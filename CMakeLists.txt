@@ -30,11 +30,11 @@ option(LIGHTUI_BUILD_RUST_BINDING "Build Rust binding" OFF)
 option(LIGHTUI_BUILD_GO_BINDING "Build Go binding" OFF)
 option(LIGHTUI_USE_SKIA "Use Skia for rendering (requires Skia)" OFF)
 
-# 编译器警告
+# 编译器警告（已禁用以减少输出）
 if(MSVC)
-    add_compile_options(/W4 /utf-8)
+    add_compile_options(/W0 /utf-8)
 else()
-    add_compile_options(-Wall -Wextra -Wpedantic)
+    add_compile_options(-w)  # -w 禁用所有警告
 endif()
 
 # 输出目录

@@ -26,12 +26,33 @@
 #include <functional>
 #include <memory>
 #include <unordered_map>
+#include <queue>
+#include <vector>
+#include <chrono>
 #include "quickjs.h"
 #include "nlohmann/json.hpp"
 
 namespace lightui {
 
 using json = nlohmann::json;
+
+/**
+ * @brief 异步任务结构
+ */
+struct Task {
+    int id;                          // 任务ID
+    JSValue callback;                // JavaScript回调函数
+    std::vector<JSValue> args;       // 回调参数
+    int64_t execute_time;            // 执行时间（毫秒时间戳）
+    bool repeat;                     // 是否重复执行
+    int64_t interval;                // 重复间隔（毫秒）
+    bool cancelled;                  // 是否已取消
+
+    // 用于优先队列排序（执行时间早的优先）
+    bool operator>(const Task& other) const {
+        return execute_time > other.execute_time;
+    }
+};
 
 /**
  * @brief C++函数类型（可以从JavaScript调用）
@@ -105,13 +126,47 @@ public:
      * @param value 属性值（JSON格式）
      */
     void SetGlobalProperty(const std::string& name, const json& value);
-    
+
+    /**
+     * @brief 注册模块
+     * @param module_name 模块名
+     * @param module_code 模块代码
+     */
+    void RegisterModule(const std::string& module_name, const std::string& module_code);
+
+    /**
+     * @brief 加载并执行模块
+     * @param module_name 模块名
+     * @return 模块导出对象（JSON格式）
+     * @throws std::runtime_error 如果加载失败
+     */
+    json LoadModule(const std::string& module_name);
+
+    /**
+     * @brief 从文件加载模块
+     * @param filepath 文件路径
+     * @return 模块导出对象（JSON格式）
+     * @throws std::runtime_error 如果加载失败
+     */
+    json LoadModuleFile(const std::string& filepath);
+
+    /**
+     * @brief 运行事件循环
+     * @param max_iterations 最大迭代次数，-1表示无限循环直到没有任务
+     */
+    void RunEventLoop(int max_iterations = -1);
+
+    /**
+     * @brief 处理所有待执行的微任务
+     */
+    void ProcessMicrotasks();
+
     /**
      * @brief 获取QuickJS上下文
      * @return QuickJS上下文指针
      */
     JSContext* GetContext() const { return ctx_; }
-    
+
     /**
      * @brief 获取QuickJS运行时
      * @return QuickJS运行时指针
@@ -138,18 +193,48 @@ private:
      * @brief 初始化运行时
      */
     void InitRuntime();
-    
+
     /**
      * @brief 初始化标准库
      */
     void InitStdLib();
-    
+
+    /**
+     * @brief 初始化Console API
+     */
+    void InitConsole();
+
+    /**
+     * @brief 初始化模块加载器
+     */
+    void InitModuleLoader();
+
+    /**
+     * @brief 初始化定时器API
+     */
+    void InitTimers();
+
     /**
      * @brief 获取并格式化JavaScript错误
      * @return 错误信息
      */
     std::string GetJSError();
-    
+
+    /**
+     * @brief 获取当前时间（毫秒）
+     */
+    int64_t GetCurrentTimeMs();
+
+    /**
+     * @brief 处理所有待执行的任务
+     */
+    void ProcessTasks();
+
+    /**
+     * @brief 检查是否有待处理的微任务
+     */
+    bool HasPendingJobs();
+
     /**
      * @brief 静态C函数包装器（用于QuickJS）
      */
@@ -157,10 +242,53 @@ private:
                                         int argc, JSValueConst* argv, int magic,
                                         JSValue* func_data);
 
+    /**
+     * @brief Console API 实现
+     * @param magic 0=log, 1=error, 2=warn, 3=info
+     */
+    static JSValue ConsoleLog(JSContext* ctx, JSValueConst this_val,
+                             int argc, JSValueConst* argv, int magic);
+
+    /**
+     * @brief 模块加载器回调
+     */
+    static JSModuleDef* ModuleLoader(JSContext* ctx, const char* module_name, void* opaque);
+
+    /**
+     * @brief setTimeout 实现
+     */
+    static JSValue SetTimeout(JSContext* ctx, JSValueConst this_val,
+                             int argc, JSValueConst* argv);
+
+    /**
+     * @brief setInterval 实现
+     */
+    static JSValue SetInterval(JSContext* ctx, JSValueConst this_val,
+                              int argc, JSValueConst* argv);
+
+    /**
+     * @brief clearTimeout/clearInterval 实现
+     */
+    static JSValue ClearTimer(JSContext* ctx, JSValueConst this_val,
+                             int argc, JSValueConst* argv);
+
+    /**
+     * @brief 内部实现：创建定时器
+     */
+    int CreateTimer(JSValue callback, int64_t delay, bool repeat,
+                   const std::vector<JSValue>& args);
+
 private:
     JSRuntime* rt_ = nullptr;
     JSContext* ctx_ = nullptr;
     std::unordered_map<std::string, NativeFunction> native_functions_;
+    std::unordered_map<std::string, std::string> module_registry_;
+
+    // 异步任务队列
+    std::queue<Task> task_queue_;
+    std::priority_queue<Task, std::vector<Task>, std::greater<Task>> timer_queue_;
+    std::unordered_map<int, Task> active_timers_;
+    int next_task_id_ = 1;
 };
 
 } // namespace lightui

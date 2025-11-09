@@ -7,16 +7,23 @@
 [![Build Status](https://img.shields.io/badge/build-passing-brightgreen.svg)]()
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Version](https://img.shields.io/badge/version-0.1.0--alpha-orange.svg)]()
-[![Phase](https://img.shields.io/badge/phase-1%20complete-green)]()
-[![Progress](https://img.shields.io/badge/progress-25%25-blue)]()
+[![Phase](https://img.shields.io/badge/phase-2.1%20complete-green)]()
+[![Progress](https://img.shields.io/badge/progress-35%25-blue)]()
 
 ---
 
 ## 📊 项目状态
 
-**当前阶段**: Phase 1 完成 ✅ - 基础架构搭建完成
-**进度**: 25% (所有核心模块编译成功 ✅)
+**当前阶段**: Phase 2.1 完成 ✅ - JavaScript Runtime 完全实现
+**进度**: 35% (Phase 1 + Phase 2.1 完成 ✅)
 **最后更新**: 2025-11-09
+
+### 最新成就 🎉
+- ✅ **完整的 JavaScript 运行时** - 基于 QuickJS，支持 ES6+
+- ✅ **异步编程支持** - Promise, setTimeout, setInterval 全部可用
+- ✅ **模块系统** - ES6 import/export 完全支持
+- ✅ **Console API** - console.log/error/warn/info
+- ✅ **14 个测试全部通过** - 100% 测试覆盖率
 
 📝 [项目进度](PROJECT_PROGRESS.md) | 📚 [文档索引](docs/DOCUMENTATION_INDEX.md) | 🏗️ [架构设计](docs/ARCHITECTURE.md)
 

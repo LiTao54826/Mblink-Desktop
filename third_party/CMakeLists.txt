@@ -48,6 +48,7 @@ if(EXISTS "${THIRD_PARTY_DIR}/quickjs")
         ${THIRD_PARTY_DIR}/quickjs/libunicode.c
         ${THIRD_PARTY_DIR}/quickjs/cutils.c
         ${THIRD_PARTY_DIR}/quickjs/quickjs-libc.c
+        ${THIRD_PARTY_DIR}/quickjs/libbf.c
     )
 
     # 创建QuickJS静态库
@@ -59,10 +60,12 @@ if(EXISTS "${THIRD_PARTY_DIR}/quickjs")
         target_compile_definitions(quickjs PRIVATE
             _CRT_SECURE_NO_WARNINGS
             CONFIG_VERSION="2024-01-13"
+            CONFIG_BIGNUM=1
         )
     else()
         target_compile_definitions(quickjs PRIVATE
             CONFIG_VERSION="2024-01-13"
+            CONFIG_BIGNUM=1
         )
         target_compile_options(quickjs PRIVATE -Wno-unused-parameter)
     endif()
