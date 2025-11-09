@@ -1,11 +1,26 @@
-# event CMakeLists.txt
+# Event模块 CMakeLists.txt
 
-# TODO: 添加源文件
-# set(SOURCES
-#     file1.cpp
-#     file2.cpp
-# )
+set(EVENT_SOURCES
+    event.cpp
+    mouse_event.cpp
+    keyboard_event.cpp
+    event_system.cpp
+)
 
-# TODO: 添加库或可执行文件
-# add_library(event ${SOURCES})
-# target_link_libraries(event ...)
+set(EVENT_HEADERS
+    event.h
+    mouse_event.h
+    keyboard_event.h
+    event_system.h
+)
+
+add_library(lightui_event STATIC ${EVENT_SOURCES})
+
+target_include_directories(lightui_event PUBLIC
+    ${CMAKE_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/core
+)
+
+target_link_libraries(lightui_event PUBLIC
+    lightui_utils
+)

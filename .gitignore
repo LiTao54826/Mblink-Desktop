@@ -3,6 +3,7 @@ build/
 cmake-build-*/
 out/
 .venv/
+mingw64/
 
 # IDE
 .vscode/
@@ -49,9 +50,38 @@ Thumbs.db
 # Logs
 *.log
 
-# Third party (if not using submodules)
-# third_party/quickjs/
-# third_party/skia/
-# third_party/sdl3/
-# third_party/yoga/
+# Third party libraries (downloaded/compiled)
+third_party/quickjs/
+third_party/SDL3/
+third_party/yoga/
+third_party/skia/
+third_party/vcpkg/
+third_party/*.tar.xz
+third_party/*.zip
 
+# Keep only CMakeLists and README for third_party
+!third_party/CMakeLists.txt
+!third_party/README.md
+
+# Temporary files
+vcpkg.exe
+*.tmp
+*.bak
+project_tree.txt
+
+# Status/progress markdown files (keep only main docs)
+CURRENT_STATUS.md
+DEPENDENCIES_DOWNLOADED.md
+ENCODING_ISSUE_FIXED.md
+PHASE1_PROGRESS.md
+PHASE1_WEEK1_COMPLETE.md
+PROJECT_COMPLETE.md
+PROJECT_STATUS.md
+PROJECT_TREE.md
+PROXY_CONFIG_COMPLETE.md
+QUICK_FIX.md
+QUICK_START.md
+SETUP_COMPLETE.md
+UTF8_FIX_COMPLETE.md
+WORK_SUMMARY.md
+BUILD.md

@@ -1,11 +1,21 @@
-# bridge CMakeLists.txt
+# Bridge模块 CMakeLists.txt
 
-# TODO: 添加源文件
-# set(SOURCES
-#     file1.cpp
-#     file2.cpp
-# )
+set(BRIDGE_SOURCES
+    bridge.cpp
+)
 
-# TODO: 添加库或可执行文件
-# add_library(bridge ${SOURCES})
-# target_link_libraries(bridge ...)
+set(BRIDGE_HEADERS
+    bridge.h
+)
+
+add_library(lightui_bridge STATIC ${BRIDGE_SOURCES})
+
+target_include_directories(lightui_bridge PUBLIC
+    ${CMAKE_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/core
+)
+
+target_link_libraries(lightui_bridge PUBLIC
+    lightui_utils
+    lightui_quickjs
+)

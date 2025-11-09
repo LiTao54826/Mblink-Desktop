@@ -28,6 +28,14 @@ option(LIGHTUI_BUILD_EXAMPLES "Build examples" ON)
 option(LIGHTUI_BUILD_PYTHON_BINDING "Build Python binding" ON)
 option(LIGHTUI_BUILD_RUST_BINDING "Build Rust binding" OFF)
 option(LIGHTUI_BUILD_GO_BINDING "Build Go binding" OFF)
+option(LIGHTUI_USE_SKIA "Use Skia for rendering (requires Skia)" OFF)
+
+# 编译器警告
+if(MSVC)
+    add_compile_options(/W4 /utf-8)
+else()
+    add_compile_options(-Wall -Wextra -Wpedantic)
+endif()
 
 # 输出目录
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
@@ -40,40 +48,47 @@ include_directories(${CMAKE_SOURCE_DIR}/core)
 include_directories(${CMAKE_SOURCE_DIR}/third_party)
 
 # 第三方库
-# TODO: 添加QuickJS, Skia, SDL3, Yoga
-# add_subdirectory(third_party)
+add_subdirectory(third_party)
 
 # 核心库
-# TODO: 添加核心模块
-# add_subdirectory(core)
+add_subdirectory(core)
 
 # 语言绑定
-# TODO: 添加语言绑定
-# if(LIGHTUI_BUILD_PYTHON_BINDING)
-#     add_subdirectory(bindings/python)
-# endif()
+if(LIGHTUI_BUILD_PYTHON_BINDING)
+    # Python绑定通过setup.py构建，这里不需要CMake
+    message(STATUS "Python binding will be built via setup.py")
+endif()
 
 # 示例
-# TODO: 添加示例
-# if(LIGHTUI_BUILD_EXAMPLES)
-#     add_subdirectory(examples)
-# endif()
+if(LIGHTUI_BUILD_EXAMPLES)
+    add_subdirectory(examples)
+endif()
 
 # 测试
-# TODO: 添加测试
-# if(LIGHTUI_BUILD_TESTS)
-#     enable_testing()
-#     add_subdirectory(tests)
-# endif()
+if(LIGHTUI_BUILD_TESTS)
+    enable_testing()
+    add_subdirectory(tests)
+endif()
 
 # 安装
-# TODO: 添加安装目标
-# install(TARGETS lightui
-#     LIBRARY DESTINATION lib
-#     ARCHIVE DESTINATION lib
-#     RUNTIME DESTINATION bin
-# )
-# install(DIRECTORY core/ DESTINATION include/lightui
-#     FILES_MATCHING PATTERN "*.h"
-# )
+install(TARGETS lightui
+    LIBRARY DESTINATION lib
+    ARCHIVE DESTINATION lib
+    RUNTIME DESTINATION bin
+)
+install(DIRECTORY core/ DESTINATION include/lightui
+    FILES_MATCHING PATTERN "*.h"
+)
+
+# 打印配置信息
+message(STATUS "========================================")
+message(STATUS "  LightUI Configuration")
+message(STATUS "========================================")
+message(STATUS "  Version: ${PROJECT_VERSION}")
+message(STATUS "  Build type: ${CMAKE_BUILD_TYPE}")
+message(STATUS "  C++ standard: ${CMAKE_CXX_STANDARD}")
+message(STATUS "  Build tests: ${LIGHTUI_BUILD_TESTS}")
+message(STATUS "  Build examples: ${LIGHTUI_BUILD_EXAMPLES}")
+message(STATUS "  Use Skia: ${LIGHTUI_USE_SKIA}")
+message(STATUS "========================================")
 

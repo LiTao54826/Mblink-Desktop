@@ -1,11 +1,28 @@
-# dom CMakeLists.txt
+# DOM模块 CMakeLists.txt
 
-# TODO: 添加源文件
-# set(SOURCES
-#     file1.cpp
-#     file2.cpp
-# )
+set(DOM_SOURCES
+    node.cpp
+    element.cpp
+    text.cpp
+    document.cpp
+    dom_bindings.cpp
+)
 
-# TODO: 添加库或可执行文件
-# add_library(dom ${SOURCES})
-# target_link_libraries(dom ...)
+set(DOM_HEADERS
+    node.h
+    element.h
+    text.h
+    document.h
+    dom_bindings.h
+)
+
+add_library(lightui_dom STATIC ${DOM_SOURCES})
+
+target_include_directories(lightui_dom PUBLIC
+    ${CMAKE_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/core
+)
+
+target_link_libraries(lightui_dom PUBLIC
+    lightui_utils
+)

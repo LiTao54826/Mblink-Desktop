@@ -25,7 +25,7 @@
 #include <memory>
 #include <SDL3/SDL.h>
 #include "include/core/SkSurface.h"
-#include "include/gpu/GrDirectContext.h"
+#include "include/gpu/ganesh/GrDirectContext.h"
 
 namespace lightui {
 

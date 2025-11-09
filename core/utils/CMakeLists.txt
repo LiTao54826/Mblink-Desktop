@@ -1,11 +1,20 @@
-# utils CMakeLists.txt
+# Utils模块 CMakeLists.txt
 
-# TODO: 添加源文件
-# set(SOURCES
-#     file1.cpp
-#     file2.cpp
-# )
+set(UTILS_SOURCES
+    logger.cpp
+    json.cpp
+)
 
-# TODO: 添加库或可执行文件
-# add_library(utils ${SOURCES})
-# target_link_libraries(utils ...)
+set(UTILS_HEADERS
+    logger.h
+    json.h
+)
+
+add_library(lightui_utils STATIC ${UTILS_SOURCES})
+
+target_include_directories(lightui_utils PUBLIC
+    ${CMAKE_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/core
+)
+
+# Utils模块是基础模块，不依赖其他模块

@@ -1,11 +1,27 @@
-# api CMakeLists.txt
+# API模块 CMakeLists.txt
 
-# TODO: 添加源文件
-# set(SOURCES
-#     file1.cpp
-#     file2.cpp
-# )
+set(API_SOURCES
+    lightui.cpp
+)
 
-# TODO: 添加库或可执行文件
-# add_library(api ${SOURCES})
-# target_link_libraries(api ...)
+set(API_HEADERS
+    lightui.h
+)
+
+add_library(lightui_api STATIC ${API_SOURCES})
+
+target_include_directories(lightui_api PUBLIC
+    ${CMAKE_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/core
+)
+
+target_link_libraries(lightui_api PUBLIC
+    lightui_window
+    lightui_quickjs
+    lightui_dom
+    lightui_event
+    lightui_layout
+    lightui_render
+    lightui_bridge
+    lightui_utils
+)

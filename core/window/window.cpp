@@ -19,7 +19,7 @@
 
 #include "window.h"
 #include <stdexcept>
-#include "include/gpu/gl/GrGLInterface.h"
+#include "include/gpu/ganesh/gl/GrGLInterface.h"
 
 namespace lightui {
 
