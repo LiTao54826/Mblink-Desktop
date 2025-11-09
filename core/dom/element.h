@@ -222,6 +222,14 @@ public:
     void SetTextContent(const std::string& content) override;
 
 private:
+    /**
+     * @brief 处理事件（内部方法）
+     * @param event 事件对象
+     * @param use_capture 是否使用捕获
+     */
+    void HandleEvent(std::shared_ptr<Event> event, bool use_capture);
+
+private:
     std::string tag_name_;
     std::unordered_map<std::string, std::string> attributes_;
     std::unordered_map<std::string, std::string> styles_;

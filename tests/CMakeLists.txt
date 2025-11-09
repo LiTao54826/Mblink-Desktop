@@ -76,3 +76,135 @@ endif()
 
 add_test(NAME QuickJSRuntime COMMAND test_quickjs_runtime)
 
+# DOM Node Test
+add_executable(test_dom_node test_dom_node.cpp)
+
+target_include_directories(test_dom_node PRIVATE
+    ${CMAKE_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/core
+)
+
+target_link_libraries(test_dom_node PRIVATE
+    lightui_dom
+    GTest::gtest
+    GTest::gtest_main
+)
+
+# Force use of MSVCRT instead of UCRT on Windows
+if(WIN32 AND MINGW)
+    target_link_options(test_dom_node PRIVATE -static-libgcc -static-libstdc++)
+endif()
+
+add_test(NAME DOMNodeTest COMMAND test_dom_node)
+
+# DOM Event Test
+add_executable(test_dom_event test_dom_event.cpp)
+
+target_include_directories(test_dom_event PRIVATE
+    ${CMAKE_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/core
+)
+
+target_link_libraries(test_dom_event PRIVATE
+    lightui_dom
+    GTest::gtest
+    GTest::gtest_main
+)
+
+if(WIN32 AND MINGW)
+    target_link_options(test_dom_event PRIVATE -static-libgcc -static-libstdc++)
+endif()
+
+add_test(NAME DOMEventTest COMMAND test_dom_event)
+
+# DOM Document Test
+add_executable(test_dom_document test_dom_document.cpp)
+
+target_include_directories(test_dom_document PRIVATE
+    ${CMAKE_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/core
+)
+
+target_link_libraries(test_dom_document PRIVATE
+    lightui_dom
+    GTest::gtest
+    GTest::gtest_main
+)
+
+if(WIN32 AND MINGW)
+    target_link_options(test_dom_document PRIVATE -static-libgcc -static-libstdc++)
+endif()
+
+add_test(NAME DOMDocumentTest COMMAND test_dom_document)
+
+# DOM Query Test
+add_executable(test_dom_query test_dom_query.cpp)
+
+target_include_directories(test_dom_query PRIVATE
+    ${CMAKE_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/core
+)
+
+target_link_libraries(test_dom_query PRIVATE
+    lightui_dom
+    GTest::gtest
+    GTest::gtest_main
+)
+
+if(WIN32 AND MINGW)
+    target_link_options(test_dom_query PRIVATE -static-libgcc -static-libstdc++)
+endif()
+
+add_test(NAME DOMQueryTest COMMAND test_dom_query)
+
+# DOM Integration Test
+add_executable(test_dom_integration test_dom_integration.cpp)
+
+target_include_directories(test_dom_integration PRIVATE
+    ${CMAKE_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/core
+)
+
+target_link_libraries(test_dom_integration PRIVATE
+    lightui_dom
+    GTest::gtest
+    GTest::gtest_main
+)
+
+if(WIN32 AND MINGW)
+    target_link_options(test_dom_integration PRIVATE -static-libgcc -static-libstdc++)
+endif()
+
+add_test(NAME DOMIntegrationTest COMMAND test_dom_integration)
+
+# DOM Bindings Integration Test
+add_executable(test_dom_bindings_integration test_dom_bindings_integration.cpp)
+
+target_include_directories(test_dom_bindings_integration PRIVATE
+    ${CMAKE_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/core
+    ${CMAKE_SOURCE_DIR}/third_party/quickjs
+)
+
+target_link_libraries(test_dom_bindings_integration PRIVATE
+    lightui_dom
+    lightui_quickjs
+    GTest::gtest
+    GTest::gtest_main
+)
+
+if(WIN32 AND MINGW)
+    target_link_options(test_dom_bindings_integration PRIVATE -static-libgcc -static-libstdc++)
+endif()
+
+add_test(NAME DOMBindingsIntegrationTest COMMAND test_dom_bindings_integration)
+
+# DOM 性能基准测试
+add_executable(benchmark_dom benchmark_dom.cpp)
+target_link_libraries(benchmark_dom PRIVATE
+    lightui_dom
+    GTest::gtest
+    GTest::gtest_main
+)
+# 注意：基准测试不添加到 CTest，因为它们不是功能测试
+

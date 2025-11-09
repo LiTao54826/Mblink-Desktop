@@ -5,6 +5,7 @@ set(DOM_SOURCES
     element.cpp
     text.cpp
     document.cpp
+    event.cpp
     dom_bindings.cpp
 )
 
@@ -13,6 +14,7 @@ set(DOM_HEADERS
     element.h
     text.h
     document.h
+    event.h
     dom_bindings.h
 )
 

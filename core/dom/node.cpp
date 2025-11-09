@@ -1,12 +1,250 @@
 /**
  * @file node.cpp
- * @brief DOM节点基类实现实现
+ * @brief DOM节点基类实现
  */
 
 #include "node.h"
+#include "text.h"
+#include <algorithm>
+#include <stdexcept>
 
 namespace lightui {
 
-// TODO: 实现函数
+// ========== 构造函数和析构函数 ==========
+
+Node::Node(NodeType type)
+    : node_type_(type)
+    , parent_node_()
+    , child_nodes_()
+    , is_dirty_(true) {
+}
+
+// ========== 子节点访问 ==========
+
+std::shared_ptr<Node> Node::GetFirstChild() const {
+    if (child_nodes_.empty()) {
+        return nullptr;
+    }
+    return child_nodes_.front();
+}
+
+std::shared_ptr<Node> Node::GetLastChild() const {
+    if (child_nodes_.empty()) {
+        return nullptr;
+    }
+    return child_nodes_.back();
+}
+
+// ========== 兄弟节点访问 ==========
+
+std::shared_ptr<Node> Node::GetNextSibling() const {
+    auto parent = parent_node_.lock();
+    if (!parent) {
+        return nullptr;
+    }
+
+    const auto& siblings = parent->child_nodes_;
+    auto it = std::find_if(siblings.begin(), siblings.end(),
+        [this](const std::shared_ptr<Node>& node) {
+            return node.get() == this;
+        });
+
+    if (it == siblings.end() || std::next(it) == siblings.end()) {
+        return nullptr;
+    }
+
+    return *std::next(it);
+}
+
+std::shared_ptr<Node> Node::GetPreviousSibling() const {
+    auto parent = parent_node_.lock();
+    if (!parent) {
+        return nullptr;
+    }
+
+    const auto& siblings = parent->child_nodes_;
+    auto it = std::find_if(siblings.begin(), siblings.end(),
+        [this](const std::shared_ptr<Node>& node) {
+            return node.get() == this;
+        });
+
+    if (it == siblings.end() || it == siblings.begin()) {
+        return nullptr;
+    }
+
+    return *std::prev(it);
+}
+
+// ========== 子节点操作 ==========
+
+std::shared_ptr<Node> Node::AppendChild(std::shared_ptr<Node> child) {
+    if (!child) {
+        throw std::invalid_argument("Cannot append null child");
+    }
+
+    // 如果child已有父节点，先从原父节点移除
+    if (auto parent = child->GetParentNode()) {
+        parent->RemoveChild(child);
+    }
+
+    // 添加到子节点列表
+    child_nodes_.push_back(child);
+    child->SetParentNode(shared_from_this());
+
+    // 标记为脏
+    MarkDirty();
+
+    return child;
+}
+
+std::shared_ptr<Node> Node::InsertBefore(std::shared_ptr<Node> new_child,
+                                          std::shared_ptr<Node> ref_child) {
+    if (!new_child) {
+        throw std::invalid_argument("Cannot insert null child");
+    }
+
+    // 如果ref_child为nullptr，等同于AppendChild
+    if (!ref_child) {
+        return AppendChild(new_child);
+    }
+
+    // 查找ref_child的位置
+    auto it = std::find(child_nodes_.begin(), child_nodes_.end(), ref_child);
+    if (it == child_nodes_.end()) {
+        throw std::invalid_argument("Reference child not found");
+    }
+
+    // 如果new_child已有父节点，先从原父节点移除
+    if (auto parent = new_child->GetParentNode()) {
+        parent->RemoveChild(new_child);
+    }
+
+    // 在ref_child前插入
+    child_nodes_.insert(it, new_child);
+    new_child->SetParentNode(shared_from_this());
+
+    // 标记为脏
+    MarkDirty();
+
+    return new_child;
+}
+
+std::shared_ptr<Node> Node::RemoveChild(std::shared_ptr<Node> child) {
+    if (!child) {
+        throw std::invalid_argument("Cannot remove null child");
+    }
+
+    // 查找child的位置
+    auto it = std::find(child_nodes_.begin(), child_nodes_.end(), child);
+    if (it == child_nodes_.end()) {
+        throw std::invalid_argument("Child not found");
+    }
+
+    // 从子节点列表移除
+    child_nodes_.erase(it);
+    child->SetParentNode(nullptr);
+
+    // 标记为脏
+    MarkDirty();
+
+    return child;
+}
+
+std::shared_ptr<Node> Node::ReplaceChild(std::shared_ptr<Node> new_child,
+                                          std::shared_ptr<Node> old_child) {
+    if (!new_child || !old_child) {
+        throw std::invalid_argument("Cannot replace with/from null child");
+    }
+
+    // 查找old_child的位置
+    auto it = std::find(child_nodes_.begin(), child_nodes_.end(), old_child);
+    if (it == child_nodes_.end()) {
+        throw std::invalid_argument("Old child not found");
+    }
+
+    // 如果new_child已有父节点，先从原父节点移除
+    if (auto parent = new_child->GetParentNode()) {
+        parent->RemoveChild(new_child);
+    }
+
+    // 替换节点
+    *it = new_child;
+    old_child->SetParentNode(nullptr);
+    new_child->SetParentNode(shared_from_this());
+
+    // 标记为脏
+    MarkDirty();
+
+    return old_child;
+}
+
+// ========== 其他操作 ==========
+
+bool Node::Contains(std::shared_ptr<Node> other) const {
+    if (!other) {
+        return false;
+    }
+
+    // 遍历other的所有祖先节点
+    auto current = other;
+    while (current) {
+        if (current.get() == this) {
+            return true;
+        }
+        current = current->GetParentNode();
+    }
+
+    return false;
+}
+
+std::string Node::GetTextContent() const {
+    std::string content;
+
+    // 递归收集所有Text节点的内容
+    for (const auto& child : child_nodes_) {
+        content += child->GetTextContent();
+    }
+
+    return content;
+}
+
+void Node::SetTextContent(const std::string& content) {
+    // 移除所有子节点
+    RemoveAllChildren();
+
+    // 创建新的Text节点
+    if (!content.empty()) {
+        auto text_node = std::make_shared<Text>(content);
+        AppendChild(text_node);
+    }
+}
+
+void Node::MarkDirty() {
+    is_dirty_ = true;
+
+    // 向上传播脏标记
+    if (auto parent = parent_node_.lock()) {
+        parent->MarkDirty();
+    }
+}
+
+// ========== Protected方法 ==========
+
+void Node::SetParentNode(std::shared_ptr<Node> parent) {
+    parent_node_ = parent;
+}
+
+void Node::RemoveAllChildren() {
+    // 清除所有子节点的父节点引用
+    for (auto& child : child_nodes_) {
+        child->SetParentNode(nullptr);
+    }
+
+    // 清空子节点列表
+    child_nodes_.clear();
+
+    // 标记为脏
+    MarkDirty();
+}
 
 } // namespace lightui

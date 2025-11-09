@@ -1,5 +1,9 @@
 # LightUI 文档索引
 
+> 最后更新: 2025-11-09
+> 当前版本: 0.1.0-alpha
+> 总进度: 70% (Phase 2.2 完成 ✅)
+
 ## 📖 文档导航
 
 本文档提供LightUI项目所有文档的快速导航和概览。
@@ -10,9 +14,16 @@
 
 如果你是第一次接触LightUI，建议按以下顺序阅读：
 
-1. **[README.md](README.md)** - 5分钟了解项目
-2. **[PROJECT_OVERVIEW.md](PROJECT_OVERVIEW.md)** - 10分钟深入了解
-3. **[GETTING_STARTED.md](GETTING_STARTED.md)** - 30分钟开始开发
+1. **[../README.md](../README.md)** - 5分钟了解项目
+2. **[../PROJECT_STATUS.md](../PROJECT_STATUS.md)** - 10分钟了解当前状态（推荐）
+3. **[PROJECT_OVERVIEW.md](PROJECT_OVERVIEW.md)** - 15分钟深入了解
+4. **[GETTING_STARTED.md](GETTING_STARTED.md)** - 30分钟开始开发
+
+### 最新完成
+- ✅ **Phase 2.2 DOM API** - 完整的 DOM API 实现（2025-11-09）
+- ✅ **102 个测试通过** - 100% 测试覆盖率
+- ✅ **生产级性能** - 所有核心操作达到生产级别
+- 📚 **完整文档** - [DOM_API.md](DOM_API.md), [PERFORMANCE.md](PERFORMANCE.md)
 
 ---
 

@@ -1,17 +1,142 @@
 /**
  * @file document.h
- * @brief Document类
- * 
- * TODO:
- * - [ ] 实现基本功能
- * - [ ] 添加单元测试
- * - [ ] 完善文档
+ * @brief Document 类
+ *
+ * 功能：
+ * - 表示整个 DOM 文档
+ * - 提供创建节点的工厂方法
+ * - 管理全局 ID 映射
+ * - 提供查询方法
  */
 
 #pragma once
 
+#include "node.h"
+#include "element.h"
+#include "text.h"
+#include <string>
+#include <memory>
+#include <unordered_map>
+
 namespace lightui {
 
-// TODO: 添加类定义和函数声明
+/**
+ * @brief Document 类
+ */
+class Document : public Node {
+public:
+    /**
+     * @brief 构造函数
+     */
+    Document();
+
+    /**
+     * @brief 析构函数
+     */
+    ~Document() override = default;
+
+    // ========== 工厂方法 ==========
+
+    /**
+     * @brief 创建元素节点
+     * @param tag_name 标签名
+     * @return 元素节点
+     */
+    std::shared_ptr<Element> CreateElement(const std::string& tag_name);
+
+    /**
+     * @brief 创建文本节点
+     * @param data 文本数据
+     * @return 文本节点
+     */
+    std::shared_ptr<Text> CreateTextNode(const std::string& data);
+
+    // ========== 文档属性 ==========
+
+    /**
+     * @brief 获取文档元素（根元素）
+     * @return 文档元素
+     */
+    std::shared_ptr<Element> GetDocumentElement() const { return document_element_; }
+
+    /**
+     * @brief 获取 body 元素
+     * @return body 元素
+     */
+    std::shared_ptr<Element> GetBody() const { return body_; }
+
+    /**
+     * @brief 设置 body 元素
+     * @param body body 元素
+     */
+    void SetBody(std::shared_ptr<Element> body);
+
+    // ========== 查询方法 ==========
+
+    /**
+     * @brief 根据 ID 查找元素
+     * @param id 元素 ID
+     * @return 元素，如果未找到返回 nullptr
+     */
+    std::shared_ptr<Element> GetElementById(const std::string& id);
+
+    /**
+     * @brief 根据标签名查找所有元素
+     * @param tag_name 标签名
+     * @return 元素列表
+     */
+    std::vector<std::shared_ptr<Element>> GetElementsByTagName(const std::string& tag_name);
+
+    /**
+     * @brief 根据 class 名查找所有元素
+     * @param class_name class 名
+     * @return 元素列表
+     */
+    std::vector<std::shared_ptr<Element>> GetElementsByClassName(const std::string& class_name);
+
+    // ========== ID 映射管理 ==========
+
+    /**
+     * @brief 注册元素 ID
+     * @param id 元素 ID
+     * @param element 元素
+     */
+    void RegisterElementId(const std::string& id, std::shared_ptr<Element> element);
+
+    /**
+     * @brief 注销元素 ID
+     * @param id 元素 ID
+     */
+    void UnregisterElementId(const std::string& id);
+
+    // ========== Node 接口实现 ==========
+
+    /**
+     * @brief 克隆节点
+     * @param deep 是否深度克隆
+     * @return 克隆的节点
+     */
+    std::shared_ptr<Node> CloneNode(bool deep) override;
+
+private:
+    /**
+     * @brief 递归收集指定标签名的元素
+     */
+    void CollectElementsByTagName(std::shared_ptr<Node> node,
+                                   const std::string& tag_name,
+                                   std::vector<std::shared_ptr<Element>>& result);
+
+    /**
+     * @brief 递归收集指定 class 名的元素
+     */
+    void CollectElementsByClassName(std::shared_ptr<Node> node,
+                                     const std::string& class_name,
+                                     std::vector<std::shared_ptr<Element>>& result);
+
+private:
+    std::shared_ptr<Element> document_element_;
+    std::shared_ptr<Element> body_;
+    std::unordered_map<std::string, std::weak_ptr<Element>> id_map_;
+};
 
 } // namespace lightui
