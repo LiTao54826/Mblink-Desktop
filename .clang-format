@@ -1,0 +1,55 @@
+# LightUI C++代码格式配置
+# 基于Google C++风格指南，略有修改
+
+BasedOnStyle: Google
+Language: Cpp
+
+# 缩进
+IndentWidth: 4
+TabWidth: 4
+UseTab: Never
+ContinuationIndentWidth: 4
+
+# 大括号
+BreakBeforeBraces: Attach
+BraceWrapping:
+  AfterClass: false
+  AfterControlStatement: false
+  AfterEnum: false
+  AfterFunction: false
+  AfterNamespace: false
+  AfterStruct: false
+  AfterUnion: false
+  BeforeCatch: false
+  BeforeElse: false
+
+# 列宽
+ColumnLimit: 100
+
+# 指针和引用对齐
+PointerAlignment: Left
+ReferenceAlignment: Left
+
+# 命名空间
+NamespaceIndentation: None
+
+# 访问修饰符
+AccessModifierOffset: -4
+
+# 包含文件排序
+SortIncludes: true
+IncludeBlocks: Regroup
+IncludeCategories:
+  - Regex: '^<.*\.h>'
+    Priority: 1
+  - Regex: '^<.*>'
+    Priority: 2
+  - Regex: '.*'
+    Priority: 3
+
+# 其他
+AllowShortFunctionsOnASingleLine: Inline
+AllowShortIfStatementsOnASingleLine: Never
+AllowShortLoopsOnASingleLine: false
+AlwaysBreakTemplateDeclarations: Yes
+

@@ -1,0 +1,57 @@
+# Build directories
+build/
+cmake-build-*/
+out/
+.venv/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Compiled files
+*.o
+*.obj
+*.exe
+*.dll
+*.so
+*.dylib
+*.a
+*.lib
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+dist/
+.eggs/
+*.egg
+
+# Rust
+target/
+Cargo.lock
+
+# Go
+*.test
+*.out
+
+# Node.js
+node_modules/
+package-lock.json
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Third party (if not using submodules)
+# third_party/quickjs/
+# third_party/skia/
+# third_party/sdl3/
+# third_party/yoga/
+
