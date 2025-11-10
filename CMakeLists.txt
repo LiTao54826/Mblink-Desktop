@@ -33,6 +33,11 @@ option(LIGHTUI_USE_SKIA "Use Skia for rendering (requires Skia)" ON)
 # 编译器警告（已禁用以减少输出）
 if(MSVC)
     add_compile_options(/W0 /utf-8)
+    # 全局强制使用 /MT 静态运行时库以匹配 Skia
+    # 注意：Skia 的 Debug 和 Release 版本都使用 /MT (不是 /MTd)
+    add_compile_options(/MT)
+    add_compile_definitions(_ITERATOR_DEBUG_LEVEL=0)
+    set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded" CACHE STRING "MSVC runtime library" FORCE)
 else()
     add_compile_options(-w)  # -w 禁用所有警告
 endif()
@@ -59,31 +64,9 @@ if(LIGHTUI_BUILD_TESTS)
     # 强制 gtest 使用静态运行时库以匹配 Skia
     if(MSVC)
         set(gtest_force_shared_crt OFF CACHE BOOL "" FORCE)
-        # 使用静态 Release 运行时
-        set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
     endif()
 
     FetchContent_MakeAvailable(googletest)
-
-    # 为 gtest 库设置运行时库
-    if(MSVC AND TARGET gtest)
-        target_compile_options(gtest PRIVATE
-            $<$<CONFIG:Debug>:/MT>
-            $<$<CONFIG:Release>:/MT>
-        )
-        target_compile_definitions(gtest PRIVATE
-            $<$<CONFIG:Debug>:_ITERATOR_DEBUG_LEVEL=0>
-        )
-    endif()
-    if(MSVC AND TARGET gtest_main)
-        target_compile_options(gtest_main PRIVATE
-            $<$<CONFIG:Debug>:/MT>
-            $<$<CONFIG:Release>:/MT>
-        )
-        target_compile_definitions(gtest_main PRIVATE
-            $<$<CONFIG:Debug>:_ITERATOR_DEBUG_LEVEL=0>
-        )
-    endif()
 endif()
 
 # 第三方库

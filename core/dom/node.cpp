@@ -5,6 +5,8 @@
 
 #include "node.h"
 #include "text.h"
+#include "document.h"
+#include "dom_observer.h"
 #include <algorithm>
 #include <stdexcept>
 
@@ -17,6 +19,26 @@ Node::Node(NodeType type)
     , parent_node_()
     , child_nodes_()
     , is_dirty_(true) {
+}
+
+// ========== 节点关系 ==========
+
+std::shared_ptr<Document> Node::GetOwnerDocument() const {
+    // 如果当前节点就是 Document，返回 nullptr（Document 没有 owner document）
+    if (node_type_ == NodeType::DOCUMENT_NODE) {
+        return nullptr;
+    }
+
+    // 向上遍历找到 Document 节点
+    auto current = const_cast<Node*>(this)->shared_from_this();
+    while (current) {
+        if (current->GetNodeType() == NodeType::DOCUMENT_NODE) {
+            return std::static_pointer_cast<Document>(current);
+        }
+        current = current->GetParentNode();
+    }
+
+    return nullptr;
 }
 
 // ========== 子节点访问 ==========
@@ -94,6 +116,12 @@ std::shared_ptr<Node> Node::AppendChild(std::shared_ptr<Node> child) {
     // 标记为脏
     MarkDirty();
 
+    // 通知观察者
+    auto doc = GetOwnerDocument();
+    if (doc) {
+        doc->GetObserverManager().NotifyNodeAdded(child.get(), this);
+    }
+
     return child;
 }
 
@@ -138,6 +166,12 @@ std::shared_ptr<Node> Node::RemoveChild(std::shared_ptr<Node> child) {
     auto it = std::find(child_nodes_.begin(), child_nodes_.end(), child);
     if (it == child_nodes_.end()) {
         throw std::invalid_argument("Child not found");
+    }
+
+    // 通知观察者（在移除之前）
+    auto doc = GetOwnerDocument();
+    if (doc) {
+        doc->GetObserverManager().NotifyNodeRemoved(child.get(), this);
     }
 
     // 从子节点列表移除

@@ -87,69 +87,71 @@ if(LIGHTUI_USE_SKIA)
 
         # 根据构建类型选择 Skia 库路径
         if(CMAKE_BUILD_TYPE STREQUAL "Debug")
-            set(SKIA_LIB_DIR "${THIRD_PARTY_DIR}/skia/out/Debug-windows-x64")
+            set(SKIA_LIB_DIR "${THIRD_PARTY_DIR}/skia/Debug/out/Debug-windows-x64")
+            set(SKIA_INCLUDE_DIR "${THIRD_PARTY_DIR}/skia/Debug")
             message(STATUS "  Using Debug Skia libraries from: ${SKIA_LIB_DIR}")
         else()
-            set(SKIA_LIB_DIR "${THIRD_PARTY_DIR}/skia/out/Release-windows-x64")
+            set(SKIA_LIB_DIR "${THIRD_PARTY_DIR}/skia/Release/out/Release-windows-x64")
+            set(SKIA_INCLUDE_DIR "${THIRD_PARTY_DIR}/skia/Release")
             message(STATUS "  Using Release Skia libraries from: ${SKIA_LIB_DIR}")
         endif()
 
         # Skia主库
         add_library(skia STATIC IMPORTED GLOBAL)
         set_target_properties(skia PROPERTIES
-            IMPORTED_LOCATION_DEBUG "${THIRD_PARTY_DIR}/skia/out/Debug-windows-x64/skia.lib"
-            IMPORTED_LOCATION_RELEASE "${THIRD_PARTY_DIR}/skia/out/Release-windows-x64/skia.lib"
+            IMPORTED_LOCATION_DEBUG "${THIRD_PARTY_DIR}/skia/Debug/out/Debug-windows-x64/skia.lib"
+            IMPORTED_LOCATION_RELEASE "${THIRD_PARTY_DIR}/skia/Release/out/Release-windows-x64/skia.lib"
             IMPORTED_LOCATION "${SKIA_LIB_DIR}/skia.lib"
-            INTERFACE_INCLUDE_DIRECTORIES "${THIRD_PARTY_DIR}/skia"
+            INTERFACE_INCLUDE_DIRECTORIES "${SKIA_INCLUDE_DIR}"
         )
 
         # Skia依赖库
         add_library(skia_harfbuzz STATIC IMPORTED GLOBAL)
         set_target_properties(skia_harfbuzz PROPERTIES
-            IMPORTED_LOCATION_DEBUG "${THIRD_PARTY_DIR}/skia/out/Debug-windows-x64/harfbuzz.lib"
-            IMPORTED_LOCATION_RELEASE "${THIRD_PARTY_DIR}/skia/out/Release-windows-x64/harfbuzz.lib"
+            IMPORTED_LOCATION_DEBUG "${THIRD_PARTY_DIR}/skia/Debug/out/Debug-windows-x64/harfbuzz.lib"
+            IMPORTED_LOCATION_RELEASE "${THIRD_PARTY_DIR}/skia/Release/out/Release-windows-x64/harfbuzz.lib"
             IMPORTED_LOCATION "${SKIA_LIB_DIR}/harfbuzz.lib"
         )
 
         add_library(skia_icu STATIC IMPORTED GLOBAL)
         set_target_properties(skia_icu PROPERTIES
-            IMPORTED_LOCATION_DEBUG "${THIRD_PARTY_DIR}/skia/out/Debug-windows-x64/icu.lib"
-            IMPORTED_LOCATION_RELEASE "${THIRD_PARTY_DIR}/skia/out/Release-windows-x64/icu.lib"
+            IMPORTED_LOCATION_DEBUG "${THIRD_PARTY_DIR}/skia/Debug/out/Debug-windows-x64/icu.lib"
+            IMPORTED_LOCATION_RELEASE "${THIRD_PARTY_DIR}/skia/Release/out/Release-windows-x64/icu.lib"
             IMPORTED_LOCATION "${SKIA_LIB_DIR}/icu.lib"
         )
 
         add_library(skia_libpng STATIC IMPORTED GLOBAL)
         set_target_properties(skia_libpng PROPERTIES
-            IMPORTED_LOCATION_DEBUG "${THIRD_PARTY_DIR}/skia/out/Debug-windows-x64/libpng.lib"
-            IMPORTED_LOCATION_RELEASE "${THIRD_PARTY_DIR}/skia/out/Release-windows-x64/libpng.lib"
+            IMPORTED_LOCATION_DEBUG "${THIRD_PARTY_DIR}/skia/Debug/out/Debug-windows-x64/libpng.lib"
+            IMPORTED_LOCATION_RELEASE "${THIRD_PARTY_DIR}/skia/Release/out/Release-windows-x64/libpng.lib"
             IMPORTED_LOCATION "${SKIA_LIB_DIR}/libpng.lib"
         )
 
         add_library(skia_libjpeg STATIC IMPORTED GLOBAL)
         set_target_properties(skia_libjpeg PROPERTIES
-            IMPORTED_LOCATION_DEBUG "${THIRD_PARTY_DIR}/skia/out/Debug-windows-x64/libjpeg.lib"
-            IMPORTED_LOCATION_RELEASE "${THIRD_PARTY_DIR}/skia/out/Release-windows-x64/libjpeg.lib"
+            IMPORTED_LOCATION_DEBUG "${THIRD_PARTY_DIR}/skia/Debug/out/Debug-windows-x64/libjpeg.lib"
+            IMPORTED_LOCATION_RELEASE "${THIRD_PARTY_DIR}/skia/Release/out/Release-windows-x64/libjpeg.lib"
             IMPORTED_LOCATION "${SKIA_LIB_DIR}/libjpeg.lib"
         )
 
         add_library(skia_libwebp STATIC IMPORTED GLOBAL)
         set_target_properties(skia_libwebp PROPERTIES
-            IMPORTED_LOCATION_DEBUG "${THIRD_PARTY_DIR}/skia/out/Debug-windows-x64/libwebp.lib"
-            IMPORTED_LOCATION_RELEASE "${THIRD_PARTY_DIR}/skia/out/Release-windows-x64/libwebp.lib"
+            IMPORTED_LOCATION_DEBUG "${THIRD_PARTY_DIR}/skia/Debug/out/Debug-windows-x64/libwebp.lib"
+            IMPORTED_LOCATION_RELEASE "${THIRD_PARTY_DIR}/skia/Release/out/Release-windows-x64/libwebp.lib"
             IMPORTED_LOCATION "${SKIA_LIB_DIR}/libwebp.lib"
         )
 
         add_library(skia_zlib STATIC IMPORTED GLOBAL)
         set_target_properties(skia_zlib PROPERTIES
-            IMPORTED_LOCATION_DEBUG "${THIRD_PARTY_DIR}/skia/out/Debug-windows-x64/zlib.lib"
-            IMPORTED_LOCATION_RELEASE "${THIRD_PARTY_DIR}/skia/out/Release-windows-x64/zlib.lib"
+            IMPORTED_LOCATION_DEBUG "${THIRD_PARTY_DIR}/skia/Debug/out/Debug-windows-x64/zlib.lib"
+            IMPORTED_LOCATION_RELEASE "${THIRD_PARTY_DIR}/skia/Release/out/Release-windows-x64/zlib.lib"
             IMPORTED_LOCATION "${SKIA_LIB_DIR}/zlib.lib"
         )
 
         add_library(skia_skcms STATIC IMPORTED GLOBAL)
         set_target_properties(skia_skcms PROPERTIES
-            IMPORTED_LOCATION_DEBUG "${THIRD_PARTY_DIR}/skia/out/Debug-windows-x64/skcms.lib"
-            IMPORTED_LOCATION_RELEASE "${THIRD_PARTY_DIR}/skia/out/Release-windows-x64/skcms.lib"
+            IMPORTED_LOCATION_DEBUG "${THIRD_PARTY_DIR}/skia/Debug/out/Debug-windows-x64/skcms.lib"
+            IMPORTED_LOCATION_RELEASE "${THIRD_PARTY_DIR}/skia/Release/out/Release-windows-x64/skcms.lib"
             IMPORTED_LOCATION "${SKIA_LIB_DIR}/skcms.lib"
         )
 

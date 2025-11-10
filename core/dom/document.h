@@ -14,6 +14,7 @@
 #include "node.h"
 #include "element.h"
 #include "text.h"
+#include "dom_observer.h"
 #include <string>
 #include <memory>
 #include <unordered_map>
@@ -34,6 +35,12 @@ public:
      * @brief 析构函数
      */
     ~Document() override = default;
+
+    /**
+     * @brief 初始化文档（创建基本 DOM 结构）
+     * 必须在对象被 shared_ptr 管理后调用
+     */
+    void Initialize();
 
     // ========== 工厂方法 ==========
 
@@ -109,6 +116,30 @@ public:
      */
     void UnregisterElementId(const std::string& id);
 
+    // ========== DOM 观察者 ==========
+
+    /**
+     * @brief 获取观察者管理器
+     * @return 观察者管理器引用
+     */
+    DOMObserverManager& GetObserverManager() { return observer_manager_; }
+
+    /**
+     * @brief 添加 DOM 观察者
+     * @param observer 观察者指针
+     */
+    void AddObserver(DOMObserver* observer) {
+        observer_manager_.AddObserver(observer);
+    }
+
+    /**
+     * @brief 移除 DOM 观察者
+     * @param observer 观察者指针
+     */
+    void RemoveObserver(DOMObserver* observer) {
+        observer_manager_.RemoveObserver(observer);
+    }
+
     // ========== Node 接口实现 ==========
 
     /**
@@ -137,6 +168,7 @@ private:
     std::shared_ptr<Element> document_element_;
     std::shared_ptr<Element> body_;
     std::unordered_map<std::string, std::weak_ptr<Element>> id_map_;
+    DOMObserverManager observer_manager_;
 };
 
 } // namespace lightui

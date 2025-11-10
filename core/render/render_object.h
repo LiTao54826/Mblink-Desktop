@@ -283,7 +283,8 @@ public:
 class RenderText : public RenderObject {
 public:
     RenderText() : RenderObject(RenderObjectType::TEXT) {}
-    
+    RenderText(const std::string& text) : RenderObject(RenderObjectType::TEXT), text_(text) {}
+
     void SetText(const std::string& text) { text_ = text; }
     std::string GetText() const { return text_; }
     

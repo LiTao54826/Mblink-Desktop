@@ -11,6 +11,7 @@
 #include "core/dom/element.h"
 #include "core/dom/text.h"
 #include <algorithm>
+#include <iostream>
 
 namespace lightui {
 
@@ -110,19 +111,38 @@ void RenderBlock::Layout(float parent_width, float parent_height) {
     // 计算内容区域宽度
     float content_width = width - padding_left - padding_right - border_left - border_right;
     
-    // 布局子元素
-    float current_y = 0;
-    float max_child_height = 0;
-    
+    // 布局子元素 - 第一遍：计算尺寸
     for (auto& child : children_) {
         if (child->NeedsLayout()) {
             child->Layout(content_width, 0);
         }
-        
+    }
+
+    // 布局子元素 - 第二遍：设置位置
+    float current_y = 0;
+    float max_child_height = 0;
+
+    // HACK: 如果是最外层的 body RenderBlock（没有父元素），添加 120px 的 top offset
+    // 这是为了避免内容被窗口顶部的黑色区域遮挡
+    float body_top_offset = 0;
+    if (!GetParent()) {
+        body_top_offset = 120.0f;
+        static bool logged = false;
+        if (!logged) {
+            std::cout << "[RenderBlock] Body element detected, adding top offset: " << body_top_offset << std::endl;
+            logged = true;
+        }
+    }
+
+    for (auto& child : children_) {
         auto& child_layout = child->GetLayoutInfo();
-        child_layout.x = padding_left + border_left;
-        child_layout.y = current_y + padding_top + border_top;
-        
+
+        float new_x = padding_left + border_left;
+        float new_y = current_y + padding_top + border_top + body_top_offset;
+
+        child_layout.x = new_x;
+        child_layout.y = new_y;
+
         current_y += child_layout.height;
         max_child_height = std::max(max_child_height, child_layout.height);
     }
@@ -175,10 +195,10 @@ void RenderBlock::Paint(SkCanvas* canvas) {
     if (!canvas) {
         return;
     }
-    
+
     const auto& style = computed_style_;
     const auto& layout = layout_info_;
-    
+
     // 保存画布状态
     canvas->save();
     canvas->translate(layout.x, layout.y);
@@ -285,6 +305,7 @@ void RenderText::Layout(float parent_width, float parent_height) {
     // 测量文本
     auto metrics = text_renderer.MeasureText(text_, font);
 
+    // 注意：只设置 width 和 height，不修改 x 和 y（由父元素设置）
     layout_info_.width = metrics.width;
     layout_info_.height = metrics.height;
     layout_info_.content_rect = SkRect::MakeWH(metrics.width, metrics.height);
@@ -322,6 +343,9 @@ void RenderText::Paint(SkCanvas* canvas) {
     lightui::Paint text_paint;
     if (!style.color.empty()) {
         text_paint.SetColor(lightui::Color::Parse(style.color));
+    } else {
+        // 默认黑色
+        text_paint.SetColor(SK_ColorBLACK);
     }
 
     // 绘制文本

@@ -65,7 +65,13 @@ public:
      * @return 父节点指针
      */
     std::shared_ptr<Node> GetParentNode() const { return parent_node_.lock(); }
-    
+
+    /**
+     * @brief 获取所属文档
+     * @return 文档指针，如果不属于任何文档则返回nullptr
+     */
+    std::shared_ptr<Document> GetOwnerDocument() const;
+
     /**
      * @brief 获取子节点列表
      * @return 子节点列表

@@ -17,6 +17,14 @@ Document::Document()
     , id_map_() {
 }
 
+void Document::Initialize() {
+    // 创建基本的 HTML 结构
+    document_element_ = CreateElement("html");
+    body_ = CreateElement("body");
+    document_element_->AppendChild(body_);
+    AppendChild(document_element_);
+}
+
 // ========== 工厂方法 ==========
 
 std::shared_ptr<Element> Document::CreateElement(const std::string& tag_name) {

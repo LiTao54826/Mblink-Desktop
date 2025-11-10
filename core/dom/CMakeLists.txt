@@ -7,6 +7,7 @@ set(DOM_SOURCES
     document.cpp
     event.cpp
     dom_bindings.cpp
+    dom_observer.cpp
 )
 
 set(DOM_HEADERS
@@ -16,6 +17,7 @@ set(DOM_HEADERS
     document.h
     event.h
     dom_bindings.h
+    dom_observer.h
 )
 
 add_library(lightui_dom STATIC ${DOM_SOURCES})

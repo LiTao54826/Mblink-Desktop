@@ -283,3 +283,296 @@ add_skia_test(test_optimization test_optimization.cpp)
 # Advanced Optimization Test
 add_skia_test(test_advanced_optimization test_advanced_optimization.cpp)
 target_link_libraries(test_advanced_optimization PRIVATE lightui_dom)
+
+# Window Test (Unit tests)
+add_executable(test_window unit/test_window.cpp)
+
+target_include_directories(test_window PRIVATE
+    ${CMAKE_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/core
+)
+
+target_link_libraries(test_window PRIVATE
+    lightui_window
+    GTest::gtest
+    GTest::gtest_main
+)
+
+# Link SDL3
+if(TARGET SDL3::SDL3)
+    target_link_libraries(test_window PRIVATE SDL3::SDL3)
+elseif(TARGET SDL3-static)
+    target_link_libraries(test_window PRIVATE SDL3-static)
+endif()
+
+# Link Skia if available
+if(TARGET skia)
+    target_link_libraries(test_window PRIVATE skia)
+
+    # Match Skia's runtime library settings (MSVC)
+    # Skia 138 is compiled with Release runtime (/MT) and _ITERATOR_DEBUG_LEVEL=0
+    # We MUST match these settings even in Debug mode
+    if(MSVC)
+        target_compile_options(test_window PRIVATE
+            $<$<CONFIG:Debug>:/MT>
+            $<$<CONFIG:Release>:/MT>
+        )
+        target_compile_definitions(test_window PRIVATE
+            $<$<CONFIG:Debug>:_ITERATOR_DEBUG_LEVEL=0>
+        )
+
+        # Link D3D12 libraries for Skia
+        target_link_libraries(test_window PRIVATE
+            d3d12.lib
+            dxgi.lib
+            d3dcompiler.lib
+        )
+    endif()
+endif()
+
+if(WIN32 AND MINGW)
+    target_link_options(test_window PRIVATE -static-libgcc -static-libstdc++)
+endif()
+
+add_test(NAME WindowTest COMMAND test_window)
+
+# ============================================================================
+# Event Loop Tests
+# ============================================================================
+
+# FrameController Test
+add_executable(test_frame_controller unit/test_frame_controller.cpp)
+
+target_include_directories(test_frame_controller PRIVATE
+    ${CMAKE_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/core
+)
+
+target_link_libraries(test_frame_controller PRIVATE
+    lightui_event
+    GTest::gtest
+    GTest::gtest_main
+)
+
+# Link SDL3
+if(TARGET SDL3::SDL3)
+    target_link_libraries(test_frame_controller PRIVATE SDL3::SDL3)
+elseif(TARGET SDL3-static)
+    target_link_libraries(test_frame_controller PRIVATE SDL3-static)
+endif()
+
+# MSVC settings
+if(MSVC)
+    target_compile_options(test_frame_controller PRIVATE
+        $<$<CONFIG:Debug>:/MT>
+        $<$<CONFIG:Release>:/MT>
+    )
+    target_compile_definitions(test_frame_controller PRIVATE
+        $<$<CONFIG:Debug>:_ITERATOR_DEBUG_LEVEL=0>
+    )
+endif()
+
+add_test(NAME FrameControllerTest COMMAND test_frame_controller)
+
+# TaskScheduler Test
+add_executable(test_task_scheduler unit/test_task_scheduler.cpp)
+
+target_include_directories(test_task_scheduler PRIVATE
+    ${CMAKE_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/core
+)
+
+target_link_libraries(test_task_scheduler PRIVATE
+    lightui_event
+    GTest::gtest
+    GTest::gtest_main
+)
+
+# Link SDL3
+if(TARGET SDL3::SDL3)
+    target_link_libraries(test_task_scheduler PRIVATE SDL3::SDL3)
+elseif(TARGET SDL3-static)
+    target_link_libraries(test_task_scheduler PRIVATE SDL3-static)
+endif()
+
+# MSVC settings
+if(MSVC)
+    target_compile_options(test_task_scheduler PRIVATE
+        $<$<CONFIG:Debug>:/MT>
+        $<$<CONFIG:Release>:/MT>
+    )
+    target_compile_definitions(test_task_scheduler PRIVATE
+        $<$<CONFIG:Debug>:_ITERATOR_DEBUG_LEVEL=0>
+    )
+endif()
+
+add_test(NAME TaskSchedulerTest COMMAND test_task_scheduler)
+
+# InputHandler Test
+add_executable(test_input_handler unit/test_input_handler.cpp)
+
+target_include_directories(test_input_handler PRIVATE
+    ${CMAKE_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/core
+)
+
+target_link_libraries(test_input_handler PRIVATE
+    lightui_event
+    GTest::gtest
+    GTest::gtest_main
+)
+
+# Link SDL3
+if(TARGET SDL3::SDL3)
+    target_link_libraries(test_input_handler PRIVATE SDL3::SDL3)
+elseif(TARGET SDL3-static)
+    target_link_libraries(test_input_handler PRIVATE SDL3-static)
+endif()
+
+# MSVC settings
+if(MSVC)
+    target_compile_options(test_input_handler PRIVATE
+        $<$<CONFIG:Debug>:/MT>
+        $<$<CONFIG:Release>:/MT>
+    )
+    target_compile_definitions(test_input_handler PRIVATE
+        $<$<CONFIG:Debug>:_ITERATOR_DEBUG_LEVEL=0>
+    )
+endif()
+
+add_test(NAME InputHandlerTest COMMAND test_input_handler)
+
+# EventLoop Test
+add_executable(test_event_loop unit/test_event_loop.cpp)
+
+target_include_directories(test_event_loop PRIVATE
+    ${CMAKE_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/core
+)
+
+target_link_libraries(test_event_loop PRIVATE
+    lightui_event
+    lightui_window
+    GTest::gtest
+    GTest::gtest_main
+)
+
+# Link SDL3
+if(TARGET SDL3::SDL3)
+    target_link_libraries(test_event_loop PRIVATE SDL3::SDL3)
+elseif(TARGET SDL3-static)
+    target_link_libraries(test_event_loop PRIVATE SDL3-static)
+endif()
+
+# Link Skia if available
+if(TARGET skia)
+    target_link_libraries(test_event_loop PRIVATE skia)
+
+    # MSVC settings
+    if(MSVC)
+        target_compile_options(test_event_loop PRIVATE
+            $<$<CONFIG:Debug>:/MT>
+            $<$<CONFIG:Release>:/MT>
+        )
+        target_compile_definitions(test_event_loop PRIVATE
+            $<$<CONFIG:Debug>:_ITERATOR_DEBUG_LEVEL=0>
+        )
+
+        # Link D3D12 libraries for Skia
+        target_link_libraries(test_event_loop PRIVATE
+            d3d12.lib
+            dxgi.lib
+            d3dcompiler.lib
+        )
+    endif()
+endif()
+
+add_test(NAME EventLoopTest COMMAND test_event_loop)
+
+# ============================================================================
+# Integration Tests
+# ============================================================================
+
+# Integration Test (Window + DOM + Renderer + TaskScheduler)
+add_executable(test_integration unit/test_integration.cpp)
+
+target_include_directories(test_integration PRIVATE
+    ${CMAKE_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/core
+)
+
+target_link_libraries(test_integration PRIVATE
+    lightui_window
+    lightui_dom
+    lightui_event
+    lightui_render
+    lightui_quickjs
+    GTest::gtest
+    GTest::gtest_main
+)
+
+# Link SDL3
+if(TARGET SDL3::SDL3)
+    target_link_libraries(test_integration PRIVATE SDL3::SDL3)
+elseif(TARGET SDL3-static)
+    target_link_libraries(test_integration PRIVATE SDL3-static)
+endif()
+
+# Link Skia if available
+if(TARGET skia)
+    target_link_libraries(test_integration PRIVATE skia)
+
+    # MSVC settings
+    if(MSVC)
+        # Link D3D12 libraries for Skia
+        target_link_libraries(test_integration PRIVATE
+            d3d12.lib
+            dxgi.lib
+            d3dcompiler.lib
+        )
+    endif()
+endif()
+
+add_test(NAME IntegrationTest COMMAND test_integration)
+
+# JavaScript Bindings Integration Test
+add_executable(test_javascript_bindings unit/test_javascript_bindings.cpp)
+
+target_include_directories(test_javascript_bindings PRIVATE
+    ${CMAKE_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/core
+)
+
+target_link_libraries(test_javascript_bindings PRIVATE
+    lightui_window
+    lightui_dom
+    lightui_event
+    lightui_render
+    lightui_quickjs
+    GTest::gtest
+    GTest::gtest_main
+)
+
+# Link SDL3
+if(TARGET SDL3::SDL3)
+    target_link_libraries(test_javascript_bindings PRIVATE SDL3::SDL3)
+elseif(TARGET SDL3-static)
+    target_link_libraries(test_javascript_bindings PRIVATE SDL3-static)
+endif()
+
+# Link Skia if available
+if(TARGET skia)
+    target_link_libraries(test_javascript_bindings PRIVATE skia)
+
+    # MSVC settings
+    if(MSVC)
+        # Link D3D12 libraries for Skia
+        target_link_libraries(test_javascript_bindings PRIVATE
+            d3d12.lib
+            dxgi.lib
+            d3dcompiler.lib
+        )
+    endif()
+endif()
+
+add_test(NAME JavaScriptBindingsTest COMMAND test_javascript_bindings)

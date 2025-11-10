@@ -6,6 +6,8 @@
 #include "element.h"
 #include "text.h"
 #include "event.h"
+#include "document.h"
+#include "dom_observer.h"
 #include <algorithm>
 #include <sstream>
 
@@ -24,8 +26,30 @@ Element::Element(const std::string& tag_name)
 // ========== 属性操作 ==========
 
 void Element::SetAttribute(const std::string& name, const std::string& value) {
+    std::string old_value = GetAttribute(name);
     attributes_[name] = value;
     MarkDirty();
+
+    // 特殊处理 id 属性
+    if (name == "id") {
+        auto doc = GetOwnerDocument();
+        if (doc) {
+            // 取消注册旧 ID
+            if (!old_value.empty()) {
+                doc->UnregisterElementId(old_value);
+            }
+            // 注册新 ID
+            if (!value.empty()) {
+                doc->RegisterElementId(value, std::static_pointer_cast<Element>(shared_from_this()));
+            }
+        }
+    }
+
+    // 通知观察者
+    auto doc = GetOwnerDocument();
+    if (doc) {
+        doc->GetObserverManager().NotifyAttributeChanged(this, name, old_value, value);
+    }
 }
 
 std::string Element::GetAttribute(const std::string& name) const {
@@ -123,8 +147,15 @@ bool Element::HasClass(const std::string& class_name) const {
 }
 
 void Element::SetStyle(const std::string& property, const std::string& value) {
+    std::string old_value = GetStyle(property);
     styles_[property] = value;
     MarkDirty();
+
+    // 通知观察者
+    auto doc = GetOwnerDocument();
+    if (doc) {
+        doc->GetObserverManager().NotifyStyleChanged(this, property, old_value, value);
+    }
 }
 
 std::string Element::GetStyle(const std::string& property) const {
