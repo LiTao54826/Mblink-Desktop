@@ -60,8 +60,10 @@ third_party/SDL3/
 third_party/yoga/
 third_party/skia/
 third_party/vcpkg/
+third_party/depot_tools/
 third_party/*.tar.xz
 third_party/*.zip
+third_party/*.rar
 
 # Keep only CMakeLists and README for third_party
 !third_party/CMakeLists.txt
