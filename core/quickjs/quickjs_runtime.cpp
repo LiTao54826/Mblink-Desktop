@@ -174,7 +174,7 @@ json QuickJSRuntime::JSValueToJSON(JSValue value) {
     }
 
     // Handle array
-    if (JS_IsArray(ctx_, value)) {
+    if (JS_IsArray(value)) {
         json arr = json::array();
         JSValue length_val = JS_GetPropertyStr(ctx_, value, "length");
         int32_t length = 0;

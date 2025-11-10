@@ -28,3 +28,14 @@ target_include_directories(lightui_dom PUBLIC
 target_link_libraries(lightui_dom PUBLIC
     lightui_utils
 )
+
+# 匹配 Skia 的运行时库设置
+if(MSVC)
+    target_compile_options(lightui_dom PUBLIC
+        $<$<CONFIG:Debug>:/MT>
+        $<$<CONFIG:Release>:/MT>
+    )
+    target_compile_definitions(lightui_dom PUBLIC
+        $<$<CONFIG:Debug>:_ITERATOR_DEBUG_LEVEL=0>
+    )
+endif()

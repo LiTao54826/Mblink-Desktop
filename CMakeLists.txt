@@ -17,8 +17,8 @@
 cmake_minimum_required(VERSION 3.15)
 project(LightUI VERSION 0.1.0 LANGUAGES CXX C)
 
-# C++标准
-set(CMAKE_CXX_STANDARD 17)
+# C++标准 (quickjs-ng 需要 C++20 支持指定初始化器)
+set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
@@ -28,7 +28,7 @@ option(LIGHTUI_BUILD_EXAMPLES "Build examples" ON)
 option(LIGHTUI_BUILD_PYTHON_BINDING "Build Python binding" ON)
 option(LIGHTUI_BUILD_RUST_BINDING "Build Rust binding" OFF)
 option(LIGHTUI_BUILD_GO_BINDING "Build Go binding" OFF)
-option(LIGHTUI_USE_SKIA "Use Skia for rendering (requires Skia)" OFF)
+option(LIGHTUI_USE_SKIA "Use Skia for rendering (requires Skia)" ON)
 
 # 编译器警告（已禁用以减少输出）
 if(MSVC)
@@ -46,6 +46,45 @@ set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
 include_directories(${CMAKE_SOURCE_DIR})
 include_directories(${CMAKE_SOURCE_DIR}/core)
 include_directories(${CMAKE_SOURCE_DIR}/third_party)
+
+# Google Test 配置（在 third_party 之前设置以确保正确的运行时库）
+if(LIGHTUI_BUILD_TESTS)
+    include(FetchContent)
+    FetchContent_Declare(
+        googletest
+        GIT_REPOSITORY https://github.com/google/googletest.git
+        GIT_TAG v1.14.0
+    )
+
+    # 强制 gtest 使用静态运行时库以匹配 Skia
+    if(MSVC)
+        set(gtest_force_shared_crt OFF CACHE BOOL "" FORCE)
+        # 使用静态 Release 运行时
+        set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+    endif()
+
+    FetchContent_MakeAvailable(googletest)
+
+    # 为 gtest 库设置运行时库
+    if(MSVC AND TARGET gtest)
+        target_compile_options(gtest PRIVATE
+            $<$<CONFIG:Debug>:/MT>
+            $<$<CONFIG:Release>:/MT>
+        )
+        target_compile_definitions(gtest PRIVATE
+            $<$<CONFIG:Debug>:_ITERATOR_DEBUG_LEVEL=0>
+        )
+    endif()
+    if(MSVC AND TARGET gtest_main)
+        target_compile_options(gtest_main PRIVATE
+            $<$<CONFIG:Debug>:/MT>
+            $<$<CONFIG:Release>:/MT>
+        )
+        target_compile_definitions(gtest_main PRIVATE
+            $<$<CONFIG:Debug>:_ITERATOR_DEBUG_LEVEL=0>
+        )
+    endif()
+endif()
 
 # 第三方库
 add_subdirectory(third_party)

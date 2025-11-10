@@ -228,11 +228,14 @@ static const JSCFunctionListEntry js_element_proto_funcs[] = {
 
 void DOMBindings::InitElementClass(JSContext* ctx) {
     JSClassDef element_class = {
-        "Element",
-        .finalizer = js_element_finalizer,
+        /* class_name */ "Element",
+        /* finalizer */ js_element_finalizer,
+        /* gc_mark */ nullptr,
+        /* call */ nullptr,
+        /* exotic */ nullptr,
     };
 
-    JS_NewClassID(&element_class_id);
+    JS_NewClassID(JS_GetRuntime(ctx), &element_class_id);
     JS_NewClass(JS_GetRuntime(ctx), element_class_id, &element_class);
 
     JSValue proto = JS_NewObject(ctx);
@@ -285,11 +288,14 @@ static const JSCFunctionListEntry js_text_proto_funcs[] = {
 
 void DOMBindings::InitTextClass(JSContext* ctx) {
     JSClassDef text_class = {
-        "Text",
-        .finalizer = js_text_finalizer,
+        /* class_name */ "Text",
+        /* finalizer */ js_text_finalizer,
+        /* gc_mark */ nullptr,
+        /* call */ nullptr,
+        /* exotic */ nullptr,
     };
 
-    JS_NewClassID(&text_class_id);
+    JS_NewClassID(JS_GetRuntime(ctx), &text_class_id);
     JS_NewClass(JS_GetRuntime(ctx), text_class_id, &text_class);
 
     JSValue proto = JS_NewObject(ctx);
@@ -387,11 +393,14 @@ static const JSCFunctionListEntry js_document_proto_funcs[] = {
 
 void DOMBindings::InitDocumentClass(JSContext* ctx) {
     JSClassDef document_class = {
-        "Document",
-        .finalizer = js_document_finalizer,
+        /* class_name */ "Document",
+        /* finalizer */ js_document_finalizer,
+        /* gc_mark */ nullptr,
+        /* call */ nullptr,
+        /* exotic */ nullptr,
     };
 
-    JS_NewClassID(&document_class_id);
+    JS_NewClassID(JS_GetRuntime(ctx), &document_class_id);
     JS_NewClass(JS_GetRuntime(ctx), document_class_id, &document_class);
 
     JSValue proto = JS_NewObject(ctx);
@@ -450,11 +459,14 @@ static const JSCFunctionListEntry js_event_proto_funcs[] = {
 
 void DOMBindings::InitEventClass(JSContext* ctx) {
     JSClassDef event_class = {
-        "Event",
-        .finalizer = js_event_finalizer,
+        /* class_name */ "Event",
+        /* finalizer */ js_event_finalizer,
+        /* gc_mark */ nullptr,
+        /* call */ nullptr,
+        /* exotic */ nullptr,
     };
 
-    JS_NewClassID(&event_class_id);
+    JS_NewClassID(JS_GetRuntime(ctx), &event_class_id);
     JS_NewClass(JS_GetRuntime(ctx), event_class_id, &event_class);
 
     JSValue proto = JS_NewObject(ctx);

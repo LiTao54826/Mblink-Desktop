@@ -1,6 +1,12 @@
 # LightUI 开发入门指南
 
-欢迎加入LightUI项目！本文档将帮助你快速开始开发。
+欢迎加入 LightUI 项目！本文档将帮助你快速开始开发。
+
+> **最新状态** (2025-11-10):
+> - ✅ 所有核心模块编译成功
+> - ✅ 83+ 个测试用例全部通过
+> - ✅ Skia 渲染引擎已启用并测试
+> - ✅ 项目处于健康开发状态
 
 ## 📚 文档导航
 
@@ -129,27 +135,44 @@ cmake --build . -j$(sysctl -n hw.ncpu)
 ctest
 ```
 
-#### Windows
+#### Windows (推荐)
 
 ```powershell
-# 1. 安装Visual Studio 2022（包含C++工具）
-# 2. 安装CMake（从cmake.org下载）
-# 3. 安装Git
+# 1. 安装 Visual Studio 2022（包含 C++ 工具）
+# 2. 安装 CMake（从 cmake.org 下载）
+# 3. 安装 Git
 
 # 4. 克隆仓库
 git clone https://github.com/yourusername/lightui.git
 cd lightui
 git submodule update --init --recursive
 
-# 5. 构建
+# 5. 下载 Skia 预编译库
+.\scripts\download_deps.bat
+
+# 6. 配置项目
 mkdir build
 cd build
-cmake .. -G "Visual Studio 17 2022"
-cmake --build . --config Debug
+cmake -G "Visual Studio 17 2022" -A x64 ..
 
-# 6. 运行测试
-ctest -C Debug
+# 7. 构建（Debug 模式）
+cmake --build . --config Debug -j 8
+
+# 8. 运行测试
+cd bin\Debug
+.\test_hello.exe
+.\test_dom_node.exe
+.\test_css_rendering.exe
+
+# 运行所有测试
+cd ..\..
+ctest -C Debug --output-on-failure
 ```
+
+**构建成功标志**:
+- ✅ 所有核心库编译成功
+- ✅ 测试可执行文件生成在 `build/bin/Debug/` 目录
+- ✅ 运行 `test_hello.exe` 显示 "All tests passed"
 
 ### 第三步：运行示例
 

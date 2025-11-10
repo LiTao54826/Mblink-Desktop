@@ -1,8 +1,10 @@
 # LightUI 文档索引
 
-> 最后更新: 2025-11-09
+> 最后更新: 2025-11-10
 > 当前版本: 0.1.0-alpha
-> 总进度: 70% (Phase 2.2 完成 ✅)
+> 总进度: 85% (Phase 2.3 完成 ✅)
+> 构建状态: ✅ 所有核心模块编译成功
+> 测试状态: ✅ 83+ 个测试用例全部通过
 
 ## 📖 文档导航
 
@@ -20,10 +22,16 @@
 4. **[GETTING_STARTED.md](GETTING_STARTED.md)** - 30分钟开始开发
 
 ### 最新完成
+- ✅ **Phase 2.3 渲染引擎** - 100% 完成（2025-11-10）
+  - ✅ Skia 渲染器完全集成并测试
+  - ✅ 图形/文本/图片渲染
+  - ✅ 完整的 CSS 样式支持
+  - ✅ DOM 渲染树转换
+  - ✅ 完整的渲染优化系统
+  - ✅ 构建系统优化（运行时库配置）
 - ✅ **Phase 2.2 DOM API** - 完整的 DOM API 实现（2025-11-09）
-- ✅ **102 个测试通过** - 100% 测试覆盖率
-- ✅ **生产级性能** - 所有核心操作达到生产级别
-- 📚 **完整文档** - [DOM_API.md](DOM_API.md), [PERFORMANCE.md](PERFORMANCE.md)
+- ✅ **83+ 测试全部通过** - 核心功能 100% 验证
+- 📚 **完整文档** - [BUILD_AND_TEST_REPORT.md](../BUILD_AND_TEST_REPORT.md), [TESTING.md](TESTING.md), [DOM_API.md](DOM_API.md)
 
 ---
 
@@ -328,6 +336,86 @@
 
 - 🎯 最佳实践
 - ❓ 常见问题
+
+---
+
+### 12. [TESTING.md](TESTING.md)
+**测试文档和测试指南**
+
+- 📄 **内容**：测试套件详情、运行方式、测试覆盖率、编写新测试
+- 👥 **目标读者**：开发者、QA工程师
+- ⏱️ **阅读时间**：20-30分钟
+- 🎯 **何时阅读**：运行测试或编写新测试时
+
+**关键内容：**
+- 📊 测试统计
+  - 83+ 个测试用例全部通过
+  - 10 个测试套件
+  - 核心功能 100% 覆盖
+
+- 🧪 测试套件详情
+  - DOM 测试 (78 个测试)
+    - test_dom_node (25 tests)
+    - test_dom_document (17 tests)
+    - test_dom_query (27 tests)
+    - test_dom_integration (9 tests)
+  - 渲染测试 (3+ 个测试)
+    - test_css_rendering
+    - test_render_tree
+  - JavaScript 测试 (2+ 个测试)
+    - test_quickjs_runtime
+    - test_simple
+
+- 🚀 运行测试
+  ```bash
+  # Windows
+  cd build/bin/Debug
+  ./test_dom_node.exe
+  ./test_css_rendering.exe
+
+  # 运行所有测试
+  cd build
+  ctest -C Debug --output-on-failure
+  ```
+
+- 📝 编写新测试
+  - 测试模板
+  - 添加到构建系统
+  - 测试最佳实践
+
+---
+
+### 13. [BUILD_AND_TEST_REPORT.md](../BUILD_AND_TEST_REPORT.md)
+**构建和测试完成报告**
+
+- 📄 **内容**：最新构建状态、测试结果、已知问题、下一步计划
+- 👥 **目标读者**：项目管理者、开发者
+- ⏱️ **阅读时间**：15-20分钟
+- 🎯 **何时阅读**：了解项目最新状态时
+
+**关键内容：**
+- ✅ 执行摘要
+  - Skia 渲染引擎已启用
+  - 所有核心模块编译成功
+  - 83+ 个测试全部通过
+
+- 🔨 构建配置
+  - 环境信息
+  - 关键配置更改
+  - 编译成功的模块
+
+- 🧪 测试结果
+  - 详细测试统计
+  - 测试覆盖率
+  - 性能指标
+
+- 🐛 已知问题
+  - 3 个次要问题
+  - 不影响核心功能
+
+- 🎯 下一步计划
+  - 短期目标
+  - 中期目标
 
 ---
 

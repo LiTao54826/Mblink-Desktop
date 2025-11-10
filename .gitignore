@@ -50,6 +50,10 @@ Thumbs.db
 # Logs
 *.log
 
+# Test output
+test_output/
+*.png
+
 # Third party libraries (downloaded/compiled)
 third_party/quickjs/
 third_party/SDL3/
@@ -69,19 +73,5 @@ vcpkg.exe
 *.bak
 project_tree.txt
 
-# Status/progress markdown files (keep only main docs)
-CURRENT_STATUS.md
-DEPENDENCIES_DOWNLOADED.md
-ENCODING_ISSUE_FIXED.md
-PHASE1_PROGRESS.md
-PHASE1_WEEK1_COMPLETE.md
-PROJECT_COMPLETE.md
-PROJECT_STATUS.md
-PROJECT_TREE.md
-PROXY_CONFIG_COMPLETE.md
-QUICK_FIX.md
-QUICK_START.md
-SETUP_COMPLETE.md
-UTF8_FIX_COMPLETE.md
-WORK_SUMMARY.md
-BUILD.md
+# Keep main documentation files in root
+# All historical task docs are in history_task_docs/
