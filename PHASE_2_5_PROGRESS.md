@@ -2,7 +2,7 @@
 
 > **开始日期**: 2025-11-11
 > **当前状态**: 进行中
-> **完成度**: 93%
+> **完成度**: 95%
 > **参考项目**: RmlUi
 
 ---
@@ -15,7 +15,7 @@
 | **P1** | DOM API完善 | 100% | ✅ 完成 |
 | **P2** | CSS伪类和焦点管理 | 95% | ✅ 基本完成 |
 | **P3** | 拖拽系统 | 100% | ✅ 完成 |
-| **P4** | 键盘事件和表单 | 0% | ⏳ 待开始 |
+| **P4** | 键盘事件和表单 | 60% | ✅ 进行中 |
 
 ---
 
@@ -578,6 +578,62 @@ focus_manager_->ProcessAutofocus(document);
 - ✅ W3C HTML5 - autofocus attribute
 - ✅ `ReferenceProject/RmlUi/Source/Core/Context.cpp` (ProcessMouseButtonDown, OnFocusChange)
 
+### 15. KeyboardEvent和键盘事件处理 ✅ (2025-11-11)
+
+**参考**: W3C UI Events, RmlUi键盘事件系统
+
+**实现内容**:
+- ✅ `core/dom/event.h` - 扩展KeyboardEvent类，支持完整的W3C接口
+- ✅ `core/dom/event.cpp` - 实现KeyboardEvent构造函数和GetModifierState方法
+- ✅ `core/event/keyboard_utils.h` - SDL按键到W3C按键名称映射工具
+- ✅ `core/event/keyboard_utils.cpp` - 实现SDLKeycodeToKey, SDLScancodeToCode, SDLKeycodeToKeyCode
+- ✅ `core/event/event_loop.h` - 添加HandleKeyboardEventForDOM方法
+- ✅ `core/event/event_loop.cpp` - 实现键盘事件处理和分发
+
+**核心功能**:
+1. **完整的W3C KeyboardEvent接口** - key, code, keyCode, 修饰键状态
+2. **SDL按键映射** - 将SDL按键码转换为W3C标准的key和code值
+3. **键盘事件分发** - keydown/keyup事件分发到焦点元素
+4. **Tab键导航** - 自动处理Tab键焦点切换
+5. **修饰键支持** - Ctrl, Shift, Alt, Meta键状态跟踪
+
+**技术亮点**:
+- ✅ 符合W3C UI Events规范
+- ✅ 支持所有常用按键（字母、数字、功能键、导航键、修饰键）
+- ✅ 正确处理Shift键对符号的影响
+- ✅ 支持重复按键检测
+- ✅ Tab键自动触发焦点导航
+- ✅ 只向焦点元素分发键盘事件
+
+**代码示例**:
+```cpp
+// 监听键盘事件
+element->AddEventListener("keydown", [](auto e) {
+    auto keyboard_event = std::dynamic_pointer_cast<KeyboardEvent>(e);
+    std::cout << "Key: " << keyboard_event->GetKey() << std::endl;
+    std::cout << "Code: " << keyboard_event->GetCode() << std::endl;
+    std::cout << "Ctrl: " << keyboard_event->GetCtrlKey() << std::endl;
+
+    // 阻止默认行为（如Tab键导航）
+    if (keyboard_event->GetKey() == "Tab") {
+        e->PreventDefault();
+    }
+});
+
+// SDL按键映射示例
+// SDLK_A + Shift=false -> "a"
+// SDLK_A + Shift=true -> "A"
+// SDL_SCANCODE_A -> "KeyA"
+// SDLK_RETURN -> "Enter"
+// SDL_SCANCODE_RETURN -> "Enter"
+```
+
+**参考文件**:
+- ✅ W3C UI Events - KeyboardEvent
+- ✅ MDN Web Docs - KeyboardEvent
+- ✅ `ReferenceProject/RmlUi/Source/Core/Context.cpp` (ProcessKeyDown, ProcessKeyUp)
+- ✅ `ReferenceProject/RmlUi/Include/RmlUi/Core/Input.h` (KeyIdentifier枚举)
+
 ---
 
 ## 🔄 进行中任务
@@ -680,15 +736,19 @@ focus_manager_->ProcessAutofocus(document);
 - ✅ `ReferenceProject/RmlUi/Source/Core/Context.cpp` (lines 706-1382)
 - ✅ `ReferenceProject/RmlUi/Samples/basic/drag/`
 
-### P4: 键盘事件和表单 (0%)
+### P4: 键盘事件和表单 (60%) ✅ 进行中
 
-#### Task 9: 键盘事件系统
-- [ ] KeyboardEvent类
-- [ ] keydown/keyup/keypress事件
-- [ ] 修饰键状态（ctrlKey, shiftKey, altKey, metaKey）
-- [ ] 文本输入事件
+#### Task 9: 键盘事件系统 (100%) ✅
+- ✅ **KeyboardEvent类** - 完整的W3C接口实现
+- ✅ **keydown/keyup事件** - 分发到焦点元素
+- ✅ **修饰键状态** - ctrlKey, shiftKey, altKey, metaKey
+- ✅ **SDL按键映射** - SDLKeycodeToKey, SDLScancodeToCode
+- ✅ **Tab键导航** - 自动焦点切换
+- ⏳ **待完成**:
+  - [ ] keypress事件（已废弃但可选）
+  - [ ] textinput事件处理（用于输入法）
 
-#### Task 10: 表单元素支持
+#### Task 10: 表单元素支持 (0%)
 - [ ] HTMLInputElement
 - [ ] HTMLTextAreaElement
 - [ ] HTMLSelectElement
@@ -763,6 +823,8 @@ focus_manager_->ProcessAutofocus(document);
 ## 📝 Git提交记录
 
 ### 2025-11-11
+- ✅ `feat(event): implement KeyboardEvent and keyboard event handling (Phase 2.5 P4)`
+- ✅ `136a6c9` - docs: update Phase 2.5 progress - P2 focus system 95% completed
 - ✅ `0a265b8` - feat(event): integrate FocusManager into EventLoop and add focusin/focusout events (Phase 2.5 P2)
 - ✅ `7b86365` - docs: update Phase 2.5 progress - P3 drag system 100% completed
 - ✅ `feat(event): implement DataTransfer and drag clone support (Phase 2.5 P3)`
