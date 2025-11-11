@@ -10,6 +10,7 @@
 #include "dom_observer.h"
 #include "selector_engine.h"
 #include "dom_token_list.h"
+#include "css_style_declaration.h"
 #include <algorithm>
 #include <sstream>
 
@@ -184,6 +185,22 @@ std::string Element::GetStyle(const std::string& property) const {
         return it->second;
     }
     return "";
+}
+
+std::shared_ptr<CSSStyleDeclaration> Element::GetStyleDeclaration() {
+    // 懒加载：第一次调用时创建
+    if (!style_declaration_) {
+        style_declaration_ = std::make_shared<CSSStyleDeclaration>(
+            std::static_pointer_cast<Element>(shared_from_this())
+        );
+
+        // 从style属性初始化
+        std::string style_attr = GetAttribute("style");
+        if (!style_attr.empty()) {
+            style_declaration_->SetCssText(style_attr);
+        }
+    }
+    return style_declaration_;
 }
 
 // ========== 克隆和文本内容 ==========

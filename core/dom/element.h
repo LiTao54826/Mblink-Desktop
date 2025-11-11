@@ -30,6 +30,7 @@ namespace lightui {
 // 前向声明
 class Event;
 class DOMTokenList;
+class CSSStyleDeclaration;
 using EventListener = std::function<void(std::shared_ptr<Event>)>;
 
 // EventListener包装器，包含唯一ID和捕获阶段标志
@@ -170,6 +171,24 @@ public:
      * @return 样式值
      */
     std::string GetStyle(const std::string& property) const;
+
+    /**
+     * @brief 获取style对象
+     * @return CSSStyleDeclaration对象
+     *
+     * 符合W3C CSSStyleDeclaration接口：
+     * - setProperty(property, value, priority?) - 设置样式属性
+     * - getPropertyValue(property) - 获取样式属性值
+     * - removeProperty(property) - 移除样式属性
+     * - getPropertyPriority(property) - 获取优先级（!important）
+     * - cssText - 完整的样式文本
+     * - length - 样式属性数量
+     *
+     * 示例：
+     * element->GetStyleDeclaration()->SetProperty("color", "red");
+     * element->GetStyleDeclaration()->SetCssText("color: red; font-size: 16px;");
+     */
+    std::shared_ptr<CSSStyleDeclaration> GetStyleDeclaration();
 
     // ========== CSS伪类支持（参考RmlUi） ==========
 
@@ -317,6 +336,9 @@ private:
 
     // classList对象（懒加载）
     mutable std::shared_ptr<DOMTokenList> class_list_;
+
+    // style对象（懒加载）
+    mutable std::shared_ptr<CSSStyleDeclaration> style_declaration_;
 };
 
 } // namespace lightui
