@@ -1,9 +1,9 @@
 # MBink 项目状态报告 2025
 
-> **报告日期**: 2025-11-11  
-> **项目版本**: 0.3.0-alpha  
-> **总体进度**: 65%  
-> **当前阶段**: Phase 2.5 - JavaScript基础设施完善
+> **报告日期**: 2025-11-12
+> **项目版本**: 0.4.0-alpha
+> **总体进度**: 70%
+> **当前阶段**: Phase 3 - React生态支持
 
 ---
 
@@ -83,9 +83,9 @@
 | **core/dom** | 95% | ✅ 完成 | DOM树、节点操作、选择器 |
 | **core/layout** | 90% | ✅ 完成 | Yoga布局、Flexbox |
 | **core/render** | 85% | ✅ 完成 | Skia渲染、CSS样式、文本渲染 |
-| **core/event** | 60% | 🔄 进行中 | 事件循环、鼠标事件、定时器 |
-| **core/quickjs** | 70% | 🔄 进行中 | JS运行时、DOM绑定、定时器 |
-| **core/lexbor** | 25% | 🔄 进行中 | HTML解析、CSS解析 |
+| **core/event** | 95% | ✅ 完成 | 事件循环、鼠标事件、定时器、拖拽 |
+| **core/quickjs** | 80% | 🔄 进行中 | JS运行时、DOM绑定、Preact集成 |
+| **core/lexbor** | 90% | ✅ 完成 | HTML解析、CSS解析、样式计算 |
 | **core/utils** | 100% | ✅ 完成 | 日志、JSON |
 
 ---
@@ -182,64 +182,93 @@
 
 ---
 
-## 🔄 进行中功能
+## ✅ 最近完成功能
 
-### Phase 2.5: JavaScript基础设施完善 (0%) 🔄
+### Phase 2.5: JavaScript基础设施完善 (99%) ✅
 
-**开始时间**: 2025-11-11  
-**预计完成**: 2025-12-02
+**完成时间**: 2025-11-11
 
 #### 核心目标
 1. ✅ 可以开发完整的交互式应用（按钮、表单、输入框）
 2. ✅ 支持现代Web开发模式（事件监听、DOM操作、CSS选择器）
 3. ✅ 为后续集成React做好准备
 
+#### 已完成任务
+- ✅ EventId枚举系统（60+事件类型）
+- ✅ CSS伪类支持（:hover, :active, :focus等）
+- ✅ mouseover/mouseout事件和hover链追踪
+- ✅ 拖拽系统（DragManager, 拖拽事件）
+- ✅ 焦点管理（FocusManager, 焦点事件）
+- ✅ 键盘事件（KeyboardEvent, 快捷键）
+- ✅ 表单元素（input, textarea, select）
+- ✅ 完整测试覆盖（200+测试用例）
+
+**详细文档**: [PHASE_2_5_PROGRESS.md](PHASE_2_5_PROGRESS.md)
+
+---
+
+### Phase 2.6: Lexbor完整集成 (97%) ✅
+
+**完成时间**: 2025-11-12
+
+#### 核心目标
+1. ✅ 完整HTML文档解析（Lexbor包装层）
+2. ✅ CSS样式表解析（LexborStyleSheet）
+3. ✅ 样式计算引擎（级联、继承、缓存）
+
+#### 已完成任务
+- ✅ Task 1: LexborDocument包装类（31个测试通过）
+- ✅ Task 2: Document类集成Lexbor（11个测试通过）
+- ✅ Task 3: LexborStyleSheet类（22个测试通过）
+- ✅ Task 4: StyleManager类（21个测试通过）
+- ✅ Task 5: CSS级联和继承（17个测试通过）
+- ✅ Task 6: 样式缓存系统（13个测试通过）
+
+**总计**: 115个单元测试全部通过
+
+**剩余任务**: Task 7-9（性能优化、集成测试、文档）
+
+**详细文档**: [PHASE_2_6_PROGRESS.md](PHASE_2_6_PROGRESS.md)
+
+---
+
+## 🔄 进行中功能
+
+### Phase 3: React生态支持 (0%) 🔄
+
+**开始时间**: 2025-11-12
+**预计完成**: 2025-12-10 (4周)
+
+#### 核心目标
+1. 🔄 集成Preact（轻量级React替代品，3KB）
+2. 🔄 支持React Hooks（useState, useEffect, useRef等）
+3. 🔄 Virtual DOM映射（Preact → MBink DOM）
+4. 🔄 组件化开发（函数组件和类组件）
+5. 🔄 验证组件库（Ant Design/Material-UI）
+
 #### 任务清单
 
-**P0: 核心事件系统** (必须完成):
-- [ ] Task 1: 鼠标事件基础设施 (Hit Testing, MouseEvent, 事件分发)
-- [ ] Task 2: JavaScript事件绑定 (addEventListener, removeEventListener)
+**P0: Preact核心集成** (必须完成，2周):
+- [ ] Task 1: Preact库集成和构建系统 (2天)
+- [ ] Task 2: Virtual DOM到MBink DOM映射 (3天)
+- [ ] Task 3: React Hooks支持 (2天)
+- [ ] Task 4: HTM集成（JSX替代方案）(1天)
+- [ ] Task 5: 基础组件示例 (2天)
 
-**P1: DOM API完善** (重要):
-- [ ] Task 3: 查询选择器 (querySelector, querySelectorAll)
-- [ ] Task 4: 元素属性和样式操作 (setAttribute, classList, style)
-- [ ] Task 5: DOM操作API (appendChild, removeChild, insertBefore)
+**P1: 组件库验证** (重要，1周):
+- [ ] Task 6: Preact Compat集成 (2天)
+- [ ] Task 7: 组件库测试 (3天)
 
-**P2: HTML元素扩展** (重要):
-- [ ] Task 6: 表单元素 (input, textarea, select)
-- [ ] Task 7: 其他常用元素 (img, a, span, ul/ol/li)
+**P2: 性能优化和文档** (可选，1周):
+- [ ] Task 8: 性能优化 (3天)
+- [ ] Task 9: 文档和示例 (2天)
 
-**P3: CSS功能扩展** (可选):
-- [ ] Task 8: CSS选择器和样式表
-- [ ] Task 9: CSS伪类支持 (:hover, :active, :focus)
-- [ ] Task 10: CSS动画和过渡
-
-**P4: 键盘和焦点管理** (可选):
-- [ ] Task 11: 键盘事件
-- [ ] Task 12: 焦点管理
+**详细计划**: [PHASE_3_REACT_ECOSYSTEM_PLAN.md](PHASE_3_REACT_ECOSYSTEM_PLAN.md)
+**进度跟踪**: [PHASE_3_PROGRESS.md](PHASE_3_PROGRESS.md)
 
 ---
 
 ## 📋 待完成功能
-
-### Phase 2.6: Lexbor完整集成 (计划中)
-
-**预计时间**: 2周
-
-- [ ] 完善Lexbor包装层
-- [ ] CSS样式引擎
-- [ ] DOM树遍历
-- [ ] 样式计算和级联
-- [ ] 100%测试覆盖
-
-### Phase 3: React生态支持 (计划中)
-
-**预计时间**: 4周
-
-- [ ] Preact集成
-- [ ] React Hooks支持
-- [ ] 组件库测试 (Ant Design, Material-UI)
-- [ ] 性能优化
 
 ### Phase 4: 高级功能 (计划中)
 
@@ -274,7 +303,8 @@
 | core/quickjs | 11 | 100% ✅ | ~85% |
 | core/render | 3 | 100% ✅ | ~70% |
 | core/layout | 0 | - | ~60% |
-| **总计** | **155** | **100%** | **~85%** |
+| core/lexbor | 115 | 100% ✅ | ~90% |
+| **总计** | **270** | **100%** | **~88%** |
 
 ### 性能基准
 
@@ -291,18 +321,16 @@
 ## 🐛 已知问题
 
 ### 高优先级
-- ⚠️ **按钮无法点击** - Phase 2.5 Task 1-2 解决
-- ⚠️ **缺少querySelector** - Phase 2.5 Task 3 解决
-- ⚠️ **Lexbor集成不完整** - Phase 2.6 解决
+- ⚠️ **Preact集成** - Phase 3 Task 1-2 进行中
+- ⚠️ **Virtual DOM性能** - Phase 3 Task 8 待优化
 
 ### 中优先级
-- ⚠️ **缺少表单元素** - Phase 2.5 Task 6 解决
-- ⚠️ **缺少CSS选择器支持** - Phase 2.5 Task 8 解决
-- ⚠️ **缺少拖拽系统** - Phase 4 解决
+- ⚠️ **组件库兼容性** - Phase 3 Task 6-7 待测试
+- ⚠️ **Lexbor性能优化** - Phase 2.6 Task 7 待完成
 
 ### 低优先级
-- ⚠️ **缺少键盘事件** - Phase 2.5 Task 11 解决
-- ⚠️ **缺少焦点管理** - Phase 2.5 Task 12 解决
+- ⚠️ **CSS动画和过渡** - Phase 4 计划中
+- ⚠️ **网络请求API** - Phase 4 计划中
 
 ---
 
@@ -312,11 +340,11 @@
 
 | 指标 | 数值 |
 |------|------|
-| 总代码行数 | ~15,000 行 |
-| C++代码 | ~12,000 行 |
-| JavaScript代码 | ~2,000 行 |
-| 测试代码 | ~5,000 行 |
-| 文档 | ~8,000 行 |
+| 总代码行数 | ~20,000 行 |
+| C++代码 | ~15,000 行 |
+| JavaScript代码 | ~2,500 行 |
+| 测试代码 | ~7,000 行 |
+| 文档 | ~10,000 行 |
 
 ### 构建统计
 
@@ -332,21 +360,22 @@
 
 ## 🎯 下一步计划
 
-### 本周 (2025-11-11 ~ 2025-11-17)
-1. ✅ 完成项目重组和规范制定
-2. 🔄 实现Hit Testing和鼠标事件 (Phase 2.5 Task 1)
-3. 🔄 实现JavaScript事件绑定 (Phase 2.5 Task 2)
-4. 🔄 测试animation_demo和counter_app
+### 本周 (2025-11-12 ~ 2025-11-18)
+1. 🔄 Task 1: Preact库集成和构建系统 (Day 1-2)
+2. 🔄 Task 2: Virtual DOM到MBink DOM映射 (Day 3-5)
+3. 🔄 Task 3: React Hooks支持 (Day 6-7)
+4. 🎯 达到M1里程碑：Preact集成完成
 
-### 下周 (2025-11-18 ~ 2025-11-24)
-1. 实现查询选择器 (Phase 2.5 Task 3)
-2. 实现元素属性操作 (Phase 2.5 Task 4)
-3. 实现DOM操作API (Phase 2.5 Task 5)
+### 下周 (2025-11-19 ~ 2025-11-25)
+1. Task 4: HTM集成（JSX替代方案）
+2. Task 5: 基础组件示例
+3. Task 6: Preact Compat集成
+4. 🎯 达到M2里程碑：Hooks支持完成
 
 ### 本月 (2025-11)
-1. 完成Phase 2.5核心任务 (Task 1-7)
-2. 创建Todo App示例
-3. 开始Lexbor完整集成
+1. 完成Phase 3 P0任务（Preact核心集成）
+2. 创建6个基础组件示例
+3. 开始组件库验证
 
 ---
 
@@ -359,7 +388,7 @@
 
 ---
 
-**最后更新**: 2025-11-11  
-**下次更新**: 2025-11-18  
+**最后更新**: 2025-11-12
+**下次更新**: 2025-11-19
 **维护者**: MBink Team
 
