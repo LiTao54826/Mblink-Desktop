@@ -31,20 +31,24 @@ ComputedStyle StyleResolver::ResolveStyle(std::shared_ptr<Element> element,
     if (!element) {
         return ComputedStyle();
     }
-    
+
     ComputedStyle style;
-    
-    // 1. 应用默认样式
-    ApplyDefaultStyle(style, element->GetTagName());
-    
-    // 2. 应用继承
+
+    // CSS 层叠顺序（从低到高优先级）：
+    // 1. 用户代理样式表（默认样式）- 最低优先级
+    ApplyDefaultStyle(style, element->GetTagName(), parent_style == nullptr);
+
+    // 2. 继承的值 - 覆盖默认的可继承属性
     if (parent_style) {
         ApplyInheritance(style, parent_style);
     }
-    
-    // 3. 应用内联样式
+
+    // 3. 元素特定的默认样式 - 覆盖继承（如 h1 的 font-size）
+    ApplyElementSpecificStyle(style, element->GetTagName());
+
+    // 4. 内联样式（最高优先级）- 覆盖所有
     ApplyInlineStyle(style, element);
-    
+
     return style;
 }
 
@@ -54,63 +58,83 @@ ComputedStyle StyleResolver::GetDefaultStyle(const std::string& tag_name) {
     if (it != default_styles_.end()) {
         return it->second;
     }
-    
+
     ComputedStyle style;
-    ApplyDefaultStyle(style, tag_name);
-    
+    ApplyDefaultStyle(style, tag_name, true);
+    ApplyElementSpecificStyle(style, tag_name);
+
     // 缓存
     default_styles_[tag_name] = style;
-    
+
     return style;
 }
 
-void StyleResolver::ApplyDefaultStyle(ComputedStyle& style, const std::string& tag_name) {
-    // 默认值
+void StyleResolver::ApplyDefaultStyle(ComputedStyle& style, const std::string& tag_name, bool is_root) {
+    // 只在根元素时设置基础默认值
+    if (is_root) {
+        style.color = "#000000";
+        style.font_family = "Arial";
+        style.font_size = 16.0f;
+        style.font_weight = "normal";
+        style.font_style = "normal";
+        style.text_align = "left";
+        style.text_decoration = "none";
+        style.line_height = 1.2f;
+        style.opacity = 1.0f;
+    }
+
+    // 设置 display 属性（不可继承）
     style.display = RenderObjectType::BLOCK;
-    style.color = "#000000";
-    style.font_family = "Arial";
-    style.font_size = 16.0f;
-    style.font_weight = "normal";
-    style.font_style = "normal";
-    style.text_align = "left";
-    style.text_decoration = "none";
-    style.line_height = 1.2f;
-    style.opacity = 1.0f;
-    
-    // 根据标签名设置默认样式
-    if (tag_name == "div" || tag_name == "p" || tag_name == "section" || 
-        tag_name == "article" || tag_name == "header" || tag_name == "footer") {
+
+    if (tag_name == "div" || tag_name == "p" || tag_name == "section" ||
+        tag_name == "article" || tag_name == "header" || tag_name == "footer" ||
+        tag_name == "h1" || tag_name == "h2" || tag_name == "h3" ||
+        tag_name == "h4" || tag_name == "h5" || tag_name == "h6") {
         style.display = RenderObjectType::BLOCK;
     }
-    else if (tag_name == "span" || tag_name == "a" || tag_name == "strong" || 
+    else if (tag_name == "span" || tag_name == "a" || tag_name == "strong" ||
              tag_name == "em" || tag_name == "b" || tag_name == "i") {
         style.display = RenderObjectType::INLINE;
     }
     else if (tag_name == "img" || tag_name == "button" || tag_name == "input") {
         style.display = RenderObjectType::INLINE_BLOCK;
     }
-    
-    // 标题默认样式
+}
+
+void StyleResolver::ApplyElementSpecificStyle(ComputedStyle& style, const std::string& tag_name) {
+    // 标题默认样式（覆盖继承的 font-size 和 font-weight）
     if (tag_name == "h1") {
         style.font_size = 32.0f;
         style.font_weight = "bold";
+        style.margin.top = CSSLength(21, CSSUnit::PX);
+        style.margin.bottom = CSSLength(21, CSSUnit::PX);
     } else if (tag_name == "h2") {
         style.font_size = 24.0f;
         style.font_weight = "bold";
+        style.margin.top = CSSLength(19, CSSUnit::PX);
+        style.margin.bottom = CSSLength(19, CSSUnit::PX);
     } else if (tag_name == "h3") {
         style.font_size = 18.72f;
         style.font_weight = "bold";
+        style.margin.top = CSSLength(18, CSSUnit::PX);
+        style.margin.bottom = CSSLength(18, CSSUnit::PX);
     } else if (tag_name == "h4") {
         style.font_size = 16.0f;
         style.font_weight = "bold";
+        style.margin.top = CSSLength(21, CSSUnit::PX);
+        style.margin.bottom = CSSLength(21, CSSUnit::PX);
     } else if (tag_name == "h5") {
         style.font_size = 13.28f;
         style.font_weight = "bold";
+        style.margin.top = CSSLength(22, CSSUnit::PX);
+        style.margin.bottom = CSSLength(22, CSSUnit::PX);
     } else if (tag_name == "h6") {
         style.font_size = 10.72f;
         style.font_weight = "bold";
+        style.margin.top = CSSLength(24, CSSUnit::PX);
+        style.margin.bottom = CSSLength(24, CSSUnit::PX);
     }
-    
+
     // 段落默认样式
     if (tag_name == "p") {
         style.margin.top = CSSLength(16, CSSUnit::PX);
@@ -118,7 +142,7 @@ void StyleResolver::ApplyDefaultStyle(ComputedStyle& style, const std::string& t
         style.margin.left = CSSLength(0, CSSUnit::PX);
         style.margin.right = CSSLength(0, CSSUnit::PX);
     }
-    
+
     // 粗体和斜体
     if (tag_name == "strong" || tag_name == "b") {
         style.font_weight = "bold";

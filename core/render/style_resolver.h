@@ -54,14 +54,24 @@ public:
 private:
     /**
      * @brief 应用默认样式
+     * @param style 要应用样式的对象
+     * @param tag_name 标签名
+     * @param is_root 是否为根元素（没有父元素）
      */
-    void ApplyDefaultStyle(ComputedStyle& style, const std::string& tag_name);
-    
+    void ApplyDefaultStyle(ComputedStyle& style, const std::string& tag_name, bool is_root);
+
+    /**
+     * @brief 应用元素特定的样式（如 h1 的 font-size）
+     * @param style 要应用样式的对象
+     * @param tag_name 标签名
+     */
+    void ApplyElementSpecificStyle(ComputedStyle& style, const std::string& tag_name);
+
     /**
      * @brief 应用元素的内联样式
      */
     void ApplyInlineStyle(ComputedStyle& style, std::shared_ptr<Element> element);
-    
+
     /**
      * @brief 应用样式继承
      */

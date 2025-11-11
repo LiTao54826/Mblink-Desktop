@@ -136,14 +136,22 @@ void RenderBlock::Layout(float parent_width, float parent_height) {
 
     for (auto& child : children_) {
         auto& child_layout = child->GetLayoutInfo();
+        auto& child_style = child->GetComputedStyle();
 
-        float new_x = padding_left + border_left;
-        float new_y = current_y + padding_top + border_top + body_top_offset;
+        // 计算子元素的 margin
+        float child_margin_top = child_style.margin.top.ToPx(width, child_style.font_size);
+        float child_margin_bottom = child_style.margin.bottom.ToPx(width, child_style.font_size);
+        float child_margin_left = child_style.margin.left.ToPx(width, child_style.font_size);
+
+        // 设置子元素位置（考虑 margin）
+        float new_x = padding_left + border_left + child_margin_left;
+        float new_y = current_y + padding_top + border_top + body_top_offset + child_margin_top;
 
         child_layout.x = new_x;
         child_layout.y = new_y;
 
-        current_y += child_layout.height;
+        // 累加高度（包括 margin）
+        current_y += child_margin_top + child_layout.height + child_margin_bottom;
         max_child_height = std::max(max_child_height, child_layout.height);
     }
     
@@ -336,6 +344,13 @@ void RenderText::Paint(SkCanvas* canvas) {
 
     SkFont font = FontManager::GetInstance().LoadFont(desc);
 
+    // 获取字体度量信息
+    SkFontMetrics font_metrics;
+    font.getMetrics(&font_metrics);
+
+    // 计算基线位置：从顶部开始，向下偏移 ascent（ascent 是负值，所以取反）
+    float baseline_y = -font_metrics.fAscent;
+
     // 创建文本渲染器
     TextRenderer text_renderer(canvas);
 
@@ -348,8 +363,8 @@ void RenderText::Paint(SkCanvas* canvas) {
         text_paint.SetColor(SK_ColorBLACK);
     }
 
-    // 绘制文本
-    text_renderer.DrawText(text_, 0, layout.height * 0.8f, font, text_paint);
+    // 绘制文本（使用正确的基线位置）
+    text_renderer.DrawText(text_, 0, baseline_y, font, text_paint);
 
     // 恢复画布状态
     canvas->restore();

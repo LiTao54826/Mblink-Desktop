@@ -277,6 +277,9 @@ add_skia_test(test_advanced_css test_advanced_css.cpp)
 add_skia_test(test_render_tree test_render_tree.cpp)
 target_link_libraries(test_render_tree PRIVATE lightui_dom)
 
+# Simple Skia Text Test
+add_skia_test(test_skia_text_simple test_skia_text_simple.cpp)
+
 # Optimization Test
 add_skia_test(test_optimization test_optimization.cpp)
 

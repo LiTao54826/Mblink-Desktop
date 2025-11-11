@@ -309,6 +309,7 @@ void BoxRenderer::RenderBackgroundAdvanced(const Box& box,
     }
 
     Paint paint;
+    bool has_background = false;  // 标记是否有有效的背景
 
     // 检查背景类型
     auto bg_it = styles.find("background");
@@ -338,6 +339,7 @@ void BoxRenderer::RenderBackgroundAdvanced(const Box& box,
             sk_sp<SkShader> shader = SkGradientShader::MakeLinear(
                 pts, colors.data(), positions.data(), colors.size(), SkTileMode::kClamp);
             paint.GetSkPaint().setShader(shader);
+            has_background = true;
         }
     }
     // 2. 径向渐变
@@ -362,6 +364,7 @@ void BoxRenderer::RenderBackgroundAdvanced(const Box& box,
             sk_sp<SkShader> shader = SkGradientShader::MakeRadial(
                 center, radius, colors.data(), positions.data(), colors.size(), SkTileMode::kClamp);
             paint.GetSkPaint().setShader(shader);
+            has_background = true;
         }
     }
     // 3. 背景图片
@@ -435,14 +438,20 @@ void BoxRenderer::RenderBackgroundAdvanced(const Box& box,
 
             sk_sp<SkShader> shader = image->makeShader(tile_x, tile_y, SkSamplingOptions(), matrix);
             paint.GetSkPaint().setShader(shader);
+            has_background = true;
         }
     }
     // 4. 纯色背景
-    else if (bg_color_it != styles.end() && !bg_color_it->second.empty()) {
+    else if (bg_color_it != styles.end() && !bg_color_it->second.empty() &&
+             bg_color_it->second != "transparent") {
         paint.SetColor(Color::Parse(bg_color_it->second));
+        has_background = true;
     }
 
-    canvas_->drawPath(path, paint.GetSkPaint());
+    // 只有在有有效背景时才绘制
+    if (has_background) {
+        canvas_->drawPath(path, paint.GetSkPaint());
+    }
 }
 
 void BoxRenderer::RenderRoundedBorder(const Box& box,
