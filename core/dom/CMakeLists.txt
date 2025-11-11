@@ -11,6 +11,7 @@ set(DOM_SOURCES
     selector_engine.cpp
     dom_token_list.cpp
     css_style_declaration.cpp
+    dom_string_map.cpp
 )
 
 set(DOM_HEADERS
@@ -24,6 +25,7 @@ set(DOM_HEADERS
     selector_engine.h
     dom_token_list.h
     css_style_declaration.h
+    dom_string_map.h
 )
 
 add_library(lightui_dom STATIC ${DOM_SOURCES})

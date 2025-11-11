@@ -11,6 +11,7 @@
 #include "selector_engine.h"
 #include "dom_token_list.h"
 #include "css_style_declaration.h"
+#include "dom_string_map.h"
 #include <algorithm>
 #include <sstream>
 
@@ -203,19 +204,51 @@ std::shared_ptr<CSSStyleDeclaration> Element::GetStyleDeclaration() {
     return style_declaration_;
 }
 
+std::shared_ptr<DOMStringMap> Element::GetDataset() {
+    // 懒加载：第一次调用时创建
+    if (!dataset_) {
+        dataset_ = std::make_shared<DOMStringMap>(
+            std::static_pointer_cast<Element>(shared_from_this())
+        );
+    }
+    return dataset_;
+}
+
 // ========== 克隆和文本内容 ==========
 
 std::shared_ptr<Node> Element::CloneNode(bool deep) {
+    // 参考：RmlUi/Source/Core/Element.cpp - Clone
+    // 参考：Lexbor lxb_dom_element_interface_copy
+
     auto cloned = std::make_shared<Element>(tag_name_);
 
     // 复制属性
     cloned->attributes_ = attributes_;
+
+    // 复制样式
     cloned->styles_ = styles_;
+
+    // 复制CSS伪类状态（注意：某些伪类如:hover不应该被复制）
+    // 只复制持久性伪类，不复制交互性伪类
+    for (const auto& [pseudo_class, active] : pseudo_classes_) {
+        // 跳过交互性伪类（这些应该由用户交互触发）
+        if (pseudo_class == "hover" ||
+            pseudo_class == "active" ||
+            pseudo_class == "focus" ||
+            pseudo_class == "focus-visible" ||
+            pseudo_class == "drag") {
+            continue;
+        }
+
+        // 复制其他伪类
+        cloned->pseudo_classes_[pseudo_class] = active;
+    }
 
     // 深度克隆子节点
     if (deep) {
         for (const auto& child : child_nodes_) {
-            cloned->AppendChild(child->CloneNode(true));
+            auto cloned_child = child->CloneNode(true);
+            cloned->AppendChild(cloned_child);
         }
     }
 

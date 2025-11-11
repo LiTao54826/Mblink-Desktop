@@ -31,6 +31,7 @@ namespace lightui {
 class Event;
 class DOMTokenList;
 class CSSStyleDeclaration;
+class DOMStringMap;
 using EventListener = std::function<void(std::shared_ptr<Event>)>;
 
 // EventListener包装器，包含唯一ID和捕获阶段标志
@@ -190,6 +191,27 @@ public:
      */
     std::shared_ptr<CSSStyleDeclaration> GetStyleDeclaration();
 
+    /**
+     * @brief 获取dataset对象
+     * @return DOMStringMap对象
+     *
+     * 符合W3C DOMStringMap接口：
+     * - Get(name) - 获取data-*属性值
+     * - Set(name, value) - 设置data-*属性值
+     * - Remove(name) - 删除data-*属性
+     * - Has(name) - 检查是否存在data-*属性
+     * - GetAll() - 获取所有data-*属性
+     *
+     * 命名转换：
+     * - HTML: data-user-id
+     * - JavaScript: userId
+     *
+     * 示例：
+     * element->GetDataset()->Set("userId", "123");  // 设置data-user-id="123"
+     * std::string id = element->GetDataset()->Get("userId");
+     */
+    std::shared_ptr<DOMStringMap> GetDataset();
+
     // ========== CSS伪类支持（参考RmlUi） ==========
 
     /**
@@ -339,6 +361,9 @@ private:
 
     // style对象（懒加载）
     mutable std::shared_ptr<CSSStyleDeclaration> style_declaration_;
+
+    // dataset对象（懒加载）
+    mutable std::shared_ptr<DOMStringMap> dataset_;
 };
 
 } // namespace lightui
