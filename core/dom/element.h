@@ -23,11 +23,13 @@
 #include <unordered_map>
 #include <vector>
 #include <functional>
+#include <memory>
 
 namespace lightui {
 
 // 前向声明
 class Event;
+class DOMTokenList;
 using EventListener = std::function<void(std::shared_ptr<Event>)>;
 
 // EventListener包装器，包含唯一ID和捕获阶段标志
@@ -136,6 +138,24 @@ public:
      * @return true表示存在
      */
     bool HasClass(const std::string& class_name) const;
+
+    /**
+     * @brief 获取classList对象
+     * @return DOMTokenList对象
+     *
+     * 符合W3C DOMTokenList接口：
+     * - add(token1, token2, ...) - 添加class
+     * - remove(token1, token2, ...) - 移除class
+     * - toggle(token, force?) - 切换class
+     * - contains(token) - 检查是否包含class
+     * - item(index) - 获取指定索引的class
+     * - length - class数量
+     *
+     * 示例：
+     * element->GetClassList()->Add("active");
+     * element->GetClassList()->Toggle("hidden");
+     */
+    std::shared_ptr<DOMTokenList> GetClassList();
 
     /**
      * @brief 设置内联样式
@@ -294,6 +314,9 @@ private:
 
     // CSS伪类状态（参考RmlUi设计）
     std::unordered_map<std::string, bool> pseudo_classes_;
+
+    // classList对象（懒加载）
+    mutable std::shared_ptr<DOMTokenList> class_list_;
 };
 
 } // namespace lightui

@@ -9,6 +9,7 @@
 #include "document.h"
 #include "dom_observer.h"
 #include "selector_engine.h"
+#include "dom_token_list.h"
 #include <algorithm>
 #include <sstream>
 
@@ -152,6 +153,17 @@ bool Element::HasClass(const std::string& class_name) const {
     }
 
     return false;
+}
+
+std::shared_ptr<DOMTokenList> Element::GetClassList() {
+    // 懒加载：第一次调用时创建
+    if (!class_list_) {
+        class_list_ = std::make_shared<DOMTokenList>(
+            std::static_pointer_cast<Element>(shared_from_this()),
+            "class"
+        );
+    }
+    return class_list_;
 }
 
 void Element::SetStyle(const std::string& property, const std::string& value) {
