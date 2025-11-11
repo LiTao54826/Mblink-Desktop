@@ -64,11 +64,11 @@ public:
     
     /**
      * @brief requestAnimationFrame - 下一帧执行
-     * 
-     * @param callback 回调函数，参数为帧时间（秒）
+     *
+     * @param callback 回调函数，参数为时间戳（毫秒）
      * @return int 任务 ID
      */
-    int RequestAnimationFrame(std::function<void(float)> callback);
+    int RequestAnimationFrame(std::function<void(double)> callback);
     
     /**
      * @brief 取消任务
@@ -107,12 +107,12 @@ public:
     
     /**
      * @brief 处理动画帧任务
-     * 
+     *
      * 执行所有 requestAnimationFrame 任务
-     * 
-     * @param delta_time 帧时间（秒）
+     *
+     * @param timestamp 当前时间戳（毫秒）
      */
-    void ProcessAnimationFrames(float delta_time);
+    void ProcessAnimationFrames(double timestamp);
     
     /**
      * @brief 检查是否有待处理的任务
@@ -134,7 +134,7 @@ private:
         int id;                             // 任务 ID
         TaskType type;                      // 任务类型
         std::function<void()> callback;     // 回调函数（timeout/interval）
-        std::function<void(float)> anim_callback;  // 动画回调函数
+        std::function<void(double)> anim_callback;  // 动画回调函数（参数为时间戳毫秒）
         Uint64 execute_time;                // 执行时间（性能计数器）
         int interval;                       // 间隔时间（毫秒，0 表示一次性）
         bool cancelled;                     // 是否已取消

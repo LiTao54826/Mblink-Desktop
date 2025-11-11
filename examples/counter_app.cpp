@@ -45,15 +45,17 @@ int main(int argc, char* argv[]) {
         // 2. 创建 DOM 文档
         auto document = std::make_shared<Document>();
         document->Initialize();
-        
-        // 3. 创建任务调度器
-        auto scheduler = std::make_shared<TaskScheduler>();
+
+        // 3. 创建事件循环（先创建，以便获取其 TaskScheduler）
+        EventLoop event_loop;
 
         // 4. 创建 JavaScript 运行时
         QuickJSRuntime runtime;
 
-        // 5. 创建 JavaScript 绑定
-        WindowBindings bindings(&runtime, window, scheduler);
+        // 5. 创建 JavaScript 绑定（使用 EventLoop 的 TaskScheduler）
+        auto scheduler_ptr = std::shared_ptr<TaskScheduler>(&event_loop.GetTaskScheduler(), [](TaskScheduler*){});
+        WindowBindings bindings(&runtime, window, scheduler_ptr);
+        bindings.InitBindings();  // 初始化绑定
 
         std::cout << "✓ JavaScript runtime initialized" << std::endl;
         
@@ -173,13 +175,10 @@ int main(int argc, char* argv[]) {
         // 9. 显示窗口
         window->Show();
         std::cout << "✓ Window shown" << std::endl;
-        
-        // 10. 创建事件循环
-        EventLoop event_loop;
-        
-        // 设置更新回调（处理定时器）
-        event_loop.SetUpdateCallback([scheduler, &runtime](float delta_time) {
-            scheduler->ProcessTasks();
+
+        // 10. 设置事件循环回调
+        // 设置更新回调（处理 QuickJS microtasks）
+        event_loop.SetUpdateCallback([&runtime](float delta_time) {
             runtime.ProcessMicrotasks();
         });
         

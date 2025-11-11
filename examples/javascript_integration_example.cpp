@@ -175,10 +175,10 @@ int main(int argc, char* argv[]) {
     // 10. 创建事件循环
     EventLoop event_loop;
     
-    // 设置更新回调（处理任务调度器）
-    event_loop.SetUpdateCallback([task_scheduler](double delta_time) {
-        task_scheduler->ProcessTasks();
-        task_scheduler->ProcessAnimationFrames(static_cast<float>(delta_time));
+    // 设置更新回调（EventLoop 内部已经处理 ProcessTasks 和 ProcessAnimationFrames）
+    // 这里只需要处理 QuickJS microtasks
+    event_loop.SetUpdateCallback([js_runtime](float delta_time) {
+        js_runtime->ProcessMicrotasks();
     });
     
     // 设置渲染回调

@@ -135,7 +135,29 @@ void WindowBindings::BindDocumentObject() {
         json result;
         result["tagName"] = element->GetTagName();
         result["id"] = element->GetAttribute("id");
+        result["textContent"] = element->GetTextContent();
         return result;
+    });
+
+    // 绑定 element.textContent setter
+    runtime_->RegisterFunction("__setTextContent", [this](const json& args) -> json {
+        auto doc = window_->GetDocument();
+        // args[0] = element id, args[1] = new text content
+        if (!doc || !args.is_array() || args.size() < 2 ||
+            !args[0].is_string() || !args[1].is_string()) {
+            return false;
+        }
+
+        std::string id = args[0].get<std::string>();
+        std::string content = args[1].get<std::string>();
+
+        auto element = doc->GetElementById(id);
+        if (!element) {
+            return false;
+        }
+
+        element->SetTextContent(content);
+        return true;
     });
 
     // 绑定 document.createElement
@@ -162,11 +184,26 @@ void WindowBindings::BindDocumentObject() {
         globalThis.document = {
             get body() { return __getDocumentBody(); },
             get documentElement() { return __getDocumentElement(); },
-            getElementById: function(id) { return __getElementById(id); },
+            getElementById: function(id) {
+                const elem = __getElementById(id);
+                if (!elem) return null;
+
+                // 创建一个代理对象，支持 textContent setter
+                return {
+                    tagName: elem.tagName,
+                    id: elem.id,
+                    get textContent() {
+                        return elem.textContent;
+                    },
+                    set textContent(value) {
+                        __setTextContent(elem.id, value);
+                    }
+                };
+            },
             createElement: function(tagName) { return __createElement(tagName); }
         };
     )";
-    
+
     runtime_->Eval(document_code, "<document_bindings>");
 }
 
@@ -261,7 +298,7 @@ void WindowBindings::BindTimers() {
                 std::cerr << "Error in requestAnimationFrame callback: " << e.what() << std::endl;
             }
         });
-        
+
         return task_id;
     });
     

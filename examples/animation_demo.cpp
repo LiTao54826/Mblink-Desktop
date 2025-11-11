@@ -45,15 +45,18 @@ int main(int argc, char* argv[]) {
         // 2. 创建 DOM 文档
         auto document = std::make_shared<Document>();
         document->Initialize();
-        
-        // 3. 创建任务调度器
-        auto scheduler = std::make_shared<TaskScheduler>();
+
+        // 3. 创建事件循环（先创建，以便获取其 TaskScheduler）
+        EventLoop event_loop;
 
         // 4. 创建 JavaScript 运行时
         QuickJSRuntime runtime;
 
-        // 5. 创建 JavaScript 绑定
-        WindowBindings bindings(&runtime, window, scheduler);
+        // 5. 创建 JavaScript 绑定（使用 EventLoop 的 TaskScheduler）
+        // 注意：这里传递的是指针，不是 shared_ptr，因为 EventLoop 拥有 TaskScheduler 的生命周期
+        auto scheduler_ptr = std::shared_ptr<TaskScheduler>(&event_loop.GetTaskScheduler(), [](TaskScheduler*){});
+        WindowBindings bindings(&runtime, window, scheduler_ptr);
+        bindings.InitBindings();  // 初始化绑定
 
         std::cout << "✓ JavaScript runtime initialized" << std::endl;
         
@@ -102,103 +105,107 @@ int main(int argc, char* argv[]) {
         window->SetDocument(document);
         
         // 8. 初始化 JavaScript 动画逻辑
-        runtime.Eval(R"(
-            // 动画状态
-            globalThis.animationRunning = false;
-            globalThis.animationId = null;
-            globalThis.position = 0;
-            globalThis.velocity = 2;
-            globalThis.frameCount = 0;
-            globalThis.lastTime = 0;
-            globalThis.fps = 0;
-            
-            // 动画循环
-            function animate(timestamp) {
-                if (!globalThis.animationRunning) {
-                    return;
-                }
-                
-                // 计算 FPS
-                if (globalThis.lastTime > 0) {
-                    const delta = timestamp - globalThis.lastTime;
-                    if (delta > 0) {
-                        globalThis.fps = Math.round(1000 / delta);
+        try {
+            runtime.Eval(R"(
+                // 动画状态
+                globalThis.animationRunning = false;
+                globalThis.animationId = null;
+                globalThis.position = 0;
+                globalThis.velocity = 2;
+                globalThis.frameCount = 0;
+                globalThis.lastTime = 0;
+                globalThis.fps = 0;
+
+                // 动画循环
+                function animate(timestamp) {
+                    if (!globalThis.animationRunning) {
+                        return;
                     }
-                }
-                globalThis.lastTime = timestamp;
-                globalThis.frameCount++;
-                
-                // 更新 FPS 显示（每 10 帧更新一次）
-                if (globalThis.frameCount % 10 === 0) {
-                    const fpsDisplay = document.getElementById('fps');
-                    if (fpsDisplay) {
-                        fpsDisplay.textContent = 'FPS: ' + globalThis.fps + ' | Frames: ' + globalThis.frameCount;
+
+                    // 计算 FPS
+                    if (globalThis.lastTime > 0) {
+                        const delta = timestamp - globalThis.lastTime;
+                        if (delta > 0) {
+                            globalThis.fps = Math.round(1000 / delta);
+                        }
                     }
-                }
-                
-                // 更新位置
-                globalThis.position += globalThis.velocity;
-                
-                // 边界检测（假设窗口宽度 600，盒子宽度 100）
-                if (globalThis.position > 500) {
-                    globalThis.position = 500;
-                    globalThis.velocity = -globalThis.velocity;
-                } else if (globalThis.position < 0) {
-                    globalThis.position = 0;
-                    globalThis.velocity = -globalThis.velocity;
-                }
-                
-                // 更新盒子位置（通过修改文本内容模拟）
-                const box = document.getElementById('box');
-                if (box) {
-                    box.textContent = 'Position: ' + Math.round(globalThis.position);
-                }
-                
-                // 请求下一帧
-                globalThis.animationId = requestAnimationFrame(animate);
-            }
-            
-            // 开始动画
-            function startAnimation() {
-                if (!globalThis.animationRunning) {
-                    globalThis.animationRunning = true;
-                    globalThis.frameCount = 0;
-                    globalThis.lastTime = 0;
-                    console.log('Animation started');
+                    globalThis.lastTime = timestamp;
+                    globalThis.frameCount++;
+
+                    // 更新 FPS 显示（每 10 帧更新一次）
+                    if (globalThis.frameCount % 10 === 0) {
+                        const fpsDisplay = document.getElementById('fps');
+                        if (fpsDisplay) {
+                            fpsDisplay.textContent = 'FPS: ' + globalThis.fps + ' | Frames: ' + globalThis.frameCount;
+                        }
+                    }
+
+                    // 更新位置
+                    globalThis.position += globalThis.velocity;
+
+                    // 边界检测（假设窗口宽度 600，盒子宽度 100）
+                    if (globalThis.position > 500) {
+                        globalThis.position = 500;
+                        globalThis.velocity = -globalThis.velocity;
+                    } else if (globalThis.position < 0) {
+                        globalThis.position = 0;
+                        globalThis.velocity = -globalThis.velocity;
+                    }
+
+                    // 更新盒子位置（通过修改文本内容模拟）
+                    const box = document.getElementById('box');
+                    if (box) {
+                        box.textContent = 'Position: ' + Math.round(globalThis.position);
+                    }
+
+                    // 请求下一帧
                     globalThis.animationId = requestAnimationFrame(animate);
                 }
-            }
-            
-            // 停止动画
-            function stopAnimation() {
-                if (globalThis.animationRunning) {
-                    globalThis.animationRunning = false;
-                    console.log('Animation stopped');
+
+                // 开始动画
+                function startAnimation() {
+                    if (!globalThis.animationRunning) {
+                        globalThis.animationRunning = true;
+                        globalThis.frameCount = 0;
+                        globalThis.lastTime = 0;
+                        console.log('Animation started');
+                        globalThis.animationId = requestAnimationFrame(animate);
+                    }
                 }
-            }
-            
-            console.log('Animation demo initialized');
-            
-            // 自动开始动画
-            startAnimation();
-        )", "animation_demo.js");
-        
-        std::cout << "✓ JavaScript initialized" << std::endl;
+
+                // 停止动画
+                function stopAnimation() {
+                    if (globalThis.animationRunning) {
+                        globalThis.animationRunning = false;
+                        console.log('Animation stopped');
+                    }
+                }
+
+                console.log('Animation demo initialized');
+
+                // 自动开始动画
+                startAnimation();
+
+                // 注意：按钮点击事件需要完整的事件系统支持
+                // 当前版本自动启动动画，按钮暂时不可用
+                // TODO: 实现完整的 DOM 事件系统后，添加按钮点击事件
+            )", "animation_demo.js");
+
+            std::cout << "✓ JavaScript initialized" << std::endl;
+        } catch (const std::exception& e) {
+            std::cerr << "❌ JavaScript error: " << e.what() << std::endl;
+        }
         
         // 9. 显示窗口
         window->Show();
         std::cout << "✓ Window shown" << std::endl;
-        
-        // 10. 创建事件循环
-        EventLoop event_loop;
-        
-        // 设置更新回调（处理定时器和动画帧）
-        event_loop.SetUpdateCallback([scheduler, &runtime](float delta_time) {
-            scheduler->ProcessTasks();
-            scheduler->ProcessAnimationFrames(delta_time);
+
+        // 10. 设置事件循环回调
+        // 设置更新回调（处理 QuickJS microtasks）
+        event_loop.SetUpdateCallback([&runtime](float delta_time) {
             runtime.ProcessMicrotasks();
         });
-        
+
         // 设置渲染回调
         event_loop.SetRenderCallback([window]() {
             if (window->NeedsRepaint()) {

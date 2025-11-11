@@ -269,6 +269,14 @@ void Node::SetParentNode(std::shared_ptr<Node> parent) {
 }
 
 void Node::RemoveAllChildren() {
+    // 通知观察者（在移除之前）
+    auto doc = GetOwnerDocument();
+    if (doc) {
+        for (auto& child : child_nodes_) {
+            doc->GetObserverManager().NotifyNodeRemoved(child.get(), this);
+        }
+    }
+
     // 清除所有子节点的父节点引用
     for (auto& child : child_nodes_) {
         child->SetParentNode(nullptr);

@@ -5,6 +5,7 @@
 
 #include "style_resolver.h"
 #include "core/dom/text.h"
+#include "color.h"
 #include <algorithm>
 
 namespace lightui {
@@ -141,6 +142,27 @@ void StyleResolver::ApplyElementSpecificStyle(ComputedStyle& style, const std::s
         style.margin.bottom = CSSLength(16, CSSUnit::PX);
         style.margin.left = CSSLength(0, CSSUnit::PX);
         style.margin.right = CSSLength(0, CSSUnit::PX);
+    }
+
+    // 按钮默认样式
+    if (tag_name == "button") {
+        style.padding.top = CSSLength(8, CSSUnit::PX);
+        style.padding.bottom = CSSLength(8, CSSUnit::PX);
+        style.padding.left = CSSLength(16, CSSUnit::PX);
+        style.padding.right = CSSLength(16, CSSUnit::PX);
+        style.margin.top = CSSLength(4, CSSUnit::PX);
+        style.margin.bottom = CSSLength(4, CSSUnit::PX);
+        style.margin.left = CSSLength(4, CSSUnit::PX);
+        style.margin.right = CSSLength(4, CSSUnit::PX);
+        style.background_color = "#F0F0F0";  // 浅灰色背景
+        style.color = "#000000";  // 黑色文字
+        style.border.width = CSSLength(1, CSSUnit::PX);
+        style.border.style = CSSBorderStyle::SOLID;
+        style.border.color = Color::FromRGB(180, 180, 180);  // 深灰色边框
+        style.border_radius.top_left = CSSLength(4, CSSUnit::PX);
+        style.border_radius.top_right = CSSLength(4, CSSUnit::PX);
+        style.border_radius.bottom_left = CSSLength(4, CSSUnit::PX);
+        style.border_radius.bottom_right = CSSLength(4, CSSUnit::PX);
     }
 
     // 粗体和斜体

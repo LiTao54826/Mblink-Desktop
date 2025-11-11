@@ -42,7 +42,7 @@ int TaskScheduler::SetInterval(std::function<void()> callback, int interval_ms) 
     return task.id;
 }
 
-int TaskScheduler::RequestAnimationFrame(std::function<void(float)> callback) {
+int TaskScheduler::RequestAnimationFrame(std::function<void(double)> callback) {
     Task task;
     task.id = next_task_id_++;
     task.type = TaskType::ANIMATION_FRAME;
@@ -50,9 +50,9 @@ int TaskScheduler::RequestAnimationFrame(std::function<void(float)> callback) {
     task.execute_time = 0;
     task.interval = 0;
     task.cancelled = false;
-    
+
     animation_frame_tasks_.push_back(task);
-    
+
     return task.id;
 }
 
@@ -126,22 +126,21 @@ void TaskScheduler::ProcessTasks() {
     }
 }
 
-void TaskScheduler::ProcessAnimationFrames(float delta_time) {
+void TaskScheduler::ProcessAnimationFrames(double timestamp) {
+    // 复制当前的任务列表，然后清空原列表
+    // 这样在执行回调时，新的 requestAnimationFrame 调用会添加到空列表中
+    std::vector<Task> tasks_to_execute = std::move(animation_frame_tasks_);
+    animation_frame_tasks_.clear();
+
     // 执行所有动画帧任务
-    for (const auto& task : animation_frame_tasks_) {
+    for (const auto& task : tasks_to_execute) {
         if (!task.cancelled && task.anim_callback) {
-            task.anim_callback(delta_time);
+            task.anim_callback(timestamp);
         }
     }
-    
-    // 清除已执行和已取消的任务
-    animation_frame_tasks_.erase(
-        std::remove_if(animation_frame_tasks_.begin(), animation_frame_tasks_.end(),
-            [](const Task& task) {
-                return task.cancelled || task.type == TaskType::ANIMATION_FRAME;
-            }),
-        animation_frame_tasks_.end()
-    );
+
+    // 不需要额外的清理，因为我们已经移动了任务列表
+    // 在回调中新添加的任务已经在 animation_frame_tasks_ 中了
 }
 
 bool TaskScheduler::HasPendingTasks() const {

@@ -51,34 +51,40 @@ void EventLoop::Stop() {
 
 void EventLoop::RunOnce() {
     frame_controller_->BeginFrame();
-    
+
     // 1. 处理所有 SDL 事件
     bool has_events = ProcessEvents();
-    
+
     // 2. 执行调度任务
     task_scheduler_->ProcessTasks();
-    
+
     // 3. 更新应用状态
     float delta_time = frame_controller_->GetDeltaTime();
     Update(delta_time);
-    
+
     // 4. 处理动画帧任务
-    task_scheduler_->ProcessAnimationFrames(delta_time);
-    
+    // 计算累积时间戳（毫秒）- requestAnimationFrame 需要这个
+    static Uint64 start_time = SDL_GetPerformanceCounter();
+    Uint64 current_time = SDL_GetPerformanceCounter();
+    Uint64 frequency = SDL_GetPerformanceFrequency();
+    double timestamp_ms = ((current_time - start_time) * 1000.0) / frequency;
+
+    task_scheduler_->ProcessAnimationFrames(timestamp_ms);
+
     // 5. 渲染
     Render();
-    
+
     // 6. 检查是否应该退出
     auto& window_manager = WindowManager::Instance();
     if (!window_manager.HasWindows()) {
         should_quit_ = true;
     }
-    
+
     // 7. 空闲处理
     if (!HasWork() && idle_callback_) {
         idle_callback_();
     }
-    
+
     // 8. 帧率控制
     frame_controller_->EndFrame();
 }
