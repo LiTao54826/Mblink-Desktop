@@ -2,7 +2,7 @@
 
 > **开始日期**: 2025-11-11
 > **当前状态**: 进行中
-> **完成度**: 87%
+> **完成度**: 90%
 > **参考项目**: RmlUi
 
 ---
@@ -14,7 +14,7 @@
 | **P0** | 核心事件系统 | 95% | ✅ 基本完成 |
 | **P1** | DOM API完善 | 100% | ✅ 完成 |
 | **P2** | CSS伪类和焦点管理 | 80% | ✅ 基本完成 |
-| **P3** | 拖拽系统 | 90% | ✅ 基本完成 |
+| **P3** | 拖拽系统 | 100% | ✅ 完成 |
 | **P4** | 键盘事件和表单 | 0% | ⏳ 待开始 |
 
 ---
@@ -476,6 +476,57 @@ element->AddEventListener("click", [](auto e) {
 // 第二次click不会触发监听器（已自动移除）
 ```
 
+### 13. DataTransfer和拖拽克隆 ✅ (2025-11-11)
+
+**参考**: W3C HTML5 - DataTransfer, RmlUi拖拽系统
+
+**实现内容**:
+- ✅ `core/event/data_transfer.h` - DataTransfer类定义
+- ✅ `core/event/data_transfer.cpp` - DataTransfer类实现
+- ✅ `core/event/drag_manager.h` - 添加DataTransfer支持
+- ✅ `core/event/drag_manager.cpp` - 实现拖拽克隆和DataTransfer集成
+
+**核心功能**:
+1. **DataTransfer类** - 完整的W3C DataTransfer接口
+2. **setData/getData** - 拖拽数据存储和获取
+3. **effectAllowed/dropEffect** - 拖拽效果控制
+4. **拖拽克隆** - 使用Element::CloneNode()实现drag: clone模式
+5. **智能伪类管理** - 克隆元素自动设置:drag伪类
+
+**技术亮点**:
+- ✅ 符合W3C DataTransfer接口规范
+- ✅ 支持多种数据格式（text/plain, text/html等）
+- ✅ 拖拽效果枚举（None, Copy, Move, Link, All等）
+- ✅ 自动初始化和清理DataTransfer对象
+- ✅ 拖拽克隆使用CloneNode深度克隆
+
+**代码示例**:
+```cpp
+// 获取DataTransfer对象
+auto dataTransfer = dragManager->GetDataTransfer();
+
+// 设置拖拽数据
+dataTransfer->SetData("text/plain", "Hello World");
+dataTransfer->SetData("text/html", "<b>Hello World</b>");
+
+// 设置拖拽效果
+dataTransfer->SetEffectAllowed(DragEffect::Copy);
+dataTransfer->SetDropEffect(DragEffect::Move);
+
+// 获取拖拽数据
+std::string text = dataTransfer->GetData("text/plain");
+
+// 拖拽克隆（drag: clone模式）
+// 自动使用Element::CloneNode()创建克隆元素
+// 克隆元素自动设置:drag伪类
+auto dragClone = dragManager->GetDragClone();
+```
+
+**参考文件**:
+- ✅ W3C HTML5 - DataTransfer Interface
+- ✅ MDN Web Docs - DataTransfer
+- ✅ `ReferenceProject/RmlUi/Source/Core/Context.cpp` (CreateDragClone)
+
 ---
 
 ## 🔄 进行中任务
@@ -561,23 +612,22 @@ element->AddEventListener("click", [](auto e) {
 - ✅ `ReferenceProject/RmlUi/Source/Core/Element.cpp` (Focus, Blur)
 - ✅ `ReferenceProject/RmlUi/Source/Core/Context.cpp` (GetFocusElement, OnFocusChange)
 
-### P3: 拖拽系统 (90%)
+### P3: 拖拽系统 (100%) ✅
 
-#### Task 8: 完整的拖拽系统 (90%)
+#### Task 8: 完整的拖拽系统 (100%)
 - ✅ DragManager类
 - ✅ 拖拽事件（dragstart, drag, dragend, dragover, dragout, dragdrop, dragmove）
 - ✅ CSS drag属性支持（drag, drag-drop, clone, block）
 - ✅ 拖拽hover链管理
 - ✅ :drag伪类自动设置
 - ✅ **集成DragManager到EventLoop** - 拖拽系统现在可以实际工作！
-- ⏳ **待完成**:
-  - [ ] 拖拽克隆支持（drag: clone）- 需要Element::Clone()
-  - [ ] DataTransfer对象
-  - [ ] effectAllowed/dropEffect
+- ✅ **拖拽克隆支持（drag: clone）** - 使用Element::CloneNode()
+- ✅ **DataTransfer对象** - 完整的W3C DataTransfer接口
+- ✅ **effectAllowed/dropEffect** - 拖拽效果控制
 
 **参考文件**:
 - ✅ `ReferenceProject/RmlUi/Source/Core/Context.cpp` (lines 706-1382)
-- `ReferenceProject/RmlUi/Samples/basic/drag/`
+- ✅ `ReferenceProject/RmlUi/Samples/basic/drag/`
 
 ### P4: 键盘事件和表单 (0%)
 
@@ -662,6 +712,12 @@ element->AddEventListener("click", [](auto e) {
 ## 📝 Git提交记录
 
 ### 2025-11-11
+- ✅ `feat(event): implement DataTransfer and drag clone support (Phase 2.5 P3)`
+- ✅ `683827d` - docs: update Phase 2.5 progress - P0 95% completed
+- ✅ `feat(event): implement dblclick event and addEventListener once option (Phase 2.5 P0)`
+- ✅ `44d0bc1` - docs: update Phase 2.5 progress - P1 DOM API 100% completed
+- ✅ `feat(dom): implement cloneNode improvements and dataset API (Phase 2.5 P1)`
+- ✅ `feat(dom): implement CSSStyleDeclaration and style API (Phase 2.5 P1)`
 - `b873f0a` - feat(dom): implement DOMTokenList and classList API (Phase 2.5 P1)
 - `992bc37` - docs: 更新Phase 2.5进度 - P1 querySelector完整集成完成
 - `2f6a7e6` - feat(dom): 完整集成Lexbor CSS选择器引擎 (Phase 2.5 P1)
