@@ -68,6 +68,10 @@ bool Element::HasAttribute(const std::string& name) const {
     return attributes_.find(name) != attributes_.end();
 }
 
+const std::unordered_map<std::string, std::string>& Element::GetAllAttributes() const {
+    return attributes_;
+}
+
 void Element::RemoveAttribute(const std::string& name) {
     attributes_.erase(name);
     MarkDirty();

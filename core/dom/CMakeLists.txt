@@ -27,10 +27,12 @@ add_library(lightui_dom STATIC ${DOM_SOURCES})
 target_include_directories(lightui_dom PUBLIC
     ${CMAKE_SOURCE_DIR}
     ${CMAKE_SOURCE_DIR}/core
+    ${CMAKE_SOURCE_DIR}/third_party/lexbor/source
 )
 
 target_link_libraries(lightui_dom PUBLIC
     lightui_utils
+    lexbor_static
 )
 
 # 匹配 Skia 的运行时库设置

@@ -84,6 +84,12 @@ public:
      * @return true表示存在
      */
     bool HasAttribute(const std::string& name) const;
+
+    /**
+     * @brief 获取所有属性
+     * @return 属性名到属性值的映射
+     */
+    const std::unordered_map<std::string, std::string>& GetAllAttributes() const;
     
     /**
      * @brief 移除属性
