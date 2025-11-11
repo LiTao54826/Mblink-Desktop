@@ -12,6 +12,8 @@ set(DOM_SOURCES
     dom_token_list.cpp
     css_style_declaration.cpp
     dom_string_map.cpp
+    html_input_element.cpp
+    html_textarea_element.cpp
 )
 
 set(DOM_HEADERS
@@ -26,6 +28,8 @@ set(DOM_HEADERS
     dom_token_list.h
     css_style_declaration.h
     dom_string_map.h
+    html_input_element.h
+    html_textarea_element.h
 )
 
 add_library(lightui_dom STATIC ${DOM_SOURCES})

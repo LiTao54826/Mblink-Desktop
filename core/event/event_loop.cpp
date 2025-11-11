@@ -16,6 +16,8 @@
 #include "core/window/window_manager.h"
 #include "core/dom/document.h"
 #include "core/dom/element.h"
+#include "core/dom/html_input_element.h"
+#include "core/dom/html_textarea_element.h"
 #include <iostream>
 #include <algorithm>
 
@@ -536,13 +538,26 @@ void EventLoop::HandleKeyboardEventForDOM(const SDL_Event& event) {
 
         focus_element->DispatchEvent(keydown_event);
 
-        // 处理Tab键导航
-        if (event.key.key == SDLK_TAB && !keydown_event->IsDefaultPrevented()) {
-            // Tab键导航到下一个可聚焦元素
-            // Shift+Tab反向导航
-            auto document = std::dynamic_pointer_cast<Document>(focus_element->GetOwnerDocument());
-            if (document) {
-                focus_manager_->TabToNextFocusableElement(document, shift_key);
+        // 如果事件未被阻止，处理表单元素的键盘输入
+        if (!keydown_event->IsDefaultPrevented()) {
+            // 检查是否是表单元素
+            auto input_element = std::dynamic_pointer_cast<HTMLInputElement>(focus_element);
+            auto textarea_element = std::dynamic_pointer_cast<HTMLTextAreaElement>(focus_element);
+
+            if (input_element) {
+                input_element->HandleKeyPress(key, ctrl_key);
+            } else if (textarea_element) {
+                textarea_element->HandleKeyPress(key, ctrl_key);
+            }
+
+            // 处理Tab键导航
+            if (event.key.key == SDLK_TAB) {
+                // Tab键导航到下一个可聚焦元素
+                // Shift+Tab反向导航
+                auto document = std::dynamic_pointer_cast<Document>(focus_element->GetOwnerDocument());
+                if (document) {
+                    focus_manager_->TabToNextFocusableElement(document, shift_key);
+                }
             }
         }
 
@@ -569,10 +584,17 @@ void EventLoop::HandleKeyboardEventForDOM(const SDL_Event& event) {
     } else if (event.type == SDL_EVENT_TEXT_INPUT) {
         // textinput事件（用于输入法等）
         // 注意：这是SDL特有的事件，W3C标准中没有直接对应
-        // 可以考虑触发input事件或beforeinput事件
+        // 用于处理IME输入和普通文本输入
 
-        // TODO: 实现textinput事件处理
-        // 这通常用于表单元素的文本输入
+        // 检查是否是表单元素
+        auto input_element = std::dynamic_pointer_cast<HTMLInputElement>(focus_element);
+        auto textarea_element = std::dynamic_pointer_cast<HTMLTextAreaElement>(focus_element);
+
+        if (input_element) {
+            input_element->HandleTextInput(event.text.text);
+        } else if (textarea_element) {
+            textarea_element->HandleTextInput(event.text.text);
+        }
     }
 }
 
