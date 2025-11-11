@@ -11,7 +11,7 @@
 
 | 优先级 | 任务组 | 进度 | 状态 |
 |--------|--------|------|------|
-| **P0** | 核心事件系统 | 75% | 🔄 进行中 |
+| **P0** | 核心事件系统 | 90% | ✅ 基本完成 |
 | **P1** | DOM API完善 | 0% | ⏳ 待开始 |
 | **P2** | CSS伪类和焦点管理 | 50% | 🔄 进行中 |
 | **P3** | 拖拽系统 | 0% | ⏳ 待开始 |
@@ -110,33 +110,77 @@ UpdateHoverChain(window_id, mouse_x, mouse_y);
 // - 自动设置:hover伪类
 ```
 
+### 4. mouseenter/mouseleave事件 ✅ (2025-11-11)
+
+**参考**: W3C DOM Level 3 Events规范
+
+**实现内容**:
+- ✅ mouseenter事件（不冒泡）
+- ✅ mouseleave事件（不冒泡）
+- ✅ 只发送到hover_element_本身
+- ✅ 符合W3C规范
+
+**与mouseover/mouseout的区别**:
+- mouseover/mouseout: 冒泡，发送到hover链中所有变化的元素
+- mouseenter/mouseleave: 不冒泡，只发送到直接进入/离开的元素
+
+### 5. removeEventListener和事件捕获阶段 ✅ (2025-11-11)
+
+**参考**: `ReferenceProject/RmlUi/Source/Core/Element.cpp` (AddEventListener, RemoveEventListener)
+
+**实现内容**:
+- ✅ 唯一ID机制标识监听器
+- ✅ `AddEventListener` 返回 `listener_id`
+- ✅ `RemoveEventListener` 通过ID移除
+- ✅ `EventListenerEntry` 结构（id, listener, use_capture）
+- ✅ 完整的三阶段事件传播（捕获 → 目标 → 冒泡）
+- ✅ `useCapture` 参数支持
+
+**三阶段事件传播**:
+1. **捕获阶段**: 从根到目标（不包括目标），只触发use_capture=true的监听器
+2. **目标阶段**: 在目标元素上，先触发捕获监听器，再触发冒泡监听器
+3. **冒泡阶段**: 从目标父节点到根，只触发use_capture=false的监听器
+
+**代码示例**:
+```cpp
+// 添加监听器（返回ID）
+uint64_t id = element->AddEventListener("click", listener, false);
+
+// 添加捕获阶段监听器
+uint64_t capture_id = element->AddEventListener("click", listener, true);
+
+// 移除监听器
+element->RemoveEventListener("click", id);
+```
+
 ---
 
 ## 🔄 进行中任务
 
-### P0: 核心事件系统 (75%)
+### P0: 核心事件系统 (90%) ✅ 基本完成
 
-#### Task 1: 完善鼠标事件系统 (75%)
+#### Task 1: 完善鼠标事件系统 (95%)
 - ✅ HitTesting已实现
 - ✅ MouseEvent类已实现
 - ✅ 基础事件分发已实现
 - ✅ mouseover/mouseout事件已实现
+- ✅ mouseenter/mouseleave事件已实现
 - ✅ hover链追踪已实现
 - ✅ :hover伪类自动设置已实现
 - ✅ :active伪类自动设置已实现
 - ⏳ **待完成**:
-  - [ ] 实现mouseenter/mouseleave事件（不冒泡）
   - [ ] 实现dblclick事件
   - [ ] 鼠标坐标投影（支持transform）
 
 **参考文件**:
 - ✅ `ReferenceProject/RmlUi/Source/Core/Context.cpp` (ProcessMouseMove, UpdateHoverChain)
 
-#### Task 2: 完善JavaScript事件绑定 (50%)
-- ✅ addEventListener已实现
+#### Task 2: 完善JavaScript事件绑定 (90%)
+- ✅ addEventListener已实现（支持useCapture）
+- ✅ removeEventListener已实现（使用ID机制）
+- ✅ 事件捕获阶段已实现
+- ✅ 完整的三阶段事件传播
 - ⏳ **待完成**:
-  - [ ] 实现removeEventListener（需要listener ID机制）
-  - [ ] 实现事件捕获阶段（useCapture参数）
   - [ ] 实现once选项
   - [ ] 绑定Event对象到JavaScript
 
@@ -281,6 +325,8 @@ UpdateHoverChain(window_id, mouse_x, mouse_y);
 ## 📝 Git提交记录
 
 ### 2025-11-11
+- `a4ac7bb` - feat(event): 实现removeEventListener和事件捕获阶段 (Phase 2.5 P0)
+- `8443694` - feat(event): 实现mouseenter/mouseleave事件 (Phase 2.5 P0)
 - `bc946fc` - feat(event): 实现mouseover/mouseout事件和hover链追踪 (Phase 2.5 P0)
 - `87e0447` - feat(event): 实现EventId枚举和CSS伪类支持 (Phase 2.5 P0-P2)
 - `075a1a4` - docs: 清理根目录 - 移动重组文档到历史目录
