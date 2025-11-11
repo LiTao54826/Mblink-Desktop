@@ -192,6 +192,38 @@ endif()
 
 add_test(NAME DOMQueryTest COMMAND test_dom_query)
 
+# DOM HTML Content Test (innerHTML/outerHTML)
+add_executable(test_dom_html_content test_dom_html_content.cpp)
+
+target_include_directories(test_dom_html_content PRIVATE
+    ${CMAKE_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/core
+)
+
+target_link_libraries(test_dom_html_content PRIVATE
+    lightui_dom
+    GTest::gtest
+    GTest::gtest_main
+)
+
+if(WIN32 AND MINGW)
+    target_link_options(test_dom_html_content PRIVATE -static-libgcc -static-libstdc++)
+endif()
+
+add_test(NAME DOMHTMLContentTest COMMAND test_dom_html_content)
+
+# innerHTML Debug Test
+add_executable(test_innerHTML_debug test_innerHTML_debug.cpp)
+
+target_include_directories(test_innerHTML_debug PRIVATE
+    ${CMAKE_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/core
+)
+
+target_link_libraries(test_innerHTML_debug PRIVATE
+    lightui_dom
+)
+
 # DOM Integration Test
 add_executable(test_dom_integration test_dom_integration.cpp)
 

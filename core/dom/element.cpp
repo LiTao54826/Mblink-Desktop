@@ -672,13 +672,27 @@ void Element::SetOuterHTML(const std::string& html) {
         html.length()
     );
 
-    if (fragment && fragment->first_child) {
-        // 只取第一个元素节点
-        lxb_dom_node_t* first_child = fragment->first_child;
-        std::shared_ptr<Node> new_node = ConvertLexborNodeToNode(first_child, doc);
+    if (fragment) {
+        // 收集所有新节点
+        std::vector<std::shared_ptr<Node>> new_nodes;
+        lxb_dom_node_t* child = fragment->first_child;
+        while (child) {
+            std::shared_ptr<Node> new_node = ConvertLexborNodeToNode(child, doc);
+            if (new_node) {
+                new_nodes.push_back(new_node);
+            }
+            child = child->next;
+        }
 
-        if (new_node) {
-            parent->ReplaceChild(new_node, shared_from_this());
+        // 替换当前元素为所有新节点
+        if (!new_nodes.empty()) {
+            // 先用第一个节点替换当前元素
+            parent->ReplaceChild(new_nodes[0], shared_from_this());
+
+            // 然后在第一个节点后面插入其余节点
+            for (size_t i = 1; i < new_nodes.size(); ++i) {
+                parent->InsertBefore(new_nodes[i], new_nodes[i-1]->GetNextSibling());
+            }
         }
     }
 
