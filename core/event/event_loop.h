@@ -10,6 +10,8 @@
 #include <SDL3/SDL.h>
 #include <memory>
 #include <functional>
+#include <unordered_set>
+#include <string>
 
 namespace lightui {
 
@@ -18,6 +20,7 @@ class WindowManager;
 class FrameController;
 class InputHandler;
 class TaskScheduler;
+class Element;
 
 /**
  * @brief 主事件循环类
@@ -168,6 +171,34 @@ private:
      */
     static int SDLButtonToMouseButton(Uint8 sdl_button);
 
+    /**
+     * @brief 更新hover链并发送mouseover/mouseout事件
+     *
+     * 参考：RmlUi/Source/Core/Context.cpp - UpdateHoverChain
+     *
+     * @param window_id 窗口ID
+     * @param mouse_x 鼠标X坐标
+     * @param mouse_y 鼠标Y坐标
+     */
+    void UpdateHoverChain(Uint32 window_id, float mouse_x, float mouse_y);
+
+    /**
+     * @brief 发送事件到元素集合的差集
+     *
+     * 参考：RmlUi/Source/Core/Context.cpp - SendEvents
+     *
+     * @param old_items 旧元素集合
+     * @param new_items 新元素集合
+     * @param event_type 事件类型
+     * @param mouse_x 鼠标X坐标
+     * @param mouse_y 鼠标Y坐标
+     */
+    void SendEvents(const std::unordered_set<Element*>& old_items,
+                   const std::unordered_set<Element*>& new_items,
+                   const std::string& event_type,
+                   float mouse_x,
+                   float mouse_y);
+
 private:
     bool running_ = false;          // 是否正在运行
     bool should_quit_ = false;      // 是否应该退出
@@ -181,6 +212,13 @@ private:
     std::unique_ptr<FrameController> frame_controller_;
     std::unique_ptr<InputHandler> input_handler_;
     std::unique_ptr<TaskScheduler> task_scheduler_;
+
+    // Hover链追踪（参考RmlUi的hover_chain）
+    // 存储当前鼠标悬停的元素链（从目标元素到根元素）
+    std::unordered_set<Element*> hover_chain_;
+
+    // 当前悬停的元素（最深层的元素）
+    Element* hover_element_ = nullptr;
 };
 
 } // namespace lightui

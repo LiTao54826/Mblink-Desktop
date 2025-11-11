@@ -9,9 +9,12 @@
 #include "task_scheduler.h"
 #include "mouse_event.h"
 #include "hit_testing.h"
+#include "event_types.h"
 #include "core/window/window_manager.h"
 #include "core/dom/document.h"
+#include "core/dom/element.h"
 #include <iostream>
+#include <algorithm>
 
 namespace lightui {
 
@@ -229,9 +232,13 @@ void EventLoop::HandleMouseEventForDOM(const SDL_Event& event) {
         mouse_y = event.motion.y;
     }
 
+    // 更新hover链（发送mouseover/mouseout事件并设置:hover伪类）
+    // 参考：RmlUi/Source/Core/Context.cpp - ProcessMouseMove
+    UpdateHoverChain(window_id, mouse_x, mouse_y);
+
     auto hit_result = hit_testing.HitTest(document, mouse_x, mouse_y);
 
-    // 如果没有命中任何元素，返回
+    // 如果没有命中任何元素，只更新hover链即可
     if (!hit_result.IsValid()) {
         return;
     }
@@ -262,20 +269,29 @@ void EventLoop::HandleMouseEventForDOM(const SDL_Event& event) {
     // 分发事件到目标元素
     hit_result.element->DispatchEvent(mouse_event);
 
-    // 如果是 mousedown + mouseup，还需要触发 click 事件
+    // 处理mousedown/mouseup和click事件
     static std::shared_ptr<Element> last_mousedown_element;
 
     if (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN) {
         last_mousedown_element = hit_result.element;
-    } else if (event.type == SDL_EVENT_MOUSE_BUTTON_UP && last_mousedown_element == hit_result.element) {
-        // 在同一个元素上 mousedown 和 mouseup，触发 click
-        auto click_event = std::make_shared<MouseEvent>(
-            "click",
-            static_cast<int>(mouse_x),
-            static_cast<int>(mouse_y),
-            button
-        );
-        hit_result.element->DispatchEvent(click_event);
+        // mousedown时设置:active伪类
+        hit_result.element->SetPseudoClass("active", true);
+    } else if (event.type == SDL_EVENT_MOUSE_BUTTON_UP) {
+        // mouseup时移除:active伪类
+        if (last_mousedown_element) {
+            last_mousedown_element->SetPseudoClass("active", false);
+        }
+
+        if (last_mousedown_element == hit_result.element) {
+            // 在同一个元素上 mousedown 和 mouseup，触发 click
+            auto click_event = std::make_shared<MouseEvent>(
+                "click",
+                static_cast<int>(mouse_x),
+                static_cast<int>(mouse_y),
+                button
+            );
+            hit_result.element->DispatchEvent(click_event);
+        }
         last_mousedown_element = nullptr;
     }
 }
@@ -290,6 +306,99 @@ int EventLoop::SDLButtonToMouseButton(Uint8 sdl_button) {
             return 3;
         default:
             return 0;
+    }
+}
+
+void EventLoop::UpdateHoverChain(Uint32 window_id, float mouse_x, float mouse_y) {
+    // 参考：RmlUi/Source/Core/Context.cpp - UpdateHoverChain
+
+    // 获取窗口和文档
+    auto& window_manager = WindowManager::Instance();
+    auto window = window_manager.FindWindowByID(window_id);
+    if (!window) {
+        return;
+    }
+
+    auto document = window->GetDocument();
+    if (!document) {
+        return;
+    }
+
+    // 执行Hit Testing获取当前鼠标下的元素
+    HitTesting hit_testing;
+    auto hit_result = hit_testing.HitTest(document, mouse_x, mouse_y);
+
+    // 构建新的hover链（从目标元素到根元素）
+    std::unordered_set<Element*> new_hover_chain;
+    Element* new_hover_element = nullptr;
+
+    if (hit_result.IsValid()) {
+        new_hover_element = hit_result.element.get();
+
+        // 从目标元素向上遍历到根元素
+        Element* current = new_hover_element;
+        while (current) {
+            new_hover_chain.insert(current);
+
+            // 获取父元素
+            auto parent_node = current->GetParentNode();
+            if (parent_node && parent_node->GetNodeType() == NodeType::ELEMENT_NODE) {
+                current = static_cast<Element*>(parent_node.get());
+            } else {
+                current = nullptr;
+            }
+        }
+    }
+
+    // 发送mouseout事件到离开的元素（在旧链中但不在新链中）
+    SendEvents(hover_chain_, new_hover_chain, "mouseout", mouse_x, mouse_y);
+
+    // 发送mouseover事件到进入的元素（在新链中但不在旧链中）
+    SendEvents(new_hover_chain, hover_chain_, "mouseover", mouse_x, mouse_y);
+
+    // 更新hover链
+    hover_chain_ = std::move(new_hover_chain);
+    hover_element_ = new_hover_element;
+}
+
+void EventLoop::SendEvents(const std::unordered_set<Element*>& old_items,
+                          const std::unordered_set<Element*>& new_items,
+                          const std::string& event_type,
+                          float mouse_x,
+                          float mouse_y) {
+    // 参考：RmlUi/Source/Core/Context.cpp - SendEvents
+    // 找出在old_items中但不在new_items中的元素
+
+    for (Element* element : old_items) {
+        if (new_items.find(element) == new_items.end()) {
+            // 这个元素在旧集合中但不在新集合中
+
+            // 创建鼠标事件
+            auto mouse_event = std::make_shared<MouseEvent>(
+                event_type,
+                static_cast<int>(mouse_x),
+                static_cast<int>(mouse_y),
+                0  // button = 0 for mouseover/mouseout
+            );
+
+            // 分发事件
+            // 注意：这里需要将原始指针转换为shared_ptr
+            // 由于Element继承自Node，而Node使用enable_shared_from_this
+            // 我们可以通过element->shared_from_this()获取shared_ptr
+            try {
+                auto element_ptr = std::static_pointer_cast<Element>(element->shared_from_this());
+                element_ptr->DispatchEvent(mouse_event);
+
+                // 根据事件类型设置/移除:hover伪类
+                if (event_type == "mouseover") {
+                    element_ptr->SetPseudoClass("hover", true);
+                } else if (event_type == "mouseout") {
+                    element_ptr->SetPseudoClass("hover", false);
+                }
+            } catch (...) {
+                // 如果shared_from_this失败，说明元素已被销毁，忽略
+            }
+        }
     }
 }
 
