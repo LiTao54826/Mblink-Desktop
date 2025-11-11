@@ -14,7 +14,7 @@
 | **P0** | 核心事件系统 | 90% | ✅ 基本完成 |
 | **P1** | DOM API完善 | 0% | ⏳ 待开始 |
 | **P2** | CSS伪类和焦点管理 | 80% | ✅ 基本完成 |
-| **P3** | 拖拽系统 | 70% | 🔄 进行中 |
+| **P3** | 拖拽系统 | 90% | ✅ 基本完成 |
 | **P4** | 键盘事件和表单 | 0% | ⏳ 待开始 |
 
 ---
@@ -209,6 +209,7 @@ focus_manager.TabToNextFocusableElement(document, true);   // Shift+Tab
 - ✅ `IsDragging()` - 是否正在拖拽
 - ✅ 拖拽hover链管理
 - ✅ :drag伪类自动设置
+- ✅ **集成到EventLoop** - 拖拽系统现在可以实际工作！
 
 **拖拽模式**:
 - None - 不可拖拽
@@ -226,6 +227,11 @@ focus_manager.TabToNextFocusableElement(document, true);   // Shift+Tab
 - dragdrop - 拖拽放下
 - dragmove - 拖拽移动（详细模式）
 
+**拖拽生命周期**:
+1. **mousedown (左键)**: StartDragDetection() - 查找可拖拽元素
+2. **mousemove**: UpdateDrag() - 发送dragstart（首次），发送drag事件，更新hover链
+3. **mouseup (左键)**: EndDrag() - 发送dragdrop, dragend事件，清理状态
+
 **代码示例**:
 ```html
 <!-- 简单拖拽 -->
@@ -238,20 +244,12 @@ focus_manager.TabToNextFocusableElement(document, true);   // Shift+Tab
 <div drag="clone">拖拽时克隆</div>
 ```
 
+**EventLoop集成**:
 ```cpp
-// 创建拖拽管理器
-DragManager drag_manager;
-
-// mousedown时
-drag_manager.StartDragDetection(element);
-
-// mousemove时
-if (drag_manager.IsDragging()) {
-    drag_manager.UpdateDrag(mouse_x, mouse_y, document);
-}
-
-// mouseup时
-drag_manager.EndDrag(mouse_x, mouse_y);
+// EventLoop自动处理拖拽
+// mousedown时 → StartDragDetection()
+// mousemove时 → UpdateDrag()
+// mouseup时 → EndDrag()
 ```
 
 ---
@@ -334,17 +332,17 @@ drag_manager.EndDrag(mouse_x, mouse_y);
 - ✅ `ReferenceProject/RmlUi/Source/Core/Element.cpp` (Focus, Blur)
 - ✅ `ReferenceProject/RmlUi/Source/Core/Context.cpp` (GetFocusElement, OnFocusChange)
 
-### P3: 拖拽系统 (70%)
+### P3: 拖拽系统 (90%)
 
-#### Task 8: 完整的拖拽系统 (70%)
+#### Task 8: 完整的拖拽系统 (90%)
 - ✅ DragManager类
 - ✅ 拖拽事件（dragstart, drag, dragend, dragover, dragout, dragdrop, dragmove）
 - ✅ CSS drag属性支持（drag, drag-drop, clone, block）
 - ✅ 拖拽hover链管理
 - ✅ :drag伪类自动设置
+- ✅ **集成DragManager到EventLoop** - 拖拽系统现在可以实际工作！
 - ⏳ **待完成**:
   - [ ] 拖拽克隆支持（drag: clone）- 需要Element::Clone()
-  - [ ] 集成DragManager到EventLoop
   - [ ] DataTransfer对象
   - [ ] effectAllowed/dropEffect
 
@@ -435,6 +433,8 @@ drag_manager.EndDrag(mouse_x, mouse_y);
 ## 📝 Git提交记录
 
 ### 2025-11-11
+- `0b6f6b0` - feat(event): 集成DragManager到EventLoop (Phase 2.5 P3)
+- `13bb360` - docs: 更新Phase 2.5进度 - P3拖拽系统基本完成
 - `8e7a1d2` - feat(event): 实现DragManager拖拽管理系统 (Phase 2.5 P3)
 - `921701e` - docs: 更新Phase 2.5进度 - P2焦点管理系统基本完成
 - `d1786bd` - feat(event): 实现FocusManager焦点管理系统 (Phase 2.5 P2)
