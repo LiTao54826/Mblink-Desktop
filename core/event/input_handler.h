@@ -37,9 +37,10 @@ enum class MouseButton {
 };
 
 /**
- * @brief 鼠标事件
+ * @brief 输入处理器的鼠标事件（内部使用）
+ * 注意：与 DOM MouseEvent 不同，这是用于输入处理器的内部事件
  */
-struct MouseEvent {
+struct InputMouseEvent {
     MouseEventType type;    // 事件类型
     int x;                  // X 坐标
     int y;                  // Y 坐标
@@ -103,10 +104,10 @@ public:
     
     /**
      * @brief 设置鼠标事件回调
-     * 
+     *
      * @param callback 鼠标事件回调函数
      */
-    void SetMouseCallback(std::function<void(const MouseEvent&)> callback);
+    void SetMouseCallback(std::function<void(const InputMouseEvent&)> callback);
     
     /**
      * @brief 设置键盘事件回调
@@ -174,7 +175,7 @@ private:
     void GetModifierKeys(bool& ctrl, bool& shift, bool& alt) const;
 
 private:
-    std::function<void(const MouseEvent&)> mouse_callback_;
+    std::function<void(const InputMouseEvent&)> mouse_callback_;
     std::function<void(const KeyEvent&)> keyboard_callback_;
     
     int mouse_x_ = 0;

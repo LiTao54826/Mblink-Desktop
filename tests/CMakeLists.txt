@@ -579,3 +579,25 @@ if(TARGET skia)
 endif()
 
 add_test(NAME JavaScriptBindingsTest COMMAND test_javascript_bindings)
+
+# Lexbor Document Test
+add_executable(test_lexbor_document unit/test_lexbor_document.cpp)
+
+target_include_directories(test_lexbor_document PRIVATE
+    ${CMAKE_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/core
+    ${THIRD_PARTY_DIR}/lexbor/source
+)
+
+target_link_libraries(test_lexbor_document PRIVATE
+    lightui_lexbor
+    GTest::gtest
+    GTest::gtest_main
+)
+
+# Link Lexbor
+if(TARGET lexbor_static)
+    target_link_libraries(test_lexbor_document PRIVATE lexbor_static)
+endif()
+
+add_test(NAME LexborDocumentTest COMMAND test_lexbor_document)

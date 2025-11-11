@@ -33,7 +33,7 @@ bool InputHandler::HandleSDLEvent(const SDL_Event& event) {
     }
 }
 
-void InputHandler::SetMouseCallback(std::function<void(const MouseEvent&)> callback) {
+void InputHandler::SetMouseCallback(std::function<void(const InputMouseEvent&)> callback) {
     mouse_callback_ = callback;
 }
 
@@ -63,7 +63,7 @@ bool InputHandler::IsScancodeDown(SDL_Scancode scancode) const {
 }
 
 bool InputHandler::HandleMouseEvent(const SDL_Event& event) {
-    MouseEvent mouse_event;
+    InputMouseEvent mouse_event;
     mouse_event.window_id = event.window.windowID;
     
     switch (event.type) {

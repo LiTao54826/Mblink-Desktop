@@ -4,6 +4,7 @@ cmake-build-*/
 out/
 .venv/
 mingw64/
+ReferenceProject/
 
 # IDE
 .vscode/

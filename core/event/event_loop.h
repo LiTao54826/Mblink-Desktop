@@ -147,20 +147,36 @@ private:
     
     /**
      * @brief 检查是否有工作需要做
-     * 
+     *
      * @return true 如果有待处理的事件、任务或渲染
      */
     bool HasWork() const;
 
 private:
+    /**
+     * @brief 处理鼠标事件并分发到 DOM
+     *
+     * @param event SDL 鼠标事件
+     */
+    void HandleMouseEventForDOM(const SDL_Event& event);
+
+    /**
+     * @brief 将 SDL 鼠标按钮转换为鼠标按钮编号
+     *
+     * @param sdl_button SDL 鼠标按钮
+     * @return 鼠标按钮编号 (0=无, 1=左, 2=中, 3=右)
+     */
+    static int SDLButtonToMouseButton(Uint8 sdl_button);
+
+private:
     bool running_ = false;          // 是否正在运行
     bool should_quit_ = false;      // 是否应该退出
-    
+
     // 回调函数
     std::function<void()> idle_callback_;
     std::function<void(float)> update_callback_;
     std::function<void()> render_callback_;
-    
+
     // 子系统（前向声明，实现文件中定义）
     std::unique_ptr<FrameController> frame_controller_;
     std::unique_ptr<InputHandler> input_handler_;

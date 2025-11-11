@@ -1,17 +1,13 @@
 /**
  * @file mouse_event.h
- * @brief 鼠标事件
- * 
- * TODO:
- * - [ ] 实现基本功能
- * - [ ] 添加单元测试
- * - [ ] 完善文档
+ * @brief 鼠标事件类 - 使用 core/dom/event.h 中的定义
+ *
+ * 注意：此文件仅用于保持兼容性
+ * 实际的 MouseEvent 类定义在 core/dom/event.h 中
  */
 
 #pragma once
 
-namespace lightui {
+#include "core/dom/event.h"
 
-// TODO: 添加类定义和函数声明
-
-} // namespace lightui
+// 所有鼠标事件相关的类型都在 core/dom/event.h 中定义

@@ -1,557 +1,247 @@
-# LightUI 文档索引
+# MBink 文档索引
 
-> 最后更新: 2025-11-10
-> 当前版本: 0.1.0-alpha
-> 总进度: 85% (Phase 2.3 完成 ✅)
-> 构建状态: ✅ 所有核心模块编译成功
-> 测试状态: ✅ 83+ 个测试用例全部通过
-
-## 📖 文档导航
-
-本文档提供LightUI项目所有文档的快速导航和概览。
+> **最后更新**: 2025-11-11  
+> **版本**: 0.3.0-alpha  
+> **总进度**: 65%  
+> **项目定位**: 轻量级跨平台桌面应用框架 - Electron的轻量级替代品
 
 ---
 
 ## 🎯 快速开始
 
-如果你是第一次接触LightUI，建议按以下顺序阅读：
+如果你是第一次接触MBink，建议按以下顺序阅读：
 
-1. **[../README.md](../README.md)** - 5分钟了解项目
-2. **[../PROJECT_STATUS.md](../PROJECT_STATUS.md)** - 10分钟了解当前状态（推荐）
-3. **[PROJECT_OVERVIEW.md](PROJECT_OVERVIEW.md)** - 15分钟深入了解
-4. **[GETTING_STARTED.md](GETTING_STARTED.md)** - 30分钟开始开发
-
-### 最新完成
-- ✅ **Phase 2.3 渲染引擎** - 100% 完成（2025-11-10）
-  - ✅ Skia 渲染器完全集成并测试
-  - ✅ 图形/文本/图片渲染
-  - ✅ 完整的 CSS 样式支持
-  - ✅ DOM 渲染树转换
-  - ✅ 完整的渲染优化系统
-  - ✅ 构建系统优化（运行时库配置）
-- ✅ **Phase 2.2 DOM API** - 完整的 DOM API 实现（2025-11-09）
-- ✅ **83+ 测试全部通过** - 核心功能 100% 验证
-- 📚 **完整文档** - [BUILD_AND_TEST_REPORT.md](../BUILD_AND_TEST_REPORT.md), [TESTING.md](TESTING.md), [DOM_API.md](DOM_API.md)
+1. **[README.md](../README.md)** - 5分钟了解项目
+2. **[PROJECT_STATUS_2025.md](../PROJECT_STATUS_2025.md)** - 10分钟了解当前状态（推荐）
+3. **[GETTING_STARTED.md](GETTING_STARTED.md)** - 30分钟开始开发
 
 ---
 
 ## 📚 核心文档
 
-### 1. [README.md](README.md)
-**项目主页和快速入口**
+### 根目录文档
 
-- 📄 **内容**：项目简介、特性、快速示例、安装方法
-- 👥 **目标读者**：所有人
-- ⏱️ **阅读时间**：5分钟
-- 🎯 **何时阅读**：第一次了解项目时
-
-**关键内容：**
-- ✨ 核心特性（轻量、高性能、易用、跨语言）
-- 🚀 Python和C++快速示例
-- 📊 与Electron/Qt/Tauri对比
-- 🎯 当前开发状态
+| 文档 | 描述 | 阅读时间 |
+|------|------|---------|
+| [README.md](../README.md) | 项目主页、特性、快速示例 | 5分钟 |
+| [PROJECT_STATUS_2025.md](../PROJECT_STATUS_2025.md) | 完整的项目状态报告 | 15分钟 |
+| [PROJECT_REORGANIZATION_2025.md](../PROJECT_REORGANIZATION_2025.md) | 项目重组计划 | 10分钟 |
+| [LICENSE](../LICENSE) | MIT许可证 | 2分钟 |
 
 ---
 
-### 2. [PROJECT_OVERVIEW.md](PROJECT_OVERVIEW.md)
-**项目概述和价值主张**
+## 🏗️ 架构和设计
 
-- 📄 **内容**：详细的项目介绍、技术栈、架构图、对比分析
-- 👥 **目标读者**：潜在用户、贡献者、决策者
-- ⏱️ **阅读时间**：10-15分钟
-- 🎯 **何时阅读**：想深入了解项目定位和技术选型时
+### 架构文档
 
-**关键内容：**
-- 🎯 核心价值主张
-- 🏗️ 技术栈详解（QuickJS 600KB + Skia 5-8MB + SDL3 1-2MB + Yoga 1-2MB）
-- 📊 详细对比表（vs Electron/Qt/Tauri/Dear ImGui）
-- 💡 使用场景和示例
+| 文档 | 描述 | 目标读者 |
+|------|------|---------|
+| [ARCHITECTURE.md](ARCHITECTURE.md) | 5层架构设计、模块职责、数据流 | 开发者、架构师 |
+| [API_DESIGN.md](API_DESIGN.md) | C API设计、接口规范 | API用户、绑定开发者 |
+| [PROJECT_STANDARDS.md](PROJECT_STANDARDS.md) | **强制执行的开发规范** | **所有开发者（必读）** |
+| [ROADMAP.md](ROADMAP.md) | 开发路线图、Phase计划 | 项目管理者、贡献者 |
 
----
-
-### 3. [PROJECT_SUMMARY.md](PROJECT_SUMMARY.md)
-**项目完整总结**
-
-- 📄 **内容**：所有设计决策、技术选型理由、完整规划总结
-- 👥 **目标读者**：核心开发者、架构师
-- ⏱️ **阅读时间**：20-30分钟
-- 🎯 **何时阅读**：需要全面了解项目所有方面时
-
-**关键内容：**
-- 🎯 技术选型决策过程（为什么选Preact而不是Solid.js/React）
-- 🏗️ 架构设计总结
-- 📅 开发计划总结（32周，6个阶段）
-- 📊 性能目标和成功标准
-- 💡 关键洞察和风险分析
+**重点推荐**:
+- 🔥 **PROJECT_STANDARDS.md** - 所有开发者必读，包含强制规范
+- 🔥 **ARCHITECTURE.md** - 了解项目架构和技术选型
 
 ---
 
-## 🗺️ 规划文档
+## 💻 开发指南
 
-### 4. [ROADMAP.md](ROADMAP.md)
-**32周详细开发路线图**
+### 入门和规范
 
-- 📄 **内容**：6个阶段、32周详细计划、里程碑、交付物
-- 👥 **目标读者**：开发者、项目管理者
-- ⏱️ **阅读时间**：15-20分钟
-- 🎯 **何时阅读**：想了解开发进度和计划时
+| 文档 | 描述 | 何时阅读 |
+|------|------|---------|
+| [GETTING_STARTED.md](GETTING_STARTED.md) | 环境搭建、编译、运行 | 开始开发前 |
+| [CODING_STANDARDS.md](CODING_STANDARDS.md) | C++/JavaScript代码规范 | 编写代码前 |
+| [CONTRIBUTING.md](CONTRIBUTING.md) | 贡献指南、PR流程 | 提交代码前 |
+| [TESTING.md](TESTING.md) | 测试规范、如何编写测试 | 编写测试前 |
 
-**关键内容：**
-- **Phase 1** (Week 1-12): 核心框架 - SDL3+Skia+QuickJS+DOM+Layout+Event
-- **Phase 2** (Week 13-16): Preact支持 - 完整DOM API
-- **Phase 3** (Week 17-20): 组件库支持 - Ant Design/Material-UI
-- **Phase 4** (Week 21-24): C API和Python绑定
-- **Phase 5** (Week 25-28): 其他语言绑定（Rust/Go）
-- **Phase 6** (Week 29-32): 优化和发布
-
-**6个关键里程碑：**
-- M1: 简单Preact应用可运行
-- M2: Preact完全可用
-- M3: 组件库可用
-- M4: Python可用
-- M5: 多语言支持
-- M6: v1.0.0发布
-
----
-
-## 🏗️ 架构文档
-
-### 5. [ARCHITECTURE.md](ARCHITECTURE.md)
-**技术架构和模块设计**
-
-- 📄 **内容**：5层架构、核心模块、数据流、性能优化
-- 👥 **目标读者**：开发者、架构师
-- ⏱️ **阅读时间**：30-40分钟
-- 🎯 **何时阅读**：开始开发前必读
-
-**关键内容：**
-- 🏗️ 5层架构详解
-  - 应用层（Python/C++/Rust/Go）
-  - 语言绑定层（ctypes/pybind11/bindgen/cgo）
-  - C API层（lightui.h）
-  - JavaScript运行时层（QuickJS + DOM + Event）
-  - 渲染层（Yoga + Skia + SDL3）
-
-- 📦 核心模块设计（含C++类定义）
-  - Window模块
-  - QuickJS Runtime模块
-  - DOM模块（Node/Element/Text/Document）
-  - Event模块
-  - Layout模块（Yoga集成）
-  - Render模块（Skia集成）
-  - Bridge模块
-
-- 🔄 关键流程
-  - 启动流程
-  - 渲染流程
-  - 事件处理流程
-
----
-
-### 6. [PROJECT_STRUCTURE.md](PROJECT_STRUCTURE.md)
-**项目结构和构建系统**
-
-- 📄 **内容**：完整目录结构、模块说明、构建流程、开发工作流
-- 👥 **目标读者**：开发者
-- ⏱️ **阅读时间**：15-20分钟
-- 🎯 **何时阅读**：开始编码前
-
-**关键内容：**
-- 📁 完整目录结构
-  ```
-  lightui/
-  ├── core/           # C++核心代码
-  ├── third_party/    # 第三方库
-  ├── js/             # JavaScript运行时
-  ├── bindings/       # 语言绑定
-  ├── tools/          # 工具
-  ├── examples/       # 示例
-  ├── tests/          # 测试
-  └── docs/           # 文档
-  ```
-
-- 🔧 构建系统（CMake）
-- 📦 依赖管理
-- 🚀 构建和发布流程
-
----
-
-## 💻 开发文档
-
-### 7. [GETTING_STARTED.md](GETTING_STARTED.md)
-**开发入门指南**
-
-- 📄 **内容**：环境设置、快速开始、贡献方向、当前任务
-- 👥 **目标读者**：新贡献者
-- ⏱️ **阅读时间**：20-30分钟
-- 🎯 **何时阅读**：准备开始贡献时
-
-**关键内容：**
-- 🚀 三步快速开始
-  1. 了解项目（30分钟）
-  2. 设置环境（1-2小时）
-  3. 运行示例（15分钟）
-
-- 🎯 6个贡献方向
-  1. 核心引擎开发（C++）
-  2. JavaScript运行时（QuickJS）
-  3. 语言绑定（Python/Rust/Go）
-  4. UI框架集成（Preact/React）
-  5. 文档和示例
-  6. 测试和质量保证
-
-- 📋 当前优先级任务（Phase 1）
-
----
-
-### 8. [CODING_STANDARDS.md](CODING_STANDARDS.md)
-**编码规范和最佳实践**
-
-- 📄 **内容**：C++/JavaScript/Python规范、命名约定、代码格式
-- 👥 **目标读者**：所有开发者
-- ⏱️ **阅读时间**：15-20分钟
-- 🎯 **何时阅读**：开始编码前必读
-
-**关键内容：**
-- 📝 C++规范
-  - 命名：PascalCase类，camelCase变量，member_变量
-  - 格式：4空格缩进，K&R大括号
-  - 内存：智能指针，RAII
-  - 错误：异常+错误码
-
-- 📝 JavaScript规范
-  - 命名：camelCase
-  - 格式：2空格缩进
-  - 特性：ES6+，现代语法
-
-- 📝 Python规范
-  - 遵循PEP 8
-  - 类型注解
-  - Docstrings
-
-- 📝 Git提交规范
-  - 格式：`<type>(<scope>): <subject>`
-  - 类型：feat/fix/docs/style/refactor/test/chore
-
----
-
-### 9. [CONTRIBUTING.md](CONTRIBUTING.md)
-**贡献指南**
-
-- 📄 **内容**：如何贡献、开发流程、代码审查、社区规范
-- 👥 **目标读者**：所有贡献者
-- ⏱️ **阅读时间**：20-25分钟
-- 🎯 **何时阅读**：准备提交PR前
-
-**关键内容：**
-- 🤝 行为准则
-- 🔧 开发环境设置（Linux/macOS/Windows）
-- 📝 提交代码流程
-  1. Fork和Clone
-  2. 创建分支
-  3. 编写代码
-  4. 提交更改
-  5. 创建PR
-
-- 🔍 代码审查流程
-- 🐛 Bug报告模板
-- 💡 功能请求模板
-- 📚 文档贡献
+**开发流程**:
+1. 阅读 `GETTING_STARTED.md` 搭建环境
+2. 阅读 `PROJECT_STANDARDS.md` 了解强制规范
+3. 阅读 `CODING_STANDARDS.md` 了解代码风格
+4. 开始开发
+5. 阅读 `TESTING.md` 编写测试
+6. 阅读 `CONTRIBUTING.md` 提交PR
 
 ---
 
 ## 📖 API文档
 
-### 10. [API_DESIGN.md](API_DESIGN.md)
-**C API完整设计**
+### API参考
 
-- 📄 **内容**：C API规范、函数签名、错误处理、使用示例
-- 👥 **目标读者**：C/C++开发者、语言绑定开发者
-- ⏱️ **阅读时间**：30-40分钟
-- 🎯 **何时阅读**：开发C API或语言绑定时
+| 文档 | 描述 | 目标读者 |
+|------|------|---------|
+| [DOM_API.md](DOM_API.md) | DOM API完整参考 | JavaScript开发者 |
+| [PYTHON_API.md](PYTHON_API.md) | Python绑定API | Python开发者 |
 
-**关键内容：**
-- 🎯 设计原则（简单、一致、安全、跨语言）
-- 📝 核心API
-  ```c
-  // 初始化
-  int lightui_init(void);
-  void lightui_cleanup(void);
-  
-  // 窗口
-  LightUIWindowHandle lightui_create_window(const char* title, int w, int h);
-  void lightui_destroy_window(LightUIWindowHandle window);
-  
-  // UI加载
-  int lightui_load_ui(LightUIWindowHandle window, const char* js_code);
-  
-  // 函数绑定
-  int lightui_bind_function(LightUIWindowHandle window, const char* name,
-                            LightUICallback callback, void* user_data);
-  
-  // 事件循环
-  void lightui_run(LightUIWindowHandle window);
-  ```
-
-- 🔧 错误处理
-- 🧵 线程安全
-- 💾 内存管理
-- 📊 性能考虑
+**示例代码**:
+- [examples/](../examples/) - C++示例
+- [examples/python/](../examples/python/) - Python示例
 
 ---
 
-### 11. [PYTHON_API.md](PYTHON_API.md)
-**Python API文档和示例**
+## 🚀 性能和示例
 
-- 📄 **内容**：Python API、完整示例、最佳实践
-- 👥 **目标读者**：Python开发者
-- ⏱️ **阅读时间**：30-40分钟
-- 🎯 **何时阅读**：使用Python开发应用时
+### 性能和示例文档
 
-**关键内容：**
-- 🚀 快速开始
-  ```python
-  import lightui
-  
-  window = lightui.Window("App", 800, 600)
-  
-  @window.bind("getData")
-  def get_data():
-      return {"data": [...]}
-  
-  window.load_ui("...")
-  window.run()
-  ```
-
-- 📚 完整API参考
-  - Window类
-  - 函数绑定
-  - JavaScript调用
-  - 事件循环
-
-- 💡 完整示例
-  - Todo应用
-  - 数据可视化
-  - 系统监控
-
-- 🎯 最佳实践
-- ❓ 常见问题
+| 文档 | 描述 | 目标读者 |
+|------|------|---------|
+| [PERFORMANCE.md](PERFORMANCE.md) | 性能优化指南、基准测试 | 性能优化者 |
+| [EXAMPLES.md](EXAMPLES.md) | 示例代码说明 | 学习者 |
 
 ---
 
-### 12. [TESTING.md](TESTING.md)
-**测试文档和测试指南**
+## 🔧 环境配置
 
-- 📄 **内容**：测试套件详情、运行方式、测试覆盖率、编写新测试
-- 👥 **目标读者**：开发者、QA工程师
-- ⏱️ **阅读时间**：20-30分钟
-- 🎯 **何时阅读**：运行测试或编写新测试时
+### 特定环境配置
 
-**关键内容：**
-- 📊 测试统计
-  - 83+ 个测试用例全部通过
-  - 10 个测试套件
-  - 核心功能 100% 覆盖
-
-- 🧪 测试套件详情
-  - DOM 测试 (78 个测试)
-    - test_dom_node (25 tests)
-    - test_dom_document (17 tests)
-    - test_dom_query (27 tests)
-    - test_dom_integration (9 tests)
-  - 渲染测试 (3+ 个测试)
-    - test_css_rendering
-    - test_render_tree
-  - JavaScript 测试 (2+ 个测试)
-    - test_quickjs_runtime
-    - test_simple
-
-- 🚀 运行测试
-  ```bash
-  # Windows
-  cd build/bin/Debug
-  ./test_dom_node.exe
-  ./test_css_rendering.exe
-
-  # 运行所有测试
-  cd build
-  ctest -C Debug --output-on-failure
-  ```
-
-- 📝 编写新测试
-  - 测试模板
-  - 添加到构建系统
-  - 测试最佳实践
+| 文档 | 描述 | 何时需要 |
+|------|------|---------|
+| [setup/PROXY_SETUP.md](setup/PROXY_SETUP.md) | 代理配置 | 在代理环境下开发 |
+| [setup/WINDOWS_UTF8.md](setup/WINDOWS_UTF8.md) | Windows UTF8配置 | Windows开发环境 |
 
 ---
 
-### 13. [BUILD_AND_TEST_REPORT.md](../BUILD_AND_TEST_REPORT.md)
-**构建和测试完成报告**
+## 📜 历史文档
 
-- 📄 **内容**：最新构建状态、测试结果、已知问题、下一步计划
-- 👥 **目标读者**：项目管理者、开发者
-- ⏱️ **阅读时间**：15-20分钟
-- 🎯 **何时阅读**：了解项目最新状态时
+所有历史文档（Phase报告、历史决策、Bug修复记录等）都在：
 
-**关键内容：**
-- ✅ 执行摘要
-  - Skia 渲染引擎已启用
-  - 所有核心模块编译成功
-  - 83+ 个测试全部通过
+- **[history_task_docs/](../history_task_docs/)** - 历史文档归档（只增不改）
 
-- 🔨 构建配置
-  - 环境信息
-  - 关键配置更改
-  - 编译成功的模块
-
-- 🧪 测试结果
-  - 详细测试统计
-  - 测试覆盖率
-  - 性能指标
-
-- 🐛 已知问题
-  - 3 个次要问题
-  - 不影响核心功能
-
-- 🎯 下一步计划
-  - 短期目标
-  - 中期目标
+**重要历史文档**:
+- `PHASE_2_1_COMPLETION_REPORT.md` - JavaScript运行时完成报告
+- `PHASE_2_2_FINAL_REPORT.md` - DOM API完成报告
+- `PHASE_2_3_COMPLETION_SUMMARY.md` - 布局引擎完成报告
+- `PHASE_2_4_COMPLETION_REPORT.md` - 窗口和事件系统完成报告
+- `PHASE_2_5_PLAN.md` - JavaScript基础设施计划（已完成）
 
 ---
 
-## 📋 文档使用指南
+## 🔍 参考项目
 
-### 按角色阅读
+### RmlUi参考
 
-#### 🎯 项目评估者
-1. [README.md](README.md) - 快速了解
-2. [PROJECT_OVERVIEW.md](PROJECT_OVERVIEW.md) - 深入了解
-3. [PROJECT_SUMMARY.md](PROJECT_SUMMARY.md) - 全面评估
+- **[ReferenceProject/RmlUi/](../ReferenceProject/RmlUi/)** - RmlUi参考项目
 
-#### 👨‍💻 核心开发者
-1. [GETTING_STARTED.md](GETTING_STARTED.md) - 入门
-2. [ARCHITECTURE.md](ARCHITECTURE.md) - 架构理解
-3. [PROJECT_STRUCTURE.md](PROJECT_STRUCTURE.md) - 项目结构
-4. [CODING_STANDARDS.md](CODING_STANDARDS.md) - 编码规范
-5. [ROADMAP.md](ROADMAP.md) - 开发计划
+**借鉴内容**:
+- 拖拽系统 (drag-and-drop)
+- 焦点管理 (focus management)
+- CSS动画和过渡 (animations & transitions)
+- 键盘事件 (keyboard events)
 
-#### 🔧 语言绑定开发者
-1. [API_DESIGN.md](API_DESIGN.md) - C API规范
-2. [ARCHITECTURE.md](ARCHITECTURE.md) - 架构理解
-3. [PYTHON_API.md](PYTHON_API.md) - Python示例参考
-
-#### 🐍 Python应用开发者
-1. [README.md](README.md) - 快速开始
-2. [PYTHON_API.md](PYTHON_API.md) - API文档
-3. [GETTING_STARTED.md](GETTING_STARTED.md) - 深入学习
-
-#### 📝 文档贡献者
-1. [CONTRIBUTING.md](CONTRIBUTING.md) - 贡献指南
-2. 所有现有文档 - 了解内容
-3. [CODING_STANDARDS.md](CODING_STANDARDS.md) - 文档规范
-
----
-
-### 按任务阅读
-
-#### 🎯 了解项目
-1. [README.md](README.md)
-2. [PROJECT_OVERVIEW.md](PROJECT_OVERVIEW.md)
-3. [PROJECT_SUMMARY.md](PROJECT_SUMMARY.md)
-
-#### 🚀 开始开发
-1. [GETTING_STARTED.md](GETTING_STARTED.md)
-2. [PROJECT_STRUCTURE.md](PROJECT_STRUCTURE.md)
-3. [CODING_STANDARDS.md](CODING_STANDARDS.md)
-
-#### 🏗️ 理解架构
-1. [ARCHITECTURE.md](ARCHITECTURE.md)
-2. [PROJECT_SUMMARY.md](PROJECT_SUMMARY.md)
-3. [API_DESIGN.md](API_DESIGN.md)
-
-#### 📅 了解进度
-1. [ROADMAP.md](ROADMAP.md)
-2. [PROJECT_SUMMARY.md](PROJECT_SUMMARY.md)
-
-#### 🤝 贡献代码
-1. [CONTRIBUTING.md](CONTRIBUTING.md)
-2. [CODING_STANDARDS.md](CODING_STANDARDS.md)
-3. [GETTING_STARTED.md](GETTING_STARTED.md)
+**不借鉴内容**:
+- 数据绑定系统（React已提供）
+- 装饰器系统（不符合定位）
+- 自研布局引擎（Yoga已足够）
 
 ---
 
 ## 📊 文档统计
 
-| 文档 | 字数 | 阅读时间 | 状态 |
-|------|------|---------|------|
-| README.md | ~2000 | 5分钟 | ✅ 完成 |
-| PROJECT_OVERVIEW.md | ~3000 | 10分钟 | ✅ 完成 |
-| PROJECT_SUMMARY.md | ~4000 | 20分钟 | ✅ 完成 |
-| ROADMAP.md | ~3500 | 15分钟 | ✅ 完成 |
-| ARCHITECTURE.md | ~5000 | 30分钟 | ✅ 完成 |
-| PROJECT_STRUCTURE.md | ~3000 | 15分钟 | ✅ 完成 |
-| GETTING_STARTED.md | ~3000 | 20分钟 | ✅ 完成 |
-| CODING_STANDARDS.md | ~3500 | 15分钟 | ✅ 完成 |
-| CONTRIBUTING.md | ~3000 | 20分钟 | ✅ 完成 |
-| API_DESIGN.md | ~4000 | 30分钟 | ✅ 完成 |
-| PYTHON_API.md | ~4000 | 30分钟 | ✅ 完成 |
-| **总计** | **~38000** | **~3.5小时** | **11/11** |
+### 文档分布
+
+| 位置 | 数量 | 说明 |
+|------|------|------|
+| 根目录 | 5 | 核心文档 |
+| docs/ | 13 | 长期文档 |
+| docs/setup/ | 2 | 环境配置 |
+| history_task_docs/ | 50+ | 历史文档 |
+| **总计** | **70+** | |
+
+### 文档类型
+
+| 类型 | 数量 | 示例 |
+|------|------|------|
+| 架构设计 | 4 | ARCHITECTURE.md, API_DESIGN.md |
+| 开发指南 | 4 | GETTING_STARTED.md, CODING_STANDARDS.md |
+| API文档 | 2 | DOM_API.md, PYTHON_API.md |
+| 性能和示例 | 2 | PERFORMANCE.md, EXAMPLES.md |
+| 环境配置 | 2 | PROXY_SETUP.md, WINDOWS_UTF8.md |
+| 历史文档 | 50+ | PHASE_*_REPORT.md |
 
 ---
 
-## 🔄 文档更新
+## 🎯 按角色推荐阅读
 
-### 更新频率
+### 新手开发者
+1. README.md
+2. PROJECT_STATUS_2025.md
+3. GETTING_STARTED.md
+4. CODING_STANDARDS.md
+5. EXAMPLES.md
 
-- **README.md**: 每个版本更新
-- **ROADMAP.md**: 每周更新进度
-- **ARCHITECTURE.md**: 重大架构变更时更新
-- **API_DESIGN.md**: API变更时更新
-- **其他文档**: 根据需要更新
+### 贡献者
+1. PROJECT_STANDARDS.md ⭐ 必读
+2. ARCHITECTURE.md
+3. CODING_STANDARDS.md
+4. CONTRIBUTING.md
+5. TESTING.md
 
-### 文档维护
+### 架构师
+1. ARCHITECTURE.md
+2. PROJECT_STANDARDS.md
+3. API_DESIGN.md
+4. ROADMAP.md
+5. PERFORMANCE.md
 
-- 📝 所有文档使用Markdown格式
-- 🔍 定期检查链接有效性
-- 📊 保持示例代码可运行
-- 🌍 考虑多语言版本（中英文）
+### API用户
+1. README.md
+2. DOM_API.md
+3. PYTHON_API.md
+4. EXAMPLES.md
 
----
-
-## 📞 反馈
-
-如果你发现文档有任何问题：
-
-- 🐛 [报告文档Bug](https://github.com/lightui/lightui/issues/new?labels=documentation)
-- 💡 [建议改进](https://github.com/lightui/lightui/issues/new?labels=documentation,enhancement)
-- 📝 [贡献文档](CONTRIBUTING.md#文档贡献)
-
----
-
-## 📚 外部资源
-
-### 学习资源
-
-- **QuickJS**: https://bellard.org/quickjs/
-- **Skia**: https://skia.org/docs/
-- **SDL3**: https://wiki.libsdl.org/SDL3/
-- **Yoga**: https://yogalayout.com/
-- **Preact**: https://preactjs.com/
-
-### 相关项目
-
-- **Electron**: https://www.electronjs.org/
-- **Tauri**: https://tauri.app/
-- **Qt**: https://www.qt.io/
-- **Flutter**: https://flutter.dev/
+### 项目管理者
+1. PROJECT_STATUS_2025.md
+2. ROADMAP.md
+3. ARCHITECTURE.md
+4. history_task_docs/ (历史进度)
 
 ---
 
-<div align="center">
+## 🔗 外部资源
 
-**文档索引最后更新：2025-11-09**
+### 技术文档
+- [QuickJS Documentation](https://bellard.org/quickjs/)
+- [Skia Documentation](https://skia.org/docs/)
+- [SDL3 Documentation](https://wiki.libsdl.org/SDL3/)
+- [Yoga Documentation](https://yogalayout.com/docs)
+- [Lexbor Documentation](https://lexbor.com/docs/)
 
-[返回主页](README.md) | [开始开发](GETTING_STARTED.md) | [贡献代码](CONTRIBUTING.md)
+### 参考项目
+- [RmlUi Documentation](https://mikke89.github.io/RmlUiDoc/)
+- [Electron Documentation](https://www.electronjs.org/docs)
+- [Tauri Documentation](https://tauri.app/v1/guides/)
+- [React Documentation](https://react.dev/)
 
-</div>
+---
+
+## 📝 文档维护
+
+### 文档更新规则
+
+1. **长期文档** (docs/) - 持续更新，反映最新状态
+2. **历史文档** (history_task_docs/) - 只增不改，保留历史记录
+3. **根目录文档** - 核心文档，定期更新
+
+### 文档审查周期
+
+- **每周**: 更新 PROJECT_STATUS_2025.md
+- **每月**: 审查 ROADMAP.md
+- **每季度**: 审查所有长期文档
+
+### 贡献文档
+
+如果你想贡献文档，请：
+1. 阅读 [CONTRIBUTING.md](CONTRIBUTING.md)
+2. 遵循 [PROJECT_STANDARDS.md](PROJECT_STANDARDS.md) 中的文档规范
+3. 提交PR
+
+---
+
+**最后更新**: 2025-11-11  
+**维护者**: MBink Team  
+**反馈**: 如有文档问题，请提Issue
 

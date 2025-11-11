@@ -5,6 +5,11 @@ set(EVENT_SOURCES
     frame_controller.cpp
     input_handler.cpp
     task_scheduler.cpp
+    mouse_event.cpp
+    keyboard_event.cpp
+    hit_testing.cpp
+    event.cpp
+    event_system.cpp
 )
 
 set(EVENT_HEADERS
@@ -12,6 +17,11 @@ set(EVENT_HEADERS
     frame_controller.h
     input_handler.h
     task_scheduler.h
+    mouse_event.h
+    keyboard_event.h
+    hit_testing.h
+    event.h
+    event_system.h
 )
 
 add_library(lightui_event STATIC ${EVENT_SOURCES})

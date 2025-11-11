@@ -1,25 +1,25 @@
-# LightUI
+# MBink
 
-**轻量级跨平台 UI 框架**
+**轻量级跨平台桌面应用框架 - Electron 的轻量级替代品**
 
-基于 V8 + Skia + SDL3，使用 JavaScript/React 开发原生桌面应用
+基于 QuickJS + Skia + SDL3，使用 JavaScript/React 开发原生桌面应用
 
 [![Build Status](https://img.shields.io/badge/build-passing-brightgreen.svg)]()
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-0.2.0--alpha-orange.svg)]()
-[![Phase](https://img.shields.io/badge/phase-2.5%20starting-yellow)]()
-[![Progress](https://img.shields.io/badge/progress-60%25-blue)]()
+[![Version](https://img.shields.io/badge/version-0.3.0--alpha-orange.svg)]()
+[![Phase](https://img.shields.io/badge/phase-2.5%20in--progress-yellow)]()
+[![Progress](https://img.shields.io/badge/progress-65%25-blue)]()
 
 ---
 
 ## 📊 项目状态
 
-**当前阶段**: Phase 2.5 开始 🚀 - JavaScript 基础设施完善
-**进度**: 60% (Phase 1 + Phase 2.1-2.4 完成 ✅, Phase 2.5 开始 🔄)
+**当前阶段**: Phase 2.5 进行中 🚀 - JavaScript 基础设施完善
+**进度**: 65% (Phase 1 + Phase 2.1-2.4 完成 ✅, Phase 2.5 进行中 🔄)
 **最后更新**: 2025-11-11
 **构建状态**: ✅ 所有核心模块和示例编译成功
-**测试状态**: ✅ 81 个测试用例全部通过 (窗口 17 + 事件循环 46 + JS绑定 11 + 集成 7)
-**下一步**: 实现完整的 DOM 事件系统和 API - 详见 [PHASE_2_5_PLAN.md](PHASE_2_5_PLAN.md)
+**测试状态**: ✅ 155 个测试用例全部通过 (窗口 17 + 事件循环 46 + DOM 78 + JS绑定 11 + 集成 3)
+**下一步**: 实现完整的 DOM 事件系统和 API - 详见 [PROJECT_STATUS_2025.md](PROJECT_STATUS_2025.md)
 
 ### 最新成就 🎉
 
@@ -84,12 +84,25 @@
 
 ## ✨ 特性
 
-- 🪶 **轻量级** - 总体积约 50MB（比Electron小50-70%）
-- ⚡ **高性能** - Skia硬件加速渲染，浏览器级渲染效果
-- 🎨 **易开发** - 使用 JavaScript/Preact + React生态开发UI
+- 🪶 **轻量级** - 总体积约 50MB（比Electron小50-70%，比Tauri大但功能更完整）
+- ⚡ **高性能** - Skia硬件加速渲染，浏览器级渲染效果，QuickJS轻量级引擎
+- 🎨 **易开发** - 使用 JavaScript/Preact + React生态开发UI，丰富的组件库支持
 - 🌍 **跨平台** - Windows、macOS、Linux 一次编写，到处运行
-- 🔗 **跨语言** - Python、C++、Rust、Go 等语言都能使用
+- 🔗 **跨语言** - Python、C++、Rust、Go、Node.js 等语言都能使用
 - 📦 **独立运行** - 单个可执行文件，无需安装额外运行时
+- 🎯 **React生态** - 完整支持React组件库（Ant Design、Material-UI等）
+
+## 🆚 与竞品对比
+
+| 特性 | **MBink** | **Electron** | **Tauri** | **RmlUi** |
+|------|-----------|-------------|-----------|-----------|
+| **体积** | ~50MB | ~150MB | ~10MB | ~5MB |
+| **JS引擎** | QuickJS | V8 | JavaScriptCore | ❌ |
+| **渲染** | Skia | Chromium | WebView | 用户提供 |
+| **React支持** | ✅ | ✅ | ✅ | ❌ |
+| **启动速度** | 快 (~200ms) | 慢 (~1s) | 快 (~100ms) | 极快 (~50ms) |
+| **目标场景** | 桌面应用 | 桌面应用 | 桌面应用 | 游戏UI |
+| **内存占用** | 中 (~100MB) | 高 (~300MB) | 低 (~50MB) | 极低 (~20MB) |
 
 ---
 
@@ -218,65 +231,98 @@ cd build/bin        # Linux/macOS
 
 | 测试套件 | 测试数量 | 状态 |
 |---------|---------|------|
-| test_hello | 1 | ✅ PASSED |
-| test_simple | 1 | ✅ PASSED |
+| test_window | 17 | ✅ PASSED |
+| test_event_loop | 46 | ✅ PASSED |
 | test_dom_node | 25 | ✅ PASSED |
 | test_dom_document | 17 | ✅ PASSED |
 | test_dom_query | 27 | ✅ PASSED |
-| test_dom_integration | 9 | ✅ PASSED |
+| test_dom_event | 9 | ✅ PASSED |
+| test_quickjs_runtime | 11 | ✅ PASSED |
 | test_css_rendering | 3 | ✅ PASSED |
-| **总计** | **83+** | **✅ 全部通过** |
+| **总计** | **155** | **✅ 全部通过** |
 
 ---
 
 ## 📚 文档
 
-- **[项目概述](docs/PROJECT_OVERVIEW.md)** - 了解项目目标和价值
-- **[开发路线图](docs/ROADMAP.md)** - 32周详细开发计划
+### 核心文档
+- **[项目状态](PROJECT_STATUS_2025.md)** - 完整的项目状态报告
+- **[项目规范](docs/PROJECT_STANDARDS.md)** - 强制执行的开发规范
+- **[开发路线图](ROADMAP.md)** - 详细开发计划
 - **[架构设计](docs/ARCHITECTURE.md)** - 技术架构和模块设计
+
+### 开发文档
 - **[入门指南](docs/GETTING_STARTED.md)** - 快速开始开发
 - **[DOM API 文档](docs/DOM_API.md)** - DOM 操作接口
+- **[API 设计](docs/API_DESIGN.md)** - C API 设计
+- **[代码规范](docs/CODING_STANDARDS.md)** - 代码风格指南
+- **[测试指南](docs/TESTING.md)** - 测试规范和方法
 - **[性能优化](docs/PERFORMANCE.md)** - 性能优化指南
 - **[贡献指南](docs/CONTRIBUTING.md)** - 如何贡献代码
-- **[文档索引](docs/DOCUMENTATION_INDEX.md)** - 完整文档导航
+- **[示例文档](docs/EXAMPLES.md)** - 示例代码说明
 
 ---
 
 ## 🎯 开发状态
 
-当前版本：**0.1.0-alpha**
+当前版本：**0.3.0-alpha**
+总体进度：**65%**
 
-### Phase 1: 基础架构 ✅ 已完成
+### ✅ 已完成阶段
 
-- [x] 开发环境搭建 (MSVC 2022 / GCC 11+ / Clang 14+)
-- [x] CMake 构建系统配置
-- [x] SDL3 集成 (6.5 MB)
-- [x] QuickJS 集成 (1.1 MB)
-- [x] Yoga 布局引擎集成 (2.1 MB)
-- [x] Skia 渲染引擎集成 (36.5 MB) - **已启用并测试**
-- [x] GoogleTest 测试框架集成
-- [x] nlohmann/json 库集成
-- [x] 9 个核心模块编译成功
+#### Phase 1: 基础架构 (100%) ✅
+- ✅ CMake构建系统
+- ✅ SDL3集成 (6.5 MB)
+- ✅ Skia集成 (36.5 MB)
+- ✅ QuickJS集成 (1.1 MB)
+- ✅ Yoga集成 (2.1 MB)
+- ✅ Lexbor集成 (2.6.0)
 
-### Phase 2: 核心功能 ✅ 已完成 (85%)
+#### Phase 2.1-2.4: 核心功能 (100%) ✅
+- ✅ JavaScript运行时 (QuickJS封装、Console API、定时器)
+- ✅ DOM API (Node、Element、Document、事件系统)
+- ✅ 布局引擎 (Yoga Flexbox、CSS盒模型)
+- ✅ 渲染引擎 (Skia渲染、CSS样式、文本渲染)
+- ✅ 窗口系统 (SDL3窗口、多窗口、GPU/CPU渲染)
+- ✅ 事件循环 (60 FPS、定时器、任务调度)
+- ✅ 155个测试全部通过
 
-- [x] JavaScript 运行时实现 ✅
-- [x] DOM API 实现 ✅
-- [x] 事件系统实现 ✅
-- [x] 渲染引擎实现 ✅
-- [x] CSS 样式渲染 ✅
-- [x] 布局引擎集成 ✅
-- [x] 83+ 个测试全部通过 ✅
+### 🔄 进行中阶段
 
-### Phase 3: 高级功能 🚧 计划中
+#### Phase 2.5: JavaScript基础设施完善 (0%) 🔄
+**目标**: 完善事件系统、DOM API、HTML元素，为React做准备
 
-- [ ] 动画系统
-- [ ] 网络请求 (Fetch API)
-- [ ] 多窗口支持
-- [ ] WebGL 支持
-- [ ] 更多语言绑定
+- [ ] 鼠标事件系统 (Hit Testing、事件分发)
+- [ ] JavaScript事件绑定 (addEventListener)
+- [ ] 查询选择器 (querySelector、querySelectorAll)
+- [ ] 表单元素 (input、textarea、select)
+- [ ] CSS伪类 (:hover、:active、:focus)
 
-查看完整进度：[PROJECT_STATUS.md](PROJECT_STATUS.md) | [docs/ROADMAP.md](docs/ROADMAP.md)
+### 📋 计划中阶段
+
+#### Phase 2.6: Lexbor完整集成 (计划中)
+- HTML/CSS完整解析
+- 样式计算和级联
+- DOM树遍历
+
+#### Phase 3: React生态支持 (计划中)
+- Preact集成
+- React Hooks支持
+- 组件库测试 (Ant Design、Material-UI)
+
+#### Phase 4: 高级功能 (计划中)
+- 拖拽系统 (参考RmlUi)
+- 焦点管理 (参考RmlUi)
+- CSS动画和过渡 (参考RmlUi)
+- 网络请求 (Fetch API)
+
+#### Phase 5: 多语言绑定 (计划中)
+- Python绑定完善
+- Rust绑定
+- Go绑定
+- Node.js绑定
+
+查看完整进度：[PROJECT_STATUS_2025.md](PROJECT_STATUS_2025.md) | [ROADMAP.md](ROADMAP.md)
 
 ---
 
@@ -294,13 +340,22 @@ cd build/bin        # Linux/macOS
 
 ## 🙏 致谢
 
-LightUI基于以下优秀的开源项目：
+MBink基于以下优秀的开源项目：
 
-- **[QuickJS](https://bellard.org/quickjs/)** - 轻量级JavaScript引擎
-- **[Skia](https://skia.org/)** - 2D图形库
+- **[QuickJS](https://bellard.org/quickjs/)** - 轻量级JavaScript引擎 (600KB)
+- **[Skia](https://skia.org/)** - 2D图形库 (Chrome同源)
 - **[SDL3](https://www.libsdl.org/)** - 跨平台窗口库
-- **[Yoga](https://yogalayout.com/)** - Flexbox布局引擎
+- **[Yoga](https://yogalayout.com/)** - Flexbox布局引擎 (Facebook出品)
+- **[Lexbor](https://github.com/lexbor/lexbor)** - HTML5/CSS3解析库
 - **[Preact](https://preactjs.com/)** - 轻量级React替代品
+- **[RmlUi](https://github.com/mikke89/RmlUi)** - 参考项目（事件系统、CSS动画）
+
+## 📖 参考资料
+
+- [RmlUi Documentation](https://mikke89.github.io/RmlUiDoc/) - 事件系统和CSS动画参考
+- [React Documentation](https://react.dev/) - React生态
+- [Electron Documentation](https://www.electronjs.org/) - 竞品参考
+- [Tauri Documentation](https://tauri.app/) - 竞品参考
 
 ---
 
@@ -308,7 +363,7 @@ LightUI基于以下优秀的开源项目：
 
 **如果这个项目对你有帮助，请给我们一个⭐️！**
 
-Made with ❤️ by the LightUI Team
+Made with ❤️ by the MBink Team
 
 </div>
 

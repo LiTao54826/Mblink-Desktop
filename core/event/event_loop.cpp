@@ -7,7 +7,10 @@
 #include "frame_controller.h"
 #include "input_handler.h"
 #include "task_scheduler.h"
+#include "mouse_event.h"
+#include "hit_testing.h"
 #include "core/window/window_manager.h"
+#include "core/dom/document.h"
 #include <iostream>
 
 namespace lightui {
@@ -124,24 +127,31 @@ TaskScheduler& EventLoop::GetTaskScheduler() {
 bool EventLoop::ProcessEvents() {
     bool has_events = false;
     SDL_Event event;
-    
+
     while (SDL_PollEvent(&event)) {
         has_events = true;
-        
+
         // 处理退出事件
         if (event.type == SDL_EVENT_QUIT) {
             should_quit_ = true;
             continue;
         }
-        
+
+        // 处理鼠标事件并分发到 DOM
+        if (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN ||
+            event.type == SDL_EVENT_MOUSE_BUTTON_UP ||
+            event.type == SDL_EVENT_MOUSE_MOTION) {
+            HandleMouseEventForDOM(event);
+        }
+
         // 分发到输入处理器
         input_handler_->HandleSDLEvent(event);
-        
+
         // 分发到窗口管理器
         auto& window_manager = WindowManager::Instance();
         window_manager.HandleEvent(event);
     }
-    
+
     return has_events;
 }
 
@@ -171,7 +181,7 @@ bool EventLoop::HasWork() const {
     if (task_scheduler_->HasPendingTasks()) {
         return true;
     }
-    
+
     // 检查是否有窗口需要重绘
     // auto& window_manager = WindowManager::Instance();
     // for (auto& window : window_manager.GetAllWindows()) {
@@ -179,8 +189,108 @@ bool EventLoop::HasWork() const {
     //         return true;
     //     }
     // }
-    
+
     return false;
+}
+
+void EventLoop::HandleMouseEventForDOM(const SDL_Event& event) {
+    // 获取窗口管理器
+    auto& window_manager = WindowManager::Instance();
+
+    // 根据事件类型获取窗口 ID
+    Uint32 window_id = 0;
+    if (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN || event.type == SDL_EVENT_MOUSE_BUTTON_UP) {
+        window_id = event.button.windowID;
+    } else if (event.type == SDL_EVENT_MOUSE_MOTION) {
+        window_id = event.motion.windowID;
+    }
+
+    // 查找对应的窗口
+    auto window = window_manager.FindWindowByID(window_id);
+    if (!window) {
+        return;
+    }
+
+    // 获取窗口的文档
+    auto document = window->GetDocument();
+    if (!document) {
+        return;
+    }
+
+    // 执行 Hit Testing
+    HitTesting hit_testing;
+    float mouse_x = 0, mouse_y = 0;
+
+    if (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN || event.type == SDL_EVENT_MOUSE_BUTTON_UP) {
+        mouse_x = event.button.x;
+        mouse_y = event.button.y;
+    } else if (event.type == SDL_EVENT_MOUSE_MOTION) {
+        mouse_x = event.motion.x;
+        mouse_y = event.motion.y;
+    }
+
+    auto hit_result = hit_testing.HitTest(document, mouse_x, mouse_y);
+
+    // 如果没有命中任何元素，返回
+    if (!hit_result.IsValid()) {
+        return;
+    }
+
+    // 创建 MouseEvent（使用 core/dom/event.h 中的简化版本）
+    std::string event_type;
+    int button = 0;
+
+    if (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN) {
+        event_type = "mousedown";
+        button = SDLButtonToMouseButton(event.button.button);
+    } else if (event.type == SDL_EVENT_MOUSE_BUTTON_UP) {
+        event_type = "mouseup";
+        button = SDLButtonToMouseButton(event.button.button);
+    } else if (event.type == SDL_EVENT_MOUSE_MOTION) {
+        event_type = "mousemove";
+        button = 0;
+    }
+
+    // 创建 DOM MouseEvent（使用简化的构造函数）
+    auto mouse_event = std::make_shared<MouseEvent>(
+        event_type,
+        static_cast<int>(mouse_x),
+        static_cast<int>(mouse_y),
+        button
+    );
+
+    // 分发事件到目标元素
+    hit_result.element->DispatchEvent(mouse_event);
+
+    // 如果是 mousedown + mouseup，还需要触发 click 事件
+    static std::shared_ptr<Element> last_mousedown_element;
+
+    if (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN) {
+        last_mousedown_element = hit_result.element;
+    } else if (event.type == SDL_EVENT_MOUSE_BUTTON_UP && last_mousedown_element == hit_result.element) {
+        // 在同一个元素上 mousedown 和 mouseup，触发 click
+        auto click_event = std::make_shared<MouseEvent>(
+            "click",
+            static_cast<int>(mouse_x),
+            static_cast<int>(mouse_y),
+            button
+        );
+        hit_result.element->DispatchEvent(click_event);
+        last_mousedown_element = nullptr;
+    }
+}
+
+int EventLoop::SDLButtonToMouseButton(Uint8 sdl_button) {
+    switch (sdl_button) {
+        case SDL_BUTTON_LEFT:
+            return 1;
+        case SDL_BUTTON_MIDDLE:
+            return 2;
+        case SDL_BUTTON_RIGHT:
+            return 3;
+        default:
+            return 0;
+    }
 }
 
 } // namespace lightui

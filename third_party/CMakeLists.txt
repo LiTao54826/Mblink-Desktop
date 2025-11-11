@@ -181,4 +181,37 @@ else()
     set(SKIA_FOUND FALSE PARENT_SCOPE)
 endif()
 
+# ============================================
+# stb_image (header-only)
+# ============================================
+if(EXISTS "${THIRD_PARTY_DIR}/stb/stb_image.h")
+    message(STATUS "  Found stb_image")
+    add_library(stb_image INTERFACE)
+    target_include_directories(stb_image INTERFACE "${THIRD_PARTY_DIR}")
+    set(STB_IMAGE_FOUND TRUE PARENT_SCOPE)
+else()
+    message(WARNING "  stb_image not found")
+    set(STB_IMAGE_FOUND FALSE PARENT_SCOPE)
+endif()
+
+# ============================================
+# Lexbor - HTML/CSS Parser
+# ============================================
+if(EXISTS "${THIRD_PARTY_DIR}/lexbor/CMakeLists.txt")
+    message(STATUS "  Found Lexbor")
+
+    # 配置 Lexbor 构建选项
+    set(LEXBOR_BUILD_SHARED OFF CACHE BOOL "Build Lexbor as static library" FORCE)
+    set(LEXBOR_BUILD_STATIC ON CACHE BOOL "Build Lexbor as static library" FORCE)
+    set(LEXBOR_BUILD_TESTS OFF CACHE BOOL "Build Lexbor tests" FORCE)
+    set(LEXBOR_BUILD_EXAMPLES OFF CACHE BOOL "Build Lexbor examples" FORCE)
+
+    add_subdirectory(lexbor)
+    set(LEXBOR_FOUND TRUE PARENT_SCOPE)
+    message(STATUS "  Lexbor configured successfully")
+else()
+    message(WARNING "  Lexbor not found. Please clone lexbor to third_party/lexbor")
+    set(LEXBOR_FOUND FALSE PARENT_SCOPE)
+endif()
+
 message(STATUS "Third-party libraries configured.")

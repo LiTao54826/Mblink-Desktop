@@ -12,6 +12,7 @@ add_subdirectory(render)
 add_subdirectory(bridge)
 add_subdirectory(api)
 add_subdirectory(utils)
+add_subdirectory(lexbor)
 
 # 创建主库 (使用INTERFACE库，因为所有实现都在子模块中)
 add_library(lightui INTERFACE)

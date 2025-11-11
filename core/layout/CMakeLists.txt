@@ -2,12 +2,10 @@
 
 set(LAYOUT_SOURCES
     layout_engine.cpp
-    style_parser.cpp
 )
 
 set(LAYOUT_HEADERS
     layout_engine.h
-    style_parser.h
 )
 
 add_library(lightui_layout STATIC ${LAYOUT_SOURCES})

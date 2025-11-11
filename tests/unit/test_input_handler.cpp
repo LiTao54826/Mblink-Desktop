@@ -32,9 +32,9 @@ protected:
 // 测试鼠标移动事件
 TEST_F(InputHandlerTest, MouseMoveEvent) {
     bool callback_called = false;
-    MouseEvent received_event;
-    
-    handler->SetMouseCallback([&](const MouseEvent& e) {
+    InputMouseEvent received_event;
+
+    handler->SetMouseCallback([&](const InputMouseEvent& e) {
         callback_called = true;
         received_event = e;
     });
@@ -66,9 +66,9 @@ TEST_F(InputHandlerTest, MouseMoveEvent) {
 // 测试鼠标按下事件
 TEST_F(InputHandlerTest, MouseButtonDownEvent) {
     bool callback_called = false;
-    MouseEvent received_event;
-    
-    handler->SetMouseCallback([&](const MouseEvent& e) {
+    InputMouseEvent received_event;
+
+    handler->SetMouseCallback([&](const InputMouseEvent& e) {
         callback_called = true;
         received_event = e;
     });

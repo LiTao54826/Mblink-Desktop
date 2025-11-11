@@ -8,6 +8,7 @@
 #include "event.h"
 #include "document.h"
 #include "dom_observer.h"
+#include "selector_engine.h"
 #include <algorithm>
 #include <sstream>
 
@@ -274,147 +275,26 @@ void Element::HandleEvent(std::shared_ptr<Event> event, bool use_capture) {
 
 // ========== 查询选择器 ==========
 
-namespace {
-    /**
-     * @brief 简单的 CSS 选择器匹配
-     * 支持：标签选择器（div）、ID选择器（#id）、类选择器（.class）、
-     *       属性选择器（[name="value"]）、通配符（*）
-     */
-    bool MatchesSimpleSelector(const Element* element, const std::string& selector) {
-        if (selector.empty()) {
-            return false;
-        }
-
-        // 通配符
-        if (selector == "*") {
-            return true;
-        }
-
-        // ID 选择器 (#id)
-        if (selector[0] == '#') {
-            std::string id = selector.substr(1);
-            return element->GetAttribute("id") == id;
-        }
-
-        // 类选择器 (.class)
-        if (selector[0] == '.') {
-            std::string class_name = selector.substr(1);
-            return element->HasClass(class_name);
-        }
-
-        // 属性选择器 ([name="value"])
-        if (selector[0] == '[') {
-            size_t end = selector.find(']');
-            if (end == std::string::npos) {
-                return false;
-            }
-
-            std::string attr_expr = selector.substr(1, end - 1);
-            size_t eq_pos = attr_expr.find('=');
-
-            if (eq_pos == std::string::npos) {
-                // [name] - 只检查属性存在
-                return element->HasAttribute(attr_expr);
-            } else {
-                // [name="value"] - 检查属性值
-                std::string attr_name = attr_expr.substr(0, eq_pos);
-                std::string attr_value = attr_expr.substr(eq_pos + 1);
-
-                // 移除引号
-                if (!attr_value.empty() &&
-                    (attr_value.front() == '"' || attr_value.front() == '\'')) {
-                    attr_value = attr_value.substr(1, attr_value.length() - 2);
-                }
-
-                return element->GetAttribute(attr_name) == attr_value;
-            }
-        }
-
-        // 标签选择器 (div, span, etc.)
-        return element->GetTagName() == selector;
-    }
-
-    /**
-     * @brief 递归查询第一个匹配的元素
-     */
-    std::shared_ptr<Element> QuerySelectorRecursive(
-        std::shared_ptr<Node> node,
-        const std::string& selector) {
-
-        auto element = std::dynamic_pointer_cast<Element>(node);
-        if (element && MatchesSimpleSelector(element.get(), selector)) {
-            return element;
-        }
-
-        for (const auto& child : node->GetChildNodes()) {
-            auto result = QuerySelectorRecursive(child, selector);
-            if (result) {
-                return result;
-            }
-        }
-
-        return nullptr;
-    }
-
-    /**
-     * @brief 递归查询所有匹配的元素
-     */
-    void QuerySelectorAllRecursive(
-        std::shared_ptr<Node> node,
-        const std::string& selector,
-        std::vector<std::shared_ptr<Element>>& results) {
-
-        auto element = std::dynamic_pointer_cast<Element>(node);
-        if (element && MatchesSimpleSelector(element.get(), selector)) {
-            results.push_back(element);
-        }
-
-        for (const auto& child : node->GetChildNodes()) {
-            QuerySelectorAllRecursive(child, selector, results);
-        }
-    }
-}
-
 std::shared_ptr<Element> Element::QuerySelector(const std::string& selector) {
-    // 从当前元素的子节点开始查询
-    for (const auto& child : GetChildNodes()) {
-        auto result = QuerySelectorRecursive(child, selector);
-        if (result) {
-            return result;
-        }
-    }
-    return nullptr;
+    auto self = std::static_pointer_cast<Element>(shared_from_this());
+    return SelectorEngine::QuerySelector(self, selector);
 }
 
 std::vector<std::shared_ptr<Element>> Element::QuerySelectorAll(const std::string& selector) {
-    std::vector<std::shared_ptr<Element>> results;
-
-    // 从当前元素的子节点开始查询
-    for (const auto& child : GetChildNodes()) {
-        QuerySelectorAllRecursive(child, selector, results);
-    }
-
-    return results;
+    auto self = std::static_pointer_cast<Element>(shared_from_this());
+    return SelectorEngine::QuerySelectorAll(self, selector);
 }
 
 bool Element::Matches(const std::string& selector) const {
-    return MatchesSimpleSelector(this, selector);
+    // 需要 const_cast 因为 SelectorEngine 需要 shared_ptr
+    auto self = std::static_pointer_cast<Element>(
+        const_cast<Element*>(this)->shared_from_this());
+    return SelectorEngine::Matches(self, selector);
 }
 
 std::shared_ptr<Element> Element::Closest(const std::string& selector) {
-    // 从当前元素开始向上查找
-    auto current = std::dynamic_pointer_cast<Element>(shared_from_this());
-
-    while (current) {
-        if (current->Matches(selector)) {
-            return current;
-        }
-
-        auto parent = current->GetParentNode();
-        current = std::dynamic_pointer_cast<Element>(parent);
-    }
-
-    return nullptr;
+    auto self = std::static_pointer_cast<Element>(shared_from_this());
+    return SelectorEngine::Closest(self, selector);
 }
 
 // ========== innerHTML ==========
