@@ -2,7 +2,7 @@
 
 > **开始日期**: 2025-11-11
 > **当前状态**: 进行中
-> **完成度**: 90%
+> **完成度**: 93%
 > **参考项目**: RmlUi
 
 ---
@@ -13,7 +13,7 @@
 |--------|--------|------|------|
 | **P0** | 核心事件系统 | 95% | ✅ 基本完成 |
 | **P1** | DOM API完善 | 100% | ✅ 完成 |
-| **P2** | CSS伪类和焦点管理 | 80% | ✅ 基本完成 |
+| **P2** | CSS伪类和焦点管理 | 95% | ✅ 基本完成 |
 | **P3** | 拖拽系统 | 100% | ✅ 完成 |
 | **P4** | 键盘事件和表单 | 0% | ⏳ 待开始 |
 
@@ -527,6 +527,57 @@ auto dragClone = dragManager->GetDragClone();
 - ✅ MDN Web Docs - DataTransfer
 - ✅ `ReferenceProject/RmlUi/Source/Core/Context.cpp` (CreateDragClone)
 
+### 14. FocusManager集成和focusin/focusout事件 ✅ (2025-11-11)
+
+**参考**: W3C UI Events, RmlUi焦点管理系统
+
+**实现内容**:
+- ✅ `core/event/event_loop.cpp` - 鼠标点击时自动设置焦点
+- ✅ `core/event/focus_manager.h` - 添加ProcessAutofocus方法
+- ✅ `core/event/focus_manager.cpp` - 实现focusin/focusout事件和autofocus支持
+
+**核心功能**:
+1. **FocusManager集成到EventLoop** - 鼠标点击时自动设置焦点
+2. **focusin/focusout事件** - 冒泡版本的focus/blur事件
+3. **autofocus属性支持** - 文档加载时自动聚焦到第一个autofocus元素
+4. **焦点链管理** - 完整的焦点事件传播
+
+**技术亮点**:
+- ✅ 符合W3C UI Events规范
+- ✅ focusin/focusout支持事件冒泡
+- ✅ focus/blur不支持事件冒泡
+- ✅ 鼠标点击时focus_visible=false（不显示焦点指示器）
+- ✅ 键盘导航时focus_visible=true（显示焦点指示器）
+- ✅ autofocus自动查找第一个可聚焦元素
+
+**代码示例**:
+```cpp
+// 鼠标点击时自动设置焦点
+if (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN) {
+    // focus_visible=false（鼠标点击不显示焦点指示器）
+    focus_manager_->SetFocus(hit_result.element, false);
+}
+
+// focusin/focusout事件（冒泡）
+element->AddEventListener("focusin", [](auto e) {
+    std::cout << "Element or child gained focus (bubbles)" << std::endl;
+});
+
+element->AddEventListener("focusout", [](auto e) {
+    std::cout << "Element or child lost focus (bubbles)" << std::endl;
+});
+
+// autofocus属性支持
+// <input autofocus />
+// 文档加载时自动聚焦
+focus_manager_->ProcessAutofocus(document);
+```
+
+**参考文件**:
+- ✅ W3C UI Events - focusin/focusout
+- ✅ W3C HTML5 - autofocus attribute
+- ✅ `ReferenceProject/RmlUi/Source/Core/Context.cpp` (ProcessMouseButtonDown, OnFocusChange)
+
 ---
 
 ## 🔄 进行中任务
@@ -590,9 +641,9 @@ auto dragClone = dragManager->GetDragClone();
   - [ ] innerHTML/outerHTML
   - [ ] 绑定到JavaScript
 
-### P2: 焦点管理系统 (80%) ✅ 基本完成
+### P2: 焦点管理系统 (95%) ✅ 基本完成
 
-#### Task 7: 焦点管理 (90%)
+#### Task 7: 焦点管理 (95%)
 - ✅ CSS伪类支持（:focus, :focus-visible）
 - ✅ :hover伪类自动设置（mouseover/mouseout）
 - ✅ :active伪类自动设置（mousedown/mouseup）
@@ -602,11 +653,11 @@ auto dragClone = dragManager->GetDragClone();
 - ✅ focus/blur事件
 - ✅ 焦点链管理
 - ✅ 可聚焦元素检测
+- ✅ **集成FocusManager到EventLoop** - 鼠标点击时自动设置焦点
+- ✅ **focusin/focusout事件（冒泡版本）** - 完整的焦点事件支持
+- ✅ **autofocus属性支持** - 文档加载时自动聚焦
 - ⏳ **待完成**:
-  - [ ] 集成FocusManager到EventLoop
-  - [ ] 实现键盘事件处理（Tab键）
-  - [ ] focusin/focusout事件（冒泡版本）
-  - [ ] autofocus属性支持
+  - [ ] 实现键盘事件处理（Tab键）- 需要P4的KeyboardEvent
 
 **参考文件**:
 - ✅ `ReferenceProject/RmlUi/Source/Core/Element.cpp` (Focus, Blur)
@@ -712,6 +763,8 @@ auto dragClone = dragManager->GetDragClone();
 ## 📝 Git提交记录
 
 ### 2025-11-11
+- ✅ `0a265b8` - feat(event): integrate FocusManager into EventLoop and add focusin/focusout events (Phase 2.5 P2)
+- ✅ `7b86365` - docs: update Phase 2.5 progress - P3 drag system 100% completed
 - ✅ `feat(event): implement DataTransfer and drag clone support (Phase 2.5 P3)`
 - ✅ `683827d` - docs: update Phase 2.5 progress - P0 95% completed
 - ✅ `feat(event): implement dblclick event and addEventListener once option (Phase 2.5 P0)`
