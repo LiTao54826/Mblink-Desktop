@@ -14,7 +14,7 @@
 | **P0** | 核心事件系统 | 90% | ✅ 基本完成 |
 | **P1** | DOM API完善 | 0% | ⏳ 待开始 |
 | **P2** | CSS伪类和焦点管理 | 80% | ✅ 基本完成 |
-| **P3** | 拖拽系统 | 0% | ⏳ 待开始 |
+| **P3** | 拖拽系统 | 70% | 🔄 进行中 |
 | **P4** | 键盘事件和表单 | 0% | ⏳ 待开始 |
 
 ---
@@ -195,6 +195,65 @@ focus_manager.TabToNextFocusableElement(document, false);  // Tab
 focus_manager.TabToNextFocusableElement(document, true);   // Shift+Tab
 ```
 
+### 7. DragManager拖拽管理系统 ✅ (2025-11-11)
+
+**参考**: `ReferenceProject/RmlUi/Source/Core/Context.cpp` (CreateDragClone, UpdateHoverChain, lines 706-1382)
+
+**实现内容**:
+- ✅ `DragManager` 类
+- ✅ `StartDragDetection()` - 开始拖拽检测
+- ✅ `UpdateDrag()` - 更新拖拽状态
+- ✅ `EndDrag()` - 结束拖拽
+- ✅ `CancelDrag()` - 取消拖拽
+- ✅ `GetDragElement()` - 获取当前拖拽元素
+- ✅ `IsDragging()` - 是否正在拖拽
+- ✅ 拖拽hover链管理
+- ✅ :drag伪类自动设置
+
+**拖拽模式**:
+- None - 不可拖拽
+- Drag - 可拖拽（简单模式）
+- DragDrop - 可拖拽（详细模式，发送dragover/dragout/dragdrop事件）
+- Clone - 拖拽时克隆元素
+- Block - 阻止拖拽
+
+**拖拽事件**:
+- dragstart - 拖拽开始
+- drag - 拖拽中
+- dragend - 拖拽结束
+- dragover - 拖拽悬停进入
+- dragout - 拖拽悬停离开
+- dragdrop - 拖拽放下
+- dragmove - 拖拽移动（详细模式）
+
+**代码示例**:
+```html
+<!-- 简单拖拽 -->
+<div drag="drag">可拖拽</div>
+
+<!-- 详细拖拽 -->
+<div drag="drag-drop">详细拖拽</div>
+
+<!-- 拖拽克隆 -->
+<div drag="clone">拖拽时克隆</div>
+```
+
+```cpp
+// 创建拖拽管理器
+DragManager drag_manager;
+
+// mousedown时
+drag_manager.StartDragDetection(element);
+
+// mousemove时
+if (drag_manager.IsDragging()) {
+    drag_manager.UpdateDrag(mouse_x, mouse_y, document);
+}
+
+// mouseup时
+drag_manager.EndDrag(mouse_x, mouse_y);
+```
+
 ---
 
 ## 🔄 进行中任务
@@ -275,17 +334,22 @@ focus_manager.TabToNextFocusableElement(document, true);   // Shift+Tab
 - ✅ `ReferenceProject/RmlUi/Source/Core/Element.cpp` (Focus, Blur)
 - ✅ `ReferenceProject/RmlUi/Source/Core/Context.cpp` (GetFocusElement, OnFocusChange)
 
-### P3: 拖拽系统 (0%)
+### P3: 拖拽系统 (70%)
 
-#### Task 8: 完整的拖拽系统
-- [ ] DragManager类
-- [ ] 拖拽事件（dragstart, drag, dragend等）
-- [ ] CSS drag属性支持
-- [ ] 拖拽克隆支持（drag: clone）
-- [ ] DataTransfer对象
+#### Task 8: 完整的拖拽系统 (70%)
+- ✅ DragManager类
+- ✅ 拖拽事件（dragstart, drag, dragend, dragover, dragout, dragdrop, dragmove）
+- ✅ CSS drag属性支持（drag, drag-drop, clone, block）
+- ✅ 拖拽hover链管理
+- ✅ :drag伪类自动设置
+- ⏳ **待完成**:
+  - [ ] 拖拽克隆支持（drag: clone）- 需要Element::Clone()
+  - [ ] 集成DragManager到EventLoop
+  - [ ] DataTransfer对象
+  - [ ] effectAllowed/dropEffect
 
 **参考文件**:
-- `ReferenceProject/RmlUi/Source/Core/Context.cpp` (拖拽相关代码)
+- ✅ `ReferenceProject/RmlUi/Source/Core/Context.cpp` (lines 706-1382)
 - `ReferenceProject/RmlUi/Samples/basic/drag/`
 
 ### P4: 键盘事件和表单 (0%)
@@ -371,6 +435,8 @@ focus_manager.TabToNextFocusableElement(document, true);   // Shift+Tab
 ## 📝 Git提交记录
 
 ### 2025-11-11
+- `8e7a1d2` - feat(event): 实现DragManager拖拽管理系统 (Phase 2.5 P3)
+- `921701e` - docs: 更新Phase 2.5进度 - P2焦点管理系统基本完成
 - `d1786bd` - feat(event): 实现FocusManager焦点管理系统 (Phase 2.5 P2)
 - `28eb492` - docs: 更新Phase 2.5进度 - P0核心事件系统基本完成
 - `a4ac7bb` - feat(event): 实现removeEventListener和事件捕获阶段 (Phase 2.5 P0)
