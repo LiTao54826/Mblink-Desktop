@@ -21,6 +21,8 @@ class FrameController;
 class InputHandler;
 class TaskScheduler;
 class Element;
+class FocusManager;
+class DragManager;
 
 /**
  * @brief 主事件循环类
@@ -212,6 +214,8 @@ private:
     std::unique_ptr<FrameController> frame_controller_;
     std::unique_ptr<InputHandler> input_handler_;
     std::unique_ptr<TaskScheduler> task_scheduler_;
+    std::unique_ptr<FocusManager> focus_manager_;
+    std::unique_ptr<DragManager> drag_manager_;
 
     // Hover链追踪（参考RmlUi的hover_chain）
     // 存储当前鼠标悬停的元素链（从目标元素到根元素）

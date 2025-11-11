@@ -7,6 +7,8 @@
 #include "frame_controller.h"
 #include "input_handler.h"
 #include "task_scheduler.h"
+#include "focus_manager.h"
+#include "drag_manager.h"
 #include "mouse_event.h"
 #include "hit_testing.h"
 #include "event_types.h"
@@ -24,6 +26,8 @@ EventLoop::EventLoop()
     , frame_controller_(std::make_unique<FrameController>(60))
     , input_handler_(std::make_unique<InputHandler>())
     , task_scheduler_(std::make_unique<TaskScheduler>())
+    , focus_manager_(std::make_unique<FocusManager>())
+    , drag_manager_(std::make_unique<DragManager>())
 {
 }
 
@@ -276,6 +280,12 @@ void EventLoop::HandleMouseEventForDOM(const SDL_Event& event) {
         last_mousedown_element = hit_result.element;
         // mousedown时设置:active伪类
         hit_result.element->SetPseudoClass("active", true);
+
+        // 拖拽检测（参考RmlUi/Source/Core/Context.cpp - ProcessMouseButtonDown）
+        // 只在左键按下时检测拖拽
+        if (event.button.button == SDL_BUTTON_LEFT) {
+            drag_manager_->StartDragDetection(hit_result.element);
+        }
     } else if (event.type == SDL_EVENT_MOUSE_BUTTON_UP) {
         // mouseup时移除:active伪类
         if (last_mousedown_element) {
@@ -293,6 +303,16 @@ void EventLoop::HandleMouseEventForDOM(const SDL_Event& event) {
             hit_result.element->DispatchEvent(click_event);
         }
         last_mousedown_element = nullptr;
+
+        // 结束拖拽（参考RmlUi/Source/Core/Context.cpp - ProcessMouseButtonUp）
+        if (event.button.button == SDL_BUTTON_LEFT) {
+            drag_manager_->EndDrag(mouse_x, mouse_y);
+        }
+    } else if (event.type == SDL_EVENT_MOUSE_MOTION) {
+        // 更新拖拽状态（参考RmlUi/Source/Core/Context.cpp - ProcessMouseMove）
+        if (drag_manager_->IsDragging()) {
+            drag_manager_->UpdateDrag(mouse_x, mouse_y, document);
+        }
     }
 }
 
