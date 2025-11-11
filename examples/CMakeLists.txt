@@ -137,10 +137,57 @@ set_target_properties(animation_demo PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY_RELEASE "${CMAKE_BINARY_DIR}/bin/Release"
 )
 
+# ========== HTML Loading Example ==========
+add_executable(html_loading_example
+    html_loading_example.cpp
+)
+
+target_link_libraries(html_loading_example PRIVATE
+    lightui_dom
+    lightui_lexbor
+)
+
+if(MSVC)
+    target_compile_options(html_loading_example PRIVATE /W3 /EHsc)
+endif()
+
+set_target_properties(html_loading_example PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+    RUNTIME_OUTPUT_DIRECTORY_DEBUG "${CMAKE_BINARY_DIR}/bin/Debug"
+    RUNTIME_OUTPUT_DIRECTORY_RELEASE "${CMAKE_BINARY_DIR}/bin/Release"
+)
+
+# ========== HTML Window Example ==========
+add_executable(html_window_example
+    html_window_example.cpp
+)
+
+target_link_libraries(html_window_example PRIVATE
+    lightui_window
+    lightui_dom
+    lightui_event
+    lightui_render
+    lightui_lexbor
+    SDL3::SDL3-static
+    skia
+)
+
+if(MSVC)
+    target_compile_options(html_window_example PRIVATE /W3 /EHsc)
+endif()
+
+set_target_properties(html_window_example PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+    RUNTIME_OUTPUT_DIRECTORY_DEBUG "${CMAKE_BINARY_DIR}/bin/Debug"
+    RUNTIME_OUTPUT_DIRECTORY_RELEASE "${CMAKE_BINARY_DIR}/bin/Release"
+)
+
 message(STATUS "Examples configured successfully")
 message(STATUS "  - integration_example")
 message(STATUS "  - javascript_integration_example")
 message(STATUS "  - hello_world")
 message(STATUS "  - counter_app")
 message(STATUS "  - animation_demo")
+message(STATUS "  - html_loading_example")
+message(STATUS "  - html_window_example")
 

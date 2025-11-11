@@ -434,13 +434,17 @@ void Window::SwapBuffers() {
 void Window::OnResize() {
     if (!sdl_window_) return;
 
-    // 获取新的窗口大小
+    // 获取客户区大小（像素，不包括标题栏和边框）
     int width, height;
-    SDL_GetWindowSize(sdl_window_, &width, &height);
-    config_.width = width;
-    config_.height = height;
+    SDL_GetWindowSizeInPixels(sdl_window_, &width, &height);
 
-    // 重新创建Skia渲染表面
+    // 同时更新config中的窗口大小（逻辑大小）
+    int logical_width, logical_height;
+    SDL_GetWindowSize(sdl_window_, &logical_width, &logical_height);
+    config_.width = logical_width;
+    config_.height = logical_height;
+
+    // 重新创建Skia渲染表面（使用客户区像素大小）
     if (actual_backend_ == RenderBackend::OPENGL) {
         CreateSkiaSurface();
     } else if (actual_backend_ == RenderBackend::CPU) {
@@ -461,9 +465,9 @@ void Window::OnResize() {
         surface_ = SkSurfaces::Raster(info);
     }
 
-    // 触发resize回调
+    // 触发resize回调（使用逻辑大小）
     if (on_resize_callback_) {
-        on_resize_callback_(width, height);
+        on_resize_callback_(logical_width, logical_height);
     }
 }
 
@@ -650,6 +654,7 @@ bool Window::HandleSDLEvent(const SDL_Event& event) {
                 int width = event.window.data1;
                 int height = event.window.data2;
                 OnResize();
+                SetNeedsRepaint();  // 标记需要重新渲染
                 DispatchWindowEvent(WindowEvent(WindowEventType::RESIZE, width, height));
                 return true;
             }
@@ -845,14 +850,29 @@ void Window::RenderDocument() {
                     return nullptr;
                 }
 
-                auto render_text = std::make_shared<RenderText>(text);
+                // 规范化空白字符：将连续的空白字符（包括换行）替换为单个空格
+                std::string normalized_text;
+                bool in_whitespace = false;
+                for (char c : text) {
+                    if (c == ' ' || c == '\t' || c == '\n' || c == '\r') {
+                        if (!in_whitespace) {
+                            normalized_text += ' ';
+                            in_whitespace = true;
+                        }
+                    } else {
+                        normalized_text += c;
+                        in_whitespace = false;
+                    }
+                }
+
+                auto render_text = std::make_shared<RenderText>(normalized_text);
 
                 // 继承父元素样式
                 if (parent_render) {
                     render_text->SetComputedStyle(parent_render->GetComputedStyle());
                 }
 
-                std::cout << "[RenderDocument] Created RenderText" << std::endl;
+                std::cout << "[RenderDocument] Created RenderText: '" << normalized_text << "'" << std::endl;
                 render_object = render_text;
             }
             else if (node->GetNodeType() == NodeType::ELEMENT_NODE) {
@@ -876,6 +896,9 @@ void Window::RenderDocument() {
 
                 render_object->SetComputedStyle(style);
 
+                // 关联DOM节点
+                render_object->SetNode(element);
+
                 // 递归处理子节点
                 auto children = element->GetChildNodes();
                 std::cout << "[RenderDocument] Element has " << children.size() << " children" << std::endl;
@@ -896,10 +919,10 @@ void Window::RenderDocument() {
         if (root_render) {
             std::cout << "[RenderDocument] Render tree built successfully" << std::endl;
 
-            // 布局
+            // 布局 - 使用客户区大小（与Skia surface一致）
             int width, height;
-            GetSize(&width, &height);
-            std::cout << "[RenderDocument] Layout: " << width << "x" << height << std::endl;
+            SDL_GetWindowSizeInPixels(sdl_window_, &width, &height);
+            std::cout << "[RenderDocument] Layout: " << width << "x" << height << " (client area)" << std::endl;
             root_render->Layout(static_cast<float>(width), static_cast<float>(height));
 
             std::cout << "[RenderDocument] Starting paint..." << std::endl;

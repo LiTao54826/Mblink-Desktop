@@ -119,20 +119,10 @@ void RenderBlock::Layout(float parent_width, float parent_height) {
     }
 
     // 布局子元素 - 第二遍：设置位置
+    // 支持内联元素水平排列和块级元素垂直排列
     float current_y = 0;
-    float max_child_height = 0;
-
-    // HACK: 如果是最外层的 body RenderBlock（没有父元素），添加 120px 的 top offset
-    // 这是为了避免内容被窗口顶部的黑色区域遮挡
-    float body_top_offset = 0;
-    if (!GetParent()) {
-        body_top_offset = 120.0f;
-        static bool logged = false;
-        if (!logged) {
-            std::cout << "[RenderBlock] Body element detected, adding top offset: " << body_top_offset << std::endl;
-            logged = true;
-        }
-    }
+    float current_x = padding_left + border_left;
+    float line_height = 0;  // 当前行的高度
 
     for (auto& child : children_) {
         auto& child_layout = child->GetLayoutInfo();
@@ -142,17 +132,71 @@ void RenderBlock::Layout(float parent_width, float parent_height) {
         float child_margin_top = child_style.margin.top.ToPx(width, child_style.font_size);
         float child_margin_bottom = child_style.margin.bottom.ToPx(width, child_style.font_size);
         float child_margin_left = child_style.margin.left.ToPx(width, child_style.font_size);
+        float child_margin_right = child_style.margin.right.ToPx(width, child_style.font_size);
 
-        // 设置子元素位置（考虑 margin）
-        float new_x = padding_left + border_left + child_margin_left;
-        float new_y = current_y + padding_top + border_top + body_top_offset + child_margin_top;
+        // 判断是块级还是内联元素
+        // 检查渲染对象的实际类型，而不是 display 属性
+        bool is_inline = (dynamic_cast<RenderInline*>(child.get()) != nullptr ||
+                         dynamic_cast<RenderText*>(child.get()) != nullptr);
 
-        child_layout.x = new_x;
-        child_layout.y = new_y;
+        if (is_inline) {
+            // 内联元素：水平排列
+            float child_width = child_layout.width + child_margin_left + child_margin_right;
 
-        // 累加高度（包括 margin）
-        current_y += child_margin_top + child_layout.height + child_margin_bottom;
-        max_child_height = std::max(max_child_height, child_layout.height);
+            // 检查是否需要换行
+            if (current_x + child_width > width - padding_right - border_right && current_x > padding_left + border_left) {
+                // 换行
+                current_y += line_height;
+                current_x = padding_left + border_left;
+                line_height = 0;
+            }
+
+            // 设置位置
+            child_layout.x = current_x + child_margin_left;
+            child_layout.y = current_y + padding_top + border_top + child_margin_top;
+
+            // 更新当前X位置和行高
+            current_x += child_width;
+            line_height = std::max(line_height, child_layout.height + child_margin_top + child_margin_bottom);
+        } else {
+            // 块级元素：垂直排列
+            // 如果当前行有内联元素，先完成当前行
+            if (current_x > padding_left + border_left) {
+                current_y += line_height;
+                current_x = padding_left + border_left;
+                line_height = 0;
+            }
+
+            // 计算X位置（考虑 text-align）
+            float new_x = padding_left + border_left + child_margin_left;
+
+            if (style.text_align == "center") {
+                float available_width = content_width - child_margin_left - child_margin_right;
+                float child_width = child_layout.width;
+                if (child_width < available_width) {
+                    new_x = padding_left + border_left + (available_width - child_width) / 2.0f;
+                }
+            } else if (style.text_align == "right") {
+                float available_width = content_width - child_margin_left - child_margin_right;
+                float child_width = child_layout.width;
+                if (child_width < available_width) {
+                    new_x = padding_left + border_left + available_width - child_width - child_margin_right;
+                }
+            }
+
+            float new_y = current_y + padding_top + border_top + child_margin_top;
+
+            child_layout.x = new_x;
+            child_layout.y = new_y;
+
+            // 累加高度
+            current_y += child_margin_top + child_layout.height + child_margin_bottom;
+        }
+    }
+
+    // 如果最后一行有内联元素，完成最后一行
+    if (current_x > padding_left + border_left) {
+        current_y += line_height;
     }
     
     // 计算高度
@@ -210,24 +254,24 @@ void RenderBlock::Paint(SkCanvas* canvas) {
     // 保存画布状态
     canvas->save();
     canvas->translate(layout.x, layout.y);
-    
+
     // 创建盒模型
     Box box;
     box.content_x = layout.content_rect.left();
     box.content_y = layout.content_rect.top();
     box.content_width = layout.content_rect.width();
     box.content_height = layout.content_rect.height();
-    
+
     box.padding_left = style.padding.left.ToPx(layout.width, style.font_size);
     box.padding_right = style.padding.right.ToPx(layout.width, style.font_size);
     box.padding_top = style.padding.top.ToPx(layout.width, style.font_size);
     box.padding_bottom = style.padding.bottom.ToPx(layout.width, style.font_size);
-    
+
     box.border_top_width = style.border.width.ToPx();
     box.border_right_width = style.border.width.ToPx();
     box.border_bottom_width = style.border.width.ToPx();
     box.border_left_width = style.border.width.ToPx();
-    
+
     // 创建样式映射
     std::unordered_map<std::string, std::string> styles;
     if (!style.background_color.empty()) {
@@ -236,60 +280,175 @@ void RenderBlock::Paint(SkCanvas* canvas) {
     if (!style.background_image.empty()) {
         styles["background-image"] = style.background_image;
     }
-    
+
     // 渲染器
     BoxRenderer renderer(canvas);
-    
+
     // 渲染阴影
     if (!style.box_shadow.empty()) {
         renderer.RenderBoxShadow(box, style.box_shadow, &style.border_radius);
     }
-    
+
     // 渲染背景
     renderer.RenderBackgroundAdvanced(box, styles, &style.border_radius);
-    
+
     // 渲染边框
     if (style.border.style != CSSBorderStyle::NONE && !style.border.width.IsZero()) {
         std::string border_width = std::to_string(style.border.width.value) + "px";
         std::string border_style = "solid"; // 简化
         std::string border_color = "#000000"; // 简化
-        
-        if (style.border_radius.top_left.IsZero() && 
+
+        if (style.border_radius.top_left.IsZero() &&
             style.border_radius.top_right.IsZero() &&
-            style.border_radius.bottom_right.IsZero() && 
+            style.border_radius.bottom_right.IsZero() &&
             style.border_radius.bottom_left.IsZero()) {
             renderer.RenderBorder(box, border_width, border_style, border_color);
         } else {
             renderer.RenderRoundedBorder(box, border_width, border_style, border_color, style.border_radius);
         }
     }
-    
+
+    // 绘制列表项目符号（如果是<li>元素）
+    auto node = GetNode();
+    if (node && node->GetNodeType() == NodeType::ELEMENT_NODE) {
+        auto element = std::static_pointer_cast<Element>(node);
+        if (element->GetTagName() == "li") {
+            // 获取父元素（ul或ol）
+            auto parent_node = element->GetParentNode();
+            if (parent_node && parent_node->GetNodeType() == NodeType::ELEMENT_NODE) {
+                auto parent_element = std::static_pointer_cast<Element>(parent_node);
+                std::string parent_tag = parent_element->GetTagName();
+
+                if (parent_tag == "ul" || parent_tag == "ol") {
+                    // 设置文本样式
+                    SkFont font;
+                    font.setSize(style.font_size);
+
+                    SkPaint paint;
+                    if (!style.color.empty()) {
+                        paint.setColor(Color::Parse(style.color));
+                    } else {
+                        paint.setColor(SK_ColorBLACK);
+                    }
+                    paint.setAntiAlias(true);
+
+                    // 计算项目符号位置（在padding区域的左侧）
+                    float marker_x = box.content_x - 20.0f;  // 在内容左侧20px处
+                    float marker_y = box.content_y + style.font_size * 0.8f;  // 第一行文本的基线位置
+
+                    if (parent_tag == "ul") {
+                        // 无序列表：绘制圆点
+                        float bullet_radius = 3.0f;
+                        float bullet_x = marker_x;
+                        float bullet_y = marker_y - style.font_size * 0.3f;
+                        canvas->drawCircle(bullet_x, bullet_y, bullet_radius, paint);
+                    } else if (parent_tag == "ol") {
+                        // 有序列表：绘制数字
+                        // 计算当前<li>在<ol>中的索引
+                        int index = 1;
+                        auto siblings = parent_element->GetChildNodes();
+                        for (const auto& sibling : siblings) {
+                            if (sibling->GetNodeType() == NodeType::ELEMENT_NODE) {
+                                auto sibling_elem = std::static_pointer_cast<Element>(sibling);
+                                if (sibling_elem->GetTagName() == "li") {
+                                    if (sibling_elem == element) {
+                                        break;
+                                    }
+                                    index++;
+                                }
+                            }
+                        }
+
+                        // 绘制数字
+                        std::string marker_text = std::to_string(index) + ".";
+                        canvas->drawString(marker_text.c_str(), marker_x - 15.0f, marker_y, font, paint);
+                    }
+                }
+            }
+        }
+    }
+
     // 绘制子元素
     for (auto& child : children_) {
         if (child->NeedsPaint()) {
             child->Paint(canvas);
         }
     }
-    
+
     // 恢复画布状态
     canvas->restore();
-    
+
     needs_paint_ = false;
 }
 
 // ========== RenderInline 实现 ==========
 
 void RenderInline::Layout(float parent_width, float parent_height) {
-    // 简化实现：内联元素暂时按块级处理
-    // 调用基类的布局逻辑（简化版）
-    layout_info_.width = parent_width;
-    layout_info_.height = 20.0f; // 默认高度
+    // 内联元素布局：计算所有子元素的总宽度和最大高度
+    float total_width = 0;
+    float max_height = 0;
+
+    // 布局所有子元素
+    for (auto& child : children_) {
+        if (child->NeedsLayout()) {
+            child->Layout(parent_width, parent_height);
+        }
+
+        auto& child_layout = child->GetLayoutInfo();
+        total_width += child_layout.width;
+        max_height = std::max(max_height, child_layout.height);
+    }
+
+    // 设置内联元素的尺寸
+    layout_info_.width = total_width;
+    layout_info_.height = max_height > 0 ? max_height : 20.0f;
     layout_info_.is_laid_out = true;
     needs_layout_ = false;
+
+    // 设置子元素的位置（水平排列）
+    float current_x = 0;
+    for (auto& child : children_) {
+        auto& child_layout = child->GetLayoutInfo();
+        child_layout.x = current_x;
+        child_layout.y = 0;
+        current_x += child_layout.width;
+    }
 }
 
 void RenderInline::Paint(SkCanvas* canvas) {
-    // 简化实现：内联元素暂时不绘制
+    if (!canvas) {
+        needs_paint_ = false;
+        return;
+    }
+
+    const auto& style = computed_style_;
+    const auto& layout = layout_info_;
+
+    // 保存画布状态
+    canvas->save();
+    canvas->translate(layout.x, layout.y);
+
+    // 绘制背景（如果有）
+    if (!style.background_color.empty()) {
+        SkPaint bg_paint;
+        bg_paint.setColor(Color::Parse(style.background_color));
+        bg_paint.setAntiAlias(true);
+
+        // 绘制背景矩形（只覆盖内容宽度）
+        SkRect bg_rect = SkRect::MakeWH(layout.width, layout.height);
+        canvas->drawRect(bg_rect, bg_paint);
+    }
+
+    // 绘制所有子元素
+    for (auto& child : children_) {
+        if (child->NeedsPaint()) {
+            child->Paint(canvas);
+        }
+    }
+
+    // 恢复画布状态
+    canvas->restore();
+
     needs_paint_ = false;
 }
 
@@ -365,6 +524,33 @@ void RenderText::Paint(SkCanvas* canvas) {
 
     // 绘制文本（使用正确的基线位置）
     text_renderer.DrawText(text_, 0, baseline_y, font, text_paint);
+
+    // 绘制文本装饰（下划线、删除线等）
+    if (style.text_decoration == "underline") {
+        // 下划线：在基线下方
+        float underline_y = baseline_y + font_metrics.fUnderlinePosition;
+        float underline_thickness = font_metrics.fUnderlineThickness;
+        if (underline_thickness < 1.0f) underline_thickness = 1.0f;
+
+        SkPaint line_paint;
+        line_paint.setColor(text_paint.GetColor());
+        line_paint.setStrokeWidth(underline_thickness);
+        line_paint.setAntiAlias(true);
+
+        canvas->drawLine(0, underline_y, layout.width, underline_y, line_paint);
+    } else if (style.text_decoration == "line-through") {
+        // 删除线：在文字中间
+        float strikethrough_y = baseline_y + font_metrics.fStrikeoutPosition;
+        float strikethrough_thickness = font_metrics.fStrikeoutThickness;
+        if (strikethrough_thickness < 1.0f) strikethrough_thickness = 1.0f;
+
+        SkPaint line_paint;
+        line_paint.setColor(text_paint.GetColor());
+        line_paint.setStrokeWidth(strikethrough_thickness);
+        line_paint.setAntiAlias(true);
+
+        canvas->drawLine(0, strikethrough_y, layout.width, strikethrough_y, line_paint);
+    }
 
     // 恢复画布状态
     canvas->restore();

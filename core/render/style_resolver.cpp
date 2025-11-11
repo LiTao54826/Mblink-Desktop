@@ -7,6 +7,7 @@
 #include "core/dom/text.h"
 #include "color.h"
 #include <algorithm>
+#include <sstream>
 
 namespace lightui {
 
@@ -39,12 +40,13 @@ ComputedStyle StyleResolver::ResolveStyle(std::shared_ptr<Element> element,
     // 1. 用户代理样式表（默认样式）- 最低优先级
     ApplyDefaultStyle(style, element->GetTagName(), parent_style == nullptr);
 
-    // 2. 继承的值 - 覆盖默认的可继承属性
+    // 2. 继承的值 - 从父元素继承可继承属性
     if (parent_style) {
         ApplyInheritance(style, parent_style);
     }
 
-    // 3. 元素特定的默认样式 - 覆盖继承（如 h1 的 font-size）
+    // 3. 元素特定的默认样式 - 覆盖继承（如 h1 的 font-size, strong 的 bold）
+    // 这一步必须在继承之后，以确保元素自身的样式优先级高于继承
     ApplyElementSpecificStyle(style, element->GetTagName());
 
     // 4. 内联样式（最高优先级）- 覆盖所有
@@ -94,7 +96,13 @@ void StyleResolver::ApplyDefaultStyle(ComputedStyle& style, const std::string& t
         style.display = RenderObjectType::BLOCK;
     }
     else if (tag_name == "span" || tag_name == "a" || tag_name == "strong" ||
-             tag_name == "em" || tag_name == "b" || tag_name == "i") {
+             tag_name == "em" || tag_name == "b" || tag_name == "i" ||
+             tag_name == "u" || tag_name == "s" || tag_name == "strike" || tag_name == "del" ||
+             tag_name == "mark" || tag_name == "small" || tag_name == "big" ||
+             tag_name == "sub" || tag_name == "sup" || tag_name == "code" ||
+             tag_name == "kbd" || tag_name == "samp" || tag_name == "var" ||
+             tag_name == "abbr" || tag_name == "cite" || tag_name == "dfn" ||
+             tag_name == "q" || tag_name == "time") {
         style.display = RenderObjectType::INLINE;
     }
     else if (tag_name == "img" || tag_name == "button" || tag_name == "input") {
@@ -103,95 +111,281 @@ void StyleResolver::ApplyDefaultStyle(ComputedStyle& style, const std::string& t
 }
 
 void StyleResolver::ApplyElementSpecificStyle(ComputedStyle& style, const std::string& tag_name) {
-    // 标题默认样式（覆盖继承的 font-size 和 font-weight）
+    // ========== 块级元素 ==========
+
+    // HTML, BODY
+    if (tag_name == "html" || tag_name == "body") {
+        style.margin.top = CSSLength(0, CSSUnit::PX);
+        style.margin.bottom = CSSLength(0, CSSUnit::PX);
+        style.margin.left = CSSLength(0, CSSUnit::PX);
+        style.margin.right = CSSLength(0, CSSUnit::PX);
+    }
+
+    // 标题 (Headings)
     if (tag_name == "h1") {
-        style.font_size = 32.0f;
+        style.font_size = 32.0f;  // 2em
         style.font_weight = "bold";
-        style.margin.top = CSSLength(21, CSSUnit::PX);
+        style.margin.top = CSSLength(21, CSSUnit::PX);  // 0.67em
         style.margin.bottom = CSSLength(21, CSSUnit::PX);
     } else if (tag_name == "h2") {
-        style.font_size = 24.0f;
+        style.font_size = 24.0f;  // 1.5em
         style.font_weight = "bold";
-        style.margin.top = CSSLength(19, CSSUnit::PX);
+        style.margin.top = CSSLength(19, CSSUnit::PX);  // 0.83em
         style.margin.bottom = CSSLength(19, CSSUnit::PX);
     } else if (tag_name == "h3") {
-        style.font_size = 18.72f;
+        style.font_size = 18.72f;  // 1.17em
         style.font_weight = "bold";
-        style.margin.top = CSSLength(18, CSSUnit::PX);
+        style.margin.top = CSSLength(18, CSSUnit::PX);  // 1em
         style.margin.bottom = CSSLength(18, CSSUnit::PX);
     } else if (tag_name == "h4") {
-        style.font_size = 16.0f;
+        style.font_size = 16.0f;  // 1em
         style.font_weight = "bold";
-        style.margin.top = CSSLength(21, CSSUnit::PX);
+        style.margin.top = CSSLength(21, CSSUnit::PX);  // 1.33em
         style.margin.bottom = CSSLength(21, CSSUnit::PX);
     } else if (tag_name == "h5") {
-        style.font_size = 13.28f;
+        style.font_size = 13.28f;  // 0.83em
         style.font_weight = "bold";
-        style.margin.top = CSSLength(22, CSSUnit::PX);
+        style.margin.top = CSSLength(22, CSSUnit::PX);  // 1.67em
         style.margin.bottom = CSSLength(22, CSSUnit::PX);
     } else if (tag_name == "h6") {
-        style.font_size = 10.72f;
+        style.font_size = 10.72f;  // 0.67em
         style.font_weight = "bold";
-        style.margin.top = CSSLength(24, CSSUnit::PX);
+        style.margin.top = CSSLength(24, CSSUnit::PX);  // 2.33em
         style.margin.bottom = CSSLength(24, CSSUnit::PX);
     }
 
-    // 段落默认样式
+    // 段落 (Paragraph)
     if (tag_name == "p") {
-        style.margin.top = CSSLength(16, CSSUnit::PX);
+        style.margin.top = CSSLength(16, CSSUnit::PX);  // 1em
         style.margin.bottom = CSSLength(16, CSSUnit::PX);
         style.margin.left = CSSLength(0, CSSUnit::PX);
         style.margin.right = CSSLength(0, CSSUnit::PX);
     }
 
-    // 按钮默认样式
-    if (tag_name == "button") {
-        style.padding.top = CSSLength(8, CSSUnit::PX);
-        style.padding.bottom = CSSLength(8, CSSUnit::PX);
-        style.padding.left = CSSLength(16, CSSUnit::PX);
-        style.padding.right = CSSLength(16, CSSUnit::PX);
-        style.margin.top = CSSLength(4, CSSUnit::PX);
-        style.margin.bottom = CSSLength(4, CSSUnit::PX);
-        style.margin.left = CSSLength(4, CSSUnit::PX);
-        style.margin.right = CSSLength(4, CSSUnit::PX);
-        style.background_color = "#F0F0F0";  // 浅灰色背景
-        style.color = "#000000";  // 黑色文字
-        style.border.width = CSSLength(1, CSSUnit::PX);
-        style.border.style = CSSBorderStyle::SOLID;
-        style.border.color = Color::FromRGB(180, 180, 180);  // 深灰色边框
-        style.border_radius.top_left = CSSLength(4, CSSUnit::PX);
-        style.border_radius.top_right = CSSLength(4, CSSUnit::PX);
-        style.border_radius.bottom_left = CSSLength(4, CSSUnit::PX);
-        style.border_radius.bottom_right = CSSLength(4, CSSUnit::PX);
+    // DIV - 无特殊样式，使用默认块级样式
+
+    // 引用块 (Blockquote)
+    if (tag_name == "blockquote") {
+        style.margin.top = CSSLength(16, CSSUnit::PX);  // 1em
+        style.margin.bottom = CSSLength(16, CSSUnit::PX);
+        style.margin.left = CSSLength(40, CSSUnit::PX);
+        style.margin.right = CSSLength(40, CSSUnit::PX);
     }
 
-    // 粗体和斜体
+    // 预格式化文本 (Preformatted)
+    if (tag_name == "pre") {
+        style.font_family = "monospace";
+        style.margin.top = CSSLength(16, CSSUnit::PX);  // 1em
+        style.margin.bottom = CSSLength(16, CSSUnit::PX);
+        // TODO: 添加 white-space: pre 支持
+    }
+
+    // 代码 (Code)
+    if (tag_name == "code") {
+        style.font_family = "monospace";
+    }
+
+    // 水平线 (Horizontal Rule)
+    if (tag_name == "hr") {
+        style.margin.top = CSSLength(8, CSSUnit::PX);  // 0.5em
+        style.margin.bottom = CSSLength(8, CSSUnit::PX);
+        style.border.width = CSSLength(1, CSSUnit::PX);
+        style.border.style = CSSBorderStyle::SOLID;
+        style.border.color = Color::FromRGB(128, 128, 128);
+    }
+
+    // ========== 列表 (Lists) ==========
+
+    if (tag_name == "ul" || tag_name == "ol") {
+        style.margin.top = CSSLength(16, CSSUnit::PX);  // 1em
+        style.margin.bottom = CSSLength(16, CSSUnit::PX);
+        style.padding.left = CSSLength(40, CSSUnit::PX);  // 左侧缩进
+    }
+
+    if (tag_name == "li") {
+        style.display = RenderObjectType::BLOCK;  // 列表项是块级
+    }
+
+    if (tag_name == "dl") {  // Definition List
+        style.margin.top = CSSLength(16, CSSUnit::PX);
+        style.margin.bottom = CSSLength(16, CSSUnit::PX);
+    }
+
+    if (tag_name == "dt") {  // Definition Term
+        style.font_weight = "bold";
+    }
+
+    if (tag_name == "dd") {  // Definition Description
+        style.margin.left = CSSLength(40, CSSUnit::PX);
+    }
+
+    // ========== 表格 (Tables) ==========
+
+    if (tag_name == "table") {
+        style.border.style = CSSBorderStyle::SOLID;
+        style.border.width = CSSLength(1, CSSUnit::PX);
+        style.border.color = Color::FromRGB(128, 128, 128);
+    }
+
+    if (tag_name == "td" || tag_name == "th") {
+        style.padding.top = CSSLength(2, CSSUnit::PX);
+        style.padding.bottom = CSSLength(2, CSSUnit::PX);
+        style.padding.left = CSSLength(2, CSSUnit::PX);
+        style.padding.right = CSSLength(2, CSSUnit::PX);
+    }
+
+    if (tag_name == "th") {
+        style.font_weight = "bold";
+        style.text_align = "center";
+    }
+
+    // ========== 表单元素 (Form Elements) ==========
+
+    if (tag_name == "form") {
+        style.margin.top = CSSLength(0, CSSUnit::PX);
+    }
+
+    if (tag_name == "fieldset") {
+        style.margin.left = CSSLength(2, CSSUnit::PX);
+        style.margin.right = CSSLength(2, CSSUnit::PX);
+        style.padding.top = CSSLength(10, CSSUnit::PX);
+        style.padding.bottom = CSSLength(10, CSSUnit::PX);
+        style.padding.left = CSSLength(10, CSSUnit::PX);
+        style.padding.right = CSSLength(10, CSSUnit::PX);
+        style.border.width = CSSLength(2, CSSUnit::PX);
+        style.border.style = CSSBorderStyle::SOLID;
+        style.border.color = Color::FromRGB(192, 192, 192);
+    }
+
+    if (tag_name == "legend") {
+        style.padding.left = CSSLength(2, CSSUnit::PX);
+        style.padding.right = CSSLength(2, CSSUnit::PX);
+    }
+
+    if (tag_name == "button" || tag_name == "input" || tag_name == "select" || tag_name == "textarea") {
+        style.padding.top = CSSLength(2, CSSUnit::PX);
+        style.padding.bottom = CSSLength(2, CSSUnit::PX);
+        style.padding.left = CSSLength(6, CSSUnit::PX);
+        style.padding.right = CSSLength(6, CSSUnit::PX);
+        style.border.width = CSSLength(2, CSSUnit::PX);
+        style.border.style = CSSBorderStyle::SOLID;
+        style.border.color = Color::FromRGB(169, 169, 169);
+    }
+
+    if (tag_name == "button") {
+        style.background_color = "#F0F0F0";
+        style.border_radius.top_left = CSSLength(2, CSSUnit::PX);
+        style.border_radius.top_right = CSSLength(2, CSSUnit::PX);
+        style.border_radius.bottom_left = CSSLength(2, CSSUnit::PX);
+        style.border_radius.bottom_right = CSSLength(2, CSSUnit::PX);
+    }
+
+    // ========== 内联元素 (Inline Elements) ==========
+
+    // 粗体 (Bold)
     if (tag_name == "strong" || tag_name == "b") {
         style.font_weight = "bold";
     }
+
+    // 斜体 (Italic)
     if (tag_name == "em" || tag_name == "i") {
         style.font_style = "italic";
+    }
+
+    // 下划线 (Underline)
+    if (tag_name == "u") {
+        style.text_decoration = "underline";
+    }
+
+    // 删除线 (Strikethrough)
+    if (tag_name == "s" || tag_name == "strike" || tag_name == "del") {
+        style.text_decoration = "line-through";
+    }
+
+    // 上标和下标 (Superscript & Subscript)
+    if (tag_name == "sup" || tag_name == "sub") {
+        style.font_size = 12.0f;  // 0.75em
+    }
+
+    // 小字体 (Small)
+    if (tag_name == "small") {
+        style.font_size = 13.28f;  // 0.83em
+    }
+
+    // 大字体 (Big)
+    if (tag_name == "big") {
+        style.font_size = 18.72f;  // 1.17em
+    }
+
+    // 链接 (Anchor)
+    if (tag_name == "a") {
+        style.color = "#0000EE";  // 蓝色
+        style.text_decoration = "underline";
+    }
+
+    // 标记/高亮 (Mark)
+    if (tag_name == "mark") {
+        style.background_color = "#FFFF00";  // 黄色背景
+        style.color = "#000000";
+    }
+
+    // 引用 (Quote)
+    if (tag_name == "q") {
+        // 浏览器通常会自动添加引号，这里简化处理
+    }
+
+    // 缩写 (Abbreviation)
+    if (tag_name == "abbr") {
+        style.text_decoration = "underline dotted";
     }
 }
 
 void StyleResolver::ApplyInlineStyle(ComputedStyle& style, std::shared_ptr<Element> element) {
-    // 遍历所有可能的样式属性
-    // 由于 Element 没有 GetStyles() 方法，我们需要逐个获取
-    // 这里简化处理：只处理常见属性
+    // 获取style属性
+    std::string style_attr = element->GetAttribute("style");
+    if (style_attr.empty()) {
+        return;
+    }
 
-    std::vector<std::string> properties = {
-        "display", "width", "height", "min-width", "max-width", "min-height", "max-height",
-        "margin", "margin-top", "margin-right", "margin-bottom", "margin-left",
-        "padding", "padding-top", "padding-right", "padding-bottom", "padding-left",
-        "border-width", "border-style", "border-color", "border-radius",
-        "background-color", "background-image", "background-repeat", "background-size",
-        "color", "font-family", "font-size", "font-weight", "font-style",
-        "text-align", "text-decoration", "line-height", "box-shadow", "opacity"
-    };
+    // 解析内联样式（格式：property: value; property: value;）
+    std::istringstream iss(style_attr);
+    std::string declaration;
 
-    for (const auto& property : properties) {
-        std::string value = element->GetStyle(property);
-        if (!value.empty()) {
+    while (std::getline(iss, declaration, ';')) {
+        // 去除前后空格
+        size_t start = declaration.find_first_not_of(" \t\n\r");
+        if (start == std::string::npos) {
+            continue;
+        }
+
+        size_t end = declaration.find_last_not_of(" \t\n\r");
+        declaration = declaration.substr(start, end - start + 1);
+
+        // 查找冒号
+        size_t colon_pos = declaration.find(':');
+        if (colon_pos == std::string::npos) {
+            continue;
+        }
+
+        // 提取属性名和值
+        std::string property = declaration.substr(0, colon_pos);
+        std::string value = declaration.substr(colon_pos + 1);
+
+        // 去除属性名和值的空格
+        start = property.find_first_not_of(" \t\n\r");
+        if (start != std::string::npos) {
+            end = property.find_last_not_of(" \t\n\r");
+            property = property.substr(start, end - start + 1);
+        }
+
+        start = value.find_first_not_of(" \t\n\r");
+        if (start != std::string::npos) {
+            end = value.find_last_not_of(" \t\n\r");
+            value = value.substr(start, end - start + 1);
+        }
+
+        // 应用样式属性
+        if (!property.empty() && !value.empty()) {
             ParseStyleProperty(style, property, value);
         }
     }
