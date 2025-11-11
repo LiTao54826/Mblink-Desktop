@@ -11,6 +11,7 @@ set(EVENT_SOURCES
     event.cpp
     event_system.cpp
     event_types.cpp
+    focus_manager.cpp
 )
 
 set(EVENT_HEADERS
@@ -24,6 +25,7 @@ set(EVENT_HEADERS
     event.h
     event_system.h
     event_types.h
+    focus_manager.h
 )
 
 add_library(lightui_event STATIC ${EVENT_SOURCES})
