@@ -2,7 +2,7 @@
 
 > **开始日期**: 2025-11-11
 > **当前状态**: 进行中
-> **完成度**: 70%
+> **完成度**: 75%
 > **参考项目**: RmlUi
 
 ---
@@ -12,7 +12,7 @@
 | 优先级 | 任务组 | 进度 | 状态 |
 |--------|--------|------|------|
 | **P0** | 核心事件系统 | 90% | ✅ 基本完成 |
-| **P1** | DOM API完善 | 80% | ✅ 基本完成 |
+| **P1** | DOM API完善 | 85% | ✅ 基本完成 |
 | **P2** | CSS伪类和焦点管理 | 80% | ✅ 基本完成 |
 | **P3** | 拖拽系统 | 90% | ✅ 基本完成 |
 | **P4** | 键盘事件和表单 | 0% | ⏳ 待开始 |
@@ -296,6 +296,50 @@ if (element->Matches(":hover:active")) {
 auto container = element->Closest(".container");
 ```
 
+### 9. DOMTokenList和classList API ✅ (2025-11-11)
+
+**参考**: W3C DOM Standard - DOMTokenList, MDN Web Docs - Element.classList
+
+**实现内容**:
+- ✅ `DOMTokenList` 类 - 完整的token列表管理
+- ✅ `Element::GetClassList()` - 获取classList对象
+- ✅ `add(token1, token2, ...)` - 添加一个或多个class
+- ✅ `remove(token1, token2, ...)` - 移除一个或多个class
+- ✅ `toggle(token, force?)` - 切换class
+- ✅ `contains(token)` - 检查是否包含class
+- ✅ `item(index)` - 获取指定索引的class
+- ✅ `length` - class数量
+- ✅ `value` - 完整的class字符串
+- ✅ `replace(old, new)` - 替换class
+
+**技术亮点**:
+- 符合W3C DOMTokenList接口规范
+- 自动去重，避免重复class
+- Token验证（不能为空，不能包含空格）
+- 懒加载classList对象，节省内存
+- 使用weak_ptr避免循环引用
+
+**代码示例**:
+```cpp
+// 添加class
+element->GetClassList()->Add("active");
+element->GetClassList()->Add({"btn", "btn-primary"});
+
+// 移除class
+element->GetClassList()->Remove("hidden");
+
+// 切换class
+bool added = element->GetClassList()->Toggle("selected");
+
+// 检查class
+if (element->GetClassList()->Contains("active")) {
+    // ...
+}
+
+// 获取class数量
+size_t count = element->GetClassList()->Length();
+```
+
 ---
 
 ## 🔄 进行中任务
@@ -341,11 +385,11 @@ auto container = element->Closest(".container");
 - ✅ 实现closest()方法
 - ✅ 完整的CSS3选择器支持
 
-#### Task 4: 元素属性和样式操作 (60%)
+#### Task 4: 元素属性和样式操作 (80%)
 - ✅ setAttribute/getAttribute/removeAttribute/hasAttribute
 - ✅ GetAllAttributes() - 获取所有属性
+- ✅ classList.add/remove/toggle/contains - DOMTokenList完整实现
 - ⏳ **待完成**:
-  - [ ] classList.add/remove/toggle/contains
   - [ ] style.setProperty/getPropertyValue/removeProperty
   - [ ] dataset属性（data-*）
   - [ ] 绑定到JavaScript
@@ -482,6 +526,8 @@ auto container = element->Closest(".container");
 ## 📝 Git提交记录
 
 ### 2025-11-11
+- `b873f0a` - feat(dom): implement DOMTokenList and classList API (Phase 2.5 P1)
+- `992bc37` - docs: 更新Phase 2.5进度 - P1 querySelector完整集成完成
 - `2f6a7e6` - feat(dom): 完整集成Lexbor CSS选择器引擎 (Phase 2.5 P1)
 - `426e49a` - docs: 更新Phase 2.5进度 - P3拖拽系统集成完成
 - `0b6f6b0` - feat(event): 集成DragManager到EventLoop (Phase 2.5 P3)
