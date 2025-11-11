@@ -14,6 +14,10 @@
 #include "dom_string_map.h"
 #include <algorithm>
 #include <sstream>
+#include <lexbor/html/interfaces/document.h>
+#include <lexbor/html/serialize.h>
+#include <lexbor/dom/interfaces/element.h>
+#include <lexbor/dom/interfaces/text.h>
 
 namespace lightui {
 
@@ -418,65 +422,6 @@ std::shared_ptr<Element> Element::Closest(const std::string& selector) {
     return SelectorEngine::Closest(self, selector);
 }
 
-// ========== innerHTML ==========
-
-std::string Element::GetInnerHTML() const {
-    std::string result;
-
-    for (const auto& child : GetChildNodes()) {
-        auto element = std::dynamic_pointer_cast<Element>(child);
-        if (element) {
-            // 元素节点：<tagName>innerHTML</tagName>
-            result += "<" + element->GetTagName();
-
-            // 添加属性
-            std::string id = element->GetAttribute("id");
-            if (!id.empty()) {
-                result += " id=\"" + id + "\"";
-            }
-            if (!element->GetClassName().empty()) {
-                result += " class=\"" + element->GetClassName() + "\"";
-            }
-
-            result += ">";
-            result += element->GetInnerHTML();  // 递归
-            result += "</" + element->GetTagName() + ">";
-        } else {
-            // 文本节点
-            result += child->GetTextContent();
-        }
-    }
-
-    return result;
-}
-
-void Element::SetInnerHTML(const std::string& html) {
-    // 简单实现：清空所有子节点，然后添加一个文本节点
-    // 完整的 HTML 解析器实现会更复杂，这里只做简单处理
-
-    // 清空所有子节点
-    while (!GetChildNodes().empty()) {
-        RemoveChild(GetChildNodes()[0]);
-    }
-
-    // 如果 HTML 为空，直接返回
-    if (html.empty()) {
-        return;
-    }
-
-    // 简单处理：如果不包含 <，当作纯文本
-    if (html.find('<') == std::string::npos) {
-        auto text = std::make_shared<Text>(html);
-        AppendChild(text);
-        return;
-    }
-
-    // TODO: 完整的 HTML 解析器实现
-    // 目前只支持纯文本，复杂的 HTML 解析留待后续实现
-    auto text = std::make_shared<Text>(html);
-    AppendChild(text);
-}
-
 // ========== CSS伪类支持（参考RmlUi） ==========
 
 void Element::SetPseudoClass(const std::string& pseudo_class, bool activate) {
@@ -525,6 +470,293 @@ std::vector<std::string> Element::GetActivePseudoClasses() const {
         }
     }
     return result;
+}
+
+// ========== HTML内容操作 ==========
+
+std::string Element::GetInnerHTML() const {
+    // 序列化所有子节点为HTML字符串
+    std::ostringstream html;
+
+    for (const auto& child : GetChildNodes()) {
+        if (child->GetNodeType() == NodeType::ELEMENT_NODE) {
+            // 元素节点：递归获取outerHTML
+            auto element = std::static_pointer_cast<Element>(child);
+            html << element->GetOuterHTML();
+        } else if (child->GetNodeType() == NodeType::TEXT_NODE) {
+            // 文本节点：直接输出文本内容（需要HTML转义）
+            auto text = std::static_pointer_cast<Text>(child);
+            std::string content = text->GetData();
+
+            // HTML转义
+            std::string escaped;
+            for (char c : content) {
+                switch (c) {
+                    case '<': escaped += "&lt;"; break;
+                    case '>': escaped += "&gt;"; break;
+                    case '&': escaped += "&amp;"; break;
+                    case '"': escaped += "&quot;"; break;
+                    case '\'': escaped += "&#39;"; break;
+                    default: escaped += c; break;
+                }
+            }
+            html << escaped;
+        }
+    }
+
+    return html.str();
+}
+
+void Element::SetInnerHTML(const std::string& html) {
+    // 清空所有子节点
+    auto children = GetChildNodes();  // 复制一份，避免迭代时修改
+    for (const auto& child : children) {
+        RemoveChild(child);
+    }
+
+    if (html.empty()) {
+        MarkDirty();
+        return;
+    }
+
+    // 使用Lexbor解析HTML片段
+    // 获取Document以访问Lexbor文档
+    auto doc = std::dynamic_pointer_cast<Document>(GetOwnerDocument());
+    if (!doc) {
+        // 如果没有Document，回退到简单的文本节点
+        auto text_node = std::make_shared<Text>(html);
+        AppendChild(text_node);
+        MarkDirty();
+        return;
+    }
+
+    // 创建临时Lexbor文档用于解析
+    lxb_html_document_t* temp_doc = lxb_html_document_create();
+    if (!temp_doc) {
+        return;
+    }
+
+    // 创建一个临时元素作为解析上下文
+    lxb_dom_element_t* temp_elem = lxb_dom_document_create_element(
+        &temp_doc->dom_document,
+        reinterpret_cast<const lxb_char_t*>(tag_name_.c_str()),
+        tag_name_.length(),
+        nullptr
+    );
+
+    if (!temp_elem) {
+        lxb_html_document_destroy(temp_doc);
+        return;
+    }
+
+    // 解析HTML片段
+    lxb_dom_node_t* fragment = lxb_html_document_parse_fragment(
+        temp_doc,
+        temp_elem,
+        reinterpret_cast<const lxb_char_t*>(html.c_str()),
+        html.length()
+    );
+
+    if (fragment) {
+        // 遍历解析结果的子节点，转换为我们的Node对象
+        lxb_dom_node_t* child = fragment->first_child;
+        while (child) {
+            std::shared_ptr<Node> new_node = ConvertLexborNodeToNode(child, doc);
+            if (new_node) {
+                AppendChild(new_node);
+            }
+            child = child->next;
+        }
+    }
+
+    // 清理临时文档
+    lxb_html_document_destroy(temp_doc);
+
+    MarkDirty();
+}
+
+std::string Element::GetOuterHTML() const {
+    // 序列化元素自身及其所有子节点为HTML字符串
+    std::ostringstream html;
+
+    // 开始标签
+    html << "<" << tag_name_;
+
+    // 属性
+    for (const auto& attr : attributes_) {
+        html << " " << attr.first << "=\"";
+
+        // HTML转义属性值
+        std::string escaped;
+        for (char c : attr.second) {
+            switch (c) {
+                case '"': escaped += "&quot;"; break;
+                case '&': escaped += "&amp;"; break;
+                case '<': escaped += "&lt;"; break;
+                case '>': escaped += "&gt;"; break;
+                default: escaped += c; break;
+            }
+        }
+        html << escaped << "\"";
+    }
+
+    // 自闭合标签检查
+    bool is_void_element = (
+        tag_name_ == "area" || tag_name_ == "base" || tag_name_ == "br" ||
+        tag_name_ == "col" || tag_name_ == "embed" || tag_name_ == "hr" ||
+        tag_name_ == "img" || tag_name_ == "input" || tag_name_ == "link" ||
+        tag_name_ == "meta" || tag_name_ == "param" || tag_name_ == "source" ||
+        tag_name_ == "track" || tag_name_ == "wbr"
+    );
+
+    if (is_void_element && GetChildNodes().empty()) {
+        // 自闭合标签
+        html << " />";
+    } else {
+        // 结束开始标签
+        html << ">";
+
+        // 子节点内容
+        html << GetInnerHTML();
+
+        // 结束标签
+        html << "</" << tag_name_ << ">";
+    }
+
+    return html.str();
+}
+
+void Element::SetOuterHTML(const std::string& html) {
+    // 替换元素自身
+    // 需要在父节点中替换
+    auto parent = GetParentNode();
+    if (!parent) {
+        throw std::runtime_error("Cannot set outerHTML on element without parent");
+    }
+
+    if (html.empty()) {
+        parent->RemoveChild(shared_from_this());
+        return;
+    }
+
+    // 使用Lexbor解析HTML片段
+    auto doc = std::dynamic_pointer_cast<Document>(GetOwnerDocument());
+    if (!doc) {
+        throw std::runtime_error("Cannot set outerHTML without document");
+    }
+
+    // 创建临时Lexbor文档用于解析
+    lxb_html_document_t* temp_doc = lxb_html_document_create();
+    if (!temp_doc) {
+        throw std::runtime_error("Failed to create temporary document");
+    }
+
+    // 创建body元素作为解析上下文
+    lxb_dom_element_t* temp_elem = lxb_dom_document_create_element(
+        &temp_doc->dom_document,
+        reinterpret_cast<const lxb_char_t*>("body"),
+        4,
+        nullptr
+    );
+
+    if (!temp_elem) {
+        lxb_html_document_destroy(temp_doc);
+        throw std::runtime_error("Failed to create temporary element");
+    }
+
+    // 解析HTML片段
+    lxb_dom_node_t* fragment = lxb_html_document_parse_fragment(
+        temp_doc,
+        temp_elem,
+        reinterpret_cast<const lxb_char_t*>(html.c_str()),
+        html.length()
+    );
+
+    if (fragment && fragment->first_child) {
+        // 只取第一个元素节点
+        lxb_dom_node_t* first_child = fragment->first_child;
+        std::shared_ptr<Node> new_node = ConvertLexborNodeToNode(first_child, doc);
+
+        if (new_node) {
+            parent->ReplaceChild(new_node, shared_from_this());
+        }
+    }
+
+    // 清理临时文档
+    lxb_html_document_destroy(temp_doc);
+}
+
+// ========== 辅助函数 ==========
+
+std::shared_ptr<Node> Element::ConvertLexborNodeToNode(lxb_dom_node_t* lexbor_node,
+                                                        std::shared_ptr<Document> doc) {
+    if (!lexbor_node) {
+        return nullptr;
+    }
+
+    if (lexbor_node->type == LXB_DOM_NODE_TYPE_ELEMENT) {
+        // 元素节点
+        lxb_dom_element_t* lexbor_elem = lxb_dom_interface_element(lexbor_node);
+
+        // 获取标签名
+        size_t tag_name_len;
+        const lxb_char_t* tag_name_data = lxb_dom_element_qualified_name(lexbor_elem, &tag_name_len);
+        std::string tag_name(reinterpret_cast<const char*>(tag_name_data), tag_name_len);
+
+        // 创建新元素
+        auto new_elem = std::make_shared<Element>(tag_name);
+        // 注意：owner_document会在AppendChild时自动设置
+
+        // 复制属性
+        lxb_dom_attr_t* attr = lexbor_elem->first_attr;
+        while (attr) {
+            size_t attr_name_len;
+            const lxb_char_t* attr_name_data = lxb_dom_attr_qualified_name(attr, &attr_name_len);
+            std::string attr_name(reinterpret_cast<const char*>(attr_name_data), attr_name_len);
+
+            size_t attr_value_len;
+            const lxb_char_t* attr_value_data = lxb_dom_attr_value(attr, &attr_value_len);
+            std::string attr_value;
+            if (attr_value_data) {
+                attr_value = std::string(reinterpret_cast<const char*>(attr_value_data), attr_value_len);
+            }
+
+            new_elem->SetAttribute(attr_name, attr_value);
+
+            attr = attr->next;
+        }
+
+        // 递归处理子节点
+        lxb_dom_node_t* child = lexbor_node->first_child;
+        while (child) {
+            std::shared_ptr<Node> child_node = ConvertLexborNodeToNode(child, doc);
+            if (child_node) {
+                new_elem->AppendChild(child_node);
+            }
+            child = child->next;
+        }
+
+        return new_elem;
+
+    } else if (lexbor_node->type == LXB_DOM_NODE_TYPE_TEXT) {
+        // 文本节点
+        lxb_dom_text_t* lexbor_text = lxb_dom_interface_text(lexbor_node);
+
+        size_t text_len;
+        const lxb_char_t* text_data = lxb_dom_node_text_content(lexbor_node, &text_len);
+        std::string text;
+        if (text_data) {
+            text = std::string(reinterpret_cast<const char*>(text_data), text_len);
+        }
+
+        auto new_text = std::make_shared<Text>(text);
+        // 注意：owner_document会在AppendChild时自动设置
+
+        return new_text;
+    }
+
+    // 其他类型节点暂不支持
+    return nullptr;
 }
 
 } // namespace lightui

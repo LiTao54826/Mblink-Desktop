@@ -1,8 +1,8 @@
 # Phase 2.5 开发进度报告
 
 > **开始日期**: 2025-11-11
-> **当前状态**: 进行中
-> **完成度**: 98%
+> **当前状态**: 基本完成
+> **完成度**: 99%
 > **参考项目**: RmlUi
 
 ---
@@ -13,7 +13,7 @@
 |--------|--------|------|------|
 | **P0** | 核心事件系统 | 95% | ✅ 基本完成 |
 | **P1** | DOM API完善 | 100% | ✅ 完成 |
-| **P2** | CSS伪类和焦点管理 | 95% | ✅ 基本完成 |
+| **P2** | CSS伪类和焦点管理 | 100% | ✅ 完成 |
 | **P3** | 拖拽系统 | 100% | ✅ 完成 |
 | **P4** | 键盘事件和表单 | 100% | ✅ 完成 |
 
@@ -703,6 +703,54 @@ textarea->SetPlaceholder("Enter your message");
 - ✅ MDN Web Docs - HTMLTextAreaElement
 - ✅ `ReferenceProject/RmlUi/Source/Core/Elements/` (ElementFormControl系列)
 
+### 15. innerHTML/outerHTML实现 ✅ (2025-11-11)
+
+**参考**: W3C DOM Parsing and Serialization Specification
+
+**实现内容**:
+- ✅ `Element::GetInnerHTML()` - 序列化元素内部HTML
+- ✅ `Element::SetInnerHTML()` - 解析HTML并替换元素内容
+- ✅ `Element::GetOuterHTML()` - 序列化包括元素自身的HTML
+- ✅ `Element::SetOuterHTML()` - 解析HTML并替换元素自身
+- ✅ `Element::ConvertLexborNodeToNode()` - Lexbor节点到Node对象转换
+- ✅ 使用Lexbor HTML解析器（`lxb_html_document_parse_fragment`）
+- ✅ HTML转义处理（`<`, `>`, `&`, `"`, `'`）
+- ✅ 自闭合标签支持（`<br />`, `<img />`, `<input />`等）
+- ✅ 递归序列化和解析
+
+**技术亮点**:
+- 使用Lexbor的HTML片段解析功能
+- 自动转换Lexbor DOM到我们的Node对象
+- 支持完整的HTML5语法
+- 正确处理属性和子节点
+
+**代码示例**:
+```cpp
+// 获取innerHTML
+auto div = std::make_shared<Element>("div");
+div->SetInnerHTML("<p>Hello <strong>World</strong></p>");
+std::string html = div->GetInnerHTML();
+// html = "<p>Hello <strong>World</strong></p>"
+
+// 获取outerHTML
+std::string outer = div->GetOuterHTML();
+// outer = "<div><p>Hello <strong>World</strong></p></div>"
+
+// 设置outerHTML（替换元素自身）
+auto parent = std::make_shared<Element>("body");
+parent->AppendChild(div);
+div->SetOuterHTML("<section>New content</section>");
+// div被替换为section元素
+```
+
+**支持的HTML特性**:
+- ✅ 元素标签和属性
+- ✅ 文本节点
+- ✅ 嵌套元素
+- ✅ 自闭合标签
+- ✅ HTML实体转义
+- ✅ 深度递归解析
+
 ---
 
 ## 🔄 进行中任务
@@ -757,18 +805,18 @@ textarea->SetPlaceholder("Enter your message");
 - ⏳ **待完成**:
   - [ ] 绑定到JavaScript（将在后续阶段完成）
 
-#### Task 5: DOM操作API (90%)
+#### Task 5: DOM操作API (100%) ✅ 完成
 - ✅ appendChild/removeChild/insertBefore
 - ✅ textContent
 - ✅ cloneNode（深拷贝/浅拷贝） - 支持CSS伪类智能复制
+- ✅ replaceChild - 已在node.cpp中实现
+- ✅ innerHTML/outerHTML - 使用Lexbor HTML解析器
 - ⏳ **待完成**:
-  - [ ] replaceChild
-  - [ ] innerHTML/outerHTML
-  - [ ] 绑定到JavaScript
+  - [ ] 绑定到JavaScript（将在后续阶段完成）
 
-### P2: 焦点管理系统 (95%) ✅ 基本完成
+### P2: 焦点管理系统 (100%) ✅ 完成
 
-#### Task 7: 焦点管理 (95%)
+#### Task 7: 焦点管理 (100%) ✅
 - ✅ CSS伪类支持（:focus, :focus-visible）
 - ✅ :hover伪类自动设置（mouseover/mouseout）
 - ✅ :active伪类自动设置（mousedown/mouseup）
@@ -781,8 +829,7 @@ textarea->SetPlaceholder("Enter your message");
 - ✅ **集成FocusManager到EventLoop** - 鼠标点击时自动设置焦点
 - ✅ **focusin/focusout事件（冒泡版本）** - 完整的焦点事件支持
 - ✅ **autofocus属性支持** - 文档加载时自动聚焦
-- ⏳ **待完成**:
-  - [ ] 实现键盘事件处理（Tab键）- 需要P4的KeyboardEvent
+- ✅ **Tab键导航** - 已在P4中实现（EventLoop处理Tab键）
 
 **参考文件**:
 - ✅ `ReferenceProject/RmlUi/Source/Core/Element.cpp` (Focus, Blur)

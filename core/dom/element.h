@@ -25,6 +25,10 @@
 #include <functional>
 #include <memory>
 
+// 前向声明Lexbor类型
+struct lxb_dom_node;
+typedef struct lxb_dom_node lxb_dom_node_t;
+
 namespace lightui {
 
 // 前向声明
@@ -32,6 +36,7 @@ class Event;
 class DOMTokenList;
 class CSSStyleDeclaration;
 class DOMStringMap;
+class Document;
 using EventListener = std::function<void(std::shared_ptr<Event>)>;
 
 // EventListener包装器，包含唯一ID、捕获阶段标志和once选项
@@ -308,21 +313,9 @@ public:
      * @return 匹配的祖先元素，如果没有返回nullptr
      */
     std::shared_ptr<Element> Closest(const std::string& selector);
-    
+
     // ========== 其他 ==========
-    
-    /**
-     * @brief 获取innerHTML
-     * @return HTML字符串
-     */
-    std::string GetInnerHTML() const;
-    
-    /**
-     * @brief 设置innerHTML
-     * @param html HTML字符串
-     */
-    void SetInnerHTML(const std::string& html);
-    
+
     /**
      * @brief 克隆节点
      * @param deep 是否深度克隆
@@ -335,12 +328,38 @@ public:
      * @return 文本内容
      */
     std::string GetTextContent() const override;
-    
+
     /**
      * @brief 设置文本内容
      * @param content 文本内容
      */
     void SetTextContent(const std::string& content) override;
+
+    // ========== HTML内容操作 ==========
+
+    /**
+     * @brief 获取innerHTML（元素内部的HTML）
+     * @return HTML字符串
+     */
+    std::string GetInnerHTML() const;
+
+    /**
+     * @brief 设置innerHTML（替换元素内部的所有内容）
+     * @param html HTML字符串
+     */
+    void SetInnerHTML(const std::string& html);
+
+    /**
+     * @brief 获取outerHTML（包括元素自身的HTML）
+     * @return HTML字符串
+     */
+    std::string GetOuterHTML() const;
+
+    /**
+     * @brief 设置outerHTML（替换元素自身）
+     * @param html HTML字符串
+     */
+    void SetOuterHTML(const std::string& html);
 
 private:
     /**
@@ -349,6 +368,15 @@ private:
      * @param use_capture 是否使用捕获
      */
     void HandleEvent(std::shared_ptr<Event> event, bool use_capture);
+
+    /**
+     * @brief 将Lexbor节点转换为我们的Node对象
+     * @param lexbor_node Lexbor节点
+     * @param doc 所属文档
+     * @return 转换后的Node对象
+     */
+    static std::shared_ptr<Node> ConvertLexborNodeToNode(lxb_dom_node_t* lexbor_node,
+                                                          std::shared_ptr<Document> doc);
 
 private:
     std::string tag_name_;
