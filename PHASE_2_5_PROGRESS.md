@@ -11,9 +11,9 @@
 
 | 优先级 | 任务组 | 进度 | 状态 |
 |--------|--------|------|------|
-| **P0** | 核心事件系统 | 50% | 🔄 进行中 |
+| **P0** | 核心事件系统 | 75% | 🔄 进行中 |
 | **P1** | DOM API完善 | 0% | ⏳ 待开始 |
-| **P2** | CSS伪类和焦点管理 | 30% | 🔄 进行中 |
+| **P2** | CSS伪类和焦点管理 | 50% | 🔄 进行中 |
 | **P3** | 拖拽系统 | 0% | ⏳ 待开始 |
 | **P4** | 键盘事件和表单 | 0% | ⏳ 待开始 |
 
@@ -78,24 +78,59 @@ if (element->HasPseudoClass("hover")) {
 }
 ```
 
+### 3. mouseover/mouseout事件和hover链追踪 ✅ (2025-11-11)
+
+**参考**: `ReferenceProject/RmlUi/Source/Core/Context.cpp` (UpdateHoverChain, SendEvents)
+
+**实现内容**:
+- ✅ `EventLoop::UpdateHoverChain()` - 更新hover链并发送事件
+- ✅ `EventLoop::SendEvents()` - 发送事件到元素集合差集
+- ✅ `hover_chain_` - 存储当前悬停元素链
+- ✅ `hover_element_` - 当前悬停的最深层元素
+- ✅ mouseover/mouseout事件自动发送
+- ✅ :hover伪类自动设置/移除
+- ✅ :active伪类自动设置/移除（mousedown/mouseup）
+
+**Hover链算法**:
+1. Hit Testing获取鼠标下的元素
+2. 从目标元素向上遍历到根元素，构建新hover链
+3. 比较新旧hover链，找出差集
+4. 发送mouseout到离开的元素（在旧链但不在新链）
+5. 发送mouseover到进入的元素（在新链但不在旧链）
+6. 自动设置/移除:hover伪类
+
+**代码示例**:
+```cpp
+// 鼠标移动时自动调用
+UpdateHoverChain(window_id, mouse_x, mouse_y);
+
+// 自动发送事件：
+// - mouseout到离开的元素
+// - mouseover到进入的元素
+// - 自动设置:hover伪类
+```
+
 ---
 
 ## 🔄 进行中任务
 
-### P0: 核心事件系统 (50%)
+### P0: 核心事件系统 (75%)
 
-#### Task 1: 完善鼠标事件系统 (50%)
+#### Task 1: 完善鼠标事件系统 (75%)
 - ✅ HitTesting已实现
 - ✅ MouseEvent类已实现
 - ✅ 基础事件分发已实现
+- ✅ mouseover/mouseout事件已实现
+- ✅ hover链追踪已实现
+- ✅ :hover伪类自动设置已实现
+- ✅ :active伪类自动设置已实现
 - ⏳ **待完成**:
-  - [ ] 实现mouseover/mouseout事件
   - [ ] 实现mouseenter/mouseleave事件（不冒泡）
   - [ ] 实现dblclick事件
   - [ ] 鼠标坐标投影（支持transform）
 
 **参考文件**:
-- `ReferenceProject/RmlUi/Source/Core/Context.cpp` (ProcessMouseMove)
+- ✅ `ReferenceProject/RmlUi/Source/Core/Context.cpp` (ProcessMouseMove, UpdateHoverChain)
 
 #### Task 2: 完善JavaScript事件绑定 (50%)
 - ✅ addEventListener已实现
@@ -132,10 +167,12 @@ if (element->HasPseudoClass("hover")) {
 - [ ] innerHTML/outerHTML/textContent
 - [ ] 绑定到JavaScript
 
-### P2: 焦点管理系统 (30%)
+### P2: 焦点管理系统 (50%)
 
-#### Task 7: 焦点管理 (30%)
+#### Task 7: 焦点管理 (50%)
 - ✅ CSS伪类支持（:focus, :focus-visible）
+- ✅ :hover伪类自动设置（mouseover/mouseout）
+- ✅ :active伪类自动设置（mousedown/mouseup）
 - ⏳ **待完成**:
   - [ ] FocusManager类
   - [ ] Focus()/Blur()方法
@@ -244,13 +281,14 @@ if (element->HasPseudoClass("hover")) {
 ## 📝 Git提交记录
 
 ### 2025-11-11
+- `bc946fc` - feat(event): 实现mouseover/mouseout事件和hover链追踪 (Phase 2.5 P0)
 - `87e0447` - feat(event): 实现EventId枚举和CSS伪类支持 (Phase 2.5 P0-P2)
 - `075a1a4` - docs: 清理根目录 - 移动重组文档到历史目录
 - `8ceb071` - docs: 项目重组2025 - 清理过时文档，建立新规范
 
 ---
 
-**最后更新**: 2025-11-11  
-**下次审查**: 2025-11-12  
+**最后更新**: 2025-11-11
+**下次审查**: 2025-11-12
 **负责人**: MBink Team
 
