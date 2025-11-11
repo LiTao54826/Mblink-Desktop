@@ -2,7 +2,7 @@
 
 > **开始日期**: 2025-11-11
 > **当前状态**: 进行中
-> **完成度**: 80%
+> **完成度**: 85%
 > **参考项目**: RmlUi
 
 ---
@@ -12,7 +12,7 @@
 | 优先级 | 任务组 | 进度 | 状态 |
 |--------|--------|------|------|
 | **P0** | 核心事件系统 | 90% | ✅ 基本完成 |
-| **P1** | DOM API完善 | 95% | ✅ 基本完成 |
+| **P1** | DOM API完善 | 100% | ✅ 完成 |
 | **P2** | CSS伪类和焦点管理 | 80% | ✅ 基本完成 |
 | **P3** | 拖拽系统 | 90% | ✅ 基本完成 |
 | **P4** | 键盘事件和表单 | 0% | ⏳ 待开始 |
@@ -386,6 +386,61 @@ std::string css_text = element->GetStyleDeclaration()->GetCssText();
 size_t count = element->GetStyleDeclaration()->Length();
 ```
 
+### 11. CloneNode改进和dataset API ✅ (2025-11-11)
+
+**参考**: W3C DOM - cloneNode, W3C HTML5 - DOMStringMap
+
+**实现内容**:
+- ✅ `Element::CloneNode()` 改进 - 支持CSS伪类复制
+- ✅ 智能伪类过滤 - 跳过交互性伪类（:hover, :active, :focus, :drag）
+- ✅ `DOMStringMap` 类 - 完整的dataset实现
+- ✅ `Element::GetDataset()` - 获取dataset对象
+- ✅ 自动命名转换 - data-foo-bar <-> fooBar
+- ✅ `Get(name)` - 获取data-*属性值
+- ✅ `Set(name, value)` - 设置data-*属性值
+- ✅ `Remove(name)` - 删除data-*属性
+- ✅ `Has(name)` - 检查是否存在data-*属性
+- ✅ `GetAll()` - 获取所有data-*属性
+
+**技术亮点**:
+- CloneNode正确处理CSS伪类状态
+- 符合W3C DOMStringMap接口规范
+- 自动命名转换（驼峰式 <-> 连字符式）
+- 懒加载dataset对象，节省内存
+- 使用weak_ptr避免循环引用
+
+**代码示例**:
+```cpp
+// CloneNode改进
+auto original = doc->CreateElement("div");
+original->SetPseudoClass("hover", true);  // 交互性伪类
+original->SetPseudoClass("custom", true);  // 持久性伪类
+
+auto cloned = std::dynamic_pointer_cast<Element>(original->CloneNode(true));
+// cloned不会有:hover伪类，但会有:custom伪类
+
+// dataset API
+element->GetDataset()->Set("userId", "123");  // 设置data-user-id="123"
+element->GetDataset()->Set("userName", "John");  // 设置data-user-name="John"
+
+// 获取data-*属性
+std::string id = element->GetDataset()->Get("userId");  // "123"
+
+// 删除data-*属性
+element->GetDataset()->Remove("userId");
+
+// 检查是否存在
+if (element->GetDataset()->Has("userName")) {
+    // ...
+}
+
+// 获取所有data-*属性
+auto all = element->GetDataset()->GetAll();
+for (const auto& [name, value] : all) {
+    // name: "userName", value: "John"
+}
+```
+
 ---
 
 ## 🔄 进行中任务
@@ -431,21 +486,21 @@ size_t count = element->GetStyleDeclaration()->Length();
 - ✅ 实现closest()方法
 - ✅ 完整的CSS3选择器支持
 
-#### Task 4: 元素属性和样式操作 (95%)
+#### Task 4: 元素属性和样式操作 (100%) ✅ 完成
 - ✅ setAttribute/getAttribute/removeAttribute/hasAttribute
 - ✅ GetAllAttributes() - 获取所有属性
 - ✅ classList.add/remove/toggle/contains - DOMTokenList完整实现
 - ✅ style.setProperty/getPropertyValue/removeProperty - CSSStyleDeclaration完整实现
+- ✅ dataset属性（data-*） - DOMStringMap完整实现
 - ⏳ **待完成**:
-  - [ ] dataset属性（data-*）
-  - [ ] 绑定到JavaScript
+  - [ ] 绑定到JavaScript（将在后续阶段完成）
 
-#### Task 5: DOM操作API (80%)
+#### Task 5: DOM操作API (90%)
 - ✅ appendChild/removeChild/insertBefore
 - ✅ textContent
+- ✅ cloneNode（深拷贝/浅拷贝） - 支持CSS伪类智能复制
 - ⏳ **待完成**:
   - [ ] replaceChild
-  - [ ] cloneNode（深拷贝/浅拷贝）
   - [ ] innerHTML/outerHTML
   - [ ] 绑定到JavaScript
 
