@@ -13,7 +13,7 @@
 |--------|--------|------|------|
 | **P0** | 核心事件系统 | 90% | ✅ 基本完成 |
 | **P1** | DOM API完善 | 0% | ⏳ 待开始 |
-| **P2** | CSS伪类和焦点管理 | 50% | 🔄 进行中 |
+| **P2** | CSS伪类和焦点管理 | 80% | ✅ 基本完成 |
 | **P3** | 拖拽系统 | 0% | ⏳ 待开始 |
 | **P4** | 键盘事件和表单 | 0% | ⏳ 待开始 |
 
@@ -153,6 +153,48 @@ uint64_t capture_id = element->AddEventListener("click", listener, true);
 element->RemoveEventListener("click", id);
 ```
 
+### 6. FocusManager焦点管理系统 ✅ (2025-11-11)
+
+**参考**: `ReferenceProject/RmlUi/Source/Core/Context.cpp` (OnFocusChange), `Element.cpp` (Focus, Blur)
+
+**实现内容**:
+- ✅ `FocusManager` 类
+- ✅ `SetFocus()` - 设置焦点到指定元素
+- ✅ `Blur()` - 移除焦点
+- ✅ `GetFocusElement()` - 获取当前焦点元素
+- ✅ `TabToNextFocusableElement()` - Tab键导航
+- ✅ `ClearFocus()` - 清除焦点
+- ✅ 焦点链管理（从元素到根）
+- ✅ focus/blur事件自动发送
+- ✅ :focus/:focus-visible伪类自动设置
+
+**Tab键导航**:
+- 支持tabindex属性（-1, 0, 正数）
+- tabindex > 0 的元素优先
+- tabindex = 0 的元素按DOM顺序
+- tabindex = -1 的元素不可通过Tab导航
+- 支持Shift+Tab反向导航
+- 循环导航支持
+
+**可聚焦元素**:
+- 有tabindex属性的元素
+- 默认可聚焦：input, button, select, textarea, a
+- 检查disabled属性
+
+**代码示例**:
+```cpp
+// 创建焦点管理器
+FocusManager focus_manager;
+
+// 设置焦点
+focus_manager.SetFocus(element, false);  // 鼠标点击
+focus_manager.SetFocus(element, true);   // 键盘导航（显示focus-visible）
+
+// Tab导航
+focus_manager.TabToNextFocusableElement(document, false);  // Tab
+focus_manager.TabToNextFocusableElement(document, true);   // Shift+Tab
+```
+
 ---
 
 ## 🔄 进行中任务
@@ -211,23 +253,27 @@ element->RemoveEventListener("click", id);
 - [ ] innerHTML/outerHTML/textContent
 - [ ] 绑定到JavaScript
 
-### P2: 焦点管理系统 (50%)
+### P2: 焦点管理系统 (80%) ✅ 基本完成
 
-#### Task 7: 焦点管理 (50%)
+#### Task 7: 焦点管理 (90%)
 - ✅ CSS伪类支持（:focus, :focus-visible）
 - ✅ :hover伪类自动设置（mouseover/mouseout）
 - ✅ :active伪类自动设置（mousedown/mouseup）
+- ✅ FocusManager类
+- ✅ SetFocus()/Blur()方法
+- ✅ Tab键导航（tabindex支持）
+- ✅ focus/blur事件
+- ✅ 焦点链管理
+- ✅ 可聚焦元素检测
 - ⏳ **待完成**:
-  - [ ] FocusManager类
-  - [ ] Focus()/Blur()方法
-  - [ ] Tab键导航（tabindex支持）
-  - [ ] focus/blur事件
+  - [ ] 集成FocusManager到EventLoop
+  - [ ] 实现键盘事件处理（Tab键）
   - [ ] focusin/focusout事件（冒泡版本）
   - [ ] autofocus属性支持
 
 **参考文件**:
-- `ReferenceProject/RmlUi/Source/Core/Element.cpp` (Focus, Blur)
-- `ReferenceProject/RmlUi/Source/Core/Context.cpp` (GetFocusElement)
+- ✅ `ReferenceProject/RmlUi/Source/Core/Element.cpp` (Focus, Blur)
+- ✅ `ReferenceProject/RmlUi/Source/Core/Context.cpp` (GetFocusElement, OnFocusChange)
 
 ### P3: 拖拽系统 (0%)
 
@@ -325,6 +371,8 @@ element->RemoveEventListener("click", id);
 ## 📝 Git提交记录
 
 ### 2025-11-11
+- `d1786bd` - feat(event): 实现FocusManager焦点管理系统 (Phase 2.5 P2)
+- `28eb492` - docs: 更新Phase 2.5进度 - P0核心事件系统基本完成
 - `a4ac7bb` - feat(event): 实现removeEventListener和事件捕获阶段 (Phase 2.5 P0)
 - `8443694` - feat(event): 实现mouseenter/mouseleave事件 (Phase 2.5 P0)
 - `bc946fc` - feat(event): 实现mouseover/mouseout事件和hover链追踪 (Phase 2.5 P0)
