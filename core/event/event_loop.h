@@ -166,6 +166,13 @@ private:
     void HandleMouseEventForDOM(const SDL_Event& event);
 
     /**
+     * @brief 处理键盘事件并分发到 DOM
+     *
+     * @param event SDL 键盘事件
+     */
+    void HandleKeyboardEventForDOM(const SDL_Event& event);
+
+    /**
      * @brief 将 SDL 鼠标按钮转换为鼠标按钮编号
      *
      * @param sdl_button SDL 鼠标按钮

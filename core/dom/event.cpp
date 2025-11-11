@@ -76,10 +76,38 @@ MouseEvent::MouseEvent(const std::string& type, int x, int y, int button)
 
 // ========== KeyboardEvent 类实现 ==========
 
-KeyboardEvent::KeyboardEvent(const std::string& type, const std::string& key, const std::string& code)
+KeyboardEvent::KeyboardEvent(const std::string& type,
+                             const std::string& key,
+                             const std::string& code,
+                             int key_code,
+                             bool ctrl_key,
+                             bool shift_key,
+                             bool alt_key,
+                             bool meta_key,
+                             bool repeat)
     : Event(type, true, true)
     , key_(key)
-    , code_(code) {
+    , code_(code)
+    , key_code_(key_code)
+    , ctrl_key_(ctrl_key)
+    , shift_key_(shift_key)
+    , alt_key_(alt_key)
+    , meta_key_(meta_key)
+    , repeat_(repeat) {
+}
+
+bool KeyboardEvent::GetModifierState(const std::string& key_arg) const {
+    // 参考：W3C UI Events - KeyboardEvent.getModifierState()
+    if (key_arg == "Control" || key_arg == "Ctrl") {
+        return ctrl_key_;
+    } else if (key_arg == "Shift") {
+        return shift_key_;
+    } else if (key_arg == "Alt") {
+        return alt_key_;
+    } else if (key_arg == "Meta") {
+        return meta_key_;
+    }
+    return false;
 }
 
 } // namespace lightui

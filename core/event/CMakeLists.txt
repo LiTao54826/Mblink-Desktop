@@ -7,6 +7,7 @@ set(EVENT_SOURCES
     task_scheduler.cpp
     mouse_event.cpp
     keyboard_event.cpp
+    keyboard_utils.cpp
     hit_testing.cpp
     event.cpp
     event_system.cpp
@@ -23,6 +24,7 @@ set(EVENT_HEADERS
     task_scheduler.h
     mouse_event.h
     keyboard_event.h
+    keyboard_utils.h
     hit_testing.h
     event.h
     event_system.h

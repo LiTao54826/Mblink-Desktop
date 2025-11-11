@@ -10,6 +10,7 @@
 #include "focus_manager.h"
 #include "drag_manager.h"
 #include "mouse_event.h"
+#include "keyboard_utils.h"
 #include "hit_testing.h"
 #include "event_types.h"
 #include "core/window/window_manager.h"
@@ -149,6 +150,13 @@ bool EventLoop::ProcessEvents() {
             event.type == SDL_EVENT_MOUSE_BUTTON_UP ||
             event.type == SDL_EVENT_MOUSE_MOTION) {
             HandleMouseEventForDOM(event);
+        }
+
+        // 处理键盘事件并分发到 DOM
+        if (event.type == SDL_EVENT_KEY_DOWN ||
+            event.type == SDL_EVENT_KEY_UP ||
+            event.type == SDL_EVENT_TEXT_INPUT) {
+            HandleKeyboardEventForDOM(event);
         }
 
         // 分发到输入处理器
@@ -485,6 +493,86 @@ void EventLoop::SendEvents(const std::unordered_set<Element*>& old_items,
                 // 如果shared_from_this失败，说明元素已被销毁，忽略
             }
         }
+    }
+}
+
+void EventLoop::HandleKeyboardEventForDOM(const SDL_Event& event) {
+    // 参考：W3C UI Events - KeyboardEvent
+    // 参考：RmlUi/Source/Core/Context.cpp - ProcessKeyDown, ProcessKeyUp
+
+    // 获取焦点元素
+    auto focus_element = focus_manager_->GetFocusElement();
+    if (!focus_element) {
+        // 没有焦点元素，不分发键盘事件
+        return;
+    }
+
+    // 获取修饰键状态
+    SDL_Keymod mod = SDL_GetModState();
+    bool ctrl_key = (mod & SDL_KMOD_CTRL) != 0;
+    bool shift_key = (mod & SDL_KMOD_SHIFT) != 0;
+    bool alt_key = (mod & SDL_KMOD_ALT) != 0;
+    bool meta_key = (mod & SDL_KMOD_GUI) != 0;
+
+    // 处理不同类型的键盘事件
+    if (event.type == SDL_EVENT_KEY_DOWN) {
+        // keydown事件
+        std::string key = SDLKeycodeToKey(event.key.key, shift_key);
+        std::string code = SDLScancodeToCode(event.key.scancode);
+        int key_code = SDLKeycodeToKeyCode(event.key.key);
+        bool repeat = event.key.repeat;
+
+        auto keydown_event = std::make_shared<KeyboardEvent>(
+            "keydown",
+            key,
+            code,
+            key_code,
+            ctrl_key,
+            shift_key,
+            alt_key,
+            meta_key,
+            repeat
+        );
+
+        focus_element->DispatchEvent(keydown_event);
+
+        // 处理Tab键导航
+        if (event.key.key == SDLK_TAB && !keydown_event->IsDefaultPrevented()) {
+            // Tab键导航到下一个可聚焦元素
+            // Shift+Tab反向导航
+            auto document = std::dynamic_pointer_cast<Document>(focus_element->GetOwnerDocument());
+            if (document) {
+                focus_manager_->TabToNextFocusableElement(document, shift_key);
+            }
+        }
+
+    } else if (event.type == SDL_EVENT_KEY_UP) {
+        // keyup事件
+        std::string key = SDLKeycodeToKey(event.key.key, shift_key);
+        std::string code = SDLScancodeToCode(event.key.scancode);
+        int key_code = SDLKeycodeToKeyCode(event.key.key);
+
+        auto keyup_event = std::make_shared<KeyboardEvent>(
+            "keyup",
+            key,
+            code,
+            key_code,
+            ctrl_key,
+            shift_key,
+            alt_key,
+            meta_key,
+            false  // keyup不会是repeat
+        );
+
+        focus_element->DispatchEvent(keyup_event);
+
+    } else if (event.type == SDL_EVENT_TEXT_INPUT) {
+        // textinput事件（用于输入法等）
+        // 注意：这是SDL特有的事件，W3C标准中没有直接对应
+        // 可以考虑触发input事件或beforeinput事件
+
+        // TODO: 实现textinput事件处理
+        // 这通常用于表单元素的文本输入
     }
 }
 

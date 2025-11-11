@@ -207,30 +207,105 @@ private:
 
 /**
  * @brief 键盘事件类
+ *
+ * 参考：
+ * - W3C UI Events - KeyboardEvent
+ * - MDN Web Docs - KeyboardEvent
  */
 class KeyboardEvent : public Event {
 public:
     /**
      * @brief 构造函数
-     * @param type 事件类型
-     * @param key 按键名称
-     * @param code 按键代码
+     * @param type 事件类型（keydown, keyup, keypress）
+     * @param key 按键名称（如"a", "Enter", "ArrowUp"）
+     * @param code 按键代码（如"KeyA", "Enter", "ArrowUp"）
+     * @param key_code 按键码（已废弃但保留兼容性）
+     * @param ctrl_key Ctrl键是否按下
+     * @param shift_key Shift键是否按下
+     * @param alt_key Alt键是否按下
+     * @param meta_key Meta键（Windows键/Command键）是否按下
+     * @param repeat 是否是重复按键
      */
-    KeyboardEvent(const std::string& type, const std::string& key, const std::string& code);
-    
+    KeyboardEvent(const std::string& type,
+                  const std::string& key,
+                  const std::string& code,
+                  int key_code = 0,
+                  bool ctrl_key = false,
+                  bool shift_key = false,
+                  bool alt_key = false,
+                  bool meta_key = false,
+                  bool repeat = false);
+
     /**
      * @brief 获取按键名称
+     * @return 按键名称（如"a", "Enter", "ArrowUp"）
      */
     std::string GetKey() const { return key_; }
-    
+
     /**
      * @brief 获取按键代码
+     * @return 按键代码（如"KeyA", "Enter", "ArrowUp"）
      */
     std::string GetCode() const { return code_; }
 
+    /**
+     * @brief 获取按键码（已废弃但保留兼容性）
+     * @return 按键码
+     */
+    int GetKeyCode() const { return key_code_; }
+
+    /**
+     * @brief 获取字符码（已废弃但保留兼容性）
+     * @return 字符码（与keyCode相同）
+     */
+    int GetCharCode() const { return key_code_; }
+
+    /**
+     * @brief 检查Ctrl键是否按下
+     * @return true表示Ctrl键按下
+     */
+    bool GetCtrlKey() const { return ctrl_key_; }
+
+    /**
+     * @brief 检查Shift键是否按下
+     * @return true表示Shift键按下
+     */
+    bool GetShiftKey() const { return shift_key_; }
+
+    /**
+     * @brief 检查Alt键是否按下
+     * @return true表示Alt键按下
+     */
+    bool GetAltKey() const { return alt_key_; }
+
+    /**
+     * @brief 检查Meta键是否按下
+     * @return true表示Meta键按下（Windows键/Command键）
+     */
+    bool GetMetaKey() const { return meta_key_; }
+
+    /**
+     * @brief 检查是否是重复按键
+     * @return true表示是重复按键（按住不放）
+     */
+    bool GetRepeat() const { return repeat_; }
+
+    /**
+     * @brief 检查修饰键是否按下
+     * @param key_arg 修饰键名称（"Control", "Shift", "Alt", "Meta"）
+     * @return true表示指定的修饰键按下
+     */
+    bool GetModifierState(const std::string& key_arg) const;
+
 private:
-    std::string key_;
-    std::string code_;
+    std::string key_;       // 按键名称
+    std::string code_;      // 按键代码
+    int key_code_;          // 按键码（已废弃）
+    bool ctrl_key_;         // Ctrl键状态
+    bool shift_key_;        // Shift键状态
+    bool alt_key_;          // Alt键状态
+    bool meta_key_;         // Meta键状态
+    bool repeat_;           // 是否重复
 };
 
 } // namespace lightui
