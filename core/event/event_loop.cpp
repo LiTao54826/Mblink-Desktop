@@ -285,6 +285,10 @@ void EventLoop::HandleMouseEventForDOM(const SDL_Event& event) {
         // mousedown时设置:active伪类
         hit_result.element->SetPseudoClass("active", true);
 
+        // 鼠标点击时设置焦点（参考RmlUi/Source/Core/Context.cpp - ProcessMouseButtonDown）
+        // 使用FocusManager设置焦点，focus_visible=false（鼠标点击不显示焦点指示器）
+        focus_manager_->SetFocus(hit_result.element, false);
+
         // 拖拽检测（参考RmlUi/Source/Core/Context.cpp - ProcessMouseButtonDown）
         // 只在左键按下时检测拖拽
         if (event.button.button == SDL_BUTTON_LEFT) {

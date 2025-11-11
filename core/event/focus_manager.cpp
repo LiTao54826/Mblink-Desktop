@@ -9,6 +9,7 @@
 #include "core/dom/event.h"
 #include <algorithm>
 #include <unordered_set>
+#include <functional>
 
 namespace lightui {
 
@@ -138,6 +139,54 @@ void FocusManager::ClearFocus() {
         SendFocusEvents(current_focus, nullptr, false);
     }
     focus_element_.reset();
+}
+
+bool FocusManager::ProcessAutofocus(std::shared_ptr<Document> document) {
+    if (!document) {
+        return false;
+    }
+
+    // 查找第一个有autofocus属性的可聚焦元素
+    // 参考：W3C HTML5 - autofocus属性
+    auto root = document->GetDocumentElement();
+    if (!root) {
+        return false;
+    }
+
+    // 递归查找autofocus元素
+    std::function<std::shared_ptr<Element>(std::shared_ptr<Element>)> find_autofocus;
+    find_autofocus = [&](std::shared_ptr<Element> element) -> std::shared_ptr<Element> {
+        if (!element) {
+            return nullptr;
+        }
+
+        // 检查当前元素是否有autofocus属性
+        if (element->HasAttribute("autofocus") && IsFocusable(element)) {
+            return element;
+        }
+
+        // 递归检查子元素
+        auto children = element->GetChildNodes();
+        for (const auto& child : children) {
+            if (child->GetNodeType() == NodeType::ELEMENT_NODE) {
+                auto child_element = std::static_pointer_cast<Element>(child);
+                auto result = find_autofocus(child_element);
+                if (result) {
+                    return result;
+                }
+            }
+        }
+
+        return nullptr;
+    };
+
+    auto autofocus_element = find_autofocus(root);
+    if (autofocus_element) {
+        // 设置焦点，focus_visible=false（autofocus不显示焦点指示器）
+        return SetFocus(autofocus_element, false);
+    }
+
+    return false;
 }
 
 std::shared_ptr<Element> FocusManager::FindFocusableElement(std::shared_ptr<Element> element) {
@@ -273,14 +322,21 @@ void FocusManager::SendFocusEvents(std::shared_ptr<Element> old_focus,
         }
     }
 
-    // 发送blur事件到离开焦点链的元素
+    // 发送blur/focusout事件到离开焦点链的元素
+    // 参考：W3C UI Events - focusout是blur的冒泡版本
     for (Element* element : old_chain) {
         if (new_chain.find(element) == new_chain.end()) {
             try {
                 auto element_ptr = std::static_pointer_cast<Element>(element->shared_from_this());
+
+                // 发送blur事件（不冒泡）
                 auto blur_event = std::make_shared<Event>("blur");
                 element_ptr->DispatchEvent(blur_event);
-                
+
+                // 发送focusout事件（冒泡）
+                auto focusout_event = std::make_shared<Event>("focusout");
+                element_ptr->DispatchEvent(focusout_event);
+
                 // 移除:focus和:focus-visible伪类
                 element_ptr->SetPseudoClass("focus", false);
                 element_ptr->SetPseudoClass("focus-visible", false);
@@ -290,17 +346,24 @@ void FocusManager::SendFocusEvents(std::shared_ptr<Element> old_focus,
         }
     }
 
-    // 发送focus事件到进入焦点链的元素
+    // 发送focus/focusin事件到进入焦点链的元素
+    // 参考：W3C UI Events - focusin是focus的冒泡版本
     for (Element* element : new_chain) {
         if (old_chain.find(element) == old_chain.end()) {
             try {
                 auto element_ptr = std::static_pointer_cast<Element>(element->shared_from_this());
+
+                // 发送focus事件（不冒泡）
                 auto focus_event = std::make_shared<Event>("focus");
                 element_ptr->DispatchEvent(focus_event);
-                
+
+                // 发送focusin事件（冒泡）
+                auto focusin_event = std::make_shared<Event>("focusin");
+                element_ptr->DispatchEvent(focusin_event);
+
                 // 设置:focus伪类
                 element_ptr->SetPseudoClass("focus", true);
-                
+
                 // 如果是键盘导航，设置:focus-visible伪类
                 if (focus_visible) {
                     element_ptr->SetPseudoClass("focus-visible", true);

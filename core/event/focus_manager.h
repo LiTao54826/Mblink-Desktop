@@ -65,6 +65,15 @@ public:
      */
     void ClearFocus();
 
+    /**
+     * @brief 处理autofocus属性（在文档加载完成时调用）
+     * @param document 文档
+     * @return true表示找到并聚焦了autofocus元素
+     *
+     * 查找第一个有autofocus属性的可聚焦元素并设置焦点
+     */
+    bool ProcessAutofocus(std::shared_ptr<Document> document);
+
 private:
     /**
      * @brief 查找可聚焦的元素
