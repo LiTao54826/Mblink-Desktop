@@ -34,14 +34,15 @@ class CSSStyleDeclaration;
 class DOMStringMap;
 using EventListener = std::function<void(std::shared_ptr<Event>)>;
 
-// EventListener包装器，包含唯一ID和捕获阶段标志
+// EventListener包装器，包含唯一ID、捕获阶段标志和once选项
 struct EventListenerEntry {
     uint64_t id;                    // 唯一ID
     EventListener listener;         // 监听器函数
     bool use_capture;               // 是否在捕获阶段触发
+    bool once;                      // 是否只执行一次（执行后自动移除）
 
-    EventListenerEntry(uint64_t id_, EventListener listener_, bool use_capture_)
-        : id(id_), listener(std::move(listener_)), use_capture(use_capture_) {}
+    EventListenerEntry(uint64_t id_, EventListener listener_, bool use_capture_, bool once_ = false)
+        : id(id_), listener(std::move(listener_)), use_capture(use_capture_), once(once_) {}
 };
 
 /**
@@ -252,9 +253,16 @@ public:
      * @param type 事件类型（如"click", "mousemove"）
      * @param listener 监听器函数
      * @param use_capture 是否在捕获阶段触发（默认false，在冒泡阶段触发）
+     * @param once 是否只执行一次（执行后自动移除，默认false）
      * @return 监听器ID，用于后续移除
+     *
+     * 符合W3C EventTarget接口：
+     * - addEventListener(type, listener, {capture: false, once: false})
+     *
+     * 示例：
+     * element->AddEventListener("click", [](auto e) { ... }, false, true);  // 只执行一次
      */
-    uint64_t AddEventListener(const std::string& type, EventListener listener, bool use_capture = false);
+    uint64_t AddEventListener(const std::string& type, EventListener listener, bool use_capture = false, bool once = false);
 
     /**
      * @brief 移除事件监听器

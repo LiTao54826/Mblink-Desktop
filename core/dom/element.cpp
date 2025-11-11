@@ -265,12 +265,12 @@ void Element::SetTextContent(const std::string& content) {
 
 // ========== 事件监听 ==========
 
-uint64_t Element::AddEventListener(const std::string& type, EventListener listener, bool use_capture) {
+uint64_t Element::AddEventListener(const std::string& type, EventListener listener, bool use_capture, bool once) {
     // 分配唯一ID
     uint64_t listener_id = next_listener_id_++;
 
-    // 创建EventListenerEntry并添加到列表
-    event_listeners_[type].emplace_back(listener_id, std::move(listener), use_capture);
+    // 创建EventListenerEntry并添加到列表（包含once选项）
+    event_listeners_[type].emplace_back(listener_id, std::move(listener), use_capture, once);
 
     return listener_id;
 }
@@ -364,6 +364,9 @@ void Element::HandleEvent(std::shared_ptr<Event> event, bool use_capture) {
         return;
     }
 
+    // 收集需要移除的once监听器ID
+    std::vector<uint64_t> once_listeners_to_remove;
+
     // 调用匹配捕获阶段的监听器
     // 参考：RmlUi的事件分发机制
     for (const auto& entry : it->second) {
@@ -376,7 +379,18 @@ void Element::HandleEvent(std::shared_ptr<Event> event, bool use_capture) {
             break;
         }
 
+        // 调用监听器
         entry.listener(event);
+
+        // 如果是once监听器，标记为待移除
+        if (entry.once) {
+            once_listeners_to_remove.push_back(entry.id);
+        }
+    }
+
+    // 移除once监听器
+    for (uint64_t listener_id : once_listeners_to_remove) {
+        RemoveEventListener(event->GetType(), listener_id);
     }
 }
 

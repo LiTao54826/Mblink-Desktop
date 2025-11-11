@@ -273,8 +273,12 @@ void EventLoop::HandleMouseEventForDOM(const SDL_Event& event) {
     // 分发事件到目标元素
     hit_result.element->DispatchEvent(mouse_event);
 
-    // 处理mousedown/mouseup和click事件
+    // 处理mousedown/mouseup和click/dblclick事件
+    // 参考：W3C UI Events - dblclick事件需要在短时间内两次click同一元素
     static std::shared_ptr<Element> last_mousedown_element;
+    static std::shared_ptr<Element> last_click_element;
+    static Uint64 last_click_time = 0;
+    static const Uint64 DOUBLE_CLICK_TIME_MS = 500;  // 500ms内的两次click算作dblclick
 
     if (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN) {
         last_mousedown_element = hit_result.element;
@@ -301,6 +305,28 @@ void EventLoop::HandleMouseEventForDOM(const SDL_Event& event) {
                 button
             );
             hit_result.element->DispatchEvent(click_event);
+
+            // 检测dblclick：在短时间内两次click同一元素
+            Uint64 current_time = SDL_GetTicks();
+            if (last_click_element == hit_result.element &&
+                (current_time - last_click_time) <= DOUBLE_CLICK_TIME_MS) {
+                // 触发dblclick事件
+                auto dblclick_event = std::make_shared<MouseEvent>(
+                    "dblclick",
+                    static_cast<int>(mouse_x),
+                    static_cast<int>(mouse_y),
+                    button
+                );
+                hit_result.element->DispatchEvent(dblclick_event);
+
+                // 重置click跟踪（避免三击触发两次dblclick）
+                last_click_element = nullptr;
+                last_click_time = 0;
+            } else {
+                // 记录这次click
+                last_click_element = hit_result.element;
+                last_click_time = current_time;
+            }
         }
         last_mousedown_element = nullptr;
 
