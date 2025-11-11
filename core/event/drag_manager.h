@@ -17,6 +17,7 @@ namespace lightui {
 class Element;
 class Document;
 class Event;
+class DataTransfer;
 
 /**
  * @brief 拖拽模式
@@ -99,6 +100,12 @@ public:
      */
     std::shared_ptr<Element> GetDragClone() const;
 
+    /**
+     * @brief 获取DataTransfer对象
+     * @return DataTransfer对象
+     */
+    std::shared_ptr<DataTransfer> GetDataTransfer() const;
+
 private:
     /**
      * @brief 查找可拖拽的元素
@@ -174,6 +181,9 @@ private:
     // 拖拽开始时的鼠标位置
     float drag_start_x_;
     float drag_start_y_;
+
+    // DataTransfer对象
+    std::shared_ptr<DataTransfer> data_transfer_;
 };
 
 } // namespace lightui

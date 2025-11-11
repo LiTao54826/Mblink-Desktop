@@ -4,6 +4,7 @@
  */
 
 #include "drag_manager.h"
+#include "data_transfer.h"
 #include "core/dom/element.h"
 #include "core/dom/document.h"
 #include "core/dom/event.h"
@@ -18,7 +19,8 @@ DragManager::DragManager()
     , drag_started_(false)
     , drag_verbose_(false)
     , drag_start_x_(0.0f)
-    , drag_start_y_(0.0f) {
+    , drag_start_y_(0.0f)
+    , data_transfer_(std::make_shared<DataTransfer>()) {
 }
 
 DragManager::~DragManager() {
@@ -42,6 +44,10 @@ bool DragManager::StartDragDetection(std::shared_ptr<Element> element) {
     drag_mode_ = GetDragMode(draggable);
     drag_started_ = false;
     drag_verbose_ = (drag_mode_ == DragMode::DragDrop || drag_mode_ == DragMode::Clone);
+
+    // 初始化DataTransfer对象
+    data_transfer_ = std::make_shared<DataTransfer>();
+    data_transfer_->SetEffectAllowed(DragEffect::All);  // 默认允许所有效果
 
     return true;
 }
@@ -109,6 +115,10 @@ bool DragManager::UpdateDrag(float mouse_x, float mouse_y, std::shared_ptr<Docum
 void DragManager::EndDrag(float mouse_x, float mouse_y) {
     auto drag_element = drag_element_.lock();
     if (!drag_element) {
+        // 清理DataTransfer
+        if (data_transfer_) {
+            data_transfer_->ClearData();
+        }
         return;
     }
 
@@ -163,6 +173,11 @@ void DragManager::EndDrag(float mouse_x, float mouse_y) {
     drag_mode_ = DragMode::None;
     drag_started_ = false;
     drag_verbose_ = false;
+
+    // 清理DataTransfer
+    if (data_transfer_) {
+        data_transfer_->ClearData();
+    }
 }
 
 void DragManager::CancelDrag() {
@@ -182,6 +197,11 @@ void DragManager::CancelDrag() {
     drag_mode_ = DragMode::None;
     drag_started_ = false;
     drag_verbose_ = false;
+
+    // 清理DataTransfer
+    if (data_transfer_) {
+        data_transfer_->ClearData();
+    }
 }
 
 std::shared_ptr<Element> DragManager::GetDragElement() const {
@@ -198,6 +218,10 @@ bool DragManager::IsDragging() const {
 
 std::shared_ptr<Element> DragManager::GetDragClone() const {
     return drag_clone_;
+}
+
+std::shared_ptr<DataTransfer> DragManager::GetDataTransfer() const {
+    return data_transfer_;
 }
 
 std::shared_ptr<Element> DragManager::FindDraggableElement(std::shared_ptr<Element> element) {
@@ -267,24 +291,44 @@ DragMode DragManager::GetDragMode(std::shared_ptr<Element> element) {
 
 void DragManager::CreateDragClone(std::shared_ptr<Element> element, float mouse_x, float mouse_y) {
     // 参考：RmlUi/Source/Core/Context.cpp - CreateDragClone (lines 1471-1511)
-    
-    // TODO: 实现元素克隆
-    // 这需要Element::Clone()方法，暂时留空
-    // 
-    // 克隆步骤：
-    // 1. 克隆元素
+
+    if (!element) {
+        return;
+    }
+
+    // 1. 克隆元素（深度克隆）
+    auto cloned_node = element->CloneNode(true);
+    drag_clone_ = std::dynamic_pointer_cast<Element>(cloned_node);
+
+    if (!drag_clone_) {
+        return;
+    }
+
     // 2. 设置克隆元素的位置（跟随鼠标）
+    // 注意：这里简化处理，实际应该设置position: absolute和left/top
+    // 在完整实现中，应该将克隆元素添加到一个特殊的"cursor proxy"文档
+    drag_clone_->SetAttribute("style",
+        "position: absolute; left: " + std::to_string(static_cast<int>(mouse_x)) +
+        "px; top: " + std::to_string(static_cast<int>(mouse_y)) + "px;");
+
     // 3. 设置:drag伪类
+    drag_clone_->SetPseudoClass("drag", true);
+
     // 4. 将克隆元素添加到cursor proxy文档
-    
-    (void)element;
+    // TODO: 在完整实现中，应该有一个专门的cursor proxy文档
+    // 现在暂时不添加到DOM树，只保存引用
+
     (void)mouse_x;
     (void)mouse_y;
 }
 
 void DragManager::ReleaseDragClone() {
     if (drag_clone_) {
+        // 移除:drag伪类
+        drag_clone_->SetPseudoClass("drag", false);
+
         // TODO: 从cursor proxy文档中移除克隆元素
+
         drag_clone_ = nullptr;
     }
 }
