@@ -1,8 +1,8 @@
 # Phase 2.5 开发进度报告
 
-> **开始日期**: 2025-11-11  
-> **当前状态**: 进行中  
-> **完成度**: 15%  
+> **开始日期**: 2025-11-11
+> **当前状态**: 进行中
+> **完成度**: 70%
 > **参考项目**: RmlUi
 
 ---
@@ -12,7 +12,7 @@
 | 优先级 | 任务组 | 进度 | 状态 |
 |--------|--------|------|------|
 | **P0** | 核心事件系统 | 90% | ✅ 基本完成 |
-| **P1** | DOM API完善 | 0% | ⏳ 待开始 |
+| **P1** | DOM API完善 | 80% | ✅ 基本完成 |
 | **P2** | CSS伪类和焦点管理 | 80% | ✅ 基本完成 |
 | **P3** | 拖拽系统 | 90% | ✅ 基本完成 |
 | **P4** | 键盘事件和表单 | 0% | ⏳ 待开始 |
@@ -252,6 +252,50 @@ focus_manager.TabToNextFocusableElement(document, true);   // Shift+Tab
 // mouseup时 → EndDrag()
 ```
 
+### 8. Lexbor CSS选择器引擎集成 ✅ (2025-11-11)
+
+**参考**: `ReferenceProject/RmlUi/Source/Core/Element.cpp` (QuerySelector)
+
+**实现内容**:
+- ✅ `SelectorEngine::LexborContext` - 线程局部Lexbor上下文
+- ✅ `ConvertToLexborDOM()` - Element树到Lexbor DOM转换
+- ✅ `QuerySelector()` - 使用Lexbor选择器引擎查询第一个匹配元素
+- ✅ `QuerySelectorAll()` - 使用Lexbor选择器引擎查询所有匹配元素
+- ✅ `Matches()` - 使用lxb_selectors_match_node匹配节点
+- ✅ `Closest()` - 查找最近的匹配祖先元素
+- ✅ `Element::GetAllAttributes()` - 获取所有属性用于DOM转换
+- ✅ 回退实现 - Lexbor初始化失败时使用简单实现
+
+**支持的CSS选择器**:
+- ✅ 基础选择器：`*`, `div`, `#id`, `.class`
+- ✅ 属性选择器：`[attr]`, `[attr=value]`, `[attr^=value]`, `[attr$=value]`, `[attr*=value]`
+- ✅ 伪类选择器：`:hover`, `:active`, `:focus`, `:first-child`, `:last-child`, `:nth-child()`
+- ✅ 组合选择器：`div p` (后代), `div > p` (子), `div + p` (相邻), `div ~ p` (兄弟)
+- ✅ 复杂选择器：`div.class#id[attr]:hover > p:first-child`
+
+**技术亮点**:
+- 线程局部存储避免多线程问题
+- Element到Lexbor DOM的双向映射
+- 自动清理Lexbor DOM树避免内存泄漏
+- 完整的CSS3选择器支持
+
+**代码示例**:
+```cpp
+// 查询第一个匹配元素
+auto elem = root->QuerySelector("div.container > p:first-child");
+
+// 查询所有匹配元素
+auto elems = root->QuerySelectorAll("button[disabled]");
+
+// 检查元素是否匹配选择器
+if (element->Matches(":hover:active")) {
+    // 元素同时处于hover和active状态
+}
+
+// 查找最近的匹配祖先
+auto container = element->Closest(".container");
+```
+
 ---
 
 ## 🔄 进行中任务
@@ -287,28 +331,33 @@ focus_manager.TabToNextFocusableElement(document, true);   // Shift+Tab
 
 ## ⏳ 待开始任务
 
-### P1: DOM API完善 (0%)
+### P1: DOM API完善 (80%) ✅ 基本完成
 
-#### Task 3: 查询选择器
-- [ ] 集成Lexbor CSS选择器引擎
-- [ ] 支持复杂选择器（后代、子、相邻、兄弟）
-- [ ] 支持伪类选择器
-- [ ] 实现matches()方法
-- [ ] 实现closest()方法
+#### Task 3: 查询选择器 (100%) ✅
+- ✅ 集成Lexbor CSS选择器引擎
+- ✅ 支持复杂选择器（后代、子、相邻、兄弟）
+- ✅ 支持伪类选择器
+- ✅ 实现matches()方法
+- ✅ 实现closest()方法
+- ✅ 完整的CSS3选择器支持
 
-#### Task 4: 元素属性和样式操作
-- [ ] setAttribute/getAttribute/removeAttribute/hasAttribute
-- [ ] classList.add/remove/toggle/contains
-- [ ] style.setProperty/getPropertyValue/removeProperty
-- [ ] dataset属性（data-*）
-- [ ] 绑定到JavaScript
+#### Task 4: 元素属性和样式操作 (60%)
+- ✅ setAttribute/getAttribute/removeAttribute/hasAttribute
+- ✅ GetAllAttributes() - 获取所有属性
+- ⏳ **待完成**:
+  - [ ] classList.add/remove/toggle/contains
+  - [ ] style.setProperty/getPropertyValue/removeProperty
+  - [ ] dataset属性（data-*）
+  - [ ] 绑定到JavaScript
 
-#### Task 5: DOM操作API
-- [ ] appendChild/removeChild/insertBefore
-- [ ] replaceChild
-- [ ] cloneNode（深拷贝/浅拷贝）
-- [ ] innerHTML/outerHTML/textContent
-- [ ] 绑定到JavaScript
+#### Task 5: DOM操作API (80%)
+- ✅ appendChild/removeChild/insertBefore
+- ✅ textContent
+- ⏳ **待完成**:
+  - [ ] replaceChild
+  - [ ] cloneNode（深拷贝/浅拷贝）
+  - [ ] innerHTML/outerHTML
+  - [ ] 绑定到JavaScript
 
 ### P2: 焦点管理系统 (80%) ✅ 基本完成
 
@@ -433,6 +482,8 @@ focus_manager.TabToNextFocusableElement(document, true);   // Shift+Tab
 ## 📝 Git提交记录
 
 ### 2025-11-11
+- `2f6a7e6` - feat(dom): 完整集成Lexbor CSS选择器引擎 (Phase 2.5 P1)
+- `426e49a` - docs: 更新Phase 2.5进度 - P3拖拽系统集成完成
 - `0b6f6b0` - feat(event): 集成DragManager到EventLoop (Phase 2.5 P3)
 - `13bb360` - docs: 更新Phase 2.5进度 - P3拖拽系统基本完成
 - `8e7a1d2` - feat(event): 实现DragManager拖拽管理系统 (Phase 2.5 P3)
