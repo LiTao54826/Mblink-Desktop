@@ -76,7 +76,17 @@ public:
     virtual void OnTextChanged(Node* node,
                               const std::string& old_text,
                               const std::string& new_text) {}
-    
+
+    /**
+     * @brief CSS伪类状态被修改时调用
+     * @param element 元素
+     * @param pseudo_class 伪类名称（如"hover", "active", "focus"）
+     * @param activate true表示激活，false表示移除
+     */
+    virtual void OnPseudoClassChanged(std::shared_ptr<Element> element,
+                                     const std::string& pseudo_class,
+                                     bool activate) {}
+
     /**
      * @brief 子树被修改时调用（批量变化）
      * @param root 子树根节点

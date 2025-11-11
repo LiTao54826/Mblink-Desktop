@@ -10,6 +10,7 @@ set(EVENT_SOURCES
     hit_testing.cpp
     event.cpp
     event_system.cpp
+    event_types.cpp
 )
 
 set(EVENT_HEADERS
@@ -22,6 +23,7 @@ set(EVENT_HEADERS
     hit_testing.h
     event.h
     event_system.h
+    event_types.h
 )
 
 add_library(lightui_event STATIC ${EVENT_SOURCES})

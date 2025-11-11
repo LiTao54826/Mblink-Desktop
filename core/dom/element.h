@@ -120,20 +120,53 @@ public:
      * @return true表示存在
      */
     bool HasClass(const std::string& class_name) const;
-    
+
     /**
      * @brief 设置内联样式
      * @param property 样式属性名
      * @param value 样式值
      */
     void SetStyle(const std::string& property, const std::string& value);
-    
+
     /**
      * @brief 获取内联样式
      * @param property 样式属性名
      * @return 样式值
      */
     std::string GetStyle(const std::string& property) const;
+
+    // ========== CSS伪类支持（参考RmlUi） ==========
+
+    /**
+     * @brief 设置或移除CSS伪类
+     * @param pseudo_class 伪类名称（如"hover", "active", "focus"）
+     * @param activate true表示设置，false表示移除
+     *
+     * 参考：RmlUi/Source/Core/Element.cpp - SetPseudoClass
+     *
+     * 支持的伪类：
+     * - :hover - 鼠标悬停
+     * - :active - 鼠标按下
+     * - :focus - 获得焦点
+     * - :focus-visible - 键盘导航焦点
+     * - :drag - 拖拽中
+     * - :disabled - 禁用状态
+     * - :checked - 选中状态（checkbox/radio）
+     */
+    void SetPseudoClass(const std::string& pseudo_class, bool activate);
+
+    /**
+     * @brief 检查是否有指定伪类
+     * @param pseudo_class 伪类名称
+     * @return true表示存在
+     */
+    bool HasPseudoClass(const std::string& pseudo_class) const;
+
+    /**
+     * @brief 获取所有激活的伪类
+     * @return 伪类名称列表
+     */
+    std::vector<std::string> GetActivePseudoClasses() const;
     
     // ========== 事件监听 ==========
     
@@ -234,6 +267,9 @@ private:
     std::unordered_map<std::string, std::string> attributes_;
     std::unordered_map<std::string, std::string> styles_;
     std::unordered_map<std::string, std::vector<EventListener>> event_listeners_;
+
+    // CSS伪类状态（参考RmlUi设计）
+    std::unordered_map<std::string, bool> pseudo_classes_;
 };
 
 } // namespace lightui

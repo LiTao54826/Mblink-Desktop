@@ -356,4 +356,56 @@ void Element::SetInnerHTML(const std::string& html) {
     AppendChild(text);
 }
 
+// ========== CSS伪类支持（参考RmlUi） ==========
+
+void Element::SetPseudoClass(const std::string& pseudo_class, bool activate) {
+    // 参考：RmlUi/Source/Core/Element.cpp - SetPseudoClass
+
+    bool current_state = HasPseudoClass(pseudo_class);
+
+    // 状态没有变化，直接返回
+    if (current_state == activate) {
+        return;
+    }
+
+    // 更新伪类状态
+    if (activate) {
+        pseudo_classes_[pseudo_class] = true;
+    } else {
+        pseudo_classes_.erase(pseudo_class);
+    }
+
+    // 标记需要重新计算样式
+    // TODO: 触发样式重新计算
+    MarkDirty();
+
+    // 通知观察者（用于React等框架）
+    auto doc = GetOwnerDocument();
+    if (doc) {
+        auto observer = doc->GetObserver();
+        if (observer) {
+            observer->OnPseudoClassChanged(
+                std::static_pointer_cast<Element>(shared_from_this()),
+                pseudo_class,
+                activate
+            );
+        }
+    }
+}
+
+bool Element::HasPseudoClass(const std::string& pseudo_class) const {
+    auto it = pseudo_classes_.find(pseudo_class);
+    return it != pseudo_classes_.end() && it->second;
+}
+
+std::vector<std::string> Element::GetActivePseudoClasses() const {
+    std::vector<std::string> result;
+    for (const auto& pair : pseudo_classes_) {
+        if (pair.second) {
+            result.push_back(pair.first);
+        }
+    }
+    return result;
+}
+
 } // namespace lightui
