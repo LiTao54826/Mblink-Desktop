@@ -12,6 +12,7 @@ set(EVENT_SOURCES
     event_system.cpp
     event_types.cpp
     focus_manager.cpp
+    drag_manager.cpp
 )
 
 set(EVENT_HEADERS
@@ -26,6 +27,7 @@ set(EVENT_HEADERS
     event_system.h
     event_types.h
     focus_manager.h
+    drag_manager.h
 )
 
 add_library(lightui_event STATIC ${EVENT_SOURCES})
