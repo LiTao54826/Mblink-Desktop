@@ -2,7 +2,7 @@
 
 > **开始日期**: 2025-11-11
 > **当前状态**: 进行中
-> **完成度**: 75%
+> **完成度**: 80%
 > **参考项目**: RmlUi
 
 ---
@@ -12,7 +12,7 @@
 | 优先级 | 任务组 | 进度 | 状态 |
 |--------|--------|------|------|
 | **P0** | 核心事件系统 | 90% | ✅ 基本完成 |
-| **P1** | DOM API完善 | 85% | ✅ 基本完成 |
+| **P1** | DOM API完善 | 95% | ✅ 基本完成 |
 | **P2** | CSS伪类和焦点管理 | 80% | ✅ 基本完成 |
 | **P3** | 拖拽系统 | 90% | ✅ 基本完成 |
 | **P4** | 键盘事件和表单 | 0% | ⏳ 待开始 |
@@ -340,6 +340,52 @@ if (element->GetClassList()->Contains("active")) {
 size_t count = element->GetClassList()->Length();
 ```
 
+### 10. CSSStyleDeclaration和style API ✅ (2025-11-11)
+
+**参考**: W3C CSSOM - CSSStyleDeclaration, MDN Web Docs - HTMLElement.style
+
+**实现内容**:
+- ✅ `CSSStyleDeclaration` 类 - 完整的内联样式管理
+- ✅ `Element::GetStyleDeclaration()` - 获取style对象
+- ✅ `setProperty(property, value, priority?)` - 设置样式属性
+- ✅ `getPropertyValue(property)` - 获取样式属性值
+- ✅ `removeProperty(property)` - 移除样式属性
+- ✅ `getPropertyPriority(property)` - 获取优先级（!important）
+- ✅ `cssText` - 完整的样式文本
+- ✅ `length` - 样式属性数量
+- ✅ `item(index)` - 获取指定索引的属性名
+
+**技术亮点**:
+- 符合W3C CSSStyleDeclaration接口规范
+- 支持!important优先级
+- CSS文本解析和序列化
+- 属性名规范化（小写，去除空格）
+- 懒加载style对象，节省内存
+- 使用weak_ptr避免循环引用
+- 自动同步到style属性
+
+**代码示例**:
+```cpp
+// 设置样式属性
+element->GetStyleDeclaration()->SetProperty("color", "red");
+element->GetStyleDeclaration()->SetProperty("width", "100px", "important");
+
+// 获取样式属性
+std::string color = element->GetStyleDeclaration()->GetPropertyValue("color");
+
+// 移除样式属性
+std::string old_width = element->GetStyleDeclaration()->RemoveProperty("width");
+
+// 设置完整样式文本
+element->GetStyleDeclaration()->SetCssText("color: red; font-size: 16px;");
+
+// 获取完整样式文本
+std::string css_text = element->GetStyleDeclaration()->GetCssText();
+
+// 获取样式属性数量
+size_t count = element->GetStyleDeclaration()->Length();
+```
+
 ---
 
 ## 🔄 进行中任务
@@ -385,12 +431,12 @@ size_t count = element->GetClassList()->Length();
 - ✅ 实现closest()方法
 - ✅ 完整的CSS3选择器支持
 
-#### Task 4: 元素属性和样式操作 (80%)
+#### Task 4: 元素属性和样式操作 (95%)
 - ✅ setAttribute/getAttribute/removeAttribute/hasAttribute
 - ✅ GetAllAttributes() - 获取所有属性
 - ✅ classList.add/remove/toggle/contains - DOMTokenList完整实现
+- ✅ style.setProperty/getPropertyValue/removeProperty - CSSStyleDeclaration完整实现
 - ⏳ **待完成**:
-  - [ ] style.setProperty/getPropertyValue/removeProperty
   - [ ] dataset属性（data-*）
   - [ ] 绑定到JavaScript
 
