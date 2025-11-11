@@ -7,19 +7,19 @@
 [![Build Status](https://img.shields.io/badge/build-passing-brightgreen.svg)]()
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Version](https://img.shields.io/badge/version-0.2.0--alpha-orange.svg)]()
-[![Phase](https://img.shields.io/badge/phase-2.4%20in%20progress-yellow)]()
-[![Progress](https://img.shields.io/badge/progress-55%25-blue)]()
+[![Phase](https://img.shields.io/badge/phase-2.5%20starting-yellow)]()
+[![Progress](https://img.shields.io/badge/progress-60%25-blue)]()
 
 ---
 
 ## 📊 项目状态
 
-**当前阶段**: Phase 2.4 进行中 🚀 - 示例应用开发
-**进度**: 70% (Phase 1 + Phase 2.1 + Phase 2.2 + Phase 2.3 完成 ✅, Phase 2.4 任务1-4 进行中 🔄)
-**最后更新**: 2025-11-10
+**当前阶段**: Phase 2.5 开始 🚀 - JavaScript 基础设施完善
+**进度**: 60% (Phase 1 + Phase 2.1-2.4 完成 ✅, Phase 2.5 开始 🔄)
+**最后更新**: 2025-11-11
 **构建状态**: ✅ 所有核心模块和示例编译成功
 **测试状态**: ✅ 81 个测试用例全部通过 (窗口 17 + 事件循环 46 + JS绑定 11 + 集成 7)
-**已知问题**: ⚠️ 窗口渲染问题待修复 - 详见 [KNOWN_ISSUES.md](KNOWN_ISSUES.md)
+**下一步**: 实现完整的 DOM 事件系统和 API - 详见 [PHASE_2_5_PLAN.md](PHASE_2_5_PLAN.md)
 
 ### 最新成就 🎉
 
