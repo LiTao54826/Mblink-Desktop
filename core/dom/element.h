@@ -30,6 +30,16 @@ namespace lightui {
 class Event;
 using EventListener = std::function<void(std::shared_ptr<Event>)>;
 
+// EventListener包装器，包含唯一ID和捕获阶段标志
+struct EventListenerEntry {
+    uint64_t id;                    // 唯一ID
+    EventListener listener;         // 监听器函数
+    bool use_capture;               // 是否在捕获阶段触发
+
+    EventListenerEntry(uint64_t id_, EventListener listener_, bool use_capture_)
+        : id(id_), listener(std::move(listener_)), use_capture(use_capture_) {}
+};
+
 /**
  * @brief DOM元素类
  */
@@ -174,15 +184,18 @@ public:
      * @brief 添加事件监听器
      * @param type 事件类型（如"click", "mousemove"）
      * @param listener 监听器函数
+     * @param use_capture 是否在捕获阶段触发（默认false，在冒泡阶段触发）
+     * @return 监听器ID，用于后续移除
      */
-    void AddEventListener(const std::string& type, EventListener listener);
-    
+    uint64_t AddEventListener(const std::string& type, EventListener listener, bool use_capture = false);
+
     /**
      * @brief 移除事件监听器
      * @param type 事件类型
-     * @param listener 监听器函数
+     * @param listener_id 监听器ID（由AddEventListener返回）
+     * @return true表示成功移除，false表示未找到
      */
-    void RemoveEventListener(const std::string& type, EventListener listener);
+    bool RemoveEventListener(const std::string& type, uint64_t listener_id);
     
     /**
      * @brief 分发事件
@@ -266,7 +279,12 @@ private:
     std::string tag_name_;
     std::unordered_map<std::string, std::string> attributes_;
     std::unordered_map<std::string, std::string> styles_;
-    std::unordered_map<std::string, std::vector<EventListener>> event_listeners_;
+
+    // 事件监听器存储（使用EventListenerEntry支持ID和捕获阶段）
+    std::unordered_map<std::string, std::vector<EventListenerEntry>> event_listeners_;
+
+    // 下一个监听器ID（静态，全局唯一）
+    static uint64_t next_listener_id_;
 
     // CSS伪类状态（参考RmlUi设计）
     std::unordered_map<std::string, bool> pseudo_classes_;

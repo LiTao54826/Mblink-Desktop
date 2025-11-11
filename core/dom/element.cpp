@@ -14,6 +14,9 @@
 
 namespace lightui {
 
+// 初始化静态成员
+uint64_t Element::next_listener_id_ = 1;
+
 // ========== 构造函数 ==========
 
 Element::Element(const std::string& tag_name)
@@ -194,21 +197,40 @@ void Element::SetTextContent(const std::string& content) {
     Node::SetTextContent(content);
 }
 
-// ========== 事件监听（暂时为空实现） ==========
+// ========== 事件监听 ==========
 
-void Element::AddEventListener(const std::string& type, EventListener listener) {
-    event_listeners_[type].push_back(listener);
+uint64_t Element::AddEventListener(const std::string& type, EventListener listener, bool use_capture) {
+    // 分配唯一ID
+    uint64_t listener_id = next_listener_id_++;
+
+    // 创建EventListenerEntry并添加到列表
+    event_listeners_[type].emplace_back(listener_id, std::move(listener), use_capture);
+
+    return listener_id;
 }
 
-void Element::RemoveEventListener(const std::string& type, EventListener listener) {
+bool Element::RemoveEventListener(const std::string& type, uint64_t listener_id) {
     auto it = event_listeners_.find(type);
     if (it == event_listeners_.end()) {
-        return;
+        return false;
     }
 
-    // 注意：由于 std::function 没有 operator==，这里无法直接比较
-    // 实际应用中可能需要使用 ID 或其他方式来标识监听器
-    // 这里暂时不实现移除功能
+    // 查找并移除指定ID的监听器
+    auto& listeners = it->second;
+    for (auto listener_it = listeners.begin(); listener_it != listeners.end(); ++listener_it) {
+        if (listener_it->id == listener_id) {
+            listeners.erase(listener_it);
+
+            // 如果该事件类型没有监听器了，移除整个条目
+            if (listeners.empty()) {
+                event_listeners_.erase(it);
+            }
+
+            return true;
+        }
+    }
+
+    return false;
 }
 
 bool Element::DispatchEvent(std::shared_ptr<Event> event) {
@@ -228,14 +250,27 @@ bool Element::DispatchEvent(std::shared_ptr<Event> event) {
     }
 
     // 2. 捕获阶段（从根到目标，不包括目标）
-    // 注意：简化实现，暂时跳过捕获阶段
-    // 完整实现需要支持 addEventListener 的 useCapture 参数
+    // 参考：RmlUi/Source/Core/Element.cpp - AddEventListener
+    event->SetEventPhase(EventPhase::CAPTURING_PHASE);
+    for (int i = static_cast<int>(path.size()) - 1; i > 0; --i) {
+        if (event->IsPropagationStopped()) {
+            break;
+        }
+
+        auto element = std::dynamic_pointer_cast<Element>(path[i]);
+        if (element) {
+            event->SetCurrentTarget(element);
+            element->HandleEvent(event, true);  // use_capture = true
+        }
+    }
 
     // 3. 目标阶段
     if (!event->IsPropagationStopped()) {
         event->SetEventPhase(EventPhase::AT_TARGET);
         event->SetCurrentTarget(shared_from_this());
-        HandleEvent(event, false);
+        // 在目标阶段，同时触发捕获和冒泡监听器
+        HandleEvent(event, true);   // 先触发捕获监听器
+        HandleEvent(event, false);  // 再触发冒泡监听器
     }
 
     // 4. 冒泡阶段（从目标的父节点到根）
@@ -249,7 +284,7 @@ bool Element::DispatchEvent(std::shared_ptr<Event> event) {
             auto element = std::dynamic_pointer_cast<Element>(path[i]);
             if (element) {
                 event->SetCurrentTarget(element);
-                element->HandleEvent(event, false);
+                element->HandleEvent(event, false);  // use_capture = false
             }
         }
     }
@@ -263,13 +298,19 @@ void Element::HandleEvent(std::shared_ptr<Event> event, bool use_capture) {
         return;
     }
 
-    // 调用所有监听器
-    for (const auto& listener : it->second) {
+    // 调用匹配捕获阶段的监听器
+    // 参考：RmlUi的事件分发机制
+    for (const auto& entry : it->second) {
+        // 只调用匹配当前阶段的监听器
+        if (entry.use_capture != use_capture) {
+            continue;
+        }
+
         if (event->IsImmediatePropagationStopped()) {
             break;
         }
 
-        listener(event);
+        entry.listener(event);
     }
 }
 
@@ -382,14 +423,12 @@ void Element::SetPseudoClass(const std::string& pseudo_class, bool activate) {
     // 通知观察者（用于React等框架）
     auto doc = GetOwnerDocument();
     if (doc) {
-        auto observer = doc->GetObserver();
-        if (observer) {
-            observer->OnPseudoClassChanged(
-                std::static_pointer_cast<Element>(shared_from_this()),
-                pseudo_class,
-                activate
-            );
-        }
+        auto& observer_manager = doc->GetObserverManager();
+        observer_manager.NotifyPseudoClassChanged(
+            std::static_pointer_cast<Element>(shared_from_this()),
+            pseudo_class,
+            activate
+        );
     }
 }
 

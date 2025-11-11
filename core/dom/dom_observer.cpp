@@ -69,5 +69,13 @@ void DOMObserverManager::NotifySubtreeModified(Node* root) {
     }
 }
 
+void DOMObserverManager::NotifyPseudoClassChanged(std::shared_ptr<Element> element,
+                                                  const std::string& pseudo_class,
+                                                  bool activate) {
+    for (auto observer : observers_) {
+        observer->OnPseudoClassChanged(element, pseudo_class, activate);
+    }
+}
+
 } // namespace lightui
 

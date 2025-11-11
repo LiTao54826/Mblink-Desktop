@@ -155,7 +155,14 @@ public:
      * @brief 通知子树被修改
      */
     void NotifySubtreeModified(Node* root);
-    
+
+    /**
+     * @brief 通知伪类状态变化
+     */
+    void NotifyPseudoClassChanged(std::shared_ptr<Element> element,
+                                 const std::string& pseudo_class,
+                                 bool activate);
+
     /**
      * @brief 获取观察者数量
      */
