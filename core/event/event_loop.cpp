@@ -356,6 +356,42 @@ void EventLoop::UpdateHoverChain(Uint32 window_id, float mouse_x, float mouse_y)
     // 发送mouseover事件到进入的元素（在新链中但不在旧链中）
     SendEvents(new_hover_chain, hover_chain_, "mouseover", mouse_x, mouse_y);
 
+    // 发送mouseleave/mouseenter事件（不冒泡版本）
+    // 只发送到hover_element_本身，不发送到父元素
+    if (hover_element_ != new_hover_element) {
+        // 发送mouseleave到旧的hover元素
+        if (hover_element_) {
+            try {
+                auto old_element_ptr = std::static_pointer_cast<Element>(hover_element_->shared_from_this());
+                auto leave_event = std::make_shared<MouseEvent>(
+                    "mouseleave",
+                    static_cast<int>(mouse_x),
+                    static_cast<int>(mouse_y),
+                    0
+                );
+                old_element_ptr->DispatchEvent(leave_event);
+            } catch (...) {
+                // 元素已被销毁，忽略
+            }
+        }
+
+        // 发送mouseenter到新的hover元素
+        if (new_hover_element) {
+            try {
+                auto new_element_ptr = std::static_pointer_cast<Element>(new_hover_element->shared_from_this());
+                auto enter_event = std::make_shared<MouseEvent>(
+                    "mouseenter",
+                    static_cast<int>(mouse_x),
+                    static_cast<int>(mouse_y),
+                    0
+                );
+                new_element_ptr->DispatchEvent(enter_event);
+            } catch (...) {
+                // 元素已被销毁，忽略
+            }
+        }
+    }
+
     // 更新hover链
     hover_chain_ = std::move(new_hover_chain);
     hover_element_ = new_hover_element;
