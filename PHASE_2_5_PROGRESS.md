@@ -2,7 +2,7 @@
 
 > **开始日期**: 2025-11-11
 > **当前状态**: 进行中
-> **完成度**: 85%
+> **完成度**: 87%
 > **参考项目**: RmlUi
 
 ---
@@ -11,7 +11,7 @@
 
 | 优先级 | 任务组 | 进度 | 状态 |
 |--------|--------|------|------|
-| **P0** | 核心事件系统 | 90% | ✅ 基本完成 |
+| **P0** | 核心事件系统 | 95% | ✅ 基本完成 |
 | **P1** | DOM API完善 | 100% | ✅ 完成 |
 | **P2** | CSS伪类和焦点管理 | 80% | ✅ 基本完成 |
 | **P3** | 拖拽系统 | 90% | ✅ 基本完成 |
@@ -441,13 +441,48 @@ for (const auto& [name, value] : all) {
 }
 ```
 
+### 12. dblclick事件和addEventListener once选项 ✅ (2025-11-11)
+
+**参考**: W3C UI Events - dblclick, W3C EventTarget - addEventListener options
+
+**实现内容**:
+- ✅ `dblclick事件` - 双击事件检测
+- ✅ 双击时间窗口 - 500ms内两次click同一元素
+- ✅ 三击保护 - 避免三击触发两次dblclick
+- ✅ `addEventListener once选项` - 监听器只执行一次
+- ✅ 自动移除once监听器 - 执行后自动移除
+- ✅ EventListenerEntry扩展 - 支持once标志
+
+**技术亮点**:
+- 使用SDL_GetTicks()跟踪click时间
+- 智能双击检测（同一元素+时间窗口）
+- 符合W3C EventTarget接口规范
+- once监听器执行后自动清理
+
+**代码示例**:
+```cpp
+// dblclick事件
+element->AddEventListener("dblclick", [](auto e) {
+    auto mouse_event = std::dynamic_pointer_cast<MouseEvent>(e);
+    std::cout << "Double clicked at: " << mouse_event->GetClientX()
+              << ", " << mouse_event->GetClientY() << std::endl;
+});
+
+// once选项 - 监听器只执行一次
+element->AddEventListener("click", [](auto e) {
+    std::cout << "This will only run once!" << std::endl;
+}, false, true);  // use_capture=false, once=true
+
+// 第二次click不会触发监听器（已自动移除）
+```
+
 ---
 
 ## 🔄 进行中任务
 
-### P0: 核心事件系统 (90%) ✅ 基本完成
+### P0: 核心事件系统 (95%) ✅ 基本完成
 
-#### Task 1: 完善鼠标事件系统 (95%)
+#### Task 1: 完善鼠标事件系统 (98%)
 - ✅ HitTesting已实现
 - ✅ MouseEvent类已实现
 - ✅ 基础事件分发已实现
@@ -456,20 +491,20 @@ for (const auto& [name, value] : all) {
 - ✅ hover链追踪已实现
 - ✅ :hover伪类自动设置已实现
 - ✅ :active伪类自动设置已实现
+- ✅ dblclick事件已实现
 - ⏳ **待完成**:
-  - [ ] 实现dblclick事件
   - [ ] 鼠标坐标投影（支持transform）
 
 **参考文件**:
 - ✅ `ReferenceProject/RmlUi/Source/Core/Context.cpp` (ProcessMouseMove, UpdateHoverChain)
 
-#### Task 2: 完善JavaScript事件绑定 (90%)
+#### Task 2: 完善JavaScript事件绑定 (95%)
 - ✅ addEventListener已实现（支持useCapture）
 - ✅ removeEventListener已实现（使用ID机制）
 - ✅ 事件捕获阶段已实现
 - ✅ 完整的三阶段事件传播
+- ✅ once选项已实现（监听器只执行一次）
 - ⏳ **待完成**:
-  - [ ] 实现once选项
   - [ ] 绑定Event对象到JavaScript
 
 ---
