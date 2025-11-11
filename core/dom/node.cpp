@@ -120,6 +120,8 @@ std::shared_ptr<Node> Node::AppendChild(std::shared_ptr<Node> child) {
     auto doc = GetOwnerDocument();
     if (doc) {
         doc->GetObserverManager().NotifyNodeAdded(child.get(), this);
+        // 标记 Lexbor DOM 需要同步
+        doc->MarkLexborDirty();
     }
 
     return child;
@@ -154,6 +156,12 @@ std::shared_ptr<Node> Node::InsertBefore(std::shared_ptr<Node> new_child,
     // 标记为脏
     MarkDirty();
 
+    // 标记 Lexbor DOM 需要同步
+    auto doc = GetOwnerDocument();
+    if (doc) {
+        doc->MarkLexborDirty();
+    }
+
     return new_child;
 }
 
@@ -180,6 +188,11 @@ std::shared_ptr<Node> Node::RemoveChild(std::shared_ptr<Node> child) {
 
     // 标记为脏
     MarkDirty();
+
+    // 标记 Lexbor DOM 需要同步
+    if (doc) {
+        doc->MarkLexborDirty();
+    }
 
     return child;
 }
@@ -208,6 +221,12 @@ std::shared_ptr<Node> Node::ReplaceChild(std::shared_ptr<Node> new_child,
 
     // 标记为脏
     MarkDirty();
+
+    // 标记 Lexbor DOM 需要同步
+    auto doc = GetOwnerDocument();
+    if (doc) {
+        doc->MarkLexborDirty();
+    }
 
     return old_child;
 }

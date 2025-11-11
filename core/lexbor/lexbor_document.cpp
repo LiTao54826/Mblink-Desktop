@@ -7,6 +7,7 @@
 #include <cstring>
 #include <sstream>
 #include <vector>
+#include <fstream>
 
 namespace lightui {
 
@@ -82,16 +83,48 @@ void LexborDocument::Cleanup() {
 
 bool LexborDocument::ParseHTML(const std::string& html) {
     if (!document_) {
+        errors_.push_back("Document is null");
         return false;
     }
-    
+
+    errors_.clear();  // 清空之前的错误
+
     lxb_status_t status = lxb_html_document_parse(
         document_,
         reinterpret_cast<const lxb_char_t*>(html.c_str()),
         html.length()
     );
-    
-    return status == LXB_STATUS_OK;
+
+    if (status != LXB_STATUS_OK) {
+        errors_.push_back("Failed to parse HTML: status code " + std::to_string(status));
+        return false;
+    }
+
+    return true;
+}
+
+bool LexborDocument::ParseHTMLFile(const std::string& file_path) {
+    errors_.clear();
+
+    // 读取文件内容
+    std::ifstream file(file_path, std::ios::binary);
+    if (!file.is_open()) {
+        errors_.push_back("Failed to open file: " + file_path);
+        return false;
+    }
+
+    // 读取整个文件到字符串
+    std::string html((std::istreambuf_iterator<char>(file)),
+                     std::istreambuf_iterator<char>());
+    file.close();
+
+    if (html.empty()) {
+        errors_.push_back("File is empty: " + file_path);
+        return false;
+    }
+
+    // 使用 ParseHTML 解析
+    return ParseHTML(html);
 }
 
 LexborElement* LexborDocument::GetBody() {
@@ -332,18 +365,37 @@ std::string LexborDocument::SerializeToHTML() {
     if (!document_) {
         return "";
     }
-    
+
     std::string result;
-    
+
     auto callback = [](const lxb_char_t* data, size_t len, void* ctx) -> lxb_status_t {
         auto* str = static_cast<std::string*>(ctx);
         str->append(reinterpret_cast<const char*>(data), len);
         return LXB_STATUS_OK;
     };
-    
+
     lxb_dom_node_t* root = lxb_dom_interface_node(document_);
     lxb_html_serialize_tree_cb(root, callback, &result);
-    
+
+    return result;
+}
+
+std::string LexborDocument::SerializeNode(lxb_dom_node_t* node) {
+    if (!node) {
+        return "";
+    }
+
+    std::string result;
+
+    auto callback = [](const lxb_char_t* data, size_t len, void* ctx) -> lxb_status_t {
+        auto* str = static_cast<std::string*>(ctx);
+        str->append(reinterpret_cast<const char*>(data), len);
+        return LXB_STATUS_OK;
+    };
+
+    // 使用 lxb_html_serialize_tree_cb 序列化节点及其子树
+    lxb_html_serialize_tree_cb(node, callback, &result);
+
     return result;
 }
 
@@ -452,7 +504,22 @@ void LexborElement::RemoveAttribute(const std::string& name) {
 
 bool LexborElement::HasClass(const std::string& class_name) const {
     std::string classes = GetClassName();
-    return classes.find(class_name) != std::string::npos;
+
+    // 分割 class 列表并精确匹配
+    std::string current;
+    for (char c : classes) {
+        if (c == ' ') {
+            if (current == class_name) {
+                return true;
+            }
+            current.clear();
+        } else {
+            current += c;
+        }
+    }
+
+    // 检查最后一个 class
+    return current == class_name;
 }
 
 void LexborElement::AddClass(const std::string& class_name) {
@@ -496,6 +563,143 @@ void LexborElement::RemoveClass(const std::string& class_name) {
     }
 
     SetClassName(result);
+}
+
+std::string LexborElement::GetInnerHTML() const {
+    if (!element_ || !document_) {
+        return "";
+    }
+
+    std::string result;
+
+    auto callback = [](const lxb_char_t* data, size_t len, void* ctx) -> lxb_status_t {
+        auto* str = static_cast<std::string*>(ctx);
+        str->append(reinterpret_cast<const char*>(data), len);
+        return LXB_STATUS_OK;
+    };
+
+    // 序列化所有子节点
+    lxb_dom_node_t* node = lxb_dom_interface_node(element_);
+    lxb_dom_node_t* child = node->first_child;
+
+    while (child) {
+        lxb_html_serialize_tree_cb(child, callback, &result);
+        child = child->next;
+    }
+
+    return result;
+}
+
+void LexborElement::SetInnerHTML(const std::string& html) {
+    if (!element_ || !document_) {
+        return;
+    }
+
+    // 清空当前所有子节点
+    lxb_dom_node_t* node = lxb_dom_interface_node(element_);
+    lxb_dom_node_t* child = node->first_child;
+
+    while (child) {
+        lxb_dom_node_t* next = child->next;
+        lxb_dom_node_destroy_deep(child);
+        child = next;
+    }
+
+    node->first_child = nullptr;
+    node->last_child = nullptr;
+
+    // 解析HTML片段
+    lxb_html_document_t* doc = document_->GetNativeDocument();
+    lxb_dom_node_t* fragment = lxb_html_document_parse_fragment(
+        doc,
+        element_,
+        reinterpret_cast<const lxb_char_t*>(html.c_str()),
+        html.length()
+    );
+
+    if (!fragment) {
+        return;
+    }
+
+    // 将片段的子节点移动到当前元素
+    child = fragment->first_child;
+    while (child) {
+        lxb_dom_node_t* next = child->next;
+        lxb_dom_node_remove(child);
+        lxb_dom_node_insert_child(node, child);
+        child = next;
+    }
+
+    // 销毁片段节点
+    lxb_dom_node_destroy(fragment);
+}
+
+std::string LexborElement::GetTextContent() const {
+    if (!element_) {
+        return "";
+    }
+
+    std::string result;
+
+    // 递归收集所有文本节点的内容
+    std::function<void(lxb_dom_node_t*)> collect_text = [&](lxb_dom_node_t* node) {
+        if (!node) return;
+
+        if (node->type == LXB_DOM_NODE_TYPE_TEXT) {
+            lxb_dom_character_data_t* char_data = lxb_dom_interface_character_data(node);
+            if (char_data && char_data->data.data) {
+                result.append(
+                    reinterpret_cast<const char*>(char_data->data.data),
+                    char_data->data.length
+                );
+            }
+        }
+
+        // 递归处理子节点
+        lxb_dom_node_t* child = node->first_child;
+        while (child) {
+            collect_text(child);
+            child = child->next;
+        }
+    };
+
+    lxb_dom_node_t* node = lxb_dom_interface_node(element_);
+    collect_text(node);
+
+    return result;
+}
+
+void LexborElement::SetTextContent(const std::string& text) {
+    if (!element_ || !document_) {
+        return;
+    }
+
+    // 清空当前所有子节点
+    lxb_dom_node_t* node = lxb_dom_interface_node(element_);
+    lxb_dom_node_t* child = node->first_child;
+
+    while (child) {
+        lxb_dom_node_t* next = child->next;
+        lxb_dom_node_destroy_deep(child);
+        child = next;
+    }
+
+    node->first_child = nullptr;
+    node->last_child = nullptr;
+
+    // 创建新的文本节点
+    if (!text.empty()) {
+        lxb_html_document_t* doc = document_->GetNativeDocument();
+        lxb_dom_text_t* text_node = lxb_dom_document_create_text_node(
+            lxb_dom_interface_document(doc),
+            reinterpret_cast<const lxb_char_t*>(text.c_str()),
+            text.length()
+        );
+
+        if (text_node) {
+            lxb_dom_node_insert_child(node, lxb_dom_interface_node(text_node));
+        }
+    }
 }
 
 // ========== LexborText 实现 ==========

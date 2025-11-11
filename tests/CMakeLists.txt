@@ -633,3 +633,117 @@ if(TARGET lexbor_static)
 endif()
 
 add_test(NAME LexborDocumentTest COMMAND test_lexbor_document)
+
+# DOM Lexbor Integration Test
+add_executable(test_dom_lexbor_integration unit/test_dom_lexbor_integration.cpp)
+
+target_include_directories(test_dom_lexbor_integration PRIVATE
+    ${CMAKE_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/core
+    ${THIRD_PARTY_DIR}/lexbor/source
+)
+
+target_link_libraries(test_dom_lexbor_integration PRIVATE
+    lightui_dom
+    lightui_lexbor
+    GTest::gtest
+    GTest::gtest_main
+)
+
+# Link Lexbor
+if(TARGET lexbor_static)
+    target_link_libraries(test_dom_lexbor_integration PRIVATE lexbor_static)
+endif()
+
+add_test(NAME DOMDocumentLexborIntegrationTest COMMAND test_dom_lexbor_integration)
+
+# Lexbor StyleSheet Test
+add_executable(test_lexbor_stylesheet unit/test_lexbor_stylesheet.cpp)
+
+target_include_directories(test_lexbor_stylesheet PRIVATE
+    ${CMAKE_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/core
+    ${THIRD_PARTY_DIR}/lexbor/source
+)
+
+target_link_libraries(test_lexbor_stylesheet PRIVATE
+    lightui_lexbor
+    GTest::gtest
+    GTest::gtest_main
+)
+
+# Link Lexbor
+if(TARGET lexbor_static)
+    target_link_libraries(test_lexbor_stylesheet PRIVATE lexbor_static)
+endif()
+
+add_test(NAME LexborStyleSheetTest COMMAND test_lexbor_stylesheet)
+
+# Style Manager Test
+add_executable(test_style_manager unit/test_style_manager.cpp)
+
+target_include_directories(test_style_manager PRIVATE
+    ${CMAKE_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/core
+    ${THIRD_PARTY_DIR}/lexbor/source
+)
+
+target_link_libraries(test_style_manager PRIVATE
+    lightui_dom
+    lightui_lexbor
+    GTest::gtest
+    GTest::gtest_main
+)
+
+# Link Lexbor
+if(TARGET lexbor_static)
+    target_link_libraries(test_style_manager PRIVATE lexbor_static)
+endif()
+
+add_test(NAME StyleManagerTest COMMAND test_style_manager)
+
+# Cascade Engine Test
+add_executable(test_cascade_engine unit/test_cascade_engine.cpp)
+
+target_include_directories(test_cascade_engine PRIVATE
+    ${CMAKE_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/core
+    ${THIRD_PARTY_DIR}/lexbor/source
+)
+
+target_link_libraries(test_cascade_engine PRIVATE
+    lightui_dom
+    lightui_lexbor
+    GTest::gtest
+    GTest::gtest_main
+)
+
+# Link Lexbor
+if(TARGET lexbor_static)
+    target_link_libraries(test_cascade_engine PRIVATE lexbor_static)
+endif()
+
+add_test(NAME CascadeEngineTest COMMAND test_cascade_engine)
+
+# Style Cache Test
+add_executable(test_style_cache unit/test_style_cache.cpp)
+
+target_include_directories(test_style_cache PRIVATE
+    ${CMAKE_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/core
+    ${THIRD_PARTY_DIR}/lexbor/source
+)
+
+target_link_libraries(test_style_cache PRIVATE
+    lightui_dom
+    lightui_lexbor
+    GTest::gtest
+    GTest::gtest_main
+)
+
+# Link Lexbor
+if(TARGET lexbor_static)
+    target_link_libraries(test_style_cache PRIVATE lexbor_static)
+endif()
+
+add_test(NAME StyleCacheTest COMMAND test_style_cache)

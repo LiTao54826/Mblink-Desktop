@@ -5,6 +5,8 @@
 
 #include <gtest/gtest.h>
 #include "core/lexbor/lexbor_document.h"
+#include <fstream>
+#include <cstdio>
 
 using namespace lightui;
 
@@ -262,7 +264,7 @@ TEST(LexborDocumentTest, SerializeToHTML) {
 TEST(LexborDocumentTest, MoveConstructor) {
     LexborDocument doc1;
     doc1.ParseHTML("<html><body><div>Hello</div></body></html>");
-    
+
     LexborDocument doc2(std::move(doc1));
     EXPECT_NE(doc2.GetNativeDocument(), nullptr);
     EXPECT_EQ(doc1.GetNativeDocument(), nullptr);  // 已移动
@@ -271,12 +273,122 @@ TEST(LexborDocumentTest, MoveConstructor) {
 TEST(LexborDocumentTest, MoveAssignment) {
     LexborDocument doc1;
     doc1.ParseHTML("<html><body><div>Hello</div></body></html>");
-    
+
     LexborDocument doc2;
     doc2 = std::move(doc1);
-    
+
     EXPECT_NE(doc2.GetNativeDocument(), nullptr);
     EXPECT_EQ(doc1.GetNativeDocument(), nullptr);  // 已移动
+}
+
+// ========== 新增功能测试 ==========
+
+TEST(LexborDocumentTest, ParseHTMLFile) {
+    // 创建临时HTML文件
+    std::string temp_file = "test_temp.html";
+    std::ofstream out(temp_file);
+    out << "<html><body><div id='test'>Hello from file</div></body></html>";
+    out.close();
+
+    LexborDocument doc;
+    bool success = doc.ParseHTMLFile(temp_file);
+    EXPECT_TRUE(success);
+    EXPECT_FALSE(doc.HasErrors());
+
+    LexborElement* elem = doc.GetElementById("test");
+    ASSERT_NE(elem, nullptr);
+    EXPECT_EQ(elem->GetTextContent(), "Hello from file");
+
+    // 清理临时文件
+    std::remove(temp_file.c_str());
+}
+
+TEST(LexborDocumentTest, ParseHTMLFileNotFound) {
+    LexborDocument doc;
+    bool success = doc.ParseHTMLFile("non_existent_file.html");
+    EXPECT_FALSE(success);
+    EXPECT_TRUE(doc.HasErrors());
+    EXPECT_FALSE(doc.GetErrors().empty());
+}
+
+TEST(LexborDocumentTest, SerializeNode) {
+    LexborDocument doc;
+    doc.ParseHTML("<html><body><div id='test'><p>Hello</p></div></body></html>");
+
+    LexborElement* div = doc.GetElementById("test");
+    ASSERT_NE(div, nullptr);
+
+    std::string html = doc.SerializeNode(lxb_dom_interface_node(div->GetNativeElement()));
+    EXPECT_FALSE(html.empty());
+    EXPECT_NE(html.find("<div"), std::string::npos);
+    EXPECT_NE(html.find("Hello"), std::string::npos);
+}
+
+TEST(LexborDocumentTest, ErrorHandling) {
+    LexborDocument doc;
+
+    // 解析无效HTML（虽然Lexbor会尽力修复）
+    bool success = doc.ParseHTML("<html><body><div>Unclosed div</body></html>");
+    EXPECT_TRUE(success);  // Lexbor会自动修复
+    EXPECT_FALSE(doc.HasErrors());
+}
+
+TEST(LexborElementTest, GetInnerHTML) {
+    LexborDocument doc;
+    doc.ParseHTML("<html><body><div id='test'><p>Hello</p><span>World</span></div></body></html>");
+
+    LexborElement* div = doc.GetElementById("test");
+    ASSERT_NE(div, nullptr);
+
+    std::string inner = div->GetInnerHTML();
+    EXPECT_NE(inner.find("<p>"), std::string::npos);
+    EXPECT_NE(inner.find("Hello"), std::string::npos);
+    EXPECT_NE(inner.find("<span>"), std::string::npos);
+    EXPECT_NE(inner.find("World"), std::string::npos);
+}
+
+TEST(LexborElementTest, SetInnerHTML) {
+    LexborDocument doc;
+    doc.ParseHTML("<html><body><div id='test'>Old content</div></body></html>");
+
+    LexborElement* div = doc.GetElementById("test");
+    ASSERT_NE(div, nullptr);
+
+    div->SetInnerHTML("<p>New content</p><span>More content</span>");
+
+    std::string inner = div->GetInnerHTML();
+    EXPECT_NE(inner.find("<p>"), std::string::npos);
+    EXPECT_NE(inner.find("New content"), std::string::npos);
+    EXPECT_EQ(inner.find("Old content"), std::string::npos);
+}
+
+TEST(LexborElementTest, GetTextContent) {
+    LexborDocument doc;
+    doc.ParseHTML("<html><body><div id='test'><p>Hello</p><span>World</span></div></body></html>");
+
+    LexborElement* div = doc.GetElementById("test");
+    ASSERT_NE(div, nullptr);
+
+    std::string text = div->GetTextContent();
+    EXPECT_NE(text.find("Hello"), std::string::npos);
+    EXPECT_NE(text.find("World"), std::string::npos);
+    EXPECT_EQ(text.find("<p>"), std::string::npos);  // 不应包含标签
+}
+
+TEST(LexborElementTest, SetTextContent) {
+    LexborDocument doc;
+    doc.ParseHTML("<html><body><div id='test'><p>Old</p><span>Content</span></div></body></html>");
+
+    LexborElement* div = doc.GetElementById("test");
+    ASSERT_NE(div, nullptr);
+
+    div->SetTextContent("New text content");
+
+    std::string text = div->GetTextContent();
+    EXPECT_EQ(text, "New text content");
+
+    std::string inner = div->GetInnerHTML();
+    EXPECT_EQ(inner.find("<p>"), std::string::npos);  // 标签应该被清除
 }
 
 // ========== 主函数 ==========

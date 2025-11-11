@@ -1,0 +1,299 @@
+/**
+ * @file lexbor_stylesheet.cpp
+ * @brief Lexbor CSS StyleSheet 包装类实现
+ */
+
+#include "lexbor_stylesheet.h"
+#include <fstream>
+#include <sstream>
+#include <lexbor/css/stylesheet.h>
+#include <lexbor/css/parser.h>
+#include <lexbor/css/rule.h>
+#include <lexbor/css/selectors/selectors.h>
+
+namespace lightui {
+
+// ========== 构造函数和析构函数 ==========
+
+LexborStyleSheet::LexborStyleSheet()
+    : parser_(nullptr)
+    , stylesheet_(nullptr)
+    , rules_()
+    , errors_() {
+    
+    // 创建 CSS 解析器
+    parser_ = lxb_css_parser_create();
+    if (parser_) {
+        lxb_status_t status = lxb_css_parser_init(parser_, nullptr);
+        if (status != LXB_STATUS_OK) {
+            lxb_css_parser_destroy(parser_, true);
+            parser_ = nullptr;
+            errors_.push_back("Failed to initialize CSS parser");
+        }
+    } else {
+        errors_.push_back("Failed to create CSS parser");
+    }
+}
+
+LexborStyleSheet::~LexborStyleSheet() {
+    if (stylesheet_) {
+        lxb_css_stylesheet_destroy(stylesheet_, true);
+        stylesheet_ = nullptr;
+    }
+    
+    if (parser_) {
+        lxb_css_parser_destroy(parser_, true);
+        parser_ = nullptr;
+    }
+}
+
+LexborStyleSheet::LexborStyleSheet(LexborStyleSheet&& other) noexcept
+    : parser_(other.parser_)
+    , stylesheet_(other.stylesheet_)
+    , rules_(std::move(other.rules_))
+    , errors_(std::move(other.errors_)) {
+    
+    other.parser_ = nullptr;
+    other.stylesheet_ = nullptr;
+}
+
+LexborStyleSheet& LexborStyleSheet::operator=(LexborStyleSheet&& other) noexcept {
+    if (this != &other) {
+        // 清理当前资源
+        if (stylesheet_) {
+            lxb_css_stylesheet_destroy(stylesheet_, true);
+        }
+        if (parser_) {
+            lxb_css_parser_destroy(parser_, true);
+        }
+        
+        // 移动资源
+        parser_ = other.parser_;
+        stylesheet_ = other.stylesheet_;
+        rules_ = std::move(other.rules_);
+        errors_ = std::move(other.errors_);
+        
+        other.parser_ = nullptr;
+        other.stylesheet_ = nullptr;
+    }
+    return *this;
+}
+
+// ========== CSS 解析 ==========
+
+bool LexborStyleSheet::ParseCSS(const std::string& css) {
+    errors_.clear();
+    rules_.clear();
+    
+    if (!parser_) {
+        errors_.push_back("Parser not initialized");
+        return false;
+    }
+    
+    // 清理旧的样式表
+    if (stylesheet_) {
+        lxb_css_stylesheet_destroy(stylesheet_, true);
+        stylesheet_ = nullptr;
+    }
+    
+    // 解析 CSS
+    stylesheet_ = lxb_css_stylesheet_parse(parser_,
+                                           reinterpret_cast<const lxb_char_t*>(css.c_str()),
+                                           css.length());
+    
+    if (!stylesheet_) {
+        errors_.push_back("Failed to parse CSS");
+        return false;
+    }
+    
+    // 提取规则
+    ExtractRules();
+    
+    return true;
+}
+
+bool LexborStyleSheet::ParseCSSFile(const std::string& file_path) {
+    errors_.clear();
+    
+    // 读取文件
+    std::ifstream file(file_path, std::ios::binary);
+    if (!file.is_open()) {
+        errors_.push_back("Failed to open file: " + file_path);
+        return false;
+    }
+    
+    std::string css((std::istreambuf_iterator<char>(file)),
+                    std::istreambuf_iterator<char>());
+    file.close();
+    
+    return ParseCSS(css);
+}
+
+// ========== 规则访问 ==========
+
+const CSSRule* LexborStyleSheet::GetRule(size_t index) const {
+    if (index >= rules_.size()) {
+        return nullptr;
+    }
+    return rules_[index].get();
+}
+
+// ========== 规则修改 ==========
+
+bool LexborStyleSheet::AddRule(const std::string& selector,
+                                const std::map<std::string, std::string>& declarations) {
+    auto rule = std::make_unique<CSSRule>();
+    rule->selector = selector;
+    rule->declarations = declarations;
+    rule->specificity = CalculateSpecificity(selector);
+    rule->important = false;
+    
+    rules_.push_back(std::move(rule));
+    return true;
+}
+
+bool LexborStyleSheet::RemoveRule(size_t index) {
+    if (index >= rules_.size()) {
+        return false;
+    }
+    
+    rules_.erase(rules_.begin() + index);
+    return true;
+}
+
+void LexborStyleSheet::ClearRules() {
+    rules_.clear();
+}
+
+// ========== 序列化 ==========
+
+std::string LexborStyleSheet::SerializeToCSS() {
+    if (!stylesheet_ || !stylesheet_->root) {
+        return "";
+    }
+    
+    std::string result;
+    
+    auto callback = [](const lxb_char_t* data, size_t len, void* ctx) -> lxb_status_t {
+        auto* str = static_cast<std::string*>(ctx);
+        str->append(reinterpret_cast<const char*>(data), len);
+        return LXB_STATUS_OK;
+    };
+    
+    lxb_css_rule_serialize(stylesheet_->root, callback, &result);
+    
+    return result;
+}
+
+// ========== 私有辅助方法 ==========
+
+void LexborStyleSheet::ExtractRules() {
+    if (!stylesheet_ || !stylesheet_->root) {
+        return;
+    }
+    
+    // 遍历规则树
+    lxb_css_rule_t* rule = stylesheet_->root;
+    
+    // 如果根规则是列表，遍历其子规则
+    if (rule->type == LXB_CSS_RULE_LIST) {
+        lxb_css_rule_list_t* list = lxb_css_rule_list(rule);
+        rule = list->first;
+        
+        while (rule) {
+            if (rule->type == LXB_CSS_RULE_STYLE) {
+                ProcessStyleRule(lxb_css_rule_style(rule));
+            }
+            rule = rule->next;
+        }
+    } else if (rule->type == LXB_CSS_RULE_STYLE) {
+        ProcessStyleRule(lxb_css_rule_style(rule));
+    }
+}
+
+void LexborStyleSheet::ProcessStyleRule(lxb_css_rule_style_t* style_rule) {
+    if (!style_rule || !style_rule->selector) {
+        return;
+    }
+    
+    auto rule = std::make_unique<CSSRule>();
+    
+    // 序列化选择器
+    std::string selector_str;
+    auto callback = [](const lxb_char_t* data, size_t len, void* ctx) -> lxb_status_t {
+        auto* str = static_cast<std::string*>(ctx);
+        str->append(reinterpret_cast<const char*>(data), len);
+        return LXB_STATUS_OK;
+    };
+    
+    lxb_css_selector_serialize_list(style_rule->selector, callback, &selector_str);
+    rule->selector = selector_str;
+    rule->specificity = CalculateSpecificity(selector_str);
+    
+    // 提取声明
+    if (style_rule->declarations) {
+        lxb_css_rule_declaration_list_t* decl_list = style_rule->declarations;
+        lxb_css_rule_t* decl = decl_list->first;
+        
+        while (decl) {
+            if (decl->type == LXB_CSS_RULE_DECLARATION) {
+                lxb_css_rule_declaration_t* declaration = lxb_css_rule_declaration(decl);
+                
+                // 获取属性名
+                const lxb_css_entry_data_t* entry = lxb_css_property_by_id(declaration->type);
+                if (entry && entry->name) {
+                    std::string prop_name(reinterpret_cast<const char*>(entry->name), entry->length);
+                    
+                    // 序列化属性值
+                    std::string prop_value;
+                    lxb_css_rule_serialize(decl, callback, &prop_value);
+                    
+                    // 移除属性名和冒号
+                    size_t colon_pos = prop_value.find(':');
+                    if (colon_pos != std::string::npos) {
+                        prop_value = prop_value.substr(colon_pos + 1);
+                        // 去除前后空格
+                        size_t start = prop_value.find_first_not_of(" \t\n\r");
+                        size_t end = prop_value.find_last_not_of(" \t\n\r;");
+                        if (start != std::string::npos && end != std::string::npos) {
+                            prop_value = prop_value.substr(start, end - start + 1);
+                        }
+                    }
+                    
+                    rule->declarations[prop_name] = prop_value;
+                    
+                    if (declaration->important) {
+                        rule->important = true;
+                    }
+                }
+            }
+            decl = decl->next;
+        }
+    }
+    
+    rules_.push_back(std::move(rule));
+}
+
+int LexborStyleSheet::CalculateSpecificity(const std::string& selector) {
+    // 简化的优先级计算
+    // ID选择器: 100, 类选择器: 10, 标签选择器: 1
+    int specificity = 0;
+    
+    for (size_t i = 0; i < selector.length(); i++) {
+        if (selector[i] == '#') {
+            specificity += 100;
+        } else if (selector[i] == '.' || selector[i] == '[' || selector[i] == ':') {
+            specificity += 10;
+        }
+    }
+    
+    // 如果没有特殊选择器，可能是标签选择器
+    if (specificity == 0 && !selector.empty()) {
+        specificity = 1;
+    }
+    
+    return specificity;
+}
+
+} // namespace lightui
+

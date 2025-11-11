@@ -361,14 +361,6 @@ public:
      */
     void SetOuterHTML(const std::string& html);
 
-private:
-    /**
-     * @brief 处理事件（内部方法）
-     * @param event 事件对象
-     * @param use_capture 是否使用捕获
-     */
-    void HandleEvent(std::shared_ptr<Event> event, bool use_capture);
-
     /**
      * @brief 将Lexbor节点转换为我们的Node对象
      * @param lexbor_node Lexbor节点
@@ -377,6 +369,14 @@ private:
      */
     static std::shared_ptr<Node> ConvertLexborNodeToNode(lxb_dom_node_t* lexbor_node,
                                                           std::shared_ptr<Document> doc);
+
+private:
+    /**
+     * @brief 处理事件（内部方法）
+     * @param event 事件对象
+     * @param use_capture 是否使用捕获
+     */
+    void HandleEvent(std::shared_ptr<Event> event, bool use_capture);
 
 private:
     std::string tag_name_;

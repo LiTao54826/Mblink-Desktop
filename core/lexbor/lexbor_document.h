@@ -54,7 +54,14 @@ public:
      * @return 是否成功
      */
     bool ParseHTML(const std::string& html);
-    
+
+    /**
+     * @brief 从文件解析 HTML
+     * @param file_path 文件路径
+     * @return 是否成功
+     */
+    bool ParseHTMLFile(const std::string& file_path);
+
     /**
      * @brief 获取 body 元素
      * @return body 元素指针，如果不存在返回 nullptr
@@ -138,12 +145,31 @@ public:
      * @return HTML 字符串
      */
     std::string SerializeToHTML();
-    
+
+    /**
+     * @brief 序列化单个节点为 HTML 字符串
+     * @param node Lexbor 节点指针
+     * @return HTML 字符串
+     */
+    std::string SerializeNode(lxb_dom_node_t* node);
+
     /**
      * @brief 遍历 DOM 树
      * @param callback 回调函数，接收每个元素
      */
     void Walk(std::function<void(LexborElement*)> callback);
+
+    /**
+     * @brief 检查是否有解析错误
+     * @return 是否有错误
+     */
+    bool HasErrors() const { return !errors_.empty(); }
+
+    /**
+     * @brief 获取所有错误信息
+     * @return 错误信息列表
+     */
+    const std::vector<std::string>& GetErrors() const { return errors_; }
 
 private:
     /**
@@ -167,6 +193,7 @@ private:
     lxb_selectors_t* selectors_;         // 选择器引擎
     bool css_initialized_;               // CSS 是否已初始化
     bool selectors_initialized_;         // 选择器是否已初始化
+    std::vector<std::string> errors_;    // 错误信息列表
 };
 
 /**
@@ -258,15 +285,27 @@ public:
     void RemoveClass(const std::string& class_name);
     
     /**
-     * @brief 获取或设置 innerHTML
+     * @brief 获取 innerHTML
+     * @return 元素内部的 HTML 字符串
      */
     std::string GetInnerHTML() const;
-    void SetInnerHTML(const std::string& html);
-    
+
     /**
-     * @brief 获取或设置 textContent
+     * @brief 设置 innerHTML
+     * @param html HTML 字符串
+     */
+    void SetInnerHTML(const std::string& html);
+
+    /**
+     * @brief 获取 textContent
+     * @return 元素的文本内容
      */
     std::string GetTextContent() const;
+
+    /**
+     * @brief 设置 textContent
+     * @param text 文本内容
+     */
     void SetTextContent(const std::string& text);
     
     /**

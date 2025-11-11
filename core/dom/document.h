@@ -19,6 +19,11 @@
 #include <memory>
 #include <unordered_map>
 
+// 前向声明
+namespace lightui {
+    class LexborDocument;
+}
+
 namespace lightui {
 
 /**
@@ -101,6 +106,49 @@ public:
      */
     std::vector<std::shared_ptr<Element>> GetElementsByClassName(const std::string& class_name);
 
+    // ========== Lexbor 集成 ==========
+
+    /**
+     * @brief 从 HTML 字符串加载文档
+     * @param html HTML 字符串
+     * @return 是否成功
+     */
+    bool LoadHTML(const std::string& html);
+
+    /**
+     * @brief 从 HTML 文件加载文档
+     * @param file_path 文件路径
+     * @return 是否成功
+     */
+    bool LoadHTMLFile(const std::string& file_path);
+
+    /**
+     * @brief 保存文档为 HTML 字符串
+     * @return HTML 字符串
+     */
+    std::string SaveHTML();
+
+    /**
+     * @brief 从 Lexbor DOM 同步到 MBink DOM
+     */
+    void SyncFromLexbor();
+
+    /**
+     * @brief 从 MBink DOM 同步到 Lexbor DOM
+     */
+    void SyncToLexbor();
+
+    /**
+     * @brief 标记 Lexbor DOM 为脏（需要同步）
+     */
+    void MarkLexborDirty() { lexbor_dirty_ = true; }
+
+    /**
+     * @brief 获取 Lexbor 文档实例
+     * @return Lexbor 文档指针
+     */
+    LexborDocument* GetLexborDocument() { return lexbor_doc_.get(); }
+
     // ========== ID 映射管理 ==========
 
     /**
@@ -164,11 +212,20 @@ private:
                                      const std::string& class_name,
                                      std::vector<std::shared_ptr<Element>>& result);
 
+    /**
+     * @brief 重建 ID 映射表
+     */
+    void RebuildIdMap(std::shared_ptr<Element> root);
+
 private:
     std::shared_ptr<Element> document_element_;
     std::shared_ptr<Element> body_;
     std::unordered_map<std::string, std::weak_ptr<Element>> id_map_;
     DOMObserverManager observer_manager_;
+
+    // Lexbor 集成
+    std::unique_ptr<LexborDocument> lexbor_doc_;
+    bool lexbor_dirty_;  // 标记 MBink DOM 是否已修改，需要同步到 Lexbor
 };
 
 } // namespace lightui

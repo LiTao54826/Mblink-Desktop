@@ -2,10 +2,18 @@
 
 set(LEXBOR_WRAPPER_SOURCES
     lexbor_document.cpp
+    lexbor_stylesheet.cpp
+    style_manager.cpp
+    cascade_engine.cpp
+    style_cache.cpp
 )
 
 set(LEXBOR_WRAPPER_HEADERS
     lexbor_document.h
+    lexbor_stylesheet.h
+    style_manager.h
+    cascade_engine.h
+    style_cache.h
 )
 
 # 创建 Lexbor 包装库
