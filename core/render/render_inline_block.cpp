@@ -73,15 +73,71 @@ float RenderInlineBlock::CalculatePreferredMinimumWidth() {
     // 计算内容不换行的最小宽度
     // 对于表单控件，这通常是内容的自然宽度
     float min_width = 0;
-    
-    for (auto& child : children_) {
-        if (child->GetType() == RenderObjectType::TEXT) {
-            auto text_child = std::static_pointer_cast<RenderText>(child);
-            // 简化：使用文本长度 * 平均字符宽度
-            min_width = std::max(min_width, text_child->GetText().length() * 8.0f);
+
+    // 特殊处理：Select元素需要根据option内容计算宽度
+    auto node = GetNode();
+    if (node && node->GetNodeType() == NodeType::ELEMENT_NODE) {
+        auto element = std::static_pointer_cast<Element>(node);
+        if (element->GetTagName() == "select") {
+            // 找到最长的option文本
+            std::string longest_text = "";
+            const auto& children_nodes = element->GetChildNodes();
+            for (const auto& child : children_nodes) {
+                if (child->GetNodeType() == NodeType::ELEMENT_NODE) {
+                    auto option = std::static_pointer_cast<Element>(child);
+                    if (option->GetTagName() == "option") {
+                        const auto& option_children = option->GetChildNodes();
+                        for (const auto& text_node : option_children) {
+                            if (text_node->GetNodeType() == NodeType::TEXT_NODE) {
+                                auto text = std::static_pointer_cast<Text>(text_node);
+                                std::string option_text = text->GetData();
+                                if (option_text.length() > longest_text.length()) {
+                                    longest_text = option_text;
+                                }
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+
+            if (!longest_text.empty()) {
+                // 使用字体测量实际宽度
+                FontDescriptor desc;
+                desc.family = computed_style_.font_family;
+                desc.size = computed_style_.font_size;
+                desc.weight = FontWeight::NORMAL;
+                desc.style = FontStyle::NORMAL;
+
+                SkFont font = FontManager::GetInstance().LoadFont(desc);
+                float text_width = font.measureText(
+                    longest_text.c_str(),
+                    longest_text.length(),
+                    SkTextEncoding::kUTF8
+                );
+
+                // 加上padding、border和箭头空间
+                float padding_left = computed_style_.padding.left.ToPx();
+                float padding_right = computed_style_.padding.right.ToPx();
+                float border_width = computed_style_.border.width.ToPx();
+
+                // border应用于左右两侧
+                min_width = text_width + padding_left + padding_right + border_width * 2;
+            }
         }
     }
-    
+
+    // 对于其他元素，使用子元素计算
+    if (min_width == 0) {
+        for (auto& child : children_) {
+            if (child->GetType() == RenderObjectType::TEXT) {
+                auto text_child = std::static_pointer_cast<RenderText>(child);
+                // 简化：使用文本长度 * 平均字符宽度
+                min_width = std::max(min_width, text_child->GetText().length() * 8.0f);
+            }
+        }
+    }
+
     // 至少要有一个最小宽度
     return std::max(min_width, 50.0f);
 }
@@ -239,6 +295,19 @@ void RenderInlineBlock::PaintInputElement(SkCanvas* canvas, HTMLInputElement* in
                 display_text = std::string(value.length(), '*');
             }
 
+            // 计算文本可用宽度（减去左右padding）
+            float text_available_width = box.content_width - computed_style_.padding.left.ToPx() - computed_style_.padding.right.ToPx();
+
+            // 裁剪文本区域（防止文本溢出）
+            canvas->save();
+            SkRect text_clip_rect = SkRect::MakeXYWH(
+                text_x,
+                box.content_y,
+                text_available_width,
+                box.content_height
+            );
+            canvas->clipRect(text_clip_rect);
+
             // 绘制文本
             text_renderer.DrawText(display_text, text_x, text_y, font, text_paint);
 
@@ -278,6 +347,9 @@ void RenderInlineBlock::PaintInputElement(SkCanvas* canvas, HTMLInputElement* in
                     canvas->drawLine(cursor_x, cursor_y_top, cursor_x, cursor_y_bottom, cursor_paint);
                 }
             }
+
+            // 恢复裁剪
+            canvas->restore();
         }
     }
     // 处理checkbox和radio类型
@@ -364,9 +436,25 @@ void RenderInlineBlock::PaintTextAreaElement(SkCanvas* canvas, HTMLTextAreaEleme
         float text_x = box.content_x + computed_style_.padding.left.ToPx();
         float text_y = box.content_y + computed_style_.padding.top.ToPx() - font_metrics.fAscent;
 
+        // 计算文本可用宽度（减去左右padding）
+        float text_available_width = box.content_width - computed_style_.padding.left.ToPx() - computed_style_.padding.right.ToPx();
+
+        // 裁剪文本区域（防止文本溢出）
+        canvas->save();
+        SkRect text_clip_rect = SkRect::MakeXYWH(
+            text_x,
+            box.content_y + computed_style_.padding.top.ToPx(),
+            text_available_width,
+            box.content_height - computed_style_.padding.top.ToPx() - computed_style_.padding.bottom.ToPx()
+        );
+        canvas->clipRect(text_clip_rect);
+
         // 简单渲染：暂时不处理换行，只显示第一行
         // TODO: 实现多行文本渲染和换行
         text_renderer.DrawText(value, text_x, text_y, font, text_paint);
+
+        // 恢复裁剪
+        canvas->restore();
     }
 }
 
@@ -425,26 +513,43 @@ void RenderInlineBlock::PaintSelectElement(SkCanvas* canvas, Element* select, co
         desc.size = computed_style_.font_size;
         desc.weight = FontWeight::NORMAL;
         desc.style = FontStyle::NORMAL;
-        
+
         SkFont font = FontManager::GetInstance().LoadFont(desc);
-        
+
         // 获取字体度量
         SkFontMetrics font_metrics;
         font.getMetrics(&font_metrics);
-        
-        // 计算文本位置（垂直居中）
+
+        // 计算文本位置（垂直居中 - 和Input一样的公式）
+        float text_height = -font_metrics.fAscent + font_metrics.fDescent;
         float text_x = box.content_x + computed_style_.padding.left.ToPx();
-        float text_y = box.content_y + (box.content_height - font_metrics.fAscent - font_metrics.fDescent) / 2.0f - font_metrics.fAscent;
-        
+        float text_y = box.content_y + (box.content_height - text_height) / 2.0f - font_metrics.fAscent;
+
+        // 计算文本可用宽度（减去左右padding和箭头空间）
+        float text_available_width = box.content_width - computed_style_.padding.left.ToPx() - computed_style_.padding.right.ToPx();
+
+        // 裁剪文本区域（防止文本溢出）
+        canvas->save();
+        SkRect text_clip_rect = SkRect::MakeXYWH(
+            text_x,
+            box.content_y,
+            text_available_width,
+            box.content_height
+        );
+        canvas->clipRect(text_clip_rect);
+
         // 创建文本渲染器
         TextRenderer text_renderer(canvas);
-        
+
         // 设置文本颜色
         lightui::Paint text_paint;
         text_paint.SetColor(SK_ColorBLACK);
-        
+
         // 绘制文本
         text_renderer.DrawText(selected_text, text_x, text_y, font, text_paint);
+
+        // 恢复裁剪
+        canvas->restore();
     }
     
     // 绘制下拉箭头
@@ -452,18 +557,22 @@ void RenderInlineBlock::PaintSelectElement(SkCanvas* canvas, Element* select, co
     arrow_paint.setColor(SK_ColorBLACK);
     arrow_paint.setStyle(SkPaint::kFill_Style);
     arrow_paint.setAntiAlias(true);
-    
-    // 箭头位置（右侧）
-    float arrow_x = box.content_x + box.content_width - 16;
-    float arrow_y = box.content_y + box.content_height / 2;
-    
-    // 绘制向下的三角形
+
+    // 箭头位置（右侧，在padding区域内居中）
+    float arrow_size = 8.0f;  // 增大箭头尺寸，更容易看到
+    float padding_right = computed_style_.padding.right.ToPx();
+
+    // 箭头在右侧padding区域内水平居中
+    float arrow_x = box.content_x + box.content_width - padding_right + (padding_right - arrow_size) / 2.0f;
+    float arrow_y = box.content_y + box.content_height / 2.0f;
+
+    // 绘制向下的三角形（更大更明显）
     SkPath arrow_path;
-    arrow_path.moveTo(arrow_x, arrow_y - 3);
-    arrow_path.lineTo(arrow_x + 6, arrow_y - 3);
-    arrow_path.lineTo(arrow_x + 3, arrow_y + 3);
+    arrow_path.moveTo(arrow_x, arrow_y - 4);  // 顶部左点
+    arrow_path.lineTo(arrow_x + arrow_size, arrow_y - 4);  // 顶部右点
+    arrow_path.lineTo(arrow_x + arrow_size / 2.0f, arrow_y + 4);  // 底部中点
     arrow_path.close();
-    
+
     canvas->drawPath(arrow_path, arrow_paint);
 }
 

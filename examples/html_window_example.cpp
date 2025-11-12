@@ -78,7 +78,7 @@ int main() {
                     <h2 style="margin: 5px 0;">Textarea & Select</h2>
                     <p style="margin: 5px 0;">
                         <textarea rows="2" cols="30" placeholder="Multi-line text..."></textarea>
-                        <select style="padding: 4px;">
+                        <select>
                             <option>Option 1</option>
                             <option selected>Option 2 (selected)</option>
                             <option>Option 3</option>
