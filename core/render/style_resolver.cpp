@@ -47,7 +47,7 @@ ComputedStyle StyleResolver::ResolveStyle(std::shared_ptr<Element> element,
 
     // 3. 元素特定的默认样式 - 覆盖继承（如 h1 的 font-size, strong 的 bold）
     // 这一步必须在继承之后，以确保元素自身的样式优先级高于继承
-    ApplyElementSpecificStyle(style, element->GetTagName());
+    ApplyElementSpecificStyle(style, element->GetTagName(), element);
 
     // 4. 内联样式（最高优先级）- 覆盖所有
     ApplyInlineStyle(style, element);
@@ -105,12 +105,16 @@ void StyleResolver::ApplyDefaultStyle(ComputedStyle& style, const std::string& t
              tag_name == "q" || tag_name == "time") {
         style.display = RenderObjectType::INLINE;
     }
-    else if (tag_name == "img" || tag_name == "button" || tag_name == "input") {
+    else if (tag_name == "img") {
         style.display = RenderObjectType::INLINE_BLOCK;
+    }
+    // 按钮和输入框临时使用 INLINE，直到实现真正的 inline-block
+    else if (tag_name == "button" || tag_name == "input") {
+        style.display = RenderObjectType::INLINE;
     }
 }
 
-void StyleResolver::ApplyElementSpecificStyle(ComputedStyle& style, const std::string& tag_name) {
+void StyleResolver::ApplyElementSpecificStyle(ComputedStyle& style, const std::string& tag_name, std::shared_ptr<Element> element) {
     // ========== 块级元素 ==========
 
     // HTML, BODY
@@ -170,11 +174,16 @@ void StyleResolver::ApplyElementSpecificStyle(ComputedStyle& style, const std::s
         style.margin.bottom = CSSLength(16, CSSUnit::PX);
         style.margin.left = CSSLength(40, CSSUnit::PX);
         style.margin.right = CSSLength(40, CSSUnit::PX);
+
+        // TODO: 当前 CSSBorder 不支持单独设置左边框，需要扩展为四个方向的边框
+        // 临时方案：增加左内边距来模拟左边框效果
+        style.padding.left = CSSLength(20, CSSUnit::PX);
+        style.background_color = "#F5F5F5";  // 浅灰色背景以区分引用块
     }
 
     // 预格式化文本 (Preformatted)
     if (tag_name == "pre") {
-        style.font_family = "monospace";
+        style.font_family = "Consolas, Monaco, Courier New, monospace";
         style.margin.top = CSSLength(16, CSSUnit::PX);  // 1em
         style.margin.bottom = CSSLength(16, CSSUnit::PX);
         // TODO: 添加 white-space: pre 支持
@@ -182,16 +191,17 @@ void StyleResolver::ApplyElementSpecificStyle(ComputedStyle& style, const std::s
 
     // 代码 (Code)
     if (tag_name == "code") {
-        style.font_family = "monospace";
+        style.font_family = "Consolas, Monaco, Courier New, monospace";
     }
 
     // 水平线 (Horizontal Rule)
     if (tag_name == "hr") {
-        style.margin.top = CSSLength(8, CSSUnit::PX);  // 0.5em
-        style.margin.bottom = CSSLength(8, CSSUnit::PX);
+        style.margin.top = CSSLength(16, CSSUnit::PX);
+        style.margin.bottom = CSSLength(16, CSSUnit::PX);
+        style.height = CSSLength(1, CSSUnit::PX);
         style.border.width = CSSLength(1, CSSUnit::PX);
         style.border.style = CSSBorderStyle::SOLID;
-        style.border.color = Color::FromRGB(128, 128, 128);
+        style.border.color = SkColorSetRGB(200, 200, 200);
     }
 
     // ========== 列表 (Lists) ==========
@@ -224,14 +234,20 @@ void StyleResolver::ApplyElementSpecificStyle(ComputedStyle& style, const std::s
     if (tag_name == "table") {
         style.border.style = CSSBorderStyle::SOLID;
         style.border.width = CSSLength(1, CSSUnit::PX);
-        style.border.color = Color::FromRGB(128, 128, 128);
+        style.border.color = SkColorSetRGB(200, 200, 200);
     }
 
     if (tag_name == "td" || tag_name == "th") {
-        style.padding.top = CSSLength(2, CSSUnit::PX);
-        style.padding.bottom = CSSLength(2, CSSUnit::PX);
-        style.padding.left = CSSLength(2, CSSUnit::PX);
-        style.padding.right = CSSLength(2, CSSUnit::PX);
+        // 添加边框
+        style.border.style = CSSBorderStyle::SOLID;
+        style.border.width = CSSLength(1, CSSUnit::PX);
+        style.border.color = SkColorSetRGB(200, 200, 200);
+
+        // 增加内边距
+        style.padding.top = CSSLength(8, CSSUnit::PX);
+        style.padding.bottom = CSSLength(8, CSSUnit::PX);
+        style.padding.left = CSSLength(8, CSSUnit::PX);
+        style.padding.right = CSSLength(8, CSSUnit::PX);
     }
 
     if (tag_name == "th") {
@@ -273,11 +289,195 @@ void StyleResolver::ApplyElementSpecificStyle(ComputedStyle& style, const std::s
     }
 
     if (tag_name == "button") {
+        // 背景色
         style.background_color = "#F0F0F0";
-        style.border_radius.top_left = CSSLength(2, CSSUnit::PX);
-        style.border_radius.top_right = CSSLength(2, CSSUnit::PX);
-        style.border_radius.bottom_left = CSSLength(2, CSSUnit::PX);
-        style.border_radius.bottom_right = CSSLength(2, CSSUnit::PX);
+
+        // 圆角（增强到 4px）
+        style.border_radius.top_left = CSSLength(4, CSSUnit::PX);
+        style.border_radius.top_right = CSSLength(4, CSSUnit::PX);
+        style.border_radius.bottom_left = CSSLength(4, CSSUnit::PX);
+        style.border_radius.bottom_right = CSSLength(4, CSSUnit::PX);
+
+        // 边框
+        style.border.width = CSSLength(1, CSSUnit::PX);
+        style.border.style = CSSBorderStyle::SOLID;
+        style.border.color = SkColorSetRGB(200, 200, 200);
+
+        // 内边距
+        style.padding.left = CSSLength(16, CSSUnit::PX);
+        style.padding.right = CSSLength(16, CSSUnit::PX);
+        style.padding.top = CSSLength(6, CSSUnit::PX);
+        style.padding.bottom = CSSLength(6, CSSUnit::PX);
+
+        // 固定宽度（临时方案，让按钮不占满整行）
+        style.width = CSSLength(120, CSSUnit::PX);
+        style.height = CSSLength(32, CSSUnit::PX);
+
+        // 阴影（增强效果）
+        CSSBoxShadow shadow;
+        shadow.offset_x = 0;
+        shadow.offset_y = 4;           // 增加到 4px
+        shadow.blur_radius = 8;        // 增加到 8px
+        shadow.spread_radius = 0;
+        shadow.color = SkColorSetARGB(80, 0, 0, 0); // 增加不透明度到 80
+        shadow.inset = false;
+        style.box_shadow.push_back(shadow);
+
+        // 文本居中
+        style.text_align = "center";
+    }
+
+    // Input 元素
+    if (tag_name == "input" && element) {
+        std::string type = element->GetAttribute("type");
+
+        if (type == "text" || type == "password" || type.empty()) {
+            // 文本输入框
+            style.background_color = "#FFFFFF";
+
+            // 固定宽度
+            style.width = CSSLength(200, CSSUnit::PX);
+            style.height = CSSLength(32, CSSUnit::PX);
+
+            // 圆角
+            style.border_radius.top_left = CSSLength(3, CSSUnit::PX);
+            style.border_radius.top_right = CSSLength(3, CSSUnit::PX);
+            style.border_radius.bottom_left = CSSLength(3, CSSUnit::PX);
+            style.border_radius.bottom_right = CSSLength(3, CSSUnit::PX);
+
+            // 边框（覆盖默认的 2px）
+            style.border.width = CSSLength(1, CSSUnit::PX);
+            style.border.style = CSSBorderStyle::SOLID;
+            style.border.color = SkColorSetRGB(200, 200, 200);
+
+            // 内边距
+            style.padding.left = CSSLength(8, CSSUnit::PX);
+            style.padding.right = CSSLength(8, CSSUnit::PX);
+            style.padding.top = CSSLength(6, CSSUnit::PX);
+            style.padding.bottom = CSSLength(6, CSSUnit::PX);
+        }
+        else if (type == "button" || type == "submit") {
+            // 按钮样式（与 <button> 相同）
+            style.background_color = "#F0F0F0";
+
+            style.width = CSSLength(120, CSSUnit::PX);
+            style.height = CSSLength(32, CSSUnit::PX);
+
+            style.border_radius.top_left = CSSLength(4, CSSUnit::PX);
+            style.border_radius.top_right = CSSLength(4, CSSUnit::PX);
+            style.border_radius.bottom_left = CSSLength(4, CSSUnit::PX);
+            style.border_radius.bottom_right = CSSLength(4, CSSUnit::PX);
+
+            style.border.width = CSSLength(1, CSSUnit::PX);
+            style.border.style = CSSBorderStyle::SOLID;
+            style.border.color = SkColorSetRGB(200, 200, 200);
+
+            style.padding.left = CSSLength(16, CSSUnit::PX);
+            style.padding.right = CSSLength(16, CSSUnit::PX);
+            style.padding.top = CSSLength(6, CSSUnit::PX);
+            style.padding.bottom = CSSLength(6, CSSUnit::PX);
+
+            CSSBoxShadow shadow;
+            shadow.offset_x = 0;
+            shadow.offset_y = 2;
+            shadow.blur_radius = 4;
+            shadow.spread_radius = 0;
+            shadow.color = SkColorSetARGB(40, 0, 0, 0);
+            shadow.inset = false;
+            style.box_shadow.push_back(shadow);
+
+            style.text_align = "center";
+        }
+        else if (type == "checkbox") {
+            // 复选框：小方块
+            style.width = CSSLength(16, CSSUnit::PX);
+            style.height = CSSLength(16, CSSUnit::PX);
+
+            style.border.width = CSSLength(1, CSSUnit::PX);
+            style.border.style = CSSBorderStyle::SOLID;
+            style.border.color = SkColorSetRGB(150, 150, 150);
+
+            style.border_radius.top_left = CSSLength(2, CSSUnit::PX);
+            style.border_radius.top_right = CSSLength(2, CSSUnit::PX);
+            style.border_radius.bottom_left = CSSLength(2, CSSUnit::PX);
+            style.border_radius.bottom_right = CSSLength(2, CSSUnit::PX);
+
+            style.background_color = "#FFFFFF";
+        }
+        else if (type == "radio") {
+            // 单选按钮：小圆圈
+            style.width = CSSLength(16, CSSUnit::PX);
+            style.height = CSSLength(16, CSSUnit::PX);
+
+            style.border.width = CSSLength(1, CSSUnit::PX);
+            style.border.style = CSSBorderStyle::SOLID;
+            style.border.color = SkColorSetRGB(150, 150, 150);
+
+            // 圆形
+            style.border_radius.top_left = CSSLength(8, CSSUnit::PX);
+            style.border_radius.top_right = CSSLength(8, CSSUnit::PX);
+            style.border_radius.bottom_left = CSSLength(8, CSSUnit::PX);
+            style.border_radius.bottom_right = CSSLength(8, CSSUnit::PX);
+
+            style.background_color = "#FFFFFF";
+        }
+    }
+
+    // Textarea 元素
+    if (tag_name == "textarea") {
+        style.background_color = "#FFFFFF";
+
+        // 固定宽度
+        style.width = CSSLength(300, CSSUnit::PX);
+        style.height = CSSLength(80, CSSUnit::PX);
+
+        // 圆角
+        style.border_radius.top_left = CSSLength(3, CSSUnit::PX);
+        style.border_radius.top_right = CSSLength(3, CSSUnit::PX);
+        style.border_radius.bottom_left = CSSLength(3, CSSUnit::PX);
+        style.border_radius.bottom_right = CSSLength(3, CSSUnit::PX);
+
+        // 边框
+        style.border.width = CSSLength(1, CSSUnit::PX);
+        style.border.style = CSSBorderStyle::SOLID;
+        style.border.color = SkColorSetRGB(200, 200, 200);
+
+        // 内边距
+        style.padding.left = CSSLength(8, CSSUnit::PX);
+        style.padding.right = CSSLength(8, CSSUnit::PX);
+        style.padding.top = CSSLength(6, CSSUnit::PX);
+        style.padding.bottom = CSSLength(6, CSSUnit::PX);
+    }
+
+    // Select 元素
+    if (tag_name == "select") {
+        style.background_color = "#FFFFFF";
+
+        // 固定宽度
+        style.width = CSSLength(200, CSSUnit::PX);
+        style.height = CSSLength(32, CSSUnit::PX);
+
+        // 圆角
+        style.border_radius.top_left = CSSLength(3, CSSUnit::PX);
+        style.border_radius.top_right = CSSLength(3, CSSUnit::PX);
+        style.border_radius.bottom_left = CSSLength(3, CSSUnit::PX);
+        style.border_radius.bottom_right = CSSLength(3, CSSUnit::PX);
+
+        // 边框
+        style.border.width = CSSLength(1, CSSUnit::PX);
+        style.border.style = CSSBorderStyle::SOLID;
+        style.border.color = SkColorSetRGB(200, 200, 200);
+
+        // 内边距
+        style.padding.left = CSSLength(8, CSSUnit::PX);
+        style.padding.right = CSSLength(8, CSSUnit::PX);
+        style.padding.top = CSSLength(6, CSSUnit::PX);
+        style.padding.bottom = CSSLength(6, CSSUnit::PX);
+    }
+
+    // Option 元素（隐藏，只显示选中的）
+    if (tag_name == "option") {
+        style.display = RenderObjectType::NONE;
     }
 
     // ========== 内联元素 (Inline Elements) ==========

@@ -160,7 +160,19 @@ public:
      * @param end 结束位置
      */
     void SetSelectionRange(int start, int end);
-    
+
+    /**
+     * @brief 获取选择起始位置
+     * @return 选择起始位置
+     */
+    int GetSelectionStart() const { return selection_start_; }
+
+    /**
+     * @brief 获取选择结束位置
+     * @return 选择结束位置
+     */
+    int GetSelectionEnd() const { return selection_end_; }
+
     // ========== 内部方法 ==========
     
     /**

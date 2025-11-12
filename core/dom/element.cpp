@@ -12,6 +12,8 @@
 #include "dom_token_list.h"
 #include "css_style_declaration.h"
 #include "dom_string_map.h"
+#include "html_input_element.h"
+#include "html_textarea_element.h"
 #include <algorithm>
 #include <sstream>
 #include <lexbor/html/interfaces/document.h>
@@ -717,8 +719,26 @@ std::shared_ptr<Node> Element::ConvertLexborNodeToNode(lxb_dom_node_t* lexbor_no
         const lxb_char_t* tag_name_data = lxb_dom_element_qualified_name(lexbor_elem, &tag_name_len);
         std::string tag_name(reinterpret_cast<const char*>(tag_name_data), tag_name_len);
 
-        // 创建新元素
-        auto new_elem = std::make_shared<Element>(tag_name);
+        // 根据标签名创建特定类型的元素
+        std::shared_ptr<Element> new_elem;
+        if (tag_name == "input") {
+            auto input_elem = std::make_shared<HTMLInputElement>();
+            // 从属性中读取type并设置
+            lxb_dom_attr_t* type_attr = lxb_dom_element_attr_by_name(lexbor_elem,
+                reinterpret_cast<const lxb_char_t*>("type"), 4);
+            if (type_attr && type_attr->value) {
+                size_t type_len;
+                const lxb_char_t* type_data = lxb_dom_attr_value(type_attr, &type_len);
+                std::string type_str(reinterpret_cast<const char*>(type_data), type_len);
+                input_elem->SetAttribute("type", type_str);
+                // SetInputType会从属性中读取
+            }
+            new_elem = input_elem;
+        } else if (tag_name == "textarea") {
+            new_elem = std::make_shared<HTMLTextAreaElement>();
+        } else {
+            new_elem = std::make_shared<Element>(tag_name);
+        }
         // 注意：owner_document会在AppendChild时自动设置
 
         // 复制属性

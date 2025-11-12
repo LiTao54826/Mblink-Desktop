@@ -18,6 +18,16 @@ HTMLInputElement::HTMLInputElement()
     , selection_end_(0) {
 }
 
+void HTMLInputElement::SetAttribute(const std::string& name, const std::string& value) {
+    // 调用基类方法设置属性
+    Element::SetAttribute(name, value);
+
+    // 如果是type属性，同步更新input_type_
+    if (name == "type") {
+        input_type_ = StringToInputType(value);
+    }
+}
+
 void HTMLInputElement::SetInputType(InputType type) {
     input_type_ = type;
     SetAttribute("type", InputTypeToString(type));
@@ -50,21 +60,32 @@ void HTMLInputElement::SetValue(const std::string& value, bool trigger_events) {
     }
 }
 
+bool HTMLInputElement::GetChecked() const {
+    // 如果checked_已经被程序设置过，使用程序设置的值
+    // 否则检查HTML属性
+    if (checked_) {
+        return true;
+    }
+
+    // 检查HTML属性中是否有checked
+    return HasAttribute("checked");
+}
+
 void HTMLInputElement::SetChecked(bool checked, bool trigger_events) {
     if (input_type_ != InputType::Checkbox && input_type_ != InputType::Radio) {
         return;  // 只有checkbox和radio支持checked
     }
-    
+
     bool old_checked = checked_;
     checked_ = checked;
-    
+
     // 更新checked属性
     if (checked) {
         SetAttribute("checked", "");
     } else {
         RemoveAttribute("checked");
     }
-    
+
     // 触发change事件
     if (trigger_events && old_checked != checked) {
         TriggerChangeEvent();

@@ -64,8 +64,9 @@ private:
      * @brief 应用元素特定的样式（如 h1 的 font-size）
      * @param style 要应用样式的对象
      * @param tag_name 标签名
+     * @param element 元素指针（可选，用于获取属性）
      */
-    void ApplyElementSpecificStyle(ComputedStyle& style, const std::string& tag_name);
+    void ApplyElementSpecificStyle(ComputedStyle& style, const std::string& tag_name, std::shared_ptr<Element> element = nullptr);
 
     /**
      * @brief 应用元素的内联样式

@@ -255,15 +255,37 @@ protected:
     bool needs_paint_ = true;
 };
 
+// 前向声明
+class HTMLInputElement;
+class HTMLTextAreaElement;
+struct Box;
+
 /**
  * @brief 块级渲染对象
  */
 class RenderBlock : public RenderObject {
 public:
     RenderBlock() : RenderObject(RenderObjectType::BLOCK) {}
-    
+
     void Layout(float parent_width, float parent_height) override;
     void Paint(SkCanvas* canvas) override;
+
+private:
+    /**
+     * @brief 渲染input元素的特定内容
+     * @param canvas Skia画布
+     * @param input HTMLInputElement指针
+     * @param box 盒模型
+     */
+    void PaintInputElement(SkCanvas* canvas, HTMLInputElement* input, const Box& box);
+
+    /**
+     * @brief 渲染textarea元素的特定内容
+     * @param canvas Skia画布
+     * @param textarea HTMLTextAreaElement指针
+     * @param box 盒模型
+     */
+    void PaintTextAreaElement(SkCanvas* canvas, HTMLTextAreaElement* textarea, const Box& box);
 };
 
 /**
@@ -272,9 +294,14 @@ public:
 class RenderInline : public RenderObject {
 public:
     RenderInline() : RenderObject(RenderObjectType::INLINE) {}
-    
+
     void Layout(float parent_width, float parent_height) override;
     void Paint(SkCanvas* canvas) override;
+
+private:
+    // 表单控件渲染辅助方法
+    void PaintInputElement(SkCanvas* canvas, HTMLInputElement* input, const Box& box);
+    void PaintTextAreaElement(SkCanvas* canvas, HTMLTextAreaElement* textarea, const Box& box);
 };
 
 /**

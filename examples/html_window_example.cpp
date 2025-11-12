@@ -40,105 +40,84 @@ int main() {
         doc->Initialize();
         std::cout << "✅ Document initialized" << std::endl;
 
-        // 加载HTML内容 - 测试交互元素和其他未测试的元素
+        // 加载HTML内容 - 紧凑布局测试所有元素
         std::string html = R"(
             <!DOCTYPE html>
             <html>
                 <head>
-                    <title>MBink Interactive Elements Test</title>
+                    <title>MBink Test - Compact Layout</title>
                 </head>
-                <body style="padding: 20px;">
-                    <h1>Interactive Elements Test</h1>
+                <body style="padding: 10px; font-size: 14px;">
+                    <h1 style="margin: 5px 0;">MBink Elements Test</h1>
 
-                    <!-- Buttons -->
-                    <h2>Buttons</h2>
-                    <p>
-                        <button>Default Button</button>
-                        <button style="background-color: #4CAF50; color: white; padding: 10px 20px; border: none;">Green Button</button>
-                        <button style="background-color: #f44336; color: white; padding: 10px 20px; border: none;">Red Button</button>
-                    </p>
-
-                    <!-- Input Elements -->
-                    <h2>Input Elements</h2>
-                    <p>
-                        <input type="text" placeholder="Text input" style="padding: 8px; width: 200px;">
-                    </p>
-                    <p>
-                        <input type="password" placeholder="Password" style="padding: 8px; width: 200px;">
-                    </p>
-                    <p>
-                        <input type="button" value="Button Input" style="padding: 8px 16px;">
-                        <input type="submit" value="Submit" style="padding: 8px 16px;">
-                    </p>
-                    <p>
-                        <input type="checkbox"> Checkbox 1
-                        <input type="checkbox" checked> Checkbox 2 (checked)
-                    </p>
-                    <p>
-                        <input type="radio" name="radio1"> Radio 1
-                        <input type="radio" name="radio1" checked> Radio 2 (checked)
+                    <!-- 第一行：按钮 -->
+                    <h2 style="margin: 5px 0;">Buttons</h2>
+                    <p style="margin: 5px 0;">
+                        <button>Default</button>
+                        <button style="background-color: #4CAF50; color: white;">Green</button>
+                        <button style="background-color: #f44336; color: white;">Red</button>
                     </p>
 
-                    <!-- Textarea -->
-                    <h2>Textarea</h2>
-                    <p>
-                        <textarea rows="4" cols="50" placeholder="Enter multiple lines..."></textarea>
+                    <!-- 第二行：文本输入 -->
+                    <h2 style="margin: 5px 0;">Text Input</h2>
+                    <p style="margin: 5px 0;">
+                        <input type="text" placeholder="Text" style="padding: 4px; width: 120px;">
+                        <input type="password" placeholder="Password" style="padding: 4px; width: 120px;">
                     </p>
 
-                    <!-- Select -->
-                    <h2>Select (Dropdown)</h2>
-                    <p>
-                        <select style="padding: 8px;">
+                    <!-- 第三行：Checkbox 和 Radio -->
+                    <h2 style="margin: 5px 0;">Checkbox & Radio</h2>
+                    <p style="margin: 5px 0;">
+                        <input type="checkbox"> CB1
+                        <input type="checkbox" checked> CB2✓
+                        <input type="radio" name="r1"> R1
+                        <input type="radio" name="r1" checked> R2✓
+                    </p>
+
+                    <!-- 第四行：Textarea 和 Select -->
+                    <h2 style="margin: 5px 0;">Textarea & Select</h2>
+                    <p style="margin: 5px 0;">
+                        <textarea rows="2" cols="30" placeholder="Multi-line text..."></textarea>
+                        <select style="padding: 4px;">
                             <option>Option 1</option>
                             <option selected>Option 2 (selected)</option>
                             <option>Option 3</option>
                         </select>
                     </p>
 
-                    <!-- Images -->
-                    <h2>Images</h2>
-                    <p>
-                        <img src="test.png" alt="Test Image" width="100" height="100" style="background-color: #ddd; border: 1px solid #999;">
-                    </p>
-
-                    <!-- Tables -->
-                    <h2>Tables</h2>
-                    <table border="1" style="border-collapse: collapse;">
+                    <!-- 第五行：表格 -->
+                    <h2 style="margin: 5px 0;">Table</h2>
+                    <table border="1" style="border-collapse: collapse; font-size: 12px;">
                         <tr>
-                            <th>Header 1</th>
-                            <th>Header 2</th>
-                            <th>Header 3</th>
+                            <th>H1</th>
+                            <th>H2</th>
+                            <th>H3</th>
                         </tr>
                         <tr>
-                            <td>Row 1, Col 1</td>
-                            <td>Row 1, Col 2</td>
-                            <td>Row 1, Col 3</td>
+                            <td>R1C1</td>
+                            <td>R1C2</td>
+                            <td>R1C3</td>
                         </tr>
                         <tr>
-                            <td>Row 2, Col 1</td>
-                            <td>Row 2, Col 2</td>
-                            <td>Row 2, Col 3</td>
+                            <td>R2C1</td>
+                            <td>R2C2</td>
+                            <td>R2C3</td>
                         </tr>
                     </table>
 
-                    <!-- Code blocks -->
-                    <h2>Code Elements</h2>
-                    <p>Inline code: <code>console.log('hello')</code></p>
-                    <pre>function test() {
-    return 42;
-}</pre>
+                    <!-- 第六行：代码和引用 -->
+                    <h2 style="margin: 5px 0;">Code & Quote</h2>
+                    <p style="margin: 5px 0;">Inline: <code>console.log('hi')</code></p>
+                    <pre style="margin: 5px 0; padding: 5px; background: #f5f5f5;">function test() { return 42; }</pre>
+                    <blockquote style="margin: 5px 0; padding: 5px;">Quote with background</blockquote>
 
-                    <!-- Blockquote -->
-                    <h2>Blockquote</h2>
-                    <blockquote style="border-left: 4px solid #ccc; padding-left: 16px; margin: 16px 0;">
-                        This is a blockquote. It should have a left border and padding.
-                    </blockquote>
-
-                    <!-- Horizontal Rule -->
-                    <h2>Horizontal Rule</h2>
-                    <p>Text before HR</p>
-                    <hr>
-                    <p>Text after HR</p>
+                    <!-- 第七行：图片和HR -->
+                    <h2 style="margin: 5px 0;">Image & HR</h2>
+                    <p style="margin: 5px 0;">
+                        <img src="test.png" alt="Img" width="60" height="60" style="background-color: #ddd; border: 1px solid #999;">
+                    </p>
+                    <hr style="margin: 5px 0;">
+                    <p style="margin: 5px 0; font-size: 12px;">✅ All elements visible in one screen</p>
 
                 </body>
             </html>

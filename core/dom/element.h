@@ -79,7 +79,7 @@ public:
      * @param name 属性名
      * @param value 属性值
      */
-    void SetAttribute(const std::string& name, const std::string& value);
+    virtual void SetAttribute(const std::string& name, const std::string& value);
     
     /**
      * @brief 获取属性

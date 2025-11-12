@@ -57,7 +57,12 @@ public:
      * @brief 析构函数
      */
     ~HTMLInputElement() override = default;
-    
+
+    /**
+     * @brief 重写SetAttribute以处理type属性
+     */
+    void SetAttribute(const std::string& name, const std::string& value) override;
+
     // ========== Input特有属性 ==========
     
     /**
@@ -89,7 +94,7 @@ public:
      * @brief 获取checked状态（用于checkbox和radio）
      * @return true表示选中
      */
-    bool GetChecked() const { return checked_; }
+    bool GetChecked() const;
     
     /**
      * @brief 设置checked状态
@@ -185,7 +190,19 @@ public:
      * @param end 结束位置
      */
     void SetSelectionRange(int start, int end);
-    
+
+    /**
+     * @brief 获取选择起始位置
+     * @return 选择起始位置
+     */
+    int GetSelectionStart() const { return selection_start_; }
+
+    /**
+     * @brief 获取选择结束位置
+     * @return 选择结束位置
+     */
+    int GetSelectionEnd() const { return selection_end_; }
+
     // ========== 内部方法 ==========
     
     /**
