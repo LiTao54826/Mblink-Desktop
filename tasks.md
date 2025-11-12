@@ -1,8 +1,8 @@
 # MBink 浏览器引擎开发任务跟踪
 
 **最后更新**: 2025-11-12
-**当前阶段**: Stage 2 - 表单控件集成 (60% 完成)
-**最新提交**: c3ceaf5 - feat: Stage 2 表单控件集成 - 部分完成 (60%)
+**当前阶段**: Stage 2 - 表单控件集成 (80% 完成)
+**最新提交**: b8e3a81 - fix: 修复空白文本处理和CSS标准化 - Textarea/Select改进
 
 ---
 
@@ -12,7 +12,7 @@
 |------|------|--------|----------|----------|
 | Stage 0: 代码审查和准备 | ✅ 完成 | 100% | 2小时 | 2小时 |
 | Stage 1: 快速视觉修复 | ✅ 完成 | 100% | 0.5小时 | 1小时 |
-| Stage 2: 表单控件集成 | 🔄 进行中 | 60% | 8-12小时 | 6小时 |
+| Stage 2: 表单控件集成 | 🔄 进行中 | 80% | 8-12小时 | 8小时 |
 | Stage 3: 布局引擎改进 | ⏸️ 未开始 | 0% | 12-18小时 | - |
 | Stage 4: 高级功能 | ⏸️ 未开始 | 0% | 20-40小时 | - |
 
@@ -52,11 +52,11 @@
 
 ---
 
-## 🔄 Stage 2: 表单控件集成 (进行中 - 60%)
+## 🔄 Stage 2: 表单控件集成 (进行中 - 80%)
 
 **开始日期**: 2025-11-12
 **文档**: STAGE_2_PROGRESS_REPORT.md
-**最新提交**: c3ceaf5
+**最新提交**: b8e3a81
 
 ### ✅ 已完成的子任务
 
@@ -114,40 +114,54 @@
 
 **⚠️ 注意**: 当前实现是硬编码的，需要改为基于CSS的vertical-align属性
 
-### ⚠️ 待完成的子任务
-
-#### Task 2.5: CSS标准化改进 ⚠️
-**优先级**: 高
-**状态**: 待开始
+#### Task 2.5: CSS标准化改进 ✅
+**完成日期**: 2025-11-12
+**修改文件**:
+- `core/render/render_inline_block.h` - 新增RenderInlineBlock类
+- `core/render/render_inline_block.cpp` - 实现inline-block布局和表单控件渲染
+- `core/render/style_resolver.cpp` - 文本规范化、Textarea/Select CSS标准化
+- `core/render/CMakeLists.txt` - 添加新文件到构建系统
+- `core/window/window.cpp` - 使用RenderTreeBuilder
 
 **用户要求**: 需要符合CSS标准而非硬编码，最终目标是支持React等组件框架
 
-**子任务**:
+**已完成的子任务**:
 
-##### 2.5.1: Textarea改进
-- [ ] 实现 `display: inline-block` 支持
-- [ ] 支持 `rows` 属性（控制高度）
-- [ ] 支持 `cols` 属性（控制宽度）
-- [ ] 多行文本渲染
-- [ ] 文本换行处理
+##### 2.5.1: Textarea改进 ✅
+- ✅ 实现 `display: inline-block` 支持
+- ✅ 支持 `rows` 属性（控制高度: rows * 20px）
+- ✅ 支持 `cols` 属性（控制宽度: cols * 8px）
+- ⚠️ 多行文本渲染（简化实现，只显示第一行）
+- ⚠️ 文本换行处理（待完善）
 
-##### 2.5.2: Select元素改进
-- [ ] 只显示选中的option
-- [ ] 隐藏其他option元素
-- [ ] 添加下拉箭头指示器
-- [ ] 实现下拉展开逻辑（可选）
+##### 2.5.2: Select元素改进 ✅
+- ✅ 只显示选中的option
+- ✅ 隐藏其他option元素（display: none）
+- ✅ 添加下拉箭头指示器
+- ⏸️ 实现下拉展开逻辑（暂不实现）
 
-##### 2.5.3: CSS属性支持
-- [ ] 实现 `vertical-align` 属性（替代硬编码垂直居中）
-- [ ] 实现 `border-collapse` 属性（表格）
-- [ ] 实现 `border-spacing` 属性（表格）
-- [ ] 实现 `display: inline-block` 类型
+##### 2.5.3: CSS属性支持 ✅
+- ✅ 实现 `display: inline-block` 类型（RenderInlineBlock类）
+- ✅ 实现shrink-to-fit宽度算法（CSS 2.1规范）
+- ✅ 空白文本过滤和规范化（符合CSS规范）
+- ⏸️ 实现 `vertical-align` 属性（待完成）
+- ⏸️ 实现 `border-collapse` 属性（待完成）
+- ⏸️ 实现 `border-spacing` 属性（待完成）
 
-##### 2.5.4: 表格优化
-- [ ] 改进单元格间距
-- [ ] 支持border-collapse
-- [ ] 支持border-spacing
-- [ ] 优化表格布局算法
+##### 2.5.4: 表格优化 ⏸️
+- ⏸️ 改进单元格间距（待完成）
+- ⏸️ 支持border-collapse（待完成）
+- ⏸️ 支持border-spacing（待完成）
+- ⏸️ 优化表格布局算法（待完成）
+
+**核心成果**:
+1. **RenderInlineBlock类** - 符合CSS标准的inline-block实现
+2. **空白文本处理** - 过滤纯空白节点，规范化连续空白
+3. **Textarea动态尺寸** - 根据rows/cols属性计算
+4. **Select正确渲染** - 只显示选中option + 下拉箭头
+5. **RenderTreeBuilder集成** - 统一渲染树构建逻辑
+
+### ⚠️ 待完成的子任务
 
 #### Task 2.6: :focus伪类样式 ⚠️
 **优先级**: 中
