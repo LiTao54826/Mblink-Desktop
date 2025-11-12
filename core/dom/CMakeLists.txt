@@ -14,6 +14,17 @@ set(DOM_SOURCES
     dom_string_map.cpp
     html_input_element.cpp
     html_textarea_element.cpp
+    html_button_element.cpp
+    html_form_element.cpp
+    html_select_element.cpp
+    html_option_element.cpp
+    html_anchor_element.cpp
+    html_label_element.cpp
+    html_image_element.cpp
+    html_div_element.cpp
+    html_span_element.cpp
+    html_paragraph_element.cpp
+    html_heading_element.cpp
 )
 
 set(DOM_HEADERS
@@ -30,6 +41,17 @@ set(DOM_HEADERS
     dom_string_map.h
     html_input_element.h
     html_textarea_element.h
+    html_button_element.h
+    html_form_element.h
+    html_select_element.h
+    html_option_element.h
+    html_anchor_element.h
+    html_label_element.h
+    html_image_element.h
+    html_div_element.h
+    html_span_element.h
+    html_paragraph_element.h
+    html_heading_element.h
 )
 
 add_library(lightui_dom STATIC ${DOM_SOURCES})

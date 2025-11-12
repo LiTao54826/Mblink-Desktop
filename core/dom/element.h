@@ -105,7 +105,7 @@ public:
      * @brief 移除属性
      * @param name 属性名
      */
-    void RemoveAttribute(const std::string& name);
+    virtual void RemoveAttribute(const std::string& name);
     
     // ========== 样式操作 ==========
     

@@ -182,6 +182,18 @@ set_target_properties(html_window_example PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY_RELEASE "${CMAKE_BINARY_DIR}/bin/Release"
 )
 
+# ========== Preact Hello World Example ==========
+add_subdirectory(preact_hello_world)
+
+# ========== Preact Counter Example ==========
+add_subdirectory(preact_counter)
+
+# ========== Preact Window Demo ==========
+add_subdirectory(preact_window_demo)
+
+# ========== Preact Todo App ==========
+add_subdirectory(preact_todo_app)
+
 message(STATUS "Examples configured successfully")
 message(STATUS "  - integration_example")
 message(STATUS "  - javascript_integration_example")
@@ -190,4 +202,8 @@ message(STATUS "  - counter_app")
 message(STATUS "  - animation_demo")
 message(STATUS "  - html_loading_example")
 message(STATUS "  - html_window_example")
+message(STATUS "  - preact_hello_world")
+message(STATUS "  - preact_counter")
+message(STATUS "  - preact_window_demo")
+message(STATUS "  - preact_todo_app")
 

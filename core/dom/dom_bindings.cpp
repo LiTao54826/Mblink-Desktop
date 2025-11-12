@@ -98,6 +98,62 @@ static JSValue js_element_set_class_name(JSContext* ctx, JSValueConst this_val, 
     return JS_UNDEFINED;
 }
 
+// Element.textContent getter
+static JSValue js_element_get_text_content(JSContext* ctx, JSValueConst this_val, int magic) {
+    auto element = DOMBindings::UnwrapElement(ctx, this_val);
+    if (!element) {
+        return JS_EXCEPTION;
+    }
+    return JS_NewString(ctx, element->GetTextContent().c_str());
+}
+
+// Element.textContent setter
+static JSValue js_element_set_text_content(JSContext* ctx, JSValueConst this_val, JSValueConst val, int magic) {
+    auto element = DOMBindings::UnwrapElement(ctx, this_val);
+    if (!element) {
+        return JS_EXCEPTION;
+    }
+
+    const char* text = JS_ToCString(ctx, val);
+    if (!text) {
+        return JS_EXCEPTION;
+    }
+
+    element->SetTextContent(text);
+    JS_FreeCString(ctx, text);
+
+    return JS_UNDEFINED;
+}
+
+// Element.children getter
+static JSValue js_element_get_children(JSContext* ctx, JSValueConst this_val, int magic) {
+    auto element = DOMBindings::UnwrapElement(ctx, this_val);
+    if (!element) {
+        return JS_EXCEPTION;
+    }
+
+    // 创建数组
+    JSValue children_array = JS_NewArray(ctx);
+
+    // 获取所有子节点（只包含Element类型）
+    const auto& child_nodes = element->GetChildNodes();
+    uint32_t index = 0;
+
+    for (const auto& child : child_nodes) {
+        // 只包含Element类型的子节点
+        if (child->GetNodeType() == NodeType::ELEMENT_NODE) {
+            auto child_element = std::static_pointer_cast<Element>(child);
+            JSValue child_obj = DOMBindings::WrapElement(ctx, child_element);
+            JS_SetPropertyUint32(ctx, children_array, index++, child_obj);
+        }
+    }
+
+    // 添加length属性
+    JS_SetPropertyStr(ctx, children_array, "length", JS_NewUint32(ctx, index));
+
+    return children_array;
+}
+
 // Element.getAttribute(name)
 static JSValue js_element_get_attribute(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) {
     auto element = DOMBindings::UnwrapElement(ctx, this_val);
@@ -220,6 +276,8 @@ static const JSCFunctionListEntry js_element_proto_funcs[] = {
     JS_CGETSET_MAGIC_DEF("tagName", js_element_get_tag_name, nullptr, 0),
     JS_CGETSET_MAGIC_DEF("id", js_element_get_id, js_element_set_id, 0),
     JS_CGETSET_MAGIC_DEF("className", js_element_get_class_name, js_element_set_class_name, 0),
+    JS_CGETSET_MAGIC_DEF("textContent", js_element_get_text_content, js_element_set_text_content, 0),
+    JS_CGETSET_MAGIC_DEF("children", js_element_get_children, nullptr, 0),
     JS_CFUNC_DEF("getAttribute", 1, js_element_get_attribute),
     JS_CFUNC_DEF("setAttribute", 2, js_element_set_attribute),
     JS_CFUNC_DEF("appendChild", 1, js_element_append_child),
@@ -384,8 +442,24 @@ static JSValue js_document_get_element_by_id(JSContext* ctx, JSValueConst this_v
     return DOMBindings::WrapElement(ctx, element);
 }
 
+// Document.body getter
+static JSValue js_document_get_body(JSContext* ctx, JSValueConst this_val, int magic) {
+    auto document = DOMBindings::UnwrapDocument(ctx, this_val);
+    if (!document) {
+        return JS_EXCEPTION;
+    }
+
+    auto body = document->GetBody();
+    if (!body) {
+        return JS_NULL;
+    }
+
+    return DOMBindings::WrapElement(ctx, body);
+}
+
 // Document 类定义
 static const JSCFunctionListEntry js_document_proto_funcs[] = {
+    JS_CGETSET_MAGIC_DEF("body", js_document_get_body, nullptr, 0),
     JS_CFUNC_DEF("createElement", 1, js_document_create_element),
     JS_CFUNC_DEF("createTextNode", 1, js_document_create_text_node),
     JS_CFUNC_DEF("getElementById", 1, js_document_get_element_by_id),

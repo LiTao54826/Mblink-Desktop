@@ -747,3 +747,301 @@ if(TARGET lexbor_static)
 endif()
 
 add_test(NAME StyleCacheTest COMMAND test_style_cache)
+
+# HTML Button Element Test
+add_executable(test_html_button_element test_html_button_element.cpp)
+
+target_include_directories(test_html_button_element PRIVATE
+    ${CMAKE_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/core
+    ${THIRD_PARTY_DIR}/lexbor/source
+)
+
+target_link_libraries(test_html_button_element PRIVATE
+    lightui_dom
+    lightui_lexbor
+    GTest::gtest
+    GTest::gtest_main
+)
+
+# Link Lexbor
+if(TARGET lexbor_static)
+    target_link_libraries(test_html_button_element PRIVATE lexbor_static)
+endif()
+
+if(WIN32 AND MINGW)
+    target_link_options(test_html_button_element PRIVATE -static-libgcc -static-libstdc++)
+endif()
+
+add_test(NAME HTMLButtonElementTest COMMAND test_html_button_element)
+
+# HTML Select Element Test
+add_executable(test_html_select_element test_html_select_element.cpp)
+
+target_include_directories(test_html_select_element PRIVATE
+    ${CMAKE_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/core
+    ${THIRD_PARTY_DIR}/lexbor/source
+)
+
+target_link_libraries(test_html_select_element PRIVATE
+    lightui_dom
+    lightui_lexbor
+    GTest::gtest
+    GTest::gtest_main
+)
+
+# Link Lexbor
+if(TARGET lexbor_static)
+    target_link_libraries(test_html_select_element PRIVATE lexbor_static)
+endif()
+
+if(WIN32 AND MINGW)
+    target_link_options(test_html_select_element PRIVATE -static-libgcc -static-libstdc++)
+endif()
+
+add_test(NAME HTMLSelectElementTest COMMAND test_html_select_element)
+
+# HTML Form Element Test
+add_executable(test_html_form_element test_html_form_element.cpp)
+
+target_include_directories(test_html_form_element PRIVATE
+    ${CMAKE_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/core
+    ${THIRD_PARTY_DIR}/lexbor/source
+)
+
+target_link_libraries(test_html_form_element PRIVATE
+    lightui_dom
+    lightui_lexbor
+    GTest::gtest
+    GTest::gtest_main
+)
+
+# Link Lexbor
+if(TARGET lexbor_static)
+    target_link_libraries(test_html_form_element PRIVATE lexbor_static)
+endif()
+
+if(WIN32 AND MINGW)
+    target_link_options(test_html_form_element PRIVATE -static-libgcc -static-libstdc++)
+endif()
+
+add_test(NAME HTMLFormElementTest COMMAND test_html_form_element)
+
+# HTML Anchor Element Test
+add_executable(test_html_anchor_element test_html_anchor_element.cpp)
+
+target_include_directories(test_html_anchor_element PRIVATE
+    ${CMAKE_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/core
+    ${THIRD_PARTY_DIR}/lexbor/source
+)
+
+target_link_libraries(test_html_anchor_element PRIVATE
+    lightui_dom
+    lightui_lexbor
+    GTest::gtest
+    GTest::gtest_main
+)
+
+# Link Lexbor
+if(TARGET lexbor_static)
+    target_link_libraries(test_html_anchor_element PRIVATE lexbor_static)
+endif()
+
+if(WIN32 AND MINGW)
+    target_link_options(test_html_anchor_element PRIVATE -static-libgcc -static-libstdc++)
+endif()
+
+add_test(NAME HTMLAnchorElementTest COMMAND test_html_anchor_element)
+
+# HTML Label Element Test
+add_executable(test_html_label_element test_html_label_element.cpp)
+
+target_include_directories(test_html_label_element PRIVATE
+    ${CMAKE_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/core
+    ${THIRD_PARTY_DIR}/lexbor/source
+)
+
+target_link_libraries(test_html_label_element PRIVATE
+    lightui_dom
+    lightui_lexbor
+    GTest::gtest
+    GTest::gtest_main
+)
+
+# Link Lexbor
+if(TARGET lexbor_static)
+    target_link_libraries(test_html_label_element PRIVATE lexbor_static)
+endif()
+
+if(WIN32 AND MINGW)
+    target_link_options(test_html_label_element PRIVATE -static-libgcc -static-libstdc++)
+endif()
+
+add_test(NAME HTMLLabelElementTest COMMAND test_html_label_element)
+
+# HTML Image Element Test
+add_executable(test_html_image_element test_html_image_element.cpp)
+
+target_include_directories(test_html_image_element PRIVATE
+    ${CMAKE_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/core
+    ${THIRD_PARTY_DIR}/lexbor/source
+)
+
+target_link_libraries(test_html_image_element PRIVATE
+    lightui_dom
+    lightui_lexbor
+    GTest::gtest
+    GTest::gtest_main
+)
+
+# Link Lexbor
+if(TARGET lexbor_static)
+    target_link_libraries(test_html_image_element PRIVATE lexbor_static)
+endif()
+
+if(WIN32 AND MINGW)
+    target_link_options(test_html_image_element PRIVATE -static-libgcc -static-libstdc++)
+endif()
+
+add_test(NAME HTMLImageElementTest COMMAND test_html_image_element)
+
+# HTML Container Elements Test (div, span, p, h1-h6)
+add_executable(test_html_container_elements test_html_container_elements.cpp)
+
+target_include_directories(test_html_container_elements PRIVATE
+    ${CMAKE_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/core
+    ${THIRD_PARTY_DIR}/lexbor/source
+)
+
+target_link_libraries(test_html_container_elements PRIVATE
+    lightui_dom
+    lightui_lexbor
+    GTest::gtest
+    GTest::gtest_main
+)
+
+# Link Lexbor
+if(TARGET lexbor_static)
+    target_link_libraries(test_html_container_elements PRIVATE lexbor_static)
+endif()
+
+if(WIN32 AND MINGW)
+    target_link_options(test_html_container_elements PRIVATE -static-libgcc -static-libstdc++)
+endif()
+
+add_test(NAME HTMLContainerElementsTest COMMAND test_html_container_elements)
+
+# Preact Integration Test
+add_executable(test_preact_integration test_preact_integration.cpp)
+
+target_include_directories(test_preact_integration PRIVATE
+    ${CMAKE_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/core
+    ${THIRD_PARTY_DIR}/quickjs
+)
+
+target_link_libraries(test_preact_integration PRIVATE
+    lightui_quickjs
+    lightui_dom
+    GTest::gtest
+    GTest::gtest_main
+)
+
+# Link QuickJS
+if(TARGET quickjs)
+    target_link_libraries(test_preact_integration PRIVATE quickjs)
+endif()
+
+if(WIN32 AND MINGW)
+    target_link_options(test_preact_integration PRIVATE -static-libgcc -static-libstdc++)
+endif()
+
+add_test(NAME PreactIntegrationTest COMMAND test_preact_integration)
+
+# Preact Basic Test
+add_executable(test_preact_basic test_preact_basic.cpp)
+
+target_include_directories(test_preact_basic PRIVATE
+    ${CMAKE_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/core
+    ${THIRD_PARTY_DIR}/quickjs
+)
+
+target_link_libraries(test_preact_basic PRIVATE
+    lightui_quickjs
+    GTest::gtest
+    GTest::gtest_main
+)
+
+# Link QuickJS
+if(TARGET quickjs)
+    target_link_libraries(test_preact_basic PRIVATE quickjs)
+endif()
+
+if(WIN32 AND MINGW)
+    target_link_options(test_preact_basic PRIVATE -static-libgcc -static-libstdc++)
+endif()
+
+add_test(NAME PreactBasicTest COMMAND test_preact_basic)
+
+# Preact Render Test
+add_executable(test_preact_render test_preact_render.cpp)
+
+target_include_directories(test_preact_render PRIVATE
+    ${CMAKE_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/core
+    ${THIRD_PARTY_DIR}/quickjs
+)
+
+target_link_libraries(test_preact_render PRIVATE
+    lightui_quickjs
+    lightui_dom
+    lightui_lexbor
+    GTest::gtest
+    GTest::gtest_main
+)
+
+# Link QuickJS
+if(TARGET quickjs)
+    target_link_libraries(test_preact_render PRIVATE quickjs)
+endif()
+
+if(WIN32 AND MINGW)
+    target_link_options(test_preact_render PRIVATE -static-libgcc -static-libstdc++)
+endif()
+
+add_test(NAME PreactRenderTest COMMAND test_preact_render)
+
+# Preact Components Test
+add_executable(test_preact_components test_preact_components.cpp)
+
+target_include_directories(test_preact_components PRIVATE
+    ${CMAKE_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/core
+    ${THIRD_PARTY_DIR}/quickjs
+)
+
+target_link_libraries(test_preact_components PRIVATE
+    lightui_quickjs
+    lightui_dom
+    lightui_lexbor
+    GTest::gtest
+    GTest::gtest_main
+)
+
+# Link QuickJS
+if(TARGET quickjs)
+    target_link_libraries(test_preact_components PRIVATE quickjs)
+endif()
+
+if(WIN32 AND MINGW)
+    target_link_options(test_preact_components PRIVATE -static-libgcc -static-libstdc++)
+endif()
+
+add_test(NAME PreactComponentsTest COMMAND test_preact_components)

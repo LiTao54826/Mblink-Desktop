@@ -3,11 +3,15 @@
 set(QUICKJS_RUNTIME_SOURCES
     quickjs_runtime.cpp
     window_bindings.cpp
+    preact_renderer.cpp
+    preact_bindings.cpp
 )
 
 set(QUICKJS_RUNTIME_HEADERS
     quickjs_runtime.h
     window_bindings.h
+    preact_renderer.h
+    preact_bindings.h
 )
 
 add_library(lightui_quickjs STATIC ${QUICKJS_RUNTIME_SOURCES})

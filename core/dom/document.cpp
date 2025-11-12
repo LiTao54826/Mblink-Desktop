@@ -4,6 +4,19 @@
  */
 
 #include "document.h"
+#include "html_input_element.h"
+#include "html_textarea_element.h"
+#include "html_button_element.h"
+#include "html_form_element.h"
+#include "html_select_element.h"
+#include "html_option_element.h"
+#include "html_anchor_element.h"
+#include "html_label_element.h"
+#include "html_image_element.h"
+#include "html_div_element.h"
+#include "html_span_element.h"
+#include "html_paragraph_element.h"
+#include "html_heading_element.h"
 #include "core/lexbor/lexbor_document.h"
 #include <algorithm>
 #include <lexbor/dom/interfaces/element.h>
@@ -33,7 +46,72 @@ void Document::Initialize() {
 // ========== 工厂方法 ==========
 
 std::shared_ptr<Element> Document::CreateElement(const std::string& tag_name) {
-    auto element = std::make_shared<Element>(tag_name);
+    // 根据标签名创建特定类型的元素
+    std::shared_ptr<Element> element;
+
+    if (tag_name == "input") {
+        element = std::make_shared<HTMLInputElement>();
+    } else if (tag_name == "textarea") {
+        element = std::make_shared<HTMLTextAreaElement>();
+    } else if (tag_name == "button") {
+        auto button = std::make_shared<HTMLButtonElement>();
+        // 初始化伪类状态（必须在shared_ptr创建后）
+        button->SetPseudoClass(":enabled", true);
+        // 设置默认type属性
+        button->Element::SetAttribute("type", "submit");
+        element = button;
+    } else if (tag_name == "form") {
+        element = std::make_shared<HTMLFormElement>();
+    } else if (tag_name == "select") {
+        auto select = std::make_shared<HTMLSelectElement>();
+        // 初始化伪类状态
+        select->SetPseudoClass(":enabled", true);
+        element = select;
+    } else if (tag_name == "option") {
+        auto option = std::make_shared<HTMLOptionElement>();
+        // 初始化伪类状态
+        option->SetPseudoClass(":enabled", true);
+        element = option;
+    } else if (tag_name == "a") {
+        auto anchor = std::make_shared<HTMLAnchorElement>();
+        // 不设置默认伪类，只有在有href时才设置:link
+        element = anchor;
+    } else if (tag_name == "label") {
+        auto label = std::make_shared<HTMLLabelElement>();
+        element = label;
+    } else if (tag_name == "img") {
+        auto img = std::make_shared<HTMLImageElement>();
+        element = img;
+    } else if (tag_name == "div") {
+        auto div = std::make_shared<HTMLDivElement>();
+        element = div;
+    } else if (tag_name == "span") {
+        auto span = std::make_shared<HTMLSpanElement>();
+        element = span;
+    } else if (tag_name == "p") {
+        auto p = std::make_shared<HTMLParagraphElement>();
+        element = p;
+    } else if (tag_name == "h1") {
+        auto h1 = std::make_shared<HTMLHeadingElement>(1);
+        element = h1;
+    } else if (tag_name == "h2") {
+        auto h2 = std::make_shared<HTMLHeadingElement>(2);
+        element = h2;
+    } else if (tag_name == "h3") {
+        auto h3 = std::make_shared<HTMLHeadingElement>(3);
+        element = h3;
+    } else if (tag_name == "h4") {
+        auto h4 = std::make_shared<HTMLHeadingElement>(4);
+        element = h4;
+    } else if (tag_name == "h5") {
+        auto h5 = std::make_shared<HTMLHeadingElement>(5);
+        element = h5;
+    } else if (tag_name == "h6") {
+        auto h6 = std::make_shared<HTMLHeadingElement>(6);
+        element = h6;
+    } else {
+        element = std::make_shared<Element>(tag_name);
+    }
 
     // 如果是 html 元素，设置为 documentElement
     if (tag_name == "html" && !document_element_) {

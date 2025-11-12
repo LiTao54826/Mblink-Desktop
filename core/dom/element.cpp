@@ -14,6 +14,17 @@
 #include "dom_string_map.h"
 #include "html_input_element.h"
 #include "html_textarea_element.h"
+#include "html_button_element.h"
+#include "html_form_element.h"
+#include "html_select_element.h"
+#include "html_option_element.h"
+#include "html_anchor_element.h"
+#include "html_label_element.h"
+#include "html_image_element.h"
+#include "html_div_element.h"
+#include "html_span_element.h"
+#include "html_paragraph_element.h"
+#include "html_heading_element.h"
 #include <algorithm>
 #include <sstream>
 #include <lexbor/html/interfaces/document.h>
@@ -736,6 +747,38 @@ std::shared_ptr<Node> Element::ConvertLexborNodeToNode(lxb_dom_node_t* lexbor_no
             new_elem = input_elem;
         } else if (tag_name == "textarea") {
             new_elem = std::make_shared<HTMLTextAreaElement>();
+        } else if (tag_name == "button") {
+            new_elem = std::make_shared<HTMLButtonElement>();
+        } else if (tag_name == "form") {
+            new_elem = std::make_shared<HTMLFormElement>();
+        } else if (tag_name == "select") {
+            new_elem = std::make_shared<HTMLSelectElement>();
+        } else if (tag_name == "option") {
+            new_elem = std::make_shared<HTMLOptionElement>();
+        } else if (tag_name == "a") {
+            new_elem = std::make_shared<HTMLAnchorElement>();
+        } else if (tag_name == "label") {
+            new_elem = std::make_shared<HTMLLabelElement>();
+        } else if (tag_name == "img") {
+            new_elem = std::make_shared<HTMLImageElement>();
+        } else if (tag_name == "div") {
+            new_elem = std::make_shared<HTMLDivElement>();
+        } else if (tag_name == "span") {
+            new_elem = std::make_shared<HTMLSpanElement>();
+        } else if (tag_name == "p") {
+            new_elem = std::make_shared<HTMLParagraphElement>();
+        } else if (tag_name == "h1") {
+            new_elem = std::make_shared<HTMLHeadingElement>(1);
+        } else if (tag_name == "h2") {
+            new_elem = std::make_shared<HTMLHeadingElement>(2);
+        } else if (tag_name == "h3") {
+            new_elem = std::make_shared<HTMLHeadingElement>(3);
+        } else if (tag_name == "h4") {
+            new_elem = std::make_shared<HTMLHeadingElement>(4);
+        } else if (tag_name == "h5") {
+            new_elem = std::make_shared<HTMLHeadingElement>(5);
+        } else if (tag_name == "h6") {
+            new_elem = std::make_shared<HTMLHeadingElement>(6);
         } else {
             new_elem = std::make_shared<Element>(tag_name);
         }

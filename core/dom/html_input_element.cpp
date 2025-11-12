@@ -26,6 +26,28 @@ void HTMLInputElement::SetAttribute(const std::string& name, const std::string& 
     if (name == "type") {
         input_type_ = StringToInputType(value);
     }
+    // 如果是checked属性，同步更新checked_（这是默认值）
+    else if (name == "checked") {
+        if (input_type_ == InputType::Checkbox || input_type_ == InputType::Radio) {
+            checked_ = true;  // 有checked属性表示默认选中
+        }
+    }
+    // 如果是value属性，同步更新value_（这是默认值）
+    else if (name == "value") {
+        value_ = value;
+    }
+}
+
+void HTMLInputElement::RemoveAttribute(const std::string& name) {
+    // 调用基类方法移除属性
+    Element::RemoveAttribute(name);
+
+    // 如果是checked属性，同步更新checked_
+    if (name == "checked") {
+        if (input_type_ == InputType::Checkbox || input_type_ == InputType::Radio) {
+            checked_ = false;  // 移除checked属性表示默认不选中
+        }
+    }
 }
 
 void HTMLInputElement::SetInputType(InputType type) {
@@ -46,13 +68,13 @@ void HTMLInputElement::SetValue(const std::string& value, bool trigger_events) {
     if (max_length > 0 && static_cast<int>(value.length()) > max_length) {
         new_value = value.substr(0, max_length);
     }
-    
+
     std::string old_value = value_;
     value_ = new_value;
-    
-    // 更新value属性
-    SetAttribute("value", new_value);
-    
+
+    // 注意：不更新value属性，value属性保持为默认值
+    // 这符合HTML标准：value属性是默认值，value_是当前值
+
     // 触发事件
     if (trigger_events && old_value != new_value) {
         TriggerInputEvent();
@@ -61,14 +83,10 @@ void HTMLInputElement::SetValue(const std::string& value, bool trigger_events) {
 }
 
 bool HTMLInputElement::GetChecked() const {
-    // 如果checked_已经被程序设置过，使用程序设置的值
-    // 否则检查HTML属性
-    if (checked_) {
-        return true;
-    }
-
-    // 检查HTML属性中是否有checked
-    return HasAttribute("checked");
+    // 返回当前checked状态
+    // checked_在SetAttribute("checked")时被设置为默认值
+    // 在SetChecked()时被设置为当前值
+    return checked_;
 }
 
 void HTMLInputElement::SetChecked(bool checked, bool trigger_events) {
@@ -79,12 +97,8 @@ void HTMLInputElement::SetChecked(bool checked, bool trigger_events) {
     bool old_checked = checked_;
     checked_ = checked;
 
-    // 更新checked属性
-    if (checked) {
-        SetAttribute("checked", "");
-    } else {
-        RemoveAttribute("checked");
-    }
+    // 注意：不更新checked属性，checked属性保持为默认值
+    // 这符合HTML标准：checked属性是默认值，checked_是当前值
 
     // 触发change事件
     if (trigger_events && old_checked != checked) {

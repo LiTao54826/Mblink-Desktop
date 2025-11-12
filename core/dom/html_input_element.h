@@ -63,6 +63,11 @@ public:
      */
     void SetAttribute(const std::string& name, const std::string& value) override;
 
+    /**
+     * @brief 重写RemoveAttribute以处理checked属性
+     */
+    void RemoveAttribute(const std::string& name) override;
+
     // ========== Input特有属性 ==========
     
     /**
