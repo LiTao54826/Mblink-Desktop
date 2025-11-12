@@ -4,10 +4,12 @@
  */
 
 #include "style_resolver.h"
+#include "render_inline_block.h"
 #include "core/dom/text.h"
 #include "color.h"
 #include <algorithm>
 #include <sstream>
+#include <iostream>
 
 namespace lightui {
 
@@ -425,11 +427,46 @@ void StyleResolver::ApplyElementSpecificStyle(ComputedStyle& style, const std::s
 
     // Textarea 元素
     if (tag_name == "textarea") {
+        // Display类型: inline-block (符合CSS标准)
+        style.display = RenderObjectType::INLINE_BLOCK;
+
         style.background_color = "#FFFFFF";
 
-        // 固定宽度
-        style.width = CSSLength(300, CSSUnit::PX);
-        style.height = CSSLength(80, CSSUnit::PX);
+        // 根据rows和cols属性计算宽度和高度 (符合CSS标准)
+        // 默认值: cols=20, rows=2 (HTML标准)
+        int cols = 20;
+        int rows = 2;
+
+        if (element) {
+            std::string cols_attr = element->GetAttribute("cols");
+            std::string rows_attr = element->GetAttribute("rows");
+
+            if (!cols_attr.empty()) {
+                try {
+                    cols = std::stoi(cols_attr);
+                    if (cols < 1) cols = 20;
+                } catch (...) {
+                    cols = 20;
+                }
+            }
+
+            if (!rows_attr.empty()) {
+                try {
+                    rows = std::stoi(rows_attr);
+                    if (rows < 1) rows = 2;
+                } catch (...) {
+                    rows = 2;
+                }
+            }
+        }
+
+        // 计算宽度: cols * 字符宽度 (约8px per char)
+        // 计算高度: rows * 行高 (约20px per line)
+        float char_width = 8.0f;
+        float line_height = 20.0f;
+
+        style.width = CSSLength(cols * char_width, CSSUnit::PX);
+        style.height = CSSLength(rows * line_height, CSSUnit::PX);
 
         // 圆角
         style.border_radius.top_left = CSSLength(3, CSSUnit::PX);
@@ -451,10 +488,16 @@ void StyleResolver::ApplyElementSpecificStyle(ComputedStyle& style, const std::s
 
     // Select 元素
     if (tag_name == "select") {
+        // Display类型: inline-block (符合CSS标准)
+        style.display = RenderObjectType::INLINE_BLOCK;
+
         style.background_color = "#FFFFFF";
 
-        // 固定宽度
-        style.width = CSSLength(200, CSSUnit::PX);
+        // 宽度: 根据内容自动计算 (shrink-to-fit)
+        // 这里不设置固定宽度，让布局引擎根据内容计算
+        // 如果用户在HTML中设置了style="width: xxx"，会被覆盖
+
+        // 高度: 单行选择框的标准高度
         style.height = CSSLength(32, CSSUnit::PX);
 
         // 圆角
@@ -468,15 +511,16 @@ void StyleResolver::ApplyElementSpecificStyle(ComputedStyle& style, const std::s
         style.border.style = CSSBorderStyle::SOLID;
         style.border.color = SkColorSetRGB(200, 200, 200);
 
-        // 内边距
+        // 内边距 (为下拉箭头留出空间)
         style.padding.left = CSSLength(8, CSSUnit::PX);
-        style.padding.right = CSSLength(8, CSSUnit::PX);
+        style.padding.right = CSSLength(24, CSSUnit::PX);  // 右侧留空间给箭头
         style.padding.top = CSSLength(6, CSSUnit::PX);
         style.padding.bottom = CSSLength(6, CSSUnit::PX);
     }
 
-    // Option 元素（隐藏，只显示选中的）
+    // Option 元素（隐藏，只在select内部显示选中的）
     if (tag_name == "option") {
+        // Option元素默认隐藏，由Select元素负责渲染选中的option
         style.display = RenderObjectType::NONE;
     }
 
@@ -808,16 +852,21 @@ std::shared_ptr<RenderObject> RenderTreeBuilder::CreateRenderObjectForElement(
 std::shared_ptr<RenderObject> RenderTreeBuilder::CreateRenderObjectForText(
     std::shared_ptr<Text> text,
     const ComputedStyle* parent_style) {
-    
+
+    // 如果父元素是 display: none，文本节点也不创建
+    if (parent_style && parent_style->display == RenderObjectType::NONE) {
+        return nullptr;
+    }
+
     auto render_obj = std::make_shared<RenderText>();
     render_obj->SetNode(text);
     render_obj->SetText(text->GetData());
-    
+
     // 文本节点继承父元素样式
     if (parent_style) {
         render_obj->SetComputedStyle(*parent_style);
     }
-    
+
     return render_obj;
 }
 
@@ -830,7 +879,7 @@ std::shared_ptr<RenderObject> RenderTreeBuilder::CreateRenderObjectByType(Render
         case RenderObjectType::TEXT:
             return std::make_shared<RenderText>();
         case RenderObjectType::INLINE_BLOCK:
-            return std::make_shared<RenderBlock>(); // 简化：暂时用 Block
+            return std::make_shared<RenderInlineBlock>(); // 使用真正的InlineBlock
         case RenderObjectType::FLEX:
             return std::make_shared<RenderBlock>(); // 简化：暂时用 Block
         case RenderObjectType::NONE:

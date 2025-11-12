@@ -14,6 +14,7 @@ set(RENDER_SOURCES
     css_value.cpp
     box_renderer.cpp
     render_object.cpp
+    render_inline_block.cpp
     style_resolver.cpp
     dirty_region.cpp
     performance_monitor.cpp
@@ -36,6 +37,7 @@ set(RENDER_HEADERS
     css_value.h
     box_renderer.h
     render_object.h
+    render_inline_block.h
     style_resolver.h
     dirty_region.h
     performance_monitor.h
