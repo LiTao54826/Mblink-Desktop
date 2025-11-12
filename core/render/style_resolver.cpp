@@ -858,9 +858,31 @@ std::shared_ptr<RenderObject> RenderTreeBuilder::CreateRenderObjectForText(
         return nullptr;
     }
 
+    std::string text_data = text->GetData();
+
+    // 跳过纯空白文本节点
+    if (text_data.find_first_not_of(" \t\n\r") == std::string::npos) {
+        return nullptr;
+    }
+
+    // 规范化空白字符：将连续的空白字符（包括换行）替换为单个空格
+    std::string normalized_text;
+    bool in_whitespace = false;
+    for (char c : text_data) {
+        if (c == ' ' || c == '\t' || c == '\n' || c == '\r') {
+            if (!in_whitespace) {
+                normalized_text += ' ';
+                in_whitespace = true;
+            }
+        } else {
+            normalized_text += c;
+            in_whitespace = false;
+        }
+    }
+
     auto render_obj = std::make_shared<RenderText>();
     render_obj->SetNode(text);
-    render_obj->SetText(text->GetData());
+    render_obj->SetText(normalized_text);
 
     // 文本节点继承父元素样式
     if (parent_style) {
