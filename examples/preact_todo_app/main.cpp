@@ -1,6 +1,6 @@
 /**
  * @file main.cpp
- * @brief Preact Todo App - 更复杂的示例
+ * @brief Preact Todo App - Interactive todo list example
  */
 
 #include "core/window/window.h"
@@ -8,10 +8,7 @@
 #include "core/dom/document.h"
 #include "core/dom/element.h"
 #include "core/dom/dom_bindings.h"
-#include "core/lexbor/lexbor_document.h"
 #include "core/quickjs/quickjs_runtime.h"
-#include "core/quickjs/preact_bindings.h"
-#include "core/quickjs/preact_renderer.h"
 #include "core/event/event_loop.h"
 
 #include <iostream>
@@ -28,7 +25,7 @@ std::string ReadFile(const std::string& path) {
         std::cerr << "Failed to open file: " << path << std::endl;
         return "";
     }
-    
+
     std::stringstream buffer;
     buffer << file.rdbuf();
     return buffer.str();
@@ -42,9 +39,9 @@ int main() {
         std::cout << std::endl;
 
         // 1. 创建窗口
-        std::cout << "[1/8] Creating window..." << std::endl;
+        std::cout << "[1/7] Creating window..." << std::endl;
         WindowConfig config;
-        config.title = "MBink Todo App";
+        config.title = "MBink Todo App - Interactive Example";
         config.width = 900;
         config.height = 700;
         auto window = std::make_shared<Window>(config);
@@ -56,37 +53,31 @@ int main() {
         std::cout << "  ✓ Window registered" << std::endl;
 
         // 2. 创建文档
-        std::cout << "[2/8] Creating document..." << std::endl;
+        std::cout << "[2/7] Creating document..." << std::endl;
         auto document = std::make_shared<Document>();
         document->Initialize();
         std::cout << "  ✓ Document initialized" << std::endl;
 
         // 3. 创建QuickJS运行时
-        std::cout << "[3/8] Creating QuickJS runtime..." << std::endl;
+        std::cout << "[3/7] Creating QuickJS runtime..." << std::endl;
         auto runtime = std::make_unique<QuickJSRuntime>();
         JSContext* ctx = runtime->GetContext();
         std::cout << "  ✓ QuickJS runtime created" << std::endl;
 
-        // 4. 创建Preact渲染器
-        std::cout << "[4/8] Creating Preact renderer..." << std::endl;
-        auto renderer = std::make_shared<PreactRenderer>(runtime.get(), document);
-        std::cout << "  ✓ Preact renderer created" << std::endl;
-
-        // 5. 初始化绑定
-        std::cout << "[5/8] Initializing bindings..." << std::endl;
+        // 4. 初始化DOM绑定
+        std::cout << "[4/7] Initializing DOM bindings..." << std::endl;
         DOMBindings::Init(ctx);
-        PreactBindings::Init(ctx, renderer);
-        std::cout << "  ✓ DOM and Preact bindings initialized" << std::endl;
+        DOMBindings::SetGlobalDocument(ctx, document);
+        std::cout << "  ✓ DOM bindings initialized" << std::endl;
 
-        // 暴露document到JavaScript
-        JSValue global = JS_GetGlobalObject(ctx);
-        JSValue doc_obj = DOMBindings::WrapDocument(ctx, document);
-        JS_SetPropertyStr(ctx, global, "document", doc_obj);
-        JS_FreeValue(ctx, global);
-        std::cout << "  ✓ Document exposed to JavaScript" << std::endl;
+        // 5. 创建body元素
+        std::cout << "[5/7] Creating body element..." << std::endl;
+        auto body = document->CreateElement("body");
+        document->SetBody(body);
+        std::cout << "  ✓ Body element created" << std::endl;
 
         // 6. 加载Preact库
-        std::cout << "[6/8] Loading Preact library..." << std::endl;
+        std::cout << "[6/7] Loading Preact library..." << std::endl;
         std::string preact_code = ReadFile("js/preact/preact.js");
         if (preact_code.empty()) {
             std::cerr << "Failed to load preact.js" << std::endl;
@@ -105,7 +96,7 @@ int main() {
         std::cout << "  ✓ Hooks library loaded" << std::endl;
 
         // 7. 加载并运行应用
-        std::cout << "[7/8] Loading application..." << std::endl;
+        std::cout << "[7/7] Loading application..." << std::endl;
         std::string app_code = ReadFile("examples/preact_todo_app/app.js");
         if (app_code.empty()) {
             std::cerr << "Failed to load app.js" << std::endl;
@@ -114,18 +105,21 @@ int main() {
         runtime->Eval(app_code, "app.js");
         std::cout << "  ✓ Application loaded and rendered" << std::endl;
 
-        // 8. 将文档关联到窗口并显示
-        std::cout << "[8/8] Showing window..." << std::endl;
+        // 将文档关联到窗口并显示
         window->SetDocument(document);
         window->Show();
-        std::cout << "  ✓ Window shown" << std::endl;
 
         std::cout << std::endl;
         std::cout << "========================================" << std::endl;
         std::cout << "  🚀 Application Started!" << std::endl;
         std::cout << "========================================" << std::endl;
         std::cout << std::endl;
-        std::cout << "  Close window to exit" << std::endl;
+        std::cout << "  Try these interactions:" << std::endl;
+        std::cout << "  - Type in the input box and click 'Add'" << std::endl;
+        std::cout << "  - Click 'Done' to mark todos as complete" << std::endl;
+        std::cout << "  - Click 'Undo' to mark todos as pending" << std::endl;
+        std::cout << "  - Click 'Delete' to remove todos" << std::endl;
+        std::cout << "  - Close window to exit" << std::endl;
         std::cout << std::endl;
 
         // 创建事件循环
@@ -148,7 +142,6 @@ int main() {
         std::cout << "========================================" << std::endl;
 
         // 清理
-        PreactBindings::Cleanup(ctx);
         DOMBindings::Cleanup(ctx);
 
         return 0;

@@ -7,6 +7,7 @@
 #include "quickjs/quickjs-libc.h"
 #include "quickjs/js_value_wrapper.h"
 #include <cstring>
+#include <iostream>
 
 namespace lightui {
 
@@ -332,7 +333,26 @@ static JSValue js_element_replace_child(JSContext* ctx, JSValueConst this_val, i
         return JS_ThrowTypeError(ctx, "replaceChild requires a Node as second argument");
     }
 
-    element->ReplaceChild(new_child, old_child);
+    // 添加安全检查：确保old_child确实是element的子节点
+    bool found = false;
+    for (const auto& child : element->GetChildNodes()) {
+        if (child == old_child) {
+            found = true;
+            break;
+        }
+    }
+
+    if (!found) {
+        return JS_ThrowTypeError(ctx, "oldChild is not a child of this element");
+    }
+
+    try {
+        element->ReplaceChild(new_child, old_child);
+    } catch (const std::exception& e) {
+        std::cerr << "[js_element_replace_child] Exception: " << e.what() << std::endl;
+        return JS_ThrowInternalError(ctx, "replaceChild failed: %s", e.what());
+    }
+
     return JS_DupValue(ctx, argv[1]);
 }
 

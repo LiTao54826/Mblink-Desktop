@@ -7,6 +7,9 @@
 #include "core/dom/element.h"
 #include "core/dom/document.h"
 #include "core/dom/event.h"
+#include "core/dom/html_input_element.h"
+#include "core/dom/html_textarea_element.h"
+#include <SDL3/SDL.h>
 #include <algorithm>
 #include <unordered_set>
 #include <functional>
@@ -54,16 +57,30 @@ bool FocusManager::SetFocus(std::shared_ptr<Element> element, bool focus_visible
     // 更新焦点元素
     focus_element_ = element;
 
+    // 如果是输入元素，启用SDL文本输入
+    std::string tag_name = element->GetTagName();
+    if (tag_name == "input" || tag_name == "textarea") {
+        std::cout << "[FocusManager] Starting text input for <" << tag_name << ">" << std::endl;
+        SDL_StartTextInput(nullptr);  // nullptr表示使用默认窗口
+    }
+
     return true;
 }
 
 void FocusManager::Blur(std::shared_ptr<Element> element) {
     auto current_focus = focus_element_.lock();
-    
+
     if (current_focus == element) {
+        // 如果是输入元素，停止SDL文本输入
+        std::string tag_name = element->GetTagName();
+        if (tag_name == "input" || tag_name == "textarea") {
+            std::cout << "[FocusManager] Stopping text input for <" << tag_name << ">" << std::endl;
+            SDL_StopTextInput(nullptr);
+        }
+
         // 发送blur事件
         SendFocusEvents(current_focus, nullptr, false);
-        
+
         // 清除焦点
         focus_element_.reset();
     }
@@ -147,6 +164,13 @@ bool FocusManager::TabToNextFocusableElement(std::shared_ptr<Document> current_d
 void FocusManager::ClearFocus() {
     auto current_focus = focus_element_.lock();
     if (current_focus) {
+        // 如果是输入元素，停止SDL文本输入
+        std::string tag_name = current_focus->GetTagName();
+        if (tag_name == "input" || tag_name == "textarea") {
+            std::cout << "[FocusManager] Stopping text input for <" << tag_name << ">" << std::endl;
+            SDL_StopTextInput(nullptr);
+        }
+
         SendFocusEvents(current_focus, nullptr, false);
     }
     focus_element_.reset();
