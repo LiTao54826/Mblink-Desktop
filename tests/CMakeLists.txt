@@ -1087,3 +1087,31 @@ if(WIN32 AND MINGW)
     target_link_options(test_long_running PRIVATE -static-libgcc -static-libstdc++)
 endif()
 add_test(NAME LongRunningTest COMMAND test_long_running)
+
+
+# ========== Benchmark Tests ==========
+
+# Timer Performance Benchmark
+add_executable(benchmark_timer_performance
+    benchmarks/benchmark_timer_performance.cpp
+)
+
+target_link_libraries(benchmark_timer_performance
+    PRIVATE
+    lightui_quickjs
+    lightui_dom
+    lightui_lexbor
+    lightui_utils
+    gtest
+    gtest_main
+)
+
+target_include_directories(benchmark_timer_performance
+    PRIVATE
+    ${CMAKE_SOURCE_DIR}/core
+    ${CMAKE_SOURCE_DIR}/third_party
+)
+
+set_target_properties(benchmark_timer_performance PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin/${CMAKE_BUILD_TYPE}"
+)

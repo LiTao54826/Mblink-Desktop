@@ -27,6 +27,7 @@
 #include <memory>
 #include <unordered_map>
 #include <queue>
+#include <map>
 #include <vector>
 #include <chrono>
 #include "quickjs.h"
@@ -295,8 +296,12 @@ private:
 
     // 异步任务队列
     std::queue<Task> task_queue_;
-    std::priority_queue<Task, std::vector<Task>, std::greater<Task>> timer_queue_;
-    std::unordered_map<int, Task> active_timers_;
+    // Timer队列：使用multimap按执行时间排序，支持高效的插入和删除
+    // Key: execute_time, Value: Task
+    std::multimap<int64_t, Task> timer_queue_;
+    // 活跃的timer映射：timer_id -> iterator to timer_queue_
+    // 用于快速查找和删除特定的timer
+    std::unordered_map<int, std::multimap<int64_t, Task>::iterator> active_timers_;
     int next_task_id_ = 1;
 };
 

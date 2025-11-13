@@ -35,9 +35,9 @@ QuickJSRuntime::~QuickJSRuntime() {
     while (!task_queue_.empty()) {
         task_queue_.pop();
     }
-    while (!timer_queue_.empty()) {
-        timer_queue_.pop();
-    }
+    // Clear timer_queue_ (multimap)
+    timer_queue_.clear();
+    active_timers_.clear();
 
     // 运行GC确保所有JavaScript对象被释放
     if (ctx_ && rt_) {
@@ -552,11 +552,11 @@ int QuickJSRuntime::CreateTimer(JSValue callback, int64_t delay, bool repeat,
         task.args.push_back(std::make_shared<JSValueWrapper>(ctx_, arg));
     }
 
-    // Store in active_timers first (this is the authoritative copy)
-    active_timers_[task.id] = task;
+    // Add to timer queue (multimap allows efficient insertion and deletion)
+    auto it = timer_queue_.insert(std::make_pair(task.execute_time, task));
 
-    // Add to timer queue (this is just for scheduling)
-    timer_queue_.push(task);
+    // Store iterator in active_timers for O(1) deletion
+    active_timers_[task.id] = it;
 
     return task.id;
 }
@@ -639,15 +639,19 @@ JSValue QuickJSRuntime::ClearTimer(JSContext* ctx, JSValueConst this_val,
         return JS_UNDEFINED;
     }
 
-    // Mark timer as cancelled in active_timers
-    // Don't erase from active_timers yet, because timer_queue_ may still have a copy
-    // The copy in timer_queue_ will be skipped when processed
+    // Find timer in active_timers
     auto it = runtime->active_timers_.find(timer_id);
     if (it != runtime->active_timers_.end()) {
-        it->second.cancelled = true;
-        // Clear the callback and args to release JSValue references immediately
-        it->second.callback.reset();
-        it->second.args.clear();
+        // Get iterator to timer_queue_ entry
+        auto timer_it = it->second;
+
+        // Remove from timer_queue_ immediately (O(1) operation with iterator)
+        runtime->timer_queue_.erase(timer_it);
+
+        // Remove from active_timers
+        runtime->active_timers_.erase(it);
+
+        // JSValueWrapper destructors will automatically free callback and arguments
     }
 
     return JS_UNDEFINED;
@@ -731,32 +735,29 @@ void QuickJSRuntime::RunEventLoop(int max_iterations) {
         int64_t now = GetCurrentTimeMs();
 
         while (!timer_queue_.empty()) {
-            Task task = timer_queue_.top();
+            // Get the first timer (earliest execute_time)
+            auto timer_it = timer_queue_.begin();
 
-            if (task.execute_time > now) {
+            if (timer_it->first > now) {
                 break;  // No more expired timers
             }
 
-            timer_queue_.pop();
+            // Extract task and remove from queue
+            Task task = timer_it->second;
+            int timer_id = task.id;
+            timer_queue_.erase(timer_it);
 
-            // Check if timer was cancelled
-            auto it = active_timers_.find(task.id);
-            if (it == active_timers_.end()) {
-                // Timer was cancelled, skip it
-                continue;
-            }
-
-            // Get the actual task from active_timers
-            Task& active_task = it->second;
+            // Remove from active_timers (we'll re-add if it's an interval)
+            active_timers_.erase(timer_id);
 
             // Prepare arguments array for JS_Call
             std::vector<JSValue> js_args;
-            for (const auto& arg_wrapper : active_task.args) {
+            for (const auto& arg_wrapper : task.args) {
                 js_args.push_back(arg_wrapper->Get());
             }
 
             // Execute the timer callback
-            JSValue result = JS_Call(ctx_, active_task.callback->Get(), JS_UNDEFINED,
+            JSValue result = JS_Call(ctx_, task.callback->Get(), JS_UNDEFINED,
                                     js_args.size(), js_args.data());
 
             if (JS_IsException(result)) {
@@ -767,14 +768,12 @@ void QuickJSRuntime::RunEventLoop(int max_iterations) {
             JS_FreeValue(ctx_, result);
 
             // If it's an interval, reschedule it
-            if (active_task.repeat) {
-                active_task.execute_time = now + active_task.interval;
-                timer_queue_.push(active_task);
-            } else {
-                // One-time timer, clean up
-                // JSValueWrapper destructors will automatically free callback and arguments
-                active_timers_.erase(it);
+            if (task.repeat) {
+                task.execute_time = now + task.interval;
+                auto new_it = timer_queue_.insert(std::make_pair(task.execute_time, task));
+                active_timers_[timer_id] = new_it;
             }
+            // else: One-time timer, already cleaned up (removed from both maps)
         }
 
         // 5. Process microtasks again
@@ -784,7 +783,8 @@ void QuickJSRuntime::RunEventLoop(int max_iterations) {
 
         // 6. If no immediate tasks but have timers, sleep briefly
         if (task_queue_.empty() && !timer_queue_.empty()) {
-            int64_t next_time = timer_queue_.top().execute_time;
+            // Get the earliest timer (first element in multimap)
+            int64_t next_time = timer_queue_.begin()->first;
             int64_t sleep_ms = std::max(0LL, next_time - GetCurrentTimeMs());
             if (sleep_ms > 0) {
                 std::this_thread::sleep_for(std::chrono::milliseconds(
