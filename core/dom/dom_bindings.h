@@ -17,6 +17,7 @@
 #include "document.h"
 #include "event.h"
 #include <memory>
+#include <unordered_map>
 
 namespace lightui {
 
@@ -119,6 +120,11 @@ public:
     static JSClassID document_class_id;
     static JSClassID event_class_id;
 
+    // 缓存管理函数 (public for finalizers)
+    static void RemoveFromElementCache(Element* ptr);
+    static void RemoveFromTextCache(Text* ptr);
+    static void RemoveFromDocumentCache(Document* ptr);
+
 private:
     // 初始化标志
     static bool initialized;
@@ -128,6 +134,13 @@ private:
     static void InitTextClass(JSContext* ctx);
     static void InitDocumentClass(JSContext* ctx);
     static void InitEventClass(JSContext* ctx);
+
+    // 对象缓存：Element* → (JSContext*, JSValue)
+    // 用于防止同一个C++对象被包装多次
+    // 存储JSContext*以便在清理时调用JS_FreeValue
+    static std::unordered_map<Element*, std::pair<JSContext*, JSValue>> element_cache_;
+    static std::unordered_map<Text*, std::pair<JSContext*, JSValue>> text_cache_;
+    static std::unordered_map<Document*, std::pair<JSContext*, JSValue>> document_cache_;
 };
 
 } // namespace lightui

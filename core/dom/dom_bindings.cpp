@@ -18,6 +18,11 @@ JSClassID DOMBindings::document_class_id = 0;
 JSClassID DOMBindings::event_class_id = 0;
 bool DOMBindings::initialized = false;
 
+// 对象缓存
+std::unordered_map<Element*, std::pair<JSContext*, JSValue>> DOMBindings::element_cache_;
+std::unordered_map<Text*, std::pair<JSContext*, JSValue>> DOMBindings::text_cache_;
+std::unordered_map<Document*, std::pair<JSContext*, JSValue>> DOMBindings::document_cache_;
+
 // ========== 辅助函数 ==========
 
 // 从 opaque 指针获取 shared_ptr
@@ -32,6 +37,8 @@ static std::shared_ptr<T>* GetOpaquePtr(void* opaque) {
 static void js_element_finalizer(JSRuntime* rt, JSValue val) {
     auto ptr = static_cast<std::shared_ptr<Element>*>(JS_GetOpaque(val, DOMBindings::element_class_id));
     if (ptr) {
+        // 从缓存中移除
+        DOMBindings::RemoveFromElementCache(ptr->get());
         delete ptr;
     }
 }
@@ -312,6 +319,8 @@ void DOMBindings::InitElementClass(JSContext* ctx) {
 static void js_text_finalizer(JSRuntime* rt, JSValue val) {
     auto ptr = static_cast<std::shared_ptr<Text>*>(JS_GetOpaque(val, DOMBindings::text_class_id));
     if (ptr) {
+        // 从缓存中移除
+        DOMBindings::RemoveFromTextCache(ptr->get());
         delete ptr;
     }
 }
@@ -372,6 +381,8 @@ void DOMBindings::InitTextClass(JSContext* ctx) {
 static void js_document_finalizer(JSRuntime* rt, JSValue val) {
     auto ptr = static_cast<std::shared_ptr<Document>*>(JS_GetOpaque(val, DOMBindings::document_class_id));
     if (ptr) {
+        // 从缓存中移除
+        DOMBindings::RemoveFromDocumentCache(ptr->get());
         delete ptr;
     }
 }
@@ -569,6 +580,22 @@ void DOMBindings::Init(JSContext* ctx) {
 }
 
 void DOMBindings::Cleanup(JSContext* ctx) {
+    // 清理所有缓存，释放JSValue引用
+    for (auto& pair : element_cache_) {
+        JS_FreeValue(pair.second.first, pair.second.second);
+    }
+    element_cache_.clear();
+
+    for (auto& pair : text_cache_) {
+        JS_FreeValue(pair.second.first, pair.second.second);
+    }
+    text_cache_.clear();
+
+    for (auto& pair : document_cache_) {
+        JS_FreeValue(pair.second.first, pair.second.second);
+    }
+    document_cache_.clear();
+
     // QuickJS 会自动清理类
     initialized = false;
 }
@@ -580,6 +607,15 @@ JSValue DOMBindings::WrapElement(JSContext* ctx, std::shared_ptr<Element> elemen
         return JS_NULL;
     }
 
+    // 检查缓存，避免重复包装
+    Element* raw_ptr = element.get();
+    auto it = element_cache_.find(raw_ptr);
+    if (it != element_cache_.end()) {
+        // 缓存命中，返回已有的JSValue（需要DupValue增加引用计数）
+        return JS_DupValue(ctx, it->second.second);
+    }
+
+    // 缓存未命中，创建新的JSValue
     JSValue obj = JS_NewObjectClass(ctx, element_class_id);
     if (JS_IsException(obj)) {
         return obj;
@@ -587,6 +623,9 @@ JSValue DOMBindings::WrapElement(JSContext* ctx, std::shared_ptr<Element> elemen
 
     auto ptr = new std::shared_ptr<Element>(element);
     JS_SetOpaque(obj, ptr);
+
+    // 添加到缓存（DupValue让缓存持有一个引用）
+    element_cache_[raw_ptr] = std::make_pair(ctx, JS_DupValue(ctx, obj));
 
     return obj;
 }
@@ -596,6 +635,15 @@ JSValue DOMBindings::WrapText(JSContext* ctx, std::shared_ptr<Text> text) {
         return JS_NULL;
     }
 
+    // 检查缓存，避免重复包装
+    Text* raw_ptr = text.get();
+    auto it = text_cache_.find(raw_ptr);
+    if (it != text_cache_.end()) {
+        // 缓存命中，返回已有的JSValue（需要DupValue增加引用计数）
+        return JS_DupValue(ctx, it->second.second);
+    }
+
+    // 缓存未命中，创建新的JSValue
     JSValue obj = JS_NewObjectClass(ctx, text_class_id);
     if (JS_IsException(obj)) {
         return obj;
@@ -603,6 +651,9 @@ JSValue DOMBindings::WrapText(JSContext* ctx, std::shared_ptr<Text> text) {
 
     auto ptr = new std::shared_ptr<Text>(text);
     JS_SetOpaque(obj, ptr);
+
+    // 添加到缓存（DupValue让缓存持有一个引用）
+    text_cache_[raw_ptr] = std::make_pair(ctx, JS_DupValue(ctx, obj));
 
     return obj;
 }
@@ -612,6 +663,15 @@ JSValue DOMBindings::WrapDocument(JSContext* ctx, std::shared_ptr<Document> docu
         return JS_NULL;
     }
 
+    // 检查缓存，避免重复包装
+    Document* raw_ptr = document.get();
+    auto it = document_cache_.find(raw_ptr);
+    if (it != document_cache_.end()) {
+        // 缓存命中，返回已有的JSValue（需要DupValue增加引用计数）
+        return JS_DupValue(ctx, it->second.second);
+    }
+
+    // 缓存未命中，创建新的JSValue
     JSValue obj = JS_NewObjectClass(ctx, document_class_id);
     if (JS_IsException(obj)) {
         return obj;
@@ -619,6 +679,9 @@ JSValue DOMBindings::WrapDocument(JSContext* ctx, std::shared_ptr<Document> docu
 
     auto ptr = new std::shared_ptr<Document>(document);
     JS_SetOpaque(obj, ptr);
+
+    // 添加到缓存（DupValue让缓存持有一个引用）
+    document_cache_[raw_ptr] = std::make_pair(ctx, JS_DupValue(ctx, obj));
 
     return obj;
 }
@@ -688,6 +751,35 @@ std::shared_ptr<Event> DOMBindings::UnwrapEvent(JSContext* ctx, JSValue obj) {
         return nullptr;
     }
     return *ptr;
+}
+
+// ========== 缓存管理函数 ==========
+
+void DOMBindings::RemoveFromElementCache(Element* ptr) {
+    auto it = element_cache_.find(ptr);
+    if (it != element_cache_.end()) {
+        // 释放缓存持有的引用
+        JS_FreeValue(it->second.first, it->second.second);
+        element_cache_.erase(it);
+    }
+}
+
+void DOMBindings::RemoveFromTextCache(Text* ptr) {
+    auto it = text_cache_.find(ptr);
+    if (it != text_cache_.end()) {
+        // 释放缓存持有的引用
+        JS_FreeValue(it->second.first, it->second.second);
+        text_cache_.erase(it);
+    }
+}
+
+void DOMBindings::RemoveFromDocumentCache(Document* ptr) {
+    auto it = document_cache_.find(ptr);
+    if (it != document_cache_.end()) {
+        // 释放缓存持有的引用
+        JS_FreeValue(it->second.first, it->second.second);
+        document_cache_.erase(it);
+    }
 }
 
 } // namespace lightui
