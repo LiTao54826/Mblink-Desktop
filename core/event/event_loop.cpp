@@ -441,21 +441,22 @@ void EventLoop::UpdateHoverChain(Uint32 window_id, float mouse_x, float mouse_y)
     }
 
     // 构建新的hover链（从目标元素到根元素）
-    std::unordered_set<Element*> new_hover_chain;
-    Element* new_hover_element = nullptr;
+    // 使用 weak_ptr 避免悬空指针问题
+    std::vector<std::weak_ptr<Element>> new_hover_chain;
+    std::weak_ptr<Element> new_hover_element;
 
     if (hit_result.IsValid()) {
-        new_hover_element = hit_result.element.get();
+        new_hover_element = hit_result.element;
 
         // 从目标元素向上遍历到根元素
-        Element* current = new_hover_element;
+        auto current = hit_result.element;
         while (current) {
-            new_hover_chain.insert(current);
+            new_hover_chain.push_back(current);
 
             // 获取父元素
             auto parent_node = current->GetParentNode();
             if (parent_node && parent_node->GetNodeType() == NodeType::ELEMENT_NODE) {
-                current = static_cast<Element*>(parent_node.get());
+                current = std::static_pointer_cast<Element>(parent_node);
             } else {
                 current = nullptr;
             }
@@ -470,40 +471,30 @@ void EventLoop::UpdateHoverChain(Uint32 window_id, float mouse_x, float mouse_y)
 
     // 发送mouseleave/mouseenter事件（不冒泡版本）
     // 只发送到hover_element_本身，不发送到父元素
-    if (hover_element_ != new_hover_element) {
+    auto old_hover = hover_element_.lock();
+    auto new_hover = new_hover_element.lock();
+
+    if (old_hover != new_hover) {
         // 发送mouseleave到旧的hover元素
-        if (hover_element_) {
-            // 检查元素是否仍然有效
-            if (hover_element_->GetParentNode() || hover_element_->GetTagName() == "body") {
-                try {
-                    auto old_element_ptr = std::static_pointer_cast<Element>(hover_element_->shared_from_this());
-                    auto leave_event = std::make_shared<MouseEvent>(
-                        "mouseleave",
-                        static_cast<int>(mouse_x),
-                        static_cast<int>(mouse_y),
-                        0
-                    );
-                    old_element_ptr->DispatchEvent(leave_event);
-                } catch (...) {
-                    // 元素已被销毁，忽略
-                }
-            }
+        if (old_hover) {
+            auto leave_event = std::make_shared<MouseEvent>(
+                "mouseleave",
+                static_cast<int>(mouse_x),
+                static_cast<int>(mouse_y),
+                0
+            );
+            old_hover->DispatchEvent(leave_event);
         }
 
         // 发送mouseenter到新的hover元素
-        if (new_hover_element) {
-            try {
-                auto new_element_ptr = std::static_pointer_cast<Element>(new_hover_element->shared_from_this());
-                auto enter_event = std::make_shared<MouseEvent>(
-                    "mouseenter",
-                    static_cast<int>(mouse_x),
-                    static_cast<int>(mouse_y),
-                    0
-                );
-                new_element_ptr->DispatchEvent(enter_event);
-            } catch (...) {
-                // 元素已被销毁，忽略
-            }
+        if (new_hover) {
+            auto enter_event = std::make_shared<MouseEvent>(
+                "mouseenter",
+                static_cast<int>(mouse_x),
+                static_cast<int>(mouse_y),
+                0
+            );
+            new_hover->DispatchEvent(enter_event);
         }
     }
 
@@ -512,24 +503,34 @@ void EventLoop::UpdateHoverChain(Uint32 window_id, float mouse_x, float mouse_y)
     hover_element_ = new_hover_element;
 }
 
-void EventLoop::SendEvents(const std::unordered_set<Element*>& old_items,
-                          const std::unordered_set<Element*>& new_items,
+void EventLoop::SendEvents(const std::vector<std::weak_ptr<Element>>& old_items,
+                          const std::vector<std::weak_ptr<Element>>& new_items,
                           const std::string& event_type,
                           float mouse_x,
                           float mouse_y) {
     // 参考：RmlUi/Source/Core/Context.cpp - SendEvents
     // 找出在old_items中但不在new_items中的元素
 
-    for (Element* element : old_items) {
-        if (new_items.find(element) == new_items.end()) {
-            // 这个元素在旧集合中但不在新集合中
+    for (const auto& weak_elem : old_items) {
+        // 尝试锁定 weak_ptr
+        auto element = weak_elem.lock();
+        if (!element) {
+            // 元素已被销毁，跳过
+            continue;
+        }
 
-            // 检查元素是否仍然有效（是否仍在DOM树中）
-            // 如果元素没有父节点且不是body元素，说明已被移除
-            if (!element->GetParentNode() && element->GetTagName() != "body") {
-                // 元素已从DOM树中移除，跳过
-                continue;
+        // 检查是否在新集合中
+        bool found = false;
+        for (const auto& new_weak : new_items) {
+            auto new_elem = new_weak.lock();
+            if (new_elem && new_elem == element) {
+                found = true;
+                break;
             }
+        }
+
+        if (!found) {
+            // 这个元素在旧集合中但不在新集合中
 
             // 创建鼠标事件
             auto mouse_event = std::make_shared<MouseEvent>(
@@ -540,21 +541,13 @@ void EventLoop::SendEvents(const std::unordered_set<Element*>& old_items,
             );
 
             // 分发事件
-            // 注意：这里需要将原始指针转换为shared_ptr
-            // 由于Element继承自Node，而Node使用enable_shared_from_this
-            // 我们可以通过element->shared_from_this()获取shared_ptr
-            try {
-                auto element_ptr = std::static_pointer_cast<Element>(element->shared_from_this());
-                element_ptr->DispatchEvent(mouse_event);
+            element->DispatchEvent(mouse_event);
 
-                // 根据事件类型设置/移除:hover伪类
-                if (event_type == "mouseover") {
-                    element_ptr->SetPseudoClass("hover", true);
-                } else if (event_type == "mouseout") {
-                    element_ptr->SetPseudoClass("hover", false);
-                }
-            } catch (...) {
-                // 如果shared_from_this失败，说明元素已被销毁，忽略
+            // 根据事件类型设置/移除:hover伪类
+            if (event_type == "mouseover") {
+                element->SetPseudoClass("hover", true);
+            } else if (event_type == "mouseout") {
+                element->SetPseudoClass("hover", false);
             }
         }
     }
