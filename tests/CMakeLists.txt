@@ -1016,3 +1016,26 @@ if(WIN32 AND MINGW)
     target_link_options(test_object_cache PRIVATE -static-libgcc -static-libstdc++)
 endif()
 add_test(NAME ObjectCacheTest COMMAND test_object_cache)
+
+# Remove Event Listener Test
+add_executable(test_remove_event_listener unit/test_remove_event_listener.cpp)
+target_include_directories(test_remove_event_listener PRIVATE
+    ${CMAKE_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/core
+    ${THIRD_PARTY_DIR}/quickjs
+    ${THIRD_PARTY_DIR}/lexbor/source
+)
+target_link_libraries(test_remove_event_listener PRIVATE
+    lightui_quickjs
+    lightui_dom
+    lightui_lexbor
+    GTest::gtest
+    GTest::gtest_main
+)
+if(TARGET quickjs)
+    target_link_libraries(test_remove_event_listener PRIVATE quickjs)
+endif()
+if(WIN32 AND MINGW)
+    target_link_options(test_remove_event_listener PRIVATE -static-libgcc -static-libstdc++)
+endif()
+add_test(NAME RemoveEventListenerTest COMMAND test_remove_event_listener)

@@ -240,6 +240,7 @@ static JSValue js_element_append_child(JSContext* ctx, JSValueConst this_val, in
 }
 
 // Element.addEventListener(type, listener)
+// 返回listener ID，可用于removeEventListener
 static JSValue js_element_add_event_listener(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) {
     auto element = DOMBindings::UnwrapElement(ctx, this_val);
     if (!element) {
@@ -267,7 +268,7 @@ static JSValue js_element_add_event_listener(JSContext* ctx, JSValueConst this_v
     // 创建 C++ lambda 包装 JS 函数
     // Lambda 捕获 shared_ptr，当 Element 被销毁时，lambda 也会被销毁，
     // shared_ptr 引用计数归零，JSValueWrapper 析构函数自动调用 JS_FreeValue
-    element->AddEventListener(type, [ctx, listener_wrapper](std::shared_ptr<Event> event) {
+    uint64_t listener_id = element->AddEventListener(type, [ctx, listener_wrapper](std::shared_ptr<Event> event) {
         JSValue event_obj = DOMBindings::WrapEvent(ctx, event);
         JSValue ret = JS_Call(ctx, listener_wrapper->Get(), JS_UNDEFINED, 1, &event_obj);
         JS_FreeValue(ctx, event_obj);
@@ -279,7 +280,40 @@ static JSValue js_element_add_event_listener(JSContext* ctx, JSValueConst this_v
 
     JS_FreeCString(ctx, type);
 
-    return JS_UNDEFINED;
+    // 返回listener ID
+    return JS_NewBigUint64(ctx, listener_id);
+}
+
+// Element.removeEventListener(type, listenerId)
+static JSValue js_element_remove_event_listener(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) {
+    auto element = DOMBindings::UnwrapElement(ctx, this_val);
+    if (!element) {
+        return JS_EXCEPTION;
+    }
+
+    if (argc < 2) {
+        return JS_ThrowTypeError(ctx, "removeEventListener requires 2 arguments");
+    }
+
+    const char* type = JS_ToCString(ctx, argv[0]);
+    if (!type) {
+        return JS_EXCEPTION;
+    }
+
+    // 获取listener ID
+    uint64_t listener_id;
+    if (JS_ToBigUint64(ctx, &listener_id, argv[1]) != 0) {
+        JS_FreeCString(ctx, type);
+        return JS_ThrowTypeError(ctx, "removeEventListener requires a listener ID as second argument");
+    }
+
+    // 移除监听器
+    bool removed = element->RemoveEventListener(type, listener_id);
+
+    JS_FreeCString(ctx, type);
+
+    // 返回是否成功移除
+    return JS_NewBool(ctx, removed);
 }
 
 // Element 类定义
@@ -293,6 +327,7 @@ static const JSCFunctionListEntry js_element_proto_funcs[] = {
     JS_CFUNC_DEF("setAttribute", 2, js_element_set_attribute),
     JS_CFUNC_DEF("appendChild", 1, js_element_append_child),
     JS_CFUNC_DEF("addEventListener", 2, js_element_add_event_listener),
+    JS_CFUNC_DEF("removeEventListener", 2, js_element_remove_event_listener),
 };
 
 void DOMBindings::InitElementClass(JSContext* ctx) {
