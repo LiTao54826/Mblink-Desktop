@@ -526,15 +526,15 @@ int QuickJSRuntime::CreateTimer(JSValue callback, int64_t delay, bool repeat,
                                 const std::vector<JSValue>& args) {
     Task task;
     task.id = next_task_id_++;
-    task.callback = JS_DupValue(ctx_, callback);
+    task.callback = std::make_shared<JSValueWrapper>(ctx_, callback);
     task.execute_time = GetCurrentTimeMs() + delay;
     task.repeat = repeat;
     task.interval = delay;
     task.cancelled = false;
 
-    // Duplicate arguments
+    // Wrap arguments in JSValueWrapper
     for (const auto& arg : args) {
-        task.args.push_back(JS_DupValue(ctx_, arg));
+        task.args.push_back(std::make_shared<JSValueWrapper>(ctx_, arg));
     }
 
     // Store in active_timers first (this is the authoritative copy)
@@ -624,14 +624,10 @@ JSValue QuickJSRuntime::ClearTimer(JSContext* ctx, JSValueConst this_val,
         return JS_UNDEFINED;
     }
 
-    // Mark timer as cancelled
+    // Remove timer from active_timers
+    // JSValueWrapper destructors will automatically free callback and arguments
     auto it = runtime->active_timers_.find(timer_id);
     if (it != runtime->active_timers_.end()) {
-        // Free callback and arguments
-        JS_FreeValue(ctx, it->second.callback);
-        for (auto& arg : it->second.args) {
-            JS_FreeValue(ctx, arg);
-        }
         runtime->active_timers_.erase(it);
     }
 
@@ -644,9 +640,15 @@ void QuickJSRuntime::ProcessTasks() {
         task_queue_.pop();
 
         if (!task.cancelled) {
+            // Prepare arguments array for JS_Call
+            std::vector<JSValue> js_args;
+            for (const auto& arg_wrapper : task.args) {
+                js_args.push_back(arg_wrapper->Get());
+            }
+
             // Call the callback
-            JSValue result = JS_Call(ctx_, task.callback, JS_UNDEFINED,
-                                    task.args.size(), task.args.data());
+            JSValue result = JS_Call(ctx_, task.callback->Get(), JS_UNDEFINED,
+                                    js_args.size(), js_args.data());
 
             if (JS_IsException(result)) {
                 // Log error but continue
@@ -657,11 +659,8 @@ void QuickJSRuntime::ProcessTasks() {
             JS_FreeValue(ctx_, result);
         }
 
-        // Free callback and arguments
-        JS_FreeValue(ctx_, task.callback);
-        for (auto& arg : task.args) {
-            JS_FreeValue(ctx_, arg);
-        }
+        // JSValueWrapper destructors will automatically free callback and arguments
+        // when task goes out of scope
     }
 }
 
@@ -731,9 +730,15 @@ void QuickJSRuntime::RunEventLoop(int max_iterations) {
             // Get the actual task from active_timers
             Task& active_task = it->second;
 
+            // Prepare arguments array for JS_Call
+            std::vector<JSValue> js_args;
+            for (const auto& arg_wrapper : active_task.args) {
+                js_args.push_back(arg_wrapper->Get());
+            }
+
             // Execute the timer callback
-            JSValue result = JS_Call(ctx_, active_task.callback, JS_UNDEFINED,
-                                    active_task.args.size(), active_task.args.data());
+            JSValue result = JS_Call(ctx_, active_task.callback->Get(), JS_UNDEFINED,
+                                    js_args.size(), js_args.data());
 
             if (JS_IsException(result)) {
                 std::string error = GetJSError();
@@ -748,10 +753,7 @@ void QuickJSRuntime::RunEventLoop(int max_iterations) {
                 timer_queue_.push(active_task);
             } else {
                 // One-time timer, clean up
-                JS_FreeValue(ctx_, active_task.callback);
-                for (auto& arg : active_task.args) {
-                    JS_FreeValue(ctx_, arg);
-                }
+                // JSValueWrapper destructors will automatically free callback and arguments
                 active_timers_.erase(it);
             }
         }

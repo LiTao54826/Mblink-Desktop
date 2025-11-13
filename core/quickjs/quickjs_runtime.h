@@ -31,6 +31,7 @@
 #include <chrono>
 #include "quickjs.h"
 #include "nlohmann/json.hpp"
+#include "quickjs/js_value_wrapper.h"
 
 namespace lightui {
 
@@ -38,15 +39,18 @@ using json = nlohmann::json;
 
 /**
  * @brief 异步任务结构
+ *
+ * 使用shared_ptr<JSValueWrapper>来管理JavaScript值的生命周期，
+ * 确保在Task被复制或移动时正确管理引用计数。
  */
 struct Task {
-    int id;                          // 任务ID
-    JSValue callback;                // JavaScript回调函数
-    std::vector<JSValue> args;       // 回调参数
-    int64_t execute_time;            // 执行时间（毫秒时间戳）
-    bool repeat;                     // 是否重复执行
-    int64_t interval;                // 重复间隔（毫秒）
-    bool cancelled;                  // 是否已取消
+    int id;                                              // 任务ID
+    std::shared_ptr<JSValueWrapper> callback;            // JavaScript回调函数
+    std::vector<std::shared_ptr<JSValueWrapper>> args;   // 回调参数
+    int64_t execute_time;                                // 执行时间（毫秒时间戳）
+    bool repeat;                                         // 是否重复执行
+    int64_t interval;                                    // 重复间隔（毫秒）
+    bool cancelled;                                      // 是否已取消
 
     // 用于优先队列排序（执行时间早的优先）
     bool operator>(const Task& other) const {
