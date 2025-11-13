@@ -684,6 +684,10 @@ void QuickJSRuntime::ProcessMicrotasks() {
     }
 }
 
+void QuickJSRuntime::RunGC() {
+    JS_RunGC(rt_);
+}
+
 bool QuickJSRuntime::HasPendingJobs() {
     return JS_IsJobPending(rt_);
 }

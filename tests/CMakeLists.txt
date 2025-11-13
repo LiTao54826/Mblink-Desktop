@@ -44,16 +44,19 @@ function(add_skia_test TEST_NAME TEST_SOURCE)
     add_test(NAME ${TEST_NAME} COMMAND ${TEST_NAME})
 endfunction()
 
+# ============================================================================
+# Unit Tests
+# ============================================================================
+
 # Hello Test
-add_executable(test_hello test_hello.cpp)
-# Force use of MSVCRT instead of UCRT on Windows
+add_executable(test_hello unit/test_hello.cpp)
 if(WIN32 AND MINGW)
     target_link_options(test_hello PRIVATE -static-libgcc -static-libstdc++)
 endif()
 add_test(NAME HelloTest COMMAND test_hello)
 
 # QuickJS C Test
-add_executable(test_quickjs_c test_quickjs_c.c)
+add_executable(test_quickjs_c unit/test_quickjs_c.c)
 target_include_directories(test_quickjs_c PRIVATE
     ${CMAKE_SOURCE_DIR}/third_party/quickjs
 )
@@ -64,219 +67,122 @@ endif()
 add_test(NAME QuickJSCTest COMMAND test_quickjs_c)
 
 # Simple QuickJS Test
-add_executable(test_simple test_simple.cpp)
-
+add_executable(test_simple unit/test_simple.cpp)
 target_include_directories(test_simple PRIVATE
     ${CMAKE_SOURCE_DIR}
     ${CMAKE_SOURCE_DIR}/core
 )
-
 target_link_libraries(test_simple PRIVATE
     lightui_quickjs
 )
-
-# Force use of MSVCRT instead of UCRT on Windows
 if(WIN32 AND MINGW)
     target_link_options(test_simple PRIVATE -static-libgcc -static-libstdc++)
 endif()
-
 if(WIN32)
     target_link_libraries(test_simple PRIVATE ws2_32)
 endif()
-
 add_test(NAME SimpleTest COMMAND test_simple)
 
 # QuickJS Runtime Test
-add_executable(test_quickjs_runtime test_quickjs_runtime.cpp)
-
+add_executable(test_quickjs_runtime unit/test_quickjs_runtime.cpp)
 target_include_directories(test_quickjs_runtime PRIVATE
     ${CMAKE_SOURCE_DIR}
     ${CMAKE_SOURCE_DIR}/core
 )
-
 target_link_libraries(test_quickjs_runtime PRIVATE
     lightui_quickjs
     nlohmann_json
 )
-
-# Force use of MSVCRT instead of UCRT on Windows
 if(WIN32 AND MINGW)
     target_link_options(test_quickjs_runtime PRIVATE -static-libgcc -static-libstdc++)
 endif()
-
-# Link Windows socket library if on Windows
 if(WIN32)
     target_link_libraries(test_quickjs_runtime PRIVATE ws2_32)
 endif()
-
 add_test(NAME QuickJSRuntime COMMAND test_quickjs_runtime)
 
 # DOM Node Test
-add_executable(test_dom_node test_dom_node.cpp)
-
+add_executable(test_dom_node unit/test_dom_node.cpp)
 target_include_directories(test_dom_node PRIVATE
     ${CMAKE_SOURCE_DIR}
     ${CMAKE_SOURCE_DIR}/core
 )
-
 target_link_libraries(test_dom_node PRIVATE
     lightui_dom
     GTest::gtest
     GTest::gtest_main
 )
-
-# Force use of MSVCRT instead of UCRT on Windows
 if(WIN32 AND MINGW)
     target_link_options(test_dom_node PRIVATE -static-libgcc -static-libstdc++)
 endif()
-
 add_test(NAME DOMNodeTest COMMAND test_dom_node)
 
 # DOM Event Test
-add_executable(test_dom_event test_dom_event.cpp)
-
+add_executable(test_dom_event unit/test_dom_event.cpp)
 target_include_directories(test_dom_event PRIVATE
     ${CMAKE_SOURCE_DIR}
     ${CMAKE_SOURCE_DIR}/core
 )
-
 target_link_libraries(test_dom_event PRIVATE
     lightui_dom
     GTest::gtest
     GTest::gtest_main
 )
-
 if(WIN32 AND MINGW)
     target_link_options(test_dom_event PRIVATE -static-libgcc -static-libstdc++)
 endif()
-
 add_test(NAME DOMEventTest COMMAND test_dom_event)
 
 # DOM Document Test
-add_executable(test_dom_document test_dom_document.cpp)
-
+add_executable(test_dom_document unit/test_dom_document.cpp)
 target_include_directories(test_dom_document PRIVATE
     ${CMAKE_SOURCE_DIR}
     ${CMAKE_SOURCE_DIR}/core
 )
-
 target_link_libraries(test_dom_document PRIVATE
     lightui_dom
     GTest::gtest
     GTest::gtest_main
 )
-
 if(WIN32 AND MINGW)
     target_link_options(test_dom_document PRIVATE -static-libgcc -static-libstdc++)
 endif()
-
 add_test(NAME DOMDocumentTest COMMAND test_dom_document)
 
 # DOM Query Test
-add_executable(test_dom_query test_dom_query.cpp)
-
+add_executable(test_dom_query unit/test_dom_query.cpp)
 target_include_directories(test_dom_query PRIVATE
     ${CMAKE_SOURCE_DIR}
     ${CMAKE_SOURCE_DIR}/core
 )
-
 target_link_libraries(test_dom_query PRIVATE
     lightui_dom
     GTest::gtest
     GTest::gtest_main
 )
-
 if(WIN32 AND MINGW)
     target_link_options(test_dom_query PRIVATE -static-libgcc -static-libstdc++)
 endif()
-
 add_test(NAME DOMQueryTest COMMAND test_dom_query)
 
 # DOM HTML Content Test (innerHTML/outerHTML)
-add_executable(test_dom_html_content test_dom_html_content.cpp)
-
+add_executable(test_dom_html_content unit/test_dom_html_content.cpp)
 target_include_directories(test_dom_html_content PRIVATE
     ${CMAKE_SOURCE_DIR}
     ${CMAKE_SOURCE_DIR}/core
 )
-
 target_link_libraries(test_dom_html_content PRIVATE
     lightui_dom
     GTest::gtest
     GTest::gtest_main
 )
-
 if(WIN32 AND MINGW)
     target_link_options(test_dom_html_content PRIVATE -static-libgcc -static-libstdc++)
 endif()
-
 add_test(NAME DOMHTMLContentTest COMMAND test_dom_html_content)
 
-# innerHTML Debug Test
-add_executable(test_innerHTML_debug test_innerHTML_debug.cpp)
-
-target_include_directories(test_innerHTML_debug PRIVATE
-    ${CMAKE_SOURCE_DIR}
-    ${CMAKE_SOURCE_DIR}/core
-)
-
-target_link_libraries(test_innerHTML_debug PRIVATE
-    lightui_dom
-)
-
-# DOM Integration Test
-add_executable(test_dom_integration test_dom_integration.cpp)
-
-target_include_directories(test_dom_integration PRIVATE
-    ${CMAKE_SOURCE_DIR}
-    ${CMAKE_SOURCE_DIR}/core
-)
-
-target_link_libraries(test_dom_integration PRIVATE
-    lightui_dom
-    GTest::gtest
-    GTest::gtest_main
-)
-
-if(WIN32 AND MINGW)
-    target_link_options(test_dom_integration PRIVATE -static-libgcc -static-libstdc++)
-endif()
-
-add_test(NAME DOMIntegrationTest COMMAND test_dom_integration)
-
-# DOM Bindings Integration Test
-add_executable(test_dom_bindings_integration test_dom_bindings_integration.cpp)
-
-target_include_directories(test_dom_bindings_integration PRIVATE
-    ${CMAKE_SOURCE_DIR}
-    ${CMAKE_SOURCE_DIR}/core
-    ${CMAKE_SOURCE_DIR}/third_party/quickjs
-)
-
-target_link_libraries(test_dom_bindings_integration PRIVATE
-    lightui_dom
-    lightui_quickjs
-    GTest::gtest
-    GTest::gtest_main
-)
-
-if(WIN32 AND MINGW)
-    target_link_options(test_dom_bindings_integration PRIVATE -static-libgcc -static-libstdc++)
-endif()
-
-add_test(NAME DOMBindingsIntegrationTest COMMAND test_dom_bindings_integration)
-
-# DOM 性能基准测试
-add_executable(benchmark_dom benchmark_dom.cpp)
-target_link_libraries(benchmark_dom PRIVATE
-    lightui_dom
-    GTest::gtest
-    GTest::gtest_main
-)
-# 注意：基准测试不添加到 CTest，因为它们不是功能测试
-
 # Render Engine Test
-add_executable(test_render_engine test_render_engine.cpp)
+add_executable(test_render_engine unit/test_render_engine.cpp)
 
 target_include_directories(test_render_engine PRIVATE
     ${CMAKE_SOURCE_DIR}
@@ -300,23 +206,36 @@ endif()
 add_test(NAME RenderEngineTest COMMAND test_render_engine)
 
 # CSS Rendering Test
-add_skia_test(test_css_rendering test_css_rendering.cpp)
+add_skia_test(test_css_rendering unit/test_css_rendering.cpp)
 
 # Advanced CSS Rendering Test
-add_skia_test(test_advanced_css test_advanced_css.cpp)
+add_skia_test(test_advanced_css unit/test_advanced_css.cpp)
 
 # Render Tree Test
-add_skia_test(test_render_tree test_render_tree.cpp)
+add_skia_test(test_render_tree unit/test_render_tree.cpp)
 target_link_libraries(test_render_tree PRIVATE lightui_dom)
 
 # Simple Skia Text Test
-add_skia_test(test_skia_text_simple test_skia_text_simple.cpp)
+add_skia_test(test_skia_text_simple unit/test_skia_text_simple.cpp)
+
+# ============================================================================
+# Benchmark Tests
+# ============================================================================
+
+# DOM Benchmark
+add_executable(benchmark_dom benchmarks/benchmark_dom.cpp)
+target_link_libraries(benchmark_dom PRIVATE
+    lightui_dom
+    GTest::gtest
+    GTest::gtest_main
+)
+# 注意：基准测试不添加到 CTest，因为它们不是功能测试
 
 # Optimization Test
-add_skia_test(test_optimization test_optimization.cpp)
+add_skia_test(test_optimization benchmarks/test_optimization.cpp)
 
 # Advanced Optimization Test
-add_skia_test(test_advanced_optimization test_advanced_optimization.cpp)
+add_skia_test(test_advanced_optimization benchmarks/test_advanced_optimization.cpp)
 target_link_libraries(test_advanced_optimization PRIVATE lightui_dom)
 
 # Window Test (Unit tests)
@@ -749,256 +668,248 @@ endif()
 add_test(NAME StyleCacheTest COMMAND test_style_cache)
 
 # HTML Button Element Test
-add_executable(test_html_button_element test_html_button_element.cpp)
-
+add_executable(test_html_button_element unit/test_html_button_element.cpp)
 target_include_directories(test_html_button_element PRIVATE
     ${CMAKE_SOURCE_DIR}
     ${CMAKE_SOURCE_DIR}/core
     ${THIRD_PARTY_DIR}/lexbor/source
 )
-
 target_link_libraries(test_html_button_element PRIVATE
     lightui_dom
     lightui_lexbor
     GTest::gtest
     GTest::gtest_main
 )
-
-# Link Lexbor
 if(TARGET lexbor_static)
     target_link_libraries(test_html_button_element PRIVATE lexbor_static)
 endif()
-
 if(WIN32 AND MINGW)
     target_link_options(test_html_button_element PRIVATE -static-libgcc -static-libstdc++)
 endif()
-
 add_test(NAME HTMLButtonElementTest COMMAND test_html_button_element)
 
 # HTML Select Element Test
-add_executable(test_html_select_element test_html_select_element.cpp)
-
+add_executable(test_html_select_element unit/test_html_select_element.cpp)
 target_include_directories(test_html_select_element PRIVATE
     ${CMAKE_SOURCE_DIR}
     ${CMAKE_SOURCE_DIR}/core
     ${THIRD_PARTY_DIR}/lexbor/source
 )
-
 target_link_libraries(test_html_select_element PRIVATE
     lightui_dom
     lightui_lexbor
     GTest::gtest
     GTest::gtest_main
 )
-
-# Link Lexbor
 if(TARGET lexbor_static)
     target_link_libraries(test_html_select_element PRIVATE lexbor_static)
 endif()
-
 if(WIN32 AND MINGW)
     target_link_options(test_html_select_element PRIVATE -static-libgcc -static-libstdc++)
 endif()
-
 add_test(NAME HTMLSelectElementTest COMMAND test_html_select_element)
 
 # HTML Form Element Test
-add_executable(test_html_form_element test_html_form_element.cpp)
-
+add_executable(test_html_form_element unit/test_html_form_element.cpp)
 target_include_directories(test_html_form_element PRIVATE
     ${CMAKE_SOURCE_DIR}
     ${CMAKE_SOURCE_DIR}/core
     ${THIRD_PARTY_DIR}/lexbor/source
 )
-
 target_link_libraries(test_html_form_element PRIVATE
     lightui_dom
     lightui_lexbor
     GTest::gtest
     GTest::gtest_main
 )
-
-# Link Lexbor
 if(TARGET lexbor_static)
     target_link_libraries(test_html_form_element PRIVATE lexbor_static)
 endif()
-
 if(WIN32 AND MINGW)
     target_link_options(test_html_form_element PRIVATE -static-libgcc -static-libstdc++)
 endif()
-
 add_test(NAME HTMLFormElementTest COMMAND test_html_form_element)
 
 # HTML Anchor Element Test
-add_executable(test_html_anchor_element test_html_anchor_element.cpp)
-
+add_executable(test_html_anchor_element unit/test_html_anchor_element.cpp)
 target_include_directories(test_html_anchor_element PRIVATE
     ${CMAKE_SOURCE_DIR}
     ${CMAKE_SOURCE_DIR}/core
     ${THIRD_PARTY_DIR}/lexbor/source
 )
-
 target_link_libraries(test_html_anchor_element PRIVATE
     lightui_dom
     lightui_lexbor
     GTest::gtest
     GTest::gtest_main
 )
-
-# Link Lexbor
 if(TARGET lexbor_static)
     target_link_libraries(test_html_anchor_element PRIVATE lexbor_static)
 endif()
-
 if(WIN32 AND MINGW)
     target_link_options(test_html_anchor_element PRIVATE -static-libgcc -static-libstdc++)
 endif()
-
 add_test(NAME HTMLAnchorElementTest COMMAND test_html_anchor_element)
 
 # HTML Label Element Test
-add_executable(test_html_label_element test_html_label_element.cpp)
-
+add_executable(test_html_label_element unit/test_html_label_element.cpp)
 target_include_directories(test_html_label_element PRIVATE
     ${CMAKE_SOURCE_DIR}
     ${CMAKE_SOURCE_DIR}/core
     ${THIRD_PARTY_DIR}/lexbor/source
 )
-
 target_link_libraries(test_html_label_element PRIVATE
     lightui_dom
     lightui_lexbor
     GTest::gtest
     GTest::gtest_main
 )
-
-# Link Lexbor
 if(TARGET lexbor_static)
     target_link_libraries(test_html_label_element PRIVATE lexbor_static)
 endif()
-
 if(WIN32 AND MINGW)
     target_link_options(test_html_label_element PRIVATE -static-libgcc -static-libstdc++)
 endif()
-
 add_test(NAME HTMLLabelElementTest COMMAND test_html_label_element)
 
 # HTML Image Element Test
-add_executable(test_html_image_element test_html_image_element.cpp)
-
+add_executable(test_html_image_element unit/test_html_image_element.cpp)
 target_include_directories(test_html_image_element PRIVATE
     ${CMAKE_SOURCE_DIR}
     ${CMAKE_SOURCE_DIR}/core
     ${THIRD_PARTY_DIR}/lexbor/source
 )
-
 target_link_libraries(test_html_image_element PRIVATE
     lightui_dom
     lightui_lexbor
     GTest::gtest
     GTest::gtest_main
 )
-
-# Link Lexbor
 if(TARGET lexbor_static)
     target_link_libraries(test_html_image_element PRIVATE lexbor_static)
 endif()
-
 if(WIN32 AND MINGW)
     target_link_options(test_html_image_element PRIVATE -static-libgcc -static-libstdc++)
 endif()
-
 add_test(NAME HTMLImageElementTest COMMAND test_html_image_element)
 
 # HTML Container Elements Test (div, span, p, h1-h6)
-add_executable(test_html_container_elements test_html_container_elements.cpp)
-
+add_executable(test_html_container_elements unit/test_html_container_elements.cpp)
 target_include_directories(test_html_container_elements PRIVATE
     ${CMAKE_SOURCE_DIR}
     ${CMAKE_SOURCE_DIR}/core
     ${THIRD_PARTY_DIR}/lexbor/source
 )
-
 target_link_libraries(test_html_container_elements PRIVATE
     lightui_dom
     lightui_lexbor
     GTest::gtest
     GTest::gtest_main
 )
-
-# Link Lexbor
 if(TARGET lexbor_static)
     target_link_libraries(test_html_container_elements PRIVATE lexbor_static)
 endif()
-
 if(WIN32 AND MINGW)
     target_link_options(test_html_container_elements PRIVATE -static-libgcc -static-libstdc++)
 endif()
-
 add_test(NAME HTMLContainerElementsTest COMMAND test_html_container_elements)
 
-# Preact Integration Test
-add_executable(test_preact_integration test_preact_integration.cpp)
+# ============================================================================
+# Integration Tests
+# ============================================================================
 
+# DOM Integration Test
+add_executable(test_dom_integration integration/test_dom_integration.cpp)
+target_include_directories(test_dom_integration PRIVATE
+    ${CMAKE_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/core
+)
+target_link_libraries(test_dom_integration PRIVATE
+    lightui_dom
+    GTest::gtest
+    GTest::gtest_main
+)
+if(WIN32 AND MINGW)
+    target_link_options(test_dom_integration PRIVATE -static-libgcc -static-libstdc++)
+endif()
+add_test(NAME DOMIntegrationTest COMMAND test_dom_integration)
+
+# DOM Bindings Integration Test
+add_executable(test_dom_bindings_integration integration/test_dom_bindings_integration.cpp)
+target_include_directories(test_dom_bindings_integration PRIVATE
+    ${CMAKE_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/core
+    ${CMAKE_SOURCE_DIR}/third_party/quickjs
+)
+target_link_libraries(test_dom_bindings_integration PRIVATE
+    lightui_dom
+    lightui_quickjs
+    GTest::gtest
+    GTest::gtest_main
+)
+if(WIN32 AND MINGW)
+    target_link_options(test_dom_bindings_integration PRIVATE -static-libgcc -static-libstdc++)
+endif()
+add_test(NAME DOMBindingsIntegrationTest COMMAND test_dom_bindings_integration)
+
+# innerHTML Debug Test
+add_executable(test_innerHTML_debug integration/test_innerHTML_debug.cpp)
+target_include_directories(test_innerHTML_debug PRIVATE
+    ${CMAKE_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/core
+)
+target_link_libraries(test_innerHTML_debug PRIVATE
+    lightui_dom
+)
+
+# Preact Integration Test
+add_executable(test_preact_integration integration/test_preact_integration.cpp)
 target_include_directories(test_preact_integration PRIVATE
     ${CMAKE_SOURCE_DIR}
     ${CMAKE_SOURCE_DIR}/core
     ${THIRD_PARTY_DIR}/quickjs
 )
-
 target_link_libraries(test_preact_integration PRIVATE
     lightui_quickjs
     lightui_dom
     GTest::gtest
     GTest::gtest_main
 )
-
-# Link QuickJS
 if(TARGET quickjs)
     target_link_libraries(test_preact_integration PRIVATE quickjs)
 endif()
-
 if(WIN32 AND MINGW)
     target_link_options(test_preact_integration PRIVATE -static-libgcc -static-libstdc++)
 endif()
-
 add_test(NAME PreactIntegrationTest COMMAND test_preact_integration)
 
 # Preact Basic Test
-add_executable(test_preact_basic test_preact_basic.cpp)
-
+add_executable(test_preact_basic integration/test_preact_basic.cpp)
 target_include_directories(test_preact_basic PRIVATE
     ${CMAKE_SOURCE_DIR}
     ${CMAKE_SOURCE_DIR}/core
     ${THIRD_PARTY_DIR}/quickjs
 )
-
 target_link_libraries(test_preact_basic PRIVATE
     lightui_quickjs
     GTest::gtest
     GTest::gtest_main
 )
-
-# Link QuickJS
 if(TARGET quickjs)
     target_link_libraries(test_preact_basic PRIVATE quickjs)
 endif()
-
 if(WIN32 AND MINGW)
     target_link_options(test_preact_basic PRIVATE -static-libgcc -static-libstdc++)
 endif()
-
 add_test(NAME PreactBasicTest COMMAND test_preact_basic)
 
 # Preact Render Test
-add_executable(test_preact_render test_preact_render.cpp)
-
+add_executable(test_preact_render integration/test_preact_render.cpp)
 target_include_directories(test_preact_render PRIVATE
     ${CMAKE_SOURCE_DIR}
     ${CMAKE_SOURCE_DIR}/core
     ${THIRD_PARTY_DIR}/quickjs
 )
-
 target_link_libraries(test_preact_render PRIVATE
     lightui_quickjs
     lightui_dom
@@ -1006,27 +917,21 @@ target_link_libraries(test_preact_render PRIVATE
     GTest::gtest
     GTest::gtest_main
 )
-
-# Link QuickJS
 if(TARGET quickjs)
     target_link_libraries(test_preact_render PRIVATE quickjs)
 endif()
-
 if(WIN32 AND MINGW)
     target_link_options(test_preact_render PRIVATE -static-libgcc -static-libstdc++)
 endif()
-
 add_test(NAME PreactRenderTest COMMAND test_preact_render)
 
 # Preact Components Test
-add_executable(test_preact_components test_preact_components.cpp)
-
+add_executable(test_preact_components integration/test_preact_components.cpp)
 target_include_directories(test_preact_components PRIVATE
     ${CMAKE_SOURCE_DIR}
     ${CMAKE_SOURCE_DIR}/core
     ${THIRD_PARTY_DIR}/quickjs
 )
-
 target_link_libraries(test_preact_components PRIVATE
     lightui_quickjs
     lightui_dom
@@ -1034,14 +939,34 @@ target_link_libraries(test_preact_components PRIVATE
     GTest::gtest
     GTest::gtest_main
 )
-
-# Link QuickJS
 if(TARGET quickjs)
     target_link_libraries(test_preact_components PRIVATE quickjs)
 endif()
-
 if(WIN32 AND MINGW)
     target_link_options(test_preact_components PRIVATE -static-libgcc -static-libstdc++)
 endif()
-
 add_test(NAME PreactComponentsTest COMMAND test_preact_components)
+
+# ============================================================================
+# Memory Safety Tests
+# ============================================================================
+
+# JSValueWrapper Test
+add_executable(test_js_value_wrapper test_js_value_wrapper.cpp)
+target_include_directories(test_js_value_wrapper PRIVATE
+    ${CMAKE_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/core
+    ${THIRD_PARTY_DIR}/quickjs
+)
+target_link_libraries(test_js_value_wrapper PRIVATE
+    lightui_quickjs
+    GTest::gtest
+    GTest::gtest_main
+)
+if(TARGET quickjs)
+    target_link_libraries(test_js_value_wrapper PRIVATE quickjs)
+endif()
+if(WIN32 AND MINGW)
+    target_link_options(test_js_value_wrapper PRIVATE -static-libgcc -static-libstdc++)
+endif()
+add_test(NAME JSValueWrapperTest COMMAND test_js_value_wrapper)

@@ -162,6 +162,11 @@ public:
     void ProcessMicrotasks();
 
     /**
+     * @brief 运行垃圾回收
+     */
+    void RunGC();
+
+    /**
      * @brief 获取QuickJS上下文
      * @return QuickJS上下文指针
      */
