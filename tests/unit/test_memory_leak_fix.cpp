@@ -24,6 +24,9 @@ protected:
     }
 
     void TearDown() override {
+        if (runtime) {
+            DOMBindings::Cleanup(runtime->GetContext());
+        }
         runtime.reset();
     }
 
@@ -146,8 +149,7 @@ TEST_F(MemoryLeakFixTest, IntervalNoLeak) {
 }
 
 // 压力测试：大量addEventListener和Timer操作
-// TODO: 修复StressTest崩溃问题
-TEST_F(MemoryLeakFixTest, DISABLED_StressTest) {
+TEST_F(MemoryLeakFixTest, StressTest) {
     JSContext* ctx = runtime->GetContext();
 
     // 创建元素

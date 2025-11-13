@@ -152,6 +152,7 @@ static JSValue js_element_get_children(JSContext* ctx, JSValueConst this_val, in
         if (child->GetNodeType() == NodeType::ELEMENT_NODE) {
             auto child_element = std::static_pointer_cast<Element>(child);
             JSValue child_obj = DOMBindings::WrapElement(ctx, child_element);
+            // JS_SetPropertyUint32会steal引用（接管所有权），所以不需要FreeValue
             JS_SetPropertyUint32(ctx, children_array, index++, child_obj);
         }
     }

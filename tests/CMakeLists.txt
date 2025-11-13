@@ -1039,3 +1039,28 @@ if(WIN32 AND MINGW)
     target_link_options(test_remove_event_listener PRIVATE -static-libgcc -static-libstdc++)
 endif()
 add_test(NAME RemoveEventListenerTest COMMAND test_remove_event_listener)
+
+# ========== Integration Tests ==========
+
+# Stress Test
+add_executable(test_stress integration/test_stress.cpp)
+target_include_directories(test_stress PRIVATE
+    ${CMAKE_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/core
+    ${THIRD_PARTY_DIR}/quickjs
+    ${THIRD_PARTY_DIR}/lexbor/source
+)
+target_link_libraries(test_stress PRIVATE
+    lightui_quickjs
+    lightui_dom
+    lightui_lexbor
+    GTest::gtest
+    GTest::gtest_main
+)
+if(TARGET quickjs)
+    target_link_libraries(test_stress PRIVATE quickjs)
+endif()
+if(WIN32 AND MINGW)
+    target_link_options(test_stress PRIVATE -static-libgcc -static-libstdc++)
+endif()
+add_test(NAME StressTest COMMAND test_stress)
