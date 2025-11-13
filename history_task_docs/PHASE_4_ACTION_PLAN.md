@@ -1,35 +1,48 @@
-# Phase 4: Preact Hooks 完整实现 - 行动计划
+# Phase 4: Preact 生态系统完善 - 行动计划（更新版）
 
-> **日期**: 2025-11-13  
-> **分支**: `feature/phase4-preact-native-hooks`  
-> **预计时间**: 1周  
-> **目标**: 让 Preact Hooks 完全工作（重渲染 + 事件处理）
+> **日期**: 2025-11-13（更新）
+> **分支**: `feature/phase4-preact-native-hooks`
+> **预计时间**: 2-3周
+> **目标**: 完善 Preact 生态系统，创建更多示例应用
 
 ---
 
-## 📊 当前状态
+## 📊 当前状态（2025-11-13）
 
-### ✅ 已有的基础
-- Preact 核心库 (h, render, Component)
-- Hooks API 框架 (useState, useEffect, useRef 等)
-- PreactRenderer (VNode → DOM 转换)
-- 20个基础测试通过
+### ✅ 已完成的功能
+- ✅ **Preact 核心库** - 原生 Preact 10.19.3 集成
+- ✅ **Hooks 支持** - useState, useEffect, useRef 等完全工作
+- ✅ **事件处理** - onClick, onChange 等事件正常工作
+- ✅ **Virtual DOM** - 完整的 Virtual DOM diffing 和渲染
+- ✅ **DOM 绑定** - 完整的 DOM API 暴露给 JavaScript
+- ✅ **重渲染机制** - setState 触发组件重新渲染和 DOM 更新
+- ✅ **伪类支持** - :hover, :active, :focus-visible 等伪类
+- ✅ **基础示例** - Counter, Hello World 示例完全工作
 
-### ❌ 缺失的功能
-1. **重渲染机制**: setState 不会触发 DOM 更新
-2. **事件处理**: onClick 等事件不工作
-3. **Virtual DOM Diff**: 每次都是全量替换
+### 🎯 架构说明
 
-### 🎯 核心问题
+**当前架构**（原生 Preact + DOM 绑定）：
 
-**问题**: `hooks.js` 中的 `__rerender()` 没有实现！
-
-```javascript
-// hooks.js 第61行
-if (currentComponent.__rerender) {
-    currentComponent.__rerender();  // ❌ 这个函数不存在！
-}
 ```
+JavaScript 层:
+  - Preact 10.19.3 (原生库，未修改)
+  - Hooks (原生库，未修改)
+  - 应用代码 (app.js)
+       ↓
+  DOM API (通过 DOMBindings 暴露)
+       ↓
+C++ 层:
+  - Document, Element, Text (core/dom/)
+  - EventLoop, FocusManager (core/event/)
+  - StyleResolver, RenderTree (core/render/)
+  - Window, Skia 渲染 (core/window/)
+```
+
+**优势**：
+- ✅ 使用原生 Preact，无需维护自定义实现
+- ✅ 自动获得 Preact 生态系统的所有更新
+- ✅ 代码更简洁，更易维护
+- ✅ 性能更好（Preact 团队的优化）
 
 ---
 

@@ -1,8 +1,8 @@
 # MBink 项目开发规范
 
-> **版本**: 2.0  
-> **生效日期**: 2025-11-11  
-> **状态**: 强制执行  
+> **版本**: 2.1
+> **生效日期**: 2025-11-14
+> **状态**: 强制执行
 > **适用范围**: 所有后续开发
 
 ---
@@ -187,7 +187,155 @@ MBink/
 - ❌ 不得手动编辑 `requirements.txt`（必须用 `pip install` + `pip freeze`）
 - ❌ 不得提交 `node_modules/`, `target/`, `build/` 到Git
 
-### 规范5: 文档规范
+### 规范5: 前端框架集成规范
+
+**核心原则：C++层只提供浏览器级别的API，不实现框架特定功能**
+
+**✅ 正确的做法**：
+```cpp
+// ✅ 提供标准的浏览器DOM API
+class Document {
+public:
+    std::shared_ptr<Element> CreateElement(const std::string& tag_name);
+    std::shared_ptr<Element> GetElementById(const std::string& id);
+    std::shared_ptr<Element> QuerySelector(const std::string& selector);
+};
+
+class Element {
+public:
+    void SetAttribute(const std::string& name, const std::string& value);
+    void AppendChild(std::shared_ptr<Node> child);
+    void RemoveChild(std::shared_ptr<Node> child);
+    void AddEventListener(const std::string& type, EventListener listener);
+};
+
+// ✅ 让React/Preact在JavaScript层运行
+// js/preact/preact.js - 原生Preact库，无需修改
+// 应用代码通过标准DOM API操作DOM
+```
+
+**❌ 错误的做法**：
+```cpp
+// ❌ 不要在C++层实现React特定功能
+class PreactRenderer {
+    void RenderComponent(JSValue component);     // ❌ 不要实现组件渲染
+    void UpdateVirtualDOM(JSValue vnode);        // ❌ 不要实现Virtual DOM
+    void ReconcileChildren(JSValue children);    // ❌ 不要实现Reconciliation
+};
+
+// ❌ 不要在C++层实现Hooks
+class HooksManager {
+    JSValue UseState(JSValue initial);           // ❌ 不要实现useState
+    void UseEffect(JSValue callback);            // ❌ 不要实现useEffect
+};
+
+// ❌ 不要在C++层实现组件生命周期
+class ComponentManager {
+    void ComponentDidMount(JSValue component);   // ❌ 不要实现生命周期
+    void ComponentWillUnmount(JSValue component);// ❌ 不要实现生命周期
+};
+```
+
+**设计理念**：
+
+1. **通用性优先** - C++层提供的API应该能支持任何前端框架（React、Vue、Angular、Svelte等）
+2. **标准化** - 遵循W3C DOM标准，而不是特定框架的API
+3. **框架无关** - 框架特定的逻辑应该在JavaScript层实现
+4. **可替换性** - 用户应该能够轻松切换前端框架，而无需修改C++代码
+
+**正确的集成方式**：
+
+```
+┌─────────────────────────────────────────┐
+│  Application Code (app.js)              │  用户应用
+│  - React/Vue/Angular/Svelte             │
+└─────────────────────────────────────────┘
+                    ↓
+┌─────────────────────────────────────────┐
+│  Frontend Framework (preact.js)         │  前端框架
+│  - Virtual DOM                          │  (JavaScript层)
+│  - Component System                     │
+│  - Hooks / Lifecycle                    │
+└─────────────────────────────────────────┘
+                    ↓
+┌─────────────────────────────────────────┐
+│  Browser DOM API (dom_bindings.cpp)    │  标准DOM API
+│  - document.createElement()             │  (C++层)
+│  - element.appendChild()                │
+│  - element.addEventListener()           │
+└─────────────────────────────────────────┘
+                    ↓
+┌─────────────────────────────────────────┐
+│  MBink Core (core/dom, core/render)    │  核心实现
+└─────────────────────────────────────────┘
+```
+
+**允许的C++层功能**：
+- ✅ 标准DOM API（createElement, appendChild, setAttribute等）
+- ✅ 标准事件API（addEventListener, removeEventListener等）
+- ✅ 标准选择器API（querySelector, querySelectorAll等）
+- ✅ 标准样式API（style, classList, className等）
+- ✅ 标准定时器API（setTimeout, setInterval等）
+- ✅ 标准Console API（console.log, console.error等）
+
+**禁止的C++层功能**：
+- ❌ 框架特定的组件系统
+- ❌ 框架特定的状态管理（useState, Redux等）
+- ❌ 框架特定的生命周期钩子
+- ❌ 框架特定的Virtual DOM实现
+- ❌ 框架特定的Reconciliation算法
+- ❌ 框架特定的JSX/模板编译
+
+**示例：正确的Preact集成**：
+
+```javascript
+// ✅ 在JavaScript层使用原生Preact
+import { h, render } from './preact.js';
+
+function App() {
+    const [count, setCount] = useState(0);  // Preact的useState
+
+    return h('div', null,
+        h('h1', null, 'Counter'),
+        h('p', null, `Count: ${count}`),
+        h('button', { onClick: () => setCount(count + 1) }, 'Increment')
+    );
+}
+
+// Preact通过标准DOM API操作DOM
+render(h(App), document.body);
+```
+
+```cpp
+// ✅ C++层只提供标准DOM API
+// core/dom/dom_bindings.cpp
+JSValue js_create_element(JSContext* ctx, JSValueConst this_val,
+                          int argc, JSValueConst* argv) {
+    const char* tag_name = JS_ToCString(ctx, argv[0]);
+    auto element = document->CreateElement(tag_name);
+    return WrapElement(ctx, element);  // 返回标准Element对象
+}
+
+JSValue js_append_child(JSContext* ctx, JSValueConst this_val,
+                        int argc, JSValueConst* argv) {
+    auto parent = UnwrapElement(ctx, this_val);
+    auto child = UnwrapNode(ctx, argv[0]);
+    parent->AppendChild(child);
+    return JS_UNDEFINED;
+}
+```
+
+**违规检查清单**：
+
+在添加新功能前，问自己：
+1. ❓ 这个功能是否是标准浏览器API？
+2. ❓ 这个功能是否只对特定框架有用？
+3. ❓ 如果用户想用Vue而不是React，这个功能还有用吗？
+4. ❓ 这个功能是否可以在JavaScript层实现？
+
+如果答案是"否、是、否、是"，那么这个功能**不应该**在C++层实现。
+
+### 规范6: 文档规范
 
 **文档分类**：
 
@@ -395,6 +543,20 @@ TEST_CASE("Element::AppendChild should add child to children list") {
 
 ---
 
-**最后更新**: 2025-11-11  
+---
+
+## 📋 版本历史
+
+### v2.1 (2025-11-14)
+- ✅ 新增规范5：前端框架集成规范
+- ✅ 明确C++层只提供浏览器级别API的原则
+- ✅ 禁止在C++层实现框架特定功能
+
+### v2.0 (2025-11-11)
+- 初始版本
+
+---
+
+**最后更新**: 2025-11-14
 **维护者**: MBink Team
 
