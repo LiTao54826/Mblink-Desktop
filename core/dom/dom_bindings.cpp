@@ -616,20 +616,11 @@ void DOMBindings::Init(JSContext* ctx) {
 }
 
 void DOMBindings::Cleanup(JSContext* ctx) {
-    // 清理所有缓存，释放JSValue引用
-    for (auto& pair : element_cache_) {
-        JS_FreeValue(pair.second.first, pair.second.second);
-    }
+    // 清理所有缓存
+    // 注意：缓存中不持有引用（弱引用），所以不需要FreeValue
+    // finalizer会在对象被GC时自动清理缓存
     element_cache_.clear();
-
-    for (auto& pair : text_cache_) {
-        JS_FreeValue(pair.second.first, pair.second.second);
-    }
     text_cache_.clear();
-
-    for (auto& pair : document_cache_) {
-        JS_FreeValue(pair.second.first, pair.second.second);
-    }
     document_cache_.clear();
 
     // QuickJS 会自动清理类
@@ -660,8 +651,9 @@ JSValue DOMBindings::WrapElement(JSContext* ctx, std::shared_ptr<Element> elemen
     auto ptr = new std::shared_ptr<Element>(element);
     JS_SetOpaque(obj, ptr);
 
-    // 添加到缓存（DupValue让缓存持有一个引用）
-    element_cache_[raw_ptr] = std::make_pair(ctx, JS_DupValue(ctx, obj));
+    // 添加到缓存（不DupValue，让GC正常工作）
+    // 缓存只是一个弱引用，finalizer会负责清理
+    element_cache_[raw_ptr] = std::make_pair(ctx, obj);
 
     return obj;
 }
@@ -688,8 +680,9 @@ JSValue DOMBindings::WrapText(JSContext* ctx, std::shared_ptr<Text> text) {
     auto ptr = new std::shared_ptr<Text>(text);
     JS_SetOpaque(obj, ptr);
 
-    // 添加到缓存（DupValue让缓存持有一个引用）
-    text_cache_[raw_ptr] = std::make_pair(ctx, JS_DupValue(ctx, obj));
+    // 添加到缓存（不DupValue，让GC正常工作）
+    // 缓存只是一个弱引用，finalizer会负责清理
+    text_cache_[raw_ptr] = std::make_pair(ctx, obj);
 
     return obj;
 }
@@ -716,8 +709,9 @@ JSValue DOMBindings::WrapDocument(JSContext* ctx, std::shared_ptr<Document> docu
     auto ptr = new std::shared_ptr<Document>(document);
     JS_SetOpaque(obj, ptr);
 
-    // 添加到缓存（DupValue让缓存持有一个引用）
-    document_cache_[raw_ptr] = std::make_pair(ctx, JS_DupValue(ctx, obj));
+    // 添加到缓存（不DupValue，让GC正常工作）
+    // 缓存只是一个弱引用，finalizer会负责清理
+    document_cache_[raw_ptr] = std::make_pair(ctx, obj);
 
     return obj;
 }
@@ -794,8 +788,7 @@ std::shared_ptr<Event> DOMBindings::UnwrapEvent(JSContext* ctx, JSValue obj) {
 void DOMBindings::RemoveFromElementCache(Element* ptr) {
     auto it = element_cache_.find(ptr);
     if (it != element_cache_.end()) {
-        // 释放缓存持有的引用
-        JS_FreeValue(it->second.first, it->second.second);
+        // 缓存不持有引用（弱引用），直接移除即可
         element_cache_.erase(it);
     }
 }
@@ -803,8 +796,7 @@ void DOMBindings::RemoveFromElementCache(Element* ptr) {
 void DOMBindings::RemoveFromTextCache(Text* ptr) {
     auto it = text_cache_.find(ptr);
     if (it != text_cache_.end()) {
-        // 释放缓存持有的引用
-        JS_FreeValue(it->second.first, it->second.second);
+        // 缓存不持有引用（弱引用），直接移除即可
         text_cache_.erase(it);
     }
 }
@@ -812,8 +804,7 @@ void DOMBindings::RemoveFromTextCache(Text* ptr) {
 void DOMBindings::RemoveFromDocumentCache(Document* ptr) {
     auto it = document_cache_.find(ptr);
     if (it != document_cache_.end()) {
-        // 释放缓存持有的引用
-        JS_FreeValue(it->second.first, it->second.second);
+        // 缓存不持有引用（弱引用），直接移除即可
         document_cache_.erase(it);
     }
 }
