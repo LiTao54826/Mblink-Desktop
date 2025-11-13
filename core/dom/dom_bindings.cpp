@@ -5,6 +5,7 @@
 
 #include "dom_bindings.h"
 #include "quickjs/quickjs-libc.h"
+#include "quickjs/js_value_wrapper.h"
 #include <cstring>
 
 namespace lightui {
@@ -252,13 +253,16 @@ static JSValue js_element_add_event_listener(JSContext* ctx, JSValueConst this_v
         return JS_ThrowTypeError(ctx, "addEventListener requires a function as second argument");
     }
 
-    // 保存 listener 的引用
-    JSValue listener = JS_DupValue(ctx, argv[1]);
+    // 使用 JSValueWrapper 管理 listener 的生命周期
+    // shared_ptr 确保在 lambda 被销毁时自动释放 JSValue
+    auto listener_wrapper = std::make_shared<JSValueWrapper>(ctx, argv[1]);
 
     // 创建 C++ lambda 包装 JS 函数
-    element->AddEventListener(type, [ctx, listener](std::shared_ptr<Event> event) {
+    // Lambda 捕获 shared_ptr，当 Element 被销毁时，lambda 也会被销毁，
+    // shared_ptr 引用计数归零，JSValueWrapper 析构函数自动调用 JS_FreeValue
+    element->AddEventListener(type, [ctx, listener_wrapper](std::shared_ptr<Event> event) {
         JSValue event_obj = DOMBindings::WrapEvent(ctx, event);
-        JSValue ret = JS_Call(ctx, listener, JS_UNDEFINED, 1, &event_obj);
+        JSValue ret = JS_Call(ctx, listener_wrapper->Get(), JS_UNDEFINED, 1, &event_obj);
         JS_FreeValue(ctx, event_obj);
         if (JS_IsException(ret)) {
             js_std_dump_error(ctx);

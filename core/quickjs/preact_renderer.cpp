@@ -22,13 +22,9 @@ PreactRenderer::PreactRenderer(QuickJSRuntime* runtime, std::shared_ptr<Document
 
 PreactRenderer::~PreactRenderer() {
     // 清理事件处理器
-    for (auto& [element, handlers] : event_handlers_) {
-        for (auto& handler : handlers) {
-            JS_FreeValue(ctx_, handler);
-        }
-    }
+    // JSValueWrapper 的析构函数会自动调用 JS_FreeValue
     event_handlers_.clear();
-    
+
     if (!JS_IsUndefined(current_component_)) {
         JS_FreeValue(ctx_, current_component_);
     }
@@ -241,11 +237,17 @@ void PreactRenderer::AddEventListener(std::shared_ptr<Element> element,
         return;
     }
 
+    // 使用 JSValueWrapper 管理 handler 的生命周期
+    // shared_ptr 确保在 lambda 被销毁时自动释放 JSValue
+    auto handler_wrapper = std::make_shared<JSValueWrapper>(ctx_, handler);
+
     // 保存handler引用（防止GC）
-    event_handlers_[element].push_back(JS_DupValue(ctx_, handler));
+    event_handlers_[element].push_back(handler_wrapper);
 
     // 创建C++事件监听器
-    auto listener = [this, handler](std::shared_ptr<Event> event) {
+    // Lambda 捕获 shared_ptr，当 Element 被销毁或 event_handlers_ 被清空时，
+    // shared_ptr 引用计数归零，JSValueWrapper 析构函数自动调用 JS_FreeValue
+    auto listener = [this, handler_wrapper](std::shared_ptr<Event> event) {
         // 创建简单的事件对象
         JSValue event_obj = JS_NewObject(ctx_);
         const char* type_str = event->GetType().c_str();
@@ -253,7 +255,7 @@ void PreactRenderer::AddEventListener(std::shared_ptr<Element> element,
         JS_SetPropertyStr(ctx_, event_obj, "type", type_val);
 
         // 调用JS handler
-        JSValue result = JS_Call(ctx_, handler, JS_UNDEFINED, 1, &event_obj);
+        JSValue result = JS_Call(ctx_, handler_wrapper->Get(), JS_UNDEFINED, 1, &event_obj);
         JS_FreeValue(ctx_, event_obj);
 
         if (JS_IsException(result)) {

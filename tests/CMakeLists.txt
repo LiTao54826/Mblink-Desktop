@@ -970,3 +970,26 @@ if(WIN32 AND MINGW)
     target_link_options(test_js_value_wrapper PRIVATE -static-libgcc -static-libstdc++)
 endif()
 add_test(NAME JSValueWrapperTest COMMAND test_js_value_wrapper)
+
+# Memory Leak Fix Test
+add_executable(test_memory_leak_fix unit/test_memory_leak_fix.cpp)
+target_include_directories(test_memory_leak_fix PRIVATE
+    ${CMAKE_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/core
+    ${THIRD_PARTY_DIR}/quickjs
+    ${THIRD_PARTY_DIR}/lexbor/source
+)
+target_link_libraries(test_memory_leak_fix PRIVATE
+    lightui_quickjs
+    lightui_dom
+    lightui_lexbor
+    GTest::gtest
+    GTest::gtest_main
+)
+if(TARGET quickjs)
+    target_link_libraries(test_memory_leak_fix PRIVATE quickjs)
+endif()
+if(WIN32 AND MINGW)
+    target_link_options(test_memory_leak_fix PRIVATE -static-libgcc -static-libstdc++)
+endif()
+add_test(NAME MemoryLeakFixTest COMMAND test_memory_leak_fix)

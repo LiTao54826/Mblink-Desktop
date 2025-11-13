@@ -11,6 +11,7 @@
 #pragma once
 
 #include "quickjs_runtime.h"
+#include "js_value_wrapper.h"
 #include "core/dom/document.h"
 #include "core/dom/element.h"
 #include <memory>
@@ -188,7 +189,8 @@ private:
     int current_hook_index_;            ///< 当前Hook索引
 
     // 事件处理器映射（防止被GC回收）
-    std::unordered_map<std::shared_ptr<Element>, std::vector<JSValue>> event_handlers_;
+    // 使用 JSValueWrapper 自动管理 JSValue 生命周期
+    std::unordered_map<std::shared_ptr<Element>, std::vector<std::shared_ptr<JSValueWrapper>>> event_handlers_;
 };
 
 /**

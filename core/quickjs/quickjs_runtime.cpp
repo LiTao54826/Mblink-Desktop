@@ -29,6 +29,21 @@ QuickJSRuntime::QuickJSRuntime() {
 }
 
 QuickJSRuntime::~QuickJSRuntime() {
+    // 清理所有待处理的任务和定时器
+    // JSValueWrapper会在Task被销毁时自动释放JSValue
+    active_timers_.clear();
+    while (!task_queue_.empty()) {
+        task_queue_.pop();
+    }
+    while (!timer_queue_.empty()) {
+        timer_queue_.pop();
+    }
+
+    // 运行GC确保所有JavaScript对象被释放
+    if (ctx_ && rt_) {
+        JS_RunGC(rt_);
+    }
+
     if (ctx_) {
         JS_FreeContext(ctx_);
         ctx_ = nullptr;
@@ -624,11 +639,15 @@ JSValue QuickJSRuntime::ClearTimer(JSContext* ctx, JSValueConst this_val,
         return JS_UNDEFINED;
     }
 
-    // Remove timer from active_timers
-    // JSValueWrapper destructors will automatically free callback and arguments
+    // Mark timer as cancelled in active_timers
+    // Don't erase from active_timers yet, because timer_queue_ may still have a copy
+    // The copy in timer_queue_ will be skipped when processed
     auto it = runtime->active_timers_.find(timer_id);
     if (it != runtime->active_timers_.end()) {
-        runtime->active_timers_.erase(it);
+        it->second.cancelled = true;
+        // Clear the callback and args to release JSValue references immediately
+        it->second.callback.reset();
+        it->second.args.clear();
     }
 
     return JS_UNDEFINED;
