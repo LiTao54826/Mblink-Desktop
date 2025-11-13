@@ -35,6 +35,8 @@ Document::Document()
     , lexbor_dirty_(false) {
 }
 
+Document::~Document() = default;
+
 void Document::Initialize() {
     // 创建基本的 HTML 结构
     document_element_ = CreateElement("html");

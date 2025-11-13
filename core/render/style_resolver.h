@@ -77,19 +77,26 @@ private:
      * @brief 应用样式继承
      */
     void ApplyInheritance(ComputedStyle& style, const ComputedStyle* parent_style);
-    
+
+    /**
+     * @brief 应用伪类样式（如 :hover, :active, :focus）
+     * @param style 要应用样式的对象
+     * @param element 元素指针
+     */
+    void ApplyPseudoClassStyles(ComputedStyle& style, std::shared_ptr<Element> element);
+
     /**
      * @brief 解析单个样式属性
      */
-    void ParseStyleProperty(ComputedStyle& style, 
-                           const std::string& property, 
+    void ParseStyleProperty(ComputedStyle& style,
+                           const std::string& property,
                            const std::string& value);
-    
+
     /**
      * @brief 检查属性是否可继承
      */
     bool IsInheritableProperty(const std::string& property);
-    
+
     /**
      * @brief 解析 display 属性
      */

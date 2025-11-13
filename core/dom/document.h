@@ -39,7 +39,7 @@ public:
     /**
      * @brief 析构函数
      */
-    ~Document() override = default;
+    ~Document() override;
 
     /**
      * @brief 初始化文档（创建基本 DOM 结构）

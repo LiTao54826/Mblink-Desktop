@@ -18,6 +18,7 @@
 #include "html_form_element.h"
 #include "html_select_element.h"
 #include "html_option_element.h"
+#include <iostream>
 #include "html_anchor_element.h"
 #include "html_label_element.h"
 #include "html_image_element.h"
@@ -93,8 +94,20 @@ const std::unordered_map<std::string, std::string>& Element::GetAllAttributes() 
 }
 
 void Element::RemoveAttribute(const std::string& name) {
+    // 获取旧值
+    std::string old_value = GetAttribute(name);
+
+    // 移除属性
     attributes_.erase(name);
     MarkDirty();
+
+    // 通知观察者（只有当属性存在时才通知）
+    if (!old_value.empty()) {
+        auto doc = GetOwnerDocument();
+        if (doc) {
+            doc->GetObserverManager().NotifyAttributeChanged(this, name, old_value, "");
+        }
+    }
 }
 
 // ========== 样式操作 ==========
@@ -446,6 +459,9 @@ void Element::SetPseudoClass(const std::string& pseudo_class, bool activate) {
     if (current_state == activate) {
         return;
     }
+
+    std::cout << "[Element::SetPseudoClass] <" << GetTagName() << "> :"
+              << pseudo_class << " = " << (activate ? "true" : "false") << std::endl;
 
     // 更新伪类状态
     if (activate) {

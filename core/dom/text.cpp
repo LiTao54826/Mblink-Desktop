@@ -4,6 +4,7 @@
  */
 
 #include "text.h"
+#include "document.h"
 
 namespace lightui {
 
@@ -13,8 +14,15 @@ Text::Text(const std::string& data)
 }
 
 void Text::SetData(const std::string& data) {
+    std::string old_data = data_;
     data_ = data;
     MarkDirty();
+
+    // 通知观察者
+    auto doc = GetOwnerDocument();
+    if (doc) {
+        doc->GetObserverManager().NotifyTextChanged(this, old_data, data);
+    }
 }
 
 std::shared_ptr<Node> Text::CloneNode(bool deep) {

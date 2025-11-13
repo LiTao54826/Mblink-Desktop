@@ -18,6 +18,7 @@
 #include "core/dom/element.h"
 #include "core/dom/html_input_element.h"
 #include "core/dom/html_textarea_element.h"
+#include "core/render/style_resolver.h"
 #include <iostream>
 #include <algorithm>
 
@@ -241,6 +242,7 @@ void EventLoop::HandleMouseEventForDOM(const SDL_Event& event) {
     if (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN || event.type == SDL_EVENT_MOUSE_BUTTON_UP) {
         mouse_x = event.button.x;
         mouse_y = event.button.y;
+        std::cout << "[EventLoop] Mouse button at (" << mouse_x << ", " << mouse_y << ")" << std::endl;
     } else if (event.type == SDL_EVENT_MOUSE_MOTION) {
         mouse_x = event.motion.x;
         mouse_y = event.motion.y;
@@ -250,12 +252,52 @@ void EventLoop::HandleMouseEventForDOM(const SDL_Event& event) {
     // 参考：RmlUi/Source/Core/Context.cpp - ProcessMouseMove
     UpdateHoverChain(window_id, mouse_x, mouse_y);
 
-    auto hit_result = hit_testing.HitTest(document, mouse_x, mouse_y);
+    // 处理mousedown/mouseup和click/dblclick事件
+    // 参考：W3C UI Events - dblclick事件需要在短时间内两次click同一元素
+    static std::shared_ptr<Element> last_mousedown_element;
+    static std::shared_ptr<Element> last_click_element;
+    static Uint64 last_click_time = 0;
+    static const Uint64 DOUBLE_CLICK_TIME_MS = 500;  // 500ms内的两次click算作dblclick
 
-    // 如果没有命中任何元素，只更新hover链即可
+    // 使用渲染树进行 Hit Testing
+    HitTestResult hit_result;
+
+    // 构建渲染树用于 Hit Testing
+    auto body = document->GetBody();
+    if (body) {
+        RenderTreeBuilder builder;
+        auto root_render = builder.BuildRenderTree(body, nullptr);
+
+        if (root_render) {
+            // 布局渲染树
+            int width, height;
+            SDL_GetWindowSizeInPixels(window->GetSDLWindow(), &width, &height);
+            root_render->Layout(static_cast<float>(width), static_cast<float>(height));
+
+            // 使用渲染树进行 Hit Testing
+            hit_result = hit_testing.HitTestRenderObject(root_render, mouse_x, mouse_y, 0.0f, 0.0f);
+        }
+    }
+
+    // 如果没有命中任何元素
     if (!hit_result.IsValid()) {
+        std::cout << "[EventLoop] No element hit at (" << mouse_x << ", " << mouse_y << ")" << std::endl;
+
+        // 即使没有命中元素，mouseup时也要移除:active伪类
+        if (event.type == SDL_EVENT_MOUSE_BUTTON_UP && last_mousedown_element) {
+            last_mousedown_element->SetPseudoClass("active", false);
+            last_mousedown_element = nullptr;
+
+            // 结束拖拽
+            if (event.button.button == SDL_BUTTON_LEFT) {
+                drag_manager_->EndDrag(mouse_x, mouse_y);
+            }
+        }
+
         return;
     }
+
+    std::cout << "[EventLoop] Hit element: <" << hit_result.element->GetTagName() << ">" << std::endl;
 
     // 创建 MouseEvent（使用 core/dom/event.h 中的简化版本）
     std::string event_type;
@@ -283,13 +325,6 @@ void EventLoop::HandleMouseEventForDOM(const SDL_Event& event) {
     // 分发事件到目标元素
     hit_result.element->DispatchEvent(mouse_event);
 
-    // 处理mousedown/mouseup和click/dblclick事件
-    // 参考：W3C UI Events - dblclick事件需要在短时间内两次click同一元素
-    static std::shared_ptr<Element> last_mousedown_element;
-    static std::shared_ptr<Element> last_click_element;
-    static Uint64 last_click_time = 0;
-    static const Uint64 DOUBLE_CLICK_TIME_MS = 500;  // 500ms内的两次click算作dblclick
-
     if (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN) {
         last_mousedown_element = hit_result.element;
         // mousedown时设置:active伪类
@@ -312,6 +347,7 @@ void EventLoop::HandleMouseEventForDOM(const SDL_Event& event) {
 
         if (last_mousedown_element == hit_result.element) {
             // 在同一个元素上 mousedown 和 mouseup，触发 click
+            std::cout << "[EventLoop] Dispatching click event to <" << hit_result.element->GetTagName() << ">" << std::endl;
             auto click_event = std::make_shared<MouseEvent>(
                 "click",
                 static_cast<int>(mouse_x),
@@ -384,9 +420,25 @@ void EventLoop::UpdateHoverChain(Uint32 window_id, float mouse_x, float mouse_y)
         return;
     }
 
-    // 执行Hit Testing获取当前鼠标下的元素
+    // 执行Hit Testing获取当前鼠标下的元素（使用渲染树）
     HitTesting hit_testing;
-    auto hit_result = hit_testing.HitTest(document, mouse_x, mouse_y);
+    HitTestResult hit_result;
+
+    auto body = document->GetBody();
+    if (body) {
+        RenderTreeBuilder builder;
+        auto root_render = builder.BuildRenderTree(body, nullptr);
+
+        if (root_render) {
+            // 布局渲染树
+            int width, height;
+            SDL_GetWindowSizeInPixels(window->GetSDLWindow(), &width, &height);
+            root_render->Layout(static_cast<float>(width), static_cast<float>(height));
+
+            // 使用渲染树进行 Hit Testing
+            hit_result = hit_testing.HitTestRenderObject(root_render, mouse_x, mouse_y, 0.0f, 0.0f);
+        }
+    }
 
     // 构建新的hover链（从目标元素到根元素）
     std::unordered_set<Element*> new_hover_chain;

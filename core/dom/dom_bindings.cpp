@@ -133,6 +133,28 @@ static JSValue js_element_set_text_content(JSContext* ctx, JSValueConst this_val
     return JS_UNDEFINED;
 }
 
+// Element.parentNode getter
+static JSValue js_element_get_parent_node(JSContext* ctx, JSValueConst this_val, int magic) {
+    auto element = DOMBindings::UnwrapElement(ctx, this_val);
+    if (!element) {
+        return JS_EXCEPTION;
+    }
+
+    auto parent = element->GetParentNode();
+    if (!parent) {
+        return JS_NULL;
+    }
+
+    // 尝试转换为 Element
+    auto parent_element = std::dynamic_pointer_cast<Element>(parent);
+    if (parent_element) {
+        return DOMBindings::WrapElement(ctx, parent_element);
+    }
+
+    // 如果不是 Element，返回 null
+    return JS_NULL;
+}
+
 // Element.children getter
 static JSValue js_element_get_children(JSContext* ctx, JSValueConst this_val, int magic) {
     auto element = DOMBindings::UnwrapElement(ctx, this_val);
@@ -240,6 +262,125 @@ static JSValue js_element_append_child(JSContext* ctx, JSValueConst this_val, in
     return JS_ThrowTypeError(ctx, "appendChild requires a Node argument");
 }
 
+// Element.removeChild(child)
+static JSValue js_element_remove_child(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) {
+    auto element = DOMBindings::UnwrapElement(ctx, this_val);
+    if (!element) {
+        return JS_EXCEPTION;
+    }
+
+    if (argc < 1) {
+        return JS_ThrowTypeError(ctx, "removeChild requires 1 argument");
+    }
+
+    // 尝试解包为 Element 或 Text
+    auto child_element = DOMBindings::UnwrapElement(ctx, argv[0]);
+    if (child_element) {
+        element->RemoveChild(child_element);
+        return JS_DupValue(ctx, argv[0]);
+    }
+
+    auto child_text = DOMBindings::UnwrapText(ctx, argv[0]);
+    if (child_text) {
+        element->RemoveChild(child_text);
+        return JS_DupValue(ctx, argv[0]);
+    }
+
+    return JS_ThrowTypeError(ctx, "removeChild requires a Node argument");
+}
+
+// Element.replaceChild(newChild, oldChild)
+static JSValue js_element_replace_child(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) {
+    auto element = DOMBindings::UnwrapElement(ctx, this_val);
+    if (!element) {
+        return JS_EXCEPTION;
+    }
+
+    if (argc < 2) {
+        return JS_ThrowTypeError(ctx, "replaceChild requires 2 arguments");
+    }
+
+    // 解包 newChild
+    std::shared_ptr<Node> new_child;
+    auto new_element = DOMBindings::UnwrapElement(ctx, argv[0]);
+    if (new_element) {
+        new_child = new_element;
+    } else {
+        auto new_text = DOMBindings::UnwrapText(ctx, argv[0]);
+        if (new_text) {
+            new_child = new_text;
+        }
+    }
+
+    if (!new_child) {
+        return JS_ThrowTypeError(ctx, "replaceChild requires a Node as first argument");
+    }
+
+    // 解包 oldChild
+    std::shared_ptr<Node> old_child;
+    auto old_element = DOMBindings::UnwrapElement(ctx, argv[1]);
+    if (old_element) {
+        old_child = old_element;
+    } else {
+        auto old_text = DOMBindings::UnwrapText(ctx, argv[1]);
+        if (old_text) {
+            old_child = old_text;
+        }
+    }
+
+    if (!old_child) {
+        return JS_ThrowTypeError(ctx, "replaceChild requires a Node as second argument");
+    }
+
+    element->ReplaceChild(new_child, old_child);
+    return JS_DupValue(ctx, argv[1]);
+}
+
+// Element.insertBefore(newChild, refChild)
+static JSValue js_element_insert_before(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) {
+    auto element = DOMBindings::UnwrapElement(ctx, this_val);
+    if (!element) {
+        return JS_EXCEPTION;
+    }
+
+    if (argc < 2) {
+        return JS_ThrowTypeError(ctx, "insertBefore requires 2 arguments");
+    }
+
+    // 解包 newChild
+    std::shared_ptr<Node> new_child;
+    auto new_element = DOMBindings::UnwrapElement(ctx, argv[0]);
+    if (new_element) {
+        new_child = new_element;
+    } else {
+        auto new_text = DOMBindings::UnwrapText(ctx, argv[0]);
+        if (new_text) {
+            new_child = new_text;
+        }
+    }
+
+    if (!new_child) {
+        return JS_ThrowTypeError(ctx, "insertBefore requires a Node as first argument");
+    }
+
+    // 解包 refChild (可以为 null)
+    std::shared_ptr<Node> ref_child;
+    if (!JS_IsNull(argv[1]) && !JS_IsUndefined(argv[1])) {
+        auto ref_element = DOMBindings::UnwrapElement(ctx, argv[1]);
+        if (ref_element) {
+            ref_child = ref_element;
+        } else {
+            auto ref_text = DOMBindings::UnwrapText(ctx, argv[1]);
+            if (ref_text) {
+                ref_child = ref_text;
+            }
+        }
+    }
+
+    element->InsertBefore(new_child, ref_child);
+    return JS_DupValue(ctx, argv[0]);
+}
+
 // Element.addEventListener(type, listener)
 // 返回listener ID，可用于removeEventListener
 static JSValue js_element_add_event_listener(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) {
@@ -323,10 +464,14 @@ static const JSCFunctionListEntry js_element_proto_funcs[] = {
     JS_CGETSET_MAGIC_DEF("id", js_element_get_id, js_element_set_id, 0),
     JS_CGETSET_MAGIC_DEF("className", js_element_get_class_name, js_element_set_class_name, 0),
     JS_CGETSET_MAGIC_DEF("textContent", js_element_get_text_content, js_element_set_text_content, 0),
+    JS_CGETSET_MAGIC_DEF("parentNode", js_element_get_parent_node, nullptr, 0),
     JS_CGETSET_MAGIC_DEF("children", js_element_get_children, nullptr, 0),
     JS_CFUNC_DEF("getAttribute", 1, js_element_get_attribute),
     JS_CFUNC_DEF("setAttribute", 2, js_element_set_attribute),
     JS_CFUNC_DEF("appendChild", 1, js_element_append_child),
+    JS_CFUNC_DEF("removeChild", 1, js_element_remove_child),
+    JS_CFUNC_DEF("replaceChild", 2, js_element_replace_child),
+    JS_CFUNC_DEF("insertBefore", 2, js_element_insert_before),
     JS_CFUNC_DEF("addEventListener", 2, js_element_add_event_listener),
     JS_CFUNC_DEF("removeEventListener", 2, js_element_remove_event_listener),
 };
@@ -615,7 +760,28 @@ void DOMBindings::Init(JSContext* ctx) {
     initialized = true;
 }
 
+void DOMBindings::SetGlobalDocument(JSContext* ctx, std::shared_ptr<Document> document) {
+    if (!document) {
+        return;
+    }
+
+    // 包装 Document 对象
+    JSValue doc_obj = WrapDocument(ctx, document);
+
+    // 设置为全局对象
+    JSValue global = JS_GetGlobalObject(ctx);
+    JS_SetPropertyStr(ctx, global, "document", doc_obj);
+    JS_FreeValue(ctx, global);
+}
+
 void DOMBindings::Cleanup(JSContext* ctx) {
+    // 清除全局 document 对象
+    if (ctx) {
+        JSValue global = JS_GetGlobalObject(ctx);
+        JS_SetPropertyStr(ctx, global, "document", JS_UNDEFINED);
+        JS_FreeValue(ctx, global);
+    }
+
     // 清理所有缓存
     // 注意：缓存中不持有引用（弱引用），所以不需要FreeValue
     // finalizer会在对象被GC时自动清理缓存

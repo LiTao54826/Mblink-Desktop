@@ -5,7 +5,7 @@
 
 // Counter组件 - 使用useState hook
 function Counter() {
-    var state = Hooks.useState(0);
+    var state = PreactHooks.useState(0);
     var count = state[0];
     var setCount = state[1];
     
@@ -14,12 +14,12 @@ function Counter() {
         Preact.h('p', null, 'Count: ' + count),
         Preact.h('button', {
             onclick: function() {
-                setCount(count + 1);
+                setCount(function(prevCount) { return prevCount + 1; });
             }
         }, 'Increment'),
         Preact.h('button', {
             onclick: function() {
-                setCount(count - 1);
+                setCount(function(prevCount) { return prevCount - 1; });
             }
         }, 'Decrement'),
         Preact.h('button', {

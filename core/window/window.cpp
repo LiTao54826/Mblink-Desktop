@@ -87,6 +87,18 @@ public:
         }
     }
 
+    void OnPseudoClassChanged(std::shared_ptr<Element> element,
+                             const std::string& pseudo_class,
+                             bool activate) override {
+        std::cout << "[WindowDOMObserver] Pseudo-class changed: <"
+                  << element->GetTagName() << "> :" << pseudo_class
+                  << " = " << (activate ? "true" : "false") << std::endl;
+        if (window_) {
+            std::cout << "[WindowDOMObserver] Calling SetNeedsRepaint()" << std::endl;
+            window_->SetNeedsRepaint();
+        }
+    }
+
 private:
     Window* window_;
 };
@@ -785,6 +797,8 @@ void Window::SetDocument(std::shared_ptr<Document> document) {
 }
 
 void Window::RenderDocument() {
+    std::cout << "[Window::RenderDocument] Called, needs_repaint_=" << needs_repaint_ << std::endl;
+
     if (!document_ || !surface_) {
         return;
     }

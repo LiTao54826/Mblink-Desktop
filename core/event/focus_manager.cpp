@@ -10,6 +10,7 @@
 #include <algorithm>
 #include <unordered_set>
 #include <functional>
+#include <iostream>
 
 namespace lightui {
 
@@ -34,8 +35,18 @@ bool FocusManager::SetFocus(std::shared_ptr<Element> element, bool focus_visible
 
     // 如果已经是焦点元素，不需要重复设置
     if (old_focus == element) {
+        std::cout << "[FocusManager] Element <" << element->GetTagName()
+                  << "> already has focus, skipping" << std::endl;
         return true;
     }
+
+    std::cout << "[FocusManager] Setting focus: ";
+    if (old_focus) {
+        std::cout << "<" << old_focus->GetTagName() << "> -> ";
+    } else {
+        std::cout << "null -> ";
+    }
+    std::cout << "<" << element->GetTagName() << ">" << std::endl;
 
     // 发送焦点变化事件
     SendFocusEvents(old_focus, element, focus_visible);

@@ -33,6 +33,13 @@ public:
     static void Init(JSContext* ctx);
 
     /**
+     * @brief 设置全局 document 对象
+     * @param ctx QuickJS 上下文
+     * @param document Document 对象
+     */
+    static void SetGlobalDocument(JSContext* ctx, std::shared_ptr<Document> document);
+
+    /**
      * @brief 清理 DOM 绑定
      * @param ctx QuickJS 上下文
      */
