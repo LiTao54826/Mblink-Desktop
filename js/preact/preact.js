@@ -132,18 +132,33 @@ function createDOMElement(vnode) {
 
             // Get old DOM and parent
             const oldDOM = component.__dom;
-            if (!oldDOM || !oldDOM.parentNode) {
+            if (!oldDOM) {
+                console.log('[Preact] __rerender: oldDOM is null');
+                return;
+            }
+
+            if (!oldDOM.parentNode) {
+                console.log('[Preact] __rerender: oldDOM.parentNode is null');
                 return;
             }
 
             const parent = oldDOM.parentNode;
+            console.log('[Preact] __rerender: parent tag=' + parent.tagName);
 
             // Create new DOM
             const newDOM = createDOMElement(newVNode);
 
             if (newDOM) {
-                // Replace old DOM with new DOM
-                parent.replaceChild(newDOM, oldDOM);
+                console.log('[Preact] __rerender: About to replaceChild, old=' + oldDOM.tagName + ', new=' + newDOM.tagName);
+
+                try {
+                    // Replace old DOM with new DOM
+                    parent.replaceChild(newDOM, oldDOM);
+                    console.log('[Preact] __rerender: replaceChild succeeded');
+                } catch (e) {
+                    console.log('[Preact] __rerender: replaceChild failed: ' + e);
+                    return;
+                }
 
                 // Update component state
                 component.__dom = newDOM;
@@ -151,6 +166,10 @@ function createDOMElement(vnode) {
 
                 // Store reference to the component VNode on the new DOM
                 newDOM.__componentVNode = vnode;
+
+                console.log('[Preact] __rerender: Component state updated');
+            } else {
+                console.log('[Preact] __rerender: newDOM is null');
             }
         };
 

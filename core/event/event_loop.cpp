@@ -473,17 +473,20 @@ void EventLoop::UpdateHoverChain(Uint32 window_id, float mouse_x, float mouse_y)
     if (hover_element_ != new_hover_element) {
         // 发送mouseleave到旧的hover元素
         if (hover_element_) {
-            try {
-                auto old_element_ptr = std::static_pointer_cast<Element>(hover_element_->shared_from_this());
-                auto leave_event = std::make_shared<MouseEvent>(
-                    "mouseleave",
-                    static_cast<int>(mouse_x),
-                    static_cast<int>(mouse_y),
-                    0
-                );
-                old_element_ptr->DispatchEvent(leave_event);
-            } catch (...) {
-                // 元素已被销毁，忽略
+            // 检查元素是否仍然有效
+            if (hover_element_->GetParentNode() || hover_element_->GetTagName() == "body") {
+                try {
+                    auto old_element_ptr = std::static_pointer_cast<Element>(hover_element_->shared_from_this());
+                    auto leave_event = std::make_shared<MouseEvent>(
+                        "mouseleave",
+                        static_cast<int>(mouse_x),
+                        static_cast<int>(mouse_y),
+                        0
+                    );
+                    old_element_ptr->DispatchEvent(leave_event);
+                } catch (...) {
+                    // 元素已被销毁，忽略
+                }
             }
         }
 
@@ -520,6 +523,13 @@ void EventLoop::SendEvents(const std::unordered_set<Element*>& old_items,
     for (Element* element : old_items) {
         if (new_items.find(element) == new_items.end()) {
             // 这个元素在旧集合中但不在新集合中
+
+            // 检查元素是否仍然有效（是否仍在DOM树中）
+            // 如果元素没有父节点且不是body元素，说明已被移除
+            if (!element->GetParentNode() && element->GetTagName() != "body") {
+                // 元素已从DOM树中移除，跳过
+                continue;
+            }
 
             // 创建鼠标事件
             auto mouse_event = std::make_shared<MouseEvent>(

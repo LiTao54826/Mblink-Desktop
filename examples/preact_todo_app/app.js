@@ -266,13 +266,16 @@ function App() {
 
     // 删除todo
     var handleDeleteTodo = function(id) {
+        console.log('[App] handleDeleteTodo called with id=' + id);
         setTodos(function(prevTodos) {
+            console.log('[App] setTodos updater called, prevTodos.length=' + prevTodos.length);
             var newTodos = [];
             for (var i = 0; i < prevTodos.length; i++) {
                 if (prevTodos[i].id !== id) {
                     newTodos.push(prevTodos[i]);
                 }
             }
+            console.log('[App] newTodos.length=' + newTodos.length);
             return newTodos;
         });
     };
