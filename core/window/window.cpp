@@ -31,6 +31,8 @@
 #include "core/render/render_object.h"
 #include "core/render/style_resolver.h"
 #include "core/render/text/font_manager.h"
+#include "core/render/dirty_region.h"
+#include "core/render/dirty_region_collector.h"
 
 namespace lightui {
 
@@ -46,16 +48,18 @@ public:
     void OnNodeAdded(Node* node, Node* parent) override {
         std::cout << "[WindowDOMObserver] OnNodeAdded: node type=" << static_cast<int>(node->GetNodeType()) << std::endl;
         if (window_) {
-            std::cout << "[WindowDOMObserver] Calling SetNeedsRepaint()" << std::endl;
+            std::cout << "[WindowDOMObserver] Calling SetNeedsRepaint() and InvalidateRenderTree()" << std::endl;
             window_->SetNeedsRepaint();
+            window_->InvalidateRenderTree();  // DOM结构改变，渲染树需要重建
         }
     }
 
     void OnNodeRemoved(Node* node, Node* parent) override {
         std::cout << "[WindowDOMObserver] OnNodeRemoved: node type=" << static_cast<int>(node->GetNodeType()) << std::endl;
         if (window_) {
-            std::cout << "[WindowDOMObserver] Calling SetNeedsRepaint()" << std::endl;
+            std::cout << "[WindowDOMObserver] Calling SetNeedsRepaint() and InvalidateRenderTree()" << std::endl;
             window_->SetNeedsRepaint();
+            window_->InvalidateRenderTree();  // DOM结构改变，渲染树需要重建
         }
     }
 
@@ -869,6 +873,128 @@ void Window::RenderDocument() {
 
     // 清除重绘标记
     needs_repaint_ = false;
+}
+
+void Window::RenderDocumentIncremental() {
+    std::cout << "[Window::RenderDocumentIncremental] Called, needs_repaint_=" << needs_repaint_
+              << ", render_tree_valid_=" << render_tree_valid_ << std::endl;
+
+    if (!document_ || !surface_) {
+        return;
+    }
+
+    // 获取画布
+    SkCanvas* canvas = surface_->getCanvas();
+    if (!canvas) {
+        return;
+    }
+
+    // 获取窗口尺寸
+    int width, height;
+    SDL_GetWindowSizeInPixels(sdl_window_, &width, &height);
+
+    // Step 1: 构建或复用渲染树
+    auto body = document_->GetBody();
+    if (!body) {
+        return;
+    }
+
+    if (!render_tree_valid_ || !cached_render_tree_) {
+        // 渲染树无效，需要重建
+        std::cout << "[RenderDocumentIncremental] Rebuilding render tree..." << std::endl;
+        RenderTreeBuilder builder;
+        cached_render_tree_ = builder.BuildRenderTree(body, nullptr);
+        render_tree_valid_ = true;
+
+        if (!cached_render_tree_) {
+            std::cout << "[RenderDocumentIncremental] Failed to build render tree!" << std::endl;
+            return;
+        }
+
+        // 新渲染树需要完整布局
+        std::cout << "[RenderDocumentIncremental] Full layout: " << width << "x" << height << std::endl;
+        cached_render_tree_->Layout(static_cast<float>(width), static_cast<float>(height));
+
+        // 清空画布并完整绘制
+        canvas->clear(SK_ColorWHITE);
+        std::cout << "[RenderDocumentIncremental] Full paint..." << std::endl;
+        cached_render_tree_->Paint(canvas);
+    } else {
+        // 渲染树有效，执行增量渲染
+        std::cout << "[RenderDocumentIncremental] Incremental rendering..." << std::endl;
+
+        // Step 2: 收集脏区域
+        DirtyRegionCollector collector;
+        collector.SetViewportSize(static_cast<float>(width), static_cast<float>(height));
+
+        DirtyRegion dirty_region;
+        bool has_dirty = collector.CollectFromDOM(body.get(), dirty_region);
+
+        if (has_dirty) {
+            // 优化脏区域（合并相邻区域）
+            dirty_region.Optimize();
+
+            const auto& dirty_rects = dirty_region.GetRegions();
+            std::cout << "[RenderDocumentIncremental] Found " << dirty_rects.size() << " dirty regions" << std::endl;
+
+            // Step 3: 增量布局（TODO: Task 2.2 - 只布局脏子树）
+            // 目前简化实现：重新布局整个树
+            std::cout << "[RenderDocumentIncremental] Layout (full for now)..." << std::endl;
+            cached_render_tree_->Layout(static_cast<float>(width), static_cast<float>(height));
+
+            // Step 4: 局部绘制
+            for (const auto& rect : dirty_rects) {
+                std::cout << "[RenderDocumentIncremental] Painting dirty rect: "
+                          << rect.x() << "," << rect.y() << " "
+                          << rect.width() << "x" << rect.height() << std::endl;
+
+                // 保存画布状态
+                canvas->save();
+
+                // 清除脏区域
+                SkPaint clear_paint;
+                clear_paint.setColor(SK_ColorWHITE);
+                canvas->drawRect(rect, clear_paint);
+
+                // 裁剪到脏区域
+                canvas->clipRect(rect);
+
+                // 绘制（只有在裁剪区域内的内容会被绘制）
+                cached_render_tree_->Paint(canvas);
+
+                // 恢复画布状态
+                canvas->restore();
+            }
+
+            // 清除DOM节点的脏标记
+            ClearDirtyFlags(body.get());
+        } else {
+            std::cout << "[RenderDocumentIncremental] No dirty regions, skipping paint" << std::endl;
+        }
+    }
+
+    // 刷新
+    if (gr_context_) {
+        gr_context_->flush();
+    }
+
+    // 清除重绘标记
+    needs_repaint_ = false;
+}
+
+void Window::ClearDirtyFlags(Node* node) {
+    if (!node) {
+        return;
+    }
+
+    // 清除当前节点的脏标记
+    node->ClearDirty(DirtyType::ALL);
+
+    // 递归清除子节点
+    const auto& children = node->GetChildNodes();
+    for (const auto& child : children) {
+        ClearDirtyFlags(child.get());
+    }
 }
 
 void Window::Clear(uint32_t color) {
