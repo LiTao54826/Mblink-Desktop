@@ -9,10 +9,22 @@
  * - 窗口事件处理
  */
 
+// 性能优化：默认关闭调试日志（可以通过定义LIGHTUI_DEBUG_RENDERING启用）
+// #define LIGHTUI_DEBUG_RENDERING
+
+#ifdef LIGHTUI_DEBUG_RENDERING
+    #define DEBUG_LOG(msg) std::cout << msg << std::endl
+    #define DEBUG_LOG_FLUSH() std::cout.flush()
+#else
+    #define DEBUG_LOG(msg) ((void)0)
+    #define DEBUG_LOG_FLUSH() ((void)0)
+#endif
+
 #include "window.h"
 #include <stdexcept>
 #include <iostream>
 #include <cstring>
+#include <unordered_map>
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_opengl.h>
 #include "include/core/SkColorSpace.h"
@@ -46,18 +58,18 @@ public:
     explicit WindowDOMObserver(Window* window) : window_(window) {}
 
     void OnNodeAdded(Node* node, Node* parent) override {
-        std::cout << "[WindowDOMObserver] OnNodeAdded: node type=" << static_cast<int>(node->GetNodeType()) << std::endl;
+        DEBUG_LOG("[WindowDOMObserver] OnNodeAdded: node type=" << static_cast<int>(node->GetNodeType()));
         if (window_ && !IsInBatch(node)) {
-            std::cout << "[WindowDOMObserver] Calling SetNeedsRepaint() and InvalidateRenderTree()" << std::endl;
+            DEBUG_LOG("[WindowDOMObserver] Calling SetNeedsRepaint() and InvalidateRenderTree()");
             window_->SetNeedsRepaint();
             window_->InvalidateRenderTree();  // DOM结构改变，渲染树需要重建
         }
     }
 
     void OnNodeRemoved(Node* node, Node* parent) override {
-        std::cout << "[WindowDOMObserver] OnNodeRemoved: node type=" << static_cast<int>(node->GetNodeType()) << std::endl;
+        DEBUG_LOG("[WindowDOMObserver] OnNodeRemoved: node type=" << static_cast<int>(node->GetNodeType()));
         if (window_ && !IsInBatch(node)) {
-            std::cout << "[WindowDOMObserver] Calling SetNeedsRepaint() and InvalidateRenderTree()" << std::endl;
+            DEBUG_LOG("[WindowDOMObserver] Calling SetNeedsRepaint() and InvalidateRenderTree()");
             window_->SetNeedsRepaint();
             window_->InvalidateRenderTree();  // DOM结构改变，渲染树需要重建
         }
@@ -92,7 +104,7 @@ public:
     void OnSubtreeModified(Node* root) override {
         // 这个方法由EndBatch()调用，总是触发重绘
         if (window_) {
-            std::cout << "[WindowDOMObserver] OnSubtreeModified - triggering repaint" << std::endl;
+            DEBUG_LOG("[WindowDOMObserver] OnSubtreeModified - triggering repaint");
             window_->SetNeedsRepaint();
             window_->InvalidateRenderTree();
         }
@@ -101,11 +113,11 @@ public:
     void OnPseudoClassChanged(std::shared_ptr<Element> element,
                              const std::string& pseudo_class,
                              bool activate) override {
-        std::cout << "[WindowDOMObserver] Pseudo-class changed: <"
+        DEBUG_LOG("[WindowDOMObserver] Pseudo-class changed: <"
                   << element->GetTagName() << "> :" << pseudo_class
-                  << " = " << (activate ? "true" : "false") << std::endl;
+                  << " = " << (activate ? "true" : "false"));
         if (window_ && !IsInBatch(element.get())) {
-            std::cout << "[WindowDOMObserver] Calling SetNeedsRepaint()" << std::endl;
+            DEBUG_LOG("[WindowDOMObserver] Calling SetNeedsRepaint()");
             window_->SetNeedsRepaint();
         }
     }
@@ -894,8 +906,8 @@ void Window::RenderDocument() {
 }
 
 void Window::RenderDocumentIncremental() {
-    std::cout << "[Window::RenderDocumentIncremental] Called, needs_repaint_=" << needs_repaint_
-              << ", render_tree_valid_=" << render_tree_valid_ << std::endl;
+    DEBUG_LOG("[Window::RenderDocumentIncremental] Called, needs_repaint_=" << needs_repaint_
+              << ", render_tree_valid_=" << render_tree_valid_);
 
     if (!document_ || !surface_) {
         return;
@@ -919,27 +931,27 @@ void Window::RenderDocumentIncremental() {
 
     if (!render_tree_valid_ || !cached_render_tree_) {
         // 渲染树无效，需要重建
-        std::cout << "[RenderDocumentIncremental] Rebuilding render tree..." << std::endl;
+        DEBUG_LOG("[RenderDocumentIncremental] Rebuilding render tree...");
         RenderTreeBuilder builder;
         cached_render_tree_ = builder.BuildRenderTree(body, nullptr);
         render_tree_valid_ = true;
 
         if (!cached_render_tree_) {
-            std::cout << "[RenderDocumentIncremental] Failed to build render tree!" << std::endl;
+            DEBUG_LOG("[RenderDocumentIncremental] Failed to build render tree!");
             return;
         }
 
         // 新渲染树需要完整布局
-        std::cout << "[RenderDocumentIncremental] Full layout: " << width << "x" << height << std::endl;
+        DEBUG_LOG("[RenderDocumentIncremental] Full layout: " << width << "x" << height);
         cached_render_tree_->Layout(static_cast<float>(width), static_cast<float>(height));
 
         // 清空画布并完整绘制
         canvas->clear(SK_ColorWHITE);
-        std::cout << "[RenderDocumentIncremental] Full paint..." << std::endl;
+        DEBUG_LOG("[RenderDocumentIncremental] Full paint...");
         cached_render_tree_->Paint(canvas);
     } else {
         // 渲染树有效，执行增量渲染
-        std::cout << "[RenderDocumentIncremental] Incremental rendering..." << std::endl;
+        DEBUG_LOG("[RenderDocumentIncremental] Incremental rendering...");
 
         // Step 2: 收集脏区域
         DirtyRegionCollector collector;
@@ -953,10 +965,10 @@ void Window::RenderDocumentIncremental() {
             dirty_region.Optimize();
 
             const auto& dirty_rects = dirty_region.GetRegions();
-            std::cout << "[RenderDocumentIncremental] Found " << dirty_rects.size() << " dirty regions" << std::endl;
+            DEBUG_LOG("[RenderDocumentIncremental] Found " << dirty_rects.size() << " dirty regions");
 
             // Step 3: 增量布局 - 只布局脏子树
-            std::cout << "[RenderDocumentIncremental] Incremental layout..." << std::endl;
+            DEBUG_LOG("[RenderDocumentIncremental] Incremental layout...");
 
             // 首先标记渲染树中对应脏DOM节点的RenderObject需要布局
             MarkRenderObjectsDirty(body.get(), cached_render_tree_.get());
@@ -967,16 +979,16 @@ void Window::RenderDocumentIncremental() {
                                                static_cast<float>(height));
 
             if (laid_out) {
-                std::cout << "[RenderDocumentIncremental] Incremental layout completed" << std::endl;
+                DEBUG_LOG("[RenderDocumentIncremental] Incremental layout completed");
             } else {
-                std::cout << "[RenderDocumentIncremental] No layout needed" << std::endl;
+                DEBUG_LOG("[RenderDocumentIncremental] No layout needed");
             }
 
             // Step 4: 局部绘制
             for (const auto& rect : dirty_rects) {
-                std::cout << "[RenderDocumentIncremental] Painting dirty rect: "
+                DEBUG_LOG("[RenderDocumentIncremental] Painting dirty rect: "
                           << rect.x() << "," << rect.y() << " "
-                          << rect.width() << "x" << rect.height() << std::endl;
+                          << rect.width() << "x" << rect.height());
 
                 // 保存画布状态
                 canvas->save();
@@ -999,7 +1011,7 @@ void Window::RenderDocumentIncremental() {
             // 清除DOM节点的脏标记
             ClearDirtyFlags(body.get());
         } else {
-            std::cout << "[RenderDocumentIncremental] No dirty regions, skipping paint" << std::endl;
+            DEBUG_LOG("[RenderDocumentIncremental] No dirty regions, skipping paint");
         }
     }
 
@@ -1020,34 +1032,38 @@ void Window::MarkRenderObjectsDirty(Node* dom_node, RenderObject* render_obj) {
     // 检查DOM节点是否有布局脏标记
     if (dom_node->IsLayoutDirty()) {
         render_obj->MarkNeedsLayout();
-        std::cout << "[MarkRenderObjectsDirty] Marked RenderObject for layout" << std::endl;
+        DEBUG_LOG("[MarkRenderObjectsDirty] Marked RenderObject for layout");
     }
 
     // 检查DOM节点是否有绘制脏标记
     if (dom_node->IsPaintDirty()) {
         render_obj->MarkNeedsPaint();
-        std::cout << "[MarkRenderObjectsDirty] Marked RenderObject for paint" << std::endl;
+        DEBUG_LOG("[MarkRenderObjectsDirty] Marked RenderObject for paint");
     }
 
     // 递归处理子节点
-    // 注意：DOM树和渲染树结构可能不一致（display:none、空白文本节点等会被跳过）
-    // 因此我们需要通过RenderObject的node_指针来匹配
+    // 优化：使用哈希表加速查找，避免O(n²)复杂度
     const auto& dom_children = dom_node->GetChildNodes();
     const auto& render_children = render_obj->GetChildren();
 
+    // 构建DOM节点指针到节点的映射（O(n)）
+    std::unordered_map<Node*, std::shared_ptr<Node>> dom_map;
+    dom_map.reserve(dom_children.size());
+    for (const auto& dom_child : dom_children) {
+        dom_map[dom_child.get()] = dom_child;
+    }
+
+    // 遍历渲染子节点并查找对应的DOM节点（O(n)）
     for (const auto& render_child : render_children) {
-        // 获取渲染对象对应的DOM节点
         auto render_child_node = render_child->GetNode();
         if (!render_child_node) {
             continue;
         }
 
-        // 在DOM子节点中查找匹配的节点
-        for (const auto& dom_child : dom_children) {
-            if (dom_child.get() == render_child_node.get()) {
-                MarkRenderObjectsDirty(dom_child.get(), render_child.get());
-                break;
-            }
+        // O(1)查找
+        auto it = dom_map.find(render_child_node.get());
+        if (it != dom_map.end()) {
+            MarkRenderObjectsDirty(it->second.get(), render_child.get());
         }
     }
 }
