@@ -15,22 +15,29 @@ namespace lightui {
 // 前向声明
 class Element;
 class Document;
+class Window;
 
 /**
  * @brief 焦点管理器
- * 
+ *
  * 负责管理元素焦点状态，支持：
  * - Focus()/Blur()方法
  * - Tab键导航（tabindex支持）
  * - focus/blur事件自动发送
  * - :focus/:focus-visible伪类自动设置
- * 
+ *
  * 参考：RmlUi的焦点管理机制
  */
 class FocusManager {
 public:
     FocusManager();
     ~FocusManager();
+
+    /**
+     * @brief 设置窗口（用于SDL文本输入）
+     * @param window 窗口指针
+     */
+    void SetWindow(Window* window) { window_ = window; }
 
     /**
      * @brief 设置焦点到指定元素
@@ -117,6 +124,9 @@ private:
 private:
     // 当前焦点元素（弱引用，避免循环引用）
     std::weak_ptr<Element> focus_element_;
+
+    // 窗口指针（用于SDL文本输入）
+    Window* window_ = nullptr;
 };
 
 } // namespace lightui

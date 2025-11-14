@@ -9,6 +9,7 @@
 #include "core/dom/event.h"
 #include "core/dom/html_input_element.h"
 #include "core/dom/html_textarea_element.h"
+#include "core/window/window.h"
 #include <SDL3/SDL.h>
 #include <algorithm>
 #include <unordered_set>
@@ -61,7 +62,18 @@ bool FocusManager::SetFocus(std::shared_ptr<Element> element, bool focus_visible
     std::string tag_name = element->GetTagName();
     if (tag_name == "input" || tag_name == "textarea") {
         std::cout << "[FocusManager] Starting text input for <" << tag_name << ">" << std::endl;
-        SDL_StartTextInput(nullptr);  // nullptr表示使用默认窗口
+        if (window_) {
+            SDL_StartTextInput(window_->GetSDLWindow());
+            std::cout << "[FocusManager] SDL_StartTextInput called with window" << std::endl;
+        } else {
+            std::cout << "[FocusManager] Warning: No window set, cannot start text input" << std::endl;
+        }
+    }
+
+    // 触发重绘以显示光标
+    if (window_) {
+        window_->SetNeedsRepaint();
+        std::cout << "[FocusManager] SetNeedsRepaint called" << std::endl;
     }
 
     return true;
@@ -75,7 +87,10 @@ void FocusManager::Blur(std::shared_ptr<Element> element) {
         std::string tag_name = element->GetTagName();
         if (tag_name == "input" || tag_name == "textarea") {
             std::cout << "[FocusManager] Stopping text input for <" << tag_name << ">" << std::endl;
-            SDL_StopTextInput(nullptr);
+            if (window_) {
+                SDL_StopTextInput(window_->GetSDLWindow());
+                std::cout << "[FocusManager] SDL_StopTextInput called with window" << std::endl;
+            }
         }
 
         // 发送blur事件
@@ -83,6 +98,11 @@ void FocusManager::Blur(std::shared_ptr<Element> element) {
 
         // 清除焦点
         focus_element_.reset();
+
+        // 触发重绘以隐藏光标
+        if (window_) {
+            window_->SetNeedsRepaint();
+        }
     }
 }
 
@@ -168,10 +188,17 @@ void FocusManager::ClearFocus() {
         std::string tag_name = current_focus->GetTagName();
         if (tag_name == "input" || tag_name == "textarea") {
             std::cout << "[FocusManager] Stopping text input for <" << tag_name << ">" << std::endl;
-            SDL_StopTextInput(nullptr);
+            if (window_) {
+                SDL_StopTextInput(window_->GetSDLWindow());
+            }
         }
 
         SendFocusEvents(current_focus, nullptr, false);
+
+        // 触发重绘
+        if (window_) {
+            window_->SetNeedsRepaint();
+        }
     }
     focus_element_.reset();
 }

@@ -44,13 +44,17 @@ public:
     explicit WindowDOMObserver(Window* window) : window_(window) {}
 
     void OnNodeAdded(Node* node, Node* parent) override {
+        std::cout << "[WindowDOMObserver] OnNodeAdded: node type=" << static_cast<int>(node->GetNodeType()) << std::endl;
         if (window_) {
+            std::cout << "[WindowDOMObserver] Calling SetNeedsRepaint()" << std::endl;
             window_->SetNeedsRepaint();
         }
     }
 
     void OnNodeRemoved(Node* node, Node* parent) override {
+        std::cout << "[WindowDOMObserver] OnNodeRemoved: node type=" << static_cast<int>(node->GetNodeType()) << std::endl;
         if (window_) {
+            std::cout << "[WindowDOMObserver] Calling SetNeedsRepaint()" << std::endl;
             window_->SetNeedsRepaint();
         }
     }

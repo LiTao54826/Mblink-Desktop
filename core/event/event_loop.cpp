@@ -332,6 +332,7 @@ void EventLoop::HandleMouseEventForDOM(const SDL_Event& event) {
 
         // 鼠标点击时设置焦点（参考RmlUi/Source/Core/Context.cpp - ProcessMouseButtonDown）
         // 使用FocusManager设置焦点，focus_visible=false（鼠标点击不显示焦点指示器）
+        focus_manager_->SetWindow(window.get());  // 设置窗口指针用于SDL文本输入
         focus_manager_->SetFocus(hit_result.element, false);
 
         // 拖拽检测（参考RmlUi/Source/Core/Context.cpp - ProcessMouseButtonDown）
