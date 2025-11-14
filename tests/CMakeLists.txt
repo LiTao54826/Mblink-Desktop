@@ -176,6 +176,38 @@ if(WIN32 AND MINGW)
 endif()
 add_test(NAME IncrementalRenderingTest COMMAND test_incremental_rendering)
 
+# Real World Application Test (Week 3 - Practical Testing)
+add_executable(test_real_world_app integration/test_real_world_app.cpp)
+target_include_directories(test_real_world_app PRIVATE
+    ${CMAKE_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/core
+    ${THIRD_PARTY_DIR}/lexbor/source
+)
+target_link_libraries(test_real_world_app PRIVATE
+    lightui_dom
+    lightui_lexbor
+    lightui_render
+    lightui_window
+    GTest::gtest
+    GTest::gtest_main
+)
+# Link Lexbor
+if(TARGET lexbor_static)
+    target_link_libraries(test_real_world_app PRIVATE lexbor_static)
+endif()
+# Link Skia
+if(TARGET skia)
+    target_link_libraries(test_real_world_app PRIVATE skia)
+endif()
+# Link SDL3
+if(TARGET SDL3-static)
+    target_link_libraries(test_real_world_app PRIVATE SDL3-static)
+endif()
+if(WIN32 AND MINGW)
+    target_link_options(test_real_world_app PRIVATE -static-libgcc -static-libstdc++)
+endif()
+add_test(NAME RealWorldAppTest COMMAND test_real_world_app)
+
 # Rendering Benchmark (Performance Testing)
 add_executable(benchmark_rendering benchmarks/benchmark_rendering.cpp)
 target_include_directories(benchmark_rendering PRIVATE
