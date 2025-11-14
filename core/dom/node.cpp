@@ -288,12 +288,31 @@ void Node::SetTextContent(const std::string& content) {
     }
 }
 
-void Node::MarkDirty() {
+void Node::MarkDirty(DirtyType type) {
+    // 更新脏标记标志
+    dirty_flags_ |= static_cast<uint32_t>(type);
+
+    // 兼容旧代码
     is_dirty_ = true;
 
     // 向上传播脏标记
     if (auto parent = parent_node_.lock()) {
-        parent->MarkDirty();
+        parent->MarkDirty(type);
+    }
+}
+
+void Node::ClearDirty(DirtyType type) {
+    // 清除指定类型的脏标记
+    dirty_flags_ &= ~static_cast<uint32_t>(type);
+
+    // 如果所有脏标记都清除了，更新兼容标志
+    if (dirty_flags_ == 0) {
+        is_dirty_ = false;
+    }
+
+    // 如果清除了绘制标记，也清除脏矩形
+    if ((static_cast<uint32_t>(type) & static_cast<uint32_t>(DirtyType::PAINT)) != 0) {
+        dirty_rect_ = SkRect::MakeEmpty();
     }
 }
 
