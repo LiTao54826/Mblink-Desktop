@@ -26,6 +26,7 @@ add_library(lightui_lexbor STATIC
 target_include_directories(lightui_lexbor PUBLIC
     ${CMAKE_SOURCE_DIR}
     ${THIRD_PARTY_DIR}/lexbor/source
+    ${CMAKE_SOURCE_DIR}/third_party/skia
 )
 
 # 链接 Lexbor 静态库
