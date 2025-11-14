@@ -19,6 +19,7 @@
 #include "html_heading_element.h"
 #include "core/lexbor/lexbor_document.h"
 #include <algorithm>
+#include <iostream>
 #include <lexbor/dom/interfaces/element.h>
 #include <lexbor/dom/interfaces/text.h>
 
@@ -345,6 +346,32 @@ void Document::RebuildIdMap(std::shared_ptr<Element> root) {
         if (child_elem) {
             RebuildIdMap(child_elem);
         }
+    }
+}
+
+// ========== 批量更新API (Week 2 - Task 2.3) ==========
+
+void Document::BeginBatch() {
+    batch_depth_++;
+    std::cout << "[Document::BeginBatch] Batch depth: " << batch_depth_ << std::endl;
+}
+
+void Document::EndBatch() {
+    if (batch_depth_ <= 0) {
+        std::cerr << "[Document::EndBatch] Warning: EndBatch() called without matching BeginBatch()" << std::endl;
+        return;
+    }
+
+    batch_depth_--;
+    std::cout << "[Document::EndBatch] Batch depth: " << batch_depth_ << std::endl;
+
+    // 只在最外层批量结束时触发重绘
+    if (batch_depth_ == 0) {
+        std::cout << "[Document::EndBatch] Batch complete, notifying observers..." << std::endl;
+
+        // 通知观察者整个文档子树已修改
+        // 这会触发Window的SetNeedsRepaint()
+        observer_manager_.NotifySubtreeModified(this);
     }
 }
 

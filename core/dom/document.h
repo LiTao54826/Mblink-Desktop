@@ -188,6 +188,40 @@ public:
         observer_manager_.RemoveObserver(observer);
     }
 
+    // ========== 批量更新API (Week 2 - Task 2.3) ==========
+
+    /**
+     * @brief 开始批量更新
+     *
+     * 在批量更新期间，DOM变化不会立即触发重绘，
+     * 而是累积脏区域，直到EndBatch()被调用。
+     * 这对于执行多个DOM操作时非常有用，可以避免多次重绘。
+     *
+     * 示例:
+     * @code
+     * doc->BeginBatch();
+     * for (int i = 0; i < 1000; i++) {
+     *     element->SetStyle("width", std::to_string(i) + "px");
+     * }
+     * doc->EndBatch();  // 只触发一次重绘
+     * @endcode
+     */
+    void BeginBatch();
+
+    /**
+     * @brief 结束批量更新
+     *
+     * 结束批量更新并触发单次重绘。
+     * 如果没有调用BeginBatch()，此方法无效。
+     */
+    void EndBatch();
+
+    /**
+     * @brief 检查是否在批量更新中
+     * @return true表示在批量更新中
+     */
+    bool IsInBatch() const { return batch_depth_ > 0; }
+
     // ========== Node 接口实现 ==========
 
     /**
@@ -226,6 +260,9 @@ private:
     // Lexbor 集成
     std::unique_ptr<LexborDocument> lexbor_doc_;
     bool lexbor_dirty_;  // 标记 MBink DOM 是否已修改，需要同步到 Lexbor
+
+    // 批量更新 (Week 2 - Task 2.3)
+    int batch_depth_ = 0;  // 批量更新嵌套深度（支持嵌套BeginBatch/EndBatch）
 };
 
 } // namespace lightui

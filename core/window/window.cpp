@@ -47,7 +47,7 @@ public:
 
     void OnNodeAdded(Node* node, Node* parent) override {
         std::cout << "[WindowDOMObserver] OnNodeAdded: node type=" << static_cast<int>(node->GetNodeType()) << std::endl;
-        if (window_) {
+        if (window_ && !IsInBatch(node)) {
             std::cout << "[WindowDOMObserver] Calling SetNeedsRepaint() and InvalidateRenderTree()" << std::endl;
             window_->SetNeedsRepaint();
             window_->InvalidateRenderTree();  // DOM结构改变，渲染树需要重建
@@ -56,7 +56,7 @@ public:
 
     void OnNodeRemoved(Node* node, Node* parent) override {
         std::cout << "[WindowDOMObserver] OnNodeRemoved: node type=" << static_cast<int>(node->GetNodeType()) << std::endl;
-        if (window_) {
+        if (window_ && !IsInBatch(node)) {
             std::cout << "[WindowDOMObserver] Calling SetNeedsRepaint() and InvalidateRenderTree()" << std::endl;
             window_->SetNeedsRepaint();
             window_->InvalidateRenderTree();  // DOM结构改变，渲染树需要重建
@@ -67,7 +67,7 @@ public:
                            const std::string& name,
                            const std::string& old_value,
                            const std::string& new_value) override {
-        if (window_) {
+        if (window_ && !IsInBatch(element)) {
             window_->SetNeedsRepaint();
         }
     }
@@ -76,7 +76,7 @@ public:
                        const std::string& property,
                        const std::string& old_value,
                        const std::string& new_value) override {
-        if (window_) {
+        if (window_ && !IsInBatch(element)) {
             window_->SetNeedsRepaint();
         }
     }
@@ -84,14 +84,17 @@ public:
     void OnTextChanged(Node* node,
                       const std::string& old_text,
                       const std::string& new_text) override {
-        if (window_) {
+        if (window_ && !IsInBatch(node)) {
             window_->SetNeedsRepaint();
         }
     }
 
     void OnSubtreeModified(Node* root) override {
+        // 这个方法由EndBatch()调用，总是触发重绘
         if (window_) {
+            std::cout << "[WindowDOMObserver] OnSubtreeModified - triggering repaint" << std::endl;
             window_->SetNeedsRepaint();
+            window_->InvalidateRenderTree();
         }
     }
 
@@ -101,13 +104,28 @@ public:
         std::cout << "[WindowDOMObserver] Pseudo-class changed: <"
                   << element->GetTagName() << "> :" << pseudo_class
                   << " = " << (activate ? "true" : "false") << std::endl;
-        if (window_) {
+        if (window_ && !IsInBatch(element.get())) {
             std::cout << "[WindowDOMObserver] Calling SetNeedsRepaint()" << std::endl;
             window_->SetNeedsRepaint();
         }
     }
 
 private:
+    /**
+     * @brief 检查节点是否在批量更新中
+     */
+    bool IsInBatch(Node* node) const {
+        if (!node) return false;
+
+        auto doc = node->GetOwnerDocument();
+        if (!doc) return false;
+
+        auto document = std::dynamic_pointer_cast<Document>(doc);
+        if (!document) return false;
+
+        return document->IsInBatch();
+    }
+
     Window* window_;
 };
 
