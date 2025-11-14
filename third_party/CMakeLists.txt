@@ -102,7 +102,7 @@ if(LIGHTUI_USE_SKIA)
             IMPORTED_LOCATION_DEBUG "${THIRD_PARTY_DIR}/skia/Debug/out/Debug-windows-x64/skia.lib"
             IMPORTED_LOCATION_RELEASE "${THIRD_PARTY_DIR}/skia/Release/out/Release-windows-x64/skia.lib"
             IMPORTED_LOCATION "${SKIA_LIB_DIR}/skia.lib"
-            INTERFACE_INCLUDE_DIRECTORIES "$<$<CONFIG:Debug>:${THIRD_PARTY_DIR}/skia/Debug/include>$<$<NOT:$<CONFIG:Debug>>:${THIRD_PARTY_DIR}/skia/Release/include>"
+            INTERFACE_INCLUDE_DIRECTORIES "$<$<CONFIG:Debug>:${THIRD_PARTY_DIR}/skia/Debug>$<$<NOT:$<CONFIG:Debug>>:${THIRD_PARTY_DIR}/skia/Release>"
         )
 
         # Skia依赖库

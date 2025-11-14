@@ -19,7 +19,7 @@
 #include <string>
 #include <vector>
 #include <memory>
-#include "core/SkRect.h"
+#include "include/core/SkRect.h"
 
 namespace lightui {
 
