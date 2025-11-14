@@ -937,10 +937,22 @@ void Window::RenderDocumentIncremental() {
             const auto& dirty_rects = dirty_region.GetRegions();
             std::cout << "[RenderDocumentIncremental] Found " << dirty_rects.size() << " dirty regions" << std::endl;
 
-            // Step 3: 增量布局（TODO: Task 2.2 - 只布局脏子树）
-            // 目前简化实现：重新布局整个树
-            std::cout << "[RenderDocumentIncremental] Layout (full for now)..." << std::endl;
-            cached_render_tree_->Layout(static_cast<float>(width), static_cast<float>(height));
+            // Step 3: 增量布局 - 只布局脏子树
+            std::cout << "[RenderDocumentIncremental] Incremental layout..." << std::endl;
+
+            // 首先标记渲染树中对应脏DOM节点的RenderObject需要布局
+            MarkRenderObjectsDirty(body.get(), cached_render_tree_.get());
+
+            // 执行增量布局
+            bool laid_out = LayoutDirtySubtree(cached_render_tree_.get(),
+                                               static_cast<float>(width),
+                                               static_cast<float>(height));
+
+            if (laid_out) {
+                std::cout << "[RenderDocumentIncremental] Incremental layout completed" << std::endl;
+            } else {
+                std::cout << "[RenderDocumentIncremental] No layout needed" << std::endl;
+            }
 
             // Step 4: 局部绘制
             for (const auto& rect : dirty_rects) {
@@ -980,6 +992,61 @@ void Window::RenderDocumentIncremental() {
 
     // 清除重绘标记
     needs_repaint_ = false;
+}
+
+void Window::MarkRenderObjectsDirty(Node* dom_node, RenderObject* render_obj) {
+    if (!dom_node || !render_obj) {
+        return;
+    }
+
+    // 检查DOM节点是否有布局脏标记
+    if (dom_node->IsLayoutDirty()) {
+        render_obj->MarkNeedsLayout();
+        std::cout << "[MarkRenderObjectsDirty] Marked RenderObject for layout" << std::endl;
+    }
+
+    // 检查DOM节点是否有绘制脏标记
+    if (dom_node->IsPaintDirty()) {
+        render_obj->MarkNeedsPaint();
+        std::cout << "[MarkRenderObjectsDirty] Marked RenderObject for paint" << std::endl;
+    }
+
+    // 递归处理子节点
+    const auto& dom_children = dom_node->GetChildNodes();
+    const auto& render_children = render_obj->GetChildren();
+
+    // 简化实现：假设DOM树和渲染树结构一致
+    size_t min_size = std::min(dom_children.size(), render_children.size());
+    for (size_t i = 0; i < min_size; ++i) {
+        MarkRenderObjectsDirty(dom_children[i].get(), render_children[i].get());
+    }
+}
+
+bool Window::LayoutDirtySubtree(RenderObject* render_obj, float parent_width, float parent_height) {
+    if (!render_obj) {
+        return false;
+    }
+
+    bool needs_layout = render_obj->NeedsLayout();
+    bool any_child_laid_out = false;
+
+    // 检查子节点是否需要布局
+    const auto& children = render_obj->GetChildren();
+    for (const auto& child : children) {
+        if (LayoutDirtySubtree(child.get(), parent_width, parent_height)) {
+            any_child_laid_out = true;
+            needs_layout = true;  // 子节点布局改变，父节点也需要重新布局
+        }
+    }
+
+    // 如果当前节点或任何子节点需要布局，执行布局
+    if (needs_layout) {
+        render_obj->Layout(parent_width, parent_height);
+        render_obj->ClearNeedsLayout();
+        return true;
+    }
+
+    return false;
 }
 
 void Window::ClearDirtyFlags(Node* node) {

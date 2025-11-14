@@ -377,6 +377,22 @@ private:
      */
     void ClearDirtyFlags(Node* node);
 
+    /**
+     * @brief 增量布局：只布局需要布局的子树
+     * @param render_obj 渲染对象
+     * @param parent_width 父元素宽度
+     * @param parent_height 父元素高度
+     * @return true表示该节点或其子节点被重新布局
+     */
+    bool LayoutDirtySubtree(RenderObject* render_obj, float parent_width, float parent_height);
+
+    /**
+     * @brief 将DOM节点的脏标记传播到对应的RenderObject
+     * @param dom_node DOM节点
+     * @param render_obj 渲染对象
+     */
+    void MarkRenderObjectsDirty(Node* dom_node, RenderObject* render_obj);
+
 private:
     WindowConfig config_;
     SDL_Window* sdl_window_ = nullptr;
