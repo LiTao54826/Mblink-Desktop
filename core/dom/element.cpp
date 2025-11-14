@@ -28,6 +28,7 @@
 #include "html_heading_element.h"
 #include <algorithm>
 #include <sstream>
+#include <unordered_set>
 #include <lexbor/html/interfaces/document.h>
 #include <lexbor/html/serialize.h>
 #include <lexbor/dom/interfaces/element.h>
@@ -52,8 +53,25 @@ Element::Element(const std::string& tag_name)
 
 void Element::SetAttribute(const std::string& name, const std::string& value) {
     std::string old_value = GetAttribute(name);
+
+    // 如果值没有改变，直接返回
+    if (old_value == value) {
+        return;
+    }
+
     attributes_[name] = value;
-    MarkDirty();
+
+    // 智能脏标记：根据属性类型精确标记
+    if (IsLayoutAttribute(name)) {
+        // 布局属性改变：需要重新布局和绘制
+        MarkDirty(DirtyType::LAYOUT | DirtyType::PAINT);
+    } else if (IsStyleAttribute(name)) {
+        // 样式属性改变：只需要重新绘制
+        MarkDirty(DirtyType::PAINT);
+    } else {
+        // 其他属性：保守标记为全部脏
+        MarkDirty(DirtyType::ALL);
+    }
 
     // 特殊处理 id 属性
     if (name == "id") {
@@ -850,6 +868,77 @@ std::shared_ptr<Node> Element::ConvertLexborNodeToNode(lxb_dom_node_t* lexbor_no
 
     // 其他类型节点暂不支持
     return nullptr;
+}
+
+// ========== 智能脏标记辅助方法 ==========
+
+bool Element::IsLayoutAttribute(const std::string& name) {
+    // 影响布局的属性（会改变元素的位置、大小、排列）
+    static const std::unordered_set<std::string> layout_attrs = {
+        // 尺寸相关
+        "width", "height", "min-width", "max-width", "min-height", "max-height",
+
+        // 间距相关
+        "padding", "padding-top", "padding-right", "padding-bottom", "padding-left",
+        "margin", "margin-top", "margin-right", "margin-bottom", "margin-left",
+
+        // 边框相关（影响盒模型尺寸）
+        "border", "border-width", "border-top-width", "border-right-width",
+        "border-bottom-width", "border-left-width",
+
+        // 定位相关
+        "position", "top", "right", "bottom", "left",
+        "display", "visibility", "float", "clear",
+
+        // Flexbox相关
+        "flex", "flex-direction", "flex-wrap", "flex-flow",
+        "justify-content", "align-items", "align-content", "align-self",
+        "flex-grow", "flex-shrink", "flex-basis", "order",
+
+        // Grid相关
+        "grid", "grid-template-columns", "grid-template-rows",
+        "grid-column", "grid-row", "grid-area",
+        "gap", "row-gap", "column-gap",
+
+        // 文本布局相关
+        "font-size", "line-height", "letter-spacing", "word-spacing",
+        "white-space", "text-align", "vertical-align",
+
+        // 其他布局属性
+        "overflow", "overflow-x", "overflow-y",
+        "box-sizing", "z-index"
+    };
+
+    return layout_attrs.count(name) > 0;
+}
+
+bool Element::IsStyleAttribute(const std::string& name) {
+    // 只影响样式的属性（不改变布局，只改变外观）
+    static const std::unordered_set<std::string> style_attrs = {
+        // 颜色相关
+        "color", "background-color", "background", "background-image",
+        "background-position", "background-size", "background-repeat",
+
+        // 边框样式（不影响尺寸）
+        "border-color", "border-style", "border-radius",
+        "border-top-color", "border-right-color", "border-bottom-color", "border-left-color",
+        "border-top-style", "border-right-style", "border-bottom-style", "border-left-style",
+
+        // 阴影和效果
+        "box-shadow", "text-shadow", "opacity", "filter",
+
+        // 文本样式
+        "font-family", "font-weight", "font-style", "text-decoration",
+        "text-transform", "text-overflow",
+
+        // 光标和用户交互
+        "cursor", "pointer-events", "user-select",
+
+        // 动画和过渡
+        "transition", "animation", "transform"
+    };
+
+    return style_attrs.count(name) > 0;
 }
 
 } // namespace lightui

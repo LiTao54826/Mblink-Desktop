@@ -379,6 +379,36 @@ private:
     void HandleEvent(std::shared_ptr<Event> event, bool use_capture);
 
 private:
+    /**
+     * @brief 判断属性是否影响布局
+     * @param name 属性名
+     * @return true表示影响布局
+     */
+    bool IsLayoutAttribute(const std::string& name) const;
+
+    /**
+     * @brief 判断属性是否只影响样式
+     * @param name 属性名
+     * @return true表示只影响样式
+     */
+    bool IsStyleAttribute(const std::string& name) const;
+
+private:
+    /**
+     * @brief 判断属性是否影响布局
+     * @param name 属性名
+     * @return true表示影响布局
+     */
+    static bool IsLayoutAttribute(const std::string& name);
+
+    /**
+     * @brief 判断属性是否只影响样式
+     * @param name 属性名
+     * @return true表示只影响样式
+     */
+    static bool IsStyleAttribute(const std::string& name);
+
+private:
     std::string tag_name_;
     std::unordered_map<std::string, std::string> attributes_;
     std::unordered_map<std::string, std::string> styles_;
