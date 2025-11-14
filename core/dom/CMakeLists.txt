@@ -61,13 +61,17 @@ target_include_directories(lightui_dom PUBLIC
     ${CMAKE_SOURCE_DIR}/core
     ${CMAKE_SOURCE_DIR}/third_party/lexbor/source
     ${CMAKE_SOURCE_DIR}/third_party/quickjs
-    ${CMAKE_SOURCE_DIR}/third_party/skia
 )
 
 target_link_libraries(lightui_dom PUBLIC
     lightui_utils
     lexbor_static
 )
+
+# 链接Skia（如果启用）- 需要SkRect.h
+if(TARGET skia)
+    target_link_libraries(lightui_dom PUBLIC skia)
+endif()
 
 # 匹配 Skia 的运行时库设置
 if(MSVC)

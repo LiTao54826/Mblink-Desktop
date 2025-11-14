@@ -26,13 +26,17 @@ add_library(lightui_lexbor STATIC
 target_include_directories(lightui_lexbor PUBLIC
     ${CMAKE_SOURCE_DIR}
     ${THIRD_PARTY_DIR}/lexbor/source
-    ${CMAKE_SOURCE_DIR}/third_party/skia
 )
 
 # 链接 Lexbor 静态库
 target_link_libraries(lightui_lexbor PUBLIC
     lexbor_static
 )
+
+# 链接Skia（如果启用）- 需要SkRect.h
+if(TARGET skia)
+    target_link_libraries(lightui_lexbor PUBLIC skia)
+endif()
 
 # 设置编译选项
 target_compile_features(lightui_lexbor PUBLIC cxx_std_20)
