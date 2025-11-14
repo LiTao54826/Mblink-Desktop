@@ -117,6 +117,33 @@ if(WIN32 AND MINGW)
 endif()
 add_test(NAME DOMNodeTest COMMAND test_dom_node)
 
+# Dirty Marking Test (Week 1 - Partial Rendering)
+add_executable(test_dirty_marking unit/test_dirty_marking.cpp)
+target_include_directories(test_dirty_marking PRIVATE
+    ${CMAKE_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/core
+    ${THIRD_PARTY_DIR}/lexbor/source
+)
+target_link_libraries(test_dirty_marking PRIVATE
+    lightui_dom
+    lightui_lexbor
+    lightui_render
+    GTest::gtest
+    GTest::gtest_main
+)
+# Link Lexbor
+if(TARGET lexbor_static)
+    target_link_libraries(test_dirty_marking PRIVATE lexbor_static)
+endif()
+# Link Skia for SkRect
+if(TARGET skia)
+    target_link_libraries(test_dirty_marking PRIVATE skia)
+endif()
+if(WIN32 AND MINGW)
+    target_link_options(test_dirty_marking PRIVATE -static-libgcc -static-libstdc++)
+endif()
+add_test(NAME DirtyMarkingTest COMMAND test_dirty_marking)
+
 # DOM Event Test
 add_executable(test_dom_event unit/test_dom_event.cpp)
 target_include_directories(test_dom_event PRIVATE
