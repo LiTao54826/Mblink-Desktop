@@ -18,6 +18,7 @@
 #include "core/dom/element.h"
 #include "core/dom/html_input_element.h"
 #include "core/dom/html_textarea_element.h"
+#include "core/render/style_resolver.h"
 #include <iostream>
 #include <algorithm>
 
@@ -241,6 +242,7 @@ void EventLoop::HandleMouseEventForDOM(const SDL_Event& event) {
     if (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN || event.type == SDL_EVENT_MOUSE_BUTTON_UP) {
         mouse_x = event.button.x;
         mouse_y = event.button.y;
+        std::cout << "[EventLoop] Mouse button at (" << mouse_x << ", " << mouse_y << ")" << std::endl;
     } else if (event.type == SDL_EVENT_MOUSE_MOTION) {
         mouse_x = event.motion.x;
         mouse_y = event.motion.y;
@@ -250,12 +252,52 @@ void EventLoop::HandleMouseEventForDOM(const SDL_Event& event) {
     // 参考：RmlUi/Source/Core/Context.cpp - ProcessMouseMove
     UpdateHoverChain(window_id, mouse_x, mouse_y);
 
-    auto hit_result = hit_testing.HitTest(document, mouse_x, mouse_y);
+    // 处理mousedown/mouseup和click/dblclick事件
+    // 参考：W3C UI Events - dblclick事件需要在短时间内两次click同一元素
+    static std::shared_ptr<Element> last_mousedown_element;
+    static std::shared_ptr<Element> last_click_element;
+    static Uint64 last_click_time = 0;
+    static const Uint64 DOUBLE_CLICK_TIME_MS = 500;  // 500ms内的两次click算作dblclick
 
-    // 如果没有命中任何元素，只更新hover链即可
+    // 使用渲染树进行 Hit Testing
+    HitTestResult hit_result;
+
+    // 构建渲染树用于 Hit Testing
+    auto body = document->GetBody();
+    if (body) {
+        RenderTreeBuilder builder;
+        auto root_render = builder.BuildRenderTree(body, nullptr);
+
+        if (root_render) {
+            // 布局渲染树
+            int width, height;
+            SDL_GetWindowSizeInPixels(window->GetSDLWindow(), &width, &height);
+            root_render->Layout(static_cast<float>(width), static_cast<float>(height));
+
+            // 使用渲染树进行 Hit Testing
+            hit_result = hit_testing.HitTestRenderObject(root_render, mouse_x, mouse_y, 0.0f, 0.0f);
+        }
+    }
+
+    // 如果没有命中任何元素
     if (!hit_result.IsValid()) {
+        std::cout << "[EventLoop] No element hit at (" << mouse_x << ", " << mouse_y << ")" << std::endl;
+
+        // 即使没有命中元素，mouseup时也要移除:active伪类
+        if (event.type == SDL_EVENT_MOUSE_BUTTON_UP && last_mousedown_element) {
+            last_mousedown_element->SetPseudoClass("active", false);
+            last_mousedown_element = nullptr;
+
+            // 结束拖拽
+            if (event.button.button == SDL_BUTTON_LEFT) {
+                drag_manager_->EndDrag(mouse_x, mouse_y);
+            }
+        }
+
         return;
     }
+
+    std::cout << "[EventLoop] Hit element: <" << hit_result.element->GetTagName() << ">" << std::endl;
 
     // 创建 MouseEvent（使用 core/dom/event.h 中的简化版本）
     std::string event_type;
@@ -283,13 +325,6 @@ void EventLoop::HandleMouseEventForDOM(const SDL_Event& event) {
     // 分发事件到目标元素
     hit_result.element->DispatchEvent(mouse_event);
 
-    // 处理mousedown/mouseup和click/dblclick事件
-    // 参考：W3C UI Events - dblclick事件需要在短时间内两次click同一元素
-    static std::shared_ptr<Element> last_mousedown_element;
-    static std::shared_ptr<Element> last_click_element;
-    static Uint64 last_click_time = 0;
-    static const Uint64 DOUBLE_CLICK_TIME_MS = 500;  // 500ms内的两次click算作dblclick
-
     if (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN) {
         last_mousedown_element = hit_result.element;
         // mousedown时设置:active伪类
@@ -297,6 +332,7 @@ void EventLoop::HandleMouseEventForDOM(const SDL_Event& event) {
 
         // 鼠标点击时设置焦点（参考RmlUi/Source/Core/Context.cpp - ProcessMouseButtonDown）
         // 使用FocusManager设置焦点，focus_visible=false（鼠标点击不显示焦点指示器）
+        focus_manager_->SetWindow(window.get());  // 设置窗口指针用于SDL文本输入
         focus_manager_->SetFocus(hit_result.element, false);
 
         // 拖拽检测（参考RmlUi/Source/Core/Context.cpp - ProcessMouseButtonDown）
@@ -312,6 +348,7 @@ void EventLoop::HandleMouseEventForDOM(const SDL_Event& event) {
 
         if (last_mousedown_element == hit_result.element) {
             // 在同一个元素上 mousedown 和 mouseup，触发 click
+            std::cout << "[EventLoop] Dispatching click event to <" << hit_result.element->GetTagName() << ">" << std::endl;
             auto click_event = std::make_shared<MouseEvent>(
                 "click",
                 static_cast<int>(mouse_x),
@@ -384,26 +421,43 @@ void EventLoop::UpdateHoverChain(Uint32 window_id, float mouse_x, float mouse_y)
         return;
     }
 
-    // 执行Hit Testing获取当前鼠标下的元素
+    // 执行Hit Testing获取当前鼠标下的元素（使用渲染树）
     HitTesting hit_testing;
-    auto hit_result = hit_testing.HitTest(document, mouse_x, mouse_y);
+    HitTestResult hit_result;
+
+    auto body = document->GetBody();
+    if (body) {
+        RenderTreeBuilder builder;
+        auto root_render = builder.BuildRenderTree(body, nullptr);
+
+        if (root_render) {
+            // 布局渲染树
+            int width, height;
+            SDL_GetWindowSizeInPixels(window->GetSDLWindow(), &width, &height);
+            root_render->Layout(static_cast<float>(width), static_cast<float>(height));
+
+            // 使用渲染树进行 Hit Testing
+            hit_result = hit_testing.HitTestRenderObject(root_render, mouse_x, mouse_y, 0.0f, 0.0f);
+        }
+    }
 
     // 构建新的hover链（从目标元素到根元素）
-    std::unordered_set<Element*> new_hover_chain;
-    Element* new_hover_element = nullptr;
+    // 使用 weak_ptr 避免悬空指针问题
+    std::vector<std::weak_ptr<Element>> new_hover_chain;
+    std::weak_ptr<Element> new_hover_element;
 
     if (hit_result.IsValid()) {
-        new_hover_element = hit_result.element.get();
+        new_hover_element = hit_result.element;
 
         // 从目标元素向上遍历到根元素
-        Element* current = new_hover_element;
+        auto current = hit_result.element;
         while (current) {
-            new_hover_chain.insert(current);
+            new_hover_chain.push_back(current);
 
             // 获取父元素
             auto parent_node = current->GetParentNode();
             if (parent_node && parent_node->GetNodeType() == NodeType::ELEMENT_NODE) {
-                current = static_cast<Element*>(parent_node.get());
+                current = std::static_pointer_cast<Element>(parent_node);
             } else {
                 current = nullptr;
             }
@@ -418,37 +472,30 @@ void EventLoop::UpdateHoverChain(Uint32 window_id, float mouse_x, float mouse_y)
 
     // 发送mouseleave/mouseenter事件（不冒泡版本）
     // 只发送到hover_element_本身，不发送到父元素
-    if (hover_element_ != new_hover_element) {
+    auto old_hover = hover_element_.lock();
+    auto new_hover = new_hover_element.lock();
+
+    if (old_hover != new_hover) {
         // 发送mouseleave到旧的hover元素
-        if (hover_element_) {
-            try {
-                auto old_element_ptr = std::static_pointer_cast<Element>(hover_element_->shared_from_this());
-                auto leave_event = std::make_shared<MouseEvent>(
-                    "mouseleave",
-                    static_cast<int>(mouse_x),
-                    static_cast<int>(mouse_y),
-                    0
-                );
-                old_element_ptr->DispatchEvent(leave_event);
-            } catch (...) {
-                // 元素已被销毁，忽略
-            }
+        if (old_hover) {
+            auto leave_event = std::make_shared<MouseEvent>(
+                "mouseleave",
+                static_cast<int>(mouse_x),
+                static_cast<int>(mouse_y),
+                0
+            );
+            old_hover->DispatchEvent(leave_event);
         }
 
         // 发送mouseenter到新的hover元素
-        if (new_hover_element) {
-            try {
-                auto new_element_ptr = std::static_pointer_cast<Element>(new_hover_element->shared_from_this());
-                auto enter_event = std::make_shared<MouseEvent>(
-                    "mouseenter",
-                    static_cast<int>(mouse_x),
-                    static_cast<int>(mouse_y),
-                    0
-                );
-                new_element_ptr->DispatchEvent(enter_event);
-            } catch (...) {
-                // 元素已被销毁，忽略
-            }
+        if (new_hover) {
+            auto enter_event = std::make_shared<MouseEvent>(
+                "mouseenter",
+                static_cast<int>(mouse_x),
+                static_cast<int>(mouse_y),
+                0
+            );
+            new_hover->DispatchEvent(enter_event);
         }
     }
 
@@ -457,16 +504,33 @@ void EventLoop::UpdateHoverChain(Uint32 window_id, float mouse_x, float mouse_y)
     hover_element_ = new_hover_element;
 }
 
-void EventLoop::SendEvents(const std::unordered_set<Element*>& old_items,
-                          const std::unordered_set<Element*>& new_items,
+void EventLoop::SendEvents(const std::vector<std::weak_ptr<Element>>& old_items,
+                          const std::vector<std::weak_ptr<Element>>& new_items,
                           const std::string& event_type,
                           float mouse_x,
                           float mouse_y) {
     // 参考：RmlUi/Source/Core/Context.cpp - SendEvents
     // 找出在old_items中但不在new_items中的元素
 
-    for (Element* element : old_items) {
-        if (new_items.find(element) == new_items.end()) {
+    for (const auto& weak_elem : old_items) {
+        // 尝试锁定 weak_ptr
+        auto element = weak_elem.lock();
+        if (!element) {
+            // 元素已被销毁，跳过
+            continue;
+        }
+
+        // 检查是否在新集合中
+        bool found = false;
+        for (const auto& new_weak : new_items) {
+            auto new_elem = new_weak.lock();
+            if (new_elem && new_elem == element) {
+                found = true;
+                break;
+            }
+        }
+
+        if (!found) {
             // 这个元素在旧集合中但不在新集合中
 
             // 创建鼠标事件
@@ -478,21 +542,13 @@ void EventLoop::SendEvents(const std::unordered_set<Element*>& old_items,
             );
 
             // 分发事件
-            // 注意：这里需要将原始指针转换为shared_ptr
-            // 由于Element继承自Node，而Node使用enable_shared_from_this
-            // 我们可以通过element->shared_from_this()获取shared_ptr
-            try {
-                auto element_ptr = std::static_pointer_cast<Element>(element->shared_from_this());
-                element_ptr->DispatchEvent(mouse_event);
+            element->DispatchEvent(mouse_event);
 
-                // 根据事件类型设置/移除:hover伪类
-                if (event_type == "mouseover") {
-                    element_ptr->SetPseudoClass("hover", true);
-                } else if (event_type == "mouseout") {
-                    element_ptr->SetPseudoClass("hover", false);
-                }
-            } catch (...) {
-                // 如果shared_from_this失败，说明元素已被销毁，忽略
+            // 根据事件类型设置/移除:hover伪类
+            if (event_type == "mouseover") {
+                element->SetPseudoClass("hover", true);
+            } else if (event_type == "mouseout") {
+                element->SetPseudoClass("hover", false);
             }
         }
     }

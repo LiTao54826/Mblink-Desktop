@@ -68,6 +68,11 @@ target_link_libraries(lightui_dom PUBLIC
     lexbor_static
 )
 
+# 链接Skia（如果启用）- 需要SkRect.h
+if(TARGET skia)
+    target_link_libraries(lightui_dom PUBLIC skia)
+endif()
+
 # 匹配 Skia 的运行时库设置
 if(MSVC)
     target_compile_options(lightui_dom PUBLIC

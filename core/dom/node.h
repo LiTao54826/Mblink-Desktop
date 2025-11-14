@@ -19,6 +19,7 @@
 #include <string>
 #include <vector>
 #include <memory>
+#include "include/core/SkRect.h"
 
 namespace lightui {
 
@@ -27,6 +28,39 @@ class Element;
 class Text;
 class Document;
 class LayoutBox;
+
+/**
+ * @brief 脏标记类型枚举
+ * 用于精确标记节点的哪些部分需要更新
+ */
+enum class DirtyType : uint32_t {
+    NONE = 0,
+    LAYOUT = 1 << 0,    // 需要重新布局（位置、大小改变）
+    PAINT = 1 << 1,     // 需要重新绘制（样式改变）
+    STYLE = 1 << 2,     // 样式改变
+    ALL = LAYOUT | PAINT | STYLE
+};
+
+// 位运算支持
+inline DirtyType operator|(DirtyType a, DirtyType b) {
+    return static_cast<DirtyType>(static_cast<uint32_t>(a) | static_cast<uint32_t>(b));
+}
+
+inline DirtyType operator&(DirtyType a, DirtyType b) {
+    return static_cast<DirtyType>(static_cast<uint32_t>(a) & static_cast<uint32_t>(b));
+}
+
+inline DirtyType operator~(DirtyType a) {
+    return static_cast<DirtyType>(~static_cast<uint32_t>(a));
+}
+
+inline uint32_t operator&(uint32_t a, DirtyType b) {
+    return a & static_cast<uint32_t>(b);
+}
+
+inline uint32_t operator|(uint32_t a, DirtyType b) {
+    return a | static_cast<uint32_t>(b);
+}
 
 /**
  * @brief 节点类型枚举
@@ -162,19 +196,57 @@ public:
     
     /**
      * @brief 标记节点为脏（需要重新布局/渲染）
+     * @param type 脏标记类型，默认为ALL
      */
-    void MarkDirty();
-    
+    void MarkDirty(DirtyType type = DirtyType::ALL);
+
     /**
-     * @brief 检查节点是否为脏
+     * @brief 检查节点是否为脏（兼容旧API）
      * @return true表示需要重新布局/渲染
      */
-    bool IsDirty() const { return is_dirty_; }
-    
+    bool IsDirty() const { return dirty_flags_ != 0; }
+
+    /**
+     * @brief 检查是否需要重新布局
+     * @return true表示需要重新布局
+     */
+    bool IsLayoutDirty() const { return (dirty_flags_ & DirtyType::LAYOUT) != 0; }
+
+    /**
+     * @brief 检查是否需要重新绘制
+     * @return true表示需要重新绘制
+     */
+    bool IsPaintDirty() const { return (dirty_flags_ & DirtyType::PAINT) != 0; }
+
+    /**
+     * @brief 检查是否有样式改变
+     * @return true表示样式改变
+     */
+    bool IsStyleDirty() const { return (dirty_flags_ & DirtyType::STYLE) != 0; }
+
     /**
      * @brief 清除脏标记
+     * @param type 要清除的脏标记类型，默认为ALL
      */
-    void ClearDirty() { is_dirty_ = false; }
+    void ClearDirty(DirtyType type = DirtyType::ALL);
+
+    /**
+     * @brief 获取脏矩形区域（在布局后计算）
+     * @return 脏矩形区域
+     */
+    SkRect GetDirtyRect() const { return dirty_rect_; }
+
+    /**
+     * @brief 设置脏矩形区域
+     * @param rect 脏矩形区域
+     */
+    void SetDirtyRect(const SkRect& rect) { dirty_rect_ = rect; }
+
+    /**
+     * @brief 获取脏标记标志
+     * @return 脏标记标志
+     */
+    uint32_t GetDirtyFlags() const { return dirty_flags_; }
 
 protected:
     /**
@@ -192,7 +264,11 @@ protected:
     NodeType node_type_;
     std::weak_ptr<Node> parent_node_;
     std::vector<std::shared_ptr<Node>> child_nodes_;
-    bool is_dirty_ = true;
+
+    // 脏标记系统
+    bool is_dirty_ = true;  // 保留用于向后兼容
+    uint32_t dirty_flags_ = static_cast<uint32_t>(DirtyType::ALL);  // 脏标记标志
+    SkRect dirty_rect_ = SkRect::MakeEmpty();  // 脏矩形区域
 };
 
 } // namespace lightui

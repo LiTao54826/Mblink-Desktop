@@ -3,6 +3,16 @@
  * @brief Document 类实现
  */
 
+// 性能优化：默认关闭调试日志
+// #define LIGHTUI_DEBUG_BATCH
+
+#ifdef LIGHTUI_DEBUG_BATCH
+    #include <iostream>
+    #define DEBUG_BATCH_LOG(msg) std::cout << msg << std::endl
+#else
+    #define DEBUG_BATCH_LOG(msg) ((void)0)
+#endif
+
 #include "document.h"
 #include "html_input_element.h"
 #include "html_textarea_element.h"
@@ -19,6 +29,7 @@
 #include "html_heading_element.h"
 #include "core/lexbor/lexbor_document.h"
 #include <algorithm>
+#include <iostream>
 #include <lexbor/dom/interfaces/element.h>
 #include <lexbor/dom/interfaces/text.h>
 
@@ -34,6 +45,8 @@ Document::Document()
     , lexbor_doc_(std::make_unique<LexborDocument>())
     , lexbor_dirty_(false) {
 }
+
+Document::~Document() = default;
 
 void Document::Initialize() {
     // 创建基本的 HTML 结构
@@ -343,6 +356,32 @@ void Document::RebuildIdMap(std::shared_ptr<Element> root) {
         if (child_elem) {
             RebuildIdMap(child_elem);
         }
+    }
+}
+
+// ========== 批量更新API (Week 2 - Task 2.3) ==========
+
+void Document::BeginBatch() {
+    batch_depth_++;
+    DEBUG_BATCH_LOG("[Document::BeginBatch] Batch depth: " << batch_depth_);
+}
+
+void Document::EndBatch() {
+    if (batch_depth_ <= 0) {
+        DEBUG_BATCH_LOG("[Document::EndBatch] Warning: EndBatch() called without matching BeginBatch()");
+        return;
+    }
+
+    batch_depth_--;
+    DEBUG_BATCH_LOG("[Document::EndBatch] Batch depth: " << batch_depth_);
+
+    // 只在最外层批量结束时触发重绘
+    if (batch_depth_ == 0) {
+        DEBUG_BATCH_LOG("[Document::EndBatch] Batch complete, notifying observers...");
+
+        // 通知观察者整个文档子树已修改
+        // 这会触发Window的SetNeedsRepaint()
+        observer_manager_.NotifySubtreeModified(this);
     }
 }
 

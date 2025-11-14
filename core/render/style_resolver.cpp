@@ -51,7 +51,10 @@ ComputedStyle StyleResolver::ResolveStyle(std::shared_ptr<Element> element,
     // 这一步必须在继承之后，以确保元素自身的样式优先级高于继承
     ApplyElementSpecificStyle(style, element->GetTagName(), element);
 
-    // 4. 内联样式（最高优先级）- 覆盖所有
+    // 4. 伪类样式（如 :hover, :active, :focus）
+    ApplyPseudoClassStyles(style, element);
+
+    // 5. 内联样式（最高优先级）- 覆盖所有
     ApplyInlineStyle(style, element);
 
     return style;
@@ -768,6 +771,96 @@ void StyleResolver::ParseStyleProperty(ComputedStyle& style,
             style.opacity = std::max(0.0f, std::min(1.0f, style.opacity));
         } catch (...) {
             style.opacity = 1.0f;
+        }
+    }
+}
+
+void StyleResolver::ApplyPseudoClassStyles(ComputedStyle& style, std::shared_ptr<Element> element) {
+    if (!element) {
+        return;
+    }
+
+    std::string tag_name = element->GetTagName();
+
+    // ========== :hover 伪类样式 ==========
+    if (element->HasPseudoClass("hover")) {
+        if (tag_name == "button") {
+            // 按钮悬停：背景色变深
+            style.background_color = "#E0E0E0";
+
+            // 边框颜色稍微变深
+            style.border.color = SkColorSetRGB(180, 180, 180);
+
+            // 增加阴影效果
+            if (!style.box_shadow.empty()) {
+                style.box_shadow[0].offset_y = 6;
+                style.box_shadow[0].blur_radius = 12;
+                style.box_shadow[0].color = SkColorSetARGB(100, 0, 0, 0);
+            }
+        }
+        else if (tag_name == "a") {
+            // 链接悬停：下划线
+            style.text_decoration = "underline";
+        }
+    }
+
+    // ========== :active 伪类样式 ==========
+    if (element->HasPseudoClass("active")) {
+        if (tag_name == "button") {
+            // 按钮按下：背景色更深，阴影减小（按下效果）
+            style.background_color = "#D0D0D0";
+
+            // 边框颜色更深
+            style.border.color = SkColorSetRGB(160, 160, 160);
+
+            // 减小阴影（按下效果）
+            if (!style.box_shadow.empty()) {
+                style.box_shadow[0].offset_y = 2;
+                style.box_shadow[0].blur_radius = 4;
+                style.box_shadow[0].color = SkColorSetARGB(60, 0, 0, 0);
+            }
+        }
+    }
+
+    // ========== :focus-visible 伪类样式 ==========
+    // 只在键盘导航时显示焦点指示器，鼠标点击不显示
+    // 这符合现代浏览器的行为：https://developer.mozilla.org/en-US/docs/Web/CSS/:focus-visible
+    if (element->HasPseudoClass("focus-visible")) {
+        if (tag_name == "button" || tag_name == "input" || tag_name == "textarea" || tag_name == "select") {
+            // 焦点样式：蓝色边框和外发光
+            style.border.width = CSSLength(2, CSSUnit::PX);
+            style.border.color = SkColorSetRGB(66, 153, 225);  // 蓝色
+
+            // 添加外发光效果（使用 box-shadow）
+            CSSBoxShadow focus_shadow;
+            focus_shadow.offset_x = 0;
+            focus_shadow.offset_y = 0;
+            focus_shadow.blur_radius = 4;
+            focus_shadow.spread_radius = 0;
+            focus_shadow.color = SkColorSetARGB(128, 66, 153, 225);  // 半透明蓝色
+            focus_shadow.inset = false;
+
+            style.box_shadow.push_back(focus_shadow);
+        }
+    }
+
+    // ========== :disabled 伪类样式 ==========
+    if (element->HasPseudoClass("disabled")) {
+        // 禁用状态：灰色，半透明
+        style.opacity = 0.6f;
+        style.background_color = "#F5F5F5";
+        style.color = "#999999";
+    }
+
+    // ========== :checked 伪类样式 ==========
+    if (element->HasPseudoClass("checked")) {
+        if (tag_name == "input") {
+            std::string type = element->GetAttribute("type");
+            if (type == "checkbox" || type == "radio") {
+                // 选中状态：蓝色背景
+                style.background_color = "#4299E1";
+                style.border.color = SkColorSetRGB(66, 153, 225);
+            }
         }
     }
 }

@@ -117,6 +117,126 @@ if(WIN32 AND MINGW)
 endif()
 add_test(NAME DOMNodeTest COMMAND test_dom_node)
 
+# Dirty Marking Test (Week 1 - Partial Rendering)
+add_executable(test_dirty_marking unit/test_dirty_marking.cpp)
+target_include_directories(test_dirty_marking PRIVATE
+    ${CMAKE_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/core
+    ${THIRD_PARTY_DIR}/lexbor/source
+)
+target_link_libraries(test_dirty_marking PRIVATE
+    lightui_dom
+    lightui_lexbor
+    lightui_render
+    GTest::gtest
+    GTest::gtest_main
+)
+# Link Lexbor
+if(TARGET lexbor_static)
+    target_link_libraries(test_dirty_marking PRIVATE lexbor_static)
+endif()
+# Link Skia for SkRect
+if(TARGET skia)
+    target_link_libraries(test_dirty_marking PRIVATE skia)
+endif()
+if(WIN32 AND MINGW)
+    target_link_options(test_dirty_marking PRIVATE -static-libgcc -static-libstdc++)
+endif()
+add_test(NAME DirtyMarkingTest COMMAND test_dirty_marking)
+
+# Incremental Rendering Test (Week 2 - Partial Rendering)
+add_executable(test_incremental_rendering unit/test_incremental_rendering.cpp)
+target_include_directories(test_incremental_rendering PRIVATE
+    ${CMAKE_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/core
+    ${THIRD_PARTY_DIR}/lexbor/source
+)
+target_link_libraries(test_incremental_rendering PRIVATE
+    lightui_dom
+    lightui_lexbor
+    lightui_render
+    lightui_window
+    GTest::gtest
+    GTest::gtest_main
+)
+# Link Lexbor
+if(TARGET lexbor_static)
+    target_link_libraries(test_incremental_rendering PRIVATE lexbor_static)
+endif()
+# Link Skia
+if(TARGET skia)
+    target_link_libraries(test_incremental_rendering PRIVATE skia)
+endif()
+# Link SDL3
+if(TARGET SDL3-static)
+    target_link_libraries(test_incremental_rendering PRIVATE SDL3-static)
+endif()
+if(WIN32 AND MINGW)
+    target_link_options(test_incremental_rendering PRIVATE -static-libgcc -static-libstdc++)
+endif()
+add_test(NAME IncrementalRenderingTest COMMAND test_incremental_rendering)
+
+# Real World Application Test (Week 3 - Practical Testing)
+add_executable(test_real_world_app integration/test_real_world_app.cpp)
+target_include_directories(test_real_world_app PRIVATE
+    ${CMAKE_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/core
+    ${THIRD_PARTY_DIR}/lexbor/source
+)
+target_link_libraries(test_real_world_app PRIVATE
+    lightui_dom
+    lightui_lexbor
+    lightui_render
+    lightui_window
+    GTest::gtest
+    GTest::gtest_main
+)
+# Link Lexbor
+if(TARGET lexbor_static)
+    target_link_libraries(test_real_world_app PRIVATE lexbor_static)
+endif()
+# Link Skia
+if(TARGET skia)
+    target_link_libraries(test_real_world_app PRIVATE skia)
+endif()
+# Link SDL3
+if(TARGET SDL3-static)
+    target_link_libraries(test_real_world_app PRIVATE SDL3-static)
+endif()
+if(WIN32 AND MINGW)
+    target_link_options(test_real_world_app PRIVATE -static-libgcc -static-libstdc++)
+endif()
+add_test(NAME RealWorldAppTest COMMAND test_real_world_app)
+
+# Rendering Benchmark (Performance Testing)
+add_executable(benchmark_rendering benchmarks/benchmark_rendering.cpp)
+target_include_directories(benchmark_rendering PRIVATE
+    ${CMAKE_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/core
+    ${THIRD_PARTY_DIR}/lexbor/source
+)
+target_link_libraries(benchmark_rendering PRIVATE
+    lightui_dom
+    lightui_lexbor
+    lightui_render
+    lightui_window
+    GTest::gtest
+    GTest::gtest_main
+)
+if(TARGET lexbor_static)
+    target_link_libraries(benchmark_rendering PRIVATE lexbor_static)
+endif()
+if(TARGET skia)
+    target_link_libraries(benchmark_rendering PRIVATE skia)
+endif()
+if(TARGET SDL3-static)
+    target_link_libraries(benchmark_rendering PRIVATE SDL3-static)
+endif()
+if(WIN32 AND MINGW)
+    target_link_options(benchmark_rendering PRIVATE -static-libgcc -static-libstdc++)
+endif()
+add_test(NAME RenderingBenchmark COMMAND benchmark_rendering)
+
 # DOM Event Test
 add_executable(test_dom_event unit/test_dom_event.cpp)
 target_include_directories(test_dom_event PRIVATE

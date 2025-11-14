@@ -7,9 +7,14 @@
 #include "core/dom/element.h"
 #include "core/dom/document.h"
 #include "core/dom/event.h"
+#include "core/dom/html_input_element.h"
+#include "core/dom/html_textarea_element.h"
+#include "core/window/window.h"
+#include <SDL3/SDL.h>
 #include <algorithm>
 #include <unordered_set>
 #include <functional>
+#include <iostream>
 
 namespace lightui {
 
@@ -34,8 +39,18 @@ bool FocusManager::SetFocus(std::shared_ptr<Element> element, bool focus_visible
 
     // 如果已经是焦点元素，不需要重复设置
     if (old_focus == element) {
+        std::cout << "[FocusManager] Element <" << element->GetTagName()
+                  << "> already has focus, skipping" << std::endl;
         return true;
     }
+
+    std::cout << "[FocusManager] Setting focus: ";
+    if (old_focus) {
+        std::cout << "<" << old_focus->GetTagName() << "> -> ";
+    } else {
+        std::cout << "null -> ";
+    }
+    std::cout << "<" << element->GetTagName() << ">" << std::endl;
 
     // 发送焦点变化事件
     SendFocusEvents(old_focus, element, focus_visible);
@@ -43,18 +58,51 @@ bool FocusManager::SetFocus(std::shared_ptr<Element> element, bool focus_visible
     // 更新焦点元素
     focus_element_ = element;
 
+    // 如果是输入元素，启用SDL文本输入
+    std::string tag_name = element->GetTagName();
+    if (tag_name == "input" || tag_name == "textarea") {
+        std::cout << "[FocusManager] Starting text input for <" << tag_name << ">" << std::endl;
+        if (window_) {
+            SDL_StartTextInput(window_->GetSDLWindow());
+            std::cout << "[FocusManager] SDL_StartTextInput called with window" << std::endl;
+        } else {
+            std::cout << "[FocusManager] Warning: No window set, cannot start text input" << std::endl;
+        }
+    }
+
+    // 触发重绘以显示光标
+    if (window_) {
+        window_->SetNeedsRepaint();
+        std::cout << "[FocusManager] SetNeedsRepaint called" << std::endl;
+    }
+
     return true;
 }
 
 void FocusManager::Blur(std::shared_ptr<Element> element) {
     auto current_focus = focus_element_.lock();
-    
+
     if (current_focus == element) {
+        // 如果是输入元素，停止SDL文本输入
+        std::string tag_name = element->GetTagName();
+        if (tag_name == "input" || tag_name == "textarea") {
+            std::cout << "[FocusManager] Stopping text input for <" << tag_name << ">" << std::endl;
+            if (window_) {
+                SDL_StopTextInput(window_->GetSDLWindow());
+                std::cout << "[FocusManager] SDL_StopTextInput called with window" << std::endl;
+            }
+        }
+
         // 发送blur事件
         SendFocusEvents(current_focus, nullptr, false);
-        
+
         // 清除焦点
         focus_element_.reset();
+
+        // 触发重绘以隐藏光标
+        if (window_) {
+            window_->SetNeedsRepaint();
+        }
     }
 }
 
@@ -136,7 +184,21 @@ bool FocusManager::TabToNextFocusableElement(std::shared_ptr<Document> current_d
 void FocusManager::ClearFocus() {
     auto current_focus = focus_element_.lock();
     if (current_focus) {
+        // 如果是输入元素，停止SDL文本输入
+        std::string tag_name = current_focus->GetTagName();
+        if (tag_name == "input" || tag_name == "textarea") {
+            std::cout << "[FocusManager] Stopping text input for <" << tag_name << ">" << std::endl;
+            if (window_) {
+                SDL_StopTextInput(window_->GetSDLWindow());
+            }
+        }
+
         SendFocusEvents(current_focus, nullptr, false);
+
+        // 触发重绘
+        if (window_) {
+            window_->SetNeedsRepaint();
+        }
     }
     focus_element_.reset();
 }

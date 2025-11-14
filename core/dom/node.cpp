@@ -9,6 +9,7 @@
 #include "dom_observer.h"
 #include <algorithm>
 #include <stdexcept>
+#include <iostream>
 
 namespace lightui {
 
@@ -156,9 +157,11 @@ std::shared_ptr<Node> Node::InsertBefore(std::shared_ptr<Node> new_child,
     // 标记为脏
     MarkDirty();
 
-    // 标记 Lexbor DOM 需要同步
+    // 通知观察者
     auto doc = GetOwnerDocument();
     if (doc) {
+        doc->GetObserverManager().NotifyNodeAdded(new_child.get(), this);
+        // 标记 Lexbor DOM 需要同步
         doc->MarkLexborDirty();
     }
 
@@ -209,9 +212,18 @@ std::shared_ptr<Node> Node::ReplaceChild(std::shared_ptr<Node> new_child,
         throw std::invalid_argument("Old child not found");
     }
 
+    std::cout << "[Node::ReplaceChild] Replacing node (type=" << static_cast<int>(old_child->GetNodeType())
+              << ") with node (type=" << static_cast<int>(new_child->GetNodeType()) << ")" << std::endl;
+
     // 如果new_child已有父节点，先从原父节点移除
     if (auto parent = new_child->GetParentNode()) {
         parent->RemoveChild(new_child);
+    }
+
+    // 通知观察者：旧节点被移除
+    auto doc = GetOwnerDocument();
+    if (doc) {
+        doc->GetObserverManager().NotifyNodeRemoved(old_child.get(), this);
     }
 
     // 替换节点
@@ -219,11 +231,15 @@ std::shared_ptr<Node> Node::ReplaceChild(std::shared_ptr<Node> new_child,
     old_child->SetParentNode(nullptr);
     new_child->SetParentNode(shared_from_this());
 
+    // 通知观察者：新节点被添加
+    if (doc) {
+        doc->GetObserverManager().NotifyNodeAdded(new_child.get(), this);
+    }
+
     // 标记为脏
     MarkDirty();
 
     // 标记 Lexbor DOM 需要同步
-    auto doc = GetOwnerDocument();
     if (doc) {
         doc->MarkLexborDirty();
     }
@@ -272,12 +288,31 @@ void Node::SetTextContent(const std::string& content) {
     }
 }
 
-void Node::MarkDirty() {
+void Node::MarkDirty(DirtyType type) {
+    // 更新脏标记标志
+    dirty_flags_ |= static_cast<uint32_t>(type);
+
+    // 兼容旧代码
     is_dirty_ = true;
 
     // 向上传播脏标记
     if (auto parent = parent_node_.lock()) {
-        parent->MarkDirty();
+        parent->MarkDirty(type);
+    }
+}
+
+void Node::ClearDirty(DirtyType type) {
+    // 清除指定类型的脏标记
+    dirty_flags_ &= ~static_cast<uint32_t>(type);
+
+    // 如果所有脏标记都清除了，更新兼容标志
+    if (dirty_flags_ == 0) {
+        is_dirty_ = false;
+    }
+
+    // 如果清除了绘制标记，也清除脏矩形
+    if ((static_cast<uint32_t>(type) & static_cast<uint32_t>(DirtyType::PAINT)) != 0) {
+        dirty_rect_ = SkRect::MakeEmpty();
     }
 }
 

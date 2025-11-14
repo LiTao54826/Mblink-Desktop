@@ -196,14 +196,14 @@ private:
      *
      * 参考：RmlUi/Source/Core/Context.cpp - SendEvents
      *
-     * @param old_items 旧元素集合
-     * @param new_items 新元素集合
+     * @param old_items 旧元素集合（使用 weak_ptr 避免悬空指针）
+     * @param new_items 新元素集合（使用 weak_ptr 避免悬空指针）
      * @param event_type 事件类型
      * @param mouse_x 鼠标X坐标
      * @param mouse_y 鼠标Y坐标
      */
-    void SendEvents(const std::unordered_set<Element*>& old_items,
-                   const std::unordered_set<Element*>& new_items,
+    void SendEvents(const std::vector<std::weak_ptr<Element>>& old_items,
+                   const std::vector<std::weak_ptr<Element>>& new_items,
                    const std::string& event_type,
                    float mouse_x,
                    float mouse_y);
@@ -226,10 +226,12 @@ private:
 
     // Hover链追踪（参考RmlUi的hover_chain）
     // 存储当前鼠标悬停的元素链（从目标元素到根元素）
-    std::unordered_set<Element*> hover_chain_;
+    // 使用 weak_ptr 避免悬空指针问题
+    std::vector<std::weak_ptr<Element>> hover_chain_;
 
     // 当前悬停的元素（最深层的元素）
-    Element* hover_element_ = nullptr;
+    // 使用 weak_ptr 避免悬空指针问题
+    std::weak_ptr<Element> hover_element_;
 };
 
 } // namespace lightui

@@ -103,8 +103,102 @@ function createDOMElement(vnode) {
     
     // Handle component functions
     if (typeof vnode.type === 'function') {
+        // Create component instance for hooks
+        if (!vnode.__component) {
+            vnode.__component = {
+                __hooks: [],
+                __vnode: vnode,
+                __dom: null,  // Will store the rendered DOM element
+                __rerender: null  // Will be set below
+            };
+        }
+
+        const component = vnode.__component;
+
+        // Set up rerender function
+        component.__rerender = function() {
+            // Set current component for hooks
+            if (typeof PreactHooks !== 'undefined' && PreactHooks.setCurrentComponent) {
+                PreactHooks.setCurrentComponent(component);
+            }
+
+            // Call component function to get new VNode
+            const newVNode = vnode.type(vnode.props);
+
+            // Clear current component
+            if (typeof PreactHooks !== 'undefined' && PreactHooks.setCurrentComponent) {
+                PreactHooks.setCurrentComponent(null);
+            }
+
+            // Get old DOM and parent
+            const oldDOM = component.__dom;
+            if (!oldDOM) {
+                console.log('[Preact] __rerender: oldDOM is null');
+                return;
+            }
+
+            if (!oldDOM.parentNode) {
+                console.log('[Preact] __rerender: oldDOM.parentNode is null');
+                return;
+            }
+
+            const parent = oldDOM.parentNode;
+            console.log('[Preact] __rerender: parent tag=' + parent.tagName);
+
+            // Create new DOM
+            const newDOM = createDOMElement(newVNode);
+
+            if (newDOM) {
+                console.log('[Preact] __rerender: About to replaceChild, old=' + oldDOM.tagName + ', new=' + newDOM.tagName);
+
+                try {
+                    // Replace old DOM with new DOM
+                    parent.replaceChild(newDOM, oldDOM);
+                    console.log('[Preact] __rerender: replaceChild succeeded');
+                } catch (e) {
+                    console.log('[Preact] __rerender: replaceChild failed: ' + e);
+                    return;
+                }
+
+                // Update component state
+                component.__dom = newDOM;
+                component.__renderedVNode = newVNode;
+
+                // Store reference to the component VNode on the new DOM
+                newDOM.__componentVNode = vnode;
+
+                console.log('[Preact] __rerender: Component state updated');
+            } else {
+                console.log('[Preact] __rerender: newDOM is null');
+            }
+        };
+
+        // Set current component for hooks
+        if (typeof PreactHooks !== 'undefined' && PreactHooks.setCurrentComponent) {
+            PreactHooks.setCurrentComponent(component);
+        }
+
+        // Call component function
         const componentVNode = vnode.type(vnode.props);
-        return createDOMElement(componentVNode);
+
+        // Clear current component
+        if (typeof PreactHooks !== 'undefined' && PreactHooks.setCurrentComponent) {
+            PreactHooks.setCurrentComponent(null);
+        }
+
+        // Create DOM element
+        const dom = createDOMElement(componentVNode);
+
+        // Store DOM reference and rendered VNode
+        component.__dom = dom;
+        component.__renderedVNode = componentVNode;
+
+        // Store reference to the component VNode on the DOM
+        if (dom) {
+            dom.__componentVNode = vnode;
+        }
+
+        return dom;
     }
     
     // Handle Fragment

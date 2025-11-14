@@ -37,6 +37,8 @@ namespace lightui {
 class Document;
 class Renderer;
 class DOMObserver;
+class RenderObject;
+class Node;
 
 /**
  * @brief 渲染后端类型
@@ -302,9 +304,19 @@ public:
     std::shared_ptr<Document> GetDocument() const { return document_; }
 
     /**
-     * @brief 渲染文档到窗口
+     * @brief 渲染文档到窗口（全量渲染 - 旧版本）
      */
     void RenderDocument();
+
+    /**
+     * @brief 增量渲染文档到窗口（Week 2优化版本）
+     *
+     * 优化策略:
+     * - 缓存渲染树，只在DOM结构改变时重建
+     * - 收集脏区域，只渲染改变的部分
+     * - 增量布局，只重新布局脏子树
+     */
+    void RenderDocumentIncremental();
 
     /**
      * @brief 清空画布
@@ -316,6 +328,11 @@ public:
      * @brief 标记需要重绘
      */
     void SetNeedsRepaint() { needs_repaint_ = true; }
+
+    /**
+     * @brief 标记渲染树需要重建
+     */
+    void InvalidateRenderTree() { render_tree_valid_ = false; }
 
     /**
      * @brief 检查是否需要重绘
@@ -354,6 +371,28 @@ private:
      */
     void InitCPURendering();
 
+    /**
+     * @brief 递归清除DOM节点的脏标记
+     * @param node 要清除的节点
+     */
+    void ClearDirtyFlags(Node* node);
+
+    /**
+     * @brief 增量布局：只布局需要布局的子树
+     * @param render_obj 渲染对象
+     * @param parent_width 父元素宽度
+     * @param parent_height 父元素高度
+     * @return true表示该节点或其子节点被重新布局
+     */
+    bool LayoutDirtySubtree(RenderObject* render_obj, float parent_width, float parent_height);
+
+    /**
+     * @brief 将DOM节点的脏标记传播到对应的RenderObject
+     * @param dom_node DOM节点
+     * @param render_obj 渲染对象
+     */
+    void MarkRenderObjectsDirty(Node* dom_node, RenderObject* render_obj);
+
 private:
     WindowConfig config_;
     SDL_Window* sdl_window_ = nullptr;
@@ -380,6 +419,10 @@ private:
     std::unique_ptr<Renderer> renderer_;
     std::unique_ptr<DOMObserver> dom_observer_;  // DOM 观察者
     bool needs_repaint_ = true;  // 初始需要绘制
+
+    // Week 2: 增量渲染优化
+    std::shared_ptr<RenderObject> cached_render_tree_;  // 缓存的渲染树
+    bool render_tree_valid_ = false;  // 渲染树是否有效
 };
 
 } // namespace lightui

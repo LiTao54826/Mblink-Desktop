@@ -45,25 +45,28 @@ function getHookState(index) {
  */
 function useState(initialValue) {
     const hookState = getHookState(currentHookIndex++);
-    
+
     if (!('value' in hookState)) {
         hookState.value = typeof initialValue === 'function' ? initialValue() : initialValue;
     }
-    
+
+    // Capture the component reference when creating setState
+    const component = currentComponent;
+
     const setState = (newValue) => {
-        const nextValue = typeof newValue === 'function' 
-            ? newValue(hookState.value) 
+        const nextValue = typeof newValue === 'function'
+            ? newValue(hookState.value)
             : newValue;
-        
+
         if (hookState.value !== nextValue) {
             hookState.value = nextValue;
-            // Trigger re-render
-            if (currentComponent.__rerender) {
-                currentComponent.__rerender();
+            // Trigger re-render using captured component reference
+            if (component && component.__rerender) {
+                component.__rerender();
             }
         }
     };
-    
+
     return [hookState.value, setState];
 }
 
@@ -192,23 +195,26 @@ function useContext(context) {
  */
 function useReducer(reducer, initialState, init) {
     const hookState = getHookState(currentHookIndex++);
-    
+
     if (!('value' in hookState)) {
         hookState.value = init ? init(initialState) : initialState;
     }
-    
+
+    // Capture the component reference when creating dispatch
+    const component = currentComponent;
+
     const dispatch = (action) => {
         const nextState = reducer(hookState.value, action);
-        
+
         if (hookState.value !== nextState) {
             hookState.value = nextState;
-            // Trigger re-render
-            if (currentComponent.__rerender) {
-                currentComponent.__rerender();
+            // Trigger re-render using captured component reference
+            if (component && component.__rerender) {
+                component.__rerender();
             }
         }
     };
-    
+
     return [hookState.value, dispatch];
 }
 

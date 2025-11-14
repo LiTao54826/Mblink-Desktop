@@ -8,10 +8,7 @@
 #include "core/dom/document.h"
 #include "core/dom/element.h"
 #include "core/dom/dom_bindings.h"
-#include "core/lexbor/lexbor_document.h"
 #include "core/quickjs/quickjs_runtime.h"
-#include "core/quickjs/preact_bindings.h"
-#include "core/quickjs/preact_renderer.h"
 #include "core/event/event_loop.h"
 #include <iostream>
 #include <fstream>
@@ -92,55 +89,42 @@ int main(int argc, char** argv) {
         std::cout << "  ✓ Window registered" << std::endl;
         
         // 2. 创建Document
-        std::cout << "[2/8] Creating document..." << std::endl;
+        std::cout << "[2/6] Creating document..." << std::endl;
         auto document = std::make_shared<Document>();
         document->Initialize();
         std::cout << "  ✓ Document initialized" << std::endl;
-        
+
         // 3. 创建QuickJS运行时
-        std::cout << "[3/8] Creating QuickJS runtime..." << std::endl;
+        std::cout << "[3/6] Creating QuickJS runtime..." << std::endl;
         auto runtime = std::make_unique<QuickJSRuntime>();
         ctx = runtime->GetContext();
         std::cout << "  ✓ QuickJS runtime created" << std::endl;
-        
-        // 4. 创建PreactRenderer
-        std::cout << "[4/8] Creating Preact renderer..." << std::endl;
-        auto renderer = std::make_shared<PreactRenderer>(runtime.get(), document);
-        std::cout << "  ✓ Preact renderer created" << std::endl;
 
-        // 5. 初始化绑定
-        std::cout << "[5/8] Initializing bindings..." << std::endl;
+        // 4. 初始化DOM绑定
+        std::cout << "[4/6] Initializing DOM bindings..." << std::endl;
         DOMBindings::Init(ctx);
-        PreactBindings::Init(ctx, renderer);
-        std::cout << "  ✓ DOM and Preact bindings initialized" << std::endl;
+        DOMBindings::SetGlobalDocument(ctx, document);
+        std::cout << "  ✓ DOM bindings initialized" << std::endl;
 
-        // 暴露document到JavaScript
-        JSValue global = JS_GetGlobalObject(ctx);
-        JSValue doc_obj = DOMBindings::WrapDocument(ctx, document);
-        JS_SetPropertyStr(ctx, global, "document", doc_obj);
-        JS_FreeValue(ctx, global);
-        std::cout << "  ✓ Document exposed to JavaScript" << std::endl;
-        
-        // 6. 加载Preact库
-        std::cout << "[6/8] Loading Preact library..." << std::endl;
+        // 5. 加载Preact库
+        std::cout << "[5/6] Loading Preact library..." << std::endl;
         std::string preact_code = ReadFile("js/preact/preact.js");
         runtime->Eval(preact_code, "preact.js");
         std::cout << "  ✓ preact.js loaded" << std::endl;
-        
+
         std::string hooks_code = ReadFile("js/preact/hooks.js");
         runtime->Eval(hooks_code, "hooks.js");
         std::cout << "  ✓ hooks.js loaded" << std::endl;
-        
-        // 7. 加载并运行应用
-        std::cout << "[7/8] Loading and running app..." << std::endl;
+
+        // 6. 加载并运行应用
+        std::cout << "[6/6] Loading and running app..." << std::endl;
         std::string app_code = ReadFile("examples/preact_window_demo/app.js");
         runtime->Eval(app_code, "app.js");
         std::cout << "  ✓ App loaded and rendered" << std::endl;
-        
-        // 8. 将文档关联到窗口
-        std::cout << "[8/8] Attaching document to window..." << std::endl;
+
+        // 将文档关联到窗口
         window->SetDocument(document);
-        std::cout << "  ✓ Document attached" << std::endl;
+        std::cout << "  ✓ Document attached to window" << std::endl;
 
         // 打印DOM树（调试）
         std::cout << std::endl;
@@ -199,22 +183,14 @@ int main(int argc, char** argv) {
         std::cout << "========================================" << std::endl;
         std::cout << "  👋 Application Closed" << std::endl;
         std::cout << "========================================" << std::endl;
-        
-        // 清理Preact绑定
-        if (ctx) {
-            PreactBindings::Cleanup(ctx);
-        }
-        
+
+        // 清理DOM绑定
+        DOMBindings::Cleanup(ctx);
+
         return 0;
     }
     catch (const std::exception& e) {
         std::cerr << "❌ Error: " << e.what() << std::endl;
-        
-        // 清理Preact绑定
-        if (ctx) {
-            PreactBindings::Cleanup(ctx);
-        }
-        
         return 1;
     }
 }
