@@ -144,6 +144,38 @@ if(WIN32 AND MINGW)
 endif()
 add_test(NAME DirtyMarkingTest COMMAND test_dirty_marking)
 
+# Incremental Rendering Test (Week 2 - Partial Rendering)
+add_executable(test_incremental_rendering unit/test_incremental_rendering.cpp)
+target_include_directories(test_incremental_rendering PRIVATE
+    ${CMAKE_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/core
+    ${THIRD_PARTY_DIR}/lexbor/source
+)
+target_link_libraries(test_incremental_rendering PRIVATE
+    lightui_dom
+    lightui_lexbor
+    lightui_render
+    lightui_window
+    GTest::gtest
+    GTest::gtest_main
+)
+# Link Lexbor
+if(TARGET lexbor_static)
+    target_link_libraries(test_incremental_rendering PRIVATE lexbor_static)
+endif()
+# Link Skia
+if(TARGET skia)
+    target_link_libraries(test_incremental_rendering PRIVATE skia)
+endif()
+# Link SDL3
+if(TARGET SDL3-static)
+    target_link_libraries(test_incremental_rendering PRIVATE SDL3-static)
+endif()
+if(WIN32 AND MINGW)
+    target_link_options(test_incremental_rendering PRIVATE -static-libgcc -static-libstdc++)
+endif()
+add_test(NAME IncrementalRenderingTest COMMAND test_incremental_rendering)
+
 # DOM Event Test
 add_executable(test_dom_event unit/test_dom_event.cpp)
 target_include_directories(test_dom_event PRIVATE

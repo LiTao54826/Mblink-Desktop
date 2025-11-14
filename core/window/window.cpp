@@ -1030,13 +1030,25 @@ void Window::MarkRenderObjectsDirty(Node* dom_node, RenderObject* render_obj) {
     }
 
     // 递归处理子节点
+    // 注意：DOM树和渲染树结构可能不一致（display:none、空白文本节点等会被跳过）
+    // 因此我们需要通过RenderObject的node_指针来匹配
     const auto& dom_children = dom_node->GetChildNodes();
     const auto& render_children = render_obj->GetChildren();
 
-    // 简化实现：假设DOM树和渲染树结构一致
-    size_t min_size = std::min(dom_children.size(), render_children.size());
-    for (size_t i = 0; i < min_size; ++i) {
-        MarkRenderObjectsDirty(dom_children[i].get(), render_children[i].get());
+    for (const auto& render_child : render_children) {
+        // 获取渲染对象对应的DOM节点
+        auto render_child_node = render_child->GetNode();
+        if (!render_child_node) {
+            continue;
+        }
+
+        // 在DOM子节点中查找匹配的节点
+        for (const auto& dom_child : dom_children) {
+            if (dom_child.get() == render_child_node.get()) {
+                MarkRenderObjectsDirty(dom_child.get(), render_child.get());
+                break;
+            }
+        }
     }
 }
 
