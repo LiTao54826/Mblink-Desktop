@@ -17,6 +17,7 @@ set(RENDER_SOURCES
     render_inline_block.cpp
     style_resolver.cpp
     dirty_region.cpp
+    dirty_region_collector.cpp
     performance_monitor.cpp
     layer.cpp
     render_cache.cpp
@@ -40,6 +41,7 @@ set(RENDER_HEADERS
     render_inline_block.h
     style_resolver.h
     dirty_region.h
+    dirty_region_collector.h
     performance_monitor.h
     layer.h
     render_cache.h
