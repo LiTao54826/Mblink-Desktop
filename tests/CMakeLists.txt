@@ -176,6 +176,35 @@ if(WIN32 AND MINGW)
 endif()
 add_test(NAME IncrementalRenderingTest COMMAND test_incremental_rendering)
 
+# Rendering Benchmark (Performance Testing)
+add_executable(benchmark_rendering benchmarks/benchmark_rendering.cpp)
+target_include_directories(benchmark_rendering PRIVATE
+    ${CMAKE_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/core
+    ${THIRD_PARTY_DIR}/lexbor/source
+)
+target_link_libraries(benchmark_rendering PRIVATE
+    lightui_dom
+    lightui_lexbor
+    lightui_render
+    lightui_window
+    GTest::gtest
+    GTest::gtest_main
+)
+if(TARGET lexbor_static)
+    target_link_libraries(benchmark_rendering PRIVATE lexbor_static)
+endif()
+if(TARGET skia)
+    target_link_libraries(benchmark_rendering PRIVATE skia)
+endif()
+if(TARGET SDL3-static)
+    target_link_libraries(benchmark_rendering PRIVATE SDL3-static)
+endif()
+if(WIN32 AND MINGW)
+    target_link_options(benchmark_rendering PRIVATE -static-libgcc -static-libstdc++)
+endif()
+add_test(NAME RenderingBenchmark COMMAND benchmark_rendering)
+
 # DOM Event Test
 add_executable(test_dom_event unit/test_dom_event.cpp)
 target_include_directories(test_dom_event PRIVATE
