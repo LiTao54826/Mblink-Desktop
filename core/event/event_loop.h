@@ -21,6 +21,8 @@ class FrameController;
 class InputHandler;
 class TaskScheduler;
 class Element;
+class Node;
+class HTMLInputElement;
 class FocusManager;
 class DragManager;
 
@@ -37,10 +39,16 @@ class DragManager;
 class EventLoop {
 public:
     /**
-     * @brief 构造函数
+     * @brief 构造函数（创建内部 TaskScheduler）
      */
     EventLoop();
-    
+
+    /**
+     * @brief 构造函数（使用外部 TaskScheduler）
+     * @param task_scheduler 外部任务调度器
+     */
+    explicit EventLoop(std::shared_ptr<TaskScheduler> task_scheduler);
+
     /**
      * @brief 析构函数
      */
@@ -173,6 +181,22 @@ private:
     void HandleKeyboardEventForDOM(const SDL_Event& event);
 
     /**
+     * @brief 处理表单元素的默认行为（参考 RmlUi InputTypeCheckbox::ProcessDefaultAction）
+     *
+     * @param element 被点击的元素
+     */
+    void ProcessFormElementDefaultAction(std::shared_ptr<Element> element);
+
+    /**
+     * @brief 取消同组 radio 的选中状态
+     *
+     * @param node 起始节点
+     * @param group_name radio 组名
+     * @param except 排除的元素（当前选中的 radio）
+     */
+    void UncheckRadioGroup(const std::shared_ptr<Node>& node, const std::string& group_name, const std::shared_ptr<HTMLInputElement>& except);
+
+    /**
      * @brief 将 SDL 鼠标按钮转换为鼠标按钮编号
      *
      * @param sdl_button SDL 鼠标按钮
@@ -220,7 +244,7 @@ private:
     // 子系统（前向声明，实现文件中定义）
     std::unique_ptr<FrameController> frame_controller_;
     std::unique_ptr<InputHandler> input_handler_;
-    std::unique_ptr<TaskScheduler> task_scheduler_;
+    std::shared_ptr<TaskScheduler> task_scheduler_;  // 可以是外部的或内部创建的
     std::unique_ptr<FocusManager> focus_manager_;
     std::unique_ptr<DragManager> drag_manager_;
 

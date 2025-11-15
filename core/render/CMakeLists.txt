@@ -91,6 +91,14 @@ target_link_libraries(lightui_render PUBLIC
     lightui_quickjs
 )
 
+# 链接Yoga（如果可用）
+if(TARGET yogacore)
+    target_link_libraries(lightui_render PUBLIC yogacore)
+    message(STATUS "Render module: Linking Yoga")
+else()
+    message(WARNING "Render module: Yoga target not found")
+endif()
+
 # 链接Skia（如果启用）
 if(TARGET skia)
     target_link_libraries(lightui_render PUBLIC skia)

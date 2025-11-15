@@ -19,6 +19,8 @@
 #include "dom_token_list.h"
 #include "css_style_declaration.h"
 #include "dom_string_map.h"
+#include "html_input_element.h"
+#include "html_textarea_element.h"
 #include "core/event/task_scheduler.h"
 #include <memory>
 #include <unordered_map>

@@ -811,6 +811,62 @@ static JSValue js_element_set_inner_html(JSContext* ctx, JSValueConst this_val, 
         return JS_EXCEPTION;
     }
 
+    // 在设置innerHTML之前，需要做两件事：
+    // 1. 清除焦点（如果焦点元素在子树中）
+    // 2. 清理所有子节点的缓存
+
+    // 1. 清除焦点
+    // 获取当前焦点元素，检查是否在即将被删除的子树中
+    auto doc = element->GetOwnerDocument();
+    if (doc) {
+        // 注意：我们无法直接访问 FocusManager，所以我们通过 Document 来清除焦点
+        // 这里我们简单地遍历子树，如果发现有元素有 :focus 伪类，就清除它
+        std::function<void(std::shared_ptr<Node>)> clear_focus_recursive;
+        clear_focus_recursive = [&](std::shared_ptr<Node> node) {
+            if (!node) return;
+
+            if (auto elem = std::dynamic_pointer_cast<Element>(node)) {
+                // 如果元素有焦点，移除焦点伪类
+                if (elem->HasPseudoClass("focus")) {
+                    elem->SetPseudoClass("focus", false);
+                    elem->SetPseudoClass("focus-visible", false);
+                }
+            }
+
+            // 递归处理子节点
+            for (const auto& child : node->GetChildNodes()) {
+                clear_focus_recursive(child);
+            }
+        };
+
+        for (const auto& child : element->GetChildNodes()) {
+            clear_focus_recursive(child);
+        }
+    }
+
+    // 2. 清理缓存
+    std::function<void(std::shared_ptr<Node>)> clear_cache_recursive;
+    clear_cache_recursive = [&](std::shared_ptr<Node> node) {
+        if (!node) return;
+
+        // 清理当前节点的缓存
+        if (auto elem = std::dynamic_pointer_cast<Element>(node)) {
+            DOMBindings::RemoveFromElementCache(elem.get());
+        } else if (auto text = std::dynamic_pointer_cast<Text>(node)) {
+            DOMBindings::RemoveFromTextCache(text.get());
+        }
+
+        // 递归清理子节点
+        for (const auto& child : node->GetChildNodes()) {
+            clear_cache_recursive(child);
+        }
+    };
+
+    // 清理所有子节点的缓存
+    for (const auto& child : element->GetChildNodes()) {
+        clear_cache_recursive(child);
+    }
+
     element->SetInnerHTML(html);
     JS_FreeCString(ctx, html);
 
@@ -841,6 +897,98 @@ static JSValue js_element_set_outer_html(JSContext* ctx, JSValueConst this_val, 
 
     element->SetOuterHTML(html);
     JS_FreeCString(ctx, html);
+
+    return JS_UNDEFINED;
+}
+
+// ========== HTMLInputElement 特殊属性 ==========
+
+// Element.value getter (for input/textarea elements)
+static JSValue js_element_get_value(JSContext* ctx, JSValueConst this_val, int magic) {
+    auto element = DOMBindings::UnwrapElement(ctx, this_val);
+    if (!element) {
+        return JS_EXCEPTION;
+    }
+
+    // 检查是否是 input 或 textarea 元素
+    std::string tag_name = element->GetTagName();
+    if (tag_name == "input") {
+        auto input = std::dynamic_pointer_cast<HTMLInputElement>(element);
+        if (input) {
+            return JS_NewString(ctx, input->GetValue().c_str());
+        }
+    } else if (tag_name == "textarea") {
+        // TODO: 实现 HTMLTextAreaElement
+        return JS_NewString(ctx, element->GetTextContent().c_str());
+    }
+
+    // 其他元素返回 undefined
+    return JS_UNDEFINED;
+}
+
+// Element.value setter (for input/textarea elements)
+static JSValue js_element_set_value(JSContext* ctx, JSValueConst this_val, JSValueConst val, int magic) {
+    auto element = DOMBindings::UnwrapElement(ctx, this_val);
+    if (!element) {
+        return JS_EXCEPTION;
+    }
+
+    const char* value = JS_ToCString(ctx, val);
+    if (!value) {
+        return JS_EXCEPTION;
+    }
+
+    // 检查是否是 input 或 textarea 元素
+    std::string tag_name = element->GetTagName();
+    if (tag_name == "input") {
+        auto input = std::dynamic_pointer_cast<HTMLInputElement>(element);
+        if (input) {
+            input->SetValue(value, false);  // 不触发事件
+        }
+    } else if (tag_name == "textarea") {
+        // TODO: 实现 HTMLTextAreaElement
+        element->SetTextContent(value);
+    }
+
+    JS_FreeCString(ctx, value);
+    return JS_UNDEFINED;
+}
+
+// Element.checked getter (for checkbox/radio input elements)
+static JSValue js_element_get_checked(JSContext* ctx, JSValueConst this_val, int magic) {
+    auto element = DOMBindings::UnwrapElement(ctx, this_val);
+    if (!element) {
+        return JS_EXCEPTION;
+    }
+
+    // 只对 input 元素有效
+    std::string tag_name = element->GetTagName();
+    if (tag_name == "input") {
+        auto input = std::dynamic_pointer_cast<HTMLInputElement>(element);
+        if (input) {
+            return JS_NewBool(ctx, input->GetChecked());
+        }
+    }
+
+    return JS_UNDEFINED;
+}
+
+// Element.checked setter (for checkbox/radio input elements)
+static JSValue js_element_set_checked(JSContext* ctx, JSValueConst this_val, JSValueConst val, int magic) {
+    auto element = DOMBindings::UnwrapElement(ctx, this_val);
+    if (!element) {
+        return JS_EXCEPTION;
+    }
+
+    // 只对 input 元素有效
+    std::string tag_name = element->GetTagName();
+    if (tag_name == "input") {
+        auto input = std::dynamic_pointer_cast<HTMLInputElement>(element);
+        if (input) {
+            bool checked = JS_ToBool(ctx, val);
+            input->SetChecked(checked, false);  // 不触发事件
+        }
+    }
 
     return JS_UNDEFINED;
 }
@@ -978,6 +1126,10 @@ static const JSCFunctionListEntry js_element_proto_funcs[] = {
     JS_CGETSET_MAGIC_DEF("classList", js_element_get_class_list, nullptr, 0),
     JS_CGETSET_MAGIC_DEF("style", js_element_get_style, nullptr, 0),
     JS_CGETSET_MAGIC_DEF("dataset", js_element_get_dataset, nullptr, 0),
+
+    // HTMLInputElement / HTMLTextAreaElement 特殊属性
+    JS_CGETSET_MAGIC_DEF("value", js_element_get_value, js_element_set_value, 0),
+    JS_CGETSET_MAGIC_DEF("checked", js_element_get_checked, js_element_set_checked, 0),
 
     // 基础方法
     JS_CFUNC_DEF("getAttribute", 1, js_element_get_attribute),
@@ -1566,6 +1718,7 @@ void DOMBindings::SetGlobalDocument(JSContext* ctx, std::shared_ptr<Document> do
     JSValue doc_obj = WrapDocument(ctx, document);
 
     // 设置为全局对象
+    // 注意：JS_SetPropertyStr 会接管 doc_obj 的所有权，不需要手动 FreeValue
     JSValue global = JS_GetGlobalObject(ctx);
     JS_SetPropertyStr(ctx, global, "document", doc_obj);
     JS_FreeValue(ctx, global);
@@ -1580,8 +1733,8 @@ void DOMBindings::Cleanup(JSContext* ctx) {
     }
 
     // 清理所有缓存
-    // 注意：缓存中不持有引用（弱引用），所以不需要FreeValue
-    // finalizer会在对象被GC时自动清理缓存
+    // 注意：缓存使用弱引用（不调用 JS_DupValue），所以不需要调用 JS_FreeValue
+    // 直接清空缓存即可
     element_cache_.clear();
     text_cache_.clear();
     document_cache_.clear();
@@ -1614,8 +1767,9 @@ JSValue DOMBindings::WrapElement(JSContext* ctx, std::shared_ptr<Element> elemen
     auto ptr = new std::shared_ptr<Element>(element);
     JS_SetOpaque(obj, ptr);
 
-    // 添加到缓存（不DupValue，让GC正常工作）
-    // 缓存只是一个弱引用，finalizer会负责清理
+    // 添加到缓存（弱引用，不增加引用计数）
+    // 缓存只是一个查找表，不影响GC
+    // finalizer 会在对象被GC时清理缓存
     element_cache_[raw_ptr] = std::make_pair(ctx, obj);
 
     return obj;
@@ -1643,8 +1797,7 @@ JSValue DOMBindings::WrapText(JSContext* ctx, std::shared_ptr<Text> text) {
     auto ptr = new std::shared_ptr<Text>(text);
     JS_SetOpaque(obj, ptr);
 
-    // 添加到缓存（不DupValue，让GC正常工作）
-    // 缓存只是一个弱引用，finalizer会负责清理
+    // 添加到缓存（弱引用，不增加引用计数）
     text_cache_[raw_ptr] = std::make_pair(ctx, obj);
 
     return obj;
@@ -1672,8 +1825,7 @@ JSValue DOMBindings::WrapDocument(JSContext* ctx, std::shared_ptr<Document> docu
     auto ptr = new std::shared_ptr<Document>(document);
     JS_SetOpaque(obj, ptr);
 
-    // 添加到缓存（不DupValue，让GC正常工作）
-    // 缓存只是一个弱引用，finalizer会负责清理
+    // 添加到缓存（弱引用，不增加引用计数）
     document_cache_[raw_ptr] = std::make_pair(ctx, obj);
 
     return obj;
@@ -1751,7 +1903,9 @@ std::shared_ptr<Event> DOMBindings::UnwrapEvent(JSContext* ctx, JSValue obj) {
 void DOMBindings::RemoveFromElementCache(Element* ptr) {
     auto it = element_cache_.find(ptr);
     if (it != element_cache_.end()) {
-        // 缓存不持有引用（弱引用），直接移除即可
+        // 注意：这个函数从 finalizer 调用
+        // 缓存使用弱引用，不需要调用 JS_FreeValue
+        // 直接从缓存中移除即可
         element_cache_.erase(it);
     }
 }
@@ -1759,7 +1913,7 @@ void DOMBindings::RemoveFromElementCache(Element* ptr) {
 void DOMBindings::RemoveFromTextCache(Text* ptr) {
     auto it = text_cache_.find(ptr);
     if (it != text_cache_.end()) {
-        // 缓存不持有引用（弱引用），直接移除即可
+        // 缓存使用弱引用，不需要调用 JS_FreeValue
         text_cache_.erase(it);
     }
 }
@@ -1767,7 +1921,7 @@ void DOMBindings::RemoveFromTextCache(Text* ptr) {
 void DOMBindings::RemoveFromDocumentCache(Document* ptr) {
     auto it = document_cache_.find(ptr);
     if (it != document_cache_.end()) {
-        // 缓存不持有引用（弱引用），直接移除即可
+        // 缓存使用弱引用，不需要调用 JS_FreeValue
         document_cache_.erase(it);
     }
 }
@@ -2315,34 +2469,46 @@ static JSValue js_clear_timeout(JSContext* ctx, JSValueConst this_val, int argc,
 
 // setInterval(callback, interval)
 static JSValue js_set_interval(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) {
+    std::cout << "[js_set_interval] Called with argc=" << argc << std::endl;
+
     if (!g_task_scheduler) {
+        std::cout << "[js_set_interval] ERROR: TaskScheduler not initialized!" << std::endl;
         return JS_ThrowInternalError(ctx, "TaskScheduler not initialized");
     }
 
     if (argc < 2) {
+        std::cout << "[js_set_interval] ERROR: Not enough arguments" << std::endl;
         return JS_ThrowTypeError(ctx, "setInterval requires 2 arguments");
     }
 
     if (!JS_IsFunction(ctx, argv[0])) {
+        std::cout << "[js_set_interval] ERROR: First argument is not a function" << std::endl;
         return JS_ThrowTypeError(ctx, "setInterval requires a function as first argument");
     }
 
     int interval = 0;
     if (JS_ToInt32(ctx, &interval, argv[1]) != 0) {
+        std::cout << "[js_set_interval] ERROR: Second argument is not a number" << std::endl;
         return JS_ThrowTypeError(ctx, "setInterval requires a number as second argument");
     }
+
+    std::cout << "[js_set_interval] Creating interval with " << interval << "ms" << std::endl;
 
     // 使用 JSValueWrapper 管理回调函数的生命周期
     auto callback_wrapper = std::make_shared<JSValueWrapper>(ctx, argv[0]);
 
     int timer_id = g_task_scheduler->SetInterval([ctx, callback_wrapper]() {
+        std::cout << "[setInterval callback] Executing..." << std::endl;
         JSValue ret = JS_Call(ctx, callback_wrapper->Get(), JS_UNDEFINED, 0, nullptr);
         if (JS_IsException(ret)) {
+            std::cout << "[setInterval callback] Exception occurred!" << std::endl;
             js_std_dump_error(ctx);
         }
         JS_FreeValue(ctx, ret);
+        std::cout << "[setInterval callback] Completed" << std::endl;
     }, interval);
 
+    std::cout << "[js_set_interval] Created timer ID: " << timer_id << std::endl;
     return JS_NewInt32(ctx, timer_id);
 }
 

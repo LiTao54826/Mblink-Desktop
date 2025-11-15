@@ -107,7 +107,38 @@ void FocusManager::Blur(std::shared_ptr<Element> element) {
 }
 
 std::shared_ptr<Element> FocusManager::GetFocusElement() const {
-    return focus_element_.lock();
+    auto element = focus_element_.lock();
+
+    // 检查元素是否仍然在 DOM 树中
+    // 如果元素已经从 DOM 树中移除（例如被 innerHTML 清除），则自动清除焦点
+    if (element) {
+        // 检查元素是否有 owner document
+        auto doc = element->GetOwnerDocument();
+        if (!doc) {
+            // 元素不在 DOM 树中，清除焦点
+            const_cast<FocusManager*>(this)->focus_element_.reset();
+            return nullptr;
+        }
+
+        // 检查元素是否连接到 document（通过向上遍历父节点）
+        std::shared_ptr<Node> current = element;
+        bool connected = false;
+        while (current) {
+            if (current->GetNodeType() == NodeType::DOCUMENT_NODE) {
+                connected = true;
+                break;
+            }
+            current = current->GetParentNode();
+        }
+
+        if (!connected) {
+            // 元素已经从 DOM 树中断开，清除焦点
+            const_cast<FocusManager*>(this)->focus_element_.reset();
+            return nullptr;
+        }
+    }
+
+    return element;
 }
 
 bool FocusManager::TabToNextFocusableElement(std::shared_ptr<Document> current_document, bool reverse) {
@@ -351,87 +382,104 @@ void FocusManager::SendFocusEvents(std::shared_ptr<Element> old_focus,
                                   std::shared_ptr<Element> new_focus,
                                   bool focus_visible) {
     // 参考：RmlUi/Source/Core/Context.cpp - OnFocusChange
-    
+
     // 构建焦点链（从元素到根）
-    std::unordered_set<Element*> old_chain;
-    std::unordered_set<Element*> new_chain;
+    // 使用 shared_ptr 而不是裸指针，避免访问已销毁的对象
+    std::vector<std::shared_ptr<Element>> old_chain;
+    std::vector<std::shared_ptr<Element>> new_chain;
 
     // 构建旧焦点链
     if (old_focus) {
-        Element* current = old_focus.get();
+        std::shared_ptr<Node> current = old_focus;
         while (current) {
-            old_chain.insert(current);
-            auto parent = current->GetParentNode();
-            if (parent && parent->GetNodeType() == NodeType::ELEMENT_NODE) {
-                current = static_cast<Element*>(parent.get());
-            } else {
-                current = nullptr;
+            if (current->GetNodeType() == NodeType::ELEMENT_NODE) {
+                old_chain.push_back(std::static_pointer_cast<Element>(current));
             }
+            current = current->GetParentNode();
         }
     }
 
     // 构建新焦点链
     if (new_focus) {
-        Element* current = new_focus.get();
+        std::shared_ptr<Node> current = new_focus;
         while (current) {
-            new_chain.insert(current);
-            auto parent = current->GetParentNode();
-            if (parent && parent->GetNodeType() == NodeType::ELEMENT_NODE) {
-                current = static_cast<Element*>(parent.get());
-            } else {
-                current = nullptr;
+            if (current->GetNodeType() == NodeType::ELEMENT_NODE) {
+                new_chain.push_back(std::static_pointer_cast<Element>(current));
             }
+            current = current->GetParentNode();
         }
     }
 
     // 发送blur/focusout事件到离开焦点链的元素
     // 参考：W3C UI Events - focusout是blur的冒泡版本
-    for (Element* element : old_chain) {
-        if (new_chain.find(element) == new_chain.end()) {
-            try {
-                auto element_ptr = std::static_pointer_cast<Element>(element->shared_from_this());
+    for (const auto& element : old_chain) {
+        // 检查元素是否在新焦点链中
+        bool in_new_chain = false;
+        for (const auto& new_elem : new_chain) {
+            if (new_elem == element) {
+                in_new_chain = true;
+                break;
+            }
+        }
 
+        if (!in_new_chain) {
+            try {
                 // 发送blur事件（不冒泡）
                 auto blur_event = std::make_shared<Event>("blur");
-                element_ptr->DispatchEvent(blur_event);
+                element->DispatchEvent(blur_event);
 
                 // 发送focusout事件（冒泡）
                 auto focusout_event = std::make_shared<Event>("focusout");
-                element_ptr->DispatchEvent(focusout_event);
+                element->DispatchEvent(focusout_event);
 
                 // 移除:focus和:focus-visible伪类
-                element_ptr->SetPseudoClass("focus", false);
-                element_ptr->SetPseudoClass("focus-visible", false);
+                element->SetPseudoClass("focus", false);
+                element->SetPseudoClass("focus-visible", false);
+            } catch (const std::exception& e) {
+                // 元素已被销毁或发生其他错误，忽略
+                std::cout << "[FocusManager] Error sending blur events: " << e.what() << std::endl;
             } catch (...) {
                 // 元素已被销毁，忽略
+                std::cout << "[FocusManager] Unknown error sending blur events" << std::endl;
             }
         }
     }
 
     // 发送focus/focusin事件到进入焦点链的元素
     // 参考：W3C UI Events - focusin是focus的冒泡版本
-    for (Element* element : new_chain) {
-        if (old_chain.find(element) == old_chain.end()) {
-            try {
-                auto element_ptr = std::static_pointer_cast<Element>(element->shared_from_this());
+    for (const auto& element : new_chain) {
+        // 检查元素是否在旧焦点链中
+        bool in_old_chain = false;
+        for (const auto& old_elem : old_chain) {
+            if (old_elem == element) {
+                in_old_chain = true;
+                break;
+            }
+        }
 
+        if (!in_old_chain) {
+            try {
                 // 发送focus事件（不冒泡）
                 auto focus_event = std::make_shared<Event>("focus");
-                element_ptr->DispatchEvent(focus_event);
+                element->DispatchEvent(focus_event);
 
                 // 发送focusin事件（冒泡）
                 auto focusin_event = std::make_shared<Event>("focusin");
-                element_ptr->DispatchEvent(focusin_event);
+                element->DispatchEvent(focusin_event);
 
                 // 设置:focus伪类
-                element_ptr->SetPseudoClass("focus", true);
+                element->SetPseudoClass("focus", true);
 
                 // 如果是键盘导航，设置:focus-visible伪类
                 if (focus_visible) {
-                    element_ptr->SetPseudoClass("focus-visible", true);
+                    element->SetPseudoClass("focus-visible", true);
                 }
+            } catch (const std::exception& e) {
+                // 元素已被销毁或发生其他错误，忽略
+                std::cout << "[FocusManager] Error sending focus events: " << e.what() << std::endl;
             } catch (...) {
                 // 元素已被销毁，忽略
+                std::cout << "[FocusManager] Unknown error sending focus events" << std::endl;
             }
         }
     }

@@ -29,22 +29,38 @@ RenderObject::RenderObject(RenderObjectType type)
     , computed_style_()
     , layout_info_()
     , needs_layout_(true)
-    , needs_paint_(true) {
+    , needs_paint_(true)
+    , yoga_node_(nullptr) {
+    // 创建 Yoga 节点
+    yoga_node_ = YGNodeNew();
+}
+
+RenderObject::~RenderObject() {
+    // 释放 Yoga 节点
+    if (yoga_node_) {
+        YGNodeFree(yoga_node_);
+        yoga_node_ = nullptr;
+    }
 }
 
 void RenderObject::AppendChild(std::shared_ptr<RenderObject> child) {
     if (!child) {
         return;
     }
-    
+
     // 从原父节点移除
     if (auto old_parent = child->GetParent()) {
         old_parent->RemoveChild(child);
     }
-    
+
     children_.push_back(child);
     child->SetParent(shared_from_this());
-    
+
+    // 同步 Yoga 树结构
+    if (yoga_node_ && child->yoga_node_) {
+        YGNodeInsertChild(yoga_node_, child->yoga_node_, YGNodeGetChildCount(yoga_node_));
+    }
+
     MarkNeedsLayout();
     MarkNeedsPaint();
 }
@@ -52,6 +68,11 @@ void RenderObject::AppendChild(std::shared_ptr<RenderObject> child) {
 void RenderObject::RemoveChild(std::shared_ptr<RenderObject> child) {
     auto it = std::find(children_.begin(), children_.end(), child);
     if (it != children_.end()) {
+        // 同步 Yoga 树结构
+        if (yoga_node_ && child->yoga_node_) {
+            YGNodeRemoveChild(yoga_node_, child->yoga_node_);
+        }
+
         (*it)->SetParent(nullptr);
         children_.erase(it);
         MarkNeedsLayout();
@@ -60,17 +81,38 @@ void RenderObject::RemoveChild(std::shared_ptr<RenderObject> child) {
 }
 
 void RenderObject::RemoveAllChildren() {
-    for (auto& child : children_) {
-        child->SetParent(nullptr);
+    // 同步 Yoga 树结构
+    if (yoga_node_) {
+        for (auto& child : children_) {
+            if (child->yoga_node_) {
+                YGNodeRemoveChild(yoga_node_, child->yoga_node_);
+            }
+            child->SetParent(nullptr);
+        }
+    } else {
+        for (auto& child : children_) {
+            child->SetParent(nullptr);
+        }
     }
+
     children_.clear();
     MarkNeedsLayout();
     MarkNeedsPaint();
 }
 
 void RenderObject::Layout(float parent_width, float parent_height) {
-    // 基类默认实现：什么都不做
-    layout_info_.is_laid_out = true;
+    // 判断是否使用 Flexbox 布局
+    bool use_flexbox = (computed_style_.display == "flex" ||
+                        computed_style_.display == "inline-flex");
+
+    if (use_flexbox && yoga_node_) {
+        // 使用 Yoga 进行 Flexbox 布局
+        LayoutWithYoga(parent_width, parent_height);
+    } else {
+        // 使用 Block/Inline 布局（CSS 标准布局）
+        LayoutBlockInline(parent_width, parent_height);
+    }
+
     needs_layout_ = false;
 }
 
@@ -82,6 +124,18 @@ void RenderObject::Paint(SkCanvas* canvas) {
 // ========== RenderBlock 实现 ==========
 
 void RenderBlock::Layout(float parent_width, float parent_height) {
+    // 判断是否使用 Flexbox 布局
+    bool use_flexbox = (computed_style_.display == "flex" ||
+                        computed_style_.display == "inline-flex");
+
+    if (use_flexbox && yoga_node_) {
+        // 使用 Yoga 进行 Flexbox 布局
+        LayoutWithYoga(parent_width, parent_height);
+        needs_layout_ = false;
+        return;
+    }
+
+    // 使用传统布局
     const auto& style = computed_style_;
     
     // 计算宽度
@@ -1144,6 +1198,352 @@ void RenderText::Paint(SkCanvas* canvas) {
     canvas->restore();
 
     needs_paint_ = false;
+}
+
+// ========== Yoga 布局辅助函数 ==========
+
+void RenderObject::ApplyYogaStyle() {
+    if (!yoga_node_) {
+        return;
+    }
+
+    const auto& style = computed_style_;
+
+    // Display
+    if (style.display == "none") {
+        YGNodeStyleSetDisplay(yoga_node_, YGDisplayNone);
+        return;  // 如果是 none，其他样式不需要设置
+    } else if (style.display == "flex" || style.display == "inline-flex") {
+        YGNodeStyleSetDisplay(yoga_node_, YGDisplayFlex);
+    } else {
+        // block, inline, inline-block 等使用默认的 flex 显示
+        YGNodeStyleSetDisplay(yoga_node_, YGDisplayFlex);
+    }
+
+    // Flex Direction
+    if (style.flex_direction == "row") {
+        YGNodeStyleSetFlexDirection(yoga_node_, YGFlexDirectionRow);
+    } else if (style.flex_direction == "row-reverse") {
+        YGNodeStyleSetFlexDirection(yoga_node_, YGFlexDirectionRowReverse);
+    } else if (style.flex_direction == "column") {
+        YGNodeStyleSetFlexDirection(yoga_node_, YGFlexDirectionColumn);
+    } else if (style.flex_direction == "column-reverse") {
+        YGNodeStyleSetFlexDirection(yoga_node_, YGFlexDirectionColumnReverse);
+    }
+
+    // Flex Wrap
+    if (style.flex_wrap == "nowrap") {
+        YGNodeStyleSetFlexWrap(yoga_node_, YGWrapNoWrap);
+    } else if (style.flex_wrap == "wrap") {
+        YGNodeStyleSetFlexWrap(yoga_node_, YGWrapWrap);
+    } else if (style.flex_wrap == "wrap-reverse") {
+        YGNodeStyleSetFlexWrap(yoga_node_, YGWrapWrapReverse);
+    }
+
+    // Justify Content
+    if (style.justify_content == "flex-start") {
+        YGNodeStyleSetJustifyContent(yoga_node_, YGJustifyFlexStart);
+    } else if (style.justify_content == "flex-end") {
+        YGNodeStyleSetJustifyContent(yoga_node_, YGJustifyFlexEnd);
+    } else if (style.justify_content == "center") {
+        YGNodeStyleSetJustifyContent(yoga_node_, YGJustifyCenter);
+    } else if (style.justify_content == "space-between") {
+        YGNodeStyleSetJustifyContent(yoga_node_, YGJustifySpaceBetween);
+    } else if (style.justify_content == "space-around") {
+        YGNodeStyleSetJustifyContent(yoga_node_, YGJustifySpaceAround);
+    } else if (style.justify_content == "space-evenly") {
+        YGNodeStyleSetJustifyContent(yoga_node_, YGJustifySpaceEvenly);
+    }
+
+    // Align Items
+    if (style.align_items == "flex-start") {
+        YGNodeStyleSetAlignItems(yoga_node_, YGAlignFlexStart);
+    } else if (style.align_items == "flex-end") {
+        YGNodeStyleSetAlignItems(yoga_node_, YGAlignFlexEnd);
+    } else if (style.align_items == "center") {
+        YGNodeStyleSetAlignItems(yoga_node_, YGAlignCenter);
+    } else if (style.align_items == "baseline") {
+        YGNodeStyleSetAlignItems(yoga_node_, YGAlignBaseline);
+    } else if (style.align_items == "stretch") {
+        YGNodeStyleSetAlignItems(yoga_node_, YGAlignStretch);
+    }
+
+    // Align Content
+    if (style.align_content == "flex-start") {
+        YGNodeStyleSetAlignContent(yoga_node_, YGAlignFlexStart);
+    } else if (style.align_content == "flex-end") {
+        YGNodeStyleSetAlignContent(yoga_node_, YGAlignFlexEnd);
+    } else if (style.align_content == "center") {
+        YGNodeStyleSetAlignContent(yoga_node_, YGAlignCenter);
+    } else if (style.align_content == "stretch") {
+        YGNodeStyleSetAlignContent(yoga_node_, YGAlignStretch);
+    } else if (style.align_content == "space-between") {
+        YGNodeStyleSetAlignContent(yoga_node_, YGAlignSpaceBetween);
+    } else if (style.align_content == "space-around") {
+        YGNodeStyleSetAlignContent(yoga_node_, YGAlignSpaceAround);
+    }
+
+    // Align Self
+    if (style.align_self == "auto") {
+        YGNodeStyleSetAlignSelf(yoga_node_, YGAlignAuto);
+    } else if (style.align_self == "flex-start") {
+        YGNodeStyleSetAlignSelf(yoga_node_, YGAlignFlexStart);
+    } else if (style.align_self == "flex-end") {
+        YGNodeStyleSetAlignSelf(yoga_node_, YGAlignFlexEnd);
+    } else if (style.align_self == "center") {
+        YGNodeStyleSetAlignSelf(yoga_node_, YGAlignCenter);
+    } else if (style.align_self == "baseline") {
+        YGNodeStyleSetAlignSelf(yoga_node_, YGAlignBaseline);
+    } else if (style.align_self == "stretch") {
+        YGNodeStyleSetAlignSelf(yoga_node_, YGAlignStretch);
+    }
+
+    // Flex Grow, Shrink
+    YGNodeStyleSetFlexGrow(yoga_node_, style.flex_grow);
+    YGNodeStyleSetFlexShrink(yoga_node_, style.flex_shrink);
+
+    // Flex Basis
+    if (style.flex_basis.IsAuto()) {
+        YGNodeStyleSetFlexBasisAuto(yoga_node_);
+    } else if (style.flex_basis.unit == CSSUnit::PERCENT) {
+        YGNodeStyleSetFlexBasisPercent(yoga_node_, style.flex_basis.value);
+    } else {
+        YGNodeStyleSetFlexBasis(yoga_node_, style.flex_basis.ToPx(0, style.font_size));
+    }
+
+    // Width
+    if (style.width.IsAuto()) {
+        YGNodeStyleSetWidthAuto(yoga_node_);
+    } else if (style.width.unit == CSSUnit::PERCENT) {
+        YGNodeStyleSetWidthPercent(yoga_node_, style.width.value);
+    } else {
+        YGNodeStyleSetWidth(yoga_node_, style.width.ToPx(0, style.font_size));
+    }
+
+    // Height
+    if (style.height.IsAuto()) {
+        YGNodeStyleSetHeightAuto(yoga_node_);
+    } else if (style.height.unit == CSSUnit::PERCENT) {
+        YGNodeStyleSetHeightPercent(yoga_node_, style.height.value);
+    } else {
+        YGNodeStyleSetHeight(yoga_node_, style.height.ToPx(0, style.font_size));
+    }
+
+    // Min/Max Width
+    if (!style.min_width.IsZero()) {
+        if (style.min_width.unit == CSSUnit::PERCENT) {
+            YGNodeStyleSetMinWidthPercent(yoga_node_, style.min_width.value);
+        } else {
+            YGNodeStyleSetMinWidth(yoga_node_, style.min_width.ToPx(0, style.font_size));
+        }
+    }
+
+    if (style.max_width.unit != CSSUnit::NONE) {
+        if (style.max_width.unit == CSSUnit::PERCENT) {
+            YGNodeStyleSetMaxWidthPercent(yoga_node_, style.max_width.value);
+        } else {
+            YGNodeStyleSetMaxWidth(yoga_node_, style.max_width.ToPx(0, style.font_size));
+        }
+    }
+
+    // Min/Max Height
+    if (!style.min_height.IsZero()) {
+        if (style.min_height.unit == CSSUnit::PERCENT) {
+            YGNodeStyleSetMinHeightPercent(yoga_node_, style.min_height.value);
+        } else {
+            YGNodeStyleSetMinHeight(yoga_node_, style.min_height.ToPx(0, style.font_size));
+        }
+    }
+
+    if (style.max_height.unit != CSSUnit::NONE) {
+        if (style.max_height.unit == CSSUnit::PERCENT) {
+            YGNodeStyleSetMaxHeightPercent(yoga_node_, style.max_height.value);
+        } else {
+            YGNodeStyleSetMaxHeight(yoga_node_, style.max_height.ToPx(0, style.font_size));
+        }
+    }
+
+    // Padding
+    auto apply_padding = [this](YGEdge edge, const CSSLength& value) {
+        if (value.unit == CSSUnit::PERCENT) {
+            YGNodeStyleSetPaddingPercent(yoga_node_, edge, value.value);
+        } else {
+            YGNodeStyleSetPadding(yoga_node_, edge, value.ToPx(0, computed_style_.font_size));
+        }
+    };
+
+    apply_padding(YGEdgeTop, style.padding_top);
+    apply_padding(YGEdgeRight, style.padding_right);
+    apply_padding(YGEdgeBottom, style.padding_bottom);
+    apply_padding(YGEdgeLeft, style.padding_left);
+
+    // Margin
+    auto apply_margin = [this](YGEdge edge, const CSSLength& value) {
+        if (value.IsAuto()) {
+            YGNodeStyleSetMarginAuto(yoga_node_, edge);
+        } else if (value.unit == CSSUnit::PERCENT) {
+            YGNodeStyleSetMarginPercent(yoga_node_, edge, value.value);
+        } else {
+            YGNodeStyleSetMargin(yoga_node_, edge, value.ToPx(0, computed_style_.font_size));
+        }
+    };
+
+    apply_margin(YGEdgeTop, style.margin_top);
+    apply_margin(YGEdgeRight, style.margin_right);
+    apply_margin(YGEdgeBottom, style.margin_bottom);
+    apply_margin(YGEdgeLeft, style.margin_left);
+
+    // Border
+    YGNodeStyleSetBorder(yoga_node_, YGEdgeTop, style.border_top_width);
+    YGNodeStyleSetBorder(yoga_node_, YGEdgeRight, style.border_right_width);
+    YGNodeStyleSetBorder(yoga_node_, YGEdgeBottom, style.border_bottom_width);
+    YGNodeStyleSetBorder(yoga_node_, YGEdgeLeft, style.border_left_width);
+
+    // Gap
+    if (!style.gap.IsZero()) {
+        float gap_px = style.gap.ToPx(0, style.font_size);
+        YGNodeStyleSetGap(yoga_node_, YGGutterAll, gap_px);
+    }
+    if (!style.row_gap.IsZero()) {
+        float row_gap_px = style.row_gap.ToPx(0, style.font_size);
+        YGNodeStyleSetGap(yoga_node_, YGGutterRow, row_gap_px);
+    }
+    if (!style.column_gap.IsZero()) {
+        float column_gap_px = style.column_gap.ToPx(0, style.font_size);
+        YGNodeStyleSetGap(yoga_node_, YGGutterColumn, column_gap_px);
+    }
+
+    // Position
+    if (style.position == "relative") {
+        YGNodeStyleSetPositionType(yoga_node_, YGPositionTypeRelative);
+    } else if (style.position == "absolute") {
+        YGNodeStyleSetPositionType(yoga_node_, YGPositionTypeAbsolute);
+    } else {
+        YGNodeStyleSetPositionType(yoga_node_, YGPositionTypeStatic);
+    }
+
+    // Position offsets
+    auto apply_position = [this](YGEdge edge, const CSSLength& value) {
+        if (value.IsAuto()) {
+            YGNodeStyleSetPositionAuto(yoga_node_, edge);
+        } else if (value.unit == CSSUnit::PERCENT) {
+            YGNodeStyleSetPositionPercent(yoga_node_, edge, value.value);
+        } else {
+            YGNodeStyleSetPosition(yoga_node_, edge, value.ToPx(0, computed_style_.font_size));
+        }
+    };
+
+    if (!style.top.IsAuto()) {
+        apply_position(YGEdgeTop, style.top);
+    }
+    if (!style.right.IsAuto()) {
+        apply_position(YGEdgeRight, style.right);
+    }
+    if (!style.bottom.IsAuto()) {
+        apply_position(YGEdgeBottom, style.bottom);
+    }
+    if (!style.left.IsAuto()) {
+        apply_position(YGEdgeLeft, style.left);
+    }
+}
+
+void RenderObject::ReadYogaLayout() {
+    if (!yoga_node_) {
+        return;
+    }
+
+    // 读取 Yoga 计算的布局结果
+    layout_info_.x = YGNodeLayoutGetLeft(yoga_node_);
+    layout_info_.y = YGNodeLayoutGetTop(yoga_node_);
+    layout_info_.width = YGNodeLayoutGetWidth(yoga_node_);
+    layout_info_.height = YGNodeLayoutGetHeight(yoga_node_);
+
+    // 计算各个矩形区域
+    float left = layout_info_.x;
+    float top = layout_info_.y;
+    float right = left + layout_info_.width;
+    float bottom = top + layout_info_.height;
+
+    // Margin 区域（最外层）
+    float margin_left = YGNodeLayoutGetMargin(yoga_node_, YGEdgeLeft);
+    float margin_top = YGNodeLayoutGetMargin(yoga_node_, YGEdgeTop);
+    float margin_right = YGNodeLayoutGetMargin(yoga_node_, YGEdgeRight);
+    float margin_bottom = YGNodeLayoutGetMargin(yoga_node_, YGEdgeBottom);
+
+    layout_info_.margin_rect = SkRect::MakeLTRB(
+        left - margin_left,
+        top - margin_top,
+        right + margin_right,
+        bottom + margin_bottom
+    );
+
+    // Border 区域
+    layout_info_.border_rect = SkRect::MakeLTRB(left, top, right, bottom);
+
+    // Padding 区域
+    float border_left = YGNodeLayoutGetBorder(yoga_node_, YGEdgeLeft);
+    float border_top = YGNodeLayoutGetBorder(yoga_node_, YGEdgeTop);
+    float border_right = YGNodeLayoutGetBorder(yoga_node_, YGEdgeRight);
+    float border_bottom = YGNodeLayoutGetBorder(yoga_node_, YGEdgeBottom);
+
+    layout_info_.padding_rect = SkRect::MakeLTRB(
+        left + border_left,
+        top + border_top,
+        right - border_right,
+        bottom - border_bottom
+    );
+
+    // Content 区域（最内层）
+    float padding_left = YGNodeLayoutGetPadding(yoga_node_, YGEdgeLeft);
+    float padding_top = YGNodeLayoutGetPadding(yoga_node_, YGEdgeTop);
+    float padding_right = YGNodeLayoutGetPadding(yoga_node_, YGEdgeRight);
+    float padding_bottom = YGNodeLayoutGetPadding(yoga_node_, YGEdgeBottom);
+
+    layout_info_.content_rect = SkRect::MakeLTRB(
+        left + border_left + padding_left,
+        top + border_top + padding_top,
+        right - border_right - padding_right,
+        bottom - border_bottom - padding_bottom
+    );
+
+    layout_info_.is_laid_out = true;
+}
+
+void RenderObject::LayoutWithYoga(float available_width, float available_height) {
+    if (!yoga_node_) {
+        return;
+    }
+
+    // 应用样式到 Yoga 节点
+    ApplyYogaStyle();
+
+    // 递归应用子节点样式
+    for (auto& child : children_) {
+        child->ApplyYogaStyle();
+    }
+
+    // 执行 Yoga 布局计算
+    YGNodeCalculateLayout(yoga_node_, available_width, available_height, YGDirectionLTR);
+
+    // 读取布局结果
+    ReadYogaLayout();
+
+    // 递归读取子节点布局结果并递归布局子节点
+    for (size_t i = 0; i < children_.size(); ++i) {
+        auto& child = children_[i];
+        child->ReadYogaLayout();
+
+        // 递归布局子节点（使用子节点的计算尺寸）
+        float child_width = child->layout_info_.width;
+        float child_height = child->layout_info_.height;
+        child->Layout(child_width, child_height);
+    }
+}
+
+void RenderObject::LayoutTraditional(float parent_width, float parent_height) {
+    // 这是原来的布局逻辑，保留用于非 Flexbox 布局
+    // 子类会覆盖这个方法
+    layout_info_.is_laid_out = true;
 }
 
 } // namespace lightui

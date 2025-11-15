@@ -23,10 +23,19 @@ void HTMLTextAreaElement::SetValue(const std::string& value, bool trigger_events
     if (max_length > 0 && static_cast<int>(value.length()) > max_length) {
         new_value = value.substr(0, max_length);
     }
-    
+
     std::string old_value = value_;
     value_ = new_value;
-    
+
+    // 调整选择范围，确保不越界
+    int new_length = static_cast<int>(new_value.length());
+    if (selection_start_ > new_length) {
+        selection_start_ = new_length;
+    }
+    if (selection_end_ > new_length) {
+        selection_end_ = new_length;
+    }
+
     // 触发事件
     if (trigger_events && old_value != new_value) {
         TriggerInputEvent();

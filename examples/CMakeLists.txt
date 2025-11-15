@@ -162,6 +162,9 @@ set_target_properties(html_window_example PROPERTIES
 # ========== Comprehensive Test App ==========
 add_subdirectory(comprehensive_test_app)
 
+# ========== Window Demo ==========
+add_subdirectory(window_demo)
+
 # ========== Preact Hello World Example ==========
 add_subdirectory(preact_hello_world)
 
@@ -184,6 +187,7 @@ message(STATUS "  - html_loading_example")
 message(STATUS "  - html_window_example")
 message(STATUS "  - html_css_performance_demo")
 message(STATUS "  - comprehensive_test_app")
+message(STATUS "  - window_demo")
 message(STATUS "  - preact_hello_world")
 message(STATUS "  - preact_counter")
 message(STATUS "  - preact_window_demo")

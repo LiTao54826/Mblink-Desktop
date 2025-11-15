@@ -6,6 +6,7 @@
 #include "html_input_element.h"
 #include "event.h"
 #include <algorithm>
+#include <iostream>
 
 namespace lightui {
 
@@ -71,6 +72,15 @@ void HTMLInputElement::SetValue(const std::string& value, bool trigger_events) {
 
     std::string old_value = value_;
     value_ = new_value;
+
+    // 调整选择范围，确保不越界
+    int new_length = static_cast<int>(new_value.length());
+    if (selection_start_ > new_length) {
+        selection_start_ = new_length;
+    }
+    if (selection_end_ > new_length) {
+        selection_end_ = new_length;
+    }
 
     // 注意：不更新value属性，value属性保持为默认值
     // 这符合HTML标准：value属性是默认值，value_是当前值
@@ -248,9 +258,9 @@ void HTMLInputElement::HandleTextInput(const std::string& text) {
     if (IsDisabled() || IsReadOnly()) {
         return;
     }
-    
+
     // 只有文本类型支持文本输入
-    if (input_type_ != InputType::Text && 
+    if (input_type_ != InputType::Text &&
         input_type_ != InputType::Password &&
         input_type_ != InputType::Search &&
         input_type_ != InputType::Email &&
@@ -259,34 +269,34 @@ void HTMLInputElement::HandleTextInput(const std::string& text) {
         input_type_ != InputType::Number) {
         return;
     }
-    
+
     // 在光标位置插入文本
     std::string new_value = value_;
     if (selection_start_ != selection_end_) {
         // 有选中文本，替换选中部分
-        new_value = value_.substr(0, selection_start_) + 
-                   text + 
+        new_value = value_.substr(0, selection_start_) +
+                   text +
                    value_.substr(selection_end_);
     } else {
         // 无选中文本，在光标位置插入
-        new_value = value_.substr(0, selection_start_) + 
-                   text + 
+        new_value = value_.substr(0, selection_start_) +
+                   text +
                    value_.substr(selection_start_);
     }
-    
+
     // 检查maxlength
     int max_length = GetMaxLength();
     if (max_length > 0 && static_cast<int>(new_value.length()) > max_length) {
         return;  // 超过最大长度，忽略输入
     }
-    
+
     value_ = new_value;
     selection_start_ += static_cast<int>(text.length());
     selection_end_ = selection_start_;
-    
+
     // 更新value属性
     SetAttribute("value", value_);
-    
+
     // 触发input事件
     TriggerInputEvent();
 }

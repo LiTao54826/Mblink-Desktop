@@ -29,10 +29,24 @@ EventLoop::EventLoop()
     , should_quit_(false)
     , frame_controller_(std::make_unique<FrameController>(60))
     , input_handler_(std::make_unique<InputHandler>())
-    , task_scheduler_(std::make_unique<TaskScheduler>())
+    , task_scheduler_(std::make_shared<TaskScheduler>())
     , focus_manager_(std::make_unique<FocusManager>())
     , drag_manager_(std::make_unique<DragManager>())
 {
+}
+
+EventLoop::EventLoop(std::shared_ptr<TaskScheduler> task_scheduler)
+    : running_(false)
+    , should_quit_(false)
+    , frame_controller_(std::make_unique<FrameController>(60))
+    , input_handler_(std::make_unique<InputHandler>())
+    , task_scheduler_(task_scheduler)
+    , focus_manager_(std::make_unique<FocusManager>())
+    , drag_manager_(std::make_unique<DragManager>())
+{
+    if (!task_scheduler_) {
+        throw std::invalid_argument("TaskScheduler cannot be null");
+    }
 }
 
 EventLoop::~EventLoop() {
@@ -357,6 +371,9 @@ void EventLoop::HandleMouseEventForDOM(const SDL_Event& event) {
             );
             hit_result.element->DispatchEvent(click_event);
 
+            // 处理表单元素的默认行为（参考 RmlUi InputTypeCheckbox::ProcessDefaultAction）
+            ProcessFormElementDefaultAction(hit_result.element);
+
             // 检测dblclick：在短时间内两次click同一元素
             Uint64 current_time = SDL_GetTicks();
             if (last_click_element == hit_result.element &&
@@ -390,6 +407,91 @@ void EventLoop::HandleMouseEventForDOM(const SDL_Event& event) {
         if (drag_manager_->IsDragging()) {
             drag_manager_->UpdateDrag(mouse_x, mouse_y, document);
         }
+    }
+}
+
+void EventLoop::ProcessFormElementDefaultAction(std::shared_ptr<Element> element) {
+    if (!element) {
+        return;
+    }
+
+    std::string tag_name = element->GetTagName();
+
+    // 处理 input 元素（参考 RmlUi InputTypeCheckbox::ProcessDefaultAction）
+    if (tag_name == "input") {
+        auto input_element = std::dynamic_pointer_cast<HTMLInputElement>(element);
+        if (!input_element) {
+            return;
+        }
+
+        // 如果禁用，不处理
+        if (input_element->IsDisabled()) {
+            return;
+        }
+
+        InputType type = input_element->GetInputType();
+
+        // Checkbox: 切换 checked 状态
+        if (type == InputType::Checkbox) {
+            bool checked = input_element->GetChecked();
+            input_element->SetChecked(!checked, true);  // trigger_events=true
+            std::cout << "[EventLoop] Checkbox toggled: " << (!checked ? "checked" : "unchecked") << std::endl;
+
+            // 标记窗口需要重绘
+            auto& window_manager = WindowManager::Instance();
+            for (auto& window : window_manager.GetAllWindows()) {
+                window->SetNeedsRepaint();
+            }
+        }
+        // Radio: 选中（不能取消选中）
+        else if (type == InputType::Radio) {
+            if (!input_element->GetChecked()) {
+                // 取消同组其他 radio 的选中状态
+                std::string name = input_element->GetAttribute("name");
+                if (!name.empty()) {
+                    // 查找同组的 radio
+                    auto document = element->GetOwnerDocument();
+                    if (document) {
+                        auto body = document->GetBody();
+                        if (body) {
+                            UncheckRadioGroup(body, name, input_element);
+                        }
+                    }
+                }
+
+                input_element->SetChecked(true, true);  // trigger_events=true
+                std::cout << "[EventLoop] Radio selected" << std::endl;
+
+                // 标记窗口需要重绘
+                auto& window_manager = WindowManager::Instance();
+                for (auto& window : window_manager.GetAllWindows()) {
+                    window->SetNeedsRepaint();
+                }
+            }
+        }
+    }
+}
+
+void EventLoop::UncheckRadioGroup(const std::shared_ptr<Node>& node, const std::string& group_name, const std::shared_ptr<HTMLInputElement>& except) {
+    if (!node) {
+        return;
+    }
+
+    // 检查当前节点
+    auto element = std::dynamic_pointer_cast<Element>(node);
+    if (element && element->GetTagName() == "input") {
+        auto input = std::dynamic_pointer_cast<HTMLInputElement>(element);
+        if (input && input != except &&
+            input->GetInputType() == InputType::Radio &&
+            input->GetAttribute("name") == group_name) {
+            input->SetChecked(false, false);  // 不触发事件
+        }
+    }
+
+    // 递归处理子节点
+    auto children = node->GetChildNodes();
+    for (auto& child : children) {
+        UncheckRadioGroup(child, group_name, except);
     }
 }
 

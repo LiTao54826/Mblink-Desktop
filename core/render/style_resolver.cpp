@@ -696,36 +696,76 @@ void StyleResolver::ParseStyleProperty(ComputedStyle& style,
     }
     else if (property == "margin") {
         style.margin = CSSValue::ParseEdges(resolved_value);
+        // 同步到单独的字段
+        style.margin_top = style.margin.top;
+        style.margin_right = style.margin.right;
+        style.margin_bottom = style.margin.bottom;
+        style.margin_left = style.margin.left;
     }
     else if (property == "margin-top") {
         style.margin.top = CSSValue::ParseLength(resolved_value);
+        style.margin_top = style.margin.top;
     }
     else if (property == "margin-right") {
         style.margin.right = CSSValue::ParseLength(resolved_value);
+        style.margin_right = style.margin.right;
     }
     else if (property == "margin-bottom") {
         style.margin.bottom = CSSValue::ParseLength(resolved_value);
+        style.margin_bottom = style.margin.bottom;
     }
     else if (property == "margin-left") {
         style.margin.left = CSSValue::ParseLength(resolved_value);
+        style.margin_left = style.margin.left;
     }
     else if (property == "padding") {
         style.padding = CSSValue::ParseEdges(resolved_value);
+        // 同步到单独的字段
+        style.padding_top = style.padding.top;
+        style.padding_right = style.padding.right;
+        style.padding_bottom = style.padding.bottom;
+        style.padding_left = style.padding.left;
     }
     else if (property == "padding-top") {
         style.padding.top = CSSValue::ParseLength(resolved_value);
+        style.padding_top = style.padding.top;
     }
     else if (property == "padding-right") {
         style.padding.right = CSSValue::ParseLength(resolved_value);
+        style.padding_right = style.padding.right;
     }
     else if (property == "padding-bottom") {
         style.padding.bottom = CSSValue::ParseLength(resolved_value);
+        style.padding_bottom = style.padding.bottom;
     }
     else if (property == "padding-left") {
         style.padding.left = CSSValue::ParseLength(resolved_value);
+        style.padding_left = style.padding.left;
     }
     else if (property == "border-width") {
         style.border.width = CSSValue::ParseLength(resolved_value);
+        // 同步到单独的字段
+        float width = style.border.width.ToPx(0, style.font_size);
+        style.border_top_width = width;
+        style.border_right_width = width;
+        style.border_bottom_width = width;
+        style.border_left_width = width;
+    }
+    else if (property == "border-top-width") {
+        auto length = CSSValue::ParseLength(resolved_value);
+        style.border_top_width = length.ToPx(0, style.font_size);
+    }
+    else if (property == "border-right-width") {
+        auto length = CSSValue::ParseLength(resolved_value);
+        style.border_right_width = length.ToPx(0, style.font_size);
+    }
+    else if (property == "border-bottom-width") {
+        auto length = CSSValue::ParseLength(resolved_value);
+        style.border_bottom_width = length.ToPx(0, style.font_size);
+    }
+    else if (property == "border-left-width") {
+        auto length = CSSValue::ParseLength(resolved_value);
+        style.border_left_width = length.ToPx(0, style.font_size);
     }
     else if (property == "border-style") {
         style.border.style = CSSValue::ParseBorderStyle(resolved_value);
@@ -822,6 +862,105 @@ void StyleResolver::ParseStyleProperty(ComputedStyle& style,
     }
     else if (property == "backdrop-filter") {
         style.backdrop_filter = CSSFilterParser::Parse(resolved_value);
+    }
+    // Flexbox 属性
+    else if (property == "flex-direction") {
+        style.flex_direction = resolved_value;
+    }
+    else if (property == "flex-wrap") {
+        style.flex_wrap = resolved_value;
+    }
+    else if (property == "justify-content") {
+        style.justify_content = resolved_value;
+    }
+    else if (property == "align-items") {
+        style.align_items = resolved_value;
+    }
+    else if (property == "align-content") {
+        style.align_content = resolved_value;
+    }
+    else if (property == "align-self") {
+        style.align_self = resolved_value;
+    }
+    else if (property == "flex-grow") {
+        try {
+            style.flex_grow = std::stof(resolved_value);
+        } catch (...) {
+            style.flex_grow = 0.0f;
+        }
+    }
+    else if (property == "flex-shrink") {
+        try {
+            style.flex_shrink = std::stof(resolved_value);
+        } catch (...) {
+            style.flex_shrink = 1.0f;
+        }
+    }
+    else if (property == "flex-basis") {
+        style.flex_basis = CSSValue::ParseLength(resolved_value);
+    }
+    else if (property == "order") {
+        try {
+            style.order = std::stoi(resolved_value);
+        } catch (...) {
+            style.order = 0;
+        }
+    }
+    else if (property == "gap") {
+        style.gap = CSSValue::ParseLength(resolved_value);
+        style.row_gap = style.gap;
+        style.column_gap = style.gap;
+    }
+    else if (property == "row-gap") {
+        style.row_gap = CSSValue::ParseLength(resolved_value);
+    }
+    else if (property == "column-gap") {
+        style.column_gap = CSSValue::ParseLength(resolved_value);
+    }
+    // 定位属性
+    else if (property == "position") {
+        style.position = resolved_value;
+    }
+    else if (property == "top") {
+        style.top = CSSValue::ParseLength(resolved_value);
+    }
+    else if (property == "right") {
+        style.right = CSSValue::ParseLength(resolved_value);
+    }
+    else if (property == "bottom") {
+        style.bottom = CSSValue::ParseLength(resolved_value);
+    }
+    else if (property == "left") {
+        style.left = CSSValue::ParseLength(resolved_value);
+    }
+    else if (property == "z-index") {
+        try {
+            style.z_index = std::stoi(resolved_value);
+        } catch (...) {
+            style.z_index = 0;
+        }
+    }
+    // 其他属性
+    else if (property == "overflow") {
+        style.overflow = resolved_value;
+    }
+    else if (property == "visibility") {
+        style.visibility = resolved_value;
+    }
+    else if (property == "white-space") {
+        style.white_space = resolved_value;
+    }
+    else if (property == "word-wrap") {
+        style.word_wrap = resolved_value;
+    }
+    else if (property == "text-overflow") {
+        style.text_overflow = resolved_value;
+    }
+    else if (property == "vertical-align") {
+        style.vertical_align = resolved_value;
+    }
+    else if (property == "cursor") {
+        style.cursor = resolved_value;
     }
 }
 
@@ -924,6 +1063,7 @@ RenderObjectType StyleResolver::ParseDisplay(const std::string& value) {
     if (value == "inline") return RenderObjectType::INLINE;
     if (value == "inline-block") return RenderObjectType::INLINE_BLOCK;
     if (value == "flex") return RenderObjectType::FLEX;
+    if (value == "inline-flex") return RenderObjectType::FLEX;  // inline-flex 也使用 FLEX 类型
     if (value == "none") return RenderObjectType::NONE;
     return RenderObjectType::BLOCK;
 }

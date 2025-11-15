@@ -5,6 +5,7 @@
 
 #include "task_scheduler.h"
 #include <algorithm>
+#include <iostream>
 
 namespace lightui {
 
@@ -29,6 +30,8 @@ int TaskScheduler::SetTimeout(std::function<void()> callback, int delay_ms) {
 }
 
 int TaskScheduler::SetInterval(std::function<void()> callback, int interval_ms) {
+    std::cout << "[TaskScheduler::SetInterval] Called with interval=" << interval_ms << "ms" << std::endl;
+
     Task task;
     task.id = next_task_id_++;
     task.type = TaskType::INTERVAL;
@@ -36,9 +39,15 @@ int TaskScheduler::SetInterval(std::function<void()> callback, int interval_ms) 
     task.execute_time = GetCurrentTime() + MillisecondsToTicks(interval_ms);
     task.interval = interval_ms;
     task.cancelled = false;
-    
+
+    std::cout << "[TaskScheduler::SetInterval] Created task ID=" << task.id
+              << ", execute_time=" << task.execute_time
+              << ", current_time=" << GetCurrentTime() << std::endl;
+
     tasks_.push(task);
-    
+
+    std::cout << "[TaskScheduler::SetInterval] Task pushed, queue size now: " << tasks_.size() << std::endl;
+
     return task.id;
 }
 
@@ -90,36 +99,50 @@ void TaskScheduler::ClearTask(int task_id) {
 void TaskScheduler::ProcessTasks() {
     Uint64 current_time = GetCurrentTime();
     std::vector<Task> requeue_tasks;  // 需要重新入队的 interval 任务
-    
+
+    static int call_count = 0;
+    if (call_count++ % 60 == 0) {  // 每60次调用输出一次
+        std::cout << "[TaskScheduler::ProcessTasks] Called, tasks count: " << tasks_.size() << std::endl;
+    }
+
     while (!tasks_.empty()) {
         const Task& task = tasks_.top();
-        
+
         // 如果任务还没到执行时间，退出循环
         if (task.execute_time > current_time) {
             break;
         }
-        
+
         // 取出任务
         Task current_task = task;
         tasks_.pop();
-        
+
+        std::cout << "[TaskScheduler] Executing task ID " << current_task.id
+                  << ", type=" << (current_task.type == TaskType::TIMEOUT ? "TIMEOUT" : "INTERVAL")
+                  << ", interval=" << current_task.interval << "ms" << std::endl;
+
         // 跳过已取消的任务
         if (current_task.cancelled) {
+            std::cout << "[TaskScheduler] Task " << current_task.id << " was cancelled, skipping" << std::endl;
             continue;
         }
-        
+
         // 执行任务
         if (current_task.callback) {
+            std::cout << "[TaskScheduler] Calling callback for task " << current_task.id << std::endl;
             current_task.callback();
+            std::cout << "[TaskScheduler] Callback completed for task " << current_task.id << std::endl;
         }
-        
+
         // 如果是 interval 任务，重新入队
         if (current_task.type == TaskType::INTERVAL && current_task.interval > 0) {
             current_task.execute_time = current_time + MillisecondsToTicks(current_task.interval);
             requeue_tasks.push_back(current_task);
+            std::cout << "[TaskScheduler] Requeuing interval task " << current_task.id
+                      << ", next execution in " << current_task.interval << "ms" << std::endl;
         }
     }
-    
+
     // 重新入队 interval 任务
     for (const auto& task : requeue_tasks) {
         tasks_.push(task);

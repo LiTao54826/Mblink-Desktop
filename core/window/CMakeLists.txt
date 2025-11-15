@@ -16,6 +16,7 @@ add_library(lightui_window STATIC ${WINDOW_SOURCES})
 target_include_directories(lightui_window PUBLIC
     ${CMAKE_SOURCE_DIR}
     ${CMAKE_SOURCE_DIR}/core
+    ${CMAKE_SOURCE_DIR}/third_party
 )
 
 # 链接SDL3（如果可用）

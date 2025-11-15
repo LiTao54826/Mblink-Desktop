@@ -29,6 +29,10 @@ QuickJSRuntime::QuickJSRuntime() {
 }
 
 QuickJSRuntime::~QuickJSRuntime() {
+    std::cout << "[QuickJSRuntime] Destructor called" << std::endl;
+    std::cout << "[QuickJSRuntime] Stack trace:" << std::endl;
+    std::cout << "  Called from: " << __FILE__ << ":" << __LINE__ << std::endl;
+
     // 清理所有待处理的任务和定时器
     // JSValueWrapper会在Task被销毁时自动释放JSValue
     active_timers_.clear();
@@ -39,19 +43,33 @@ QuickJSRuntime::~QuickJSRuntime() {
     timer_queue_.clear();
     active_timers_.clear();
 
+    std::cout << "[QuickJSRuntime] About to run GC" << std::endl;
+
     // 运行GC确保所有JavaScript对象被释放
     if (ctx_ && rt_) {
-        JS_RunGC(rt_);
+        // 先运行多次 GC 确保所有对象都被释放
+        for (int i = 0; i < 5; i++) {
+            std::cout << "[QuickJSRuntime] Running GC pass " << (i + 1) << std::endl;
+            JS_RunGC(rt_);
+        }
     }
+
+    std::cout << "[QuickJSRuntime] GC completed, freeing context" << std::endl;
 
     if (ctx_) {
         JS_FreeContext(ctx_);
         ctx_ = nullptr;
     }
+
+    std::cout << "[QuickJSRuntime] Context freed, freeing runtime" << std::endl;
+    std::cout << "[QuickJSRuntime] WARNING: If assertion fails, there are leaked JSValue objects" << std::endl;
+
     if (rt_) {
         JS_FreeRuntime(rt_);
         rt_ = nullptr;
     }
+
+    std::cout << "[QuickJSRuntime] Runtime freed, destructor complete" << std::endl;
 }
 
 json QuickJSRuntime::Eval(const std::string& code, const std::string& filename) {
