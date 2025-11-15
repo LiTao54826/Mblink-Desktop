@@ -66,15 +66,27 @@ else()
 endif()
 
 # ============================================
-# Yoga
+# Yoga (Legacy - kept for reference)
 # ============================================
 if(EXISTS "${THIRD_PARTY_DIR}/yoga/CMakeLists.txt")
-    message(STATUS "  Found Yoga")
-    add_subdirectory(yoga)
-    set(YOGA_FOUND TRUE PARENT_SCOPE)
-else()
-    message(WARNING "  Yoga not found. Please run scripts/download_deps.sh")
+    message(STATUS "  Found Yoga (not used, Taffy is preferred)")
+    # add_subdirectory(yoga)
     set(YOGA_FOUND FALSE PARENT_SCOPE)
+else()
+    message(STATUS "  Yoga not found (using Taffy instead)")
+    set(YOGA_FOUND FALSE PARENT_SCOPE)
+endif()
+
+# ============================================
+# Taffy - CSS Layout Engine
+# ============================================
+if(EXISTS "${THIRD_PARTY_DIR}/taffy/CMakeLists.txt")
+    message(STATUS "  Found Taffy")
+    add_subdirectory(taffy)
+    set(TAFFY_FOUND TRUE PARENT_SCOPE)
+else()
+    message(WARNING "  Taffy not found. Please build Taffy C bindings first")
+    set(TAFFY_FOUND FALSE PARENT_SCOPE)
 endif()
 
 # ============================================
