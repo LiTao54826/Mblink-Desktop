@@ -177,6 +177,9 @@ add_subdirectory(preact_window_demo)
 # ========== Preact Todo App ==========
 add_subdirectory(preact_todo_app)
 
+# ========== Flexbox Test ==========
+add_subdirectory(flexbox_test)
+
 message(STATUS "Examples configured successfully")
 message(STATUS "  - integration_example")
 message(STATUS "  - javascript_integration_example")
@@ -192,4 +195,5 @@ message(STATUS "  - preact_hello_world")
 message(STATUS "  - preact_counter")
 message(STATUS "  - preact_window_demo")
 message(STATUS "  - preact_todo_app")
+message(STATUS "  - flexbox_test")
 
