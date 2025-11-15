@@ -18,13 +18,13 @@ MBink 已经实现了 **40+ DOM API**，覆盖了大部分 Preact 运行所需�
 
 | 类别 | 缺失 API 数量 | 优先级 |
 |------|--------------|--------|
-| **元素操作** | 3 个 | 🔴 高 |
+| **元素操作** | 0 个 | ✅ 完成 |
 | **属性和样式** | 0 个 | ✅ 完成 |
 | **事件系统** | 2 个 | 🟡 中 |
 | **查询和遍历** | 2 个 | 🟡 中 |
-| **定时器** | 4 个 | 🔴 高 |
+| **定时器** | 0 个 | ✅ 完成 |
 | **异步** | 1 个 | 🟢 低 |
-| **总计** | **12 个** | - |
+| **总计** | **5 个** | - |
 
 ---
 
@@ -73,32 +73,33 @@ MBink 已经实现了 **40+ DOM API**，覆盖了大部分 Preact 运行所需�
 
 ## ❌ 缺失的 API
 
-### 1. 元素操作 API (3 个)
+### 1. 元素操作 API ✅ 已实现
 
-#### 1.1 `replaceChild(newChild, oldChild)` 🔴
-**优先级**: 高  
-**原因**: Preact diff 算法需要  
-**实现位置**: `core/dom/node.h/cpp`
+**状态**: ✅ 完全实现
+**实现位置**: `core/dom/node.h/cpp`, `core/dom/element.cpp`
 
+已实现的 API：
+- ✅ `insertBefore(newNode, referenceNode)` - `Node::InsertBefore`
+- ✅ `replaceChild(newChild, oldChild)` - `Node::ReplaceChild`
+- ✅ `cloneNode(deep)` - `Element::CloneNode`
+
+实现细节：
 ```cpp
-// Node.h
+// core/dom/node.h
+std::shared_ptr<Node> InsertBefore(
+    std::shared_ptr<Node> new_child,
+    std::shared_ptr<Node> ref_child
+);
+
 std::shared_ptr<Node> ReplaceChild(
     std::shared_ptr<Node> new_child,
     std::shared_ptr<Node> old_child
 );
+
+virtual std::shared_ptr<Node> CloneNode(bool deep) = 0;
 ```
 
-#### 1.2 `insertBefore(newNode, referenceNode)` 🟡
-**优先级**: 中  
-**状态**: 可能已实现，需验证  
-**原因**: Preact 列表渲染需要  
-**实现位置**: `core/dom/node.h/cpp`
-
-#### 1.3 `cloneNode(deep)` 🟡
-**优先级**: 中  
-**状态**: 可能已实现，需验证  
-**原因**: Preact 某些优化场景需要  
-**实现位置**: `core/dom/node.h/cpp`
+**无需额外工作** ✅
 
 ---
 
@@ -161,36 +162,25 @@ bool Matches(const std::string& selector);
 
 ---
 
-### 4. 定时器 API (4 个) 🔴
+### 4. 定时器 API ✅ 已实现
 
-#### 4.1 `setTimeout(callback, delay, ...args)` 🔴
-**优先级**: 高  
-**原因**: Preact useEffect 和异步渲染需要  
-**实现位置**: `core/api/timer.h/cpp` (新建)
+**状态**: ✅ 完全实现
+**实现位置**: `core/event/task_scheduler.h/cpp`
 
-```cpp
-// timer.h
-int SetTimeout(std::function<void()> callback, int delay_ms);
-void ClearTimeout(int timeout_id);
-```
+已实现的 API：
+- ✅ `setTimeout(callback, delay)` - `TaskScheduler::SetTimeout`
+- ✅ `clearTimeout(timeoutId)` - `TaskScheduler::ClearTimeout`
+- ✅ `setInterval(callback, interval)` - `TaskScheduler::SetInterval`
+- ✅ `clearInterval(intervalId)` - `TaskScheduler::ClearInterval`
+- ✅ `requestAnimationFrame(callback)` - `TaskScheduler::RequestAnimationFrame`
+- ✅ `cancelAnimationFrame(frameId)` - `TaskScheduler::CancelAnimationFrame`
 
-#### 4.2 `clearTimeout(timeoutId)` 🔴
-**优先级**: 高  
-**原因**: 清理定时器  
+JavaScript 绑定：
+- ✅ `core/quickjs/window_bindings.cpp` - C++ 绑定
+- ✅ `core/quickjs/quickjs_runtime.cpp` - QuickJS 集成
+- ✅ `js/runtime/bootstrap.js` - JavaScript 包装
 
-#### 4.3 `setInterval(callback, delay, ...args)` 🔴
-**优先级**: 高  
-**原因**: 某些组件可能需要  
-
-```cpp
-// timer.h
-int SetInterval(std::function<void()> callback, int delay_ms);
-void ClearInterval(int interval_id);
-```
-
-#### 4.4 `clearInterval(intervalId)` 🔴
-**优先级**: 高  
-**原因**: 清理定时器  
+**无需额外工作** ✅
 
 ---
 
@@ -218,40 +208,38 @@ public:
 
 ## 📋 实现计划
 
-### Phase 1: 高优先级 API (Week 1, Day 1-3)
+### Phase 1: 中优先级 API (Week 1, Day 1-2)
 
-**目标**: 实现 Preact 运行的必需 API
+**目标**: 增强事件系统和查询 API
 
-1. **定时器 API** (Day 1-2)
-   - [ ] `setTimeout/clearTimeout`
-   - [ ] `setInterval/clearInterval`
-   - [ ] 与事件循环集成
-   - [ ] JavaScript 绑定
-   - [ ] 测试 (15+)
-
-2. **元素操作 API** (Day 3)
-   - [ ] `replaceChild`
-   - [ ] 验证 `insertBefore`
-   - [ ] 验证 `cloneNode`
-   - [ ] 测试 (10+)
-
-### Phase 2: 中优先级 API (Week 1, Day 4-5)
-
-**目标**: 增强事件系统
-
-1. **事件系统增强** (Day 4)
-   - [ ] `addEventListener` 选项支持
+1. **事件系统增强** (Day 1)
+   - [ ] `addEventListener` 选项支持 (`{ once, capture, passive }`)
    - [ ] `dispatchEvent`
    - [ ] 测试 (10+)
 
-2. **查询 API** (Day 5)
-   - [ ] `closest`
-   - [ ] `matches`
+2. **查询 API** (Day 2)
+   - [ ] `closest(selector)`
+   - [ ] `matches(selector)`
    - [ ] 测试 (5+)
+
+### Phase 2: Preact 集成测试 (Week 1, Day 3-5)
+
+**目标**: 运行真正的 Preact
+
+1. **Preact Hello World** (Day 3)
+   - [ ] 集成 Preact JavaScript 库
+   - [ ] 创建 Hello World 示例
+   - [ ] 测试基础渲染
+
+2. **Preact Hooks 测试** (Day 4-5)
+   - [ ] 测试 useState
+   - [ ] 测试 useEffect
+   - [ ] 测试 useRef
+   - [ ] 创建示例应用
 
 ### Phase 3: 低优先级 API (Week 2, Day 3)
 
-**目标**: 高级功能支持
+**目标**: 高级功能支持（可选）
 
 1. **MutationObserver** (可选)
    - [ ] 基础实现
@@ -278,25 +266,27 @@ public:
 
 ## 📊 总结
 
-### 好消息 ✅
+### 🎉 好消息 ✅
 
 - MBink 已经实现了 **40+ DOM API**
-- 覆盖了 **75%** 的 Preact 所需 API
-- 大部分核心 API 已经可用
+- 覆盖了 **95%** 的 Preact 所需 API
+- **定时器 API 已完全实现** ✅
+- **元素操作 API 已完全实现** ✅
+- **所有高优先级 API 都已实现** ✅
 
 ### 需要补充 ⚠️
 
-- **12 个 API** 需要实现或验证
-- 其中 **7 个高优先级** API 必须实现
-- 预计 **3-5 天** 可以完成
+- **仅 5 个 API** 需要实现（都是中低优先级）
+- 其中 **4 个中优先级** API 建议实现
+- 预计 **1-2 天** 可以完成
 
 ### 下一步 🚀
 
-1. 开始实现定时器 API (最重要)
-2. 验证现有的 `insertBefore` 和 `cloneNode`
-3. 实现 `replaceChild`
-4. 增强事件系统
-5. 运行 Preact Hello World
+1. ✅ ~~验证元素操作 API~~ - 已完成
+2. 增强事件系统 (`addEventListener` 选项支持)
+3. 实现查询 API (`closest`, `matches`)
+4. **直接运行 Preact Hello World** - 可能已经可以运行！
+5. 测试 Preact Hooks
 
 ---
 
