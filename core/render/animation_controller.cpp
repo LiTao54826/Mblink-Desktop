@@ -67,8 +67,13 @@ void AnimationController::StartAnimation(RenderObject* object, const CSSAnimatio
     if (animation.paused) {
         anim.state = CSSAnimationState::PAUSED;
     }
-    
+
     running_animations_.push_back(anim);
+
+    // 标记为脏
+    if (optimization_enabled_) {
+        optimizer_.GetDirtyTracker().MarkDirty(object, animation.name);
+    }
 }
 
 void AnimationController::StopAnimation(RenderObject* object, const std::string& name) {
@@ -107,20 +112,47 @@ void AnimationController::ResumeAnimation(RenderObject* object, const std::strin
 // ============================================================================
 
 void AnimationController::Update(double current_time) {
-    for (auto it = running_animations_.begin(); it != running_animations_.end(); ) {
-        RunningAnimation& anim = *it;
-
-        // 初始化开始时间
-        if (!anim.initialized) {
-            anim.start_time = current_time;
-            anim.initialized = true;
+    // 如果启用了批量更新优化
+    if (optimization_enabled_ && optimizer_.GetBatchUpdater().IsEnabled()) {
+        // 收集所有需要更新的动画
+        for (auto& anim : running_animations_) {
+            if (anim.state != CSSAnimationState::PAUSED) {
+                optimizer_.GetBatchUpdater().AddUpdateRequest(
+                    anim.object, anim.config.name, current_time);
+            }
         }
 
-        // 跳过暂停的动画
-        if (anim.state == CSSAnimationState::PAUSED) {
-            ++it;
-            continue;
+        // 批量执行更新
+        auto requests = optimizer_.GetBatchUpdater().GetPendingRequests();
+        optimizer_.GetBatchUpdater().Clear();
+
+        // 处理每个请求
+        for (const auto& req : requests) {
+            UpdateSingleAnimation(req.object, req.animation_name, req.current_time);
         }
+    } else {
+        // 正常更新流程
+        for (auto it = running_animations_.begin(); it != running_animations_.end(); ) {
+            RunningAnimation& anim = *it;
+
+            // 检查脏标记优化
+            if (optimization_enabled_ &&
+                !optimizer_.GetDirtyTracker().IsDirty(anim.object, anim.config.name)) {
+                ++it;
+                continue;
+            }
+
+            // 初始化开始时间
+            if (!anim.initialized) {
+                anim.start_time = current_time;
+                anim.initialized = true;
+            }
+
+            // 跳过暂停的动画
+            if (anim.state == CSSAnimationState::PAUSED) {
+                ++it;
+                continue;
+            }
 
         // 计算从开始到现在的总时间
         double total_elapsed = current_time - anim.start_time;
@@ -193,10 +225,16 @@ void AnimationController::Update(double current_time) {
             FireAnimationEvent(anim, "animationiteration", static_cast<float>(elapsed));
         }
 
-        anim.current_iteration = new_iteration;
-        anim.last_iteration = new_iteration;
+            anim.current_iteration = new_iteration;
+            anim.last_iteration = new_iteration;
 
-        ++it;
+            // 清除脏标记
+            if (optimization_enabled_) {
+                optimizer_.GetDirtyTracker().ClearDirty(anim.object, anim.config.name);
+            }
+
+            ++it;
+        }
     }
 }
 
@@ -227,6 +265,14 @@ std::map<std::string, std::string> AnimationController::ComputeCurrentFrame(
         return {};
     }
 
+    // 尝试从缓存获取
+    if (optimization_enabled_) {
+        auto cached = optimizer_.GetInterpolationCache().Get(anim.config.name, progress);
+        if (cached.has_value()) {
+            return cached.value();
+        }
+    }
+
     // 获取当前进度对应的关键帧
     auto [prev, next, factor] = anim.keyframes->GetKeyframesAt(progress);
 
@@ -238,7 +284,14 @@ std::map<std::string, std::string> AnimationController::ComputeCurrentFrame(
     float eased_factor = ApplyEasing(factor, anim.config.timing_function, anim.config.bezier);
 
     // 使用属性插值
-    return PropertyInterpolation::InterpolateProperties(prev->properties, next->properties, eased_factor);
+    auto result = PropertyInterpolation::InterpolateProperties(prev->properties, next->properties, eased_factor);
+
+    // 缓存结果
+    if (optimization_enabled_) {
+        optimizer_.GetInterpolationCache().Put(anim.config.name, progress, result);
+    }
+
+    return result;
 }
 
 float AnimationController::ComputeProgress(const RunningAnimation& anim, double current_time) const {
@@ -321,6 +374,106 @@ AnimationController::FindAnimation(RenderObject* object, const std::string& name
 void AnimationController::Clear() {
     running_animations_.clear();
     keyframes_rules_.clear();
+
+    // 清除优化器状态
+    if (optimization_enabled_) {
+        optimizer_.Reset();
+    }
+}
+
+void AnimationController::UpdateSingleAnimation(RenderObject* object,
+                                                const std::string& name,
+                                                double current_time) {
+    auto it = FindAnimation(object, name);
+    if (it == running_animations_.end()) {
+        return;
+    }
+
+    RunningAnimation& anim = *it;
+
+    // 初始化开始时间
+    if (!anim.initialized) {
+        anim.start_time = current_time;
+        anim.initialized = true;
+    }
+
+    // 跳过暂停的动画
+    if (anim.state == CSSAnimationState::PAUSED) {
+        return;
+    }
+
+    // 计算从开始到现在的总时间
+    double total_elapsed = current_time - anim.start_time;
+
+    // 处理延迟
+    if (anim.state == CSSAnimationState::DELAYED) {
+        if (total_elapsed >= anim.config.delay) {
+            anim.state = CSSAnimationState::RUNNING;
+
+            // 触发 animationstart 事件
+            if (!anim.start_event_fired) {
+                FireAnimationEvent(anim, "animationstart", 0.0f);
+                anim.start_event_fired = true;
+            }
+        } else {
+            return;
+        }
+    }
+
+    // 计算动画实际运行时间（减去延迟）
+    if (anim.config.delay > 0) {
+        anim.current_time = total_elapsed - anim.config.delay;
+    } else {
+        anim.current_time = total_elapsed;
+    }
+
+    // 计算动画进度
+    double elapsed = anim.current_time;
+    double duration = anim.config.duration;
+
+    if (duration <= 0) {
+        return;
+    }
+
+    // 检查是否完成
+    if (anim.config.iteration_count > 0) {
+        // 有限次迭代
+        double total_duration = duration * anim.config.iteration_count;
+        if (elapsed >= total_duration) {
+            anim.state = CSSAnimationState::FINISHED;
+
+            // 触发 animationend 事件
+            if (!anim.end_event_fired) {
+                FireAnimationEvent(anim, "animationend", static_cast<float>(elapsed));
+                anim.end_event_fired = true;
+            }
+
+            // 根据 fill-mode 决定是否保留
+            if (anim.config.fill_mode == AnimationFillMode::FORWARDS ||
+                anim.config.fill_mode == AnimationFillMode::BOTH) {
+                // 保留最后一帧
+                anim.current_iteration = anim.config.iteration_count - 1;
+            }
+            return;
+        }
+    }
+
+    // 计算当前迭代
+    int new_iteration = static_cast<int>(elapsed / duration);
+
+    // 检测迭代变化，触发 animationiteration 事件
+    if (new_iteration > anim.last_iteration && anim.last_iteration >= 0) {
+        // 迭代次数增加，触发事件
+        FireAnimationEvent(anim, "animationiteration", static_cast<float>(elapsed));
+    }
+
+    anim.current_iteration = new_iteration;
+    anim.last_iteration = new_iteration;
+
+    // 清除脏标记
+    if (optimization_enabled_) {
+        optimizer_.GetDirtyTracker().ClearDirty(anim.object, anim.config.name);
+    }
 }
 
 // ============================================================================

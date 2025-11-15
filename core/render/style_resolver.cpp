@@ -642,7 +642,10 @@ void StyleResolver::ApplyInheritance(ComputedStyle& style, const ComputedStyle* 
     if (!parent_style) {
         return;
     }
-    
+
+    // 继承 CSS 变量（CSS 变量总是可继承的）
+    style.css_variables.InheritFrom(&parent_style->css_variables);
+
     // 继承可继承属性
     style.color = parent_style->color;
     style.font_family = parent_style->font_family;
@@ -657,102 +660,115 @@ void StyleResolver::ApplyInheritance(ComputedStyle& style, const ComputedStyle* 
 void StyleResolver::ParseStyleProperty(ComputedStyle& style,
                                        const std::string& property,
                                        const std::string& value) {
+    // 1. 检查是否为 CSS 自定义属性（--custom-property）
+    if (IsCustomProperty(property)) {
+        style.css_variables.SetVariable(property, value);
+        return;
+    }
+
+    // 2. 解析 var() 函数（如果值包含 var()）
+    std::string resolved_value = value;
+    if (CSSVarResolver::ContainsVar(value)) {
+        resolved_value = CSSVarResolver::ResolveVar(value, style.css_variables);
+    }
+
+    // 3. 解析标准 CSS 属性
     if (property == "display") {
-        style.display = ParseDisplay(value);
+        style.display = ParseDisplay(resolved_value);
     }
     else if (property == "width") {
-        style.width = CSSValue::ParseLength(value);
+        style.width = CSSValue::ParseLength(resolved_value);
     }
     else if (property == "height") {
-        style.height = CSSValue::ParseLength(value);
+        style.height = CSSValue::ParseLength(resolved_value);
     }
     else if (property == "min-width") {
-        style.min_width = CSSValue::ParseLength(value);
+        style.min_width = CSSValue::ParseLength(resolved_value);
     }
     else if (property == "max-width") {
-        style.max_width = CSSValue::ParseLength(value);
+        style.max_width = CSSValue::ParseLength(resolved_value);
     }
     else if (property == "min-height") {
-        style.min_height = CSSValue::ParseLength(value);
+        style.min_height = CSSValue::ParseLength(resolved_value);
     }
     else if (property == "max-height") {
-        style.max_height = CSSValue::ParseLength(value);
+        style.max_height = CSSValue::ParseLength(resolved_value);
     }
     else if (property == "margin") {
-        style.margin = CSSValue::ParseEdges(value);
+        style.margin = CSSValue::ParseEdges(resolved_value);
     }
     else if (property == "margin-top") {
-        style.margin.top = CSSValue::ParseLength(value);
+        style.margin.top = CSSValue::ParseLength(resolved_value);
     }
     else if (property == "margin-right") {
-        style.margin.right = CSSValue::ParseLength(value);
+        style.margin.right = CSSValue::ParseLength(resolved_value);
     }
     else if (property == "margin-bottom") {
-        style.margin.bottom = CSSValue::ParseLength(value);
+        style.margin.bottom = CSSValue::ParseLength(resolved_value);
     }
     else if (property == "margin-left") {
-        style.margin.left = CSSValue::ParseLength(value);
+        style.margin.left = CSSValue::ParseLength(resolved_value);
     }
     else if (property == "padding") {
-        style.padding = CSSValue::ParseEdges(value);
+        style.padding = CSSValue::ParseEdges(resolved_value);
     }
     else if (property == "padding-top") {
-        style.padding.top = CSSValue::ParseLength(value);
+        style.padding.top = CSSValue::ParseLength(resolved_value);
     }
     else if (property == "padding-right") {
-        style.padding.right = CSSValue::ParseLength(value);
+        style.padding.right = CSSValue::ParseLength(resolved_value);
     }
     else if (property == "padding-bottom") {
-        style.padding.bottom = CSSValue::ParseLength(value);
+        style.padding.bottom = CSSValue::ParseLength(resolved_value);
     }
     else if (property == "padding-left") {
-        style.padding.left = CSSValue::ParseLength(value);
+        style.padding.left = CSSValue::ParseLength(resolved_value);
     }
     else if (property == "border-width") {
-        style.border.width = CSSValue::ParseLength(value);
+        style.border.width = CSSValue::ParseLength(resolved_value);
     }
     else if (property == "border-style") {
-        style.border.style = CSSValue::ParseBorderStyle(value);
+        style.border.style = CSSValue::ParseBorderStyle(resolved_value);
     }
     else if (property == "border-color") {
-        style.border.color = CSSValue::ParseColor(value);
+        style.border.color = CSSValue::ParseColor(resolved_value);
     }
     else if (property == "border-radius") {
-        style.border_radius = CSSValue::ParseBorderRadius(value);
+        style.border_radius = CSSValue::ParseBorderRadius(resolved_value);
     }
     else if (property == "background-color") {
-        style.background_color = value;
+        style.background_color = resolved_value;
     }
     else if (property == "background-repeat") {
-        style.background_repeat = CSSValue::ParseBackgroundRepeat(value);
+        style.background_repeat = CSSValue::ParseBackgroundRepeat(resolved_value);
     }
     else if (property == "background-size") {
-        style.background_size = CSSValue::ParseBackgroundSize(value);
+        style.background_size = CSSValue::ParseBackgroundSize(resolved_value);
     }
     else if (property == "color") {
-        style.color = value;
+        style.color = resolved_value;
     }
     else if (property == "font-family") {
-        style.font_family = value;
+        style.font_family = resolved_value;
     }
     else if (property == "font-size") {
-        auto length = CSSValue::ParseLength(value);
+        auto length = CSSValue::ParseLength(resolved_value);
         style.font_size = length.ToPx(16.0f, 16.0f); // 默认基准 16px
     }
     else if (property == "font-weight") {
-        style.font_weight = value;
+        style.font_weight = resolved_value;
     }
     else if (property == "font-style") {
-        style.font_style = value;
+        style.font_style = resolved_value;
     }
     else if (property == "text-align") {
-        style.text_align = value;
+        style.text_align = resolved_value;
     }
     else if (property == "text-decoration") {
-        style.text_decoration = value;
+        style.text_decoration = resolved_value;
     }
     else if (property == "line-height") {
-        auto length = CSSValue::ParseLength(value);
+        auto length = CSSValue::ParseLength(resolved_value);
         if (length.unit == CSSUnit::NONE) {
             style.line_height = length.value; // 无单位表示倍数
         } else {
@@ -760,46 +776,52 @@ void StyleResolver::ParseStyleProperty(ComputedStyle& style,
         }
     }
     else if (property == "box-shadow") {
-        style.box_shadow = CSSValue::ParseBoxShadow(value);
+        style.box_shadow = CSSValue::ParseBoxShadow(resolved_value);
     }
     else if (property == "text-shadow") {
-        style.text_shadow = CSSValue::ParseTextShadow(value);
+        style.text_shadow = CSSValue::ParseTextShadow(resolved_value);
     }
     else if (property == "background-image") {
         // 检查是否为渐变
-        if (value.find("linear-gradient") != std::string::npos) {
-            auto gradient = CSSValue::ParseLinearGradient(value);
+        if (resolved_value.find("linear-gradient") != std::string::npos) {
+            auto gradient = CSSValue::ParseLinearGradient(resolved_value);
             if (gradient.has_value()) {
                 style.background_linear_gradient = gradient;
             } else {
                 // 解析失败，存储原始值
-                style.background_image = value;
+                style.background_image = resolved_value;
             }
         }
-        else if (value.find("radial-gradient") != std::string::npos) {
-            auto gradient = CSSValue::ParseRadialGradient(value);
+        else if (resolved_value.find("radial-gradient") != std::string::npos) {
+            auto gradient = CSSValue::ParseRadialGradient(resolved_value);
             if (gradient.has_value()) {
                 style.background_radial_gradient = gradient;
             } else {
                 // 解析失败，存储原始值
-                style.background_image = value;
+                style.background_image = resolved_value;
             }
         }
         else {
             // 普通图片URL
-            style.background_image = value;
+            style.background_image = resolved_value;
         }
     }
     else if (property == "opacity") {
         try {
-            style.opacity = std::stof(value);
+            style.opacity = std::stof(resolved_value);
             style.opacity = std::max(0.0f, std::min(1.0f, style.opacity));
         } catch (...) {
             style.opacity = 1.0f;
         }
     }
     else if (property == "transition") {
-        style.transitions = CSSTransition::Parse(value);
+        style.transitions = CSSTransition::Parse(resolved_value);
+    }
+    else if (property == "filter") {
+        style.filter = CSSFilterParser::Parse(resolved_value);
+    }
+    else if (property == "backdrop-filter") {
+        style.backdrop_filter = CSSFilterParser::Parse(resolved_value);
     }
 }
 

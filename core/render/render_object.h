@@ -12,6 +12,8 @@
 #pragma once
 
 #include "css_value.h"
+#include "css_variables.h"
+#include "css_filters.h"
 #include "transition.h"
 #include <memory>
 #include <string>
@@ -93,10 +95,17 @@ struct ComputedStyle {
     // 过渡动画
     std::vector<CSSTransition> transitions;
 
+    // CSS 变量
+    CSSVariables css_variables;
+
+    // CSS 滤镜
+    std::optional<CSSFilterList> filter;
+    std::optional<CSSFilterList> backdrop_filter;
+
     // 其他
     std::string overflow;  // visible, hidden, scroll, auto
     std::string position;  // static, relative, absolute, fixed
-    
+
     ComputedStyle() {
         width = CSSLength(0, CSSUnit::AUTO);
         height = CSSLength(0, CSSUnit::AUTO);

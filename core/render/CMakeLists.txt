@@ -32,6 +32,10 @@ set(RENDER_SOURCES
     animation.cpp
     animation_controller.cpp
     property_interpolation.cpp
+    css_variables.cpp
+    css_filters.cpp
+    animation_optimizer.cpp
+    filter_cache.cpp
 )
 
 set(RENDER_HEADERS
@@ -66,6 +70,11 @@ set(RENDER_HEADERS
     animation.h
     animation_controller.h
     property_interpolation.h
+    css_variables.h
+    css_filters.h
+    animation_optimizer.h
+    filter_cache.h
+    object_pool.h
 )
 
 add_library(lightui_render STATIC ${RENDER_SOURCES})

@@ -10,6 +10,7 @@
 
 #include "animation.h"
 #include "keyframes.h"
+#include "animation_optimizer.h"
 #include <map>
 #include <vector>
 #include <optional>
@@ -208,10 +209,36 @@ public:
      * @brief 清除所有动画
      */
     void Clear();
-    
+
+    /**
+     * @brief 获取动画优化器
+     * @return 动画优化器引用
+     */
+    AnimationOptimizer& GetOptimizer() { return optimizer_; }
+
+    /**
+     * @brief 获取动画优化器 (const 版本)
+     * @return 动画优化器引用
+     */
+    const AnimationOptimizer& GetOptimizer() const { return optimizer_; }
+
+    /**
+     * @brief 启用/禁用性能优化
+     * @param enabled 是否启用
+     */
+    void SetOptimizationEnabled(bool enabled) { optimization_enabled_ = enabled; }
+
+    /**
+     * @brief 检查性能优化是否启用
+     * @return 是否启用
+     */
+    bool IsOptimizationEnabled() const { return optimization_enabled_; }
+
 private:
     std::map<std::string, KeyframesRule> keyframes_rules_;  ///< @keyframes 规则映射
     std::vector<RunningAnimation> running_animations_;      ///< 运行中的动画列表
+    AnimationOptimizer optimizer_;                          ///< 动画优化器
+    bool optimization_enabled_ = true;                      ///< 是否启用性能优化
     
     /**
      * @brief 计算当前帧的属性值
@@ -277,6 +304,15 @@ private:
     void FireAnimationEvent(const RunningAnimation& anim,
                            const std::string& event_type,
                            float elapsed_time);
+
+    /**
+     * @brief 更新单个动画（用于批量更新）
+     *
+     * @param object 渲染对象
+     * @param name 动画名称
+     * @param current_time 当前时间
+     */
+    void UpdateSingleAnimation(RenderObject* object, const std::string& name, double current_time);
 };
 
 } // namespace lightui

@@ -12,6 +12,7 @@
 #pragma once
 
 #include "render_object.h"
+#include "filter_cache.h"
 #include "core/dom/element.h"
 #include <memory>
 #include <string>
@@ -50,6 +51,30 @@ public:
      * @return 默认样式
      */
     ComputedStyle GetDefaultStyle(const std::string& tag_name);
+
+    /**
+     * @brief 获取渲染优化器
+     * @return 渲染优化器引用
+     */
+    RenderOptimizer& GetOptimizer() { return optimizer_; }
+
+    /**
+     * @brief 获取渲染优化器 (const 版本)
+     * @return 渲染优化器引用
+     */
+    const RenderOptimizer& GetOptimizer() const { return optimizer_; }
+
+    /**
+     * @brief 启用/禁用性能优化
+     * @param enabled 是否启用
+     */
+    void SetOptimizationEnabled(bool enabled) { optimization_enabled_ = enabled; }
+
+    /**
+     * @brief 检查性能优化是否启用
+     * @return 是否启用
+     */
+    bool IsOptimizationEnabled() const { return optimization_enabled_; }
 
 private:
     /**
@@ -105,9 +130,15 @@ private:
 private:
     // 可继承属性集合
     std::unordered_set<std::string> inheritable_properties_;
-    
+
     // 默认样式缓存
     std::unordered_map<std::string, ComputedStyle> default_styles_;
+
+    // 渲染优化器
+    RenderOptimizer optimizer_;
+
+    // 是否启用性能优化
+    bool optimization_enabled_ = true;
 };
 
 /**

@@ -334,6 +334,15 @@ add_skia_test(test_css_rendering unit/test_css_rendering.cpp)
 # Advanced CSS Rendering Test
 add_skia_test(test_advanced_css unit/test_advanced_css.cpp)
 
+# CSS Variables Test
+add_skia_test(test_css_variables unit/test_css_variables.cpp)
+
+# CSS Filters Test
+add_skia_test(test_css_filters unit/test_css_filters.cpp)
+
+# Performance Optimization Test
+add_skia_test(test_performance_optimization unit/test_performance_optimization.cpp)
+
 # Render Tree Test
 add_skia_test(test_render_tree unit/test_render_tree.cpp)
 target_link_libraries(test_render_tree PRIVATE lightui_dom)
