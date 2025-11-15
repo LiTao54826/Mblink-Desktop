@@ -6,6 +6,7 @@
 #include "render_inline_block.h"
 #include "box_renderer.h"
 #include "text_renderer.h"
+#include "gradient_renderer.h"
 #include "color.h"
 #include "text/font_manager.h"
 #include "core/dom/node.h"
@@ -177,8 +178,15 @@ void RenderInlineBlock::Paint(SkCanvas* canvas) {
         renderer.RenderBoxShadow(box, style.box_shadow, &style.border_radius);
     }
 
-    // 渲染背景
-    if (!style.background_color.empty()) {
+    // 渲染背景（优先渐变，然后纯色）
+    SkRect padding_box = box.GetPaddingBox();
+    if (style.background_linear_gradient.has_value()) {
+        GradientRenderer::RenderLinearGradient(canvas, padding_box, *style.background_linear_gradient);
+    }
+    else if (style.background_radial_gradient.has_value()) {
+        GradientRenderer::RenderRadialGradient(canvas, padding_box, *style.background_radial_gradient);
+    }
+    else if (!style.background_color.empty()) {
         std::unordered_map<std::string, std::string> styles;
         styles["background-color"] = style.background_color;
         renderer.RenderBackgroundAdvanced(box, styles, &style.border_radius);

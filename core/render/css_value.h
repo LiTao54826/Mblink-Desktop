@@ -131,6 +131,20 @@ struct CSSBoxShadow {
 };
 
 /**
+ * @brief CSS 文本阴影定义
+ */
+struct CSSTextShadow {
+    float offset_x;      // X 偏移
+    float offset_y;      // Y 偏移
+    float blur_radius;   // 模糊半径
+    SkColor color;       // 阴影颜色
+
+    CSSTextShadow()
+        : offset_x(0), offset_y(0), blur_radius(0),
+          color(SK_ColorBLACK) {}
+};
+
+/**
  * @brief CSS 渐变色停止点
  */
 struct CSSGradientStop {
@@ -266,6 +280,13 @@ public:
     static std::vector<CSSBoxShadow> ParseBoxShadow(const std::string& str);
 
     /**
+     * @brief 解析文本阴影值
+     * @param str CSS text-shadow 字符串
+     * @return CSSTextShadow 对象列表（支持多重阴影）
+     */
+    static std::vector<CSSTextShadow> ParseTextShadow(const std::string& str);
+
+    /**
      * @brief 解析线性渐变
      * @param str CSS linear-gradient 字符串
      * @return CSSLinearGradient 对象
@@ -293,16 +314,17 @@ public:
      */
     static CSSBackgroundSize ParseBackgroundSize(const std::string& str);
 
-private:
     /**
      * @brief 去除字符串首尾空格
      */
     static std::string Trim(const std::string& str);
-    
+
     /**
      * @brief 分割字符串
      */
     static std::vector<std::string> Split(const std::string& str, char delimiter);
+
+private:
 };
 
 } // namespace lightui

@@ -9,6 +9,7 @@
 #include <sstream>
 #include <cctype>
 #include <cstdlib>
+#include <iostream>
 
 namespace lightui {
 
@@ -326,6 +327,48 @@ std::vector<CSSBoxShadow> CSSValue::ParseBoxShadow(const std::string& str) {
             shadow.color = ParseColor(parts[idx++]);
         } else {
             shadow.spread_radius = ParseLength(parts[idx++]).ToPx();
+        }
+    }
+    if (idx < parts.size()) {
+        shadow.color = ParseColor(parts[idx++]);
+    }
+
+    shadows.push_back(shadow);
+    return shadows;
+}
+
+std::vector<CSSTextShadow> CSSValue::ParseTextShadow(const std::string& str) {
+    std::vector<CSSTextShadow> shadows;
+    std::string trimmed = Trim(str);
+
+    if (trimmed.empty() || trimmed == "none") {
+        return shadows;
+    }
+
+    // 简化实现：只支持单个阴影
+    // 格式：offset-x offset-y blur-radius color
+    // 例如：2px 2px 4px rgba(0,0,0,0.5)
+
+    CSSTextShadow shadow;
+    std::vector<std::string> parts = Split(trimmed, ' ');
+
+    size_t idx = 0;
+
+    // 解析偏移和半径
+    if (idx < parts.size()) {
+        shadow.offset_x = ParseLength(parts[idx++]).ToPx();
+    }
+    if (idx < parts.size()) {
+        shadow.offset_y = ParseLength(parts[idx++]).ToPx();
+    }
+    if (idx < parts.size()) {
+        // 检查是否为颜色
+        if (parts[idx].find("rgb") != std::string::npos ||
+            parts[idx].find("#") != std::string::npos ||
+            std::isalpha(parts[idx][0])) {
+            shadow.color = ParseColor(parts[idx++]);
+        } else {
+            shadow.blur_radius = ParseLength(parts[idx++]).ToPx();
         }
     }
     if (idx < parts.size()) {

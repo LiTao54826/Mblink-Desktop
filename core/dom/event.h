@@ -308,5 +308,55 @@ private:
     bool repeat_;           // 是否重复
 };
 
+/**
+ * @brief 动画事件类
+ *
+ * 用于 CSS 动画事件：
+ * - animationstart: 动画开始时触发
+ * - animationend: 动画结束时触发
+ * - animationiteration: 动画迭代时触发（除了最后一次）
+ *
+ * 参考：
+ * - W3C CSS Animations Level 1 - AnimationEvent
+ * - MDN Web Docs - AnimationEvent
+ */
+class AnimationEvent : public Event {
+public:
+    /**
+     * @brief 构造函数
+     * @param type 事件类型（animationstart, animationend, animationiteration）
+     * @param animation_name 动画名称（@keyframes 规则名称）
+     * @param elapsed_time 动画已运行时间（秒）
+     * @param pseudo_element 伪元素选择器（如 "::before"，可选）
+     */
+    AnimationEvent(const std::string& type,
+                   const std::string& animation_name,
+                   float elapsed_time,
+                   const std::string& pseudo_element = "");
+
+    /**
+     * @brief 获取动画名称
+     * @return 动画名称（@keyframes 规则名称）
+     */
+    std::string GetAnimationName() const { return animation_name_; }
+
+    /**
+     * @brief 获取动画已运行时间
+     * @return 已运行时间（秒）
+     */
+    float GetElapsedTime() const { return elapsed_time_; }
+
+    /**
+     * @brief 获取伪元素选择器
+     * @return 伪元素选择器（如 "::before"），如果不是伪元素则返回空字符串
+     */
+    std::string GetPseudoElement() const { return pseudo_element_; }
+
+private:
+    std::string animation_name_;    // 动画名称
+    float elapsed_time_;            // 已运行时间（秒）
+    std::string pseudo_element_;    // 伪元素选择器
+};
+
 } // namespace lightui
 

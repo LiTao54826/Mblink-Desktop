@@ -22,6 +22,16 @@ set(RENDER_SOURCES
     layer.cpp
     render_cache.cpp
     clip_optimizer.cpp
+    shadow_renderer.cpp
+    gradient_renderer.cpp
+    transform.cpp
+    transition.cpp
+    easing_functions.cpp
+    animation_timeline.cpp
+    keyframes.cpp
+    animation.cpp
+    animation_controller.cpp
+    property_interpolation.cpp
 )
 
 set(RENDER_HEADERS
@@ -46,6 +56,16 @@ set(RENDER_HEADERS
     layer.h
     render_cache.h
     clip_optimizer.h
+    shadow_renderer.h
+    gradient_renderer.h
+    transform.h
+    transition.h
+    easing_functions.h
+    animation_timeline.h
+    keyframes.h
+    animation.h
+    animation_controller.h
+    property_interpolation.h
 )
 
 add_library(lightui_render STATIC ${RENDER_SOURCES})

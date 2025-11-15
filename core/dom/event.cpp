@@ -110,5 +110,17 @@ bool KeyboardEvent::GetModifierState(const std::string& key_arg) const {
     return false;
 }
 
+// ========== AnimationEvent 类实现 ==========
+
+AnimationEvent::AnimationEvent(const std::string& type,
+                               const std::string& animation_name,
+                               float elapsed_time,
+                               const std::string& pseudo_element)
+    : Event(type, true, false)  // 动画事件冒泡但不可取消
+    , animation_name_(animation_name)
+    , elapsed_time_(elapsed_time)
+    , pseudo_element_(pseudo_element) {
+}
+
 } // namespace lightui
 

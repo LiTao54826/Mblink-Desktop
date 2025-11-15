@@ -21,6 +21,9 @@ function(add_skia_test TEST_NAME TEST_SOURCE)
 
     target_link_libraries(${TEST_NAME} PRIVATE
         lightui_render
+        lightui_lexbor
+        GTest::gtest
+        GTest::gtest_main
     )
 
     if(TARGET skia)
@@ -337,6 +340,64 @@ target_link_libraries(test_render_tree PRIVATE lightui_dom)
 
 # Simple Skia Text Test
 add_skia_test(test_skia_text_simple unit/test_skia_text_simple.cpp)
+
+# Shadow Renderer Test
+add_skia_test(test_shadow_renderer render/test_shadow_renderer.cpp)
+
+# Text Shadow Test
+add_skia_test(test_text_shadow render/test_text_shadow.cpp)
+
+# Gradient Renderer Test
+add_skia_test(test_gradient_renderer render/test_gradient_renderer.cpp)
+
+# Transform Test
+add_skia_test(test_transform render/test_transform.cpp)
+
+# Transition Test
+add_skia_test(test_transition render/test_transition.cpp)
+
+# Animation Timeline Test
+add_skia_test(test_animation_timeline render/test_animation_timeline.cpp)
+
+# Keyframes Test
+add_skia_test(test_keyframes render/test_keyframes.cpp)
+
+# Animation Test
+add_skia_test(test_animation render/test_animation.cpp)
+
+# Animation Controller Test
+add_skia_test(test_animation_controller render/test_animation_controller.cpp)
+
+# Property Interpolation Test
+add_skia_test(test_property_interpolation render/test_property_interpolation.cpp)
+
+# CSS Integration Test (需要额外的库)
+add_executable(test_css_integration render/test_css_integration.cpp)
+target_include_directories(test_css_integration PRIVATE
+    ${CMAKE_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/core
+    ${CMAKE_SOURCE_DIR}/third_party/skia
+)
+target_link_libraries(test_css_integration PRIVATE
+    lightui_render
+    lightui_dom
+    lightui_lexbor
+    GTest::gtest
+    GTest::gtest_main
+)
+if(TARGET skia)
+    target_link_libraries(test_css_integration PRIVATE skia)
+    if(MSVC)
+        target_compile_options(test_css_integration PRIVATE
+            $<$<CONFIG:Debug>:/MT>
+            $<$<CONFIG:Release>:/MT>
+        )
+        target_compile_definitions(test_css_integration PRIVATE
+            $<$<CONFIG:Debug>:_ITERATOR_DEBUG_LEVEL=0>
+        )
+    endif()
+endif()
+add_test(NAME test_css_integration COMMAND test_css_integration)
 
 # ============================================================================
 # Benchmark Tests

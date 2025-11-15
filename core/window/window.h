@@ -39,6 +39,8 @@ class Renderer;
 class DOMObserver;
 class RenderObject;
 class Node;
+class AnimationTimeline;
+class AnimationController;
 
 /**
  * @brief 渲染后端类型
@@ -340,6 +342,24 @@ public:
      */
     bool NeedsRepaint() const { return needs_repaint_; }
 
+    /**
+     * @brief 获取动画时间轴
+     * @return 动画时间轴指针
+     */
+    AnimationTimeline* GetAnimationTimeline() const { return animation_timeline_.get(); }
+
+    /**
+     * @brief 获取动画控制器
+     * @return 动画控制器指针
+     */
+    AnimationController* GetAnimationController() const { return animation_controller_.get(); }
+
+    /**
+     * @brief 更新动画（在渲染循环中调用）
+     * @param current_time 当前时间（秒）
+     */
+    void UpdateAnimations(double current_time);
+
 private:
     /**
      * @brief 初始化SDL
@@ -423,6 +443,12 @@ private:
     // Week 2: 增量渲染优化
     std::shared_ptr<RenderObject> cached_render_tree_;  // 缓存的渲染树
     bool render_tree_valid_ = false;  // 渲染树是否有效
+
+    // CSS Transition 动画时间轴
+    std::unique_ptr<AnimationTimeline> animation_timeline_;
+
+    // CSS Animation 动画控制器
+    std::unique_ptr<AnimationController> animation_controller_;
 };
 
 } // namespace lightui

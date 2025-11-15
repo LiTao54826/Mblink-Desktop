@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>CSS Transition Example</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            padding: 20px;
+        }
+
+        .box {
+            width: 100px;
+            height: 100px;
+            background-color: #3498db;
+            margin: 20px;
+            transition: all 0.3s ease-in-out;
+        }
+
+        .box:hover {
+            width: 150px;
+            height: 150px;
+            background-color: #e74c3c;
+            opacity: 0.8;
+        }
+
+        .button {
+            padding: 10px 20px;
+            background-color: #2ecc71;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: background-color 0.2s ease, transform 0.2s ease;
+        }
+
+        .button:hover {
+            background-color: #27ae60;
+            transform: scale(1.1);
+        }
+
+        .button:active {
+            transform: scale(0.95);
+        }
+
+        .fade {
+            opacity: 1;
+            transition: opacity 1s ease-in-out;
+        }
+
+        .fade:hover {
+            opacity: 0.3;
+        }
+
+        .slide {
+            margin-left: 0;
+            transition: margin-left 0.5s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+        }
+
+        .slide:hover {
+            margin-left: 100px;
+        }
+    </style>
+</head>
+<body>
+    <h1>CSS Transition Examples</h1>
+
+    <h2>1. Size and Color Transition</h2>
+    <div class="box"></div>
+    <p>Hover over the box to see size and color transition</p>
+
+    <h2>2. Button with Multiple Transitions</h2>
+    <button class="button">Hover Me!</button>
+    <p>Hover and click the button to see transitions</p>
+
+    <h2>3. Fade Effect</h2>
+    <div class="box fade"></div>
+    <p>Hover to see fade transition</p>
+
+    <h2>4. Slide with Custom Easing</h2>
+    <div class="box slide"></div>
+    <p>Hover to see slide with bounce effect</p>
+
+    <h2>5. Multiple Properties</h2>
+    <div style="
+        width: 200px;
+        height: 50px;
+        background-color: #9b59b6;
+        margin: 20px;
+        transition: width 0.3s ease, height 0.3s ease 0.1s, background-color 0.3s ease 0.2s;
+    " onmouseover="this.style.width='300px'; this.style.height='100px'; this.style.backgroundColor='#8e44ad';"
+       onmouseout="this.style.width='200px'; this.style.height='50px'; this.style.backgroundColor='#9b59b6';">
+        Hover for staggered transitions
+    </div>
+</body>
+</html>
+

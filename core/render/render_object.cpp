@@ -6,6 +6,8 @@
 #include "render_object.h"
 #include "box_renderer.h"
 #include "text_renderer.h"
+#include "gradient_renderer.h"
+#include "shadow_renderer.h"
 #include "color.h"
 #include "core/dom/node.h"
 #include "core/dom/element.h"
@@ -312,8 +314,17 @@ void RenderBlock::Paint(SkCanvas* canvas) {
         renderer.RenderBoxShadow(box, style.box_shadow, &style.border_radius);
     }
 
-    // 渲染背景
-    renderer.RenderBackgroundAdvanced(box, styles, &style.border_radius);
+    // 渲染背景（优先渐变，然后纯色）
+    SkRect padding_box = box.GetPaddingBox();
+    if (style.background_linear_gradient.has_value()) {
+        GradientRenderer::RenderLinearGradient(canvas, padding_box, *style.background_linear_gradient);
+    }
+    else if (style.background_radial_gradient.has_value()) {
+        GradientRenderer::RenderRadialGradient(canvas, padding_box, *style.background_radial_gradient);
+    }
+    else {
+        renderer.RenderBackgroundAdvanced(box, styles, &style.border_radius);
+    }
 
     // 渲染边框
     if (style.border.style != CSSBorderStyle::NONE && !style.border.width.IsZero()) {
@@ -1083,16 +1094,24 @@ void RenderText::Paint(SkCanvas* canvas) {
     TextRenderer text_renderer(canvas);
 
     // 设置文本样式
-    lightui::Paint text_paint;
+    SkColor text_color;
     if (!style.color.empty()) {
-        text_paint.SetColor(lightui::Color::Parse(style.color));
+        text_color = lightui::Color::Parse(style.color);
     } else {
         // 默认黑色
-        text_paint.SetColor(SK_ColorBLACK);
+        text_color = SK_ColorBLACK;
     }
 
-    // 绘制文本（使用正确的基线位置）
-    text_renderer.DrawText(text_, 0, baseline_y, font, text_paint);
+    // 绘制文本（支持阴影）
+    if (!style.text_shadow.empty()) {
+        // 使用 ShadowRenderer 渲染带阴影的文本
+        ShadowRenderer::RenderTextWithShadow(canvas, text_, font, 0, baseline_y, text_color, style.text_shadow);
+    } else {
+        // 普通文本渲染
+        lightui::Paint text_paint;
+        text_paint.SetColor(text_color);
+        text_renderer.DrawText(text_, 0, baseline_y, font, text_paint);
+    }
 
     // 绘制文本装饰（下划线、删除线等）
     if (style.text_decoration == "underline") {
@@ -1102,7 +1121,7 @@ void RenderText::Paint(SkCanvas* canvas) {
         if (underline_thickness < 1.0f) underline_thickness = 1.0f;
 
         SkPaint line_paint;
-        line_paint.setColor(text_paint.GetColor());
+        line_paint.setColor(text_color);
         line_paint.setStrokeWidth(underline_thickness);
         line_paint.setAntiAlias(true);
 
@@ -1114,7 +1133,7 @@ void RenderText::Paint(SkCanvas* canvas) {
         if (strikethrough_thickness < 1.0f) strikethrough_thickness = 1.0f;
 
         SkPaint line_paint;
-        line_paint.setColor(text_paint.GetColor());
+        line_paint.setColor(text_color);
         line_paint.setStrokeWidth(strikethrough_thickness);
         line_paint.setAntiAlias(true);
 

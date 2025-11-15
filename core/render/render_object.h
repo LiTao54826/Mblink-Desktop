@@ -12,6 +12,7 @@
 #pragma once
 
 #include "css_value.h"
+#include "transition.h"
 #include <memory>
 #include <string>
 #include <unordered_map>
@@ -27,6 +28,7 @@ namespace lightui {
 class Node;
 class Element;
 class Text;
+class AnimationTimeline;
 
 /**
  * @brief 渲染对象类型
@@ -79,10 +81,18 @@ struct ComputedStyle {
     
     // 阴影
     std::vector<CSSBoxShadow> box_shadow;
-    
+    std::vector<CSSTextShadow> text_shadow;
+
+    // 渐变
+    std::optional<CSSLinearGradient> background_linear_gradient;
+    std::optional<CSSRadialGradient> background_radial_gradient;
+
     // 透明度
     float opacity = 1.0f;
-    
+
+    // 过渡动画
+    std::vector<CSSTransition> transitions;
+
     // 其他
     std::string overflow;  // visible, hidden, scroll, auto
     std::string position;  // static, relative, absolute, fixed

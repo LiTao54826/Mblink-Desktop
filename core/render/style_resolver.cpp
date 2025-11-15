@@ -654,8 +654,8 @@ void StyleResolver::ApplyInheritance(ComputedStyle& style, const ComputedStyle* 
     style.text_decoration = parent_style->text_decoration;
 }
 
-void StyleResolver::ParseStyleProperty(ComputedStyle& style, 
-                                       const std::string& property, 
+void StyleResolver::ParseStyleProperty(ComputedStyle& style,
+                                       const std::string& property,
                                        const std::string& value) {
     if (property == "display") {
         style.display = ParseDisplay(value);
@@ -723,9 +723,6 @@ void StyleResolver::ParseStyleProperty(ComputedStyle& style,
     else if (property == "background-color") {
         style.background_color = value;
     }
-    else if (property == "background-image") {
-        style.background_image = value;
-    }
     else if (property == "background-repeat") {
         style.background_repeat = CSSValue::ParseBackgroundRepeat(value);
     }
@@ -765,6 +762,34 @@ void StyleResolver::ParseStyleProperty(ComputedStyle& style,
     else if (property == "box-shadow") {
         style.box_shadow = CSSValue::ParseBoxShadow(value);
     }
+    else if (property == "text-shadow") {
+        style.text_shadow = CSSValue::ParseTextShadow(value);
+    }
+    else if (property == "background-image") {
+        // 检查是否为渐变
+        if (value.find("linear-gradient") != std::string::npos) {
+            auto gradient = CSSValue::ParseLinearGradient(value);
+            if (gradient.has_value()) {
+                style.background_linear_gradient = gradient;
+            } else {
+                // 解析失败，存储原始值
+                style.background_image = value;
+            }
+        }
+        else if (value.find("radial-gradient") != std::string::npos) {
+            auto gradient = CSSValue::ParseRadialGradient(value);
+            if (gradient.has_value()) {
+                style.background_radial_gradient = gradient;
+            } else {
+                // 解析失败，存储原始值
+                style.background_image = value;
+            }
+        }
+        else {
+            // 普通图片URL
+            style.background_image = value;
+        }
+    }
     else if (property == "opacity") {
         try {
             style.opacity = std::stof(value);
@@ -772,6 +797,9 @@ void StyleResolver::ParseStyleProperty(ComputedStyle& style,
         } catch (...) {
             style.opacity = 1.0f;
         }
+    }
+    else if (property == "transition") {
+        style.transitions = CSSTransition::Parse(value);
     }
 }
 

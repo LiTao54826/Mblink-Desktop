@@ -45,6 +45,9 @@
 #include "core/render/text/font_manager.h"
 #include "core/render/dirty_region.h"
 #include "core/render/dirty_region_collector.h"
+#include "core/render/transition.h"
+#include "core/render/animation_timeline.h"
+#include "core/render/animation_controller.h"
 
 namespace lightui {
 
@@ -206,6 +209,12 @@ Window::Window(const WindowConfig& config) : config_(config) {
         InitCPURendering();
         actual_backend_ = RenderBackend::CPU;
     }
+
+    // 初始化动画时间轴
+    animation_timeline_ = std::make_unique<AnimationTimeline>();
+
+    // 初始化动画控制器
+    animation_controller_ = std::make_unique<AnimationController>();
 
     std::cout << "[Window] Constructor completed" << std::endl;
     std::cout.flush();
@@ -841,6 +850,13 @@ void Window::RenderDocument() {
         return;
     }
 
+    // 更新动画
+    static Uint64 start_time = SDL_GetPerformanceCounter();
+    Uint64 current_time = SDL_GetPerformanceCounter();
+    Uint64 frequency = SDL_GetPerformanceFrequency();
+    double timestamp_sec = static_cast<double>(current_time - start_time) / frequency;
+    UpdateAnimations(timestamp_sec);
+
     // 获取画布
     SkCanvas* canvas = surface_->getCanvas();
     if (!canvas) {
@@ -912,6 +928,13 @@ void Window::RenderDocumentIncremental() {
     if (!document_ || !surface_) {
         return;
     }
+
+    // 更新动画
+    static Uint64 start_time = SDL_GetPerformanceCounter();
+    Uint64 current_time = SDL_GetPerformanceCounter();
+    Uint64 frequency = SDL_GetPerformanceFrequency();
+    double timestamp_sec = static_cast<double>(current_time - start_time) / frequency;
+    UpdateAnimations(timestamp_sec);
 
     // 获取画布
     SkCanvas* canvas = surface_->getCanvas();
@@ -1126,6 +1149,22 @@ void Window::Clear(uint32_t color) {
         );
         canvas->clear(sk_color);
     }
+}
+
+void Window::UpdateAnimations(double current_time) {
+    // 更新 CSS Transition 动画
+    if (animation_timeline_) {
+        animation_timeline_->Update(current_time);
+    }
+
+    // 更新 CSS Animation 动画
+    if (animation_controller_) {
+        animation_controller_->Update(current_time);
+    }
+
+    // 如果有动画正在运行，标记需要重绘
+    // TODO: 可以优化为只在动画实际改变值时才重绘
+    SetNeedsRepaint();
 }
 
 } // namespace lightui
