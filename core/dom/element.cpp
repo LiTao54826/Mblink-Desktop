@@ -33,6 +33,7 @@
 #include <lexbor/html/serialize.h>
 #include <lexbor/dom/interfaces/element.h>
 #include <lexbor/dom/interfaces/text.h>
+#include "core/lexbor/lexbor_document.h"
 
 namespace lightui {
 
@@ -93,6 +94,9 @@ void Element::SetAttribute(const std::string& name, const std::string& value) {
     if (doc) {
         doc->GetObserverManager().NotifyAttributeChanged(this, name, old_value, value);
     }
+
+    // 标记 Lexbor 需要同步
+    MarkLexborDirty();
 }
 
 std::string Element::GetAttribute(const std::string& name) const {
@@ -118,6 +122,7 @@ void Element::RemoveAttribute(const std::string& name) {
     // 移除属性
     attributes_.erase(name);
     MarkDirty();
+    MarkLexborDirty();
 
     // 通知观察者（只有当属性存在时才通知）
     if (!old_value.empty()) {
@@ -903,6 +908,89 @@ bool Element::IsStyleAttribute(const std::string& name) {
     };
 
     return style_attrs.count(name) > 0;
+}
+
+// ========== DOM 同步机制 ==========
+
+void Element::SyncToLexbor() {
+    // 如果不需要同步，直接返回
+    if (!lexbor_dirty_) {
+        return;
+    }
+
+    // 获取 owner document
+    auto doc = std::dynamic_pointer_cast<Document>(GetOwnerDocument());
+    if (!doc || !doc->GetLexborDocument()) {
+        return;
+    }
+
+    auto lexbor_doc = doc->GetLexborDocument();
+    auto native_doc = lexbor_doc->GetNativeDocument();
+    if (!native_doc) {
+        return;
+    }
+
+    // 如果还没有 Lexbor 元素，创建一个
+    if (!lexbor_element_) {
+        lexbor_element_ = reinterpret_cast<lxb_dom_node_t*>(
+            lxb_dom_document_create_element(
+                lxb_dom_interface_document(native_doc),
+                reinterpret_cast<const lxb_char_t*>(tag_name_.c_str()),
+                tag_name_.length(),
+                nullptr
+            )
+        );
+
+        if (!lexbor_element_) {
+            return;
+        }
+    }
+
+    // 同步属性
+    lxb_dom_element_t* lexbor_elem = reinterpret_cast<lxb_dom_element_t*>(lexbor_element_);
+    for (const auto& [name, value] : attributes_) {
+        lxb_dom_element_set_attribute(
+            lexbor_elem,
+            reinterpret_cast<const lxb_char_t*>(name.c_str()),
+            name.length(),
+            reinterpret_cast<const lxb_char_t*>(value.c_str()),
+            value.length()
+        );
+    }
+
+    // 同步子节点
+    // 先清空 Lexbor 元素的子节点
+    lxb_dom_node_t* child = lexbor_element_->first_child;
+    while (child) {
+        lxb_dom_node_t* next = child->next;
+        lxb_dom_node_remove(child);
+        lxb_dom_node_destroy(child);
+        child = next;
+    }
+
+    // 添加新的子节点
+    for (const auto& mbink_child : child_nodes_) {
+        if (auto elem_child = std::dynamic_pointer_cast<Element>(mbink_child)) {
+            // 递归同步子元素
+            elem_child->SyncToLexbor();
+            if (elem_child->GetLexborElement()) {
+                lxb_dom_node_insert_child(lexbor_element_, elem_child->GetLexborElement());
+            }
+        } else if (auto text_child = std::dynamic_pointer_cast<Text>(mbink_child)) {
+            // 创建文本节点
+            auto text_content = text_child->GetTextContent();
+            lxb_dom_text_t* lexbor_text = lxb_dom_document_create_text_node(
+                lxb_dom_interface_document(native_doc),
+                reinterpret_cast<const lxb_char_t*>(text_content.c_str()),
+                text_content.length()
+            );
+            if (lexbor_text) {
+                lxb_dom_node_insert_child(lexbor_element_, lxb_dom_interface_node(lexbor_text));
+            }
+        }
+    }
+
+    lexbor_dirty_ = false;
 }
 
 } // namespace lightui

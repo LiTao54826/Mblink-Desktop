@@ -370,6 +370,36 @@ public:
     static std::shared_ptr<Node> ConvertLexborNodeToNode(lxb_dom_node_t* lexbor_node,
                                                           std::shared_ptr<Document> doc);
 
+    // ========== DOM 同步机制 ==========
+
+    /**
+     * @brief 获取关联的 Lexbor 元素
+     * @return Lexbor 元素指针，如果没有则返回 nullptr
+     */
+    lxb_dom_node_t* GetLexborElement() const { return lexbor_element_; }
+
+    /**
+     * @brief 设置关联的 Lexbor 元素
+     * @param lexbor_elem Lexbor 元素指针
+     */
+    void SetLexborElement(lxb_dom_node_t* lexbor_elem) { lexbor_element_ = lexbor_elem; }
+
+    /**
+     * @brief 同步到 Lexbor DOM
+     * @details 将当前元素及其子树同步到 Lexbor DOM
+     */
+    void SyncToLexbor();
+
+    /**
+     * @brief 标记 Lexbor 需要同步
+     */
+    void MarkLexborDirty() { lexbor_dirty_ = true; }
+
+    /**
+     * @brief 检查 Lexbor 是否需要同步
+     */
+    bool IsLexborDirty() const { return lexbor_dirty_; }
+
 private:
     /**
      * @brief 处理事件（内部方法）
@@ -413,6 +443,10 @@ private:
 
     // dataset对象（懒加载）
     mutable std::shared_ptr<DOMStringMap> dataset_;
+
+    // Lexbor DOM 同步
+    lxb_dom_node_t* lexbor_element_ = nullptr;  // 关联的 Lexbor 元素
+    bool lexbor_dirty_ = true;                   // Lexbor 是否需要同步
 };
 
 } // namespace lightui

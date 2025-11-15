@@ -10,6 +10,7 @@
 #include "text.h"
 #include <algorithm>
 #include <cctype>
+#include <iostream>
 
 // Lexbor头文件
 #include <lexbor/html/html.h>
@@ -107,9 +108,11 @@ lxb_dom_element* SelectorEngine::ConvertToLexborDOM(
     }
 
     // 创建Lexbor元素
+    // 注意：必须将 tag_name 存储在局部变量中，避免临时对象被销毁
     lxb_dom_document_t* doc = lxb_dom_interface_document(ctx.document);
-    const lxb_char_t* tag_name = reinterpret_cast<const lxb_char_t*>(element->GetTagName().c_str());
-    size_t tag_len = element->GetTagName().length();
+    std::string tag_name_str = element->GetTagName();
+    const lxb_char_t* tag_name = reinterpret_cast<const lxb_char_t*>(tag_name_str.c_str());
+    size_t tag_len = tag_name_str.length();
 
     lxb_dom_element_t* lexbor_elem = lxb_dom_document_create_element(
         doc, tag_name, tag_len, nullptr);
@@ -281,7 +284,6 @@ std::shared_ptr<Element> SelectorEngine::QuerySelector(
         if (list) {
             lxb_css_selector_list_destroy_memory(list);
         }
-        // 清理Lexbor DOM树
         lxb_dom_node_destroy_deep(lxb_dom_interface_node(lexbor_root));
         return nullptr;
     }
