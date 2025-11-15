@@ -37,6 +37,7 @@ namespace lightui {
 class Document;
 class Renderer;
 class DOMObserver;
+class LayoutEngine;
 class RenderObject;
 class Node;
 class AnimationTimeline;
@@ -449,6 +450,9 @@ private:
 
     // CSS Animation 动画控制器
     std::unique_ptr<AnimationController> animation_controller_;
+
+    // Taffy CSS 布局引擎
+    std::unique_ptr<LayoutEngine> layout_engine_;
 };
 
 } // namespace lightui

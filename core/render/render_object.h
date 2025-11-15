@@ -149,6 +149,21 @@ struct ComputedStyle {
     CSSLength margin_right;
     CSSLength margin_bottom;
     CSSLength margin_left;
+    CSSLength padding_top;
+    CSSLength padding_right;
+    CSSLength padding_bottom;
+    CSSLength padding_left;
+    float border_top_width = 0.0f;
+    float border_right_width = 0.0f;
+    float border_bottom_width = 0.0f;
+    float border_left_width = 0.0f;
+
+    // 文本布局属性
+    std::string white_space = "normal";  // normal, nowrap, pre, pre-wrap, pre-line
+    std::string word_wrap = "normal";    // normal, break-word
+    std::string text_overflow = "clip";  // clip, ellipsis
+    std::string vertical_align = "baseline";  // baseline, top, middle, bottom
+    std::string cursor = "default";  // default, pointer, text, etc.
 
     ComputedStyle() {
         width = CSSLength(0, CSSUnit::AUTO);
@@ -171,6 +186,10 @@ struct ComputedStyle {
         margin_right = CSSLength(0, CSSUnit::PX);
         margin_bottom = CSSLength(0, CSSUnit::PX);
         margin_left = CSSLength(0, CSSUnit::PX);
+        padding_top = CSSLength(0, CSSUnit::PX);
+        padding_right = CSSLength(0, CSSUnit::PX);
+        padding_bottom = CSSLength(0, CSSUnit::PX);
+        padding_left = CSSLength(0, CSSUnit::PX);
     }
 };
 

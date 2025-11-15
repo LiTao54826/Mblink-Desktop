@@ -8,11 +8,6 @@
 #include "render/render_object.h"
 #include <cmath>
 
-// Taffy C API
-extern "C" {
-#include "taffy.h"
-}
-
 namespace lightui {
 
 LayoutEngine::LayoutEngine()
@@ -31,7 +26,7 @@ LayoutEngine::~LayoutEngine() {
     }
 }
 
-void LayoutEngine::BuildLayoutTree(Element* root) {
+void LayoutEngine::BuildLayoutTree(std::shared_ptr<RenderObject> root) {
     if (!root || !taffy_tree_) {
         return;
     }
@@ -41,7 +36,7 @@ void LayoutEngine::BuildLayoutTree(Element* root) {
     // Build tree from root
     TaffyNodeId invalid_parent;
     invalid_parent._0 = 0;
-    BuildSubtree(root, invalid_parent);
+    BuildSubtree(root.get(), invalid_parent);
 }
 
 void LayoutEngine::ComputeLayout(float available_width, float available_height) {
@@ -51,44 +46,26 @@ void LayoutEngine::ComputeLayout(float available_width, float available_height) 
 
     // Call Taffy layout computation
     TaffyTree_ComputeLayout(taffy_tree_, root_node_, available_width, available_height);
-
-    // Read layout results for all elements
-    for (auto& [element, node] : element_to_node_) {
-        ReadLayoutResults(element);
-    }
 }
 
-LayoutInfo LayoutEngine::GetLayoutInfo(Element* element) const {
-    LayoutInfo info;
-
-    if (!taffy_tree_) {
-        return info;
+void LayoutEngine::GetLayoutInfo(std::shared_ptr<RenderObject> root) {
+    if (!root || !taffy_tree_) {
+        return;
     }
 
-    auto it = element_to_node_.find(element);
-    if (it != element_to_node_.end()) {
-        TaffyResult_TaffyLayout result = TaffyTree_GetLayout(taffy_tree_, it->second);
-        if (result.return_code == TAFFY_RETURN_CODE_OK) {
-            info.x = result.value.x;
-            info.y = result.value.y;
-            info.width = result.value.width;
-            info.height = result.value.height;
-            info.is_laid_out = true;
-        }
-    }
-
-    return info;
+    // Read layout results recursively
+    ReadLayoutResults(root.get());
 }
 
-void LayoutEngine::UpdateStyle(Element* element, const ComputedStyle& style) {
-    auto it = element_to_node_.find(element);
+void LayoutEngine::UpdateStyle(RenderObject* render_obj, const ComputedStyle& style) {
+    auto it = element_to_node_.find(render_obj);
     if (it != element_to_node_.end()) {
         ApplyStyle(it->second, style);
     }
 }
 
-void LayoutEngine::AddElement(Element* element, Element* parent) {
-    if (!element || HasElement(element) || !taffy_tree_) {
+void LayoutEngine::AddElement(RenderObject* render_obj, RenderObject* parent) {
+    if (!render_obj || HasElement(render_obj) || !taffy_tree_) {
         return;
     }
 
@@ -102,9 +79,9 @@ void LayoutEngine::AddElement(Element* element, Element* parent) {
         }
     }
 
-    TaffyNodeId node = CreateNode(element);
-    element_to_node_[element] = node;
-    node_to_element_[node._0] = element;
+    TaffyNodeId node = CreateNode(render_obj);
+    element_to_node_[render_obj] = node;
+    node_to_element_[node._0] = render_obj;
 
     // Add to parent in Taffy tree
     if (parent_node._0 != 0) {
@@ -117,8 +94,8 @@ void LayoutEngine::AddElement(Element* element, Element* parent) {
     }
 }
 
-void LayoutEngine::RemoveElement(Element* element) {
-    auto it = element_to_node_.find(element);
+void LayoutEngine::RemoveElement(RenderObject* render_obj) {
+    auto it = element_to_node_.find(render_obj);
     if (it == element_to_node_.end() || !taffy_tree_) {
         return;
     }
@@ -147,11 +124,11 @@ void LayoutEngine::Clear() {
     // }
 }
 
-bool LayoutEngine::HasElement(Element* element) const {
-    return element_to_node_.find(element) != element_to_node_.end();
+bool LayoutEngine::HasElement(RenderObject* render_obj) const {
+    return element_to_node_.find(render_obj) != element_to_node_.end();
 }
 
-TaffyNodeId LayoutEngine::CreateNode(Element* element) {
+TaffyNodeId LayoutEngine::CreateNode(RenderObject* render_obj) {
     TaffyNodeId node;
     node._0 = 0;
 
@@ -164,12 +141,9 @@ TaffyNodeId LayoutEngine::CreateNode(Element* element) {
     if (result.return_code == TAFFY_RETURN_CODE_OK) {
         node = result.value;
 
-        // Apply element's computed style if available
-        if (element) {
-            auto render_obj = element->GetRenderObject();
-            if (render_obj) {
-                ApplyStyle(node, render_obj->GetComputedStyle());
-            }
+        // Apply render object's computed style
+        if (render_obj) {
+            ApplyStyle(node, render_obj->GetComputedStyle());
         }
     }
 
@@ -232,10 +206,10 @@ void LayoutEngine::ApplyStyle(TaffyNodeId node, const ComputedStyle& style) {
     apply_dimension(taffy_style, style.padding.left, TaffyStyle_SetPaddingLeft);
 
     // Apply border (convert to length)
-    TaffyStyle_SetBorderTop(taffy_style, style.border.top.width, TAFFY_UNIT_LENGTH);
-    TaffyStyle_SetBorderRight(taffy_style, style.border.right.width, TAFFY_UNIT_LENGTH);
-    TaffyStyle_SetBorderBottom(taffy_style, style.border.bottom.width, TAFFY_UNIT_LENGTH);
-    TaffyStyle_SetBorderLeft(taffy_style, style.border.left.width, TAFFY_UNIT_LENGTH);
+    TaffyStyle_SetBorderTop(taffy_style, style.border_top_width, TAFFY_UNIT_LENGTH);
+    TaffyStyle_SetBorderRight(taffy_style, style.border_right_width, TAFFY_UNIT_LENGTH);
+    TaffyStyle_SetBorderBottom(taffy_style, style.border_bottom_width, TAFFY_UNIT_LENGTH);
+    TaffyStyle_SetBorderLeft(taffy_style, style.border_left_width, TAFFY_UNIT_LENGTH);
 
     // Apply Flexbox properties
     if (style.display == RenderObjectType::FLEX) {
@@ -296,46 +270,42 @@ void LayoutEngine::ApplyStyle(TaffyNodeId node, const ComputedStyle& style) {
     }
 }
 
-void LayoutEngine::SyncChildren(Element* element, TaffyNodeId node) {
-    if (!element || !taffy_tree_) {
+void LayoutEngine::SyncChildren(RenderObject* render_obj, TaffyNodeId node) {
+    if (!render_obj || !taffy_tree_) {
         return;
     }
 
-    // Get children from element
-    auto children = element->GetChildren();
-    for (auto& child_node : children) {
-        if (child_node->GetNodeType() == NodeType::ELEMENT_NODE) {
-            Element* child_element = static_cast<Element*>(child_node.get());
-
-            // Create or get Taffy node for child
-            TaffyNodeId child_taffy_node;
-            auto it = element_to_node_.find(child_element);
-            if (it == element_to_node_.end()) {
-                child_taffy_node = CreateNode(child_element);
-                element_to_node_[child_element] = child_taffy_node;
-                node_to_element_[child_taffy_node._0] = child_element;
-            } else {
-                child_taffy_node = it->second;
-            }
-
-            // Add as child to parent node
-            TaffyTree_AppendChild(taffy_tree_, node, child_taffy_node);
-
-            // Recursively sync
-            SyncChildren(child_element, child_taffy_node);
+    // Get children from render object
+    auto& children = render_obj->GetChildren();
+    for (auto& child : children) {
+        // Create or get Taffy node for child
+        TaffyNodeId child_taffy_node;
+        auto it = element_to_node_.find(child.get());
+        if (it == element_to_node_.end()) {
+            child_taffy_node = CreateNode(child.get());
+            element_to_node_[child.get()] = child_taffy_node;
+            node_to_element_[child_taffy_node._0] = child.get();
+        } else {
+            child_taffy_node = it->second;
         }
+
+        // Add as child to parent node
+        TaffyTree_AppendChild(taffy_tree_, node, child_taffy_node);
+
+        // Recursively sync
+        SyncChildren(child.get(), child_taffy_node);
     }
 }
 
-void LayoutEngine::BuildSubtree(Element* element, TaffyNodeId parent_node) {
-    if (!element || !taffy_tree_) {
+void LayoutEngine::BuildSubtree(RenderObject* render_obj, TaffyNodeId parent_node) {
+    if (!render_obj || !taffy_tree_) {
         return;
     }
 
-    // Create node for this element
-    TaffyNodeId node = CreateNode(element);
-    element_to_node_[element] = node;
-    node_to_element_[node._0] = element;
+    // Create node for this render object
+    TaffyNodeId node = CreateNode(render_obj);
+    element_to_node_[render_obj] = node;
+    node_to_element_[node._0] = render_obj;
 
     // Set as root if no parent
     if (parent_node._0 == 0 && !has_root_) {
@@ -349,21 +319,18 @@ void LayoutEngine::BuildSubtree(Element* element, TaffyNodeId parent_node) {
     }
 
     // Recursively build children
-    auto children = element->GetChildren();
-    for (auto& child_node : children) {
-        if (child_node->GetNodeType() == NodeType::ELEMENT_NODE) {
-            Element* child_element = static_cast<Element*>(child_node.get());
-            BuildSubtree(child_element, node);
-        }
+    auto& children = render_obj->GetChildren();
+    for (auto& child : children) {
+        BuildSubtree(child.get(), node);
     }
 }
 
-void LayoutEngine::ReadLayoutResults(Element* element) {
-    if (!element || !taffy_tree_) {
+void LayoutEngine::ReadLayoutResults(RenderObject* render_obj) {
+    if (!render_obj || !taffy_tree_) {
         return;
     }
 
-    auto it = element_to_node_.find(element);
+    auto it = element_to_node_.find(render_obj);
     if (it == element_to_node_.end()) {
         return;
     }
@@ -374,17 +341,18 @@ void LayoutEngine::ReadLayoutResults(Element* element) {
         return;
     }
 
-    // Update element's render object with layout info
-    auto render_obj = element->GetRenderObject();
-    if (render_obj) {
-        LayoutInfo info;
-        info.x = result.value.x;
-        info.y = result.value.y;
-        info.width = result.value.width;
-        info.height = result.value.height;
-        info.is_laid_out = true;
+    // Update render object with layout info
+    LayoutInfo& info = render_obj->GetLayoutInfo();
+    info.x = result.value.x;
+    info.y = result.value.y;
+    info.width = result.value.width;
+    info.height = result.value.height;
+    info.is_laid_out = true;
 
-        render_obj->SetLayoutInfo(info);
+    // Recursively read layout for children
+    auto& children = render_obj->GetChildren();
+    for (auto& child : children) {
+        ReadLayoutResults(child.get());
     }
 }
 

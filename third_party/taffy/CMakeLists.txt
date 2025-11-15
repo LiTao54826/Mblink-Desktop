@@ -32,6 +32,15 @@ target_include_directories(taffy INTERFACE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 
+# Link Windows system libraries required by Rust std
+if(WIN32)
+    target_link_libraries(taffy INTERFACE
+        ntdll
+        ws2_32
+        userenv
+    )
+endif()
+
 # Export variables for parent scope
 set(TAFFY_INCLUDE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/include" PARENT_SCOPE)
 set(TAFFY_FOUND TRUE PARENT_SCOPE)

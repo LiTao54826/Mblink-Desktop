@@ -3,20 +3,20 @@
 
 #include <unordered_map>
 #include <memory>
+#include <cstdint>
+
+// Taffy C API
+extern "C" {
+#include "taffy.h"
+}
 
 // Forward declarations
 namespace lightui {
 class Element;
+class RenderObject;
 struct ComputedStyle;
 struct LayoutInfo;
 }
-
-// Taffy C API forward declarations
-// Will be included in .cpp file
-struct TaffyTree;
-typedef struct TaffyNodeId {
-    uint64_t _0;
-} TaffyNodeId;
 
 namespace lightui {
 
@@ -36,10 +36,10 @@ public:
     LayoutEngine& operator=(const LayoutEngine&) = delete;
 
     /**
-     * @brief Build layout tree from DOM tree
-     * @param root Root element of the DOM tree
+     * @brief Build layout tree from render tree
+     * @param root Root of the render tree
      */
-    void BuildLayoutTree(Element* root);
+    void BuildLayoutTree(std::shared_ptr<RenderObject> root);
 
     /**
      * @brief Compute layout for the entire tree
@@ -49,31 +49,30 @@ public:
     void ComputeLayout(float available_width, float available_height);
 
     /**
-     * @brief Get layout information for an element
-     * @param element The element to query
-     * @return Layout information (position, size, etc.)
+     * @brief Get layout information and update render tree
+     * @param root Root of the render tree
      */
-    LayoutInfo GetLayoutInfo(Element* element) const;
+    void GetLayoutInfo(std::shared_ptr<RenderObject> root);
 
     /**
-     * @brief Update style for an element
-     * @param element The element to update
+     * @brief Update style for a render object
+     * @param render_obj The render object to update
      * @param style The new computed style
      */
-    void UpdateStyle(Element* element, const ComputedStyle& style);
+    void UpdateStyle(RenderObject* render_obj, const ComputedStyle& style);
 
     /**
-     * @brief Add a new element to the layout tree
-     * @param element The element to add
-     * @param parent Parent element (nullptr for root)
+     * @brief Add a new render object to the layout tree
+     * @param render_obj The render object to add
+     * @param parent Parent render object
      */
-    void AddElement(Element* element, Element* parent);
+    void AddElement(RenderObject* render_obj, RenderObject* parent);
 
     /**
-     * @brief Remove an element from the layout tree
-     * @param element The element to remove
+     * @brief Remove a render object from the layout tree
+     * @param render_obj The render object to remove
      */
-    void RemoveElement(Element* element);
+    void RemoveElement(RenderObject* render_obj);
 
     /**
      * @brief Clear the entire layout tree
@@ -81,30 +80,30 @@ public:
     void Clear();
 
     /**
-     * @brief Check if an element is in the layout tree
-     * @param element The element to check
-     * @return true if element is in the tree
+     * @brief Check if a render object is in the layout tree
+     * @param render_obj The render object to check
+     * @return true if render object is in the tree
      */
-    bool HasElement(Element* element) const;
+    bool HasElement(RenderObject* render_obj) const;
 
 private:
     // Taffy tree instance
     TaffyTree* taffy_tree_;
 
-    // Bidirectional mapping between DOM elements and Taffy nodes
-    std::unordered_map<Element*, TaffyNodeId> element_to_node_;
-    std::unordered_map<uint64_t, Element*> node_to_element_;
+    // Bidirectional mapping between render objects and Taffy nodes
+    std::unordered_map<RenderObject*, TaffyNodeId> element_to_node_;
+    std::unordered_map<uint64_t, RenderObject*> node_to_element_;
 
     // Root node
     TaffyNodeId root_node_;
     bool has_root_;
 
     /**
-     * @brief Create a Taffy node for an element
-     * @param element The element
+     * @brief Create a Taffy node for a render object
+     * @param render_obj The render object
      * @return Taffy node ID
      */
-    TaffyNodeId CreateNode(Element* element);
+    TaffyNodeId CreateNode(RenderObject* render_obj);
 
     /**
      * @brief Apply computed style to a Taffy node
@@ -114,24 +113,24 @@ private:
     void ApplyStyle(TaffyNodeId node, const ComputedStyle& style);
 
     /**
-     * @brief Synchronize children between DOM and Taffy tree
-     * @param element Parent element
+     * @brief Synchronize children between render tree and Taffy tree
+     * @param render_obj Parent render object
      * @param node Parent Taffy node
      */
-    void SyncChildren(Element* element, TaffyNodeId node);
+    void SyncChildren(RenderObject* render_obj, TaffyNodeId node);
 
     /**
-     * @brief Recursively build layout tree from DOM subtree
-     * @param element Current element
+     * @brief Recursively build layout tree from render subtree
+     * @param render_obj Current render object
      * @param parent_node Parent Taffy node (invalid for root)
      */
-    void BuildSubtree(Element* element, TaffyNodeId parent_node);
+    void BuildSubtree(RenderObject* render_obj, TaffyNodeId parent_node);
 
     /**
-     * @brief Read layout results from Taffy and update elements
-     * @param element Current element
+     * @brief Read layout results from Taffy and update render objects
+     * @param render_obj Current render object
      */
-    void ReadLayoutResults(Element* element);
+    void ReadLayoutResults(RenderObject* render_obj);
 };
 
 } // namespace lightui

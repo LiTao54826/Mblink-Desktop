@@ -13,6 +13,7 @@ add_library(lightui_layout STATIC ${LAYOUT_SOURCES})
 target_include_directories(lightui_layout PUBLIC
     ${CMAKE_SOURCE_DIR}
     ${CMAKE_SOURCE_DIR}/core
+    ${CMAKE_SOURCE_DIR}/third_party
 )
 
 target_link_libraries(lightui_layout PUBLIC
@@ -25,4 +26,21 @@ if(TARGET taffy)
     message(STATUS "Linking Taffy layout engine")
 else()
     message(WARNING "Taffy not found, layout module may not build correctly")
+endif()
+
+# 链接Skia（如果启用）
+if(TARGET skia)
+    target_link_libraries(lightui_layout PUBLIC skia)
+    target_include_directories(lightui_layout PUBLIC ${CMAKE_SOURCE_DIR}/third_party/skia)
+
+    # Match Skia's runtime library settings (MSVC)
+    if(MSVC)
+        target_compile_options(lightui_layout PUBLIC
+            $<$<CONFIG:Debug>:/MT>
+            $<$<CONFIG:Release>:/MT>
+        )
+        target_compile_definitions(lightui_layout PUBLIC
+            $<$<CONFIG:Debug>:_ITERATOR_DEBUG_LEVEL=0>
+        )
+    endif()
 endif()

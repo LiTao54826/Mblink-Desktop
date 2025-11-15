@@ -48,6 +48,7 @@
 #include "core/render/transition.h"
 #include "core/render/animation_timeline.h"
 #include "core/render/animation_controller.h"
+#include "core/layout/layout_engine.h"
 
 namespace lightui {
 
@@ -215,6 +216,9 @@ Window::Window(const WindowConfig& config) : config_(config) {
 
     // 初始化动画控制器
     animation_controller_ = std::make_unique<AnimationController>();
+
+    // 初始化 Taffy CSS 布局引擎
+    layout_engine_ = std::make_unique<LayoutEngine>();
 
     std::cout << "[Window] Constructor completed" << std::endl;
     std::cout.flush();
@@ -897,11 +901,26 @@ void Window::RenderDocument() {
         if (root_render) {
             std::cout << "[RenderDocument] Render tree built successfully" << std::endl;
 
-            // 布局 - 使用客户区大小（与Skia surface一致）
+            // 获取窗口大小
             int width, height;
             SDL_GetWindowSizeInPixels(sdl_window_, &width, &height);
             std::cout << "[RenderDocument] Layout: " << width << "x" << height << " (client area)" << std::endl;
-            root_render->Layout(static_cast<float>(width), static_cast<float>(height));
+
+            // 使用 Taffy 布局引擎计算布局
+            if (layout_engine_) {
+                std::cout << "[RenderDocument] Building Taffy layout tree..." << std::endl;
+                layout_engine_->BuildLayoutTree(root_render);
+
+                std::cout << "[RenderDocument] Computing layout with Taffy..." << std::endl;
+                layout_engine_->ComputeLayout(static_cast<float>(width), static_cast<float>(height));
+
+                std::cout << "[RenderDocument] Reading layout results..." << std::endl;
+                layout_engine_->GetLayoutInfo(root_render);
+            } else {
+                // 降级到传统布局（如果 LayoutEngine 未初始化）
+                std::cout << "[RenderDocument] Using traditional layout (LayoutEngine not available)" << std::endl;
+                root_render->Layout(static_cast<float>(width), static_cast<float>(height));
+            }
 
             std::cout << "[RenderDocument] Starting paint..." << std::endl;
             // 绘制
@@ -966,7 +985,21 @@ void Window::RenderDocumentIncremental() {
 
         // 新渲染树需要完整布局
         DEBUG_LOG("[RenderDocumentIncremental] Full layout: " << width << "x" << height);
-        cached_render_tree_->Layout(static_cast<float>(width), static_cast<float>(height));
+
+        // 使用 Taffy 布局引擎计算布局
+        if (layout_engine_) {
+            DEBUG_LOG("[RenderDocumentIncremental] Building Taffy layout tree...");
+            layout_engine_->BuildLayoutTree(cached_render_tree_);
+
+            DEBUG_LOG("[RenderDocumentIncremental] Computing layout with Taffy...");
+            layout_engine_->ComputeLayout(static_cast<float>(width), static_cast<float>(height));
+
+            DEBUG_LOG("[RenderDocumentIncremental] Reading layout results...");
+            layout_engine_->GetLayoutInfo(cached_render_tree_);
+        } else {
+            // 降级到传统布局
+            cached_render_tree_->Layout(static_cast<float>(width), static_cast<float>(height));
+        }
 
         // 清空画布并完整绘制
         canvas->clear(SK_ColorWHITE);
