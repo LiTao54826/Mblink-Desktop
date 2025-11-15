@@ -689,7 +689,16 @@ void Element::SetOuterHTML(const std::string& html) {
     // 使用Lexbor解析HTML片段
     auto doc = std::dynamic_pointer_cast<Document>(GetOwnerDocument());
     if (!doc) {
-        throw std::runtime_error("Cannot set outerHTML without document");
+        // 尝试从父节点获取document
+        if (parent) {
+            doc = std::dynamic_pointer_cast<Document>(parent->GetOwnerDocument());
+        }
+    }
+
+    if (!doc) {
+        // 改为返回而不是抛出异常，避免崩溃
+        std::cerr << "Warning: Cannot set outerHTML without document" << std::endl;
+        return;
     }
 
     // 创建临时Lexbor文档用于解析
@@ -764,59 +773,14 @@ std::shared_ptr<Node> Element::ConvertLexborNodeToNode(lxb_dom_node_t* lexbor_no
         const lxb_char_t* tag_name_data = lxb_dom_element_qualified_name(lexbor_elem, &tag_name_len);
         std::string tag_name(reinterpret_cast<const char*>(tag_name_data), tag_name_len);
 
-        // 根据标签名创建特定类型的元素
+        // 使用 Document::CreateElement 创建元素，这样会自动设置正确的类型和 owner_document
         std::shared_ptr<Element> new_elem;
-        if (tag_name == "input") {
-            auto input_elem = std::make_shared<HTMLInputElement>();
-            // 从属性中读取type并设置
-            lxb_dom_attr_t* type_attr = lxb_dom_element_attr_by_name(lexbor_elem,
-                reinterpret_cast<const lxb_char_t*>("type"), 4);
-            if (type_attr && type_attr->value) {
-                size_t type_len;
-                const lxb_char_t* type_data = lxb_dom_attr_value(type_attr, &type_len);
-                std::string type_str(reinterpret_cast<const char*>(type_data), type_len);
-                input_elem->SetAttribute("type", type_str);
-                // SetInputType会从属性中读取
-            }
-            new_elem = input_elem;
-        } else if (tag_name == "textarea") {
-            new_elem = std::make_shared<HTMLTextAreaElement>();
-        } else if (tag_name == "button") {
-            new_elem = std::make_shared<HTMLButtonElement>();
-        } else if (tag_name == "form") {
-            new_elem = std::make_shared<HTMLFormElement>();
-        } else if (tag_name == "select") {
-            new_elem = std::make_shared<HTMLSelectElement>();
-        } else if (tag_name == "option") {
-            new_elem = std::make_shared<HTMLOptionElement>();
-        } else if (tag_name == "a") {
-            new_elem = std::make_shared<HTMLAnchorElement>();
-        } else if (tag_name == "label") {
-            new_elem = std::make_shared<HTMLLabelElement>();
-        } else if (tag_name == "img") {
-            new_elem = std::make_shared<HTMLImageElement>();
-        } else if (tag_name == "div") {
-            new_elem = std::make_shared<HTMLDivElement>();
-        } else if (tag_name == "span") {
-            new_elem = std::make_shared<HTMLSpanElement>();
-        } else if (tag_name == "p") {
-            new_elem = std::make_shared<HTMLParagraphElement>();
-        } else if (tag_name == "h1") {
-            new_elem = std::make_shared<HTMLHeadingElement>(1);
-        } else if (tag_name == "h2") {
-            new_elem = std::make_shared<HTMLHeadingElement>(2);
-        } else if (tag_name == "h3") {
-            new_elem = std::make_shared<HTMLHeadingElement>(3);
-        } else if (tag_name == "h4") {
-            new_elem = std::make_shared<HTMLHeadingElement>(4);
-        } else if (tag_name == "h5") {
-            new_elem = std::make_shared<HTMLHeadingElement>(5);
-        } else if (tag_name == "h6") {
-            new_elem = std::make_shared<HTMLHeadingElement>(6);
+        if (doc) {
+            new_elem = doc->CreateElement(tag_name);
         } else {
+            // 如果没有 document，回退到直接创建（但这种情况下 owner_document 会是 null）
             new_elem = std::make_shared<Element>(tag_name);
         }
-        // 注意：owner_document会在AppendChild时自动设置
 
         // 复制属性
         lxb_dom_attr_t* attr = lexbor_elem->first_attr;

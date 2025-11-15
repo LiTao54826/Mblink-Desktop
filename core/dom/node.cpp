@@ -30,11 +30,19 @@ std::shared_ptr<Document> Node::GetOwnerDocument() const {
         return nullptr;
     }
 
-    // 向上遍历找到 Document 节点
+    // 优先使用缓存的 owner_document_
+    if (auto doc = owner_document_.lock()) {
+        return doc;
+    }
+
+    // 如果没有缓存，向上遍历找到 Document 节点
     auto current = const_cast<Node*>(this)->shared_from_this();
     while (current) {
         if (current->GetNodeType() == NodeType::DOCUMENT_NODE) {
-            return std::static_pointer_cast<Document>(current);
+            auto doc = std::static_pointer_cast<Document>(current);
+            // 缓存结果
+            const_cast<Node*>(this)->owner_document_ = doc;
+            return doc;
         }
         current = current->GetParentNode();
     }

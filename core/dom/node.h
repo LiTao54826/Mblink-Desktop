@@ -263,12 +263,16 @@ protected:
 protected:
     NodeType node_type_;
     std::weak_ptr<Node> parent_node_;
+    std::weak_ptr<Document> owner_document_;  // 所属文档（弱引用避免循环引用）
     std::vector<std::shared_ptr<Node>> child_nodes_;
 
     // 脏标记系统
     bool is_dirty_ = true;  // 保留用于向后兼容
     uint32_t dirty_flags_ = static_cast<uint32_t>(DirtyType::ALL);  // 脏标记标志
     SkRect dirty_rect_ = SkRect::MakeEmpty();  // 脏矩形区域
+
+    // 允许 Document 类访问 owner_document_
+    friend class Document;
 };
 
 } // namespace lightui

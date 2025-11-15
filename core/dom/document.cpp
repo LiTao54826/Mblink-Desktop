@@ -126,6 +126,9 @@ std::shared_ptr<Element> Document::CreateElement(const std::string& tag_name) {
         element = std::make_shared<Element>(tag_name);
     }
 
+    // 设置 owner_document（使用 friend 访问权限）
+    element->owner_document_ = std::static_pointer_cast<Document>(shared_from_this());
+
     // 如果是 html 元素，设置为 documentElement
     if (tag_name == "html" && !document_element_) {
         document_element_ = element;
@@ -136,7 +139,10 @@ std::shared_ptr<Element> Document::CreateElement(const std::string& tag_name) {
 }
 
 std::shared_ptr<Text> Document::CreateTextNode(const std::string& data) {
-    return std::make_shared<Text>(data);
+    auto text = std::make_shared<Text>(data);
+    // 设置 owner_document
+    text->owner_document_ = std::static_pointer_cast<Document>(shared_from_this());
+    return text;
 }
 
 // ========== 文档属性 ==========
