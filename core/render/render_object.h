@@ -106,6 +106,50 @@ struct ComputedStyle {
     std::string overflow;  // visible, hidden, scroll, auto
     std::string position;  // static, relative, absolute, fixed
 
+    // Flexbox 属性
+    std::string flex_direction = "row";  // row, row-reverse, column, column-reverse
+    std::string flex_wrap = "nowrap";    // nowrap, wrap, wrap-reverse
+    std::string justify_content = "flex-start";  // flex-start, flex-end, center, space-between, space-around, space-evenly
+    std::string align_items = "stretch";  // flex-start, flex-end, center, baseline, stretch
+    std::string align_content = "stretch";  // flex-start, flex-end, center, space-between, space-around, stretch
+    std::string align_self = "auto";  // auto, flex-start, flex-end, center, baseline, stretch
+    float flex_grow = 0.0f;
+    float flex_shrink = 1.0f;
+    CSSLength flex_basis;  // auto, length, percentage
+
+    // Grid 属性 (基础支持)
+    std::string grid_template_columns;  // e.g., "1fr 1fr", "100px auto"
+    std::string grid_template_rows;     // e.g., "auto 1fr"
+    std::string grid_auto_flow = "row"; // row, column, row dense, column dense
+    CSSLength grid_column_gap;
+    CSSLength grid_row_gap;
+    std::string grid_column;  // e.g., "1 / 3", "span 2"
+    std::string grid_row;     // e.g., "1 / 2"
+
+    // Gap (用于 Flexbox 和 Grid)
+    CSSLength gap;  // 简写属性
+    CSSLength column_gap;
+    CSSLength row_gap;
+
+    // 定位属性
+    CSSLength top;
+    CSSLength right;
+    CSSLength bottom;
+    CSSLength left;
+    int z_index = 0;
+
+    // Flexbox order
+    int order = 0;
+
+    // 其他布局属性
+    std::string visibility = "visible";  // visible, hidden, collapse
+
+    // 盒模型单独字段（用于兼容性）
+    CSSLength margin_top;
+    CSSLength margin_right;
+    CSSLength margin_bottom;
+    CSSLength margin_left;
+
     ComputedStyle() {
         width = CSSLength(0, CSSUnit::AUTO);
         height = CSSLength(0, CSSUnit::AUTO);
@@ -113,6 +157,20 @@ struct ComputedStyle {
         max_width = CSSLength(0, CSSUnit::NONE);
         min_height = CSSLength(0, CSSUnit::PX);
         max_height = CSSLength(0, CSSUnit::NONE);
+        flex_basis = CSSLength(0, CSSUnit::AUTO);
+        gap = CSSLength(0, CSSUnit::PX);
+        column_gap = CSSLength(0, CSSUnit::PX);
+        row_gap = CSSLength(0, CSSUnit::PX);
+        grid_column_gap = CSSLength(0, CSSUnit::PX);
+        grid_row_gap = CSSLength(0, CSSUnit::PX);
+        top = CSSLength(0, CSSUnit::AUTO);
+        right = CSSLength(0, CSSUnit::AUTO);
+        bottom = CSSLength(0, CSSUnit::AUTO);
+        left = CSSLength(0, CSSUnit::AUTO);
+        margin_top = CSSLength(0, CSSUnit::PX);
+        margin_right = CSSLength(0, CSSUnit::PX);
+        margin_bottom = CSSLength(0, CSSUnit::PX);
+        margin_left = CSSLength(0, CSSUnit::PX);
     }
 };
 

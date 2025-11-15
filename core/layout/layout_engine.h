@@ -15,7 +15,7 @@ struct LayoutInfo;
 // Will be included in .cpp file
 struct TaffyTree;
 typedef struct TaffyNodeId {
-    uint64_t value;
+    uint64_t _0;
 } TaffyNodeId;
 
 namespace lightui {

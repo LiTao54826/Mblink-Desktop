@@ -19,11 +19,10 @@ target_link_libraries(lightui_layout PUBLIC
     lightui_utils
 )
 
-# 链接Yoga（如果可用）
-if(TARGET yogacore)
-    target_link_libraries(lightui_layout PUBLIC yogacore)
-elseif(TARGET yoga)
-    target_link_libraries(lightui_layout PUBLIC yoga)
+# 链接 Taffy 布局引擎
+if(TARGET taffy)
+    target_link_libraries(lightui_layout PUBLIC taffy)
+    message(STATUS "Linking Taffy layout engine")
 else()
-    message(WARNING "Yoga not found, layout module may not build correctly")
+    message(WARNING "Taffy not found, layout module may not build correctly")
 endif()
