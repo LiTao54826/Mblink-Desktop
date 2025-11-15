@@ -778,6 +778,227 @@ endif()
 
 add_test(NAME LexborDocumentTest COMMAND test_lexbor_document)
 
+# HTML5 Parser Test
+add_executable(test_html5_parser unit/test_html5_parser.cpp)
+
+target_include_directories(test_html5_parser PRIVATE
+    ${CMAKE_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/core
+    ${THIRD_PARTY_DIR}/lexbor/source
+)
+
+target_link_libraries(test_html5_parser PRIVATE
+    lightui_lexbor
+    GTest::gtest
+    GTest::gtest_main
+)
+
+# Link Lexbor
+if(TARGET lexbor_static)
+    target_link_libraries(test_html5_parser PRIVATE lexbor_static)
+endif()
+
+add_test(NAME HTML5ParserTest COMMAND test_html5_parser)
+
+# HTML5 Error Handling Test
+add_executable(test_html5_error_handling unit/test_html5_error_handling.cpp)
+
+target_include_directories(test_html5_error_handling PRIVATE
+    ${CMAKE_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/core
+    ${THIRD_PARTY_DIR}/lexbor/source
+)
+
+target_link_libraries(test_html5_error_handling PRIVATE
+    lightui_lexbor
+    GTest::gtest
+    GTest::gtest_main
+)
+
+# Link Lexbor
+if(TARGET lexbor_static)
+    target_link_libraries(test_html5_error_handling PRIVATE lexbor_static)
+endif()
+
+add_test(NAME HTML5ErrorHandlingTest COMMAND test_html5_error_handling)
+
+# HTML5 Features Test
+add_executable(test_html5_features unit/test_html5_features.cpp)
+
+target_include_directories(test_html5_features PRIVATE
+    ${CMAKE_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/core
+    ${THIRD_PARTY_DIR}/lexbor/source
+)
+
+target_link_libraries(test_html5_features PRIVATE
+    lightui_lexbor
+    GTest::gtest
+    GTest::gtest_main
+)
+
+# Link Lexbor
+if(TARGET lexbor_static)
+    target_link_libraries(test_html5_features PRIVATE lexbor_static)
+endif()
+
+add_test(NAME HTML5FeaturesTest COMMAND test_html5_features)
+
+# HTML5 Performance Test
+add_executable(test_html5_performance unit/test_html5_performance.cpp)
+
+target_include_directories(test_html5_performance PRIVATE
+    ${CMAKE_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/core
+    ${THIRD_PARTY_DIR}/lexbor/source
+)
+
+target_link_libraries(test_html5_performance PRIVATE
+    lightui_lexbor
+    GTest::gtest
+    GTest::gtest_main
+)
+
+# Link Lexbor
+if(TARGET lexbor_static)
+    target_link_libraries(test_html5_performance PRIVATE lexbor_static)
+endif()
+
+add_test(NAME HTML5PerformanceTest COMMAND test_html5_performance)
+
+# CSS3 Selectors Test
+add_executable(test_css3_selectors unit/test_css3_selectors.cpp)
+
+target_include_directories(test_css3_selectors PRIVATE
+    ${CMAKE_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/core
+    ${THIRD_PARTY_DIR}/lexbor/source
+)
+
+target_link_libraries(test_css3_selectors PRIVATE
+    lightui_lexbor
+    GTest::gtest
+    GTest::gtest_main
+)
+
+# Link Lexbor
+if(TARGET lexbor_static)
+    target_link_libraries(test_css3_selectors PRIVATE lexbor_static)
+endif()
+
+add_test(NAME CSS3SelectorsTest COMMAND test_css3_selectors)
+
+# CSS3 Pseudo Classes Test
+add_executable(test_css3_pseudo_classes unit/test_css3_pseudo_classes.cpp)
+
+target_include_directories(test_css3_pseudo_classes PRIVATE
+    ${CMAKE_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/core
+    ${THIRD_PARTY_DIR}/lexbor/source
+)
+
+target_link_libraries(test_css3_pseudo_classes PRIVATE
+    lightui_lexbor
+    lightui_dom
+    GTest::gtest
+    GTest::gtest_main
+)
+
+# Link Lexbor
+if(TARGET lexbor_static)
+    target_link_libraries(test_css3_pseudo_classes PRIVATE lexbor_static)
+endif()
+
+add_test(NAME CSS3PseudoClassesTest COMMAND test_css3_pseudo_classes)
+
+# CSS3 Pseudo Elements Test
+add_executable(test_css3_pseudo_elements unit/test_css3_pseudo_elements.cpp)
+
+target_include_directories(test_css3_pseudo_elements PRIVATE
+    ${CMAKE_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/core
+    ${THIRD_PARTY_DIR}/lexbor/source
+)
+
+target_link_libraries(test_css3_pseudo_elements PRIVATE
+    lightui_lexbor
+    GTest::gtest
+    GTest::gtest_main
+)
+
+# Link Lexbor
+if(TARGET lexbor_static)
+    target_link_libraries(test_css3_pseudo_elements PRIVATE lexbor_static)
+endif()
+
+add_test(NAME CSS3PseudoElementsTest COMMAND test_css3_pseudo_elements)
+
+# Form Elements Test
+add_executable(test_form_elements unit/test_form_elements.cpp)
+
+target_include_directories(test_form_elements PRIVATE
+    ${CMAKE_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/core
+    ${THIRD_PARTY_DIR}/lexbor/source
+)
+
+target_link_libraries(test_form_elements PRIVATE
+    lightui_lexbor
+    GTest::gtest
+    GTest::gtest_main
+)
+
+# Link Lexbor
+if(TARGET lexbor_static)
+    target_link_libraries(test_form_elements PRIVATE lexbor_static)
+endif()
+
+add_test(NAME FormElementsTest COMMAND test_form_elements)
+
+# Form Validation Test
+add_executable(test_form_validation unit/test_form_validation.cpp)
+
+target_include_directories(test_form_validation PRIVATE
+    ${CMAKE_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/core
+    ${THIRD_PARTY_DIR}/lexbor/source
+)
+
+target_link_libraries(test_form_validation PRIVATE
+    lightui_lexbor
+    GTest::gtest
+    GTest::gtest_main
+)
+
+# Link Lexbor
+if(TARGET lexbor_static)
+    target_link_libraries(test_form_validation PRIVATE lexbor_static)
+endif()
+
+add_test(NAME FormValidationTest COMMAND test_form_validation)
+
+# Form State Test
+add_executable(test_form_state unit/test_form_state.cpp)
+
+target_include_directories(test_form_state PRIVATE
+    ${CMAKE_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/core
+    ${THIRD_PARTY_DIR}/lexbor/source
+)
+
+target_link_libraries(test_form_state PRIVATE
+    lightui_lexbor
+    GTest::gtest
+    GTest::gtest_main
+)
+
+# Link Lexbor
+if(TARGET lexbor_static)
+    target_link_libraries(test_form_state PRIVATE lexbor_static)
+endif()
+
+add_test(NAME FormStateTest COMMAND test_form_state)
+
 # DOM Lexbor Integration Test
 add_executable(test_dom_lexbor_integration unit/test_dom_lexbor_integration.cpp)
 
@@ -1340,3 +1561,127 @@ target_include_directories(benchmark_timer_performance
 set_target_properties(benchmark_timer_performance PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin/${CMAKE_BUILD_TYPE}"
 )
+
+# ============================================================================
+# Performance Tests
+# ============================================================================
+
+# Parsing Performance Test
+add_executable(test_parsing_performance
+    performance/test_parsing_performance.cpp
+)
+
+target_link_libraries(test_parsing_performance
+    PRIVATE
+    lightui_lexbor
+    gtest
+    gtest_main
+)
+
+target_include_directories(test_parsing_performance
+    PRIVATE
+    ${CMAKE_SOURCE_DIR}/core
+    ${CMAKE_SOURCE_DIR}/tests
+)
+
+set_target_properties(test_parsing_performance PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin/${CMAKE_BUILD_TYPE}"
+)
+
+add_test(NAME ParsingPerformanceTest COMMAND test_parsing_performance)
+
+# Selector Performance Test
+add_executable(test_selector_performance
+    performance/test_selector_performance.cpp
+)
+
+target_link_libraries(test_selector_performance
+    PRIVATE
+    lightui_lexbor
+    gtest
+    gtest_main
+)
+
+target_include_directories(test_selector_performance
+    PRIVATE
+    ${CMAKE_SOURCE_DIR}/core
+    ${CMAKE_SOURCE_DIR}/tests
+)
+
+set_target_properties(test_selector_performance PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin/${CMAKE_BUILD_TYPE}"
+)
+
+add_test(NAME SelectorPerformanceTest COMMAND test_selector_performance)
+
+# DOM Performance Test
+add_executable(test_dom_performance
+    performance/test_dom_performance.cpp
+)
+
+target_link_libraries(test_dom_performance
+    PRIVATE
+    lightui_lexbor
+    gtest
+    gtest_main
+)
+
+target_include_directories(test_dom_performance
+    PRIVATE
+    ${CMAKE_SOURCE_DIR}/core
+    ${CMAKE_SOURCE_DIR}/tests
+)
+
+set_target_properties(test_dom_performance PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin/${CMAKE_BUILD_TYPE}"
+)
+
+add_test(NAME DOMPerformanceTest COMMAND test_dom_performance)
+
+# Form Performance Test
+add_executable(test_form_performance
+    performance/test_form_performance.cpp
+)
+
+target_link_libraries(test_form_performance
+    PRIVATE
+    lightui_lexbor
+    gtest
+    gtest_main
+)
+
+target_include_directories(test_form_performance
+    PRIVATE
+    ${CMAKE_SOURCE_DIR}/core
+    ${CMAKE_SOURCE_DIR}/tests
+)
+
+set_target_properties(test_form_performance PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin/${CMAKE_BUILD_TYPE}"
+)
+
+add_test(NAME FormPerformanceTest COMMAND test_form_performance)
+
+# Memory Stress Test
+add_executable(test_memory_stress
+    performance/test_memory_stress.cpp
+)
+
+target_link_libraries(test_memory_stress
+    PRIVATE
+    lightui_lexbor
+    gtest
+    gtest_main
+)
+
+target_include_directories(test_memory_stress
+    PRIVATE
+    ${CMAKE_SOURCE_DIR}/core
+    ${CMAKE_SOURCE_DIR}/tests
+)
+
+set_target_properties(test_memory_stress PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin/${CMAKE_BUILD_TYPE}"
+)
+
+add_test(NAME MemoryStressTest COMMAND test_memory_stress)

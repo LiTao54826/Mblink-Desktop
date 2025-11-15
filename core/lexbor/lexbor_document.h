@@ -25,10 +25,12 @@ class LexborText;
 
 /**
  * @brief Lexbor Document 包装类
- * 
+ *
  * 管理 Lexbor HTML 文档的生命周期，提供 C++ 风格的 API
  */
 class LexborDocument {
+    friend class LexborElement;  // 允许 LexborElement 访问私有成员
+
 public:
     /**
      * @brief 构造函数
@@ -171,6 +173,41 @@ public:
      */
     const std::vector<std::string>& GetErrors() const { return errors_; }
 
+    /**
+     * @brief 清空错误信息
+     */
+    void ClearErrors() { errors_.clear(); }
+
+    /**
+     * @brief 获取警告信息
+     * @return 警告信息列表
+     */
+    const std::vector<std::string>& GetWarnings() const { return warnings_; }
+
+    /**
+     * @brief 检查是否有警告
+     * @return 是否有警告
+     */
+    bool HasWarnings() const { return !warnings_.empty(); }
+
+    /**
+     * @brief 获取文档模式（quirks mode / standards mode）
+     * @return 文档模式字符串
+     */
+    std::string GetDocumentMode() const;
+
+    /**
+     * @brief 检查是否为 quirks mode
+     * @return 是否为 quirks mode
+     */
+    bool IsQuirksMode() const;
+
+    /**
+     * @brief 获取 DOCTYPE 信息
+     * @return DOCTYPE 字符串
+     */
+    std::string GetDoctype() const;
+
 private:
     /**
      * @brief 初始化 CSS 支持
@@ -188,12 +225,24 @@ private:
     void Cleanup();
 
 private:
+    /**
+     * @brief 添加错误信息
+     */
+    void AddError(const std::string& error) { errors_.push_back(error); }
+
+    /**
+     * @brief 添加警告信息
+     */
+    void AddWarning(const std::string& warning) { warnings_.push_back(warning); }
+
+private:
     lxb_html_document_t* document_;      // Lexbor HTML 文档
     lxb_css_parser_t* css_parser_;       // CSS 解析器
     lxb_selectors_t* selectors_;         // 选择器引擎
     bool css_initialized_;               // CSS 是否已初始化
     bool selectors_initialized_;         // 选择器是否已初始化
     std::vector<std::string> errors_;    // 错误信息列表
+    std::vector<std::string> warnings_;  // 警告信息列表
 };
 
 /**

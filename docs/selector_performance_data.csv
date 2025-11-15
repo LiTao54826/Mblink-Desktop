@@ -1,0 +1,11 @@
+Category,Name,Value,Unit
+Selector Comparison,ID Selector,2.1232,ms
+Selector Comparison,Class Selector,5.5103,ms
+Selector Comparison,Tag Selector,4.7891,ms
+Selector Comparison,Attribute Exists Selector,5.0985,ms
+Selector Comparison,Attribute Equals Selector,5.5145,ms
+Selector Comparison,Descendant Selector,3.6809,ms
+Selector Comparison,Child Selector,6.5567,ms
+Selector Comparison,Multiple Classes Selector,3.4081,ms
+Selector Comparison,Pseudo-class Selector,4.1209,ms
+Selector Comparison,Complex Selector,12.001,ms

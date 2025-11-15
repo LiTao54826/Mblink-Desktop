@@ -8,6 +8,7 @@
 #include <sstream>
 #include <vector>
 #include <fstream>
+#include <functional>
 
 namespace lightui {
 
@@ -702,6 +703,97 @@ void LexborElement::SetTextContent(const std::string& text) {
     }
 }
 
+LexborElement* LexborElement::GetParentElement() {
+    if (!element_) {
+        return nullptr;
+    }
+
+    lxb_dom_node_t* node = lxb_dom_interface_node(element_);
+    lxb_dom_node_t* parent = node->parent;
+
+    if (!parent || parent->type != LXB_DOM_NODE_TYPE_ELEMENT) {
+        return nullptr;
+    }
+
+    return new LexborElement(lxb_dom_interface_element(parent), document_);
+}
+
+std::vector<LexborElement*> LexborElement::GetChildren() {
+    std::vector<LexborElement*> children;
+
+    if (!element_) {
+        return children;
+    }
+
+    lxb_dom_node_t* node = lxb_dom_interface_node(element_);
+    lxb_dom_node_t* child = node->first_child;
+
+    while (child) {
+        if (child->type == LXB_DOM_NODE_TYPE_ELEMENT) {
+            children.push_back(new LexborElement(lxb_dom_interface_element(child), document_));
+        }
+        child = child->next;
+    }
+
+    return children;
+}
+
+LexborElement* LexborElement::GetFirstChild() {
+    if (!element_) {
+        return nullptr;
+    }
+
+    lxb_dom_node_t* node = lxb_dom_interface_node(element_);
+    lxb_dom_node_t* child = node->first_child;
+
+    while (child) {
+        if (child->type == LXB_DOM_NODE_TYPE_ELEMENT) {
+            return new LexborElement(lxb_dom_interface_element(child), document_);
+        }
+        child = child->next;
+    }
+
+    return nullptr;
+}
+
+LexborElement* LexborElement::GetLastChild() {
+    if (!element_) {
+        return nullptr;
+    }
+
+    lxb_dom_node_t* node = lxb_dom_interface_node(element_);
+    lxb_dom_node_t* child = node->last_child;
+
+    while (child) {
+        if (child->type == LXB_DOM_NODE_TYPE_ELEMENT) {
+            return new LexborElement(lxb_dom_interface_element(child), document_);
+        }
+        child = child->prev;
+    }
+
+    return nullptr;
+}
+
+void LexborElement::AppendChild(LexborElement* child) {
+    if (!element_ || !child || !child->element_) {
+        return;
+    }
+
+    lxb_dom_node_t* parent_node = lxb_dom_interface_node(element_);
+    lxb_dom_node_t* child_node = lxb_dom_interface_node(child->element_);
+
+    lxb_dom_node_insert_child(parent_node, child_node);
+}
+
+void LexborElement::RemoveChild(LexborElement* child) {
+    if (!element_ || !child || !child->element_) {
+        return;
+    }
+
+    lxb_dom_node_t* child_node = lxb_dom_interface_node(child->element_);
+    lxb_dom_node_remove(child_node);
+}
+
 // ========== LexborText 实现 ==========
 
 LexborText::LexborText(lxb_dom_text_t* text, LexborDocument* document)
@@ -729,12 +821,12 @@ void LexborText::SetData(const std::string& data) {
     if (!text_) {
         return;
     }
-    
+
     lxb_dom_character_data_t* char_data = lxb_dom_interface_character_data(text_);
     if (!char_data) {
         return;
     }
-    
+
     lexbor_str_t* str = &char_data->data;
     lexbor_str_clean(str);
     lexbor_str_append(
@@ -743,6 +835,175 @@ void LexborText::SetData(const std::string& data) {
         reinterpret_cast<const lxb_char_t*>(data.c_str()),
         data.length()
     );
+}
+
+// ========== LexborDocument 增强功能 ==========
+
+std::string LexborDocument::GetDocumentMode() const {
+    if (!document_) {
+        return "unknown";
+    }
+
+    lxb_dom_document_t* dom_doc = lxb_dom_interface_document(document_);
+    if (!dom_doc) {
+        return "unknown";
+    }
+
+    // 检查文档模式
+    switch (dom_doc->compat_mode) {
+        case LXB_DOM_DOCUMENT_CMODE_NO_QUIRKS:
+            return "no-quirks";
+        case LXB_DOM_DOCUMENT_CMODE_QUIRKS:
+            return "quirks";
+        case LXB_DOM_DOCUMENT_CMODE_LIMITED_QUIRKS:
+            return "limited-quirks";
+        default:
+            return "unknown";
+    }
+}
+
+bool LexborDocument::IsQuirksMode() const {
+    if (!document_) {
+        return false;
+    }
+
+    lxb_dom_document_t* dom_doc = lxb_dom_interface_document(document_);
+    if (!dom_doc) {
+        return false;
+    }
+
+    return dom_doc->compat_mode == LXB_DOM_DOCUMENT_CMODE_QUIRKS;
+}
+
+std::string LexborDocument::GetDoctype() const {
+    if (!document_) {
+        return "";
+    }
+
+    lxb_dom_document_t* dom_doc = lxb_dom_interface_document(document_);
+    if (!dom_doc) {
+        return "";
+    }
+
+    // 遍历文档的子节点查找 DOCTYPE
+    lxb_dom_node_t* node = lxb_dom_interface_node(dom_doc);
+    if (!node) {
+        return "";
+    }
+
+    lxb_dom_node_t* child = node->first_child;
+    while (child) {
+        if (child->type == LXB_DOM_NODE_TYPE_DOCUMENT_TYPE) {
+            size_t name_len;
+            const lxb_char_t* name = lxb_dom_node_name(child, &name_len);
+            if (name) {
+                return std::string(reinterpret_cast<const char*>(name), name_len);
+            }
+        }
+        child = child->next;
+    }
+
+    return "";
+}
+
+LexborElement* LexborElement::QuerySelector(const std::string& selector) {
+    if (!element_ || !document_) {
+        return nullptr;
+    }
+
+    // 使用文档的选择器引擎
+    if (!document_->InitializeSelectors()) {
+        return nullptr;
+    }
+
+    // 解析选择器
+    lxb_css_selector_list_t* list = lxb_css_selectors_parse(
+        document_->css_parser_,
+        reinterpret_cast<const lxb_char_t*>(selector.c_str()),
+        selector.length()
+    );
+
+    if (!list || document_->css_parser_->status != LXB_STATUS_OK) {
+        if (list) {
+            lxb_css_selector_list_destroy_memory(list);
+        }
+        return nullptr;
+    }
+
+    // 查找第一个匹配的元素（从当前元素开始）
+    lxb_dom_element_t* result = nullptr;
+
+    auto callback = [](lxb_dom_node_t* node, lxb_css_selector_specificity_t spec, void* ctx) -> lxb_status_t {
+        lxb_dom_element_t** result_ptr = static_cast<lxb_dom_element_t**>(ctx);
+        *result_ptr = lxb_dom_interface_element(node);
+        return LXB_STATUS_STOP;  // 只需要第一个
+    };
+
+    lxb_dom_node_t* node = lxb_dom_interface_node(element_);
+    lxb_selectors_find(document_->selectors_, node, list, callback, &result);
+
+    lxb_css_selector_list_destroy_memory(list);
+
+    if (result) {
+        return new LexborElement(result, document_);
+    }
+
+    return nullptr;
+}
+
+std::vector<LexborElement*> LexborElement::QuerySelectorAll(const std::string& selector) {
+    std::vector<LexborElement*> results;
+
+    if (!element_ || !document_) {
+        return results;
+    }
+
+    // 使用文档的选择器引擎
+    if (!document_->InitializeSelectors()) {
+        return results;
+    }
+
+    // 解析选择器
+    lxb_css_selector_list_t* list = lxb_css_selectors_parse(
+        document_->css_parser_,
+        reinterpret_cast<const lxb_char_t*>(selector.c_str()),
+        selector.length()
+    );
+
+    if (!list || document_->css_parser_->status != LXB_STATUS_OK) {
+        if (list) {
+            lxb_css_selector_list_destroy_memory(list);
+        }
+        return results;
+    }
+
+    // 查找所有匹配的元素（从当前元素开始）
+    auto callback = [](lxb_dom_node_t* node, lxb_css_selector_specificity_t spec, void* ctx) -> lxb_status_t {
+        auto* results_ptr = static_cast<std::vector<LexborElement*>*>(ctx);
+        lxb_dom_element_t* elem = lxb_dom_interface_element(node);
+
+        // 需要获取 document 指针，这里我们从第一个元素获取
+        if (!results_ptr->empty()) {
+            results_ptr->push_back(new LexborElement(elem, (*results_ptr)[0]->document_));
+        }
+
+        return LXB_STATUS_OK;  // 继续查找
+    };
+
+    lxb_dom_node_t* node = lxb_dom_interface_node(element_);
+
+    // 先添加一个临时元素以便回调函数能获取 document 指针
+    results.push_back(new LexborElement(element_, document_));
+
+    lxb_selectors_find(document_->selectors_, node, list, callback, &results);
+
+    // 移除临时元素
+    delete results[0];
+    results.erase(results.begin());
+
+    lxb_css_selector_list_destroy_memory(list);
+
+    return results;
 }
 
 } // namespace lightui
