@@ -16,6 +16,10 @@
 #include "text.h"
 #include "document.h"
 #include "event.h"
+#include "dom_token_list.h"
+#include "css_style_declaration.h"
+#include "dom_string_map.h"
+#include "core/event/task_scheduler.h"
 #include <memory>
 #include <unordered_map>
 
@@ -38,6 +42,13 @@ public:
      * @param document Document 对象
      */
     static void SetGlobalDocument(JSContext* ctx, std::shared_ptr<Document> document);
+
+    /**
+     * @brief 设置全局 TaskScheduler
+     * @param ctx QuickJS 上下文
+     * @param scheduler TaskScheduler 对象
+     */
+    static void SetGlobalTaskScheduler(JSContext* ctx, std::shared_ptr<TaskScheduler> scheduler);
 
     /**
      * @brief 清理 DOM 绑定
@@ -126,6 +137,9 @@ public:
     static JSClassID text_class_id;
     static JSClassID document_class_id;
     static JSClassID event_class_id;
+    static JSClassID dom_token_list_class_id;
+    static JSClassID css_style_declaration_class_id;
+    static JSClassID dom_string_map_class_id;
 
     // 缓存管理函数 (public for finalizers)
     static void RemoveFromElementCache(Element* ptr);
@@ -141,6 +155,9 @@ private:
     static void InitTextClass(JSContext* ctx);
     static void InitDocumentClass(JSContext* ctx);
     static void InitEventClass(JSContext* ctx);
+    static void InitDOMTokenListClass(JSContext* ctx);
+    static void InitCSSStyleDeclarationClass(JSContext* ctx);
+    static void InitDOMStringMapClass(JSContext* ctx);
 
     // 对象缓存：Element* → (JSContext*, JSValue)
     // 用于防止同一个C++对象被包装多次

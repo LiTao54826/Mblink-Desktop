@@ -61,10 +61,12 @@ target_include_directories(lightui_dom PUBLIC
     ${CMAKE_SOURCE_DIR}/core
     ${CMAKE_SOURCE_DIR}/third_party/lexbor/source
     ${CMAKE_SOURCE_DIR}/third_party/quickjs
+    ${CMAKE_SOURCE_DIR}/third_party/SDL/include
 )
 
 target_link_libraries(lightui_dom PUBLIC
     lightui_utils
+    lightui_event
     lexbor_static
 )
 

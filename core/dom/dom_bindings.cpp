@@ -17,6 +17,9 @@ JSClassID DOMBindings::element_class_id = 0;
 JSClassID DOMBindings::text_class_id = 0;
 JSClassID DOMBindings::document_class_id = 0;
 JSClassID DOMBindings::event_class_id = 0;
+JSClassID DOMBindings::dom_token_list_class_id = 0;
+JSClassID DOMBindings::css_style_declaration_class_id = 0;
+JSClassID DOMBindings::dom_string_map_class_id = 0;
 bool DOMBindings::initialized = false;
 
 // 对象缓存
@@ -105,6 +108,81 @@ static JSValue js_element_set_class_name(JSContext* ctx, JSValueConst this_val, 
     JS_FreeCString(ctx, class_name);
 
     return JS_UNDEFINED;
+}
+
+// Element.classList getter (阶段3)
+static JSValue js_element_get_class_list(JSContext* ctx, JSValueConst this_val, int magic) {
+    auto element = DOMBindings::UnwrapElement(ctx, this_val);
+    if (!element) {
+        return JS_EXCEPTION;
+    }
+
+    // 获取classList对象
+    auto class_list = element->GetClassList();
+    if (!class_list) {
+        return JS_NULL;
+    }
+
+    // 包装为JS对象
+    JSValue obj = JS_NewObjectClass(ctx, DOMBindings::dom_token_list_class_id);
+    if (JS_IsException(obj)) {
+        return obj;
+    }
+
+    auto ptr = new std::shared_ptr<DOMTokenList>(class_list);
+    JS_SetOpaque(obj, ptr);
+
+    return obj;
+}
+
+// Element.style getter (阶段3)
+static JSValue js_element_get_style(JSContext* ctx, JSValueConst this_val, int magic) {
+    auto element = DOMBindings::UnwrapElement(ctx, this_val);
+    if (!element) {
+        return JS_EXCEPTION;
+    }
+
+    // 获取style对象
+    auto style = element->GetStyleDeclaration();
+    if (!style) {
+        return JS_NULL;
+    }
+
+    // 包装为JS对象
+    JSValue obj = JS_NewObjectClass(ctx, DOMBindings::css_style_declaration_class_id);
+    if (JS_IsException(obj)) {
+        return obj;
+    }
+
+    auto ptr = new std::shared_ptr<CSSStyleDeclaration>(style);
+    JS_SetOpaque(obj, ptr);
+
+    return obj;
+}
+
+// Element.dataset getter (阶段3)
+static JSValue js_element_get_dataset(JSContext* ctx, JSValueConst this_val, int magic) {
+    auto element = DOMBindings::UnwrapElement(ctx, this_val);
+    if (!element) {
+        return JS_EXCEPTION;
+    }
+
+    // 获取dataset对象
+    auto dataset = element->GetDataset();
+    if (!dataset) {
+        return JS_NULL;
+    }
+
+    // 包装为JS对象
+    JSValue obj = JS_NewObjectClass(ctx, DOMBindings::dom_string_map_class_id);
+    if (JS_IsException(obj)) {
+        return obj;
+    }
+
+    auto ptr = new std::shared_ptr<DOMStringMap>(dataset);
+    JS_SetOpaque(obj, ptr);
+
+    return obj;
 }
 
 // Element.textContent getter
@@ -423,6 +501,17 @@ static JSValue js_element_add_event_listener(JSContext* ctx, JSValueConst this_v
         return JS_ThrowTypeError(ctx, "addEventListener requires a function as second argument");
     }
 
+    // 解析第3和第4个参数 (useCapture, once)
+    bool use_capture = false;
+    bool once = false;
+
+    if (argc >= 3) {
+        use_capture = JS_ToBool(ctx, argv[2]);
+    }
+    if (argc >= 4) {
+        once = JS_ToBool(ctx, argv[3]);
+    }
+
     // 使用 JSValueWrapper 管理 listener 的生命周期
     // shared_ptr 确保在 lambda 被销毁时自动释放 JSValue
     auto listener_wrapper = std::make_shared<JSValueWrapper>(ctx, argv[1]);
@@ -438,12 +527,32 @@ static JSValue js_element_add_event_listener(JSContext* ctx, JSValueConst this_v
             js_std_dump_error(ctx);
         }
         JS_FreeValue(ctx, ret);
-    });
+    }, use_capture, once);
 
     JS_FreeCString(ctx, type);
 
     // 返回listener ID
     return JS_NewBigUint64(ctx, listener_id);
+}
+
+// Element.dispatchEvent(event) (阶段4)
+static JSValue js_element_dispatch_event(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) {
+    auto element = DOMBindings::UnwrapElement(ctx, this_val);
+    if (!element) {
+        return JS_EXCEPTION;
+    }
+
+    if (argc < 1) {
+        return JS_ThrowTypeError(ctx, "dispatchEvent requires 1 argument");
+    }
+
+    auto event = DOMBindings::UnwrapEvent(ctx, argv[0]);
+    if (!event) {
+        return JS_ThrowTypeError(ctx, "dispatchEvent requires an Event object");
+    }
+
+    bool result = element->DispatchEvent(event);
+    return JS_NewBool(ctx, result);
 }
 
 // Element.removeEventListener(type, listenerId)
@@ -462,11 +571,20 @@ static JSValue js_element_remove_event_listener(JSContext* ctx, JSValueConst thi
         return JS_EXCEPTION;
     }
 
-    // 获取listener ID
+    // 获取listener ID (支持普通数字和BigInt)
     uint64_t listener_id;
-    if (JS_ToBigUint64(ctx, &listener_id, argv[1]) != 0) {
-        JS_FreeCString(ctx, type);
-        return JS_ThrowTypeError(ctx, "removeEventListener requires a listener ID as second argument");
+    if (JS_IsBigInt(argv[1])) {
+        if (JS_ToBigUint64(ctx, &listener_id, argv[1]) != 0) {
+            JS_FreeCString(ctx, type);
+            return JS_ThrowTypeError(ctx, "Invalid listener ID");
+        }
+    } else {
+        int64_t id;
+        if (JS_ToInt64(ctx, &id, argv[1]) != 0) {
+            JS_FreeCString(ctx, type);
+            return JS_ThrowTypeError(ctx, "removeEventListener requires a listener ID as second argument");
+        }
+        listener_id = static_cast<uint64_t>(id);
     }
 
     // 移除监听器
@@ -478,14 +596,390 @@ static JSValue js_element_remove_event_listener(JSContext* ctx, JSValueConst thi
     return JS_NewBool(ctx, removed);
 }
 
+// ========== 阶段1: 核心 Node API 绑定 ==========
+
+// Node.childNodes getter
+static JSValue js_element_get_child_nodes(JSContext* ctx, JSValueConst this_val, int magic) {
+    auto element = DOMBindings::UnwrapElement(ctx, this_val);
+    if (!element) {
+        return JS_EXCEPTION;
+    }
+
+    // 创建数组
+    JSValue nodes_array = JS_NewArray(ctx);
+
+    // 获取所有子节点（包含Element和Text）
+    const auto& child_nodes = element->GetChildNodes();
+    uint32_t index = 0;
+
+    for (const auto& child : child_nodes) {
+        JSValue child_obj = DOMBindings::WrapNode(ctx, child);
+        JS_SetPropertyUint32(ctx, nodes_array, index++, child_obj);
+    }
+
+    return nodes_array;
+}
+
+// Node.firstChild getter
+static JSValue js_element_get_first_child(JSContext* ctx, JSValueConst this_val, int magic) {
+    auto element = DOMBindings::UnwrapElement(ctx, this_val);
+    if (!element) {
+        return JS_EXCEPTION;
+    }
+
+    auto first_child = element->GetFirstChild();
+    if (!first_child) {
+        return JS_NULL;
+    }
+
+    return DOMBindings::WrapNode(ctx, first_child);
+}
+
+// Node.lastChild getter
+static JSValue js_element_get_last_child(JSContext* ctx, JSValueConst this_val, int magic) {
+    auto element = DOMBindings::UnwrapElement(ctx, this_val);
+    if (!element) {
+        return JS_EXCEPTION;
+    }
+
+    auto last_child = element->GetLastChild();
+    if (!last_child) {
+        return JS_NULL;
+    }
+
+    return DOMBindings::WrapNode(ctx, last_child);
+}
+
+// Node.nextSibling getter
+static JSValue js_element_get_next_sibling(JSContext* ctx, JSValueConst this_val, int magic) {
+    auto element = DOMBindings::UnwrapElement(ctx, this_val);
+    if (!element) {
+        return JS_EXCEPTION;
+    }
+
+    auto next_sibling = element->GetNextSibling();
+    if (!next_sibling) {
+        return JS_NULL;
+    }
+
+    return DOMBindings::WrapNode(ctx, next_sibling);
+}
+
+// Node.previousSibling getter
+static JSValue js_element_get_previous_sibling(JSContext* ctx, JSValueConst this_val, int magic) {
+    auto element = DOMBindings::UnwrapElement(ctx, this_val);
+    if (!element) {
+        return JS_EXCEPTION;
+    }
+
+    auto previous_sibling = element->GetPreviousSibling();
+    if (!previous_sibling) {
+        return JS_NULL;
+    }
+
+    return DOMBindings::WrapNode(ctx, previous_sibling);
+}
+
+// Node.nodeType getter
+static JSValue js_element_get_node_type(JSContext* ctx, JSValueConst this_val, int magic) {
+    auto element = DOMBindings::UnwrapElement(ctx, this_val);
+    if (!element) {
+        return JS_EXCEPTION;
+    }
+
+    return JS_NewInt32(ctx, static_cast<int>(element->GetNodeType()));
+}
+
+// Node.cloneNode(deep)
+static JSValue js_element_clone_node(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) {
+    auto element = DOMBindings::UnwrapElement(ctx, this_val);
+    if (!element) {
+        return JS_EXCEPTION;
+    }
+
+    bool deep = false;
+    if (argc > 0) {
+        deep = JS_ToBool(ctx, argv[0]);
+    }
+
+    auto cloned = element->CloneNode(deep);
+    if (!cloned) {
+        return JS_NULL;
+    }
+
+    return DOMBindings::WrapNode(ctx, cloned);
+}
+
+// Node.contains(node)
+static JSValue js_element_contains(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) {
+    auto element = DOMBindings::UnwrapElement(ctx, this_val);
+    if (!element) {
+        return JS_EXCEPTION;
+    }
+
+    if (argc < 1) {
+        return JS_ThrowTypeError(ctx, "contains requires 1 argument");
+    }
+
+    // 尝试解包为 Node
+    auto other_element = DOMBindings::UnwrapElement(ctx, argv[0]);
+    if (other_element) {
+        return JS_NewBool(ctx, element->Contains(other_element));
+    }
+
+    auto other_text = DOMBindings::UnwrapText(ctx, argv[0]);
+    if (other_text) {
+        return JS_NewBool(ctx, element->Contains(other_text));
+    }
+
+    return JS_ThrowTypeError(ctx, "contains requires a Node argument");
+}
+
+// Node.hasChildNodes()
+static JSValue js_element_has_child_nodes(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) {
+    auto element = DOMBindings::UnwrapElement(ctx, this_val);
+    if (!element) {
+        return JS_EXCEPTION;
+    }
+
+    return JS_NewBool(ctx, element->GetChildNodes().size() > 0);
+}
+
+// Element.hasAttribute(name)
+static JSValue js_element_has_attribute(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) {
+    auto element = DOMBindings::UnwrapElement(ctx, this_val);
+    if (!element) {
+        return JS_EXCEPTION;
+    }
+
+    if (argc < 1) {
+        return JS_ThrowTypeError(ctx, "hasAttribute requires 1 argument");
+    }
+
+    const char* name = JS_ToCString(ctx, argv[0]);
+    if (!name) {
+        return JS_EXCEPTION;
+    }
+
+    bool has_attr = element->HasAttribute(name);
+    JS_FreeCString(ctx, name);
+
+    return JS_NewBool(ctx, has_attr);
+}
+
+// Element.removeAttribute(name)
+static JSValue js_element_remove_attribute(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) {
+    auto element = DOMBindings::UnwrapElement(ctx, this_val);
+    if (!element) {
+        return JS_EXCEPTION;
+    }
+
+    if (argc < 1) {
+        return JS_ThrowTypeError(ctx, "removeAttribute requires 1 argument");
+    }
+
+    const char* name = JS_ToCString(ctx, argv[0]);
+    if (!name) {
+        return JS_EXCEPTION;
+    }
+
+    element->RemoveAttribute(name);
+    JS_FreeCString(ctx, name);
+
+    return JS_UNDEFINED;
+}
+
+// Element.innerHTML getter
+static JSValue js_element_get_inner_html(JSContext* ctx, JSValueConst this_val, int magic) {
+    auto element = DOMBindings::UnwrapElement(ctx, this_val);
+    if (!element) {
+        return JS_EXCEPTION;
+    }
+
+    return JS_NewString(ctx, element->GetInnerHTML().c_str());
+}
+
+// Element.innerHTML setter
+static JSValue js_element_set_inner_html(JSContext* ctx, JSValueConst this_val, JSValueConst val, int magic) {
+    auto element = DOMBindings::UnwrapElement(ctx, this_val);
+    if (!element) {
+        return JS_EXCEPTION;
+    }
+
+    const char* html = JS_ToCString(ctx, val);
+    if (!html) {
+        return JS_EXCEPTION;
+    }
+
+    element->SetInnerHTML(html);
+    JS_FreeCString(ctx, html);
+
+    return JS_UNDEFINED;
+}
+
+// Element.outerHTML getter
+static JSValue js_element_get_outer_html(JSContext* ctx, JSValueConst this_val, int magic) {
+    auto element = DOMBindings::UnwrapElement(ctx, this_val);
+    if (!element) {
+        return JS_EXCEPTION;
+    }
+
+    return JS_NewString(ctx, element->GetOuterHTML().c_str());
+}
+
+// Element.outerHTML setter
+static JSValue js_element_set_outer_html(JSContext* ctx, JSValueConst this_val, JSValueConst val, int magic) {
+    auto element = DOMBindings::UnwrapElement(ctx, this_val);
+    if (!element) {
+        return JS_EXCEPTION;
+    }
+
+    const char* html = JS_ToCString(ctx, val);
+    if (!html) {
+        return JS_EXCEPTION;
+    }
+
+    element->SetOuterHTML(html);
+    JS_FreeCString(ctx, html);
+
+    return JS_UNDEFINED;
+}
+
+// ========== 阶段2: 查询选择器 API 绑定 ==========
+
+// Element.querySelector(selector)
+static JSValue js_element_query_selector(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) {
+    auto element = DOMBindings::UnwrapElement(ctx, this_val);
+    if (!element) {
+        return JS_EXCEPTION;
+    }
+
+    if (argc < 1) {
+        return JS_ThrowTypeError(ctx, "querySelector requires 1 argument");
+    }
+
+    const char* selector = JS_ToCString(ctx, argv[0]);
+    if (!selector) {
+        return JS_EXCEPTION;
+    }
+
+    auto result = element->QuerySelector(selector);
+    JS_FreeCString(ctx, selector);
+
+    if (!result) {
+        return JS_NULL;
+    }
+
+    return DOMBindings::WrapElement(ctx, result);
+}
+
+// Element.querySelectorAll(selector)
+static JSValue js_element_query_selector_all(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) {
+    auto element = DOMBindings::UnwrapElement(ctx, this_val);
+    if (!element) {
+        return JS_EXCEPTION;
+    }
+
+    if (argc < 1) {
+        return JS_ThrowTypeError(ctx, "querySelectorAll requires 1 argument");
+    }
+
+    const char* selector = JS_ToCString(ctx, argv[0]);
+    if (!selector) {
+        return JS_EXCEPTION;
+    }
+
+    auto results = element->QuerySelectorAll(selector);
+    JS_FreeCString(ctx, selector);
+
+    // 创建数组
+    JSValue array = JS_NewArray(ctx);
+    uint32_t index = 0;
+
+    for (const auto& elem : results) {
+        JSValue elem_obj = DOMBindings::WrapElement(ctx, elem);
+        JS_SetPropertyUint32(ctx, array, index++, elem_obj);
+    }
+
+    return array;
+}
+
+// Element.matches(selector)
+static JSValue js_element_matches(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) {
+    auto element = DOMBindings::UnwrapElement(ctx, this_val);
+    if (!element) {
+        return JS_EXCEPTION;
+    }
+
+    if (argc < 1) {
+        return JS_ThrowTypeError(ctx, "matches requires 1 argument");
+    }
+
+    const char* selector = JS_ToCString(ctx, argv[0]);
+    if (!selector) {
+        return JS_EXCEPTION;
+    }
+
+    bool matches = element->Matches(selector);
+    JS_FreeCString(ctx, selector);
+
+    return JS_NewBool(ctx, matches);
+}
+
+// Element.closest(selector)
+static JSValue js_element_closest(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) {
+    auto element = DOMBindings::UnwrapElement(ctx, this_val);
+    if (!element) {
+        return JS_EXCEPTION;
+    }
+
+    if (argc < 1) {
+        return JS_ThrowTypeError(ctx, "closest requires 1 argument");
+    }
+
+    const char* selector = JS_ToCString(ctx, argv[0]);
+    if (!selector) {
+        return JS_EXCEPTION;
+    }
+
+    auto result = element->Closest(selector);
+    JS_FreeCString(ctx, selector);
+
+    if (!result) {
+        return JS_NULL;
+    }
+
+    return DOMBindings::WrapElement(ctx, result);
+}
+
 // Element 类定义
 static const JSCFunctionListEntry js_element_proto_funcs[] = {
+    // 基础属性
     JS_CGETSET_MAGIC_DEF("tagName", js_element_get_tag_name, nullptr, 0),
     JS_CGETSET_MAGIC_DEF("id", js_element_get_id, js_element_set_id, 0),
     JS_CGETSET_MAGIC_DEF("className", js_element_get_class_name, js_element_set_class_name, 0),
     JS_CGETSET_MAGIC_DEF("textContent", js_element_get_text_content, js_element_set_text_content, 0),
     JS_CGETSET_MAGIC_DEF("parentNode", js_element_get_parent_node, nullptr, 0),
     JS_CGETSET_MAGIC_DEF("children", js_element_get_children, nullptr, 0),
+
+    // 阶段1: Node 属性
+    JS_CGETSET_MAGIC_DEF("childNodes", js_element_get_child_nodes, nullptr, 0),
+    JS_CGETSET_MAGIC_DEF("firstChild", js_element_get_first_child, nullptr, 0),
+    JS_CGETSET_MAGIC_DEF("lastChild", js_element_get_last_child, nullptr, 0),
+    JS_CGETSET_MAGIC_DEF("nextSibling", js_element_get_next_sibling, nullptr, 0),
+    JS_CGETSET_MAGIC_DEF("previousSibling", js_element_get_previous_sibling, nullptr, 0),
+    JS_CGETSET_MAGIC_DEF("nodeType", js_element_get_node_type, nullptr, 0),
+
+    // 阶段1: HTML 内容
+    JS_CGETSET_MAGIC_DEF("innerHTML", js_element_get_inner_html, js_element_set_inner_html, 0),
+    JS_CGETSET_MAGIC_DEF("outerHTML", js_element_get_outer_html, js_element_set_outer_html, 0),
+
+    // 阶段3: 对象属性
+    JS_CGETSET_MAGIC_DEF("classList", js_element_get_class_list, nullptr, 0),
+    JS_CGETSET_MAGIC_DEF("style", js_element_get_style, nullptr, 0),
+    JS_CGETSET_MAGIC_DEF("dataset", js_element_get_dataset, nullptr, 0),
+
+    // 基础方法
     JS_CFUNC_DEF("getAttribute", 1, js_element_get_attribute),
     JS_CFUNC_DEF("setAttribute", 2, js_element_set_attribute),
     JS_CFUNC_DEF("appendChild", 1, js_element_append_child),
@@ -494,6 +988,22 @@ static const JSCFunctionListEntry js_element_proto_funcs[] = {
     JS_CFUNC_DEF("insertBefore", 2, js_element_insert_before),
     JS_CFUNC_DEF("addEventListener", 2, js_element_add_event_listener),
     JS_CFUNC_DEF("removeEventListener", 2, js_element_remove_event_listener),
+    JS_CFUNC_DEF("dispatchEvent", 1, js_element_dispatch_event),
+
+    // 阶段1: Node 方法
+    JS_CFUNC_DEF("cloneNode", 1, js_element_clone_node),
+    JS_CFUNC_DEF("contains", 1, js_element_contains),
+    JS_CFUNC_DEF("hasChildNodes", 0, js_element_has_child_nodes),
+
+    // 阶段1: Element 属性操作
+    JS_CFUNC_DEF("hasAttribute", 1, js_element_has_attribute),
+    JS_CFUNC_DEF("removeAttribute", 1, js_element_remove_attribute),
+
+    // 阶段2: 查询选择器
+    JS_CFUNC_DEF("querySelector", 1, js_element_query_selector),
+    JS_CFUNC_DEF("querySelectorAll", 1, js_element_query_selector_all),
+    JS_CFUNC_DEF("matches", 1, js_element_matches),
+    JS_CFUNC_DEF("closest", 1, js_element_closest),
 };
 
 void DOMBindings::InitElementClass(JSContext* ctx) {
@@ -658,6 +1168,139 @@ static JSValue js_document_get_element_by_id(JSContext* ctx, JSValueConst this_v
     return DOMBindings::WrapElement(ctx, element);
 }
 
+// Document.querySelector(selector)
+static JSValue js_document_query_selector(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) {
+    auto document = DOMBindings::UnwrapDocument(ctx, this_val);
+    if (!document) {
+        return JS_EXCEPTION;
+    }
+
+    if (argc < 1) {
+        return JS_ThrowTypeError(ctx, "querySelector requires 1 argument");
+    }
+
+    const char* selector = JS_ToCString(ctx, argv[0]);
+    if (!selector) {
+        return JS_EXCEPTION;
+    }
+
+    // 从 document element 开始查询
+    auto doc_element = document->GetDocumentElement();
+    if (!doc_element) {
+        JS_FreeCString(ctx, selector);
+        return JS_NULL;
+    }
+
+    auto result = doc_element->QuerySelector(selector);
+    JS_FreeCString(ctx, selector);
+
+    if (!result) {
+        return JS_NULL;
+    }
+
+    return DOMBindings::WrapElement(ctx, result);
+}
+
+// Document.querySelectorAll(selector)
+static JSValue js_document_query_selector_all(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) {
+    auto document = DOMBindings::UnwrapDocument(ctx, this_val);
+    if (!document) {
+        return JS_EXCEPTION;
+    }
+
+    if (argc < 1) {
+        return JS_ThrowTypeError(ctx, "querySelectorAll requires 1 argument");
+    }
+
+    const char* selector = JS_ToCString(ctx, argv[0]);
+    if (!selector) {
+        return JS_EXCEPTION;
+    }
+
+    // 从 document element 开始查询
+    auto doc_element = document->GetDocumentElement();
+    std::vector<std::shared_ptr<Element>> results;
+
+    if (doc_element) {
+        results = doc_element->QuerySelectorAll(selector);
+    }
+
+    JS_FreeCString(ctx, selector);
+
+    // 创建数组
+    JSValue array = JS_NewArray(ctx);
+    uint32_t index = 0;
+
+    for (const auto& elem : results) {
+        JSValue elem_obj = DOMBindings::WrapElement(ctx, elem);
+        JS_SetPropertyUint32(ctx, array, index++, elem_obj);
+    }
+
+    return array;
+}
+
+// Document.getElementsByClassName(className)
+static JSValue js_document_get_elements_by_class_name(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) {
+    auto document = DOMBindings::UnwrapDocument(ctx, this_val);
+    if (!document) {
+        return JS_EXCEPTION;
+    }
+
+    if (argc < 1) {
+        return JS_ThrowTypeError(ctx, "getElementsByClassName requires 1 argument");
+    }
+
+    const char* class_name = JS_ToCString(ctx, argv[0]);
+    if (!class_name) {
+        return JS_EXCEPTION;
+    }
+
+    auto results = document->GetElementsByClassName(class_name);
+    JS_FreeCString(ctx, class_name);
+
+    // 创建数组
+    JSValue array = JS_NewArray(ctx);
+    uint32_t index = 0;
+
+    for (const auto& elem : results) {
+        JSValue elem_obj = DOMBindings::WrapElement(ctx, elem);
+        JS_SetPropertyUint32(ctx, array, index++, elem_obj);
+    }
+
+    return array;
+}
+
+// Document.getElementsByTagName(tagName)
+static JSValue js_document_get_elements_by_tag_name(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) {
+    auto document = DOMBindings::UnwrapDocument(ctx, this_val);
+    if (!document) {
+        return JS_EXCEPTION;
+    }
+
+    if (argc < 1) {
+        return JS_ThrowTypeError(ctx, "getElementsByTagName requires 1 argument");
+    }
+
+    const char* tag_name = JS_ToCString(ctx, argv[0]);
+    if (!tag_name) {
+        return JS_EXCEPTION;
+    }
+
+    auto results = document->GetElementsByTagName(tag_name);
+    JS_FreeCString(ctx, tag_name);
+
+    // 创建数组
+    JSValue array = JS_NewArray(ctx);
+    uint32_t index = 0;
+
+    for (const auto& elem : results) {
+        JSValue elem_obj = DOMBindings::WrapElement(ctx, elem);
+        JS_SetPropertyUint32(ctx, array, index++, elem_obj);
+    }
+
+    return array;
+}
+
 // Document.body getter
 static JSValue js_document_get_body(JSContext* ctx, JSValueConst this_val, int magic) {
     auto document = DOMBindings::UnwrapDocument(ctx, this_val);
@@ -679,6 +1322,12 @@ static const JSCFunctionListEntry js_document_proto_funcs[] = {
     JS_CFUNC_DEF("createElement", 1, js_document_create_element),
     JS_CFUNC_DEF("createTextNode", 1, js_document_create_text_node),
     JS_CFUNC_DEF("getElementById", 1, js_document_get_element_by_id),
+
+    // 阶段2: 查询选择器
+    JS_CFUNC_DEF("querySelector", 1, js_document_query_selector),
+    JS_CFUNC_DEF("querySelectorAll", 1, js_document_query_selector_all),
+    JS_CFUNC_DEF("getElementsByClassName", 1, js_document_get_elements_by_class_name),
+    JS_CFUNC_DEF("getElementsByTagName", 1, js_document_get_elements_by_tag_name),
 };
 
 void DOMBindings::InitDocumentClass(JSContext* ctx) {
@@ -709,6 +1358,49 @@ static void js_event_finalizer(JSRuntime* rt, JSValue val) {
     }
 }
 
+// Event 构造函数 (阶段4)
+static JSValue js_event_constructor(JSContext* ctx, JSValueConst new_target, int argc, JSValueConst* argv) {
+    if (argc < 1) {
+        return JS_ThrowTypeError(ctx, "Event constructor requires at least 1 argument");
+    }
+
+    const char* type = JS_ToCString(ctx, argv[0]);
+    if (!type) {
+        return JS_EXCEPTION;
+    }
+
+    bool bubbles = false;
+    bool cancelable = false;
+
+    // 解析第二个参数（options对象）
+    if (argc >= 2 && JS_IsObject(argv[1])) {
+        JSValue bubbles_val = JS_GetPropertyStr(ctx, argv[1], "bubbles");
+        if (!JS_IsUndefined(bubbles_val)) {
+            bubbles = JS_ToBool(ctx, bubbles_val);
+        }
+        JS_FreeValue(ctx, bubbles_val);
+
+        JSValue cancelable_val = JS_GetPropertyStr(ctx, argv[1], "cancelable");
+        if (!JS_IsUndefined(cancelable_val)) {
+            cancelable = JS_ToBool(ctx, cancelable_val);
+        }
+        JS_FreeValue(ctx, cancelable_val);
+    }
+
+    auto event = std::make_shared<Event>(type, bubbles, cancelable);
+    JS_FreeCString(ctx, type);
+
+    JSValue obj = JS_NewObjectClass(ctx, DOMBindings::event_class_id);
+    if (JS_IsException(obj)) {
+        return obj;
+    }
+
+    auto ptr = new std::shared_ptr<Event>(event);
+    JS_SetOpaque(obj, ptr);
+
+    return obj;
+}
+
 // Event.type getter
 static JSValue js_event_get_type(JSContext* ctx, JSValueConst this_val, int magic) {
     auto event = DOMBindings::UnwrapEvent(ctx, this_val);
@@ -716,6 +1408,72 @@ static JSValue js_event_get_type(JSContext* ctx, JSValueConst this_val, int magi
         return JS_EXCEPTION;
     }
     return JS_NewString(ctx, event->GetType().c_str());
+}
+
+// Event.target getter (阶段4)
+static JSValue js_event_get_target(JSContext* ctx, JSValueConst this_val, int magic) {
+    auto event = DOMBindings::UnwrapEvent(ctx, this_val);
+    if (!event) {
+        return JS_EXCEPTION;
+    }
+
+    auto target = event->GetTarget();
+    if (!target) {
+        return JS_NULL;
+    }
+
+    return DOMBindings::WrapNode(ctx, target);
+}
+
+// Event.currentTarget getter (阶段4)
+static JSValue js_event_get_current_target(JSContext* ctx, JSValueConst this_val, int magic) {
+    auto event = DOMBindings::UnwrapEvent(ctx, this_val);
+    if (!event) {
+        return JS_EXCEPTION;
+    }
+
+    auto current_target = event->GetCurrentTarget();
+    if (!current_target) {
+        return JS_NULL;
+    }
+
+    return DOMBindings::WrapNode(ctx, current_target);
+}
+
+// Event.bubbles getter (阶段4)
+static JSValue js_event_get_bubbles(JSContext* ctx, JSValueConst this_val, int magic) {
+    auto event = DOMBindings::UnwrapEvent(ctx, this_val);
+    if (!event) {
+        return JS_EXCEPTION;
+    }
+    return JS_NewBool(ctx, event->GetBubbles());
+}
+
+// Event.cancelable getter (阶段4)
+static JSValue js_event_get_cancelable(JSContext* ctx, JSValueConst this_val, int magic) {
+    auto event = DOMBindings::UnwrapEvent(ctx, this_val);
+    if (!event) {
+        return JS_EXCEPTION;
+    }
+    return JS_NewBool(ctx, event->GetCancelable());
+}
+
+// Event.defaultPrevented getter (阶段4)
+static JSValue js_event_get_default_prevented(JSContext* ctx, JSValueConst this_val, int magic) {
+    auto event = DOMBindings::UnwrapEvent(ctx, this_val);
+    if (!event) {
+        return JS_EXCEPTION;
+    }
+    return JS_NewBool(ctx, event->IsDefaultPrevented());
+}
+
+// Event.timeStamp getter (阶段4)
+static JSValue js_event_get_time_stamp(JSContext* ctx, JSValueConst this_val, int magic) {
+    auto event = DOMBindings::UnwrapEvent(ctx, this_val);
+    if (!event) {
+        return JS_EXCEPTION;
+    }
+    return JS_NewFloat64(ctx, event->GetTimeStamp());
 }
 
 // Event.stopPropagation()
@@ -742,7 +1500,16 @@ static JSValue js_event_prevent_default(JSContext* ctx, JSValueConst this_val, i
 
 // Event 类定义
 static const JSCFunctionListEntry js_event_proto_funcs[] = {
+    // 阶段4: Event 属性
     JS_CGETSET_MAGIC_DEF("type", js_event_get_type, nullptr, 0),
+    JS_CGETSET_MAGIC_DEF("target", js_event_get_target, nullptr, 0),
+    JS_CGETSET_MAGIC_DEF("currentTarget", js_event_get_current_target, nullptr, 0),
+    JS_CGETSET_MAGIC_DEF("bubbles", js_event_get_bubbles, nullptr, 0),
+    JS_CGETSET_MAGIC_DEF("cancelable", js_event_get_cancelable, nullptr, 0),
+    JS_CGETSET_MAGIC_DEF("defaultPrevented", js_event_get_default_prevented, nullptr, 0),
+    JS_CGETSET_MAGIC_DEF("timeStamp", js_event_get_time_stamp, nullptr, 0),
+
+    // 阶段4: Event 方法
     JS_CFUNC_DEF("stopPropagation", 0, js_event_stop_propagation),
     JS_CFUNC_DEF("preventDefault", 0, js_event_prevent_default),
 };
@@ -763,6 +1530,13 @@ void DOMBindings::InitEventClass(JSContext* ctx) {
     JS_SetPropertyFunctionList(ctx, proto, js_event_proto_funcs,
                                sizeof(js_event_proto_funcs) / sizeof(js_event_proto_funcs[0]));
     JS_SetClassProto(ctx, event_class_id, proto);
+
+    // 注册Event构造函数到全局对象
+    JSValue global = JS_GetGlobalObject(ctx);
+    JSValue event_ctor = JS_NewCFunction2(ctx, js_event_constructor, "Event", 1, JS_CFUNC_constructor, 0);
+    JS_SetConstructor(ctx, event_ctor, proto);
+    JS_SetPropertyStr(ctx, global, "Event", event_ctor);
+    JS_FreeValue(ctx, global);
 }
 
 // ========== 初始化和清理 ==========
@@ -776,6 +1550,9 @@ void DOMBindings::Init(JSContext* ctx) {
     InitTextClass(ctx);
     InitDocumentClass(ctx);
     InitEventClass(ctx);
+    InitDOMTokenListClass(ctx);
+    InitCSSStyleDeclarationClass(ctx);
+    InitDOMStringMapClass(ctx);
 
     initialized = true;
 }
@@ -993,6 +1770,664 @@ void DOMBindings::RemoveFromDocumentCache(Document* ptr) {
         // 缓存不持有引用（弱引用），直接移除即可
         document_cache_.erase(it);
     }
+}
+
+// ========== DOMTokenList 类绑定 (阶段3) ==========
+
+// DOMTokenList finalizer
+static void js_dom_token_list_finalizer(JSRuntime* rt, JSValue val) {
+    auto ptr = static_cast<std::shared_ptr<DOMTokenList>*>(JS_GetOpaque(val, DOMBindings::dom_token_list_class_id));
+    if (ptr) {
+        delete ptr;
+    }
+}
+
+// DOMTokenList.add(token)
+static JSValue js_dom_token_list_add(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) {
+    auto list = static_cast<std::shared_ptr<DOMTokenList>*>(
+        JS_GetOpaque2(ctx, this_val, DOMBindings::dom_token_list_class_id));
+    if (!list || !*list) {
+        return JS_EXCEPTION;
+    }
+
+    if (argc < 1) {
+        return JS_ThrowTypeError(ctx, "add requires at least 1 argument");
+    }
+
+    const char* token = JS_ToCString(ctx, argv[0]);
+    if (!token) {
+        return JS_EXCEPTION;
+    }
+
+    try {
+        (*list)->Add(token);
+    } catch (const std::exception& e) {
+        JS_FreeCString(ctx, token);
+        return JS_ThrowTypeError(ctx, "%s", e.what());
+    }
+
+    JS_FreeCString(ctx, token);
+    return JS_UNDEFINED;
+}
+
+// DOMTokenList.remove(token)
+static JSValue js_dom_token_list_remove(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) {
+    auto list = static_cast<std::shared_ptr<DOMTokenList>*>(
+        JS_GetOpaque2(ctx, this_val, DOMBindings::dom_token_list_class_id));
+    if (!list || !*list) {
+        return JS_EXCEPTION;
+    }
+
+    if (argc < 1) {
+        return JS_ThrowTypeError(ctx, "remove requires at least 1 argument");
+    }
+
+    const char* token = JS_ToCString(ctx, argv[0]);
+    if (!token) {
+        return JS_EXCEPTION;
+    }
+
+    try {
+        (*list)->Remove(token);
+    } catch (const std::exception& e) {
+        JS_FreeCString(ctx, token);
+        return JS_ThrowTypeError(ctx, "%s", e.what());
+    }
+
+    JS_FreeCString(ctx, token);
+    return JS_UNDEFINED;
+}
+
+// DOMTokenList.toggle(token)
+static JSValue js_dom_token_list_toggle(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) {
+    auto list = static_cast<std::shared_ptr<DOMTokenList>*>(
+        JS_GetOpaque2(ctx, this_val, DOMBindings::dom_token_list_class_id));
+    if (!list || !*list) {
+        return JS_EXCEPTION;
+    }
+
+    if (argc < 1) {
+        return JS_ThrowTypeError(ctx, "toggle requires at least 1 argument");
+    }
+
+    const char* token = JS_ToCString(ctx, argv[0]);
+    if (!token) {
+        return JS_EXCEPTION;
+    }
+
+    bool result;
+    try {
+        result = (*list)->Toggle(token);
+    } catch (const std::exception& e) {
+        JS_FreeCString(ctx, token);
+        return JS_ThrowTypeError(ctx, "%s", e.what());
+    }
+
+    JS_FreeCString(ctx, token);
+    return JS_NewBool(ctx, result);
+}
+
+// DOMTokenList.contains(token)
+static JSValue js_dom_token_list_contains(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) {
+    auto list = static_cast<std::shared_ptr<DOMTokenList>*>(
+        JS_GetOpaque2(ctx, this_val, DOMBindings::dom_token_list_class_id));
+    if (!list || !*list) {
+        return JS_EXCEPTION;
+    }
+
+    if (argc < 1) {
+        return JS_ThrowTypeError(ctx, "contains requires at least 1 argument");
+    }
+
+    const char* token = JS_ToCString(ctx, argv[0]);
+    if (!token) {
+        return JS_EXCEPTION;
+    }
+
+    bool result = (*list)->Contains(token);
+    JS_FreeCString(ctx, token);
+
+    return JS_NewBool(ctx, result);
+}
+
+// DOMTokenList.item(index)
+static JSValue js_dom_token_list_item(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) {
+    auto list = static_cast<std::shared_ptr<DOMTokenList>*>(
+        JS_GetOpaque2(ctx, this_val, DOMBindings::dom_token_list_class_id));
+    if (!list || !*list) {
+        return JS_EXCEPTION;
+    }
+
+    if (argc < 1) {
+        return JS_ThrowTypeError(ctx, "item requires at least 1 argument");
+    }
+
+    uint32_t index;
+    if (JS_ToUint32(ctx, &index, argv[0])) {
+        return JS_EXCEPTION;
+    }
+
+    std::string result = (*list)->Item(index);
+    return JS_NewString(ctx, result.c_str());
+}
+
+// DOMTokenList.length getter
+static JSValue js_dom_token_list_get_length(JSContext* ctx, JSValueConst this_val, int magic) {
+    auto list = static_cast<std::shared_ptr<DOMTokenList>*>(
+        JS_GetOpaque2(ctx, this_val, DOMBindings::dom_token_list_class_id));
+    if (!list || !*list) {
+        return JS_EXCEPTION;
+    }
+
+    return JS_NewUint32(ctx, (*list)->Length());
+}
+
+// DOMTokenList 类定义
+static const JSCFunctionListEntry js_dom_token_list_proto_funcs[] = {
+    JS_CGETSET_MAGIC_DEF("length", js_dom_token_list_get_length, nullptr, 0),
+    JS_CFUNC_DEF("add", 1, js_dom_token_list_add),
+    JS_CFUNC_DEF("remove", 1, js_dom_token_list_remove),
+    JS_CFUNC_DEF("toggle", 1, js_dom_token_list_toggle),
+    JS_CFUNC_DEF("contains", 1, js_dom_token_list_contains),
+    JS_CFUNC_DEF("item", 1, js_dom_token_list_item),
+};
+
+void DOMBindings::InitDOMTokenListClass(JSContext* ctx) {
+    JSClassDef dom_token_list_class = {
+        /* class_name */ "DOMTokenList",
+        /* finalizer */ js_dom_token_list_finalizer,
+        /* gc_mark */ nullptr,
+        /* call */ nullptr,
+        /* exotic */ nullptr,
+    };
+
+    JS_NewClassID(JS_GetRuntime(ctx), &dom_token_list_class_id);
+    JS_NewClass(JS_GetRuntime(ctx), dom_token_list_class_id, &dom_token_list_class);
+
+    JSValue proto = JS_NewObject(ctx);
+    JS_SetPropertyFunctionList(ctx, proto, js_dom_token_list_proto_funcs,
+                               sizeof(js_dom_token_list_proto_funcs) / sizeof(js_dom_token_list_proto_funcs[0]));
+    JS_SetClassProto(ctx, dom_token_list_class_id, proto);
+}
+
+// ========== CSSStyleDeclaration 类绑定 (阶段3) ==========
+
+// CSSStyleDeclaration finalizer
+static void js_css_style_declaration_finalizer(JSRuntime* rt, JSValue val) {
+    auto ptr = static_cast<std::shared_ptr<CSSStyleDeclaration>*>(
+        JS_GetOpaque(val, DOMBindings::css_style_declaration_class_id));
+    if (ptr) {
+        delete ptr;
+    }
+}
+
+// CSSStyleDeclaration.setProperty(property, value, priority?)
+static JSValue js_css_style_declaration_set_property(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) {
+    auto style = static_cast<std::shared_ptr<CSSStyleDeclaration>*>(
+        JS_GetOpaque2(ctx, this_val, DOMBindings::css_style_declaration_class_id));
+    if (!style || !*style) {
+        return JS_EXCEPTION;
+    }
+
+    if (argc < 2) {
+        return JS_ThrowTypeError(ctx, "setProperty requires at least 2 arguments");
+    }
+
+    const char* property = JS_ToCString(ctx, argv[0]);
+    if (!property) {
+        return JS_EXCEPTION;
+    }
+
+    const char* value = JS_ToCString(ctx, argv[1]);
+    if (!value) {
+        JS_FreeCString(ctx, property);
+        return JS_EXCEPTION;
+    }
+
+    const char* priority = "";
+    if (argc >= 3) {
+        priority = JS_ToCString(ctx, argv[2]);
+        if (!priority) {
+            JS_FreeCString(ctx, property);
+            JS_FreeCString(ctx, value);
+            return JS_EXCEPTION;
+        }
+    }
+
+    (*style)->SetProperty(property, value, priority);
+
+    JS_FreeCString(ctx, property);
+    JS_FreeCString(ctx, value);
+    if (argc >= 3) {
+        JS_FreeCString(ctx, priority);
+    }
+
+    return JS_UNDEFINED;
+}
+
+// CSSStyleDeclaration.getPropertyValue(property)
+static JSValue js_css_style_declaration_get_property_value(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) {
+    auto style = static_cast<std::shared_ptr<CSSStyleDeclaration>*>(
+        JS_GetOpaque2(ctx, this_val, DOMBindings::css_style_declaration_class_id));
+    if (!style || !*style) {
+        return JS_EXCEPTION;
+    }
+
+    if (argc < 1) {
+        return JS_ThrowTypeError(ctx, "getPropertyValue requires at least 1 argument");
+    }
+
+    const char* property = JS_ToCString(ctx, argv[0]);
+    if (!property) {
+        return JS_EXCEPTION;
+    }
+
+    std::string result = (*style)->GetPropertyValue(property);
+    JS_FreeCString(ctx, property);
+
+    return JS_NewString(ctx, result.c_str());
+}
+
+// CSSStyleDeclaration.removeProperty(property)
+static JSValue js_css_style_declaration_remove_property(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) {
+    auto style = static_cast<std::shared_ptr<CSSStyleDeclaration>*>(
+        JS_GetOpaque2(ctx, this_val, DOMBindings::css_style_declaration_class_id));
+    if (!style || !*style) {
+        return JS_EXCEPTION;
+    }
+
+    if (argc < 1) {
+        return JS_ThrowTypeError(ctx, "removeProperty requires at least 1 argument");
+    }
+
+    const char* property = JS_ToCString(ctx, argv[0]);
+    if (!property) {
+        return JS_EXCEPTION;
+    }
+
+    std::string result = (*style)->RemoveProperty(property);
+    JS_FreeCString(ctx, property);
+
+    return JS_NewString(ctx, result.c_str());
+}
+
+// CSSStyleDeclaration.cssText getter
+static JSValue js_css_style_declaration_get_css_text(JSContext* ctx, JSValueConst this_val, int magic) {
+    auto style = static_cast<std::shared_ptr<CSSStyleDeclaration>*>(
+        JS_GetOpaque2(ctx, this_val, DOMBindings::css_style_declaration_class_id));
+    if (!style || !*style) {
+        return JS_EXCEPTION;
+    }
+
+    return JS_NewString(ctx, (*style)->GetCssText().c_str());
+}
+
+// CSSStyleDeclaration.cssText setter
+static JSValue js_css_style_declaration_set_css_text(JSContext* ctx, JSValueConst this_val, JSValueConst val, int magic) {
+    auto style = static_cast<std::shared_ptr<CSSStyleDeclaration>*>(
+        JS_GetOpaque2(ctx, this_val, DOMBindings::css_style_declaration_class_id));
+    if (!style || !*style) {
+        return JS_EXCEPTION;
+    }
+
+    const char* css_text = JS_ToCString(ctx, val);
+    if (!css_text) {
+        return JS_EXCEPTION;
+    }
+
+    (*style)->SetCssText(css_text);
+    JS_FreeCString(ctx, css_text);
+
+    return JS_UNDEFINED;
+}
+
+// CSSStyleDeclaration.length getter
+static JSValue js_css_style_declaration_get_length(JSContext* ctx, JSValueConst this_val, int magic) {
+    auto style = static_cast<std::shared_ptr<CSSStyleDeclaration>*>(
+        JS_GetOpaque2(ctx, this_val, DOMBindings::css_style_declaration_class_id));
+    if (!style || !*style) {
+        return JS_EXCEPTION;
+    }
+
+    return JS_NewInt32(ctx, (*style)->Length());
+}
+
+// CSSStyleDeclaration 类定义
+static const JSCFunctionListEntry js_css_style_declaration_proto_funcs[] = {
+    JS_CGETSET_MAGIC_DEF("cssText", js_css_style_declaration_get_css_text, js_css_style_declaration_set_css_text, 0),
+    JS_CGETSET_MAGIC_DEF("length", js_css_style_declaration_get_length, nullptr, 0),
+    JS_CFUNC_DEF("setProperty", 2, js_css_style_declaration_set_property),
+    JS_CFUNC_DEF("getPropertyValue", 1, js_css_style_declaration_get_property_value),
+    JS_CFUNC_DEF("removeProperty", 1, js_css_style_declaration_remove_property),
+};
+
+void DOMBindings::InitCSSStyleDeclarationClass(JSContext* ctx) {
+    JSClassDef css_style_declaration_class = {
+        /* class_name */ "CSSStyleDeclaration",
+        /* finalizer */ js_css_style_declaration_finalizer,
+        /* gc_mark */ nullptr,
+        /* call */ nullptr,
+        /* exotic */ nullptr,
+    };
+
+    JS_NewClassID(JS_GetRuntime(ctx), &css_style_declaration_class_id);
+    JS_NewClass(JS_GetRuntime(ctx), css_style_declaration_class_id, &css_style_declaration_class);
+
+    JSValue proto = JS_NewObject(ctx);
+    JS_SetPropertyFunctionList(ctx, proto, js_css_style_declaration_proto_funcs,
+                               sizeof(js_css_style_declaration_proto_funcs) / sizeof(js_css_style_declaration_proto_funcs[0]));
+    JS_SetClassProto(ctx, css_style_declaration_class_id, proto);
+}
+
+// ========== DOMStringMap 类绑定 (阶段3) ==========
+
+// DOMStringMap finalizer
+static void js_dom_string_map_finalizer(JSRuntime* rt, JSValue val) {
+    auto ptr = static_cast<std::shared_ptr<DOMStringMap>*>(
+        JS_GetOpaque(val, DOMBindings::dom_string_map_class_id));
+    if (ptr) {
+        delete ptr;
+    }
+}
+
+// DOMStringMap.set(name, value)
+static JSValue js_dom_string_map_set(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) {
+    auto dataset = static_cast<std::shared_ptr<DOMStringMap>*>(
+        JS_GetOpaque2(ctx, this_val, DOMBindings::dom_string_map_class_id));
+    if (!dataset || !*dataset) {
+        return JS_EXCEPTION;
+    }
+
+    if (argc < 2) {
+        return JS_ThrowTypeError(ctx, "set requires 2 arguments");
+    }
+
+    const char* name = JS_ToCString(ctx, argv[0]);
+    if (!name) {
+        return JS_EXCEPTION;
+    }
+
+    const char* value = JS_ToCString(ctx, argv[1]);
+    if (!value) {
+        JS_FreeCString(ctx, name);
+        return JS_EXCEPTION;
+    }
+
+    (*dataset)->Set(name, value);
+
+    JS_FreeCString(ctx, name);
+    JS_FreeCString(ctx, value);
+
+    return JS_UNDEFINED;
+}
+
+// DOMStringMap.get(name)
+static JSValue js_dom_string_map_get(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) {
+    auto dataset = static_cast<std::shared_ptr<DOMStringMap>*>(
+        JS_GetOpaque2(ctx, this_val, DOMBindings::dom_string_map_class_id));
+    if (!dataset || !*dataset) {
+        return JS_EXCEPTION;
+    }
+
+    if (argc < 1) {
+        return JS_ThrowTypeError(ctx, "get requires 1 argument");
+    }
+
+    const char* name = JS_ToCString(ctx, argv[0]);
+    if (!name) {
+        return JS_EXCEPTION;
+    }
+
+    std::string result = (*dataset)->Get(name);
+    JS_FreeCString(ctx, name);
+
+    return JS_NewString(ctx, result.c_str());
+}
+
+// DOMStringMap.has(name)
+static JSValue js_dom_string_map_has(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) {
+    auto dataset = static_cast<std::shared_ptr<DOMStringMap>*>(
+        JS_GetOpaque2(ctx, this_val, DOMBindings::dom_string_map_class_id));
+    if (!dataset || !*dataset) {
+        return JS_EXCEPTION;
+    }
+
+    if (argc < 1) {
+        return JS_ThrowTypeError(ctx, "has requires 1 argument");
+    }
+
+    const char* name = JS_ToCString(ctx, argv[0]);
+    if (!name) {
+        return JS_EXCEPTION;
+    }
+
+    bool result = (*dataset)->Has(name);
+    JS_FreeCString(ctx, name);
+
+    return JS_NewBool(ctx, result);
+}
+
+// DOMStringMap.remove(name)
+static JSValue js_dom_string_map_remove(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) {
+    auto dataset = static_cast<std::shared_ptr<DOMStringMap>*>(
+        JS_GetOpaque2(ctx, this_val, DOMBindings::dom_string_map_class_id));
+    if (!dataset || !*dataset) {
+        return JS_EXCEPTION;
+    }
+
+    if (argc < 1) {
+        return JS_ThrowTypeError(ctx, "remove requires 1 argument");
+    }
+
+    const char* name = JS_ToCString(ctx, argv[0]);
+    if (!name) {
+        return JS_EXCEPTION;
+    }
+
+    (*dataset)->Remove(name);
+    JS_FreeCString(ctx, name);
+
+    return JS_UNDEFINED;
+}
+
+// DOMStringMap 类定义
+static const JSCFunctionListEntry js_dom_string_map_proto_funcs[] = {
+    JS_CFUNC_DEF("set", 2, js_dom_string_map_set),
+    JS_CFUNC_DEF("get", 1, js_dom_string_map_get),
+    JS_CFUNC_DEF("has", 1, js_dom_string_map_has),
+    JS_CFUNC_DEF("remove", 1, js_dom_string_map_remove),
+};
+
+void DOMBindings::InitDOMStringMapClass(JSContext* ctx) {
+    JSClassDef dom_string_map_class = {
+        /* class_name */ "DOMStringMap",
+        /* finalizer */ js_dom_string_map_finalizer,
+        /* gc_mark */ nullptr,
+        /* call */ nullptr,
+        /* exotic */ nullptr,
+    };
+
+    JS_NewClassID(JS_GetRuntime(ctx), &dom_string_map_class_id);
+    JS_NewClass(JS_GetRuntime(ctx), dom_string_map_class_id, &dom_string_map_class);
+
+    JSValue proto = JS_NewObject(ctx);
+    JS_SetPropertyFunctionList(ctx, proto, js_dom_string_map_proto_funcs,
+                               sizeof(js_dom_string_map_proto_funcs) / sizeof(js_dom_string_map_proto_funcs[0]));
+    JS_SetClassProto(ctx, dom_string_map_class_id, proto);
+}
+
+// ========== TaskScheduler 绑定 ==========
+
+// 全局 TaskScheduler 实例
+static std::shared_ptr<TaskScheduler> g_task_scheduler = nullptr;
+
+// setTimeout(callback, delay)
+static JSValue js_set_timeout(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) {
+    if (!g_task_scheduler) {
+        return JS_ThrowInternalError(ctx, "TaskScheduler not initialized");
+    }
+
+    if (argc < 2) {
+        return JS_ThrowTypeError(ctx, "setTimeout requires 2 arguments");
+    }
+
+    if (!JS_IsFunction(ctx, argv[0])) {
+        return JS_ThrowTypeError(ctx, "setTimeout requires a function as first argument");
+    }
+
+    int delay = 0;
+    if (JS_ToInt32(ctx, &delay, argv[1]) != 0) {
+        return JS_ThrowTypeError(ctx, "setTimeout requires a number as second argument");
+    }
+
+    // 使用 JSValueWrapper 管理回调函数的生命周期
+    auto callback_wrapper = std::make_shared<JSValueWrapper>(ctx, argv[0]);
+
+    int timer_id = g_task_scheduler->SetTimeout([ctx, callback_wrapper]() {
+        JSValue ret = JS_Call(ctx, callback_wrapper->Get(), JS_UNDEFINED, 0, nullptr);
+        if (JS_IsException(ret)) {
+            js_std_dump_error(ctx);
+        }
+        JS_FreeValue(ctx, ret);
+    }, delay);
+
+    return JS_NewInt32(ctx, timer_id);
+}
+
+// clearTimeout(timerId)
+static JSValue js_clear_timeout(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) {
+    if (!g_task_scheduler) {
+        return JS_ThrowInternalError(ctx, "TaskScheduler not initialized");
+    }
+
+    if (argc < 1) {
+        return JS_ThrowTypeError(ctx, "clearTimeout requires 1 argument");
+    }
+
+    int timer_id = 0;
+    if (JS_ToInt32(ctx, &timer_id, argv[0]) != 0) {
+        return JS_ThrowTypeError(ctx, "clearTimeout requires a number as argument");
+    }
+
+    g_task_scheduler->ClearTimeout(timer_id);
+    return JS_UNDEFINED;
+}
+
+// setInterval(callback, interval)
+static JSValue js_set_interval(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) {
+    if (!g_task_scheduler) {
+        return JS_ThrowInternalError(ctx, "TaskScheduler not initialized");
+    }
+
+    if (argc < 2) {
+        return JS_ThrowTypeError(ctx, "setInterval requires 2 arguments");
+    }
+
+    if (!JS_IsFunction(ctx, argv[0])) {
+        return JS_ThrowTypeError(ctx, "setInterval requires a function as first argument");
+    }
+
+    int interval = 0;
+    if (JS_ToInt32(ctx, &interval, argv[1]) != 0) {
+        return JS_ThrowTypeError(ctx, "setInterval requires a number as second argument");
+    }
+
+    // 使用 JSValueWrapper 管理回调函数的生命周期
+    auto callback_wrapper = std::make_shared<JSValueWrapper>(ctx, argv[0]);
+
+    int timer_id = g_task_scheduler->SetInterval([ctx, callback_wrapper]() {
+        JSValue ret = JS_Call(ctx, callback_wrapper->Get(), JS_UNDEFINED, 0, nullptr);
+        if (JS_IsException(ret)) {
+            js_std_dump_error(ctx);
+        }
+        JS_FreeValue(ctx, ret);
+    }, interval);
+
+    return JS_NewInt32(ctx, timer_id);
+}
+
+// clearInterval(timerId)
+static JSValue js_clear_interval(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) {
+    if (!g_task_scheduler) {
+        return JS_ThrowInternalError(ctx, "TaskScheduler not initialized");
+    }
+
+    if (argc < 1) {
+        return JS_ThrowTypeError(ctx, "clearInterval requires 1 argument");
+    }
+
+    int timer_id = 0;
+    if (JS_ToInt32(ctx, &timer_id, argv[0]) != 0) {
+        return JS_ThrowTypeError(ctx, "clearInterval requires a number as argument");
+    }
+
+    g_task_scheduler->ClearInterval(timer_id);
+    return JS_UNDEFINED;
+}
+
+// requestAnimationFrame(callback)
+static JSValue js_request_animation_frame(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) {
+    if (!g_task_scheduler) {
+        return JS_ThrowInternalError(ctx, "TaskScheduler not initialized");
+    }
+
+    if (argc < 1) {
+        return JS_ThrowTypeError(ctx, "requestAnimationFrame requires 1 argument");
+    }
+
+    if (!JS_IsFunction(ctx, argv[0])) {
+        return JS_ThrowTypeError(ctx, "requestAnimationFrame requires a function as argument");
+    }
+
+    // 使用 JSValueWrapper 管理回调函数的生命周期
+    auto callback_wrapper = std::make_shared<JSValueWrapper>(ctx, argv[0]);
+
+    int frame_id = g_task_scheduler->RequestAnimationFrame([ctx, callback_wrapper](double timestamp) {
+        JSValue timestamp_val = JS_NewFloat64(ctx, timestamp);
+        JSValue ret = JS_Call(ctx, callback_wrapper->Get(), JS_UNDEFINED, 1, &timestamp_val);
+        JS_FreeValue(ctx, timestamp_val);
+        if (JS_IsException(ret)) {
+            js_std_dump_error(ctx);
+        }
+        JS_FreeValue(ctx, ret);
+    });
+
+    return JS_NewInt32(ctx, frame_id);
+}
+
+// cancelAnimationFrame(frameId)
+static JSValue js_cancel_animation_frame(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) {
+    if (!g_task_scheduler) {
+        return JS_ThrowInternalError(ctx, "TaskScheduler not initialized");
+    }
+
+    if (argc < 1) {
+        return JS_ThrowTypeError(ctx, "cancelAnimationFrame requires 1 argument");
+    }
+
+    int frame_id = 0;
+    if (JS_ToInt32(ctx, &frame_id, argv[0]) != 0) {
+        return JS_ThrowTypeError(ctx, "cancelAnimationFrame requires a number as argument");
+    }
+
+    g_task_scheduler->CancelAnimationFrame(frame_id);
+    return JS_UNDEFINED;
+}
+
+void DOMBindings::SetGlobalTaskScheduler(JSContext* ctx, std::shared_ptr<TaskScheduler> scheduler) {
+    g_task_scheduler = scheduler;
+
+    // 注册全局函数
+    JSValue global = JS_GetGlobalObject(ctx);
+
+    JS_SetPropertyStr(ctx, global, "setTimeout", JS_NewCFunction(ctx, js_set_timeout, "setTimeout", 2));
+    JS_SetPropertyStr(ctx, global, "clearTimeout", JS_NewCFunction(ctx, js_clear_timeout, "clearTimeout", 1));
+    JS_SetPropertyStr(ctx, global, "setInterval", JS_NewCFunction(ctx, js_set_interval, "setInterval", 2));
+    JS_SetPropertyStr(ctx, global, "clearInterval", JS_NewCFunction(ctx, js_clear_interval, "clearInterval", 1));
+    JS_SetPropertyStr(ctx, global, "requestAnimationFrame", JS_NewCFunction(ctx, js_request_animation_frame, "requestAnimationFrame", 1));
+    JS_SetPropertyStr(ctx, global, "cancelAnimationFrame", JS_NewCFunction(ctx, js_cancel_animation_frame, "cancelAnimationFrame", 1));
+
+    JS_FreeValue(ctx, global);
 }
 
 } // namespace lightui

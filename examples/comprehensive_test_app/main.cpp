@@ -48,25 +48,31 @@ int main(int argc, char* argv[]) {
 
     try {
         // 1. 创建 Document
-        std::cout << "[1/4] 创建 Document..." << std::endl;
+        std::cout << "[1/5] 创建 Document..." << std::endl;
         auto document = std::make_shared<Document>();
         document->Initialize();
         std::cout << "   ✓ Document 创建成功" << std::endl;
 
-        // 2. 创建 QuickJS 运行时
-        std::cout << "[2/4] 创建 QuickJS 运行时..." << std::endl;
+        // 2. 创建 TaskScheduler
+        std::cout << "[2/5] 创建 TaskScheduler..." << std::endl;
+        auto scheduler = std::make_shared<TaskScheduler>();
+        std::cout << "   ✓ TaskScheduler 创建成功" << std::endl;
+
+        // 3. 创建 QuickJS 运行时
+        std::cout << "[3/5] 创建 QuickJS 运行时..." << std::endl;
         auto runtime = std::make_unique<QuickJSRuntime>();
         ctx = runtime->GetContext();
         std::cout << "   ✓ QuickJS 运行时创建成功" << std::endl;
 
-        // 3. 初始化 DOM 绑定
-        std::cout << "[3/4] 初始化 DOM 绑定..." << std::endl;
+        // 4. 初始化 DOM 绑定
+        std::cout << "[4/5] 初始化 DOM 绑定..." << std::endl;
         DOMBindings::Init(ctx);
         DOMBindings::SetGlobalDocument(ctx, document);
+        DOMBindings::SetGlobalTaskScheduler(ctx, scheduler);
         std::cout << "   ✓ DOM 绑定初始化成功" << std::endl;
 
-        // 4. 加载测试框架
-        std::cout << "[4/4] 加载测试框架..." << std::endl;
+        // 5. 加载测试框架
+        std::cout << "[5/5] 加载测试框架..." << std::endl;
         std::string test_framework = ReadFile("examples/comprehensive_test_app/test_framework.js");
         if (test_framework.empty()) {
             std::cerr << "错误: 无法加载测试框架" << std::endl;
@@ -74,8 +80,8 @@ int main(int argc, char* argv[]) {
         }
         runtime->Eval(test_framework, "test_framework.js");
         std::cout << "   ✓ 测试框架加载成功" << std::endl;
-        
-        // 5. 加载并运行所有测试
+
+        // 6. 加载并运行所有测试
         std::cout << std::endl;
         std::cout << "=== 加载测试用例 ===" << std::endl;
         std::cout << std::endl;
