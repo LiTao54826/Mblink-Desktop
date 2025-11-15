@@ -48,6 +48,41 @@ function(add_skia_test TEST_NAME TEST_SOURCE)
 endfunction()
 
 # ============================================================================
+# Benchmark Tests
+# ============================================================================
+
+# CSS Animation Benchmark
+add_executable(benchmark_css_animations
+    benchmark/benchmark_css_animations.cpp
+)
+
+target_include_directories(benchmark_css_animations PRIVATE
+    ${CMAKE_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/core
+    ${CMAKE_SOURCE_DIR}/third_party/skia
+)
+
+target_link_libraries(benchmark_css_animations PRIVATE
+    lightui_render
+    lightui_dom
+    lightui_lexbor
+)
+
+if(TARGET skia)
+    target_link_libraries(benchmark_css_animations PRIVATE skia)
+
+    if(MSVC)
+        target_compile_options(benchmark_css_animations PRIVATE
+            $<$<CONFIG:Debug>:/MT>
+            $<$<CONFIG:Release>:/MT>
+        )
+        target_compile_definitions(benchmark_css_animations PRIVATE
+            $<$<CONFIG:Debug>:_ITERATOR_DEBUG_LEVEL=0>
+        )
+    endif()
+endif()
+
+# ============================================================================
 # Unit Tests
 # ============================================================================
 
