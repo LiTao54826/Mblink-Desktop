@@ -159,6 +159,9 @@ set_target_properties(html_window_example PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY_RELEASE "${CMAKE_BINARY_DIR}/bin/Release"
 )
 
+# ========== Comprehensive Test App ==========
+add_subdirectory(comprehensive_test_app)
+
 # ========== Preact Hello World Example ==========
 add_subdirectory(preact_hello_world)
 
@@ -180,6 +183,7 @@ message(STATUS "  - animation_demo")
 message(STATUS "  - html_loading_example")
 message(STATUS "  - html_window_example")
 message(STATUS "  - html_css_performance_demo")
+message(STATUS "  - comprehensive_test_app")
 message(STATUS "  - preact_hello_world")
 message(STATUS "  - preact_counter")
 message(STATUS "  - preact_window_demo")
