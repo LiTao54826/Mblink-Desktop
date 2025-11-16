@@ -6,6 +6,8 @@
 #include "style_resolver.h"
 #include "render_inline_block.h"
 #include "core/dom/text.h"
+#include "core/dom/document.h"
+#include "core/lexbor/style_manager.h"
 #include "color.h"
 #include <algorithm>
 #include <sstream>
@@ -51,10 +53,13 @@ ComputedStyle StyleResolver::ResolveStyle(std::shared_ptr<Element> element,
     // 这一步必须在继承之后，以确保元素自身的样式优先级高于继承
     ApplyElementSpecificStyle(style, element->GetTagName(), element);
 
-    // 4. 伪类样式（如 :hover, :active, :focus）
+    // 4. CSS 规则（<style> 标签和外部样式表）
+    ApplyCSSRules(style, element);
+
+    // 5. 伪类样式（如 :hover, :active, :focus）
     ApplyPseudoClassStyles(style, element);
 
-    // 5. 内联样式（最高优先级）- 覆盖所有
+    // 6. 内联样式（最高优先级）- 覆盖所有
     ApplyInlineStyle(style, element);
 
     return style;
@@ -776,6 +781,11 @@ void StyleResolver::ParseStyleProperty(ComputedStyle& style,
     else if (property == "border-radius") {
         style.border_radius = CSSValue::ParseBorderRadius(resolved_value);
     }
+    else if (property == "background") {
+        // 简化处理：如果是颜色值，设置 background-color
+        // 完整的 background 解析应该支持 image, position, size, repeat 等
+        style.background_color = resolved_value;
+    }
     else if (property == "background-color") {
         style.background_color = resolved_value;
     }
@@ -964,6 +974,32 @@ void StyleResolver::ParseStyleProperty(ComputedStyle& style,
     }
 }
 
+void StyleResolver::ApplyCSSRules(ComputedStyle& style, std::shared_ptr<Element> element) {
+    if (!style_manager_ || !element) {
+        return;
+    }
+
+    // 从 StyleManager 获取匹配的 CSS 规则
+    auto css_properties = style_manager_->ComputeStyle(element.get());
+
+    // 调试输出
+    if (!css_properties.empty()) {
+        std::cout << "[ApplyCSSRules] Element: " << element->GetTagName();
+        if (!element->GetAttribute("class").empty()) {
+            std::cout << " class=\"" << element->GetAttribute("class") << "\"";
+        }
+        std::cout << " - " << css_properties.size() << " CSS properties" << std::endl;
+        for (const auto& [property, value] : css_properties) {
+            std::cout << "  " << property << ": " << value << std::endl;
+        }
+    }
+
+    // 应用每个 CSS 属性
+    for (const auto& [property, value] : css_properties) {
+        ParseStyleProperty(style, property, value);
+    }
+}
+
 void StyleResolver::ApplyPseudoClassStyles(ComputedStyle& style, std::shared_ptr<Element> element) {
     if (!element) {
         return;
@@ -1077,13 +1113,18 @@ RenderTreeBuilder::RenderTreeBuilder()
 std::shared_ptr<RenderObject> RenderTreeBuilder::BuildRenderTree(
     std::shared_ptr<Node> node,
     const ComputedStyle* parent_style) {
-    
+
     if (!node) {
         return nullptr;
     }
-    
+
+    // 设置 StyleManager（如果有 Document）
+    if (document_ && document_->GetStyleManager()) {
+        style_resolver_.SetStyleManager(document_->GetStyleManager());
+    }
+
     std::shared_ptr<RenderObject> render_obj;
-    
+
     // 根据节点类型创建渲染对象
     if (node->GetNodeType() == NodeType::ELEMENT_NODE) {
         auto element = std::static_pointer_cast<Element>(node);

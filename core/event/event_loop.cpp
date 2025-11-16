@@ -197,15 +197,15 @@ void EventLoop::Render() {
     if (render_callback_) {
         render_callback_();
     }
-    
+
     // 默认渲染：渲染所有窗口
-    // 注意：这里只是示例，实际渲染逻辑应该在窗口中实现
-    // auto& window_manager = WindowManager::Instance();
-    // for (auto& window : window_manager.GetAllWindows()) {
-    //     if (window->NeedsRedraw()) {
-    //         window->Render();
-    //     }
-    // }
+    auto& window_manager = WindowManager::Instance();
+    for (auto& window : window_manager.GetAllWindows()) {
+        if (window->NeedsRepaint()) {
+            window->RenderDocument();
+            window->SwapBuffers();
+        }
+    }
 }
 
 bool EventLoop::HasWork() const {

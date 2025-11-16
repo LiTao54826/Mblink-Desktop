@@ -238,30 +238,34 @@ void LexborStyleSheet::ProcessStyleRule(lxb_css_rule_style_t* style_rule) {
         while (decl) {
             if (decl->type == LXB_CSS_RULE_DECLARATION) {
                 lxb_css_rule_declaration_t* declaration = lxb_css_rule_declaration(decl);
-                
-                // 获取属性名
-                const lxb_css_entry_data_t* entry = lxb_css_property_by_id(declaration->type);
-                if (entry && entry->name) {
-                    std::string prop_name(reinterpret_cast<const char*>(entry->name), entry->length);
-                    
-                    // 序列化属性值
-                    std::string prop_value;
-                    lxb_css_rule_serialize(decl, callback, &prop_value);
-                    
-                    // 移除属性名和冒号
-                    size_t colon_pos = prop_value.find(':');
-                    if (colon_pos != std::string::npos) {
-                        prop_value = prop_value.substr(colon_pos + 1);
-                        // 去除前后空格
-                        size_t start = prop_value.find_first_not_of(" \t\n\r");
-                        size_t end = prop_value.find_last_not_of(" \t\n\r;");
-                        if (start != std::string::npos && end != std::string::npos) {
-                            prop_value = prop_value.substr(start, end - start + 1);
-                        }
+
+                // 序列化整个声明（包括属性名和值）
+                std::string full_decl;
+                lxb_css_rule_serialize(decl, callback, &full_decl);
+
+                // 解析 "property: value" 格式
+                size_t colon_pos = full_decl.find(':');
+                if (colon_pos != std::string::npos) {
+                    // 提取属性名
+                    std::string prop_name = full_decl.substr(0, colon_pos);
+                    // 去除前后空格
+                    size_t start = prop_name.find_first_not_of(" \t\n\r");
+                    size_t end = prop_name.find_last_not_of(" \t\n\r");
+                    if (start != std::string::npos && end != std::string::npos) {
+                        prop_name = prop_name.substr(start, end - start + 1);
                     }
-                    
+
+                    // 提取属性值
+                    std::string prop_value = full_decl.substr(colon_pos + 1);
+                    // 去除前后空格和分号
+                    start = prop_value.find_first_not_of(" \t\n\r");
+                    end = prop_value.find_last_not_of(" \t\n\r;");
+                    if (start != std::string::npos && end != std::string::npos) {
+                        prop_value = prop_value.substr(start, end - start + 1);
+                    }
+
                     rule->declarations[prop_name] = prop_value;
-                    
+
                     if (declaration->important) {
                         rule->important = true;
                     }

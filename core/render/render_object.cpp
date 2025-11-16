@@ -263,20 +263,25 @@ void RenderBlock::Paint(SkCanvas* canvas) {
 
     // 创建盒模型
     Box box;
-    box.content_x = layout.content_rect.left();
-    box.content_y = layout.content_rect.top();
-    box.content_width = layout.content_rect.width();
-    box.content_height = layout.content_rect.height();
 
+    // 计算 padding
     box.padding_left = style.padding.left.ToPx(layout.width, style.font_size);
     box.padding_right = style.padding.right.ToPx(layout.width, style.font_size);
     box.padding_top = style.padding.top.ToPx(layout.width, style.font_size);
     box.padding_bottom = style.padding.bottom.ToPx(layout.width, style.font_size);
 
+    // 计算 border
     box.border_top_width = style.border.width.ToPx();
     box.border_right_width = style.border.width.ToPx();
     box.border_bottom_width = style.border.width.ToPx();
     box.border_left_width = style.border.width.ToPx();
+
+    // Taffy 返回的是 border-box 尺寸，需要减去 padding 和 border 得到 content box
+    // 由于我们已经 translate 到元素左上角，padding_box 应该从 (0, 0) 开始
+    box.content_x = box.padding_left;
+    box.content_y = box.padding_top;
+    box.content_width = layout.width - box.padding_left - box.padding_right;
+    box.content_height = layout.height - box.padding_top - box.padding_bottom;
 
     // 创建样式映射
     std::unordered_map<std::string, std::string> styles;
@@ -285,6 +290,20 @@ void RenderBlock::Paint(SkCanvas* canvas) {
     }
     if (!style.background_image.empty()) {
         styles["background-image"] = style.background_image;
+    }
+
+    // Debug: Print styles map
+    static int debug_styles_count = 0;
+    if (debug_styles_count < 20 && !styles.empty()) {
+        auto node = GetNode();
+        std::string tag = node && node->GetNodeType() == NodeType::ELEMENT_NODE
+                          ? std::static_pointer_cast<Element>(node)->GetTagName()
+                          : "unknown";
+        std::cout << "[RenderBlock::Paint] <" << tag << "> styles map:" << std::endl;
+        for (const auto& pair : styles) {
+            std::cout << "  " << pair.first << " = \"" << pair.second << "\"" << std::endl;
+        }
+        debug_styles_count++;
     }
 
     // 渲染器
@@ -420,9 +439,7 @@ void RenderBlock::Paint(SkCanvas* canvas) {
 
     // 绘制子元素
     for (auto& child : children_) {
-        if (child->NeedsPaint()) {
-            child->Paint(canvas);
-        }
+        child->Paint(canvas);
     }
 
     // 恢复画布状态
@@ -725,45 +742,51 @@ void RenderInline::Paint(SkCanvas* canvas) {
     canvas->save();
     canvas->translate(layout.x, layout.y);
 
-    // 绘制背景（如果有）
-    if (!style.background_color.empty()) {
-        SkPaint bg_paint;
-        bg_paint.setColor(Color::Parse(style.background_color));
-        bg_paint.setAntiAlias(true);
+    // 创建盒模型
+    Box box;
+    box.padding_left = style.padding.left.ToPx(layout.width, style.font_size);
+    box.padding_right = style.padding.right.ToPx(layout.width, style.font_size);
+    box.padding_top = style.padding.top.ToPx(layout.width, style.font_size);
+    box.padding_bottom = style.padding.bottom.ToPx(layout.width, style.font_size);
+    box.border_top_width = style.border.width.ToPx();
+    box.border_right_width = style.border.width.ToPx();
+    box.border_bottom_width = style.border.width.ToPx();
+    box.border_left_width = style.border.width.ToPx();
+    // 由于我们已经 translate 到元素左上角，padding_box 应该从 (0, 0) 开始
+    box.content_x = box.padding_left;
+    box.content_y = box.padding_top;
+    box.content_width = layout.width - box.padding_left - box.padding_right;
+    box.content_height = layout.height - box.padding_top - box.padding_bottom;
 
-        // 绘制背景矩形（只覆盖内容宽度）
-        SkRect bg_rect = SkRect::MakeWH(layout.width, layout.height);
-        canvas->drawRect(bg_rect, bg_paint);
+    // 创建样式映射
+    std::unordered_map<std::string, std::string> styles;
+    if (!style.background_color.empty()) {
+        styles["background-color"] = style.background_color;
+    }
+    if (!style.background_image.empty()) {
+        styles["background-image"] = style.background_image;
     }
 
-    // 绘制边框（如果有）
+    // 渲染器
+    BoxRenderer renderer(canvas);
+
+    // 渲染背景
+    renderer.RenderBackgroundAdvanced(box, styles, &style.border_radius);
+
+    // 渲染边框
     if (style.border.style != CSSBorderStyle::NONE && !style.border.width.IsZero()) {
-        SkPaint border_paint;
-        border_paint.setColor(style.border.color);
-        border_paint.setStyle(SkPaint::kStroke_Style);
-        border_paint.setStrokeWidth(style.border.width.ToPx());
-        border_paint.setAntiAlias(true);
+        std::string border_width = std::to_string(style.border.width.value) + "px";
+        std::string border_style = "solid";
 
-        // 绘制边框矩形
-        SkRect border_rect = SkRect::MakeWH(layout.width, layout.height);
+        // 将 SkColor 转换为十六进制字符串
+        char color_str[8];
+        snprintf(color_str, sizeof(color_str), "#%02X%02X%02X",
+                 SkColorGetR(style.border.color),
+                 SkColorGetG(style.border.color),
+                 SkColorGetB(style.border.color));
+        std::string border_color = color_str;
 
-        // 如果有圆角，使用圆角矩形
-        if (!style.border_radius.top_left.IsZero() ||
-            !style.border_radius.top_right.IsZero() ||
-            !style.border_radius.bottom_right.IsZero() ||
-            !style.border_radius.bottom_left.IsZero()) {
-            SkRRect rrect;
-            SkVector radii[4] = {
-                {style.border_radius.top_left.ToPx(), style.border_radius.top_left.ToPx()},
-                {style.border_radius.top_right.ToPx(), style.border_radius.top_right.ToPx()},
-                {style.border_radius.bottom_right.ToPx(), style.border_radius.bottom_right.ToPx()},
-                {style.border_radius.bottom_left.ToPx(), style.border_radius.bottom_left.ToPx()}
-            };
-            rrect.setRectRadii(border_rect, radii);
-            canvas->drawRRect(rrect, border_paint);
-        } else {
-            canvas->drawRect(border_rect, border_paint);
-        }
+        renderer.RenderBorder(box, border_width, border_style, border_color);
     }
 
     // 渲染表单控件特定内容
@@ -794,9 +817,7 @@ void RenderInline::Paint(SkCanvas* canvas) {
 
     // 绘制所有子元素
     for (auto& child : children_) {
-        if (child->NeedsPaint()) {
-            child->Paint(canvas);
-        }
+        child->Paint(canvas);
     }
 
     // 恢复画布状态

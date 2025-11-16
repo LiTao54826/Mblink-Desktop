@@ -49,6 +49,7 @@
 #include "core/render/animation_timeline.h"
 #include "core/render/animation_controller.h"
 #include "core/layout/layout_engine.h"
+#include "core/render/color.h"
 
 namespace lightui {
 
@@ -516,16 +517,27 @@ void Window::OnResize() {
             SDL_DestroyTexture(sdl_texture_);
         }
 
+        // 创建 Skia 表面
+        SkImageInfo info = SkImageInfo::MakeN32Premul(width, height);
+        surface_ = SkSurfaces::Raster(info);
+
+        // 根据 Skia 的颜色类型选择 SDL 像素格式
+        SDL_PixelFormat sdl_format;
+        if (info.colorType() == kRGBA_8888_SkColorType) {
+            sdl_format = SDL_PIXELFORMAT_RGBA32;
+        } else if (info.colorType() == kBGRA_8888_SkColorType) {
+            sdl_format = SDL_PIXELFORMAT_BGRA32;
+        } else {
+            sdl_format = SDL_PIXELFORMAT_ARGB8888;
+        }
+
         sdl_texture_ = SDL_CreateTexture(
             sdl_renderer_,
-            SDL_PIXELFORMAT_RGBA32,
+            sdl_format,
             SDL_TEXTUREACCESS_STREAMING,
             width,
             height
         );
-
-        SkImageInfo info = SkImageInfo::MakeN32Premul(width, height);
-        surface_ = SkSurfaces::Raster(info);
     }
 
     // 触发resize回调（使用逻辑大小）
@@ -882,9 +894,6 @@ void Window::RenderDocument() {
         size_checked = true;
     }
 
-    // 清空画布
-    canvas->clear(SK_ColorWHITE);
-
     // TODO: 实现完整的渲染管线
     // 1. 样式解析
     // 2. 布局计算
@@ -896,10 +905,19 @@ void Window::RenderDocument() {
     if (body) {
         // 使用 RenderTreeBuilder 构建渲染树
         RenderTreeBuilder builder;
+        builder.SetDocument(document_.get());
         auto root_render = builder.BuildRenderTree(body, nullptr);
 
         if (root_render) {
             std::cout << "[RenderDocument] Render tree built successfully" << std::endl;
+
+            // 获取 body 的背景色并清空画布
+            SkColor clear_color = SK_ColorWHITE;  // 默认白色
+            const auto& body_style = root_render->GetComputedStyle();
+            if (!body_style.background_color.empty() && body_style.background_color != "transparent") {
+                clear_color = Color::Parse(body_style.background_color);
+            }
+            canvas->clear(clear_color);
 
             // 获取窗口大小
             int width, height;
@@ -975,6 +993,7 @@ void Window::RenderDocumentIncremental() {
         // 渲染树无效，需要重建
         DEBUG_LOG("[RenderDocumentIncremental] Rebuilding render tree...");
         RenderTreeBuilder builder;
+        builder.SetDocument(document_.get());
         cached_render_tree_ = builder.BuildRenderTree(body, nullptr);
         render_tree_valid_ = true;
 

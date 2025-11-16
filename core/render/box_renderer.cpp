@@ -15,6 +15,7 @@
 #include "include/effects/SkGradientShader.h"
 #include "include/effects/SkImageFilters.h"
 #include <cmath>
+#include <iostream>
 
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
@@ -294,13 +295,37 @@ void BoxRenderer::RenderBackgroundAdvanced(const Box& box,
 
     // 创建路径（支持圆角）
     SkPath path;
-    if (border_radius) {
+    bool has_radius = border_radius && (
+        border_radius->top_left.value > 0 ||
+        border_radius->top_right.value > 0 ||
+        border_radius->bottom_right.value > 0 ||
+        border_radius->bottom_left.value > 0
+    );
+
+    if (has_radius) {
         SkRRect rrect;
+        float tl = border_radius->top_left.ToPx();
+        float tr = border_radius->top_right.ToPx();
+        float br = border_radius->bottom_right.ToPx();
+        float bl = border_radius->bottom_left.ToPx();
+
+        // Debug: Print border-radius values and rect
+        static int debug_radius_count = 0;
+        if (debug_radius_count < 20) {
+            std::cout << "[RenderBackgroundAdvanced] Rect: ("
+                      << padding_box.left() << ", " << padding_box.top() << ", "
+                      << padding_box.right() << ", " << padding_box.bottom() << ") "
+                      << "size=" << padding_box.width() << "x" << padding_box.height() << std::endl;
+            std::cout << "[RenderBackgroundAdvanced] border-radius: "
+                      << "tl=" << tl << ", tr=" << tr << ", br=" << br << ", bl=" << bl << std::endl;
+            debug_radius_count++;
+        }
+
         SkVector radii[4] = {
-            {border_radius->top_left.ToPx(), border_radius->top_left.ToPx()},
-            {border_radius->top_right.ToPx(), border_radius->top_right.ToPx()},
-            {border_radius->bottom_right.ToPx(), border_radius->bottom_right.ToPx()},
-            {border_radius->bottom_left.ToPx(), border_radius->bottom_left.ToPx()}
+            {tl, tl},  // top-left
+            {tr, tr},  // top-right
+            {br, br},  // bottom-right
+            {bl, bl}   // bottom-left
         };
         rrect.setRectRadii(padding_box, radii);
         path.addRRect(rrect);
@@ -444,7 +469,21 @@ void BoxRenderer::RenderBackgroundAdvanced(const Box& box,
     // 4. 纯色背景
     else if (bg_color_it != styles.end() && !bg_color_it->second.empty() &&
              bg_color_it->second != "transparent") {
-        paint.SetColor(Color::Parse(bg_color_it->second));
+        SkColor parsed_color = Color::Parse(bg_color_it->second);
+
+        // Debug: Print color parsing
+        static int debug_color_count = 0;
+        if (debug_color_count < 20) {
+            std::cout << "[RenderBackgroundAdvanced] background-color: \"" << bg_color_it->second
+                      << "\" -> ARGB("
+                      << SkColorGetA(parsed_color) << ", "
+                      << SkColorGetR(parsed_color) << ", "
+                      << SkColorGetG(parsed_color) << ", "
+                      << SkColorGetB(parsed_color) << ")" << std::endl;
+            debug_color_count++;
+        }
+
+        paint.SetColor(parsed_color);
         has_background = true;
     }
 

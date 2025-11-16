@@ -7,6 +7,7 @@
 #include "dom/element.h"
 #include "render/render_object.h"
 #include <cmath>
+#include <iostream>
 
 namespace lightui {
 
@@ -144,6 +145,21 @@ TaffyNodeId LayoutEngine::CreateNode(RenderObject* render_obj) {
         // Apply render object's computed style
         if (render_obj) {
             ApplyStyle(node, render_obj->GetComputedStyle());
+
+            // For text nodes, measure text and set explicit size
+            if (render_obj->GetType() == RenderObjectType::TEXT) {
+                // Force layout to measure text
+                render_obj->Layout(0, 0);
+                const auto& layout_info = render_obj->GetLayoutInfo();
+
+                // Set explicit width and height for text node
+                TaffyStyleMutRefResult style_result = TaffyTree_GetStyleMut(taffy_tree_, node);
+                if (style_result.return_code == TAFFY_RETURN_CODE_OK) {
+                    TaffyStyleMutRef taffy_style = style_result.value;
+                    TaffyStyle_SetWidth(taffy_style, layout_info.width, TAFFY_UNIT_LENGTH);
+                    TaffyStyle_SetHeight(taffy_style, layout_info.height, TAFFY_UNIT_LENGTH);
+                }
+            }
         }
     }
 
@@ -349,10 +365,42 @@ void LayoutEngine::ReadLayoutResults(RenderObject* render_obj) {
     info.height = result.value.height;
     info.is_laid_out = true;
 
+    // Debug: Print layout info for first few elements
+    static int debug_count = 0;
+    if (debug_count < 10) {
+        std::cout << "[ReadLayoutResults] Element " << debug_count
+                  << ": x=" << info.x << ", y=" << info.y
+                  << ", w=" << info.width << ", h=" << info.height << std::endl;
+        debug_count++;
+    }
+
     // Recursively read layout for children
     auto& children = render_obj->GetChildren();
     for (auto& child : children) {
         ReadLayoutResults(child.get());
+    }
+
+    // Apply text-align to children (Taffy doesn't support text-align CSS property)
+    const auto& style = render_obj->GetComputedStyle();
+    if (!children.empty() && (style.text_align == "center" || style.text_align == "right")) {
+        // Calculate content width (excluding padding)
+        float padding_left = style.padding.left.ToPx(info.width, style.font_size);
+        float padding_right = style.padding.right.ToPx(info.width, style.font_size);
+        float content_width = info.width - padding_left - padding_right;
+
+        for (auto& child : children) {
+            LayoutInfo& child_info = child->GetLayoutInfo();
+            float child_width = child_info.width;
+
+            if (style.text_align == "center") {
+                // Center align: move child to center
+                float offset = (content_width - child_width) / 2.0f;
+                child_info.x = padding_left + offset;
+            } else if (style.text_align == "right") {
+                // Right align: move child to right
+                child_info.x = padding_left + content_width - child_width;
+            }
+        }
     }
 }
 

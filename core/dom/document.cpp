@@ -28,6 +28,7 @@
 #include "html_paragraph_element.h"
 #include "html_heading_element.h"
 #include "core/lexbor/lexbor_document.h"
+#include "core/lexbor/style_manager.h"
 #include <algorithm>
 #include <iostream>
 #include <lexbor/dom/interfaces/element.h>
@@ -43,10 +44,15 @@ Document::Document()
     , body_(nullptr)
     , id_map_()
     , lexbor_doc_(std::make_unique<LexborDocument>())
-    , lexbor_dirty_(false) {
+    , lexbor_dirty_(false)
+    , style_manager_(std::make_unique<StyleManager>(this)) {
 }
 
 Document::~Document() = default;
+
+StyleManager* Document::GetStyleManager() const {
+    return style_manager_.get();
+}
 
 void Document::Initialize() {
     // 创建基本的 HTML 结构
@@ -166,6 +172,14 @@ bool Document::LoadHTML(const std::string& html) {
     // 从 Lexbor DOM 同步到 MBink DOM
     SyncFromLexbor();
 
+    // 解析所有 <style> 标签
+    if (style_manager_) {
+        auto style_elements = GetElementsByTagName("style");
+        for (auto& style_elem : style_elements) {
+            style_manager_->ParseStyleElement(style_elem.get());
+        }
+    }
+
     lexbor_dirty_ = false;
     return true;
 }
@@ -182,6 +196,14 @@ bool Document::LoadHTMLFile(const std::string& file_path) {
 
     // 从 Lexbor DOM 同步到 MBink DOM
     SyncFromLexbor();
+
+    // 解析所有 <style> 标签
+    if (style_manager_) {
+        auto style_elements = GetElementsByTagName("style");
+        for (auto& style_elem : style_elements) {
+            style_manager_->ParseStyleElement(style_elem.get());
+        }
+    }
 
     lexbor_dirty_ = false;
     return true;
