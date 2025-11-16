@@ -41,6 +41,7 @@ enum class RenderObjectType {
     TEXT,       // 文本节点
     INLINE_BLOCK, // 内联块（img, button等）
     FLEX,       // Flex 容器
+    GRID,       // Grid 容器
     NONE        // 不渲染（display: none）
 };
 

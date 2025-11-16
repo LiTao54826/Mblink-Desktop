@@ -26,8 +26,17 @@ std::string ReadFile(const std::string& path) {
 }
 
 int main(int argc, char* argv[]) {
+    // Determine which test to run
+    std::string test_file = "examples/window_demo/flexbox_test.html";
+    std::string test_name = "Flexbox";
+
+    if (argc > 1 && std::string(argv[1]) == "grid") {
+        test_file = "examples/window_demo/grid_test.html";
+        test_name = "Grid";
+    }
+
     std::cout << "========================================" << std::endl;
-    std::cout << "  Flexbox Layout Test" << std::endl;
+    std::cout << "  " << test_name << " Layout Test" << std::endl;
     std::cout << "========================================" << std::endl;
     std::cout << std::endl;
 
@@ -35,7 +44,7 @@ int main(int argc, char* argv[]) {
         // Create window
         std::cout << "[1/4] Creating window..." << std::endl;
         WindowConfig config;
-        config.title = "Flexbox Test";
+        config.title = test_name + " Test";
         config.width = 800;
         config.height = 600;
         config.resizable = true;
@@ -57,9 +66,9 @@ int main(int argc, char* argv[]) {
 
         // Load HTML
         std::cout << "[3/4] Loading HTML..." << std::endl;
-        std::string html = ReadFile("examples/window_demo/flexbox_test.html");
+        std::string html = ReadFile(test_file);
         if (html.empty()) {
-            std::cerr << "  ✗ Failed to load HTML" << std::endl;
+            std::cerr << "  ✗ Failed to load HTML: " << test_file << std::endl;
             return 1;
         }
         std::cout << "  ✓ HTML loaded (" << html.size() << " bytes)" << std::endl;

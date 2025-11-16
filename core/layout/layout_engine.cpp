@@ -212,6 +212,8 @@ void LayoutEngine::ApplyStyle(TaffyNodeId node, const ComputedStyle& style) {
     TaffyDisplay display = TAFFY_DISPLAY_BLOCK;
     if (style.display == RenderObjectType::FLEX) {
         display = TAFFY_DISPLAY_FLEX;
+    } else if (style.display == RenderObjectType::GRID) {
+        display = TAFFY_DISPLAY_GRID;
     } else if (style.display == RenderObjectType::NONE) {
         display = TAFFY_DISPLAY_NONE;
     } else if (style.display == RenderObjectType::BLOCK) {
@@ -312,6 +314,38 @@ void LayoutEngine::ApplyStyle(TaffyNodeId node, const ComputedStyle& style) {
         // Gap
         apply_dimension(taffy_style, style.column_gap, TaffyStyle_SetColumnGap);
         apply_dimension(taffy_style, style.row_gap, TaffyStyle_SetRowGap);
+    }
+
+    // Apply CSS Grid properties
+    if (style.display == RenderObjectType::GRID) {
+        // Grid auto flow
+        TaffyGridAutoFlow grid_auto_flow = TAFFY_GRID_AUTO_FLOW_ROW;
+        if (style.grid_auto_flow == "row") grid_auto_flow = TAFFY_GRID_AUTO_FLOW_ROW;
+        else if (style.grid_auto_flow == "column") grid_auto_flow = TAFFY_GRID_AUTO_FLOW_COLUMN;
+        else if (style.grid_auto_flow == "row dense") grid_auto_flow = TAFFY_GRID_AUTO_FLOW_ROW_DENSE;
+        else if (style.grid_auto_flow == "column dense") grid_auto_flow = TAFFY_GRID_AUTO_FLOW_COLUMN_DENSE;
+        TaffyStyle_SetGridAutoFlow(taffy_style, grid_auto_flow);
+
+        // Gap (Grid uses the same gap properties as Flexbox)
+        apply_dimension(taffy_style, style.column_gap, TaffyStyle_SetColumnGap);
+        apply_dimension(taffy_style, style.row_gap, TaffyStyle_SetRowGap);
+
+        // TODO: Grid template columns/rows parsing
+        // This requires parsing strings like "1fr 1fr", "100px auto", "repeat(3, 1fr)"
+        // For now, we'll skip this and rely on auto-placement
+    }
+
+    // Apply Grid item placement (for children of grid containers)
+    if (!style.grid_column.empty()) {
+        // Parse grid-column: "span 2", "1 / 3", etc.
+        TaffyGridPlacement column_placement = ParseGridPlacement(style.grid_column);
+        TaffyStyle_SetGridColumn(taffy_style, column_placement);
+    }
+
+    if (!style.grid_row.empty()) {
+        // Parse grid-row: "span 2", "1 / 2", etc.
+        TaffyGridPlacement row_placement = ParseGridPlacement(style.grid_row);
+        TaffyStyle_SetGridRow(taffy_style, row_placement);
     }
 }
 
@@ -431,6 +465,77 @@ void LayoutEngine::ReadLayoutResults(RenderObject* render_obj) {
             }
         }
     }
+}
+
+TaffyGridPlacement LayoutEngine::ParseGridPlacement(const std::string& value) {
+    TaffyGridPlacement placement;
+    placement.start = 0;
+    placement.end = 0;
+    placement.span = 0;
+
+    if (value.empty()) {
+        return placement;
+    }
+
+    // Parse "span N" format
+    if (value.find("span") != std::string::npos) {
+        size_t span_pos = value.find("span");
+        std::string span_str = value.substr(span_pos + 4);
+
+        // Trim whitespace
+        size_t first = span_str.find_first_not_of(" \t");
+        if (first != std::string::npos) {
+            span_str = span_str.substr(first);
+            size_t last = span_str.find_last_not_of(" \t");
+            span_str = span_str.substr(0, last + 1);
+
+            try {
+                placement.span = static_cast<uint16_t>(std::stoi(span_str));
+            } catch (...) {
+                placement.span = 1;
+            }
+        }
+        return placement;
+    }
+
+    // Parse "start / end" format
+    size_t slash_pos = value.find('/');
+    if (slash_pos != std::string::npos) {
+        std::string start_str = value.substr(0, slash_pos);
+        std::string end_str = value.substr(slash_pos + 1);
+
+        // Trim whitespace
+        size_t first = start_str.find_first_not_of(" \t");
+        if (first != std::string::npos) {
+            start_str = start_str.substr(first);
+            size_t last = start_str.find_last_not_of(" \t");
+            start_str = start_str.substr(0, last + 1);
+        }
+
+        first = end_str.find_first_not_of(" \t");
+        if (first != std::string::npos) {
+            end_str = end_str.substr(first);
+            size_t last = end_str.find_last_not_of(" \t");
+            end_str = end_str.substr(0, last + 1);
+        }
+
+        try {
+            placement.start = static_cast<int16_t>(std::stoi(start_str));
+            placement.end = static_cast<int16_t>(std::stoi(end_str));
+        } catch (...) {
+            // Invalid format, use defaults
+        }
+        return placement;
+    }
+
+    // Parse single number (start line)
+    try {
+        placement.start = static_cast<int16_t>(std::stoi(value));
+    } catch (...) {
+        // Invalid format, use defaults
+    }
+
+    return placement;
 }
 
 } // namespace lightui

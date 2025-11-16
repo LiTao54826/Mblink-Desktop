@@ -4,6 +4,7 @@
 #include <unordered_map>
 #include <memory>
 #include <cstdint>
+#include <string>
 
 // Taffy C API
 extern "C" {
@@ -131,6 +132,13 @@ private:
      * @param render_obj Current render object
      */
     void ReadLayoutResults(RenderObject* render_obj);
+
+    /**
+     * @brief Parse CSS grid placement value (e.g., "span 2", "1 / 3")
+     * @param value Grid placement string
+     * @return Taffy grid placement structure
+     */
+    TaffyGridPlacement ParseGridPlacement(const std::string& value);
 };
 
 } // namespace lightui

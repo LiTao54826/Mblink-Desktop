@@ -927,6 +927,28 @@ void StyleResolver::ParseStyleProperty(ComputedStyle& style,
     else if (property == "column-gap") {
         style.column_gap = CSSValue::ParseLength(resolved_value);
     }
+    // Grid 属性
+    else if (property == "grid-template-columns") {
+        style.grid_template_columns = resolved_value;
+    }
+    else if (property == "grid-template-rows") {
+        style.grid_template_rows = resolved_value;
+    }
+    else if (property == "grid-auto-flow") {
+        style.grid_auto_flow = resolved_value;
+    }
+    else if (property == "grid-column-gap") {
+        style.grid_column_gap = CSSValue::ParseLength(resolved_value);
+    }
+    else if (property == "grid-row-gap") {
+        style.grid_row_gap = CSSValue::ParseLength(resolved_value);
+    }
+    else if (property == "grid-column") {
+        style.grid_column = resolved_value;
+    }
+    else if (property == "grid-row") {
+        style.grid_row = resolved_value;
+    }
     // 定位属性
     else if (property == "position") {
         style.position = resolved_value;
@@ -1100,6 +1122,8 @@ RenderObjectType StyleResolver::ParseDisplay(const std::string& value) {
     if (value == "inline-block") return RenderObjectType::INLINE_BLOCK;
     if (value == "flex") return RenderObjectType::FLEX;
     if (value == "inline-flex") return RenderObjectType::FLEX;  // inline-flex 也使用 FLEX 类型
+    if (value == "grid") return RenderObjectType::GRID;
+    if (value == "inline-grid") return RenderObjectType::GRID;  // inline-grid 也使用 GRID 类型
     if (value == "none") return RenderObjectType::NONE;
     return RenderObjectType::BLOCK;
 }
