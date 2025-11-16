@@ -359,6 +359,49 @@ void LayoutEngine::ApplyStyle(TaffyNodeId node, const ComputedStyle& style) {
         TaffyGridPlacement row_placement = ParseGridPlacement(style.grid_row);
         TaffyStyle_SetGridRow(taffy_style, row_placement);
     }
+
+    // Apply Position property
+    TaffyPosition position = TAFFY_POSITION_RELATIVE;
+    if (style.position == "relative") {
+        position = TAFFY_POSITION_RELATIVE;
+    } else if (style.position == "absolute") {
+        position = TAFFY_POSITION_ABSOLUTE;
+    }
+    // Note: CSS "fixed" and "sticky" are not supported by Taffy, they will be treated as absolute
+    else if (style.position == "fixed" || style.position == "sticky") {
+        position = TAFFY_POSITION_ABSOLUTE;
+    }
+    TaffyStyle_SetPosition(taffy_style, position);
+
+    // Apply Inset properties (top, right, bottom, left)
+    apply_dimension(taffy_style, style.top, TaffyStyle_SetInsetTop);
+    apply_dimension(taffy_style, style.right, TaffyStyle_SetInsetRight);
+    apply_dimension(taffy_style, style.bottom, TaffyStyle_SetInsetBottom);
+    apply_dimension(taffy_style, style.left, TaffyStyle_SetInsetLeft);
+
+    // Apply Overflow properties
+    TaffyOverflow overflow_x = TAFFY_OVERFLOW_VISIBLE;
+    TaffyOverflow overflow_y = TAFFY_OVERFLOW_VISIBLE;
+
+    if (style.overflow == "visible") {
+        overflow_x = overflow_y = TAFFY_OVERFLOW_VISIBLE;
+    } else if (style.overflow == "hidden") {
+        overflow_x = overflow_y = TAFFY_OVERFLOW_HIDDEN;
+    } else if (style.overflow == "scroll") {
+        overflow_x = overflow_y = TAFFY_OVERFLOW_SCROLL;
+    } else if (style.overflow == "auto") {
+        overflow_x = overflow_y = TAFFY_OVERFLOW_SCROLL;  // Taffy treats auto as scroll
+    }
+    // Note: "clip" is not supported by Taffy, treat as hidden
+    else if (style.overflow == "clip") {
+        overflow_x = overflow_y = TAFFY_OVERFLOW_HIDDEN;
+    }
+
+    TaffyStyle_SetOverflowX(taffy_style, overflow_x);
+    TaffyStyle_SetOverflowY(taffy_style, overflow_y);
+
+    // Note: z-index is not handled by Taffy layout engine
+    // It should be handled by the rendering layer during paint
 }
 
 void LayoutEngine::SyncChildren(RenderObject* render_obj, TaffyNodeId node) {

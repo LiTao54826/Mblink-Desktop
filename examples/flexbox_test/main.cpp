@@ -30,9 +30,18 @@ int main(int argc, char* argv[]) {
     std::string test_file = "examples/window_demo/flexbox_test.html";
     std::string test_name = "Flexbox";
 
-    if (argc > 1 && std::string(argv[1]) == "grid") {
-        test_file = "examples/window_demo/grid_test.html";
-        test_name = "Grid";
+    if (argc > 1) {
+        std::string arg = argv[1];
+        if (arg == "grid") {
+            test_file = "examples/window_demo/grid_test.html";
+            test_name = "Grid";
+        } else if (arg == "position") {
+            test_file = "examples/window_demo/position_test.html";
+            test_name = "Position & Overflow";
+        } else if (arg == "comprehensive" || arg == "all") {
+            test_file = "examples/window_demo/comprehensive_test.html";
+            test_name = "Comprehensive Layout";
+        }
     }
 
     std::cout << "========================================" << std::endl;
