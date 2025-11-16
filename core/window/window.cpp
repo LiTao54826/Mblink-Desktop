@@ -921,37 +921,48 @@ void Window::RenderDocument() {
             }
             canvas->clear(clear_color);
 
-            // 获取窗口大小（物理像素）
-            int width, height;
-            SDL_GetWindowSizeInPixels(sdl_window_, &width, &height);
+            // 获取物理像素大小
+            int physical_width, physical_height;
+            SDL_GetWindowSizeInPixels(sdl_window_, &physical_width, &physical_height);
 
-            // 获取 DPI 缩放比（用于 JavaScript devicePixelRatio）
+            // 获取 DPI 缩放比
             float dpi_scale = GetDisplayScale();
 
-            std::cout << "[RenderDocument] Window size: " << width << "x" << height << " (physical pixels)" << std::endl;
+            // 计算逻辑大小（CSS 像素）- 像浏览器一样
+            int logical_width = static_cast<int>(physical_width / dpi_scale);
+            int logical_height = static_cast<int>(physical_height / dpi_scale);
+
+            std::cout << "[RenderDocument] Physical size: " << physical_width << "x" << physical_height << std::endl;
+            std::cout << "[RenderDocument] Logical size: " << logical_width << "x" << logical_height << std::endl;
             std::cout << "[RenderDocument] DPI scale: " << dpi_scale << std::endl;
 
-            // 使用物理像素大小进行布局计算
-            // 这样在高 DPI 显示器上，内容会自动变大（像浏览器一样）
+            // 使用逻辑大小进行布局计算（CSS 像素）
+            // 这样 CSS 中的 px 单位与浏览器行为一致
             if (layout_engine_) {
                 std::cout << "[RenderDocument] Building Taffy layout tree..." << std::endl;
                 layout_engine_->BuildLayoutTree(root_render);
 
                 std::cout << "[RenderDocument] Computing layout with Taffy..." << std::endl;
-                layout_engine_->ComputeLayout(static_cast<float>(width), static_cast<float>(height));
+                layout_engine_->ComputeLayout(static_cast<float>(logical_width), static_cast<float>(logical_height));
 
                 std::cout << "[RenderDocument] Reading layout results..." << std::endl;
                 layout_engine_->GetLayoutInfo(root_render);
             } else {
                 // 降级到传统布局（如果 LayoutEngine 未初始化）
                 std::cout << "[RenderDocument] Using traditional layout (LayoutEngine not available)" << std::endl;
-                root_render->Layout(static_cast<float>(width), static_cast<float>(height));
+                root_render->Layout(static_cast<float>(logical_width), static_cast<float>(logical_height));
             }
 
             std::cout << "[RenderDocument] Starting paint..." << std::endl;
 
-            // 直接绘制（不应用缩放）
+            // 应用 DPI 缩放到 canvas（将逻辑像素缩放到物理像素）
+            canvas->save();
+            canvas->scale(dpi_scale, dpi_scale);
+
+            // 绘制（使用逻辑坐标）
             root_render->Paint(canvas);
+
+            canvas->restore();
             std::cout << "[RenderDocument] Paint completed" << std::endl;
         } else {
             std::cout << "[RenderDocument] Failed to build render tree!" << std::endl;
