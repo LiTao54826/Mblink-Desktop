@@ -311,6 +311,14 @@ typedef struct TaffyGridPlacement {
   uint16_t span;
 } TaffyGridPlacement;
 
+// Represents a single grid track sizing function
+typedef struct TaffyGridTrack {
+  // The type of track sizing function (length, fr, auto, etc.)
+  enum TaffyUnit unit;
+  // The value for the track (e.g., 100.0 for 100px, 1.0 for 1fr)
+  float value;
+} TaffyGridTrack;
+
 typedef struct TaffyTree *TaffyTreeOwnedRef;
 
 typedef struct TaffyTree *TaffyTreeMutRef;
@@ -544,6 +552,28 @@ struct TaffyGridPlacement TaffyStyle_GetGridRow(TaffyStyleMutRef raw_style);
 
 // Set grid item's row placement
 enum TaffyReturnCode TaffyStyle_SetGridRow(TaffyStyleMutRef raw_style, struct TaffyGridPlacement placement);
+
+// Set grid template columns
+//
+// Arguments:
+// * raw_style - Mutable reference to the style
+// * tracks - Pointer to array of TaffyGridTrack
+// * track_count - Number of tracks in the array
+//
+// Safety:
+// The tracks pointer must be valid and point to at least track_count elements
+enum TaffyReturnCode TaffyStyle_SetGridTemplateColumns(TaffyStyleMutRef raw_style, const struct TaffyGridTrack *tracks, size_t track_count);
+
+// Set grid template rows
+//
+// Arguments:
+// * raw_style - Mutable reference to the style
+// * tracks - Pointer to array of TaffyGridTrack
+// * track_count - Number of tracks in the array
+//
+// Safety:
+// The tracks pointer must be valid and point to at least track_count elements
+enum TaffyReturnCode TaffyStyle_SetGridTemplateRows(TaffyStyleMutRef raw_style, const struct TaffyGridTrack *tracks, size_t track_count);
 
 // Create a TaffyTree instance
 TaffyTreeOwnedRef TaffyTree_New(void);

@@ -330,9 +330,21 @@ void LayoutEngine::ApplyStyle(TaffyNodeId node, const ComputedStyle& style) {
         apply_dimension(taffy_style, style.column_gap, TaffyStyle_SetColumnGap);
         apply_dimension(taffy_style, style.row_gap, TaffyStyle_SetRowGap);
 
-        // TODO: Grid template columns/rows parsing
-        // This requires parsing strings like "1fr 1fr", "100px auto", "repeat(3, 1fr)"
-        // For now, we'll skip this and rely on auto-placement
+        // Grid template columns
+        if (!style.grid_template_columns.empty()) {
+            std::vector<TaffyGridTrack> columns = ParseGridTemplate(style.grid_template_columns);
+            if (!columns.empty()) {
+                TaffyStyle_SetGridTemplateColumns(taffy_style, columns.data(), columns.size());
+            }
+        }
+
+        // Grid template rows
+        if (!style.grid_template_rows.empty()) {
+            std::vector<TaffyGridTrack> rows = ParseGridTemplate(style.grid_template_rows);
+            if (!rows.empty()) {
+                TaffyStyle_SetGridTemplateRows(taffy_style, rows.data(), rows.size());
+            }
+        }
     }
 
     // Apply Grid item placement (for children of grid containers)
@@ -536,6 +548,110 @@ TaffyGridPlacement LayoutEngine::ParseGridPlacement(const std::string& value) {
     }
 
     return placement;
+}
+
+std::vector<TaffyGridTrack> LayoutEngine::ParseGridTemplate(const std::string& value) {
+    std::vector<TaffyGridTrack> tracks;
+
+    if (value.empty()) {
+        return tracks;
+    }
+
+    // Split by whitespace to get individual track definitions
+    std::istringstream iss(value);
+    std::string token;
+
+    while (iss >> token) {
+        TaffyGridTrack track;
+        track.unit = TAFFY_UNIT_AUTO;
+        track.value = 0.0f;
+
+        // Check for "auto"
+        if (token == "auto") {
+            track.unit = TAFFY_UNIT_AUTO;
+            track.value = 0.0f;
+        }
+        // Check for "min-content"
+        else if (token == "min-content") {
+            track.unit = TAFFY_UNIT_MIN_CONTENT;
+            track.value = 0.0f;
+        }
+        // Check for "max-content"
+        else if (token == "max-content") {
+            track.unit = TAFFY_UNIT_MAX_CONTENT;
+            track.value = 0.0f;
+        }
+        // Check for fr units (e.g., "1fr", "2.5fr")
+        else if (token.find("fr") != std::string::npos) {
+            try {
+                float fr_value = std::stof(token.substr(0, token.find("fr")));
+                track.unit = TAFFY_UNIT_FR;
+                track.value = fr_value;
+            } catch (...) {
+                track.unit = TAFFY_UNIT_FR;
+                track.value = 1.0f;
+            }
+        }
+        // Check for percentage (e.g., "50%", "33.33%")
+        else if (token.find('%') != std::string::npos) {
+            try {
+                float percent_value = std::stof(token.substr(0, token.find('%')));
+                track.unit = TAFFY_UNIT_PERCENT;
+                track.value = percent_value / 100.0f;  // Convert to 0.0-1.0 range
+            } catch (...) {
+                track.unit = TAFFY_UNIT_PERCENT;
+                track.value = 0.0f;
+            }
+        }
+        // Check for pixel values (e.g., "100px", "200px")
+        else if (token.find("px") != std::string::npos) {
+            try {
+                float px_value = std::stof(token.substr(0, token.find("px")));
+                track.unit = TAFFY_UNIT_LENGTH;
+                track.value = px_value;
+            } catch (...) {
+                track.unit = TAFFY_UNIT_LENGTH;
+                track.value = 0.0f;
+            }
+        }
+        // Check for fit-content() function
+        else if (token.find("fit-content(") != std::string::npos) {
+            size_t start = token.find('(') + 1;
+            size_t end = token.find(')');
+            if (end != std::string::npos) {
+                std::string arg = token.substr(start, end - start);
+
+                if (arg.find('%') != std::string::npos) {
+                    try {
+                        float percent_value = std::stof(arg.substr(0, arg.find('%')));
+                        track.unit = TAFFY_UNIT_FIT_CONTENT_PERCENT;
+                        track.value = percent_value / 100.0f;
+                    } catch (...) {
+                        track.unit = TAFFY_UNIT_AUTO;
+                        track.value = 0.0f;
+                    }
+                } else if (arg.find("px") != std::string::npos) {
+                    try {
+                        float px_value = std::stof(arg.substr(0, arg.find("px")));
+                        track.unit = TAFFY_UNIT_FIT_CONTENT_PX;
+                        track.value = px_value;
+                    } catch (...) {
+                        track.unit = TAFFY_UNIT_AUTO;
+                        track.value = 0.0f;
+                    }
+                }
+            }
+        }
+        // If we couldn't parse it, default to auto
+        else {
+            track.unit = TAFFY_UNIT_AUTO;
+            track.value = 0.0f;
+        }
+
+        tracks.push_back(track);
+    }
+
+    return tracks;
 }
 
 } // namespace lightui

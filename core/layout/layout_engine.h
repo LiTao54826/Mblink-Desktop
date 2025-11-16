@@ -5,6 +5,8 @@
 #include <memory>
 #include <cstdint>
 #include <string>
+#include <vector>
+#include <sstream>
 
 // Taffy C API
 extern "C" {
@@ -139,6 +141,13 @@ private:
      * @return Taffy grid placement structure
      */
     TaffyGridPlacement ParseGridPlacement(const std::string& value);
+
+    /**
+     * @brief Parse CSS grid template value (e.g., "1fr 1fr", "100px auto 1fr")
+     * @param value Grid template string
+     * @return Vector of Taffy grid tracks
+     */
+    std::vector<TaffyGridTrack> ParseGridTemplate(const std::string& value);
 };
 
 } // namespace lightui
