@@ -361,6 +361,12 @@ public:
      */
     void UpdateAnimations(double current_time);
 
+    /**
+     * @brief 获取 DPI 缩放比
+     * @return DPI 缩放比（例如：1.0, 1.5, 2.0）
+     */
+    float GetDisplayScale() const;
+
 private:
     /**
      * @brief 初始化SDL

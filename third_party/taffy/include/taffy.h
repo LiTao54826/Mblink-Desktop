@@ -75,6 +75,14 @@ typedef enum TaffyAlignItems {
 // Sets the layout used for the children of this node
 //
 // The default values depends on on which feature flags are enabled. The order of precedence is: Flex, Grid, Block, None.
+// Controls whether box-sizing is calculated relative to the content box or border box
+typedef enum TaffyBoxSizing {
+  // Size styles specify the box's "content box" (the size excluding padding/border/margin)
+  TAFFY_BOX_SIZING_CONTENT_BOX,
+  // Size styles specify the box's "border box" (the size excluding margin but including padding/border)
+  TAFFY_BOX_SIZING_BORDER_BOX,
+} TaffyBoxSizing;
+
 typedef enum TaffyDisplay {
   // The children will follow the block layout algorithm
   TAFFY_DISPLAY_BLOCK,
@@ -353,6 +361,10 @@ extern "C" {
 enum TaffyDisplay TaffyStyle_GetDisplay(TaffyStyleConstRef raw_style);
 
 enum TaffyReturnCode TaffyStyle_SetDisplay(TaffyStyleMutRef raw_style, enum TaffyDisplay value);
+
+enum TaffyBoxSizing TaffyStyle_GetBoxSizing(TaffyStyleConstRef raw_style);
+
+enum TaffyReturnCode TaffyStyle_SetBoxSizing(TaffyStyleMutRef raw_style, enum TaffyBoxSizing value);
 
 enum TaffyPosition TaffyStyle_GetPosition(TaffyStyleConstRef raw_style);
 

@@ -152,12 +152,37 @@ TaffyNodeId LayoutEngine::CreateNode(RenderObject* render_obj) {
                 render_obj->Layout(0, 0);
                 const auto& layout_info = render_obj->GetLayoutInfo();
 
+                // Debug: Print text measurement
+                auto* text_obj = dynamic_cast<RenderText*>(render_obj);
+                if (text_obj) {
+                    printf("[TextMeasure] Text: \"%s\", measured size: %.1fx%.1f\n",
+                           text_obj->GetText().c_str(), layout_info.width, layout_info.height);
+                }
+
                 // Set explicit width and height for text node
+                // Note: Text nodes should use border-box since they don't have padding/border
                 TaffyStyleMutRefResult style_result = TaffyTree_GetStyleMut(taffy_tree_, node);
                 if (style_result.return_code == TAFFY_RETURN_CODE_OK) {
                     TaffyStyleMutRef taffy_style = style_result.value;
+
+                    // Text nodes should use border-box (Taffy default)
+                    TaffyStyle_SetBoxSizing(taffy_style, TAFFY_BOX_SIZING_BORDER_BOX);
+
+                    // Clear any padding/margin/border for text nodes
+                    TaffyStyle_SetPaddingLeft(taffy_style, 0.0f, TAFFY_UNIT_LENGTH);
+                    TaffyStyle_SetPaddingRight(taffy_style, 0.0f, TAFFY_UNIT_LENGTH);
+                    TaffyStyle_SetPaddingTop(taffy_style, 0.0f, TAFFY_UNIT_LENGTH);
+                    TaffyStyle_SetPaddingBottom(taffy_style, 0.0f, TAFFY_UNIT_LENGTH);
+
+                    TaffyStyle_SetMarginLeft(taffy_style, 0.0f, TAFFY_UNIT_LENGTH);
+                    TaffyStyle_SetMarginRight(taffy_style, 0.0f, TAFFY_UNIT_LENGTH);
+                    TaffyStyle_SetMarginTop(taffy_style, 0.0f, TAFFY_UNIT_LENGTH);
+                    TaffyStyle_SetMarginBottom(taffy_style, 0.0f, TAFFY_UNIT_LENGTH);
+
                     TaffyStyle_SetWidth(taffy_style, layout_info.width, TAFFY_UNIT_LENGTH);
                     TaffyStyle_SetHeight(taffy_style, layout_info.height, TAFFY_UNIT_LENGTH);
+
+                    printf("[TextStyle] Set text node size: %.1fx%.1f\n", layout_info.width, layout_info.height);
                 }
             }
         }
@@ -178,6 +203,10 @@ void LayoutEngine::ApplyStyle(TaffyNodeId node, const ComputedStyle& style) {
     }
 
     TaffyStyleMutRef taffy_style = style_result.value;
+
+    // Set box-sizing to content-box (CSS default)
+    // Taffy defaults to border-box, but CSS defaults to content-box
+    TaffyStyle_SetBoxSizing(taffy_style, TAFFY_BOX_SIZING_CONTENT_BOX);
 
     // Map display type
     TaffyDisplay display = TAFFY_DISPLAY_BLOCK;

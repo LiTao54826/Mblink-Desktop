@@ -673,8 +673,10 @@ void Window::CreateSkiaSurface() {
 void Window::InitCPURendering() {
     // CPU 软件渲染模式 - 不需要 OpenGL
     // 创建 SDL Renderer 和 Texture
-    int width = config_.width;
-    int height = config_.height;
+
+    // 使用物理像素大小创建渲染表面（支持高 DPI）
+    int width, height;
+    SDL_GetWindowSizeInPixels(sdl_window_, &width, &height);
 
     // 创建 SDL Renderer
     sdl_renderer_ = SDL_CreateRenderer(sdl_window_, nullptr);
@@ -682,7 +684,7 @@ void Window::InitCPURendering() {
         throw std::runtime_error(std::string("Failed to create SDL renderer: ") + SDL_GetError());
     }
 
-    // 创建 Raster 表面（CPU 渲染）- 先创建 Skia surface 来确定像素格式
+    // 创建 Raster 表面（CPU 渲染）- 使用物理像素大小
     SkImageInfo info = SkImageInfo::MakeN32Premul(width, height);
     surface_ = SkSurfaces::Raster(info);
 
@@ -919,12 +921,18 @@ void Window::RenderDocument() {
             }
             canvas->clear(clear_color);
 
-            // 获取窗口大小
+            // 获取窗口大小（物理像素）
             int width, height;
             SDL_GetWindowSizeInPixels(sdl_window_, &width, &height);
-            std::cout << "[RenderDocument] Layout: " << width << "x" << height << " (client area)" << std::endl;
 
-            // 使用 Taffy 布局引擎计算布局
+            // 获取 DPI 缩放比（用于 JavaScript devicePixelRatio）
+            float dpi_scale = GetDisplayScale();
+
+            std::cout << "[RenderDocument] Window size: " << width << "x" << height << " (physical pixels)" << std::endl;
+            std::cout << "[RenderDocument] DPI scale: " << dpi_scale << std::endl;
+
+            // 使用物理像素大小进行布局计算
+            // 这样在高 DPI 显示器上，内容会自动变大（像浏览器一样）
             if (layout_engine_) {
                 std::cout << "[RenderDocument] Building Taffy layout tree..." << std::endl;
                 layout_engine_->BuildLayoutTree(root_render);
@@ -941,7 +949,8 @@ void Window::RenderDocument() {
             }
 
             std::cout << "[RenderDocument] Starting paint..." << std::endl;
-            // 绘制
+
+            // 直接绘制（不应用缩放）
             root_render->Paint(canvas);
             std::cout << "[RenderDocument] Paint completed" << std::endl;
         } else {
@@ -1217,6 +1226,43 @@ void Window::UpdateAnimations(double current_time) {
     // 如果有动画正在运行，标记需要重绘
     // TODO: 可以优化为只在动画实际改变值时才重绘
     SetNeedsRepaint();
+}
+
+float Window::GetDisplayScale() const {
+    if (!sdl_window_) {
+        return 1.0f;
+    }
+
+    // 方法 1: 尝试使用 SDL_GetWindowDisplayScale (SDL3)
+    float scale = SDL_GetWindowDisplayScale(sdl_window_);
+    if (scale > 1.0f) {
+        return scale;
+    }
+
+    // 方法 2: 通过物理像素和逻辑像素的比值计算
+    int logical_width, logical_height;
+    SDL_GetWindowSize(sdl_window_, &logical_width, &logical_height);
+
+    int physical_width, physical_height;
+    SDL_GetWindowSizeInPixels(sdl_window_, &physical_width, &physical_height);
+
+    if (logical_width > 0 && physical_width != logical_width) {
+        float calculated_scale = static_cast<float>(physical_width) / static_cast<float>(logical_width);
+        if (calculated_scale > 1.0f) {
+            return calculated_scale;
+        }
+    }
+
+    // 方法 3: 使用 SDL_GetDisplayContentScale
+    SDL_DisplayID display_id = SDL_GetDisplayForWindow(sdl_window_);
+    if (display_id != 0) {
+        float content_scale = SDL_GetDisplayContentScale(display_id);
+        if (content_scale > 1.0f) {
+            return content_scale;
+        }
+    }
+
+    return 1.0f;
 }
 
 } // namespace lightui
