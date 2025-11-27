@@ -309,18 +309,6 @@ void BoxRenderer::RenderBackgroundAdvanced(const Box& box,
         float br = border_radius->bottom_right.ToPx();
         float bl = border_radius->bottom_left.ToPx();
 
-        // Debug: Print border-radius values and rect
-        static int debug_radius_count = 0;
-        if (debug_radius_count < 20) {
-            std::cout << "[RenderBackgroundAdvanced] Rect: ("
-                      << padding_box.left() << ", " << padding_box.top() << ", "
-                      << padding_box.right() << ", " << padding_box.bottom() << ") "
-                      << "size=" << padding_box.width() << "x" << padding_box.height() << std::endl;
-            std::cout << "[RenderBackgroundAdvanced] border-radius: "
-                      << "tl=" << tl << ", tr=" << tr << ", br=" << br << ", bl=" << bl << std::endl;
-            debug_radius_count++;
-        }
-
         SkVector radii[4] = {
             {tl, tl},  // top-left
             {tr, tr},  // top-right
@@ -470,18 +458,6 @@ void BoxRenderer::RenderBackgroundAdvanced(const Box& box,
     else if (bg_color_it != styles.end() && !bg_color_it->second.empty() &&
              bg_color_it->second != "transparent") {
         SkColor parsed_color = Color::Parse(bg_color_it->second);
-
-        // Debug: Print color parsing
-        static int debug_color_count = 0;
-        if (debug_color_count < 20) {
-            std::cout << "[RenderBackgroundAdvanced] background-color: \"" << bg_color_it->second
-                      << "\" -> ARGB("
-                      << SkColorGetA(parsed_color) << ", "
-                      << SkColorGetR(parsed_color) << ", "
-                      << SkColorGetG(parsed_color) << ", "
-                      << SkColorGetB(parsed_color) << ")" << std::endl;
-            debug_color_count++;
-        }
 
         paint.SetColor(parsed_color);
         has_background = true;

@@ -6,8 +6,105 @@
 #include "layout_engine.h"
 #include "dom/element.h"
 #include "render/render_object.h"
+#include "render/text_renderer.h"
+#include "render/text/font_manager.h"
 #include <cmath>
 #include <iostream>
+
+// Text measurement callback for Taffy
+// This function is called by Taffy during layout to measure text nodes
+static TaffySize TextMeasureFunction(
+    TaffyMeasureMode width_measure_mode,
+    float width,
+    TaffyMeasureMode height_measure_mode,
+    float height,
+    void* context)
+{
+    TaffySize size = {0.0f, 0.0f};
+
+    if (!context) {
+        return size;
+    }
+
+    auto* text_obj = static_cast<lightui::RenderText*>(context);
+    const std::string& text = text_obj->GetText();
+
+    if (text.empty()) {
+        return size;
+    }
+
+    const auto& style = text_obj->GetComputedStyle();
+
+    // Create font
+    lightui::FontDescriptor desc;
+    desc.family = style.font_family;
+    desc.size = style.font_size;
+    desc.weight = (style.font_weight == "bold") ? lightui::FontWeight::BOLD : lightui::FontWeight::NORMAL;
+    desc.style = (style.font_style == "italic") ? lightui::FontStyle::ITALIC : lightui::FontStyle::NORMAL;
+
+    SkFont font = lightui::FontManager::GetInstance().LoadFont(desc);
+    lightui::TextRenderer text_renderer(nullptr);
+
+    // Determine available width for text wrapping
+    float available_width = 0.0f;
+    bool should_wrap = false;
+
+    switch (width_measure_mode) {
+        case TAFFY_MEASURE_MODE_EXACT:
+            // Exact width constraint - wrap text to this width
+            available_width = width;
+            should_wrap = true;
+            break;
+        case TAFFY_MEASURE_MODE_FIT_CONTENT:
+            // Fit content with max width constraint
+            available_width = width;
+            should_wrap = (width > 0);
+            break;
+        case TAFFY_MEASURE_MODE_MIN_CONTENT:
+            // Minimum content width - wrap at every opportunity
+            available_width = 0;
+            should_wrap = true;
+            break;
+        case TAFFY_MEASURE_MODE_MAX_CONTENT:
+            // Maximum content width - no wrapping
+            available_width = 0;
+            should_wrap = false;
+            break;
+    }
+
+    if (should_wrap && available_width > 0) {
+        // Wrap text and calculate size
+        std::vector<std::string> lines = text_renderer.WrapText(text, available_width, font);
+
+        // Store wrapped lines in the RenderText object for later rendering
+        text_obj->SetWrappedLines(lines);
+
+        float max_line_width = 0.0f;
+        for (size_t i = 0; i < lines.size(); ++i) {
+            float line_width = text_renderer.MeasureTextWidth(lines[i], font);
+            max_line_width = std::max(max_line_width, line_width);
+        }
+
+        float line_height = style.line_height * style.font_size;
+        size.width = max_line_width;
+        size.height = lines.size() * line_height;
+
+        // Store actual text width for text-align calculation
+        text_obj->SetActualTextWidth(max_line_width);
+    } else {
+        // Single line measurement - clear any previous wrapped lines
+        text_obj->SetWrappedLines({});
+
+        auto metrics = text_renderer.MeasureText(text, font);
+        size.width = metrics.width;
+        size.height = metrics.height;
+
+        // Store actual text width for text-align calculation
+        text_obj->SetActualTextWidth(metrics.width);
+    }
+
+    return size;
+}
 
 namespace lightui {
 
@@ -146,43 +243,38 @@ TaffyNodeId LayoutEngine::CreateNode(RenderObject* render_obj) {
         if (render_obj) {
             ApplyStyle(node, render_obj->GetComputedStyle());
 
-            // For text nodes, measure text and set explicit size
+            // For text nodes, set up measure function for dynamic text measurement
             if (render_obj->GetType() == RenderObjectType::TEXT) {
-                // Force layout to measure text
-                render_obj->Layout(0, 0);
-                const auto& layout_info = render_obj->GetLayoutInfo();
-
-                // Debug: Print text measurement
                 auto* text_obj = dynamic_cast<RenderText*>(render_obj);
                 if (text_obj) {
-                    printf("[TextMeasure] Text: \"%s\", measured size: %.1fx%.1f\n",
-                           text_obj->GetText().c_str(), layout_info.width, layout_info.height);
-                }
+                    // Set the measure function with the RenderText object as context
+                    // Taffy will call this function during layout to measure the text
+                    TaffyTree_SetNodeContext(taffy_tree_, node, TextMeasureFunction, text_obj);
 
-                // Set explicit width and height for text node
-                // Note: Text nodes should use border-box since they don't have padding/border
-                TaffyStyleMutRefResult style_result = TaffyTree_GetStyleMut(taffy_tree_, node);
-                if (style_result.return_code == TAFFY_RETURN_CODE_OK) {
-                    TaffyStyleMutRef taffy_style = style_result.value;
+                    // Set text node style
+                    TaffyStyleMutRefResult style_result = TaffyTree_GetStyleMut(taffy_tree_, node);
+                    if (style_result.return_code == TAFFY_RETURN_CODE_OK) {
+                        TaffyStyleMutRef taffy_style = style_result.value;
 
-                    // Text nodes should use border-box (Taffy default)
-                    TaffyStyle_SetBoxSizing(taffy_style, TAFFY_BOX_SIZING_BORDER_BOX);
+                        // Text nodes should use border-box (Taffy default)
+                        TaffyStyle_SetBoxSizing(taffy_style, TAFFY_BOX_SIZING_BORDER_BOX);
 
-                    // Clear any padding/margin/border for text nodes
-                    TaffyStyle_SetPaddingLeft(taffy_style, 0.0f, TAFFY_UNIT_LENGTH);
-                    TaffyStyle_SetPaddingRight(taffy_style, 0.0f, TAFFY_UNIT_LENGTH);
-                    TaffyStyle_SetPaddingTop(taffy_style, 0.0f, TAFFY_UNIT_LENGTH);
-                    TaffyStyle_SetPaddingBottom(taffy_style, 0.0f, TAFFY_UNIT_LENGTH);
+                        // Clear any padding/margin/border for text nodes
+                        TaffyStyle_SetPaddingLeft(taffy_style, 0.0f, TAFFY_UNIT_LENGTH);
+                        TaffyStyle_SetPaddingRight(taffy_style, 0.0f, TAFFY_UNIT_LENGTH);
+                        TaffyStyle_SetPaddingTop(taffy_style, 0.0f, TAFFY_UNIT_LENGTH);
+                        TaffyStyle_SetPaddingBottom(taffy_style, 0.0f, TAFFY_UNIT_LENGTH);
 
-                    TaffyStyle_SetMarginLeft(taffy_style, 0.0f, TAFFY_UNIT_LENGTH);
-                    TaffyStyle_SetMarginRight(taffy_style, 0.0f, TAFFY_UNIT_LENGTH);
-                    TaffyStyle_SetMarginTop(taffy_style, 0.0f, TAFFY_UNIT_LENGTH);
-                    TaffyStyle_SetMarginBottom(taffy_style, 0.0f, TAFFY_UNIT_LENGTH);
+                        TaffyStyle_SetMarginLeft(taffy_style, 0.0f, TAFFY_UNIT_LENGTH);
+                        TaffyStyle_SetMarginRight(taffy_style, 0.0f, TAFFY_UNIT_LENGTH);
+                        TaffyStyle_SetMarginTop(taffy_style, 0.0f, TAFFY_UNIT_LENGTH);
+                        TaffyStyle_SetMarginBottom(taffy_style, 0.0f, TAFFY_UNIT_LENGTH);
 
-                    TaffyStyle_SetWidth(taffy_style, layout_info.width, TAFFY_UNIT_LENGTH);
-                    TaffyStyle_SetHeight(taffy_style, layout_info.height, TAFFY_UNIT_LENGTH);
-
-                    printf("[TextStyle] Set text node size: %.1fx%.1f\n", layout_info.width, layout_info.height);
+                        // Don't set explicit width/height - let Taffy call measure function
+                        // Set width to auto so it can be determined by parent container
+                        TaffyStyle_SetWidth(taffy_style, 0.0f, TAFFY_UNIT_AUTO);
+                        TaffyStyle_SetHeight(taffy_style, 0.0f, TAFFY_UNIT_AUTO);
+                    }
                 }
             }
         }
@@ -223,7 +315,8 @@ void LayoutEngine::ApplyStyle(TaffyNodeId node, const ComputedStyle& style) {
 
     // Apply sizing
     auto apply_dimension = [](TaffyStyleMutRef style_ref, const CSSLength& css_len,
-                              auto setter_func) {
+                              auto setter_func, const char* name = nullptr) {
+        (void)name;  // suppress unused warning
         if (css_len.unit == CSSUnit::PX) {
             setter_func(style_ref, css_len.value, TAFFY_UNIT_LENGTH);
         } else if (css_len.unit == CSSUnit::PERCENT) {
@@ -483,14 +576,7 @@ void LayoutEngine::ReadLayoutResults(RenderObject* render_obj) {
     info.height = result.value.height;
     info.is_laid_out = true;
 
-    // Debug: Print layout info for first few elements
-    static int debug_count = 0;
-    if (debug_count < 10) {
-        std::cout << "[ReadLayoutResults] Element " << debug_count
-                  << ": x=" << info.x << ", y=" << info.y
-                  << ", w=" << info.width << ", h=" << info.height << std::endl;
-        debug_count++;
-    }
+    const auto& style = render_obj->GetComputedStyle();
 
     // Recursively read layout for children
     auto& children = render_obj->GetChildren();
@@ -498,8 +584,60 @@ void LayoutEngine::ReadLayoutResults(RenderObject* render_obj) {
         ReadLayoutResults(child.get());
     }
 
+    // Fix height for elements with auto height
+    // Taffy sometimes doesn't correctly calculate content-based height
+    if (style.height.unit == CSSUnit::AUTO && !children.empty()) {
+        // Calculate the required height based on children
+        float padding_top = style.padding.top.ToPx(info.width, style.font_size);
+        float padding_bottom = style.padding.bottom.ToPx(info.width, style.font_size);
+
+        // First, fix any children with negative y coordinates
+        for (auto& child : children) {
+            LayoutInfo& child_info = child->GetLayoutInfo();
+            if (child_info.y < 0) {
+                // Move child to padding_top position
+                child_info.y = padding_top;
+            }
+        }
+
+        // Now calculate max_child_bottom
+        float max_child_bottom = 0;
+        for (auto& child : children) {
+            const LayoutInfo& child_info = child->GetLayoutInfo();
+            float child_bottom = child_info.y + child_info.height;
+            max_child_bottom = std::max(max_child_bottom, child_bottom);
+        }
+
+        // Calculate required height: content + padding_bottom
+        float required_height = max_child_bottom + padding_bottom;
+
+        // Only adjust if the calculated height is larger than Taffy's result
+        if (required_height > info.height) {
+            info.height = required_height;
+        }
+    }
+
+    // Fix position for absolute children with bottom property
+    // After children heights have been corrected, we need to recalculate y position
+    // for absolute elements that use bottom positioning
+    if (style.position == "relative" && !children.empty()) {
+        for (auto& child : children) {
+            const auto& child_style = child->GetComputedStyle();
+            if (child_style.position == "absolute" &&
+                child_style.bottom.unit == CSSUnit::PX &&
+                child_style.top.unit == CSSUnit::AUTO) {
+
+                LayoutInfo& child_info = child->GetLayoutInfo();
+                float bottom_offset = child_style.bottom.value;
+
+                // Calculate new y position: parent_height - bottom - child_height
+                float new_y = info.height - bottom_offset - child_info.height;
+                child_info.y = new_y;
+            }
+        }
+    }
+
     // Apply text-align to children (Taffy doesn't support text-align CSS property)
-    const auto& style = render_obj->GetComputedStyle();
     if (!children.empty() && (style.text_align == "center" || style.text_align == "right")) {
         // Calculate content width (excluding padding)
         float padding_left = style.padding.left.ToPx(info.width, style.font_size);
@@ -508,7 +646,18 @@ void LayoutEngine::ReadLayoutResults(RenderObject* render_obj) {
 
         for (auto& child : children) {
             LayoutInfo& child_info = child->GetLayoutInfo();
+
+            // For text nodes, use actual measured text width instead of layout width
+            // (Taffy may stretch text nodes to fill container)
             float child_width = child_info.width;
+            if (child->GetType() == RenderObjectType::TEXT) {
+                auto* text_obj = dynamic_cast<RenderText*>(child.get());
+                if (text_obj && text_obj->GetActualTextWidth() > 0) {
+                    child_width = text_obj->GetActualTextWidth();
+                }
+            }
+
+            float old_x = child_info.x;
 
             if (style.text_align == "center") {
                 // Center align: move child to center
@@ -518,6 +667,7 @@ void LayoutEngine::ReadLayoutResults(RenderObject* render_obj) {
                 // Right align: move child to right
                 child_info.x = padding_left + content_width - child_width;
             }
+            (void)old_x;  // suppress unused warning
         }
     }
 }

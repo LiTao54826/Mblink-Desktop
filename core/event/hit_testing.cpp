@@ -156,14 +156,15 @@ bool HitTesting::HitTestRecursive(
     // 获取对应的 DOM 元素
     auto node = render_object->GetNode();
     auto element = std::dynamic_pointer_cast<Element>(node);
-    
+
     if (element) {
         result.element = element;
+        result.render_object = render_object;  // 保存渲染对象引用
         result.local_x = x - current_offset_x;
         result.local_y = y - current_offset_y;
         return true;
     }
-    
+
     return false;
 }
 

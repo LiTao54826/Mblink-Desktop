@@ -63,20 +63,16 @@ public:
     explicit WindowDOMObserver(Window* window) : window_(window) {}
 
     void OnNodeAdded(Node* node, Node* parent) override {
-        DEBUG_LOG("[WindowDOMObserver] OnNodeAdded: node type=" << static_cast<int>(node->GetNodeType()));
         if (window_ && !IsInBatch(node)) {
-            DEBUG_LOG("[WindowDOMObserver] Calling SetNeedsRepaint() and InvalidateRenderTree()");
             window_->SetNeedsRepaint();
-            window_->InvalidateRenderTree();  // DOM结构改变，渲染树需要重建
+            window_->InvalidateRenderTree();
         }
     }
 
     void OnNodeRemoved(Node* node, Node* parent) override {
-        DEBUG_LOG("[WindowDOMObserver] OnNodeRemoved: node type=" << static_cast<int>(node->GetNodeType()));
         if (window_ && !IsInBatch(node)) {
-            DEBUG_LOG("[WindowDOMObserver] Calling SetNeedsRepaint() and InvalidateRenderTree()");
             window_->SetNeedsRepaint();
-            window_->InvalidateRenderTree();  // DOM结构改变，渲染树需要重建
+            window_->InvalidateRenderTree();
         }
     }
 
@@ -107,9 +103,7 @@ public:
     }
 
     void OnSubtreeModified(Node* root) override {
-        // 这个方法由EndBatch()调用，总是触发重绘
         if (window_) {
-            DEBUG_LOG("[WindowDOMObserver] OnSubtreeModified - triggering repaint");
             window_->SetNeedsRepaint();
             window_->InvalidateRenderTree();
         }
@@ -118,12 +112,26 @@ public:
     void OnPseudoClassChanged(std::shared_ptr<Element> element,
                              const std::string& pseudo_class,
                              bool activate) override {
-        DEBUG_LOG("[WindowDOMObserver] Pseudo-class changed: <"
-                  << element->GetTagName() << "> :" << pseudo_class
-                  << " = " << (activate ? "true" : "false"));
         if (window_ && !IsInBatch(element.get())) {
-            DEBUG_LOG("[WindowDOMObserver] Calling SetNeedsRepaint()");
-            window_->SetNeedsRepaint();
+            // 性能优化：只有可能有视觉变化的伪类才触发重绘
+            bool needs_repaint = false;
+
+            if (pseudo_class == "hover") {
+                // 只有这些元素有内置的 :hover 样式
+                std::string tag = element->GetTagName();
+                if (tag == "button" || tag == "a" || tag == "input" ||
+                    tag == "textarea" || tag == "select") {
+                    needs_repaint = true;
+                }
+            } else if (pseudo_class == "active" || pseudo_class == "focus" ||
+                       pseudo_class == "focus-visible" || pseudo_class == "checked" ||
+                       pseudo_class == "disabled") {
+                needs_repaint = true;
+            }
+
+            if (needs_repaint) {
+                window_->SetNeedsRepaint();
+            }
         }
     }
 
@@ -150,53 +158,20 @@ private:
 static int sdl_init_count = 0;
 
 Window::Window(const WindowConfig& config) : config_(config) {
-    std::cout << "[Window] Constructor started for: " << config.title << std::endl;
-    std::cout.flush();
-
-    std::cout << "[Window] Calling InitSDL..." << std::endl;
-    std::cout.flush();
     InitSDL();
-    std::cout << "[Window] InitSDL completed" << std::endl;
-    std::cout.flush();
-
-    std::cout << "[Window] Calling CreateSDLWindow..." << std::endl;
-    std::cout.flush();
     CreateSDLWindow();
-    std::cout << "[Window] CreateSDLWindow completed" << std::endl;
-    std::cout.flush();
 
     // 根据配置选择渲染后端
     if (config_.backend == RenderBackend::AUTO) {
         // 自动模式：先尝试 GPU，失败则降级到 CPU
         try {
-            std::cout << "[Window] Trying GPU rendering..." << std::endl;
-            std::cout.flush();
-
-            std::cout << "[Window] Calling InitOpenGL..." << std::endl;
-            std::cout.flush();
             InitOpenGL();
-            std::cout << "[Window] InitOpenGL completed" << std::endl;
-            std::cout.flush();
-
-            std::cout << "[Window] Calling InitSkia..." << std::endl;
-            std::cout.flush();
             InitSkia();
-            std::cout << "[Window] InitSkia completed" << std::endl;
-            std::cout.flush();
-
-            std::cout << "[Window] Calling CreateSkiaSurface..." << std::endl;
-            std::cout.flush();
             CreateSkiaSurface();
-            std::cout << "[Window] CreateSkiaSurface completed" << std::endl;
-            std::cout.flush();
-
             actual_backend_ = RenderBackend::OPENGL;
-            std::cout << "[Window] GPU rendering initialized successfully" << std::endl;
-            std::cout.flush();
         } catch (const std::exception& e) {
             // GPU 初始化失败，降级到 CPU 软件渲染
-            std::cerr << "⚠️  GPU 渲染初始化失败: " << e.what() << std::endl;
-            std::cerr << "   降级到 CPU 软件渲染..." << std::endl;
+            std::cerr << "GPU rendering failed: " << e.what() << ", falling back to CPU" << std::endl;
             InitCPURendering();
             actual_backend_ = RenderBackend::CPU;
         }
@@ -220,92 +195,47 @@ Window::Window(const WindowConfig& config) : config_(config) {
 
     // 初始化 Taffy CSS 布局引擎
     layout_engine_ = std::make_unique<LayoutEngine>();
-
-    std::cout << "[Window] Constructor completed" << std::endl;
-    std::cout.flush();
 }
 
 Window::~Window() {
-    std::cout << "[Window] Destructor START" << std::endl;
-    std::cout.flush();
-
     // 关键修复：在释放 Skia 资源之前，先激活 OpenGL 上下文
     // Skia 的 GrContext 在释放时需要调用 OpenGL 清理函数
     if (gl_context_ && sdl_window_) {
-        std::cout << "[Window] Making OpenGL context current before cleanup..." << std::endl;
-        std::cout.flush();
         SDL_GL_MakeCurrent(sdl_window_, gl_context_);
-        std::cout << "[Window] OpenGL context is now current" << std::endl;
-        std::cout.flush();
     }
 
     // 释放Skia资源
-    std::cout << "[Window] Releasing Skia surface..." << std::endl;
-    std::cout.flush();
     surface_.reset();
-    std::cout << "[Window] Skia surface released" << std::endl;
-    std::cout.flush();
-
-    std::cout << "[Window] Releasing Skia context..." << std::endl;
-    std::cout.flush();
     gr_context_.reset();
-    std::cout << "[Window] Skia context released" << std::endl;
-    std::cout.flush();
 
     // 销毁 SDL Texture 和 Renderer（CPU 模式）
     if (sdl_texture_) {
-        std::cout << "[Window] Destroying SDL texture..." << std::endl;
-        std::cout.flush();
         SDL_DestroyTexture(sdl_texture_);
-        std::cout << "[Window] SDL texture destroyed" << std::endl;
-        std::cout.flush();
         sdl_texture_ = nullptr;
     }
 
     if (sdl_renderer_) {
-        std::cout << "[Window] Destroying SDL renderer..." << std::endl;
-        std::cout.flush();
         SDL_DestroyRenderer(sdl_renderer_);
-        std::cout << "[Window] SDL renderer destroyed" << std::endl;
-        std::cout.flush();
         sdl_renderer_ = nullptr;
     }
 
     // 销毁OpenGL上下文
     if (gl_context_) {
-        std::cout << "[Window] Destroying OpenGL context..." << std::endl;
-        std::cout.flush();
         SDL_GL_DestroyContext(gl_context_);
-        std::cout << "[Window] OpenGL context destroyed" << std::endl;
-        std::cout.flush();
         gl_context_ = nullptr;
     }
 
     // 销毁SDL窗口
     if (sdl_window_) {
-        std::cout << "[Window] Destroying SDL window..." << std::endl;
-        std::cout.flush();
         SDL_DestroyWindow(sdl_window_);
-        std::cout << "[Window] SDL window destroyed" << std::endl;
-        std::cout.flush();
         sdl_window_ = nullptr;
     }
 
     // 清理SDL（如果是最后一个窗口）
     sdl_init_count--;
-    std::cout << "[Window] SDL init count: " << sdl_init_count << std::endl;
-    std::cout.flush();
-
     if (sdl_init_count == 0) {
-        std::cout << "[Window] Calling SDL_Quit()..." << std::endl;
-        std::cout.flush();
         SDL_Quit();
-        std::cout << "[Window] SDL_Quit() completed" << std::endl;
-        std::cout.flush();
     }
-
-    std::cout << "[Window] Destructor END" << std::endl;
-    std::cout.flush();
 }
 
 void Window::Show() {
@@ -427,31 +357,9 @@ void Window::SwapBuffers() {
         SDL_GL_SwapWindow(sdl_window_);
     }
     else if (actual_backend_ == RenderBackend::CPU && surface_) {
-        // CPU 模式：将 Raster surface 内容复制到 SDL Texture 并渲染
+        // CPU 模式：将 Skia 渲染结果复制到 SDL Texture 并显示
 
-        static int swap_count = 0;
-        if (swap_count == 0) {
-            std::cout << "[SwapBuffers] CPU mode - first swap" << std::endl;
-
-            // 检查 SDL Texture 大小
-            float tex_w, tex_h;
-            SDL_GetTextureSize(sdl_texture_, &tex_w, &tex_h);
-            std::cout << "[SwapBuffers] Texture size: " << tex_w << "x" << tex_h << std::endl;
-
-            // 检查 SDL Renderer 输出大小
-            int out_w, out_h;
-            SDL_GetRenderOutputSize(sdl_renderer_, &out_w, &out_h);
-            std::cout << "[SwapBuffers] Renderer output size: " << out_w << "x" << out_h << std::endl;
-        }
-        swap_count++;
-
-        if (!sdl_renderer_) {
-            std::cerr << "SDL renderer is null!" << std::endl;
-            return;
-        }
-
-        if (!sdl_texture_) {
-            std::cerr << "SDL texture is null!" << std::endl;
+        if (!sdl_renderer_ || !sdl_texture_) {
             return;
         }
 
@@ -462,36 +370,19 @@ void Window::SwapBuffers() {
             return;
         }
 
-        // 使用 SDL_UpdateTexture 直接更新纹理（比 Lock/Unlock 更简单可靠）
-        // 注意：SDL3 中成功返回 true (非零)，失败返回 false (0)
+        // 更新纹理
         const void* pixels = pixmap.addr();
         int pitch = pixmap.rowBytes();
 
-        bool result = SDL_UpdateTexture(sdl_texture_, nullptr, pixels, pitch);
-        if (!result) {
-            const char* error = SDL_GetError();
-            std::cerr << "Failed to update SDL texture: "
-                      << (error ? error : "no error message") << std::endl;
+        if (!SDL_UpdateTexture(sdl_texture_, nullptr, pixels, pitch)) {
+            std::cerr << "Failed to update SDL texture: " << SDL_GetError() << std::endl;
             return;
         }
 
-        // 渲染纹理到窗口（不需要清空，因为纹理会覆盖整个窗口）
-        // SDL3 中成功返回 true (非零)，失败返回 false (0)
-        if (!SDL_RenderTexture(sdl_renderer_, sdl_texture_, nullptr, nullptr)) {
-            std::cerr << "Failed to render texture: " << SDL_GetError() << std::endl;
-            return;
-        }
-
-        if (swap_count == 1) {
-            std::cout << "[SwapBuffers] About to present" << std::endl;
-        }
-
-        // 显示
+        // 清空渲染器并绘制纹理
+        SDL_RenderClear(sdl_renderer_);
+        SDL_RenderTexture(sdl_renderer_, sdl_texture_, nullptr, nullptr);
         SDL_RenderPresent(sdl_renderer_);
-
-        if (swap_count == 1) {
-            std::cout << "[SwapBuffers] Present completed" << std::endl;
-        }
     }
 }
 
@@ -512,16 +403,15 @@ void Window::OnResize() {
     if (actual_backend_ == RenderBackend::OPENGL) {
         CreateSkiaSurface();
     } else if (actual_backend_ == RenderBackend::CPU) {
-        // CPU 模式：重新创建 SDL Texture 和 Raster 表面
+        // CPU 模式：重新创建 Skia Raster 表面和 SDL Texture
+        SkImageInfo info = SkImageInfo::MakeN32Premul(width, height);
+        surface_ = SkSurfaces::Raster(info);
+
+        // 重新创建 SDL Texture
         if (sdl_texture_) {
             SDL_DestroyTexture(sdl_texture_);
         }
 
-        // 创建 Skia 表面
-        SkImageInfo info = SkImageInfo::MakeN32Premul(width, height);
-        surface_ = SkSurfaces::Raster(info);
-
-        // 根据 Skia 的颜色类型选择 SDL 像素格式
         SDL_PixelFormat sdl_format;
         if (info.colorType() == kRGBA_8888_SkColorType) {
             sdl_format = SDL_PIXELFORMAT_RGBA32;
@@ -558,7 +448,12 @@ void Window::InitSDL() {
 
 void Window::CreateSDLWindow() {
     // 构建窗口标志
-    SDL_WindowFlags flags = SDL_WINDOW_OPENGL;
+    SDL_WindowFlags flags = 0;
+
+    // 只有 GPU 模式才需要 OpenGL 标志
+    if (config_.backend == RenderBackend::OPENGL || config_.backend == RenderBackend::AUTO) {
+        flags |= SDL_WINDOW_OPENGL;
+    }
 
     if (config_.resizable) flags |= SDL_WINDOW_RESIZABLE;
     if (config_.fullscreen) flags |= SDL_WINDOW_FULLSCREEN;
@@ -684,6 +579,9 @@ void Window::InitCPURendering() {
         throw std::runtime_error(std::string("Failed to create SDL renderer: ") + SDL_GetError());
     }
 
+    // 禁用 VSync，由 FrameController 控制帧率
+    SDL_SetRenderVSync(sdl_renderer_, 0);
+
     // 创建 Raster 表面（CPU 渲染）- 使用物理像素大小
     SkImageInfo info = SkImageInfo::MakeN32Premul(width, height);
     surface_ = SkSurfaces::Raster(info);
@@ -702,7 +600,7 @@ void Window::InitCPURendering() {
         sdl_format = SDL_PIXELFORMAT_ARGB8888;
     }
 
-    // 创建 SDL Texture（用于显示 Skia 渲染结果）
+    // 创建 SDL Texture
     sdl_texture_ = SDL_CreateTexture(
         sdl_renderer_,
         sdl_format,
@@ -714,8 +612,6 @@ void Window::InitCPURendering() {
     if (!sdl_texture_) {
         throw std::runtime_error(std::string("Failed to create SDL texture: ") + SDL_GetError());
     }
-
-    std::cout << "✅ 使用 CPU 软件渲染（类似 Chrome 的软件渲染模式）" << std::endl;
 }
 
 bool Window::HandleSDLEvent(const SDL_Event& event) {
@@ -728,11 +624,33 @@ bool Window::HandleSDLEvent(const SDL_Event& event) {
         switch (event.type) {
             case SDL_EVENT_WINDOW_RESIZED:
             case SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED: {
-                int width = event.window.data1;
-                int height = event.window.data2;
+                int new_width = event.window.data1;
+                int new_height = event.window.data2;
+
+                // 检查是否真的改变了大小（避免重复处理）
+                static int last_resize_width = 0, last_resize_height = 0;
+                static Uint64 last_resize_time = 0;
+                Uint64 current_time = SDL_GetTicks();
+
+                if (new_width == last_resize_width && new_height == last_resize_height) {
+                    return true;  // 大小没变，跳过
+                }
+
+                // 节流：如果距离上次 resize 不到 16ms (约60fps)，延迟处理
+                // 但如果是最终的大小，我们需要处理它
+                if (current_time - last_resize_time < 16 && event.type == SDL_EVENT_WINDOW_RESIZED) {
+                    // 记录期望的大小，但不立即处理
+                    // SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED 通常是最终事件
+                    return true;
+                }
+
+                last_resize_width = new_width;
+                last_resize_height = new_height;
+                last_resize_time = current_time;
+
                 OnResize();
-                SetNeedsRepaint();  // 标记需要重新渲染
-                DispatchWindowEvent(WindowEvent(WindowEventType::RESIZE, width, height));
+                SetNeedsRepaint();
+                DispatchWindowEvent(WindowEvent(WindowEventType::RESIZE, new_width, new_height));
                 return true;
             }
 
@@ -797,7 +715,9 @@ bool Window::HandleSDLEvent(const SDL_Event& event) {
             }
 
             case SDL_EVENT_WINDOW_EXPOSED: {
-                DispatchWindowEvent(WindowEvent(WindowEventType::EXPOSED));
+                // 完全忽略 EXPOSED 事件
+                // 在 Windows 上，SDL_RenderPresent 会触发 EXPOSED 事件，形成无限循环
+                // 我们的渲染由 needs_repaint_ 标志控制，不需要响应 EXPOSED 事件
                 return true;
             }
 
@@ -862,8 +782,6 @@ void Window::SetDocument(std::shared_ptr<Document> document) {
 }
 
 void Window::RenderDocument() {
-    std::cout << "[Window::RenderDocument] Called, needs_repaint_=" << needs_repaint_ << std::endl;
-
     if (!document_ || !surface_) {
         return;
     }
@@ -881,91 +799,70 @@ void Window::RenderDocument() {
         return;
     }
 
-    // 调试：检查窗口和 surface 大小
-    static bool size_checked = false;
-    if (!size_checked) {
-        int win_w, win_h;
-        SDL_GetWindowSize(sdl_window_, &win_w, &win_h);
-
-        int client_w, client_h;
-        SDL_GetWindowSizeInPixels(sdl_window_, &client_w, &client_h);
-
-        std::cout << "[RenderDocument] Window size: " << win_w << "x" << win_h << std::endl;
-        std::cout << "[RenderDocument] Client size (pixels): " << client_w << "x" << client_h << std::endl;
-        std::cout << "[RenderDocument] Surface size: " << surface_->width() << "x" << surface_->height() << std::endl;
-        size_checked = true;
-    }
-
     // TODO: 实现完整的渲染管线
     // 1. 样式解析
     // 2. 布局计算
     // 3. 渲染树构建
     // 4. 绘制
 
-    // 简化实现：遍历 DOM 树并渲染
+    // 使用缓存的渲染树，避免每次重建导致滚动状态丢失
     auto body = document_->GetBody();
     if (body) {
-        // 使用 RenderTreeBuilder 构建渲染树
-        RenderTreeBuilder builder;
-        builder.SetDocument(document_.get());
-        auto root_render = builder.BuildRenderTree(body, nullptr);
+        // 获取物理像素大小
+        int physical_width, physical_height;
+        SDL_GetWindowSizeInPixels(sdl_window_, &physical_width, &physical_height);
 
-        if (root_render) {
-            std::cout << "[RenderDocument] Render tree built successfully" << std::endl;
+        // 获取 DPI 缩放比
+        float dpi_scale = GetDisplayScale();
 
+        // 计算逻辑大小（CSS 像素）- 像浏览器一样
+        int logical_width = static_cast<int>(physical_width / dpi_scale);
+        int logical_height = static_cast<int>(physical_height / dpi_scale);
+
+        // 检查是否需要重建渲染树和重新布局
+        bool needs_layout = false;
+        if (!render_tree_valid_ || !cached_render_tree_) {
+            // 使用 RenderTreeBuilder 构建渲染树
+            RenderTreeBuilder builder;
+            builder.SetDocument(document_.get());
+            cached_render_tree_ = builder.BuildRenderTree(body, nullptr);
+            render_tree_valid_ = true;
+            needs_layout = true;
+        }
+
+        if (cached_render_tree_) {
             // 获取 body 的背景色并清空画布
             SkColor clear_color = SK_ColorWHITE;  // 默认白色
-            const auto& body_style = root_render->GetComputedStyle();
+            const auto& body_style = cached_render_tree_->GetComputedStyle();
             if (!body_style.background_color.empty() && body_style.background_color != "transparent") {
                 clear_color = Color::Parse(body_style.background_color);
             }
             canvas->clear(clear_color);
 
-            // 获取物理像素大小
-            int physical_width, physical_height;
-            SDL_GetWindowSizeInPixels(sdl_window_, &physical_width, &physical_height);
+            // 只在需要时重新计算布局（渲染树重建或窗口大小改变）
+            static int last_logical_width = 0, last_logical_height = 0;
+            if (needs_layout || logical_width != last_logical_width || logical_height != last_logical_height) {
+                last_logical_width = logical_width;
+                last_logical_height = logical_height;
 
-            // 获取 DPI 缩放比
-            float dpi_scale = GetDisplayScale();
-
-            // 计算逻辑大小（CSS 像素）- 像浏览器一样
-            int logical_width = static_cast<int>(physical_width / dpi_scale);
-            int logical_height = static_cast<int>(physical_height / dpi_scale);
-
-            std::cout << "[RenderDocument] Physical size: " << physical_width << "x" << physical_height << std::endl;
-            std::cout << "[RenderDocument] Logical size: " << logical_width << "x" << logical_height << std::endl;
-            std::cout << "[RenderDocument] DPI scale: " << dpi_scale << std::endl;
-
-            // 使用逻辑大小进行布局计算（CSS 像素）
-            // 这样 CSS 中的 px 单位与浏览器行为一致
-            if (layout_engine_) {
-                std::cout << "[RenderDocument] Building Taffy layout tree..." << std::endl;
-                layout_engine_->BuildLayoutTree(root_render);
-
-                std::cout << "[RenderDocument] Computing layout with Taffy..." << std::endl;
-                layout_engine_->ComputeLayout(static_cast<float>(logical_width), static_cast<float>(logical_height));
-
-                std::cout << "[RenderDocument] Reading layout results..." << std::endl;
-                layout_engine_->GetLayoutInfo(root_render);
-            } else {
-                // 降级到传统布局（如果 LayoutEngine 未初始化）
-                std::cout << "[RenderDocument] Using traditional layout (LayoutEngine not available)" << std::endl;
-                root_render->Layout(static_cast<float>(logical_width), static_cast<float>(logical_height));
+                // 使用逻辑大小进行布局计算（CSS 像素）
+                if (layout_engine_) {
+                    layout_engine_->BuildLayoutTree(cached_render_tree_);
+                    layout_engine_->ComputeLayout(static_cast<float>(logical_width), static_cast<float>(logical_height));
+                    layout_engine_->GetLayoutInfo(cached_render_tree_);
+                } else {
+                    cached_render_tree_->Layout(static_cast<float>(logical_width), static_cast<float>(logical_height));
+                }
             }
-
-            std::cout << "[RenderDocument] Starting paint..." << std::endl;
 
             // 应用 DPI 缩放到 canvas（将逻辑像素缩放到物理像素）
             canvas->save();
             canvas->scale(dpi_scale, dpi_scale);
 
             // 绘制（使用逻辑坐标）
-            root_render->Paint(canvas);
+            cached_render_tree_->Paint(canvas);
 
             canvas->restore();
-            std::cout << "[RenderDocument] Paint completed" << std::endl;
-        } else {
-            std::cout << "[RenderDocument] Failed to build render tree!" << std::endl;
         }
     }
 
@@ -1225,18 +1122,21 @@ void Window::Clear(uint32_t color) {
 
 void Window::UpdateAnimations(double current_time) {
     // 更新 CSS Transition 动画
+    bool has_active_animations = false;
     if (animation_timeline_) {
         animation_timeline_->Update(current_time);
+        // TODO: 检查是否有活跃的动画
     }
 
     // 更新 CSS Animation 动画
     if (animation_controller_) {
         animation_controller_->Update(current_time);
+        // TODO: 检查是否有活跃的动画
     }
 
-    // 如果有动画正在运行，标记需要重绘
-    // TODO: 可以优化为只在动画实际改变值时才重绘
-    SetNeedsRepaint();
+    // 只在有活跃动画时才标记需要重绘
+    // 注意：不要在这里无条件调用 SetNeedsRepaint()，否则会导致无限重绘循环
+    (void)has_active_animations;
 }
 
 float Window::GetDisplayScale() const {
@@ -1274,6 +1174,45 @@ float Window::GetDisplayScale() const {
     }
 
     return 1.0f;
+}
+
+void Window::EnsureRenderTree() {
+    if (render_tree_valid_ && cached_render_tree_) {
+        return;  // 渲染树已经有效
+    }
+
+    if (!document_) {
+        return;
+    }
+
+    auto body = document_->GetBody();
+    if (!body) {
+        return;
+    }
+
+    // 构建渲染树
+    RenderTreeBuilder builder;
+    builder.SetDocument(document_.get());
+    cached_render_tree_ = builder.BuildRenderTree(body, nullptr);
+
+    if (!cached_render_tree_) {
+        return;
+    }
+
+    // 获取窗口尺寸
+    int width, height;
+    SDL_GetWindowSizeInPixels(sdl_window_, &width, &height);
+
+    // 使用 Taffy 布局引擎计算布局
+    if (layout_engine_) {
+        layout_engine_->BuildLayoutTree(cached_render_tree_);
+        layout_engine_->ComputeLayout(static_cast<float>(width), static_cast<float>(height));
+        layout_engine_->GetLayoutInfo(cached_render_tree_);
+    } else {
+        cached_render_tree_->Layout(static_cast<float>(width), static_cast<float>(height));
+    }
+
+    render_tree_valid_ = true;
 }
 
 } // namespace lightui

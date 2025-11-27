@@ -1004,18 +1004,6 @@ void StyleResolver::ApplyCSSRules(ComputedStyle& style, std::shared_ptr<Element>
     // 从 StyleManager 获取匹配的 CSS 规则
     auto css_properties = style_manager_->ComputeStyle(element.get());
 
-    // 调试输出
-    if (!css_properties.empty()) {
-        std::cout << "[ApplyCSSRules] Element: " << element->GetTagName();
-        if (!element->GetAttribute("class").empty()) {
-            std::cout << " class=\"" << element->GetAttribute("class") << "\"";
-        }
-        std::cout << " - " << css_properties.size() << " CSS properties" << std::endl;
-        for (const auto& [property, value] : css_properties) {
-            std::cout << "  " << property << ": " << value << std::endl;
-        }
-    }
-
     // 应用每个 CSS 属性
     for (const auto& [property, value] : css_properties) {
         ParseStyleProperty(style, property, value);
@@ -1169,14 +1157,13 @@ std::shared_ptr<RenderObject> RenderTreeBuilder::BuildRenderTree(
     }
     
     // 递归构建子树
-    const auto& children = node->GetChildNodes();
-    for (const auto& child : children) {
+    for (const auto& child : node->GetChildNodes()) {
         auto child_render_obj = BuildRenderTree(child, &render_obj->GetComputedStyle());
         if (child_render_obj) {
             render_obj->AppendChild(child_render_obj);
         }
     }
-    
+
     return render_obj;
 }
 
@@ -1232,10 +1219,22 @@ std::shared_ptr<RenderObject> RenderTreeBuilder::CreateRenderObjectForText(
     render_obj->SetNode(text);
     render_obj->SetText(normalized_text);
 
-    // 文本节点继承父元素样式
+    // 文本节点只继承可继承的样式属性，不继承定位属性
+    ComputedStyle text_style;
     if (parent_style) {
-        render_obj->SetComputedStyle(*parent_style);
+        // 只继承可继承属性
+        text_style.color = parent_style->color;
+        text_style.font_family = parent_style->font_family;
+        text_style.font_size = parent_style->font_size;
+        text_style.font_weight = parent_style->font_weight;
+        text_style.font_style = parent_style->font_style;
+        text_style.line_height = parent_style->line_height;
+        text_style.text_align = parent_style->text_align;
+        text_style.text_decoration = parent_style->text_decoration;
+        // 继承 CSS 变量
+        text_style.css_variables.InheritFrom(&parent_style->css_variables);
     }
+    render_obj->SetComputedStyle(text_style);
 
     return render_obj;
 }

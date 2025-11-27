@@ -325,31 +325,140 @@ public:
      * @brief 清除绘制标记
      */
     void ClearNeedsPaint() { needs_paint_ = false; }
-    
+
     /**
      * @brief 执行布局
      * @param parent_width 父元素宽度
      * @param parent_height 父元素高度
      */
     virtual void Layout(float parent_width, float parent_height);
-    
+
     /**
      * @brief 执行绘制
      * @param canvas Skia 画布
      */
     virtual void Paint(SkCanvas* canvas);
 
+    // ========== 滚动相关方法 ==========
+
+    /**
+     * @brief 获取滚动偏移量
+     */
+    float GetScrollX() const { return scroll_x_; }
+    float GetScrollY() const { return scroll_y_; }
+
+    /**
+     * @brief 设置滚动偏移量
+     */
+    void SetScrollX(float x) { scroll_x_ = x; MarkNeedsPaint(); }
+    void SetScrollY(float y) { scroll_y_ = y; MarkNeedsPaint(); }
+
+    /**
+     * @brief 滚动指定距离
+     */
+    void ScrollBy(float dx, float dy);
+
+    /**
+     * @brief 滚动到指定位置
+     */
+    void ScrollTo(float x, float y);
+
+    /**
+     * @brief 获取内容尺寸（用于滚动计算）
+     */
+    float GetContentWidth() const { return content_width_; }
+    float GetContentHeight() const { return content_height_; }
+
+    /**
+     * @brief 设置内容尺寸
+     */
+    void SetContentSize(float width, float height) {
+        content_width_ = width;
+        content_height_ = height;
+    }
+
+    /**
+     * @brief 检查是否可滚动
+     */
+    bool IsScrollable() const;
+
+    /**
+     * @brief 获取最大滚动范围
+     */
+    float GetMaxScrollX() const;
+    float GetMaxScrollY() const;
+
+    /**
+     * @brief 滚动条区域类型
+     */
+    enum class ScrollbarHitArea {
+        None,           // 不在滚动条区域
+        HorizontalTrack,// 水平滚动条轨道
+        HorizontalThumb,// 水平滚动条滑块
+        VerticalTrack,  // 垂直滚动条轨道
+        VerticalThumb   // 垂直滚动条滑块
+    };
+
+    /**
+     * @brief 检测点是否在滚动条区域内
+     * @param local_x 相对于元素的 X 坐标
+     * @param local_y 相对于元素的 Y 坐标
+     * @return 滚动条区域类型
+     */
+    ScrollbarHitArea HitTestScrollbar(float local_x, float local_y) const;
+
+    /**
+     * @brief 获取滚动条宽度
+     */
+    static constexpr float GetScrollbarWidth() { return 12.0f; }
+
+    /**
+     * @brief 开始拖动滚动条
+     */
+    void StartScrollbarDrag(ScrollbarHitArea area, float mouse_x, float mouse_y);
+
+    /**
+     * @brief 更新滚动条拖动
+     */
+    void UpdateScrollbarDrag(float mouse_x, float mouse_y);
+
+    /**
+     * @brief 结束滚动条拖动
+     */
+    void EndScrollbarDrag();
+
+    /**
+     * @brief 检查是否正在拖动滚动条
+     */
+    bool IsDraggingScrollbar() const { return dragging_scrollbar_ != ScrollbarHitArea::None; }
+
+    /**
+     * @brief 获取正在拖动的滚动条类型
+     */
+    ScrollbarHitArea GetDraggingScrollbar() const { return dragging_scrollbar_; }
+
 protected:
     RenderObjectType type_;
     std::weak_ptr<Node> node_;
     std::weak_ptr<RenderObject> parent_;
     std::vector<std::shared_ptr<RenderObject>> children_;
-    
+
     ComputedStyle computed_style_;
     LayoutInfo layout_info_;
-    
+
     bool needs_layout_ = true;
     bool needs_paint_ = true;
+
+    // 滚动状态
+    float scroll_x_ = 0.0f;
+    float scroll_y_ = 0.0f;
+    float content_width_ = 0.0f;
+    float content_height_ = 0.0f;
+
+    // 滚动条拖动状态
+    ScrollbarHitArea dragging_scrollbar_ = ScrollbarHitArea::None;
+    float drag_start_scroll_ = 0.0f;      // 拖动开始时的滚动位置
+    float drag_start_mouse_ = 0.0f;       // 拖动开始时的鼠标位置
 };
 
 // 前向声明
@@ -409,14 +518,26 @@ public:
     RenderText() : RenderObject(RenderObjectType::TEXT) {}
     RenderText(const std::string& text) : RenderObject(RenderObjectType::TEXT), text_(text) {}
 
-    void SetText(const std::string& text) { text_ = text; }
+    void SetText(const std::string& text) { text_ = text; wrapped_lines_.clear(); }
     std::string GetText() const { return text_; }
-    
+
+    // Get wrapped lines (populated after layout with width constraint)
+    const std::vector<std::string>& GetWrappedLines() const { return wrapped_lines_; }
+
+    // Set wrapped lines (called by measure function)
+    void SetWrappedLines(const std::vector<std::string>& lines) { wrapped_lines_ = lines; }
+
+    // Get/Set actual measured text width (for text-align calculation)
+    float GetActualTextWidth() const { return actual_text_width_; }
+    void SetActualTextWidth(float width) { actual_text_width_ = width; }
+
     void Layout(float parent_width, float parent_height) override;
     void Paint(SkCanvas* canvas) override;
 
 private:
     std::string text_;
+    std::vector<std::string> wrapped_lines_;  // Cached wrapped lines for rendering
+    float actual_text_width_ = 0.0f;  // Actual measured text width (for text-align)
 };
 
 } // namespace lightui

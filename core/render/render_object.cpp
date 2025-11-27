@@ -16,6 +16,7 @@
 #include "core/dom/html_textarea_element.h"
 #include <algorithm>
 #include <iostream>
+#include <sstream>
 
 namespace lightui {
 
@@ -78,6 +79,169 @@ void RenderObject::Layout(float parent_width, float parent_height) {
 void RenderObject::Paint(SkCanvas* canvas) {
     // 基类默认实现：什么都不做
     needs_paint_ = false;
+}
+
+void RenderObject::ScrollBy(float dx, float dy) {
+    float new_x = scroll_x_ + dx;
+    float new_y = scroll_y_ + dy;
+    ScrollTo(new_x, new_y);
+}
+
+void RenderObject::ScrollTo(float x, float y) {
+    // 限制滚动范围
+    float max_x = GetMaxScrollX();
+    float max_y = GetMaxScrollY();
+
+    scroll_x_ = std::max(0.0f, std::min(x, max_x));
+    scroll_y_ = std::max(0.0f, std::min(y, max_y));
+
+    MarkNeedsPaint();
+}
+
+bool RenderObject::IsScrollable() const {
+    const auto& style = computed_style_;
+    if (style.overflow != "scroll" && style.overflow != "auto") {
+        return false;
+    }
+
+    // 检查内容是否超出可见区域
+    float visible_width = layout_info_.width;
+    float visible_height = layout_info_.height;
+
+    return content_width_ > visible_width || content_height_ > visible_height;
+}
+
+float RenderObject::GetMaxScrollX() const {
+    float visible_width = layout_info_.width -
+        computed_style_.padding.left.ToPx(layout_info_.width, computed_style_.font_size) -
+        computed_style_.padding.right.ToPx(layout_info_.width, computed_style_.font_size);
+    return std::max(0.0f, content_width_ - visible_width);
+}
+
+float RenderObject::GetMaxScrollY() const {
+    float visible_height = layout_info_.height -
+        computed_style_.padding.top.ToPx(layout_info_.width, computed_style_.font_size) -
+        computed_style_.padding.bottom.ToPx(layout_info_.width, computed_style_.font_size);
+    return std::max(0.0f, content_height_ - visible_height);
+}
+
+RenderObject::ScrollbarHitArea RenderObject::HitTestScrollbar(float local_x, float local_y) const {
+    const auto& style = computed_style_;
+    const auto& layout = layout_info_;
+
+    // 只有 overflow: scroll 或 auto 才有滚动条
+    if (style.overflow != "scroll" && style.overflow != "auto") {
+        return ScrollbarHitArea::None;
+    }
+
+    const float scrollbar_width = GetScrollbarWidth();
+
+    // 计算可见区域
+    float visible_width = layout.width;
+    float visible_height = layout.height;
+
+    // 检查是否需要滚动条
+    bool needs_h_scroll = content_width_ > visible_width - scrollbar_width || style.overflow == "scroll";
+    bool needs_v_scroll = content_height_ > visible_height - scrollbar_width || style.overflow == "scroll";
+
+    // 检测水平滚动条区域
+    if (needs_h_scroll) {
+        float track_y = layout.height - scrollbar_width;
+        float track_width = visible_width - (needs_v_scroll ? scrollbar_width : 0);
+
+        if (local_y >= track_y && local_y <= layout.height &&
+            local_x >= 0 && local_x <= track_width) {
+            return ScrollbarHitArea::HorizontalTrack;
+        }
+    }
+
+    // 检测垂直滚动条区域
+    if (needs_v_scroll) {
+        float track_x = layout.width - scrollbar_width;
+        float track_height = visible_height - (needs_h_scroll ? scrollbar_width : 0);
+
+        if (local_x >= track_x && local_x <= layout.width &&
+            local_y >= 0 && local_y <= track_height) {
+            return ScrollbarHitArea::VerticalTrack;
+        }
+    }
+
+    return ScrollbarHitArea::None;
+}
+
+void RenderObject::StartScrollbarDrag(ScrollbarHitArea area, float mouse_x, float mouse_y) {
+    if (area == ScrollbarHitArea::None) {
+        return;
+    }
+
+    dragging_scrollbar_ = area;
+
+    if (area == ScrollbarHitArea::HorizontalTrack || area == ScrollbarHitArea::HorizontalThumb) {
+        drag_start_scroll_ = scroll_x_;
+        drag_start_mouse_ = mouse_x;
+    } else {
+        drag_start_scroll_ = scroll_y_;
+        drag_start_mouse_ = mouse_y;
+    }
+
+}
+
+void RenderObject::UpdateScrollbarDrag(float mouse_x, float mouse_y) {
+    if (dragging_scrollbar_ == ScrollbarHitArea::None) {
+        return;
+    }
+
+    const auto& layout = layout_info_;
+    const float scrollbar_width = GetScrollbarWidth();
+
+    if (dragging_scrollbar_ == ScrollbarHitArea::HorizontalTrack ||
+        dragging_scrollbar_ == ScrollbarHitArea::HorizontalThumb) {
+        // 水平滚动
+        float visible_width = layout.width - scrollbar_width;  // 减去垂直滚动条
+        float scrollable_width = content_width_ - visible_width;
+
+        if (scrollable_width > 0 && visible_width > 0) {
+            // 计算滑块可以移动的轨道长度
+            float thumb_ratio = visible_width / content_width_;
+            float thumb_width = std::max(30.0f, visible_width * thumb_ratio);
+            float track_length = visible_width - thumb_width;
+
+            if (track_length > 0) {
+                // 鼠标移动距离转换为滚动距离
+                float mouse_delta = mouse_x - drag_start_mouse_;
+                float scroll_delta = (mouse_delta / track_length) * scrollable_width;
+
+                scroll_x_ = std::max(0.0f, std::min(drag_start_scroll_ + scroll_delta, scrollable_width));
+                MarkNeedsPaint();
+            }
+        }
+    } else {
+        // 垂直滚动
+        float visible_height = layout.height - scrollbar_width;  // 减去水平滚动条
+        float scrollable_height = content_height_ - visible_height;
+
+        if (scrollable_height > 0 && visible_height > 0) {
+            // 计算滑块可以移动的轨道长度
+            float thumb_ratio = visible_height / content_height_;
+            float thumb_height = std::max(30.0f, visible_height * thumb_ratio);
+            float track_length = visible_height - thumb_height;
+
+            if (track_length > 0) {
+                // 鼠标移动距离转换为滚动距离
+                float mouse_delta = mouse_y - drag_start_mouse_;
+                float scroll_delta = (mouse_delta / track_length) * scrollable_height;
+
+                scroll_y_ = std::max(0.0f, std::min(drag_start_scroll_ + scroll_delta, scrollable_height));
+                MarkNeedsPaint();
+            }
+        }
+    }
+}
+
+void RenderObject::EndScrollbarDrag() {
+    dragging_scrollbar_ = ScrollbarHitArea::None;
+    drag_start_scroll_ = 0;
+    drag_start_mouse_ = 0;
 }
 
 // ========== RenderBlock 实现 ==========
@@ -292,20 +456,6 @@ void RenderBlock::Paint(SkCanvas* canvas) {
         styles["background-image"] = style.background_image;
     }
 
-    // Debug: Print styles map
-    static int debug_styles_count = 0;
-    if (debug_styles_count < 20 && !styles.empty()) {
-        auto node = GetNode();
-        std::string tag = node && node->GetNodeType() == NodeType::ELEMENT_NODE
-                          ? std::static_pointer_cast<Element>(node)->GetTagName()
-                          : "unknown";
-        std::cout << "[RenderBlock::Paint] <" << tag << "> styles map:" << std::endl;
-        for (const auto& pair : styles) {
-            std::cout << "  " << pair.first << " = \"" << pair.second << "\"" << std::endl;
-        }
-        debug_styles_count++;
-    }
-
     // 渲染器
     BoxRenderer renderer(canvas);
 
@@ -437,9 +587,162 @@ void RenderBlock::Paint(SkCanvas* canvas) {
         }
     }
 
+    // 应用 overflow 裁剪
+    bool needs_clip = false;
+    bool needs_scrollbar = false;
+    float content_width = 0, content_height = 0;
+    const float scrollbar_width = 12.0f;
+
+    if (style.overflow == "hidden" || style.overflow == "scroll" || style.overflow == "auto") {
+        needs_clip = true;
+
+        // 计算子元素内容的实际尺寸
+        for (const auto& child : children_) {
+            const auto& child_layout = child->GetLayoutInfo();
+            content_width = std::max(content_width, child_layout.x + child_layout.width);
+            content_height = std::max(content_height, child_layout.y + child_layout.height);
+        }
+
+        // 保存内容尺寸用于滚动计算
+        content_width_ = content_width;
+        content_height_ = content_height;
+
+        // 判断是否需要滚动条
+        float visible_width = layout.width - box.border_left_width - box.border_right_width;
+        float visible_height = layout.height - box.border_top_width - box.border_bottom_width;
+
+        bool needs_h_scroll = content_width > visible_width;
+        bool needs_v_scroll = content_height > visible_height;
+        needs_scrollbar = (style.overflow == "scroll") ||
+                          (style.overflow == "auto" && (needs_h_scroll || needs_v_scroll));
+
+        // 调整可见区域以考虑滚动条占用的空间
+        float clip_width = visible_width;
+        float clip_height = visible_height;
+        if (needs_scrollbar && (needs_v_scroll || style.overflow == "scroll")) {
+            clip_width -= scrollbar_width;
+        }
+        if (needs_scrollbar && (needs_h_scroll || style.overflow == "scroll")) {
+            clip_height -= scrollbar_width;
+        }
+
+        // 裁剪到 padding box (内容区域 + padding)
+        SkRect clip_rect = SkRect::MakeXYWH(
+            box.border_left_width,
+            box.border_top_width,
+            clip_width,
+            clip_height
+        );
+        canvas->save();
+        canvas->clipRect(clip_rect, SkClipOp::kIntersect, true);
+
+        // 应用滚动偏移
+        canvas->translate(-scroll_x_, -scroll_y_);
+    }
+
+    // 按 z-index 排序子元素
+    std::vector<std::shared_ptr<RenderObject>> sorted_children = children_;
+    std::sort(sorted_children.begin(), sorted_children.end(),
+        [](const std::shared_ptr<RenderObject>& a, const std::shared_ptr<RenderObject>& b) {
+            return a->GetComputedStyle().z_index < b->GetComputedStyle().z_index;
+        });
+
     // 绘制子元素
-    for (auto& child : children_) {
+    for (auto& child : sorted_children) {
         child->Paint(canvas);
+    }
+
+    // 恢复裁剪状态和滚动偏移
+    if (needs_clip) {
+        canvas->restore();
+    }
+
+    // 绘制滚动条 (在裁剪区域外绘制)
+    if (needs_scrollbar) {
+        float visible_width = layout.width - box.border_left_width - box.border_right_width;
+        float visible_height = layout.height - box.border_top_width - box.border_bottom_width;
+
+        bool needs_h_scroll = content_width > visible_width - scrollbar_width || style.overflow == "scroll";
+        bool needs_v_scroll = content_height > visible_height - scrollbar_width || style.overflow == "scroll";
+
+        const float scrollbar_margin = 2.0f;
+        const float corner_radius = 4.0f;
+
+        // 滚动条轨道颜色 (更接近浏览器的浅灰色)
+        SkPaint track_paint;
+        track_paint.setColor(SkColorSetRGB(241, 241, 241));
+        track_paint.setAntiAlias(true);
+
+        // 滚动条滑块颜色 (深灰色)
+        SkPaint thumb_paint;
+        thumb_paint.setColor(SkColorSetRGB(193, 193, 193));
+        thumb_paint.setAntiAlias(true);
+
+        // 滚动条滑块悬停颜色 (可以在将来添加悬停检测)
+        // SkPaint thumb_hover_paint;
+        // thumb_hover_paint.setColor(SkColorSetRGB(168, 168, 168));
+
+        // 绘制水平滚动条
+        if (needs_h_scroll) {
+            float track_x = box.border_left_width;
+            float track_y = layout.height - box.border_bottom_width - scrollbar_width;
+            float track_width = visible_width - (needs_v_scroll ? scrollbar_width : 0);
+
+            // 绘制轨道
+            SkRect track_rect = SkRect::MakeXYWH(track_x, track_y, track_width, scrollbar_width);
+            canvas->drawRect(track_rect, track_paint);
+
+            // 计算滑块尺寸和位置
+            float scrollable_width = content_width - (visible_width - scrollbar_width);
+            float thumb_ratio = (visible_width - scrollbar_width) / content_width;
+            float thumb_width = std::max(30.0f, (track_width - 2 * scrollbar_margin) * thumb_ratio);
+            float available_track = track_width - thumb_width - 2 * scrollbar_margin;
+            float scroll_ratio = scrollable_width > 0 ? scroll_x_ / scrollable_width : 0;
+            float thumb_x = track_x + scrollbar_margin + available_track * scroll_ratio;
+
+            SkRect thumb_rect = SkRect::MakeXYWH(
+                thumb_x,
+                track_y + scrollbar_margin,
+                thumb_width,
+                scrollbar_width - 2 * scrollbar_margin
+            );
+            canvas->drawRoundRect(thumb_rect, corner_radius, corner_radius, thumb_paint);
+        }
+
+        // 绘制垂直滚动条
+        if (needs_v_scroll) {
+            float track_x = layout.width - box.border_right_width - scrollbar_width;
+            float track_y = box.border_top_width;
+            float track_height = visible_height - (needs_h_scroll ? scrollbar_width : 0);
+
+            // 绘制轨道
+            SkRect track_rect = SkRect::MakeXYWH(track_x, track_y, scrollbar_width, track_height);
+            canvas->drawRect(track_rect, track_paint);
+
+            // 计算滑块尺寸和位置
+            float scrollable_height = content_height - (visible_height - scrollbar_width);
+            float thumb_ratio = (visible_height - scrollbar_width) / content_height;
+            float thumb_height = std::max(30.0f, (track_height - 2 * scrollbar_margin) * thumb_ratio);
+            float available_track = track_height - thumb_height - 2 * scrollbar_margin;
+            float scroll_ratio = scrollable_height > 0 ? scroll_y_ / scrollable_height : 0;
+            float thumb_y = track_y + scrollbar_margin + available_track * scroll_ratio;
+
+            SkRect thumb_rect = SkRect::MakeXYWH(
+                track_x + scrollbar_margin,
+                thumb_y,
+                scrollbar_width - 2 * scrollbar_margin,
+                thumb_height
+            );
+            canvas->drawRoundRect(thumb_rect, corner_radius, corner_radius, thumb_paint);
+        }
+
+        // 绘制滚动条角落（当两个滚动条都存在时）
+        if (needs_h_scroll && needs_v_scroll) {
+            float corner_x = layout.width - box.border_right_width - scrollbar_width;
+            float corner_y = layout.height - box.border_bottom_width - scrollbar_width;
+            SkRect corner_rect = SkRect::MakeXYWH(corner_x, corner_y, scrollbar_width, scrollbar_width);
+            canvas->drawRect(corner_rect, track_paint);
+        }
     }
 
     // 恢复画布状态
@@ -815,9 +1118,36 @@ void RenderInline::Paint(SkCanvas* canvas) {
         }
     }
 
+    // 应用 overflow 裁剪
+    bool needs_clip = false;
+    if (style.overflow == "hidden" || style.overflow == "scroll" || style.overflow == "auto") {
+        needs_clip = true;
+        // 裁剪到 padding box (内容区域 + padding)
+        SkRect clip_rect = SkRect::MakeXYWH(
+            box.border_left_width,
+            box.border_top_width,
+            layout.width - box.border_left_width - box.border_right_width,
+            layout.height - box.border_top_width - box.border_bottom_width
+        );
+        canvas->save();
+        canvas->clipRect(clip_rect, SkClipOp::kIntersect, true);
+    }
+
+    // 按 z-index 排序子元素
+    std::vector<std::shared_ptr<RenderObject>> sorted_children = children_;
+    std::sort(sorted_children.begin(), sorted_children.end(),
+        [](const std::shared_ptr<RenderObject>& a, const std::shared_ptr<RenderObject>& b) {
+            return a->GetComputedStyle().z_index < b->GetComputedStyle().z_index;
+        });
+
     // 绘制所有子元素
-    for (auto& child : children_) {
+    for (auto& child : sorted_children) {
         child->Paint(canvas);
+    }
+
+    // 恢复裁剪状态
+    if (needs_clip) {
+        canvas->restore();
     }
 
     // 恢复画布状态
@@ -1072,13 +1402,34 @@ void RenderText::Layout(float parent_width, float parent_height) {
     // 创建文本渲染器来测量文本
     TextRenderer text_renderer(nullptr);
 
-    // 测量文本
-    auto metrics = text_renderer.MeasureText(text_, font);
+    // 检查是否包含换行符
+    if (text_.find('\n') != std::string::npos) {
+        // 多行文本：分别测量每一行，取最大宽度和累加高度
+        std::istringstream iss(text_);
+        std::string line;
+        float max_width = 0;
+        float total_height = 0;
+        float line_height = style.line_height * style.font_size;
+        int line_count = 0;
 
-    // 注意：只设置 width 和 height，不修改 x 和 y（由父元素设置）
-    layout_info_.width = metrics.width;
-    layout_info_.height = metrics.height;
-    layout_info_.content_rect = SkRect::MakeWH(metrics.width, metrics.height);
+        while (std::getline(iss, line)) {
+            auto line_metrics = text_renderer.MeasureText(line, font);
+            max_width = std::max(max_width, line_metrics.width);
+            line_count++;
+        }
+
+        total_height = line_count * line_height;
+
+        layout_info_.width = max_width;
+        layout_info_.height = total_height;
+    } else {
+        // 单行文本
+        auto metrics = text_renderer.MeasureText(text_, font);
+        layout_info_.width = metrics.width;
+        layout_info_.height = metrics.height;
+    }
+
+    layout_info_.content_rect = SkRect::MakeWH(layout_info_.width, layout_info_.height);
     layout_info_.is_laid_out = true;
 
     needs_layout_ = false;
@@ -1093,9 +1444,15 @@ void RenderText::Paint(SkCanvas* canvas) {
     const auto& style = computed_style_;
     const auto& layout = layout_info_;
 
+    // 使用 Taffy 计算的位置来支持 text-align
+    // layout.x 包含了 text-align 的偏移量
+    float text_x = layout.x;
+    float text_y = layout.y;
+
     // 保存画布状态
     canvas->save();
-    canvas->translate(layout.x, layout.y);
+    // 移动到文本位置（支持 text-align 居中等）
+    canvas->translate(text_x, text_y);
 
     // 创建字体
     FontDescriptor desc;
@@ -1125,15 +1482,43 @@ void RenderText::Paint(SkCanvas* canvas) {
         text_color = SK_ColorBLACK;
     }
 
-    // 绘制文本（支持阴影）
-    if (!style.text_shadow.empty()) {
-        // 使用 ShadowRenderer 渲染带阴影的文本
-        ShadowRenderer::RenderTextWithShadow(canvas, text_, font, 0, baseline_y, text_color, style.text_shadow);
+    // Determine which lines to render
+    // Priority: 1. wrapped_lines_ (from Taffy measure), 2. explicit newlines, 3. single line
+    std::vector<std::string> lines_to_render;
+
+    if (!wrapped_lines_.empty()) {
+        // Use wrapped lines from Taffy measure function
+        lines_to_render = wrapped_lines_;
+    } else if (text_.find('\n') != std::string::npos) {
+        // Split by explicit newlines
+        std::istringstream iss(text_);
+        std::string line;
+        while (std::getline(iss, line)) {
+            lines_to_render.push_back(line);
+        }
     } else {
-        // 普通文本渲染
-        lightui::Paint text_paint;
-        text_paint.SetColor(text_color);
-        text_renderer.DrawText(text_, 0, baseline_y, font, text_paint);
+        // Single line
+        lines_to_render.push_back(text_);
+    }
+
+    // Render all lines
+    float current_y = baseline_y;
+    float line_height = style.line_height * style.font_size;
+
+    for (const auto& line : lines_to_render) {
+        // Skip empty lines (but still advance y position)
+        if (!line.empty()) {
+            if (!style.text_shadow.empty()) {
+                ShadowRenderer::RenderTextWithShadow(canvas, line, font, 0, current_y, text_color, style.text_shadow);
+            } else {
+                lightui::Paint text_paint;
+                text_paint.SetColor(text_color);
+                text_renderer.DrawText(line, 0, current_y, font, text_paint);
+            }
+        }
+
+        // Move to next line
+        current_y += line_height;
     }
 
     // 绘制文本装饰（下划线、删除线等）

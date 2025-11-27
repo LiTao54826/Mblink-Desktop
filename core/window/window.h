@@ -330,7 +330,9 @@ public:
     /**
      * @brief 标记需要重绘
      */
-    void SetNeedsRepaint() { needs_repaint_ = true; }
+    void SetNeedsRepaint() {
+        needs_repaint_ = true;
+    }
 
     /**
      * @brief 标记渲染树需要重建
@@ -342,6 +344,17 @@ public:
      * @return true表示需要重绘
      */
     bool NeedsRepaint() const { return needs_repaint_; }
+
+    /**
+     * @brief 获取缓存的渲染树
+     * @return 渲染树根节点，如果没有则返回nullptr
+     */
+    std::shared_ptr<RenderObject> GetCachedRenderTree() const { return cached_render_tree_; }
+
+    /**
+     * @brief 确保渲染树已构建（如果无效则重建）
+     */
+    void EnsureRenderTree();
 
     /**
      * @brief 获取动画时间轴
@@ -426,6 +439,7 @@ private:
     SDL_GLContext gl_context_ = nullptr;
     SDL_Renderer* sdl_renderer_ = nullptr;  // SDL Renderer for CPU mode
     SDL_Texture* sdl_texture_ = nullptr;    // SDL Texture for CPU mode
+    SDL_Surface* sdl_surface_ = nullptr;    // SDL Surface for direct rendering (no SDL_Renderer)
     sk_sp<GrDirectContext> gr_context_;
     sk_sp<SkSurface> surface_;
     bool should_close_ = false;
