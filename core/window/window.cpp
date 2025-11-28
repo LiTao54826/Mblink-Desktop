@@ -858,23 +858,26 @@ bool Window::HandleSDLEvent(const SDL_Event& event) {
                 // 检查是否真的改变了大小（避免重复处理）
                 static int last_resize_width = 0, last_resize_height = 0;
                 static Uint64 last_resize_time = 0;
+                static bool resize_in_progress = false;
                 Uint64 current_time = SDL_GetTicks();
 
                 if (new_width == last_resize_width && new_height == last_resize_height) {
                     return true;  // 大小没变，跳过
                 }
 
-                // 节流：如果距离上次 resize 不到 16ms (约60fps)，延迟处理
-                // 但如果是最终的大小，我们需要处理它
-                if (current_time - last_resize_time < 16 && event.type == SDL_EVENT_WINDOW_RESIZED) {
-                    // 记录期望的大小，但不立即处理
-                    // SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED 通常是最终事件
+                // 节流：在拖动 resize 过程中，限制处理频率到 ~30fps (33ms)
+                // 这样可以减少 CPU 开销，同时保持响应性
+                Uint64 throttle_interval = 33;  // 33ms = ~30fps
+                if (current_time - last_resize_time < throttle_interval) {
+                    // 标记 resize 正在进行中，稍后会处理
+                    resize_in_progress = true;
                     return true;
                 }
 
                 last_resize_width = new_width;
                 last_resize_height = new_height;
                 last_resize_time = current_time;
+                resize_in_progress = false;
 
                 OnResize();
                 SetNeedsRepaint();

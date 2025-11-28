@@ -892,6 +892,70 @@ void StyleResolver::ParseStyleProperty(ComputedStyle& style,
     else if (property == "align-self") {
         style.align_self = resolved_value;
     }
+    else if (property == "flex") {
+        // 解析 flex 简写属性
+        // flex: none => flex-grow: 0; flex-shrink: 0; flex-basis: auto
+        // flex: auto => flex-grow: 1; flex-shrink: 1; flex-basis: auto
+        // flex: <number> => flex-grow: <number>; flex-shrink: 1; flex-basis: 0%
+        // flex: <number> <number> => flex-grow; flex-shrink; flex-basis: 0%
+        // flex: <number> <number> <length> => flex-grow; flex-shrink; flex-basis
+        if (resolved_value == "none") {
+            style.flex_grow = 0.0f;
+            style.flex_shrink = 0.0f;
+            style.flex_basis = CSSLength{0.0f, CSSUnit::AUTO};
+        } else if (resolved_value == "auto") {
+            style.flex_grow = 1.0f;
+            style.flex_shrink = 1.0f;
+            style.flex_basis = CSSLength{0.0f, CSSUnit::AUTO};
+        } else if (resolved_value == "initial") {
+            style.flex_grow = 0.0f;
+            style.flex_shrink = 1.0f;
+            style.flex_basis = CSSLength{0.0f, CSSUnit::AUTO};
+        } else {
+            // 尝试解析数值
+            std::istringstream iss(resolved_value);
+            std::vector<std::string> parts;
+            std::string part;
+            while (iss >> part) {
+                parts.push_back(part);
+            }
+
+            if (parts.size() == 1) {
+                // flex: <number> => flex-grow: <number>; flex-shrink: 1; flex-basis: 0%
+                try {
+                    style.flex_grow = std::stof(parts[0]);
+                    style.flex_shrink = 1.0f;
+                    style.flex_basis = CSSLength{0.0f, CSSUnit::PERCENT};
+                } catch (...) {
+                    // 可能是 flex-basis 值如 "100px"
+                    style.flex_grow = 1.0f;
+                    style.flex_shrink = 1.0f;
+                    style.flex_basis = CSSValue::ParseLength(parts[0]);
+                }
+            } else if (parts.size() == 2) {
+                // flex: <number> <number> => flex-grow; flex-shrink; flex-basis: 0%
+                try {
+                    style.flex_grow = std::stof(parts[0]);
+                    style.flex_shrink = std::stof(parts[1]);
+                    style.flex_basis = CSSLength{0.0f, CSSUnit::PERCENT};
+                } catch (...) {
+                    // 第二个可能是 flex-basis
+                    try {
+                        style.flex_grow = std::stof(parts[0]);
+                        style.flex_shrink = 1.0f;
+                        style.flex_basis = CSSValue::ParseLength(parts[1]);
+                    } catch (...) {}
+                }
+            } else if (parts.size() >= 3) {
+                // flex: <number> <number> <length>
+                try {
+                    style.flex_grow = std::stof(parts[0]);
+                    style.flex_shrink = std::stof(parts[1]);
+                    style.flex_basis = CSSValue::ParseLength(parts[2]);
+                } catch (...) {}
+            }
+        }
+    }
     else if (property == "flex-grow") {
         try {
             style.flex_grow = std::stof(resolved_value);

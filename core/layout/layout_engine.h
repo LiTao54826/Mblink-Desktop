@@ -136,6 +136,12 @@ private:
     void ReadLayoutResults(RenderObject* render_obj);
 
     /**
+     * @brief Recursively update styles for all render objects in the tree
+     * @param render_obj Current render object
+     */
+    void UpdateStylesRecursive(RenderObject* render_obj);
+
+    /**
      * @brief Parse CSS grid placement value (e.g., "span 2", "1 / 3")
      * @param value Grid placement string
      * @return Taffy grid placement structure

@@ -129,6 +129,14 @@ void LayoutEngine::BuildLayoutTree(std::shared_ptr<RenderObject> root) {
         return;
     }
 
+    // 优化：如果布局树已经存在且根节点相同，只需要更新样式而不是重建
+    // 这避免了在窗口 resize 时重新构建整个布局树
+    if (has_root_ && HasElement(root.get())) {
+        // 布局树已存在，只需重新应用样式（因为样式可能依赖于窗口大小的百分比计算）
+        UpdateStylesRecursive(root.get());
+        return;
+    }
+
     Clear();
 
     // Build tree from root
@@ -224,6 +232,22 @@ void LayoutEngine::Clear() {
 
 bool LayoutEngine::HasElement(RenderObject* render_obj) const {
     return element_to_node_.find(render_obj) != element_to_node_.end();
+}
+
+void LayoutEngine::UpdateStylesRecursive(RenderObject* render_obj) {
+    if (!render_obj) return;
+
+    // 更新当前节点的样式
+    auto it = element_to_node_.find(render_obj);
+    if (it != element_to_node_.end()) {
+        ApplyStyle(it->second, render_obj->GetComputedStyle());
+    }
+
+    // 递归更新子节点
+    auto& children = render_obj->GetChildren();
+    for (auto& child : children) {
+        UpdateStylesRecursive(child.get());
+    }
 }
 
 TaffyNodeId LayoutEngine::CreateNode(RenderObject* render_obj) {
@@ -397,17 +421,16 @@ void LayoutEngine::ApplyStyle(TaffyNodeId node, const ComputedStyle& style) {
         else if (style.align_content == "stretch") align_content = TAFFY_ALIGN_CONTENT_STRETCH;
         TaffyStyle_SetAlignContent(taffy_style, align_content);
 
-        // Flex grow/shrink
-        TaffyStyle_SetFlexGrow(taffy_style, style.flex_grow);
-        TaffyStyle_SetFlexShrink(taffy_style, style.flex_shrink);
-
-        // Flex basis
-        apply_dimension(taffy_style, style.flex_basis, TaffyStyle_SetFlexBasis);
-
-        // Gap
+        // Gap (for flex container)
         apply_dimension(taffy_style, style.column_gap, TaffyStyle_SetColumnGap);
         apply_dimension(taffy_style, style.row_gap, TaffyStyle_SetRowGap);
     }
+
+    // Flex item properties (apply to all elements, they become effective when parent is flex)
+    // 这些属性对所有元素生效，当父元素是 flex 容器时会被使用
+    TaffyStyle_SetFlexGrow(taffy_style, style.flex_grow);
+    TaffyStyle_SetFlexShrink(taffy_style, style.flex_shrink);
+    apply_dimension(taffy_style, style.flex_basis, TaffyStyle_SetFlexBasis);
 
     // Apply CSS Grid properties
     if (style.display == RenderObjectType::GRID) {
