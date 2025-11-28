@@ -129,15 +129,17 @@ void LayoutEngine::BuildLayoutTree(std::shared_ptr<RenderObject> root) {
         return;
     }
 
-    // 优化：如果布局树已经存在且根节点相同，只需要更新样式而不是重建
+    // 优化：如果布局树已经存在且是同一个渲染树对象，只需要更新样式而不是重建
     // 这避免了在窗口 resize 时重新构建整个布局树
-    if (has_root_ && HasElement(root.get())) {
-        // 布局树已存在，只需重新应用样式（因为样式可能依赖于窗口大小的百分比计算）
+    auto cached = cached_root_.lock();
+    if (has_root_ && cached && cached.get() == root.get()) {
+        // 同一个渲染树对象，只需重新应用样式
         UpdateStylesRecursive(root.get());
         return;
     }
 
     Clear();
+    cached_root_ = root;  // 缓存当前根节点
 
     // Build tree from root
     TaffyNodeId invalid_parent;

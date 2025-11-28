@@ -101,6 +101,9 @@ private:
     TaffyNodeId root_node_;
     bool has_root_;
 
+    // Cached root render object (weak_ptr to avoid circular reference)
+    std::weak_ptr<RenderObject> cached_root_;
+
     /**
      * @brief Create a Taffy node for a render object
      * @param render_obj The render object
