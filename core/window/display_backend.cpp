@@ -15,6 +15,14 @@
 #define NOMINMAX
 #endif
 #include <windows.h>
+
+// Direct3D 11 头文件
+#include <d3d11.h>
+#include <dxgi.h>
+#include <d3dcompiler.h>
+#pragma comment(lib, "d3d11.lib")
+#pragma comment(lib, "dxgi.lib")
+#pragma comment(lib, "d3dcompiler.lib")
 #endif
 
 // OpenGL 头文件
@@ -41,14 +49,16 @@ namespace lightui {
 
 std::unique_ptr<DisplayBackend> DisplayBackend::Create(DisplayBackendType type) {
     switch (type) {
-        case DisplayBackendType::OPENGL:
-            return std::make_unique<OpenGLDisplayBackend>();
 #ifdef _WIN32
+        case DisplayBackendType::D3D11:
+            return std::make_unique<D3D11DisplayBackend>();
         case DisplayBackendType::LAYERED_WINDOW:
             return std::make_unique<LayeredWindowDisplayBackend>();
         case DisplayBackendType::GDI:
             return std::make_unique<GDIDisplayBackend>();
 #endif
+        case DisplayBackendType::OPENGL:
+            return std::make_unique<OpenGLDisplayBackend>();
         case DisplayBackendType::SDL_SURFACE:
             return std::make_unique<SDLSurfaceDisplayBackend>();
         case DisplayBackendType::AUTO:
@@ -60,27 +70,28 @@ std::unique_ptr<DisplayBackend> DisplayBackend::Create(DisplayBackendType type) 
 std::unique_ptr<DisplayBackend> DisplayBackend::CreateBest(SDL_Window* window, int width, int height) {
     // 按优先级尝试各后端
 
-    // 1. 优先使用 OpenGL - 利用 VSync 避免闪烁
-    if (IsOpenGLAvailable()) {
-        auto backend = std::make_unique<OpenGLDisplayBackend>();
+#ifdef _WIN32
+    // 1. Windows 上优先使用 Direct3D 11 - 最稳定的无闪烁方案
+    {
+        auto backend = std::make_unique<D3D11DisplayBackend>();
         if (backend->Initialize(window, width, height)) {
-            std::cout << "[DisplayBackend] Using OpenGL backend" << std::endl;
+            std::cout << "[DisplayBackend] Using Direct3D 11 backend" << std::endl;
             return backend;
         }
+        std::cout << "[DisplayBackend] D3D11 backend failed, trying fallback..." << std::endl;
     }
 
-#ifdef _WIN32
     // 2. GDI 作为回退
     {
         auto backend = std::make_unique<GDIDisplayBackend>();
         if (backend->Initialize(window, width, height)) {
-            std::cout << "[DisplayBackend] Using GDI backend" << std::endl;
+            std::cout << "[DisplayBackend] Using GDI backend (fallback)" << std::endl;
             return backend;
         }
     }
 #endif
 
-    // 3. 尝试 OpenGL (暂时放到后面，因为可能有问题)
+    // 3. OpenGL 作为跨平台方案
     if (IsOpenGLAvailable()) {
         auto backend = std::make_unique<OpenGLDisplayBackend>();
         if (backend->Initialize(window, width, height)) {
@@ -89,7 +100,7 @@ std::unique_ptr<DisplayBackend> DisplayBackend::CreateBest(SDL_Window* window, i
         }
     }
 
-    // 4. SDL Surface 回退
+    // 4. SDL Surface 最终回退
     {
         auto backend = std::make_unique<SDLSurfaceDisplayBackend>();
         if (backend->Initialize(window, width, height)) {
@@ -107,6 +118,506 @@ bool DisplayBackend::IsOpenGLAvailable() {
     // 这里先返回 true，实际检测在 Initialize 中进行
     return true;
 }
+
+// ============================================================================
+// D3D11DisplayBackend 实现 (Windows only)
+// ============================================================================
+
+#ifdef _WIN32
+
+// 简单的全屏四边形顶点着色器
+static const char* g_d3d11_vertex_shader = R"(
+struct VS_INPUT {
+    float2 pos : POSITION;
+    float2 uv : TEXCOORD0;
+};
+
+struct VS_OUTPUT {
+    float4 pos : SV_POSITION;
+    float2 uv : TEXCOORD0;
+};
+
+VS_OUTPUT main(VS_INPUT input) {
+    VS_OUTPUT output;
+    output.pos = float4(input.pos, 0.0f, 1.0f);
+    output.uv = input.uv;
+    return output;
+}
+)";
+
+// 简单的纹理采样像素着色器
+static const char* g_d3d11_pixel_shader = R"(
+Texture2D tex : register(t0);
+SamplerState samp : register(s0);
+
+struct PS_INPUT {
+    float4 pos : SV_POSITION;
+    float2 uv : TEXCOORD0;
+};
+
+float4 main(PS_INPUT input) : SV_TARGET {
+    return tex.Sample(samp, input.uv);
+}
+)";
+
+// 顶点结构
+struct D3D11Vertex {
+    float x, y;   // 位置
+    float u, v;   // 纹理坐标
+};
+
+D3D11DisplayBackend::D3D11DisplayBackend() = default;
+
+D3D11DisplayBackend::~D3D11DisplayBackend() {
+    Shutdown();
+}
+
+bool D3D11DisplayBackend::Initialize(SDL_Window* window, int width, int height) {
+    window_ = window;
+    width_ = width;
+    height_ = height;
+
+    // 获取 Windows 窗口句柄
+    hwnd_ = (void*)SDL_GetPointerProperty(
+        SDL_GetWindowProperties(window),
+        SDL_PROP_WINDOW_WIN32_HWND_POINTER, NULL);
+
+    if (!hwnd_) {
+        std::cerr << "[D3D11DisplayBackend] Failed to get HWND from SDL window" << std::endl;
+        return false;
+    }
+
+    // 创建设备和交换链
+    if (!CreateDeviceAndSwapChain()) {
+        return false;
+    }
+
+    // 创建渲染目标
+    if (!CreateRenderTarget()) {
+        Shutdown();
+        return false;
+    }
+
+    // 创建纹理
+    if (!CreateTexture(width, height)) {
+        Shutdown();
+        return false;
+    }
+
+    // 创建着色器
+    if (!CreateShaders()) {
+        Shutdown();
+        return false;
+    }
+
+    std::cout << "[D3D11DisplayBackend] Initialized successfully ("
+              << width << "x" << height << ")" << std::endl;
+    return true;
+}
+
+bool D3D11DisplayBackend::CreateDeviceAndSwapChain() {
+    HWND hwnd = (HWND)hwnd_;
+
+    // 描述交换链
+    DXGI_SWAP_CHAIN_DESC scd = {};
+    scd.BufferCount = 2;
+    scd.BufferDesc.Width = width_;
+    scd.BufferDesc.Height = height_;
+    scd.BufferDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+    scd.BufferDesc.RefreshRate.Numerator = 60;
+    scd.BufferDesc.RefreshRate.Denominator = 1;
+    scd.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
+    scd.OutputWindow = hwnd;
+    scd.SampleDesc.Count = 1;
+    scd.SampleDesc.Quality = 0;
+    scd.Windowed = TRUE;
+    scd.SwapEffect = DXGI_SWAP_EFFECT_FLIP_DISCARD;
+    scd.Flags = DXGI_SWAP_CHAIN_FLAG_ALLOW_MODE_SWITCH;
+
+    D3D_FEATURE_LEVEL feature_levels[] = {
+        D3D_FEATURE_LEVEL_11_1,
+        D3D_FEATURE_LEVEL_11_0,
+        D3D_FEATURE_LEVEL_10_1,
+        D3D_FEATURE_LEVEL_10_0,
+    };
+
+    UINT create_flags = 0;
+#ifdef _DEBUG
+    create_flags |= D3D11_CREATE_DEVICE_DEBUG;
+#endif
+
+    ID3D11Device* device = nullptr;
+    ID3D11DeviceContext* context = nullptr;
+    IDXGISwapChain* swap_chain = nullptr;
+    D3D_FEATURE_LEVEL feature_level;
+
+    HRESULT hr = D3D11CreateDeviceAndSwapChain(
+        nullptr,                    // 适配器（默认）
+        D3D_DRIVER_TYPE_HARDWARE,   // 驱动类型
+        nullptr,                    // 软件模块
+        create_flags,               // 创建标志
+        feature_levels,             // 功能级别
+        _countof(feature_levels),
+        D3D11_SDK_VERSION,
+        &scd,
+        &swap_chain,
+        &device,
+        &feature_level,
+        &context
+    );
+
+    if (FAILED(hr)) {
+        // 尝试不带调试层
+        create_flags &= ~D3D11_CREATE_DEVICE_DEBUG;
+        hr = D3D11CreateDeviceAndSwapChain(
+            nullptr, D3D_DRIVER_TYPE_HARDWARE, nullptr,
+            create_flags, feature_levels, _countof(feature_levels),
+            D3D11_SDK_VERSION, &scd, &swap_chain, &device,
+            &feature_level, &context
+        );
+    }
+
+    if (FAILED(hr)) {
+        std::cerr << "[D3D11DisplayBackend] Failed to create device and swap chain: 0x"
+                  << std::hex << hr << std::dec << std::endl;
+        return false;
+    }
+
+    device_ = device;
+    device_context_ = context;
+    swap_chain_ = swap_chain;
+
+    return true;
+}
+
+bool D3D11DisplayBackend::CreateRenderTarget() {
+    IDXGISwapChain* swap_chain = (IDXGISwapChain*)swap_chain_;
+    ID3D11Device* device = (ID3D11Device*)device_;
+
+    ID3D11Texture2D* back_buffer = nullptr;
+    HRESULT hr = swap_chain->GetBuffer(0, __uuidof(ID3D11Texture2D), (void**)&back_buffer);
+    if (FAILED(hr)) {
+        std::cerr << "[D3D11DisplayBackend] Failed to get back buffer" << std::endl;
+        return false;
+    }
+
+    ID3D11RenderTargetView* rtv = nullptr;
+    hr = device->CreateRenderTargetView(back_buffer, nullptr, &rtv);
+    back_buffer->Release();
+
+    if (FAILED(hr)) {
+        std::cerr << "[D3D11DisplayBackend] Failed to create render target view" << std::endl;
+        return false;
+    }
+
+    render_target_view_ = rtv;
+    return true;
+}
+
+bool D3D11DisplayBackend::CreateTexture(int width, int height) {
+    ID3D11Device* device = (ID3D11Device*)device_;
+
+    // 创建动态纹理用于上传 CPU 渲染的像素
+    D3D11_TEXTURE2D_DESC tex_desc = {};
+    tex_desc.Width = width;
+    tex_desc.Height = height;
+    tex_desc.MipLevels = 1;
+    tex_desc.ArraySize = 1;
+    tex_desc.Format = DXGI_FORMAT_B8G8R8A8_UNORM;  // BGRA 格式匹配 Skia
+    tex_desc.SampleDesc.Count = 1;
+    tex_desc.Usage = D3D11_USAGE_DYNAMIC;
+    tex_desc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
+    tex_desc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
+
+    ID3D11Texture2D* texture = nullptr;
+    HRESULT hr = device->CreateTexture2D(&tex_desc, nullptr, &texture);
+    if (FAILED(hr)) {
+        std::cerr << "[D3D11DisplayBackend] Failed to create texture" << std::endl;
+        return false;
+    }
+
+    // 创建着色器资源视图
+    D3D11_SHADER_RESOURCE_VIEW_DESC srv_desc = {};
+    srv_desc.Format = tex_desc.Format;
+    srv_desc.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
+    srv_desc.Texture2D.MipLevels = 1;
+
+    ID3D11ShaderResourceView* srv = nullptr;
+    hr = device->CreateShaderResourceView(texture, &srv_desc, &srv);
+    if (FAILED(hr)) {
+        texture->Release();
+        std::cerr << "[D3D11DisplayBackend] Failed to create shader resource view" << std::endl;
+        return false;
+    }
+
+    // 创建采样器
+    D3D11_SAMPLER_DESC sampler_desc = {};
+    sampler_desc.Filter = D3D11_FILTER_MIN_MAG_MIP_POINT;
+    sampler_desc.AddressU = D3D11_TEXTURE_ADDRESS_CLAMP;
+    sampler_desc.AddressV = D3D11_TEXTURE_ADDRESS_CLAMP;
+    sampler_desc.AddressW = D3D11_TEXTURE_ADDRESS_CLAMP;
+
+    ID3D11SamplerState* sampler = nullptr;
+    hr = device->CreateSamplerState(&sampler_desc, &sampler);
+    if (FAILED(hr)) {
+        texture->Release();
+        srv->Release();
+        std::cerr << "[D3D11DisplayBackend] Failed to create sampler state" << std::endl;
+        return false;
+    }
+
+    texture_ = texture;
+    texture_srv_ = srv;
+    sampler_state_ = sampler;
+    texture_width_ = width;
+    texture_height_ = height;
+
+    return true;
+}
+
+bool D3D11DisplayBackend::CreateShaders() {
+    ID3D11Device* device = (ID3D11Device*)device_;
+
+    // 编译顶点着色器
+    ID3DBlob* vs_blob = nullptr;
+    ID3DBlob* error_blob = nullptr;
+    HRESULT hr = D3DCompile(
+        g_d3d11_vertex_shader, strlen(g_d3d11_vertex_shader),
+        "VS", nullptr, nullptr, "main", "vs_4_0",
+        D3DCOMPILE_ENABLE_STRICTNESS, 0,
+        &vs_blob, &error_blob
+    );
+
+    if (FAILED(hr)) {
+        if (error_blob) {
+            std::cerr << "[D3D11DisplayBackend] VS compile error: "
+                      << (char*)error_blob->GetBufferPointer() << std::endl;
+            error_blob->Release();
+        }
+        return false;
+    }
+
+    ID3D11VertexShader* vs = nullptr;
+    hr = device->CreateVertexShader(
+        vs_blob->GetBufferPointer(), vs_blob->GetBufferSize(),
+        nullptr, &vs
+    );
+    if (FAILED(hr)) {
+        vs_blob->Release();
+        std::cerr << "[D3D11DisplayBackend] Failed to create vertex shader" << std::endl;
+        return false;
+    }
+
+    // 创建输入布局
+    D3D11_INPUT_ELEMENT_DESC layout[] = {
+        { "POSITION", 0, DXGI_FORMAT_R32G32_FLOAT, 0, 0, D3D11_INPUT_PER_VERTEX_DATA, 0 },
+        { "TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0, 8, D3D11_INPUT_PER_VERTEX_DATA, 0 },
+    };
+
+    ID3D11InputLayout* input_layout = nullptr;
+    hr = device->CreateInputLayout(
+        layout, _countof(layout),
+        vs_blob->GetBufferPointer(), vs_blob->GetBufferSize(),
+        &input_layout
+    );
+    vs_blob->Release();
+
+    if (FAILED(hr)) {
+        vs->Release();
+        std::cerr << "[D3D11DisplayBackend] Failed to create input layout" << std::endl;
+        return false;
+    }
+
+    // 编译像素着色器
+    ID3DBlob* ps_blob = nullptr;
+    hr = D3DCompile(
+        g_d3d11_pixel_shader, strlen(g_d3d11_pixel_shader),
+        "PS", nullptr, nullptr, "main", "ps_4_0",
+        D3DCOMPILE_ENABLE_STRICTNESS, 0,
+        &ps_blob, &error_blob
+    );
+
+    if (FAILED(hr)) {
+        if (error_blob) {
+            std::cerr << "[D3D11DisplayBackend] PS compile error: "
+                      << (char*)error_blob->GetBufferPointer() << std::endl;
+            error_blob->Release();
+        }
+        vs->Release();
+        input_layout->Release();
+        return false;
+    }
+
+    ID3D11PixelShader* ps = nullptr;
+    hr = device->CreatePixelShader(
+        ps_blob->GetBufferPointer(), ps_blob->GetBufferSize(),
+        nullptr, &ps
+    );
+    ps_blob->Release();
+
+    if (FAILED(hr)) {
+        vs->Release();
+        input_layout->Release();
+        std::cerr << "[D3D11DisplayBackend] Failed to create pixel shader" << std::endl;
+        return false;
+    }
+
+    // 创建顶点缓冲区（全屏四边形）
+    D3D11Vertex vertices[] = {
+        { -1.0f,  1.0f, 0.0f, 0.0f }, // 左上
+        {  1.0f,  1.0f, 1.0f, 0.0f }, // 右上
+        { -1.0f, -1.0f, 0.0f, 1.0f }, // 左下
+        {  1.0f, -1.0f, 1.0f, 1.0f }, // 右下
+    };
+
+    D3D11_BUFFER_DESC vb_desc = {};
+    vb_desc.ByteWidth = sizeof(vertices);
+    vb_desc.Usage = D3D11_USAGE_IMMUTABLE;
+    vb_desc.BindFlags = D3D11_BIND_VERTEX_BUFFER;
+
+    D3D11_SUBRESOURCE_DATA vb_data = {};
+    vb_data.pSysMem = vertices;
+
+    ID3D11Buffer* vb = nullptr;
+    hr = device->CreateBuffer(&vb_desc, &vb_data, &vb);
+    if (FAILED(hr)) {
+        vs->Release();
+        ps->Release();
+        input_layout->Release();
+        std::cerr << "[D3D11DisplayBackend] Failed to create vertex buffer" << std::endl;
+        return false;
+    }
+
+    vertex_shader_ = vs;
+    pixel_shader_ = ps;
+    input_layout_ = input_layout;
+    vertex_buffer_ = vb;
+
+    return true;
+}
+
+void D3D11DisplayBackend::ReleaseRenderTarget() {
+    if (render_target_view_) {
+        ((ID3D11RenderTargetView*)render_target_view_)->Release();
+        render_target_view_ = nullptr;
+    }
+}
+
+void D3D11DisplayBackend::Present(const void* pixels, int width, int height, int stride) {
+    if (!device_context_ || !swap_chain_ || !texture_) return;
+
+    ID3D11DeviceContext* ctx = (ID3D11DeviceContext*)device_context_;
+    IDXGISwapChain* swap_chain = (IDXGISwapChain*)swap_chain_;
+
+    // 如果尺寸变化，重建纹理
+    if (width != texture_width_ || height != texture_height_) {
+        if (texture_srv_) ((ID3D11ShaderResourceView*)texture_srv_)->Release();
+        if (texture_) ((ID3D11Texture2D*)texture_)->Release();
+        texture_ = nullptr;
+        texture_srv_ = nullptr;
+        CreateTexture(width, height);
+    }
+
+    // 上传像素到纹理
+    D3D11_MAPPED_SUBRESOURCE mapped = {};
+    HRESULT hr = ctx->Map((ID3D11Texture2D*)texture_, 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped);
+    if (SUCCEEDED(hr)) {
+        const uint8_t* src = (const uint8_t*)pixels;
+        uint8_t* dst = (uint8_t*)mapped.pData;
+        int copy_width = width * 4;
+        for (int y = 0; y < height; y++) {
+            memcpy(dst, src, copy_width);
+            src += stride;
+            dst += mapped.RowPitch;
+        }
+        ctx->Unmap((ID3D11Texture2D*)texture_, 0);
+    }
+
+    // 设置渲染状态
+    ID3D11RenderTargetView* rtv = (ID3D11RenderTargetView*)render_target_view_;
+    ctx->OMSetRenderTargets(1, &rtv, nullptr);
+
+    // 设置视口
+    D3D11_VIEWPORT viewport = {};
+    viewport.Width = (float)width_;
+    viewport.Height = (float)height_;
+    viewport.MaxDepth = 1.0f;
+    ctx->RSSetViewports(1, &viewport);
+
+    // 清屏
+    float clear_color[4] = { 0.0f, 0.0f, 0.0f, 1.0f };
+    ctx->ClearRenderTargetView(rtv, clear_color);
+
+    // 设置着色器和资源
+    ctx->IASetInputLayout((ID3D11InputLayout*)input_layout_);
+    ctx->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP);
+
+    UINT stride_vb = sizeof(D3D11Vertex);
+    UINT offset = 0;
+    ID3D11Buffer* vb = (ID3D11Buffer*)vertex_buffer_;
+    ctx->IASetVertexBuffers(0, 1, &vb, &stride_vb, &offset);
+
+    ctx->VSSetShader((ID3D11VertexShader*)vertex_shader_, nullptr, 0);
+    ctx->PSSetShader((ID3D11PixelShader*)pixel_shader_, nullptr, 0);
+
+    ID3D11ShaderResourceView* srv = (ID3D11ShaderResourceView*)texture_srv_;
+    ctx->PSSetShaderResources(0, 1, &srv);
+
+    ID3D11SamplerState* sampler = (ID3D11SamplerState*)sampler_state_;
+    ctx->PSSetSamplers(0, 1, &sampler);
+
+    // 绘制全屏四边形
+    ctx->Draw(4, 0);
+
+    // 显示（带 VSync）
+    swap_chain->Present(vsync_enabled_ ? 1 : 0, 0);
+}
+
+void D3D11DisplayBackend::OnResize(int width, int height) {
+    if (width == width_ && height == height_) return;
+    if (!swap_chain_ || !device_) return;
+
+    width_ = width;
+    height_ = height;
+
+    ID3D11DeviceContext* ctx = (ID3D11DeviceContext*)device_context_;
+    IDXGISwapChain* swap_chain = (IDXGISwapChain*)swap_chain_;
+
+    // 释放渲染目标
+    ctx->OMSetRenderTargets(0, nullptr, nullptr);
+    ReleaseRenderTarget();
+
+    // 调整交换链大小
+    HRESULT hr = swap_chain->ResizeBuffers(0, width, height, DXGI_FORMAT_UNKNOWN, 0);
+    if (FAILED(hr)) {
+        std::cerr << "[D3D11DisplayBackend] Failed to resize swap chain" << std::endl;
+        return;
+    }
+
+    // 重建渲染目标
+    CreateRenderTarget();
+}
+
+void D3D11DisplayBackend::Shutdown() {
+    if (vertex_buffer_) { ((ID3D11Buffer*)vertex_buffer_)->Release(); vertex_buffer_ = nullptr; }
+    if (input_layout_) { ((ID3D11InputLayout*)input_layout_)->Release(); input_layout_ = nullptr; }
+    if (pixel_shader_) { ((ID3D11PixelShader*)pixel_shader_)->Release(); pixel_shader_ = nullptr; }
+    if (vertex_shader_) { ((ID3D11VertexShader*)vertex_shader_)->Release(); vertex_shader_ = nullptr; }
+    if (sampler_state_) { ((ID3D11SamplerState*)sampler_state_)->Release(); sampler_state_ = nullptr; }
+    if (texture_srv_) { ((ID3D11ShaderResourceView*)texture_srv_)->Release(); texture_srv_ = nullptr; }
+    if (texture_) { ((ID3D11Texture2D*)texture_)->Release(); texture_ = nullptr; }
+    ReleaseRenderTarget();
+    if (swap_chain_) { ((IDXGISwapChain*)swap_chain_)->Release(); swap_chain_ = nullptr; }
+    if (device_context_) { ((ID3D11DeviceContext*)device_context_)->Release(); device_context_ = nullptr; }
+    if (device_) { ((ID3D11Device*)device_)->Release(); device_ = nullptr; }
+}
+
+bool D3D11DisplayBackend::SetVSync(bool enabled) {
+    vsync_enabled_ = enabled;
+    return true;
+}
+
+#endif // _WIN32
 
 // ============================================================================
 // OpenGLDisplayBackend 实现

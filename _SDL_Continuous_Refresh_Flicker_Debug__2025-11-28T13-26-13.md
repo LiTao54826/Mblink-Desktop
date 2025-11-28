@@ -1,0 +1,14 @@
+-[/] NAME:原生 Windows 显示后端开发 DESCRIPTION:使用 Direct3D 11 替代 SDL 显示层，解决 CPU 渲染模式的闪烁问题
+--[ ] NAME:阶段1: Direct3D 11 基础设施 DESCRIPTION:创建 D3D11 设备、交换链、渲染目标
+--[ ] NAME:1.1 创建 D3D11DisplayBackend 类 DESCRIPTION:在 display_backend.h/cpp 中添加 D3D11 后端类声明和基本结构
+--[ ] NAME:1.2 初始化 D3D11 设备和交换链 DESCRIPTION:创建 ID3D11Device, ID3D11DeviceContext, IDXGISwapChain
+--[ ] NAME:1.3 创建纹理和着色器 DESCRIPTION:创建用于显示 CPU 渲染结果的纹理和简单的全屏四边形着色器
+--[ ] NAME:1.4 实现 Present 方法 DESCRIPTION:将 Skia 像素数据上传到 D3D11 纹理并显示
+--[ ] NAME:阶段2: 集成与测试 DESCRIPTION:将 D3D11 后端集成到现有架构中
+--[ ] NAME:2.1 修改 CreateBest 优先使用 D3D11 DESCRIPTION:在 Windows 上优先选择 D3D11DisplayBackend
+--[ ] NAME:2.2 处理窗口大小变化 DESCRIPTION:实现 OnResize 方法，重建交换链和纹理
+--[ ] NAME:2.3 测试各示例应用 DESCRIPTION:测试 flexbox_test, grid_test, position_test, comprehensive_test
+--[ ] NAME:阶段3: 优化与清理 DESCRIPTION:性能优化和代码清理
+--[ ] NAME:3.1 启用 VSync DESCRIPTION:配置交换链使用 VSync 同步
+--[ ] NAME:3.2 清理旧的 SDL 显示代码 DESCRIPTION:移除不再需要的 SDL Surface 显示逻辑
+--[ ] NAME:3.3 更新 CMakeLists DESCRIPTION:添加 D3D11 库链接配置

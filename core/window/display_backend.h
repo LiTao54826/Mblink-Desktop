@@ -24,6 +24,7 @@ namespace lightui {
  */
 enum class DisplayBackendType {
     AUTO,           ///< 自动选择最佳后端
+    D3D11,          ///< Direct3D 11 (仅 Windows，推荐)
     OPENGL,         ///< OpenGL 纹理显示
     LAYERED_WINDOW, ///< Windows Layered Window (仅 Windows)
     GDI,            ///< GDI 双缓冲 (仅 Windows)
@@ -150,8 +151,53 @@ private:
 
 #ifdef _WIN32
 /**
+ * @brief Direct3D 11 显示后端
+ *
+ * 使用 D3D11 纹理显示像素数据，利用 DXGI VSync 实现无闪烁
+ * 这是 Windows 上推荐的 CPU 渲染显示方案
+ */
+class D3D11DisplayBackend : public DisplayBackend {
+public:
+    D3D11DisplayBackend();
+    ~D3D11DisplayBackend() override;
+
+    bool Initialize(SDL_Window* window, int width, int height) override;
+    void Present(const void* pixels, int width, int height, int stride) override;
+    void OnResize(int width, int height) override;
+    void Shutdown() override;
+
+    DisplayBackendType GetType() const override { return DisplayBackendType::D3D11; }
+    const char* GetName() const override { return "Direct3D 11"; }
+    bool SupportsVSync() const override { return true; }
+    bool SetVSync(bool enabled) override;
+
+private:
+    bool CreateDeviceAndSwapChain();
+    bool CreateRenderTarget();
+    bool CreateTexture(int width, int height);
+    bool CreateShaders();
+    void ReleaseRenderTarget();
+
+    void* hwnd_ = nullptr;              // HWND
+    void* device_ = nullptr;            // ID3D11Device*
+    void* device_context_ = nullptr;    // ID3D11DeviceContext*
+    void* swap_chain_ = nullptr;        // IDXGISwapChain*
+    void* render_target_view_ = nullptr;// ID3D11RenderTargetView*
+    void* texture_ = nullptr;           // ID3D11Texture2D* (动态纹理)
+    void* texture_srv_ = nullptr;       // ID3D11ShaderResourceView*
+    void* sampler_state_ = nullptr;     // ID3D11SamplerState*
+    void* vertex_shader_ = nullptr;     // ID3D11VertexShader*
+    void* pixel_shader_ = nullptr;      // ID3D11PixelShader*
+    void* vertex_buffer_ = nullptr;     // ID3D11Buffer*
+    void* input_layout_ = nullptr;      // ID3D11InputLayout*
+    int texture_width_ = 0;
+    int texture_height_ = 0;
+    bool vsync_enabled_ = true;
+};
+
+/**
  * @brief Windows Layered Window 显示后端
- * 
+ *
  * 使用 Win32 UpdateLayeredWindow API 实现无闪烁显示
  */
 class LayeredWindowDisplayBackend : public DisplayBackend {

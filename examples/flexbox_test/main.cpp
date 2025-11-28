@@ -29,7 +29,7 @@ int main(int argc, char* argv[]) {
     // Determine which test to run
     std::string test_file = "examples/window_demo/flexbox_test.html";
     std::string test_name = "Flexbox";
-
+    
     if (argc > 1) {
         std::string arg = argv[1];
         if (arg == "grid") {
@@ -58,6 +58,7 @@ int main(int argc, char* argv[]) {
         config.height = 600;
         config.resizable = true;
         config.vsync = true;
+        config.backend = RenderBackend::CPU;  // 明确使用 CPU 渲染模式
 
         auto window = std::make_shared<Window>(config);
         std::cout << "  ✓ Window created: 800x600" << std::endl;

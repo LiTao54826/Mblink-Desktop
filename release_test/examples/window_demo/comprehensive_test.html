@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Comprehensive Layout Test</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 20px;
+            background: #f5f5f5;
+            font-family: "Segoe UI", "Microsoft YaHei", Arial, sans-serif;
+        }
+
+        h1 {
+            color: #333;
+            text-align: center;
+            margin-bottom: 30px;
+        }
+
+        .section {
+            background: white;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+
+        .section-title {
+            font-size: 18px;
+            font-weight: bold;
+            color: #667eea;
+            margin-bottom: 15px;
+        }
+
+        /* Flexbox Test */
+        .flex-container {
+            display: flex;
+            justify-content: space-between;
+            gap: 10px;
+            background: #e9ecef;
+            padding: 10px;
+            border-radius: 4px;
+        }
+
+        .flex-item {
+            background: #667eea;
+            color: white;
+            padding: 15px;
+            border-radius: 4px;
+            flex: 1;
+            text-align: center;
+        }
+
+        /* Grid Test */
+        .grid-container {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            gap: 10px;
+            background: #e9ecef;
+            padding: 10px;
+            border-radius: 4px;
+        }
+
+        .grid-item {
+            background: #51cf66;
+            color: white;
+            padding: 15px;
+            border-radius: 4px;
+            text-align: center;
+        }
+
+        .grid-item-span {
+            grid-column: span 2;
+            background: #ffd43b;
+            color: #333;
+        }
+
+        /* Position Test */
+        .position-container {
+            position: relative;
+            background: #e9ecef;
+            padding: 10px;
+            border-radius: 4px;
+            height: 120px;
+        }
+
+        .position-relative {
+            position: relative;
+            background: #4dabf7;
+            color: white;
+            padding: 10px;
+            border-radius: 4px;
+            width: 100px;
+            top: 10px;
+            left: 10px;
+        }
+
+        .position-absolute {
+            position: absolute;
+            background: #ff6b6b;
+            color: white;
+            padding: 10px;
+            border-radius: 4px;
+            width: 100px;
+            top: 10px;
+            right: 10px;
+        }
+
+        /* Overflow Test */
+        .overflow-container {
+            background: #e9ecef;
+            padding: 10px;
+            border-radius: 4px;
+        }
+
+        .overflow-box {
+            background: white;
+            border: 2px solid #dee2e6;
+            border-radius: 4px;
+            padding: 10px;
+            width: 200px;
+            height: 50px;
+            overflow: hidden;
+            margin-bottom: 10px;
+        }
+
+        .overflow-content {
+            background: #f783ac;
+            padding: 10px;
+            width: 300px;
+            height: 80px;
+            border-radius: 4px;
+        }
+
+        /* Mixed Layout Test */
+        .mixed-container {
+            display: flex;
+            gap: 10px;
+            background: #e9ecef;
+            padding: 10px;
+            border-radius: 4px;
+        }
+
+        .mixed-left {
+            flex: 1;
+            background: #667eea;
+            color: white;
+            padding: 15px;
+            border-radius: 4px;
+        }
+
+        .mixed-right {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+            flex: 2;
+        }
+
+        .mixed-grid-item {
+            background: #51cf66;
+            color: white;
+            padding: 15px;
+            border-radius: 4px;
+            text-align: center;
+        }
+
+        /* Nested Flexbox */
+        .nested-flex-outer {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            background: #e9ecef;
+            padding: 10px;
+            border-radius: 4px;
+        }
+
+        .nested-flex-inner {
+            display: flex;
+            gap: 10px;
+        }
+
+        .nested-flex-item {
+            flex: 1;
+            background: #4dabf7;
+            color: white;
+            padding: 15px;
+            border-radius: 4px;
+            text-align: center;
+        }
+
+        /* Complex Grid */
+        .complex-grid {
+            display: grid;
+            grid-template-columns: 100px 1fr 2fr;
+            grid-template-rows: auto auto;
+            gap: 10px;
+            background: #e9ecef;
+            padding: 10px;
+            border-radius: 4px;
+        }
+
+        .complex-grid-item {
+            background: #ffd43b;
+            color: #333;
+            padding: 15px;
+            border-radius: 4px;
+            text-align: center;
+        }
+
+        .complex-grid-header {
+            grid-column: span 3;
+            background: #ff6b6b;
+            color: white;
+        }
+    </style>
+</head>
+<body>
+    <h1>🎨 Comprehensive CSS Layout Test</h1>
+
+    <!-- Flexbox Test -->
+    <div class="section">
+        <div class="section-title">1. Flexbox Layout</div>
+        <div class="flex-container">
+            <div class="flex-item">Item 1</div>
+            <div class="flex-item">Item 2</div>
+            <div class="flex-item">Item 3</div>
+        </div>
+    </div>
+
+    <!-- Grid Test -->
+    <div class="section">
+        <div class="section-title">2. Grid Layout</div>
+        <div class="grid-container">
+            <div class="grid-item">1</div>
+            <div class="grid-item">2</div>
+            <div class="grid-item">3</div>
+            <div class="grid-item-span">Span 2 Columns</div>
+            <div class="grid-item">6</div>
+        </div>
+    </div>
+
+    <!-- Position Test -->
+    <div class="section">
+        <div class="section-title">3. Position (Relative & Absolute)</div>
+        <div class="position-container">
+            <div class="position-relative">Relative</div>
+            <div class="position-absolute">Absolute</div>
+        </div>
+    </div>
+
+    <!-- Overflow Test -->
+    <div class="section">
+        <div class="section-title">4. Overflow Hidden</div>
+        <div class="overflow-container">
+            <div class="overflow-box">
+                <div class="overflow-content">
+                    This content is clipped
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Mixed Layout Test -->
+    <div class="section">
+        <div class="section-title">5. Mixed Flexbox + Grid</div>
+        <div class="mixed-container">
+            <div class="mixed-left">Flex Item</div>
+            <div class="mixed-right">
+                <div class="mixed-grid-item">G1</div>
+                <div class="mixed-grid-item">G2</div>
+                <div class="mixed-grid-item">G3</div>
+                <div class="mixed-grid-item">G4</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Nested Flexbox -->
+    <div class="section">
+        <div class="section-title">6. Nested Flexbox</div>
+        <div class="nested-flex-outer">
+            <div class="nested-flex-inner">
+                <div class="nested-flex-item">A1</div>
+                <div class="nested-flex-item">A2</div>
+            </div>
+            <div class="nested-flex-inner">
+                <div class="nested-flex-item">B1</div>
+                <div class="nested-flex-item">B2</div>
+                <div class="nested-flex-item">B3</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Complex Grid -->
+    <div class="section">
+        <div class="section-title">7. Complex Grid (Mixed Track Sizes)</div>
+        <div class="complex-grid">
+            <div class="complex-grid-item complex-grid-header">Header (Span 3)</div>
+            <div class="complex-grid-item">100px</div>
+            <div class="complex-grid-item">1fr</div>
+            <div class="complex-grid-item">2fr</div>
+        </div>
+    </div>
+</body>
+</html>
+
