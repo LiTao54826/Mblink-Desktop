@@ -1,0 +1,25 @@
+[package]
+name = "ctaffy"
+version = "0.0.1"
+authors = [
+    "Nico Burns <nico@nicoburns.com>",
+]
+edition = "2021"
+include = ["src/**/*", "Cargo.toml"]
+description = "C bindings to Taffy (A flexible UI layout library)"
+repository = "https://github.com/DioxusLabs/taffy"
+license = "MIT"
+
+[lib]
+name = "ctaffy"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[dependencies]
+taffy = { path = "../.." }
+
+[profile.release]
+opt-level = "z"     # 优化文件大小而不是速度 (z 比 s 更激进)
+lto = true          # 启用链接时优化
+codegen-units = 1   # 减少代码生成单元以提高优化效果
+strip = true        # 移除调试符号
+panic = 'abort'     # 减小 panic 处理代码的大小

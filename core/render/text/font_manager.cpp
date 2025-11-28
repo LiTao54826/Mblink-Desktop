@@ -160,14 +160,42 @@ sk_sp<SkTypeface> FontManager::FindTypeface(const std::string& family, const SkF
     if (it != typeface_cache_.end()) {
         return it->second;
     }
-    
+
     // 查找字体族
     sk_sp<SkTypeface> typeface;
-    
+
     if (font_mgr_) {
-        typeface = font_mgr_->matchFamilyStyle(family.c_str(), style);
+        // 解析字体列表（用逗号分隔）
+        std::istringstream font_stream(family);
+        std::string font_name;
+
+        while (std::getline(font_stream, font_name, ',')) {
+            // 去除前后空格
+            size_t start = font_name.find_first_not_of(" \t\r\n");
+            size_t end = font_name.find_last_not_of(" \t\r\n");
+            if (start == std::string::npos) {
+                continue;
+            }
+            font_name = font_name.substr(start, end - start + 1);
+
+            // 去除引号
+            if (!font_name.empty() && (font_name.front() == '"' || font_name.front() == '\'')) {
+                font_name = font_name.substr(1);
+            }
+            if (!font_name.empty() && (font_name.back() == '"' || font_name.back() == '\'')) {
+                font_name = font_name.substr(0, font_name.size() - 1);
+            }
+
+            // 尝试匹配字体
+            if (!font_name.empty()) {
+                typeface = font_mgr_->matchFamilyStyle(font_name.c_str(), style);
+                if (typeface) {
+                    break;  // 找到字体，停止搜索
+                }
+            }
+        }
     }
-    
+
     // 如果找不到，使用默认字体
     if (!typeface && font_mgr_) {
         typeface = font_mgr_->matchFamilyStyle(nullptr, SkFontStyle());
@@ -177,10 +205,10 @@ sk_sp<SkTypeface> FontManager::FindTypeface(const std::string& family, const SkF
     if (!typeface) {
         typeface = SkTypeface::MakeEmpty();
     }
-    
+
     // 缓存字体族
     typeface_cache_[cache_key] = typeface;
-    
+
     return typeface;
 }
 

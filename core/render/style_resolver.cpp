@@ -6,6 +6,8 @@
 #include "style_resolver.h"
 #include "render_inline_block.h"
 #include "core/dom/text.h"
+#include "core/dom/document.h"
+#include "core/lexbor/style_manager.h"
 #include "color.h"
 #include <algorithm>
 #include <sstream>
@@ -51,10 +53,13 @@ ComputedStyle StyleResolver::ResolveStyle(std::shared_ptr<Element> element,
     // 这一步必须在继承之后，以确保元素自身的样式优先级高于继承
     ApplyElementSpecificStyle(style, element->GetTagName(), element);
 
-    // 4. 伪类样式（如 :hover, :active, :focus）
+    // 4. CSS 规则（<style> 标签和外部样式表）
+    ApplyCSSRules(style, element);
+
+    // 5. 伪类样式（如 :hover, :active, :focus）
     ApplyPseudoClassStyles(style, element);
 
-    // 5. 内联样式（最高优先级）- 覆盖所有
+    // 6. 内联样式（最高优先级）- 覆盖所有
     ApplyInlineStyle(style, element);
 
     return style;
@@ -776,6 +781,11 @@ void StyleResolver::ParseStyleProperty(ComputedStyle& style,
     else if (property == "border-radius") {
         style.border_radius = CSSValue::ParseBorderRadius(resolved_value);
     }
+    else if (property == "background") {
+        // 简化处理：如果是颜色值，设置 background-color
+        // 完整的 background 解析应该支持 image, position, size, repeat 等
+        style.background_color = resolved_value;
+    }
     else if (property == "background-color") {
         style.background_color = resolved_value;
     }
@@ -882,6 +892,70 @@ void StyleResolver::ParseStyleProperty(ComputedStyle& style,
     else if (property == "align-self") {
         style.align_self = resolved_value;
     }
+    else if (property == "flex") {
+        // 解析 flex 简写属性
+        // flex: none => flex-grow: 0; flex-shrink: 0; flex-basis: auto
+        // flex: auto => flex-grow: 1; flex-shrink: 1; flex-basis: auto
+        // flex: <number> => flex-grow: <number>; flex-shrink: 1; flex-basis: 0%
+        // flex: <number> <number> => flex-grow; flex-shrink; flex-basis: 0%
+        // flex: <number> <number> <length> => flex-grow; flex-shrink; flex-basis
+        if (resolved_value == "none") {
+            style.flex_grow = 0.0f;
+            style.flex_shrink = 0.0f;
+            style.flex_basis = CSSLength{0.0f, CSSUnit::AUTO};
+        } else if (resolved_value == "auto") {
+            style.flex_grow = 1.0f;
+            style.flex_shrink = 1.0f;
+            style.flex_basis = CSSLength{0.0f, CSSUnit::AUTO};
+        } else if (resolved_value == "initial") {
+            style.flex_grow = 0.0f;
+            style.flex_shrink = 1.0f;
+            style.flex_basis = CSSLength{0.0f, CSSUnit::AUTO};
+        } else {
+            // 尝试解析数值
+            std::istringstream iss(resolved_value);
+            std::vector<std::string> parts;
+            std::string part;
+            while (iss >> part) {
+                parts.push_back(part);
+            }
+
+            if (parts.size() == 1) {
+                // flex: <number> => flex-grow: <number>; flex-shrink: 1; flex-basis: 0%
+                try {
+                    style.flex_grow = std::stof(parts[0]);
+                    style.flex_shrink = 1.0f;
+                    style.flex_basis = CSSLength{0.0f, CSSUnit::PERCENT};
+                } catch (...) {
+                    // 可能是 flex-basis 值如 "100px"
+                    style.flex_grow = 1.0f;
+                    style.flex_shrink = 1.0f;
+                    style.flex_basis = CSSValue::ParseLength(parts[0]);
+                }
+            } else if (parts.size() == 2) {
+                // flex: <number> <number> => flex-grow; flex-shrink; flex-basis: 0%
+                try {
+                    style.flex_grow = std::stof(parts[0]);
+                    style.flex_shrink = std::stof(parts[1]);
+                    style.flex_basis = CSSLength{0.0f, CSSUnit::PERCENT};
+                } catch (...) {
+                    // 第二个可能是 flex-basis
+                    try {
+                        style.flex_grow = std::stof(parts[0]);
+                        style.flex_shrink = 1.0f;
+                        style.flex_basis = CSSValue::ParseLength(parts[1]);
+                    } catch (...) {}
+                }
+            } else if (parts.size() >= 3) {
+                // flex: <number> <number> <length>
+                try {
+                    style.flex_grow = std::stof(parts[0]);
+                    style.flex_shrink = std::stof(parts[1]);
+                    style.flex_basis = CSSValue::ParseLength(parts[2]);
+                } catch (...) {}
+            }
+        }
+    }
     else if (property == "flex-grow") {
         try {
             style.flex_grow = std::stof(resolved_value);
@@ -916,6 +990,28 @@ void StyleResolver::ParseStyleProperty(ComputedStyle& style,
     }
     else if (property == "column-gap") {
         style.column_gap = CSSValue::ParseLength(resolved_value);
+    }
+    // Grid 属性
+    else if (property == "grid-template-columns") {
+        style.grid_template_columns = resolved_value;
+    }
+    else if (property == "grid-template-rows") {
+        style.grid_template_rows = resolved_value;
+    }
+    else if (property == "grid-auto-flow") {
+        style.grid_auto_flow = resolved_value;
+    }
+    else if (property == "grid-column-gap") {
+        style.grid_column_gap = CSSValue::ParseLength(resolved_value);
+    }
+    else if (property == "grid-row-gap") {
+        style.grid_row_gap = CSSValue::ParseLength(resolved_value);
+    }
+    else if (property == "grid-column") {
+        style.grid_column = resolved_value;
+    }
+    else if (property == "grid-row") {
+        style.grid_row = resolved_value;
     }
     // 定位属性
     else if (property == "position") {
@@ -961,6 +1057,20 @@ void StyleResolver::ParseStyleProperty(ComputedStyle& style,
     }
     else if (property == "cursor") {
         style.cursor = resolved_value;
+    }
+}
+
+void StyleResolver::ApplyCSSRules(ComputedStyle& style, std::shared_ptr<Element> element) {
+    if (!style_manager_ || !element) {
+        return;
+    }
+
+    // 从 StyleManager 获取匹配的 CSS 规则
+    auto css_properties = style_manager_->ComputeStyle(element.get());
+
+    // 应用每个 CSS 属性
+    for (const auto& [property, value] : css_properties) {
+        ParseStyleProperty(style, property, value);
     }
 }
 
@@ -1064,6 +1174,8 @@ RenderObjectType StyleResolver::ParseDisplay(const std::string& value) {
     if (value == "inline-block") return RenderObjectType::INLINE_BLOCK;
     if (value == "flex") return RenderObjectType::FLEX;
     if (value == "inline-flex") return RenderObjectType::FLEX;  // inline-flex 也使用 FLEX 类型
+    if (value == "grid") return RenderObjectType::GRID;
+    if (value == "inline-grid") return RenderObjectType::GRID;  // inline-grid 也使用 GRID 类型
     if (value == "none") return RenderObjectType::NONE;
     return RenderObjectType::BLOCK;
 }
@@ -1077,13 +1189,18 @@ RenderTreeBuilder::RenderTreeBuilder()
 std::shared_ptr<RenderObject> RenderTreeBuilder::BuildRenderTree(
     std::shared_ptr<Node> node,
     const ComputedStyle* parent_style) {
-    
+
     if (!node) {
         return nullptr;
     }
-    
+
+    // 设置 StyleManager（如果有 Document）
+    if (document_ && document_->GetStyleManager()) {
+        style_resolver_.SetStyleManager(document_->GetStyleManager());
+    }
+
     std::shared_ptr<RenderObject> render_obj;
-    
+
     // 根据节点类型创建渲染对象
     if (node->GetNodeType() == NodeType::ELEMENT_NODE) {
         auto element = std::static_pointer_cast<Element>(node);
@@ -1104,14 +1221,13 @@ std::shared_ptr<RenderObject> RenderTreeBuilder::BuildRenderTree(
     }
     
     // 递归构建子树
-    const auto& children = node->GetChildNodes();
-    for (const auto& child : children) {
+    for (const auto& child : node->GetChildNodes()) {
         auto child_render_obj = BuildRenderTree(child, &render_obj->GetComputedStyle());
         if (child_render_obj) {
             render_obj->AppendChild(child_render_obj);
         }
     }
-    
+
     return render_obj;
 }
 
@@ -1167,10 +1283,22 @@ std::shared_ptr<RenderObject> RenderTreeBuilder::CreateRenderObjectForText(
     render_obj->SetNode(text);
     render_obj->SetText(normalized_text);
 
-    // 文本节点继承父元素样式
+    // 文本节点只继承可继承的样式属性，不继承定位属性
+    ComputedStyle text_style;
     if (parent_style) {
-        render_obj->SetComputedStyle(*parent_style);
+        // 只继承可继承属性
+        text_style.color = parent_style->color;
+        text_style.font_family = parent_style->font_family;
+        text_style.font_size = parent_style->font_size;
+        text_style.font_weight = parent_style->font_weight;
+        text_style.font_style = parent_style->font_style;
+        text_style.line_height = parent_style->line_height;
+        text_style.text_align = parent_style->text_align;
+        text_style.text_decoration = parent_style->text_decoration;
+        // 继承 CSS 变量
+        text_style.css_variables.InheritFrom(&parent_style->css_variables);
     }
+    render_obj->SetComputedStyle(text_style);
 
     return render_obj;
 }

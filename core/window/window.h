@@ -30,6 +30,7 @@
 #include "include/core/SkSurface.h"
 #include "include/gpu/ganesh/GrDirectContext.h"
 #include "window_event.h"
+#include "display_backend.h"
 
 namespace lightui {
 
@@ -37,6 +38,7 @@ namespace lightui {
 class Document;
 class Renderer;
 class DOMObserver;
+class LayoutEngine;
 class RenderObject;
 class Node;
 class AnimationTimeline;
@@ -203,7 +205,13 @@ public:
      * @return Skia上下文
      */
     GrDirectContext* GetGrContext() const { return gr_context_.get(); }
-    
+
+    /**
+     * @brief 获取 PaintMode 显示后端（如果正在使用）
+     * @return PaintModeDisplayBackend 指针，如果不是 PaintMode 模式则返回 nullptr
+     */
+    PaintModeDisplayBackend* GetPaintModeBackend() const;
+
     /**
      * @brief 交换缓冲区（显示渲染结果）
      */
@@ -329,7 +337,9 @@ public:
     /**
      * @brief 标记需要重绘
      */
-    void SetNeedsRepaint() { needs_repaint_ = true; }
+    void SetNeedsRepaint() {
+        needs_repaint_ = true;
+    }
 
     /**
      * @brief 标记渲染树需要重建
@@ -341,6 +351,17 @@ public:
      * @return true表示需要重绘
      */
     bool NeedsRepaint() const { return needs_repaint_; }
+
+    /**
+     * @brief 获取缓存的渲染树
+     * @return 渲染树根节点，如果没有则返回nullptr
+     */
+    std::shared_ptr<RenderObject> GetCachedRenderTree() const { return cached_render_tree_; }
+
+    /**
+     * @brief 确保渲染树已构建（如果无效则重建）
+     */
+    void EnsureRenderTree();
 
     /**
      * @brief 获取动画时间轴
@@ -359,6 +380,12 @@ public:
      * @param current_time 当前时间（秒）
      */
     void UpdateAnimations(double current_time);
+
+    /**
+     * @brief 获取 DPI 缩放比
+     * @return DPI 缩放比（例如：1.0, 1.5, 2.0）
+     */
+    float GetDisplayScale() const;
 
 private:
     /**
@@ -419,6 +446,7 @@ private:
     SDL_GLContext gl_context_ = nullptr;
     SDL_Renderer* sdl_renderer_ = nullptr;  // SDL Renderer for CPU mode
     SDL_Texture* sdl_texture_ = nullptr;    // SDL Texture for CPU mode
+    SDL_Surface* sdl_surface_ = nullptr;    // SDL Surface for direct rendering (no SDL_Renderer)
     sk_sp<GrDirectContext> gr_context_;
     sk_sp<SkSurface> surface_;
     bool should_close_ = false;
@@ -449,6 +477,12 @@ private:
 
     // CSS Animation 动画控制器
     std::unique_ptr<AnimationController> animation_controller_;
+
+    // Taffy CSS 布局引擎
+    std::unique_ptr<LayoutEngine> layout_engine_;
+
+    // 显示后端（用于 CPU 渲染模式）
+    std::unique_ptr<DisplayBackend> display_backend_;
 };
 
 } // namespace lightui

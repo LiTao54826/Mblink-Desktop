@@ -42,7 +42,7 @@ void WindowBindings::BindWindowObject() {
 
     // 绑定 window.devicePixelRatio
     runtime_->RegisterFunction("__getDevicePixelRatio", [this](const json& args) -> json {
-        return 1.0; // 默认为 1.0，可以从系统获取
+        return static_cast<double>(window_->GetDisplayScale());
     });
 
     // 绑定 window.title

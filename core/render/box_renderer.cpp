@@ -15,6 +15,7 @@
 #include "include/effects/SkGradientShader.h"
 #include "include/effects/SkImageFilters.h"
 #include <cmath>
+#include <iostream>
 
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
@@ -294,13 +295,25 @@ void BoxRenderer::RenderBackgroundAdvanced(const Box& box,
 
     // 创建路径（支持圆角）
     SkPath path;
-    if (border_radius) {
+    bool has_radius = border_radius && (
+        border_radius->top_left.value > 0 ||
+        border_radius->top_right.value > 0 ||
+        border_radius->bottom_right.value > 0 ||
+        border_radius->bottom_left.value > 0
+    );
+
+    if (has_radius) {
         SkRRect rrect;
+        float tl = border_radius->top_left.ToPx();
+        float tr = border_radius->top_right.ToPx();
+        float br = border_radius->bottom_right.ToPx();
+        float bl = border_radius->bottom_left.ToPx();
+
         SkVector radii[4] = {
-            {border_radius->top_left.ToPx(), border_radius->top_left.ToPx()},
-            {border_radius->top_right.ToPx(), border_radius->top_right.ToPx()},
-            {border_radius->bottom_right.ToPx(), border_radius->bottom_right.ToPx()},
-            {border_radius->bottom_left.ToPx(), border_radius->bottom_left.ToPx()}
+            {tl, tl},  // top-left
+            {tr, tr},  // top-right
+            {br, br},  // bottom-right
+            {bl, bl}   // bottom-left
         };
         rrect.setRectRadii(padding_box, radii);
         path.addRRect(rrect);
@@ -444,7 +457,9 @@ void BoxRenderer::RenderBackgroundAdvanced(const Box& box,
     // 4. 纯色背景
     else if (bg_color_it != styles.end() && !bg_color_it->second.empty() &&
              bg_color_it->second != "transparent") {
-        paint.SetColor(Color::Parse(bg_color_it->second));
+        SkColor parsed_color = Color::Parse(bg_color_it->second);
+
+        paint.SetColor(parsed_color);
         has_background = true;
     }
 

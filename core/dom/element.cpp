@@ -483,9 +483,6 @@ void Element::SetPseudoClass(const std::string& pseudo_class, bool activate) {
         return;
     }
 
-    std::cout << "[Element::SetPseudoClass] <" << GetTagName() << "> :"
-              << pseudo_class << " = " << (activate ? "true" : "false") << std::endl;
-
     // 更新伪类状态
     if (activate) {
         pseudo_classes_[pseudo_class] = true;

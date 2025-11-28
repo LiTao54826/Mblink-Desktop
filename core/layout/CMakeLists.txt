@@ -13,17 +13,34 @@ add_library(lightui_layout STATIC ${LAYOUT_SOURCES})
 target_include_directories(lightui_layout PUBLIC
     ${CMAKE_SOURCE_DIR}
     ${CMAKE_SOURCE_DIR}/core
+    ${CMAKE_SOURCE_DIR}/third_party
 )
 
 target_link_libraries(lightui_layout PUBLIC
     lightui_utils
 )
 
-# 链接Yoga（如果可用）
-if(TARGET yogacore)
-    target_link_libraries(lightui_layout PUBLIC yogacore)
-elseif(TARGET yoga)
-    target_link_libraries(lightui_layout PUBLIC yoga)
+# 链接 Taffy 布局引擎
+if(TARGET taffy)
+    target_link_libraries(lightui_layout PUBLIC taffy)
+    message(STATUS "Linking Taffy layout engine")
 else()
-    message(WARNING "Yoga not found, layout module may not build correctly")
+    message(WARNING "Taffy not found, layout module may not build correctly")
+endif()
+
+# 链接Skia（如果启用）
+if(TARGET skia)
+    target_link_libraries(lightui_layout PUBLIC skia)
+    target_include_directories(lightui_layout PUBLIC ${CMAKE_SOURCE_DIR}/third_party/skia)
+
+    # Match Skia's runtime library settings (MSVC)
+    if(MSVC)
+        target_compile_options(lightui_layout PUBLIC
+            $<$<CONFIG:Debug>:/MT>
+            $<$<CONFIG:Release>:/MT>
+        )
+        target_compile_definitions(lightui_layout PUBLIC
+            $<$<CONFIG:Debug>:_ITERATOR_DEBUG_LEVEL=0>
+        )
+    endif()
 endif()

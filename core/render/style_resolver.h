@@ -21,6 +21,10 @@
 
 namespace lightui {
 
+// 前向声明
+class StyleManager;
+class Document;
+
 /**
  * @brief 样式解析器
  */
@@ -76,6 +80,12 @@ public:
      */
     bool IsOptimizationEnabled() const { return optimization_enabled_; }
 
+    /**
+     * @brief 设置样式管理器
+     * @param manager 样式管理器指针
+     */
+    void SetStyleManager(StyleManager* manager) { style_manager_ = manager; }
+
 private:
     /**
      * @brief 应用默认样式
@@ -111,6 +121,13 @@ private:
     void ApplyPseudoClassStyles(ComputedStyle& style, std::shared_ptr<Element> element);
 
     /**
+     * @brief 应用 CSS 规则（从 StyleManager）
+     * @param style 要应用样式的对象
+     * @param element 元素指针
+     */
+    void ApplyCSSRules(ComputedStyle& style, std::shared_ptr<Element> element);
+
+    /**
      * @brief 解析单个样式属性
      */
     void ParseStyleProperty(ComputedStyle& style,
@@ -139,6 +156,9 @@ private:
 
     // 是否启用性能优化
     bool optimization_enabled_ = true;
+
+    // 样式管理器指针
+    StyleManager* style_manager_ = nullptr;
 };
 
 /**
@@ -165,6 +185,12 @@ public:
     std::shared_ptr<RenderObject> BuildRenderTree(std::shared_ptr<Node> node,
                                                    const ComputedStyle* parent_style = nullptr);
 
+    /**
+     * @brief 设置 Document（用于访问 StyleManager）
+     * @param doc Document 指针
+     */
+    void SetDocument(Document* doc) { document_ = doc; }
+
 private:
     /**
      * @brief 从元素节点创建渲染对象
@@ -187,6 +213,7 @@ private:
 
 private:
     StyleResolver style_resolver_;
+    Document* document_ = nullptr;
 };
 
 } // namespace lightui

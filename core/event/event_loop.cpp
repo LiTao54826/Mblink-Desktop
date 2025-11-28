@@ -99,8 +99,35 @@ void EventLoop::RunOnce() {
 
     task_scheduler_->ProcessAnimationFrames(timestamp_ms);
 
-    // 5. 渲染
-    Render();
+    // 5. 只在有窗口需要重绘时才渲染
+    auto& wm = WindowManager::Instance();
+    bool any_needs_repaint = false;
+    for (auto& window : wm.GetAllWindows()) {
+        if (window->NeedsRepaint()) {
+            any_needs_repaint = true;
+            break;
+        }
+    }
+
+    // 调试：追踪渲染频率
+    static bool debug_render = std::getenv("LIGHTUI_DEBUG_RENDER") != nullptr;
+    static int frame_count = 0;
+    static Uint64 last_debug_time = SDL_GetTicks();
+    frame_count++;
+
+    if (debug_render) {
+        Uint64 now = SDL_GetTicks();
+        if (now - last_debug_time >= 1000) {
+            std::cout << "[EventLoop] FPS: " << frame_count
+                      << ", needs_repaint: " << any_needs_repaint << std::endl;
+            frame_count = 0;
+            last_debug_time = now;
+        }
+    }
+
+    if (any_needs_repaint) {
+        Render();
+    }
 
     // 6. 检查是否应该退出
     auto& window_manager = WindowManager::Instance();
@@ -156,6 +183,15 @@ bool EventLoop::ProcessEvents() {
     while (SDL_PollEvent(&event)) {
         has_events = true;
 
+        // 调试：输出事件类型（可以通过环境变量控制）
+        static bool debug_events = std::getenv("LIGHTUI_DEBUG_EVENTS") != nullptr;
+        if (debug_events) {
+            // 过滤掉高频的鼠标移动事件
+            if (event.type != SDL_EVENT_MOUSE_MOTION) {
+                std::cout << "[EventLoop] SDL Event: type=" << event.type << std::endl;
+            }
+        }
+
         // 处理退出事件
         if (event.type == SDL_EVENT_QUIT) {
             should_quit_ = true;
@@ -167,6 +203,11 @@ bool EventLoop::ProcessEvents() {
             event.type == SDL_EVENT_MOUSE_BUTTON_UP ||
             event.type == SDL_EVENT_MOUSE_MOTION) {
             HandleMouseEventForDOM(event);
+        }
+
+        // 处理鼠标滚轮事件
+        if (event.type == SDL_EVENT_MOUSE_WHEEL) {
+            HandleMouseWheelEventForDOM(event);
         }
 
         // 处理键盘事件并分发到 DOM
@@ -197,15 +238,15 @@ void EventLoop::Render() {
     if (render_callback_) {
         render_callback_();
     }
-    
+
     // 默认渲染：渲染所有窗口
-    // 注意：这里只是示例，实际渲染逻辑应该在窗口中实现
-    // auto& window_manager = WindowManager::Instance();
-    // for (auto& window : window_manager.GetAllWindows()) {
-    //     if (window->NeedsRedraw()) {
-    //         window->Render();
-    //     }
-    // }
+    auto& window_manager = WindowManager::Instance();
+    for (auto& window : window_manager.GetAllWindows()) {
+        if (window->NeedsRepaint()) {
+            window->RenderDocument();
+            window->SwapBuffers();
+        }
+    }
 }
 
 bool EventLoop::HasWork() const {
@@ -256,10 +297,44 @@ void EventLoop::HandleMouseEventForDOM(const SDL_Event& event) {
     if (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN || event.type == SDL_EVENT_MOUSE_BUTTON_UP) {
         mouse_x = event.button.x;
         mouse_y = event.button.y;
-        std::cout << "[EventLoop] Mouse button at (" << mouse_x << ", " << mouse_y << ")" << std::endl;
     } else if (event.type == SDL_EVENT_MOUSE_MOTION) {
         mouse_x = event.motion.x;
         mouse_y = event.motion.y;
+    }
+
+    // 将物理像素坐标转换为逻辑像素坐标（CSS 像素）
+    float dpi_scale = window->GetDisplayScale();
+    float logical_x = mouse_x / dpi_scale;
+    float logical_y = mouse_y / dpi_scale;
+
+    // ===== 处理滚动条拖动 =====
+    // 如果正在拖动滚动条，处理拖动更新
+    auto dragging_element = scrollbar_dragging_element_.lock();
+    if (dragging_element && dragging_element->IsDraggingScrollbar()) {
+        if (event.type == SDL_EVENT_MOUSE_MOTION) {
+            // 更新滚动条位置
+            dragging_element->UpdateScrollbarDrag(logical_x, logical_y);
+            window->SetNeedsRepaint();
+            return;  // 拖动期间不处理其他鼠标事件
+        } else if (event.type == SDL_EVENT_MOUSE_BUTTON_UP && event.button.button == SDL_BUTTON_LEFT) {
+            // 结束拖动
+            dragging_element->EndScrollbarDrag();
+            scrollbar_dragging_element_.reset();
+            scrollbar_dragging_window_id_ = 0;
+            window->SetNeedsRepaint();
+            return;
+        }
+    }
+
+    // 对于鼠标移动事件，只在位置真正改变时才更新 hover
+    // 这可以显著减少不必要的处理
+    static float last_mouse_x = -1, last_mouse_y = -1;
+    if (event.type == SDL_EVENT_MOUSE_MOTION) {
+        if (mouse_x == last_mouse_x && mouse_y == last_mouse_y) {
+            return;  // 位置没变，跳过处理
+        }
+        last_mouse_x = mouse_x;
+        last_mouse_y = mouse_y;
     }
 
     // 更新hover链（发送mouseover/mouseout事件并设置:hover伪类）
@@ -273,30 +348,81 @@ void EventLoop::HandleMouseEventForDOM(const SDL_Event& event) {
     static Uint64 last_click_time = 0;
     static const Uint64 DOUBLE_CLICK_TIME_MS = 500;  // 500ms内的两次click算作dblclick
 
-    // 使用渲染树进行 Hit Testing
+    // 使用缓存的渲染树进行 Hit Testing
+    window->EnsureRenderTree();
+    auto root_render = window->GetCachedRenderTree();
+
     HitTestResult hit_result;
+    if (root_render) {
+        // 使用渲染树进行 Hit Testing（使用逻辑坐标）
+        hit_result = hit_testing.HitTestRenderObject(root_render, logical_x, logical_y, 0.0f, 0.0f);
+    }
 
-    // 构建渲染树用于 Hit Testing
-    auto body = document->GetBody();
-    if (body) {
-        RenderTreeBuilder builder;
-        auto root_render = builder.BuildRenderTree(body, nullptr);
+    // ===== 检测滚动条点击 =====
+    if (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN && event.button.button == SDL_BUTTON_LEFT && root_render) {
+        // 遍历渲染树找可滚动元素并检测滚动条
+        std::function<std::shared_ptr<RenderObject>(std::shared_ptr<RenderObject>, float, float)> findScrollableAtPoint;
+        findScrollableAtPoint = [&](std::shared_ptr<RenderObject> obj, float abs_x, float abs_y) -> std::shared_ptr<RenderObject> {
+            const auto& layout = obj->GetLayoutInfo();
+            float local_x = abs_x - layout.x;
+            float local_y = abs_y - layout.y;
 
-        if (root_render) {
-            // 布局渲染树
-            int width, height;
-            SDL_GetWindowSizeInPixels(window->GetSDLWindow(), &width, &height);
-            root_render->Layout(static_cast<float>(width), static_cast<float>(height));
+            // 检查点是否在元素范围内
+            if (local_x >= 0 && local_x <= layout.width && local_y >= 0 && local_y <= layout.height) {
+                const auto& style = obj->GetComputedStyle();
+                if (style.overflow == "scroll" || style.overflow == "auto") {
+                    // 检测是否点击了滚动条
+                    auto scrollbar_area = obj->HitTestScrollbar(local_x, local_y);
+                    if (scrollbar_area != RenderObject::ScrollbarHitArea::None) {
+                        return obj;
+                    }
+                }
 
-            // 使用渲染树进行 Hit Testing
-            hit_result = hit_testing.HitTestRenderObject(root_render, mouse_x, mouse_y, 0.0f, 0.0f);
+                // 递归检查子元素
+                for (const auto& child : obj->GetChildren()) {
+                    auto result = findScrollableAtPoint(child, local_x, local_y);
+                    if (result) {
+                        return result;
+                    }
+                }
+            }
+            return nullptr;
+        };
+
+        auto scrollable = findScrollableAtPoint(root_render, logical_x, logical_y);
+        if (scrollable) {
+            // 计算相对于元素的坐标
+            // 需要累加所有祖先的偏移
+            float elem_abs_x = 0, elem_abs_y = 0;
+            std::vector<std::shared_ptr<RenderObject>> ancestors;
+            auto current = scrollable;
+            while (current) {
+                ancestors.push_back(current);
+                current = current->GetParent();
+            }
+            for (auto it = ancestors.rbegin(); it != ancestors.rend(); ++it) {
+                const auto& l = (*it)->GetLayoutInfo();
+                elem_abs_x += l.x;
+                elem_abs_y += l.y;
+            }
+
+            float local_x = logical_x - elem_abs_x;
+            float local_y = logical_y - elem_abs_y;
+
+            auto scrollbar_area = scrollable->HitTestScrollbar(local_x, local_y);
+            if (scrollbar_area != RenderObject::ScrollbarHitArea::None) {
+                // 开始拖动滚动条
+                scrollable->StartScrollbarDrag(scrollbar_area, logical_x, logical_y);
+                scrollbar_dragging_element_ = scrollable;
+                scrollbar_dragging_window_id_ = window_id;
+                window->SetNeedsRepaint();
+                return;  // 滚动条点击不触发其他事件
+            }
         }
     }
 
     // 如果没有命中任何元素
     if (!hit_result.IsValid()) {
-        std::cout << "[EventLoop] No element hit at (" << mouse_x << ", " << mouse_y << ")" << std::endl;
-
         // 即使没有命中元素，mouseup时也要移除:active伪类
         if (event.type == SDL_EVENT_MOUSE_BUTTON_UP && last_mousedown_element) {
             last_mousedown_element->SetPseudoClass("active", false);
@@ -310,8 +436,6 @@ void EventLoop::HandleMouseEventForDOM(const SDL_Event& event) {
 
         return;
     }
-
-    std::cout << "[EventLoop] Hit element: <" << hit_result.element->GetTagName() << ">" << std::endl;
 
     // 创建 MouseEvent（使用 core/dom/event.h 中的简化版本）
     std::string event_type;
@@ -362,7 +486,6 @@ void EventLoop::HandleMouseEventForDOM(const SDL_Event& event) {
 
         if (last_mousedown_element == hit_result.element) {
             // 在同一个元素上 mousedown 和 mouseup，触发 click
-            std::cout << "[EventLoop] Dispatching click event to <" << hit_result.element->GetTagName() << ">" << std::endl;
             auto click_event = std::make_shared<MouseEvent>(
                 "click",
                 static_cast<int>(mouse_x),
@@ -435,7 +558,6 @@ void EventLoop::ProcessFormElementDefaultAction(std::shared_ptr<Element> element
         if (type == InputType::Checkbox) {
             bool checked = input_element->GetChecked();
             input_element->SetChecked(!checked, true);  // trigger_events=true
-            std::cout << "[EventLoop] Checkbox toggled: " << (!checked ? "checked" : "unchecked") << std::endl;
 
             // 标记窗口需要重绘
             auto& window_manager = WindowManager::Instance();
@@ -460,7 +582,6 @@ void EventLoop::ProcessFormElementDefaultAction(std::shared_ptr<Element> element
                 }
 
                 input_element->SetChecked(true, true);  // trigger_events=true
-                std::cout << "[EventLoop] Radio selected" << std::endl;
 
                 // 标记窗口需要重绘
                 auto& window_manager = WindowManager::Instance();
@@ -523,36 +644,36 @@ void EventLoop::UpdateHoverChain(Uint32 window_id, float mouse_x, float mouse_y)
         return;
     }
 
-    // 执行Hit Testing获取当前鼠标下的元素（使用渲染树）
+    // 使用缓存的渲染树进行 Hit Testing（避免每次鼠标移动都重建）
+    window->EnsureRenderTree();
+    auto root_render = window->GetCachedRenderTree();
+    if (!root_render) {
+        return;
+    }
+
+    // 将物理像素坐标转换为逻辑像素坐标
+    float dpi_scale = window->GetDisplayScale();
+    float logical_x = mouse_x / dpi_scale;
+    float logical_y = mouse_y / dpi_scale;
+
     HitTesting hit_testing;
-    HitTestResult hit_result;
+    HitTestResult hit_result = hit_testing.HitTestRenderObject(root_render, logical_x, logical_y, 0.0f, 0.0f);
 
-    auto body = document->GetBody();
-    if (body) {
-        RenderTreeBuilder builder;
-        auto root_render = builder.BuildRenderTree(body, nullptr);
+    // 获取新的 hover 目标元素
+    std::shared_ptr<Element> new_hover = hit_result.IsValid() ? hit_result.element : nullptr;
+    std::shared_ptr<Element> old_hover = hover_element_.lock();
 
-        if (root_render) {
-            // 布局渲染树
-            int width, height;
-            SDL_GetWindowSizeInPixels(window->GetSDLWindow(), &width, &height);
-            root_render->Layout(static_cast<float>(width), static_cast<float>(height));
-
-            // 使用渲染树进行 Hit Testing
-            hit_result = hit_testing.HitTestRenderObject(root_render, mouse_x, mouse_y, 0.0f, 0.0f);
-        }
+    // 快速路径：如果 hover 元素没有变化，直接返回
+    if (new_hover == old_hover) {
+        return;  // 无需任何处理
     }
 
     // 构建新的hover链（从目标元素到根元素）
-    // 使用 weak_ptr 避免悬空指针问题
     std::vector<std::weak_ptr<Element>> new_hover_chain;
-    std::weak_ptr<Element> new_hover_element;
 
-    if (hit_result.IsValid()) {
-        new_hover_element = hit_result.element;
-
+    if (new_hover) {
         // 从目标元素向上遍历到根元素
-        auto current = hit_result.element;
+        auto current = new_hover;
         while (current) {
             new_hover_chain.push_back(current);
 
@@ -573,37 +694,31 @@ void EventLoop::UpdateHoverChain(Uint32 window_id, float mouse_x, float mouse_y)
     SendEvents(new_hover_chain, hover_chain_, "mouseover", mouse_x, mouse_y);
 
     // 发送mouseleave/mouseenter事件（不冒泡版本）
-    // 只发送到hover_element_本身，不发送到父元素
-    auto old_hover = hover_element_.lock();
-    auto new_hover = new_hover_element.lock();
+    // 发送mouseleave到旧的hover元素
+    if (old_hover) {
+        auto leave_event = std::make_shared<MouseEvent>(
+            "mouseleave",
+            static_cast<int>(mouse_x),
+            static_cast<int>(mouse_y),
+            0
+        );
+        old_hover->DispatchEvent(leave_event);
+    }
 
-    if (old_hover != new_hover) {
-        // 发送mouseleave到旧的hover元素
-        if (old_hover) {
-            auto leave_event = std::make_shared<MouseEvent>(
-                "mouseleave",
-                static_cast<int>(mouse_x),
-                static_cast<int>(mouse_y),
-                0
-            );
-            old_hover->DispatchEvent(leave_event);
-        }
-
-        // 发送mouseenter到新的hover元素
-        if (new_hover) {
-            auto enter_event = std::make_shared<MouseEvent>(
-                "mouseenter",
-                static_cast<int>(mouse_x),
-                static_cast<int>(mouse_y),
-                0
-            );
-            new_hover->DispatchEvent(enter_event);
-        }
+    // 发送mouseenter到新的hover元素
+    if (new_hover) {
+        auto enter_event = std::make_shared<MouseEvent>(
+            "mouseenter",
+            static_cast<int>(mouse_x),
+            static_cast<int>(mouse_y),
+            0
+        );
+        new_hover->DispatchEvent(enter_event);
     }
 
     // 更新hover链
     hover_chain_ = std::move(new_hover_chain);
-    hover_element_ = new_hover_element;
+    hover_element_ = new_hover;
 }
 
 void EventLoop::SendEvents(const std::vector<std::weak_ptr<Element>>& old_items,
@@ -753,6 +868,100 @@ void EventLoop::HandleKeyboardEventForDOM(const SDL_Event& event) {
         } else if (textarea_element) {
             textarea_element->HandleTextInput(event.text.text);
         }
+    }
+}
+
+void EventLoop::HandleMouseWheelEventForDOM(const SDL_Event& event) {
+    // 获取窗口管理器
+    auto& window_manager = WindowManager::Instance();
+
+    Uint32 window_id = event.wheel.windowID;
+    float mouse_x = event.wheel.mouse_x;
+    float mouse_y = event.wheel.mouse_y;
+    float wheel_x = event.wheel.x;
+    float wheel_y = event.wheel.y;
+
+    // 查找对应的窗口
+    auto window = window_manager.FindWindowByID(window_id);
+    if (!window) {
+        return;
+    }
+
+    // 确保渲染树已构建
+    window->EnsureRenderTree();
+
+    // 获取缓存的渲染树
+    auto root_render = window->GetCachedRenderTree();
+    if (!root_render) {
+        return;
+    }
+
+    // 将物理像素坐标转换为逻辑像素坐标（CSS 像素）
+    float dpi_scale = window->GetDisplayScale();
+    float logical_x = mouse_x / dpi_scale;
+    float logical_y = mouse_y / dpi_scale;
+
+    // 使用渲染树进行 Hit Testing（使用逻辑坐标）
+    HitTesting hit_testing;
+    HitTestResult hit_result = hit_testing.HitTestRenderObject(root_render, logical_x, logical_y, 0.0f, 0.0f);
+
+    if (!hit_result.IsValid()) {
+        return;
+    }
+
+    // 检查是否按住 Shift 键（用于水平滚动）
+    const bool* keyboard_state = SDL_GetKeyboardState(nullptr);
+    bool shift_pressed = keyboard_state[SDL_SCANCODE_LSHIFT] || keyboard_state[SDL_SCANCODE_RSHIFT];
+
+    // 从命中的元素向上遍历，找到第一个可滚动的元素
+    auto render_obj = hit_result.render_object;
+    while (render_obj) {
+        const auto& style = render_obj->GetComputedStyle();
+
+        // 检查是否可滚动
+        if (style.overflow == "scroll" || style.overflow == "auto") {
+            // 计算滚动量（负值向下滚动，正值向上滚动，所以要取反）
+            // 每行滚动 40 像素（类似浏览器的默认行为）
+            float scroll_delta_x = -wheel_x * 40.0f;
+            float scroll_delta_y = -wheel_y * 40.0f;
+
+            // 计算元素的绝对位置，用于检测鼠标是否在滚动条上
+            float elem_abs_x = 0, elem_abs_y = 0;
+            std::vector<std::shared_ptr<RenderObject>> ancestors;
+            auto current = render_obj;
+            while (current) {
+                ancestors.push_back(current);
+                current = current->GetParent();
+            }
+            for (auto it = ancestors.rbegin(); it != ancestors.rend(); ++it) {
+                const auto& l = (*it)->GetLayoutInfo();
+                elem_abs_x += l.x;
+                elem_abs_y += l.y;
+            }
+
+            float element_local_x = logical_x - elem_abs_x;
+            float element_local_y = logical_y - elem_abs_y;
+            auto scrollbar_area = render_obj->HitTestScrollbar(element_local_x, element_local_y);
+
+            // 如果鼠标在水平滚动条上，或者按住 Shift 键，将垂直滚动转换为水平滚动
+            bool use_horizontal_scroll = (scrollbar_area == RenderObject::ScrollbarHitArea::HorizontalTrack) ||
+                                         (shift_pressed && wheel_y != 0 && wheel_x == 0);
+
+            if (use_horizontal_scroll) {
+                scroll_delta_x = -wheel_y * 40.0f;
+                scroll_delta_y = 0;
+            }
+
+            // 应用滚动
+            render_obj->ScrollBy(scroll_delta_x, scroll_delta_y);
+
+            // 标记窗口需要重绘
+            window->SetNeedsRepaint();
+
+            break;
+        }
+
+        render_obj = render_obj->GetParent();
     }
 }
 

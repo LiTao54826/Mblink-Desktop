@@ -22,6 +22,7 @@
 // 前向声明
 namespace lightui {
     class LexborDocument;
+class StyleManager;
 }
 
 namespace lightui {
@@ -222,6 +223,12 @@ public:
      */
     bool IsInBatch() const { return batch_depth_ > 0; }
 
+    /**
+     * @brief 获取样式管理器
+     * @return 样式管理器指针
+     */
+    StyleManager* GetStyleManager() const;
+
     // ========== Node 接口实现 ==========
 
     /**
@@ -263,6 +270,9 @@ private:
 
     // 批量更新 (Week 2 - Task 2.3)
     int batch_depth_ = 0;  // 批量更新嵌套深度（支持嵌套BeginBatch/EndBatch）
+
+    // 样式管理器
+    std::unique_ptr<StyleManager> style_manager_;
 };
 
 } // namespace lightui

@@ -19,12 +19,13 @@ class Document;
  * @brief Hit Testing 结果
  */
 struct HitTestResult {
-    std::shared_ptr<Element> element;  // 被点击的元素
-    float local_x;                      // 相对于元素的 X 坐标
-    float local_y;                      // 相对于元素的 Y 坐标
-    
-    HitTestResult() : element(nullptr), local_x(0), local_y(0) {}
-    
+    std::shared_ptr<Element> element;       // 被点击的元素
+    std::shared_ptr<RenderObject> render_object;  // 对应的渲染对象
+    float local_x;                          // 相对于元素的 X 坐标
+    float local_y;                          // 相对于元素的 Y 坐标
+
+    HitTestResult() : element(nullptr), render_object(nullptr), local_x(0), local_y(0) {}
+
     bool IsValid() const { return element != nullptr; }
 };
 

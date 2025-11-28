@@ -25,6 +25,7 @@ class Node;
 class HTMLInputElement;
 class FocusManager;
 class DragManager;
+class RenderObject;
 
 /**
  * @brief 主事件循环类
@@ -181,6 +182,13 @@ private:
     void HandleKeyboardEventForDOM(const SDL_Event& event);
 
     /**
+     * @brief 处理鼠标滚轮事件并分发到 DOM
+     *
+     * @param event SDL 鼠标滚轮事件
+     */
+    void HandleMouseWheelEventForDOM(const SDL_Event& event);
+
+    /**
      * @brief 处理表单元素的默认行为（参考 RmlUi InputTypeCheckbox::ProcessDefaultAction）
      *
      * @param element 被点击的元素
@@ -256,6 +264,10 @@ private:
     // 当前悬停的元素（最深层的元素）
     // 使用 weak_ptr 避免悬空指针问题
     std::weak_ptr<Element> hover_element_;
+
+    // 滚动条拖动状态
+    std::weak_ptr<RenderObject> scrollbar_dragging_element_;  // 正在拖动滚动条的元素
+    Uint32 scrollbar_dragging_window_id_ = 0;                 // 拖动所在窗口的ID
 };
 
 } // namespace lightui
