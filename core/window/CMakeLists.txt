@@ -3,12 +3,14 @@
 set(WINDOW_SOURCES
     window.cpp
     window_manager.cpp
+    display_backend.cpp
 )
 
 set(WINDOW_HEADERS
     window.h
     window_event.h
     window_manager.h
+    display_backend.h
 )
 
 add_library(lightui_window STATIC ${WINDOW_SOURCES})
@@ -64,4 +66,12 @@ else()
         message(STATUS "Window module: Manually adding Skia include directory")
         target_include_directories(lightui_window PUBLIC ${CMAKE_SOURCE_DIR}/third_party/skia)
     endif()
+endif()
+
+# 链接 OpenGL（用于 DisplayBackend）
+find_package(OpenGL)
+if(OpenGL_FOUND)
+    target_link_libraries(lightui_window PUBLIC OpenGL::GL)
+elseif(WIN32)
+    target_link_libraries(lightui_window PUBLIC opengl32)
 endif()

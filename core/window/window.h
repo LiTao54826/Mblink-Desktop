@@ -30,6 +30,7 @@
 #include "include/core/SkSurface.h"
 #include "include/gpu/ganesh/GrDirectContext.h"
 #include "window_event.h"
+#include "display_backend.h"
 
 namespace lightui {
 
@@ -473,6 +474,9 @@ private:
 
     // Taffy CSS 布局引擎
     std::unique_ptr<LayoutEngine> layout_engine_;
+
+    // 显示后端（用于 CPU 渲染模式）
+    std::unique_ptr<DisplayBackend> display_backend_;
 };
 
 } // namespace lightui

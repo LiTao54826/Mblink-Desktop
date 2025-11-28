@@ -27,6 +27,10 @@
 #include <unordered_map>
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_opengl.h>
+
+#ifdef _WIN32
+#include <windows.h>
+#endif
 #include "include/core/SkColorSpace.h"
 #include "include/core/SkImageInfo.h"
 #include "include/core/SkFont.h"
@@ -157,9 +161,68 @@ private:
 // 静态成员：SDL初始化计数器
 static int sdl_init_count = 0;
 
+#ifdef _WIN32
+// Windows 子类化窗口过程，用于拦截可能导致闪烁的消息
+static std::unordered_map<HWND, WNDPROC> g_original_wndprocs;
+static std::unordered_map<HWND, Window*> g_hwnd_to_window;
+
+static LRESULT CALLBACK SubclassWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
+    auto proc_it = g_original_wndprocs.find(hwnd);
+
+    if (proc_it == g_original_wndprocs.end()) {
+        return DefWindowProc(hwnd, msg, wParam, lParam);
+    }
+
+    switch (msg) {
+        case WM_ERASEBKGND:
+            // 阻止 Windows 擦除背景，避免闪烁
+            return 1;
+
+        case WM_PAINT: {
+            // 验证窗口区域但不绘制，我们的渲染循环会处理
+            PAINTSTRUCT ps;
+            BeginPaint(hwnd, &ps);
+            EndPaint(hwnd, &ps);
+            return 0;
+        }
+
+        case WM_SETREDRAW:
+            // 忽略 SetRedraw 调用，防止闪烁
+            return 0;
+
+        case WM_SYNCPAINT:
+            // 忽略同步绘制请求
+            return 0;
+    }
+
+    return CallWindowProc(proc_it->second, hwnd, msg, wParam, lParam);
+}
+#endif
+
+// SDL 事件过滤器：过滤掉可能导致闪烁的事件
+// 返回 true 表示保留事件，返回 false 表示丢弃事件
+static bool SDLCALL SDLEventFilter(void* userdata, SDL_Event* event) {
+    (void)userdata;
+    // 过滤掉 EXPOSED 事件，避免在 Windows 上触发闪烁
+    if (event->type == SDL_EVENT_WINDOW_EXPOSED) {
+        return false;  // 丢弃此事件
+    }
+    return true;  // 保留其他事件
+}
+
 Window::Window(const WindowConfig& config) : config_(config) {
     InitSDL();
     CreateSDLWindow();
+
+#ifdef _WIN32
+    // Windows: 子类化窗口以拦截 WM_PAINT 和 WM_ERASEBKGND，防止闪烁
+    HWND hwnd = (HWND)SDL_GetPointerProperty(SDL_GetWindowProperties(sdl_window_), SDL_PROP_WINDOW_WIN32_HWND_POINTER, NULL);
+    if (hwnd) {
+        WNDPROC original = (WNDPROC)SetWindowLongPtr(hwnd, GWLP_WNDPROC, (LONG_PTR)SubclassWndProc);
+        g_original_wndprocs[hwnd] = original;
+        g_hwnd_to_window[hwnd] = this;
+    }
+#endif
 
     // 根据配置选择渲染后端
     if (config_.backend == RenderBackend::AUTO) {
@@ -204,20 +267,33 @@ Window::~Window() {
         SDL_GL_MakeCurrent(sdl_window_, gl_context_);
     }
 
+    // 释放 DisplayBackend（在销毁窗口之前）
+    if (display_backend_) {
+        display_backend_->Shutdown();
+        display_backend_.reset();
+    }
+
     // 释放Skia资源
     surface_.reset();
     gr_context_.reset();
 
-    // 销毁 SDL Texture 和 Renderer（CPU 模式）
-    if (sdl_texture_) {
-        SDL_DestroyTexture(sdl_texture_);
-        sdl_texture_ = nullptr;
-    }
+    // 注意：sdl_surface_ 不需要手动销毁，它由 SDL_DestroyWindow 自动处理
+    sdl_surface_ = nullptr;
 
-    if (sdl_renderer_) {
-        SDL_DestroyRenderer(sdl_renderer_);
-        sdl_renderer_ = nullptr;
+#ifdef _WIN32
+    // 移除窗口子类化
+    if (sdl_window_) {
+        HWND hwnd = (HWND)SDL_GetPointerProperty(SDL_GetWindowProperties(sdl_window_), SDL_PROP_WINDOW_WIN32_HWND_POINTER, NULL);
+        if (hwnd) {
+            auto proc_it = g_original_wndprocs.find(hwnd);
+            if (proc_it != g_original_wndprocs.end()) {
+                SetWindowLongPtr(hwnd, GWLP_WNDPROC, (LONG_PTR)proc_it->second);
+                g_original_wndprocs.erase(proc_it);
+            }
+            g_hwnd_to_window.erase(hwnd);
+        }
     }
+#endif
 
     // 销毁OpenGL上下文
     if (gl_context_) {
@@ -357,32 +433,22 @@ void Window::SwapBuffers() {
         SDL_GL_SwapWindow(sdl_window_);
     }
     else if (actual_backend_ == RenderBackend::CPU && surface_) {
-        // CPU 模式：将 Skia 渲染结果复制到 SDL Texture 并显示
-
-        if (!sdl_renderer_ || !sdl_texture_) {
-            return;
-        }
-
-        // 获取 Skia surface 的像素数据
+        // CPU 模式：使用 DisplayBackend 显示像素
         SkPixmap pixmap;
         if (!surface_->peekPixels(&pixmap)) {
             std::cerr << "Failed to peek pixels from Skia surface" << std::endl;
             return;
         }
 
-        // 更新纹理
-        const void* pixels = pixmap.addr();
-        int pitch = pixmap.rowBytes();
-
-        if (!SDL_UpdateTexture(sdl_texture_, nullptr, pixels, pitch)) {
-            std::cerr << "Failed to update SDL texture: " << SDL_GetError() << std::endl;
-            return;
+        if (display_backend_) {
+            // 使用 DisplayBackend 显示（无闪烁）
+            display_backend_->Present(
+                pixmap.addr(),
+                static_cast<int>(pixmap.width()),
+                static_cast<int>(pixmap.height()),
+                static_cast<int>(pixmap.rowBytes())
+            );
         }
-
-        // 清空渲染器并绘制纹理
-        SDL_RenderClear(sdl_renderer_);
-        SDL_RenderTexture(sdl_renderer_, sdl_texture_, nullptr, nullptr);
-        SDL_RenderPresent(sdl_renderer_);
     }
 }
 
@@ -403,31 +469,14 @@ void Window::OnResize() {
     if (actual_backend_ == RenderBackend::OPENGL) {
         CreateSkiaSurface();
     } else if (actual_backend_ == RenderBackend::CPU) {
-        // CPU 模式：重新创建 Skia Raster 表面和 SDL Texture
+        // CPU 模式：重新创建 Skia Raster 表面
         SkImageInfo info = SkImageInfo::MakeN32Premul(width, height);
         surface_ = SkSurfaces::Raster(info);
 
-        // 重新创建 SDL Texture
-        if (sdl_texture_) {
-            SDL_DestroyTexture(sdl_texture_);
+        // 通知 DisplayBackend 窗口大小变化
+        if (display_backend_) {
+            display_backend_->OnResize(width, height);
         }
-
-        SDL_PixelFormat sdl_format;
-        if (info.colorType() == kRGBA_8888_SkColorType) {
-            sdl_format = SDL_PIXELFORMAT_RGBA32;
-        } else if (info.colorType() == kBGRA_8888_SkColorType) {
-            sdl_format = SDL_PIXELFORMAT_BGRA32;
-        } else {
-            sdl_format = SDL_PIXELFORMAT_ARGB8888;
-        }
-
-        sdl_texture_ = SDL_CreateTexture(
-            sdl_renderer_,
-            sdl_format,
-            SDL_TEXTUREACCESS_STREAMING,
-            width,
-            height
-        );
     }
 
     // 触发resize回调（使用逻辑大小）
@@ -439,9 +488,18 @@ void Window::OnResize() {
 void Window::InitSDL() {
     // 只在第一次调用时初始化SDL
     if (sdl_init_count == 0) {
+        // 设置 SDL 提示，禁用 Windows 上可能导致问题的行为
+        // 禁用 Windows 消息循环中的某些处理
+        SDL_SetHint(SDL_HINT_WINDOWS_ENABLE_MESSAGELOOP, "1");
+        // 禁用屏幕保护程序（可选）
+        SDL_SetHint(SDL_HINT_VIDEO_ALLOW_SCREENSAVER, "0");
+
         if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS)) {
             throw std::runtime_error(std::string("Failed to initialize SDL: ") + SDL_GetError());
         }
+
+        // 设置事件过滤器，过滤掉可能导致闪烁的 EXPOSED 事件
+        SDL_SetEventFilter(SDLEventFilter, nullptr);
     }
     sdl_init_count++;
 }
@@ -450,10 +508,9 @@ void Window::CreateSDLWindow() {
     // 构建窗口标志
     SDL_WindowFlags flags = 0;
 
-    // 只有 GPU 模式才需要 OpenGL 标志
-    if (config_.backend == RenderBackend::OPENGL || config_.backend == RenderBackend::AUTO) {
-        flags |= SDL_WINDOW_OPENGL;
-    }
+    // 所有模式都使用 OpenGL 窗口
+    // CPU 模式也通过 OpenGL 纹理显示，利用 VSync 避免闪烁
+    flags |= SDL_WINDOW_OPENGL;
 
     if (config_.resizable) flags |= SDL_WINDOW_RESIZABLE;
     if (config_.fullscreen) flags |= SDL_WINDOW_FULLSCREEN;
@@ -566,23 +623,14 @@ void Window::CreateSkiaSurface() {
 }
 
 void Window::InitCPURendering() {
-    // CPU 软件渲染模式 - 不需要 OpenGL
-    // 创建 SDL Renderer 和 Texture
+    // CPU 软件渲染模式 - 使用 DisplayBackend 进行无闪烁显示
 
     // 使用物理像素大小创建渲染表面（支持高 DPI）
     int width, height;
     SDL_GetWindowSizeInPixels(sdl_window_, &width, &height);
 
-    // 创建 SDL Renderer
-    sdl_renderer_ = SDL_CreateRenderer(sdl_window_, nullptr);
-    if (!sdl_renderer_) {
-        throw std::runtime_error(std::string("Failed to create SDL renderer: ") + SDL_GetError());
-    }
-
-    // 禁用 VSync，由 FrameController 控制帧率
-    SDL_SetRenderVSync(sdl_renderer_, 0);
-
-    // 创建 Raster 表面（CPU 渲染）- 使用物理像素大小
+    // 创建 Skia Raster 表面（CPU 渲染）- 使用物理像素大小
+    // 注意：使用 BGRA 格式以匹配显示后端
     SkImageInfo info = SkImageInfo::MakeN32Premul(width, height);
     surface_ = SkSurfaces::Raster(info);
 
@@ -590,27 +638,15 @@ void Window::InitCPURendering() {
         throw std::runtime_error("Failed to create CPU rendering surface");
     }
 
-    // 根据 Skia 的颜色类型选择 SDL 像素格式
-    SDL_PixelFormat sdl_format;
-    if (info.colorType() == kRGBA_8888_SkColorType) {
-        sdl_format = SDL_PIXELFORMAT_RGBA32;
-    } else if (info.colorType() == kBGRA_8888_SkColorType) {
-        sdl_format = SDL_PIXELFORMAT_BGRA32;
-    } else {
-        sdl_format = SDL_PIXELFORMAT_ARGB8888;
-    }
-
-    // 创建 SDL Texture
-    sdl_texture_ = SDL_CreateTexture(
-        sdl_renderer_,
-        sdl_format,
-        SDL_TEXTUREACCESS_STREAMING,
-        width,
-        height
-    );
-
-    if (!sdl_texture_) {
-        throw std::runtime_error(std::string("Failed to create SDL texture: ") + SDL_GetError());
+    // 创建最佳显示后端（按优先级：OpenGL → LayeredWindow → GDI → SDL_Surface）
+    display_backend_ = DisplayBackend::CreateBest(sdl_window_, width, height);
+    if (!display_backend_) {
+        std::cerr << "Warning: Failed to create display backend, falling back to SDL Surface" << std::endl;
+        // 如果 CreateBest 失败，尝试 SDL Surface 作为最后回退
+        display_backend_ = DisplayBackend::Create(DisplayBackendType::SDL_SURFACE);
+        if (display_backend_) {
+            display_backend_->Initialize(sdl_window_, width, height);
+        }
     }
 }
 
@@ -718,6 +754,24 @@ bool Window::HandleSDLEvent(const SDL_Event& event) {
                 // 完全忽略 EXPOSED 事件
                 // 在 Windows 上，SDL_RenderPresent 会触发 EXPOSED 事件，形成无限循环
                 // 我们的渲染由 needs_repaint_ 标志控制，不需要响应 EXPOSED 事件
+                static bool debug_events = std::getenv("LIGHTUI_DEBUG_EVENTS") != nullptr;
+                if (debug_events) {
+                    std::cout << "[Window] Ignoring EXPOSED event" << std::endl;
+                }
+                return true;
+            }
+
+            case SDL_EVENT_WINDOW_DISPLAY_SCALE_CHANGED: {
+                // 忽略显示缩放变化事件，避免可能的循环
+                static bool debug_events = std::getenv("LIGHTUI_DEBUG_EVENTS") != nullptr;
+                if (debug_events) {
+                    std::cout << "[Window] Ignoring DISPLAY_SCALE_CHANGED event" << std::endl;
+                }
+                return true;
+            }
+
+            case SDL_EVENT_WINDOW_OCCLUDED: {
+                // 窗口被遮挡，不需要处理
                 return true;
             }
 

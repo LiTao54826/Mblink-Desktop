@@ -109,6 +109,22 @@ void EventLoop::RunOnce() {
         }
     }
 
+    // 调试：追踪渲染频率
+    static bool debug_render = std::getenv("LIGHTUI_DEBUG_RENDER") != nullptr;
+    static int frame_count = 0;
+    static Uint64 last_debug_time = SDL_GetTicks();
+    frame_count++;
+
+    if (debug_render) {
+        Uint64 now = SDL_GetTicks();
+        if (now - last_debug_time >= 1000) {
+            std::cout << "[EventLoop] FPS: " << frame_count
+                      << ", needs_repaint: " << any_needs_repaint << std::endl;
+            frame_count = 0;
+            last_debug_time = now;
+        }
+    }
+
     if (any_needs_repaint) {
         Render();
     }
@@ -166,6 +182,15 @@ bool EventLoop::ProcessEvents() {
 
     while (SDL_PollEvent(&event)) {
         has_events = true;
+
+        // 调试：输出事件类型（可以通过环境变量控制）
+        static bool debug_events = std::getenv("LIGHTUI_DEBUG_EVENTS") != nullptr;
+        if (debug_events) {
+            // 过滤掉高频的鼠标移动事件
+            if (event.type != SDL_EVENT_MOUSE_MOTION) {
+                std::cout << "[EventLoop] SDL Event: type=" << event.type << std::endl;
+            }
+        }
 
         // 处理退出事件
         if (event.type == SDL_EVENT_QUIT) {
