@@ -205,7 +205,13 @@ public:
      * @return Skia上下文
      */
     GrDirectContext* GetGrContext() const { return gr_context_.get(); }
-    
+
+    /**
+     * @brief 获取 PaintMode 显示后端（如果正在使用）
+     * @return PaintModeDisplayBackend 指针，如果不是 PaintMode 模式则返回 nullptr
+     */
+    PaintModeDisplayBackend* GetPaintModeBackend() const;
+
     /**
      * @brief 交换缓冲区（显示渲染结果）
      */

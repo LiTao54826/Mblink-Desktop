@@ -59,6 +59,7 @@ int main(int argc, char* argv[]) {
         config.resizable = true;
         config.vsync = true;
         config.backend = RenderBackend::CPU;  // 明确使用 CPU 渲染模式
+        config.borderless = true;  // 测试无边框模式（虚拟机兼容）
 
         auto window = std::make_shared<Window>(config);
         std::cout << "  ✓ Window created: 800x600" << std::endl;

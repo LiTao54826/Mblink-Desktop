@@ -52,6 +52,8 @@ std::unique_ptr<DisplayBackend> DisplayBackend::Create(DisplayBackendType type) 
 #ifdef _WIN32
         case DisplayBackendType::D3D11:
             return std::make_unique<D3D11DisplayBackend>();
+        case DisplayBackendType::PAINT_MODE:
+            return std::make_unique<PaintModeDisplayBackend>();
         case DisplayBackendType::LAYERED_WINDOW:
             return std::make_unique<LayeredWindowDisplayBackend>();
         case DisplayBackendType::GDI:
@@ -67,11 +69,73 @@ std::unique_ptr<DisplayBackend> DisplayBackend::Create(DisplayBackendType type) 
     }
 }
 
+// 检测是否在虚拟机中运行
+static bool IsRunningInVirtualMachine() {
+#ifdef _WIN32
+    // 方法1: 检查系统信息中的虚拟机标识
+    HKEY hKey;
+    if (RegOpenKeyExA(HKEY_LOCAL_MACHINE,
+                      "SYSTEM\\CurrentControlSet\\Services\\Disk\\Enum",
+                      0, KEY_READ, &hKey) == ERROR_SUCCESS) {
+        char value[256] = {0};
+        DWORD size = sizeof(value);
+        if (RegQueryValueExA(hKey, "0", NULL, NULL, (LPBYTE)value, &size) == ERROR_SUCCESS) {
+            // 检查常见虚拟机标识
+            std::string disk_info(value);
+            if (disk_info.find("VBOX") != std::string::npos ||
+                disk_info.find("VMWARE") != std::string::npos ||
+                disk_info.find("QEMU") != std::string::npos ||
+                disk_info.find("Virtual") != std::string::npos) {
+                RegCloseKey(hKey);
+                return true;
+            }
+        }
+        RegCloseKey(hKey);
+    }
+
+    // 方法2: 检查 BIOS 信息
+    if (RegOpenKeyExA(HKEY_LOCAL_MACHINE,
+                      "HARDWARE\\DESCRIPTION\\System\\BIOS",
+                      0, KEY_READ, &hKey) == ERROR_SUCCESS) {
+        char value[256] = {0};
+        DWORD size = sizeof(value);
+        if (RegQueryValueExA(hKey, "SystemProductName", NULL, NULL, (LPBYTE)value, &size) == ERROR_SUCCESS) {
+            std::string product(value);
+            if (product.find("VirtualBox") != std::string::npos ||
+                product.find("VMware") != std::string::npos ||
+                product.find("Virtual Machine") != std::string::npos ||
+                product.find("Hyper-V") != std::string::npos) {
+                RegCloseKey(hKey);
+                return true;
+            }
+        }
+        RegCloseKey(hKey);
+    }
+#endif
+    return false;
+}
+
 std::unique_ptr<DisplayBackend> DisplayBackend::CreateBest(SDL_Window* window, int width, int height) {
     // 按优先级尝试各后端
 
 #ifdef _WIN32
-    // 1. Windows 上优先使用 Direct3D 11 - 最稳定的无闪烁方案
+    // 检测虚拟机环境
+    bool is_vm = IsRunningInVirtualMachine();
+    if (is_vm) {
+        std::cout << "[DisplayBackend] Virtual machine detected" << std::endl;
+    }
+
+    // 虚拟机环境：优先使用 PaintMode 后端（基于 WM_PAINT，与系统窗口管理器协作更好）
+    if (is_vm) {
+        auto backend = std::make_unique<PaintModeDisplayBackend>();
+        if (backend->Initialize(window, width, height)) {
+            std::cout << "[DisplayBackend] Using PaintMode backend (VM-friendly)" << std::endl;
+            return backend;
+        }
+        std::cout << "[DisplayBackend] PaintMode backend failed, trying D3D11..." << std::endl;
+    }
+
+    // 1. 物理机上优先使用 Direct3D 11 - 最稳定的无闪烁方案
     {
         auto backend = std::make_unique<D3D11DisplayBackend>();
         if (backend->Initialize(window, width, height)) {
@@ -81,7 +145,16 @@ std::unique_ptr<DisplayBackend> DisplayBackend::CreateBest(SDL_Window* window, i
         std::cout << "[DisplayBackend] D3D11 backend failed, trying fallback..." << std::endl;
     }
 
-    // 2. GDI 作为回退
+    // 2. PaintMode 作为第二选择（如果 D3D11 失败）
+    if (!is_vm) {
+        auto backend = std::make_unique<PaintModeDisplayBackend>();
+        if (backend->Initialize(window, width, height)) {
+            std::cout << "[DisplayBackend] Using PaintMode backend (fallback)" << std::endl;
+            return backend;
+        }
+    }
+
+    // 3. GDI 作为回退
     {
         auto backend = std::make_unique<GDIDisplayBackend>();
         if (backend->Initialize(window, width, height)) {
@@ -91,7 +164,7 @@ std::unique_ptr<DisplayBackend> DisplayBackend::CreateBest(SDL_Window* window, i
     }
 #endif
 
-    // 3. OpenGL 作为跨平台方案
+    // 4. OpenGL 作为跨平台方案
     if (IsOpenGLAvailable()) {
         auto backend = std::make_unique<OpenGLDisplayBackend>();
         if (backend->Initialize(window, width, height)) {
@@ -100,7 +173,7 @@ std::unique_ptr<DisplayBackend> DisplayBackend::CreateBest(SDL_Window* window, i
         }
     }
 
-    // 4. SDL Surface 最终回退
+    // 5. SDL Surface 最终回退
     {
         auto backend = std::make_unique<SDLSurfaceDisplayBackend>();
         if (backend->Initialize(window, width, height)) {
@@ -615,6 +688,187 @@ void D3D11DisplayBackend::Shutdown() {
 bool D3D11DisplayBackend::SetVSync(bool enabled) {
     vsync_enabled_ = enabled;
     return true;
+}
+
+// ============================================================================
+// PaintModeDisplayBackend 实现
+// ============================================================================
+
+PaintModeDisplayBackend::PaintModeDisplayBackend() = default;
+
+PaintModeDisplayBackend::~PaintModeDisplayBackend() {
+    Shutdown();
+}
+
+bool PaintModeDisplayBackend::Initialize(SDL_Window* window, int width, int height) {
+    window_ = window;
+    width_ = width;
+    height_ = height;
+
+    // 获取 Windows 窗口句柄
+    hwnd_ = (void*)SDL_GetPointerProperty(
+        SDL_GetWindowProperties(window),
+        SDL_PROP_WINDOW_WIN32_HWND_POINTER, NULL);
+
+    if (!hwnd_) {
+        std::cerr << "[PaintModeDisplayBackend] Failed to get HWND from SDL window" << std::endl;
+        return false;
+    }
+
+    // 创建离屏缓冲区
+    if (!CreateBuffer(width, height)) {
+        return false;
+    }
+
+    std::cout << "[PaintModeDisplayBackend] Initialized successfully ("
+              << width << "x" << height << ")" << std::endl;
+    return true;
+}
+
+bool PaintModeDisplayBackend::CreateBuffer(int width, int height) {
+    // 如果已有缓冲区且尺寸匹配，直接返回
+    if (hbitmap_ && bitmap_width_ == width && bitmap_height_ == height) {
+        return true;
+    }
+
+    // 销毁旧缓冲区
+    DestroyBuffer();
+
+    HWND hwnd = (HWND)hwnd_;
+    HDC hdc_window = GetDC(hwnd);
+    if (!hdc_window) {
+        std::cerr << "[PaintModeDisplayBackend] Failed to get window DC" << std::endl;
+        return false;
+    }
+
+    // 创建内存 DC
+    HDC hdc_mem = CreateCompatibleDC(hdc_window);
+    if (!hdc_mem) {
+        ReleaseDC(hwnd, hdc_window);
+        std::cerr << "[PaintModeDisplayBackend] Failed to create memory DC" << std::endl;
+        return false;
+    }
+
+    // 创建 DIB 位图
+    BITMAPINFO bmi = {};
+    bmi.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+    bmi.bmiHeader.biWidth = width;
+    bmi.bmiHeader.biHeight = -height;  // 负数表示自上而下
+    bmi.bmiHeader.biPlanes = 1;
+    bmi.bmiHeader.biBitCount = 32;
+    bmi.bmiHeader.biCompression = BI_RGB;
+
+    void* bits = nullptr;
+    HBITMAP hbitmap = CreateDIBSection(hdc_mem, &bmi, DIB_RGB_COLORS, &bits, NULL, 0);
+
+    ReleaseDC(hwnd, hdc_window);
+
+    if (!hbitmap || !bits) {
+        DeleteDC(hdc_mem);
+        std::cerr << "[PaintModeDisplayBackend] Failed to create DIB section" << std::endl;
+        return false;
+    }
+
+    // 选择位图到 DC
+    HBITMAP old_bitmap = (HBITMAP)SelectObject(hdc_mem, hbitmap);
+
+    hdc_mem_ = hdc_mem;
+    hbitmap_ = hbitmap;
+    hbitmap_old_ = old_bitmap;
+    bitmap_bits_ = bits;
+    bitmap_width_ = width;
+    bitmap_height_ = height;
+
+    return true;
+}
+
+void PaintModeDisplayBackend::DestroyBuffer() {
+    if (hdc_mem_) {
+        if (hbitmap_old_) {
+            SelectObject((HDC)hdc_mem_, (HBITMAP)hbitmap_old_);
+            hbitmap_old_ = nullptr;
+        }
+        DeleteDC((HDC)hdc_mem_);
+        hdc_mem_ = nullptr;
+    }
+    if (hbitmap_) {
+        DeleteObject((HBITMAP)hbitmap_);
+        hbitmap_ = nullptr;
+    }
+    bitmap_bits_ = nullptr;
+    bitmap_width_ = 0;
+    bitmap_height_ = 0;
+}
+
+void PaintModeDisplayBackend::Present(const void* pixels, int width, int height, int stride) {
+    if (!hwnd_ || !bitmap_bits_) return;
+
+    // 如果尺寸变化，重建缓冲区
+    if (width != bitmap_width_ || height != bitmap_height_) {
+        if (!CreateBuffer(width, height)) {
+            return;
+        }
+    }
+
+    // 复制像素到离屏缓冲区
+    const uint8_t* src = (const uint8_t*)pixels;
+    uint8_t* dst = (uint8_t*)bitmap_bits_;
+    int dst_stride = bitmap_width_ * 4;
+
+    for (int y = 0; y < height; y++) {
+        memcpy(dst, src, width * 4);
+        src += stride;
+        dst += dst_stride;
+    }
+
+    // 方案：直接绘制到窗口，完全绕过 WM_PAINT
+    // 这样避免了与系统窗口管理器的任何冲突
+    HWND hwnd = (HWND)hwnd_;
+    HDC hdc = GetDC(hwnd);
+    if (hdc) {
+        // 使用 GDI 的 BitBlt 直接复制
+        BitBlt(hdc, 0, 0, bitmap_width_, bitmap_height_,
+               (HDC)hdc_mem_, 0, 0, SRCCOPY);
+        ReleaseDC(hwnd, hdc);
+    }
+
+    has_pending_paint_ = false;
+}
+
+void PaintModeDisplayBackend::OnPaint(void* hdc, const void* paint_rect) {
+    if (!hdc || !hdc_mem_) return;
+
+    HDC hdc_target = (HDC)hdc;
+    HDC hdc_source = (HDC)hdc_mem_;
+
+    // 如果提供了绘制区域，只绘制该区域（优化）
+    if (paint_rect) {
+        const RECT* rc = (const RECT*)paint_rect;
+        BitBlt(hdc_target, rc->left, rc->top,
+               rc->right - rc->left, rc->bottom - rc->top,
+               hdc_source, rc->left, rc->top, SRCCOPY);
+    } else {
+        // 绘制整个缓冲区
+        BitBlt(hdc_target, 0, 0, bitmap_width_, bitmap_height_,
+               hdc_source, 0, 0, SRCCOPY);
+    }
+
+    has_pending_paint_ = false;
+}
+
+void PaintModeDisplayBackend::OnResize(int width, int height) {
+    if (width == width_ && height == height_) return;
+
+    width_ = width;
+    height_ = height;
+
+    // 重建缓冲区
+    CreateBuffer(width, height);
+}
+
+void PaintModeDisplayBackend::Shutdown() {
+    DestroyBuffer();
+    hwnd_ = nullptr;
 }
 
 #endif // _WIN32

@@ -180,6 +180,9 @@ add_subdirectory(preact_todo_app)
 # ========== Flexbox Test ==========
 add_subdirectory(flexbox_test)
 
+# ========== SDL Test ==========
+add_subdirectory(sdl_test)
+
 message(STATUS "Examples configured successfully")
 message(STATUS "  - integration_example")
 message(STATUS "  - javascript_integration_example")

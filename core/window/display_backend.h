@@ -25,6 +25,7 @@ namespace lightui {
 enum class DisplayBackendType {
     AUTO,           ///< 自动选择最佳后端
     D3D11,          ///< Direct3D 11 (仅 Windows，推荐)
+    PAINT_MODE,     ///< WM_PAINT 模式 (仅 Windows，虚拟机友好)
     OPENGL,         ///< OpenGL 纹理显示
     LAYERED_WINDOW, ///< Windows Layered Window (仅 Windows)
     GDI,            ///< GDI 双缓冲 (仅 Windows)
@@ -225,7 +226,7 @@ private:
 
 /**
  * @brief GDI 显示后端
- * 
+ *
  * 使用 GDI 双缓冲显示，作为最终回退方案
  */
 class GDIDisplayBackend : public DisplayBackend {
@@ -250,6 +251,60 @@ private:
     int bitmap_width_ = 0;
     int bitmap_height_ = 0;
 };
+
+/**
+ * @brief WM_PAINT 模式显示后端
+ *
+ * 基于 Windows 标准绘制模型，适合虚拟机环境：
+ * 1. 渲染时只更新离屏缓冲区并调用 InvalidateRect()
+ * 2. 在 WM_PAINT 消息中使用 BeginPaint/EndPaint 绘制
+ * 3. 让系统 DWM 控制显示时机，避免与窗口管理器冲突
+ */
+class PaintModeDisplayBackend : public DisplayBackend {
+public:
+    PaintModeDisplayBackend();
+    ~PaintModeDisplayBackend() override;
+
+    bool Initialize(SDL_Window* window, int width, int height) override;
+    void Present(const void* pixels, int width, int height, int stride) override;
+    void OnResize(int width, int height) override;
+    void Shutdown() override;
+
+    DisplayBackendType GetType() const override { return DisplayBackendType::PAINT_MODE; }
+    const char* GetName() const override { return "PaintMode"; }
+
+    /**
+     * @brief 在 WM_PAINT 中调用此方法进行绘制
+     * @param hdc 绘制设备上下文 (从 BeginPaint 获取)
+     * @param paint_rect 需要绘制的区域 (从 PAINTSTRUCT 获取)
+     */
+    void OnPaint(void* hdc, const void* paint_rect);
+
+    /**
+     * @brief 获取当前缓冲区的内存 DC，用于 WM_PAINT 中的 BitBlt
+     * @return 内存 DC 句柄
+     */
+    void* GetMemoryDC() const { return hdc_mem_; }
+
+    /**
+     * @brief 检查是否有待绘制的内容
+     */
+    bool HasPendingPaint() const { return has_pending_paint_; }
+
+private:
+    bool CreateBuffer(int width, int height);
+    void DestroyBuffer();
+
+    void* hwnd_ = nullptr;           // HWND
+    void* hdc_mem_ = nullptr;        // HDC (内存设备上下文)
+    void* hbitmap_ = nullptr;        // HBITMAP (DIB 位图)
+    void* hbitmap_old_ = nullptr;    // 旧位图句柄
+    void* bitmap_bits_ = nullptr;    // 直接访问位图像素的指针
+    int bitmap_width_ = 0;
+    int bitmap_height_ = 0;
+    bool has_pending_paint_ = false; // 是否有待绘制的内容
+};
+
 #endif // _WIN32
 
 /**
