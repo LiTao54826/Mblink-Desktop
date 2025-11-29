@@ -355,7 +355,7 @@ class Component {
     }
 }
 
-// Export all APIs as global object (QuickJS compatible)
+// Export all APIs as global object (for script loading)
 var Preact = {
     h: h,
     createElement: createElement,
@@ -367,3 +367,4 @@ var Preact = {
     isValidElement: isValidElement
 };
 
+// Note: For ES6 module usage, use js/preact/preact.mjs

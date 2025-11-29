@@ -1327,7 +1327,7 @@ endif()
 if(WIN32 AND MINGW)
     target_link_options(test_preact_integration PRIVATE -static-libgcc -static-libstdc++)
 endif()
-add_test(NAME PreactIntegrationTest COMMAND test_preact_integration)
+add_test(NAME PreactIntegrationTest COMMAND test_preact_integration WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
 
 # Preact Basic Test
 add_executable(test_preact_basic integration/test_preact_basic.cpp)
@@ -1347,7 +1347,7 @@ endif()
 if(WIN32 AND MINGW)
     target_link_options(test_preact_basic PRIVATE -static-libgcc -static-libstdc++)
 endif()
-add_test(NAME PreactBasicTest COMMAND test_preact_basic)
+add_test(NAME PreactBasicTest COMMAND test_preact_basic WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
 
 # Preact Render Test
 add_executable(test_preact_render integration/test_preact_render.cpp)
@@ -1369,7 +1369,7 @@ endif()
 if(WIN32 AND MINGW)
     target_link_options(test_preact_render PRIVATE -static-libgcc -static-libstdc++)
 endif()
-add_test(NAME PreactRenderTest COMMAND test_preact_render)
+add_test(NAME PreactRenderTest COMMAND test_preact_render WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
 
 # Preact Components Test
 add_executable(test_preact_components integration/test_preact_components.cpp)
@@ -1391,7 +1391,7 @@ endif()
 if(WIN32 AND MINGW)
     target_link_options(test_preact_components PRIVATE -static-libgcc -static-libstdc++)
 endif()
-add_test(NAME PreactComponentsTest COMMAND test_preact_components)
+add_test(NAME PreactComponentsTest COMMAND test_preact_components WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
 
 # ============================================================================
 # Memory Safety Tests

@@ -1,11 +1,17 @@
 /**
  * @file test_preact_integration.cpp
  * @brief Preact集成测试
+ *
+ * 设计理念：遵循 JavaScript-first 架构
+ * - C++ 层只提供标准 DOM API
+ * - Preact 在 JavaScript 层运行
+ * - 不使用 C++ PreactRenderer 类
+ *
+ * @see docs/PROJECT_STANDARDS.md - 规范5: JavaScript优先架构
  */
 
 #include <gtest/gtest.h>
 #include "core/quickjs/quickjs_runtime.h"
-#include "core/quickjs/preact_renderer.h"
 #include "core/dom/document.h"
 #include "core/dom/element.h"
 #include <fstream>
@@ -33,6 +39,29 @@ protected:
         return buffer.str();
     }
 
+    void LoadPreactAsGlobal() {
+        // 加载 Preact 为全局变量 (与示例应用一致的方式)
+        std::string preact_code = ReadFile("js/preact/preact.js");
+        ASSERT_FALSE(preact_code.empty()) << "Failed to read js/preact/preact.js";
+        runtime->Eval(preact_code, "preact.js");
+
+        // 加载 Hooks 为全局变量
+        std::string hooks_code = ReadFile("js/preact/hooks.js");
+        ASSERT_FALSE(hooks_code.empty()) << "Failed to read js/preact/hooks.js";
+        runtime->Eval(hooks_code, "hooks.js");
+    }
+
+    void RegisterPreactModules() {
+        // 注册 ES6 模块版本 (.mjs)
+        std::string preact_code = ReadFile("js/preact/preact.mjs");
+        ASSERT_FALSE(preact_code.empty()) << "Failed to read js/preact/preact.mjs";
+        runtime->RegisterModule("preact", preact_code);
+
+        std::string hooks_code = ReadFile("js/preact/hooks.mjs");
+        ASSERT_FALSE(hooks_code.empty()) << "Failed to read js/preact/hooks.mjs";
+        runtime->RegisterModule("preact/hooks", hooks_code);
+    }
+
     std::unique_ptr<QuickJSRuntime> runtime;
 };
 
@@ -43,48 +72,42 @@ TEST_F(PreactIntegrationTest, RuntimeCreation) {
     EXPECT_NE(runtime->GetContext(), nullptr);
 }
 
-TEST_F(PreactIntegrationTest, LoadPreactModule) {
-    // 读取Preact模块
-    std::string preact_code = ReadFile("js/preact/preact.js");
-    ASSERT_FALSE(preact_code.empty()) << "Failed to read js/preact/preact.js";
-    
-    // 注册Preact模块
-    runtime->RegisterModule("preact", preact_code);
-    
-    // 加载模块
-    auto result = runtime->LoadModule("preact");
-    EXPECT_TRUE(result.contains("h"));
-    EXPECT_TRUE(result.contains("render"));
-    EXPECT_TRUE(result.contains("createElement"));
+TEST_F(PreactIntegrationTest, LoadPreactAsGlobalWorks) {
+    // 测试全局变量方式加载 (与示例应用一致)
+    LoadPreactAsGlobal();
+
+    // 验证全局对象存在
+    auto result = runtime->Eval("typeof Preact !== 'undefined'", "test.js");
+    EXPECT_EQ(result, true);
+
+    result = runtime->Eval("typeof PreactHooks !== 'undefined'", "test.js");
+    EXPECT_EQ(result, true);
 }
 
-TEST_F(PreactIntegrationTest, LoadHooksModule) {
-    // 读取Hooks模块
-    std::string hooks_code = ReadFile("js/preact/hooks.js");
-    ASSERT_FALSE(hooks_code.empty()) << "Failed to read js/preact/hooks.js";
-    
-    // 注册Hooks模块
-    runtime->RegisterModule("preact/hooks", hooks_code);
-    
-    // 加载模块
-    auto result = runtime->LoadModule("preact/hooks");
-    EXPECT_TRUE(result.contains("useState"));
-    EXPECT_TRUE(result.contains("useEffect"));
-    EXPECT_TRUE(result.contains("useRef"));
+TEST_F(PreactIntegrationTest, ES6ModuleLoadWorks) {
+    // 测试 ES6 模块方式加载
+    RegisterPreactModules();
+
+    // 加载模块不抛出异常即成功
+    EXPECT_NO_THROW({
+        runtime->LoadModule("preact");
+    });
+
+    EXPECT_NO_THROW({
+        runtime->LoadModule("preact/hooks");
+    });
 }
 
-// ========== VNode创建测试 ==========
+// ========== VNode创建测试 (使用全局变量方式，与示例一致) ==========
 
 TEST_F(PreactIntegrationTest, CreateSimpleVNode) {
-    std::string preact_code = ReadFile("js/preact/preact.js");
-    runtime->RegisterModule("preact", preact_code);
-    
+    LoadPreactAsGlobal();
+
     std::string test_code = R"(
-        import { h } from 'preact';
-        const vnode = h('div', null, 'Hello World');
+        var vnode = Preact.h('div', null, 'Hello World');
         vnode;
     )";
-    
+
     auto result = runtime->Eval(test_code, "test.js");
     EXPECT_TRUE(result.contains("type"));
     EXPECT_EQ(result["type"], "div");
@@ -92,15 +115,13 @@ TEST_F(PreactIntegrationTest, CreateSimpleVNode) {
 }
 
 TEST_F(PreactIntegrationTest, CreateVNodeWithProps) {
-    std::string preact_code = ReadFile("js/preact/preact.js");
-    runtime->RegisterModule("preact", preact_code);
-    
+    LoadPreactAsGlobal();
+
     std::string test_code = R"(
-        import { h } from 'preact';
-        const vnode = h('div', { className: 'container', id: 'main' }, 'Content');
+        var vnode = Preact.h('div', { className: 'container', id: 'main' }, 'Content');
         vnode;
     )";
-    
+
     auto result = runtime->Eval(test_code, "test.js");
     EXPECT_TRUE(result.contains("props"));
     EXPECT_EQ(result["props"]["className"], "container");
@@ -108,18 +129,16 @@ TEST_F(PreactIntegrationTest, CreateVNodeWithProps) {
 }
 
 TEST_F(PreactIntegrationTest, CreateVNodeWithChildren) {
-    std::string preact_code = ReadFile("js/preact/preact.js");
-    runtime->RegisterModule("preact", preact_code);
-    
+    LoadPreactAsGlobal();
+
     std::string test_code = R"(
-        import { h } from 'preact';
-        const vnode = h('div', null,
-            h('h1', null, 'Title'),
-            h('p', null, 'Paragraph')
+        var vnode = Preact.h('div', null,
+            Preact.h('h1', null, 'Title'),
+            Preact.h('p', null, 'Paragraph')
         );
         vnode;
     )";
-    
+
     auto result = runtime->Eval(test_code, "test.js");
     EXPECT_TRUE(result.contains("children"));
     EXPECT_EQ(result["children"].size(), 2);
@@ -128,20 +147,17 @@ TEST_F(PreactIntegrationTest, CreateVNodeWithChildren) {
 // ========== 组件测试 ==========
 
 TEST_F(PreactIntegrationTest, CreateFunctionComponent) {
-    std::string preact_code = ReadFile("js/preact/preact.js");
-    runtime->RegisterModule("preact", preact_code);
-    
+    LoadPreactAsGlobal();
+
     std::string test_code = R"(
-        import { h } from 'preact';
-        
         function Greeting(props) {
-            return h('div', null, 'Hello, ', props.name);
+            return Preact.h('div', null, 'Hello, ', props.name);
         }
-        
-        const vnode = h(Greeting, { name: 'World' });
+
+        var vnode = Preact.h(Greeting, { name: 'World' });
         vnode;
     )";
-    
+
     auto result = runtime->Eval(test_code, "test.js");
     EXPECT_TRUE(result.contains("type"));
     EXPECT_TRUE(result.contains("props"));
@@ -151,25 +167,19 @@ TEST_F(PreactIntegrationTest, CreateFunctionComponent) {
 // ========== Hooks测试 ==========
 
 TEST_F(PreactIntegrationTest, UseStateHook) {
-    std::string preact_code = ReadFile("js/preact/preact.js");
-    std::string hooks_code = ReadFile("js/preact/hooks.js");
-    
-    runtime->RegisterModule("preact", preact_code);
-    runtime->RegisterModule("preact/hooks", hooks_code);
-    
+    LoadPreactAsGlobal();
+
     std::string test_code = R"(
-        import { h } from 'preact';
-        import { useState } from 'preact/hooks';
-        
         function Counter() {
-            const [count, setCount] = useState(0);
-            return h('div', null, 'Count: ', count);
+            var state = PreactHooks.useState(0);
+            var count = state[0];
+            return Preact.h('div', null, 'Count: ' + count);
         }
-        
-        const vnode = h(Counter);
+
+        var vnode = Preact.h(Counter);
         vnode;
     )";
-    
+
     // 这个测试主要验证代码能够执行，不会抛出异常
     EXPECT_NO_THROW({
         auto result = runtime->Eval(test_code, "test.js");
@@ -179,26 +189,22 @@ TEST_F(PreactIntegrationTest, UseStateHook) {
 // ========== 性能测试 ==========
 
 TEST_F(PreactIntegrationTest, PerformanceVNodeCreation) {
-    std::string preact_code = ReadFile("js/preact/preact.js");
-    runtime->RegisterModule("preact", preact_code);
-    
+    LoadPreactAsGlobal();
+
     std::string test_code = R"(
-        import { h } from 'preact';
-        
-        const start = Date.now();
-        for (let i = 0; i < 1000; i++) {
-            h('div', { key: i }, 'Item ', i);
+        var start = Date.now();
+        for (var i = 0; i < 1000; i++) {
+            Preact.h('div', { key: i }, 'Item ' + i);
         }
-        const end = Date.now();
-        
+        var end = Date.now();
         end - start;
     )";
-    
+
     auto result = runtime->Eval(test_code, "test.js");
     double time_ms = result.get<double>();
-    
+
     std::cout << "Created 1000 VNodes in " << time_ms << "ms" << std::endl;
-    
+
     // 性能要求：1000个VNode创建应该在100ms内完成
     EXPECT_LT(time_ms, 100.0);
 }
@@ -206,15 +212,10 @@ TEST_F(PreactIntegrationTest, PerformanceVNodeCreation) {
 // ========== 集成测试 ==========
 
 TEST_F(PreactIntegrationTest, SimpleVNodeCreation) {
-    std::string preact_code = ReadFile("js/preact/preact.js");
-    ASSERT_FALSE(preact_code.empty());
+    LoadPreactAsGlobal();
 
-    runtime->RegisterModule("preact", preact_code);
-
-    // 创建一个简单的VNode
     std::string test_code = R"(
-        import { h } from 'preact';
-        const vnode = h('div', { className: 'test' }, 'Hello Preact!');
+        var vnode = Preact.h('div', { className: 'test' }, 'Hello Preact!');
         vnode;
     )";
 

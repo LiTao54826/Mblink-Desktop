@@ -85,6 +85,19 @@ json QuickJSRuntime::Eval(const std::string& code, const std::string& filename) 
     return ret;
 }
 
+json QuickJSRuntime::EvalModule(const std::string& code, const std::string& filename) {
+    JSValue result = JS_Eval(ctx_, code.c_str(), code.length(),
+                             filename.c_str(), JS_EVAL_TYPE_MODULE);
+    if (JS_IsException(result)) {
+        std::string error = GetJSError();
+        JS_FreeValue(ctx_, result);
+        throw std::runtime_error("JavaScript module error: " + error);
+    }
+    json ret = JSValueToJSON(result);
+    JS_FreeValue(ctx_, result);
+    return ret;
+}
+
 json QuickJSRuntime::EvalFile(const std::string& filepath) {
     std::ifstream file(filepath);
     if (!file.is_open()) {

@@ -251,4 +251,3 @@ var PreactHooks = {
     createContext: createContext,
     setCurrentComponent: setCurrentComponent
 };
-

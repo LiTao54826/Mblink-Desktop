@@ -93,7 +93,16 @@ public:
      * @throws std::runtime_error 如果执行失败
      */
     json Eval(const std::string& code, const std::string& filename = "<eval>");
-    
+
+    /**
+     * @brief 执行ES6模块代码
+     * @param code JavaScript模块代码
+     * @param filename 文件名（用于错误报告）
+     * @return 执行结果（JSON格式）
+     * @throws std::runtime_error 如果执行失败
+     */
+    json EvalModule(const std::string& code, const std::string& filename = "<eval>");
+
     /**
      * @brief 执行JavaScript文件
      * @param filepath 文件路径
