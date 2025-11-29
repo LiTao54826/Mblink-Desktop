@@ -144,6 +144,14 @@ private:
      */
     RenderObjectType ParseDisplay(const std::string& value);
 
+    /**
+     * @brief 解析边框简写属性（如 "4px solid #4CAF50"）
+     * @param value 边框简写值
+     * @param font_size 用于解析相对单位的字体大小
+     * @return CSSBorder 对象
+     */
+    CSSBorder ParseBorderShorthand(const std::string& value, float font_size);
+
 private:
     // 可继承属性集合
     std::unordered_set<std::string> inheritable_properties_;

@@ -22,58 +22,94 @@ namespace lightui {
 
 void RenderInlineBlock::Layout(float parent_width, float parent_height) {
     const auto& style = computed_style_;
-    
+
+    // 计算 padding
+    float padding_left = style.padding.left.ToPx(parent_width, style.font_size);
+    float padding_right = style.padding.right.ToPx(parent_width, style.font_size);
+    float padding_top = style.padding.top.ToPx(parent_height, style.font_size);
+    float padding_bottom = style.padding.bottom.ToPx(parent_height, style.font_size);
+
     // 1. 计算宽度
     if (style.width.unit != CSSUnit::NONE && style.width.unit != CSSUnit::AUTO) {
         // 显式设置了宽度
         layout_info_.width = style.width.ToPx(parent_width, style.font_size);
     } else {
-        // 使用shrink-to-fit算法
+        // 使用shrink-to-fit算法（包含 padding）
         layout_info_.width = CalculateShrinkToFitWidth(parent_width);
     }
-    
-    // 2. 布局子元素（按照block容器的方式）
+
+    // 2. 布局子元素（考虑 padding）
     float content_height = 0;
-    float current_y = 0;
-    
+    float total_child_width = 0;
+    float content_width = layout_info_.width - padding_left - padding_right;
+
+    // 首先布局所有子元素并计算总宽度和高度
     for (auto& child : children_) {
         if (child->NeedsLayout()) {
-            child->Layout(layout_info_.width, parent_height);
+            child->Layout(content_width, parent_height);
         }
-        
+
         auto& child_layout = child->GetLayoutInfo();
-        child_layout.x = 0;
-        child_layout.y = current_y;
-        
-        current_y += child_layout.height;
-        content_height += child_layout.height;
+        total_child_width += child_layout.width;
+        content_height = std::max(content_height, child_layout.height);
     }
-    
-    // 3. 计算高度
+
+    // 3. 计算高度（包含 padding）
     if (style.height.unit != CSSUnit::NONE && style.height.unit != CSSUnit::AUTO) {
         // 显式设置了高度
         layout_info_.height = style.height.ToPx(parent_height, style.font_size);
     } else {
-        // 根据内容计算高度
-        layout_info_.height = content_height > 0 ? content_height : 20.0f;
+        // 根据内容计算高度 + padding
+        layout_info_.height = content_height > 0 ? (content_height + padding_top + padding_bottom) : 20.0f;
     }
-    
+
+    // 4. 设置子元素位置，支持 text-align
+    float start_x = padding_left;
+
+    // 处理 text-align
+    if (style.text_align == "center" && total_child_width < content_width) {
+        // 居中对齐
+        start_x = padding_left + (content_width - total_child_width) / 2.0f;
+    } else if (style.text_align == "right" && total_child_width < content_width) {
+        // 右对齐
+        start_x = padding_left + content_width - total_child_width;
+    }
+
+    float current_x = start_x;
+    for (auto& child : children_) {
+        auto& child_layout = child->GetLayoutInfo();
+        child_layout.x = current_x;
+        // 垂直居中
+        child_layout.y = padding_top + (layout_info_.height - padding_top - padding_bottom - child_layout.height) / 2.0f;
+        current_x += child_layout.width;
+    }
+
     layout_info_.is_laid_out = true;
     needs_layout_ = false;
 }
 
 float RenderInlineBlock::CalculateShrinkToFitWidth(float available_width) {
-    // Shrink-to-fit: min(max(preferred minimum width, available width), preferred width)
-    float preferred_min = CalculatePreferredMinimumWidth();
+    // CSS shrink-to-fit 算法：
+    // 1. 如果 available_width >= preferred_width，使用 preferred_width
+    // 2. 如果 available_width < preferred_width，使用 max(preferred_min, available_width)
     float preferred = CalculatePreferredWidth();
-    
-    return std::min(std::max(preferred_min, available_width), preferred);
+
+    if (available_width >= preferred) {
+        return preferred;
+    }
+
+    float preferred_min = CalculatePreferredMinimumWidth();
+    return std::max(preferred_min, available_width);
 }
 
 float RenderInlineBlock::CalculatePreferredMinimumWidth() {
     // 计算内容不换行的最小宽度
-    // 对于表单控件，这通常是内容的自然宽度
-    float min_width = 0;
+    const auto& style = computed_style_;
+    float padding_left = style.padding.left.ToPx();
+    float padding_right = style.padding.right.ToPx();
+    float border_width = style.border.width.ToPx();
+
+    float content_width = 0;
 
     // 特殊处理：Select元素需要根据option内容计算宽度
     auto node = GetNode();
@@ -105,48 +141,96 @@ float RenderInlineBlock::CalculatePreferredMinimumWidth() {
             if (!longest_text.empty()) {
                 // 使用字体测量实际宽度
                 FontDescriptor desc;
-                desc.family = computed_style_.font_family;
-                desc.size = computed_style_.font_size;
+                desc.family = style.font_family;
+                desc.size = style.font_size;
+                desc.weight = FontWeight::NORMAL;
+                desc.style = FontStyle::NORMAL;
+
+                SkFont font = FontManager::GetInstance().LoadFont(desc);
+                content_width = font.measureText(
+                    longest_text.c_str(),
+                    longest_text.length(),
+                    SkTextEncoding::kUTF8
+                );
+            }
+        }
+    }
+
+    // 对于其他元素，使用子元素计算或使用字体测量
+    if (content_width == 0) {
+        for (auto& child : children_) {
+            if (child->GetType() == RenderObjectType::TEXT) {
+                auto text_child = std::static_pointer_cast<RenderText>(child);
+                std::string text = text_child->GetText();
+
+                // 使用实际字体测量宽度
+                FontDescriptor desc;
+                desc.family = style.font_family;
+                desc.size = style.font_size;
                 desc.weight = FontWeight::NORMAL;
                 desc.style = FontStyle::NORMAL;
 
                 SkFont font = FontManager::GetInstance().LoadFont(desc);
                 float text_width = font.measureText(
-                    longest_text.c_str(),
-                    longest_text.length(),
+                    text.c_str(),
+                    text.length(),
                     SkTextEncoding::kUTF8
                 );
-
-                // 加上padding、border和箭头空间
-                float padding_left = computed_style_.padding.left.ToPx();
-                float padding_right = computed_style_.padding.right.ToPx();
-                float border_width = computed_style_.border.width.ToPx();
-
-                // border应用于左右两侧
-                min_width = text_width + padding_left + padding_right + border_width * 2;
+                content_width = std::max(content_width, text_width);
             }
         }
     }
 
-    // 对于其他元素，使用子元素计算
-    if (min_width == 0) {
-        for (auto& child : children_) {
-            if (child->GetType() == RenderObjectType::TEXT) {
-                auto text_child = std::static_pointer_cast<RenderText>(child);
-                // 简化：使用文本长度 * 平均字符宽度
-                min_width = std::max(min_width, text_child->GetText().length() * 8.0f);
-            }
-        }
-    }
-
-    // 至少要有一个最小宽度
-    return std::max(min_width, 50.0f);
+    // 总宽度 = 内容宽度 + padding + border
+    return content_width + padding_left + padding_right + border_width * 2;
 }
 
 float RenderInlineBlock::CalculatePreferredWidth() {
     // 计算内容自然布局的宽度
-    // 对于表单控件，这通常等于preferred minimum width
+    // 对于简单的inline-block元素，preferred width = preferred minimum width
     return CalculatePreferredMinimumWidth();
+}
+
+std::pair<float, float> RenderInlineBlock::MeasureIntrinsicSize(float available_width) {
+    const auto& style = computed_style_;
+
+    // 计算 padding
+    float padding_left = style.padding.left.ToPx(available_width, style.font_size);
+    float padding_right = style.padding.right.ToPx(available_width, style.font_size);
+    float padding_top = style.padding.top.ToPx(available_width, style.font_size);
+    float padding_bottom = style.padding.bottom.ToPx(available_width, style.font_size);
+
+    // 计算宽度
+    float width;
+    if (style.width.unit != CSSUnit::NONE && style.width.unit != CSSUnit::AUTO) {
+        // 显式设置了宽度
+        width = style.width.ToPx(available_width, style.font_size);
+    } else {
+        // 使用 shrink-to-fit 算法
+        width = CalculateShrinkToFitWidth(available_width);
+    }
+
+    // 计算高度
+    float height;
+    if (style.height.unit != CSSUnit::NONE && style.height.unit != CSSUnit::AUTO) {
+        // 显式设置了高度
+        height = style.height.ToPx(available_width, style.font_size);
+    } else {
+        // 根据内容计算高度
+        float content_height = 0;
+        float content_width = width - padding_left - padding_right;
+
+        // 布局子元素以获取高度
+        for (auto& child : children_) {
+            child->Layout(content_width, 0);
+            auto& child_layout = child->GetLayoutInfo();
+            content_height = std::max(content_height, child_layout.height);
+        }
+
+        height = content_height > 0 ? (content_height + padding_top + padding_bottom) : 20.0f;
+    }
+
+    return {width, height};
 }
 
 void RenderInlineBlock::Paint(SkCanvas* canvas) {

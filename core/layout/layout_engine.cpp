@@ -6,10 +6,93 @@
 #include "layout_engine.h"
 #include "dom/element.h"
 #include "render/render_object.h"
+#include "render/render_inline_block.h"
 #include "render/text_renderer.h"
 #include "render/text/font_manager.h"
 #include <cmath>
 #include <iostream>
+
+// InlineBlock measurement callback for Taffy
+// This function is called by Taffy during layout to measure inline-block elements
+static TaffySize InlineBlockMeasureFunction(
+    TaffyMeasureMode width_measure_mode,
+    float width,
+    TaffyMeasureMode height_measure_mode,
+    float height,
+    void* context)
+{
+    TaffySize size = {0.0f, 0.0f};
+
+    if (!context) {
+        return size;
+    }
+
+    auto* inline_block = static_cast<lightui::RenderInlineBlock*>(context);
+
+    // Determine available width
+    float available_width = 0.0f;
+    switch (width_measure_mode) {
+        case TAFFY_MEASURE_MODE_EXACT:
+        case TAFFY_MEASURE_MODE_FIT_CONTENT:
+            available_width = width;
+            break;
+        case TAFFY_MEASURE_MODE_MIN_CONTENT:
+            available_width = 0;
+            break;
+        case TAFFY_MEASURE_MODE_MAX_CONTENT:
+            available_width = 10000.0f; // 足够大的值
+            break;
+    }
+
+    // 使用 inline-block 元素的固有尺寸计算
+    auto [measured_width, measured_height] = inline_block->MeasureIntrinsicSize(available_width);
+
+    size.width = measured_width;
+    size.height = measured_height;
+
+    return size;
+}
+
+// Inline element measurement callback for Taffy
+// This function is called by Taffy during layout to measure inline elements (like buttons)
+static TaffySize InlineMeasureFunction(
+    TaffyMeasureMode width_measure_mode,
+    float width,
+    TaffyMeasureMode height_measure_mode,
+    float height,
+    void* context)
+{
+    TaffySize size = {0.0f, 0.0f};
+
+    if (!context) {
+        return size;
+    }
+
+    auto* inline_elem = static_cast<lightui::RenderInline*>(context);
+
+    // Determine available width
+    float available_width = 0.0f;
+    switch (width_measure_mode) {
+        case TAFFY_MEASURE_MODE_EXACT:
+        case TAFFY_MEASURE_MODE_FIT_CONTENT:
+            available_width = width;
+            break;
+        case TAFFY_MEASURE_MODE_MIN_CONTENT:
+            available_width = 0;
+            break;
+        case TAFFY_MEASURE_MODE_MAX_CONTENT:
+            available_width = 10000.0f;
+            break;
+    }
+
+    // 使用 inline 元素的固有尺寸计算
+    auto [measured_width, measured_height] = inline_elem->MeasureIntrinsicSize(available_width);
+
+    size.width = measured_width;
+    size.height = measured_height;
+
+    return size;
+}
 
 // Text measurement callback for Taffy
 // This function is called by Taffy during layout to measure text nodes
@@ -269,6 +352,40 @@ TaffyNodeId LayoutEngine::CreateNode(RenderObject* render_obj) {
         if (render_obj) {
             ApplyStyle(node, render_obj->GetComputedStyle());
 
+            // For BLOCK elements with inline content (TEXT and INLINE_BLOCK children),
+            // we need to use flex row in Taffy to create an inline formatting context.
+            // This makes text and inline-block elements flow horizontally.
+            RenderObjectType type = render_obj->GetType();
+            if (type == RenderObjectType::BLOCK) {
+                auto& children = render_obj->GetChildren();
+                bool has_inline_content = false;
+                bool has_only_inline_content = true;
+
+                for (auto& child : children) {
+                    RenderObjectType child_type = child->GetType();
+                    if (child_type == RenderObjectType::TEXT ||
+                        child_type == RenderObjectType::INLINE_BLOCK ||
+                        child_type == RenderObjectType::INLINE) {
+                        has_inline_content = true;
+                    } else if (child_type != RenderObjectType::NONE) {
+                        has_only_inline_content = false;
+                    }
+                }
+
+                // If we have inline content mixed with other inline content,
+                // use flex row to lay out children horizontally
+                if (has_inline_content && has_only_inline_content && children.size() > 1) {
+                    TaffyStyleMutRefResult style_result = TaffyTree_GetStyleMut(taffy_tree_, node);
+                    if (style_result.return_code == TAFFY_RETURN_CODE_OK) {
+                        TaffyStyleMutRef taffy_style = style_result.value;
+                        TaffyStyle_SetDisplay(taffy_style, TAFFY_DISPLAY_FLEX);
+                        TaffyStyle_SetFlexDirection(taffy_style, TAFFY_FLEX_DIRECTION_ROW);
+                        TaffyStyle_SetFlexWrap(taffy_style, TAFFY_FLEX_WRAP_WRAP);
+                        TaffyStyle_SetAlignItems(taffy_style, TAFFY_ALIGN_ITEMS_BASELINE);
+                    }
+                }
+            }
+
             // For text nodes, set up measure function for dynamic text measurement
             if (render_obj->GetType() == RenderObjectType::TEXT) {
                 auto* text_obj = dynamic_cast<RenderText*>(render_obj);
@@ -298,6 +415,48 @@ TaffyNodeId LayoutEngine::CreateNode(RenderObject* render_obj) {
 
                         // Don't set explicit width/height - let Taffy call measure function
                         // Set width to auto so it can be determined by parent container
+                        TaffyStyle_SetWidth(taffy_style, 0.0f, TAFFY_UNIT_AUTO);
+                        TaffyStyle_SetHeight(taffy_style, 0.0f, TAFFY_UNIT_AUTO);
+                    }
+                }
+            }
+            // For inline-block elements, set up measure function for intrinsic size calculation
+            else if (render_obj->GetType() == RenderObjectType::INLINE_BLOCK) {
+                auto* inline_block = dynamic_cast<RenderInlineBlock*>(render_obj);
+                if (inline_block) {
+                    // Set the measure function with the RenderInlineBlock object as context
+                    TaffyTree_SetNodeContext(taffy_tree_, node, InlineBlockMeasureFunction, inline_block);
+
+                    // Set inline-block node style - let measure function determine size
+                    TaffyStyleMutRefResult style_result = TaffyTree_GetStyleMut(taffy_tree_, node);
+                    if (style_result.return_code == TAFFY_RETURN_CODE_OK) {
+                        TaffyStyleMutRef taffy_style = style_result.value;
+
+                        // Use border-box for inline-block (measure function returns full size)
+                        TaffyStyle_SetBoxSizing(taffy_style, TAFFY_BOX_SIZING_BORDER_BOX);
+
+                        // Width and height will be determined by measure function
+                        TaffyStyle_SetWidth(taffy_style, 0.0f, TAFFY_UNIT_AUTO);
+                        TaffyStyle_SetHeight(taffy_style, 0.0f, TAFFY_UNIT_AUTO);
+                    }
+                }
+            }
+            // For inline elements (like buttons), set up measure function
+            else if (render_obj->GetType() == RenderObjectType::INLINE) {
+                auto* inline_elem = dynamic_cast<RenderInline*>(render_obj);
+                if (inline_elem) {
+                    // Set the measure function with the RenderInline object as context
+                    TaffyTree_SetNodeContext(taffy_tree_, node, InlineMeasureFunction, inline_elem);
+
+                    // Set inline node style - let measure function determine size
+                    TaffyStyleMutRefResult style_result = TaffyTree_GetStyleMut(taffy_tree_, node);
+                    if (style_result.return_code == TAFFY_RETURN_CODE_OK) {
+                        TaffyStyleMutRef taffy_style = style_result.value;
+
+                        // Use border-box for inline (measure function returns full size)
+                        TaffyStyle_SetBoxSizing(taffy_style, TAFFY_BOX_SIZING_BORDER_BOX);
+
+                        // Width and height will be determined by measure function
                         TaffyStyle_SetWidth(taffy_style, 0.0f, TAFFY_UNIT_AUTO);
                         TaffyStyle_SetHeight(taffy_style, 0.0f, TAFFY_UNIT_AUTO);
                     }
@@ -570,6 +729,15 @@ void LayoutEngine::BuildSubtree(RenderObject* render_obj, TaffyNodeId parent_nod
         TaffyTree_AppendChild(taffy_tree_, parent_node, node);
     }
 
+    // For INLINE_BLOCK and INLINE elements, we use measure functions to determine their size.
+    // Taffy only calls measure functions for leaf nodes (nodes without children in Taffy tree).
+    // So we don't add children to Taffy for these elements - they will layout their own children.
+    RenderObjectType type = render_obj->GetType();
+    if (type == RenderObjectType::INLINE_BLOCK || type == RenderObjectType::INLINE) {
+        // Don't add children to Taffy tree - these elements manage their own children layout
+        return;
+    }
+
     // Recursively build children
     auto& children = render_obj->GetChildren();
     for (auto& child : children) {
@@ -602,6 +770,55 @@ void LayoutEngine::ReadLayoutResults(RenderObject* render_obj) {
     info.is_laid_out = true;
 
     const auto& style = render_obj->GetComputedStyle();
+
+    // For INLINE_BLOCK and INLINE elements, their children are not in Taffy tree.
+    // We need to layout their children manually.
+    // Note: We already have info.width and info.height from Taffy, so we just need
+    // to position the children within this element.
+    RenderObjectType type = render_obj->GetType();
+    if (type == RenderObjectType::INLINE_BLOCK || type == RenderObjectType::INLINE) {
+        // Position children within this element
+        // Get padding
+        float padding_left = style.padding.left.ToPx(info.width, style.font_size);
+        float padding_right = style.padding.right.ToPx(info.width, style.font_size);
+        float padding_top = style.padding.top.ToPx(info.height, style.font_size);
+        float padding_bottom = style.padding.bottom.ToPx(info.height, style.font_size);
+
+        // Layout each child and position them
+        float content_width = info.width - padding_left - padding_right;
+        float total_child_width = 0;
+        float max_child_height = 0;
+
+        auto& children = render_obj->GetChildren();
+        for (auto& child : children) {
+            child->Layout(info.width, info.height);
+            auto& child_layout = child->GetLayoutInfo();
+            total_child_width += child_layout.width;
+            max_child_height = std::max(max_child_height, child_layout.height);
+        }
+
+        // Calculate starting x position based on text-align
+        float start_x = padding_left;
+        if (style.text_align == "center" && total_child_width < content_width) {
+            start_x = padding_left + (content_width - total_child_width) / 2.0f;
+        } else if (style.text_align == "right" && total_child_width < content_width) {
+            start_x = padding_left + content_width - total_child_width;
+        }
+
+        // Position children
+        float current_x = start_x;
+        float content_height = info.height - padding_top - padding_bottom;
+        for (auto& child : children) {
+            auto& child_layout = child->GetLayoutInfo();
+            child_layout.x = current_x;
+            // Vertically center children
+            child_layout.y = padding_top + (content_height - child_layout.height) / 2.0f;
+            current_x += child_layout.width;
+        }
+
+        // Don't recurse into children - we already handled them
+        return;
+    }
 
     // Recursively read layout for children
     auto& children = render_obj->GetChildren();

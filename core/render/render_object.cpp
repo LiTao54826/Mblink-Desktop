@@ -434,11 +434,11 @@ void RenderBlock::Paint(SkCanvas* canvas) {
     box.padding_top = style.padding.top.ToPx(layout.width, style.font_size);
     box.padding_bottom = style.padding.bottom.ToPx(layout.width, style.font_size);
 
-    // 计算 border
-    box.border_top_width = style.border.width.ToPx();
-    box.border_right_width = style.border.width.ToPx();
-    box.border_bottom_width = style.border.width.ToPx();
-    box.border_left_width = style.border.width.ToPx();
+    // 计算 border - 优先使用单边边框宽度，否则使用统一的 border.width
+    box.border_top_width = style.border_top_width > 0 ? style.border_top_width : style.border.width.ToPx();
+    box.border_right_width = style.border_right_width > 0 ? style.border_right_width : style.border.width.ToPx();
+    box.border_bottom_width = style.border_bottom_width > 0 ? style.border_bottom_width : style.border.width.ToPx();
+    box.border_left_width = style.border_left_width > 0 ? style.border_left_width : style.border.width.ToPx();
 
     // Taffy 返回的是 border-box 尺寸，需要减去 padding 和 border 得到 content box
     // 由于我们已经 translate 到元素左上角，padding_box 应该从 (0, 0) 开始
@@ -497,19 +497,74 @@ void RenderBlock::Paint(SkCanvas* canvas) {
         renderer.RenderBackgroundAdvanced(box, styles, &style.border_radius);
     }
 
-    // 渲染边框
-    if (style.border.style != CSSBorderStyle::NONE && !style.border.width.IsZero()) {
-        std::string border_width = std::to_string(style.border.width.value) + "px";
-        std::string border_style = "solid"; // 简化
-        std::string border_color = "#000000"; // 简化
+    // 渲染边框 - 支持单边边框
+    bool has_any_border = (style.border.style != CSSBorderStyle::NONE && !style.border.width.IsZero()) ||
+                          (style.border_left_width > 0 && style.border_left_style != CSSBorderStyle::NONE) ||
+                          (style.border_right_width > 0 && style.border_right_style != CSSBorderStyle::NONE) ||
+                          (style.border_top_width > 0 && style.border_top_style != CSSBorderStyle::NONE) ||
+                          (style.border_bottom_width > 0 && style.border_bottom_style != CSSBorderStyle::NONE);
 
-        if (style.border_radius.top_left.IsZero() &&
-            style.border_radius.top_right.IsZero() &&
-            style.border_radius.bottom_right.IsZero() &&
-            style.border_radius.bottom_left.IsZero()) {
-            renderer.RenderBorder(box, border_width, border_style, border_color);
-        } else {
-            renderer.RenderRoundedBorder(box, border_width, border_style, border_color, style.border_radius);
+    if (has_any_border) {
+        SkRect border_box = box.GetBorderBox();
+
+        // 渲染左边框
+        if (box.border_left_width > 0) {
+            CSSBorderStyle left_style = style.border_left_style != CSSBorderStyle::NONE ?
+                                        style.border_left_style : style.border.style;
+            SkColor left_color = style.border_left_style != CSSBorderStyle::NONE ?
+                                 style.border_left_color : style.border.color;
+            if (left_style != CSSBorderStyle::NONE) {
+                renderer.RenderBorderEdge(
+                    border_box.left(), border_box.top(),
+                    border_box.left(), border_box.bottom(),
+                    box.border_left_width, left_style, left_color
+                );
+            }
+        }
+
+        // 渲染右边框
+        if (box.border_right_width > 0) {
+            CSSBorderStyle right_style = style.border_right_style != CSSBorderStyle::NONE ?
+                                         style.border_right_style : style.border.style;
+            SkColor right_color = style.border_right_style != CSSBorderStyle::NONE ?
+                                  style.border_right_color : style.border.color;
+            if (right_style != CSSBorderStyle::NONE) {
+                renderer.RenderBorderEdge(
+                    border_box.right(), border_box.top(),
+                    border_box.right(), border_box.bottom(),
+                    box.border_right_width, right_style, right_color
+                );
+            }
+        }
+
+        // 渲染上边框
+        if (box.border_top_width > 0) {
+            CSSBorderStyle top_style = style.border_top_style != CSSBorderStyle::NONE ?
+                                       style.border_top_style : style.border.style;
+            SkColor top_color = style.border_top_style != CSSBorderStyle::NONE ?
+                                style.border_top_color : style.border.color;
+            if (top_style != CSSBorderStyle::NONE) {
+                renderer.RenderBorderEdge(
+                    border_box.left(), border_box.top(),
+                    border_box.right(), border_box.top(),
+                    box.border_top_width, top_style, top_color
+                );
+            }
+        }
+
+        // 渲染下边框
+        if (box.border_bottom_width > 0) {
+            CSSBorderStyle bottom_style = style.border_bottom_style != CSSBorderStyle::NONE ?
+                                          style.border_bottom_style : style.border.style;
+            SkColor bottom_color = style.border_bottom_style != CSSBorderStyle::NONE ?
+                                   style.border_bottom_color : style.border.color;
+            if (bottom_style != CSSBorderStyle::NONE) {
+                renderer.RenderBorderEdge(
+                    border_box.left(), border_box.bottom(),
+                    border_box.right(), border_box.bottom(),
+                    box.border_bottom_width, bottom_style, bottom_color
+                );
+            }
         }
     }
 
@@ -1014,22 +1069,98 @@ void RenderInline::Layout(float parent_width, float parent_height) {
         max_height = std::max(max_height, child_layout.height);
     }
 
+    // 计算 padding
+    float padding_left = style.padding.left.ToPx(parent_width, style.font_size);
+    float padding_right = style.padding.right.ToPx(parent_width, style.font_size);
+    float padding_top = style.padding.top.ToPx(parent_height, style.font_size);
+    float padding_bottom = style.padding.bottom.ToPx(parent_height, style.font_size);
+
     // 设置内联元素的尺寸
-    // 如果有显式宽度/高度，使用显式值；否则使用子元素计算的值
-    layout_info_.width = has_explicit_width ? explicit_width : total_width;
-    layout_info_.height = has_explicit_height ? explicit_height : (max_height > 0 ? max_height : 20.0f);
+    // 如果有显式宽度/高度，使用显式值；否则使用子元素计算的值 + padding
+    layout_info_.width = has_explicit_width ? explicit_width : (total_width + padding_left + padding_right);
+    layout_info_.height = has_explicit_height ? explicit_height : (max_height > 0 ? max_height + padding_top + padding_bottom : 20.0f);
     layout_info_.is_laid_out = true;
     needs_layout_ = false;
 
-    // 设置子元素的位置（水平排列，垂直居中）
-    float current_x = 0;
+    // 计算内容区域宽度（不包括 padding）
+    float content_width = layout_info_.width - padding_left - padding_right;
+
+    // 设置子元素的位置（水平排列，支持 text-align）
+    float start_x = padding_left;
+
+    // 处理 text-align
+    if (style.text_align == "center" && total_width < content_width) {
+        // 居中对齐：计算起始偏移
+        start_x = padding_left + (content_width - total_width) / 2.0f;
+    } else if (style.text_align == "right" && total_width < content_width) {
+        // 右对齐
+        start_x = padding_left + content_width - total_width;
+    }
+
+    float current_x = start_x;
     for (auto& child : children_) {
         auto& child_layout = child->GetLayoutInfo();
         child_layout.x = current_x;
         // 垂直居中：如果父元素高度大于子元素高度，则居中对齐
-        child_layout.y = (layout_info_.height - child_layout.height) / 2.0f;
+        child_layout.y = padding_top + (layout_info_.height - padding_top - padding_bottom - child_layout.height) / 2.0f;
         current_x += child_layout.width;
     }
+}
+
+std::pair<float, float> RenderInline::MeasureIntrinsicSize(float available_width) {
+    const auto& style = computed_style_;
+
+    // 计算 padding
+    float padding_left = style.padding.left.ToPx(available_width, style.font_size);
+    float padding_right = style.padding.right.ToPx(available_width, style.font_size);
+    float padding_top = style.padding.top.ToPx(available_width, style.font_size);
+    float padding_bottom = style.padding.bottom.ToPx(available_width, style.font_size);
+
+    // 计算 border（单边边框宽度是 float 类型）
+    float border_left = style.border_left_width;
+    float border_right = style.border_right_width;
+    float border_top = style.border_top_width;
+    float border_bottom = style.border_bottom_width;
+
+    // 如果没有单独的边框宽度，使用通用边框
+    if (border_left == 0 && border_right == 0 && border_top == 0 && border_bottom == 0) {
+        float border_width = style.border.width.ToPx(available_width, style.font_size);
+        border_left = border_right = border_top = border_bottom = border_width;
+    }
+
+    // 检查是否有显式宽高
+    bool has_explicit_width = false;
+    bool has_explicit_height = false;
+    float explicit_width = 0.0f;
+    float explicit_height = 0.0f;
+
+    if (style.width.unit != CSSUnit::NONE && style.width.unit != CSSUnit::AUTO) {
+        explicit_width = style.width.ToPx(available_width, style.font_size);
+        has_explicit_width = true;
+    }
+
+    if (style.height.unit != CSSUnit::NONE && style.height.unit != CSSUnit::AUTO) {
+        explicit_height = style.height.ToPx(available_width, style.font_size);
+        has_explicit_height = true;
+    }
+
+    // 计算子元素的尺寸
+    float total_width = 0;
+    float max_height = 0;
+
+    for (auto& child : children_) {
+        child->Layout(available_width, 0);
+        auto& child_layout = child->GetLayoutInfo();
+        total_width += child_layout.width;
+        max_height = std::max(max_height, child_layout.height);
+    }
+
+    float width = has_explicit_width ? explicit_width :
+        (total_width + padding_left + padding_right + border_left + border_right);
+    float height = has_explicit_height ? explicit_height :
+        (max_height > 0 ? max_height + padding_top + padding_bottom + border_top + border_bottom : 20.0f);
+
+    return {width, height};
 }
 
 void RenderInline::Paint(SkCanvas* canvas) {
@@ -1525,6 +1656,9 @@ void RenderText::Paint(SkCanvas* canvas) {
     }
 
     // 绘制文本装饰（下划线、删除线等）
+    // 使用实际文本宽度，而不是布局宽度（布局宽度可能被 flex: 1 拉伸）
+    float decoration_width = (actual_text_width_ > 0) ? actual_text_width_ : layout.width;
+
     if (style.text_decoration == "underline") {
         // 下划线：在基线下方
         float underline_y = baseline_y + font_metrics.fUnderlinePosition;
@@ -1536,7 +1670,7 @@ void RenderText::Paint(SkCanvas* canvas) {
         line_paint.setStrokeWidth(underline_thickness);
         line_paint.setAntiAlias(true);
 
-        canvas->drawLine(0, underline_y, layout.width, underline_y, line_paint);
+        canvas->drawLine(0, underline_y, decoration_width, underline_y, line_paint);
     } else if (style.text_decoration == "line-through") {
         // 删除线：在文字中间
         float strikethrough_y = baseline_y + font_metrics.fStrikeoutPosition;
@@ -1548,7 +1682,7 @@ void RenderText::Paint(SkCanvas* canvas) {
         line_paint.setStrokeWidth(strikethrough_thickness);
         line_paint.setAntiAlias(true);
 
-        canvas->drawLine(0, strikethrough_y, layout.width, strikethrough_y, line_paint);
+        canvas->drawLine(0, strikethrough_y, decoration_width, strikethrough_y, line_paint);
     }
 
     // 恢复画布状态

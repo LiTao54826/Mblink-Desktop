@@ -118,9 +118,13 @@ void StyleResolver::ApplyDefaultStyle(ComputedStyle& style, const std::string& t
     else if (tag_name == "img") {
         style.display = RenderObjectType::INLINE_BLOCK;
     }
-    // 按钮和输入框临时使用 INLINE，直到实现真正的 inline-block
-    else if (tag_name == "button" || tag_name == "input") {
+    // 按钮使用 INLINE（RenderInline 已经有正确的文本渲染）
+    // 输入框使用 INLINE_BLOCK（需要特殊的表单控件渲染）
+    else if (tag_name == "button") {
         style.display = RenderObjectType::INLINE;
+    }
+    else if (tag_name == "input") {
+        style.display = RenderObjectType::INLINE_BLOCK;
     }
 }
 
@@ -313,25 +317,14 @@ void StyleResolver::ApplyElementSpecificStyle(ComputedStyle& style, const std::s
         style.border.style = CSSBorderStyle::SOLID;
         style.border.color = SkColorSetRGB(200, 200, 200);
 
-        // 内边距
-        style.padding.left = CSSLength(16, CSSUnit::PX);
-        style.padding.right = CSSLength(16, CSSUnit::PX);
-        style.padding.top = CSSLength(6, CSSUnit::PX);
-        style.padding.bottom = CSSLength(6, CSSUnit::PX);
+        // 内边距 - 使用浏览器默认值
+        style.padding.left = CSSLength(6, CSSUnit::PX);
+        style.padding.right = CSSLength(6, CSSUnit::PX);
+        style.padding.top = CSSLength(1, CSSUnit::PX);
+        style.padding.bottom = CSSLength(1, CSSUnit::PX);
 
-        // 固定宽度（临时方案，让按钮不占满整行）
-        style.width = CSSLength(120, CSSUnit::PX);
-        style.height = CSSLength(32, CSSUnit::PX);
-
-        // 阴影（增强效果）
-        CSSBoxShadow shadow;
-        shadow.offset_x = 0;
-        shadow.offset_y = 4;           // 增加到 4px
-        shadow.blur_radius = 8;        // 增加到 8px
-        shadow.spread_radius = 0;
-        shadow.color = SkColorSetARGB(80, 0, 0, 0); // 增加不透明度到 80
-        shadow.inset = false;
-        style.box_shadow.push_back(shadow);
+        // 不设置固定宽高，让按钮根据内容自动计算尺寸
+        // width 和 height 保持默认的 AUTO
 
         // 文本居中
         style.text_align = "center";
@@ -774,9 +767,71 @@ void StyleResolver::ParseStyleProperty(ComputedStyle& style,
     }
     else if (property == "border-style") {
         style.border.style = CSSValue::ParseBorderStyle(resolved_value);
+        // 同步到所有边
+        style.border_top_style = style.border.style;
+        style.border_right_style = style.border.style;
+        style.border_bottom_style = style.border.style;
+        style.border_left_style = style.border.style;
     }
     else if (property == "border-color") {
         style.border.color = CSSValue::ParseColor(resolved_value);
+        // 同步到所有边
+        style.border_top_color = style.border.color;
+        style.border_right_color = style.border.color;
+        style.border_bottom_color = style.border.color;
+        style.border_left_color = style.border.color;
+    }
+    // 单边边框简写属性: border-left, border-right, border-top, border-bottom
+    else if (property == "border-left") {
+        // 解析 "width style color" 格式，如 "4px solid #4CAF50"
+        auto border = ParseBorderShorthand(resolved_value, style.font_size);
+        style.border_left_width = border.width.ToPx(0, style.font_size);
+        style.border_left_style = border.style;
+        style.border_left_color = border.color;
+    }
+    else if (property == "border-right") {
+        auto border = ParseBorderShorthand(resolved_value, style.font_size);
+        style.border_right_width = border.width.ToPx(0, style.font_size);
+        style.border_right_style = border.style;
+        style.border_right_color = border.color;
+    }
+    else if (property == "border-top") {
+        auto border = ParseBorderShorthand(resolved_value, style.font_size);
+        style.border_top_width = border.width.ToPx(0, style.font_size);
+        style.border_top_style = border.style;
+        style.border_top_color = border.color;
+    }
+    else if (property == "border-bottom") {
+        auto border = ParseBorderShorthand(resolved_value, style.font_size);
+        style.border_bottom_width = border.width.ToPx(0, style.font_size);
+        style.border_bottom_style = border.style;
+        style.border_bottom_color = border.color;
+    }
+    // 单边边框样式
+    else if (property == "border-left-style") {
+        style.border_left_style = CSSValue::ParseBorderStyle(resolved_value);
+    }
+    else if (property == "border-right-style") {
+        style.border_right_style = CSSValue::ParseBorderStyle(resolved_value);
+    }
+    else if (property == "border-top-style") {
+        style.border_top_style = CSSValue::ParseBorderStyle(resolved_value);
+    }
+    else if (property == "border-bottom-style") {
+        style.border_bottom_style = CSSValue::ParseBorderStyle(resolved_value);
+    }
+    // 单边边框颜色
+    else if (property == "border-left-color") {
+        style.border_left_color = CSSValue::ParseColor(resolved_value);
+    }
+    else if (property == "border-right-color") {
+        style.border_right_color = CSSValue::ParseColor(resolved_value);
+    }
+    else if (property == "border-top-color") {
+        style.border_top_color = CSSValue::ParseColor(resolved_value);
+    }
+    else if (property == "border-bottom-color") {
+        style.border_bottom_color = CSSValue::ParseColor(resolved_value);
     }
     else if (property == "border-radius") {
         style.border_radius = CSSValue::ParseBorderRadius(resolved_value);
@@ -1178,6 +1233,47 @@ RenderObjectType StyleResolver::ParseDisplay(const std::string& value) {
     if (value == "inline-grid") return RenderObjectType::GRID;  // inline-grid 也使用 GRID 类型
     if (value == "none") return RenderObjectType::NONE;
     return RenderObjectType::BLOCK;
+}
+
+CSSBorder StyleResolver::ParseBorderShorthand(const std::string& value, float font_size) {
+    CSSBorder border;
+    border.style = CSSBorderStyle::NONE;
+    border.width = CSSLength(0, CSSUnit::PX);
+    border.color = SK_ColorBLACK;
+
+    if (value.empty() || value == "none") {
+        return border;
+    }
+
+    // 分割值，格式如 "4px solid #4CAF50"
+    std::istringstream iss(value);
+    std::vector<std::string> parts;
+    std::string part;
+    while (iss >> part) {
+        parts.push_back(part);
+    }
+
+    for (const auto& p : parts) {
+        // 尝试解析为长度值（宽度）
+        if (p.find("px") != std::string::npos ||
+            p.find("em") != std::string::npos ||
+            p.find("rem") != std::string::npos ||
+            (std::isdigit(p[0]) && p.find("px") == std::string::npos && p.find("em") == std::string::npos)) {
+            border.width = CSSValue::ParseLength(p);
+        }
+        // 尝试解析为样式
+        else if (p == "solid" || p == "dashed" || p == "dotted" || p == "double" || p == "none") {
+            border.style = CSSValue::ParseBorderStyle(p);
+        }
+        // 尝试解析为颜色
+        else if (p[0] == '#' || p.find("rgb") == 0 || p.find("hsl") == 0 ||
+                 p == "black" || p == "white" || p == "red" || p == "green" || p == "blue" ||
+                 p == "transparent" || p == "currentColor") {
+            border.color = CSSValue::ParseColor(p);
+        }
+    }
+
+    return border;
 }
 
 // ========== RenderTreeBuilder 实现 ==========

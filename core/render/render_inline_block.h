@@ -31,6 +31,13 @@ public:
     void Layout(float parent_width, float parent_height) override;
     void Paint(SkCanvas* canvas) override;
 
+    /**
+     * @brief 计算元素的固有尺寸（用于 Taffy measure function）
+     * @param available_width 可用宽度
+     * @return 包含宽度和高度的尺寸
+     */
+    std::pair<float, float> MeasureIntrinsicSize(float available_width);
+
 private:
     /**
      * @brief 计算shrink-to-fit宽度

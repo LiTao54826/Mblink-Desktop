@@ -158,6 +158,14 @@ struct ComputedStyle {
     float border_right_width = 0.0f;
     float border_bottom_width = 0.0f;
     float border_left_width = 0.0f;
+    CSSBorderStyle border_top_style = CSSBorderStyle::NONE;
+    CSSBorderStyle border_right_style = CSSBorderStyle::NONE;
+    CSSBorderStyle border_bottom_style = CSSBorderStyle::NONE;
+    CSSBorderStyle border_left_style = CSSBorderStyle::NONE;
+    SkColor border_top_color = SK_ColorBLACK;
+    SkColor border_right_color = SK_ColorBLACK;
+    SkColor border_bottom_color = SK_ColorBLACK;
+    SkColor border_left_color = SK_ColorBLACK;
 
     // 文本布局属性
     std::string white_space = "normal";  // normal, nowrap, pre, pre-wrap, pre-line
@@ -503,6 +511,13 @@ public:
 
     void Layout(float parent_width, float parent_height) override;
     void Paint(SkCanvas* canvas) override;
+
+    /**
+     * @brief 计算元素的固有尺寸（用于 Taffy measure function）
+     * @param available_width 可用宽度
+     * @return 包含宽度和高度的尺寸
+     */
+    std::pair<float, float> MeasureIntrinsicSize(float available_width);
 
 private:
     // 表单控件渲染辅助方法
