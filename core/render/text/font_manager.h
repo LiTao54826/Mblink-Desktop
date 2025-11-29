@@ -1,10 +1,10 @@
 /**
  * @file font_manager.h
  * @brief 字体管理器
- * 
+ *
  * 功能：
  * - 管理字体加载、缓存、查找
- * - 支持字体回退机制
+ * - 支持字体回退机制（包括emoji字体）
  * - 集成系统字体
  */
 
@@ -12,6 +12,7 @@
 
 #include <string>
 #include <memory>
+#include <vector>
 #include <unordered_map>
 #include "include/core/SkTypeface.h"
 #include "include/core/SkFont.h"
@@ -113,28 +114,62 @@ public:
      */
     sk_sp<SkFontMgr> GetSystemFontManager() const { return font_mgr_; }
 
+    /**
+     * @brief 获取emoji字体
+     * @param size 字体大小
+     * @return 支持emoji的字体，如果不可用则返回默认字体
+     */
+    SkFont GetEmojiFont(float size = 16.0f);
+
+    /**
+     * @brief 获取emoji字体的typeface
+     * @return emoji字体的typeface
+     */
+    sk_sp<SkTypeface> GetEmojiTypeface();
+
+    /**
+     * @brief 检查字符是否是emoji
+     * @param codepoint Unicode码点
+     * @return true如果是emoji字符
+     */
+    static bool IsEmoji(uint32_t codepoint);
+
+    /**
+     * @brief 检查typeface是否包含指定字符
+     * @param typeface 字体
+     * @param codepoint Unicode码点
+     * @return true如果字体包含该字符
+     */
+    static bool TypefaceContainsChar(const sk_sp<SkTypeface>& typeface, uint32_t codepoint);
+
 private:
     FontManager();
     ~FontManager() = default;
-    
+
     // 禁止拷贝和赋值
     FontManager(const FontManager&) = delete;
     FontManager& operator=(const FontManager&) = delete;
-    
+
     /**
      * @brief 创建 Skia 字体样式
      */
     SkFontStyle CreateSkFontStyle(FontWeight weight, FontStyle style) const;
-    
+
     /**
      * @brief 查找字体族
      */
     sk_sp<SkTypeface> FindTypeface(const std::string& family, const SkFontStyle& style);
 
+    /**
+     * @brief 初始化emoji字体
+     */
+    void InitializeEmojiFont();
+
 private:
     sk_sp<SkFontMgr> font_mgr_;                                     ///< Skia 字体管理器
     std::unordered_map<std::string, SkFont> font_cache_;            ///< 字体缓存
     std::unordered_map<std::string, sk_sp<SkTypeface>> typeface_cache_;  ///< 字体族缓存
+    sk_sp<SkTypeface> emoji_typeface_;                              ///< Emoji字体
     bool initialized_;                                              ///< 是否已初始化
 };
 

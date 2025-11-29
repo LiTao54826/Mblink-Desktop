@@ -95,6 +95,20 @@ public:
     void DrawText(const std::string& text, float x, float y, const FontDescriptor& descriptor, const Paint& paint);
 
     /**
+     * @brief 绘制支持emoji的文本
+     *
+     * 此方法会自动检测文本中的emoji字符，并使用emoji字体进行渲染。
+     * 对于普通文本使用指定的字体，对于emoji使用系统emoji字体。
+     *
+     * @param text 文本内容（可包含emoji）
+     * @param x X 坐标
+     * @param y Y 坐标（基线位置）
+     * @param font 主字体（用于普通文本）
+     * @param paint 画笔
+     */
+    void DrawTextWithEmoji(const std::string& text, float x, float y, const SkFont& font, const Paint& paint);
+
+    /**
      * @brief 绘制多行文本
      * @param text 文本内容
      * @param x X 坐标
@@ -131,6 +145,14 @@ public:
      * @return 文本高度
      */
     float MeasureTextHeight(const SkFont& font);
+
+    /**
+     * @brief 测量包含emoji的文本宽度
+     * @param text 文本内容（可包含emoji）
+     * @param font 主字体
+     * @return 文本宽度
+     */
+    float MeasureTextWidthWithEmoji(const std::string& text, const SkFont& font);
 
     // ========== 文本装饰 ==========
 

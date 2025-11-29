@@ -1413,8 +1413,9 @@ void RenderText::Layout(float parent_width, float parent_height) {
         int line_count = 0;
 
         while (std::getline(iss, line)) {
-            auto line_metrics = text_renderer.MeasureText(line, font);
-            max_width = std::max(max_width, line_metrics.width);
+            // 使用支持emoji的文本测量
+            float line_width = text_renderer.MeasureTextWidthWithEmoji(line, font);
+            max_width = std::max(max_width, line_width);
             line_count++;
         }
 
@@ -1423,9 +1424,10 @@ void RenderText::Layout(float parent_width, float parent_height) {
         layout_info_.width = max_width;
         layout_info_.height = total_height;
     } else {
-        // 单行文本
+        // 单行文本 - 使用支持emoji的测量
+        float width = text_renderer.MeasureTextWidthWithEmoji(text_, font);
         auto metrics = text_renderer.MeasureText(text_, font);
-        layout_info_.width = metrics.width;
+        layout_info_.width = width;
         layout_info_.height = metrics.height;
     }
 
@@ -1513,7 +1515,8 @@ void RenderText::Paint(SkCanvas* canvas) {
             } else {
                 lightui::Paint text_paint;
                 text_paint.SetColor(text_color);
-                text_renderer.DrawText(line, 0, current_y, font, text_paint);
+                // 使用支持emoji的文本渲染
+                text_renderer.DrawTextWithEmoji(line, 0, current_y, font, text_paint);
             }
         }
 
