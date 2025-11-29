@@ -1077,6 +1077,9 @@ void Window::RenderDocument() {
             cached_render_tree_ = builder.BuildRenderTree(body, nullptr);
             render_tree_valid_ = true;
             needs_layout = true;
+        } else {
+            // 渲染树有效，但需要更新脏节点的样式（处理伪类变化如:focus）
+            MarkRenderObjectsDirty(body.get(), cached_render_tree_.get());
         }
 
         if (cached_render_tree_) {
@@ -1273,13 +1276,36 @@ void Window::MarkRenderObjectsDirty(Node* dom_node, RenderObject* render_obj) {
     // 检查DOM节点是否有布局脏标记
     if (dom_node->IsLayoutDirty()) {
         render_obj->MarkNeedsLayout();
-        DEBUG_LOG("[MarkRenderObjectsDirty] Marked RenderObject for layout");
     }
 
-    // 检查DOM节点是否有绘制脏标记
-    if (dom_node->IsPaintDirty()) {
+    // 检查DOM节点是否有绘制脏标记或样式脏标记（包括伪类变化如:focus）
+    if (dom_node->IsPaintDirty() || dom_node->IsStyleDirty()) {
+        if (dom_node->GetNodeType() == NodeType::ELEMENT_NODE) {
+            auto elem = std::static_pointer_cast<Element>(dom_node->shared_from_this());
+            std::cout << "[MarkRenderObjectsDirty] <" << elem->GetTagName() << "> is dirty, recalculating style" << std::endl;
+        }
         render_obj->MarkNeedsPaint();
-        DEBUG_LOG("[MarkRenderObjectsDirty] Marked RenderObject for paint");
+
+        // 重新计算样式（处理伪类变化如:focus, :hover等）
+        if (dom_node->GetNodeType() == NodeType::ELEMENT_NODE) {
+            auto element = std::static_pointer_cast<Element>(dom_node->shared_from_this());
+            if (element) {
+                // 获取父样式
+                const ComputedStyle* parent_style = nullptr;
+                auto parent = render_obj->GetParent();
+                if (parent) {
+                    parent_style = &parent->GetComputedStyle();
+                }
+
+                // 使用 StyleResolver 重新计算样式
+                StyleResolver resolver;
+                if (document_ && document_->GetStyleManager()) {
+                    resolver.SetStyleManager(document_->GetStyleManager());
+                }
+                auto new_style = resolver.ResolveStyle(element, parent_style);
+                render_obj->SetComputedStyle(new_style);
+            }
+        }
     }
 
     // 递归处理子节点

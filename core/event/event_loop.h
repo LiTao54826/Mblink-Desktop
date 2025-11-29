@@ -120,24 +120,31 @@ public:
     
     /**
      * @brief 获取帧率控制器
-     * 
+     *
      * @return FrameController& 帧率控制器引用
      */
     FrameController& GetFrameController();
-    
+
     /**
      * @brief 获取输入处理器
-     * 
+     *
      * @return InputHandler& 输入处理器引用
      */
     InputHandler& GetInputHandler();
-    
+
     /**
      * @brief 获取任务调度器
-     * 
+     *
      * @return TaskScheduler& 任务调度器引用
      */
     TaskScheduler& GetTaskScheduler();
+
+    /**
+     * @brief 获取光标是否可见（用于闪烁效果）
+     *
+     * @return true 如果光标应该显示
+     */
+    bool IsCursorVisible() const { return cursor_visible_; }
 
 private:
     /**
@@ -268,6 +275,9 @@ private:
     // 滚动条拖动状态
     std::weak_ptr<RenderObject> scrollbar_dragging_element_;  // 正在拖动滚动条的元素
     Uint32 scrollbar_dragging_window_id_ = 0;                 // 拖动所在窗口的ID
+
+    // 光标闪烁状态
+    bool cursor_visible_ = true;  // 光标是否可见（用于闪烁效果）
 };
 
 } // namespace lightui

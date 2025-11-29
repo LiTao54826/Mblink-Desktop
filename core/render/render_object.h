@@ -86,6 +86,12 @@ struct ComputedStyle {
     std::vector<CSSBoxShadow> box_shadow;
     std::vector<CSSTextShadow> text_shadow;
 
+    // Outline（焦点指示器，不占用布局空间，不受 border 内联样式影响）
+    CSSLength outline_width;
+    std::string outline_style = "none";  // none, solid, dotted, dashed
+    SkColor outline_color = SK_ColorBLACK;
+    CSSLength outline_offset;  // outline 与边框的距离
+
     // 渐变
     std::optional<CSSLinearGradient> background_linear_gradient;
     std::optional<CSSRadialGradient> background_radial_gradient;

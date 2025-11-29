@@ -17,6 +17,9 @@
 #include <algorithm>
 #include <iostream>
 #include <sstream>
+#include <chrono>
+#include "include/core/SkPathEffect.h"
+#include "include/effects/SkDashPathEffect.h"
 
 namespace lightui {
 
@@ -568,6 +571,53 @@ void RenderBlock::Paint(SkCanvas* canvas) {
         }
     }
 
+    // ========== 绘制 outline（焦点指示器）==========
+    // outline 不占用布局空间，绘制在边框外部
+    if (style.outline_style != "none" && !style.outline_width.IsZero()) {
+        float outline_width = style.outline_width.ToPx();
+        float outline_offset = style.outline_offset.ToPx();
+
+        // outline 绘制在边框外部
+        SkRect outline_rect = SkRect::MakeXYWH(
+            -outline_offset - outline_width,
+            -outline_offset - outline_width,
+            layout.width + 2 * (outline_offset + outline_width),
+            layout.height + 2 * (outline_offset + outline_width)
+        );
+
+        SkPaint outline_paint;
+        outline_paint.setColor(style.outline_color);
+        outline_paint.setStyle(SkPaint::kStroke_Style);
+        outline_paint.setStrokeWidth(outline_width);
+        outline_paint.setAntiAlias(true);
+
+        // 根据 outline_style 设置线条样式
+        if (style.outline_style == "dashed") {
+            const SkScalar intervals[] = {6.0f, 3.0f};
+            outline_paint.setPathEffect(SkDashPathEffect::Make(intervals, 2, 0));
+        } else if (style.outline_style == "dotted") {
+            const SkScalar intervals[] = {2.0f, 2.0f};
+            outline_paint.setPathEffect(SkDashPathEffect::Make(intervals, 2, 0));
+        }
+        // solid 不需要特殊处理
+
+        // 如果有圆角，outline 也应该有圆角
+        if (style.border_radius.top_left.value > 0 || style.border_radius.top_right.value > 0 ||
+            style.border_radius.bottom_left.value > 0 || style.border_radius.bottom_right.value > 0) {
+            float tl = style.border_radius.top_left.ToPx() + outline_offset + outline_width;
+            float tr = style.border_radius.top_right.ToPx() + outline_offset + outline_width;
+            float br = style.border_radius.bottom_right.ToPx() + outline_offset + outline_width;
+            float bl = style.border_radius.bottom_left.ToPx() + outline_offset + outline_width;
+
+            SkRRect outline_rrect;
+            SkVector radii[4] = {{tl, tl}, {tr, tr}, {br, br}, {bl, bl}};
+            outline_rrect.setRectRadii(outline_rect, radii);
+            canvas->drawRRect(outline_rrect, outline_paint);
+        } else {
+            canvas->drawRect(outline_rect, outline_paint);
+        }
+    }
+
     // 绘制列表项目符号（如果是<li>元素）
     if (node && node->GetNodeType() == NodeType::ELEMENT_NODE) {
         auto element2 = std::static_pointer_cast<Element>(node);
@@ -865,10 +915,15 @@ void RenderBlock::PaintInputElement(SkCanvas* canvas, HTMLInputElement* input, c
             // 绘制文本
             text_renderer.DrawText(display_text, text_x, text_y, font, text_paint);
 
-            // 如果有焦点且不是placeholder，绘制光标
-            if (!value.empty()) {
-                auto element = std::static_pointer_cast<Element>(GetNode());
-                if (element && element->HasPseudoClass("focus")) {
+            // 如果有焦点，绘制光标（即使是空值也绘制光标）
+            auto element = std::static_pointer_cast<Element>(GetNode());
+            if (element && element->HasPseudoClass("focus")) {
+                // 基于时间的光标闪烁：每500毫秒切换一次
+                auto now = std::chrono::steady_clock::now();
+                auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()).count();
+                bool cursor_visible = (ms / 500) % 2 == 0;
+
+                if (cursor_visible) {
                     // 计算光标位置
                     int cursor_pos = input->GetSelectionStart();
                     std::string text_before_cursor = value.substr(0, cursor_pos);
@@ -892,7 +947,7 @@ void RenderBlock::PaintInputElement(SkCanvas* canvas, HTMLInputElement* input, c
                     float cursor_y_top = box.content_y;
                     float cursor_y_bottom = box.content_y + box.content_height;
 
-                    // 绘制光标（简单的竖线，暂时不实现闪烁）
+                    // 绘制光标
                     SkPaint cursor_paint;
                     cursor_paint.setColor(SK_ColorBLACK);
                     cursor_paint.setStrokeWidth(1);

@@ -7,6 +7,7 @@
 #include "core/dom/element.h"
 #include "core/dom/document.h"
 #include "core/dom/event.h"
+#include "core/dom/node.h"
 #include "core/dom/html_input_element.h"
 #include "core/dom/html_textarea_element.h"
 #include "core/window/window.h"
@@ -22,6 +23,37 @@ FocusManager::FocusManager() {
 }
 
 FocusManager::~FocusManager() {
+    // 析构时从文档注销
+    UnregisterFromDocument();
+}
+
+void FocusManager::RegisterWithDocument(std::shared_ptr<Document> document) {
+    if (!document) {
+        return;
+    }
+
+    // 如果已经注册到同一个文档，不需要重复注册
+    auto current_doc = registered_document_.lock();
+    if (current_doc == document) {
+        return;
+    }
+
+    // 先从旧文档注销
+    UnregisterFromDocument();
+
+    // 注册到新文档
+    document->AddObserver(this);
+    registered_document_ = document;
+    std::cout << "[FocusManager] Registered as DOM observer" << std::endl;
+}
+
+void FocusManager::UnregisterFromDocument() {
+    auto doc = registered_document_.lock();
+    if (doc) {
+        doc->RemoveObserver(this);
+        std::cout << "[FocusManager] Unregistered from DOM observer" << std::endl;
+    }
+    registered_document_.reset();
 }
 
 bool FocusManager::SetFocus(std::shared_ptr<Element> element, bool focus_visible) {
@@ -51,6 +83,14 @@ bool FocusManager::SetFocus(std::shared_ptr<Element> element, bool focus_visible
         std::cout << "null -> ";
     }
     std::cout << "<" << element->GetTagName() << ">" << std::endl;
+
+    // 注册到元素所属文档的观察者管理器
+    // 这样当元素被移除时，我们会收到通知并清除焦点
+    // 参考 Chrome/Blink: 焦点元素被移除时自动清除焦点
+    auto doc = std::dynamic_pointer_cast<Document>(element->GetOwnerDocument());
+    if (doc) {
+        RegisterWithDocument(doc);
+    }
 
     // 发送焦点变化事件
     SendFocusEvents(old_focus, element, focus_visible);
@@ -107,37 +147,10 @@ void FocusManager::Blur(std::shared_ptr<Element> element) {
 }
 
 std::shared_ptr<Element> FocusManager::GetFocusElement() const {
+    // 参考 Chrome/Blink: document.activeElement 返回当前焦点元素
+    // 如果焦点元素已被销毁（weak_ptr 过期），则返回 nullptr
+    // 不在这里自动清除焦点，焦点应该通过 ClearFocus() 或元素移除事件来清除
     auto element = focus_element_.lock();
-
-    // 检查元素是否仍然在 DOM 树中
-    // 如果元素已经从 DOM 树中移除（例如被 innerHTML 清除），则自动清除焦点
-    if (element) {
-        // 检查元素是否有 owner document
-        auto doc = element->GetOwnerDocument();
-        if (!doc) {
-            // 元素不在 DOM 树中，清除焦点
-            const_cast<FocusManager*>(this)->focus_element_.reset();
-            return nullptr;
-        }
-
-        // 检查元素是否连接到 document（通过向上遍历父节点）
-        std::shared_ptr<Node> current = element;
-        bool connected = false;
-        while (current) {
-            if (current->GetNodeType() == NodeType::DOCUMENT_NODE) {
-                connected = true;
-                break;
-            }
-            current = current->GetParentNode();
-        }
-
-        if (!connected) {
-            // 元素已经从 DOM 树中断开，清除焦点
-            const_cast<FocusManager*>(this)->focus_element_.reset();
-            return nullptr;
-        }
-    }
-
     return element;
 }
 
@@ -213,8 +226,10 @@ bool FocusManager::TabToNextFocusableElement(std::shared_ptr<Document> current_d
 }
 
 void FocusManager::ClearFocus() {
+    std::cout << "[FocusManager] ClearFocus called" << std::endl;
     auto current_focus = focus_element_.lock();
     if (current_focus) {
+        std::cout << "[FocusManager] Current focus is <" << current_focus->GetTagName() << ">, clearing it" << std::endl;
         // 如果是输入元素，停止SDL文本输入
         std::string tag_name = current_focus->GetTagName();
         if (tag_name == "input" || tag_name == "textarea") {
@@ -229,9 +244,42 @@ void FocusManager::ClearFocus() {
         // 触发重绘
         if (window_) {
             window_->SetNeedsRepaint();
+            std::cout << "[FocusManager] SetNeedsRepaint called after ClearFocus" << std::endl;
         }
+    } else {
+        std::cout << "[FocusManager] No focus to clear" << std::endl;
     }
     focus_element_.reset();
+}
+
+void FocusManager::OnNodeRemoved(Node* node, Node* parent) {
+    // 参考 Chrome/Blink: 当焦点元素被从 DOM 移除时，自动清除焦点
+    // 这是正确的焦点管理行为，而不是在 GetFocusElement 中检查
+
+    auto current_focus = focus_element_.lock();
+    if (!current_focus || !node) {
+        return;
+    }
+
+    // 检查被移除的节点是否是焦点元素本身
+    if (current_focus.get() == node) {
+        std::cout << "[FocusManager] Focus element <" << current_focus->GetTagName()
+                  << "> is being removed, clearing focus" << std::endl;
+        ClearFocus();
+        return;
+    }
+
+    // 检查被移除的节点是否包含焦点元素（通过检查焦点元素的祖先链）
+    // 注意：此时节点可能已经从 DOM 断开，所以需要检查焦点元素的父节点链
+    std::shared_ptr<Node> current = current_focus;
+    while (current) {
+        if (current.get() == node) {
+            std::cout << "[FocusManager] Ancestor of focus element is being removed, clearing focus" << std::endl;
+            ClearFocus();
+            return;
+        }
+        current = current->GetParentNode();
+    }
 }
 
 bool FocusManager::ProcessAutofocus(std::shared_ptr<Document> document) {
@@ -330,26 +378,31 @@ bool FocusManager::IsFocusable(std::shared_ptr<Element> element) {
         return false;
     }
 
+    std::string tag_name = element->GetTagName();
+
     // 检查元素是否有tabindex属性
     std::string tabindex_str = element->GetAttribute("tabindex");
     if (!tabindex_str.empty()) {
         // 有tabindex属性的元素都可聚焦（即使tabindex=-1）
+        std::cout << "[FocusManager] IsFocusable(<" << tag_name << ">): true (has tabindex)" << std::endl;
         return true;
     }
 
     // 检查是否是默认可聚焦的元素
-    std::string tag_name = element->GetTagName();
-    if (tag_name == "input" || tag_name == "button" || 
+    if (tag_name == "input" || tag_name == "button" ||
         tag_name == "select" || tag_name == "textarea" ||
         tag_name == "a") {
         // 检查是否被禁用
         std::string disabled = element->GetAttribute("disabled");
         if (disabled == "true" || disabled == "disabled") {
+            std::cout << "[FocusManager] IsFocusable(<" << tag_name << ">): false (disabled)" << std::endl;
             return false;
         }
+        std::cout << "[FocusManager] IsFocusable(<" << tag_name << ">): true (focusable tag)" << std::endl;
         return true;
     }
 
+    std::cout << "[FocusManager] IsFocusable(<" << tag_name << ">): false (not focusable)" << std::endl;
     return false;
 }
 

@@ -1191,16 +1191,30 @@ void StyleResolver::ApplyPseudoClassStyles(ComputedStyle& style, std::shared_ptr
         }
     }
 
+    // ========== :focus 伪类样式 ==========
+    // 使用 outline 显示焦点指示器（符合浏览器行为）
+    // outline 不占用布局空间，不受内联样式中的 border 影响
+    if (element->HasPseudoClass("focus")) {
+        if (tag_name == "input" || tag_name == "textarea" || tag_name == "button" || tag_name == "select") {
+            // 使用 outline 显示焦点，类似浏览器默认行为
+            style.outline_width = CSSLength(2, CSSUnit::PX);
+            style.outline_style = "solid";
+            style.outline_color = SkColorSetRGB(0, 0, 0);  // 黑色轮廓
+            style.outline_offset = CSSLength(1, CSSUnit::PX);  // 轮廓距离边框1px
+        }
+    }
+
     // ========== :focus-visible 伪类样式 ==========
-    // 只在键盘导航时显示焦点指示器，鼠标点击不显示
+    // 键盘导航时的焦点指示器（更明显的蓝色边框）
     // 这符合现代浏览器的行为：https://developer.mozilla.org/en-US/docs/Web/CSS/:focus-visible
     if (element->HasPseudoClass("focus-visible")) {
         if (tag_name == "button" || tag_name == "input" || tag_name == "textarea" || tag_name == "select") {
-            // 焦点样式：蓝色边框和外发光
+            // 焦点样式：蓝色边框和外发光（覆盖:focus的样式）
             style.border.width = CSSLength(2, CSSUnit::PX);
             style.border.color = SkColorSetRGB(66, 153, 225);  // 蓝色
 
-            // 添加外发光效果（使用 box-shadow）
+            // 清除之前的阴影，添加蓝色外发光效果
+            style.box_shadow.clear();
             CSSBoxShadow focus_shadow;
             focus_shadow.offset_x = 0;
             focus_shadow.offset_y = 0;

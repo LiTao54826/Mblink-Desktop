@@ -475,6 +475,7 @@ std::shared_ptr<Element> Element::Closest(const std::string& selector) {
 
 void Element::SetPseudoClass(const std::string& pseudo_class, bool activate) {
     // 参考：RmlUi/Source/Core/Element.cpp - SetPseudoClass
+    // 参考：Chrome/Blink - 伪类是浏览器内部状态，不应触发框架重新渲染
 
     bool current_state = HasPseudoClass(pseudo_class);
 
@@ -490,20 +491,13 @@ void Element::SetPseudoClass(const std::string& pseudo_class, bool activate) {
         pseudo_classes_.erase(pseudo_class);
     }
 
-    // 标记需要重新计算样式
-    // TODO: 触发样式重新计算
-    MarkDirty();
+    // 标记需要重新计算样式和重绘
+    // 伪类变化需要样式重计算（如:focus, :hover改变边框颜色）
+    MarkDirty(DirtyType::STYLE | DirtyType::PAINT);
 
-    // 通知观察者（用于React等框架）
-    auto doc = GetOwnerDocument();
-    if (doc) {
-        auto& observer_manager = doc->GetObserverManager();
-        observer_manager.NotifyPseudoClassChanged(
-            std::static_pointer_cast<Element>(shared_from_this()),
-            pseudo_class,
-            activate
-        );
-    }
+    // 注意：不通知 DOM 观察者，因为伪类是浏览器内部状态
+    // 这样可以避免 React/Preact 等框架因伪类变化而重新渲染整个组件树
+    // 参考 Chrome 行为：:focus, :hover, :active 等伪类变化不会触发 MutationObserver
 }
 
 bool Element::HasPseudoClass(const std::string& pseudo_class) const {

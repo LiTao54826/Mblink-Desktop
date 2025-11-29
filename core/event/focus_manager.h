@@ -1,14 +1,16 @@
 /**
  * @file focus_manager.h
  * @brief 焦点管理器
- * 
+ *
  * 参考：RmlUi/Source/Core/Context.cpp - OnFocusChange
+ * 参考：Chrome/Blink - Document::SetFocusedElement
  */
 
 #pragma once
 
 #include <memory>
 #include <vector>
+#include "core/dom/dom_observer.h"
 
 namespace lightui {
 
@@ -16,6 +18,7 @@ namespace lightui {
 class Element;
 class Document;
 class Window;
+class Node;
 
 /**
  * @brief 焦点管理器
@@ -27,8 +30,9 @@ class Window;
  * - :focus/:focus-visible伪类自动设置
  *
  * 参考：RmlUi的焦点管理机制
+ * 参考：Chrome/Blink - 焦点元素被移除时自动清除焦点
  */
-class FocusManager {
+class FocusManager : public DOMObserver {
 public:
     FocusManager();
     ~FocusManager();
@@ -72,6 +76,16 @@ public:
      */
     void ClearFocus();
 
+    // ========== DOMObserver 接口 ==========
+
+    /**
+     * @brief 节点被移除时调用
+     *
+     * 如果被移除的节点是焦点元素或包含焦点元素，则清除焦点
+     * 参考 Chrome/Blink 行为
+     */
+    void OnNodeRemoved(Node* node, Node* parent) override;
+
     /**
      * @brief 处理autofocus属性（在文档加载完成时调用）
      * @param document 文档
@@ -81,13 +95,14 @@ public:
      */
     bool ProcessAutofocus(std::shared_ptr<Document> document);
 
-private:
     /**
-     * @brief 查找可聚焦的元素
+     * @brief 查找可聚焦的元素（从当前元素向上查找）
      * @param element 起始元素
      * @return 可聚焦的元素，如果没有则返回nullptr
      */
     std::shared_ptr<Element> FindFocusableElement(std::shared_ptr<Element> element);
+
+private:
 
     /**
      * @brief 收集所有可聚焦元素（按tabindex排序）
@@ -121,12 +136,26 @@ private:
                         std::shared_ptr<Element> new_focus,
                         bool focus_visible);
 
+    /**
+     * @brief 注册到文档的观察者管理器
+     * @param document 要注册的文档
+     */
+    void RegisterWithDocument(std::shared_ptr<Document> document);
+
+    /**
+     * @brief 从当前文档的观察者管理器注销
+     */
+    void UnregisterFromDocument();
+
 private:
     // 当前焦点元素（弱引用，避免循环引用）
     std::weak_ptr<Element> focus_element_;
 
     // 窗口指针（用于SDL文本输入）
     Window* window_ = nullptr;
+
+    // 当前注册的文档（用于自动注销）
+    std::weak_ptr<Document> registered_document_;
 };
 
 } // namespace lightui

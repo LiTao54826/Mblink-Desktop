@@ -99,6 +99,32 @@ void EventLoop::RunOnce() {
 
     task_scheduler_->ProcessAnimationFrames(timestamp_ms);
 
+    // 4.5 处理光标闪烁（如果有聚焦的输入框）
+    static Uint64 last_cursor_blink_time = SDL_GetTicks();
+    static bool cursor_visible = true;
+    auto focus_element = focus_manager_->GetFocusElement();
+    if (focus_element) {
+        std::string tag_name = focus_element->GetTagName();
+        if (tag_name == "input" || tag_name == "textarea") {
+            // 每500毫秒切换光标显示状态
+            Uint64 now = SDL_GetTicks();
+            if (now - last_cursor_blink_time >= 500) {
+                cursor_visible = !cursor_visible;
+                cursor_visible_ = cursor_visible;  // 保存到成员变量供渲染使用
+                last_cursor_blink_time = now;
+                // 触发重绘以更新光标
+                auto& wm = WindowManager::Instance();
+                for (auto& window : wm.GetAllWindows()) {
+                    window->SetNeedsRepaint();
+                }
+            }
+        }
+    } else {
+        // 没有聚焦的输入框时，重置光标状态
+        cursor_visible = true;
+        cursor_visible_ = true;
+    }
+
     // 5. 只在有窗口需要重绘时才渲染
     auto& wm = WindowManager::Instance();
     bool any_needs_repaint = false;
@@ -468,10 +494,20 @@ void EventLoop::HandleMouseEventForDOM(const SDL_Event& event) {
         // mousedown时设置:active伪类
         hit_result.element->SetPseudoClass("active", true);
 
+        std::cout << "[EventLoop] MOUSE_BUTTON_DOWN on <" << hit_result.element->GetTagName() << ">" << std::endl;
+
         // 鼠标点击时设置焦点（参考RmlUi/Source/Core/Context.cpp - ProcessMouseButtonDown）
         // 使用FocusManager设置焦点，focus_visible=false（鼠标点击不显示焦点指示器）
         focus_manager_->SetWindow(window.get());  // 设置窗口指针用于SDL文本输入
-        focus_manager_->SetFocus(hit_result.element, false);
+        bool focus_set = focus_manager_->SetFocus(hit_result.element, false);
+
+        std::cout << "[EventLoop] SetFocus returned: " << (focus_set ? "true" : "false") << std::endl;
+
+        // 如果元素不可聚焦，清除当前焦点（点击空白区域或非交互元素）
+        if (!focus_set) {
+            std::cout << "[EventLoop] Calling ClearFocus because element is not focusable" << std::endl;
+            focus_manager_->ClearFocus();
+        }
 
         // 拖拽检测（参考RmlUi/Source/Core/Context.cpp - ProcessMouseButtonDown）
         // 只在左键按下时检测拖拽
@@ -779,8 +815,12 @@ void EventLoop::HandleKeyboardEventForDOM(const SDL_Event& event) {
     auto focus_element = focus_manager_->GetFocusElement();
     if (!focus_element) {
         // 没有焦点元素，不分发键盘事件
+        std::cout << "[EventLoop] HandleKeyboardEventForDOM: No focus element, ignoring" << std::endl;
         return;
     }
+
+    std::cout << "[EventLoop] HandleKeyboardEventForDOM: focus on <" << focus_element->GetTagName()
+              << ">, event type: " << event.type << std::endl;
 
     // 获取修饰键状态
     SDL_Keymod mod = SDL_GetModState();
@@ -859,14 +899,20 @@ void EventLoop::HandleKeyboardEventForDOM(const SDL_Event& event) {
         // 注意：这是SDL特有的事件，W3C标准中没有直接对应
         // 用于处理IME输入和普通文本输入
 
+        std::cout << "[EventLoop] TEXT_INPUT received: '" << event.text.text << "'" << std::endl;
+
         // 检查是否是表单元素
         auto input_element = std::dynamic_pointer_cast<HTMLInputElement>(focus_element);
         auto textarea_element = std::dynamic_pointer_cast<HTMLTextAreaElement>(focus_element);
 
         if (input_element) {
+            std::cout << "[EventLoop] Calling input_element->HandleTextInput" << std::endl;
             input_element->HandleTextInput(event.text.text);
         } else if (textarea_element) {
+            std::cout << "[EventLoop] Calling textarea_element->HandleTextInput" << std::endl;
             textarea_element->HandleTextInput(event.text.text);
+        } else {
+            std::cout << "[EventLoop] Focus element is not input or textarea" << std::endl;
         }
     }
 }

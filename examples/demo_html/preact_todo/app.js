@@ -284,15 +284,7 @@ function App() {
 
     var containerStyle = 'max-width: 800px; margin: 0 auto; padding: 20px;';
 
-    // 测试按钮样式（和 Add 按钮相同）
-    var testButtonStyle = 'padding: 10px 20px; font-size: 16px; background-color: #4CAF50; color: white; border: none; border-radius: 4px; cursor: pointer;';
-
     return Preact.h('div', { style: appStyle },
-        // 独立测试按钮（不在flex容器内）
-        Preact.h('div', { style: 'padding: 10px; background-color: #fff; margin-bottom: 10px;' },
-            Preact.h('p', { style: 'margin: 0 0 10px 0; font-size: 14px; color: #666;' }, 'Test Button (outside flex):'),
-            Preact.h('button', { style: testButtonStyle }, 'Test Add')
-        ),
         Preact.h('div', { style: containerStyle },
             Preact.h(Header, {
                 title: 'MBink Todo App',

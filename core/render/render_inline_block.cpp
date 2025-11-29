@@ -17,6 +17,9 @@
 #include <algorithm>
 #include <iostream>
 #include <unordered_map>
+#include <chrono>
+#include "include/core/SkPathEffect.h"
+#include "include/effects/SkDashPathEffect.h"
 
 namespace lightui {
 
@@ -321,6 +324,53 @@ void RenderInlineBlock::Paint(SkCanvas* canvas) {
         }
     }
 
+    // ========== 绘制 outline（焦点指示器）==========
+    // outline 不占用布局空间，绘制在边框外部
+    if (style.outline_style != "none" && !style.outline_width.IsZero()) {
+        float outline_width = style.outline_width.ToPx();
+        float outline_offset = style.outline_offset.ToPx();
+
+        // outline 绘制在边框外部
+        SkRect outline_rect = SkRect::MakeXYWH(
+            -outline_offset - outline_width,
+            -outline_offset - outline_width,
+            layout.width + 2 * (outline_offset + outline_width),
+            layout.height + 2 * (outline_offset + outline_width)
+        );
+
+        SkPaint outline_paint;
+        outline_paint.setColor(style.outline_color);
+        outline_paint.setStyle(SkPaint::kStroke_Style);
+        outline_paint.setStrokeWidth(outline_width);
+        outline_paint.setAntiAlias(true);
+
+        // 根据 outline_style 设置线条样式
+        if (style.outline_style == "dashed") {
+            const SkScalar intervals[] = {6.0f, 3.0f};
+            outline_paint.setPathEffect(SkDashPathEffect::Make(intervals, 2, 0));
+        } else if (style.outline_style == "dotted") {
+            const SkScalar intervals[] = {2.0f, 2.0f};
+            outline_paint.setPathEffect(SkDashPathEffect::Make(intervals, 2, 0));
+        }
+        // solid 不需要特殊处理
+
+        // 如果有圆角，outline 也应该有圆角
+        if (style.border_radius.top_left.value > 0 || style.border_radius.top_right.value > 0 ||
+            style.border_radius.bottom_left.value > 0 || style.border_radius.bottom_right.value > 0) {
+            float tl = style.border_radius.top_left.ToPx() + outline_offset + outline_width;
+            float tr = style.border_radius.top_right.ToPx() + outline_offset + outline_width;
+            float br = style.border_radius.bottom_right.ToPx() + outline_offset + outline_width;
+            float bl = style.border_radius.bottom_left.ToPx() + outline_offset + outline_width;
+
+            SkRRect outline_rrect;
+            SkVector radii[4] = {{tl, tl}, {tr, tr}, {br, br}, {bl, bl}};
+            outline_rrect.setRectRadii(outline_rect, radii);
+            canvas->drawRRect(outline_rrect, outline_paint);
+        } else {
+            canvas->drawRect(outline_rect, outline_paint);
+        }
+    }
+
     // 渲染表单控件特定内容
     if (node && node->GetNodeType() == NodeType::ELEMENT_NODE) {
         auto element = std::static_pointer_cast<Element>(node);
@@ -372,23 +422,44 @@ void RenderInlineBlock::PaintInputElement(SkCanvas* canvas, HTMLInputElement* in
         type == InputType::Url || type == InputType::Search ||
         type == InputType::Number) {
 
+        // 创建字体（光标绘制也需要）
+        FontDescriptor desc;
+        desc.family = computed_style_.font_family;
+        desc.size = computed_style_.font_size;
+        desc.weight = FontWeight::NORMAL;
+        desc.style = FontStyle::NORMAL;
+        SkFont font = FontManager::GetInstance().LoadFont(desc);
+
+        // 计算文本位置
+        SkFontMetrics font_metrics;
+        font.getMetrics(&font_metrics);
+        float text_height = -font_metrics.fAscent + font_metrics.fDescent;
+        float text_y = box.content_y + (box.content_height - text_height) / 2 - font_metrics.fAscent;
+        float text_x = box.content_x + computed_style_.padding.left.ToPx();
+
+        // 计算文本可用宽度（减去左右padding）
+        float text_available_width = box.content_width - computed_style_.padding.left.ToPx() - computed_style_.padding.right.ToPx();
+
         // 如果value为空，显示placeholder
+        std::string original_value = value;  // 保存原始值用于光标计算
         bool is_placeholder = false;
         if (value.empty()) {
             value = input->GetPlaceholder();
             is_placeholder = true;
         }
 
+        // 裁剪文本区域（防止文本溢出）
+        canvas->save();
+        SkRect text_clip_rect = SkRect::MakeXYWH(
+            text_x,
+            box.content_y,
+            text_available_width,
+            box.content_height
+        );
+        canvas->clipRect(text_clip_rect);
+
+        // 绘制文本（如果有内容）
         if (!value.empty()) {
-            // 创建字体
-            FontDescriptor desc;
-            desc.family = computed_style_.font_family;
-            desc.size = computed_style_.font_size;
-            desc.weight = FontWeight::NORMAL;
-            desc.style = FontStyle::NORMAL;
-
-            SkFont font = FontManager::GetInstance().LoadFont(desc);
-
             // 创建文本渲染器
             TextRenderer text_renderer(canvas);
 
@@ -403,75 +474,62 @@ void RenderInlineBlock::PaintInputElement(SkCanvas* canvas, HTMLInputElement* in
                 text_paint.SetColor(SK_ColorBLACK);
             }
 
-            // 计算文本位置（垂直居中）
-            SkFontMetrics font_metrics;
-            font.getMetrics(&font_metrics);
-            float text_height = -font_metrics.fAscent + font_metrics.fDescent;
-            float text_y = box.content_y + (box.content_height - text_height) / 2 - font_metrics.fAscent;
-            float text_x = box.content_x + computed_style_.padding.left.ToPx();
-
             // 如果是密码类型，显示星号
             std::string display_text = value;
             if (type == InputType::Password && !is_placeholder) {
                 display_text = std::string(value.length(), '*');
             }
 
-            // 计算文本可用宽度（减去左右padding）
-            float text_available_width = box.content_width - computed_style_.padding.left.ToPx() - computed_style_.padding.right.ToPx();
-
-            // 裁剪文本区域（防止文本溢出）
-            canvas->save();
-            SkRect text_clip_rect = SkRect::MakeXYWH(
-                text_x,
-                box.content_y,
-                text_available_width,
-                box.content_height
-            );
-            canvas->clipRect(text_clip_rect);
-
             // 绘制文本
             text_renderer.DrawText(display_text, text_x, text_y, font, text_paint);
-
-            // 如果有焦点且不是placeholder，绘制光标
-            if (!value.empty() && !is_placeholder) {
-                auto element = std::static_pointer_cast<Element>(GetNode());
-                if (element && element->HasPseudoClass("focus")) {
-                    // 计算光标位置
-                    int cursor_pos = input->GetSelectionStart();
-                    std::string text_before_cursor = value.substr(0, cursor_pos);
-
-                    // 如果是密码类型，使用星号计算宽度
-                    if (type == InputType::Password) {
-                        text_before_cursor = std::string(cursor_pos, '*');
-                    }
-
-                    // 测量光标前的文本宽度
-                    float cursor_x = text_x;
-                    if (cursor_pos > 0) {
-                        cursor_x += font.measureText(
-                            text_before_cursor.c_str(),
-                            text_before_cursor.length(),
-                            SkTextEncoding::kUTF8
-                        );
-                    }
-
-                    // 计算光标的Y坐标（从文本顶部到底部）
-                    float cursor_y_top = box.content_y + computed_style_.padding.top.ToPx();
-                    float cursor_y_bottom = box.content_y + box.content_height - computed_style_.padding.bottom.ToPx();
-
-                    // 绘制光标（简单的竖线）
-                    SkPaint cursor_paint;
-                    cursor_paint.setColor(SK_ColorBLACK);
-                    cursor_paint.setStrokeWidth(1);
-                    cursor_paint.setAntiAlias(true);
-
-                    canvas->drawLine(cursor_x, cursor_y_top, cursor_x, cursor_y_bottom, cursor_paint);
-                }
-            }
-
-            // 恢复裁剪
-            canvas->restore();
         }
+
+        // 如果有焦点，绘制光标（独立于文本绘制）
+        auto element = std::static_pointer_cast<Element>(GetNode());
+        bool has_focus = element && element->HasPseudoClass("focus");
+
+        if (has_focus) {
+            // 基于时间的光标闪烁：每500毫秒切换一次
+            auto now = std::chrono::steady_clock::now();
+            auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()).count();
+            bool cursor_visible = (ms / 500) % 2 == 0;
+
+            if (cursor_visible) {
+                // 计算光标位置（使用原始值，不是placeholder）
+                int cursor_pos = input->GetSelectionStart();
+                std::string text_before_cursor = original_value.substr(0, std::min(cursor_pos, static_cast<int>(original_value.length())));
+
+                // 如果是密码类型，使用星号计算宽度
+                if (type == InputType::Password) {
+                    text_before_cursor = std::string(text_before_cursor.length(), '*');
+                }
+
+                // 测量光标前的文本宽度
+                float cursor_x = text_x;
+                if (!text_before_cursor.empty()) {
+                    cursor_x += font.measureText(
+                        text_before_cursor.c_str(),
+                        text_before_cursor.length(),
+                        SkTextEncoding::kUTF8
+                    );
+                }
+
+                // 计算光标的Y坐标（从文本顶部到底部）
+                float cursor_y_top = box.content_y + computed_style_.padding.top.ToPx();
+                float cursor_y_bottom = box.content_y + box.content_height - computed_style_.padding.bottom.ToPx();
+
+                // 绘制光标（简单的竖线）
+                SkPaint cursor_paint;
+                cursor_paint.setColor(SK_ColorBLACK);
+                cursor_paint.setStrokeWidth(1);
+                cursor_paint.setAntiAlias(true);
+
+                canvas->drawLine(cursor_x, cursor_y_top, cursor_x, cursor_y_bottom, cursor_paint);
+            }
+        }
+
+        // 恢复裁剪
+        canvas->restore();
     }
     // 处理checkbox和radio类型
     else if (type == InputType::Checkbox || type == InputType::Radio) {
