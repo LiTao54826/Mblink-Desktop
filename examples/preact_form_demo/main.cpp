@@ -117,7 +117,7 @@ int main() {
         std::cout << "  Application loaded and rendered" << std::endl;
 
         std::cout << std::endl;
-        std::cout << "  Note: Open examples/preact_form_demo/index.html in browser to compare" << std::endl;
+        std::cout << "  Note: Open examples/html/preact_form.html in browser to compare" << std::endl;
 
         // 将文档关联到窗口并显示
         window->SetDocument(document);
