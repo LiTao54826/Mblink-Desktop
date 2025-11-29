@@ -177,6 +177,9 @@ add_subdirectory(preact_window_demo)
 # ========== Preact Todo App ==========
 add_subdirectory(preact_todo_app)
 
+# ========== Preact Form Demo ==========
+add_subdirectory(preact_form_demo)
+
 # ========== Flexbox Test ==========
 add_subdirectory(flexbox_test)
 
@@ -198,5 +201,6 @@ message(STATUS "  - preact_hello_world")
 message(STATUS "  - preact_counter")
 message(STATUS "  - preact_window_demo")
 message(STATUS "  - preact_todo_app")
+message(STATUS "  - preact_form_demo")
 message(STATUS "  - flexbox_test")
 

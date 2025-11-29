@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>MBink Form Demo</title>
+    <style>
+        * { box-sizing: border-box; }
+        body { margin: 0; padding: 0; font-family: Arial, sans-serif; }
+    </style>
+</head>
+<body>
+    <!-- Preact will render here -->
+    
+    <!-- Load Preact (use CDN for browser, local file for MBink) -->
+    <script>
+        // Polyfill for MBink compatibility
+        if (typeof window === 'undefined') {
+            // Running in MBink
+        } else {
+            // Running in browser - Preact will be loaded below
+        }
+    </script>
+    
+    <!-- For browser testing, include Preact from CDN -->
+    <script src="https://unpkg.com/preact@10.19.3/dist/preact.umd.js"></script>
+    <script src="https://unpkg.com/preact@10.19.3/hooks/dist/hooks.umd.js"></script>
+    
+    <script>
+        // Browser compatibility layer
+        if (typeof window !== 'undefined' && window.preact) {
+            // Running in browser with official Preact
+            var Preact = {
+                h: window.preact.h,
+                createElement: window.preact.createElement,
+                render: window.preact.render,
+                Fragment: window.preact.Fragment,
+                Component: window.preact.Component
+            };
+            var PreactHooks = {
+                useState: window.preactHooks.useState,
+                useEffect: window.preactHooks.useEffect,
+                useLayoutEffect: window.preactHooks.useLayoutEffect,
+                useRef: window.preactHooks.useRef,
+                useMemo: window.preactHooks.useMemo,
+                useCallback: window.preactHooks.useCallback,
+                useContext: window.preactHooks.useContext,
+                useReducer: window.preactHooks.useReducer
+            };
+        }
+        // If running in MBink, Preact and PreactHooks are already global
+    </script>
+    
+    <!-- Application code -->
+    <script src="app.js"></script>
+</body>
+</html>
+
