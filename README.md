@@ -7,8 +7,8 @@
 [![Build Status](https://img.shields.io/badge/build-passing-brightgreen.svg)]()
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Version](https://img.shields.io/badge/version-0.90.0-orange.svg)]()
-[![Phase](https://img.shields.io/badge/phase-Taffy%20Layout%20Complete-brightgreen)]()
-[![Progress](https://img.shields.io/badge/progress-90%25-blue)]()
+[![Phase](https://img.shields.io/badge/phase-Preact%20Integration-yellow)]()
+[![Progress](https://img.shields.io/badge/progress-85%25-blue)]()
 [![Tests](https://img.shields.io/badge/tests-81%20passing-brightgreen)]()
 
 ---
@@ -16,14 +16,15 @@
 ## 📊 项目状态
 
 **当前版本**: v0.90.0
-**当前阶段**: Taffy CSS 布局引擎集成完成 ✅
-**进度**: 90% (核心功能 + CSS 高级特性 + 布局引擎完成)
+**当前阶段**: Preact 生态集成进行中 🔄
+**进度**: 85% (核心功能 + CSS + 布局完成，Preact 集成中)
 **最后更新**: 2025-11-29
-**构建状态**: ✅ 所有模块编译成功
-**测试状态**: ✅ 81 个测试用例全部通过
+**构建状态**: ✅ 核心模块编译成功
+**测试状态**: ✅ 81 个测试用例通过 (4个 Preact 测试待修复)
 **布局引擎**: ✅ Taffy CSS 布局引擎 (Flexbox + CSS Grid)
 **CSS 高级特性**: ✅ 100% 完成 (阴影、渐变、Transform、Transition、Animation、变量、滤镜)
-**下一步**: React 生态完善 或 多语言绑定
+**Preact 状态**: 🔄 纯 JS 实现可用，C++ 绑定未完成
+**下一步**: 完成 PreactRenderer/PreactBindings C++ 实现
 
 ### 🚀 快速开始
 
@@ -33,37 +34,32 @@
 
 ### 最新成就 🎉
 
-**Phase 8 - Taffy CSS 布局引擎** (2025-11-28 完成 ✅):
+**Phase 9 - Preact 生态集成** (进行中 🔄):
+- ✅ **Preact 核心库** - 纯 JS 实现 `js/preact/preact.js`
+- ✅ **Hooks 支持** - useState, useEffect, useRef 等完整 Hooks
+- ✅ **Virtual DOM** - h() / createElement() VNode 创建
+- ✅ **函数组件** - 支持函数组件和 props
+- ✅ **事件绑定** - onclick, onChange, onSubmit 事件
+- ✅ **示例应用** - preact_counter, preact_todo_app 可运行
+- 🔄 **C++ 绑定** - PreactRenderer/PreactBindings 待实现
+- ❌ **Virtual DOM Diffing** - 当前为简单重渲染
+
+**Phase 8 - Taffy CSS 布局引擎** (完成 ✅):
 - ✅ **Taffy 布局引擎集成** - 替代 Yoga，支持更完整的 CSS 布局
-- ✅ **CSS Flexbox** - 完整的 Flexbox 布局支持
-- ✅ **CSS Grid** - grid-template-columns/rows 模板支持
-- ✅ **Position/Overflow** - 定位和溢出处理
+- ✅ **CSS Flexbox/Grid** - 完整布局支持
 - ✅ **D3D11 DisplayBackend** - 无闪烁 CPU 渲染
 - ✅ **DPI 缩放** - 高 DPI 显示支持
-- ✅ **滚动条支持** - 原生滚动条渲染
 
-**Phase 7 - HTML/CSS 完整支持** (v0.90.0 完成 ✅):
-- ✅ **HTML5 完整解析** - 错误处理、DOCTYPE、HTML 实体 (200+)
-- ✅ **CSS3 选择器** - 所有基本、组合、属性、伪类、伪元素选择器
-- ✅ **表单元素** - 所有 HTML5 input 类型、验证、状态管理
-- ✅ **333 个测试** - 283 单元测试 + 50 性能测试
-
-**Phase 3-6 - CSS 高级特性** (100% 完成 ✅):
-- ✅ **CSS Shadows** - Box Shadow、Text Shadow (多重阴影)
-- ✅ **CSS Gradients** - Linear/Radial Gradient (多色停止点)
-- ✅ **CSS Transform** - translate、rotate、scale、skew、matrix
-- ✅ **CSS Transition** - 12 种缓动函数、动画时间线
-- ✅ **CSS Animation** - @keyframes、AnimationController
-- ✅ **CSS Variables** - 自定义属性、var() 函数
-- ✅ **CSS Filters** - 10 种滤镜效果
+**Phase 3-7 - CSS 高级特性与 HTML 支持** (100% 完成 ✅):
+- ✅ **CSS Shadows/Gradients** - 阴影、渐变
+- ✅ **CSS Transform/Transition/Animation** - 变换、过渡、动画
+- ✅ **CSS Variables/Filters** - 变量、滤镜
+- ✅ **HTML5 完整解析** - 错误处理、表单元素
 
 **Phase 2 - 核心功能** (100% 完成 ✅):
-- ✅ **JavaScript 运行时** - QuickJS 封装、Console API、定时器
-- ✅ **DOM API** - 遵循 W3C 标准、事件冒泡/捕获
-- ✅ **布局引擎** - Flexbox、CSS 盒模型
-- ✅ **渲染引擎** - Skia 渲染、CSS 样式
-- ✅ **窗口系统** - SDL3 窗口、60 FPS 主循环
-- ✅ **事件系统** - 鼠标、键盘、焦点、拖拽
+- ✅ **JavaScript 运行时** - QuickJS 封装、Console API
+- ✅ **DOM API** - W3C 标准、事件系统
+- ✅ **渲染/窗口系统** - Skia + SDL3
 
 📝 [项目状态](docs/PROJECT_STATUS.md) | 📊 [开发路线图](docs/ROADMAP.md) | 🏗️ [架构设计](docs/ARCHITECTURE.md)
 

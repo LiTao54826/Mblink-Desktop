@@ -2,8 +2,8 @@
 
 > **最后更新**: 2025-11-29
 > **当前版本**: 0.90.0
-> **总体进度**: 90%
-> **最新完成**: Taffy CSS 布局引擎集成 (Flexbox + CSS Grid)
+> **总体进度**: 85%
+> **当前工作**: Preact 生态集成 (C++ 绑定待完成)
 
 ---
 
@@ -30,13 +30,13 @@
 | **性能优化** | 100% | ✅ 完成 | ✅ |
 | **HTML/CSS 完整支持** | 100% | ✅ 完成 | 333 测试 |
 | **Taffy 布局引擎** | 100% | ✅ 完成 | ✅ |
-| **Preact 生态** | 60% | 🔄 进行中 | 5 个示例 |
+| **Preact 生态** | 50% | 🔄 进行中 | 4 个示例 (JS可用，C++待完成) |
 | **多语言绑定** | 20% | 🔄 进行中 | - |
 | **工具链** | 0% | ⚪ 未开始 | - |
 | **跨平台** | 33% | 🔄 进行中 | Windows ✅ |
 | **文档** | 70% | 🔄 进行中 | 19 个文档 |
 
-**总计**: 90% 完成，81 个测试用例全部通过
+**总计**: 85% 完成，81 个测试用例通过 (4个 Preact 测试待修复)
 
 ---
 
@@ -208,14 +208,37 @@
 
 ## 🚧 进行中的工作
 
-### Preact 生态系统 (60%)
-- ✅ Preact 基本集成
-- ✅ Preact Counter 示例
-- ✅ Preact Hello World 示例
-- ✅ Preact Todo App 示例
-- ✅ Preact Window Demo 示例
-- ✅ Preact Form Demo 示例
-- ⚪ Preact Hooks 完整测试
+### Preact 生态系统 (50%)
+
+**已完成 (纯 JavaScript 实现)**:
+- ✅ Preact 核心库 (`js/preact/preact.js` - 370 行)
+- ✅ Hooks 系统 (`js/preact/hooks.js` - 255 行)
+  - useState, useEffect, useLayoutEffect
+  - useRef, useMemo, useCallback
+  - useContext, useReducer, createContext
+- ✅ Virtual DOM (h() / createElement() VNode 创建)
+- ✅ 函数组件支持 (props 传递)
+- ✅ 事件绑定 (onclick, onChange, onSubmit)
+- ✅ DOM 渲染 (createDOMElement → MBink DOM)
+
+**可运行示例**:
+- ✅ preact_counter - 计数器应用 (useState 演示)
+- ✅ preact_todo_app - Todo 应用 (完整 CRUD)
+- ✅ preact_hello_world - 基础示例
+- ✅ preact_window_demo - 窗口渲染
+- ❌ preact_form_demo - 目录为空
+
+**测试状态**:
+- ✅ PreactBasicTest (8 个测试) - 通过
+- ❌ PreactIntegrationTest - 缺少可执行文件
+- ❌ PreactRenderTest - 引用不存在的 PreactRenderer
+- ❌ PreactComponentsTest - 引用不存在的 PreactBindings
+
+**待完成 (C++ 绑定)**:
+- ❌ `core/quickjs/preact_renderer.h/cpp` - 未实现
+- ❌ `core/quickjs/preact_bindings.h/cpp` - 未实现
+- ❌ Virtual DOM Diffing 优化 - 当前为简单重渲染
+- ⚪ Preact Router 集成
 - ⚪ Ant Design 组件库测试
 
 ### 多语言绑定 (20%)
@@ -236,15 +259,17 @@
 
 ## 📅 下一步计划
 
-### 选项 1: Preact 生态完善 (推荐)
+### 选项 1: Preact C++ 绑定完成 (推荐)
 **预计时间**: 1-2 周
 **优先级**: 高
 
 **任务清单**:
-1. Preact Hooks 完整测试
-2. Preact Router 集成
-3. Ant Design 组件库测试
-4. 性能优化
+1. 实现 `core/quickjs/preact_renderer.h/cpp`
+2. 实现 `core/quickjs/preact_bindings.h/cpp`
+3. 修复 PreactRenderTest, PreactComponentsTest, PreactIntegrationTest
+4. 完成 preact_form_demo 示例
+5. Virtual DOM Diffing 优化
+6. Preact Router 集成
 
 ### 选项 2: 多语言绑定
 **预计时间**: 2-3 周

@@ -2,10 +2,10 @@
 
 > **最后更新**: 2025-11-29
 > **当前版本**: 0.90.0
-> **当前进度**: 90%
-> **构建状态**: ✅ 所有核心模块编译成功
-> **测试状态**: ✅ 81 个测试用例全部通过
-> **当前阶段**: Phase 8 完成，进入稳定化阶段 ✅
+> **当前进度**: 85%
+> **构建状态**: ✅ 核心模块编译成功
+> **测试状态**: ✅ 81 个测试用例通过 (4个 Preact 测试待修复)
+> **当前阶段**: Phase 9 进行中 - Preact C++ 绑定待完成 🔄
 
 ## 总体时间规划
 
@@ -377,25 +377,45 @@
 
 ## 🚧 进行中阶段
 
-### Phase 9: Preact 生态系统 (60%)
+### Phase 9: Preact 生态系统 (50%)
 
 **目标**: 完整支持 Preact 和 React 生态
 
-#### 已完成
+#### 已完成 (纯 JavaScript 实现)
 
-- [x] Preact 基本集成
-- [x] Preact Counter 示例
-- [x] Preact Hello World 示例
-- [x] Preact Todo App 示例
-- [x] Preact Window Demo 示例
-- [x] Preact Form Demo 示例
+- [x] Preact 核心库 (`js/preact/preact.js` - 370 行)
+- [x] Hooks 系统 (`js/preact/hooks.js` - 255 行)
+  - useState, useEffect, useLayoutEffect
+  - useRef, useMemo, useCallback
+  - useContext, useReducer, createContext
+- [x] Virtual DOM (h() / createElement() VNode 创建)
+- [x] 函数组件支持 (props 传递)
+- [x] 事件绑定 (onclick, onChange, onSubmit)
+- [x] DOM 渲染 (createDOMElement → MBink DOM)
 
-#### 待完成
+#### 可运行示例
 
-- [ ] Preact Hooks 完整测试
+- [x] preact_counter - 计数器应用 (useState 演示)
+- [x] preact_todo_app - Todo 应用 (完整 CRUD)
+- [x] preact_hello_world - 基础示例
+- [x] preact_window_demo - 窗口渲染
+- [ ] preact_form_demo - 目录为空
+
+#### 测试状态
+
+- [x] PreactBasicTest (8 个测试) - 通过
+- [ ] PreactIntegrationTest - 缺少可执行文件
+- [ ] PreactRenderTest - 引用不存在的 PreactRenderer
+- [ ] PreactComponentsTest - 引用不存在的 PreactBindings
+
+#### 待完成 (C++ 绑定)
+
+- [ ] 实现 `core/quickjs/preact_renderer.h/cpp`
+- [ ] 实现 `core/quickjs/preact_bindings.h/cpp`
+- [ ] 修复 PreactRenderTest, PreactComponentsTest, PreactIntegrationTest
+- [ ] Virtual DOM Diffing 优化 (当前为简单重渲染)
 - [ ] Preact Router 集成
 - [ ] Ant Design 组件库测试
-- [ ] 性能优化
 
 ---
 
@@ -436,7 +456,7 @@
 | M2: CSS 高级特性 | 第16周 | ✅ 2025-11-14 | 阴影、渐变、变换、动画 |
 | M3: HTML/CSS 完整 | 第20周 | ✅ 2025-11-15 | 完整 HTML5/CSS3 支持 |
 | M4: Taffy 布局 | 第24周 | ✅ 2025-11-28 | CSS Grid + Flexbox |
-| M5: Preact 生态 | 第28周 | 🔄 进行中 | Preact 完整支持 |
+| M5: Preact 生态 | 第28周 | 🔄 50% | JS 实现完成，C++ 绑定待完成 |
 | M6: v1.0发布 | 第32周 | ⏳ 待完成 | 正式发布v1.0 |
 
 ---
