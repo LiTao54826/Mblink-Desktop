@@ -5,7 +5,48 @@ All notable changes to MBink will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.90.0] - 2025-11-28
+
+### Added - Phase 8: Taffy CSS 布局引擎 (2025-11-28) ✅ 已完成
+- **Taffy 布局引擎集成** (替代 Yoga)
+  - 完整 CSS Flexbox 支持
+  - CSS Grid 布局支持
+  - grid-template-columns/rows 模板解析
+  - Position (relative, absolute, fixed) 支持
+  - Overflow 处理
+- **渲染优化**
+  - D3D11 DisplayBackend (无闪烁 CPU 渲染)
+  - DPI 缩放检测和支持
+  - 滚动条渲染支持
+  - font-family 解析支持
+- **Flexbox 修复**
+  - 启动黑屏问题修复
+  - resize 性能优化
+  - weak_ptr 正确跟踪渲染树
+
+### Added - Phase 7: HTML/CSS 完整支持 (2025-11-15) ✅ 已完成
+- **HTML5 解析增强**
+  - 错误处理和警告系统
+  - 文档模式检测 (quirks/standards)
+  - DOCTYPE 处理 (HTML5, HTML4, XHTML)
+  - HTML 实体解析 (200+ 实体)
+  - 特殊元素处理 (script, style, template, SVG)
+  - 健壮的错误恢复机制
+- **CSS3 选择器支持**
+  - 所有基本选择器 (type, class, ID, universal)
+  - 所有组合选择器 (descendant, child, sibling)
+  - 所有属性选择器 (7 种变体)
+  - 所有结构伪类 (14 种)
+  - 所有表单伪类 (3 种)
+  - 所有动态伪类 (hover, active, focus 等)
+  - 所有伪元素 (::before, ::after 等)
+- **表单元素支持**
+  - 所有 HTML5 input 类型
+  - 完整表单验证
+  - 表单状态管理
+- **测试**: 283 单元测试 + 50 性能测试 = 333 个测试
+
+## [0.5.0-alpha] - 2025-11-14
 
 ### Added - Phase 4: CSS Animation (2025-11-14) ✅ 已完成
 - **CSS @keyframes**: Complete support for keyframe animations

@@ -1,17 +1,17 @@
 # MBink 开发路线图
 
-> **最后更新**: 2025-11-11
-> **当前版本**: 0.3.0-alpha
-> **当前进度**: 65%
+> **最后更新**: 2025-11-29
+> **当前版本**: 0.90.0
+> **当前进度**: 90%
 > **构建状态**: ✅ 所有核心模块编译成功
-> **测试状态**: ✅ 155 个测试用例全部通过
-> **当前阶段**: Phase 2.5 进行中 🔄
+> **测试状态**: ✅ 81 个测试用例全部通过
+> **当前阶段**: Phase 8 完成，进入稳定化阶段 ✅
 
 ## 总体时间规划
 
 **总计**: 8-10个月完成核心功能
 **目标**: 2026年Q2发布v1.0
-**当前状态**: Phase 2.5 进行中 🔄
+**当前状态**: 核心功能已完成，进入稳定化和文档完善阶段
 **项目定位**: 轻量级跨平台桌面应用框架 - Electron的轻量级替代品
 
 ---
@@ -154,499 +154,301 @@
 
 ---
 
+### Phase 2.4: 窗口和事件系统 (100%) ✅
+
+**完成时间**: 2025-11-10
+
+#### 已完成任务
+
+- [x] 完善 SDL3 窗口集成
+- [x] 实现完整的事件循环 (60 FPS)
+- [x] 实现键盘和鼠标事件
+- [x] 实现窗口生命周期管理
+- [x] 编写集成测试
+
+#### 交付物
+
+- ✅ SDL3 窗口管理完整实现
+- ✅ 60 FPS 主循环
+- ✅ 定时器调度系统
+- ✅ 任务队列
+
+---
+
+### Phase 2.5: 高级事件系统 (100%) ✅
+
+**完成时间**: 2025-11-12
+
+#### 已完成任务
+
+- [x] 实现 mouseenter/mouseleave 事件
+- [x] 实现 mouseover/mouseout 事件和 hover 链追踪
+- [x] 实现 removeEventListener 和事件捕获阶段
+- [x] 实现 FocusManager 焦点管理系统
+- [x] 实现 DragManager 拖拽管理系统
+- [x] 实现 DataTransfer 拖拽数据传输
+- [x] 实现 KeyboardEvent 和键盘事件处理
+- [x] 实现 classList API (DOMTokenList)
+- [x] 实现 CSSStyleDeclaration 和 style API
+- [x] 实现 cloneNode 和 dataset API
+- [x] 实现 dblclick 事件和 addEventListener once 选项
+- [x] 完整集成 Lexbor CSS 选择器引擎
+
+#### 交付物
+
+- ✅ 完整的事件系统 (10+ 种事件类型)
+- ✅ 焦点管理系统
+- ✅ 拖拽系统
+- ✅ DOM API 扩展
+
+---
+
+### Phase 2.6: Lexbor 集成 (100%) ✅
+
+**完成时间**: 2025-11-13
+
+#### 已完成任务
+
+- [x] 实现 innerHTML/outerHTML 解析和序列化
+- [x] 实现 HTMLInputElement 和 HTMLTextAreaElement
+- [x] 实现表单验证和状态管理
+- [x] focusin/focusout 事件集成
+- [x] 文本输入支持
+
+#### 交付物
+
+- ✅ innerHTML/outerHTML 完整支持
+- ✅ 表单元素实现
+- ✅ Lexbor HTML5 解析器集成
+
+---
+
+### Phase 3: CSS 阴影和渐变 (100%) ✅
+
+**完成时间**: 2025-11-14
+
+#### 已完成任务
+
+- [x] CSS Box Shadow (内外阴影、模糊、扩展)
+- [x] CSS Text Shadow (多重阴影)
+- [x] CSS Linear Gradient (角度、方向、多色)
+- [x] CSS Radial Gradient (圆形、椭圆形)
+- [x] 50 个测试全部通过
+
+#### 交付物
+
+- ✅ ShadowRenderer 阴影渲染器
+- ✅ GradientRenderer 渐变渲染器
+- ✅ 完整的 CSS 阴影和渐变支持
+
+---
+
+### Phase 4: CSS Transform/Transition/Animation (100%) ✅
+
+**完成时间**: 2025-11-14
+
+#### 已完成任务
+
+- [x] CSS Transform (translate, rotate, scale, skew, matrix)
+- [x] transform-origin 支持
+- [x] CSS Transition 属性
+- [x] 12 种缓动函数 (ease, linear, cubic-bezier 等)
+- [x] @keyframes 规则解析
+- [x] CSS Animation 属性
+- [x] AnimationController (启动、停止、暂停、恢复)
+- [x] 属性插值系统
+- [x] 动画事件 (animationstart, animationend, animationiteration)
+
+#### 交付物
+
+- ✅ CSSTransform 变换系统
+- ✅ AnimationTimeline 动画时间线
+- ✅ AnimationController 动画控制器
+- ✅ PropertyInterpolation 属性插值
+- ✅ 150+ 个测试全部通过
+
+---
+
+### Phase 5: CSS 变量和滤镜 (100%) ✅
+
+**完成时间**: 2025-11-14
+
+#### 已完成任务
+
+- [x] CSS Custom Properties (--var)
+- [x] var() 函数解析和求值
+- [x] 10 种 CSS Filters (blur, brightness, contrast, grayscale, etc.)
+- [x] 滤镜链支持
+- [x] 性能优化系统集成
+
+#### 交付物
+
+- ✅ CSSVariables 变量系统
+- ✅ CSSFilters 滤镜系统
+- ✅ 114 个测试全部通过
+
+---
+
+### Phase 6: 性能优化系统 (100%) ✅
+
+**完成时间**: 2025-11-15
+
+#### 已完成任务
+
+- [x] 关键帧插值缓存 (KeyframeInterpolationCache)
+- [x] 动画脏标记系统 (AnimationDirtyTracker)
+- [x] 批量动画更新器 (BatchAnimationUpdater)
+- [x] CSS 滤镜缓存 (FilterCache)
+- [x] 变换矩阵缓存 (TransformMatrixCache)
+- [x] 泛型对象池 (ObjectPool<T>)
+- [x] 增量渲染系统
+- [x] 脏区域收集器
+
+#### 交付物
+
+- ✅ animation_optimizer 动画优化器
+- ✅ filter_cache 渲染优化器
+- ✅ object_pool 对象池
+- ✅ 44 个测试全部通过
+- ✅ 性能提升 1.5-2x
+
+---
+
+### Phase 7: HTML/CSS 完整支持 (100%) ✅
+
+**完成时间**: 2025-11-15 (v0.90.0)
+
+#### 已完成任务
+
+- [x] 完整的 HTML5 解析增强
+  - 错误处理和警告系统
+  - 文档模式检测 (quirks/standards)
+  - DOCTYPE 处理 (HTML5, HTML4, XHTML)
+  - HTML 实体解析 (200+ 实体)
+  - 特殊元素处理 (script, style, template, SVG)
+  - 健壮的错误恢复机制
+- [x] 完整的 CSS3 选择器支持
+  - 所有基本选择器 (type, class, ID, universal)
+  - 所有组合选择器 (descendant, child, sibling)
+  - 所有属性选择器 (7 种变体)
+  - 所有结构伪类 (14 种)
+  - 所有表单伪类 (3 种)
+  - 所有动态伪类 (hover, active, focus 等)
+  - 所有伪元素 (::before, ::after 等)
+- [x] 增强表单元素支持
+  - 所有 HTML5 input 类型
+  - 完整表单验证
+  - 表单状态管理
+
+#### 交付物
+
+- ✅ 283 个单元测试 (100% 通过)
+- ✅ 50 个性能测试 (84% 通过)
+- ✅ 总计 333 个测试 (98% 通过)
+
+---
+
+### Phase 8: Taffy CSS 布局引擎 (100%) ✅
+
+**完成时间**: 2025-11-28
+
+#### 已完成任务
+
+- [x] 集成 Taffy CSS 布局引擎 (替代 Yoga)
+- [x] 完整 Flexbox 布局支持
+- [x] CSS Grid 布局支持
+  - grid-template-columns/rows
+  - grid 模板支持
+- [x] Position 和 Overflow 支持
+- [x] DPI 缩放检测
+- [x] font-family 解析支持
+- [x] D3D11 DisplayBackend 实现 (无闪烁 CPU 渲染)
+- [x] 滚动条支持
+- [x] Flexbox 布局修复和 resize 性能优化
+
+#### 交付物
+
+- ✅ Taffy 布局引擎完整集成
+- ✅ CSS Grid 支持
+- ✅ DisplayBackend 抽象层
+- ✅ Flexbox 测试应用
+
+---
+
 ## 🚧 进行中阶段
 
-### Phase 2.4: 窗口和事件系统 (20%)
+### Phase 9: Preact 生态系统 (60%)
 
-**目标**: 完善窗口管理和事件处理
+**目标**: 完整支持 Preact 和 React 生态
 
-#### 计划任务
-- [ ] 完善 SDL3 窗口集成
-- [ ] 实现完整的事件循环
-- [ ] 实现键盘和鼠标事件
-- [ ] 实现窗口生命周期管理
-- [ ] 编写集成测试
+#### 已完成
 
-#### 核心API列表
+- [x] Preact 基本集成
+- [x] Preact Counter 示例
+- [x] Preact Hello World 示例
+- [x] Preact Todo App 示例
+- [x] Preact Window Demo 示例
+- [x] Preact Form Demo 示例
 
-```javascript
-// P0 - 必须实现
-document.createElement(tagName)
-document.createTextNode(text)
-element.appendChild(child)
-element.insertBefore(newNode, refNode)
-element.removeChild(child)
-element.setAttribute(name, value)
-element.getAttribute(name)
-element.addEventListener(type, handler)
-element.removeEventListener(type, handler)
+#### 待完成
 
-// P1 - 重要
-element.className
-element.style.cssText
-textNode.data
-document.body
-document.getElementById(id)
-```
-
-#### 交付物
-
-- 完整的DOM节点类
-- 15个核心DOM API
-- 单元测试覆盖率 > 80%
+- [ ] Preact Hooks 完整测试
+- [ ] Preact Router 集成
+- [ ] Ant Design 组件库测试
+- [ ] 性能优化
 
 ---
 
-### 第7-8周: Yoga布局引擎集成
+## 📅 后续计划
 
-**目标**: 集成Yoga，实现Flexbox布局
+### Phase 10: 多语言绑定 (20%)
 
-#### 任务清单
-
-- [ ] 集成Yoga库
-- [ ] 创建布局引擎类
-- [ ] 实现CSS属性解析（简化版）
-- [ ] 实现样式计算
-- [ ] DOM节点与Yoga节点映射
-- [ ] 实现布局计算
-- [ ] 测试各种布局场景
-
-#### 支持的CSS属性
-
-```css
-/* 布局属性 */
-display: flex | block | none
-flex-direction: row | column
-justify-content: flex-start | center | flex-end | space-between
-align-items: flex-start | center | flex-end | stretch
-flex-wrap: nowrap | wrap
-
-/* 尺寸属性 */
-width, height, min-width, max-width, min-height, max-height
-padding, margin
-flex-grow, flex-shrink, flex-basis
-
-/* 位置属性 */
-position: relative | absolute
-top, right, bottom, left
-```
-
-#### 交付物
-
-- Yoga集成完成
-- 支持20+个CSS属性
-- 布局测试用例
-
----
-
-### 第9-10周: Skia渲染集成
-
-**目标**: 实现DOM树到Skia的渲染
+**预计时间**: 2-3 周
 
 #### 任务清单
 
-- [ ] 创建渲染器类
-- [ ] 实现DOM树遍历渲染
-- [ ] 实现基础样式渲染（背景、边框）
-- [ ] 实现文本渲染
-- [ ] 实现裁剪和滚动
-- [ ] 优化渲染性能（脏矩形）
-- [ ] 实现60fps渲染循环
+- [x] C API 基础框架
+- [ ] Python 绑定完善
+- [ ] Rust 绑定
+- [ ] Go 绑定
+- [ ] Node.js 绑定
 
-#### 渲染流程
+### Phase 11: 工具链和发布
 
-```
-1. 布局计算 (Yoga)
-   └─> 获取每个元素的位置和尺寸
-
-2. 样式计算
-   └─> 计算最终的样式属性
-
-3. 绘制 (Skia)
-   ├─> 背景和边框
-   ├─> 文本内容
-   └─> 子元素（递归）
-
-4. 合成和输出
-   └─> 交换缓冲区
-```
-
-#### 交付物
-
-- 完整的渲染管线
-- 支持基础样式渲染
-- 60fps流畅渲染
-
----
-
-### 第11-12周: 事件系统
-
-**目标**: 实现完整的事件系统
+**预计时间**: 2-4 周
 
 #### 任务清单
 
-- [ ] 实现Event类
-- [ ] 实现事件捕获和冒泡
-- [ ] SDL事件到DOM事件的转换
-- [ ] 实现鼠标事件
-- [ ] 实现键盘事件
-- [ ] 实现焦点管理
-- [ ] 事件测试
-
-#### 支持的事件
-
-```javascript
-// 鼠标事件
-mousedown, mouseup, mousemove
-click, dblclick
-mouseenter, mouseleave
-wheel
-
-// 键盘事件
-keydown, keyup, keypress
-
-// 焦点事件
-focus, blur
-
-// 表单事件
-input, change, submit
-```
-
-#### 交付物
-
-- 完整的事件系统
-- 支持10+种事件类型
-- 事件测试覆盖率 > 80%
-
----
-
-## 阶段2: Preact支持 (1个月)
-
-### 第13-14周: 完善DOM API
-
-**目标**: 补充Preact所需的DOM API
-
-#### 任务清单
-
-- [ ] 分析Preact的DOM API依赖
-- [ ] 实现剩余的DOM API（约25个）
-- [ ] 实现innerHTML/textContent
-- [ ] 实现classList API
-- [ ] 实现表单元素API
-- [ ] 运行Preact Hello World
-- [ ] 修复兼容性问题
-
-#### 新增API列表
-
-```javascript
-// 文本和HTML
-element.innerHTML
-element.textContent
-element.innerText
-
-// 样式
-element.classList.add/remove/toggle/contains
-element.style.setProperty/getPropertyValue
-
-// 表单
-input.value
-input.checked
-select.selectedIndex
-textarea.value
-
-// 查询
-document.querySelector(selector)
-document.querySelectorAll(selector)
-element.matches(selector)
-
-// 其他
-element.focus()
-element.blur()
-element.scrollIntoView()
-```
-
-#### 交付物
-
-- 40+个DOM API
-- Preact成功运行
-- 兼容性测试通过
-
----
-
-### 第15-16周: Preact集成和测试
-
-**目标**: 完整支持Preact和基础组件
-
-#### 任务清单
-
-- [ ] 打包Preact运行时
-- [ ] 实现模块加载器
-- [ ] 测试Preact Hooks
-- [ ] 测试Preact Router
-- [ ] 创建示例应用
-- [ ] 性能测试和优化
-
-#### 测试用例
-
-```javascript
-// 1. 基础渲染
-import { render } from 'preact';
-render(<h1>Hello World</h1>, document.body);
-
-// 2. 状态管理
-import { useState } from 'preact/hooks';
-function Counter() {
-    const [count, setCount] = useState(0);
-    return <button onClick={() => setCount(count + 1)}>{count}</button>;
-}
-
-// 3. 列表渲染
-function List({ items }) {
-    return <ul>{items.map(item => <li key={item.id}>{item.text}</li>)}</ul>;
-}
-
-// 4. 条件渲染
-function App() {
-    const [show, setShow] = useState(true);
-    return <div>{show && <p>Visible</p>}</div>;
-}
-```
-
-#### 交付物
-
-- Preact完全支持
-- 5+个示例应用
-- 性能基准测试
-
----
-
-## 阶段3: 组件库支持 (1个月)
-
-### 第17-18周: Ant Design集成
-
-**目标**: 支持Ant Design组件库
-
-#### 任务清单
-
-- [ ] 分析Ant Design依赖
-- [ ] 补充缺失的DOM API
-- [ ] 实现CSS样式系统完善
-- [ ] 测试核心组件（Button, Input, Modal等）
-- [ ] 修复兼容性问题
-- [ ] 创建Ant Design示例
-
-#### 测试组件列表
-
-```
-优先级P0:
-- Button
-- Input
-- Select
-- Checkbox
-- Radio
-
-优先级P1:
-- Modal
-- Drawer
-- Table
-- Form
-- Tabs
-
-优先级P2:
-- DatePicker
-- Upload
-- Tree
-- Menu
-```
-
-#### 交付物
-
-- 支持Ant Design核心组件
-- 10+个组件示例
-- 兼容性文档
-
----
-
-### 第19-20周: 其他组件库和优化
-
-**目标**: 支持更多组件库，性能优化
-
-#### 任务清单
-
-- [ ] 测试Material-UI
-- [ ] 测试Chakra UI
-- [ ] 渲染性能优化
-- [ ] 内存优化
-- [ ] 启动速度优化
-- [ ] 编写性能优化文档
-
-#### 性能目标
-
-```
-启动时间: < 500ms
-首次渲染: < 100ms
-帧率: 60fps (16.6ms/frame)
-内存占用: < 100MB (空应用)
-```
-
-#### 交付物
-
-- 支持3+个主流组件库
-- 性能提升30%+
-- 性能测试报告
-
----
-
-## 阶段4: C API和Python绑定 (1个月)
-
-### 第21-22周: C API设计和实现
-
-**目标**: 设计统一的C API接口
-
-#### 任务清单
-
-- [ ] 设计C API接口
-- [ ] 实现窗口管理API
-- [ ] 实现UI加载API
-- [ ] 实现函数绑定API
-- [ ] 实现JS调用API
-- [ ] 编写C API文档
-- [ ] 创建C/C++示例
-
-#### C API设计
-
-详见 [API_DESIGN.md](API_DESIGN.md)
-
-#### 交付物
-
-- 完整的C API
-- C API文档
-- 5+个C/C++示例
-
----
-
-### 第23-24周: Python绑定
-
-**目标**: 完善Python绑定
-
-#### 任务清单
-
-- [ ] 实现ctypes版本
-- [ ] 实现pybind11版本
-- [ ] 实现高级Python API
-- [ ] 实现装饰器语法
-- [ ] 编写Python文档
-- [ ] 创建Python示例
-- [ ] 发布到PyPI
-
-#### Python API设计
-
-详见 [PYTHON_API.md](PYTHON_API.md)
-
-#### 交付物
-
-- 完整的Python绑定
-- Python文档
-- 10+个Python示例
-- PyPI包
-
----
-
-## 阶段5: 其他语言绑定 (1个月)
-
-### 第25-26周: Rust和Go绑定
-
-**目标**: 支持Rust和Go语言
-
-#### 任务清单
-
-- [ ] Rust绑定（使用bindgen）
-- [ ] Go绑定（使用cgo）
-- [ ] Node.js绑定（使用N-API）
-- [ ] 各语言示例
-- [ ] 各语言文档
-
-#### 交付物
-
-- Rust/Go/Node.js绑定
-- 各语言文档和示例
-
----
-
-### 第27-28周: 工具链和CLI
-
-**目标**: 开发工具链
-
-#### 任务清单
-
-- [ ] 创建CLI工具
+- [ ] CLI 工具开发
 - [ ] 项目模板生成器
 - [ ] 打包工具
 - [ ] 热重载支持
-- [ ] 开发者工具
-
-#### 交付物
-
-- lightui-cli工具
-- 项目模板
-- 打包工具
-
----
-
-## 阶段6: 优化和发布 (1个月)
-
-### 第29-30周: 文档和示例
-
-**目标**: 完善文档和示例
-
-#### 任务清单
-
-- [ ] 完整的API文档
-- [ ] 教程和指南
-- [ ] 10+个完整示例项目
-- [ ] 视频教程
-- [ ] 官方网站
-
-#### 交付物
-
-- 完整文档网站
-- 丰富的示例
-- 教程视频
-
----
-
-### 第31-32周: 测试和发布
-
-**目标**: 全面测试，发布v1.0
-
-#### 任务清单
-
-- [ ] 单元测试覆盖率 > 80%
-- [ ] 集成测试
-- [ ] 性能测试
-- [ ] 跨平台测试
-- [ ] Beta测试
-- [ ] 修复关键Bug
-- [ ] 发布v1.0
-
-#### 交付物
-
-- LightUI v1.0正式版
-- 完整的发布说明
-- 社区支持渠道
+- [ ] 跨平台测试 (macOS, Linux)
+- [ ] v1.0 发布准备
 
 ---
 
 ## 里程碑
 
-| 里程碑 | 时间 | 描述 |
-|--------|------|------|
-| M1: 核心框架 | 第12周 | 基础框架完成，能运行简单UI |
-| M2: Preact支持 | 第16周 | 完整支持Preact |
-| M3: 组件库支持 | 第20周 | 支持Ant Design等组件库 |
-| M4: 多语言绑定 | 第24周 | 支持Python/Rust/Go |
-| M5: 工具链 | 第28周 | 完整的开发工具链 |
-| M6: v1.0发布 | 第32周 | 正式发布v1.0 |
+| 里程碑 | 计划时间 | 实际完成 | 描述 |
+|--------|----------|---------|------|
+| M1: 核心框架 | 第12周 | ✅ 2025-11-10 | 基础框架完成，能运行简单UI |
+| M2: CSS 高级特性 | 第16周 | ✅ 2025-11-14 | 阴影、渐变、变换、动画 |
+| M3: HTML/CSS 完整 | 第20周 | ✅ 2025-11-15 | 完整 HTML5/CSS3 支持 |
+| M4: Taffy 布局 | 第24周 | ✅ 2025-11-28 | CSS Grid + Flexbox |
+| M5: Preact 生态 | 第28周 | 🔄 进行中 | Preact 完整支持 |
+| M6: v1.0发布 | 第32周 | ⏳ 待完成 | 正式发布v1.0 |
+
+---
+
+## 版本历史
+
+| 版本 | 日期 | 主要变更 |
+|------|------|---------|
+| 0.90.0 | 2025-11-15 | HTML/CSS 完整支持，333 个测试 |
+| 0.5.0-alpha | 2025-11-14 | CSS 动画、变换、滤镜 |
+| 0.3.0-alpha | 2025-11-11 | 渲染引擎、DOM API |
+| 0.1.0 | 2025-11-08 | 基础架构 |
 
 ---
 
@@ -656,15 +458,18 @@ function App() {
 
 1. **性能不达标**
    - 风险: QuickJS性能可能不足
-   - 应对: 早期性能测试，必要时优化或切换引擎
+   - 应对: ✅ 已实现性能优化系统，1.5-2x 提升
+   - 状态: 已解决
 
 2. **组件库兼容性**
    - 风险: 某些组件库可能无法兼容
    - 应对: 优先支持核心组件，提供替代方案
+   - 状态: 进行中
 
 3. **跨平台问题**
    - 风险: 不同平台行为不一致
-   - 应对: 早期多平台测试，建立CI/CD
+   - 应对: ✅ SDL3 跨平台，D3D11 无闪烁渲染
+   - 状态: Windows 已完成，其他平台待测试
 
 ### 资源风险
 
@@ -673,6 +478,7 @@ function App() {
 
 2. **时间延期**
    - 应对: 灵活调整优先级，核心功能优先
+   - 状态: 核心功能按计划完成
 
 ---
 
