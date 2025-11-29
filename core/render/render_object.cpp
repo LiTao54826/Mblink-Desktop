@@ -1655,34 +1655,42 @@ void RenderText::Paint(SkCanvas* canvas) {
         current_y += line_height;
     }
 
-    // 绘制文本装饰（下划线、删除线等）
-    // 使用实际文本宽度，而不是布局宽度（布局宽度可能被 flex: 1 拉伸）
-    float decoration_width = (actual_text_width_ > 0) ? actual_text_width_ : layout.width;
-
-    if (style.text_decoration == "underline") {
-        // 下划线：在基线下方
-        float underline_y = baseline_y + font_metrics.fUnderlinePosition;
-        float underline_thickness = font_metrics.fUnderlineThickness;
-        if (underline_thickness < 1.0f) underline_thickness = 1.0f;
-
+    // 绘制文本装饰（下划线、删除线等）- 需要为每一行绘制
+    if (style.text_decoration == "underline" || style.text_decoration == "line-through") {
         SkPaint line_paint;
         line_paint.setColor(text_color);
-        line_paint.setStrokeWidth(underline_thickness);
         line_paint.setAntiAlias(true);
 
-        canvas->drawLine(0, underline_y, decoration_width, underline_y, line_paint);
-    } else if (style.text_decoration == "line-through") {
-        // 删除线：在文字中间
-        float strikethrough_y = baseline_y + font_metrics.fStrikeoutPosition;
-        float strikethrough_thickness = font_metrics.fStrikeoutThickness;
-        if (strikethrough_thickness < 1.0f) strikethrough_thickness = 1.0f;
+        float decoration_current_y = baseline_y;
 
-        SkPaint line_paint;
-        line_paint.setColor(text_color);
-        line_paint.setStrokeWidth(strikethrough_thickness);
-        line_paint.setAntiAlias(true);
+        for (size_t i = 0; i < lines_to_render.size(); ++i) {
+            const auto& line = lines_to_render[i];
 
-        canvas->drawLine(0, strikethrough_y, decoration_width, strikethrough_y, line_paint);
+            // Calculate line width (use actual text width for each line)
+            float line_width = text_renderer.MeasureTextWidthWithEmoji(line, font);
+            if (line_width <= 0) {
+                decoration_current_y += line_height;
+                continue;
+            }
+
+            if (style.text_decoration == "underline") {
+                // 下划线：在基线下方
+                float underline_y = decoration_current_y + font_metrics.fUnderlinePosition;
+                float underline_thickness = font_metrics.fUnderlineThickness;
+                if (underline_thickness < 1.0f) underline_thickness = 1.0f;
+                line_paint.setStrokeWidth(underline_thickness);
+                canvas->drawLine(0, underline_y, line_width, underline_y, line_paint);
+            } else if (style.text_decoration == "line-through") {
+                // 删除线：在文字中间
+                float strikethrough_y = decoration_current_y + font_metrics.fStrikeoutPosition;
+                float strikethrough_thickness = font_metrics.fStrikeoutThickness;
+                if (strikethrough_thickness < 1.0f) strikethrough_thickness = 1.0f;
+                line_paint.setStrokeWidth(strikethrough_thickness);
+                canvas->drawLine(0, strikethrough_y, line_width, strikethrough_y, line_paint);
+            }
+
+            decoration_current_y += line_height;
+        }
     }
 
     // 恢复画布状态

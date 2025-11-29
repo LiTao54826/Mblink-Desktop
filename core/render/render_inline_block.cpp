@@ -200,10 +200,22 @@ std::pair<float, float> RenderInlineBlock::MeasureIntrinsicSize(float available_
     float padding_top = style.padding.top.ToPx(available_width, style.font_size);
     float padding_bottom = style.padding.bottom.ToPx(available_width, style.font_size);
 
+    // 计算 border
+    float border_left = style.border_left_width;
+    float border_right = style.border_right_width;
+    float border_top = style.border_top_width;
+    float border_bottom = style.border_bottom_width;
+
+    // 如果没有单独的边框宽度，使用通用边框
+    if (border_left == 0 && border_right == 0 && border_top == 0 && border_bottom == 0) {
+        float border_width = style.border.width.ToPx(available_width, style.font_size);
+        border_left = border_right = border_top = border_bottom = border_width;
+    }
+
     // 计算宽度
     float width;
     if (style.width.unit != CSSUnit::NONE && style.width.unit != CSSUnit::AUTO) {
-        // 显式设置了宽度
+        // 显式设置了宽度 - 包含 padding 和 border (border-box)
         width = style.width.ToPx(available_width, style.font_size);
     } else {
         // 使用 shrink-to-fit 算法
@@ -218,7 +230,7 @@ std::pair<float, float> RenderInlineBlock::MeasureIntrinsicSize(float available_
     } else {
         // 根据内容计算高度
         float content_height = 0;
-        float content_width = width - padding_left - padding_right;
+        float content_width = width - padding_left - padding_right - border_left - border_right;
 
         // 布局子元素以获取高度
         for (auto& child : children_) {
@@ -227,7 +239,17 @@ std::pair<float, float> RenderInlineBlock::MeasureIntrinsicSize(float available_
             content_height = std::max(content_height, child_layout.height);
         }
 
-        height = content_height > 0 ? (content_height + padding_top + padding_bottom) : 20.0f;
+        if (content_height > 0) {
+            // 有子元素内容
+            height = content_height + padding_top + padding_bottom + border_top + border_bottom;
+        } else {
+            // 没有子元素（如 input 元素），基于 font-size 计算
+            // 浏览器 input 高度 ≈ font-size + 小量内部空间 + padding + border
+            // 实测：16px font + 10px*2 padding + 2px*2 border = 42.5px
+            // 所以内部空间约为 42.5 - 24 - 16 = 2.5px，即 font-size * 0.15
+            float content_line_height = style.font_size * 1.15f;
+            height = content_line_height + padding_top + padding_bottom + border_top + border_bottom;
+        }
     }
 
     return {width, height};
@@ -280,7 +302,14 @@ void RenderInlineBlock::Paint(SkCanvas* canvas) {
     if (style.border.style != CSSBorderStyle::NONE && !style.border.width.IsZero()) {
         std::string border_width = std::to_string(style.border.width.value) + "px";
         std::string border_style = "solid";
-        std::string border_color = "#000000";
+
+        // 将 SkColor 转换为十六进制字符串
+        char color_str[8];
+        snprintf(color_str, sizeof(color_str), "#%02X%02X%02X",
+                 SkColorGetR(style.border.color),
+                 SkColorGetG(style.border.color),
+                 SkColorGetB(style.border.color));
+        std::string border_color = color_str;
 
         if (style.border_radius.top_left.IsZero() &&
             style.border_radius.top_right.IsZero() &&
@@ -319,10 +348,10 @@ void RenderInlineBlock::Paint(SkCanvas* canvas) {
     }
 
     // 绘制子元素
+    // 注意：对于 inline-block 元素，子元素的绘制不依赖 NeedsPaint 标志
+    // 因为子元素不在 Taffy 树中，它们的重绘状态可能没有正确同步
     for (auto& child : children_) {
-        if (child->NeedsPaint()) {
-            child->Paint(canvas);
-        }
+        child->Paint(canvas);
     }
 
     // 恢复画布状态

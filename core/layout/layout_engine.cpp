@@ -220,7 +220,6 @@ void LayoutEngine::BuildLayoutTree(std::shared_ptr<RenderObject> root) {
         UpdateStylesRecursive(root.get());
         return;
     }
-
     Clear();
     cached_root_ = root;  // 缓存当前根节点
 
@@ -325,7 +324,114 @@ void LayoutEngine::UpdateStylesRecursive(RenderObject* render_obj) {
     // 更新当前节点的样式
     auto it = element_to_node_.find(render_obj);
     if (it != element_to_node_.end()) {
-        ApplyStyle(it->second, render_obj->GetComputedStyle());
+        TaffyNodeId node = it->second;
+        ApplyStyle(node, render_obj->GetComputedStyle());
+
+        RenderObjectType type = render_obj->GetType();
+        const auto& computed_style = render_obj->GetComputedStyle();
+
+        // Skip if element already has explicit flex/grid display (e.g., form with display: flex)
+        bool is_already_flex_or_grid = (computed_style.display == RenderObjectType::FLEX ||
+                                        computed_style.display == RenderObjectType::GRID);
+
+        // 对于 BLOCK 元素，检查是否需要设置为 FLEX（与 CreateNode 中的逻辑相同）
+        // 这确保了在窗口 resize 时不会丢失 FLEX 设置
+        if (type == RenderObjectType::BLOCK && !is_already_flex_or_grid) {
+            auto& children = render_obj->GetChildren();
+            bool has_inline_content = false;
+            bool has_block_content = false;
+
+            for (auto& child : children) {
+                RenderObjectType child_type = child->GetType();
+                if (child_type == RenderObjectType::TEXT ||
+                    child_type == RenderObjectType::INLINE_BLOCK ||
+                    child_type == RenderObjectType::INLINE) {
+                    has_inline_content = true;
+                } else if (child_type == RenderObjectType::BLOCK ||
+                           child_type == RenderObjectType::FLEX ||
+                           child_type == RenderObjectType::GRID) {
+                    has_block_content = true;
+                }
+            }
+
+            if (has_inline_content) {
+                TaffyStyleMutRefResult style_result = TaffyTree_GetStyleMut(taffy_tree_, node);
+                if (style_result.return_code == TAFFY_RETURN_CODE_OK) {
+                    TaffyStyleMutRef taffy_style = style_result.value;
+                    TaffyStyle_SetDisplay(taffy_style, TAFFY_DISPLAY_FLEX);
+
+                    if (has_block_content) {
+                        // Mixed content: use column layout (like block stacking)
+                        // INLINE elements won't stretch because of align-items: flex-start
+                        TaffyStyle_SetFlexDirection(taffy_style, TAFFY_FLEX_DIRECTION_COLUMN);
+                        TaffyStyle_SetAlignItems(taffy_style, TAFFY_ALIGN_ITEMS_FLEX_START);
+                    } else {
+                        // Pure inline content: use row layout (horizontal flow)
+                        // Known issue: flex-wrap causes inline-block elements to wrap to
+                        // new line instead of flowing with text (Taffy doesn't support IFC)
+                        TaffyStyle_SetFlexDirection(taffy_style, TAFFY_FLEX_DIRECTION_ROW);
+                        TaffyStyle_SetFlexWrap(taffy_style, TAFFY_FLEX_WRAP_WRAP);
+                        TaffyStyle_SetAlignItems(taffy_style, TAFFY_ALIGN_ITEMS_BASELINE);
+                    }
+                }
+            }
+        }
+        // For INLINE elements, clear padding/border in Taffy because measure function already includes them
+        else if (type == RenderObjectType::INLINE) {
+            TaffyStyleMutRefResult style_result = TaffyTree_GetStyleMut(taffy_tree_, node);
+            if (style_result.return_code == TAFFY_RETURN_CODE_OK) {
+                TaffyStyleMutRef taffy_style = style_result.value;
+
+                // Use border-box
+                TaffyStyle_SetBoxSizing(taffy_style, TAFFY_BOX_SIZING_BORDER_BOX);
+
+                // Width and height determined by measure function
+                TaffyStyle_SetWidth(taffy_style, 0.0f, TAFFY_UNIT_AUTO);
+                TaffyStyle_SetHeight(taffy_style, 0.0f, TAFFY_UNIT_AUTO);
+
+                // Clear padding - measure function already includes it
+                TaffyStyle_SetPaddingTop(taffy_style, 0.0f, TAFFY_UNIT_LENGTH);
+                TaffyStyle_SetPaddingRight(taffy_style, 0.0f, TAFFY_UNIT_LENGTH);
+                TaffyStyle_SetPaddingBottom(taffy_style, 0.0f, TAFFY_UNIT_LENGTH);
+                TaffyStyle_SetPaddingLeft(taffy_style, 0.0f, TAFFY_UNIT_LENGTH);
+
+                // Clear border - measure function already includes it
+                TaffyStyle_SetBorderTop(taffy_style, 0.0f, TAFFY_UNIT_LENGTH);
+                TaffyStyle_SetBorderRight(taffy_style, 0.0f, TAFFY_UNIT_LENGTH);
+                TaffyStyle_SetBorderBottom(taffy_style, 0.0f, TAFFY_UNIT_LENGTH);
+                TaffyStyle_SetBorderLeft(taffy_style, 0.0f, TAFFY_UNIT_LENGTH);
+
+                // DON'T set align-self - let flex container control stretch behavior
+                TaffyStyle_SetFlexGrow(taffy_style, 0.0f);
+                TaffyStyle_SetFlexShrink(taffy_style, 0.0f);
+            }
+        }
+        // For INLINE_BLOCK elements, always use measure function settings
+        else if (type == RenderObjectType::INLINE_BLOCK) {
+            TaffyStyleMutRefResult style_result = TaffyTree_GetStyleMut(taffy_tree_, node);
+            if (style_result.return_code == TAFFY_RETURN_CODE_OK) {
+                TaffyStyleMutRef taffy_style = style_result.value;
+
+                // Use border-box
+                TaffyStyle_SetBoxSizing(taffy_style, TAFFY_BOX_SIZING_BORDER_BOX);
+                TaffyStyle_SetWidth(taffy_style, 0.0f, TAFFY_UNIT_AUTO);
+                TaffyStyle_SetHeight(taffy_style, 0.0f, TAFFY_UNIT_AUTO);
+
+                // Clear padding/border - measure function already includes them
+                TaffyStyle_SetPaddingTop(taffy_style, 0.0f, TAFFY_UNIT_LENGTH);
+                TaffyStyle_SetPaddingRight(taffy_style, 0.0f, TAFFY_UNIT_LENGTH);
+                TaffyStyle_SetPaddingBottom(taffy_style, 0.0f, TAFFY_UNIT_LENGTH);
+                TaffyStyle_SetPaddingLeft(taffy_style, 0.0f, TAFFY_UNIT_LENGTH);
+
+                TaffyStyle_SetBorderTop(taffy_style, 0.0f, TAFFY_UNIT_LENGTH);
+                TaffyStyle_SetBorderRight(taffy_style, 0.0f, TAFFY_UNIT_LENGTH);
+                TaffyStyle_SetBorderBottom(taffy_style, 0.0f, TAFFY_UNIT_LENGTH);
+                TaffyStyle_SetBorderLeft(taffy_style, 0.0f, TAFFY_UNIT_LENGTH);
+
+                // Prevent stretch in cross-axis
+                TaffyStyle_SetAlignSelf(taffy_style, TAFFY_ALIGN_ITEMS_FLEX_START);
+            }
+        }
     }
 
     // 递归更新子节点
@@ -352,14 +458,25 @@ TaffyNodeId LayoutEngine::CreateNode(RenderObject* render_obj) {
         if (render_obj) {
             ApplyStyle(node, render_obj->GetComputedStyle());
 
-            // For BLOCK elements with inline content (TEXT and INLINE_BLOCK children),
-            // we need to use flex row in Taffy to create an inline formatting context.
-            // This makes text and inline-block elements flow horizontally.
+            // For BLOCK elements, we need to handle inline content properly.
+            // Taffy doesn't have true INLINE display, so we use FLEX to simulate it.
+            //
+            // Rules:
+            // 1. If element already has display: flex/grid set via CSS, don't override
+            // 2. If ALL children are inline (TEXT, INLINE, INLINE_BLOCK) -> FLEX ROW (horizontal flow)
+            // 3. If mixed BLOCK and INLINE children -> FLEX COLUMN (vertical stack, but INLINE won't stretch)
+            // 4. If ALL children are BLOCK -> keep as BLOCK (default)
             RenderObjectType type = render_obj->GetType();
-            if (type == RenderObjectType::BLOCK) {
+            const auto& computed_style = render_obj->GetComputedStyle();
+
+            // Skip if element already has explicit flex/grid display (e.g., form with display: flex)
+            bool is_already_flex_or_grid = (computed_style.display == RenderObjectType::FLEX ||
+                                            computed_style.display == RenderObjectType::GRID);
+
+            if (type == RenderObjectType::BLOCK && !is_already_flex_or_grid) {
                 auto& children = render_obj->GetChildren();
                 bool has_inline_content = false;
-                bool has_only_inline_content = true;
+                bool has_block_content = false;
 
                 for (auto& child : children) {
                     RenderObjectType child_type = child->GetType();
@@ -367,21 +484,32 @@ TaffyNodeId LayoutEngine::CreateNode(RenderObject* render_obj) {
                         child_type == RenderObjectType::INLINE_BLOCK ||
                         child_type == RenderObjectType::INLINE) {
                         has_inline_content = true;
-                    } else if (child_type != RenderObjectType::NONE) {
-                        has_only_inline_content = false;
+                    } else if (child_type == RenderObjectType::BLOCK ||
+                               child_type == RenderObjectType::FLEX ||
+                               child_type == RenderObjectType::GRID) {
+                        has_block_content = true;
                     }
                 }
 
-                // If we have inline content mixed with other inline content,
-                // use flex row to lay out children horizontally
-                if (has_inline_content && has_only_inline_content && children.size() > 1) {
+                if (has_inline_content) {
                     TaffyStyleMutRefResult style_result = TaffyTree_GetStyleMut(taffy_tree_, node);
                     if (style_result.return_code == TAFFY_RETURN_CODE_OK) {
                         TaffyStyleMutRef taffy_style = style_result.value;
                         TaffyStyle_SetDisplay(taffy_style, TAFFY_DISPLAY_FLEX);
-                        TaffyStyle_SetFlexDirection(taffy_style, TAFFY_FLEX_DIRECTION_ROW);
-                        TaffyStyle_SetFlexWrap(taffy_style, TAFFY_FLEX_WRAP_WRAP);
-                        TaffyStyle_SetAlignItems(taffy_style, TAFFY_ALIGN_ITEMS_BASELINE);
+
+                        if (has_block_content) {
+                            // Mixed content: use column layout (like block stacking)
+                            // INLINE elements won't stretch because of align-items: flex-start
+                            TaffyStyle_SetFlexDirection(taffy_style, TAFFY_FLEX_DIRECTION_COLUMN);
+                            TaffyStyle_SetAlignItems(taffy_style, TAFFY_ALIGN_ITEMS_FLEX_START);
+                        } else {
+                            // Pure inline content: use row layout (horizontal flow)
+                            // Known issue: flex-wrap causes inline-block elements to wrap to
+                            // new line instead of flowing with text (Taffy doesn't support IFC)
+                            TaffyStyle_SetFlexDirection(taffy_style, TAFFY_FLEX_DIRECTION_ROW);
+                            TaffyStyle_SetFlexWrap(taffy_style, TAFFY_FLEX_WRAP_WRAP);
+                            TaffyStyle_SetAlignItems(taffy_style, TAFFY_ALIGN_ITEMS_BASELINE);
+                        }
                     }
                 }
             }
@@ -420,14 +548,14 @@ TaffyNodeId LayoutEngine::CreateNode(RenderObject* render_obj) {
                     }
                 }
             }
-            // For inline-block elements, set up measure function for intrinsic size calculation
+            // For inline-block elements, use measure function
             else if (render_obj->GetType() == RenderObjectType::INLINE_BLOCK) {
                 auto* inline_block = dynamic_cast<RenderInlineBlock*>(render_obj);
                 if (inline_block) {
-                    // Set the measure function with the RenderInlineBlock object as context
+                    // Always use measure function for INLINE_BLOCK
+                    // This ensures proper height calculation for elements like input
                     TaffyTree_SetNodeContext(taffy_tree_, node, InlineBlockMeasureFunction, inline_block);
 
-                    // Set inline-block node style - let measure function determine size
                     TaffyStyleMutRefResult style_result = TaffyTree_GetStyleMut(taffy_tree_, node);
                     if (style_result.return_code == TAFFY_RETURN_CODE_OK) {
                         TaffyStyleMutRef taffy_style = style_result.value;
@@ -438,6 +566,21 @@ TaffyNodeId LayoutEngine::CreateNode(RenderObject* render_obj) {
                         // Width and height will be determined by measure function
                         TaffyStyle_SetWidth(taffy_style, 0.0f, TAFFY_UNIT_AUTO);
                         TaffyStyle_SetHeight(taffy_style, 0.0f, TAFFY_UNIT_AUTO);
+
+                        // IMPORTANT: Clear padding in Taffy - measure function already includes it
+                        TaffyStyle_SetPaddingTop(taffy_style, 0.0f, TAFFY_UNIT_LENGTH);
+                        TaffyStyle_SetPaddingRight(taffy_style, 0.0f, TAFFY_UNIT_LENGTH);
+                        TaffyStyle_SetPaddingBottom(taffy_style, 0.0f, TAFFY_UNIT_LENGTH);
+                        TaffyStyle_SetPaddingLeft(taffy_style, 0.0f, TAFFY_UNIT_LENGTH);
+
+                        // Clear border too
+                        TaffyStyle_SetBorderTop(taffy_style, 0.0f, TAFFY_UNIT_LENGTH);
+                        TaffyStyle_SetBorderRight(taffy_style, 0.0f, TAFFY_UNIT_LENGTH);
+                        TaffyStyle_SetBorderBottom(taffy_style, 0.0f, TAFFY_UNIT_LENGTH);
+                        TaffyStyle_SetBorderLeft(taffy_style, 0.0f, TAFFY_UNIT_LENGTH);
+
+                        // Prevent stretch in cross-axis
+                        TaffyStyle_SetAlignSelf(taffy_style, TAFFY_ALIGN_ITEMS_FLEX_START);
                     }
                 }
             }
@@ -459,6 +602,26 @@ TaffyNodeId LayoutEngine::CreateNode(RenderObject* render_obj) {
                         // Width and height will be determined by measure function
                         TaffyStyle_SetWidth(taffy_style, 0.0f, TAFFY_UNIT_AUTO);
                         TaffyStyle_SetHeight(taffy_style, 0.0f, TAFFY_UNIT_AUTO);
+
+                        // IMPORTANT: Clear padding in Taffy - our measure function already includes padding!
+                        // Otherwise Taffy will add padding again to the measure result.
+                        TaffyStyle_SetPaddingTop(taffy_style, 0.0f, TAFFY_UNIT_LENGTH);
+                        TaffyStyle_SetPaddingRight(taffy_style, 0.0f, TAFFY_UNIT_LENGTH);
+                        TaffyStyle_SetPaddingBottom(taffy_style, 0.0f, TAFFY_UNIT_LENGTH);
+                        TaffyStyle_SetPaddingLeft(taffy_style, 0.0f, TAFFY_UNIT_LENGTH);
+
+                        // Clear border too - measure function includes border
+                        TaffyStyle_SetBorderTop(taffy_style, 0.0f, TAFFY_UNIT_LENGTH);
+                        TaffyStyle_SetBorderRight(taffy_style, 0.0f, TAFFY_UNIT_LENGTH);
+                        TaffyStyle_SetBorderBottom(taffy_style, 0.0f, TAFFY_UNIT_LENGTH);
+                        TaffyStyle_SetBorderLeft(taffy_style, 0.0f, TAFFY_UNIT_LENGTH);
+
+                        // DON'T set align-self - let flex container control stretch behavior
+                        // Buttons in flex containers like form should stretch to match input height
+
+                        // Don't grow or shrink in flex context (width doesn't change)
+                        TaffyStyle_SetFlexGrow(taffy_style, 0.0f);
+                        TaffyStyle_SetFlexShrink(taffy_style, 0.0f);
                     }
                 }
             }
@@ -770,12 +933,12 @@ void LayoutEngine::ReadLayoutResults(RenderObject* render_obj) {
     info.is_laid_out = true;
 
     const auto& style = render_obj->GetComputedStyle();
+    RenderObjectType type = render_obj->GetType();
 
     // For INLINE_BLOCK and INLINE elements, their children are not in Taffy tree.
     // We need to layout their children manually.
     // Note: We already have info.width and info.height from Taffy, so we just need
     // to position the children within this element.
-    RenderObjectType type = render_obj->GetType();
     if (type == RenderObjectType::INLINE_BLOCK || type == RenderObjectType::INLINE) {
         // Position children within this element
         // Get padding

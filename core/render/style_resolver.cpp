@@ -338,9 +338,10 @@ void StyleResolver::ApplyElementSpecificStyle(ComputedStyle& style, const std::s
             // 文本输入框
             style.background_color = "#FFFFFF";
 
-            // 固定宽度
+            // 宽度：默认 200px（会被 inline style 覆盖）
+            // 高度：不设置固定高度，让 padding + line-height 决定（符合浏览器行为）
             style.width = CSSLength(200, CSSUnit::PX);
-            style.height = CSSLength(32, CSSUnit::PX);
+            // style.height 保持 AUTO，高度由内容决定
 
             // 圆角
             style.border_radius.top_left = CSSLength(3, CSSUnit::PX);
@@ -348,22 +349,23 @@ void StyleResolver::ApplyElementSpecificStyle(ComputedStyle& style, const std::s
             style.border_radius.bottom_left = CSSLength(3, CSSUnit::PX);
             style.border_radius.bottom_right = CSSLength(3, CSSUnit::PX);
 
-            // 边框（覆盖默认的 2px）
+            // 边框
             style.border.width = CSSLength(1, CSSUnit::PX);
             style.border.style = CSSBorderStyle::SOLID;
             style.border.color = SkColorSetRGB(200, 200, 200);
 
-            // 内边距
-            style.padding.left = CSSLength(8, CSSUnit::PX);
-            style.padding.right = CSSLength(8, CSSUnit::PX);
-            style.padding.top = CSSLength(6, CSSUnit::PX);
-            style.padding.bottom = CSSLength(6, CSSUnit::PX);
+            // 内边距（浏览器默认较小，会被 inline style 覆盖）
+            style.padding.left = CSSLength(2, CSSUnit::PX);
+            style.padding.right = CSSLength(2, CSSUnit::PX);
+            style.padding.top = CSSLength(1, CSSUnit::PX);
+            style.padding.bottom = CSSLength(1, CSSUnit::PX);
         }
         else if (type == "button" || type == "submit") {
-            // 按钮样式（与 <button> 相同）
+            // 按钮样式
             style.background_color = "#F0F0F0";
 
-            style.width = CSSLength(120, CSSUnit::PX);
+            // 宽度和高度
+            style.width = CSSLength(80, CSSUnit::PX);
             style.height = CSSLength(32, CSSUnit::PX);
 
             style.border_radius.top_left = CSSLength(4, CSSUnit::PX);
@@ -375,19 +377,10 @@ void StyleResolver::ApplyElementSpecificStyle(ComputedStyle& style, const std::s
             style.border.style = CSSBorderStyle::SOLID;
             style.border.color = SkColorSetRGB(200, 200, 200);
 
-            style.padding.left = CSSLength(16, CSSUnit::PX);
-            style.padding.right = CSSLength(16, CSSUnit::PX);
-            style.padding.top = CSSLength(6, CSSUnit::PX);
-            style.padding.bottom = CSSLength(6, CSSUnit::PX);
-
-            CSSBoxShadow shadow;
-            shadow.offset_x = 0;
-            shadow.offset_y = 2;
-            shadow.blur_radius = 4;
-            shadow.spread_radius = 0;
-            shadow.color = SkColorSetARGB(40, 0, 0, 0);
-            shadow.inset = false;
-            style.box_shadow.push_back(shadow);
+            style.padding.left = CSSLength(6, CSSUnit::PX);
+            style.padding.right = CSSLength(6, CSSUnit::PX);
+            style.padding.top = CSSLength(4, CSSUnit::PX);
+            style.padding.bottom = CSSLength(4, CSSUnit::PX);
 
             style.text_align = "center";
         }
@@ -645,6 +638,9 @@ void StyleResolver::ApplyInheritance(ComputedStyle& style, const ComputedStyle* 
     style.css_variables.InheritFrom(&parent_style->css_variables);
 
     // 继承可继承属性
+    // 注意：text-decoration 在 CSS 规范中不应该被继承
+    // 它看起来像继承是因为装饰会绘制在整个元素上包括子元素
+    // 但子元素不应该继承这个属性值
     style.color = parent_style->color;
     style.font_family = parent_style->font_family;
     style.font_size = parent_style->font_size;
@@ -652,7 +648,7 @@ void StyleResolver::ApplyInheritance(ComputedStyle& style, const ComputedStyle* 
     style.font_style = parent_style->font_style;
     style.line_height = parent_style->line_height;
     style.text_align = parent_style->text_align;
-    style.text_decoration = parent_style->text_decoration;
+    // text_decoration 不继承 - 保持默认值 "none"
 }
 
 void StyleResolver::ParseStyleProperty(ComputedStyle& style,
@@ -739,6 +735,25 @@ void StyleResolver::ParseStyleProperty(ComputedStyle& style,
     else if (property == "padding-left") {
         style.padding.left = CSSValue::ParseLength(resolved_value);
         style.padding_left = style.padding.left;
+    }
+    // border 简写属性：border: [width] [style] [color]
+    else if (property == "border") {
+        auto border = ParseBorderShorthand(resolved_value, style.font_size);
+        // 设置所有边
+        style.border = border;
+        float width = border.width.ToPx(0, style.font_size);
+        style.border_top_width = width;
+        style.border_right_width = width;
+        style.border_bottom_width = width;
+        style.border_left_width = width;
+        style.border_top_style = border.style;
+        style.border_right_style = border.style;
+        style.border_bottom_style = border.style;
+        style.border_left_style = border.style;
+        style.border_top_color = border.color;
+        style.border_right_color = border.color;
+        style.border_bottom_color = border.color;
+        style.border_left_color = border.color;
     }
     else if (property == "border-width") {
         style.border.width = CSSValue::ParseLength(resolved_value);
