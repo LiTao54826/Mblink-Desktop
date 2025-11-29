@@ -15,12 +15,6 @@ target_link_libraries(preact_form_demo
     skia
 )
 
-# Copy JavaScript files to build directory
-add_custom_command(TARGET preact_form_demo POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E echo "Copying preact_form_demo files..."
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        ${CMAKE_SOURCE_DIR}/examples/preact_form_demo/app.js
-        ${CMAKE_BINARY_DIR}/examples/preact_form_demo/app.js
-    COMMENT "Copying Preact Form Demo files"
-)
+# 依赖资源复制目标
+add_dependencies(preact_form_demo copy_demo_resources)
 

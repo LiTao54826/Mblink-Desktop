@@ -4,6 +4,18 @@ cmake_minimum_required(VERSION 3.15)
 
 message(STATUS "Configuring LightUI examples...")
 
+# ========== 复制 demo_html 和 js 到构建目录 ==========
+# 创建自定义目标统一复制资源文件
+add_custom_target(copy_demo_resources ALL
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+        ${CMAKE_SOURCE_DIR}/examples/demo_html
+        ${CMAKE_BINARY_DIR}/examples/demo_html
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+        ${CMAKE_SOURCE_DIR}/js
+        ${CMAKE_BINARY_DIR}/examples/demo_html/js
+    COMMENT "Copying demo_html and js resources to build directory"
+)
+
 # ========== C++ Examples ==========
 
 # Integration Example

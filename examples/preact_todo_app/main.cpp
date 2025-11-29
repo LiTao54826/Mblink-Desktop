@@ -78,7 +78,7 @@ int main() {
 
         // 6. 加载Preact库
         std::cout << "[6/7] Loading Preact library..." << std::endl;
-        std::string preact_code = ReadFile("js/preact/preact.js");
+        std::string preact_code = ReadFile("../../examples/demo_html/js/preact/preact.js");
         if (preact_code.empty()) {
             std::cerr << "Failed to load preact.js" << std::endl;
             return 1;
@@ -87,7 +87,7 @@ int main() {
         std::cout << "  ✓ Preact library loaded" << std::endl;
 
         // 加载Hooks库
-        std::string hooks_code = ReadFile("js/preact/hooks.js");
+        std::string hooks_code = ReadFile("../../examples/demo_html/js/preact/hooks.js");
         if (hooks_code.empty()) {
             std::cerr << "Failed to load hooks.js" << std::endl;
             return 1;
@@ -97,7 +97,7 @@ int main() {
 
         // 7. 加载并运行应用
         std::cout << "[7/7] Loading application..." << std::endl;
-        std::string app_code = ReadFile("examples/preact_todo_app/app.js");
+        std::string app_code = ReadFile("../../examples/demo_html/preact_todo/app.js");
         if (app_code.empty()) {
             std::cerr << "Failed to load app.js" << std::endl;
             return 1;

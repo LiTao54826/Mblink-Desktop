@@ -87,9 +87,9 @@ int main() {
         document->SetBody(body);
         std::cout << "  Body element created" << std::endl;
 
-        // 7. 加载Preact库
+        // 7. 加载Preact库 (相对于 build/bin/Release/)
         std::cout << "[7/8] Loading Preact library..." << std::endl;
-        std::string preact_code = ReadFile("js/preact/preact.js");
+        std::string preact_code = ReadFile("../../examples/demo_html/js/preact/preact.js");
         if (preact_code.empty()) {
             std::cerr << "Failed to load preact.js" << std::endl;
             return 1;
@@ -98,7 +98,7 @@ int main() {
         std::cout << "  Preact library loaded" << std::endl;
 
         // 加载Hooks库
-        std::string hooks_code = ReadFile("js/preact/hooks.js");
+        std::string hooks_code = ReadFile("../../examples/demo_html/js/preact/hooks.js");
         if (hooks_code.empty()) {
             std::cerr << "Failed to load hooks.js" << std::endl;
             return 1;
@@ -108,7 +108,7 @@ int main() {
 
         // 8. 加载并运行应用
         std::cout << "[8/8] Loading application..." << std::endl;
-        std::string app_code = ReadFile("examples/preact_form_demo/app.js");
+        std::string app_code = ReadFile("../../examples/demo_html/preact_form/app.js");
         if (app_code.empty()) {
             std::cerr << "Failed to load app.js" << std::endl;
             return 1;
@@ -117,7 +117,7 @@ int main() {
         std::cout << "  Application loaded and rendered" << std::endl;
 
         std::cout << std::endl;
-        std::cout << "  Note: Open examples/html/preact_form.html in browser to compare" << std::endl;
+        std::cout << "  Note: Open examples/demo_html/preact_form/index.html in browser to compare" << std::endl;
 
         // 将文档关联到窗口并显示
         window->SetDocument(document);

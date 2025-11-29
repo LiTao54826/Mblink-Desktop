@@ -75,16 +75,16 @@ int main(int argc, char** argv) {
         // 4. 加载并执行Preact代码
         std::cout << "[4/4] Loading Preact..." << std::endl;
 
-        // 加载 Preact 核心
-        std::string preact_code = ReadFile("js/preact/preact.js");
+        // 加载 Preact 核心 (相对于 build/bin/Release/)
+        std::string preact_code = ReadFile("../../examples/demo_html/js/preact/preact.js");
         runtime->Eval(preact_code, "preact.js");
 
         // 加载 Preact Hooks
-        std::string hooks_code = ReadFile("js/preact/hooks.js");
+        std::string hooks_code = ReadFile("../../examples/demo_html/js/preact/hooks.js");
         runtime->Eval(hooks_code, "hooks.js");
 
         // 加载应用代码
-        std::string app_code = ReadFile("examples/preact_counter/app.js");
+        std::string app_code = ReadFile("../../examples/demo_html/preact_counter/app.js");
         runtime->Eval(app_code, "app.js");
 
         std::cout << std::endl;

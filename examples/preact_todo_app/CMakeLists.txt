@@ -15,12 +15,13 @@ target_link_libraries(preact_todo_app
     skia
 )
 
-# Copy JavaScript files to build directory
-add_custom_command(TARGET preact_todo_app POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E echo "Copying example files..."
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        ${CMAKE_SOURCE_DIR}/examples/preact_todo_app/app.js
-        ${CMAKE_BINARY_DIR}/examples/preact_todo_app/app.js
-    COMMENT "Copying Preact Todo App files"
+# 输出到 bin/ 目录
+set_target_properties(preact_todo_app PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+    RUNTIME_OUTPUT_DIRECTORY_DEBUG "${CMAKE_BINARY_DIR}/bin/Debug"
+    RUNTIME_OUTPUT_DIRECTORY_RELEASE "${CMAKE_BINARY_DIR}/bin/Release"
 )
+
+# 依赖资源复制目标
+add_dependencies(preact_todo_app copy_demo_resources)
 
