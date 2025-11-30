@@ -19,6 +19,7 @@
 #include <iostream>
 #include <unordered_map>
 #include <chrono>
+#include <sstream>
 #include "include/core/SkPathEffect.h"
 #include "include/effects/SkDashPathEffect.h"
 
@@ -622,16 +623,84 @@ void RenderInlineBlock::PaintTextAreaElement(SkCanvas* canvas, HTMLTextAreaEleme
         is_placeholder = true;
     }
 
+    // 创建字体
+    FontDescriptor desc;
+    desc.family = computed_style_.font_family;
+    desc.size = computed_style_.font_size;
+    desc.weight = FontWeight::NORMAL;
+    desc.style = FontStyle::NORMAL;
+
+    SkFont font = FontManager::GetInstance().LoadFont(desc);
+
+    // 获取字体度量
+    SkFontMetrics font_metrics;
+    font.getMetrics(&font_metrics);
+    // 行高 = ascent + descent，再加一点行间距
+    float line_height = -font_metrics.fAscent + font_metrics.fDescent;
+    if (font_metrics.fLeading > 0) {
+        line_height += font_metrics.fLeading;
+    } else {
+        // 如果没有 leading，添加一点额外间距（通常是字体大小的20%）
+        line_height += computed_style_.font_size * 0.2f;
+    }
+
+    // 计算文本起始位置 - 使用 border-box 的坐标系统
+    float padding_left = computed_style_.padding.left.ToPx();
+    float padding_top = computed_style_.padding.top.ToPx();
+    float padding_right = computed_style_.padding.right.ToPx();
+    float padding_bottom = computed_style_.padding.bottom.ToPx();
+
+    // 获取滚动偏移量
+    float scroll_top = textarea->GetScrollTop();
+    float scroll_left = textarea->GetScrollLeft();
+
+    // 基础可见区域（不考虑滚动条）
+    float base_visible_height = box.content_height - padding_top - padding_bottom;
+    float base_visible_width = box.content_width - padding_left - padding_right;
+
+    // 计算内容尺寸以确定是否需要滚动条
+    const float scrollbar_width = HTMLTextAreaElement::SCROLLBAR_WIDTH;
+    float content_height = textarea->GetContentHeight(line_height);
+    float max_line_width = textarea->GetMaxLineWidth(font);
+
+    // 判断是否需要滚动条（先用基础可见区域判断）
+    bool need_v_scrollbar = content_height > base_visible_height;
+    bool need_h_scrollbar = max_line_width > base_visible_width;
+
+    // 如果需要滚动条，减去滚动条占用的空间
+    float visible_height = base_visible_height - (need_h_scrollbar ? scrollbar_width : 0);
+    float visible_width = base_visible_width - (need_v_scrollbar ? scrollbar_width : 0);
+
+    // 重新检查是否需要另一个滚动条（因为可见区域减小了）
+    if (!need_v_scrollbar && content_height > visible_height) {
+        need_v_scrollbar = true;
+        visible_width = base_visible_width - scrollbar_width;
+    }
+    if (!need_h_scrollbar && max_line_width > visible_width) {
+        need_h_scrollbar = true;
+        visible_height = base_visible_height - scrollbar_width;
+    }
+
+    float text_x = box.content_x + padding_left - scroll_left;  // 应用横向滚动偏移
+    float text_y = box.content_y + padding_top - font_metrics.fAscent - scroll_top;  // 应用垂直滚动偏移
+
+    // 计算文本可用宽度（减去左右padding和滚动条）
+    float text_available_width = visible_width;
+
+    // 裁剪文本区域（防止文本溢出）
+    // 注意：裁剪区域应该是固定的可见区域，不受滚动影响
+    float clip_x = box.content_x + padding_left;
+    float clip_y = box.content_y + padding_top;
+    canvas->save();
+    SkRect text_clip_rect = SkRect::MakeXYWH(
+        clip_x,
+        clip_y,
+        visible_width,
+        visible_height
+    );
+    canvas->clipRect(text_clip_rect);
+
     if (!value.empty()) {
-        // 创建字体
-        FontDescriptor desc;
-        desc.family = computed_style_.font_family;
-        desc.size = computed_style_.font_size;
-        desc.weight = FontWeight::NORMAL;
-        desc.style = FontStyle::NORMAL;
-
-        SkFont font = FontManager::GetInstance().LoadFont(desc);
-
         // 创建文本渲染器
         TextRenderer text_renderer(canvas);
 
@@ -645,34 +714,222 @@ void RenderInlineBlock::PaintTextAreaElement(SkCanvas* canvas, HTMLTextAreaEleme
             text_paint.SetColor(SK_ColorBLACK);
         }
 
-        // 获取字体度量
-        SkFontMetrics font_metrics;
-        font.getMetrics(&font_metrics);
-        float line_height = -font_metrics.fAscent + font_metrics.fDescent + font_metrics.fLeading;
+        // 绘制多行文本
+        text_renderer.DrawMultilineText(value, text_x, text_y, text_available_width, line_height, font, text_paint);
+    }
 
-        // 计算文本起始位置
-        float text_x = box.content_x + computed_style_.padding.left.ToPx();
-        float text_y = box.content_y + computed_style_.padding.top.ToPx() - font_metrics.fAscent;
+    // 如果有焦点，绘制选中高亮和光标
+    auto element = std::static_pointer_cast<Element>(GetNode());
+    if (element && element->HasPseudoClass("focus")) {
+        // 只在光标位置变化时才自动滚动到光标位置
+        if (textarea->NeedsScrollToCursor()) {
+            textarea->EnsureCursorVisible(line_height, visible_height, visible_width, font);
+            textarea->ResetScrollToCursor();
+            // 重新获取滚动偏移量（可能已经更新）
+            scroll_top = textarea->GetScrollTop();
+            scroll_left = textarea->GetScrollLeft();
+            text_x = box.content_x + padding_left - scroll_left;
+            text_y = box.content_y + padding_top - font_metrics.fAscent - scroll_top;
+        }
 
-        // 计算文本可用宽度（减去左右padding）
-        float text_available_width = box.content_width - computed_style_.padding.left.ToPx() - computed_style_.padding.right.ToPx();
+        std::string actual_value = textarea->GetValue();
+        int sel_start = textarea->GetSelectionStart();
+        int sel_end = textarea->GetSelectionEnd();
 
-        // 裁剪文本区域（防止文本溢出）
-        canvas->save();
-        SkRect text_clip_rect = SkRect::MakeXYWH(
-            text_x,
-            box.content_y + computed_style_.padding.top.ToPx(),
-            text_available_width,
-            box.content_height - computed_style_.padding.top.ToPx() - computed_style_.padding.bottom.ToPx()
+        // 绘制选中高亮
+        if (sel_start != sel_end) {
+            int start = std::min(sel_start, sel_end);
+            int end = std::max(sel_start, sel_end);
+
+            // 选中高亮颜色
+            SkPaint selection_paint;
+            selection_paint.setColor(SkColorSetARGB(128, 66, 133, 244));  // 半透明蓝色
+            selection_paint.setStyle(SkPaint::kFill_Style);
+
+            // 将文本分割成行来绘制选中区域
+            std::vector<std::string> lines;
+            std::istringstream stream(actual_value);
+            std::string line;
+            while (std::getline(stream, line)) {
+                lines.push_back(line);
+            }
+            if (actual_value.empty() || (!actual_value.empty() && actual_value.back() == '\n')) {
+                lines.push_back("");
+            }
+
+            int char_offset = 0;
+            float current_y = text_y;
+
+            for (size_t line_idx = 0; line_idx < lines.size(); line_idx++) {
+                const std::string& current_line = lines[line_idx];
+                int line_char_count = static_cast<int>(utf8::CharCount(current_line));
+                int line_start = char_offset;
+                int line_end = char_offset + line_char_count;
+
+                // 检查选中区域是否与此行重叠
+                if (end > line_start && start < line_end + 1) {
+                    int sel_start_in_line = std::max(0, start - line_start);
+                    int sel_end_in_line = std::min(line_char_count, end - line_start);
+
+                    // 计算选中区域的 x 坐标
+                    float sel_x_start = text_x;
+                    float sel_x_end = text_x;
+
+                    if (sel_start_in_line > 0) {
+                        std::string before_sel = utf8::SubstrByChar(current_line, 0, sel_start_in_line);
+                        sel_x_start += font.measureText(before_sel.c_str(), before_sel.length(), SkTextEncoding::kUTF8);
+                    }
+
+                    if (sel_end_in_line > 0) {
+                        std::string to_sel_end = utf8::SubstrByChar(current_line, 0, sel_end_in_line);
+                        sel_x_end += font.measureText(to_sel_end.c_str(), to_sel_end.length(), SkTextEncoding::kUTF8);
+                    }
+
+                    // 如果选中包含换行符，只高亮到行尾实际字符位置，不扩展到整行宽度
+                    if (end > line_end && sel_end_in_line == line_char_count) {
+                        // 选中区域已经到行尾，不再额外扩展
+                        // sel_x_end 保持为实际文本宽度
+                    }
+
+                    // 绘制选中矩形
+                    SkRect sel_rect = SkRect::MakeXYWH(
+                        sel_x_start,
+                        current_y + font_metrics.fAscent,
+                        sel_x_end - sel_x_start,
+                        -font_metrics.fAscent + font_metrics.fDescent
+                    );
+                    canvas->drawRect(sel_rect, selection_paint);
+                }
+
+                char_offset = line_end + 1;  // +1 for newline
+                current_y += line_height;
+            }
+        }
+
+        // 绘制光标（基于时间的闪烁）
+        auto now = std::chrono::steady_clock::now();
+        auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()).count();
+        bool cursor_visible = (ms / 500) % 2 == 0;
+
+        if (cursor_visible) {
+            // 计算光标位置 - 使用 sel_end 作为光标位置
+            int cursor_pos = sel_end;
+            size_t cursor_byte_pos = utf8::CharPosToBytePos(actual_value, cursor_pos);
+            std::string text_before_cursor = actual_value.substr(0, cursor_byte_pos);
+
+            // 找到最后一个换行符的位置
+            size_t last_newline = text_before_cursor.rfind('\n');
+            std::string current_line_before_cursor;
+            float cursor_y = text_y;
+
+            if (last_newline != std::string::npos) {
+                // 光标在某一行中
+                current_line_before_cursor = text_before_cursor.substr(last_newline + 1);
+                // 计算光标所在行（每个\n增加一行）
+                int line_count = std::count(text_before_cursor.begin(), text_before_cursor.end(), '\n');
+                cursor_y += line_count * line_height;
+            } else {
+                // 光标在第一行
+                current_line_before_cursor = text_before_cursor;
+            }
+
+            // 测量光标前的文本宽度
+            float cursor_x = text_x;
+            if (!current_line_before_cursor.empty()) {
+                cursor_x += font.measureText(
+                    current_line_before_cursor.c_str(),
+                    current_line_before_cursor.length(),
+                    SkTextEncoding::kUTF8
+                );
+            }
+
+            // 绘制光标
+            SkPaint cursor_paint;
+            cursor_paint.setColor(SK_ColorBLACK);
+            cursor_paint.setStrokeWidth(1);
+            cursor_paint.setAntiAlias(true);
+
+            canvas->drawLine(cursor_x, cursor_y + font_metrics.fAscent,
+                           cursor_x, cursor_y + font_metrics.fDescent, cursor_paint);
+        }
+    }
+
+    // 恢复裁剪
+    canvas->restore();
+
+    // ========== 绘制滚动条 ==========
+    // scrollbar_width 已在前面定义
+    const float scrollbar_min_size = 20.0f;
+    const SkColor scrollbar_track_color = SkColorSetARGB(30, 0, 0, 0);
+    const SkColor scrollbar_thumb_color = SkColorSetARGB(128, 100, 100, 100);
+    // content_height, max_line_width, need_v_scrollbar, need_h_scrollbar 已在前面计算
+
+    // 绘制垂直滚动条
+    if (need_v_scrollbar) {
+        float track_x = box.content_x + box.content_width - scrollbar_width - 2;
+        float track_y = box.content_y + padding_top;
+        float track_height = visible_height;
+
+        // 绘制滚动条轨道
+        SkPaint track_paint;
+        track_paint.setColor(scrollbar_track_color);
+        track_paint.setAntiAlias(true);
+        SkRRect track_rrect = SkRRect::MakeRectXY(
+            SkRect::MakeXYWH(track_x, track_y, scrollbar_width, track_height),
+            scrollbar_width / 2, scrollbar_width / 2
         );
-        canvas->clipRect(text_clip_rect);
+        canvas->drawRRect(track_rrect, track_paint);
 
-        // 简单渲染：暂时不处理换行，只显示第一行
-        // TODO: 实现多行文本渲染和换行
-        text_renderer.DrawText(value, text_x, text_y, font, text_paint);
+        // 计算滚动条滑块尺寸和位置
+        float thumb_ratio = visible_height / content_height;
+        float thumb_height = std::max(scrollbar_min_size, track_height * thumb_ratio);
+        float max_scroll = content_height - visible_height;
+        float scroll_ratio = max_scroll > 0 ? (scroll_top / max_scroll) : 0;
+        float thumb_y = track_y + scroll_ratio * (track_height - thumb_height);
 
-        // 恢复裁剪
-        canvas->restore();
+        // 绘制滚动条滑块
+        SkPaint thumb_paint;
+        thumb_paint.setColor(scrollbar_thumb_color);
+        thumb_paint.setAntiAlias(true);
+        SkRRect thumb_rrect = SkRRect::MakeRectXY(
+            SkRect::MakeXYWH(track_x, thumb_y, scrollbar_width, thumb_height),
+            scrollbar_width / 2, scrollbar_width / 2
+        );
+        canvas->drawRRect(thumb_rrect, thumb_paint);
+    }
+
+    // 绘制水平滚动条
+    if (need_h_scrollbar) {
+        float track_x = box.content_x + padding_left;
+        float track_y = box.content_y + box.content_height - scrollbar_width - 2;
+        float track_width = visible_width;
+
+        // 绘制滚动条轨道
+        SkPaint track_paint;
+        track_paint.setColor(scrollbar_track_color);
+        track_paint.setAntiAlias(true);
+        SkRRect track_rrect = SkRRect::MakeRectXY(
+            SkRect::MakeXYWH(track_x, track_y, track_width, scrollbar_width),
+            scrollbar_width / 2, scrollbar_width / 2
+        );
+        canvas->drawRRect(track_rrect, track_paint);
+
+        // 计算滚动条滑块尺寸和位置
+        float thumb_ratio = visible_width / max_line_width;
+        float thumb_width = std::max(scrollbar_min_size, track_width * thumb_ratio);
+        float max_scroll = max_line_width - visible_width;
+        float scroll_ratio = max_scroll > 0 ? (scroll_left / max_scroll) : 0;
+        float thumb_x = track_x + scroll_ratio * (track_width - thumb_width);
+
+        // 绘制滚动条滑块
+        SkPaint thumb_paint;
+        thumb_paint.setColor(scrollbar_thumb_color);
+        thumb_paint.setAntiAlias(true);
+        SkRRect thumb_rrect = SkRRect::MakeRectXY(
+            SkRect::MakeXYWH(thumb_x, track_y, thumb_width, scrollbar_width),
+            scrollbar_width / 2, scrollbar_width / 2
+        );
+        canvas->drawRRect(thumb_rrect, thumb_paint);
     }
 }
 

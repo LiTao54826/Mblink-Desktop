@@ -1,13 +1,16 @@
 /**
  * @file main.cpp
- * @brief 输入框测试应用 - 测试中文输入和快捷键
+ * @brief TextArea多行文本框测试应用
  *
  * 测试功能:
- * 1. 中文输入和删除（UTF-8多字节字符处理）
- * 2. Ctrl+A - 全选
- * 3. Ctrl+C - 复制
- * 4. Ctrl+V - 粘贴
- * 5. Ctrl+X - 剪切
+ * 1. 多行文本输入
+ * 2. 换行处理 (Enter键)
+ * 3. 中文输入和删除（UTF-8多字节字符处理）
+ * 4. 光标导航 (上下左右箭头)
+ * 5. Ctrl+A - 全选
+ * 6. Ctrl+C - 复制
+ * 7. Ctrl+V - 粘贴
+ * 8. Ctrl+X - 剪切
  */
 
 #include "core/window/window.h"
@@ -42,16 +45,16 @@ std::string ReadFile(const std::string& path) {
 int main() {
     try {
         std::cout << "========================================" << std::endl;
-        std::cout << "  输入框测试 - 中文和快捷键" << std::endl;
+        std::cout << "  TextArea多行文本框测试" << std::endl;
         std::cout << "========================================" << std::endl;
         std::cout << std::endl;
 
         // 1. 创建窗口
         std::cout << "[1/8] Creating window..." << std::endl;
         WindowConfig config;
-        config.title = "输入框测试 - 中文和快捷键";
-        config.width = 700;
-        config.height = 700;
+        config.title = "TextArea多行文本框测试";
+        config.width = 800;
+        config.height = 800;
         auto window = std::make_shared<Window>(config);
         std::cout << "  Window created: " << config.width << "x" << config.height << std::endl;
 
@@ -87,15 +90,16 @@ int main() {
         // 6. 创建body元素
         std::cout << "[6/8] Creating body element..." << std::endl;
         auto body = document->CreateElement("body");
+        body->SetAttribute("style", "overflow: auto;");
         document->SetBody(body);
         std::cout << "  Body element created" << std::endl;
 
         // 7. 加载Preact库 (相对于 build/bin/Release/ 或 build/bin/Debug/)
         std::cout << "[7/8] Loading Preact library..." << std::endl;
-        std::string preact_code = ReadFile("../../examples/demo_html/js/preact/preact.js");
+        std::string preact_code = ReadFile("../../../js/preact/preact.js");
         if (preact_code.empty()) {
             // 尝试从 build 目录直接运行的路径
-            preact_code = ReadFile("examples/demo_html/js/preact/preact.js");
+            preact_code = ReadFile("js/preact/preact.js");
         }
         if (preact_code.empty()) {
             std::cerr << "Failed to load preact.js" << std::endl;
@@ -105,9 +109,9 @@ int main() {
         std::cout << "  Preact library loaded" << std::endl;
 
         // 加载Hooks库
-        std::string hooks_code = ReadFile("../../examples/demo_html/js/preact/hooks.js");
+        std::string hooks_code = ReadFile("../../../js/preact/hooks.js");
         if (hooks_code.empty()) {
-            hooks_code = ReadFile("examples/demo_html/js/preact/hooks.js");
+            hooks_code = ReadFile("js/preact/hooks.js");
         }
         if (hooks_code.empty()) {
             std::cerr << "Failed to load hooks.js" << std::endl;
@@ -118,16 +122,16 @@ int main() {
 
         // 8. 加载并运行应用
         std::cout << "[8/8] Loading application..." << std::endl;
-        std::string app_code = ReadFile("../../examples/demo_html/input_test/app.js");
+        std::string app_code = ReadFile("../../../examples/demo_html/textarea_test/app.js");
         if (app_code.empty()) {
-            app_code = ReadFile("examples/demo_html/input_test/app.js");
+            app_code = ReadFile("examples/demo_html/textarea_test/app.js");
         }
         if (app_code.empty()) {
-            std::cerr << "Failed to load app.js" << std::endl;
+            std::cerr << "Failed to load textarea_test app.js" << std::endl;
             return 1;
         }
-        runtime->Eval(app_code, "app.js");
-        std::cout << "  Application loaded and rendered" << std::endl;
+        runtime->Eval(app_code, "textarea_test_app.js");
+        std::cout << "  TextArea test application loaded and rendered" << std::endl;
 
         // 将文档关联到窗口并显示
         window->SetDocument(document);
@@ -135,12 +139,14 @@ int main() {
 
         std::cout << std::endl;
         std::cout << "========================================" << std::endl;
-        std::cout << "  测试应用已启动!" << std::endl;
+        std::cout << "  TextArea测试应用已启动!" << std::endl;
         std::cout << "========================================" << std::endl;
         std::cout << std::endl;
         std::cout << "  测试内容:" << std::endl;
+        std::cout << "  - 多行文本输入" << std::endl;
+        std::cout << "  - Enter键换行" << std::endl;
         std::cout << "  - 输入中文字符" << std::endl;
-        std::cout << "  - 使用 Backspace 删除中文" << std::endl;
+        std::cout << "  - 上下左右箭头导航" << std::endl;
         std::cout << "  - Ctrl+A 全选" << std::endl;
         std::cout << "  - Ctrl+C 复制" << std::endl;
         std::cout << "  - Ctrl+V 粘贴" << std::endl;

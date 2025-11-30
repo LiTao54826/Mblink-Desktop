@@ -937,8 +937,10 @@ static JSValue js_element_get_value(JSContext* ctx, JSValueConst this_val, int m
             return JS_NewString(ctx, input->GetValue().c_str());
         }
     } else if (tag_name == "textarea") {
-        // TODO: 实现 HTMLTextAreaElement
-        return JS_NewString(ctx, element->GetTextContent().c_str());
+        auto textarea = std::dynamic_pointer_cast<HTMLTextAreaElement>(element);
+        if (textarea) {
+            return JS_NewString(ctx, textarea->GetValue().c_str());
+        }
     }
 
     // 其他元素返回 undefined
@@ -978,8 +980,12 @@ static JSValue js_element_set_value(JSContext* ctx, JSValueConst this_val, JSVal
             input->SetValue(value, false);  // 不触发事件
         }
     } else if (tag_name == "textarea") {
-        // TODO: 实现 HTMLTextAreaElement
-        element->SetTextContent(value);
+        auto textarea = std::dynamic_pointer_cast<HTMLTextAreaElement>(element);
+        if (textarea) {
+            std::cerr << "[js_element_set_value] Calling textarea->SetValue" << std::endl;
+            std::cerr.flush();
+            textarea->SetValue(value, false);  // 不触发事件
+        }
     }
 
     JS_FreeCString(ctx, value);

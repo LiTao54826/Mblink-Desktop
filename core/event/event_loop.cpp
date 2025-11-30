@@ -25,8 +25,10 @@
 #include "core/render/text/font_manager.h"
 #include "core/utils/utf8_utils.h"
 #include "include/core/SkFontTypes.h"
+#include "include/core/SkFontMetrics.h"
 #include <iostream>
 #include <algorithm>
+#include <sstream>
 
 namespace lightui {
 
@@ -523,6 +525,89 @@ void EventLoop::HandleMouseEventForDOM(const SDL_Event& event) {
                                                style.font_size, style.font_family);
                 }
             }
+            // 处理 textarea 的鼠标点击定位光标
+            else if (tag_name == "textarea" && event.button.button == SDL_BUTTON_LEFT) {
+                auto textarea_element = std::dynamic_pointer_cast<HTMLTextAreaElement>(hit_result.element);
+                if (textarea_element && hit_result.render_object) {
+                    const auto& style = hit_result.render_object->GetComputedStyle();
+                    float padding_left = style.padding.left.ToPx();
+                    float padding_top = style.padding.top.ToPx();
+                    float padding_right = style.padding.right.ToPx();
+                    float padding_bottom = style.padding.bottom.ToPx();
+                    const auto& layout = hit_result.render_object->GetLayoutInfo();
+
+                    const float scrollbar_width = HTMLTextAreaElement::SCROLLBAR_WIDTH;
+
+                    // 计算内容尺寸以确定是否需要滚动条
+                    FontDescriptor desc;
+                    desc.family = style.font_family.empty() ? "sans-serif" : style.font_family;
+                    desc.size = style.font_size > 0 ? style.font_size : 14.0f;
+                    SkFont font = FontManager::GetInstance().LoadFont(desc);
+                    SkFontMetrics fm;
+                    font.getMetrics(&fm);
+                    float line_height = -fm.fAscent + fm.fDescent;
+                    if (fm.fLeading > 0) line_height += fm.fLeading;
+                    else line_height += desc.size * 0.2f;
+
+                    float content_height = textarea_element->GetContentHeight(line_height);
+                    float max_line_width = textarea_element->GetMaxLineWidth(font);
+                    float base_visible_width = layout.width - padding_left - padding_right;
+                    float base_visible_height = layout.height - padding_top - padding_bottom;
+                    bool need_v_scrollbar = content_height > base_visible_height;
+                    bool need_h_scrollbar = max_line_width > base_visible_width;
+
+                    // 检查是否点击在滚动条上
+                    float local_x = hit_result.local_x;
+                    float local_y = hit_result.local_y;
+
+                    // 垂直滚动条区域
+                    if (need_v_scrollbar) {
+                        float v_scrollbar_x = layout.width - scrollbar_width - 2;
+                        if (local_x >= v_scrollbar_x && local_x <= layout.width) {
+                            // 点击在垂直滚动条上
+                            float track_y = padding_top;
+                            float track_height = base_visible_height - (need_h_scrollbar ? scrollbar_width : 0);
+                            textarea_element->StartScrollbarDrag(
+                                HTMLTextAreaElement::ScrollbarType::VERTICAL,
+                                local_y - track_y
+                            );
+                            // 不处理文本点击
+                            goto skip_text_interaction;
+                        }
+                    }
+
+                    // 水平滚动条区域
+                    if (need_h_scrollbar) {
+                        float h_scrollbar_y = layout.height - scrollbar_width - 2;
+                        if (local_y >= h_scrollbar_y && local_y <= layout.height) {
+                            // 点击在水平滚动条上
+                            float track_x = padding_left;
+                            float track_width = base_visible_width - (need_v_scrollbar ? scrollbar_width : 0);
+                            textarea_element->StartScrollbarDrag(
+                                HTMLTextAreaElement::ScrollbarType::HORIZONTAL,
+                                local_x - track_x
+                            );
+                            // 不处理文本点击
+                            goto skip_text_interaction;
+                        }
+                    }
+
+                    {
+                        // 正常的文本区域点击
+                        float visible_width = base_visible_width - (need_v_scrollbar ? scrollbar_width : 0);
+                        float visible_height = base_visible_height - (need_h_scrollbar ? scrollbar_width : 0);
+                        float text_local_x = hit_result.local_x - padding_left;
+                        float text_local_y = hit_result.local_y - padding_top;
+                        // 检查是否按住 Shift 键
+                        SDL_Keymod mod_state = SDL_GetModState();
+                        bool shift_key = (mod_state & SDL_KMOD_SHIFT) != 0;
+                        HandleTextAreaMouseInteraction(textarea_element, text_local_x, text_local_y, event.type,
+                                                       style.font_size, style.font_family, shift_key,
+                                                       visible_width, visible_height);
+                    }
+                    skip_text_interaction:;
+                }
+            }
         }
         // 对于其他可聚焦元素（button 等），不在 mousedown 时设置焦点
         // 焦点将在 click 事件后设置，避免 focus 事件触发 Preact 重渲染导致元素被替换
@@ -551,6 +636,18 @@ void EventLoop::HandleMouseEventForDOM(const SDL_Event& event) {
                 if (input_element && input_element->IsDraggingSelection()) {
                     // mouse up 时只需要结束拖动，不需要计算字符位置
                     HandleInputMouseInteraction(input_element, 0, event.type, 14.0f, "");
+                }
+            } else if (tag_name == "textarea") {
+                auto textarea_element = std::dynamic_pointer_cast<HTMLTextAreaElement>(last_mousedown_element);
+                if (textarea_element) {
+                    // 结束滚动条拖动
+                    if (textarea_element->IsDraggingScrollbar()) {
+                        textarea_element->EndScrollbarDrag();
+                    }
+                    // 结束文本选择拖动
+                    if (textarea_element->IsDraggingSelection()) {
+                        textarea_element->HandleMouseUp();
+                    }
                 }
             }
         }
@@ -654,6 +751,135 @@ void EventLoop::HandleMouseEventForDOM(const SDL_Event& event) {
                                 float text_local_x = logical_x - layout.x - padding_left;
                                 HandleInputMouseInteraction(input_element, text_local_x, event.type,
                                                            style.font_size, style.font_family);
+                            }
+                        }
+                    }
+                }
+            } else if (tag_name == "textarea") {
+                auto textarea_element = std::dynamic_pointer_cast<HTMLTextAreaElement>(last_mousedown_element);
+                if (textarea_element) {
+                    // 处理滚动条拖动
+                    if (textarea_element->IsDraggingScrollbar()) {
+                        auto root_render = window->GetCachedRenderTree();
+                        if (root_render) {
+                            std::function<std::shared_ptr<RenderObject>(std::shared_ptr<RenderObject>)> findRenderObj;
+                            findRenderObj = [&](std::shared_ptr<RenderObject> obj) -> std::shared_ptr<RenderObject> {
+                                if (!obj) return nullptr;
+                                auto node = obj->GetNode();
+                                if (node && std::dynamic_pointer_cast<HTMLTextAreaElement>(node) == textarea_element) {
+                                    return obj;
+                                }
+                                for (auto& child : obj->GetChildren()) {
+                                    auto result = findRenderObj(child);
+                                    if (result) return result;
+                                }
+                                return nullptr;
+                            };
+
+                            auto textarea_render = findRenderObj(root_render);
+                            if (textarea_render) {
+                                const auto& layout = textarea_render->GetLayoutInfo();
+                                const auto& style = textarea_render->GetComputedStyle();
+                                float padding_left = style.padding.left.ToPx();
+                                float padding_top = style.padding.top.ToPx();
+                                float padding_right = style.padding.right.ToPx();
+                                float padding_bottom = style.padding.bottom.ToPx();
+
+                                const float scrollbar_width = HTMLTextAreaElement::SCROLLBAR_WIDTH;
+
+                                FontDescriptor desc;
+                                desc.family = style.font_family.empty() ? "sans-serif" : style.font_family;
+                                desc.size = style.font_size > 0 ? style.font_size : 14.0f;
+                                SkFont font = FontManager::GetInstance().LoadFont(desc);
+                                SkFontMetrics fm;
+                                font.getMetrics(&fm);
+                                float line_height = -fm.fAscent + fm.fDescent;
+                                if (fm.fLeading > 0) line_height += fm.fLeading;
+                                else line_height += desc.size * 0.2f;
+
+                                float content_height = textarea_element->GetContentHeight(line_height);
+                                float max_line_width = textarea_element->GetMaxLineWidth(font);
+                                float base_visible_width = layout.width - padding_left - padding_right;
+                                float base_visible_height = layout.height - padding_top - padding_bottom;
+                                bool need_v_scrollbar = content_height > base_visible_height;
+                                bool need_h_scrollbar = max_line_width > base_visible_width;
+
+                                float local_x = logical_x - layout.x;
+                                float local_y = logical_y - layout.y;
+
+                                if (textarea_element->GetDraggingScrollbarType() == HTMLTextAreaElement::ScrollbarType::VERTICAL) {
+                                    float track_y = padding_top;
+                                    float track_height = base_visible_height - (need_h_scrollbar ? scrollbar_width : 0);
+                                    float visible_height = base_visible_height - (need_h_scrollbar ? scrollbar_width : 0);
+                                    textarea_element->UpdateScrollbarDrag(
+                                        local_y - track_y,
+                                        track_height,
+                                        content_height,
+                                        visible_height
+                                    );
+                                } else {
+                                    float track_x = padding_left;
+                                    float track_width = base_visible_width - (need_v_scrollbar ? scrollbar_width : 0);
+                                    float visible_width = base_visible_width - (need_v_scrollbar ? scrollbar_width : 0);
+                                    textarea_element->UpdateScrollbarDrag(
+                                        local_x - track_x,
+                                        track_width,
+                                        max_line_width,
+                                        visible_width
+                                    );
+                                }
+                            }
+                        }
+                    }
+                    // 处理文本选择拖动
+                    else if (textarea_element->IsDraggingSelection()) {
+                        if (hit_result.element == last_mousedown_element && hit_result.render_object) {
+                            const auto& style = hit_result.render_object->GetComputedStyle();
+                            const auto& layout = hit_result.render_object->GetLayoutInfo();
+                            float padding_left = style.padding.left.ToPx();
+                            float padding_top = style.padding.top.ToPx();
+                            float padding_right = style.padding.right.ToPx();
+                            float padding_bottom = style.padding.bottom.ToPx();
+                            float visible_width = layout.width - padding_left - padding_right;
+                            float visible_height = layout.height - padding_top - padding_bottom;
+                            float text_local_x = hit_result.local_x - padding_left;
+                            float text_local_y = hit_result.local_y - padding_top;
+                            HandleTextAreaMouseInteraction(textarea_element, text_local_x, text_local_y, event.type,
+                                                           style.font_size, style.font_family, false,
+                                                           visible_width, visible_height);
+                        } else {
+                            auto root_render = window->GetCachedRenderTree();
+                            if (root_render) {
+                                std::function<std::shared_ptr<RenderObject>(std::shared_ptr<RenderObject>)> findRenderObj;
+                                findRenderObj = [&](std::shared_ptr<RenderObject> obj) -> std::shared_ptr<RenderObject> {
+                                    if (!obj) return nullptr;
+                                    auto node = obj->GetNode();
+                                    if (node && std::dynamic_pointer_cast<HTMLTextAreaElement>(node) == textarea_element) {
+                                        return obj;
+                                    }
+                                    for (auto& child : obj->GetChildren()) {
+                                        auto result = findRenderObj(child);
+                                        if (result) return result;
+                                    }
+                                    return nullptr;
+                                };
+
+                                auto textarea_render = findRenderObj(root_render);
+                                if (textarea_render) {
+                                    const auto& layout = textarea_render->GetLayoutInfo();
+                                    const auto& style = textarea_render->GetComputedStyle();
+                                    float padding_left = style.padding.left.ToPx();
+                                    float padding_top = style.padding.top.ToPx();
+                                    float padding_right = style.padding.right.ToPx();
+                                    float padding_bottom = style.padding.bottom.ToPx();
+                                    float visible_width = layout.width - padding_left - padding_right;
+                                    float visible_height = layout.height - padding_top - padding_bottom;
+                                    float text_local_x = logical_x - layout.x - padding_left;
+                                    float text_local_y = logical_y - layout.y - padding_top;
+                                    HandleTextAreaMouseInteraction(textarea_element, text_local_x, text_local_y, event.type,
+                                                                   style.font_size, style.font_family, false,
+                                                                   visible_width, visible_height);
+                                }
                             }
                         }
                     }
@@ -1015,7 +1241,7 @@ void EventLoop::HandleKeyboardEventForDOM(const SDL_Event& event) {
             if (input_element) {
                 input_element->HandleKeyPress(key, ctrl_key);
             } else if (textarea_element) {
-                textarea_element->HandleKeyPress(key, ctrl_key);
+                textarea_element->HandleKeyPress(key, ctrl_key, shift_key);
             }
 
             // 处理Tab键导航
@@ -1115,6 +1341,54 @@ void EventLoop::HandleMouseWheelEventForDOM(const SDL_Event& event) {
     // 检查是否按住 Shift 键（用于水平滚动）
     const bool* keyboard_state = SDL_GetKeyboardState(nullptr);
     bool shift_pressed = keyboard_state[SDL_SCANCODE_LSHIFT] || keyboard_state[SDL_SCANCODE_RSHIFT];
+
+    // 首先检查是否是 textarea 元素
+    if (hit_result.element) {
+        std::string tag_name = hit_result.element->GetTagName();
+        if (tag_name == "textarea") {
+            auto textarea_element = std::dynamic_pointer_cast<HTMLTextAreaElement>(hit_result.element);
+            if (textarea_element && hit_result.render_object) {
+                const auto& style = hit_result.render_object->GetComputedStyle();
+                float padding_top = style.padding.top.ToPx();
+                float padding_bottom = style.padding.bottom.ToPx();
+                float padding_left = style.padding.left.ToPx();
+                float padding_right = style.padding.right.ToPx();
+                const auto& layout = hit_result.render_object->GetLayoutInfo();
+                float visible_height = layout.height - padding_top - padding_bottom;
+                float visible_width = layout.width - padding_left - padding_right;
+
+                // 计算行高（与渲染保持一致）
+                float font_size = style.font_size > 0 ? style.font_size : 14.0f;
+                FontDescriptor desc;
+                desc.family = style.font_family.empty() ? "sans-serif" : style.font_family;
+                desc.size = font_size;
+                desc.weight = FontWeight::NORMAL;
+                desc.style = FontStyle::NORMAL;
+                SkFont font = FontManager::GetInstance().LoadFont(desc);
+                SkFontMetrics font_metrics;
+                font.getMetrics(&font_metrics);
+                float line_height = -font_metrics.fAscent + font_metrics.fDescent;
+                if (font_metrics.fLeading > 0) {
+                    line_height += font_metrics.fLeading;
+                } else {
+                    line_height += font_size * 0.2f;
+                }
+
+                // 处理滚轮事件
+                if (shift_pressed) {
+                    // Shift+滚轮：横向滚动
+                    textarea_element->HandleMouseWheelHorizontal(-wheel_y, visible_width, font);
+                } else {
+                    // 普通滚轮：垂直滚动
+                    textarea_element->HandleMouseWheel(-wheel_y, line_height, visible_height);
+                }
+
+                // 标记窗口需要重绘
+                window->SetNeedsRepaint();
+                return;
+            }
+        }
+    }
 
     // 从命中的元素向上遍历，找到第一个可滚动的元素
     auto render_obj = hit_result.render_object;
@@ -1274,6 +1548,171 @@ void EventLoop::HandleInputMouseInteraction(std::shared_ptr<HTMLInputElement> in
         input_element->HandleMouseUp();
 
         std::cout << "[EventLoop] Input mouse up" << std::endl;
+    }
+}
+
+void EventLoop::HandleTextAreaMouseInteraction(std::shared_ptr<HTMLTextAreaElement> textarea_element,
+                                               float local_x,
+                                               float local_y,
+                                               Uint32 event_type,
+                                               float font_size,
+                                               const std::string& font_family,
+                                               bool shift_key,
+                                               float visible_width,
+                                               float visible_height) {
+    if (!textarea_element) {
+        return;
+    }
+
+    // 获取字体
+    FontDescriptor desc;
+    desc.family = font_family.empty() ? "sans-serif" : font_family;
+    desc.size = font_size > 0 ? font_size : 14.0f;
+    desc.weight = FontWeight::NORMAL;
+    desc.style = FontStyle::NORMAL;
+    SkFont font = FontManager::GetInstance().LoadFont(desc);
+
+    SkFontMetrics font_metrics;
+    font.getMetrics(&font_metrics);
+    float line_height = -font_metrics.fAscent + font_metrics.fDescent;
+    if (font_metrics.fLeading > 0) {
+        line_height += font_metrics.fLeading;
+    } else {
+        line_height += font_size * 0.2f;
+    }
+
+    // 拖动选择时自动滚动
+    if (event_type == SDL_EVENT_MOUSE_MOTION && textarea_element->IsDraggingSelection() &&
+        visible_width > 0 && visible_height > 0) {
+        float scroll_speed = line_height;  // 每帧滚动一行高度
+        float scroll_top = textarea_element->GetScrollTop();
+        float scroll_left = textarea_element->GetScrollLeft();
+
+        // 计算内容高度和最大滚动值
+        int line_count = textarea_element->GetLineCount();
+        float content_height = line_count * line_height;
+        float max_scroll_y = std::max(0.0f, content_height - visible_height);
+
+        // 计算最大行宽度
+        float max_line_width = 0.0f;
+        std::string value = textarea_element->GetValue();
+        std::istringstream stream(value);
+        std::string line;
+        while (std::getline(stream, line)) {
+            float w = font.measureText(line.c_str(), line.size(), SkTextEncoding::kUTF8);
+            if (w > max_line_width) max_line_width = w;
+        }
+        float max_scroll_x = std::max(0.0f, max_line_width - visible_width);
+
+        // 检测鼠标是否超出边界并自动滚动
+        bool scrolled = false;
+        if (local_y < 0) {
+            // 鼠标在上边界外，向上滚动
+            float new_scroll = std::max(0.0f, scroll_top - scroll_speed);
+            textarea_element->SetScrollTop(new_scroll);
+            scrolled = true;
+        } else if (local_y > visible_height) {
+            // 鼠标在下边界外，向下滚动
+            float new_scroll = std::min(max_scroll_y, scroll_top + scroll_speed);
+            textarea_element->SetScrollTop(new_scroll);
+            scrolled = true;
+        }
+
+        if (local_x < 0) {
+            // 鼠标在左边界外，向左滚动
+            float new_scroll = std::max(0.0f, scroll_left - scroll_speed);
+            textarea_element->SetScrollLeft(new_scroll);
+            scrolled = true;
+        } else if (local_x > visible_width) {
+            // 鼠标在右边界外，向右滚动
+            float new_scroll = std::min(max_scroll_x, scroll_left + scroll_speed);
+            textarea_element->SetScrollLeft(new_scroll);
+            scrolled = true;
+        }
+    }
+
+    // 获取滚动偏移量，计算实际的坐标
+    float scroll_top = textarea_element->GetScrollTop();
+    float scroll_left = textarea_element->GetScrollLeft();
+    float actual_x = local_x + scroll_left;  // 考虑横向滚动
+    float actual_y = local_y + scroll_top;
+
+    // 计算点击的行号（使用考虑滚动偏移后的坐标）
+    int clicked_line = static_cast<int>(actual_y / line_height);
+    if (clicked_line < 0) clicked_line = 0;
+
+    // 获取 textarea 的文本内容
+    std::string value = textarea_element->GetValue();
+
+    // 将文本分割成行
+    std::vector<std::string> lines;
+    std::istringstream stream(value);
+    std::string line;
+    while (std::getline(stream, line)) {
+        lines.push_back(line);
+    }
+    if (value.empty() || (!value.empty() && value.back() == '\n')) {
+        lines.push_back("");
+    }
+
+    // 确保行号在有效范围内
+    if (clicked_line >= static_cast<int>(lines.size())) {
+        clicked_line = static_cast<int>(lines.size()) - 1;
+    }
+    if (clicked_line < 0) clicked_line = 0;
+
+    // 计算该行之前的字符总数（包含换行符）
+    int char_offset = 0;
+    for (int i = 0; i < clicked_line && i < static_cast<int>(lines.size()); i++) {
+        char_offset += static_cast<int>(utf8::CharCount(lines[i])) + 1;  // +1 for newline
+    }
+
+    // 在当前行中查找点击位置对应的字符
+    const std::string& current_line = clicked_line < static_cast<int>(lines.size()) ? lines[clicked_line] : "";
+    int char_pos_in_line = 0;
+
+    if (!current_line.empty()) {
+        float accumulated_width = 0;
+        size_t char_count = utf8::CharCount(current_line);
+
+        for (size_t i = 0; i < char_count; i++) {
+            // 获取当前字符
+            size_t byte_start = utf8::CharPosToBytePos(current_line, static_cast<int>(i));
+            size_t byte_end = utf8::CharPosToBytePos(current_line, static_cast<int>(i + 1));
+            std::string char_str = current_line.substr(byte_start, byte_end - byte_start);
+
+            SkScalar char_width = font.measureText(char_str.c_str(), char_str.size(), SkTextEncoding::kUTF8);
+
+            // 使用 actual_x（考虑横向滚动偏移后的坐标）
+            if (actual_x < accumulated_width + char_width / 2) {
+                break;
+            }
+            accumulated_width += char_width;
+            char_pos_in_line++;
+        }
+    }
+
+    int char_pos = char_offset + char_pos_in_line;
+
+    // 根据事件类型处理
+    if (event_type == SDL_EVENT_MOUSE_BUTTON_DOWN) {
+        if (shift_key) {
+            // Shift+点击：扩展选择区域，保持 selection_start 不变
+            int current_start = textarea_element->GetSelectionStart();
+            textarea_element->SetSelection(current_start, char_pos);
+        } else {
+            // 普通点击：设置光标位置
+            textarea_element->SetCursorPosition(char_pos);
+        }
+        textarea_element->SetDragStartPos(char_pos);
+        textarea_element->HandleMouseDown(local_x, local_y);
+    } else if (event_type == SDL_EVENT_MOUSE_MOTION) {
+        if (textarea_element->IsDraggingSelection()) {
+            int drag_start = textarea_element->GetDragStartPos();
+            textarea_element->SetSelection(drag_start, char_pos);
+        }
+    } else if (event_type == SDL_EVENT_MOUSE_BUTTON_UP) {
+        textarea_element->HandleMouseUp();
     }
 }
 

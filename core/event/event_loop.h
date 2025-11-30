@@ -23,6 +23,7 @@ class TaskScheduler;
 class Element;
 class Node;
 class HTMLInputElement;
+class HTMLTextAreaElement;
 class HTMLButtonElement;
 class HTMLFormElement;
 class FocusManager;
@@ -271,6 +272,28 @@ private:
                                      Uint32 event_type,
                                      float font_size,
                                      const std::string& font_family);
+
+    /**
+     * @brief 处理 TextArea 元素的鼠标交互
+     * @param textarea_element TextArea 元素
+     * @param local_x 相对于文本内容区域的 X 坐标
+     * @param local_y 相对于文本内容区域的 Y 坐标
+     * @param event_type 事件类型
+     * @param font_size 字体大小
+     * @param font_family 字体族
+     * @param shift_key 是否按住Shift键
+     * @param visible_width 可见区域宽度（用于自动滚动）
+     * @param visible_height 可见区域高度（用于自动滚动）
+     */
+    void HandleTextAreaMouseInteraction(std::shared_ptr<HTMLTextAreaElement> textarea_element,
+                                        float local_x,
+                                        float local_y,
+                                        Uint32 event_type,
+                                        float font_size,
+                                        const std::string& font_family,
+                                        bool shift_key = false,
+                                        float visible_width = 0.0f,
+                                        float visible_height = 0.0f);
 
 private:
     bool running_ = false;          // 是否正在运行
