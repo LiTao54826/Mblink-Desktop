@@ -14,6 +14,7 @@
 #include "core/dom/text.h"
 #include "core/dom/html_input_element.h"
 #include "core/dom/html_textarea_element.h"
+#include "core/utils/utf8_utils.h"
 #include <algorithm>
 #include <iostream>
 #include <unordered_map>
@@ -484,24 +485,62 @@ void RenderInlineBlock::PaintInputElement(SkCanvas* canvas, HTMLInputElement* in
             text_renderer.DrawText(display_text, text_x, text_y, font, text_paint);
         }
 
-        // 如果有焦点，绘制光标（独立于文本绘制）
+        // 如果有焦点，绘制选中高亮和光标
         auto element = std::static_pointer_cast<Element>(GetNode());
         bool has_focus = element && element->HasPseudoClass("focus");
 
         if (has_focus) {
+            int sel_start = input->GetSelectionStart();
+            int sel_end = input->GetSelectionEnd();
+
+            // 绘制选中区域高亮
+            if (sel_start != sel_end && !original_value.empty()) {
+                int start_char = std::min(sel_start, sel_end);
+                int end_char = std::max(sel_start, sel_end);
+
+                // 使用 UTF-8 工具计算字节位置
+                size_t start_byte = utf8::CharPosToBytePos(original_value, start_char);
+                size_t end_byte = utf8::CharPosToBytePos(original_value, end_char);
+
+                std::string text_before_sel = original_value.substr(0, start_byte);
+                std::string selected_text = original_value.substr(start_byte, end_byte - start_byte);
+
+                // 如果是密码类型，使用星号
+                if (type == InputType::Password) {
+                    text_before_sel = std::string(start_char, '*');
+                    selected_text = std::string(end_char - start_char, '*');
+                }
+
+                float sel_start_x = text_x;
+                if (start_char > 0) {
+                    sel_start_x += font.measureText(text_before_sel.c_str(), text_before_sel.length(), SkTextEncoding::kUTF8);
+                }
+                float sel_width = font.measureText(selected_text.c_str(), selected_text.length(), SkTextEncoding::kUTF8);
+
+                // 绘制选中背景
+                SkPaint sel_paint;
+                sel_paint.setColor(SkColorSetARGB(128, 51, 153, 255));  // 半透明蓝色
+                sel_paint.setStyle(SkPaint::kFill_Style);
+
+                float sel_y_top = box.content_y + computed_style_.padding.top.ToPx();
+                float sel_height = box.content_height - computed_style_.padding.top.ToPx() - computed_style_.padding.bottom.ToPx();
+                canvas->drawRect(SkRect::MakeXYWH(sel_start_x, sel_y_top, sel_width, sel_height), sel_paint);
+            }
+
             // 基于时间的光标闪烁：每500毫秒切换一次
             auto now = std::chrono::steady_clock::now();
             auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()).count();
             bool cursor_visible = (ms / 500) % 2 == 0;
 
             if (cursor_visible) {
-                // 计算光标位置（使用原始值，不是placeholder）
-                int cursor_pos = input->GetSelectionStart();
-                std::string text_before_cursor = original_value.substr(0, std::min(cursor_pos, static_cast<int>(original_value.length())));
+                // 计算光标位置 - 使用 UTF-8 字符位置
+                int cursor_pos = sel_end;
+                size_t cursor_byte_pos = utf8::CharPosToBytePos(original_value, cursor_pos);
+                std::string text_before_cursor = original_value.substr(0, cursor_byte_pos);
 
                 // 如果是密码类型，使用星号计算宽度
                 if (type == InputType::Password) {
-                    text_before_cursor = std::string(text_before_cursor.length(), '*');
+                    text_before_cursor = std::string(cursor_pos, '*');
                 }
 
                 // 测量光标前的文本宽度
@@ -518,7 +557,7 @@ void RenderInlineBlock::PaintInputElement(SkCanvas* canvas, HTMLInputElement* in
                 float cursor_y_top = box.content_y + computed_style_.padding.top.ToPx();
                 float cursor_y_bottom = box.content_y + box.content_height - computed_style_.padding.bottom.ToPx();
 
-                // 绘制光标（简单的竖线）
+                // 绘制光标
                 SkPaint cursor_paint;
                 cursor_paint.setColor(SK_ColorBLACK);
                 cursor_paint.setStrokeWidth(1);

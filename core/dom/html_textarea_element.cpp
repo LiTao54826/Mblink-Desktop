@@ -5,7 +5,9 @@
 
 #include "html_textarea_element.h"
 #include "event.h"
+#include "../utils/utf8_utils.h"
 #include <algorithm>
+#include <SDL3/SDL.h>
 
 namespace lightui {
 
@@ -160,11 +162,11 @@ std::string HTMLTextAreaElement::GetValidationMessage() const {
 
 void HTMLTextAreaElement::Select() {
     selection_start_ = 0;
-    selection_end_ = static_cast<int>(value_.length());
+    selection_end_ = static_cast<int>(utf8::CharCount(value_));
 }
 
 void HTMLTextAreaElement::SetSelectionRange(int start, int end) {
-    int len = static_cast<int>(value_.length());
+    int len = static_cast<int>(utf8::CharCount(value_));
     selection_start_ = std::max(0, std::min(start, len));
     selection_end_ = std::max(selection_start_, std::min(end, len));
 }
@@ -174,73 +176,146 @@ void HTMLTextAreaElement::HandleTextInput(const std::string& text) {
     if (IsDisabled() || IsReadOnly()) {
         return;
     }
-    
-    // 在光标位置插入文本
+
+    // 使用 UTF-8 工具处理文本插入
     std::string new_value = value_;
+    size_t text_char_count = utf8::CharCount(text);
+
     if (selection_start_ != selection_end_) {
         // 有选中文本，替换选中部分
-        new_value = value_.substr(0, selection_start_) + 
-                   text + 
-                   value_.substr(selection_end_);
+        size_t start_byte = utf8::CharPosToBytePos(value_, selection_start_);
+        size_t end_byte = utf8::CharPosToBytePos(value_, selection_end_);
+        new_value = value_.substr(0, start_byte) + text + value_.substr(end_byte);
+        selection_end_ = selection_start_;
     } else {
         // 无选中文本，在光标位置插入
-        new_value = value_.substr(0, selection_start_) + 
-                   text + 
-                   value_.substr(selection_start_);
+        size_t byte_pos = utf8::CharPosToBytePos(value_, selection_start_);
+        new_value = value_.substr(0, byte_pos) + text + value_.substr(byte_pos);
     }
-    
-    // 检查maxlength
+
+    // 检查maxlength（按字符数检查，不是字节数）
     int max_length = GetMaxLength();
-    if (max_length > 0 && static_cast<int>(new_value.length()) > max_length) {
+    if (max_length > 0 && static_cast<int>(utf8::CharCount(new_value)) > max_length) {
         return;  // 超过最大长度，忽略输入
     }
-    
+
     value_ = new_value;
-    selection_start_ += static_cast<int>(text.length());
+    selection_start_ += static_cast<int>(text_char_count);
     selection_end_ = selection_start_;
-    
+
     // 触发input事件
     TriggerInputEvent();
 }
 
 void HTMLTextAreaElement::HandleKeyPress(const std::string& key, bool ctrl_key) {
-    // 检查是否可编辑
-    if (IsDisabled() || IsReadOnly()) {
+    // 检查是否可编辑（导航键和复制不需要可编辑）
+    bool is_navigation_key = (key == "ArrowLeft" || key == "ArrowRight" ||
+                              key == "ArrowUp" || key == "ArrowDown" ||
+                              key == "Home" || key == "End");
+    bool is_clipboard_read = ctrl_key && (key == "c" || key == "C");
+
+    if (!is_navigation_key && !is_clipboard_read && (IsDisabled() || IsReadOnly())) {
         return;
     }
-    
+
+    size_t char_count = utf8::CharCount(value_);
+
     // 处理特殊按键
     if (key == "Backspace") {
         if (selection_start_ != selection_end_) {
             // 删除选中文本
-            value_ = value_.substr(0, selection_start_) + value_.substr(selection_end_);
+            size_t start_byte = utf8::CharPosToBytePos(value_, selection_start_);
+            size_t end_byte = utf8::CharPosToBytePos(value_, selection_end_);
+            value_ = value_.substr(0, start_byte) + value_.substr(end_byte);
             selection_end_ = selection_start_;
         } else if (selection_start_ > 0) {
-            // 删除光标前一个字符
-            value_ = value_.substr(0, selection_start_ - 1) + value_.substr(selection_start_);
+            // 删除光标前一个字符（正确处理多字节UTF-8字符）
+            size_t prev_byte = utf8::CharPosToBytePos(value_, selection_start_ - 1);
+            size_t curr_byte = utf8::CharPosToBytePos(value_, selection_start_);
+            value_ = value_.substr(0, prev_byte) + value_.substr(curr_byte);
             selection_start_--;
             selection_end_ = selection_start_;
         }
         TriggerInputEvent();
-        
+
     } else if (key == "Delete") {
         if (selection_start_ != selection_end_) {
             // 删除选中文本
-            value_ = value_.substr(0, selection_start_) + value_.substr(selection_end_);
+            size_t start_byte = utf8::CharPosToBytePos(value_, selection_start_);
+            size_t end_byte = utf8::CharPosToBytePos(value_, selection_end_);
+            value_ = value_.substr(0, start_byte) + value_.substr(end_byte);
             selection_end_ = selection_start_;
-        } else if (selection_start_ < static_cast<int>(value_.length())) {
+        } else if (selection_start_ < static_cast<int>(char_count)) {
             // 删除光标后一个字符
-            value_ = value_.substr(0, selection_start_) + value_.substr(selection_start_ + 1);
+            size_t curr_byte = utf8::CharPosToBytePos(value_, selection_start_);
+            size_t next_byte = utf8::CharPosToBytePos(value_, selection_start_ + 1);
+            value_ = value_.substr(0, curr_byte) + value_.substr(next_byte);
         }
         TriggerInputEvent();
-        
+
+    } else if (key == "ArrowLeft") {
+        if (selection_start_ > 0) {
+            selection_start_--;
+            selection_end_ = selection_start_;
+        }
+
+    } else if (key == "ArrowRight") {
+        if (selection_start_ < static_cast<int>(char_count)) {
+            selection_start_++;
+            selection_end_ = selection_start_;
+        }
+
+    } else if (key == "Home") {
+        selection_start_ = 0;
+        selection_end_ = 0;
+
+    } else if (key == "End") {
+        selection_start_ = static_cast<int>(char_count);
+        selection_end_ = selection_start_;
+
     } else if (key == "Enter") {
         // TextArea支持换行
         HandleTextInput("\n");
-        
-    } else if (ctrl_key && key == "a") {
+
+    } else if (ctrl_key && (key == "a" || key == "A")) {
         // Ctrl+A 全选
         Select();
+
+    } else if (ctrl_key && (key == "c" || key == "C")) {
+        // Ctrl+C 复制
+        if (selection_start_ != selection_end_) {
+            int start = std::min(selection_start_, selection_end_);
+            int end = std::max(selection_start_, selection_end_);
+            std::string selected_text = utf8::SubstrByChar(value_, start, end);
+            SDL_SetClipboardText(selected_text.c_str());
+        }
+
+    } else if (ctrl_key && (key == "x" || key == "X")) {
+        // Ctrl+X 剪切
+        if (selection_start_ != selection_end_ && !IsReadOnly()) {
+            int start = std::min(selection_start_, selection_end_);
+            int end = std::max(selection_start_, selection_end_);
+            std::string selected_text = utf8::SubstrByChar(value_, start, end);
+            SDL_SetClipboardText(selected_text.c_str());
+
+            // 删除选中文本
+            size_t start_byte = utf8::CharPosToBytePos(value_, start);
+            size_t end_byte = utf8::CharPosToBytePos(value_, end);
+            value_ = value_.substr(0, start_byte) + value_.substr(end_byte);
+            selection_start_ = start;
+            selection_end_ = start;
+            TriggerInputEvent();
+        }
+
+    } else if (ctrl_key && (key == "v" || key == "V")) {
+        // Ctrl+V 粘贴
+        if (!IsReadOnly()) {
+            char* clipboard_text = SDL_GetClipboardText();
+            if (clipboard_text && clipboard_text[0] != '\0') {
+                HandleTextInput(clipboard_text);
+            }
+            SDL_free(clipboard_text);
+        }
     }
 }
 

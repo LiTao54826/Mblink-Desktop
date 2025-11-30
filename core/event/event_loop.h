@@ -257,6 +257,21 @@ private:
                    float mouse_x,
                    float mouse_y);
 
+    /**
+     * @brief 处理输入框的鼠标交互（点击定位光标、拖动选择）
+     *
+     * @param input_element 输入元素
+     * @param local_x 相对于输入框内容区域的X坐标
+     * @param event_type 事件类型 (SDL_EVENT_MOUSE_BUTTON_DOWN, SDL_EVENT_MOUSE_MOTION, SDL_EVENT_MOUSE_BUTTON_UP)
+     * @param font_size 字体大小（用于计算字符宽度）
+     * @param font_family 字体族（用于计算字符宽度）
+     */
+    void HandleInputMouseInteraction(std::shared_ptr<HTMLInputElement> input_element,
+                                     float local_x,
+                                     Uint32 event_type,
+                                     float font_size,
+                                     const std::string& font_family);
+
 private:
     bool running_ = false;          // 是否正在运行
     bool should_quit_ = false;      // 是否应该退出

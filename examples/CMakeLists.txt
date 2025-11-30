@@ -198,6 +198,9 @@ add_subdirectory(flexbox_test)
 # ========== SDL Test ==========
 add_subdirectory(sdl_test)
 
+# ========== Input Test App ==========
+add_subdirectory(input_test_app)
+
 message(STATUS "Examples configured successfully")
 message(STATUS "  - integration_example")
 message(STATUS "  - javascript_integration_example")

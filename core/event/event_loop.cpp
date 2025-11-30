@@ -21,6 +21,10 @@
 #include "core/dom/html_button_element.h"
 #include "core/dom/html_form_element.h"
 #include "core/render/style_resolver.h"
+#include "core/render/render_inline_block.h"
+#include "core/render/text/font_manager.h"
+#include "core/utils/utf8_utils.h"
+#include "include/core/SkFontTypes.h"
 #include <iostream>
 #include <algorithm>
 
@@ -505,6 +509,20 @@ void EventLoop::HandleMouseEventForDOM(const SDL_Event& event) {
             focus_manager_->SetWindow(window.get());
             bool focus_set = focus_manager_->SetFocus(hit_result.element, false);
             std::cout << "[EventLoop] SetFocus (input) returned: " << (focus_set ? "true" : "false") << std::endl;
+
+            // 处理输入框的鼠标点击定位光标
+            if (tag_name == "input" && event.button.button == SDL_BUTTON_LEFT) {
+                auto input_element = std::dynamic_pointer_cast<HTMLInputElement>(hit_result.element);
+                if (input_element && hit_result.render_object) {
+                    // 获取渲染对象的样式信息
+                    const auto& style = hit_result.render_object->GetComputedStyle();
+                    float padding_left = style.padding.left.ToPx();
+                    // 计算相对于文本内容区域的 X 坐标
+                    float text_local_x = hit_result.local_x - padding_left;
+                    HandleInputMouseInteraction(input_element, text_local_x, event.type,
+                                               style.font_size, style.font_family);
+                }
+            }
         }
         // 对于其他可聚焦元素（button 等），不在 mousedown 时设置焦点
         // 焦点将在 click 事件后设置，避免 focus 事件触发 Preact 重渲染导致元素被替换
@@ -523,6 +541,18 @@ void EventLoop::HandleMouseEventForDOM(const SDL_Event& event) {
         // mouseup时移除:active伪类
         if (last_mousedown_element) {
             last_mousedown_element->SetPseudoClass("active", false);
+        }
+
+        // 处理输入框的鼠标释放（结束拖动选择）
+        if (last_mousedown_element && event.button.button == SDL_BUTTON_LEFT) {
+            std::string tag_name = last_mousedown_element->GetTagName();
+            if (tag_name == "input") {
+                auto input_element = std::dynamic_pointer_cast<HTMLInputElement>(last_mousedown_element);
+                if (input_element && input_element->IsDraggingSelection()) {
+                    // mouse up 时只需要结束拖动，不需要计算字符位置
+                    HandleInputMouseInteraction(input_element, 0, event.type, 14.0f, "");
+                }
+            }
         }
 
         if (last_mousedown_element == hit_result.element) {
@@ -580,6 +610,57 @@ void EventLoop::HandleMouseEventForDOM(const SDL_Event& event) {
             drag_manager_->EndDrag(mouse_x, mouse_y);
         }
     } else if (event.type == SDL_EVENT_MOUSE_MOTION) {
+        // 处理输入框的拖动选择
+        if (last_mousedown_element) {
+            std::string tag_name = last_mousedown_element->GetTagName();
+            if (tag_name == "input") {
+                auto input_element = std::dynamic_pointer_cast<HTMLInputElement>(last_mousedown_element);
+                if (input_element && input_element->IsDraggingSelection()) {
+                    // 查找输入框对应的渲染对象
+                    // 通过遍历渲染树或重新进行 hit testing 来获取
+                    if (hit_result.element == last_mousedown_element && hit_result.render_object) {
+                        // 如果鼠标仍在输入框上，使用 hit_result
+                        const auto& style = hit_result.render_object->GetComputedStyle();
+                        float padding_left = style.padding.left.ToPx();
+                        float text_local_x = hit_result.local_x - padding_left;
+                        HandleInputMouseInteraction(input_element, text_local_x, event.type,
+                                                   style.font_size, style.font_family);
+                    } else {
+                        // 鼠标移出了输入框，但仍在拖动选择
+                        // 使用输入框的布局信息计算相对坐标
+                        // 需要从窗口缓存的渲染树中查找输入框的渲染对象
+                        auto root_render = window->GetCachedRenderTree();
+                        if (root_render) {
+                            // 递归查找输入框对应的渲染对象
+                            std::function<std::shared_ptr<RenderObject>(std::shared_ptr<RenderObject>)> findRenderObj;
+                            findRenderObj = [&](std::shared_ptr<RenderObject> obj) -> std::shared_ptr<RenderObject> {
+                                if (!obj) return nullptr;
+                                auto node = obj->GetNode();
+                                if (node && std::dynamic_pointer_cast<HTMLInputElement>(node) == input_element) {
+                                    return obj;
+                                }
+                                for (auto& child : obj->GetChildren()) {
+                                    auto result = findRenderObj(child);
+                                    if (result) return result;
+                                }
+                                return nullptr;
+                            };
+
+                            auto input_render = findRenderObj(root_render);
+                            if (input_render) {
+                                const auto& layout = input_render->GetLayoutInfo();
+                                const auto& style = input_render->GetComputedStyle();
+                                float padding_left = style.padding.left.ToPx();
+                                float text_local_x = logical_x - layout.x - padding_left;
+                                HandleInputMouseInteraction(input_element, text_local_x, event.type,
+                                                           style.font_size, style.font_family);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         // 更新拖拽状态（参考RmlUi/Source/Core/Context.cpp - ProcessMouseMove）
         if (drag_manager_->IsDragging()) {
             drag_manager_->UpdateDrag(mouse_x, mouse_y, document);
@@ -1091,6 +1172,108 @@ void EventLoop::HandleMouseWheelEventForDOM(const SDL_Event& event) {
         }
 
         render_obj = render_obj->GetParent();
+    }
+}
+
+void EventLoop::HandleInputMouseInteraction(std::shared_ptr<HTMLInputElement> input_element,
+                                            float local_x,
+                                            Uint32 event_type,
+                                            float font_size,
+                                            const std::string& font_family) {
+    if (!input_element) {
+        return;
+    }
+
+    // 获取输入框的值和类型
+    std::string value = input_element->GetValue();
+    InputType type = input_element->GetInputType();
+
+    // 只有文本类型的输入框支持鼠标选择
+    if (type != InputType::Text && type != InputType::Password &&
+        type != InputType::Email && type != InputType::Tel &&
+        type != InputType::Url && type != InputType::Search &&
+        type != InputType::Number) {
+        return;
+    }
+
+    // 获取字体信息以计算字符位置
+    // 使用渲染时的实际字体大小和字体族
+    FontDescriptor desc;
+    desc.family = font_family.empty() ? "sans-serif" : font_family;
+    desc.size = font_size > 0 ? font_size : 14.0f;  // 使用传入的字体大小
+    desc.weight = FontWeight::NORMAL;
+    desc.style = FontStyle::NORMAL;
+    SkFont font = FontManager::GetInstance().LoadFont(desc);
+
+    // 如果是密码类型，计算使用星号
+    std::string display_text = value;
+    if (type == InputType::Password) {
+        size_t char_count = utf8::CharCount(value);
+        display_text = std::string(char_count, '*');
+    }
+
+    // 根据 local_x 计算字符位置
+    // local_x 是相对于文本起始位置的偏移
+    int char_pos = 0;
+    size_t total_chars = utf8::CharCount(value);
+
+    if (local_x <= 0 || total_chars == 0) {
+        char_pos = 0;
+    } else {
+        // 逐个字符测量，找到 local_x 落在哪个字符范围内
+        float accumulated_width = 0.0f;
+        size_t byte_pos = 0;
+
+        for (size_t i = 0; i < total_chars; ++i) {
+            // 获取当前字符的字节长度
+            size_t next_byte_pos = utf8::CharPosToBytePos(value, i + 1);
+            std::string char_str;
+
+            if (type == InputType::Password) {
+                char_str = "*";
+            } else {
+                char_str = value.substr(byte_pos, next_byte_pos - byte_pos);
+            }
+
+            // 测量当前字符宽度
+            float char_width = font.measureText(char_str.c_str(), char_str.size(), SkTextEncoding::kUTF8);
+
+            // 检查 local_x 是否在当前字符范围内
+            // 如果 local_x 在字符中心之前，光标放在字符前；否则放在字符后
+            if (local_x < accumulated_width + char_width / 2) {
+                char_pos = static_cast<int>(i);
+                break;
+            }
+
+            accumulated_width += char_width;
+            byte_pos = next_byte_pos;
+            char_pos = static_cast<int>(i + 1);  // 如果超过所有字符，光标放在最后
+        }
+    }
+
+    // 根据事件类型处理
+    if (event_type == SDL_EVENT_MOUSE_BUTTON_DOWN) {
+        // 鼠标按下：设置光标位置并开始拖动选择
+        input_element->SetCursorPosition(char_pos);
+        input_element->SetDragStartPos(char_pos);
+        input_element->HandleMouseDown(local_x, 0);  // 通知开始拖动
+
+        std::cout << "[EventLoop] Input mouse down: char_pos=" << char_pos
+                  << ", local_x=" << local_x << std::endl;
+    } else if (event_type == SDL_EVENT_MOUSE_MOTION) {
+        // 鼠标移动：更新选择区域（如果正在拖动）
+        if (input_element->IsDraggingSelection()) {
+            int drag_start = input_element->GetDragStartPos();
+            input_element->SetSelection(drag_start, char_pos);
+
+            std::cout << "[EventLoop] Input mouse drag: start=" << drag_start
+                      << ", end=" << char_pos << std::endl;
+        }
+    } else if (event_type == SDL_EVENT_MOUSE_BUTTON_UP) {
+        // 鼠标释放：结束拖动选择
+        input_element->HandleMouseUp();
+
+        std::cout << "[EventLoop] Input mouse up" << std::endl;
     }
 }
 

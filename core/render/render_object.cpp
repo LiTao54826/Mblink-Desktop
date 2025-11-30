@@ -14,6 +14,7 @@
 #include "core/dom/text.h"
 #include "core/dom/html_input_element.h"
 #include "core/dom/html_textarea_element.h"
+#include "core/utils/utf8_utils.h"
 #include <algorithm>
 #include <iostream>
 #include <sstream>
@@ -1147,18 +1148,54 @@ void RenderBlock::PaintInputElement(SkCanvas* canvas, HTMLInputElement* input, c
             // 绘制文本
             text_renderer.DrawText(display_text, text_x, text_y, font, text_paint);
 
-            // 如果有焦点，绘制光标（即使是空值也绘制光标）
+            // 如果有焦点，绘制选中高亮和光标
             auto element = std::static_pointer_cast<Element>(GetNode());
             if (element && element->HasPseudoClass("focus")) {
+                int sel_start = input->GetSelectionStart();
+                int sel_end = input->GetSelectionEnd();
+
+                // 绘制选中区域高亮
+                if (sel_start != sel_end) {
+                    int start_char = std::min(sel_start, sel_end);
+                    int end_char = std::max(sel_start, sel_end);
+
+                    // 使用 UTF-8 工具计算字节位置
+                    size_t start_byte = utf8::CharPosToBytePos(value, start_char);
+                    size_t end_byte = utf8::CharPosToBytePos(value, end_char);
+
+                    std::string text_before_sel = value.substr(0, start_byte);
+                    std::string selected_text = value.substr(start_byte, end_byte - start_byte);
+
+                    // 如果是密码类型，使用星号
+                    if (type == InputType::Password) {
+                        text_before_sel = std::string(start_char, '*');
+                        selected_text = std::string(end_char - start_char, '*');
+                    }
+
+                    float sel_start_x = text_x;
+                    if (start_char > 0) {
+                        sel_start_x += font.measureText(text_before_sel.c_str(), text_before_sel.length(), SkTextEncoding::kUTF8);
+                    }
+                    float sel_width = font.measureText(selected_text.c_str(), selected_text.length(), SkTextEncoding::kUTF8);
+
+                    // 绘制选中背景
+                    SkPaint sel_paint;
+                    sel_paint.setColor(SkColorSetARGB(128, 51, 153, 255));  // 半透明蓝色
+                    sel_paint.setStyle(SkPaint::kFill_Style);
+
+                    canvas->drawRect(SkRect::MakeXYWH(sel_start_x, box.content_y, sel_width, box.content_height), sel_paint);
+                }
+
                 // 基于时间的光标闪烁：每500毫秒切换一次
                 auto now = std::chrono::steady_clock::now();
                 auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()).count();
                 bool cursor_visible = (ms / 500) % 2 == 0;
 
                 if (cursor_visible) {
-                    // 计算光标位置
-                    int cursor_pos = input->GetSelectionStart();
-                    std::string text_before_cursor = value.substr(0, cursor_pos);
+                    // 计算光标位置 - 使用 UTF-8 字符位置转换为字节位置
+                    int cursor_pos = sel_end;  // 使用 selection_end 作为光标位置
+                    size_t cursor_byte_pos = utf8::CharPosToBytePos(value, cursor_pos);
+                    std::string text_before_cursor = value.substr(0, cursor_byte_pos);
 
                     // 如果是密码类型，使用星号计算宽度
                     if (type == InputType::Password) {
@@ -1641,13 +1678,54 @@ void RenderInline::PaintInputElement(SkCanvas* canvas, HTMLInputElement* input, 
             // 绘制文本
             text_renderer.DrawText(display_text, text_x, text_y, font, text_paint);
 
-            // 如果有焦点且不是placeholder，绘制光标
-            if (!value.empty() && !is_placeholder) {
-                auto element = std::static_pointer_cast<Element>(GetNode());
-                if (element && element->HasPseudoClass("focus")) {
-                    // 计算光标位置
-                    int cursor_pos = input->GetSelectionStart();
-                    std::string text_before_cursor = value.substr(0, cursor_pos);
+            // 如果有焦点，绘制选中高亮和光标
+            auto element = std::static_pointer_cast<Element>(GetNode());
+            if (element && element->HasPseudoClass("focus")) {
+                int sel_start = input->GetSelectionStart();
+                int sel_end = input->GetSelectionEnd();
+
+                // 绘制选中区域高亮
+                if (sel_start != sel_end && !is_placeholder) {
+                    int start_char = std::min(sel_start, sel_end);
+                    int end_char = std::max(sel_start, sel_end);
+
+                    // 使用 UTF-8 工具计算字节位置
+                    size_t start_byte = utf8::CharPosToBytePos(value, start_char);
+                    size_t end_byte = utf8::CharPosToBytePos(value, end_char);
+
+                    std::string text_before_sel = value.substr(0, start_byte);
+                    std::string selected_text = value.substr(start_byte, end_byte - start_byte);
+
+                    // 如果是密码类型，使用星号
+                    if (type == InputType::Password) {
+                        text_before_sel = std::string(start_char, '*');
+                        selected_text = std::string(end_char - start_char, '*');
+                    }
+
+                    float sel_start_x = text_x;
+                    if (start_char > 0) {
+                        sel_start_x += font.measureText(text_before_sel.c_str(), text_before_sel.length(), SkTextEncoding::kUTF8);
+                    }
+                    float sel_width = font.measureText(selected_text.c_str(), selected_text.length(), SkTextEncoding::kUTF8);
+
+                    // 绘制选中背景
+                    SkPaint sel_paint;
+                    sel_paint.setColor(SkColorSetARGB(128, 51, 153, 255));  // 半透明蓝色
+                    sel_paint.setStyle(SkPaint::kFill_Style);
+
+                    canvas->drawRect(SkRect::MakeXYWH(sel_start_x, box.content_y, sel_width, box.content_height), sel_paint);
+                }
+
+                // 基于时间的光标闪烁
+                auto now = std::chrono::steady_clock::now();
+                auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()).count();
+                bool cursor_visible = (ms / 500) % 2 == 0;
+
+                if (cursor_visible) {
+                    // 计算光标位置 - 使用 UTF-8 字符位置转换为字节位置
+                    int cursor_pos = sel_end;
+                    size_t cursor_byte_pos = utf8::CharPosToBytePos(value, cursor_pos);
+                    std::string text_before_cursor = value.substr(0, cursor_byte_pos);
 
                     // 如果是密码类型，使用星号计算宽度
                     if (type == InputType::Password) {
@@ -1668,7 +1746,7 @@ void RenderInline::PaintInputElement(SkCanvas* canvas, HTMLInputElement* input, 
                     float cursor_y_top = box.content_y;
                     float cursor_y_bottom = box.content_y + box.content_height;
 
-                    // 绘制光标（简单的竖线，暂时不实现闪烁）
+                    // 绘制光标
                     SkPaint cursor_paint;
                     cursor_paint.setColor(SK_ColorBLACK);
                     cursor_paint.setStrokeWidth(1);

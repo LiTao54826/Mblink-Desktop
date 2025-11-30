@@ -209,19 +209,69 @@ public:
     int GetSelectionEnd() const { return selection_end_; }
 
     // ========== 内部方法 ==========
-    
+
     /**
      * @brief 处理文本输入（由EventLoop调用）
      * @param text 输入的文本
      */
     void HandleTextInput(const std::string& text);
-    
+
     /**
      * @brief 处理键盘事件（由EventLoop调用）
      * @param key 按键名称
      * @param ctrl_key Ctrl键是否按下
      */
     void HandleKeyPress(const std::string& key, bool ctrl_key);
+
+    /**
+     * @brief 处理鼠标按下事件（由EventLoop调用）
+     * @param local_x 相对于元素内容区域的x坐标
+     * @param local_y 相对于元素内容区域的y坐标
+     */
+    void HandleMouseDown(float local_x, float local_y);
+
+    /**
+     * @brief 处理鼠标移动事件（用于拖动选择）
+     * @param local_x 相对于元素内容区域的x坐标
+     * @param local_y 相对于元素内容区域的y坐标
+     */
+    void HandleMouseMove(float local_x, float local_y);
+
+    /**
+     * @brief 处理鼠标抬起事件
+     */
+    void HandleMouseUp();
+
+    /**
+     * @brief 检查是否正在拖动选择
+     * @return true表示正在拖动选择
+     */
+    bool IsDraggingSelection() const { return is_dragging_selection_; }
+
+    /**
+     * @brief 设置光标位置（用于鼠标点击定位）
+     * @param char_pos 字符位置（UTF-8字符索引）
+     */
+    void SetCursorPosition(int char_pos);
+
+    /**
+     * @brief 设置选择区域（用于鼠标拖动选择）
+     * @param start 选择起始字符位置
+     * @param end 选择结束字符位置
+     */
+    void SetSelection(int start, int end);
+
+    /**
+     * @brief 获取拖动起始位置
+     * @return 拖动起始的字符位置
+     */
+    int GetDragStartPos() const { return drag_start_pos_; }
+
+    /**
+     * @brief 设置拖动起始位置
+     * @param pos 字符位置
+     */
+    void SetDragStartPos(int pos) { drag_start_pos_ = pos; }
 
 protected:
     /**
@@ -254,6 +304,8 @@ private:
     bool checked_;              // 选中状态（checkbox/radio）
     int selection_start_;       // 选择起始位置
     int selection_end_;         // 选择结束位置
+    bool is_dragging_selection_ = false;  // 是否正在拖动选择
+    int drag_start_pos_ = 0;    // 拖动选择的起始字符位置
 };
 
 } // namespace lightui
