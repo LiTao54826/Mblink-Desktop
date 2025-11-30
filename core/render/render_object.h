@@ -110,7 +110,9 @@ struct ComputedStyle {
     std::optional<CSSFilterList> backdrop_filter;
 
     // 其他
-    std::string overflow;  // visible, hidden, scroll, auto
+    std::string overflow;    // visible, hidden, scroll, auto (简写属性)
+    std::string overflow_x;  // visible, hidden, scroll, auto
+    std::string overflow_y;  // visible, hidden, scroll, auto
     std::string position;  // static, relative, absolute, fixed
 
     // Flexbox 属性
@@ -461,7 +463,55 @@ public:
      */
     ScrollbarHitArea GetDraggingScrollbar() const { return dragging_scrollbar_; }
 
+    /**
+     * @brief 递归计算子元素的实际内容高度
+     * @return 所有子元素的实际内容高度（包括嵌套子元素）
+     */
+    float CalculateContentHeight() const;
+
+    /**
+     * @brief 递归计算子元素的实际内容宽度
+     * @return 所有子元素的实际内容宽度（包括嵌套子元素）
+     */
+    float CalculateContentWidth() const;
+
+    /**
+     * @brief 设置视口尺寸（用于 body 元素滚动条计算）
+     * @param width 视口宽度
+     * @param height 视口高度
+     */
+    static void SetViewportSize(float width, float height);
+
+    /**
+     * @brief 获取视口宽度
+     */
+    static float GetViewportWidth() { return viewport_width_; }
+
+    /**
+     * @brief 获取视口高度
+     */
+    static float GetViewportHeight() { return viewport_height_; }
+
+    /**
+     * @brief 检查当前元素是否是 body 元素
+     */
+    bool IsBodyElement() const;
+
+    /**
+     * @brief 获取有效的可见宽度（对于 body 元素返回视口宽度）
+     */
+    float GetEffectiveVisibleWidth() const;
+
+    /**
+     * @brief 获取有效的可见高度（对于 body 元素返回视口高度）
+     */
+    float GetEffectiveVisibleHeight() const;
+
 protected:
+    // 静态成员：视口尺寸
+    static float viewport_width_;
+    static float viewport_height_;
+
     RenderObjectType type_;
     std::weak_ptr<Node> node_;
     std::weak_ptr<RenderObject> parent_;

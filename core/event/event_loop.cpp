@@ -61,16 +61,16 @@ void EventLoop::Run() {
     if (running_) {
         return;  // 已经在运行
     }
-    
+
     running_ = true;
     should_quit_ = false;
-    
+
     std::cout << "[EventLoop] Starting main loop..." << std::endl;
-    
+
     while (running_ && !should_quit_) {
         RunOnce();
     }
-    
+
     running_ = false;
     std::cout << "[EventLoop] Main loop stopped" << std::endl;
 }
@@ -1040,8 +1040,15 @@ void EventLoop::HandleMouseWheelEventForDOM(const SDL_Event& event) {
     while (render_obj) {
         const auto& style = render_obj->GetComputedStyle();
 
+        // 获取独立的 overflow-x 和 overflow-y 值
+        std::string overflow_x = !style.overflow_x.empty() ? style.overflow_x : style.overflow;
+        std::string overflow_y = !style.overflow_y.empty() ? style.overflow_y : style.overflow;
+
+        bool allow_h_scroll = (overflow_x == "scroll" || overflow_x == "auto");
+        bool allow_v_scroll = (overflow_y == "scroll" || overflow_y == "auto");
+
         // 检查是否可滚动
-        if (style.overflow == "scroll" || style.overflow == "auto") {
+        if (allow_h_scroll || allow_v_scroll) {
             // 计算滚动量（负值向下滚动，正值向上滚动，所以要取反）
             // 每行滚动 40 像素（类似浏览器的默认行为）
             float scroll_delta_x = -wheel_x * 40.0f;

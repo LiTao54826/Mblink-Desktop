@@ -674,15 +674,21 @@ void LayoutEngine::ApplyStyle(TaffyNodeId node, const ComputedStyle& style) {
 
     // Apply sizing
     auto apply_dimension = [](TaffyStyleMutRef style_ref, const CSSLength& css_len,
-                              auto setter_func, const char* name = nullptr) {
-        (void)name;  // suppress unused warning
+                              auto setter_func) {
         if (css_len.unit == CSSUnit::PX) {
             setter_func(style_ref, css_len.value, TAFFY_UNIT_LENGTH);
         } else if (css_len.unit == CSSUnit::PERCENT) {
             setter_func(style_ref, css_len.value, TAFFY_UNIT_PERCENT);
         } else if (css_len.unit == CSSUnit::AUTO) {
             setter_func(style_ref, 0.0f, TAFFY_UNIT_AUTO);
+        } else if (css_len.unit == CSSUnit::EM) {
+            // EM 单位转换为像素（假设基础字体大小为 16px）
+            setter_func(style_ref, css_len.value * 16.0f, TAFFY_UNIT_LENGTH);
+        } else if (css_len.unit == CSSUnit::REM) {
+            // REM 单位转换为像素（假设根字体大小为 16px）
+            setter_func(style_ref, css_len.value * 16.0f, TAFFY_UNIT_LENGTH);
         }
+        // NONE 单位不设置任何值，保持 Taffy 的默认值（无限制）
     };
 
     apply_dimension(taffy_style, style.width, TaffyStyle_SetWidth);
@@ -831,25 +837,37 @@ void LayoutEngine::ApplyStyle(TaffyNodeId node, const ComputedStyle& style) {
     apply_dimension(taffy_style, style.left, TaffyStyle_SetInsetLeft);
 
     // Apply Overflow properties
-    TaffyOverflow overflow_x = TAFFY_OVERFLOW_VISIBLE;
-    TaffyOverflow overflow_y = TAFFY_OVERFLOW_VISIBLE;
+    // 辅助函数：将 overflow 字符串转换为 TaffyOverflow
+    auto parseOverflow = [](const std::string& value) -> TaffyOverflow {
+        if (value == "hidden") {
+            return TAFFY_OVERFLOW_HIDDEN;
+        } else if (value == "scroll") {
+            return TAFFY_OVERFLOW_SCROLL;
+        } else if (value == "auto") {
+            return TAFFY_OVERFLOW_SCROLL;  // Taffy treats auto as scroll
+        } else if (value == "clip") {
+            return TAFFY_OVERFLOW_HIDDEN;  // clip not supported, treat as hidden
+        }
+        return TAFFY_OVERFLOW_VISIBLE;
+    };
 
-    if (style.overflow == "visible") {
-        overflow_x = overflow_y = TAFFY_OVERFLOW_VISIBLE;
-    } else if (style.overflow == "hidden") {
-        overflow_x = overflow_y = TAFFY_OVERFLOW_HIDDEN;
-    } else if (style.overflow == "scroll") {
-        overflow_x = overflow_y = TAFFY_OVERFLOW_SCROLL;
-    } else if (style.overflow == "auto") {
-        overflow_x = overflow_y = TAFFY_OVERFLOW_SCROLL;  // Taffy treats auto as scroll
-    }
-    // Note: "clip" is not supported by Taffy, treat as hidden
-    else if (style.overflow == "clip") {
-        overflow_x = overflow_y = TAFFY_OVERFLOW_HIDDEN;
-    }
+    // 优先使用 overflow_x/overflow_y，如果没有设置则使用 overflow 简写属性
+    std::string overflow_x_val = !style.overflow_x.empty() ? style.overflow_x : style.overflow;
+    std::string overflow_y_val = !style.overflow_y.empty() ? style.overflow_y : style.overflow;
+
+    TaffyOverflow overflow_x = parseOverflow(overflow_x_val);
+    TaffyOverflow overflow_y = parseOverflow(overflow_y_val);
 
     TaffyStyle_SetOverflowX(taffy_style, overflow_x);
     TaffyStyle_SetOverflowY(taffy_style, overflow_y);
+
+    // 设置 scrollbar_width，否则 Overflow::Scroll 会表现得和 Hidden 一样
+    // 滚动条宽度需要与 RenderObject::GetScrollbarWidth() 保持一致
+    bool needs_scrollbar = (overflow_x_val == "scroll" || overflow_x_val == "auto" ||
+                            overflow_y_val == "scroll" || overflow_y_val == "auto");
+    if (needs_scrollbar) {
+        TaffyStyle_SetScrollbarWidth(taffy_style, 12.0f);
+    }
 
     // Note: z-index is not handled by Taffy layout engine
     // It should be handled by the rendering layer during paint
@@ -1002,7 +1020,12 @@ void LayoutEngine::ReadLayoutResults(RenderObject* render_obj) {
 
     // Fix height for elements with auto height
     // Taffy sometimes doesn't correctly calculate content-based height
-    if (style.height.unit == CSSUnit::AUTO && !children.empty()) {
+    // BUT: Don't modify height for elements with overflow - they should respect max-height
+    bool has_overflow = (style.overflow_y == "scroll" || style.overflow_y == "auto" ||
+                         style.overflow_y == "hidden" || style.overflow == "scroll" ||
+                         style.overflow == "auto" || style.overflow == "hidden");
+
+    if (style.height.unit == CSSUnit::AUTO && !children.empty() && !has_overflow) {
         // Calculate the required height based on children
         float padding_top = style.padding.top.ToPx(info.width, style.font_size);
         float padding_bottom = style.padding.bottom.ToPx(info.width, style.font_size);
@@ -1016,7 +1039,8 @@ void LayoutEngine::ReadLayoutResults(RenderObject* render_obj) {
             }
         }
 
-        // Now calculate max_child_bottom
+        // Now calculate max_child_bottom, using the child's LAYOUT height (not content height)
+        // For children with overflow, we use their constrained layout height
         float max_child_bottom = 0;
         for (auto& child : children) {
             const LayoutInfo& child_info = child->GetLayoutInfo();

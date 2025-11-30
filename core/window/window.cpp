@@ -1071,12 +1071,23 @@ void Window::RenderDocument() {
         // 检查是否需要重建渲染树和重新布局
         bool needs_layout = false;
         if (!render_tree_valid_ || !cached_render_tree_) {
+            // 在重建渲染树前，保存旧渲染树的滚动位置
+            std::unordered_map<Node*, std::pair<float, float>> scroll_positions;
+            if (cached_render_tree_) {
+                SaveScrollPositions(cached_render_tree_.get(), scroll_positions);
+            }
+
             // 使用 RenderTreeBuilder 构建渲染树
             RenderTreeBuilder builder;
             builder.SetDocument(document_.get());
             cached_render_tree_ = builder.BuildRenderTree(body, nullptr);
             render_tree_valid_ = true;
             needs_layout = true;
+
+            // 恢复滚动位置
+            if (cached_render_tree_ && !scroll_positions.empty()) {
+                RestoreScrollPositions(cached_render_tree_.get(), scroll_positions);
+            }
         } else {
             // 渲染树有效，但需要更新脏节点的样式（处理伪类变化如:focus）
             MarkRenderObjectsDirty(body.get(), cached_render_tree_.get());
@@ -1093,6 +1104,9 @@ void Window::RenderDocument() {
             }
             canvas->clear(clear_color);
 
+            // 设置视口尺寸（用于 body 元素滚动条计算）
+            RenderObject::SetViewportSize(static_cast<float>(logical_width), static_cast<float>(logical_height));
+
             // 只在需要时重新计算布局（渲染树重建、窗口大小改变、或内容改变）
             static int last_logical_width = 0, last_logical_height = 0;
             if (needs_layout || logical_width != last_logical_width || logical_height != last_logical_height) {
@@ -1100,12 +1114,17 @@ void Window::RenderDocument() {
                 last_logical_height = logical_height;
 
                 // 使用逻辑大小进行布局计算（CSS 像素）
+                // 注意：滚动条宽度由 Taffy 内部处理（通过 TaffyStyle_SetScrollbarWidth）
+                // 不需要在这里手动减去，否则会重复减去导致白线
+                float layout_width = static_cast<float>(logical_width);
+                float layout_height = static_cast<float>(logical_height);
+
                 if (layout_engine_) {
                     layout_engine_->BuildLayoutTree(cached_render_tree_);
-                    layout_engine_->ComputeLayout(static_cast<float>(logical_width), static_cast<float>(logical_height));
+                    layout_engine_->ComputeLayout(layout_width, layout_height);
                     layout_engine_->GetLayoutInfo(cached_render_tree_);
                 } else {
-                    cached_render_tree_->Layout(static_cast<float>(logical_width), static_cast<float>(logical_height));
+                    cached_render_tree_->Layout(layout_width, layout_height);
                 }
             }
 
@@ -1161,6 +1180,12 @@ void Window::RenderDocumentIncremental() {
     }
 
     if (!render_tree_valid_ || !cached_render_tree_) {
+        // 在重建渲染树前，保存旧渲染树的滚动位置
+        std::unordered_map<Node*, std::pair<float, float>> scroll_positions;
+        if (cached_render_tree_) {
+            SaveScrollPositions(cached_render_tree_.get(), scroll_positions);
+        }
+
         // 渲染树无效，需要重建
         DEBUG_LOG("[RenderDocumentIncremental] Rebuilding render tree...");
         RenderTreeBuilder builder;
@@ -1171,6 +1196,11 @@ void Window::RenderDocumentIncremental() {
         if (!cached_render_tree_) {
             DEBUG_LOG("[RenderDocumentIncremental] Failed to build render tree!");
             return;
+        }
+
+        // 恢复滚动位置
+        if (!scroll_positions.empty()) {
+            RestoreScrollPositions(cached_render_tree_.get(), scroll_positions);
         }
 
         // 新渲染树需要完整布局
@@ -1537,6 +1567,12 @@ void Window::EnsureRenderTree() {
         return;
     }
 
+    // 在重建渲染树前，保存旧渲染树的滚动位置
+    std::unordered_map<Node*, std::pair<float, float>> scroll_positions;
+    if (cached_render_tree_) {
+        SaveScrollPositions(cached_render_tree_.get(), scroll_positions);
+    }
+
     // 构建渲染树
     RenderTreeBuilder builder;
     builder.SetDocument(document_.get());
@@ -1544,6 +1580,11 @@ void Window::EnsureRenderTree() {
 
     if (!cached_render_tree_) {
         return;
+    }
+
+    // 恢复滚动位置
+    if (!scroll_positions.empty()) {
+        RestoreScrollPositions(cached_render_tree_.get(), scroll_positions);
     }
 
     // 获取窗口尺寸
@@ -1560,6 +1601,50 @@ void Window::EnsureRenderTree() {
     }
 
     render_tree_valid_ = true;
+}
+
+void Window::SaveScrollPositions(RenderObject* render_obj,
+                                  std::unordered_map<Node*, std::pair<float, float>>& scroll_positions) {
+    if (!render_obj) {
+        return;
+    }
+
+    // 如果有滚动偏移，保存它
+    float scroll_x = render_obj->GetScrollX();
+    float scroll_y = render_obj->GetScrollY();
+    if (scroll_x != 0.0f || scroll_y != 0.0f) {
+        auto node = render_obj->GetNode();
+        if (node) {
+            scroll_positions[node.get()] = {scroll_x, scroll_y};
+        }
+    }
+
+    // 递归处理子节点
+    for (const auto& child : render_obj->GetChildren()) {
+        SaveScrollPositions(child.get(), scroll_positions);
+    }
+}
+
+void Window::RestoreScrollPositions(RenderObject* render_obj,
+                                     const std::unordered_map<Node*, std::pair<float, float>>& scroll_positions) {
+    if (!render_obj) {
+        return;
+    }
+
+    // 查找是否有保存的滚动位置
+    auto node = render_obj->GetNode();
+    if (node) {
+        auto it = scroll_positions.find(node.get());
+        if (it != scroll_positions.end()) {
+            render_obj->SetScrollX(it->second.first);
+            render_obj->SetScrollY(it->second.second);
+        }
+    }
+
+    // 递归处理子节点
+    for (const auto& child : render_obj->GetChildren()) {
+        RestoreScrollPositions(child.get(), scroll_positions);
+    }
 }
 
 } // namespace lightui

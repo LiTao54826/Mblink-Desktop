@@ -134,6 +134,9 @@ function TodoList(props) {
 
     var emptyStyle = 'text-align: center; padding: 40px; color: #999; font-size: 16px;';
 
+    // 为列表内容添加滚动容器样式 - 使用 overflow-y: scroll 只显示垂直滚动条
+    var listContainerStyle = 'max-height: 200px; overflow-y: scroll; overflow-x: hidden;';
+
     // 创建TodoItem数组
     var todoItems = [];
     for (var i = 0; i < items.length; i++) {
@@ -154,7 +157,7 @@ function TodoList(props) {
         ),
         items.length === 0
             ? Preact.h('div', { style: emptyStyle }, '🎉 No todos! Add one above to get started.')
-            : Preact.h('div', null, todoItems)
+            : Preact.h('div', { style: listContainerStyle }, todoItems)
     );
 }
 
@@ -292,7 +295,8 @@ function App() {
         });
     };
 
-    var appStyle = 'padding: 0; margin: 0; background-color: #e0e0e0; min-height: 100vh;';
+    // 应用容器样式 - 移除 min-height: 100vh，让内容自然撑开高度以测试滚动条
+    var appStyle = 'padding: 0; margin: 0; background-color: #e0e0e0;';
 
     var containerStyle = 'max-width: 800px; margin: 0 auto; padding: 20px;';
 
@@ -310,7 +314,15 @@ function App() {
                 onToggle: handleToggleTodo,
                 onDelete: handleDeleteTodo
             }),
-            Preact.h(Footer)
+            Preact.h(Footer),
+            // 添加一些额外的内容来测试滚动
+            Preact.h('div', { style: 'margin-top: 20px; padding: 20px; background-color: #fff; border-radius: 8px;' },
+                Preact.h('h3', { style: 'margin: 0 0 10px 0;' }, '滚动测试区域'),
+                Preact.h('p', { style: 'margin: 0;' }, '这是用来测试页面级滚动条的额外内容。'),
+                Preact.h('div', { style: 'height: 300px; background-color: #f0f0f0; margin-top: 10px; display: flex; align-items: center; justify-content: center;' },
+                    Preact.h('span', {}, '如果能看到这里，说明滚动条工作正常！')
+                )
+            )
         )
     );
 }

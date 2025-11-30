@@ -53,6 +53,9 @@ void FontManager::Initialize() {
     // 初始化emoji字体
     InitializeEmojiFont();
 
+    // 初始化CJK字体
+    InitializeCJKFont();
+
     initialized_ = true;
 }
 
@@ -123,11 +126,13 @@ SkFont FontManager::GetDefaultFont(float size) {
     if (!initialized_) {
         Initialize();
     }
-    
+
     FontDescriptor descriptor;
     descriptor.size = size;
-    descriptor.family = "Arial";  // 默认使用 Arial
-    
+    // 默认字体列表：Arial + 中文字体备选
+    // Microsoft YaHei (微软雅黑) 和 SimSun (宋体) 支持中文显示
+    descriptor.family = "Arial, Microsoft YaHei, SimSun, SimHei";
+
     return LoadFont(descriptor);
 }
 
@@ -295,6 +300,120 @@ sk_sp<SkTypeface> FontManager::GetEmojiTypeface() {
     }
 
     return SkTypeface::MakeEmpty();
+}
+
+// ========== CJK(中日韩)字体支持 ==========
+
+void FontManager::InitializeCJKFont() {
+    if (!font_mgr_) {
+        return;
+    }
+
+    // CJK字体优先级列表
+    const std::vector<const char*> cjk_fonts = {
+#ifdef _WIN32
+        "Microsoft YaHei",          // 微软雅黑 (简体中文)
+        "Microsoft YaHei UI",       // 微软雅黑UI
+        "SimSun",                   // 宋体
+        "SimHei",                   // 黑体
+        "KaiTi",                    // 楷体
+        "DengXian",                 // 等线
+        "FangSong",                 // 仿宋
+        "NSimSun",                  // 新宋体
+#elif defined(__APPLE__)
+        "PingFang SC",              // 苹方简体
+        "PingFang TC",              // 苹方繁体
+        "Hiragino Sans GB",         // 冬青黑体
+        "STHeiti",                  // 华文黑体
+        "STSong",                   // 华文宋体
+#else
+        "Noto Sans CJK SC",         // Google Noto CJK
+        "Noto Sans SC",             // Google Noto简体
+        "Source Han Sans SC",       // 思源黑体
+        "WenQuanYi Micro Hei",      // 文泉驿微米黑
+        "Droid Sans Fallback",      // Android字体
+#endif
+    };
+
+    for (const char* font_name : cjk_fonts) {
+        cjk_typeface_ = font_mgr_->matchFamilyStyle(font_name, SkFontStyle());
+        if (cjk_typeface_) {
+            std::cout << "[FontManager] CJK font loaded: " << font_name << std::endl;
+            break;
+        }
+    }
+
+    if (!cjk_typeface_) {
+        std::cerr << "[FontManager] Warning: No CJK font found, Chinese characters may not display correctly" << std::endl;
+    }
+}
+
+sk_sp<SkTypeface> FontManager::GetCJKTypeface() {
+    if (!initialized_) {
+        Initialize();
+    }
+
+    if (cjk_typeface_) {
+        return cjk_typeface_;
+    }
+
+    // 如果没有CJK字体，返回默认字体
+    if (font_mgr_) {
+        return font_mgr_->matchFamilyStyle(nullptr, SkFontStyle());
+    }
+
+    return SkTypeface::MakeEmpty();
+}
+
+bool FontManager::IsCJK(uint32_t codepoint) {
+    // CJK Unified Ideographs (U+4E00–U+9FFF) - 基本汉字
+    if (codepoint >= 0x4E00 && codepoint <= 0x9FFF) return true;
+
+    // CJK Unified Ideographs Extension A (U+3400–U+4DBF)
+    if (codepoint >= 0x3400 && codepoint <= 0x4DBF) return true;
+
+    // CJK Unified Ideographs Extension B-F (U+20000–U+2A6DF, U+2A700–U+2CEAF, etc.)
+    if (codepoint >= 0x20000 && codepoint <= 0x2A6DF) return true;
+    if (codepoint >= 0x2A700 && codepoint <= 0x2B73F) return true;
+    if (codepoint >= 0x2B740 && codepoint <= 0x2B81F) return true;
+    if (codepoint >= 0x2B820 && codepoint <= 0x2CEAF) return true;
+    if (codepoint >= 0x2CEB0 && codepoint <= 0x2EBEF) return true;
+    if (codepoint >= 0x30000 && codepoint <= 0x3134F) return true;
+
+    // CJK Compatibility Ideographs (U+F900–U+FAFF)
+    if (codepoint >= 0xF900 && codepoint <= 0xFAFF) return true;
+
+    // CJK Compatibility Ideographs Supplement (U+2F800–U+2FA1F)
+    if (codepoint >= 0x2F800 && codepoint <= 0x2FA1F) return true;
+
+    // CJK Radicals Supplement (U+2E80–U+2EFF)
+    if (codepoint >= 0x2E80 && codepoint <= 0x2EFF) return true;
+
+    // Kangxi Radicals (U+2F00–U+2FDF)
+    if (codepoint >= 0x2F00 && codepoint <= 0x2FDF) return true;
+
+    // CJK Symbols and Punctuation (U+3000–U+303F)
+    if (codepoint >= 0x3000 && codepoint <= 0x303F) return true;
+
+    // Hiragana (U+3040–U+309F)
+    if (codepoint >= 0x3040 && codepoint <= 0x309F) return true;
+
+    // Katakana (U+30A0–U+30FF)
+    if (codepoint >= 0x30A0 && codepoint <= 0x30FF) return true;
+
+    // Hangul Syllables (U+AC00–U+D7AF) - 韩文
+    if (codepoint >= 0xAC00 && codepoint <= 0xD7AF) return true;
+
+    // Hangul Jamo (U+1100–U+11FF)
+    if (codepoint >= 0x1100 && codepoint <= 0x11FF) return true;
+
+    // Bopomofo (U+3100–U+312F) - 注音符号
+    if (codepoint >= 0x3100 && codepoint <= 0x312F) return true;
+
+    // Halfwidth and Fullwidth Forms (U+FF00–U+FFEF)
+    if (codepoint >= 0xFF00 && codepoint <= 0xFFEF) return true;
+
+    return false;
 }
 
 bool FontManager::IsEmoji(uint32_t codepoint) {

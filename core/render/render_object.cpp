@@ -23,6 +23,48 @@
 
 namespace lightui {
 
+// 静态成员初始化
+float RenderObject::viewport_width_ = 0.0f;
+float RenderObject::viewport_height_ = 0.0f;
+
+void RenderObject::SetViewportSize(float width, float height) {
+    viewport_width_ = width;
+    viewport_height_ = height;
+}
+
+bool RenderObject::IsBodyElement() const {
+    auto node = GetNode();
+    if (node) {
+        auto element = std::dynamic_pointer_cast<Element>(node);
+        if (element) {
+            std::string tag = element->GetTagName();
+            return (tag == "body" || tag == "BODY");
+        }
+    }
+    return false;
+}
+
+float RenderObject::GetEffectiveVisibleWidth() const {
+    if (IsBodyElement() && viewport_width_ > 0) {
+        return viewport_width_;
+    }
+    return layout_info_.width;
+}
+
+float RenderObject::GetEffectiveVisibleHeight() const {
+    if (IsBodyElement() && viewport_height_ > 0) {
+        return viewport_height_;
+    }
+
+    // 如果设置了 max-height，使用 max-height 作为可见高度
+    float max_height_px = computed_style_.max_height.ToPx();
+    if (max_height_px > 0 && max_height_px < layout_info_.height) {
+        return max_height_px;
+    }
+
+    return layout_info_.height;
+}
+
 // ========== RenderObject 基类实现 ==========
 
 RenderObject::RenderObject(RenderObjectType type)
@@ -103,69 +145,101 @@ void RenderObject::ScrollTo(float x, float y) {
 
 bool RenderObject::IsScrollable() const {
     const auto& style = computed_style_;
-    if (style.overflow != "scroll" && style.overflow != "auto") {
+
+    // 获取独立的 overflow-x 和 overflow-y 值
+    std::string overflow_x = !style.overflow_x.empty() ? style.overflow_x : style.overflow;
+    std::string overflow_y = !style.overflow_y.empty() ? style.overflow_y : style.overflow;
+
+    bool allow_h_scroll = (overflow_x == "scroll" || overflow_x == "auto");
+    bool allow_v_scroll = (overflow_y == "scroll" || overflow_y == "auto");
+
+    if (!allow_h_scroll && !allow_v_scroll) {
         return false;
     }
 
-    // 检查内容是否超出可见区域
-    float visible_width = layout_info_.width;
-    float visible_height = layout_info_.height;
+    // 检查内容是否超出可见区域（对于 body 元素使用视口尺寸）
+    float visible_width = GetEffectiveVisibleWidth();
+    float visible_height = GetEffectiveVisibleHeight();
 
-    return content_width_ > visible_width || content_height_ > visible_height;
+    return (allow_h_scroll && content_width_ > visible_width) ||
+           (allow_v_scroll && content_height_ > visible_height);
 }
 
 float RenderObject::GetMaxScrollX() const {
-    float visible_width = layout_info_.width -
-        computed_style_.padding.left.ToPx(layout_info_.width, computed_style_.font_size) -
-        computed_style_.padding.right.ToPx(layout_info_.width, computed_style_.font_size);
-    return std::max(0.0f, content_width_ - visible_width);
+    const float scrollbar_width = GetScrollbarWidth();
+    float effective_width = GetEffectiveVisibleWidth();
+    float effective_height = GetEffectiveVisibleHeight();
+
+    // 检查是否需要垂直滚动条
+    bool needs_v_scroll = content_height_ > effective_height;
+
+    // 可用内容宽度需要减去垂直滚动条宽度
+    float available_width = effective_width - (needs_v_scroll ? scrollbar_width : 0);
+    return std::max(0.0f, content_width_ - available_width);
 }
 
 float RenderObject::GetMaxScrollY() const {
-    float visible_height = layout_info_.height -
-        computed_style_.padding.top.ToPx(layout_info_.width, computed_style_.font_size) -
-        computed_style_.padding.bottom.ToPx(layout_info_.width, computed_style_.font_size);
-    return std::max(0.0f, content_height_ - visible_height);
+    const float scrollbar_width = GetScrollbarWidth();
+    float effective_width = GetEffectiveVisibleWidth();
+    float effective_height = GetEffectiveVisibleHeight();
+
+    // 检查是否需要垂直滚动条（用于计算内容区域宽度）
+    bool needs_v_scroll = content_height_ > effective_height;
+    float available_width = effective_width - (needs_v_scroll ? scrollbar_width : 0);
+
+    // 检查是否需要水平滚动条
+    bool needs_h_scroll = content_width_ > available_width;
+
+    // 可用内容高度需要减去水平滚动条高度
+    float available_height = effective_height - (needs_h_scroll ? scrollbar_width : 0);
+    return std::max(0.0f, content_height_ - available_height);
 }
 
 RenderObject::ScrollbarHitArea RenderObject::HitTestScrollbar(float local_x, float local_y) const {
     const auto& style = computed_style_;
-    const auto& layout = layout_info_;
 
-    // 只有 overflow: scroll 或 auto 才有滚动条
-    if (style.overflow != "scroll" && style.overflow != "auto") {
+    // 获取独立的 overflow-x 和 overflow-y 值
+    std::string overflow_x = !style.overflow_x.empty() ? style.overflow_x : style.overflow;
+    std::string overflow_y = !style.overflow_y.empty() ? style.overflow_y : style.overflow;
+
+    bool allow_h_scroll = (overflow_x == "scroll" || overflow_x == "auto");
+    bool allow_v_scroll = (overflow_y == "scroll" || overflow_y == "auto");
+
+    // 只有设置了 overflow: scroll 或 auto 才有滚动条
+    if (!allow_h_scroll && !allow_v_scroll) {
         return ScrollbarHitArea::None;
     }
 
     const float scrollbar_width = GetScrollbarWidth();
 
-    // 计算可见区域
-    float visible_width = layout.width;
-    float visible_height = layout.height;
+    // 计算可见区域（对于 body 元素使用视口尺寸）
+    float visible_width = GetEffectiveVisibleWidth();
+    float visible_height = GetEffectiveVisibleHeight();
 
-    // 检查是否需要滚动条
-    bool needs_h_scroll = content_width_ > visible_width - scrollbar_width || style.overflow == "scroll";
-    bool needs_v_scroll = content_height_ > visible_height - scrollbar_width || style.overflow == "scroll";
+    // 使用与 Paint 相同的逻辑判断是否需要滚动条
+    bool needs_v_scroll = allow_v_scroll && (content_height_ > visible_height || overflow_y == "scroll");
+    float content_area_width = visible_width - (needs_v_scroll ? scrollbar_width : 0);
+    bool needs_h_scroll = allow_h_scroll && (content_width_ > content_area_width || overflow_x == "scroll");
 
-    // 检测水平滚动条区域
-    if (needs_h_scroll) {
-        float track_y = layout.height - scrollbar_width;
-        float track_width = visible_width - (needs_v_scroll ? scrollbar_width : 0);
+    // 检测垂直滚动条区域（优先检测，因为它更常见）
+    if (needs_v_scroll) {
+        float track_x = visible_width - scrollbar_width;
+        float track_height = visible_height - (needs_h_scroll ? scrollbar_width : 0);
 
-        if (local_y >= track_y && local_y <= layout.height &&
-            local_x >= 0 && local_x <= track_width) {
-            return ScrollbarHitArea::HorizontalTrack;
+        if (local_x >= track_x && local_x <= visible_width &&
+            local_y >= 0 && local_y <= track_height) {
+            return ScrollbarHitArea::VerticalTrack;
         }
     }
 
-    // 检测垂直滚动条区域
-    if (needs_v_scroll) {
-        float track_x = layout.width - scrollbar_width;
-        float track_height = visible_height - (needs_h_scroll ? scrollbar_width : 0);
+    // 检测水平滚动条区域
+    if (needs_h_scroll) {
+        float track_y = visible_height - scrollbar_width;
+        float track_width = visible_width - (needs_v_scroll ? scrollbar_width : 0);
 
-        if (local_x >= track_x && local_x <= layout.width &&
-            local_y >= 0 && local_y <= track_height) {
-            return ScrollbarHitArea::VerticalTrack;
+        if (local_y >= track_y && local_y <= visible_height &&
+            local_x >= 0 && local_x <= track_width) {
+            return ScrollbarHitArea::HorizontalTrack;
         }
     }
 
@@ -194,20 +268,28 @@ void RenderObject::UpdateScrollbarDrag(float mouse_x, float mouse_y) {
         return;
     }
 
-    const auto& layout = layout_info_;
     const float scrollbar_width = GetScrollbarWidth();
+
+    // 对于 body 元素使用视口尺寸
+    float effective_width = GetEffectiveVisibleWidth();
+    float effective_height = GetEffectiveVisibleHeight();
+
+    // 使用与 Paint 相同的逻辑判断滚动条
+    bool needs_v_scroll = content_height_ > effective_height;
+    float content_area_width = effective_width - (needs_v_scroll ? scrollbar_width : 0);
+    bool needs_h_scroll = content_width_ > content_area_width;
+    float content_area_height = effective_height - (needs_h_scroll ? scrollbar_width : 0);
 
     if (dragging_scrollbar_ == ScrollbarHitArea::HorizontalTrack ||
         dragging_scrollbar_ == ScrollbarHitArea::HorizontalThumb) {
         // 水平滚动
-        float visible_width = layout.width - scrollbar_width;  // 减去垂直滚动条
-        float scrollable_width = content_width_ - visible_width;
+        float scrollable_width = content_width_ - content_area_width;
 
-        if (scrollable_width > 0 && visible_width > 0) {
+        if (scrollable_width > 0 && content_area_width > 0) {
             // 计算滑块可以移动的轨道长度
-            float thumb_ratio = visible_width / content_width_;
-            float thumb_width = std::max(30.0f, visible_width * thumb_ratio);
-            float track_length = visible_width - thumb_width;
+            float thumb_ratio = content_area_width / content_width_;
+            float thumb_width = std::max(30.0f, content_area_width * thumb_ratio);
+            float track_length = content_area_width - thumb_width;
 
             if (track_length > 0) {
                 // 鼠标移动距离转换为滚动距离
@@ -220,14 +302,13 @@ void RenderObject::UpdateScrollbarDrag(float mouse_x, float mouse_y) {
         }
     } else {
         // 垂直滚动
-        float visible_height = layout.height - scrollbar_width;  // 减去水平滚动条
-        float scrollable_height = content_height_ - visible_height;
+        float scrollable_height = content_height_ - content_area_height;
 
-        if (scrollable_height > 0 && visible_height > 0) {
+        if (scrollable_height > 0 && content_area_height > 0) {
             // 计算滑块可以移动的轨道长度
-            float thumb_ratio = visible_height / content_height_;
-            float thumb_height = std::max(30.0f, visible_height * thumb_ratio);
-            float track_length = visible_height - thumb_height;
+            float thumb_ratio = content_area_height / content_height_;
+            float thumb_height = std::max(30.0f, content_area_height * thumb_ratio);
+            float track_length = content_area_height - thumb_height;
 
             if (track_length > 0) {
                 // 鼠标移动距离转换为滚动距离
@@ -245,6 +326,72 @@ void RenderObject::EndScrollbarDrag() {
     dragging_scrollbar_ = ScrollbarHitArea::None;
     drag_start_scroll_ = 0;
     drag_start_mouse_ = 0;
+}
+
+float RenderObject::CalculateContentHeight() const {
+    float max_height = 0.0f;
+
+    // 辅助函数：检查是否设置了 overflow 隐藏/滚动
+    auto hasOverflowClip = [](const ComputedStyle& s) {
+        std::string oy = !s.overflow_y.empty() ? s.overflow_y : s.overflow;
+        return oy == "scroll" || oy == "auto" || oy == "hidden";
+    };
+
+    for (const auto& child : children_) {
+        const auto& child_layout = child->GetLayoutInfo();
+        const auto& child_style = child->GetComputedStyle();
+
+        // 获取子元素的位置和高度
+        float child_y = child_layout.y;
+        float child_height = child_layout.height;
+
+        // 如果子元素也有 overflow: scroll/auto/hidden，使用其布局高度
+        // 否则，递归计算其内容高度
+        if (!hasOverflowClip(child_style)) {
+            // 递归计算子元素的内容高度
+            float child_content_height = child->CalculateContentHeight();
+            if (child_content_height > child_height) {
+                child_height = child_content_height;
+            }
+        }
+
+        max_height = std::max(max_height, child_y + child_height);
+    }
+
+    return max_height;
+}
+
+float RenderObject::CalculateContentWidth() const {
+    float max_width = 0.0f;
+
+    // 辅助函数：检查是否设置了 overflow 隐藏/滚动
+    auto hasOverflowClip = [](const ComputedStyle& s) {
+        std::string ox = !s.overflow_x.empty() ? s.overflow_x : s.overflow;
+        return ox == "scroll" || ox == "auto" || ox == "hidden";
+    };
+
+    for (const auto& child : children_) {
+        const auto& child_layout = child->GetLayoutInfo();
+        const auto& child_style = child->GetComputedStyle();
+
+        // 获取子元素的位置和宽度
+        float child_x = child_layout.x;
+        float child_width = child_layout.width;
+
+        // 如果子元素也有 overflow: scroll/auto/hidden，使用其布局宽度
+        // 否则，递归计算其内容宽度
+        if (!hasOverflowClip(child_style)) {
+            // 递归计算子元素的内容宽度
+            float child_content_width = child->CalculateContentWidth();
+            if (child_content_width > child_width) {
+                child_width = child_content_width;
+            }
+        }
+
+        max_width = std::max(max_width, child_x + child_width);
+    }
+
+    return max_width;
 }
 
 // ========== RenderBlock 实现 ==========
@@ -424,6 +571,7 @@ void RenderBlock::Paint(SkCanvas* canvas) {
     const auto& style = computed_style_;
     const auto& layout = layout_info_;
 
+    // DEBUG: 打印每个有 max-height 或 overflow 的元素
     // 保存画布状态
     canvas->save();
     canvas->translate(layout.x, layout.y);
@@ -443,12 +591,15 @@ void RenderBlock::Paint(SkCanvas* canvas) {
     box.border_bottom_width = style.border_bottom_width > 0 ? style.border_bottom_width : style.border.width.ToPx();
     box.border_left_width = style.border_left_width > 0 ? style.border_left_width : style.border.width.ToPx();
 
-    // Taffy 返回的是 border-box 尺寸，需要减去 padding 和 border 得到 content box
-    // 由于我们已经 translate 到元素左上角，padding_box 应该从 (0, 0) 开始
-    box.content_x = box.padding_left;
-    box.content_y = box.padding_top;
-    box.content_width = layout.width - box.padding_left - box.padding_right;
-    box.content_height = layout.height - box.padding_top - box.padding_bottom;
+    // Taffy 返回的是 border-box 尺寸
+    // 由于我们已经 translate 到元素左上角（border-box 的左上角）
+    // content_x 和 content_y 应该从 border + padding 开始
+    box.content_x = box.border_left_width + box.padding_left;
+    box.content_y = box.border_top_width + box.padding_top;
+    box.content_width = layout.width - box.border_left_width - box.border_right_width
+                        - box.padding_left - box.padding_right;
+    box.content_height = layout.height - box.border_top_width - box.border_bottom_width
+                         - box.padding_top - box.padding_bottom;
 
     // 创建样式映射
     std::unordered_map<std::string, std::string> styles;
@@ -507,8 +658,17 @@ void RenderBlock::Paint(SkCanvas* canvas) {
                           (style.border_top_width > 0 && style.border_top_style != CSSBorderStyle::NONE) ||
                           (style.border_bottom_width > 0 && style.border_bottom_style != CSSBorderStyle::NONE);
 
+
+
     if (has_any_border) {
         SkRect border_box = box.GetBorderBox();
+
+        // 边框绘制时需要向内偏移半个边框宽度
+        // 因为 Skia 的线条是以指定坐标为中心绘制的
+        float half_left = box.border_left_width / 2.0f;
+        float half_right = box.border_right_width / 2.0f;
+        float half_top = box.border_top_width / 2.0f;
+        float half_bottom = box.border_bottom_width / 2.0f;
 
         // 渲染左边框
         if (box.border_left_width > 0) {
@@ -518,8 +678,8 @@ void RenderBlock::Paint(SkCanvas* canvas) {
                                  style.border_left_color : style.border.color;
             if (left_style != CSSBorderStyle::NONE) {
                 renderer.RenderBorderEdge(
-                    border_box.left(), border_box.top(),
-                    border_box.left(), border_box.bottom(),
+                    border_box.left() + half_left, border_box.top(),
+                    border_box.left() + half_left, border_box.bottom(),
                     box.border_left_width, left_style, left_color
                 );
             }
@@ -533,8 +693,8 @@ void RenderBlock::Paint(SkCanvas* canvas) {
                                   style.border_right_color : style.border.color;
             if (right_style != CSSBorderStyle::NONE) {
                 renderer.RenderBorderEdge(
-                    border_box.right(), border_box.top(),
-                    border_box.right(), border_box.bottom(),
+                    border_box.right() - half_right, border_box.top(),
+                    border_box.right() - half_right, border_box.bottom(),
                     box.border_right_width, right_style, right_color
                 );
             }
@@ -548,8 +708,8 @@ void RenderBlock::Paint(SkCanvas* canvas) {
                                 style.border_top_color : style.border.color;
             if (top_style != CSSBorderStyle::NONE) {
                 renderer.RenderBorderEdge(
-                    border_box.left(), border_box.top(),
-                    border_box.right(), border_box.top(),
+                    border_box.left(), border_box.top() + half_top,
+                    border_box.right(), border_box.top() + half_top,
                     box.border_top_width, top_style, top_color
                 );
             }
@@ -563,8 +723,8 @@ void RenderBlock::Paint(SkCanvas* canvas) {
                                    style.border_bottom_color : style.border.color;
             if (bottom_style != CSSBorderStyle::NONE) {
                 renderer.RenderBorderEdge(
-                    border_box.left(), border_box.bottom(),
-                    border_box.right(), border_box.bottom(),
+                    border_box.left(), border_box.bottom() - half_bottom,
+                    border_box.right(), border_box.bottom() - half_bottom,
                     box.border_bottom_width, bottom_style, bottom_color
                 );
             }
@@ -698,40 +858,61 @@ void RenderBlock::Paint(SkCanvas* canvas) {
     float content_width = 0, content_height = 0;
     const float scrollbar_width = 12.0f;
 
-    if (style.overflow == "hidden" || style.overflow == "scroll" || style.overflow == "auto") {
+    // 获取独立的 overflow-x 和 overflow-y 值
+    std::string overflow_x = !style.overflow_x.empty() ? style.overflow_x : style.overflow;
+    std::string overflow_y = !style.overflow_y.empty() ? style.overflow_y : style.overflow;
+
+    // 检查任一方向是否有 overflow 属性
+    auto isOverflowSet = [](const std::string& v) {
+        return v == "hidden" || v == "scroll" || v == "auto";
+    };
+
+    if (isOverflowSet(overflow_x) || isOverflowSet(overflow_y)) {
         needs_clip = true;
 
-        // 计算子元素内容的实际尺寸
-        for (const auto& child : children_) {
-            const auto& child_layout = child->GetLayoutInfo();
-            content_width = std::max(content_width, child_layout.x + child_layout.width);
-            content_height = std::max(content_height, child_layout.y + child_layout.height);
-        }
+        // 使用递归方法计算子元素内容的实际尺寸
+        content_width = CalculateContentWidth();
+        content_height = CalculateContentHeight();
 
         // 保存内容尺寸用于滚动计算
         content_width_ = content_width;
         content_height_ = content_height;
 
         // 判断是否需要滚动条
-        float visible_width = layout.width - box.border_left_width - box.border_right_width;
-        float visible_height = layout.height - box.border_top_width - box.border_bottom_width;
+        float effective_width = GetEffectiveVisibleWidth();
+        float effective_height = GetEffectiveVisibleHeight();
+        float visible_width = effective_width - box.border_left_width - box.border_right_width;
+        float visible_height = effective_height - box.border_top_width - box.border_bottom_width;
 
-        bool needs_h_scroll = content_width > visible_width;
-        bool needs_v_scroll = content_height > visible_height;
-        needs_scrollbar = (style.overflow == "scroll") ||
-                          (style.overflow == "auto" && (needs_h_scroll || needs_v_scroll));
 
-        // 调整可见区域以考虑滚动条占用的空间
-        float clip_width = visible_width;
-        float clip_height = visible_height;
-        if (needs_scrollbar && (needs_v_scroll || style.overflow == "scroll")) {
-            clip_width -= scrollbar_width;
+
+        bool allow_v_scroll = (overflow_y == "scroll" || overflow_y == "auto");
+        bool allow_h_scroll = (overflow_x == "scroll" || overflow_x == "auto");
+
+        bool needs_v_scroll = allow_v_scroll && (content_height > visible_height || overflow_y == "scroll");
+
+        float content_area_width = visible_width;
+        if (needs_v_scroll) {
+            content_area_width -= scrollbar_width;
         }
-        if (needs_scrollbar && (needs_h_scroll || style.overflow == "scroll")) {
-            clip_height -= scrollbar_width;
+
+        bool needs_h_scroll = allow_h_scroll && (content_width > content_area_width || overflow_x == "scroll");
+
+        float content_area_height = visible_height;
+        if (needs_h_scroll) {
+            content_area_height -= scrollbar_width;
+            if (allow_v_scroll && !needs_v_scroll && content_height > content_area_height) {
+                needs_v_scroll = true;
+                content_area_width = visible_width - scrollbar_width;
+                needs_h_scroll = allow_h_scroll && content_width > content_area_width;
+            }
         }
 
-        // 裁剪到 padding box (内容区域 + padding)
+        needs_scrollbar = needs_h_scroll || needs_v_scroll;
+
+        float clip_width = content_area_width;
+        float clip_height = content_area_height;
+
         SkRect clip_rect = SkRect::MakeXYWH(
             box.border_left_width,
             box.border_top_width,
@@ -752,23 +933,72 @@ void RenderBlock::Paint(SkCanvas* canvas) {
             return a->GetComputedStyle().z_index < b->GetComputedStyle().z_index;
         });
 
+    // 浏览器行为：当元素有 border-radius 时，子元素会被裁剪到圆角区域内
+    // 即使没有设置 overflow: hidden
+    bool has_border_radius = style.border_radius.top_left.value > 0 ||
+                             style.border_radius.top_right.value > 0 ||
+                             style.border_radius.bottom_left.value > 0 ||
+                             style.border_radius.bottom_right.value > 0;
+
+    bool needs_radius_clip = has_border_radius && !needs_clip;
+    if (needs_radius_clip) {
+        canvas->save();
+        SkRect clip_rect = box.GetPaddingBox();
+        SkRRect rrect;
+        float tl = style.border_radius.top_left.ToPx();
+        float tr = style.border_radius.top_right.ToPx();
+        float br = style.border_radius.bottom_right.ToPx();
+        float bl = style.border_radius.bottom_left.ToPx();
+        SkVector radii[4] = {
+            {tl, tl}, {tr, tr}, {br, br}, {bl, bl}
+        };
+        rrect.setRectRadii(clip_rect, radii);
+        canvas->clipRRect(rrect, SkClipOp::kIntersect, true);
+    }
+
     // 绘制子元素
     for (auto& child : sorted_children) {
         child->Paint(canvas);
     }
 
-    // 恢复裁剪状态和滚动偏移
+    // 恢复圆角裁剪状态
+    if (needs_radius_clip) {
+        canvas->restore();
+    }
+
+    // 恢复 overflow 裁剪状态和滚动偏移
     if (needs_clip) {
         canvas->restore();
     }
 
     // 绘制滚动条 (在裁剪区域外绘制)
     if (needs_scrollbar) {
-        float visible_width = layout.width - box.border_left_width - box.border_right_width;
-        float visible_height = layout.height - box.border_top_width - box.border_bottom_width;
+        // 对于 body 元素使用视口尺寸
+        float effective_width = GetEffectiveVisibleWidth();
+        float effective_height = GetEffectiveVisibleHeight();
+        float visible_width = effective_width - box.border_left_width - box.border_right_width;
+        float visible_height = effective_height - box.border_top_width - box.border_bottom_width;
 
-        bool needs_h_scroll = content_width > visible_width - scrollbar_width || style.overflow == "scroll";
-        bool needs_v_scroll = content_height > visible_height - scrollbar_width || style.overflow == "scroll";
+        // 获取独立的 overflow-x 和 overflow-y 值
+        std::string overflow_x = !style.overflow_x.empty() ? style.overflow_x : style.overflow;
+        std::string overflow_y = !style.overflow_y.empty() ? style.overflow_y : style.overflow;
+
+        // 判断是否允许显示滚动条
+        bool allow_v_scroll = (overflow_y == "scroll" || overflow_y == "auto");
+        bool allow_h_scroll = (overflow_x == "scroll" || overflow_x == "auto");
+
+        // 使用与上面相同的逻辑判断是否需要滚动条
+        bool needs_v_scroll = allow_v_scroll && (content_height > visible_height || overflow_y == "scroll");
+        float content_area_width = visible_width - (needs_v_scroll ? scrollbar_width : 0);
+        bool needs_h_scroll = allow_h_scroll && (content_width > content_area_width || overflow_x == "scroll");
+
+        // 如果需要水平滚动条，调整高度并重新检查
+        if (needs_h_scroll) {
+            float content_area_height = visible_height - scrollbar_width;
+            if (allow_v_scroll && !needs_v_scroll && content_height > content_area_height) {
+                needs_v_scroll = true;
+            }
+        }
 
         const float scrollbar_margin = 2.0f;
         const float corner_radius = 4.0f;
@@ -783,23 +1013,24 @@ void RenderBlock::Paint(SkCanvas* canvas) {
         thumb_paint.setColor(SkColorSetRGB(193, 193, 193));
         thumb_paint.setAntiAlias(true);
 
-        // 滚动条滑块悬停颜色 (可以在将来添加悬停检测)
-        // SkPaint thumb_hover_paint;
-        // thumb_hover_paint.setColor(SkColorSetRGB(168, 168, 168));
+        // 滚动条区域尺寸
+        float scrollbar_area_width = effective_width;
+        float scrollbar_area_height = effective_height;
 
         // 绘制水平滚动条
         if (needs_h_scroll) {
             float track_x = box.border_left_width;
-            float track_y = layout.height - box.border_bottom_width - scrollbar_width;
+            float track_y = scrollbar_area_height - box.border_bottom_width - scrollbar_width;
             float track_width = visible_width - (needs_v_scroll ? scrollbar_width : 0);
 
             // 绘制轨道
             SkRect track_rect = SkRect::MakeXYWH(track_x, track_y, track_width, scrollbar_width);
             canvas->drawRect(track_rect, track_paint);
 
-            // 计算滑块尺寸和位置
-            float scrollable_width = content_width - (visible_width - scrollbar_width);
-            float thumb_ratio = (visible_width - scrollbar_width) / content_width;
+            // 计算滑块尺寸和位置 - 使用减去滚动条后的可用宽度
+            float available_content_width = visible_width - (needs_v_scroll ? scrollbar_width : 0);
+            float scrollable_width = content_width - available_content_width;
+            float thumb_ratio = available_content_width / content_width;
             float thumb_width = std::max(30.0f, (track_width - 2 * scrollbar_margin) * thumb_ratio);
             float available_track = track_width - thumb_width - 2 * scrollbar_margin;
             float scroll_ratio = scrollable_width > 0 ? scroll_x_ / scrollable_width : 0;
@@ -816,7 +1047,7 @@ void RenderBlock::Paint(SkCanvas* canvas) {
 
         // 绘制垂直滚动条
         if (needs_v_scroll) {
-            float track_x = layout.width - box.border_right_width - scrollbar_width;
+            float track_x = scrollbar_area_width - box.border_right_width - scrollbar_width;
             float track_y = box.border_top_width;
             float track_height = visible_height - (needs_h_scroll ? scrollbar_width : 0);
 
@@ -824,9 +1055,10 @@ void RenderBlock::Paint(SkCanvas* canvas) {
             SkRect track_rect = SkRect::MakeXYWH(track_x, track_y, scrollbar_width, track_height);
             canvas->drawRect(track_rect, track_paint);
 
-            // 计算滑块尺寸和位置
-            float scrollable_height = content_height - (visible_height - scrollbar_width);
-            float thumb_ratio = (visible_height - scrollbar_width) / content_height;
+            // 计算滑块尺寸和位置 - 使用减去滚动条后的可用高度
+            float available_content_height = visible_height - (needs_h_scroll ? scrollbar_width : 0);
+            float scrollable_height = content_height - available_content_height;
+            float thumb_ratio = available_content_height / content_height;
             float thumb_height = std::max(30.0f, (track_height - 2 * scrollbar_margin) * thumb_ratio);
             float available_track = track_height - thumb_height - 2 * scrollbar_margin;
             float scroll_ratio = scrollable_height > 0 ? scroll_y_ / scrollable_height : 0;
@@ -843,8 +1075,8 @@ void RenderBlock::Paint(SkCanvas* canvas) {
 
         // 绘制滚动条角落（当两个滚动条都存在时）
         if (needs_h_scroll && needs_v_scroll) {
-            float corner_x = layout.width - box.border_right_width - scrollbar_width;
-            float corner_y = layout.height - box.border_bottom_width - scrollbar_width;
+            float corner_x = scrollbar_area_width - box.border_right_width - scrollbar_width;
+            float corner_y = scrollbar_area_height - box.border_bottom_width - scrollbar_width;
             SkRect corner_rect = SkRect::MakeXYWH(corner_x, corner_y, scrollbar_width, scrollbar_width);
             canvas->drawRect(corner_rect, track_paint);
         }
@@ -1241,11 +1473,14 @@ void RenderInline::Paint(SkCanvas* canvas) {
     box.border_right_width = style.border.width.ToPx();
     box.border_bottom_width = style.border.width.ToPx();
     box.border_left_width = style.border.width.ToPx();
-    // 由于我们已经 translate 到元素左上角，padding_box 应该从 (0, 0) 开始
-    box.content_x = box.padding_left;
-    box.content_y = box.padding_top;
-    box.content_width = layout.width - box.padding_left - box.padding_right;
-    box.content_height = layout.height - box.padding_top - box.padding_bottom;
+    // 由于我们已经 translate 到元素左上角（border-box 的左上角）
+    // content_x 和 content_y 应该从 border + padding 开始
+    box.content_x = box.border_left_width + box.padding_left;
+    box.content_y = box.border_top_width + box.padding_top;
+    box.content_width = layout.width - box.border_left_width - box.border_right_width
+                        - box.padding_left - box.padding_right;
+    box.content_height = layout.height - box.border_top_width - box.border_bottom_width
+                         - box.padding_top - box.padding_bottom;
 
     // 创建样式映射
     std::unordered_map<std::string, std::string> styles;
@@ -1306,7 +1541,12 @@ void RenderInline::Paint(SkCanvas* canvas) {
 
     // 应用 overflow 裁剪
     bool needs_clip = false;
-    if (style.overflow == "hidden" || style.overflow == "scroll" || style.overflow == "auto") {
+    std::string overflow_x = !style.overflow_x.empty() ? style.overflow_x : style.overflow;
+    std::string overflow_y = !style.overflow_y.empty() ? style.overflow_y : style.overflow;
+    auto isOverflowSet = [](const std::string& v) {
+        return v == "hidden" || v == "scroll" || v == "auto";
+    };
+    if (isOverflowSet(overflow_x) || isOverflowSet(overflow_y)) {
         needs_clip = true;
         // 裁剪到 padding box (内容区域 + padding)
         SkRect clip_rect = SkRect::MakeXYWH(

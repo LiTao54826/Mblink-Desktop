@@ -73,8 +73,11 @@ int main() {
         // 5. 创建body元素
         std::cout << "[5/7] Creating body element..." << std::endl;
         auto body = document->CreateElement("body");
+        // 设置 body 的 overflow: auto 以支持页面级滚动
+        // 不设置固定宽高，让 body 自动适应视口大小
+        body->SetAttribute("style", "overflow: auto;");
         document->SetBody(body);
-        std::cout << "  ✓ Body element created" << std::endl;
+        std::cout << "  ✓ Body element created with overflow: auto" << std::endl;
 
         // 6. 加载Preact库
         std::cout << "[6/7] Loading Preact library..." << std::endl;

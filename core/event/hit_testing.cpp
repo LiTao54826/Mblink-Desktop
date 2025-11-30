@@ -121,37 +121,45 @@ bool HitTesting::HitTestRecursive(
     float offset_x,
     float offset_y,
     HitTestResult& result) {
-    
+
     if (!render_object) {
         return false;
     }
-    
+
     const auto& layout = render_object->GetLayoutInfo();
     if (!layout.is_laid_out) {
         return false;
     }
-    
+
     // 计算当前元素的绝对位置
     float current_offset_x = offset_x + layout.x;
     float current_offset_y = offset_y + layout.y;
-    
+
     // 检查点是否在当前元素边界内
     if (!IsPointInBounds(render_object, x, y, offset_x, offset_y)) {
         return false;
     }
-    
+
+    // 获取当前元素的滚动偏移量
+    float scroll_x = render_object->GetScrollX();
+    float scroll_y = render_object->GetScrollY();
+
+    // 子元素的偏移需要减去滚动偏移（因为滚动会让内容向上/向左移动）
+    float child_offset_x = current_offset_x - scroll_x;
+    float child_offset_y = current_offset_y - scroll_y;
+
     // 从后向前遍历子元素（后面的元素在上层）
     const auto& children = render_object->GetChildren();
     for (auto it = children.rbegin(); it != children.rend(); ++it) {
         const auto& child = *it;
-        
-        // 递归检查子元素
-        if (HitTestRecursive(child, x, y, current_offset_x, current_offset_y, result)) {
+
+        // 递归检查子元素，传递考虑了滚动偏移的坐标
+        if (HitTestRecursive(child, x, y, child_offset_x, child_offset_y, result)) {
             // 子元素命中，返回 true
             return true;
         }
     }
-    
+
     // 没有子元素命中，当前元素就是目标
     // 获取对应的 DOM 元素
     auto node = render_object->GetNode();

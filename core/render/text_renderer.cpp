@@ -79,19 +79,21 @@ void TextRenderer::DrawTextWithEmoji(const std::string& text, float x, float y,
     if (!canvas_ || text.empty()) return;
 
     auto& font_manager = FontManager::GetInstance();
-    sk_sp<SkTypeface> main_typeface = font.refTypeface();
     sk_sp<SkTypeface> emoji_typeface = font_manager.GetEmojiTypeface();
-
-    // 如果没有emoji字体，直接使用普通绘制
-    if (!emoji_typeface) {
-        DrawText(text, x, y, font, paint);
-        return;
-    }
+    sk_sp<SkTypeface> cjk_typeface = font_manager.GetCJKTypeface();
 
     // 创建emoji字体（保持相同大小）
     SkFont emoji_font(emoji_typeface, font.getSize());
     emoji_font.setEdging(SkFont::Edging::kAntiAlias);
     emoji_font.setSubpixel(true);
+
+    // 创建CJK字体（保持相同大小）
+    SkFont cjk_font(cjk_typeface, font.getSize());
+    cjk_font.setEdging(SkFont::Edging::kAntiAlias);
+    cjk_font.setSubpixel(true);
+
+    // 字符类型枚举
+    enum class CharType { NORMAL, EMOJI, CJK };
 
     float current_x = x;
     const char* str = text.c_str();
@@ -99,47 +101,54 @@ void TextRenderer::DrawTextWithEmoji(const std::string& text, float x, float y,
     size_t pos = 0;
 
     std::string run_text;
-    bool run_is_emoji = false;
+    CharType run_type = CharType::NORMAL;
+
+    auto getCharType = [](uint32_t codepoint) -> CharType {
+        if (FontManager::IsEmoji(codepoint)) return CharType::EMOJI;
+        if (FontManager::IsCJK(codepoint)) return CharType::CJK;
+        return CharType::NORMAL;
+    };
+
+    auto drawRun = [&](const std::string& text, CharType type, float& x_pos) {
+        if (text.empty()) return;
+        const SkFont* use_font = &font;
+        switch (type) {
+            case CharType::EMOJI:
+                use_font = emoji_typeface ? &emoji_font : &font;
+                break;
+            case CharType::CJK:
+                use_font = cjk_typeface ? &cjk_font : &font;
+                break;
+            default:
+                use_font = &font;
+                break;
+        }
+        canvas_->drawSimpleText(text.c_str(), text.size(), SkTextEncoding::kUTF8,
+                               x_pos, y, *use_font, paint.GetSkPaint());
+        x_pos += use_font->measureText(text.c_str(), text.size(), SkTextEncoding::kUTF8);
+    };
 
     while (pos < len) {
         auto [codepoint, bytes] = DecodeUTF8Char(str + pos, len - pos);
         if (bytes == 0) break;
 
-        bool is_emoji = FontManager::IsEmoji(codepoint);
+        CharType char_type = getCharType(codepoint);
 
         // 如果字符类型变化，绘制之前积累的文本
-        if (!run_text.empty() && is_emoji != run_is_emoji) {
-            if (run_is_emoji) {
-                canvas_->drawSimpleText(run_text.c_str(), run_text.size(), SkTextEncoding::kUTF8,
-                                       current_x, y, emoji_font, paint.GetSkPaint());
-            } else {
-                canvas_->drawSimpleText(run_text.c_str(), run_text.size(), SkTextEncoding::kUTF8,
-                                       current_x, y, font, paint.GetSkPaint());
-            }
-            // 更新x位置
-            if (run_is_emoji) {
-                current_x += emoji_font.measureText(run_text.c_str(), run_text.size(), SkTextEncoding::kUTF8);
-            } else {
-                current_x += font.measureText(run_text.c_str(), run_text.size(), SkTextEncoding::kUTF8);
-            }
+        if (!run_text.empty() && char_type != run_type) {
+            drawRun(run_text, run_type, current_x);
             run_text.clear();
         }
 
         // 添加当前字符到run
         run_text.append(str + pos, bytes);
-        run_is_emoji = is_emoji;
+        run_type = char_type;
         pos += bytes;
     }
 
     // 绘制最后的run
     if (!run_text.empty()) {
-        if (run_is_emoji) {
-            canvas_->drawSimpleText(run_text.c_str(), run_text.size(), SkTextEncoding::kUTF8,
-                                   current_x, y, emoji_font, paint.GetSkPaint());
-        } else {
-            canvas_->drawSimpleText(run_text.c_str(), run_text.size(), SkTextEncoding::kUTF8,
-                                   current_x, y, font, paint.GetSkPaint());
-        }
+        drawRun(run_text, run_type, current_x);
     }
 }
 
@@ -204,16 +213,43 @@ float TextRenderer::MeasureTextWidthWithEmoji(const std::string& text, const SkF
 
     auto& font_manager = FontManager::GetInstance();
     sk_sp<SkTypeface> emoji_typeface = font_manager.GetEmojiTypeface();
-
-    // 如果没有emoji字体，使用普通测量
-    if (!emoji_typeface) {
-        return MeasureTextWidth(text, font);
-    }
+    sk_sp<SkTypeface> cjk_typeface = font_manager.GetCJKTypeface();
 
     // 创建emoji字体
     SkFont emoji_font(emoji_typeface, font.getSize());
     emoji_font.setEdging(SkFont::Edging::kAntiAlias);
     emoji_font.setSubpixel(true);
+
+    // 创建CJK字体
+    SkFont cjk_font(cjk_typeface, font.getSize());
+    cjk_font.setEdging(SkFont::Edging::kAntiAlias);
+    cjk_font.setSubpixel(true);
+
+    // 字符类型枚举
+    enum class CharType { NORMAL, EMOJI, CJK };
+
+    auto getCharType = [](uint32_t codepoint) -> CharType {
+        if (FontManager::IsEmoji(codepoint)) return CharType::EMOJI;
+        if (FontManager::IsCJK(codepoint)) return CharType::CJK;
+        return CharType::NORMAL;
+    };
+
+    auto measureRun = [&](const std::string& text, CharType type) -> float {
+        if (text.empty()) return 0.0f;
+        const SkFont* use_font = &font;
+        switch (type) {
+            case CharType::EMOJI:
+                use_font = emoji_typeface ? &emoji_font : &font;
+                break;
+            case CharType::CJK:
+                use_font = cjk_typeface ? &cjk_font : &font;
+                break;
+            default:
+                use_font = &font;
+                break;
+        }
+        return use_font->measureText(text.c_str(), text.size(), SkTextEncoding::kUTF8);
+    };
 
     float total_width = 0.0f;
     const char* str = text.c_str();
@@ -221,36 +257,28 @@ float TextRenderer::MeasureTextWidthWithEmoji(const std::string& text, const SkF
     size_t pos = 0;
 
     std::string run_text;
-    bool run_is_emoji = false;
+    CharType run_type = CharType::NORMAL;
 
     while (pos < len) {
         auto [codepoint, bytes] = DecodeUTF8Char(str + pos, len - pos);
         if (bytes == 0) break;
 
-        bool is_emoji = FontManager::IsEmoji(codepoint);
+        CharType char_type = getCharType(codepoint);
 
         // 如果字符类型变化，测量之前积累的文本
-        if (!run_text.empty() && is_emoji != run_is_emoji) {
-            if (run_is_emoji) {
-                total_width += emoji_font.measureText(run_text.c_str(), run_text.size(), SkTextEncoding::kUTF8);
-            } else {
-                total_width += font.measureText(run_text.c_str(), run_text.size(), SkTextEncoding::kUTF8);
-            }
+        if (!run_text.empty() && char_type != run_type) {
+            total_width += measureRun(run_text, run_type);
             run_text.clear();
         }
 
         run_text.append(str + pos, bytes);
-        run_is_emoji = is_emoji;
+        run_type = char_type;
         pos += bytes;
     }
 
     // 测量最后的run
     if (!run_text.empty()) {
-        if (run_is_emoji) {
-            total_width += emoji_font.measureText(run_text.c_str(), run_text.size(), SkTextEncoding::kUTF8);
-        } else {
-            total_width += font.measureText(run_text.c_str(), run_text.size(), SkTextEncoding::kUTF8);
-        }
+        total_width += measureRun(run_text, run_type);
     }
 
     return total_width;

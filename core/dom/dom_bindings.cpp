@@ -154,6 +154,13 @@ static JSValue js_element_get_style(JSContext* ctx, JSValueConst this_val, int m
         return JS_NULL;
     }
 
+    // DEBUG
+    static int debug_count = 0;
+    if (debug_count++ < 10) {
+        printf("[DEBUG js_element_get_style] tag=%s, style ptr=%p\n",
+               element->GetTagName().c_str(), (void*)style.get());
+    }
+
     // 包装为JS对象
     JSValue obj = JS_NewObjectClass(ctx, DOMBindings::css_style_declaration_class_id);
     if (JS_IsException(obj)) {

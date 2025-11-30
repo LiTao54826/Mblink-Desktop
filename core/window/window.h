@@ -440,6 +440,22 @@ private:
      */
     void MarkRenderObjectsDirty(Node* dom_node, RenderObject* render_obj);
 
+    /**
+     * @brief 保存渲染树中所有元素的滚动位置
+     * @param render_obj 渲染对象
+     * @param scroll_positions 滚动位置映射表（DOM节点指针 -> 滚动位置）
+     */
+    void SaveScrollPositions(RenderObject* render_obj,
+                             std::unordered_map<Node*, std::pair<float, float>>& scroll_positions);
+
+    /**
+     * @brief 恢复渲染树中元素的滚动位置
+     * @param render_obj 渲染对象
+     * @param scroll_positions 滚动位置映射表
+     */
+    void RestoreScrollPositions(RenderObject* render_obj,
+                                const std::unordered_map<Node*, std::pair<float, float>>& scroll_positions);
+
 private:
     WindowConfig config_;
     SDL_Window* sdl_window_ = nullptr;

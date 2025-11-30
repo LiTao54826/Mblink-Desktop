@@ -581,6 +581,7 @@ void StyleResolver::ApplyElementSpecificStyle(ComputedStyle& style, const std::s
 void StyleResolver::ApplyInlineStyle(ComputedStyle& style, std::shared_ptr<Element> element) {
     // 获取style属性
     std::string style_attr = element->GetAttribute("style");
+
     if (style_attr.empty()) {
         return;
     }
@@ -1109,6 +1110,15 @@ void StyleResolver::ParseStyleProperty(ComputedStyle& style,
     // 其他属性
     else if (property == "overflow") {
         style.overflow = resolved_value;
+        // 简写属性同时设置 overflow-x 和 overflow-y
+        style.overflow_x = resolved_value;
+        style.overflow_y = resolved_value;
+    }
+    else if (property == "overflow-x") {
+        style.overflow_x = resolved_value;
+    }
+    else if (property == "overflow-y") {
+        style.overflow_y = resolved_value;
     }
     else if (property == "visibility") {
         style.visibility = resolved_value;
