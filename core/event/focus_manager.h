@@ -102,6 +102,13 @@ public:
      */
     std::shared_ptr<Element> FindFocusableElement(std::shared_ptr<Element> element);
 
+    /**
+     * @brief 检查元素是否可聚焦
+     * @param element 要检查的元素
+     * @return true表示可聚焦
+     */
+    bool IsFocusable(std::shared_ptr<Element> element);
+
 private:
 
     /**
@@ -109,15 +116,8 @@ private:
      * @param root 根元素
      * @param focusable_elements 输出：可聚焦元素列表
      */
-    void CollectFocusableElements(std::shared_ptr<Element> root, 
+    void CollectFocusableElements(std::shared_ptr<Element> root,
                                   std::vector<std::shared_ptr<Element>>& focusable_elements);
-
-    /**
-     * @brief 检查元素是否可聚焦
-     * @param element 要检查的元素
-     * @return true表示可聚焦
-     */
-    bool IsFocusable(std::shared_ptr<Element> element);
 
     /**
      * @brief 获取元素的tabindex

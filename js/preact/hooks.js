@@ -52,19 +52,27 @@ function useState(initialValue) {
 
     // Capture the component reference when creating setState
     const component = currentComponent;
+    const componentName = component && component.__vnode && component.__vnode.type ? component.__vnode.type.name : 'unknown';
 
     const setState = (newValue) => {
+        console.log('[useState.setState] START component=' + componentName);
         const nextValue = typeof newValue === 'function'
             ? newValue(hookState.value)
             : newValue;
 
+        console.log('[useState.setState] oldValue=' + JSON.stringify(hookState.value) + ' nextValue=' + JSON.stringify(nextValue));
         if (hookState.value !== nextValue) {
             hookState.value = nextValue;
             // Trigger re-render using captured component reference
             if (component && component.__rerender) {
+                console.log('[useState.setState] Calling __rerender');
                 component.__rerender();
+                console.log('[useState.setState] __rerender completed');
             }
+        } else {
+            console.log('[useState.setState] Value unchanged, skipping rerender');
         }
+        console.log('[useState.setState] END');
     };
 
     return [hookState.value, setState];

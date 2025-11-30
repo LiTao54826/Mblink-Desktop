@@ -216,7 +216,18 @@ void LayoutEngine::BuildLayoutTree(std::shared_ptr<RenderObject> root) {
     // 这避免了在窗口 resize 时重新构建整个布局树
     auto cached = cached_root_.lock();
     if (has_root_ && cached && cached.get() == root.get()) {
-        // 同一个渲染树对象，只需重新应用样式
+        // 检查是否有任何节点需要布局（内容改变等）
+        // 如果有，需要重建 Taffy 树以便重新测量
+        if (root->NeedsLayout()) {
+            // 有节点需要重新布局，清除并重建 Taffy 树
+            Clear();
+            cached_root_ = root;
+            TaffyNodeId invalid_parent;
+            invalid_parent._0 = 0;
+            BuildSubtree(root.get(), invalid_parent);
+            return;
+        }
+        // 同一个渲染树对象，没有布局需求，只需重新应用样式
         UpdateStylesRecursive(root.get());
         return;
     }

@@ -63,6 +63,10 @@ void HTMLInputElement::SetInputType(InputType type) {
 }
 
 void HTMLInputElement::SetValue(const std::string& value, bool trigger_events) {
+    std::cerr << "[HTMLInputElement::SetValue] START value='" << value << "' trigger_events=" << trigger_events << " this=" << this << std::endl;
+    std::cerr << "[HTMLInputElement::SetValue] BEFORE: value_='" << value_ << "' selection_start_=" << selection_start_ << " selection_end_=" << selection_end_ << std::endl;
+    std::cerr.flush();
+
     // 检查maxlength限制
     int max_length = GetMaxLength();
     std::string new_value = value;
@@ -82,6 +86,9 @@ void HTMLInputElement::SetValue(const std::string& value, bool trigger_events) {
         selection_end_ = new_length;
     }
 
+    std::cerr << "[HTMLInputElement::SetValue] AFTER: value_='" << value_ << "' selection_start_=" << selection_start_ << " selection_end_=" << selection_end_ << std::endl;
+    std::cerr.flush();
+
     // 注意：不更新value属性，value属性保持为默认值
     // 这符合HTML标准：value属性是默认值，value_是当前值
 
@@ -90,6 +97,9 @@ void HTMLInputElement::SetValue(const std::string& value, bool trigger_events) {
         TriggerInputEvent();
         TriggerChangeEvent();
     }
+
+    std::cerr << "[HTMLInputElement::SetValue] END" << std::endl;
+    std::cerr.flush();
 }
 
 bool HTMLInputElement::GetChecked() const {
@@ -254,10 +264,28 @@ void HTMLInputElement::SetSelectionRange(int start, int end) {
 }
 
 void HTMLInputElement::HandleTextInput(const std::string& text) {
+    std::cerr << "[HTMLInputElement::HandleTextInput] START text='" << text << "' this=" << this << std::endl;
+    std::cerr.flush();
+
+    std::cerr << "[HTMLInputElement::HandleTextInput] Checking IsDisabled" << std::endl;
+    std::cerr.flush();
+
     // 检查是否可编辑
-    if (IsDisabled() || IsReadOnly()) {
+    bool disabled = IsDisabled();
+    std::cerr << "[HTMLInputElement::HandleTextInput] IsDisabled=" << disabled << std::endl;
+    std::cerr.flush();
+
+    bool readonly = IsReadOnly();
+    std::cerr << "[HTMLInputElement::HandleTextInput] IsReadOnly=" << readonly << std::endl;
+    std::cerr.flush();
+
+    if (disabled || readonly) {
+        std::cerr << "[HTMLInputElement::HandleTextInput] Disabled or readonly, returning" << std::endl;
         return;
     }
+
+    std::cerr << "[HTMLInputElement::HandleTextInput] Checking input_type_=" << static_cast<int>(input_type_) << std::endl;
+    std::cerr.flush();
 
     // 只有文本类型支持文本输入
     if (input_type_ != InputType::Text &&
@@ -267,11 +295,18 @@ void HTMLInputElement::HandleTextInput(const std::string& text) {
         input_type_ != InputType::Tel &&
         input_type_ != InputType::Url &&
         input_type_ != InputType::Number) {
+        std::cerr << "[HTMLInputElement::HandleTextInput] Wrong input type, returning" << std::endl;
         return;
     }
 
+    std::cerr << "[HTMLInputElement::HandleTextInput] About to build new_value, value_='" << value_ << "'" << std::endl;
+    std::cerr.flush();
+
     // 在光标位置插入文本
     std::string new_value = value_;
+    std::cerr << "[HTMLInputElement::HandleTextInput] selection_start_=" << selection_start_ << " selection_end_=" << selection_end_ << std::endl;
+    std::cerr.flush();
+
     if (selection_start_ != selection_end_) {
         // 有选中文本，替换选中部分
         new_value = value_.substr(0, selection_start_) +
@@ -284,6 +319,9 @@ void HTMLInputElement::HandleTextInput(const std::string& text) {
                    value_.substr(selection_start_);
     }
 
+    std::cerr << "[HTMLInputElement::HandleTextInput] new_value='" << new_value << "'" << std::endl;
+    std::cerr.flush();
+
     // 检查maxlength
     int max_length = GetMaxLength();
     if (max_length > 0 && static_cast<int>(new_value.length()) > max_length) {
@@ -294,19 +332,27 @@ void HTMLInputElement::HandleTextInput(const std::string& text) {
     selection_start_ += static_cast<int>(text.length());
     selection_end_ = selection_start_;
 
-    // 更新value属性
-    SetAttribute("value", value_);
+    // 注意：不调用 SetAttribute("value", value_)
+    // 因为这会触发 DOM 观察者，导致 Preact 等框架重新渲染整个组件
+    // value 属性保持为默认值，value_ 是当前输入值（符合 HTML 标准）
 
+    std::cerr << "[HTMLInputElement::HandleTextInput] About to TriggerInputEvent" << std::endl;
+    std::cerr.flush();
     // 触发input事件
     TriggerInputEvent();
+    std::cerr << "[HTMLInputElement::HandleTextInput] END" << std::endl;
+    std::cerr.flush();
 }
 
 void HTMLInputElement::HandleKeyPress(const std::string& key, bool ctrl_key) {
-    // 检查是否可编辑
-    if (IsDisabled() || IsReadOnly()) {
+    // 检查是否可编辑（箭头键等导航键不需要可编辑）
+    bool is_navigation_key = (key == "ArrowLeft" || key == "ArrowRight" ||
+                              key == "Home" || key == "End");
+
+    if (!is_navigation_key && (IsDisabled() || IsReadOnly())) {
         return;
     }
-    
+
     // 处理特殊按键
     if (key == "Backspace") {
         if (selection_start_ != selection_end_) {
@@ -319,9 +365,9 @@ void HTMLInputElement::HandleKeyPress(const std::string& key, bool ctrl_key) {
             selection_start_--;
             selection_end_ = selection_start_;
         }
-        SetAttribute("value", value_);
+        // 注意：不调用 SetAttribute，避免触发 DOM 观察者导致 Preact 重新渲染
         TriggerInputEvent();
-        
+
     } else if (key == "Delete") {
         if (selection_start_ != selection_end_) {
             // 删除选中文本
@@ -331,13 +377,37 @@ void HTMLInputElement::HandleKeyPress(const std::string& key, bool ctrl_key) {
             // 删除光标后一个字符
             value_ = value_.substr(0, selection_start_) + value_.substr(selection_start_ + 1);
         }
-        SetAttribute("value", value_);
+        // 注意：不调用 SetAttribute，避免触发 DOM 观察者导致 Preact 重新渲染
         TriggerInputEvent();
-        
+
+    } else if (key == "ArrowLeft") {
+        // 左箭头：光标左移
+        if (selection_start_ > 0) {
+            selection_start_--;
+            selection_end_ = selection_start_;
+        }
+
+    } else if (key == "ArrowRight") {
+        // 右箭头：光标右移
+        if (selection_start_ < static_cast<int>(value_.length())) {
+            selection_start_++;
+            selection_end_ = selection_start_;
+        }
+
+    } else if (key == "Home") {
+        // Home：光标移到开头
+        selection_start_ = 0;
+        selection_end_ = 0;
+
+    } else if (key == "End") {
+        // End：光标移到末尾
+        selection_start_ = static_cast<int>(value_.length());
+        selection_end_ = selection_start_;
+
     } else if (key == "Enter") {
         // Enter键触发change事件
         TriggerChangeEvent();
-        
+
     } else if (ctrl_key && key == "a") {
         // Ctrl+A 全选
         Select();
@@ -350,8 +420,11 @@ void HTMLInputElement::TriggerChangeEvent() {
 }
 
 void HTMLInputElement::TriggerInputEvent() {
+    std::cout << "[HTMLInputElement::TriggerInputEvent] START this=" << this << std::endl;
     auto input_event = std::make_shared<Event>("input");
+    std::cout << "[HTMLInputElement::TriggerInputEvent] About to DispatchEvent" << std::endl;
     DispatchEvent(input_event);
+    std::cout << "[HTMLInputElement::TriggerInputEvent] END" << std::endl;
 }
 
 std::string HTMLInputElement::InputTypeToString(InputType type) {

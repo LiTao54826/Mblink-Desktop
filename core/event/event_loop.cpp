@@ -18,6 +18,8 @@
 #include "core/dom/element.h"
 #include "core/dom/html_input_element.h"
 #include "core/dom/html_textarea_element.h"
+#include "core/dom/html_button_element.h"
+#include "core/dom/html_form_element.h"
 #include "core/render/style_resolver.h"
 #include <iostream>
 #include <algorithm>
@@ -496,15 +498,18 @@ void EventLoop::HandleMouseEventForDOM(const SDL_Event& event) {
 
         std::cout << "[EventLoop] MOUSE_BUTTON_DOWN on <" << hit_result.element->GetTagName() << ">" << std::endl;
 
-        // 鼠标点击时设置焦点（参考RmlUi/Source/Core/Context.cpp - ProcessMouseButtonDown）
-        // 使用FocusManager设置焦点，focus_visible=false（鼠标点击不显示焦点指示器）
-        focus_manager_->SetWindow(window.get());  // 设置窗口指针用于SDL文本输入
-        bool focus_set = focus_manager_->SetFocus(hit_result.element, false);
-
-        std::cout << "[EventLoop] SetFocus returned: " << (focus_set ? "true" : "false") << std::endl;
-
-        // 如果元素不可聚焦，清除当前焦点（点击空白区域或非交互元素）
-        if (!focus_set) {
+        // 对于输入元素（input, textarea），在 mousedown 时立即设置焦点
+        // 这样可以立即启用 SDL 文本输入
+        std::string tag_name = hit_result.element->GetTagName();
+        if (tag_name == "input" || tag_name == "textarea") {
+            focus_manager_->SetWindow(window.get());
+            bool focus_set = focus_manager_->SetFocus(hit_result.element, false);
+            std::cout << "[EventLoop] SetFocus (input) returned: " << (focus_set ? "true" : "false") << std::endl;
+        }
+        // 对于其他可聚焦元素（button 等），不在 mousedown 时设置焦点
+        // 焦点将在 click 事件后设置，避免 focus 事件触发 Preact 重渲染导致元素被替换
+        // 如果点击的是非可聚焦元素，清除当前焦点
+        else if (!focus_manager_->IsFocusable(hit_result.element)) {
             std::cout << "[EventLoop] Calling ClearFocus because element is not focusable" << std::endl;
             focus_manager_->ClearFocus();
         }
@@ -529,6 +534,19 @@ void EventLoop::HandleMouseEventForDOM(const SDL_Event& event) {
                 button
             );
             hit_result.element->DispatchEvent(click_event);
+
+            // 对于非输入元素（button 等），在 click 事件后设置焦点
+            // 这样可以确保 click 事件正确触发，避免 focus 事件导致 Preact 重渲染
+            std::string tag_name = hit_result.element->GetTagName();
+            if (tag_name != "input" && tag_name != "textarea") {
+                focus_manager_->SetWindow(window.get());
+                bool focus_set = focus_manager_->SetFocus(hit_result.element, false);
+                std::cout << "[EventLoop] SetFocus (after click) returned: " << (focus_set ? "true" : "false") << std::endl;
+                if (!focus_set && !focus_manager_->IsFocusable(hit_result.element)) {
+                    // 如果点击的是非可聚焦元素，清除当前焦点
+                    focus_manager_->ClearFocus();
+                }
+            }
 
             // 处理表单元素的默认行为（参考 RmlUi InputTypeCheckbox::ProcessDefaultAction）
             ProcessFormElementDefaultAction(hit_result.element);
@@ -626,7 +644,63 @@ void EventLoop::ProcessFormElementDefaultAction(std::shared_ptr<Element> element
                 }
             }
         }
+        // Submit 按钮: 提交表单
+        else if (type == InputType::Submit) {
+            // 查找关联的表单并提交
+            auto form = FindParentForm(element);
+            if (form) {
+                form->Submit();
+            }
+        }
     }
+    // 处理 button 元素
+    else if (tag_name == "button") {
+        auto button_element = std::dynamic_pointer_cast<HTMLButtonElement>(element);
+        if (button_element) {
+            // 如果禁用，不处理
+            if (button_element->GetDisabled()) {
+                return;
+            }
+
+            std::string button_type = button_element->GetAttribute("type");
+            // 默认 type 是 "submit"
+            if (button_type.empty()) {
+                button_type = "submit";
+            }
+
+            if (button_type == "submit") {
+                // 查找关联的表单并提交
+                auto form = FindParentForm(element);
+                if (form) {
+                    std::cout << "[EventLoop] Submit button clicked, submitting form" << std::endl;
+                    form->Submit();
+                }
+            } else if (button_type == "reset") {
+                // 查找关联的表单并重置
+                auto form = FindParentForm(element);
+                if (form) {
+                    form->Reset();
+                }
+            }
+            // type="button" 不执行任何默认操作
+        }
+    }
+}
+
+std::shared_ptr<HTMLFormElement> EventLoop::FindParentForm(std::shared_ptr<Element> element) {
+    if (!element) {
+        return nullptr;
+    }
+
+    auto parent = element->GetParentNode();
+    while (parent) {
+        auto parent_element = std::dynamic_pointer_cast<Element>(parent);
+        if (parent_element && parent_element->GetTagName() == "form") {
+            return std::dynamic_pointer_cast<HTMLFormElement>(parent_element);
+        }
+        parent = parent->GetParentNode();
+    }
+    return nullptr;
 }
 
 void EventLoop::UncheckRadioGroup(const std::shared_ptr<Node>& node, const std::string& group_name, const std::shared_ptr<HTMLInputElement>& except) {
@@ -899,18 +973,20 @@ void EventLoop::HandleKeyboardEventForDOM(const SDL_Event& event) {
         // 注意：这是SDL特有的事件，W3C标准中没有直接对应
         // 用于处理IME输入和普通文本输入
 
-        std::cout << "[EventLoop] TEXT_INPUT received: '" << event.text.text << "'" << std::endl;
+        std::cout << "[EventLoop] TEXT_INPUT received: '" << event.text.text << "' focus_element=" << focus_element.get() << std::endl;
 
         // 检查是否是表单元素
         auto input_element = std::dynamic_pointer_cast<HTMLInputElement>(focus_element);
         auto textarea_element = std::dynamic_pointer_cast<HTMLTextAreaElement>(focus_element);
 
         if (input_element) {
-            std::cout << "[EventLoop] Calling input_element->HandleTextInput" << std::endl;
+            std::cout << "[EventLoop] Calling input_element->HandleTextInput on " << input_element.get() << std::endl;
             input_element->HandleTextInput(event.text.text);
+            std::cout << "[EventLoop] HandleTextInput returned" << std::endl;
         } else if (textarea_element) {
             std::cout << "[EventLoop] Calling textarea_element->HandleTextInput" << std::endl;
             textarea_element->HandleTextInput(event.text.text);
+            std::cout << "[EventLoop] HandleTextInput returned" << std::endl;
         } else {
             std::cout << "[EventLoop] Focus element is not input or textarea" << std::endl;
         }

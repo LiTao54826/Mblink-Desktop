@@ -1080,6 +1080,8 @@ void Window::RenderDocument() {
         } else {
             // 渲染树有效，但需要更新脏节点的样式（处理伪类变化如:focus）
             MarkRenderObjectsDirty(body.get(), cached_render_tree_.get());
+            // 检查渲染树根节点是否需要布局（MarkNeedsLayout 会向上传播）
+            needs_layout = cached_render_tree_->NeedsLayout();
         }
 
         if (cached_render_tree_) {
@@ -1091,7 +1093,7 @@ void Window::RenderDocument() {
             }
             canvas->clear(clear_color);
 
-            // 只在需要时重新计算布局（渲染树重建或窗口大小改变）
+            // 只在需要时重新计算布局（渲染树重建、窗口大小改变、或内容改变）
             static int last_logical_width = 0, last_logical_height = 0;
             if (needs_layout || logical_width != last_logical_width || logical_height != last_logical_height) {
                 last_logical_width = logical_width;
@@ -1278,33 +1280,54 @@ void Window::MarkRenderObjectsDirty(Node* dom_node, RenderObject* render_obj) {
         render_obj->MarkNeedsLayout();
     }
 
+    // 获取父样式（用于继承）
+    const ComputedStyle* parent_style = nullptr;
+    auto parent = render_obj->GetParent();
+    if (parent) {
+        parent_style = &parent->GetComputedStyle();
+    }
+
     // 检查DOM节点是否有绘制脏标记或样式脏标记（包括伪类变化如:focus）
     if (dom_node->IsPaintDirty() || dom_node->IsStyleDirty()) {
-        if (dom_node->GetNodeType() == NodeType::ELEMENT_NODE) {
-            auto elem = std::static_pointer_cast<Element>(dom_node->shared_from_this());
-            std::cout << "[MarkRenderObjectsDirty] <" << elem->GetTagName() << "> is dirty, recalculating style" << std::endl;
-        }
         render_obj->MarkNeedsPaint();
 
-        // 重新计算样式（处理伪类变化如:focus, :hover等）
-        if (dom_node->GetNodeType() == NodeType::ELEMENT_NODE) {
-            auto element = std::static_pointer_cast<Element>(dom_node->shared_from_this());
-            if (element) {
-                // 获取父样式
-                const ComputedStyle* parent_style = nullptr;
-                auto parent = render_obj->GetParent();
-                if (parent) {
-                    parent_style = &parent->GetComputedStyle();
+        // 对于 Text 节点，需要同步更新 RenderText 的文本内容和样式
+        if (dom_node->GetNodeType() == NodeType::TEXT_NODE) {
+            auto text_node = static_cast<Text*>(dom_node);
+            auto render_text = dynamic_cast<RenderText*>(render_obj);
+            if (text_node && render_text) {
+                std::string new_text = text_node->GetData();
+                if (render_text->GetText() != new_text) {
+                    render_text->SetText(new_text);
+                    render_obj->MarkNeedsLayout();  // 文本改变需要重新布局
                 }
 
-                // 使用 StyleResolver 重新计算样式
-                StyleResolver resolver;
-                if (document_ && document_->GetStyleManager()) {
-                    resolver.SetStyleManager(document_->GetStyleManager());
+                // 更新 Text 节点的样式（从父元素继承可继承属性）
+                if (parent_style) {
+                    ComputedStyle text_style = render_obj->GetComputedStyle();
+                    text_style.color = parent_style->color;
+                    text_style.font_family = parent_style->font_family;
+                    text_style.font_size = parent_style->font_size;
+                    text_style.font_weight = parent_style->font_weight;
+                    text_style.font_style = parent_style->font_style;
+                    text_style.line_height = parent_style->line_height;
+                    text_style.text_align = parent_style->text_align;
+                    text_style.text_decoration = parent_style->text_decoration;
+                    render_obj->SetComputedStyle(text_style);
                 }
-                auto new_style = resolver.ResolveStyle(element, parent_style);
-                render_obj->SetComputedStyle(new_style);
             }
+        }
+
+        // 重新计算 Element 样式（处理伪类变化如:focus, :hover等）
+        if (dom_node->GetNodeType() == NodeType::ELEMENT_NODE) {
+            // 使用 StyleResolver 重新计算样式
+            StyleResolver resolver;
+            if (document_ && document_->GetStyleManager()) {
+                resolver.SetStyleManager(document_->GetStyleManager());
+            }
+            auto element = std::static_pointer_cast<Element>(dom_node->shared_from_this());
+            auto new_style = resolver.ResolveStyle(element, parent_style);
+            render_obj->SetComputedStyle(new_style);
         }
     }
 
@@ -1320,6 +1343,9 @@ void Window::MarkRenderObjectsDirty(Node* dom_node, RenderObject* render_obj) {
         dom_map[dom_child.get()] = dom_child;
     }
 
+    // 获取当前节点的新样式（用于子节点继承）
+    const ComputedStyle* current_style = &render_obj->GetComputedStyle();
+
     // 遍历渲染子节点并查找对应的DOM节点（O(n)）
     for (const auto& render_child : render_children) {
         auto render_child_node = render_child->GetNode();
@@ -1330,7 +1356,53 @@ void Window::MarkRenderObjectsDirty(Node* dom_node, RenderObject* render_obj) {
         // O(1)查找
         auto it = dom_map.find(render_child_node.get());
         if (it != dom_map.end()) {
-            MarkRenderObjectsDirty(it->second.get(), render_child.get());
+            Node* child_dom_node = it->second.get();
+            RenderObject* child_render_obj = render_child.get();
+
+            // 如果当前节点样式改变，子节点的可继承样式也需要更新
+            bool current_is_dirty = dom_node->IsPaintDirty() || dom_node->IsStyleDirty();
+            if (current_is_dirty) {
+                // 对于 Text 子节点，更新继承的样式
+                if (child_dom_node->GetNodeType() == NodeType::TEXT_NODE) {
+                    auto render_text = dynamic_cast<RenderText*>(child_render_obj);
+                    if (render_text) {
+                        // 同步文本内容
+                        auto text_node = static_cast<Text*>(child_dom_node);
+                        std::string new_text = text_node->GetData();
+                        if (render_text->GetText() != new_text) {
+                            render_text->SetText(new_text);
+                            child_render_obj->MarkNeedsLayout();
+                        }
+
+                        // 更新继承的样式
+                        ComputedStyle text_style = child_render_obj->GetComputedStyle();
+                        text_style.color = current_style->color;
+                        text_style.font_family = current_style->font_family;
+                        text_style.font_size = current_style->font_size;
+                        text_style.font_weight = current_style->font_weight;
+                        text_style.font_style = current_style->font_style;
+                        text_style.line_height = current_style->line_height;
+                        text_style.text_align = current_style->text_align;
+                        text_style.text_decoration = current_style->text_decoration;
+                        child_render_obj->SetComputedStyle(text_style);
+                        child_render_obj->MarkNeedsPaint();
+                    }
+                }
+                // 对于 Element 子节点，重新计算样式（会自动继承父样式）
+                else if (child_dom_node->GetNodeType() == NodeType::ELEMENT_NODE) {
+                    StyleResolver resolver;
+                    if (document_ && document_->GetStyleManager()) {
+                        resolver.SetStyleManager(document_->GetStyleManager());
+                    }
+                    auto child_element = std::static_pointer_cast<Element>(it->second);
+                    auto new_style = resolver.ResolveStyle(child_element, current_style);
+                    child_render_obj->SetComputedStyle(new_style);
+                    child_render_obj->MarkNeedsPaint();
+                }
+            }
+
+            // 递归处理
+            MarkRenderObjectsDirty(child_dom_node, child_render_obj);
         }
     }
 }

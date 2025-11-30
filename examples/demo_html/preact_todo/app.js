@@ -33,10 +33,17 @@ function AddTodo(props) {
     var setInputValue = state[1];
 
     var handleSubmit = function(e) {
+        console.log('[AddTodo] handleSubmit called');
+        console.log('[AddTodo] inputValue=' + inputValue);
+        console.log('[AddTodo] inputValue.trim()=' + inputValue.trim());
         e.preventDefault();
         if (inputValue.trim()) {
+            console.log('[AddTodo] Calling props.onAdd with: ' + inputValue);
             props.onAdd(inputValue);
+            console.log('[AddTodo] Calling setInputValue with empty string');
             setInputValue('');
+        } else {
+            console.log('[AddTodo] inputValue is empty, not adding');
         }
     };
 
@@ -234,13 +241,18 @@ function App() {
 
     // 添加todo
     var handleAddTodo = function(text) {
+        console.log('[App] handleAddTodo called with text=' + text);
         var newTodo = {
             id: Date.now(), // 使用时间戳作为ID
             text: text,
             completed: false
         };
+        console.log('[App] Created newTodo with id=' + newTodo.id);
         setTodos(function(prevTodos) {
-            return prevTodos.concat([newTodo]);
+            console.log('[App] setTodos updater called, prevTodos.length=' + prevTodos.length);
+            var result = prevTodos.concat([newTodo]);
+            console.log('[App] Returning new todos with length=' + result.length);
+            return result;
         });
     };
 

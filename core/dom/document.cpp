@@ -413,4 +413,16 @@ void Document::EndBatch() {
     }
 }
 
+// ========== 焦点管理 ==========
+
+std::shared_ptr<Element> Document::GetActiveElement() const {
+    auto element = active_element_.lock();
+    // 如果没有焦点元素，返回 body（符合浏览器标准）
+    return element ? element : body_;
+}
+
+void Document::SetActiveElement(std::shared_ptr<Element> element) {
+    active_element_ = element;
+}
+
 } // namespace lightui

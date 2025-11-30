@@ -8,6 +8,8 @@
 #include "quickjs/js_value_wrapper.h"
 #include <cstring>
 #include <iostream>
+#include <algorithm>
+#include <cctype>
 
 namespace lightui {
 
@@ -48,12 +50,16 @@ static void js_element_finalizer(JSRuntime* rt, JSValue val) {
 }
 
 // Element.tagName getter
+// Note: According to HTML standard, tagName returns uppercase for HTML elements
 static JSValue js_element_get_tag_name(JSContext* ctx, JSValueConst this_val, int magic) {
     auto element = DOMBindings::UnwrapElement(ctx, this_val);
     if (!element) {
         return JS_EXCEPTION;
     }
-    return JS_NewString(ctx, element->GetTagName().c_str());
+    std::string tag_name = element->GetTagName();
+    // Convert to uppercase for HTML standard compliance
+    std::transform(tag_name.begin(), tag_name.end(), tag_name.begin(), ::toupper);
+    return JS_NewString(ctx, tag_name.c_str());
 }
 
 // Element.id getter
@@ -515,18 +521,24 @@ static JSValue js_element_add_event_listener(JSContext* ctx, JSValueConst this_v
     // 使用 JSValueWrapper 管理 listener 的生命周期
     // shared_ptr 确保在 lambda 被销毁时自动释放 JSValue
     auto listener_wrapper = std::make_shared<JSValueWrapper>(ctx, argv[1]);
+    std::string event_type_str(type);  // 保存事件类型用于日志
 
     // 创建 C++ lambda 包装 JS 函数
     // Lambda 捕获 shared_ptr，当 Element 被销毁时，lambda 也会被销毁，
     // shared_ptr 引用计数归零，JSValueWrapper 析构函数自动调用 JS_FreeValue
-    uint64_t listener_id = element->AddEventListener(type, [ctx, listener_wrapper](std::shared_ptr<Event> event) {
+    uint64_t listener_id = element->AddEventListener(type, [ctx, listener_wrapper, event_type_str](std::shared_ptr<Event> event) {
+        std::cout << "[JS_EventListener] START event=" << event_type_str << std::endl;
         JSValue event_obj = DOMBindings::WrapEvent(ctx, event);
+        std::cout << "[JS_EventListener] About to JS_Call" << std::endl;
         JSValue ret = JS_Call(ctx, listener_wrapper->Get(), JS_UNDEFINED, 1, &event_obj);
+        std::cout << "[JS_EventListener] JS_Call returned" << std::endl;
         JS_FreeValue(ctx, event_obj);
         if (JS_IsException(ret)) {
+            std::cout << "[JS_EventListener] Exception occurred!" << std::endl;
             js_std_dump_error(ctx);
         }
         JS_FreeValue(ctx, ret);
+        std::cout << "[JS_EventListener] END" << std::endl;
     }, use_capture, once);
 
     JS_FreeCString(ctx, type);
@@ -928,21 +940,34 @@ static JSValue js_element_get_value(JSContext* ctx, JSValueConst this_val, int m
 
 // Element.value setter (for input/textarea elements)
 static JSValue js_element_set_value(JSContext* ctx, JSValueConst this_val, JSValueConst val, int magic) {
+    std::cerr << "[js_element_set_value] START" << std::endl;
+    std::cerr.flush();
+
     auto element = DOMBindings::UnwrapElement(ctx, this_val);
     if (!element) {
+        std::cerr << "[js_element_set_value] element is null" << std::endl;
         return JS_EXCEPTION;
     }
 
     const char* value = JS_ToCString(ctx, val);
     if (!value) {
+        std::cerr << "[js_element_set_value] value is null" << std::endl;
         return JS_EXCEPTION;
     }
 
+    std::cerr << "[js_element_set_value] value='" << value << "'" << std::endl;
+    std::cerr.flush();
+
     // 检查是否是 input 或 textarea 元素
     std::string tag_name = element->GetTagName();
+    std::cerr << "[js_element_set_value] tag_name='" << tag_name << "'" << std::endl;
+    std::cerr.flush();
+
     if (tag_name == "input") {
         auto input = std::dynamic_pointer_cast<HTMLInputElement>(element);
         if (input) {
+            std::cerr << "[js_element_set_value] Calling input->SetValue" << std::endl;
+            std::cerr.flush();
             input->SetValue(value, false);  // 不触发事件
         }
     } else if (tag_name == "textarea") {
@@ -951,6 +976,8 @@ static JSValue js_element_set_value(JSContext* ctx, JSValueConst this_val, JSVal
     }
 
     JS_FreeCString(ctx, value);
+    std::cerr << "[js_element_set_value] END" << std::endl;
+    std::cerr.flush();
     return JS_UNDEFINED;
 }
 
@@ -1201,14 +1228,17 @@ static JSValue js_text_get_data(JSContext* ctx, JSValueConst this_val, int magic
 static JSValue js_text_set_data(JSContext* ctx, JSValueConst this_val, JSValueConst val, int magic) {
     auto text = DOMBindings::UnwrapText(ctx, this_val);
     if (!text) {
+        std::cerr << "[js_text_set_data] text is null!" << std::endl;
         return JS_EXCEPTION;
     }
 
     const char* data = JS_ToCString(ctx, val);
     if (!data) {
+        std::cerr << "[js_text_set_data] data is null!" << std::endl;
         return JS_EXCEPTION;
     }
 
+    std::cerr << "[js_text_set_data] old=" << text->GetData() << ", new=" << data << std::endl;
     text->SetData(data);
     JS_FreeCString(ctx, data);
 
@@ -1216,8 +1246,10 @@ static JSValue js_text_set_data(JSContext* ctx, JSValueConst this_val, JSValueCo
 }
 
 // Text 类定义
+// Note: textContent for Text nodes is equivalent to data property
 static const JSCFunctionListEntry js_text_proto_funcs[] = {
     JS_CGETSET_MAGIC_DEF("data", js_text_get_data, js_text_set_data, 0),
+    JS_CGETSET_MAGIC_DEF("textContent", js_text_get_data, js_text_set_data, 0),
 };
 
 void DOMBindings::InitTextClass(JSContext* ctx) {

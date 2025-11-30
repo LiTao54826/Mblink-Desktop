@@ -23,6 +23,8 @@ class TaskScheduler;
 class Element;
 class Node;
 class HTMLInputElement;
+class HTMLButtonElement;
+class HTMLFormElement;
 class FocusManager;
 class DragManager;
 class RenderObject;
@@ -210,6 +212,14 @@ private:
      * @param except 排除的元素（当前选中的 radio）
      */
     void UncheckRadioGroup(const std::shared_ptr<Node>& node, const std::string& group_name, const std::shared_ptr<HTMLInputElement>& except);
+
+    /**
+     * @brief 查找父级表单元素
+     *
+     * @param element 起始元素
+     * @return 父级表单元素，如果没有找到则返回 nullptr
+     */
+    std::shared_ptr<HTMLFormElement> FindParentForm(std::shared_ptr<Element> element);
 
     /**
      * @brief 将 SDL 鼠标按钮转换为鼠标按钮编号

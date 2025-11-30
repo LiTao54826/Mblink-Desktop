@@ -312,8 +312,18 @@ public:
     
     /**
      * @brief 标记需要重新布局
+     * @param propagate_to_parent 是否向上传播到父节点（默认true）
      */
-    void MarkNeedsLayout() { needs_layout_ = true; }
+    void MarkNeedsLayout(bool propagate_to_parent = true) {
+        needs_layout_ = true;
+        // 向上传播到父节点，因为父节点的大小可能依赖于子节点
+        if (propagate_to_parent) {
+            auto parent = parent_.lock();
+            if (parent) {
+                parent->MarkNeedsLayout(true);
+            }
+        }
+    }
     
     /**
      * @brief 检查是否需要重新布局

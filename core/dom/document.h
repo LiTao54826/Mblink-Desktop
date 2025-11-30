@@ -229,6 +229,20 @@ public:
      */
     StyleManager* GetStyleManager() const;
 
+    // ========== 焦点管理 ==========
+
+    /**
+     * @brief 获取当前活动元素（焦点元素）
+     * @return 当前焦点元素，如果没有则返回 body
+     */
+    std::shared_ptr<Element> GetActiveElement() const;
+
+    /**
+     * @brief 设置当前活动元素
+     * @param element 焦点元素（nullptr 表示清除焦点）
+     */
+    void SetActiveElement(std::shared_ptr<Element> element);
+
     // ========== Node 接口实现 ==========
 
     /**
@@ -273,6 +287,9 @@ private:
 
     // 样式管理器
     std::unique_ptr<StyleManager> style_manager_;
+
+    // 焦点管理
+    std::weak_ptr<Element> active_element_;
 };
 
 } // namespace lightui

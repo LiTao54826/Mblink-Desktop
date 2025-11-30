@@ -326,6 +326,9 @@ bool FontManager::IsEmoji(uint32_t codepoint) {
     // Miscellaneous Symbols (U+2600–U+26FF) - 包含☀ ☁ ☂等
     if (codepoint >= 0x2600 && codepoint <= 0x26FF) return true;
 
+    // Miscellaneous Technical (U+2300–U+23FF) - 包含⏳ (U+231B), ⌚ (U+231A) 等
+    if (codepoint >= 0x2300 && codepoint <= 0x23FF) return true;
+
     // Regional Indicator Symbols (U+1F1E0–U+1F1FF) - 国旗emoji
     if (codepoint >= 0x1F1E0 && codepoint <= 0x1F1FF) return true;
 

@@ -412,9 +412,20 @@ bool Element::DispatchEvent(std::shared_ptr<Event> event) {
 }
 
 void Element::HandleEvent(std::shared_ptr<Event> event, bool use_capture) {
+    // 只对 input 事件打印详细日志
+    bool verbose = (event->GetType() == "input");
+    if (verbose) {
+        std::cout << "[Element::HandleEvent] Event: " << event->GetType()
+                  << " on <" << tag_name_ << ">, capture=" << use_capture << std::endl;
+    }
+
     auto it = event_listeners_.find(event->GetType());
     if (it == event_listeners_.end()) {
         return;
+    }
+
+    if (verbose) {
+        std::cout << "[Element::HandleEvent] Found " << it->second.size() << " listeners" << std::endl;
     }
 
     // 收集需要移除的once监听器ID
@@ -422,6 +433,7 @@ void Element::HandleEvent(std::shared_ptr<Event> event, bool use_capture) {
 
     // 调用匹配捕获阶段的监听器
     // 参考：RmlUi的事件分发机制
+    int listener_index = 0;
     for (const auto& entry : it->second) {
         // 只调用匹配当前阶段的监听器
         if (entry.use_capture != use_capture) {
@@ -432,13 +444,23 @@ void Element::HandleEvent(std::shared_ptr<Event> event, bool use_capture) {
             break;
         }
 
+        if (verbose) {
+            std::cout << "[Element::HandleEvent] Calling listener " << listener_index
+                      << " (id=" << entry.id << ")" << std::endl;
+        }
+
         // 调用监听器
         entry.listener(event);
+
+        if (verbose) {
+            std::cout << "[Element::HandleEvent] Listener " << listener_index << " returned" << std::endl;
+        }
 
         // 如果是once监听器，标记为待移除
         if (entry.once) {
             once_listeners_to_remove.push_back(entry.id);
         }
+        listener_index++;
     }
 
     // 移除once监听器
