@@ -207,6 +207,12 @@ public:
     GrDirectContext* GetGrContext() const { return gr_context_.get(); }
 
     /**
+     * @brief 获取Skia渲染表面
+     * @return Skia渲染表面
+     */
+    sk_sp<SkSurface> GetSurface() const { return surface_; }
+
+    /**
      * @brief 获取 PaintMode 显示后端（如果正在使用）
      * @return PaintModeDisplayBackend 指针，如果不是 PaintMode 模式则返回 nullptr
      */
