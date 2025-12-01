@@ -164,7 +164,7 @@ static TaffySize TextMeasureFunction(
 
         float max_line_width = 0.0f;
         for (size_t i = 0; i < lines.size(); ++i) {
-            float line_width = text_renderer.MeasureTextWidth(lines[i], font);
+            float line_width = text_renderer.MeasureTextWidthWithEmoji(lines[i], font);
             max_line_width = std::max(max_line_width, line_width);
         }
 
@@ -178,13 +178,59 @@ static TaffySize TextMeasureFunction(
         // Single line measurement - clear any previous wrapped lines
         text_obj->SetWrappedLines({});
 
-        auto metrics = text_renderer.MeasureText(text, font);
-        size.width = metrics.width;
-        size.height = metrics.height;
+        // Use MeasureTextWidthWithEmoji for consistent width measurement with rendering
+        float text_width = text_renderer.MeasureTextWidthWithEmoji(text, font);
+        float text_height = text_renderer.MeasureTextHeight(font);
+
+        size.width = text_width;
+        size.height = text_height;
 
         // Store actual text width for text-align calculation
-        text_obj->SetActualTextWidth(metrics.width);
+        text_obj->SetActualTextWidth(text_width);
     }
+
+    return size;
+}
+
+// Table measurement callback for Taffy
+// This function is called by Taffy during layout to measure table elements
+static TaffySize TableMeasureFunction(
+    TaffyMeasureMode width_measure_mode,
+    float width,
+    TaffyMeasureMode height_measure_mode,
+    float height,
+    void* context)
+{
+    TaffySize size = {0.0f, 0.0f};
+
+    if (!context) {
+        return size;
+    }
+
+    auto* table = static_cast<lightui::RenderTable*>(context);
+
+    // Determine available width
+    float available_width = 0.0f;
+    switch (width_measure_mode) {
+        case TAFFY_MEASURE_MODE_EXACT:
+        case TAFFY_MEASURE_MODE_FIT_CONTENT:
+            available_width = width;
+            break;
+        case TAFFY_MEASURE_MODE_MIN_CONTENT:
+            available_width = 0;
+            break;
+        case TAFFY_MEASURE_MODE_MAX_CONTENT:
+            available_width = 10000.0f;
+            break;
+    }
+
+    // Layout the table with the available width
+    table->Layout(available_width, 0);
+
+    // Return the calculated size
+    const auto& layout = table->GetLayoutInfo();
+    size.width = layout.width;
+    size.height = layout.height;
 
     return size;
 }
@@ -489,15 +535,27 @@ TaffyNodeId LayoutEngine::CreateNode(RenderObject* render_obj) {
                 bool has_inline_content = false;
                 bool has_block_content = false;
 
+                // DEBUG: Log block element children
+                auto dom_node = render_obj->GetNode();
+                std::string tag_name = "unknown";
+                if (dom_node && dom_node->GetNodeType() == NodeType::ELEMENT_NODE) {
+                    auto elem = std::static_pointer_cast<Element>(dom_node);
+                    tag_name = elem->GetTagName();
+                }
+                std::cout << "[DEBUG CreateNode] BLOCK <" << tag_name << "> has "
+                          << children.size() << " render children" << std::endl;
+
                 for (auto& child : children) {
                     RenderObjectType child_type = child->GetType();
+                    std::cout << "[DEBUG CreateNode]   child type=" << static_cast<int>(child_type) << std::endl;
                     if (child_type == RenderObjectType::TEXT ||
                         child_type == RenderObjectType::INLINE_BLOCK ||
                         child_type == RenderObjectType::INLINE) {
                         has_inline_content = true;
                     } else if (child_type == RenderObjectType::BLOCK ||
                                child_type == RenderObjectType::FLEX ||
-                               child_type == RenderObjectType::GRID) {
+                               child_type == RenderObjectType::GRID ||
+                               child_type == RenderObjectType::TABLE) {
                         has_block_content = true;
                     }
                 }
@@ -513,6 +571,7 @@ TaffyNodeId LayoutEngine::CreateNode(RenderObject* render_obj) {
                             // INLINE elements won't stretch because of align-items: flex-start
                             TaffyStyle_SetFlexDirection(taffy_style, TAFFY_FLEX_DIRECTION_COLUMN);
                             TaffyStyle_SetAlignItems(taffy_style, TAFFY_ALIGN_ITEMS_FLEX_START);
+                            std::cout << "[DEBUG CreateNode] BLOCK with mixed content -> FLEX COLUMN" << std::endl;
                         } else {
                             // Pure inline content: use row layout (horizontal flow)
                             // Known issue: flex-wrap causes inline-block elements to wrap to
@@ -520,6 +579,7 @@ TaffyNodeId LayoutEngine::CreateNode(RenderObject* render_obj) {
                             TaffyStyle_SetFlexDirection(taffy_style, TAFFY_FLEX_DIRECTION_ROW);
                             TaffyStyle_SetFlexWrap(taffy_style, TAFFY_FLEX_WRAP_WRAP);
                             TaffyStyle_SetAlignItems(taffy_style, TAFFY_ALIGN_ITEMS_BASELINE);
+                            std::cout << "[DEBUG CreateNode] BLOCK with inline content -> FLEX ROW WRAP" << std::endl;
                         }
                     }
                 }
@@ -529,6 +589,9 @@ TaffyNodeId LayoutEngine::CreateNode(RenderObject* render_obj) {
             if (render_obj->GetType() == RenderObjectType::TEXT) {
                 auto* text_obj = dynamic_cast<RenderText*>(render_obj);
                 if (text_obj) {
+                    std::cout << "[DEBUG CreateNode] TEXT node created, text_len="
+                              << text_obj->GetText().length()
+                              << " text='" << text_obj->GetText().substr(0, 20) << "...'" << std::endl;
                     // Set the measure function with the RenderText object as context
                     // Taffy will call this function during layout to measure the text
                     TaffyTree_SetNodeContext(taffy_tree_, node, TextMeasureFunction, text_obj);
@@ -633,6 +696,41 @@ TaffyNodeId LayoutEngine::CreateNode(RenderObject* render_obj) {
                         // Don't grow or shrink in flex context (width doesn't change)
                         TaffyStyle_SetFlexGrow(taffy_style, 0.0f);
                         TaffyStyle_SetFlexShrink(taffy_style, 0.0f);
+                    }
+                }
+            }
+            // For table elements, use measure function for custom table layout
+            else if (render_obj->GetType() == RenderObjectType::TABLE) {
+                auto* table = dynamic_cast<RenderTable*>(render_obj);
+                if (table) {
+                    // Set the measure function with the RenderTable object as context
+                    TaffyTree_SetNodeContext(taffy_tree_, node, TableMeasureFunction, table);
+
+                    TaffyStyleMutRefResult style_result = TaffyTree_GetStyleMut(taffy_tree_, node);
+                    if (style_result.return_code == TAFFY_RETURN_CODE_OK) {
+                        TaffyStyleMutRef taffy_style = style_result.value;
+
+                        // Use border-box for table (measure function returns full size)
+                        TaffyStyle_SetBoxSizing(taffy_style, TAFFY_BOX_SIZING_BORDER_BOX);
+
+                        // Width and height will be determined by measure function
+                        TaffyStyle_SetWidth(taffy_style, 0.0f, TAFFY_UNIT_AUTO);
+                        TaffyStyle_SetHeight(taffy_style, 0.0f, TAFFY_UNIT_AUTO);
+
+                        // Clear padding in Taffy - measure function already includes it
+                        TaffyStyle_SetPaddingTop(taffy_style, 0.0f, TAFFY_UNIT_LENGTH);
+                        TaffyStyle_SetPaddingRight(taffy_style, 0.0f, TAFFY_UNIT_LENGTH);
+                        TaffyStyle_SetPaddingBottom(taffy_style, 0.0f, TAFFY_UNIT_LENGTH);
+                        TaffyStyle_SetPaddingLeft(taffy_style, 0.0f, TAFFY_UNIT_LENGTH);
+
+                        // Clear border too
+                        TaffyStyle_SetBorderTop(taffy_style, 0.0f, TAFFY_UNIT_LENGTH);
+                        TaffyStyle_SetBorderRight(taffy_style, 0.0f, TAFFY_UNIT_LENGTH);
+                        TaffyStyle_SetBorderBottom(taffy_style, 0.0f, TAFFY_UNIT_LENGTH);
+                        TaffyStyle_SetBorderLeft(taffy_style, 0.0f, TAFFY_UNIT_LENGTH);
+
+                        // Table is a block-level element
+                        TaffyStyle_SetDisplay(taffy_style, TAFFY_DISPLAY_BLOCK);
                     }
                 }
             }
@@ -930,8 +1028,23 @@ void LayoutEngine::BuildSubtree(RenderObject* render_obj, TaffyNodeId parent_nod
         return;
     }
 
+    // For TABLE elements, they manage their own layout (rows, cells, etc.)
+    // Don't add children to Taffy tree - table elements use custom layout algorithm
+    if (type == RenderObjectType::TABLE ||
+        type == RenderObjectType::TABLE_ROW_GROUP ||
+        type == RenderObjectType::TABLE_HEADER_GROUP ||
+        type == RenderObjectType::TABLE_FOOTER_GROUP ||
+        type == RenderObjectType::TABLE_ROW ||
+        type == RenderObjectType::TABLE_CELL ||
+        type == RenderObjectType::TABLE_CAPTION) {
+        // Table elements manage their own children layout
+        return;
+    }
+
     // Recursively build children
     auto& children = render_obj->GetChildren();
+    std::cout << "[DEBUG BuildSubtree] type=" << static_cast<int>(type)
+              << " recursing into " << children.size() << " children" << std::endl;
     for (auto& child : children) {
         BuildSubtree(child.get(), node);
     }
@@ -957,12 +1070,30 @@ void LayoutEngine::ReadLayoutResults(RenderObject* render_obj) {
     LayoutInfo& info = render_obj->GetLayoutInfo();
     info.x = result.value.x;
     info.y = result.value.y;
-    info.width = result.value.width;
-    info.height = result.value.height;
-    info.is_laid_out = true;
+
+    // DEBUG: Check layout results for elements with margin
+    const auto& style_debug = render_obj->GetComputedStyle();
+    if (style_debug.margin.top.value > 0 || style_debug.margin.bottom.value > 0) {
+        std::cout << "[DEBUG ReadLayout] x=" << result.value.x
+                  << " y=" << result.value.y
+                  << " w=" << result.value.width
+                  << " h=" << result.value.height
+                  << " margin_top=" << style_debug.margin.top.value
+                  << " margin_bottom=" << style_debug.margin.bottom.value << std::endl;
+    }
 
     const auto& style = render_obj->GetComputedStyle();
     RenderObjectType type = render_obj->GetType();
+
+    // For TABLE elements, don't overwrite width/height from Taffy
+    // because the table has already calculated its own size in TableMeasureFunction
+    // via table->Layout(). Taffy may return the parent container width instead of
+    // the table's actual content-based width.
+    if (type != RenderObjectType::TABLE) {
+        info.width = result.value.width;
+        info.height = result.value.height;
+    }
+    info.is_laid_out = true;
 
     // For INLINE_BLOCK and INLINE elements, their children are not in Taffy tree.
     // We need to layout their children manually.

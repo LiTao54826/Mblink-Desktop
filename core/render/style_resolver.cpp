@@ -126,6 +126,28 @@ void StyleResolver::ApplyDefaultStyle(ComputedStyle& style, const std::string& t
     else if (tag_name == "input") {
         style.display = RenderObjectType::INLINE_BLOCK;
     }
+    // ========== 表格元素 ==========
+    else if (tag_name == "table") {
+        style.display = RenderObjectType::TABLE;
+    }
+    else if (tag_name == "thead") {
+        style.display = RenderObjectType::TABLE_HEADER_GROUP;
+    }
+    else if (tag_name == "tbody") {
+        style.display = RenderObjectType::TABLE_ROW_GROUP;
+    }
+    else if (tag_name == "tfoot") {
+        style.display = RenderObjectType::TABLE_FOOTER_GROUP;
+    }
+    else if (tag_name == "tr") {
+        style.display = RenderObjectType::TABLE_ROW;
+    }
+    else if (tag_name == "td" || tag_name == "th") {
+        style.display = RenderObjectType::TABLE_CELL;
+    }
+    else if (tag_name == "caption") {
+        style.display = RenderObjectType::TABLE_CAPTION;
+    }
 }
 
 void StyleResolver::ApplyElementSpecificStyle(ComputedStyle& style, const std::string& tag_name, std::shared_ptr<Element> element) {
@@ -852,6 +874,16 @@ void StyleResolver::ParseStyleProperty(ComputedStyle& style,
     else if (property == "border-radius") {
         style.border_radius = CSSValue::ParseBorderRadius(resolved_value);
     }
+    // 表格边框属性
+    else if (property == "border-collapse") {
+        // CSS 标准值: collapse, separate
+        if (resolved_value == "collapse" || resolved_value == "separate") {
+            style.border_collapse = resolved_value;
+        }
+    }
+    else if (property == "border-spacing") {
+        style.border_spacing = CSSValue::ParseLength(resolved_value);
+    }
     else if (property == "background") {
         // 简化处理：如果是颜色值，设置 background-color
         // 完整的 background 解析应该支持 image, position, size, repeat 等
@@ -889,11 +921,45 @@ void StyleResolver::ParseStyleProperty(ComputedStyle& style,
         style.text_decoration = resolved_value;
     }
     else if (property == "line-height") {
-        auto length = CSSValue::ParseLength(resolved_value);
-        if (length.unit == CSSUnit::NONE) {
-            style.line_height = length.value; // 无单位表示倍数
+        // line-height 可以是：
+        // 1. 无单位数字（如 "1.6"）- 表示 font-size 的倍数
+        // 2. 带单位的长度（如 "24px", "1.5em"）- 转换为 font-size 的倍数
+        // 3. 百分比（如 "150%"）- 表示 font-size 的百分比
+        std::string trimmed = resolved_value;
+        // 去除首尾空格
+        size_t start = trimmed.find_first_not_of(" \t");
+        size_t end = trimmed.find_last_not_of(" \t");
+        if (start != std::string::npos && end != std::string::npos) {
+            trimmed = trimmed.substr(start, end - start + 1);
+        }
+
+        // 检查是否为纯数字（无单位）
+        bool is_pure_number = true;
+        bool has_digit = false;
+        for (char c : trimmed) {
+            if (std::isdigit(c) || c == '.' || c == '-') {
+                if (std::isdigit(c)) has_digit = true;
+            } else {
+                is_pure_number = false;
+                break;
+            }
+        }
+
+        if (is_pure_number && has_digit) {
+            // 无单位数字，直接作为倍数
+            try {
+                style.line_height = std::stof(trimmed);
+            } catch (...) {
+                style.line_height = 1.2f; // 默认值
+            }
         } else {
-            style.line_height = length.ToPx(style.font_size, style.font_size) / style.font_size;
+            // 带单位的值，解析并转换为倍数
+            auto length = CSSValue::ParseLength(resolved_value);
+            if (length.unit == CSSUnit::PERCENT) {
+                style.line_height = length.value / 100.0f;
+            } else {
+                style.line_height = length.ToPx(style.font_size, style.font_size) / style.font_size;
+            }
         }
     }
     else if (property == "box-shadow") {
@@ -1271,6 +1337,14 @@ RenderObjectType StyleResolver::ParseDisplay(const std::string& value) {
     if (value == "grid") return RenderObjectType::GRID;
     if (value == "inline-grid") return RenderObjectType::GRID;  // inline-grid 也使用 GRID 类型
     if (value == "none") return RenderObjectType::NONE;
+    // 表格相关display类型
+    if (value == "table") return RenderObjectType::TABLE;
+    if (value == "table-row-group") return RenderObjectType::TABLE_ROW_GROUP;
+    if (value == "table-header-group") return RenderObjectType::TABLE_HEADER_GROUP;
+    if (value == "table-footer-group") return RenderObjectType::TABLE_FOOTER_GROUP;
+    if (value == "table-row") return RenderObjectType::TABLE_ROW;
+    if (value == "table-cell") return RenderObjectType::TABLE_CELL;
+    if (value == "table-caption") return RenderObjectType::TABLE_CAPTION;
     return RenderObjectType::BLOCK;
 }
 
@@ -1340,21 +1414,28 @@ std::shared_ptr<RenderObject> RenderTreeBuilder::BuildRenderTree(
     if (node->GetNodeType() == NodeType::ELEMENT_NODE) {
         auto element = std::static_pointer_cast<Element>(node);
         render_obj = CreateRenderObjectForElement(element, parent_style);
+        // DEBUG: Log element with children count
+        std::cout << "[DEBUG BuildRenderTree] Element <" << element->GetTagName()
+                  << "> has " << node->GetChildNodes().size() << " children" << std::endl;
     }
     else if (node->GetNodeType() == NodeType::TEXT_NODE) {
         auto text = std::static_pointer_cast<Text>(node);
         render_obj = CreateRenderObjectForText(text, parent_style);
+        if (render_obj) {
+            std::cout << "[DEBUG BuildRenderTree] TEXT node created, len="
+                      << text->GetData().length() << std::endl;
+        }
     }
-    
+
     if (!render_obj) {
         return nullptr;
     }
-    
+
     // 如果是 display: none，不创建渲染对象
     if (render_obj->GetComputedStyle().display == RenderObjectType::NONE) {
         return nullptr;
     }
-    
+
     // 递归构建子树
     for (const auto& child : node->GetChildNodes()) {
         auto child_render_obj = BuildRenderTree(child, &render_obj->GetComputedStyle());
@@ -1450,6 +1531,23 @@ std::shared_ptr<RenderObject> RenderTreeBuilder::CreateRenderObjectByType(Render
             return std::make_shared<RenderInlineBlock>(); // 使用真正的InlineBlock
         case RenderObjectType::FLEX:
             return std::make_shared<RenderBlock>(); // 简化：暂时用 Block
+        case RenderObjectType::GRID:
+            return std::make_shared<RenderBlock>(); // 简化：暂时用 Block
+        // 表格相关类型
+        case RenderObjectType::TABLE:
+            return std::make_shared<RenderTable>();
+        case RenderObjectType::TABLE_ROW_GROUP:
+            return std::make_shared<RenderTableRowGroup>(RenderObjectType::TABLE_ROW_GROUP);
+        case RenderObjectType::TABLE_HEADER_GROUP:
+            return std::make_shared<RenderTableRowGroup>(RenderObjectType::TABLE_HEADER_GROUP);
+        case RenderObjectType::TABLE_FOOTER_GROUP:
+            return std::make_shared<RenderTableRowGroup>(RenderObjectType::TABLE_FOOTER_GROUP);
+        case RenderObjectType::TABLE_ROW:
+            return std::make_shared<RenderTableRow>();
+        case RenderObjectType::TABLE_CELL:
+            return std::make_shared<RenderTableCell>();
+        case RenderObjectType::TABLE_CAPTION:
+            return std::make_shared<RenderTableCaption>();
         case RenderObjectType::NONE:
             return nullptr;
         default:

@@ -2072,5 +2072,690 @@ void RenderText::Paint(SkCanvas* canvas) {
     needs_paint_ = false;
 }
 
+// ========== RenderTable 实现 ==========
+
+void RenderTable::CalculateColumnWidths(float available_width) {
+    // 收集所有行中的单元格来确定列数和宽度
+    std::vector<float> min_widths;
+    std::vector<float> preferred_widths;
+    size_t max_columns = 0;
+
+    // 遍历所有子元素（可能是 thead, tbody, tfoot 或直接的 tr）
+    for (auto& child : children_) {
+        RenderObjectType child_type = child->GetType();
+
+        // 处理行组（thead, tbody, tfoot）
+        if (child_type == RenderObjectType::TABLE_ROW_GROUP ||
+            child_type == RenderObjectType::TABLE_HEADER_GROUP ||
+            child_type == RenderObjectType::TABLE_FOOTER_GROUP) {
+            for (auto& row : child->GetChildren()) {
+                if (row->GetType() == RenderObjectType::TABLE_ROW) {
+                    auto& cells = row->GetChildren();
+                    max_columns = std::max(max_columns, cells.size());
+                }
+            }
+        }
+        // 处理直接的行（tr）
+        else if (child_type == RenderObjectType::TABLE_ROW) {
+            auto& cells = child->GetChildren();
+            max_columns = std::max(max_columns, cells.size());
+        }
+    }
+
+    if (max_columns == 0) {
+        column_widths_.clear();
+        return;
+    }
+
+    // 初始化列宽度数组
+    min_widths.resize(max_columns, 0.0f);
+    preferred_widths.resize(max_columns, 0.0f);
+
+    // 计算每列的最小和首选宽度
+    auto process_row = [&](std::shared_ptr<RenderObject> row) {
+        auto& cells = row->GetChildren();
+        for (size_t i = 0; i < cells.size() && i < max_columns; ++i) {
+            auto& cell = cells[i];
+            const auto& cell_style = cell->GetComputedStyle();
+
+            // 计算单元格的最小宽度（内容 + padding + border）
+            float cell_padding_left = cell_style.padding.left.ToPx(available_width, cell_style.font_size);
+            float cell_padding_right = cell_style.padding.right.ToPx(available_width, cell_style.font_size);
+            float cell_border_left = cell_style.border.width.ToPx();
+            float cell_border_right = cell_style.border.width.ToPx();
+            float cell_extra = cell_padding_left + cell_padding_right + cell_border_left + cell_border_right;
+
+            // 获取单元格内容的固有宽度
+            float content_min_width = 0;
+            float content_preferred_width = 0;
+
+            for (auto& cell_child : cell->GetChildren()) {
+                cell_child->Layout(10000.0f, 0); // 测量时使用大宽度
+                auto& child_layout = cell_child->GetLayoutInfo();
+                content_min_width = std::max(content_min_width, child_layout.width);
+                content_preferred_width = std::max(content_preferred_width, child_layout.width);
+            }
+
+            // 如果单元格有显式宽度，使用它
+            if (cell_style.width.unit == CSSUnit::PX) {
+                content_preferred_width = std::max(content_preferred_width, cell_style.width.value);
+            }
+
+            min_widths[i] = std::max(min_widths[i], content_min_width + cell_extra);
+            preferred_widths[i] = std::max(preferred_widths[i], content_preferred_width + cell_extra);
+        }
+    };
+
+    // 遍历所有行
+    for (auto& child : children_) {
+        RenderObjectType child_type = child->GetType();
+
+        if (child_type == RenderObjectType::TABLE_ROW_GROUP ||
+            child_type == RenderObjectType::TABLE_HEADER_GROUP ||
+            child_type == RenderObjectType::TABLE_FOOTER_GROUP) {
+            for (auto& row : child->GetChildren()) {
+                if (row->GetType() == RenderObjectType::TABLE_ROW) {
+                    process_row(row);
+                }
+            }
+        }
+        else if (child_type == RenderObjectType::TABLE_ROW) {
+            process_row(child);
+        }
+    }
+
+    // 计算表格边框和间距
+    const auto& style = computed_style_;
+    float table_border_left = style.border.width.ToPx();
+    float table_border_right = style.border.width.ToPx();
+    float table_padding_left = style.padding.left.ToPx(available_width, style.font_size);
+    float table_padding_right = style.padding.right.ToPx(available_width, style.font_size);
+
+    // 计算实际可用于列的宽度
+    float table_extra = table_border_left + table_border_right + table_padding_left + table_padding_right;
+    float available_for_columns = available_width - table_extra;
+
+    // 计算总最小宽度和总首选宽度
+    float total_min_width = 0;
+    float total_preferred_width = 0;
+    for (size_t i = 0; i < max_columns; ++i) {
+        total_min_width += min_widths[i];
+        total_preferred_width += preferred_widths[i];
+    }
+
+    // 分配列宽度
+    column_widths_.resize(max_columns);
+
+    // 检查表格是否有显式宽度设置
+    bool has_explicit_width = (style.width.unit == CSSUnit::PX || style.width.unit == CSSUnit::PERCENT);
+
+    if (has_explicit_width) {
+        // 表格有显式宽度，需要根据可用空间分配列宽
+        if (total_preferred_width <= available_for_columns) {
+            // 有足够空间，使用首选宽度并平均分配剩余空间
+            float extra_space = available_for_columns - total_preferred_width;
+            float extra_per_column = extra_space / max_columns;
+            for (size_t i = 0; i < max_columns; ++i) {
+                column_widths_[i] = preferred_widths[i] + extra_per_column;
+            }
+        }
+        else if (total_min_width <= available_for_columns) {
+            // 空间不足以容纳首选宽度，但可以容纳最小宽度
+            // 按比例分配剩余空间
+            float extra_space = available_for_columns - total_min_width;
+            float total_extra_needed = total_preferred_width - total_min_width;
+
+            for (size_t i = 0; i < max_columns; ++i) {
+                float extra_needed = preferred_widths[i] - min_widths[i];
+                float extra = (total_extra_needed > 0) ? (extra_needed / total_extra_needed * extra_space) : 0;
+                column_widths_[i] = min_widths[i] + extra;
+            }
+        }
+        else {
+            // 空间不足以容纳最小宽度，使用最小宽度
+            column_widths_ = min_widths;
+        }
+    } else {
+        // 表格宽度为 auto，使用内容的自然宽度（首选宽度）
+        // 不进行拉伸，保持紧凑
+        for (size_t i = 0; i < max_columns; ++i) {
+            column_widths_[i] = preferred_widths[i];
+        }
+    }
+}
+
+void RenderTable::Layout(float parent_width, float parent_height) {
+    const auto& style = computed_style_;
+
+    // 检查是否有显式宽度
+    bool has_explicit_width = (style.width.unit == CSSUnit::PX || style.width.unit == CSSUnit::PERCENT);
+
+    // 检查 border-collapse 模式
+    bool is_collapse = (style.border_collapse == "collapse");
+
+    // 获取 border-spacing（仅在 separate 模式下有效）
+    // CSS 默认值是 2px（实际上浏览器默认是 0，但为了视觉效果使用 2px）
+    float border_spacing = 0;
+    if (!is_collapse) {
+        // 在 separate 模式下，使用显式设置的值
+        // 如果设置了非零值，使用它；否则使用默认值 2px
+        if (style.border_spacing.value > 0) {
+            border_spacing = style.border_spacing.ToPx();
+        } else {
+            border_spacing = 2.0f;  // 默认间距
+        }
+    }
+
+
+    // 边框和padding
+    float border_width = style.border.width.ToPx();
+    float padding_left = style.padding.left.ToPx(parent_width, style.font_size);
+    float padding_right = style.padding.right.ToPx(parent_width, style.font_size);
+    float padding_top = style.padding.top.ToPx(parent_width, style.font_size);
+    float padding_bottom = style.padding.bottom.ToPx(parent_width, style.font_size);
+
+    // 在 collapse 模式下，表格边框会与单元格边框合并
+    // 所以表格本身不需要额外的边框空间
+    float effective_border = is_collapse ? 0 : border_width;
+
+    float width;
+    if (has_explicit_width) {
+        // 有显式宽度，使用指定的宽度
+        if (style.width.unit == CSSUnit::PX) {
+            width = style.width.value;
+        } else {
+            width = style.width.value / 100.0f * parent_width;
+        }
+        // 计算列宽度（会拉伸以填满表格宽度）
+        CalculateColumnWidths(width);
+    } else {
+        // 宽度为 auto，先计算内容需要的宽度
+        // 传入一个大值来获取自然宽度
+        CalculateColumnWidths(parent_width);
+
+        // 计算所有列的总宽度
+        float total_column_width = 0;
+        for (float col_w : column_widths_) {
+            total_column_width += col_w;
+        }
+
+        // 添加 border-spacing（separate 模式下列之间的间距）
+        size_t num_columns = column_widths_.size();
+        float total_spacing = is_collapse ? 0 : (border_spacing * (num_columns + 1));
+
+        // 表格宽度 = 列宽度 + spacing + padding + border
+        width = total_column_width + total_spacing + padding_left + padding_right + effective_border * 2;
+
+        // 确保不超过父容器宽度
+        width = std::min(width, parent_width);
+    }
+
+    // 布局表格内容
+    float current_y = padding_top + effective_border + (is_collapse ? 0 : border_spacing);
+    float content_width = width - effective_border * 2 - padding_left - padding_right;
+
+    // 遍历并布局所有子元素
+    for (auto& child : children_) {
+        RenderObjectType child_type = child->GetType();
+
+        // 处理 caption
+        if (child_type == RenderObjectType::TABLE_CAPTION) {
+            child->Layout(content_width, 0);
+            auto& child_layout = child->GetLayoutInfo();
+            child_layout.x = padding_left + effective_border;
+            child_layout.y = current_y;
+            current_y += child_layout.height;
+            continue;
+        }
+
+        // 设置行组的列宽度并布局
+        auto layout_row_group = [&](std::shared_ptr<RenderObject> group) {
+            float group_start_y = current_y;
+            float row_y_in_group = 0;  // 行在行组内的相对位置
+
+            for (auto& row : group->GetChildren()) {
+                if (row->GetType() == RenderObjectType::TABLE_ROW) {
+                    auto table_row = std::dynamic_pointer_cast<RenderTableRow>(row);
+                    if (table_row) {
+                        table_row->SetColumnWidths(column_widths_);
+                        table_row->SetBorderSpacing(border_spacing);
+                        table_row->SetBorderCollapse(is_collapse);
+                    }
+
+                    row->Layout(content_width, 0);
+                    auto& row_layout = row->GetLayoutInfo();
+                    row_layout.x = 0;  // 相对于行组
+                    row_layout.y = row_y_in_group;  // 相对于行组
+                    row_y_in_group += row_layout.height;
+                    current_y += row_layout.height;
+
+                    // 在 separate 模式下，行之间添加 border-spacing
+                    if (!is_collapse) {
+                        row_y_in_group += border_spacing;
+                        current_y += border_spacing;
+                    }
+                }
+            }
+
+            // 设置行组的布局信息
+            auto& group_layout = group->GetLayoutInfo();
+            group_layout.x = padding_left + effective_border + (is_collapse ? 0 : border_spacing);
+            group_layout.y = group_start_y;
+            group_layout.width = content_width;
+            group_layout.height = row_y_in_group;  // 使用行组内的总高度
+            group_layout.is_laid_out = true;
+        };
+
+        if (child_type == RenderObjectType::TABLE_ROW_GROUP ||
+            child_type == RenderObjectType::TABLE_HEADER_GROUP ||
+            child_type == RenderObjectType::TABLE_FOOTER_GROUP) {
+            layout_row_group(child);
+        }
+        else if (child_type == RenderObjectType::TABLE_ROW) {
+            auto table_row = std::dynamic_pointer_cast<RenderTableRow>(child);
+            if (table_row) {
+                table_row->SetColumnWidths(column_widths_);
+                table_row->SetBorderSpacing(border_spacing);
+                table_row->SetBorderCollapse(is_collapse);
+            }
+
+            child->Layout(content_width, 0);
+            auto& child_layout = child->GetLayoutInfo();
+            child_layout.x = padding_left + effective_border + (is_collapse ? 0 : border_spacing);
+            child_layout.y = current_y;
+            current_y += child_layout.height;
+
+            // 在 separate 模式下，行之间添加 border-spacing
+            if (!is_collapse) {
+                current_y += border_spacing;
+            }
+        }
+    }
+
+    // 计算表格高度
+    float height = current_y + padding_bottom + effective_border;
+
+    // 应用显式高度（如果有）
+    if (style.height.unit == CSSUnit::PX) {
+        height = std::max(height, style.height.value);
+    }
+
+    // 设置布局信息
+    layout_info_.width = width;
+    layout_info_.height = height;
+    layout_info_.is_laid_out = true;
+    needs_layout_ = false;
+}
+
+void RenderTable::Paint(SkCanvas* canvas) {
+    if (!canvas) {
+        needs_paint_ = false;
+        return;
+    }
+
+    const auto& style = computed_style_;
+    const auto& layout = layout_info_;
+
+    // 检查 border-collapse 模式
+    bool is_collapse = (style.border_collapse == "collapse");
+
+    canvas->save();
+    canvas->translate(layout.x, layout.y);
+
+    // 获取边框宽度
+    float border_w = style.border.width.ToPx();
+
+    // 创建盒模型
+    Box box;
+    box.padding_left = style.padding.left.ToPx(layout.width, style.font_size);
+    box.padding_right = style.padding.right.ToPx(layout.width, style.font_size);
+    box.padding_top = style.padding.top.ToPx(layout.width, style.font_size);
+    box.padding_bottom = style.padding.bottom.ToPx(layout.width, style.font_size);
+    box.border_top_width = border_w;
+    box.border_right_width = border_w;
+    box.border_bottom_width = border_w;
+    box.border_left_width = border_w;
+    box.content_x = box.border_left_width + box.padding_left;
+    box.content_y = box.border_top_width + box.padding_top;
+    box.content_width = layout.width - box.padding_left - box.padding_right - box.border_left_width - box.border_right_width;
+    box.content_height = layout.height - box.padding_top - box.padding_bottom - box.border_top_width - box.border_bottom_width;
+
+    BoxRenderer renderer(canvas);
+
+    // 渲染背景
+    SkRect bounds = SkRect::MakeWH(layout.width, layout.height);
+    if (!style.background_color.empty() && style.background_color != "transparent") {
+        SkPaint bg_paint;
+        bg_paint.setColor(Color::Parse(style.background_color));
+        bg_paint.setStyle(SkPaint::kFill_Style);
+        canvas->drawRect(bounds, bg_paint);
+    }
+
+    // 渲染子元素（先渲染子元素，这样表格边框可以覆盖在上面）
+    for (auto& child : children_) {
+        child->Paint(canvas);
+    }
+
+    // 渲染表格边框
+    // 在 collapse 模式下，表格边框画在最外层（覆盖单元格边框）
+    // 在 separate 模式下，表格边框也正常画
+    if (style.border.style != CSSBorderStyle::NONE && border_w > 0) {
+        char width_str[32];
+        snprintf(width_str, sizeof(width_str), "%.0fpx", border_w);
+        std::string border_width = width_str;
+        std::string border_style = "solid";
+        char color_str[8];
+        snprintf(color_str, sizeof(color_str), "#%02X%02X%02X",
+                 SkColorGetR(style.border.color),
+                 SkColorGetG(style.border.color),
+                 SkColorGetB(style.border.color));
+        std::string border_color = color_str;
+        renderer.RenderBorder(box, border_width, border_style, border_color);
+    }
+
+    canvas->restore();
+    needs_paint_ = false;
+}
+
+// ========== RenderTableRowGroup 实现 ==========
+
+void RenderTableRowGroup::Layout(float parent_width, float parent_height) {
+    // 行组的布局由父表格处理
+    // 这里只标记为已布局
+    layout_info_.is_laid_out = true;
+    needs_layout_ = false;
+}
+
+void RenderTableRowGroup::Paint(SkCanvas* canvas) {
+    if (!canvas) {
+        needs_paint_ = false;
+        return;
+    }
+
+    const auto& layout = layout_info_;
+
+    canvas->save();
+    canvas->translate(layout.x, layout.y);
+
+    // 渲染背景（如果有）
+    const auto& style = computed_style_;
+    if (!style.background_color.empty() && style.background_color != "transparent") {
+        SkRect bounds = SkRect::MakeWH(layout.width, layout.height);
+        SkPaint bg_paint;
+        bg_paint.setColor(Color::Parse(style.background_color));
+        bg_paint.setStyle(SkPaint::kFill_Style);
+        canvas->drawRect(bounds, bg_paint);
+    }
+
+    // 渲染子元素（行）
+    for (auto& child : children_) {
+        child->Paint(canvas);
+    }
+
+    canvas->restore();
+    needs_paint_ = false;
+}
+
+// ========== RenderTableRow 实现 ==========
+
+void RenderTableRow::Layout(float parent_width, float parent_height) {
+    const auto& style = computed_style_;
+
+    // 计算行的padding和border
+    float padding_top = style.padding.top.ToPx(parent_width, style.font_size);
+    float padding_bottom = style.padding.bottom.ToPx(parent_width, style.font_size);
+    float border_width = style.border.width.ToPx();
+
+    // 获取 border-spacing（在 separate 模式下单元格之间的间距）
+    float spacing = border_collapse_ ? 0 : border_spacing_;
+
+    // 布局每个单元格
+    float current_x = 0;  // 在 separate 模式下，第一个单元格前的间距由表格处理
+    float max_height = 0;
+
+    auto& cells = children_;
+    for (size_t i = 0; i < cells.size(); ++i) {
+        auto& cell = cells[i];
+
+        // 获取单元格的列宽度
+        float cell_width = (i < column_widths_.size()) ? column_widths_[i] : 100.0f;
+
+        // 处理 colspan
+        auto table_cell = std::dynamic_pointer_cast<RenderTableCell>(cell);
+        if (table_cell && table_cell->GetColSpan() > 1) {
+            int col_span = table_cell->GetColSpan();
+            for (int j = 1; j < col_span && (i + j) < column_widths_.size(); ++j) {
+                cell_width += column_widths_[i + j];
+                // 在 separate 模式下，合并的列之间也有间距
+                if (!border_collapse_) {
+                    cell_width += spacing;
+                }
+            }
+        }
+
+        // 布局单元格
+        cell->Layout(cell_width, parent_height);
+        auto& cell_layout = cell->GetLayoutInfo();
+
+        // 设置单元格位置
+        cell_layout.x = current_x;
+        cell_layout.y = 0;
+        cell_layout.width = cell_width;
+
+        current_x += cell_width;
+        // 在 separate 模式下，单元格之间添加间距
+        if (!border_collapse_) {
+            current_x += spacing;
+        }
+        max_height = std::max(max_height, cell_layout.height);
+    }
+
+    // 统一所有单元格的高度
+    for (auto& cell : cells) {
+        auto& cell_layout = cell->GetLayoutInfo();
+        cell_layout.height = max_height;
+    }
+
+    // 设置行的布局信息
+    layout_info_.width = current_x;
+    layout_info_.height = max_height;
+    layout_info_.is_laid_out = true;
+    needs_layout_ = false;
+}
+
+void RenderTableRow::Paint(SkCanvas* canvas) {
+    if (!canvas) {
+        needs_paint_ = false;
+        return;
+    }
+
+    const auto& layout = layout_info_;
+
+    canvas->save();
+    canvas->translate(layout.x, layout.y);
+
+    // 渲染背景（如果有）
+    const auto& style = computed_style_;
+    if (!style.background_color.empty() && style.background_color != "transparent") {
+        SkRect bounds = SkRect::MakeWH(layout.width, layout.height);
+        SkPaint bg_paint;
+        bg_paint.setColor(Color::Parse(style.background_color));
+        bg_paint.setStyle(SkPaint::kFill_Style);
+        canvas->drawRect(bounds, bg_paint);
+    }
+
+    // 渲染单元格
+    for (auto& child : children_) {
+        child->Paint(canvas);
+    }
+
+    canvas->restore();
+    needs_paint_ = false;
+}
+
+// ========== RenderTableCell 实现 ==========
+
+void RenderTableCell::Layout(float parent_width, float parent_height) {
+    const auto& style = computed_style_;
+
+    // 计算padding和border
+    float padding_left = style.padding.left.ToPx(parent_width, style.font_size);
+    float padding_right = style.padding.right.ToPx(parent_width, style.font_size);
+    float padding_top = style.padding.top.ToPx(parent_width, style.font_size);
+    float padding_bottom = style.padding.bottom.ToPx(parent_width, style.font_size);
+    float border_width = style.border.width.ToPx();
+
+    // 计算内容区域宽度
+    float content_width = parent_width - padding_left - padding_right - border_width * 2;
+
+    // 布局子元素
+    float content_height = 0;
+    for (auto& child : children_) {
+        child->Layout(content_width, 0);
+        auto& child_layout = child->GetLayoutInfo();
+        child_layout.x = padding_left + border_width;
+        child_layout.y = padding_top + border_width + content_height;
+        content_height += child_layout.height;
+    }
+
+    // 计算单元格高度
+    float height = content_height + padding_top + padding_bottom + border_width * 2;
+
+    // 设置布局信息
+    layout_info_.width = parent_width;
+    layout_info_.height = height;
+    layout_info_.is_laid_out = true;
+    needs_layout_ = false;
+}
+
+void RenderTableCell::Paint(SkCanvas* canvas) {
+    if (!canvas) {
+        needs_paint_ = false;
+        return;
+    }
+
+    const auto& style = computed_style_;
+    const auto& layout = layout_info_;
+
+    canvas->save();
+    canvas->translate(layout.x, layout.y);
+
+    // 获取边框宽度
+    float border_w = style.border.width.ToPx();
+
+    // 创建盒模型
+    Box box;
+    box.padding_left = style.padding.left.ToPx(layout.width, style.font_size);
+    box.padding_right = style.padding.right.ToPx(layout.width, style.font_size);
+    box.padding_top = style.padding.top.ToPx(layout.width, style.font_size);
+    box.padding_bottom = style.padding.bottom.ToPx(layout.width, style.font_size);
+    box.border_top_width = border_w;
+    box.border_right_width = border_w;
+    box.border_bottom_width = border_w;
+    box.border_left_width = border_w;
+    box.content_x = box.border_left_width + box.padding_left;
+    box.content_y = box.border_top_width + box.padding_top;
+    box.content_width = layout.width - box.padding_left - box.padding_right - box.border_left_width - box.border_right_width;
+    box.content_height = layout.height - box.padding_top - box.padding_bottom - box.border_top_width - box.border_bottom_width;
+
+    BoxRenderer renderer(canvas);
+
+    // 渲染背景
+    SkRect bounds = SkRect::MakeWH(layout.width, layout.height);
+    if (!style.background_color.empty() && style.background_color != "transparent") {
+        SkPaint bg_paint;
+        bg_paint.setColor(Color::Parse(style.background_color));
+        bg_paint.setStyle(SkPaint::kFill_Style);
+        canvas->drawRect(bounds, bg_paint);
+    }
+
+    // 渲染边框
+    if (style.border.style != CSSBorderStyle::NONE && border_w > 0) {
+        char width_str[32];
+        snprintf(width_str, sizeof(width_str), "%.0fpx", border_w);
+        std::string border_width = width_str;
+        std::string border_style = "solid";
+        char color_str[8];
+        snprintf(color_str, sizeof(color_str), "#%02X%02X%02X",
+                 SkColorGetR(style.border.color),
+                 SkColorGetG(style.border.color),
+                 SkColorGetB(style.border.color));
+        std::string border_color = color_str;
+        renderer.RenderBorder(box, border_width, border_style, border_color);
+    }
+
+    // 渲染子元素
+    for (auto& child : children_) {
+        child->Paint(canvas);
+    }
+
+    canvas->restore();
+    needs_paint_ = false;
+}
+
+// ========== RenderTableCaption 实现 ==========
+
+void RenderTableCaption::Layout(float parent_width, float parent_height) {
+    const auto& style = computed_style_;
+
+    // 计算padding
+    float padding_left = style.padding.left.ToPx(parent_width, style.font_size);
+    float padding_right = style.padding.right.ToPx(parent_width, style.font_size);
+    float padding_top = style.padding.top.ToPx(parent_width, style.font_size);
+    float padding_bottom = style.padding.bottom.ToPx(parent_width, style.font_size);
+
+    // 计算内容区域宽度
+    float content_width = parent_width - padding_left - padding_right;
+
+    // 布局子元素
+    float content_height = 0;
+    for (auto& child : children_) {
+        child->Layout(content_width, 0);
+        auto& child_layout = child->GetLayoutInfo();
+        child_layout.x = padding_left;
+        child_layout.y = padding_top + content_height;
+        content_height += child_layout.height;
+    }
+
+    // 计算标题高度
+    float height = content_height + padding_top + padding_bottom;
+
+    // 设置布局信息
+    layout_info_.width = parent_width;
+    layout_info_.height = height;
+    layout_info_.is_laid_out = true;
+    needs_layout_ = false;
+}
+
+void RenderTableCaption::Paint(SkCanvas* canvas) {
+    if (!canvas) {
+        needs_paint_ = false;
+        return;
+    }
+
+    const auto& style = computed_style_;
+    const auto& layout = layout_info_;
+
+    canvas->save();
+    canvas->translate(layout.x, layout.y);
+
+    // 渲染背景
+    if (!style.background_color.empty() && style.background_color != "transparent") {
+        SkRect bounds = SkRect::MakeWH(layout.width, layout.height);
+        SkPaint bg_paint;
+        bg_paint.setColor(Color::Parse(style.background_color));
+        bg_paint.setStyle(SkPaint::kFill_Style);
+        canvas->drawRect(bounds, bg_paint);
+    }
+
+    // 渲染子元素
+    for (auto& child : children_) {
+        child->Paint(canvas);
+    }
+
+    canvas->restore();
+    needs_paint_ = false;
+}
+
 } // namespace lightui
 

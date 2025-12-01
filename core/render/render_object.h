@@ -42,6 +42,13 @@ enum class RenderObjectType {
     INLINE_BLOCK, // 内联块（img, button等）
     FLEX,       // Flex 容器
     GRID,       // Grid 容器
+    TABLE,      // 表格（display: table）
+    TABLE_ROW_GROUP,  // 表格行组（display: table-row-group, 如 tbody）
+    TABLE_HEADER_GROUP, // 表格头组（display: table-header-group, 如 thead）
+    TABLE_FOOTER_GROUP, // 表格尾组（display: table-footer-group, 如 tfoot）
+    TABLE_ROW,  // 表格行（display: table-row, 如 tr）
+    TABLE_CELL, // 表格单元格（display: table-cell, 如 td, th）
+    TABLE_CAPTION, // 表格标题（display: table-caption, 如 caption）
     NONE        // 不渲染（display: none）
 };
 
@@ -181,6 +188,10 @@ struct ComputedStyle {
     std::string text_overflow = "clip";  // clip, ellipsis
     std::string vertical_align = "baseline";  // baseline, top, middle, bottom
     std::string cursor = "default";  // default, pointer, text, etc.
+
+    // 表格相关属性
+    std::string border_collapse = "separate";  // collapse, separate (CSS 默认值是 separate)
+    CSSLength border_spacing;  // 当 border-collapse: separate 时，单元格之间的间距
 
     ComputedStyle() {
         width = CSSLength(0, CSSUnit::AUTO);
@@ -619,6 +630,114 @@ private:
     std::string text_;
     std::vector<std::string> wrapped_lines_;  // Cached wrapped lines for rendering
     float actual_text_width_ = 0.0f;  // Actual measured text width (for text-align)
+};
+
+/**
+ * @brief 表格渲染对象（display: table）
+ *
+ * CSS表格布局模型：
+ * - 表格由行组（thead, tbody, tfoot）和行（tr）组成
+ * - 每行由单元格（td, th）组成
+ * - 表格自动计算列宽度
+ */
+class RenderTable : public RenderObject {
+public:
+    RenderTable() : RenderObject(RenderObjectType::TABLE) {}
+
+    void Layout(float parent_width, float parent_height) override;
+    void Paint(SkCanvas* canvas) override;
+
+    // 获取计算后的列宽度
+    const std::vector<float>& GetColumnWidths() const { return column_widths_; }
+
+    // 获取列数
+    size_t GetColumnCount() const { return column_widths_.size(); }
+
+private:
+    // 计算表格列宽度
+    void CalculateColumnWidths(float available_width);
+
+    // 缓存的列宽度
+    std::vector<float> column_widths_;
+};
+
+/**
+ * @brief 表格行组渲染对象（display: table-row-group/table-header-group/table-footer-group）
+ *
+ * 用于 thead, tbody, tfoot 元素
+ */
+class RenderTableRowGroup : public RenderObject {
+public:
+    explicit RenderTableRowGroup(RenderObjectType type = RenderObjectType::TABLE_ROW_GROUP)
+        : RenderObject(type) {}
+
+    void Layout(float parent_width, float parent_height) override;
+    void Paint(SkCanvas* canvas) override;
+};
+
+/**
+ * @brief 表格行渲染对象（display: table-row）
+ *
+ * 用于 tr 元素
+ */
+class RenderTableRow : public RenderObject {
+public:
+    RenderTableRow() : RenderObject(RenderObjectType::TABLE_ROW) {}
+
+    void Layout(float parent_width, float parent_height) override;
+    void Paint(SkCanvas* canvas) override;
+
+    // 设置和获取列宽度（由父表格设置）
+    void SetColumnWidths(const std::vector<float>& widths) { column_widths_ = widths; }
+    const std::vector<float>& GetColumnWidths() const { return column_widths_; }
+
+    // 设置 border-spacing 和 border-collapse（由父表格设置）
+    void SetBorderSpacing(float spacing) { border_spacing_ = spacing; }
+    float GetBorderSpacing() const { return border_spacing_; }
+    void SetBorderCollapse(bool collapse) { border_collapse_ = collapse; }
+    bool GetBorderCollapse() const { return border_collapse_; }
+
+private:
+    std::vector<float> column_widths_;
+    float border_spacing_ = 2.0f;  // CSS 默认值
+    bool border_collapse_ = false;
+};
+
+/**
+ * @brief 表格单元格渲染对象（display: table-cell）
+ *
+ * 用于 td, th 元素
+ */
+class RenderTableCell : public RenderObject {
+public:
+    RenderTableCell() : RenderObject(RenderObjectType::TABLE_CELL) {}
+
+    void Layout(float parent_width, float parent_height) override;
+    void Paint(SkCanvas* canvas) override;
+
+    // colspan 和 rowspan 支持
+    void SetColSpan(int span) { col_span_ = span; }
+    int GetColSpan() const { return col_span_; }
+
+    void SetRowSpan(int span) { row_span_ = span; }
+    int GetRowSpan() const { return row_span_; }
+
+private:
+    int col_span_ = 1;
+    int row_span_ = 1;
+};
+
+/**
+ * @brief 表格标题渲染对象（display: table-caption）
+ *
+ * 用于 caption 元素
+ */
+class RenderTableCaption : public RenderObject {
+public:
+    RenderTableCaption() : RenderObject(RenderObjectType::TABLE_CAPTION) {}
+
+    void Layout(float parent_width, float parent_height) override;
+    void Paint(SkCanvas* canvas) override;
 };
 
 } // namespace lightui

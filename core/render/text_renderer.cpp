@@ -335,8 +335,8 @@ std::vector<std::string> TextRenderer::WrapText(const std::string& text, float m
             continue;
         }
 
-        // 测量整段文本
-        float paragraph_width = MeasureTextWidth(paragraph, font);
+        // 测量整段文本 - 使用支持混合字体的测量方法
+        float paragraph_width = MeasureTextWidthWithEmoji(paragraph, font);
 
         if (paragraph_width <= max_width) {
             // 整段文本可以放在一行
@@ -344,23 +344,44 @@ std::vector<std::string> TextRenderer::WrapText(const std::string& text, float m
             continue;
         }
 
-        // 需要换行
+        // 需要换行 - 逐字符处理以支持中文
         std::string current_line;
-        std::istringstream word_stream(paragraph);
-        std::string word;
+        float current_width = 0.0f;
+        const char* str = paragraph.c_str();
+        size_t len = paragraph.size();
+        size_t pos = 0;
 
-        while (word_stream >> word) {
-            std::string test_line = current_line.empty() ? word : current_line + " " + word;
-            float test_width = MeasureTextWidth(test_line, font);
+        while (pos < len) {
+            // 解码UTF-8字符
+            auto [codepoint, bytes] = DecodeUTF8Char(str + pos, len - pos);
+            if (bytes == 0) break;
 
-            if (test_width <= max_width) {
-                current_line = test_line;
-            } else {
-                if (!current_line.empty()) {
+            std::string char_str(str + pos, bytes);
+            // 使用支持混合字体的测量方法
+            float char_width = MeasureTextWidthWithEmoji(char_str, font);
+
+            // 检查是否是空格（用于单词边界）
+            bool is_space = (codepoint == ' ' || codepoint == '\t');
+
+            // 检查添加这个字符后是否会超出宽度
+            if (current_width + char_width > max_width && !current_line.empty()) {
+                // 当前行已满，保存并开始新行
+                // 如果当前字符是空格，跳过它（不要在新行开头放空格）
+                if (!is_space) {
                     lines.push_back(current_line);
+                    current_line = char_str;
+                    current_width = char_width;
+                } else {
+                    lines.push_back(current_line);
+                    current_line.clear();
+                    current_width = 0.0f;
                 }
-                current_line = word;
+            } else {
+                current_line += char_str;
+                current_width += char_width;
             }
+
+            pos += bytes;
         }
 
         if (!current_line.empty()) {
