@@ -2,10 +2,26 @@
 
 set(LAYOUT_SOURCES
     layout_engine.cpp
+    # IFC (Inline Formatting Context) 模块
+    text_run.cpp
+    inline_box.cpp
+    line_box.cpp
+    inline_formatting_context.cpp
+    line_breaker.cpp
+    vertical_aligner.cpp
+    ifc_layout.cpp
 )
 
 set(LAYOUT_HEADERS
     layout_engine.h
+    # IFC (Inline Formatting Context) 模块
+    text_run.h
+    inline_box.h
+    line_box.h
+    inline_formatting_context.h
+    line_breaker.h
+    vertical_aligner.h
+    ifc_layout.h
 )
 
 add_library(lightui_layout STATIC ${LAYOUT_SOURCES})

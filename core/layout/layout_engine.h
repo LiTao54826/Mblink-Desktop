@@ -2,6 +2,7 @@
 #define LIGHTUI_LAYOUT_ENGINE_H
 
 #include <unordered_map>
+#include <unordered_set>
 #include <memory>
 #include <cstdint>
 #include <string>
@@ -12,6 +13,9 @@
 extern "C" {
 #include "taffy.h"
 }
+
+// IFC (Inline Formatting Context)
+#include "ifc_layout.h"
 
 // Forward declarations
 namespace lightui {
@@ -103,6 +107,12 @@ private:
 
     // Cached root render object (weak_ptr to avoid circular reference)
     std::weak_ptr<RenderObject> cached_root_;
+
+    // IFC (Inline Formatting Context) 布局器
+    IFCLayout ifc_layout_;
+
+    // 记录使用 IFC 布局的容器
+    std::unordered_set<RenderObject*> ifc_containers_;
 
     /**
      * @brief Create a Taffy node for a render object

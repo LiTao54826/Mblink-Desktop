@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>IFC Layout Comparison Test</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: Arial, sans-serif;
+            font-size: 16px;
+            line-height: 1.5;
+            padding: 20px;
+        }
+        .test-section {
+            margin-bottom: 30px;
+            border: 1px solid #ccc;
+            padding: 10px;
+        }
+        .test-title {
+            font-weight: bold;
+            margin-bottom: 10px;
+            color: #333;
+        }
+        .test-container {
+            background: #f0f0f0;
+            position: relative;
+        }
+
+        /* ========== Test Case 1: Basic Text Flow ========== */
+        #test1 .content {
+            width: 300px;
+        }
+        #test1 span {
+            background: rgba(255, 200, 200, 0.5);
+        }
+
+        /* ========== Test Case 2: Text Wrap ========== */
+        #test2 .content {
+            width: 200px;
+        }
+        #test2 span {
+            background: rgba(200, 255, 200, 0.5);
+        }
+
+        /* ========== Test Case 3: Inline Elements ========== */
+        #test3 .content {
+            width: 300px;
+        }
+        #test3 .inline-item {
+            display: inline;
+            padding: 2px 5px;
+            margin: 0 3px;
+            background: rgba(200, 200, 255, 0.5);
+            border: 1px solid #888;
+        }
+
+        /* ========== Test Case 4: Inline-Block ========== */
+        #test4 .content {
+            width: 300px;
+        }
+        #test4 .inline-block-item {
+            display: inline-block;
+            width: 80px;
+            height: 40px;
+            background: rgba(255, 255, 200, 0.5);
+            border: 1px solid #888;
+            vertical-align: middle;
+        }
+
+        /* ========== Test Case 5: Vertical Align ========== */
+        #test5 .content {
+            width: 400px;
+            line-height: 60px;
+            background: #e0e0e0;
+        }
+        #test5 .va-top { vertical-align: top; background: #fcc; }
+        #test5 .va-middle { vertical-align: middle; background: #cfc; }
+        #test5 .va-bottom { vertical-align: bottom; background: #ccf; }
+        #test5 .va-baseline { vertical-align: baseline; background: #ffc; }
+        #test5 span {
+            display: inline-block;
+            width: 50px;
+            height: 30px;
+            margin: 0 5px;
+        }
+
+        /* ========== Test Case 6: Text Indent ========== */
+        #test6 .content {
+            width: 300px;
+            text-indent: 40px;
+        }
+        #test6 span {
+            background: rgba(255, 200, 255, 0.5);
+        }
+
+        /* ========== Test Case 7: Letter Spacing ========== */
+        #test7 .content {
+            width: 300px;
+            letter-spacing: 5px;
+        }
+        #test7 span {
+            background: rgba(200, 255, 255, 0.5);
+        }
+
+        /* ========== Test Case 8: Word Spacing ========== */
+        #test8 .content {
+            width: 300px;
+            word-spacing: 20px;
+        }
+        #test8 span {
+            background: rgba(255, 220, 200, 0.5);
+        }
+
+        /* ========== Test Case 9: Text Align ========== */
+        #test9 .content {
+            width: 300px;
+        }
+        #test9 .align-left { text-align: left; background: #fee; }
+        #test9 .align-center { text-align: center; background: #efe; }
+        #test9 .align-right { text-align: right; background: #eef; }
+
+        /* ========== Test Case 10: White Space ========== */
+        #test10 .content {
+            width: 200px;
+        }
+        #test10 .ws-normal { white-space: normal; background: #fee; }
+        #test10 .ws-nowrap { white-space: nowrap; background: #efe; }
+        #test10 .ws-pre { white-space: pre; background: #eef; }
+
+        /* ========== Test Case 11: Mixed Content ========== */
+        #test11 .content {
+            width: 350px;
+        }
+        #test11 img {
+            width: 50px;
+            height: 50px;
+            background: #888;
+            vertical-align: middle;
+        }
+        #test11 span {
+            background: rgba(255, 200, 200, 0.5);
+        }
+
+        /* ========== Test Case 12: Nested Inline ========== */
+        #test12 .content {
+            width: 300px;
+        }
+        #test12 .outer {
+            display: inline;
+            background: rgba(255, 200, 200, 0.3);
+            padding: 2px;
+            border: 1px solid #c88;
+        }
+        #test12 .inner {
+            display: inline;
+            background: rgba(200, 255, 200, 0.5);
+            padding: 2px;
+            border: 1px solid #8c8;
+        }
+    </style>
+</head>
+<body>
+    <!-- Test Case 1: Basic Text Flow -->
+    <div class="test-section" id="test1">
+        <div class="test-title">Test 1: Basic Text Flow</div>
+        <div class="test-container">
+            <div class="content" data-test="test1-content">
+                <span data-test="test1-span">Hello World</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Test Case 2: Text Wrap -->
+    <div class="test-section" id="test2">
+        <div class="test-title">Test 2: Text Wrap</div>
+        <div class="test-container">
+            <div class="content" data-test="test2-content">
+                <span data-test="test2-span">This is a long text that should wrap to multiple lines</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Test Case 3: Inline Elements -->
+    <div class="test-section" id="test3">
+        <div class="test-title">Test 3: Inline Elements with Margin/Padding</div>
+        <div class="test-container">
+            <div class="content" data-test="test3-content">
+                <span class="inline-item" data-test="test3-item1">Item 1</span>
+                <span class="inline-item" data-test="test3-item2">Item 2</span>
+                <span class="inline-item" data-test="test3-item3">Item 3</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Test Case 4: Inline-Block -->
+    <div class="test-section" id="test4">
+        <div class="test-title">Test 4: Inline-Block Elements</div>
+        <div class="test-container">
+            <div class="content" data-test="test4-content">
+                <div class="inline-block-item" data-test="test4-item1">Box 1</div>
+                <div class="inline-block-item" data-test="test4-item2">Box 2</div>
+                <div class="inline-block-item" data-test="test4-item3">Box 3</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Test Case 5: Vertical Align -->
+    <div class="test-section" id="test5">
+        <div class="test-title">Test 5: Vertical Alignment</div>
+        <div class="test-container">
+            <div class="content" data-test="test5-content">
+                <span class="va-top" data-test="test5-top">Top</span>
+                <span class="va-middle" data-test="test5-middle">Mid</span>
+                <span class="va-bottom" data-test="test5-bottom">Bot</span>
+                <span class="va-baseline" data-test="test5-baseline">Base</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Test Case 6: Text Indent -->
+    <div class="test-section" id="test6">
+        <div class="test-title">Test 6: Text Indent (40px)</div>
+        <div class="test-container">
+            <div class="content" data-test="test6-content">
+                <span data-test="test6-span">This paragraph has a 40px text indent on the first line. The second line should start from the left edge.</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Test Case 7: Letter Spacing -->
+    <div class="test-section" id="test7">
+        <div class="test-title">Test 7: Letter Spacing (5px)</div>
+        <div class="test-container">
+            <div class="content" data-test="test7-content">
+                <span data-test="test7-span">LETTER SPACING TEST</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Test Case 8: Word Spacing -->
+    <div class="test-section" id="test8">
+        <div class="test-title">Test 8: Word Spacing (20px)</div>
+        <div class="test-container">
+            <div class="content" data-test="test8-content">
+                <span data-test="test8-span">Word spacing test with multiple words</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Test Case 9: Text Align -->
+    <div class="test-section" id="test9">
+        <div class="test-title">Test 9: Text Alignment</div>
+        <div class="test-container">
+            <div class="content">
+                <div class="align-left" data-test="test9-left">Left aligned text</div>
+                <div class="align-center" data-test="test9-center">Center aligned text</div>
+                <div class="align-right" data-test="test9-right">Right aligned text</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Test Case 10: White Space -->
+    <div class="test-section" id="test10">
+        <div class="test-title">Test 10: White Space Handling</div>
+        <div class="test-container">
+            <div class="content">
+                <div class="ws-normal" data-test="test10-normal">Normal:   multiple   spaces</div>
+                <div class="ws-nowrap" data-test="test10-nowrap">Nowrap: text that should not wrap to next line</div>
+                <div class="ws-pre" data-test="test10-pre">Pre:   keeps   spaces</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Test Case 11: Mixed Content -->
+    <div class="test-section" id="test11">
+        <div class="test-title">Test 11: Mixed Text and Images</div>
+        <div class="test-container">
+            <div class="content" data-test="test11-content">
+                <span data-test="test11-text1">Text before</span>
+                <img data-test="test11-img" src="data:image/png;base64,iVBORw0KGgo=" alt="img">
+                <span data-test="test11-text2">Text after image</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Test Case 12: Nested Inline -->
+    <div class="test-section" id="test12">
+        <div class="test-title">Test 12: Nested Inline Elements</div>
+        <div class="test-container">
+            <div class="content" data-test="test12-content">
+                <span class="outer" data-test="test12-outer">
+                    Outer start
+                    <span class="inner" data-test="test12-inner">Inner content</span>
+                    Outer end
+                </span>
+            </div>
+        </div>
+    </div>
+
+    <script src="layout_extractor.js"></script>
+</body>
+</html>
+

@@ -367,6 +367,7 @@ void LayoutEngine::RemoveElement(RenderObject* render_obj) {
 void LayoutEngine::Clear() {
     element_to_node_.clear();
     node_to_element_.clear();
+    ifc_containers_.clear();
     has_root_ = false;
 
     // TODO: Clear Taffy tree
@@ -1114,18 +1115,53 @@ void LayoutEngine::BuildSubtree(RenderObject* render_obj, TaffyNodeId parent_nod
         return;
     }
 
-    // Recursively build children
+    // Check if this BLOCK element has only inline content (use IFC)
     auto& children = render_obj->GetChildren();
+    const auto& computed_style = render_obj->GetComputedStyle();
+    bool is_already_flex_or_grid = (computed_style.display == RenderObjectType::FLEX ||
+                                    computed_style.display == RenderObjectType::GRID);
+
+    if (type == RenderObjectType::BLOCK && !is_already_flex_or_grid && !children.empty()) {
+        bool has_inline_content = false;
+        bool has_block_content = false;
+
+        // Check computed display style to determine layout
+        for (auto& child : children) {
+            RenderObjectType child_type = child->GetType();
+            RenderObjectType child_display = child->GetComputedStyle().display;
+
+            if (child_type == RenderObjectType::TEXT) {
+                has_inline_content = true;
+            } else if (child_display == RenderObjectType::INLINE ||
+                       child_display == RenderObjectType::INLINE_BLOCK) {
+                has_inline_content = true;
+            } else if (child_display == RenderObjectType::BLOCK ||
+                       child_display == RenderObjectType::FLEX ||
+                       child_display == RenderObjectType::GRID ||
+                       child_display == RenderObjectType::TABLE) {
+                has_block_content = true;
+            }
+        }
+
+        // If we have ONLY inline content, use IFC for layout
+        // Don't add children to Taffy tree - IFC will handle them
+        if (has_inline_content && !has_block_content) {
+            ifc_containers_.insert(render_obj);
+            // Don't add children to Taffy - IFC will layout them
+            return;
+        }
+
+        // If we have mixed content (inline + block), still use Taffy
+        // but set block children to 100% width after building subtree
+    }
+
+    // Recursively build children
     for (auto& child : children) {
         BuildSubtree(child.get(), node);
     }
 
     // After all children are created, set block-level children width to 100%
     // This must be done here because children are now in element_to_node_ map
-    const auto& computed_style = render_obj->GetComputedStyle();
-    bool is_already_flex_or_grid = (computed_style.display == RenderObjectType::FLEX ||
-                                    computed_style.display == RenderObjectType::GRID);
-
     if (type == RenderObjectType::BLOCK && !is_already_flex_or_grid) {
         bool has_inline_content = false;
         bool has_block_content = false;
@@ -1212,6 +1248,60 @@ void LayoutEngine::ReadLayoutResults(RenderObject* render_obj) {
     }
 
     info.is_laid_out = true;
+
+    // Check if this is an IFC container (BLOCK with only inline content)
+    if (ifc_containers_.find(render_obj) != ifc_containers_.end()) {
+        // Use IFC to layout inline content
+        float content_width = info.width;
+        float content_height = info.height;
+
+        // Get padding
+        float padding_left = style.padding.left.ToPx(info.width, style.font_size);
+        float padding_right = style.padding.right.ToPx(info.width, style.font_size);
+        float padding_top = style.padding.top.ToPx(info.height, style.font_size);
+        float padding_bottom = style.padding.bottom.ToPx(info.height, style.font_size);
+
+        // Get border widths
+        float border_left = style.border_left_width;
+        float border_right = style.border_right_width;
+        float border_top = style.border_top_width;
+        float border_bottom = style.border_bottom_width;
+        if (border_left == 0 && border_right == 0 && border_top == 0 && border_bottom == 0) {
+            float border_width = style.border.width.ToPx(info.width, style.font_size);
+            border_left = border_right = border_top = border_bottom = border_width;
+        }
+
+        // Calculate available width for IFC
+        float available_width = content_width - padding_left - padding_right - border_left - border_right;
+
+        // Perform IFC layout
+        IFCLayoutResult ifc_result = ifc_layout_.Layout(render_obj, available_width);
+
+        // Apply IFC layout results to children
+        // The IFC layout positions are relative to the content area
+        float offset_x = padding_left + border_left;
+        float offset_y = padding_top + border_top;
+
+        // Update child positions based on IFC results
+        auto& children = render_obj->GetChildren();
+        for (auto& child : children) {
+            LayoutInfo& child_info = child->GetLayoutInfo();
+            child_info.x += offset_x;
+            child_info.y += offset_y;
+            child_info.is_laid_out = true;
+        }
+
+        // Update container height if auto
+        if (style.height.unit == CSSUnit::AUTO) {
+            float required_height = ifc_result.total_height + padding_top + padding_bottom + border_top + border_bottom;
+            if (required_height > info.height) {
+                info.height = required_height;
+            }
+        }
+
+        // Don't recurse into children - IFC already handled them
+        return;
+    }
 
     // For INLINE_BLOCK and INLINE elements, their children are not in Taffy tree.
     // We need to layout their children manually.

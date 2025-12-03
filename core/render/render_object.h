@@ -88,6 +88,11 @@ struct ComputedStyle {
     std::string text_align;   // left, center, right, justify
     std::string text_decoration; // none, underline, line-through
     float line_height = 1.2f;
+
+    // 文本间距和缩进
+    CSSLength text_indent;           // 首行缩进
+    CSSLength letter_spacing;        // 字符间距
+    CSSLength word_spacing;          // 单词间距
     
     // 阴影
     std::vector<CSSBoxShadow> box_shadow;

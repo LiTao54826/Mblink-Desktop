@@ -365,16 +365,62 @@ const ifcTests = [
 
 ## 时间表
 
-| 阶段 | 预计时间 | 依赖 |
-|------|---------|------|
-| Phase 1: 核心数据结构 | 3-5 天 | 无 |
-| Phase 2: 断行算法 | 5-7 天 | Phase 1 |
-| Phase 3: 行盒布局 | 4-5 天 | Phase 1, 2 |
-| Phase 4: Taffy 集成 | 3-4 天 | Phase 1, 2, 3 |
-| Phase 5: 高级特性 | 5-7 天 | Phase 4 |
-| Phase 6: 优化测试 | 3-5 天 | Phase 5 |
+| 阶段 | 预计时间 | 依赖 | 状态 |
+|------|---------|------|------|
+| Phase 1: 核心数据结构 | 3-5 天 | 无 | ✅ 已完成 |
+| Phase 2: 断行算法 | 5-7 天 | Phase 1 | ✅ 已完成 |
+| Phase 3: 行盒布局 | 4-5 天 | Phase 1, 2 | ✅ 已完成 |
+| Phase 4: Taffy 集成 | 3-4 天 | Phase 1, 2, 3 | ✅ 已完成 |
+| Phase 5: 单元测试 | 2-3 天 | Phase 4 | ✅ 已完成 |
+| Phase 6: 高级特性 | 5-7 天 | Phase 5 | ✅ 已完成 |
+| Phase 7: 优化测试 | 3-5 天 | Phase 6 | ✅ 已完成 |
 
-**总计: 23-33 天 (约 4-6 周)**
+**总计: 23-33 天 (约 4-6 周) - 全部完成！**
+
+### 已完成的工作
+
+**2024-12-03 完成：**
+
+1. **核心数据结构** (`core/layout/`)
+   - `text_run.h/cpp` - 文本片段结构
+   - `inline_box.h/cpp` - 内联盒结构
+   - `line_box.h/cpp` - 行盒结构
+   - `inline_formatting_context.h/cpp` - IFC 主类
+
+2. **断行算法**
+   - `line_breaker.h/cpp` - 断行器，支持 Unicode 断行
+   - 支持 `white-space`, `word-break`, `overflow-wrap`
+
+3. **垂直对齐**
+   - `vertical_aligner.h/cpp` - 垂直对齐器
+   - 支持 baseline, top, middle, bottom 等对齐方式
+
+4. **集成入口**
+   - `ifc_layout.h/cpp` - IFC 布局统一入口
+   - 已集成到 `LayoutEngine`
+
+5. **单元测试**
+   - `tests/unit/test_ifc.cpp` - 18 个测试用例全部通过
+
+6. **高级特性** (Phase 7)
+   - `text-indent` - 首行缩进支持
+   - `letter-spacing` - 字符间距支持
+   - `word-spacing` - 单词间距支持
+   - `text-decoration` - 文本装饰（underline, line-through）已在渲染层实现
+   - 新增 4 个高级特性测试用例
+
+7. **性能优化** (Phase 8)
+   - 布局缓存系统 - 缓存已计算的行盒结果
+   - 增量布局 - 基于内容版本号的缓存失效机制
+   - 新增 2 个性能测试用例，共 24 个测试全部通过
+
+8. **浏览器比较测试** (Phase 9)
+   - 创建 12 个 IFC 测试用例 HTML 文件
+   - 浏览器端 JavaScript 布局提取脚本
+   - MBink 端 C++ 测试应用
+   - Python 比较工具，支持容差比较
+   - 修复了内联元素边界计算问题
+   - 修复了 inline-block 尺寸从 CSS 样式读取问题
 
 ---
 
@@ -382,8 +428,57 @@ const ifcTests = [
 
 1. **Unicode 复杂性** - 断行算法需要处理各种语言
 2. **性能** - 大量文本时的布局性能
-3. **边缘情况** - 浏览器有很多历史遗留行为
-4. **BiDi 支持** - 双向文本处理复杂
+3. **BiDi 支持** - 双向文本处理复杂
+
+---
+
+## 设计决策：现代模式（无浏览器历史包袱）
+
+### 背景
+
+浏览器有很多历史遗留行为，这些行为虽然不直观，但为了向后兼容而保留。
+MBink 作为轻量级桌面应用框架（不是浏览器），采用**仅现代模式**策略。
+
+### 浏览器历史行为 vs MBink 现代行为
+
+| 行为 | 浏览器（历史） | MBink（现代） |
+|------|---------------|---------------|
+| **Strut（支柱）** | 每行有不可见支柱，高度=父元素 line-height | 无 strut，行高完全由内容决定 |
+| **vertical-align: middle** | 对齐到 x-height 中点（不直观） | 真正的垂直居中 |
+| **line-height 继承** | `150%` 继承计算值，`1.5` 继承乘数 | 统一继承乘数（相对于当前 font-size） |
+| **inline-block 基线** | 空元素在底部，有内容在最后一行文本基线 | 统一：有文本用文本基线，无文本用底部 |
+| **空白折叠** | 规则复杂，场景不同行为不同 | 简化：合并连续空白，删除首尾空白 |
+
+### 现代模式具体实现
+
+```cpp
+// 1. 无 Strut：行高完全由内容决定
+line_height = max(child.height for child in line);
+
+// 2. vertical-align: middle 真正居中
+child.y = (line_height - child.height) / 2;
+
+// 3. line-height 统一继承乘数
+actual_line_height = current_font_size * line_height_multiplier;
+
+// 4. inline-block 基线统一
+baseline = has_text_content ? last_line_text_baseline : box_bottom;
+
+// 5. 简化空白处理
+// - 连续空白合并为一个空格
+// - 换行符视为空格
+// - 行首行尾空白删除
+```
+
+### 选择理由
+
+1. **MBink 不是浏览器** - 目标是开发新应用，不需要渲染现有网页
+2. **React/Preact 生态** - 现代框架很少依赖浏览器怪癖
+3. **开发效率** - 减少 50%+ 的代码和测试工作量
+4. **用户体验** - 开发者不需要学习浏览器的历史包袱
+5. **可预测性** - 布局行为直观，调试更容易
+
+---
 
 ## 参考资料
 

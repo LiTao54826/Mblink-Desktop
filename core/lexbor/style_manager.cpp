@@ -8,6 +8,7 @@
 #include "core/dom/document.h"
 #include <algorithm>
 #include <sstream>
+#include <vector>
 
 namespace lightui {
 
@@ -162,10 +163,10 @@ bool StyleManager::MatchesSelector(const std::string& selector, Element* element
     if (!element || selector.empty()) {
         return false;
     }
-    
+
     // 简化的选择器匹配实现
-    // 支持：标签选择器、类选择器、ID选择器
-    
+    // 支持：标签选择器、类选择器、ID选择器、后代选择器
+
     std::string trimmed_selector = selector;
     // 去除前后空格
     size_t start = trimmed_selector.find_first_not_of(" \t\n\r");
@@ -173,36 +174,89 @@ bool StyleManager::MatchesSelector(const std::string& selector, Element* element
     if (start != std::string::npos && end != std::string::npos) {
         trimmed_selector = trimmed_selector.substr(start, end - start + 1);
     }
-    
+
+    // 检查是否是后代选择器（包含空格）
+    size_t space_pos = trimmed_selector.find(' ');
+    if (space_pos != std::string::npos) {
+        // 后代选择器：从右向左匹配
+        // 例如 "#test4 .inline-block-item" 分解为 ["#test4", ".inline-block-item"]
+        std::vector<std::string> parts;
+        std::istringstream iss(trimmed_selector);
+        std::string part;
+        while (iss >> part) {
+            if (!part.empty()) {
+                parts.push_back(part);
+            }
+        }
+
+        if (parts.empty()) {
+            return false;
+        }
+
+        // 最后一个选择器必须匹配当前元素
+        if (!MatchesSimpleSelector(parts.back(), element)) {
+            return false;
+        }
+
+        // 从右向左检查祖先元素
+        if (parts.size() > 1) {
+            auto parent_node = element->GetParentNode();
+            Element* ancestor = dynamic_cast<Element*>(parent_node.get());
+            int part_index = static_cast<int>(parts.size()) - 2;
+
+            while (ancestor && part_index >= 0) {
+                if (MatchesSimpleSelector(parts[part_index], ancestor)) {
+                    part_index--;
+                }
+                parent_node = ancestor->GetParentNode();
+                ancestor = dynamic_cast<Element*>(parent_node.get());
+            }
+
+            // 所有部分都必须匹配
+            return part_index < 0;
+        }
+
+        return true;
+    }
+
+    // 简单选择器匹配
+    return MatchesSimpleSelector(trimmed_selector, element);
+}
+
+bool StyleManager::MatchesSimpleSelector(const std::string& selector, Element* element) const {
+    if (!element || selector.empty()) {
+        return false;
+    }
+
     // ID选择器 (#id)
-    if (trimmed_selector[0] == '#') {
-        std::string id = trimmed_selector.substr(1);
+    if (selector[0] == '#') {
+        std::string id = selector.substr(1);
         return element->GetAttribute("id") == id;
     }
-    
+
     // 类选择器 (.class)
-    if (trimmed_selector[0] == '.') {
-        std::string class_name = trimmed_selector.substr(1);
+    if (selector[0] == '.') {
+        std::string class_name = selector.substr(1);
         return element->HasClass(class_name);
     }
-    
+
     // 标签选择器 (tag)
     // 处理复合选择器（如 div.container）
-    size_t dot_pos = trimmed_selector.find('.');
-    size_t hash_pos = trimmed_selector.find('#');
-    
+    size_t dot_pos = selector.find('.');
+    size_t hash_pos = selector.find('#');
+
     if (dot_pos != std::string::npos || hash_pos != std::string::npos) {
         // 复合选择器：先匹配标签
         size_t sep_pos = (dot_pos != std::string::npos) ? dot_pos : hash_pos;
-        std::string tag = trimmed_selector.substr(0, sep_pos);
-        
+        std::string tag = selector.substr(0, sep_pos);
+
         if (!tag.empty() && element->GetTagName() != tag) {
             return false;
         }
-        
+
         // 再匹配类或ID
         if (dot_pos != std::string::npos) {
-            std::string class_name = trimmed_selector.substr(dot_pos + 1);
+            std::string class_name = selector.substr(dot_pos + 1);
             // 移除可能的ID部分
             size_t hash_in_class = class_name.find('#');
             if (hash_in_class != std::string::npos) {
@@ -212,19 +266,19 @@ bool StyleManager::MatchesSelector(const std::string& selector, Element* element
                 return false;
             }
         }
-        
+
         if (hash_pos != std::string::npos) {
-            std::string id = trimmed_selector.substr(hash_pos + 1);
+            std::string id = selector.substr(hash_pos + 1);
             if (element->GetAttribute("id") != id) {
                 return false;
             }
         }
-        
+
         return true;
     }
-    
+
     // 简单标签选择器
-    return element->GetTagName() == trimmed_selector;
+    return element->GetTagName() == selector;
 }
 
 std::map<std::string, std::string> StyleManager::ParseDeclarations(const std::string& declarations) const {

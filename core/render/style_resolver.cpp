@@ -30,7 +30,11 @@ StyleResolver::StyleResolver() {
         "line-height",
         "text-align",
         "text-decoration",
-        "opacity"
+        "opacity",
+        "letter-spacing",
+        "word-spacing",
+        "text-indent",
+        "white-space"
     };
 }
 
@@ -1057,6 +1061,12 @@ void StyleResolver::ApplyInheritance(ComputedStyle& style, const ComputedStyle* 
     style.line_height = parent_style->line_height;
     style.text_align = parent_style->text_align;
     // text_decoration 不继承 - 保持默认值 "none"
+
+    // 继承文本间距相关属性
+    style.letter_spacing = parent_style->letter_spacing;
+    style.word_spacing = parent_style->word_spacing;
+    style.text_indent = parent_style->text_indent;
+    style.white_space = parent_style->white_space;
 }
 
 void StyleResolver::ParseStyleProperty(ComputedStyle& style,
@@ -1325,6 +1335,23 @@ void StyleResolver::ParseStyleProperty(ComputedStyle& style,
     }
     else if (property == "text-decoration") {
         style.text_decoration = resolved_value;
+    }
+    else if (property == "text-indent") {
+        style.text_indent = CSSValue::ParseLength(resolved_value);
+    }
+    else if (property == "letter-spacing") {
+        if (resolved_value == "normal") {
+            style.letter_spacing = CSSLength(0, CSSUnit::PX);
+        } else {
+            style.letter_spacing = CSSValue::ParseLength(resolved_value);
+        }
+    }
+    else if (property == "word-spacing") {
+        if (resolved_value == "normal") {
+            style.word_spacing = CSSLength(0, CSSUnit::PX);
+        } else {
+            style.word_spacing = CSSValue::ParseLength(resolved_value);
+        }
     }
     else if (property == "line-height") {
         // line-height 可以是：
@@ -2080,6 +2107,11 @@ std::shared_ptr<RenderObject> RenderTreeBuilder::CreateRenderObjectForText(
         text_style.text_align = parent_style->text_align;
         text_style.text_decoration = parent_style->text_decoration;
         text_style.vertical_align = parent_style->vertical_align;
+        // 继承文本间距相关属性
+        text_style.letter_spacing = parent_style->letter_spacing;
+        text_style.word_spacing = parent_style->word_spacing;
+        text_style.text_indent = parent_style->text_indent;
+        text_style.white_space = parent_style->white_space;
         // 继承 CSS 变量
         text_style.css_variables.InheritFrom(&parent_style->css_variables);
     }

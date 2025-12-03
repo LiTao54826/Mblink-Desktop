@@ -1685,3 +1685,49 @@ set_target_properties(test_memory_stress PROPERTIES
 )
 
 add_test(NAME MemoryStressTest COMMAND test_memory_stress)
+
+# ============================================================================
+# IFC (Inline Formatting Context) Tests
+# ============================================================================
+
+# IFC Unit Test
+add_executable(test_ifc unit/test_ifc.cpp)
+
+target_include_directories(test_ifc PRIVATE
+    ${CMAKE_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/core
+)
+
+target_link_libraries(test_ifc PRIVATE
+    lightui_layout
+    lightui_render
+    GTest::gtest
+    GTest::gtest_main
+)
+
+# Link Skia if available
+if(TARGET skia)
+    target_link_libraries(test_ifc PRIVATE skia)
+
+    if(MSVC)
+        target_compile_options(test_ifc PRIVATE
+            $<$<CONFIG:Debug>:/MT>
+            $<$<CONFIG:Release>:/MT>
+        )
+        target_compile_definitions(test_ifc PRIVATE
+            $<$<CONFIG:Debug>:_ITERATOR_DEBUG_LEVEL=0>
+        )
+    endif()
+endif()
+
+if(WIN32 AND MINGW)
+    target_link_options(test_ifc PRIVATE -static-libgcc -static-libstdc++)
+endif()
+
+add_test(NAME IFCTest COMMAND test_ifc)
+
+# ============================================================================
+# Layout Comparison Tests
+# ============================================================================
+
+add_subdirectory(layout_comparison)

@@ -134,13 +134,21 @@ public:
     
 private:
     /**
-     * @brief 检查选择器是否匹配元素
+     * @brief 检查选择器是否匹配元素（支持后代选择器）
      * @param selector 选择器字符串
      * @param element 元素
      * @return 是否匹配
      */
     bool MatchesSelector(const std::string& selector, Element* element) const;
-    
+
+    /**
+     * @brief 检查简单选择器是否匹配元素（不支持后代选择器）
+     * @param selector 简单选择器字符串
+     * @param element 元素
+     * @return 是否匹配
+     */
+    bool MatchesSimpleSelector(const std::string& selector, Element* element) const;
+
     /**
      * @brief 解析CSS声明块
      * @param declarations CSS声明字符串（如 "color: red; font-size: 14px;"）
