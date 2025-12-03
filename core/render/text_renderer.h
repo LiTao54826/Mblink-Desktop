@@ -154,6 +154,14 @@ public:
      */
     float MeasureTextWidthWithEmoji(const std::string& text, const SkFont& font);
 
+    /**
+     * @brief 静态方法：测量包含emoji/CJK的文本宽度
+     * @param text 文本内容
+     * @param font 主字体
+     * @return 文本宽度
+     */
+    static float MeasureMixedTextWidth(const std::string& text, const SkFont& font);
+
     // ========== 文本装饰 ==========
 
     /**

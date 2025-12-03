@@ -42,8 +42,11 @@ public:
     /**
      * @brief 获取value值
      * @return 当前值
+     *
+     * 如果 value_ 未设置且存在子文本节点，则从子节点获取初始值
+     * 符合浏览器行为：<textarea>text</textarea> 中的文本会成为初始值
      */
-    std::string GetValue() const { return value_; }
+    std::string GetValue() const;
     
     /**
      * @brief 设置value值
@@ -405,7 +408,8 @@ private:
      */
     void GetLineRange(int line, int& out_start, int& out_end) const;
 
-    std::string value_;             // 当前值
+    mutable std::string value_;             // 当前值
+    mutable bool value_initialized_;        // value_ 是否已初始化
     int selection_start_;           // 选择起始位置
     int selection_end_;             // 选择结束位置
     bool is_dragging_selection_;    // 是否正在拖动选择

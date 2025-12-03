@@ -36,6 +36,9 @@ set(RENDER_SOURCES
     css_filters.cpp
     animation_optimizer.cpp
     filter_cache.cpp
+    svg_path_parser.cpp
+    render_svg.cpp
+    select_dropdown.cpp
 )
 
 set(RENDER_HEADERS
@@ -75,6 +78,9 @@ set(RENDER_HEADERS
     animation_optimizer.h
     filter_cache.h
     object_pool.h
+    svg_path_parser.h
+    render_svg.h
+    select_dropdown.h
 )
 
 add_library(lightui_render STATIC ${RENDER_SOURCES})

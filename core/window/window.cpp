@@ -54,6 +54,7 @@
 #include "core/render/animation_controller.h"
 #include "core/layout/layout_engine.h"
 #include "core/render/color.h"
+#include "core/render/select_dropdown.h"
 
 namespace lightui {
 
@@ -1134,6 +1135,14 @@ void Window::RenderDocument() {
 
             // 绘制（使用逻辑坐标）
             cached_render_tree_->Paint(canvas);
+
+            // 更新并绘制 select 下拉菜单（在所有内容之上）
+            auto& dropdown_manager = SelectDropdownManager::Instance();
+            if (dropdown_manager.IsDropdownOpen()) {
+                // 滚动时更新下拉菜单位置
+                dropdown_manager.UpdatePositionFromRenderTree(cached_render_tree_);
+            }
+            dropdown_manager.Paint(canvas);
 
             canvas->restore();
         }

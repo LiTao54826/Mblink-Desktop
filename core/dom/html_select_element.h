@@ -204,22 +204,64 @@ public:
     void RemoveAttribute(const std::string& name) override;
     
     // ========== 内部方法 ==========
-    
+
     /**
      * @brief 当option的选中状态改变时调用
      * @param option 改变的option
      */
     void OnOptionSelectionChanged(std::shared_ptr<HTMLOptionElement> option);
-    
+
+    /**
+     * @brief 处理点击事件（切换下拉菜单或选择下一个选项）
+     */
+    void HandleClick();
+
+    /**
+     * @brief 检查下拉菜单是否打开
+     */
+    bool IsDropdownOpen() const { return is_dropdown_open_; }
+
+    /**
+     * @brief 设置下拉菜单打开状态
+     */
+    void SetDropdownOpen(bool open) { is_dropdown_open_ = open; }
+
+    /**
+     * @brief 选择下一个选项
+     */
+    void SelectNextOption();
+
+    /**
+     * @brief 选择上一个选项
+     */
+    void SelectPreviousOption();
+
+    /**
+     * @brief 获取当前悬停的选项索引
+     */
+    long GetHoveredIndex() const { return hovered_index_; }
+
+    /**
+     * @brief 设置悬停的选项索引
+     */
+    void SetHoveredIndex(long index) { hovered_index_ = index; }
+
+    /**
+     * @brief 选择悬停的选项并关闭下拉菜单
+     */
+    void SelectHoveredOption();
+
 private:
     // ========== 私有成员变量 ==========
-    
+
     bool disabled_ = false;           // 是否禁用
     bool multiple_ = false;           // 是否多选
     bool required_ = false;           // 是否必填
     unsigned long size_ = 0;          // 显示的选项数量（0表示默认）
     std::string name_;                // 表单提交时的名称
     std::string custom_validity_;     // 自定义验证消息
+    bool is_dropdown_open_ = false;   // 下拉菜单是否打开
+    long hovered_index_ = -1;         // 当前悬停的选项索引
     
     // ========== 辅助方法 ==========
     

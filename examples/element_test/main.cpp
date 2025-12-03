@@ -1,0 +1,257 @@
+/**
+ * @file main.cpp
+ * @brief Element Test - 测试剩余 HTML 元素渲染
+ *
+ * 测试元素: fieldset, legend, progress, meter, details, summary,
+ *          dialog, select, output, ruby, rt, rp, del, ins, bdo
+ */
+
+#include "core/window/window.h"
+#include "core/window/window_manager.h"
+#include "core/dom/document.h"
+#include "core/dom/element.h"
+#include "core/dom/dom_bindings.h"
+#include "core/quickjs/quickjs_runtime.h"
+#include "core/event/event_loop.h"
+#include "core/render/render_object.h"
+
+#include <iostream>
+#include <fstream>
+#include <sstream>
+#include <memory>
+#include <vector>
+#include <set>
+
+using namespace lightui;
+
+// 调试输出：打印渲染树中特定元素的布局信息
+void PrintRenderInfo(const std::shared_ptr<RenderObject>& render_obj,
+                     const std::set<std::string>& target_tags,
+                     int depth = 0) {
+    if (!render_obj) return;
+
+    auto node = render_obj->GetNode();
+    auto element = std::dynamic_pointer_cast<Element>(node);
+
+    if (element) {
+        std::string tag = element->GetTagName();
+        // 转小写
+        std::transform(tag.begin(), tag.end(), tag.begin(), ::tolower);
+
+        if (target_tags.find(tag) != target_tags.end()) {
+            const auto& layout = render_obj->GetLayoutInfo();
+            const auto& style = render_obj->GetComputedStyle();
+
+            std::cout << "\n[" << tag << "]" << std::endl;
+            std::cout << "  layout: x=" << layout.x << ", y=" << layout.y
+                      << ", w=" << layout.width << ", h=" << layout.height << std::endl;
+            std::cout << "  display: " << static_cast<int>(render_obj->GetType()) << std::endl;
+            std::cout << "  font-size: " << style.font_size << std::endl;
+            std::cout << "  text-decoration: " << style.text_decoration << std::endl;
+            std::cout << "  unicode-bidi: " << style.unicode_bidi << std::endl;
+            std::cout << "  direction: " << style.direction << std::endl;
+            std::cout << "  margin: " << style.margin.top.value << " "
+                      << style.margin.right.value << " "
+                      << style.margin.bottom.value << " "
+                      << style.margin.left.value << std::endl;
+            std::cout << "  padding: " << style.padding.top.value << " "
+                      << style.padding.right.value << " "
+                      << style.padding.bottom.value << " "
+                      << style.padding.left.value << std::endl;
+            std::cout << "  border-width: " << style.border.width.value << std::endl;
+        }
+    }
+
+    // 递归遍历子节点
+    for (const auto& child : render_obj->GetChildren()) {
+        PrintRenderInfo(child, target_tags, depth + 1);
+    }
+}
+
+// 读取文件内容
+std::string ReadFile(const std::string& path) {
+    std::ifstream file(path);
+    if (!file.is_open()) {
+        std::cerr << "Failed to open file: " << path << std::endl;
+        return "";
+    }
+
+    std::stringstream buffer;
+    buffer << file.rdbuf();
+    return buffer.str();
+}
+
+int main() {
+    try {
+        std::cout << "========================================" << std::endl;
+        std::cout << "  MBink Element Test" << std::endl;
+        std::cout << "========================================" << std::endl;
+        std::cout << std::endl;
+
+        // 1. 创建窗口
+        std::cout << "[1/7] Creating window..." << std::endl;
+        WindowConfig config;
+        config.title = "MBink Element Test";
+        config.width = 1200;
+        config.height = 900;
+        auto window = std::make_shared<Window>(config);
+        std::cout << "  ✓ Window created: " << config.width << "x" << config.height << std::endl;
+
+        // 注册窗口
+        auto& window_manager = WindowManager::Instance();
+        window_manager.RegisterWindow(window);
+        std::cout << "  ✓ Window registered" << std::endl;
+
+        // 2. 创建文档
+        std::cout << "[2/7] Creating document..." << std::endl;
+        auto document = std::make_shared<Document>();
+        document->Initialize();
+        std::cout << "  ✓ Document initialized" << std::endl;
+
+        // 3. 创建QuickJS运行时
+        std::cout << "[3/7] Creating QuickJS runtime..." << std::endl;
+        auto runtime = std::make_unique<QuickJSRuntime>();
+        JSContext* ctx = runtime->GetContext();
+        std::cout << "  ✓ QuickJS runtime created" << std::endl;
+
+        // 4. 初始化DOM绑定
+        std::cout << "[4/7] Initializing DOM bindings..." << std::endl;
+        DOMBindings::Init(ctx);
+        DOMBindings::SetGlobalDocument(ctx, document);
+        std::cout << "  ✓ DOM bindings initialized" << std::endl;
+
+        // 5. 创建body元素
+        std::cout << "[5/7] Creating body element..." << std::endl;
+        auto body = document->CreateElement("body");
+        body->SetAttribute("style", "overflow: auto;");
+        document->SetBody(body);
+        std::cout << "  ✓ Body element created with overflow: auto" << std::endl;
+
+        // 6. 加载Preact库
+        std::cout << "[6/7] Loading Preact library..." << std::endl;
+        std::vector<std::string> preact_paths = {
+            "../../examples/demo_html/js/preact/preact.js",
+            "../examples/demo_html/js/preact/preact.js",
+            "examples/demo_html/js/preact/preact.js",
+            "../../../examples/demo_html/js/preact/preact.js"
+        };
+        std::string preact_code;
+        for (const auto& path : preact_paths) {
+            preact_code = ReadFile(path);
+            if (!preact_code.empty()) {
+                std::cout << "  Found preact.js at: " << path << std::endl;
+                break;
+            }
+        }
+        if (preact_code.empty()) {
+            std::cerr << "Failed to load preact.js from any path" << std::endl;
+            return 1;
+        }
+        runtime->Eval(preact_code, "preact.js");
+        std::cout << "  ✓ Preact library loaded" << std::endl;
+
+        // 加载Hooks库
+        std::vector<std::string> hooks_paths = {
+            "../../examples/demo_html/js/preact/hooks.js",
+            "../examples/demo_html/js/preact/hooks.js",
+            "examples/demo_html/js/preact/hooks.js",
+            "../../../examples/demo_html/js/preact/hooks.js"
+        };
+        std::string hooks_code;
+        for (const auto& path : hooks_paths) {
+            hooks_code = ReadFile(path);
+            if (!hooks_code.empty()) {
+                std::cout << "  Found hooks.js at: " << path << std::endl;
+                break;
+            }
+        }
+        if (hooks_code.empty()) {
+            std::cerr << "Failed to load hooks.js from any path" << std::endl;
+            return 1;
+        }
+        runtime->Eval(hooks_code, "hooks.js");
+        std::cout << "  ✓ Hooks library loaded" << std::endl;
+
+        // 7. 加载并运行应用
+        std::cout << "[7/7] Loading Element Test application..." << std::endl;
+        std::vector<std::string> app_paths = {
+            "../../examples/demo_html/element_test/app.js",
+            "../examples/demo_html/element_test/app.js",
+            "examples/demo_html/element_test/app.js",
+            "../../../examples/demo_html/element_test/app.js"
+        };
+        std::string app_code;
+        for (const auto& path : app_paths) {
+            app_code = ReadFile(path);
+            if (!app_code.empty()) {
+                std::cout << "  Found app.js at: " << path << std::endl;
+                break;
+            }
+        }
+        if (app_code.empty()) {
+            std::cerr << "Failed to load app.js from any path" << std::endl;
+            return 1;
+        }
+        runtime->Eval(app_code, "app.js");
+        std::cout << "  ✓ Application loaded and rendered" << std::endl;
+
+        // 将文档关联到窗口并显示
+        window->SetDocument(document);
+        window->Show();
+
+        // 执行一次渲染以构建渲染树
+        window->RenderDocument();
+        window->SwapBuffers();
+
+        // 打印目标元素的渲染信息
+        std::cout << std::endl;
+        std::cout << "========================================" << std::endl;
+        std::cout << "  📊 Render Info (MBink)" << std::endl;
+        std::cout << "========================================" << std::endl;
+
+        std::set<std::string> target_tags = {"input"};
+        auto render_tree = window->GetCachedRenderTree();
+        if (render_tree) {
+            PrintRenderInfo(render_tree, target_tags);
+        } else {
+            std::cout << "  (No render tree available)" << std::endl;
+        }
+
+        std::cout << std::endl;
+        std::cout << "========================================" << std::endl;
+        std::cout << "  🚀 Element Test Started!" << std::endl;
+        std::cout << "========================================" << std::endl;
+        std::cout << std::endl;
+        std::cout << "  Close window to exit." << std::endl;
+        std::cout << std::endl;
+
+        // 创建事件循环
+        EventLoop event_loop;
+
+        // 设置渲染回调
+        event_loop.SetRenderCallback([window]() {
+            if (window->NeedsRepaint()) {
+                window->RenderDocument();
+                window->SwapBuffers();
+            }
+        });
+
+        // 运行事件循环
+        event_loop.Run();
+
+        std::cout << std::endl;
+        std::cout << "========================================" << std::endl;
+        std::cout << "  👋 Application Closed" << std::endl;
+        std::cout << "========================================" << std::endl;
+
+        // 清理
+        DOMBindings::Cleanup(ctx);
+
+        return 0;
+    }
+    catch (const std::exception& e) {
+        std::cerr << "Error: " << e.what() << std::endl;
+        return 1;
+    }
+}
+

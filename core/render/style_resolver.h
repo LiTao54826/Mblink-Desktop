@@ -121,6 +121,13 @@ private:
     void ApplyPseudoClassStyles(ComputedStyle& style, std::shared_ptr<Element> element);
 
     /**
+     * @brief 应用伪元素样式（::before, ::after）
+     * @param style 要应用样式的对象
+     * @param element 元素指针
+     */
+    void ApplyPseudoElementStyles(ComputedStyle& style, std::shared_ptr<Element> element);
+
+    /**
      * @brief 应用 CSS 规则（从 StyleManager）
      * @param style 要应用样式的对象
      * @param element 元素指针

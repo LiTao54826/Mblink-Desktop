@@ -157,35 +157,36 @@ void Color::InitNamedColors() {
         return;
     }
     
-    // CSS 命名颜色
-    named_colors_["black"] = SK_ColorBLACK;
-    named_colors_["white"] = SK_ColorWHITE;
-    named_colors_["red"] = SK_ColorRED;
-    named_colors_["green"] = SK_ColorGREEN;
-    named_colors_["blue"] = SK_ColorBLUE;
-    named_colors_["yellow"] = SK_ColorYELLOW;
-    named_colors_["cyan"] = SK_ColorCYAN;
-    named_colors_["magenta"] = SK_ColorMAGENTA;
-    named_colors_["gray"] = SK_ColorGRAY;
-    named_colors_["grey"] = SK_ColorGRAY;
-    named_colors_["darkgray"] = SK_ColorDKGRAY;
-    named_colors_["darkgrey"] = SK_ColorDKGRAY;
-    named_colors_["lightgray"] = SK_ColorLTGRAY;
-    named_colors_["lightgrey"] = SK_ColorLTGRAY;
+    // CSS 命名颜色（使用 CSS 标准颜色值）
+    named_colors_["black"] = SK_ColorBLACK;           // #000000
+    named_colors_["white"] = SK_ColorWHITE;           // #FFFFFF
+    named_colors_["red"] = SkColorSetRGB(255, 0, 0);  // #FF0000
+    named_colors_["green"] = SkColorSetRGB(0, 128, 0); // #008000 (CSS 标准 green，不是亮绿)
+    named_colors_["blue"] = SkColorSetRGB(0, 0, 255); // #0000FF
+    named_colors_["yellow"] = SK_ColorYELLOW;         // #FFFF00
+    named_colors_["cyan"] = SK_ColorCYAN;             // #00FFFF
+    named_colors_["magenta"] = SK_ColorMAGENTA;       // #FF00FF (同 fuchsia)
+    named_colors_["gray"] = SkColorSetRGB(128, 128, 128);   // #808080
+    named_colors_["grey"] = SkColorSetRGB(128, 128, 128);   // #808080
+    named_colors_["darkgray"] = SkColorSetRGB(169, 169, 169);   // #A9A9A9
+    named_colors_["darkgrey"] = SkColorSetRGB(169, 169, 169);   // #A9A9A9
+    named_colors_["lightgray"] = SkColorSetRGB(211, 211, 211);  // #D3D3D3
+    named_colors_["lightgrey"] = SkColorSetRGB(211, 211, 211);  // #D3D3D3
     named_colors_["transparent"] = SK_ColorTRANSPARENT;
-    
-    // 更多 CSS 颜色
-    named_colors_["orange"] = SkColorSetRGB(255, 165, 0);
-    named_colors_["purple"] = SkColorSetRGB(128, 0, 128);
-    named_colors_["pink"] = SkColorSetRGB(255, 192, 203);
-    named_colors_["brown"] = SkColorSetRGB(165, 42, 42);
-    named_colors_["navy"] = SkColorSetRGB(0, 0, 128);
-    named_colors_["teal"] = SkColorSetRGB(0, 128, 128);
-    named_colors_["olive"] = SkColorSetRGB(128, 128, 0);
-    named_colors_["lime"] = SkColorSetRGB(0, 255, 0);
-    named_colors_["aqua"] = SkColorSetRGB(0, 255, 255);
-    named_colors_["maroon"] = SkColorSetRGB(128, 0, 0);
-    named_colors_["silver"] = SkColorSetRGB(192, 192, 192);
+
+    // 更多 CSS 标准颜色
+    named_colors_["orange"] = SkColorSetRGB(255, 165, 0);   // #FFA500
+    named_colors_["purple"] = SkColorSetRGB(128, 0, 128);   // #800080
+    named_colors_["pink"] = SkColorSetRGB(255, 192, 203);   // #FFC0CB
+    named_colors_["brown"] = SkColorSetRGB(165, 42, 42);    // #A52A2A
+    named_colors_["navy"] = SkColorSetRGB(0, 0, 128);       // #000080
+    named_colors_["teal"] = SkColorSetRGB(0, 128, 128);     // #008080
+    named_colors_["olive"] = SkColorSetRGB(128, 128, 0);    // #808000
+    named_colors_["lime"] = SkColorSetRGB(0, 255, 0);       // #00FF00 (亮绿色)
+    named_colors_["aqua"] = SkColorSetRGB(0, 255, 255);     // #00FFFF (同 cyan)
+    named_colors_["maroon"] = SkColorSetRGB(128, 0, 0);     // #800000
+    named_colors_["silver"] = SkColorSetRGB(192, 192, 192); // #C0C0C0
+    named_colors_["fuchsia"] = SkColorSetRGB(255, 0, 255);  // #FF00FF (同 magenta)
     
     named_colors_initialized_ = true;
 }

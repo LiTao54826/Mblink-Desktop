@@ -365,6 +365,52 @@ sk_sp<SkTypeface> FontManager::GetCJKTypeface() {
     return SkTypeface::MakeEmpty();
 }
 
+sk_sp<SkTypeface> FontManager::GetCJKTypeface(const SkFontStyle& style) {
+    if (!initialized_) {
+        Initialize();
+    }
+
+    // 如果请求的是普通样式，返回缓存的 typeface
+    if (style.weight() == SkFontStyle::kNormal_Weight &&
+        style.slant() == SkFontStyle::kUpright_Slant) {
+        return GetCJKTypeface();
+    }
+
+    // CJK 字体列表
+    const char* cjk_fonts[] = {
+#ifdef _WIN32
+        "Microsoft YaHei",      // 微软雅黑
+        "SimHei",               // 黑体
+        "SimSun",               // 宋体
+        "KaiTi",                // 楷体
+        "DengXian",             // 等线
+#elif defined(__APPLE__)
+        "PingFang SC",          // 苹方简体
+        "PingFang TC",          // 苹方繁体
+        "Hiragino Sans GB",     // 冬青黑体
+        "STHeiti",              // 华文黑体
+#else
+        "Noto Sans CJK SC",     // Google Noto CJK
+        "Noto Sans SC",         // Google Noto简体
+        "Source Han Sans SC",   // 思源黑体
+        "WenQuanYi Micro Hei",  // 文泉驿微米黑
+#endif
+    };
+
+    // 尝试用指定样式匹配 CJK 字体
+    if (font_mgr_) {
+        for (const char* font_name : cjk_fonts) {
+            auto typeface = font_mgr_->matchFamilyStyle(font_name, style);
+            if (typeface) {
+                return typeface;
+            }
+        }
+    }
+
+    // 如果找不到带样式的字体，返回普通 CJK 字体
+    return GetCJKTypeface();
+}
+
 bool FontManager::IsCJK(uint32_t codepoint) {
     // CJK Unified Ideographs (U+4E00–U+9FFF) - 基本汉字
     if (codepoint >= 0x4E00 && codepoint <= 0x9FFF) return true;

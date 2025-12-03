@@ -273,6 +273,16 @@ public:
      */
     void SetDragStartPos(int pos) { drag_start_pos_ = pos; }
 
+    /**
+     * @brief 步进增加数值（用于 input[number] 的 spinner）
+     */
+    void StepUp();
+
+    /**
+     * @brief 步进减少数值（用于 input[number] 的 spinner）
+     */
+    void StepDown();
+
 protected:
     /**
      * @brief 触发change事件

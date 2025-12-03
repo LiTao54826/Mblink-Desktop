@@ -25,6 +25,12 @@ set(DOM_SOURCES
     html_span_element.cpp
     html_paragraph_element.cpp
     html_heading_element.cpp
+    html_ulist_element.cpp
+    html_olist_element.cpp
+    html_li_element.cpp
+    html_table_element.cpp
+    html_form_controls.cpp
+    svg_element.cpp
 )
 
 set(DOM_HEADERS
@@ -52,6 +58,12 @@ set(DOM_HEADERS
     html_span_element.h
     html_paragraph_element.h
     html_heading_element.h
+    html_ulist_element.h
+    html_olist_element.h
+    html_li_element.h
+    html_table_element.h
+    html_form_controls.h
+    svg_element.h
 )
 
 add_library(lightui_dom STATIC ${DOM_SOURCES})

@@ -27,6 +27,12 @@
 #include "html_span_element.h"
 #include "html_paragraph_element.h"
 #include "html_heading_element.h"
+#include "html_ulist_element.h"
+#include "html_olist_element.h"
+#include "html_li_element.h"
+#include "html_table_element.h"
+#include "html_form_controls.h"
+#include "svg_element.h"
 #include "core/lexbor/lexbor_document.h"
 #include "core/lexbor/style_manager.h"
 #include <algorithm>
@@ -128,7 +134,71 @@ std::shared_ptr<Element> Document::CreateElement(const std::string& tag_name) {
     } else if (tag_name == "h6") {
         auto h6 = std::make_shared<HTMLHeadingElement>(6);
         element = h6;
+    } else if (tag_name == "ul") {
+        element = std::make_shared<HTMLUListElement>();
+    } else if (tag_name == "ol") {
+        element = std::make_shared<HTMLOListElement>();
+    } else if (tag_name == "li") {
+        element = std::make_shared<HTMLLIElement>();
+    }
+    // ========== 表格标签 ==========
+    else if (tag_name == "table") {
+        element = std::make_shared<HTMLTableElement>();
+    } else if (tag_name == "thead" || tag_name == "tbody" || tag_name == "tfoot") {
+        element = std::make_shared<HTMLTableSectionElement>(tag_name);
+    } else if (tag_name == "tr") {
+        element = std::make_shared<HTMLTableRowElement>();
+    } else if (tag_name == "td" || tag_name == "th") {
+        element = std::make_shared<HTMLTableCellElement>(tag_name);
+    } else if (tag_name == "caption") {
+        element = std::make_shared<HTMLTableCaptionElement>();
+    } else if (tag_name == "col" || tag_name == "colgroup") {
+        element = std::make_shared<HTMLTableColElement>(tag_name);
+    }
+    // ========== 表单增强标签 ==========
+    else if (tag_name == "fieldset") {
+        element = std::make_shared<HTMLFieldSetElement>();
+    } else if (tag_name == "legend") {
+        element = std::make_shared<HTMLLegendElement>();
+    } else if (tag_name == "optgroup") {
+        element = std::make_shared<HTMLOptGroupElement>();
+    } else if (tag_name == "datalist") {
+        element = std::make_shared<HTMLDataListElement>();
+    } else if (tag_name == "output") {
+        element = std::make_shared<HTMLOutputElement>();
+    } else if (tag_name == "progress") {
+        element = std::make_shared<HTMLProgressElement>();
+    } else if (tag_name == "meter") {
+        element = std::make_shared<HTMLMeterElement>();
+    } else if (tag_name == "dialog") {
+        element = std::make_shared<HTMLDialogElement>();
+    }
+    // ========== SVG 元素 ==========
+    else if (tag_name == "svg") {
+        element = std::make_shared<SVGSVGElement>();
+    } else if (tag_name == "path") {
+        element = std::make_shared<SVGPathElement>();
+    } else if (tag_name == "g") {
+        element = std::make_shared<SVGGElement>();
+    } else if (tag_name == "circle") {
+        element = std::make_shared<SVGCircleElement>();
+    } else if (tag_name == "rect") {
+        element = std::make_shared<SVGRectElement>();
+    } else if (tag_name == "ellipse") {
+        element = std::make_shared<SVGEllipseElement>();
+    } else if (tag_name == "line") {
+        element = std::make_shared<SVGLineElement>();
+    } else if (tag_name == "polyline") {
+        element = std::make_shared<SVGPolylineElement>();
+    } else if (tag_name == "polygon") {
+        element = std::make_shared<SVGPolygonElement>();
+    } else if (tag_name == "text") {
+        element = std::make_shared<SVGTextElement>();
     } else {
+        // 所有其他标签使用通用 Element 类
+        // 包括：语义化标签（header, footer, nav, section, article, aside, main, figure, figcaption）
+        //       文本标签（strong, em, b, i, u, s, mark, code, kbd, pre, blockquote, etc.）
+        //       列表标签（dl, dt, dd）
         element = std::make_shared<Element>(tag_name);
     }
 

@@ -100,8 +100,6 @@ function render(vnode, container) {
         return __preact_internal.render(vnode, container);
     }
 
-    console.log('[Preact render] Starting render');
-
     // Get old vnode from container
     var oldVNode = container.__preactVNode;
     var oldDOM = container.__preactDOM;
@@ -112,8 +110,6 @@ function render(vnode, container) {
     // Store references
     container.__preactVNode = vnode;
     container.__preactDOM = newDOM;
-
-    console.log('[Preact render] Render complete');
 }
 
 /**
@@ -201,8 +197,6 @@ function createComponentDOM(vnode) {
 
     // Set up rerender function using Virtual DOM diffing
     component.__rerender = function() {
-        console.log('[Preact __rerender] Starting rerender');
-
         try {
             // Set current component for hooks
             if (typeof PreactHooks !== 'undefined' && PreactHooks.setCurrentComponent) {
@@ -221,18 +215,14 @@ function createComponentDOM(vnode) {
             // Get old DOM and parent
             var oldDOM = component.__dom;
             if (!oldDOM) {
-                console.log('[Preact __rerender] oldDOM is null');
                 return;
             }
             if (!oldDOM.parentNode) {
-                console.log('[Preact __rerender] oldDOM.parentNode is null');
                 return;
             }
 
             var parent = oldDOM.parentNode;
             var oldRenderedVNode = component.__renderedVNode;
-
-            console.log('[Preact __rerender] Calling diffNode');
 
             // Use Virtual DOM diffing to update in place
             var newDOM = diffNode(oldRenderedVNode, newRenderedVNode, parent, oldDOM);
@@ -243,11 +233,8 @@ function createComponentDOM(vnode) {
             if (newDOM) {
                 newDOM.__componentVNode = vnode;
             }
-
-            console.log('[Preact __rerender] Rerender complete');
         } catch (e) {
-            console.log('[Preact __rerender] Error: ' + e.message);
-            console.log('[Preact __rerender] Stack: ' + e.stack);
+            // Silently handle errors
         }
     };
 
@@ -324,19 +311,9 @@ function getElementVNode(element) {
  */
 function createStableHandler(elementId, eventKey) {
     return function(event) {
-        console.log('[StableHandler] Called for elementId=' + elementId + ', eventKey=' + eventKey);
         var data = __elementDataStore[elementId];
-        console.log('[StableHandler] data exists=' + !!data);
-        if (data && data.handlers) {
-            console.log('[StableHandler] handlers keys=' + Object.keys(data.handlers).join(','));
-            console.log('[StableHandler] handler exists=' + !!data.handlers[eventKey]);
-        }
         if (data && data.handlers && data.handlers[eventKey]) {
-            console.log('[StableHandler] Calling handler for ' + eventKey);
             data.handlers[eventKey](event);
-            console.log('[StableHandler] Handler completed');
-        } else {
-            console.log('[StableHandler] WARNING: No handler found!');
         }
     };
 }
@@ -386,21 +363,10 @@ function setDOMProps(element, oldProps, newProps) {
         var newValue = newProps[prop];
         var oldValue = oldProps[prop];
 
-        // Debug: log value prop handling
-        if (prop === 'value') {
-            console.log('[setDOMProps] DEBUG: prop=value, tagName=' + element.tagName + ', newValue=' + newValue + ', oldValue=' + oldValue);
-        }
-
-        // Debug: log style prop handling
-        if (prop === 'style') {
-            console.log('[setDOMProps] DEBUG: prop=style, oldValue=' + oldValue + ', newValue=' + newValue);
-        }
-
         if (prop.substring(0, 2) === 'on' && typeof newValue === 'function') {
             var evtName = prop.substring(2).toLowerCase();
 
             // Always update the handler reference (so latest closure is called)
-            console.log('[setDOMProps] Updating handler for ' + prop + ' on element ' + elementId);
             handlers[prop] = newValue;
             if (evtName === 'change') {
                 handlers[prop + '_input'] = newValue;
@@ -408,11 +374,9 @@ function setDOMProps(element, oldProps, newProps) {
 
             // Only add listener if not already added
             if (!listeners[prop]) {
-                console.log('[setDOMProps] Adding NEW listener for ' + evtName + ' on element ' + elementId);
                 // Create stable wrapper and add listener
                 var stableHandler = createStableHandler(elementId, prop);
                 var listenerId = element.addEventListener(evtName, stableHandler);
-                console.log('[setDOMProps] Got listenerId=' + listenerId);
                 listeners[prop] = listenerId;
 
                 if (evtName === 'change') {
@@ -424,9 +388,7 @@ function setDOMProps(element, oldProps, newProps) {
         } else if (prop === 'value' && (element.tagName === 'INPUT' || element.tagName === 'TEXTAREA')) {
             // For controlled inputs, always check against current DOM value
             // Don't skip based on oldValue because DOM value can be changed by user input
-            console.log('[setDOMProps] value prop: newValue=' + newValue + ' element.value=' + element.value);
             if (element.value !== String(newValue)) {
-                console.log('[setDOMProps] Setting element.value to ' + newValue);
                 element.value = newValue;
             }
         } else if (newValue === oldValue) {
@@ -435,11 +397,8 @@ function setDOMProps(element, oldProps, newProps) {
         } else if (prop === 'className') {
             element.className = newValue || '';
         } else if (prop === 'style') {
-            console.log('[setDOMProps] SETTING style, typeof newValue=' + typeof newValue);
             if (typeof newValue === 'string') {
-                console.log('[setDOMProps] Setting cssText to: ' + newValue);
                 element.style.cssText = newValue;
-                console.log('[setDOMProps] After setting, cssText=' + element.style.cssText);
             } else if (typeof newValue === 'object') {
                 // Clear old styles first if old value was also object
                 if (typeof oldValue === 'object' && oldValue) {
@@ -474,12 +433,12 @@ function setDOMProps(element, oldProps, newProps) {
 function diffNode(oldVNode, newVNode, parentDOM, oldDOM) {
     var oldType = oldVNode ? (typeof oldVNode === 'object' ? oldVNode.type : typeof oldVNode) : 'null';
     var newType = newVNode ? (typeof newVNode === 'object' ? newVNode.type : typeof newVNode) : 'null';
-    console.log('[diffNode] old=' + oldType + ', new=' + newType);
+    // console.log('[diffNode] old=' + oldType + ', new=' + newType);
 
     try {
         // New node is null - remove old
         if (newVNode == null || newVNode === false || newVNode === true) {
-            console.log('[diffNode] newVNode is null/false/true, removing old');
+            // console.log('[diffNode] newVNode is null/false/true, removing old');
             if (oldDOM && parentDOM) {
                 parentDOM.removeChild(oldDOM);
             }
@@ -488,7 +447,7 @@ function diffNode(oldVNode, newVNode, parentDOM, oldDOM) {
 
         // Old node is null - create new
         if (oldVNode == null || oldVNode === false || oldVNode === true || !oldDOM) {
-            console.log('[diffNode] oldVNode is null, creating new');
+            // console.log('[diffNode] oldVNode is null, creating new');
             var newDOM = createDOMElement(newVNode);
             if (newDOM && parentDOM) {
                 parentDOM.appendChild(newDOM);
@@ -499,9 +458,9 @@ function diffNode(oldVNode, newVNode, parentDOM, oldDOM) {
         // Both are text nodes
         if ((typeof oldVNode === 'string' || typeof oldVNode === 'number') &&
             (typeof newVNode === 'string' || typeof newVNode === 'number')) {
-            console.log('[diffNode] Both text nodes, old="' + oldVNode + '" new="' + newVNode + '"');
+            // console.log('[diffNode] Both text nodes, old="' + oldVNode + '" new="' + newVNode + '"');
             if (String(oldVNode) !== String(newVNode)) {
-                console.log('[diffNode] Text changed, updating DOM');
+                // console.log('[diffNode] Text changed, updating DOM');
                 oldDOM.textContent = String(newVNode);
             }
             return oldDOM;
@@ -509,7 +468,7 @@ function diffNode(oldVNode, newVNode, parentDOM, oldDOM) {
 
         // Type changed - replace entirely
         if (!isSameVNodeType(oldVNode, newVNode)) {
-            console.log('[diffNode] Type changed, replacing');
+            // console.log('[diffNode] Type changed, replacing');
             var replacementDOM = createDOMElement(newVNode);
             if (parentDOM && oldDOM) {
                 parentDOM.replaceChild(replacementDOM, oldDOM);
@@ -519,7 +478,7 @@ function diffNode(oldVNode, newVNode, parentDOM, oldDOM) {
 
         // Both are components of the same type
         if (typeof newVNode.type === 'function') {
-            console.log('[diffNode] Both components, calling diffComponent');
+            // console.log('[diffNode] Both components, calling diffComponent');
             // IMPORTANT: Transfer component reference from old to new VNode
             // This is necessary because newVNode is freshly created and doesn't have __component
             if (oldVNode.__component && !newVNode.__component) {
@@ -529,10 +488,10 @@ function diffNode(oldVNode, newVNode, parentDOM, oldDOM) {
         }
 
         // Both are elements of the same type - update in place
-        console.log('[diffNode] Both elements of type ' + newVNode.type + ', calling diffElement');
+        // console.log('[diffNode] Both elements of type ' + newVNode.type + ', calling diffElement');
         return diffElement(oldVNode, newVNode, oldDOM);
     } catch (e) {
-        console.log('[diffNode] Error: ' + e.message);
+        // console.log('[diffNode] Error: ' + e.message);
         throw e;
     }
 }
@@ -542,13 +501,13 @@ function diffNode(oldVNode, newVNode, parentDOM, oldDOM) {
  */
 function diffComponent(oldVNode, newVNode, parentDOM, oldDOM) {
     var componentName = newVNode.type.name || 'Anonymous';
-    console.log('[diffComponent] Component: ' + componentName);
+    // console.log('[diffComponent] Component: ' + componentName);
 
     // Reuse the component instance
     var component = oldVNode.__component;
     if (!component) {
         // No old component, create new
-        console.log('[diffComponent] No old component, creating new');
+        // console.log('[diffComponent] No old component, creating new');
         return createDOMElement(newVNode);
     }
 
@@ -562,8 +521,8 @@ function diffComponent(oldVNode, newVNode, parentDOM, oldDOM) {
     }
 
     // Log props comparison
-    console.log('[diffComponent] ' + componentName + ' old props keys: ' + Object.keys(oldVNode.props || {}).join(','));
-    console.log('[diffComponent] ' + componentName + ' new props keys: ' + Object.keys(newVNode.props || {}).join(','));
+    // console.log('[diffComponent] ' + componentName + ' old props keys: ' + Object.keys(oldVNode.props || {}).join(','));
+    // console.log('[diffComponent] ' + componentName + ' new props keys: ' + Object.keys(newVNode.props || {}).join(','));
 
     // Get new rendered VNode
     var newRenderedVNode = newVNode.type(newVNode.props);
@@ -574,7 +533,7 @@ function diffComponent(oldVNode, newVNode, parentDOM, oldDOM) {
     }
 
     var oldRenderedVNode = component.__renderedVNode;
-    console.log('[diffComponent] ' + componentName + ' calling diffNode on rendered output');
+    // console.log('[diffComponent] ' + componentName + ' calling diffNode on rendered output');
 
     // Diff the rendered output
     var newDOM = diffNode(oldRenderedVNode, newRenderedVNode, parentDOM, oldDOM);
@@ -585,7 +544,7 @@ function diffComponent(oldVNode, newVNode, parentDOM, oldDOM) {
 
     // Update rerender function - use component.__vnode to get latest props
     component.__rerender = function() {
-        console.log('[Preact __rerender] Starting rerender');
+        // console.log('[Preact __rerender] Starting rerender');
         if (typeof PreactHooks !== 'undefined' && PreactHooks.setCurrentComponent) {
             PreactHooks.setCurrentComponent(component);
         }
@@ -601,15 +560,15 @@ function diffComponent(oldVNode, newVNode, parentDOM, oldDOM) {
 
         var currentDOM = component.__dom;
         if (!currentDOM || !currentDOM.parentNode) {
-            console.log('[Preact __rerender] No DOM or parent, skipping');
+            // console.log('[Preact __rerender] No DOM or parent, skipping');
             return;
         }
 
-        console.log('[Preact __rerender] Calling diffNode');
+        // console.log('[Preact __rerender] Calling diffNode');
         var resultDOM = diffNode(component.__renderedVNode, updatedVNode, currentDOM.parentNode, currentDOM);
         component.__dom = resultDOM;
         component.__renderedVNode = updatedVNode;
-        console.log('[Preact __rerender] Rerender complete');
+        // console.log('[Preact __rerender] Rerender complete');
     };
 
     return newDOM;
@@ -620,7 +579,7 @@ function diffComponent(oldVNode, newVNode, parentDOM, oldDOM) {
  */
 function diffElement(oldVNode, newVNode, dom) {
     var tagName = dom && dom.tagName ? dom.tagName.toLowerCase() : 'unknown';
-    console.log('[diffElement] Updating ' + tagName + ' element');
+    // console.log('[diffElement] Updating ' + tagName + ' element');
 
     // Update props - event listeners use stable wrappers so we can update handlers safely
     setDOMProps(dom, oldVNode.props || {}, newVNode.props || {});
@@ -628,7 +587,7 @@ function diffElement(oldVNode, newVNode, dom) {
     // Diff children
     var oldChildCount = oldVNode.children ? oldVNode.children.length : 0;
     var newChildCount = newVNode.children ? newVNode.children.length : 0;
-    console.log('[diffElement] ' + tagName + ' has ' + oldChildCount + ' old children, ' + newChildCount + ' new children');
+    // console.log('[diffElement] ' + tagName + ' has ' + oldChildCount + ' old children, ' + newChildCount + ' new children');
     diffChildren(oldVNode.children || [], newVNode.children || [], dom);
 
     // Update vnode reference (using global storage)
@@ -644,7 +603,7 @@ function diffElement(oldVNode, newVNode, dom) {
         }
     }
 
-    console.log('[diffElement] Done updating ' + tagName);
+    // console.log('[diffElement] Done updating ' + tagName);
     return dom;
 }
 
@@ -653,7 +612,7 @@ function diffElement(oldVNode, newVNode, dom) {
  */
 function diffChildren(oldChildren, newChildren, parentDOM) {
     if (!parentDOM) {
-        console.log('[diffChildren] No parentDOM, returning');
+        // console.log('[diffChildren] No parentDOM, returning');
         return;
     }
 
@@ -663,7 +622,7 @@ function diffChildren(oldChildren, newChildren, parentDOM) {
     var oldLen = oldChildren.length;
     var newLen = newChildren.length;
 
-    console.log('[diffChildren] oldLen=' + oldLen + ', newLen=' + newLen);
+    // console.log('[diffChildren] oldLen=' + oldLen + ', newLen=' + newLen);
 
     // Build a map of old children by key
     var oldKeyedMap = {};  // key -> { vnode, dom, index }
@@ -704,7 +663,7 @@ function diffChildren(oldChildren, newChildren, parentDOM) {
             oldEntry = oldKeyedMap[newKey];
             oldDOM = oldEntry.dom;
             usedOldDOMs[oldEntry.index] = true;
-            console.log('[diffChildren] Matched key=' + newKey + ' at oldIndex=' + oldEntry.index);
+            // console.log('[diffChildren] Matched key=' + newKey + ' at oldIndex=' + oldEntry.index);
         } else if (newKey == null && unkeyedIndex < oldUnkeyed.length) {
             // Use next unkeyed element
             oldEntry = oldUnkeyed[unkeyedIndex++];
@@ -728,7 +687,7 @@ function diffChildren(oldChildren, newChildren, parentDOM) {
             }
         } else {
             // No matching old DOM, create new
-            console.log('[diffChildren] Creating new child at ' + j);
+            // console.log('[diffChildren] Creating new child at ' + j);
             var newDOM = createDOMElement(newChild);
             if (newDOM) {
                 if (currentDOMAtPosition) {
@@ -745,13 +704,13 @@ function diffChildren(oldChildren, newChildren, parentDOM) {
         if (!usedOldDOMs[m]) {
             var domToRemove = childNodesArray[m];
             if (domToRemove && domToRemove.parentNode === parentDOM) {
-                console.log('[diffChildren] Removing unused child at ' + m);
+                // console.log('[diffChildren] Removing unused child at ' + m);
                 parentDOM.removeChild(domToRemove);
             }
         }
     }
 
-    console.log('[diffChildren] Done, final childCount=' + parentDOM.childNodes.length);
+    // console.log('[diffChildren] Done, final childCount=' + parentDOM.childNodes.length);
 }
 
 /**

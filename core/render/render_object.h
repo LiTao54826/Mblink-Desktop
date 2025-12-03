@@ -122,12 +122,16 @@ struct ComputedStyle {
     std::string overflow_y;  // visible, hidden, scroll, auto
     std::string position;  // static, relative, absolute, fixed
 
+    // 双向文本属性
+    std::string unicode_bidi = "normal";  // normal, embed, isolate, bidi-override, isolate-override, plaintext
+    std::string direction = "ltr";        // ltr, rtl
+
     // Flexbox 属性
     std::string flex_direction = "row";  // row, row-reverse, column, column-reverse
     std::string flex_wrap = "nowrap";    // nowrap, wrap, wrap-reverse
     std::string justify_content = "flex-start";  // flex-start, flex-end, center, space-between, space-around, space-evenly
-    std::string align_items = "stretch";  // flex-start, flex-end, center, baseline, stretch
-    std::string align_content = "stretch";  // flex-start, flex-end, center, space-between, space-around, stretch
+    std::string align_items = "normal";  // normal, flex-start, flex-end, center, baseline, stretch (CSS 规范默认值是 normal)
+    std::string align_content = "normal";  // normal, flex-start, flex-end, center, space-between, space-around, stretch (CSS 规范默认值是 normal)
     std::string align_self = "auto";  // auto, flex-start, flex-end, center, baseline, stretch
     float flex_grow = 0.0f;
     float flex_shrink = 1.0f;
@@ -192,6 +196,12 @@ struct ComputedStyle {
     // 表格相关属性
     std::string border_collapse = "separate";  // collapse, separate (CSS 默认值是 separate)
     CSSLength border_spacing;  // 当 border-collapse: separate 时，单元格之间的间距
+
+    // 伪元素 ::before 和 ::after 的 content 属性
+    std::string content_before;  // ::before 伪元素的内容
+    std::string content_after;   // ::after 伪元素的内容
+    bool has_before = false;     // 是否有 ::before 伪元素
+    bool has_after = false;      // 是否有 ::after 伪元素
 
     ComputedStyle() {
         width = CSSLength(0, CSSUnit::AUTO);
@@ -265,7 +275,13 @@ public:
      * @brief 获取渲染对象类型
      */
     RenderObjectType GetType() const { return type_; }
-    
+
+    /**
+     * @brief 检查是否是SVG渲染对象
+     * @return 默认返回false，SVG渲染对象重写返回true
+     */
+    virtual bool IsSVGRenderObject() const { return false; }
+
     /**
      * @brief 获取关联的 DOM 节点
      */
@@ -653,12 +669,26 @@ public:
     // 获取列数
     size_t GetColumnCount() const { return column_widths_.size(); }
 
+    // 获取列的背景色（从 colgroup/col 继承）
+    std::string GetColumnBackgroundColor(size_t col_index) const {
+        if (col_index < column_background_colors_.size()) {
+            return column_background_colors_[col_index];
+        }
+        return "";
+    }
+
 private:
     // 计算表格列宽度
     void CalculateColumnWidths(float available_width);
 
+    // 收集 colgroup/col 的样式
+    void CollectColumnStyles();
+
     // 缓存的列宽度
     std::vector<float> column_widths_;
+
+    // 列的背景色（从 colgroup/col 收集）
+    std::vector<std::string> column_background_colors_;
 };
 
 /**
@@ -697,10 +727,21 @@ public:
     void SetBorderCollapse(bool collapse) { border_collapse_ = collapse; }
     bool GetBorderCollapse() const { return border_collapse_; }
 
+    // Rowspan 占据的列信息（由父表格设置）
+    // 记录被上方单元格的 rowspan 占据的列索引
+    struct RowspanCell {
+        size_t col_index;          // 列索引
+        int remaining_rows;        // 还需要跨越的行数
+        std::shared_ptr<RenderObject> cell;  // 原始单元格（用于高度对齐）
+    };
+    void SetRowspanOccupiedCols(const std::vector<RowspanCell>& cols) { rowspan_occupied_cols_ = cols; }
+    const std::vector<RowspanCell>& GetRowspanOccupiedCols() const { return rowspan_occupied_cols_; }
+
 private:
     std::vector<float> column_widths_;
     float border_spacing_ = 2.0f;  // CSS 默认值
     bool border_collapse_ = false;
+    std::vector<RowspanCell> rowspan_occupied_cols_;  // 被 rowspan 占据的列
 };
 
 /**
@@ -722,9 +763,14 @@ public:
     void SetRowSpan(int span) { row_span_ = span; }
     int GetRowSpan() const { return row_span_; }
 
+    // 列索引（用于应用 col 的背景色）
+    void SetColumnIndex(size_t index) { column_index_ = index; }
+    size_t GetColumnIndex() const { return column_index_; }
+
 private:
     int col_span_ = 1;
     int row_span_ = 1;
+    size_t column_index_ = 0;  // 单元格所在的逻辑列索引
 };
 
 /**

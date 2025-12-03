@@ -53,10 +53,13 @@ Element::Element(const std::string& tag_name)
 // ========== 属性操作 ==========
 
 void Element::SetAttribute(const std::string& name, const std::string& value) {
-    std::string old_value = GetAttribute(name);
+    // 检查属性是否已存在
+    bool has_attr = HasAttribute(name);
+    std::string old_value = has_attr ? GetAttribute(name) : "";
 
-    // 如果值没有改变，直接返回
-    if (old_value == value) {
+    // 如果属性已存在且值没有改变，直接返回
+    // 注意：如果属性不存在，即使值是空字符串也需要设置（用于 boolean 属性如 open, disabled 等）
+    if (has_attr && old_value == value) {
         return;
     }
 

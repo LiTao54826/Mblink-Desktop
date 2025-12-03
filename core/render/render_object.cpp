@@ -4,6 +4,7 @@
  */
 
 #include "render_object.h"
+#include "render_inline_block.h"
 #include "box_renderer.h"
 #include "text_renderer.h"
 #include "gradient_renderer.h"
@@ -423,11 +424,11 @@ void RenderBlock::Layout(float parent_width, float parent_height) {
     float padding_top = style.padding.top.ToPx(width, style.font_size);
     float padding_bottom = style.padding.bottom.ToPx(width, style.font_size);
     
-    // 计算 border
-    float border_left = style.border.width.ToPx();
-    float border_right = style.border.width.ToPx();
-    float border_top = style.border.width.ToPx();
-    float border_bottom = style.border.width.ToPx();
+    // 计算 border - 优先使用单边边框宽度，否则使用统一的 border.width（与 Paint 保持一致）
+    float border_left = style.border_left_width > 0 ? style.border_left_width : style.border.width.ToPx();
+    float border_right = style.border_right_width > 0 ? style.border_right_width : style.border.width.ToPx();
+    float border_top = style.border_top_width > 0 ? style.border_top_width : style.border.width.ToPx();
+    float border_bottom = style.border_bottom_width > 0 ? style.border_bottom_width : style.border.width.ToPx();
     
     // 计算内容区域宽度
     float content_width = width - padding_left - padding_right - border_left - border_right;
@@ -435,7 +436,35 @@ void RenderBlock::Layout(float parent_width, float parent_height) {
     // 布局子元素 - 第一遍：计算尺寸
     for (auto& child : children_) {
         if (child->NeedsLayout()) {
-            child->Layout(content_width, 0);
+            // 检查是否是 legend 元素，需要特殊处理宽度
+            auto child_node = child->GetNode();
+            bool is_legend = false;
+            if (child_node && child_node->GetNodeType() == NodeType::ELEMENT_NODE) {
+                auto child_elem = std::static_pointer_cast<Element>(child_node);
+                is_legend = (child_elem->GetTagName() == "legend");
+            }
+
+            if (is_legend) {
+                // legend 的宽度应该是 fit-content（自适应内容）
+                // 用大宽度布局，让文本不换行
+                child->Layout(10000, 0);
+
+                // 找到子元素的最右边位置
+                float max_right = 0.0f;
+                for (const auto& grandchild : child->GetChildren()) {
+                    auto& gc_layout = grandchild->GetLayoutInfo();
+                    max_right = std::max(max_right, gc_layout.x + gc_layout.width);
+                }
+
+                auto& child_style = child->GetComputedStyle();
+                float legend_padding_right = child_style.padding.right.ToPx();
+                float legend_border_right = child_style.border_right_width > 0 ? child_style.border_right_width : child_style.border.width.ToPx();
+
+                // 设置 legend 的布局宽度 = 子元素右边缘 + 右侧 padding + 右侧 border
+                child->GetLayoutInfo().width = max_right + legend_padding_right + legend_border_right;
+            } else {
+                child->Layout(content_width, 0);
+            }
         }
     }
 
@@ -457,8 +486,10 @@ void RenderBlock::Layout(float parent_width, float parent_height) {
 
         // 判断是块级还是内联元素
         // 检查渲染对象的实际类型，而不是 display 属性
+        // RenderInlineBlock 也应该被视为内联元素参与行内流
         bool is_inline = (dynamic_cast<RenderInline*>(child.get()) != nullptr ||
-                         dynamic_cast<RenderText*>(child.get()) != nullptr);
+                         dynamic_cast<RenderText*>(child.get()) != nullptr ||
+                         dynamic_cast<RenderInlineBlock*>(child.get()) != nullptr);
 
         if (is_inline) {
             // 内联元素：水平排列
@@ -519,7 +550,7 @@ void RenderBlock::Layout(float parent_width, float parent_height) {
     if (current_x > padding_left + border_left) {
         current_y += line_height;
     }
-    
+
     // 计算高度
     float height = 0;
     if (!style.height.IsAuto()) {
@@ -619,18 +650,15 @@ void RenderBlock::Paint(SkCanvas* canvas) {
     if (node && node->GetNodeType() == NodeType::ELEMENT_NODE) {
         auto element = std::static_pointer_cast<Element>(node);
         if (element->GetTagName() == "hr") {
-            // 绘制水平线
+            // 绘制水平线（使用相对坐标，因为已经 translate 过了）
             SkPaint line_paint;
             line_paint.setColor(style.border.color);
             line_paint.setStrokeWidth(style.border.width.ToPx());
             line_paint.setAntiAlias(true);
 
-            float y = layout_info_.y + layout_info_.height / 2;
-            canvas->drawLine(
-                layout_info_.x, y,
-                layout_info_.x + layout_info_.width, y,
-                line_paint
-            );
+            float y = layout.height / 2;
+            canvas->drawLine(0, y, layout.width, y, line_paint);
+            canvas->restore(); // 恢复 canvas 状态
             return; // 不绘制其他内容
         }
     }
@@ -671,6 +699,49 @@ void RenderBlock::Paint(SkCanvas* canvas) {
         float half_top = box.border_top_width / 2.0f;
         float half_bottom = box.border_bottom_width / 2.0f;
 
+        // 检查是否是 fieldset 元素，需要特殊处理上边框
+        bool is_fieldset = false;
+        float legend_left = 0, legend_right = 0;
+        RenderObject* legend_render = nullptr;
+
+        if (node && node->GetNodeType() == NodeType::ELEMENT_NODE) {
+            auto element = std::static_pointer_cast<Element>(node);
+            if (element->GetTagName() == "fieldset") {
+                is_fieldset = true;
+                // 查找 legend 子元素的渲染对象
+                for (auto& child : children_) {
+                    auto child_node = child->GetNode();
+                    if (child_node && child_node->GetNodeType() == NodeType::ELEMENT_NODE) {
+                        auto child_elem = std::static_pointer_cast<Element>(child_node);
+                        if (child_elem->GetTagName() == "legend") {
+                            legend_render = child.get();
+                            auto& legend_layout = child->GetLayoutInfo();
+                            auto& legend_style = child->GetComputedStyle();
+
+                            // 计算 legend 的实际渲染宽度
+                            // 遍历 legend 的子元素，找到最右边的位置
+                            float max_child_right = 0.0f;
+                            for (const auto& grandchild : child->GetChildren()) {
+                                auto& gc_layout = grandchild->GetLayoutInfo();
+                                max_child_right = std::max(max_child_right, gc_layout.x + gc_layout.width);
+                            }
+
+                            float legend_padding_right = legend_style.padding.right.ToPx();
+                            float legend_border_right = legend_style.border_right_width > 0 ?
+                                legend_style.border_right_width : legend_style.border.width.ToPx();
+
+                            // legend_left 是 legend 的左边缘（相对于 fieldset border-box）
+                            legend_left = legend_layout.x;
+                            // legend_right 是 legend 的右边缘
+                            // = legend_left + 子元素最右边位置 + 右侧 padding + 右侧 border
+                            legend_right = legend_layout.x + max_child_right + legend_padding_right + legend_border_right;
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+
         // 渲染左边框
         if (box.border_left_width > 0) {
             CSSBorderStyle left_style = style.border_left_style != CSSBorderStyle::NONE ?
@@ -701,18 +772,39 @@ void RenderBlock::Paint(SkCanvas* canvas) {
             }
         }
 
-        // 渲染上边框
+        // 渲染上边框 - fieldset 需要特殊处理（在 legend 位置断开）
         if (box.border_top_width > 0) {
             CSSBorderStyle top_style = style.border_top_style != CSSBorderStyle::NONE ?
                                        style.border_top_style : style.border.style;
             SkColor top_color = style.border_top_style != CSSBorderStyle::NONE ?
                                 style.border_top_color : style.border.color;
             if (top_style != CSSBorderStyle::NONE) {
-                renderer.RenderBorderEdge(
-                    border_box.left(), border_box.top() + half_top,
-                    border_box.right(), border_box.top() + half_top,
-                    box.border_top_width, top_style, top_color
-                );
+                if (is_fieldset && legend_render) {
+                    // fieldset 上边框在 legend 位置断开
+                    // 绘制 legend 左边的部分
+                    if (legend_left > border_box.left()) {
+                        renderer.RenderBorderEdge(
+                            border_box.left(), border_box.top() + half_top,
+                            legend_left, border_box.top() + half_top,
+                            box.border_top_width, top_style, top_color
+                        );
+                    }
+                    // 绘制 legend 右边的部分
+                    if (legend_right < border_box.right()) {
+                        renderer.RenderBorderEdge(
+                            legend_right, border_box.top() + half_top,
+                            border_box.right(), border_box.top() + half_top,
+                            box.border_top_width, top_style, top_color
+                        );
+                    }
+                } else {
+                    // 普通元素：绘制完整上边框
+                    renderer.RenderBorderEdge(
+                        border_box.left(), border_box.top() + half_top,
+                        border_box.right(), border_box.top() + half_top,
+                        box.border_top_width, top_style, top_color
+                    );
+                }
             }
         }
 
@@ -733,17 +825,20 @@ void RenderBlock::Paint(SkCanvas* canvas) {
     }
 
     // ========== 绘制 outline（焦点指示器）==========
-    // outline 不占用布局空间，绘制在边框外部
+    // outline 不占用布局空间，紧贴边框外边缘绘制（符合浏览器行为）
     if (style.outline_style != "none" && !style.outline_width.IsZero()) {
         float outline_width = style.outline_width.ToPx();
         float outline_offset = style.outline_offset.ToPx();
 
-        // outline 绘制在边框外部
+        // 使用 stroke 绘制时，线条以矩形边缘为中心
+        // 要让 outline 内边缘紧贴 border-box 外边缘，需要向外偏移 half_width
+        // 这样 stroke 中心在 (outline_offset + half_width) 处，内边缘在 outline_offset 处
+        float half_width = outline_width / 2.0f;
         SkRect outline_rect = SkRect::MakeXYWH(
-            -outline_offset - outline_width,
-            -outline_offset - outline_width,
-            layout.width + 2 * (outline_offset + outline_width),
-            layout.height + 2 * (outline_offset + outline_width)
+            -(outline_offset + half_width),
+            -(outline_offset + half_width),
+            layout.width + 2 * (outline_offset + half_width),
+            layout.height + 2 * (outline_offset + half_width)
         );
 
         SkPaint outline_paint;
@@ -765,10 +860,10 @@ void RenderBlock::Paint(SkCanvas* canvas) {
         // 如果有圆角，outline 也应该有圆角
         if (style.border_radius.top_left.value > 0 || style.border_radius.top_right.value > 0 ||
             style.border_radius.bottom_left.value > 0 || style.border_radius.bottom_right.value > 0) {
-            float tl = style.border_radius.top_left.ToPx() + outline_offset + outline_width;
-            float tr = style.border_radius.top_right.ToPx() + outline_offset + outline_width;
-            float br = style.border_radius.bottom_right.ToPx() + outline_offset + outline_width;
-            float bl = style.border_radius.bottom_left.ToPx() + outline_offset + outline_width;
+            float tl = style.border_radius.top_left.ToPx() + outline_offset + half_width;
+            float tr = style.border_radius.top_right.ToPx() + outline_offset + half_width;
+            float br = style.border_radius.bottom_right.ToPx() + outline_offset + half_width;
+            float bl = style.border_radius.bottom_left.ToPx() + outline_offset + half_width;
 
             SkRRect outline_rrect;
             SkVector radii[4] = {{tl, tl}, {tr, tr}, {br, br}, {bl, bl}};
@@ -785,37 +880,114 @@ void RenderBlock::Paint(SkCanvas* canvas) {
         if (element2->GetTagName() == "li") {
             // 获取父元素（ul或ol）
             auto parent_node = element2->GetParentNode();
-            if (parent_node && parent_node->GetNodeType() == NodeType::ELEMENT_NODE) {
-                auto parent_element = std::static_pointer_cast<Element>(parent_node);
-                std::string parent_tag = parent_element->GetTagName();
+            std::string parent_tag = "";
 
-                if (parent_tag == "ul" || parent_tag == "ol") {
-                    // 设置文本样式
-                    SkFont font;
-                    font.setSize(style.font_size);
-
-                    SkPaint paint;
-                    if (!style.color.empty()) {
-                        paint.setColor(Color::Parse(style.color));
-                    } else {
-                        paint.setColor(SK_ColorBLACK);
+            // 向上查找最近的 ul 或 ol 祖先
+            auto ancestor = parent_node;
+            std::shared_ptr<Element> list_element = nullptr;
+            while (ancestor) {
+                if (ancestor->GetNodeType() == NodeType::ELEMENT_NODE) {
+                    auto ancestor_elem = std::static_pointer_cast<Element>(ancestor);
+                    std::string tag = ancestor_elem->GetTagName();
+                    if (tag == "ul" || tag == "ol") {
+                        parent_tag = tag;
+                        list_element = ancestor_elem;
+                        break;
                     }
-                    paint.setAntiAlias(true);
+                }
+                ancestor = ancestor->GetParentNode();
+            }
 
-                    // 计算项目符号位置（在padding区域的左侧）
-                    float marker_x = box.content_x - 20.0f;  // 在内容左侧20px处
-                    float marker_y = box.content_y + style.font_size * 0.8f;  // 第一行文本的基线位置
+            if (!parent_tag.empty() && list_element) {
+                auto parent_element = list_element;
 
-                    if (parent_tag == "ul") {
-                        // 无序列表：绘制圆点
-                        float bullet_radius = 3.0f;
-                        float bullet_x = marker_x;
-                        float bullet_y = marker_y - style.font_size * 0.3f;
+                // 设置文本样式 - 使用 FontManager 加载字体
+                FontDescriptor desc;
+                desc.family = style.font_family;
+                desc.size = style.font_size;
+                desc.weight = FontWeight::NORMAL;
+                desc.style = FontStyle::NORMAL;
+                SkFont font = FontManager::GetInstance().LoadFont(desc);
+
+                SkPaint paint;
+                if (!style.color.empty()) {
+                    paint.setColor(Color::Parse(style.color));
+                } else {
+                    paint.setColor(SK_ColorBLACK);
+                }
+                paint.setAntiAlias(true);
+
+                // 计算项目符号位置
+                // 浏览器行为：符号在 content box 左边，距离文字约 0.5em
+                float marker_y = box.content_y + style.font_size * 0.8f;  // 第一行文本的基线位置
+
+                if (parent_tag == "ul") {
+                    // 无序列表：根据嵌套层级使用不同符号
+                    // 浏览器默认：disc (●) → circle (○) → square (■) → disc ...
+                    int nesting_level = 0;
+                    auto ancestor2 = parent_node;
+                    while (ancestor2) {
+                        if (ancestor2->GetNodeType() == NodeType::ELEMENT_NODE) {
+                            auto ancestor_elem = std::static_pointer_cast<Element>(ancestor2);
+                            std::string ancestor_tag = ancestor_elem->GetTagName();
+                            if (ancestor_tag == "ul" || ancestor_tag == "ol") {
+                                nesting_level++;
+                            }
+                        }
+                        ancestor2 = ancestor2->GetParentNode();
+                    }
+
+                    float bullet_radius = 3.0f;
+                    // 符号位置：在内容区左边约 0.5em 处（8px for 16px font）
+                    float bullet_x = box.content_x - 8.0f - bullet_radius;
+                    float bullet_y = marker_y - style.font_size * 0.3f;
+
+                    int marker_type = (nesting_level - 1) % 3;  // 0=disc, 1=circle, 2=square
+                    if (marker_type == 0) {
+                        // disc: 实心圆
+                        paint.setStyle(SkPaint::kFill_Style);
                         canvas->drawCircle(bullet_x, bullet_y, bullet_radius, paint);
-                    } else if (parent_tag == "ol") {
-                        // 有序列表：绘制数字
-                        // 计算当前<li>在<ol>中的索引
-                        int index = 1;
+                    } else if (marker_type == 1) {
+                        // circle: 空心圆
+                        paint.setStyle(SkPaint::kStroke_Style);
+                        paint.setStrokeWidth(1.5f);
+                        canvas->drawCircle(bullet_x, bullet_y, bullet_radius, paint);
+                    } else {
+                        // square: 实心方块
+                        paint.setStyle(SkPaint::kFill_Style);
+                        SkRect rect = SkRect::MakeXYWH(
+                            bullet_x - bullet_radius,
+                            bullet_y - bullet_radius,
+                            bullet_radius * 2,
+                            bullet_radius * 2
+                        );
+                        canvas->drawRect(rect, paint);
+                    }
+                } else if (parent_tag == "ol") {
+                    // 有序列表：绘制数字
+                    // 计算当前<li>在<ol>中的索引
+                    int index = 1;
+
+                    // 检查 <li> 是否有 value 属性
+                    std::string value_attr = element2->GetAttribute("value");
+                    if (!value_attr.empty()) {
+                        try {
+                            index = std::stoi(value_attr);
+                        } catch (...) {
+                            // 忽略解析错误
+                        }
+                    } else {
+                        // 获取 ol 的 start 属性
+                        std::string start_attr = parent_element->GetAttribute("start");
+                        int start_index = 1;
+                        if (!start_attr.empty()) {
+                            try {
+                                start_index = std::stoi(start_attr);
+                            } catch (...) {}
+                        }
+
+                        // 计算当前<li>在<ol>中的位置
+                        int position = 0;
                         auto siblings = parent_element->GetChildNodes();
                         for (const auto& sibling : siblings) {
                             if (sibling->GetNodeType() == NodeType::ELEMENT_NODE) {
@@ -824,15 +996,34 @@ void RenderBlock::Paint(SkCanvas* canvas) {
                                     if (sibling_elem == element2) {
                                         break;
                                     }
-                                    index++;
+                                    // 检查前面的 li 是否有 value 属性
+                                    std::string prev_value = sibling_elem->GetAttribute("value");
+                                    if (!prev_value.empty()) {
+                                        try {
+                                            start_index = std::stoi(prev_value) + 1;
+                                            position = 0;
+                                        } catch (...) {}
+                                    }
+                                    position++;
                                 }
                             }
                         }
-
-                        // 绘制数字
-                        std::string marker_text = std::to_string(index) + ".";
-                        canvas->drawString(marker_text.c_str(), marker_x - 15.0f, marker_y, font, paint);
+                        index = start_index + position;
                     }
+
+                    // 绘制数字，数字的右边对齐到内容区左边
+                    std::string marker_text = std::to_string(index) + ".";
+                    // 直接用固定间距，让数字紧贴着文字左边
+                    float marker_x = box.content_x - 5.0f;  // 数字右边距离内容 5px
+
+                    // 把数字右对齐：需要先测量文本宽度
+                    // 简单估算：每个字符约 0.5em
+                    float char_width = style.font_size * 0.5f;
+                    float text_width = marker_text.length() * char_width;
+                    marker_x = marker_x - text_width;
+
+                    paint.setStyle(SkPaint::kFill_Style);  // 确保是填充模式
+                    canvas->drawString(marker_text.c_str(), marker_x, marker_y, font, paint);
                 }
             }
         }
@@ -934,14 +1125,37 @@ void RenderBlock::Paint(SkCanvas* canvas) {
             return a->GetComputedStyle().z_index < b->GetComputedStyle().z_index;
         });
 
+    // 检查是否是 fieldset 元素
+    bool is_fieldset_element = false;
+    RenderObject* legend_child = nullptr;
+    if (node && node->GetNodeType() == NodeType::ELEMENT_NODE) {
+        auto elem = std::static_pointer_cast<Element>(node);
+        is_fieldset_element = (elem->GetTagName() == "fieldset");
+
+        // 查找 legend 子元素
+        if (is_fieldset_element) {
+            for (auto& child : children_) {
+                auto child_node = child->GetNode();
+                if (child_node && child_node->GetNodeType() == NodeType::ELEMENT_NODE) {
+                    auto child_elem = std::static_pointer_cast<Element>(child_node);
+                    if (child_elem->GetTagName() == "legend") {
+                        legend_child = child.get();
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
     // 浏览器行为：当元素有 border-radius 时，子元素会被裁剪到圆角区域内
     // 即使没有设置 overflow: hidden
+    // 但是 fieldset 的 legend 不应该被裁剪
     bool has_border_radius = style.border_radius.top_left.value > 0 ||
                              style.border_radius.top_right.value > 0 ||
                              style.border_radius.bottom_left.value > 0 ||
                              style.border_radius.bottom_right.value > 0;
 
-    bool needs_radius_clip = has_border_radius && !needs_clip;
+    bool needs_radius_clip = has_border_radius && !needs_clip && !is_fieldset_element;
     if (needs_radius_clip) {
         canvas->save();
         SkRect clip_rect = box.GetPaddingBox();
@@ -957,9 +1171,51 @@ void RenderBlock::Paint(SkCanvas* canvas) {
         canvas->clipRRect(rrect, SkClipOp::kIntersect, true);
     }
 
-    // 绘制子元素
+    // 对于 fieldset，先在裁剪区域外绘制 legend
+    if (is_fieldset_element && legend_child) {
+        auto& legend_layout = legend_child->GetLayoutInfo();
+        float original_y = legend_layout.y;
+
+        // 根据 HTML 标准：legend 的 border box 应该居中于 fieldset 的上边框线
+        // legend 的垂直中心应该在 border_top / 2 的位置
+        float legend_half_height = legend_layout.height / 2.0f;
+        float target_y = box.border_top_width / 2.0f - legend_half_height;
+
+        // 临时修改位置进行渲染
+        legend_layout.y = target_y;
+        legend_child->Paint(canvas);
+
+        // 恢复原始位置（保持布局一致性）
+        legend_layout.y = original_y;
+    }
+
+    // 绘制其他子元素（fieldset 的非 legend 子元素需要裁剪）
+    if (is_fieldset_element && has_border_radius) {
+        canvas->save();
+        SkRect clip_rect = box.GetPaddingBox();
+        SkRRect rrect;
+        float tl = style.border_radius.top_left.ToPx();
+        float tr = style.border_radius.top_right.ToPx();
+        float br = style.border_radius.bottom_right.ToPx();
+        float bl = style.border_radius.bottom_left.ToPx();
+        SkVector radii[4] = {
+            {tl, tl}, {tr, tr}, {br, br}, {bl, bl}
+        };
+        rrect.setRectRadii(clip_rect, radii);
+        canvas->clipRRect(rrect, SkClipOp::kIntersect, true);
+    }
+
     for (auto& child : sorted_children) {
+        // 跳过已经绘制的 legend
+        if (is_fieldset_element && child.get() == legend_child) {
+            continue;
+        }
         child->Paint(canvas);
+    }
+
+    // 恢复 fieldset 的圆角裁剪状态
+    if (is_fieldset_element && has_border_radius) {
+        canvas->restore();
     }
 
     // 恢复圆角裁剪状态
@@ -1230,37 +1486,74 @@ void RenderBlock::PaintInputElement(SkCanvas* canvas, HTMLInputElement* input, c
     // 处理checkbox和radio类型
     else if (type == InputType::Checkbox || type == InputType::Radio) {
         bool checked = input->GetChecked();
+        float cx = box.content_x + box.content_width / 2;
+        float cy = box.content_y + box.content_height / 2;
 
-        // 无条件绘制标记用于测试
         if (type == InputType::Checkbox) {
-            // 绘制勾选标记（✓）
-            SkPaint check_paint;
-            check_paint.setColor(checked ? SK_ColorBLACK : SkColorSetRGB(200, 200, 200));
-            check_paint.setStrokeWidth(2);
-            check_paint.setStyle(SkPaint::kStroke_Style);
-            check_paint.setAntiAlias(true);
+            // 绘制 checkbox 方框边框
+            SkPaint border_paint;
+            border_paint.setColor(SkColorSetRGB(118, 118, 118));
+            border_paint.setStrokeWidth(1);
+            border_paint.setStyle(SkPaint::kStroke_Style);
+            border_paint.setAntiAlias(true);
 
-            float cx = box.content_x + box.content_width / 2;
-            float cy = box.content_y + box.content_height / 2;
+            float size = std::min(box.content_width, box.content_height);
+            float half = size / 2;
+            SkRect checkbox_rect = SkRect::MakeXYWH(cx - half, cy - half, size, size);
 
-            SkPath check_path;
-            check_path.moveTo(cx - 4, cy);
-            check_path.lineTo(cx - 1, cy + 3);
-            check_path.lineTo(cx + 4, cy - 3);
-            canvas->drawPath(check_path, check_paint);
+            // 背景
+            SkPaint bg_paint;
+            bg_paint.setColor(SK_ColorWHITE);
+            bg_paint.setStyle(SkPaint::kFill_Style);
+            canvas->drawRoundRect(checkbox_rect, 2, 2, bg_paint);
+
+            // 边框
+            canvas->drawRoundRect(checkbox_rect, 2, 2, border_paint);
+
+            // 如果选中，绘制勾选标记
+            if (checked) {
+                SkPaint check_paint;
+                check_paint.setColor(SK_ColorBLACK);
+                check_paint.setStrokeWidth(2);
+                check_paint.setStyle(SkPaint::kStroke_Style);
+                check_paint.setAntiAlias(true);
+
+                SkPath check_path;
+                check_path.moveTo(cx - 4, cy);
+                check_path.lineTo(cx - 1, cy + 3);
+                check_path.lineTo(cx + 4, cy - 3);
+                canvas->drawPath(check_path, check_paint);
+            }
         }
         else if (type == InputType::Radio) {
-            // 绘制圆点标记
-            SkPaint dot_paint;
-            dot_paint.setColor(checked ? SK_ColorBLACK : SkColorSetRGB(200, 200, 200));
-            dot_paint.setStyle(SkPaint::kFill_Style);
-            dot_paint.setAntiAlias(true);
+            // 绘制 radio 外圆环
+            float radius = std::min(box.content_width, box.content_height) / 2;
 
-            float cx = box.content_x + box.content_width / 2;
-            float cy = box.content_y + box.content_height / 2;
-            float radius = std::min(box.content_width, box.content_height) / 4;
+            // 背景
+            SkPaint bg_paint;
+            bg_paint.setColor(SK_ColorWHITE);
+            bg_paint.setStyle(SkPaint::kFill_Style);
+            bg_paint.setAntiAlias(true);
+            canvas->drawCircle(cx, cy, radius, bg_paint);
 
-            canvas->drawCircle(cx, cy, radius, dot_paint);
+            // 边框
+            SkPaint border_paint;
+            border_paint.setColor(SkColorSetRGB(118, 118, 118));
+            border_paint.setStrokeWidth(1);
+            border_paint.setStyle(SkPaint::kStroke_Style);
+            border_paint.setAntiAlias(true);
+            canvas->drawCircle(cx, cy, radius, border_paint);
+
+            // 如果选中，绘制内圆点
+            if (checked) {
+                SkPaint dot_paint;
+                dot_paint.setColor(SK_ColorBLACK);
+                dot_paint.setStyle(SkPaint::kFill_Style);
+                dot_paint.setAntiAlias(true);
+
+                float inner_radius = radius / 2;
+                canvas->drawCircle(cx, cy, inner_radius, dot_paint);
+            }
         }
     }
 }
@@ -1760,19 +2053,37 @@ void RenderInline::PaintInputElement(SkCanvas* canvas, HTMLInputElement* input, 
     // 处理checkbox和radio类型
     else if (type == InputType::Checkbox || type == InputType::Radio) {
         bool checked = input->GetChecked();
+        float cx = box.content_x + box.content_width / 2;
+        float cy = box.content_y + box.content_height / 2;
 
-        // 只有选中时才绘制标记
-        if (checked) {
-            if (type == InputType::Checkbox) {
-                // 绘制勾选标记（✓）
+        if (type == InputType::Checkbox) {
+            // 绘制 checkbox 方框边框
+            SkPaint border_paint;
+            border_paint.setColor(SkColorSetRGB(118, 118, 118));
+            border_paint.setStrokeWidth(1);
+            border_paint.setStyle(SkPaint::kStroke_Style);
+            border_paint.setAntiAlias(true);
+
+            float size = std::min(box.content_width, box.content_height);
+            float half = size / 2;
+            SkRect checkbox_rect = SkRect::MakeXYWH(cx - half, cy - half, size, size);
+
+            // 背景
+            SkPaint bg_paint;
+            bg_paint.setColor(SK_ColorWHITE);
+            bg_paint.setStyle(SkPaint::kFill_Style);
+            canvas->drawRoundRect(checkbox_rect, 2, 2, bg_paint);
+
+            // 边框
+            canvas->drawRoundRect(checkbox_rect, 2, 2, border_paint);
+
+            // 如果选中，绘制勾选标记
+            if (checked) {
                 SkPaint check_paint;
                 check_paint.setColor(SK_ColorBLACK);
                 check_paint.setStrokeWidth(2);
                 check_paint.setStyle(SkPaint::kStroke_Style);
                 check_paint.setAntiAlias(true);
-
-                float cx = box.content_x + box.content_width / 2;
-                float cy = box.content_y + box.content_height / 2;
 
                 SkPath check_path;
                 check_path.moveTo(cx - 4, cy);
@@ -1780,18 +2091,35 @@ void RenderInline::PaintInputElement(SkCanvas* canvas, HTMLInputElement* input, 
                 check_path.lineTo(cx + 4, cy - 3);
                 canvas->drawPath(check_path, check_paint);
             }
-            else if (type == InputType::Radio) {
-                // 绘制圆点标记
+        }
+        else if (type == InputType::Radio) {
+            // 绘制 radio 外圆环
+            float radius = std::min(box.content_width, box.content_height) / 2;
+
+            // 背景
+            SkPaint bg_paint;
+            bg_paint.setColor(SK_ColorWHITE);
+            bg_paint.setStyle(SkPaint::kFill_Style);
+            bg_paint.setAntiAlias(true);
+            canvas->drawCircle(cx, cy, radius, bg_paint);
+
+            // 边框
+            SkPaint border_paint;
+            border_paint.setColor(SkColorSetRGB(118, 118, 118));
+            border_paint.setStrokeWidth(1);
+            border_paint.setStyle(SkPaint::kStroke_Style);
+            border_paint.setAntiAlias(true);
+            canvas->drawCircle(cx, cy, radius, border_paint);
+
+            // 如果选中，绘制内圆点
+            if (checked) {
                 SkPaint dot_paint;
                 dot_paint.setColor(SK_ColorBLACK);
                 dot_paint.setStyle(SkPaint::kFill_Style);
                 dot_paint.setAntiAlias(true);
 
-                float cx = box.content_x + box.content_width / 2;
-                float cy = box.content_y + box.content_height / 2;
-                float radius = std::min(box.content_width, box.content_height) / 4;
-
-                canvas->drawCircle(cx, cy, radius, dot_paint);
+                float inner_radius = radius / 2;
+                canvas->drawCircle(cx, cy, inner_radius, dot_paint);
             }
         }
     }
@@ -1930,9 +2258,10 @@ void RenderText::Layout(float parent_width, float parent_height) {
     } else {
         // 单行文本 - 使用支持emoji的测量
         float width = text_renderer.MeasureTextWidthWithEmoji(text_, font);
-        auto metrics = text_renderer.MeasureText(text_, font);
         layout_info_.width = width;
-        layout_info_.height = metrics.height;
+        // 单行文本也应该使用 line_height 来计算高度，与浏览器行为一致
+        // 浏览器的 line-height: normal 会应用到所有文本，包括单行文本
+        layout_info_.height = style.line_height * style.font_size;
     }
 
     layout_info_.content_rect = SkRect::MakeWH(layout_info_.width, layout_info_.height);
@@ -1975,6 +2304,15 @@ void RenderText::Paint(SkCanvas* canvas) {
 
     // 计算基线位置：从顶部开始，向下偏移 ascent（ascent 是负值，所以取反）
     float baseline_y = -font_metrics.fAscent;
+
+    // 处理 vertical-align
+    if (style.vertical_align == "super") {
+        // 上标：向上偏移 (约为字体大小的 0.4 倍)
+        baseline_y -= style.font_size * 0.4f;
+    } else if (style.vertical_align == "sub") {
+        // 下标：向下偏移 (约为字体大小的 0.2 倍)
+        baseline_y += style.font_size * 0.2f;
+    }
 
     // 创建文本渲染器
     TextRenderer text_renderer(canvas);
@@ -2029,10 +2367,25 @@ void RenderText::Paint(SkCanvas* canvas) {
     }
 
     // 绘制文本装饰（下划线、删除线等）- 需要为每一行绘制
-    if (style.text_decoration == "underline" || style.text_decoration == "line-through") {
+    // 支持格式: "underline", "line-through", "underline dotted", "underline dashed"
+    bool has_underline = style.text_decoration.find("underline") != std::string::npos;
+    bool has_line_through = style.text_decoration.find("line-through") != std::string::npos;
+    bool is_dotted = style.text_decoration.find("dotted") != std::string::npos;
+    bool is_dashed = style.text_decoration.find("dashed") != std::string::npos;
+
+    if (has_underline || has_line_through) {
         SkPaint line_paint;
         line_paint.setColor(text_color);
         line_paint.setAntiAlias(true);
+
+        // 设置线条样式
+        if (is_dotted) {
+            const SkScalar intervals[] = {2.0f, 2.0f};
+            line_paint.setPathEffect(SkDashPathEffect::Make(intervals, 2, 0));
+        } else if (is_dashed) {
+            const SkScalar intervals[] = {4.0f, 2.0f};
+            line_paint.setPathEffect(SkDashPathEffect::Make(intervals, 2, 0));
+        }
 
         float decoration_current_y = baseline_y;
 
@@ -2046,14 +2399,16 @@ void RenderText::Paint(SkCanvas* canvas) {
                 continue;
             }
 
-            if (style.text_decoration == "underline") {
+            if (has_underline) {
                 // 下划线：在基线下方
                 float underline_y = decoration_current_y + font_metrics.fUnderlinePosition;
                 float underline_thickness = font_metrics.fUnderlineThickness;
                 if (underline_thickness < 1.0f) underline_thickness = 1.0f;
                 line_paint.setStrokeWidth(underline_thickness);
                 canvas->drawLine(0, underline_y, line_width, underline_y, line_paint);
-            } else if (style.text_decoration == "line-through") {
+            }
+
+            if (has_line_through) {
                 // 删除线：在文字中间
                 float strikethrough_y = decoration_current_y + font_metrics.fStrikeoutPosition;
                 float strikethrough_thickness = font_metrics.fStrikeoutThickness;
@@ -2074,11 +2429,106 @@ void RenderText::Paint(SkCanvas* canvas) {
 
 // ========== RenderTable 实现 ==========
 
+void RenderTable::CollectColumnStyles() {
+    column_background_colors_.clear();
+
+    // 遍历子元素查找 colgroup 和 col
+    for (auto& child : children_) {
+        // 检查是否是 colgroup（通过检查 DOM 元素的标签名）
+        auto node = child->GetNode();
+        if (!node) continue;
+
+        auto element = std::dynamic_pointer_cast<Element>(node);
+        if (!element) continue;
+
+        std::string tag_name = element->GetTagName();
+        std::transform(tag_name.begin(), tag_name.end(), tag_name.begin(), ::tolower);
+
+        if (tag_name == "colgroup") {
+            // colgroup 的背景色（作为默认值应用到其下的 col）
+            std::string colgroup_bg = child->GetComputedStyle().background_color;
+
+            // 遍历 colgroup 中的 col 元素
+            for (auto& col_child : child->GetChildren()) {
+                auto col_node = col_child->GetNode();
+                if (!col_node) continue;
+
+                auto col_element = std::dynamic_pointer_cast<Element>(col_node);
+                if (!col_element) continue;
+
+                std::string col_tag = col_element->GetTagName();
+                std::transform(col_tag.begin(), col_tag.end(), col_tag.begin(), ::tolower);
+
+                if (col_tag == "col") {
+                    // 获取 col 的背景色，如果没有则使用 colgroup 的
+                    std::string col_bg = col_child->GetComputedStyle().background_color;
+                    if (col_bg.empty() || col_bg == "transparent") {
+                        col_bg = colgroup_bg;
+                    }
+
+                    // 检查 span 属性
+                    int span = 1;
+                    std::string span_str = col_element->GetAttribute("span");
+                    if (!span_str.empty()) {
+                        try {
+                            span = std::stoi(span_str);
+                            if (span < 1) span = 1;
+                        } catch (...) {
+                            span = 1;
+                        }
+                    }
+
+                    // 为每个跨越的列添加背景色
+                    for (int i = 0; i < span; ++i) {
+                        column_background_colors_.push_back(col_bg);
+                    }
+                }
+            }
+        }
+        else if (tag_name == "col") {
+            // 直接的 col 元素（没有 colgroup 包裹）
+            std::string col_bg = child->GetComputedStyle().background_color;
+
+            // 检查 span 属性
+            int span = 1;
+            std::string span_str = element->GetAttribute("span");
+            if (!span_str.empty()) {
+                try {
+                    span = std::stoi(span_str);
+                    if (span < 1) span = 1;
+                } catch (...) {
+                    span = 1;
+                }
+            }
+
+            // 为每个跨越的列添加背景色
+            for (int i = 0; i < span; ++i) {
+                column_background_colors_.push_back(col_bg);
+            }
+        }
+    }
+}
+
 void RenderTable::CalculateColumnWidths(float available_width) {
     // 收集所有行中的单元格来确定列数和宽度
     std::vector<float> min_widths;
     std::vector<float> preferred_widths;
     size_t max_columns = 0;
+
+    // 辅助函数：计算一行的实际列数（考虑 colspan）
+    auto count_row_columns = [](std::shared_ptr<RenderObject> row) -> size_t {
+        size_t col_count = 0;
+        for (auto& cell : row->GetChildren()) {
+            int col_span = 1;
+            auto table_cell = std::dynamic_pointer_cast<RenderTableCell>(cell);
+            if (table_cell) {
+                col_span = table_cell->GetColSpan();
+                if (col_span < 1) col_span = 1;
+            }
+            col_count += col_span;
+        }
+        return col_count;
+    };
 
     // 遍历所有子元素（可能是 thead, tbody, tfoot 或直接的 tr）
     for (auto& child : children_) {
@@ -2090,15 +2540,13 @@ void RenderTable::CalculateColumnWidths(float available_width) {
             child_type == RenderObjectType::TABLE_FOOTER_GROUP) {
             for (auto& row : child->GetChildren()) {
                 if (row->GetType() == RenderObjectType::TABLE_ROW) {
-                    auto& cells = row->GetChildren();
-                    max_columns = std::max(max_columns, cells.size());
+                    max_columns = std::max(max_columns, count_row_columns(row));
                 }
             }
         }
         // 处理直接的行（tr）
         else if (child_type == RenderObjectType::TABLE_ROW) {
-            auto& cells = child->GetChildren();
-            max_columns = std::max(max_columns, cells.size());
+            max_columns = std::max(max_columns, count_row_columns(child));
         }
     }
 
@@ -2114,9 +2562,18 @@ void RenderTable::CalculateColumnWidths(float available_width) {
     // 计算每列的最小和首选宽度
     auto process_row = [&](std::shared_ptr<RenderObject> row) {
         auto& cells = row->GetChildren();
-        for (size_t i = 0; i < cells.size() && i < max_columns; ++i) {
+        size_t logical_col = 0;  // 跟踪逻辑列索引
+        for (size_t i = 0; i < cells.size() && logical_col < max_columns; ++i) {
             auto& cell = cells[i];
             const auto& cell_style = cell->GetComputedStyle();
+
+            // 获取 colspan
+            int col_span = 1;
+            auto table_cell = std::dynamic_pointer_cast<RenderTableCell>(cell);
+            if (table_cell) {
+                col_span = table_cell->GetColSpan();
+                if (col_span < 1) col_span = 1;
+            }
 
             // 计算单元格的最小宽度（内容 + padding + border）
             float cell_padding_left = cell_style.padding.left.ToPx(available_width, cell_style.font_size);
@@ -2141,8 +2598,17 @@ void RenderTable::CalculateColumnWidths(float available_width) {
                 content_preferred_width = std::max(content_preferred_width, cell_style.width.value);
             }
 
-            min_widths[i] = std::max(min_widths[i], content_min_width + cell_extra);
-            preferred_widths[i] = std::max(preferred_widths[i], content_preferred_width + cell_extra);
+            // 对于 colspan > 1 的单元格，将宽度平均分配到各列
+            float width_per_col = (content_min_width + cell_extra) / col_span;
+            float pref_width_per_col = (content_preferred_width + cell_extra) / col_span;
+
+            for (int j = 0; j < col_span && (logical_col + j) < max_columns; ++j) {
+                min_widths[logical_col + j] = std::max(min_widths[logical_col + j], width_per_col);
+                preferred_widths[logical_col + j] = std::max(preferred_widths[logical_col + j], pref_width_per_col);
+            }
+
+            // 更新逻辑列索引
+            logical_col += col_span;
         }
     };
 
@@ -2166,8 +2632,11 @@ void RenderTable::CalculateColumnWidths(float available_width) {
 
     // 计算表格边框和间距
     const auto& style = computed_style_;
-    float table_border_left = style.border.width.ToPx();
-    float table_border_right = style.border.width.ToPx();
+    bool is_collapse = (style.border_collapse == "collapse");
+
+    // 在 collapse 模式下，表格边框与单元格边框合并，不占用额外空间
+    float table_border_left = is_collapse ? 0 : style.border.width.ToPx();
+    float table_border_right = is_collapse ? 0 : style.border.width.ToPx();
     float table_padding_left = style.padding.left.ToPx(available_width, style.font_size);
     float table_padding_right = style.padding.right.ToPx(available_width, style.font_size);
 
@@ -2258,6 +2727,9 @@ void RenderTable::Layout(float parent_width, float parent_height) {
     // 所以表格本身不需要额外的边框空间
     float effective_border = is_collapse ? 0 : border_width;
 
+    // 收集 colgroup/col 的样式（背景色等）
+    CollectColumnStyles();
+
     float width;
     if (has_explicit_width) {
         // 有显式宽度，使用指定的宽度
@@ -2294,80 +2766,202 @@ void RenderTable::Layout(float parent_width, float parent_height) {
     float current_y = padding_top + effective_border + (is_collapse ? 0 : border_spacing);
     float content_width = width - effective_border * 2 - padding_left - padding_right;
 
-    // 遍历并布局所有子元素
+    // 先布局 caption（在表格内容之前）
     for (auto& child : children_) {
-        RenderObjectType child_type = child->GetType();
-
-        // 处理 caption
-        if (child_type == RenderObjectType::TABLE_CAPTION) {
+        if (child->GetType() == RenderObjectType::TABLE_CAPTION) {
             child->Layout(content_width, 0);
             auto& child_layout = child->GetLayoutInfo();
             child_layout.x = padding_left + effective_border;
             child_layout.y = current_y;
             current_y += child_layout.height;
-            continue;
         }
+    }
 
-        // 设置行组的列宽度并布局
-        auto layout_row_group = [&](std::shared_ptr<RenderObject> group) {
-            float group_start_y = current_y;
-            float row_y_in_group = 0;  // 行在行组内的相对位置
+    // 收集所有行（用于 rowspan 处理）
+    std::vector<std::shared_ptr<RenderTableRow>> all_rows;
+    std::vector<std::shared_ptr<RenderObject>> row_groups;  // 记录行组以便后续设置布局
 
-            for (auto& row : group->GetChildren()) {
-                if (row->GetType() == RenderObjectType::TABLE_ROW) {
-                    auto table_row = std::dynamic_pointer_cast<RenderTableRow>(row);
-                    if (table_row) {
-                        table_row->SetColumnWidths(column_widths_);
-                        table_row->SetBorderSpacing(border_spacing);
-                        table_row->SetBorderCollapse(is_collapse);
-                    }
-
-                    row->Layout(content_width, 0);
-                    auto& row_layout = row->GetLayoutInfo();
-                    row_layout.x = 0;  // 相对于行组
-                    row_layout.y = row_y_in_group;  // 相对于行组
-                    row_y_in_group += row_layout.height;
-                    current_y += row_layout.height;
-
-                    // 在 separate 模式下，行之间添加 border-spacing
-                    if (!is_collapse) {
-                        row_y_in_group += border_spacing;
-                        current_y += border_spacing;
-                    }
+    auto collect_rows = [&](std::shared_ptr<RenderObject> container) {
+        for (auto& child : container->GetChildren()) {
+            if (child->GetType() == RenderObjectType::TABLE_ROW) {
+                auto table_row = std::dynamic_pointer_cast<RenderTableRow>(child);
+                if (table_row) {
+                    all_rows.push_back(table_row);
                 }
             }
+        }
+    };
 
-            // 设置行组的布局信息
-            auto& group_layout = group->GetLayoutInfo();
-            group_layout.x = padding_left + effective_border + (is_collapse ? 0 : border_spacing);
-            group_layout.y = group_start_y;
-            group_layout.width = content_width;
-            group_layout.height = row_y_in_group;  // 使用行组内的总高度
-            group_layout.is_laid_out = true;
-        };
-
+    for (auto& child : children_) {
+        RenderObjectType child_type = child->GetType();
         if (child_type == RenderObjectType::TABLE_ROW_GROUP ||
             child_type == RenderObjectType::TABLE_HEADER_GROUP ||
             child_type == RenderObjectType::TABLE_FOOTER_GROUP) {
-            layout_row_group(child);
-        }
-        else if (child_type == RenderObjectType::TABLE_ROW) {
+            row_groups.push_back(child);
+            collect_rows(child);
+        } else if (child_type == RenderObjectType::TABLE_ROW) {
             auto table_row = std::dynamic_pointer_cast<RenderTableRow>(child);
             if (table_row) {
-                table_row->SetColumnWidths(column_widths_);
-                table_row->SetBorderSpacing(border_spacing);
-                table_row->SetBorderCollapse(is_collapse);
+                all_rows.push_back(table_row);
+            }
+        }
+    }
+
+    // 跟踪 rowspan 占据的单元格
+    std::vector<RenderTableRow::RowspanCell> active_rowspans;
+
+    // 记录 rowspan 单元格信息，用于后续更新高度
+    struct RowspanInfo {
+        std::shared_ptr<RenderTableCell> cell;
+        size_t start_row;  // 起始行索引
+        int row_span;      // 跨越的行数
+    };
+    std::vector<RowspanInfo> rowspan_cells;
+
+    // 第一遍：布局所有行，收集 rowspan 信息
+    for (size_t row_idx = 0; row_idx < all_rows.size(); ++row_idx) {
+        auto& table_row = all_rows[row_idx];
+
+        // 设置行的基本属性
+        table_row->SetColumnWidths(column_widths_);
+        table_row->SetBorderSpacing(border_spacing);
+        table_row->SetBorderCollapse(is_collapse);
+        table_row->SetRowspanOccupiedCols(active_rowspans);
+
+        // 布局行
+        table_row->Layout(content_width, 0);
+        auto& row_layout = table_row->GetLayoutInfo();
+        row_layout.y = current_y;
+        current_y += row_layout.height;
+
+        // 更新 active_rowspans：处理当前行的单元格
+        // 1. 减少现有 rowspan 的剩余行数，移除已完成的
+        for (auto it = active_rowspans.begin(); it != active_rowspans.end(); ) {
+            it->remaining_rows--;
+            if (it->remaining_rows <= 0) {
+                it = active_rowspans.erase(it);
+            } else {
+                ++it;
+            }
+        }
+
+        // 2. 添加当前行中新的 rowspan 单元格
+        size_t logical_col = 0;
+        for (auto& cell : table_row->GetChildren()) {
+            // 跳过被 rowspan 占据的列
+            while (true) {
+                bool occupied = false;
+                for (const auto& rs : active_rowspans) {
+                    if (rs.col_index == logical_col) {
+                        occupied = true;
+                        break;
+                    }
+                }
+                if (!occupied) break;
+                logical_col++;
             }
 
-            child->Layout(content_width, 0);
+            auto table_cell = std::dynamic_pointer_cast<RenderTableCell>(cell);
+            if (table_cell) {
+                int col_span = table_cell->GetColSpan();
+                int row_span = table_cell->GetRowSpan();
+                if (col_span < 1) col_span = 1;
+                if (row_span < 1) row_span = 1;
+
+                // 如果有 rowspan > 1，记录它
+                if (row_span > 1) {
+                    // 记录用于后续更新高度
+                    RowspanInfo info;
+                    info.cell = table_cell;
+                    info.start_row = row_idx;
+                    info.row_span = row_span;
+                    rowspan_cells.push_back(info);
+
+                    for (int c = 0; c < col_span; ++c) {
+                        RenderTableRow::RowspanCell rs_cell;
+                        rs_cell.col_index = logical_col + c;
+                        rs_cell.remaining_rows = row_span - 1;
+                        rs_cell.cell = std::dynamic_pointer_cast<RenderObject>(table_cell);
+                        active_rowspans.push_back(rs_cell);
+                    }
+                }
+
+                logical_col += col_span;
+            } else {
+                logical_col++;
+            }
+        }
+
+        // 在 separate 模式下，行之间添加 border-spacing
+        if (!is_collapse) {
+            current_y += border_spacing;
+        }
+    }
+
+    // 第二遍：更新 rowspan 单元格的高度并重新布局以应用垂直居中
+    for (const auto& info : rowspan_cells) {
+        size_t end_row = std::min(info.start_row + info.row_span, all_rows.size());
+        if (end_row <= info.start_row) continue;
+
+        // 计算跨越行的总高度
+        float start_y = all_rows[info.start_row]->GetLayoutInfo().y;
+        float end_y = all_rows[end_row - 1]->GetLayoutInfo().y +
+                      all_rows[end_row - 1]->GetLayoutInfo().height;
+        float total_height = end_y - start_y;
+
+        // 添加行间距（如果有的话）
+        if (!is_collapse && info.row_span > 1) {
+            total_height += border_spacing * (info.row_span - 1);
+        }
+
+        // 获取单元格当前布局信息
+        auto& cell_layout = info.cell->GetLayoutInfo();
+        float cell_width = cell_layout.width;
+        float cell_x = cell_layout.x;
+        float cell_y = cell_layout.y;
+
+        // 重新布局单元格，传入目标高度以应用垂直居中
+        info.cell->Layout(cell_width, total_height);
+
+        // 恢复位置（Layout 不设置 x/y）
+        cell_layout.x = cell_x;
+        cell_layout.y = cell_y;
+        cell_layout.height = total_height;
+    }
+
+    // 设置独立行的 x 坐标
+    for (auto& child : children_) {
+        if (child->GetType() == RenderObjectType::TABLE_ROW) {
             auto& child_layout = child->GetLayoutInfo();
             child_layout.x = padding_left + effective_border + (is_collapse ? 0 : border_spacing);
-            child_layout.y = current_y;
-            current_y += child_layout.height;
+        }
+    }
 
-            // 在 separate 模式下，行之间添加 border-spacing
-            if (!is_collapse) {
-                current_y += border_spacing;
+    // 设置行组的布局信息
+    for (auto& group : row_groups) {
+        float min_y = std::numeric_limits<float>::max();
+        float max_y = 0;
+        for (auto& row : group->GetChildren()) {
+            if (row->GetType() == RenderObjectType::TABLE_ROW) {
+                auto& row_layout = row->GetLayoutInfo();
+                min_y = std::min(min_y, row_layout.y);
+                max_y = std::max(max_y, row_layout.y + row_layout.height);
+                // 设置行在行组内的相对位置
+                row_layout.x = 0;
+            }
+        }
+        auto& group_layout = group->GetLayoutInfo();
+        group_layout.x = padding_left + effective_border + (is_collapse ? 0 : border_spacing);
+        group_layout.y = min_y;
+        group_layout.width = content_width;
+        group_layout.height = max_y - min_y;
+        group_layout.is_laid_out = true;
+
+        // 调整行在行组内的 y 坐标（相对于行组）
+        for (auto& row : group->GetChildren()) {
+            if (row->GetType() == RenderObjectType::TABLE_ROW) {
+                auto& row_layout = row->GetLayoutInfo();
+                row_layout.y -= min_y;
             }
         }
     }
@@ -2509,28 +3103,76 @@ void RenderTableRow::Layout(float parent_width, float parent_height) {
     // 获取 border-spacing（在 separate 模式下单元格之间的间距）
     float spacing = border_collapse_ ? 0 : border_spacing_;
 
+    // 辅助函数：检查某列是否被 rowspan 占据
+    auto is_col_occupied = [this](size_t col) -> bool {
+        for (const auto& rs : rowspan_occupied_cols_) {
+            if (rs.col_index == col) {
+                return true;
+            }
+        }
+        return false;
+    };
+
+    // 辅助函数：获取某列被 rowspan 占据的宽度
+    auto get_occupied_width = [this, &spacing](size_t col) -> float {
+        if (col < column_widths_.size()) {
+            float w = column_widths_[col];
+            if (!border_collapse_) {
+                w += spacing;
+            }
+            return w;
+        }
+        return 0;
+    };
+
     // 布局每个单元格
     float current_x = 0;  // 在 separate 模式下，第一个单元格前的间距由表格处理
     float max_height = 0;
 
     auto& cells = children_;
+    size_t logical_col = 0;  // 跟踪逻辑列索引（考虑 colspan 和 rowspan）
+
     for (size_t i = 0; i < cells.size(); ++i) {
         auto& cell = cells[i];
 
-        // 获取单元格的列宽度
-        float cell_width = (i < column_widths_.size()) ? column_widths_[i] : 100.0f;
+        // 跳过被 rowspan 占据的列
+        while (is_col_occupied(logical_col)) {
+            current_x += get_occupied_width(logical_col);
+            logical_col++;
+        }
 
-        // 处理 colspan
+        // 获取当前单元格的 colspan
+        int col_span = 1;
         auto table_cell = std::dynamic_pointer_cast<RenderTableCell>(cell);
-        if (table_cell && table_cell->GetColSpan() > 1) {
-            int col_span = table_cell->GetColSpan();
-            for (int j = 1; j < col_span && (i + j) < column_widths_.size(); ++j) {
-                cell_width += column_widths_[i + j];
-                // 在 separate 模式下，合并的列之间也有间距
-                if (!border_collapse_) {
-                    cell_width += spacing;
-                }
+        if (table_cell) {
+            col_span = table_cell->GetColSpan();
+            if (col_span < 1) col_span = 1;
+            // 设置单元格的列索引（用于应用 col 的背景色）
+            table_cell->SetColumnIndex(logical_col);
+        }
+
+        // 计算单元格宽度：从 logical_col 开始，跨越 col_span 列
+        float cell_width = 0;
+        int actual_cols = 0;
+        for (int j = 0; j < col_span && (logical_col + j) < column_widths_.size(); ++j) {
+            // 跳过被 rowspan 占据的列
+            size_t target_col = logical_col + j;
+            while (is_col_occupied(target_col) && target_col < column_widths_.size()) {
+                target_col++;
             }
+            if (target_col >= column_widths_.size()) break;
+
+            cell_width += column_widths_[target_col];
+            actual_cols++;
+            // 在 separate 模式下，合并的列之间也有间距（除了第一列）
+            if (actual_cols > 1 && !border_collapse_) {
+                cell_width += spacing;
+            }
+        }
+
+        // 如果没有列宽度信息，使用默认值
+        if (cell_width == 0) {
+            cell_width = 100.0f;
         }
 
         // 布局单元格
@@ -2548,6 +3190,15 @@ void RenderTableRow::Layout(float parent_width, float parent_height) {
             current_x += spacing;
         }
         max_height = std::max(max_height, cell_layout.height);
+
+        // 更新逻辑列索引
+        logical_col += col_span;
+    }
+
+    // 跳过行末尾被 rowspan 占据的列（用于计算正确的行宽度）
+    while (is_col_occupied(logical_col) && logical_col < column_widths_.size()) {
+        current_x += get_occupied_width(logical_col);
+        logical_col++;
     }
 
     // 统一所有单元格的高度
@@ -2608,18 +3259,55 @@ void RenderTableCell::Layout(float parent_width, float parent_height) {
     // 计算内容区域宽度
     float content_width = parent_width - padding_left - padding_right - border_width * 2;
 
-    // 布局子元素
+    // 布局子元素，先计算内容总高度
     float content_height = 0;
     for (auto& child : children_) {
         child->Layout(content_width, 0);
-        auto& child_layout = child->GetLayoutInfo();
-        child_layout.x = padding_left + border_width;
-        child_layout.y = padding_top + border_width + content_height;
-        content_height += child_layout.height;
+        content_height += child->GetLayoutInfo().height;
     }
 
-    // 计算单元格高度
-    float height = content_height + padding_top + padding_bottom + border_width * 2;
+    // 计算单元格自然高度（如果没有 parent_height 约束）
+    float natural_height = content_height + padding_top + padding_bottom + border_width * 2;
+
+    // 使用较大的高度（考虑行高统一或 rowspan）
+    float height = std::max(natural_height, parent_height);
+
+    // 计算垂直对齐偏移（根据 vertical-align 属性）
+    float available_height = height - padding_top - padding_bottom - border_width * 2;
+    float vertical_offset = 0;
+
+    const std::string& v_align = style.vertical_align;
+    if (v_align == "middle") {
+        // 垂直居中
+        vertical_offset = (available_height - content_height) / 2;
+    } else if (v_align == "bottom") {
+        // 底部对齐
+        vertical_offset = available_height - content_height;
+    } else {
+        // top, baseline 或其他值：顶部对齐
+        vertical_offset = 0;
+    }
+    if (vertical_offset < 0) vertical_offset = 0;
+
+    // 设置子元素位置（应用垂直居中和水平对齐）
+    float current_y = padding_top + border_width + vertical_offset;
+    for (auto& child : children_) {
+        auto& child_layout = child->GetLayoutInfo();
+
+        // 计算水平对齐偏移（根据 text-align 属性）
+        float horizontal_offset = 0;
+        const std::string& t_align = style.text_align;
+        if (t_align == "center") {
+            horizontal_offset = (content_width - child_layout.width) / 2;
+        } else if (t_align == "right") {
+            horizontal_offset = content_width - child_layout.width;
+        }
+        if (horizontal_offset < 0) horizontal_offset = 0;
+
+        child_layout.x = padding_left + border_width + horizontal_offset;
+        child_layout.y = current_y;
+        current_y += child_layout.height;
+    }
 
     // 设置布局信息
     layout_info_.width = parent_width;
@@ -2662,9 +3350,35 @@ void RenderTableCell::Paint(SkCanvas* canvas) {
 
     // 渲染背景
     SkRect bounds = SkRect::MakeWH(layout.width, layout.height);
+
+    // 首先检查 col 的背景色（优先级低于单元格自身的背景色）
+    std::string effective_bg_color;
+
+    // 查找父表格来获取列的背景色
+    auto parent = GetParent();
+    while (parent) {
+        if (parent->GetType() == RenderObjectType::TABLE) {
+            auto table = std::dynamic_pointer_cast<RenderTable>(parent);
+            if (table) {
+                std::string col_bg = table->GetColumnBackgroundColor(column_index_);
+                if (!col_bg.empty() && col_bg != "transparent") {
+                    effective_bg_color = col_bg;
+                }
+            }
+            break;
+        }
+        parent = parent->GetParent();
+    }
+
+    // 单元格自身的背景色优先级更高
     if (!style.background_color.empty() && style.background_color != "transparent") {
+        effective_bg_color = style.background_color;
+    }
+
+    // 绘制背景
+    if (!effective_bg_color.empty()) {
         SkPaint bg_paint;
-        bg_paint.setColor(Color::Parse(style.background_color));
+        bg_paint.setColor(Color::Parse(effective_bg_color));
         bg_paint.setStyle(SkPaint::kFill_Style);
         canvas->drawRect(bounds, bg_paint);
     }
@@ -2712,7 +3426,18 @@ void RenderTableCaption::Layout(float parent_width, float parent_height) {
     for (auto& child : children_) {
         child->Layout(content_width, 0);
         auto& child_layout = child->GetLayoutInfo();
-        child_layout.x = padding_left;
+
+        // 根据 text-align 计算水平偏移
+        float horizontal_offset = 0;
+        const std::string& t_align = style.text_align;
+        if (t_align == "center") {
+            horizontal_offset = (content_width - child_layout.width) / 2;
+        } else if (t_align == "right") {
+            horizontal_offset = content_width - child_layout.width;
+        }
+        // left 或其他值：horizontal_offset = 0
+
+        child_layout.x = padding_left + horizontal_offset;
         child_layout.y = padding_top + content_height;
         content_height += child_layout.height;
     }

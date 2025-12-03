@@ -5,8 +5,10 @@
 
 #include "layout_engine.h"
 #include "dom/element.h"
+#include "dom/svg_element.h"
 #include "render/render_object.h"
 #include "render/render_inline_block.h"
+#include "render/render_svg.h"
 #include "render/text_renderer.h"
 #include "render/text/font_manager.h"
 #include <cmath>
@@ -180,10 +182,12 @@ static TaffySize TextMeasureFunction(
 
         // Use MeasureTextWidthWithEmoji for consistent width measurement with rendering
         float text_width = text_renderer.MeasureTextWidthWithEmoji(text, font);
-        float text_height = text_renderer.MeasureTextHeight(font);
+        // 单行文本也应该使用 line_height 来计算高度，与浏览器行为一致
+        // 浏览器的 line-height: normal 会应用到所有文本，包括单行文本
+        float line_height = style.line_height * style.font_size;
 
         size.width = text_width;
-        size.height = text_height;
+        size.height = line_height;
 
         // Store actual text width for text-align calculation
         text_obj->SetActualTextWidth(text_width);
@@ -391,9 +395,19 @@ void LayoutEngine::UpdateStylesRecursive(RenderObject* render_obj) {
         bool is_already_flex_or_grid = (computed_style.display == RenderObjectType::FLEX ||
                                         computed_style.display == RenderObjectType::GRID);
 
+        // Skip if parent is a flex/grid container - flex items should not be auto-converted
+        // because their size is determined by the flex algorithm, not by their internal layout
+        bool parent_is_flex_or_grid = false;
+        if (auto parent = render_obj->GetParent()) {
+            auto parent_display = parent->GetComputedStyle().display;
+            parent_is_flex_or_grid = (parent_display == RenderObjectType::FLEX ||
+                                      parent_display == RenderObjectType::GRID);
+        }
+
         // 对于 BLOCK 元素，检查是否需要设置为 FLEX（与 CreateNode 中的逻辑相同）
         // 这确保了在窗口 resize 时不会丢失 FLEX 设置
-        if (type == RenderObjectType::BLOCK && !is_already_flex_or_grid) {
+        // 但是：如果父元素是 flex/grid 容器，不要进行自动转换，以保持正确的 flex 子项行为
+        if (type == RenderObjectType::BLOCK && !is_already_flex_or_grid && !parent_is_flex_or_grid) {
             auto& children = render_obj->GetChildren();
             bool has_inline_content = false;
             bool has_block_content = false;
@@ -530,32 +544,39 @@ TaffyNodeId LayoutEngine::CreateNode(RenderObject* render_obj) {
             bool is_already_flex_or_grid = (computed_style.display == RenderObjectType::FLEX ||
                                             computed_style.display == RenderObjectType::GRID);
 
-            if (type == RenderObjectType::BLOCK && !is_already_flex_or_grid) {
+            // Skip if parent is a flex/grid container - flex items should not be auto-converted
+            // because their size is determined by the flex algorithm, not by their internal layout
+            bool parent_is_flex_or_grid = false;
+            if (auto parent = render_obj->GetParent()) {
+                auto parent_display = parent->GetComputedStyle().display;
+                parent_is_flex_or_grid = (parent_display == RenderObjectType::FLEX ||
+                                          parent_display == RenderObjectType::GRID);
+            }
+
+            if (type == RenderObjectType::BLOCK && !is_already_flex_or_grid && !parent_is_flex_or_grid) {
                 auto& children = render_obj->GetChildren();
                 bool has_inline_content = false;
                 bool has_block_content = false;
 
-                // DEBUG: Log block element children
-                auto dom_node = render_obj->GetNode();
-                std::string tag_name = "unknown";
-                if (dom_node && dom_node->GetNodeType() == NodeType::ELEMENT_NODE) {
-                    auto elem = std::static_pointer_cast<Element>(dom_node);
-                    tag_name = elem->GetTagName();
-                }
-                std::cout << "[DEBUG CreateNode] BLOCK <" << tag_name << "> has "
-                          << children.size() << " render children" << std::endl;
-
+                // Check computed display style (not RenderObjectType) to determine layout
+                // This respects CSS display property set via inline styles or stylesheets
                 for (auto& child : children) {
                     RenderObjectType child_type = child->GetType();
-                    std::cout << "[DEBUG CreateNode]   child type=" << static_cast<int>(child_type) << std::endl;
-                    if (child_type == RenderObjectType::TEXT ||
-                        child_type == RenderObjectType::INLINE_BLOCK ||
-                        child_type == RenderObjectType::INLINE) {
+                    // Use computed style display for accurate CSS behavior
+                    RenderObjectType child_display = child->GetComputedStyle().display;
+
+                    // TEXT nodes are always inline
+                    if (child_type == RenderObjectType::TEXT) {
                         has_inline_content = true;
-                    } else if (child_type == RenderObjectType::BLOCK ||
-                               child_type == RenderObjectType::FLEX ||
-                               child_type == RenderObjectType::GRID ||
-                               child_type == RenderObjectType::TABLE) {
+                    }
+                    // For other elements, check computed display style
+                    else if (child_display == RenderObjectType::INLINE ||
+                             child_display == RenderObjectType::INLINE_BLOCK) {
+                        has_inline_content = true;
+                    } else if (child_display == RenderObjectType::BLOCK ||
+                               child_display == RenderObjectType::FLEX ||
+                               child_display == RenderObjectType::GRID ||
+                               child_display == RenderObjectType::TABLE) {
                         has_block_content = true;
                     }
                 }
@@ -566,21 +587,16 @@ TaffyNodeId LayoutEngine::CreateNode(RenderObject* render_obj) {
                         TaffyStyleMutRef taffy_style = style_result.value;
                         TaffyStyle_SetDisplay(taffy_style, TAFFY_DISPLAY_FLEX);
 
-                        if (has_block_content) {
-                            // Mixed content: use column layout (like block stacking)
-                            // INLINE elements won't stretch because of align-items: flex-start
-                            TaffyStyle_SetFlexDirection(taffy_style, TAFFY_FLEX_DIRECTION_COLUMN);
-                            TaffyStyle_SetAlignItems(taffy_style, TAFFY_ALIGN_ITEMS_FLEX_START);
-                            std::cout << "[DEBUG CreateNode] BLOCK with mixed content -> FLEX COLUMN" << std::endl;
-                        } else {
-                            // Pure inline content: use row layout (horizontal flow)
-                            // Known issue: flex-wrap causes inline-block elements to wrap to
-                            // new line instead of flowing with text (Taffy doesn't support IFC)
-                            TaffyStyle_SetFlexDirection(taffy_style, TAFFY_FLEX_DIRECTION_ROW);
-                            TaffyStyle_SetFlexWrap(taffy_style, TAFFY_FLEX_WRAP_WRAP);
-                            TaffyStyle_SetAlignItems(taffy_style, TAFFY_ALIGN_ITEMS_BASELINE);
-                            std::cout << "[DEBUG CreateNode] BLOCK with inline content -> FLEX ROW WRAP" << std::endl;
-                        }
+                        // Always use row layout with wrap for inline content
+                        // Block elements will force line breaks by having width: 100%
+                        // This simulates browser's inline formatting context behavior
+                        TaffyStyle_SetFlexDirection(taffy_style, TAFFY_FLEX_DIRECTION_ROW);
+                        TaffyStyle_SetFlexWrap(taffy_style, TAFFY_FLEX_WRAP_WRAP);
+                        TaffyStyle_SetAlignItems(taffy_style, TAFFY_ALIGN_ITEMS_BASELINE);
+
+                        // Note: Setting block children width to 100% is done in BuildSubtree
+                        // after all children are created, because at this point children
+                        // haven't been added to element_to_node_ map yet.
                     }
                 }
             }
@@ -589,9 +605,6 @@ TaffyNodeId LayoutEngine::CreateNode(RenderObject* render_obj) {
             if (render_obj->GetType() == RenderObjectType::TEXT) {
                 auto* text_obj = dynamic_cast<RenderText*>(render_obj);
                 if (text_obj) {
-                    std::cout << "[DEBUG CreateNode] TEXT node created, text_len="
-                              << text_obj->GetText().length()
-                              << " text='" << text_obj->GetText().substr(0, 20) << "...'" << std::endl;
                     // Set the measure function with the RenderText object as context
                     // Taffy will call this function during layout to measure the text
                     TaffyTree_SetNodeContext(taffy_tree_, node, TextMeasureFunction, text_obj);
@@ -734,6 +747,52 @@ TaffyNodeId LayoutEngine::CreateNode(RenderObject* render_obj) {
                     }
                 }
             }
+            // For SVG elements, set fixed width/height from SVG attributes
+            // SVG elements have their dimensions defined by width/height attributes, not CSS
+            else if (render_obj->IsSVGRenderObject()) {
+                auto* svg_root = dynamic_cast<RenderSVGRoot*>(render_obj);
+                if (svg_root) {
+                    auto svg_element = svg_root->GetSVGSVGElement();
+                    if (svg_element) {
+                        // Get SVG dimensions from attributes
+                        float svg_width = 300.0f;  // SVG default width
+                        float svg_height = 150.0f; // SVG default height
+
+                        std::string width_str = svg_element->GetWidth();
+                        std::string height_str = svg_element->GetHeight();
+
+                        if (!width_str.empty()) {
+                            try {
+                                svg_width = std::stof(width_str);
+                            } catch (...) {}
+                        }
+                        if (!height_str.empty()) {
+                            try {
+                                svg_height = std::stof(height_str);
+                            } catch (...) {}
+                        }
+
+                        // If still no dimensions, try viewBox
+                        float view_min_x, view_min_y, view_width, view_height;
+                        if (svg_element->ParseViewBox(view_min_x, view_min_y, view_width, view_height)) {
+                            if (svg_width == 300.0f && width_str.empty()) svg_width = view_width;
+                            if (svg_height == 150.0f && height_str.empty()) svg_height = view_height;
+                        }
+
+                        TaffyStyleMutRefResult style_result = TaffyTree_GetStyleMut(taffy_tree_, node);
+                        if (style_result.return_code == TAFFY_RETURN_CODE_OK) {
+                            TaffyStyleMutRef taffy_style = style_result.value;
+
+                            // Set fixed width and height for SVG
+                            TaffyStyle_SetWidth(taffy_style, svg_width, TAFFY_UNIT_LENGTH);
+                            TaffyStyle_SetHeight(taffy_style, svg_height, TAFFY_UNIT_LENGTH);
+
+                            // SVG is a replaced element, use block display in Taffy
+                            TaffyStyle_SetDisplay(taffy_style, TAFFY_DISPLAY_BLOCK);
+                        }
+                    }
+                }
+            }
         }
     }
 
@@ -841,23 +900,30 @@ void LayoutEngine::ApplyStyle(TaffyNodeId node, const ComputedStyle& style) {
         else if (style.justify_content == "space-evenly") justify = TAFFY_ALIGN_CONTENT_SPACE_EVENLY;
         TaffyStyle_SetJustifyContent(taffy_style, justify);
 
-        // Align items
-        TaffyAlignItems align = TAFFY_ALIGN_ITEMS_STRETCH;
-        if (style.align_items == "flex-start") align = TAFFY_ALIGN_ITEMS_FLEX_START;
+        // Align items (CSS 规范默认值是 normal)
+        TaffyAlignItems align = TAFFY_ALIGN_ITEMS_NORMAL;
+        if (style.align_items == "normal") align = TAFFY_ALIGN_ITEMS_NORMAL;
+        else if (style.align_items == "flex-start") align = TAFFY_ALIGN_ITEMS_FLEX_START;
         else if (style.align_items == "flex-end") align = TAFFY_ALIGN_ITEMS_FLEX_END;
         else if (style.align_items == "center") align = TAFFY_ALIGN_ITEMS_CENTER;
         else if (style.align_items == "baseline") align = TAFFY_ALIGN_ITEMS_BASELINE;
         else if (style.align_items == "stretch") align = TAFFY_ALIGN_ITEMS_STRETCH;
+        else if (style.align_items == "start") align = TAFFY_ALIGN_ITEMS_START;
+        else if (style.align_items == "end") align = TAFFY_ALIGN_ITEMS_END;
         TaffyStyle_SetAlignItems(taffy_style, align);
 
-        // Align content
-        TaffyAlignContent align_content = TAFFY_ALIGN_CONTENT_STRETCH;
-        if (style.align_content == "flex-start") align_content = TAFFY_ALIGN_CONTENT_FLEX_START;
+        // Align content (CSS 规范默认值是 normal)
+        TaffyAlignContent align_content = TAFFY_ALIGN_CONTENT_NORMAL;
+        if (style.align_content == "normal") align_content = TAFFY_ALIGN_CONTENT_NORMAL;
+        else if (style.align_content == "flex-start") align_content = TAFFY_ALIGN_CONTENT_FLEX_START;
         else if (style.align_content == "flex-end") align_content = TAFFY_ALIGN_CONTENT_FLEX_END;
         else if (style.align_content == "center") align_content = TAFFY_ALIGN_CONTENT_CENTER;
         else if (style.align_content == "space-between") align_content = TAFFY_ALIGN_CONTENT_SPACE_BETWEEN;
         else if (style.align_content == "space-around") align_content = TAFFY_ALIGN_CONTENT_SPACE_AROUND;
+        else if (style.align_content == "space-evenly") align_content = TAFFY_ALIGN_CONTENT_SPACE_EVENLY;
         else if (style.align_content == "stretch") align_content = TAFFY_ALIGN_CONTENT_STRETCH;
+        else if (style.align_content == "start") align_content = TAFFY_ALIGN_CONTENT_START;
+        else if (style.align_content == "end") align_content = TAFFY_ALIGN_CONTENT_END;
         TaffyStyle_SetAlignContent(taffy_style, align_content);
 
         // Gap (for flex container)
@@ -1041,12 +1107,68 @@ void LayoutEngine::BuildSubtree(RenderObject* render_obj, TaffyNodeId parent_nod
         return;
     }
 
+    // For SVG elements, they manage their own layout using SVG coordinate system
+    // Don't add children to Taffy tree - SVG elements use custom layout
+    if (render_obj->IsSVGRenderObject()) {
+        // SVG elements manage their own children layout
+        return;
+    }
+
     // Recursively build children
     auto& children = render_obj->GetChildren();
-    std::cout << "[DEBUG BuildSubtree] type=" << static_cast<int>(type)
-              << " recursing into " << children.size() << " children" << std::endl;
     for (auto& child : children) {
         BuildSubtree(child.get(), node);
+    }
+
+    // After all children are created, set block-level children width to 100%
+    // This must be done here because children are now in element_to_node_ map
+    const auto& computed_style = render_obj->GetComputedStyle();
+    bool is_already_flex_or_grid = (computed_style.display == RenderObjectType::FLEX ||
+                                    computed_style.display == RenderObjectType::GRID);
+
+    if (type == RenderObjectType::BLOCK && !is_already_flex_or_grid) {
+        bool has_inline_content = false;
+        bool has_block_content = false;
+
+        // Check computed display style to determine layout
+        for (auto& child : children) {
+            RenderObjectType child_type = child->GetType();
+            RenderObjectType child_display = child->GetComputedStyle().display;
+
+            if (child_type == RenderObjectType::TEXT) {
+                has_inline_content = true;
+            } else if (child_display == RenderObjectType::INLINE ||
+                       child_display == RenderObjectType::INLINE_BLOCK) {
+                has_inline_content = true;
+            } else if (child_display == RenderObjectType::BLOCK ||
+                       child_display == RenderObjectType::FLEX ||
+                       child_display == RenderObjectType::GRID ||
+                       child_display == RenderObjectType::TABLE) {
+                has_block_content = true;
+            }
+        }
+
+        // If we have mixed content (inline + block), set block children to 100% width
+        if (has_inline_content && has_block_content) {
+            for (auto& child : children) {
+                RenderObjectType child_display = child->GetComputedStyle().display;
+                if (child_display == RenderObjectType::BLOCK ||
+                    child_display == RenderObjectType::FLEX ||
+                    child_display == RenderObjectType::GRID ||
+                    child_display == RenderObjectType::TABLE) {
+                    auto child_it = element_to_node_.find(child.get());
+                    if (child_it != element_to_node_.end()) {
+                        TaffyNodeId child_node = child_it->second;
+                        TaffyStyleMutRefResult child_style_result = TaffyTree_GetStyleMut(taffy_tree_, child_node);
+                        if (child_style_result.return_code == TAFFY_RETURN_CODE_OK) {
+                            TaffyStyleMutRef child_taffy_style = child_style_result.value;
+                            // Set width to 100% to force line break (like normal block behavior)
+                            TaffyStyle_SetWidth(child_taffy_style, 100.0f, TAFFY_UNIT_PERCENT);
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -1071,28 +1193,24 @@ void LayoutEngine::ReadLayoutResults(RenderObject* render_obj) {
     info.x = result.value.x;
     info.y = result.value.y;
 
-    // DEBUG: Check layout results for elements with margin
-    const auto& style_debug = render_obj->GetComputedStyle();
-    if (style_debug.margin.top.value > 0 || style_debug.margin.bottom.value > 0) {
-        std::cout << "[DEBUG ReadLayout] x=" << result.value.x
-                  << " y=" << result.value.y
-                  << " w=" << result.value.width
-                  << " h=" << result.value.height
-                  << " margin_top=" << style_debug.margin.top.value
-                  << " margin_bottom=" << style_debug.margin.bottom.value << std::endl;
-    }
-
     const auto& style = render_obj->GetComputedStyle();
     RenderObjectType type = render_obj->GetType();
 
+
+
     // For TABLE elements, don't overwrite width/height from Taffy
     // because the table has already calculated its own size in TableMeasureFunction
-    // via table->Layout(). Taffy may return the parent container width instead of
-    // the table's actual content-based width.
-    if (type != RenderObjectType::TABLE) {
+    if (type != RenderObjectType::TABLE && !render_obj->IsSVGRenderObject()) {
         info.width = result.value.width;
         info.height = result.value.height;
     }
+
+    // For SVG elements, call their Layout method to set correct width/height
+    // They need to read width/height attributes from their DOM element
+    if (render_obj->IsSVGRenderObject()) {
+        render_obj->Layout(result.value.width, result.value.height);
+    }
+
     info.is_laid_out = true;
 
     // For INLINE_BLOCK and INLINE elements, their children are not in Taffy tree.
@@ -1107,8 +1225,19 @@ void LayoutEngine::ReadLayoutResults(RenderObject* render_obj) {
         float padding_top = style.padding.top.ToPx(info.height, style.font_size);
         float padding_bottom = style.padding.bottom.ToPx(info.height, style.font_size);
 
+        // Get border widths
+        float border_left = style.border_left_width;
+        float border_right = style.border_right_width;
+        float border_top = style.border_top_width;
+        float border_bottom = style.border_bottom_width;
+        if (border_left == 0 && border_right == 0 && border_top == 0 && border_bottom == 0) {
+            float border_width = style.border.width.ToPx(info.width, style.font_size);
+            border_left = border_right = border_top = border_bottom = border_width;
+        }
+
         // Layout each child and position them
-        float content_width = info.width - padding_left - padding_right;
+        // Content width/height should exclude border
+        float content_width = info.width - padding_left - padding_right - border_left - border_right;
         float total_child_width = 0;
         float max_child_height = 0;
 
@@ -1121,25 +1250,32 @@ void LayoutEngine::ReadLayoutResults(RenderObject* render_obj) {
         }
 
         // Calculate starting x position based on text-align
-        float start_x = padding_left;
+        float start_x = padding_left + border_left;
         if (style.text_align == "center" && total_child_width < content_width) {
-            start_x = padding_left + (content_width - total_child_width) / 2.0f;
+            start_x = padding_left + border_left + (content_width - total_child_width) / 2.0f;
         } else if (style.text_align == "right" && total_child_width < content_width) {
-            start_x = padding_left + content_width - total_child_width;
+            start_x = padding_left + border_left + content_width - total_child_width;
         }
 
         // Position children
         float current_x = start_x;
-        float content_height = info.height - padding_top - padding_bottom;
+        float content_height = info.height - padding_top - padding_bottom - border_top - border_bottom;
+
         for (auto& child : children) {
             auto& child_layout = child->GetLayoutInfo();
             child_layout.x = current_x;
-            // Vertically center children
-            child_layout.y = padding_top + (content_height - child_layout.height) / 2.0f;
+            // Vertically center children (add border_top to offset)
+            child_layout.y = padding_top + border_top + (content_height - child_layout.height) / 2.0f;
             current_x += child_layout.width;
         }
 
         // Don't recurse into children - we already handled them
+        return;
+    }
+
+    // For SVG elements, their children are not in Taffy tree.
+    // The SVG element's Layout() already handles child layout, so don't recurse.
+    if (render_obj->IsSVGRenderObject()) {
         return;
     }
 

@@ -204,6 +204,12 @@ add_subdirectory(input_test_app)
 # ========== Table Test App ==========
 add_subdirectory(table_test_app)
 
+# ========== HTML Tags Test ==========
+add_subdirectory(html_tags_test)
+
+# ========== Element Test ==========
+add_subdirectory(element_test)
+
 message(STATUS "Examples configured successfully")
 message(STATUS "  - integration_example")
 message(STATUS "  - javascript_integration_example")

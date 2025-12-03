@@ -154,13 +154,6 @@ static JSValue js_element_get_style(JSContext* ctx, JSValueConst this_val, int m
         return JS_NULL;
     }
 
-    // DEBUG
-    static int debug_count = 0;
-    if (debug_count++ < 10) {
-        printf("[DEBUG js_element_get_style] tag=%s, style ptr=%p\n",
-               element->GetTagName().c_str(), (void*)style.get());
-    }
-
     // 包装为JS对象
     JSValue obj = JS_NewObjectClass(ctx, DOMBindings::css_style_declaration_class_id);
     if (JS_IsException(obj)) {
@@ -960,37 +953,25 @@ static JSValue js_element_set_value(JSContext* ctx, JSValueConst this_val, JSVal
 
     const char* value = JS_ToCString(ctx, val);
     if (!value) {
-        std::cerr << "[js_element_set_value] value is null" << std::endl;
         return JS_EXCEPTION;
     }
 
-    std::cerr << "[js_element_set_value] value='" << value << "'" << std::endl;
-    std::cerr.flush();
-
     // 检查是否是 input 或 textarea 元素
     std::string tag_name = element->GetTagName();
-    std::cerr << "[js_element_set_value] tag_name='" << tag_name << "'" << std::endl;
-    std::cerr.flush();
 
     if (tag_name == "input") {
         auto input = std::dynamic_pointer_cast<HTMLInputElement>(element);
         if (input) {
-            std::cerr << "[js_element_set_value] Calling input->SetValue" << std::endl;
-            std::cerr.flush();
             input->SetValue(value, false);  // 不触发事件
         }
     } else if (tag_name == "textarea") {
         auto textarea = std::dynamic_pointer_cast<HTMLTextAreaElement>(element);
         if (textarea) {
-            std::cerr << "[js_element_set_value] Calling textarea->SetValue" << std::endl;
-            std::cerr.flush();
             textarea->SetValue(value, false);  // 不触发事件
         }
     }
 
     JS_FreeCString(ctx, value);
-    std::cerr << "[js_element_set_value] END" << std::endl;
-    std::cerr.flush();
     return JS_UNDEFINED;
 }
 

@@ -20,9 +20,12 @@
 #include "core/dom/html_textarea_element.h"
 #include "core/dom/html_button_element.h"
 #include "core/dom/html_form_element.h"
+#include "core/dom/html_select_element.h"
+#include "core/render/select_dropdown.h"
 #include "core/render/style_resolver.h"
 #include "core/render/render_inline_block.h"
 #include "core/render/text/font_manager.h"
+#include "core/render/text_renderer.h"
 #include "core/utils/utf8_utils.h"
 #include "include/core/SkFontTypes.h"
 #include "include/core/SkFontMetrics.h"
@@ -41,6 +44,7 @@ EventLoop::EventLoop()
     , focus_manager_(std::make_unique<FocusManager>())
     , drag_manager_(std::make_unique<DragManager>())
 {
+    InitSystemCursors();
 }
 
 EventLoop::EventLoop(std::shared_ptr<TaskScheduler> task_scheduler)
@@ -55,12 +59,14 @@ EventLoop::EventLoop(std::shared_ptr<TaskScheduler> task_scheduler)
     if (!task_scheduler_) {
         throw std::invalid_argument("TaskScheduler cannot be null");
     }
+    InitSystemCursors();
 }
 
 EventLoop::~EventLoop() {
     if (running_) {
         Stop();
     }
+    DestroySystemCursors();
 }
 
 void EventLoop::Run() {
@@ -360,6 +366,30 @@ void EventLoop::HandleMouseEventForDOM(const SDL_Event& event) {
         }
     }
 
+    // ===== 处理 select 下拉菜单 =====
+    auto& dropdown_manager = SelectDropdownManager::Instance();
+    if (dropdown_manager.IsDropdownOpen()) {
+        if (event.type == SDL_EVENT_MOUSE_MOTION) {
+            // 更新悬停状态
+            if (dropdown_manager.HandleMouseMove(logical_x, logical_y)) {
+                window->SetNeedsRepaint();
+            }
+        } else if (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN && event.button.button == SDL_BUTTON_LEFT) {
+            // 处理点击
+            if (dropdown_manager.HitTest(logical_x, logical_y)) {
+                // 点击在下拉菜单内
+                dropdown_manager.HandleClick(logical_x, logical_y);
+                window->SetNeedsRepaint();
+                return;  // 已处理，不继续
+            } else {
+                // 点击在下拉菜单外，关闭菜单
+                dropdown_manager.CloseDropdown();
+                window->SetNeedsRepaint();
+                // 继续处理点击事件（可能点击了其他元素）
+            }
+        }
+    }
+
     // 对于鼠标移动事件，只在位置真正改变时才更新 hover
     // 这可以显著减少不必要的处理
     static float last_mouse_x = -1, last_mouse_y = -1;
@@ -390,6 +420,12 @@ void EventLoop::HandleMouseEventForDOM(const SDL_Event& event) {
     if (root_render) {
         // 使用渲染树进行 Hit Testing（使用逻辑坐标）
         hit_result = hit_testing.HitTestRenderObject(root_render, logical_x, logical_y, 0.0f, 0.0f);
+    }
+
+    // ===== 更新鼠标光标样式 =====
+    // 根据悬停元素更新系统光标（符合浏览器行为）
+    if (event.type == SDL_EVENT_MOUSE_MOTION) {
+        UpdateMouseCursor(hit_result, window_id);
     }
 
     // ===== 检测滚动条点击 =====
@@ -459,12 +495,140 @@ void EventLoop::HandleMouseEventForDOM(const SDL_Event& event) {
     if (!hit_result.IsValid()) {
         // 即使没有命中元素，mouseup时也要移除:active伪类
         if (event.type == SDL_EVENT_MOUSE_BUTTON_UP && last_mousedown_element) {
+            // 处理 textarea 的鼠标释放
+            std::string tag_name = last_mousedown_element->GetTagName();
+            if (tag_name == "textarea") {
+                auto textarea_element = std::dynamic_pointer_cast<HTMLTextAreaElement>(last_mousedown_element);
+                if (textarea_element) {
+                    if (textarea_element->IsDraggingScrollbar()) {
+                        textarea_element->EndScrollbarDrag();
+                    }
+                    if (textarea_element->IsDraggingSelection()) {
+                        textarea_element->HandleMouseUp();
+                    }
+                }
+            } else if (tag_name == "input") {
+                auto input_element = std::dynamic_pointer_cast<HTMLInputElement>(last_mousedown_element);
+                if (input_element && input_element->IsDraggingSelection()) {
+                    HandleInputMouseInteraction(input_element, 0, event.type, 14.0f, "");
+                }
+            }
+
             last_mousedown_element->SetPseudoClass("active", false);
             last_mousedown_element = nullptr;
 
             // 结束拖拽
             if (event.button.button == SDL_BUTTON_LEFT) {
                 drag_manager_->EndDrag(mouse_x, mouse_y);
+            }
+        }
+        // 即使没有命中元素，mousemove 时也要处理正在进行的拖动选择
+        else if (event.type == SDL_EVENT_MOUSE_MOTION && last_mousedown_element) {
+            std::string tag_name = last_mousedown_element->GetTagName();
+            if (tag_name == "textarea") {
+                auto textarea_element = std::dynamic_pointer_cast<HTMLTextAreaElement>(last_mousedown_element);
+                if (textarea_element && (textarea_element->IsDraggingSelection() || textarea_element->IsDraggingScrollbar())) {
+                    // 查找 textarea 的渲染对象并计算绝对位置
+                    auto root_render = window->GetCachedRenderTree();
+                    if (root_render) {
+                        struct FindResult {
+                            std::shared_ptr<RenderObject> render_obj;
+                            float abs_x = 0;
+                            float abs_y = 0;
+                        };
+                        std::function<FindResult(std::shared_ptr<RenderObject>, float, float)> findRenderObj;
+                        findRenderObj = [&](std::shared_ptr<RenderObject> obj, float offset_x, float offset_y) -> FindResult {
+                            if (!obj) return {};
+                            const auto& layout = obj->GetLayoutInfo();
+                            float current_x = offset_x + layout.x;
+                            float current_y = offset_y + layout.y;
+
+                            auto node = obj->GetNode();
+                            if (node && std::dynamic_pointer_cast<HTMLTextAreaElement>(node) == textarea_element) {
+                                return {obj, current_x, current_y};
+                            }
+                            // 子元素需要考虑滚动偏移
+                            float child_offset_x = current_x - obj->GetScrollX();
+                            float child_offset_y = current_y - obj->GetScrollY();
+                            for (auto& child : obj->GetChildren()) {
+                                auto result = findRenderObj(child, child_offset_x, child_offset_y);
+                                if (result.render_obj) return result;
+                            }
+                            return {};
+                        };
+
+                        auto find_result = findRenderObj(root_render, 0.0f, 0.0f);
+                        if (find_result.render_obj) {
+                            const auto& layout = find_result.render_obj->GetLayoutInfo();
+                            const auto& style = find_result.render_obj->GetComputedStyle();
+                            float padding_left = style.padding.left.ToPx();
+                            float padding_top = style.padding.top.ToPx();
+                            float padding_right = style.padding.right.ToPx();
+                            float padding_bottom = style.padding.bottom.ToPx();
+
+                            // 计算是否需要滚动条（与渲染保持一致）
+                            const float scrollbar_width = HTMLTextAreaElement::SCROLLBAR_WIDTH;
+                            SkFont font;
+                            font.setSize(style.font_size);
+                            float line_height = style.font_size * 1.2f;
+                            float content_height = textarea_element->GetContentHeight(line_height);
+                            float max_line_width = textarea_element->GetMaxLineWidth(font);
+                            float base_visible_width = layout.width - padding_left - padding_right;
+                            float base_visible_height = layout.height - padding_top - padding_bottom;
+                            bool need_v_scrollbar = content_height > base_visible_height;
+                            bool need_h_scrollbar = max_line_width > base_visible_width;
+                            float visible_width = base_visible_width - (need_v_scrollbar ? scrollbar_width : 0);
+                            float visible_height = base_visible_height - (need_h_scrollbar ? scrollbar_width : 0);
+
+                            // 使用绝对位置计算 local 坐标
+                            float text_local_x = logical_x - find_result.abs_x - padding_left;
+                            float text_local_y = logical_y - find_result.abs_y - padding_top;
+                            HandleTextAreaMouseInteraction(textarea_element, text_local_x, text_local_y, event.type,
+                                                           style.font_size, style.font_family, false,
+                                                           visible_width, visible_height);
+                        }
+                    }
+                }
+            } else if (tag_name == "input") {
+                auto input_element = std::dynamic_pointer_cast<HTMLInputElement>(last_mousedown_element);
+                if (input_element && input_element->IsDraggingSelection()) {
+                    auto root_render = window->GetCachedRenderTree();
+                    if (root_render) {
+                        struct FindResult {
+                            std::shared_ptr<RenderObject> render_obj;
+                            float abs_x = 0;
+                            float abs_y = 0;
+                        };
+                        std::function<FindResult(std::shared_ptr<RenderObject>, float, float)> findRenderObj;
+                        findRenderObj = [&](std::shared_ptr<RenderObject> obj, float offset_x, float offset_y) -> FindResult {
+                            if (!obj) return {};
+                            const auto& layout = obj->GetLayoutInfo();
+                            float current_x = offset_x + layout.x;
+                            float current_y = offset_y + layout.y;
+
+                            auto node = obj->GetNode();
+                            if (node && std::dynamic_pointer_cast<HTMLInputElement>(node) == input_element) {
+                                return {obj, current_x, current_y};
+                            }
+                            float child_offset_x = current_x - obj->GetScrollX();
+                            float child_offset_y = current_y - obj->GetScrollY();
+                            for (auto& child : obj->GetChildren()) {
+                                auto result = findRenderObj(child, child_offset_x, child_offset_y);
+                                if (result.render_obj) return result;
+                            }
+                            return {};
+                        };
+
+                        auto find_result = findRenderObj(root_render, 0.0f, 0.0f);
+                        if (find_result.render_obj) {
+                            const auto& style = find_result.render_obj->GetComputedStyle();
+                            float padding_left = style.padding.left.ToPx();
+                            float text_local_x = logical_x - find_result.abs_x - padding_left;
+                            HandleInputMouseInteraction(input_element, text_local_x, event.type,
+                                                       style.font_size, style.font_family);
+                        }
+                    }
+                }
             }
         }
 
@@ -518,11 +682,43 @@ void EventLoop::HandleMouseEventForDOM(const SDL_Event& event) {
                 if (input_element && hit_result.render_object) {
                     // 获取渲染对象的样式信息
                     const auto& style = hit_result.render_object->GetComputedStyle();
+                    const auto& layout = hit_result.render_object->GetLayoutInfo();
                     float padding_left = style.padding.left.ToPx();
-                    // 计算相对于文本内容区域的 X 坐标
-                    float text_local_x = hit_result.local_x - padding_left;
-                    HandleInputMouseInteraction(input_element, text_local_x, event.type,
-                                               style.font_size, style.font_family);
+                    float padding_right = style.padding.right.ToPx();
+                    float border_width = style.border.width.ToPx();
+
+                    // 检查是否是 input[number] 并且点击在 spinner 区域
+                    if (input_element->GetInputType() == InputType::Number) {
+                        const float spinner_width = 16.0f;
+                        float content_width = layout.width - padding_left - padding_right - border_width * 2;
+                        float spinner_x = padding_left + border_width + content_width - spinner_width;
+
+                        if (hit_result.local_x >= spinner_x) {
+                            // 点击在 spinner 区域
+                            float content_height = layout.height - style.padding.top.ToPx() - style.padding.bottom.ToPx() - border_width * 2;
+                            float half_height = content_height / 2;
+                            float spinner_y = style.padding.top.ToPx() + border_width;
+
+                            if (hit_result.local_y < spinner_y + half_height) {
+                                // 点击上半部分 - 增加
+                                input_element->StepUp();
+                            } else {
+                                // 点击下半部分 - 减少
+                                input_element->StepDown();
+                            }
+                            // 不处理文本点击 - spinner 区域已处理完毕
+                        } else {
+                            // 计算相对于文本内容区域的 X 坐标
+                            float text_local_x = hit_result.local_x - padding_left;
+                            HandleInputMouseInteraction(input_element, text_local_x, event.type,
+                                                       style.font_size, style.font_family);
+                        }
+                    } else {
+                        // 计算相对于文本内容区域的 X 坐标
+                        float text_local_x = hit_result.local_x - padding_left;
+                        HandleInputMouseInteraction(input_element, text_local_x, event.type,
+                                                   style.font_size, style.font_family);
+                    }
                 }
             }
             // 处理 textarea 的鼠标点击定位光标
@@ -676,7 +872,7 @@ void EventLoop::HandleMouseEventForDOM(const SDL_Event& event) {
             }
 
             // 处理表单元素的默认行为（参考 RmlUi InputTypeCheckbox::ProcessDefaultAction）
-            ProcessFormElementDefaultAction(hit_result.element);
+            ProcessFormElementDefaultAction(hit_result.element, hit_result);
 
             // 检测dblclick：在短时间内两次click同一元素
             Uint64 current_time = SDL_GetTicks();
@@ -834,48 +1030,90 @@ void EventLoop::HandleMouseEventForDOM(const SDL_Event& event) {
                     // 处理文本选择拖动
                     else if (textarea_element->IsDraggingSelection()) {
                         if (hit_result.element == last_mousedown_element && hit_result.render_object) {
+                            std::cout << "[DEBUG-A] hit_result.element == last_mousedown_element" << std::endl;
                             const auto& style = hit_result.render_object->GetComputedStyle();
                             const auto& layout = hit_result.render_object->GetLayoutInfo();
                             float padding_left = style.padding.left.ToPx();
                             float padding_top = style.padding.top.ToPx();
                             float padding_right = style.padding.right.ToPx();
                             float padding_bottom = style.padding.bottom.ToPx();
-                            float visible_width = layout.width - padding_left - padding_right;
-                            float visible_height = layout.height - padding_top - padding_bottom;
+
+                            // 计算是否需要滚动条（与渲染保持一致）
+                            const float scrollbar_width = HTMLTextAreaElement::SCROLLBAR_WIDTH;
+                            SkFont font;
+                            font.setSize(style.font_size);
+                            float line_height = style.font_size * 1.2f;
+                            float content_height = textarea_element->GetContentHeight(line_height);
+                            float max_line_width = textarea_element->GetMaxLineWidth(font);
+                            float base_visible_width = layout.width - padding_left - padding_right;
+                            float base_visible_height = layout.height - padding_top - padding_bottom;
+                            bool need_v_scrollbar = content_height > base_visible_height;
+                            bool need_h_scrollbar = max_line_width > base_visible_width;
+                            float visible_width = base_visible_width - (need_v_scrollbar ? scrollbar_width : 0);
+                            float visible_height = base_visible_height - (need_h_scrollbar ? scrollbar_width : 0);
+
                             float text_local_x = hit_result.local_x - padding_left;
                             float text_local_y = hit_result.local_y - padding_top;
                             HandleTextAreaMouseInteraction(textarea_element, text_local_x, text_local_y, event.type,
                                                            style.font_size, style.font_family, false,
                                                            visible_width, visible_height);
                         } else {
+                            // 鼠标移出 textarea，需要找到 textarea 的绝对位置
                             auto root_render = window->GetCachedRenderTree();
                             if (root_render) {
-                                std::function<std::shared_ptr<RenderObject>(std::shared_ptr<RenderObject>)> findRenderObj;
-                                findRenderObj = [&](std::shared_ptr<RenderObject> obj) -> std::shared_ptr<RenderObject> {
-                                    if (!obj) return nullptr;
+                                // 查找 textarea 的渲染对象并计算绝对位置
+                                struct FindResult {
+                                    std::shared_ptr<RenderObject> render_obj;
+                                    float abs_x = 0;
+                                    float abs_y = 0;
+                                };
+                                std::function<FindResult(std::shared_ptr<RenderObject>, float, float)> findRenderObj;
+                                findRenderObj = [&](std::shared_ptr<RenderObject> obj, float offset_x, float offset_y) -> FindResult {
+                                    if (!obj) return {};
+                                    const auto& layout = obj->GetLayoutInfo();
+                                    float current_x = offset_x + layout.x;
+                                    float current_y = offset_y + layout.y;
+
                                     auto node = obj->GetNode();
                                     if (node && std::dynamic_pointer_cast<HTMLTextAreaElement>(node) == textarea_element) {
-                                        return obj;
+                                        return {obj, current_x, current_y};
                                     }
+                                    // 子元素需要考虑滚动偏移
+                                    float child_offset_x = current_x - obj->GetScrollX();
+                                    float child_offset_y = current_y - obj->GetScrollY();
                                     for (auto& child : obj->GetChildren()) {
-                                        auto result = findRenderObj(child);
-                                        if (result) return result;
+                                        auto result = findRenderObj(child, child_offset_x, child_offset_y);
+                                        if (result.render_obj) return result;
                                     }
-                                    return nullptr;
+                                    return {};
                                 };
 
-                                auto textarea_render = findRenderObj(root_render);
-                                if (textarea_render) {
-                                    const auto& layout = textarea_render->GetLayoutInfo();
-                                    const auto& style = textarea_render->GetComputedStyle();
+                                auto find_result = findRenderObj(root_render, 0.0f, 0.0f);
+                                if (find_result.render_obj) {
+                                    const auto& layout = find_result.render_obj->GetLayoutInfo();
+                                    const auto& style = find_result.render_obj->GetComputedStyle();
                                     float padding_left = style.padding.left.ToPx();
                                     float padding_top = style.padding.top.ToPx();
                                     float padding_right = style.padding.right.ToPx();
                                     float padding_bottom = style.padding.bottom.ToPx();
-                                    float visible_width = layout.width - padding_left - padding_right;
-                                    float visible_height = layout.height - padding_top - padding_bottom;
-                                    float text_local_x = logical_x - layout.x - padding_left;
-                                    float text_local_y = logical_y - layout.y - padding_top;
+
+                                    // 计算是否需要滚动条（与渲染保持一致）
+                                    const float scrollbar_width = HTMLTextAreaElement::SCROLLBAR_WIDTH;
+                                    SkFont font;
+                                    font.setSize(style.font_size);
+                                    float line_height = style.font_size * 1.2f;
+                                    float content_height = textarea_element->GetContentHeight(line_height);
+                                    float max_line_width = textarea_element->GetMaxLineWidth(font);
+                                    float base_visible_width = layout.width - padding_left - padding_right;
+                                    float base_visible_height = layout.height - padding_top - padding_bottom;
+                                    bool need_v_scrollbar = content_height > base_visible_height;
+                                    bool need_h_scrollbar = max_line_width > base_visible_width;
+                                    float visible_width = base_visible_width - (need_v_scrollbar ? scrollbar_width : 0);
+                                    float visible_height = base_visible_height - (need_h_scrollbar ? scrollbar_width : 0);
+
+                                    // 使用绝对位置计算 local 坐标
+                                    float text_local_x = logical_x - find_result.abs_x - padding_left;
+                                    float text_local_y = logical_y - find_result.abs_y - padding_top;
                                     HandleTextAreaMouseInteraction(textarea_element, text_local_x, text_local_y, event.type,
                                                                    style.font_size, style.font_family, false,
                                                                    visible_width, visible_height);
@@ -894,7 +1132,7 @@ void EventLoop::HandleMouseEventForDOM(const SDL_Event& event) {
     }
 }
 
-void EventLoop::ProcessFormElementDefaultAction(std::shared_ptr<Element> element) {
+void EventLoop::ProcessFormElementDefaultAction(std::shared_ptr<Element> element, const HitTestResult& hit_result) {
     if (!element) {
         return;
     }
@@ -990,6 +1228,58 @@ void EventLoop::ProcessFormElementDefaultAction(std::shared_ptr<Element> element
                 }
             }
             // type="button" 不执行任何默认操作
+        }
+    }
+    // 处理 select 元素
+    else if (tag_name == "select") {
+        auto select_element = std::dynamic_pointer_cast<HTMLSelectElement>(element);
+        if (select_element) {
+            // 如果禁用，不处理
+            if (select_element->GetDisabled()) {
+                return;
+            }
+
+            auto& dropdown_manager = SelectDropdownManager::Instance();
+
+            if (select_element->IsDropdownOpen()) {
+                // 关闭下拉菜单
+                dropdown_manager.CloseDropdown();
+            } else {
+                // 打开下拉菜单
+                // 使用 hit_result 中的渲染对象获取位置
+                auto render_obj = hit_result.render_object;
+                if (render_obj) {
+                    // 计算绝对位置（需要从当前元素向上累加，同时考虑滚动偏移）
+                    float abs_x = 0, abs_y = 0;
+                    auto current = render_obj;
+                    while (current) {
+                        const auto& layout = current->GetLayoutInfo();
+                        abs_x += layout.x;
+                        abs_y += layout.y;
+
+                        // 减去父元素的滚动偏移
+                        auto parent = current->GetParent();
+                        if (parent) {
+                            abs_x -= parent->GetScrollX();
+                            abs_y -= parent->GetScrollY();
+                        }
+
+                        current = parent;
+                    }
+
+                    const auto& layout = render_obj->GetLayoutInfo();
+                    SkRect trigger_rect = SkRect::MakeXYWH(abs_x, abs_y, layout.width, layout.height);
+
+                    select_element->SetDropdownOpen(true);
+                    dropdown_manager.OpenDropdown(select_element, trigger_rect);
+                }
+            }
+
+            // 标记窗口需要重绘
+            auto& window_manager = WindowManager::Instance();
+            for (auto& window : window_manager.GetAllWindows()) {
+                window->SetNeedsRepaint();
+            }
         }
     }
 }
@@ -1593,26 +1883,33 @@ void EventLoop::HandleTextAreaMouseInteraction(std::shared_ptr<HTMLTextAreaEleme
         float content_height = line_count * line_height;
         float max_scroll_y = std::max(0.0f, content_height - visible_height);
 
-        // 计算最大行宽度
+        // 计算最大行宽度 - 使用支持 CJK/Emoji 的测量方法
+        TextRenderer text_renderer(nullptr);
         float max_line_width = 0.0f;
         std::string value = textarea_element->GetValue();
         std::istringstream stream(value);
         std::string line;
         while (std::getline(stream, line)) {
-            float w = font.measureText(line.c_str(), line.size(), SkTextEncoding::kUTF8);
+            float w = text_renderer.MeasureTextWidthWithEmoji(line, font);
             if (w > max_line_width) max_line_width = w;
         }
         float max_scroll_x = std::max(0.0f, max_line_width - visible_width);
+
+        // 调试输出
+        std::cout << "[DEBUG] local_x=" << local_x << ", local_y=" << local_y
+                  << ", visible_w=" << visible_width << ", visible_h=" << visible_height << std::endl;
 
         // 检测鼠标是否超出边界并自动滚动
         bool scrolled = false;
         if (local_y < 0) {
             // 鼠标在上边界外，向上滚动
+            std::cout << "[DEBUG] Scrolling UP" << std::endl;
             float new_scroll = std::max(0.0f, scroll_top - scroll_speed);
             textarea_element->SetScrollTop(new_scroll);
             scrolled = true;
         } else if (local_y > visible_height) {
             // 鼠标在下边界外，向下滚动
+            std::cout << "[DEBUG] Scrolling DOWN" << std::endl;
             float new_scroll = std::min(max_scroll_y, scroll_top + scroll_speed);
             textarea_element->SetScrollTop(new_scroll);
             scrolled = true;
@@ -1634,8 +1931,17 @@ void EventLoop::HandleTextAreaMouseInteraction(std::shared_ptr<HTMLTextAreaEleme
     // 获取滚动偏移量，计算实际的坐标
     float scroll_top = textarea_element->GetScrollTop();
     float scroll_left = textarea_element->GetScrollLeft();
-    float actual_x = local_x + scroll_left;  // 考虑横向滚动
-    float actual_y = local_y + scroll_top;
+
+    // 限制坐标在有效范围内（防止鼠标拖出边界时计算出错）
+    float clamped_local_x = local_x;
+    float clamped_local_y = local_y;
+    if (clamped_local_x < 0) clamped_local_x = 0;
+    if (clamped_local_y < 0) clamped_local_y = 0;
+    if (visible_width > 0 && clamped_local_x > visible_width) clamped_local_x = visible_width;
+    if (visible_height > 0 && clamped_local_y > visible_height) clamped_local_y = visible_height;
+
+    float actual_x = clamped_local_x + scroll_left;  // 考虑横向滚动
+    float actual_y = clamped_local_y + scroll_top;
 
     // 计算点击的行号（使用考虑滚动偏移后的坐标）
     int clicked_line = static_cast<int>(actual_y / line_height);
@@ -1675,13 +1981,16 @@ void EventLoop::HandleTextAreaMouseInteraction(std::shared_ptr<HTMLTextAreaEleme
         float accumulated_width = 0;
         size_t char_count = utf8::CharCount(current_line);
 
+        // 使用支持 CJK/Emoji 的文本测量（与渲染一致）
+        TextRenderer text_renderer(nullptr);
+
         for (size_t i = 0; i < char_count; i++) {
             // 获取当前字符
             size_t byte_start = utf8::CharPosToBytePos(current_line, static_cast<int>(i));
             size_t byte_end = utf8::CharPosToBytePos(current_line, static_cast<int>(i + 1));
             std::string char_str = current_line.substr(byte_start, byte_end - byte_start);
 
-            SkScalar char_width = font.measureText(char_str.c_str(), char_str.size(), SkTextEncoding::kUTF8);
+            float char_width = text_renderer.MeasureTextWidthWithEmoji(char_str, font);
 
             // 使用 actual_x（考虑横向滚动偏移后的坐标）
             if (actual_x < accumulated_width + char_width / 2) {
@@ -1714,6 +2023,136 @@ void EventLoop::HandleTextAreaMouseInteraction(std::shared_ptr<HTMLTextAreaEleme
     } else if (event_type == SDL_EVENT_MOUSE_BUTTON_UP) {
         textarea_element->HandleMouseUp();
     }
+}
+
+// ===== 系统光标管理实现 =====
+// 参考：RmlUi/Backends/RmlUi_Platform_SDL.cpp
+
+void EventLoop::InitSystemCursors() {
+    // 创建系统光标（SDL3 API）
+    cursor_default_ = SDL_CreateSystemCursor(SDL_SYSTEM_CURSOR_DEFAULT);
+    cursor_pointer_ = SDL_CreateSystemCursor(SDL_SYSTEM_CURSOR_POINTER);
+    cursor_text_ = SDL_CreateSystemCursor(SDL_SYSTEM_CURSOR_TEXT);
+    current_cursor_type_ = SDL_SYSTEM_CURSOR_DEFAULT;
+}
+
+void EventLoop::DestroySystemCursors() {
+    if (cursor_default_) {
+        SDL_DestroyCursor(cursor_default_);
+        cursor_default_ = nullptr;
+    }
+    if (cursor_pointer_) {
+        SDL_DestroyCursor(cursor_pointer_);
+        cursor_pointer_ = nullptr;
+    }
+    if (cursor_text_) {
+        SDL_DestroyCursor(cursor_text_);
+        cursor_text_ = nullptr;
+    }
+}
+
+void EventLoop::SetSystemCursor(SDL_SystemCursor cursor_type) {
+    // 避免重复设置相同的光标
+    if (cursor_type == current_cursor_type_) {
+        return;
+    }
+
+    SDL_Cursor* cursor = nullptr;
+    switch (cursor_type) {
+        case SDL_SYSTEM_CURSOR_DEFAULT:
+            cursor = cursor_default_;
+            break;
+        case SDL_SYSTEM_CURSOR_POINTER:
+            cursor = cursor_pointer_;
+            break;
+        case SDL_SYSTEM_CURSOR_TEXT:
+            cursor = cursor_text_;
+            break;
+        default:
+            cursor = cursor_default_;
+            break;
+    }
+
+    if (cursor) {
+        SDL_SetCursor(cursor);
+        current_cursor_type_ = cursor_type;
+    }
+}
+
+void EventLoop::UpdateMouseCursor(const HitTestResult& hit_result, Uint32 window_id) {
+    // 默认使用箭头光标
+    SDL_SystemCursor target_cursor = SDL_SYSTEM_CURSOR_DEFAULT;
+
+    if (hit_result.IsValid() && hit_result.element) {
+        std::string tag_name = hit_result.element->GetTagName();
+
+        // input 元素
+        if (tag_name == "input") {
+            auto input_element = std::dynamic_pointer_cast<HTMLInputElement>(hit_result.element);
+            if (input_element) {
+                InputType input_type = input_element->GetInputType();
+
+                // 对于 number 类型，检查是否在 spinner 区域
+                if (input_type == InputType::Number && hit_result.render_object) {
+                    const auto& style = hit_result.render_object->GetComputedStyle();
+                    const auto& layout = hit_result.render_object->GetLayoutInfo();
+                    float padding_left = style.padding.left.ToPx();
+                    float padding_right = style.padding.right.ToPx();
+                    float border_width = style.border.width.ToPx();
+
+                    const float spinner_width = 16.0f;
+                    float content_width = layout.width - padding_left - padding_right - border_width * 2;
+                    float spinner_x = padding_left + border_width + content_width - spinner_width;
+
+                    if (hit_result.local_x >= spinner_x) {
+                        // 在 spinner 区域使用箭头光标
+                        target_cursor = SDL_SYSTEM_CURSOR_DEFAULT;
+                    } else {
+                        // 在文本区域使用文本光标
+                        target_cursor = SDL_SYSTEM_CURSOR_TEXT;
+                    }
+                }
+                // 对于文本类型输入框，使用文本光标
+                else if (input_type == InputType::Text ||
+                         input_type == InputType::Password ||
+                         input_type == InputType::Email ||
+                         input_type == InputType::Tel ||
+                         input_type == InputType::Url ||
+                         input_type == InputType::Search) {
+                    target_cursor = SDL_SYSTEM_CURSOR_TEXT;
+                }
+                // 对于按钮类型（button, submit, reset），使用箭头光标
+                else if (input_type == InputType::Button ||
+                         input_type == InputType::Submit ||
+                         input_type == InputType::Reset) {
+                    target_cursor = SDL_SYSTEM_CURSOR_DEFAULT;
+                }
+                // 对于 checkbox 和 radio，使用箭头光标
+                else if (input_type == InputType::Checkbox ||
+                         input_type == InputType::Radio) {
+                    target_cursor = SDL_SYSTEM_CURSOR_DEFAULT;
+                }
+            }
+        }
+        // textarea 元素使用文本光标
+        else if (tag_name == "textarea") {
+            target_cursor = SDL_SYSTEM_CURSOR_TEXT;
+        }
+        // button 元素使用箭头光标（浏览器默认行为）
+        else if (tag_name == "button") {
+            target_cursor = SDL_SYSTEM_CURSOR_DEFAULT;
+        }
+        // select 元素使用箭头光标
+        else if (tag_name == "select") {
+            target_cursor = SDL_SYSTEM_CURSOR_DEFAULT;
+        }
+        // a 元素（链接）使用手型光标
+        else if (tag_name == "a") {
+            target_cursor = SDL_SYSTEM_CURSOR_POINTER;
+        }
+    }
+
+    SetSystemCursor(target_cursor);
 }
 
 } // namespace lightui

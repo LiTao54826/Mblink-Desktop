@@ -8,6 +8,7 @@
 #include "../utils/utf8_utils.h"
 #include "../window/window_manager.h"
 #include <algorithm>
+#include <cmath>
 #include <iostream>
 #include <SDL3/SDL.h>
 
@@ -66,10 +67,6 @@ void HTMLInputElement::SetInputType(InputType type) {
 }
 
 void HTMLInputElement::SetValue(const std::string& value, bool trigger_events) {
-    std::cerr << "[HTMLInputElement::SetValue] START value='" << value << "' trigger_events=" << trigger_events << " this=" << this << std::endl;
-    std::cerr << "[HTMLInputElement::SetValue] BEFORE: value_='" << value_ << "' selection_start_=" << selection_start_ << " selection_end_=" << selection_end_ << std::endl;
-    std::cerr.flush();
-
     // 检查maxlength限制
     int max_length = GetMaxLength();
     std::string new_value = value;
@@ -89,9 +86,6 @@ void HTMLInputElement::SetValue(const std::string& value, bool trigger_events) {
         selection_end_ = new_length;
     }
 
-    std::cerr << "[HTMLInputElement::SetValue] AFTER: value_='" << value_ << "' selection_start_=" << selection_start_ << " selection_end_=" << selection_end_ << std::endl;
-    std::cerr.flush();
-
     // 注意：不更新value属性，value属性保持为默认值
     // 这符合HTML标准：value属性是默认值，value_是当前值
 
@@ -100,9 +94,6 @@ void HTMLInputElement::SetValue(const std::string& value, bool trigger_events) {
         TriggerInputEvent();
         TriggerChangeEvent();
     }
-
-    std::cerr << "[HTMLInputElement::SetValue] END" << std::endl;
-    std::cerr.flush();
 }
 
 bool HTMLInputElement::GetChecked() const {
@@ -588,6 +579,104 @@ void HTMLInputElement::SetSelection(int start, int end) {
     auto& window_manager = WindowManager::Instance();
     for (auto& window : window_manager.GetAllWindows()) {
         window->SetNeedsRepaint();
+    }
+}
+
+void HTMLInputElement::StepUp() {
+    if (input_type_ != InputType::Number) {
+        return;
+    }
+
+    // 获取当前值
+    double current_value = 0.0;
+    try {
+        if (!value_.empty()) {
+            current_value = std::stod(value_);
+        }
+    } catch (...) {
+        current_value = 0.0;
+    }
+
+    // 获取 step 属性（默认为 1）
+    double step = 1.0;
+    std::string step_attr = GetAttribute("step");
+    if (!step_attr.empty() && step_attr != "any") {
+        try {
+            step = std::stod(step_attr);
+        } catch (...) {
+            step = 1.0;
+        }
+    }
+
+    // 增加值
+    current_value += step;
+
+    // 检查 max 限制
+    std::string max_attr = GetAttribute("max");
+    if (!max_attr.empty()) {
+        try {
+            double max_val = std::stod(max_attr);
+            if (current_value > max_val) {
+                current_value = max_val;
+            }
+        } catch (...) {}
+    }
+
+    // 更新值
+    // 如果是整数，去掉小数点
+    if (step == std::floor(step) && current_value == std::floor(current_value)) {
+        SetValue(std::to_string(static_cast<long long>(current_value)));
+    } else {
+        SetValue(std::to_string(current_value));
+    }
+}
+
+void HTMLInputElement::StepDown() {
+    if (input_type_ != InputType::Number) {
+        return;
+    }
+
+    // 获取当前值
+    double current_value = 0.0;
+    try {
+        if (!value_.empty()) {
+            current_value = std::stod(value_);
+        }
+    } catch (...) {
+        current_value = 0.0;
+    }
+
+    // 获取 step 属性（默认为 1）
+    double step = 1.0;
+    std::string step_attr = GetAttribute("step");
+    if (!step_attr.empty() && step_attr != "any") {
+        try {
+            step = std::stod(step_attr);
+        } catch (...) {
+            step = 1.0;
+        }
+    }
+
+    // 减少值
+    current_value -= step;
+
+    // 检查 min 限制
+    std::string min_attr = GetAttribute("min");
+    if (!min_attr.empty()) {
+        try {
+            double min_val = std::stod(min_attr);
+            if (current_value < min_val) {
+                current_value = min_val;
+            }
+        } catch (...) {}
+    }
+
+    // 更新值
+    // 如果是整数，去掉小数点
+    if (step == std::floor(step) && current_value == std::floor(current_value)) {
+        SetValue(std::to_string(static_cast<long long>(current_value)));
+    } else {
+        SetValue(std::to_string(current_value));
     }
 }
 

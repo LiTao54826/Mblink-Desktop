@@ -73,6 +73,16 @@ private:
      * @brief 渲染select元素的特定内容
      */
     void PaintSelectElement(SkCanvas* canvas, Element* select, const Box& box);
+
+    /**
+     * @brief 渲染progress元素的特定内容
+     */
+    void PaintProgressElement(SkCanvas* canvas, class HTMLProgressElement* progress, const Box& box);
+
+    /**
+     * @brief 渲染meter元素的特定内容
+     */
+    void PaintMeterElement(SkCanvas* canvas, class HTMLMeterElement* meter, const Box& box);
 };
 
 } // namespace lightui

@@ -28,6 +28,7 @@ class HTMLButtonElement;
 class HTMLFormElement;
 class FocusManager;
 class DragManager;
+struct HitTestResult;
 class RenderObject;
 
 /**
@@ -202,8 +203,9 @@ private:
      * @brief 处理表单元素的默认行为（参考 RmlUi InputTypeCheckbox::ProcessDefaultAction）
      *
      * @param element 被点击的元素
+     * @param hit_result Hit Testing 结果（包含渲染对象）
      */
-    void ProcessFormElementDefaultAction(std::shared_ptr<Element> element);
+    void ProcessFormElementDefaultAction(std::shared_ptr<Element> element, const HitTestResult& hit_result);
 
     /**
      * @brief 取消同组 radio 的选中状态
@@ -326,6 +328,36 @@ private:
 
     // 光标闪烁状态
     bool cursor_visible_ = true;  // 光标是否可见（用于闪烁效果）
+
+    // ===== 系统光标管理 =====
+    // 参考：RmlUi/Backends/RmlUi_Platform_SDL.cpp
+    SDL_Cursor* cursor_default_ = nullptr;    // 默认箭头光标
+    SDL_Cursor* cursor_pointer_ = nullptr;    // 手型光标（链接、按钮）
+    SDL_Cursor* cursor_text_ = nullptr;       // 文本光标（输入框）
+    SDL_SystemCursor current_cursor_type_ = SDL_SYSTEM_CURSOR_DEFAULT;  // 当前光标类型
+
+    /**
+     * @brief 初始化系统光标
+     */
+    void InitSystemCursors();
+
+    /**
+     * @brief 销毁系统光标
+     */
+    void DestroySystemCursors();
+
+    /**
+     * @brief 设置系统光标类型
+     * @param cursor_type 光标类型
+     */
+    void SetSystemCursor(SDL_SystemCursor cursor_type);
+
+    /**
+     * @brief 更新鼠标光标样式（根据悬停元素）
+     * @param hit_result Hit Testing 结果
+     * @param window_id 窗口ID
+     */
+    void UpdateMouseCursor(const HitTestResult& hit_result, Uint32 window_id);
 };
 
 } // namespace lightui

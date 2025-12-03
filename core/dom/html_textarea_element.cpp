@@ -6,6 +6,7 @@
 #include "html_textarea_element.h"
 #include "event.h"
 #include "../utils/utf8_utils.h"
+#include "../render/text_renderer.h"
 #include <algorithm>
 #include <iostream>
 #include <sstream>
@@ -18,6 +19,7 @@ namespace lightui {
 HTMLTextAreaElement::HTMLTextAreaElement()
     : Element("textarea")
     , value_("")
+    , value_initialized_(false)
     , selection_start_(0)
     , selection_end_(0)
     , is_dragging_selection_(false)
@@ -30,6 +32,20 @@ HTMLTextAreaElement::HTMLTextAreaElement()
     , scrollbar_drag_start_scroll_(0.0f) {
 }
 
+std::string HTMLTextAreaElement::GetValue() const {
+    // 如果 value_ 尚未初始化，从子文本节点获取初始值
+    // 符合浏览器行为：<textarea>text</textarea> 中的文本会成为初始值
+    if (!value_initialized_ && value_.empty()) {
+        // 获取子节点的文本内容
+        std::string text_content = Element::GetTextContent();
+        if (!text_content.empty()) {
+            value_ = text_content;
+            value_initialized_ = true;
+        }
+    }
+    return value_;
+}
+
 void HTMLTextAreaElement::SetValue(const std::string& value, bool trigger_events) {
     // 检查maxlength限制
     int max_length = GetMaxLength();
@@ -40,6 +56,7 @@ void HTMLTextAreaElement::SetValue(const std::string& value, bool trigger_events
 
     std::string old_value = value_;
     value_ = new_value;
+    value_initialized_ = true;  // 标记 value 已经被显式设置
 
     // 调整选择范围，确保不越界
     int new_length = static_cast<int>(new_value.length());
@@ -644,14 +661,14 @@ void HTMLTextAreaElement::HandleMouseWheel(float delta_y, float line_height, flo
     float old_scroll_top = scroll_top_;
     scroll_top_ = std::clamp(scroll_top_ + scroll_amount, 0.0f, max_scroll);
 
-    std::cout << "[HandleMouseWheel] delta_y=" << delta_y
-              << " line_height=" << line_height
-              << " visible_height=" << visible_height
-              << " content_height=" << content_height
-              << " line_count=" << GetLineCount()
-              << " max_scroll=" << max_scroll
-              << " old_scroll=" << old_scroll_top
-              << " new_scroll=" << scroll_top_ << std::endl;
+    // std::cout << "[HandleMouseWheel] delta_y=" << delta_y
+    //           << " line_height=" << line_height
+    //           << " visible_height=" << visible_height
+    //           << " content_height=" << content_height
+    //           << " line_count=" << GetLineCount()
+    //           << " max_scroll=" << max_scroll
+    //           << " old_scroll=" << old_scroll_top
+    //           << " new_scroll=" << scroll_top_ << std::endl;
 }
 
 void HTMLTextAreaElement::SetScrollLeft(float scroll_left) {
@@ -714,11 +731,11 @@ void HTMLTextAreaElement::EnsureCursorVisible(float line_height, float visible_h
         current_line_before_cursor = text_before;
     }
 
+    // 使用支持 CJK/Emoji 的测量方法（与渲染一致）
+    TextRenderer text_renderer(nullptr);
     float cursor_x = 0.0f;
     if (!current_line_before_cursor.empty()) {
-        cursor_x = font.measureText(current_line_before_cursor.c_str(),
-                                     current_line_before_cursor.size(),
-                                     SkTextEncoding::kUTF8);
+        cursor_x = text_renderer.MeasureTextWidthWithEmoji(current_line_before_cursor, font);
     }
 
     // 检查是否需要横向滚动
@@ -740,11 +757,13 @@ float HTMLTextAreaElement::GetContentHeight(float line_height) const {
 }
 
 float HTMLTextAreaElement::GetMaxLineWidth(const SkFont& font) const {
+    // 使用支持 CJK/Emoji 的测量方法（与渲染一致）
+    TextRenderer text_renderer(nullptr);
     float max_width = 0.0f;
     std::istringstream stream(value_);
     std::string line;
     while (std::getline(stream, line)) {
-        float w = font.measureText(line.c_str(), line.size(), SkTextEncoding::kUTF8);
+        float w = text_renderer.MeasureTextWidthWithEmoji(line, font);
         if (w > max_width) max_width = w;
     }
     return max_width;

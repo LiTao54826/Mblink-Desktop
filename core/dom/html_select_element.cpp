@@ -312,9 +312,90 @@ void HTMLSelectElement::TriggerChangeEvent() {
     auto event = std::make_shared<Event>("change");
     event->SetTarget(shared_from_this());
     event->SetCurrentTarget(shared_from_this());
-    
+
     // 触发事件
     DispatchEvent(event);
+}
+
+void HTMLSelectElement::HandleClick() {
+    // 如果禁用，不处理
+    if (disabled_) {
+        return;
+    }
+
+    // 切换下拉菜单状态
+    is_dropdown_open_ = !is_dropdown_open_;
+
+    // 打开下拉菜单时，设置悬停索引为当前选中的索引
+    if (is_dropdown_open_) {
+        hovered_index_ = GetSelectedIndex();
+    }
+}
+
+void HTMLSelectElement::SelectHoveredOption() {
+    if (hovered_index_ >= 0) {
+        auto options = GetOptions();
+        if (hovered_index_ < static_cast<long>(options.size())) {
+            if (!options[hovered_index_]->GetDisabled()) {
+                SetSelectedIndex(hovered_index_);
+            }
+        }
+    }
+    is_dropdown_open_ = false;
+    hovered_index_ = -1;
+}
+
+void HTMLSelectElement::SelectNextOption() {
+    auto options = GetOptions();
+    if (options.empty()) return;
+
+    long current = GetSelectedIndex();
+    long next = current + 1;
+
+    // 循环到第一个
+    if (next >= static_cast<long>(options.size())) {
+        next = 0;
+    }
+
+    // 跳过禁用的选项
+    long start = next;
+    while (options[next]->GetDisabled()) {
+        next = (next + 1) % static_cast<long>(options.size());
+        if (next == start) {
+            // 所有选项都禁用，不做任何事
+            return;
+        }
+    }
+
+    SetSelectedIndex(next);
+}
+
+void HTMLSelectElement::SelectPreviousOption() {
+    auto options = GetOptions();
+    if (options.empty()) return;
+
+    long current = GetSelectedIndex();
+    long prev = current - 1;
+
+    // 循环到最后一个
+    if (prev < 0) {
+        prev = static_cast<long>(options.size()) - 1;
+    }
+
+    // 跳过禁用的选项
+    long start = prev;
+    while (options[prev]->GetDisabled()) {
+        prev = prev - 1;
+        if (prev < 0) {
+            prev = static_cast<long>(options.size()) - 1;
+        }
+        if (prev == start) {
+            // 所有选项都禁用，不做任何事
+            return;
+        }
+    }
+
+    SetSelectedIndex(prev);
 }
 
 } // namespace lightui

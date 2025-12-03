@@ -5,8 +5,10 @@
 
 #include "style_resolver.h"
 #include "render_inline_block.h"
+#include "render_svg.h"
 #include "core/dom/text.h"
 #include "core/dom/document.h"
+#include "core/dom/svg_element.h"
 #include "core/lexbor/style_manager.h"
 #include "color.h"
 #include <algorithm>
@@ -59,7 +61,10 @@ ComputedStyle StyleResolver::ResolveStyle(std::shared_ptr<Element> element,
     // 5. 伪类样式（如 :hover, :active, :focus）
     ApplyPseudoClassStyles(style, element);
 
-    // 6. 内联样式（最高优先级）- 覆盖所有
+    // 6. 伪元素样式（::before, ::after）
+    ApplyPseudoElementStyles(style, element);
+
+    // 7. 内联样式（最高优先级）- 覆盖所有
     ApplyInlineStyle(style, element);
 
     return style;
@@ -92,39 +97,98 @@ void StyleResolver::ApplyDefaultStyle(ComputedStyle& style, const std::string& t
         style.font_style = "normal";
         style.text_align = "left";
         style.text_decoration = "none";
-        style.line_height = 1.2f;
+        style.line_height = 1.2f;  // Chrome 默认 line-height: normal ≈ 1.2
         style.opacity = 1.0f;
     }
 
-    // 设置 display 属性（不可继承）
-    style.display = RenderObjectType::BLOCK;
+    // ========== Chrome 默认 display 属性 ==========
+    // 默认为 inline（未知元素默认行为）
+    style.display = RenderObjectType::INLINE;
 
-    if (tag_name == "div" || tag_name == "p" || tag_name == "section" ||
-        tag_name == "article" || tag_name == "header" || tag_name == "footer" ||
+    // ========== display: block 元素 ==========
+    if (tag_name == "html" || tag_name == "body" ||
+        tag_name == "div" || tag_name == "p" ||
+        // 标题
         tag_name == "h1" || tag_name == "h2" || tag_name == "h3" ||
-        tag_name == "h4" || tag_name == "h5" || tag_name == "h6") {
+        tag_name == "h4" || tag_name == "h5" || tag_name == "h6" ||
+        // 语义化布局标签
+        tag_name == "header" || tag_name == "footer" || tag_name == "main" ||
+        tag_name == "nav" || tag_name == "section" || tag_name == "article" ||
+        tag_name == "aside" || tag_name == "hgroup" || tag_name == "search" ||
+        // 图片/媒体容器
+        tag_name == "figure" || tag_name == "figcaption" ||
+        // 地址
+        tag_name == "address" ||
+        // 块级格式标签
+        tag_name == "pre" || tag_name == "blockquote" || tag_name == "hr" ||
+        tag_name == "center" ||
+        // 列表
+        tag_name == "ul" || tag_name == "ol" || tag_name == "li" ||
+        tag_name == "dl" || tag_name == "dt" || tag_name == "dd" ||
+        tag_name == "dir" || tag_name == "menu" ||
+        // 表单
+        tag_name == "form" || tag_name == "fieldset" || tag_name == "legend" ||
+        // 多媒体
+        tag_name == "video" || tag_name == "audio" ||
+        // 其他块级
+        tag_name == "layer" || tag_name == "marquee" ||
+        tag_name == "noscript" || tag_name == "listing" || tag_name == "xmp" ||
+        tag_name == "plaintext") {
         style.display = RenderObjectType::BLOCK;
     }
-    else if (tag_name == "span" || tag_name == "a" || tag_name == "strong" ||
-             tag_name == "em" || tag_name == "b" || tag_name == "i" ||
-             tag_name == "u" || tag_name == "s" || tag_name == "strike" || tag_name == "del" ||
+    // ========== display: none 元素 ==========
+    else if (tag_name == "head" || tag_name == "meta" || tag_name == "title" ||
+             tag_name == "link" || tag_name == "style" || tag_name == "script" ||
+             tag_name == "noscript" || tag_name == "template" ||
+             tag_name == "base" || tag_name == "basefont" ||
+             tag_name == "datalist" || tag_name == "param" || tag_name == "source" ||
+             tag_name == "track" || tag_name == "area" ||
+             tag_name == "option" || tag_name == "optgroup") {
+        style.display = RenderObjectType::NONE;
+    }
+    // ========== display: inline 元素 ==========
+    else if (tag_name == "span" || tag_name == "a" ||
+             // 文本格式标签
+             tag_name == "strong" || tag_name == "b" ||
+             tag_name == "em" || tag_name == "i" ||
+             tag_name == "u" || tag_name == "ins" ||
+             tag_name == "s" || tag_name == "strike" || tag_name == "del" ||
              tag_name == "mark" || tag_name == "small" || tag_name == "big" ||
-             tag_name == "sub" || tag_name == "sup" || tag_name == "code" ||
-             tag_name == "kbd" || tag_name == "samp" || tag_name == "var" ||
-             tag_name == "abbr" || tag_name == "cite" || tag_name == "dfn" ||
-             tag_name == "q" || tag_name == "time") {
+             tag_name == "sub" || tag_name == "sup" ||
+             tag_name == "nobr" || tag_name == "font" || tag_name == "tt" ||
+             // 代码/键盘标签
+             tag_name == "code" || tag_name == "kbd" || tag_name == "samp" || tag_name == "var" ||
+             // 引用/定义标签
+             tag_name == "abbr" || tag_name == "acronym" ||
+             tag_name == "cite" || tag_name == "dfn" || tag_name == "q" ||
+             // 时间/数据标签
+             tag_name == "time" || tag_name == "data" ||
+             // 换行
+             tag_name == "br" || tag_name == "wbr" ||
+             // Ruby 注音
+             tag_name == "ruby" || tag_name == "rt" || tag_name == "rp" ||
+             // 双向文本
+             tag_name == "bdo" || tag_name == "bdi" ||
+             // 表单内联元素
+             tag_name == "label" || tag_name == "output" ||
+             // map
+             tag_name == "map" ||
+             // 嵌入式 slot
+             tag_name == "slot") {
         style.display = RenderObjectType::INLINE;
     }
-    else if (tag_name == "img") {
+    // ========== display: inline-block 元素 ==========
+    else if (tag_name == "img" || tag_name == "input" ||
+             tag_name == "button" || tag_name == "select" || tag_name == "textarea" ||
+             tag_name == "meter" || tag_name == "progress" ||
+             tag_name == "canvas" || tag_name == "embed" || tag_name == "object" ||
+             tag_name == "iframe" || tag_name == "frame" || tag_name == "frameset") {
         style.display = RenderObjectType::INLINE_BLOCK;
     }
-    // 按钮使用 INLINE（RenderInline 已经有正确的文本渲染）
-    // 输入框使用 INLINE_BLOCK（需要特殊的表单控件渲染）
-    else if (tag_name == "button") {
-        style.display = RenderObjectType::INLINE;
-    }
-    else if (tag_name == "input") {
-        style.display = RenderObjectType::INLINE_BLOCK;
+    // ========== display: list-item 元素 ==========
+    else if (tag_name == "li" || tag_name == "dd" || tag_name == "dt") {
+        // li 在 Chrome 中是 display: list-item，我们用 BLOCK 模拟
+        style.display = RenderObjectType::BLOCK;
     }
     // ========== 表格元素 ==========
     else if (tag_name == "table") {
@@ -147,6 +211,34 @@ void StyleResolver::ApplyDefaultStyle(ComputedStyle& style, const std::string& t
     }
     else if (tag_name == "caption") {
         style.display = RenderObjectType::TABLE_CAPTION;
+    }
+    else if (tag_name == "colgroup" || tag_name == "col") {
+        // colgroup/col 目前用 NONE 隐藏（暂未实现表格列样式）
+        style.display = RenderObjectType::NONE;
+    }
+    // ========== display: block 但特殊 ==========
+    else if (tag_name == "details") {
+        style.display = RenderObjectType::BLOCK;
+    }
+    else if (tag_name == "summary") {
+        style.display = RenderObjectType::BLOCK;  // Chrome: display: block (list-item in some contexts)
+    }
+    else if (tag_name == "dialog") {
+        // dialog 的 display 由 ApplyElementSpecificStyle 根据 open 属性决定
+        // 这里先设置为 block，后续会根据 open 属性调整
+        style.display = RenderObjectType::BLOCK;
+    }
+    // ========== SVG 元素 ==========
+    else if (tag_name == "svg") {
+        style.display = RenderObjectType::INLINE_BLOCK;  // SVG 内联块
+    }
+    else if (tag_name == "path" || tag_name == "circle" || tag_name == "rect" ||
+             tag_name == "ellipse" || tag_name == "line" || tag_name == "polyline" ||
+             tag_name == "polygon" || tag_name == "text" || tag_name == "g" ||
+             tag_name == "defs" || tag_name == "use" || tag_name == "symbol" ||
+             tag_name == "clipPath" || tag_name == "mask" || tag_name == "pattern" ||
+             tag_name == "linearGradient" || tag_name == "radialGradient" || tag_name == "stop") {
+        style.display = RenderObjectType::BLOCK;  // SVG 子元素
     }
 }
 
@@ -217,17 +309,20 @@ void StyleResolver::ApplyElementSpecificStyle(ComputedStyle& style, const std::s
         style.background_color = "#F5F5F5";  // 浅灰色背景以区分引用块
     }
 
-    // 预格式化文本 (Preformatted)
+    // 预格式化文本 (Preformatted) - 等宽字体，略小
     if (tag_name == "pre") {
-        style.font_family = "Consolas, Monaco, Courier New, monospace";
+        style.font_family = "Courier New";
+        style.font_size = style.font_size * 0.8125f;  // 13px / 16px，与浏览器一致
         style.margin.top = CSSLength(16, CSSUnit::PX);  // 1em
         style.margin.bottom = CSSLength(16, CSSUnit::PX);
         // TODO: 添加 white-space: pre 支持
     }
 
-    // 代码 (Code)
+    // 代码 (Code) - 等宽字体，略小
+    // 浏览器默认 font-size 是 13.3333px（约为 16px * 0.8333）
     if (tag_name == "code") {
-        style.font_family = "Consolas, Monaco, Courier New, monospace";
+        style.font_family = "Courier New";
+        style.font_size = style.font_size * 0.8125f;  // 13px / 16px
     }
 
     // 水平线 (Horizontal Rule)
@@ -243,9 +338,31 @@ void StyleResolver::ApplyElementSpecificStyle(ComputedStyle& style, const std::s
     // ========== 列表 (Lists) ==========
 
     if (tag_name == "ul" || tag_name == "ol") {
-        style.margin.top = CSSLength(16, CSSUnit::PX);  // 1em
-        style.margin.bottom = CSSLength(16, CSSUnit::PX);
         style.padding.left = CSSLength(40, CSSUnit::PX);  // 左侧缩进
+
+        // 浏览器默认行为：嵌套列表（父元素是 ul/ol/dir/menu）没有 margin
+        // Chrome: ol ul, ul ol, ul ul, ol ol { margin-block-start: 0; margin-block-end: 0; }
+        bool is_nested = false;
+        if (element) {
+            auto parent = element->GetParentNode();
+            if (parent && parent->GetNodeType() == NodeType::ELEMENT_NODE) {
+                auto parent_elem = std::static_pointer_cast<Element>(parent);
+                std::string parent_tag = parent_elem->GetTagName();
+                // 检查是否嵌套在列表项中（li 内的 ul/ol 也视为嵌套）
+                if (parent_tag == "ul" || parent_tag == "ol" || parent_tag == "li" ||
+                    parent_tag == "dir" || parent_tag == "menu") {
+                    is_nested = true;
+                }
+            }
+        }
+
+        if (is_nested) {
+            style.margin.top = CSSLength(0, CSSUnit::PX);
+            style.margin.bottom = CSSLength(0, CSSUnit::PX);
+        } else {
+            style.margin.top = CSSLength(16, CSSUnit::PX);  // 1em
+            style.margin.bottom = CSSLength(16, CSSUnit::PX);
+        }
     }
 
     if (tag_name == "li") {
@@ -253,8 +370,27 @@ void StyleResolver::ApplyElementSpecificStyle(ComputedStyle& style, const std::s
     }
 
     if (tag_name == "dl") {  // Definition List
-        style.margin.top = CSSLength(16, CSSUnit::PX);
-        style.margin.bottom = CSSLength(16, CSSUnit::PX);
+        // 浏览器默认行为：嵌套 dl（在 ul/ol/dl 中）没有 margin
+        bool is_nested = false;
+        if (element) {
+            auto parent = element->GetParentNode();
+            if (parent && parent->GetNodeType() == NodeType::ELEMENT_NODE) {
+                auto parent_elem = std::static_pointer_cast<Element>(parent);
+                std::string parent_tag = parent_elem->GetTagName();
+                if (parent_tag == "ul" || parent_tag == "ol" || parent_tag == "dl" ||
+                    parent_tag == "li" || parent_tag == "dd") {
+                    is_nested = true;
+                }
+            }
+        }
+
+        if (is_nested) {
+            style.margin.top = CSSLength(0, CSSUnit::PX);
+            style.margin.bottom = CSSLength(0, CSSUnit::PX);
+        } else {
+            style.margin.top = CSSLength(16, CSSUnit::PX);
+            style.margin.bottom = CSSLength(16, CSSUnit::PX);
+        }
     }
 
     if (tag_name == "dt") {  // Definition Term
@@ -284,6 +420,9 @@ void StyleResolver::ApplyElementSpecificStyle(ComputedStyle& style, const std::s
         style.padding.bottom = CSSLength(8, CSSUnit::PX);
         style.padding.left = CSSLength(8, CSSUnit::PX);
         style.padding.right = CSSLength(8, CSSUnit::PX);
+
+        // 表格单元格默认垂直居中（CSS 规范）
+        style.vertical_align = "middle";
     }
 
     if (tag_name == "th") {
@@ -298,48 +437,57 @@ void StyleResolver::ApplyElementSpecificStyle(ComputedStyle& style, const std::s
     }
 
     if (tag_name == "fieldset") {
+        // Chrome 默认: margin: 0px 2px; padding: 5.6px 12px 10px; border: 2px groove
         style.margin.left = CSSLength(2, CSSUnit::PX);
         style.margin.right = CSSLength(2, CSSUnit::PX);
-        style.padding.top = CSSLength(10, CSSUnit::PX);
+        style.padding.top = CSSLength(5.6f, CSSUnit::PX);
         style.padding.bottom = CSSLength(10, CSSUnit::PX);
-        style.padding.left = CSSLength(10, CSSUnit::PX);
-        style.padding.right = CSSLength(10, CSSUnit::PX);
+        style.padding.left = CSSLength(12, CSSUnit::PX);
+        style.padding.right = CSSLength(12, CSSUnit::PX);
         style.border.width = CSSLength(2, CSSUnit::PX);
-        style.border.style = CSSBorderStyle::SOLID;
-        style.border.color = Color::FromRGB(192, 192, 192);
+        style.border.style = CSSBorderStyle::SOLID;  // 用 solid 模拟 groove（暂不支持 groove）
+        style.border.color = Color::FromRGB(240, 240, 240);
     }
 
     if (tag_name == "legend") {
+        // Chrome 默认: display: block; padding: 0px 2px
+        style.display = RenderObjectType::BLOCK;
         style.padding.left = CSSLength(2, CSSUnit::PX);
         style.padding.right = CSSLength(2, CSSUnit::PX);
+        // legend 的位置由 fieldset 的 Paint 方法特殊处理
     }
 
+    // 表单元素基础样式 - 根据浏览器计算样式设置
+    // 注意：不同类型的 input 有不同的默认值，在后面单独处理
     if (tag_name == "button" || tag_name == "input" || tag_name == "select" || tag_name == "textarea") {
-        style.padding.top = CSSLength(2, CSSUnit::PX);
-        style.padding.bottom = CSSLength(2, CSSUnit::PX);
-        style.padding.left = CSSLength(6, CSSUnit::PX);
-        style.padding.right = CSSLength(6, CSSUnit::PX);
-        style.border.width = CSSLength(2, CSSUnit::PX);
         style.border.style = CSSBorderStyle::SOLID;
-        style.border.color = Color::FromRGB(169, 169, 169);
+        style.border.color = Color::FromRGB(118, 118, 118);  // Chrome 默认边框色
     }
 
     if (tag_name == "button") {
-        // 背景色
-        style.background_color = "#F0F0F0";
+        // 背景色 - Chrome 默认 rgb(239, 239, 239)
+        style.background_color = "#EFEFEF";
 
-        // 圆角（增强到 4px）
-        style.border_radius.top_left = CSSLength(4, CSSUnit::PX);
-        style.border_radius.top_right = CSSLength(4, CSSUnit::PX);
-        style.border_radius.bottom_left = CSSLength(4, CSSUnit::PX);
-        style.border_radius.bottom_right = CSSLength(4, CSSUnit::PX);
+        // 字体 - Chrome 按钮使用系统 UI 字体
+        // 参考: https://developer.mozilla.org/en-US/docs/Web/CSS/font-family
+        style.font_family = "system-ui, -apple-system, Arial, sans-serif";
 
-        // 边框
+        // 字体大小 - Chrome 按钮默认 13.333px (约等于 13px)
+        style.font_size = 13.333f;
+
+        // 圆角 - Chrome 默认较小的圆角（约 2-3px）
+        style.border_radius.top_left = CSSLength(2, CSSUnit::PX);
+        style.border_radius.top_right = CSSLength(2, CSSUnit::PX);
+        style.border_radius.bottom_left = CSSLength(2, CSSUnit::PX);
+        style.border_radius.bottom_right = CSSLength(2, CSSUnit::PX);
+
+        // 边框 - Chrome 默认使用浅灰色边框（rgb(118, 118, 118)）
+        // 使用 1px solid 模拟 outset 效果
         style.border.width = CSSLength(1, CSSUnit::PX);
         style.border.style = CSSBorderStyle::SOLID;
-        style.border.color = SkColorSetRGB(200, 200, 200);
+        style.border.color = SkColorSetRGB(118, 118, 118);
 
-        // 内边距 - 使用浏览器默认值
+        // 内边距 - Chrome 默认 1px 6px
         style.padding.left = CSSLength(6, CSSUnit::PX);
         style.padding.right = CSSLength(6, CSSUnit::PX);
         style.padding.top = CSSLength(1, CSSUnit::PX);
@@ -350,6 +498,9 @@ void StyleResolver::ApplyElementSpecificStyle(ComputedStyle& style, const std::s
 
         // 文本居中
         style.text_align = "center";
+
+        // cursor: pointer
+        style.cursor = "pointer";
     }
 
     // Input 元素
@@ -357,7 +508,7 @@ void StyleResolver::ApplyElementSpecificStyle(ComputedStyle& style, const std::s
         std::string type = element->GetAttribute("type");
 
         if (type == "text" || type == "password" || type.empty()) {
-            // 文本输入框
+            // 文本输入框 - Chrome 默认样式
             style.background_color = "#FFFFFF";
 
             // 宽度：默认 200px（会被 inline style 覆盖）
@@ -371,16 +522,44 @@ void StyleResolver::ApplyElementSpecificStyle(ComputedStyle& style, const std::s
             style.border_radius.bottom_left = CSSLength(3, CSSUnit::PX);
             style.border_radius.bottom_right = CSSLength(3, CSSUnit::PX);
 
-            // 边框
-            style.border.width = CSSLength(1, CSSUnit::PX);
+            // 边框 - Chrome 默认 2px inset rgb(118, 118, 118)
+            // 注意：CSSBorderStyle 没有 INSET，使用 SOLID 代替
+            style.border.width = CSSLength(2, CSSUnit::PX);
             style.border.style = CSSBorderStyle::SOLID;
-            style.border.color = SkColorSetRGB(200, 200, 200);
+            style.border.color = SkColorSetRGB(118, 118, 118);
 
-            // 内边距（浏览器默认较小，会被 inline style 覆盖）
-            style.padding.left = CSSLength(2, CSSUnit::PX);
-            style.padding.right = CSSLength(2, CSSUnit::PX);
-            style.padding.top = CSSLength(1, CSSUnit::PX);
-            style.padding.bottom = CSSLength(1, CSSUnit::PX);
+            // 内边距 - Chrome 默认 5px
+            style.padding.left = CSSLength(5, CSSUnit::PX);
+            style.padding.right = CSSLength(5, CSSUnit::PX);
+            style.padding.top = CSSLength(5, CSSUnit::PX);
+            style.padding.bottom = CSSLength(5, CSSUnit::PX);
+        }
+        else if (type == "number") {
+            // 数字输入框 - Chrome 默认样式
+            style.background_color = "#FFFFFF";
+
+            // 宽度：默认 200px（会被 inline style 覆盖）
+            // 高度：不设置固定高度，让 padding + line-height 决定（符合浏览器行为）
+            style.width = CSSLength(200, CSSUnit::PX);
+            // style.height 保持 AUTO，高度由内容决定
+
+            // 圆角
+            style.border_radius.top_left = CSSLength(3, CSSUnit::PX);
+            style.border_radius.top_right = CSSLength(3, CSSUnit::PX);
+            style.border_radius.bottom_left = CSSLength(3, CSSUnit::PX);
+            style.border_radius.bottom_right = CSSLength(3, CSSUnit::PX);
+
+            // 边框 - Chrome 默认 2px inset rgb(118, 118, 118)
+            // 注意：CSSBorderStyle 没有 INSET，使用 SOLID 代替
+            style.border.width = CSSLength(2, CSSUnit::PX);
+            style.border.style = CSSBorderStyle::SOLID;
+            style.border.color = SkColorSetRGB(118, 118, 118);
+
+            // 内边距 - Chrome 默认 8px
+            style.padding.left = CSSLength(8, CSSUnit::PX);
+            style.padding.right = CSSLength(8, CSSUnit::PX);
+            style.padding.top = CSSLength(8, CSSUnit::PX);
+            style.padding.bottom = CSSLength(8, CSSUnit::PX);
         }
         else if (type == "button" || type == "submit") {
             // 按钮样式
@@ -407,37 +586,53 @@ void StyleResolver::ApplyElementSpecificStyle(ComputedStyle& style, const std::s
             style.text_align = "center";
         }
         else if (type == "checkbox") {
-            // 复选框：小方块
-            style.width = CSSLength(16, CSSUnit::PX);
-            style.height = CSSLength(16, CSSUnit::PX);
+            // 复选框 - Chrome 默认样式
+            // 尺寸: 13x13px
+            style.width = CSSLength(13, CSSUnit::PX);
+            style.height = CSSLength(13, CSSUnit::PX);
 
-            style.border.width = CSSLength(1, CSSUnit::PX);
-            style.border.style = CSSBorderStyle::SOLID;
-            style.border.color = SkColorSetRGB(150, 150, 150);
+            // margin: 3px 3px 3px 4px
+            style.margin.top = CSSLength(3, CSSUnit::PX);
+            style.margin.right = CSSLength(3, CSSUnit::PX);
+            style.margin.bottom = CSSLength(3, CSSUnit::PX);
+            style.margin.left = CSSLength(4, CSSUnit::PX);
+
+            // 无边框（浏览器使用原生控件渲染）
+            style.border.width = CSSLength(0, CSSUnit::PX);
+            style.border.style = CSSBorderStyle::NONE;
 
             style.border_radius.top_left = CSSLength(2, CSSUnit::PX);
             style.border_radius.top_right = CSSLength(2, CSSUnit::PX);
             style.border_radius.bottom_left = CSSLength(2, CSSUnit::PX);
             style.border_radius.bottom_right = CSSLength(2, CSSUnit::PX);
 
-            style.background_color = "#FFFFFF";
+            // 透明背景（浏览器使用原生控件渲染）
+            style.background_color = "transparent";
         }
         else if (type == "radio") {
-            // 单选按钮：小圆圈
-            style.width = CSSLength(16, CSSUnit::PX);
-            style.height = CSSLength(16, CSSUnit::PX);
+            // 单选按钮 - Chrome 默认样式
+            // 尺寸: 13x13px
+            style.width = CSSLength(13, CSSUnit::PX);
+            style.height = CSSLength(13, CSSUnit::PX);
 
-            style.border.width = CSSLength(1, CSSUnit::PX);
-            style.border.style = CSSBorderStyle::SOLID;
-            style.border.color = SkColorSetRGB(150, 150, 150);
+            // margin: 3px 3px 0px 5px
+            style.margin.top = CSSLength(3, CSSUnit::PX);
+            style.margin.right = CSSLength(3, CSSUnit::PX);
+            style.margin.bottom = CSSLength(0, CSSUnit::PX);
+            style.margin.left = CSSLength(5, CSSUnit::PX);
+
+            // 无边框（浏览器使用原生控件渲染）
+            style.border.width = CSSLength(0, CSSUnit::PX);
+            style.border.style = CSSBorderStyle::NONE;
 
             // 圆形
-            style.border_radius.top_left = CSSLength(8, CSSUnit::PX);
-            style.border_radius.top_right = CSSLength(8, CSSUnit::PX);
-            style.border_radius.bottom_left = CSSLength(8, CSSUnit::PX);
-            style.border_radius.bottom_right = CSSLength(8, CSSUnit::PX);
+            style.border_radius.top_left = CSSLength(7, CSSUnit::PX);
+            style.border_radius.top_right = CSSLength(7, CSSUnit::PX);
+            style.border_radius.bottom_left = CSSLength(7, CSSUnit::PX);
+            style.border_radius.bottom_right = CSSLength(7, CSSUnit::PX);
 
-            style.background_color = "#FFFFFF";
+            // 透明背景（浏览器使用原生控件渲染）
+            style.background_color = "transparent";
         }
     }
 
@@ -490,53 +685,59 @@ void StyleResolver::ApplyElementSpecificStyle(ComputedStyle& style, const std::s
         style.border_radius.bottom_left = CSSLength(3, CSSUnit::PX);
         style.border_radius.bottom_right = CSSLength(3, CSSUnit::PX);
 
-        // 边框
+        // 边框 - Chrome 默认 1px solid rgb(118, 118, 118)
         style.border.width = CSSLength(1, CSSUnit::PX);
         style.border.style = CSSBorderStyle::SOLID;
-        style.border.color = SkColorSetRGB(200, 200, 200);
+        style.border.color = SkColorSetRGB(118, 118, 118);
 
-        // 内边距
-        style.padding.left = CSSLength(8, CSSUnit::PX);
-        style.padding.right = CSSLength(8, CSSUnit::PX);
-        style.padding.top = CSSLength(6, CSSUnit::PX);
-        style.padding.bottom = CSSLength(6, CSSUnit::PX);
+        // 内边距 - Chrome 默认 2px
+        style.padding.left = CSSLength(2, CSSUnit::PX);
+        style.padding.right = CSSLength(2, CSSUnit::PX);
+        style.padding.top = CSSLength(2, CSSUnit::PX);
+        style.padding.bottom = CSSLength(2, CSSUnit::PX);
     }
 
-    // Select 元素
+    // Select 元素 (Chrome 风格)
     if (tag_name == "select") {
         // Display类型: inline-block (符合CSS标准)
         style.display = RenderObjectType::INLINE_BLOCK;
 
+        // Chrome 默认 font-size 约 13.3333px
+        style.font_size = 13.3333f;
+
         style.background_color = "#FFFFFF";
 
-        // 宽度: 根据内容自动计算 (shrink-to-fit)
-        // 这里不设置固定宽度，让布局引擎根据内容计算
-        // 如果用户在HTML中设置了style="width: xxx"，会被覆盖
-
-        // 高度: 单行选择框的标准高度
-        style.height = CSSLength(32, CSSUnit::PX);
-
-        // 圆角
-        style.border_radius.top_left = CSSLength(3, CSSUnit::PX);
-        style.border_radius.top_right = CSSLength(3, CSSUnit::PX);
-        style.border_radius.bottom_left = CSSLength(3, CSSUnit::PX);
-        style.border_radius.bottom_right = CSSLength(3, CSSUnit::PX);
-
-        // 边框
+        // 边框（Chrome 标准灰色边框）
         style.border.width = CSSLength(1, CSSUnit::PX);
         style.border.style = CSSBorderStyle::SOLID;
-        style.border.color = SkColorSetRGB(200, 200, 200);
+        style.border.color = SkColorSetRGB(118, 118, 118);  // Chrome 默认边框颜色 #767676
+        style.border_top_width = 1.0f;
+        style.border_right_width = 1.0f;
+        style.border_bottom_width = 1.0f;
+        style.border_left_width = 1.0f;
 
-        // 内边距 (为下拉箭头留出空间)
-        style.padding.left = CSSLength(8, CSSUnit::PX);
-        style.padding.right = CSSLength(24, CSSUnit::PX);  // 右侧留空间给箭头
-        style.padding.top = CSSLength(6, CSSUnit::PX);
-        style.padding.bottom = CSSLength(6, CSSUnit::PX);
+        // 圆角（Chrome 默认轻微圆角）
+        style.border_radius.top_left = CSSLength(2, CSSUnit::PX);
+        style.border_radius.top_right = CSSLength(2, CSSUnit::PX);
+        style.border_radius.bottom_left = CSSLength(2, CSSUnit::PX);
+        style.border_radius.bottom_right = CSSLength(2, CSSUnit::PX);
+
+        // Chrome 默认 padding (左侧文字需要间距，右侧留给箭头)
+        style.padding.top = CSSLength(1, CSSUnit::PX);
+        style.padding.bottom = CSSLength(1, CSSUnit::PX);
+        style.padding.left = CSSLength(4, CSSUnit::PX);
+        style.padding.right = CSSLength(16, CSSUnit::PX);  // 右侧需要更多空间给下拉箭头
     }
 
     // Option 元素（隐藏，只在select内部显示选中的）
     if (tag_name == "option") {
         // Option元素默认隐藏，由Select元素负责渲染选中的option
+        style.display = RenderObjectType::NONE;
+    }
+
+    // OptGroup 元素（隐藏，只在select下拉菜单中显示）
+    if (tag_name == "optgroup") {
+        // OptGroup元素默认隐藏，由Select元素负责渲染
         style.display = RenderObjectType::NONE;
     }
 
@@ -562,9 +763,16 @@ void StyleResolver::ApplyElementSpecificStyle(ComputedStyle& style, const std::s
         style.text_decoration = "line-through";
     }
 
-    // 上标和下标 (Superscript & Subscript)
-    if (tag_name == "sup" || tag_name == "sub") {
-        style.font_size = 12.0f;  // 0.75em
+    // 上标 (Superscript)
+    if (tag_name == "sup") {
+        style.font_size = style.font_size * 0.83f;  // smaller
+        style.vertical_align = "super";
+    }
+
+    // 下标 (Subscript)
+    if (tag_name == "sub") {
+        style.font_size = style.font_size * 0.83f;  // smaller
+        style.vertical_align = "sub";
     }
 
     // 小字体 (Small)
@@ -597,6 +805,183 @@ void StyleResolver::ApplyElementSpecificStyle(ComputedStyle& style, const std::s
     // 缩写 (Abbreviation)
     if (tag_name == "abbr") {
         style.text_decoration = "underline dotted";
+    }
+
+    // 插入文本 (Inserted)
+    if (tag_name == "ins") {
+        style.text_decoration = "underline";
+    }
+
+    // 键盘输入 (Keyboard) - 等宽字体，略小
+    if (tag_name == "kbd") {
+        style.font_family = "Courier New";
+        style.font_size = style.font_size * 0.8125f;  // 13px / 16px
+    }
+
+    // 示例输出 (Sample) - 等宽字体，略小
+    if (tag_name == "samp") {
+        style.font_family = "Courier New";
+        style.font_size = style.font_size * 0.8125f;  // 13px / 16px
+    }
+
+    // 变量 (Variable)
+    if (tag_name == "var") {
+        style.font_style = "italic";
+    }
+
+    // 引用来源 (Citation)
+    if (tag_name == "cite") {
+        style.font_style = "italic";
+    }
+
+    // 定义 (Definition)
+    if (tag_name == "dfn") {
+        style.font_style = "italic";
+    }
+
+    // 地址 (Address)
+    if (tag_name == "address") {
+        style.font_style = "italic";
+        style.margin.top = CSSLength(16, CSSUnit::PX);
+        style.margin.bottom = CSSLength(16, CSSUnit::PX);
+    }
+
+    // 时间 (Time) - 无特殊样式
+    // 数据 (Data) - 无特殊样式
+
+    // ========== 语义化布局标签 ==========
+    // 这些标签默认无特殊样式，仅作为块级容器
+
+    // 页眉 (Header)
+    // 页脚 (Footer)
+    // 主内容 (Main)
+    // 导航 (Nav)
+    // 区块 (Section)
+    // 文章 (Article)
+    // 侧边栏 (Aside)
+    // 以上均使用默认块级样式，无需额外设置
+
+    // 图文容器 (Figure)
+    if (tag_name == "figure") {
+        style.margin.top = CSSLength(16, CSSUnit::PX);
+        style.margin.bottom = CSSLength(16, CSSUnit::PX);
+        style.margin.left = CSSLength(40, CSSUnit::PX);
+        style.margin.right = CSSLength(40, CSSUnit::PX);
+    }
+
+    // 图文标题 (Figcaption)
+    if (tag_name == "figcaption") {
+        style.text_align = "center";
+    }
+
+    // 表格标题 (Caption)
+    if (tag_name == "caption") {
+        style.text_align = "center";
+    }
+
+    // 折叠面板 (Details/Summary) - Chrome 默认
+    if (tag_name == "details") {
+        // Chrome: margin: 0px, padding: 0px
+        // 不设置额外 margin
+    }
+
+    if (tag_name == "summary") {
+        // Chrome: display: list-item, fontWeight: 400, listStyleType: disclosure-closed/open
+        // 用 BLOCK 模拟 list-item（暂不支持 list-item）
+        style.display = RenderObjectType::BLOCK;
+        // 不设置 bold，使用默认 400
+    }
+
+    // 对话框 (Dialog) - Chrome 默认
+    if (tag_name == "dialog") {
+        // dialog 默认隐藏，只有设置 open 属性时才显示
+        if (element && element->HasAttribute("open")) {
+            style.display = RenderObjectType::BLOCK;
+        } else {
+            style.display = RenderObjectType::NONE;
+        }
+        style.background_color = "#FFFFFF";
+        style.padding.top = CSSLength(16, CSSUnit::PX);
+        style.padding.bottom = CSSLength(16, CSSUnit::PX);
+        style.padding.left = CSSLength(16, CSSUnit::PX);
+        style.padding.right = CSSLength(16, CSSUnit::PX);
+        // Chrome: border: 1.5px solid black
+        style.border.width = CSSLength(1.5f, CSSUnit::PX);
+        style.border.style = CSSBorderStyle::SOLID;
+        style.border.color = SkColorSetRGB(0, 0, 0);
+    }
+
+    // Ruby 注音元素 - Chrome 默认
+    // ruby: display: ruby（用 INLINE 模拟）
+    // rt: display: ruby-text, font-size: 0.75em（用 INLINE 模拟）
+    // rp: display: none（括号在支持 ruby 的浏览器中隐藏）
+    if (tag_name == "ruby") {
+        style.display = RenderObjectType::INLINE;
+        // ruby 容器保持 inline
+    }
+    if (tag_name == "rt") {
+        style.display = RenderObjectType::INLINE;
+        // Chrome: font-size 约 0.75em (12px when parent is 16px)
+        style.font_size = 12.0f;
+    }
+    if (tag_name == "rp") {
+        // rp 在支持 ruby 的浏览器中隐藏
+        style.display = RenderObjectType::NONE;
+    }
+
+    // 双向文本覆盖 (BDO) - Chrome 默认
+    // unicode-bidi: isolate-override, direction 由 dir 属性决定
+    if (tag_name == "bdo") {
+        style.display = RenderObjectType::INLINE;
+        style.unicode_bidi = "isolate-override";
+        // direction 由 dir 属性决定，在 ApplyAttributeStyles 中处理
+        if (element && element->HasAttribute("dir")) {
+            std::string dir = element->GetAttribute("dir");
+            if (dir == "rtl") {
+                style.direction = "rtl";
+            } else if (dir == "ltr") {
+                style.direction = "ltr";
+            }
+        }
+    }
+
+    // 进度条 (Progress) - Chrome 默认: 160x16
+    if (tag_name == "progress") {
+        style.display = RenderObjectType::INLINE_BLOCK;
+        style.width = CSSLength(160, CSSUnit::PX);
+        style.height = CSSLength(16, CSSUnit::PX);
+    }
+
+    // 度量 (Meter) - Chrome 默认: 80x16
+    if (tag_name == "meter") {
+        style.display = RenderObjectType::INLINE_BLOCK;
+        style.width = CSSLength(80, CSSUnit::PX);
+        style.height = CSSLength(16, CSSUnit::PX);
+    }
+
+    // ========== SVG 元素 ==========
+    // SVG 根元素
+    if (tag_name == "svg") {
+        style.display = RenderObjectType::INLINE_BLOCK;
+        style.overflow = "hidden";  // SVG 默认裁剪溢出内容
+    }
+
+    // SVG 图形元素默认样式
+    if (tag_name == "path" || tag_name == "circle" || tag_name == "rect" ||
+        tag_name == "ellipse" || tag_name == "line" || tag_name == "polyline" ||
+        tag_name == "polygon") {
+        // SVG 图形元素默认填充黑色，无描边
+        // 这些样式通过 SVGElement 的属性处理，这里只设置布局相关
+    }
+
+    // SVG 文本元素
+    if (tag_name == "text") {
+        style.font_size = 16.0f;  // SVG 默认字体大小
+    }
+
+    // SVG 分组元素
+    if (tag_name == "g") {
+        // g 元素只是容器，不需要特殊样式
     }
 }
 
@@ -885,9 +1270,30 @@ void StyleResolver::ParseStyleProperty(ComputedStyle& style,
         style.border_spacing = CSSValue::ParseLength(resolved_value);
     }
     else if (property == "background") {
-        // 简化处理：如果是颜色值，设置 background-color
-        // 完整的 background 解析应该支持 image, position, size, repeat 等
-        style.background_color = resolved_value;
+        // 处理 background 简写属性
+        // 检查是否为渐变
+        if (resolved_value.find("linear-gradient") != std::string::npos) {
+            auto gradient = CSSValue::ParseLinearGradient(resolved_value);
+            if (gradient.has_value()) {
+                style.background_linear_gradient = gradient;
+            } else {
+                // 解析失败，存储原始值
+                style.background_image = resolved_value;
+            }
+        }
+        else if (resolved_value.find("radial-gradient") != std::string::npos) {
+            auto gradient = CSSValue::ParseRadialGradient(resolved_value);
+            if (gradient.has_value()) {
+                style.background_radial_gradient = gradient;
+            } else {
+                // 解析失败，存储原始值
+                style.background_image = resolved_value;
+            }
+        }
+        else {
+            // 简化处理：如果是颜色值，设置 background-color
+            style.background_color = resolved_value;
+        }
     }
     else if (property == "background-color") {
         style.background_color = resolved_value;
@@ -1228,20 +1634,12 @@ void StyleResolver::ApplyPseudoClassStyles(ComputedStyle& style, std::shared_ptr
     std::string tag_name = element->GetTagName();
 
     // ========== :hover 伪类样式 ==========
+    // 参考 Chrome 浏览器默认行为
     if (element->HasPseudoClass("hover")) {
         if (tag_name == "button") {
-            // 按钮悬停：背景色变深
-            style.background_color = "#E0E0E0";
-
-            // 边框颜色稍微变深
-            style.border.color = SkColorSetRGB(180, 180, 180);
-
-            // 增加阴影效果
-            if (!style.box_shadow.empty()) {
-                style.box_shadow[0].offset_y = 6;
-                style.box_shadow[0].blur_radius = 12;
-                style.box_shadow[0].color = SkColorSetARGB(100, 0, 0, 0);
-            }
+            // 按钮悬停：背景色略变深 (Chrome 默认: rgb(232, 232, 232))
+            style.background_color = "#E8E8E8";
+            // 边框颜色保持不变，与浏览器行为一致
         }
         else if (tag_name == "a") {
             // 链接悬停：下划线
@@ -1250,56 +1648,43 @@ void StyleResolver::ApplyPseudoClassStyles(ComputedStyle& style, std::shared_ptr
     }
 
     // ========== :active 伪类样式 ==========
+    // 参考 Chrome 浏览器默认行为
     if (element->HasPseudoClass("active")) {
         if (tag_name == "button") {
-            // 按钮按下：背景色更深，阴影减小（按下效果）
-            style.background_color = "#D0D0D0";
-
-            // 边框颜色更深
-            style.border.color = SkColorSetRGB(160, 160, 160);
-
-            // 减小阴影（按下效果）
-            if (!style.box_shadow.empty()) {
-                style.box_shadow[0].offset_y = 2;
-                style.box_shadow[0].blur_radius = 4;
-                style.box_shadow[0].color = SkColorSetARGB(60, 0, 0, 0);
-            }
+            // 按钮按下：背景色更深 (Chrome 默认: rgb(224, 224, 224))
+            style.background_color = "#E0E0E0";
+            // 边框颜色保持不变，与浏览器行为一致
         }
     }
 
     // ========== :focus 伪类样式 ==========
-    // 使用 outline 显示焦点指示器（符合浏览器行为）
-    // outline 不占用布局空间，不受内联样式中的 border 影响
+    // 符合浏览器行为：
+    // - 鼠标点击 input/textarea：显示 outline（需要显示光标位置）
+    // - 鼠标点击 button/select/a：不显示 outline（Chrome 行为）
+    // - 键盘导航：通过 :focus-visible 处理
     if (element->HasPseudoClass("focus")) {
-        if (tag_name == "input" || tag_name == "textarea" || tag_name == "button" || tag_name == "select") {
-            // 使用 outline 显示焦点，类似浏览器默认行为
+        // 只有 input 和 textarea 在鼠标点击时显示 outline
+        // 因为它们需要显示光标/输入位置
+        if (tag_name == "input" || tag_name == "textarea") {
             style.outline_width = CSSLength(2, CSSUnit::PX);
             style.outline_style = "solid";
             style.outline_color = SkColorSetRGB(0, 0, 0);  // 黑色轮廓
-            style.outline_offset = CSSLength(1, CSSUnit::PX);  // 轮廓距离边框1px
+            style.outline_offset = CSSLength(0, CSSUnit::PX);  // 紧贴边框外边缘
         }
+        // button, select, a 等元素鼠标点击时不显示 outline（Chrome 行为）
     }
 
     // ========== :focus-visible 伪类样式 ==========
-    // 键盘导航时的焦点指示器（更明显的蓝色边框）
+    // 键盘导航时的焦点指示器（所有可聚焦元素都显示）
     // 这符合现代浏览器的行为：https://developer.mozilla.org/en-US/docs/Web/CSS/:focus-visible
     if (element->HasPseudoClass("focus-visible")) {
-        if (tag_name == "button" || tag_name == "input" || tag_name == "textarea" || tag_name == "select") {
-            // 焦点样式：蓝色边框和外发光（覆盖:focus的样式）
-            style.border.width = CSSLength(2, CSSUnit::PX);
-            style.border.color = SkColorSetRGB(66, 153, 225);  // 蓝色
-
-            // 清除之前的阴影，添加蓝色外发光效果
-            style.box_shadow.clear();
-            CSSBoxShadow focus_shadow;
-            focus_shadow.offset_x = 0;
-            focus_shadow.offset_y = 0;
-            focus_shadow.blur_radius = 4;
-            focus_shadow.spread_radius = 0;
-            focus_shadow.color = SkColorSetARGB(128, 66, 153, 225);  // 半透明蓝色
-            focus_shadow.inset = false;
-
-            style.box_shadow.push_back(focus_shadow);
+        if (tag_name == "button" || tag_name == "input" || tag_name == "textarea" ||
+            tag_name == "select" || tag_name == "a") {
+            // 键盘导航焦点：使用 outline 显示（不影响布局）
+            style.outline_width = CSSLength(2, CSSUnit::PX);
+            style.outline_style = "solid";
+            style.outline_color = SkColorSetRGB(0, 0, 0);  // 黑色轮廓
+            style.outline_offset = CSSLength(0, CSSUnit::PX);  // 紧贴边框外边缘
         }
     }
 
@@ -1322,6 +1707,32 @@ void StyleResolver::ApplyPseudoClassStyles(ComputedStyle& style, std::shared_ptr
             }
         }
     }
+}
+
+void StyleResolver::ApplyPseudoElementStyles(ComputedStyle& style, std::shared_ptr<Element> element) {
+    if (!element) {
+        return;
+    }
+
+    std::string tag_name = element->GetTagName();
+
+    // ========== ::before 和 ::after 伪元素样式 ==========
+    // 根据 HTML 标准，某些元素有默认的伪元素内容
+
+    // <q> 引用元素 - 浏览器默认添加引号
+    // CSS 规范: q::before { content: open-quote; } q::after { content: close-quote; }
+    if (tag_name == "q") {
+        style.has_before = true;
+        style.has_after = true;
+        // 使用中文引号（也可以根据 lang 属性选择不同引号）
+        // 英文使用 """ 和 """，中文使用 "「" 和 "」" 或 """ 和 """
+        style.content_before = "\xe2\x80\x9c";  // UTF-8 编码的 "
+        style.content_after = "\xe2\x80\x9d";   // UTF-8 编码的 "
+    }
+
+    // 未来可以在这里添加更多伪元素支持，例如：
+    // - <li> 的列表标记（虽然这通常用 ::marker 而非 ::before）
+    // - 自定义 CSS 规则中的 content 属性
 }
 
 bool StyleResolver::IsInheritableProperty(const std::string& property) {
@@ -1414,17 +1825,10 @@ std::shared_ptr<RenderObject> RenderTreeBuilder::BuildRenderTree(
     if (node->GetNodeType() == NodeType::ELEMENT_NODE) {
         auto element = std::static_pointer_cast<Element>(node);
         render_obj = CreateRenderObjectForElement(element, parent_style);
-        // DEBUG: Log element with children count
-        std::cout << "[DEBUG BuildRenderTree] Element <" << element->GetTagName()
-                  << "> has " << node->GetChildNodes().size() << " children" << std::endl;
     }
     else if (node->GetNodeType() == NodeType::TEXT_NODE) {
         auto text = std::static_pointer_cast<Text>(node);
         render_obj = CreateRenderObjectForText(text, parent_style);
-        if (render_obj) {
-            std::cout << "[DEBUG BuildRenderTree] TEXT node created, len="
-                      << text->GetData().length() << std::endl;
-        }
     }
 
     if (!render_obj) {
@@ -1436,6 +1840,30 @@ std::shared_ptr<RenderObject> RenderTreeBuilder::BuildRenderTree(
         return nullptr;
     }
 
+    // 获取当前元素的样式
+    const auto& style = render_obj->GetComputedStyle();
+
+    // 处理 ::before 伪元素
+    if (style.has_before && !style.content_before.empty()) {
+        auto before_text = std::make_shared<RenderText>();
+        before_text->SetText(style.content_before);
+
+        // 继承父元素的样式
+        ComputedStyle before_style;
+        before_style.color = style.color;
+        before_style.font_family = style.font_family;
+        before_style.font_size = style.font_size;
+        before_style.font_weight = style.font_weight;
+        before_style.font_style = style.font_style;
+        before_style.line_height = style.line_height;
+        before_style.text_align = style.text_align;
+        before_style.text_decoration = style.text_decoration;
+        before_style.vertical_align = style.vertical_align;
+        before_text->SetComputedStyle(before_style);
+
+        render_obj->AppendChild(before_text);
+    }
+
     // 递归构建子树
     for (const auto& child : node->GetChildNodes()) {
         auto child_render_obj = BuildRenderTree(child, &render_obj->GetComputedStyle());
@@ -1444,23 +1872,163 @@ std::shared_ptr<RenderObject> RenderTreeBuilder::BuildRenderTree(
         }
     }
 
+    // 处理 ::after 伪元素
+    if (style.has_after && !style.content_after.empty()) {
+        auto after_text = std::make_shared<RenderText>();
+        after_text->SetText(style.content_after);
+
+        // 继承父元素的样式
+        ComputedStyle after_style;
+        after_style.color = style.color;
+        after_style.font_family = style.font_family;
+        after_style.font_size = style.font_size;
+        after_style.font_weight = style.font_weight;
+        after_style.font_style = style.font_style;
+        after_style.line_height = style.line_height;
+        after_style.text_align = style.text_align;
+        after_style.text_decoration = style.text_decoration;
+        after_style.vertical_align = style.vertical_align;
+        after_text->SetComputedStyle(after_style);
+
+        render_obj->AppendChild(after_text);
+    }
+
     return render_obj;
 }
 
 std::shared_ptr<RenderObject> RenderTreeBuilder::CreateRenderObjectForElement(
     std::shared_ptr<Element> element,
     const ComputedStyle* parent_style) {
-    
+
     // 计算样式
     auto style = style_resolver_.ResolveStyle(element, parent_style);
-    
-    // 创建渲染对象
-    auto render_obj = CreateRenderObjectByType(style.display);
+
+    std::shared_ptr<RenderObject> render_obj;
+
+    // ========== 处理 SVG 元素 ==========
+    std::string tag_name = element->GetTagName();
+
+    // Debug: 输出元素标签名
+    if (tag_name == "svg" || tag_name == "circle" || tag_name == "rect" ||
+        tag_name == "ellipse" || tag_name == "line" || tag_name == "path" ||
+        tag_name == "polyline" || tag_name == "polygon" || tag_name == "g") {
+        // std::cerr << "[SVG] CreateRenderObjectForElement: tag=" << tag_name << std::endl;
+    }
+
+    if (tag_name == "svg") {
+        auto svg_element = std::dynamic_pointer_cast<SVGSVGElement>(element);
+        // std::cerr << "[SVG] svg element cast result: " << (svg_element ? "success" : "failed") << std::endl;
+        if (svg_element) {
+            auto svg_root = std::make_shared<RenderSVGRoot>();
+            svg_root->SetSVGSVGElement(svg_element);
+            render_obj = svg_root;
+            // std::cerr << "[SVG] Created RenderSVGRoot" << std::endl;
+        }
+    } else if (tag_name == "circle") {
+        auto circle_element = std::dynamic_pointer_cast<SVGCircleElement>(element);
+        // std::cerr << "[SVG] circle element cast result: " << (circle_element ? "success" : "failed") << std::endl;
+        if (circle_element) {
+            auto svg_circle = std::make_shared<RenderSVGCircle>();
+            svg_circle->SetSVGCircleElement(circle_element);
+            render_obj = svg_circle;
+            // std::cerr << "[SVG] Created RenderSVGCircle" << std::endl;
+        }
+    } else if (tag_name == "rect") {
+        auto rect_element = std::dynamic_pointer_cast<SVGRectElement>(element);
+        if (rect_element) {
+            auto svg_rect = std::make_shared<RenderSVGRect>();
+            svg_rect->SetSVGRectElement(rect_element);
+            render_obj = svg_rect;
+        }
+    } else if (tag_name == "ellipse") {
+        auto ellipse_element = std::dynamic_pointer_cast<SVGEllipseElement>(element);
+        if (ellipse_element) {
+            auto svg_ellipse = std::make_shared<RenderSVGEllipse>();
+            svg_ellipse->SetSVGEllipseElement(ellipse_element);
+            render_obj = svg_ellipse;
+        }
+    } else if (tag_name == "line") {
+        auto line_element = std::dynamic_pointer_cast<SVGLineElement>(element);
+        if (line_element) {
+            auto svg_line = std::make_shared<RenderSVGLine>();
+            svg_line->SetSVGLineElement(line_element);
+            render_obj = svg_line;
+        }
+    } else if (tag_name == "polyline") {
+        auto polyline_element = std::dynamic_pointer_cast<SVGPolylineElement>(element);
+        if (polyline_element) {
+            auto svg_polyline = std::make_shared<RenderSVGPolyline>();
+            svg_polyline->SetSVGPolylineElement(polyline_element);
+            render_obj = svg_polyline;
+        }
+    } else if (tag_name == "polygon") {
+        auto polygon_element = std::dynamic_pointer_cast<SVGPolygonElement>(element);
+        if (polygon_element) {
+            auto svg_polygon = std::make_shared<RenderSVGPolygon>();
+            svg_polygon->SetSVGPolygonElement(polygon_element);
+            render_obj = svg_polygon;
+        }
+    } else if (tag_name == "path") {
+        auto path_element = std::dynamic_pointer_cast<SVGPathElement>(element);
+        if (path_element) {
+            auto svg_path = std::make_shared<RenderSVGPath>();
+            svg_path->SetSVGPathElement(path_element);
+            render_obj = svg_path;
+        }
+    } else if (tag_name == "g") {
+        auto g_element = std::dynamic_pointer_cast<SVGGElement>(element);
+        if (g_element) {
+            auto svg_group = std::make_shared<RenderSVGGroup>();
+            svg_group->SetSVGGElement(g_element);
+            render_obj = svg_group;
+        }
+    } else if (tag_name == "text") {
+        // 检查是否是SVG text元素（父元素是svg或g）
+        auto text_element = std::dynamic_pointer_cast<SVGTextElement>(element);
+        if (text_element) {
+            auto svg_text = std::make_shared<RenderSVGText>();
+            svg_text->SetSVGTextElement(text_element);
+            render_obj = svg_text;
+        }
+    }
+
+    // 如果不是SVG元素，使用默认方式创建渲染对象
+    if (!render_obj) {
+        render_obj = CreateRenderObjectByType(style.display);
+    }
+
     if (render_obj) {
         render_obj->SetNode(element);
         render_obj->SetComputedStyle(style);
+
+        // 处理表格单元格的 colspan/rowspan
+        if (style.display == RenderObjectType::TABLE_CELL) {
+            auto table_cell = std::dynamic_pointer_cast<RenderTableCell>(render_obj);
+            if (table_cell) {
+                // 读取 colspan 属性
+                std::string colspan_str = element->GetAttribute("colspan");
+                if (!colspan_str.empty()) {
+                    try {
+                        int colspan = std::stoi(colspan_str);
+                        if (colspan > 0) {
+                            table_cell->SetColSpan(colspan);
+                        }
+                    } catch (...) {}
+                }
+                // 读取 rowspan 属性
+                std::string rowspan_str = element->GetAttribute("rowspan");
+                if (!rowspan_str.empty()) {
+                    try {
+                        int rowspan = std::stoi(rowspan_str);
+                        if (rowspan >= 0) {
+                            table_cell->SetRowSpan(rowspan);
+                        }
+                    } catch (...) {}
+                }
+            }
+        }
     }
-    
+
     return render_obj;
 }
 
@@ -1511,6 +2079,7 @@ std::shared_ptr<RenderObject> RenderTreeBuilder::CreateRenderObjectForText(
         text_style.line_height = parent_style->line_height;
         text_style.text_align = parent_style->text_align;
         text_style.text_decoration = parent_style->text_decoration;
+        text_style.vertical_align = parent_style->vertical_align;
         // 继承 CSS 变量
         text_style.css_variables.InheritFrom(&parent_style->css_variables);
     }

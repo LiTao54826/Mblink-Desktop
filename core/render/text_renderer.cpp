@@ -80,14 +80,22 @@ void TextRenderer::DrawTextWithEmoji(const std::string& text, float x, float y,
 
     auto& font_manager = FontManager::GetInstance();
     sk_sp<SkTypeface> emoji_typeface = font_manager.GetEmojiTypeface();
-    sk_sp<SkTypeface> cjk_typeface = font_manager.GetCJKTypeface();
+
+    // 获取原始字体的样式（粗细、斜体等）
+    SkFontStyle original_style;
+    if (font.getTypeface()) {
+        original_style = font.getTypeface()->fontStyle();
+    }
+
+    // 使用原始字体的样式获取 CJK 字体
+    sk_sp<SkTypeface> cjk_typeface = font_manager.GetCJKTypeface(original_style);
 
     // 创建emoji字体（保持相同大小）
     SkFont emoji_font(emoji_typeface, font.getSize());
     emoji_font.setEdging(SkFont::Edging::kAntiAlias);
     emoji_font.setSubpixel(true);
 
-    // 创建CJK字体（保持相同大小）
+    // 创建CJK字体（保持相同大小和样式）
     SkFont cjk_font(cjk_typeface, font.getSize());
     cjk_font.setEdging(SkFont::Edging::kAntiAlias);
     cjk_font.setSubpixel(true);
@@ -213,14 +221,22 @@ float TextRenderer::MeasureTextWidthWithEmoji(const std::string& text, const SkF
 
     auto& font_manager = FontManager::GetInstance();
     sk_sp<SkTypeface> emoji_typeface = font_manager.GetEmojiTypeface();
-    sk_sp<SkTypeface> cjk_typeface = font_manager.GetCJKTypeface();
+
+    // 获取原始字体的样式（粗细、斜体等）
+    SkFontStyle original_style;
+    if (font.getTypeface()) {
+        original_style = font.getTypeface()->fontStyle();
+    }
+
+    // 使用原始字体的样式获取 CJK 字体
+    sk_sp<SkTypeface> cjk_typeface = font_manager.GetCJKTypeface(original_style);
 
     // 创建emoji字体
     SkFont emoji_font(emoji_typeface, font.getSize());
     emoji_font.setEdging(SkFont::Edging::kAntiAlias);
     emoji_font.setSubpixel(true);
 
-    // 创建CJK字体
+    // 创建CJK字体（保持相同样式）
     SkFont cjk_font(cjk_typeface, font.getSize());
     cjk_font.setEdging(SkFont::Edging::kAntiAlias);
     cjk_font.setSubpixel(true);
@@ -249,6 +265,92 @@ float TextRenderer::MeasureTextWidthWithEmoji(const std::string& text, const SkF
                 break;
         }
         return use_font->measureText(text.c_str(), text.size(), SkTextEncoding::kUTF8);
+    };
+
+    float total_width = 0.0f;
+    const char* str = text.c_str();
+    size_t len = text.size();
+    size_t pos = 0;
+
+    std::string run_text;
+    CharType run_type = CharType::NORMAL;
+
+    while (pos < len) {
+        auto [codepoint, bytes] = DecodeUTF8Char(str + pos, len - pos);
+        if (bytes == 0) break;
+
+        CharType char_type = getCharType(codepoint);
+
+        // 如果字符类型变化，测量之前积累的文本
+        if (!run_text.empty() && char_type != run_type) {
+            total_width += measureRun(run_text, run_type);
+            run_text.clear();
+        }
+
+        run_text.append(str + pos, bytes);
+        run_type = char_type;
+        pos += bytes;
+    }
+
+    // 测量最后的run
+    if (!run_text.empty()) {
+        total_width += measureRun(run_text, run_type);
+    }
+
+    return total_width;
+}
+
+float TextRenderer::MeasureMixedTextWidth(const std::string& text, const SkFont& font) {
+    if (text.empty()) {
+        return 0.0f;
+    }
+
+    auto& font_manager = FontManager::GetInstance();
+    sk_sp<SkTypeface> emoji_typeface = font_manager.GetEmojiTypeface();
+
+    // 获取原始字体的样式（粗细、斜体等）
+    SkFontStyle original_style;
+    if (font.getTypeface()) {
+        original_style = font.getTypeface()->fontStyle();
+    }
+
+    // 使用原始字体的样式获取 CJK 字体
+    sk_sp<SkTypeface> cjk_typeface = font_manager.GetCJKTypeface(original_style);
+
+    // 创建emoji字体
+    SkFont emoji_font(emoji_typeface, font.getSize());
+    emoji_font.setEdging(SkFont::Edging::kAntiAlias);
+    emoji_font.setSubpixel(true);
+
+    // 创建CJK字体（保持相同样式）
+    SkFont cjk_font(cjk_typeface, font.getSize());
+    cjk_font.setEdging(SkFont::Edging::kAntiAlias);
+    cjk_font.setSubpixel(true);
+
+    // 字符类型枚举
+    enum class CharType { NORMAL, EMOJI, CJK };
+
+    auto getCharType = [](uint32_t codepoint) -> CharType {
+        if (FontManager::IsEmoji(codepoint)) return CharType::EMOJI;
+        if (FontManager::IsCJK(codepoint)) return CharType::CJK;
+        return CharType::NORMAL;
+    };
+
+    auto measureRun = [&](const std::string& run_text, CharType type) -> float {
+        if (run_text.empty()) return 0.0f;
+        const SkFont* use_font = &font;
+        switch (type) {
+            case CharType::EMOJI:
+                use_font = emoji_typeface ? &emoji_font : &font;
+                break;
+            case CharType::CJK:
+                use_font = cjk_typeface ? &cjk_font : &font;
+                break;
+            default:
+                use_font = &font;
+                break;
+        }
+        return use_font->measureText(run_text.c_str(), run_text.size(), SkTextEncoding::kUTF8);
     };
 
     float total_width = 0.0f;

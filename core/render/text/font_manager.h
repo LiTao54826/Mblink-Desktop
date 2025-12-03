@@ -134,6 +134,13 @@ public:
     sk_sp<SkTypeface> GetCJKTypeface();
 
     /**
+     * @brief 获取带样式的CJK(中日韩)字体的typeface
+     * @param style 字体样式（粗细、斜体等）
+     * @return CJK字体的typeface
+     */
+    sk_sp<SkTypeface> GetCJKTypeface(const SkFontStyle& style);
+
+    /**
      * @brief 检查字符是否是emoji
      * @param codepoint Unicode码点
      * @return true如果是emoji字符

@@ -113,11 +113,6 @@ std::string CSSStyleDeclaration::GetCssText() const {
 }
 
 void CSSStyleDeclaration::SetCssText(const std::string& css_text) {
-    static int debug_count = 0;
-    if (debug_count++ < 10) {
-        printf("[DEBUG SetCssText] called with: '%s'\n", css_text.c_str());
-    }
-
     // 清空现有属性
     properties_.clear();
     priorities_.clear();
@@ -259,22 +254,11 @@ std::string CSSStyleDeclaration::NormalizePropertyName(const std::string& proper
 void CSSStyleDeclaration::UpdateStyleAttribute() {
     auto elem = element_.lock();
     if (!elem) {
-        static int debug_count = 0;
-        if (debug_count++ < 5) {
-            printf("[DEBUG UpdateStyleAttribute] element_.lock() returned null!\n");
-        }
         return;
     }
 
     // 将样式序列化为CSS文本并设置到style属性
     std::string css_text = SerializeCssText();
-
-    static int debug_count2 = 0;
-    if (debug_count2++ < 10) {
-        printf("[DEBUG UpdateStyleAttribute] Setting style='%s' on tag=%s\n",
-               css_text.c_str(), elem->GetTagName().c_str());
-    }
-
     elem->SetAttribute("style", css_text);
 }
 
