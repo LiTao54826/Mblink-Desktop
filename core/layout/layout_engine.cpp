@@ -4,6 +4,7 @@
  */
 
 #include "layout_engine.h"
+#include "ifc_layout.h"
 #include "dom/element.h"
 #include "dom/svg_element.h"
 #include "render/render_object.h"
@@ -92,6 +93,75 @@ static TaffySize InlineMeasureFunction(
 
     size.width = measured_width;
     size.height = measured_height;
+
+    return size;
+}
+
+// IFC Container measurement callback for Taffy
+// This function is called by Taffy during layout to measure containers with only inline content
+static TaffySize IFCContainerMeasureFunction(
+    TaffyMeasureMode width_measure_mode,
+    float width,
+    TaffyMeasureMode height_measure_mode,
+    float height,
+    void* context)
+{
+    TaffySize size = {0.0f, 0.0f};
+
+    if (!context) {
+        return size;
+    }
+
+    auto* render_obj = static_cast<lightui::RenderObject*>(context);
+
+    // Determine available width
+    float available_width = 0.0f;
+    switch (width_measure_mode) {
+        case TAFFY_MEASURE_MODE_EXACT:
+        case TAFFY_MEASURE_MODE_FIT_CONTENT:
+            available_width = width;
+            break;
+        case TAFFY_MEASURE_MODE_MIN_CONTENT:
+            available_width = 0;
+            break;
+        case TAFFY_MEASURE_MODE_MAX_CONTENT:
+            available_width = 10000.0f;
+            break;
+    }
+
+    // Get style for padding/border calculations
+    const auto& style = render_obj->GetComputedStyle();
+
+    // Get padding
+    float padding_left = style.padding.left.ToPx(available_width, style.font_size);
+    float padding_right = style.padding.right.ToPx(available_width, style.font_size);
+    float padding_top = style.padding.top.ToPx(0, style.font_size);
+    float padding_bottom = style.padding.bottom.ToPx(0, style.font_size);
+
+    // Get border
+    float border_left = style.border_left_width;
+    float border_right = style.border_right_width;
+    float border_top = style.border_top_width;
+    float border_bottom = style.border_bottom_width;
+    if (border_left == 0 && border_right == 0 && border_top == 0 && border_bottom == 0) {
+        float border_width = style.border.width.ToPx(available_width, style.font_size);
+        border_left = border_right = border_top = border_bottom = border_width;
+    }
+
+    // Calculate content area width
+    float content_width = available_width - padding_left - padding_right - border_left - border_right;
+    if (content_width < 0) content_width = 0;
+
+    // Use IFC to measure content height
+    lightui::IFCLayout ifc_layout;
+    lightui::IFCLayoutResult result = ifc_layout.Layout(render_obj, content_width);
+
+    // Return total size including padding and border
+    size.width = result.max_width + padding_left + padding_right + border_left + border_right;
+    size.height = result.total_height + padding_top + padding_bottom + border_top + border_bottom;
+
+    std::cout << "[IFCMeasure] padding_top=" << padding_top << ", padding_bottom=" << padding_bottom
+              << ", content_height=" << result.total_height << ", total_height=" << size.height << std::endl;
 
     return size;
 }
@@ -1147,6 +1217,11 @@ void LayoutEngine::BuildSubtree(RenderObject* render_obj, TaffyNodeId parent_nod
         // Don't add children to Taffy tree - IFC will handle them
         if (has_inline_content && !has_block_content) {
             ifc_containers_.insert(render_obj);
+            std::cout << "[IFC-Register] Registered IFC container: " << render_obj << std::endl;
+
+            // Set IFC container measure function so Taffy can calculate correct height
+            TaffyTree_SetNodeContext(taffy_tree_, node, IFCContainerMeasureFunction, render_obj);
+
             // Don't add children to Taffy - IFC will layout them
             return;
         }
@@ -1215,6 +1290,7 @@ void LayoutEngine::ReadLayoutResults(RenderObject* render_obj) {
 
     auto it = element_to_node_.find(render_obj);
     if (it == element_to_node_.end()) {
+        std::cout << "[ReadLayout] render_obj " << render_obj << " not found in element_to_node_" << std::endl;
         return;
     }
 
@@ -1254,6 +1330,8 @@ void LayoutEngine::ReadLayoutResults(RenderObject* render_obj) {
         // Use IFC to layout inline content
         float content_width = info.width;
         float content_height = info.height;
+
+        std::cout << "[IFC-Apply] Taffy returned height=" << info.height << " for IFC container" << std::endl;
 
         // Get padding
         float padding_left = style.padding.left.ToPx(info.width, style.font_size);

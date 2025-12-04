@@ -59,10 +59,10 @@ struct InlineBox {
     const ComputedStyle* style = nullptr;
     
     // ========== 尺寸信息 ==========
-    
+
     /** @brief 盒子宽度（像素） */
     float width = 0.0f;
-    
+
     /** @brief 盒子高度（像素） */
     float height = 0.0f;
 
@@ -71,6 +71,12 @@ struct InlineBox {
 
     /** @brief 行高倍数（CSS line-height 属性） */
     float line_height_multiplier = 1.2f;
+
+    /** @brief Skia 测量的 ascent（从基线向上的距离，正值） */
+    float skia_ascent = 0.0f;
+
+    /** @brief Skia 测量的 descent（从基线向下的距离，正值） */
+    float skia_descent = 0.0f;
     
     // ========== 位置信息（布局后填充） ==========
     

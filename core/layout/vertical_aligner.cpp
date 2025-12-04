@@ -7,6 +7,10 @@
 #include "core/render/render_object.h"
 #include <algorithm>
 #include <cmath>
+#include <iostream>
+
+// 调试开关
+#define VA_DEBUG 0
 
 namespace lightui {
 
@@ -14,14 +18,20 @@ namespace lightui {
 
 BoxVerticalMetrics VerticalAligner::GetBoxMetrics(const InlineBox& box) {
     BoxVerticalMetrics metrics;
-    
+
     metrics.height = box.height;
-    
+
     if (box.IsText()) {
-        // 文本盒子：使用字体度量
-        // 典型情况：ascent ≈ 80% height, descent ≈ 20% height
-        metrics.ascent = box.height * 0.8f;
-        metrics.descent = box.height * 0.2f;
+        // 文本盒子：使用 Skia 测量的精确 ascent 和 descent
+        if (box.skia_ascent > 0 || box.skia_descent > 0) {
+            // 使用 Skia 测量的精确值
+            metrics.ascent = box.skia_ascent;
+            metrics.descent = box.skia_descent;
+        } else {
+            // 回退到估算值
+            metrics.ascent = box.height * 0.8f;
+            metrics.descent = box.height * 0.2f;
+        }
         metrics.baseline = metrics.ascent;
     } else if (box.IsAtomic()) {
         // 原子盒子（inline-block, 图片等）
@@ -36,7 +46,7 @@ BoxVerticalMetrics VerticalAligner::GetBoxMetrics(const InlineBox& box) {
         metrics.descent = box.height * 0.2f;
         metrics.baseline = metrics.ascent;
     }
-    
+
     return metrics;
 }
 
@@ -69,16 +79,15 @@ LineVerticalMetrics VerticalAligner::CalculateLineMetrics(
             ? aligns[i]
             : VerticalAlignInfo{};
 
-        // 获取盒子的 line-height 和 font-size
-        float font_size = 16.0f;  // 默认字体大小
-        float line_height_multiplier = box->line_height_multiplier;
+        // 获取盒子的 line-height（使用盒子自身的高度，已包含 line-height 计算）
+        // MeasureTextForIFC 已经根据 line-height: normal 或指定值计算了正确的高度
+        float box_line_height = box->height;
+        max_line_height = std::max(max_line_height, box_line_height);
+
+        float font_size = 16.0f;
         if (box->style) {
             font_size = box->style->font_size;
         }
-
-        // 计算 CSS line-height（font-size * multiplier）
-        float css_line_height = font_size * line_height_multiplier;
-        max_line_height = std::max(max_line_height, css_line_height);
         max_font_size = std::max(max_font_size, font_size);
 
         // 根据对齐方式决定是否参与基线计算
@@ -176,6 +185,14 @@ LineVerticalMetrics VerticalAligner::CalculateLineMetrics(
     if (line_top < 0) {
         metrics.baseline = metrics.baseline - line_top;
     }
+
+#if VA_DEBUG
+    std::cout << "[VA] CalculateLineMetrics: max_ascent=" << max_ascent
+              << ", max_descent=" << max_descent
+              << ", max_line_height=" << max_line_height
+              << ", content_height=" << content_height
+              << ", line_height=" << metrics.line_height << std::endl;
+#endif
 
     return metrics;
 }

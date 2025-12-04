@@ -6,6 +6,7 @@
 #include "text_renderer.h"
 #include <sstream>
 #include <cstdint>
+#include <iostream>
 
 namespace lightui {
 
@@ -111,14 +112,29 @@ void TextRenderer::DrawTextWithEmoji(const std::string& text, float x, float y,
     std::string run_text;
     CharType run_type = CharType::NORMAL;
 
-    auto getCharType = [](uint32_t codepoint) -> CharType {
+    // 检查是否是零宽度修饰符（变体选择符、零宽连接符等）
+    auto isZeroWidthModifier = [](uint32_t codepoint) -> bool {
+        // Variation Selectors (U+FE00-U+FE0F)
+        if (codepoint >= 0xFE00 && codepoint <= 0xFE0F) return true;
+        // Zero Width Joiner (U+200D)
+        if (codepoint == 0x200D) return true;
+        // Zero Width Non-Joiner (U+200C)
+        if (codepoint == 0x200C) return true;
+        // Combining marks that modify emoji
+        if (codepoint >= 0x1F3FB && codepoint <= 0x1F3FF) return true;  // Skin tone modifiers
+        return false;
+    };
+
+    auto getCharType = [&isZeroWidthModifier](uint32_t codepoint) -> CharType {
+        // 零宽度修饰符跟随前一个字符的类型，返回 EMOJI
+        if (isZeroWidthModifier(codepoint)) return CharType::EMOJI;
         if (FontManager::IsEmoji(codepoint)) return CharType::EMOJI;
         if (FontManager::IsCJK(codepoint)) return CharType::CJK;
         return CharType::NORMAL;
     };
 
-    auto drawRun = [&](const std::string& text, CharType type, float& x_pos) {
-        if (text.empty()) return;
+    auto drawRun = [&](const std::string& run_text_arg, CharType type, float& x_pos) {
+        if (run_text_arg.empty()) return;
         const SkFont* use_font = &font;
         switch (type) {
             case CharType::EMOJI:
@@ -131,9 +147,38 @@ void TextRenderer::DrawTextWithEmoji(const std::string& text, float x, float y,
                 use_font = &font;
                 break;
         }
-        canvas_->drawSimpleText(text.c_str(), text.size(), SkTextEncoding::kUTF8,
+
+        // 绘制文本（包括零宽度修饰符，让字体正确渲染组合字符）
+        canvas_->drawSimpleText(run_text_arg.c_str(), run_text_arg.size(), SkTextEncoding::kUTF8,
                                x_pos, y, *use_font, paint.GetSkPaint());
-        x_pos += use_font->measureText(text.c_str(), text.size(), SkTextEncoding::kUTF8);
+
+        // 对于 emoji，过滤掉零宽度修饰符后再计算宽度
+        float width = 0.0f;
+        if (type == CharType::EMOJI) {
+            std::string filtered_text;
+            const char* run_str = run_text_arg.c_str();
+            size_t run_len = run_text_arg.size();
+            size_t run_pos = 0;
+
+            while (run_pos < run_len) {
+                auto [cp, bytes] = DecodeUTF8Char(run_str + run_pos, run_len - run_pos);
+                if (bytes == 0) break;
+
+                // 跳过零宽度修饰符
+                if (!isZeroWidthModifier(cp)) {
+                    filtered_text.append(run_str + run_pos, bytes);
+                }
+                run_pos += bytes;
+            }
+
+            if (!filtered_text.empty()) {
+                width = use_font->measureText(filtered_text.c_str(), filtered_text.size(), SkTextEncoding::kUTF8);
+            }
+        } else {
+            width = use_font->measureText(run_text_arg.c_str(), run_text_arg.size(), SkTextEncoding::kUTF8);
+        }
+
+        x_pos += width;
     };
 
     while (pos < len) {
@@ -330,7 +375,23 @@ float TextRenderer::MeasureMixedTextWidth(const std::string& text, const SkFont&
     // 字符类型枚举
     enum class CharType { NORMAL, EMOJI, CJK };
 
-    auto getCharType = [](uint32_t codepoint) -> CharType {
+    // 检查是否是零宽度修饰符（变体选择符、零宽连接符等）
+    auto isZeroWidthModifier = [](uint32_t codepoint) -> bool {
+        // Variation Selectors (U+FE00-U+FE0F)
+        if (codepoint >= 0xFE00 && codepoint <= 0xFE0F) return true;
+        // Zero Width Joiner (U+200D)
+        if (codepoint == 0x200D) return true;
+        // Zero Width Non-Joiner (U+200C)
+        if (codepoint == 0x200C) return true;
+        // Combining marks that modify emoji
+        if (codepoint >= 0x1F3FB && codepoint <= 0x1F3FF) return true;  // Skin tone modifiers
+        return false;
+    };
+
+    auto getCharType = [&isZeroWidthModifier](uint32_t codepoint) -> CharType {
+        // 零宽度修饰符跟随前一个字符的类型，但在这里我们返回 EMOJI
+        // 因为这些修饰符主要用于 emoji
+        if (isZeroWidthModifier(codepoint)) return CharType::EMOJI;
         if (FontManager::IsEmoji(codepoint)) return CharType::EMOJI;
         if (FontManager::IsCJK(codepoint)) return CharType::CJK;
         return CharType::NORMAL;
@@ -350,7 +411,37 @@ float TextRenderer::MeasureMixedTextWidth(const std::string& text, const SkFont&
                 use_font = &font;
                 break;
         }
-        return use_font->measureText(run_text.c_str(), run_text.size(), SkTextEncoding::kUTF8);
+
+        // 对于 emoji，过滤掉零宽度修饰符后再测量
+        float width = 0.0f;
+        if (type == CharType::EMOJI) {
+            // 创建过滤后的文本（移除零宽度修饰符）
+            std::string filtered_text;
+            const char* run_str = run_text.c_str();
+            size_t run_len = run_text.size();
+            size_t run_pos = 0;
+
+            while (run_pos < run_len) {
+                auto [cp, bytes] = DecodeUTF8Char(run_str + run_pos, run_len - run_pos);
+                if (bytes == 0) break;
+
+                // 跳过零宽度修饰符
+                if (!isZeroWidthModifier(cp)) {
+                    filtered_text.append(run_str + run_pos, bytes);
+                }
+                run_pos += bytes;
+            }
+
+            if (!filtered_text.empty()) {
+                width = use_font->measureText(filtered_text.c_str(), filtered_text.size(), SkTextEncoding::kUTF8);
+            }
+
+
+        } else {
+            width = use_font->measureText(run_text.c_str(), run_text.size(), SkTextEncoding::kUTF8);
+        }
+
+        return width;
     };
 
     float total_width = 0.0f;

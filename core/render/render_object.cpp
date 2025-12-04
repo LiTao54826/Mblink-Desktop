@@ -2302,8 +2302,21 @@ void RenderText::Paint(SkCanvas* canvas) {
     SkFontMetrics font_metrics;
     font.getMetrics(&font_metrics);
 
-    // 计算基线位置：从顶部开始，向下偏移 ascent（ascent 是负值，所以取反）
-    float baseline_y = -font_metrics.fAscent;
+    // 计算 Skia 测量的精确文本高度
+    float skia_text_height = -font_metrics.fAscent + font_metrics.fDescent;
+
+    // 计算 CSS line-height
+    float css_line_height = style.line_height * style.font_size;
+
+    // 计算 half-leading：当 CSS line-height 大于文本高度时，
+    // 额外空间应该平均分配在文本上下
+    float half_leading = 0.0f;
+    if (css_line_height > skia_text_height) {
+        half_leading = (css_line_height - skia_text_height) / 2.0f;
+    }
+
+    // 计算基线位置：从顶部开始，加上 half-leading，再加上 ascent
+    float baseline_y = half_leading + (-font_metrics.fAscent);
 
     // 处理 vertical-align
     if (style.vertical_align == "super") {

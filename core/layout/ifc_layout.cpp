@@ -8,10 +8,14 @@
 #include <cmath>
 #include <limits>
 #include <unordered_map>
+#include <iostream>
 
 // Skia 字体测量
 #include "core/render/text/font_manager.h"
 #include "core/render/text_renderer.h"
+
+// 调试开关
+#define IFC_DEBUG 0
 
 namespace lightui {
 
@@ -47,17 +51,36 @@ bool IFCLayout::IsInlineLevel(RenderObject* render_obj) {
 // ========== 文本测量 ==========
 
 /**
- * @brief 使用 Skia 进行精确文本测量
+ * @brief 文本测量结果
  */
-std::pair<float, float> MeasureTextForIFC(
+struct TextMeasurement {
+    float width = 0.0f;           // 文本宽度
+    float height = 0.0f;          // 盒子高度（用于布局）
+    float skia_ascent = 0.0f;     // Skia 测量的 ascent（正值）
+    float skia_descent = 0.0f;    // Skia 测量的 descent（正值）
+};
+
+/**
+ * @brief 使用 Skia 进行精确文本测量
+ *
+ * 宽度使用 Skia 精确测量，高度使用 CSS line-height 或 Skia 度量的较大值，
+ * 以确保行与行之间有足够的间距。
+ */
+TextMeasurement MeasureTextForIFC(
     const std::string& text,
     float font_size,
     const std::string& font_family,
     float letter_spacing,
-    float word_spacing
+    float word_spacing,
+    float line_height_multiplier = 1.2f
 ) {
+    TextMeasurement result;
+
     if (text.empty()) {
-        return {0.0f, font_size * 1.2f};
+        result.height = font_size * line_height_multiplier;
+        result.skia_ascent = font_size * 0.8f;
+        result.skia_descent = font_size * 0.2f;
+        return result;
     }
 
     // 使用 FontManager 获取字体
@@ -74,12 +97,47 @@ std::pair<float, float> MeasureTextForIFC(
     SkFont font = font_manager.LoadFont(font_desc);
 
     // 使用 Skia 测量文本宽度（支持混合字符：ASCII、CJK、emoji）
-    float width = TextRenderer::MeasureMixedTextWidth(text, font);
+    result.width = TextRenderer::MeasureMixedTextWidth(text, font);
 
     // 获取字体度量计算高度
     SkFontMetrics metrics;
     font.getMetrics(&metrics);
-    float height = -metrics.fAscent + metrics.fDescent;
+
+    // 存储 Skia 测量的精确 ascent 和 descent（转换为正值）
+    result.skia_ascent = -metrics.fAscent;  // fAscent 是负值
+    result.skia_descent = metrics.fDescent;  // fDescent 是正值
+
+    // 计算 Skia 测量的精确高度（内容高度）
+    float skia_content_height = result.skia_ascent + result.skia_descent;
+
+    // 计算 line-height: normal 的值
+    // 浏览器的 line-height: normal 基于字体的 metrics，通常约为 1.15-1.35 倍字体大小
+    // 根据浏览器测试：16px -> 21px (1.3125), 24px -> 32px (1.333), 32px -> 43px (1.34375)
+    // 使用公式：normal_line_height = ceil(font_size * 1.3)，然后取整到最接近的像素
+    float browser_normal_line_height = std::ceil(font_size * 1.3f);
+
+    // 如果指定了 line-height 倍数（非默认的 1.2），使用 CSS 指定的值
+    // 否则使用浏览器风格的 line-height: normal
+    float final_line_height;
+    if (line_height_multiplier != 1.2f) {
+        // 用户指定了具体的 line-height
+        final_line_height = font_size * line_height_multiplier;
+    } else {
+        // 使用 line-height: normal（浏览器风格）
+        final_line_height = browser_normal_line_height;
+    }
+
+    // 使用较大的高度，确保行间距足够
+    result.height = std::max(skia_content_height, final_line_height);
+
+    // Debug: 打印高度计算信息
+    std::cout << "[TextMeasure] font_size=" << font_size
+              << ", line_height_multiplier=" << line_height_multiplier
+              << ", skia_height=" << skia_content_height
+              << ", browser_normal=" << browser_normal_line_height
+              << ", final_height=" << result.height << std::endl;
+
+
 
     // 计算 UTF-8 字符数（用于 letter-spacing）
     int char_count = 0;
@@ -102,7 +160,7 @@ std::pair<float, float> MeasureTextForIFC(
 
     // 应用 letter-spacing：在每个字符之间添加间距（最后一个字符后面不加）
     if (char_count > 1 && letter_spacing != 0.0f) {
-        width += letter_spacing * (char_count - 1);
+        result.width += letter_spacing * (char_count - 1);
     }
 
     // 应用 word-spacing：在每个空格处添加额外间距
@@ -113,10 +171,10 @@ std::pair<float, float> MeasureTextForIFC(
         }
     }
     if (space_count > 0 && word_spacing != 0.0f) {
-        width += word_spacing * space_count;
+        result.width += word_spacing * space_count;
     }
 
-    return {width, height};
+    return result;
 }
 
 // ========== 缓存方法 ==========
@@ -272,6 +330,12 @@ IFCLayoutResult IFCLayout::Layout(RenderObject* container, float available_width
         line.height = line_metrics.line_height;
         line.baseline = line_metrics.baseline;
 
+#if IFC_DEBUG
+        std::cout << "[IFC] Line metrics: line_height=" << line_metrics.line_height
+                  << ", baseline=" << line_metrics.baseline
+                  << ", boxes=" << box_ptrs.size() << std::endl;
+#endif
+
         // 设置行位置
         line.y = current_y;
 
@@ -290,11 +354,17 @@ IFCLayoutResult IFCLayout::Layout(RenderObject* container, float available_width
         line.ApplyTextAlign(style.text_align);
 
         // 更新统计
+#if IFC_DEBUG
+        std::cout << "[IFC] current_y: " << current_y << " -> " << (current_y + line_metrics.line_height) << std::endl;
+#endif
         current_y += line_metrics.line_height;
         content_width_ = std::max(content_width_, line.content_width);
     }
 
     content_height_ = current_y;
+#if IFC_DEBUG
+    std::cout << "[IFC] Total content_height: " << content_height_ << std::endl;
+#endif
 
     // 5. 应用布局结果到渲染对象
     ApplyLayoutResults(container);
@@ -346,13 +416,15 @@ void IFCLayout::CreateInlineBox(RenderObject* render_obj) {
             float letter_spacing = style.letter_spacing.ToPx(0, style.font_size);
             float word_spacing = style.word_spacing.ToPx(0, style.font_size);
 
-            auto [width, height] = MeasureTextForIFC(
-                text, style.font_size, style.font_family, letter_spacing, word_spacing);
+            TextMeasurement measurement = MeasureTextForIFC(
+                text, style.font_size, style.font_family, letter_spacing, word_spacing, style.line_height);
 
             InlineBox box = InlineBox::CreateTextBox(render_obj);
-            box.width = width;
-            box.height = height;
-            box.baseline = style.font_size * 0.8f;
+            box.width = measurement.width;
+            box.height = measurement.height;
+            box.baseline = measurement.skia_ascent;  // 使用 Skia 测量的精确 ascent
+            box.skia_ascent = measurement.skia_ascent;
+            box.skia_descent = measurement.skia_descent;
             box.line_height_multiplier = style.line_height;  // 设置行高倍数
 
             // 添加 TextRun
@@ -360,9 +432,9 @@ void IFCLayout::CreateInlineBox(RenderObject* render_obj) {
             run.text = text;
             run.start_offset = 0;
             run.end_offset = text.size();
-            run.width = width;
-            run.height = height;
-            run.baseline = style.font_size * 0.8f;
+            run.width = measurement.width;
+            run.height = measurement.height;
+            run.baseline = measurement.skia_ascent;
             box.text_runs.push_back(run);
 
             inline_boxes_.push_back(std::move(box));
@@ -438,7 +510,8 @@ std::pair<float, float> IFCLayout::MeasureText(
 ) {
     float letter_spacing = style.letter_spacing.ToPx(0, style.font_size);
     float word_spacing = style.word_spacing.ToPx(0, style.font_size);
-    return MeasureTextForIFC(text, style.font_size, style.font_family, letter_spacing, word_spacing);
+    TextMeasurement measurement = MeasureTextForIFC(text, style.font_size, style.font_family, letter_spacing, word_spacing, style.line_height);
+    return {measurement.width, measurement.height};
 }
 
 // ========== 应用布局结果 ==========
@@ -478,6 +551,14 @@ void IFCLayout::ApplyLayoutResults(RenderObject* container) {
             float box_right = box_left + box.width;
             float box_top = box.y;
             float box_bottom = box.y + box.height;
+
+#if IFC_DEBUG
+            if (box.type == InlineBoxType::TEXT) {
+                std::cout << "[IFC Apply] TEXT box: y=" << box.y << ", height=" << box.height
+                          << ", skia_ascent=" << box.skia_ascent << ", skia_descent=" << box.skia_descent
+                          << std::endl;
+            }
+#endif
 
             // 更新自身的布局信息
             LayoutInfo& layout = render_obj->GetLayoutInfo();
