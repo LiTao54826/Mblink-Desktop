@@ -9,6 +9,10 @@
 #include <limits>
 #include <unordered_map>
 
+// Skia 字体测量
+#include "core/render/text/font_manager.h"
+#include "core/render/text_renderer.h"
+
 namespace lightui {
 
 // ========== 静态辅助方法 ==========
@@ -42,68 +46,58 @@ bool IFCLayout::IsInlineLevel(RenderObject* render_obj) {
 
 // ========== 文本测量 ==========
 
+/**
+ * @brief 使用 Skia 进行精确文本测量
+ */
 std::pair<float, float> MeasureTextForIFC(
     const std::string& text,
     float font_size,
     const std::string& font_family,
-    float letter_spacing = 0.0f,
-    float word_spacing = 0.0f
+    float letter_spacing,
+    float word_spacing
 ) {
-    (void)font_family; // TODO: 使用字体信息
-
     if (text.empty()) {
         return {0.0f, font_size * 1.2f};
     }
 
-    // 简化的文本测量
-    // TODO: 集成 TextRenderer 或 Skia 进行精确测量
-    float char_width = font_size * 0.5f;  // 平均字符宽度估计
-    float width = 0.0f;
-    int char_count = 0;  // 字符计数（用于 letter-spacing）
-    int word_count = 0;  // 单词计数（用于 word-spacing）
-    bool in_word = false;
+    // 使用 FontManager 获取字体
+    auto& font_manager = FontManager::GetInstance();
 
-    // 计算 UTF-8 字符数
+    // 创建字体描述符
+    FontDescriptor font_desc;
+    font_desc.family = font_family.empty() ? "Arial" : font_family;
+    font_desc.size = font_size;
+    font_desc.weight = FontWeight::NORMAL;
+    font_desc.style = FontStyle::NORMAL;
+
+    // 加载字体
+    SkFont font = font_manager.LoadFont(font_desc);
+
+    // 使用 Skia 测量文本宽度（支持混合字符：ASCII、CJK、emoji）
+    float width = TextRenderer::MeasureMixedTextWidth(text, font);
+
+    // 获取字体度量计算高度
+    SkFontMetrics metrics;
+    font.getMetrics(&metrics);
+    float height = -metrics.fAscent + metrics.fDescent;
+
+    // 计算 UTF-8 字符数（用于 letter-spacing）
+    int char_count = 0;
     size_t pos = 0;
     while (pos < text.size()) {
         unsigned char c = static_cast<unsigned char>(text[pos]);
-
         if ((c & 0x80) == 0) {
-            // ASCII
-            if (c == ' ' || c == '\t') {
-                width += font_size * 0.25f;  // 空格较窄
-                // 单词结束，计数
-                if (in_word) {
-                    word_count++;
-                    in_word = false;
-                }
-            } else {
-                width += char_width;
-                in_word = true;
-            }
-            char_count++;
             pos += 1;
         } else if ((c & 0xE0) == 0xC0) {
-            // 2字节
-            width += font_size * 1.0f;  // CJK 等宽字符
-            char_count++;
-            in_word = true;
             pos += 2;
         } else if ((c & 0xF0) == 0xE0) {
-            // 3字节（大部分中文）
-            width += font_size * 1.0f;
-            char_count++;
-            in_word = true;
             pos += 3;
         } else if ((c & 0xF8) == 0xF0) {
-            // 4字节
-            width += font_size * 1.0f;
-            char_count++;
-            in_word = true;
             pos += 4;
         } else {
             pos += 1;
         }
+        char_count++;
     }
 
     // 应用 letter-spacing：在每个字符之间添加间距（最后一个字符后面不加）
@@ -112,7 +106,6 @@ std::pair<float, float> MeasureTextForIFC(
     }
 
     // 应用 word-spacing：在每个空格处添加额外间距
-    // 统计空格数量
     int space_count = 0;
     for (char ch : text) {
         if (ch == ' ') {
@@ -123,7 +116,6 @@ std::pair<float, float> MeasureTextForIFC(
         width += word_spacing * space_count;
     }
 
-    float height = font_size * 1.2f;  // 行高通常是字体大小的 1.2 倍
     return {width, height};
 }
 

@@ -34,6 +34,7 @@ target_include_directories(lightui_layout PUBLIC
 
 target_link_libraries(lightui_layout PUBLIC
     lightui_utils
+    lightui_render
 )
 
 # 链接 Taffy 布局引擎

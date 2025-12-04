@@ -16,9 +16,9 @@
     "test1-span": {
       "viewport": {
         "x": 31.00,
-        "y": 43.40,
-        "width": 84.00,
-        "height": 19.20
+        "y": 44.06,
+        "width": 82.69,
+        "height": 17.88
       }
     },
     "test2-content": {
@@ -32,9 +32,9 @@
     "test2-span": {
       "viewport": {
         "x": 31.00,
-        "y": 124.60,
-        "width": 392.00,
-        "height": 19.20
+        "y": 125.26,
+        "width": 361.07,
+        "height": 17.88
       }
     },
     "test3-content": {
@@ -48,25 +48,25 @@
     "test3-item1": {
       "viewport": {
         "x": 40.00,
-        "y": 167.40,
-        "width": 44.00,
-        "height": 19.20
+        "y": 168.06,
+        "width": 44.46,
+        "height": 17.88
       }
     },
     "test3-item2": {
       "viewport": {
-        "x": 102.00,
-        "y": 167.40,
-        "width": 44.00,
-        "height": 19.20
+        "x": 102.46,
+        "y": 168.06,
+        "width": 44.46,
+        "height": 17.88
       }
     },
     "test3-item3": {
       "viewport": {
-        "x": 164.00,
-        "y": 167.40,
-        "width": 44.00,
-        "height": 19.20
+        "x": 164.92,
+        "y": 168.06,
+        "width": 44.46,
+        "height": 17.88
       }
     },
     "test4-content": {
@@ -152,9 +152,9 @@
     "test6-span": {
       "viewport": {
         "x": 31.00,
-        "y": 372.60,
-        "width": 764.00,
-        "height": 19.20
+        "y": 373.26,
+        "width": 719.53,
+        "height": 17.88
       }
     },
     "test7-content": {
@@ -168,9 +168,9 @@
     "test7-span": {
       "viewport": {
         "x": 31.00,
-        "y": 415.40,
-        "width": 234.00,
-        "height": 19.20
+        "y": 416.06,
+        "width": 273.14,
+        "height": 17.88
       }
     },
     "test8-content": {
@@ -184,9 +184,9 @@
     "test8-span": {
       "viewport": {
         "x": 31.00,
-        "y": 496.60,
-        "width": 376.00,
-        "height": 19.20
+        "y": 497.26,
+        "width": 367.66,
+        "height": 17.88
       }
     },
     "test9-left": {
@@ -248,14 +248,14 @@
     "test11-text1": {
       "viewport": {
         "x": 31.00,
-        "y": 676.40,
-        "width": 84.00,
-        "height": 19.20
+        "y": 677.06,
+        "width": 80.93,
+        "height": 17.88
       }
     },
     "test11-img": {
       "viewport": {
-        "x": 115.00,
+        "x": 111.93,
         "y": 661.00,
         "width": 50.00,
         "height": 50.00
@@ -263,10 +263,10 @@
     },
     "test11-text2": {
       "viewport": {
-        "x": 165.00,
-        "y": 676.40,
-        "width": 120.00,
-        "height": 19.20
+        "x": 161.93,
+        "y": 677.06,
+        "width": 115.60,
+        "height": 17.88
       }
     },
     "test12-content": {
@@ -280,17 +280,17 @@
     "test12-outer": {
       "viewport": {
         "x": 34.00,
-        "y": 725.40,
-        "width": 274.00,
-        "height": 19.20
+        "y": 726.06,
+        "width": 263.91,
+        "height": 17.88
       }
     },
     "test12-inner": {
       "viewport": {
-        "x": 132.00,
-        "y": 727.80,
-        "width": 100.00,
-        "height": 19.20
+        "x": 124.47,
+        "y": 729.12,
+        "width": 93.40,
+        "height": 17.88
       }
     }
   }
