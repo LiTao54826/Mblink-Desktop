@@ -930,6 +930,10 @@ Taffy 已实现 intrinsic sizing，翻译时保留：
 | TextAlign 枚举冲突 | 与 `text_renderer.h` 中的 TextAlign 冲突 | 重命名为 `BlockTextAlign` |
 | optional 类型转换 | `Style` 中的 optional 字段赋值给非 optional | 使用 `.value_or()` 提供默认值 |
 | vertical_margins_are_collapsible 类型 | `LayoutInput` 字段为 `bool`，接口参数为 `Line<bool>` | 改为 `Line<bool>` |
+| Block width: auto | Block 元素使用内在宽度而非填充可用宽度 | 在 `ComputeBlockLayoutInner` 检测普通流 block 并填充可用空间 |
+| 百分比宽度计算错误 | 百分比宽度基于错误的父容器宽度 | 修复 `parent_size` 传递到子元素布局 |
+| text-align: center 不生效 | IFC 使用 `available_space` 而非 `known_dimensions` | 优先使用 `known_dimensions.width` 计算内容宽度 |
+| min-height 不生效 | IFC 容器未应用 min/max 尺寸约束 | 在 `ComputeIFCLayout` 添加 min/max 约束处理 |
 
 ### 测试验证
 
@@ -937,13 +941,31 @@ Taffy 已实现 intrinsic sizing，翻译时保留：
 |------|------|------|
 | `html_window_example` | ✅ 通过 | 窗口正常显示，布局正确 |
 | `html_tags_test` | ✅ 通过 | 所有 HTML 标签渲染正常 |
+| `layout_compare_test` | ✅ 通过 | 与浏览器布局对比一致 |
+
+### 布局对比测试覆盖
+
+| 类别 | 测试项 | 状态 |
+|------|--------|------|
+| 基础布局 | 固定宽高 (200x100) | ✅ |
+| 基础布局 | 百分比宽度 (50%, 75%, 100%) | ✅ |
+| 基础布局 | Margin/Padding | ✅ |
+| Flexbox | flex-direction: row/column | ✅ |
+| Flexbox | justify-content (全部 6 种) | ✅ |
+| Flexbox | align-items (全部 4 种) | ✅ |
+| Flexbox | flex-grow/flex-shrink/flex-basis | ✅ |
+| 尺寸约束 | min-width/max-width | ✅ |
+| 尺寸约束 | min-height/max-height | ✅ |
+| 文本对齐 | text-align: center | ✅ |
+| 嵌套布局 | Flex 嵌套 Block | ✅ |
 
 ### 待完成工作
 
 1. ~~**完整集成测试**~~ ✅ - html_tags_test 验证通过
-2. **性能测试** - 对比原生实现与 Taffy FFI 的性能
-3. **移除 Taffy FFI 依赖** - 清理 `third_party/taffy/` 中的 FFI 相关代码
-4. **Flexbox/Grid 边界情况** - 完善更多边界情况处理
+2. ~~**布局对比测试**~~ ✅ - layout_compare_test 与浏览器一致
+3. **性能测试** - 对比原生实现与 Taffy FFI 的性能
+4. **移除 Taffy FFI 依赖** - 清理 `third_party/taffy/` 中的 FFI 相关代码
+5. **Flexbox/Grid 边界情况** - 完善更多边界情况处理
 
 ### 当前架构
 
@@ -969,8 +991,8 @@ LayoutEngine (薄代理, ~70行)
 
 ---
 
-*文档版本: 1.2*
+*文档版本: 1.3*
 *创建日期: 2024-12-04*
-*更新日期: 2024-12-04*
+*更新日期: 2024-12-05*
 *实现策略: 翻译 Taffy v0.4.x → 纯 C++ 实现 ✅*
 
