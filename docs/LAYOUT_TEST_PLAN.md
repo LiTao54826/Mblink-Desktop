@@ -9,20 +9,116 @@
 - 布局结果与主流浏览器 (Chrome) 像素级一致
 - 边界情况正确处理
 
-### 1.2 测试方法
+### 1.2 测试环境
 
-使用 `layout_compare_test` 工具进行可视化对比：
-1. 左侧：MBink 渲染结果
-2. 右侧：浏览器渲染参考 (browser.html)
-3. 人工对比或自动截图对比
-
-### 1.3 验收标准
-
-| 级别 | 标准 |
+| 项目 | 说明 |
 |------|------|
-| P0 | 位置和尺寸完全一致 (±1px 容差) |
-| P1 | 位置和尺寸基本一致 (±3px 容差) |
-| P2 | 布局行为正确，允许细微差异 |
+| 参考浏览器 | Google Chrome (最新稳定版) |
+| 测试工具 | `layout_compare_test` |
+| 对比方式 | 并排实时对比 |
+| 窗口尺寸 | 900×700 (MBink) / 450×700 (内容区) |
+
+### 1.3 验证方式
+
+**采用浏览器与 MBink 一对一真实对比验证：**
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    layout_compare_test                       │
+├─────────────────────────────┬───────────────────────────────┤
+│                             │                               │
+│     MBink 渲染结果          │     浏览器渲染参考            │
+│     (左侧 450px)            │     (右侧 450px)              │
+│                             │                               │
+│  ┌─────────────────────┐    │    打开 browser.html          │
+│  │  测试用例 1.1       │    │    在 Chrome 中查看           │
+│  │  ┌───────────────┐  │    │                               │
+│  │  │   渲染结果    │  │    │    ┌───────────────┐          │
+│  │  └───────────────┘  │    │    │   渲染结果    │          │
+│  └─────────────────────┘    │    └───────────────┘          │
+│                             │                               │
+└─────────────────────────────┴───────────────────────────────┘
+```
+
+**验证流程：**
+
+1. **启动测试程序**
+   ```bash
+   cmake --build build --config Release --target layout_compare_test
+   build/bin/Release/layout_compare_test.exe
+   ```
+
+2. **打开浏览器参考页面**
+   ```
+   在 Chrome 中打开: examples/demo_html/layout_compare_test/browser.html
+   ```
+
+3. **逐项对比验证**
+   - 将 MBink 窗口与浏览器窗口并排放置
+   - 滚动到相同测试用例位置
+   - 目视对比以下内容：
+     - 元素位置 (x, y 坐标)
+     - 元素尺寸 (宽度、高度)
+     - 元素间距 (margin, padding, gap)
+     - 文本对齐方式
+     - 子元素排列顺序
+
+4. **记录测试结果**
+   - ✅ 通过：完全一致或在容差范围内
+   - ❌ 失败：超出容差范围，记录差异详情
+
+### 1.4 验收标准
+
+| 检查项 | 通过标准 | 容差 |
+|--------|----------|------|
+| 元素宽度 | 与浏览器一致 | ±1px |
+| 元素高度 | 与浏览器一致 | ±2px (考虑文本行高差异) |
+| 元素 X 坐标 | 与浏览器一致 | ±1px |
+| 元素 Y 坐标 | 与浏览器一致 | ±2px |
+| 子元素间距 | 与浏览器一致 | ±1px |
+| 文本水平对齐 | 视觉一致 | 允许亚像素差异 |
+| 文本垂直位置 | 与浏览器一致 | ±2px |
+
+**已知可接受差异：**
+
+| 差异项 | 原因 | 处理方式 |
+|--------|------|----------|
+| 滚动条宽度 | MBink 暂无滚动条 UI | 记录但不阻断 |
+| 字体渲染 | 不同渲染引擎差异 | 只验证布局位置 |
+| 亚像素渲染 | 浮点精度差异 | ±1px 容差 |
+
+### 1.5 测试用例编写规范
+
+每个测试用例需要在两个文件中同步实现：
+
+| 文件 | 用途 |
+|------|------|
+| `examples/demo_html/layout_compare_test/app.js` | MBink 测试用例 (Preact) |
+| `examples/demo_html/layout_compare_test/browser.html` | 浏览器参考用例 (纯 HTML) |
+
+**用例结构：**
+
+```javascript
+// app.js 中的测试用例格式
+h('div', { style: testContainerStyle },
+    h('h3', { style: 'margin: 0 0 5px 0; font-size: 14px;' }, '测试编号 测试名称'),
+    h('div', { style: 'background: #ddd; padding: 5px;' },
+        h('div', { style: '被测试的样式' }, '测试内容')
+    )
+),
+```
+
+```html
+<!-- browser.html 中的对应用例 -->
+<div style="...testContainerStyle...">
+    <h3 style="margin: 0 0 5px 0; font-size: 14px;">测试编号 测试名称</h3>
+    <div style="background: #ddd; padding: 5px;">
+        <div style="被测试的样式">测试内容</div>
+    </div>
+</div>
+```
+
+**重要：两边的样式必须完全一致！**
 
 ---
 
@@ -260,45 +356,124 @@
 
 ## 6. 附录
 
-### A. 测试工具使用
+### A. 完整测试执行流程
+
+#### Step 1: 编译测试程序
 
 ```bash
-# 编译测试程序
+# 在项目根目录执行
 cmake --build build --config Release --target layout_compare_test
-
-# 运行测试
-build/bin/Release/layout_compare_test.exe
-
-# 浏览器参考
-# 在浏览器中打开 examples/demo_html/layout_compare_test/browser.html
 ```
+
+#### Step 2: 启动 MBink 测试窗口
+
+```bash
+# Windows
+build\bin\Release\layout_compare_test.exe
+
+# 或使用 start 命令后台启动
+start build\bin\Release\layout_compare_test.exe
+```
+
+#### Step 3: 打开浏览器参考页面
+
+```
+1. 打开 Chrome 浏览器
+2. 按 Ctrl+O 打开文件
+3. 选择: examples/demo_html/layout_compare_test/browser.html
+4. 或直接在地址栏输入文件路径
+```
+
+#### Step 4: 并排对比
+
+```
+1. 将 MBink 窗口放在屏幕左侧
+2. 将 Chrome 窗口放在屏幕右侧
+3. 调整两个窗口大小，使内容区域宽度一致 (约 450px)
+4. 同步滚动到相同测试用例位置
+5. 逐项目视对比
+```
+
+#### Step 5: 记录结果
+
+对每个测试用例，检查并记录：
+
+| 检查项 | 对比方法 |
+|--------|----------|
+| 元素位置 | 观察元素在容器中的相对位置 |
+| 元素尺寸 | 观察元素的宽高比例 |
+| 间距 | 观察元素之间的间隙 |
+| 对齐 | 观察文本和子元素的对齐方式 |
+| 换行 | 观察多行内容的换行位置 |
 
 ### B. 添加新测试用例
 
-编辑 `examples/demo_html/layout_compare_test/app.js`:
+#### 1. 在 app.js 中添加 MBink 测试用例
+
+文件: `examples/demo_html/layout_compare_test/app.js`
 
 ```javascript
-// 1. 添加测试容器
+// 在对应分类下添加新用例
 h('div', { style: testContainerStyle },
-    h('h3', { style: '...' }, '测试标题'),
+    h('h3', { style: 'margin: 0 0 5px 0; font-size: 14px;' }, 'XX-NN 测试名称'),
     h('div', { style: 'background: #ddd; padding: 5px;' },
-        h('div', { style: '你的测试样式' }, '测试内容')
+        // 测试内容
+        h('div', { style: '被测试的CSS样式' }, '显示内容')
     )
 ),
-
-// 2. 同步更新 browser.html
 ```
 
-### C. 参考资源
+#### 2. 在 browser.html 中添加对应的浏览器参考
+
+文件: `examples/demo_html/layout_compare_test/browser.html`
+
+```html
+<!-- 在对应分类下添加完全相同的 HTML -->
+<div style="background: white; padding: 10px; margin-bottom: 10px; border-radius: 4px;">
+    <h3 style="margin: 0 0 5px 0; font-size: 14px;">XX-NN 测试名称</h3>
+    <div style="background: #ddd; padding: 5px;">
+        <!-- 测试内容 -->
+        <div style="被测试的CSS样式">显示内容</div>
+    </div>
+</div>
+```
+
+#### 3. 更新测试计划文档
+
+在本文档对应章节中添加测试用例记录。
+
+### C. 测试用例命名规范
+
+| 前缀 | 模块 | 示例 |
+|------|------|------|
+| BM | Box Model | BM-01, BM-02 |
+| BL | Block Layout | BL-01, BL-02 |
+| FL | Flexbox | FL-01, FL-02 |
+| GR | Grid | GR-01, GR-02 |
+| PS | Positioning | PS-01, PS-02 |
+| TX | Text/IFC | TX-01, TX-02 |
+
+### D. 常见问题排查
+
+| 问题 | 可能原因 | 解决方法 |
+|------|----------|----------|
+| MBink 和浏览器宽度不同 | 滚动条宽度差异 | 记录差异，不影响测试 |
+| 文字高度有 1-2px 差异 | 字体渲染差异 | 在容差范围内，通过 |
+| 元素位置偏差 > 3px | 布局算法问题 | 标记失败，创建 Issue |
+| 样式完全不生效 | CSS 属性不支持 | 标记失败，记录不支持属性 |
+
+### E. 参考资源
 
 - [CSS Box Model - MDN](https://developer.mozilla.org/en-US/docs/Web/CSS/CSS_Box_Model)
 - [Flexbox - MDN](https://developer.mozilla.org/en-US/docs/Web/CSS/CSS_Flexible_Box_Layout)
 - [Grid - MDN](https://developer.mozilla.org/en-US/docs/Web/CSS/CSS_Grid_Layout)
+- [CSS Positioning - MDN](https://developer.mozilla.org/en-US/docs/Web/CSS/position)
 - [Taffy Layout Engine](https://github.com/DioxusLabs/taffy)
 
 ---
 
-*文档版本: 1.0*
+*文档版本: 1.1*
 *创建日期: 2024-12-05*
+*更新日期: 2024-12-05*
 *维护者: MBink Team*
 
