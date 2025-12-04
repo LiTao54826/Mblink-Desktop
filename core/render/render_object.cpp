@@ -1116,6 +1116,7 @@ void RenderBlock::Paint(SkCanvas* canvas) {
 
         // 应用滚动偏移
         canvas->translate(-scroll_x_, -scroll_y_);
+
     }
 
     // 按 z-index 排序子元素
@@ -2288,6 +2289,8 @@ void RenderText::Paint(SkCanvas* canvas) {
     canvas->save();
     // 移动到文本位置（支持 text-align 居中等）
     canvas->translate(text_x, text_y);
+
+
 
     // 创建字体
     FontDescriptor desc;

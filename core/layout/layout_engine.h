@@ -1,172 +1,68 @@
 #ifndef LIGHTUI_LAYOUT_ENGINE_H
 #define LIGHTUI_LAYOUT_ENGINE_H
 
-#include <unordered_map>
-#include <unordered_set>
 #include <memory>
-#include <cstdint>
-#include <string>
-#include <vector>
-#include <sstream>
-
-// Taffy C API
-extern "C" {
-#include "taffy.h"
-}
-
-// IFC (Inline Formatting Context)
-#include "ifc_layout.h"
+#include "native_layout_engine.h"
 
 // Forward declarations
 namespace lightui {
-class Element;
 class RenderObject;
 struct ComputedStyle;
-struct LayoutInfo;
 }
 
 namespace lightui {
 
 /**
- * @brief Layout engine that uses Taffy for CSS layout computation
+ * @brief Layout engine using native C++ implementation
  *
- * This class manages the Taffy layout tree and synchronizes it with the DOM tree.
- * It supports Block, Flexbox, and CSS Grid layouts according to W3C specifications.
+ * This class wraps NativeLayoutEngine to provide CSS layout computation.
+ * It supports Block, Flexbox, Grid, and IFC layouts according to W3C specifications.
+ *
+ * The implementation is translated from Taffy (Rust) to pure C++.
  */
 class LayoutEngine {
 public:
-    LayoutEngine();
-    ~LayoutEngine();
+    LayoutEngine() = default;
+    ~LayoutEngine() = default;
 
     // Prevent copying
     LayoutEngine(const LayoutEngine&) = delete;
     LayoutEngine& operator=(const LayoutEngine&) = delete;
 
-    /**
-     * @brief Build layout tree from render tree
-     * @param root Root of the render tree
-     */
-    void BuildLayoutTree(std::shared_ptr<RenderObject> root);
+    void BuildLayoutTree(std::shared_ptr<RenderObject> root) {
+        native_engine_.BuildLayoutTree(root);
+    }
 
-    /**
-     * @brief Compute layout for the entire tree
-     * @param available_width Available width for layout
-     * @param available_height Available height for layout
-     */
-    void ComputeLayout(float available_width, float available_height);
+    void ComputeLayout(float available_width, float available_height) {
+        native_engine_.ComputeLayout(available_width, available_height);
+    }
 
-    /**
-     * @brief Get layout information and update render tree
-     * @param root Root of the render tree
-     */
-    void GetLayoutInfo(std::shared_ptr<RenderObject> root);
+    void GetLayoutInfo(std::shared_ptr<RenderObject> root) {
+        native_engine_.GetLayoutInfo(root);
+    }
 
-    /**
-     * @brief Update style for a render object
-     * @param render_obj The render object to update
-     * @param style The new computed style
-     */
-    void UpdateStyle(RenderObject* render_obj, const ComputedStyle& style);
+    void UpdateStyle(RenderObject* render_obj, const ComputedStyle& style) {
+        native_engine_.UpdateStyle(render_obj, style);
+    }
 
-    /**
-     * @brief Add a new render object to the layout tree
-     * @param render_obj The render object to add
-     * @param parent Parent render object
-     */
-    void AddElement(RenderObject* render_obj, RenderObject* parent);
+    void AddElement(RenderObject* render_obj, RenderObject* parent) {
+        native_engine_.AddElement(render_obj, parent);
+    }
 
-    /**
-     * @brief Remove a render object from the layout tree
-     * @param render_obj The render object to remove
-     */
-    void RemoveElement(RenderObject* render_obj);
+    void RemoveElement(RenderObject* render_obj) {
+        native_engine_.RemoveElement(render_obj);
+    }
 
-    /**
-     * @brief Clear the entire layout tree
-     */
-    void Clear();
+    void Clear() {
+        native_engine_.Clear();
+    }
 
-    /**
-     * @brief Check if a render object is in the layout tree
-     * @param render_obj The render object to check
-     * @return true if render object is in the tree
-     */
-    bool HasElement(RenderObject* render_obj) const;
+    bool HasElement(RenderObject* render_obj) const {
+        return native_engine_.HasElement(render_obj);
+    }
 
 private:
-    // Taffy tree instance
-    TaffyTree* taffy_tree_;
-
-    // Bidirectional mapping between render objects and Taffy nodes
-    std::unordered_map<RenderObject*, TaffyNodeId> element_to_node_;
-    std::unordered_map<uint64_t, RenderObject*> node_to_element_;
-
-    // Root node
-    TaffyNodeId root_node_;
-    bool has_root_;
-
-    // Cached root render object (weak_ptr to avoid circular reference)
-    std::weak_ptr<RenderObject> cached_root_;
-
-    // IFC (Inline Formatting Context) 布局器
-    IFCLayout ifc_layout_;
-
-    // 记录使用 IFC 布局的容器
-    std::unordered_set<RenderObject*> ifc_containers_;
-
-    /**
-     * @brief Create a Taffy node for a render object
-     * @param render_obj The render object
-     * @return Taffy node ID
-     */
-    TaffyNodeId CreateNode(RenderObject* render_obj);
-
-    /**
-     * @brief Apply computed style to a Taffy node
-     * @param node Taffy node ID
-     * @param style Computed style
-     */
-    void ApplyStyle(TaffyNodeId node, const ComputedStyle& style);
-
-    /**
-     * @brief Synchronize children between render tree and Taffy tree
-     * @param render_obj Parent render object
-     * @param node Parent Taffy node
-     */
-    void SyncChildren(RenderObject* render_obj, TaffyNodeId node);
-
-    /**
-     * @brief Recursively build layout tree from render subtree
-     * @param render_obj Current render object
-     * @param parent_node Parent Taffy node (invalid for root)
-     */
-    void BuildSubtree(RenderObject* render_obj, TaffyNodeId parent_node);
-
-    /**
-     * @brief Read layout results from Taffy and update render objects
-     * @param render_obj Current render object
-     */
-    void ReadLayoutResults(RenderObject* render_obj);
-
-    /**
-     * @brief Recursively update styles for all render objects in the tree
-     * @param render_obj Current render object
-     */
-    void UpdateStylesRecursive(RenderObject* render_obj);
-
-    /**
-     * @brief Parse CSS grid placement value (e.g., "span 2", "1 / 3")
-     * @param value Grid placement string
-     * @return Taffy grid placement structure
-     */
-    TaffyGridPlacement ParseGridPlacement(const std::string& value);
-
-    /**
-     * @brief Parse CSS grid template value (e.g., "1fr 1fr", "100px auto 1fr")
-     * @param value Grid template string
-     * @return Vector of Taffy grid tracks
-     */
-    std::vector<TaffyGridTrack> ParseGridTemplate(const std::string& value);
+    NativeLayoutEngine native_engine_;
 };
 
 } // namespace lightui

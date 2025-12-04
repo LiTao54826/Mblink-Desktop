@@ -210,6 +210,9 @@ add_subdirectory(html_tags_test)
 # ========== Element Test ==========
 add_subdirectory(element_test)
 
+# ========== Layout Compare Test ==========
+add_subdirectory(layout_compare_test)
+
 message(STATUS "Examples configured successfully")
 message(STATUS "  - integration_example")
 message(STATUS "  - javascript_integration_example")
@@ -227,4 +230,5 @@ message(STATUS "  - preact_window_demo")
 message(STATUS "  - preact_todo_app")
 message(STATUS "  - preact_form_demo")
 message(STATUS "  - flexbox_test")
+message(STATUS "  - layout_compare_test")
 

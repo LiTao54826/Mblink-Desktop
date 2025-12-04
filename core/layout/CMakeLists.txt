@@ -1,7 +1,7 @@
 # Layout模块 CMakeLists.txt
 
 set(LAYOUT_SOURCES
-    layout_engine.cpp
+    native_layout_engine.cpp
     # IFC (Inline Formatting Context) 模块
     text_run.cpp
     inline_box.cpp
@@ -10,10 +10,15 @@ set(LAYOUT_SOURCES
     line_breaker.cpp
     vertical_aligner.cpp
     ifc_layout.cpp
+    # Taffy 翻译模块 (原生布局引擎)
+    taffy/compute/block.cpp
+    taffy/compute/flexbox.cpp
+    taffy/compute/grid/grid.cpp
 )
 
 set(LAYOUT_HEADERS
     layout_engine.h
+    native_layout_engine.h
     # IFC (Inline Formatting Context) 模块
     text_run.h
     inline_box.h
@@ -22,6 +27,20 @@ set(LAYOUT_HEADERS
     line_breaker.h
     vertical_aligner.h
     ifc_layout.h
+    # Taffy 翻译模块 (原生布局引擎)
+    taffy/geometry.h
+    taffy/style.h
+    taffy/layout.h
+    taffy/cache.h
+    taffy/util/math.h
+    taffy/util/resolve.h
+    taffy/tree/traits.h
+    taffy/compute/block.h
+    taffy/compute/flexbox.h
+    taffy/compute/grid/types.h
+    taffy/compute/grid/grid.h
+    taffy/compute/ifc.h
+    taffy/compute/mod.h
 )
 
 add_library(lightui_layout STATIC ${LAYOUT_SOURCES})
@@ -37,13 +56,8 @@ target_link_libraries(lightui_layout PUBLIC
     lightui_render
 )
 
-# 链接 Taffy 布局引擎
-if(TARGET taffy)
-    target_link_libraries(lightui_layout PUBLIC taffy)
-    message(STATUS "Linking Taffy layout engine")
-else()
-    message(WARNING "Taffy not found, layout module may not build correctly")
-endif()
+# 原生布局引擎已替换 Taffy FFI，不再需要链接 Taffy
+# Taffy 源码仅作为翻译参考保留在 third_party/taffy
 
 # 链接Skia（如果启用）
 if(TARGET skia)

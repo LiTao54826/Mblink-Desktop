@@ -130,13 +130,6 @@ TextMeasurement MeasureTextForIFC(
     // 使用较大的高度，确保行间距足够
     result.height = std::max(skia_content_height, final_line_height);
 
-    // Debug: 打印高度计算信息
-    std::cout << "[TextMeasure] font_size=" << font_size
-              << ", line_height_multiplier=" << line_height_multiplier
-              << ", skia_height=" << skia_content_height
-              << ", browser_normal=" << browser_normal_line_height
-              << ", final_height=" << result.height << std::endl;
-
 
 
     // 计算 UTF-8 字符数（用于 letter-spacing）
@@ -519,6 +512,23 @@ std::pair<float, float> IFCLayout::MeasureText(
 void IFCLayout::ApplyLayoutResults(RenderObject* container) {
     if (!container) return;
 
+    // Get container's padding and border for offset calculation
+    const auto& container_style = container->GetComputedStyle();
+    const auto& container_layout = container->GetLayoutInfo();
+
+    float padding_left = container_style.padding.left.ToPx(container_layout.width, container_style.font_size);
+    float padding_top = container_style.padding.top.ToPx(container_layout.height, container_style.font_size);
+    float border_left = container_style.border_left_width;
+    float border_top = container_style.border_top_width;
+    if (border_left == 0 && border_top == 0) {
+        float border_width = container_style.border.width.ToPx(container_layout.width, container_style.font_size);
+        border_left = border_top = border_width;
+    }
+
+    // Offset to add to convert from content-area coordinates to border-box coordinates
+    float offset_x = padding_left + border_left;
+    float offset_y = padding_top + border_top;
+
     // 用于跟踪内联元素的边界
     struct InlineElementBounds {
         float min_x = std::numeric_limits<float>::max();
@@ -547,10 +557,11 @@ void IFCLayout::ApplyLayoutResults(RenderObject* container) {
             }
         } else {
             // TEXT 或 ATOMIC 盒子
-            float box_left = box.x + box.margin_left;
+            // Add offset to convert to border-box coordinates
+            float box_left = box.x + box.margin_left + offset_x;
             float box_right = box_left + box.width;
-            float box_top = box.y;
-            float box_bottom = box.y + box.height;
+            float box_top = box.y + offset_y;
+            float box_bottom = box_top + box.height;
 
 #if IFC_DEBUG
             if (box.type == InlineBoxType::TEXT) {
@@ -560,7 +571,7 @@ void IFCLayout::ApplyLayoutResults(RenderObject* container) {
             }
 #endif
 
-            // 更新自身的布局信息
+            // 更新自身的布局信息 (positions now include padding/border offset)
             LayoutInfo& layout = render_obj->GetLayoutInfo();
             layout.x = box_left;
             layout.y = box_top;

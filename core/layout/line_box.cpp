@@ -10,6 +10,7 @@
 #include "line_box.h"
 #include <algorithm>
 #include <cmath>
+#include <iostream>
 
 namespace lightui {
 
@@ -130,13 +131,14 @@ void LineBox::ApplyVerticalAlign(InlineBox* box, VerticalAlign align, float offs
 
 void LineBox::ApplyTextAlign(const std::string& align) {
     float extra_space = available_width - content_width;
+
     if (extra_space <= 0) return;
-    
+
     if (align == "left" || align == "start") {
         // 左对齐：默认，无需调整
         return;
     }
-    
+
     if (align == "right" || align == "end") {
         // 右对齐：所有盒子右移
         for (auto* box : boxes) {
@@ -144,16 +146,18 @@ void LineBox::ApplyTextAlign(const std::string& align) {
         }
         return;
     }
-    
+
     if (align == "center") {
         // 居中对齐：所有盒子右移一半额外空间
         float offset = extra_space / 2.0f;
         for (auto* box : boxes) {
-            if (box) box->x += offset;
+            if (box) {
+                box->x += offset;
+            }
         }
         return;
     }
-    
+
     if (align == "justify") {
         // 两端对齐：分配额外空间到单词之间
         // 最后一行不做两端对齐
