@@ -11,10 +11,10 @@
 
 #pragma once
 
-#include "../geometry.h"
-#include "../style.h"
-#include "../layout.h"
-#include "../tree/traits.h"
+#include "types/geometry.h"
+#include "types/style.h"
+#include "types/layout.h"
+#include "types/traits.h"
 #include <vector>
 #include <optional>
 

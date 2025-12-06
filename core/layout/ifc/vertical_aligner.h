@@ -121,11 +121,13 @@ public:
      * @brief 计算行的垂直度量
      * @param boxes 行内的盒子列表
      * @param aligns 每个盒子的对齐信息
+     * @param container_line_height 容器指定的 line-height（可选，0 表示自动）
      * @return 行的垂直度量
      */
     LineVerticalMetrics CalculateLineMetrics(
         const std::vector<InlineBox*>& boxes,
-        const std::vector<VerticalAlignInfo>& aligns
+        const std::vector<VerticalAlignInfo>& aligns,
+        float container_line_height = 0.0f
     );
     
     /**
@@ -148,11 +150,13 @@ public:
      * @param boxes 盒子列表（会修改 y 值）
      * @param aligns 对齐信息列表
      * @param line_y 行的 Y 位置
+     * @param container_line_height 容器指定的 line-height（可选，0 表示自动）
      */
     void AlignBoxes(
         std::vector<InlineBox*>& boxes,
         const std::vector<VerticalAlignInfo>& aligns,
-        float line_y
+        float line_y,
+        float container_line_height = 0.0f
     );
     
     /**

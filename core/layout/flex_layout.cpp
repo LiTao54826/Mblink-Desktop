@@ -1,14 +1,14 @@
 /**
- * @file flexbox.cpp
+ * @file flex_layout.cpp
  * @brief Flexbox layout algorithm implementation
- * 
+ *
  * Translated from Taffy (https://github.com/DioxusLabs/taffy)
  * Original: src/compute/flexbox.rs (~2349 lines)
  */
 
-#include "flexbox.h"
-#include "../util/math.h"
-#include "../util/resolve.h"
+#include "flex_layout.h"
+#include "util/math.h"
+#include "util/resolve.h"
 #include <algorithm>
 #include <cmath>
 #include <iostream>

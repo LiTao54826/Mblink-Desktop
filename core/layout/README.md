@@ -2,14 +2,16 @@
 
 ## 📋 概述
 
-Layout 模块是 MBink 的布局引擎，基于 Facebook 的 Yoga 库实现 Flexbox 布局。它负责将 CSS 样式转换为布局属性，计算元素的位置和尺寸，为渲染引擎提供精确的布局信息。
+Layout 模块是 MBink 的原生布局引擎，实现了完整的 CSS 布局规范，包括 Block、Flexbox、Grid 和 IFC（Inline Formatting Context）布局。它负责将 CSS 样式转换为布局属性，计算元素的位置和尺寸，为渲染引擎提供精确的布局信息。
 
 ## 🎯 主要功能
 
+- **Block 布局**: CSS 块级布局
 - **Flexbox 布局**: 完整的 CSS Flexbox 规范支持
+- **Grid 布局**: CSS Grid 布局支持
+- **IFC 布局**: 内联格式化上下文，处理文本和内联元素
 - **布局计算**: 自动计算元素位置和尺寸
-- **样式映射**: CSS 属性到 Yoga 属性的转换
-- **布局树管理**: 维护与 DOM 树对应的布局树
+- **布局树管理**: 维护与 RenderTree 对应的布局树
 - **增量更新**: 只重新计算变化的部分
 - **响应式布局**: 支持百分比、auto 等响应式单位
 
@@ -17,68 +19,82 @@ Layout 模块是 MBink 的布局引擎，基于 Facebook 的 Yoga 库实现 Flex
 
 ```
 layout/
-├── CMakeLists.txt        # 构建配置
-├── layout_engine.h       # 布局引擎头文件
-└── layout_engine.cpp     # 布局引擎实现
+├── CMakeLists.txt           # 构建配置
+├── layout_engine.h          # 布局引擎抽象接口
+├── native_layout_engine.h   # 原生布局引擎实现
+├── native_layout_engine.cpp
+├── block_layout.h/cpp       # Block 布局算法
+├── flex_layout.h/cpp        # Flexbox 布局算法
+├── grid/                    # Grid 布局
+│   ├── grid.h/cpp
+│   └── types.h
+├── ifc/                     # IFC (Inline Formatting Context)
+│   ├── ifc_layout.h/cpp     # IFC 布局入口
+│   ├── inline_box.h/cpp     # 内联盒
+│   ├── line_box.h/cpp       # 行盒
+│   ├── line_breaker.h/cpp   # 断行器
+│   ├── text_run.h/cpp       # 文本片段
+│   └── vertical_aligner.h/cpp # 垂直对齐
+├── types/                   # 类型定义
+│   ├── geometry.h           # Size, Point, Rect
+│   ├── style.h              # Style 结构
+│   ├── layout.h             # Layout 结果
+│   ├── cache.h              # 缓存
+│   └── traits.h             # 布局接口
+└── util/                    # 工具函数
+    ├── math.h
+    └── resolve.h
 ```
 
 ## 🔌 核心类
 
-### LayoutEngine
+### NativeLayoutEngine
 
 ```cpp
-class LayoutEngine {
+class NativeLayoutEngine : public LayoutEngine, public LayoutBlockContainer {
 public:
-    LayoutEngine();
-    ~LayoutEngine();
-    
+    NativeLayoutEngine();
+    ~NativeLayoutEngine() override;
+
     // 布局计算
-    void CalculateLayout(std::shared_ptr<Element> root, 
+    void CalculateLayout(RenderObject* root,
                         float available_width,
-                        float available_height);
-    
-    // 获取布局结果
-    LayoutRect GetLayoutRect(std::shared_ptr<Element> element);
-    
-    // 样式更新
-    void UpdateStyle(std::shared_ptr<Element> element);
-    
+                        float available_height) override;
+
     // 布局树管理
-    void AttachNode(std::shared_ptr<Element> element);
-    void DetachNode(std::shared_ptr<Element> element);
-    
-    // 增量更新
-    void MarkDirty(std::shared_ptr<Element> element);
-    bool IsDirty(std::shared_ptr<Element> element);
+    void BuildLayoutTree(RenderObject* root);
+    void ReadLayoutResults(RenderObject* root);
+
+    // 布局算法分发
+    LayoutOutput ComputeNodeLayout(NodeId node, const LayoutInput& inputs);
+    LayoutOutput ComputeBlockLayout(NodeId node, const LayoutInput& inputs);
+    LayoutOutput ComputeFlexLayout(NodeId node, const LayoutInput& inputs);
+    LayoutOutput ComputeGridLayout(NodeId node, const LayoutInput& inputs);
+    LayoutOutput ComputeIFCLayout(NodeId node, const LayoutInput& inputs);
 };
 ```
 
-### LayoutRect (布局结果)
+### IFCLayout (内联格式化上下文)
 
 ```cpp
-struct LayoutRect {
-    float x;          // X 坐标
-    float y;          // Y 坐标
-    float width;      // 宽度
-    float height;     // 高度
-    
-    // 边距
-    float margin_top;
-    float margin_right;
-    float margin_bottom;
-    float margin_left;
-    
-    // 内边距
-    float padding_top;
-    float padding_right;
-    float padding_bottom;
-    float padding_left;
-    
-    // 边框
-    float border_top;
-    float border_right;
-    float border_bottom;
-    float border_left;
+class IFCLayout {
+public:
+    // 静态文本测量
+    static TextMeasureResult MeasureTextStatic(
+        const std::string& text,
+        float font_size,
+        const std::string& font_family,
+        float letter_spacing = 0.0f,
+        float word_spacing = 0.0f,
+        float line_height_multiplier = 1.2f
+    );
+
+    // 布局计算
+    IFCLayoutResult Layout(RenderObject* container, float available_width);
+    IFCMeasureResult LayoutWithResult(RenderObject* container, float available_width);
+
+    // 应用布局结果
+    void ApplyLayoutResults(RenderObject* container, float padding_left, float padding_top);
 };
 ```
 
@@ -162,9 +178,9 @@ layout_engine->CalculateLayout(root, 800, 600);
 
 ### 依赖的模块
 
-- `third_party/yoga` - Yoga 布局引擎
-- `core/dom` - DOM 元素和样式
+- `core/render` - RenderObject 和样式
 - `core/utils` - 工具函数
+- `third_party/skia` - 文本测量
 
 ### 被依赖的模块
 
@@ -177,13 +193,17 @@ Layout 模块在架构中的位置：
 
 ```
 ┌─────────────────────────────────────────┐
-│  DOM Tree (core/dom)                    │
-│  Element with CSS styles                │
+│  RenderTree (core/render)               │
+│  RenderObject with ComputedStyle        │
 └─────────────────────────────────────────┘
                     ↓
 ┌─────────────────────────────────────────┐
 │  Layout Module (core/layout) ← 当前模块  │
-│  LayoutEngine + Yoga                    │
+│  NativeLayoutEngine                     │
+│  ├── Block Layout                       │
+│  ├── Flex Layout                        │
+│  ├── Grid Layout                        │
+│  └── IFC Layout (inline content)        │
 └─────────────────────────────────────────┘
                     ↓
 ┌─────────────────────────────────────────┐
@@ -230,77 +250,61 @@ Layout 模块在架构中的位置：
 - `position: relative | absolute`
 - `top`, `right`, `bottom`, `left`
 
-## 🔧 样式映射
+## 🔧 布局流程
 
-### CSS 到 Yoga 的转换
+### 布局计算流程
 
 ```cpp
-// CSS: display: flex
-YGNodeStyleSetDisplay(node, YGDisplayFlex);
+// 1. 构建布局树
+layout_engine->BuildLayoutTree(render_root);
 
-// CSS: flex-direction: row
-YGNodeStyleSetFlexDirection(node, YGFlexDirectionRow);
+// 2. 计算布局
+layout_engine->CalculateLayout(render_root, viewport_width, viewport_height);
 
-// CSS: width: 100px
-YGNodeStyleSetWidth(node, 100);
+// 3. 读取布局结果（更新 RenderObject 的 LayoutInfo）
+layout_engine->ReadLayoutResults(render_root);
+```
 
-// CSS: width: 50%
-YGNodeStyleSetWidthPercent(node, 50);
+### IFC 布局流程
 
-// CSS: width: auto
-YGNodeStyleSetWidthAuto(node);
-
-// CSS: margin: 10px
-YGNodeStyleSetMargin(node, YGEdgeAll, 10);
-
-// CSS: padding: 5px 10px
-YGNodeStyleSetPadding(node, YGEdgeVertical, 5);
-YGNodeStyleSetPadding(node, YGEdgeHorizontal, 10);
+```cpp
+// IFC 布局自动处理内联内容：
+// 1. 收集内联内容 (CollectInlineContent)
+// 2. 断行 (LineBreaker)
+// 3. 计算行度量 (VerticalAligner::CalculateLineMetrics)
+// 4. 垂直对齐 (VerticalAligner::AlignBoxes)
+// 5. 应用布局结果 (ApplyLayoutResults)
 ```
 
 ## ⚠️ 注意事项
 
 1. **布局顺序**: 必须先计算布局，再进行渲染
-2. **性能**: 避免频繁的布局计算，使用增量更新
+2. **性能**: 避免频繁的布局计算，使用缓存
 3. **单位转换**: 确保正确处理 px、%、auto 等单位
-4. **循环依赖**: 避免父子元素尺寸相互依赖
+4. **IFC 容器**: 只有纯内联内容的块级容器才使用 IFC 布局
 
 ## 🚀 性能优化
 
-### 增量布局
-
-```cpp
-// 只标记变化的元素
-element->GetStyle()->SetProperty("width", "200px");
-layout_engine->MarkDirty(element);
-
-// Yoga 会自动只重新计算必要的部分
-layout_engine->CalculateLayout(root, 800, 600);
-```
-
 ### 布局缓存
 
-```cpp
-// 缓存布局结果
-std::unordered_map<Element*, LayoutRect> layout_cache_;
-
-// 只在脏元素时重新计算
-if (layout_engine->IsDirty(element)) {
-    auto rect = layout_engine->GetLayoutRect(element);
-    layout_cache_[element.get()] = rect;
-}
-```
-
-### 批量更新
+布局引擎内置缓存机制，避免重复计算：
 
 ```cpp
-// 批量修改样式
-element->GetStyle()->SetProperty("width", "200px");
-element->GetStyle()->SetProperty("height", "100px");
-element->GetStyle()->SetProperty("margin", "10px");
+// Cache 类自动缓存布局结果
+struct Cache {
+    std::optional<LayoutOutput> Get(
+        const Size<std::optional<float>>& known_dimensions,
+        const Size<AvailableSpace>& available_space,
+        RunMode run_mode
+    );
 
-// 一次性计算布局
-layout_engine->CalculateLayout(root, 800, 600);
+    void Store(
+        const Size<std::optional<float>>& known_dimensions,
+        const Size<AvailableSpace>& available_space,
+        RunMode run_mode,
+        const LayoutOutput& output
+    );
+};
 ```
 
 ## 🐛 调试技巧
@@ -308,55 +312,37 @@ layout_engine->CalculateLayout(root, 800, 600);
 ### 打印布局树
 
 ```cpp
-void PrintLayoutTree(std::shared_ptr<Element> element, int depth = 0) {
-    auto rect = layout_engine->GetLayoutRect(element);
-    
+void PrintLayoutTree(RenderObject* obj, int depth = 0) {
+    const auto& info = obj->GetLayoutInfo();
+
     std::string indent(depth * 2, ' ');
-    std::cout << indent << element->GetTagName() 
-              << " [" << rect.x << ", " << rect.y 
-              << ", " << rect.width << ", " << rect.height << "]"
+    std::cout << indent << "[" << obj->GetTagName() << "]"
+              << " x=" << info.x << " y=" << info.y
+              << " w=" << info.width << " h=" << info.height
               << std::endl;
-    
-    for (auto child : element->GetChildren()) {
+
+    for (auto* child : obj->GetChildren()) {
         PrintLayoutTree(child, depth + 1);
     }
 }
 ```
 
-### 可视化布局
-
-```cpp
-// 在渲染时绘制布局边界
-void DrawLayoutBounds(SkCanvas* canvas, std::shared_ptr<Element> element) {
-    auto rect = layout_engine->GetLayoutRect(element);
-    
-    SkPaint paint;
-    paint.setStyle(SkPaint::kStroke_Style);
-    paint.setColor(SK_ColorRED);
-    paint.setStrokeWidth(1);
-    
-    canvas->drawRect(SkRect::MakeXYWH(rect.x, rect.y, 
-                                      rect.width, rect.height), 
-                     paint);
-}
-```
-
 ## 📚 相关文档
 
-- [Yoga 官方文档](https://yogalayout.com/)
 - [CSS Flexbox 规范](https://www.w3.org/TR/css-flexbox-1/)
+- [CSS Grid 规范](https://www.w3.org/TR/css-grid-1/)
+- [CSS Inline Layout 规范](https://www.w3.org/TR/css-inline-3/)
 - [渲染引擎文档](../render/README.md)
-- [性能优化指南](../../docs/PERFORMANCE.md)
 
 ## 🔮 未来改进
 
-1. **Grid 布局**: 支持 CSS Grid
-2. **绝对定位**: 完善 absolute/fixed 定位
-3. **文本布局**: 集成文本换行和对齐
-4. **动画支持**: 布局属性的平滑过渡
+1. **绝对定位**: 完善 absolute/fixed 定位
+2. **浮动布局**: 支持 float 属性
+3. **动画支持**: 布局属性的平滑过渡
+4. **性能优化**: 增量布局更新
 
 ---
 
-**维护者**: MBink Team  
-**最后更新**: 2025-11-12
+**维护者**: MBink Team
+**最后更新**: 2025-12-06
 

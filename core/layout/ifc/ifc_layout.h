@@ -12,10 +12,12 @@
 #include <vector>
 #include <unordered_map>
 #include <functional>
-#include "inline_formatting_context.h"
+#include "inline_box.h"
+#include "line_box.h"
 #include "line_breaker.h"
 #include "vertical_aligner.h"
-#include "../render/render_object.h"
+#include "../types/traits.h"
+#include "../../render/render_object.h"
 
 namespace lightui {
 
@@ -93,6 +95,37 @@ public:
      */
     static bool IsInlineLevel(RenderObject* render_obj);
 
+    //--------------------------------------------------------------------------
+    // Static measurement methods (for Taffy integration)
+    //--------------------------------------------------------------------------
+
+    /**
+     * @brief 静态文本测量方法 (供 Taffy 调用)
+     * @param text 文本内容
+     * @param font_size 字体大小
+     * @param font_family 字体族
+     * @param letter_spacing 字符间距
+     * @param word_spacing 词间距
+     * @param line_height_multiplier 行高倍数
+     * @return TextMeasureResult 包含宽度、高度、ascent 和 descent
+     */
+    static TextMeasureResult MeasureTextStatic(
+        const std::string& text,
+        float font_size,
+        const std::string& font_family,
+        float letter_spacing = 0.0f,
+        float word_spacing = 0.0f,
+        float line_height_multiplier = 1.2f
+    );
+
+    /**
+     * @brief 执行 IFC 布局并返回详细结果 (供 Taffy 调用)
+     * @param container 容器渲染对象
+     * @param available_width 可用宽度
+     * @return IFCMeasureResult 包含行盒信息
+     */
+    IFCMeasureResult LayoutWithResult(RenderObject* container, float available_width);
+
     /**
      * @brief 使容器的布局缓存失效
      * @param container 容器渲染对象
@@ -121,8 +154,7 @@ private:
     /** @brief 当前布局的可用宽度（用于 CreateInlineBox） */
     float current_available_width_ = 0.0f;
 
-    /** @brief 组件实例（使用指针延迟初始化） */
-    std::unique_ptr<InlineFormattingContext> ifc_;
+    /** @brief 组件实例 */
     LineBreaker line_breaker_;
     VerticalAligner vertical_aligner_;
 
@@ -172,26 +204,10 @@ private:
     /**
      * @brief 应用布局结果到渲染对象
      * @param container 容器
+     * @param container_width 容器的 border-box 宽度（用于计算 padding）
      */
-    void ApplyLayoutResults(RenderObject* container);
+    void ApplyLayoutResults(RenderObject* container, float container_width);
 };
-
-/**
- * @brief 测量文本用于 IFC 布局
- * 
- * 简化版本，用于 IFC 内部测量。
- * 实际项目中应该使用 TextRenderer 或 SkFont。
- * 
- * @param text 文本内容
- * @param font_size 字体大小
- * @param font_family 字体家族
- * @return {宽度, 高度}
- */
-std::pair<float, float> MeasureTextForIFC(
-    const std::string& text,
-    float font_size,
-    const std::string& font_family
-);
 
 } // namespace lightui
 

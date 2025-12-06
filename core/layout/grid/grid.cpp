@@ -10,8 +10,8 @@
  */
 
 #include "grid.h"
-#include "../../util/math.h"
-#include "../../util/resolve.h"
+#include "../util/math.h"
+#include "../util/resolve.h"
 #include <algorithm>
 #include <cmath>
 

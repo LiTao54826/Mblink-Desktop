@@ -8,8 +8,8 @@
 
 #pragma once
 
-#include "../style.h"
-#include "../geometry.h"
+#include "../types/style.h"
+#include "../types/geometry.h"
 #include "math.h"
 #include <optional>
 #include <functional>

@@ -8,8 +8,8 @@
 
 #pragma once
 
-#include "../../geometry.h"
-#include "../../style.h"
+#include "../types/geometry.h"
+#include "../types/style.h"
 #include <cstdint>
 #include <vector>
 #include <optional>

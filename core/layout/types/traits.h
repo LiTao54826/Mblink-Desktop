@@ -8,14 +8,58 @@
 
 #pragma once
 
-#include "../geometry.h"
-#include "../style.h"
-#include "../layout.h"
-#include "../cache.h"
+#include "geometry.h"
+#include "style.h"
+#include "layout.h"
+#include "cache.h"
 #include <cstdint>
 #include <functional>
+#include <vector>
+#include <string>
 
 namespace lightui {
+
+//------------------------------------------------------------------------------
+// IFC Measurement Structures (for Taffy integration)
+//------------------------------------------------------------------------------
+
+/// Information about a single line box in IFC layout
+struct LineBoxInfo {
+    /// Y position of the line box (relative to IFC container)
+    float y = 0.0f;
+    /// Height of the line box
+    float height = 0.0f;
+    /// Baseline position (distance from top of line box)
+    float baseline = 0.0f;
+    /// Content width of the line
+    float content_width = 0.0f;
+    /// Number of inline boxes in this line
+    size_t box_count = 0;
+};
+
+/// Result of IFC measurement/layout (for Taffy to call)
+struct IFCMeasureResult {
+    /// Width of the content area (max line width)
+    float content_width = 0.0f;
+    /// Height of the content area (sum of line heights)
+    float content_height = 0.0f;
+    /// Line box information for each line
+    std::vector<LineBoxInfo> line_boxes;
+    /// Whether the measurement was successful
+    bool success = false;
+};
+
+/// Text measurement result (for measuring individual text runs)
+struct TextMeasureResult {
+    /// Width of the text
+    float width = 0.0f;
+    /// Height of the text box (based on line-height)
+    float height = 0.0f;
+    /// Skia-measured ascent (positive value, distance above baseline)
+    float skia_ascent = 0.0f;
+    /// Skia-measured descent (positive value, distance below baseline)
+    float skia_descent = 0.0f;
+};
 
 /// Node identifier type
 using NodeId = uint64_t;

@@ -1,12 +1,12 @@
 /**
- * @file block.cpp
+ * @file block_layout.cpp
  * @brief Block layout algorithm implementation
- * 
+ *
  * Translated from Taffy (https://github.com/DioxusLabs/taffy)
  * Original: src/compute/block.rs
  */
 
-#include "block.h"
+#include "block_layout.h"
 #include <algorithm>
 #include <iostream>
 

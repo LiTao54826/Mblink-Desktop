@@ -11,12 +11,12 @@
 #include <iostream>
 
 // Skia 字体测量
-#include "core/render/text/font_manager.h"
-#include "core/render/text_renderer.h"
-#include "core/render/render_inline_block.h"
+#include "../../render/text/font_manager.h"
+#include "../../render/text_renderer.h"
+#include "../../render/render_inline_block.h"
 
 // DOM 类型（用于检测 BR 元素）
-#include "core/dom/element.h"
+#include "../../dom/element.h"
 
 // 调试开关
 #define IFC_DEBUG 0
@@ -52,33 +52,20 @@ bool IFCLayout::IsInlineLevel(RenderObject* render_obj) {
     }
 }
 
-// ========== 文本测量 ==========
+// ========== 静态文本测量 ==========
 
-/**
- * @brief 文本测量结果
- */
-struct TextMeasurement {
-    float width = 0.0f;           // 文本宽度
-    float height = 0.0f;          // 盒子高度（用于布局）
-    float skia_ascent = 0.0f;     // Skia 测量的 ascent（正值）
-    float skia_descent = 0.0f;    // Skia 测量的 descent（正值）
-};
+// 内部使用的别名，兼容旧代码
+using TextMeasurement = TextMeasureResult;
 
-/**
- * @brief 使用 Skia 进行精确文本测量
- *
- * 宽度使用 Skia 精确测量，高度使用 CSS line-height 或 Skia 度量的较大值，
- * 以确保行与行之间有足够的间距。
- */
-TextMeasurement MeasureTextForIFC(
+TextMeasureResult IFCLayout::MeasureTextStatic(
     const std::string& text,
     float font_size,
     const std::string& font_family,
     float letter_spacing,
     float word_spacing,
-    float line_height_multiplier = 1.2f
+    float line_height_multiplier
 ) {
-    TextMeasurement result;
+    TextMeasureResult result;
 
     if (text.empty()) {
         result.height = font_size * line_height_multiplier;
@@ -174,6 +161,18 @@ TextMeasurement MeasureTextForIFC(
     return result;
 }
 
+// 内部辅助函数：兼容旧代码调用
+static inline TextMeasurement MeasureTextForIFC(
+    const std::string& text,
+    float font_size,
+    const std::string& font_family,
+    float letter_spacing,
+    float word_spacing,
+    float line_height_multiplier = 1.2f
+) {
+    return IFCLayout::MeasureTextStatic(text, font_size, font_family, letter_spacing, word_spacing, line_height_multiplier);
+}
+
 // ========== 缓存方法 ==========
 
 size_t IFCLayout::GetContentVersion(RenderObject* container) const {
@@ -236,6 +235,24 @@ IFCLayoutResult IFCLayout::Layout(RenderObject* container, float available_width
         return result;
     }
 
+    // Calculate container's border-box width for ApplyLayoutResults
+    // We need this because ApplyLayoutResults needs to calculate padding offset
+    const auto& style = container->GetComputedStyle();
+
+    // For percentage padding, we need the container's border-box width
+    // But we only have content width (available_width). We need to estimate.
+    // For fixed pixel padding, this doesn't matter.
+    // For percentage padding, we use available_width as an approximation.
+    float padding_left = style.padding.left.ToPx(available_width, style.font_size);
+    float padding_right = style.padding.right.ToPx(available_width, style.font_size);
+    float border_left = style.border_left_width;
+    float border_right = style.border_right_width;
+    if (border_left == 0 && border_right == 0) {
+        float border_width = style.border.width.ToPx(available_width, style.font_size);
+        border_left = border_right = border_width;
+    }
+    float container_width = available_width + padding_left + padding_right + border_left + border_right;
+
     // 检查缓存
     if (IsCacheValid(container, available_width)) {
         const auto& cache = cache_[container];
@@ -245,7 +262,7 @@ IFCLayoutResult IFCLayout::Layout(RenderObject* container, float available_width
         content_width_ = cache.content_width;
 
         // Re-apply layout results to update render object positions
-        ApplyLayoutResults(container);
+        ApplyLayoutResults(container, container_width);
 
         result.total_height = content_height_;
         result.max_width = content_width_;
@@ -272,7 +289,7 @@ IFCLayoutResult IFCLayout::Layout(RenderObject* container, float available_width
     }
 
     // 2. 配置断行器
-    const auto& style = container->GetComputedStyle();
+    // Note: 'style' is already defined at the beginning of this function
 
     // 解析 white-space
     if (style.white_space == "pre" || style.white_space == "pre-wrap") {
@@ -326,8 +343,16 @@ IFCLayoutResult IFCLayout::Layout(RenderObject* container, float available_width
             aligns.push_back(align_info);
         }
 
-        // 计算行度量
-        auto line_metrics = vertical_aligner_.CalculateLineMetrics(box_ptrs, aligns);
+        // 计算容器的 line-height（像素值）
+        float container_line_height = style.line_height * style.font_size;
+
+#if IFC_DEBUG
+        std::cout << "[IFC] Container line-height: " << container_line_height
+                  << " (multiplier=" << style.line_height << ", font_size=" << style.font_size << ")" << std::endl;
+#endif
+
+        // 计算行度量，传入容器的 line-height
+        auto line_metrics = vertical_aligner_.CalculateLineMetrics(box_ptrs, aligns, container_line_height);
         line.height = line_metrics.line_height;
         line.baseline = line_metrics.baseline;
 
@@ -348,8 +373,8 @@ IFCLayoutResult IFCLayout::Layout(RenderObject* container, float available_width
             current_x += box->GetTotalWidth();
         }
 
-        // 应用垂直对齐
-        vertical_aligner_.AlignBoxes(box_ptrs, aligns, current_y);
+        // 应用垂直对齐，传入容器的 line-height
+        vertical_aligner_.AlignBoxes(box_ptrs, aligns, current_y, container_line_height);
 
         // 应用水平对齐（调整 x 坐标）
         line.ApplyTextAlign(style.text_align);
@@ -368,7 +393,7 @@ IFCLayoutResult IFCLayout::Layout(RenderObject* container, float available_width
 #endif
 
     // 5. 应用布局结果到渲染对象
-    ApplyLayoutResults(container);
+    ApplyLayoutResults(container, container_width);
 
     // 6. 更新缓存
     LayoutCache& cache = cache_[container];
@@ -387,6 +412,36 @@ IFCLayoutResult IFCLayout::Layout(RenderObject* container, float available_width
     result.success = true;
 
     return result;
+}
+
+IFCMeasureResult IFCLayout::LayoutWithResult(RenderObject* container, float available_width) {
+    IFCMeasureResult measure_result;
+
+    // 先调用 Layout 进行实际布局
+    IFCLayoutResult layout_result = Layout(container, available_width);
+
+    if (!layout_result.success) {
+        return measure_result;
+    }
+
+    // 填充 IFCMeasureResult
+    measure_result.content_width = layout_result.max_width;
+    measure_result.content_height = layout_result.total_height;
+    measure_result.success = layout_result.success;
+
+    // 将 LineBox 转换为 LineBoxInfo
+    measure_result.line_boxes.reserve(line_boxes_.size());
+    for (const auto& line : line_boxes_) {
+        LineBoxInfo info;
+        info.y = line.y;
+        info.height = line.height;
+        info.baseline = line.baseline;
+        info.content_width = line.content_width;
+        info.box_count = line.boxes.size();
+        measure_result.line_boxes.push_back(info);
+    }
+
+    return measure_result;
 }
 
 // ========== 内联内容收集 ==========
@@ -676,19 +731,20 @@ std::pair<float, float> IFCLayout::MeasureText(
 
 // ========== 应用布局结果 ==========
 
-void IFCLayout::ApplyLayoutResults(RenderObject* container) {
+void IFCLayout::ApplyLayoutResults(RenderObject* container, float container_width) {
     if (!container) return;
 
     // Get container's padding and border for offset calculation
     const auto& container_style = container->GetComputedStyle();
-    const auto& container_layout = container->GetLayoutInfo();
 
-    float padding_left = container_style.padding.left.ToPx(container_layout.width, container_style.font_size);
-    float padding_top = container_style.padding.top.ToPx(container_layout.height, container_style.font_size);
+    // Use the passed container_width instead of container_layout.width
+    // because container_layout may not be set yet during layout computation
+    float padding_left = container_style.padding.left.ToPx(container_width, container_style.font_size);
+    float padding_top = container_style.padding.top.ToPx(container_width, container_style.font_size);
     float border_left = container_style.border_left_width;
     float border_top = container_style.border_top_width;
     if (border_left == 0 && border_top == 0) {
-        float border_width = container_style.border.width.ToPx(container_layout.width, container_style.font_size);
+        float border_width = container_style.border.width.ToPx(container_width, container_style.font_size);
         border_left = border_top = border_width;
     }
 
@@ -735,8 +791,9 @@ void IFCLayout::ApplyLayoutResults(RenderObject* container) {
 
 #if IFC_DEBUG
             if (box.type == InlineBoxType::TEXT) {
-                std::cout << "[IFC Apply] TEXT box: y=" << box.y << ", height=" << box.height
-                          << ", skia_ascent=" << box.skia_ascent << ", skia_descent=" << box.skia_descent
+                std::cout << "[IFC Apply] TEXT box: x=" << box.x << ", y=" << box.y
+                          << ", width=" << box.width << ", height=" << box.height
+                          << ", offset_x=" << offset_x << ", box_left=" << box_left
                           << std::endl;
             }
 #endif

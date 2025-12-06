@@ -23,14 +23,25 @@ BoxVerticalMetrics VerticalAligner::GetBoxMetrics(const InlineBox& box) {
 
     if (box.IsText()) {
         // 文本盒子：使用 Skia 测量的精确 ascent 和 descent
-        if (box.skia_ascent > 0 || box.skia_descent > 0) {
-            // 使用 Skia 测量的精确值
-            metrics.ascent = box.skia_ascent;
-            metrics.descent = box.skia_descent;
-        } else {
+        float skia_ascent = box.skia_ascent;
+        float skia_descent = box.skia_descent;
+
+        if (skia_ascent <= 0 && skia_descent <= 0) {
             // 回退到估算值
-            metrics.ascent = box.height * 0.8f;
-            metrics.descent = box.height * 0.2f;
+            skia_ascent = box.height * 0.8f;
+            skia_descent = box.height * 0.2f;
+        }
+
+        // 计算内容高度和 half-leading
+        float content_height = skia_ascent + skia_descent;
+        if (box.height > content_height) {
+            // 有 line-height 导致的额外空间，分配 half-leading
+            float half_leading = (box.height - content_height) / 2.0f;
+            metrics.ascent = skia_ascent + half_leading;
+            metrics.descent = skia_descent + half_leading;
+        } else {
+            metrics.ascent = skia_ascent;
+            metrics.descent = skia_descent;
         }
         metrics.baseline = metrics.ascent;
     } else if (box.IsAtomic()) {
@@ -54,7 +65,8 @@ BoxVerticalMetrics VerticalAligner::GetBoxMetrics(const InlineBox& box) {
 
 LineVerticalMetrics VerticalAligner::CalculateLineMetrics(
     const std::vector<InlineBox*>& boxes,
-    const std::vector<VerticalAlignInfo>& aligns
+    const std::vector<VerticalAlignInfo>& aligns,
+    float container_line_height
 ) {
     LineVerticalMetrics metrics;
 
@@ -69,6 +81,11 @@ LineVerticalMetrics VerticalAligner::CalculateLineMetrics(
     float max_text_descent = 0.0f;
     float max_line_height = 0.0f;  // 最大 CSS line-height
     float max_font_size = 0.0f;    // 最大字体大小
+
+    // 如果容器指定了 line-height，使用它作为初始值
+    if (container_line_height > 0.0f) {
+        max_line_height = container_line_height;
+    }
 
     for (size_t i = 0; i < boxes.size(); ++i) {
         const InlineBox* box = boxes[i];
@@ -285,10 +302,11 @@ float VerticalAligner::CalculateBoxYOffset(
 void VerticalAligner::AlignBoxes(
     std::vector<InlineBox*>& boxes,
     const std::vector<VerticalAlignInfo>& aligns,
-    float line_y
+    float line_y,
+    float container_line_height
 ) {
-    // 计算行度量
-    LineVerticalMetrics line_metrics = CalculateLineMetrics(boxes, aligns);
+    // 计算行度量，传入容器的 line-height
+    LineVerticalMetrics line_metrics = CalculateLineMetrics(boxes, aligns, container_line_height);
 
     // 应用到每个盒子
     for (size_t i = 0; i < boxes.size(); ++i) {

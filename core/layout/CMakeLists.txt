@@ -2,45 +2,45 @@
 
 set(LAYOUT_SOURCES
     native_layout_engine.cpp
+    # 布局算法
+    block_layout.cpp
+    flex_layout.cpp
+    grid/grid.cpp
     # IFC (Inline Formatting Context) 模块
-    text_run.cpp
-    inline_box.cpp
-    line_box.cpp
-    inline_formatting_context.cpp
-    line_breaker.cpp
-    vertical_aligner.cpp
-    ifc_layout.cpp
-    # Taffy 翻译模块 (原生布局引擎)
-    taffy/compute/block.cpp
-    taffy/compute/flexbox.cpp
-    taffy/compute/grid/grid.cpp
+    ifc/ifc_layout.cpp
+    ifc/text_run.cpp
+    ifc/inline_box.cpp
+    ifc/line_box.cpp
+    ifc/line_breaker.cpp
+    ifc/vertical_aligner.cpp
 )
 
 set(LAYOUT_HEADERS
     layout_engine.h
     native_layout_engine.h
+    # 布局算法
+    block_layout.h
+    flex_layout.h
+    grid/grid.h
+    grid/types.h
     # IFC (Inline Formatting Context) 模块
-    text_run.h
-    inline_box.h
-    line_box.h
-    inline_formatting_context.h
-    line_breaker.h
-    vertical_aligner.h
-    ifc_layout.h
-    # Taffy 翻译模块 (原生布局引擎)
-    taffy/geometry.h
-    taffy/style.h
-    taffy/layout.h
-    taffy/cache.h
-    taffy/util/math.h
-    taffy/util/resolve.h
-    taffy/tree/traits.h
-    taffy/compute/block.h
-    taffy/compute/flexbox.h
-    taffy/compute/grid/types.h
-    taffy/compute/grid/grid.h
-    taffy/compute/ifc.h
-    taffy/compute/mod.h
+    ifc/ifc_layout.h
+    ifc/ifc.h
+    ifc/text_run.h
+    ifc/inline_box.h
+    ifc/line_box.h
+    ifc/line_breaker.h
+    ifc/vertical_aligner.h
+    # 类型定义
+    types/geometry.h
+    types/style.h
+    types/layout.h
+    types/cache.h
+    types/traits.h
+    types/mod.h
+    # 工具函数
+    util/math.h
+    util/resolve.h
 )
 
 add_library(lightui_layout STATIC ${LAYOUT_SOURCES})

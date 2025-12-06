@@ -4,18 +4,18 @@
  */
 
 #include "native_layout_engine.h"
-#include "ifc_layout.h"
-#include "dom/element.h"
-#include "render/render_object.h"
-#include "render/render_inline_block.h"
-#include "render/render_svg.h"
-#include "render/text_renderer.h"
-#include "render/text/font_manager.h"
-#include "taffy/util/resolve.h"
-#include "taffy/util/math.h"
-#include "taffy/compute/block.h"
-#include "taffy/compute/flexbox.h"
-#include "taffy/compute/grid/grid.h"
+#include "ifc/ifc_layout.h"
+#include "../dom/element.h"
+#include "../render/render_object.h"
+#include "../render/render_inline_block.h"
+#include "../render/render_svg.h"
+#include "../render/text_renderer.h"
+#include "../render/text/font_manager.h"
+#include "util/resolve.h"
+#include "util/math.h"
+#include "block_layout.h"
+#include "flex_layout.h"
+#include "grid/grid.h"
 #include <cmath>
 #include <iostream>
 #include <algorithm>
@@ -1240,10 +1240,25 @@ LayoutOutput NativeLayoutEngine::ComputeIFCLayout(NodeId node_id, const LayoutIn
     if (inputs.known_dimensions.width.has_value()) {
         // Container has a fixed width (e.g., width: 200px)
         container_width = *inputs.known_dimensions.width;
-    } else if (inputs.available_space.width.type == AvailableSpace::Type::Definite) {
-        container_width = inputs.available_space.width.value;
-    } else if (inputs.available_space.width.type == AvailableSpace::Type::MaxContent) {
-        container_width = 10000.0f;
+    } else {
+        // For InherentSize mode, check CSS width property FIRST
+        // This is important for Grid children with explicit width/height
+        if (inputs.sizing_mode == SizingMode::InherentSize) {
+            if (style.width.unit == CSSUnit::PX && style.width.value > 0) {
+                container_width = style.width.value;
+            } else if (style.width.unit == CSSUnit::PERCENT && inputs.parent_size.width.has_value()) {
+                container_width = (style.width.value / 100.0f) * (*inputs.parent_size.width);
+            }
+        }
+
+        // If no CSS width, fall back to available_space
+        if (container_width == 0.0f) {
+            if (inputs.available_space.width.type == AvailableSpace::Type::Definite) {
+                container_width = inputs.available_space.width.value;
+            } else if (inputs.available_space.width.type == AvailableSpace::Type::MaxContent) {
+                container_width = 10000.0f;
+            }
+        }
     }
 
     // Resolve padding and border
