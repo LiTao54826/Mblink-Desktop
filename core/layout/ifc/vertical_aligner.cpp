@@ -39,6 +39,12 @@ BoxVerticalMetrics VerticalAligner::GetBoxMetrics(const InlineBox& box) {
             float half_leading = (box.height - content_height) / 2.0f;
             metrics.ascent = skia_ascent + half_leading;
             metrics.descent = skia_descent + half_leading;
+        } else if (box.height < content_height) {
+            // line-height 小于 Skia 测量的高度，按比例缩放
+            // 这确保 ascent + descent = box.height
+            float scale = box.height / content_height;
+            metrics.ascent = skia_ascent * scale;
+            metrics.descent = skia_descent * scale;
         } else {
             metrics.ascent = skia_ascent;
             metrics.descent = skia_descent;
@@ -82,10 +88,10 @@ LineVerticalMetrics VerticalAligner::CalculateLineMetrics(
     float max_line_height = 0.0f;  // 最大 CSS line-height
     float max_font_size = 0.0f;    // 最大字体大小
 
-    // 如果容器指定了 line-height，使用它作为初始值
-    if (container_line_height > 0.0f) {
-        max_line_height = container_line_height;
-    }
+    // 不使用 container_line_height 作为初始值
+    // 因为 MeasureTextStatic 已经根据文本内容计算了正确的 line-height
+    // container_line_height 使用的是默认的 1.2 倍数，可能与实际不符
+    (void)container_line_height;  // 标记为已使用，避免警告
 
     for (size_t i = 0; i < boxes.size(); ++i) {
         const InlineBox* box = boxes[i];

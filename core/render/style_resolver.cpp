@@ -1484,6 +1484,48 @@ void StyleResolver::ParseStyleProperty(ComputedStyle& style,
     else if (property == "justify-self") {
         style.justify_self = resolved_value;
     }
+    else if (property == "place-items") {
+        // place-items: <align-items> <justify-items>?
+        // If only one value, it applies to both
+        std::istringstream iss(resolved_value);
+        std::vector<std::string> parts;
+        std::string part;
+        while (iss >> part) {
+            parts.push_back(part);
+        }
+        if (parts.size() >= 1) {
+            style.align_items = parts[0];
+            style.justify_items = (parts.size() >= 2) ? parts[1] : parts[0];
+        }
+    }
+    else if (property == "place-self") {
+        // place-self: <align-self> <justify-self>?
+        // If only one value, it applies to both
+        std::istringstream iss(resolved_value);
+        std::vector<std::string> parts;
+        std::string part;
+        while (iss >> part) {
+            parts.push_back(part);
+        }
+        if (parts.size() >= 1) {
+            style.align_self = parts[0];
+            style.justify_self = (parts.size() >= 2) ? parts[1] : parts[0];
+        }
+    }
+    else if (property == "place-content") {
+        // place-content: <align-content> <justify-content>?
+        // If only one value, it applies to both
+        std::istringstream iss(resolved_value);
+        std::vector<std::string> parts;
+        std::string part;
+        while (iss >> part) {
+            parts.push_back(part);
+        }
+        if (parts.size() >= 1) {
+            style.align_content = parts[0];
+            style.justify_content = (parts.size() >= 2) ? parts[1] : parts[0];
+        }
+    }
     else if (property == "flex") {
         // 解析 flex 简写属性
         // flex: none => flex-grow: 0; flex-shrink: 0; flex-basis: auto
@@ -1589,6 +1631,12 @@ void StyleResolver::ParseStyleProperty(ComputedStyle& style,
     }
     else if (property == "grid-template-rows") {
         style.grid_template_rows = resolved_value;
+    }
+    else if (property == "grid-auto-columns") {
+        style.grid_auto_columns = resolved_value;
+    }
+    else if (property == "grid-auto-rows") {
+        style.grid_auto_rows = resolved_value;
     }
     else if (property == "grid-auto-flow") {
         style.grid_auto_flow = resolved_value;

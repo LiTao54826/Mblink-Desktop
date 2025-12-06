@@ -59,9 +59,10 @@ public:
      * @brief 执行 IFC 布局
      * @param container 容器渲染对象
      * @param available_width 可用宽度
+     * @param apply_results 是否应用布局结果到渲染对象（默认为 true）
      * @return 布局结果
      */
-    IFCLayoutResult Layout(RenderObject* container, float available_width);
+    IFCLayoutResult Layout(RenderObject* container, float available_width, bool apply_results = true);
 
     /**
      * @brief 获取内容高度
@@ -125,6 +126,13 @@ public:
      * @return IFCMeasureResult 包含行盒信息
      */
     IFCMeasureResult LayoutWithResult(RenderObject* container, float available_width);
+
+    /**
+     * @brief 测量容器的最小内容宽度（最长单词的宽度）
+     * @param container 容器渲染对象
+     * @return 最小内容宽度
+     */
+    float MeasureMinContentWidth(RenderObject* container);
 
     /**
      * @brief 使容器的布局缓存失效

@@ -102,10 +102,71 @@ TextMeasureResult IFCLayout::MeasureTextStatic(
     float skia_content_height = result.skia_ascent + result.skia_descent;
 
     // 计算 line-height: normal 的值
-    // 浏览器的 line-height: normal 基于字体的 metrics，通常约为 1.15-1.35 倍字体大小
-    // 根据浏览器测试：16px -> 21px (1.3125), 24px -> 32px (1.333), 32px -> 43px (1.34375)
-    // 使用公式：normal_line_height = ceil(font_size * 1.3)，然后取整到最接近的像素
-    float browser_normal_line_height = std::ceil(font_size * 1.3f);
+    // 浏览器的 line-height: normal 基于字体的实际 metrics
+    // 根据浏览器测试：
+    // - 16px 英文文本 → 18.5px（约 1.156 倍）
+    // - 16px 中文文本 → 21px（约 1.3125 倍）
+    //
+    // 检测文本是否包含 CJK 字符来决定使用哪个倍数
+    // CJK 字符的 Unicode 范围：
+    // - CJK Unified Ideographs: U+4E00-U+9FFF
+    // - CJK Unified Ideographs Extension A: U+3400-U+4DBF
+    // - CJK Compatibility Ideographs: U+F900-U+FAFF
+    // - Hiragana: U+3040-U+309F
+    // - Katakana: U+30A0-U+30FF
+    // - Hangul Syllables: U+AC00-U+D7AF
+    bool has_cjk = false;
+    for (size_t i = 0; i < text.size(); ) {
+        unsigned char c = static_cast<unsigned char>(text[i]);
+        if (c < 0x80) {
+            // ASCII
+            i += 1;
+        } else if (c < 0xE0) {
+            // 2-byte UTF-8
+            i += 2;
+        } else if (c < 0xF0) {
+            // 3-byte UTF-8 - 解码 Unicode 码点
+            if (i + 2 < text.size()) {
+                unsigned char c2 = static_cast<unsigned char>(text[i + 1]);
+                unsigned char c3 = static_cast<unsigned char>(text[i + 2]);
+                uint32_t codepoint = ((c & 0x0F) << 12) | ((c2 & 0x3F) << 6) | (c3 & 0x3F);
+
+                // 检查是否是 CJK 字符
+                if ((codepoint >= 0x4E00 && codepoint <= 0x9FFF) ||   // CJK Unified Ideographs
+                    (codepoint >= 0x3400 && codepoint <= 0x4DBF) ||   // CJK Extension A
+                    (codepoint >= 0xF900 && codepoint <= 0xFAFF) ||   // CJK Compatibility
+                    (codepoint >= 0x3040 && codepoint <= 0x309F) ||   // Hiragana
+                    (codepoint >= 0x30A0 && codepoint <= 0x30FF) ||   // Katakana
+                    (codepoint >= 0xAC00 && codepoint <= 0xD7AF)) {   // Hangul
+                    has_cjk = true;
+                    break;
+                }
+            }
+            i += 3;
+        } else {
+            // 4-byte UTF-8 - 可能是 CJK Extension B 等
+            if (i + 3 < text.size()) {
+                unsigned char c2 = static_cast<unsigned char>(text[i + 1]);
+                unsigned char c3 = static_cast<unsigned char>(text[i + 2]);
+                unsigned char c4 = static_cast<unsigned char>(text[i + 3]);
+                uint32_t codepoint = ((c & 0x07) << 18) | ((c2 & 0x3F) << 12) |
+                                     ((c3 & 0x3F) << 6) | (c4 & 0x3F);
+
+                // CJK Extension B-F: U+20000-U+2FFFF
+                if (codepoint >= 0x20000 && codepoint <= 0x2FFFF) {
+                    has_cjk = true;
+                    break;
+                }
+            }
+            i += 4;
+        }
+    }
+
+    // 根据文本类型选择 line-height 倍数
+    // 英文：1.156 倍（16px → 18.5px）
+    // 中文：1.3125 倍（16px → 21px）
+    float normal_multiplier = has_cjk ? 1.3125f : 1.15625f;
+    float browser_normal_line_height = font_size * normal_multiplier;
 
     // 如果指定了 line-height 倍数（非默认的 1.2），使用 CSS 指定的值
     // 否则使用浏览器风格的 line-height: normal
@@ -114,14 +175,21 @@ TextMeasureResult IFCLayout::MeasureTextStatic(
         // 用户指定了具体的 line-height
         final_line_height = font_size * line_height_multiplier;
     } else {
-        // 使用 line-height: normal（浏览器风格）
+        // 使用 line-height: normal（基于文本类型）
         final_line_height = browser_normal_line_height;
     }
 
-    // 使用较大的高度，确保行间距足够
-    result.height = std::max(skia_content_height, final_line_height);
+    // 直接使用计算的 line-height，与浏览器行为一致
+    result.height = final_line_height;
 
-
+    // 如果 Skia 测量的高度大于 final_line_height，需要调整 ascent 和 descent
+    // 以确保 VerticalAligner 中的行高计算正确
+    if (skia_content_height > final_line_height) {
+        // 按比例缩放 ascent 和 descent
+        float scale = final_line_height / skia_content_height;
+        result.skia_ascent = result.skia_ascent * scale;
+        result.skia_descent = result.skia_descent * scale;
+    }
 
     // 计算 UTF-8 字符数（用于 letter-spacing）
     int char_count = 0;
@@ -226,9 +294,125 @@ void IFCLayout::ClearCache() {
     cache_.clear();
 }
 
+float IFCLayout::MeasureMinContentWidth(RenderObject* container) {
+    if (!container) return 0.0f;
+
+    float max_word_width = 0.0f;
+    auto& font_manager = FontManager::GetInstance();
+
+    // Helper function to measure a single word
+    auto measureWord = [](const std::string& word, const SkFont& font) -> float {
+        if (word.empty()) return 0.0f;
+        float width = TextRenderer::MeasureMixedTextWidth(word, font);
+        return width;
+    };
+
+    // Helper function to check if a character is CJK
+    auto isCJK = [](uint32_t codepoint) -> bool {
+        return (codepoint >= 0x4E00 && codepoint <= 0x9FFF) ||   // CJK Unified Ideographs
+               (codepoint >= 0x3400 && codepoint <= 0x4DBF) ||   // CJK Unified Ideographs Extension A
+               (codepoint >= 0x20000 && codepoint <= 0x2A6DF) || // CJK Unified Ideographs Extension B
+               (codepoint >= 0x2A700 && codepoint <= 0x2B73F) || // CJK Unified Ideographs Extension C
+               (codepoint >= 0x2B740 && codepoint <= 0x2B81F) || // CJK Unified Ideographs Extension D
+               (codepoint >= 0xF900 && codepoint <= 0xFAFF) ||   // CJK Compatibility Ideographs
+               (codepoint >= 0x3000 && codepoint <= 0x303F) ||   // CJK Symbols and Punctuation
+               (codepoint >= 0xFF00 && codepoint <= 0xFFEF);     // Halfwidth and Fullwidth Forms
+    };
+
+    // Recursively measure all text nodes
+    std::function<void(RenderObject*)> measureChildren = [&](RenderObject* obj) {
+        if (!obj) return;
+
+        if (obj->GetType() == RenderObjectType::TEXT) {
+            RenderText* text_obj = static_cast<RenderText*>(obj);
+            const std::string& text = text_obj->GetText();
+            const auto& style = obj->GetComputedStyle();
+
+            // Create font for measurement using FontManager
+            FontDescriptor font_desc;
+            font_desc.family = style.font_family.empty() ? "Arial" : style.font_family;
+            font_desc.size = style.font_size;
+            font_desc.weight = FontWeight::NORMAL;
+            font_desc.style = FontStyle::NORMAL;
+            SkFont font = font_manager.LoadFont(font_desc);
+
+            // Measure the minimum content width (longest word)
+            // For CJK text, each character is a potential break point
+            // For Latin text, words are separated by spaces
+            std::string current_word;
+            size_t i = 0;
+            while (i < text.size()) {
+                unsigned char c = text[i];
+                uint32_t codepoint = 0;
+                size_t char_len = 1;
+
+                // Decode UTF-8
+                if ((c & 0x80) == 0) {
+                    codepoint = c;
+                    char_len = 1;
+                } else if ((c & 0xE0) == 0xC0) {
+                    codepoint = c & 0x1F;
+                    char_len = 2;
+                } else if ((c & 0xF0) == 0xE0) {
+                    codepoint = c & 0x0F;
+                    char_len = 3;
+                } else if ((c & 0xF8) == 0xF0) {
+                    codepoint = c & 0x07;
+                    char_len = 4;
+                }
+
+                for (size_t j = 1; j < char_len && i + j < text.size(); ++j) {
+                    codepoint = (codepoint << 6) | (text[i + j] & 0x3F);
+                }
+
+                std::string char_str = text.substr(i, char_len);
+
+                if (codepoint == ' ' || codepoint == '\t' || codepoint == '\n' || codepoint == '\r') {
+                    // Whitespace - end of word
+                    if (!current_word.empty()) {
+                        float word_width = measureWord(current_word, font);
+                        max_word_width = std::max(max_word_width, word_width);
+                        current_word.clear();
+                    }
+                } else if (isCJK(codepoint)) {
+                    // CJK character - each is a potential break point
+                    if (!current_word.empty()) {
+                        float word_width = measureWord(current_word, font);
+                        max_word_width = std::max(max_word_width, word_width);
+                        current_word.clear();
+                    }
+                    // Measure the CJK character itself
+                    float char_width = measureWord(char_str, font);
+                    max_word_width = std::max(max_word_width, char_width);
+                } else {
+                    // Non-CJK, non-whitespace - add to current word
+                    current_word += char_str;
+                }
+
+                i += char_len;
+            }
+
+            // Don't forget the last word
+            if (!current_word.empty()) {
+                float word_width = measureWord(current_word, font);
+                max_word_width = std::max(max_word_width, word_width);
+            }
+        }
+
+        // Recurse into children
+        for (const auto& child : obj->GetChildren()) {
+            measureChildren(child.get());
+        }
+    };
+
+    measureChildren(container);
+
+    return max_word_width;
+}
+
 // ========== 主布局方法 ==========
 
-IFCLayoutResult IFCLayout::Layout(RenderObject* container, float available_width) {
+IFCLayoutResult IFCLayout::Layout(RenderObject* container, float available_width, bool apply_results) {
     IFCLayoutResult result;
 
     if (!container) {
@@ -261,8 +445,10 @@ IFCLayoutResult IFCLayout::Layout(RenderObject* container, float available_width
         content_height_ = cache.content_height;
         content_width_ = cache.content_width;
 
-        // Re-apply layout results to update render object positions
-        ApplyLayoutResults(container, container_width);
+        // Re-apply layout results to update render object positions (only if requested)
+        if (apply_results) {
+            ApplyLayoutResults(container, container_width);
+        }
 
         result.total_height = content_height_;
         result.max_width = content_width_;
@@ -392,8 +578,10 @@ IFCLayoutResult IFCLayout::Layout(RenderObject* container, float available_width
     std::cout << "[IFC] Total content_height: " << content_height_ << std::endl;
 #endif
 
-    // 5. 应用布局结果到渲染对象
-    ApplyLayoutResults(container, container_width);
+    // 5. 应用布局结果到渲染对象 (only if requested)
+    if (apply_results) {
+        ApplyLayoutResults(container, container_width);
+    }
 
     // 6. 更新缓存
     LayoutCache& cache = cache_[container];

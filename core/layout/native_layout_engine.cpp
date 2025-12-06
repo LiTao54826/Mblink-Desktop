@@ -188,6 +188,40 @@ static std::vector<TrackSizingFunction> ParseGridTemplate(const std::string& tem
     return result;
 }
 
+// Helper to parse grid-auto-rows/grid-auto-columns string
+// Can contain multiple track sizes separated by spaces
+static std::vector<NonRepeatedTrackSizingFunction> ParseGridAutoTracks(const std::string& auto_str) {
+    std::vector<NonRepeatedTrackSizingFunction> result;
+    if (auto_str.empty()) return result;
+
+    std::string str = auto_str;
+    size_t pos = 0;
+
+    while (pos < str.size()) {
+        // Skip whitespace
+        while (pos < str.size() && (str[pos] == ' ' || str[pos] == '\t')) pos++;
+        if (pos >= str.size()) break;
+
+        // Find end of this track value (handle parentheses for minmax())
+        size_t end = pos;
+        int paren_count = 0;
+        while (end < str.size()) {
+            if (str[end] == '(') paren_count++;
+            else if (str[end] == ')') paren_count--;
+            else if ((str[end] == ' ' || str[end] == '\t') && paren_count == 0) break;
+            end++;
+        }
+
+        std::string track_value = str.substr(pos, end - pos);
+        if (!track_value.empty()) {
+            result.push_back(ParseGridTrackValue(track_value));
+        }
+        pos = end;
+    }
+
+    return result;
+}
+
 // Helper to parse grid-column/row placement
 static GridPlacement ParseGridPlacement(const std::string& value) {
     if (value.empty() || value == "auto") return GridPlacement::Auto();
@@ -583,6 +617,9 @@ NodeId NativeLayoutEngine::CreateNode(RenderObject* render_obj) {
     // Parse grid-template-rows, grid-template-columns
     node.grid_container_style.grid_template_columns = ParseGridTemplate(computed.grid_template_columns);
     node.grid_container_style.grid_template_rows = ParseGridTemplate(computed.grid_template_rows);
+    // Parse grid-auto-rows, grid-auto-columns
+    node.grid_container_style.grid_auto_columns = ParseGridAutoTracks(computed.grid_auto_columns);
+    node.grid_container_style.grid_auto_rows = ParseGridAutoTracks(computed.grid_auto_rows);
     // Parse gap
     node.grid_container_style.column_gap = ConvertLength(computed.column_gap);
     node.grid_container_style.row_gap = ConvertLength(computed.row_gap);
@@ -1026,6 +1063,28 @@ LayoutOutput NativeLayoutEngine::ComputeNodeLayout(NodeId node_id, const LayoutI
 
     LayoutOutput output;
 
+    // Check if this is a leaf node (text, inline-block, etc.)
+    // Leaf nodes need special measurement handling
+    if (node->render_obj) {
+        RenderObjectType type = node->render_obj->GetType();
+
+        if (type == RenderObjectType::TEXT ||
+            type == RenderObjectType::INLINE_BLOCK ||
+            type == RenderObjectType::INLINE) {
+            output = MeasureLeafNode(node_id, inputs);
+
+            // Store in cache and return early
+            node->cache.Store(
+                inputs.known_dimensions,
+                inputs.available_space,
+                inputs.run_mode,
+                output
+            );
+            node->output = output;
+            return output;
+        }
+    }
+
     // Dispatch based on display type
     switch (node->style.display) {
         case Display::None:
@@ -1234,6 +1293,8 @@ LayoutOutput NativeLayoutEngine::ComputeIFCLayout(NodeId node_id, const LayoutIn
 
     const auto& style = node->render_obj->GetComputedStyle();
 
+
+
     // Resolve container width - prefer known_dimensions (fixed width) over available_space
     // This is critical for text-align: center to work correctly
     float container_width = 0.0f;
@@ -1257,9 +1318,18 @@ LayoutOutput NativeLayoutEngine::ComputeIFCLayout(NodeId node_id, const LayoutIn
                 container_width = inputs.available_space.width.value;
             } else if (inputs.available_space.width.type == AvailableSpace::Type::MaxContent) {
                 container_width = 10000.0f;
+            } else if (inputs.available_space.width.type == AvailableSpace::Type::MinContent) {
+                // For MinContent, we need to calculate the minimum width needed
+                // This is the width of the longest word in the text
+                // We'll use a very small width to force line breaking at every opportunity
+                container_width = 0.0f;  // Will be handled specially below
             }
         }
     }
+
+    // Handle MinContent mode specially
+    bool is_min_content = (inputs.available_space.width.type == AvailableSpace::Type::MinContent) &&
+                          !inputs.known_dimensions.width.has_value();
 
     // Resolve padding and border
     // Note: CSS padding percentages are always relative to the containing block's WIDTH (not height)
@@ -1294,12 +1364,32 @@ LayoutOutput NativeLayoutEngine::ComputeIFCLayout(NodeId node_id, const LayoutIn
     float content_width = container_width - padding_left - padding_right - border_left - border_right - scrollbar_gutter_right;
     if (content_width < 0) content_width = 0;
 
-    // Use IFC to compute content layout with the correct content width
-    IFCLayoutResult result = ifc_layout_.Layout(node->render_obj, content_width);
+    float total_width = 0.0f;
+    float total_height = 0.0f;
+    IFCLayoutResult result;
 
-    // Calculate total size including padding and border
-    float total_width = result.max_width + padding_left + padding_right + border_left + border_right;
-    float total_height = result.total_height + padding_top + padding_bottom + border_top + border_bottom;
+    // Only apply layout results (update render object positions) in PerformLayout mode
+    // In ComputeSize mode, we only need to measure the size, not update positions
+    bool apply_results = (inputs.run_mode == RunMode::PerformLayout);
+
+    if (is_min_content) {
+        // For MinContent, calculate the minimum width needed to display the content
+        // This is the width of the longest word in the text
+        float min_content_width = ifc_layout_.MeasureMinContentWidth(node->render_obj);
+
+        // Now layout with this minimum width to get the height
+        result = ifc_layout_.Layout(node->render_obj, min_content_width, apply_results);
+
+        total_width = min_content_width + padding_left + padding_right + border_left + border_right;
+        total_height = result.total_height + padding_top + padding_bottom + border_top + border_bottom;
+    } else {
+        // Use IFC to compute content layout with the correct content width
+        result = ifc_layout_.Layout(node->render_obj, content_width, apply_results);
+
+        // Calculate total size including padding and border
+        total_width = result.max_width + padding_left + padding_right + border_left + border_right;
+        total_height = result.total_height + padding_top + padding_bottom + border_top + border_bottom;
+    }
 
     // Apply known dimensions if provided (override calculated size)
     float fixed_width = 0.0f;
@@ -1358,22 +1448,24 @@ LayoutOutput NativeLayoutEngine::ComputeIFCLayout(NodeId node_id, const LayoutIn
 
     // Apply min/max constraints
     // Note: min-height and max-height need to be applied even for IFC containers
+    // CSS spec: when min > max, min wins (apply max first, then min)
     float min_height = style.min_height.ToPx(0, style.font_size);
     float max_height = style.max_height.ToPx(0, style.font_size);
     float min_width = style.min_width.ToPx(container_width, style.font_size);
     float max_width = style.max_width.ToPx(container_width, style.font_size);
 
-    if (min_height > 0) {
-        total_height = std::max(total_height, min_height);
-    }
+    // Apply max first, then min - ensures min wins when min > max
     if (max_height > 0) {
         total_height = std::min(total_height, max_height);
     }
-    if (min_width > 0) {
-        total_width = std::max(total_width, min_width);
+    if (min_height > 0) {
+        total_height = std::max(total_height, min_height);
     }
     if (max_width > 0) {
         total_width = std::min(total_width, max_width);
+    }
+    if (min_width > 0) {
+        total_width = std::max(total_width, min_width);
     }
 
     LayoutOutput output;
@@ -1416,6 +1508,7 @@ LayoutOutput NativeLayoutEngine::MeasureLeafNode(NodeId node_id, const LayoutInp
         // Determine available width
         float available_width = 0.0f;
         bool should_wrap = false;
+        bool is_min_content = false;
 
         // Check white-space property - nowrap and pre disable wrapping
         const std::string& white_space = style.white_space;
@@ -1426,14 +1519,22 @@ LayoutOutput NativeLayoutEngine::MeasureLeafNode(NodeId node_id, const LayoutInp
                 available_width = inputs.available_space.width.value;
                 should_wrap = true;
             } else if (inputs.available_space.width.type == AvailableSpace::Type::MinContent) {
-                available_width = 0;
+                is_min_content = true;
                 should_wrap = true;
             }
         }
 
         LayoutOutput output;
 
-        if (should_wrap && available_width > 0) {
+        if (is_min_content) {
+            // For MinContent, return the width of the longest word
+            // This is the minimum width needed to display the text without overflow
+            float max_word_width = text_renderer.MeasureMinContentWidth(text, font);
+            float line_height = style.line_height * style.font_size;
+            output.size.width = max_word_width;
+            output.size.height = line_height;
+            text_obj->SetActualTextWidth(max_word_width);
+        } else if (should_wrap && available_width > 0) {
             std::vector<std::string> lines = text_renderer.WrapText(text, available_width, font);
             text_obj->SetWrappedLines(lines);
 

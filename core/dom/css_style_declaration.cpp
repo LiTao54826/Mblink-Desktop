@@ -118,28 +118,91 @@ void CSSStyleDeclaration::SetCssText(const std::string& css_text) {
     priorities_.clear();
     property_order_.clear();
 
-    // 解析CSS文本
-    auto parsed_properties = ParseCssText(css_text);
-    
-    // 设置属性
-    for (const auto& [property, value] : parsed_properties) {
+    if (css_text.empty()) {
+        UpdateStyleAttribute();
+        return;
+    }
+
+    // 直接按顺序解析CSS文本，保持属性顺序
+    // 这对于简写属性和长写属性的覆盖顺序很重要
+    // 例如：padding: 10px; padding-top: 15px; 应该先设置 padding，再覆盖 padding-top
+    std::istringstream iss(css_text);
+    std::string declaration;
+
+    while (std::getline(iss, declaration, ';')) {
+        // 去除前后空格
+        size_t start = declaration.find_first_not_of(" \t\n\r");
+        if (start == std::string::npos) {
+            continue;
+        }
+
+        size_t end = declaration.find_last_not_of(" \t\n\r");
+        declaration = declaration.substr(start, end - start + 1);
+
+        // 查找冒号
+        size_t colon_pos = declaration.find(':');
+        if (colon_pos == std::string::npos) {
+            continue;
+        }
+
+        // 提取属性名和值
+        std::string property = declaration.substr(0, colon_pos);
+        std::string value = declaration.substr(colon_pos + 1);
+
+        // 去除属性名和值的空格
+        start = property.find_first_not_of(" \t\n\r");
+        if (start != std::string::npos) {
+            end = property.find_last_not_of(" \t\n\r");
+            property = property.substr(start, end - start + 1);
+        }
+
+        start = value.find_first_not_of(" \t\n\r");
+        if (start != std::string::npos) {
+            end = value.find_last_not_of(" \t\n\r");
+            value = value.substr(start, end - start + 1);
+        }
+
+        if (property.empty() || value.empty()) {
+            continue;
+        }
+
+        // 规范化属性名
+        std::string normalized_property = NormalizePropertyName(property);
+
         // 检查是否有!important
         std::string actual_value = value;
         std::string priority = "";
-        
+
         size_t important_pos = value.find("!important");
         if (important_pos != std::string::npos) {
             actual_value = value.substr(0, important_pos);
             priority = "important";
-            
+
             // 去除尾部空格
             while (!actual_value.empty() && std::isspace(actual_value.back())) {
                 actual_value.pop_back();
             }
         }
-        
-        SetProperty(property, actual_value, priority);
+
+        // 直接设置属性（不调用 SetProperty 以避免多次 UpdateStyleAttribute）
+        // 如果是新属性，添加到顺序列表
+        if (properties_.find(normalized_property) == properties_.end()) {
+            property_order_.push_back(normalized_property);
+        }
+
+        // 设置属性值
+        properties_[normalized_property] = actual_value;
+
+        // 设置优先级
+        if (priority == "important") {
+            priorities_[normalized_property] = "important";
+        } else {
+            priorities_.erase(normalized_property);
+        }
     }
+
+    // 最后更新元素的style属性
+    UpdateStyleAttribute();
 }
 
 const std::unordered_map<std::string, std::string>& CSSStyleDeclaration::GetAllProperties() const {
