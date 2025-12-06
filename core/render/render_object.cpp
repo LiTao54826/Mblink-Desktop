@@ -603,10 +603,16 @@ void RenderBlock::Paint(SkCanvas* canvas) {
     const auto& style = computed_style_;
     const auto& layout = layout_info_;
 
-    // DEBUG: 打印每个有 max-height 或 overflow 的元素
     // 保存画布状态
     canvas->save();
     canvas->translate(layout.x, layout.y);
+
+    // 应用 CSS transform
+    if (style.transform.has_value() && !style.transform->IsEmpty()) {
+        SkRect element_rect = SkRect::MakeWH(layout.width, layout.height);
+        SkMatrix transform_matrix = style.transform->ToSkMatrix(element_rect, style.transform_origin);
+        canvas->concat(transform_matrix);
+    }
 
     // 创建盒模型
     Box box;
@@ -2234,6 +2240,7 @@ void RenderText::Layout(float parent_width, float parent_height) {
 
     // 创建文本渲染器来测量文本
     TextRenderer text_renderer(nullptr);
+    float line_height = style.line_height * style.font_size;
 
     // 检查是否包含换行符
     if (text_.find('\n') != std::string::npos) {
@@ -2242,7 +2249,6 @@ void RenderText::Layout(float parent_width, float parent_height) {
         std::string line;
         float max_width = 0;
         float total_height = 0;
-        float line_height = style.line_height * style.font_size;
         int line_count = 0;
 
         while (std::getline(iss, line)) {
@@ -2256,13 +2262,32 @@ void RenderText::Layout(float parent_width, float parent_height) {
 
         layout_info_.width = max_width;
         layout_info_.height = total_height;
+    } else if (parent_width > 0) {
+        // 有可用宽度限制，检查是否需要换行
+        float text_width = text_renderer.MeasureTextWidthWithEmoji(text_, font);
+
+        if (text_width > parent_width) {
+            // 文本超出可用宽度，需要换行
+            std::vector<std::string> lines = text_renderer.WrapText(text_, parent_width, font);
+
+            float max_width = 0;
+            for (const auto& line : lines) {
+                float line_width = text_renderer.MeasureTextWidthWithEmoji(line, font);
+                max_width = std::max(max_width, line_width);
+            }
+
+            layout_info_.width = max_width;
+            layout_info_.height = lines.size() * line_height;
+        } else {
+            // 文本不需要换行
+            layout_info_.width = text_width;
+            layout_info_.height = line_height;
+        }
     } else {
-        // 单行文本 - 使用支持emoji的测量
+        // 没有宽度限制，单行文本
         float width = text_renderer.MeasureTextWidthWithEmoji(text_, font);
         layout_info_.width = width;
-        // 单行文本也应该使用 line_height 来计算高度，与浏览器行为一致
-        // 浏览器的 line-height: normal 会应用到所有文本，包括单行文本
-        layout_info_.height = style.line_height * style.font_size;
+        layout_info_.height = line_height;
     }
 
     layout_info_.content_rect = SkRect::MakeWH(layout_info_.width, layout_info_.height);
@@ -2361,6 +2386,22 @@ void RenderText::Paint(SkCanvas* canvas) {
         lines_to_render.push_back(text_);
     }
 
+    // Check for text-overflow: ellipsis from parent container
+    bool use_ellipsis = false;
+    float available_width = 0.0f;
+    auto parent = GetParent();
+    if (parent) {
+        const auto& parent_style = parent->GetComputedStyle();
+        if (parent_style.text_overflow == "ellipsis") {
+            use_ellipsis = true;
+            // Get parent's content width (layout width minus padding)
+            const auto& parent_layout = parent->GetLayoutInfo();
+            float padding_left = parent_style.padding.left.ToPx(parent_layout.width, parent_style.font_size);
+            float padding_right = parent_style.padding.right.ToPx(parent_layout.width, parent_style.font_size);
+            available_width = parent_layout.width - padding_left - padding_right;
+        }
+    }
+
     // Render all lines
     float current_y = baseline_y;
     float line_height = style.line_height * style.font_size;
@@ -2368,13 +2409,55 @@ void RenderText::Paint(SkCanvas* canvas) {
     for (const auto& line : lines_to_render) {
         // Skip empty lines (but still advance y position)
         if (!line.empty()) {
+            std::string text_to_render = line;
+
+            // Apply text-overflow: ellipsis if needed
+            if (use_ellipsis && available_width > 0) {
+                float text_width = text_renderer.MeasureTextWidthWithEmoji(line, font);
+                if (text_width > available_width) {
+                    // Need to truncate and add ellipsis
+                    const std::string ellipsis = "...";
+                    float ellipsis_width = font.measureText(ellipsis.c_str(), ellipsis.length(), SkTextEncoding::kUTF8);
+                    float target_width = available_width - ellipsis_width;
+
+                    if (target_width > 0) {
+                        // Binary search to find the right truncation point
+                        std::string truncated;
+                        size_t len = line.length();
+                        size_t low = 0, high = len;
+
+                        while (low < high) {
+                            size_t mid = (low + high + 1) / 2;
+                            // Handle UTF-8: find valid character boundary
+                            size_t char_end = mid;
+                            while (char_end > 0 && char_end < len && (line[char_end] & 0xC0) == 0x80) {
+                                char_end--;
+                            }
+                            std::string test = line.substr(0, char_end);
+                            float test_width = text_renderer.MeasureTextWidthWithEmoji(test, font);
+                            if (test_width <= target_width) {
+                                low = mid;
+                                truncated = test;
+                            } else {
+                                high = mid - 1;
+                            }
+                        }
+
+                        text_to_render = truncated + ellipsis;
+                    } else {
+                        // Not enough space even for ellipsis, just show ellipsis
+                        text_to_render = ellipsis;
+                    }
+                }
+            }
+
             if (!style.text_shadow.empty()) {
-                ShadowRenderer::RenderTextWithShadow(canvas, line, font, 0, current_y, text_color, style.text_shadow);
+                ShadowRenderer::RenderTextWithShadow(canvas, text_to_render, font, 0, current_y, text_color, style.text_shadow);
             } else {
                 lightui::Paint text_paint;
                 text_paint.SetColor(text_color);
                 // 使用支持emoji的文本渲染
-                text_renderer.DrawTextWithEmoji(line, 0, current_y, font, text_paint);
+                text_renderer.DrawTextWithEmoji(text_to_render, 0, current_y, font, text_paint);
             }
         }
 

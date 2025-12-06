@@ -135,6 +135,7 @@ private:
         float content_height = 0.0f;
         float content_width = 0.0f;
         std::vector<LineBox> line_boxes;
+        std::vector<InlineBox> inline_boxes;  // Cache inline boxes for ApplyLayoutResults
         size_t content_version = 0;  // 内容版本号
         bool valid = false;
     };

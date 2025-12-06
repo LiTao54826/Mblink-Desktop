@@ -23,6 +23,226 @@
 namespace lightui {
 
 //------------------------------------------------------------------------------
+// Helper Functions (must be before CreateNode)
+//------------------------------------------------------------------------------
+
+// Helper to convert CSSLength to LengthPercentage
+static LengthPercentage ConvertLength(const CSSLength& css_length) {
+    switch (css_length.unit) {
+        case CSSUnit::PX:
+            return LengthPercentage::Length(css_length.value);
+        case CSSUnit::PERCENT:
+            return LengthPercentage::Percent(css_length.value / 100.0f);
+        case CSSUnit::EM:
+            return LengthPercentage::Length(css_length.value * 16.0f);
+        case CSSUnit::REM:
+            return LengthPercentage::Length(css_length.value * 16.0f);
+        case CSSUnit::AUTO:
+        case CSSUnit::NONE:
+        default:
+            return LengthPercentage::Zero();
+    }
+}
+
+// Forward declaration for recursive call
+static std::vector<TrackSizingFunction> ParseGridTemplate(const std::string& template_str);
+
+// Helper to parse a single grid track value
+static NonRepeatedTrackSizingFunction ParseGridTrackValue(const std::string& value) {
+    std::string trimmed = value;
+    size_t start = trimmed.find_first_not_of(" \t");
+    size_t end = trimmed.find_last_not_of(" \t");
+    if (start == std::string::npos) {
+        return NonRepeatedTrackSizingFunction::Auto();
+    }
+    trimmed = trimmed.substr(start, end - start + 1);
+
+    if (trimmed == "auto") {
+        return NonRepeatedTrackSizingFunction::Auto();
+    }
+
+    if (trimmed.size() > 2 && trimmed.substr(trimmed.size() - 2) == "fr") {
+        try {
+            float fr = std::stof(trimmed.substr(0, trimmed.size() - 2));
+            return NonRepeatedTrackSizingFunction::Flex(fr);
+        } catch (...) {
+            return NonRepeatedTrackSizingFunction::Auto();
+        }
+    }
+
+    if (trimmed.size() > 2 && trimmed.substr(trimmed.size() - 2) == "px") {
+        try {
+            float px = std::stof(trimmed.substr(0, trimmed.size() - 2));
+            return NonRepeatedTrackSizingFunction::Fixed(px);
+        } catch (...) {
+            return NonRepeatedTrackSizingFunction::Auto();
+        }
+    }
+
+    if (trimmed.size() > 1 && trimmed.back() == '%') {
+        try {
+            float pct = std::stof(trimmed.substr(0, trimmed.size() - 1));
+            return NonRepeatedTrackSizingFunction{
+                MinTrackSizingFunction::Percent(pct / 100.0f),
+                MaxTrackSizingFunction::Percent(pct / 100.0f)
+            };
+        } catch (...) {
+            return NonRepeatedTrackSizingFunction::Auto();
+        }
+    }
+
+    if (trimmed.size() > 7 && trimmed.substr(0, 7) == "minmax(") {
+        size_t close = trimmed.rfind(')');
+        if (close != std::string::npos) {
+            std::string inner = trimmed.substr(7, close - 7);
+            size_t comma = inner.find(',');
+            if (comma != std::string::npos) {
+                std::string min_str = inner.substr(0, comma);
+                std::string max_str = inner.substr(comma + 1);
+                auto min_func = ParseGridTrackValue(min_str);
+                auto max_func = ParseGridTrackValue(max_str);
+                return NonRepeatedTrackSizingFunction{min_func.min, max_func.max};
+            }
+        }
+    }
+
+    try {
+        float px = std::stof(trimmed);
+        return NonRepeatedTrackSizingFunction::Fixed(px);
+    } catch (...) {}
+
+    return NonRepeatedTrackSizingFunction::Auto();
+}
+
+// Helper to parse grid-template-columns/rows string
+static std::vector<TrackSizingFunction> ParseGridTemplate(const std::string& template_str) {
+    std::vector<TrackSizingFunction> result;
+    if (template_str.empty()) return result;
+
+    std::string str = template_str;
+    size_t pos = 0;
+
+    while (pos < str.size()) {
+        while (pos < str.size() && (str[pos] == ' ' || str[pos] == '\t')) pos++;
+        if (pos >= str.size()) break;
+
+        if (str.substr(pos, 7) == "repeat(") {
+            size_t start = pos + 7;
+            int paren_count = 1;
+            size_t end = start;
+            while (end < str.size() && paren_count > 0) {
+                if (str[end] == '(') paren_count++;
+                else if (str[end] == ')') paren_count--;
+                end++;
+            }
+
+            std::string repeat_content = str.substr(start, end - start - 1);
+            size_t comma = repeat_content.find(',');
+            if (comma != std::string::npos) {
+                std::string count_str = repeat_content.substr(0, comma);
+                std::string tracks_str = repeat_content.substr(comma + 1);
+
+                size_t cs = count_str.find_first_not_of(" \t");
+                size_t ce = count_str.find_last_not_of(" \t");
+                if (cs != std::string::npos) count_str = count_str.substr(cs, ce - cs + 1);
+
+                uint16_t repeat_count = 1;
+                if (count_str == "auto-fill") repeat_count = 0;
+                else if (count_str == "auto-fit") repeat_count = UINT16_MAX;
+                else {
+                    try { repeat_count = static_cast<uint16_t>(std::stoi(count_str)); } catch (...) {}
+                }
+
+                std::vector<NonRepeatedTrackSizingFunction> repeat_tracks;
+                auto inner_tracks = ParseGridTemplate(tracks_str);
+                for (const auto& t : inner_tracks) {
+                    if (t.type == TrackSizingFunction::Type::Single) {
+                        repeat_tracks.push_back(t.single);
+                    }
+                }
+
+                if (!repeat_tracks.empty()) {
+                    result.push_back(TrackSizingFunction::Repeat(repeat_count, repeat_tracks));
+                }
+            }
+            pos = end;
+        } else {
+            size_t end = pos;
+            int paren_count = 0;
+            while (end < str.size()) {
+                if (str[end] == '(') paren_count++;
+                else if (str[end] == ')') paren_count--;
+                else if ((str[end] == ' ' || str[end] == '\t') && paren_count == 0) break;
+                end++;
+            }
+
+            std::string track_value = str.substr(pos, end - pos);
+            if (!track_value.empty()) {
+                auto track = ParseGridTrackValue(track_value);
+                result.push_back(TrackSizingFunction::Single(track));
+            }
+            pos = end;
+        }
+    }
+
+    return result;
+}
+
+// Helper to parse grid-column/row placement
+static GridPlacement ParseGridPlacement(const std::string& value) {
+    if (value.empty() || value == "auto") return GridPlacement::Auto();
+
+    if (value.size() > 5 && value.substr(0, 5) == "span ") {
+        try {
+            uint16_t span = static_cast<uint16_t>(std::stoi(value.substr(5)));
+            return GridPlacement::Span(span);
+        } catch (...) {
+            return GridPlacement::Auto();
+        }
+    }
+
+    try {
+        int16_t line = static_cast<int16_t>(std::stoi(value));
+        return GridPlacement::Line(line);
+    } catch (...) {}
+
+    return GridPlacement::Auto();
+}
+
+// Helper to parse grid-column/row shorthand
+// CSS规范: 当只有一个值且是 span 时, 表示 grid-*-end: span N
+// 例如: grid-column: span 2 => grid-column-start: auto; grid-column-end: span 2
+static std::pair<GridPlacement, GridPlacement> ParseGridLine(const std::string& value) {
+    if (value.empty()) return {GridPlacement::Auto(), GridPlacement::Auto()};
+
+    size_t slash = value.find('/');
+    if (slash != std::string::npos) {
+        std::string start_str = value.substr(0, slash);
+        std::string end_str = value.substr(slash + 1);
+
+        size_t s1 = start_str.find_first_not_of(" \t");
+        size_t e1 = start_str.find_last_not_of(" \t");
+        if (s1 != std::string::npos) start_str = start_str.substr(s1, e1 - s1 + 1);
+
+        size_t s2 = end_str.find_first_not_of(" \t");
+        size_t e2 = end_str.find_last_not_of(" \t");
+        if (s2 != std::string::npos) end_str = end_str.substr(s2, e2 - s2 + 1);
+
+        return {ParseGridPlacement(start_str), ParseGridPlacement(end_str)};
+    }
+
+    // 单值: 如果是 span, 放到 end 位置; 否则放到 start 位置
+    auto placement = ParseGridPlacement(value);
+    if (placement.IsSpan()) {
+        // span 2 => start=auto, end=span 2
+        return {GridPlacement::Auto(), placement};
+    } else {
+        // 1 或 auto => start=value, end=auto
+        return {placement, GridPlacement::Auto()};
+    }
+}
+
+//------------------------------------------------------------------------------
 // Constructor / Destructor
 //------------------------------------------------------------------------------
 
@@ -67,16 +287,67 @@ void NativeLayoutEngine::ComputeLayout(float available_width, float available_he
         return;
     }
 
+    // Check if root node has overflow: auto or scroll and might need scrollbar
+    LayoutNode* root = GetNode(root_node_);
+    float effective_width = available_width;
+
+    if (root && root->render_obj) {
+        const auto& style = root->render_obj->GetComputedStyle();
+        std::string overflow_y = !style.overflow_y.empty() ? style.overflow_y : style.overflow;
+
+        // For overflow: auto or scroll on root, we need to account for potential vertical scrollbar
+        // We do a two-pass layout: first pass to check if content exceeds height,
+        // second pass with reduced width if scrollbar is needed
+        if (overflow_y == "auto" || overflow_y == "scroll") {
+            // First pass: compute layout with full width
+            LayoutInput inputs;
+            inputs.run_mode = RunMode::PerformLayout;
+            inputs.sizing_mode = SizingMode::InherentSize;
+            inputs.known_dimensions = Size<std::optional<float>>{std::nullopt, std::nullopt};
+            inputs.parent_size = Size<std::optional<float>>{
+                std::optional<float>(available_width),
+                std::optional<float>(available_height)
+            };
+            inputs.available_space = Size<AvailableSpace>{
+                AvailableSpace::Definite(available_width),
+                AvailableSpace::Definite(available_height)
+            };
+
+            // Clear cache to force recomputation
+            for (auto& pair : nodes_) {
+                pair.second.cache.Clear();
+            }
+
+            LayoutOutput first_pass = ComputeNodeLayout(root_node_, inputs);
+
+            // Check if content height exceeds available height (needs vertical scrollbar)
+            // or if overflow-y is scroll (always show scrollbar)
+            // Use size.height instead of content_size.height for the actual rendered height
+            bool needs_v_scrollbar = (first_pass.size.height > available_height) ||
+                                      (overflow_y == "scroll");
+
+            if (needs_v_scrollbar) {
+                // Reduce available width by scrollbar width
+                effective_width = available_width - RenderObject::GetScrollbarWidth();
+
+                // Clear cache and recompute with reduced width
+                for (auto& pair : nodes_) {
+                    pair.second.cache.Clear();
+                }
+            }
+        }
+    }
+
     LayoutInput inputs;
     inputs.run_mode = RunMode::PerformLayout;
     inputs.sizing_mode = SizingMode::InherentSize;
     inputs.known_dimensions = Size<std::optional<float>>{std::nullopt, std::nullopt};
     inputs.parent_size = Size<std::optional<float>>{
-        std::optional<float>(available_width),
+        std::optional<float>(effective_width),
         std::optional<float>(available_height)
     };
     inputs.available_space = Size<AvailableSpace>{
-        AvailableSpace::Definite(available_width),
+        AvailableSpace::Definite(effective_width),
         AvailableSpace::Definite(available_height)
     };
 
@@ -97,6 +368,47 @@ void NativeLayoutEngine::UpdateStyle(RenderObject* render_obj, const ComputedSty
         LayoutNode* node = GetNode(it->second);
         if (node) {
             node->style = ConvertStyle(style);
+
+            // Also update all the specialized style structs
+            node->block_container_style.display = node->style.display;
+            node->block_container_style.box_sizing = node->style.box_sizing;
+            node->block_container_style.position = node->style.position;
+            node->block_container_style.overflow = node->style.overflow;
+            node->block_container_style.scrollbar_width = node->style.scrollbar_width;
+            node->block_container_style.size = node->style.size;
+            node->block_container_style.min_size = node->style.min_size;
+            node->block_container_style.max_size = node->style.max_size;
+            node->block_container_style.padding = node->style.padding;
+            node->block_container_style.border = node->style.border;
+            node->block_container_style.margin = node->style.margin;
+            node->block_container_style.inset = node->style.inset;
+
+            node->block_item_style.display = node->style.display;
+            node->block_item_style.box_sizing = node->style.box_sizing;
+            node->block_item_style.position = node->style.position;
+            node->block_item_style.overflow = node->style.overflow;
+            node->block_item_style.scrollbar_width = node->style.scrollbar_width;
+            node->block_item_style.size = node->style.size;
+            node->block_item_style.min_size = node->style.min_size;
+            node->block_item_style.max_size = node->style.max_size;
+            node->block_item_style.padding = node->style.padding;
+            node->block_item_style.border = node->style.border;
+            node->block_item_style.margin = node->style.margin;
+            node->block_item_style.inset = node->style.inset;
+
+            node->grid_item_style.display = node->style.display;
+            node->grid_item_style.box_sizing = node->style.box_sizing;
+            node->grid_item_style.position = node->style.position;
+            node->grid_item_style.overflow = node->style.overflow;
+            node->grid_item_style.scrollbar_width = node->style.scrollbar_width;
+            node->grid_item_style.size = node->style.size;
+            node->grid_item_style.min_size = node->style.min_size;
+            node->grid_item_style.max_size = node->style.max_size;
+            node->grid_item_style.padding = node->style.padding;
+            node->grid_item_style.border = node->style.border;
+            node->grid_item_style.margin = node->style.margin;
+            node->grid_item_style.inset = node->style.inset;
+
             node->needs_layout = true;
         }
     }
@@ -184,8 +496,11 @@ NodeId NativeLayoutEngine::CreateNode(RenderObject* render_obj) {
     node.style = ConvertStyle(computed);
     node.is_ifc_container = ShouldUseIFC(render_obj);
 
+
+
     // Also fill in BlockContainerStyle and BlockItemStyle for the interfaces
     node.block_container_style.display = node.style.display;
+    node.block_container_style.box_sizing = node.style.box_sizing;
     node.block_container_style.position = node.style.position;
     node.block_container_style.overflow = node.style.overflow;
     node.block_container_style.scrollbar_width = node.style.scrollbar_width;
@@ -197,7 +512,12 @@ NodeId NativeLayoutEngine::CreateNode(RenderObject* render_obj) {
     node.block_container_style.margin = node.style.margin;
     node.block_container_style.inset = node.style.inset;
 
+
+
+
+
     node.block_item_style.display = node.style.display;
+    node.block_item_style.box_sizing = node.style.box_sizing;
     node.block_item_style.position = node.style.position;
     node.block_item_style.overflow = node.style.overflow;
     node.block_item_style.scrollbar_width = node.style.scrollbar_width;
@@ -211,6 +531,7 @@ NodeId NativeLayoutEngine::CreateNode(RenderObject* render_obj) {
 
     // Fill in FlexboxContainerStyle and FlexboxItemStyle
     node.flexbox_container_style.display = node.style.display;
+    node.flexbox_container_style.box_sizing = node.style.box_sizing;
     node.flexbox_container_style.position = node.style.position;
     node.flexbox_container_style.overflow = node.style.overflow;
     node.flexbox_container_style.scrollbar_width = node.style.scrollbar_width;
@@ -229,6 +550,7 @@ NodeId NativeLayoutEngine::CreateNode(RenderObject* render_obj) {
     node.flexbox_container_style.gap = node.style.gap;
 
     node.flexbox_item_style.display = node.style.display;
+    node.flexbox_item_style.box_sizing = node.style.box_sizing;
     node.flexbox_item_style.position = node.style.position;
     node.flexbox_item_style.overflow = node.style.overflow;
     node.flexbox_item_style.scrollbar_width = node.style.scrollbar_width;
@@ -243,9 +565,11 @@ NodeId NativeLayoutEngine::CreateNode(RenderObject* render_obj) {
     node.flexbox_item_style.flex_grow = node.style.flex_grow;
     node.flexbox_item_style.flex_shrink = node.style.flex_shrink;
     node.flexbox_item_style.flex_basis = node.style.flex_basis;
+    node.flexbox_item_style.order = node.style.order;
 
     // Fill in GridContainerStyle and GridItemStyle
     node.grid_container_style.display = node.style.display;
+    node.grid_container_style.box_sizing = node.style.box_sizing;
     node.grid_container_style.position = node.style.position;
     node.grid_container_style.overflow = node.style.overflow;
     node.grid_container_style.scrollbar_width = node.style.scrollbar_width;
@@ -256,9 +580,18 @@ NodeId NativeLayoutEngine::CreateNode(RenderObject* render_obj) {
     node.grid_container_style.border = node.style.border;
     node.grid_container_style.margin = node.style.margin;
     node.grid_container_style.inset = node.style.inset;
-    // TODO: Parse grid-template-rows, grid-template-columns, etc. from computed style
+    // Parse grid-template-rows, grid-template-columns
+    node.grid_container_style.grid_template_columns = ParseGridTemplate(computed.grid_template_columns);
+    node.grid_container_style.grid_template_rows = ParseGridTemplate(computed.grid_template_rows);
+    // Parse gap
+    node.grid_container_style.column_gap = ConvertLength(computed.column_gap);
+    node.grid_container_style.row_gap = ConvertLength(computed.row_gap);
+    // Parse align-items and justify-items for grid
+    node.grid_container_style.align_items = node.style.align_items;
+    node.grid_container_style.justify_items = node.style.justify_items;
 
     node.grid_item_style.display = node.style.display;
+    node.grid_item_style.box_sizing = node.style.box_sizing;
     node.grid_item_style.position = node.style.position;
     node.grid_item_style.overflow = node.style.overflow;
     node.grid_item_style.scrollbar_width = node.style.scrollbar_width;
@@ -269,7 +602,16 @@ NodeId NativeLayoutEngine::CreateNode(RenderObject* render_obj) {
     node.grid_item_style.border = node.style.border;
     node.grid_item_style.margin = node.style.margin;
     node.grid_item_style.inset = node.style.inset;
-    // TODO: Parse grid-row-start, grid-row-end, grid-column-start, grid-column-end
+    // Parse grid-row, grid-column
+    auto [col_start, col_end] = ParseGridLine(computed.grid_column);
+    auto [row_start, row_end] = ParseGridLine(computed.grid_row);
+    node.grid_item_style.grid_column_start = col_start;
+    node.grid_item_style.grid_column_end = col_end;
+    node.grid_item_style.grid_row_start = row_start;
+    node.grid_item_style.grid_row_end = row_end;
+    // Grid item alignment (align-self, justify-self)
+    node.grid_item_style.align_self = node.style.align_self;
+    node.grid_item_style.justify_self = node.style.justify_self;
 
     nodes_[id] = std::move(node);
     render_to_node_[render_obj] = id;
@@ -340,26 +682,13 @@ bool NativeLayoutEngine::ShouldUseIFC(RenderObject* render_obj) const {
 
 namespace {
 
-// Helper to convert CSSLength to LengthPercentage
-LengthPercentage ConvertLength(const CSSLength& css_length) {
-    switch (css_length.unit) {
-        case CSSUnit::PX:
-            return LengthPercentage::Length(css_length.value);
-        case CSSUnit::PERCENT:
-            return LengthPercentage::Percent(css_length.value / 100.0f);
-        case CSSUnit::EM:
-            return LengthPercentage::Length(css_length.value * 16.0f); // Assume 16px default
-        case CSSUnit::REM:
-            return LengthPercentage::Length(css_length.value * 16.0f); // Root font size
-        case CSSUnit::AUTO:
-        case CSSUnit::NONE:
-        default:
-            return LengthPercentage::Zero();
-    }
-}
-
 // Helper to convert CSSLength to Dimension
 Dimension ConvertDimension(const CSSLength& css_length) {
+    // Handle calc() expressions
+    if (css_length.is_calc) {
+        return Dimension::Calc(css_length.calc_percent / 100.0f, css_length.calc_px);
+    }
+
     switch (css_length.unit) {
         case CSSUnit::AUTO:
         case CSSUnit::NONE:
@@ -379,6 +708,11 @@ Dimension ConvertDimension(const CSSLength& css_length) {
 
 // Helper to convert CSSLength to LengthPercentageAuto
 LengthPercentageAuto ConvertLengthAuto(const CSSLength& css_length) {
+    // Handle calc() expressions
+    if (css_length.is_calc) {
+        return LengthPercentageAuto::Calc(css_length.calc_percent / 100.0f, css_length.calc_px);
+    }
+
     switch (css_length.unit) {
         case CSSUnit::AUTO:
         case CSSUnit::NONE:
@@ -422,8 +756,21 @@ Style NativeLayoutEngine::ConvertStyle(const ComputedStyle& computed) {
         style.position = Position::Absolute;
     } else if (computed.position == "relative") {
         style.position = Position::Relative;
+    } else if (computed.position == "fixed") {
+        // Fixed 定位在布局时当作 absolute 处理，渲染时相对视口
+        style.position = Position::Fixed;
+    } else if (computed.position == "sticky") {
+        // Sticky 定位在布局时当作 relative 处理，滚动时特殊处理
+        style.position = Position::Sticky;
     } else {
         style.position = Position::Relative;
+    }
+
+    // Box sizing
+    if (computed.box_sizing == "border-box") {
+        style.box_sizing = BoxSizing::BorderBox;
+    } else {
+        style.box_sizing = BoxSizing::ContentBox;
     }
 
     // Size
@@ -478,11 +825,16 @@ Style NativeLayoutEngine::ConvertStyle(const ComputedStyle& computed) {
     style.flex_grow = computed.flex_grow;
     style.flex_shrink = computed.flex_shrink;
     style.flex_basis = ConvertDimension(computed.flex_basis);
+    style.order = computed.order;
 
-    // Alignment
-    if (computed.justify_content == "flex-start" || computed.justify_content == "start") {
+    // Alignment - Note: flex-start/flex-end are different from start/end in reverse layouts
+    if (computed.justify_content == "flex-start") {
+        style.justify_content = JustifyContent::FlexStart;
+    } else if (computed.justify_content == "start") {
         style.justify_content = JustifyContent::Start;
-    } else if (computed.justify_content == "flex-end" || computed.justify_content == "end") {
+    } else if (computed.justify_content == "flex-end") {
+        style.justify_content = JustifyContent::FlexEnd;
+    } else if (computed.justify_content == "end") {
         style.justify_content = JustifyContent::End;
     } else if (computed.justify_content == "center") {
         style.justify_content = JustifyContent::Center;
@@ -494,9 +846,13 @@ Style NativeLayoutEngine::ConvertStyle(const ComputedStyle& computed) {
         style.justify_content = JustifyContent::SpaceEvenly;
     }
 
-    if (computed.align_items == "flex-start" || computed.align_items == "start") {
+    if (computed.align_items == "flex-start") {
+        style.align_items = AlignItems::FlexStart;
+    } else if (computed.align_items == "start") {
         style.align_items = AlignItems::Start;
-    } else if (computed.align_items == "flex-end" || computed.align_items == "end") {
+    } else if (computed.align_items == "flex-end") {
+        style.align_items = AlignItems::FlexEnd;
+    } else if (computed.align_items == "end") {
         style.align_items = AlignItems::End;
     } else if (computed.align_items == "center") {
         style.align_items = AlignItems::Center;
@@ -506,9 +862,13 @@ Style NativeLayoutEngine::ConvertStyle(const ComputedStyle& computed) {
         style.align_items = AlignItems::Stretch;
     }
 
-    if (computed.align_content == "flex-start" || computed.align_content == "start") {
+    if (computed.align_content == "flex-start") {
+        style.align_content = AlignContent::FlexStart;
+    } else if (computed.align_content == "start") {
         style.align_content = AlignContent::Start;
-    } else if (computed.align_content == "flex-end" || computed.align_content == "end") {
+    } else if (computed.align_content == "flex-end") {
+        style.align_content = AlignContent::FlexEnd;
+    } else if (computed.align_content == "end") {
         style.align_content = AlignContent::End;
     } else if (computed.align_content == "center") {
         style.align_content = AlignContent::Center;
@@ -532,9 +892,53 @@ Style NativeLayoutEngine::ConvertStyle(const ComputedStyle& computed) {
         style.align_self = AlignSelf::Stretch;
     }
 
+    // Grid alignment (justify-items, justify-self)
+    if (computed.justify_items == "start") {
+        style.justify_items = AlignItems::Start;
+    } else if (computed.justify_items == "end") {
+        style.justify_items = AlignItems::End;
+    } else if (computed.justify_items == "center") {
+        style.justify_items = AlignItems::Center;
+    } else if (computed.justify_items == "stretch") {
+        style.justify_items = AlignItems::Stretch;
+    }
+
+    if (computed.justify_self == "start") {
+        style.justify_self = AlignSelf::Start;
+    } else if (computed.justify_self == "end") {
+        style.justify_self = AlignSelf::End;
+    } else if (computed.justify_self == "center") {
+        style.justify_self = AlignSelf::Center;
+    } else if (computed.justify_self == "stretch") {
+        style.justify_self = AlignSelf::Stretch;
+    }
+
     // Gap
     style.gap.width = ConvertLength(computed.column_gap);
     style.gap.height = ConvertLength(computed.row_gap);
+
+    // Overflow
+    auto parseOverflow = [](const std::string& val) -> Overflow {
+        if (val == "hidden") return Overflow::Hidden;
+        if (val == "scroll") return Overflow::Scroll;
+        if (val == "clip") return Overflow::Clip;
+        // Note: "auto" is not directly supported in Taffy's Overflow enum,
+        // treat it as Visible for layout purposes (scrollbar only appears when needed)
+        return Overflow::Visible;
+    };
+
+    // Use overflow-x/overflow-y if set, otherwise fall back to overflow
+    std::string overflow_x = !computed.overflow_x.empty() ? computed.overflow_x : computed.overflow;
+    std::string overflow_y = !computed.overflow_y.empty() ? computed.overflow_y : computed.overflow;
+
+    style.overflow.x = parseOverflow(overflow_x);
+    style.overflow.y = parseOverflow(overflow_y);
+
+    // Set scrollbar width when overflow is scroll
+    // For overflow: auto, we don't reserve space in layout (scrollbar appears only when needed)
+    if (style.overflow.x == Overflow::Scroll || style.overflow.y == Overflow::Scroll) {
+        style.scrollbar_width = RenderObject::GetScrollbarWidth();
+    }
 
     return style;
 }
@@ -843,10 +1247,12 @@ LayoutOutput NativeLayoutEngine::ComputeIFCLayout(NodeId node_id, const LayoutIn
     }
 
     // Resolve padding and border
+    // Note: CSS padding percentages are always relative to the containing block's WIDTH (not height)
+    // So we use container_width for all padding values
     float padding_left = style.padding.left.ToPx(container_width, style.font_size);
     float padding_right = style.padding.right.ToPx(container_width, style.font_size);
-    float padding_top = style.padding.top.ToPx(0, style.font_size);
-    float padding_bottom = style.padding.bottom.ToPx(0, style.font_size);
+    float padding_top = style.padding.top.ToPx(container_width, style.font_size);
+    float padding_bottom = style.padding.bottom.ToPx(container_width, style.font_size);
 
     float border_left = style.border_left_width;
     float border_right = style.border_right_width;
@@ -857,8 +1263,20 @@ LayoutOutput NativeLayoutEngine::ComputeIFCLayout(NodeId node_id, const LayoutIn
         border_left = border_right = border_top = border_bottom = border_width;
     }
 
-    // Calculate content area width (container width minus padding and border)
-    float content_width = container_width - padding_left - padding_right - border_left - border_right;
+    // Calculate scrollbar gutter for overflow: scroll or auto
+    float scrollbar_gutter_right = 0.0f;
+    float scrollbar_gutter_bottom = 0.0f;
+    std::string overflow_x = !style.overflow_x.empty() ? style.overflow_x : style.overflow;
+    std::string overflow_y = !style.overflow_y.empty() ? style.overflow_y : style.overflow;
+    if (overflow_y == "scroll") {
+        scrollbar_gutter_right = RenderObject::GetScrollbarWidth();
+    }
+    if (overflow_x == "scroll") {
+        scrollbar_gutter_bottom = RenderObject::GetScrollbarWidth();
+    }
+
+    // Calculate content area width (container width minus padding, border, and scrollbar)
+    float content_width = container_width - padding_left - padding_right - border_left - border_right - scrollbar_gutter_right;
     if (content_width < 0) content_width = 0;
 
     // Use IFC to compute content layout with the correct content width
@@ -869,11 +1287,58 @@ LayoutOutput NativeLayoutEngine::ComputeIFCLayout(NodeId node_id, const LayoutIn
     float total_height = result.total_height + padding_top + padding_bottom + border_top + border_bottom;
 
     // Apply known dimensions if provided (override calculated size)
+    float fixed_width = 0.0f;
+    float fixed_height = 0.0f;
     if (inputs.known_dimensions.width.has_value()) {
-        total_width = *inputs.known_dimensions.width;
+        fixed_width = *inputs.known_dimensions.width;
+        total_width = fixed_width;
     }
     if (inputs.known_dimensions.height.has_value()) {
-        total_height = *inputs.known_dimensions.height;
+        fixed_height = *inputs.known_dimensions.height;
+        total_height = fixed_height;
+    }
+
+    // For InherentSize mode, also check the node's own CSS width/height properties
+    // This is important for Grid children with explicit width/height
+    // Note: We use render_obj->GetComputedStyle() directly to get the latest style,
+    // because the node->style may be stale if the DOM was rebuilt
+    // IMPORTANT: Only apply CSS width/height if known_dimensions is NOT set!
+    // known_dimensions takes precedence (e.g., from flexbox target_size)
+    if (inputs.sizing_mode == SizingMode::InherentSize) {
+        const auto& computed = node->render_obj->GetComputedStyle();
+        // Check CSS width property - only if known_dimensions.width is not set
+        if (!inputs.known_dimensions.width.has_value()) {
+            if (computed.width.unit == CSSUnit::PX && computed.width.value > 0) {
+                total_width = computed.width.value;
+            } else if (computed.width.unit == CSSUnit::PERCENT && inputs.parent_size.width.has_value()) {
+                total_width = (computed.width.value / 100.0f) * (*inputs.parent_size.width);
+            }
+        }
+        // Check CSS height property - only if known_dimensions.height is not set
+        if (!inputs.known_dimensions.height.has_value()) {
+            if (computed.height.unit == CSSUnit::PX && computed.height.value > 0) {
+                total_height = computed.height.value;
+            } else if (computed.height.unit == CSSUnit::PERCENT && inputs.parent_size.height.has_value()) {
+                total_height = (computed.height.value / 100.0f) * (*inputs.parent_size.height);
+            }
+        }
+    }
+
+    // Handle overflow: auto - if content exceeds container, add scrollbar and relayout
+    if (overflow_y == "auto" && fixed_height > 0 && scrollbar_gutter_right == 0.0f) {
+        // Calculate content area height
+        float content_area_height = fixed_height - padding_top - padding_bottom - border_top - border_bottom;
+        // Check if content exceeds container height
+        if (result.total_height > content_area_height) {
+            // Need vertical scrollbar - reduce content width and relayout
+            scrollbar_gutter_right = RenderObject::GetScrollbarWidth();
+            content_width = container_width - padding_left - padding_right - border_left - border_right - scrollbar_gutter_right;
+            if (content_width < 0) content_width = 0;
+
+            // Clear IFC cache and relayout
+            ifc_layout_.ClearCache();
+            result = ifc_layout_.Layout(node->render_obj, content_width);
+        }
     }
 
     // Apply min/max constraints
@@ -937,12 +1402,18 @@ LayoutOutput NativeLayoutEngine::MeasureLeafNode(NodeId node_id, const LayoutInp
         float available_width = 0.0f;
         bool should_wrap = false;
 
-        if (inputs.available_space.width.type == AvailableSpace::Type::Definite) {
-            available_width = inputs.available_space.width.value;
-            should_wrap = true;
-        } else if (inputs.available_space.width.type == AvailableSpace::Type::MinContent) {
-            available_width = 0;
-            should_wrap = true;
+        // Check white-space property - nowrap and pre disable wrapping
+        const std::string& white_space = style.white_space;
+        bool wrap_allowed = (white_space != "nowrap" && white_space != "pre");
+
+        if (wrap_allowed) {
+            if (inputs.available_space.width.type == AvailableSpace::Type::Definite) {
+                available_width = inputs.available_space.width.value;
+                should_wrap = true;
+            } else if (inputs.available_space.width.type == AvailableSpace::Type::MinContent) {
+                available_width = 0;
+                should_wrap = true;
+            }
         }
 
         LayoutOutput output;
@@ -1085,6 +1556,8 @@ void NativeLayoutEngine::SetUnroundedLayout(NodeId node, const Layout& layout) {
         // Also update x, y for backward compatibility
         it->second.x = layout.location.x;
         it->second.y = layout.location.y;
+        // Also update output.size for ReadLayoutResults
+        it->second.output.size = layout.size;
     }
 }
 

@@ -1,0 +1,201 @@
+{
+  "_meta": {
+    "description": "Chrome 浏览器布局参考数据 - 用于 MBink 布局对比验证 (使用元素 id 进行精确匹配)",
+    "generatedAt": "2025-12-06T10:00:00.000Z",
+    "browserViewport": { "width": 453, "height": 900 },
+    "sectionWidth": 398,
+    "bodyWidth": 438,
+    "tolerances": { "width": 1, "height": 3, "x": 1, "y": 3 },
+    "note": "高度容差增加到3px以适应字体渲染差异"
+  },
+  "BM-01": { "id": "BM-01", "name": "固定宽高 (200x100)", "elements": {
+    "BM-01-box": { "x": 11, "y": 35, "width": 200, "height": 100 }
+  }},
+  "BM-02": { "id": "BM-02", "name": "百分比宽度", "elements": {
+    "BM-02-A": { "relX": 11, "relY": 35, "width": 188, "height": 38.5 },
+    "BM-02-B": { "relX": 11, "relY": 78.5, "width": 282, "height": 38.5 },
+    "BM-02-C": { "relX": 11, "relY": 122, "width": 376, "height": 38.5 }
+  }},
+  "BM-03": { "id": "BM-03", "name": "Margin 测试", "elements": {
+    "BM-03-A": { "relX": 21, "relY": 45, "width": 356, "height": 38.5 },
+    "BM-03-B": { "relX": 21, "relY": 113.5, "width": 356, "height": 38.5 },
+    "BM-03-C": { "relX": 61, "relY": 172, "width": 326, "height": 38.5 }
+  }},
+  "BM-07": { "id": "BM-07", "name": "box-sizing: border-box", "elements": {
+    "BM-07-wrap": { "x": 11, "y": 35, "width": 376, "height": 81 },
+    "BM-07-box": { "x": 5, "y": 5, "width": 200, "height": 71 }
+  }},
+  "BM-08": { "id": "BM-08", "name": "box-sizing: content-box", "elements": {
+    "BM-08-wrap": { "x": 11, "y": 35, "width": 376, "height": 81 },
+    "BM-08-box": { "x": 5, "y": 5, "width": 250, "height": 71 }
+  }},
+  "BM-09": { "id": "BM-09", "name": "margin: auto 水平居中", "elements": {
+    "BM-09-wrap": { "x": 11, "y": 35, "width": 376, "height": 51 },
+    "BM-09-box": { "x": 93, "y": 5, "width": 200, "height": 41 }
+  }},
+  "BM-10": { "id": "BM-10", "name": "margin 负值", "elements": {
+    "BM-10-wrap": { "x": 11, "y": 35, "width": 376, "height": 81 },
+    "BM-10-box": { "x": 10, "y": 20, "width": 346, "height": 41 }
+  }},
+  "BL-04": { "id": "BL-04", "name": "display: inline-block", "elements": {
+    "BL-04-wrap": { "x": 11, "y": 35, "width": 376, "height": 68.4 },
+    "BL-04-A": { "x": 5, "y": 5, "width": 100, "height": 58.4 },
+    "BL-04-B": { "x": 105, "y": 5, "width": 100, "height": 58.4 },
+    "BL-04-C": { "x": 205, "y": 5, "width": 100, "height": 58.4 }
+  }},
+  "BL-10": { "id": "BL-10", "name": "嵌套块级元素", "elements": {
+    "BL-10-L1": { "x": 21, "y": 45, "width": 356, "height": 128.5 },
+    "BL-10-L2": { "x": 25, "y": 25, "width": 306, "height": 78.5 },
+    "BL-10-L3": { "x": 15, "y": 15, "width": 276, "height": 48.5 },
+    "BL-10-box": { "x": 10, "y": 10, "width": 256, "height": 28.5 }
+  }},
+  "FL-01": { "id": "FL-01", "name": "flex-direction: row", "elements": {
+    "FL-01-container": { "x": 11, "y": 35, "width": 400, "height": 61 },
+    "FL-01-A": { "x": 10, "y": 10, "width": 80, "height": 41 },
+    "FL-01-B": { "x": 100, "y": 10, "width": 80, "height": 41 },
+    "FL-01-C": { "x": 190, "y": 10, "width": 80, "height": 41 }
+  }},
+  "FL-02": { "id": "FL-02", "name": "justify-content: flex-start", "elements": {
+    "FL-02-container": { "x": 11, "y": 35, "width": 400, "height": 61 },
+    "FL-02-A": { "x": 10, "y": 10, "width": 60, "height": 41 },
+    "FL-02-B": { "x": 80, "y": 10, "width": 60, "height": 41 },
+    "FL-02-C": { "x": 150, "y": 10, "width": 60, "height": 41 }
+  }},
+  "FL-03": { "id": "FL-03", "name": "justify-content: center", "elements": {
+    "FL-03-container": { "x": 11, "y": 35, "width": 400, "height": 61 },
+    "FL-03-A": { "x": 100, "y": 10, "width": 60, "height": 41 },
+    "FL-03-B": { "x": 170, "y": 10, "width": 60, "height": 41 },
+    "FL-03-C": { "x": 240, "y": 10, "width": 60, "height": 41 }
+  }},
+  "FL-04": { "id": "FL-04", "name": "justify-content: flex-end", "elements": {
+    "FL-04-container": { "x": 11, "y": 35, "width": 400, "height": 61 },
+    "FL-04-A": { "x": 190, "y": 10, "width": 60, "height": 41 },
+    "FL-04-B": { "x": 260, "y": 10, "width": 60, "height": 41 },
+    "FL-04-C": { "x": 330, "y": 10, "width": 60, "height": 41 }
+  }},
+  "FL-05": { "id": "FL-05", "name": "justify-content: space-between", "elements": {
+    "FL-05-container": { "x": 11, "y": 35, "width": 400, "height": 61 },
+    "FL-05-A": { "x": 10, "y": 10, "width": 60, "height": 41 },
+    "FL-05-B": { "x": 170, "y": 10, "width": 60, "height": 41 },
+    "FL-05-C": { "x": 330, "y": 10, "width": 60, "height": 41 }
+  }},
+  "FL-08": { "id": "FL-08", "name": "align-items: flex-start", "elements": {
+    "FL-08-container": { "x": 11, "y": 35, "width": 376, "height": 120 },
+    "FL-08-A": { "x": 10, "y": 10, "width": 30.7, "height": 41 },
+    "FL-08-B": { "x": 50.7, "y": 10, "width": 30.7, "height": 50 },
+    "FL-08-C": { "x": 91.3, "y": 10, "width": 31.6, "height": 80 }
+  }},
+  "FL-09": { "id": "FL-09", "name": "align-items: center", "elements": {
+    "FL-09-container": { "x": 11, "y": 35, "width": 376, "height": 120 },
+    "FL-09-A": { "x": 10, "y": 39.5, "width": 30.7, "height": 41 },
+    "FL-09-B": { "x": 50.7, "y": 35, "width": 30.7, "height": 50 },
+    "FL-09-C": { "x": 91.3, "y": 20, "width": 31.6, "height": 80 }
+  }},
+  "FL-10": { "id": "FL-10", "name": "align-items: flex-end", "elements": {
+    "FL-10-container": { "x": 11, "y": 35, "width": 376, "height": 120 },
+    "FL-10-A": { "x": 10, "y": 69, "width": 30.7, "height": 41 },
+    "FL-10-B": { "x": 50.7, "y": 60, "width": 30.7, "height": 50 },
+    "FL-10-C": { "x": 91.3, "y": 30, "width": 31.6, "height": 80 }
+  }},
+  "FL-11": { "id": "FL-11", "name": "align-items: stretch", "elements": {
+    "FL-11-container": { "x": 11, "y": 35, "width": 376, "height": 120 },
+    "FL-11-A": { "x": 10, "y": 10, "width": 30.7, "height": 100 },
+    "FL-11-B": { "x": 50.7, "y": 10, "width": 30.7, "height": 100 },
+    "FL-11-C": { "x": 91.3, "y": 10, "width": 31.6, "height": 100 }
+  }},
+  "FL-13": { "id": "FL-13", "name": "flex-wrap: wrap", "elements": {
+    "FL-13-container": { "x": 11, "y": 35, "width": 300, "height": 112 },
+    "FL-13-A": { "x": 10, "y": 10, "width": 100, "height": 41 },
+    "FL-13-B": { "x": 120, "y": 10, "width": 100, "height": 41 },
+    "FL-13-C": { "x": 10, "y": 61, "width": 100, "height": 41, "_note": "y=10+41+10gap=61" },
+    "FL-13-D": { "x": 120, "y": 61, "width": 100, "height": 41 }
+  }},
+  "FL-14": { "id": "FL-14", "name": "flex-wrap: wrap-reverse", "elements": {
+    "FL-14-container": { "x": 11, "y": 35, "width": 300, "height": 112 },
+    "FL-14-A": { "x": 10, "y": 61, "width": 100, "height": 41, "_note": "wrap-reverse: 第一行在底部" },
+    "FL-14-B": { "x": 120, "y": 61, "width": 100, "height": 41 },
+    "FL-14-C": { "x": 10, "y": 10, "width": 100, "height": 41, "_note": "wrap-reverse: 第二行在顶部" },
+    "FL-14-D": { "x": 120, "y": 10, "width": 100, "height": 41 }
+  }},
+  "FL-15": { "id": "FL-15", "name": "gap: 20px", "elements": {
+    "FL-15-container": { "x": 11, "y": 35, "width": 400, "height": 61 },
+    "FL-15-A": { "x": 10, "y": 10, "width": 80, "height": 41 },
+    "FL-15-B": { "x": 110, "y": 10, "width": 80, "height": 41, "_note": "x=10+80+20gap=110" },
+    "FL-15-C": { "x": 210, "y": 10, "width": 80, "height": 41 }
+  }},
+  "FL-16": { "id": "FL-16", "name": "row-gap: 10px; column-gap: 30px", "elements": {
+    "FL-16-container": { "x": 11, "y": 35, "width": 280, "height": 112 },
+    "FL-16-A": { "x": 10, "y": 10, "width": 100, "height": 41 },
+    "FL-16-B": { "x": 140, "y": 10, "width": 100, "height": 41, "_note": "x=10+100+30col-gap=140" },
+    "FL-16-C": { "x": 10, "y": 61, "width": 100, "height": 41, "_note": "y=10+41+10row-gap=61" },
+    "FL-16-D": { "x": 140, "y": 61, "width": 100, "height": 41 }
+  }},
+  "FL-22": { "id": "FL-22", "name": "align-content: center", "elements": {
+    "FL-22-container": { "x": 11, "y": 35, "width": 250, "height": 150 },
+    "FL-22-A": { "x": 10, "y": 31.5, "width": 100, "height": 41, "_note": "align-content:center垂直居中" },
+    "FL-22-B": { "x": 115, "y": 31.5, "width": 100, "height": 41 },
+    "FL-22-C": { "x": 10, "y": 77.5, "width": 100, "height": 41 },
+    "FL-22-D": { "x": 115, "y": 77.5, "width": 100, "height": 41 }
+  }},
+  "FL-23": { "id": "FL-23", "name": "order", "elements": {
+    "FL-23-container": { "x": 11, "y": 35, "width": 376, "height": 61 },
+    "FL-23-A": { "x": 176.7, "y": 10, "width": 70.7, "height": 41 },
+    "FL-23-B": { "x": 10, "y": 10, "width": 76, "height": 41 },
+    "FL-23-C": { "x": 96, "y": 10, "width": 70.7, "height": 41 }
+  }},
+  "FL-24": { "id": "FL-24", "name": "flex-direction: row-reverse", "elements": {
+    "FL-24-container": { "x": 11, "y": 35, "width": 376, "height": 61 },
+    "FL-24-A": { "x": 335.3, "y": 10, "width": 30.7, "height": 41 },
+    "FL-24-B": { "x": 294.7, "y": 10, "width": 30.7, "height": 41 },
+    "FL-24-C": { "x": 253.1, "y": 10, "width": 31.6, "height": 41 }
+  }},
+  "FL-25": { "id": "FL-25", "name": "flex-direction: column-reverse", "elements": {
+    "FL-25-container": { "x": 11, "y": 35, "width": 376, "height": 150 },
+    "FL-25-A": { "x": 10, "y": 99, "width": 356, "height": 41 },
+    "FL-25-B": { "x": 10, "y": 48, "width": 356, "height": 41 },
+    "FL-25-C": { "x": 10, "y": -3, "width": 356, "height": 41, "_note": "负坐标是正确的，因为容器高度不足" }
+  }},
+  "GR-01": { "id": "GR-01", "name": "基础 Grid (1fr 1fr)", "elements": {
+    "GR-01-container": { "x": 11, "y": 35, "width": 376, "height": 112 },
+    "GR-01-A": { "x": 10, "y": 10, "width": 173, "height": 41 },
+    "GR-01-B": { "x": 193, "y": 10, "width": 173, "height": 41 },
+    "GR-01-C": { "x": 10, "y": 61, "width": 173, "height": 41 },
+    "GR-01-D": { "x": 193, "y": 61, "width": 173, "height": 41 }
+  }},
+  "GR-11": { "id": "GR-11", "name": "grid-row: span 2", "elements": {
+    "GR-11-container": { "x": 11, "y": 35, "width": 376, "height": 163 },
+    "GR-11-A": { "x": 10, "y": 10, "width": 173, "height": 92, "_note": "span 2 高度=41+10(gap)+41" },
+    "GR-11-B": { "x": 193, "y": 10, "width": 173, "height": 41 },
+    "GR-11-C": { "x": 193, "y": 61, "width": 173, "height": 41 },
+    "GR-11-D": { "x": 10, "y": 112, "width": 173, "height": 41 }
+  }},
+  "GR-14": { "id": "GR-14", "name": "justify-items: center", "elements": {
+    "GR-14-container": { "x": 11, "y": 35, "width": 376, "height": 61 },
+    "GR-14-A": { "x": 66.5, "y": 10, "width": 60, "height": 41, "_note": "居中: (173-60)/2+10=66.5" },
+    "GR-14-B": { "x": 249.5, "y": 10, "width": 60, "height": 41 }
+  }},
+  "PS-01": { "id": "PS-01", "name": "position: relative", "elements": {
+    "PS-01-wrap": { "x": 11, "y": 35, "width": 376, "height": 81 },
+    "PS-01-box": { "x": 40, "y": 30, "width": 336, "height": 41, "_note": "left:20+padding:20=40, top:10+padding:20=30" }
+  }},
+  "PS-03": { "id": "PS-03", "name": "position: absolute (四角)", "elements": {
+    "PS-03-wrap": { "x": 11, "y": 35, "width": 376, "height": 120 },
+    "PS-03-TL": { "x": 5, "y": 5, "width": 50, "height": 41 },
+    "PS-03-TR": { "x": 321, "y": 5, "width": 50, "height": 41 },
+    "PS-03-BL": { "x": 5, "y": 74, "width": 50, "height": 41 },
+    "PS-03-BR": { "x": 321, "y": 74, "width": 50, "height": 41 }
+  }},
+  "TX-01": { "id": "TX-01", "name": "text-align: center", "elements": {
+    "TX-01-box": { "x": 11, "y": 35, "width": 300, "height": 41 }
+  }},
+  "TX-10": { "id": "TX-10", "name": "white-space: pre", "elements": {
+    "TX-10-box": { "x": 11, "y": 35, "width": 376, "height": 75 }
+  }},
+  "TX-12": { "id": "TX-12", "name": "vertical-align", "elements": {
+    "TX-12-box": { "x": 11, "y": 35, "width": 376, "height": 80 },
+    "TX-12-top": { "relY": 10, "width": 30, "height": 30 },
+    "TX-12-middle": { "relY": 25, "width": 30, "height": 30 },
+    "TX-12-bottom": { "relY": 40, "width": 30, "height": 30 }
+  }}
+}
+

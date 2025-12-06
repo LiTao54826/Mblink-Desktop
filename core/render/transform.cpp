@@ -115,25 +115,25 @@ std::optional<Transform> CSSTransform::ParseFunction(const std::string& func_nam
 
 std::optional<Transform> CSSTransform::ParseTranslate(const std::string& args) {
     auto parts = CSSValue::Split(args, ',');
-    
+
     if (parts.empty() || parts.size() > 2) {
         return std::nullopt;
     }
-    
-    Transform transform(TransformType::TRANSLATE, {});
-    
-    // 解析 X 值
+
+    Transform transform(TransformType::TRANSLATE);
+
+    // 解析 X 值 - 保留 CSSLength 以支持百分比
     auto x_length = CSSValue::ParseLength(parts[0]);
-    transform.values.push_back(x_length.ToPx(0.0f, 16.0f));
-    
-    // 解析 Y 值（如果有）
+    transform.lengths.push_back(x_length);
+
+    // 解析 Y 值（如果有）- 保留 CSSLength 以支持百分比
     if (parts.size() == 2) {
         auto y_length = CSSValue::ParseLength(parts[1]);
-        transform.values.push_back(y_length.ToPx(0.0f, 16.0f));
+        transform.lengths.push_back(y_length);
     } else {
-        transform.values.push_back(0.0f);  // 默认 Y = 0
+        transform.lengths.push_back(CSSLength(0.0f, CSSUnit::PX));  // 默认 Y = 0
     }
-    
+
     return transform;
 }
 
@@ -155,22 +155,22 @@ std::optional<Transform> CSSTransform::ParseRotate(const std::string& args) {
         angle = CSSValue::ParseFloat(trimmed);
     }
     
-    return Transform(TransformType::ROTATE, {angle});
+    return Transform(TransformType::ROTATE, std::vector<float>{angle});
 }
 
 std::optional<Transform> CSSTransform::ParseScale(const std::string& args) {
     auto parts = CSSValue::Split(args, ',');
-    
+
     if (parts.empty() || parts.size() > 2) {
         return std::nullopt;
     }
-    
-    Transform transform(TransformType::SCALE, {});
-    
+
+    Transform transform(TransformType::SCALE);
+
     // 解析 X 缩放
     float scale_x = CSSValue::ParseFloat(parts[0]);
     transform.values.push_back(scale_x);
-    
+
     // 解析 Y 缩放（如果有）
     if (parts.size() == 2) {
         float scale_y = CSSValue::ParseFloat(parts[1]);
@@ -178,23 +178,23 @@ std::optional<Transform> CSSTransform::ParseScale(const std::string& args) {
     } else {
         transform.values.push_back(scale_x);  // 默认 Y = X（等比缩放）
     }
-    
+
     return transform;
 }
 
 std::optional<Transform> CSSTransform::ParseSkew(const std::string& args) {
     auto parts = CSSValue::Split(args, ',');
-    
+
     if (parts.empty() || parts.size() > 2) {
         return std::nullopt;
     }
-    
-    Transform transform(TransformType::SKEW, {});
-    
+
+    Transform transform(TransformType::SKEW);
+
     // 解析 X 倾斜角度
     float skew_x = CSSValue::ParseFloat(parts[0]);
     transform.values.push_back(skew_x);
-    
+
     // 解析 Y 倾斜角度（如果有）
     if (parts.size() == 2) {
         float skew_y = CSSValue::ParseFloat(parts[1]);
@@ -202,18 +202,18 @@ std::optional<Transform> CSSTransform::ParseSkew(const std::string& args) {
     } else {
         transform.values.push_back(0.0f);  // 默认 Y = 0
     }
-    
+
     return transform;
 }
 
 std::optional<Transform> CSSTransform::ParseMatrix(const std::string& args) {
     auto parts = CSSValue::Split(args, ',');
-    
+
     if (parts.size() != 6) {
         return std::nullopt;  // matrix 需要 6 个参数
     }
-    
-    Transform transform(TransformType::MATRIX, {});
+
+    Transform transform(TransformType::MATRIX);
     
     for (const auto& part : parts) {
         float value = CSSValue::ParseFloat(part);
@@ -246,8 +246,28 @@ SkMatrix CSSTransform::ToSkMatrix(const SkRect& rect, const TransformOrigin& ori
 
         switch (transform.type) {
             case TransformType::TRANSLATE:
-                if (transform.values.size() >= 2) {
-                    t.setTranslate(transform.values[0], transform.values[1]);
+                // translate 使用 lengths 存储，支持百分比
+                // translate(-50%, -50%) 中百分比基于元素自身尺寸
+                if (transform.lengths.size() >= 2) {
+                    float tx = 0.0f, ty = 0.0f;
+                    const auto& x_len = transform.lengths[0];
+                    const auto& y_len = transform.lengths[1];
+
+                    // X 方向：百分比基于元素宽度
+                    if (x_len.unit == CSSUnit::PERCENT) {
+                        tx = rect.width() * (x_len.value / 100.0f);
+                    } else {
+                        tx = x_len.ToPx(rect.width(), 16.0f);
+                    }
+
+                    // Y 方向：百分比基于元素高度
+                    if (y_len.unit == CSSUnit::PERCENT) {
+                        ty = rect.height() * (y_len.value / 100.0f);
+                    } else {
+                        ty = y_len.ToPx(rect.height(), 16.0f);
+                    }
+
+                    t.setTranslate(tx, ty);
                 }
                 break;
 

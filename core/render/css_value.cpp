@@ -16,6 +16,12 @@ namespace lightui {
 // ========== CSSLength 实现 ==========
 
 float CSSLength::ToPx(float base_value, float font_size, float root_font_size) const {
+    // 处理 calc() 表达式
+    if (is_calc) {
+        float percent_value = base_value * (calc_percent / 100.0f);
+        return percent_value + calc_px;
+    }
+
     switch (unit) {
         case CSSUnit::PX:
             return value;
@@ -65,41 +71,46 @@ std::vector<std::string> CSSValue::Split(const std::string& str, char delimiter)
 
 CSSLength CSSValue::ParseLength(const std::string& str) {
     std::string trimmed = Trim(str);
-    
+
     if (trimmed.empty()) {
         return CSSLength(0.0f, CSSUnit::PX);
     }
-    
+
     // 检查是否为 auto
     std::string lower = trimmed;
     std::transform(lower.begin(), lower.end(), lower.begin(), ::tolower);
     if (lower == "auto") {
         return CSSLength(0.0f, CSSUnit::AUTO);
     }
-    
+
+    // 检查是否为 calc() 表达式
+    if (lower.find("calc(") == 0 && lower.back() == ')') {
+        return ParseCalc(trimmed);
+    }
+
     // 查找单位
     size_t i = 0;
     while (i < trimmed.length() && (std::isdigit(trimmed[i]) || trimmed[i] == '.' || trimmed[i] == '-')) {
         i++;
     }
-    
+
     if (i == 0) {
         return CSSLength(0.0f, CSSUnit::PX);
     }
-    
+
     // 解析数值
     std::string value_str = trimmed.substr(0, i);
     float value = ParseFloat(value_str, 0.0f);
-    
+
     // 解析单位
     if (i >= trimmed.length()) {
         // 无单位，默认为像素
         return CSSLength(value, CSSUnit::PX);
     }
-    
+
     std::string unit_str = trimmed.substr(i);
     std::transform(unit_str.begin(), unit_str.end(), unit_str.begin(), ::tolower);
-    
+
     if (unit_str == "px") {
         return CSSLength(value, CSSUnit::PX);
     } else if (unit_str == "%") {
@@ -112,6 +123,89 @@ CSSLength CSSValue::ParseLength(const std::string& str) {
         // 未知单位，默认为像素
         return CSSLength(value, CSSUnit::PX);
     }
+}
+
+CSSLength CSSValue::ParseCalc(const std::string& str) {
+    // 解析 calc() 表达式
+    // 支持格式: calc(100% - 40px), calc(50% + 20px), calc(100% - 2em)
+
+    // 提取括号内的内容
+    size_t start = str.find('(');
+    size_t end = str.rfind(')');
+    if (start == std::string::npos || end == std::string::npos || end <= start) {
+        return CSSLength(0.0f, CSSUnit::PX);
+    }
+
+    std::string expr = Trim(str.substr(start + 1, end - start - 1));
+
+    // 查找运算符 (+ 或 -)
+    float percent_value = 0.0f;
+    float px_value = 0.0f;
+
+    // 简单解析: 查找 + 或 - 运算符
+    size_t op_pos = std::string::npos;
+    char op = '+';
+
+    // 跳过开头的负号
+    size_t search_start = 0;
+    if (!expr.empty() && expr[0] == '-') {
+        search_start = 1;
+    }
+
+    // 查找运算符
+    for (size_t i = search_start; i < expr.length(); ++i) {
+        if (expr[i] == '+' || expr[i] == '-') {
+            // 确保不是数字的一部分 (如 1e-5)
+            if (i > 0 && (expr[i-1] == 'e' || expr[i-1] == 'E')) {
+                continue;
+            }
+            op_pos = i;
+            op = expr[i];
+            break;
+        }
+    }
+
+    if (op_pos == std::string::npos) {
+        // 没有运算符，只有一个值
+        CSSLength single = ParseLength(expr);
+        if (single.unit == CSSUnit::PERCENT) {
+            return CSSLength::Calc(single.value, 0.0f);
+        } else {
+            return CSSLength::Calc(0.0f, single.ToPx());
+        }
+    }
+
+    // 解析两个操作数
+    std::string left = Trim(expr.substr(0, op_pos));
+    std::string right = Trim(expr.substr(op_pos + 1));
+
+    CSSLength left_len = ParseLength(left);
+    CSSLength right_len = ParseLength(right);
+
+    // 根据单位类型分配到 percent 或 px
+    if (left_len.unit == CSSUnit::PERCENT) {
+        percent_value = left_len.value;
+    } else {
+        px_value = left_len.ToPx();
+    }
+
+    float right_px = 0.0f;
+    if (right_len.unit == CSSUnit::PERCENT) {
+        if (op == '+') {
+            percent_value += right_len.value;
+        } else {
+            percent_value -= right_len.value;
+        }
+    } else {
+        right_px = right_len.ToPx();
+        if (op == '+') {
+            px_value += right_px;
+        } else {
+            px_value -= right_px;
+        }
+    }
+
+    return CSSLength::Calc(percent_value, px_value);
 }
 
 SkColor CSSValue::ParseColor(const std::string& str) {

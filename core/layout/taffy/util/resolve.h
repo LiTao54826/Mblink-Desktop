@@ -29,8 +29,12 @@ inline std::optional<float> MaybeResolve(
         case LengthTag::Length:
             return value.value;
         case LengthTag::Percent:
-            return context.has_value() 
+            return context.has_value()
                 ? std::optional<float>(*context * value.value)
+                : std::nullopt;
+        case LengthTag::Calc:
+            return context.has_value()
+                ? std::optional<float>(*context * value.value + value.calc_px)
                 : std::nullopt;
         default:
             return std::nullopt;
@@ -46,8 +50,12 @@ inline std::optional<float> MaybeResolve(
         case LengthTag::Length:
             return value.value;
         case LengthTag::Percent:
-            return context.has_value() 
+            return context.has_value()
                 ? std::optional<float>(*context * value.value)
+                : std::nullopt;
+        case LengthTag::Calc:
+            return context.has_value()
+                ? std::optional<float>(*context * value.value + value.calc_px)
                 : std::nullopt;
         case LengthTag::Auto:
         default:
@@ -279,6 +287,7 @@ inline Size<std::optional<float>> MaybeOr(
 }
 
 /// Max of two optional sizes
+/// Note: If left-hand value is None, returns None (following Taffy's MaybeMath semantics)
 inline Size<std::optional<float>> MaybeMaxOpt(
     Size<std::optional<float>> a,
     Size<std::optional<float>> b
@@ -287,7 +296,9 @@ inline Size<std::optional<float>> MaybeMaxOpt(
         if (x.has_value() && y.has_value()) {
             return f32_max(*x, *y);
         }
-        return x.has_value() ? x : y;
+        // If x (left-hand) is None, return None (not y)
+        // If x has value but y is None, return x
+        return x;
     };
     return Size<std::optional<float>>{
         max_opt(a.width, b.width),

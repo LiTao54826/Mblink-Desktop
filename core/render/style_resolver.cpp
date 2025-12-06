@@ -1088,6 +1088,12 @@ void StyleResolver::ParseStyleProperty(ComputedStyle& style,
     if (property == "display") {
         style.display = ParseDisplay(resolved_value);
     }
+    else if (property == "box-sizing") {
+        // box-sizing: content-box | border-box
+        if (resolved_value == "border-box" || resolved_value == "content-box") {
+            style.box_sizing = resolved_value;
+        }
+    }
     else if (property == "width") {
         style.width = CSSValue::ParseLength(resolved_value);
     }
@@ -1434,6 +1440,16 @@ void StyleResolver::ParseStyleProperty(ComputedStyle& style,
             style.opacity = 1.0f;
         }
     }
+    else if (property == "transform") {
+        style.transform_str = resolved_value;
+        style.transform = CSSTransform::Parse(resolved_value);
+    }
+    else if (property == "transform-origin") {
+        auto origin = ParseTransformOrigin(resolved_value);
+        if (origin.has_value()) {
+            style.transform_origin = *origin;
+        }
+    }
     else if (property == "transition") {
         style.transitions = CSSTransition::Parse(resolved_value);
     }
@@ -1461,6 +1477,12 @@ void StyleResolver::ParseStyleProperty(ComputedStyle& style,
     }
     else if (property == "align-self") {
         style.align_self = resolved_value;
+    }
+    else if (property == "justify-items") {
+        style.justify_items = resolved_value;
+    }
+    else if (property == "justify-self") {
+        style.justify_self = resolved_value;
     }
     else if (property == "flex") {
         // 解析 flex 简写属性
@@ -2070,29 +2092,65 @@ std::shared_ptr<RenderObject> RenderTreeBuilder::CreateRenderObjectForText(
 
     std::string text_data = text->GetData();
 
-    // 跳过纯空白文本节点
-    if (text_data.find_first_not_of(" \t\n\r") == std::string::npos) {
+    // 检查父元素的 white-space 属性，决定是否保留换行符
+    bool preserve_newlines = false;
+    if (parent_style) {
+        const std::string& ws = parent_style->white_space;
+        preserve_newlines = (ws == "pre" || ws == "pre-wrap" || ws == "pre-line");
+    }
+
+    // 跳过纯空白文本节点（但如果 white-space: pre 则不跳过）
+    if (!preserve_newlines && text_data.find_first_not_of(" \t\n\r") == std::string::npos) {
         return nullptr;
     }
 
-    // 规范化空白字符：将连续的空白字符（包括换行）替换为单个空格
-    std::string normalized_text;
-    bool in_whitespace = false;
-    for (char c : text_data) {
-        if (c == ' ' || c == '\t' || c == '\n' || c == '\r') {
-            if (!in_whitespace) {
-                normalized_text += ' ';
-                in_whitespace = true;
-            }
+    std::string final_text;
+    if (preserve_newlines) {
+        // 保留换行符，但根据 white-space 的不同处理空格/制表符
+        // pre: 保留所有空白字符
+        // pre-wrap: 保留换行，但合并空格
+        // pre-line: 保留换行，合并空格
+        const std::string& ws = parent_style ? parent_style->white_space : "normal";
+        if (ws == "pre") {
+            // 完全保留原始文本
+            final_text = text_data;
         } else {
-            normalized_text += c;
-            in_whitespace = false;
+            // pre-wrap 或 pre-line: 保留换行，合并连续空格
+            bool in_space = false;
+            for (char c : text_data) {
+                if (c == '\n') {
+                    final_text += c;
+                    in_space = false;
+                } else if (c == ' ' || c == '\t' || c == '\r') {
+                    if (!in_space) {
+                        final_text += ' ';
+                        in_space = true;
+                    }
+                } else {
+                    final_text += c;
+                    in_space = false;
+                }
+            }
+        }
+    } else {
+        // 规范化空白字符：将连续的空白字符（包括换行）替换为单个空格
+        bool in_whitespace = false;
+        for (char c : text_data) {
+            if (c == ' ' || c == '\t' || c == '\n' || c == '\r') {
+                if (!in_whitespace) {
+                    final_text += ' ';
+                    in_whitespace = true;
+                }
+            } else {
+                final_text += c;
+                in_whitespace = false;
+            }
         }
     }
 
     auto render_obj = std::make_shared<RenderText>();
     render_obj->SetNode(text);
-    render_obj->SetText(normalized_text);
+    render_obj->SetText(final_text);
 
     // 文本节点只继承可继承的样式属性，不继承定位属性
     ComputedStyle text_style;

@@ -8,6 +8,7 @@
 
 #include "block.h"
 #include <algorithm>
+#include <iostream>
 
 namespace lightui {
 
@@ -133,6 +134,8 @@ LayoutOutput ComputeBlockLayoutInner(
     auto padding = ResolveOrZero(style.padding, inputs.parent_size.width);
     auto border = ResolveOrZero(style.border, inputs.parent_size.width);
     auto scrollbar_gutter = ComputeScrollbarGutter(style.overflow, style.scrollbar_width);
+
+
     
     Rect<float> padding_border = {
         padding.left + border.left,
@@ -185,15 +188,17 @@ LayoutOutput ComputeBlockLayoutInner(
     max_size = MaybeAdd(max_size, box_sizing_adjustment);
     
     // Determine margin collapsing behavior
+    // Sticky behaves like relative for margin collapsing
+    bool is_in_flow_position = (style.position == Position::Relative || style.position == Position::Sticky);
     Line<bool> own_margins_collapse_with_children = {
         inputs.vertical_margins_are_collapsible.start &&
         style.overflow.x != Overflow::Scroll && style.overflow.y != Overflow::Scroll &&
-        style.position == Position::Relative &&
+        is_in_flow_position &&
         padding.top == 0.0f && border.top == 0.0f,
 
         inputs.vertical_margins_are_collapsible.end &&
         style.overflow.x != Overflow::Scroll && style.overflow.y != Overflow::Scroll &&
-        style.position == Position::Relative &&
+        is_in_flow_position &&
         padding.bottom == 0.0f && border.bottom == 0.0f &&
         !size.height.has_value()
     };
@@ -207,6 +212,7 @@ LayoutOutput ComputeBlockLayoutInner(
     // For block elements with width: auto, use available width (not intrinsic width)
     // This is the CSS block formatting context behavior
     float container_outer_width;
+
     if (inputs.known_dimensions.width.has_value()) {
         container_outer_width = *inputs.known_dimensions.width;
     } else if (inputs.available_space.width.IsDefinite() &&
@@ -405,7 +411,8 @@ float DetermineContentBasedContainerWidth(
     float max_child_width = 0.0f;
 
     for (const auto& item : items) {
-        if (item.position == Position::Absolute) {
+        // Skip out-of-flow elements (absolute and fixed)
+        if (item.position == Position::Absolute || item.position == Position::Fixed) {
             continue;
         }
 
@@ -479,7 +486,8 @@ PerformFinalLayoutOnInFlowChildren(
     bool is_collapsing_with_first_margin_set = true;
 
     for (auto& item : items) {
-        if (item.position == Position::Absolute) {
+        // Handle out-of-flow elements (absolute and fixed)
+        if (item.position == Position::Absolute || item.position == Position::Fixed) {
             item.static_position = Point<float>{
                 resolved_content_box_inset.left,
                 y_offset_for_absolute
@@ -591,6 +599,26 @@ PerformFinalLayoutOnInFlowChildren(
             }
         }
 
+        // Apply relative/sticky positioning (inset offsets)
+        // Sticky behaves like relative for initial layout
+        if (item.position == Position::Relative || item.position == Position::Sticky) {
+            auto inset_left = MaybeResolve(item.inset.left, std::optional<float>(container_outer_width));
+            auto inset_right = MaybeResolve(item.inset.right, std::optional<float>(container_outer_width));
+            auto inset_top = MaybeResolve(item.inset.top, std::optional<float>(container_outer_width));
+            auto inset_bottom = MaybeResolve(item.inset.bottom, std::optional<float>(container_outer_width));
+
+            if (inset_left.has_value()) {
+                location.x += *inset_left;
+            } else if (inset_right.has_value()) {
+                location.x -= *inset_right;
+            }
+            if (inset_top.has_value()) {
+                location.y += *inset_top;
+            } else if (inset_bottom.has_value()) {
+                location.y -= *inset_bottom;
+            }
+        }
+
         // Set layout
         Layout layout;
         layout.order = item.order;
@@ -652,7 +680,8 @@ Size<float> PerformAbsoluteLayoutOnAbsoluteChildren(
     Size<float> absolute_content_size = Size<float>::Zero();
 
     for (const auto& item : items) {
-        if (item.position != Position::Absolute) {
+        // Process absolute and fixed positioned elements
+        if (item.position != Position::Absolute && item.position != Position::Fixed) {
             continue;
         }
 

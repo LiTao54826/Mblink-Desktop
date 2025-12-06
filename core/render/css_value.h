@@ -36,10 +36,29 @@ enum class CSSUnit {
 struct CSSLength {
     float value;
     CSSUnit unit;
-    
+
+    // calc() 表达式支持
+    bool is_calc = false;
+    float calc_percent = 0.0f;  // 百分比部分 (如 100%)
+    float calc_px = 0.0f;       // 像素部分 (如 -40px)
+
     CSSLength() : value(0.0f), unit(CSSUnit::PX) {}
     CSSLength(float v, CSSUnit u) : value(v), unit(u) {}
-    
+
+    /**
+     * @brief 创建 calc 表达式
+     * @param percent 百分比值 (如 100 表示 100%)
+     * @param px 像素值 (如 -40 表示 -40px)
+     */
+    static CSSLength Calc(float percent, float px) {
+        CSSLength len;
+        len.is_calc = true;
+        len.calc_percent = percent;
+        len.calc_px = px;
+        len.unit = CSSUnit::PX;  // calc 结果是像素
+        return len;
+    }
+
     /**
      * @brief 转换为像素值
      * @param base_value 基准值（用于百分比和 em/rem 计算）
@@ -48,16 +67,16 @@ struct CSSLength {
      * @return 像素值
      */
     float ToPx(float base_value = 0.0f, float font_size = 16.0f, float root_font_size = 16.0f) const;
-    
+
     /**
      * @brief 是否为自动值
      */
     bool IsAuto() const { return unit == CSSUnit::AUTO; }
-    
+
     /**
      * @brief 是否为零值
      */
-    bool IsZero() const { return value == 0.0f && unit != CSSUnit::AUTO; }
+    bool IsZero() const { return value == 0.0f && unit != CSSUnit::AUTO && !is_calc; }
 };
 
 /**
@@ -216,7 +235,14 @@ public:
      * @return CSSLength 对象
      */
     static CSSLength ParseLength(const std::string& str);
-    
+
+    /**
+     * @brief 解析 calc() 表达式
+     * @param str calc() 表达式字符串（如 "calc(100% - 40px)"）
+     * @return CSSLength 对象
+     */
+    static CSSLength ParseCalc(const std::string& str);
+
     /**
      * @brief 解析颜色值
      * @param str CSS 颜色字符串

@@ -11,6 +11,7 @@
 #include "../util/resolve.h"
 #include <algorithm>
 #include <cmath>
+#include <iostream>
 
 namespace lightui {
 
@@ -148,42 +149,112 @@ static Size<float> PerformAbsoluteLayoutOnAbsoluteChildren(
 // Helper Functions
 //------------------------------------------------------------------------------
 
-/// Compute alignment offset for a given alignment mode
+/// Apply alignment fallback for negative free space or single item
+/// Based on https://www.w3.org/TR/css-align-3/ and https://github.com/w3c/csswg-drafts/issues/10154
+static AlignContent ApplyAlignmentFallback(
+    float free_space,
+    size_t num_items,
+    AlignContent alignment_mode,
+    bool is_safe = false
+) {
+    // Fallback occurs in two cases:
+
+    // 1. If there is only a single item being aligned and alignment is a distributed alignment keyword
+    //    https://www.w3.org/TR/css-align-3/#distribution-values
+    if (num_items <= 1 || free_space <= 0.0f) {
+        switch (alignment_mode) {
+            case AlignContent::Stretch:
+                alignment_mode = AlignContent::FlexStart;
+                is_safe = true;
+                break;
+            case AlignContent::SpaceBetween:
+                alignment_mode = AlignContent::FlexStart;
+                is_safe = true;
+                break;
+            case AlignContent::SpaceAround:
+                alignment_mode = AlignContent::Center;
+                is_safe = true;
+                break;
+            case AlignContent::SpaceEvenly:
+                alignment_mode = AlignContent::Center;
+                is_safe = true;
+                break;
+            default:
+                break;
+        }
+    }
+
+    // 2. If free space is negative the "safe" alignment variants all fallback to Start alignment
+    if (free_space <= 0.0f && is_safe) {
+        alignment_mode = AlignContent::Start;
+    }
+
+    return alignment_mode;
+}
+
+/// Compute alignment offset for a given alignment mode (supports flex-reverse)
 static float ComputeAlignmentOffset(
     float free_space,
     size_t num_items,
     float gap,
     AlignContent alignment,
-    bool is_safe,
+    bool layout_is_flex_reversed,
     bool is_first
 ) {
-    if (is_safe && free_space < 0.0f) {
-        return 0.0f;
-    }
-    
-    switch (alignment) {
-        case AlignContent::Start:
-        case AlignContent::FlexStart:
-            return 0.0f;
-        case AlignContent::End:
-        case AlignContent::FlexEnd:
-            return free_space;
-        case AlignContent::Center:
-            return free_space / 2.0f;
-        case AlignContent::Stretch:
-            return 0.0f;
-        case AlignContent::SpaceBetween:
-            if (is_first) return 0.0f;
-            if (num_items <= 1) return 0.0f;
-            return free_space / static_cast<float>(num_items - 1);
-        case AlignContent::SpaceAround:
-            if (num_items == 0) return 0.0f;
-            return free_space / static_cast<float>(num_items * 2);
-        case AlignContent::SpaceEvenly:
-            if (num_items == 0) return 0.0f;
-            return free_space / static_cast<float>(num_items + 1);
-        default:
-            return 0.0f;
+    if (is_first) {
+        switch (alignment) {
+            case AlignContent::Start:
+                return 0.0f;
+            case AlignContent::FlexStart:
+                return layout_is_flex_reversed ? free_space : 0.0f;
+            case AlignContent::End:
+                return free_space;
+            case AlignContent::FlexEnd:
+                return layout_is_flex_reversed ? 0.0f : free_space;
+            case AlignContent::Center:
+                return free_space / 2.0f;
+            case AlignContent::Stretch:
+                return 0.0f;
+            case AlignContent::SpaceBetween:
+                return 0.0f;
+            case AlignContent::SpaceAround:
+                if (free_space >= 0.0f && num_items > 0) {
+                    return (free_space / static_cast<float>(num_items)) / 2.0f;
+                } else {
+                    return free_space / 2.0f;
+                }
+            case AlignContent::SpaceEvenly:
+                if (free_space >= 0.0f && num_items > 0) {
+                    return free_space / static_cast<float>(num_items + 1);
+                } else {
+                    return free_space / 2.0f;
+                }
+            default:
+                return 0.0f;
+        }
+    } else {
+        float positive_free_space = std::max(free_space, 0.0f);
+        float extra = 0.0f;
+        switch (alignment) {
+            case AlignContent::SpaceBetween:
+                if (num_items > 1) {
+                    extra = positive_free_space / static_cast<float>(num_items - 1);
+                }
+                break;
+            case AlignContent::SpaceAround:
+                if (num_items > 0) {
+                    extra = positive_free_space / static_cast<float>(num_items);
+                }
+                break;
+            case AlignContent::SpaceEvenly:
+                if (num_items > 0) {
+                    extra = positive_free_space / static_cast<float>(num_items + 1);
+                }
+                break;
+            default:
+                break;
+        }
+        return gap + extra;
     }
 }
 
@@ -542,7 +613,7 @@ static std::vector<FlexItem> GenerateAnonymousFlexItems(
 
         FlexItem item;
         item.node = child;
-        item.order = static_cast<uint32_t>(i);
+        item.order = static_cast<uint32_t>(child_style.order);
 
         auto aspect_ratio = child_style.aspect_ratio;
         auto padding = ResolveOrZero(child_style.padding, constants.node_inner_size.width);
@@ -608,6 +679,11 @@ static std::vector<FlexItem> GenerateAnonymousFlexItems(
 
         items.push_back(item);
     }
+
+    // Sort items by CSS order property (stable sort to preserve DOM order for equal order values)
+    std::stable_sort(items.begin(), items.end(), [](const FlexItem& a, const FlexItem& b) {
+        return static_cast<int32_t>(a.order) < static_cast<int32_t>(b.order);
+    });
 
     return items;
 }
@@ -728,7 +804,7 @@ static void DetermineFlexBaseSize(
         if (main_min.has_value()) {
             item.resolved_minimum_main_size = *main_min;
         } else if (!item.IsScrollContainer()) {
-            // Content-based minimum size
+            // Content-based minimum size (CSS min-width: auto)
             auto content_size = tree.MeasureChildSize(
                 item.node,
                 Size<std::optional<float>>{std::nullopt, std::nullopt},
@@ -1236,6 +1312,8 @@ static void DistributeRemainingFreeSpace(
     std::vector<FlexItem>& flex_items,
     const FlexAlgoConstants& constants
 ) {
+    bool layout_reverse = IsReverse(constants.dir);
+
     for (auto& line : flex_lines) {
         // Calculate used main space
         float used_space = 0.0f;
@@ -1269,54 +1347,30 @@ static void DistributeRemainingFreeSpace(
             free_space = 0.0f;
         }
 
-        // Apply justify-content
+        // Apply justify-content with reverse support
         size_t num_items = line.end_index - line.start_index;
-        JustifyContent justify = constants.justify_content.value_or(JustifyContent::FlexStart);
+        JustifyContent raw_justify = constants.justify_content.value_or(JustifyContent::FlexStart);
+        float gap = constants.gap.Main(constants.dir);
 
-        float initial_offset = 0.0f;
-        float gap_between = constants.gap.Main(constants.dir);
+        // Apply alignment fallback for negative free space
+        bool is_safe = false; // TODO: Implement safe alignment
+        JustifyContent justify = ApplyAlignmentFallback(free_space, num_items, raw_justify, is_safe);
 
-        switch (justify) {
-            case JustifyContent::FlexStart:
-            case JustifyContent::Start:
-                initial_offset = 0.0f;
-                break;
-            case JustifyContent::FlexEnd:
-            case JustifyContent::End:
-                initial_offset = free_space;
-                break;
-            case JustifyContent::Center:
-                initial_offset = free_space / 2.0f;
-                break;
-            case JustifyContent::SpaceBetween:
-                if (num_items > 1) {
-                    gap_between += free_space / static_cast<float>(num_items - 1);
-                }
-                break;
-            case JustifyContent::SpaceAround:
-                if (num_items > 0) {
-                    float space = free_space / static_cast<float>(num_items);
-                    initial_offset = space / 2.0f;
-                    gap_between += space;
-                }
-                break;
-            case JustifyContent::SpaceEvenly:
-                if (num_items > 0) {
-                    float space = free_space / static_cast<float>(num_items + 1);
-                    initial_offset = space;
-                    gap_between += space;
-                }
-                break;
-            default:
-                break;
-        }
-
-        // Set item offsets
-        float offset = initial_offset;
-        for (size_t i = line.start_index; i < line.end_index; ++i) {
-            auto& item = flex_items[i];
-            item.offset_main = offset + item.margin.MainStart(constants.dir);
-            offset += item.outer_target_size.Main(constants.dir) + gap_between;
+        // Set item offsets - iterate in reverse order if layout_reverse
+        if (layout_reverse) {
+            // Reverse iteration: enumerate from end to start
+            for (size_t idx = 0; idx < num_items; ++idx) {
+                size_t i = line.end_index - 1 - idx;
+                auto& item = flex_items[i];
+                item.offset_main = ComputeAlignmentOffset(free_space, num_items, gap, justify, layout_reverse, idx == 0);
+            }
+        } else {
+            // Normal iteration
+            for (size_t idx = 0; idx < num_items; ++idx) {
+                size_t i = line.start_index + idx;
+                auto& item = flex_items[i];
+                item.offset_main = ComputeAlignmentOffset(free_space, num_items, gap, justify, layout_reverse, idx == 0);
+            }
         }
     }
 }
@@ -1490,6 +1544,79 @@ static void AlignFlexLinesPerAlignContent(
 // Final Layout Pass
 //------------------------------------------------------------------------------
 
+// Helper function to calculate layout for a single flex item
+static void CalculateFlexItem(
+    LayoutFlexboxContainer& tree,
+    FlexItem& item,
+    float& total_offset_main,
+    float total_offset_cross,
+    float line_offset_cross,
+    Size<float>& content_size,
+    const FlexAlgoConstants& constants
+) {
+    // Perform final layout
+    Size<std::optional<float>> known_dimensions = {
+        std::optional<float>(item.target_size.width),
+        std::optional<float>(item.target_size.height)
+    };
+
+    auto layout_output = tree.PerformChildLayout(
+        item.node,
+        known_dimensions,
+        constants.node_inner_size,
+        Size<AvailableSpace>{
+            AvailableSpace::Definite(item.target_size.width),
+            AvailableSpace::Definite(item.target_size.height)
+        },
+        SizingMode::InherentSize,
+        LineBoolFalse()
+    );
+
+    // Compute position
+    float offset_main = total_offset_main + item.offset_main + item.margin.MainStart(constants.dir);
+    float offset_cross = total_offset_cross + item.offset_cross + line_offset_cross + item.margin.CrossStart(constants.dir);
+
+    // Handle relative positioning (inset)
+    if (item.inset.MainStart(constants.dir).has_value()) {
+        offset_main += *item.inset.MainStart(constants.dir);
+    } else if (item.inset.MainEnd(constants.dir).has_value()) {
+        offset_main -= *item.inset.MainEnd(constants.dir);
+    }
+    if (item.inset.CrossStart(constants.dir).has_value()) {
+        offset_cross += *item.inset.CrossStart(constants.dir);
+    } else if (item.inset.CrossEnd(constants.dir).has_value()) {
+        offset_cross -= *item.inset.CrossEnd(constants.dir);
+    }
+
+    Point<float> location;
+    if (constants.is_row) {
+        location.x = offset_main;
+        location.y = offset_cross;
+    } else {
+        location.x = offset_cross;
+        location.y = offset_main;
+    }
+
+    // Set layout
+    Layout layout;
+    layout.order = item.order;
+    layout.size = layout_output.size;
+    layout.content_size = layout_output.content_size;
+    layout.location = location;
+    layout.padding = item.padding;
+    layout.border = item.border;
+    tree.SetUnroundedLayout(item.node, layout);
+
+    // Update total_offset_main for next item
+    total_offset_main += item.offset_main + RectMainAxisSum(item.margin, constants.dir) + layout_output.size.Main(constants.dir);
+
+    // Update content size
+    float right = location.x + layout_output.size.width;
+    float bottom = location.y + layout_output.size.height;
+    content_size.width = f32_max(content_size.width, right);
+    content_size.height = f32_max(content_size.height, bottom);
+}
+
 static Size<float> FinalLayoutPass(
     LayoutFlexboxContainer& tree,
     std::vector<FlexLine>& flex_lines,
@@ -1497,73 +1624,31 @@ static Size<float> FinalLayoutPass(
     const FlexAlgoConstants& constants
 ) {
     Size<float> content_size = Size<float>::Zero();
+    bool layout_reverse = IsReverse(constants.dir);
+    // content_box_inset.CrossStart is the padding/border offset from container edge to content area
+    float container_cross_start = constants.content_box_inset.CrossStart(constants.dir);
 
     for (auto& line : flex_lines) {
-        for (size_t i = line.start_index; i < line.end_index; ++i) {
-            auto& item = flex_items[i];
+        float total_offset_main = constants.content_box_inset.MainStart(constants.dir);
+        // line.offset_cross is already an absolute offset from content area start (calculated by AlignFlexLinesPerAlignContent)
+        // So total_offset_cross = container_cross_start + line.offset_cross
+        float total_offset_cross = container_cross_start + line.offset_cross;
 
-            // Perform final layout
-            Size<std::optional<float>> known_dimensions = {
-                std::optional<float>(item.target_size.width),
-                std::optional<float>(item.target_size.height)
-            };
-
-            auto layout_output = tree.PerformChildLayout(
-                item.node,
-                known_dimensions,
-                constants.node_inner_size,
-                Size<AvailableSpace>{
-                    AvailableSpace::Definite(item.target_size.width),
-                    AvailableSpace::Definite(item.target_size.height)
-                },
-                SizingMode::InherentSize,
-                LineBoolFalse()
-            );
-
-            // Compute position
-            Point<float> location;
-
-            float main_pos = constants.content_box_inset.MainStart(constants.dir) +
-                            item.offset_main;
-            float cross_pos = constants.content_box_inset.CrossStart(constants.dir) +
-                             line.offset_cross + item.offset_cross +
-                             item.margin.CrossStart(constants.dir);
-
-            if (constants.is_row) {
-                location.x = main_pos;
-                location.y = cross_pos;
-            } else {
-                location.x = cross_pos;
-                location.y = main_pos;
+        if (layout_reverse) {
+            // Reverse iteration for row-reverse/column-reverse
+            for (size_t idx = 0; idx < (line.end_index - line.start_index); ++idx) {
+                size_t i = line.end_index - 1 - idx;
+                auto& item = flex_items[i];
+                // Pass 0.0f for line_offset_cross since it's already included in total_offset_cross
+                CalculateFlexItem(tree, item, total_offset_main, total_offset_cross, 0.0f, content_size, constants);
             }
-
-            // Handle relative positioning
-            if (item.inset.left.has_value()) {
-                location.x += *item.inset.left;
-            } else if (item.inset.right.has_value()) {
-                location.x -= *item.inset.right;
+        } else {
+            // Normal iteration
+            for (size_t i = line.start_index; i < line.end_index; ++i) {
+                auto& item = flex_items[i];
+                // Pass 0.0f for line_offset_cross since it's already included in total_offset_cross
+                CalculateFlexItem(tree, item, total_offset_main, total_offset_cross, 0.0f, content_size, constants);
             }
-            if (item.inset.top.has_value()) {
-                location.y += *item.inset.top;
-            } else if (item.inset.bottom.has_value()) {
-                location.y -= *item.inset.bottom;
-            }
-
-            // Set layout
-            Layout layout;
-            layout.order = item.order;
-            layout.size = layout_output.size;
-            layout.content_size = layout_output.content_size;
-            layout.location = location;
-            layout.padding = item.padding;
-            layout.border = item.border;
-            tree.SetUnroundedLayout(item.node, layout);
-
-            // Update content size
-            float right = location.x + layout_output.size.width;
-            float bottom = location.y + layout_output.size.height;
-            content_size.width = f32_max(content_size.width, right);
-            content_size.height = f32_max(content_size.height, bottom);
         }
     }
 
@@ -1586,8 +1671,8 @@ static Size<float> PerformAbsoluteLayoutOnAbsoluteChildren(
         NodeId child = tree.GetChildId(node, i);
         const auto& child_style = tree.GetFlexboxChildStyle(child);
 
-        // Skip non-absolute children
-        if (child_style.position != Position::Absolute) {
+        // Skip non-absolute/fixed children
+        if (child_style.position != Position::Absolute && child_style.position != Position::Fixed) {
             continue;
         }
 

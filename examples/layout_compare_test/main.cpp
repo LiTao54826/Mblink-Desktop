@@ -34,19 +34,23 @@ void PrintLayoutTree(const std::shared_ptr<RenderObject>& render_obj, int depth 
 
     auto node = render_obj->GetNode();
     auto element = std::dynamic_pointer_cast<Element>(node);
-    
+
     std::string indent(depth * 2, ' ');
     std::string tag = element ? element->GetTagName() : "#text";
-    
+    std::string id = element ? element->GetAttribute("id") : "";
+
     const auto& layout = render_obj->GetLayoutInfo();
     const auto& style = render_obj->GetComputedStyle();
-    
+
     // 只打印有意义的布局节点
     if (layout.width > 0 || layout.height > 0) {
-        std::cout << indent << "[" << tag << "] "
-                  << "x=" << std::fixed << std::setprecision(1) << layout.x 
+        std::cout << indent << "[" << tag << "]";
+        if (!id.empty()) {
+            std::cout << " #" << id;
+        }
+        std::cout << " x=" << std::fixed << std::setprecision(1) << layout.x
                   << " y=" << layout.y
-                  << " w=" << layout.width 
+                  << " w=" << layout.width
                   << " h=" << layout.height;
         
         // 打印 display 类型 - 从 ComputedStyle 获取准确的 display 类型
@@ -64,6 +68,15 @@ void PrintLayoutTree(const std::shared_ptr<RenderObject>& render_obj, int depth 
         }
         std::cout << " (" << display_str << ")";
 
+        // 如果有 grid-template-columns，打印出来以便调试
+        if (!style.grid_template_columns.empty()) {
+            std::cout << " grid-cols:" << style.grid_template_columns;
+            // 如果 grid-template-columns 存在但 display 不是 grid，输出警告
+            if (display_type != RenderObjectType::GRID) {
+                std::cout << " [WARN:display=" << static_cast<int>(display_type) << "]";
+            }
+        }
+
         // 如果是 flex 容器，打印 justify-content 和 align-items
         if (display_type == RenderObjectType::FLEX) {
             std::cout << " jc:" << style.justify_content << " ai:" << style.align_items;
@@ -80,12 +93,26 @@ void PrintLayoutTree(const std::shared_ptr<RenderObject>& render_obj, int depth 
         
         if (style.padding.top.value != 0 || style.padding.right.value != 0 ||
             style.padding.bottom.value != 0 || style.padding.left.value != 0) {
-            std::cout << " p:[" << style.padding.top.value << " " 
+            std::cout << " p:[" << style.padding.top.value << " "
                       << style.padding.right.value << " "
-                      << style.padding.bottom.value << " " 
+                      << style.padding.bottom.value << " "
                       << style.padding.left.value << "]";
         }
-        
+
+        // 打印 border 如果非零
+        if (style.border_top_width != 0 || style.border_right_width != 0 ||
+            style.border_bottom_width != 0 || style.border_left_width != 0) {
+            std::cout << " b:[" << style.border_top_width << " "
+                      << style.border_right_width << " "
+                      << style.border_bottom_width << " "
+                      << style.border_left_width << "]";
+        }
+
+        // 打印 box-sizing 如果是 content-box
+        if (style.box_sizing == "content-box") {
+            std::cout << " [content-box]";
+        }
+
         std::cout << std::endl;
     }
 
@@ -121,10 +148,22 @@ std::string LoadFileFromPaths(const std::vector<std::string>& paths, const std::
     return "";
 }
 
-int main() {
+int main(int argc, char* argv[]) {
+    // 解析命令行参数
+    bool auto_close = false;
+    for (int i = 1; i < argc; i++) {
+        std::string arg = argv[i];
+        if (arg == "--auto-close" || arg == "-q") {
+            auto_close = true;
+        }
+    }
+
     try {
         std::cout << "========================================" << std::endl;
         std::cout << "  MBink Layout Compare Test" << std::endl;
+        if (auto_close) {
+            std::cout << "  (Auto-close mode)" << std::endl;
+        }
         std::cout << "========================================" << std::endl;
         std::cout << std::endl;
 
@@ -243,25 +282,32 @@ int main() {
         std::cout << "  🚀 Layout Compare Test Started!" << std::endl;
         std::cout << "========================================" << std::endl;
         std::cout << std::endl;
-        std::cout << "  打开 browser.html 在浏览器中对比渲染结果" << std::endl;
-        std::cout << "  examples/demo_html/layout_compare_test/browser.html" << std::endl;
-        std::cout << std::endl;
-        std::cout << "  Close window to exit." << std::endl;
-        std::cout << std::endl;
 
-        // 创建事件循环
-        EventLoop event_loop;
+        if (auto_close) {
+            // 自动关闭模式：渲染完成后直接退出
+            std::cout << "  Auto-close mode: exiting after render." << std::endl;
+        } else {
+            std::cout << "  打开 browser.html 在浏览器中对比渲染结果" << std::endl;
+            std::cout << "  examples/demo_html/layout_compare_test/browser.html" << std::endl;
+            std::cout << std::endl;
+            std::cout << "  Close window to exit." << std::endl;
+            std::cout << "  (Use --auto-close or -q to auto exit)" << std::endl;
+            std::cout << std::endl;
 
-        // 设置渲染回调
-        event_loop.SetRenderCallback([window]() {
-            if (window->NeedsRepaint()) {
-                window->RenderDocument();
-                window->SwapBuffers();
-            }
-        });
+            // 创建事件循环
+            EventLoop event_loop;
 
-        // 运行事件循环
-        event_loop.Run();
+            // 设置渲染回调
+            event_loop.SetRenderCallback([window]() {
+                if (window->NeedsRepaint()) {
+                    window->RenderDocument();
+                    window->SwapBuffers();
+                }
+            });
+
+            // 运行事件循环
+            event_loop.Run();
+        }
 
         std::cout << std::endl;
         std::cout << "========================================" << std::endl;

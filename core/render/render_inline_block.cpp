@@ -289,9 +289,8 @@ std::pair<float, float> RenderInlineBlock::MeasureIntrinsicSize(float available_
             height = content_height + padding_top + padding_bottom + border_top + border_bottom;
         } else {
             // 没有子元素（如 input, select 元素），基于 font-size 计算
-            // Chrome select: height=35, padding=8*2=16, border=1*2=2, font-size=13.3333
-            // content_height = 35 - 16 - 2 = 17px = font-size * 1.275
-            float content_line_height = style.font_size * 1.275f;
+            // 使用 line_height * font_size 来计算高度，与浏览器行为一致
+            float content_line_height = style.line_height * style.font_size;
             height = content_line_height + padding_top + padding_bottom + border_top + border_bottom;
         }
     }

@@ -24,83 +24,104 @@ enum class LengthTag : uint8_t {
     Length = 0,
     Percent = 1,
     Auto = 2,
+    Calc = 3,  // calc() expression: percent + px
 };
 
-/// A unit of linear measurement - Length, Percent, or Auto
+/// A unit of linear measurement - Length, Percent, Auto, or Calc
 struct LengthPercentageAuto {
     LengthTag tag;
     float value;
+    float calc_px = 0.0f;  // For calc: the px offset (value stores percent)
 
     static LengthPercentageAuto Length(float val) {
-        return LengthPercentageAuto{LengthTag::Length, val};
+        return LengthPercentageAuto{LengthTag::Length, val, 0.0f};
     }
 
     static LengthPercentageAuto Percent(float val) {
-        return LengthPercentageAuto{LengthTag::Percent, val};
+        return LengthPercentageAuto{LengthTag::Percent, val, 0.0f};
     }
 
     static LengthPercentageAuto Auto() {
-        return LengthPercentageAuto{LengthTag::Auto, 0.0f};
+        return LengthPercentageAuto{LengthTag::Auto, 0.0f, 0.0f};
     }
 
     static LengthPercentageAuto Zero() {
         return Length(0.0f);
     }
 
+    /// Create a calc expression: percent% + px
+    static LengthPercentageAuto Calc(float percent, float px) {
+        return LengthPercentageAuto{LengthTag::Calc, percent, px};
+    }
+
     bool IsAuto() const { return tag == LengthTag::Auto; }
     bool IsLength() const { return tag == LengthTag::Length; }
     bool IsPercent() const { return tag == LengthTag::Percent; }
+    bool IsCalc() const { return tag == LengthTag::Calc; }
 
     /// Resolve to option: Length returns value, Percent resolves, Auto returns nullopt
     std::optional<float> ResolveToOption(float context) const {
         switch (tag) {
             case LengthTag::Length: return value;
             case LengthTag::Percent: return context * value;
+            case LengthTag::Calc: return context * value + calc_px;
             case LengthTag::Auto: return std::nullopt;
         }
         return std::nullopt;
     }
 
     bool operator==(const LengthPercentageAuto& other) const {
-        return tag == other.tag && (tag == LengthTag::Auto || value == other.value);
+        if (tag != other.tag) return false;
+        if (tag == LengthTag::Auto) return true;
+        if (tag == LengthTag::Calc) return value == other.value && calc_px == other.calc_px;
+        return value == other.value;
     }
 };
 
-/// A unit of linear measurement - Length or Percent only (no Auto)
+/// A unit of linear measurement - Length, Percent, or Calc (no Auto)
 struct LengthPercentage {
     LengthTag tag;
     float value;
+    float calc_px = 0.0f;  // For calc: the px offset
 
     static LengthPercentage Length(float val) {
-        return LengthPercentage{LengthTag::Length, val};
+        return LengthPercentage{LengthTag::Length, val, 0.0f};
     }
 
     static LengthPercentage Percent(float val) {
-        return LengthPercentage{LengthTag::Percent, val};
+        return LengthPercentage{LengthTag::Percent, val, 0.0f};
     }
 
     static LengthPercentage Zero() {
         return Length(0.0f);
     }
 
+    static LengthPercentage Calc(float percent, float px) {
+        return LengthPercentage{LengthTag::Calc, percent, px};
+    }
+
     bool IsLength() const { return tag == LengthTag::Length; }
     bool IsPercent() const { return tag == LengthTag::Percent; }
+    bool IsCalc() const { return tag == LengthTag::Calc; }
 
     /// Resolve value against context
     float Resolve(float context) const {
         switch (tag) {
             case LengthTag::Length: return value;
             case LengthTag::Percent: return context * value;
+            case LengthTag::Calc: return context * value + calc_px;
             default: return 0.0f;
         }
     }
 
     operator LengthPercentageAuto() const {
-        return LengthPercentageAuto{tag, value};
+        return LengthPercentageAuto{tag, value, calc_px};
     }
 
     bool operator==(const LengthPercentage& other) const {
-        return tag == other.tag && value == other.value;
+        if (tag != other.tag) return false;
+        if (tag == LengthTag::Calc) return value == other.value && calc_px == other.calc_px;
+        return value == other.value;
     }
 };
 
@@ -166,7 +187,9 @@ enum class BoxGenerationMode {
 /// Positioning strategy
 enum class Position {
     Relative,
-    Absolute
+    Absolute,
+    Fixed,    // 相对于视口定位
+    Sticky    // 粘性定位（滚动时切换 relative/fixed）
 };
 
 /// Box sizing mode
@@ -268,6 +291,7 @@ struct Style : public CoreStyle {
     Dimension flex_basis = Dimension::Auto();
     float flex_grow = 0.0f;
     float flex_shrink = 1.0f;
+    int order = 0;  // CSS order property for flex item ordering
 
     // Grid properties (simplified - full grid support in grid_style.h)
     GridAutoFlow grid_auto_flow = GridAutoFlow::Row;

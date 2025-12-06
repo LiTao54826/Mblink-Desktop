@@ -202,7 +202,7 @@ static void DistributeFreeSpaceToFlexTracks(
     float free_space
 ) {
     if (free_space <= 0.0f) return;
-    
+
     // Calculate total flex factor
     float total_flex = 0.0f;
     for (const auto& track : tracks) {
@@ -210,14 +210,17 @@ static void DistributeFreeSpaceToFlexTracks(
             total_flex += track.FlexFactor();
         }
     }
-    
+
     if (total_flex <= 0.0f) return;
-    
+
     // Distribute space proportionally
+    // For minmax(min, fr) tracks, the base_size is already set to min
+    // We need to add the fr share to the base_size
     for (auto& track : tracks) {
         if (track.kind == GridTrackKind::Track && track.IsFlexible()) {
             float share = (track.FlexFactor() / total_flex) * free_space;
-            track.base_size = std::max(track.base_size, share);
+            // Add the share to the base_size (which may already have a min value)
+            track.base_size += share;
             track.growth_limit = track.base_size;
         }
     }
@@ -285,6 +288,12 @@ LayoutOutput ComputeGridLayout(
         std::optional<float>(padding_border_size.width),
         std::optional<float>(padding_border_size.height)
     });
+
+    // For grid containers with width: auto, use available space width
+    // This is similar to block layout behavior
+    if (!outer_node_size.width.has_value() && available_space.width.IsDefinite()) {
+        outer_node_size.width = std::optional<float>(available_space.width.value);
+    }
 
     // Early return if we can compute size directly
     if (run_mode == RunMode::ComputeSize &&
@@ -354,20 +363,415 @@ LayoutOutput ComputeGridLayout(
 
     Size<float> container_size{container_width, container_height};
 
-    // If only size requested, return early
+    // 8. Calculate track offsets
+    CalculateTrackOffsets(columns, padding_border.left);
+    CalculateTrackOffsets(rows, padding_border.top);
+
+    // 9. Layout children - place items in grid cells
+    size_t child_count = tree.ChildCount(node);
+
+    // Auto-placement: place children in grid cells row by row
+    size_t num_cols = col_count > 0 ? col_count : 1;
+    size_t num_rows = row_count > 0 ? row_count : 1;
+
+    // Expand rows if needed for auto-placement
+    while (num_rows * num_cols < child_count) {
+        num_rows++;
+    }
+
+    // Calculate required number of track slots (tracks + gutters between them)
+    // For n tracks, we need: track, gutter, track, gutter, ..., track = 2*n - 1 slots
+    size_t required_slots = num_rows > 0 ? num_rows * 2 - 1 : 0;
+
+    // Ensure we have enough row tracks (including gutters)
+    while (rows.size() < required_slots) {
+        if (!rows.empty()) {
+            GridTrack gutter = GridTrack::Gutter(row_gap);
+            // Set base_size for gutter immediately
+            gutter.base_size = row_gap;
+            gutter.growth_limit = row_gap;
+            rows.push_back(gutter);
+        }
+        rows.push_back(GridTrack::New(MinTrackSizingFunction::Auto(), MaxTrackSizingFunction::Auto()));
+    }
+
+    // Structure to hold child placement info
+    struct ChildPlacement {
+        NodeId child_id;
+        size_t col_idx;
+        size_t row_idx;
+        size_t col_span;
+        size_t row_span;
+        float measured_width;
+        float measured_height;
+    };
+    std::vector<ChildPlacement> placements;
+    placements.reserve(child_count);
+
+    // Cell occupancy matrix to track which cells are occupied
+    // True means the cell is occupied
+    std::vector<std::vector<bool>> occupied(num_rows, std::vector<bool>(num_cols, false));
+
+    // Helper lambda to find next available cell
+    auto findNextAvailableCell = [&](size_t& col, size_t& row, size_t col_span, size_t row_span) {
+        while (true) {
+            // Check if current position can fit the item
+            bool can_fit = true;
+            if (col + col_span > num_cols) {
+                can_fit = false;
+            } else if (row + row_span > num_rows) {
+                // Need to expand rows
+                size_t new_rows = row + row_span;
+                occupied.resize(new_rows, std::vector<bool>(num_cols, false));
+                num_rows = new_rows;
+            }
+
+            if (can_fit) {
+                // Check if all cells in the span area are free
+                for (size_t r = row; r < row + row_span && can_fit; r++) {
+                    for (size_t c = col; c < col + col_span && can_fit; c++) {
+                        if (occupied[r][c]) {
+                            can_fit = false;
+                        }
+                    }
+                }
+            }
+
+            if (can_fit) {
+                return; // Found a valid position
+            }
+
+            // Move to next cell
+            col++;
+            if (col >= num_cols) {
+                col = 0;
+                row++;
+                // Expand rows if needed
+                if (row >= occupied.size()) {
+                    occupied.push_back(std::vector<bool>(num_cols, false));
+                    num_rows = occupied.size();
+                }
+            }
+        }
+    };
+
+    // Helper lambda to mark cells as occupied
+    auto markCellsOccupied = [&](size_t col, size_t row, size_t col_span, size_t row_span) {
+        // Ensure we have enough rows
+        while (row + row_span > occupied.size()) {
+            occupied.push_back(std::vector<bool>(num_cols, false));
+        }
+        for (size_t r = row; r < row + row_span; r++) {
+            for (size_t c = col; c < col + col_span; c++) {
+                if (c < num_cols) {
+                    occupied[r][c] = true;
+                }
+            }
+        }
+    };
+
+    // First pass: determine placement and measure children
+    size_t current_col = 0;
+    size_t current_row = 0;
+
+    for (size_t i = 0; i < child_count; i++) {
+        NodeId child_id = tree.GetChildId(node, i);
+        const auto& child_style = tree.GetGridItemStyle(child_id);
+
+        // Determine grid cell for this child
+        size_t col_idx = current_col;
+        size_t row_idx = current_row;
+        size_t col_span = 1;
+        size_t row_span = 1;
+        bool has_explicit_col = false;
+        bool has_explicit_row = false;
+
+        // Check for explicit placement
+        if (child_style.grid_column_start.IsLine()) {
+            int16_t line = child_style.grid_column_start.value;
+            if (line > 0) col_idx = static_cast<size_t>(line - 1);
+            else if (line < 0) col_idx = num_cols + line;
+            has_explicit_col = true;
+        }
+        if (child_style.grid_row_start.IsLine()) {
+            int16_t line = child_style.grid_row_start.value;
+            if (line > 0) row_idx = static_cast<size_t>(line - 1);
+            else if (line < 0) row_idx = num_rows + line;
+            has_explicit_row = true;
+        }
+
+        // Check for span
+        if (child_style.grid_column_end.IsSpan()) {
+            col_span = static_cast<size_t>(child_style.grid_column_end.value);
+        } else if (child_style.grid_column_end.IsLine()) {
+            int16_t end_line = child_style.grid_column_end.value;
+            size_t end_idx = end_line > 0 ? static_cast<size_t>(end_line - 1) : num_cols + end_line;
+            if (end_idx > col_idx) col_span = end_idx - col_idx;
+        }
+        if (child_style.grid_row_end.IsSpan()) {
+            row_span = static_cast<size_t>(child_style.grid_row_end.value);
+        } else if (child_style.grid_row_end.IsLine()) {
+            int16_t end_line = child_style.grid_row_end.value;
+            size_t end_idx = end_line > 0 ? static_cast<size_t>(end_line - 1) : num_rows + end_line;
+            if (end_idx > row_idx) row_span = end_idx - row_idx;
+        }
+
+        // For auto-placed items, find the next available cell that can fit the span
+        if (!has_explicit_col && !has_explicit_row) {
+            findNextAvailableCell(current_col, current_row, col_span, row_span);
+            col_idx = current_col;
+            row_idx = current_row;
+        }
+
+        // Clamp indices
+        if (col_idx >= num_cols) col_idx = num_cols - 1;
+        if (row_idx + row_span > num_rows) {
+            // Expand rows to fit
+            num_rows = row_idx + row_span;
+        }
+        if (col_idx + col_span > num_cols) col_span = num_cols - col_idx;
+
+        // Calculate available width for this cell
+        size_t col_track_start = col_idx * 2;
+        size_t col_track_end = (col_idx + col_span - 1) * 2;
+        float cell_width = 0.0f;
+        for (size_t t = col_track_start; t <= col_track_end && t < columns.size(); t++) {
+            if (columns[t].kind != GridTrackKind::Gutter) {
+                cell_width += columns[t].base_size;
+            } else if (t > col_track_start && t < col_track_end) {
+                cell_width += columns[t].base_size;
+            }
+        }
+
+        // Measure child to get its intrinsic height
+        Size<AvailableSpace> measure_space{
+            AvailableSpace::Definite(cell_width),
+            AvailableSpace::MaxContent()
+        };
+
+        auto child_output = tree.PerformChildLayout(
+            child_id,
+            Size<std::optional<float>>{std::nullopt, std::nullopt},
+            Size<std::optional<float>>{cell_width, std::nullopt},
+            measure_space,
+            SizingMode::InherentSize,
+            Line<bool>{false, false}
+        );
+
+        placements.push_back({
+            child_id,
+            col_idx,
+            row_idx,
+            col_span,
+            row_span,
+            child_output.size.width,
+            child_output.size.height
+        });
+
+        // Mark cells as occupied
+        markCellsOccupied(col_idx, row_idx, col_span, row_span);
+
+        // Move to next cell for auto-placement
+        // The next item will use findNextAvailableCell to skip occupied cells
+        current_col = col_idx + col_span;
+        if (current_col >= num_cols) {
+            current_col = 0;
+            current_row = row_idx + 1;
+        }
+    }
+
+    // Ensure we have enough row tracks after auto-placement may have expanded num_rows
+    size_t required_row_slots = num_rows > 0 ? num_rows * 2 - 1 : 0;
+    while (rows.size() < required_row_slots) {
+        if (!rows.empty()) {
+            GridTrack gutter = GridTrack::Gutter(row_gap);
+            gutter.base_size = row_gap;
+            gutter.growth_limit = row_gap;
+            rows.push_back(gutter);
+        }
+        rows.push_back(GridTrack::New(MinTrackSizingFunction::Auto(), MaxTrackSizingFunction::Auto()));
+    }
+
+    // Update row heights based on measured children (for auto-sized rows)
+    for (const auto& placement : placements) {
+        // Update all row tracks that this item spans
+        for (size_t r = 0; r < placement.row_span; r++) {
+            size_t row_track_idx = (placement.row_idx + r) * 2;
+            if (row_track_idx < rows.size() && rows[row_track_idx].kind == GridTrackKind::Track) {
+                // For auto-sized rows, update base_size to fit content
+                bool is_auto_row = rows[row_track_idx].min_track_sizing_function.type == MinTrackSizingFunctionType::Auto ||
+                                   rows[row_track_idx].max_track_sizing_function.type == MaxTrackSizingFunctionType::Auto;
+                if (is_auto_row) {
+                    // For non-spanning items, use full height; for spanning items, divide by span
+                    float height_per_row = placement.measured_height / static_cast<float>(placement.row_span);
+                    rows[row_track_idx].base_size = std::max(rows[row_track_idx].base_size, height_per_row);
+                }
+            }
+        }
+    }
+
+    // Recalculate row sum and offsets
+    row_sum = SumTrackBaseSizes(rows);
+
+    // Update container height
+    container_height = outer_node_size.height.value_or(row_sum + padding_border_size.height);
+    if (min_size.height.has_value()) container_height = f32_max(container_height, *min_size.height);
+    if (max_size.height.has_value()) container_height = f32_min(container_height, *max_size.height);
+    container_size.height = container_height;
+
+    // If container has explicit height larger than content, distribute extra space to rows
+    float inner_height = container_height - padding_border_size.height;
+    if (inner_height > row_sum) {
+        float extra_space = inner_height - row_sum;
+        // Count auto/fr rows that can grow
+        size_t growable_rows = 0;
+        for (const auto& row : rows) {
+            if (row.kind == GridTrackKind::Track) growable_rows++;
+        }
+        if (growable_rows > 0) {
+            float extra_per_row = extra_space / static_cast<float>(growable_rows);
+            for (auto& row : rows) {
+                if (row.kind == GridTrackKind::Track) {
+                    row.base_size += extra_per_row;
+                }
+            }
+            row_sum = inner_height;
+        }
+    }
+
+    CalculateTrackOffsets(rows, padding_border.top);
+
+    // If only size requested, return early after measuring children
     if (run_mode == RunMode::ComputeSize) {
         LayoutOutput output;
         output.size = container_size;
         return output;
     }
 
-    // 8. Calculate track offsets
-    CalculateTrackOffsets(columns, padding_border.left);
-    CalculateTrackOffsets(rows, padding_border.top);
+    // Second pass: position children in their cells
+    for (const auto& placement : placements) {
+        size_t col_track_start = placement.col_idx * 2;
+        size_t row_track_start = placement.row_idx * 2;
+        size_t col_track_end = (placement.col_idx + placement.col_span - 1) * 2;
+        size_t row_track_end = (placement.row_idx + placement.row_span - 1) * 2;
 
-    // 9. Layout children
-    // TODO: Implement full grid item placement and layout
-    // For now, just layout children in their grid areas
+        float cell_x = 0.0f;
+        float cell_y = 0.0f;
+        float cell_width = 0.0f;
+        float cell_height = 0.0f;
+
+        // Get position from first track
+        if (col_track_start < columns.size()) {
+            cell_x = columns[col_track_start].offset;
+        }
+        if (row_track_start < rows.size()) {
+            cell_y = rows[row_track_start].offset;
+        }
+
+        // Calculate width spanning multiple tracks
+        for (size_t t = col_track_start; t <= col_track_end && t < columns.size(); t++) {
+            if (columns[t].kind != GridTrackKind::Gutter) {
+                cell_width += columns[t].base_size;
+            } else if (t > col_track_start && t < col_track_end) {
+                cell_width += columns[t].base_size;
+            }
+        }
+
+        // Calculate height spanning multiple tracks
+        for (size_t t = row_track_start; t <= row_track_end && t < rows.size(); t++) {
+            if (rows[t].kind != GridTrackKind::Gutter) {
+                cell_height += rows[t].base_size;
+            } else if (t > row_track_start && t < row_track_end) {
+                cell_height += rows[t].base_size;
+            }
+        }
+
+        // Get child's item style for align-self/justify-self
+        const auto& child_style = tree.GetGridItemStyle(placement.child_id);
+
+        // Determine final size and position based on alignment
+        // Default is stretch (fill the cell)
+        float final_width = placement.measured_width;
+        float final_height = placement.measured_height;
+        float offset_x = 0.0f;
+        float offset_y = 0.0f;
+
+        // Resolve justify-items (horizontal alignment within cell)
+        // Child's justify-self overrides container's justify-items
+        auto justify = child_style.justify_self.value_or(
+            style.justify_items.value_or(AlignItems::Stretch));
+
+        if (justify == AlignItems::Stretch) {
+            final_width = cell_width;
+        } else {
+            // For non-stretch, we need to measure with intrinsic sizing
+            // to get the child's natural width (respecting its own width property)
+            // Pass cell_width as parent size so percentage widths can resolve
+            auto intrinsic_output = tree.PerformChildLayout(
+                placement.child_id,
+                Size<std::optional<float>>{std::nullopt, std::nullopt},
+                Size<std::optional<float>>{cell_width, cell_height},
+                Size<AvailableSpace>{AvailableSpace::Definite(cell_width), AvailableSpace::MaxContent()},
+                SizingMode::InherentSize,
+                Line<bool>{false, false}
+            );
+            final_width = intrinsic_output.size.width;
+
+            float free_space = cell_width - final_width;
+            if (free_space > 0) {
+                switch (justify) {
+                    case AlignItems::Center:
+                        offset_x = free_space / 2.0f;
+                        break;
+                    case AlignItems::End:
+                    case AlignItems::FlexEnd:
+                        offset_x = free_space;
+                        break;
+                    case AlignItems::Start:
+                    case AlignItems::FlexStart:
+                    default:
+                        offset_x = 0.0f;
+                        break;
+                }
+            }
+        }
+
+        // Resolve align-items (vertical alignment within cell)
+        // Child's align-self overrides container's align-items
+        auto align = child_style.align_self.value_or(
+            style.align_items.value_or(AlignItems::Stretch));
+
+        if (align == AlignItems::Stretch) {
+            final_height = cell_height;
+        } else {
+            // For non-stretch, use measured height
+            float free_space = cell_height - final_height;
+            if (free_space > 0) {
+                switch (align) {
+                    case AlignItems::Center:
+                        offset_y = free_space / 2.0f;
+                        break;
+                    case AlignItems::End:
+                    case AlignItems::FlexEnd:
+                        offset_y = free_space;
+                        break;
+                    case AlignItems::Start:
+                    case AlignItems::FlexStart:
+                    default:
+                        offset_y = 0.0f;
+                        break;
+                }
+            }
+        }
+
+        tree.SetUnroundedLayout(placement.child_id, Layout{
+            0,  // order
+            cell_x + offset_x,
+            cell_y + offset_y,
+            final_width,
+            final_height
+        });
+    }
 
     Size<float> content_size{col_sum, row_sum};
 

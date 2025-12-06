@@ -41,6 +41,7 @@ struct FlexboxItemStyle : public CoreStyle {
     float flex_grow = 0.0f;
     float flex_shrink = 1.0f;
     Dimension flex_basis = Dimension::Auto();
+    int order = 0;  // CSS order property for flex item ordering
 };
 
 //------------------------------------------------------------------------------

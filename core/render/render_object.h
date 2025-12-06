@@ -15,6 +15,7 @@
 #include "css_variables.h"
 #include "css_filters.h"
 #include "transition.h"
+#include "transform.h"
 #include <memory>
 #include <string>
 #include <unordered_map>
@@ -58,7 +59,7 @@ enum class RenderObjectType {
 struct ComputedStyle {
     // 显示和定位
     RenderObjectType display = RenderObjectType::BLOCK;
-    
+
     // 尺寸
     CSSLength width;
     CSSLength height;
@@ -66,8 +67,9 @@ struct ComputedStyle {
     CSSLength max_width;
     CSSLength min_height;
     CSSLength max_height;
-    
+
     // 盒模型
+    std::string box_sizing = "content-box";  // content-box, border-box
     CSSEdges margin;
     CSSEdges padding;
     CSSBorder border;
@@ -150,6 +152,8 @@ struct ComputedStyle {
     CSSLength grid_row_gap;
     std::string grid_column;  // e.g., "1 / 3", "span 2"
     std::string grid_row;     // e.g., "1 / 2"
+    std::string justify_items = "stretch";  // stretch, start, end, center (Grid 默认)
+    std::string justify_self = "auto";      // auto, stretch, start, end, center
 
     // Gap (用于 Flexbox 和 Grid)
     CSSLength gap;  // 简写属性
@@ -208,12 +212,17 @@ struct ComputedStyle {
     bool has_before = false;     // 是否有 ::before 伪元素
     bool has_after = false;      // 是否有 ::after 伪元素
 
+    // CSS Transform
+    std::string transform_str;  // 原始 transform 字符串
+    std::optional<CSSTransform> transform;  // 解析后的 transform
+    TransformOrigin transform_origin;  // transform-origin
+
     ComputedStyle() {
         width = CSSLength(0, CSSUnit::AUTO);
         height = CSSLength(0, CSSUnit::AUTO);
-        min_width = CSSLength(0, CSSUnit::PX);
+        min_width = CSSLength(0, CSSUnit::AUTO);   // CSS初始值是auto，不是0px
         max_width = CSSLength(0, CSSUnit::NONE);
-        min_height = CSSLength(0, CSSUnit::PX);
+        min_height = CSSLength(0, CSSUnit::AUTO);  // CSS初始值是auto，不是0px
         max_height = CSSLength(0, CSSUnit::NONE);
         flex_basis = CSSLength(0, CSSUnit::AUTO);
         gap = CSSLength(0, CSSUnit::PX);

@@ -1,18 +1,32 @@
 /**
  * @file line_box.cpp
  * @brief LineBox 结构的实现
- * 
+ *
  * MBink 现代模式实现：
  * - 无 strut：行高完全由内容决定
  * - vertical-align: middle 真正居中
  */
 
 #include "line_box.h"
+#include "core/render/render_object.h"
 #include <algorithm>
 #include <cmath>
 #include <iostream>
 
 namespace lightui {
+
+// Helper function to parse vertical-align style string to enum
+static VerticalAlign ParseVerticalAlignStyle(const std::string& value) {
+    if (value == "top") return VerticalAlign::TOP;
+    if (value == "bottom") return VerticalAlign::BOTTOM;
+    if (value == "middle") return VerticalAlign::MIDDLE;
+    if (value == "text-top") return VerticalAlign::TEXT_TOP;
+    if (value == "text-bottom") return VerticalAlign::TEXT_BOTTOM;
+    if (value == "super") return VerticalAlign::SUPER;
+    if (value == "sub") return VerticalAlign::SUB;
+    // Default is baseline
+    return VerticalAlign::BASELINE;
+}
 
 void LineBox::AddBox(InlineBox* box) {
     if (!box) return;
@@ -51,23 +65,26 @@ void LineBox::CalculateHeight() {
 
 void LineBox::AlignBoxes() {
     if (boxes.empty()) return;
-    
+
     // 首先计算行高
     CalculateHeight();
-    
+
     // 然后对齐每个盒子
     float current_x = x;
-    
+
     for (auto* box : boxes) {
         if (!box) continue;
-        
+
         // 水平位置
         box->x = current_x + box->GetLeftSpace();
         current_x += box->GetTotalWidth();
-        
-        // 垂直对齐 - 默认基线对齐
-        // TODO: 从样式中读取 vertical-align
+
+        // 从样式中读取 vertical-align
         VerticalAlign align = VerticalAlign::BASELINE;
+        if (box->render_object) {
+            const auto& style = box->render_object->GetComputedStyle();
+            align = ParseVerticalAlignStyle(style.vertical_align);
+        }
         ApplyVerticalAlign(box, align);
     }
 }

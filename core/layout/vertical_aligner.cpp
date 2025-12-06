@@ -289,19 +289,29 @@ void VerticalAligner::AlignBoxes(
 ) {
     // 计算行度量
     LineVerticalMetrics line_metrics = CalculateLineMetrics(boxes, aligns);
-    
+
     // 应用到每个盒子
     for (size_t i = 0; i < boxes.size(); ++i) {
         InlineBox* box = boxes[i];
         if (!box) continue;
-        
+
         BoxVerticalMetrics box_metrics = GetBoxMetrics(*box);
-        const VerticalAlignInfo& align = (i < aligns.size()) 
-            ? aligns[i] 
+        const VerticalAlignInfo& align = (i < aligns.size())
+            ? aligns[i]
             : VerticalAlignInfo{};
-        
+
         float y_offset = CalculateBoxYOffset(*box, box_metrics, line_metrics, align);
         box->y = line_y + y_offset;
+
+#if VA_DEBUG
+        if (box->IsAtomic()) {
+            std::cout << "[VA] AlignBoxes ATOMIC: align_type=" << static_cast<int>(align.type)
+                      << ", box_height=" << box_metrics.height
+                      << ", line_height=" << line_metrics.line_height
+                      << ", y_offset=" << y_offset
+                      << ", final_y=" << box->y << std::endl;
+        }
+#endif
     }
 }
 

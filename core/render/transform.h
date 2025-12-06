@@ -29,14 +29,19 @@ enum class TransformType {
 
 /**
  * @brief 单个 Transform 操作
+ *
+ * 对于 TRANSLATE 类型，使用 lengths 存储 CSSLength 以支持百分比值
+ * 对于其他类型，使用 values 存储已解析的数值
  */
 struct Transform {
     TransformType type;
-    std::vector<float> values;  // 参数值
+    std::vector<float> values;  // 参数值（用于 rotate, scale, skew, matrix）
+    std::vector<CSSLength> lengths;  // 长度值（用于 translate，支持百分比）
 
     Transform() : type(TransformType::TRANSLATE) {}
     Transform(TransformType t) : type(t) {}
     Transform(TransformType t, const std::vector<float>& v) : type(t), values(v) {}
+    Transform(TransformType t, const std::vector<CSSLength>& l) : type(t), lengths(l) {}
 };
 
 /**

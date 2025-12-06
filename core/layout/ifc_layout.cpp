@@ -13,6 +13,10 @@
 // Skia 字体测量
 #include "core/render/text/font_manager.h"
 #include "core/render/text_renderer.h"
+#include "core/render/render_inline_block.h"
+
+// DOM 类型（用于检测 BR 元素）
+#include "core/dom/element.h"
 
 // 调试开关
 #define IFC_DEBUG 0
@@ -236,8 +240,12 @@ IFCLayoutResult IFCLayout::Layout(RenderObject* container, float available_width
     if (IsCacheValid(container, available_width)) {
         const auto& cache = cache_[container];
         line_boxes_ = cache.line_boxes;
+        inline_boxes_ = cache.inline_boxes;  // Also restore inline_boxes for ApplyLayoutResults
         content_height_ = cache.content_height;
         content_width_ = cache.content_width;
+
+        // Re-apply layout results to update render object positions
+        ApplyLayoutResults(container);
 
         result.total_height = content_height_;
         result.max_width = content_width_;
@@ -368,6 +376,7 @@ IFCLayoutResult IFCLayout::Layout(RenderObject* container, float available_width
     cache.content_height = content_height_;
     cache.content_width = content_width_;
     cache.line_boxes = line_boxes_;
+    cache.inline_boxes = inline_boxes_;  // Cache inline boxes for ApplyLayoutResults
     cache.content_version = GetContentVersion(container);
     cache.valid = true;
 
@@ -409,54 +418,180 @@ void IFCLayout::CreateInlineBox(RenderObject* render_obj) {
             float letter_spacing = style.letter_spacing.ToPx(0, style.font_size);
             float word_spacing = style.word_spacing.ToPx(0, style.font_size);
 
-            TextMeasurement measurement = MeasureTextForIFC(
-                text, style.font_size, style.font_family, letter_spacing, word_spacing, style.line_height);
+            // 检查 white-space 属性
+            bool wrap_allowed = (style.white_space != "nowrap" && style.white_space != "pre");
+            bool preserve_newlines = (style.white_space == "pre" || style.white_space == "pre-wrap" || style.white_space == "pre-line");
 
-            InlineBox box = InlineBox::CreateTextBox(render_obj);
-            box.width = measurement.width;
-            box.height = measurement.height;
-            box.baseline = measurement.skia_ascent;  // 使用 Skia 测量的精确 ascent
-            box.skia_ascent = measurement.skia_ascent;
-            box.skia_descent = measurement.skia_descent;
-            box.line_height_multiplier = style.line_height;  // 设置行高倍数
+            // 如果 white-space: pre/pre-wrap/pre-line，需要按 \n 分割文本
+            if (preserve_newlines && text.find('\n') != std::string::npos) {
+                // 按换行符分割文本
+                std::vector<std::string> lines;
+                size_t start = 0;
+                size_t pos = 0;
+                while ((pos = text.find('\n', start)) != std::string::npos) {
+                    lines.push_back(text.substr(start, pos - start));
+                    start = pos + 1;
+                }
+                // 添加最后一行（\n 后面的内容）
+                if (start < text.size()) {
+                    lines.push_back(text.substr(start));
+                } else if (start == text.size()) {
+                    // 文本以 \n 结尾，添加空行
+                    lines.push_back("");
+                }
 
-            // 添加 TextRun
-            TextRun run;
-            run.text = text;
-            run.start_offset = 0;
-            run.end_offset = text.size();
-            run.width = measurement.width;
-            run.height = measurement.height;
-            run.baseline = measurement.skia_ascent;
-            box.text_runs.push_back(run);
+#if IFC_DEBUG
+                std::cout << "[IFC CreateInlineBox] PRE mode: split into " << lines.size() << " lines by \\n" << std::endl;
+#endif
 
-            inline_boxes_.push_back(std::move(box));
+                // 保存换行后的文本到 RenderText 对象
+                text_obj->SetWrappedLines(lines);
+
+                // 为每一行创建一个 InlineBox
+                for (size_t i = 0; i < lines.size(); ++i) {
+                    const std::string& line_text = lines[i];
+
+                    // 对于空行，使用空格来获取正确的行高
+                    std::string measure_text = line_text.empty() ? " " : line_text;
+                    TextMeasurement line_measurement = MeasureTextForIFC(
+                        measure_text, style.font_size, style.font_family, letter_spacing, word_spacing, style.line_height);
+
+                    // 空行宽度为0
+                    if (line_text.empty()) {
+                        line_measurement.width = 0;
+                    }
+
+                    InlineBox box = InlineBox::CreateTextBox(render_obj);
+                    box.width = line_measurement.width;
+                    box.height = line_measurement.height;
+                    box.baseline = line_measurement.skia_ascent;
+                    box.skia_ascent = line_measurement.skia_ascent;
+                    box.skia_descent = line_measurement.skia_descent;
+                    box.line_height_multiplier = style.line_height;
+
+                    // 添加 TextRun
+                    TextRun run;
+                    run.text = line_text;
+                    run.start_offset = 0;
+                    run.end_offset = line_text.size();
+                    run.width = line_measurement.width;
+                    run.height = line_measurement.height;
+                    run.baseline = line_measurement.skia_ascent;
+                    // 标记除最后一行外的所有行为强制换行
+                    if (i < lines.size() - 1) {
+                        run.is_forced_break = true;
+                    }
+                    box.text_runs.push_back(run);
+
+                    inline_boxes_.push_back(std::move(box));
+                }
+            } else {
+                // 测量整个文本
+                TextMeasurement measurement = MeasureTextForIFC(
+                    text, style.font_size, style.font_family, letter_spacing, word_spacing, style.line_height);
+
+                // 如果文本宽度超过可用宽度且允许换行，则分割文本
+#if IFC_DEBUG
+                std::cout << "[IFC CreateInlineBox] TEXT: wrap_allowed=" << wrap_allowed
+                          << ", available_width=" << current_available_width_
+                          << ", text_width=" << measurement.width
+                          << ", text=" << text.substr(0, 50) << "..." << std::endl;
+#endif
+                if (wrap_allowed && current_available_width_ > 0 && measurement.width > current_available_width_) {
+                    // 使用 TextRenderer::WrapText 进行文本换行
+                    auto& font_manager = FontManager::GetInstance();
+                    FontDescriptor font_desc;
+                    font_desc.family = style.font_family.empty() ? "Arial" : style.font_family;
+                    font_desc.size = style.font_size;
+                    font_desc.weight = FontWeight::NORMAL;
+                    font_desc.style = FontStyle::NORMAL;
+                    SkFont font = font_manager.LoadFont(font_desc);
+
+                    TextRenderer text_renderer(nullptr);  // 创建 TextRenderer 实例
+                    std::vector<std::string> wrapped_lines = text_renderer.WrapText(text, current_available_width_, font);
+
+#if IFC_DEBUG
+                    std::cout << "[IFC CreateInlineBox] Wrapped into " << wrapped_lines.size() << " lines:" << std::endl;
+                    for (size_t i = 0; i < wrapped_lines.size(); ++i) {
+                        std::cout << "  Line " << i << ": \"" << wrapped_lines[i] << "\"" << std::endl;
+                    }
+#endif
+
+                    // 保存换行后的文本到 RenderText 对象
+                    text_obj->SetWrappedLines(wrapped_lines);
+
+                    // 为每一行创建一个 InlineBox
+                    for (size_t i = 0; i < wrapped_lines.size(); ++i) {
+                        const std::string& line_text = wrapped_lines[i];
+                        if (line_text.empty()) continue;
+
+                        TextMeasurement line_measurement = MeasureTextForIFC(
+                            line_text, style.font_size, style.font_family, letter_spacing, word_spacing, style.line_height);
+
+                        InlineBox box = InlineBox::CreateTextBox(render_obj);
+                        box.width = line_measurement.width;
+                        box.height = line_measurement.height;
+                        box.baseline = line_measurement.skia_ascent;
+                        box.skia_ascent = line_measurement.skia_ascent;
+                        box.skia_descent = line_measurement.skia_descent;
+                        box.line_height_multiplier = style.line_height;
+
+                        // 添加 TextRun
+                        TextRun run;
+                        run.text = line_text;
+                        run.start_offset = 0;
+                        run.end_offset = line_text.size();
+                        run.width = line_measurement.width;
+                        run.height = line_measurement.height;
+                        run.baseline = line_measurement.skia_ascent;
+                        // 标记除最后一行外的所有行为强制换行
+                        if (i < wrapped_lines.size() - 1) {
+                            run.is_forced_break = true;
+                        }
+                        box.text_runs.push_back(run);
+
+                        inline_boxes_.push_back(std::move(box));
+                    }
+                } else {
+                    // 不需要换行，创建单个 InlineBox
+                    text_obj->SetWrappedLines({});  // 清除之前的换行信息
+
+                    InlineBox box = InlineBox::CreateTextBox(render_obj);
+                    box.width = measurement.width;
+                    box.height = measurement.height;
+                    box.baseline = measurement.skia_ascent;
+                    box.skia_ascent = measurement.skia_ascent;
+                    box.skia_descent = measurement.skia_descent;
+                    box.line_height_multiplier = style.line_height;
+
+                    // 添加 TextRun
+                    TextRun run;
+                    run.text = text;
+                    run.start_offset = 0;
+                    run.end_offset = text.size();
+                    run.width = measurement.width;
+                    run.height = measurement.height;
+                    run.baseline = measurement.skia_ascent;
+                    box.text_runs.push_back(run);
+
+                    inline_boxes_.push_back(std::move(box));
+                }
+            }
             break;
         }
 
         case RenderObjectType::INLINE_BLOCK: {
             // 原子内联元素
-            // 优先使用 CSS 样式中的尺寸，其次使用已计算的布局尺寸
-            float w = 100.0f;  // 默认宽度
-            float h = 20.0f;   // 默认高度
+            // 使用 MeasureIntrinsicSize 计算尺寸
+            auto* inline_block = static_cast<RenderInlineBlock*>(render_obj);
+            auto [w, h] = inline_block->MeasureIntrinsicSize(current_available_width_);
 
-            // 从 CSS 样式获取尺寸
-            if (style.width.unit != CSSUnit::AUTO) {
+            // 如果 CSS 样式中有显式尺寸，使用 CSS 尺寸
+            if (style.width.unit != CSSUnit::AUTO && style.width.unit != CSSUnit::NONE) {
                 w = style.width.ToPx(current_available_width_, style.font_size);
-            } else {
-                const auto& layout = render_obj->GetLayoutInfo();
-                if (layout.width > 0) {
-                    w = layout.width;
-                }
             }
-
-            if (style.height.unit != CSSUnit::AUTO) {
+            if (style.height.unit != CSSUnit::AUTO && style.height.unit != CSSUnit::NONE) {
                 h = style.height.ToPx(0, style.font_size);
-            } else {
-                const auto& layout = render_obj->GetLayoutInfo();
-                if (layout.height > 0) {
-                    h = layout.height;
-                }
             }
 
             InlineBox box = InlineBox::CreateAtomicBox(render_obj, w, h, h);
@@ -473,7 +608,39 @@ void IFCLayout::CreateInlineBox(RenderObject* render_obj) {
         }
 
         case RenderObjectType::INLINE: {
-            // 内联元素 - 递归处理子元素
+            // 检查是否是 BR 元素
+            auto node = render_obj->GetNode();
+            if (node && node->GetNodeType() == NodeType::ELEMENT_NODE) {
+                auto element = std::static_pointer_cast<Element>(node);
+                std::string tag_name = element->GetTagName();
+                if (tag_name == "br" || tag_name == "BR") {
+                    // BR 元素 - 创建一个带有强制换行标记的空文本盒子
+                    InlineBox box = InlineBox::CreateTextBox(render_obj);
+                    box.width = 0.0f;
+                    // 使用父元素的 line-height 来确定 BR 的高度
+                    box.height = style.font_size * style.line_height;
+                    box.baseline = style.font_size * 0.8f;
+                    box.skia_ascent = style.font_size * 0.8f;
+                    box.skia_descent = style.font_size * 0.2f;
+                    box.line_height_multiplier = style.line_height;
+
+                    // 添加一个空的 TextRun，标记为强制换行
+                    TextRun run;
+                    run.text = "";
+                    run.start_offset = 0;
+                    run.end_offset = 0;
+                    run.width = 0.0f;
+                    run.height = box.height;
+                    run.baseline = box.baseline;
+                    run.is_forced_break = true;  // 关键：标记为强制换行
+                    box.text_runs.push_back(run);
+
+                    inline_boxes_.push_back(std::move(box));
+                    break;
+                }
+            }
+
+            // 普通内联元素 - 递归处理子元素
             // 添加 INLINE_START 标记
             InlineBox start = InlineBox::CreateInlineStart(render_obj);
             inline_boxes_.push_back(std::move(start));
@@ -539,6 +706,9 @@ void IFCLayout::ApplyLayoutResults(RenderObject* container) {
     };
     std::unordered_map<RenderObject*, InlineElementBounds> inline_bounds;
 
+    // 用于跟踪文本节点的边界（多行文本需要合并边界）
+    std::unordered_map<RenderObject*, InlineElementBounds> text_bounds;
+
     // 第一遍：收集所有内联盒的位置信息
     std::vector<RenderObject*> inline_stack;  // 当前活跃的内联元素栈
 
@@ -571,12 +741,29 @@ void IFCLayout::ApplyLayoutResults(RenderObject* container) {
             }
 #endif
 
-            // 更新自身的布局信息 (positions now include padding/border offset)
-            LayoutInfo& layout = render_obj->GetLayoutInfo();
-            layout.x = box_left;
-            layout.y = box_top;
-            layout.width = box.width;
-            layout.height = box.height;
+            // 对于文本节点，合并所有行的边界
+            if (box.type == InlineBoxType::TEXT) {
+                auto& bounds = text_bounds[render_obj];
+                if (!bounds.has_content) {
+                    bounds.min_x = box_left;
+                    bounds.min_y = box_top;
+                    bounds.max_x = box_right;
+                    bounds.max_y = box_bottom;
+                    bounds.has_content = true;
+                } else {
+                    bounds.min_x = std::min(bounds.min_x, box_left);
+                    bounds.min_y = std::min(bounds.min_y, box_top);
+                    bounds.max_x = std::max(bounds.max_x, box_right);
+                    bounds.max_y = std::max(bounds.max_y, box_bottom);
+                }
+            } else {
+                // ATOMIC 盒子直接更新布局信息
+                LayoutInfo& layout = render_obj->GetLayoutInfo();
+                layout.x = box_left;
+                layout.y = box_top;
+                layout.width = box.width;
+                layout.height = box.height;
+            }
 
             // 更新所有父级内联元素的边界
             for (RenderObject* inline_elem : inline_stack) {
@@ -588,6 +775,17 @@ void IFCLayout::ApplyLayoutResults(RenderObject* container) {
                 bounds.has_content = true;
             }
         }
+    }
+
+    // 应用文本节点的合并边界
+    for (auto& [render_obj, bounds] : text_bounds) {
+        if (!bounds.has_content) continue;
+
+        LayoutInfo& layout = render_obj->GetLayoutInfo();
+        layout.x = bounds.min_x;
+        layout.y = bounds.min_y;
+        layout.width = bounds.max_x - bounds.min_x;
+        layout.height = bounds.max_y - bounds.min_y;
     }
 
     // 第二遍：应用内联元素的边界
