@@ -778,18 +778,27 @@ static void DetermineFlexBaseSize(
             item.flex_basis = measured_size.Main(constants.dir);
         }
 
-        // Clamp flex_basis by min/max size
-        auto main_min = item.min_size.Main(constants.dir);
-        auto main_max = item.max_size.Main(constants.dir);
-        item.flex_basis = f32_clamp(
-            item.flex_basis,
-            main_min.value_or(0.0f),
-            main_max.value_or(INFINITY)
-        );
-
-        // Compute inner_flex_basis (flex_basis minus padding and border)
+        // Compute padding + border sum for main axis
         float main_padding_border = RectMainAxisSum(item.padding, constants.dir) +
                                     RectMainAxisSum(item.border, constants.dir);
+
+        // Floor flex-basis by the padding_border_sum (floors inner_flex_basis at zero)
+        // This matches Chrome and Firefox's behaviour.
+        // See: https://www.w3.org/TR/css-flexbox-1/#intrinsic-item-contributions
+        item.flex_basis = f32_max(item.flex_basis, main_padding_border);
+
+        // Note: flex_basis should NOT be clamped by min size here.
+        // min constraints are applied during the flex algorithm's
+        // "freeze" and "clamp" steps, not to the initial flex-basis.
+        // max constraints can be applied here.
+        // See: https://www.w3.org/TR/css-flexbox-1/#resolve-flexible-lengths
+        auto main_min = item.min_size.Main(constants.dir);
+        auto main_max = item.max_size.Main(constants.dir);
+        if (main_max.has_value()) {
+            item.flex_basis = f32_min(item.flex_basis, *main_max);
+        }
+
+        // Compute inner_flex_basis (flex_basis minus padding and border)
         item.inner_flex_basis = f32_max(item.flex_basis - main_padding_border, 0.0f);
 
         // Compute hypothetical main size
@@ -1385,6 +1394,21 @@ static void ResolveCrossAxisAutoMargins(
     const FlexAlgoConstants& constants
 ) {
     for (auto& line : flex_lines) {
+        // First pass: find the maximum baseline for baseline-aligned items in this line
+        float max_baseline = 0.0f;
+        bool has_baseline_items = false;
+        for (size_t i = line.start_index; i < line.end_index; ++i) {
+            const auto& item = flex_items[i];
+            if (item.align_self == AlignSelf::Baseline) {
+                has_baseline_items = true;
+                // The baseline is measured from the top of the item's content box
+                // We need to add the cross-start margin to get the baseline from the line start
+                float item_baseline = item.margin.CrossStart(constants.dir) + item.baseline;
+                max_baseline = f32_max(max_baseline, item_baseline);
+            }
+        }
+
+        // Second pass: apply alignment
         for (size_t i = line.start_index; i < line.end_index; ++i) {
             auto& item = flex_items[i];
 
@@ -1415,8 +1439,13 @@ static void ResolveCrossAxisAutoMargins(
                         item.offset_cross = free_space / 2.0f;
                         break;
                     case AlignSelf::Baseline:
-                        // Baseline alignment handled separately
-                        item.offset_cross = 0.0f;
+                        if (has_baseline_items) {
+                            // Align this item's baseline with the max baseline
+                            float item_baseline = item.margin.CrossStart(constants.dir) + item.baseline;
+                            item.offset_cross = max_baseline - item_baseline;
+                        } else {
+                            item.offset_cross = 0.0f;
+                        }
                         break;
                     case AlignSelf::Stretch:
                     default:

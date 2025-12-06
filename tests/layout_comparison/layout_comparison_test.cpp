@@ -447,6 +447,63 @@ TEST_F(LayoutComparisonTest, FullTestCases) {
 }
 
 /**
+ * @brief 高级布局测试用例
+ */
+TEST_F(LayoutComparisonTest, AdvancedTestCases) {
+    // 尝试多个可能的路径
+    std::vector<std::string> paths = {
+        "layout_comparison/advanced_test_cases.html",  // 从 build/bin/Release 运行
+        "tests/layout_comparison/advanced_test_cases.html",  // 从项目根目录运行
+        "../../../tests/layout_comparison/advanced_test_cases.html",  // 从 build/bin/Release 向上
+        "advanced_test_cases.html"  // 当前目录
+    };
+
+    std::string html;
+    for (const auto& path : paths) {
+        html = ReadFile(path);
+        if (!html.empty()) {
+            std::cout << "Loaded HTML from: " << path << std::endl;
+            break;
+        }
+    }
+
+    if (html.empty()) {
+        GTEST_SKIP() << "Advanced test HTML file not found in any of the expected paths";
+    }
+
+    document_->LoadHTML(html);
+    window_->SetDocument(document_);
+    window_->EnsureRenderTree();
+
+    auto render_tree = window_->GetCachedRenderTree();
+    ASSERT_NE(render_tree, nullptr);
+
+    std::vector<LayoutData> layouts;
+    CollectLayoutData(render_tree, layouts);
+
+    std::string json = LayoutsToJSON(layouts);
+
+    // 保存到文件
+    std::vector<std::string> out_paths = {
+        "layout_comparison/mbink_advanced_layout_data.json",
+        "mbink_advanced_layout_data.json"
+    };
+
+    for (const auto& path : out_paths) {
+        std::ofstream out(path);
+        if (out.is_open()) {
+            out << json;
+            out.close();
+            std::cout << "\n✓ Advanced layout data saved to " << path << std::endl;
+            break;
+        }
+    }
+
+    std::cout << "\n=== MBink Advanced Layout Data ===\n" << json << std::endl;
+    std::cout << "\nTotal advanced test elements: " << layouts.size() << std::endl;
+}
+
+/**
  * @brief 测试 line-height 继承
  */
 TEST_F(LayoutComparisonTest, LineHeightInheritance) {

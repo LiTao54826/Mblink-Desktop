@@ -13,6 +13,7 @@
 #include <optional>
 #include <array>
 #include <cmath>
+#include <iostream>
 
 namespace lightui {
 
@@ -122,13 +123,13 @@ public:
         // RunMode::ComputeSize
         for (const auto& entry : measure_entries_) {
             if (!entry.has_value()) continue;
-            
+
             const auto cached_size = entry->content;
 
-            bool width_matches = 
+            bool width_matches =
                 known_dimensions.width == entry->known_dimensions.width ||
                 known_dimensions.width == std::optional<float>(cached_size.width);
-            bool height_matches = 
+            bool height_matches =
                 known_dimensions.height == entry->known_dimensions.height ||
                 known_dimensions.height == std::optional<float>(cached_size.height);
             bool width_space_matches = known_dimensions.width.has_value() ||

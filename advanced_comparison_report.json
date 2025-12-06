@@ -1,0 +1,804 @@
+{
+  "total": 159,
+  "passed": 0,
+  "failed": 0,
+  "missing_in_mbink": 159,
+  "missing_in_browser": 0,
+  "details": [
+    {
+      "id": "ADV-1-01",
+      "status": "MISSING_IN_MBINK",
+      "message": "Element not found in MBink output"
+    },
+    {
+      "id": "ADV-1-01-L1",
+      "status": "MISSING_IN_MBINK",
+      "message": "Element not found in MBink output"
+    },
+    {
+      "id": "ADV-1-01-L2",
+      "status": "MISSING_IN_MBINK",
+      "message": "Element not found in MBink output"
+    },
+    {
+      "id": "ADV-1-01-A",
+      "status": "MISSING_IN_MBINK",
+      "message": "Element not found in MBink output"
+    },
+    {
+      "id": "ADV-1-01-B",
+      "status": "MISSING_IN_MBINK",
+      "message": "Element not found in MBink output"
+    },
+    {
+      "id": "ADV-1-01-C",
+      "status": "MISSING_IN_MBINK",
+      "message": "Element not found in MBink output"
+    },
+    {
+      "id": "ADV-1-02",
+      "status": "MISSING_IN_MBINK",
+      "message": "Element not found in MBink output"
+    },
+    {
+      "id": "ADV-1-02-grid",
+      "status": "MISSING_IN_MBINK",
+      "message": "Element not found in MBink output"
+    },
+    {
+      "id": "ADV-1-02-left",
+      "status": "MISSING_IN_MBINK",
+      "message": "Element not found in MBink output"
+    },
+    {
+      "id": "ADV-1-02-A",
+      "status": "MISSING_IN_MBINK",
+      "message": "Element not found in MBink output"
+    },
+    {
+      "id": "ADV-1-02-right",
+      "status": "MISSING_IN_MBINK",
+      "message": "Element not found in MBink output"
+    },
+    {
+      "id": "ADV-1-02-B",
+      "status": "MISSING_IN_MBINK",
+      "message": "Element not found in MBink output"
+    },
+    {
+      "id": "ADV-1-03",
+      "status": "MISSING_IN_MBINK",
+      "message": "Element not found in MBink output"
+    },
+    {
+      "id": "ADV-1-03-L1",
+      "status": "MISSING_IN_MBINK",
+      "message": "Element not found in MBink output"
+    },
+    {
+      "id": "ADV-1-03-L2",
+      "status": "MISSING_IN_MBINK",
+      "message": "Element not found in MBink output"
+    },
+    {
+      "id": "ADV-1-03-L3",
+      "status": "MISSING_IN_MBINK",
+      "message": "Element not found in MBink output"
+    },
+    {
+      "id": "ADV-1-03-L4",
+      "status": "MISSING_IN_MBINK",
+      "message": "Element not found in MBink output"
+    },
+    {
+      "id": "ADV-1-03-A",
+      "status": "MISSING_IN_MBINK",
+      "message": "Element not found in MBink output"
+    },
+    {
+      "id": "ADV-1-03-B",
+      "status": "MISSING_IN_MBINK",
+      "message": "Element not found in MBink output"
+    },
+    {
+      "id": "ADV-2-01",
+      "status": "MISSING_IN_MBINK",
+      "message": "Element not found in MBink output"
+    },
+    {
+      "id": "ADV-2-01-wrap",
+      "status": "MISSING_IN_MBINK",
+      "message": "Element not found in MBink output"
+    },
+    {
+      "id": "ADV-2-01-box",
+      "status": "MISSING_IN_MBINK",
+      "message": "Element not found in MBink output"
+    },
+    {
+      "id": "ADV-2-02",
+      "status": "MISSING_IN_MBINK",
+      "message": "Element not found in MBink output"
+    },
+    {
+      "id": "ADV-2-02-wrap",
+      "status": "MISSING_IN_MBINK",
+      "message": "Element not found in MBink output"
+    },
+    {
+      "id": "ADV-2-02-box",
+      "status": "MISSING_IN_MBINK",
+      "message": "Element not found in MBink output"
+    },
+    {
+      "id": "ADV-2-03",
+      "status": "MISSING_IN_MBINK",
+      "message": "Element not found in MBink output"
+    },
+    {
+      "id": "ADV-2-03-flex",
+      "status": "MISSING_IN_MBINK",
+      "message": "Element not found in MBink output"
+    },
+    {
+      "id": "ADV-2-03-A",
+      "status": "MISSING_IN_MBINK",
+      "message": "Element not found in MBink output"
+    },
+    {
+      "id": "ADV-2-03-B",
+      "status": "MISSING_IN_MBINK",
+      "message": "Element not found in MBink output"
+    },
+    {
+      "id": "ADV-2-04",
+      "status": "MISSING_IN_MBINK",
+      "message": "Element not found in MBink output"
+    },
+    {
+      "id": "ADV-2-04-L0",
+      "status": "MISSING_IN_MBINK",
+      "message": "Element not found in MBink output"
+    },
+    {
+      "id": "ADV-2-04-L1",
+      "status": "MISSING_IN_MBINK",
+      "message": "Element not found in MBink output"
+    },
+    {
+      "id": "ADV-2-04-L2",
+      "status": "MISSING_IN_MBINK",
+      "message": "Element not found in MBink output"
+    },
+    {
+      "id": "ADV-2-04-box",
+      "status": "MISSING_IN_MBINK",
+      "message": "Element not found in MBink output"
+    },
+    {
+      "id": "ADV-2-05",
+      "status": "MISSING_IN_MBINK",
+      "message": "Element not found in MBink output"
+    },
+    {
+      "id": "ADV-2-05-wrap",
+      "status": "MISSING_IN_MBINK",
+      "message": "Element not found in MBink output"
+    },
+    {
+      "id": "ADV-2-05-box",
+      "status": "MISSING_IN_MBINK",
+      "message": "Element not found in MBink output"
+    },
+    {
+      "id": "ADV-3-01",
+      "status": "MISSING_IN_MBINK",
+      "message": "Element not found in MBink output"
+    },
+    {
+      "id": "ADV-3-01-flex",
+      "status": "MISSING_IN_MBINK",
+      "message": "Element not found in MBink output"
+    },
+    {
+      "id": "ADV-3-01-box",
+      "status": "MISSING_IN_MBINK",
+      "message": "Element not found in MBink output"
+    },
+    {
+      "id": "ADV-3-02",
+      "status": "MISSING_IN_MBINK",
+      "message": "Element not found in MBink output"
+    },
+    {
+      "id": "ADV-3-02-flex",
+      "status": "MISSING_IN_MBINK",
+      "message": "Element not found in MBink output"
+    },
+    {
+      "id": "ADV-3-02-A",
+      "status": "MISSING_IN_MBINK",
+      "message": "Element not found in MBink output"
+    },
+    {
+      "id": "ADV-3-02-B",
+      "status": "MISSING_IN_MBINK",
+      "message": "Element not found in MBink output"
+    },
+    {
+      "id": "ADV-3-02-C",
+      "status": "MISSING_IN_MBINK",
+      "message": "Element not found in MBink output"
+    },
+    {
+      "id": "ADV-3-03",
+      "status": "MISSING_IN_MBINK",
+      "message": "Element not found in MBink output"
+    },
+    {
+      "id": "ADV-3-03-grid",
+      "status": "MISSING_IN_MBINK",
+      "message": "Element not found in MBink output"
+    },
+    {
+      "id": "ADV-3-03-A",
+      "status": "MISSING_IN_MBINK",
+      "message": "Element not found in MBink output"
+    },
+    {
+      "id": "ADV-3-03-B",
+      "status": "MISSING_IN_MBINK",
+      "message": "Element not found in MBink output"
+    },
+    {
+      "id": "ADV-3-04",
+      "status": "MISSING_IN_MBINK",
+      "message": "Element not found in MBink output"
+    },
+    {
+      "id": "ADV-3-04-grid",
+      "status": "MISSING_IN_MBINK",
+      "message": "Element not found in MBink output"
+    },
+    {
+      "id": "ADV-3-04-A",
+      "status": "MISSING_IN_MBINK",
+      "message": "Element not found in MBink output"
+    },
+    {
+      "id": "ADV-3-04-B",
+      "status": "MISSING_IN_MBINK",
+      "message": "Element not found in MBink output"
+    },
+    {
+      "id": "ADV-3-05",
+      "status": "MISSING_IN_MBINK",
+      "message": "Element not found in MBink output"
+    },
+    {
+      "id": "ADV-3-05-flex",
+      "status": "MISSING_IN_MBINK",
+      "message": "Element not found in MBink output"
+    },
+    {
+      "id": "ADV-3-05-A",
+      "status": "MISSING_IN_MBINK",
+      "message": "Element not found in MBink output"
+    },
+    {
+      "id": "ADV-3-05-B",
+      "status": "MISSING_IN_MBINK",
+      "message": "Element not found in MBink output"
+    },
+    {
+      "id": "ADV-3-05-C",
+      "status": "MISSING_IN_MBINK",
+      "message": "Element not found in MBink output"
+    },
+    {
+      "id": "ADV-4-01",
+      "status": "MISSING_IN_MBINK",
+      "message": "Element not found in MBink output"
+    },
+    {
+      "id": "ADV-4-01-flex",
+      "status": "MISSING_IN_MBINK",
+      "message": "Element not found in MBink output"
+    },
+    {
+      "id": "ADV-4-01-A",
+      "status": "MISSING_IN_MBINK",
+      "message": "Element not found in MBink output"
+    },
+    {
+      "id": "ADV-4-01-B",
+      "status": "MISSING_IN_MBINK",
+      "message": "Element not found in MBink output"
+    },
+    {
+      "id": "ADV-4-01-C",
+      "status": "MISSING_IN_MBINK",
+      "message": "Element not found in MBink output"
+    },
+    {
+      "id": "ADV-4-02",
+      "status": "MISSING_IN_MBINK",
+      "message": "Element not found in MBink output"
+    },
+    {
+      "id": "ADV-4-02-grid",
+      "status": "MISSING_IN_MBINK",
+      "message": "Element not found in MBink output"
+    },
+    {
+      "id": "ADV-4-02-A",
+      "status": "MISSING_IN_MBINK",
+      "message": "Element not found in MBink output"
+    },
+    {
+      "id": "ADV-4-02-B",
+      "status": "MISSING_IN_MBINK",
+      "message": "Element not found in MBink output"
+    },
+    {
+      "id": "ADV-4-03",
+      "status": "MISSING_IN_MBINK",
+      "message": "Element not found in MBink output"
+    },
+    {
+      "id": "ADV-4-03-flex",
+      "status": "MISSING_IN_MBINK",
+      "message": "Element not found in MBink output"
+    },
+    {
+      "id": "ADV-4-03-A",
+      "status": "MISSING_IN_MBINK",
+      "message": "Element not found in MBink output"
+    },
+    {
+      "id": "ADV-4-03-B",
+      "status": "MISSING_IN_MBINK",
+      "message": "Element not found in MBink output"
+    },
+    {
+      "id": "ADV-4-04",
+      "status": "MISSING_IN_MBINK",
+      "message": "Element not found in MBink output"
+    },
+    {
+      "id": "ADV-4-04-flex",
+      "status": "MISSING_IN_MBINK",
+      "message": "Element not found in MBink output"
+    },
+    {
+      "id": "ADV-4-04-A",
+      "status": "MISSING_IN_MBINK",
+      "message": "Element not found in MBink output"
+    },
+    {
+      "id": "ADV-4-04-B",
+      "status": "MISSING_IN_MBINK",
+      "message": "Element not found in MBink output"
+    },
+    {
+      "id": "ADV-5-01",
+      "status": "MISSING_IN_MBINK",
+      "message": "Element not found in MBink output"
+    },
+    {
+      "id": "ADV-5-01-grid",
+      "status": "MISSING_IN_MBINK",
+      "message": "Element not found in MBink output"
+    },
+    {
+      "id": "ADV-5-01-A",
+      "status": "MISSING_IN_MBINK",
+      "message": "Element not found in MBink output"
+    },
+    {
+      "id": "ADV-5-01-B",
+      "status": "MISSING_IN_MBINK",
+      "message": "Element not found in MBink output"
+    },
+    {
+      "id": "ADV-5-01-C",
+      "status": "MISSING_IN_MBINK",
+      "message": "Element not found in MBink output"
+    },
+    {
+      "id": "ADV-5-01-D",
+      "status": "MISSING_IN_MBINK",
+      "message": "Element not found in MBink output"
+    },
+    {
+      "id": "ADV-5-01-E",
+      "status": "MISSING_IN_MBINK",
+      "message": "Element not found in MBink output"
+    },
+    {
+      "id": "ADV-5-01-F",
+      "status": "MISSING_IN_MBINK",
+      "message": "Element not found in MBink output"
+    },
+    {
+      "id": "ADV-5-02",
+      "status": "MISSING_IN_MBINK",
+      "message": "Element not found in MBink output"
+    },
+    {
+      "id": "ADV-5-02-grid",
+      "status": "MISSING_IN_MBINK",
+      "message": "Element not found in MBink output"
+    },
+    {
+      "id": "ADV-5-02-A",
+      "status": "MISSING_IN_MBINK",
+      "message": "Element not found in MBink output"
+    },
+    {
+      "id": "ADV-5-02-B",
+      "status": "MISSING_IN_MBINK",
+      "message": "Element not found in MBink output"
+    },
+    {
+      "id": "ADV-5-02-C",
+      "status": "MISSING_IN_MBINK",
+      "message": "Element not found in MBink output"
+    },
+    {
+      "id": "ADV-5-02-D",
+      "status": "MISSING_IN_MBINK",
+      "message": "Element not found in MBink output"
+    },
+    {
+      "id": "ADV-5-02-E",
+      "status": "MISSING_IN_MBINK",
+      "message": "Element not found in MBink output"
+    },
+    {
+      "id": "ADV-5-02-F",
+      "status": "MISSING_IN_MBINK",
+      "message": "Element not found in MBink output"
+    },
+    {
+      "id": "ADV-5-03",
+      "status": "MISSING_IN_MBINK",
+      "message": "Element not found in MBink output"
+    },
+    {
+      "id": "ADV-5-03-grid",
+      "status": "MISSING_IN_MBINK",
+      "message": "Element not found in MBink output"
+    },
+    {
+      "id": "ADV-5-03-A",
+      "status": "MISSING_IN_MBINK",
+      "message": "Element not found in MBink output"
+    },
+    {
+      "id": "ADV-5-03-B",
+      "status": "MISSING_IN_MBINK",
+      "message": "Element not found in MBink output"
+    },
+    {
+      "id": "ADV-5-03-C",
+      "status": "MISSING_IN_MBINK",
+      "message": "Element not found in MBink output"
+    },
+    {
+      "id": "ADV-5-04",
+      "status": "MISSING_IN_MBINK",
+      "message": "Element not found in MBink output"
+    },
+    {
+      "id": "ADV-5-04-grid",
+      "status": "MISSING_IN_MBINK",
+      "message": "Element not found in MBink output"
+    },
+    {
+      "id": "ADV-5-04-A",
+      "status": "MISSING_IN_MBINK",
+      "message": "Element not found in MBink output"
+    },
+    {
+      "id": "ADV-5-04-B",
+      "status": "MISSING_IN_MBINK",
+      "message": "Element not found in MBink output"
+    },
+    {
+      "id": "ADV-5-04-C",
+      "status": "MISSING_IN_MBINK",
+      "message": "Element not found in MBink output"
+    },
+    {
+      "id": "ADV-5-04-D",
+      "status": "MISSING_IN_MBINK",
+      "message": "Element not found in MBink output"
+    },
+    {
+      "id": "ADV-5-04-E",
+      "status": "MISSING_IN_MBINK",
+      "message": "Element not found in MBink output"
+    },
+    {
+      "id": "ADV-6-01",
+      "status": "MISSING_IN_MBINK",
+      "message": "Element not found in MBink output"
+    },
+    {
+      "id": "ADV-6-01-flex",
+      "status": "MISSING_IN_MBINK",
+      "message": "Element not found in MBink output"
+    },
+    {
+      "id": "ADV-6-01-A",
+      "status": "MISSING_IN_MBINK",
+      "message": "Element not found in MBink output"
+    },
+    {
+      "id": "ADV-6-01-B",
+      "status": "MISSING_IN_MBINK",
+      "message": "Element not found in MBink output"
+    },
+    {
+      "id": "ADV-6-02",
+      "status": "MISSING_IN_MBINK",
+      "message": "Element not found in MBink output"
+    },
+    {
+      "id": "ADV-6-02-flex",
+      "status": "MISSING_IN_MBINK",
+      "message": "Element not found in MBink output"
+    },
+    {
+      "id": "ADV-6-02-A",
+      "status": "MISSING_IN_MBINK",
+      "message": "Element not found in MBink output"
+    },
+    {
+      "id": "ADV-6-02-B",
+      "status": "MISSING_IN_MBINK",
+      "message": "Element not found in MBink output"
+    },
+    {
+      "id": "ADV-6-03",
+      "status": "MISSING_IN_MBINK",
+      "message": "Element not found in MBink output"
+    },
+    {
+      "id": "ADV-6-03-outer",
+      "status": "MISSING_IN_MBINK",
+      "message": "Element not found in MBink output"
+    },
+    {
+      "id": "ADV-6-03-A",
+      "status": "MISSING_IN_MBINK",
+      "message": "Element not found in MBink output"
+    },
+    {
+      "id": "ADV-6-03-inner",
+      "status": "MISSING_IN_MBINK",
+      "message": "Element not found in MBink output"
+    },
+    {
+      "id": "ADV-6-03-B",
+      "status": "MISSING_IN_MBINK",
+      "message": "Element not found in MBink output"
+    },
+    {
+      "id": "ADV-6-04",
+      "status": "MISSING_IN_MBINK",
+      "message": "Element not found in MBink output"
+    },
+    {
+      "id": "ADV-6-04-flex",
+      "status": "MISSING_IN_MBINK",
+      "message": "Element not found in MBink output"
+    },
+    {
+      "id": "ADV-6-04-A",
+      "status": "MISSING_IN_MBINK",
+      "message": "Element not found in MBink output"
+    },
+    {
+      "id": "ADV-6-04-B",
+      "status": "MISSING_IN_MBINK",
+      "message": "Element not found in MBink output"
+    },
+    {
+      "id": "ADV-7-01",
+      "status": "MISSING_IN_MBINK",
+      "message": "Element not found in MBink output"
+    },
+    {
+      "id": "ADV-7-01-container",
+      "status": "MISSING_IN_MBINK",
+      "message": "Element not found in MBink output"
+    },
+    {
+      "id": "ADV-7-01-header",
+      "status": "MISSING_IN_MBINK",
+      "message": "Element not found in MBink output"
+    },
+    {
+      "id": "ADV-7-01-main",
+      "status": "MISSING_IN_MBINK",
+      "message": "Element not found in MBink output"
+    },
+    {
+      "id": "ADV-7-01-footer",
+      "status": "MISSING_IN_MBINK",
+      "message": "Element not found in MBink output"
+    },
+    {
+      "id": "ADV-7-02",
+      "status": "MISSING_IN_MBINK",
+      "message": "Element not found in MBink output"
+    },
+    {
+      "id": "ADV-7-02-container",
+      "status": "MISSING_IN_MBINK",
+      "message": "Element not found in MBink output"
+    },
+    {
+      "id": "ADV-7-02-header",
+      "status": "MISSING_IN_MBINK",
+      "message": "Element not found in MBink output"
+    },
+    {
+      "id": "ADV-7-02-left",
+      "status": "MISSING_IN_MBINK",
+      "message": "Element not found in MBink output"
+    },
+    {
+      "id": "ADV-7-02-main",
+      "status": "MISSING_IN_MBINK",
+      "message": "Element not found in MBink output"
+    },
+    {
+      "id": "ADV-7-02-right",
+      "status": "MISSING_IN_MBINK",
+      "message": "Element not found in MBink output"
+    },
+    {
+      "id": "ADV-7-02-footer",
+      "status": "MISSING_IN_MBINK",
+      "message": "Element not found in MBink output"
+    },
+    {
+      "id": "ADV-7-03",
+      "status": "MISSING_IN_MBINK",
+      "message": "Element not found in MBink output"
+    },
+    {
+      "id": "ADV-7-03-container",
+      "status": "MISSING_IN_MBINK",
+      "message": "Element not found in MBink output"
+    },
+    {
+      "id": "ADV-7-03-A",
+      "status": "MISSING_IN_MBINK",
+      "message": "Element not found in MBink output"
+    },
+    {
+      "id": "ADV-7-03-B",
+      "status": "MISSING_IN_MBINK",
+      "message": "Element not found in MBink output"
+    },
+    {
+      "id": "ADV-7-03-C",
+      "status": "MISSING_IN_MBINK",
+      "message": "Element not found in MBink output"
+    },
+    {
+      "id": "ADV-7-04",
+      "status": "MISSING_IN_MBINK",
+      "message": "Element not found in MBink output"
+    },
+    {
+      "id": "ADV-7-04-container",
+      "status": "MISSING_IN_MBINK",
+      "message": "Element not found in MBink output"
+    },
+    {
+      "id": "ADV-7-04-card1",
+      "status": "MISSING_IN_MBINK",
+      "message": "Element not found in MBink output"
+    },
+    {
+      "id": "ADV-7-04-card1-content",
+      "status": "MISSING_IN_MBINK",
+      "message": "Element not found in MBink output"
+    },
+    {
+      "id": "ADV-7-04-card1-btn",
+      "status": "MISSING_IN_MBINK",
+      "message": "Element not found in MBink output"
+    },
+    {
+      "id": "ADV-7-04-card2",
+      "status": "MISSING_IN_MBINK",
+      "message": "Element not found in MBink output"
+    },
+    {
+      "id": "ADV-7-04-card2-content",
+      "status": "MISSING_IN_MBINK",
+      "message": "Element not found in MBink output"
+    },
+    {
+      "id": "ADV-7-04-card2-btn",
+      "status": "MISSING_IN_MBINK",
+      "message": "Element not found in MBink output"
+    },
+    {
+      "id": "ADV-7-04-card3",
+      "status": "MISSING_IN_MBINK",
+      "message": "Element not found in MBink output"
+    },
+    {
+      "id": "ADV-7-04-card3-content",
+      "status": "MISSING_IN_MBINK",
+      "message": "Element not found in MBink output"
+    },
+    {
+      "id": "ADV-7-04-card3-btn",
+      "status": "MISSING_IN_MBINK",
+      "message": "Element not found in MBink output"
+    },
+    {
+      "id": "ADV-7-05",
+      "status": "MISSING_IN_MBINK",
+      "message": "Element not found in MBink output"
+    },
+    {
+      "id": "ADV-7-05-container",
+      "status": "MISSING_IN_MBINK",
+      "message": "Element not found in MBink output"
+    },
+    {
+      "id": "ADV-7-05-avatar",
+      "status": "MISSING_IN_MBINK",
+      "message": "Element not found in MBink output"
+    },
+    {
+      "id": "ADV-7-05-content",
+      "status": "MISSING_IN_MBINK",
+      "message": "Element not found in MBink output"
+    },
+    {
+      "id": "ADV-7-05-title",
+      "status": "MISSING_IN_MBINK",
+      "message": "Element not found in MBink output"
+    },
+    {
+      "id": "ADV-7-05-body",
+      "status": "MISSING_IN_MBINK",
+      "message": "Element not found in MBink output"
+    },
+    {
+      "id": "ADV-7-06",
+      "status": "MISSING_IN_MBINK",
+      "message": "Element not found in MBink output"
+    },
+    {
+      "id": "ADV-7-06-container",
+      "status": "MISSING_IN_MBINK",
+      "message": "Element not found in MBink output"
+    },
+    {
+      "id": "ADV-7-06-left",
+      "status": "MISSING_IN_MBINK",
+      "message": "Element not found in MBink output"
+    },
+    {
+      "id": "ADV-7-06-main",
+      "status": "MISSING_IN_MBINK",
+      "message": "Element not found in MBink output"
+    },
+    {
+      "id": "ADV-7-06-right",
+      "status": "MISSING_IN_MBINK",
+      "message": "Element not found in MBink output"
+    }
+  ]
+}

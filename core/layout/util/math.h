@@ -90,19 +90,21 @@ inline float UnwrapOrZero(std::optional<float> opt) {
 /// Extension methods for optional float operations
 struct MaybeMath {
     /// Maybe clamp value between min and max
+    /// CSS spec: when min > max, min wins (apply max first, then min)
     static std::optional<float> MaybeClamp(
         std::optional<float> value,
         std::optional<float> min_val,
         std::optional<float> max_val
     ) {
         if (!value.has_value()) return std::nullopt;
-        
+
         float result = *value;
-        if (min_val.has_value()) {
-            result = f32_max(result, *min_val);
-        }
+        // Apply max first, then min - ensures min wins when min > max
         if (max_val.has_value()) {
             result = f32_min(result, *max_val);
+        }
+        if (min_val.has_value()) {
+            result = f32_max(result, *min_val);
         }
         return result;
     }

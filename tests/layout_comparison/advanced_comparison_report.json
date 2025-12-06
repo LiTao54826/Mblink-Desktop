@@ -1,0 +1,780 @@
+{
+  "total": 159,
+  "passed": 117,
+  "failed": 42,
+  "missing_in_mbink": 0,
+  "missing_in_browser": 0,
+  "details": [
+    {
+      "id": "ADV-1-01",
+      "status": "FAILED",
+      "diffs": [
+        "height: browser=111.5, mbink=107.0, diff=4.5"
+      ]
+    },
+    {
+      "id": "ADV-1-01-L1",
+      "status": "FAILED",
+      "diffs": [
+        "height: browser=68.5, mbink=61.0, diff=7.5"
+      ]
+    },
+    {
+      "id": "ADV-1-01-L2",
+      "status": "FAILED",
+      "diffs": [
+        "height: browser=48.5, mbink=41.0, diff=7.5"
+      ]
+    },
+    {
+      "id": "ADV-1-01-A",
+      "status": "FAILED",
+      "diffs": [
+        "height: browser=38.5, mbink=31.0, diff=7.5"
+      ]
+    },
+    {
+      "id": "ADV-1-01-B",
+      "status": "FAILED",
+      "diffs": [
+        "height: browser=38.5, mbink=31.0, diff=7.5"
+      ]
+    },
+    {
+      "id": "ADV-1-01-C",
+      "status": "FAILED",
+      "diffs": [
+        "height: browser=48.5, mbink=41.0, diff=7.5"
+      ]
+    },
+    {
+      "id": "ADV-1-02",
+      "status": "FAILED",
+      "diffs": [
+        "relY: browser=163.5, mbink=159.0, diff=4.5"
+      ]
+    },
+    {
+      "id": "ADV-1-02-grid",
+      "status": "PASSED"
+    },
+    {
+      "id": "ADV-1-02-left",
+      "status": "PASSED"
+    },
+    {
+      "id": "ADV-1-02-A",
+      "status": "PASSED"
+    },
+    {
+      "id": "ADV-1-02-right",
+      "status": "PASSED"
+    },
+    {
+      "id": "ADV-1-02-B",
+      "status": "PASSED"
+    },
+    {
+      "id": "ADV-1-03",
+      "status": "FAILED",
+      "diffs": [
+        "height: browser=140.0, mbink=122.0, diff=18.0"
+      ]
+    },
+    {
+      "id": "ADV-1-03-L1",
+      "status": "FAILED",
+      "diffs": [
+        "height: browser=94.5, mbink=76.0, diff=18.5"
+      ]
+    },
+    {
+      "id": "ADV-1-03-L2",
+      "status": "FAILED",
+      "diffs": [
+        "height: browser=74.5, mbink=56.0, diff=18.5"
+      ]
+    },
+    {
+      "id": "ADV-1-03-L3",
+      "status": "FAILED",
+      "diffs": [
+        "height: browser=58.5, mbink=40.0, diff=18.5"
+      ]
+    },
+    {
+      "id": "ADV-1-03-L4",
+      "status": "FAILED",
+      "diffs": [
+        "height: browser=46.5, mbink=28.0, diff=18.5"
+      ]
+    },
+    {
+      "id": "ADV-1-03-A",
+      "status": "FAILED",
+      "diffs": [
+        "height: browser=38.5, mbink=20.0, diff=18.5"
+      ]
+    },
+    {
+      "id": "ADV-1-03-B",
+      "status": "FAILED",
+      "diffs": [
+        "height: browser=38.5, mbink=20.0, diff=18.5"
+      ]
+    },
+    {
+      "id": "ADV-2-01",
+      "status": "PASSED"
+    },
+    {
+      "id": "ADV-2-01-wrap",
+      "status": "PASSED"
+    },
+    {
+      "id": "ADV-2-01-box",
+      "status": "PASSED"
+    },
+    {
+      "id": "ADV-2-02",
+      "status": "FAILED",
+      "diffs": [
+        "height: browser=91.5, mbink=97.0, diff=5.5"
+      ]
+    },
+    {
+      "id": "ADV-2-02-wrap",
+      "status": "PASSED"
+    },
+    {
+      "id": "ADV-2-02-box",
+      "status": "PASSED"
+    },
+    {
+      "id": "ADV-2-03",
+      "status": "FAILED",
+      "diffs": [
+        "height: browser=91.5, mbink=97.0, diff=5.5",
+        "relY: browser=247.5, mbink=256.0, diff=8.5"
+      ]
+    },
+    {
+      "id": "ADV-2-03-flex",
+      "status": "PASSED"
+    },
+    {
+      "id": "ADV-2-03-A",
+      "status": "PASSED"
+    },
+    {
+      "id": "ADV-2-03-B",
+      "status": "PASSED"
+    },
+    {
+      "id": "ADV-2-04",
+      "status": "FAILED",
+      "diffs": [
+        "relY: browser=349.0, mbink=363.0, diff=14.0"
+      ]
+    },
+    {
+      "id": "ADV-2-04-L0",
+      "status": "PASSED"
+    },
+    {
+      "id": "ADV-2-04-L1",
+      "status": "PASSED"
+    },
+    {
+      "id": "ADV-2-04-L2",
+      "status": "PASSED"
+    },
+    {
+      "id": "ADV-2-04-box",
+      "status": "PASSED"
+    },
+    {
+      "id": "ADV-2-05",
+      "status": "FAILED",
+      "diffs": [
+        "relY: browser=604.5, mbink=619.0, diff=14.5"
+      ]
+    },
+    {
+      "id": "ADV-2-05-wrap",
+      "status": "PASSED"
+    },
+    {
+      "id": "ADV-2-05-box",
+      "status": "PASSED"
+    },
+    {
+      "id": "ADV-3-01",
+      "status": "PASSED"
+    },
+    {
+      "id": "ADV-3-01-flex",
+      "status": "PASSED"
+    },
+    {
+      "id": "ADV-3-01-box",
+      "status": "PASSED"
+    },
+    {
+      "id": "ADV-3-02",
+      "status": "PASSED"
+    },
+    {
+      "id": "ADV-3-02-flex",
+      "status": "PASSED"
+    },
+    {
+      "id": "ADV-3-02-A",
+      "status": "PASSED"
+    },
+    {
+      "id": "ADV-3-02-B",
+      "status": "PASSED"
+    },
+    {
+      "id": "ADV-3-02-C",
+      "status": "PASSED"
+    },
+    {
+      "id": "ADV-3-03",
+      "status": "FAILED",
+      "diffs": [
+        "relY: browser=351.5, mbink=355.0, diff=3.5"
+      ]
+    },
+    {
+      "id": "ADV-3-03-grid",
+      "status": "PASSED"
+    },
+    {
+      "id": "ADV-3-03-A",
+      "status": "PASSED"
+    },
+    {
+      "id": "ADV-3-03-B",
+      "status": "PASSED"
+    },
+    {
+      "id": "ADV-3-04",
+      "status": "FAILED",
+      "diffs": [
+        "relY: browser=524.5, mbink=531.0, diff=6.5"
+      ]
+    },
+    {
+      "id": "ADV-3-04-grid",
+      "status": "PASSED"
+    },
+    {
+      "id": "ADV-3-04-A",
+      "status": "PASSED"
+    },
+    {
+      "id": "ADV-3-04-B",
+      "status": "PASSED"
+    },
+    {
+      "id": "ADV-3-05",
+      "status": "FAILED",
+      "diffs": [
+        "relY: browser=700.0, mbink=707.0, diff=7.0"
+      ]
+    },
+    {
+      "id": "ADV-3-05-flex",
+      "status": "PASSED"
+    },
+    {
+      "id": "ADV-3-05-A",
+      "status": "PASSED"
+    },
+    {
+      "id": "ADV-3-05-B",
+      "status": "PASSED"
+    },
+    {
+      "id": "ADV-3-05-C",
+      "status": "FAILED",
+      "diffs": [
+        "height: browser=46.0, mbink=41.0, diff=5.0",
+        "relY: browser=13.5, mbink=21.0, diff=7.5"
+      ]
+    },
+    {
+      "id": "ADV-4-01",
+      "status": "PASSED"
+    },
+    {
+      "id": "ADV-4-01-flex",
+      "status": "PASSED"
+    },
+    {
+      "id": "ADV-4-01-A",
+      "status": "PASSED"
+    },
+    {
+      "id": "ADV-4-01-B",
+      "status": "PASSED"
+    },
+    {
+      "id": "ADV-4-01-C",
+      "status": "PASSED"
+    },
+    {
+      "id": "ADV-4-02",
+      "status": "PASSED"
+    },
+    {
+      "id": "ADV-4-02-grid",
+      "status": "PASSED"
+    },
+    {
+      "id": "ADV-4-02-A",
+      "status": "PASSED"
+    },
+    {
+      "id": "ADV-4-02-B",
+      "status": "PASSED"
+    },
+    {
+      "id": "ADV-4-03",
+      "status": "FAILED",
+      "diffs": [
+        "height: browser=81.5, mbink=87.0, diff=5.5",
+        "relY: browser=232.5, mbink=236.0, diff=3.5"
+      ]
+    },
+    {
+      "id": "ADV-4-03-flex",
+      "status": "PASSED"
+    },
+    {
+      "id": "ADV-4-03-A",
+      "status": "PASSED"
+    },
+    {
+      "id": "ADV-4-03-B",
+      "status": "PASSED"
+    },
+    {
+      "id": "ADV-4-04",
+      "status": "FAILED",
+      "diffs": [
+        "relY: browser=324.0, mbink=333.0, diff=9.0"
+      ]
+    },
+    {
+      "id": "ADV-4-04-flex",
+      "status": "PASSED"
+    },
+    {
+      "id": "ADV-4-04-A",
+      "status": "PASSED"
+    },
+    {
+      "id": "ADV-4-04-B",
+      "status": "PASSED"
+    },
+    {
+      "id": "ADV-5-01",
+      "status": "PASSED"
+    },
+    {
+      "id": "ADV-5-01-grid",
+      "status": "PASSED"
+    },
+    {
+      "id": "ADV-5-01-A",
+      "status": "PASSED"
+    },
+    {
+      "id": "ADV-5-01-B",
+      "status": "PASSED"
+    },
+    {
+      "id": "ADV-5-01-C",
+      "status": "PASSED"
+    },
+    {
+      "id": "ADV-5-01-D",
+      "status": "PASSED"
+    },
+    {
+      "id": "ADV-5-01-E",
+      "status": "PASSED"
+    },
+    {
+      "id": "ADV-5-01-F",
+      "status": "PASSED"
+    },
+    {
+      "id": "ADV-5-02",
+      "status": "PASSED"
+    },
+    {
+      "id": "ADV-5-02-grid",
+      "status": "PASSED"
+    },
+    {
+      "id": "ADV-5-02-A",
+      "status": "PASSED"
+    },
+    {
+      "id": "ADV-5-02-B",
+      "status": "PASSED"
+    },
+    {
+      "id": "ADV-5-02-C",
+      "status": "PASSED"
+    },
+    {
+      "id": "ADV-5-02-D",
+      "status": "PASSED"
+    },
+    {
+      "id": "ADV-5-02-E",
+      "status": "PASSED"
+    },
+    {
+      "id": "ADV-5-02-F",
+      "status": "PASSED"
+    },
+    {
+      "id": "ADV-5-03",
+      "status": "FAILED",
+      "diffs": [
+        "relY: browser=568.0, mbink=574.0, diff=6.0"
+      ]
+    },
+    {
+      "id": "ADV-5-03-grid",
+      "status": "PASSED"
+    },
+    {
+      "id": "ADV-5-03-A",
+      "status": "PASSED"
+    },
+    {
+      "id": "ADV-5-03-B",
+      "status": "PASSED"
+    },
+    {
+      "id": "ADV-5-03-C",
+      "status": "PASSED"
+    },
+    {
+      "id": "ADV-5-04",
+      "status": "FAILED",
+      "diffs": [
+        "height: browser=188.5, mbink=199.0, diff=10.5",
+        "relY: browser=730.5, mbink=737.0, diff=6.5"
+      ]
+    },
+    {
+      "id": "ADV-5-04-grid",
+      "status": "FAILED",
+      "diffs": [
+        "height: browser=145.5, mbink=153.0, diff=7.5"
+      ]
+    },
+    {
+      "id": "ADV-5-04-A",
+      "status": "FAILED",
+      "diffs": [
+        "height: browser=82.0, mbink=87.0, diff=5.0"
+      ]
+    },
+    {
+      "id": "ADV-5-04-B",
+      "status": "PASSED"
+    },
+    {
+      "id": "ADV-5-04-C",
+      "status": "PASSED"
+    },
+    {
+      "id": "ADV-5-04-D",
+      "status": "FAILED",
+      "diffs": [
+        "relY: browser=97.0, mbink=102.0, diff=5.0"
+      ]
+    },
+    {
+      "id": "ADV-5-04-E",
+      "status": "FAILED",
+      "diffs": [
+        "relY: browser=97.0, mbink=102.0, diff=5.0"
+      ]
+    },
+    {
+      "id": "ADV-6-01",
+      "status": "PASSED"
+    },
+    {
+      "id": "ADV-6-01-flex",
+      "status": "PASSED"
+    },
+    {
+      "id": "ADV-6-01-A",
+      "status": "PASSED"
+    },
+    {
+      "id": "ADV-6-01-B",
+      "status": "PASSED"
+    },
+    {
+      "id": "ADV-6-02",
+      "status": "PASSED"
+    },
+    {
+      "id": "ADV-6-02-flex",
+      "status": "PASSED"
+    },
+    {
+      "id": "ADV-6-02-A",
+      "status": "PASSED"
+    },
+    {
+      "id": "ADV-6-02-B",
+      "status": "PASSED"
+    },
+    {
+      "id": "ADV-6-03",
+      "status": "FAILED",
+      "diffs": [
+        "height: browser=127.5, mbink=107.0, diff=20.5",
+        "relY: browser=270.0, mbink=276.0, diff=6.0"
+      ]
+    },
+    {
+      "id": "ADV-6-03-outer",
+      "status": "FAILED",
+      "diffs": [
+        "height: browser=82.0, mbink=61.0, diff=21.0"
+      ]
+    },
+    {
+      "id": "ADV-6-03-A",
+      "status": "FAILED",
+      "diffs": [
+        "height: browser=62.0, mbink=41.0, diff=21.0"
+      ]
+    },
+    {
+      "id": "ADV-6-03-inner",
+      "status": "FAILED",
+      "diffs": [
+        "width: browser=80.0, mbink=84.0, diff=4.0",
+        "height: browser=62.0, mbink=41.0, diff=21.0"
+      ]
+    },
+    {
+      "id": "ADV-6-03-B",
+      "status": "FAILED",
+      "diffs": [
+        "width: browser=80.0, mbink=84.0, diff=4.0",
+        "height: browser=62.0, mbink=41.0, diff=21.0"
+      ]
+    },
+    {
+      "id": "ADV-6-04",
+      "status": "FAILED",
+      "diffs": [
+        "height: browser=122.5, mbink=107.0, diff=15.5",
+        "relY: browser=407.5, mbink=393.0, diff=14.5"
+      ]
+    },
+    {
+      "id": "ADV-6-04-flex",
+      "status": "FAILED",
+      "diffs": [
+        "height: browser=79.5, mbink=61.0, diff=18.5"
+      ]
+    },
+    {
+      "id": "ADV-6-04-A",
+      "status": "FAILED",
+      "diffs": [
+        "height: browser=59.5, mbink=41.0, diff=18.5"
+      ]
+    },
+    {
+      "id": "ADV-6-04-B",
+      "status": "FAILED",
+      "diffs": [
+        "width: browser=76.0, mbink=124.0, diff=48.0",
+        "height: browser=59.5, mbink=41.0, diff=18.5"
+      ]
+    },
+    {
+      "id": "ADV-7-01",
+      "status": "PASSED"
+    },
+    {
+      "id": "ADV-7-01-container",
+      "status": "PASSED"
+    },
+    {
+      "id": "ADV-7-01-header",
+      "status": "PASSED"
+    },
+    {
+      "id": "ADV-7-01-main",
+      "status": "PASSED"
+    },
+    {
+      "id": "ADV-7-01-footer",
+      "status": "PASSED"
+    },
+    {
+      "id": "ADV-7-02",
+      "status": "PASSED"
+    },
+    {
+      "id": "ADV-7-02-container",
+      "status": "PASSED"
+    },
+    {
+      "id": "ADV-7-02-header",
+      "status": "PASSED"
+    },
+    {
+      "id": "ADV-7-02-left",
+      "status": "FAILED",
+      "diffs": [
+        "height: browser=113.0, mbink=108.0, diff=5.0"
+      ]
+    },
+    {
+      "id": "ADV-7-02-main",
+      "status": "FAILED",
+      "diffs": [
+        "height: browser=113.0, mbink=108.0, diff=5.0"
+      ]
+    },
+    {
+      "id": "ADV-7-02-right",
+      "status": "FAILED",
+      "diffs": [
+        "height: browser=113.0, mbink=108.0, diff=5.0"
+      ]
+    },
+    {
+      "id": "ADV-7-02-footer",
+      "status": "PASSED"
+    },
+    {
+      "id": "ADV-7-03",
+      "status": "PASSED"
+    },
+    {
+      "id": "ADV-7-03-container",
+      "status": "PASSED"
+    },
+    {
+      "id": "ADV-7-03-A",
+      "status": "PASSED"
+    },
+    {
+      "id": "ADV-7-03-B",
+      "status": "PASSED"
+    },
+    {
+      "id": "ADV-7-03-C",
+      "status": "PASSED"
+    },
+    {
+      "id": "ADV-7-04",
+      "status": "PASSED"
+    },
+    {
+      "id": "ADV-7-04-container",
+      "status": "PASSED"
+    },
+    {
+      "id": "ADV-7-04-card1",
+      "status": "PASSED"
+    },
+    {
+      "id": "ADV-7-04-card1-content",
+      "status": "PASSED"
+    },
+    {
+      "id": "ADV-7-04-card1-btn",
+      "status": "PASSED"
+    },
+    {
+      "id": "ADV-7-04-card2",
+      "status": "PASSED"
+    },
+    {
+      "id": "ADV-7-04-card2-content",
+      "status": "PASSED"
+    },
+    {
+      "id": "ADV-7-04-card2-btn",
+      "status": "PASSED"
+    },
+    {
+      "id": "ADV-7-04-card3",
+      "status": "PASSED"
+    },
+    {
+      "id": "ADV-7-04-card3-content",
+      "status": "PASSED"
+    },
+    {
+      "id": "ADV-7-04-card3-btn",
+      "status": "PASSED"
+    },
+    {
+      "id": "ADV-7-05",
+      "status": "PASSED"
+    },
+    {
+      "id": "ADV-7-05-container",
+      "status": "PASSED"
+    },
+    {
+      "id": "ADV-7-05-avatar",
+      "status": "PASSED"
+    },
+    {
+      "id": "ADV-7-05-content",
+      "status": "PASSED"
+    },
+    {
+      "id": "ADV-7-05-title",
+      "status": "PASSED"
+    },
+    {
+      "id": "ADV-7-05-body",
+      "status": "PASSED"
+    },
+    {
+      "id": "ADV-7-06",
+      "status": "PASSED"
+    },
+    {
+      "id": "ADV-7-06-container",
+      "status": "PASSED"
+    },
+    {
+      "id": "ADV-7-06-left",
+      "status": "PASSED"
+    },
+    {
+      "id": "ADV-7-06-main",
+      "status": "PASSED"
+    },
+    {
+      "id": "ADV-7-06-right",
+      "status": "PASSED"
+    }
+  ]
+}

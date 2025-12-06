@@ -162,6 +162,14 @@ public:
      */
     static float MeasureMixedTextWidth(const std::string& text, const SkFont& font);
 
+    /**
+     * @brief 测量文本的最小内容宽度（最长单词的宽度）
+     * @param text 文本内容
+     * @param font 字体
+     * @return 最小内容宽度
+     */
+    float MeasureMinContentWidth(const std::string& text, const SkFont& font);
+
     // ========== 文本装饰 ==========
 
     /**

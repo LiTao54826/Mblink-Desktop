@@ -383,6 +383,9 @@ LayoutOutput ComputeGridLayout(
     // For n tracks, we need: track, gutter, track, gutter, ..., track = 2*n - 1 slots
     size_t required_slots = num_rows > 0 ? num_rows * 2 - 1 : 0;
 
+    // Track index for cycling through grid_auto_rows
+    size_t auto_row_idx = 0;
+
     // Ensure we have enough row tracks (including gutters)
     while (rows.size() < required_slots) {
         if (!rows.empty()) {
@@ -392,7 +395,33 @@ LayoutOutput ComputeGridLayout(
             gutter.growth_limit = row_gap;
             rows.push_back(gutter);
         }
-        rows.push_back(GridTrack::New(MinTrackSizingFunction::Auto(), MaxTrackSizingFunction::Auto()));
+        // Use grid_auto_rows if available, otherwise use Auto
+        if (!style.grid_auto_rows.empty()) {
+            const auto& auto_track = style.grid_auto_rows[auto_row_idx % style.grid_auto_rows.size()];
+            auto_row_idx++;
+            GridTrack track = GridTrack::New(auto_track.min, auto_track.max);
+            // Resolve the track size immediately for fixed values
+            if (auto_track.min.type == MinTrackSizingFunctionType::Fixed) {
+                if (auto_track.min.is_percent && inner_node_size.height.has_value()) {
+                    track.base_size = auto_track.min.value * *inner_node_size.height;
+                } else if (!auto_track.min.is_percent) {
+                    track.base_size = auto_track.min.value;
+                }
+            }
+            if (auto_track.max.type == MaxTrackSizingFunctionType::Fixed) {
+                if (auto_track.max.is_percent && inner_node_size.height.has_value()) {
+                    track.growth_limit = auto_track.max.value * *inner_node_size.height;
+                } else if (!auto_track.max.is_percent) {
+                    track.growth_limit = auto_track.max.value;
+                }
+            }
+            if (track.growth_limit < track.base_size) {
+                track.growth_limit = track.base_size;
+            }
+            rows.push_back(track);
+        } else {
+            rows.push_back(GridTrack::New(MinTrackSizingFunction::Auto(), MaxTrackSizingFunction::Auto()));
+        }
     }
 
     // Structure to hold child placement info
@@ -505,14 +534,18 @@ LayoutOutput ComputeGridLayout(
             col_span = static_cast<size_t>(child_style.grid_column_end.value);
         } else if (child_style.grid_column_end.IsLine()) {
             int16_t end_line = child_style.grid_column_end.value;
-            size_t end_idx = end_line > 0 ? static_cast<size_t>(end_line - 1) : num_cols + end_line;
+            // CSS Grid lines are 1-based. For N columns, there are N+1 lines (1 to N+1).
+            // Negative indices count from the end: -1 is the last line (N+1), -2 is N, etc.
+            // So for end_line = -1 with 4 columns: end_idx = 4 + 1 + (-1) = 4 (meaning span to column 4)
+            size_t end_idx = end_line > 0 ? static_cast<size_t>(end_line - 1) : num_cols + 1 + end_line;
             if (end_idx > col_idx) col_span = end_idx - col_idx;
         }
         if (child_style.grid_row_end.IsSpan()) {
             row_span = static_cast<size_t>(child_style.grid_row_end.value);
         } else if (child_style.grid_row_end.IsLine()) {
             int16_t end_line = child_style.grid_row_end.value;
-            size_t end_idx = end_line > 0 ? static_cast<size_t>(end_line - 1) : num_rows + end_line;
+            // Same logic for rows
+            size_t end_idx = end_line > 0 ? static_cast<size_t>(end_line - 1) : num_rows + 1 + end_line;
             if (end_idx > row_idx) row_span = end_idx - row_idx;
         }
 
@@ -521,6 +554,25 @@ LayoutOutput ComputeGridLayout(
             findNextAvailableCell(current_col, current_row, col_span, row_span);
             col_idx = current_col;
             row_idx = current_row;
+        } else if (has_explicit_col && !has_explicit_row) {
+            // Has explicit column but not row - find next available row at this column
+            row_idx = current_row;
+            // Check if the cells are occupied and find next available row
+            while (row_idx < occupied.size()) {
+                bool can_place = true;
+                for (size_t c = col_idx; c < col_idx + col_span && c < num_cols; c++) {
+                    if (row_idx < occupied.size() && c < occupied[row_idx].size() && occupied[row_idx][c]) {
+                        can_place = false;
+                        break;
+                    }
+                }
+                if (can_place) break;
+                row_idx++;
+            }
+            // Expand occupied grid if needed
+            while (row_idx >= occupied.size()) {
+                occupied.push_back(std::vector<bool>(num_cols, false));
+            }
         }
 
         // Clamp indices
@@ -589,7 +641,33 @@ LayoutOutput ComputeGridLayout(
             gutter.growth_limit = row_gap;
             rows.push_back(gutter);
         }
-        rows.push_back(GridTrack::New(MinTrackSizingFunction::Auto(), MaxTrackSizingFunction::Auto()));
+        // Use grid_auto_rows if available, otherwise use Auto
+        if (!style.grid_auto_rows.empty()) {
+            const auto& auto_track = style.grid_auto_rows[auto_row_idx % style.grid_auto_rows.size()];
+            auto_row_idx++;
+            GridTrack track = GridTrack::New(auto_track.min, auto_track.max);
+            // Resolve the track size immediately for fixed values
+            if (auto_track.min.type == MinTrackSizingFunctionType::Fixed) {
+                if (auto_track.min.is_percent && inner_node_size.height.has_value()) {
+                    track.base_size = auto_track.min.value * *inner_node_size.height;
+                } else if (!auto_track.min.is_percent) {
+                    track.base_size = auto_track.min.value;
+                }
+            }
+            if (auto_track.max.type == MaxTrackSizingFunctionType::Fixed) {
+                if (auto_track.max.is_percent && inner_node_size.height.has_value()) {
+                    track.growth_limit = auto_track.max.value * *inner_node_size.height;
+                } else if (!auto_track.max.is_percent) {
+                    track.growth_limit = auto_track.max.value;
+                }
+            }
+            if (track.growth_limit < track.base_size) {
+                track.growth_limit = track.base_size;
+            }
+            rows.push_back(track);
+        } else {
+            rows.push_back(GridTrack::New(MinTrackSizingFunction::Auto(), MaxTrackSizingFunction::Auto()));
+        }
     }
 
     // Update row heights based on measured children (for auto-sized rows)
@@ -619,23 +697,41 @@ LayoutOutput ComputeGridLayout(
     if (max_size.height.has_value()) container_height = f32_min(container_height, *max_size.height);
     container_size.height = container_height;
 
-    // If container has explicit height larger than content, distribute extra space to rows
+    // If container has explicit height larger than content, distribute extra space to fr rows
     float inner_height = container_height - padding_border_size.height;
     if (inner_height > row_sum) {
         float extra_space = inner_height - row_sum;
-        // Count auto/fr rows that can grow
-        size_t growable_rows = 0;
+        // First, try to distribute to fr (flexible) rows
+        float total_flex = 0.0f;
         for (const auto& row : rows) {
-            if (row.kind == GridTrackKind::Track) growable_rows++;
+            if (row.kind == GridTrackKind::Track && row.IsFlexible()) {
+                total_flex += row.FlexFactor();
+            }
         }
-        if (growable_rows > 0) {
-            float extra_per_row = extra_space / static_cast<float>(growable_rows);
+        if (total_flex > 0.0f) {
+            // Distribute to fr rows proportionally
             for (auto& row : rows) {
-                if (row.kind == GridTrackKind::Track) {
-                    row.base_size += extra_per_row;
+                if (row.kind == GridTrackKind::Track && row.IsFlexible()) {
+                    float share = (row.FlexFactor() / total_flex) * extra_space;
+                    row.base_size += share;
                 }
             }
             row_sum = inner_height;
+        } else {
+            // No fr rows, distribute to all track rows equally
+            size_t growable_rows = 0;
+            for (const auto& row : rows) {
+                if (row.kind == GridTrackKind::Track) growable_rows++;
+            }
+            if (growable_rows > 0) {
+                float extra_per_row = extra_space / static_cast<float>(growable_rows);
+                for (auto& row : rows) {
+                    if (row.kind == GridTrackKind::Track) {
+                        row.base_size += extra_per_row;
+                    }
+                }
+                row_sum = inner_height;
+            }
         }
     }
 
@@ -701,10 +797,13 @@ LayoutOutput ComputeGridLayout(
         auto justify = child_style.justify_self.value_or(
             style.justify_items.value_or(AlignItems::Stretch));
 
-        if (justify == AlignItems::Stretch) {
+        // Check if child has explicit width - if so, don't stretch even if justify is Stretch
+        bool has_explicit_width = !child_style.size.width.IsAuto();
+
+        if (justify == AlignItems::Stretch && !has_explicit_width) {
             final_width = cell_width;
         } else {
-            // For non-stretch, we need to measure with intrinsic sizing
+            // For non-stretch, or when child has explicit width, we need to measure with intrinsic sizing
             // to get the child's natural width (respecting its own width property)
             // Pass cell_width as parent size so percentage widths can resolve
             auto intrinsic_output = tree.PerformChildLayout(
@@ -729,6 +828,7 @@ LayoutOutput ComputeGridLayout(
                         break;
                     case AlignItems::Start:
                     case AlignItems::FlexStart:
+                    case AlignItems::Stretch:  // Stretch with explicit width acts like Start
                     default:
                         offset_x = 0.0f;
                         break;
@@ -741,10 +841,13 @@ LayoutOutput ComputeGridLayout(
         auto align = child_style.align_self.value_or(
             style.align_items.value_or(AlignItems::Stretch));
 
-        if (align == AlignItems::Stretch) {
+        // Check if child has explicit height - if so, don't stretch even if align is Stretch
+        bool has_explicit_height = !child_style.size.height.IsAuto();
+
+        if (align == AlignItems::Stretch && !has_explicit_height) {
             final_height = cell_height;
         } else {
-            // For non-stretch, use measured height
+            // For non-stretch, or when child has explicit height, use measured height
             float free_space = cell_height - final_height;
             if (free_space > 0) {
                 switch (align) {
@@ -757,12 +860,24 @@ LayoutOutput ComputeGridLayout(
                         break;
                     case AlignItems::Start:
                     case AlignItems::FlexStart:
+                    case AlignItems::Stretch:  // Stretch with explicit height acts like Start
                     default:
                         offset_y = 0.0f;
                         break;
                 }
             }
         }
+
+        // Perform final layout with known dimensions so child containers
+        // (like flex containers) can properly align their children
+        tree.PerformChildLayout(
+            placement.child_id,
+            Size<std::optional<float>>{final_width, final_height},
+            Size<std::optional<float>>{cell_width, cell_height},
+            Size<AvailableSpace>{AvailableSpace::Definite(final_width), AvailableSpace::Definite(final_height)},
+            SizingMode::InherentSize,
+            Line<bool>{false, false}
+        );
 
         tree.SetUnroundedLayout(placement.child_id, Layout{
             0,  // order

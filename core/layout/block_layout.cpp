@@ -103,7 +103,7 @@ LayoutOutput ComputeBlockLayout(
     
     // Short-circuit if both dimensions known and only computing size
     if (inputs.sizing_mode == SizingMode::ContentSize) {
-        if (styled_based_known_dimensions.width.has_value() && 
+        if (styled_based_known_dimensions.width.has_value() &&
             styled_based_known_dimensions.height.has_value()) {
             return LayoutOutput::FromOuterSize(Size<float>{
                 *styled_based_known_dimensions.width,
@@ -115,7 +115,7 @@ LayoutOutput ComputeBlockLayout(
     // Continue with inner layout
     LayoutInput inner_inputs = inputs;
     inner_inputs.known_dimensions = styled_based_known_dimensions;
-    
+
     return ComputeBlockLayoutInner(tree, node_id, inner_inputs);
 }
 

@@ -585,4 +585,82 @@ std::vector<std::string> TextRenderer::WrapText(const std::string& text, float m
     return lines;
 }
 
+float TextRenderer::MeasureMinContentWidth(const std::string& text, const SkFont& font) {
+    if (text.empty()) {
+        return 0.0f;
+    }
+
+    // For min-content, we need to find the width of the longest "word"
+    // A word is defined as:
+    // - For CJK characters: each character is a word (can break anywhere)
+    // - For non-CJK: a sequence of non-whitespace characters
+
+    float max_word_width = 0.0f;
+    std::string current_word;
+    const char* str = text.c_str();
+    size_t len = text.size();
+    size_t pos = 0;
+
+    auto isCJK = [](uint32_t codepoint) -> bool {
+        // CJK Unified Ideographs
+        if (codepoint >= 0x4E00 && codepoint <= 0x9FFF) return true;
+        // CJK Unified Ideographs Extension A
+        if (codepoint >= 0x3400 && codepoint <= 0x4DBF) return true;
+        // CJK Unified Ideographs Extension B-F
+        if (codepoint >= 0x20000 && codepoint <= 0x2EBEF) return true;
+        // CJK Compatibility Ideographs
+        if (codepoint >= 0xF900 && codepoint <= 0xFAFF) return true;
+        // Hiragana
+        if (codepoint >= 0x3040 && codepoint <= 0x309F) return true;
+        // Katakana
+        if (codepoint >= 0x30A0 && codepoint <= 0x30FF) return true;
+        // Hangul Syllables
+        if (codepoint >= 0xAC00 && codepoint <= 0xD7AF) return true;
+        return false;
+    };
+
+    while (pos < len) {
+        // Decode UTF-8 character
+        auto [codepoint, bytes] = DecodeUTF8Char(str + pos, len - pos);
+        if (bytes == 0) break;
+
+        std::string char_str(str + pos, bytes);
+        bool is_space = (codepoint == ' ' || codepoint == '\t' || codepoint == '\n' || codepoint == '\r');
+        bool is_cjk = isCJK(codepoint);
+
+        if (is_cjk) {
+            // CJK character: measure it as a single word
+            // First, finish any pending non-CJK word
+            if (!current_word.empty()) {
+                float word_width = MeasureTextWidthWithEmoji(current_word, font);
+                max_word_width = std::max(max_word_width, word_width);
+                current_word.clear();
+            }
+            // Measure the CJK character
+            float char_width = MeasureTextWidthWithEmoji(char_str, font);
+            max_word_width = std::max(max_word_width, char_width);
+        } else if (is_space) {
+            // Space: finish current word
+            if (!current_word.empty()) {
+                float word_width = MeasureTextWidthWithEmoji(current_word, font);
+                max_word_width = std::max(max_word_width, word_width);
+                current_word.clear();
+            }
+        } else {
+            // Non-CJK, non-space: add to current word
+            current_word += char_str;
+        }
+
+        pos += bytes;
+    }
+
+    // Don't forget the last word
+    if (!current_word.empty()) {
+        float word_width = MeasureTextWidthWithEmoji(current_word, font);
+        max_word_width = std::max(max_word_width, word_width);
+    }
+
+    return max_word_width;
+}
+
 } // namespace lightui

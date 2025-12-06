@@ -42,8 +42,9 @@ void PrintLayoutTree(const std::shared_ptr<RenderObject>& render_obj, int depth 
     const auto& layout = render_obj->GetLayoutInfo();
     const auto& style = render_obj->GetComputedStyle();
 
-    // 只打印有意义的布局节点
-    if (layout.width > 0 || layout.height > 0) {
+    // 打印所有布局节点（包括宽高为0的，用于调试）
+    bool has_size = (layout.width > 0 || layout.height > 0);
+    if (has_size || tag == "#text") {
         std::cout << indent << "[" << tag << "]";
         if (!id.empty()) {
             std::cout << " #" << id;
@@ -52,6 +53,9 @@ void PrintLayoutTree(const std::shared_ptr<RenderObject>& render_obj, int depth 
                   << " y=" << layout.y
                   << " w=" << layout.width
                   << " h=" << layout.height;
+        if (!has_size) {
+            std::cout << " [NO-SIZE]";
+        }
         
         // 打印 display 类型 - 从 ComputedStyle 获取准确的 display 类型
         auto display_type = style.display;
@@ -151,16 +155,22 @@ std::string LoadFileFromPaths(const std::vector<std::string>& paths, const std::
 int main(int argc, char* argv[]) {
     // 解析命令行参数
     bool auto_close = false;
+    bool advanced_mode = false;
     for (int i = 1; i < argc; i++) {
         std::string arg = argv[i];
         if (arg == "--auto-close" || arg == "-q") {
             auto_close = true;
+        } else if (arg == "--advanced" || arg == "-a") {
+            advanced_mode = true;
         }
     }
 
     try {
         std::cout << "========================================" << std::endl;
         std::cout << "  MBink Layout Compare Test" << std::endl;
+        if (advanced_mode) {
+            std::cout << "  (Advanced mode)" << std::endl;
+        }
         if (auto_close) {
             std::cout << "  (Auto-close mode)" << std::endl;
         }
@@ -240,20 +250,32 @@ int main(int argc, char* argv[]) {
         std::cout << "  ✓ Hooks library loaded" << std::endl;
 
         // 7. 加载并运行应用
-        std::cout << "[7/7] Loading Layout Compare Test application..." << std::endl;
-        std::vector<std::string> app_paths = {
-            "layout_compare_test/app.js",
-            "examples/demo_html/layout_compare_test/app.js",
-            "../examples/demo_html/layout_compare_test/app.js",
-            "../../examples/demo_html/layout_compare_test/app.js",
-            "../../../examples/demo_html/layout_compare_test/app.js"
-        };
-        std::string app_code = LoadFileFromPaths(app_paths, "app.js");
+        std::string app_filename = advanced_mode ? "app_advanced.js" : "app.js";
+        std::cout << "[7/7] Loading Layout Compare Test application (" << app_filename << ")..." << std::endl;
+        std::vector<std::string> app_paths;
+        if (advanced_mode) {
+            app_paths = {
+                "layout_compare_test/app_advanced.js",
+                "examples/demo_html/layout_compare_test/app_advanced.js",
+                "../examples/demo_html/layout_compare_test/app_advanced.js",
+                "../../examples/demo_html/layout_compare_test/app_advanced.js",
+                "../../../examples/demo_html/layout_compare_test/app_advanced.js"
+            };
+        } else {
+            app_paths = {
+                "layout_compare_test/app.js",
+                "examples/demo_html/layout_compare_test/app.js",
+                "../examples/demo_html/layout_compare_test/app.js",
+                "../../examples/demo_html/layout_compare_test/app.js",
+                "../../../examples/demo_html/layout_compare_test/app.js"
+            };
+        }
+        std::string app_code = LoadFileFromPaths(app_paths, app_filename);
         if (app_code.empty()) {
-            std::cerr << "Failed to load app.js from any path" << std::endl;
+            std::cerr << "Failed to load " << app_filename << " from any path" << std::endl;
             return 1;
         }
-        runtime->Eval(app_code, "app.js");
+        runtime->Eval(app_code, app_filename.c_str());
         std::cout << "  ✓ Application loaded and rendered" << std::endl;
 
         // 将文档关联到窗口并显示

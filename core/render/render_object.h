@@ -147,6 +147,8 @@ struct ComputedStyle {
     // Grid 属性 (基础支持)
     std::string grid_template_columns;  // e.g., "1fr 1fr", "100px auto"
     std::string grid_template_rows;     // e.g., "auto 1fr"
+    std::string grid_auto_columns;      // e.g., "100px", "1fr", "minmax(100px, auto)"
+    std::string grid_auto_rows;         // e.g., "60px", "auto", "minmax(50px, 1fr)"
     std::string grid_auto_flow = "row"; // row, column, row dense, column dense
     CSSLength grid_column_gap;
     CSSLength grid_row_gap;
