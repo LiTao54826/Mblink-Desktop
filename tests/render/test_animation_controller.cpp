@@ -147,17 +147,17 @@ TEST_F(AnimationControllerTest, PauseAndResumeAnimation) {
     CSSAnimation anim;
     anim.name = "test-anim";
     anim.duration = 1.0f;
-    
+
     controller->StartAnimation(object, anim);
     controller->Update(0.0);
-    
-    EXPECT_EQ(controller->GetRunningAnimations()[0].state, AnimationState::RUNNING);
-    
+
+    EXPECT_EQ(controller->GetRunningAnimations()[0].state, CSSAnimationState::RUNNING);
+
     controller->PauseAnimation(object, "test-anim");
-    EXPECT_EQ(controller->GetRunningAnimations()[0].state, AnimationState::PAUSED);
-    
+    EXPECT_EQ(controller->GetRunningAnimations()[0].state, CSSAnimationState::PAUSED);
+
     controller->ResumeAnimation(object, "test-anim");
-    EXPECT_EQ(controller->GetRunningAnimations()[0].state, AnimationState::RUNNING);
+    EXPECT_EQ(controller->GetRunningAnimations()[0].state, CSSAnimationState::RUNNING);
 }
 
 // ============================================================================
@@ -168,15 +168,15 @@ TEST_F(AnimationControllerTest, UpdateBasic) {
     CSSAnimation anim;
     anim.name = "test-anim";
     anim.duration = 1.0f;
-    
+
     controller->StartAnimation(object, anim);
-    
+
     controller->Update(0.0);
-    EXPECT_EQ(controller->GetRunningAnimations()[0].state, AnimationState::RUNNING);
-    
+    EXPECT_EQ(controller->GetRunningAnimations()[0].state, CSSAnimationState::RUNNING);
+
     controller->Update(0.5);
-    EXPECT_EQ(controller->GetRunningAnimations()[0].state, AnimationState::RUNNING);
-    
+    EXPECT_EQ(controller->GetRunningAnimations()[0].state, CSSAnimationState::RUNNING);
+
     controller->Update(1.5);
     // 动画应该已完成并被移除
     EXPECT_EQ(controller->GetRunningAnimations().size(), 0);
@@ -191,13 +191,13 @@ TEST_F(AnimationControllerTest, UpdateWithDelay) {
     controller->StartAnimation(object, anim);
 
     controller->Update(0.0);
-    EXPECT_EQ(controller->GetRunningAnimations()[0].state, AnimationState::DELAYED);
+    EXPECT_EQ(controller->GetRunningAnimations()[0].state, CSSAnimationState::DELAYED);
 
     controller->Update(0.3);
-    EXPECT_EQ(controller->GetRunningAnimations()[0].state, AnimationState::DELAYED);
+    EXPECT_EQ(controller->GetRunningAnimations()[0].state, CSSAnimationState::DELAYED);
 
     controller->Update(0.6);
-    EXPECT_EQ(controller->GetRunningAnimations()[0].state, AnimationState::RUNNING);
+    EXPECT_EQ(controller->GetRunningAnimations()[0].state, CSSAnimationState::RUNNING);
 }
 
 TEST_F(AnimationControllerTest, UpdateWithIterationCount) {
@@ -227,16 +227,16 @@ TEST_F(AnimationControllerTest, UpdateWithInfiniteIteration) {
     anim.name = "test-anim";
     anim.duration = 1.0f;
     anim.iteration_count = -1;  // infinite
-    
+
     controller->StartAnimation(object, anim);
-    
+
     controller->Update(0.0);
     controller->Update(1.5);
     controller->Update(10.0);
-    
+
     // 动画应该一直运行
     EXPECT_EQ(controller->GetRunningAnimations().size(), 1);
-    EXPECT_EQ(controller->GetRunningAnimations()[0].state, AnimationState::RUNNING);
+    EXPECT_EQ(controller->GetRunningAnimations()[0].state, CSSAnimationState::RUNNING);
 }
 
 TEST_F(AnimationControllerTest, UpdateWithFillModeForwards) {
@@ -244,15 +244,15 @@ TEST_F(AnimationControllerTest, UpdateWithFillModeForwards) {
     anim.name = "test-anim";
     anim.duration = 1.0f;
     anim.fill_mode = AnimationFillMode::FORWARDS;
-    
+
     controller->StartAnimation(object, anim);
-    
+
     controller->Update(0.0);
     controller->Update(1.5);
-    
+
     // 动画应该保留最后一帧
     EXPECT_EQ(controller->GetRunningAnimations().size(), 1);
-    EXPECT_EQ(controller->GetRunningAnimations()[0].state, AnimationState::FINISHED);
+    EXPECT_EQ(controller->GetRunningAnimations()[0].state, CSSAnimationState::FINISHED);
 }
 
 // ============================================================================

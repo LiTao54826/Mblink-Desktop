@@ -94,9 +94,9 @@ TEST_F(InputHandlerTest, MouseButtonDownEvent) {
 // 测试鼠标释放事件
 TEST_F(InputHandlerTest, MouseButtonUpEvent) {
     bool callback_called = false;
-    MouseEvent received_event;
-    
-    handler->SetMouseCallback([&](const MouseEvent& e) {
+    InputMouseEvent received_event;
+
+    handler->SetMouseCallback([&](const InputMouseEvent& e) {
         callback_called = true;
         received_event = e;
     });
@@ -122,9 +122,9 @@ TEST_F(InputHandlerTest, MouseButtonUpEvent) {
 // 测试鼠标滚轮事件
 TEST_F(InputHandlerTest, MouseWheelEvent) {
     bool callback_called = false;
-    MouseEvent received_event;
-    
-    handler->SetMouseCallback([&](const MouseEvent& e) {
+    InputMouseEvent received_event;
+
+    handler->SetMouseCallback([&](const InputMouseEvent& e) {
         callback_called = true;
         received_event = e;
     });
@@ -260,7 +260,7 @@ TEST_F(InputHandlerTest, MultipleEvents) {
     int mouse_event_count = 0;
     int key_event_count = 0;
     
-    handler->SetMouseCallback([&](const MouseEvent& e) {
+    handler->SetMouseCallback([&](const InputMouseEvent& e) {
         mouse_event_count++;
     });
     

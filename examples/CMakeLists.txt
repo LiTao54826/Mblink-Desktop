@@ -93,6 +93,7 @@ target_link_libraries(counter_app PRIVATE
     lightui_event
     lightui_render
     lightui_quickjs
+    lightui_lexbor
     SDL3::SDL3-static
     skia
 )
@@ -177,8 +178,7 @@ add_subdirectory(comprehensive_test_app)
 # ========== Window Demo ==========
 add_subdirectory(window_demo)
 
-# ========== Preact Hello World Example ==========
-add_subdirectory(preact_hello_world)
+
 
 # ========== Preact Counter Example ==========
 add_subdirectory(preact_counter)
@@ -224,7 +224,7 @@ message(STATUS "  - html_window_example")
 message(STATUS "  - html_css_performance_demo")
 message(STATUS "  - comprehensive_test_app")
 message(STATUS "  - window_demo")
-message(STATUS "  - preact_hello_world")
+
 message(STATUS "  - preact_counter")
 message(STATUS "  - preact_window_demo")
 message(STATUS "  - preact_todo_app")

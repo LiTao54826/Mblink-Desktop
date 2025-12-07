@@ -79,6 +79,7 @@ target_include_directories(lightui_dom PUBLIC
 target_link_libraries(lightui_dom PUBLIC
     lightui_utils
     lightui_event
+    lightui_lexbor
     lexbor_static
 )
 

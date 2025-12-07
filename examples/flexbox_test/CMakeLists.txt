@@ -12,22 +12,13 @@ target_link_libraries(flexbox_test PRIVATE
     lightui_utils
 )
 
-# Copy HTML files to output directory
+# Copy HTML files to output directory (only if they exist)
 add_custom_command(TARGET flexbox_test POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E echo "Copying flexbox_test files to output directory"
     COMMAND ${CMAKE_COMMAND} -E make_directory $<TARGET_FILE_DIR:flexbox_test>/examples/window_demo
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        ${CMAKE_SOURCE_DIR}/examples/window_demo/flexbox_test.html
-        $<TARGET_FILE_DIR:flexbox_test>/examples/window_demo/flexbox_test.html
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        ${CMAKE_SOURCE_DIR}/examples/window_demo/grid_test.html
-        $<TARGET_FILE_DIR:flexbox_test>/examples/window_demo/grid_test.html
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        ${CMAKE_SOURCE_DIR}/examples/window_demo/position_test.html
-        $<TARGET_FILE_DIR:flexbox_test>/examples/window_demo/position_test.html
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        ${CMAKE_SOURCE_DIR}/examples/window_demo/comprehensive_test.html
-        $<TARGET_FILE_DIR:flexbox_test>/examples/window_demo/comprehensive_test.html
+        ${CMAKE_SOURCE_DIR}/examples/window_demo/index.html
+        $<TARGET_FILE_DIR:flexbox_test>/examples/window_demo/index.html
 )
 
 set_target_properties(flexbox_test PROPERTIES

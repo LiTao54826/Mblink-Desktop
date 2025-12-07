@@ -1272,6 +1272,8 @@ target_include_directories(test_dom_integration PRIVATE
 )
 target_link_libraries(test_dom_integration PRIVATE
     lightui_dom
+    lightui_lexbor
+    lightui_render
     GTest::gtest
     GTest::gtest_main
 )
@@ -1290,6 +1292,8 @@ target_include_directories(test_dom_bindings_integration PRIVATE
 target_link_libraries(test_dom_bindings_integration PRIVATE
     lightui_dom
     lightui_quickjs
+    lightui_lexbor
+    lightui_render
     GTest::gtest
     GTest::gtest_main
 )

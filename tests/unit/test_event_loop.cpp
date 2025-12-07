@@ -147,7 +147,7 @@ TEST_F(EventLoopTest, InputHandlerAccess) {
     auto& input_handler = loop.GetInputHandler();
     
     bool callback_called = false;
-    input_handler.SetMouseCallback([&](const MouseEvent& e) {
+    input_handler.SetMouseCallback([&](const InputMouseEvent& e) {
         callback_called = true;
     });
     

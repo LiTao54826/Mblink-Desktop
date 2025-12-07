@@ -35,22 +35,26 @@ using namespace lightui;
 // 测试辅助函数
 void SaveSurfaceToPNG(sk_sp<SkSurface> surface, const std::string& filename) {
     if (!surface) return;
-    
+
     sk_sp<SkImage> image = surface->makeImageSnapshot();
     if (!image) return;
-    
+
     SkFILEWStream stream(filename.c_str());
-    SkPngEncoder::Encode(&stream, image.get(), SkPngEncoder::Options());
-    
+    auto data = SkPngEncoder::Encode(nullptr, image.get(), {});
+    if (data) {
+        stream.write(data->data(), data->size());
+    }
+
     std::cout << "Saved: " << filename << std::endl;
 }
 
 // 测试 1: Renderer 基类
 void TestRenderer() {
     std::cout << "\n=== Test 1: Renderer ===" << std::endl;
-    
+
     // 创建表面
-    sk_sp<SkSurface> surface = SkSurface::MakeRasterN32Premul(800, 600);
+    SkImageInfo info = SkImageInfo::MakeN32Premul(800, 600);
+    sk_sp<SkSurface> surface = SkSurfaces::Raster(info);
     assert(surface != nullptr);
     
     // 创建渲染器
@@ -142,9 +146,10 @@ void TestPaint() {
 // 测试 4: Shapes 图形绘制
 void TestShapes() {
     std::cout << "\n=== Test 4: Shapes ===" << std::endl;
-    
+
     // 创建表面
-    sk_sp<SkSurface> surface = SkSurface::MakeRasterN32Premul(800, 600);
+    SkImageInfo info = SkImageInfo::MakeN32Premul(800, 600);
+    sk_sp<SkSurface> surface = SkSurfaces::Raster(info);
     SkCanvas* canvas = surface->getCanvas();
     canvas->clear(SK_ColorWHITE);
     
@@ -196,9 +201,10 @@ void TestTextRenderer() {
     
     // 初始化字体管理器
     FontManager::GetInstance().Initialize();
-    
+
     // 创建表面
-    sk_sp<SkSurface> surface = SkSurface::MakeRasterN32Premul(800, 600);
+    SkImageInfo info = SkImageInfo::MakeN32Premul(800, 600);
+    sk_sp<SkSurface> surface = SkSurfaces::Raster(info);
     SkCanvas* canvas = surface->getCanvas();
     canvas->clear(SK_ColorWHITE);
     
@@ -252,9 +258,10 @@ void TestImageCache() {
     // 清空缓存
     cache.Clear();
     assert(cache.GetCacheCount() == 0);
-    
+
     // 创建测试图片
-    sk_sp<SkSurface> surface = SkSurface::MakeRasterN32Premul(100, 100);
+    SkImageInfo info = SkImageInfo::MakeN32Premul(100, 100);
+    sk_sp<SkSurface> surface = SkSurfaces::Raster(info);
     sk_sp<SkImage> test_image = surface->makeImageSnapshot();
     
     // 添加到缓存
