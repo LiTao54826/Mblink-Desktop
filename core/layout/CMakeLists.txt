@@ -56,8 +56,8 @@ target_link_libraries(lightui_layout PUBLIC
     lightui_render
 )
 
-# 原生布局引擎已替换 Taffy FFI，不再需要链接 Taffy
-# Taffy 源码仅作为翻译参考保留在 third_party/taffy
+# 原生布局引擎 (Native Layout Engine)
+# 已完全替换 Taffy FFI，Taffy 源码移至 ReferenceProject/taffy 作为参考
 
 # 链接Skia（如果启用）
 if(TARGET skia)

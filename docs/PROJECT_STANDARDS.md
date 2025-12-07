@@ -1,7 +1,7 @@
 # MBink 项目开发规范
 
-> **版本**: 2.1
-> **生效日期**: 2025-11-14
+> **版本**: 3.0
+> **生效日期**: 2025-12-07
 > **状态**: 强制执行
 > **适用范围**: 所有后续开发
 
@@ -33,7 +33,7 @@
 | **渲染方式** | 用户提供渲染器 | 内置Skia渲染 |
 | **JavaScript** | 可选Lua插件 | 核心QuickJS引擎 |
 | **生态系统** | 自定义标记 | **React生态** |
-| **布局引擎** | 自研CSS布局 | **Yoga (Flexbox)** |
+| **布局引擎** | 自研CSS布局 | **Native + Taffy** |
 | **HTML解析** | 自研解析器 | **Lexbor (HTML5)** |
 
 ### 核心价值主张
@@ -57,14 +57,13 @@
 | **JavaScript引擎** | QuickJS | 2024-01-13 | 轻量级(600KB)，符合定位 |
 | **渲染引擎** | Skia | m116 | 浏览器级质量，Chrome同源 |
 | **窗口系统** | SDL3 | 3.1.6+ | 跨平台，稳定 |
-| **布局引擎** | Yoga | 3.1.0+ | Facebook出品，生产级Flexbox |
+| **布局引擎** | Native Layout Engine | 0.91.0 | 原生实现 Block + IFC + Flex + Grid |
 | **HTML解析** | Lexbor | 2.6.0+ | 完整HTML5/CSS3支持 |
 | **JSON库** | nlohmann/json | 3.11.0+ | 现代C++ API |
 
 **❌ 禁止行为**：
 - ❌ 不得引入V8引擎（太重，违背轻量级定位）
 - ❌ 不得自研HTML/CSS解析器（Lexbor已足够）
-- ❌ 不得自研布局引擎（Yoga已生产级）
 - ❌ 不得引入Electron/Chromium（违背项目定位）
 
 ### 规范2: 模块边界严格
@@ -103,7 +102,7 @@
                     ↓
 ┌─────────────────────────────────────────┐
 │  Third Party (third_party/*)            │
-│  QuickJS, Skia, SDL3, Yoga, Lexbor      │
+│  QuickJS, Skia, SDL3, Lexbor            │
 └─────────────────────────────────────────┘
 ```
 
@@ -375,7 +374,7 @@ JSValue js_append_child(JSContext* ctx, JSValueConst this_val,
 | **core/dom** | DOM树管理、节点操作 | ❌ 渲染逻辑、事件处理 |
 | **core/event** | 事件循环、事件分发 | ❌ DOM操作、渲染逻辑 |
 | **core/render** | Skia渲染、样式计算 | ❌ DOM操作、事件处理 |
-| **core/layout** | Yoga布局计算 | ❌ 渲染逻辑、事件处理 |
+| **core/layout** | 原生布局引擎 (Block/IFC/Flex/Grid) | ❌ 渲染逻辑、事件处理 |
 | **core/window** | SDL窗口管理 | ❌ DOM操作、渲染逻辑 |
 | **core/quickjs** | JS运行时、绑定 | ❌ 业务逻辑 |
 | **core/lexbor** | HTML/CSS解析 | ❌ 渲染逻辑、布局计算 |
@@ -547,6 +546,11 @@ TEST_CASE("Element::AppendChild should add child to children list") {
 
 ## 📋 版本历史
 
+### v3.0 (2025-12-07)
+- ✅ 布局引擎更新为原生实现 (Native Layout Engine)
+- ✅ 移除 Yoga 依赖，Taffy 移至 ReferenceProject 作为参考
+- ✅ 支持 Block + IFC + Flexbox + Grid 布局
+
 ### v2.1 (2025-11-14)
 - ✅ 新增规范5：前端框架集成规范
 - ✅ 明确C++层只提供浏览器级别API的原则
@@ -557,6 +561,6 @@ TEST_CASE("Element::AppendChild should add child to children list") {
 
 ---
 
-**最后更新**: 2025-11-14
+**最后更新**: 2025-12-07
 **维护者**: MBink Team
 
