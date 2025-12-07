@@ -33,7 +33,7 @@
 | **渲染方式** | 用户提供渲染器 | 内置Skia渲染 |
 | **JavaScript** | 可选Lua插件 | 核心QuickJS引擎 |
 | **生态系统** | 自定义标记 | **React生态** |
-| **布局引擎** | 自研CSS布局 | **Native + Taffy** |
+| **布局引擎** | 自研CSS布局 | **Native Layout Engine** |
 | **HTML解析** | 自研解析器 | **Lexbor (HTML5)** |
 
 ### 核心价值主张
