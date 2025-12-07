@@ -1,9 +1,9 @@
 # MBink 项目状态报告
 
-> **最后更新**: 2025-11-29
-> **当前版本**: 0.90.0
-> **总体进度**: 85%
-> **当前工作**: Preact 生态集成 (C++ 绑定待完成)
+> **最后更新**: 2025-12-07
+> **当前版本**: 0.91.0
+> **总体进度**: 90%
+> **当前工作**: 原生布局引擎完成，Preact 生态待完善
 
 ---
 
@@ -30,13 +30,14 @@
 | **性能优化** | 100% | ✅ 完成 | ✅ |
 | **HTML/CSS 完整支持** | 100% | ✅ 完成 | 333 测试 |
 | **Taffy 布局引擎** | 100% | ✅ 完成 | ✅ |
+| **原生布局引擎** | 100% | ✅ 完成 | 320 测试 (IFC+Block+比较) |
 | **Preact 生态** | 50% | 🔄 进行中 | 4 个示例 (JS可用，C++待完成) |
 | **多语言绑定** | 20% | 🔄 进行中 | - |
 | **工具链** | 0% | ⚪ 未开始 | - |
 | **跨平台** | 33% | 🔄 进行中 | Windows ✅ |
-| **文档** | 70% | 🔄 进行中 | 19 个文档 |
+| **文档** | 70% | 🔄 进行中 | 15 个文档 |
 
-**总计**: 85% 完成，81 个测试用例通过 (4个 Preact 测试待修复)
+**总计**: 90% 完成，541 个测试用例通过
 
 ---
 
@@ -206,6 +207,34 @@
 
 ---
 
+### 9. 原生布局引擎 (100%) ✅
+
+**完成时间**: 2025-12-07
+
+- ✅ **Native Layout Engine**
+  - Block 布局模式
+  - IFC (Inline Formatting Context) 布局
+  - 与 Taffy (Flexbox/Grid) 无缝集成
+
+- ✅ **IFC 特性**
+  - text-align: left/center/right/justify
+  - vertical-align: top/middle/bottom/baseline
+  - inline-block 元素支持
+  - 行内元素换行算法 (CJK/连字符)
+
+- ✅ **布局测试套件**
+  - IFC 单元测试: 32 个 (100% 通过)
+  - 基础布局比较: 121 个 (100% 通过)
+  - 高级布局比较: 159 个 (100% 通过)
+  - 性能测试: 8 个 (全部达标)
+
+- ✅ **性能基线**
+  - 1000 元素布局: 3.2 ms (目标 < 100 ms)
+  - 5000 元素布局: 19.7 ms (目标 < 500 ms)
+  - 缓存加速: 544x (目标 > 1.5x)
+
+---
+
 ## 🚧 进行中的工作
 
 ### Preact 生态系统 (50%)
@@ -249,8 +278,9 @@
 - ⚪ Node.js 绑定
 
 ### 文档 (70%)
-- ✅ 19 个技术文档
+- ✅ 15 个技术文档
 - ✅ API 参考文档
+- ✅ 布局系统测试计划
 - ⚪ 用户教程
 - ⚪ 示例项目
 - ⚪ 官方网站
@@ -316,18 +346,21 @@
 ### 核心代码
 ```
 core/
+├── layout/
+│   ├── native_layout_engine.h/cpp      # 原生布局引擎
+│   ├── ifc/                            # IFC 行内格式化上下文
+│   │   ├── ifc_layout.h/cpp            # IFC 布局实现
+│   │   ├── line_breaker.h/cpp          # 换行算法
+│   │   └── inline_box.h/cpp            # 行内盒子
+│   └── taffy_layout_engine.h/cpp       # Taffy 布局引擎 (Flexbox/Grid)
 ├── render/
-│   ├── animation_controller.h/cpp      # 动画控制器 (已集成优化)
-│   ├── animation_optimizer.h/cpp       # 动画优化器
-│   ├── filter_cache.h/cpp              # 渲染优化器
-│   ├── object_pool.h                   # 对象池
-│   ├── style_resolver.h/cpp            # 样式解析器 (已集成优化)
+│   ├── animation_controller.h/cpp      # 动画控制器
+│   ├── style_resolver.h/cpp            # 样式解析器
 │   ├── css_animation.h/cpp             # CSS 动画
 │   ├── css_filters.h/cpp               # CSS 滤镜
-│   ├── css_variables.h/cpp             # CSS 变量
 │   └── transform.h/cpp                 # CSS Transform
 ├── dom/                                # DOM API
-├── js/                                 # JavaScript 运行时
+├── quickjs/                            # JavaScript 运行时
 ├── window/                             # 窗口系统
 └── event/                              # 事件系统
 ```
@@ -336,24 +369,27 @@ core/
 ```
 tests/
 ├── unit/
-│   ├── test_performance_optimization.cpp  # 性能优化测试 (44 个)
-│   ├── test_css_animation.cpp             # CSS 动画测试 (100 个)
-│   ├── test_css_filters.cpp               # CSS 滤镜测试 (64 个)
+│   ├── test_ifc.cpp                       # IFC 单元测试 (32 个)
+│   ├── test_performance_optimization.cpp  # 性能优化测试
 │   └── ...                                # 其他测试
+├── layout_comparison/
+│   ├── compare_unified.py                 # 统一布局比较脚本
+│   ├── browser_reference_data.json        # 浏览器参考数据
+│   └── browser_advanced_data.json         # 高级布局参考数据
+├── performance/
+│   └── test_layout_performance.cpp        # 布局性能测试 (8 个)
 └── benchmark/
-    └── benchmark_css_animations.cpp       # 基准测试
+    └── benchmark_css_animations.cpp       # 动画基准测试
 ```
 
 ### 文档
 ```
 docs/
 ├── PROJECT_STATUS.md                      # 项目状态 (本文档)
-├── PRODUCTION_READINESS_CHECKLIST.md      # 生产就绪清单
-├── CSS_FEATURES_TASK_TRACKER.md           # CSS 任务追踪
-├── PROGRESS_SUMMARY.md                    # CSS 进度总结
-├── BENCHMARK_RESULTS.md                   # 基准测试结果
-├── PERFORMANCE_OPTIMIZATION_INTEGRATION.md # 性能优化集成
-└── CSS_ADVANCED_FEATURES_FINAL_INTEGRATION.md # CSS 最终集成
+├── ARCHITECTURE.md                        # 架构设计
+├── LAYOUT_SYSTEM_TEST_PLAN.md             # 布局系统测试计划
+├── NATIVE_LAYOUT_ENGINE_DESIGN.md         # 原生布局引擎设计
+└── ...                                    # 其他文档
 ```
 
 ---
@@ -400,6 +436,7 @@ Merge branch 'feature/flexbox-fix' - Flexbox布局修复和resize优化
 
 | 版本 | 日期 | 主要变更 |
 |------|------|---------|
+| 0.91.0 | 2025-12-07 | 原生布局引擎 (Block + IFC)，541 个测试 |
 | 0.90.0 | 2025-11-15 | HTML/CSS 完整支持，333 个测试 |
 | - | 2025-11-28 | Taffy CSS 布局引擎，CSS Grid |
 | 0.5.0-alpha | 2025-11-14 | CSS 动画、变换、滤镜 |
@@ -416,7 +453,7 @@ Merge branch 'feature/flexbox-fix' - Flexbox布局修复和resize优化
 
 ---
 
-**最后更新**: 2025-11-29
+**最后更新**: 2025-12-07
 **下一步**: Preact 生态完善 或 多语言绑定
 **建议**: 优先完善 Preact 生态，测试 Ant Design 组件库
 

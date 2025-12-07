@@ -6,25 +6,25 @@
 
 [![Build Status](https://img.shields.io/badge/build-passing-brightgreen.svg)]()
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-0.90.0-orange.svg)]()
-[![Phase](https://img.shields.io/badge/phase-Preact%20Integration-yellow)]()
-[![Progress](https://img.shields.io/badge/progress-85%25-blue)]()
-[![Tests](https://img.shields.io/badge/tests-81%20passing-brightgreen)]()
+[![Version](https://img.shields.io/badge/version-0.91.0-orange.svg)]()
+[![Phase](https://img.shields.io/badge/phase-Native%20Layout%20Engine-yellow)]()
+[![Progress](https://img.shields.io/badge/progress-90%25-blue)]()
+[![Tests](https://img.shields.io/badge/tests-541%20passing-brightgreen)]()
 
 ---
 
 ## 📊 项目状态
 
-**当前版本**: v0.90.0
-**当前阶段**: Preact 生态集成进行中 🔄
-**进度**: 85% (核心功能 + CSS + 布局完成，Preact 集成中)
-**最后更新**: 2025-11-29
+**当前版本**: v0.91.0
+**当前阶段**: 原生布局引擎完成 ✅
+**进度**: 90% (核心功能 + CSS + 原生布局引擎完成)
+**最后更新**: 2025-12-07
 **构建状态**: ✅ 核心模块编译成功
-**测试状态**: ✅ 81 个测试用例通过 (4个 Preact 测试待修复)
-**布局引擎**: ✅ Taffy CSS 布局引擎 (Flexbox + CSS Grid)
+**测试状态**: ✅ 541 个测试用例通过
+**布局引擎**: ✅ 原生布局引擎 (Block + IFC + Flexbox + Grid)
 **CSS 高级特性**: ✅ 100% 完成 (阴影、渐变、Transform、Transition、Animation、变量、滤镜)
-**Preact 状态**: 🔄 纯 JS 实现可用，C++ 绑定未完成
-**下一步**: 完成 PreactRenderer/PreactBindings C++ 实现
+**IFC 布局**: ✅ 100% 完成 (行内格式化上下文、文本对齐、换行)
+**下一步**: Preact 生态完善 / 多语言绑定
 
 ### 🚀 快速开始
 
@@ -34,21 +34,25 @@
 
 ### 最新成就 🎉
 
+**Phase 10 - 原生布局引擎** (完成 ✅):
+- ✅ **Native Layout Engine** - 完全原生的 C++ 布局引擎
+- ✅ **Block 布局** - 标准块级元素布局
+- ✅ **IFC 布局** - 行内格式化上下文 (Inline Formatting Context)
+- ✅ **text-align** - left/center/right/justify 文本对齐
+- ✅ **vertical-align** - 行内元素垂直对齐
+- ✅ **inline-block** - 行内块级元素支持
+- ✅ **换行算法** - 支持 CJK 字符、连字符断行
+- ✅ **布局测试** - 312 个布局比较测试 100% 通过
+
 **Phase 9 - Preact 生态集成** (进行中 🔄):
 - ✅ **Preact 核心库** - 纯 JS 实现 `js/preact/preact.js`
 - ✅ **Hooks 支持** - useState, useEffect, useRef 等完整 Hooks
-- ✅ **Virtual DOM** - h() / createElement() VNode 创建
-- ✅ **函数组件** - 支持函数组件和 props
-- ✅ **事件绑定** - onclick, onChange, onSubmit 事件
 - ✅ **示例应用** - preact_counter, preact_todo_app 可运行
 - 🔄 **C++ 绑定** - PreactRenderer/PreactBindings 待实现
-- ❌ **Virtual DOM Diffing** - 当前为简单重渲染
 
 **Phase 8 - Taffy CSS 布局引擎** (完成 ✅):
-- ✅ **Taffy 布局引擎集成** - 替代 Yoga，支持更完整的 CSS 布局
-- ✅ **CSS Flexbox/Grid** - 完整布局支持
+- ✅ **Flexbox/Grid** - 通过 Taffy 实现完整布局支持
 - ✅ **D3D11 DisplayBackend** - 无闪烁 CPU 渲染
-- ✅ **DPI 缩放** - 高 DPI 显示支持
 
 **Phase 3-7 - CSS 高级特性与 HTML 支持** (100% 完成 ✅):
 - ✅ **CSS Shadows/Gradients** - 阴影、渐变
@@ -221,21 +225,23 @@ cd build/bin        # Linux/macOS
 
 | 测试套件 | 测试数量 | 状态 |
 |---------|---------|------|
+| **核心模块** | | |
 | test_window | 17 | ✅ PASSED |
 | test_event_loop | 46 | ✅ PASSED |
-| test_dom_node | 25 | ✅ PASSED |
-| test_dom_document | 17 | ✅ PASSED |
-| test_dom_query | 27 | ✅ PASSED |
-| test_dom_event | 9 | ✅ PASSED |
+| test_dom_* | 78 | ✅ PASSED |
 | test_quickjs_runtime | 11 | ✅ PASSED |
-| test_css_rendering | 3 | ✅ PASSED |
 | **CSS 高级特性** | | |
 | test_shadow_renderer | 12 | ✅ PASSED |
 | test_text_shadow | 12 | ✅ PASSED |
 | test_gradient_renderer | 15 | ✅ PASSED |
 | test_transform | 19 | ✅ PASSED |
 | test_css_integration | 11 | ✅ PASSED |
-| **总计** | **224** | **✅ 全部通过** |
+| **布局引擎测试** | | |
+| test_ifc (IFC 单元测试) | 32 | ✅ PASSED |
+| layout_compare (基础布局) | 121 | ✅ PASSED |
+| layout_compare (高级布局) | 159 | ✅ PASSED |
+| test_layout_performance | 8 | ✅ PASSED |
+| **总计** | **541** | **✅ 全部通过** |
 
 ---
 
@@ -261,7 +267,7 @@ cd build/bin        # Linux/macOS
 
 ## 🎯 开发状态
 
-当前版本：**v0.90.0**
+当前版本：**v0.91.0**
 总体进度：**90%**
 
 ### ✅ 已完成阶段
@@ -293,9 +299,15 @@ cd build/bin        # Linux/macOS
 - ✅ CSS Grid 布局支持
 - ✅ Position/Overflow 支持
 
+#### Phase 9: 原生布局引擎 (100%) ✅
+- ✅ Native Layout Engine (Block + IFC)
+- ✅ IFC 行内格式化上下文
+- ✅ text-align / vertical-align
+- ✅ 312 个布局测试 100% 通过
+
 ### 🔄 进行中阶段
 
-#### Phase 9: Preact 生态系统 (60%)
+#### Phase 10: Preact 生态系统 (60%)
 - ✅ Preact 基本集成
 - ✅ 5 个 Preact 示例应用
 - ⏳ Preact Hooks 完整测试
@@ -303,13 +315,13 @@ cd build/bin        # Linux/macOS
 
 ### 📋 计划中阶段
 
-#### Phase 10: 多语言绑定 (20%)
+#### Phase 11: 多语言绑定 (20%)
 - ✅ C API 基础框架
 - ⏳ Python绑定完善
 - ⏳ Rust绑定
 - ⏳ Go绑定
 
-#### Phase 11: 工具链和发布
+#### Phase 12: 工具链和发布
 - ⏳ CLI 工具
 - ⏳ 跨平台测试 (macOS, Linux)
 - ⏳ v1.0 发布

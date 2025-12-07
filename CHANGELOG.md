@@ -5,6 +5,41 @@ All notable changes to MBink will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.91.0] - 2025-12-07
+
+### Added - Phase 9: 原生布局引擎 (2025-12-07) ✅ 已完成
+- **Native Layout Engine** - 完全原生的 C++ 布局引擎
+  - Block 布局模式
+  - IFC (Inline Formatting Context) 行内格式化上下文
+  - 与 Taffy (Flexbox/Grid) 无缝集成
+- **IFC 特性**
+  - text-align: left/center/right/justify
+  - vertical-align: top/middle/bottom/baseline
+  - inline-block 元素支持
+  - 行内元素换行算法 (支持 CJK 字符)
+  - 连字符断行支持
+- **布局测试套件**
+  - IFC 单元测试: 32 个 (100% 通过)
+  - 基础布局比较测试: 121 个 (100% 通过)
+  - 高级布局比较测试: 159 个 (100% 通过)
+  - 布局性能测试: 8 个 (全部达标)
+- **性能基线**
+  - 1000 元素布局: 3.2 ms (目标 < 100 ms)
+  - 5000 元素布局: 19.7 ms (目标 < 500 ms)
+  - 50 层嵌套: 0.17 ms (目标 < 50 ms)
+  - 缓存加速: 544x (目标 > 1.5x)
+- **CI 集成**
+  - `scripts/run_layout_tests.py` 统一测试脚本
+  - GitHub Actions `layout-regression` 任务
+  - 98% 通过率阈值检查
+- **文档更新**
+  - `docs/LAYOUT_SYSTEM_TEST_PLAN.md` 布局系统测试计划
+  - 整理删除过时文档
+
+### Fixed
+- inline-block 元素内 text-align: center 不生效
+- IFC 布局 ATOMIC 盒子位置应用
+
 ## [0.90.0] - 2025-11-28
 
 ### Added - Phase 8: Taffy CSS 布局引擎 (2025-11-28) ✅ 已完成
@@ -225,6 +260,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Yoga layout engine
 - Lexbor HTML/CSS parsing
 
-[Unreleased]: https://github.com/yourusername/mbink/compare/v0.5.0-alpha...HEAD
+[Unreleased]: https://github.com/yourusername/mbink/compare/v0.91.0...HEAD
+[0.91.0]: https://github.com/yourusername/mbink/compare/v0.90.0...v0.91.0
+[0.90.0]: https://github.com/yourusername/mbink/compare/v0.5.0-alpha...v0.90.0
 [0.5.0-alpha]: https://github.com/yourusername/mbink/releases/tag/v0.5.0-alpha
 

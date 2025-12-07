@@ -1008,6 +1008,14 @@ void IFCLayout::ApplyLayoutResults(RenderObject* container, float container_widt
                 layout.y = box_top;
                 layout.width = box.width;
                 layout.height = box.height;
+
+                // 对于 inline-block 元素，需要调用 Layout 来设置其内部子元素的位置
+                // 这样才能正确应用 text-align 等属性
+                if (render_obj->GetType() == RenderObjectType::INLINE_BLOCK) {
+                    auto* inline_block = static_cast<RenderInlineBlock*>(render_obj);
+                    // 调用 Layout 来设置子元素位置（尺寸已经在 MeasureIntrinsicSize 中计算过了）
+                    inline_block->Layout(box.width, box.height);
+                }
             }
 
             // 更新所有父级内联元素的边界

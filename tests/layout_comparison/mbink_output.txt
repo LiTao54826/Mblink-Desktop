@@ -1,36 +1,45 @@
-========================================
+﻿========================================
   MBink Layout Compare Test
   (Auto-close mode)
 ========================================
 
 [1/7] Creating window...
-GPU rendering failed: Failed to create Skia OpenGL interface, falling back to CPU
+./build/bin/Release/layout_compare_test.exe : GPU rendering fail
+ed: Failed to create Skia OpenGL interface, falling back to CPU
+所在位置 行:1 字符: 1
++ ./build/bin/Release/layout_compare_test.exe -q 2>&1 | Out-File
+ -FileP ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (GPU rendering f... 
+   ing back to CPU:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
 [DisplayBackend] Virtual machine detected
 [PaintModeDisplayBackend] Initialized successfully (900x900)
 [DisplayBackend] Using PaintMode backend (VM-friendly)
-  ✓ Window created: 900x900
-  ✓ Window registered
+  鉁?Window created: 900x900
+  鉁?Window registered
 [2/7] Creating document...
-  ✓ Document initialized
+  鉁?Document initialized
 [3/7] Creating QuickJS runtime...
-  ✓ QuickJS runtime created
+  鉁?QuickJS runtime created
 [4/7] Initializing DOM bindings...
-  ✓ DOM bindings initialized
+  鉁?DOM bindings initialized
 [5/7] Creating body element...
-  ✓ Body element created with overflow: auto
+  鉁?Body element created with overflow: auto
 [6/7] Loading Preact library...
   Found preact.js at: js/preact/preact.js
-  ✓ Preact library loaded
+  鉁?Preact library loaded
   Found hooks.js at: js/preact/hooks.js
-  ✓ Hooks library loaded
+  鉁?Hooks library loaded
 [7/7] Loading Layout Compare Test application (app.js)...
   Found app.js at: examples/demo_html/layout_compare_test/app.js
-  ✓ Application loaded and rendered
+  鉁?Application loaded and rendered
 [FontManager] Emoji font loaded: Segoe UI Emoji
 [FontManager] CJK font loaded: Microsoft YaHei
 
 ========================================
-  📊 Layout Tree (MBink)
+  馃搳 Layout Tree (MBink)
 ========================================
 [body] x=0.0 y=0.0 w=438.0 h=13686.6 (block) [content-box]
   [div] x=0.0 y=0.0 w=438.0 h=13686.6 (block) p:[20.0 20.0 20.0 20.0] [content-box]
@@ -146,11 +155,11 @@ GPU rendering failed: Failed to create Skia OpenGL interface, falling back to CP
           [#text] x=0.0 y=0.0 w=162.6 h=16.2 (block) [content-box]
         [div] #BL-04-wrap x=11.0 y=32.2 w=376.0 h=68.4 (block) p:[5.0 5.0 5.0 5.0] [content-box]
           [div] #BL-04-A x=5.0 y=5.0 w=100.0 h=58.4 (inline-block) p:[10.0 10.0 10.0 10.0]
-            [#text] x=0.0 y=0.0 w=72.0 h=38.4 (block) [content-box]
+            [#text] x=14.0 y=10.0 w=72.0 h=38.4 (block) [content-box]
           [div] #BL-04-B x=105.0 y=5.0 w=100.0 h=58.4 (inline-block) p:[10.0 10.0 10.0 10.0]
-            [#text] x=0.0 y=0.0 w=72.0 h=38.4 (block) [content-box]
+            [#text] x=14.0 y=10.0 w=72.0 h=38.4 (block) [content-box]
           [div] #BL-04-C x=205.0 y=5.0 w=100.0 h=58.4 (inline-block) p:[10.0 10.0 10.0 10.0]
-            [#text] x=0.0 y=0.0 w=72.0 h=38.4 (block) [content-box]
+            [#text] x=14.0 y=10.0 w=72.0 h=38.4 (block) [content-box]
       [div] #BL-05 x=0.0 y=163.1 w=398.0 h=93.2 (block) m:[10.0 0.0 10.0 0.0] p:[10.0 10.0 10.0 10.0] b:[1.0 1.0 1.0 1.0]
         [h3] x=11.0 y=11.0 w=376.0 h=16.2 (block) m:[0.0 0.0 5.0 0.0] [content-box]
           [#text] x=0.0 y=0.0 w=143.2 h=16.2 (block) [content-box]
@@ -813,13 +822,13 @@ GPU rendering failed: Failed to create Skia OpenGL interface, falling back to CP
         [#text] x=0.8 y=0.0 w=356.3 h=37.0 (block) [content-box]
 
 ========================================
-  🚀 Layout Compare Test Started!
+  馃殌 Layout Compare Test Started!
 ========================================
 
   Auto-close mode: exiting after render.
 
 ========================================
-  👋 Application Closed
+  馃憢 Application Closed
 ========================================
 [QuickJSRuntime] Destructor called
 [QuickJSRuntime] Stack trace:

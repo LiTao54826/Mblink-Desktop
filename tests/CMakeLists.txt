@@ -1686,6 +1686,49 @@ set_target_properties(test_memory_stress PROPERTIES
 
 add_test(NAME MemoryStressTest COMMAND test_memory_stress)
 
+# Layout Performance Test
+add_executable(test_layout_performance
+    performance/test_layout_performance.cpp
+)
+
+target_link_libraries(test_layout_performance
+    PRIVATE
+    lightui_layout
+    lightui_render
+    lightui_dom
+    lightui_lexbor
+    gtest
+    gtest_main
+)
+
+target_include_directories(test_layout_performance
+    PRIVATE
+    ${CMAKE_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/core
+    ${CMAKE_SOURCE_DIR}/tests
+)
+
+# Link Skia if available
+if(TARGET skia)
+    target_link_libraries(test_layout_performance PRIVATE skia)
+
+    if(MSVC)
+        target_compile_options(test_layout_performance PRIVATE
+            $<$<CONFIG:Debug>:/MT>
+            $<$<CONFIG:Release>:/MT>
+        )
+        target_compile_definitions(test_layout_performance PRIVATE
+            $<$<CONFIG:Debug>:_ITERATOR_DEBUG_LEVEL=0>
+        )
+    endif()
+endif()
+
+set_target_properties(test_layout_performance PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin/${CMAKE_BUILD_TYPE}"
+)
+
+add_test(NAME LayoutPerformanceTest COMMAND test_layout_performance)
+
 # ============================================================================
 # IFC (Inline Formatting Context) Tests
 # ============================================================================
@@ -1696,11 +1739,14 @@ add_executable(test_ifc unit/test_ifc.cpp)
 target_include_directories(test_ifc PRIVATE
     ${CMAKE_SOURCE_DIR}
     ${CMAKE_SOURCE_DIR}/core
+    ${THIRD_PARTY_DIR}/lexbor/source
 )
 
 target_link_libraries(test_ifc PRIVATE
     lightui_layout
     lightui_render
+    lightui_dom
+    lightui_lexbor
     GTest::gtest
     GTest::gtest_main
 )

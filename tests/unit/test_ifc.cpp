@@ -11,12 +11,12 @@
  */
 
 #include <gtest/gtest.h>
-#include "core/layout/text_run.h"
-#include "core/layout/inline_box.h"
-#include "core/layout/line_box.h"
-#include "core/layout/line_breaker.h"
-#include "core/layout/vertical_aligner.h"
-#include "core/layout/ifc_layout.h"
+#include "core/layout/ifc/text_run.h"
+#include "core/layout/ifc/inline_box.h"
+#include "core/layout/ifc/line_box.h"
+#include "core/layout/ifc/line_breaker.h"
+#include "core/layout/ifc/vertical_aligner.h"
+#include "core/layout/ifc/ifc_layout.h"
 
 using namespace lightui;
 
@@ -459,6 +459,181 @@ TEST_F(PerformanceTest, CacheValidation) {
 
     // 空容器应该返回缓存无效
     EXPECT_FALSE(layout.IsCacheValid(nullptr, 100.0f));
+}
+
+// ========== Text-Align 测试 ==========
+
+class TextAlignTest : public ::testing::Test {
+protected:
+    void SetUp() override {}
+    void TearDown() override {}
+};
+
+TEST_F(TextAlignTest, TextAlignLeft) {
+    // 创建一个 500px 宽的行盒
+    LineBox line(500.0f);
+
+    // 创建一个 200px 宽的文本盒子
+    InlineBox box = InlineBox::CreateTextBox(nullptr);
+    box.width = 200.0f;
+    box.height = 20.0f;
+    box.x = 0.0f;  // 初始位置
+
+    line.AddBox(&box);
+    line.content_width = 200.0f;
+
+    // 应用左对齐
+    line.ApplyTextAlign("left");
+
+    // 左对齐：盒子应该保持在 x=0
+    EXPECT_FLOAT_EQ(box.x, 0.0f);
+}
+
+TEST_F(TextAlignTest, TextAlignRight) {
+    // 创建一个 500px 宽的行盒
+    LineBox line(500.0f);
+
+    // 创建一个 200px 宽的文本盒子
+    InlineBox box = InlineBox::CreateTextBox(nullptr);
+    box.width = 200.0f;
+    box.height = 20.0f;
+    box.x = 0.0f;  // 初始位置
+
+    line.AddBox(&box);
+    line.content_width = 200.0f;
+
+    // 应用右对齐
+    line.ApplyTextAlign("right");
+
+    // 右对齐：盒子应该移动到 x = 500 - 200 = 300
+    EXPECT_FLOAT_EQ(box.x, 300.0f);
+}
+
+TEST_F(TextAlignTest, TextAlignCenter) {
+    // 创建一个 500px 宽的行盒
+    LineBox line(500.0f);
+
+    // 创建一个 200px 宽的文本盒子
+    InlineBox box = InlineBox::CreateTextBox(nullptr);
+    box.width = 200.0f;
+    box.height = 20.0f;
+    box.x = 0.0f;  // 初始位置
+
+    line.AddBox(&box);
+    line.content_width = 200.0f;
+
+    // 应用居中对齐
+    line.ApplyTextAlign("center");
+
+    // 居中对齐：盒子应该移动到 x = (500 - 200) / 2 = 150
+    EXPECT_FLOAT_EQ(box.x, 150.0f);
+}
+
+TEST_F(TextAlignTest, TextAlignCenterMultipleBoxes) {
+    // 创建一个 500px 宽的行盒
+    LineBox line(500.0f);
+
+    // 创建两个文本盒子，总宽度 300px
+    InlineBox box1 = InlineBox::CreateTextBox(nullptr);
+    box1.width = 100.0f;
+    box1.height = 20.0f;
+    box1.x = 0.0f;
+
+    InlineBox box2 = InlineBox::CreateTextBox(nullptr);
+    box2.width = 200.0f;
+    box2.height = 20.0f;
+    box2.x = 100.0f;  // 紧跟在 box1 后面
+
+    line.AddBox(&box1);
+    line.AddBox(&box2);
+    line.content_width = 300.0f;
+
+    // 应用居中对齐
+    line.ApplyTextAlign("center");
+
+    // 居中对齐：所有盒子应该右移 (500 - 300) / 2 = 100
+    EXPECT_FLOAT_EQ(box1.x, 100.0f);
+    EXPECT_FLOAT_EQ(box2.x, 200.0f);
+}
+
+TEST_F(TextAlignTest, TextAlignNoExtraSpace) {
+    // 创建一个 200px 宽的行盒
+    LineBox line(200.0f);
+
+    // 创建一个 200px 宽的文本盒子（正好填满）
+    InlineBox box = InlineBox::CreateTextBox(nullptr);
+    box.width = 200.0f;
+    box.height = 20.0f;
+    box.x = 0.0f;
+
+    line.AddBox(&box);
+    line.content_width = 200.0f;
+
+    // 应用居中对齐（但没有额外空间）
+    line.ApplyTextAlign("center");
+
+    // 没有额外空间，盒子应该保持在 x=0
+    EXPECT_FLOAT_EQ(box.x, 0.0f);
+}
+
+TEST_F(TextAlignTest, TextAlignOverflow) {
+    // 创建一个 200px 宽的行盒
+    LineBox line(200.0f);
+
+    // 创建一个 300px 宽的文本盒子（溢出）
+    InlineBox box = InlineBox::CreateTextBox(nullptr);
+    box.width = 300.0f;
+    box.height = 20.0f;
+    box.x = 0.0f;
+
+    line.AddBox(&box);
+    line.content_width = 300.0f;
+
+    // 应用居中对齐（内容溢出）
+    line.ApplyTextAlign("center");
+
+    // 内容溢出时，盒子应该保持在 x=0（不应该负偏移）
+    EXPECT_FLOAT_EQ(box.x, 0.0f);
+}
+
+TEST_F(TextAlignTest, TextAlignStart) {
+    // 创建一个 500px 宽的行盒
+    LineBox line(500.0f);
+
+    // 创建一个 200px 宽的文本盒子
+    InlineBox box = InlineBox::CreateTextBox(nullptr);
+    box.width = 200.0f;
+    box.height = 20.0f;
+    box.x = 0.0f;
+
+    line.AddBox(&box);
+    line.content_width = 200.0f;
+
+    // 应用 start 对齐（LTR 模式下等同于 left）
+    line.ApplyTextAlign("start");
+
+    // start 对齐：盒子应该保持在 x=0
+    EXPECT_FLOAT_EQ(box.x, 0.0f);
+}
+
+TEST_F(TextAlignTest, TextAlignEnd) {
+    // 创建一个 500px 宽的行盒
+    LineBox line(500.0f);
+
+    // 创建一个 200px 宽的文本盒子
+    InlineBox box = InlineBox::CreateTextBox(nullptr);
+    box.width = 200.0f;
+    box.height = 20.0f;
+    box.x = 0.0f;
+
+    line.AddBox(&box);
+    line.content_width = 200.0f;
+
+    // 应用 end 对齐（LTR 模式下等同于 right）
+    line.ApplyTextAlign("end");
+
+    // end 对齐：盒子应该移动到 x = 500 - 200 = 300
+    EXPECT_FLOAT_EQ(box.x, 300.0f);
 }
 
 // ========== 主函数 ==========

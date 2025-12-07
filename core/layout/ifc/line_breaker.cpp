@@ -121,19 +121,29 @@ bool LineBreaker::IsLineEndProhibited(uint32_t ch) {
 bool LineBreaker::CanBreakBetween(uint32_t prev_char, uint32_t next_char) {
     // 行首禁止字符不能出现在断行后
     if (IsLineStartProhibited(next_char)) return false;
-    
+
     // 行尾禁止字符不能出现在断行前
     if (IsLineEndProhibited(prev_char)) return false;
-    
+
     // 空白后可以断行
     if (IsBreakableWhitespace(prev_char)) return true;
-    
+
+    // 连字符后可以断行（CSS 默认行为）
+    // U+002D: HYPHEN-MINUS (-)
+    // U+2010: HYPHEN (‐)
+    // U+2011: NON-BREAKING HYPHEN (不断行)
+    // U+2012: FIGURE DASH (‒)
+    // U+2013: EN DASH (–)
+    if (prev_char == '-' || prev_char == 0x2010 || prev_char == 0x2012 || prev_char == 0x2013) {
+        return true;
+    }
+
     // CJK 字符间可以断行
     if (IsCJK(prev_char) && IsCJK(next_char)) return true;
-    
+
     // CJK 和其他字符间可以断行
     if (IsCJK(prev_char) || IsCJK(next_char)) return true;
-    
+
     // 默认不断行（英文单词内部）
     return false;
 }

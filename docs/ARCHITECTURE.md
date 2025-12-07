@@ -1,17 +1,18 @@
 # MBink 架构设计文档
 
-> **版本**: 4.0
-> **最后更新**: 2025-11-29
+> **版本**: 5.0
+> **最后更新**: 2025-12-07
 > **项目定位**: 轻量级跨平台桌面应用框架 - Electron的轻量级替代品
 
-> **实现状态** (2025-11-29):
+> **实现状态** (2025-12-07):
 > - ✅ 所有 5 层架构已实现
 > - ✅ Skia 渲染层完全集成并测试
 > - ✅ QuickJS 运行时层完全实现
 > - ✅ DOM 和事件系统完全实现
-> - ✅ Taffy CSS 布局引擎集成 (Flexbox + CSS Grid)
+> - ✅ 原生布局引擎 (Block + IFC + Flexbox + Grid)
+> - ✅ IFC 行内格式化上下文 (text-align, vertical-align)
 > - ✅ CSS 高级特性完成 (动画、变换、滤镜)
-> - ✅ 81 个测试验证架构正确性
+> - ✅ 541 个测试验证架构正确性
 
 ---
 
@@ -50,7 +51,7 @@
 |------|---------|------|-------------|
 | **JS引擎** | QuickJS | 轻量级(600KB)，启动快 | ❌ V8 (太重，70MB+) |
 | **渲染引擎** | Skia | 浏览器级质量，Chrome同源 | ❌ 自研渲染器 |
-| **布局引擎** | Taffy | Rust实现，Flexbox + CSS Grid | ❌ Yoga (仅Flexbox) |
+| **布局引擎** | Native + Taffy | 原生 Block/IFC + Taffy Flexbox/Grid | ❌ 单独使用 Yoga |
 | **HTML解析** | Lexbor | 完整HTML5/CSS3支持 | ❌ 自研解析器 |
 | **窗口系统** | SDL3 | 跨平台，稳定 | ❌ GLFW, Qt |
 
@@ -66,7 +67,6 @@
 **不借鉴** ❌:
 - 数据绑定系统 (React已提供)
 - 装饰器系统 (不符合定位)
-- 自研布局引擎 (Taffy已足够)
 - 自研HTML/CSS解析器 (Lexbor已足够)
 
 ---
@@ -105,6 +105,7 @@
                      │ 渲染指令
 ┌────────────────────▼────────────────────────────────────┐
 │  Layer 1: 渲染层 (Rendering Layer)                      │
+│  - 原生布局引擎 (Block + IFC)                           │
 │  - Taffy布局引擎 (Flexbox + CSS Grid)                   │
 │  - Skia图形渲染                                         │
 │  - SDL3窗口系统                                         │
@@ -451,43 +452,75 @@ private:
 
 ### 2.5 布局引擎模块 (Layout Engine Module)
 
-**职责**: 使用Taffy计算布局 (Flexbox + CSS Grid)
+**职责**: 计算 CSS 布局 (Block + IFC + Flexbox + Grid)
+
+MBink 使用混合布局引擎架构:
+- **原生布局引擎**: 处理 Block 布局和 IFC (Inline Formatting Context)
+- **Taffy 布局引擎**: 处理 Flexbox 和 CSS Grid 布局
 
 ```cpp
-// layout/layout_engine.h
+// layout/native_layout_engine.h
 
-struct LayoutBox {
-    float x, y;
-    float width, height;
-    float paddingTop, paddingRight, paddingBottom, paddingLeft;
-    float marginTop, marginRight, marginBottom, marginLeft;
-};
-
-class LayoutEngine {
+class NativeLayoutEngine {
 public:
-    LayoutEngine();
-    ~LayoutEngine();
-    
-    // 布局计算
-    void Layout(Element* root, float availableWidth, float availableHeight);
-    
-    // 获取布局结果
-    LayoutBox GetLayoutBox(Element* element);
-    
-    // 样式应用
-    void ApplyStyles(Element* element, YGNodeRef yogaNode);
-    
+    // 执行完整布局
+    void PerformLayout(RenderObject* root, float available_width, float available_height);
+
+    // 计算尺寸（不设置位置）
+    LayoutResult ComputeSize(RenderObject* root, float available_width, float available_height);
+
 private:
-    YGConfigRef config_;
-    std::unordered_map<Element*, YGNodeRef> nodeMap_;
-    
-    // 样式解析
-    YGFlexDirection ParseFlexDirection(const std::string& value);
-    YGJustify ParseJustifyContent(const std::string& value);
-    YGAlign ParseAlignItems(const std::string& value);
-    YGValue ParseSize(const std::string& value);
+    // Block 布局
+    LayoutResult LayoutBlock(RenderObject* obj, float available_width);
+
+    // IFC 布局 (行内格式化上下文)
+    LayoutResult LayoutIFC(RenderObject* container, float available_width);
+
+    // 委托给 Taffy 处理 Flexbox/Grid
+    LayoutResult LayoutFlex(RenderObject* obj, float available_width);
+    LayoutResult LayoutGrid(RenderObject* obj, float available_width);
 };
 ```
+
+#### IFC (Inline Formatting Context) 架构
+
+```cpp
+// layout/ifc/ifc_layout.h
+
+class IFCLayout {
+public:
+    // 执行 IFC 布局
+    IFCLayoutResult Layout(RenderObject* container, float available_width, RunMode mode);
+
+private:
+    // 收集行内内容
+    void CollectInlineContent(RenderObject* container);
+
+    // 换行算法
+    void BreakIntoLines(float available_width);
+
+    // 行内对齐
+    void AlignLine(Line& line, TextAlign align, float container_width);
+
+    // 垂直对齐
+    void VerticalAlignBoxes(Line& line);
+};
+
+// 行内盒子类型
+enum class InlineBoxType {
+    TEXT,           // 文本内容
+    ATOMIC,         // inline-block, img 等
+    OPEN_TAG,       // 开始标签 (span, a 等)
+    CLOSE_TAG       // 结束标签
+};
+```
+
+**IFC 特性**:
+- ✅ text-align: left/center/right/justify
+- ✅ vertical-align: top/middle/bottom/baseline
+- ✅ inline-block 元素支持
+- ✅ CJK 字符换行
+- ✅ 连字符断行
 
 ---
 

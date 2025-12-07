@@ -109,9 +109,9 @@ void RenderInlineBlock::Layout(float parent_width, float parent_height) {
     for (auto& child : children_) {
         auto& child_layout = child->GetLayoutInfo();
         child_layout.x = current_x;
-        // 垂直居中（需要减去 border）
-        float available_height = layout_info_.height - padding_top - padding_bottom - border_top - border_bottom;
-        child_layout.y = padding_top + border_top + (available_height - child_layout.height) / 2.0f;
+        // 文本默认从顶部开始排列（标准 CSS 行为）
+        // 注意：垂直居中需要使用其他方法（如 line-height、vertical-align、flexbox 等）
+        child_layout.y = padding_top + border_top;
         current_x += child_layout.width;
     }
 

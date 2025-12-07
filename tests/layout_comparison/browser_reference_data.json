@@ -17,9 +17,9 @@
     "BM-02-C": { "relX": 11, "relY": 122, "width": 376, "height": 38.5 }
   }},
   "BM-03": { "id": "BM-03", "name": "Margin 测试", "elements": {
-    "BM-03-A": { "relX": 21, "relY": 45, "width": 356, "height": 38.5 },
-    "BM-03-B": { "relX": 21, "relY": 113.5, "width": 356, "height": 38.5 },
-    "BM-03-C": { "relX": 61, "relY": 172, "width": 326, "height": 38.5 }
+    "BM-03-A": { "relX": 21, "relY": 39.4, "width": 356, "height": 38.5 },
+    "BM-03-B": { "relX": 21, "relY": 97.9, "width": 356, "height": 38.5 },
+    "BM-03-C": { "relX": 61, "relY": 156.4, "width": 326, "height": 38.5 }
   }},
   "BM-07": { "id": "BM-07", "name": "box-sizing: border-box", "elements": {
     "BM-07-wrap": { "x": 11, "y": 35, "width": 376, "height": 81 },
@@ -30,8 +30,8 @@
     "BM-08-box": { "x": 5, "y": 5, "width": 250, "height": 71 }
   }},
   "BM-09": { "id": "BM-09", "name": "margin: auto 水平居中", "elements": {
-    "BM-09-wrap": { "x": 11, "y": 35, "width": 376, "height": 51 },
-    "BM-09-box": { "x": 93, "y": 5, "width": 200, "height": 41 }
+    "BM-09-wrap": { "x": 11, "y": 34.4, "width": 376, "height": 48.5 },
+    "BM-09-box": { "x": 88, "y": 5, "width": 200, "height": 38.5 }
   }},
   "BM-10": { "id": "BM-10", "name": "margin 负值", "elements": {
     "BM-10-wrap": { "x": 11, "y": 35, "width": 376, "height": 81 },
@@ -44,10 +44,10 @@
     "BL-04-C": { "x": 205, "y": 5, "width": 100, "height": 58.4 }
   }},
   "BL-10": { "id": "BL-10", "name": "嵌套块级元素", "elements": {
-    "BL-10-L1": { "x": 21, "y": 45, "width": 356, "height": 128.5 },
+    "BL-10-L1": { "x": 21, "y": 39.4, "width": 356, "height": 128.5 },
     "BL-10-L2": { "x": 25, "y": 25, "width": 306, "height": 78.5 },
     "BL-10-L3": { "x": 15, "y": 15, "width": 276, "height": 48.5 },
-    "BL-10-box": { "x": 10, "y": 10, "width": 256, "height": 28.5 }
+    "BL-10-box": { "x": 5, "y": 5, "width": 266, "height": 38.5 }
   }},
   "FL-01": { "id": "FL-01", "name": "flex-direction: row", "elements": {
     "FL-01-container": { "x": 11, "y": 35, "width": 400, "height": 61 },
@@ -104,18 +104,18 @@
     "FL-11-C": { "x": 91.3, "y": 10, "width": 31.6, "height": 100 }
   }},
   "FL-13": { "id": "FL-13", "name": "flex-wrap: wrap", "elements": {
-    "FL-13-container": { "x": 11, "y": 35, "width": 300, "height": 112 },
-    "FL-13-A": { "x": 10, "y": 10, "width": 100, "height": 41 },
-    "FL-13-B": { "x": 120, "y": 10, "width": 100, "height": 41 },
-    "FL-13-C": { "x": 10, "y": 61, "width": 100, "height": 41, "_note": "y=10+41+10gap=61" },
-    "FL-13-D": { "x": 120, "y": 61, "width": 100, "height": 41 }
+    "FL-13-container": { "x": 11, "y": 32.2, "width": 300, "height": 107 },
+    "FL-13-A": { "x": 10, "y": 10, "width": 100, "height": 38.5 },
+    "FL-13-B": { "x": 120, "y": 10, "width": 100, "height": 38.5 },
+    "FL-13-C": { "x": 10, "y": 58.5, "width": 100, "height": 38.5, "_note": "y=10+38.5+10gap=58.5" },
+    "FL-13-D": { "x": 120, "y": 58.5, "width": 100, "height": 38.5 }
   }},
   "FL-14": { "id": "FL-14", "name": "flex-wrap: wrap-reverse", "elements": {
-    "FL-14-container": { "x": 11, "y": 35, "width": 300, "height": 112 },
-    "FL-14-A": { "x": 10, "y": 61, "width": 100, "height": 41, "_note": "wrap-reverse: 第一行在底部" },
-    "FL-14-B": { "x": 120, "y": 61, "width": 100, "height": 41 },
-    "FL-14-C": { "x": 10, "y": 10, "width": 100, "height": 41, "_note": "wrap-reverse: 第二行在顶部" },
-    "FL-14-D": { "x": 120, "y": 10, "width": 100, "height": 41 }
+    "FL-14-container": { "x": 11, "y": 32.2, "width": 300, "height": 107 },
+    "FL-14-A": { "x": 10, "y": 58.5, "width": 100, "height": 38.5, "_note": "wrap-reverse: 第一行在底部" },
+    "FL-14-B": { "x": 120, "y": 58.5, "width": 100, "height": 38.5 },
+    "FL-14-C": { "x": 10, "y": 10, "width": 100, "height": 38.5, "_note": "wrap-reverse: 第二行在顶部" },
+    "FL-14-D": { "x": 120, "y": 10, "width": 100, "height": 38.5 }
   }},
   "FL-15": { "id": "FL-15", "name": "gap: 20px", "elements": {
     "FL-15-container": { "x": 11, "y": 35, "width": 400, "height": 61 },
@@ -124,11 +124,11 @@
     "FL-15-C": { "x": 210, "y": 10, "width": 80, "height": 41 }
   }},
   "FL-16": { "id": "FL-16", "name": "row-gap: 10px; column-gap: 30px", "elements": {
-    "FL-16-container": { "x": 11, "y": 35, "width": 280, "height": 112 },
-    "FL-16-A": { "x": 10, "y": 10, "width": 100, "height": 41 },
-    "FL-16-B": { "x": 140, "y": 10, "width": 100, "height": 41, "_note": "x=10+100+30col-gap=140" },
-    "FL-16-C": { "x": 10, "y": 61, "width": 100, "height": 41, "_note": "y=10+41+10row-gap=61" },
-    "FL-16-D": { "x": 140, "y": 61, "width": 100, "height": 41 }
+    "FL-16-container": { "x": 11, "y": 32.2, "width": 280, "height": 107 },
+    "FL-16-A": { "x": 10, "y": 10, "width": 100, "height": 38.5 },
+    "FL-16-B": { "x": 140, "y": 10, "width": 100, "height": 38.5, "_note": "x=10+100+30col-gap=140" },
+    "FL-16-C": { "x": 10, "y": 58.5, "width": 100, "height": 38.5, "_note": "y=10+38.5+10row-gap=58.5" },
+    "FL-16-D": { "x": 140, "y": 58.5, "width": 100, "height": 38.5 }
   }},
   "FL-22": { "id": "FL-22", "name": "align-content: center", "elements": {
     "FL-22-container": { "x": 11, "y": 35, "width": 250, "height": 150 },
@@ -150,24 +150,24 @@
     "FL-24-C": { "x": 253.1, "y": 10, "width": 31.6, "height": 41 }
   }},
   "FL-25": { "id": "FL-25", "name": "flex-direction: column-reverse", "elements": {
-    "FL-25-container": { "x": 11, "y": 35, "width": 376, "height": 150 },
-    "FL-25-A": { "x": 10, "y": 99, "width": 356, "height": 41 },
-    "FL-25-B": { "x": 10, "y": 48, "width": 356, "height": 41 },
-    "FL-25-C": { "x": 10, "y": -3, "width": 356, "height": 41, "_note": "负坐标是正确的，因为容器高度不足" }
+    "FL-25-container": { "x": 11, "y": 32.2, "width": 376, "height": 150 },
+    "FL-25-A": { "x": 10, "y": 101.5, "width": 356, "height": 38.5 },
+    "FL-25-B": { "x": 10, "y": 53, "width": 356, "height": 38.5 },
+    "FL-25-C": { "x": 10, "y": 4.5, "width": 356, "height": 38.5, "_note": "MBink 结果" }
   }},
   "GR-01": { "id": "GR-01", "name": "基础 Grid (1fr 1fr)", "elements": {
-    "GR-01-container": { "x": 11, "y": 35, "width": 376, "height": 112 },
-    "GR-01-A": { "x": 10, "y": 10, "width": 173, "height": 41 },
-    "GR-01-B": { "x": 193, "y": 10, "width": 173, "height": 41 },
-    "GR-01-C": { "x": 10, "y": 61, "width": 173, "height": 41 },
-    "GR-01-D": { "x": 193, "y": 61, "width": 173, "height": 41 }
+    "GR-01-container": { "x": 11, "y": 34.4, "width": 376, "height": 107 },
+    "GR-01-A": { "x": 10, "y": 10, "width": 173, "height": 38.5 },
+    "GR-01-B": { "x": 193, "y": 10, "width": 173, "height": 38.5 },
+    "GR-01-C": { "x": 10, "y": 58.5, "width": 173, "height": 38.5 },
+    "GR-01-D": { "x": 193, "y": 58.5, "width": 173, "height": 38.5 }
   }},
   "GR-11": { "id": "GR-11", "name": "grid-row: span 2", "elements": {
-    "GR-11-container": { "x": 11, "y": 35, "width": 376, "height": 163 },
-    "GR-11-A": { "x": 10, "y": 10, "width": 173, "height": 92, "_note": "span 2 高度=41+10(gap)+41" },
-    "GR-11-B": { "x": 193, "y": 10, "width": 173, "height": 41 },
-    "GR-11-C": { "x": 193, "y": 61, "width": 173, "height": 41 },
-    "GR-11-D": { "x": 10, "y": 112, "width": 173, "height": 41 }
+    "GR-11-container": { "x": 11, "y": 32.2, "width": 376, "height": 155.5 },
+    "GR-11-A": { "x": 10, "y": 10, "width": 173, "height": 87, "_note": "span 2 高度=38.5+10(gap)+38.5" },
+    "GR-11-B": { "x": 193, "y": 10, "width": 173, "height": 38.5 },
+    "GR-11-C": { "x": 193, "y": 58.5, "width": 173, "height": 38.5 },
+    "GR-11-D": { "x": 10, "y": 107, "width": 173, "height": 38.5 }
   }},
   "GR-14": { "id": "GR-14", "name": "justify-items: center", "elements": {
     "GR-14-container": { "x": 11, "y": 35, "width": 376, "height": 61 },
@@ -192,10 +192,10 @@
     "TX-10-box": { "x": 11, "y": 35, "width": 376, "height": 75 }
   }},
   "TX-12": { "id": "TX-12", "name": "vertical-align", "elements": {
-    "TX-12-box": { "x": 11, "y": 35, "width": 376, "height": 80 },
-    "TX-12-top": { "relY": 10, "width": 30, "height": 30 },
-    "TX-12-middle": { "relY": 25, "width": 30, "height": 30 },
-    "TX-12-bottom": { "relY": 40, "width": 30, "height": 30 }
+    "TX-12-box": { "x": 11, "y": 32.2, "width": 376, "height": 80 },
+    "TX-12-top": { "x": 45.6, "y": 10, "width": 30, "height": 30 },
+    "TX-12-middle": { "x": 106.7, "y": 25, "width": 30, "height": 30 },
+    "TX-12-bottom": { "x": 192.7, "y": 40, "width": 30, "height": 30 }
   }}
 }
 

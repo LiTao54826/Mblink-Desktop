@@ -1,16 +1,10 @@
-# LightUI CI/CD配置
+# MBink CI/CD配置
 #
 # 功能：
 # - 多平台构建（Windows, macOS, Linux）
-# - 运行测试
+# - 运行单元测试和布局测试
 # - 代码格式检查
 # - 生成发布包
-#
-# TODO:
-# - [ ] 配置依赖安装
-# - [ ] 配置构建步骤
-# - [ ] 配置测试运行
-# - [ ] 配置发布流程
 
 name: Build
 
@@ -21,100 +15,149 @@ on:
     branches: [ main, develop ]
 
 jobs:
-  # ========== Linux构建 ==========
-  build-linux:
-    runs-on: ubuntu-latest
-    
+  # ========== Windows构建和测试 ==========
+  build-windows:
+    runs-on: windows-latest
+
     steps:
     - uses: actions/checkout@v3
       with:
         submodules: recursive
-    
+
+    - name: Setup Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+
+    - name: Configure CMake
+      run: cmake -B build -DCMAKE_BUILD_TYPE=Release
+
+    - name: Build
+      run: cmake --build build --config Release
+
+    - name: Run IFC Unit Tests
+      run: ./build/bin/Release/test_ifc.exe
+      continue-on-error: true
+
+    - name: Run Layout Comparison Tests
+      run: |
+        python scripts/run_layout_tests.py --output layout_test_results.json
+      continue-on-error: true
+
+    - name: Upload Test Results
+      uses: actions/upload-artifact@v3
+      with:
+        name: test-results-windows
+        path: |
+          layout_test_results.json
+          comparison_report_*.json
+
+  # ========== Linux构建 ==========
+  build-linux:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v3
+      with:
+        submodules: recursive
+
     - name: Install dependencies
       run: |
-        # TODO: 安装依赖
-        # sudo apt-get update
-        # sudo apt-get install -y cmake g++ libsdl3-dev
-        echo "TODO: Install dependencies"
-    
+        sudo apt-get update
+        sudo apt-get install -y cmake g++ libsdl2-dev libfontconfig1-dev
+        # TODO: 添加其他依赖
+
     - name: Configure CMake
-      run: |
-        # TODO: 配置CMake
-        # cmake -B build -DCMAKE_BUILD_TYPE=Release
-        echo "TODO: Configure CMake"
-    
+      run: cmake -B build -DCMAKE_BUILD_TYPE=Release
+
     - name: Build
-      run: |
-        # TODO: 构建
-        # cmake --build build --config Release
-        echo "TODO: Build"
-    
+      run: cmake --build build --config Release
+
     - name: Test
       run: |
-        # TODO: 运行测试
         # cd build && ctest --output-on-failure
-        echo "TODO: Test"
+        echo "Linux tests - TODO"
   
   # ========== macOS构建 ==========
   build-macos:
     runs-on: macos-latest
-    
+
     steps:
     - uses: actions/checkout@v3
       with:
         submodules: recursive
-    
+
     - name: Install dependencies
       run: |
-        # TODO: 安装依赖
-        # brew install cmake sdl3
-        echo "TODO: Install dependencies"
-    
+        brew install cmake sdl2
+        # TODO: 添加其他依赖
+
     - name: Configure CMake
-      run: |
-        # TODO: 配置CMake
-        echo "TODO: Configure CMake"
-    
+      run: cmake -B build -DCMAKE_BUILD_TYPE=Release
+
     - name: Build
-      run: |
-        # TODO: 构建
-        echo "TODO: Build"
-    
+      run: cmake --build build --config Release
+
     - name: Test
       run: |
-        # TODO: 运行测试
-        echo "TODO: Test"
-  
-  # ========== Windows构建 ==========
-  build-windows:
+        # ./build/bin/Release/test_ifc
+        echo "macOS tests - TODO"
+
+  # ========== 布局回归测试 ==========
+  layout-regression:
     runs-on: windows-latest
-    
+    needs: build-windows
+
     steps:
     - uses: actions/checkout@v3
       with:
         submodules: recursive
-    
-    - name: Install dependencies
-      run: |
-        # TODO: 安装依赖
-        # choco install cmake
-        echo "TODO: Install dependencies"
-    
+
+    - name: Setup Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+
     - name: Configure CMake
+      run: cmake -B build -DCMAKE_BUILD_TYPE=Release
+
+    - name: Build Layout Tests
       run: |
-        # TODO: 配置CMake
-        echo "TODO: Configure CMake"
-    
-    - name: Build
+        cmake --build build --config Release --target test_ifc
+        cmake --build build --config Release --target layout_compare_test
+
+    - name: Run Layout Regression Tests
+      id: layout_tests
       run: |
-        # TODO: 构建
-        echo "TODO: Build"
-    
-    - name: Test
+        python scripts/run_layout_tests.py --verbose --output layout_test_results.json
+
+    - name: Check Pass Rate
       run: |
-        # TODO: 运行测试
-        echo "TODO: Test"
-  
+        python -c "
+        import json
+        with open('layout_test_results.json') as f:
+            results = json.load(f)
+
+        overall = results.get('overall_pass_rate', 0)
+        print(f'Overall pass rate: {overall:.1f}%')
+
+        if overall < 98.0:
+            print('❌ Pass rate below threshold (98%)')
+            exit(1)
+        else:
+            print('✅ Pass rate meets threshold')
+        "
+
+    - name: Upload Test Results
+      uses: actions/upload-artifact@v3
+      if: always()
+      with:
+        name: layout-regression-results
+        path: |
+          layout_test_results.json
+          comparison_report_*.json
+          tests/layout_comparison/*.txt
+
   # ========== 代码格式检查 ==========
   format-check:
     runs-on: ubuntu-latest

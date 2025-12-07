@@ -404,12 +404,74 @@ function PracticalLayoutTest() {
     );
 }
 
+// ========== ADV-8: Text-Align 边界情况测试 ==========
+function TextAlignEdgeCaseTest() {
+    return h('section', { style: 'margin: 20px 0;', id: 'section-adv8' },
+        h('h2', { style: 'margin: 0 0 10px 0;' }, 'ADV-8: Text-Align 边界情况'),
+
+        // ADV-8-01: 多行文本居中
+        h('div', { style: testContainerStyle, id: 'ADV-8-01' },
+            h('h3', { style: 'margin: 0 0 5px 0; font-size: 14px;' }, 'ADV-8-01 多行文本居中'),
+            h('div', { style: boxSizing + 'width: 200px; text-align: center; background: #eee; padding: 10px;', id: 'ADV-8-01-box' },
+                '这是一段较长的文本内容，会自动换行到多行显示'
+            )
+        ),
+
+        // ADV-8-02: 嵌套 text-align 继承
+        h('div', { style: testContainerStyle, id: 'ADV-8-02' },
+            h('h3', { style: 'margin: 0 0 5px 0; font-size: 14px;' }, 'ADV-8-02 嵌套text-align继承'),
+            h('div', { style: boxSizing + 'text-align: center; background: #eee; padding: 10px;', id: 'ADV-8-02-parent' },
+                h('div', { style: boxSizing + 'text-align: left; background: #ddd; padding: 5px; margin-bottom: 5px;', id: 'ADV-8-02-left' }, '左对齐'),
+                h('div', { style: boxSizing + 'background: #ccc; padding: 5px; margin-bottom: 5px;', id: 'ADV-8-02-inherit' }, '继承居中'),
+                h('div', { style: boxSizing + 'text-align: right; background: #bbb; padding: 5px;', id: 'ADV-8-02-right' }, '右对齐')
+            )
+        ),
+
+        // ADV-8-03: Flex内text-align
+        h('div', { style: testContainerStyle, id: 'ADV-8-03' },
+            h('h3', { style: 'margin: 0 0 5px 0; font-size: 14px;' }, 'ADV-8-03 Flex内text-align'),
+            h('div', { style: boxSizing + 'display: flex; gap: 10px; background: #eee; padding: 10px;', id: 'ADV-8-03-flex' },
+                h('div', { style: boxSizing + 'flex: 1; text-align: left; background: #ddd; padding: 10px;', id: 'ADV-8-03-A' }, '左'),
+                h('div', { style: boxSizing + 'flex: 1; text-align: center; background: #ccc; padding: 10px;', id: 'ADV-8-03-B' }, '中'),
+                h('div', { style: boxSizing + 'flex: 1; text-align: right; background: #bbb; padding: 10px;', id: 'ADV-8-03-C' }, '右')
+            )
+        ),
+
+        // ADV-8-04: Grid内text-align
+        h('div', { style: testContainerStyle, id: 'ADV-8-04' },
+            h('h3', { style: 'margin: 0 0 5px 0; font-size: 14px;' }, 'ADV-8-04 Grid内text-align'),
+            h('div', { style: boxSizing + 'display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; background: #eee; padding: 10px;', id: 'ADV-8-04-grid' },
+                h('div', { style: boxSizing + 'text-align: left; background: #ddd; padding: 10px;', id: 'ADV-8-04-A' }, '左对齐'),
+                h('div', { style: boxSizing + 'text-align: center; background: #ccc; padding: 10px;', id: 'ADV-8-04-B' }, '居中'),
+                h('div', { style: boxSizing + 'text-align: right; background: #bbb; padding: 10px;', id: 'ADV-8-04-C' }, '右对齐')
+            )
+        ),
+
+        // ADV-8-05: 宽度刚好等于内容宽度
+        h('div', { style: testContainerStyle, id: 'ADV-8-05' },
+            h('h3', { style: 'margin: 0 0 5px 0; font-size: 14px;' }, 'ADV-8-05 宽度=内容宽度'),
+            h('div', { style: boxSizing + 'display: inline-block; text-align: center; background: #eee; padding: 10px;', id: 'ADV-8-05-box' },
+                '精确宽度'
+            )
+        ),
+
+        // ADV-8-06: text-align: start/end
+        h('div', { style: testContainerStyle, id: 'ADV-8-06' },
+            h('h3', { style: 'margin: 0 0 5px 0; font-size: 14px;' }, 'ADV-8-06 text-align start/end'),
+            h('div', { style: boxSizing + 'display: flex; gap: 10px; background: #eee; padding: 10px;', id: 'ADV-8-06-flex' },
+                h('div', { style: boxSizing + 'flex: 1; text-align: start; background: #ddd; padding: 10px;', id: 'ADV-8-06-A' }, 'start'),
+                h('div', { style: boxSizing + 'flex: 1; text-align: end; background: #ccc; padding: 10px;', id: 'ADV-8-06-B' }, 'end')
+            )
+        )
+    );
+}
+
 // ========== 主应用组件 ==========
 function AdvancedApp() {
     return h('div', { style: 'padding: 20px; font-family: Arial, sans-serif;' },
         h('h1', { style: 'margin: 0 0 20px 0; color: #333;' }, '高级布局对比测试'),
         h('p', { style: 'margin: 0 0 20px 0; color: #666;' },
-            '测试复杂布局场景和边界情况。共 7 个类别，约 30+ 个测试用例。'
+            '测试复杂布局场景和边界情况。共 8 个类别，约 36+ 个测试用例。'
         ),
 
         h(DeepNestingTest),
@@ -419,6 +481,7 @@ function AdvancedApp() {
         h(GridAdvancedTest),
         h(FlexboxEdgeCaseTest),
         h(PracticalLayoutTest),
+        h(TextAlignEdgeCaseTest),
 
         h('footer', { style: 'margin-top: 30px; padding: 20px; text-align: center; background: #f5f5f5; border-radius: 4px;' },
             h('p', { style: 'margin: 0; color: #666;' }, '✅ Advanced Layout Compare Test Complete - Powered by MBink')
@@ -439,6 +502,7 @@ if (typeof window !== 'undefined') {
         GridAdvancedTest: GridAdvancedTest,
         FlexboxEdgeCaseTest: FlexboxEdgeCaseTest,
         PracticalLayoutTest: PracticalLayoutTest,
+        TextAlignEdgeCaseTest: TextAlignEdgeCaseTest,
         AdvancedApp: AdvancedApp
     };
 }
