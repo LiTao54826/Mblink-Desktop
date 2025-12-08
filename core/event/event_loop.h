@@ -253,8 +253,9 @@ private:
      * @param event_type 事件类型
      * @param mouse_x 鼠标X坐标
      * @param mouse_y 鼠标Y坐标
+     * @return 是否有伪类变化（需要重绘）
      */
-    void SendEvents(const std::vector<std::weak_ptr<Element>>& old_items,
+    bool SendEvents(const std::vector<std::weak_ptr<Element>>& old_items,
                    const std::vector<std::weak_ptr<Element>>& new_items,
                    const std::string& event_type,
                    float mouse_x,

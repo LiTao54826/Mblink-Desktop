@@ -283,6 +283,49 @@ public:
      */
     void StepDown();
 
+    /**
+     * @brief 获取 min 属性值（用于 number/range 类型）
+     * @return min 值，默认为 0
+     */
+    double GetMin() const;
+
+    /**
+     * @brief 获取 max 属性值（用于 number/range 类型）
+     * @return max 值，默认为 100
+     */
+    double GetMax() const;
+
+    /**
+     * @brief 获取当前值作为数字
+     * @return 当前值的数字表示
+     */
+    double GetValueAsNumber() const;
+
+    // ========== Range 滑块拖动支持 ==========
+
+    /**
+     * @brief 检查是否正在拖动 range 滑块
+     */
+    bool IsDraggingRange() const { return is_dragging_range_; }
+
+    /**
+     * @brief 开始拖动 range 滑块
+     * @param track_width 轨道宽度
+     */
+    void StartRangeDrag(float track_width);
+
+    /**
+     * @brief 更新 range 滑块位置
+     * @param local_x 相对于控件的 X 坐标
+     * @param track_width 轨道宽度
+     */
+    void UpdateRangeDrag(float local_x, float track_width);
+
+    /**
+     * @brief 结束 range 滑块拖动
+     */
+    void EndRangeDrag();
+
 protected:
     /**
      * @brief 触发change事件
@@ -316,6 +359,9 @@ private:
     int selection_end_;         // 选择结束位置
     bool is_dragging_selection_ = false;  // 是否正在拖动选择
     int drag_start_pos_ = 0;    // 拖动选择的起始字符位置
+
+    // Range 滑块拖动状态
+    bool is_dragging_range_ = false;  // 是否正在拖动 range 滑块
 };
 
 } // namespace lightui

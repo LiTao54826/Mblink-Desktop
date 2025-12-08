@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DOM Render Test - Browser Reference</title>
+    <style>
+        /* 不使用全局 reset，让元素使用默认样式，与 MBink 行为保持一致 */
+        /* 明确指定字体，确保浏览器和 MBink 使用相同的字体 */
+        html, body {
+            margin: 0;
+            padding: 0;
+            width: 800px;
+            height: 600px;
+            overflow: auto;
+            font-family: Arial, "Microsoft YaHei", sans-serif;
+        }
+        /* 等宽字体元素使用 Courier New，与 MBink 默认一致 */
+        code, kbd, samp, pre {
+            font-family: "Courier New", Courier, monospace !important;
+            font-size: 16px !important;  /* 统一使用 16px，避免默认 13px 导致的差异 */
+        }
+        .toolbar {
+            position: fixed;
+            top: 0;
+            right: 0;
+            background: #333;
+            color: #fff;
+            padding: 10px;
+            z-index: 9999;
+            font-size: 12px;
+        }
+        .toolbar button {
+            margin: 2px;
+            padding: 5px 10px;
+            cursor: pointer;
+        }
+        #output {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background: #222;
+            color: #0f0;
+            font-family: monospace;
+            font-size: 11px;
+            padding: 10px;
+            max-height: 200px;
+            overflow: auto;
+            display: none;
+            z-index: 9998;
+        }
+    </style>
+</head>
+<body>
+    <div class="toolbar">
+        <button onclick="extractAndShow()">Extract Data</button>
+        <button onclick="copyToClipboard()">Copy JSON</button>
+        <button onclick="downloadJSON()">Download JSON</button>
+        <button onclick="toggleOutput()">Toggle Output</button>
+    </div>
+    <div id="output"></div>
+
+    <!-- 加载 Preact (相对于项目根目录的 js/preact/) -->
+    <script src="../../../js/preact/preact.js"></script>
+    <script src="../../../js/preact/hooks.js"></script>
+    
+    <!-- 加载测试用例 (与 MBink 相同) -->
+    <script src="app.js"></script>
+    
+    <script>
+        var lastData = null;
+
+        function extractAndShow() {
+            lastData = window.DOMRenderTest.extract();
+            var json = JSON.stringify(lastData, null, 2);
+            document.getElementById('output').textContent = json;
+            // document.getElementById('output').style.display = 'block';
+            console.log('__RENDER_DATA__' + JSON.stringify(lastData));
+            var elemCount = Object.keys(lastData.elements || {}).length;
+            console.log('Data extracted. ' + elemCount + ' elements found.');
+        }
+
+        function copyToClipboard() {
+            if (!lastData) extractAndShow();
+            var json = JSON.stringify(lastData);
+            navigator.clipboard.writeText(json).then(function() {
+                alert('JSON copied to clipboard!');
+            });
+        }
+
+        function downloadJSON() {
+            if (!lastData) extractAndShow();
+            var json = JSON.stringify(lastData, null, 2);
+            var blob = new Blob([json], { type: 'application/json' });
+            var url = URL.createObjectURL(blob);
+            var a = document.createElement('a');
+            a.href = url;
+            a.download = 'browser_render_data.json';
+            a.click();
+            URL.revokeObjectURL(url);
+        }
+
+        function toggleOutput() {
+            var output = document.getElementById('output');
+            output.style.display = output.style.display === 'none' ? 'block' : 'none';
+        }
+
+        // 页面加载完成后自动提取数据
+        window.addEventListener('load', function() {
+            setTimeout(function() {
+                extractAndShow();
+            }, 100);
+        });
+    </script>
+</body>
+</html>
+

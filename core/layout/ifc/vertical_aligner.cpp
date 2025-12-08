@@ -88,10 +88,15 @@ LineVerticalMetrics VerticalAligner::CalculateLineMetrics(
     float max_line_height = 0.0f;  // 最大 CSS line-height
     float max_font_size = 0.0f;    // 最大字体大小
 
-    // 不使用 container_line_height 作为初始值
-    // 因为 MeasureTextStatic 已经根据文本内容计算了正确的 line-height
-    // container_line_height 使用的是默认的 1.2 倍数，可能与实际不符
-    (void)container_line_height;  // 标记为已使用，避免警告
+    // CSS 规范：每行都有一个隐式的 "strut"（零宽度字符）
+    // strut 的高度等于容器的 line-height，参与基线对齐
+    // 这确保了即使行内只有 inline-block 元素，行高也至少为容器的 line-height
+    //
+    // 注意：container_line_height 现在使用浏览器风格的 line-height: normal
+    // 而不是默认的 1.2 倍数，所以可以安全地使用它作为最小行高
+    if (container_line_height > 0) {
+        max_line_height = container_line_height;
+    }
 
     for (size_t i = 0; i < boxes.size(); ++i) {
         const InlineBox* box = boxes[i];
@@ -116,11 +121,35 @@ LineVerticalMetrics VerticalAligner::CalculateLineMetrics(
         // 根据对齐方式决定是否参与基线计算
         switch (align.type) {
             case VerticalAlignType::BASELINE:
-            case VerticalAlignType::SUPER:
-            case VerticalAlignType::SUB:
             case VerticalAlignType::LENGTH:
                 max_ascent = std::max(max_ascent, box_metrics.ascent);
                 max_descent = std::max(max_descent, box_metrics.descent);
+                break;
+
+            case VerticalAlignType::SUPER:
+                // 上标会向上偏移 0.4 * height，需要增加 ascent
+                // 上标偏移后：新的顶部 = 原顶部 - 0.4 * height
+                // 新的 ascent = 原 ascent + 0.4 * height
+                {
+                    float super_offset = box_metrics.height * 0.4f;
+                    max_ascent = std::max(max_ascent, box_metrics.ascent + super_offset);
+                    max_descent = std::max(max_descent, box_metrics.descent - super_offset);
+                    // 确保 descent 不会变成负数
+                    if (max_descent < 0.0f) max_descent = 0.0f;
+                }
+                break;
+
+            case VerticalAlignType::SUB:
+                // 下标会向下偏移 0.2 * height，需要增加 descent
+                // 下标偏移后：新的底部 = 原底部 + 0.2 * height
+                // 新的 descent = 原 descent + 0.2 * height
+                {
+                    float sub_offset = box_metrics.height * 0.2f;
+                    max_ascent = std::max(max_ascent, box_metrics.ascent - sub_offset);
+                    max_descent = std::max(max_descent, box_metrics.descent + sub_offset);
+                    // 确保 ascent 不会变成负数
+                    if (max_ascent < 0.0f) max_ascent = 0.0f;
+                }
                 break;
 
             case VerticalAlignType::TEXT_TOP:

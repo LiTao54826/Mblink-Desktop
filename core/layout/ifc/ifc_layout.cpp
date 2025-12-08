@@ -14,6 +14,7 @@
 #include "../../render/text/font_manager.h"
 #include "../../render/text_renderer.h"
 #include "../../render/render_inline_block.h"
+#include "../../render/render_svg.h"
 
 // DOM 类型（用于检测 BR 元素）
 #include "../../dom/element.h"
@@ -103,80 +104,68 @@ TextMeasureResult IFCLayout::MeasureTextStatic(
 
     // 计算 line-height: normal 的值
     // 浏览器的 line-height: normal 基于字体的实际 metrics
-    // 根据浏览器测试：
-    // - 16px 英文文本 → 18.5px（约 1.156 倍）
-    // - 16px 中文文本 → 21px（约 1.3125 倍）
     //
-    // 检测文本是否包含 CJK 字符来决定使用哪个倍数
-    // CJK 字符的 Unicode 范围：
-    // - CJK Unified Ideographs: U+4E00-U+9FFF
-    // - CJK Unified Ideographs Extension A: U+3400-U+4DBF
-    // - CJK Compatibility Ideographs: U+F900-U+FAFF
-    // - Hiragana: U+3040-U+309F
-    // - Katakana: U+30A0-U+30FF
-    // - Hangul Syllables: U+AC00-U+D7AF
-    bool has_cjk = false;
-    for (size_t i = 0; i < text.size(); ) {
-        unsigned char c = static_cast<unsigned char>(text[i]);
-        if (c < 0x80) {
-            // ASCII
-            i += 1;
-        } else if (c < 0xE0) {
-            // 2-byte UTF-8
-            i += 2;
-        } else if (c < 0xF0) {
-            // 3-byte UTF-8 - 解码 Unicode 码点
-            if (i + 2 < text.size()) {
-                unsigned char c2 = static_cast<unsigned char>(text[i + 1]);
-                unsigned char c3 = static_cast<unsigned char>(text[i + 2]);
-                uint32_t codepoint = ((c & 0x0F) << 12) | ((c2 & 0x3F) << 6) | (c3 & 0x3F);
+    // 根据浏览器测试（Chrome/Edge on Windows with sans-serif font），
+    // line-height: normal 的值因字体大小而异。
+    // 使用查找表来匹配常见字体大小的浏览器行为：
+    float browser_normal_line_height;
 
-                // 检查是否是 CJK 字符
-                if ((codepoint >= 0x4E00 && codepoint <= 0x9FFF) ||   // CJK Unified Ideographs
-                    (codepoint >= 0x3400 && codepoint <= 0x4DBF) ||   // CJK Extension A
-                    (codepoint >= 0xF900 && codepoint <= 0xFAFF) ||   // CJK Compatibility
-                    (codepoint >= 0x3040 && codepoint <= 0x309F) ||   // Hiragana
-                    (codepoint >= 0x30A0 && codepoint <= 0x30FF) ||   // Katakana
-                    (codepoint >= 0xAC00 && codepoint <= 0xD7AF)) {   // Hangul
-                    has_cjk = true;
-                    break;
-                }
-            }
-            i += 3;
-        } else {
-            // 4-byte UTF-8 - 可能是 CJK Extension B 等
-            if (i + 3 < text.size()) {
-                unsigned char c2 = static_cast<unsigned char>(text[i + 1]);
-                unsigned char c3 = static_cast<unsigned char>(text[i + 2]);
-                unsigned char c4 = static_cast<unsigned char>(text[i + 3]);
-                uint32_t codepoint = ((c & 0x07) << 18) | ((c2 & 0x3F) << 12) |
-                                     ((c3 & 0x3F) << 6) | (c4 & 0x3F);
+    // 检查是否是等宽字体（monospace）
+    // 等宽字体的 line-height: normal 等于 font-size（根据浏览器测试）
+    bool is_monospace = (font_family == "Courier New" || font_family == "Consolas" ||
+                         font_family == "monospace" || font_family == "Courier" ||
+                         font_family == "Monaco" || font_family == "Menlo");
 
-                // CJK Extension B-F: U+20000-U+2FFFF
-                if (codepoint >= 0x20000 && codepoint <= 0x2FFFF) {
-                    has_cjk = true;
-                    break;
-                }
-            }
-            i += 4;
+    if (is_monospace) {
+        // Courier New 等宽字体的 line-height: normal 查找表
+        // 基于 Chrome 浏览器使用 Courier New 字体测量的实际值
+        // 比率约为 1.156（与 Arial 相同，因为浏览器使用相同的 line-height 计算）
+        int font_size_int = static_cast<int>(font_size + 0.5f);
+        switch (font_size_int) {
+            case 13: browser_normal_line_height = 15.0f; break;  // 13px 字体
+            case 16: browser_normal_line_height = 18.5f; break;  // 16px 字体 (从浏览器测量)
+            default:
+                browser_normal_line_height = font_size * 1.156f;
+                browser_normal_line_height = std::round(browser_normal_line_height * 2.0f) / 2.0f;
+                break;
+        }
+    } else {
+        // Arial 字体的 line-height: normal 查找表
+        // 基于 Chrome 浏览器使用 Arial 字体测量的实际值
+        // 比率约为 1.15 (比默认 sans-serif 字体更小)
+        int font_size_int = static_cast<int>(font_size + 0.5f);  // 四舍五入到整数
+        switch (font_size_int) {
+            case 10: browser_normal_line_height = 11.5f; break;   // ~1.15
+            case 11: browser_normal_line_height = 13.0f; break;   // ~1.18
+            case 12: browser_normal_line_height = 14.0f; break;   // ~1.17
+            case 13: browser_normal_line_height = 15.0f; break;   // ~1.15
+            case 14: browser_normal_line_height = 16.0f; break;   // ~1.14
+            case 15: browser_normal_line_height = 17.5f; break;   // ~1.17
+            case 16: browser_normal_line_height = 18.5f; break;   // ~1.156 (从浏览器测量)
+            case 17: browser_normal_line_height = 19.5f; break;   // ~1.15
+            case 18: browser_normal_line_height = 21.0f; break;   // ~1.17
+            case 19: browser_normal_line_height = 22.0f; break;   // ~1.16
+            case 20: browser_normal_line_height = 23.0f; break;   // ~1.15
+            case 22: browser_normal_line_height = 25.5f; break;   // ~1.16
+            case 24: browser_normal_line_height = 28.0f; break;   // ~1.17
+            case 32: browser_normal_line_height = 37.0f; break;   // h1 (32px -> 37px, 从浏览器测量)
+            default:
+                // 对于其他字体大小，使用 1.156 倍数并四舍五入到 0.5px
+                browser_normal_line_height = font_size * 1.156f;
+                browser_normal_line_height = std::round(browser_normal_line_height * 2.0f) / 2.0f;
+                break;
         }
     }
-
-    // 根据文本类型选择 line-height 倍数
-    // 英文：1.156 倍（16px → 18.5px）
-    // 中文：1.3125 倍（16px → 21px）
-    float normal_multiplier = has_cjk ? 1.3125f : 1.15625f;
-    float browser_normal_line_height = font_size * normal_multiplier;
 
     // 如果指定了 line-height 倍数（非默认的 1.2），使用 CSS 指定的值
     // 否则使用浏览器风格的 line-height: normal
     float final_line_height;
-    if (line_height_multiplier != 1.2f) {
-        // 用户指定了具体的 line-height
-        final_line_height = font_size * line_height_multiplier;
-    } else {
+    if (std::abs(line_height_multiplier - 1.2f) < 0.001f) {
         // 使用 line-height: normal（基于文本类型）
         final_line_height = browser_normal_line_height;
+    } else {
+        // 用户指定了具体的 line-height
+        final_line_height = font_size * line_height_multiplier;
     }
 
     // 直接使用计算的 line-height，与浏览器行为一致
@@ -530,7 +519,36 @@ IFCLayoutResult IFCLayout::Layout(RenderObject* container, float available_width
         }
 
         // 计算容器的 line-height（像素值）
-        float container_line_height = style.line_height * style.font_size;
+        // 如果 style.line_height 是默认值 1.2，使用浏览器风格的 line-height: normal
+        float container_line_height;
+        if (std::abs(style.line_height - 1.2f) < 0.001f) {
+            // 使用浏览器风格的 line-height: normal（与 MeasureTextStatic 中的查找表一致）
+            // Arial 字体的 line-height: normal 值（比率约 1.156）
+            int font_size_int = static_cast<int>(style.font_size + 0.5f);
+            switch (font_size_int) {
+                case 10: container_line_height = 11.5f; break;   // ~1.15
+                case 11: container_line_height = 13.0f; break;   // ~1.18
+                case 12: container_line_height = 14.0f; break;   // ~1.17
+                case 13: container_line_height = 15.0f; break;   // ~1.15
+                case 14: container_line_height = 16.0f; break;   // ~1.14
+                case 15: container_line_height = 17.5f; break;   // ~1.17
+                case 16: container_line_height = 18.5f; break;   // ~1.156 (从浏览器测量)
+                case 17: container_line_height = 19.5f; break;   // ~1.15
+                case 18: container_line_height = 21.0f; break;   // ~1.17
+                case 19: container_line_height = 22.0f; break;   // ~1.16
+                case 20: container_line_height = 23.0f; break;   // ~1.15
+                case 22: container_line_height = 25.5f; break;   // ~1.16
+                case 24: container_line_height = 28.0f; break;   // ~1.17
+                case 32: container_line_height = 37.0f; break;   // h1 (32px -> 37px)
+                default:
+                    container_line_height = style.font_size * 1.156f;
+                    container_line_height = std::round(container_line_height * 2.0f) / 2.0f;
+                    break;
+            }
+        } else {
+            // 用户指定了具体的 line-height
+            container_line_height = style.line_height * style.font_size;
+        }
 
 #if IFC_DEBUG
         std::cout << "[IFC] Container line-height: " << container_line_height
@@ -825,17 +843,20 @@ void IFCLayout::CreateInlineBox(RenderObject* render_obj) {
 
         case RenderObjectType::INLINE_BLOCK: {
             // 原子内联元素
-            // 使用 MeasureIntrinsicSize 计算尺寸
-            auto* inline_block = static_cast<RenderInlineBlock*>(render_obj);
-            auto [w, h] = inline_block->MeasureIntrinsicSize(current_available_width_);
+            // 先检查是否是 SVG 元素（RenderSVGRoot 类型也是 INLINE_BLOCK，但不是 RenderInlineBlock）
+            float w = 0, h = 0;
+            auto* svg_root = dynamic_cast<RenderSVGRoot*>(render_obj);
+            if (svg_root) {
+                // SVG 元素使用 RenderSVGRoot::MeasureIntrinsicSize
+                std::tie(w, h) = svg_root->MeasureIntrinsicSize(current_available_width_);
+            } else {
+                // 普通 inline-block 元素使用 RenderInlineBlock::MeasureIntrinsicSize
+                auto* inline_block = static_cast<RenderInlineBlock*>(render_obj);
+                std::tie(w, h) = inline_block->MeasureIntrinsicSize(current_available_width_);
+            }
 
-            // 如果 CSS 样式中有显式尺寸，使用 CSS 尺寸
-            if (style.width.unit != CSSUnit::AUTO && style.width.unit != CSSUnit::NONE) {
-                w = style.width.ToPx(current_available_width_, style.font_size);
-            }
-            if (style.height.unit != CSSUnit::AUTO && style.height.unit != CSSUnit::NONE) {
-                h = style.height.ToPx(0, style.font_size);
-            }
+            // 注意：不再覆盖 MeasureIntrinsicSize 返回的尺寸
+            // MeasureIntrinsicSize 已经正确处理了 box-sizing 和显式尺寸
 
             InlineBox box = InlineBox::CreateAtomicBox(render_obj, w, h, h);
 
@@ -856,6 +877,7 @@ void IFCLayout::CreateInlineBox(RenderObject* render_obj) {
             if (node && node->GetNodeType() == NodeType::ELEMENT_NODE) {
                 auto element = std::static_pointer_cast<Element>(node);
                 std::string tag_name = element->GetTagName();
+
                 if (tag_name == "br" || tag_name == "BR") {
                     // BR 元素 - 创建一个带有强制换行标记的空文本盒子
                     InlineBox box = InlineBox::CreateTextBox(render_obj);
@@ -1030,8 +1052,8 @@ void IFCLayout::ApplyLayoutResults(RenderObject* container, float container_widt
         }
     }
 
-    // 应用文本节点的合并边界
-    for (auto& [render_obj, bounds] : text_bounds) {
+    // 第二遍：先应用内联元素的边界（因为子元素需要相对于父元素的位置）
+    for (auto& [render_obj, bounds] : inline_bounds) {
         if (!bounds.has_content) continue;
 
         LayoutInfo& layout = render_obj->GetLayoutInfo();
@@ -1041,13 +1063,30 @@ void IFCLayout::ApplyLayoutResults(RenderObject* container, float container_widt
         layout.height = bounds.max_y - bounds.min_y;
     }
 
-    // 第二遍：应用内联元素的边界
-    for (auto& [render_obj, bounds] : inline_bounds) {
+    // 第三遍：应用文本节点的合并边界
+    // 文本节点的位置需要相对于其父 INLINE 元素（如果有的话）
+    // 因为 RenderInline::Paint 会先 translate 到自己的位置
+    for (auto& [render_obj, bounds] : text_bounds) {
         if (!bounds.has_content) continue;
 
         LayoutInfo& layout = render_obj->GetLayoutInfo();
-        layout.x = bounds.min_x;
-        layout.y = bounds.min_y;
+
+        // 获取父元素
+        auto parent = render_obj->GetParent();
+
+        // 检查父元素是否是 INLINE 类型（且不是 IFC 容器）
+        // 如果是，则文本位置需要相对于父 INLINE 元素
+        if (parent && parent->GetType() == RenderObjectType::INLINE) {
+            const LayoutInfo& parent_layout = parent->GetLayoutInfo();
+            // 文本位置 = 绝对位置 - 父元素绝对位置
+            layout.x = bounds.min_x - parent_layout.x;
+            layout.y = bounds.min_y - parent_layout.y;
+        } else {
+            // 没有 INLINE 父元素，使用绝对位置
+            layout.x = bounds.min_x;
+            layout.y = bounds.min_y;
+        }
+
         layout.width = bounds.max_x - bounds.min_x;
         layout.height = bounds.max_y - bounds.min_y;
     }

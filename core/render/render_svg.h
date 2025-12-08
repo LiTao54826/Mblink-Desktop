@@ -92,6 +92,12 @@ public:
     void Layout(float parent_width, float parent_height) override;
 
     /**
+     * @brief 测量 SVG 元素的固有尺寸
+     * 这是 flex 布局所需的
+     */
+    std::pair<float, float> MeasureIntrinsicSize(float available_width);
+
+    /**
      * @brief 设置关联的SVG根元素
      */
     void SetSVGSVGElement(std::shared_ptr<SVGSVGElement> element);
@@ -114,6 +120,7 @@ public:
     ~RenderSVGPath() override = default;
 
     void Paint(SkCanvas* canvas) override;
+    void Layout(float parent_width, float parent_height) override;
 
     /**
      * @brief 设置关联的path元素
@@ -145,6 +152,7 @@ public:
     ~RenderSVGCircle() override = default;
 
     void Paint(SkCanvas* canvas) override;
+    void Layout(float parent_width, float parent_height) override;
 
     void SetSVGCircleElement(std::shared_ptr<SVGCircleElement> element);
 
@@ -161,6 +169,7 @@ public:
     ~RenderSVGRect() override = default;
 
     void Paint(SkCanvas* canvas) override;
+    void Layout(float parent_width, float parent_height) override;
 
     void SetSVGRectElement(std::shared_ptr<SVGRectElement> element);
 
@@ -177,6 +186,7 @@ public:
     ~RenderSVGEllipse() override = default;
 
     void Paint(SkCanvas* canvas) override;
+    void Layout(float parent_width, float parent_height) override;
 
     void SetSVGEllipseElement(std::shared_ptr<SVGEllipseElement> element);
 
@@ -193,6 +203,7 @@ public:
     ~RenderSVGLine() override = default;
 
     void Paint(SkCanvas* canvas) override;
+    void Layout(float parent_width, float parent_height) override;
 
     void SetSVGLineElement(std::shared_ptr<SVGLineElement> element);
 
@@ -259,6 +270,7 @@ public:
     ~RenderSVGText() override = default;
 
     void Paint(SkCanvas* canvas) override;
+    void Layout(float parent_width, float parent_height) override;
 
     void SetSVGTextElement(std::shared_ptr<SVGTextElement> element);
 

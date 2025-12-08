@@ -680,5 +680,110 @@ void HTMLInputElement::StepDown() {
     }
 }
 
+double HTMLInputElement::GetMin() const {
+    std::string min_attr = GetAttribute("min");
+    if (!min_attr.empty()) {
+        try {
+            return std::stod(min_attr);
+        } catch (...) {}
+    }
+    // range 类型默认 min 为 0
+    if (input_type_ == InputType::Range) {
+        return 0.0;
+    }
+    return 0.0;
+}
+
+double HTMLInputElement::GetMax() const {
+    std::string max_attr = GetAttribute("max");
+    if (!max_attr.empty()) {
+        try {
+            return std::stod(max_attr);
+        } catch (...) {}
+    }
+    // range 类型默认 max 为 100
+    if (input_type_ == InputType::Range) {
+        return 100.0;
+    }
+    return 100.0;
+}
+
+double HTMLInputElement::GetValueAsNumber() const {
+    if (value_.empty()) {
+        // range 类型默认值为 (min + max) / 2
+        if (input_type_ == InputType::Range) {
+            return (GetMin() + GetMax()) / 2.0;
+        }
+        return 0.0;
+    }
+    try {
+        return std::stod(value_);
+    } catch (...) {
+        if (input_type_ == InputType::Range) {
+            return (GetMin() + GetMax()) / 2.0;
+        }
+        return 0.0;
+    }
+}
+
+// ========== Range 滑块拖动实现 ==========
+
+void HTMLInputElement::StartRangeDrag(float track_width) {
+    if (input_type_ != InputType::Range) return;
+    is_dragging_range_ = true;
+}
+
+void HTMLInputElement::UpdateRangeDrag(float local_x, float track_width) {
+    if (input_type_ != InputType::Range || !is_dragging_range_) return;
+    if (track_width <= 0) return;
+
+    // 计算位置比例 (0.0 - 1.0)
+    float position = std::clamp(local_x / track_width, 0.0f, 1.0f);
+
+    // 转换为值
+    double min_val = GetMin();
+    double max_val = GetMax();
+    double new_value = min_val + position * (max_val - min_val);
+
+    // 应用 step（如果有）
+    std::string step_attr = GetAttribute("step");
+    if (!step_attr.empty() && step_attr != "any") {
+        try {
+            double step = std::stod(step_attr);
+            if (step > 0) {
+                // 四舍五入到最近的 step
+                new_value = min_val + std::round((new_value - min_val) / step) * step;
+            }
+        } catch (...) {}
+    }
+
+    // 限制在范围内
+    new_value = std::clamp(new_value, min_val, max_val);
+
+    // 设置新值
+    // 对于整数 step，保持整数格式
+    double step = 1.0;
+    if (!step_attr.empty() && step_attr != "any") {
+        try { step = std::stod(step_attr); } catch (...) {}
+    }
+
+    if (step == std::floor(step) && new_value == std::floor(new_value)) {
+        SetValue(std::to_string(static_cast<long long>(new_value)));
+    } else {
+        SetValue(std::to_string(new_value));
+    }
+
+    // 触发 input 事件
+    TriggerInputEvent();
+}
+
+void HTMLInputElement::EndRangeDrag() {
+    if (is_dragging_range_) {
+        is_dragging_range_ = false;
+        // 触发 change 事件
+        TriggerChangeEvent();
+    }
+}
+
 } // namespace lightui
 

@@ -81,6 +81,9 @@ if(LIGHTUI_BUILD_PYTHON_BINDING)
     message(STATUS "Python binding will be built via setup.py")
 endif()
 
+# 工具
+add_subdirectory(tools/app_loader)
+
 # 示例
 if(LIGHTUI_BUILD_EXAMPLES)
     add_subdirectory(examples)

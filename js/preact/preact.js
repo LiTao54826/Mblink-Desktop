@@ -147,15 +147,31 @@ function createDOMElement(vnode) {
     }
 
     // Handle regular elements
-    var element = document.createElement(vnode.type);
+    // Check if this is an SVG element or if we're inside an SVG context
+    var isSVG = vnode.type === 'svg' || vnode.__isSVG;
+    var SVG_TAGS = ['svg', 'circle', 'ellipse', 'line', 'path', 'polygon', 'polyline', 'rect', 'g', 'text', 'tspan', 'defs', 'use', 'symbol', 'clipPath', 'mask', 'pattern', 'image', 'foreignObject', 'linearGradient', 'radialGradient', 'stop'];
+    if (SVG_TAGS.indexOf(vnode.type) !== -1) {
+        isSVG = true;
+    }
+
+    var element;
+    if (isSVG) {
+        element = document.createElementNS('http://www.w3.org/2000/svg', vnode.type);
+    } else {
+        element = document.createElement(vnode.type);
+    }
 
     // Set properties
-    setDOMProps(element, {}, vnode.props || {});
+    setDOMProps(element, {}, vnode.props || {}, isSVG);
 
     // Append children
     if (vnode.children) {
         for (var j = 0; j < vnode.children.length; j++) {
             var child = vnode.children[j];
+            // Pass SVG context to children
+            if (isSVG && child && typeof child === 'object') {
+                child.__isSVG = true;
+            }
             var childEl = createDOMElement(child);
             if (childEl) {
                 element.appendChild(childEl);
@@ -322,7 +338,7 @@ function createStableHandler(elementId, eventKey) {
  * Set DOM properties, handling events, styles, etc.
  * Uses stable event handler wrappers to avoid add/remove listener on every render
  */
-function setDOMProps(element, oldProps, newProps) {
+function setDOMProps(element, oldProps, newProps, isSVG) {
     var elementId = getElementId(element);
     var data = __elementDataStore[elementId];
     var listeners = data.listeners;
@@ -581,8 +597,12 @@ function diffElement(oldVNode, newVNode, dom) {
     var tagName = dom && dom.tagName ? dom.tagName.toLowerCase() : 'unknown';
     // console.log('[diffElement] Updating ' + tagName + ' element');
 
+    // Check if this is an SVG element
+    var SVG_TAGS = ['svg', 'circle', 'ellipse', 'line', 'path', 'polygon', 'polyline', 'rect', 'g', 'text', 'tspan', 'defs', 'use', 'symbol', 'clipPath', 'mask', 'pattern', 'image', 'foreignObject', 'linearGradient', 'radialGradient', 'stop'];
+    var isSVG = SVG_TAGS.indexOf(tagName) !== -1;
+
     // Update props - event listeners use stable wrappers so we can update handlers safely
-    setDOMProps(dom, oldVNode.props || {}, newVNode.props || {});
+    setDOMProps(dom, oldVNode.props || {}, newVNode.props || {}, isSVG);
 
     // Diff children
     var oldChildCount = oldVNode.children ? oldVNode.children.length : 0;

@@ -1781,3 +1781,9 @@ add_test(NAME IFCTest COMMAND test_ifc)
 # ============================================================================
 
 add_subdirectory(layout_comparison)
+
+# ============================================================================
+# DOM Render Comparison Tests
+# ============================================================================
+
+add_subdirectory(dom_render_comparison)

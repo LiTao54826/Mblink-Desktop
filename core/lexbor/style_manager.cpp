@@ -228,6 +228,11 @@ bool StyleManager::MatchesSimpleSelector(const std::string& selector, Element* e
         return false;
     }
 
+    // 通配符选择器 (*)
+    if (selector == "*") {
+        return true;
+    }
+
     // ID选择器 (#id)
     if (selector[0] == '#') {
         std::string id = selector.substr(1);
