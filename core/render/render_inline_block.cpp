@@ -30,70 +30,120 @@ namespace lightui {
 void RenderInlineBlock::Layout(float parent_width, float parent_height) {
     const auto& style = computed_style_;
 
-    // 计算 padding
-    float padding_left = style.padding.left.ToPx(parent_width, style.font_size);
-    float padding_right = style.padding.right.ToPx(parent_width, style.font_size);
-    float padding_top = style.padding.top.ToPx(parent_height, style.font_size);
-    float padding_bottom = style.padding.bottom.ToPx(parent_height, style.font_size);
+    // Check if dimensions are already set by external layout engine (e.g., flex/grid).
+    // When is_laid_out is true and we have valid dimensions, we only need to
+    // position children, not recalculate our own dimensions.
+    // This is important because flex layout may stretch elements (align-items: stretch),
+    // and we need to preserve the externally calculated dimensions.
+    bool dimensions_externally_set = layout_info_.is_laid_out &&
+                                     layout_info_.width > 0 &&
+                                     layout_info_.height > 0;
 
-    // 1. 计算宽度
-    if (style.width.unit != CSSUnit::NONE && style.width.unit != CSSUnit::AUTO) {
-        // 显式设置了宽度
-        layout_info_.width = style.width.ToPx(parent_width, style.font_size);
-    } else {
-        // 使用shrink-to-fit算法（包含 padding）
-        layout_info_.width = CalculateShrinkToFitWidth(parent_width);
+    // 计算 padding (use layout_info_.width if externally set, otherwise parent_width)
+    float reference_width = dimensions_externally_set ? layout_info_.width : parent_width;
+    float reference_height = dimensions_externally_set ? layout_info_.height : parent_height;
+
+    float padding_left = style.padding.left.ToPx(reference_width, style.font_size);
+    float padding_right = style.padding.right.ToPx(reference_width, style.font_size);
+    float padding_top = style.padding.top.ToPx(reference_height, style.font_size);
+    float padding_bottom = style.padding.bottom.ToPx(reference_height, style.font_size);
+
+    // 计算 border（提前计算，用于 box-sizing 调整）
+    float border_left = style.border_left_width;
+    float border_right = style.border_right_width;
+    if (border_left == 0 && border_right == 0) {
+        float border_width = style.border.width.ToPx(reference_width, style.font_size);
+        border_left = border_right = border_width;
     }
 
-    // 2. 布局子元素（考虑 padding）
+    // 1. 计算宽度 (only if not externally set)
+    if (!dimensions_externally_set) {
+        if (style.width.unit != CSSUnit::NONE && style.width.unit != CSSUnit::AUTO) {
+            // 显式设置了宽度
+            float specified_width = style.width.ToPx(parent_width, style.font_size);
+
+            // 根据 box-sizing 调整宽度
+            // content-box: width 只是内容宽度，需要加上 padding 和 border
+            // border-box: width 包含 padding 和 border
+            if (style.box_sizing == "content-box") {
+                layout_info_.width = specified_width + padding_left + padding_right + border_left + border_right;
+            } else {
+                // border-box
+                layout_info_.width = specified_width;
+            }
+        } else {
+            // 使用shrink-to-fit算法（包含 padding）
+            layout_info_.width = CalculateShrinkToFitWidth(parent_width);
+        }
+    }
+
+    // 2. 布局子元素（考虑 padding 和 border）
     float content_height = 0;
     float total_child_width = 0;
-    float content_width = layout_info_.width - padding_left - padding_right;
+    float content_width = layout_info_.width - padding_left - padding_right - border_left - border_right;
 
     // 首先布局所有子元素并计算总宽度和高度
+    // Note: Always layout children to ensure they have valid dimensions.
+    // When user specifies fixed width/height on inline-block (e.g., button),
+    // MeasureIntrinsicSize won't layout children, leaving their dimensions as 0.
+    // We need to layout them here to get correct dimensions for text-align calculation.
     for (auto& child : children_) {
-        if (child->NeedsLayout()) {
-            child->Layout(content_width, parent_height);
-        }
+        child->Layout(content_width, reference_height);
 
         auto& child_layout = child->GetLayoutInfo();
         total_child_width += child_layout.width;
         content_height = std::max(content_height, child_layout.height);
     }
 
-    // 3. 计算高度（包含 padding 和 border）
+    // 3. 计算高度（包含 padding 和 border）(only if not externally set)
     // 计算 border
     float border_top = style.border_top_width;
     float border_bottom = style.border_bottom_width;
     if (border_top == 0 && border_bottom == 0) {
-        float border_width = style.border.width.ToPx(parent_width, style.font_size);
+        float border_width = style.border.width.ToPx(reference_width, style.font_size);
         border_top = border_bottom = border_width;
     }
 
-    if (style.height.unit != CSSUnit::NONE && style.height.unit != CSSUnit::AUTO) {
-        // 显式设置了高度
-        layout_info_.height = style.height.ToPx(parent_height, style.font_size);
-    } else {
-        if (content_height > 0) {
-            // 有子元素内容
-            layout_info_.height = content_height + padding_top + padding_bottom + border_top + border_bottom;
+    if (!dimensions_externally_set) {
+        if (style.height.unit != CSSUnit::NONE && style.height.unit != CSSUnit::AUTO) {
+            // 显式设置了高度
+            float specified_height = style.height.ToPx(parent_height, style.font_size);
+
+            // 根据 box-sizing 调整高度
+            if (style.box_sizing == "content-box") {
+                layout_info_.height = specified_height + padding_top + padding_bottom + border_top + border_bottom;
+            } else {
+                // border-box
+                layout_info_.height = specified_height;
+            }
         } else {
-            // 没有子元素（如 input, select 元素），基于 font-size 计算
-            // Chrome: content_height ≈ font-size * 1.2 (line-height: normal)
-            float content_line_height = style.font_size * 1.2f;
-            layout_info_.height = content_line_height + padding_top + padding_bottom + border_top + border_bottom;
+            if (content_height > 0) {
+                // 有子元素内容
+                layout_info_.height = content_height + padding_top + padding_bottom + border_top + border_bottom;
+            } else {
+                // 没有子元素（如 input, select 元素），基于 font-size 计算
+                // 检查是否是 text/password 类型的 input 元素
+                bool is_text_input = false;
+                auto node = GetNode();
+                if (node && node->GetNodeType() == NodeType::ELEMENT_NODE) {
+                    auto element = std::static_pointer_cast<Element>(node);
+                    if (element->GetTagName() == "input") {
+                        std::string type = element->GetAttribute("type");
+                        is_text_input = (type.empty() || type == "text" || type == "password" || type == "number");
+                    }
+                }
+
+                // Chrome text input 元素: content_height ≈ font-size * 0.85 (约 13.5px for 16px font)
+                // 其他元素: content_height ≈ font-size * 1.2 (line-height: normal)
+                float content_line_height = is_text_input ? (style.font_size * 0.85f) : (style.font_size * 1.2f);
+                layout_info_.height = content_line_height + padding_top + padding_bottom + border_top + border_bottom;
+            }
         }
     }
 
     // 4. 设置子元素位置，支持 text-align
-    // 计算左右边框
-    float border_left = style.border_left_width;
-    float border_right = style.border_right_width;
-    if (border_left == 0 && border_right == 0) {
-        float border_width = style.border.width.ToPx(parent_width, style.font_size);
-        border_left = border_right = border_width;
-    }
-
+    // Calculate content area for positioning children
+    float content_area_height = layout_info_.height - padding_top - padding_bottom - border_top - border_bottom;
     float start_x = padding_left + border_left;
 
     // 处理 text-align
@@ -109,9 +159,13 @@ void RenderInlineBlock::Layout(float parent_width, float parent_height) {
     for (auto& child : children_) {
         auto& child_layout = child->GetLayoutInfo();
         child_layout.x = current_x;
-        // 文本默认从顶部开始排列（标准 CSS 行为）
-        // 注意：垂直居中需要使用其他方法（如 line-height、vertical-align、flexbox 等）
-        child_layout.y = padding_top + border_top;
+        // 垂直居中：如果内容高度小于内容区域高度，则居中
+        // 这对于按钮等元素的文字垂直居中很重要
+        if (child_layout.height < content_area_height) {
+            child_layout.y = padding_top + border_top + (content_area_height - child_layout.height) / 2.0f;
+        } else {
+            child_layout.y = padding_top + border_top;
+        }
         current_x += child_layout.width;
     }
 
@@ -260,8 +314,16 @@ std::pair<float, float> RenderInlineBlock::MeasureIntrinsicSize(float available_
     // 计算宽度
     float width;
     if (style.width.unit != CSSUnit::NONE && style.width.unit != CSSUnit::AUTO) {
-        // 显式设置了宽度 - 包含 padding 和 border (border-box)
-        width = style.width.ToPx(available_width, style.font_size);
+        // 显式设置了宽度
+        float specified_width = style.width.ToPx(available_width, style.font_size);
+
+        // 根据 box-sizing 调整宽度
+        if (style.box_sizing == "content-box") {
+            width = specified_width + padding_left + padding_right + border_left + border_right;
+        } else {
+            // border-box
+            width = specified_width;
+        }
     } else {
         // 使用 shrink-to-fit 算法
         width = CalculateShrinkToFitWidth(available_width);
@@ -271,7 +333,15 @@ std::pair<float, float> RenderInlineBlock::MeasureIntrinsicSize(float available_
     float height;
     if (style.height.unit != CSSUnit::NONE && style.height.unit != CSSUnit::AUTO) {
         // 显式设置了高度
-        height = style.height.ToPx(available_width, style.font_size);
+        float specified_height = style.height.ToPx(available_width, style.font_size);
+
+        // 根据 box-sizing 调整高度
+        if (style.box_sizing == "content-box") {
+            height = specified_height + padding_top + padding_bottom + border_top + border_bottom;
+        } else {
+            // border-box
+            height = specified_height;
+        }
     } else {
         // 根据内容计算高度
         float content_height = 0;
@@ -289,8 +359,20 @@ std::pair<float, float> RenderInlineBlock::MeasureIntrinsicSize(float available_
             height = content_height + padding_top + padding_bottom + border_top + border_bottom;
         } else {
             // 没有子元素（如 input, select 元素），基于 font-size 计算
-            // 使用 line_height * font_size 来计算高度，与浏览器行为一致
-            float content_line_height = style.line_height * style.font_size;
+            // 检查是否是 text/password 类型的 input 元素
+            bool is_text_input = false;
+            auto node = GetNode();
+            if (node && node->GetNodeType() == NodeType::ELEMENT_NODE) {
+                auto element = std::static_pointer_cast<Element>(node);
+                if (element->GetTagName() == "input") {
+                    std::string type = element->GetAttribute("type");
+                    is_text_input = (type.empty() || type == "text" || type == "password" || type == "number");
+                }
+            }
+
+            // Chrome text input 元素: content_height ≈ font-size * 0.85 (约 13.5px for 16px font)
+            // 其他元素: content_height ≈ font-size * 1.2 (line-height: normal)
+            float content_line_height = is_text_input ? (style.font_size * 0.85f) : (style.font_size * 1.2f);
             height = content_line_height + padding_top + padding_bottom + border_top + border_bottom;
         }
     }
@@ -773,6 +855,79 @@ void RenderInlineBlock::PaintInputElement(SkCanvas* canvas, HTMLInputElement* in
                 canvas->drawCircle(cx, cy, inner_radius, dot_paint);
             }
         }
+    }
+    // 处理 range 类型（滑动条）
+    else if (type == InputType::Range) {
+        // 获取 min, max, value
+        double min_val = input->GetMin();
+        double max_val = input->GetMax();
+        double cur_val = input->GetValueAsNumber();
+
+        // 计算滑块位置
+        double range = max_val - min_val;
+        double position = (range > 0) ? ((cur_val - min_val) / range) : 0.5;
+        position = std::clamp(position, 0.0, 1.0);
+
+        // 轨道参数 - Chrome 默认轨道高度约 8px
+        float track_height = 8.0f;
+        float track_y = box.content_y + (box.content_height - track_height) / 2.0f;
+        float track_radius = track_height / 2.0f;
+
+        // 绘制轨道背景
+        SkPaint track_paint;
+        track_paint.setColor(SkColorSetRGB(200, 200, 200));
+        track_paint.setStyle(SkPaint::kFill_Style);
+        track_paint.setAntiAlias(true);
+
+        SkRRect track_rrect;
+        track_rrect.setRectXY(
+            SkRect::MakeXYWH(box.content_x, track_y, box.content_width, track_height),
+            track_radius, track_radius
+        );
+        canvas->drawRRect(track_rrect, track_paint);
+
+        // 绘制已填充部分（蓝色）
+        float filled_width = box.content_width * static_cast<float>(position);
+        if (filled_width > 0) {
+            SkPaint filled_paint;
+            filled_paint.setColor(SkColorSetRGB(0, 120, 215));  // Windows 蓝色
+            filled_paint.setStyle(SkPaint::kFill_Style);
+            filled_paint.setAntiAlias(true);
+
+            SkRRect filled_rrect;
+            filled_rrect.setRectXY(
+                SkRect::MakeXYWH(box.content_x, track_y, filled_width, track_height),
+                track_radius, track_radius
+            );
+            canvas->drawRRect(filled_rrect, filled_paint);
+        }
+
+        // 绘制滑块（圆形）
+        float thumb_radius = 7.0f;
+        float thumb_x = box.content_x + box.content_width * static_cast<float>(position);
+        float thumb_y = box.content_y + box.content_height / 2.0f;
+
+        // 滑块阴影
+        SkPaint shadow_paint;
+        shadow_paint.setColor(SkColorSetARGB(40, 0, 0, 0));
+        shadow_paint.setStyle(SkPaint::kFill_Style);
+        shadow_paint.setAntiAlias(true);
+        canvas->drawCircle(thumb_x, thumb_y + 1, thumb_radius, shadow_paint);
+
+        // 滑块背景
+        SkPaint thumb_paint;
+        thumb_paint.setColor(SK_ColorWHITE);
+        thumb_paint.setStyle(SkPaint::kFill_Style);
+        thumb_paint.setAntiAlias(true);
+        canvas->drawCircle(thumb_x, thumb_y, thumb_radius, thumb_paint);
+
+        // 滑块边框
+        SkPaint thumb_border;
+        thumb_border.setColor(SkColorSetRGB(180, 180, 180));
+        thumb_border.setStyle(SkPaint::kStroke_Style);
+        thumb_border.setStrokeWidth(1);
+        thumb_border.setAntiAlias(true);
+        canvas->drawCircle(thumb_x, thumb_y, thumb_radius, thumb_border);
     }
 }
 

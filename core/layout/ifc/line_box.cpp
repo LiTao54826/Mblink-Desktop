@@ -41,24 +41,47 @@ void LineBox::CalculateHeight() {
         baseline = 0;
         return;
     }
-    
+
     // MBink 现代模式：行高完全由内容决定，无 strut
     // 计算最大 ascent（基线以上）和 descent（基线以下）
+    // 需要考虑 vertical-align 对行高的影响
     float max_ascent = 0.0f;
     float max_descent = 0.0f;
-    
+
     for (auto* box : boxes) {
         if (!box) continue;
-        
+
         // ascent = 基线位置（距离盒子顶部）
         float ascent = box->baseline;
         // descent = 盒子高度 - 基线位置
         float descent = box->height - box->baseline;
-        
+
+        // 获取 vertical-align 类型并调整 ascent/descent
+        VerticalAlign align = VerticalAlign::BASELINE;
+        if (box->render_object) {
+            const auto& style = box->render_object->GetComputedStyle();
+            align = ParseVerticalAlignStyle(style.vertical_align);
+        }
+
+        // 根据 vertical-align 调整 ascent 和 descent
+        // 上标/下标会影响行的总高度
+        switch (align) {
+            case VerticalAlign::SUPER:
+                // 上标向上偏移，增加 ascent
+                ascent += box->height * 0.4f;
+                break;
+            case VerticalAlign::SUB:
+                // 下标向下偏移，增加 descent
+                descent += box->height * 0.2f;
+                break;
+            default:
+                break;
+        }
+
         max_ascent = std::max(max_ascent, ascent);
         max_descent = std::max(max_descent, descent);
     }
-    
+
     height = max_ascent + max_descent;
     baseline = max_ascent;
 }

@@ -22,6 +22,8 @@
 #include <sstream>
 #include <memory>
 #include <vector>
+#include <map>
+#include <tuple>
 #include <iomanip>
 
 using namespace lightui;
@@ -60,86 +62,73 @@ std::string LoadFileFromPaths(const std::vector<std::string>& paths, const std::
     return "";
 }
 
-// 递归提取渲染数据为 JSON
-std::string ExtractRenderDataJSON(const std::shared_ptr<RenderObject>& render_obj, int depth = 0) {
-    if (!render_obj) return "null";
-    
+// 收集所有带 data-test 属性的元素到 map
+// 使用视口绝对坐标（与布局测试一致）
+//
+// 坐标系说明：
+// - MBink 的 layout.x/y 是相对于父元素 border-box 左上角的坐标
+// - 子元素的 location 已经包含了父元素的 content-box-inset (padding + border)
+// - 所以我们只需要累加父元素的 border-box 位置，不需要额外加 padding/border
+void CollectTestElements(const std::shared_ptr<RenderObject>& render_obj,
+                         std::map<std::string, std::tuple<float, float, float, float>>& elements,
+                         float offset_x = 0, float offset_y = 0) {
+    if (!render_obj) return;
+
     auto node = render_obj->GetNode();
     auto element = std::dynamic_pointer_cast<Element>(node);
-    
     const auto& layout = render_obj->GetLayoutInfo();
-    const auto& style = render_obj->GetComputedStyle();
-    
+
+    // 计算视口绝对坐标
+    // layout.x/y 已经是相对于父元素 border-box 的偏移（包含了父元素的 padding+border）
+    float abs_x = offset_x + layout.x;
+    float abs_y = offset_y + layout.y;
+
+    // 如果有 data-test 属性，记录该元素
+    if (element) {
+        std::string testId = element->GetAttribute("data-test");
+        if (!testId.empty()) {
+            elements[testId] = std::make_tuple(abs_x, abs_y, layout.width, layout.height);
+        }
+    }
+
+    // 递归子元素
+    // 子元素的 layout.x/y 已经包含了它们相对于当前元素 border-box 的偏移
+    // 所以我们只需要传递当前元素的绝对位置，不需要再加 padding/border
+    for (const auto& child : render_obj->GetChildren()) {
+        CollectTestElements(child, elements, abs_x, abs_y);
+    }
+}
+
+// 生成与布局测试兼容的 JSON 格式
+std::string ExtractRenderDataJSON(const std::shared_ptr<RenderObject>& render_obj, int viewport_width, int viewport_height) {
+    std::map<std::string, std::tuple<float, float, float, float>> elements;
+    CollectTestElements(render_obj, elements);
+
     std::ostringstream json;
     json << std::fixed << std::setprecision(2);
-    
+
     json << "{";
-    
-    // 基本信息
-    std::string tag = element ? element->GetTagName() : "#text";
-    std::string id = element ? element->GetAttribute("id") : "";
-    std::string className = element ? element->GetAttribute("class") : "";
-    
-    json << "\"tag\":\"" << tag << "\"";
-    if (!id.empty()) json << ",\"id\":\"" << id << "\"";
-    if (!className.empty()) json << ",\"class\":\"" << className << "\"";
-    json << ",\"depth\":" << depth;
-    
-    // 布局数据
-    json << ",\"layout\":{";
-    json << "\"x\":" << layout.x;
-    json << ",\"y\":" << layout.y;
-    json << ",\"width\":" << layout.width;
-    json << ",\"height\":" << layout.height;
-    json << "}";
-    
-    // 盒模型
-    json << ",\"box\":{";
-    json << "\"marginTop\":" << style.margin_top.value;
-    json << ",\"marginRight\":" << style.margin_right.value;
-    json << ",\"marginBottom\":" << style.margin_bottom.value;
-    json << ",\"marginLeft\":" << style.margin_left.value;
-    json << ",\"paddingTop\":" << style.padding_top.value;
-    json << ",\"paddingRight\":" << style.padding_right.value;
-    json << ",\"paddingBottom\":" << style.padding_bottom.value;
-    json << ",\"paddingLeft\":" << style.padding_left.value;
-    json << ",\"borderTop\":" << style.border_top_width;
-    json << ",\"borderRight\":" << style.border_right_width;
-    json << ",\"borderBottom\":" << style.border_bottom_width;
-    json << ",\"borderLeft\":" << style.border_left_width;
-    json << "}";
-    
-    // 布局模式
-    std::string display_str;
-    switch (style.display) {
-        case RenderObjectType::BLOCK: display_str = "block"; break;
-        case RenderObjectType::INLINE: display_str = "inline"; break;
-        case RenderObjectType::INLINE_BLOCK: display_str = "inline-block"; break;
-        case RenderObjectType::FLEX: display_str = "flex"; break;
-        case RenderObjectType::GRID: display_str = "grid"; break;
-        case RenderObjectType::TEXT: display_str = "text"; break;
-        case RenderObjectType::NONE: display_str = "none"; break;
-        default: display_str = "block"; break;
+    json << "\"source\":\"MBink\",";
+    json << "\"viewport\":{\"width\":" << viewport_width << ",\"height\":" << viewport_height << "},";
+    json << "\"elements\":{";
+
+    bool first = true;
+    for (const auto& [testId, coords] : elements) {
+        if (!first) json << ",";
+        first = false;
+
+        auto [x, y, width, height] = coords;
+        json << "\"" << testId << "\":{";
+        json << "\"viewport\":{";
+        json << "\"x\":" << x << ",";
+        json << "\"y\":" << y << ",";
+        json << "\"width\":" << width << ",";
+        json << "\"height\":" << height;
+        json << "}";
+        json << "}";
     }
-    json << ",\"style\":{";
-    json << "\"display\":\"" << display_str << "\"";
-    json << ",\"position\":\"" << style.position << "\"";
-    json << ",\"textAlign\":\"" << style.text_align << "\"";
+
     json << "}";
-    
-    // 递归子元素
-    const auto& children = render_obj->GetChildren();
-    if (!children.empty()) {
-        json << ",\"children\":[";
-        bool first = true;
-        for (const auto& child : children) {
-            if (!first) json << ",";
-            first = false;
-            json << ExtractRenderDataJSON(child, depth + 1);
-        }
-        json << "]";
-    }
-    
     json << "}";
     return json.str();
 }
@@ -167,11 +156,12 @@ int main(int argc, char* argv[]) {
             LOG_INFO("Quick exit mode enabled");
         }
 
-        // 1. 创建窗口 (800x600 固定尺寸，与浏览器一致)
-        LOG_INFO("Creating window (800x600)...");
+        // 1. 创建窗口 (785x600 固定尺寸，与浏览器可用宽度一致)
+        // 浏览器窗口 800px 减去滚动条宽度约 15px = 785px
+        LOG_INFO("Creating window (785x600)...");
         WindowConfig config;
         config.title = "MBink DOM Render Test";
-        config.width = 800;
+        config.width = 785;
         config.height = 600;
         auto window = std::make_shared<Window>(config);
 
@@ -195,7 +185,7 @@ int main(int argc, char* argv[]) {
 
         // 5. 创建 body 元素
         auto body = document->CreateElement("body");
-        body->SetAttribute("style", "margin: 0; padding: 0; width: 800px; height: 600px;");
+        body->SetAttribute("style", "margin: 0; padding: 0; width: 785px; height: 600px;");
         document->SetBody(body);
 
         // 6. 加载 Preact 库
@@ -255,7 +245,32 @@ int main(int argc, char* argv[]) {
         LOG_INFO("Extracting render data...");
         auto render_tree = window->GetCachedRenderTree();
         if (render_tree) {
-            std::string json = ExtractRenderDataJSON(render_tree);
+            // 查找 #test-container 元素，与浏览器保持一致
+            std::shared_ptr<RenderObject> target_render = nullptr;
+            std::function<std::shared_ptr<RenderObject>(const std::shared_ptr<RenderObject>&)> findTestContainer;
+            findTestContainer = [&findTestContainer](const std::shared_ptr<RenderObject>& obj) -> std::shared_ptr<RenderObject> {
+                if (!obj) return nullptr;
+                auto node = obj->GetNode();
+                auto element = std::dynamic_pointer_cast<Element>(node);
+                if (element && element->GetAttribute("id") == "test-container") {
+                    return obj;
+                }
+                for (const auto& child : obj->GetChildren()) {
+                    auto result = findTestContainer(child);
+                    if (result) return result;
+                }
+                return nullptr;
+            };
+
+            target_render = findTestContainer(render_tree);
+            if (!target_render) {
+                LOG_INFO("test-container not found, using root render tree");
+                target_render = render_tree;
+            } else {
+                LOG_INFO("Found test-container element");
+            }
+
+            std::string json = ExtractRenderDataJSON(target_render, config.width, config.height);
             // JSON 数据始终输出到 stdout
             std::cout << "__RENDER_DATA__" << json << std::endl;
         } else {

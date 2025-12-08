@@ -1298,6 +1298,33 @@ static JSValue js_document_create_element(JSContext* ctx, JSValueConst this_val,
     return DOMBindings::WrapElement(ctx, element);
 }
 
+// Document.createElementNS(namespaceURI, qualifiedName)
+// For SVG elements, namespaceURI is "http://www.w3.org/2000/svg"
+// We ignore the namespace and just use the tag name, since our Document::CreateElement
+// already handles SVG elements correctly based on tag name.
+static JSValue js_document_create_element_ns(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) {
+    auto document = DOMBindings::UnwrapDocument(ctx, this_val);
+    if (!document) {
+        return JS_EXCEPTION;
+    }
+
+    if (argc < 2) {
+        return JS_ThrowTypeError(ctx, "createElementNS requires 2 arguments");
+    }
+
+    // First argument is namespace URI (we ignore it since we handle SVG by tag name)
+    // Second argument is the qualified name (tag name)
+    const char* qualified_name = JS_ToCString(ctx, argv[1]);
+    if (!qualified_name) {
+        return JS_EXCEPTION;
+    }
+
+    auto element = document->CreateElement(qualified_name);
+    JS_FreeCString(ctx, qualified_name);
+
+    return DOMBindings::WrapElement(ctx, element);
+}
+
 // Document.createTextNode(data)
 static JSValue js_document_create_text_node(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) {
     auto document = DOMBindings::UnwrapDocument(ctx, this_val);
@@ -1498,6 +1525,7 @@ static JSValue js_document_get_body(JSContext* ctx, JSValueConst this_val, int m
 static const JSCFunctionListEntry js_document_proto_funcs[] = {
     JS_CGETSET_MAGIC_DEF("body", js_document_get_body, nullptr, 0),
     JS_CFUNC_DEF("createElement", 1, js_document_create_element),
+    JS_CFUNC_DEF("createElementNS", 2, js_document_create_element_ns),
     JS_CFUNC_DEF("createTextNode", 1, js_document_create_text_node),
     JS_CFUNC_DEF("getElementById", 1, js_document_get_element_by_id),
 

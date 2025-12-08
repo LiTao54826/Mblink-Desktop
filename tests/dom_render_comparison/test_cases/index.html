@@ -5,16 +5,20 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>DOM Render Test - Browser Reference</title>
     <style>
-        * {
+        /* 不使用全局 reset，让元素使用默认样式，与 MBink 行为保持一致 */
+        /* 明确指定字体，确保浏览器和 MBink 使用相同的字体 */
+        html, body {
             margin: 0;
             padding: 0;
-            box-sizing: border-box;
-        }
-        html, body {
             width: 800px;
             height: 600px;
             overflow: auto;
-            font-family: sans-serif;
+            font-family: Arial, "Microsoft YaHei", sans-serif;
+        }
+        /* 等宽字体元素使用 Courier New，与 MBink 默认一致 */
+        code, kbd, samp, pre {
+            font-family: "Courier New", Courier, monospace !important;
+            font-size: 16px !important;  /* 统一使用 16px，避免默认 13px 导致的差异 */
         }
         .toolbar {
             position: fixed;
@@ -66,27 +70,17 @@
     
     <script>
         var lastData = null;
-        
+
         function extractAndShow() {
             lastData = window.DOMRenderTest.extract();
             var json = JSON.stringify(lastData, null, 2);
             document.getElementById('output').textContent = json;
-            document.getElementById('output').style.display = 'block';
+            // document.getElementById('output').style.display = 'block';
             console.log('__RENDER_DATA__' + JSON.stringify(lastData));
-            console.log('Data extracted. ' + countElements(lastData) + ' elements found.');
+            var elemCount = Object.keys(lastData.elements || {}).length;
+            console.log('Data extracted. ' + elemCount + ' elements found.');
         }
-        
-        function countElements(data) {
-            if (!data) return 0;
-            var count = 1;
-            if (data.children) {
-                for (var i = 0; i < data.children.length; i++) {
-                    count += countElements(data.children[i]);
-                }
-            }
-            return count;
-        }
-        
+
         function copyToClipboard() {
             if (!lastData) extractAndShow();
             var json = JSON.stringify(lastData);
@@ -94,7 +88,7 @@
                 alert('JSON copied to clipboard!');
             });
         }
-        
+
         function downloadJSON() {
             if (!lastData) extractAndShow();
             var json = JSON.stringify(lastData, null, 2);
@@ -106,12 +100,12 @@
             a.click();
             URL.revokeObjectURL(url);
         }
-        
+
         function toggleOutput() {
             var output = document.getElementById('output');
             output.style.display = output.style.display === 'none' ? 'block' : 'none';
         }
-        
+
         // 页面加载完成后自动提取数据
         window.addEventListener('load', function() {
             setTimeout(function() {

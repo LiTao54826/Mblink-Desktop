@@ -509,8 +509,16 @@ void EventLoop::HandleMouseEventForDOM(const SDL_Event& event) {
                 }
             } else if (tag_name == "input") {
                 auto input_element = std::dynamic_pointer_cast<HTMLInputElement>(last_mousedown_element);
-                if (input_element && input_element->IsDraggingSelection()) {
-                    HandleInputMouseInteraction(input_element, 0, event.type, 14.0f, "");
+                if (input_element) {
+                    // 结束 Range 拖动
+                    if (input_element->IsDraggingRange()) {
+                        input_element->EndRangeDrag();
+                        window->SetNeedsRepaint();
+                    }
+                    // 结束文本选择拖动
+                    else if (input_element->IsDraggingSelection()) {
+                        HandleInputMouseInteraction(input_element, 0, event.type, 14.0f, "");
+                    }
                 }
             }
 
@@ -591,41 +599,82 @@ void EventLoop::HandleMouseEventForDOM(const SDL_Event& event) {
                 }
             } else if (tag_name == "input") {
                 auto input_element = std::dynamic_pointer_cast<HTMLInputElement>(last_mousedown_element);
-                if (input_element && input_element->IsDraggingSelection()) {
-                    auto root_render = window->GetCachedRenderTree();
-                    if (root_render) {
-                        struct FindResult {
-                            std::shared_ptr<RenderObject> render_obj;
-                            float abs_x = 0;
-                            float abs_y = 0;
-                        };
-                        std::function<FindResult(std::shared_ptr<RenderObject>, float, float)> findRenderObj;
-                        findRenderObj = [&](std::shared_ptr<RenderObject> obj, float offset_x, float offset_y) -> FindResult {
-                            if (!obj) return {};
-                            const auto& layout = obj->GetLayoutInfo();
-                            float current_x = offset_x + layout.x;
-                            float current_y = offset_y + layout.y;
+                if (input_element) {
+                    // 处理 Range 滑块拖动
+                    if (input_element->IsDraggingRange()) {
+                        auto root_render = window->GetCachedRenderTree();
+                        if (root_render) {
+                            struct FindResult {
+                                std::shared_ptr<RenderObject> render_obj;
+                                float abs_x = 0;
+                                float abs_y = 0;
+                            };
+                            std::function<FindResult(std::shared_ptr<RenderObject>, float, float)> findRenderObj;
+                            findRenderObj = [&](std::shared_ptr<RenderObject> obj, float offset_x, float offset_y) -> FindResult {
+                                if (!obj) return {};
+                                const auto& layout = obj->GetLayoutInfo();
+                                float current_x = offset_x + layout.x;
+                                float current_y = offset_y + layout.y;
 
-                            auto node = obj->GetNode();
-                            if (node && std::dynamic_pointer_cast<HTMLInputElement>(node) == input_element) {
-                                return {obj, current_x, current_y};
-                            }
-                            float child_offset_x = current_x - obj->GetScrollX();
-                            float child_offset_y = current_y - obj->GetScrollY();
-                            for (auto& child : obj->GetChildren()) {
-                                auto result = findRenderObj(child, child_offset_x, child_offset_y);
-                                if (result.render_obj) return result;
-                            }
-                            return {};
-                        };
+                                auto node = obj->GetNode();
+                                if (node && std::dynamic_pointer_cast<HTMLInputElement>(node) == input_element) {
+                                    return {obj, current_x, current_y};
+                                }
+                                float child_offset_x = current_x - obj->GetScrollX();
+                                float child_offset_y = current_y - obj->GetScrollY();
+                                for (auto& child : obj->GetChildren()) {
+                                    auto result = findRenderObj(child, child_offset_x, child_offset_y);
+                                    if (result.render_obj) return result;
+                                }
+                                return {};
+                            };
 
-                        auto find_result = findRenderObj(root_render, 0.0f, 0.0f);
-                        if (find_result.render_obj) {
-                            const auto& style = find_result.render_obj->GetComputedStyle();
-                            float padding_left = style.padding.left.ToPx();
-                            float text_local_x = logical_x - find_result.abs_x - padding_left;
-                            HandleInputMouseInteraction(input_element, text_local_x, event.type,
-                                                       style.font_size, style.font_family);
+                            auto find_result = findRenderObj(root_render, 0.0f, 0.0f);
+                            if (find_result.render_obj) {
+                                const auto& layout = find_result.render_obj->GetLayoutInfo();
+                                float local_x = logical_x - find_result.abs_x;
+                                input_element->UpdateRangeDrag(local_x, layout.width);
+                                window->SetNeedsRepaint();
+                            }
+                        }
+                    }
+                    // 处理文本选择拖动
+                    else if (input_element->IsDraggingSelection()) {
+                        auto root_render = window->GetCachedRenderTree();
+                        if (root_render) {
+                            struct FindResult {
+                                std::shared_ptr<RenderObject> render_obj;
+                                float abs_x = 0;
+                                float abs_y = 0;
+                            };
+                            std::function<FindResult(std::shared_ptr<RenderObject>, float, float)> findRenderObj;
+                            findRenderObj = [&](std::shared_ptr<RenderObject> obj, float offset_x, float offset_y) -> FindResult {
+                                if (!obj) return {};
+                                const auto& layout = obj->GetLayoutInfo();
+                                float current_x = offset_x + layout.x;
+                                float current_y = offset_y + layout.y;
+
+                                auto node = obj->GetNode();
+                                if (node && std::dynamic_pointer_cast<HTMLInputElement>(node) == input_element) {
+                                    return {obj, current_x, current_y};
+                                }
+                                float child_offset_x = current_x - obj->GetScrollX();
+                                float child_offset_y = current_y - obj->GetScrollY();
+                                for (auto& child : obj->GetChildren()) {
+                                    auto result = findRenderObj(child, child_offset_x, child_offset_y);
+                                    if (result.render_obj) return result;
+                                }
+                                return {};
+                            };
+
+                            auto find_result = findRenderObj(root_render, 0.0f, 0.0f);
+                            if (find_result.render_obj) {
+                                const auto& style = find_result.render_obj->GetComputedStyle();
+                                float padding_left = style.padding.left.ToPx();
+                                float text_local_x = logical_x - find_result.abs_x - padding_left;
+                                HandleInputMouseInteraction(input_element, text_local_x, event.type,
+                                                           style.font_size, style.font_family);
+                            }
                         }
                     }
                 }
@@ -633,6 +682,53 @@ void EventLoop::HandleMouseEventForDOM(const SDL_Event& event) {
         }
 
         return;
+    }
+
+    // 处理 Range 滑块拖动（即使命中了元素，也要优先处理正在进行的拖动）
+    if (event.type == SDL_EVENT_MOUSE_MOTION && last_mousedown_element) {
+        std::string tag_name = last_mousedown_element->GetTagName();
+        if (tag_name == "input") {
+            auto input_element = std::dynamic_pointer_cast<HTMLInputElement>(last_mousedown_element);
+            if (input_element && input_element->IsDraggingRange()) {
+                auto root_render = window->GetCachedRenderTree();
+                if (root_render) {
+                    struct FindResult {
+                        std::shared_ptr<RenderObject> render_obj;
+                        float abs_x = 0;
+                        float abs_y = 0;
+                    };
+                    std::function<FindResult(std::shared_ptr<RenderObject>, float, float)> findRenderObj;
+                    findRenderObj = [&](std::shared_ptr<RenderObject> obj, float offset_x, float offset_y) -> FindResult {
+                        if (!obj) return {};
+                        const auto& layout = obj->GetLayoutInfo();
+                        float current_x = offset_x + layout.x;
+                        float current_y = offset_y + layout.y;
+
+                        auto node = obj->GetNode();
+                        if (node && std::dynamic_pointer_cast<HTMLInputElement>(node) == input_element) {
+                            return {obj, current_x, current_y};
+                        }
+                        float child_offset_x = current_x - obj->GetScrollX();
+                        float child_offset_y = current_y - obj->GetScrollY();
+                        for (auto& child : obj->GetChildren()) {
+                            auto result = findRenderObj(child, child_offset_x, child_offset_y);
+                            if (result.render_obj) return result;
+                        }
+                        return {};
+                    };
+
+                    auto find_result = findRenderObj(root_render, 0.0f, 0.0f);
+                    if (find_result.render_obj) {
+                        const auto& layout = find_result.render_obj->GetLayoutInfo();
+                        float local_x = logical_x - find_result.abs_x;
+                        input_element->UpdateRangeDrag(local_x, layout.width);
+                        window->SetNeedsRepaint();
+                    }
+                }
+                // Range 拖动已处理，不需要继续处理 mousemove
+                return;
+            }
+        }
     }
 
     // 创建 MouseEvent（使用 core/dom/event.h 中的简化版本）
@@ -713,6 +809,12 @@ void EventLoop::HandleMouseEventForDOM(const SDL_Event& event) {
                             HandleInputMouseInteraction(input_element, text_local_x, event.type,
                                                        style.font_size, style.font_family);
                         }
+                    } else if (input_element->GetInputType() == InputType::Range) {
+                        // Range 滑块 - 开始拖动
+                        float content_width = layout.width;  // range 没有 padding/border
+                        input_element->StartRangeDrag(content_width);
+                        input_element->UpdateRangeDrag(hit_result.local_x, content_width);
+                        window->SetNeedsRepaint();
                     } else {
                         // 计算相对于文本内容区域的 X 坐标
                         float text_local_x = hit_result.local_x - padding_left;
@@ -829,9 +931,17 @@ void EventLoop::HandleMouseEventForDOM(const SDL_Event& event) {
             std::string tag_name = last_mousedown_element->GetTagName();
             if (tag_name == "input") {
                 auto input_element = std::dynamic_pointer_cast<HTMLInputElement>(last_mousedown_element);
-                if (input_element && input_element->IsDraggingSelection()) {
-                    // mouse up 时只需要结束拖动，不需要计算字符位置
-                    HandleInputMouseInteraction(input_element, 0, event.type, 14.0f, "");
+                if (input_element) {
+                    // 结束 Range 拖动
+                    if (input_element->IsDraggingRange()) {
+                        input_element->EndRangeDrag();
+                        window->SetNeedsRepaint();
+                    }
+                    // 结束文本选择拖动
+                    else if (input_element->IsDraggingSelection()) {
+                        // mouse up 时只需要结束拖动，不需要计算字符位置
+                        HandleInputMouseInteraction(input_element, 0, event.type, 14.0f, "");
+                    }
                 }
             } else if (tag_name == "textarea") {
                 auto textarea_element = std::dynamic_pointer_cast<HTMLTextAreaElement>(last_mousedown_element);
@@ -1395,10 +1505,15 @@ void EventLoop::UpdateHoverChain(Uint32 window_id, float mouse_x, float mouse_y)
     }
 
     // 发送mouseout事件到离开的元素（在旧链中但不在新链中）
-    SendEvents(hover_chain_, new_hover_chain, "mouseout", mouse_x, mouse_y);
+    bool changed = SendEvents(hover_chain_, new_hover_chain, "mouseout", mouse_x, mouse_y);
 
     // 发送mouseover事件到进入的元素（在新链中但不在旧链中）
-    SendEvents(new_hover_chain, hover_chain_, "mouseover", mouse_x, mouse_y);
+    changed |= SendEvents(new_hover_chain, hover_chain_, "mouseover", mouse_x, mouse_y);
+
+    // 如果有伪类变化，触发重绘
+    if (changed) {
+        window->SetNeedsRepaint();
+    }
 
     // 发送mouseleave/mouseenter事件（不冒泡版本）
     // 发送mouseleave到旧的hover元素
@@ -1428,13 +1543,16 @@ void EventLoop::UpdateHoverChain(Uint32 window_id, float mouse_x, float mouse_y)
     hover_element_ = new_hover;
 }
 
-void EventLoop::SendEvents(const std::vector<std::weak_ptr<Element>>& old_items,
+bool EventLoop::SendEvents(const std::vector<std::weak_ptr<Element>>& old_items,
                           const std::vector<std::weak_ptr<Element>>& new_items,
                           const std::string& event_type,
                           float mouse_x,
                           float mouse_y) {
     // 参考：RmlUi/Source/Core/Context.cpp - SendEvents
     // 找出在old_items中但不在new_items中的元素
+    // 返回是否有伪类变化（需要重绘）
+
+    bool has_changes = false;
 
     for (const auto& weak_elem : old_items) {
         // 尝试锁定 weak_ptr
@@ -1471,11 +1589,15 @@ void EventLoop::SendEvents(const std::vector<std::weak_ptr<Element>>& old_items,
             // 根据事件类型设置/移除:hover伪类
             if (event_type == "mouseover") {
                 element->SetPseudoClass("hover", true);
+                has_changes = true;
             } else if (event_type == "mouseout") {
                 element->SetPseudoClass("hover", false);
+                has_changes = true;
             }
         }
     }
+
+    return has_changes;
 }
 
 void EventLoop::HandleKeyboardEventForDOM(const SDL_Event& event) {

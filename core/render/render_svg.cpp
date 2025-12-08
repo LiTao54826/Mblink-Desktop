@@ -9,6 +9,7 @@
 #include "text/font_manager.h"
 #include "include/core/SkCanvas.h"
 #include "include/core/SkFont.h"
+#include "include/core/SkFontMetrics.h"
 #include "include/core/SkTypeface.h"
 #include <cmath>
 #include <iostream>
@@ -86,7 +87,12 @@ SkColor RenderSVG::ParseColor(const std::string& color) {
 
 // ========== RenderSVGRoot 实现 ==========
 
-RenderSVGRoot::RenderSVGRoot() : RenderSVG() {}
+RenderSVGRoot::RenderSVGRoot() : RenderSVG() {
+    // SVG root element should be INLINE_BLOCK (like <img>)
+    // This allows it to be properly handled by the layout engine
+    // Note: We need to modify the type_ directly since RenderSVG sets it to BLOCK
+    type_ = RenderObjectType::INLINE_BLOCK;
+}
 
 void RenderSVGRoot::SetSVGSVGElement(std::shared_ptr<SVGSVGElement> element) {
     svg_svg_element_ = element;
@@ -189,6 +195,50 @@ void RenderSVGRoot::Layout(float parent_width, float parent_height) {
     }
 }
 
+std::pair<float, float> RenderSVGRoot::MeasureIntrinsicSize(float available_width) {
+    auto element = svg_svg_element_.lock();
+    if (!element) {
+        return {0, 0};
+    }
+
+    float width = 0, height = 0;
+
+    // 解析width和height属性
+    std::string width_str = element->GetWidth();
+    std::string height_str = element->GetHeight();
+
+    // 解析宽度
+    if (!width_str.empty()) {
+        try {
+            width = std::stof(width_str);
+        } catch (...) {
+            width = 0;
+        }
+    }
+
+    // 解析高度
+    if (!height_str.empty()) {
+        try {
+            height = std::stof(height_str);
+        } catch (...) {
+            height = 0;
+        }
+    }
+
+    // 如果没有指定宽高，使用viewBox
+    float view_min_x, view_min_y, view_width, view_height;
+    if (element->ParseViewBox(view_min_x, view_min_y, view_width, view_height)) {
+        if (width == 0) width = view_width;
+        if (height == 0) height = view_height;
+    }
+
+    // 如果仍然没有宽高，使用默认值
+    if (width == 0) width = 300;  // SVG默认宽度
+    if (height == 0) height = 150; // SVG默认高度
+
+    return {width, height};
+}
+
 // ========== RenderSVGPath 实现 ==========
 
 RenderSVGPath::RenderSVGPath() : RenderSVG() {}
@@ -239,6 +289,23 @@ void RenderSVGPath::Paint(SkCanvas* canvas) {
     canvas->restore();
 }
 
+void RenderSVGPath::Layout(float parent_width, float parent_height) {
+    auto element = path_element_.lock();
+    if (!element) return;
+
+    if (path_dirty_) {
+        UpdatePath();
+    }
+
+    // 获取路径的边界框
+    SkRect bounds = path_.getBounds();
+    auto& layout = GetLayoutInfo();
+    layout.x = bounds.x();
+    layout.y = bounds.y();
+    layout.width = bounds.width();
+    layout.height = bounds.height();
+}
+
 // ========== RenderSVGCircle 实现 ==========
 
 RenderSVGCircle::RenderSVGCircle() : RenderSVG() {}
@@ -280,6 +347,22 @@ void RenderSVGCircle::Paint(SkCanvas* canvas) {
     }
 
     canvas->restore();
+}
+
+void RenderSVGCircle::Layout(float parent_width, float parent_height) {
+    auto element = circle_element_.lock();
+    if (!element) return;
+
+    float cx = element->GetCx();
+    float cy = element->GetCy();
+    float r = element->GetR();
+
+    auto& layout = GetLayoutInfo();
+    // 圆形的边界框
+    layout.x = cx - r;
+    layout.y = cy - r;
+    layout.width = r * 2;
+    layout.height = r * 2;
 }
 
 // ========== RenderSVGRect 实现 ==========
@@ -335,6 +418,17 @@ void RenderSVGRect::Paint(SkCanvas* canvas) {
     canvas->restore();
 }
 
+void RenderSVGRect::Layout(float parent_width, float parent_height) {
+    auto element = rect_element_.lock();
+    if (!element) return;
+
+    auto& layout = GetLayoutInfo();
+    layout.x = element->GetX();
+    layout.y = element->GetY();
+    layout.width = element->GetWidth();
+    layout.height = element->GetHeight();
+}
+
 // ========== RenderSVGEllipse 实现 ==========
 
 RenderSVGEllipse::RenderSVGEllipse() : RenderSVG() {}
@@ -378,6 +472,22 @@ void RenderSVGEllipse::Paint(SkCanvas* canvas) {
     canvas->restore();
 }
 
+void RenderSVGEllipse::Layout(float parent_width, float parent_height) {
+    auto element = ellipse_element_.lock();
+    if (!element) return;
+
+    float cx = element->GetCx();
+    float cy = element->GetCy();
+    float rx = element->GetRx();
+    float ry = element->GetRy();
+
+    auto& layout = GetLayoutInfo();
+    layout.x = cx - rx;
+    layout.y = cy - ry;
+    layout.width = rx * 2;
+    layout.height = ry * 2;
+}
+
 // ========== RenderSVGLine 实现 ==========
 
 RenderSVGLine::RenderSVGLine() : RenderSVG() {}
@@ -410,6 +520,22 @@ void RenderSVGLine::Paint(SkCanvas* canvas) {
     }
 
     canvas->restore();
+}
+
+void RenderSVGLine::Layout(float parent_width, float parent_height) {
+    auto element = line_element_.lock();
+    if (!element) return;
+
+    float x1 = element->GetX1();
+    float y1 = element->GetY1();
+    float x2 = element->GetX2();
+    float y2 = element->GetY2();
+
+    auto& layout = GetLayoutInfo();
+    layout.x = std::min(x1, x2);
+    layout.y = std::min(y1, y2);
+    layout.width = std::abs(x2 - x1);
+    layout.height = std::abs(y2 - y1);
 }
 
 // ========== RenderSVGPolyline 实现 ==========
@@ -577,6 +703,44 @@ void RenderSVGText::Paint(SkCanvas* canvas) {
     }
 
     canvas->restore();
+}
+
+void RenderSVGText::Layout(float parent_width, float parent_height) {
+    auto element = text_element_.lock();
+    if (!element) return;
+
+    float x = element->GetX();
+    float y = element->GetY();
+    std::string text = element->GetTextContent();
+
+    if (text.empty()) {
+        return;
+    }
+
+    // 获取字体大小
+    float font_size = element->GetFontSize();
+    SkFont font = FontManager::GetInstance().GetDefaultFont(font_size);
+
+    // 测量文本
+    float text_width = font.measureText(text.c_str(), text.size(), SkTextEncoding::kUTF8);
+
+    // 处理 text-anchor 属性
+    std::string text_anchor = element->GetTextAnchor();
+    float draw_x = x;
+    if (text_anchor == "middle") {
+        draw_x = x - text_width / 2.0f;
+    } else if (text_anchor == "end") {
+        draw_x = x - text_width;
+    }
+
+    auto& layout = GetLayoutInfo();
+    layout.x = draw_x;
+    // 文本的 y 坐标是基线位置，需要调整为顶部位置
+    SkFontMetrics metrics;
+    font.getMetrics(&metrics);
+    layout.y = y + metrics.fAscent;  // fAscent 是负值
+    layout.width = text_width;
+    layout.height = metrics.fDescent - metrics.fAscent;
 }
 
 } // namespace lightui

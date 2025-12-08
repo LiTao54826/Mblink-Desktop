@@ -29,6 +29,33 @@ namespace lightui {
 float RenderObject::viewport_width_ = 0.0f;
 float RenderObject::viewport_height_ = 0.0f;
 
+// 辅助函数：计算浏览器风格的 line-height: normal
+// 与 IFCLayout::MeasureTextStatic 中的查找表保持一致
+// 使用 Arial 字体的 line-height: normal 值（比率约 1.156）
+static float GetBrowserNormalLineHeight(float font_size) {
+    int font_size_int = static_cast<int>(font_size + 0.5f);  // 四舍五入到整数
+    switch (font_size_int) {
+        case 10: return 11.5f;   // ~1.15
+        case 11: return 13.0f;   // ~1.18
+        case 12: return 14.0f;   // ~1.17
+        case 13: return 15.0f;   // ~1.15
+        case 14: return 16.0f;   // ~1.14
+        case 15: return 17.5f;   // ~1.17
+        case 16: return 18.5f;   // ~1.156 (从浏览器测量)
+        case 17: return 19.5f;   // ~1.15
+        case 18: return 21.0f;   // ~1.17
+        case 19: return 22.0f;   // ~1.16
+        case 20: return 23.0f;   // ~1.15
+        case 22: return 25.5f;   // ~1.16
+        case 24: return 28.0f;   // ~1.17
+        case 32: return 37.0f;   // h1 (32px -> 37px, 从浏览器测量)
+        default:
+            // 对于其他字体大小，使用 1.156 倍数并四舍五入到 0.5px
+            float line_height = font_size * 1.156f;
+            return std::round(line_height * 2.0f) / 2.0f;
+    }
+}
+
 void RenderObject::SetViewportSize(float width, float height) {
     viewport_width_ = width;
     viewport_height_ = height;
@@ -474,6 +501,14 @@ void RenderBlock::Layout(float parent_width, float parent_height) {
     float current_x = padding_left + border_left;
     float line_height = 0;  // 当前行的高度
 
+    // 检查是否是 fieldset 元素
+    bool is_fieldset = false;
+    auto this_node = GetNode();
+    if (this_node && this_node->GetNodeType() == NodeType::ELEMENT_NODE) {
+        auto this_elem = std::static_pointer_cast<Element>(this_node);
+        is_fieldset = (this_elem->GetTagName() == "fieldset");
+    }
+
     for (auto& child : children_) {
         auto& child_layout = child->GetLayoutInfo();
         auto& child_style = child->GetComputedStyle();
@@ -483,6 +518,16 @@ void RenderBlock::Layout(float parent_width, float parent_height) {
         float child_margin_bottom = child_style.margin.bottom.ToPx(width, child_style.font_size);
         float child_margin_left = child_style.margin.left.ToPx(width, child_style.font_size);
         float child_margin_right = child_style.margin.right.ToPx(width, child_style.font_size);
+
+        // 检查是否是 legend 元素（fieldset 的子元素）
+        bool is_legend = false;
+        if (is_fieldset) {
+            auto child_node = child->GetNode();
+            if (child_node && child_node->GetNodeType() == NodeType::ELEMENT_NODE) {
+                auto child_elem = std::static_pointer_cast<Element>(child_node);
+                is_legend = (child_elem->GetTagName() == "legend");
+            }
+        }
 
         // 判断是块级还是内联元素
         // 检查渲染对象的实际类型，而不是 display 属性
@@ -538,11 +583,20 @@ void RenderBlock::Layout(float parent_width, float parent_height) {
 
             float new_y = current_y + padding_top + border_top + child_margin_top;
 
+            // 对于 legend 元素，使用特殊的 y 坐标计算
+            // 根据浏览器行为，legend 的 y 坐标（从 getBoundingClientRect 获取）
+            // 与 fieldset 的 y 坐标相同，即 legend.y = 0（相对于 fieldset）
+            if (is_legend) {
+                new_y = 0;
+            }
+
             child_layout.x = new_x;
             child_layout.y = new_y;
 
-            // 累加高度
-            current_y += child_margin_top + child_layout.height + child_margin_bottom;
+            // 累加高度（legend 不占用正常流的高度，因为它在边框上）
+            if (!is_legend) {
+                current_y += child_margin_top + child_layout.height + child_margin_bottom;
+            }
         }
     }
 
@@ -1179,17 +1233,18 @@ void RenderBlock::Paint(SkCanvas* canvas) {
     }
 
     // 对于 fieldset，先在裁剪区域外绘制 legend
+    // legend 的布局 y 坐标是 0（与 fieldset 的 y 坐标相同，用于 getBoundingClientRect）
+    // 但是绘制时需要将 legend 居中于 fieldset 的上边框线
     if (is_fieldset_element && legend_child) {
         auto& legend_layout = legend_child->GetLayoutInfo();
         float original_y = legend_layout.y;
 
-        // 根据 HTML 标准：legend 的 border box 应该居中于 fieldset 的上边框线
-        // legend 的垂直中心应该在 border_top / 2 的位置
+        // 计算绘制时的 y 坐标：legend 的垂直中心应该在 border_top / 2 的位置
         float legend_half_height = legend_layout.height / 2.0f;
-        float target_y = box.border_top_width / 2.0f - legend_half_height;
+        float paint_y = box.border_top_width / 2.0f - legend_half_height;
 
         // 临时修改位置进行渲染
-        legend_layout.y = target_y;
+        legend_layout.y = paint_y;
         legend_child->Paint(canvas);
 
         // 恢复原始位置（保持布局一致性）
@@ -2240,7 +2295,18 @@ void RenderText::Layout(float parent_width, float parent_height) {
 
     // 创建文本渲染器来测量文本
     TextRenderer text_renderer(nullptr);
-    float line_height = style.line_height * style.font_size;
+
+    // 计算 line-height
+    // 如果 style.line_height 是默认值 1.2，使用浏览器风格的 line-height: normal
+    // 否则使用用户指定的 line-height 倍数
+    float line_height;
+    if (std::abs(style.line_height - 1.2f) < 0.001f) {
+        // 使用浏览器风格的 line-height: normal
+        line_height = GetBrowserNormalLineHeight(style.font_size);
+    } else {
+        // 用户指定了具体的 line-height
+        line_height = style.line_height * style.font_size;
+    }
 
     // 检查是否包含换行符
     if (text_.find('\n') != std::string::npos) {
@@ -2266,7 +2332,12 @@ void RenderText::Layout(float parent_width, float parent_height) {
         // 有可用宽度限制，检查是否需要换行
         float text_width = text_renderer.MeasureTextWidthWithEmoji(text_, font);
 
-        if (text_width > parent_width) {
+        // 使用小容差值来避免浮点数精度问题
+        // 当 text_width 和 parent_width 非常接近时，不应该换行
+        const float epsilon = 0.01f;
+        bool needs_wrap = text_width > parent_width + epsilon;
+
+        if (needs_wrap) {
             // 文本超出可用宽度，需要换行
             std::vector<std::string> lines = text_renderer.WrapText(text_, parent_width, font);
 
@@ -2658,15 +2729,23 @@ void RenderTable::CalculateColumnWidths(float available_width) {
     min_widths.resize(max_columns, 0.0f);
     preferred_widths.resize(max_columns, 0.0f);
 
-    // 计算每列的最小和首选宽度
-    auto process_row = [&](std::shared_ptr<RenderObject> row) {
+    // 存储 colspan 单元格信息，用于后续处理
+    struct ColspanCellInfo {
+        size_t start_col;
+        int col_span;
+        float min_width;
+        float preferred_width;
+    };
+    std::vector<ColspanCellInfo> colspan_cells;
+
+    // 第一遍：处理 colspan=1 的单元格，收集 colspan>1 的单元格信息
+    auto process_row_pass1 = [&](std::shared_ptr<RenderObject> row) {
         auto& cells = row->GetChildren();
-        size_t logical_col = 0;  // 跟踪逻辑列索引
+        size_t logical_col = 0;
         for (size_t i = 0; i < cells.size() && logical_col < max_columns; ++i) {
             auto& cell = cells[i];
             const auto& cell_style = cell->GetComputedStyle();
 
-            // 获取 colspan
             int col_span = 1;
             auto table_cell = std::dynamic_pointer_cast<RenderTableCell>(cell);
             if (table_cell) {
@@ -2674,44 +2753,40 @@ void RenderTable::CalculateColumnWidths(float available_width) {
                 if (col_span < 1) col_span = 1;
             }
 
-            // 计算单元格的最小宽度（内容 + padding + border）
             float cell_padding_left = cell_style.padding.left.ToPx(available_width, cell_style.font_size);
             float cell_padding_right = cell_style.padding.right.ToPx(available_width, cell_style.font_size);
             float cell_border_left = cell_style.border.width.ToPx();
             float cell_border_right = cell_style.border.width.ToPx();
             float cell_extra = cell_padding_left + cell_padding_right + cell_border_left + cell_border_right;
 
-            // 获取单元格内容的固有宽度
             float content_min_width = 0;
             float content_preferred_width = 0;
 
             for (auto& cell_child : cell->GetChildren()) {
-                cell_child->Layout(10000.0f, 0); // 测量时使用大宽度
+                cell_child->Layout(10000.0f, 0);
                 auto& child_layout = cell_child->GetLayoutInfo();
                 content_min_width = std::max(content_min_width, child_layout.width);
                 content_preferred_width = std::max(content_preferred_width, child_layout.width);
             }
 
-            // 如果单元格有显式宽度，使用它
             if (cell_style.width.unit == CSSUnit::PX) {
                 content_preferred_width = std::max(content_preferred_width, cell_style.width.value);
             }
 
-            // 对于 colspan > 1 的单元格，将宽度平均分配到各列
-            float width_per_col = (content_min_width + cell_extra) / col_span;
-            float pref_width_per_col = (content_preferred_width + cell_extra) / col_span;
-
-            for (int j = 0; j < col_span && (logical_col + j) < max_columns; ++j) {
-                min_widths[logical_col + j] = std::max(min_widths[logical_col + j], width_per_col);
-                preferred_widths[logical_col + j] = std::max(preferred_widths[logical_col + j], pref_width_per_col);
+            if (col_span == 1) {
+                // colspan=1 的单元格直接设置列宽
+                min_widths[logical_col] = std::max(min_widths[logical_col], content_min_width + cell_extra);
+                preferred_widths[logical_col] = std::max(preferred_widths[logical_col], content_preferred_width + cell_extra);
+            } else {
+                // colspan>1 的单元格，记录下来后续处理
+                colspan_cells.push_back({logical_col, col_span, content_min_width + cell_extra, content_preferred_width + cell_extra});
             }
 
-            // 更新逻辑列索引
             logical_col += col_span;
         }
     };
 
-    // 遍历所有行
+    // 遍历所有行（第一遍）
     for (auto& child : children_) {
         RenderObjectType child_type = child->GetType();
 
@@ -2720,12 +2795,40 @@ void RenderTable::CalculateColumnWidths(float available_width) {
             child_type == RenderObjectType::TABLE_FOOTER_GROUP) {
             for (auto& row : child->GetChildren()) {
                 if (row->GetType() == RenderObjectType::TABLE_ROW) {
-                    process_row(row);
+                    process_row_pass1(row);
                 }
             }
         }
         else if (child_type == RenderObjectType::TABLE_ROW) {
-            process_row(child);
+            process_row_pass1(child);
+        }
+    }
+
+    // 第二遍：处理 colspan>1 的单元格
+    // 只有当 colspan 单元格的宽度超过其跨越列的总宽度时，才需要扩展列宽
+    for (const auto& info : colspan_cells) {
+        // 计算当前跨越列的总宽度
+        float current_total_min = 0;
+        float current_total_pref = 0;
+        for (int j = 0; j < info.col_span && (info.start_col + j) < max_columns; ++j) {
+            current_total_min += min_widths[info.start_col + j];
+            current_total_pref += preferred_widths[info.start_col + j];
+        }
+
+        // 如果 colspan 单元格需要更多宽度，按比例分配额外宽度
+        if (info.min_width > current_total_min) {
+            float extra = info.min_width - current_total_min;
+            float extra_per_col = extra / info.col_span;
+            for (int j = 0; j < info.col_span && (info.start_col + j) < max_columns; ++j) {
+                min_widths[info.start_col + j] += extra_per_col;
+            }
+        }
+        if (info.preferred_width > current_total_pref) {
+            float extra = info.preferred_width - current_total_pref;
+            float extra_per_col = extra / info.col_span;
+            for (int j = 0; j < info.col_span && (info.start_col + j) < max_columns; ++j) {
+                preferred_widths[info.start_col + j] += extra_per_col;
+            }
         }
     }
 
@@ -2760,11 +2863,13 @@ void RenderTable::CalculateColumnWidths(float available_width) {
     if (has_explicit_width) {
         // 表格有显式宽度，需要根据可用空间分配列宽
         if (total_preferred_width <= available_for_columns) {
-            // 有足够空间，使用首选宽度并平均分配剩余空间
+            // 有足够空间，使用首选宽度并按比例分配剩余空间
+            // 浏览器行为：按照内容宽度的比例分配剩余空间，而不是平均分配
             float extra_space = available_for_columns - total_preferred_width;
-            float extra_per_column = extra_space / max_columns;
             for (size_t i = 0; i < max_columns; ++i) {
-                column_widths_[i] = preferred_widths[i] + extra_per_column;
+                // 按首选宽度的比例分配剩余空间
+                float ratio = (total_preferred_width > 0) ? (preferred_widths[i] / total_preferred_width) : (1.0f / max_columns);
+                column_widths_[i] = preferred_widths[i] + extra_space * ratio;
             }
         }
         else if (total_min_width <= available_for_columns) {

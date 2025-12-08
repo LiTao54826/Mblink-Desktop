@@ -26,6 +26,51 @@ namespace lightui {
 // Helper Functions (must be before CreateNode)
 //------------------------------------------------------------------------------
 
+// Helper to get browser-style line-height: normal
+// This matches the lookup table in ifc_layout.cpp
+// 使用 Arial 字体的 line-height: normal 值（比率约 1.156）
+static float GetBrowserNormalLineHeight(float font_size, const std::string& font_family) {
+    // 检查是否是等宽字体（monospace）
+    bool is_monospace = (font_family == "Courier New" || font_family == "Consolas" ||
+                         font_family == "monospace" || font_family == "Courier" ||
+                         font_family == "Monaco" || font_family == "Menlo");
+
+    int font_size_int = static_cast<int>(font_size + 0.5f);
+
+    if (is_monospace) {
+        // Courier New 等宽字体的 line-height: normal 查找表
+        // 比率约为 1.156（与 Arial 相同）
+        switch (font_size_int) {
+            case 13: return 15.0f;  // 13px 字体
+            case 16: return 18.5f;  // 16px 字体 (从浏览器测量)
+            default:
+                float result = font_size * 1.156f;
+                return std::round(result * 2.0f) / 2.0f;
+        }
+    }
+
+    // Arial 字体的 line-height: normal 查找表
+    switch (font_size_int) {
+        case 10: return 11.5f;   // ~1.15
+        case 11: return 13.0f;   // ~1.18
+        case 12: return 14.0f;   // ~1.17
+        case 13: return 15.0f;   // ~1.15
+        case 14: return 16.0f;   // ~1.14
+        case 15: return 17.5f;   // ~1.17
+        case 16: return 18.5f;   // ~1.156 (从浏览器测量)
+        case 17: return 19.5f;   // ~1.15
+        case 18: return 21.0f;   // ~1.17
+        case 19: return 22.0f;   // ~1.16
+        case 20: return 23.0f;   // ~1.15
+        case 22: return 25.5f;   // ~1.16
+        case 24: return 28.0f;   // ~1.17
+        case 32: return 37.0f;   // h1 (32px -> 37px)
+        default:
+            float result = font_size * 1.156f;
+            return std::round(result * 2.0f) / 2.0f;
+    }
+}
+
 // Helper to convert CSSLength to LengthPercentage
 static LengthPercentage ConvertLength(const CSSLength& css_length) {
     switch (css_length.unit) {
@@ -346,6 +391,8 @@ void NativeLayoutEngine::ComputeLayout(float available_width, float available_he
                 AvailableSpace::Definite(available_width),
                 AvailableSpace::Definite(available_height)
             };
+            // Enable vertical margin collapsing
+            inputs.vertical_margins_are_collapsible = Line<bool>{true, true};
 
             // Clear cache to force recomputation
             for (auto& pair : nodes_) {
@@ -384,6 +431,9 @@ void NativeLayoutEngine::ComputeLayout(float available_width, float available_he
         AvailableSpace::Definite(effective_width),
         AvailableSpace::Definite(available_height)
     };
+    // Enable vertical margin collapsing for proper CSS margin collapse behavior
+    // This allows margins of child elements to collapse with their container
+    inputs.vertical_margins_are_collapsible = Line<bool>{true, true};
 
     ComputeNodeLayout(root_node_, inputs);
     PositionChildren(root_node_);
@@ -830,11 +880,12 @@ Style NativeLayoutEngine::ConvertStyle(const ComputedStyle& computed) {
     style.margin.top = ConvertLengthAuto(computed.margin.top);
     style.margin.bottom = ConvertLengthAuto(computed.margin.bottom);
 
-    // Border widths
-    style.border.left = LengthPercentage::Length(computed.border_left_width);
-    style.border.right = LengthPercentage::Length(computed.border_right_width);
-    style.border.top = LengthPercentage::Length(computed.border_top_width);
-    style.border.bottom = LengthPercentage::Length(computed.border_bottom_width);
+    // Border widths - 如果独立属性是 0，使用 border.width 作为回退值
+    float fallback_border = computed.border.width.ToPx(0, computed.font_size);
+    style.border.left = LengthPercentage::Length(computed.border_left_width > 0 ? computed.border_left_width : fallback_border);
+    style.border.right = LengthPercentage::Length(computed.border_right_width > 0 ? computed.border_right_width : fallback_border);
+    style.border.top = LengthPercentage::Length(computed.border_top_width > 0 ? computed.border_top_width : fallback_border);
+    style.border.bottom = LengthPercentage::Length(computed.border_bottom_width > 0 ? computed.border_bottom_width : fallback_border);
 
     // Inset (for positioned elements)
     style.inset.left = ConvertLengthAuto(computed.left);
@@ -1082,6 +1133,79 @@ LayoutOutput NativeLayoutEngine::ComputeNodeLayout(NodeId node_id, const LayoutI
             );
             node->output = output;
             return output;
+        }
+
+        // Handle TABLE elements - they manage their own layout
+        if (type == RenderObjectType::TABLE) {
+            auto* table = static_cast<RenderTable*>(node->render_obj);
+
+            // Determine available width
+            float available_width = 0.0f;
+            if (inputs.available_space.width.type == AvailableSpace::Type::Definite) {
+                available_width = inputs.available_space.width.value;
+            } else if (inputs.available_space.width.type == AvailableSpace::Type::MaxContent) {
+                available_width = 10000.0f;
+            }
+
+            // Call table's own layout method
+            table->Layout(available_width, 0);
+
+            // Get the computed size from table's layout info
+            const auto& table_layout = table->GetLayoutInfo();
+            output.size.width = table_layout.width;
+            output.size.height = table_layout.height;
+            output.content_size = output.size;
+
+            // Store in cache and return
+            node->cache.Store(
+                inputs.known_dimensions,
+                inputs.available_space,
+                inputs.run_mode,
+                output
+            );
+            node->output = output;
+            return output;
+        }
+
+        // Handle LEGEND elements - they should use fit-content width
+        auto dom_node = node->render_obj->GetNode();
+        if (dom_node && dom_node->GetNodeType() == NodeType::ELEMENT_NODE) {
+            auto element = std::dynamic_pointer_cast<Element>(dom_node);
+            if (element && element->GetTagName() == "legend") {
+                // Legend should use fit-content width (intrinsic sizing)
+                // First measure content with MaxContent to get intrinsic width
+                LayoutInput measure_inputs = inputs;
+                measure_inputs.available_space.width = AvailableSpace::MaxContent();
+                measure_inputs.known_dimensions.width = std::nullopt;
+
+                // Compute layout to get intrinsic content size
+                // Use IFC layout if legend is an IFC container (contains only text)
+                LayoutOutput intrinsic;
+                if (node->is_ifc_container) {
+                    intrinsic = ComputeIFCLayout(node_id, measure_inputs);
+                } else {
+                    intrinsic = ComputeBlockLayout(node_id, measure_inputs);
+                }
+
+                // Now do actual layout with the intrinsic width
+                LayoutInput final_inputs = inputs;
+                final_inputs.known_dimensions.width = intrinsic.size.width;
+                if (node->is_ifc_container) {
+                    output = ComputeIFCLayout(node_id, final_inputs);
+                } else {
+                    output = ComputeBlockLayout(node_id, final_inputs);
+                }
+
+                // Store in cache and return
+                node->cache.Store(
+                    inputs.known_dimensions,
+                    inputs.available_space,
+                    inputs.run_mode,
+                    output
+                );
+                node->output = output;
+                return output;
+            }
         }
     }
 
@@ -1526,11 +1650,22 @@ LayoutOutput NativeLayoutEngine::MeasureLeafNode(NodeId node_id, const LayoutInp
 
         LayoutOutput output;
 
+        // 计算 line-height
+        // 如果 style.line_height 是默认值 1.2，使用浏览器风格的 line-height: normal
+        // 否则使用用户指定的 line-height 倍数
+        float line_height;
+        if (std::abs(style.line_height - 1.2f) < 0.001f) {
+            // 使用浏览器风格的 line-height: normal
+            line_height = GetBrowserNormalLineHeight(style.font_size, style.font_family);
+        } else {
+            // 用户指定了具体的 line-height
+            line_height = style.line_height * style.font_size;
+        }
+
         if (is_min_content) {
             // For MinContent, return the width of the longest word
             // This is the minimum width needed to display the text without overflow
             float max_word_width = text_renderer.MeasureMinContentWidth(text, font);
-            float line_height = style.line_height * style.font_size;
             output.size.width = max_word_width;
             output.size.height = line_height;
             text_obj->SetActualTextWidth(max_word_width);
@@ -1544,14 +1679,12 @@ LayoutOutput NativeLayoutEngine::MeasureLeafNode(NodeId node_id, const LayoutInp
                 max_line_width = f32_max(max_line_width, line_width);
             }
 
-            float line_height = style.line_height * style.font_size;
             output.size.width = max_line_width;
             output.size.height = lines.size() * line_height;
             text_obj->SetActualTextWidth(max_line_width);
         } else {
             text_obj->SetWrappedLines({});
             float text_width = text_renderer.MeasureTextWidthWithEmoji(text, font);
-            float line_height = style.line_height * style.font_size;
             output.size.width = text_width;
             output.size.height = line_height;
             text_obj->SetActualTextWidth(text_width);
@@ -1563,8 +1696,6 @@ LayoutOutput NativeLayoutEngine::MeasureLeafNode(NodeId node_id, const LayoutInp
 
     // Handle inline-block elements
     if (type == RenderObjectType::INLINE_BLOCK) {
-        auto* inline_block = static_cast<RenderInlineBlock*>(render_obj);
-
         float available_width = 0.0f;
         if (inputs.available_space.width.type == AvailableSpace::Type::Definite) {
             available_width = inputs.available_space.width.value;
@@ -1572,6 +1703,18 @@ LayoutOutput NativeLayoutEngine::MeasureLeafNode(NodeId node_id, const LayoutInp
             available_width = 10000.0f;
         }
 
+        // Check if this is an SVG element
+        auto* svg_root = dynamic_cast<RenderSVGRoot*>(render_obj);
+        if (svg_root) {
+            auto [width, height] = svg_root->MeasureIntrinsicSize(available_width);
+            LayoutOutput output;
+            output.size = Size<float>{width, height};
+            output.content_size = output.size;
+            return output;
+        }
+
+        // Regular inline-block element
+        auto* inline_block = static_cast<RenderInlineBlock*>(render_obj);
         auto [width, height] = inline_block->MeasureIntrinsicSize(available_width);
 
         LayoutOutput output;
@@ -1619,6 +1762,56 @@ void NativeLayoutEngine::ReadLayoutResults(RenderObject* render_obj) {
     info.height = node->output.size.height;
     info.is_laid_out = true;
 
+    // For inline-block elements (like button), we need to call Layout() to properly
+    // position their children (e.g., apply text-align: center for button text).
+    // This is necessary because:
+    // 1. MeasureIntrinsicSize() only calculates dimensions, not child positions
+    // 2. Flex layout may stretch the element's height (align-items: stretch is default)
+    // 3. Without calling Layout(), child positions remain unset or outdated
+    RenderObjectType type = render_obj->GetType();
+    if (type == RenderObjectType::INLINE_BLOCK) {
+        // Check if this is an SVG element (RenderSVGRoot also uses INLINE_BLOCK type)
+        auto dom_node = render_obj->GetNode();
+        bool is_svg = false;
+        if (dom_node && dom_node->GetNodeType() == NodeType::ELEMENT_NODE) {
+            auto element = std::dynamic_pointer_cast<Element>(dom_node);
+            if (element && element->GetTagName() == "svg") {
+                is_svg = true;
+                // Call RenderSVGRoot::Layout directly
+                auto* svg_root = static_cast<RenderSVGRoot*>(render_obj);
+                svg_root->Layout(info.width, info.height);
+            }
+        }
+
+        if (!is_svg) {
+            auto* inline_block = static_cast<RenderInlineBlock*>(render_obj);
+            // Call Layout with the final dimensions to properly position children
+            inline_block->Layout(info.width, info.height);
+        }
+    }
+
+    // Check if this is a fieldset element - need special layout handling
+    bool is_fieldset = false;
+    float legend_height = 0.0f;
+    auto dom_node = render_obj->GetNode();
+    if (dom_node && dom_node->GetNodeType() == NodeType::ELEMENT_NODE) {
+        auto element = std::dynamic_pointer_cast<Element>(dom_node);
+        if (element && element->GetTagName() == "fieldset") {
+            is_fieldset = true;
+            // Find legend to get its height
+            for (auto& child : render_obj->GetChildren()) {
+                auto child_node = child->GetNode();
+                if (child_node && child_node->GetNodeType() == NodeType::ELEMENT_NODE) {
+                    auto child_elem = std::dynamic_pointer_cast<Element>(child_node);
+                    if (child_elem && child_elem->GetTagName() == "legend") {
+                        legend_height = child->GetLayoutInfo().height;
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
     // Handle IFC containers
     // IFC layout already applies padding/border offset in ApplyLayoutResults,
     // so we just mark children as laid out without modifying positions
@@ -1630,9 +1823,58 @@ void NativeLayoutEngine::ReadLayoutResults(RenderObject* render_obj) {
         return;
     }
 
+    // For fieldset, calculate the offset adjustment for non-legend children
+    // Browser behavior: content starts at max(min_offset, padding-top)
+    // where min_offset ≈ legend.height + border-top + small gap ≈ 24px
+    // Current layout puts content at: border + padding + legend
+    // We need to adjust to the correct position
+    float fieldset_content_offset = 0.0f;
+    if (is_fieldset && legend_height > 0) {
+        const auto& style = render_obj->GetComputedStyle();
+        float border_top = style.border_top_width > 0 ? style.border_top_width :
+                           style.border.width.ToPx(0, style.font_size);
+        float padding_top = style.padding.top.ToPx(0, style.font_size);
+
+        // Minimum offset for content area (legend height + border + small gap)
+        float min_content_offset = legend_height + border_top + 3.5f;  // ≈ 24px for typical legend
+
+        // Browser uses: max(min_offset, padding_top)
+        float target_content_y = std::max(min_content_offset, padding_top);
+
+        // Current layout puts content at: border + padding + legend
+        float current_content_y = border_top + padding_top + legend_height;
+
+        // The offset to subtract from non-legend children
+        fieldset_content_offset = current_content_y - target_content_y;
+    }
+
     // Recursively read children
     for (auto& child : render_obj->GetChildren()) {
         ReadLayoutResults(child.get());
+
+        // For fieldset, adjust children positions according to browser behavior
+        if (is_fieldset) {
+            auto child_node = child->GetNode();
+            if (child_node && child_node->GetNodeType() == NodeType::ELEMENT_NODE) {
+                auto child_elem = std::dynamic_pointer_cast<Element>(child_node);
+                LayoutInfo& child_info = child->GetLayoutInfo();
+
+                if (child_elem && child_elem->GetTagName() == "legend") {
+                    // Legend's y coordinate should be 0 relative to fieldset's border-box
+                    child_info.y = 0;
+                } else if (fieldset_content_offset > 0) {
+                    // Non-legend children: adjust y to start from legend.height + padding
+                    // instead of border + padding + legend
+                    child_info.y -= fieldset_content_offset;
+                }
+            }
+        }
+    }
+
+    // Adjust fieldset height: we moved content up by fieldset_content_offset,
+    // so the total height should be reduced by the same amount
+    if (is_fieldset && fieldset_content_offset > 0) {
+        info.height -= fieldset_content_offset;
     }
 }
 
