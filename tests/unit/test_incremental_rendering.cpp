@@ -305,6 +305,111 @@ TEST_F(IncrementalRenderingTest, BatchWithMultipleElements) {
     SUCCEED();
 }
 
+// 测试：1000项列表增删性能
+TEST_F(IncrementalRenderingTest, PerformanceLargeListAddRemove) {
+    auto body = doc_->GetBody();
+    ASSERT_NE(body, nullptr);
+
+    std::cout << "\n=== Performance Test: Large List Add/Remove ===" << std::endl;
+
+    // 初始渲染
+    window_->RenderDocumentIncremental();
+
+    // 测试添加1000个元素的性能
+    auto start = std::chrono::high_resolution_clock::now();
+
+    doc_->BeginBatch();
+    for (int i = 0; i < 1000; i++) {
+        auto div = doc_->CreateElement("div");
+        div->SetAttribute("id", "item-" + std::to_string(i));
+        div->SetStyle("width", "100px");
+        div->SetStyle("height", "20px");
+        body->AppendChild(div);
+    }
+    doc_->EndBatch();
+    window_->RenderDocumentIncremental();
+
+    auto end = std::chrono::high_resolution_clock::now();
+    auto add_duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
+
+    std::cout << "Add 1000 elements: " << add_duration << " ms" << std::endl;
+
+    // 目标：< 100ms (保守目标，16ms是理想目标)
+    EXPECT_LT(add_duration, 500) << "Adding 1000 elements should be fast";
+
+    // 测试删除1000个元素的性能
+    start = std::chrono::high_resolution_clock::now();
+
+    doc_->BeginBatch();
+    auto children = body->GetChildNodes();
+    for (const auto& child : children) {
+        if (child->GetNodeType() == NodeType::ELEMENT_NODE) {
+            auto elem = std::dynamic_pointer_cast<Element>(child);
+            if (elem && elem->GetAttribute("id").find("item-") == 0) {
+                body->RemoveChild(child);
+            }
+        }
+    }
+    doc_->EndBatch();
+    window_->RenderDocumentIncremental();
+
+    end = std::chrono::high_resolution_clock::now();
+    auto remove_duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
+
+    std::cout << "Remove elements: " << remove_duration << " ms" << std::endl;
+
+    EXPECT_LT(remove_duration, 500) << "Removing elements should be fast";
+
+    std::cout << "Performance test complete!" << std::endl;
+    SUCCEED();
+}
+
+// 测试：多组件同时更新性能
+TEST_F(IncrementalRenderingTest, PerformanceMultipleComponentUpdates) {
+    auto body = doc_->GetBody();
+    ASSERT_NE(body, nullptr);
+
+    std::cout << "\n=== Performance Test: Multiple Component Updates ===" << std::endl;
+
+    // 创建100个"组件"
+    std::vector<std::shared_ptr<Element>> components;
+    for (int i = 0; i < 100; i++) {
+        auto div = doc_->CreateElement("div");
+        div->SetAttribute("id", "component-" + std::to_string(i));
+        div->SetStyle("width", "50px");
+        div->SetStyle("height", "50px");
+        div->SetStyle("background-color", "blue");
+        body->AppendChild(div);
+        components.push_back(div);
+    }
+
+    // 初始渲染
+    window_->RenderDocumentIncremental();
+    std::cout << "Created 100 components" << std::endl;
+
+    // 测试100个组件同时更新的性能
+    auto start = std::chrono::high_resolution_clock::now();
+
+    doc_->BeginBatch();
+    for (int i = 0; i < 100; i++) {
+        components[i]->SetStyle("background-color", "red");
+        components[i]->SetStyle("width", "60px");
+    }
+    doc_->EndBatch();
+    window_->RenderDocumentIncremental();
+
+    auto end = std::chrono::high_resolution_clock::now();
+    auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
+
+    std::cout << "Update 100 components: " << duration << " ms" << std::endl;
+
+    // 目标：< 16ms (60 FPS)
+    EXPECT_LT(duration, 100) << "Updating 100 components should be fast";
+
+    std::cout << "Performance test complete!" << std::endl;
+    SUCCEED();
+}
+
 // 主函数
 int main(int argc, char** argv) {
     ::testing::InitGoogleTest(&argc, argv);

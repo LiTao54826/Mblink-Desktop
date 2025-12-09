@@ -68,6 +68,10 @@ int main() {
         std::cout << "[4/7] Initializing DOM bindings..." << std::endl;
         DOMBindings::Init(ctx);
         DOMBindings::SetGlobalDocument(ctx, document);
+
+        // 重要：在 JS 执行前就将 Document 关联到 Window，以便注册 DOM Observer
+        // 这样 JS 中的 DOM 变化才能触发重绘
+        window->SetDocument(document);
         std::cout << "  ✓ DOM bindings initialized" << std::endl;
 
         // 5. 创建body元素
@@ -108,8 +112,7 @@ int main() {
         runtime->Eval(app_code, "app.js");
         std::cout << "  ✓ Application loaded and rendered" << std::endl;
 
-        // 将文档关联到窗口并显示
-        window->SetDocument(document);
+        // 显示窗口（Document 已在前面关联）
         window->Show();
 
         std::cout << std::endl;
@@ -128,10 +131,14 @@ int main() {
         // 创建事件循环
         EventLoop event_loop;
 
+        // 重要：将 TaskScheduler 绑定到 JS，以支持 setTimeout/setInterval/requestAnimationFrame
+        auto task_scheduler = event_loop.GetTaskSchedulerPtr();
+        DOMBindings::SetGlobalTaskScheduler(ctx, task_scheduler);
+
         // 设置渲染回调
         event_loop.SetRenderCallback([window]() {
             if (window->NeedsRepaint()) {
-                window->RenderDocument();
+                window->Render();
                 window->SwapBuffers();
             }
         });

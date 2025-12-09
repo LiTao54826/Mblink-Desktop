@@ -120,48 +120,31 @@ bool DirtyRegionCollector::GetNodeLayout(Node* node, float& x, float& y, float& 
         return false;
     }
 
-    // TODO: 这里需要从渲染对象获取实际的布局信息
-    // 当前简化实现：假设节点有布局信息
-    
-    // 尝试从Element获取样式属性
-    if (node->GetNodeType() == NodeType::ELEMENT_NODE) {
-        auto element = static_cast<Element*>(node);
-        
-        // 尝试从style属性获取位置和尺寸
-        // 注意：这是简化实现，实际应该从渲染对象获取
-        
-        // 获取width
-        std::string width_str = element->GetAttribute("width");
-        if (!width_str.empty()) {
-            try {
-                width = std::stof(width_str);
-            } catch (...) {
-                width = 100.0f;  // 默认宽度
-            }
-        } else {
-            width = 100.0f;  // 默认宽度
-        }
-        
-        // 获取height
-        std::string height_str = element->GetAttribute("height");
-        if (!height_str.empty()) {
-            try {
-                height = std::stof(height_str);
-            } catch (...) {
-                height = 100.0f;  // 默认高度
-            }
-        } else {
-            height = 100.0f;  // 默认高度
-        }
-        
-        // 位置信息（简化实现）
-        x = 0.0f;
-        y = 0.0f;
-        
-        return true;
+    // 仅对 Element 节点尝试获取布局
+    if (node->GetNodeType() != NodeType::ELEMENT_NODE) {
+        return false;
     }
 
-    return false;
+    // 从 RenderObject 获取真实的布局信息
+    auto render_obj = node->GetRenderObject();
+    if (!render_obj) {
+        // 节点没有关联的 RenderObject（可能还未构建渲染树）
+        return false;
+    }
+
+    // 使用 GetBoundingRect() 获取绝对坐标边界框
+    // 该方法已考虑父子偏移和滚动
+    SkRect bounds = render_obj->GetBoundingRect();
+    if (bounds.isEmpty()) {
+        // 节点没有有效的布局信息
+        return false;
+    }
+
+    x      = bounds.left();
+    y      = bounds.top();
+    width  = bounds.width();
+    height = bounds.height();
+    return true;
 }
 
 void DirtyRegionCollector::SetViewportSize(float width, float height) {

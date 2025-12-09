@@ -1521,6 +1521,38 @@ static JSValue js_document_get_body(JSContext* ctx, JSValueConst this_val, int m
     return DOMBindings::WrapElement(ctx, body);
 }
 
+// Phase 4: 批量更新 API - document.__beginBatch()
+static JSValue js_document_begin_batch(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) {
+    auto document = DOMBindings::UnwrapDocument(ctx, this_val);
+    if (!document) {
+        return JS_EXCEPTION;
+    }
+
+    document->BeginBatch();
+    return JS_UNDEFINED;
+}
+
+// Phase 4: 批量更新 API - document.__endBatch()
+static JSValue js_document_end_batch(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) {
+    auto document = DOMBindings::UnwrapDocument(ctx, this_val);
+    if (!document) {
+        return JS_EXCEPTION;
+    }
+
+    document->EndBatch();
+    return JS_UNDEFINED;
+}
+
+// Phase 4: 批量更新 API - document.__isInBatch()
+static JSValue js_document_is_in_batch(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) {
+    auto document = DOMBindings::UnwrapDocument(ctx, this_val);
+    if (!document) {
+        return JS_EXCEPTION;
+    }
+
+    return JS_NewBool(ctx, document->IsInBatch());
+}
+
 // Document 类定义
 static const JSCFunctionListEntry js_document_proto_funcs[] = {
     JS_CGETSET_MAGIC_DEF("body", js_document_get_body, nullptr, 0),
@@ -1534,6 +1566,11 @@ static const JSCFunctionListEntry js_document_proto_funcs[] = {
     JS_CFUNC_DEF("querySelectorAll", 1, js_document_query_selector_all),
     JS_CFUNC_DEF("getElementsByClassName", 1, js_document_get_elements_by_class_name),
     JS_CFUNC_DEF("getElementsByTagName", 1, js_document_get_elements_by_tag_name),
+
+    // Phase 4: 批量更新 API
+    JS_CFUNC_DEF("__beginBatch", 0, js_document_begin_batch),
+    JS_CFUNC_DEF("__endBatch", 0, js_document_end_batch),
+    JS_CFUNC_DEF("__isInBatch", 0, js_document_is_in_batch),
 };
 
 void DOMBindings::InitDocumentClass(JSContext* ctx) {

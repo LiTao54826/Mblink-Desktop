@@ -216,6 +216,10 @@ TaskScheduler& EventLoop::GetTaskScheduler() {
     return *task_scheduler_;
 }
 
+std::shared_ptr<TaskScheduler> EventLoop::GetTaskSchedulerPtr() {
+    return task_scheduler_;
+}
+
 bool EventLoop::ProcessEvents() {
     bool has_events = false;
     SDL_Event event;
@@ -279,11 +283,11 @@ void EventLoop::Render() {
         render_callback_();
     }
 
-    // 默认渲染：渲染所有窗口
+    // 渲染所有窗口
     auto& window_manager = WindowManager::Instance();
     for (auto& window : window_manager.GetAllWindows()) {
         if (window->NeedsRepaint()) {
-            window->RenderDocument();
+            window->Render();
             window->SwapBuffers();
         }
     }

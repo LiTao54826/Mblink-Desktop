@@ -137,11 +137,18 @@ public:
     InputHandler& GetInputHandler();
 
     /**
-     * @brief 获取任务调度器
+     * @brief 获取任务调度器引用
      *
      * @return TaskScheduler& 任务调度器引用
      */
     TaskScheduler& GetTaskScheduler();
+
+    /**
+     * @brief 获取任务调度器智能指针
+     *
+     * @return std::shared_ptr<TaskScheduler> 任务调度器智能指针
+     */
+    std::shared_ptr<TaskScheduler> GetTaskSchedulerPtr();
 
     /**
      * @brief 获取光标是否可见（用于闪烁效果）

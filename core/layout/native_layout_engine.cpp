@@ -446,6 +446,92 @@ void NativeLayoutEngine::GetLayoutInfo(std::shared_ptr<RenderObject> root) {
     ReadLayoutResults(root.get());
 }
 
+bool NativeLayoutEngine::ComputeIncrementalLayout(float available_width, float available_height) {
+    if (root_node_ == 0) {
+        return false;
+    }
+
+    // 收集需要布局的节点
+    std::vector<NodeId> dirty_nodes;
+    std::function<void(NodeId)> collectDirty = [&](NodeId node_id) {
+        LayoutNode* node = GetNode(node_id);
+        if (!node) return;
+
+        if (node->needs_layout) {
+            dirty_nodes.push_back(node_id);
+        }
+
+        for (NodeId child_id : node->children) {
+            collectDirty(child_id);
+        }
+    };
+    collectDirty(root_node_);
+
+    if (dirty_nodes.empty()) {
+        return false;
+    }
+
+    // 对每个脏节点重新布局其子树
+    for (NodeId node_id : dirty_nodes) {
+        LayoutNode* node = GetNode(node_id);
+        if (!node || !node->needs_layout) continue;
+
+        // 获取父节点的布局信息作为约束
+        float parent_width = available_width;
+        float parent_height = available_height;
+
+        if (node->parent != 0) {
+            LayoutNode* parent = GetNode(node->parent);
+            if (parent) {
+                parent_width = parent->layout.size.width;
+                parent_height = parent->layout.size.height;
+            }
+        }
+
+        LayoutInput inputs;
+        inputs.run_mode = RunMode::PerformLayout;
+        inputs.sizing_mode = SizingMode::InherentSize;
+        inputs.known_dimensions = Size<std::optional<float>>{std::nullopt, std::nullopt};
+        inputs.parent_size = Size<std::optional<float>>{
+            std::optional<float>(parent_width),
+            std::optional<float>(parent_height)
+        };
+        inputs.available_space = Size<AvailableSpace>{
+            AvailableSpace::Definite(parent_width),
+            AvailableSpace::Definite(parent_height)
+        };
+        inputs.vertical_margins_are_collapsible = Line<bool>{true, true};
+
+        // 只清除该节点的缓存
+        node->cache.Clear();
+
+        ComputeNodeLayout(node_id, inputs);
+        node->needs_layout = false;
+    }
+
+    // 重新定位子节点
+    PositionChildren(root_node_);
+    return true;
+}
+
+void NativeLayoutEngine::MarkNeedsLayout(RenderObject* render_obj) {
+    auto it = render_to_node_.find(render_obj);
+    if (it != render_to_node_.end()) {
+        LayoutNode* node = GetNode(it->second);
+        if (node) {
+            node->needs_layout = true;
+            // 向上传播脏标记到父节点
+            NodeId parent_id = node->parent;
+            while (parent_id != 0) {
+                LayoutNode* parent = GetNode(parent_id);
+                if (!parent || parent->needs_layout) break;
+                parent->needs_layout = true;
+                parent_id = parent->parent;
+            }
+        }
+    }
+}
+
 void NativeLayoutEngine::UpdateStyle(RenderObject* render_obj, const ComputedStyle& style) {
     auto it = render_to_node_.find(render_obj);
     if (it != render_to_node_.end()) {

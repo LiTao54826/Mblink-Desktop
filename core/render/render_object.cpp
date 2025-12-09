@@ -155,6 +155,35 @@ void RenderObject::Paint(SkCanvas* canvas) {
     needs_paint_ = false;
 }
 
+SkRect RenderObject::GetBoundingRect() const {
+    // 使用布局信息计算边界框
+    const auto& layout = layout_info_;
+
+    // 如果布局信息无效，返回空矩形
+    if (!layout.is_laid_out) {
+        return SkRect::MakeEmpty();
+    }
+
+    // 计算绝对位置（需要累加所有祖先的偏移）
+    float abs_x = layout.x;
+    float abs_y = layout.y;
+
+    auto parent = parent_.lock();
+    while (parent) {
+        const auto& parent_layout = parent->GetLayoutInfo();
+        abs_x += parent_layout.x;
+        abs_y += parent_layout.y;
+
+        // 考虑父元素的滚动偏移
+        abs_x -= parent->GetScrollX();
+        abs_y -= parent->GetScrollY();
+
+        parent = parent->GetParent();
+    }
+
+    return SkRect::MakeXYWH(abs_x, abs_y, layout.width, layout.height);
+}
+
 void RenderObject::ScrollBy(float dx, float dy) {
     float new_x = scroll_x_ + dx;
     float new_y = scroll_y_ + dy;

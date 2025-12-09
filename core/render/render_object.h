@@ -322,7 +322,12 @@ public:
      * @brief 获取子渲染对象列表
      */
     const std::vector<std::shared_ptr<RenderObject>>& GetChildren() const { return children_; }
-    
+
+    /**
+     * @brief 获取子渲染对象列表（可修改版本，用于增量更新）
+     */
+    std::vector<std::shared_ptr<RenderObject>>& GetChildrenMutable() { return children_; }
+
     /**
      * @brief 添加子渲染对象
      */
@@ -394,6 +399,20 @@ public:
      * @brief 清除绘制标记
      */
     void ClearNeedsPaint() { needs_paint_ = false; }
+
+    /**
+     * @brief 清除所有脏标记（布局和绘制）
+     */
+    void ClearDirtyFlags() {
+        needs_layout_ = false;
+        needs_paint_ = false;
+    }
+
+    /**
+     * @brief 获取边界框（用于脏区域计算）
+     * @return 屏幕空间的边界矩形
+     */
+    SkRect GetBoundingRect() const;
 
     /**
      * @brief 执行布局

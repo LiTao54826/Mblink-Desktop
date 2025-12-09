@@ -28,6 +28,7 @@ class Element;
 class Text;
 class Document;
 class LayoutBox;
+class RenderObject;
 
 /**
  * @brief 脏标记类型枚举
@@ -248,6 +249,20 @@ public:
      */
     uint32_t GetDirtyFlags() const { return dirty_flags_; }
 
+    // ========== RenderObject 双向绑定 ==========
+
+    /**
+     * @brief 设置关联的 RenderObject
+     * @param render_obj 渲染对象
+     */
+    void SetRenderObject(std::shared_ptr<RenderObject> render_obj);
+
+    /**
+     * @brief 获取关联的 RenderObject
+     * @return 渲染对象，如果没有则返回 nullptr
+     */
+    std::shared_ptr<RenderObject> GetRenderObject() const;
+
 protected:
     /**
      * @brief 设置父节点
@@ -270,6 +285,9 @@ protected:
     bool is_dirty_ = true;  // 保留用于向后兼容
     uint32_t dirty_flags_ = static_cast<uint32_t>(DirtyType::ALL);  // 脏标记标志
     SkRect dirty_rect_ = SkRect::MakeEmpty();  // 脏矩形区域
+
+    // RenderObject 双向绑定（使用 weak_ptr 避免循环引用）
+    std::weak_ptr<RenderObject> render_object_;
 
     // 允许 Document 类访问 owner_document_
     friend class Document;

@@ -37,12 +37,20 @@ public:
         native_engine_.ComputeLayout(available_width, available_height);
     }
 
+    bool ComputeIncrementalLayout(float available_width, float available_height) {
+        return native_engine_.ComputeIncrementalLayout(available_width, available_height);
+    }
+
     void GetLayoutInfo(std::shared_ptr<RenderObject> root) {
         native_engine_.GetLayoutInfo(root);
     }
 
     void UpdateStyle(RenderObject* render_obj, const ComputedStyle& style) {
         native_engine_.UpdateStyle(render_obj, style);
+    }
+
+    void MarkNeedsLayout(RenderObject* render_obj) {
+        native_engine_.MarkNeedsLayout(render_obj);
     }
 
     void AddElement(RenderObject* render_obj, RenderObject* parent) {

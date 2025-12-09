@@ -76,6 +76,20 @@ public:
     void ComputeLayout(float available_width, float available_height);
 
     /**
+     * @brief Compute incremental layout for dirty subtrees only
+     * @param available_width Available width for layout
+     * @param available_height Available height for layout
+     * @return true if any layout was performed
+     */
+    bool ComputeIncrementalLayout(float available_width, float available_height);
+
+    /**
+     * @brief Mark a render object as needing layout
+     * @param render_obj The render object to mark
+     */
+    void MarkNeedsLayout(RenderObject* render_obj);
+
+    /**
      * @brief Get layout information and update render tree
      * @param root Root of the render tree
      */
