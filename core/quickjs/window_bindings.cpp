@@ -7,6 +7,7 @@
 #include "bindings/js_node.h"
 #include "bindings/js_element.h"
 #include "bindings/js_style_declaration.h"
+#include "bindings/js_event.h"
 #include <iostream>
 
 namespace lightui {
@@ -26,6 +27,7 @@ void WindowBindings::InitBindings() {
     bindings::InitNodeBinding(runtime_->GetContext());
     bindings::InitElementBinding(runtime_->GetContext());
     bindings::InitStyleDeclarationBinding(runtime_->GetContext());
+    bindings::InitEventBinding(runtime_->GetContext());
     
     // 绑定 Document API（使用新的 C API 实现）
     BindDocumentAPIs(runtime_->GetContext(), window_.get());

@@ -6,7 +6,9 @@
 #include "js_element.h"
 #include "js_node.h"
 #include "js_style_declaration.h"
+#include "js_event.h"
 #include "core/quickjs/dom_binding_map.h"
+#include "core/quickjs/js_value_wrapper.h"
 #include <iostream>
 
 namespace lightui {
@@ -201,6 +203,85 @@ static JSValue JSElement_removeAttribute(JSContext* ctx, JSValueConst this_val, 
     return JS_UNDEFINED;
 }
 
+// addEventListener(type, listener, options?)
+static JSValue JSElement_addEventListener(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) {
+    auto* data = static_cast<JSElementData*>(JS_GetOpaque(this_val, js_element_class_id));
+    if (!data || !data->element) {
+        return JS_EXCEPTION;
+    }
+
+    if (argc < 2) {
+        return JS_ThrowTypeError(ctx, "addEventListener requires at least 2 arguments");
+    }
+
+    const char* type = JS_ToCString(ctx, argv[0]);
+    if (!type) {
+        return JS_EXCEPTION;
+    }
+
+    if (!JS_IsFunction(ctx, argv[1])) {
+        JS_FreeCString(ctx, type);
+        return JS_ThrowTypeError(ctx, "Second argument must be a function");
+    }
+
+    // 解析 options（支持布尔值或对象）
+    bool use_capture = false;
+    bool once = false;
+
+    if (argc >= 3) {
+        if (JS_IsBool(argv[2])) {
+            // 第三个参数是布尔值，表示 useCapture
+            use_capture = JS_ToBool(ctx, argv[2]);
+        } else if (JS_IsObject(argv[2])) {
+            // 第三个参数是对象，提取 capture 和 once
+            JSValue capture_val = JS_GetPropertyStr(ctx, argv[2], "capture");
+            if (JS_IsBool(capture_val)) {
+                use_capture = JS_ToBool(ctx, capture_val);
+            }
+            JS_FreeValue(ctx, capture_val);
+
+            JSValue once_val = JS_GetPropertyStr(ctx, argv[2], "once");
+            if (JS_IsBool(once_val)) {
+                once = JS_ToBool(ctx, once_val);
+            }
+            JS_FreeValue(ctx, once_val);
+        }
+    }
+
+    // 包装 JS 函数为 C++ lambda
+    auto listener_wrapper = std::make_shared<JSValueWrapper>(ctx, argv[1]);
+    
+    uint64_t listener_id = data->element->AddEventListener(type, 
+        [ctx, listener_wrapper](std::shared_ptr<Event> event) {
+            // 包装 Event 对象
+            JSValue event_val = WrapEvent(ctx, event);
+            
+            // 调用 JS 监听器函数
+            JSValue result = listener_wrapper->Call(JS_UNDEFINED, 1, &event_val);
+            
+            // 释放
+            if (JS_IsException(result)) {
+                // 输出错误但不中断
+                JSValue exception = JS_GetException(ctx);
+                const char* err = JS_ToCString(ctx, exception);
+                if (err) {
+                    std::cerr << "[Event Listener Error] " << err << std::endl;
+                    JS_FreeCString(ctx, err);
+                }
+                JS_FreeValue(ctx, exception);
+            }
+            JS_FreeValue(ctx, result);
+            JS_FreeValue(ctx, event_val);
+        }, 
+        use_capture, 
+        once
+    );
+
+    JS_FreeCString(ctx, type);
+
+    return JS_NewInt64(ctx, listener_id);
+}
+
 // ========== 类定义 ==========
 
 static const JSCFunctionListEntry js_element_proto_funcs[] = {
@@ -211,6 +292,7 @@ static const JSCFunctionListEntry js_element_proto_funcs[] = {
     JS_CFUNC_DEF("setAttribute", 2, JSElement_setAttribute),
     JS_CFUNC_DEF("getAttribute", 1, JSElement_getAttribute),
     JS_CFUNC_DEF("removeAttribute", 1, JSElement_removeAttribute),
+    JS_CFUNC_DEF("addEventListener", 3, JSElement_addEventListener),
 };
 
 static JSClassDef js_element_class = {
