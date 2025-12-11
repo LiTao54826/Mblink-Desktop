@@ -230,10 +230,7 @@ function createComponentDOM(vnode) {
 
             // Get old DOM and parent
             var oldDOM = component.__dom;
-            if (!oldDOM) {
-                return;
-            }
-            if (!oldDOM.parentNode) {
+            if (!oldDOM || !oldDOM.parentNode) {
                 return;
             }
 
@@ -392,13 +389,13 @@ function setDOMProps(element, oldProps, newProps, isSVG) {
             if (!listeners[prop]) {
                 // Create stable wrapper and add listener
                 var stableHandler = createStableHandler(elementId, prop);
-                var listenerId = element.addEventListener(evtName, stableHandler);
-                listeners[prop] = listenerId;
+                element.addEventListener(evtName, stableHandler);
+                listeners[prop] = stableHandler;  // Store the wrapper function itself
 
                 if (evtName === 'change') {
                     var stableInputHandler = createStableHandler(elementId, prop + '_input');
-                    var inputListenerId = element.addEventListener('input', stableInputHandler);
-                    listeners[prop + '_input'] = inputListenerId;
+                    element.addEventListener('input', stableInputHandler);
+                    listeners[prop + '_input'] = stableInputHandler;  // Store the wrapper function itself
                 }
             }
         } else if (prop === 'value' && (element.tagName === 'INPUT' || element.tagName === 'TEXTAREA')) {
@@ -474,9 +471,7 @@ function diffNode(oldVNode, newVNode, parentDOM, oldDOM) {
         // Both are text nodes
         if ((typeof oldVNode === 'string' || typeof oldVNode === 'number') &&
             (typeof newVNode === 'string' || typeof newVNode === 'number')) {
-            // console.log('[diffNode] Both text nodes, old="' + oldVNode + '" new="' + newVNode + '"');
             if (String(oldVNode) !== String(newVNode)) {
-                // console.log('[diffNode] Text changed, updating DOM');
                 oldDOM.textContent = String(newVNode);
             }
             return oldDOM;
@@ -576,15 +571,12 @@ function diffComponent(oldVNode, newVNode, parentDOM, oldDOM) {
 
         var currentDOM = component.__dom;
         if (!currentDOM || !currentDOM.parentNode) {
-            // console.log('[Preact __rerender] No DOM or parent, skipping');
             return;
         }
 
-        // console.log('[Preact __rerender] Calling diffNode');
         var resultDOM = diffNode(component.__renderedVNode, updatedVNode, currentDOM.parentNode, currentDOM);
         component.__dom = resultDOM;
         component.__renderedVNode = updatedVNode;
-        // console.log('[Preact __rerender] Rerender complete');
     };
 
     return newDOM;
@@ -651,8 +643,12 @@ function diffChildren(oldChildren, newChildren, parentDOM) {
     // Get current DOM children as static array
     var childNodesArray = [];
     var childNodes = parentDOM.childNodes;
-    for (var k = 0; k < childNodes.length; k++) {
-        childNodesArray.push(childNodes[k]);
+    if (childNodes) {
+        for (var k = 0; k < childNodes.length; k++) {
+            childNodesArray.push(childNodes[k]);
+        }
+    } else {
+        // parentDOM.childNodes is undefined, use empty array
     }
 
     // Map old children

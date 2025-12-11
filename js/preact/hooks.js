@@ -56,7 +56,7 @@ function flushUpdates() {
             try {
                 component.__rerender();
             } catch (e) {
-                console.error('[flushUpdates] Error in __rerender:', e);
+                // Silently handle rerender errors
             }
         }
     }

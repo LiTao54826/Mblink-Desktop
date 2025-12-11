@@ -173,15 +173,49 @@ int main(int argc, char** argv) {
         window_bindings.InitBindings();
         std::cout << "  ✓ Window bindings initialized" << std::endl;
 
-        // 5. 加载Preact库
-        std::cout << "[5/6] Loading Preact library..." << std::endl;
+        // 5. 查找 Preact 路径
         std::string preact_path = FindPreactPath(app_path);
-        
         if (preact_path.empty()) {
             std::cerr << "  ✗ Could not find Preact library" << std::endl;
             std::cerr << "  Please ensure js/preact/preact.js exists" << std::endl;
             return 1;
         }
+
+        // 6. 加载 DOM polyfills (必须在 Preact 之前)
+        std::cout << "[5/7] Loading DOM polyfills..." << std::endl;
+        std::string polyfills_path = preact_path + "/../polyfills/dom.js";
+        if (fs::exists(polyfills_path)) {
+            std::string polyfills_code = ReadFile(polyfills_path);
+            if (!polyfills_code.empty()) {
+                runtime->Eval(polyfills_code, "dom.js");
+                std::cout << "  ✓ DOM polyfills loaded" << std::endl;
+            }
+        } else {
+            // 尝试其他路径
+            std::vector<std::string> polyfills_search_paths = {
+                "js/polyfills/dom.js",
+                "../js/polyfills/dom.js",
+                "../../js/polyfills/dom.js"
+            };
+            bool polyfills_loaded = false;
+            for (const auto& path : polyfills_search_paths) {
+                if (fs::exists(path)) {
+                    std::string polyfills_code = ReadFile(path);
+                    if (!polyfills_code.empty()) {
+                        runtime->Eval(polyfills_code, "dom.js");
+                        std::cout << "  ✓ DOM polyfills loaded from: " << path << std::endl;
+                        polyfills_loaded = true;
+                        break;
+                    }
+                }
+            }
+            if (!polyfills_loaded) {
+                std::cout << "  ⚠ DOM polyfills not found, some features may not work" << std::endl;
+            }
+        }
+
+        // 7. 加载Preact库
+        std::cout << "[6/7] Loading Preact library..." << std::endl;
         
         std::string preact_code = ReadFile(preact_path + "/preact.js");
         if (preact_code.empty()) {
@@ -198,8 +232,8 @@ int main(int argc, char** argv) {
             std::cout << "  ✓ Hooks library loaded" << std::endl;
         }
 
-        // 6. 加载并运行应用
-        std::cout << "[6/6] Loading application..." << std::endl;
+        // 8. 加载并运行应用
+        std::cout << "[7/7] Loading application..." << std::endl;
         std::string app_code = ReadFile(app_path);
         if (app_code.empty()) {
             std::cerr << "  ✗ Failed to load: " << app_path << std::endl;
@@ -220,8 +254,8 @@ int main(int argc, char** argv) {
         std::cout << "  Close window to exit" << std::endl;
         std::cout << std::endl;
 
-        // 创建事件循环
-        EventLoop event_loop;
+        // 创建事件循环（使用共享的 task_scheduler 确保定时器正常工作）
+        EventLoop event_loop(task_scheduler);
 
         // 设置渲染回调
         event_loop.SetRenderCallback([window]() {

@@ -29,7 +29,7 @@ function Counter() {
             preact.h('button', {
                 onclick: () => {
                     console.log('减少按钮点击');
-                    setCount(count - 1);
+                    setCount(c => c - 1);
                 },
                 style: 'padding: 10px 20px; font-size: 16px; cursor: pointer; background: #e74c3c; color: white; border: none; border-radius: 5px;'
             }, '➖ 减少'),
@@ -45,7 +45,7 @@ function Counter() {
             preact.h('button', {
                 onclick: () => {
                     console.log('增加按钮点击');
-                    setCount(count + 1);
+                    setCount(c => c + 1);
                 },
                 style: 'padding: 10px 20px; font-size: 16px; cursor: pointer; background: #27ae60; color: white; border: none; border-radius: 5px;'
             }, '➕ 增加')

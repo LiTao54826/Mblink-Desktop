@@ -149,6 +149,26 @@ static JSValue JSNode_set_textContent(JSContext* ctx, JSValueConst this_val, JSV
     return JS_UNDEFINED;
 }
 
+// childNodes getter - 返回一个包含所有子节点的 NodeList (简化为 Array)
+static JSValue JSNode_get_childNodes(JSContext* ctx, JSValueConst this_val, int magic) {
+    auto node = UnwrapNode(ctx, this_val);
+    if (!node) {
+        return JS_NewArray(ctx);  // 返回空数组而不是 null
+    }
+
+    // 获取所有子节点
+    JSValue arr = JS_NewArray(ctx);
+    uint32_t index = 0;
+    
+    // 遍历所有子节点
+    for (auto child = node->GetFirstChild(); child; child = child->GetNextSibling()) {
+        JSValue child_val = WrapNode(ctx, child);
+        JS_SetPropertyUint32(ctx, arr, index++, child_val);
+    }
+
+    return arr;
+}
+
 // ========== 方法实现 ==========
 
 // appendChild(child)
@@ -269,6 +289,7 @@ static const JSCFunctionListEntry js_node_proto_funcs[] = {
     JS_CGETSET_MAGIC_DEF("nextSibling", JSNode_get_nextSibling, nullptr, 0),
     JS_CGETSET_MAGIC_DEF("previousSibling", JSNode_get_previousSibling, nullptr, 0),
     JS_CGETSET_MAGIC_DEF("textContent", JSNode_get_textContent, JSNode_set_textContent, 0),
+    JS_CGETSET_MAGIC_DEF("childNodes", JSNode_get_childNodes, nullptr, 0),
     JS_CFUNC_DEF("appendChild", 1, JSNode_appendChild),
     JS_CFUNC_DEF("removeChild", 1, JSNode_removeChild),
     JS_CFUNC_DEF("insertBefore", 2, JSNode_insertBefore),

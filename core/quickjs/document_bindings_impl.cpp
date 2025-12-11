@@ -107,6 +107,54 @@ static JSValue JS_Document_createElement(JSContext* ctx, JSValueConst this_val, 
     return bindings::WrapElement(ctx, element);
 }
 
+// ========== document.createTextNode 实现 ==========
+
+static JSValue JS_Document_createTextNode(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) {
+    if (argc < 1) {
+        return JS_ThrowTypeError(ctx, "createTextNode requires 1 argument");
+    }
+
+    const char* data = JS_ToCString(ctx, argv[0]);
+    if (!data) {
+        return JS_EXCEPTION;
+    }
+
+    // 从全局对象获取 window
+    JSValue global = JS_GetGlobalObject(ctx);
+    JSValue window_val = JS_GetPropertyStr(ctx, global, "__lightui_window_ptr");
+    JS_FreeValue(ctx, global);
+
+    if (JS_IsUndefined(window_val)) {
+        JS_FreeCString(ctx, data);
+        return JS_NULL;
+    }
+
+    void* ptr = nullptr;
+    JS_ToInt64Ext(ctx, (int64_t*)&ptr, window_val);
+    JS_FreeValue(ctx, window_val);
+
+    if (!ptr) {
+        JS_FreeCString(ctx, data);
+        return JS_NULL;
+    }
+
+    auto* window = static_cast<Window*>(ptr);
+    auto doc = window->GetDocument();
+    if (!doc) {
+        JS_FreeCString(ctx, data);
+        return JS_NULL;
+    }
+
+    auto text_node = doc->CreateTextNode(data);
+    JS_FreeCString(ctx, data);
+
+    if (!text_node) {
+        return JS_NULL;
+    }
+
+    return bindings::WrapNode(ctx, text_node);
+}
+
 // ========== document.body getter 实现 ==========
 
 static JSValue JS_Document_get_body(JSContext* ctx, JSValueConst this_val, int magic) {
@@ -169,6 +217,10 @@ void BindDocumentAPIs(JSContext* ctx, Window* window) {
     // 设置 createElement 方法
     JS_SetPropertyStr(ctx, document, "createElement",
         JS_NewCFunction(ctx, JS_Document_createElement, "createElement", 1));
+
+    // 设置 createTextNode 方法
+    JS_SetPropertyStr(ctx, document, "createTextNode",
+        JS_NewCFunction(ctx, JS_Document_createTextNode, "createTextNode", 1));
 
     // 设置到全局对象
     JS_SetPropertyStr(ctx, global, "document", document);
