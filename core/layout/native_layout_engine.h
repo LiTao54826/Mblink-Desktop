@@ -210,6 +210,7 @@ private:
 
         // Flags
         bool is_ifc_container = false;
+        bool is_table_container = false;  // TABLE 元素标记
         bool needs_layout = true;
 
         //----------------------------------------------------------------------
@@ -293,6 +294,14 @@ private:
      * @return Layout output
      */
     LayoutOutput ComputeGridLayout(NodeId node_id, const LayoutInput& inputs);
+
+    /**
+     * @brief Compute table layout for a node
+     * @param node_id Node to layout
+     * @param inputs Layout input parameters
+     * @return Layout output
+     */
+    LayoutOutput ComputeTableLayout(NodeId node_id, const LayoutInput& inputs);
 
     /**
      * @brief Compute IFC layout for a node

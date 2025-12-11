@@ -177,6 +177,23 @@ public:
                             const CSSBorderRadius& border_radius);
 
     /**
+     * @brief 渲染圆角边框（支持每边独立属性）
+     * @param box 盒模型定义
+     * @param border_widths 四边宽度 [top, right, bottom, left]
+     * @param border_styles 四边样式 [top, right, bottom, left]
+     * @param border_colors 四边颜色 [top, right, bottom, left]
+     * @param border_radius 圆角定义
+     * 
+     * 如果四边属性完全相同，使用 SkRRect 绘制完整圆角矩形。
+     * 如果四边属性不同，回退到分段绘制直边（不绘制圆角部分）。
+     */
+    void RenderRoundedBorderAdvanced(const Box& box,
+                                      const float border_widths[4],
+                                      const CSSBorderStyle border_styles[4],
+                                      const SkColor border_colors[4],
+                                      const CSSBorderRadius& border_radius);
+
+    /**
      * @brief 渲染阴影
      * @param box 盒模型定义
      * @param shadows 阴影列表

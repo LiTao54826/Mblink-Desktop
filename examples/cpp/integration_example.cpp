@@ -96,7 +96,7 @@ int main(int argc, char* argv[]) {
         event_loop.SetRenderCallback([&]() {
             // 渲染文档
             if (window->NeedsRepaint()) {
-                window->RenderDocument();
+                window->Render();
                 window->SwapBuffers();
             }
         });

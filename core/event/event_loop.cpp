@@ -405,17 +405,7 @@ void EventLoop::HandleMouseEventForDOM(const SDL_Event& event) {
         last_mouse_y = mouse_y;
     }
 
-    // 更新hover链（发送mouseover/mouseout事件并设置:hover伪类）
-    // 参考：RmlUi/Source/Core/Context.cpp - ProcessMouseMove
-    UpdateHoverChain(window_id, mouse_x, mouse_y);
-
-    // 处理mousedown/mouseup和click/dblclick事件
-    // 参考：W3C UI Events - dblclick事件需要在短时间内两次click同一元素
-    static std::shared_ptr<Element> last_mousedown_element;
-    static std::shared_ptr<Element> last_click_element;
-    static Uint64 last_click_time = 0;
-    static const Uint64 DOUBLE_CLICK_TIME_MS = 500;  // 500ms内的两次click算作dblclick
-
+    // ===== 性能优化：提前执行一次 Hit Testing，后续所有逻辑复用结果 =====
     // 使用缓存的渲染树进行 Hit Testing
     window->EnsureRenderTree();
     auto root_render = window->GetCachedRenderTree();
@@ -425,6 +415,19 @@ void EventLoop::HandleMouseEventForDOM(const SDL_Event& event) {
         // 使用渲染树进行 Hit Testing（使用逻辑坐标）
         hit_result = hit_testing.HitTestRenderObject(root_render, logical_x, logical_y, 0.0f, 0.0f);
     }
+
+    // 更新hover链（发送mouseover/mouseout事件并设置:hover伪类）
+    // 使用优化版本，复用已计算的 HitTestResult
+    UpdateHoverChainWithResult(window_id, mouse_x, mouse_y, hit_result);
+
+    // 处理mousedown/mouseup和click/dblclick事件
+    // 参考：W3C UI Events - dblclick事件需要在短时间内两次click同一元素
+    static std::shared_ptr<Element> last_mousedown_element;
+    static std::shared_ptr<Element> last_click_element;
+    static Uint64 last_click_time = 0;
+    static const Uint64 DOUBLE_CLICK_TIME_MS = 500;  // 500ms内的两次click算作dblclick
+
+    // 注意：hit_result 已在上面计算，直接使用
 
     // ===== 更新鼠标光标样式 =====
     // 根据悬停元素更新系统光标（符合浏览器行为）
@@ -1451,6 +1454,7 @@ int EventLoop::SDLButtonToMouseButton(Uint8 sdl_button) {
 }
 
 void EventLoop::UpdateHoverChain(Uint32 window_id, float mouse_x, float mouse_y) {
+    // 向后兼容版本：内部执行 Hit Testing 然后调用优化版本
     // 参考：RmlUi/Source/Core/Context.cpp - UpdateHoverChain
 
     // 获取窗口和文档
@@ -1465,7 +1469,7 @@ void EventLoop::UpdateHoverChain(Uint32 window_id, float mouse_x, float mouse_y)
         return;
     }
 
-    // 使用缓存的渲染树进行 Hit Testing（避免每次鼠标移动都重建）
+    // 使用缓存的渲染树进行 Hit Testing
     window->EnsureRenderTree();
     auto root_render = window->GetCachedRenderTree();
     if (!root_render) {
@@ -1479,6 +1483,21 @@ void EventLoop::UpdateHoverChain(Uint32 window_id, float mouse_x, float mouse_y)
 
     HitTesting hit_testing;
     HitTestResult hit_result = hit_testing.HitTestRenderObject(root_render, logical_x, logical_y, 0.0f, 0.0f);
+
+    // 调用优化版本
+    UpdateHoverChainWithResult(window_id, mouse_x, mouse_y, hit_result);
+}
+
+void EventLoop::UpdateHoverChainWithResult(Uint32 window_id, float mouse_x, float mouse_y, const HitTestResult& hit_result) {
+    // 性能优化版本：复用外部已计算的 Hit Testing 结果
+    // 避免在 HandleMouseEventForDOM 中重复执行 Hit Testing
+
+    // 获取窗口（用于触发重绘）
+    auto& window_manager = WindowManager::Instance();
+    auto window = window_manager.FindWindowByID(window_id);
+    if (!window) {
+        return;
+    }
 
     // 获取新的 hover 目标元素
     std::shared_ptr<Element> new_hover = hit_result.IsValid() ? hit_result.element : nullptr;

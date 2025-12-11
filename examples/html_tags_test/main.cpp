@@ -147,13 +147,13 @@ int main() {
                 break;
             }
         }
-        if (app_code.empty()) {
-            std::cerr << "Failed to load app.js from any path" << std::endl;
-            return 1;
-        }
-        runtime->Eval(app_code, "app.js");
+            if (app_code.empty()) {
+                std::cerr << "Failed to load app.js from any path" << std::endl;
+                return 1;
+            }
+            runtime->Eval(app_code, "app.js");
         std::cout << "  ✓ Application loaded and rendered" << std::endl;
-
+        
         // 将文档关联到窗口并显示
         window->SetDocument(document);
         window->Show();
@@ -180,7 +180,7 @@ int main() {
         // 设置渲染回调
         event_loop.SetRenderCallback([window]() {
             if (window->NeedsRepaint()) {
-                window->RenderDocument();
+                window->Render();
                 window->SwapBuffers();
             }
         });

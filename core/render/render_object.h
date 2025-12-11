@@ -1,11 +1,11 @@
 /**
  * @file render_object.h
  * @brief 渲染对象 - DOM 到渲染树的桥梁
- * 
+ *
  * 功能：
  * - 表示渲染树中的节点
  * - 存储计算后的样式
- * - 存储布局信息
+ * - 存储布局信息（统一布局树和渲染树）
  * - 管理渲染子树
  */
 
@@ -21,6 +21,17 @@
 #include <unordered_map>
 #include <vector>
 #include "include/core/SkRect.h"
+
+// 布局类型（从 layout 模块引入）
+#include "../layout/types/style.h"
+#include "../layout/types/layout.h"
+#include "../layout/types/cache.h"
+#include "../layout/types/traits.h"
+
+// 布局样式类型（Block、Flex、Grid）
+#include "../layout/block_layout.h"
+#include "../layout/flex_layout.h"
+#include "../layout/grid/grid.h"
 
 // 前向声明 Skia 类
 class SkCanvas;
@@ -408,6 +419,101 @@ public:
         needs_paint_ = false;
     }
 
+    // =========================================================================
+    // 布局树统一：布局相关公共方法
+    // =========================================================================
+
+    /**
+     * @brief 获取布局样式（用于布局计算）
+     */
+    Style& GetLayoutStyle() { return layout_style_; }
+    const Style& GetLayoutStyle() const { return layout_style_; }
+
+    /**
+     * @brief 获取 Block 容器样式
+     */
+    BlockContainerStyle& GetBlockContainerStyle() { return block_container_style_; }
+    const BlockContainerStyle& GetBlockContainerStyle() const { return block_container_style_; }
+
+    /**
+     * @brief 获取 Block 项目样式
+     */
+    BlockItemStyle& GetBlockItemStyle() { return block_item_style_; }
+    const BlockItemStyle& GetBlockItemStyle() const { return block_item_style_; }
+
+    /**
+     * @brief 获取 Flexbox 容器样式
+     */
+    FlexboxContainerStyle& GetFlexContainerStyle() { return flex_container_style_; }
+    const FlexboxContainerStyle& GetFlexContainerStyle() const { return flex_container_style_; }
+
+    /**
+     * @brief 获取 Flexbox 项目样式
+     */
+    FlexboxItemStyle& GetFlexItemStyle() { return flex_item_style_; }
+    const FlexboxItemStyle& GetFlexItemStyle() const { return flex_item_style_; }
+
+    /**
+     * @brief 获取 Grid 容器样式
+     */
+    GridContainerStyle& GetGridContainerStyle() { return grid_container_style_; }
+    const GridContainerStyle& GetGridContainerStyle() const { return grid_container_style_; }
+
+    /**
+     * @brief 获取 Grid 项目样式
+     */
+    GridItemStyle& GetGridItemStyle() { return grid_item_style_; }
+    const GridItemStyle& GetGridItemStyle() const { return grid_item_style_; }
+
+    /**
+     * @brief 获取布局缓存
+     */
+    Cache& GetLayoutCache() { return layout_cache_; }
+    const Cache& GetLayoutCache() const { return layout_cache_; }
+
+    /**
+     * @brief 清除布局缓存
+     */
+    void ClearLayoutCache() { layout_cache_.Clear(); }
+
+    /**
+     * @brief 获取布局输出
+     */
+    LayoutOutput& GetLayoutOutput() { return layout_output_; }
+    const LayoutOutput& GetLayoutOutput() const { return layout_output_; }
+
+    /**
+     * @brief 获取未舍入布局
+     */
+    struct Layout& GetUnroundedLayout() { return unrounded_layout_; }
+    const struct Layout& GetUnroundedLayout() const { return unrounded_layout_; }
+
+    /**
+     * @brief 检查是否为 IFC 容器
+     */
+    bool IsIFCContainer() const { return is_ifc_container_; }
+
+    /**
+     * @brief 设置 IFC 容器标记
+     */
+    void SetIsIFCContainer(bool value) { is_ifc_container_ = value; }
+
+    /**
+     * @brief 从 ComputedStyle 更新布局样式
+     * 当 ComputedStyle 改变时调用此方法同步布局样式
+     */
+    void UpdateLayoutStyle();
+
+    /**
+     * @brief 检查布局样式是否需要更新
+     */
+    bool IsLayoutStyleDirty() const { return layout_style_dirty_; }
+
+    /**
+     * @brief 标记布局样式需要更新
+     */
+    void MarkLayoutStyleDirty() { layout_style_dirty_ = true; }
+
     /**
      * @brief 获取边界框（用于脏区域计算）
      * @return 屏幕空间的边界矩形
@@ -555,6 +661,16 @@ public:
     static float GetViewportHeight() { return viewport_height_; }
 
     /**
+     * @brief 重置绘制统计（每帧开始时调用）
+     */
+    static void ResetPaintStats();
+
+    /**
+     * @brief 打印绘制统计（验证视口剔除效果）
+     */
+    static void PrintPaintStats();
+
+    /**
      * @brief 检查当前元素是否是 body 元素
      */
     bool IsBodyElement() const;
@@ -595,6 +711,40 @@ protected:
     ScrollbarHitArea dragging_scrollbar_ = ScrollbarHitArea::None;
     float drag_start_scroll_ = 0.0f;      // 拖动开始时的滚动位置
     float drag_start_mouse_ = 0.0f;       // 拖动开始时的鼠标位置
+
+    // =========================================================================
+    // 布局树统一：以下字段从 NativeLayoutEngine::LayoutNode 移入
+    // =========================================================================
+
+    /// 布局样式（从 ComputedStyle 转换而来，用于布局计算）
+    Style layout_style_;
+
+    /// Block 布局样式
+    BlockContainerStyle block_container_style_;
+    BlockItemStyle block_item_style_;
+
+    /// Flexbox 布局样式
+    FlexboxContainerStyle flex_container_style_;
+    FlexboxItemStyle flex_item_style_;
+
+    /// Grid 布局样式
+    GridContainerStyle grid_container_style_;
+    GridItemStyle grid_item_style_;
+
+    /// 布局缓存（避免重复计算）
+    Cache layout_cache_;
+
+    /// 布局输出结果
+    LayoutOutput layout_output_;
+
+    /// 最终布局（未舍入）
+    struct Layout unrounded_layout_;
+
+    /// 是否为 IFC（Inline Formatting Context）容器
+    bool is_ifc_container_ = false;
+
+    /// 布局样式是否已更新
+    bool layout_style_dirty_ = true;
 };
 
 // 前向声明

@@ -556,7 +556,7 @@ private:
     std::vector<SkRect> dirty_rects_;  // 脏区域列表（用于局部重绘）
 
     // 增量渲染控制开关
-    bool enable_incremental_render_ = false;  // 暂时禁用增量渲染，使用全屏重绘调试
+    bool enable_incremental_render_ = true;  // 启用增量渲染（局部裁剪）
     bool force_full_repaint_ = false;         // 强制全屏重绘（调试用，但保留渲染树缓存）
 
     // Phase 3: 渲染树增量更新器
