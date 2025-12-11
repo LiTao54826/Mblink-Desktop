@@ -119,6 +119,168 @@ static JSValue JSElement_set_className(JSContext* ctx, JSValueConst this_val, JS
     return JS_UNDEFINED;
 }
 
+// classList getter - 返回 DOMTokenList 对象
+static JSValue JSElement_get_classList(JSContext* ctx, JSValueConst this_val, int magic) {
+    auto* data = static_cast<JSElementData*>(JS_GetOpaque(this_val, js_element_class_id));
+    if (!data || !data->element) {
+        return JS_NULL;
+    }
+
+    // 创建 classList 对象
+    JSValue classList = JS_NewObject(ctx);
+    
+    // add(className) 方法
+    JSValue add_func = JS_NewCFunction(ctx, [](JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) -> JSValue {
+        // 从闭包中获取 element
+        JSValue element_val = JS_GetPropertyStr(ctx, this_val, "__element__");
+        auto* data = static_cast<JSElementData*>(JS_GetOpaque(element_val, js_element_class_id));
+        JS_FreeValue(ctx, element_val);
+        
+        if (!data || !data->element || argc < 1) {
+            return JS_UNDEFINED;
+        }
+        
+        const char* className = JS_ToCString(ctx, argv[0]);
+        if (!className) {
+            return JS_UNDEFINED;
+        }
+        
+        std::string currentClasses = data->element->GetClassName();
+        std::string newClass = className;
+        
+        // 检查是否已存在
+        if (currentClasses.find(newClass) == std::string::npos) {
+            if (!currentClasses.empty()) {
+                currentClasses += " ";
+            }
+            currentClasses += newClass;
+            data->element->SetClassName(currentClasses);
+        }
+        
+        JS_FreeCString(ctx, className);
+        return JS_UNDEFINED;
+    }, "__add__", 1);
+    
+    // remove(className) 方法
+    JSValue remove_func = JS_NewCFunction(ctx, [](JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) -> JSValue {
+        JSValue element_val = JS_GetPropertyStr(ctx, this_val, "__element__");
+        auto* data = static_cast<JSElementData*>(JS_GetOpaque(element_val, js_element_class_id));
+        JS_FreeValue(ctx, element_val);
+        
+        if (!data || !data->element || argc < 1) {
+            return JS_UNDEFINED;
+        }
+        
+        const char* className = JS_ToCString(ctx, argv[0]);
+        if (!className) {
+            return JS_UNDEFINED;
+        }
+        
+        std::string currentClasses = data->element->GetClassName();
+        std::string toRemove = className;
+        size_t pos = currentClasses.find(toRemove);
+        
+        if (pos != std::string::npos) {
+            // 移除类名
+            currentClasses.erase(pos, toRemove.length());
+            // 清理多余空格
+            while (currentClasses.find("  ") != std::string::npos) {
+                currentClasses.replace(currentClasses.find("  "), 2, " ");
+            }
+            if (!currentClasses.empty() && currentClasses[0] == ' ') {
+                currentClasses = currentClasses.substr(1);
+            }
+            if (!currentClasses.empty() && currentClasses.back() == ' ') {
+                currentClasses.pop_back();
+            }
+            data->element->SetClassName(currentClasses);
+        }
+        
+        JS_FreeCString(ctx, className);
+        return JS_UNDEFINED;
+    }, "__remove__", 1);
+    
+    // toggle(className) 方法
+    JSValue toggle_func = JS_NewCFunction(ctx, [](JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) -> JSValue {
+        JSValue element_val = JS_GetPropertyStr(ctx, this_val, "__element__");
+        auto* data = static_cast<JSElementData*>(JS_GetOpaque(element_val, js_element_class_id));
+        JS_FreeValue(ctx, element_val);
+        
+        if (!data || !data->element || argc < 1) {
+            return JS_FALSE;
+        }
+        
+        const char* className = JS_ToCString(ctx, argv[0]);
+        if (!className) {
+            return JS_FALSE;
+        }
+        
+        std::string currentClasses = data->element->GetClassName();
+        std::string toToggle = className;
+        bool exists = currentClasses.find(toToggle) != std::string::npos;
+        
+        if (exists) {
+            // 移除
+            size_t pos = currentClasses.find(toToggle);
+            currentClasses.erase(pos, toToggle.length());
+            while (currentClasses.find("  ") != std::string::npos) {
+                currentClasses.replace(currentClasses.find("  "), 2, " ");
+            }
+            if (!currentClasses.empty() && currentClasses[0] == ' ') {
+                currentClasses = currentClasses.substr(1);
+            }
+            if (!currentClasses.empty() && currentClasses.back() == ' ') {
+                currentClasses.pop_back();
+            }
+            data->element->SetClassName(currentClasses);
+        } else {
+            // 添加
+            if (!currentClasses.empty()) {
+                currentClasses += " ";
+            }
+            currentClasses += toToggle;
+            data->element->SetClassName(currentClasses);
+        }
+        
+        JS_FreeCString(ctx, className);
+        return JS_NewBool(ctx, !exists);  // 返回切换后的状态
+    }, "__toggle__", 1);
+    
+    // contains(className) 方法
+    JSValue contains_func = JS_NewCFunction(ctx, [](JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) -> JSValue {
+        JSValue element_val = JS_GetPropertyStr(ctx, this_val, "__element__");
+        auto* data = static_cast<JSElementData*>(JS_GetOpaque(element_val, js_element_class_id));
+        JS_FreeValue(ctx, element_val);
+        
+        if (!data || !data->element || argc < 1) {
+            return JS_FALSE;
+        }
+        
+        const char* className = JS_ToCString(ctx, argv[0]);
+        if (!className) {
+            return JS_FALSE;
+        }
+        
+        std::string currentClasses = data->element->GetClassName();
+        std::string toCheck = className;
+        bool exists = currentClasses.find(toCheck) != std::string::npos;
+        
+        JS_FreeCString(ctx, className);
+        return JS_NewBool(ctx, exists);
+    }, "__contains__", 1);
+    
+    // 将 element 引用存储到 classList 对象
+    JS_SetPropertyStr(ctx, classList, "__element__", JS_DupValue(ctx, this_val));
+    
+    // 设置方法
+    JS_SetPropertyStr(ctx, classList, "add", add_func);
+    JS_SetPropertyStr(ctx, classList, "remove", remove_func);
+    JS_SetPropertyStr(ctx, classList, "toggle", toggle_func);
+    JS_SetPropertyStr(ctx, classList, "contains", contains_func);
+    
+    return classList;
+}
+
 // style getter
 static JSValue JSElement_get_style(JSContext* ctx, JSValueConst this_val, int magic) {
     auto* data = static_cast<JSElementData*>(JS_GetOpaque(this_val, js_element_class_id));
@@ -292,10 +454,7 @@ static JSValue JSElement_getAttribute(JSContext* ctx, JSValueConst this_val, int
     std::string value = data->element->GetAttribute(name);
     JS_FreeCString(ctx, name);
 
-    if (value.empty()) {
-        return JS_NULL;
-    }
-
+    // Web 标准：不存在的属性返回空字符串，而不是 null
     return JS_NewString(ctx, value.c_str());
 }
 
@@ -463,6 +622,7 @@ static const JSCFunctionListEntry js_element_proto_funcs[] = {
     JS_CGETSET_MAGIC_DEF("tagName", JSElement_get_tagName, nullptr, 0),
     JS_CGETSET_MAGIC_DEF("id", JSElement_get_id, JSElement_set_id, 0),
     JS_CGETSET_MAGIC_DEF("className", JSElement_get_className, JSElement_set_className, 0),
+    JS_CGETSET_MAGIC_DEF("classList", JSElement_get_classList, nullptr, 0),
     JS_CGETSET_MAGIC_DEF("style", JSElement_get_style, nullptr, 0),
     JS_CGETSET_MAGIC_DEF("value", JSElement_get_value, JSElement_set_value, 0),
     JS_CGETSET_MAGIC_DEF("checked", JSElement_get_checked, JSElement_set_checked, 0),
