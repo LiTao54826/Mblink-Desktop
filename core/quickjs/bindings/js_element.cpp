@@ -6,13 +6,17 @@
 #include "js_element.h"
 #include "js_node.h"
 #include "js_style_declaration.h"
-#include "js_event.h"
+#include "js_element.h"
 #include "core/dom/element.h"
 #include "core/dom/document.h"
 #include "core/dom/html_input_element.h"
 #include "core/dom/html_textarea_element.h"
 #include "core/dom/html_select_element.h"
+#include "core/dom/selector_engine.h"
 #include "core/quickjs/dom_binding_map.h"
+#include "js_node.h"
+#include "js_style_declaration.h"
+#include "js_event.h"
 #include "core/quickjs/js_value_wrapper.h"
 #include <memory>
 #include <string>
@@ -317,6 +321,63 @@ static JSValue JSElement_removeAttribute(JSContext* ctx, JSValueConst this_val, 
     return JS_UNDEFINED;
 }
 
+// querySelector(selector)
+static JSValue JSElement_querySelector(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) {
+    auto* data = static_cast<JSElementData*>(JS_GetOpaque(this_val, js_element_class_id));
+    if (!data || !data->element) {
+        return JS_NULL;
+    }
+
+    if (argc < 1) {
+        return JS_ThrowTypeError(ctx, "querySelector requires 1 argument");
+    }
+
+    const char* selector = JS_ToCString(ctx, argv[0]);
+    if (!selector) {
+        return JS_NULL;
+    }
+
+    // 使用 SelectorEngine 查询
+    auto result = SelectorEngine::QuerySelector(data->element, selector);
+    JS_FreeCString(ctx, selector);
+
+    if (!result) {
+        return JS_NULL;
+    }
+
+    return WrapElement(ctx, result);
+}
+
+// querySelectorAll(selector)
+static JSValue JSElement_querySelectorAll(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) {
+    auto* data = static_cast<JSElementData*>(JS_GetOpaque(this_val, js_element_class_id));
+    if (!data || !data->element) {
+        return JS_NewArray(ctx);
+    }
+
+    if (argc < 1) {
+        return JS_ThrowTypeError(ctx, "querySelectorAll requires 1 argument");
+    }
+
+    const char* selector = JS_ToCString(ctx, argv[0]);
+    if (!selector) {
+        return JS_NewArray(ctx);
+    }
+
+    // 使用 SelectorEngine 查询所有匹配元素
+    auto results = SelectorEngine::QuerySelectorAll(data->element, selector);
+    JS_FreeCString(ctx, selector);
+
+    // 创建 JavaScript 数组
+    JSValue array = JS_NewArray(ctx);
+    for (size_t i = 0; i < results.size(); i++) {
+        JSValue elem = WrapElement(ctx, results[i]);
+        JS_SetPropertyUint32(ctx, array, static_cast<uint32_t>(i), elem);
+    }
+
+    return array;
+}
+
 // addEventListener(type, listener, options?)
 static JSValue JSElement_addEventListener(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) {
     auto* data = static_cast<JSElementData*>(JS_GetOpaque(this_val, js_element_class_id));
@@ -409,6 +470,8 @@ static const JSCFunctionListEntry js_element_proto_funcs[] = {
     JS_CFUNC_DEF("setAttribute", 2, JSElement_setAttribute),
     JS_CFUNC_DEF("getAttribute", 1, JSElement_getAttribute),
     JS_CFUNC_DEF("removeAttribute", 1, JSElement_removeAttribute),
+    JS_CFUNC_DEF("querySelector", 1, JSElement_querySelector),
+    JS_CFUNC_DEF("querySelectorAll", 1, JSElement_querySelectorAll),
     JS_CFUNC_DEF("addEventListener", 3, JSElement_addEventListener),
 };
 
