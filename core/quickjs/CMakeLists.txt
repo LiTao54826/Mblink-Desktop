@@ -3,11 +3,19 @@
 set(QUICKJS_RUNTIME_SOURCES
     quickjs_runtime.cpp
     window_bindings.cpp
+    document_bindings_impl.cpp
+    dom_binding_map.cpp
+    bindings/js_node.cpp
+    bindings/js_element.cpp
 )
 
 set(QUICKJS_RUNTIME_HEADERS
     quickjs_runtime.h
     window_bindings.h
+    js_value_wrapper.h
+    dom_binding_map.h
+    bindings/js_node.h
+    bindings/js_element.h
 )
 
 add_library(lightui_quickjs STATIC ${QUICKJS_RUNTIME_SOURCES})

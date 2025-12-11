@@ -112,5 +112,12 @@ private:
     std::shared_ptr<Document> document_;
 };
 
+/**
+ * @brief 绑定 Document API（使用 C API 直接返回 DOM 对象）
+ * @param ctx QuickJS 上下文
+ * @param window 窗口对象指针
+ */
+void BindDocumentAPIs(JSContext* ctx, Window* window);
+
 } // namespace lightui
 

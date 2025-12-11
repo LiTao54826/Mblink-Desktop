@@ -4,6 +4,8 @@
  */
 
 #include "window_bindings.h"
+#include "bindings/js_node.h"
+#include "bindings/js_element.h"
 #include <iostream>
 
 namespace lightui {
@@ -19,8 +21,15 @@ WindowBindings::WindowBindings(QuickJSRuntime* runtime,
 }
 
 void WindowBindings::InitBindings() {
+    // 初始化 DOM 绑定
+    bindings::InitNodeBinding(runtime_->GetContext());
+    bindings::InitElementBinding(runtime_->GetContext());
+    
+    // 绑定 Document API（使用新的 C API 实现）
+    BindDocumentAPIs(runtime_->GetContext(), window_.get());
+    
     BindWindowObject();
-    BindDocumentObject();
+    // BindDocumentObject();  // 暂时注释掉旧的实现
     BindTimers();
     BindEventListeners();
 }
