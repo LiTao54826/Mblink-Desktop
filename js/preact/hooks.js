@@ -19,7 +19,7 @@ function getRAF() {
         return requestAnimationFrame;
     }
     // 回退到 setTimeout
-    return function(callback) {
+    return function (callback) {
         return setTimeout(callback, 16);
     };
 }
@@ -84,15 +84,15 @@ function getHookState(index) {
     if (!currentComponent) {
         throw new Error('Hooks can only be called inside function components');
     }
-    
+
     if (!currentComponent.__hooks) {
         currentComponent.__hooks = [];
     }
-    
+
     if (!currentComponent.__hooks[index]) {
         currentComponent.__hooks[index] = {};
     }
-    
+
     return currentComponent.__hooks[index];
 }
 
@@ -138,14 +138,14 @@ function useState(initialValue) {
  */
 function useEffect(effect, deps) {
     const hookState = getHookState(currentHookIndex++);
-    
-    const hasChanged = !hookState.deps || 
-        !deps || 
+
+    const hasChanged = !hookState.deps ||
+        !deps ||
         deps.some((dep, i) => dep !== hookState.deps[i]);
-    
+
     if (hasChanged) {
         hookState.deps = deps;
-        
+
         // Schedule effect to run after render
         if (typeof setTimeout !== 'undefined') {
             setTimeout(() => {
@@ -171,14 +171,14 @@ function useEffect(effect, deps) {
  */
 function useLayoutEffect(effect, deps) {
     const hookState = getHookState(currentHookIndex++);
-    
-    const hasChanged = !hookState.deps || 
-        !deps || 
+
+    const hasChanged = !hookState.deps ||
+        !deps ||
         deps.some((dep, i) => dep !== hookState.deps[i]);
-    
+
     if (hasChanged) {
         hookState.deps = deps;
-        
+
         // Run immediately (synchronous)
         if (hookState.cleanup) {
             hookState.cleanup();
@@ -194,11 +194,11 @@ function useLayoutEffect(effect, deps) {
  */
 function useRef(initialValue) {
     const hookState = getHookState(currentHookIndex++);
-    
+
     if (!('ref' in hookState)) {
         hookState.ref = { current: initialValue };
     }
-    
+
     return hookState.ref;
 }
 
@@ -210,16 +210,16 @@ function useRef(initialValue) {
  */
 function useMemo(factory, deps) {
     const hookState = getHookState(currentHookIndex++);
-    
-    const hasChanged = !hookState.deps || 
-        !deps || 
+
+    const hasChanged = !hookState.deps ||
+        !deps ||
         deps.some((dep, i) => dep !== hookState.deps[i]);
-    
+
     if (hasChanged) {
         hookState.deps = deps;
         hookState.value = factory();
     }
-    
+
     return hookState.value;
 }
 
@@ -242,7 +242,7 @@ function useContext(context) {
     if (!currentComponent) {
         throw new Error('useContext can only be called inside function components');
     }
-    
+
     // Simple context implementation
     return context._currentValue;
 }
@@ -295,7 +295,7 @@ function createContext(defaultValue) {
             return props.children(context._currentValue);
         }
     };
-    
+
     return context;
 }
 
@@ -315,3 +315,6 @@ var PreactHooks = {
     scheduleUpdate: scheduleUpdate,
     flushUpdates: flushUpdates
 };
+
+// 添加小写别名以提高兼容性
+var preactHooks = PreactHooks;

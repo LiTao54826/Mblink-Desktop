@@ -212,7 +212,7 @@ function createComponentDOM(vnode) {
     var component = vnode.__component;
 
     // Set up rerender function using Virtual DOM diffing
-    component.__rerender = function() {
+    component.__rerender = function () {
         try {
             // Set current component for hooks
             if (typeof PreactHooks !== 'undefined' && PreactHooks.setCurrentComponent) {
@@ -326,7 +326,7 @@ function getElementVNode(element) {
  * This allows us to update the handler without removing/adding listeners
  */
 function createStableHandler(elementId, eventKey) {
-    return function(event) {
+    return function (event) {
         var data = __elementDataStore[elementId];
         if (data && data.handlers && data.handlers[eventKey]) {
             data.handlers[eventKey](event);
@@ -559,7 +559,7 @@ function diffComponent(oldVNode, newVNode, parentDOM, oldDOM) {
     component.__renderedVNode = newRenderedVNode;
 
     // Update rerender function - use component.__vnode to get latest props
-    component.__rerender = function() {
+    component.__rerender = function () {
         // console.log('[Preact __rerender] Starting rerender');
         if (typeof PreactHooks !== 'undefined' && PreactHooks.setCurrentComponent) {
             PreactHooks.setCurrentComponent(component);
@@ -774,14 +774,14 @@ class Component {
         this.props = props;
         this.state = {};
     }
-    
+
     setState(update) {
         if (typeof update === 'function') {
             this.state = { ...this.state, ...update(this.state, this.props) };
         } else {
             this.state = { ...this.state, ...update };
         }
-        
+
         // Trigger re-render
         if (this.__container && this.__vnode) {
             const newVNode = this.render();
@@ -789,7 +789,7 @@ class Component {
             this.__vnode = newVNode;
         }
     }
-    
+
     render() {
         return null;
     }
@@ -806,5 +806,8 @@ var Preact = {
     cloneElement: cloneElement,
     isValidElement: isValidElement
 };
+
+// 添加小写别名以提高兼容性
+var preact = Preact;
 
 // Note: For ES6 module usage, use js/preact/preact.mjs
