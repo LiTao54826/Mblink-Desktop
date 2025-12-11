@@ -4,6 +4,7 @@
  */
 
 #include "js_node.h"
+#include "js_element.h"
 #include "core/quickjs/dom_binding_map.h"
 #include "core/dom/element.h"
 #include "core/dom/text.h"
@@ -22,6 +23,12 @@ struct JSNodeData {
 
 static JSClassID js_node_class_id = 0;
 
+// ========== 公共函数 ==========
+
+JSClassID GetNodeClassID() {
+    return js_node_class_id;
+}
+
 // ========== 析构函数 ==========
 
 static void JSNodeFinalizer(JSRuntime* rt, JSValue val) {
@@ -39,12 +46,13 @@ static void JSNodeFinalizer(JSRuntime* rt, JSValue val) {
 
 // parentNode
 static JSValue JSNode_get_parentNode(JSContext* ctx, JSValueConst this_val, int magic) {
-    auto* data = static_cast<JSNodeData*>(JS_GetOpaque(this_val, js_node_class_id));
-    if (!data || !data->node) {
+    // 支持 Element 对象（Element 继承自 Node）
+    auto node = UnwrapNode(ctx, this_val);
+    if (!node) {
         return JS_NULL;
     }
 
-    auto parent = data->node->GetParentNode();
+    auto parent = node->GetParentNode();
     if (!parent) {
         return JS_NULL;
     }
@@ -52,14 +60,14 @@ static JSValue JSNode_get_parentNode(JSContext* ctx, JSValueConst this_val, int 
     return WrapNode(ctx, parent);
 }
 
-// firstChild
+// firstChild  
 static JSValue JSNode_get_firstChild(JSContext* ctx, JSValueConst this_val, int magic) {
-    auto* data = static_cast<JSNodeData*>(JS_GetOpaque(this_val, js_node_class_id));
-    if (!data || !data->node) {
+    auto node = UnwrapNode(ctx, this_val);
+    if (!node) {
         return JS_NULL;
     }
 
-    auto first_child = data->node->GetFirstChild();
+    auto first_child = node->GetFirstChild();
     if (!first_child) {
         return JS_NULL;
     }
@@ -69,12 +77,12 @@ static JSValue JSNode_get_firstChild(JSContext* ctx, JSValueConst this_val, int 
 
 // nextSibling
 static JSValue JSNode_get_nextSibling(JSContext* ctx, JSValueConst this_val, int magic) {
-    auto* data = static_cast<JSNodeData*>(JS_GetOpaque(this_val, js_node_class_id));
-    if (!data || !data->node) {
+    auto node = UnwrapNode(ctx, this_val);
+    if (!node) {
         return JS_NULL;
     }
 
-    auto next_sibling = data->node->GetNextSibling();
+    auto next_sibling = node->GetNextSibling();
     if (!next_sibling) {
         return JS_NULL;
     }
@@ -84,19 +92,19 @@ static JSValue JSNode_get_nextSibling(JSContext* ctx, JSValueConst this_val, int
 
 // textContent getter
 static JSValue JSNode_get_textContent(JSContext* ctx, JSValueConst this_val, int magic) {
-    auto* data = static_cast<JSNodeData*>(JS_GetOpaque(this_val, js_node_class_id));
-    if (!data || !data->node) {
+    auto node = UnwrapNode(ctx, this_val);
+    if (!node) {
         return JS_NULL;
     }
 
-    std::string text = data->node->GetTextContent();
+    std::string text = node->GetTextContent();
     return JS_NewString(ctx, text.c_str());
 }
 
 // textContent setter
 static JSValue JSNode_set_textContent(JSContext* ctx, JSValueConst this_val, JSValue val, int magic) {
-    auto* data = static_cast<JSNodeData*>(JS_GetOpaque(this_val, js_node_class_id));
-    if (!data || !data->node) {
+    auto node = UnwrapNode(ctx, this_val);
+    if (!node) {
         return JS_UNDEFINED;
     }
 
@@ -105,7 +113,7 @@ static JSValue JSNode_set_textContent(JSContext* ctx, JSValueConst this_val, JSV
         return JS_EXCEPTION;
     }
 
-    data->node->SetTextContent(str);
+    node->SetTextContent(str);
     JS_FreeCString(ctx, str);
 
     return JS_UNDEFINED;
@@ -115,8 +123,8 @@ static JSValue JSNode_set_textContent(JSContext* ctx, JSValueConst this_val, JSV
 
 // appendChild(child)
 static JSValue JSNode_appendChild(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) {
-    auto* data = static_cast<JSNodeData*>(JS_GetOpaque(this_val, js_node_class_id));
-    if (!data || !data->node) {
+    auto node = UnwrapNode(ctx, this_val);
+    if (!node) {
         return JS_EXCEPTION;
     }
 
@@ -130,7 +138,7 @@ static JSValue JSNode_appendChild(JSContext* ctx, JSValueConst this_val, int arg
     }
 
     try {
-        data->node->AppendChild(child);
+        node->AppendChild(child);
         return JS_DupValue(ctx, argv[0]);
     } catch (const std::exception& e) {
         return JS_ThrowInternalError(ctx, "appendChild failed: %s", e.what());
@@ -139,8 +147,8 @@ static JSValue JSNode_appendChild(JSContext* ctx, JSValueConst this_val, int arg
 
 // removeChild(child)
 static JSValue JSNode_removeChild(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) {
-    auto* data = static_cast<JSNodeData*>(JS_GetOpaque(this_val, js_node_class_id));
-    if (!data || !data->node) {
+    auto node = UnwrapNode(ctx, this_val);
+    if (!node) {
         return JS_EXCEPTION;
     }
 
@@ -154,7 +162,7 @@ static JSValue JSNode_removeChild(JSContext* ctx, JSValueConst this_val, int arg
     }
 
     try {
-        data->node->RemoveChild(child);
+        node->RemoveChild(child);
         return JS_DupValue(ctx, argv[0]);
     } catch (const std::exception& e) {
         return JS_ThrowInternalError(ctx, "removeChild failed: %s", e.what());
@@ -163,8 +171,8 @@ static JSValue JSNode_removeChild(JSContext* ctx, JSValueConst this_val, int arg
 
 // insertBefore(newNode, refNode)
 static JSValue JSNode_insertBefore(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) {
-    auto* data = static_cast<JSNodeData*>(JS_GetOpaque(this_val, js_node_class_id));
-    if (!data || !data->node) {
+    auto node = UnwrapNode(ctx, this_val);
+    if (!node) {
         return JS_EXCEPTION;
     }
 
@@ -186,7 +194,7 @@ static JSValue JSNode_insertBefore(JSContext* ctx, JSValueConst this_val, int ar
     }
 
     try {
-        data->node->InsertBefore(new_node, ref_node);
+        node->InsertBefore(new_node, ref_node);
         return JS_DupValue(ctx, argv[0]);
     } catch (const std::exception& e) {
         return JS_ThrowInternalError(ctx, "insertBefore failed: %s", e.what());
@@ -195,8 +203,8 @@ static JSValue JSNode_insertBefore(JSContext* ctx, JSValueConst this_val, int ar
 
 // replaceChild(newNode, oldNode)
 static JSValue JSNode_replaceChild(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) {
-    auto* data = static_cast<JSNodeData*>(JS_GetOpaque(this_val, js_node_class_id));
-    if (!data || !data->node) {
+    auto node = UnwrapNode(ctx, this_val);
+    if (!node) {
         return JS_EXCEPTION;
     }
 
@@ -215,7 +223,7 @@ static JSValue JSNode_replaceChild(JSContext* ctx, JSValueConst this_val, int ar
     }
 
     try {
-        data->node->ReplaceChild(new_node, old_node);
+        node->ReplaceChild(new_node, old_node);
         return JS_DupValue(ctx, argv[1]);
     } catch (const std::exception& e) {
         return JS_ThrowInternalError(ctx, "replaceChild failed: %s", e.what());
@@ -291,11 +299,20 @@ JSValue WrapNode(JSContext* ctx, std::shared_ptr<Node> node) {
 }
 
 std::shared_ptr<Node> UnwrapNode(JSContext* ctx, JSValue value) {
-    auto* data = static_cast<JSNodeData*>(JS_GetOpaque(value, js_node_class_id));
-    if (!data) {
-        return nullptr;
+    // 首先尝试作为 Node
+    auto* node_data = static_cast<JSNodeData*>(JS_GetOpaque(value, js_node_class_id));
+    if (node_data) {
+        return node_data->node;
     }
-    return data->node;
+    
+    // 如果不是 Node，尝试作为 Element（Element 继承自 Node）
+    auto element = UnwrapElement(ctx, value);
+    if (element) {
+        // Element 是 Node 的子类，可强直接返回
+        return std::static_pointer_cast<Node>(element);
+    }
+    
+    return nullptr;
 }
 
 } // namespace bindings

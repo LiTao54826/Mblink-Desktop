@@ -19,6 +19,12 @@ namespace lightui {
 namespace bindings {
 
 /**
+ * @brief 获取 Node 的 ClassID（用于设置继承关系）
+ * @return Node 的 JSClassID
+ */
+JSClassID GetNodeClassID();
+
+/**
  * @brief 初始化 Node 类的 JavaScript 绑定
  * @param ctx QuickJS 上下文
  */

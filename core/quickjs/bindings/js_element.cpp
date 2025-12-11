@@ -314,10 +314,18 @@ void InitElementBinding(JSContext* ctx) {
 
     // 创建原型对象
     JSValue proto = JS_NewObject(ctx);
+    
+    // 设置原型链：Element.prototype.__proto__ = Node.prototype
+    // 这样 Element 就能继承 Node 的所有属性和方法（firstChild, nextSibling等）
+    JSValue node_proto = JS_GetClassProto(ctx, GetNodeClassID());
+    if (!JS_IsNull(node_proto)) {
+        JS_SetPrototype(ctx, proto, node_proto);
+        JS_FreeValue(ctx, node_proto);
+    }
+    
+    // 设置 Element 自己的属性和方法
     JS_SetPropertyFunctionList(ctx, proto, js_element_proto_funcs, 
                                sizeof(js_element_proto_funcs) / sizeof(js_element_proto_funcs[0]));
-
-    // TODO: 设置 Element 的原型继承自 Node
 
     // 设置类的原型
     JS_SetClassProto(ctx, js_element_class_id, proto);
