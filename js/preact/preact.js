@@ -212,7 +212,7 @@ function createComponentDOM(vnode) {
     var component = vnode.__component;
 
     // Set up rerender function using Virtual DOM diffing
-    component.__rerender = function() {
+    component.__rerender = function () {
         try {
             // Set current component for hooks
             if (typeof PreactHooks !== 'undefined' && PreactHooks.setCurrentComponent) {
@@ -230,10 +230,7 @@ function createComponentDOM(vnode) {
 
             // Get old DOM and parent
             var oldDOM = component.__dom;
-            if (!oldDOM) {
-                return;
-            }
-            if (!oldDOM.parentNode) {
+            if (!oldDOM || !oldDOM.parentNode) {
                 return;
             }
 
@@ -326,7 +323,7 @@ function getElementVNode(element) {
  * This allows us to update the handler without removing/adding listeners
  */
 function createStableHandler(elementId, eventKey) {
-    return function(event) {
+    return function (event) {
         var data = __elementDataStore[elementId];
         if (data && data.handlers && data.handlers[eventKey]) {
             data.handlers[eventKey](event);
@@ -392,13 +389,13 @@ function setDOMProps(element, oldProps, newProps, isSVG) {
             if (!listeners[prop]) {
                 // Create stable wrapper and add listener
                 var stableHandler = createStableHandler(elementId, prop);
-                var listenerId = element.addEventListener(evtName, stableHandler);
-                listeners[prop] = listenerId;
+                element.addEventListener(evtName, stableHandler);
+                listeners[prop] = stableHandler;  // Store the wrapper function itself
 
                 if (evtName === 'change') {
                     var stableInputHandler = createStableHandler(elementId, prop + '_input');
-                    var inputListenerId = element.addEventListener('input', stableInputHandler);
-                    listeners[prop + '_input'] = inputListenerId;
+                    element.addEventListener('input', stableInputHandler);
+                    listeners[prop + '_input'] = stableInputHandler;  // Store the wrapper function itself
                 }
             }
         } else if (prop === 'value' && (element.tagName === 'INPUT' || element.tagName === 'TEXTAREA')) {
@@ -474,9 +471,7 @@ function diffNode(oldVNode, newVNode, parentDOM, oldDOM) {
         // Both are text nodes
         if ((typeof oldVNode === 'string' || typeof oldVNode === 'number') &&
             (typeof newVNode === 'string' || typeof newVNode === 'number')) {
-            // console.log('[diffNode] Both text nodes, old="' + oldVNode + '" new="' + newVNode + '"');
             if (String(oldVNode) !== String(newVNode)) {
-                // console.log('[diffNode] Text changed, updating DOM');
                 oldDOM.textContent = String(newVNode);
             }
             return oldDOM;
@@ -559,7 +554,7 @@ function diffComponent(oldVNode, newVNode, parentDOM, oldDOM) {
     component.__renderedVNode = newRenderedVNode;
 
     // Update rerender function - use component.__vnode to get latest props
-    component.__rerender = function() {
+    component.__rerender = function () {
         // console.log('[Preact __rerender] Starting rerender');
         if (typeof PreactHooks !== 'undefined' && PreactHooks.setCurrentComponent) {
             PreactHooks.setCurrentComponent(component);
@@ -576,15 +571,12 @@ function diffComponent(oldVNode, newVNode, parentDOM, oldDOM) {
 
         var currentDOM = component.__dom;
         if (!currentDOM || !currentDOM.parentNode) {
-            // console.log('[Preact __rerender] No DOM or parent, skipping');
             return;
         }
 
-        // console.log('[Preact __rerender] Calling diffNode');
         var resultDOM = diffNode(component.__renderedVNode, updatedVNode, currentDOM.parentNode, currentDOM);
         component.__dom = resultDOM;
         component.__renderedVNode = updatedVNode;
-        // console.log('[Preact __rerender] Rerender complete');
     };
 
     return newDOM;
@@ -651,8 +643,12 @@ function diffChildren(oldChildren, newChildren, parentDOM) {
     // Get current DOM children as static array
     var childNodesArray = [];
     var childNodes = parentDOM.childNodes;
-    for (var k = 0; k < childNodes.length; k++) {
-        childNodesArray.push(childNodes[k]);
+    if (childNodes) {
+        for (var k = 0; k < childNodes.length; k++) {
+            childNodesArray.push(childNodes[k]);
+        }
+    } else {
+        // parentDOM.childNodes is undefined, use empty array
     }
 
     // Map old children
@@ -774,14 +770,14 @@ class Component {
         this.props = props;
         this.state = {};
     }
-    
+
     setState(update) {
         if (typeof update === 'function') {
             this.state = { ...this.state, ...update(this.state, this.props) };
         } else {
             this.state = { ...this.state, ...update };
         }
-        
+
         // Trigger re-render
         if (this.__container && this.__vnode) {
             const newVNode = this.render();
@@ -789,7 +785,7 @@ class Component {
             this.__vnode = newVNode;
         }
     }
-    
+
     render() {
         return null;
     }
@@ -806,5 +802,8 @@ var Preact = {
     cloneElement: cloneElement,
     isValidElement: isValidElement
 };
+
+// 添加小写别名以提高兼容性
+var preact = Preact;
 
 // Note: For ES6 module usage, use js/preact/preact.mjs

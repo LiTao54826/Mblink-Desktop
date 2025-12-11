@@ -14,8 +14,9 @@
 #include "core/window/window_manager.h"
 #include "core/dom/document.h"
 #include "core/dom/element.h"
-#include "core/dom/dom_bindings.h"
 #include "core/quickjs/quickjs_runtime.h"
+#include "core/quickjs/window_bindings.h"
+#include "core/event/task_scheduler.h"
 #include "core/event/event_loop.h"
 
 #include <iostream>
@@ -151,32 +152,70 @@ int main(int argc, char** argv) {
         document->Initialize();
         std::cout << "  ✓ Document initialized" << std::endl;
 
-        // 3. 创建QuickJS运行时
-        std::cout << "[3/6] Creating QuickJS runtime..." << std::endl;
-        auto runtime = std::make_unique<QuickJSRuntime>();
-        JSContext* ctx = runtime->GetContext();
-        std::cout << "  ✓ QuickJS runtime created" << std::endl;
-
-        // 4. 初始化DOM绑定
-        std::cout << "[4/6] Initializing DOM bindings..." << std::endl;
-        DOMBindings::Init(ctx);
-        DOMBindings::SetGlobalDocument(ctx, document);
-        std::cout << "  ✓ DOM bindings initialized" << std::endl;
-
         // 创建body元素
         auto body = document->CreateElement("body");
         body->SetAttribute("style", "overflow: auto;");
         document->SetBody(body);
-
-        // 5. 加载Preact库
-        std::cout << "[5/6] Loading Preact library..." << std::endl;
-        std::string preact_path = FindPreactPath(app_path);
         
+        // **重要：先将文档关联到窗口**
+        window->SetDocument(document);
+
+        // 3. 创建QuickJS运行时和任务调度器
+        std::cout << "[3/6] Creating QuickJS runtime..." << std::endl;
+        auto runtime = std::make_unique<QuickJSRuntime>();
+        auto task_scheduler = std::make_shared<TaskScheduler>();
+        std::cout << "  ✓ QuickJS runtime created" << std::endl;
+
+        // 4. 初始化 WindowBindings（新的 DOM 绑定系统）
+        // WindowBindings 会自动从 window 获取 document 并绑定到全局
+        std::cout << "[4/6] Initializing Window bindings..." << std::endl;
+        WindowBindings window_bindings(runtime.get(), window, task_scheduler);
+        window_bindings.InitBindings();
+        std::cout << "  ✓ Window bindings initialized" << std::endl;
+
+        // 5. 查找 Preact 路径
+        std::string preact_path = FindPreactPath(app_path);
         if (preact_path.empty()) {
             std::cerr << "  ✗ Could not find Preact library" << std::endl;
             std::cerr << "  Please ensure js/preact/preact.js exists" << std::endl;
             return 1;
         }
+
+        // 6. 加载 DOM polyfills (必须在 Preact 之前)
+        std::cout << "[5/7] Loading DOM polyfills..." << std::endl;
+        std::string polyfills_path = preact_path + "/../polyfills/dom.js";
+        if (fs::exists(polyfills_path)) {
+            std::string polyfills_code = ReadFile(polyfills_path);
+            if (!polyfills_code.empty()) {
+                runtime->Eval(polyfills_code, "dom.js");
+                std::cout << "  ✓ DOM polyfills loaded" << std::endl;
+            }
+        } else {
+            // 尝试其他路径
+            std::vector<std::string> polyfills_search_paths = {
+                "js/polyfills/dom.js",
+                "../js/polyfills/dom.js",
+                "../../js/polyfills/dom.js"
+            };
+            bool polyfills_loaded = false;
+            for (const auto& path : polyfills_search_paths) {
+                if (fs::exists(path)) {
+                    std::string polyfills_code = ReadFile(path);
+                    if (!polyfills_code.empty()) {
+                        runtime->Eval(polyfills_code, "dom.js");
+                        std::cout << "  ✓ DOM polyfills loaded from: " << path << std::endl;
+                        polyfills_loaded = true;
+                        break;
+                    }
+                }
+            }
+            if (!polyfills_loaded) {
+                std::cout << "  ⚠ DOM polyfills not found, some features may not work" << std::endl;
+            }
+        }
+
+        // 7. 加载Preact库
+        std::cout << "[6/7] Loading Preact library..." << std::endl;
         
         std::string preact_code = ReadFile(preact_path + "/preact.js");
         if (preact_code.empty()) {
@@ -193,8 +232,8 @@ int main(int argc, char** argv) {
             std::cout << "  ✓ Hooks library loaded" << std::endl;
         }
 
-        // 6. 加载并运行应用
-        std::cout << "[6/6] Loading application..." << std::endl;
+        // 8. 加载并运行应用
+        std::cout << "[7/7] Loading application..." << std::endl;
         std::string app_code = ReadFile(app_path);
         if (app_code.empty()) {
             std::cerr << "  ✗ Failed to load: " << app_path << std::endl;
@@ -205,8 +244,7 @@ int main(int argc, char** argv) {
         runtime->Eval(app_code, app_filename.string());
         std::cout << "  ✓ Application loaded" << std::endl;
 
-        // 将文档关联到窗口并显示
-        window->SetDocument(document);
+        // 显示窗口
         window->Show();
 
         std::cout << std::endl;
@@ -216,13 +254,13 @@ int main(int argc, char** argv) {
         std::cout << "  Close window to exit" << std::endl;
         std::cout << std::endl;
 
-        // 创建事件循环
-        EventLoop event_loop;
+        // 创建事件循环（使用共享的 task_scheduler 确保定时器正常工作）
+        EventLoop event_loop(task_scheduler);
 
         // 设置渲染回调
         event_loop.SetRenderCallback([window]() {
             if (window->NeedsRepaint()) {
-                window->RenderDocument();
+                window->Render();
                 window->SwapBuffers();
             }
         });
@@ -235,8 +273,7 @@ int main(int argc, char** argv) {
         std::cout << "  👋 Application Closed" << std::endl;
         std::cout << "========================================" << std::endl;
 
-        // 清理
-        DOMBindings::Cleanup(ctx);
+        // 清理（WindowBindings 会自动清理）
 
         return 0;
     }

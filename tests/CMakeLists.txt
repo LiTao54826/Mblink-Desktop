@@ -1787,3 +1787,58 @@ add_subdirectory(layout_comparison)
 # ============================================================================
 
 add_subdirectory(dom_render_comparison)
+
+# ============================================================================
+# React Binding Test
+# ============================================================================
+
+add_executable(react_binding_test react_binding_test.cpp)
+
+target_include_directories(react_binding_test PRIVATE
+    ${CMAKE_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/core
+)
+
+target_link_libraries(react_binding_test PRIVATE
+    lightui_window
+    lightui_dom
+    lightui_event
+    lightui_quickjs
+)
+
+# Link SDL3
+if(TARGET SDL3-static)
+    target_link_libraries(react_binding_test PRIVATE SDL3-static)
+endif()
+
+# Link Skia
+if(TARGET skia)
+    target_link_libraries(react_binding_test PRIVATE skia)
+    
+    if(MSVC)
+        target_compile_options(react_binding_test PRIVATE
+            $<$<CONFIG:Debug>:/MT>
+            $<$<CONFIG:Release>:/MT>
+        )
+        target_compile_definitions(react_binding_test PRIVATE
+            $<$<CONFIG:Debug>:_ITERATOR_DEBUG_LEVEL=0>
+        )
+        
+        # Link D3D12 libraries for Skia
+        target_link_libraries(react_binding_test PRIVATE
+            d3d12.lib
+            dxgi.lib
+            d3dcompiler.lib
+        )
+    endif()
+endif()
+
+# Copy JS test files to build directory
+add_custom_command(TARGET react_binding_test POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        ${CMAKE_CURRENT_SOURCE_DIR}/react_dom_test.js
+        $<TARGET_FILE_DIR:react_binding_test>/../tests/react_dom_test.js
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        ${CMAKE_CURRENT_SOURCE_DIR}/react_event_test.js
+        $<TARGET_FILE_DIR:react_binding_test>/../tests/react_event_test.js
+)
