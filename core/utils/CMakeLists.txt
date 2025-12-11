@@ -3,11 +3,13 @@
 set(UTILS_SOURCES
     logger.cpp
     json.cpp
+    encoding_utils.cpp
 )
 
 set(UTILS_HEADERS
     logger.h
     json.h
+    encoding_utils.h
 )
 
 add_library(lightui_utils STATIC ${UTILS_SOURCES})

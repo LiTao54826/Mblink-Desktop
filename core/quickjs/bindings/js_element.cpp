@@ -7,8 +7,13 @@
 #include "js_node.h"
 #include "js_style_declaration.h"
 #include "js_event.h"
+#include "core/dom/element.h"
+#include "core/dom/document.h"
+#include "core/dom/html_input_element.h"
 #include "core/quickjs/dom_binding_map.h"
 #include "core/quickjs/js_value_wrapper.h"
+#include <memory>
+#include <string>
 #include <iostream>
 
 namespace lightui {
@@ -123,6 +128,81 @@ static JSValue JSElement_get_style(JSContext* ctx, JSValueConst this_val, int ma
 
     // 包装并返回
     return WrapStyleDeclaration(ctx, style);
+}
+
+// value getter (for HTMLInputElement)
+static JSValue JSElement_get_value(JSContext* ctx, JSValueConst this_val, int magic) {
+    auto* data = static_cast<JSElementData*>(JS_GetOpaque(this_val, js_element_class_id));
+    if (!data || !data->element) {
+        return JS_UNDEFINED;
+    }
+
+    // 检查是否是 HTMLInputElement
+    auto input_element = std::dynamic_pointer_cast<HTMLInputElement>(data->element);
+    if (!input_element) {
+        return JS_UNDEFINED;
+    }
+
+    std::string value = input_element->GetValue();
+    return JS_NewString(ctx, value.c_str());
+}
+
+// value setter (for HTMLInputElement)
+static JSValue JSElement_set_value(JSContext* ctx, JSValueConst this_val, JSValue val, int magic) {
+    auto* data = static_cast<JSElementData*>(JS_GetOpaque(this_val, js_element_class_id));
+    if (!data || !data->element) {
+        return JS_UNDEFINED;
+    }
+
+    // 检查是否是 HTMLInputElement
+    auto input_element = std::dynamic_pointer_cast<HTMLInputElement>(data->element);
+    if (!input_element) {
+        return JS_UNDEFINED;
+    }
+
+    const char* str = JS_ToCString(ctx, val);
+    if (str) {
+        input_element->SetValue(str, false);  // false = 不触发事件
+        JS_FreeCString(ctx, str);
+    }
+
+    return JS_UNDEFINED;
+}
+
+// checked getter (for checkbox/radio)
+static JSValue JSElement_get_checked(JSContext* ctx, JSValueConst this_val, int magic) {
+    auto* data = static_cast<JSElementData*>(JS_GetOpaque(this_val, js_element_class_id));
+    if (!data || !data->element) {
+        return JS_FALSE;
+    }
+
+    // 检查是否是 HTMLInputElement
+    auto input_element = std::dynamic_pointer_cast<HTMLInputElement>(data->element);
+    if (!input_element) {
+        return JS_FALSE;
+    }
+
+    bool checked = input_element->GetChecked();
+    return JS_NewBool(ctx, checked);
+}
+
+// checked setter (for checkbox/radio)
+static JSValue JSElement_set_checked(JSContext* ctx, JSValueConst this_val, JSValue val, int magic) {
+    auto* data = static_cast<JSElementData*>(JS_GetOpaque(this_val, js_element_class_id));
+    if (!data || !data->element) {
+        return JS_UNDEFINED;
+    }
+
+    // 检查是否是 HTMLInputElement
+    auto input_element = std::dynamic_pointer_cast<HTMLInputElement>(data->element);
+    if (!input_element) {
+        return JS_UNDEFINED;
+    }
+
+    bool checked = JS_ToBool(ctx, val);
+    input_element->SetChecked(checked, false);  // false = 不触发事件
+
+    return JS_UNDEFINED;
 }
 
 // ========== 方法实现 ==========
@@ -289,6 +369,9 @@ static const JSCFunctionListEntry js_element_proto_funcs[] = {
     JS_CGETSET_MAGIC_DEF("id", JSElement_get_id, JSElement_set_id, 0),
     JS_CGETSET_MAGIC_DEF("className", JSElement_get_className, JSElement_set_className, 0),
     JS_CGETSET_MAGIC_DEF("style", JSElement_get_style, nullptr, 0),
+    JS_CGETSET_MAGIC_DEF("value", JSElement_get_value, JSElement_set_value, 0),
+    JS_CGETSET_MAGIC_DEF("checked", JSElement_get_checked, JSElement_set_checked, 0),
+    JS_PROP_STRING_DEF("[Symbol.toStringTag]", "Element", JS_PROP_CONFIGURABLE),
     JS_CFUNC_DEF("setAttribute", 2, JSElement_setAttribute),
     JS_CFUNC_DEF("getAttribute", 1, JSElement_getAttribute),
     JS_CFUNC_DEF("removeAttribute", 1, JSElement_removeAttribute),

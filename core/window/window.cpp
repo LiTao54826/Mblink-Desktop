@@ -56,6 +56,7 @@
 #include "core/layout/layout_engine.h"
 #include "core/render/color.h"
 #include "core/render/select_dropdown.h"
+#include "core/utils/encoding_utils.h"
 
 namespace lightui {
 
@@ -645,7 +646,9 @@ std::string Window::GetTitle() const {
 void Window::SetTitle(const std::string& title) {
     config_.title = title;
     if (sdl_window_) {
-        SDL_SetWindowTitle(sdl_window_, title.c_str());
+        // 将本地编码（Windows下的GBK）转换为UTF-8，因为SDL需要UTF-8
+        std::string utf8_title = utils::LocalToUTF8(title);
+        SDL_SetWindowTitle(sdl_window_, utf8_title.c_str());
     }
 }
 
@@ -847,8 +850,10 @@ void Window::CreateSDLWindow() {
     if (config_.high_dpi) flags |= SDL_WINDOW_HIGH_PIXEL_DENSITY;
 
     // 创建窗口
+    // 将本地编码（Windows下的GBK）转换为UTF-8，因为SDL需要UTF-8
+    std::string utf8_title = utils::LocalToUTF8(config_.title);
     sdl_window_ = SDL_CreateWindow(
-        config_.title.c_str(),
+        utf8_title.c_str(),
         config_.width,
         config_.height,
         flags
