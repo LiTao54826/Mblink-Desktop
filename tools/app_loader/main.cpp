@@ -14,8 +14,9 @@
 #include "core/window/window_manager.h"
 #include "core/dom/document.h"
 #include "core/dom/element.h"
-#include "core/dom/dom_bindings.h"
 #include "core/quickjs/quickjs_runtime.h"
+#include "core/quickjs/window_bindings.h"
+#include "core/event/task_scheduler.h"
 #include "core/event/event_loop.h"
 
 #include <iostream>
@@ -151,22 +152,26 @@ int main(int argc, char** argv) {
         document->Initialize();
         std::cout << "  ✓ Document initialized" << std::endl;
 
-        // 3. 创建QuickJS运行时
-        std::cout << "[3/6] Creating QuickJS runtime..." << std::endl;
-        auto runtime = std::make_unique<QuickJSRuntime>();
-        JSContext* ctx = runtime->GetContext();
-        std::cout << "  ✓ QuickJS runtime created" << std::endl;
-
-        // 4. 初始化DOM绑定
-        std::cout << "[4/6] Initializing DOM bindings..." << std::endl;
-        DOMBindings::Init(ctx);
-        DOMBindings::SetGlobalDocument(ctx, document);
-        std::cout << "  ✓ DOM bindings initialized" << std::endl;
-
         // 创建body元素
         auto body = document->CreateElement("body");
         body->SetAttribute("style", "overflow: auto;");
         document->SetBody(body);
+        
+        // **重要：先将文档关联到窗口**
+        window->SetDocument(document);
+
+        // 3. 创建QuickJS运行时和任务调度器
+        std::cout << "[3/6] Creating QuickJS runtime..." << std::endl;
+        auto runtime = std::make_unique<QuickJSRuntime>();
+        auto task_scheduler = std::make_shared<TaskScheduler>();
+        std::cout << "  ✓ QuickJS runtime created" << std::endl;
+
+        // 4. 初始化 WindowBindings（新的 DOM 绑定系统）
+        // WindowBindings 会自动从 window 获取 document 并绑定到全局
+        std::cout << "[4/6] Initializing Window bindings..." << std::endl;
+        WindowBindings window_bindings(runtime.get(), window, task_scheduler);
+        window_bindings.InitBindings();
+        std::cout << "  ✓ Window bindings initialized" << std::endl;
 
         // 5. 加载Preact库
         std::cout << "[5/6] Loading Preact library..." << std::endl;
@@ -205,8 +210,7 @@ int main(int argc, char** argv) {
         runtime->Eval(app_code, app_filename.string());
         std::cout << "  ✓ Application loaded" << std::endl;
 
-        // 将文档关联到窗口并显示
-        window->SetDocument(document);
+        // 显示窗口
         window->Show();
 
         std::cout << std::endl;
@@ -222,7 +226,7 @@ int main(int argc, char** argv) {
         // 设置渲染回调
         event_loop.SetRenderCallback([window]() {
             if (window->NeedsRepaint()) {
-                window->RenderDocument();
+                window->Render();
                 window->SwapBuffers();
             }
         });
@@ -235,8 +239,7 @@ int main(int argc, char** argv) {
         std::cout << "  👋 Application Closed" << std::endl;
         std::cout << "========================================" << std::endl;
 
-        // 清理
-        DOMBindings::Cleanup(ctx);
+        // 清理（WindowBindings 会自动清理）
 
         return 0;
     }
