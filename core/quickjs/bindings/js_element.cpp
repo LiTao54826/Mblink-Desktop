@@ -281,6 +281,32 @@ static JSValue JSElement_get_classList(JSContext* ctx, JSValueConst this_val, in
     return classList;
 }
 
+// children getter - 返回所有子元素（HTMLCollection）
+static JSValue JSElement_get_children(JSContext* ctx, JSValueConst this_val, int magic) {
+    auto* data = static_cast<JSElementData*>(JS_GetOpaque(this_val, js_element_class_id));
+    if (!data || !data->element) {
+        return JS_NewArray(ctx);
+    }
+
+    // 创建 JavaScript 数组表示 HTMLCollection
+    JSValue array = JS_NewArray(ctx);
+    uint32_t index = 0;
+
+    // 遍历所有子节点，只添加元素节点（跳过文本节点）
+    auto child = data->element->GetFirstChild();
+    while (child) {
+        // 检查是否是 Element 类型
+        auto element_child = std::dynamic_pointer_cast<Element>(child);
+        if (element_child) {
+            JSValue elem = WrapElement(ctx, element_child);
+            JS_SetPropertyUint32(ctx, array, index++, elem);
+        }
+        child = child->GetNextSibling();
+    }
+
+    return array;
+}
+
 // style getter
 static JSValue JSElement_get_style(JSContext* ctx, JSValueConst this_val, int magic) {
     auto* data = static_cast<JSElementData*>(JS_GetOpaque(this_val, js_element_class_id));
@@ -623,6 +649,7 @@ static const JSCFunctionListEntry js_element_proto_funcs[] = {
     JS_CGETSET_MAGIC_DEF("id", JSElement_get_id, JSElement_set_id, 0),
     JS_CGETSET_MAGIC_DEF("className", JSElement_get_className, JSElement_set_className, 0),
     JS_CGETSET_MAGIC_DEF("classList", JSElement_get_classList, nullptr, 0),
+    JS_CGETSET_MAGIC_DEF("children", JSElement_get_children, nullptr, 0),
     JS_CGETSET_MAGIC_DEF("style", JSElement_get_style, nullptr, 0),
     JS_CGETSET_MAGIC_DEF("value", JSElement_get_value, JSElement_set_value, 0),
     JS_CGETSET_MAGIC_DEF("checked", JSElement_get_checked, JSElement_set_checked, 0),

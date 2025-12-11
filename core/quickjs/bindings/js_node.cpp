@@ -90,6 +90,36 @@ static JSValue JSNode_get_nextSibling(JSContext* ctx, JSValueConst this_val, int
     return WrapNode(ctx, next_sibling);
 }
 
+// lastChild
+static JSValue JSNode_get_lastChild(JSContext* ctx, JSValueConst this_val, int magic) {
+    auto node = UnwrapNode(ctx, this_val);
+    if (!node) {
+        return JS_NULL;
+    }
+
+    auto last_child = node->GetLastChild();
+    if (!last_child) {
+        return JS_NULL;
+    }
+
+    return WrapNode(ctx, last_child);
+}
+
+// previousSibling
+static JSValue JSNode_get_previousSibling(JSContext* ctx, JSValueConst this_val, int magic) {
+    auto node = UnwrapNode(ctx, this_val);
+    if (!node) {
+        return JS_NULL;
+    }
+
+    auto prev_sibling = node->GetPreviousSibling();
+    if (!prev_sibling) {
+        return JS_NULL;
+    }
+
+    return WrapNode(ctx, prev_sibling);
+}
+
 // textContent getter
 static JSValue JSNode_get_textContent(JSContext* ctx, JSValueConst this_val, int magic) {
     auto node = UnwrapNode(ctx, this_val);
@@ -235,7 +265,9 @@ static JSValue JSNode_replaceChild(JSContext* ctx, JSValueConst this_val, int ar
 static const JSCFunctionListEntry js_node_proto_funcs[] = {
     JS_CGETSET_MAGIC_DEF("parentNode", JSNode_get_parentNode, nullptr, 0),
     JS_CGETSET_MAGIC_DEF("firstChild", JSNode_get_firstChild, nullptr, 0),
+    JS_CGETSET_MAGIC_DEF("lastChild", JSNode_get_lastChild, nullptr, 0),
     JS_CGETSET_MAGIC_DEF("nextSibling", JSNode_get_nextSibling, nullptr, 0),
+    JS_CGETSET_MAGIC_DEF("previousSibling", JSNode_get_previousSibling, nullptr, 0),
     JS_CGETSET_MAGIC_DEF("textContent", JSNode_get_textContent, JSNode_set_textContent, 0),
     JS_CFUNC_DEF("appendChild", 1, JSNode_appendChild),
     JS_CFUNC_DEF("removeChild", 1, JSNode_removeChild),
