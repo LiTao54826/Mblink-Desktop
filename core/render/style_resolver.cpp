@@ -2024,6 +2024,11 @@ std::shared_ptr<RenderObject> RenderTreeBuilder::BuildRenderTree(
         return nullptr;
     }
 
+    // 建立 DOM 节点与 RenderObject 的双向绑定
+    // RenderObject 已经在 CreateRenderObjectForElement/CreateRenderObjectForText 中设置了 node_
+    // 这里设置 Node 的 render_object_ 指向
+    node->SetRenderObject(render_obj);
+
     // 获取当前元素的样式
     const auto& style = render_obj->GetComputedStyle();
 
@@ -2354,6 +2359,66 @@ std::shared_ptr<RenderObject> RenderTreeBuilder::CreateRenderObjectByType(Render
         default:
             return std::make_shared<RenderBlock>();
     }
+}
+
+// ========== Phase 3: 增量渲染树更新公有接口 ==========
+
+std::shared_ptr<RenderObject> RenderTreeBuilder::CreateRenderObjectForElement(Element* element) {
+    if (!element) {
+        return nullptr;
+    }
+
+    // 获取父元素的样式作为继承基础
+    const ComputedStyle* parent_style = nullptr;
+    if (auto parent_node = element->GetParentNode()) {
+        auto parent_elem = std::dynamic_pointer_cast<Element>(parent_node);
+        if (parent_elem) {
+            if (auto parent_ro = parent_elem->GetRenderObject()) {
+                parent_style = &parent_ro->GetComputedStyle();
+            }
+        }
+    }
+
+    // 创建 shared_ptr 包装（临时，仅用于调用内部方法）
+    // 注意：这里假设 element 已经被某个 shared_ptr 管理
+    auto element_shared = std::dynamic_pointer_cast<Element>(element->shared_from_this());
+    if (!element_shared) {
+        return nullptr;
+    }
+
+    auto render_obj = CreateRenderObjectForElement(element_shared, parent_style);
+
+    // 检查 display: none
+    if (render_obj && render_obj->GetComputedStyle().display == RenderObjectType::NONE) {
+        return nullptr;
+    }
+
+    return render_obj;
+}
+
+std::shared_ptr<RenderObject> RenderTreeBuilder::CreateRenderObjectForText(Text* text) {
+    if (!text) {
+        return nullptr;
+    }
+
+    // 获取父元素的样式作为继承基础
+    const ComputedStyle* parent_style = nullptr;
+    if (auto parent_node = text->GetParentNode()) {
+        auto parent_elem = std::dynamic_pointer_cast<Element>(parent_node);
+        if (parent_elem) {
+            if (auto parent_ro = parent_elem->GetRenderObject()) {
+                parent_style = &parent_ro->GetComputedStyle();
+            }
+        }
+    }
+
+    // 创建 shared_ptr 包装
+    auto text_shared = std::dynamic_pointer_cast<Text>(text->shared_from_this());
+    if (!text_shared) {
+        return nullptr;
+    }
+
+    return CreateRenderObjectForText(text_shared, parent_style);
 }
 
 } // namespace lightui

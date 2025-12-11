@@ -386,6 +386,13 @@ void RenderInlineBlock::Paint(SkCanvas* canvas) {
         return;
     }
 
+    // Viewport Culling: Skip inline-block elements outside clip region
+    SkRect paint_rect = SkRect::MakeXYWH(layout_info_.x, layout_info_.y, layout_info_.width, layout_info_.height);
+    if (canvas->quickReject(paint_rect.makeOutset(50, 50))) {
+        needs_paint_ = false;
+        return;
+    }
+
     auto node = GetNode();
     const auto& style = computed_style_;
     const auto& layout = layout_info_;
@@ -435,26 +442,59 @@ void RenderInlineBlock::Paint(SkCanvas* canvas) {
         renderer.RenderBackgroundAdvanced(box, styles, &style.border_radius);
     }
 
-    // 渲染边框
-    if (style.border.style != CSSBorderStyle::NONE && !style.border.width.IsZero()) {
-        std::string border_width = std::to_string(style.border.width.value) + "px";
-        std::string border_style = "solid";
 
-        // 将 SkColor 转换为十六进制字符串
-        char color_str[8];
-        snprintf(color_str, sizeof(color_str), "#%02X%02X%02X",
-                 SkColorGetR(style.border.color),
-                 SkColorGetG(style.border.color),
-                 SkColorGetB(style.border.color));
-        std::string border_color = color_str;
+    // 渲染边框 - 支持单边边框
+    bool has_any_border = (style.border.style != CSSBorderStyle::NONE && !style.border.width.IsZero()) ||
+                          (style.border_left_width > 0 && style.border_left_style != CSSBorderStyle::NONE) ||
+                          (style.border_right_width > 0 && style.border_right_style != CSSBorderStyle::NONE) ||
+                          (style.border_top_width > 0 && style.border_top_style != CSSBorderStyle::NONE) ||
+                          (style.border_bottom_width > 0 && style.border_bottom_style != CSSBorderStyle::NONE);
 
-        if (style.border_radius.top_left.IsZero() &&
-            style.border_radius.top_right.IsZero() &&
-            style.border_radius.bottom_right.IsZero() &&
-            style.border_radius.bottom_left.IsZero()) {
-            renderer.RenderBorder(box, border_width, border_style, border_color);
+    if (has_any_border) {
+        // 检查是否有圆角
+        bool has_border_radius = !style.border_radius.top_left.IsZero() ||
+                                 !style.border_radius.top_right.IsZero() ||
+                                 !style.border_radius.bottom_right.IsZero() ||
+                                 !style.border_radius.bottom_left.IsZero();
+
+        if (has_border_radius) {
+            // 有圆角：使用 RenderRoundedBorderAdvanced（支持每边独立属性）
+            
+            // 准备四边宽度数组 [top, right, bottom, left]
+            float border_widths[4] = {
+                style.border_top_width > 0 ? style.border_top_width : style.border.width.ToPx(),
+                style.border_right_width > 0 ? style.border_right_width : style.border.width.ToPx(),
+                style.border_bottom_width > 0 ? style.border_bottom_width : style.border.width.ToPx(),
+                style.border_left_width > 0 ? style.border_left_width : style.border.width.ToPx()
+            };
+            
+            // 准备四边样式数组
+            CSSBorderStyle border_styles[4] = {
+                style.border_top_style != CSSBorderStyle::NONE ? style.border_top_style : style.border.style,
+                style.border_right_style != CSSBorderStyle::NONE ? style.border_right_style : style.border.style,
+                style.border_bottom_style != CSSBorderStyle::NONE ? style.border_bottom_style : style.border.style,
+                style.border_left_style != CSSBorderStyle::NONE ? style.border_left_style : style.border.style
+            };
+            
+            // 准备四边颜色数组
+            SkColor border_colors[4] = {
+                style.border_top_style != CSSBorderStyle::NONE ? style.border_top_color : style.border.color,
+                style.border_right_style != CSSBorderStyle::NONE ? style.border_right_color : style.border.color,
+                style.border_bottom_style != CSSBorderStyle::NONE ? style.border_bottom_color : style.border.color,
+                style.border_left_style != CSSBorderStyle::NONE ? style.border_left_color : style.border.color
+            };
+            
+            renderer.RenderRoundedBorderAdvanced(box, border_widths, border_styles, border_colors, style.border_radius);
         } else {
-            renderer.RenderRoundedBorder(box, border_width, border_style, border_color, style.border_radius);
+            // 无圆角：使用普通边框渲染
+            std::string border_width = std::to_string(style.border.width.value) + "px";
+            std::string border_style = "solid";
+            char color_str[8];
+            snprintf(color_str, sizeof(color_str), "#%02X%02X%02X",
+                     SkColorGetR(style.border.color),
+                     SkColorGetG(style.border.color),
+                     SkColorGetB(style.border.color));
+            renderer.RenderBorder(box, border_width, border_style, std::string(color_str));
         }
     }
 

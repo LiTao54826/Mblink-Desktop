@@ -90,39 +90,46 @@ void BoxRenderer::RenderBorder(const Box& box,
     
     float width = border.width.ToPx();
     
-    // 绘制四条边
+    // 绘制四条边 - 坐标向内偏移 width/2，确保边框完全在边界内
+    // Skia 的 drawLine 是居中描边，偏移后描边外边缘与边界对齐
+    float half_width = width / 2.0f;
+    
     // 上边框
     if (box.border_top_width > 0) {
+        float top_half = box.border_top_width / 2.0f;
         RenderBorderEdge(
-            border_box.left(), border_box.top(),
-            border_box.right(), border_box.top(),
+            border_box.left() + top_half, border_box.top() + top_half,
+            border_box.right() - top_half, border_box.top() + top_half,
             box.border_top_width, border.style, border.color
         );
     }
     
     // 右边框
     if (box.border_right_width > 0) {
+        float right_half = box.border_right_width / 2.0f;
         RenderBorderEdge(
-            border_box.right(), border_box.top(),
-            border_box.right(), border_box.bottom(),
+            border_box.right() - right_half, border_box.top() + right_half,
+            border_box.right() - right_half, border_box.bottom() - right_half,
             box.border_right_width, border.style, border.color
         );
     }
     
     // 下边框
     if (box.border_bottom_width > 0) {
+        float bottom_half = box.border_bottom_width / 2.0f;
         RenderBorderEdge(
-            border_box.left(), border_box.bottom(),
-            border_box.right(), border_box.bottom(),
+            border_box.left() + bottom_half, border_box.bottom() - bottom_half,
+            border_box.right() - bottom_half, border_box.bottom() - bottom_half,
             box.border_bottom_width, border.style, border.color
         );
     }
     
     // 左边框
     if (box.border_left_width > 0) {
+        float left_half = box.border_left_width / 2.0f;
         RenderBorderEdge(
-            border_box.left(), border_box.top(),
-            border_box.left(), border_box.bottom(),
+            border_box.left() + left_half, border_box.top() + left_half,
+            border_box.left() + left_half, border_box.bottom() - left_half,
             box.border_left_width, border.style, border.color
         );
     }
@@ -291,7 +298,9 @@ Box BoxRenderer::ComputeBox(const std::unordered_map<std::string, std::string>& 
 void BoxRenderer::RenderBackgroundAdvanced(const Box& box,
                                           const std::unordered_map<std::string, std::string>& styles,
                                           const CSSBorderRadius* border_radius) {
-    SkRect padding_box = box.GetPaddingBox();
+    // 使用 border_box 绘制背景（符合 CSS 规范 background-clip: border-box 默认值）
+    // 背景会延伸到边框外边缘，被边框覆盖
+    SkRect border_box_rect = box.GetBorderBox();
 
     // 创建路径（支持圆角）
     SkPath path;
@@ -315,10 +324,10 @@ void BoxRenderer::RenderBackgroundAdvanced(const Box& box,
             {br, br},  // bottom-right
             {bl, bl}   // bottom-left
         };
-        rrect.setRectRadii(padding_box, radii);
+        rrect.setRectRadii(border_box_rect, radii);
         path.addRRect(rrect);
     } else {
-        path.addRect(padding_box);
+        path.addRect(border_box_rect);
     }
 
     Paint paint;
@@ -344,10 +353,10 @@ void BoxRenderer::RenderBackgroundAdvanced(const Box& box,
             // 计算渐变方向
             float angle_rad = gradient->angle * M_PI / 180.0f;
             SkPoint pts[2];
-            pts[0] = SkPoint::Make(padding_box.centerX() - cos(angle_rad) * padding_box.width() / 2,
-                                  padding_box.centerY() - sin(angle_rad) * padding_box.height() / 2);
-            pts[1] = SkPoint::Make(padding_box.centerX() + cos(angle_rad) * padding_box.width() / 2,
-                                  padding_box.centerY() + sin(angle_rad) * padding_box.height() / 2);
+            pts[0] = SkPoint::Make(border_box_rect.centerX() - cos(angle_rad) * border_box_rect.width() / 2,
+                                  border_box_rect.centerY() - sin(angle_rad) * border_box_rect.height() / 2);
+            pts[1] = SkPoint::Make(border_box_rect.centerX() + cos(angle_rad) * border_box_rect.width() / 2,
+                                  border_box_rect.centerY() + sin(angle_rad) * border_box_rect.height() / 2);
 
             sk_sp<SkShader> shader = SkGradientShader::MakeLinear(
                 pts, colors.data(), positions.data(), colors.size(), SkTileMode::kClamp);
@@ -368,11 +377,11 @@ void BoxRenderer::RenderBackgroundAdvanced(const Box& box,
             }
 
             SkPoint center = SkPoint::Make(
-                padding_box.left() + padding_box.width() * gradient->center_x,
-                padding_box.top() + padding_box.height() * gradient->center_y
+                border_box_rect.left() + border_box_rect.width() * gradient->center_x,
+                border_box_rect.top() + border_box_rect.height() * gradient->center_y
             );
 
-            float radius = std::max(padding_box.width(), padding_box.height()) / 2.0f;
+            float radius = std::max(border_box_rect.width(), border_box_rect.height()) / 2.0f;
 
             sk_sp<SkShader> shader = SkGradientShader::MakeRadial(
                 center, radius, colors.data(), positions.data(), colors.size(), SkTileMode::kClamp);
@@ -415,21 +424,21 @@ void BoxRenderer::RenderBackgroundAdvanced(const Box& box,
             float img_height = image->height();
 
             if (bg_size.type == CSSBackgroundSize::Type::COVER) {
-                float scale = std::max(padding_box.width() / img_width,
-                                      padding_box.height() / img_height);
+                float scale = std::max(border_box_rect.width() / img_width,
+                                      border_box_rect.height() / img_height);
                 img_width *= scale;
                 img_height *= scale;
             } else if (bg_size.type == CSSBackgroundSize::Type::CONTAIN) {
-                float scale = std::min(padding_box.width() / img_width,
-                                      padding_box.height() / img_height);
+                float scale = std::min(border_box_rect.width() / img_width,
+                                      border_box_rect.height() / img_height);
                 img_width *= scale;
                 img_height *= scale;
             } else if (bg_size.type == CSSBackgroundSize::Type::LENGTH) {
                 if (!bg_size.width.IsAuto()) {
-                    img_width = bg_size.width.ToPx(padding_box.width());
+                    img_width = bg_size.width.ToPx(border_box_rect.width());
                 }
                 if (!bg_size.height.IsAuto()) {
-                    img_height = bg_size.height.ToPx(padding_box.height());
+                    img_height = bg_size.height.ToPx(border_box_rect.height());
                 }
             }
 
@@ -445,9 +454,9 @@ void BoxRenderer::RenderBackgroundAdvanced(const Box& box,
                 tile_x = SkTileMode::kDecal;
             }
 
-            SkMatrix matrix = SkMatrix::Translate(padding_box.left(), padding_box.top());
+            SkMatrix matrix = SkMatrix::Translate(border_box_rect.left(), border_box_rect.top());
             matrix.postScale(img_width / image->width(), img_height / image->height(),
-                           padding_box.left(), padding_box.top());
+                           border_box_rect.left(), border_box_rect.top());
 
             sk_sp<SkShader> shader = image->makeShader(tile_x, tile_y, SkSamplingOptions(), matrix);
             paint.GetSkPaint().setShader(shader);
@@ -584,6 +593,287 @@ void BoxRenderer::RenderBoxShadow(const Box& box,
         } else {
             // 内阴影：使用裁剪和反向绘制
             // 简化实现：暂不支持内阴影
+        }
+    }
+}
+
+void BoxRenderer::RenderRoundedBorderAdvanced(const Box& box,
+                                               const float border_widths[4],
+                                               const CSSBorderStyle border_styles[4],
+                                               const SkColor border_colors[4],
+                                               const CSSBorderRadius& border_radius) {
+    // 索引定义：0=top, 1=right, 2=bottom, 3=left
+    
+    bool has_top = border_widths[0] > 0 && border_styles[0] != CSSBorderStyle::NONE;
+    bool has_right = border_widths[1] > 0 && border_styles[1] != CSSBorderStyle::NONE;
+    bool has_bottom = border_widths[2] > 0 && border_styles[2] != CSSBorderStyle::NONE;
+    bool has_left = border_widths[3] > 0 && border_styles[3] != CSSBorderStyle::NONE;
+    
+    if (!has_top && !has_right && !has_bottom && !has_left) {
+        return;
+    }
+    
+    // 检查四边属性是否完全相同
+    bool all_same = has_top && has_right && has_bottom && has_left &&
+                    border_widths[0] == border_widths[1] &&
+                    border_widths[1] == border_widths[2] &&
+                    border_widths[2] == border_widths[3] &&
+                    border_styles[0] == border_styles[1] &&
+                    border_styles[1] == border_styles[2] &&
+                    border_styles[2] == border_styles[3] &&
+                    border_colors[0] == border_colors[1] &&
+                    border_colors[1] == border_colors[2] &&
+                    border_colors[2] == border_colors[3];
+    
+    SkRect border_box = box.GetBorderBox();
+    
+    // 准备圆角半径
+    SkVector outer_radii[4] = {
+        {border_radius.top_left.ToPx(), border_radius.top_left.ToPx()},     // TL
+        {border_radius.top_right.ToPx(), border_radius.top_right.ToPx()},   // TR
+        {border_radius.bottom_right.ToPx(), border_radius.bottom_right.ToPx()}, // BR
+        {border_radius.bottom_left.ToPx(), border_radius.bottom_left.ToPx()}    // BL
+    };
+
+    if (all_same) {
+        // 四边属性相同：使用 SkRRect 绘制完整圆角矩形
+        float width = border_widths[0];
+        float half_width = width / 2.0f;
+        
+        // 向内收缩半个边框宽度，使描边外边缘与元素边界对齐
+        SkRect inset_box = border_box.makeInset(half_width, half_width);
+        
+        // 圆角半径也需要相应减少
+        SkVector inset_radii[4] = {
+            {std::max(0.0f, outer_radii[0].fX - half_width), std::max(0.0f, outer_radii[0].fY - half_width)},
+            {std::max(0.0f, outer_radii[1].fX - half_width), std::max(0.0f, outer_radii[1].fY - half_width)},
+            {std::max(0.0f, outer_radii[2].fX - half_width), std::max(0.0f, outer_radii[2].fY - half_width)},
+            {std::max(0.0f, outer_radii[3].fX - half_width), std::max(0.0f, outer_radii[3].fY - half_width)}
+        };
+        
+        SkRRect rrect;
+        rrect.setRectRadii(inset_box, inset_radii);
+        
+        Paint paint;
+        paint.SetColor(border_colors[0]);
+        paint.SetStyle(PaintStyle::STROKE);
+        paint.SetStrokeWidth(width);
+        paint.SetAntiAlias(true);
+        
+        if (border_styles[0] == CSSBorderStyle::DASHED) {
+            float intervals[] = {width * 3, width * 3};
+            paint.GetSkPaint().setPathEffect(SkDashPathEffect::Make(intervals, 2, 0));
+        } else if (border_styles[0] == CSSBorderStyle::DOTTED) {
+            float intervals[] = {width, width};
+            paint.GetSkPaint().setPathEffect(SkDashPathEffect::Make(intervals, 2, 0));
+        }
+        
+        SkPath path;
+        path.addRRect(rrect);
+        canvas_->drawPath(path, paint.GetSkPaint());
+    } else {
+        // 四边属性不同：分段绘制（支持圆角）
+        
+        // 1. 计算分割角 (Split Angles)
+        // Skia 角度: 0=R, 90=D, 180=L, 270=U
+        auto to_deg = [](float rad) { return rad * 180.0f / M_PI; };
+        
+        // TL Corner (180 -> 270)
+        float angle_tl; 
+        if (border_widths[3] == 0 && border_widths[0] == 0) angle_tl = 225;
+        else if (border_widths[3] == 0) angle_tl = 180; // Top takes all
+        else if (border_widths[0] == 0) angle_tl = 270; // Left takes all
+        else angle_tl = 180 + to_deg(atan2(border_widths[0], border_widths[3]));
+
+        // TR Corner (270 -> 360/0)
+        float angle_tr;
+        if (border_widths[0] == 0 && border_widths[1] == 0) angle_tr = 315;
+        else if (border_widths[0] == 0) angle_tr = 270; // Right takes all
+        else if (border_widths[1] == 0) angle_tr = 360; // Top takes all
+        else angle_tr = 270 + to_deg(atan2(border_widths[1], border_widths[0]));
+
+        // BR Corner (0 -> 90)
+        float angle_br;
+        if (border_widths[1] == 0 && border_widths[2] == 0) angle_br = 45;
+        else if (border_widths[1] == 0) angle_br = 0;   // Bottom takes all
+        else if (border_widths[2] == 0) angle_br = 90;  // Right takes all
+        else angle_br = to_deg(atan2(border_widths[2], border_widths[1]));
+
+        // BL Corner (90 -> 180)
+        float angle_bl;
+        if (border_widths[2] == 0 && border_widths[3] == 0) angle_bl = 135;
+        else if (border_widths[2] == 0) angle_bl = 90;  // Left takes all
+        else if (border_widths[3] == 0) angle_bl = 180; // Bottom takes all
+        else angle_bl = 90 + to_deg(atan2(border_widths[3], border_widths[2]));
+
+        // 2. 准备外圆和内圆的 Rect (Ovals for arcTo)
+        // Outer Ovals
+        SkRect outer_rects[4]; // TL, TR, BR, BL
+        outer_rects[0] = SkRect::MakeXYWH(border_box.left(), border_box.top(), outer_radii[0].fX * 2, outer_radii[0].fY * 2);
+        outer_rects[1] = SkRect::MakeXYWH(border_box.right() - outer_radii[1].fX * 2, border_box.top(), outer_radii[1].fX * 2, outer_radii[1].fY * 2);
+        outer_rects[2] = SkRect::MakeXYWH(border_box.right() - outer_radii[2].fX * 2, border_box.bottom() - outer_radii[2].fY * 2, outer_radii[2].fX * 2, outer_radii[2].fY * 2);
+        outer_rects[3] = SkRect::MakeXYWH(border_box.left(), border_box.bottom() - outer_radii[3].fY * 2, outer_radii[3].fX * 2, outer_radii[3].fY * 2);
+
+        // Inner Radii & Rects
+        SkVector inner_radii[4];
+        SkRect inner_rects[4];
+        
+        // Inner TL
+        inner_radii[0].fX = std::max(0.0f, outer_radii[0].fX - border_widths[3]); // - Left
+        inner_radii[0].fY = std::max(0.0f, outer_radii[0].fY - border_widths[0]); // - Top
+        inner_rects[0] = SkRect::MakeXYWH(border_box.left() + border_widths[3], border_box.top() + border_widths[0], inner_radii[0].fX * 2, inner_radii[0].fY * 2);
+        
+        // Inner TR
+        inner_radii[1].fX = std::max(0.0f, outer_radii[1].fX - border_widths[1]); // - Right
+        inner_radii[1].fY = std::max(0.0f, outer_radii[1].fY - border_widths[0]); // - Top
+        inner_rects[1] = SkRect::MakeXYWH(border_box.right() - border_widths[1] - inner_radii[1].fX * 2, border_box.top() + border_widths[0], inner_radii[1].fX * 2, inner_radii[1].fY * 2);
+        
+        // Inner BR
+        inner_radii[2].fX = std::max(0.0f, outer_radii[2].fX - border_widths[1]); // - Right
+        inner_radii[2].fY = std::max(0.0f, outer_radii[2].fY - border_widths[2]); // - Bottom
+        inner_rects[2] = SkRect::MakeXYWH(border_box.right() - border_widths[1] - inner_radii[2].fX * 2, border_box.bottom() - border_widths[2] - inner_radii[2].fY * 2, inner_radii[2].fX * 2, inner_radii[2].fY * 2);
+        
+        // Inner BL
+        inner_radii[3].fX = std::max(0.0f, outer_radii[3].fX - border_widths[3]); // - Left
+        inner_radii[3].fY = std::max(0.0f, outer_radii[3].fY - border_widths[2]); // - Bottom
+        inner_rects[3] = SkRect::MakeXYWH(border_box.left() + border_widths[3], border_box.bottom() - border_widths[2] - inner_radii[3].fY * 2, inner_radii[3].fX * 2, inner_radii[3].fY * 2);
+
+        // 辅助函数：计算角度对应的点坐标（用于零半径角的直线连接）
+        auto point_on_rect = [&](const SkRect& rect, float angle) -> SkPoint {
+            float rad = angle * M_PI / 180.0f;
+            float cx = rect.centerX();
+            float cy = rect.centerY();
+            float rx = rect.width() / 2.0f;
+            float ry = rect.height() / 2.0f;
+            return SkPoint::Make(cx + rx * cos(rad), cy + ry * sin(rad));
+        };
+
+        // 辅助函数：检查半径是否为零
+        auto is_zero_radius = [](const SkVector& radii) -> bool {
+            return radii.fX <= 0.001f && radii.fY <= 0.001f;
+        };
+
+        // 辅助函数：安全 arcTo - 如果半径为零则使用 lineTo
+        auto safe_arc_to = [&](SkPath& path, const SkRect& oval, float start, float sweep, bool force_move, const SkVector& radii) {
+            if (is_zero_radius(radii)) {
+                // 零半径：直接使用 lineTo 到矩形角点
+                SkPoint corner = SkPoint::Make(oval.centerX(), oval.centerY());
+                if (force_move) {
+                    path.moveTo(corner);
+                } else {
+                    path.lineTo(corner);
+                }
+            } else {
+                path.arcTo(oval, start, sweep, force_move);
+            }
+        };
+
+        auto draw_side = [&](int side, float start_angle, float end_angle, 
+                             int c1_idx, float c1_start, float c1_sweep,
+                             int c2_idx, float c2_start, float c2_sweep) {
+            CSSBorderStyle style = border_styles[side];
+            float width = border_widths[side];
+            
+            // 对于 dashed/dotted 样式，使用 STROKE 模式沿中线绘制
+            bool use_stroke = (style == CSSBorderStyle::DASHED || style == CSSBorderStyle::DOTTED);
+            
+            if (use_stroke) {
+                // STROKE 模式：沿边框中线绘制，支持虚线效果
+                SkPath stroke_path;
+                float half_width = width / 2.0f;
+                
+                // 计算中线矩形（介于外边和内边之间）
+                SkRect mid_rects[4];
+                SkVector mid_radii[4];
+                for (int i = 0; i < 4; i++) {
+                    float inset_x = (i == 1 || i == 2) ? border_widths[1] / 2.0f : border_widths[3] / 2.0f;
+                    float inset_y = (i == 0 || i == 1) ? border_widths[0] / 2.0f : border_widths[2] / 2.0f;
+                    mid_radii[i].fX = std::max(0.0f, outer_radii[i].fX - inset_x);
+                    mid_radii[i].fY = std::max(0.0f, outer_radii[i].fY - inset_y);
+                    
+                    float left = outer_rects[i].left() + (i == 0 || i == 3 ? inset_x : 0);
+                    float top = outer_rects[i].top() + (i == 0 || i == 1 ? inset_y : 0);
+                    float right = outer_rects[i].right() - (i == 1 || i == 2 ? inset_x : 0);
+                    float bottom = outer_rects[i].bottom() - (i == 2 || i == 3 ? inset_y : 0);
+                    mid_rects[i] = SkRect::MakeLTRB(left, top, right, bottom);
+                }
+                
+                // 沿中线绘制弧和直线
+                safe_arc_to(stroke_path, mid_rects[c1_idx], c1_start, c1_sweep, true, mid_radii[c1_idx]);
+                safe_arc_to(stroke_path, mid_rects[c2_idx], c2_start, c2_sweep, false, mid_radii[c2_idx]);
+                
+                Paint paint;
+                paint.SetColor(border_colors[side]);
+                paint.SetStyle(PaintStyle::STROKE);
+                paint.SetStrokeWidth(width);
+                paint.SetAntiAlias(true);
+                
+                if (style == CSSBorderStyle::DASHED) {
+                    float intervals[] = {width * 3, width * 3};
+                    paint.GetSkPaint().setPathEffect(SkDashPathEffect::Make(intervals, 2, 0));
+                } else if (style == CSSBorderStyle::DOTTED) {
+                    float intervals[] = {width, width * 2};
+                    paint.GetSkPaint().setPathEffect(SkDashPathEffect::Make(intervals, 2, 0));
+                    paint.SetStrokeCap(StrokeCap::ROUND);
+                }
+                
+                canvas_->drawPath(stroke_path, paint.GetSkPaint());
+            } else {
+                // FILL 模式：原有逻辑，绘制填充形状
+                SkPath path;
+                
+                // Outer C1 - 使用安全版本处理零半径
+                safe_arc_to(path, outer_rects[c1_idx], c1_start, c1_sweep, true, outer_radii[c1_idx]);
+                
+                // Outer C2 (auto connects line)
+                safe_arc_to(path, outer_rects[c2_idx], c2_start, c2_sweep, false, outer_radii[c2_idx]);
+                
+                // Inner C2 (Reverse)
+                safe_arc_to(path, inner_rects[c2_idx], c2_start + c2_sweep, -c2_sweep, false, inner_radii[c2_idx]);
+                
+                // Inner C1 (Reverse)
+                safe_arc_to(path, inner_rects[c1_idx], c1_start + c1_sweep, -c1_sweep, false, inner_radii[c1_idx]);
+                
+                path.close();
+                
+                Paint paint;
+                paint.SetColor(border_colors[side]);
+                paint.SetStyle(PaintStyle::FILL);
+                paint.SetAntiAlias(true);
+                canvas_->drawPath(path, paint.GetSkPaint());
+            }
+        };
+        
+        // Draw Top (0) - Connects TL(0) and TR(1)
+        if (has_top) {
+            // TL: angle_tl -> 270. TR: 270 -> angle_tr.
+            draw_side(0, 0, 0, 
+                      0, angle_tl, 270 - angle_tl,
+                      1, 270, angle_tr - 270);
+        }
+        
+        // Draw Right (1) - Connects TR(1) and BR(2)
+        if (has_right) {
+            // TR: angle_tr -> 360. BR: 0 -> angle_br.
+            draw_side(1, 0, 0,
+                      1, angle_tr, 360 - angle_tr,
+                      2, 0, angle_br);
+        }
+        
+        // Draw Bottom (2) - Connects BR(2) and BL(3)
+        if (has_bottom) {
+            // BR: angle_br -> 90. BL: 90 -> angle_bl.
+            draw_side(2, 0, 0,
+                      2, angle_br, 90 - angle_br,
+                      3, 90, angle_bl - 90);
+        }
+        
+        // Draw Left (3) - Connects BL(3) and TL(0)
+        if (has_left) {
+            // BL: angle_bl -> 180. TL: 180 -> angle_tl.
+            draw_side(3, 0, 0,
+                      3, angle_bl, 180 - angle_bl,
+                      0, 180, angle_tl - 180);
         }
     }
 }

@@ -9,6 +9,64 @@
 let currentComponent = null;
 let currentHookIndex = 0;
 
+// Phase 4: Preact 调度器 - 批量更新支持
+var pendingUpdates = new Set();
+var updateScheduled = false;
+
+// 获取 requestAnimationFrame，支持回退
+function getRAF() {
+    if (typeof requestAnimationFrame === 'function') {
+        return requestAnimationFrame;
+    }
+    // 回退到 setTimeout
+    return function(callback) {
+        return setTimeout(callback, 16);
+    };
+}
+
+function scheduleUpdate(component) {
+    if (!component || pendingUpdates.has(component)) {
+        return;
+    }
+
+    pendingUpdates.add(component);
+
+    if (!updateScheduled) {
+        updateScheduled = true;
+        // 使用 requestAnimationFrame 批量更新（带回退）
+        var raf = getRAF();
+        raf(flushUpdates);
+    }
+}
+
+function flushUpdates() {
+    // 通知 C++ 开始批量操作
+    if (typeof document !== 'undefined' && typeof document.__beginBatch === 'function') {
+        document.__beginBatch();
+    }
+
+    // 执行所有待更新组件
+    var updates = Array.from(pendingUpdates);
+    pendingUpdates.clear();
+    updateScheduled = false;
+
+    for (var i = 0; i < updates.length; i++) {
+        var component = updates[i];
+        if (component && component.__rerender) {
+            try {
+                component.__rerender();
+            } catch (e) {
+                console.error('[flushUpdates] Error in __rerender:', e);
+            }
+        }
+    }
+
+    // 通知 C++ 结束批量操作
+    if (typeof document !== 'undefined' && typeof document.__endBatch === 'function') {
+        document.__endBatch();
+    }
+}
+
 /**
  * Set the current component context (called by renderer)
  * @internal
@@ -55,24 +113,19 @@ function useState(initialValue) {
     const componentName = component && component.__vnode && component.__vnode.type ? component.__vnode.type.name : 'unknown';
 
     const setState = (newValue) => {
-        console.log('[useState.setState] START component=' + componentName);
+        // console.log('[useState.setState] START component=' + componentName);
         const nextValue = typeof newValue === 'function'
             ? newValue(hookState.value)
             : newValue;
 
-        console.log('[useState.setState] oldValue=' + JSON.stringify(hookState.value) + ' nextValue=' + JSON.stringify(nextValue));
+        // console.log('[useState.setState] oldValue=' + JSON.stringify(hookState.value) + ' nextValue=' + JSON.stringify(nextValue));
         if (hookState.value !== nextValue) {
             hookState.value = nextValue;
-            // Trigger re-render using captured component reference
-            if (component && component.__rerender) {
-                console.log('[useState.setState] Calling __rerender');
-                component.__rerender();
-                console.log('[useState.setState] __rerender completed');
+            // Phase 4: 使用调度器批量更新，而非立即渲染
+            if (component) {
+                scheduleUpdate(component);
             }
-        } else {
-            console.log('[useState.setState] Value unchanged, skipping rerender');
         }
-        console.log('[useState.setState] END');
     };
 
     return [hookState.value, setState];
@@ -257,5 +310,8 @@ var PreactHooks = {
     useContext: useContext,
     useReducer: useReducer,
     createContext: createContext,
-    setCurrentComponent: setCurrentComponent
+    setCurrentComponent: setCurrentComponent,
+    // Phase 4: 调度器 API
+    scheduleUpdate: scheduleUpdate,
+    flushUpdates: flushUpdates
 };

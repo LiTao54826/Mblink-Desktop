@@ -137,11 +137,18 @@ public:
     InputHandler& GetInputHandler();
 
     /**
-     * @brief 获取任务调度器
+     * @brief 获取任务调度器引用
      *
      * @return TaskScheduler& 任务调度器引用
      */
     TaskScheduler& GetTaskScheduler();
+
+    /**
+     * @brief 获取任务调度器智能指针
+     *
+     * @return std::shared_ptr<TaskScheduler> 任务调度器智能指针
+     */
+    std::shared_ptr<TaskScheduler> GetTaskSchedulerPtr();
 
     /**
      * @brief 获取光标是否可见（用于闪烁效果）
@@ -242,6 +249,18 @@ private:
      * @param mouse_y 鼠标Y坐标
      */
     void UpdateHoverChain(Uint32 window_id, float mouse_x, float mouse_y);
+
+    /**
+     * @brief 更新hover链（使用已计算的 HitTestResult）
+     *
+     * 性能优化版本：复用外部已计算的 Hit Testing 结果，避免重复遍历渲染树
+     *
+     * @param window_id 窗口ID
+     * @param mouse_x 鼠标X坐标
+     * @param mouse_y 鼠标Y坐标
+     * @param hit_result 已计算的 Hit Testing 结果
+     */
+    void UpdateHoverChainWithResult(Uint32 window_id, float mouse_x, float mouse_y, const HitTestResult& hit_result);
 
     /**
      * @brief 发送事件到元素集合的差集

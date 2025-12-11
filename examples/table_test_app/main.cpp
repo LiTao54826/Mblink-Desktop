@@ -150,7 +150,7 @@ int main() {
         std::cout << std::endl;
 
         // 先进行一次渲染
-        window->RenderDocument();
+        window->Render();
         window->SwapBuffers();
 
         // 保存截图
@@ -182,7 +182,7 @@ int main() {
         // 设置渲染回调
         event_loop.SetRenderCallback([window]() {
             if (window->NeedsRepaint()) {
-                window->RenderDocument();
+                window->Render();
                 window->SwapBuffers();
             }
         });

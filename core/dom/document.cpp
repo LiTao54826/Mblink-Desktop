@@ -495,4 +495,35 @@ void Document::SetActiveElement(std::shared_ptr<Element> element) {
     active_element_ = element;
 }
 
+// ========== 脏区域管理 ==========
+
+void Document::AddDirtyRect(const SkRect& rect) {
+    if (rect.isEmpty()) {
+        return;
+    }
+    
+    // 检查是否与现有脏区域重叠，如果重叠则合并
+    for (auto& existing : dirty_rects_) {
+        if (SkRect::Intersects(existing, rect)) {
+            existing.join(rect);
+            return;
+        }
+    }
+    
+    // 没有重叠，添加新区域
+    dirty_rects_.push_back(rect);
+}
+
+SkRect Document::GetMergedDirtyRect() const {
+    if (dirty_rects_.empty()) {
+        return SkRect::MakeEmpty();
+    }
+    
+    SkRect merged = dirty_rects_[0];
+    for (size_t i = 1; i < dirty_rects_.size(); ++i) {
+        merged.join(dirty_rects_[i]);
+    }
+    return merged;
+}
+
 } // namespace lightui

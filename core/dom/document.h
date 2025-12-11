@@ -290,6 +290,38 @@ private:
 
     // 焦点管理
     std::weak_ptr<Element> active_element_;
+
+    // 脏区域收集（用于移动元素双区域标记优化）
+    std::vector<SkRect> dirty_rects_;
+
+public:
+    // ========== 脏区域管理 ==========
+
+    /**
+     * @brief 添加脏矩形区域
+     * @param rect 需要重绘的区域
+     * 
+     * 用于元素移动时标记新旧两个位置都需要重绘。
+     * 该方法会自动合并重叠区域以减少重绘开销。
+     */
+    void AddDirtyRect(const SkRect& rect);
+
+    /**
+     * @brief 获取合并后的脏矩形区域
+     * @return 所有脏区域的并集
+     */
+    SkRect GetMergedDirtyRect() const;
+
+    /**
+     * @brief 获取所有脏区域列表
+     * @return 脏区域列表的引用
+     */
+    const std::vector<SkRect>& GetDirtyRects() const { return dirty_rects_; }
+
+    /**
+     * @brief 清除脏区域
+     */
+    void ClearDirtyRects() { dirty_rects_.clear(); }
 };
 
 } // namespace lightui

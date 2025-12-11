@@ -8,6 +8,7 @@
 #include "document.h"
 #include "element.h"
 #include "dom_observer.h"
+#include "core/render/render_object.h"
 #include <algorithm>
 #include <stdexcept>
 #include <iostream>
@@ -315,9 +316,16 @@ void Node::MarkDirty(DirtyType type) {
     // 兼容旧代码
     is_dirty_ = true;
 
+    // 4.9 布局隔离回滚：
+    // 恢复为标准的增量布局模式。
+    // 即便对于 absolute/fixed 元素，也允许 LAYOUT 标记向上传播。
+    // 这会触发 Root 的增量布局过程，利用 Cache 避免非必要的重排。
+    // 这虽然不如完全隔离高效，但能保证绝对正确性，并能解决 Popup 不显示的问题。
+    DirtyType propagate_type = type;
+
     // 向上传播脏标记
     if (auto parent = parent_node_.lock()) {
-        parent->MarkDirty(type);
+        parent->MarkDirty(propagate_type);
     }
 }
 
@@ -361,6 +369,16 @@ void Node::RemoveAllChildren() {
 
     // 标记为脏
     MarkDirty();
+}
+
+// ========== RenderObject 双向绑定 ==========
+
+void Node::SetRenderObject(std::shared_ptr<RenderObject> render_obj) {
+    render_object_ = render_obj;
+}
+
+std::shared_ptr<RenderObject> Node::GetRenderObject() const {
+    return render_object_.lock();
 }
 
 } // namespace lightui

@@ -39,6 +39,7 @@ set(RENDER_SOURCES
     svg_path_parser.cpp
     render_svg.cpp
     select_dropdown.cpp
+    render_tree_updater.cpp
 )
 
 set(RENDER_HEADERS
@@ -81,6 +82,7 @@ set(RENDER_HEADERS
     svg_path_parser.h
     render_svg.h
     select_dropdown.h
+    render_tree_updater.h
 )
 
 add_library(lightui_render STATIC ${RENDER_SOURCES})

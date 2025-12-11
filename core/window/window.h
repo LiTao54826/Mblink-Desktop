@@ -43,6 +43,8 @@ class RenderObject;
 class Node;
 class AnimationTimeline;
 class AnimationController;
+class RenderTreeUpdater;
+class RenderTreeBuilder;
 
 /**
  * @brief 渲染后端类型
@@ -320,19 +322,13 @@ public:
     std::shared_ptr<Document> GetDocument() const { return document_; }
 
     /**
-     * @brief 渲染文档到窗口（全量渲染 - 旧版本）
-     */
-    void RenderDocument();
-
-    /**
-     * @brief 增量渲染文档到窗口（Week 2优化版本）
+     * @brief 渲染文档到窗口（唯一渲染入口）
      *
-     * 优化策略:
-     * - 缓存渲染树，只在DOM结构改变时重建
-     * - 收集脏区域，只渲染改变的部分
-     * - 增量布局，只重新布局脏子树
+     * 自动判断使用全量渲染或增量渲染：
+     * - 首次渲染/渲染树失效 → 全量渲染
+     * - 只有脏区域 → 增量渲染
      */
-    void RenderDocumentIncremental();
+    void Render();
 
     /**
      * @brief 清空画布
@@ -359,15 +355,60 @@ public:
     bool NeedsRepaint() const { return needs_repaint_; }
 
     /**
+     * @brief 添加脏区域（用于增量渲染）
+     * @param rect 脏区域矩形
+     */
+    void AddDirtyRect(const SkRect& rect);
+
+    /**
+     * @brief 获取脏区域列表
+     * @return 脏区域列表
+     */
+    const std::vector<SkRect>& GetDirtyRects() const { return dirty_rects_; }
+
+    /**
+     * @brief 清空脏区域
+     */
+    void ClearDirtyRects() { dirty_rects_.clear(); }
+
+    /**
      * @brief 获取缓存的渲染树
      * @return 渲染树根节点，如果没有则返回nullptr
      */
     std::shared_ptr<RenderObject> GetCachedRenderTree() const { return cached_render_tree_; }
 
     /**
+     * @brief 设置是否启用增量渲染
+     * @param enable true启用增量渲染（局部裁剪），false则始终全屏重绘
+     */
+    void SetEnableIncrementalRender(bool enable) { enable_incremental_render_ = enable; }
+
+    /**
+     * @brief 获取是否启用增量渲染
+     */
+    bool IsIncrementalRenderEnabled() const { return enable_incremental_render_; }
+
+    /**
+     * @brief 设置是否强制全屏重绘（调试用）
+     * @param force true强制全屏重绘，但保留渲染树缓存
+     */
+    void SetForceFullRepaint(bool force) { force_full_repaint_ = force; }
+
+    /**
+     * @brief 获取是否强制全屏重绘
+     */
+    bool IsForceFullRepaint() const { return force_full_repaint_; }
+
+    /**
      * @brief 确保渲染树已构建（如果无效则重建）
      */
     void EnsureRenderTree();
+
+    /**
+     * @brief 获取渲染树增量更新器
+     * @return 渲染树更新器指针
+     */
+    RenderTreeUpdater* GetRenderTreeUpdater() const { return render_tree_updater_.get(); }
 
     /**
      * @brief 获取动画时间轴
@@ -429,6 +470,25 @@ private:
      * @param node 要清除的节点
      */
     void ClearDirtyFlags(Node* node);
+
+    /**
+     * @brief 递归清除RenderObject的脏标记
+     * @param render_obj 要清除的渲染对象
+     */
+    void ClearRenderObjectDirtyFlags(RenderObject* render_obj);
+
+    /**
+     * @brief 从渲染树收集脏区域（基于RenderObject的NeedsPaint标记）
+     * @param root 渲染树根节点
+     */
+    void CollectDirtyRectsFromRenderTree(RenderObject* root);
+
+    /**
+     * @brief 检查是否有需要布局的脏节点
+     * @param node DOM节点
+     * @return true表示有脏节点需要布局
+     */
+    bool HasDirtyLayoutNodes(Node* node);
 
     /**
      * @brief 增量布局：只布局需要布局的子树
@@ -493,6 +553,15 @@ private:
     // Week 2: 增量渲染优化
     std::shared_ptr<RenderObject> cached_render_tree_;  // 缓存的渲染树
     bool render_tree_valid_ = false;  // 渲染树是否有效
+    std::vector<SkRect> dirty_rects_;  // 脏区域列表（用于局部重绘）
+
+    // 增量渲染控制开关
+    bool enable_incremental_render_ = true;  // 启用增量渲染（局部裁剪）
+    bool force_full_repaint_ = false;         // 强制全屏重绘（调试用，但保留渲染树缓存）
+
+    // Phase 3: 渲染树增量更新器
+    std::unique_ptr<RenderTreeUpdater> render_tree_updater_;
+    std::shared_ptr<RenderTreeBuilder> render_tree_builder_;
 
     // CSS Transition 动画时间轴
     std::unique_ptr<AnimationTimeline> animation_timeline_;

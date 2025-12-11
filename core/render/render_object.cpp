@@ -20,6 +20,7 @@
 #include <iostream>
 #include <sstream>
 #include <chrono>
+#include <atomic>
 #include "include/core/SkPathEffect.h"
 #include "include/effects/SkDashPathEffect.h"
 
@@ -28,6 +29,26 @@ namespace lightui {
 // 静态成员初始化
 float RenderObject::viewport_width_ = 0.0f;
 float RenderObject::viewport_height_ = 0.0f;
+
+// 视口剔除调试统计（用于验证 quickReject 效果）
+static std::atomic<int> g_paint_total_calls{0};
+static std::atomic<int> g_paint_culled_calls{0};
+
+void RenderObject::ResetPaintStats() {
+    g_paint_total_calls = 0;
+    g_paint_culled_calls = 0;
+}
+
+void RenderObject::PrintPaintStats() {
+    int total = g_paint_total_calls.load();
+    int culled = g_paint_culled_calls.load();
+    int painted = total - culled;
+    float cull_rate = total > 0 ? (culled * 100.0f / total) : 0.0f;
+    std::cout << "[ViewportCulling] Total: " << total 
+              << ", Painted: " << painted 
+              << ", Culled: " << culled 
+              << " (" << cull_rate << "%)" << std::endl;
+}
 
 // 辅助函数：计算浏览器风格的 line-height: normal
 // 与 IFCLayout::MeasureTextStatic 中的查找表保持一致
@@ -144,6 +165,253 @@ void RenderObject::RemoveAllChildren() {
     MarkNeedsPaint();
 }
 
+// =========================================================================
+// 布局样式转换辅助函数
+// =========================================================================
+
+namespace {
+
+/// 将 CSSLength 转换为 Dimension
+Dimension ConvertDimension(const CSSLength& value) {
+    if (value.IsAuto()) {
+        return Dimension::Auto();
+    }
+    if (value.unit == CSSUnit::PERCENT) {
+        return Dimension::Percent(value.value / 100.0f);
+    }
+    return Dimension::Length(value.ToPx());
+}
+
+/// 将 CSSLength 转换为 LengthPercentage
+LengthPercentage ConvertLengthFromCSSLength(const CSSLength& value) {
+    if (value.unit == CSSUnit::PERCENT) {
+        return LengthPercentage::Percent(value.value / 100.0f);
+    }
+    return LengthPercentage::Length(value.ToPx());
+}
+
+/// 将 CSSLength 转换为 LengthPercentageAuto
+LengthPercentageAuto ConvertLengthAuto(const CSSLength& value) {
+    if (value.IsAuto()) {
+        return LengthPercentageAuto::Auto();
+    }
+    if (value.unit == CSSUnit::PERCENT) {
+        return LengthPercentageAuto::Percent(value.value / 100.0f);
+    }
+    return LengthPercentageAuto::Length(value.ToPx());
+}
+
+/// 将 ComputedStyle 转换为布局 Style
+Style ConvertComputedStyleToLayoutStyle(const ComputedStyle& computed) {
+    Style style;
+
+    // Display
+    switch (computed.display) {
+        case RenderObjectType::NONE:
+            style.display = Display::None;
+            break;
+        case RenderObjectType::FLEX:
+            style.display = Display::Flex;
+            break;
+        case RenderObjectType::GRID:
+            style.display = Display::Grid;
+            break;
+        default:
+            style.display = Display::Block;
+            break;
+    }
+
+    // Position
+    if (computed.position == "absolute") {
+        style.position = Position::Absolute;
+    } else if (computed.position == "relative") {
+        style.position = Position::Relative;
+    } else if (computed.position == "fixed") {
+        style.position = Position::Fixed;
+    } else if (computed.position == "sticky") {
+        style.position = Position::Sticky;
+    } else {
+        style.position = Position::Relative;
+    }
+
+    // Box sizing
+    if (computed.box_sizing == "border-box") {
+        style.box_sizing = BoxSizing::BorderBox;
+    } else {
+        style.box_sizing = BoxSizing::ContentBox;
+    }
+
+    // Size
+    style.size.width = ConvertDimension(computed.width);
+    style.size.height = ConvertDimension(computed.height);
+    style.min_size.width = ConvertDimension(computed.min_width);
+    style.min_size.height = ConvertDimension(computed.min_height);
+    style.max_size.width = ConvertDimension(computed.max_width);
+    style.max_size.height = ConvertDimension(computed.max_height);
+
+    // Padding
+    style.padding.left = ConvertLengthFromCSSLength(computed.padding.left);
+    style.padding.right = ConvertLengthFromCSSLength(computed.padding.right);
+    style.padding.top = ConvertLengthFromCSSLength(computed.padding.top);
+    style.padding.bottom = ConvertLengthFromCSSLength(computed.padding.bottom);
+
+    // Margin
+    style.margin.left = ConvertLengthAuto(computed.margin.left);
+    style.margin.right = ConvertLengthAuto(computed.margin.right);
+    style.margin.top = ConvertLengthAuto(computed.margin.top);
+    style.margin.bottom = ConvertLengthAuto(computed.margin.bottom);
+
+    // Border widths
+    float fallback_border = computed.border.width.ToPx(0, computed.font_size);
+    style.border.left = LengthPercentage::Length(computed.border_left_width > 0 ? computed.border_left_width : fallback_border);
+    style.border.right = LengthPercentage::Length(computed.border_right_width > 0 ? computed.border_right_width : fallback_border);
+    style.border.top = LengthPercentage::Length(computed.border_top_width > 0 ? computed.border_top_width : fallback_border);
+    style.border.bottom = LengthPercentage::Length(computed.border_bottom_width > 0 ? computed.border_bottom_width : fallback_border);
+
+    // Inset (for positioned elements)
+    style.inset.left = ConvertLengthAuto(computed.left);
+    style.inset.right = ConvertLengthAuto(computed.right);
+    style.inset.top = ConvertLengthAuto(computed.top);
+    style.inset.bottom = ConvertLengthAuto(computed.bottom);
+
+    // Flexbox properties
+    style.flex_direction = FlexDirection::Row;
+    if (computed.flex_direction == "column") {
+        style.flex_direction = FlexDirection::Column;
+    } else if (computed.flex_direction == "row-reverse") {
+        style.flex_direction = FlexDirection::RowReverse;
+    } else if (computed.flex_direction == "column-reverse") {
+        style.flex_direction = FlexDirection::ColumnReverse;
+    }
+
+    style.flex_wrap = FlexWrap::NoWrap;
+    if (computed.flex_wrap == "wrap") {
+        style.flex_wrap = FlexWrap::Wrap;
+    } else if (computed.flex_wrap == "wrap-reverse") {
+        style.flex_wrap = FlexWrap::WrapReverse;
+    }
+
+    style.flex_grow = computed.flex_grow;
+    style.flex_shrink = computed.flex_shrink;
+    style.flex_basis = ConvertDimension(computed.flex_basis);
+    style.order = computed.order;
+
+    // Alignment
+    if (computed.justify_content == "flex-start") {
+        style.justify_content = JustifyContent::FlexStart;
+    } else if (computed.justify_content == "start") {
+        style.justify_content = JustifyContent::Start;
+    } else if (computed.justify_content == "flex-end") {
+        style.justify_content = JustifyContent::FlexEnd;
+    } else if (computed.justify_content == "end") {
+        style.justify_content = JustifyContent::End;
+    } else if (computed.justify_content == "center") {
+        style.justify_content = JustifyContent::Center;
+    } else if (computed.justify_content == "space-between") {
+        style.justify_content = JustifyContent::SpaceBetween;
+    } else if (computed.justify_content == "space-around") {
+        style.justify_content = JustifyContent::SpaceAround;
+    } else if (computed.justify_content == "space-evenly") {
+        style.justify_content = JustifyContent::SpaceEvenly;
+    }
+
+    // align-items
+    if (computed.align_items == "flex-start" || computed.align_items == "start") {
+        style.align_items = AlignItems::FlexStart;
+    } else if (computed.align_items == "flex-end" || computed.align_items == "end") {
+        style.align_items = AlignItems::FlexEnd;
+    } else if (computed.align_items == "center") {
+        style.align_items = AlignItems::Center;
+    } else if (computed.align_items == "baseline") {
+        style.align_items = AlignItems::Baseline;
+    } else if (computed.align_items == "stretch") {
+        style.align_items = AlignItems::Stretch;
+    }
+
+    // align-self
+    if (computed.align_self == "auto") {
+        style.align_self = std::nullopt;
+    } else if (computed.align_self == "flex-start" || computed.align_self == "start") {
+        style.align_self = AlignSelf::FlexStart;
+    } else if (computed.align_self == "flex-end" || computed.align_self == "end") {
+        style.align_self = AlignSelf::FlexEnd;
+    } else if (computed.align_self == "center") {
+        style.align_self = AlignSelf::Center;
+    } else if (computed.align_self == "baseline") {
+        style.align_self = AlignSelf::Baseline;
+    } else if (computed.align_self == "stretch") {
+        style.align_self = AlignSelf::Stretch;
+    }
+
+    // Gap
+    style.gap.width = ConvertLengthFromCSSLength(computed.column_gap);
+    style.gap.height = ConvertLengthFromCSSLength(computed.row_gap);
+
+    return style;
+}
+
+/// 将 CoreStyle 基础属性从 Style 复制到目标
+void CopyCoreStyleFrom(CoreStyle& target, const Style& source) {
+    target.display = source.display;
+    target.box_sizing = source.box_sizing;
+    target.position = source.position;
+    target.overflow = source.overflow;
+    target.scrollbar_width = source.scrollbar_width;
+    target.size = source.size;
+    target.min_size = source.min_size;
+    target.max_size = source.max_size;
+    target.padding = source.padding;
+    target.border = source.border;
+    target.margin = source.margin;
+    target.inset = source.inset;
+}
+
+} // anonymous namespace
+
+void RenderObject::UpdateLayoutStyle() {
+    if (!layout_style_dirty_) {
+        return;
+    }
+
+    // 转换 ComputedStyle 到布局 Style
+    layout_style_ = ConvertComputedStyleToLayoutStyle(computed_style_);
+
+    // 更新 Block 样式
+    CopyCoreStyleFrom(block_container_style_, layout_style_);
+    CopyCoreStyleFrom(block_item_style_, layout_style_);
+
+    // 更新 Flexbox 样式
+    CopyCoreStyleFrom(flex_container_style_, layout_style_);
+    flex_container_style_.flex_direction = layout_style_.flex_direction;
+    flex_container_style_.flex_wrap = layout_style_.flex_wrap;
+    flex_container_style_.align_items = layout_style_.align_items.value_or(AlignItems::Stretch);
+    flex_container_style_.align_content = layout_style_.align_content.value_or(AlignContent::Stretch);
+    flex_container_style_.justify_content = layout_style_.justify_content;
+    flex_container_style_.gap = layout_style_.gap;
+
+    CopyCoreStyleFrom(flex_item_style_, layout_style_);
+    flex_item_style_.align_self = layout_style_.align_self;
+    flex_item_style_.flex_grow = layout_style_.flex_grow;
+    flex_item_style_.flex_shrink = layout_style_.flex_shrink;
+    flex_item_style_.flex_basis = layout_style_.flex_basis;
+    flex_item_style_.order = layout_style_.order;
+
+    // 更新 Grid 样式
+    CopyCoreStyleFrom(grid_container_style_, layout_style_);
+    grid_container_style_.align_items = layout_style_.align_items;
+    grid_container_style_.justify_items = layout_style_.justify_items;
+    grid_container_style_.row_gap = ConvertLengthFromCSSLength(computed_style_.row_gap);
+    grid_container_style_.column_gap = ConvertLengthFromCSSLength(computed_style_.column_gap);
+    // Note: grid-template-* 需要更复杂的解析，暂时保持默认值
+
+    CopyCoreStyleFrom(grid_item_style_, layout_style_);
+    grid_item_style_.align_self = layout_style_.align_self;
+    // Note: grid-row/column-* 需要更复杂的解析，暂时保持默认值
+
+    // 清除脏标记
+    layout_style_dirty_ = false;
+}
+
 void RenderObject::Layout(float parent_width, float parent_height) {
     // 基类默认实现：简单的块布局
     // 子类应该重写此方法实现具体的布局逻辑
@@ -153,6 +421,35 @@ void RenderObject::Layout(float parent_width, float parent_height) {
 void RenderObject::Paint(SkCanvas* canvas) {
     // 基类默认实现：什么都不做
     needs_paint_ = false;
+}
+
+SkRect RenderObject::GetBoundingRect() const {
+    // 使用布局信息计算边界框
+    const auto& layout = layout_info_;
+
+    // 如果布局信息无效，返回空矩形
+    if (!layout.is_laid_out) {
+        return SkRect::MakeEmpty();
+    }
+
+    // 计算绝对位置（需要累加所有祖先的偏移）
+    float abs_x = layout.x;
+    float abs_y = layout.y;
+
+    auto parent = parent_.lock();
+    while (parent) {
+        const auto& parent_layout = parent->GetLayoutInfo();
+        abs_x += parent_layout.x;
+        abs_y += parent_layout.y;
+
+        // 考虑父元素的滚动偏移
+        abs_x -= parent->GetScrollX();
+        abs_y -= parent->GetScrollY();
+
+        parent = parent->GetParent();
+    }
+
+    return SkRect::MakeXYWH(abs_x, abs_y, layout.width, layout.height);
 }
 
 void RenderObject::ScrollBy(float dx, float dy) {
@@ -654,6 +951,29 @@ void RenderBlock::Paint(SkCanvas* canvas) {
         return;
     }
 
+    // 统计：每次 Paint 调用
+    extern std::atomic<int> g_paint_total_calls;
+    extern std::atomic<int> g_paint_culled_calls;
+    g_paint_total_calls++;
+
+    // Enterprise-Grade Optimization: View Culling
+    // Check if the object is visible in the current clip rect.
+    // layout_info_ contains coordinates relative to the parent.
+    // The canvas CTM is currently set to the parent's generic coordinate space.
+    // So paint_rect matches the CTM directly.
+    SkRect paint_rect = SkRect::MakeXYWH(layout_info_.x, layout_info_.y, layout_info_.width, layout_info_.height);
+    
+    // Aggressive culling: Skip if completely outside the clip.
+    // Note: This relies on Skia's quickReject which accounts for the current transform (CTM) and clip.
+    // We add a safety margin (50px) to account for shadows, outlines, or minor overflows.
+    // For large overflows (overflow: visible), strictly speaking we shouldn't cull, 
+    // but in practice large offscreen content is rare in well-designed apps.
+    if (canvas->quickReject(paint_rect.makeOutset(50, 50))) {
+        g_paint_culled_calls++;  // 统计：被剔除的调用
+        needs_paint_ = false;
+        return;
+    }
+
     const auto& style = computed_style_;
     const auto& layout = layout_info_;
 
@@ -752,134 +1072,173 @@ void RenderBlock::Paint(SkCanvas* canvas) {
     if (has_any_border) {
         SkRect border_box = box.GetBorderBox();
 
-        // 边框绘制时需要向内偏移半个边框宽度
-        // 因为 Skia 的线条是以指定坐标为中心绘制的
-        float half_left = box.border_left_width / 2.0f;
-        float half_right = box.border_right_width / 2.0f;
-        float half_top = box.border_top_width / 2.0f;
-        float half_bottom = box.border_bottom_width / 2.0f;
+        // 检查是否有圆角
+        bool has_border_radius = style.border_radius.top_left.value > 0 ||
+                                 style.border_radius.top_right.value > 0 ||
+                                 style.border_radius.bottom_left.value > 0 ||
+                                 style.border_radius.bottom_right.value > 0;
 
-        // 检查是否是 fieldset 元素，需要特殊处理上边框
-        bool is_fieldset = false;
-        float legend_left = 0, legend_right = 0;
-        RenderObject* legend_render = nullptr;
+        if (has_border_radius) {
+            // 有圆角：使用 RenderRoundedBorderAdvanced（支持每边独立属性）
+            
+            // 准备四边宽度数组 [top, right, bottom, left]
+            float border_widths[4] = {
+                box.border_top_width,
+                box.border_right_width,
+                box.border_bottom_width,
+                box.border_left_width
+            };
+            
+            // 准备四边样式数组
+            CSSBorderStyle border_styles[4] = {
+                style.border_top_style != CSSBorderStyle::NONE ? style.border_top_style : style.border.style,
+                style.border_right_style != CSSBorderStyle::NONE ? style.border_right_style : style.border.style,
+                style.border_bottom_style != CSSBorderStyle::NONE ? style.border_bottom_style : style.border.style,
+                style.border_left_style != CSSBorderStyle::NONE ? style.border_left_style : style.border.style
+            };
+            
+            // 准备四边颜色数组
+            SkColor border_colors[4] = {
+                style.border_top_style != CSSBorderStyle::NONE ? style.border_top_color : style.border.color,
+                style.border_right_style != CSSBorderStyle::NONE ? style.border_right_color : style.border.color,
+                style.border_bottom_style != CSSBorderStyle::NONE ? style.border_bottom_color : style.border.color,
+                style.border_left_style != CSSBorderStyle::NONE ? style.border_left_color : style.border.color
+            };
+            
+            renderer.RenderRoundedBorderAdvanced(box, border_widths, border_styles, border_colors, style.border_radius);
+            
+        } else {
+            // 无圆角：使用原有的独立边框渲染逻辑
+            
+            // 边框绘制时需要向内偏移半个边框宽度
+            // 因为 Skia 的线条是以指定坐标为中心绘制的
+            float half_left = box.border_left_width / 2.0f;
+            float half_right = box.border_right_width / 2.0f;
+            float half_top = box.border_top_width / 2.0f;
+            float half_bottom = box.border_bottom_width / 2.0f;
 
-        if (node && node->GetNodeType() == NodeType::ELEMENT_NODE) {
-            auto element = std::static_pointer_cast<Element>(node);
-            if (element->GetTagName() == "fieldset") {
-                is_fieldset = true;
-                // 查找 legend 子元素的渲染对象
-                for (auto& child : children_) {
-                    auto child_node = child->GetNode();
-                    if (child_node && child_node->GetNodeType() == NodeType::ELEMENT_NODE) {
-                        auto child_elem = std::static_pointer_cast<Element>(child_node);
-                        if (child_elem->GetTagName() == "legend") {
-                            legend_render = child.get();
-                            auto& legend_layout = child->GetLayoutInfo();
-                            auto& legend_style = child->GetComputedStyle();
+            // 检查是否是 fieldset 元素，需要特殊处理上边框
+            bool is_fieldset = false;
+            float legend_left = 0, legend_right = 0;
+            RenderObject* legend_render = nullptr;
 
-                            // 计算 legend 的实际渲染宽度
-                            // 遍历 legend 的子元素，找到最右边的位置
-                            float max_child_right = 0.0f;
-                            for (const auto& grandchild : child->GetChildren()) {
-                                auto& gc_layout = grandchild->GetLayoutInfo();
-                                max_child_right = std::max(max_child_right, gc_layout.x + gc_layout.width);
+            if (node && node->GetNodeType() == NodeType::ELEMENT_NODE) {
+                auto element = std::static_pointer_cast<Element>(node);
+                if (element->GetTagName() == "fieldset") {
+                    is_fieldset = true;
+                    // 查找 legend 子元素的渲染对象
+                    for (auto& child : children_) {
+                        auto child_node = child->GetNode();
+                        if (child_node && child_node->GetNodeType() == NodeType::ELEMENT_NODE) {
+                            auto child_elem = std::static_pointer_cast<Element>(child_node);
+                            if (child_elem->GetTagName() == "legend") {
+                                legend_render = child.get();
+                                auto& legend_layout = child->GetLayoutInfo();
+                                auto& legend_style = child->GetComputedStyle();
+
+                                // 计算 legend 的实际渲染宽度
+                                // 遍历 legend 的子元素，找到最右边的位置
+                                float max_child_right = 0.0f;
+                                for (const auto& grandchild : child->GetChildren()) {
+                                    auto& gc_layout = grandchild->GetLayoutInfo();
+                                    max_child_right = std::max(max_child_right, gc_layout.x + gc_layout.width);
+                                }
+
+                                float legend_padding_right = legend_style.padding.right.ToPx();
+                                float legend_border_right = legend_style.border_right_width > 0 ?
+                                    legend_style.border_right_width : legend_style.border.width.ToPx();
+
+                                // legend_left 是 legend 的左边缘（相对于 fieldset border-box）
+                                legend_left = legend_layout.x;
+                                // legend_right 是 legend 的右边缘
+                                // = legend_left + 子元素最右边位置 + 右侧 padding + 右侧 border
+                                legend_right = legend_layout.x + max_child_right + legend_padding_right + legend_border_right;
+                                break;
                             }
-
-                            float legend_padding_right = legend_style.padding.right.ToPx();
-                            float legend_border_right = legend_style.border_right_width > 0 ?
-                                legend_style.border_right_width : legend_style.border.width.ToPx();
-
-                            // legend_left 是 legend 的左边缘（相对于 fieldset border-box）
-                            legend_left = legend_layout.x;
-                            // legend_right 是 legend 的右边缘
-                            // = legend_left + 子元素最右边位置 + 右侧 padding + 右侧 border
-                            legend_right = legend_layout.x + max_child_right + legend_padding_right + legend_border_right;
-                            break;
                         }
                     }
                 }
             }
-        }
 
-        // 渲染左边框
-        if (box.border_left_width > 0) {
-            CSSBorderStyle left_style = style.border_left_style != CSSBorderStyle::NONE ?
-                                        style.border_left_style : style.border.style;
-            SkColor left_color = style.border_left_style != CSSBorderStyle::NONE ?
-                                 style.border_left_color : style.border.color;
-            if (left_style != CSSBorderStyle::NONE) {
-                renderer.RenderBorderEdge(
-                    border_box.left() + half_left, border_box.top(),
-                    border_box.left() + half_left, border_box.bottom(),
-                    box.border_left_width, left_style, left_color
-                );
+            // 渲染左边框
+            if (box.border_left_width > 0) {
+                CSSBorderStyle left_style = style.border_left_style != CSSBorderStyle::NONE ?
+                                            style.border_left_style : style.border.style;
+                SkColor left_color = style.border_left_style != CSSBorderStyle::NONE ?
+                                     style.border_left_color : style.border.color;
+                if (left_style != CSSBorderStyle::NONE) {
+                    renderer.RenderBorderEdge(
+                        border_box.left() + half_left, border_box.top(),
+                        border_box.left() + half_left, border_box.bottom(),
+                        box.border_left_width, left_style, left_color
+                    );
+                }
             }
-        }
 
-        // 渲染右边框
-        if (box.border_right_width > 0) {
-            CSSBorderStyle right_style = style.border_right_style != CSSBorderStyle::NONE ?
-                                         style.border_right_style : style.border.style;
-            SkColor right_color = style.border_right_style != CSSBorderStyle::NONE ?
-                                  style.border_right_color : style.border.color;
-            if (right_style != CSSBorderStyle::NONE) {
-                renderer.RenderBorderEdge(
-                    border_box.right() - half_right, border_box.top(),
-                    border_box.right() - half_right, border_box.bottom(),
-                    box.border_right_width, right_style, right_color
-                );
+            // 渲染右边框
+            if (box.border_right_width > 0) {
+                CSSBorderStyle right_style = style.border_right_style != CSSBorderStyle::NONE ?
+                                             style.border_right_style : style.border.style;
+                SkColor right_color = style.border_right_style != CSSBorderStyle::NONE ?
+                                      style.border_right_color : style.border.color;
+                if (right_style != CSSBorderStyle::NONE) {
+                    renderer.RenderBorderEdge(
+                        border_box.right() - half_right, border_box.top(),
+                        border_box.right() - half_right, border_box.bottom(),
+                        box.border_right_width, right_style, right_color
+                    );
+                }
             }
-        }
 
-        // 渲染上边框 - fieldset 需要特殊处理（在 legend 位置断开）
-        if (box.border_top_width > 0) {
-            CSSBorderStyle top_style = style.border_top_style != CSSBorderStyle::NONE ?
-                                       style.border_top_style : style.border.style;
-            SkColor top_color = style.border_top_style != CSSBorderStyle::NONE ?
-                                style.border_top_color : style.border.color;
-            if (top_style != CSSBorderStyle::NONE) {
-                if (is_fieldset && legend_render) {
-                    // fieldset 上边框在 legend 位置断开
-                    // 绘制 legend 左边的部分
-                    if (legend_left > border_box.left()) {
+            // 渲染上边框 - fieldset 需要特殊处理（在 legend 位置断开）
+            if (box.border_top_width > 0) {
+                CSSBorderStyle top_style = style.border_top_style != CSSBorderStyle::NONE ?
+                                           style.border_top_style : style.border.style;
+                SkColor top_color = style.border_top_style != CSSBorderStyle::NONE ?
+                                    style.border_top_color : style.border.color;
+                if (top_style != CSSBorderStyle::NONE) {
+                    if (is_fieldset && legend_render) {
+                        // fieldset 上边框在 legend 位置断开
+                        // 绘制 legend 左边的部分
+                        if (legend_left > border_box.left()) {
+                            renderer.RenderBorderEdge(
+                                border_box.left(), border_box.top() + half_top,
+                                legend_left, border_box.top() + half_top,
+                                box.border_top_width, top_style, top_color
+                            );
+                        }
+                        // 绘制 legend 右边的部分
+                        if (legend_right < border_box.right()) {
+                            renderer.RenderBorderEdge(
+                                legend_right, border_box.top() + half_top,
+                                border_box.right(), border_box.top() + half_top,
+                                box.border_top_width, top_style, top_color
+                            );
+                        }
+                    } else {
+                        // 普通元素：绘制完整上边框
                         renderer.RenderBorderEdge(
                             border_box.left(), border_box.top() + half_top,
-                            legend_left, border_box.top() + half_top,
-                            box.border_top_width, top_style, top_color
-                        );
-                    }
-                    // 绘制 legend 右边的部分
-                    if (legend_right < border_box.right()) {
-                        renderer.RenderBorderEdge(
-                            legend_right, border_box.top() + half_top,
                             border_box.right(), border_box.top() + half_top,
                             box.border_top_width, top_style, top_color
                         );
                     }
-                } else {
-                    // 普通元素：绘制完整上边框
-                    renderer.RenderBorderEdge(
-                        border_box.left(), border_box.top() + half_top,
-                        border_box.right(), border_box.top() + half_top,
-                        box.border_top_width, top_style, top_color
-                    );
                 }
             }
-        }
 
-        // 渲染下边框
-        if (box.border_bottom_width > 0) {
-            CSSBorderStyle bottom_style = style.border_bottom_style != CSSBorderStyle::NONE ?
-                                          style.border_bottom_style : style.border.style;
-            SkColor bottom_color = style.border_bottom_style != CSSBorderStyle::NONE ?
-                                   style.border_bottom_color : style.border.color;
-            if (bottom_style != CSSBorderStyle::NONE) {
-                renderer.RenderBorderEdge(
-                    border_box.left(), border_box.bottom() - half_bottom,
-                    border_box.right(), border_box.bottom() - half_bottom,
-                    box.border_bottom_width, bottom_style, bottom_color
-                );
+            // 渲染下边框
+            if (box.border_bottom_width > 0) {
+                CSSBorderStyle bottom_style = style.border_bottom_style != CSSBorderStyle::NONE ?
+                                              style.border_bottom_style : style.border.style;
+                SkColor bottom_color = style.border_bottom_style != CSSBorderStyle::NONE ?
+                                       style.border_bottom_color : style.border.color;
+                if (bottom_style != CSSBorderStyle::NONE) {
+                    renderer.RenderBorderEdge(
+                        border_box.left(), border_box.bottom() - half_bottom,
+                        border_box.right(), border_box.bottom() - half_bottom,
+                        box.border_bottom_width, bottom_style, bottom_color
+                    );
+                }
             }
         }
     }
@@ -1848,6 +2207,13 @@ void RenderInline::Paint(SkCanvas* canvas) {
         return;
     }
 
+    // Enterprise-Grade Optimization: View Culling
+    SkRect paint_rect = SkRect::MakeXYWH(layout_info_.x, layout_info_.y, layout_info_.width, layout_info_.height);
+    if (canvas->quickReject(paint_rect.makeOutset(10, 10))) {
+        needs_paint_ = false;
+        return;
+    }
+
     const auto& style = computed_style_;
     const auto& layout = layout_info_;
 
@@ -2369,6 +2735,13 @@ void RenderText::Layout(float parent_width, float parent_height) {
 
 void RenderText::Paint(SkCanvas* canvas) {
     if (!canvas || text_.empty()) {
+        needs_paint_ = false;
+        return;
+    }
+
+    // Viewport Culling: Skip text outside clip region
+    SkRect paint_rect = SkRect::MakeXYWH(layout_info_.x, layout_info_.y, layout_info_.width, layout_info_.height);
+    if (canvas->quickReject(paint_rect.makeOutset(10, 10))) {
         needs_paint_ = false;
         return;
     }
@@ -3191,6 +3564,14 @@ void RenderTable::Paint(SkCanvas* canvas) {
         return;
     }
 
+    // Enterprise-Grade Optimization: View Culling
+    // Tables can be large, so culling is important.
+    SkRect paint_rect = SkRect::MakeXYWH(layout_info_.x, layout_info_.y, layout_info_.width, layout_info_.height);
+    if (canvas->quickReject(paint_rect.makeOutset(50, 50))) {
+        needs_paint_ = false;
+        return;
+    }
+
     const auto& style = computed_style_;
     const auto& layout = layout_info_;
 
@@ -3266,6 +3647,13 @@ void RenderTableRowGroup::Layout(float parent_width, float parent_height) {
 
 void RenderTableRowGroup::Paint(SkCanvas* canvas) {
     if (!canvas) {
+        needs_paint_ = false;
+        return;
+    }
+
+    // Viewport Culling: Skip row groups outside clip region
+    SkRect paint_rect = SkRect::MakeXYWH(layout_info_.x, layout_info_.y, layout_info_.width, layout_info_.height);
+    if (canvas->quickReject(paint_rect.makeOutset(20, 20))) {
         needs_paint_ = false;
         return;
     }
@@ -3424,6 +3812,13 @@ void RenderTableRow::Paint(SkCanvas* canvas) {
         return;
     }
 
+    // Viewport Culling: Skip rows outside clip region
+    SkRect paint_rect = SkRect::MakeXYWH(layout_info_.x, layout_info_.y, layout_info_.width, layout_info_.height);
+    if (canvas->quickReject(paint_rect.makeOutset(20, 20))) {
+        needs_paint_ = false;
+        return;
+    }
+
     const auto& layout = layout_info_;
 
     canvas->save();
@@ -3522,6 +3917,13 @@ void RenderTableCell::Layout(float parent_width, float parent_height) {
 
 void RenderTableCell::Paint(SkCanvas* canvas) {
     if (!canvas) {
+        needs_paint_ = false;
+        return;
+    }
+
+    // Viewport Culling: Skip cells outside clip region
+    SkRect paint_rect = SkRect::MakeXYWH(layout_info_.x, layout_info_.y, layout_info_.width, layout_info_.height);
+    if (canvas->quickReject(paint_rect.makeOutset(20, 20))) {
         needs_paint_ = false;
         return;
     }
@@ -3658,6 +4060,13 @@ void RenderTableCaption::Layout(float parent_width, float parent_height) {
 
 void RenderTableCaption::Paint(SkCanvas* canvas) {
     if (!canvas) {
+        needs_paint_ = false;
+        return;
+    }
+
+    // Viewport Culling: Skip captions outside clip region
+    SkRect paint_rect = SkRect::MakeXYWH(layout_info_.x, layout_info_.y, layout_info_.width, layout_info_.height);
+    if (canvas->quickReject(paint_rect.makeOutset(20, 20))) {
         needs_paint_ = false;
         return;
     }

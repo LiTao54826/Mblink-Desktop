@@ -76,6 +76,20 @@ public:
     void ComputeLayout(float available_width, float available_height);
 
     /**
+     * @brief Compute incremental layout for dirty subtrees only
+     * @param available_width Available width for layout
+     * @param available_height Available height for layout
+     * @return true if any layout was performed
+     */
+    bool ComputeIncrementalLayout(float available_width, float available_height);
+
+    /**
+     * @brief Mark a render object as needing layout
+     * @param render_obj The render object to mark
+     */
+    void MarkNeedsLayout(RenderObject* render_obj);
+
+    /**
      * @brief Get layout information and update render tree
      * @param root Root of the render tree
      */
@@ -196,6 +210,7 @@ private:
 
         // Flags
         bool is_ifc_container = false;
+        bool is_table_container = false;  // TABLE 元素标记
         bool needs_layout = true;
 
         //----------------------------------------------------------------------
@@ -279,6 +294,14 @@ private:
      * @return Layout output
      */
     LayoutOutput ComputeGridLayout(NodeId node_id, const LayoutInput& inputs);
+
+    /**
+     * @brief Compute table layout for a node
+     * @param node_id Node to layout
+     * @param inputs Layout input parameters
+     * @return Layout output
+     */
+    LayoutOutput ComputeTableLayout(NodeId node_id, const LayoutInput& inputs);
 
     /**
      * @brief Compute IFC layout for a node

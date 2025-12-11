@@ -206,21 +206,42 @@ public:
      */
     void SetDocument(Document* doc) { document_ = doc; }
 
+    /**
+     * @brief 获取样式解析器
+     */
+    StyleResolver& GetStyleResolver() { return style_resolver_; }
+
+    // ========== Phase 3: 增量渲染树更新接口 ==========
+
+    /**
+     * @brief 从元素节点创建渲染对象（用于增量更新）
+     * @param element 元素节点
+     * @return 渲染对象，如果 display: none 则返回 nullptr
+     */
+    std::shared_ptr<RenderObject> CreateRenderObjectForElement(Element* element);
+
+    /**
+     * @brief 从文本节点创建渲染对象（用于增量更新）
+     * @param text 文本节点
+     * @return 渲染对象
+     */
+    std::shared_ptr<RenderObject> CreateRenderObjectForText(Text* text);
+
 private:
     /**
-     * @brief 从元素节点创建渲染对象
+     * @brief 从元素节点创建渲染对象（内部使用）
      */
     std::shared_ptr<RenderObject> CreateRenderObjectForElement(
         std::shared_ptr<Element> element,
         const ComputedStyle* parent_style);
-    
+
     /**
-     * @brief 从文本节点创建渲染对象
+     * @brief 从文本节点创建渲染对象（内部使用）
      */
     std::shared_ptr<RenderObject> CreateRenderObjectForText(
         std::shared_ptr<Text> text,
         const ComputedStyle* parent_style);
-    
+
     /**
      * @brief 根据样式创建对应类型的渲染对象
      */

@@ -408,6 +408,12 @@ private:
      */
     void HandleEvent(std::shared_ptr<Event> event, bool use_capture);
 
+    /**
+     * @brief 同步 styles_ map 到 style attribute
+     * 仅供内部使用，用于支持 SetStyle() API
+     */
+    void UpdateStyleAttribute();
+
 private:
     /**
      * @brief 判断属性是否影响布局

@@ -231,4 +231,26 @@ message(STATUS "  - preact_todo_app")
 message(STATUS "  - preact_form_demo")
 message(STATUS "  - flexbox_test")
 message(STATUS "  - layout_compare_test")
+message(STATUS "  - incremental_render_test")
+
+# Incremental Render Test
+add_executable(incremental_render_test
+    incremental_render_test.cpp
+)
+target_link_libraries(incremental_render_test PRIVATE
+    lightui_window
+    lightui_dom
+    lightui_event
+    lightui_render
+    SDL3::SDL3-static
+    skia
+)
+if(MSVC)
+    target_compile_options(incremental_render_test PRIVATE /W3 /EHsc)
+endif()
+set_target_properties(incremental_render_test PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+    RUNTIME_OUTPUT_DIRECTORY_DEBUG "${CMAKE_BINARY_DIR}/bin/Debug"
+    RUNTIME_OUTPUT_DIRECTORY_RELEASE "${CMAKE_BINARY_DIR}/bin/Release"
+)
 

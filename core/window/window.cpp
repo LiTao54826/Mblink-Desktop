@@ -52,6 +52,7 @@
 #include "core/render/transition.h"
 #include "core/render/animation_timeline.h"
 #include "core/render/animation_controller.h"
+#include "core/render/render_tree_updater.h"
 #include "core/layout/layout_engine.h"
 #include "core/render/color.h"
 #include "core/render/select_dropdown.h"
@@ -68,25 +69,73 @@ public:
     explicit WindowDOMObserver(Window* window) : window_(window) {}
 
     void OnNodeAdded(Node* node, Node* parent) override {
+        DEBUG_LOG("[WindowDOMObserver::OnNodeAdded] node=" << node
+                  << ", parent=" << parent
+                  << ", IsInBatch=" << (node ? IsInBatch(node) : false));
         if (window_ && !IsInBatch(node)) {
+            // Phase 2 优化：增量渲染树更新
+            // 使用 RenderTreeUpdater 插入新的 RenderObject，而不是重建整棵树
+            auto* updater = window_->GetRenderTreeUpdater();
+            if (updater && window_->GetCachedRenderTree()) {
+                DEBUG_LOG("[WindowDOMObserver::OnNodeAdded] Using incremental tree update");
+                auto new_ro = updater->InsertRenderObject(node, parent, nullptr);
+                // 新增节点时，由于 RenderObject 尚未布局，其边界矩形为空
+                // 必须强制全量重绘以确保新节点可见
+                if (new_ro) {
+                    window_->SetForceFullRepaint(true);
+                }
+            } else {
+                // 回退：渲染树还未构建，需要完全重建
+                DEBUG_LOG("[WindowDOMObserver::OnNodeAdded] Fallback to InvalidateRenderTree");
+                window_->InvalidateRenderTree();
+            }
             window_->SetNeedsRepaint();
-            window_->InvalidateRenderTree();
         }
     }
 
+
     void OnNodeRemoved(Node* node, Node* parent) override {
+        DEBUG_LOG("[WindowDOMObserver::OnNodeRemoved] node=" << node
+                  << ", parent=" << parent
+                  << ", IsInBatch=" << (node ? IsInBatch(node) : false));
         if (window_ && !IsInBatch(node)) {
+            // 节点移除时强制全量重绘以确保正确清除
+            window_->SetForceFullRepaint(true);
+
+            // Phase 2 优化：增量渲染树更新
+            // 使用 RenderTreeUpdater 移除 RenderObject，而不是重建整棵树
+            auto* updater = window_->GetRenderTreeUpdater();
+            if (updater && window_->GetCachedRenderTree()) {
+                DEBUG_LOG("[WindowDOMObserver::OnNodeRemoved] Using incremental tree update");
+                updater->RemoveRenderObject(node);
+            } else {
+                // 回退：渲染树还未构建，需要完全重建
+                DEBUG_LOG("[WindowDOMObserver::OnNodeRemoved] Fallback to InvalidateRenderTree");
+                window_->InvalidateRenderTree();
+            }
             window_->SetNeedsRepaint();
-            window_->InvalidateRenderTree();
         }
     }
+
 
     void OnAttributeChanged(Element* element,
                            const std::string& name,
                            const std::string& old_value,
                            const std::string& new_value) override {
         if (window_ && !IsInBatch(element)) {
+            // Phase 1: 精确脏区域标记
+            // 获取关联的 RenderObject，标记其需要重绘
+            if (auto render_obj = element->GetRenderObject()) {
+                render_obj->MarkNeedsPaint();
+                // 记录脏矩形
+                SkRect bounds = render_obj->GetBoundingRect();
+                if (!bounds.isEmpty()) {
+                    element->SetDirtyRect(bounds);
+                    window_->AddDirtyRect(bounds);
+                }
+            }
             window_->SetNeedsRepaint();
+            // 注意：属性变化不调用 InvalidateRenderTree()，保持渲染树结构
         }
     }
 
@@ -95,7 +144,55 @@ public:
                        const std::string& old_value,
                        const std::string& new_value) override {
         if (window_ && !IsInBatch(element)) {
+            // 特殊处理: display 属性变化影响元素的 RenderObject 存在性
+            // display: none 的元素没有 RenderObject，变为 block/flex 等需要创建
+            // 反之亦然，需要删除 RenderObject
+            if (property == "display") {
+                bool was_none = (old_value == "none" || old_value.empty());
+                bool is_none = (new_value == "none");
+                if (was_none != is_none) {
+                    // 可见性发生变化，需要重建渲染树
+                    window_->InvalidateRenderTree();
+                    window_->SetNeedsRepaint();
+                    return;
+                }
+            }
+            
+            // Phase 1: 精确脏区域标记
+            // 样式变化可能影响布局或绘制
+            if (auto render_obj = element->GetRenderObject()) {
+                // 某些样式属性只影响绘制，不影响布局
+                static const std::vector<std::string> paint_only_props = {
+                    "color", "background-color", "background-image",
+                    "border-color", "opacity", "visibility",
+                    "box-shadow", "text-shadow", "outline"
+                };
+
+                bool is_paint_only = false;
+                for (const auto& prop : paint_only_props) {
+                    if (property == prop) {
+                        is_paint_only = true;
+                        break;
+                    }
+                }
+
+                if (is_paint_only) {
+                    render_obj->MarkNeedsPaint();
+                } else {
+                    // 其他属性可能影响布局
+                    render_obj->MarkNeedsLayout();
+                    render_obj->MarkNeedsPaint();
+                }
+
+                // 记录脏矩形
+                SkRect bounds = render_obj->GetBoundingRect();
+                if (!bounds.isEmpty()) {
+                    element->SetDirtyRect(bounds);
+                    window_->AddDirtyRect(bounds);
+                }
+            }
             window_->SetNeedsRepaint();
+            // 样式变化不调用 InvalidateRenderTree()，保持渲染树结构
         }
     }
 
@@ -103,6 +200,29 @@ public:
                       const std::string& old_text,
                       const std::string& new_text) override {
         if (window_ && !IsInBatch(node)) {
+            // Phase 2: 文本内容变化的局部重绘
+            // 先尝试获取节点自身的 RenderObject
+            auto render_obj = node->GetRenderObject();
+
+            // 如果节点没有 RenderObject，尝试获取父节点的
+            if (!render_obj) {
+                if (auto parent = node->GetParentNode()) {
+                    render_obj = parent->GetRenderObject();
+                }
+            }
+
+            if (render_obj) {
+                // 文本内容变化需要重新布局（尺寸可能改变）
+                render_obj->MarkNeedsLayout();
+                render_obj->MarkNeedsPaint();
+
+                // 记录脏矩形
+                SkRect bounds = render_obj->GetBoundingRect();
+                if (!bounds.isEmpty()) {
+                    node->SetDirtyRect(bounds);
+                    window_->AddDirtyRect(bounds);
+                }
+            }
             window_->SetNeedsRepaint();
         }
     }
@@ -135,6 +255,18 @@ public:
             }
 
             if (needs_repaint) {
+                // Phase 1: 精确脏区域标记
+                // 伪类变化只影响绘制，不影响渲染树结构
+                if (auto render_obj = element->GetRenderObject()) {
+                    render_obj->MarkNeedsPaint();
+
+                    // 记录脏矩形
+                    SkRect bounds = render_obj->GetBoundingRect();
+                    if (!bounds.isEmpty()) {
+                        element->SetDirtyRect(bounds);
+                        window_->AddDirtyRect(bounds);
+                    }
+                }
                 window_->SetNeedsRepaint();
             }
         }
@@ -1031,134 +1163,8 @@ void Window::SetDocument(std::shared_ptr<Document> document) {
     SetNeedsRepaint();
 }
 
-void Window::RenderDocument() {
-    if (!document_ || !surface_) {
-        return;
-    }
-
-    // 更新动画
-    static Uint64 start_time = SDL_GetPerformanceCounter();
-    Uint64 current_time = SDL_GetPerformanceCounter();
-    Uint64 frequency = SDL_GetPerformanceFrequency();
-    double timestamp_sec = static_cast<double>(current_time - start_time) / frequency;
-    UpdateAnimations(timestamp_sec);
-
-    // 获取画布
-    SkCanvas* canvas = surface_->getCanvas();
-    if (!canvas) {
-        return;
-    }
-
-    // TODO: 实现完整的渲染管线
-    // 1. 样式解析
-    // 2. 布局计算
-    // 3. 渲染树构建
-    // 4. 绘制
-
-    // 使用缓存的渲染树，避免每次重建导致滚动状态丢失
-    auto body = document_->GetBody();
-    if (body) {
-        // 获取物理像素大小
-        int physical_width, physical_height;
-        SDL_GetWindowSizeInPixels(sdl_window_, &physical_width, &physical_height);
-
-        // 获取 DPI 缩放比
-        float dpi_scale = GetDisplayScale();
-
-        // 计算逻辑大小（CSS 像素）- 像浏览器一样
-        int logical_width = static_cast<int>(physical_width / dpi_scale);
-        int logical_height = static_cast<int>(physical_height / dpi_scale);
-
-        // 检查是否需要重建渲染树和重新布局
-        bool needs_layout = false;
-        if (!render_tree_valid_ || !cached_render_tree_) {
-            // 在重建渲染树前，保存旧渲染树的滚动位置
-            std::unordered_map<Node*, std::pair<float, float>> scroll_positions;
-            if (cached_render_tree_) {
-                SaveScrollPositions(cached_render_tree_.get(), scroll_positions);
-            }
-
-            // 使用 RenderTreeBuilder 构建渲染树
-            RenderTreeBuilder builder;
-            builder.SetDocument(document_.get());
-            cached_render_tree_ = builder.BuildRenderTree(body, nullptr);
-            render_tree_valid_ = true;
-            needs_layout = true;
-
-            // 恢复滚动位置
-            if (cached_render_tree_ && !scroll_positions.empty()) {
-                RestoreScrollPositions(cached_render_tree_.get(), scroll_positions);
-            }
-        } else {
-            // 渲染树有效，但需要更新脏节点的样式（处理伪类变化如:focus）
-            MarkRenderObjectsDirty(body.get(), cached_render_tree_.get());
-            // 检查渲染树根节点是否需要布局（MarkNeedsLayout 会向上传播）
-            needs_layout = cached_render_tree_->NeedsLayout();
-        }
-
-        if (cached_render_tree_) {
-            // 获取 body 的背景色并清空画布
-            SkColor clear_color = SK_ColorWHITE;  // 默认白色
-            const auto& body_style = cached_render_tree_->GetComputedStyle();
-            if (!body_style.background_color.empty() && body_style.background_color != "transparent") {
-                clear_color = Color::Parse(body_style.background_color);
-            }
-            canvas->clear(clear_color);
-
-            // 设置视口尺寸（用于 body 元素滚动条计算）
-            RenderObject::SetViewportSize(static_cast<float>(logical_width), static_cast<float>(logical_height));
-
-            // 只在需要时重新计算布局（渲染树重建、窗口大小改变、或内容改变）
-            static int last_logical_width = 0, last_logical_height = 0;
-            if (needs_layout || logical_width != last_logical_width || logical_height != last_logical_height) {
-                last_logical_width = logical_width;
-                last_logical_height = logical_height;
-
-                // 使用逻辑大小进行布局计算（CSS 像素）
-                // 注意：滚动条宽度由 Taffy 内部处理（通过 TaffyStyle_SetScrollbarWidth）
-                // 不需要在这里手动减去，否则会重复减去导致白线
-                float layout_width = static_cast<float>(logical_width);
-                float layout_height = static_cast<float>(logical_height);
-
-                if (layout_engine_) {
-                    layout_engine_->BuildLayoutTree(cached_render_tree_);
-                    layout_engine_->ComputeLayout(layout_width, layout_height);
-                    layout_engine_->GetLayoutInfo(cached_render_tree_);
-                } else {
-                    cached_render_tree_->Layout(layout_width, layout_height);
-                }
-            }
-
-            // 应用 DPI 缩放到 canvas（将逻辑像素缩放到物理像素）
-            canvas->save();
-            canvas->scale(dpi_scale, dpi_scale);
-
-            // 绘制（使用逻辑坐标）
-            cached_render_tree_->Paint(canvas);
-
-            // 更新并绘制 select 下拉菜单（在所有内容之上）
-            auto& dropdown_manager = SelectDropdownManager::Instance();
-            if (dropdown_manager.IsDropdownOpen()) {
-                // 滚动时更新下拉菜单位置
-                dropdown_manager.UpdatePositionFromRenderTree(cached_render_tree_);
-            }
-            dropdown_manager.Paint(canvas);
-
-            canvas->restore();
-        }
-    }
-
-    // 刷新（Skia 使用 flush() 方法）
-    if (gr_context_) {
-        gr_context_->flush();
-    }
-
-    // 清除重绘标记
-    needs_repaint_ = false;
-}
-
-void Window::RenderDocumentIncremental() {
-    DEBUG_LOG("[Window::RenderDocumentIncremental] Called, needs_repaint_=" << needs_repaint_
+void Window::Render() {
+    DEBUG_LOG("[Window::Render] Called, needs_repaint_=" << needs_repaint_
               << ", render_tree_valid_=" << render_tree_valid_);
 
     if (!document_ || !surface_) {
@@ -1178,14 +1184,33 @@ void Window::RenderDocumentIncremental() {
         return;
     }
 
-    // 获取窗口尺寸
-    int width, height;
-    SDL_GetWindowSizeInPixels(sdl_window_, &width, &height);
+    // 获取物理像素大小
+    int physical_width, physical_height;
+    SDL_GetWindowSizeInPixels(sdl_window_, &physical_width, &physical_height);
+
+    // 获取 DPI 缩放比
+    float dpi_scale = GetDisplayScale();
+
+    // 计算逻辑大小（CSS 像素）- 像浏览器一样
+    int width = static_cast<int>(physical_width / dpi_scale);
+    int height = static_cast<int>(physical_height / dpi_scale);
+
+    // 设置视口尺寸（用于 body 元素滚动条计算）
+    RenderObject::SetViewportSize(static_cast<float>(width), static_cast<float>(height));
 
     // Step 1: 构建或复用渲染树
     auto body = document_->GetBody();
     if (!body) {
         return;
+    }
+
+    // 检查窗口大小是否改变（需要全量重建）
+    static int last_width = 0, last_height = 0;
+    bool size_changed = (width != last_width || height != last_height);
+    if (size_changed) {
+        last_width = width;
+        last_height = height;
+        render_tree_valid_ = false;  // 窗口大小改变，需要全量重建
     }
 
     if (!render_tree_valid_ || !cached_render_tree_) {
@@ -1195,15 +1220,15 @@ void Window::RenderDocumentIncremental() {
             SaveScrollPositions(cached_render_tree_.get(), scroll_positions);
         }
 
-        // 渲染树无效，需要重建
-        DEBUG_LOG("[RenderDocumentIncremental] Rebuilding render tree...");
+        // 渲染树无效，需要重建（全量渲染）
+        DEBUG_LOG("[Window::Render] Full render - rebuilding render tree...");
         RenderTreeBuilder builder;
         builder.SetDocument(document_.get());
         cached_render_tree_ = builder.BuildRenderTree(body, nullptr);
         render_tree_valid_ = true;
 
         if (!cached_render_tree_) {
-            DEBUG_LOG("[RenderDocumentIncremental] Failed to build render tree!");
+            DEBUG_LOG("[Window::Render] Failed to build render tree!");
             return;
         }
 
@@ -1213,91 +1238,165 @@ void Window::RenderDocumentIncremental() {
         }
 
         // 新渲染树需要完整布局
-        DEBUG_LOG("[RenderDocumentIncremental] Full layout: " << width << "x" << height);
+        DEBUG_LOG("[Window::Render] Full layout: " << width << "x" << height);
 
         // 使用 Taffy 布局引擎计算布局
         if (layout_engine_) {
-            DEBUG_LOG("[RenderDocumentIncremental] Building Taffy layout tree...");
             layout_engine_->BuildLayoutTree(cached_render_tree_);
-
-            DEBUG_LOG("[RenderDocumentIncremental] Computing layout with Taffy...");
             layout_engine_->ComputeLayout(static_cast<float>(width), static_cast<float>(height));
-
-            DEBUG_LOG("[RenderDocumentIncremental] Reading layout results...");
             layout_engine_->GetLayoutInfo(cached_render_tree_);
         } else {
             // 降级到传统布局
             cached_render_tree_->Layout(static_cast<float>(width), static_cast<float>(height));
         }
 
-        // 清空画布并完整绘制
-        canvas->clear(SK_ColorWHITE);
-        DEBUG_LOG("[RenderDocumentIncremental] Full paint...");
+        // 获取 body 的背景色并清空画布
+        SkColor clear_color = SK_ColorWHITE;
+        const auto& body_style = cached_render_tree_->GetComputedStyle();
+        if (!body_style.background_color.empty() && body_style.background_color != "transparent") {
+            clear_color = Color::Parse(body_style.background_color);
+        }
+        canvas->clear(clear_color);
+
+        // 应用 DPI 缩放到 canvas
+        canvas->save();
+        canvas->scale(dpi_scale, dpi_scale);
+
+        // 绘制（使用逻辑坐标）
+        DEBUG_LOG("[Window::Render] Mode A: Full rebuild and repaint");
         cached_render_tree_->Paint(canvas);
+
+        // 更新并绘制 select 下拉菜单（在所有内容之上）
+        auto& dropdown_manager = SelectDropdownManager::Instance();
+        if (dropdown_manager.IsDropdownOpen()) {
+            dropdown_manager.UpdatePositionFromRenderTree(cached_render_tree_);
+        }
+        dropdown_manager.Paint(canvas);
+
+        canvas->restore();
+
+        // 全量渲染后，清除所有脏标记
+        ClearDirtyFlags(body.get());
+        ClearRenderObjectDirtyFlags(cached_render_tree_.get());
     } else {
-        // 渲染树有效，执行增量渲染
-        DEBUG_LOG("[RenderDocumentIncremental] Incremental rendering...");
+        // 渲染树有效，尝试增量渲染
 
-        // Step 2: 收集脏区域
-        DirtyRegionCollector collector;
-        collector.SetViewportSize(static_cast<float>(width), static_cast<float>(height));
+        // 获取背景色
+        SkColor clear_color = SK_ColorWHITE;
+        const auto& body_style = cached_render_tree_->GetComputedStyle();
+        if (!body_style.background_color.empty() && body_style.background_color != "transparent") {
+            clear_color = Color::Parse(body_style.background_color);
+        }
 
-        DirtyRegion dirty_region;
-        bool has_dirty = collector.CollectFromDOM(body.get(), dirty_region);
+        // 应用 DPI 缩放
+        canvas->save();
+        canvas->scale(dpi_scale, dpi_scale);
 
-        if (has_dirty) {
-            // 优化脏区域（合并相邻区域）
-            dirty_region.Optimize();
+        // 检查是否强制全屏重绘或禁用增量渲染
+        if (force_full_repaint_ || !enable_incremental_render_) {
+            // 模式 B：使用缓存的渲染树，但全屏重绘（不做局部裁剪）
+            DEBUG_LOG("[Window::Render] Mode B: Full repaint (incremental disabled or forced)");
 
-            const auto& dirty_rects = dirty_region.GetRegions();
-            DEBUG_LOG("[RenderDocumentIncremental] Found " << dirty_rects.size() << " dirty regions");
-
-            // Step 3: 增量布局 - 只布局脏子树
-            DEBUG_LOG("[RenderDocumentIncremental] Incremental layout...");
-
-            // 首先标记渲染树中对应脏DOM节点的RenderObject需要布局
+            // 增量布局：仅布局脏子树
+            // Phase 1 优化：不再每帧执行完整布局
             MarkRenderObjectsDirty(body.get(), cached_render_tree_.get());
+            LayoutDirtySubtree(cached_render_tree_.get(),
+                               static_cast<float>(width),
+                               static_cast<float>(height));
 
-            // 执行增量布局
-            bool laid_out = LayoutDirtySubtree(cached_render_tree_.get(),
-                                               static_cast<float>(width),
-                                               static_cast<float>(height));
+            // 全屏重绘
+            canvas->clear(clear_color);
+            cached_render_tree_->Paint(canvas);
 
-            if (laid_out) {
-                DEBUG_LOG("[RenderDocumentIncremental] Incremental layout completed");
+            // 清除脏标记
+            ClearDirtyFlags(body.get());
+            ClearRenderObjectDirtyFlags(cached_render_tree_.get());
+        } else {
+            // 模式 C：基于脏区域的增量渲染
+
+            // 步骤1：从渲染树收集脏区域（基于 RenderObject::NeedsPaint）
+            // 这样可以捕获滚动、动画等仅修改 RenderObject 的更新
+            CollectDirtyRectsFromRenderTree(cached_render_tree_.get());
+
+            // 步骤2：收集最终的脏区域
+            std::vector<SkRect> combined_dirty_rects;
+
+            if (!dirty_rects_.empty()) {
+                // 优先使用已收集的脏区域（包含 DOM 来源 + RenderObject 来源）
+                combined_dirty_rects = dirty_rects_;
             } else {
-                DEBUG_LOG("[RenderDocumentIncremental] No layout needed");
+                // 回退：使用 DirtyRegionCollector 从 DOM 扫描
+                DirtyRegionCollector collector;
+                collector.SetViewportSize(static_cast<float>(width), static_cast<float>(height));
+                DirtyRegion dirty_region;
+                if (collector.CollectFromDOM(body.get(), dirty_region)) {
+                    dirty_region.Optimize();
+                    combined_dirty_rects = dirty_region.GetRegions();
+                }
             }
 
-            // Step 4: 局部绘制
-            for (const auto& rect : dirty_rects) {
-                DEBUG_LOG("[RenderDocumentIncremental] Painting dirty rect: "
-                          << rect.x() << "," << rect.y() << " "
-                          << rect.width() << "x" << rect.height());
+            if (!combined_dirty_rects.empty()) {
+                // 有脏区域：增量渲染
+                DEBUG_LOG("[Window::Render] Mode C: Incremental rendering " << combined_dirty_rects.size() << " dirty rects");
+                std::cout << "[DamageRect] Mode C: " << combined_dirty_rects.size() << " dirty regions" << std::endl;
 
-                // 保存画布状态
-                canvas->save();
+                // 同步 DOM 脏标记到 RenderObject 并执行增量布局
+                MarkRenderObjectsDirty(body.get(), cached_render_tree_.get());
+                LayoutDirtySubtree(cached_render_tree_.get(),
+                                   static_cast<float>(width),
+                                   static_cast<float>(height));
 
-                // 清除脏区域
-                SkPaint clear_paint;
-                clear_paint.setColor(SK_ColorWHITE);
-                canvas->drawRect(rect, clear_paint);
+                // 关键修复：布局更新后，位置可能发生了变化。
+                // 我们需要再次收集脏区域，以捕获元素的新位置。
+                // 此时 dirty_rects_ 已包含旧位置（步骤1收集）和 SetStyle 手动添加的区域。
+                // 这次收集将添加新位置，从而实现"双区域标记"的后半部分。
+                CollectDirtyRectsFromRenderTree(cached_render_tree_.get());
+                
+                // 更新 combined_dirty_rects
+                if (!dirty_rects_.empty()) {
+                    combined_dirty_rects = dirty_rects_;
+                }
 
-                // 裁剪到脏区域
-                canvas->clipRect(rect);
+                // 局部绘制
+                for (const auto& rect : combined_dirty_rects) {
+                    canvas->save();
 
-                // 绘制（只有在裁剪区域内的内容会被绘制）
+                    // 清除脏区域
+                    SkPaint clear_paint;
+                    clear_paint.setColor(clear_color);
+                    canvas->drawRect(rect, clear_paint);
+
+                    // 裁剪到脏区域
+                    canvas->clipRect(rect);
+
+                    // 绘制整棵渲染树（会被裁剪到脏区域）
+                    cached_render_tree_->Paint(canvas);
+
+                    canvas->restore();
+                }
+
+                // 清除脏标记（DOM 和 RenderObject）
+                ClearDirtyFlags(body.get());
+                ClearRenderObjectDirtyFlags(cached_render_tree_.get());
+            } else {
+                // 无脏区域但需要重绘：全量绘制（如窗口被遮挡后恢复）
+                DEBUG_LOG("[Window::Render] Full repaint (no dirty rects but needs_repaint)");
+                canvas->clear(clear_color);
                 cached_render_tree_->Paint(canvas);
 
-                // 恢复画布状态
-                canvas->restore();
+                // 清除脏标记
+                ClearRenderObjectDirtyFlags(cached_render_tree_.get());
             }
-
-            // 清除DOM节点的脏标记
-            ClearDirtyFlags(body.get());
-        } else {
-            DEBUG_LOG("[RenderDocumentIncremental] No dirty regions, skipping paint");
         }
+
+        // 更新并绘制 select 下拉菜单
+        auto& dropdown_manager = SelectDropdownManager::Instance();
+        if (dropdown_manager.IsDropdownOpen()) {
+            dropdown_manager.UpdatePositionFromRenderTree(cached_render_tree_);
+        }
+        dropdown_manager.Paint(canvas);
+
+        canvas->restore();
     }
 
     // 刷新
@@ -1305,8 +1404,9 @@ void Window::RenderDocumentIncremental() {
         gr_context_->flush();
     }
 
-    // 清除重绘标记
+    // 清除重绘标记和脏区域
     needs_repaint_ = false;
+    dirty_rects_.clear();
 }
 
 void Window::MarkRenderObjectsDirty(Node* dom_node, RenderObject* render_obj) {
@@ -1367,6 +1467,12 @@ void Window::MarkRenderObjectsDirty(Node* dom_node, RenderObject* render_obj) {
             auto element = std::static_pointer_cast<Element>(dom_node->shared_from_this());
             auto new_style = resolver.ResolveStyle(element, parent_style);
             render_obj->SetComputedStyle(new_style);
+            
+            // 关键修复：通知布局引擎样式已更新
+            // 这确保 left/top 等位置属性的变化能正确触发重新布局
+            if (layout_engine_) {
+                layout_engine_->UpdateStyle(render_obj, new_style);
+            }
         }
     }
 
@@ -1451,6 +1557,32 @@ bool Window::LayoutDirtySubtree(RenderObject* render_obj, float parent_width, fl
         return false;
     }
 
+    // 优先使用 NativeLayoutEngine 的增量布局
+    if (layout_engine_) {
+        // 首先标记需要布局的 RenderObject
+        std::function<void(RenderObject*)> markDirty = [&](RenderObject* obj) {
+            if (!obj) return;
+            if (obj->NeedsLayout()) {
+                layout_engine_->MarkNeedsLayout(obj);
+            }
+            for (const auto& child : obj->GetChildren()) {
+                markDirty(child.get());
+            }
+        };
+        markDirty(render_obj);
+
+        // 执行增量布局
+        bool did_layout = layout_engine_->ComputeIncrementalLayout(parent_width, parent_height);
+
+        if (did_layout) {
+            // 更新 RenderObject 的布局信息
+            layout_engine_->GetLayoutInfo(cached_render_tree_);
+        }
+
+        return did_layout;
+    }
+
+    // 回退到传统的递归布局
     bool needs_layout = render_obj->NeedsLayout();
     bool any_child_laid_out = false;
 
@@ -1488,6 +1620,77 @@ void Window::ClearDirtyFlags(Node* node) {
     }
 }
 
+void Window::ClearRenderObjectDirtyFlags(RenderObject* render_obj) {
+    if (!render_obj) {
+        return;
+    }
+
+    // 清除当前渲染对象的脏标记
+    render_obj->ClearDirtyFlags();
+
+    // 递归清除子节点
+    const auto& children = render_obj->GetChildren();
+    for (const auto& child : children) {
+        ClearRenderObjectDirtyFlags(child.get());
+    }
+}
+
+bool Window::HasDirtyLayoutNodes(Node* node) {
+    if (!node) {
+        return false;
+    }
+
+    // 检查当前节点是否需要布局
+    if (node->IsLayoutDirty()) {
+        return true;
+    }
+
+    // 检查关联的 RenderObject
+    if (auto render_obj = node->GetRenderObject()) {
+        if (render_obj->NeedsLayout()) {
+            return true;
+        }
+    }
+
+    // 递归检查子节点
+    const auto& children = node->GetChildNodes();
+    for (const auto& child : children) {
+        if (HasDirtyLayoutNodes(child.get())) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+void Window::CollectDirtyRectsFromRenderTree(RenderObject* root) {
+    if (!root) {
+        return;
+    }
+
+    // 深度优先遍历渲染树，收集所有需要重绘的对象的边界框
+    std::function<void(RenderObject*)> dfs = [&](RenderObject* obj) {
+        if (!obj) {
+            return;
+        }
+
+        // 如果该渲染对象需要重绘，收集其边界框
+        if (obj->NeedsPaint()) {
+            SkRect rect = obj->GetBoundingRect();
+            if (!rect.isEmpty()) {
+                AddDirtyRect(rect);
+            }
+        }
+
+        // 递归处理子节点
+        for (const auto& child : obj->GetChildren()) {
+            dfs(child.get());
+        }
+    };
+
+    dfs(root);
+}
+
 void Window::Clear(uint32_t color) {
     if (!surface_) {
         return;
@@ -1503,6 +1706,42 @@ void Window::Clear(uint32_t color) {
             color & 0xFF           // B
         );
         canvas->clear(sk_color);
+    }
+}
+
+void Window::AddDirtyRect(const SkRect& rect) {
+    // 忽略空矩形
+    if (rect.isEmpty()) {
+        return;
+    }
+
+    // 合并策略：如果新矩形与已有矩形重叠或距离较近，合并它们
+    constexpr float kMergeThreshold = 10.0f;
+
+    for (auto& existing : dirty_rects_) {
+        // 扩展现有矩形检测重叠
+        SkRect expanded = existing.makeOutset(kMergeThreshold, kMergeThreshold);
+        if (expanded.intersects(rect)) {
+            // 合并矩形
+            existing.join(rect);
+            return;
+        }
+    }
+
+    // 没有重叠，添加新矩形
+    // 关键修复：自动膨胀脏区域以容纳抗锯齿、子像素偏移和阴影
+    SkRect inflated_rect = rect.makeOutset(2.0f, 2.0f);
+    dirty_rects_.push_back(inflated_rect);
+
+    // 如果脏区域太多，合并为一个全量重绘
+    constexpr size_t kMaxDirtyRects = 10;
+    if (dirty_rects_.size() > kMaxDirtyRects) {
+        SkRect bounds = SkRect::MakeEmpty();
+        for (const auto& r : dirty_rects_) {
+            bounds.join(r);
+        }
+        dirty_rects_.clear();
+        dirty_rects_.push_back(bounds);
     }
 }
 
@@ -1583,12 +1822,25 @@ void Window::EnsureRenderTree() {
     }
 
     // 构建渲染树
-    RenderTreeBuilder builder;
-    builder.SetDocument(document_.get());
-    cached_render_tree_ = builder.BuildRenderTree(body, nullptr);
+    if (!render_tree_builder_) {
+        render_tree_builder_ = std::make_shared<RenderTreeBuilder>();
+    }
+    render_tree_builder_->SetDocument(document_.get());
+    cached_render_tree_ = render_tree_builder_->BuildRenderTree(body, nullptr);
 
     if (!cached_render_tree_) {
         return;
+    }
+
+    // Phase 3: 初始化渲染树增量更新器
+    if (!render_tree_updater_) {
+        render_tree_updater_ = std::make_unique<RenderTreeUpdater>();
+    }
+    render_tree_updater_->SetDocument(document_);
+    render_tree_updater_->SetRenderTreeBuilder(render_tree_builder_);
+    if (layout_engine_) {
+        render_tree_updater_->SetLayoutEngine(std::shared_ptr<LayoutEngine>(
+            layout_engine_.get(), [](LayoutEngine*) {}));  // 非拥有指针
     }
 
     // 恢复滚动位置
