@@ -102,11 +102,16 @@ void RenderSVGRoot::SetSVGSVGElement(std::shared_ptr<SVGSVGElement> element) {
 void RenderSVGRoot::Paint(SkCanvas* canvas) {
     auto element = svg_svg_element_.lock();
     if (!element) {
-        // std::cerr << "[SVG] RenderSVGRoot::Paint - element is null!" << std::endl;
         return;
     }
 
+    // Viewport Culling: Skip SVG roots outside clip region
     auto& layout = GetLayoutInfo();
+    SkRect paint_rect = SkRect::MakeXYWH(layout.x, layout.y, layout.width, layout.height);
+    if (canvas->quickReject(paint_rect.makeOutset(10, 10))) {
+        needs_paint_ = false;
+        return;
+    }
     (void)layout; // Suppress unused warning
 
     // 先绘制背景（如果有）
@@ -317,16 +322,20 @@ void RenderSVGCircle::SetSVGCircleElement(std::shared_ptr<SVGCircleElement> elem
 
 void RenderSVGCircle::Paint(SkCanvas* canvas) {
     auto element = circle_element_.lock();
-    if (!element) {
-        // std::cerr << "[SVG] RenderSVGCircle::Paint - element is null!" << std::endl;
-        return;
-    }
+    if (!element) return;
 
     float cx = element->GetCx();
     float cy = element->GetCy();
     float r = element->GetR();
 
     if (r <= 0) return;
+
+    // Viewport Culling: Skip circles outside clip region
+    SkRect paint_rect = SkRect::MakeXYWH(cx - r, cy - r, r * 2, r * 2);
+    if (canvas->quickReject(paint_rect.makeOutset(5, 5))) {
+        needs_paint_ = false;
+        return;
+    }
 
     canvas->save();
 
@@ -386,6 +395,13 @@ void RenderSVGRect::Paint(SkCanvas* canvas) {
     float ry = element->GetRy();
 
     if (width <= 0 || height <= 0) return;
+
+    // Viewport Culling: Skip rects outside clip region
+    SkRect paint_rect = SkRect::MakeXYWH(x, y, width, height);
+    if (canvas->quickReject(paint_rect.makeOutset(5, 5))) {
+        needs_paint_ = false;
+        return;
+    }
 
     canvas->save();
 
@@ -448,6 +464,13 @@ void RenderSVGEllipse::Paint(SkCanvas* canvas) {
     float ry = element->GetRy();
 
     if (rx <= 0 || ry <= 0) return;
+
+    // Viewport Culling: Skip ellipses outside clip region
+    SkRect paint_rect = SkRect::MakeXYWH(cx - rx, cy - ry, rx * 2, ry * 2);
+    if (canvas->quickReject(paint_rect.makeOutset(5, 5))) {
+        needs_paint_ = false;
+        return;
+    }
 
     canvas->save();
 

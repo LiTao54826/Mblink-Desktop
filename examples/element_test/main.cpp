@@ -200,7 +200,7 @@ int main() {
         window->Show();
 
         // 执行一次渲染以构建渲染树
-        window->RenderDocument();
+        window->Render();
         window->SwapBuffers();
 
         // 打印目标元素的渲染信息
@@ -231,7 +231,7 @@ int main() {
         // 设置渲染回调
         event_loop.SetRenderCallback([window]() {
             if (window->NeedsRepaint()) {
-                window->RenderDocument();
+                window->Render();
                 window->SwapBuffers();
             }
         });

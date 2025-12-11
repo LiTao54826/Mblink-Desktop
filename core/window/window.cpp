@@ -73,40 +73,50 @@ public:
                   << ", parent=" << parent
                   << ", IsInBatch=" << (node ? IsInBatch(node) : false));
         if (window_ && !IsInBatch(node)) {
-            // 节点添加时，需要完全重建渲染树
-            // 因为布局引擎需要重新构建布局树
-            //
-            // 注意：Phase 3 的增量渲染树更新主要是为了
-            // 减少不必要的渲染对象创建/销毁开销。
-            // 但由于我们的布局系统依赖于完整的渲染树，
-            // 目前仍需要使渲染树无效。
-            //
-            // 未来优化：实现增量布局树更新
-            DEBUG_LOG("[WindowDOMObserver::OnNodeAdded] Calling SetNeedsRepaint + InvalidateRenderTree");
+            // Phase 2 优化：增量渲染树更新
+            // 使用 RenderTreeUpdater 插入新的 RenderObject，而不是重建整棵树
+            auto* updater = window_->GetRenderTreeUpdater();
+            if (updater && window_->GetCachedRenderTree()) {
+                DEBUG_LOG("[WindowDOMObserver::OnNodeAdded] Using incremental tree update");
+                auto new_ro = updater->InsertRenderObject(node, parent, nullptr);
+                // 新增节点时，由于 RenderObject 尚未布局，其边界矩形为空
+                // 必须强制全量重绘以确保新节点可见
+                if (new_ro) {
+                    window_->SetForceFullRepaint(true);
+                }
+            } else {
+                // 回退：渲染树还未构建，需要完全重建
+                DEBUG_LOG("[WindowDOMObserver::OnNodeAdded] Fallback to InvalidateRenderTree");
+                window_->InvalidateRenderTree();
+            }
             window_->SetNeedsRepaint();
-            window_->InvalidateRenderTree();
         }
     }
+
 
     void OnNodeRemoved(Node* node, Node* parent) override {
         DEBUG_LOG("[WindowDOMObserver::OnNodeRemoved] node=" << node
                   << ", parent=" << parent
                   << ", IsInBatch=" << (node ? IsInBatch(node) : false));
         if (window_ && !IsInBatch(node)) {
-            // 记录被删除节点的区域（用于清除绘制）
-            if (auto ro = node->GetRenderObject()) {
-                SkRect bounds = ro->GetBoundingRect();
-                if (!bounds.isEmpty()) {
-                    window_->AddDirtyRect(bounds);
-                }
-            }
+            // 节点移除时强制全量重绘以确保正确清除
+            window_->SetForceFullRepaint(true);
 
-            // 节点删除时，需要完全重建渲染树
-            DEBUG_LOG("[WindowDOMObserver::OnNodeRemoved] Calling SetNeedsRepaint + InvalidateRenderTree");
+            // Phase 2 优化：增量渲染树更新
+            // 使用 RenderTreeUpdater 移除 RenderObject，而不是重建整棵树
+            auto* updater = window_->GetRenderTreeUpdater();
+            if (updater && window_->GetCachedRenderTree()) {
+                DEBUG_LOG("[WindowDOMObserver::OnNodeRemoved] Using incremental tree update");
+                updater->RemoveRenderObject(node);
+            } else {
+                // 回退：渲染树还未构建，需要完全重建
+                DEBUG_LOG("[WindowDOMObserver::OnNodeRemoved] Fallback to InvalidateRenderTree");
+                window_->InvalidateRenderTree();
+            }
             window_->SetNeedsRepaint();
-            window_->InvalidateRenderTree();
         }
     }
+
 
     void OnAttributeChanged(Element* element,
                            const std::string& name,
@@ -134,6 +144,20 @@ public:
                        const std::string& old_value,
                        const std::string& new_value) override {
         if (window_ && !IsInBatch(element)) {
+            // 特殊处理: display 属性变化影响元素的 RenderObject 存在性
+            // display: none 的元素没有 RenderObject，变为 block/flex 等需要创建
+            // 反之亦然，需要删除 RenderObject
+            if (property == "display") {
+                bool was_none = (old_value == "none" || old_value.empty());
+                bool is_none = (new_value == "none");
+                if (was_none != is_none) {
+                    // 可见性发生变化，需要重建渲染树
+                    window_->InvalidateRenderTree();
+                    window_->SetNeedsRepaint();
+                    return;
+                }
+            }
+            
             // Phase 1: 精确脏区域标记
             // 样式变化可能影响布局或绘制
             if (auto render_obj = element->GetRenderObject()) {
@@ -1273,16 +1297,12 @@ void Window::Render() {
             // 模式 B：使用缓存的渲染树，但全屏重绘（不做局部裁剪）
             DEBUG_LOG("[Window::Render] Mode B: Full repaint (incremental disabled or forced)");
 
-            // 注意：增量布局目前有 bug，暂时每帧都执行完整布局
-            // TODO: 修复 NativeLayoutEngine::ComputeIncrementalLayout() 后启用增量布局
-            // 完整布局开销不大，比遍历检查脏节点更高效
-            if (layout_engine_) {
-                layout_engine_->BuildLayoutTree(cached_render_tree_);
-                layout_engine_->ComputeLayout(static_cast<float>(width), static_cast<float>(height));
-                layout_engine_->GetLayoutInfo(cached_render_tree_);
-            } else {
-                cached_render_tree_->Layout(static_cast<float>(width), static_cast<float>(height));
-            }
+            // 增量布局：仅布局脏子树
+            // Phase 1 优化：不再每帧执行完整布局
+            MarkRenderObjectsDirty(body.get(), cached_render_tree_.get());
+            LayoutDirtySubtree(cached_render_tree_.get(),
+                               static_cast<float>(width),
+                               static_cast<float>(height));
 
             // 全屏重绘
             canvas->clear(clear_color);
@@ -1318,12 +1338,24 @@ void Window::Render() {
             if (!combined_dirty_rects.empty()) {
                 // 有脏区域：增量渲染
                 DEBUG_LOG("[Window::Render] Mode C: Incremental rendering " << combined_dirty_rects.size() << " dirty rects");
+                std::cout << "[DamageRect] Mode C: " << combined_dirty_rects.size() << " dirty regions" << std::endl;
 
                 // 同步 DOM 脏标记到 RenderObject 并执行增量布局
                 MarkRenderObjectsDirty(body.get(), cached_render_tree_.get());
                 LayoutDirtySubtree(cached_render_tree_.get(),
                                    static_cast<float>(width),
                                    static_cast<float>(height));
+
+                // 关键修复：布局更新后，位置可能发生了变化。
+                // 我们需要再次收集脏区域，以捕获元素的新位置。
+                // 此时 dirty_rects_ 已包含旧位置（步骤1收集）和 SetStyle 手动添加的区域。
+                // 这次收集将添加新位置，从而实现"双区域标记"的后半部分。
+                CollectDirtyRectsFromRenderTree(cached_render_tree_.get());
+                
+                // 更新 combined_dirty_rects
+                if (!dirty_rects_.empty()) {
+                    combined_dirty_rects = dirty_rects_;
+                }
 
                 // 局部绘制
                 for (const auto& rect : combined_dirty_rects) {
@@ -1435,6 +1467,12 @@ void Window::MarkRenderObjectsDirty(Node* dom_node, RenderObject* render_obj) {
             auto element = std::static_pointer_cast<Element>(dom_node->shared_from_this());
             auto new_style = resolver.ResolveStyle(element, parent_style);
             render_obj->SetComputedStyle(new_style);
+            
+            // 关键修复：通知布局引擎样式已更新
+            // 这确保 left/top 等位置属性的变化能正确触发重新布局
+            if (layout_engine_) {
+                layout_engine_->UpdateStyle(render_obj, new_style);
+            }
         }
     }
 
@@ -1691,7 +1729,9 @@ void Window::AddDirtyRect(const SkRect& rect) {
     }
 
     // 没有重叠，添加新矩形
-    dirty_rects_.push_back(rect);
+    // 关键修复：自动膨胀脏区域以容纳抗锯齿、子像素偏移和阴影
+    SkRect inflated_rect = rect.makeOutset(2.0f, 2.0f);
+    dirty_rects_.push_back(inflated_rect);
 
     // 如果脏区域太多，合并为一个全量重绘
     constexpr size_t kMaxDirtyRects = 10;

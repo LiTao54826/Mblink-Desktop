@@ -471,46 +471,28 @@ bool NativeLayoutEngine::ComputeIncrementalLayout(float available_width, float a
         return false;
     }
 
-    // 对每个脏节点重新布局其子树
+    LayoutNode* root_node = GetNode(root_node_);
+
+    // 关键修复：不要单独布局每个 dirty node。
+    // 这会打破父子布局约束（例如 Flexbox 分配空间）。
+    // 正确做法是：
+    // 1. 清除所有 dirty node 的缓存
+    // 2. 清除 needs_layout 标记
+    // 3. 从 Root 开始执行一次标准布局（因为 MarkNeedsLayout 会向上冒泡到 Root，Root 也是 dirty 的）
+    //    ComputeNodeLayout 会自动利用未被清除的 clean node 缓存。
+
     for (NodeId node_id : dirty_nodes) {
         LayoutNode* node = GetNode(node_id);
-        if (!node || !node->needs_layout) continue;
-
-        // 获取父节点的布局信息作为约束
-        float parent_width = available_width;
-        float parent_height = available_height;
-
-        if (node->parent != 0) {
-            LayoutNode* parent = GetNode(node->parent);
-            if (parent) {
-                parent_width = parent->layout.size.width;
-                parent_height = parent->layout.size.height;
-            }
+        if (node) {
+            node->cache.Clear();
+            node->needs_layout = false;
         }
-
-        LayoutInput inputs;
-        inputs.run_mode = RunMode::PerformLayout;
-        inputs.sizing_mode = SizingMode::InherentSize;
-        inputs.known_dimensions = Size<std::optional<float>>{std::nullopt, std::nullopt};
-        inputs.parent_size = Size<std::optional<float>>{
-            std::optional<float>(parent_width),
-            std::optional<float>(parent_height)
-        };
-        inputs.available_space = Size<AvailableSpace>{
-            AvailableSpace::Definite(parent_width),
-            AvailableSpace::Definite(parent_height)
-        };
-        inputs.vertical_margins_are_collapsible = Line<bool>{true, true};
-
-        // 只清除该节点的缓存
-        node->cache.Clear();
-
-        ComputeNodeLayout(node_id, inputs);
-        node->needs_layout = false;
     }
 
-    // 重新定位子节点
-    PositionChildren(root_node_);
+    // 调用标准布局过程
+    // 它会检查缓存，只重新计算被清除缓存的节点
+    ComputeLayout(available_width, available_height);
+    
     return true;
 }
 
@@ -520,7 +502,16 @@ void NativeLayoutEngine::MarkNeedsLayout(RenderObject* render_obj) {
         LayoutNode* node = GetNode(it->second);
         if (node) {
             node->needs_layout = true;
-            // 向上传播脏标记到父节点
+            
+            // 4.9 布局隔离回滚：
+            // 恢复标准逻辑。即便对于 absolute/fixed 元素，也标记 Layout dirty。
+            // 配合 UpdateStyle 的向上冒泡（或默认冒泡），确保 Root 能够感知变化。
+            // const auto& style = render_obj->GetComputedStyle();
+            // if (style.position == "absolute" || style.position == "fixed") {
+            //    return;
+            // }
+            
+            // 非定位元素：向上传播脏标记到父节点
             NodeId parent_id = node->parent;
             while (parent_id != 0) {
                 LayoutNode* parent = GetNode(parent_id);
@@ -580,6 +571,26 @@ void NativeLayoutEngine::UpdateStyle(RenderObject* render_obj, const ComputedSty
             node->grid_item_style.inset = node->style.inset;
 
             node->needs_layout = true;
+        }
+    } else {
+        // 如果找不到对应的 LayoutNode，可能是之前是 display: none
+        // 现在如果变成可见的，需要添加到 LayoutTree
+        if (style.display != RenderObjectType::NONE) {
+            AddElement(render_obj, render_obj->GetParent().get());
+            
+            // 找到新添加的节点并标记需要布局
+            auto new_it = render_to_node_.find(render_obj);
+            if (new_it != render_to_node_.end()) {
+                LayoutNode* node = GetNode(new_it->second);
+                if (node) {
+                    node->needs_layout = true;
+                    if (node->parent != 0) {
+                        if (LayoutNode* parent = GetNode(node->parent)) {
+                            parent->needs_layout = true;
+                        }
+                    }
+                }
+            }
         }
     }
 }
@@ -665,7 +676,10 @@ NodeId NativeLayoutEngine::CreateNode(RenderObject* render_obj) {
     const auto& computed = render_obj->GetComputedStyle();
     node.style = ConvertStyle(computed);
     node.is_ifc_container = ShouldUseIFC(render_obj);
-
+    
+    // 检测 TABLE 容器
+    RenderObjectType type = render_obj->GetType();
+    node.is_table_container = (type == RenderObjectType::TABLE);
 
 
     // Also fill in BlockContainerStyle and BlockItemStyle for the interfaces
@@ -1221,37 +1235,12 @@ LayoutOutput NativeLayoutEngine::ComputeNodeLayout(NodeId node_id, const LayoutI
             return output;
         }
 
-        // Handle TABLE elements - they manage their own layout
+        // Handle TABLE elements - use ComputeTableLayout
         if (type == RenderObjectType::TABLE) {
-            auto* table = static_cast<RenderTable*>(node->render_obj);
-
-            // Determine available width
-            float available_width = 0.0f;
-            if (inputs.available_space.width.type == AvailableSpace::Type::Definite) {
-                available_width = inputs.available_space.width.value;
-            } else if (inputs.available_space.width.type == AvailableSpace::Type::MaxContent) {
-                available_width = 10000.0f;
-            }
-
-            // Call table's own layout method
-            table->Layout(available_width, 0);
-
-            // Get the computed size from table's layout info
-            const auto& table_layout = table->GetLayoutInfo();
-            output.size.width = table_layout.width;
-            output.size.height = table_layout.height;
-            output.content_size = output.size;
-
-            // Store in cache and return
-            node->cache.Store(
-                inputs.known_dimensions,
-                inputs.available_space,
-                inputs.run_mode,
-                output
-            );
-            node->output = output;
+            output = ComputeTableLayout(node_id, inputs);
             return output;
         }
+
 
         // Handle LEGEND elements - they should use fit-content width
         auto dom_node = node->render_obj->GetNode();
@@ -1493,6 +1482,51 @@ LayoutOutput NativeLayoutEngine::ComputeGridLayout(NodeId node_id, const LayoutI
     // Create adapter and call translated Taffy algorithm
     GridAdapter adapter(*this);
     return lightui::ComputeGridLayout(adapter, node_id, inputs);
+}
+
+LayoutOutput NativeLayoutEngine::ComputeTableLayout(NodeId node_id, const LayoutInput& inputs) {
+    LayoutNode* node = GetNode(node_id);
+    if (!node || !node->render_obj) {
+        return LayoutOutput{};
+    }
+
+    LayoutOutput output;
+
+    // TABLE 布局委托给 RenderTable::Layout
+    auto* table = static_cast<RenderTable*>(node->render_obj);
+
+    // 确定可用宽度
+    float available_width = 0.0f;
+    if (inputs.known_dimensions.width.has_value()) {
+        available_width = *inputs.known_dimensions.width;
+    } else if (inputs.available_space.width.type == AvailableSpace::Type::Definite) {
+        available_width = inputs.available_space.width.value;
+    } else if (inputs.available_space.width.type == AvailableSpace::Type::MaxContent) {
+        available_width = 10000.0f;  // 大值表示无限宽度
+    } else {
+        // MinContent 模式下，表格使用最小内容宽度
+        available_width = 0.0f;
+    }
+
+    // 调用表格自身的布局方法
+    table->Layout(available_width, 0);
+
+    // 从表格的布局信息获取计算后的尺寸
+    const auto& table_layout = table->GetLayoutInfo();
+    output.size.width = table_layout.width;
+    output.size.height = table_layout.height;
+    output.content_size = output.size;
+
+    // 存储到缓存
+    node->cache.Store(
+        inputs.known_dimensions,
+        inputs.available_space,
+        inputs.run_mode,
+        output
+    );
+    node->output = output;
+
+    return output;
 }
 
 LayoutOutput NativeLayoutEngine::ComputeIFCLayout(NodeId node_id, const LayoutInput& inputs) {
@@ -1842,10 +1876,27 @@ void NativeLayoutEngine::ReadLayoutResults(RenderObject* render_obj) {
 
     // Update render object with layout info
     LayoutInfo& info = render_obj->GetLayoutInfo();
-    info.x = node->x;
-    info.y = node->y;
-    info.width = node->output.size.width;
-    info.height = node->output.size.height;
+
+    // For TABLE internal elements (ROW_GROUP, ROW, CELL, etc.), their positions
+    // are managed by RenderTable::Layout, not NativeLayoutEngine.
+    // We should NOT overwrite their x/y values, only update width/height.
+    RenderObjectType type = render_obj->GetType();
+    bool is_table_internal = (type == RenderObjectType::TABLE_ROW_GROUP ||
+                              type == RenderObjectType::TABLE_HEADER_GROUP ||
+                              type == RenderObjectType::TABLE_FOOTER_GROUP ||
+                              type == RenderObjectType::TABLE_ROW ||
+                              type == RenderObjectType::TABLE_CELL ||
+                              type == RenderObjectType::TABLE_CAPTION);
+
+    if (!is_table_internal) {
+        // Normal elements: update all layout info from NativeLayoutEngine
+        info.x = node->x;
+        info.y = node->y;
+        info.width = node->output.size.width;
+        info.height = node->output.size.height;
+    }
+    // For TABLE internal elements, their layout is fully managed by RenderTable::Layout
+    // We only mark them as laid out, but preserve their positions and dimensions
     info.is_laid_out = true;
 
     // For inline-block elements (like button), we need to call Layout() to properly
@@ -1854,7 +1905,7 @@ void NativeLayoutEngine::ReadLayoutResults(RenderObject* render_obj) {
     // 1. MeasureIntrinsicSize() only calculates dimensions, not child positions
     // 2. Flex layout may stretch the element's height (align-items: stretch is default)
     // 3. Without calling Layout(), child positions remain unset or outdated
-    RenderObjectType type = render_obj->GetType();
+    // type was already declared above
     if (type == RenderObjectType::INLINE_BLOCK) {
         // Check if this is an SVG element (RenderSVGRoot also uses INLINE_BLOCK type)
         auto dom_node = render_obj->GetNode();

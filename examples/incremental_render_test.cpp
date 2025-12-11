@@ -18,13 +18,14 @@
 #include "core/dom/element.h"
 #include "core/dom/text.h"
 #include "core/event/event_loop.h"
+#include "core/render/render_object.h"  // For paint stats
 #include "core/render/render_object.h"
 
 using namespace lightui;
 
 class IncrementalRenderTest {
 public:
-    IncrementalRenderTest() : item_count_(0) {}
+    IncrementalRenderTest() : item_count_(0), box_x_(50), box_y_(50), popup_visible_(false) {}
 
     bool Initialize() {
         std::cout << "=== Incremental Render Visual Test ===" << std::endl;
@@ -66,40 +67,120 @@ public:
         while (running && !window_->ShouldClose()) {
             // 处理事件
             SDL_Event event;
-            while (SDL_PollEvent(&event)) {
-                if (event.type == SDL_EVENT_QUIT) {
-                    running = false;
-                    break;
+            // 1. 阻塞等待事件（带超时，用于保持渲染帧率）
+            // 如果有动画或需要持续渲染，这里应该设为较小的值（如16ms）
+            // 如果完全静止，可以设长一点或者 INFINITE（但要注意刷新）
+            // 这里设为 16ms 是为了兼顾可能的动画更新和低 CPU
+            if (SDL_WaitEventTimeout(&event, 16)) {
+                // 有事件发生，批量读取所有积压事件
+                std::vector<SDL_Event> batch_events;
+                batch_events.push_back(event);
+                while (SDL_PollEvent(&event)) {
+                    batch_events.push_back(event);
                 }
 
-                if (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN) {
-                    HandleClick(event.button.x, event.button.y);
+                // 2. 第一遍：优先处理所有非鼠标移动事件（点击、键盘、窗口消息等）
+                // 并找出最后一个鼠标移动事件
+                SDL_Event* last_mouse_motion = nullptr;
+
+                for (auto& e : batch_events) {
+                    if (e.type == SDL_EVENT_MOUSE_MOTION) {
+                        last_mouse_motion = &e;
+                    } else {
+                        // 立即处理非移动事件
+                        if (e.type == SDL_EVENT_QUIT) {
+                            running = false;
+                        }
+                        else if (e.type == SDL_EVENT_MOUSE_BUTTON_DOWN) {
+                            float dpi_scale = window_->GetDisplayScale();
+                            float logical_x = e.button.x / dpi_scale;
+                            float logical_y = e.button.y / dpi_scale;
+                            std::cout << "[Click] " << logical_x << "," << logical_y << std::endl;
+                            HandleClick(logical_x, logical_y);
+                        }
+                        else if (e.type == SDL_EVENT_WINDOW_RESIZED) {
+                             int new_width = e.window.data1;
+                             int new_height = e.window.data2;
+                             std::cout << "[Resize] " << new_width << "x" << new_height << std::endl;
+                             window_->OnResize();
+                             window_->InvalidateRenderTree();
+                             window_->SetNeedsRepaint();
+                        }
+                        else if (e.type == SDL_EVENT_MOUSE_WHEEL) {
+                            float scroll_x = e.wheel.x * 40.0f;
+                            float scroll_y = e.wheel.y * 40.0f;
+                            auto body = doc_->GetBody();
+                            if (body) {
+                                auto render_obj = body->GetRenderObject();
+                                if (render_obj && render_obj->IsScrollable()) {
+                                    float old_scroll_y = render_obj->GetScrollY();
+                                    render_obj->ScrollBy(-scroll_x, -scroll_y);
+                                    if (render_obj->GetScrollY() != old_scroll_y) {
+                                        window_->SetNeedsRepaint();
+                                    }
+                                }
+                            }
+                        }
+                        else if (e.type == SDL_EVENT_KEY_DOWN) {
+                            bool moved = false;
+                            switch (e.key.scancode) {
+                                case SDL_SCANCODE_LEFT: case SDL_SCANCODE_A: box_x_ -= 20; moved = true; break;
+                                case SDL_SCANCODE_RIGHT: case SDL_SCANCODE_D: box_x_ += 20; moved = true; break;
+                                case SDL_SCANCODE_UP: case SDL_SCANCODE_W: box_y_ -= 20; moved = true; break;
+                                case SDL_SCANCODE_DOWN: case SDL_SCANCODE_S: box_y_ += 20; moved = true; break;
+                                case SDL_SCANCODE_P: TogglePopup(); break;
+                                default: break;
+                            }
+                            if (moved && moving_box_) {
+                                moving_box_->SetStyle("left", std::to_string(box_x_) + "px");
+                                moving_box_->SetStyle("top", std::to_string(box_y_) + "px");
+                                window_->SetNeedsRepaint();
+                            }
+                        }
+                    }
                 }
 
-                // 处理窗口大小改变
-                if (event.type == SDL_EVENT_WINDOW_RESIZED) {
-                    int new_width = event.window.data1;
-                    int new_height = event.window.data2;
-                    std::cout << "[Resize] " << new_width << "x" << new_height << std::endl;
-                    window_->OnResize();  // 重新创建 surface
-                    window_->InvalidateRenderTree();  // 需要重新布局
-                    window_->SetNeedsRepaint();
+                // 3. 第二遍：只处理最后一次鼠标移动事件（事件合并）
+                if (last_mouse_motion) {
+                    static float last_hover_x = -1, last_hover_y = -1;
+                    float dpi_scale = window_->GetDisplayScale();
+                    float logical_x = last_mouse_motion->motion.x / dpi_scale;
+                    float logical_y = last_mouse_motion->motion.y / dpi_scale;
+                    
+                    if (logical_x != last_hover_x || logical_y != last_hover_y) {
+                        last_hover_x = logical_x;
+                        last_hover_y = logical_y;
+                        HandleHover(logical_x, logical_y);
+                    }
                 }
             }
 
             // 渲染（限制帧率）
+            // 在事件驱动模型中，即使没有事件（超时返回），也需要检查是否需要渲染（例如动画）
             auto now = std::chrono::steady_clock::now();
             auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - last_render);
+            
+            // 只有当有需要重绘的内容或者距离上次渲染超过一定时间时才渲染
+            // 但在这个测试中，为了简单起见，我们保持 ~60FPS 的检查频率
+            // 由于 SDL_WaitEventTimeout(16) 的存在，这本身就是受限的
             if (elapsed.count() >= 16) {  // ~60 FPS
-                // 使用 RenderDocument 而非 RenderDocumentIncremental 来确保布局正确
                 if (window_->NeedsRepaint()) {
-                    window_->RenderDocument();
+                    lightui::RenderObject::ResetPaintStats();
+                    
+                    auto render_start = std::chrono::high_resolution_clock::now();
+                    window_->Render();
+                    auto render_end = std::chrono::high_resolution_clock::now();
+                    auto render_us = std::chrono::duration_cast<std::chrono::microseconds>(render_end - render_start).count();
+                    // 仅在渲染耗时较长时输出，避免刷屏
+                    if (render_us > 1000) {
+                        std::cout << "[Perf] Render: " << render_us << " μs" << std::endl;
+                    }
+                    
+                    lightui::RenderObject::PrintPaintStats();
                 }
-                window_->SwapBuffers();  // 显示到屏幕
+                window_->SwapBuffers();
                 last_render = now;
             }
-
-            SDL_Delay(1);
         }
     }
 
@@ -139,6 +220,11 @@ private:
         add_button_->SetStyle("padding", "10px 20px");
         add_button_->SetStyle("background-color", "#4CAF50");
         add_button_->SetStyle("color", "white");
+        
+        // 调试：检查 inline style 是否正确设置
+        std::cout << "[DEBUG] Add button inline styles after SetStyle:" << std::endl;
+        std::cout << "  style attribute: '" << add_button_->GetAttribute("style") << "'" << std::endl;
+        
         button_container->AppendChild(add_button_);
 
         // Remove 按钮
@@ -172,27 +258,96 @@ private:
         list_container_->SetAttribute("id", "list-container");
         list_container_->SetStyle("border", "1px solid #ccc");
         list_container_->SetStyle("padding", "10px");
-        list_container_->SetStyle("min-height", "200px");
+        list_container_->SetStyle("min-height", "100px");
         list_container_->SetStyle("background-color", "white");
         body->AppendChild(list_container_);
 
+        // ========== 移动方块演示 (验证双区域脏标记) ==========
+        auto move_hint = doc_->CreateElement("div");
+        move_hint->SetStyle("margin-top", "20px");
+        move_hint->SetStyle("margin-bottom", "10px");
+        move_hint->SetStyle("color", "#666");
+        move_hint->SetTextContent("Use WASD or Arrow keys to move the box. Press P to toggle popup.");
+        body->AppendChild(move_hint);
+
+        // 移动方块容器 (相对定位，作为 absolute 定位的参考)
+        auto box_container = doc_->CreateElement("div");
+        box_container->SetAttribute("id", "box-container");
+        box_container->SetStyle("position", "relative");
+        box_container->SetStyle("width", "400px");
+        box_container->SetStyle("height", "150px");
+        box_container->SetStyle("border", "2px dashed #999");
+        box_container->SetStyle("background-color", "#fafafa");
+        body->AppendChild(box_container);
+
+        // 可移动的方块 (absolute 定位)
+        moving_box_ = doc_->CreateElement("div");
+        moving_box_->SetAttribute("id", "moving-box");
+        moving_box_->SetStyle("position", "absolute");
+        moving_box_->SetStyle("left", std::to_string(box_x_) + "px");
+        moving_box_->SetStyle("top", std::to_string(box_y_) + "px");
+        moving_box_->SetStyle("width", "60px");
+        moving_box_->SetStyle("height", "60px");
+        moving_box_->SetStyle("background-color", "#FF5722");
+        moving_box_->SetStyle("border-radius", "8px");
+        box_container->AppendChild(moving_box_);
+
+        // ========== 弹出层演示 (验证布局隔离) ==========
+        popup_layer_ = doc_->CreateElement("div");
+        popup_layer_->SetAttribute("id", "popup");
+        popup_layer_->SetStyle("position", "fixed");
+        popup_layer_->SetStyle("left", "150px");
+        popup_layer_->SetStyle("top", "150px");
+        popup_layer_->SetStyle("width", "200px");
+        popup_layer_->SetStyle("padding", "20px");
+        popup_layer_->SetStyle("background-color", "#FFF3E0");
+        popup_layer_->SetStyle("border", "2px solid #FF9800");
+        popup_layer_->SetStyle("border-radius", "8px");
+        popup_layer_->SetStyle("display", "none");  // 初始隐藏
+        popup_layer_->SetTextContent("This is a popup! Press P to close.");
+        body->AppendChild(popup_layer_);
+
         // 初始渲染
         std::cout << "UI created, rendering..." << std::endl;
-        window_->RenderDocumentIncremental();
+        window_->Render();
         std::cout << "Initial render complete!" << std::endl;
+        
+        // 调试：检查按钮的布局
+        if (add_button_) {
+            auto ro = add_button_->GetRenderObject();
+            if (ro) {
+                auto bounds = ro->GetBoundingRect();
+                auto& style = ro->GetComputedStyle();
+                std::cout << "[DEBUG] Add button after render:" << std::endl;
+                std::cout << "  Bounds: [" << bounds.left() << "," << bounds.top() 
+                          << "," << bounds.right() << "," << bounds.bottom() << "]" << std::endl;
+                std::cout << "  Size: " << bounds.width() << "x" << bounds.height() << std::endl;
+                std::cout << "  Padding: " << style.padding.top.ToPx(0, style.font_size) << "px " 
+                          << style.padding.right.ToPx(0, style.font_size) << "px" << std::endl;
+                std::cout << "  Display: " << static_cast<int>(style.display) << std::endl;
+            } else {
+                std::cout << "[DEBUG] Add button has NO RenderObject!" << std::endl;
+            }
+        }
     }
 
     void HandleClick(float x, float y) {
         // 简单的点击检测 - 检查是否点击了按钮
         // 这里我们使用简单的位置检测
+        std::cout << "[HandleClick] x=" << x << ", y=" << y << std::endl;
 
         // 获取按钮的渲染对象位置
         if (add_button_) {
             auto ro = add_button_->GetRenderObject();
+            std::cout << "[HandleClick] add_button RenderObject: "  << (ro ? "valid" : "NULL") << std::endl;
             if (ro) {
                 auto bounds = ro->GetBoundingRect();
+                std::cout << "[HandleClick] add_button bounds: [" 
+                          << bounds.left() << "," << bounds.top() << "," 
+                          << bounds.right() << "," << bounds.bottom() << "]" << std::endl;
                 if (x >= bounds.left() && x <= bounds.right() &&
                     y >= bounds.top() && y <= bounds.bottom()) {
+                    std::cout << "[HandleClick] Add button clicked!" << std::endl;
                     OnAddItem();
                     return;
                 }
@@ -201,10 +356,12 @@ private:
 
         if (remove_button_) {
             auto ro = remove_button_->GetRenderObject();
+            std::cout << "[HandleClick] remove_button RenderObject: " << (ro ? "valid" : "NULL") << std::endl;
             if (ro) {
                 auto bounds = ro->GetBoundingRect();
                 if (x >= bounds.left() && x <= bounds.right() &&
                     y >= bounds.top() && y <= bounds.bottom()) {
+                    std::cout << "[HandleClick] Remove button clicked!" << std::endl;
                     OnRemoveItem();
                     return;
                 }
@@ -213,15 +370,56 @@ private:
 
         if (clear_button_) {
             auto ro = clear_button_->GetRenderObject();
+            std::cout << "[HandleClick] clear_button RenderObject: " << (ro ? "valid" : "NULL") << std::endl;
             if (ro) {
                 auto bounds = ro->GetBoundingRect();
                 if (x >= bounds.left() && x <= bounds.right() &&
                     y >= bounds.top() && y <= bounds.bottom()) {
+                    std::cout << "[HandleClick] Clear button clicked!" << std::endl;
                     OnClearAll();
                     return;
                 }
             }
         }
+        
+        std::cout << "[HandleClick] No button clicked at this position" << std::endl;
+    }
+
+    // 处理鼠标悬停 - 更新按钮 hover 状态和视觉效果
+    // 优化：只在状态变化时才更新样式和触发重绘
+    void HandleHover(float x, float y) {
+        // 按钮颜色配置: {正常颜色, hover颜色}
+        struct ButtonColors {
+            std::string normal;
+            std::string hover;
+        };
+        
+        // 检查每个按钮是否被 hover，并更新视觉效果
+        auto checkHover = [&](std::shared_ptr<Element> button, const std::string& name, 
+                              const ButtonColors& colors) {
+            if (!button) return;
+            auto ro = button->GetRenderObject();
+            if (!ro) return;
+            
+            auto bounds = ro->GetBoundingRect();
+            bool is_hovering = (x >= bounds.left() && x <= bounds.right() &&
+                               y >= bounds.top() && y <= bounds.bottom());
+            
+            // 只有状态变化时才更新 (避免无效重绘)
+            if (is_hovering != button->HasPseudoClass("hover")) {
+                button->SetPseudoClass("hover", is_hovering);
+                // 更新视觉效果 - hover 时使用更亮的颜色
+                button->SetStyle("background-color", is_hovering ? colors.hover : colors.normal);
+                window_->SetNeedsRepaint();
+            }
+        };
+        
+        // Add 按钮: 绿色系
+        checkHover(add_button_, "add_button", {"#4CAF50", "#66BB6A"});
+        // Remove 按钮: 红色系  
+        checkHover(remove_button_, "remove_button", {"#f44336", "#EF5350"});
+        // Clear 按钮: 灰色系
+        checkHover(clear_button_, "clear_button", {"#757575", "#9E9E9E"});
     }
 
     void OnAddItem() {
@@ -303,6 +501,18 @@ private:
         }
     }
 
+    void TogglePopup() {
+        if (!popup_layer_) return;
+        
+        popup_visible_ = !popup_visible_;
+        popup_layer_->SetStyle("display", popup_visible_ ? "block" : "none");
+        
+        std::cout << "[Popup] " << (popup_visible_ ? "Shown" : "Hidden") 
+                  << " (fixed positioning - should NOT trigger parent layout)" << std::endl;
+        
+        window_->SetNeedsRepaint();
+    }
+
     std::unique_ptr<Window> window_;
     std::shared_ptr<Document> doc_;
     std::shared_ptr<Element> add_button_;
@@ -310,7 +520,12 @@ private:
     std::shared_ptr<Element> clear_button_;
     std::shared_ptr<Element> counter_display_;
     std::shared_ptr<Element> list_container_;
+    std::shared_ptr<Element> moving_box_;
+    std::shared_ptr<Element> popup_layer_;
     int item_count_;
+    float box_x_;
+    float box_y_;
+    bool popup_visible_;
 };
 
 int main() {

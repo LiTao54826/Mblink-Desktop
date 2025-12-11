@@ -34,6 +34,7 @@
 #include <lexbor/dom/interfaces/element.h>
 #include <lexbor/dom/interfaces/text.h>
 #include "core/lexbor/lexbor_document.h"
+#include "core/render/render_object.h"
 
 namespace lightui {
 
@@ -226,8 +227,40 @@ std::shared_ptr<DOMTokenList> Element::GetClassList() {
 
 void Element::SetStyle(const std::string& property, const std::string& value) {
     std::string old_value = GetStyle(property);
+    
+    // 移动元素双区域标记优化：位置属性变化时记录旧位置
+    // 这些属性会导致元素位置变化，需要同时重绘新旧两个位置
+    static const std::unordered_set<std::string> position_properties = {
+        "left", "top", "right", "bottom", "transform"
+    };
+    
+    SkRect old_bounds = SkRect::MakeEmpty();
+    bool is_position_change = position_properties.count(property) > 0;
+    
+    if (is_position_change) {
+        // 记录变化前的边界框
+        if (auto render_obj = GetRenderObject()) {
+            old_bounds = render_obj->GetBoundingRect();
+        }
+    }
+    
     styles_[property] = value;
+    
+    // 关键修复：同步更新 style attribute
+    // StyleResolver 从 style attribute 读取内联样式，而不是从 styles_ map
+    UpdateStyleAttribute();
+    
     MarkDirty();
+
+    // 移动元素双区域标记：添加旧位置到脏区域列表
+    if (is_position_change && !old_bounds.isEmpty()) {
+        auto doc = GetOwnerDocument();
+        if (doc) {
+            // 将旧位置添加到文档的脏区域列表
+            // 这样渲染时会同时重绘旧位置（擦除残影）和新位置
+            doc->AddDirtyRect(old_bounds);
+        }
+    }
 
     // 通知观察者
     auto doc = GetOwnerDocument();
@@ -268,6 +301,29 @@ std::shared_ptr<DOMStringMap> Element::GetDataset() {
         );
     }
     return dataset_;
+}
+
+void Element::UpdateStyleAttribute() {
+    // 将 styles_ map 转换为 CSS 字符串并更新 style attribute
+    // 格式: "property1: value1; property2: value2;"
+    if (styles_.empty()) {
+        // 如果没有样式，移除 style attribute
+        if (HasAttribute("style")) {
+            RemoveAttribute("style");
+        }
+        return;
+    }
+    
+    std::string css_text;
+    for (const auto& [property, value] : styles_) {
+        if (!css_text.empty()) {
+            css_text += " ";
+        }
+        css_text += property + ": " + value + ";";
+    }
+    
+    // 直接设置 attribute，避免递归调用 SetStyle
+    attributes_["style"] = css_text;
 }
 
 // ========== 克隆和文本内容 ==========
