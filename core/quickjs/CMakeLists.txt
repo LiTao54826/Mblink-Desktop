@@ -7,6 +7,7 @@ set(QUICKJS_RUNTIME_SOURCES
     dom_binding_map.cpp
     bindings/js_node.cpp
     bindings/js_element.cpp
+    bindings/js_style_declaration.cpp
 )
 
 set(QUICKJS_RUNTIME_HEADERS
@@ -16,6 +17,7 @@ set(QUICKJS_RUNTIME_HEADERS
     dom_binding_map.h
     bindings/js_node.h
     bindings/js_element.h
+    bindings/js_style_declaration.h
 )
 
 add_library(lightui_quickjs STATIC ${QUICKJS_RUNTIME_SOURCES})

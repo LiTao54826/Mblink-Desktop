@@ -5,6 +5,7 @@
 
 #include "js_element.h"
 #include "js_node.h"
+#include "js_style_declaration.h"
 #include "core/quickjs/dom_binding_map.h"
 #include <iostream>
 
@@ -105,10 +106,21 @@ static JSValue JSElement_set_className(JSContext* ctx, JSValueConst this_val, JS
     return JS_UNDEFINED;
 }
 
-// style getter (暂时返回简单对象，后续实现 CSSStyleDeclaration)
+// style getter
 static JSValue JSElement_get_style(JSContext* ctx, JSValueConst this_val, int magic) {
-    // TODO: 实现 CSSStyleDeclaration 代理对象
-    return JS_NewObject(ctx);
+    auto* data = static_cast<JSElementData*>(JS_GetOpaque(this_val, js_element_class_id));
+    if (!data || !data->element) {
+        return JS_NULL;
+    }
+
+    // 获取 CSSStyleDeclaration 对象
+    auto style = data->element->GetStyleDeclaration();
+    if (!style) {
+        return JS_NULL;
+    }
+
+    // 包装并返回
+    return WrapStyleDeclaration(ctx, style);
 }
 
 // ========== 方法实现 ==========
