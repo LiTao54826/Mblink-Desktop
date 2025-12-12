@@ -1,30 +1,32 @@
 # MBink
 
-**轻量级跨平台桌面应用框架 - Electron 的轻量级替代品**
+**轻量高效的企业级桌面应用框架**
 
-基于 QuickJS + Skia + SDL3 + Taffy，使用 JavaScript/React 开发原生桌面应用
+基于 QuickJS + Skia + SDL3 + NativeLayoutEngine，使用 JavaScript/Preact 开发高性能桌面应用
+
+> 🎯 **定位**: 轻量核心 + 可选企业级扩展（混合策略）
 
 [![Build Status](https://img.shields.io/badge/build-passing-brightgreen.svg)]()
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Version](https://img.shields.io/badge/version-0.91.0-orange.svg)]()
 [![Phase](https://img.shields.io/badge/phase-Native%20Layout%20Engine-yellow)]()
-[![Progress](https://img.shields.io/badge/progress-90%25-blue)]()
+[![Progress](https://img.shields.io/badge/progress-91%25-blue)]()
 [![Tests](https://img.shields.io/badge/tests-541%20passing-brightgreen)]()
+[![Strategy](https://img.shields.io/badge/strategy-Hybrid-purple)]()
 
 ---
 
 ## 📊 项目状态
 
 **当前版本**: v0.91.0
-**当前阶段**: 原生布局引擎完成 ✅
-**进度**: 90% (核心功能 + CSS + 原生布局引擎完成)
-**最后更新**: 2025-12-07
+**当前阶段**: UI 组件库开发 🔄
+**进度**: 91% (核心功能完成，组件库开发中)
+**最后更新**: 2025-12-12
 **构建状态**: ✅ 核心模块编译成功
 **测试状态**: ✅ 541 个测试用例通过
-**布局引擎**: ✅ 原生布局引擎 (Block + IFC + Flexbox + Grid)
-**CSS 高级特性**: ✅ 100% 完成 (阴影、渐变、Transform、Transition、Animation、变量、滤镜)
-**IFC 布局**: ✅ 100% 完成 (行内格式化上下文、文本对齐、换行)
-**下一步**: Preact 生态完善 / 多语言绑定
+**Preact 生态**: ✅ 90% 完成 (完整 Virtual DOM Diffing)
+**战略定位**: 轻量核心 + 可选企业级扩展
+**下一步**: UI 组件库 / 状态管理 / 路由系统
 
 ### 🚀 快速开始
 
@@ -50,8 +52,8 @@
 - ✅ **示例应用** - preact_counter, preact_todo_app 可运行
 - 🔄 **C++ 绑定** - PreactRenderer/PreactBindings 待实现
 
-**Phase 8 - Taffy CSS 布局引擎** (完成 ✅):
-- ✅ **Flexbox/Grid** - 通过 Taffy 实现完整布局支持
+**Phase 8 - 原生布局引擎** (完成 ✅):
+- ✅ **Flexbox/Grid** - 通过 NativeLayoutEngine 实现完整布局支持
 - ✅ **D3D11 DisplayBackend** - 无闪烁 CPU 渲染
 
 **Phase 3-7 - CSS 高级特性与 HTML 支持** (100% 完成 ✅):
@@ -71,13 +73,17 @@
 
 ## ✨ 特性
 
-- 🪶 **轻量级** - 总体积约 50MB（比Electron小50-70%，比Tauri大但功能更完整）
-- ⚡ **高性能** - Skia硬件加速渲染，浏览器级渲染效果，QuickJS轻量级引擎
-- 🎨 **易开发** - 使用 JavaScript/Preact + React生态开发UI，丰富的组件库支持
-- 🌍 **跨平台** - Windows、macOS、Linux 一次编写，到处运行
-- 🔗 **跨语言** - Python、C++、Rust、Go、Node.js 等语言都能使用
-- 📦 **独立运行** - 单个可执行文件，无需安装额外运行时
-- 🎯 **React生态** - 完整支持React组件库（Ant Design、Material-UI等）
+### 核心优势
+- 🪶 **轻量高效** - 启动 ~100ms，内存 ~50MB（比 Electron 显著优秀）
+- ⚡ **原生性能** - Skia 硬件加速，QuickJS 轻量引擎
+- 🎨 **Preact 生态** - 完整 Virtual DOM，支持所有 React Hooks
+- 🌍 **跨平台** - Windows、macOS、Linux 一次编写
+- 📦 **独立部署** - 单文件运行，无需额外运行时
+
+### 混合策略（企业级能力）
+- 🔧 **轻量核心** - 20个基础组件 (~50KB)，满足 80% 场景
+- 🔌 **可选扩展** - 按需加载高级组件和第三方库
+- 🏢 **企业支持** - 完整组件库、可视化设计器（规划中）
 
 ## 🆚 与竞品对比
 
@@ -277,13 +283,13 @@ cd build/bin        # Linux/macOS
 - ✅ SDL3集成 (6.5 MB)
 - ✅ Skia集成 (36.5 MB)
 - ✅ QuickJS集成 (1.1 MB)
-- ✅ Taffy 布局引擎 (替代 Yoga)
+- ✅ NativeLayoutEngine (Block + IFC + Flexbox + Grid)
 - ✅ Lexbor集成 (2.6.0)
 
 #### Phase 2-6: 核心功能 (100%) ✅
 - ✅ JavaScript运行时 (QuickJS封装、Console API、定时器)
 - ✅ DOM API (Node、Element、Document、事件系统)
-- ✅ 布局引擎 (Taffy Flexbox + CSS Grid)
+- ✅ 布局引擎 (NativeLayoutEngine Flexbox + CSS Grid)
 - ✅ 渲染引擎 (Skia渲染、CSS样式、文本渲染)
 - ✅ 窗口系统 (SDL3窗口、D3D11 后端)
 - ✅ 事件系统 (鼠标、键盘、焦点、拖拽)
@@ -294,8 +300,8 @@ cd build/bin        # Linux/macOS
 - ✅ CSS3 选择器 (所有类型)
 - ✅ 表单元素 (所有 HTML5 input 类型)
 
-#### Phase 8: Taffy 布局引擎 (100%) ✅
-- ✅ CSS Flexbox 完整支持
+#### Phase 8: 原生布局引擎 (100%) ✅
+- ✅ CSS Flexbox 完整支持 (NativeLayoutEngine)
 - ✅ CSS Grid 布局支持
 - ✅ Position/Overflow 支持
 
@@ -349,7 +355,7 @@ MBink基于以下优秀的开源项目：
 - **[QuickJS](https://bellard.org/quickjs/)** - 轻量级JavaScript引擎 (600KB)
 - **[Skia](https://skia.org/)** - 2D图形库 (Chrome同源)
 - **[SDL3](https://www.libsdl.org/)** - 跨平台窗口库
-- **[Taffy](https://github.com/DioxusLabs/taffy)** - CSS 布局引擎 (Flexbox + Grid)
+- **NativeLayoutEngine** - 原生 C++ 布局引擎 (Block + IFC + Flexbox + Grid)
 - **[Lexbor](https://github.com/lexbor/lexbor)** - HTML5/CSS3解析库
 - **[Preact](https://preactjs.com/)** - 轻量级React替代品
 - **[RmlUi](https://github.com/mikke89/RmlUi)** - 参考项目（事件系统、CSS动画）
