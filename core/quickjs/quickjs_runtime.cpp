@@ -17,6 +17,7 @@
 #include <iostream>
 #include <thread>
 #include <chrono>
+#include <filesystem>
 
 namespace lightui {
 
@@ -455,8 +456,8 @@ JSValue QuickJSRuntime::ConsoleLog(JSContext* ctx, JSValueConst this_val,
 }
 
 void QuickJSRuntime::InitModuleLoader() {
-    // Set module loader function
-    JS_SetModuleLoaderFunc(rt_, nullptr, ModuleLoader, this);
+    // Set module loader function with normalize function
+    JS_SetModuleLoaderFunc(rt_, ModuleNormalize, ModuleLoader, this);
 }
 
 JSModuleDef* QuickJSRuntime::ModuleLoader(JSContext* ctx, const char* module_name, void* opaque) {
@@ -466,28 +467,167 @@ JSModuleDef* QuickJSRuntime::ModuleLoader(JSContext* ctx, const char* module_nam
         return nullptr;
     }
 
-    // Check if module is registered
+    // 1. 优先从注册表查找（精确匹配）
     auto it = runtime->module_registry_.find(module_name);
-    if (it == runtime->module_registry_.end()) {
-        JS_ThrowReferenceError(ctx, "Module not found: %s", module_name);
+    if (it != runtime->module_registry_.end()) {
+        const std::string& module_code = it->second;
+        JSValue module_val = JS_Eval(ctx, module_code.c_str(), module_code.length(),
+                                     module_name, JS_EVAL_TYPE_MODULE | JS_EVAL_FLAG_COMPILE_ONLY);
+        if (JS_IsException(module_val)) {
+            return nullptr;
+        }
+        JSModuleDef* m = (JSModuleDef*)JS_VALUE_GET_PTR(module_val);
+        JS_FreeValue(ctx, module_val);
+        return m;
+    }
+
+    // 2. 解析路径并尝试从文件系统加载
+    std::string resolved_path;
+    if (!runtime->ResolveModulePath(module_name, resolved_path)) {
+        JS_ThrowReferenceError(ctx, "Cannot resolve module: %s", module_name);
         return nullptr;
     }
 
-    const std::string& module_code = it->second;
+    // 3. 检查解析后的路径是否已注册（避免重复加载）
+    it = runtime->module_registry_.find(resolved_path);
+    if (it != runtime->module_registry_.end()) {
+        const std::string& module_code = it->second;
+        JSValue module_val = JS_Eval(ctx, module_code.c_str(), module_code.length(),
+                                     resolved_path.c_str(), JS_EVAL_TYPE_MODULE | JS_EVAL_FLAG_COMPILE_ONLY);
+        if (JS_IsException(module_val)) {
+            return nullptr;
+        }
+        JSModuleDef* m = (JSModuleDef*)JS_VALUE_GET_PTR(module_val);
+        JS_FreeValue(ctx, module_val);
+        return m;
+    }
 
-    // Compile the module
+    // 4. 从文件系统读取
+    std::ifstream file(resolved_path);
+    if (!file.is_open()) {
+        JS_ThrowReferenceError(ctx, "Module file not found: %s", resolved_path.c_str());
+        return nullptr;
+    }
+    std::stringstream buffer;
+    buffer << file.rdbuf();
+    std::string module_code = buffer.str();
+
+    // 5. 注册并编译
+    runtime->module_registry_[resolved_path] = module_code;
+    
+    // 更新基础路径为当前加载的模块路径（供其依赖项使用）
+    std::string old_base_path = runtime->base_module_path_;
+    runtime->base_module_path_ = resolved_path;
+    
     JSValue module_val = JS_Eval(ctx, module_code.c_str(), module_code.length(),
-                                 module_name, JS_EVAL_TYPE_MODULE | JS_EVAL_FLAG_COMPILE_ONLY);
-
+                                 resolved_path.c_str(), JS_EVAL_TYPE_MODULE | JS_EVAL_FLAG_COMPILE_ONLY);
+    
+    // 恢复旧的基础路径
+    runtime->base_module_path_ = old_base_path;
+    
     if (JS_IsException(module_val)) {
         return nullptr;
     }
 
-    // Get the module definition
     JSModuleDef* m = (JSModuleDef*)JS_VALUE_GET_PTR(module_val);
     JS_FreeValue(ctx, module_val);
-
     return m;
+}
+
+char* QuickJSRuntime::ModuleNormalize(JSContext* ctx, const char* module_base,
+                                       const char* module_name, void* opaque) {
+    QuickJSRuntime* runtime = static_cast<QuickJSRuntime*>(opaque);
+    if (!runtime) {
+        return nullptr;
+    }
+
+    std::string name(module_name);
+    std::string base(module_base ? module_base : "");
+    std::string resolved_path;
+    
+    // 如果是绝对路径，解析为文件夹或文件
+    if ((name.length() > 1 && name[1] == ':') || (name.length() > 0 && name[0] == '/')) {
+        resolved_path = ResolveFolderOrFile(name);
+        return js_strdup(ctx, resolved_path.c_str());
+    }
+    
+    // 如果是相对路径，基于 base 解析
+    if (name.rfind("./", 0) == 0 || name.rfind("../", 0) == 0) {
+        if (base.empty()) {
+            // 如果没有 base，使用当前设置的 base_module_path_
+            if (runtime->base_module_path_.empty()) {
+                return js_strdup(ctx, module_name);
+            }
+            base = runtime->base_module_path_;
+        }
+        
+        std::filesystem::path base_path(base);
+        std::filesystem::path relative_path(name);
+        std::filesystem::path resolved = (base_path.parent_path() / relative_path).lexically_normal();
+        
+        // 转换为字符串并标准化为正斜杠
+        std::string resolved_str = resolved.string();
+        std::replace(resolved_str.begin(), resolved_str.end(), '\\', '/');
+        
+        // 检查是否是文件夹，如果是则尝试解析 package.json 或 index.js
+        resolved_path = ResolveFolderOrFile(resolved_str);
+        return js_strdup(ctx, resolved_path.c_str());
+    }
+    
+    // 裸模块名，直接返回
+    return js_strdup(ctx, module_name);
+}
+
+std::string QuickJSRuntime::ResolveFolderOrFile(const std::string& path) {
+    namespace fs = std::filesystem;
+    
+    // 如果路径已经是文件，直接返回
+    if (fs::is_regular_file(path)) {
+        return path;
+    }
+    
+    // 如果路径不存在，假设它是文件（稍后会在加载时报错）
+    if (!fs::exists(path)) {
+        return path;
+    }
+    
+    // 如果是目录，尝试解析
+    if (fs::is_directory(path)) {
+        // 1. 尝试读取 package.json 的 main 字段
+        fs::path package_json = fs::path(path) / "package.json";
+        if (fs::exists(package_json)) {
+            std::ifstream file(package_json);
+            if (file.is_open()) {
+                try {
+                    json pkg = json::parse(file);
+                    if (pkg.contains("main") && pkg["main"].is_string()) {
+                        std::string main_file = pkg["main"].get<std::string>();
+                        fs::path main_path = fs::path(path) / main_file;
+                        
+                        // 标准化路径
+                        std::string result = main_path.lexically_normal().string();
+                        std::replace(result.begin(), result.end(), '\\', '/');
+                        return result;
+                    }
+                } catch (...) {
+                    // JSON 解析失败，继续尝试 index.js
+                }
+            }
+        }
+        
+        // 2. 尝试 index.js
+        fs::path index_js = fs::path(path) / "index.js";
+        if (fs::exists(index_js)) {
+            std::string result = index_js.string();
+            std::replace(result.begin(), result.end(), '\\', '/');
+            return result;
+        }
+        
+        // 3. 如果都没有，返回原路径（后续会报错）
+        return path;
+    }
+    
+    return path;
 }
 
 void QuickJSRuntime::RegisterModule(const std::string& module_name, const std::string& module_code) {
@@ -503,9 +643,16 @@ json QuickJSRuntime::LoadModule(const std::string& module_name) {
 
     const std::string& module_code = it->second;
 
+    // 设置基础路径为当前模块路径（供其依赖项使用）
+    std::string old_base_path = base_module_path_;
+    base_module_path_ = module_name;
+
     // Evaluate the module
     JSValue result = JS_Eval(ctx_, module_code.c_str(), module_code.length(),
                             module_name.c_str(), JS_EVAL_TYPE_MODULE);
+
+    // 恢复旧的基础路径
+    base_module_path_ = old_base_path;
 
     if (JS_IsException(result)) {
         std::string error = GetJSError();
@@ -531,9 +678,48 @@ json QuickJSRuntime::LoadModuleFile(const std::string& filepath) {
     buffer << file.rdbuf();
     std::string module_code = buffer.str();
 
+    // 设置基础路径为当前文件的绝对路径
+    std::filesystem::path abs_path = std::filesystem::absolute(filepath);
+    SetBaseModulePath(abs_path.string());
+
     // Register and load the module
-    RegisterModule(filepath, module_code);
-    return LoadModule(filepath);
+    RegisterModule(abs_path.string(), module_code);
+    return LoadModule(abs_path.string());
+}
+
+void QuickJSRuntime::SetBaseModulePath(const std::string& path) {
+    base_module_path_ = path;
+}
+
+bool QuickJSRuntime::ResolveModulePath(const char* module_name, std::string& resolved_path) {
+    std::string name(module_name);
+    
+    // 已是绝对路径（Windows: C:/... 或 Linux: /...）
+    if ((name.length() > 1 && name[1] == ':') || (name.length() > 0 && name[0] == '/')) {
+        resolved_path = name;
+        return true;
+    }
+    
+    // 相对路径：基于 base_module_path_ 解析
+    if (name.rfind("./", 0) == 0 || name.rfind("../", 0) == 0) {
+        if (base_module_path_.empty()) {
+            // 没有基础路径，无法解析相对路径
+            return false;
+        }
+        
+        std::filesystem::path base(base_module_path_);
+        std::filesystem::path relative(name);
+        std::filesystem::path resolved = (base.parent_path() / relative).lexically_normal();
+        
+        // 转换路径为字符串并确保使用正斜杠（跨平台兼容）
+        resolved_path = resolved.string();
+        // Windows 上 std::filesystem 可能返回反斜杠，统一转换为正斜杠
+        std::replace(resolved_path.begin(), resolved_path.end(), '\\', '/');
+        return true;
+    }
+    
+    // 裸模块名（如 "preact"）- 暂不支持 node_modules 查找
+    return false;
 }
 
 // ============================================================================

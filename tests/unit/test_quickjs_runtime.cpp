@@ -455,6 +455,69 @@ void test_async_promises() {
     std::cout << "  ✓ Async promises passed" << std::endl;
 }
 
+void test_filesystem_module_loading() {
+    std::cout << "Test: Filesystem Module Loading..." << std::endl;
+    QuickJSRuntime runtime;
+
+    // Test loading module from filesystem with relative imports
+    std::cout << "  Testing module file loading with relative imports:" << std::endl;
+    
+    try {
+        // Load main.js which imports from ./math.js
+        // Use absolute path for reliability
+        runtime.LoadModuleFile("c:/Users/Administrator/Desktop/code/MBink/examples/module_test/main.js");
+
+        // Verify the imported values
+        auto results = runtime.GetGlobalProperty("testResults");
+        assert(results.is_object());
+        
+        // Check imported function results
+        assert(results["add"].get<int>() == 8);      // 5 + 3
+        assert(results["square"].get<int>() == 25);  // 5 * 5 (uses nested multiply)
+        assert(results["half"].get<int>() == 5);     // 10 / 2 (uses nested divide)
+        
+        // Check imported constant
+        auto pi = results["pi"].get<double>();
+        assert(pi > 3.14 && pi < 3.15);
+
+        std::cout << "  ✓ Filesystem module loading passed" << std::endl;
+    } catch (const std::exception& e) {
+        std::cerr << "  ✗ Filesystem module loading failed: " << e.what() << std::endl;
+        throw;
+    }
+}
+
+void test_folder_imports() {
+    std::cout << "Test: Folder Imports..." << std::endl;
+    QuickJSRuntime runtime;
+
+    // Test folder imports (index.js and package.json)
+    std::cout << "  Testing folder imports (index.js and package.json):" << std::endl;
+    
+    try {
+        // Load folder-test.js which imports from folders
+        runtime.LoadModuleFile("c:/Users/Administrator/Desktop/code/MBink/examples/module_test/folder-test.js");
+
+        // Verify the imported values
+        auto results = runtime.GetGlobalProperty("folderImportResults");
+        assert(results.is_object());
+        
+        // Check values from ./utils (index.js)
+        assert(results["utilName"].get<std::string>() == "Utils Package");
+        assert(results["message"].get<std::string>() == "[UTILS] Test");
+        
+        // Check values from ./config (package.json -> config-main.js)
+        assert(results["appName"].get<std::string>() == "My Application");
+        assert(results["configEnv"].get<std::string>() == "production");
+
+        std::cout << "  ✓ Folder imports passed" << std::endl;
+    } catch (const std::exception& e) {
+        std::cerr << "  ✗ Folder imports failed: " << e.what() << std::endl;
+        throw;
+    }
+}
+
+
 int main() {
     std::cout << "=== QuickJS Runtime Tests ===" << std::endl << std::endl;
 
@@ -471,6 +534,8 @@ int main() {
         test_complex_operations();
         test_console_api();
         test_module_loading();
+        test_filesystem_module_loading();
+        test_folder_imports();
         test_async_timers();
         test_async_promises();
 

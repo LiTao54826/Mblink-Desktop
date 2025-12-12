@@ -165,6 +165,12 @@ public:
     json LoadModuleFile(const std::string& filepath);
 
     /**
+     * @brief 设置模块基础路径（用于解析相对导入）
+     * @param path 基础路径
+     */
+    void SetBaseModulePath(const std::string& path);
+
+    /**
      * @brief 运行事件循环
      * @param max_iterations 最大迭代次数，-1表示无限循环直到没有任务
      */
@@ -274,6 +280,12 @@ private:
     static JSModuleDef* ModuleLoader(JSContext* ctx, const char* module_name, void* opaque);
 
     /**
+     * @brief 模块名标准化回调（解析相对路径）
+     */
+    static char* ModuleNormalize(JSContext* ctx, const char* module_base, 
+                                 const char* module_name, void* opaque);
+
+    /**
      * @brief setTimeout 实现
      */
     static JSValue SetTimeout(JSContext* ctx, JSValueConst this_val,
@@ -297,11 +309,25 @@ private:
     int CreateTimer(JSValue callback, int64_t delay, bool repeat,
                    const std::vector<JSValue>& args);
 
+    /**
+     * @brief 解析模块路径（相对/绝对路径）
+     * @param module_name 模块名称
+     * @param resolved_path 解析后的路径（输出参数）
+     * @return 是否成功解析
+     */
+    bool ResolveModulePath(const char* module_name, std::string& resolved_path);
+
+    /**
+     * @brief 解析文件夹或文件（支持 package.json 和 index.js）
+     */
+    static std::string ResolveFolderOrFile(const std::string& path);
+
 private:
     JSRuntime* rt_ = nullptr;
     JSContext* ctx_ = nullptr;
     std::unordered_map<std::string, NativeFunction> native_functions_;
     std::unordered_map<std::string, std::string> module_registry_;
+    std::string base_module_path_;  // 当前模块的基础路径
 
     // 异步任务队列
     std::queue<Task> task_queue_;
