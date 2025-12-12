@@ -322,6 +322,24 @@ private:
      */
     static std::string ResolveFolderOrFile(const std::string& path);
 
+    /**
+     * @brief 解析 package 目录（支持 exports 和 main 字段）
+     */
+    static std::string ResolvePackageDirectory(const std::string& dir_path);
+
+    /**
+     * @brief 解析 package.json 的 exports 字段
+     */
+    static std::string ResolvePackageExports(const json& exports, 
+                                              const std::string& package_dir,
+                                              const std::string& subpath);
+
+    /**
+     * @brief 从 node_modules 查找模块
+     */
+    static std::string ResolveNodeModules(const std::string& module_name,
+                                           const std::string& start_path);
+
 private:
     JSRuntime* rt_ = nullptr;
     JSContext* ctx_ = nullptr;

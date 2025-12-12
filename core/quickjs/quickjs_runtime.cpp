@@ -574,60 +574,198 @@ char* QuickJSRuntime::ModuleNormalize(JSContext* ctx, const char* module_base,
         return js_strdup(ctx, resolved_path.c_str());
     }
     
-    // 裸模块名，直接返回
+    // 裸模块名，尝试 node_modules 查找
+    if (!name.empty() && name[0] != '.' && name[0] != '/') {
+        std::string base_for_search = base.empty() ? runtime->base_module_path_ : base;
+        if (!base_for_search.empty()) {
+            resolved_path = ResolveNodeModules(name, base_for_search);
+            if (!resolved_path.empty()) {
+                return js_strdup(ctx, resolved_path.c_str());
+            }
+        }
+    }
+    
+    // 未能解析，返回原名称
     return js_strdup(ctx, module_name);
 }
 
 std::string QuickJSRuntime::ResolveFolderOrFile(const std::string& path) {
     namespace fs = std::filesystem;
     
-    // 如果路径已经是文件，直接返回
+    // 1. 如果路径已经是文件，直接返回
     if (fs::is_regular_file(path)) {
         return path;
     }
     
-    // 如果路径不存在，假设它是文件（稍后会在加载时报错）
-    if (!fs::exists(path)) {
-        return path;
+    // 2. 尝试添加 .js 扩展名（扩展名省略支持）
+    if (!path.empty() && path.find('.') == std::string::npos) {
+        std::string with_js = path + ".js";
+        if (fs::is_regular_file(with_js)) {
+            return with_js;
+        }
     }
     
-    // 如果是目录，尝试解析
+    // 3. 如果路径不存在，尝试作为文件或目录处理
+    if (!fs::exists(path)) {
+        return path;  // 返回原路径，稍后会报错
+    }
+    
+    // 4. 如果是目录，尝试解析 package
     if (fs::is_directory(path)) {
-        // 1. 尝试读取 package.json 的 main 字段
-        fs::path package_json = fs::path(path) / "package.json";
-        if (fs::exists(package_json)) {
-            std::ifstream file(package_json);
-            if (file.is_open()) {
-                try {
-                    json pkg = json::parse(file);
-                    if (pkg.contains("main") && pkg["main"].is_string()) {
-                        std::string main_file = pkg["main"].get<std::string>();
-                        fs::path main_path = fs::path(path) / main_file;
-                        
-                        // 标准化路径
-                        std::string result = main_path.lexically_normal().string();
-                        std::replace(result.begin(), result.end(), '\\', '/');
-                        return result;
-                    }
-                } catch (...) {
-                    // JSON 解析失败，继续尝试 index.js
-                }
-            }
-        }
-        
-        // 2. 尝试 index.js
-        fs::path index_js = fs::path(path) / "index.js";
+        return ResolvePackageDirectory(path);
+    }
+    
+    return path;
+}
+
+std::string QuickJSRuntime::ResolvePackageDirectory(const std::string& dir_path) {
+    namespace fs = std::filesystem;
+    
+    fs::path package_json = fs::path(dir_path) / "package.json";
+    if (!fs::exists(package_json)) {
+        // 没有 package.json，尝试 index.js
+        fs::path index_js = fs::path(dir_path) / "index.js";
         if (fs::exists(index_js)) {
             std::string result = index_js.string();
             std::replace(result.begin(), result.end(), '\\', '/');
             return result;
         }
-        
-        // 3. 如果都没有，返回原路径（后续会报错）
-        return path;
+        return dir_path;
     }
     
-    return path;
+    // 读取并解析 package.json
+    std::ifstream file(package_json);
+    if (!file.is_open()) {
+        return dir_path;
+    }
+    
+    try {
+        json pkg = json::parse(file);
+        
+        // 优先使用 exports 字段（新标准）
+        if (pkg.contains("exports")) {
+            std::string exports_result = ResolvePackageExports(pkg["exports"], dir_path, ".");
+            if (!exports_result.empty()) {
+                return exports_result;
+            }
+        }
+        
+        // 回退到 main 字段
+        if (pkg.contains("main") && pkg["main"].is_string()) {
+            std::string main_file = pkg["main"].get<std::string>();
+            fs::path main_path = fs::path(dir_path) / main_file;
+            std::string result = main_path.lexically_normal().string();
+            std::replace(result.begin(), result.end(), '\\', '/');
+            return result;
+        }
+    } catch (...) {
+        // JSON 解析失败
+    }
+    
+    // 最后尝试 index.js
+    fs::path index_js = fs::path(dir_path) / "index.js";
+    if (fs::exists(index_js)) {
+        std::string result = index_js.string();
+        std::replace(result.begin(), result.end(), '\\', '/');
+        return result;
+    }
+    
+    return dir_path;
+}
+
+std::string QuickJSRuntime::ResolvePackageExports(const json& exports, 
+                                                   const std::string& package_dir,
+                                                   const std::string& subpath) {
+    namespace fs = std::filesystem;
+    
+    // exports 可以是字符串、对象或null
+    if (exports.is_string()) {
+        // 简单情况: "exports": "./dist/index.js"
+        std::string export_path = exports.get<std::string>();
+        if (export_path.rfind("./", 0) == 0) {
+            export_path = export_path.substr(2);  // 去掉 "./"
+        }
+        fs::path full_path = fs::path(package_dir) / export_path;
+        std::string result = full_path.lexically_normal().string();
+        std::replace(result.begin(), result.end(), '\\', '/');
+        return result;
+    }
+    
+    if (exports.is_object()) {
+        // 对象情况: { ".": "./dist/index.js", "./utils": "./dist/utils.js" }
+        if (exports.contains(subpath)) {
+            const json& target = exports[subpath];
+            if (target.is_string()) {
+                std::string export_path = target.get<std::string>();
+                if (export_path.rfind("./", 0) == 0) {
+                    export_path = export_path.substr(2);
+                }
+                fs::path full_path = fs::path(package_dir) / export_path;
+                std::string result = full_path.lexically_normal().string();
+                std::replace(result.begin(), result.end(), '\\', '/');
+                return result;
+            }
+        }
+        
+        // 条件导出: { "import": "...", "require": "..." }
+        // 优先使用 "import" (ES6)
+        if (exports.contains("import") && exports["import"].is_string()) {
+            std::string export_path = exports["import"].get<std::string>();
+            if (export_path.rfind("./", 0) == 0) {
+                export_path = export_path.substr(2);
+            }
+            fs::path full_path = fs::path(package_dir) / export_path;
+            std::string result = full_path.lexically_normal().string();
+            std::replace(result.begin(), result.end(), '\\', '/');
+            return result;
+        }
+    }
+    
+    return "";
+}
+
+std::string QuickJSRuntime::ResolveNodeModules(const std::string& module_name,
+                                                const std::string& start_path) {
+    namespace fs = std::filesystem;
+    
+    // 从 start_path 开始向上遍历，查找 node_modules
+    fs::path current_dir = fs::path(start_path).parent_path();
+    
+    while (!current_dir.empty() && current_dir.has_parent_path()) {
+        // 检查当前目录的 node_modules
+        fs::path node_modules = current_dir / "node_modules" / module_name;
+        
+        if (fs::exists(node_modules)) {
+            if (fs::is_directory(node_modules)) {
+                // 如果是目录，尝试解析为 package
+                std::string resolved = ResolvePackageDirectory(node_modules.string());
+                std::replace(resolved.begin(), resolved.end(), '\\', '/');
+                return resolved;
+            } else if (fs::is_regular_file(node_modules)) {
+                // 如果是文件，直接返回
+                std::string result = node_modules.string();
+                std::replace(result.begin(), result.end(), '\\', '/');
+                return result;
+            }
+        }
+        
+        // 尝试添加 .js 扩展名
+        fs::path node_modules_js = current_dir / "node_modules" / (module_name + ".js");
+        if (fs::is_regular_file(node_modules_js)) {
+            std::string result = node_modules_js.string();
+            std::replace(result.begin(), result.end(), '\\', '/');
+            return result;
+        }
+        
+        // 向上一级目录
+        fs::path parent = current_dir.parent_path();
+        if (parent == current_dir) {
+            break;  // 已到达根目录
+        }
+        current_dir = parent;
+    }
+    
+    return "";  // 未找到
 }
 
 void QuickJSRuntime::RegisterModule(const std::string& module_name, const std::string& module_code) {

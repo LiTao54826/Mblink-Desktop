@@ -517,6 +517,36 @@ void test_folder_imports() {
     }
 }
 
+void test_advanced_resolution() {
+    std::cout << "Test: Advanced Module Resolution..." << std::endl;
+    QuickJSRuntime runtime;
+
+    // Test advanced features: extension omission and exports field
+    std::cout << "  Testing extension omission and exports field:" << std::endl;
+    
+    try {
+        // Load advanced-test.js which tests omission and exports
+        runtime.LoadModuleFile("c:/Users/Administrator/Desktop/code/MBink/examples/module_test/advanced-test.js");
+
+        // Verify the imported values
+        auto results = runtime.GetGlobalProperty("advancedResults");
+        assert(results.is_object());
+        
+        // Check extension omission (imported from ./libs/lib instead of ./libs/lib.js)
+        assert(results["libName"].get<std::string>() == "MyLibrary");
+        assert(results["greeting"].get<std::string>() == "Hello, Test!");
+        
+        // Check exports field resolution
+        assert(results["packageIdentity"].get<std::string>() == "This is my-package main entry");
+
+        std::cout << "  ✓ Advanced module resolution passed" << std::endl;
+    } catch (const std::exception& e) {
+        std::cerr << "  ✗ Advanced resolution failed: " << e.what() << std::endl;
+        throw;
+    }
+}
+
+
 
 int main() {
     std::cout << "=== QuickJS Runtime Tests ===" << std::endl << std::endl;
@@ -536,6 +566,7 @@ int main() {
         test_module_loading();
         test_filesystem_module_loading();
         test_folder_imports();
+        test_advanced_resolution();
         test_async_timers();
         test_async_promises();
 
