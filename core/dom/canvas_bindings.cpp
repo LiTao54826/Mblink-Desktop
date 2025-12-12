@@ -882,6 +882,52 @@ static JSValue js_context_2d_translate(JSContext* ctx, JSValueConst this_val, in
     return JS_UNDEFINED;
 }
 
+// transform(a, b, c, d, e, f)
+static JSValue js_context_2d_transform(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) {
+    auto context = CanvasBindings::UnwrapContext2D(ctx, this_val);
+    if (!context) return JS_EXCEPTION;
+    
+    if (argc < 6) return JS_ThrowTypeError(ctx, "transform requires 6 arguments");
+    
+    double a, b, c, d, e, f;
+    if (JS_ToFloat64(ctx, &a, argv[0]) != 0) return JS_EXCEPTION;
+    if (JS_ToFloat64(ctx, &b, argv[1]) != 0) return JS_EXCEPTION;
+    if (JS_ToFloat64(ctx, &c, argv[2]) != 0) return JS_EXCEPTION;
+    if (JS_ToFloat64(ctx, &d, argv[3]) != 0) return JS_EXCEPTION;
+    if (JS_ToFloat64(ctx, &e, argv[4]) != 0) return JS_EXCEPTION;
+    if (JS_ToFloat64(ctx, &f, argv[5]) != 0) return JS_EXCEPTION;
+    
+    context->Transform(a, b, c, d, e, f);
+    return JS_UNDEFINED;
+}
+
+// setTransform(a, b, c, d, e, f)
+static JSValue js_context_2d_set_transform(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) {
+    auto context = CanvasBindings::UnwrapContext2D(ctx, this_val);
+    if (!context) return JS_EXCEPTION;
+    
+    if (argc < 6) return JS_ThrowTypeError(ctx, "setTransform requires 6 arguments");
+    
+    double a, b, c, d, e, f;
+    if (JS_ToFloat64(ctx, &a, argv[0]) != 0) return JS_EXCEPTION;
+    if (JS_ToFloat64(ctx, &b, argv[1]) != 0) return JS_EXCEPTION;
+    if (JS_ToFloat64(ctx, &c, argv[2]) != 0) return JS_EXCEPTION;
+    if (JS_ToFloat64(ctx, &d, argv[3]) != 0) return JS_EXCEPTION;
+    if (JS_ToFloat64(ctx, &e, argv[4]) != 0) return JS_EXCEPTION;
+    if (JS_ToFloat64(ctx, &f, argv[5]) != 0) return JS_EXCEPTION;
+    
+    context->SetTransform(a, b, c, d, e, f);
+    return JS_UNDEFINED;
+}
+
+// resetTransform()
+static JSValue js_context_2d_reset_transform(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) {
+    auto context = CanvasBindings::UnwrapContext2D(ctx, this_val);
+    if (!context) return JS_EXCEPTION;
+    context->ResetTransform();
+    return JS_UNDEFINED;
+}
+
 // ========== Context2D 类初始化 ==========
 
 // ========== Context2D 类定义 ==========
@@ -953,6 +999,9 @@ static const JSCFunctionListEntry js_context_2d_proto_funcs[] = {
     JS_CFUNC_DEF("scale", 2, js_context_2d_scale),
     JS_CFUNC_DEF("rotate", 1, js_context_2d_rotate),
     JS_CFUNC_DEF("translate", 2, js_context_2d_translate),
+    JS_CFUNC_DEF("transform", 6, js_context_2d_transform),
+    JS_CFUNC_DEF("setTransform", 6, js_context_2d_set_transform),
+    JS_CFUNC_DEF("resetTransform", 0, js_context_2d_reset_transform),
 };
 
 void CanvasBindings::InitContext2DClass(JSContext* ctx) {
