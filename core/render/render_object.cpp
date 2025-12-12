@@ -15,6 +15,8 @@
 #include "core/dom/text.h"
 #include "core/dom/html_input_element.h"
 #include "core/dom/html_textarea_element.h"
+#include "core/dom/html_canvas_element.h"
+#include "core/render/canvas/canvas_rendering_context_2d.h"
 #include "core/utils/utf8_utils.h"
 #include <algorithm>
 #include <iostream>
@@ -1040,6 +1042,30 @@ void RenderBlock::Paint(SkCanvas* canvas) {
             canvas->drawLine(0, y, layout.width, y, line_paint);
             canvas->restore(); // 恢复 canvas 状态
             return; // 不绘制其他内容
+        }
+        
+        // 检查是否是 <canvas> 元素
+        if (element->GetTagName() == "canvas") {
+            auto canvas_element = std::dynamic_pointer_cast<HTMLCanvasElement>(element);
+            if (canvas_element) {
+                auto context_2d = canvas_element->GetContext2D();
+                if (context_2d) {
+                    // 获取Canvas的Surface并绘制到屏幕
+                    auto* surface = context_2d->GetSurface();
+                    if (surface) {
+                        auto image = surface->makeImageSnapshot();
+                        if (image) {
+                            // 绘制Canvas内容到content区域
+                            SkRect dest_rect = SkRect::MakeXYWH(
+                                box.content_x, box.content_y,
+                                box.content_width, box.content_height
+                            );
+                            canvas->drawImageRect(image, dest_rect, SkSamplingOptions());
+                        }
+                    }
+                }
+            }
+            // Canvas元素绘制完Surface后继续正常绘制背景边框等
         }
     }
 

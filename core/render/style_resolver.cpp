@@ -790,6 +790,32 @@ void StyleResolver::ApplyElementSpecificStyle(ComputedStyle& style, const std::s
         // OptGroup元素默认隐藏，由Select元素负责渲染
         style.display = RenderObjectType::NONE;
     }
+    
+    // Canvas 元素 - 读取width/height属性设置尺寸
+    if (tag_name == "canvas" && element) {
+        // Canvas默认尺寸: 300x150 (HTML5标准)
+        unsigned long width = 300;
+        unsigned long height = 150;
+        
+        // 读取width属性
+        std::string width_attr = element->GetAttribute("width");
+        if (!width_attr.empty()) {
+            try {
+                width = std::stoul(width_attr);
+            } catch (...) {}
+        }
+        
+        // 读取height属性
+        std::string height_attr = element->GetAttribute("height");
+        if (!height_attr.empty()) {
+            try {
+                height = std::stoul(height_attr);
+            } catch (...) {}
+        }
+        
+        style.width = CSSLength(static_cast<float>(width), CSSUnit::PX);
+        style.height = CSSLength(static_cast<float>(height), CSSUnit::PX);
+    }
 
     // ========== 内联元素 (Inline Elements) ==========
 

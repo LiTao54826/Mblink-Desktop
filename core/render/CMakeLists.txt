@@ -40,6 +40,9 @@ set(RENDER_SOURCES
     render_svg.cpp
     select_dropdown.cpp
     render_tree_updater.cpp
+    canvas/canvas_rendering_context_2d.cpp
+    canvas/canvas_gradient.cpp
+    canvas/canvas_image_data.cpp
 )
 
 set(RENDER_HEADERS
@@ -83,6 +86,7 @@ set(RENDER_HEADERS
     render_svg.h
     select_dropdown.h
     render_tree_updater.h
+    canvas/canvas_rendering_context_2d.h
 )
 
 add_library(lightui_render STATIC ${RENDER_SOURCES})

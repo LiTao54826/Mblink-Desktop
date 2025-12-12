@@ -12,6 +12,8 @@
 #include "core/dom/html_input_element.h"
 #include "core/dom/html_textarea_element.h"
 #include "core/dom/html_select_element.h"
+#include "core/dom/html_canvas_element.h"
+#include "core/dom/canvas_bindings.h"
 #include "core/dom/selector_engine.h"
 #include "core/quickjs/dom_binding_map.h"
 #include "js_node.h"
@@ -642,6 +644,100 @@ static JSValue JSElement_addEventListener(JSContext* ctx, JSValueConst this_val,
     return JS_NewInt64(ctx, listener_id);
 }
 
+// HTMLCanvasElement.width getter
+static JSValue JSElement_get_canvas_width(JSContext* ctx, JSValueConst this_val, int magic) {
+    auto* data = static_cast<JSElementData*>(JS_GetOpaque(this_val, js_element_class_id));
+    if (!data || !data->element) return JS_NewInt32(ctx, 0);
+    
+    auto canvas = std::dynamic_pointer_cast<HTMLCanvasElement>(data->element);
+    if (!canvas) return JS_NewInt32(ctx, 0);
+    
+    return JS_NewInt32(ctx, static_cast<int>(canvas->GetWidth()));
+}
+
+// HTMLCanvasElement.width setter
+static JSValue JSElement_set_canvas_width(JSContext* ctx, JSValueConst this_val, JSValue val, int magic) {
+    auto* data = static_cast<JSElementData*>(JS_GetOpaque(this_val, js_element_class_id));
+    if (!data || !data->element) return JS_UNDEFINED;
+    
+    auto canvas = std::dynamic_pointer_cast<HTMLCanvasElement>(data->element);
+    if (!canvas) return JS_UNDEFINED;
+    
+    int32_t width;
+    if (JS_ToInt32(ctx, &width, val) != 0) return JS_EXCEPTION;
+    if (width > 0) {
+        canvas->SetWidth(static_cast<unsigned long>(width));
+    }
+    return JS_UNDEFINED;
+}
+
+// HTMLCanvasElement.height getter
+static JSValue JSElement_get_canvas_height(JSContext* ctx, JSValueConst this_val, int magic) {
+    auto* data = static_cast<JSElementData*>(JS_GetOpaque(this_val, js_element_class_id));
+    if (!data || !data->element) return JS_NewInt32(ctx, 0);
+    
+    auto canvas = std::dynamic_pointer_cast<HTMLCanvasElement>(data->element);
+    if (!canvas) return JS_NewInt32(ctx, 0);
+    
+    return JS_NewInt32(ctx, static_cast<int>(canvas->GetHeight()));
+}
+
+// HTMLCanvasElement.height setter
+static JSValue JSElement_set_canvas_height(JSContext* ctx, JSValueConst this_val, JSValue val, int magic) {
+    auto* data = static_cast<JSElementData*>(JS_GetOpaque(this_val, js_element_class_id));
+    if (!data || !data->element) return JS_UNDEFINED;
+    
+    auto canvas = std::dynamic_pointer_cast<HTMLCanvasElement>(data->element);
+    if (!canvas) return JS_UNDEFINED;
+    
+    int32_t height;
+    if (JS_ToInt32(ctx, &height, val) != 0) return JS_EXCEPTION;
+    if (height > 0) {
+        canvas->SetHeight(static_cast<unsigned long>(height));
+    }
+    return JS_UNDEFINED;
+}
+
+// getContext(contextId) - for HTMLCanvasElement
+static JSValue JSElement_getContext(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) {
+    auto* data = static_cast<JSElementData*>(JS_GetOpaque(this_val, js_element_class_id));
+    if (!data || !data->element) {
+        return JS_UNDEFINED;
+    }
+    
+    // 尝试转换为 HTMLCanvasElement
+    auto canvas = std::dynamic_pointer_cast<HTMLCanvasElement>(data->element);
+    if (!canvas) {
+        return JS_UNDEFINED;  // 不是canvas元素，返回undefined
+    }
+    
+    if (argc < 1) {
+        return JS_ThrowTypeError(ctx, "getContext requires 1 argument");
+    }
+    
+    const char* context_id = JS_ToCString(ctx, argv[0]);
+    if (!context_id) {
+        return JS_EXCEPTION;
+    }
+    
+    // 保存context_id用于后续比较
+    std::string context_id_str(context_id);
+    void* context = canvas->GetContext(context_id);
+    JS_FreeCString(ctx, context_id);
+    
+    if (!context) {
+        return JS_NULL;
+    }
+    
+    // 目前只支持 "2d" context
+    if (context_id_str == "2d") {
+        auto context_2d = static_cast<CanvasRenderingContext2D*>(context);
+        return CanvasBindings::WrapContext2D(ctx, context_2d);
+    }
+    
+    return JS_NULL;
+}
+
 // ========== 类定义 ==========
 
 static const JSCFunctionListEntry js_element_proto_funcs[] = {
@@ -653,6 +749,9 @@ static const JSCFunctionListEntry js_element_proto_funcs[] = {
     JS_CGETSET_MAGIC_DEF("style", JSElement_get_style, nullptr, 0),
     JS_CGETSET_MAGIC_DEF("value", JSElement_get_value, JSElement_set_value, 0),
     JS_CGETSET_MAGIC_DEF("checked", JSElement_get_checked, JSElement_set_checked, 0),
+    // HTMLCanvasElement 属性
+    JS_CGETSET_MAGIC_DEF("width", JSElement_get_canvas_width, JSElement_set_canvas_width, 0),
+    JS_CGETSET_MAGIC_DEF("height", JSElement_get_canvas_height, JSElement_set_canvas_height, 0),
     JS_PROP_STRING_DEF("[Symbol.toStringTag]", "Element", JS_PROP_CONFIGURABLE),
     JS_CFUNC_DEF("setAttribute", 2, JSElement_setAttribute),
     JS_CFUNC_DEF("getAttribute", 1, JSElement_getAttribute),
@@ -660,6 +759,7 @@ static const JSCFunctionListEntry js_element_proto_funcs[] = {
     JS_CFUNC_DEF("querySelector", 1, JSElement_querySelector),
     JS_CFUNC_DEF("querySelectorAll", 1, JSElement_querySelectorAll),
     JS_CFUNC_DEF("addEventListener", 3, JSElement_addEventListener),
+    JS_CFUNC_DEF("getContext", 1, JSElement_getContext),
 };
 
 static JSClassDef js_element_class = {

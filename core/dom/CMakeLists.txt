@@ -30,6 +30,8 @@ set(DOM_SOURCES
     html_li_element.cpp
     html_table_element.cpp
     html_form_controls.cpp
+    html_canvas_element.cpp
+    canvas_bindings.cpp
     svg_element.cpp
 )
 
@@ -63,6 +65,8 @@ set(DOM_HEADERS
     html_li_element.h
     html_table_element.h
     html_form_controls.h
+    html_canvas_element.h
+    canvas_bindings.h
     svg_element.h
 )
 
@@ -80,6 +84,7 @@ target_link_libraries(lightui_dom PUBLIC
     lightui_utils
     lightui_event
     lightui_lexbor
+    lightui_render
     lexbor_static
 )
 

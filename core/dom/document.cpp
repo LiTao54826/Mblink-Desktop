@@ -23,6 +23,7 @@
 #include "html_anchor_element.h"
 #include "html_label_element.h"
 #include "html_image_element.h"
+#include "html_canvas_element.h"
 #include "html_div_element.h"
 #include "html_span_element.h"
 #include "html_paragraph_element.h"
@@ -107,6 +108,9 @@ std::shared_ptr<Element> Document::CreateElement(const std::string& tag_name) {
     } else if (tag_name == "img") {
         auto img = std::make_shared<HTMLImageElement>();
         element = img;
+    } else if (tag_name == "canvas") {
+        auto canvas = std::make_shared<HTMLCanvasElement>();
+        element = canvas;
     } else if (tag_name == "div") {
         auto div = std::make_shared<HTMLDivElement>();
         element = div;

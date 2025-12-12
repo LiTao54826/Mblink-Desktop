@@ -16,6 +16,8 @@
 #include "core/dom/html_textarea_element.h"
 #include "core/dom/html_select_element.h"
 #include "core/dom/html_form_controls.h"
+#include "core/dom/html_canvas_element.h"
+#include "core/render/canvas/canvas_rendering_context_2d.h"
 #include "core/utils/utf8_utils.h"
 #include <algorithm>
 #include <iostream>
@@ -589,6 +591,35 @@ void RenderInlineBlock::Paint(SkCanvas* canvas) {
         auto meter_element = std::dynamic_pointer_cast<HTMLMeterElement>(node);
         if (meter_element) {
             PaintMeterElement(canvas, meter_element.get(), box);
+            canvas->restore();
+            needs_paint_ = false;
+            return;
+        }
+        
+        // Canvas元素 - 将Canvas内部surface内容绘制到窗口画布
+        auto canvas_element = std::dynamic_pointer_cast<HTMLCanvasElement>(node);
+        if (canvas_element) {
+            auto ctx2d = canvas_element->GetContext2D();
+            if (ctx2d) {
+                SkSurface* surface = ctx2d->GetSurface();
+                if (surface) {
+                    sk_sp<SkImage> image = surface->makeImageSnapshot();
+                    if (image) {
+                        // 使用canvas元素的实际尺寸而不是布局尺寸
+                        // 因为JS可能在渲染树构建后修改了width/height属性
+                        float canvas_width = static_cast<float>(canvas_element->GetWidth());
+                        float canvas_height = static_cast<float>(canvas_element->GetHeight());
+                        
+                        SkRect dst = SkRect::MakeXYWH(
+                            box.content_x,
+                            box.content_y,
+                            canvas_width,
+                            canvas_height
+                        );
+                        canvas->drawImageRect(image, dst, SkSamplingOptions());
+                    }
+                }
+            }
             canvas->restore();
             needs_paint_ = false;
             return;
