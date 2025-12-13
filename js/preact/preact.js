@@ -4,12 +4,17 @@
  *
  * This is a lightweight implementation optimized for MBink's QuickJS runtime.
  * Implements real Virtual DOM diffing for efficient updates.
+ *
+ * 使用 IIFE 封装避免全局变量污染，只暴露 preact/Preact 对象
  */
 
-// VNode type constants
-const VNODE_TYPE_ELEMENT = 1;
-const VNODE_TYPE_TEXT = 2;
-const VNODE_TYPE_COMPONENT = 3;
+(function (global) {
+    'use strict';
+
+    // VNode type constants
+    var VNODE_TYPE_ELEMENT = 1;
+    var VNODE_TYPE_TEXT = 2;
+    var VNODE_TYPE_COMPONENT = 3;
 
 /**
  * Create a Virtual DOM node (VNode)
@@ -77,10 +82,10 @@ function isSameVNodeType(oldVNode, newVNode) {
     return false;
 }
 
-/**
- * Create a VNode (alias for h)
- */
-const createElement = h;
+    /**
+     * Create a VNode (alias for h)
+     */
+    var createElement = h;
 
 /**
  * Fragment component - renders children without wrapper
@@ -738,20 +743,41 @@ function createRef(initialValue) {
     return { current: initialValue };
 }
 
-/**
- * Clone a VNode with new props
- * @param {object} vnode - VNode to clone
- * @param {object} props - New props
- * @param {...any} children - New children
- * @returns {object} Cloned VNode
- */
-function cloneElement(vnode, props, ...children) {
-    return {
-        ...vnode,
-        props: { ...vnode.props, ...props },
-        children: children.length > 0 ? children : vnode.children
-    };
-}
+    /**
+     * Clone a VNode with new props
+     * @param {object} vnode - VNode to clone
+     * @param {object} props - New props
+     * @param {...any} children - New children
+     * @returns {object} Cloned VNode
+     */
+    function cloneElement(vnode, props) {
+        // ES5 兼容的参数收集
+        var children = [];
+        for (var i = 2; i < arguments.length; i++) {
+            children.push(arguments[i]);
+        }
+
+        // 复制 vnode
+        var cloned = {};
+        for (var key in vnode) {
+            cloned[key] = vnode[key];
+        }
+
+        // 合并 props
+        var newProps = {};
+        for (var p in vnode.props) {
+            newProps[p] = vnode.props[p];
+        }
+        for (var q in props) {
+            newProps[q] = props[q];
+        }
+        cloned.props = newProps;
+
+        // 设置 children
+        cloned.children = children.length > 0 ? children : vnode.children;
+
+        return cloned;
+    }
 
 /**
  * Check if a value is a valid element
@@ -762,48 +788,57 @@ function isValidElement(value) {
     return value != null && typeof value === 'object' && value.__v === VNODE_TYPE_ELEMENT;
 }
 
-/**
- * Component base class (for class components)
- */
-class Component {
-    constructor(props) {
+    /**
+     * Component base class (for class components)
+     */
+    function Component(props) {
         this.props = props;
         this.state = {};
     }
 
-    setState(update) {
+    Component.prototype.setState = function(update) {
         if (typeof update === 'function') {
-            this.state = { ...this.state, ...update(this.state, this.props) };
+            var newState = update(this.state, this.props);
+            for (var key in newState) {
+                this.state[key] = newState[key];
+            }
         } else {
-            this.state = { ...this.state, ...update };
+            for (var k in update) {
+                this.state[k] = update[k];
+            }
         }
 
         // Trigger re-render
         if (this.__container && this.__vnode) {
-            const newVNode = this.render();
+            var newVNode = this.render();
             diff(this.__vnode, newVNode, this.__container);
             this.__vnode = newVNode;
         }
-    }
+    };
 
-    render() {
+    Component.prototype.render = function() {
         return null;
-    }
-}
+    };
 
-// Export all APIs as global object (for script loading)
-var Preact = {
-    h: h,
-    createElement: createElement,
-    render: render,
-    Fragment: Fragment,
-    Component: Component,
-    createRef: createRef,
-    cloneElement: cloneElement,
-    isValidElement: isValidElement
-};
+    // Export all APIs as global object (for script loading)
+    var Preact = {
+        h: h,
+        createElement: createElement,
+        render: render,
+        Fragment: Fragment,
+        Component: Component,
+        createRef: createRef,
+        cloneElement: cloneElement,
+        isValidElement: isValidElement
+    };
 
-// 添加小写别名以提高兼容性
-var preact = Preact;
+    // 添加小写别名以提高兼容性
+    var preact = Preact;
 
-// Note: For ES6 module usage, use js/preact/preact.mjs
+    // 暴露到全局作用域
+    global.Preact = Preact;
+    global.preact = preact;
+
+    // Note: For ES6 module usage, use js/preact/preact.mjs
+
+})(typeof globalThis !== 'undefined' ? globalThis : typeof window !== 'undefined' ? window : typeof global !== 'undefined' ? global : this);

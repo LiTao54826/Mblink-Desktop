@@ -95,8 +95,22 @@ bool StyleManager::LoadCSSFile(const std::string& file_path, int priority) {
     if (!sheet->ParseCSSFile(file_path)) {
         return false;
     }
-    
+
     AddStyleSheet(sheet, priority, "external-file");
+    return true;
+}
+
+bool StyleManager::ParseCSSString(const std::string& css_text, int priority, const std::string& source) {
+    if (css_text.empty()) {
+        return false;
+    }
+
+    auto sheet = std::make_shared<LexborStyleSheet>();
+    if (!sheet->ParseCSS(css_text)) {
+        return false;
+    }
+
+    AddStyleSheet(sheet, priority, source);
     return true;
 }
 

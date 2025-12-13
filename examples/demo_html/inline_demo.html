@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>MBink Inline Demo</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        
+        .container {
+            max-width: 600px;
+            margin: 0 auto;
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        
+        h1 {
+            color: #333;
+            margin-bottom: 20px;
+        }
+        
+        .counter {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin: 20px 0;
+        }
+        
+        .counter-value {
+            font-size: 24px;
+            font-weight: bold;
+            color: #2196F3;
+            min-width: 60px;
+            text-align: center;
+        }
+        
+        button {
+            padding: 10px 20px;
+            font-size: 16px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            background-color: #2196F3;
+            color: white;
+        }
+        
+        button:hover {
+            background-color: #1976D2;
+        }
+        
+        .info {
+            margin-top: 20px;
+            padding: 10px;
+            background-color: #e3f2fd;
+            border-radius: 4px;
+            color: #1565C0;
+        }
+    </style>
+</head>
+<body>
+    <div id="app"></div>
+    
+    <script>
+        // 使用 Preact 创建一个简单的计数器应用
+        const { h, render } = preact;
+        const { useState } = preactHooks;
+        
+        function App() {
+            const [count, setCount] = useState(0);
+            
+            return h('div', { class: 'container' },
+                h('h1', null, '🚀 MBink HTML Loader Demo'),
+                h('p', null, '这是一个直接从 HTML 文件加载的示例，包含内联样式和脚本。'),
+                h('div', { class: 'counter' },
+                    h('button', { onclick: () => setCount(count - 1) }, '-'),
+                    h('span', { class: 'counter-value' }, count),
+                    h('button', { onclick: () => setCount(count + 1) }, '+')
+                ),
+                h('div', { class: 'info' },
+                    h('strong', null, '特性演示:'),
+                    h('ul', null,
+                        h('li', null, '✅ 内联 <style> 标签'),
+                        h('li', null, '✅ 内联 <script> 标签'),
+                        h('li', null, '✅ Preact 组件渲染'),
+                        h('li', null, '✅ 事件处理')
+                    )
+                )
+            );
+        }
+        
+        render(h(App), document.getElementById('app'));
+        console.log('App rendered successfully!');
+    </script>
+</body>
+</html>

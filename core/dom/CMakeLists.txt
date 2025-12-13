@@ -33,6 +33,10 @@ set(DOM_SOURCES
     html_canvas_element.cpp
     canvas_bindings.cpp
     svg_element.cpp
+    html_head_element.cpp
+    html_style_element.cpp
+    html_script_element.cpp
+    html_link_element.cpp
 )
 
 set(DOM_HEADERS
@@ -68,6 +72,10 @@ set(DOM_HEADERS
     html_canvas_element.h
     canvas_bindings.h
     svg_element.h
+    html_head_element.h
+    html_style_element.h
+    html_script_element.h
+    html_link_element.h
 )
 
 add_library(lightui_dom STATIC ${DOM_SOURCES})

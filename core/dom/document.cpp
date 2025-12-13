@@ -33,13 +33,23 @@
 #include "html_li_element.h"
 #include "html_table_element.h"
 #include "html_form_controls.h"
+#include "html_head_element.h"
+#include "html_style_element.h"
+#include "html_script_element.h"
+#include "html_link_element.h"
 #include "svg_element.h"
 #include "core/lexbor/lexbor_document.h"
 #include "core/lexbor/style_manager.h"
+#include "core/quickjs/quickjs_runtime.h"
 #include <algorithm>
 #include <iostream>
+#include <fstream>
+#include <sstream>
+#include <filesystem>
 #include <lexbor/dom/interfaces/element.h>
 #include <lexbor/dom/interfaces/text.h>
+
+namespace fs = std::filesystem;
 
 namespace lightui {
 
@@ -48,11 +58,13 @@ namespace lightui {
 Document::Document()
     : Node(NodeType::DOCUMENT_NODE)
     , document_element_(nullptr)
+    , head_(nullptr)
     , body_(nullptr)
     , id_map_()
     , lexbor_doc_(std::make_unique<LexborDocument>())
     , lexbor_dirty_(false)
-    , style_manager_(std::make_unique<StyleManager>(this)) {
+    , style_manager_(std::make_unique<StyleManager>(this))
+    , js_runtime_(nullptr) {
 }
 
 Document::~Document() = default;
@@ -198,11 +210,22 @@ std::shared_ptr<Element> Document::CreateElement(const std::string& tag_name) {
         element = std::make_shared<SVGPolygonElement>();
     } else if (tag_name == "text") {
         element = std::make_shared<SVGTextElement>();
+    }
+    // ========== 文档结构标签 ==========
+    else if (tag_name == "head") {
+        element = std::make_shared<HTMLHeadElement>();
+    } else if (tag_name == "style") {
+        element = std::make_shared<HTMLStyleElement>();
+    } else if (tag_name == "script") {
+        element = std::make_shared<HTMLScriptElement>();
+    } else if (tag_name == "link") {
+        element = std::make_shared<HTMLLinkElement>();
     } else {
         // 所有其他标签使用通用 Element 类
         // 包括：语义化标签（header, footer, nav, section, article, aside, main, figure, figcaption）
         //       文本标签（strong, em, b, i, u, s, mark, code, kbd, pre, blockquote, etc.）
         //       列表标签（dl, dt, dd）
+        //       其他标签（title, meta, link, base, noscript, template 等）
         element = std::make_shared<Element>(tag_name);
     }
 
@@ -229,6 +252,10 @@ std::shared_ptr<Text> Document::CreateTextNode(const std::string& data) {
 
 void Document::SetBody(std::shared_ptr<Element> body) {
     body_ = body;
+}
+
+void Document::SetHead(std::shared_ptr<Element> head) {
+    head_ = head;
 }
 
 // ========== Lexbor 集成 ==========
@@ -326,12 +353,15 @@ void Document::SyncFromLexbor() {
             document_element_ = html_elem;
             AppendChild(html_elem);
 
-            // 查找 body 元素
+            // 查找 head 和 body 元素
             for (const auto& child : html_elem->GetChildNodes()) {
                 auto child_elem = std::dynamic_pointer_cast<Element>(child);
-                if (child_elem && child_elem->GetTagName() == "body") {
-                    body_ = child_elem;
-                    break;
+                if (child_elem) {
+                    if (child_elem->GetTagName() == "head") {
+                        head_ = child_elem;
+                    } else if (child_elem->GetTagName() == "body") {
+                        body_ = child_elem;
+                    }
                 }
             }
 
@@ -528,6 +558,181 @@ SkRect Document::GetMergedDirtyRect() const {
         merged.join(dirty_rects_[i]);
     }
     return merged;
+}
+
+// ========== JavaScript 脚本执行 ==========
+
+void Document::ExecuteScripts() {
+    if (js_runtime_) {
+        ExecuteScripts(js_runtime_);
+    }
+}
+
+void Document::ExecuteScripts(QuickJSRuntime* runtime) {
+    if (!runtime) {
+        return;
+    }
+
+    // 获取所有 script 元素
+    auto scripts = GetElementsByTagName("script");
+
+    for (auto& script_elem : scripts) {
+        auto script = std::dynamic_pointer_cast<HTMLScriptElement>(script_elem);
+        if (!script) {
+            continue;
+        }
+
+        // 跳过已执行的脚本
+        if (script->IsExecuted()) {
+            continue;
+        }
+
+        std::string code;
+        std::string script_name;
+
+        // 处理外部脚本
+        if (script->IsExternal()) {
+            std::string src = script->GetSrc();
+            code = ReadExternalFile(src);
+
+            if (code.empty()) {
+                std::cerr << "[Document::ExecuteScripts] Warning: Failed to load external script: "
+                          << src << std::endl;
+                script->MarkExecuted();
+                continue;
+            }
+
+            script_name = src;
+            std::cout << "  ✓ External script loaded: " << src << std::endl;
+        } else {
+            // 内联脚本
+            code = script->GetScriptText();
+            script_name = "<inline-script>";
+        }
+
+        if (code.empty()) {
+            script->MarkExecuted();
+            continue;
+        }
+
+        // 执行脚本
+        try {
+            std::string type = script->GetType();
+
+            if (type == "module") {
+                // ES6 模块
+                runtime->EvalModule(code, script_name);
+            } else {
+                // 普通脚本（text/javascript 或空）
+                runtime->Eval(code, script_name);
+            }
+
+            script->MarkExecuted();
+        } catch (const std::exception& e) {
+            std::cerr << "[Document::ExecuteScripts] Script execution error: "
+                      << e.what() << std::endl;
+            script->MarkExecuted();  // 标记为已执行，避免重复执行失败的脚本
+        }
+    }
+}
+
+// ========== 资源加载 ==========
+
+std::string Document::ResolvePath(const std::string& path) const {
+    if (path.empty()) {
+        return "";
+    }
+
+    // 如果是绝对路径，直接返回
+    fs::path p(path);
+    if (p.is_absolute()) {
+        return path;
+    }
+
+    // 如果有基础路径，拼接
+    if (!base_path_.empty()) {
+        fs::path base(base_path_);
+        fs::path resolved = base / p;
+        return resolved.string();
+    }
+
+    // 否则返回原路径
+    return path;
+}
+
+std::string Document::ReadExternalFile(const std::string& path) const {
+    std::string resolved_path = ResolvePath(path);
+
+    if (resolved_path.empty()) {
+        return "";
+    }
+
+    // 检查文件是否存在
+    if (!fs::exists(resolved_path)) {
+        std::cerr << "[Document::ReadExternalFile] File not found: " << resolved_path << std::endl;
+        return "";
+    }
+
+    // 读取文件内容
+    std::ifstream file(resolved_path, std::ios::binary);
+    if (!file.is_open()) {
+        std::cerr << "[Document::ReadExternalFile] Failed to open file: " << resolved_path << std::endl;
+        return "";
+    }
+
+    std::stringstream buffer;
+    buffer << file.rdbuf();
+    return buffer.str();
+}
+
+void Document::LoadExternalStylesheets() {
+    // 获取所有 link 元素
+    auto links = GetElementsByTagName("link");
+
+    for (auto& link_elem : links) {
+        auto link = std::dynamic_pointer_cast<HTMLLinkElement>(link_elem);
+        if (!link) {
+            continue;
+        }
+
+        // 只处理样式表
+        if (link->GetRel() != "stylesheet") {
+            continue;
+        }
+
+        // 跳过已加载的
+        if (link->IsLoaded()) {
+            continue;
+        }
+
+        std::string href = link->GetHref();
+        if (href.empty()) {
+            link->MarkLoaded();
+            continue;
+        }
+
+        // 读取外部 CSS 文件
+        std::string css = ReadExternalFile(href);
+
+        if (css.empty()) {
+            std::cerr << "[Document::LoadExternalStylesheets] Warning: Failed to load stylesheet: "
+                      << href << std::endl;
+            link->MarkLoaded();
+            continue;
+        }
+
+        // 解析 CSS 并添加到样式管理器
+        if (style_manager_) {
+            if (style_manager_->ParseCSSString(css, 50, "external-link")) {
+                std::cout << "  ✓ External stylesheet loaded: " << href << std::endl;
+            } else {
+                std::cerr << "[Document::LoadExternalStylesheets] Warning: Failed to parse CSS: "
+                          << href << std::endl;
+            }
+        }
+
+        link->MarkLoaded();
+    }
 }
 
 } // namespace lightui

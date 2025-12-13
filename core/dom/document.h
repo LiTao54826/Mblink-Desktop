@@ -22,7 +22,8 @@
 // 前向声明
 namespace lightui {
     class LexborDocument;
-class StyleManager;
+    class StyleManager;
+    class QuickJSRuntime;
 }
 
 namespace lightui {
@@ -83,6 +84,18 @@ public:
      * @param body body 元素
      */
     void SetBody(std::shared_ptr<Element> body);
+
+    /**
+     * @brief 获取 head 元素
+     * @return head 元素
+     */
+    std::shared_ptr<Element> GetHead() const { return head_; }
+
+    /**
+     * @brief 设置 head 元素
+     * @param head head 元素
+     */
+    void SetHead(std::shared_ptr<Element> head);
 
     // ========== 查询方法 ==========
 
@@ -229,6 +242,73 @@ public:
      */
     StyleManager* GetStyleManager() const;
 
+    // ========== JavaScript 运行时集成 ==========
+
+    /**
+     * @brief 设置 JavaScript 运行时
+     * @param runtime QuickJS 运行时指针
+     * 
+     * 设置后，LoadHTML 会自动执行内联脚本
+     */
+    void SetJSRuntime(QuickJSRuntime* runtime) { js_runtime_ = runtime; }
+
+    /**
+     * @brief 获取 JavaScript 运行时
+     * @return QuickJS 运行时指针
+     */
+    QuickJSRuntime* GetJSRuntime() const { return js_runtime_; }
+
+    /**
+     * @brief 执行文档中的所有内联脚本
+     * 
+     * 按照 DOM 顺序执行所有未执行的 <script> 标签
+     * 支持 type="text/javascript" 和 type="module"
+     */
+    void ExecuteScripts();
+
+    /**
+     * @brief 执行文档中的所有内联脚本（使用指定运行时）
+     * @param runtime QuickJS 运行时指针
+     */
+    void ExecuteScripts(QuickJSRuntime* runtime);
+
+    // ========== 资源加载 ==========
+
+    /**
+     * @brief 设置文档的基础路径
+     * @param base_path 基础路径（通常是 HTML 文件所在目录）
+     *
+     * 用于解析相对路径的外部资源（脚本、样式表、图片等）
+     */
+    void SetBasePath(const std::string& base_path) { base_path_ = base_path; }
+
+    /**
+     * @brief 获取文档的基础路径
+     * @return 基础路径
+     */
+    const std::string& GetBasePath() const { return base_path_; }
+
+    /**
+     * @brief 解析资源路径
+     * @param path 相对路径或绝对路径
+     * @return 完整的文件路径
+     */
+    std::string ResolvePath(const std::string& path) const;
+
+    /**
+     * @brief 读取外部文件内容
+     * @param path 文件路径（相对于基础路径或绝对路径）
+     * @return 文件内容，读取失败返回空字符串
+     */
+    std::string ReadExternalFile(const std::string& path) const;
+
+    /**
+     * @brief 加载外部样式表
+     *
+     * 解析所有 <link rel="stylesheet"> 标签并加载外部 CSS 文件
+     */
+    void LoadExternalStylesheets();
+
     // ========== 焦点管理 ==========
 
     /**
@@ -274,6 +354,7 @@ private:
 
 private:
     std::shared_ptr<Element> document_element_;
+    std::shared_ptr<Element> head_;
     std::shared_ptr<Element> body_;
     std::unordered_map<std::string, std::weak_ptr<Element>> id_map_;
     DOMObserverManager observer_manager_;
@@ -288,11 +369,17 @@ private:
     // 样式管理器
     std::unique_ptr<StyleManager> style_manager_;
 
+    // JavaScript 运行时
+    QuickJSRuntime* js_runtime_ = nullptr;
+
     // 焦点管理
     std::weak_ptr<Element> active_element_;
 
     // 脏区域收集（用于移动元素双区域标记优化）
     std::vector<SkRect> dirty_rects_;
+
+    // 资源加载基础路径
+    std::string base_path_;
 
 public:
     // ========== 脏区域管理 ==========
