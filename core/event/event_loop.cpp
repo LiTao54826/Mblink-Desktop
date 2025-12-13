@@ -27,6 +27,7 @@
 #include "core/render/text/font_manager.h"
 #include "core/render/text_renderer.h"
 #include "core/utils/utf8_utils.h"
+#include "core/quickjs/quickjs_runtime.h"
 #include "include/core/SkFontTypes.h"
 #include "include/core/SkFontMetrics.h"
 #include <iostream>
@@ -99,6 +100,12 @@ void EventLoop::RunOnce() {
 
     // 2. 执行调度任务
     task_scheduler_->ProcessTasks();
+
+    // 2.5 处理 QuickJS 定时器和微任务
+    if (quickjs_runtime_) {
+        // 处理 QuickJS 内部的定时器队列
+        quickjs_runtime_->RunEventLoop(1);  // 只运行一次迭代
+    }
 
     // 3. 更新应用状态
     float delta_time = frame_controller_->GetDeltaTime();
@@ -1573,7 +1580,12 @@ bool EventLoop::SendEvents(const std::vector<std::weak_ptr<Element>>& old_items,
                           float mouse_y) {
     // 参考：RmlUi/Source/Core/Context.cpp - SendEvents
     // 找出在old_items中但不在new_items中的元素
-    // 返回是否有伪类变化（需要重绘）
+    // 返回是否有视觉变化（需要重绘）
+    //
+    // 优化策略：
+    // 1. 保留 hover 伪类传播给所有祖先（符合 CSS 规范）
+    // 2. 但只对有视觉变化的元素返回 has_changes = true
+    // 3. 这样可以避免对 div, span 等无 hover 样式的元素触发重绘
 
     bool has_changes = false;
 
@@ -1606,16 +1618,27 @@ bool EventLoop::SendEvents(const std::vector<std::weak_ptr<Element>>& old_items,
                 0  // button = 0 for mouseover/mouseout
             );
 
-            // 分发事件
+            // 分发事件（符合 W3C 规范，所有祖先都应收到事件）
             element->DispatchEvent(mouse_event);
 
-            // 根据事件类型设置/移除:hover伪类
-            if (event_type == "mouseover") {
-                element->SetPseudoClass("hover", true);
-                has_changes = true;
-            } else if (event_type == "mouseout") {
-                element->SetPseudoClass("hover", false);
-                has_changes = true;
+            // 检查元素当前的 hover 状态，避免重复设置
+            bool current_hover = element->HasPseudoClass("hover");
+            bool new_hover_state = (event_type == "mouseover");
+
+            // 只有状态真正变化时才处理
+            if (current_hover != new_hover_state) {
+                // 设置/移除 :hover 伪类（符合 CSS 规范，所有祖先都应有 hover 状态）
+                element->SetPseudoClass("hover", new_hover_state);
+
+                // 只有具有内置 hover 样式的元素才需要触发重绘
+                // 这些元素在 StyleResolver::ApplyPseudoClassStyles 中有特殊处理
+                std::string tag = element->GetTagName();
+                if (tag == "button" || tag == "a" || tag == "input" ||
+                    tag == "textarea" || tag == "select") {
+                    has_changes = true;
+                }
+                // TODO: 未来可以检查 CSS 规则是否匹配该元素的 :hover 选择器
+                // 例如 .container:hover { background: red; }
             }
         }
     }

@@ -2394,6 +2394,11 @@ std::shared_ptr<RenderObject> RenderTreeBuilder::CreateRenderObjectForElement(El
         return nullptr;
     }
 
+    // 确保 StyleManager 已设置（用于增量更新时的样式计算）
+    if (document_ && document_->GetStyleManager()) {
+        style_resolver_.SetStyleManager(document_->GetStyleManager());
+    }
+
     // 获取父元素的样式作为继承基础
     const ComputedStyle* parent_style = nullptr;
     if (auto parent_node = element->GetParentNode()) {
@@ -2425,6 +2430,11 @@ std::shared_ptr<RenderObject> RenderTreeBuilder::CreateRenderObjectForElement(El
 std::shared_ptr<RenderObject> RenderTreeBuilder::CreateRenderObjectForText(Text* text) {
     if (!text) {
         return nullptr;
+    }
+
+    // 确保 StyleManager 已设置（用于增量更新时的样式计算）
+    if (document_ && document_->GetStyleManager()) {
+        style_resolver_.SetStyleManager(document_->GetStyleManager());
     }
 
     // 获取父元素的样式作为继承基础

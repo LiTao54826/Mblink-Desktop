@@ -1,7 +1,7 @@
 /**
  * @file window_bindings.h
  * @brief Window 对象的 JavaScript 绑定
- * 
+ *
  * 功能：
  * - 将 Window 对象暴露给 JavaScript
  * - 绑定 window 全局对象
@@ -63,6 +63,16 @@ public:
      * @brief 绑定事件监听器
      */
     void BindEventListeners();
+
+    /**
+     * @brief 获取运行时
+     */
+    QuickJSRuntime* GetRuntime() { return runtime_; }
+
+    /**
+     * @brief 获取任务调度器
+     */
+    std::shared_ptr<TaskScheduler> GetTaskScheduler() { return task_scheduler_; }
 
 private:
     QuickJSRuntime* runtime_;

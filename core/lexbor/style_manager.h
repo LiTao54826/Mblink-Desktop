@@ -105,6 +105,15 @@ public:
      * @return 是否成功
      */
     bool LoadCSSFile(const std::string& file_path, int priority = 0);
+
+    /**
+     * @brief 解析CSS字符串
+     * @param css_text CSS文本内容
+     * @param priority 优先级
+     * @param source 来源标识
+     * @return 是否成功
+     */
+    bool ParseCSSString(const std::string& css_text, int priority = 0, const std::string& source = "external");
     
     /**
      * @brief 获取匹配元素的所有规则

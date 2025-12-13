@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>MBink Static HTML Demo</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            margin: 0;
+        }
+        
+        .card {
+            max-width: 500px;
+            margin: 50px auto;
+            background: white;
+            padding: 30px;
+            border-radius: 12px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+        }
+        
+        h1 {
+            color: #333;
+            margin-top: 0;
+            font-size: 28px;
+        }
+        
+        p {
+            color: #666;
+            line-height: 1.6;
+        }
+        
+        .feature-list {
+            list-style: none;
+            padding: 0;
+        }
+        
+        .feature-list li {
+            padding: 10px 0;
+            border-bottom: 1px solid #eee;
+            color: #444;
+        }
+        
+        .feature-list li:last-child {
+            border-bottom: none;
+        }
+        
+        .badge {
+            display: inline-block;
+            background: #4CAF50;
+            color: white;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            margin-right: 8px;
+        }
+        
+        .footer {
+            margin-top: 20px;
+            padding-top: 20px;
+            border-top: 1px solid #eee;
+            text-align: center;
+            color: #999;
+            font-size: 14px;
+        }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <h1>📄 Static HTML Demo</h1>
+        <p>
+            这是一个纯静态 HTML 页面，展示了 MBink 的 CSS 渲染能力。
+            无需 JavaScript，仅使用内联 &lt;style&gt; 标签定义样式。
+        </p>
+        
+        <h2>支持的 CSS 特性</h2>
+        <ul class="feature-list">
+            <li><span class="badge">✓</span> 背景渐变 (linear-gradient)</li>
+            <li><span class="badge">✓</span> 圆角边框 (border-radius)</li>
+            <li><span class="badge">✓</span> 阴影效果 (box-shadow)</li>
+            <li><span class="badge">✓</span> 弹性布局 (flexbox)</li>
+            <li><span class="badge">✓</span> 内联样式 (&lt;style&gt; 标签)</li>
+        </ul>
+        
+        <div class="footer">
+            MBink - 轻量级跨平台桌面应用框架
+        </div>
+    </div>
+</body>
+</html>

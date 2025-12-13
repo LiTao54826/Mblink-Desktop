@@ -30,6 +30,7 @@ class FocusManager;
 class DragManager;
 struct HitTestResult;
 class RenderObject;
+class QuickJSRuntime;
 
 /**
  * @brief 主事件循环类
@@ -156,6 +157,12 @@ public:
      * @return true 如果光标应该显示
      */
     bool IsCursorVisible() const { return cursor_visible_; }
+
+    /**
+     * @brief 设置 QuickJS 运行时（用于处理 JS 定时器和微任务）
+     * @param runtime QuickJS 运行时指针
+     */
+    void SetQuickJSRuntime(QuickJSRuntime* runtime) { quickjs_runtime_ = runtime; }
 
 private:
     /**
@@ -348,6 +355,9 @@ private:
 
     // 光标闪烁状态
     bool cursor_visible_ = true;  // 光标是否可见（用于闪烁效果）
+
+    // QuickJS 运行时（用于处理 JS 定时器和微任务）
+    QuickJSRuntime* quickjs_runtime_ = nullptr;
 
     // ===== 系统光标管理 =====
     // 参考：RmlUi/Backends/RmlUi_Platform_SDL.cpp

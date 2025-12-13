@@ -1,13 +1,18 @@
 /**
  * Preact Hooks - Simplified version for MBink
  * Based on Preact Hooks API
- * 
+ *
  * Implements: useState, useEffect, useRef, useMemo, useCallback, useContext
+ *
+ * 使用 IIFE 封装避免全局变量污染，只暴露 preactHooks/PreactHooks 对象
  */
 
-// Global state for hooks
-let currentComponent = null;
-let currentHookIndex = 0;
+(function (global) {
+    'use strict';
+
+    // Global state for hooks
+    var currentComponent = null;
+    var currentHookIndex = 0;
 
 // Phase 4: Preact 调度器 - 批量更新支持
 var pendingUpdates = new Set();
@@ -96,73 +101,76 @@ function getHookState(index) {
     return currentComponent.__hooks[index];
 }
 
-/**
- * useState Hook - Manage component state
- * @param {any} initialValue - Initial state value
- * @returns {[any, Function]} [state, setState]
- */
-function useState(initialValue) {
-    const hookState = getHookState(currentHookIndex++);
+    /**
+     * useState Hook - Manage component state
+     * @param {any} initialValue - Initial state value
+     * @returns {[any, Function]} [state, setState]
+     */
+    function useState(initialValue) {
+        var hookState = getHookState(currentHookIndex++);
 
-    if (!('value' in hookState)) {
-        hookState.value = typeof initialValue === 'function' ? initialValue() : initialValue;
+        if (!('value' in hookState)) {
+            hookState.value = typeof initialValue === 'function' ? initialValue() : initialValue;
+        }
+
+        // Capture the component reference when creating setState
+        var component = currentComponent;
+
+        var setState = function(newValue) {
+            var nextValue = typeof newValue === 'function'
+                ? newValue(hookState.value)
+                : newValue;
+
+            if (hookState.value !== nextValue) {
+                hookState.value = nextValue;
+                // Phase 4: 使用调度器批量更新，而非立即渲染
+                if (component) {
+                    scheduleUpdate(component);
+                }
+            }
+        };
+
+        return [hookState.value, setState];
     }
 
-    // Capture the component reference when creating setState
-    const component = currentComponent;
-    const componentName = component && component.__vnode && component.__vnode.type ? component.__vnode.type.name : 'unknown';
+    /**
+     * useEffect Hook - Side effects
+     * @param {Function} effect - Effect function
+     * @param {Array} deps - Dependency array
+     */
+    function useEffect(effect, deps) {
+        var hookState = getHookState(currentHookIndex++);
 
-    const setState = (newValue) => {
-        // console.log('[useState.setState] START component=' + componentName);
-        const nextValue = typeof newValue === 'function'
-            ? newValue(hookState.value)
-            : newValue;
-
-        // console.log('[useState.setState] oldValue=' + JSON.stringify(hookState.value) + ' nextValue=' + JSON.stringify(nextValue));
-        if (hookState.value !== nextValue) {
-            hookState.value = nextValue;
-            // Phase 4: 使用调度器批量更新，而非立即渲染
-            if (component) {
-                scheduleUpdate(component);
+        var hasChanged = !hookState.deps || !deps;
+        if (!hasChanged && deps) {
+            for (var i = 0; i < deps.length; i++) {
+                if (deps[i] !== hookState.deps[i]) {
+                    hasChanged = true;
+                    break;
+                }
             }
         }
-    };
 
-    return [hookState.value, setState];
-}
+        if (hasChanged) {
+            hookState.deps = deps;
 
-/**
- * useEffect Hook - Side effects
- * @param {Function} effect - Effect function
- * @param {Array} deps - Dependency array
- */
-function useEffect(effect, deps) {
-    const hookState = getHookState(currentHookIndex++);
-
-    const hasChanged = !hookState.deps ||
-        !deps ||
-        deps.some((dep, i) => dep !== hookState.deps[i]);
-
-    if (hasChanged) {
-        hookState.deps = deps;
-
-        // Schedule effect to run after render
-        if (typeof setTimeout !== 'undefined') {
-            setTimeout(() => {
+            // Schedule effect to run after render
+            if (typeof setTimeout !== 'undefined') {
+                setTimeout(function() {
+                    if (hookState.cleanup) {
+                        hookState.cleanup();
+                    }
+                    hookState.cleanup = effect();
+                }, 0);
+            } else {
+                // Fallback: run immediately
                 if (hookState.cleanup) {
                     hookState.cleanup();
                 }
                 hookState.cleanup = effect();
-            }, 0);
-        } else {
-            // Fallback: run immediately
-            if (hookState.cleanup) {
-                hookState.cleanup();
             }
-            hookState.cleanup = effect();
         }
     }
-}
 
 /**
  * useLayoutEffect Hook - Synchronous effects
@@ -299,22 +307,28 @@ function createContext(defaultValue) {
     return context;
 }
 
-// Export all hooks as global object (QuickJS compatible)
-var PreactHooks = {
-    useState: useState,
-    useEffect: useEffect,
-    useLayoutEffect: useLayoutEffect,
-    useRef: useRef,
-    useMemo: useMemo,
-    useCallback: useCallback,
-    useContext: useContext,
-    useReducer: useReducer,
-    createContext: createContext,
-    setCurrentComponent: setCurrentComponent,
-    // Phase 4: 调度器 API
-    scheduleUpdate: scheduleUpdate,
-    flushUpdates: flushUpdates
-};
+    // Export all hooks as global object (QuickJS compatible)
+    var PreactHooks = {
+        useState: useState,
+        useEffect: useEffect,
+        useLayoutEffect: useLayoutEffect,
+        useRef: useRef,
+        useMemo: useMemo,
+        useCallback: useCallback,
+        useContext: useContext,
+        useReducer: useReducer,
+        createContext: createContext,
+        setCurrentComponent: setCurrentComponent,
+        // Phase 4: 调度器 API
+        scheduleUpdate: scheduleUpdate,
+        flushUpdates: flushUpdates
+    };
 
-// 添加小写别名以提高兼容性
-var preactHooks = PreactHooks;
+    // 添加小写别名以提高兼容性
+    var preactHooks = PreactHooks;
+
+    // 暴露到全局作用域
+    global.PreactHooks = PreactHooks;
+    global.preactHooks = preactHooks;
+
+})(typeof globalThis !== 'undefined' ? globalThis : typeof window !== 'undefined' ? window : typeof global !== 'undefined' ? global : this);

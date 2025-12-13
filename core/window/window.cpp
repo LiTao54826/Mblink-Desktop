@@ -1301,13 +1301,17 @@ void Window::Render() {
         if (force_full_repaint_ || !enable_incremental_render_) {
             // 模式 B：使用缓存的渲染树，但全屏重绘（不做局部裁剪）
             DEBUG_LOG("[Window::Render] Mode B: Full repaint (incremental disabled or forced)");
+            std::cout << "[Render] Mode B: Full repaint" << std::endl;
 
             // 增量布局：仅布局脏子树
             // Phase 1 优化：不再每帧执行完整布局
+            std::cout << "[Render] Before MarkRenderObjectsDirty" << std::endl;
             MarkRenderObjectsDirty(body.get(), cached_render_tree_.get());
-            LayoutDirtySubtree(cached_render_tree_.get(),
+            std::cout << "[Render] After MarkRenderObjectsDirty, before LayoutDirtySubtree" << std::endl;
+            bool did_layout = LayoutDirtySubtree(cached_render_tree_.get(),
                                static_cast<float>(width),
                                static_cast<float>(height));
+            std::cout << "[Render] After LayoutDirtySubtree, did_layout=" << did_layout << std::endl;
 
             // 全屏重绘
             canvas->clear(clear_color);
@@ -1318,6 +1322,7 @@ void Window::Render() {
             ClearRenderObjectDirtyFlags(cached_render_tree_.get());
         } else {
             // 模式 C：基于脏区域的增量渲染
+            DEBUG_LOG("[Window::Render] Mode C: Incremental rendering");
 
             // 步骤1：从渲染树收集脏区域（基于 RenderObject::NeedsPaint）
             // 这样可以捕获滚动、动画等仅修改 RenderObject 的更新
@@ -1343,7 +1348,6 @@ void Window::Render() {
             if (!combined_dirty_rects.empty()) {
                 // 有脏区域：增量渲染
                 DEBUG_LOG("[Window::Render] Mode C: Incremental rendering " << combined_dirty_rects.size() << " dirty rects");
-                std::cout << "[DamageRect] Mode C: " << combined_dirty_rects.size() << " dirty regions" << std::endl;
 
                 // 同步 DOM 脏标记到 RenderObject 并执行增量布局
                 MarkRenderObjectsDirty(body.get(), cached_render_tree_.get());
@@ -1414,6 +1418,59 @@ void Window::Render() {
     dirty_rects_.clear();
 }
 
+// 辅助函数：规范化文本内容（与 RenderTreeBuilder::CreateRenderObjectForText 保持一致）
+// 将连续的空白字符（空格、制表符、换行符）折叠为单个空格
+static std::string NormalizeTextContent(const std::string& text_data, const ComputedStyle* parent_style) {
+    // 检查父元素的 white-space 属性，决定是否保留换行符
+    bool preserve_newlines = false;
+    if (parent_style) {
+        const std::string& ws = parent_style->white_space;
+        preserve_newlines = (ws == "pre" || ws == "pre-wrap" || ws == "pre-line");
+    }
+
+    std::string final_text;
+    if (preserve_newlines) {
+        // 保留换行符，但根据 white-space 的不同处理空格/制表符
+        const std::string& ws = parent_style ? parent_style->white_space : "normal";
+        if (ws == "pre") {
+            // 完全保留原始文本
+            final_text = text_data;
+        } else {
+            // pre-wrap 或 pre-line: 保留换行，合并连续空格
+            bool in_space = false;
+            for (char c : text_data) {
+                if (c == '\n') {
+                    final_text += c;
+                    in_space = false;
+                } else if (c == ' ' || c == '\t' || c == '\r') {
+                    if (!in_space) {
+                        final_text += ' ';
+                        in_space = true;
+                    }
+                } else {
+                    final_text += c;
+                    in_space = false;
+                }
+            }
+        }
+    } else {
+        // 规范化空白字符：将连续的空白字符（包括换行）替换为单个空格
+        bool in_whitespace = false;
+        for (char c : text_data) {
+            if (c == ' ' || c == '\t' || c == '\n' || c == '\r') {
+                if (!in_whitespace) {
+                    final_text += ' ';
+                    in_whitespace = true;
+                }
+            } else {
+                final_text += c;
+                in_whitespace = false;
+            }
+        }
+    }
+    return final_text;
+}
+
 void Window::MarkRenderObjectsDirty(Node* dom_node, RenderObject* render_obj) {
     if (!dom_node || !render_obj) {
         return;
@@ -1440,9 +1497,12 @@ void Window::MarkRenderObjectsDirty(Node* dom_node, RenderObject* render_obj) {
             auto text_node = static_cast<Text*>(dom_node);
             auto render_text = dynamic_cast<RenderText*>(render_obj);
             if (text_node && render_text) {
-                std::string new_text = text_node->GetData();
-                if (render_text->GetText() != new_text) {
-                    render_text->SetText(new_text);
+                // 关键修复：使用规范化后的文本进行比较
+                // RenderText 中存储的是规范化后的文本，所以比较时也需要规范化
+                std::string raw_text = text_node->GetData();
+                std::string normalized_text = NormalizeTextContent(raw_text, parent_style);
+                if (render_text->GetText() != normalized_text) {
+                    render_text->SetText(normalized_text);
                     render_obj->MarkNeedsLayout();  // 文本改变需要重新布局
                 }
 
@@ -1471,8 +1531,9 @@ void Window::MarkRenderObjectsDirty(Node* dom_node, RenderObject* render_obj) {
             }
             auto element = std::static_pointer_cast<Element>(dom_node->shared_from_this());
             auto new_style = resolver.ResolveStyle(element, parent_style);
+
             render_obj->SetComputedStyle(new_style);
-            
+
             // 关键修复：通知布局引擎样式已更新
             // 这确保 left/top 等位置属性的变化能正确触发重新布局
             if (layout_engine_) {
@@ -1517,10 +1578,12 @@ void Window::MarkRenderObjectsDirty(Node* dom_node, RenderObject* render_obj) {
                     auto render_text = dynamic_cast<RenderText*>(child_render_obj);
                     if (render_text) {
                         // 同步文本内容
+                        // 关键修复：使用规范化后的文本进行比较
                         auto text_node = static_cast<Text*>(child_dom_node);
-                        std::string new_text = text_node->GetData();
-                        if (render_text->GetText() != new_text) {
-                            render_text->SetText(new_text);
+                        std::string raw_text = text_node->GetData();
+                        std::string normalized_text = NormalizeTextContent(raw_text, current_style);
+                        if (render_text->GetText() != normalized_text) {
+                            render_text->SetText(normalized_text);
                             child_render_obj->MarkNeedsLayout();
                         }
 
@@ -1548,6 +1611,12 @@ void Window::MarkRenderObjectsDirty(Node* dom_node, RenderObject* render_obj) {
                     auto new_style = resolver.ResolveStyle(child_element, current_style);
                     child_render_obj->SetComputedStyle(new_style);
                     child_render_obj->MarkNeedsPaint();
+
+                    // 关键修复：通知布局引擎样式已更新
+                    // 这确保 LayoutNode 的样式与 RenderObject 一致
+                    if (layout_engine_) {
+                        layout_engine_->UpdateStyle(child_render_obj, new_style);
+                    }
                 }
             }
 

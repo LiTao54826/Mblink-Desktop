@@ -528,7 +528,69 @@ void NativeLayoutEngine::UpdateStyle(RenderObject* render_obj, const ComputedSty
     if (it != render_to_node_.end()) {
         LayoutNode* node = GetNode(it->second);
         if (node) {
-            node->style = ConvertStyle(style);
+            // 转换新样式
+            Style new_style = ConvertStyle(style);
+
+            // 关键优化：只有布局相关属性变化时才标记需要重新布局
+            // 纯视觉属性（如 color, background-color）的变化不应触发布局
+            bool layout_changed = false;
+
+            // 检查影响布局的属性是否变化
+            const Style& old_style = node->style;
+
+            // Display 和 Position 变化会影响布局
+            if (old_style.display != new_style.display ||
+                old_style.position != new_style.position ||
+                old_style.box_sizing != new_style.box_sizing) {
+                layout_changed = true;
+            }
+
+            // 尺寸属性变化会影响布局
+            if (old_style.size.width != new_style.size.width ||
+                old_style.size.height != new_style.size.height ||
+                old_style.min_size.width != new_style.min_size.width ||
+                old_style.min_size.height != new_style.min_size.height ||
+                old_style.max_size.width != new_style.max_size.width ||
+                old_style.max_size.height != new_style.max_size.height) {
+                layout_changed = true;
+            }
+
+            // 盒模型属性变化会影响布局
+            if (old_style.padding != new_style.padding ||
+                old_style.margin != new_style.margin ||
+                old_style.border != new_style.border ||
+                old_style.inset != new_style.inset) {
+                layout_changed = true;
+            }
+
+            // Flexbox 属性变化会影响布局
+            if (old_style.flex_direction != new_style.flex_direction ||
+                old_style.flex_wrap != new_style.flex_wrap ||
+                old_style.flex_grow != new_style.flex_grow ||
+                old_style.flex_shrink != new_style.flex_shrink ||
+                old_style.flex_basis != new_style.flex_basis ||
+                old_style.justify_content != new_style.justify_content ||
+                old_style.align_items != new_style.align_items ||
+                old_style.align_content != new_style.align_content ||
+                old_style.gap != new_style.gap ||
+                old_style.order != new_style.order) {
+                layout_changed = true;
+            }
+
+            // Grid 属性变化会影响布局
+            if (old_style.grid_auto_flow != new_style.grid_auto_flow) {
+                layout_changed = true;
+            }
+
+            // Overflow 变化可能影响布局（滚动条）
+            if (old_style.overflow.x != new_style.overflow.x ||
+                old_style.overflow.y != new_style.overflow.y ||
+                old_style.scrollbar_width != new_style.scrollbar_width) {
+                layout_changed = true;
+            }
+
+            // 更新样式
+            node->style = new_style;
 
             // Also update all the specialized style structs
             node->block_container_style.display = node->style.display;
@@ -570,7 +632,10 @@ void NativeLayoutEngine::UpdateStyle(RenderObject* render_obj, const ComputedSty
             node->grid_item_style.margin = node->style.margin;
             node->grid_item_style.inset = node->style.inset;
 
-            node->needs_layout = true;
+            // 只有布局相关属性变化时才标记需要重新布局
+            if (layout_changed) {
+                node->needs_layout = true;
+            }
         }
     } else {
         // 如果找不到对应的 LayoutNode，可能是之前是 display: none
