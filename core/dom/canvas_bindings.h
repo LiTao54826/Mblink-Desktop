@@ -15,6 +15,7 @@
 #include "html_canvas_element.h"
 #include "core/render/canvas/canvas_rendering_context_2d.h"
 #include "core/render/canvas/canvas_gradient.h"
+#include "core/render/canvas/canvas_pattern.h"
 #include "core/render/canvas/canvas_image_data.h"
 #include <memory>
 
@@ -60,16 +61,28 @@ public:
      * @brief 从 JS 对象解包 ImageData
      */
     static ImageData* UnwrapImageData(JSContext* ctx, JSValue obj);
+    
+    /**
+     * @brief 将 CanvasPattern 包装为 JS 对象
+     */
+    static JSValue WrapPattern(JSContext* ctx, CanvasPattern* pattern);
+    
+    /**
+     * @brief 从 JS 对象解包 CanvasPattern
+     */
+    static CanvasPattern* UnwrapPattern(JSContext* ctx, JSValue obj);
 
     // Class IDs
     static JSClassID context_2d_class_id;
     static JSClassID gradient_class_id;
+    static JSClassID pattern_class_id;
     static JSClassID image_data_class_id;
 
 private:
     static bool initialized;
     static void InitContext2DClass(JSContext* ctx);
     static void InitGradientClass(JSContext* ctx);
+    static void InitPatternClass(JSContext* ctx);
     static void InitImageDataClass(JSContext* ctx);
 };
 

@@ -25,6 +25,7 @@ namespace lightui {
 
 // 前向声明
 class CanvasGradient;
+class CanvasPattern;
 class ImageData;
 
 /**
@@ -114,6 +115,17 @@ public:
     void QuadraticCurveTo(double cpx, double cpy, double x, double y);
     void BezierCurveTo(double cp1x, double cp1y, double cp2x, double cp2y, double x, double y);
     void Rect(double x, double y, double width, double height);
+    
+    /**
+     * @brief 添加圆角矩形路径
+     * @param x 左上角X坐标
+     * @param y 左上角Y坐标
+     * @param width 宽度
+     * @param height 高度
+     * @param radius 圆角半径
+     */
+    void RoundRect(double x, double y, double width, double height, double radius);
+    
     void Fill();
     void Stroke();
     void Clip();
@@ -133,8 +145,10 @@ public:
 
     void SetFillStyle(const std::string& color);
     void SetFillStyle(CanvasGradient* gradient);
+    void SetFillStyle(CanvasPattern* pattern);
     void SetStrokeStyle(const std::string& color);
     void SetStrokeStyle(CanvasGradient* gradient);
+    void SetStrokeStyle(CanvasPattern* pattern);
     void SetLineWidth(double width);
     void SetLineCap(const std::string& cap);
     void SetLineJoin(const std::string& join);
@@ -144,10 +158,19 @@ public:
     void SetTextBaseline(const std::string& baseline);
     void SetGlobalAlpha(double alpha);
     
-    // ========== 渐变 ==========
+    // ========== 渐变与图案 ==========
     
     CanvasGradient* CreateLinearGradient(double x0, double y0, double x1, double y1);
     CanvasGradient* CreateRadialGradient(double x0, double y0, double r0, double x1, double y1, double r1);
+    CanvasGradient* CreateConicGradient(double startAngle, double x, double y);
+    
+    /**
+     * @brief 创建图案填充
+     * @param image 图像数据指针（SkImage*）
+     * @param repetition 重复模式："repeat", "repeat-x", "repeat-y", "no-repeat"
+     * @return CanvasPattern对象指针
+     */
+    CanvasPattern* CreatePattern(void* image, const std::string& repetition);
 
     std::string GetFillStyle() const;
     std::string GetStrokeStyle() const;
@@ -188,6 +211,12 @@ public:
     void Transform(double a, double b, double c, double d, double e, double f);
     void SetTransform(double a, double b, double c, double d, double e, double f);
     void ResetTransform();
+    
+    /**
+     * @brief 获取当前变换矩阵
+     * @return 变换矩阵的6个值 [a, b, c, d, e, f]
+     */
+    std::vector<double> GetTransform() const;
 
     // ========== 状态管理 ==========
 

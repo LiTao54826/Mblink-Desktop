@@ -31,7 +31,7 @@ static JSValue js_context_2d_get_fill_style(JSContext* ctx, JSValueConst this_va
     return JS_NewString(ctx, context->GetFillStyle().c_str());
 }
 
-// fillStyle setter (supports string color or CanvasGradient)
+// fillStyle setter (supports string color or CanvasGradient or CanvasPattern)
 static JSValue js_context_2d_set_fill_style(JSContext* ctx, JSValueConst this_val, JSValueConst val, int magic) {
     auto context = CanvasBindings::UnwrapContext2D(ctx, this_val);
     if (!context) return JS_EXCEPTION;
@@ -41,6 +41,13 @@ static JSValue js_context_2d_set_fill_style(JSContext* ctx, JSValueConst this_va
         auto gradient = CanvasBindings::UnwrapGradient(ctx, val);
         if (gradient) {
             context->SetFillStyle(gradient);
+            return JS_UNDEFINED;
+        }
+        
+        // 检查是否是图案对象
+        auto pattern = CanvasBindings::UnwrapPattern(ctx, val);
+        if (pattern) {
+            context->SetFillStyle(pattern);
             return JS_UNDEFINED;
         }
     }
@@ -61,7 +68,7 @@ static JSValue js_context_2d_get_stroke_style(JSContext* ctx, JSValueConst this_
     return JS_NewString(ctx, context->GetStrokeStyle().c_str());
 }
 
-// strokeStyle setter (supports string color or CanvasGradient)
+// strokeStyle setter (supports string color or CanvasGradient or CanvasPattern)
 static JSValue js_context_2d_set_stroke_style(JSContext* ctx, JSValueConst this_val, JSValueConst val, int magic) {
     auto context = CanvasBindings::UnwrapContext2D(ctx, this_val);
     if (!context) return JS_EXCEPTION;
@@ -71,6 +78,13 @@ static JSValue js_context_2d_set_stroke_style(JSContext* ctx, JSValueConst this_
         auto gradient = CanvasBindings::UnwrapGradient(ctx, val);
         if (gradient) {
             context->SetStrokeStyle(gradient);
+            return JS_UNDEFINED;
+        }
+        
+        // 检查是否是图案对象
+        auto pattern = CanvasBindings::UnwrapPattern(ctx, val);
+        if (pattern) {
+            context->SetStrokeStyle(pattern);
             return JS_UNDEFINED;
         }
     }
@@ -566,6 +580,26 @@ static JSValue js_context_2d_ellipse(JSContext* ctx, JSValueConst this_val, int 
     return JS_UNDEFINED;
 }
 
+// roundRect(x, y, width, height, radii)
+static JSValue js_context_2d_round_rect(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) {
+    auto context = CanvasBindings::UnwrapContext2D(ctx, this_val);
+    if (!context) return JS_EXCEPTION;
+    
+    if (argc < 5) return JS_ThrowTypeError(ctx, "roundRect requires 5 arguments");
+    
+    double x, y, width, height, radius;
+    if (JS_ToFloat64(ctx, &x, argv[0]) != 0) return JS_EXCEPTION;
+    if (JS_ToFloat64(ctx, &y, argv[1]) != 0) return JS_EXCEPTION;
+    if (JS_ToFloat64(ctx, &width, argv[2]) != 0) return JS_EXCEPTION;
+    if (JS_ToFloat64(ctx, &height, argv[3]) != 0) return JS_EXCEPTION;
+    
+    // 第5个参数可以是数字或数组，这里简化处理只支持单个数字
+    if (JS_ToFloat64(ctx, &radius, argv[4]) != 0) return JS_EXCEPTION;
+    
+    context->RoundRect(x, y, width, height, radius);
+    return JS_UNDEFINED;
+}
+
 // clip()
 static JSValue js_context_2d_clip(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) {
     auto context = CanvasBindings::UnwrapContext2D(ctx, this_val);
@@ -768,6 +802,51 @@ static JSValue js_context_2d_create_radial_gradient(JSContext* ctx, JSValueConst
     return CanvasBindings::WrapGradient(ctx, gradient);
 }
 
+// createConicGradient(startAngle, x, y)
+static JSValue js_context_2d_create_conic_gradient(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) {
+    auto context = CanvasBindings::UnwrapContext2D(ctx, this_val);
+    if (!context) return JS_EXCEPTION;
+    
+    if (argc < 3) return JS_ThrowTypeError(ctx, "createConicGradient requires 3 arguments");
+    
+    double startAngle, x, y;
+    if (JS_ToFloat64(ctx, &startAngle, argv[0]) != 0) return JS_EXCEPTION;
+    if (JS_ToFloat64(ctx, &x, argv[1]) != 0) return JS_EXCEPTION;
+    if (JS_ToFloat64(ctx, &y, argv[2]) != 0) return JS_EXCEPTION;
+    
+    CanvasGradient* gradient = context->CreateConicGradient(startAngle, x, y);
+    return CanvasBindings::WrapGradient(ctx, gradient);
+}
+
+// createPattern(image, repetition)
+// 注意：暂时image参数可以传null，因为完整的图像加载需要HTMLImageElement支持
+static JSValue js_context_2d_create_pattern(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) {
+    auto context = CanvasBindings::UnwrapContext2D(ctx, this_val);
+    if (!context) return JS_EXCEPTION;
+    
+    if (argc < 2) return JS_ThrowTypeError(ctx, "createPattern requires 2 arguments");
+    
+    // 暂时简化实现：image参数传null会返回null
+    // 完整实现需要从HTMLImageElement或HTMLCanvasElement提取SkImage
+    if (JS_IsNull(argv[0]) || JS_IsUndefined(argv[0])) {
+        return JS_NULL;
+    }
+    
+    const char* repetition = JS_ToCString(ctx, argv[1]);
+    if (!repetition) return JS_EXCEPTION;
+    
+    // TODO: 从argv[0]提取SkImage*，这里暂时返回null
+    // 完整实现需要检查argv[0]是否是HTMLImageElement或HTMLCanvasElement
+    // 然后获取其内部的SkImage*
+    
+    JS_FreeCString(ctx, repetition);
+    
+    // 暂时返回null，表示不支持
+    // 等有了HTMLImageElement绑定后可以完善
+    return JS_NULL;
+}
+
+
 // ========== Context2D 像素操作方法 ==========
 
 // createImageData(width, height)
@@ -817,6 +896,21 @@ static JSValue js_context_2d_put_image_data(JSContext* ctx, JSValueConst this_va
     if (JS_ToInt32(ctx, &dy, argv[2]) != 0) return JS_EXCEPTION;
     
     context->PutImageData(imageData, dx, dy);
+    return JS_UNDEFINED;
+}
+
+// ========== Context2D 图像绘制方法 ==========
+
+// drawImage(image, dx, dy) 或 drawImage(image, dx, dy, dw, dh)
+// 注意：目前暂不支持，因为需要图片加载系统
+static JSValue js_context_2d_draw_image(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) {
+    auto context = CanvasBindings::UnwrapContext2D(ctx, this_val);
+    if (!context) return JS_EXCEPTION;
+    
+    // 暂时返回 undefined，因为我们还没有实现完整的图片加载系统
+    // TODO: 实现图片对象支持
+    // 需要：HTMLImageElement、Image 构造函数、图片加载
+    
     return JS_UNDEFINED;
 }
 
@@ -928,6 +1022,26 @@ static JSValue js_context_2d_reset_transform(JSContext* ctx, JSValueConst this_v
     return JS_UNDEFINED;
 }
 
+// getTransform() - 返回 DOMMatrix 对象或简化的对象
+static JSValue js_context_2d_get_transform(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) {
+    auto context = CanvasBindings::UnwrapContext2D(ctx, this_val);
+    if (!context) return JS_EXCEPTION;
+    
+    std::vector<double> matrix = context->GetTransform();
+    
+    // 返回一个包含变换矩阵值的对象
+    // 简化实现：返回 {a, b, c, d, e, f} 对象而不是完整的 DOMMatrix
+    JSValue result = JS_NewObject(ctx);
+    JS_SetPropertyStr(ctx, result, "a", JS_NewFloat64(ctx, matrix[0]));
+    JS_SetPropertyStr(ctx, result, "b", JS_NewFloat64(ctx, matrix[1]));
+    JS_SetPropertyStr(ctx, result, "c", JS_NewFloat64(ctx, matrix[2]));
+    JS_SetPropertyStr(ctx, result, "d", JS_NewFloat64(ctx, matrix[3]));
+    JS_SetPropertyStr(ctx, result, "e", JS_NewFloat64(ctx, matrix[4]));
+    JS_SetPropertyStr(ctx, result, "f", JS_NewFloat64(ctx, matrix[5]));
+    
+    return result;
+}
+
 // ========== Context2D 类初始化 ==========
 
 // ========== Context2D 类定义 ==========
@@ -966,6 +1080,7 @@ static const JSCFunctionListEntry js_context_2d_proto_funcs[] = {
     JS_CFUNC_DEF("moveTo", 2, js_context_2d_move_to),
     JS_CFUNC_DEF("lineTo", 2, js_context_2d_line_to),
     JS_CFUNC_DEF("rect", 4, js_context_2d_rect),
+    JS_CFUNC_DEF("roundRect", 5, js_context_2d_round_rect),
     JS_CFUNC_DEF("arc", 6, js_context_2d_arc),
     JS_CFUNC_DEF("arcTo", 5, js_context_2d_arc_to),
     JS_CFUNC_DEF("quadraticCurveTo", 4, js_context_2d_quadratic_curve_to),
@@ -980,14 +1095,19 @@ static const JSCFunctionListEntry js_context_2d_proto_funcs[] = {
     JS_CFUNC_DEF("strokeText", 3, js_context_2d_stroke_text),
     JS_CFUNC_DEF("measureText", 1, js_context_2d_measure_text),
     
-    // 渐变方法
+    // 渐变与图案方法
     JS_CFUNC_DEF("createLinearGradient", 4, js_context_2d_create_linear_gradient),
     JS_CFUNC_DEF("createRadialGradient", 6, js_context_2d_create_radial_gradient),
+    JS_CFUNC_DEF("createConicGradient", 3, js_context_2d_create_conic_gradient),
+    JS_CFUNC_DEF("createPattern", 2, js_context_2d_create_pattern),
     
     // 像素操作方法
     JS_CFUNC_DEF("createImageData", 2, js_context_2d_create_image_data),
     JS_CFUNC_DEF("getImageData", 4, js_context_2d_get_image_data),
     JS_CFUNC_DEF("putImageData", 3, js_context_2d_put_image_data),
+    
+    // 图像绘制方法
+    JS_CFUNC_DEF("drawImage", 3, js_context_2d_draw_image),  // 最少3个参数
     
     // 点击检测方法
     JS_CFUNC_DEF("isPointInPath", 2, js_context_2d_is_point_in_path),
@@ -1002,6 +1122,7 @@ static const JSCFunctionListEntry js_context_2d_proto_funcs[] = {
     JS_CFUNC_DEF("transform", 6, js_context_2d_transform),
     JS_CFUNC_DEF("setTransform", 6, js_context_2d_set_transform),
     JS_CFUNC_DEF("resetTransform", 0, js_context_2d_reset_transform),
+    JS_CFUNC_DEF("getTransform", 0, js_context_2d_get_transform),
 };
 
 void CanvasBindings::InitContext2DClass(JSContext* ctx) {
@@ -1172,6 +1293,53 @@ ImageData* CanvasBindings::UnwrapImageData(JSContext* ctx, JSValue obj) {
     return static_cast<ImageData*>(JS_GetOpaque(obj, image_data_class_id));
 }
 
+// ========== CanvasPattern 绑定 ==========
+
+JSClassID CanvasBindings::pattern_class_id = 0;
+
+static void js_pattern_finalizer(JSRuntime* rt, JSValue val) {
+    auto ptr = static_cast<CanvasPattern*>(JS_GetOpaque(val, CanvasBindings::pattern_class_id));
+    if (ptr) {
+        delete ptr;
+    }
+}
+
+// CanvasPattern 目前没有需要暴露的方法，未来可能添加 setTransform 等
+
+void CanvasBindings::InitPatternClass(JSContext* ctx) {
+    JS_NewClassID(JS_GetRuntime(ctx), &pattern_class_id);
+    
+    JSClassDef pattern_class = {
+        "CanvasPattern",
+        js_pattern_finalizer,
+        nullptr,
+        nullptr,
+        nullptr,
+    };
+    
+    JS_NewClass(JS_GetRuntime(ctx), pattern_class_id, &pattern_class);
+    
+    JSValue proto = JS_NewObject(ctx);
+    // CanvasPattern 目前没有公开方法，所以不设置函数列表
+    // 如果未来添加方法（如setTransform），可以在这里添加
+    JS_SetClassProto(ctx, pattern_class_id, proto);
+}
+
+JSValue CanvasBindings::WrapPattern(JSContext* ctx, CanvasPattern* pattern) {
+    if (!pattern) return JS_NULL;
+    
+    JSValue obj = JS_NewObjectClass(ctx, pattern_class_id);
+    if (JS_IsException(obj)) return obj;
+    
+    JS_SetOpaque(obj, pattern);
+    return obj;
+}
+
+CanvasPattern* CanvasBindings::UnwrapPattern(JSContext* ctx, JSValue obj) {
+    return static_cast<CanvasPattern*>(JS_GetOpaque(obj, pattern_class_id));
+}
+
+
 // ========== 公共接口 ==========
 
 void CanvasBindings::Init(JSContext* ctx) {
@@ -1179,6 +1347,7 @@ void CanvasBindings::Init(JSContext* ctx) {
     
     InitContext2DClass(ctx);
     InitGradientClass(ctx);
+    InitPatternClass(ctx);
     InitImageDataClass(ctx);
     
     initialized = true;

@@ -10,6 +10,7 @@
 
 #include "canvas_rendering_context_2d.h"
 #include "canvas_gradient.h"
+#include "canvas_pattern.h"
 #include "canvas_image_data.h"
 #include "core/render/color.h"
 #include "core/render/render_object.h"
@@ -19,6 +20,7 @@
 #include "include/encode/SkPngEncoder.h"
 #include "include/encode/SkJpegEncoder.h"
 #include "include/core/SkStream.h"
+#include "include/core/SkRRect.h"
 #include "include/core/SkPathEffect.h"
 #include "include/effects/SkDashPathEffect.h"
 #include <cmath>
@@ -255,6 +257,19 @@ void CanvasRenderingContext2D::Rect(double x, double y, double width, double hei
     current_path_.addRect(SkRect::MakeXYWH(x, y, width, height));
 }
 
+void CanvasRenderingContext2D::RoundRect(double x, double y, double width, double height, double radius) {
+    // 限制圆角半径不超过矩形的一半
+    double maxRadius = std::min(width / 2.0, height / 2.0);
+    double clampedRadius = std::min(radius, maxRadius);
+    
+    // 使用 SkRRect 创建圆角矩形
+    SkRRect rrect;
+    rrect.setRectXY(SkRect::MakeXYWH(x, y, width, height), clampedRadius, clampedRadius);
+    
+    // 添加到当前路径
+    current_path_.addRRect(rrect);
+}
+
 void CanvasRenderingContext2D::Fill() {
     if (!surface_) return;
     
@@ -424,12 +439,39 @@ void CanvasRenderingContext2D::SetStrokeStyle(CanvasGradient* gradient) {
     }
 }
 
+void CanvasRenderingContext2D::SetFillStyle(CanvasPattern* pattern) {
+    if (pattern) {
+        current_state_.fill_paint.setShader(pattern->GetShader());
+    }
+}
+
+void CanvasRenderingContext2D::SetStrokeStyle(CanvasPattern* pattern) {
+    if (pattern) {
+        current_state_.stroke_paint.setShader(pattern->GetShader());
+    }
+}
+
 CanvasGradient* CanvasRenderingContext2D::CreateLinearGradient(double x0, double y0, double x1, double y1) {
     return CanvasGradient::CreateLinear(x0, y0, x1, y1);
 }
 
 CanvasGradient* CanvasRenderingContext2D::CreateRadialGradient(double x0, double y0, double r0, double x1, double y1, double r1) {
     return CanvasGradient::CreateRadial(x0, y0, r0, x1, y1, r1);
+}
+
+CanvasGradient* CanvasRenderingContext2D::CreateConicGradient(double startAngle, double x, double y) {
+    return CanvasGradient::CreateConic(startAngle, x, y);
+}
+
+CanvasPattern* CanvasRenderingContext2D::CreatePattern(void* image, const std::string& repetition) {
+    if (!image) return nullptr;
+    
+    try {
+        return CanvasPattern::Create(image, repetition);
+    } catch (const std::exception& e) {
+        std::cerr << "Error in CreatePattern: " << e.what() << std::endl;
+        return nullptr;
+    }
 }
 
 void CanvasRenderingContext2D::SetLineWidth(double width) {
@@ -685,6 +727,23 @@ void CanvasRenderingContext2D::SetTransform(double a, double b, double c, double
 
 void CanvasRenderingContext2D::ResetTransform() {
     current_state_.transform.reset();
+}
+
+std::vector<double> CanvasRenderingContext2D::GetTransform() const {
+    // 返回变换矩阵的6个值：[a, b, c, d, e, f]
+    // 对应矩阵：
+    // | a c e |
+    // | b d f |
+    // | 0 0 1 |
+    const SkMatrix& m = current_state_.transform;
+    return {
+        m.getScaleX(),    // a
+        m.getSkewY(),     // b
+        m.getSkewX(),     // c
+        m.getScaleY(),    // d
+        m.getTranslateX(),// e
+        m.getTranslateY() // f
+    };
 }
 
 // ========== 状态管理 ==========

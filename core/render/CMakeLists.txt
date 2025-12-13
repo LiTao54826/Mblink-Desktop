@@ -42,6 +42,7 @@ set(RENDER_SOURCES
     render_tree_updater.cpp
     canvas/canvas_rendering_context_2d.cpp
     canvas/canvas_gradient.cpp
+    canvas/canvas_pattern.cpp
     canvas/canvas_image_data.cpp
 )
 

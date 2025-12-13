@@ -12,7 +12,8 @@ namespace lightui {
 CanvasGradient::CanvasGradient(CanvasGradientType type)
     : type_(type)
     , x0_(0), y0_(0), x1_(0), y1_(0)
-    , r0_(0), r1_(0) {
+    , r0_(0), r1_(0)
+    , start_angle_(0) {
 }
 
 CanvasGradient* CanvasGradient::CreateLinear(double x0, double y0, double x1, double y1) {
@@ -32,6 +33,14 @@ CanvasGradient* CanvasGradient::CreateRadial(double x0, double y0, double r0, do
     gradient->x1_ = x1;
     gradient->y1_ = y1;
     gradient->r1_ = r1;
+    return gradient;
+}
+
+CanvasGradient* CanvasGradient::CreateConic(double startAngle, double x, double y) {
+    CanvasGradient* gradient = new CanvasGradient(CanvasGradientType::CONIC);
+    gradient->start_angle_ = startAngle;
+    gradient->x0_ = x;
+    gradient->y0_ = y;
     return gradient;
 }
 
@@ -74,13 +83,28 @@ sk_sp<SkShader> CanvasGradient::GetShader() const {
             pts, colors.data(), positions.data(), colors.size(),
             SkTileMode::kClamp
         );
-    } else {
+    } else if (type_ == CanvasGradientType::RADIAL) {
         // 径向渐变
         return SkGradientShader::MakeTwoPointConical(
             SkPoint::Make(x0_, y0_), r0_,
             SkPoint::Make(x1_, y1_), r1_,
             colors.data(), positions.data(), colors.size(),
             SkTileMode::kClamp
+        );
+    } else {
+        // 锥形渐变
+        // Skia的Sweep渐变从0度开始，需要转换startAngle
+        // HTML5 Canvas锥形渐变：startAngle是起始角度（弧度），0度在右侧，顺时针旋转
+        // Skia Sweep渐变：从0度开始（3点钟方向），顺时针
+        float startDegrees = static_cast<float>(start_angle_ * 180.0 / 3.14159265358979323846);
+        
+        // 使用MakeSweep创建锥形渐变
+        return SkGradientShader::MakeSweep(
+            x0_, y0_,
+            colors.data(), positions.data(), colors.size(),
+            SkTileMode::kClamp,
+            startDegrees, startDegrees + 360.0f,  // 完整360度旋转
+            0, nullptr
         );
     }
 }
