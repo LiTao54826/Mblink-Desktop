@@ -13,6 +13,10 @@ add_custom_target(copy_demo_resources ALL
     COMMAND ${CMAKE_COMMAND} -E copy_directory
         ${CMAKE_SOURCE_DIR}/js
         ${CMAKE_BINARY_DIR}/examples/demo_html/js
+    # 同时复制到 build 根目录的 js 目录（html_loader 使用）
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+        ${CMAKE_SOURCE_DIR}/js
+        ${CMAKE_BINARY_DIR}/js
     COMMENT "Copying demo_html and js resources to build directory"
 )
 

@@ -1,12 +1,12 @@
 /**
  * @file dom.js
  * @brief DOM API Polyfills
- * 
+ *
  * 功能：
  * - 为C++实现的DOM API提供JavaScript包装
  * - 添加缺失的DOM API
  * - 兼容性处理
- * 
+ *
  * TODO:
  * - [ ] 实现Element.prototype扩展
  * - [ ] 实现Node.prototype扩展
@@ -17,11 +17,25 @@
 (function (global) {
     'use strict';
 
+    // 检测 Element 是否可用（在 MBink 中 Element 不作为全局构造函数暴露）
+    // 我们通过 document.createElement 创建元素来获取 Element 原型
+    var ElementProto = null;
+    try {
+        if (typeof document !== 'undefined' && document.createElement) {
+            var testEl = document.createElement('div');
+            if (testEl && Object.getPrototypeOf) {
+                ElementProto = Object.getPrototypeOf(testEl);
+            }
+        }
+    } catch (e) {
+        // 忽略错误
+    }
+
     // ========== Element扩展 ==========
 
-    // classList API
-    if (typeof Element !== 'undefined' && Element.prototype && !Element.prototype.classList) {
-        Object.defineProperty(Element.prototype, 'classList', {
+    // classList API - 使用获取到的 ElementProto
+    if (ElementProto && !ElementProto.classList) {
+        Object.defineProperty(ElementProto, 'classList', {
             get: function () {
                 const element = this;
                 return {

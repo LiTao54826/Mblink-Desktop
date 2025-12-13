@@ -13,6 +13,7 @@ add_subdirectory(bridge)
 add_subdirectory(api)
 add_subdirectory(utils)
 add_subdirectory(lexbor)
+add_subdirectory(network)
 
 # 创建主库 (使用INTERFACE库，因为所有实现都在子模块中)
 add_library(lightui INTERFACE)
@@ -28,6 +29,7 @@ target_link_libraries(lightui INTERFACE
     lightui_bridge
     lightui_api
     lightui_utils
+    lightui_network
 )
 
 # 包含目录

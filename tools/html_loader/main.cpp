@@ -24,6 +24,7 @@
 #include "core/quickjs/window_bindings.h"
 #include "core/event/task_scheduler.h"
 #include "core/event/event_loop.h"
+#include "core/network/fetch_bindings.h"
 
 #include <iostream>
 #include <fstream>
@@ -226,6 +227,11 @@ int main(int argc, char** argv) {
         WindowBindings window_bindings(runtime.get(), window, task_scheduler);
         window_bindings.InitBindings();
         std::cout << "  ✓ Window bindings initialized" << std::endl;
+
+        // 初始化 FetchBindings
+        FetchBindings fetch_bindings(runtime->GetContext(), task_scheduler);
+        fetch_bindings.InitBindings();
+        std::cout << "  ✓ Fetch API initialized" << std::endl;
 
         // 6. 加载 Preact 库（如果需要执行脚本）
         if (execute_scripts) {
