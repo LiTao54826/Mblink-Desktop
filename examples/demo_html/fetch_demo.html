@@ -72,18 +72,23 @@
         
         function addResult(title, content, status) {
             const div = document.createElement('div');
-            div.className = 'result';
-            div.innerHTML = '<strong>' + title + '</strong>: <span class="' + status + '">' + content + '</span>';
+            div.className = 'result ' + status;
+            div.textContent = title + ': ' + content;
             resultsDiv.appendChild(div);
         }
         
         function addJsonResult(title, data) {
             const div = document.createElement('div');
-            div.className = 'result';
+            div.className = 'result success';
+
+            const titleSpan = document.createElement('span');
+            titleSpan.textContent = title;
+            div.appendChild(titleSpan);
+
             const pre = document.createElement('pre');
             pre.textContent = JSON.stringify(data, null, 2);
-            div.innerHTML = '<strong class="success">' + title + '</strong>';
             div.appendChild(pre);
+
             resultsDiv.appendChild(div);
         }
         
@@ -97,6 +102,7 @@
                     return response.json();
                 })
                 .then(function(data) {
+                    console.log("aaa",data)
                     addJsonResult('GET Response Data', data);
                 })
                 .catch(function(error) {

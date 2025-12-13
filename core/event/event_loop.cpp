@@ -27,6 +27,7 @@
 #include "core/render/text/font_manager.h"
 #include "core/render/text_renderer.h"
 #include "core/utils/utf8_utils.h"
+#include "core/quickjs/quickjs_runtime.h"
 #include "include/core/SkFontTypes.h"
 #include "include/core/SkFontMetrics.h"
 #include <iostream>
@@ -99,6 +100,12 @@ void EventLoop::RunOnce() {
 
     // 2. 执行调度任务
     task_scheduler_->ProcessTasks();
+
+    // 2.5 处理 QuickJS 定时器和微任务
+    if (quickjs_runtime_) {
+        // 处理 QuickJS 内部的定时器队列
+        quickjs_runtime_->RunEventLoop(1);  // 只运行一次迭代
+    }
 
     // 3. 更新应用状态
     float delta_time = frame_controller_->GetDeltaTime();

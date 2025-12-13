@@ -301,6 +301,9 @@ int main(int argc, char** argv) {
         // 创建事件循环
         EventLoop event_loop(task_scheduler);
 
+        // 设置 QuickJS 运行时，让事件循环处理 JS 定时器和微任务
+        event_loop.SetQuickJSRuntime(runtime.get());
+
         // 设置渲染回调
         event_loop.SetRenderCallback([window]() {
             if (window->NeedsRepaint()) {
