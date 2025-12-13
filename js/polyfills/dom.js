@@ -179,6 +179,37 @@
         };
     }
 
+    // ========== Intl API Polyfill (for Chart.js) ==========
+
+    if (typeof Intl === 'undefined') {
+        global.Intl = {
+            NumberFormat: function (locale, options) {
+                this.locale = locale;
+                this.options = options || {};
+            }
+        };
+
+        global.Intl.NumberFormat.prototype.format = function (value) {
+            if (value === undefined || value === null) return '';
+
+            var num = Number(value);
+            if (isNaN(num)) return String(value);
+
+            var opts = this.options;
+
+            // 处理科学计数法
+            if (opts.notation === 'scientific') {
+                return num.toExponential(opts.maximumFractionDigits || 2);
+            }
+
+            // 处理小数位数
+            var minFrac = opts.minimumFractionDigits || 0;
+            var maxFrac = opts.maximumFractionDigits !== undefined ? opts.maximumFractionDigits : 3;
+
+            return num.toFixed(Math.min(Math.max(minFrac, 0), maxFrac));
+        };
+    }
+
     console.log('DOM polyfills loaded');
 
 })(this);

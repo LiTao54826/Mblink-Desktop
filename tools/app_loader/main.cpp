@@ -232,6 +232,27 @@ int main(int argc, char** argv) {
             std::cout << "  ✓ Hooks library loaded" << std::endl;
         }
 
+        // 尝试加载 Chart.js 库（如果存在）
+        // 优先加载开发版本以便调试
+        std::vector<std::string> chartjs_search_paths = {
+            "js/chart.dev.js",    // 开发版本（优先）
+            "js/chart.js",
+            "../js/chart.dev.js",
+            "../js/chart.js",
+            "../../js/chart.dev.js",
+            "../../js/chart.js"
+        };
+        for (const auto& path : chartjs_search_paths) {
+            if (fs::exists(path)) {
+                std::string chartjs_code = ReadFile(path);
+                if (!chartjs_code.empty()) {
+                    runtime->Eval(chartjs_code, "chart.js");
+                    std::cout << "  ✓ Chart.js loaded from: " << path << std::endl;
+                    break;
+                }
+            }
+        }
+
         // 8. 加载并运行应用
         std::cout << "[7/7] Loading application..." << std::endl;
         std::string app_code = ReadFile(app_path);

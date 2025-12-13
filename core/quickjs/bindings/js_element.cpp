@@ -732,7 +732,15 @@ static JSValue JSElement_getContext(JSContext* ctx, JSValueConst this_val, int a
     // 目前只支持 "2d" context
     if (context_id_str == "2d") {
         auto context_2d = static_cast<CanvasRenderingContext2D*>(context);
-        return CanvasBindings::WrapContext2D(ctx, context_2d);
+        JSValue context_obj = CanvasBindings::WrapContext2D(ctx, context_2d);
+        
+        // 重要：设置 canvas 属性，指向原始的 canvas 元素
+        // Chart.js 需要通过 ctx.canvas 来访问 canvas 元素
+        if (!JS_IsException(context_obj)) {
+            JS_SetPropertyStr(ctx, context_obj, "canvas", JS_DupValue(ctx, this_val));
+        }
+        
+        return context_obj;
     }
     
     return JS_NULL;
