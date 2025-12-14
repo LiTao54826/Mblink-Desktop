@@ -22,6 +22,7 @@
 #include "core/event/task_scheduler.h"
 #include "core/event/event_loop.h"
 #include "core/network/fetch_bindings.h"
+#include "core/devtools/devtools_manager.h"
 
 #include <iostream>
 #include <fstream>
@@ -201,6 +202,11 @@ int main(int argc, char** argv) {
         fetch_bindings.InitBindings();
         std::cout << "  ✓ Fetch API initialized" << std::endl;
 
+        // 初始化 DevTools
+        auto& devtools = DevToolsManager::GetInstance();
+        devtools.Initialize(document.get(), window.get());
+        std::cout << "  ✓ DevTools initialized (F12 to toggle)" << std::endl;
+
         // 4. 执行脚本（完全由 HTML 中的 <script> 标签控制）
         if (execute_scripts) {
             std::cout << "[4/4] Executing scripts..." << std::endl;
@@ -216,6 +222,7 @@ int main(int argc, char** argv) {
         std::cout << std::endl;
         std::cout << "========================================" << std::endl;
         std::cout << "  🚀 Application Started!" << std::endl;
+        std::cout << "  Press F12 or Ctrl+Shift+I for DevTools" << std::endl;
         std::cout << "========================================" << std::endl;
         std::cout << std::endl;
 
@@ -233,6 +240,9 @@ int main(int argc, char** argv) {
 
         // 运行事件循环
         event_loop.Run();
+
+        // 关闭 DevTools
+        devtools.Shutdown();
 
         std::cout << std::endl;
         std::cout << "========================================" << std::endl;

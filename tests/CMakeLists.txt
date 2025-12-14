@@ -1842,3 +1842,114 @@ add_custom_command(TARGET react_binding_test POST_BUILD
         ${CMAKE_CURRENT_SOURCE_DIR}/react_event_test.js
         $<TARGET_FILE_DIR:react_binding_test>/../tests/react_event_test.js
 )
+
+
+# ============================================================================
+# DevTools Tests
+# ============================================================================
+
+# DevTools Properties Test
+add_executable(test_devtools_properties devtools/test_devtools_properties.cpp)
+
+target_include_directories(test_devtools_properties PRIVATE
+    ${CMAKE_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/core
+    ${CMAKE_SOURCE_DIR}/third_party/skia
+)
+
+target_link_libraries(test_devtools_properties PRIVATE
+    lightui_devtools
+    lightui_dom
+    lightui_lexbor
+    GTest::gtest
+    GTest::gtest_main
+)
+
+# Link Skia if available
+if(TARGET skia)
+    target_link_libraries(test_devtools_properties PRIVATE skia)
+
+    if(MSVC)
+        target_compile_options(test_devtools_properties PRIVATE
+            $<$<CONFIG:Debug>:/MT>
+            $<$<CONFIG:Release>:/MT>
+        )
+        target_compile_definitions(test_devtools_properties PRIVATE
+            $<$<CONFIG:Debug>:_ITERATOR_DEBUG_LEVEL=0>
+        )
+    endif()
+endif()
+
+# Link Lexbor
+if(TARGET lexbor_static)
+    target_link_libraries(test_devtools_properties PRIVATE lexbor_static)
+endif()
+
+add_test(NAME DevToolsPropertiesTest COMMAND test_devtools_properties)
+
+
+# DOM Tree View Test
+add_executable(test_dom_tree_view devtools/test_dom_tree_view.cpp)
+
+target_include_directories(test_dom_tree_view PRIVATE
+    ${CMAKE_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/core
+    ${CMAKE_SOURCE_DIR}/third_party/skia
+)
+
+target_link_libraries(test_dom_tree_view PRIVATE
+    lightui_devtools
+    lightui_dom
+    GTest::gtest
+    GTest::gtest_main
+)
+
+if(TARGET skia)
+    target_link_libraries(test_dom_tree_view PRIVATE skia)
+
+    if(MSVC)
+        target_compile_options(test_dom_tree_view PRIVATE
+            $<$<CONFIG:Debug>:/MT>
+            $<$<CONFIG:Release>:/MT>
+        )
+        target_compile_definitions(test_dom_tree_view PRIVATE
+            $<$<CONFIG:Debug>:_ITERATOR_DEBUG_LEVEL=0>
+        )
+    endif()
+endif()
+
+add_test(NAME DOMTreeViewTest COMMAND test_dom_tree_view)
+
+# DevTools Improvements Test
+add_executable(test_devtools_improvements devtools/test_devtools_improvements.cpp)
+
+target_include_directories(test_devtools_improvements PRIVATE
+    ${CMAKE_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/core
+    ${CMAKE_SOURCE_DIR}/third_party/skia
+)
+
+target_link_libraries(test_devtools_improvements PRIVATE
+    lightui_devtools
+    lightui_dom
+    lightui_window
+    GTest::gtest
+    GTest::gtest_main
+)
+
+# Link Skia if available
+if(TARGET skia)
+    target_link_libraries(test_devtools_improvements PRIVATE skia)
+
+    if(MSVC)
+        target_compile_options(test_devtools_improvements PRIVATE
+            $<$<CONFIG:Debug>:/MT>
+            $<$<CONFIG:Release>:/MT>
+        )
+        target_compile_definitions(test_devtools_improvements PRIVATE
+            $<$<CONFIG:Debug>:_ITERATOR_DEBUG_LEVEL=0>
+        )
+    endif()
+endif()
+
+add_test(NAME DevToolsImprovementsTest COMMAND test_devtools_improvements)

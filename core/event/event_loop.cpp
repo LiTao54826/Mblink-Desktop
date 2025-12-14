@@ -28,6 +28,7 @@
 #include "core/render/text_renderer.h"
 #include "core/utils/utf8_utils.h"
 #include "core/quickjs/quickjs_runtime.h"
+#include "core/devtools/devtools_manager.h"
 #include "include/core/SkFontTypes.h"
 #include "include/core/SkFontMetrics.h"
 #include <iostream>
@@ -357,6 +358,129 @@ void EventLoop::HandleMouseEventForDOM(const SDL_Event& event) {
     float dpi_scale = window->GetDisplayScale();
     float logical_x = mouse_x / dpi_scale;
     float logical_y = mouse_y / dpi_scale;
+
+    // ===== 处理 DevTools 鼠标事件 =====
+    auto& devtools = DevToolsManager::GetInstance();
+    if (devtools.IsOpen()) {
+        // 获取窗口尺寸
+        int win_width, win_height;
+        SDL_GetWindowSize(window->GetSDLWindow(), &win_width, &win_height);
+        float width = static_cast<float>(win_width) / dpi_scale;
+        float height = static_cast<float>(win_height) / dpi_scale;
+        
+        // 获取 DevTools 面板区域
+        float panel_x, panel_y, panel_width, panel_height;
+        devtools.GetPanelBounds(width, height, panel_x, panel_y, panel_width, panel_height);
+        
+        // ===== 优先处理面板边界拖动 =====
+        bool is_dragging_border = devtools.IsDraggingPanelBorder();
+        bool on_panel_border = devtools.IsMouseOnPanelBorder(logical_x, logical_y, width, height);
+        
+        if (is_dragging_border || on_panel_border) {
+            // 设置面板边界光标（根据停靠位置）- 对所有事件类型都设置
+            if (devtools.GetDockPosition() == DockPosition::Bottom) {
+                SetSystemCursor(SDL_SYSTEM_CURSOR_NS_RESIZE);
+            } else {
+                SetSystemCursor(SDL_SYSTEM_CURSOR_EW_RESIZE);
+            }
+            
+            if (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN && event.button.button == SDL_BUTTON_LEFT) {
+                devtools.HandlePanelBorderDrag(logical_x, logical_y, width, height, true);
+                window->SetNeedsRepaint();
+                return;
+            } else if (event.type == SDL_EVENT_MOUSE_BUTTON_UP && event.button.button == SDL_BUTTON_LEFT) {
+                devtools.HandlePanelBorderDrag(logical_x, logical_y, width, height, false);
+                window->SetNeedsRepaint();
+                return;
+            } else if (event.type == SDL_EVENT_MOUSE_MOTION) {
+                if (is_dragging_border) {
+                    if (devtools.UpdatePanelBorderDrag(logical_x, logical_y, width, height)) {
+                        window->SetNeedsRepaint();
+                    }
+                }
+                // 在边界上时直接返回，不再处理面板内部事件，避免光标闪烁
+                return;
+            }
+        }
+        
+        // 检查是否正在拖动分隔线（即使鼠标不在面板区域内也要处理）
+        bool is_dragging = devtools.IsDraggingSplitter();
+        
+        // 检查鼠标是否在 DevTools 面板区域内，或者正在拖动
+        bool in_panel = (logical_x >= panel_x && logical_x < panel_x + panel_width &&
+                         logical_y >= panel_y && logical_y < panel_y + panel_height);
+        
+        if (in_panel || is_dragging) {
+            // 将事件传递给 DevTools
+            if (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN) {
+                devtools.HandleMouseEvent(
+                    static_cast<int>(logical_x - panel_x),
+                    static_cast<int>(logical_y - panel_y),
+                    event.button.button == SDL_BUTTON_LEFT ? 0 : 1,
+                    true
+                );
+                window->SetNeedsRepaint();
+            } else if (event.type == SDL_EVENT_MOUSE_BUTTON_UP) {
+                devtools.HandleMouseEvent(
+                    static_cast<int>(logical_x - panel_x),
+                    static_cast<int>(logical_y - panel_y),
+                    event.button.button == SDL_BUTTON_LEFT ? 0 : 1,
+                    false
+                );
+                window->SetNeedsRepaint();
+            } else if (event.type == SDL_EVENT_MOUSE_MOTION) {
+                // 处理鼠标移动事件（用于 BoxModel 悬停高亮和分隔线拖动）
+                int rel_x = static_cast<int>(logical_x - panel_x);
+                int rel_y = static_cast<int>(logical_y - panel_y);
+                if (devtools.HandleMouseMove(rel_x, rel_y)) {
+                    window->SetNeedsRepaint();
+                }
+                // 设置分隔线光标
+                if (devtools.IsMouseOnSplitter(rel_x, rel_y) || devtools.IsDraggingSplitter()) {
+                    SetSystemCursor(SDL_SYSTEM_CURSOR_EW_RESIZE);
+                } else {
+                    SetSystemCursor(SDL_SYSTEM_CURSOR_DEFAULT);
+                }
+            }
+            if (in_panel) {
+                return;  // 只有在面板区域内才消费事件
+            }
+        } else if (event.type == SDL_EVENT_MOUSE_MOTION) {
+            // 鼠标不在面板区域内时，清除 Box Model 高亮
+            devtools.ClearBoxModelHover();
+            window->SetNeedsRepaint();
+        }
+        
+        // ===== 处理元素选择器模式 =====
+        // 如果元素选择器激活，点击主应用区域的元素会选中它
+        if (devtools.IsPickerActive() && event.type == SDL_EVENT_MOUSE_BUTTON_DOWN && 
+            event.button.button == SDL_BUTTON_LEFT) {
+            // 确保渲染树已构建
+            window->EnsureRenderTree();
+            auto root_render = window->GetCachedRenderTree();
+            if (root_render) {
+                // 获取主应用区域
+                float app_x, app_y, app_width, app_height;
+                devtools.GetMainAppBounds(width, height, app_x, app_y, app_width, app_height);
+                
+                // 检查是否在主应用区域内
+                if (logical_x >= app_x && logical_x < app_x + app_width &&
+                    logical_y >= app_y && logical_y < app_y + app_height) {
+                    // 执行 Hit Testing
+                    HitTestResult hit_result = hit_testing.HitTestRenderObject(
+                        root_render, logical_x, logical_y, 0.0f, 0.0f);
+                    
+                    if (hit_result.IsValid() && hit_result.element) {
+                        // 选中元素并停止选择器模式
+                        devtools.SelectElement(hit_result.element);
+                        devtools.StopElementPicker();
+                        window->SetNeedsRepaint();
+                        return;  // 消费事件
+                    }
+                }
+            }
+        }
+    }
 
     // ===== 处理滚动条拖动 =====
     // 如果正在拖动滚动条，处理拖动更新
@@ -1663,6 +1787,28 @@ void EventLoop::HandleKeyboardEventForDOM(const SDL_Event& event) {
     // 参考：W3C UI Events - KeyboardEvent
     // 参考：RmlUi/Source/Core/Context.cpp - ProcessKeyDown, ProcessKeyUp
 
+    // 首先检查 DevTools 快捷键
+    if (event.type == SDL_EVENT_KEY_DOWN) {
+        SDL_Keymod mod = SDL_GetModState();
+        bool ctrl_key = (mod & SDL_KMOD_CTRL) != 0;
+        bool shift_key = (mod & SDL_KMOD_SHIFT) != 0;
+        bool alt_key = (mod & SDL_KMOD_ALT) != 0;
+        
+        // 将 SDL 键码转换为 DOM keyCode
+        int key_code = SDLKeycodeToKeyCode(event.key.key);
+        
+        auto& devtools = DevToolsManager::GetInstance();
+        if (devtools.HandleKeyboardShortcut(key_code, ctrl_key, shift_key, alt_key)) {
+            // DevTools 消费了这个快捷键
+            // 触发重绘
+            auto& window_manager = WindowManager::Instance();
+            for (auto& window : window_manager.GetAllWindows()) {
+                window->SetNeedsRepaint();
+            }
+            return;
+        }
+    }
+
     // 获取焦点元素
     auto focus_element = focus_manager_->GetFocusElement();
     if (!focus_element) {
@@ -1787,6 +1933,39 @@ void EventLoop::HandleMouseWheelEventForDOM(const SDL_Event& event) {
         return;
     }
 
+    // 将物理像素坐标转换为逻辑像素坐标
+    float dpi_scale = window->GetDisplayScale();
+    float logical_x = mouse_x / dpi_scale;
+    float logical_y = mouse_y / dpi_scale;
+
+    // ===== 处理 DevTools 滚轮事件 =====
+    auto& devtools = DevToolsManager::GetInstance();
+    if (devtools.IsOpen()) {
+        // 获取窗口尺寸
+        int win_width, win_height;
+        SDL_GetWindowSize(window->GetSDLWindow(), &win_width, &win_height);
+        float width = static_cast<float>(win_width) / dpi_scale;
+        float height = static_cast<float>(win_height) / dpi_scale;
+        
+        // 获取 DevTools 面板区域
+        float panel_x, panel_y, panel_width, panel_height;
+        devtools.GetPanelBounds(width, height, panel_x, panel_y, panel_width, panel_height);
+        
+        // 检查鼠标是否在 DevTools 面板区域内
+        if (logical_x >= panel_x && logical_x < panel_x + panel_width &&
+            logical_y >= panel_y && logical_y < panel_y + panel_height) {
+            // 将滚轮事件传递给 DevTools
+            if (devtools.HandleMouseWheel(
+                static_cast<int>(logical_x - panel_x),
+                static_cast<int>(logical_y - panel_y),
+                wheel_x, wheel_y
+            )) {
+                window->SetNeedsRepaint();
+            }
+            return;  // DevTools 消费了事件
+        }
+    }
+
     // 确保渲染树已构建
     window->EnsureRenderTree();
 
@@ -1795,11 +1974,6 @@ void EventLoop::HandleMouseWheelEventForDOM(const SDL_Event& event) {
     if (!root_render) {
         return;
     }
-
-    // 将物理像素坐标转换为逻辑像素坐标（CSS 像素）
-    float dpi_scale = window->GetDisplayScale();
-    float logical_x = mouse_x / dpi_scale;
-    float logical_y = mouse_y / dpi_scale;
 
     // 使用渲染树进行 Hit Testing（使用逻辑坐标）
     HitTesting hit_testing;
@@ -2238,6 +2412,8 @@ void EventLoop::InitSystemCursors() {
     cursor_default_ = SDL_CreateSystemCursor(SDL_SYSTEM_CURSOR_DEFAULT);
     cursor_pointer_ = SDL_CreateSystemCursor(SDL_SYSTEM_CURSOR_POINTER);
     cursor_text_ = SDL_CreateSystemCursor(SDL_SYSTEM_CURSOR_TEXT);
+    cursor_ew_resize_ = SDL_CreateSystemCursor(SDL_SYSTEM_CURSOR_EW_RESIZE);  // 水平调整大小
+    cursor_ns_resize_ = SDL_CreateSystemCursor(SDL_SYSTEM_CURSOR_NS_RESIZE);  // 垂直调整大小
     current_cursor_type_ = SDL_SYSTEM_CURSOR_DEFAULT;
 }
 
@@ -2253,6 +2429,14 @@ void EventLoop::DestroySystemCursors() {
     if (cursor_text_) {
         SDL_DestroyCursor(cursor_text_);
         cursor_text_ = nullptr;
+    }
+    if (cursor_ew_resize_) {
+        SDL_DestroyCursor(cursor_ew_resize_);
+        cursor_ew_resize_ = nullptr;
+    }
+    if (cursor_ns_resize_) {
+        SDL_DestroyCursor(cursor_ns_resize_);
+        cursor_ns_resize_ = nullptr;
     }
 }
 
@@ -2272,6 +2456,12 @@ void EventLoop::SetSystemCursor(SDL_SystemCursor cursor_type) {
             break;
         case SDL_SYSTEM_CURSOR_TEXT:
             cursor = cursor_text_;
+            break;
+        case SDL_SYSTEM_CURSOR_EW_RESIZE:
+            cursor = cursor_ew_resize_;
+            break;
+        case SDL_SYSTEM_CURSOR_NS_RESIZE:
+            cursor = cursor_ns_resize_;
             break;
         default:
             cursor = cursor_default_;

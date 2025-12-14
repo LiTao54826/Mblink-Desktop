@@ -364,6 +364,8 @@ private:
     SDL_Cursor* cursor_default_ = nullptr;    // 默认箭头光标
     SDL_Cursor* cursor_pointer_ = nullptr;    // 手型光标（链接、按钮）
     SDL_Cursor* cursor_text_ = nullptr;       // 文本光标（输入框）
+    SDL_Cursor* cursor_ew_resize_ = nullptr;  // 水平调整大小光标（分割线）
+    SDL_Cursor* cursor_ns_resize_ = nullptr;  // 垂直调整大小光标（面板边界）
     SDL_SystemCursor current_cursor_type_ = SDL_SYSTEM_CURSOR_DEFAULT;  // 当前光标类型
 
     /**

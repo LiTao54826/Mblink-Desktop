@@ -57,6 +57,7 @@
 #include "core/render/color.h"
 #include "core/render/select_dropdown.h"
 #include "core/utils/encoding_utils.h"
+#include "core/devtools/devtools_manager.h"
 
 namespace lightui {
 
@@ -1200,8 +1201,19 @@ void Window::Render() {
     int width = static_cast<int>(physical_width / dpi_scale);
     int height = static_cast<int>(physical_height / dpi_scale);
 
-    // 设置视口尺寸（用于 body 元素滚动条计算）
-    RenderObject::SetViewportSize(static_cast<float>(width), static_cast<float>(height));
+    // 检查 DevTools 是否打开，如果打开则调整主应用区域
+    auto& devtools = DevToolsManager::GetInstance();
+    float app_x = 0, app_y = 0;
+    float app_width = static_cast<float>(width);
+    float app_height = static_cast<float>(height);
+    
+    if (devtools.IsOpen()) {
+        devtools.GetMainAppBounds(static_cast<float>(width), static_cast<float>(height),
+                                   app_x, app_y, app_width, app_height);
+    }
+
+    // 设置视口尺寸（用于 body 元素滚动条计算）- 使用调整后的尺寸
+    RenderObject::SetViewportSize(app_width, app_height);
 
     // Step 1: 构建或复用渲染树
     auto body = document_->GetBody();
@@ -1209,13 +1221,17 @@ void Window::Render() {
         return;
     }
 
-    // 检查窗口大小是否改变（需要全量重建）
+    // 检查窗口大小或 DevTools 状态是否改变（需要全量重建）
     static int last_width = 0, last_height = 0;
+    static float last_app_width = 0, last_app_height = 0;
     bool size_changed = (width != last_width || height != last_height);
-    if (size_changed) {
+    bool app_size_changed = (app_width != last_app_width || app_height != last_app_height);
+    if (size_changed || app_size_changed) {
         last_width = width;
         last_height = height;
-        render_tree_valid_ = false;  // 窗口大小改变，需要全量重建
+        last_app_width = app_width;
+        last_app_height = app_height;
+        render_tree_valid_ = false;  // 窗口大小或 DevTools 状态改变，需要全量重建
     }
 
     if (!render_tree_valid_ || !cached_render_tree_) {
@@ -1242,17 +1258,17 @@ void Window::Render() {
             RestoreScrollPositions(cached_render_tree_.get(), scroll_positions);
         }
 
-        // 新渲染树需要完整布局
-        DEBUG_LOG("[Window::Render] Full layout: " << width << "x" << height);
+        // 新渲染树需要完整布局（使用调整后的尺寸）
+        DEBUG_LOG("[Window::Render] Full layout: " << app_width << "x" << app_height);
 
         // 使用 Taffy 布局引擎计算布局
         if (layout_engine_) {
             layout_engine_->BuildLayoutTree(cached_render_tree_);
-            layout_engine_->ComputeLayout(static_cast<float>(width), static_cast<float>(height));
+            layout_engine_->ComputeLayout(app_width, app_height);
             layout_engine_->GetLayoutInfo(cached_render_tree_);
         } else {
             // 降级到传统布局
-            cached_render_tree_->Layout(static_cast<float>(width), static_cast<float>(height));
+            cached_render_tree_->Layout(app_width, app_height);
         }
 
         // 获取 body 的背景色并清空画布
@@ -1266,6 +1282,11 @@ void Window::Render() {
         // 应用 DPI 缩放到 canvas
         canvas->save();
         canvas->scale(dpi_scale, dpi_scale);
+
+        // 如果 DevTools 打开，裁剪到主应用区域
+        if (devtools.IsOpen()) {
+            canvas->clipRect(SkRect::MakeXYWH(app_x, app_y, app_width, app_height));
+        }
 
         // 绘制（使用逻辑坐标）
         DEBUG_LOG("[Window::Render] Mode A: Full rebuild and repaint");
@@ -1297,6 +1318,11 @@ void Window::Render() {
         canvas->save();
         canvas->scale(dpi_scale, dpi_scale);
 
+        // 如果 DevTools 打开，裁剪到主应用区域
+        if (devtools.IsOpen()) {
+            canvas->clipRect(SkRect::MakeXYWH(app_x, app_y, app_width, app_height));
+        }
+
         // 检查是否强制全屏重绘或禁用增量渲染
         if (force_full_repaint_ || !enable_incremental_render_) {
             // 模式 B：使用缓存的渲染树，但全屏重绘（不做局部裁剪）
@@ -1309,8 +1335,8 @@ void Window::Render() {
             MarkRenderObjectsDirty(body.get(), cached_render_tree_.get());
             std::cout << "[Render] After MarkRenderObjectsDirty, before LayoutDirtySubtree" << std::endl;
             bool did_layout = LayoutDirtySubtree(cached_render_tree_.get(),
-                               static_cast<float>(width),
-                               static_cast<float>(height));
+                               app_width,
+                               app_height);
             std::cout << "[Render] After LayoutDirtySubtree, did_layout=" << did_layout << std::endl;
 
             // 全屏重绘
@@ -1352,8 +1378,8 @@ void Window::Render() {
                 // 同步 DOM 脏标记到 RenderObject 并执行增量布局
                 MarkRenderObjectsDirty(body.get(), cached_render_tree_.get());
                 LayoutDirtySubtree(cached_render_tree_.get(),
-                                   static_cast<float>(width),
-                                   static_cast<float>(height));
+                                   app_width,
+                                   app_height);
 
                 // 关键修复：布局更新后，位置可能发生了变化。
                 // 我们需要再次收集脏区域，以捕获元素的新位置。
@@ -1408,6 +1434,9 @@ void Window::Render() {
         canvas->restore();
     }
 
+    // 渲染 DevTools（在所有内容之上）
+    RenderDevTools(canvas, static_cast<float>(width), static_cast<float>(height));
+
     // 刷新
     if (gr_context_) {
         gr_context_->flush();
@@ -1416,6 +1445,29 @@ void Window::Render() {
     // 清除重绘标记和脏区域
     needs_repaint_ = false;
     dirty_rects_.clear();
+}
+
+void Window::RenderDevTools(SkCanvas* canvas, float width, float height) {
+    auto& devtools = DevToolsManager::GetInstance();
+    
+    if (!devtools.IsOpen()) {
+        return;
+    }
+    
+    // 获取 DPI 缩放比
+    float dpi_scale = GetDisplayScale();
+    
+    // 应用 DPI 缩放
+    canvas->save();
+    canvas->scale(dpi_scale, dpi_scale);
+    
+    // 渲染 DevTools 面板
+    devtools.Render(canvas, width, height);
+    
+    // 渲染元素高亮覆盖层
+    devtools.RenderHighlight(canvas);
+    
+    canvas->restore();
 }
 
 // 辅助函数：规范化文本内容（与 RenderTreeBuilder::CreateRenderObjectForText 保持一致）
