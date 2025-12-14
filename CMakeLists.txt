@@ -84,6 +84,7 @@ endif()
 # 工具
 add_subdirectory(tools/app_loader)
 add_subdirectory(tools/html_loader)
+add_subdirectory(tools/html_loader_clean)
 
 # 示例
 if(LIGHTUI_BUILD_EXAMPLES)

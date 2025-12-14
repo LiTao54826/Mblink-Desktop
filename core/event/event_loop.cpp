@@ -451,10 +451,21 @@ void EventLoop::HandleMouseEventForDOM(const SDL_Event& event) {
             float local_x = abs_x - layout.x;
             float local_y = abs_y - layout.y;
 
-            // 检查点是否在元素范围内
-            if (local_x >= 0 && local_x <= layout.width && local_y >= 0 && local_y <= layout.height) {
+            // 检查点是否在元素范围内（使用有效可见尺寸，对于有滚动条的元素）
+            float effective_width = obj->GetEffectiveVisibleWidth();
+            float effective_height = obj->GetEffectiveVisibleHeight();
+            // 对于非 body 元素，使用布局尺寸
+            if (effective_width <= 0) effective_width = layout.width;
+            if (effective_height <= 0) effective_height = layout.height;
+
+            if (local_x >= 0 && local_x <= effective_width && local_y >= 0 && local_y <= effective_height) {
                 const auto& style = obj->GetComputedStyle();
-                if (style.overflow == "scroll" || style.overflow == "auto") {
+                // 检查 overflow, overflow-x, overflow-y 任一方向是否允许滚动
+                std::string overflow_x = !style.overflow_x.empty() ? style.overflow_x : style.overflow;
+                std::string overflow_y = !style.overflow_y.empty() ? style.overflow_y : style.overflow;
+                bool allow_scroll = (overflow_x == "scroll" || overflow_x == "auto" ||
+                                     overflow_y == "scroll" || overflow_y == "auto");
+                if (allow_scroll) {
                     // 检测是否点击了滚动条
                     auto scrollbar_area = obj->HitTestScrollbar(local_x, local_y);
                     if (scrollbar_area != RenderObject::ScrollbarHitArea::None) {
@@ -462,9 +473,11 @@ void EventLoop::HandleMouseEventForDOM(const SDL_Event& event) {
                     }
                 }
 
-                // 递归检查子元素
+                // 递归检查子元素（考虑父元素的滚动偏移）
+                float child_offset_x = local_x + obj->GetScrollX();
+                float child_offset_y = local_y + obj->GetScrollY();
                 for (const auto& child : obj->GetChildren()) {
-                    auto result = findScrollableAtPoint(child, local_x, local_y);
+                    auto result = findScrollableAtPoint(child, child_offset_x, child_offset_y);
                     if (result) {
                         return result;
                     }
@@ -1862,10 +1875,34 @@ void EventLoop::HandleMouseWheelEventForDOM(const SDL_Event& event) {
 
         // 检查是否可滚动
         if (allow_h_scroll || allow_v_scroll) {
+            // 检查内容是否真的需要滚动（内容是否超出可见区域）
+            float max_scroll_x = render_obj->GetMaxScrollX();
+            float max_scroll_y = render_obj->GetMaxScrollY();
+            bool can_scroll_h = allow_h_scroll && max_scroll_x > 0;
+            bool can_scroll_v = allow_v_scroll && max_scroll_y > 0;
+
             // 计算滚动量（负值向下滚动，正值向上滚动，所以要取反）
             // 每行滚动 40 像素（类似浏览器的默认行为）
             float scroll_delta_x = -wheel_x * 40.0f;
             float scroll_delta_y = -wheel_y * 40.0f;
+
+            // 检查滚动方向是否与元素实际可滚动的方向匹配
+            // 如果用户垂直滚动但元素实际上不能垂直滚动，应该穿透到父级
+            bool wants_v_scroll = (wheel_y != 0);
+            bool wants_h_scroll = (wheel_x != 0) || shift_pressed;
+
+            // 如果滚动方向与元素实际可滚动的方向不匹配，继续向上查找
+            if ((wants_v_scroll && !can_scroll_v && !wants_h_scroll) ||
+                (wants_h_scroll && !can_scroll_h && !wants_v_scroll)) {
+                render_obj = render_obj->GetParent();
+                continue;
+            }
+
+            // 如果元素完全不能滚动，穿透到父级
+            if (!can_scroll_h && !can_scroll_v) {
+                render_obj = render_obj->GetParent();
+                continue;
+            }
 
             // 计算元素的绝对位置，用于检测鼠标是否在滚动条上
             float elem_abs_x = 0, elem_abs_y = 0;

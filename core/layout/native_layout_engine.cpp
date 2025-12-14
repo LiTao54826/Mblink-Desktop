@@ -1248,6 +1248,14 @@ void NativeLayoutEngine::BuildSubtree(RenderObject* render_obj, NodeId parent_id
     // For IFC containers, don't add children to layout tree
     LayoutNode* node = GetNode(node_id);
     if (node && node->is_ifc_container) {
+        // DEBUG: Print IFC container info
+        auto dom_node = render_obj->GetNode();
+        std::string tag_name = "unknown";
+        if (dom_node && dom_node->GetNodeType() == NodeType::ELEMENT_NODE) {
+            auto element = std::dynamic_pointer_cast<Element>(dom_node);
+            if (element) tag_name = element->GetTagName();
+        }
+        std::cout << "[BuildSubtree] IFC container: " << tag_name << " (node_id=" << node_id << ")" << std::endl;
         return;
     }
 
@@ -1752,6 +1760,18 @@ LayoutOutput NativeLayoutEngine::ComputeIFCLayout(NodeId node_id, const LayoutIn
             // Clear IFC cache and relayout
             ifc_layout_.ClearCache();
             result = ifc_layout_.Layout(node->render_obj, content_width);
+        }
+    }
+
+    // Handle overflow-x: auto - if content exceeds container width, add horizontal scrollbar height
+    if (overflow_x == "auto" && scrollbar_gutter_bottom == 0.0f) {
+        // Calculate content area width
+        float content_area_width = content_width;
+        // Check if content exceeds container width
+        if (result.max_width > content_area_width) {
+            // Need horizontal scrollbar - add scrollbar height to total height
+            scrollbar_gutter_bottom = RenderObject::GetScrollbarWidth();
+            total_height += scrollbar_gutter_bottom;
         }
     }
 

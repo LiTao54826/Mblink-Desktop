@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Clean Loader Demo</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            margin: 0;
+            padding: 20px;
+            min-height: 100vh;
+        }
+        
+        .container {
+            max-width: 600px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 12px;
+            padding: 30px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+        }
+        
+        h1 {
+            color: #333;
+            margin-bottom: 20px;
+        }
+        
+        .info {
+            background: #f0f0f0;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+        
+        #app {
+            margin-top: 20px;
+        }
+        
+        .counter {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            margin-top: 20px;
+        }
+        
+        .counter button {
+            padding: 10px 20px;
+            font-size: 18px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            background: #667eea;
+            color: white;
+        }
+        
+        .counter button:hover {
+            background: #5a6fd6;
+        }
+        
+        .counter span {
+            font-size: 24px;
+            font-weight: bold;
+            min-width: 50px;
+            text-align: center;
+        }
+    </style>
+    
+    <!-- 在 HTML 中加载 Preact 和 polyfills -->
+    <script src="../../js/polyfills/dom.js"></script>
+    <script src="../../js/preact/preact.js"></script>
+    <script src="../../js/preact/hooks.js"></script>
+</head>
+<body>
+    <div class="container">
+        <h1>🧹 Clean Loader Demo</h1>
+        
+        <div class="info">
+            <p>这个示例展示了如何在 HTML 中通过 <code>&lt;script src="..."&gt;</code> 加载 Preact，</p>
+            <p>而不是依赖 C++ 加载器自动查找和加载。</p>
+        </div>
+        
+        <div id="app">Loading...</div>
+    </div>
+    
+    <script>
+        // 使用 Preact
+        const { h, render } = preact;
+        const { useState } = preactHooks;
+        
+        function Counter() {
+            const [count, setCount] = useState(0);
+            
+            return h('div', { className: 'counter' },
+                h('button', { onclick: () => setCount(count - 1) }, '-'),
+                h('span', null, count),
+                h('button', { onclick: () => setCount(count + 1) }, '+')
+            );
+        }
+        
+        function App() {
+            return h('div', null,
+                h('p', null, '✅ Preact 已从 HTML 中的 script 标签加载！'),
+                h(Counter)
+            );
+        }
+        
+        render(h(App), document.getElementById('app'));
+    </script>
+</body>
+</html>
+

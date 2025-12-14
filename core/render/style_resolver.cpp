@@ -324,7 +324,10 @@ void StyleResolver::ApplyElementSpecificStyle(ComputedStyle& style, const std::s
         // 不缩小字体，使用继承的 16px，与测试 HTML 中的设置一致
         style.margin.top = CSSLength(16, CSSUnit::PX);  // 1em
         style.margin.bottom = CSSLength(16, CSSUnit::PX);
-        // TODO: 添加 white-space: pre 支持
+        // 浏览器默认 white-space: pre，保留空白和换行，不自动换行
+        style.white_space = "pre";
+        // 浏览器默认 overflow-x: auto，内容超出时显示水平滚动条
+        style.overflow_x = "auto";
     }
 
     // 代码 (Code) - 等宽字体
