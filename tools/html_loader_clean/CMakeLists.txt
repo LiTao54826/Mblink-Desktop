@@ -12,6 +12,7 @@ target_link_libraries(html_loader_clean
     lightui_quickjs
     lightui_lexbor
     lightui_network
+    lightui_devtools
     SDL3::SDL3-static
     skia
 )

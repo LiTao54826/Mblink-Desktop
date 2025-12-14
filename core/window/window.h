@@ -522,6 +522,14 @@ private:
     void RestoreScrollPositions(RenderObject* render_obj,
                                 const std::unordered_map<Node*, std::pair<float, float>>& scroll_positions);
 
+    /**
+     * @brief 渲染 DevTools 面板
+     * @param canvas Skia 画布
+     * @param width 窗口宽度
+     * @param height 窗口高度
+     */
+    void RenderDevTools(SkCanvas* canvas, float width, float height);
+
 private:
     WindowConfig config_;
     SDL_Window* sdl_window_ = nullptr;

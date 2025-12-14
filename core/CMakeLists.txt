@@ -14,6 +14,7 @@ add_subdirectory(api)
 add_subdirectory(utils)
 add_subdirectory(lexbor)
 add_subdirectory(network)
+add_subdirectory(devtools)
 
 # 创建主库 (使用INTERFACE库，因为所有实现都在子模块中)
 add_library(lightui INTERFACE)
@@ -30,6 +31,7 @@ target_link_libraries(lightui INTERFACE
     lightui_api
     lightui_utils
     lightui_network
+    lightui_devtools
 )
 
 # 包含目录
