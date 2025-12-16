@@ -217,6 +217,9 @@ public:
     /// Get block container style
     virtual const BlockContainerStyle& GetBlockContainerStyle(NodeId node) const = 0;
     
+    /// Check if node is a text node (should be skipped in block layout)
+    virtual bool IsTextNode(NodeId node) const = 0;
+    
     /// Get block child style
     virtual const BlockItemStyle& GetBlockChildStyle(NodeId node) const = 0;
 };

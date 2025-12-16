@@ -127,50 +127,95 @@ bool HitTesting::HitTestRecursive(
     }
 
     const auto& layout = render_object->GetLayoutInfo();
+    
     if (!layout.is_laid_out) {
         return false;
     }
 
-    // 计算当前元素的绝对位置
+    // 计算当前元素在文档中的绝对位置
     float current_offset_x = offset_x + layout.x;
     float current_offset_y = offset_y + layout.y;
 
-    // 检查点是否在当前元素边界内
-    if (!IsPointInBounds(render_object, x, y, offset_x, offset_y)) {
-        return false;
-    }
-
+    // 检查当前元素是否有 overflow 属性
+    const auto& style = render_object->GetComputedStyle();
+    bool has_overflow = (style.overflow == "auto" || style.overflow == "scroll" || 
+                         style.overflow == "hidden" ||
+                         style.overflow_y == "auto" || style.overflow_y == "scroll" ||
+                         style.overflow_y == "hidden");
+    
     // 获取当前元素的滚动偏移量
     float scroll_x = render_object->GetScrollX();
     float scroll_y = render_object->GetScrollY();
-
-    // 子元素的偏移需要减去滚动偏移（因为滚动会让内容向上/向左移动）
-    float child_offset_x = current_offset_x - scroll_x;
-    float child_offset_y = current_offset_y - scroll_y;
+    
+    // 用于检查子元素的鼠标坐标（可能需要转换为文档坐标）
+    float child_test_x = x;
+    float child_test_y = y;
+    
+    // 检查是否是 body 元素（根滚动容器）
+    auto node = render_object->GetNode();
+    auto element = std::dynamic_pointer_cast<Element>(node);
+    bool is_body = element && (element->GetTagName() == "body" || element->GetTagName() == "BODY");
+    
+    if (has_overflow && is_body) {
+        // 对于 body 元素，它的可见区域是整个视口，不是 CSS 设置的高度
+        // 所以不需要检查边界，直接将鼠标坐标转换为文档坐标
+        // 
+        // 例如：body CSS 高度 400px，但视口高度 800px，滚动了 100px
+        // - 鼠标在视口 y=500（超出 body 的 CSS 高度）
+        // - 转换为文档坐标：y=500+100=600
+        // - 子元素布局位置 y=600，可以命中
+        child_test_x = x + scroll_x;
+        child_test_y = y + scroll_y;
+    } else if (has_overflow) {
+        // 对于其他有 overflow 的容器，检查点是否在可见区域内
+        if (!IsPointInBounds(render_object, x, y, offset_x, offset_y)) {
+            return false;  // 点不在可见区域内，跳过此元素及其子元素
+        }
+        
+        // 将鼠标坐标转换为文档坐标
+        child_test_x = x + scroll_x;
+        child_test_y = y + scroll_y;
+    } else {
+        // 对于普通元素，检查点是否在边界内
+        if (!IsPointInBounds(render_object, x, y, offset_x, offset_y)) {
+            return false;
+        }
+    }
 
     // 从后向前遍历子元素（后面的元素在上层）
     const auto& children = render_object->GetChildren();
+    
     for (auto it = children.rbegin(); it != children.rend(); ++it) {
         const auto& child = *it;
 
-        // 递归检查子元素，传递考虑了滚动偏移的坐标
-        if (HitTestRecursive(child, x, y, child_offset_x, child_offset_y, result)) {
-            // 子元素命中，返回 true
+        // 递归检查子元素，使用转换后的坐标
+        if (HitTestRecursive(child, child_test_x, child_test_y, current_offset_x, current_offset_y, result)) {
             return true;
         }
     }
 
-    // 没有子元素命中，当前元素就是目标
-    // 获取对应的 DOM 元素
-    auto node = render_object->GetNode();
-    auto element = std::dynamic_pointer_cast<Element>(node);
-
+    // 没有子元素命中，当前元素就是目标（复用前面已获取的 node 和 element）
     if (element) {
         result.element = element;
-        result.render_object = render_object;  // 保存渲染对象引用
+        result.render_object = render_object;
         result.local_x = x - current_offset_x;
         result.local_y = y - current_offset_y;
         return true;
+    }
+
+    // 如果是 Text 节点，向上查找最近的 Element 祖先
+    auto parent_ro = render_object->GetParent();
+    while (parent_ro) {
+        auto parent_node = parent_ro->GetNode();
+        auto parent_element = std::dynamic_pointer_cast<Element>(parent_node);
+        if (parent_element) {
+            result.element = parent_element;
+            result.render_object = parent_ro;
+            result.local_x = x - current_offset_x;
+            result.local_y = y - current_offset_y;
+            return true;
+        }
+        parent_ro = parent_ro->GetParent();
     }
 
     return false;

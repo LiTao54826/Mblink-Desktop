@@ -29,6 +29,7 @@
 #include "core/utils/utf8_utils.h"
 #include "core/quickjs/quickjs_runtime.h"
 #include "core/devtools/devtools_manager.h"
+#include "core/devtools/inspector/element_picker.h"
 #include "include/core/SkFontTypes.h"
 #include "include/core/SkFontMetrics.h"
 #include <iostream>
@@ -452,10 +453,19 @@ void EventLoop::HandleMouseEventForDOM(const SDL_Event& event) {
         }
         
         // ===== 处理元素选择器模式 =====
-        // 如果元素选择器激活，点击主应用区域的元素会选中它
-        if (devtools.IsPickerActive() && event.type == SDL_EVENT_MOUSE_BUTTON_DOWN && 
-            event.button.button == SDL_BUTTON_LEFT) {
-            // 确保渲染树已构建
+        if (devtools.IsPickerActive()) {
+            // 确保渲染树已构建并且布局完成
+            // 特别是在窗口最大化等尺寸变化后，必须确保使用最新的布局信息
+            // 否则 hit testing 会使用旧的布局数据导致选择失败
+            
+            // 关键修复：先强制使渲染树失效，这样 Render() 才会重新构建和布局
+            // 这解决了 Render() 内部静态变量导致的尺寸检查被跳过的问题
+            window->InvalidateRenderTree();
+            
+            // 强制执行渲染以确保布局是最新的
+            window->Render();
+            
+            // 再次确保渲染树有效（双重保险）
             window->EnsureRenderTree();
             auto root_render = window->GetCachedRenderTree();
             if (root_render) {
@@ -463,19 +473,47 @@ void EventLoop::HandleMouseEventForDOM(const SDL_Event& event) {
                 float app_x, app_y, app_width, app_height;
                 devtools.GetMainAppBounds(width, height, app_x, app_y, app_width, app_height);
                 
+                // 调试：输出关键信息
+                std::cout << "[ElementPicker] window size: " << width << "x" << height 
+                          << " dpi_scale=" << dpi_scale
+                          << " app_bounds: (" << app_x << "," << app_y << "," << app_width << "," << app_height << ")"
+                          << " mouse: (" << logical_x << "," << logical_y << ")"
+                          << std::endl;
+                
                 // 检查是否在主应用区域内
                 if (logical_x >= app_x && logical_x < app_x + app_width &&
                     logical_y >= app_y && logical_y < app_y + app_height) {
-                    // 执行 Hit Testing
-                    HitTestResult hit_result = hit_testing.HitTestRenderObject(
-                        root_render, logical_x, logical_y, 0.0f, 0.0f);
                     
-                    if (hit_result.IsValid() && hit_result.element) {
-                        // 选中元素并停止选择器模式
-                        devtools.SelectElement(hit_result.element);
-                        devtools.StopElementPicker();
-                        window->SetNeedsRepaint();
-                        return;  // 消费事件
+                    // 将窗口绝对坐标转换为相对于主应用区域的坐标
+                    // 这样 hit testing 才能正确命中元素，无论窗口是否最大化
+                    float app_relative_x = logical_x - app_x;
+                    float app_relative_y = logical_y - app_y;
+                    
+                    std::cout << "[ElementPicker] app_relative: (" << app_relative_x << "," << app_relative_y << ")" << std::endl;
+                    
+                    // 处理鼠标移动：更新悬停高亮
+                    if (event.type == SDL_EVENT_MOUSE_MOTION) {
+                        HitTestResult hit_result = hit_testing.HitTestRenderObject(
+                            root_render, app_relative_x, app_relative_y, 0.0f, 0.0f);
+                        
+                        if (hit_result.IsValid() && hit_result.element) {
+                            devtools.GetElementPicker()->SetHoverElement(hit_result.element, hit_result.render_object);
+                            window->SetNeedsRepaint();
+                        }
+                    }
+                    // 处理鼠标点击：选中元素
+                    else if (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN && 
+                             event.button.button == SDL_BUTTON_LEFT) {
+                        HitTestResult hit_result = hit_testing.HitTestRenderObject(
+                            root_render, app_relative_x, app_relative_y, 0.0f, 0.0f);
+                        
+                        if (hit_result.IsValid() && hit_result.element) {
+                            // 选中元素并停止选择器模式
+                            devtools.SelectElement(hit_result.element);
+                            devtools.StopElementPicker();
+                            window->SetNeedsRepaint();
+                            return;  // 消费事件
+                        }
                     }
                 }
             }

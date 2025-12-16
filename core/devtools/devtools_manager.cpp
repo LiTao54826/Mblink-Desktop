@@ -218,6 +218,9 @@ bool DevToolsManager::HandleEvent(const Event& event) {
 }
 
 bool DevToolsManager::HandleMouseEvent(int x, int y, int button, bool pressed) {
+    // picker模式下的鼠标事件由event_loop.cpp处理，不在这里处理
+    // 这里只处理DevTools面板内的鼠标事件
+    
     if (!is_open_ || !panel_) {
         return false;
     }
@@ -227,6 +230,9 @@ bool DevToolsManager::HandleMouseEvent(int x, int y, int button, bool pressed) {
 }
 
 bool DevToolsManager::HandleMouseMove(int x, int y) {
+    // picker模式下的鼠标移动由event_loop.cpp处理，不在这里处理
+    // 这里只处理DevTools面板内的鼠标移动
+
     if (!is_open_ || !panel_) {
         return false;
     }

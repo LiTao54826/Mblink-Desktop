@@ -173,6 +173,11 @@ public:
     bool HandleMouseMove(int x, int y);
 
     /**
+     * @brief 获取元素选择器（用于event_loop设置悬停元素）
+     */
+    ElementPicker* GetElementPicker() { return picker_.get(); }
+
+    /**
      * @brief 设置 Box Model 悬停高亮
      * @param element 要高亮的元素
      * @param area 要高亮的区域 (0=None, 1=Margin, 2=Border, 3=Padding, 4=Content)

@@ -321,9 +321,10 @@ void StyleResolver::ApplyElementSpecificStyle(ComputedStyle& style, const std::s
     // 注意：浏览器默认使用较小字体（约 13px），但为了测试一致性，使用 16px
     if (tag_name == "pre") {
         style.font_family = "Courier New";
-        // 不缩小字体，使用继承的 16px，与测试 HTML 中的设置一致
-        style.margin.top = CSSLength(16, CSSUnit::PX);  // 1em
-        style.margin.bottom = CSSLength(16, CSSUnit::PX);
+        // 使用 1em 单位而不是固定的16px，这样会根据实际font-size动态计算
+        // Chrome浏览器默认：pre { margin: 1em 0; }
+        style.margin.top = CSSLength(1, CSSUnit::EM);  // 1em = 1 * font-size
+        style.margin.bottom = CSSLength(1, CSSUnit::EM);
         // 浏览器默认 white-space: pre，保留空白和换行，不自动换行
         style.white_space = "pre";
         // 浏览器默认 overflow-x: auto，内容超出时显示水平滚动条
@@ -2087,6 +2088,18 @@ std::shared_ptr<RenderObject> RenderTreeBuilder::BuildRenderTree(
         auto child_render_obj = BuildRenderTree(child, &render_obj->GetComputedStyle());
         if (child_render_obj) {
             render_obj->AppendChild(child_render_obj);
+            
+            // 调试：检查 result 类元素
+            if (child->GetNodeType() == NodeType::ELEMENT_NODE) {
+                auto child_elem = std::static_pointer_cast<Element>(child);
+                std::string cls = child_elem->GetAttribute("class");
+                if (cls.find("result") != std::string::npos) {
+                    std::cout << "[BuildRenderTree] Result element: " << child_elem->GetTagName()
+                              << " class=" << cls
+                              << " render_obj=" << child_render_obj.get()
+                              << std::endl;
+                }
+            }
         }
     }
 

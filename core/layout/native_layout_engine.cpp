@@ -378,17 +378,23 @@ void NativeLayoutEngine::ComputeLayout(float available_width, float available_he
         // We do a two-pass layout: first pass to check if content exceeds height,
         // second pass with reduced width if scrollbar is needed
         if (overflow_y == "auto" || overflow_y == "scroll") {
-            // First pass: compute layout with full width
+            // First pass: compute layout with full width, accounting for root margin
+            Rect<float> first_pass_margin = ResolveOrZero(root->style.margin, std::optional<float>(available_width));
+            float first_pass_width = available_width - first_pass_margin.left - first_pass_margin.right;
+            
             LayoutInput inputs;
             inputs.run_mode = RunMode::PerformLayout;
             inputs.sizing_mode = SizingMode::InherentSize;
-            inputs.known_dimensions = Size<std::optional<float>>{std::nullopt, std::nullopt};
+            inputs.known_dimensions = Size<std::optional<float>>{
+                std::optional<float>(first_pass_width),
+                std::nullopt
+            };
             inputs.parent_size = Size<std::optional<float>>{
                 std::optional<float>(available_width),
                 std::optional<float>(available_height)
             };
             inputs.available_space = Size<AvailableSpace>{
-                AvailableSpace::Definite(available_width),
+                AvailableSpace::Definite(first_pass_width),
                 AvailableSpace::Definite(available_height)
             };
             // Enable vertical margin collapsing
@@ -404,7 +410,9 @@ void NativeLayoutEngine::ComputeLayout(float available_width, float available_he
             // Check if content height exceeds available height (needs vertical scrollbar)
             // or if overflow-y is scroll (always show scrollbar)
             // Use size.height instead of content_size.height for the actual rendered height
-            bool needs_v_scrollbar = (first_pass.size.height > available_height) ||
+            // Add root margin to get total height
+            float total_height = first_pass.size.height + first_pass_margin.top + first_pass_margin.bottom;
+            bool needs_v_scrollbar = (total_height > available_height) ||
                                       (overflow_y == "scroll");
 
             if (needs_v_scrollbar) {
@@ -419,16 +427,35 @@ void NativeLayoutEngine::ComputeLayout(float available_width, float available_he
         }
     }
 
+    // For root element (body), we need to handle margin specially:
+    // - Root element's margin offsets it from the viewport edge
+    // - Root element's width = effective_width - margin_left - margin_right
+    // - Scrollbar is in viewport, outside of body's margin
+    LayoutNode* root_node = GetNode(root_node_);
+    Rect<float> root_margin = {0.0f, 0.0f, 0.0f, 0.0f};
+    float root_width = effective_width;
+    
+    if (root_node) {
+        // Resolve root element's margin based on available_width (viewport width)
+        root_margin = ResolveOrZero(root_node->style.margin, std::optional<float>(available_width));
+        // Root element's width should be reduced by its horizontal margins
+        root_width = effective_width - root_margin.left - root_margin.right;
+    }
+
     LayoutInput inputs;
     inputs.run_mode = RunMode::PerformLayout;
     inputs.sizing_mode = SizingMode::InherentSize;
-    inputs.known_dimensions = Size<std::optional<float>>{std::nullopt, std::nullopt};
+    // Set known width for root element to account for its margin
+    inputs.known_dimensions = Size<std::optional<float>>{
+        std::optional<float>(root_width),
+        std::nullopt
+    };
     inputs.parent_size = Size<std::optional<float>>{
-        std::optional<float>(effective_width),
+        std::optional<float>(available_width),
         std::optional<float>(available_height)
     };
     inputs.available_space = Size<AvailableSpace>{
-        AvailableSpace::Definite(effective_width),
+        AvailableSpace::Definite(root_width),
         AvailableSpace::Definite(available_height)
     };
     // Enable vertical margin collapsing for proper CSS margin collapse behavior
@@ -436,6 +463,15 @@ void NativeLayoutEngine::ComputeLayout(float available_width, float available_he
     inputs.vertical_margins_are_collapsible = Line<bool>{true, true};
 
     ComputeNodeLayout(root_node_, inputs);
+    
+    // Set root element position based on its margin
+    // In CSS, the root element's margin offsets it from the viewport edge
+    if (root_node) {
+        root_node->x = root_margin.left;
+        root_node->y = root_margin.top;
+        root_node->layout.location = Point<float>{root_margin.left, root_margin.top};
+    }
+    
     PositionChildren(root_node_);
 }
 
@@ -1205,6 +1241,22 @@ void NativeLayoutEngine::BuildSubtree(RenderObject* render_obj, NodeId parent_id
         return;
     }
 
+    // 调试：检查 result 类元素
+    auto dbg_node = render_obj->GetNode();
+    if (dbg_node) {
+        auto dbg_elem = std::dynamic_pointer_cast<Element>(dbg_node);
+        if (dbg_elem) {
+            std::string cls = dbg_elem->GetAttribute("class");
+            if (cls.find("result") != std::string::npos) {
+                std::cout << "[BuildSubtree] Result element: " << dbg_elem->GetTagName()
+                          << " class=" << cls
+                          << " render_obj=" << render_obj
+                          << " parent_id=" << parent_id
+                          << std::endl;
+            }
+        }
+    }
+
     NodeId node_id = CreateNode(render_obj);
 
     // Set as root if no parent
@@ -1255,7 +1307,7 @@ void NativeLayoutEngine::BuildSubtree(RenderObject* render_obj, NodeId parent_id
             auto element = std::dynamic_pointer_cast<Element>(dom_node);
             if (element) tag_name = element->GetTagName();
         }
-        std::cout << "[BuildSubtree] IFC container: " << tag_name << " (node_id=" << node_id << ")" << std::endl;
+        // std::cout << "[BuildSubtree] IFC container: " << tag_name << " (node_id=" << node_id << ")" << std::endl;
         return;
     }
 
@@ -1899,6 +1951,32 @@ LayoutOutput NativeLayoutEngine::MeasureLeafNode(NodeId node_id, const LayoutInp
         return output;
     }
 
+    // ✅ 修复：Handle inline elements (e.g., span in mixed content containers)
+    // Mixed content containers (containing both inline and block elements) don't use IFC,
+    // so inline elements need to be measured here.
+    if (type == RenderObjectType::INLINE) {
+        float available_width = 0.0f;
+        if (inputs.available_space.width.type == AvailableSpace::Type::Definite) {
+            available_width = inputs.available_space.width.value;
+        } else if (inputs.available_space.width.type == AvailableSpace::Type::MaxContent) {
+            available_width = 10000.0f;
+        }
+
+        auto* inline_obj = static_cast<RenderInline*>(render_obj);
+        auto [width, height] = inline_obj->MeasureIntrinsicSize(available_width);
+
+        // Update layout_info_ so DevTools can display correct size
+        LayoutInfo& layout = inline_obj->GetLayoutInfo();
+        layout.width = width;
+        layout.height = height;
+       layout.is_laid_out = true;
+
+        LayoutOutput output;
+        output.size = Size<float>{width, height};
+        output.content_size = output.size;
+        return output;
+    }
+
     // Handle inline-block elements
     if (type == RenderObjectType::INLINE_BLOCK) {
         float available_width = 0.0f;
@@ -1949,8 +2027,30 @@ void NativeLayoutEngine::ReadLayoutResults(RenderObject* render_obj) {
         return;
     }
 
+    // 调试：检查 result 类元素
+    auto dbg_node = render_obj->GetNode();
+    if (dbg_node) {
+        auto dbg_elem = std::dynamic_pointer_cast<Element>(dbg_node);
+        if (dbg_elem) {
+            std::string cls = dbg_elem->GetAttribute("class");
+            if (cls.find("result") != std::string::npos) {
+                auto it_dbg = render_to_node_.find(render_obj);
+                std::cout << "[ReadLayoutResults] Result element: " << dbg_elem->GetTagName()
+                          << " class=" << cls
+                          << " render_obj=" << render_obj
+                          << " has_mapping=" << (it_dbg != render_to_node_.end())
+                          << std::endl;
+            }
+        }
+    }
+
     auto it = render_to_node_.find(render_obj);
     if (it == render_to_node_.end()) {
+        // 没有映射，但仍然需要递归处理子元素
+        // 这可能发生在 IFC 容器的子元素上
+        for (auto& child : render_obj->GetChildren()) {
+            ReadLayoutResults(child.get());
+        }
         return;
     }
 
@@ -2207,6 +2307,17 @@ const BlockItemStyle& NativeLayoutEngine::GetBlockChildStyle(NodeId node) const 
         return default_style;
     }
     return it->second.block_item_style;
+}
+
+bool NativeLayoutEngine::IsTextNode(NodeId node) const {
+    auto it = nodes_.find(node);
+    if (it == nodes_.end()) {
+        return false;
+    }
+    if (!it->second.render_obj) {
+        return false;
+    }
+    return it->second.render_obj->GetType() == RenderObjectType::TEXT;
 }
 
 //------------------------------------------------------------------------------

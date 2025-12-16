@@ -18,6 +18,7 @@
 
 // DOM 类型（用于检测 BR 元素）
 #include "../../dom/element.h"
+#include "../../dom/text.h"
 
 // 调试开关
 #define IFC_DEBUG 0
@@ -653,6 +654,39 @@ IFCMeasureResult IFCLayout::LayoutWithResult(RenderObject* container, float avai
 // ========== 内联内容收集 ==========
 
 void IFCLayout::CollectInlineContent(RenderObject* container) {
+    // 收集内容（已禁用调试输出）
+    /*
+    std::string container_tag = "?";
+    if (container) {
+        auto node = container->GetNode();
+        if (node && node->GetNodeType() == NodeType::ELEMENT_NODE) {
+            auto elem = std::static_pointer_cast<Element>(node);
+            container_tag = elem->GetTagName();
+        }
+    }
+    size_t children_count = container ? container->GetChildren().size() : 0;
+    printf("[IFC CollectInlineContent] container=%s, children=%zu\n", 
+           container_tag.c_str(), children_count);
+    
+    if (container) {
+        const auto& children = container->GetChildren();
+        for (size_t i = 0; i < children.size(); ++i) {
+            const auto& child = children[i];
+            RenderObjectType child_type = child->GetType();
+            std::string child_tag = "?";
+            auto child_node = child->GetNode();
+            if (child_node && child_node->GetNodeType() == NodeType::ELEMENT_NODE) {
+                auto child_elem = std::static_pointer_cast<Element>(child_node);
+                child_tag = child_elem->GetTagName();
+            } else if (child_node && child_node->GetNodeType() == NodeType::TEXT_NODE) {
+                auto text_node = std::static_pointer_cast<Text>(child_node);
+                child_tag = "TEXT:\"" + text_node->GetData().substr(0, 20) + "\"";
+            }
+            printf("  child[%zu]: type=%d, tag=%s\n", i, (int)child_type, child_tag.c_str());
+        }
+    }
+    */
+    
     const auto& children = container->GetChildren();
     
     for (const auto& child : children) {
@@ -874,6 +908,21 @@ void IFCLayout::CreateInlineBox(RenderObject* render_obj) {
         case RenderObjectType::INLINE: {
             // 检查是否是 BR 元素
             auto node = render_obj->GetNode();
+            
+            // 🔍 调试：输出INLINE元素信息（已禁用）
+            /*
+            std::string tag_name = "?";
+            std::string text_content = "";
+            if (node && node->GetNodeType() == NodeType::ELEMENT_NODE) {
+                auto element = std::static_pointer_cast<Element>(node);
+                tag_name = element->GetTagName();
+                text_content = element->GetTextContent();
+            }
+            size_t children_count = render_obj->GetChildren().size();
+            printf("[IFC CreateInlineBox] INLINE: tag=%s, textContent='%s', children=%zu\n",
+                   tag_name.c_str(), text_content.c_str(), children_count);
+            */
+            
             if (node && node->GetNodeType() == NodeType::ELEMENT_NODE) {
                 auto element = std::static_pointer_cast<Element>(node);
                 std::string tag_name = element->GetTagName();

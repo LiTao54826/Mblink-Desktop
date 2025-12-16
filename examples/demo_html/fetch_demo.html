@@ -9,6 +9,11 @@
             padding: 20px;
             background: #1a1a2e;
             color: #eee;
+            margin: 8px;
+            height: 400px;
+            /* 固定高度以触发滚动 */
+            overflow: auto;
+            /* 启用滚动条 */
         }
 
         h1 {
@@ -75,7 +80,6 @@
         </div>
 
         <div id="results">
-            <div class="result success">Status: Ready - Click a button to test</div>
             <div class="result loading">GET Request: Loading...</div>
             <div class="result success">Response Status: 200 OK</div>
             <div class="result success"><span>GET Response Data</span>

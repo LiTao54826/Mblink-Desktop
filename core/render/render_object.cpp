@@ -444,31 +444,14 @@ SkRect RenderObject::GetBoundingRect() const {
         abs_x += parent_layout.x;
         abs_y += parent_layout.y;
 
-        // 考虑父元素的滚动偏移
+        // 减去父元素的滚动偏移
         abs_x -= parent->GetScrollX();
         abs_y -= parent->GetScrollY();
 
         parent = parent->GetParent();
     }
 
-    // 对于 body 元素或有滚动条的元素，使用有效可见尺寸（包含滚动条区域）
-    float width = layout.width;
-    float height = layout.height;
-    
-    // 检查是否有滚动条（overflow: scroll 或 auto）
-    const auto& style = computed_style_;
-    std::string overflow_x = !style.overflow_x.empty() ? style.overflow_x : style.overflow;
-    std::string overflow_y = !style.overflow_y.empty() ? style.overflow_y : style.overflow;
-    bool has_scrollbar = (overflow_x == "scroll" || overflow_x == "auto" ||
-                          overflow_y == "scroll" || overflow_y == "auto");
-    
-    if (has_scrollbar) {
-        // 使用有效可见尺寸（对于 body 元素是视口尺寸）
-        width = GetEffectiveVisibleWidth();
-        height = GetEffectiveVisibleHeight();
-    }
-
-    return SkRect::MakeXYWH(abs_x, abs_y, width, height);
+    return SkRect::MakeXYWH(abs_x, abs_y, layout.width, layout.height);
 }
 
 void RenderObject::ScrollBy(float dx, float dy) {
@@ -526,9 +509,9 @@ float RenderObject::GetMaxScrollX() const {
     float visible_width = effective_width - border_left - border_right;
     float visible_height = effective_height - border_top - border_bottom;
 
-    // 如果 content_width_/height_ 还没初始化（首次渲染前），动态计算
-    float content_width = content_width_ > 0 ? content_width_ : CalculateContentWidth();
-    float content_height = content_height_ > 0 ? content_height_ : CalculateContentHeight();
+    // ✅ 修复：始终动态计算内容尺寸，不使用缓存（与GetMaxScrollY保持一致）
+    float content_width = CalculateContentWidth();
+    float content_height = CalculateContentHeight();
 
     // 检查是否需要垂直滚动条
     bool needs_v_scroll = content_height > visible_height;
@@ -554,9 +537,11 @@ float RenderObject::GetMaxScrollY() const {
     float visible_width = effective_width - border_left - border_right;
     float visible_height = effective_height - border_top - border_bottom;
 
-    // 如果 content_width_/height_ 还没初始化（首次渲染前），动态计算
-    float content_width = content_width_ > 0 ? content_width_ : CalculateContentWidth();
-    float content_height = content_height_ > 0 ? content_height_ : CalculateContentHeight();
+    // ✅ 修复：始终动态计算内容尺寸，不使用缓存
+    // 原因：窗口resize后，effective_height会立即更新，但content_height_可能
+    //      还是旧值（因为Paint可能被增量渲染跳过），导致滚动范围计算错误
+    float content_width = CalculateContentWidth();
+    float content_height = CalculateContentHeight();
 
     // 检查是否需要垂直滚动条（用于计算内容区域宽度）
     bool needs_v_scroll = content_height > visible_height;
@@ -567,7 +552,9 @@ float RenderObject::GetMaxScrollY() const {
 
     // 可用内容高度需要减去水平滚动条高度
     float available_height = visible_height - (needs_h_scroll ? scrollbar_width : 0);
-    return std::max(0.0f, content_height - available_height);
+    float max_scroll = std::max(0.0f, content_height - available_height);
+
+    return max_scroll;
 }
 
 RenderObject::ScrollbarHitArea RenderObject::HitTestScrollbar(float local_x, float local_y) const {
@@ -757,8 +744,37 @@ float RenderObject::CalculateContentHeight() const {
             }
         }
 
+        // ✅ 修复：不再加 margin-bottom，因为 child_y 在 Layout 阶段已经包含了之前元素的 margin
+        // 内容高度 = 子元素位置 + 子元素高度（不加margin，避免重复计算）
         max_height = std::max(max_height, child_y + child_height);
     }
+
+    // ✅ 修复：为最后一个子元素添加 margin-bottom（这部分在可滚动区域内应该被看到）
+    // 并且为 body 元素添加其自身的 margin-bottom
+    if (!children_.empty()) {
+        const auto& last_child = children_.back();
+        const auto& last_child_style = last_child->GetComputedStyle();
+        // 最后一个子元素的 margin-bottom 不会与后续元素 collapse，需要计入内容高度
+        float last_margin_bottom = last_child_style.margin.bottom.ToPx(layout_info_.width, last_child_style.font_size);
+        max_height += last_margin_bottom;
+    }
+
+    // For body element, add body's own margin-bottom to content height
+    // because it's part of the scrollable content
+    if (IsBodyElement()) {
+        // 注意：body 的 margin-top 已经在第一个子元素的 child_y 中体现了
+        // 只需要加上 margin-bottom
+        float body_margin_bottom = computed_style_.margin.bottom.ToPx(viewport_height_, computed_style_.font_size);
+        max_height += body_margin_bottom;
+    }
+
+    // ✅ 修复：添加容器自身的 padding-bottom
+    // 原因：子元素的 y 坐标已经包含了 padding-top (从 padding-top 开始布局)
+    //      但内容高度需要延伸到 padding-bottom 的底部，这样滚动时才能看到完整的底部留白
+    // 注意：不需要加 padding-top，因为子元素的 child_y 已经是相对于 content area 的
+    //      (content area 从 border + padding-top 开始)
+    float padding_bottom = computed_style_.padding.bottom.ToPx(layout_info_.width, computed_style_.font_size);
+    max_height += padding_bottom;
 
     return max_height;
 }
@@ -792,6 +808,10 @@ float RenderObject::CalculateContentWidth() const {
 
         max_width = std::max(max_width, child_x + child_width);
     }
+
+    // ✅ 修复：添加容器自身的 padding-right（与 CalculateContentHeight 保持一致）
+    float padding_right = computed_style_.padding.right.ToPx(layout_info_.width, computed_style_.font_size);
+    max_width += padding_right;
 
     return max_width;
 }
@@ -927,7 +947,9 @@ void RenderBlock::Layout(float parent_width, float parent_height) {
 
             // 更新当前X位置和行高
             current_x += child_width;
-            line_height = std::max(line_height, child_layout.height + child_margin_top + child_margin_bottom);
+            // ✅ 修复：Inline元素的垂直margin不应该参与行高计算（CSS规范）
+            // 这样可以避免inline元素后的block元素margin被错误累加
+            line_height = std::max(line_height, child_layout.height);
         } else {
             // 块级元素：垂直排列
             // 如果当前行有内联元素，先完成当前行
@@ -1621,6 +1643,20 @@ void RenderBlock::Paint(SkCanvas* canvas) {
 
         needs_scrollbar = needs_h_scroll || needs_v_scroll;
 
+        // ✅ 修复：窗口或内容尺寸变化后，重新限制滚动位置
+        // 场景1：用户滚动到底部后，窗口变高，此时max_scroll变小，
+        //       需要自动调整scroll_y_以保持在有效范围内
+        // 场景2：窗口最大化后不再需要滚动条，需要重置滚动位置
+        float max_scroll_x = GetMaxScrollX();
+        float max_scroll_y = GetMaxScrollY();
+        
+        // 只在超出范围时调整（避免不必要的重绘标记）
+        if (scroll_x_ > max_scroll_x || scroll_y_ > max_scroll_y) {
+            scroll_x_ = std::max(0.0f, std::min(scroll_x_, max_scroll_x));
+            scroll_y_ = std::max(0.0f, std::min(scroll_y_, max_scroll_y));
+            // 注意：这里不调用MarkNeedsPaint()，因为我们已经在Paint中了
+        }
+
         float clip_width = content_area_width;
         float clip_height = content_area_height;
 
@@ -1751,6 +1787,15 @@ void RenderBlock::Paint(SkCanvas* canvas) {
 
     // 绘制滚动条 (在裁剪区域外绘制)
     if (needs_scrollbar) {
+        // For body element, scrollbar should be drawn relative to viewport, not body
+        // Save current transform and adjust for body's margin
+        bool is_body = IsBodyElement();
+        if (is_body) {
+            canvas->save();
+            // Translate back by body's position to draw scrollbar relative to viewport
+            canvas->translate(-layout_info_.x, -layout_info_.y);
+        }
+        
         // 对于 body 元素使用视口尺寸
         float effective_width = GetEffectiveVisibleWidth();
         float effective_height = GetEffectiveVisibleHeight();
@@ -1857,6 +1902,11 @@ void RenderBlock::Paint(SkCanvas* canvas) {
             float corner_y = scrollbar_area_height - box.border_bottom_width - scrollbar_width;
             SkRect corner_rect = SkRect::MakeXYWH(corner_x, corner_y, scrollbar_width, scrollbar_width);
             canvas->drawRect(corner_rect, track_paint);
+        }
+        
+        // Restore transform for body element
+        if (is_body) {
+            canvas->restore();
         }
     }
 
@@ -2174,6 +2224,18 @@ void RenderBlock::PaintTextAreaElement(SkCanvas* canvas, HTMLTextAreaElement* te
 // ========== RenderInline 实现 ==========
 
 void RenderInline::Layout(float parent_width, float parent_height) {
+    // 🔍 调试：开始布局
+    auto node = GetNode();
+    std::string tag_name = "?";
+    std::string text_content = "";
+    if (node && node->GetNodeType() == NodeType::ELEMENT_NODE) {
+        auto elem = std::static_pointer_cast<Element>(node);
+        tag_name = elem->GetTagName();
+        text_content = elem->GetTextContent();
+    }
+    printf("[RenderInline::Layout] START - tag=%s, textContent='%s', children=%zu\n",
+           tag_name.c_str(), text_content.c_str(), children_.size());
+
     const auto& style = computed_style_;
 
     // 首先检查是否有显式的width/height设置（例如input元素）
@@ -2205,6 +2267,11 @@ void RenderInline::Layout(float parent_width, float parent_height) {
         auto& child_layout = child->GetLayoutInfo();
         total_width += child_layout.width;
         max_height = std::max(max_height, child_layout.height);
+        
+        // 🔍 调试：子元素信息
+        printf("  child[%d]: type=%d, w=%.2f, h=%.2f\n",
+               (int)(&child - &children_[0]), (int)child->GetType(),
+               child_layout.width, child_layout.height);
     }
 
     // 计算 padding
@@ -2243,6 +2310,10 @@ void RenderInline::Layout(float parent_width, float parent_height) {
         child_layout.y = padding_top + (layout_info_.height - padding_top - padding_bottom - child_layout.height) / 2.0f;
         current_x += child_layout.width;
     }
+    
+    // 🔍 调试：结束布局
+    printf("[RenderInline::Layout] END - w=%.2f, h=%.2f, total_width=%.2f, max_height=%.2f\n",
+           layout_info_.width, layout_info_.height, total_width, max_height);
 }
 
 std::pair<float, float> RenderInline::MeasureIntrinsicSize(float available_width) {

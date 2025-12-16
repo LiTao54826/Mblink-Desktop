@@ -14,6 +14,7 @@ class SkCanvas;
 namespace lightui {
 
 class Event;
+class RenderObject;
 
 /**
  * @brief 元素拾取工具
@@ -66,6 +67,19 @@ public:
     std::shared_ptr<Element> GetHoveredElement() const { return hovered_element_; }
 
     /**
+     * @brief 设置当前悬停的元素（用于event_loop调用）
+     */
+    void SetHoverElement(std::shared_ptr<Element> element) { 
+        hovered_element_ = element; 
+        hovered_render_object_.reset();  // 清除旧的render_object
+    }
+    
+    /**
+     * @brief 设置当前悬停的元素和对应的RenderObject
+     */
+    void SetHoverElement(std::shared_ptr<Element> element, std::shared_ptr<RenderObject> render_obj);
+
+    /**
      * @brief 渲染悬停高亮
      */
     void RenderHoverHighlight(SkCanvas* canvas);
@@ -75,6 +89,7 @@ private:
     bool active_ = false;
 
     std::shared_ptr<Element> hovered_element_;
+    std::shared_ptr<RenderObject> hovered_render_object_;  // HitTest返回的RenderObject
     std::shared_ptr<Element> picked_element_;
 
     int last_mouse_x_ = 0;

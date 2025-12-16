@@ -340,6 +340,13 @@ std::vector<BlockItem> GenerateItemList(
     uint32_t order = 0;
     for (size_t i = 0; i < child_count; ++i) {
         NodeId child_id = tree.GetChildId(node, i);
+        
+        // Skip text nodes in block layout - they should be handled by IFC
+        // Text nodes between block elements are whitespace and should not affect layout
+        if (tree.IsTextNode(child_id)) {
+            continue;
+        }
+        
         const auto& child_style = tree.GetBlockChildStyle(child_id);
 
         // Skip display:none children
@@ -500,12 +507,6 @@ PerformFinalLayoutOnInFlowChildren(
         // Resolve margin
         auto item_margin = MaybeResolve(item.margin, std::optional<float>(container_outer_width));
         
-        // DEBUG: Print margin values - disabled for now
-        // std::cout << "[BlockLayout] Item " << item.node_id 
-        //           << " margin: top=" << item_margin.top.value_or(-999) 
-        //           << " bottom=" << item_margin.bottom.value_or(-999)
-        //           << " active_margin=" << active_collapsible_margin_set.Resolve()
-        //           << std::endl;
         float item_non_auto_x_margin_sum =
             item_margin.left.value_or(0.0f) + item_margin.right.value_or(0.0f);
 

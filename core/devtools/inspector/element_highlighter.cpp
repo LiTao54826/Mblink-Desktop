@@ -186,15 +186,18 @@ void ElementHighlighter::RenderBoxModelHighlight(SkCanvas* canvas, std::shared_p
         if (!obj) return {};
         
         const auto& layout = obj->GetLayoutInfo();
+        // 当前元素的绝对位置（不受自身滚动影响）
         float current_x = offset_x + layout.x;
         float current_y = offset_y + layout.y;
         
         auto node = obj->GetNode();
         if (node && node.get() == element.get()) {
+            // 找到目标元素，返回其绝对位置（不减去自身滚动）
             return {obj, current_x, current_y};
         }
         
-        // 子元素需要考虑滚动偏移
+        // 查找子元素时，需要减去当前元素的滚动偏移
+        // 因为子元素的可见位置会随父元素滚动而移动
         float child_offset_x = current_x - obj->GetScrollX();
         float child_offset_y = current_y - obj->GetScrollY();
         
@@ -212,8 +215,10 @@ void ElementHighlighter::RenderBoxModelHighlight(SkCanvas* canvas, std::shared_p
     const auto& layout = result.render_obj->GetLayoutInfo();
     const auto& style = result.render_obj->GetComputedStyle();
     
-    float x = result.abs_x;
-    float y = result.abs_y;
+    // 对于有滚动的元素，高亮位置需要减去自身的滚动偏移
+    // 这样高亮才能正确显示元素内容的实际渲染位置（可能在负坐标）
+    float x = result.abs_x - result.render_obj->GetScrollX();
+    float y = result.abs_y - result.render_obj->GetScrollY();
     float width = layout.width;
     float height = layout.height;
     

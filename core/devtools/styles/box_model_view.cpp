@@ -78,16 +78,13 @@ BoxModelData BoxModelView::GetBoxModelData() const {
     const auto& layout = render_obj->GetLayoutInfo();
     const auto& style = render_obj->GetComputedStyle();
     
-    // 获取 DPI 缩放比例，将物理像素转换为 CSS 像素
-    float dpi_scale = window->GetDisplayScale();
-    if (dpi_scale <= 0) dpi_scale = 1.0f;
-    
-    // 获取内容尺寸（从布局信息，转换为 CSS 像素）
-    data.content_width = layout.width / dpi_scale;
-    data.content_height = layout.height / dpi_scale;
+    // 布局引擎输出的 layout.width 和 layout.height 已经是 CSS 像素值
+    // 不需要进行 DPI 缩放转换
+    float total_width = layout.width;
+    float total_height = layout.height;
     
     // 获取 CSS 像素宽度用于百分比计算
-    float css_width = layout.width / dpi_scale;
+    float css_width = total_width;
     
     // 获取 padding（优先使用 CSSEdges，如果为0则尝试单独字段）
     // ToPx 返回的是 CSS 像素值，不需要再除以 dpi_scale
@@ -117,6 +114,15 @@ BoxModelData BoxModelView::GetBoxModelData() const {
     data.border_right = style.border_right_width;
     data.border_bottom = style.border_bottom_width;
     data.border_left = style.border_left_width;
+    
+    // 计算内容尺寸：总尺寸 - padding - border
+    // 这与浏览器 DevTools 的 box model 显示一致
+    data.content_width = total_width - data.padding_left - data.padding_right - data.border_left - data.border_right;
+    data.content_height = total_height - data.padding_top - data.padding_bottom - data.border_top - data.border_bottom;
+    
+    // 确保内容尺寸不为负
+    if (data.content_width < 0) data.content_width = 0;
+    if (data.content_height < 0) data.content_height = 0;
 
     // 调试输出
     std::cout << "[BoxModelView] Element found, layout: " << layout.width << "x" << layout.height << std::endl;

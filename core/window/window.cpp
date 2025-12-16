@@ -1019,6 +1019,7 @@ bool Window::HandleSDLEvent(const SDL_Event& event) {
                 resize_in_progress = false;
 
                 OnResize();
+                InvalidateRenderTree();  // 窗口大小改变，需要用新尺寸重建渲染树和布局
                 SetNeedsRepaint();
                 DispatchWindowEvent(WindowEvent(WindowEventType::RESIZE, new_width, new_height));
                 return true;
@@ -1056,11 +1057,20 @@ bool Window::HandleSDLEvent(const SDL_Event& event) {
             }
 
             case SDL_EVENT_WINDOW_MAXIMIZED: {
+                // 窗口最大化时需要触发重绘
+                // 注意：不在这里调用 InvalidateRenderTree()，因为此时窗口尺寸可能还未更新
+                // RESIZED 事件会随后触发，届时会正确处理渲染树重建
+                std::cout << "[Window] MAXIMIZED event received" << std::endl;
+                SetNeedsRepaint();
                 DispatchWindowEvent(WindowEvent(WindowEventType::MAXIMIZE));
                 return true;
             }
 
             case SDL_EVENT_WINDOW_RESTORED: {
+                // 窗口还原时需要触发重绘
+                // 注意：不在这里调用 InvalidateRenderTree()，因为此时窗口尺寸可能还未更新
+                // RESIZED 事件会随后触发，届时会正确处理渲染树重建
+                SetNeedsRepaint();
                 DispatchWindowEvent(WindowEvent(WindowEventType::RESTORE));
                 return true;
             }
@@ -1457,16 +1467,21 @@ void Window::RenderDevTools(SkCanvas* canvas, float width, float height) {
     // 获取 DPI 缩放比
     float dpi_scale = GetDisplayScale();
     
-    // 应用 DPI 缩放
+    // 获取主应用区域
+    float app_x, app_y, app_width, app_height;
+    devtools.GetMainAppBounds(width, height, app_x, app_y, app_width, app_height);
+    
+    // 先渲染元素高亮覆盖层（在主应用区域内）
     canvas->save();
     canvas->scale(dpi_scale, dpi_scale);
-    
-    // 渲染 DevTools 面板
-    devtools.Render(canvas, width, height);
-    
-    // 渲染元素高亮覆盖层
+    canvas->clipRect(SkRect::MakeXYWH(app_x, app_y, app_width, app_height));
     devtools.RenderHighlight(canvas);
+    canvas->restore();
     
+    // 再渲染 DevTools 面板
+    canvas->save();
+    canvas->scale(dpi_scale, dpi_scale);
+    devtools.Render(canvas, width, height);
     canvas->restore();
 }
 
@@ -1928,7 +1943,11 @@ float Window::GetDisplayScale() const {
 }
 
 void Window::EnsureRenderTree() {
+    // 减少日志输出
+    // std::cout << "[EnsureRenderTree] Called, render_tree_valid_=" << render_tree_valid_ << std::endl;
+    
     if (render_tree_valid_ && cached_render_tree_) {
+        // std::cout << "[EnsureRenderTree] Tree already valid, skipping" << std::endl;
         return;  // 渲染树已经有效
     }
 
@@ -1975,16 +1994,38 @@ void Window::EnsureRenderTree() {
     }
 
     // 获取窗口尺寸
-    int width, height;
-    SDL_GetWindowSizeInPixels(sdl_window_, &width, &height);
+    int physical_width, physical_height;
+    SDL_GetWindowSizeInPixels(sdl_window_, &physical_width, &physical_height);
+    
+    // 获取 DPI 缩放比
+    float dpi_scale = GetDisplayScale();
+    
+    // 计算逻辑大小
+    float width = static_cast<float>(physical_width) / dpi_scale;
+    float height = static_cast<float>(physical_height) / dpi_scale;
+    
+    // 检查 DevTools 是否打开，如果打开则调整主应用区域
+    auto& devtools = DevToolsManager::GetInstance();
+    float app_width = width;
+    float app_height = height;
+    
+    if (devtools.IsOpen()) {
+        float app_x, app_y;
+        devtools.GetMainAppBounds(width, height, app_x, app_y, app_width, app_height);
+    }
+    
+    std::cout << "[EnsureRenderTree] Layout with app_width=" << app_width << " app_height=" << app_height << std::endl;
+    
+    // 设置视口尺寸
+    RenderObject::SetViewportSize(app_width, app_height);
 
-    // 使用 Taffy 布局引擎计算布局
+    // 使用 Taffy 布局引擎计算布局（使用调整后的尺寸）
     if (layout_engine_) {
         layout_engine_->BuildLayoutTree(cached_render_tree_);
-        layout_engine_->ComputeLayout(static_cast<float>(width), static_cast<float>(height));
+        layout_engine_->ComputeLayout(app_width, app_height);
         layout_engine_->GetLayoutInfo(cached_render_tree_);
     } else {
-        cached_render_tree_->Layout(static_cast<float>(width), static_cast<float>(height));
+        cached_render_tree_->Layout(app_width, app_height);
     }
 
     render_tree_valid_ = true;

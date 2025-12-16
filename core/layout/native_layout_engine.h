@@ -160,6 +160,7 @@ public:
 
     const BlockContainerStyle& GetBlockContainerStyle(NodeId node) const override;
     const BlockItemStyle& GetBlockChildStyle(NodeId node) const override;
+    bool IsTextNode(NodeId node) const override;
 
     //--------------------------------------------------------------------------
     // Flexbox and Grid style getters (for adapters)
