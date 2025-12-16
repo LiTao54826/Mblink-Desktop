@@ -80,14 +80,11 @@ void EventLoop::Run() {
     running_ = true;
     should_quit_ = false;
 
-    std::cout << "[EventLoop] Starting main loop..." << std::endl;
-
     while (running_ && !should_quit_) {
         RunOnce();
     }
 
     running_ = false;
-    std::cout << "[EventLoop] Main loop stopped" << std::endl;
 }
 
 void EventLoop::Stop() {
@@ -951,15 +948,12 @@ void EventLoop::HandleMouseEventForDOM(const SDL_Event& event) {
         // mousedown时设置:active伪类
         hit_result.element->SetPseudoClass("active", true);
 
-        std::cout << "[EventLoop] MOUSE_BUTTON_DOWN on <" << hit_result.element->GetTagName() << ">" << std::endl;
-
         // 对于输入元素（input, textarea），在 mousedown 时立即设置焦点
         // 这样可以立即启用 SDL 文本输入
         std::string tag_name = hit_result.element->GetTagName();
         if (tag_name == "input" || tag_name == "textarea") {
             focus_manager_->SetWindow(window.get());
-            bool focus_set = focus_manager_->SetFocus(hit_result.element, false);
-            std::cout << "[EventLoop] SetFocus (input) returned: " << (focus_set ? "true" : "false") << std::endl;
+            focus_manager_->SetFocus(hit_result.element, false);
 
             // 处理输入框的鼠标点击定位光标
             if (tag_name == "input" && event.button.button == SDL_BUTTON_LEFT) {
@@ -1100,7 +1094,6 @@ void EventLoop::HandleMouseEventForDOM(const SDL_Event& event) {
         // 焦点将在 click 事件后设置，避免 focus 事件触发 Preact 重渲染导致元素被替换
         // 如果点击的是非可聚焦元素，清除当前焦点
         else if (!focus_manager_->IsFocusable(hit_result.element)) {
-            std::cout << "[EventLoop] Calling ClearFocus because element is not focusable" << std::endl;
             focus_manager_->ClearFocus();
         }
 
@@ -1163,7 +1156,6 @@ void EventLoop::HandleMouseEventForDOM(const SDL_Event& event) {
             if (tag_name != "input" && tag_name != "textarea") {
                 focus_manager_->SetWindow(window.get());
                 bool focus_set = focus_manager_->SetFocus(hit_result.element, false);
-                std::cout << "[EventLoop] SetFocus (after click) returned: " << (focus_set ? "true" : "false") << std::endl;
                 if (!focus_set && !focus_manager_->IsFocusable(hit_result.element)) {
                     // 如果点击的是非可聚焦元素，清除当前焦点
                     focus_manager_->ClearFocus();
@@ -1516,7 +1508,6 @@ void EventLoop::ProcessFormElementDefaultAction(std::shared_ptr<Element> element
                 // 查找关联的表单并提交
                 auto form = FindParentForm(element);
                 if (form) {
-                    std::cout << "[EventLoop] Submit button clicked, submitting form" << std::endl;
                     form->Submit();
                 }
             } else if (button_type == "reset") {
@@ -1851,12 +1842,8 @@ void EventLoop::HandleKeyboardEventForDOM(const SDL_Event& event) {
     auto focus_element = focus_manager_->GetFocusElement();
     if (!focus_element) {
         // 没有焦点元素，不分发键盘事件
-        std::cout << "[EventLoop] HandleKeyboardEventForDOM: No focus element, ignoring" << std::endl;
         return;
     }
-
-    std::cout << "[EventLoop] HandleKeyboardEventForDOM: focus on <" << focus_element->GetTagName()
-              << ">, event type: " << event.type << std::endl;
 
     // 获取修饰键状态
     SDL_Keymod mod = SDL_GetModState();
@@ -1935,22 +1922,14 @@ void EventLoop::HandleKeyboardEventForDOM(const SDL_Event& event) {
         // 注意：这是SDL特有的事件，W3C标准中没有直接对应
         // 用于处理IME输入和普通文本输入
 
-        std::cout << "[EventLoop] TEXT_INPUT received: '" << event.text.text << "' focus_element=" << focus_element.get() << std::endl;
-
         // 检查是否是表单元素
         auto input_element = std::dynamic_pointer_cast<HTMLInputElement>(focus_element);
         auto textarea_element = std::dynamic_pointer_cast<HTMLTextAreaElement>(focus_element);
 
         if (input_element) {
-            std::cout << "[EventLoop] Calling input_element->HandleTextInput on " << input_element.get() << std::endl;
             input_element->HandleTextInput(event.text.text);
-            std::cout << "[EventLoop] HandleTextInput returned" << std::endl;
         } else if (textarea_element) {
-            std::cout << "[EventLoop] Calling textarea_element->HandleTextInput" << std::endl;
             textarea_element->HandleTextInput(event.text.text);
-            std::cout << "[EventLoop] HandleTextInput returned" << std::endl;
-        } else {
-            std::cout << "[EventLoop] Focus element is not input or textarea" << std::endl;
         }
     }
 }
@@ -2238,23 +2217,16 @@ void EventLoop::HandleInputMouseInteraction(std::shared_ptr<HTMLInputElement> in
         input_element->SetCursorPosition(char_pos);
         input_element->SetDragStartPos(char_pos);
         input_element->HandleMouseDown(local_x, 0);  // 通知开始拖动
-
-        std::cout << "[EventLoop] Input mouse down: char_pos=" << char_pos
-                  << ", local_x=" << local_x << std::endl;
     } else if (event_type == SDL_EVENT_MOUSE_MOTION) {
         // 鼠标移动：更新选择区域（如果正在拖动）
         if (input_element->IsDraggingSelection()) {
             int drag_start = input_element->GetDragStartPos();
             input_element->SetSelection(drag_start, char_pos);
 
-            std::cout << "[EventLoop] Input mouse drag: start=" << drag_start
-                      << ", end=" << char_pos << std::endl;
         }
     } else if (event_type == SDL_EVENT_MOUSE_BUTTON_UP) {
         // 鼠标释放：结束拖动选择
         input_element->HandleMouseUp();
-
-        std::cout << "[EventLoop] Input mouse up" << std::endl;
     }
 }
 

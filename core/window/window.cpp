@@ -1467,6 +1467,9 @@ void Window::RenderDevTools(SkCanvas* canvas, float width, float height) {
     // 获取 DPI 缩放比
     float dpi_scale = GetDisplayScale();
     
+    // 注意：传入的 width 和 height 已经是逻辑尺寸（CSS 像素）
+    // 不需要再除以 dpi_scale
+    
     // 获取主应用区域
     float app_x, app_y, app_width, app_height;
     devtools.GetMainAppBounds(width, height, app_x, app_y, app_width, app_height);
@@ -2013,8 +2016,6 @@ void Window::EnsureRenderTree() {
         float app_x, app_y;
         devtools.GetMainAppBounds(width, height, app_x, app_y, app_width, app_height);
     }
-    
-    std::cout << "[EnsureRenderTree] Layout with app_width=" << app_width << " app_height=" << app_height << std::endl;
     
     // 设置视口尺寸
     RenderObject::SetViewportSize(app_width, app_height);

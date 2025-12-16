@@ -1242,21 +1242,6 @@ void NativeLayoutEngine::BuildSubtree(RenderObject* render_obj, NodeId parent_id
     }
 
     // 调试：检查 result 类元素
-    auto dbg_node = render_obj->GetNode();
-    if (dbg_node) {
-        auto dbg_elem = std::dynamic_pointer_cast<Element>(dbg_node);
-        if (dbg_elem) {
-            std::string cls = dbg_elem->GetAttribute("class");
-            if (cls.find("result") != std::string::npos) {
-                std::cout << "[BuildSubtree] Result element: " << dbg_elem->GetTagName()
-                          << " class=" << cls
-                          << " render_obj=" << render_obj
-                          << " parent_id=" << parent_id
-                          << std::endl;
-            }
-        }
-    }
-
     NodeId node_id = CreateNode(render_obj);
 
     // Set as root if no parent
@@ -2025,23 +2010,6 @@ void NativeLayoutEngine::PositionChildren(NodeId node_id) {
 void NativeLayoutEngine::ReadLayoutResults(RenderObject* render_obj) {
     if (!render_obj) {
         return;
-    }
-
-    // 调试：检查 result 类元素
-    auto dbg_node = render_obj->GetNode();
-    if (dbg_node) {
-        auto dbg_elem = std::dynamic_pointer_cast<Element>(dbg_node);
-        if (dbg_elem) {
-            std::string cls = dbg_elem->GetAttribute("class");
-            if (cls.find("result") != std::string::npos) {
-                auto it_dbg = render_to_node_.find(render_obj);
-                std::cout << "[ReadLayoutResults] Result element: " << dbg_elem->GetTagName()
-                          << " class=" << cls
-                          << " render_obj=" << render_obj
-                          << " has_mapping=" << (it_dbg != render_to_node_.end())
-                          << std::endl;
-            }
-        }
     }
 
     auto it = render_to_node_.find(render_obj);

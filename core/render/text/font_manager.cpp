@@ -250,13 +250,8 @@ void FontManager::InitializeEmojiFont() {
     for (const char* font_name : emoji_fonts) {
         emoji_typeface_ = font_mgr_->matchFamilyStyle(font_name, SkFontStyle());
         if (emoji_typeface_) {
-            std::cout << "[FontManager] Emoji font loaded: " << font_name << std::endl;
             break;
         }
-    }
-
-    if (!emoji_typeface_) {
-        std::cerr << "[FontManager] Warning: No emoji font found, emoji may not display correctly" << std::endl;
     }
 }
 
@@ -338,13 +333,8 @@ void FontManager::InitializeCJKFont() {
     for (const char* font_name : cjk_fonts) {
         cjk_typeface_ = font_mgr_->matchFamilyStyle(font_name, SkFontStyle());
         if (cjk_typeface_) {
-            std::cout << "[FontManager] CJK font loaded: " << font_name << std::endl;
             break;
         }
-    }
-
-    if (!cjk_typeface_) {
-        std::cerr << "[FontManager] Warning: No CJK font found, Chinese characters may not display correctly" << std::endl;
     }
 }
 

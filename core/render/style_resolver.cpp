@@ -2088,18 +2088,6 @@ std::shared_ptr<RenderObject> RenderTreeBuilder::BuildRenderTree(
         auto child_render_obj = BuildRenderTree(child, &render_obj->GetComputedStyle());
         if (child_render_obj) {
             render_obj->AppendChild(child_render_obj);
-            
-            // 调试：检查 result 类元素
-            if (child->GetNodeType() == NodeType::ELEMENT_NODE) {
-                auto child_elem = std::static_pointer_cast<Element>(child);
-                std::string cls = child_elem->GetAttribute("class");
-                if (cls.find("result") != std::string::npos) {
-                    std::cout << "[BuildRenderTree] Result element: " << child_elem->GetTagName()
-                              << " class=" << cls
-                              << " render_obj=" << child_render_obj.get()
-                              << std::endl;
-                }
-            }
         }
     }
 
