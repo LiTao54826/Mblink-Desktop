@@ -11,6 +11,7 @@ target_link_libraries(app_loader
     lightui_render
     lightui_quickjs
     lightui_lexbor
+    lightui_devtools
     SDL3::SDL3-static
     skia
 )
@@ -22,6 +23,5 @@ set_target_properties(app_loader PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY_RELEASE "${CMAKE_BINARY_DIR}/bin/Release"
 )
 
-# 依赖资源复制目标
-add_dependencies(app_loader copy_demo_resources)
+
 

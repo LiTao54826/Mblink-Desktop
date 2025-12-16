@@ -1,19 +1,16 @@
 /**
  * @file main.cpp
- * @brief MBink HTML Loader - 直接加载 HTML 文件
+ * @brief MBink HTML Loader (Clean Version) - 纯净版 HTML 加载器
  * 
- * 用法: html_loader.exe <html文件路径> [选项]
+ * 不在 C++ 中查找和加载任何 JS 库，完全依赖 HTML 中的 <script src="..."> 加载
+ * 
+ * 用法: html_loader_clean.exe <html文件路径> [选项]
  * 
  * 选项:
  *   --width <宽度>      窗口宽度 (默认: 800)
  *   --height <高度>     窗口高度 (默认: 600)
  *   --title <标题>      窗口标题 (默认: 从HTML title标签获取)
- *   --no-scripts        不执行内联脚本
- * 
- * 支持的HTML特性:
- *   - <style> 标签中的内联CSS
- *   - <script> 标签中的内联JavaScript
- *   - Preact/React 组件渲染
+ *   --no-scripts        不执行脚本
  */
 
 #include "core/window/window.h"
@@ -25,6 +22,7 @@
 #include "core/event/task_scheduler.h"
 #include "core/event/event_loop.h"
 #include "core/network/fetch_bindings.h"
+#include "core/devtools/devtools_manager.h"
 
 #include <iostream>
 #include <fstream>
@@ -49,7 +47,7 @@ std::string ReadFile(const std::string& path) {
 
 // 打印帮助信息
 void PrintUsage(const char* program_name) {
-    std::cout << "MBink HTML Loader - 直接加载 HTML 文件" << std::endl;
+    std::cout << "MBink HTML Loader (Clean Version)" << std::endl;
     std::cout << std::endl;
     std::cout << "用法: " << program_name << " <html文件路径> [选项]" << std::endl;
     std::cout << std::endl;
@@ -57,39 +55,12 @@ void PrintUsage(const char* program_name) {
     std::cout << "  --width <宽度>      窗口宽度 (默认: 800)" << std::endl;
     std::cout << "  --height <高度>     窗口高度 (默认: 600)" << std::endl;
     std::cout << "  --title <标题>      窗口标题 (默认: 从HTML title标签获取)" << std::endl;
-    std::cout << "  --no-scripts        不执行内联脚本" << std::endl;
+    std::cout << "  --no-scripts        不执行脚本" << std::endl;
     std::cout << "  --help              显示此帮助信息" << std::endl;
     std::cout << std::endl;
     std::cout << "示例:" << std::endl;
     std::cout << "  " << program_name << " index.html" << std::endl;
     std::cout << "  " << program_name << " app.html --width 1024 --height 768" << std::endl;
-    std::cout << "  " << program_name << " static.html --no-scripts" << std::endl;
-}
-
-// 查找 Preact 库路径
-std::string FindPreactPath(const std::string& html_path) {
-    fs::path html_dir = fs::path(html_path).parent_path();
-    
-    // 尝试多个可能的路径
-    std::vector<std::string> search_paths = {
-        (html_dir / "js" / "preact").string(),
-        (html_dir / "preact").string(),
-        (html_dir.parent_path() / "js" / "preact").string(),
-        "js/preact",
-        "../js/preact",
-        "../../js/preact",
-        "examples/demo_html/js/preact",
-        "../examples/demo_html/js/preact",
-        "../../examples/demo_html/js/preact",
-    };
-    
-    for (const auto& path : search_paths) {
-        if (fs::exists(path + "/preact.js")) {
-            return path;
-        }
-    }
-    
-    return "";
 }
 
 // 从文档中获取 title
@@ -130,7 +101,6 @@ int main(int argc, char** argv) {
     
     if (html_path.empty()) {
         std::cerr << "错误: 未指定 HTML 文件路径" << std::endl;
-        std::cerr << std::endl;
         PrintUsage(argv[0]);
         return 1;
     }
@@ -143,7 +113,7 @@ int main(int argc, char** argv) {
     
     try {
         std::cout << "========================================" << std::endl;
-        std::cout << "  MBink HTML Loader" << std::endl;
+        std::cout << "  MBink HTML Loader (Clean)" << std::endl;
         std::cout << "========================================" << std::endl;
         std::cout << "  HTML: " << html_path << std::endl;
         std::cout << "  Size: " << width << "x" << height << std::endl;
@@ -152,16 +122,16 @@ int main(int argc, char** argv) {
         std::cout << std::endl;
 
         // 1. 创建 QuickJS 运行时
-        std::cout << "[1/6] Creating QuickJS runtime..." << std::endl;
+        std::cout << "[1/4] Creating QuickJS runtime..." << std::endl;
         auto runtime = std::make_unique<QuickJSRuntime>();
         auto task_scheduler = std::make_shared<TaskScheduler>();
         std::cout << "  ✓ QuickJS runtime created" << std::endl;
 
         // 2. 创建文档并加载 HTML
-        std::cout << "[2/6] Loading HTML document..." << std::endl;
+        std::cout << "[2/4] Loading HTML document..." << std::endl;
         auto document = std::make_shared<Document>();
         
-        // 关联 JS 运行时（用于执行内联脚本）
+        // 关联 JS 运行时
         if (execute_scripts) {
             document->SetJSRuntime(runtime.get());
         }
@@ -179,32 +149,33 @@ int main(int argc, char** argv) {
         }
         std::cout << "  ✓ HTML document loaded" << std::endl;
 
-        // 设置基础路径（用于加载外部资源）
+        // 设置基础路径（用于解析相对路径的外部资源）
         fs::path html_dir = fs::path(html_path).parent_path();
         if (html_dir.empty()) {
             html_dir = fs::current_path();
         }
         document->SetBasePath(fs::absolute(html_dir).string());
+        std::cout << "  ✓ Base path: " << document->GetBasePath() << std::endl;
 
         // 加载外部样式表
         document->LoadExternalStylesheets();
 
-        // 统计 style, link 和 script 标签
+        // 统计标签
         auto styles = document->GetElementsByTagName("style");
         auto links = document->GetElementsByTagName("link");
         auto scripts = document->GetElementsByTagName("script");
-        std::cout << "  ✓ Found " << styles.size() << " <style> tags, "
-                  << links.size() << " <link> tags, "
-                  << scripts.size() << " <script> tags" << std::endl;
+        std::cout << "  ✓ Found " << styles.size() << " <style>, "
+                  << links.size() << " <link>, "
+                  << scripts.size() << " <script>" << std::endl;
 
-        // 3. 获取或设置窗口标题
+        // 获取或设置窗口标题
         if (title.empty()) {
             title = GetDocumentTitle(document);
         }
         std::cout << "  ✓ Title: " << title << std::endl;
 
-        // 4. 创建窗口
-        std::cout << "[3/6] Creating window..." << std::endl;
+        // 3. 创建窗口并初始化绑定
+        std::cout << "[3/4] Creating window and bindings..." << std::endl;
         WindowConfig config;
         config.title = title;
         config.width = width;
@@ -213,8 +184,7 @@ int main(int argc, char** argv) {
         config.vsync = true;
         
         auto window = std::make_shared<Window>(config);
-        std::cout << "  ✓ Window created" << std::endl;
-
+        
         // 注册窗口
         auto& window_manager = WindowManager::Instance();
         window_manager.RegisterWindow(window);
@@ -222,8 +192,7 @@ int main(int argc, char** argv) {
         // 关联文档到窗口
         window->SetDocument(document);
 
-        // 5. 初始化 WindowBindings
-        std::cout << "[4/6] Initializing Window bindings..." << std::endl;
+        // 初始化 WindowBindings
         WindowBindings window_bindings(runtime.get(), window, task_scheduler);
         window_bindings.InitBindings();
         std::cout << "  ✓ Window bindings initialized" << std::endl;
@@ -233,59 +202,18 @@ int main(int argc, char** argv) {
         fetch_bindings.InitBindings();
         std::cout << "  ✓ Fetch API initialized" << std::endl;
 
-        // 6. 加载 Preact 库（如果需要执行脚本）
+        // 初始化 DevTools
+        auto& devtools = DevToolsManager::GetInstance();
+        devtools.Initialize(document.get(), window.get());
+        std::cout << "  ✓ DevTools initialized (F12 to toggle)" << std::endl;
+
+        // 4. 执行脚本（完全由 HTML 中的 <script> 标签控制）
         if (execute_scripts) {
-            std::cout << "[5/6] Loading JavaScript libraries..." << std::endl;
-            
-            // 查找 Preact 路径
-            std::string preact_path = FindPreactPath(html_path);
-            
-            // 加载 DOM polyfills
-            std::vector<std::string> polyfills_search_paths = {
-                "js/polyfills/dom.js",
-                "../js/polyfills/dom.js",
-                "../../js/polyfills/dom.js"
-            };
-            if (!preact_path.empty()) {
-                polyfills_search_paths.insert(polyfills_search_paths.begin(), 
-                    preact_path + "/../polyfills/dom.js");
-            }
-            
-            for (const auto& path : polyfills_search_paths) {
-                if (fs::exists(path)) {
-                    std::string polyfills_code = ReadFile(path);
-                    if (!polyfills_code.empty()) {
-                        runtime->Eval(polyfills_code, "dom.js");
-                        std::cout << "  ✓ DOM polyfills loaded" << std::endl;
-                        break;
-                    }
-                }
-            }
-            
-            // 加载 Preact
-            if (!preact_path.empty()) {
-                std::string preact_code = ReadFile(preact_path + "/preact.js");
-                if (!preact_code.empty()) {
-                    runtime->Eval(preact_code, "preact.js");
-                    std::cout << "  ✓ Preact loaded" << std::endl;
-                }
-                
-                std::string hooks_code = ReadFile(preact_path + "/hooks.js");
-                if (!hooks_code.empty()) {
-                    runtime->Eval(hooks_code, "hooks.js");
-                    std::cout << "  ✓ Preact Hooks loaded" << std::endl;
-                }
-            } else {
-                std::cout << "  ⚠ Preact not found, some features may not work" << std::endl;
-            }
-            
-            // 执行内联脚本
-            std::cout << "[6/6] Executing inline scripts..." << std::endl;
+            std::cout << "[4/4] Executing scripts..." << std::endl;
             document->ExecuteScripts();
             std::cout << "  ✓ Scripts executed" << std::endl;
         } else {
-            std::cout << "[5/6] Skipping JavaScript libraries (--no-scripts)" << std::endl;
-            std::cout << "[6/6] Skipping script execution (--no-scripts)" << std::endl;
+            std::cout << "[4/4] Skipping script execution (--no-scripts)" << std::endl;
         }
 
         // 显示窗口
@@ -294,14 +222,12 @@ int main(int argc, char** argv) {
         std::cout << std::endl;
         std::cout << "========================================" << std::endl;
         std::cout << "  🚀 Application Started!" << std::endl;
+        std::cout << "  Press F12 or Ctrl+Shift+I for DevTools" << std::endl;
         std::cout << "========================================" << std::endl;
-        std::cout << "  Close window to exit" << std::endl;
         std::cout << std::endl;
 
         // 创建事件循环
         EventLoop event_loop(task_scheduler);
-
-        // 设置 QuickJS 运行时，让事件循环处理 JS 定时器和微任务
         event_loop.SetQuickJSRuntime(runtime.get());
 
         // 设置渲染回调
@@ -315,6 +241,9 @@ int main(int argc, char** argv) {
         // 运行事件循环
         event_loop.Run();
 
+        // 关闭 DevTools
+        devtools.Shutdown();
+
         std::cout << std::endl;
         std::cout << "========================================" << std::endl;
         std::cout << "  👋 Application Closed" << std::endl;
@@ -327,3 +256,4 @@ int main(int argc, char** argv) {
         return 1;
     }
 }
+

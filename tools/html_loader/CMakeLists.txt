@@ -1,4 +1,4 @@
-# MBink HTML Loader - 直接加载 HTML 文件
+# MBink HTML Loader - HTML 文件加载器
 
 add_executable(html_loader
     main.cpp
@@ -12,6 +12,7 @@ target_link_libraries(html_loader
     lightui_quickjs
     lightui_lexbor
     lightui_network
+    lightui_devtools
     SDL3::SDL3-static
     skia
 )
@@ -23,5 +24,3 @@ set_target_properties(html_loader PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY_RELEASE "${CMAKE_BINARY_DIR}/bin/Release"
 )
 
-# 依赖资源复制目标
-add_dependencies(html_loader copy_demo_resources)

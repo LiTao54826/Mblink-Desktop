@@ -1,8 +1,0 @@
-{
-    "name": "my-package",
-    "version": "2.0.0",
-    "exports": {
-        ".": "./src/main.js",
-        "./utils": "./src/utils.js"
-    }
-}

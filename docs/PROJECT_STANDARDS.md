@@ -1,7 +1,7 @@
 # MBink 项目开发规范
 
-> **版本**: 3.0
-> **生效日期**: 2025-12-07
+> **版本**: 3.1
+> **生效日期**: 2025-12-16
 > **状态**: 强制执行
 > **适用范围**: 所有后续开发
 
@@ -141,8 +141,8 @@ MBink/
 │   ├── polyfills/           # Polyfills
 │   ├── preact/              # Preact库
 │   └── runtime/             # 运行时脚本
-├── examples/                # 示例代码
-├── tests/                   # 测试代码
+├── examples/                # 示例代码 (待重建)
+├── tests/                   # 测试代码 (待重建)
 │   ├── unit/                # 单元测试
 │   ├── integration/         # 集成测试
 │   └── benchmarks/          # 性能测试
@@ -546,6 +546,11 @@ TEST_CASE("Element::AppendChild should add child to children list") {
 
 ## 📋 版本历史
 
+### v3.1 (2025-12-16)
+- ✅ 项目整理：清理 tests 和 examples 目录
+- ✅ 文档整理：保留 9 个核心文档
+- ✅ 创建历史测试清单 (LEGACY_TEST_LIST.md)
+
 ### v3.0 (2025-12-07)
 - ✅ 布局引擎更新为原生实现 (Native Layout Engine)
 - ✅ 移除 Yoga 依赖，Taffy 移至 ReferenceProject 作为参考
@@ -561,6 +566,6 @@ TEST_CASE("Element::AppendChild should add child to children list") {
 
 ---
 
-**最后更新**: 2025-12-07
+**最后更新**: 2025-12-16
 **维护者**: MBink Team
 

@@ -1,9 +1,9 @@
 # MBink 项目状态报告
 
-> **最后更新**: 2025-12-12
+> **最后更新**: 2025-12-16
 > **当前版本**: 0.91.0
 > **总体进度**: 91%
-> **当前工作**: 原生布局引擎完成，Preact 测试待编译
+> **当前工作**: 项目整理完成，测试待重建
 
 ---
 
@@ -13,7 +13,7 @@
 - **QuickJS** - JavaScript 引擎
 - **Skia** - 2D 图形渲染
 - **SDL3** - 窗口和事件
-- **Taffy** - CSS 布局引擎 (Flexbox + Grid)
+- **NativeLayoutEngine** - 原生布局引擎 (Block + IFC + Flexbox + Grid)
 - **Lexbor** - HTML/CSS 解析
 
 **目标**: 提供比 Electron 更轻量、更快速的桌面应用开发方案。
@@ -28,16 +28,15 @@
 | **核心功能** | 100% | ✅ 完成 | ✅ |
 | **CSS 高级特性** | 100% | ✅ 完成 | ✅ |
 | **性能优化** | 100% | ✅ 完成 | ✅ |
-| **HTML/CSS 完整支持** | 100% | ✅ 完成 | 333 测试 |
-| **Taffy 布局引擎** | 100% | ✅ 完成 | ✅ |
-| **原生布局引擎** | 100% | ✅ 完成 | 320 测试 (IFC+Block+比较) |
-| **Preact 生态** | 90% | ✅ 完成 | 5 个示例，810行核心+321行Hooks (测试待编译) |
+| **HTML/CSS 完整支持** | 100% | ✅ 完成 | 待重建 |
+| **原生布局引擎** | 100% | ✅ 完成 | 待重建 |
+| **Preact 生态** | 90% | ✅ 完成 | 待重建 |
 | **多语言绑定** | 20% | 🔄 进行中 | - |
 | **工具链** | 0% | ⚪ 未开始 | - |
 | **跨平台** | 33% | 🔄 进行中 | Windows ✅ |
-| **文档** | 70% | 🔄 进行中 | 15 个文档 |
+| **文档** | 80% | ✅ 整理完成 | 9 个核心文档 |
 
-**总计**: 90% 完成，541 个测试用例通过
+**总计**: 91% 完成，测试待重建（历史清单见 LEGACY_TEST_LIST.md）
 
 ---
 
@@ -255,18 +254,9 @@
   - ✅ useContext, useReducer, createContext
   - ✅ **批量更新调度器** (requestAnimationFrame)
 
-**可运行示例** (5个):
-- ✅ preact_counter - 计数器应用
-- ✅ preact_counter_enhanced - 增强版计数器
-- ✅ preact_todo_enhanced - Todo 应用 (完整 CRUD)
-- ✅ preact_form - 表单处理
-- ✅ preact_todo - Todo 应用目录
+**示例状态**: 已清理，待重建（历史清单见 LEGACY_TEST_LIST.md）
 
-**测试状态** (4个测试代码完整，但未编译):
-- ⚠️ PreactBasicTest - 代码完整，未编译
-- ⚠️ PreactRenderTest - 代码完整，未编译
-- ⚠️ PreactComponentsTest - 代码完整，未编译
-- ⚠️ PreactIntegrationTest - 代码完整，未编译
+**测试状态**: 待重建
 
 **架构说明**:
 - ✅ **JavaScript-first 架构** - Preact 完全在 JS 层运行
@@ -274,7 +264,7 @@
 - ✅ 不需要 C++ PreactRenderer/PreactBindings
 
 **待完成**:
-- ⚪ 编译并运行测试
+- ⚪ 重建示例和测试
 - ⚪ Preact Router 集成
 - ⚪ Ant Design 组件库测试
 
@@ -354,50 +344,38 @@
 ### 核心代码
 ```
 core/
-├── layout/
-│   ├── native_layout_engine.h/cpp      # 原生布局引擎
-│   ├── ifc/                            # IFC 行内格式化上下文
-│   │   ├── ifc_layout.h/cpp            # IFC 布局实现
-│   │   ├── line_breaker.h/cpp          # 换行算法
-│   │   └── inline_box.h/cpp            # 行内盒子
-│   └── taffy_layout_engine.h/cpp       # Taffy 布局引擎 (Flexbox/Grid)
-├── render/
-│   ├── animation_controller.h/cpp      # 动画控制器
-│   ├── style_resolver.h/cpp            # 样式解析器
-│   ├── css_animation.h/cpp             # CSS 动画
-│   ├── css_filters.h/cpp               # CSS 滤镜
-│   └── transform.h/cpp                 # CSS Transform
-├── dom/                                # DOM API
-├── quickjs/                            # JavaScript 运行时
-├── window/                             # 窗口系统
-└── event/                              # 事件系统
+├── api/          # C API 接口
+├── bridge/       # 桥接层
+├── devtools/     # 开发工具
+├── dom/          # DOM API
+├── event/        # 事件系统
+├── layout/       # 布局引擎 (Block + IFC + Flex + Grid)
+├── lexbor/       # HTML/CSS 解析
+├── network/      # 网络模块
+├── quickjs/      # JavaScript 运行时
+├── render/       # 渲染引擎
+├── utils/        # 工具类
+└── window/       # 窗口系统
 ```
 
 ### 测试
 ```
-tests/
-├── unit/
-│   ├── test_ifc.cpp                       # IFC 单元测试 (32 个)
-│   ├── test_performance_optimization.cpp  # 性能优化测试
-│   └── ...                                # 其他测试
-├── layout_comparison/
-│   ├── compare_unified.py                 # 统一布局比较脚本
-│   ├── browser_reference_data.json        # 浏览器参考数据
-│   └── browser_advanced_data.json         # 高级布局参考数据
-├── performance/
-│   └── test_layout_performance.cpp        # 布局性能测试 (8 个)
-└── benchmark/
-    └── benchmark_css_animations.cpp       # 动画基准测试
+tests/  # 已清理，待重建
+        # 历史测试清单见 docs/LEGACY_TEST_LIST.md
 ```
 
 ### 文档
 ```
 docs/
-├── PROJECT_STATUS.md                      # 项目状态 (本文档)
-├── ARCHITECTURE.md                        # 架构设计
-├── LAYOUT_SYSTEM_TEST_PLAN.md             # 布局系统测试计划
-├── NATIVE_LAYOUT_ENGINE_DESIGN.md         # 原生布局引擎设计
-└── ...                                    # 其他文档
+├── PROJECT_STATUS.md      # 项目状态 (本文档)
+├── PROJECT_STANDARDS.md   # 项目开发规范
+├── ARCHITECTURE.md        # 架构设计
+├── API_DESIGN.md          # API 设计
+├── DOM_API.md             # DOM API 文档
+├── CODING_STANDARDS.md    # 编码规范
+├── CONTRIBUTING.md        # 贡献指南
+├── ROADMAP.md             # 开发路线图
+└── LEGACY_TEST_LIST.md    # 历史测试清单
 ```
 
 ---
@@ -461,7 +439,7 @@ Merge branch 'feature/flexbox-fix' - Flexbox布局修复和resize优化
 
 ---
 
-**最后更新**: 2025-12-12
-**下一步**: 编译 Preact 测试 或 Ant Design 集成
-**建议**: Preact 核心已完成 (90%)，可开始组件库测试
+**最后更新**: 2025-12-16
+**下一步**: 重建测试和示例
+**建议**: 参考 LEGACY_TEST_LIST.md 重建核心测试
 

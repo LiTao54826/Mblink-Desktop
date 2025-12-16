@@ -11,7 +11,7 @@
 [![Version](https://img.shields.io/badge/version-0.91.0-orange.svg)]()
 [![Phase](https://img.shields.io/badge/phase-Native%20Layout%20Engine-yellow)]()
 [![Progress](https://img.shields.io/badge/progress-91%25-blue)]()
-[![Tests](https://img.shields.io/badge/tests-541%20passing-brightgreen)]()
+[![Tests](https://img.shields.io/badge/tests-待重建-yellow)]()
 [![Strategy](https://img.shields.io/badge/strategy-Hybrid-purple)]()
 
 ---
@@ -19,11 +19,11 @@
 ## 📊 项目状态
 
 **当前版本**: v0.91.0
-**当前阶段**: UI 组件库开发 🔄
-**进度**: 91% (核心功能完成，组件库开发中)
-**最后更新**: 2025-12-12
+**当前阶段**: 项目整理完成，测试待重建 🔄
+**进度**: 91% (核心功能完成)
+**最后更新**: 2025-12-16
 **构建状态**: ✅ 核心模块编译成功
-**测试状态**: ✅ 541 个测试用例通过
+**测试状态**: ⚠️ 测试待重建（历史清单见 docs/LEGACY_TEST_LIST.md）
 **Preact 生态**: ✅ 90% 完成 (完整 Virtual DOM Diffing)
 **战略定位**: 轻量核心 + 可选企业级扩展
 **下一步**: UI 组件库 / 状态管理 / 路由系统
@@ -196,58 +196,19 @@ cmake --build . -j 8
 
 ## 🧪 测试
 
-项目包含完整的测试套件，所有核心功能都经过验证：
+⚠️ **测试待重建** - 历史测试已清理，需要根据当前代码状态重新编写。
 
-### 运行所有测试
+历史测试清单见 [docs/LEGACY_TEST_LIST.md](docs/LEGACY_TEST_LIST.md)。
 
-```bash
-cd build/bin/Debug  # Windows
-# 或
-cd build/bin        # Linux/macOS
+### 测试状态
 
-# DOM 测试
-./test_dom_node        # 25 个节点操作测试
-./test_dom_document    # 17 个文档操作测试
-./test_dom_query       # 27 个查询选择器测试
-./test_dom_integration # 9 个集成测试
+⚠️ **测试待重建** - 由于项目重构，历史测试已清理。
 
-# 渲染测试
-./test_css_rendering   # CSS 渲染测试
-./test_render_tree     # 渲染树测试
-
-# CSS 高级特性测试
-./test_shadow_renderer    # 阴影渲染测试 (12个)
-./test_text_shadow        # 文本阴影测试 (12个)
-./test_gradient_renderer  # 渐变渲染测试 (15个)
-./test_transform          # Transform 测试 (19个)
-./test_css_integration    # CSS 集成测试 (11个)
-
-# JavaScript 测试
-./test_simple          # QuickJS 基础测试
-./test_quickjs_runtime # 运行时测试
-```
-
-### 测试统计
-
-| 测试套件 | 测试数量 | 状态 |
-|---------|---------|------|
-| **核心模块** | | |
-| test_window | 17 | ✅ PASSED |
-| test_event_loop | 46 | ✅ PASSED |
-| test_dom_* | 78 | ✅ PASSED |
-| test_quickjs_runtime | 11 | ✅ PASSED |
-| **CSS 高级特性** | | |
-| test_shadow_renderer | 12 | ✅ PASSED |
-| test_text_shadow | 12 | ✅ PASSED |
-| test_gradient_renderer | 15 | ✅ PASSED |
-| test_transform | 19 | ✅ PASSED |
-| test_css_integration | 11 | ✅ PASSED |
-| **布局引擎测试** | | |
-| test_ifc (IFC 单元测试) | 32 | ✅ PASSED |
-| layout_compare (基础布局) | 121 | ✅ PASSED |
-| layout_compare (高级布局) | 159 | ✅ PASSED |
-| test_layout_performance | 8 | ✅ PASSED |
-| **总计** | **541** | **✅ 全部通过** |
+完整的历史测试清单见 [docs/LEGACY_TEST_LIST.md](docs/LEGACY_TEST_LIST.md)，包含：
+- 54 个单元测试
+- 11 个渲染测试
+- 10 个集成测试
+- 性能测试、基准测试等
 
 ---
 
@@ -260,14 +221,11 @@ cd build/bin        # Linux/macOS
 - **[架构设计](docs/ARCHITECTURE.md)** - 技术架构和模块设计
 
 ### 开发文档
-- **[入门指南](docs/GETTING_STARTED.md)** - 快速开始开发
-- **[快速上手](docs/QUICK_START_GUIDE.md)** - 快速恢复工作指南
 - **[DOM API 文档](docs/DOM_API.md)** - DOM 操作接口
 - **[API 设计](docs/API_DESIGN.md)** - C API 设计
 - **[代码规范](docs/CODING_STANDARDS.md)** - 代码风格指南
-- **[测试指南](docs/TESTING.md)** - 测试规范和方法
 - **[贡献指南](docs/CONTRIBUTING.md)** - 如何贡献代码
-- **[示例文档](docs/EXAMPLES.md)** - 示例代码说明
+- **[历史测试清单](docs/LEGACY_TEST_LIST.md)** - 待重建的测试列表
 
 ---
 
