@@ -104,6 +104,15 @@ public:
      */
     bool IsFrameRateLimitEnabled() const;
 
+    /**
+     * @brief 设置是否使用 VSync
+     * 
+     * 如果启用 VSync，将禁用 SDL_Delay 以避免额外延迟
+     * 
+     * @param use_vsync true 表示使用 VSync
+     */
+    void SetUseVSync(bool use_vsync);
+
 private:
     /**
      * @brief 更新 FPS 统计
@@ -116,6 +125,7 @@ private:
     int target_fps_;                    // 目标帧率
     float target_frame_time_;           // 目标帧时间（毫秒）
     bool frame_rate_limit_enabled_;     // 是否启用帧率限制
+    bool use_vsync_;                    // 是否使用 VSync（如果是，则不使用 SDL_Delay）
     
     Uint64 frame_start_ticks_;          // 帧开始时间（性能计数器）
     Uint64 performance_frequency_;      // 性能计数器频率

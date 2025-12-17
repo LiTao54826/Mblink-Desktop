@@ -212,7 +212,11 @@ private:
         // Flags
         bool is_ifc_container = false;
         bool is_table_container = false;  // TABLE 元素标记
+        bool is_anonymous_block = false;  // 匿名块盒标记（用于包裹混合内容中的内联元素）
         bool needs_layout = true;
+        
+        // 匿名块盒包含的内联级子元素（render_obj指针列表）
+        std::vector<RenderObject*> anonymous_inline_children;
 
         //----------------------------------------------------------------------
         // IFC Layout Results (for integrated IFC layout)
@@ -311,6 +315,36 @@ private:
      * @return Layout output
      */
     LayoutOutput ComputeIFCLayout(NodeId node_id, const LayoutInput& inputs);
+    
+    /**
+     * @brief Compute IFC layout for an anonymous block box
+     * @param node_id Anonymous block node to layout
+     * @param inputs Layout input parameters
+     * @return Layout output
+     * 
+     * Anonymous block boxes wrap inline-level content in mixed-content containers.
+     * They use IFC layout but don't have a render_obj - instead they reference
+     * the inline children directly.
+     */
+    LayoutOutput ComputeAnonymousBlockIFCLayout(NodeId node_id, const LayoutInput& inputs);
+    
+    /**
+     * @brief Recursively collect inline boxes from an inline element
+     * @param render_obj The inline element to process
+     * @param inline_boxes Output vector to collect inline boxes
+     * @param available_width Available width for layout
+     */
+    void CollectInlineBoxesRecursive(
+        RenderObject* render_obj,
+        std::vector<InlineBox>& inline_boxes,
+        float available_width
+    );
+    
+    /**
+     * @brief Apply layout results from anonymous block to render objects
+     * @param node The anonymous block node
+     */
+    void ApplyAnonymousBlockLayoutResults(LayoutNode* node);
 
     /**
      * @brief Measure a leaf node (text, image, etc.)
@@ -346,6 +380,18 @@ private:
      * @return true if IFC should be used
      */
     bool ShouldUseIFC(RenderObject* render_obj) const;
+    
+    /**
+     * @brief Create an anonymous block box to wrap inline-level elements
+     * @param parent_id Parent node ID
+     * @param inline_children Vector of inline-level render objects to wrap
+     * @return Node ID of the created anonymous block box
+     * 
+     * This implements CSS anonymous block box creation for mixed content.
+     * When a block container has both block-level and inline-level children,
+     * consecutive inline-level children are wrapped in anonymous block boxes.
+     */
+    NodeId CreateAnonymousBlockBox(NodeId parent_id, const std::vector<RenderObject*>& inline_children);
 };
 
 } // namespace lightui

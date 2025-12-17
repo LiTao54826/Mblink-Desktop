@@ -46,6 +46,7 @@ EventLoop::EventLoop()
     , task_scheduler_(std::make_shared<TaskScheduler>())
     , focus_manager_(std::make_unique<FocusManager>())
     , drag_manager_(std::make_unique<DragManager>())
+    , vsync_detected_(false)
 {
     InitSystemCursors();
 }
@@ -58,6 +59,7 @@ EventLoop::EventLoop(std::shared_ptr<TaskScheduler> task_scheduler)
     , task_scheduler_(task_scheduler)
     , focus_manager_(std::make_unique<FocusManager>())
     , drag_manager_(std::make_unique<DragManager>())
+    , vsync_detected_(false)
 {
     if (!task_scheduler_) {
         throw std::invalid_argument("TaskScheduler cannot be null");
@@ -174,6 +176,43 @@ void EventLoop::RunOnce() {
     if (any_needs_repaint) {
         Render();
     }
+
+    // 5.5 检测 VSync 状态（只在第一次渲染后检测）
+    if (!vsync_detected_ && total_frames_ > 5) {  // 改为5帧后检测，更快
+        // 检查第一个窗口的 VSync 状态
+        auto windows = wm.GetAllWindows();
+        if (!windows.empty()) {
+            // 方法1：尝试查询 SDL swap interval（需要 OpenGL 上下文）
+            int swap_interval = 0;
+            bool query_success = SDL_GL_GetSwapInterval(&swap_interval);
+            
+            // 方法2：如果查询失败，假设 VSync 默认启用（WindowConfig::vsync = true）
+            // 这是合理的假设，因为大多数情况下 VSync 都是启用的
+            bool vsync_enabled = query_success ? (swap_interval != 0) : true;
+            
+            frame_controller_->SetUseVSync(vsync_enabled);
+            vsync_detected_ = true;
+            
+            std::cout << "========================================" << std::endl;
+            if (query_success) {
+                if (vsync_enabled) {
+                    std::cout << "[EventLoop] ✓ VSync ENABLED (swap_interval=" << swap_interval << ")" << std::endl;
+                    std::cout << "[EventLoop] ✓ SDL_Delay DISABLED for maximum smoothness" << std::endl;
+                    std::cout << "[EventLoop] ✓ Frame rate controlled by display refresh rate" << std::endl;
+                } else {
+                    std::cout << "[EventLoop] ✗ VSync DISABLED (swap_interval=" << swap_interval << ")" << std::endl;
+                    std::cout << "[EventLoop] → Using SDL_Delay for frame rate limiting" << std::endl;
+                }
+            } else {
+                // 查询失败，使用默认假设
+                std::cout << "[EventLoop] ℹ VSync status query failed (OpenGL context issue)" << std::endl;
+                std::cout << "[EventLoop] ✓ Assuming VSync ENABLED (default configuration)" << std::endl;
+                std::cout << "[EventLoop] ✓ SDL_Delay DISABLED for maximum smoothness" << std::endl;
+            }
+            std::cout << "========================================" << std::endl;
+        }
+    }
+    total_frames_++;
 
     // 6. 检查是否应该退出
     auto& window_manager = WindowManager::Instance();
@@ -2126,6 +2165,24 @@ void EventLoop::HandleMouseWheelEventForDOM(const SDL_Event& event) {
             render_obj->ScrollBy(scroll_delta_x, scroll_delta_y);
 
             // 标记窗口需要重绘
+            // 性能优化：检查滚动容器是否是 body 元素
+            // - 如果是 body 滚动，需要全屏重绘（因为整个视口内容都在移动）
+            // - 如果是局部滚动容器，只需要重绘该容器区域
+            bool is_body_scroll = render_obj->IsBodyElement();
+            
+            if (is_body_scroll) {
+                // body 滚动：全屏重绘
+                window->SetForceFullRepaint(true);
+            } else {
+                // 局部滚动容器：只标记该容器区域为脏
+                // 使用视口坐标，因为绘制时会应用滚动偏移
+                SkRect scroll_bounds = render_obj->GetViewportBoundingRect();
+                if (!scroll_bounds.isEmpty()) {
+                    window->AddDirtyRect(scroll_bounds);
+                }
+                // 强制全量重绘该区域（避免增量渲染的坐标系问题）
+                window->SetForceFullRepaint(true);
+            }
             window->SetNeedsRepaint();
 
             break;

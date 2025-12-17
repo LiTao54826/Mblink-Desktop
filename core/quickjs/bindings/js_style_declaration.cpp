@@ -5,6 +5,8 @@
 
 #include "js_style_declaration.h"
 #include <iostream>
+#include <cctype>
+#include <string>
 
 namespace lightui {
 namespace bindings {
@@ -152,6 +154,125 @@ static JSValue JSStyleDeclaration_get_length(JSContext* ctx, JSValueConst this_v
     return JS_NewInt32(ctx, static_cast<int32_t>(data->style->Length()));
 }
 
+// ========== 动态属性拦截器 ==========
+
+/**
+ * @brief 将 camelCase 转换为 kebab-case
+ * 例如: backgroundColor -> background-color
+ */
+static std::string CamelToKebab(const std::string& camel) {
+    std::string result;
+    for (size_t i = 0; i < camel.length(); ++i) {
+        char c = camel[i];
+        if (std::isupper(c)) {
+            if (i > 0) {
+                result += '-';
+            }
+            result += std::tolower(c);
+        } else {
+            result += c;
+        }
+    }
+    return result;
+}
+
+/**
+ * @brief 属性 getter 拦截器
+ * 支持 style.backgroundColor 这样的访问
+ */
+static int JSStyleDeclaration_get_own_property(JSContext* ctx, JSPropertyDescriptor* desc,
+                                                 JSValueConst obj, JSAtom prop) {
+    auto* data = static_cast<JSStyleDeclarationData*>(JS_GetOpaque(obj, js_style_declaration_class_id));
+    if (!data || !data->style) {
+        return 0;  // 属性不存在
+    }
+
+    // 获取属性名
+    const char* prop_name = JS_AtomToCString(ctx, prop);
+    if (!prop_name) {
+        return -1;  // 错误
+    }
+
+    std::string prop_str(prop_name);
+    JS_FreeCString(ctx, prop_name);
+
+    // 跳过内置属性和方法
+    if (prop_str == "cssText" || prop_str == "length" || 
+        prop_str == "setProperty" || prop_str == "getPropertyValue" || 
+        prop_str == "removeProperty") {
+        return 0;  // 让默认处理器处理
+    }
+
+    // 将 camelCase 转换为 kebab-case
+    std::string css_property = CamelToKebab(prop_str);
+    
+    // 获取属性值
+    std::string value = data->style->GetPropertyValue(css_property);
+    
+    // 设置描述符
+    if (desc) {
+        desc->flags = JS_PROP_CONFIGURABLE | JS_PROP_ENUMERABLE | JS_PROP_WRITABLE;
+        desc->value = JS_NewString(ctx, value.c_str());
+        desc->getter = JS_UNDEFINED;
+        desc->setter = JS_UNDEFINED;
+    }
+
+    return 1;  // 属性存在
+}
+
+/**
+ * @brief 属性 setter 拦截器
+ * 支持 style.backgroundColor = 'blue' 这样的赋值
+ */
+static int JSStyleDeclaration_set_property(JSContext* ctx, JSValueConst obj,
+                                             JSAtom prop, JSValueConst value,
+                                             JSValueConst receiver, int flags) {
+    auto* data = static_cast<JSStyleDeclarationData*>(JS_GetOpaque(obj, js_style_declaration_class_id));
+    if (!data || !data->style) {
+        return -1;  // 错误
+    }
+
+    // 获取属性名
+    const char* prop_name = JS_AtomToCString(ctx, prop);
+    if (!prop_name) {
+        return -1;  // 错误
+    }
+
+    std::string prop_str(prop_name);
+    JS_FreeCString(ctx, prop_name);
+
+    // 跳过内置属性
+    if (prop_str == "cssText" || prop_str == "length") {
+        return 0;  // 让默认处理器处理
+    }
+
+    // 将 camelCase 转换为 kebab-case
+    std::string css_property = CamelToKebab(prop_str);
+    
+    // 获取值
+    const char* value_str = JS_ToCString(ctx, value);
+    if (!value_str) {
+        return -1;  // 错误
+    }
+
+    // 设置属性
+    data->style->SetProperty(css_property, value_str, "");
+    JS_FreeCString(ctx, value_str);
+
+    return 1;  // 成功
+}
+
+// Exotic 对象处理器
+static JSClassExoticMethods js_style_declaration_exotic = {
+    /* get_own_property */ JSStyleDeclaration_get_own_property,
+    /* get_own_property_names */ nullptr,
+    /* delete_property */ nullptr,
+    /* define_own_property */ nullptr,
+    /* has_property */ nullptr,
+    /* get_property */ nullptr,
+    /* set_property */ JSStyleDeclaration_set_property,
+};
+
 // ========== 类定义 ==========
 
 static const JSCFunctionListEntry js_style_declaration_proto_funcs[] = {
@@ -167,7 +288,7 @@ static JSClassDef js_style_declaration_class = {
     /* finalizer */ JSStyleDeclarationFinalizer,
     /* gc_mark */ nullptr,
     /* call */ nullptr,
-    /* exotic */ nullptr,
+    /* exotic */ &js_style_declaration_exotic,
 };
 
 // ========== 公共 API ==========

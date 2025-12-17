@@ -76,8 +76,15 @@ StyleManager* Document::GetStyleManager() const {
 void Document::Initialize() {
     // 创建基本的 HTML 结构
     document_element_ = CreateElement("html");
+    
+    // 创建并添加 head 元素
+    head_ = CreateElement("head");
+    document_element_->AppendChild(head_);
+    
+    // 创建并添加 body 元素
     body_ = CreateElement("body");
     document_element_->AppendChild(body_);
+    
     AppendChild(document_element_);
 }
 
@@ -423,6 +430,26 @@ void Document::UnregisterElementId(const std::string& id) {
     id_map_.erase(id);
 }
 
+void Document::UnregisterElementAndDescendantIds(std::shared_ptr<Element> element) {
+    if (!element) {
+        return;
+    }
+
+    // 注销当前元素的 ID
+    std::string id = element->GetAttribute("id");
+    if (!id.empty()) {
+        UnregisterElementId(id);
+    }
+
+    // 递归注销所有后代元素的 ID
+    for (const auto& child : element->GetChildNodes()) {
+        if (child->GetNodeType() == NodeType::ELEMENT_NODE) {
+            auto child_element = std::static_pointer_cast<Element>(child);
+            UnregisterElementAndDescendantIds(child_element);
+        }
+    }
+}
+
 // ========== Node 接口实现 ==========
 
 std::shared_ptr<Node> Document::CloneNode(bool deep) {
@@ -536,15 +563,8 @@ void Document::AddDirtyRect(const SkRect& rect) {
         return;
     }
     
-    // 检查是否与现有脏区域重叠，如果重叠则合并
-    for (auto& existing : dirty_rects_) {
-        if (SkRect::Intersects(existing, rect)) {
-            existing.join(rect);
-            return;
-        }
-    }
-    
-    // 没有重叠，添加新区域
+    // 直接添加新区域，不进行合并
+    // 这样可以保持每个脏区域的独立性，便于调试和优化
     dirty_rects_.push_back(rect);
 }
 

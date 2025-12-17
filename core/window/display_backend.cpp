@@ -801,6 +801,12 @@ void PaintModeDisplayBackend::DestroyBuffer() {
 }
 
 void PaintModeDisplayBackend::Present(const void* pixels, int width, int height, int stride) {
+    // 默认实现：复制整个 surface
+    PresentPartial(pixels, width, height, stride, 0, 0, width, height);
+}
+
+void PaintModeDisplayBackend::PresentPartial(const void* pixels, int width, int height, int stride,
+                                              int dirty_x, int dirty_y, int dirty_width, int dirty_height) {
     if (!hwnd_ || !bitmap_bits_) return;
 
     // 如果尺寸变化，重建缓冲区
@@ -810,25 +816,38 @@ void PaintModeDisplayBackend::Present(const void* pixels, int width, int height,
         }
     }
 
-    // 复制像素到离屏缓冲区
+    // 边界检查
+    if (dirty_x < 0) dirty_x = 0;
+    if (dirty_y < 0) dirty_y = 0;
+    if (dirty_x + dirty_width > width) dirty_width = width - dirty_x;
+    if (dirty_y + dirty_height > height) dirty_height = height - dirty_y;
+    if (dirty_width <= 0 || dirty_height <= 0) return;
+
+    // 只复制脏区域的像素到离屏缓冲区
     const uint8_t* src = (const uint8_t*)pixels;
     uint8_t* dst = (uint8_t*)bitmap_bits_;
     int dst_stride = bitmap_width_ * 4;
+    int bytes_per_pixel = 4;
 
-    for (int y = 0; y < height; y++) {
-        memcpy(dst, src, width * 4);
+    // 定位到脏区域的起始位置
+    src += dirty_y * stride + dirty_x * bytes_per_pixel;
+    dst += dirty_y * dst_stride + dirty_x * bytes_per_pixel;
+
+    // 只复制脏区域的行
+    int copy_width = dirty_width * bytes_per_pixel;
+    for (int y = 0; y < dirty_height; y++) {
+        memcpy(dst, src, copy_width);
         src += stride;
         dst += dst_stride;
     }
 
-    // 方案：直接绘制到窗口，完全绕过 WM_PAINT
-    // 这样避免了与系统窗口管理器的任何冲突
+    // 只更新脏区域到窗口
     HWND hwnd = (HWND)hwnd_;
     HDC hdc = GetDC(hwnd);
     if (hdc) {
-        // 使用 GDI 的 BitBlt 直接复制
-        BitBlt(hdc, 0, 0, bitmap_width_, bitmap_height_,
-               (HDC)hdc_mem_, 0, 0, SRCCOPY);
+        // 使用 GDI 的 BitBlt 只复制脏区域
+        BitBlt(hdc, dirty_x, dirty_y, dirty_width, dirty_height,
+               (HDC)hdc_mem_, dirty_x, dirty_y, SRCCOPY);
         ReleaseDC(hwnd, hdc);
     }
 

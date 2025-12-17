@@ -562,6 +562,8 @@ private:
     std::shared_ptr<RenderObject> cached_render_tree_;  // 缓存的渲染树
     bool render_tree_valid_ = false;  // 渲染树是否有效
     std::vector<SkRect> dirty_rects_;  // 脏区域列表（用于局部重绘）
+    SkRect last_dirty_bounds_;  // 上一帧的脏区域边界（用于 CPU 模式局部更新）
+    bool has_dirty_bounds_ = false;  // 是否有脏区域边界
 
     // 增量渲染控制开关
     bool enable_incremental_render_ = true;  // 启用增量渲染（局部裁剪）

@@ -110,6 +110,16 @@ private:
     static SkColor ParseRgbString(const std::string& str);
     
     /**
+     * @brief 解析 hsl() 或 hsla() 字符串
+     */
+    static SkColor ParseHslString(const std::string& str);
+    
+    /**
+     * @brief HSL 转 RGB
+     */
+    static SkColor HslToRgb(float h, float s, float l, float a = 1.0f);
+    
+    /**
      * @brief 命名颜色映射表
      */
     static std::unordered_map<std::string, SkColor> named_colors_;

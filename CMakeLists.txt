@@ -20,6 +20,7 @@ option(LIGHTUI_BUILD_PYTHON_BINDING "Build Python binding" ON)
 option(LIGHTUI_BUILD_RUST_BINDING "Build Rust binding" OFF)
 option(LIGHTUI_BUILD_GO_BINDING "Build Go binding" OFF)
 option(LIGHTUI_USE_SKIA "Use Skia for rendering (requires Skia)" ON)
+option(LIGHTUI_BUILD_TESTS "Build tests" OFF)
 
 # 编译器警告（已禁用以减少输出）
 if(MSVC)
@@ -69,6 +70,11 @@ install(DIRECTORY core/ DESTINATION include/lightui
     FILES_MATCHING PATTERN "*.h"
 )
 
+# 测试
+if(LIGHTUI_BUILD_TESTS)
+    add_subdirectory(tests)
+endif()
+
 # 打印配置信息
 message(STATUS "========================================")
 message(STATUS "  LightUI Configuration")
@@ -77,5 +83,6 @@ message(STATUS "  Version: ${PROJECT_VERSION}")
 message(STATUS "  Build type: ${CMAKE_BUILD_TYPE}")
 message(STATUS "  C++ standard: ${CMAKE_CXX_STANDARD}")
 message(STATUS "  Use Skia: ${LIGHTUI_USE_SKIA}")
+message(STATUS "  Build tests: ${LIGHTUI_BUILD_TESTS}")
 message(STATUS "========================================")
 

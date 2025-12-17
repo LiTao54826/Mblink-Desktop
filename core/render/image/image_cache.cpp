@@ -107,7 +107,7 @@ void ImageCache::EvictLRU() {
     }
     
     // 移除列表末尾的项（最少使用）
-    const CacheEntry& entry = cache_list_.back();
+    const ImageCacheEntry& entry = cache_list_.back();
     current_cache_size_ -= entry.size;
     cache_map_.erase(entry.key);
     cache_list_.pop_back();

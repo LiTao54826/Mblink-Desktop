@@ -169,7 +169,8 @@ CSSLength CSSValue::ParseCalc(const std::string& str) {
         // 没有运算符，只有一个值
         CSSLength single = ParseLength(expr);
         if (single.unit == CSSUnit::PERCENT) {
-            return CSSLength::Calc(single.value, 0.0f);
+            // 转换百分比为 0-1 范围
+            return CSSLength::Calc(single.value / 100.0f, 0.0f);
         } else {
             return CSSLength::Calc(0.0f, single.ToPx());
         }
@@ -183,18 +184,20 @@ CSSLength CSSValue::ParseCalc(const std::string& str) {
     CSSLength right_len = ParseLength(right);
 
     // 根据单位类型分配到 percent 或 px
+    // 注意：百分比值需要转换为 0-1 范围（100% = 1.0）
     if (left_len.unit == CSSUnit::PERCENT) {
-        percent_value = left_len.value;
+        percent_value = left_len.value / 100.0f;
     } else {
         px_value = left_len.ToPx();
     }
 
     float right_px = 0.0f;
     if (right_len.unit == CSSUnit::PERCENT) {
+        float right_percent = right_len.value / 100.0f;
         if (op == '+') {
-            percent_value += right_len.value;
+            percent_value += right_percent;
         } else {
-            percent_value -= right_len.value;
+            percent_value -= right_percent;
         }
     } else {
         right_px = right_len.ToPx();
@@ -382,52 +385,82 @@ std::vector<CSSBoxShadow> CSSValue::ParseBoxShadow(const std::string& str) {
         return shadows;
     }
 
-    // 简化实现：只支持单个阴影
+    // 支持多个阴影，用逗号分隔
     // 格式：offset-x offset-y blur-radius spread-radius color [inset]
-    // 例如：2px 2px 4px 0px rgba(0,0,0,0.5)
+    // 例如：2px 2px 4px 0px rgba(0,0,0,0.5), 5px 5px 10px black
 
-    CSSBoxShadow shadow;
-    std::vector<std::string> parts = Split(trimmed, ' ');
-
-    size_t idx = 0;
-
-    // 检查是否有 inset
-    if (!parts.empty() && parts[0] == "inset") {
-        shadow.inset = true;
-        idx++;
-    }
-
-    // 解析偏移和半径
-    if (idx < parts.size()) {
-        shadow.offset_x = ParseLength(parts[idx++]).ToPx();
-    }
-    if (idx < parts.size()) {
-        shadow.offset_y = ParseLength(parts[idx++]).ToPx();
-    }
-    if (idx < parts.size()) {
-        // 检查是否为颜色
-        if (parts[idx].find("rgb") != std::string::npos ||
-            parts[idx].find("#") != std::string::npos ||
-            std::isalpha(parts[idx][0])) {
-            shadow.color = ParseColor(parts[idx++]);
+    // 分割多个阴影（注意不要分割括号内的逗号，如 rgba(0,0,0,0.5)）
+    std::vector<std::string> shadow_strings;
+    std::string current;
+    int paren_depth = 0;
+    
+    for (char c : trimmed) {
+        if (c == '(') {
+            paren_depth++;
+            current += c;
+        } else if (c == ')') {
+            paren_depth--;
+            current += c;
+        } else if (c == ',' && paren_depth == 0) {
+            if (!current.empty()) {
+                shadow_strings.push_back(Trim(current));
+                current.clear();
+            }
         } else {
-            shadow.blur_radius = ParseLength(parts[idx++]).ToPx();
+            current += c;
         }
     }
-    if (idx < parts.size()) {
-        if (parts[idx].find("rgb") != std::string::npos ||
-            parts[idx].find("#") != std::string::npos ||
-            std::isalpha(parts[idx][0])) {
-            shadow.color = ParseColor(parts[idx++]);
-        } else {
-            shadow.spread_radius = ParseLength(parts[idx++]).ToPx();
-        }
-    }
-    if (idx < parts.size()) {
-        shadow.color = ParseColor(parts[idx++]);
+    
+    if (!current.empty()) {
+        shadow_strings.push_back(Trim(current));
     }
 
-    shadows.push_back(shadow);
+    // 解析每个阴影
+    for (const auto& shadow_str : shadow_strings) {
+        CSSBoxShadow shadow;
+        std::vector<std::string> parts = Split(shadow_str, ' ');
+
+        size_t idx = 0;
+
+        // 检查是否有 inset
+        if (!parts.empty() && parts[0] == "inset") {
+            shadow.inset = true;
+            idx++;
+        }
+
+        // 解析偏移和半径
+        if (idx < parts.size()) {
+            shadow.offset_x = ParseLength(parts[idx++]).ToPx();
+        }
+        if (idx < parts.size()) {
+            shadow.offset_y = ParseLength(parts[idx++]).ToPx();
+        }
+        if (idx < parts.size()) {
+            // 检查是否为颜色
+            if (parts[idx].find("rgb") != std::string::npos ||
+                parts[idx].find("#") != std::string::npos ||
+                std::isalpha(parts[idx][0])) {
+                shadow.color = ParseColor(parts[idx++]);
+            } else {
+                shadow.blur_radius = ParseLength(parts[idx++]).ToPx();
+            }
+        }
+        if (idx < parts.size()) {
+            if (parts[idx].find("rgb") != std::string::npos ||
+                parts[idx].find("#") != std::string::npos ||
+                std::isalpha(parts[idx][0])) {
+                shadow.color = ParseColor(parts[idx++]);
+            } else {
+                shadow.spread_radius = ParseLength(parts[idx++]).ToPx();
+            }
+        }
+        if (idx < parts.size()) {
+            shadow.color = ParseColor(parts[idx++]);
+        }
+
+        shadows.push_back(shadow);
+    }
+    
     return shadows;
 }
 
@@ -439,37 +472,67 @@ std::vector<CSSTextShadow> CSSValue::ParseTextShadow(const std::string& str) {
         return shadows;
     }
 
-    // 简化实现：只支持单个阴影
+    // 支持多个阴影，用逗号分隔
     // 格式：offset-x offset-y blur-radius color
-    // 例如：2px 2px 4px rgba(0,0,0,0.5)
+    // 例如：2px 2px 4px rgba(0,0,0,0.5), 1px 1px white
 
-    CSSTextShadow shadow;
-    std::vector<std::string> parts = Split(trimmed, ' ');
-
-    size_t idx = 0;
-
-    // 解析偏移和半径
-    if (idx < parts.size()) {
-        shadow.offset_x = ParseLength(parts[idx++]).ToPx();
-    }
-    if (idx < parts.size()) {
-        shadow.offset_y = ParseLength(parts[idx++]).ToPx();
-    }
-    if (idx < parts.size()) {
-        // 检查是否为颜色
-        if (parts[idx].find("rgb") != std::string::npos ||
-            parts[idx].find("#") != std::string::npos ||
-            std::isalpha(parts[idx][0])) {
-            shadow.color = ParseColor(parts[idx++]);
+    // 分割多个阴影（注意不要分割括号内的逗号，如 rgba(0,0,0,0.5)）
+    std::vector<std::string> shadow_strings;
+    std::string current;
+    int paren_depth = 0;
+    
+    for (char c : trimmed) {
+        if (c == '(') {
+            paren_depth++;
+            current += c;
+        } else if (c == ')') {
+            paren_depth--;
+            current += c;
+        } else if (c == ',' && paren_depth == 0) {
+            if (!current.empty()) {
+                shadow_strings.push_back(Trim(current));
+                current.clear();
+            }
         } else {
-            shadow.blur_radius = ParseLength(parts[idx++]).ToPx();
+            current += c;
         }
     }
-    if (idx < parts.size()) {
-        shadow.color = ParseColor(parts[idx++]);
+    
+    if (!current.empty()) {
+        shadow_strings.push_back(Trim(current));
     }
 
-    shadows.push_back(shadow);
+    // 解析每个阴影
+    for (const auto& shadow_str : shadow_strings) {
+        CSSTextShadow shadow;
+        std::vector<std::string> parts = Split(shadow_str, ' ');
+
+        size_t idx = 0;
+
+        // 解析偏移和半径
+        if (idx < parts.size()) {
+            shadow.offset_x = ParseLength(parts[idx++]).ToPx();
+        }
+        if (idx < parts.size()) {
+            shadow.offset_y = ParseLength(parts[idx++]).ToPx();
+        }
+        if (idx < parts.size()) {
+            // 检查是否为颜色
+            if (parts[idx].find("rgb") != std::string::npos ||
+                parts[idx].find("#") != std::string::npos ||
+                std::isalpha(parts[idx][0])) {
+                shadow.color = ParseColor(parts[idx++]);
+            } else {
+                shadow.blur_radius = ParseLength(parts[idx++]).ToPx();
+            }
+        }
+        if (idx < parts.size()) {
+            shadow.color = ParseColor(parts[idx++]);
+        }
+
+        shadows.push_back(shadow);
+    }
+    
     return shadows;
 }
 

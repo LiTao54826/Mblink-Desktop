@@ -29,8 +29,13 @@ void DOMTokenList::Add(const std::vector<std::string>& tokens) {
     
     // 验证所有token
     for (const auto& token : tokens) {
+        // 空 token 静默忽略
+        if (token.empty()) {
+            continue;
+        }
+        
         if (!ValidateToken(token)) {
-            // 符合W3C规范：空token或包含空格的token会抛出异常
+            // 符合W3C规范：包含空格的token会抛出异常
             throw std::invalid_argument("DOMTokenList: Invalid token '" + token + "'");
         }
     }
@@ -40,6 +45,11 @@ void DOMTokenList::Add(const std::vector<std::string>& tokens) {
     
     // 添加新token（去重）
     for (const auto& token : tokens) {
+        // 再次跳过空 token
+        if (token.empty()) {
+            continue;
+        }
+        
         auto it = std::find(current_tokens.begin(), current_tokens.end(), token);
         if (it == current_tokens.end()) {
             current_tokens.push_back(token);

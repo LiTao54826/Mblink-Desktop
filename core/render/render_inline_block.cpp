@@ -30,6 +30,16 @@
 namespace lightui {
 
 void RenderInlineBlock::Layout(float parent_width, float parent_height) {
+    // Debug: 追踪 Layout 调用
+    auto dom_node = GetNode();
+    if (dom_node && dom_node->GetNodeType() == NodeType::ELEMENT_NODE) {
+        auto element = std::dynamic_pointer_cast<Element>(dom_node);
+        if (element && element->GetTagName() == "button") {
+            std::cout << "[RenderInlineBlock::Layout] <button> parent_size=(" 
+                      << parent_width << "," << parent_height << ")" << std::endl;
+        }
+    }
+    
     const auto& style = computed_style_;
 
     // Check if dimensions are already set by external layout engine (e.g., flex/grid).
@@ -398,6 +408,15 @@ void RenderInlineBlock::Paint(SkCanvas* canvas) {
     auto node = GetNode();
     const auto& style = computed_style_;
     const auto& layout = layout_info_;
+
+    // Debug: 输出按钮位置信息
+    if (node && node->GetNodeType() == NodeType::ELEMENT_NODE) {
+        auto element = std::dynamic_pointer_cast<Element>(node);
+        if (element && element->GetTagName() == "button") {
+            std::cout << "[Paint] button pos=(" << layout.x << "," << layout.y 
+                      << ") size=(" << layout.width << "," << layout.height << ")" << std::endl;
+        }
+    }
 
     // 保存画布状态
     canvas->save();

@@ -109,6 +109,11 @@ SkColor Color::Parse(const std::string& str) {
         return ParseRgbString(trimmed);
     }
     
+    // hsl() 或 hsla() 格式
+    if (trimmed.substr(0, 4) == "hsl(" || trimmed.substr(0, 5) == "hsla(") {
+        return ParseHslString(trimmed);
+    }
+    
     // 命名颜色
     return FromName(trimmed);
 }
@@ -146,7 +151,8 @@ std::string Color::ToHex(SkColor color, bool includeAlpha) {
     }
     
     std::string result = oss.str();
-    std::transform(result.begin(), result.end(), result.begin(), ::toupper);
+    // 转换为小写（CSS 标准使用小写十六进制）
+    std::transform(result.begin(), result.end(), result.begin(), ::tolower);
     return result;
 }
 
@@ -240,6 +246,97 @@ SkColor Color::ParseRgbString(const std::string& str) {
     }
     
     return SK_ColorBLACK;
+}
+
+SkColor Color::ParseHslString(const std::string& str) {
+    // 查找括号
+    size_t start = str.find('(');
+    size_t end = str.find(')');
+    
+    if (start == std::string::npos || end == std::string::npos) {
+        return SK_ColorBLACK;
+    }
+    
+    // 提取括号内的内容
+    std::string content = str.substr(start + 1, end - start - 1);
+    
+    // 分割逗号
+    std::vector<float> values;
+    std::istringstream iss(content);
+    std::string token;
+    
+    while (std::getline(iss, token, ',')) {
+        // 去除空格
+        token.erase(0, token.find_first_not_of(" \t"));
+        token.erase(token.find_last_not_of(" \t") + 1);
+        
+        // 解析数值
+        try {
+            // 处理百分比
+            if (token.find('%') != std::string::npos) {
+                float percent = std::stof(token);
+                values.push_back(percent / 100.0f);
+            } else {
+                // 直接数值（色相是度数，不需要转换）
+                values.push_back(std::stof(token));
+            }
+        } catch (...) {
+            values.push_back(0.0f);
+        }
+    }
+    
+    // HSL 需要 3 个值（h, s, l）或 4 个值（h, s, l, a）
+    if (values.size() >= 3) {
+        float h = values[0];  // 色相 (0-360)
+        float s = values[1];  // 饱和度 (0-1)
+        float l = values[2];  // 亮度 (0-1)
+        float a = (values.size() >= 4) ? values[3] : 1.0f;  // 透明度 (0-1)
+        
+        return HslToRgb(h, s, l, a);
+    }
+    
+    return SK_ColorBLACK;
+}
+
+SkColor Color::HslToRgb(float h, float s, float l, float a) {
+    // 将色相标准化到 0-1 范围
+    h = h / 360.0f;
+    
+    // 确保值在有效范围内
+    h = std::clamp(h, 0.0f, 1.0f);
+    s = std::clamp(s, 0.0f, 1.0f);
+    l = std::clamp(l, 0.0f, 1.0f);
+    a = std::clamp(a, 0.0f, 1.0f);
+    
+    // HSL 到 RGB 转换算法
+    auto hue_to_rgb = [](float p, float q, float t) -> float {
+        if (t < 0.0f) t += 1.0f;
+        if (t > 1.0f) t -= 1.0f;
+        if (t < 1.0f / 6.0f) return p + (q - p) * 6.0f * t;
+        if (t < 1.0f / 2.0f) return q;
+        if (t < 2.0f / 3.0f) return p + (q - p) * (2.0f / 3.0f - t) * 6.0f;
+        return p;
+    };
+    
+    float r, g, b;
+    
+    if (s == 0.0f) {
+        // 无饱和度，灰度
+        r = g = b = l;
+    } else {
+        float q = (l < 0.5f) ? l * (1.0f + s) : l + s - l * s;
+        float p = 2.0f * l - q;
+        r = hue_to_rgb(p, q, h + 1.0f / 3.0f);
+        g = hue_to_rgb(p, q, h);
+        b = hue_to_rgb(p, q, h - 1.0f / 3.0f);
+    }
+    
+    return FromRGBA(
+        static_cast<int>(r * 255.0f),
+        static_cast<int>(g * 255.0f),
+        static_cast<int>(b * 255.0f),
+        static_cast<int>(a * 255.0f)
+    );
 }
 
 } // namespace lightui

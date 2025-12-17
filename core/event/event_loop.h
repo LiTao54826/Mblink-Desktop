@@ -327,6 +327,8 @@ private:
 private:
     bool running_ = false;          // 是否正在运行
     bool should_quit_ = false;      // 是否应该退出
+    bool vsync_detected_ = false;   // 是否已检测 VSync 状态
+    uint64_t total_frames_ = 0;     // 总帧数（用于延迟 VSync 检测）
 
     // 回调函数
     std::function<void()> idle_callback_;

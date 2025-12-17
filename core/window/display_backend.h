@@ -60,6 +60,26 @@ public:
     virtual void Present(const void* pixels, int width, int height, int stride) = 0;
 
     /**
+     * @brief 将像素数据的脏区域显示到窗口（优化版本）
+     * @param pixels 像素数据指针 (BGRA 格式, 预乘 alpha)
+     * @param width 图像宽度
+     * @param height 图像高度
+     * @param stride 每行字节数（通常为 width * 4）
+     * @param dirty_x 脏区域左上角 X
+     * @param dirty_y 脏区域左上角 Y
+     * @param dirty_width 脏区域宽度
+     * @param dirty_height 脏区域高度
+     * 
+     * 默认实现调用 Present() 复制整个 surface。
+     * 子类可以重写此方法以实现局部更新优化。
+     */
+    virtual void PresentPartial(const void* pixels, int width, int height, int stride,
+                                int dirty_x, int dirty_y, int dirty_width, int dirty_height) {
+        // 默认实现：复制整个 surface
+        Present(pixels, width, height, stride);
+    }
+
+    /**
      * @brief 处理窗口大小变化
      * @param width 新宽度
      * @param height 新高度
@@ -267,6 +287,8 @@ public:
 
     bool Initialize(SDL_Window* window, int width, int height) override;
     void Present(const void* pixels, int width, int height, int stride) override;
+    void PresentPartial(const void* pixels, int width, int height, int stride,
+                        int dirty_x, int dirty_y, int dirty_width, int dirty_height) override;
     void OnResize(int width, int height) override;
     void Shutdown() override;
 

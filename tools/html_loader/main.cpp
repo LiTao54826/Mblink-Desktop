@@ -75,8 +75,8 @@ std::string GetDocumentTitle(std::shared_ptr<Document> doc) {
 int main(int argc, char** argv) {
     // 解析命令行参数
     std::string html_path;
-    int width = 800;
-    int height = 600;
+    int width = 1600;
+    int height = 1000;
     std::string title;
     bool execute_scripts = true;
     

@@ -30,8 +30,25 @@ void CSSStyleDeclaration::SetProperty(const std::string& property, const std::st
         return;
     }
     
+    // 检查值是否真的改变了
+    auto it = properties_.find(normalized_property);
+    bool value_changed = (it == properties_.end() || it->second != value);
+    bool priority_changed = false;
+    
+    if (priority == "important") {
+        priority_changed = (priorities_.find(normalized_property) == priorities_.end() || 
+                           priorities_[normalized_property] != "important");
+    } else {
+        priority_changed = (priorities_.find(normalized_property) != priorities_.end());
+    }
+    
+    // 如果值和优先级都没变，直接返回
+    if (!value_changed && !priority_changed) {
+        return;
+    }
+    
     // 如果是新属性，添加到顺序列表
-    if (properties_.find(normalized_property) == properties_.end()) {
+    if (it == properties_.end()) {
         property_order_.push_back(normalized_property);
     }
     
@@ -45,7 +62,7 @@ void CSSStyleDeclaration::SetProperty(const std::string& property, const std::st
         priorities_.erase(normalized_property);
     }
     
-    // 更新元素的style属性
+    // 更新元素的style属性（这会触发重绘）
     UpdateStyleAttribute();
 }
 
@@ -305,10 +322,20 @@ std::string CSSStyleDeclaration::NormalizePropertyName(const std::string& proper
     size_t end = property.find_last_not_of(" \t\n\r");
     std::string trimmed = property.substr(start, end - start + 1);
     
-    // 转换为小写
-    result.reserve(trimmed.size());
-    for (char c : trimmed) {
-        result += std::tolower(c);
+    // 转换 camelCase 为 kebab-case，同时转为小写
+    // 例如: boxShadow -> box-shadow, backgroundColor -> background-color
+    result.reserve(trimmed.size() + 4);  // 预留一些空间给可能添加的连字符
+    for (size_t i = 0; i < trimmed.size(); ++i) {
+        char c = trimmed[i];
+        if (std::isupper(c)) {
+            // 大写字母前添加连字符（除非是第一个字符）
+            if (i > 0) {
+                result += '-';
+            }
+            result += std::tolower(c);
+        } else {
+            result += std::tolower(c);
+        }
     }
     
     return result;
@@ -320,8 +347,16 @@ void CSSStyleDeclaration::UpdateStyleAttribute() {
         return;
     }
 
-    // 将样式序列化为CSS文本并设置到style属性
+    // 将样式序列化为CSS文本
     std::string css_text = SerializeCssText();
+    
+    // 优化：只在CSS文本真的改变时才更新属性
+    // 这避免了不必要的 SetAttribute 调用和重绘
+    std::string current_style = elem->GetAttribute("style");
+    if (current_style == css_text) {
+        return;  // 没有变化，跳过更新
+    }
+    
     elem->SetAttribute("style", css_text);
 }
 

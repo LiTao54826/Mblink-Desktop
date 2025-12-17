@@ -34,6 +34,7 @@
 #include "include/core/SkColorSpace.h"
 #include "include/core/SkImageInfo.h"
 #include "include/core/SkFont.h"
+#include "include/core/SkRegion.h"
 #include "include/gpu/ganesh/gl/GrGLInterface.h"
 #include "include/gpu/ganesh/gl/GrGLDirectContext.h"
 #include "include/gpu/ganesh/gl/GrGLBackendSurface.h"
@@ -129,11 +130,19 @@ public:
             // 获取关联的 RenderObject，标记其需要重绘
             if (auto render_obj = element->GetRenderObject()) {
                 render_obj->MarkNeedsPaint();
-                // 记录脏矩形
+                // 记录脏矩形（旧位置）
                 SkRect bounds = render_obj->GetBoundingRect();
                 if (!bounds.isEmpty()) {
                     element->SetDirtyRect(bounds);
                     window_->AddDirtyRect(bounds);
+                    
+                    // 调试输出
+                    static int debug_count = 0;
+                    if (++debug_count <= 5 && name == "style") {
+                        std::cout << "[OnAttributeChanged] Old bounds: " 
+                                  << bounds.left() << "," << bounds.top() << " " 
+                                  << bounds.width() << "x" << bounds.height() << std::endl;
+                    }
                 }
             }
             window_->SetNeedsRepaint();
@@ -546,11 +555,13 @@ Window::Window(const WindowConfig& config) : config_(config) {
             InitSkia();
             CreateSkiaSurface();
             actual_backend_ = RenderBackend::OPENGL;
+            std::cout << "[Window] Using GPU (OpenGL) rendering backend" << std::endl;
         } catch (const std::exception& e) {
             // GPU 初始化失败，降级到 CPU 软件渲染
             std::cerr << "GPU rendering failed: " << e.what() << ", falling back to CPU" << std::endl;
             InitCPURendering();
             actual_backend_ = RenderBackend::CPU;
+            std::cout << "[Window] Using CPU rendering backend" << std::endl;
         }
     } else if (config_.backend == RenderBackend::OPENGL) {
         // 仅 GPU 模式
@@ -558,10 +569,12 @@ Window::Window(const WindowConfig& config) : config_(config) {
         InitSkia();
         CreateSkiaSurface();
         actual_backend_ = RenderBackend::OPENGL;
+        std::cout << "[Window] Using GPU (OpenGL) rendering backend (forced)" << std::endl;
     } else if (config_.backend == RenderBackend::CPU) {
         // 仅 CPU 模式
         InitCPURendering();
         actual_backend_ = RenderBackend::CPU;
+        std::cout << "[Window] Using CPU rendering backend (forced)" << std::endl;
     }
 
     // 初始化动画时间轴
@@ -770,13 +783,41 @@ void Window::SwapBuffers() {
             g_present_count++;
             PrintStats();
 #endif
-            // 使用 DisplayBackend 显示（无闪烁）
-            display_backend_->Present(
-                pixmap.addr(),
-                static_cast<int>(pixmap.width()),
-                static_cast<int>(pixmap.height()),
-                static_cast<int>(pixmap.rowBytes())
-            );
+            // 使用局部更新优化 CPU 模式性能
+            if (has_dirty_bounds_ && !last_dirty_bounds_.isEmpty()) {
+                // 有脏区域边界：只更新脏区域
+                int dirty_x = static_cast<int>(last_dirty_bounds_.left());
+                int dirty_y = static_cast<int>(last_dirty_bounds_.top());
+                int dirty_width = static_cast<int>(last_dirty_bounds_.width());
+                int dirty_height = static_cast<int>(last_dirty_bounds_.height());
+                
+                // 边界检查
+                int surface_width = static_cast<int>(pixmap.width());
+                int surface_height = static_cast<int>(pixmap.height());
+                if (dirty_x < 0) dirty_x = 0;
+                if (dirty_y < 0) dirty_y = 0;
+                if (dirty_x + dirty_width > surface_width) dirty_width = surface_width - dirty_x;
+                if (dirty_y + dirty_height > surface_height) dirty_height = surface_height - dirty_y;
+                
+                if (dirty_width > 0 && dirty_height > 0) {
+                    display_backend_->PresentPartial(
+                        pixmap.addr(),
+                        surface_width,
+                        surface_height,
+                        static_cast<int>(pixmap.rowBytes()),
+                        dirty_x, dirty_y, dirty_width, dirty_height
+                    );
+                }
+            } else {
+                // 无脏区域边界或全量渲染：更新整个 surface
+                display_backend_->Present(
+                    pixmap.addr(),
+                    static_cast<int>(pixmap.width()),
+                    static_cast<int>(pixmap.height()),
+                    static_cast<int>(pixmap.rowBytes())
+                );
+            }
+            has_dirty_bounds_ = false;
         }
     }
 }
@@ -1187,6 +1228,29 @@ void Window::Render() {
         return;
     }
 
+    // =========================================================================
+    // P0优化：按需渲染快速路径
+    // 如果没有任何变化，直接跳过整个渲染流程
+    // =========================================================================
+    bool has_active_animations = false;
+    if (animation_timeline_) {
+        has_active_animations = animation_timeline_->HasRunningTransitions();
+    }
+    if (!has_active_animations && animation_controller_) {
+        has_active_animations = !animation_controller_->GetRunningAnimations().empty();
+    }
+    
+    // 快速路径：无需重绘且无活动动画时直接返回
+    if (!needs_repaint_ && !has_active_animations && dirty_rects_.empty() && render_tree_valid_) {
+        // 静态场景：完全跳过渲染
+        static int skip_count = 0;
+        static bool debug_skip = std::getenv("LIGHTUI_DEBUG_RENDER_SKIP") != nullptr;
+        if (debug_skip && ++skip_count % 60 == 0) {
+            std::cout << "[Render] Skipped " << skip_count << " frames (no changes)" << std::endl;
+        }
+        return;
+    }
+
     // 更新动画
     static Uint64 start_time = SDL_GetPerformanceCounter();
     Uint64 current_time = SDL_GetPerformanceCounter();
@@ -1314,6 +1378,9 @@ void Window::Render() {
         // 全量渲染后，清除所有脏标记
         ClearDirtyFlags(body.get());
         ClearRenderObjectDirtyFlags(cached_render_tree_.get());
+        
+        // 全量渲染时，清除脏区域标记（SwapBuffers 将使用全量更新）
+        has_dirty_bounds_ = false;
     } else {
         // 渲染树有效，尝试增量渲染
 
@@ -1333,25 +1400,28 @@ void Window::Render() {
             canvas->clipRect(SkRect::MakeXYWH(app_x, app_y, app_width, app_height));
         }
 
+        // 调试输出控制（仅在设置环境变量时输出）
+        static bool debug_render = std::getenv("LIGHTUI_DEBUG_RENDER") != nullptr;
+
         // 检查是否强制全屏重绘或禁用增量渲染
         if (force_full_repaint_ || !enable_incremental_render_) {
             // 模式 B：使用缓存的渲染树，但全屏重绘（不做局部裁剪）
             DEBUG_LOG("[Window::Render] Mode B: Full repaint (incremental disabled or forced)");
-            std::cout << "[Render] Mode B: Full repaint" << std::endl;
+            if (debug_render) {
+                std::cout << "[Render] Mode B: Full repaint (force=" << force_full_repaint_ 
+                          << ", incremental=" << enable_incremental_render_ << ")" << std::endl;
+            }
 
             // 增量布局：仅布局脏子树
-            // Phase 1 优化：不再每帧执行完整布局
-            std::cout << "[Render] Before MarkRenderObjectsDirty" << std::endl;
             MarkRenderObjectsDirty(body.get(), cached_render_tree_.get());
-            std::cout << "[Render] After MarkRenderObjectsDirty, before LayoutDirtySubtree" << std::endl;
-            bool did_layout = LayoutDirtySubtree(cached_render_tree_.get(),
-                               app_width,
-                               app_height);
-            std::cout << "[Render] After LayoutDirtySubtree, did_layout=" << did_layout << std::endl;
+            LayoutDirtySubtree(cached_render_tree_.get(), app_width, app_height);
 
             // 全屏重绘
             canvas->clear(clear_color);
             cached_render_tree_->Paint(canvas);
+            
+            // 全屏重绘时，清除脏区域标记（SwapBuffers 将使用全量更新）
+            has_dirty_bounds_ = false;
 
             // 清除脏标记
             ClearDirtyFlags(body.get());
@@ -1369,14 +1439,20 @@ void Window::Render() {
 
             if (!dirty_rects_.empty()) {
                 // 优先使用已收集的脏区域（包含 DOM 来源 + RenderObject 来源）
-                combined_dirty_rects = dirty_rects_;
+                // P2优化：使用自适应脏区域合并
+                DirtyRegion dirty_region;
+                for (const auto& rect : dirty_rects_) {
+                    dirty_region.AddRect(rect);
+                }
+                dirty_region.OptimizeAdaptive(app_width, app_height);
+                combined_dirty_rects = dirty_region.GetRegions();
             } else {
                 // 回退：使用 DirtyRegionCollector 从 DOM 扫描
                 DirtyRegionCollector collector;
                 collector.SetViewportSize(static_cast<float>(width), static_cast<float>(height));
                 DirtyRegion dirty_region;
                 if (collector.CollectFromDOM(body.get(), dirty_region)) {
-                    dirty_region.Optimize();
+                    dirty_region.OptimizeAdaptive(app_width, app_height);
                     combined_dirty_rects = dirty_region.GetRegions();
                 }
             }
@@ -1384,17 +1460,16 @@ void Window::Render() {
             if (!combined_dirty_rects.empty()) {
                 // 有脏区域：增量渲染
                 DEBUG_LOG("[Window::Render] Mode C: Incremental rendering " << combined_dirty_rects.size() << " dirty rects");
+                if (debug_render) {
+                    std::cout << "[Render] Mode C: " << combined_dirty_rects.size() << " dirty rects" << std::endl;
+                }
 
                 // 同步 DOM 脏标记到 RenderObject 并执行增量布局
                 MarkRenderObjectsDirty(body.get(), cached_render_tree_.get());
-                LayoutDirtySubtree(cached_render_tree_.get(),
-                                   app_width,
-                                   app_height);
+                LayoutDirtySubtree(cached_render_tree_.get(), app_width, app_height);
 
                 // 关键修复：布局更新后，位置可能发生了变化。
                 // 我们需要再次收集脏区域，以捕获元素的新位置。
-                // 此时 dirty_rects_ 已包含旧位置（步骤1收集）和 SetStyle 手动添加的区域。
-                // 这次收集将添加新位置，从而实现"双区域标记"的后半部分。
                 CollectDirtyRectsFromRenderTree(cached_render_tree_.get());
                 
                 // 更新 combined_dirty_rects
@@ -1402,23 +1477,38 @@ void Window::Render() {
                     combined_dirty_rects = dirty_rects_;
                 }
 
-                // 局部绘制
+                // 局部绘制 - 恢复到之前正常工作的版本
+                // 计算所有脏区域的边界（用于 CPU 模式局部更新）
+                SkRect dirty_bounds = SkRect::MakeEmpty();
+                
                 for (const auto& rect : combined_dirty_rects) {
                     canvas->save();
 
-                    // 清除脏区域
+                    // 裁剪到脏区域（扩大一点以包含边缘元素）
+                    SkRect expanded_rect = rect.makeOutset(50, 50);
+                    dirty_bounds.join(expanded_rect);
+                    canvas->clipRect(expanded_rect);
+
+                    // 清除扩大后的脏区域
                     SkPaint clear_paint;
                     clear_paint.setColor(clear_color);
-                    canvas->drawRect(rect, clear_paint);
+                    canvas->drawRect(expanded_rect, clear_paint);
 
-                    // 裁剪到脏区域
-                    canvas->clipRect(rect);
-
-                    // 绘制整棵渲染树（会被裁剪到脏区域）
+                    // 绘制整棵渲染树（会被裁剪到扩大后的脏区域）
                     cached_render_tree_->Paint(canvas);
 
                     canvas->restore();
                 }
+                
+                // 保存脏区域边界（用于 SwapBuffers 的局部更新）
+                // 注意：dirty_bounds 是逻辑坐标，需要转换为物理像素坐标
+                last_dirty_bounds_ = SkRect::MakeLTRB(
+                    dirty_bounds.left() * dpi_scale,
+                    dirty_bounds.top() * dpi_scale,
+                    dirty_bounds.right() * dpi_scale,
+                    dirty_bounds.bottom() * dpi_scale
+                );
+                has_dirty_bounds_ = true;
 
                 // 清除脏标记（DOM 和 RenderObject）
                 ClearDirtyFlags(body.get());
@@ -1455,6 +1545,10 @@ void Window::Render() {
     // 清除重绘标记和脏区域
     needs_repaint_ = false;
     dirty_rects_.clear();
+    
+    // 关键修复：重置强制全屏重绘标志
+    // 这样下一帧可以恢复增量渲染模式，避免大窗口时的性能问题
+    force_full_repaint_ = false;
 }
 
 void Window::RenderDevTools(SkCanvas* canvas, float width, float height) {
@@ -1859,33 +1953,64 @@ void Window::AddDirtyRect(const SkRect& rect) {
         return;
     }
 
+    // 自动膨胀脏区域以容纳抗锯齿、子像素偏移和阴影
+    SkRect inflated_rect = rect.makeOutset(2.0f, 2.0f);
+
     // 合并策略：如果新矩形与已有矩形重叠或距离较近，合并它们
     constexpr float kMergeThreshold = 10.0f;
 
     for (auto& existing : dirty_rects_) {
         // 扩展现有矩形检测重叠
         SkRect expanded = existing.makeOutset(kMergeThreshold, kMergeThreshold);
-        if (expanded.intersects(rect)) {
+        if (expanded.intersects(inflated_rect)) {
             // 合并矩形
-            existing.join(rect);
+            existing.join(inflated_rect);
             return;
         }
     }
 
     // 没有重叠，添加新矩形
-    // 关键修复：自动膨胀脏区域以容纳抗锯齿、子像素偏移和阴影
-    SkRect inflated_rect = rect.makeOutset(2.0f, 2.0f);
     dirty_rects_.push_back(inflated_rect);
 
-    // 如果脏区域太多，合并为一个全量重绘
-    constexpr size_t kMaxDirtyRects = 10;
+    // 如果脏区域太多，尝试合并相邻的区域
+    constexpr size_t kMaxDirtyRects = 100;  // 提高阈值
     if (dirty_rects_.size() > kMaxDirtyRects) {
-        SkRect bounds = SkRect::MakeEmpty();
-        for (const auto& r : dirty_rects_) {
-            bounds.join(r);
+        // 策略：找到最近的两个矩形并合并它们
+        // 重复这个过程直到数量降到阈值以下
+        while (dirty_rects_.size() > kMaxDirtyRects) {
+            float min_distance = std::numeric_limits<float>::max();
+            size_t merge_i = 0, merge_j = 1;
+            
+            // 找到距离最近的两个矩形
+            for (size_t i = 0; i < dirty_rects_.size(); ++i) {
+                for (size_t j = i + 1; j < dirty_rects_.size(); ++j) {
+                    const auto& r1 = dirty_rects_[i];
+                    const auto& r2 = dirty_rects_[j];
+                    
+                    // 计算两个矩形中心点的距离
+                    float cx1 = (r1.left() + r1.right()) / 2.0f;
+                    float cy1 = (r1.top() + r1.bottom()) / 2.0f;
+                    float cx2 = (r2.left() + r2.right()) / 2.0f;
+                    float cy2 = (r2.top() + r2.bottom()) / 2.0f;
+                    
+                    float dx = cx2 - cx1;
+                    float dy = cy2 - cy1;
+                    float distance = dx * dx + dy * dy;  // 不需要开方，比较大小即可
+                    
+                    if (distance < min_distance) {
+                        min_distance = distance;
+                        merge_i = i;
+                        merge_j = j;
+                    }
+                }
+            }
+            
+            // 合并最近的两个矩形
+            dirty_rects_[merge_i].join(dirty_rects_[merge_j]);
+            dirty_rects_.erase(dirty_rects_.begin() + merge_j);
         }
-        dirty_rects_.clear();
-        dirty_rects_.push_back(bounds);
+        
+        std::cout << "[AddDirtyRect] Merged nearby rects, now have " << dirty_rects_.size() << " rects" << std::endl;
     }
 }
 

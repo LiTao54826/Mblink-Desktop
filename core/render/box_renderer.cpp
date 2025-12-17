@@ -313,10 +313,15 @@ void BoxRenderer::RenderBackgroundAdvanced(const Box& box,
 
     if (has_radius) {
         SkRRect rrect;
-        float tl = border_radius->top_left.ToPx();
-        float tr = border_radius->top_right.ToPx();
-        float br = border_radius->bottom_right.ToPx();
-        float bl = border_radius->bottom_left.ToPx();
+        // 修复：border-radius 百分比值应该相对于元素尺寸计算
+        // 水平半径相对于宽度，垂直半径相对于高度
+        float width = border_box_rect.width();
+        float height = border_box_rect.height();
+        
+        float tl = border_radius->top_left.ToPx(std::min(width, height));
+        float tr = border_radius->top_right.ToPx(std::min(width, height));
+        float br = border_radius->bottom_right.ToPx(std::min(width, height));
+        float bl = border_radius->bottom_left.ToPx(std::min(width, height));
 
         SkVector radii[4] = {
             {tl, tl},  // top-left
@@ -493,12 +498,17 @@ void BoxRenderer::RenderRoundedBorder(const Box& box,
     float width = border.width.ToPx();
 
     // 创建圆角矩形路径
+    // 修复：border-radius 百分比值应该相对于元素尺寸计算
+    float box_width = border_box.width();
+    float box_height = border_box.height();
+    float base_size = std::min(box_width, box_height);
+    
     SkRRect rrect;
     SkVector radii[4] = {
-        {border_radius.top_left.ToPx(), border_radius.top_left.ToPx()},
-        {border_radius.top_right.ToPx(), border_radius.top_right.ToPx()},
-        {border_radius.bottom_right.ToPx(), border_radius.bottom_right.ToPx()},
-        {border_radius.bottom_left.ToPx(), border_radius.bottom_left.ToPx()}
+        {border_radius.top_left.ToPx(base_size), border_radius.top_left.ToPx(base_size)},
+        {border_radius.top_right.ToPx(base_size), border_radius.top_right.ToPx(base_size)},
+        {border_radius.bottom_right.ToPx(base_size), border_radius.bottom_right.ToPx(base_size)},
+        {border_radius.bottom_left.ToPx(base_size), border_radius.bottom_left.ToPx(base_size)}
     };
     rrect.setRectRadii(border_box, radii);
 
@@ -529,6 +539,11 @@ void BoxRenderer::RenderBoxShadow(const Box& box,
     }
 
     SkRect border_box = box.GetBorderBox();
+    
+    // 修复：计算 border-radius 百分比的基准尺寸
+    float box_width = border_box.width();
+    float box_height = border_box.height();
+    float base_size = std::min(box_width, box_height);
 
     for (const auto& shadow : shadows) {
         // 创建路径
@@ -536,10 +551,10 @@ void BoxRenderer::RenderBoxShadow(const Box& box,
         if (border_radius) {
             SkRRect rrect;
             SkVector radii[4] = {
-                {border_radius->top_left.ToPx(), border_radius->top_left.ToPx()},
-                {border_radius->top_right.ToPx(), border_radius->top_right.ToPx()},
-                {border_radius->bottom_right.ToPx(), border_radius->bottom_right.ToPx()},
-                {border_radius->bottom_left.ToPx(), border_radius->bottom_left.ToPx()}
+                {border_radius->top_left.ToPx(base_size), border_radius->top_left.ToPx(base_size)},
+                {border_radius->top_right.ToPx(base_size), border_radius->top_right.ToPx(base_size)},
+                {border_radius->bottom_right.ToPx(base_size), border_radius->bottom_right.ToPx(base_size)},
+                {border_radius->bottom_left.ToPx(base_size), border_radius->bottom_left.ToPx(base_size)}
             };
             rrect.setRectRadii(border_box, radii);
             path.addRRect(rrect);
@@ -570,14 +585,14 @@ void BoxRenderer::RenderBoxShadow(const Box& box,
                 if (border_radius) {
                     SkRRect rrect;
                     SkVector radii[4] = {
-                        {border_radius->top_left.ToPx() + shadow.spread_radius,
-                         border_radius->top_left.ToPx() + shadow.spread_radius},
-                        {border_radius->top_right.ToPx() + shadow.spread_radius,
-                         border_radius->top_right.ToPx() + shadow.spread_radius},
-                        {border_radius->bottom_right.ToPx() + shadow.spread_radius,
-                         border_radius->bottom_right.ToPx() + shadow.spread_radius},
-                        {border_radius->bottom_left.ToPx() + shadow.spread_radius,
-                         border_radius->bottom_left.ToPx() + shadow.spread_radius}
+                        {border_radius->top_left.ToPx(base_size) + shadow.spread_radius,
+                         border_radius->top_left.ToPx(base_size) + shadow.spread_radius},
+                        {border_radius->top_right.ToPx(base_size) + shadow.spread_radius,
+                         border_radius->top_right.ToPx(base_size) + shadow.spread_radius},
+                        {border_radius->bottom_right.ToPx(base_size) + shadow.spread_radius,
+                         border_radius->bottom_right.ToPx(base_size) + shadow.spread_radius},
+                        {border_radius->bottom_left.ToPx(base_size) + shadow.spread_radius,
+                         border_radius->bottom_left.ToPx(base_size) + shadow.spread_radius}
                     };
                     rrect.setRectRadii(expanded, radii);
                     expanded_path.addRRect(rrect);
@@ -627,12 +642,17 @@ void BoxRenderer::RenderRoundedBorderAdvanced(const Box& box,
     
     SkRect border_box = box.GetBorderBox();
     
+    // 修复：计算 border-radius 百分比的基准尺寸
+    float box_width = border_box.width();
+    float box_height = border_box.height();
+    float base_size = std::min(box_width, box_height);
+    
     // 准备圆角半径
     SkVector outer_radii[4] = {
-        {border_radius.top_left.ToPx(), border_radius.top_left.ToPx()},     // TL
-        {border_radius.top_right.ToPx(), border_radius.top_right.ToPx()},   // TR
-        {border_radius.bottom_right.ToPx(), border_radius.bottom_right.ToPx()}, // BR
-        {border_radius.bottom_left.ToPx(), border_radius.bottom_left.ToPx()}    // BL
+        {border_radius.top_left.ToPx(base_size), border_radius.top_left.ToPx(base_size)},     // TL
+        {border_radius.top_right.ToPx(base_size), border_radius.top_right.ToPx(base_size)},   // TR
+        {border_radius.bottom_right.ToPx(base_size), border_radius.bottom_right.ToPx(base_size)}, // BR
+        {border_radius.bottom_left.ToPx(base_size), border_radius.bottom_left.ToPx(base_size)}    // BL
     };
 
     if (all_same) {

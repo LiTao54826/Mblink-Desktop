@@ -105,22 +105,17 @@ void ElementPicker::RenderHoverHighlight(SkCanvas* canvas) {
               << " has_parent=" << (render_obj->GetParent() != nullptr)
               << std::endl;
 
-    // 获取元素的绝对边界矩形
-    SkRect bounds = render_obj->GetBoundingRect();
+    // 获取元素的视口坐标边界矩形（已经考虑了滚动偏移）
+    SkRect bounds = render_obj->GetViewportBoundingRect();
     if (bounds.isEmpty()) {
         std::cout << "[ElementPicker] Empty bounds for element " << hovered_element_->GetTagName() << std::endl;
         return;
     }
 
-    // 对于有滚动的元素，高亮位置需要减去自身的滚动偏移
-    // 这样高亮才能正确显示元素内容的实际渲染位置
-    float x = bounds.x() - render_obj->GetScrollX();
-    float y = bounds.y() - render_obj->GetScrollY();
+    float x = bounds.x();
+    float y = bounds.y();
     float width = bounds.width();
     float height = bounds.height();
-    
-    // 重新构建 bounds 用于绘制
-    bounds = SkRect::MakeXYWH(x, y, width, height);
     
     std::cout << "[ElementPicker] Absolute bounds: (" << x << "," << y << ") " << width << "x" << height << std::endl;
 

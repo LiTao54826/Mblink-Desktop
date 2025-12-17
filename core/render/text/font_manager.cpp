@@ -46,8 +46,6 @@ void FontManager::Initialize() {
     font_mgr_ = SkFontMgr_New_CoreText(nullptr);
 #elif defined(__linux__)
     font_mgr_ = SkFontMgr_New_FontConfig(nullptr);
-#else
-    font_mgr_ = SkFontMgr::RefDefault();
 #endif
 
     // 初始化emoji字体

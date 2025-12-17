@@ -178,6 +178,12 @@ public:
      */
     void UnregisterElementId(const std::string& id);
 
+    /**
+     * @brief 递归注销元素及其所有后代的 ID
+     * @param element 要注销的元素
+     */
+    void UnregisterElementAndDescendantIds(std::shared_ptr<Element> element);
+
     // ========== DOM 观察者 ==========
 
     /**

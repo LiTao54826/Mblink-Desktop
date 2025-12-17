@@ -436,6 +436,12 @@ function setDOMProps(element, oldProps, newProps, isSVG) {
             } else {
                 element.removeAttribute(prop);
             }
+        } else if (prop === 'innerHTML') {
+            // innerHTML 是 DOM 属性，不是 HTML 属性
+            element.innerHTML = newValue || '';
+        } else if (prop === 'textContent') {
+            // textContent 也是 DOM 属性
+            element.textContent = newValue || '';
         } else if (newValue != null) {
             element.setAttribute(prop, String(newValue));
         } else {

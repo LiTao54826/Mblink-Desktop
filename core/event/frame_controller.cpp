@@ -13,6 +13,7 @@ FrameController::FrameController(int target_fps)
     : target_fps_(target_fps)
     , target_frame_time_(1000.0f / target_fps)
     , frame_rate_limit_enabled_(true)
+    , use_vsync_(false)  // 默认不使用 VSync，由外部设置
     , frame_start_ticks_(0)
     , performance_frequency_(SDL_GetPerformanceFrequency())
     , current_fps_(0.0f)
@@ -52,17 +53,30 @@ void FrameController::EndFrame() {
     UpdateFPSStats(frame_time_);
     
     // 帧率限制
-    if (frame_rate_limit_enabled_ && frame_time_ < target_frame_time_) {
-        Uint32 delay_ms = static_cast<Uint32>(target_frame_time_ - frame_time_);
-        SDL_Delay(delay_ms);
-        
-        // 重新计算实际帧时间
-        frame_end_ticks = SDL_GetPerformanceCounter();
-        elapsed_ticks = frame_end_ticks - frame_start_ticks_;
-        frame_time_ = (elapsed_ticks * 1000.0f) / performance_frequency_;
+    // 关键优化：如果使用 VSync，完全跳过 SDL_Delay
+    // VSync 会在 SwapBuffers 时自动同步到显示器刷新率，提供最流畅的体验
+    if (!use_vsync_ && frame_rate_limit_enabled_ && frame_time_ < target_frame_time_) {
+        // 只在帧时间明显小于目标时间时才延迟（留出一些余量）
+        float remaining_time = target_frame_time_ - frame_time_;
+        if (remaining_time > 2.0f) {  // 至少剩余 2ms 才延迟
+            // 延迟时间减少 1ms，避免过度延迟
+            Uint32 delay_ms = static_cast<Uint32>(remaining_time - 1.0f);
+            if (delay_ms > 0) {
+                SDL_Delay(delay_ms);
+                
+                // 重新计算实际帧时间
+                frame_end_ticks = SDL_GetPerformanceCounter();
+                elapsed_ticks = frame_end_ticks - frame_start_ticks_;
+                frame_time_ = (elapsed_ticks * 1000.0f) / performance_frequency_;
+            }
+        }
     }
     
     total_frames_++;
+}
+
+void FrameController::SetUseVSync(bool use_vsync) {
+    use_vsync_ = use_vsync;
 }
 
 float FrameController::GetCurrentFPS() const {

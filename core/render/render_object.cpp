@@ -420,13 +420,82 @@ void RenderObject::Layout(float parent_width, float parent_height) {
     needs_layout_ = false;
 }
 
+void RenderObject::UpdatePaintCache() {
+    // P1优化：样式预计算缓存
+    // 如果缓存有效，直接返回
+    if (paint_cache_.valid) {
+        return;
+    }
+
+    const auto& style = computed_style_;
+    const auto& layout = layout_info_;
+
+    // 计算 padding（像素值）
+    paint_cache_.padding_left = style.padding.left.ToPx(layout.width, style.font_size);
+    paint_cache_.padding_right = style.padding.right.ToPx(layout.width, style.font_size);
+    paint_cache_.padding_top = style.padding.top.ToPx(layout.width, style.font_size);
+    paint_cache_.padding_bottom = style.padding.bottom.ToPx(layout.width, style.font_size);
+
+    // 计算 border 宽度（优先使用单边边框宽度）
+    paint_cache_.border_top_width = style.border_top_width > 0 ? style.border_top_width : style.border.width.ToPx();
+    paint_cache_.border_right_width = style.border_right_width > 0 ? style.border_right_width : style.border.width.ToPx();
+    paint_cache_.border_bottom_width = style.border_bottom_width > 0 ? style.border_bottom_width : style.border.width.ToPx();
+    paint_cache_.border_left_width = style.border_left_width > 0 ? style.border_left_width : style.border.width.ToPx();
+
+    // 计算内容区域偏移
+    paint_cache_.content_x = paint_cache_.border_left_width + paint_cache_.padding_left;
+    paint_cache_.content_y = paint_cache_.border_top_width + paint_cache_.padding_top;
+
+    // 预解析背景颜色
+    if (!style.background_color.empty() && style.background_color != "transparent") {
+        paint_cache_.background_color = Color::Parse(style.background_color);
+    } else {
+        paint_cache_.background_color = SK_ColorTRANSPARENT;
+    }
+
+    // 预解析边框颜色
+    paint_cache_.border_top_color = style.border_top_style != CSSBorderStyle::NONE ? 
+        style.border_top_color : style.border.color;
+    paint_cache_.border_right_color = style.border_right_style != CSSBorderStyle::NONE ? 
+        style.border_right_color : style.border.color;
+    paint_cache_.border_bottom_color = style.border_bottom_style != CSSBorderStyle::NONE ? 
+        style.border_bottom_color : style.border.color;
+    paint_cache_.border_left_color = style.border_left_style != CSSBorderStyle::NONE ? 
+        style.border_left_color : style.border.color;
+
+    // 预计算圆角
+    paint_cache_.border_radius_tl = style.border_radius.top_left.ToPx(layout.width);
+    paint_cache_.border_radius_tr = style.border_radius.top_right.ToPx(layout.width);
+    paint_cache_.border_radius_bl = style.border_radius.bottom_left.ToPx(layout.width);
+    paint_cache_.border_radius_br = style.border_radius.bottom_right.ToPx(layout.width);
+
+    // 预计算标志位
+    paint_cache_.has_border = (style.border.style != CSSBorderStyle::NONE && !style.border.width.IsZero()) ||
+                              (paint_cache_.border_left_width > 0 && style.border_left_style != CSSBorderStyle::NONE) ||
+                              (paint_cache_.border_right_width > 0 && style.border_right_style != CSSBorderStyle::NONE) ||
+                              (paint_cache_.border_top_width > 0 && style.border_top_style != CSSBorderStyle::NONE) ||
+                              (paint_cache_.border_bottom_width > 0 && style.border_bottom_style != CSSBorderStyle::NONE);
+
+    paint_cache_.has_border_radius = paint_cache_.border_radius_tl > 0 ||
+                                     paint_cache_.border_radius_tr > 0 ||
+                                     paint_cache_.border_radius_bl > 0 ||
+                                     paint_cache_.border_radius_br > 0;
+
+    paint_cache_.has_box_shadow = !style.box_shadow.empty();
+    paint_cache_.has_gradient = style.background_linear_gradient.has_value() || 
+                                style.background_radial_gradient.has_value();
+
+    // 标记缓存有效
+    paint_cache_.valid = true;
+}
+
 void RenderObject::Paint(SkCanvas* canvas) {
     // 基类默认实现：什么都不做
     needs_paint_ = false;
 }
 
 SkRect RenderObject::GetBoundingRect() const {
-    // 使用布局信息计算边界框
+    // 使用布局信息计算边界框（文档坐标系，用于脏区域收集）
     const auto& layout = layout_info_;
 
     // 如果布局信息无效，返回空矩形
@@ -444,7 +513,35 @@ SkRect RenderObject::GetBoundingRect() const {
         abs_x += parent_layout.x;
         abs_y += parent_layout.y;
 
-        // 减去父元素的滚动偏移
+        // 注意：这里不减去滚动偏移，保持文档坐标系
+        // 这样脏区域收集才能正确工作
+
+        parent = parent->GetParent();
+    }
+
+    return SkRect::MakeXYWH(abs_x, abs_y, layout.width, layout.height);
+}
+
+SkRect RenderObject::GetViewportBoundingRect() const {
+    // 使用布局信息计算边界框（视口坐标系，用于元素选择器高亮）
+    const auto& layout = layout_info_;
+
+    // 如果布局信息无效，返回空矩形
+    if (!layout.is_laid_out) {
+        return SkRect::MakeEmpty();
+    }
+
+    // 计算绝对位置（需要累加所有祖先的偏移）
+    float abs_x = layout.x;
+    float abs_y = layout.y;
+
+    auto parent = parent_.lock();
+    while (parent) {
+        const auto& parent_layout = parent->GetLayoutInfo();
+        abs_x += parent_layout.x;
+        abs_y += parent_layout.y;
+
+        // 减去父元素的滚动偏移，转换为视口坐标
         abs_x -= parent->GetScrollX();
         abs_y -= parent->GetScrollY();
 
@@ -465,10 +562,27 @@ void RenderObject::ScrollTo(float x, float y) {
     float max_x = GetMaxScrollX();
     float max_y = GetMaxScrollY();
 
+    float old_scroll_x = scroll_x_;
+    float old_scroll_y = scroll_y_;
+
     scroll_x_ = std::max(0.0f, std::min(x, max_x));
     scroll_y_ = std::max(0.0f, std::min(y, max_y));
 
-    MarkNeedsPaint();
+    // 只有滚动位置真正改变时才标记重绘
+    if (scroll_x_ != old_scroll_x || scroll_y_ != old_scroll_y) {
+        MarkNeedsPaint();
+        
+        // 关键修复：滚动时，标记所有子元素也需要重绘
+        // 因为子元素的视觉位置改变了（即使布局位置没变）
+        std::function<void(RenderObject*)> mark_children = [&](RenderObject* obj) {
+            if (!obj) return;
+            obj->MarkNeedsPaint();
+            for (const auto& child : obj->GetChildren()) {
+                mark_children(child.get());
+            }
+        };
+        mark_children(this);
+    }
 }
 
 bool RenderObject::IsScrollable() const {
@@ -819,6 +933,16 @@ float RenderObject::CalculateContentWidth() const {
 // ========== RenderBlock 实现 ==========
 
 void RenderBlock::Layout(float parent_width, float parent_height) {
+    // Debug: 追踪 Layout 调用
+    auto dom_node = GetNode();
+    if (dom_node && dom_node->GetNodeType() == NodeType::ELEMENT_NODE) {
+        auto element = std::dynamic_pointer_cast<Element>(dom_node);
+        if (element) {
+            std::cout << "[RenderBlock::Layout] <" << element->GetTagName() 
+                      << "> parent_size=(" << parent_width << "," << parent_height << ")" << std::endl;
+        }
+    }
+    
     // 使用传统块布局
     const auto& style = computed_style_;
     
@@ -1072,8 +1196,12 @@ void RenderBlock::Paint(SkCanvas* canvas) {
         return;
     }
 
+    // P1优化：更新绘制缓存（如果无效则重新计算）
+    UpdatePaintCache();
+
     const auto& style = computed_style_;
     const auto& layout = layout_info_;
+    const auto& cache = paint_cache_;  // 使用缓存的值
 
     // 保存画布状态
     canvas->save();
@@ -1086,30 +1214,28 @@ void RenderBlock::Paint(SkCanvas* canvas) {
         canvas->concat(transform_matrix);
     }
 
-    // 创建盒模型
+    // 创建盒模型 - 使用缓存的值
     Box box;
 
-    // 计算 padding
-    box.padding_left = style.padding.left.ToPx(layout.width, style.font_size);
-    box.padding_right = style.padding.right.ToPx(layout.width, style.font_size);
-    box.padding_top = style.padding.top.ToPx(layout.width, style.font_size);
-    box.padding_bottom = style.padding.bottom.ToPx(layout.width, style.font_size);
+    // 使用缓存的 padding 值
+    box.padding_left = cache.padding_left;
+    box.padding_right = cache.padding_right;
+    box.padding_top = cache.padding_top;
+    box.padding_bottom = cache.padding_bottom;
 
-    // 计算 border - 优先使用单边边框宽度，否则使用统一的 border.width
-    box.border_top_width = style.border_top_width > 0 ? style.border_top_width : style.border.width.ToPx();
-    box.border_right_width = style.border_right_width > 0 ? style.border_right_width : style.border.width.ToPx();
-    box.border_bottom_width = style.border_bottom_width > 0 ? style.border_bottom_width : style.border.width.ToPx();
-    box.border_left_width = style.border_left_width > 0 ? style.border_left_width : style.border.width.ToPx();
+    // 使用缓存的 border 宽度
+    box.border_top_width = cache.border_top_width;
+    box.border_right_width = cache.border_right_width;
+    box.border_bottom_width = cache.border_bottom_width;
+    box.border_left_width = cache.border_left_width;
 
-    // Taffy 返回的是 border-box 尺寸
-    // 由于我们已经 translate 到元素左上角（border-box 的左上角）
-    // content_x 和 content_y 应该从 border + padding 开始
-    box.content_x = box.border_left_width + box.padding_left;
-    box.content_y = box.border_top_width + box.padding_top;
-    box.content_width = layout.width - box.border_left_width - box.border_right_width
-                        - box.padding_left - box.padding_right;
-    box.content_height = layout.height - box.border_top_width - box.border_bottom_width
-                         - box.padding_top - box.padding_bottom;
+    // 使用缓存的内容区域偏移
+    box.content_x = cache.content_x;
+    box.content_y = cache.content_y;
+    box.content_width = layout.width - cache.border_left_width - cache.border_right_width
+                        - cache.padding_left - cache.padding_right;
+    box.content_height = layout.height - cache.border_top_width - cache.border_bottom_width
+                         - cache.padding_top - cache.padding_bottom;
 
     // 创建样式映射
     std::unordered_map<std::string, std::string> styles;
@@ -1182,23 +1308,12 @@ void RenderBlock::Paint(SkCanvas* canvas) {
         renderer.RenderBackgroundAdvanced(box, styles, &style.border_radius);
     }
 
-    // 渲染边框 - 支持单边边框
-    bool has_any_border = (style.border.style != CSSBorderStyle::NONE && !style.border.width.IsZero()) ||
-                          (style.border_left_width > 0 && style.border_left_style != CSSBorderStyle::NONE) ||
-                          (style.border_right_width > 0 && style.border_right_style != CSSBorderStyle::NONE) ||
-                          (style.border_top_width > 0 && style.border_top_style != CSSBorderStyle::NONE) ||
-                          (style.border_bottom_width > 0 && style.border_bottom_style != CSSBorderStyle::NONE);
-
-
-
-    if (has_any_border) {
+    // 渲染边框 - 使用缓存的标志位
+    if (cache.has_border) {
         SkRect border_box = box.GetBorderBox();
 
-        // 检查是否有圆角
-        bool has_border_radius = style.border_radius.top_left.value > 0 ||
-                                 style.border_radius.top_right.value > 0 ||
-                                 style.border_radius.bottom_left.value > 0 ||
-                                 style.border_radius.bottom_right.value > 0;
+        // 使用缓存的圆角标志
+        bool has_border_radius = cache.has_border_radius;
 
         if (has_border_radius) {
             // 有圆角：使用 RenderRoundedBorderAdvanced（支持每边独立属性）
@@ -1401,10 +1516,15 @@ void RenderBlock::Paint(SkCanvas* canvas) {
         // 如果有圆角，outline 也应该有圆角
         if (style.border_radius.top_left.value > 0 || style.border_radius.top_right.value > 0 ||
             style.border_radius.bottom_left.value > 0 || style.border_radius.bottom_right.value > 0) {
-            float tl = style.border_radius.top_left.ToPx() + outline_offset + half_width;
-            float tr = style.border_radius.top_right.ToPx() + outline_offset + half_width;
-            float br = style.border_radius.bottom_right.ToPx() + outline_offset + half_width;
-            float bl = style.border_radius.bottom_left.ToPx() + outline_offset + half_width;
+            // 修复：计算 border-radius 百分比的基准尺寸
+            float box_width = outline_rect.width();
+            float box_height = outline_rect.height();
+            float base_size = std::min(box_width, box_height);
+            
+            float tl = style.border_radius.top_left.ToPx(base_size) + outline_offset + half_width;
+            float tr = style.border_radius.top_right.ToPx(base_size) + outline_offset + half_width;
+            float br = style.border_radius.bottom_right.ToPx(base_size) + outline_offset + half_width;
+            float bl = style.border_radius.bottom_left.ToPx(base_size) + outline_offset + half_width;
 
             SkRRect outline_rrect;
             SkVector radii[4] = {{tl, tl}, {tr, tr}, {br, br}, {bl, bl}};
@@ -1715,11 +1835,17 @@ void RenderBlock::Paint(SkCanvas* canvas) {
     if (needs_radius_clip) {
         canvas->save();
         SkRect clip_rect = box.GetPaddingBox();
+        
+        // 修复：计算 border-radius 百分比的基准尺寸
+        float box_width = clip_rect.width();
+        float box_height = clip_rect.height();
+        float base_size = std::min(box_width, box_height);
+        
         SkRRect rrect;
-        float tl = style.border_radius.top_left.ToPx();
-        float tr = style.border_radius.top_right.ToPx();
-        float br = style.border_radius.bottom_right.ToPx();
-        float bl = style.border_radius.bottom_left.ToPx();
+        float tl = style.border_radius.top_left.ToPx(base_size);
+        float tr = style.border_radius.top_right.ToPx(base_size);
+        float br = style.border_radius.bottom_right.ToPx(base_size);
+        float bl = style.border_radius.bottom_left.ToPx(base_size);
         SkVector radii[4] = {
             {tl, tl}, {tr, tr}, {br, br}, {bl, bl}
         };
@@ -1750,11 +1876,17 @@ void RenderBlock::Paint(SkCanvas* canvas) {
     if (is_fieldset_element && has_border_radius) {
         canvas->save();
         SkRect clip_rect = box.GetPaddingBox();
+        
+        // 修复：计算 border-radius 百分比的基准尺寸
+        float box_width = clip_rect.width();
+        float box_height = clip_rect.height();
+        float base_size = std::min(box_width, box_height);
+        
         SkRRect rrect;
-        float tl = style.border_radius.top_left.ToPx();
-        float tr = style.border_radius.top_right.ToPx();
-        float br = style.border_radius.bottom_right.ToPx();
-        float bl = style.border_radius.bottom_left.ToPx();
+        float tl = style.border_radius.top_left.ToPx(base_size);
+        float tr = style.border_radius.top_right.ToPx(base_size);
+        float br = style.border_radius.bottom_right.ToPx(base_size);
+        float bl = style.border_radius.bottom_left.ToPx(base_size);
         SkVector radii[4] = {
             {tl, tl}, {tr, tr}, {br, br}, {bl, bl}
         };

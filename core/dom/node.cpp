@@ -193,6 +193,12 @@ std::shared_ptr<Node> Node::RemoveChild(std::shared_ptr<Node> child) {
     auto doc = GetOwnerDocument();
     if (doc) {
         doc->GetObserverManager().NotifyNodeRemoved(child.get(), this);
+        
+        // 如果被移除的是元素，清理其 ID 缓存（包括所有后代）
+        if (child->GetNodeType() == NodeType::ELEMENT_NODE) {
+            auto element = std::static_pointer_cast<Element>(child);
+            doc->UnregisterElementAndDescendantIds(element);
+        }
     }
 
     // 从子节点列表移除

@@ -20,14 +20,14 @@
 namespace lightui {
 
 /**
- * @brief 缓存项
+ * @brief 图片缓存项
  */
-struct CacheEntry {
+struct ImageCacheEntry {
     std::string key;        ///< 缓存键
     sk_sp<SkImage> image;   ///< 图片
     size_t size;            ///< 图片大小（字节）
     
-    CacheEntry(const std::string& k, sk_sp<SkImage> img, size_t s)
+    ImageCacheEntry(const std::string& k, sk_sp<SkImage> img, size_t s)
         : key(k), image(img), size(s) {}
 };
 
@@ -118,7 +118,7 @@ private:
     size_t CalculateImageSize(sk_sp<SkImage> image) const;
 
 private:
-    using CacheList = std::list<CacheEntry>;
+    using CacheList = std::list<ImageCacheEntry>;
     using CacheMap = std::unordered_map<std::string, CacheList::iterator>;
     
     CacheList cache_list_;          ///< LRU 列表（最近使用的在前）

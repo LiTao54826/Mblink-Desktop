@@ -35,6 +35,9 @@
 #include <lexbor/dom/interfaces/text.h>
 #include "core/lexbor/lexbor_document.h"
 #include "core/render/render_object.h"
+#include "../quickjs/quickjs.h"
+#include "../quickjs/quickjs-libc.h"
+#include "../quickjs/quickjs_runtime.h"
 
 namespace lightui {
 
@@ -65,6 +68,17 @@ void Element::SetAttribute(const std::string& name, const std::string& value) {
     }
 
     attributes_[name] = value;
+
+    // TODO: 特殊处理 style 属性：解析并应用内联样式
+    // if (name == "style") {
+    //     ParseStyleAttribute(value);
+    // }
+
+    // 特殊处理内联事件处理器（onclick, onload, onmouseover等）
+    if (name.length() > 2 && name[0] == 'o' && name[1] == 'n') {
+        std::string event_type = name.substr(2);  // 去掉 "on" 前缀
+        SetupInlineEventHandler(event_type, value);
+    }
 
     // 智能脏标记：根据属性类型精确标记
     if (IsLayoutAttribute(name)) {
@@ -250,7 +264,66 @@ void Element::SetStyle(const std::string& property, const std::string& value) {
     // StyleResolver 从 style attribute 读取内联样式，而不是从 styles_ map
     UpdateStyleAttribute();
     
-    MarkDirty();
+    // 性能优化：根据CSS属性类型决定脏标记类型
+    // 只有影响布局的属性才需要重新布局，其他属性只需要重绘
+    
+    // 关键优化：定位元素的 left/top/right/bottom 通常不触发布局！
+    // - absolute/fixed: 脱离文档流，不影响其他元素
+    // - relative: 只是视觉偏移，不改变占据的空间，不影响其他元素
+    // - static: left/top 无效
+    static const std::unordered_set<std::string> position_offset_properties = {
+        "left", "top", "right", "bottom"
+    };
+    
+    bool is_position_offset = position_offset_properties.count(property) > 0;
+    bool skip_layout = false;
+    
+    if (is_position_offset) {
+        // 检查元素的 position 属性
+        std::string position = GetStyle("position");
+        // 关键发现：absolute/fixed/relative 的位置偏移都不影响布局！
+        // - absolute/fixed: 脱离文档流
+        // - relative: 只是视觉偏移，仍占据原始空间
+        // 只有 static（默认）时 left/top 无效，但也不需要布局
+        skip_layout = (position == "absolute" || position == "fixed" || 
+                      position == "relative" || position == "static" || position.empty());
+    }
+    
+    // 总是触发布局的属性（无论定位方式）
+    static const std::unordered_set<std::string> always_layout_properties = {
+        // 尺寸属性
+        "width", "height", "min-width", "min-height", "max-width", "max-height",
+        // 内边距
+        "padding", "padding-left", "padding-right", "padding-top", "padding-bottom",
+        // 外边距
+        "margin", "margin-left", "margin-right", "margin-top", "margin-bottom",
+        // 边框
+        "border", "border-width", "border-left-width", "border-right-width", 
+        "border-top-width", "border-bottom-width",
+        // 定位方式改变
+        "position",
+        // 显示
+        "display", "visibility", "overflow", "overflow-x", "overflow-y",
+        // Flexbox
+        "flex", "flex-direction", "flex-wrap", "justify-content", "align-items",
+        "flex-grow", "flex-shrink", "flex-basis",
+        // 字体（影响文本尺寸）
+        "font-size", "font-family", "font-weight", "line-height", "letter-spacing",
+        // 其他
+        "float", "clear", "vertical-align"
+    };
+    
+    if (is_position_offset && skip_layout) {
+        // 位置偏移属性（left/top/right/bottom）：只需要重绘！
+        // 适用于 absolute/fixed/relative，都不影响其他元素的布局
+        MarkDirty(DirtyType::PAINT);
+    } else if (always_layout_properties.count(property) > 0) {
+        // 总是触发布局的属性
+        MarkDirty(DirtyType::LAYOUT | DirtyType::PAINT);
+    } else {
+        // 只影响外观的属性（如颜色、背景等）：只需要重绘
+        MarkDirty(DirtyType::PAINT);
+    }
 
     // 移动元素双区域标记：添加旧位置到脏区域列表
     if (is_position_change && !old_bounds.isEmpty()) {
@@ -1063,6 +1136,66 @@ void Element::SyncToLexbor() {
     }
 
     lexbor_dirty_ = false;
+}
+
+void Element::SetupInlineEventHandler(const std::string& event_type, const std::string& handler_code) {
+    std::cout << "[Element::SetupInlineEventHandler] Setting up handler for event '" << event_type 
+              << "' with code: " << handler_code << std::endl;
+
+    // 移除旧的内联事件处理器（如果存在）
+    auto it = inline_event_handlers_.find(event_type);
+    if (it != inline_event_handlers_.end()) {
+        RemoveEventListener(event_type, it->second);
+        inline_event_handlers_.erase(it);
+    }
+
+    // 如果handler_code为空，只移除不添加
+    if (handler_code.empty()) {
+        return;
+    }
+
+    // 创建事件监听器，在事件触发时动态获取 JS 上下文并执行代码
+    // 这样可以确保在脚本执行后，全局函数已经定义
+    std::string code = handler_code;  // 复制一份，避免引用悬空
+    
+    uint64_t listener_id = AddEventListener(event_type, [this, code, event_type](std::shared_ptr<Event> event) {
+        std::cout << "[InlineEventHandler] Executing inline handler for '" << event_type << "': " << code << std::endl;
+        
+        // 动态获取 Document 和 JavaScript 上下文
+        auto doc = std::dynamic_pointer_cast<Document>(GetOwnerDocument());
+        if (!doc) {
+            std::cerr << "[InlineEventHandler] No document, cannot execute inline handler" << std::endl;
+            return;
+        }
+
+        auto js_runtime = doc->GetJSRuntime();
+        if (!js_runtime) {
+            std::cerr << "[InlineEventHandler] No JS runtime, cannot execute inline handler" << std::endl;
+            return;
+        }
+
+        auto js_ctx = js_runtime->GetContext();
+        if (!js_ctx) {
+            std::cerr << "[InlineEventHandler] No JS context, cannot execute inline handler" << std::endl;
+            return;
+        }
+        
+        // 在全局作用域执行代码
+        JSValue result = JS_Eval(js_ctx, code.c_str(), code.length(), "<inline>", JS_EVAL_TYPE_GLOBAL);
+        
+        if (JS_IsException(result)) {
+            std::cerr << "[InlineEventHandler] Exception in inline handler:" << std::endl;
+            js_std_dump_error(js_ctx);
+        }
+        
+        JS_FreeValue(js_ctx, result);
+        std::cout << "[InlineEventHandler] Inline handler completed" << std::endl;
+    }, false, false);
+
+    // 记录listener ID，以便后续移除
+    inline_event_handlers_[event_type] = listener_id;
+    
+    std::cout << "[Element::SetupInlineEventHandler] Handler setup complete, listener_id=" << listener_id << std::endl;
 }
 
 } // namespace lightui

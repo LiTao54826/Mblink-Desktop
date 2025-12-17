@@ -283,6 +283,53 @@ struct LayoutInfo {
 };
 
 /**
+ * @brief 绘制缓存 - P1优化：样式预计算缓存
+ * 
+ * 缓存从 ComputedStyle 计算得到的绘制相关值，避免每帧重复计算。
+ * 当样式变化时调用 InvalidatePaintCache() 使缓存失效。
+ */
+struct PaintCache {
+    bool valid = false;
+    
+    // 预计算的盒模型值（像素）
+    float padding_left = 0.0f;
+    float padding_right = 0.0f;
+    float padding_top = 0.0f;
+    float padding_bottom = 0.0f;
+    
+    float border_left_width = 0.0f;
+    float border_right_width = 0.0f;
+    float border_top_width = 0.0f;
+    float border_bottom_width = 0.0f;
+    
+    // 预解析的颜色
+    SkColor background_color = SK_ColorTRANSPARENT;
+    SkColor border_top_color = SK_ColorBLACK;
+    SkColor border_right_color = SK_ColorBLACK;
+    SkColor border_bottom_color = SK_ColorBLACK;
+    SkColor border_left_color = SK_ColorBLACK;
+    
+    // 预计算的圆角（像素）
+    float border_radius_tl = 0.0f;
+    float border_radius_tr = 0.0f;
+    float border_radius_bl = 0.0f;
+    float border_radius_br = 0.0f;
+    
+    // 内容区域偏移（border + padding）
+    float content_x = 0.0f;
+    float content_y = 0.0f;
+    
+    // 是否有边框
+    bool has_border = false;
+    // 是否有圆角
+    bool has_border_radius = false;
+    // 是否有阴影
+    bool has_box_shadow = false;
+    // 是否有渐变背景
+    bool has_gradient = false;
+};
+
+/**
  * @brief 渲染对象基类
  */
 class RenderObject : public std::enable_shared_from_this<RenderObject> {
@@ -362,8 +409,12 @@ public:
     
     /**
      * @brief 设置计算后的样式
+     * 自动使绘制缓存失效
      */
-    void SetComputedStyle(const ComputedStyle& style) { computed_style_ = style; }
+    void SetComputedStyle(const ComputedStyle& style) { 
+        computed_style_ = style; 
+        paint_cache_.valid = false;  // P1优化：样式变化时使缓存失效
+    }
     
     /**
      * @brief 获取布局信息
@@ -418,6 +469,28 @@ public:
         needs_layout_ = false;
         needs_paint_ = false;
     }
+
+    // =========================================================================
+    // P1优化：样式预计算缓存
+    // =========================================================================
+
+    /**
+     * @brief 获取绘制缓存
+     */
+    PaintCache& GetPaintCache() { return paint_cache_; }
+    const PaintCache& GetPaintCache() const { return paint_cache_; }
+
+    /**
+     * @brief 更新绘制缓存（如果无效则重新计算）
+     * 在 Paint() 开头调用，确保缓存值是最新的
+     */
+    void UpdatePaintCache();
+
+    /**
+     * @brief 使绘制缓存失效
+     * 在样式变化时调用
+     */
+    void InvalidatePaintCache() { paint_cache_.valid = false; }
 
     // =========================================================================
     // 布局树统一：布局相关公共方法
@@ -519,6 +592,12 @@ public:
      * @return 屏幕空间的边界矩形
      */
     SkRect GetBoundingRect() const;
+
+    /**
+     * @brief 获取视口坐标系的边界框（用于元素选择器高亮）
+     * @return 视口空间的边界矩形（考虑滚动偏移）
+     */
+    SkRect GetViewportBoundingRect() const;
 
     /**
      * @brief 执行布局
@@ -697,6 +776,7 @@ protected:
 
     ComputedStyle computed_style_;
     LayoutInfo layout_info_;
+    PaintCache paint_cache_;  // P1优化：样式预计算缓存
 
     bool needs_layout_ = true;
     bool needs_paint_ = true;

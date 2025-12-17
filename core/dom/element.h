@@ -414,6 +414,13 @@ private:
      */
     void UpdateStyleAttribute();
 
+    /**
+     * @brief 设置内联事件处理器
+     * @param event_type 事件类型（不含"on"前缀，如"click"）
+     * @param handler_code JavaScript代码字符串
+     */
+    void SetupInlineEventHandler(const std::string& event_type, const std::string& handler_code);
+
 private:
     /**
      * @brief 判断属性是否影响布局
@@ -453,6 +460,9 @@ private:
     // Lexbor DOM 同步
     lxb_dom_node_t* lexbor_element_ = nullptr;  // 关联的 Lexbor 元素
     bool lexbor_dirty_ = true;                   // Lexbor 是否需要同步
+
+    // 内联事件处理器映射（事件类型 -> listener ID）
+    std::unordered_map<std::string, uint64_t> inline_event_handlers_;
 };
 
 } // namespace lightui

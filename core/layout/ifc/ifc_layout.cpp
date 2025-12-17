@@ -574,8 +574,11 @@ IFCLayoutResult IFCLayout::Layout(RenderObject* container, float available_width
         float current_x = line.x;  // 行的起始 x 位置（可能有 text-indent）
         for (auto* box : line.boxes) {
             if (!box) continue;
-            box->x = current_x + box->margin_left;
-            current_x += box->GetTotalWidth();
+            // 盒子的 x 位置是内容区域的起始位置（在 margin_left 之后）
+            // current_x 指向当前可用空间的起始位置
+            current_x += box->margin_left;  // 先跳过左边距
+            box->x = current_x;             // 内容区域从这里开始
+            current_x += box->width + box->margin_right;  // 移动到下一个盒子的起始位置
         }
 
         // 应用垂直对齐，传入容器的 line-height
@@ -1043,7 +1046,8 @@ void IFCLayout::ApplyLayoutResults(RenderObject* container, float container_widt
         } else {
             // TEXT 或 ATOMIC 盒子
             // Add offset to convert to border-box coordinates
-            float box_left = box.x + box.margin_left + offset_x;
+            // box.x 已经是内容区域的起始位置（margin_left 已经在布局时处理过了）
+            float box_left = box.x + offset_x;
             float box_right = box_left + box.width;
             float box_top = box.y + offset_y;
             float box_bottom = box_top + box.height;
