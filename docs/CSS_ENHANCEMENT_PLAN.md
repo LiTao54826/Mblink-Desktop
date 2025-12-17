@@ -6,7 +6,15 @@
 
 ## 优先级划分
 
-### P0 - 高优先级（影响基本布局和交互）
+### P0 - 紧急（阻塞性问题）
+
+| 属性 | 说明 | 预计工作量 | 状态 |
+|------|------|-----------|------|
+| **CSSStyleDeclaration exotic 支持** | 支持 `element.style.propertyName` 动态属性访问语法 | 2天 | 待开发 |
+
+> ⚠️ **关键问题**：当前 `CSSStyleDeclaration` 没有实现 QuickJS 的 `exotic` 处理器，导致 `element.style.boxShadow = '...'` 这种动态属性访问无法正常工作。这会导致 Preact/React 等框架设置样式时出现问题。
+
+### P1 - 高优先级（影响基本布局和交互）
 
 | 属性 | 说明 | 预计工作量 | 状态 |
 |------|------|-----------|------|
@@ -39,6 +47,108 @@
 ---
 
 ## 详细实现计划
+
+### Phase 0: CSSStyleDeclaration exotic 支持 (紧急)
+
+**问题描述：**
+
+当 JavaScript 使用 `element.style.boxShadow = '...'` 语法时：
+1. QuickJS 尝试在 `CSSStyleDeclaration` 对象上设置 `boxShadow` 属性
+2. 由于没有 `exotic` 处理器，操作失败或被忽略
+3. 样式没有被正确应用，可能导致渲染异常
+
+**影响范围：**
+- Preact/React 等框架的样式设置
+- 任何使用 `element.style.propertyName` 语法的代码
+
+**实现步骤：**
+
+1. 定义 `JSClassExoticMethods` 结构体：
+```cpp
+// core/dom/dom_bindings.cpp
+
+static int js_css_style_declaration_get_own_property(
+    JSContext* ctx, JSPropertyDescriptor* desc,
+    JSValueConst obj, JSAtom prop) {
+    // 获取属性名
+    const char* prop_name = JS_AtomToCString(ctx, prop);
+    if (!prop_name) return -1;
+    
+    auto style = GetCSSStyleDeclaration(ctx, obj);
+    if (!style) {
+        JS_FreeCString(ctx, prop_name);
+        return -1;
+    }
+    
+    // 获取属性值
+    std::string value = style->GetPropertyValue(prop_name);
+    JS_FreeCString(ctx, prop_name);
+    
+    if (desc) {
+        desc->flags = JS_PROP_ENUMERABLE | JS_PROP_WRITABLE;
+        desc->value = JS_NewString(ctx, value.c_str());
+        desc->getter = JS_UNDEFINED;
+        desc->setter = JS_UNDEFINED;
+    }
+    return 1;  // 属性存在
+}
+
+static int js_css_style_declaration_set_property_exotic(
+    JSContext* ctx, JSValueConst obj, JSAtom prop,
+    JSValueConst val, JSValueConst receiver, int flags) {
+    const char* prop_name = JS_AtomToCString(ctx, prop);
+    if (!prop_name) return -1;
+    
+    const char* value = JS_ToCString(ctx, val);
+    if (!value) {
+        JS_FreeCString(ctx, prop_name);
+        return -1;
+    }
+    
+    auto style = GetCSSStyleDeclaration(ctx, obj);
+    if (style) {
+        style->SetProperty(prop_name, value);
+    }
+    
+    JS_FreeCString(ctx, prop_name);
+    JS_FreeCString(ctx, value);
+    return 1;  // 成功
+}
+
+static JSClassExoticMethods css_style_declaration_exotic = {
+    .get_own_property = js_css_style_declaration_get_own_property,
+    .get_own_property_names = nullptr,
+    .delete_property = nullptr,
+    .define_own_property = nullptr,
+    .has_property = nullptr,
+    .get_property = nullptr,
+    .set_property = js_css_style_declaration_set_property_exotic,
+};
+```
+
+2. 在类定义中使用 exotic：
+```cpp
+JSClassDef css_style_declaration_class = {
+    /* class_name */ "CSSStyleDeclaration",
+    /* finalizer */ js_css_style_declaration_finalizer,
+    /* gc_mark */ nullptr,
+    /* call */ nullptr,
+    /* exotic */ &css_style_declaration_exotic,  // 添加这行
+};
+```
+
+**测试用例：**
+```javascript
+// 测试动态属性访问
+var div = document.createElement('div');
+div.style.backgroundColor = 'red';
+console.assert(div.style.backgroundColor === 'red');
+
+div.style.boxShadow = '0 2px 4px rgba(0,0,0,0.1)';
+console.assert(div.style.boxShadow !== '');
+```
+
+---
 
 ### Phase 1: 基础交互属性 (1周)
 
@@ -248,12 +358,15 @@ tests/
 
 | 阶段 | 内容 | 预计时间 |
 |------|------|---------|
+| **Phase 0** | **CSSStyleDeclaration exotic 支持** | **2天** |
 | Phase 1 | 基础交互属性 | 1周 |
 | Phase 2 | 媒体和布局属性 | 1周 |
 | Phase 3 | 高级视觉效果 | 2周 |
 | 测试和修复 | 全面测试 | 1周 |
 
-**总计：约 5 周**
+**总计：约 5.5 周**
+
+> 注：Phase 0 是紧急任务，应优先完成，因为它影响 Preact/React 等框架的正常使用。
 
 ---
 
