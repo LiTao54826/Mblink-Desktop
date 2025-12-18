@@ -18,6 +18,7 @@
 #include "core/quickjs/window_bindings.h"
 #include "core/event/task_scheduler.h"
 #include "core/event/event_loop.h"
+#include "core/devtools/devtools_manager.h"
 
 #include <iostream>
 #include <fstream>
@@ -50,12 +51,16 @@ void PrintUsage(const char* program_name) {
     std::cout << "  --width <宽度>      窗口宽度 (默认: 800)" << std::endl;
     std::cout << "  --height <高度>     窗口高度 (默认: 600)" << std::endl;
     std::cout << "  --title <标题>      窗口标题 (默认: MBink App)" << std::endl;
+    std::cout << "  --devtools          启动时打开开发者工具" << std::endl;
     std::cout << "  --help              显示此帮助信息" << std::endl;
+    std::cout << std::endl;
+    std::cout << "快捷键:" << std::endl;
+    std::cout << "  F12                 切换开发者工具" << std::endl;
     std::cout << std::endl;
     std::cout << "示例:" << std::endl;
     std::cout << "  " << program_name << " my_app.js" << std::endl;
     std::cout << "  " << program_name << " my_app.js --width 1024 --height 768" << std::endl;
-    std::cout << "  " << program_name << " my_app.js --title \"My Application\"" << std::endl;
+    std::cout << "  " << program_name << " my_app.js --devtools" << std::endl;
 }
 
 // 查找 Preact 库路径
@@ -90,6 +95,7 @@ int main(int argc, char** argv) {
     int width = 800;
     int height = 600;
     std::string title = "MBink App";
+    bool open_devtools = false;
     
     for (int i = 1; i < argc; i++) {
         std::string arg = argv[i];
@@ -103,6 +109,8 @@ int main(int argc, char** argv) {
             height = std::stoi(argv[++i]);
         } else if (arg == "--title" && i + 1 < argc) {
             title = argv[++i];
+        } else if (arg == "--devtools") {
+            open_devtools = true;
         } else if (arg[0] != '-') {
             app_path = arg;
         }
@@ -268,11 +276,22 @@ int main(int argc, char** argv) {
         // 显示窗口
         window->Show();
 
+        // 初始化 DevTools
+        auto& devtools = DevToolsManager::GetInstance();
+        devtools.Initialize(document.get(), window.get());
+        
+        // 如果指定了 --devtools 参数，打开开发者工具
+        if (open_devtools) {
+            devtools.Open();
+            std::cout << "  ✓ DevTools opened" << std::endl;
+        }
+
         std::cout << std::endl;
         std::cout << "========================================" << std::endl;
         std::cout << "  🚀 Application Started!" << std::endl;
         std::cout << "========================================" << std::endl;
         std::cout << "  Close window to exit" << std::endl;
+        std::cout << "  Press F12 to toggle DevTools" << std::endl;
         std::cout << std::endl;
 
         // 创建事件循环（使用共享的 task_scheduler 确保定时器正常工作）
@@ -293,6 +312,9 @@ int main(int argc, char** argv) {
         std::cout << "========================================" << std::endl;
         std::cout << "  👋 Application Closed" << std::endl;
         std::cout << "========================================" << std::endl;
+
+        // 清理 DevTools
+        devtools.Shutdown();
 
         // 清理（WindowBindings 会自动清理）
 

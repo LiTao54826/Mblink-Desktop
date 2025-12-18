@@ -210,19 +210,40 @@ public:
     void OnTextChanged(Node* node,
                       const std::string& old_text,
                       const std::string& new_text) override {
+        printf("[OnTextChanged] old=\"%s\" -> new=\"%s\"\n", old_text.c_str(), new_text.c_str());
+        fflush(stdout);
         if (window_ && !IsInBatch(node)) {
             // Phase 2: 文本内容变化的局部重绘
             // 先尝试获取节点自身的 RenderObject
             auto render_obj = node->GetRenderObject();
+            printf("[OnTextChanged] node has RenderObject: %s\n", render_obj ? "yes" : "no");
+            fflush(stdout);
 
             // 如果节点没有 RenderObject，尝试获取父节点的
             if (!render_obj) {
                 if (auto parent = node->GetParentNode()) {
                     render_obj = parent->GetRenderObject();
+                    printf("[OnTextChanged] parent has RenderObject: %s\n", render_obj ? "yes" : "no");
+                    fflush(stdout);
                 }
             }
 
             if (render_obj) {
+                printf("[OnTextChanged] RenderObject type: %d (TEXT=%d)\n", 
+                       static_cast<int>(render_obj->GetType()), 
+                       static_cast<int>(RenderObjectType::TEXT));
+                fflush(stdout);
+                // 如果是 RenderText，直接更新文本内容
+                if (render_obj->GetType() == RenderObjectType::TEXT) {
+                    auto render_text = static_cast<RenderText*>(render_obj.get());
+                    // 直接设置新文本（SyncRenderTree 会处理规范化）
+                    render_text->SetText(new_text);
+                    auto& layout = render_text->GetLayoutInfo();
+                    printf("[OnTextChanged] Updated RenderText to: \"%s\", layout: x=%.1f, y=%.1f, w=%.1f, h=%.1f\n", 
+                           new_text.c_str(), layout.x, layout.y, layout.width, layout.height);
+                    fflush(stdout);
+                }
+
                 // 文本内容变化需要重新布局（尺寸可能改变）
                 render_obj->MarkNeedsLayout();
                 render_obj->MarkNeedsPaint();

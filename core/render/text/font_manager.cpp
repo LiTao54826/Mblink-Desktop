@@ -8,6 +8,8 @@
 #include "include/ports/SkTypeface_win.h"
 #include <sstream>
 #include <iostream>
+#include <algorithm>
+#include <cctype>
 
 namespace lightui {
 
@@ -161,6 +163,27 @@ SkFontStyle FontManager::CreateSkFontStyle(FontWeight weight, FontStyle style) c
     return SkFontStyle(sk_weight, sk_width, sk_slant);
 }
 
+// 将通用字体族名称映射到具体字体
+static std::string MapGenericFontFamily(const std::string& family) {
+    // 转换为小写进行比较
+    std::string lower_family = family;
+    std::transform(lower_family.begin(), lower_family.end(), lower_family.begin(), ::tolower);
+    
+    // 通用字体族映射
+    if (lower_family == "monospace") {
+        return "Consolas, Courier New, Courier";
+    } else if (lower_family == "sans-serif") {
+        return "Arial, Helvetica";
+    } else if (lower_family == "serif") {
+        return "Times New Roman, Times";
+    } else if (lower_family == "cursive") {
+        return "Comic Sans MS, cursive";
+    } else if (lower_family == "fantasy") {
+        return "Impact, fantasy";
+    }
+    return family;
+}
+
 sk_sp<SkTypeface> FontManager::FindTypeface(const std::string& family, const SkFontStyle& style) {
     // 检查缓存
     std::string cache_key = family + "_" + std::to_string(style.weight()) + "_" + std::to_string(style.slant());
@@ -169,12 +192,15 @@ sk_sp<SkTypeface> FontManager::FindTypeface(const std::string& family, const SkF
         return it->second;
     }
 
+    // 映射通用字体族名称
+    std::string mapped_family = MapGenericFontFamily(family);
+
     // 查找字体族
     sk_sp<SkTypeface> typeface;
 
     if (font_mgr_) {
         // 解析字体列表（用逗号分隔）
-        std::istringstream font_stream(family);
+        std::istringstream font_stream(mapped_family);
         std::string font_name;
 
         while (std::getline(font_stream, font_name, ',')) {

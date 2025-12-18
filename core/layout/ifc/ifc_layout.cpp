@@ -796,8 +796,13 @@ void IFCLayout::CreateInlineBox(RenderObject* render_obj) {
                 }
             } else {
                 // 测量整个文本
+                printf("[IFC] MeasureTextForIFC: text=\"%s\", font_size=%.1f, font_family=\"%s\"\n",
+                       text.substr(0, 20).c_str(), style.font_size, style.font_family.c_str());
+                fflush(stdout);
                 TextMeasurement measurement = MeasureTextForIFC(
                     text, style.font_size, style.font_family, letter_spacing, word_spacing, style.line_height);
+                printf("[IFC] MeasureTextForIFC result: width=%.1f, height=%.1f\n", measurement.width, measurement.height);
+                fflush(stdout);
 
                 // 如果文本宽度超过可用宽度且允许换行，则分割文本
 #if IFC_DEBUG
@@ -882,6 +887,10 @@ void IFCLayout::CreateInlineBox(RenderObject* render_obj) {
                     run.height = measurement.height;
                     run.baseline = measurement.skia_ascent;
                     box.text_runs.push_back(run);
+
+                    printf("[IFC CreateInlineBox] TEXT box created: text=\"%s\", width=%.1f, height=%.1f\n",
+                           text.substr(0, 20).c_str(), box.width, box.height);
+                    fflush(stdout);
 
                     inline_boxes_.push_back(std::move(box));
                 }
@@ -1130,10 +1139,22 @@ void IFCLayout::ApplyLayoutResults(RenderObject* container, float container_widt
     // 第三遍：应用文本节点的合并边界
     // 文本节点的位置需要相对于其父 INLINE 元素（如果有的话）
     // 因为 RenderInline::Paint 会先 translate 到自己的位置
+    printf("[IFC ApplyLayoutResults] text_bounds has %zu entries\n", text_bounds.size());
+    fflush(stdout);
     for (auto& [render_obj, bounds] : text_bounds) {
         if (!bounds.has_content) continue;
 
         LayoutInfo& layout = render_obj->GetLayoutInfo();
+        
+        // Debug: print text content
+        if (render_obj->GetType() == RenderObjectType::TEXT) {
+            auto* text_obj = static_cast<RenderText*>(render_obj);
+            printf("[IFC ApplyLayoutResults] TEXT \"%s\": bounds=(%.1f,%.1f)-(%.1f,%.1f) -> w=%.1f, h=%.1f\n",
+                   text_obj->GetText().substr(0, 20).c_str(),
+                   bounds.min_x, bounds.min_y, bounds.max_x, bounds.max_y,
+                   bounds.max_x - bounds.min_x, bounds.max_y - bounds.min_y);
+            fflush(stdout);
+        }
 
         // 获取父元素
         auto parent = render_obj->GetParent();

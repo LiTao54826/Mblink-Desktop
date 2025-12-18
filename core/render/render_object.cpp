@@ -3011,7 +3011,19 @@ void RenderText::Paint(SkCanvas* canvas) {
     SkRect paint_rect = SkRect::MakeXYWH(layout_info_.x, layout_info_.y, layout_info_.width, layout_info_.height);
     if (canvas->quickReject(paint_rect.makeOutset(10, 10))) {
         needs_paint_ = false;
+        printf("[RenderText::Paint] CULLED text=\"%s\" at (%.1f, %.1f)\n", 
+               text_.substr(0, 20).c_str(), layout_info_.x, layout_info_.y);
+        fflush(stdout);
         return;
+    }
+    
+    // Debug: Log painting
+    if (text_.find(':') != std::string::npos && text_.length() == 8) {
+        // Looks like a time string
+        printf("[RenderText::Paint] Painting time text=\"%s\" at (%.1f, %.1f) size=(%.1f, %.1f) color=%s\n", 
+               text_.c_str(), layout_info_.x, layout_info_.y, layout_info_.width, layout_info_.height,
+               computed_style_.color.c_str());
+        fflush(stdout);
     }
 
     const auto& style = computed_style_;

@@ -130,7 +130,9 @@ function createDOMElement(vnode) {
 
     // Handle text nodes
     if (typeof vnode === 'string' || typeof vnode === 'number') {
+        console.log('[createDOMElement] Creating text node: "' + vnode + '"');
         var textNode = document.createTextNode(String(vnode));
+        console.log('[createDOMElement] Text node created, textContent="' + textNode.textContent + '"');
         return textNode;
     }
 
@@ -483,7 +485,10 @@ function diffNode(oldVNode, newVNode, parentDOM, oldDOM) {
         if ((typeof oldVNode === 'string' || typeof oldVNode === 'number') &&
             (typeof newVNode === 'string' || typeof newVNode === 'number')) {
             if (String(oldVNode) !== String(newVNode)) {
+                console.log('[diffNode] Updating text: "' + oldVNode + '" -> "' + newVNode + '"');
+                console.log('[diffNode] oldDOM.nodeType=' + oldDOM.nodeType + ', oldDOM.textContent="' + oldDOM.textContent + '"');
                 oldDOM.textContent = String(newVNode);
+                console.log('[diffNode] After update: oldDOM.textContent="' + oldDOM.textContent + '"');
             }
             return oldDOM;
         }
