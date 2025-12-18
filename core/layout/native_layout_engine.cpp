@@ -355,6 +355,7 @@ void NativeLayoutEngine::BuildLayoutTree(std::shared_ptr<RenderObject> root) {
 
     // Check if we can reuse the existing tree
     auto cached = cached_root_.lock();
+    
     if (root_node_ != 0 && cached && cached.get() == root.get()) {
         if (root->NeedsLayout()) {
             // Need to rebuild - clear all layout flags first
@@ -381,13 +382,19 @@ void NativeLayoutEngine::ComputeLayout(float available_width, float available_he
         return;
     }
 
-    // Clear all caches before full layout computation
+    // Clear all caches and needs_layout flags before full layout computation
     // This ensures a complete recalculation of the entire tree
     // **Feature: incremental-layout-optimization**
     // **Validates: Requirements 6.1**
     for (auto& pair : nodes_) {
         pair.second.cache.Clear();
+        pair.second.needs_layout = false;  // Clear dirty flag after full layout
     }
+    
+    // Reset cached scrollbar state for full layout
+    // This forces re-detection of scrollbar need
+    last_needs_v_scrollbar_ = false;
+    last_effective_width_ = 0.0f;
 
     // Delegate to internal method for actual layout computation
     ComputeLayoutInternal(available_width, available_height);
@@ -406,59 +413,72 @@ void NativeLayoutEngine::ComputeLayoutInternal(float available_width, float avai
     // Check if root node has overflow: auto or scroll and might need scrollbar
     LayoutNode* root = GetNode(root_node_);
     float effective_width = available_width;
+    bool needs_v_scrollbar = false;
 
     if (root && root->render_obj) {
         const auto& style = root->render_obj->GetComputedStyle();
         std::string overflow_y = !style.overflow_y.empty() ? style.overflow_y : style.overflow;
 
         // For overflow: auto or scroll on root, we need to account for potential vertical scrollbar
-        // We do a two-pass layout: first pass to check if content exceeds height,
-        // second pass with reduced width if scrollbar is needed
         if (overflow_y == "auto" || overflow_y == "scroll") {
-            // First pass: compute layout with full width, accounting for root margin
-            Rect<float> first_pass_margin = ResolveOrZero(root->style.margin, std::optional<float>(available_width));
-            float first_pass_width = available_width - first_pass_margin.left - first_pass_margin.right;
-            
-            LayoutInput inputs;
-            inputs.run_mode = RunMode::PerformLayout;
-            inputs.sizing_mode = SizingMode::InherentSize;
-            inputs.known_dimensions = Size<std::optional<float>>{
-                std::optional<float>(first_pass_width),
-                std::nullopt
-            };
-            inputs.parent_size = Size<std::optional<float>>{
-                std::optional<float>(available_width),
-                std::optional<float>(available_height)
-            };
-            inputs.available_space = Size<AvailableSpace>{
-                AvailableSpace::Definite(first_pass_width),
-                AvailableSpace::Definite(available_height)
-            };
-            // Enable vertical margin collapsing
-            inputs.vertical_margins_are_collapsible = Line<bool>{true, true};
-
-            LayoutOutput first_pass = ComputeNodeLayout(root_node_, inputs);
-
-            // Check if content height exceeds available height (needs vertical scrollbar)
-            // or if overflow-y is scroll (always show scrollbar)
-            // Use size.height instead of content_size.height for the actual rendered height
-            // Add root margin to get total height
-            float total_height = first_pass.size.height + first_pass_margin.top + first_pass_margin.bottom;
-            bool needs_v_scrollbar = (total_height > available_height) ||
-                                      (overflow_y == "scroll");
-
-            if (needs_v_scrollbar) {
-                // Reduce available width by scrollbar width
+            // Optimization for incremental layout: use cached scrollbar state
+            // This avoids the expensive two-pass layout on every incremental update
+            // **Feature: incremental-layout-optimization**
+            // **Validates: Requirements 2.5**
+            if (last_effective_width_ > 0 && last_needs_v_scrollbar_) {
+                // Use cached scrollbar state - skip the first pass
                 effective_width = available_width - RenderObject::GetScrollbarWidth();
+                needs_v_scrollbar = true;
+            } else {
+                // First pass: compute layout with full width, accounting for root margin
+                Rect<float> first_pass_margin = ResolveOrZero(root->style.margin, std::optional<float>(available_width));
+                float first_pass_width = available_width - first_pass_margin.left - first_pass_margin.right;
+                
+                LayoutInput inputs;
+                inputs.run_mode = RunMode::PerformLayout;
+                inputs.sizing_mode = SizingMode::InherentSize;
+                inputs.known_dimensions = Size<std::optional<float>>{
+                    std::optional<float>(first_pass_width),
+                    std::nullopt
+                };
+                inputs.parent_size = Size<std::optional<float>>{
+                    std::optional<float>(available_width),
+                    std::optional<float>(available_height)
+                };
+                inputs.available_space = Size<AvailableSpace>{
+                    AvailableSpace::Definite(first_pass_width),
+                    AvailableSpace::Definite(available_height)
+                };
+                // Enable vertical margin collapsing
+                inputs.vertical_margins_are_collapsible = Line<bool>{true, true};
 
-                // Optimization: Only clear caches for nodes affected by width change
-                // Nodes with fixed width (explicit pixel values) that don't depend on
-                // the available width can keep their cache results from the first pass.
-                // This significantly improves performance for layouts with many fixed-size elements.
-                // **Feature: incremental-layout-optimization**
-                // **Validates: Requirements 2.5**
-                ClearWidthDependentCaches(root_node_);
+                LayoutOutput first_pass = ComputeNodeLayout(root_node_, inputs);
+
+                // Check if content height exceeds available height (needs vertical scrollbar)
+                // or if overflow-y is scroll (always show scrollbar)
+                // Use size.height instead of content_size.height for the actual rendered height
+                // Add root margin to get total height
+                float total_height = first_pass.size.height + first_pass_margin.top + first_pass_margin.bottom;
+                needs_v_scrollbar = (total_height > available_height) ||
+                                          (overflow_y == "scroll");
+
+                if (needs_v_scrollbar) {
+                    // Reduce available width by scrollbar width
+                    effective_width = available_width - RenderObject::GetScrollbarWidth();
+
+                    // Optimization: Only clear caches for nodes affected by width change
+                    // Nodes with fixed width (explicit pixel values) that don't depend on
+                    // the available width can keep their cache results from the first pass.
+                    // This significantly improves performance for layouts with many fixed-size elements.
+                    // **Feature: incremental-layout-optimization**
+                    // **Validates: Requirements 2.5**
+                    ClearWidthDependentCaches(root_node_);
+                }
             }
+            
+            // Cache the scrollbar state for future incremental layouts
+            last_needs_v_scrollbar_ = needs_v_scrollbar;
+            last_effective_width_ = effective_width;
         }
     }
 
@@ -972,6 +992,15 @@ void NativeLayoutEngine::PropagateLayoutDirty(NodeId node_id, LayoutScope scope)
                 LayoutNode* parent = GetNode(node->parent);
                 if (parent && !parent->needs_layout) {
                     parent->needs_layout = true;
+                    // For IFC containers, we MUST update content_version because IFC layout
+                    // caches based on content_version and needs to re-collect inline content.
+                    // For non-IFC containers (flex/grid), we do NOT update content_version.
+                    // **Feature: incremental-layout-optimization**
+                    // **Validates: Requirements 4.4**
+                    if (parent->is_ifc_container) {
+                        parent->content_version = ContentVersionManager::GetInstance().GenerateVersion();
+                    }
+                    
                     // For flex/grid containers, we need to propagate further up
                     // because the container size might change
                     LayoutScope parent_scope = DetermineLayoutScope(parent);
@@ -1002,6 +1031,18 @@ void NativeLayoutEngine::PropagateLayoutDirty(NodeId node_id, LayoutScope scope)
                     }
 
                     parent->needs_layout = true;
+                    
+                    // For IFC containers, we MUST update content_version because IFC layout
+                    // caches based on content_version and needs to re-collect inline content
+                    // when any child changes.
+                    // For non-IFC containers, we do NOT update content_version because
+                    // child layouts are computed independently and the parent's cache
+                    // can remain valid (only needs_layout flag triggers re-layout).
+                    // **Feature: incremental-layout-optimization**
+                    // **Validates: Requirements 4.1, 4.2**
+                    if (parent->is_ifc_container) {
+                        parent->content_version = ContentVersionManager::GetInstance().GenerateVersion();
+                    }
 
                     // Check if this parent is a fixed-size container
                     // If so, stop propagation here as changes won't affect its ancestors
@@ -1113,6 +1154,11 @@ NodeId NativeLayoutEngine::CreateNode(RenderObject* render_obj) {
     const auto& computed = render_obj->GetComputedStyle();
     node.style = ConvertStyle(computed);
     node.is_ifc_container = ShouldUseIFC(render_obj);
+    
+    // 为 IFC 容器初始化 content_version（非零值启用版本检查）
+    if (node.is_ifc_container) {
+        node.content_version = ContentVersionManager::GetInstance().GenerateVersion();
+    }
     
     // 检测 TABLE 容器
     RenderObjectType type = render_obj->GetType();
@@ -2914,27 +2960,11 @@ void NativeLayoutEngine::ReadLayoutResults(RenderObject* render_obj) {
         // 1. IFC 容器的子元素
         // 2. 匿名块盒管理的内联元素（它们的布局已经由 ApplyAnonymousBlockLayoutResults 设置）
         
-        // Debug: 输出找不到映射的元素信息
-        auto dom_node = render_obj->GetNode();
-        std::string tag_name = "unknown";
-        if (dom_node && dom_node->GetNodeType() == NodeType::ELEMENT_NODE) {
-            auto element = std::dynamic_pointer_cast<Element>(dom_node);
-            if (element) tag_name = element->GetTagName();
-        }
-        RenderObjectType type = render_obj->GetType();
         LayoutInfo& info = render_obj->GetLayoutInfo();
-        
-        std::cout << "[ReadLayoutResults] No mapping for <" << tag_name 
-                  << "> type=" << static_cast<int>(type)
-                  << " is_laid_out=" << info.is_laid_out
-                  << " pos=(" << info.x << "," << info.y << ")"
-                  << " size=(" << info.width << "," << info.height << ")" << std::endl;
         
         // 检查该元素是否已经被布局（由匿名块盒处理）
         // 如果 is_laid_out 为 true，说明已经由匿名块盒或 IFC 布局过，不需要再递归处理
         if (info.is_laid_out) {
-            // 已经布局过，不要递归处理子元素，避免覆盖位置信息
-            std::cout << "[ReadLayoutResults] Skipping (already laid out)" << std::endl;
             return;
         }
         
@@ -2971,17 +3001,6 @@ void NativeLayoutEngine::ReadLayoutResults(RenderObject* render_obj) {
         info.y = node->layout.location.y;
         info.width = node->output.size.width;
         info.height = node->output.size.height;
-        
-        // Debug: 输出 h3 和 container 的布局信息
-        auto dom_node = render_obj->GetNode();
-        if (dom_node && dom_node->GetNodeType() == NodeType::ELEMENT_NODE) {
-            auto elem = std::dynamic_pointer_cast<Element>(dom_node);
-            if (elem && (elem->GetTagName() == "h3" || elem->GetClassName().find("container") != std::string::npos)) {
-                std::cout << "[ReadLayoutResults] <" << elem->GetTagName() << " class=\"" << elem->GetClassName() 
-                          << "\"> node->layout.location=(" << node->layout.location.x << "," << node->layout.location.y 
-                          << ") size=(" << node->output.size.width << "," << node->output.size.height << ")" << std::endl;
-            }
-        }
     }
     // For TABLE internal elements, their layout is fully managed by RenderTable::Layout
     // We only mark them as laid out, but preserve their positions and dimensions

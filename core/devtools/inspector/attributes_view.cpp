@@ -4,6 +4,7 @@
  */
 
 #include "attributes_view.h"
+#include "core/render/text/font_manager.h"
 
 #include "include/core/SkCanvas.h"
 #include "include/core/SkPaint.h"
@@ -112,8 +113,13 @@ void AttributesView::Render(SkCanvas* canvas, float x, float y, float width, flo
 }
 
 void AttributesView::RenderEmptyState(SkCanvas* canvas, float x, float y, float width, float height) {
-    SkFont font;
-    font.setSize(12);
+    // 使用 FontManager 获取字体（使用支持中文的字体）
+    FontDescriptor font_desc;
+    font_desc.family = "Microsoft YaHei";  // 微软雅黑同时支持中英文
+    font_desc.size = 12.0f;
+    font_desc.weight = FontWeight::NORMAL;
+    font_desc.style = FontStyle::NORMAL;
+    SkFont font = FontManager::GetInstance().LoadFont(font_desc);
 
     SkPaint text_paint;
     text_paint.setColor(SkColorSetRGB(128, 128, 128));
@@ -129,8 +135,13 @@ void AttributesView::RenderEmptyState(SkCanvas* canvas, float x, float y, float 
 
 void AttributesView::RenderAttributeList(SkCanvas* canvas, float x, float y, float width, float height,
                                           const std::vector<AttributeInfo>& attributes) {
-    SkFont font;
-    font.setSize(12);
+    // 使用 FontManager 获取字体（使用支持中文的字体）
+    FontDescriptor font_desc;
+    font_desc.family = "Microsoft YaHei";  // 微软雅黑同时支持中英文
+    font_desc.size = 12.0f;
+    font_desc.weight = FontWeight::NORMAL;
+    font_desc.style = FontStyle::NORMAL;
+    SkFont font = FontManager::GetInstance().LoadFont(font_desc);
 
     float current_y = y + PADDING;
 

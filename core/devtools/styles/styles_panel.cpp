@@ -191,9 +191,9 @@ void StylesPanel::RenderTabs(SkCanvas* canvas, float x, float y, float width, fl
     const int tab_count = 2;
     float tab_width = width / tab_count;
 
-    // 使用 FontManager 获取字体
+    // 使用 FontManager 获取字体（使用支持中文的字体）
     FontDescriptor font_desc;
-    font_desc.family = "Arial";
+    font_desc.family = "Microsoft YaHei";  // 微软雅黑同时支持中英文
     font_desc.size = 11.0f;
     font_desc.weight = FontWeight::NORMAL;
     font_desc.style = FontStyle::NORMAL;

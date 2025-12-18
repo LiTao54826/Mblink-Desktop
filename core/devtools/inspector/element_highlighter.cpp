@@ -6,6 +6,7 @@
 #include "element_highlighter.h"
 #include "core/window/window_manager.h"
 #include "core/render/render_object.h"
+#include "core/render/text/font_manager.h"
 #include "include/core/SkCanvas.h"
 #include "include/core/SkPaint.h"
 #include "include/core/SkRect.h"
@@ -381,9 +382,13 @@ void ElementHighlighter::RenderInfoTooltip(SkCanvas* canvas, std::shared_ptr<Ele
     // 获取元素位置
     float x = 0, y = 0;  // TODO: 从布局获取
 
-    // 提示框背景
-    SkFont font;
-    font.setSize(11);
+    // 提示框背景（使用支持中文的字体）
+    FontDescriptor font_desc;
+    font_desc.family = "Microsoft YaHei";  // 微软雅黑同时支持中英文
+    font_desc.size = 11.0f;
+    font_desc.weight = FontWeight::NORMAL;
+    font_desc.style = FontStyle::NORMAL;
+    SkFont font = FontManager::GetInstance().LoadFont(font_desc);
 
     float text_width = font.measureText(text.c_str(), text.length(), SkTextEncoding::kUTF8);
     float tooltip_width = text_width + 12;

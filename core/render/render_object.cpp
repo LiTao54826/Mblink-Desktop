@@ -1007,16 +1007,6 @@ float RenderObject::CalculateContentWidth() const {
 // ========== RenderBlock 实现 ==========
 
 void RenderBlock::Layout(float parent_width, float parent_height) {
-    // Debug: 追踪 Layout 调用
-    auto dom_node = GetNode();
-    if (dom_node && dom_node->GetNodeType() == NodeType::ELEMENT_NODE) {
-        auto element = std::dynamic_pointer_cast<Element>(dom_node);
-        if (element) {
-            std::cout << "[RenderBlock::Layout] <" << element->GetTagName() 
-                      << "> parent_size=(" << parent_width << "," << parent_height << ")" << std::endl;
-        }
-    }
-    
     // 使用传统块布局
     const auto& style = computed_style_;
     
@@ -2312,16 +2302,6 @@ void RenderBlock::PaintTextAreaElement(SkCanvas* canvas, HTMLTextAreaElement* te
 void RenderInline::Layout(float parent_width, float parent_height) {
     // 🔍 调试：开始布局
     auto node = GetNode();
-    std::string tag_name = "?";
-    std::string text_content = "";
-    if (node && node->GetNodeType() == NodeType::ELEMENT_NODE) {
-        auto elem = std::static_pointer_cast<Element>(node);
-        tag_name = elem->GetTagName();
-        text_content = elem->GetTextContent();
-    }
-    printf("[RenderInline::Layout] START - tag=%s, textContent='%s', children=%zu\n",
-           tag_name.c_str(), text_content.c_str(), children_.size());
-
     const auto& style = computed_style_;
 
     // 首先检查是否有显式的width/height设置（例如input元素）
@@ -2353,11 +2333,6 @@ void RenderInline::Layout(float parent_width, float parent_height) {
         auto& child_layout = child->GetLayoutInfo();
         total_width += child_layout.width;
         max_height = std::max(max_height, child_layout.height);
-        
-        // 🔍 调试：子元素信息
-        printf("  child[%d]: type=%d, w=%.2f, h=%.2f\n",
-               (int)(&child - &children_[0]), (int)child->GetType(),
-               child_layout.width, child_layout.height);
     }
 
     // 计算 padding
@@ -2396,10 +2371,6 @@ void RenderInline::Layout(float parent_width, float parent_height) {
         child_layout.y = padding_top + (layout_info_.height - padding_top - padding_bottom - child_layout.height) / 2.0f;
         current_x += child_layout.width;
     }
-    
-    // 🔍 调试：结束布局
-    printf("[RenderInline::Layout] END - w=%.2f, h=%.2f, total_width=%.2f, max_height=%.2f\n",
-           layout_info_.width, layout_info_.height, total_width, max_height);
 }
 
 std::pair<float, float> RenderInline::MeasureIntrinsicSize(float available_width) {
@@ -3011,19 +2982,7 @@ void RenderText::Paint(SkCanvas* canvas) {
     SkRect paint_rect = SkRect::MakeXYWH(layout_info_.x, layout_info_.y, layout_info_.width, layout_info_.height);
     if (canvas->quickReject(paint_rect.makeOutset(10, 10))) {
         needs_paint_ = false;
-        printf("[RenderText::Paint] CULLED text=\"%s\" at (%.1f, %.1f)\n", 
-               text_.substr(0, 20).c_str(), layout_info_.x, layout_info_.y);
-        fflush(stdout);
         return;
-    }
-    
-    // Debug: Log painting
-    if (text_.find(':') != std::string::npos && text_.length() == 8) {
-        // Looks like a time string
-        printf("[RenderText::Paint] Painting time text=\"%s\" at (%.1f, %.1f) size=(%.1f, %.1f) color=%s\n", 
-               text_.c_str(), layout_info_.x, layout_info_.y, layout_info_.width, layout_info_.height,
-               computed_style_.color.c_str());
-        fflush(stdout);
     }
 
     const auto& style = computed_style_;

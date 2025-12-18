@@ -290,6 +290,11 @@ private:
     
     // IFC layout instance
     IFCLayout ifc_layout_;
+    
+    // Cached scrollbar state for incremental layout optimization
+    // This avoids the two-pass layout on every incremental update
+    bool last_needs_v_scrollbar_ = false;
+    float last_effective_width_ = 0.0f;
 
     /**
      * @brief Create a new node

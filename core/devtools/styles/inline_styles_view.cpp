@@ -98,9 +98,9 @@ std::vector<InlineStylesView::StyleProperty> InlineStylesView::GetStylePropertie
 }
 
 void InlineStylesView::RenderEmptyState(SkCanvas* canvas, float x, float y, float width, float height) {
-    // 使用 FontManager 获取字体
+    // 使用 FontManager 获取字体（使用支持中文的字体）
     FontDescriptor font_desc;
-    font_desc.family = "Consolas";
+    font_desc.family = "Microsoft YaHei";  // 微软雅黑同时支持中英文
     font_desc.size = 12.0f;
     font_desc.weight = FontWeight::NORMAL;
     font_desc.style = FontStyle::NORMAL;
@@ -347,9 +347,9 @@ void InlineStylesView::RenderEmptyState(SkCanvas* canvas, float x, float y, floa
 
 void InlineStylesView::RenderStyleList(SkCanvas* canvas, float x, float y, float width, float height,
                                         const std::vector<StyleProperty>& properties) {
-    // 使用 FontManager 获取字体
+    // 使用 FontManager 获取字体（使用支持中文的字体）
     FontDescriptor font_desc;
-    font_desc.family = "Consolas";
+    font_desc.family = "Microsoft YaHei";  // 微软雅黑同时支持中英文
     font_desc.size = 12.0f;
     font_desc.weight = FontWeight::NORMAL;
     font_desc.style = FontStyle::NORMAL;

@@ -238,7 +238,7 @@
 ## Phase 4: IFC 集成
 
 
-- [-] 12. 优化 IFCLayout 缓存机制
+- [x] 12. 优化 IFCLayout 缓存机制
 
 
   - [x] 12.1 修改 IFCLayout::LayoutCache 使用版本号
@@ -249,9 +249,10 @@
     - _Requirements: 3.1_
 
 
-  - [ ] 12.2 修改 IFCLayout::IsCacheValid() 使用版本号
+  - [x] 12.2 修改 IFCLayout::IsCacheValid() 使用版本号
     - 添加 `content_version` 参数
     - 直接比较版本号而非计算哈希
+    - 修复 PropagateLayoutDirty 向上传播时更新祖先节点的 content_version
     - _Requirements: 3.1, 3.3_
 
   - [x] 12.3 修改 IFCLayout::Layout() 传递版本号
@@ -260,7 +261,7 @@
     - 从 `LayoutNode` 获取版本号并传递给缓存检查
     - _Requirements: 3.2, 3.4_
 
-  - [ ] 12.4 编写 IFC 缓存属性测试
+  - [x] 12.4 编写 IFC 缓存属性测试
 
 
     - **Property 8: IFC 缓存独立性**
@@ -349,7 +350,7 @@
     - 确保渲染结果正确
     - _Requirements: 6.1_
 
-- [-] 18. Final Checkpoint - 确保所有测试通过
+- [x] 18. Final Checkpoint - 确保所有测试通过
 
 
 

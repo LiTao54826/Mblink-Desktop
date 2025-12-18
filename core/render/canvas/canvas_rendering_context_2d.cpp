@@ -25,6 +25,7 @@
 #include "include/effects/SkDashPathEffect.h"
 #include <cmath>
 #include <stdexcept>
+#include <iostream>
 
 namespace lightui {
 

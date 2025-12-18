@@ -13,7 +13,6 @@
 #include <optional>
 #include <array>
 #include <cmath>
-#include <iostream>
 
 namespace lightui {
 

@@ -6,6 +6,7 @@
 #include "computed_styles_view.h"
 #include "core/window/window_manager.h"
 #include "core/render/render_object.h"
+#include "core/render/text/font_manager.h"
 
 #include "include/core/SkCanvas.h"
 #include "include/core/SkPaint.h"
@@ -210,8 +211,13 @@ void ComputedStylesView::RefreshStyles() {
 
 void ComputedStylesView::RenderCategory(SkCanvas* canvas, const ComputedStyleCategory& category,
                                          float x, float& y, float width) {
-    SkFont font;
-    font.setSize(11);
+    // 使用 FontManager 获取字体（使用支持中文的字体）
+    FontDescriptor font_desc;
+    font_desc.family = "Microsoft YaHei";  // 微软雅黑同时支持中英文
+    font_desc.size = 11.0f;
+    font_desc.weight = FontWeight::NORMAL;
+    font_desc.style = FontStyle::NORMAL;
+    SkFont font = FontManager::GetInstance().LoadFont(font_desc);
 
     // 类别标题
     SkPaint title_bg;

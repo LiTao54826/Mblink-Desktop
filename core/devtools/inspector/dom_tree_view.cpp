@@ -229,9 +229,9 @@ void DOMTreeView::RenderNode(SkCanvas* canvas, std::shared_ptr<Node> node,
     float text_x = node_x + (has_children ? EXPAND_ICON_SIZE + 4 : 0);
     std::string label = FormatNodeLabel(node);
 
-    // 使用 FontManager 获取字体
+    // 使用 FontManager 获取字体（使用支持中文的字体）
     FontDescriptor font_desc;
-    font_desc.family = "Consolas";
+    font_desc.family = "Microsoft YaHei";  // 微软雅黑同时支持中英文
     font_desc.size = 12.0f;
     font_desc.weight = FontWeight::NORMAL;
     font_desc.style = FontStyle::NORMAL;

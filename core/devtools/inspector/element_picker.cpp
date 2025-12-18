@@ -8,11 +8,14 @@
 #include "core/dom/event.h"
 #include "core/window/window_manager.h"
 #include "core/render/render_object.h"
+#include "core/render/text/font_manager.h"
 
 #include "include/core/SkCanvas.h"
 #include "include/core/SkPaint.h"
 #include "include/core/SkRect.h"
 #include "include/core/SkFont.h"
+
+#include <iostream>
 
 namespace lightui {
 
@@ -152,9 +155,13 @@ void ElementPicker::RenderHoverHighlight(SkCanvas* canvas) {
     // 添加尺寸
     text += " | " + std::to_string(static_cast<int>(width)) + " × " + std::to_string(static_cast<int>(height));
 
-    // 提示框
-    SkFont font;
-    font.setSize(11);
+    // 提示框（使用支持中文的字体）
+    FontDescriptor font_desc;
+    font_desc.family = "Microsoft YaHei";  // 微软雅黑同时支持中英文
+    font_desc.size = 11.0f;
+    font_desc.weight = FontWeight::NORMAL;
+    font_desc.style = FontStyle::NORMAL;
+    SkFont font = FontManager::GetInstance().LoadFont(font_desc);
 
     float text_width = font.measureText(text.c_str(), text.length(), SkTextEncoding::kUTF8);
     float tooltip_width = text_width + 12;

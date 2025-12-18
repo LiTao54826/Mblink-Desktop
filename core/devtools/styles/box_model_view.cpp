@@ -242,9 +242,9 @@ void BoxModelView::RenderBoxDiagram(SkCanvas* canvas, float x, float y, float wi
     canvas->drawRect(SkRect::MakeXYWH(content_x, content_y, content_w, content_h), content_paint);
     drawDashedRect(content_x, content_y, content_w, content_h);
 
-    // ========== 绘制文本 ==========
+    // ========== 绘制文本（使用支持中文的字体）==========
     FontDescriptor font_desc;
-    font_desc.family = "Arial";
+    font_desc.family = "Microsoft YaHei";  // 微软雅黑同时支持中英文
     font_desc.size = 11.0f;
     font_desc.weight = FontWeight::NORMAL;
     font_desc.style = FontStyle::NORMAL;
@@ -302,8 +302,13 @@ void BoxModelView::RenderBoxDiagram(SkCanvas* canvas, float x, float y, float wi
 }
 
 void BoxModelView::RenderLabel(SkCanvas* canvas, const std::string& text, float x, float y) {
-    SkFont font;
-    font.setSize(10);
+    // 使用 FontManager 获取字体（使用支持中文的字体）
+    FontDescriptor font_desc;
+    font_desc.family = "Microsoft YaHei";  // 微软雅黑同时支持中英文
+    font_desc.size = 10.0f;
+    font_desc.weight = FontWeight::NORMAL;
+    font_desc.style = FontStyle::NORMAL;
+    SkFont font = FontManager::GetInstance().LoadFont(font_desc);
 
     SkPaint paint;
     paint.setColor(SkColorSetRGB(51, 51, 51));
