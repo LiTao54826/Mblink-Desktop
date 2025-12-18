@@ -60,9 +60,10 @@ public:
      * @param container 容器渲染对象
      * @param available_width 可用宽度
      * @param apply_results 是否应用布局结果到渲染对象（默认为 true）
+     * @param content_version 外部传入的内容版本号（0表示使用旧的哈希计算方式）
      * @return 布局结果
      */
-    IFCLayoutResult Layout(RenderObject* container, float available_width, bool apply_results = true);
+    IFCLayoutResult Layout(RenderObject* container, float available_width, bool apply_results = true, uint64_t content_version = 0);
 
     /**
      * @brief 获取内容高度
@@ -149,9 +150,10 @@ public:
      * @brief 检查缓存是否有效
      * @param container 容器渲染对象
      * @param available_width 可用宽度
+     * @param content_version 外部传入的内容版本号（0表示使用旧的哈希计算方式）
      * @return 如果缓存有效则返回 true
      */
-    bool IsCacheValid(RenderObject* container, float available_width) const;
+    bool IsCacheValid(RenderObject* container, float available_width, uint64_t content_version = 0) const;
 
 private:
     /** @brief 布局结果 */
@@ -176,7 +178,7 @@ private:
         float content_width = 0.0f;
         std::vector<LineBox> line_boxes;
         std::vector<InlineBox> inline_boxes;  // Cache inline boxes for ApplyLayoutResults
-        size_t content_version = 0;  // 内容版本号
+        uint64_t content_version = 0;  // 内容版本号（从外部传入，不再内部计算哈希）
         bool valid = false;
     };
 

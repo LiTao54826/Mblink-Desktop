@@ -4,6 +4,7 @@ set(PERFORMANCE_TEST_SOURCES
     main.cpp
     test_dom_performance.cpp
     test_layout_performance.cpp
+    test_incremental_layout_performance.cpp
     test_render_performance.cpp
 )
 

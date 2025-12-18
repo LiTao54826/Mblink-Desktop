@@ -7,6 +7,7 @@ set(INTEGRATION_TEST_SOURCES
     test_event_dispatch.cpp
     test_html_loading.cpp
     test_javascript_integration.cpp
+    test_incremental_layout_integration.cpp
 )
 
 add_executable(lightui_integration_tests

@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuites tests="6" failures="0" disabled="0" errors="0" time="2.341" timestamp="2025-12-18T19:48:41.444" name="AllTests">
+  <testsuite name="LayoutPerformanceTest" tests="1" failures="0" disabled="0" skipped="0" errors="0" time="0.041" timestamp="2025-12-18T19:48:41.457">
+    <testcase name="IncrementalLayout" file="C:\Users\Administrator\Desktop\code\MBink\tests\performance\test_layout_performance.cpp" line="140" status="run" result="completed" time="0.012" timestamp="2025-12-18T19:48:41.458" classname="LayoutPerformanceTest" />
+  </testsuite>
+  <testsuite name="IncrementalLayoutPerformanceTest" tests="5" failures="0" disabled="0" skipped="0" errors="0" time="2.262" timestamp="2025-12-18T19:48:41.503">
+    <testcase name="SingleNodeUpdate100NodeTree" file="C:\Users\Administrator\Desktop\code\MBink\tests\performance\test_incremental_layout_performance.cpp" line="129" status="run" result="completed" time="0.1" timestamp="2025-12-18T19:48:41.512" classname="IncrementalLayoutPerformanceTest" />
+    <testcase name="TextUpdateIn100NodeTree" file="C:\Users\Administrator\Desktop\code\MBink\tests\performance\test_incremental_layout_performance.cpp" line="231" status="run" result="completed" time="2.035" timestamp="2025-12-18T19:48:41.614" classname="IncrementalLayoutPerformanceTest" />
+    <testcase name="MultipleSequentialUpdates" file="C:\Users\Administrator\Desktop\code\MBink\tests\performance\test_incremental_layout_performance.cpp" line="321" status="run" result="completed" time="0.023" timestamp="2025-12-18T19:48:43.653" classname="IncrementalLayoutPerformanceTest" />
+    <testcase name="DeepTreeStructure" file="C:\Users\Administrator\Desktop\code\MBink\tests\performance\test_incremental_layout_performance.cpp" line="387" status="run" result="completed" time="0.035" timestamp="2025-12-18T19:48:43.680" classname="IncrementalLayoutPerformanceTest" />
+    <testcase name="WideTreeStructure" file="C:\Users\Administrator\Desktop\code\MBink\tests\performance\test_incremental_layout_performance.cpp" line="448" status="run" result="completed" time="0.046" timestamp="2025-12-18T19:48:43.717" classname="IncrementalLayoutPerformanceTest" />
+  </testsuite>
+</testsuites>

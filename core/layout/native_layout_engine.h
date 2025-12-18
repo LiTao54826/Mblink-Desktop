@@ -103,6 +103,19 @@ public:
     void UpdateStyle(RenderObject* render_obj, const ComputedStyle& style);
 
     /**
+     * @brief Update content version for a render object
+     * 
+     * Called when content changes (text, children, or layout-affecting style).
+     * Generates a new version number and propagates dirty marks to ancestors.
+     * 
+     * @param render_obj The render object whose content changed
+     * 
+     * **Feature: incremental-layout-optimization**
+     * **Validates: Requirements 1.1, 1.2, 1.3**
+     */
+    void UpdateContentVersion(RenderObject* render_obj);
+
+    /**
      * @brief Add a new render object to the layout tree
      * @param render_obj The render object to add
      * @param parent Parent render object
@@ -173,6 +186,19 @@ public:
 
 private:
     /**
+     * @brief Layout scope enumeration - determines how layout changes propagate
+     * 
+     * Used to optimize incremental layout by limiting the scope of recalculation
+     * based on the container's characteristics.
+     */
+    enum class LayoutScope {
+        SELF_ONLY,   ///< Only affects self (fixed-size containers, absolute/fixed positioned)
+        SUBTREE,     ///< Affects subtree (auto-size containers)
+        SIBLINGS,    ///< Affects siblings (flex/grid children)
+        ANCESTORS    ///< Affects ancestors (size changes propagate upward)
+    };
+
+    /**
      * @brief Internal node structure for the layout tree
      */
     struct LayoutNode {
@@ -208,6 +234,24 @@ private:
         // Position (relative to parent)
         float x = 0.0f;
         float y = 0.0f;
+
+        //----------------------------------------------------------------------
+        // Content Version and Layout Scope (for incremental layout optimization)
+        //----------------------------------------------------------------------
+
+        /// Content version number - incremented when content changes (text, children, layout-affecting style)
+        /// Used for automatic cache invalidation without manual cache clearing
+        uint64_t content_version = 0;
+
+        /// Layout scope - determines how layout changes propagate through the tree
+        /// Used to optimize incremental layout by limiting recalculation scope
+        LayoutScope layout_scope = LayoutScope::SUBTREE;
+
+        /// Last measured width (used to detect size changes for incremental layout)
+        float last_measured_width = 0.0f;
+
+        /// Last measured height (used to detect size changes for incremental layout)
+        float last_measured_height = 0.0f;
 
         // Flags
         bool is_ifc_container = false;
@@ -367,6 +411,21 @@ private:
     void PositionChildren(NodeId node_id);
 
     /**
+     * @brief Internal layout computation (does not clear caches)
+     * 
+     * This method contains the core layout logic extracted from ComputeLayout().
+     * It performs layout computation without clearing caches first, allowing
+     * incremental layout to selectively clear only dirty node caches.
+     * 
+     * @param available_width Available width for layout
+     * @param available_height Available height for layout
+     * 
+     * **Feature: incremental-layout-optimization**
+     * **Validates: Requirements 2.2**
+     */
+    void ComputeLayoutInternal(float available_width, float available_height);
+
+    /**
      * @brief Get node by ID
      * @param id Node ID
      * @return Pointer to node, or nullptr if not found
@@ -392,6 +451,99 @@ private:
      * consecutive inline-level children are wrapped in anonymous block boxes.
      */
     NodeId CreateAnonymousBlockBox(NodeId parent_id, const std::vector<RenderObject*>& inline_children);
+
+    /**
+     * @brief Determine the layout scope for a node
+     * 
+     * Analyzes the node's style to determine how layout changes should propagate.
+     * This is used to optimize incremental layout by limiting recalculation scope.
+     * 
+     * @param node The layout node to analyze
+     * @return LayoutScope indicating how layout changes propagate
+     * 
+     * Rules:
+     * - SELF_ONLY: Absolute/fixed positioned elements, or elements with fixed width AND height
+     * - SUBTREE: Elements with fixed dimensions (width or height)
+     * - SIBLINGS: Flex/grid children that may affect sibling layouts
+     * - ANCESTORS: Auto-sized elements that may affect parent container size
+     * 
+     * **Feature: incremental-layout-optimization**
+     * **Validates: Requirements 3.1.3, 3.1.4, 3.1.5**
+     */
+    LayoutScope DetermineLayoutScope(const LayoutNode* node) const;
+
+    /**
+     * @brief Propagate layout dirty marks based on LayoutScope
+     * 
+     * Intelligently propagates dirty marks through the layout tree based on
+     * the node's LayoutScope. This optimizes incremental layout by limiting
+     * the scope of recalculation.
+     * 
+     * @param node_id The node that triggered the dirty mark
+     * @param scope The layout scope determining propagation behavior
+     * 
+     * Propagation rules:
+     * - SELF_ONLY: Only mark the node itself, don't propagate to ancestors
+     * - SUBTREE: Mark the node and its subtree, don't propagate to ancestors
+     * - SIBLINGS: Mark the node and notify parent to recalculate siblings
+     * - ANCESTORS: Mark the node and propagate to all ancestors up to root
+     * 
+     * **Feature: incremental-layout-optimization**
+     * **Validates: Requirements 4.1, 4.2, 4.3, 4.4**
+     */
+    void PropagateLayoutDirty(NodeId node_id, LayoutScope scope);
+
+    /**
+     * @brief Check if a node has fixed dimensions (both width and height are explicit lengths)
+     * @param node The layout node to check
+     * @return true if both width and height are fixed lengths
+     */
+    bool HasFixedSize(const LayoutNode* node) const;
+
+    /**
+     * @brief Check if a node is a flex or grid child
+     * @param node The layout node to check
+     * @return true if the node's parent is a flex or grid container
+     */
+    bool IsFlexOrGridChild(const LayoutNode* node) const;
+
+    /**
+     * @brief Clear caches only for nodes affected by width changes
+     * 
+     * This method is used during scrollbar detection to optimize the two-pass layout.
+     * Instead of clearing all caches, it only clears caches for nodes whose layout
+     * depends on the available width. Nodes with fixed width (explicit pixel values)
+     * can keep their cache results from the first pass.
+     * 
+     * @param node_id The root node to start clearing from
+     * 
+     * A node's cache is cleared if:
+     * - Its width is auto, percentage, or depends on parent width
+     * - It's a flex/grid child (may be affected by container width changes)
+     * - Its parent's cache was cleared (cascading effect)
+     * 
+     * **Feature: incremental-layout-optimization**
+     * **Validates: Requirements 2.5**
+     */
+    void ClearWidthDependentCaches(NodeId node_id);
+
+    /**
+     * @brief Check if a node's layout depends on available width
+     * 
+     * @param node The layout node to check
+     * @return true if the node's layout depends on available width
+     */
+    bool IsWidthDependent(const LayoutNode* node) const;
+
+    /**
+     * @brief Recursively clear all caches in a subtree
+     * 
+     * Helper method used by ClearWidthDependentCaches when a parent is
+     * width-dependent and all children need their caches cleared.
+     * 
+     * @param node_id The root node of the subtree to clear
+     */
+    void ClearWidthDependentCachesRecursive(NodeId node_id);
 };
 
 } // namespace lightui

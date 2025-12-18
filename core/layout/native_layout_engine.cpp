@@ -4,6 +4,7 @@
  */
 
 #include "native_layout_engine.h"
+#include "content_version.h"
 #include "ifc/ifc_layout.h"
 #include "ifc/line_breaker.h"
 #include "ifc/vertical_aligner.h"
@@ -380,6 +381,28 @@ void NativeLayoutEngine::ComputeLayout(float available_width, float available_he
         return;
     }
 
+    // Clear all caches before full layout computation
+    // This ensures a complete recalculation of the entire tree
+    // **Feature: incremental-layout-optimization**
+    // **Validates: Requirements 6.1**
+    for (auto& pair : nodes_) {
+        pair.second.cache.Clear();
+    }
+
+    // Delegate to internal method for actual layout computation
+    ComputeLayoutInternal(available_width, available_height);
+}
+
+void NativeLayoutEngine::ComputeLayoutInternal(float available_width, float available_height) {
+    // Internal layout computation - does NOT clear caches
+    // This allows incremental layout to selectively clear only dirty node caches
+    // **Feature: incremental-layout-optimization**
+    // **Validates: Requirements 2.2**
+    
+    if (root_node_ == 0) {
+        return;
+    }
+
     // Check if root node has overflow: auto or scroll and might need scrollbar
     LayoutNode* root = GetNode(root_node_);
     float effective_width = available_width;
@@ -414,11 +437,6 @@ void NativeLayoutEngine::ComputeLayout(float available_width, float available_he
             // Enable vertical margin collapsing
             inputs.vertical_margins_are_collapsible = Line<bool>{true, true};
 
-            // Clear cache to force recomputation
-            for (auto& pair : nodes_) {
-                pair.second.cache.Clear();
-            }
-
             LayoutOutput first_pass = ComputeNodeLayout(root_node_, inputs);
 
             // Check if content height exceeds available height (needs vertical scrollbar)
@@ -433,10 +451,13 @@ void NativeLayoutEngine::ComputeLayout(float available_width, float available_he
                 // Reduce available width by scrollbar width
                 effective_width = available_width - RenderObject::GetScrollbarWidth();
 
-                // Clear cache and recompute with reduced width
-                for (auto& pair : nodes_) {
-                    pair.second.cache.Clear();
-                }
+                // Optimization: Only clear caches for nodes affected by width change
+                // Nodes with fixed width (explicit pixel values) that don't depend on
+                // the available width can keep their cache results from the first pass.
+                // This significantly improves performance for layouts with many fixed-size elements.
+                // **Feature: incremental-layout-optimization**
+                // **Validates: Requirements 2.5**
+                ClearWidthDependentCaches(root_node_);
             }
         }
     }
@@ -502,6 +523,8 @@ bool NativeLayoutEngine::ComputeIncrementalLayout(float available_width, float a
     }
 
     // 收集需要布局的节点
+    // **Feature: incremental-layout-optimization**
+    // **Validates: Requirements 2.1, 2.2**
     std::vector<NodeId> dirty_nodes;
     std::function<void(NodeId)> collectDirty = [&](NodeId node_id) {
         LayoutNode* node = GetNode(node_id);
@@ -521,16 +544,10 @@ bool NativeLayoutEngine::ComputeIncrementalLayout(float available_width, float a
         return false;
     }
 
-    LayoutNode* root_node = GetNode(root_node_);
-
-    // 关键修复：不要单独布局每个 dirty node。
-    // 这会打破父子布局约束（例如 Flexbox 分配空间）。
-    // 正确做法是：
-    // 1. 清除所有 dirty node 的缓存
-    // 2. 清除 needs_layout 标记
-    // 3. 从 Root 开始执行一次标准布局（因为 MarkNeedsLayout 会向上冒泡到 Root，Root 也是 dirty 的）
-    //    ComputeNodeLayout 会自动利用未被清除的 clean node 缓存。
-
+    // 关键优化：只清除脏节点的缓存，而不是所有节点
+    // 这样干净的节点可以保留其缓存结果，实现真正的增量布局
+    // **Feature: incremental-layout-optimization**
+    // **Validates: Requirements 2.1, 2.4**
     for (NodeId node_id : dirty_nodes) {
         LayoutNode* node = GetNode(node_id);
         if (node) {
@@ -539,9 +556,11 @@ bool NativeLayoutEngine::ComputeIncrementalLayout(float available_width, float a
         }
     }
 
-    // 调用标准布局过程
-    // 它会检查缓存，只重新计算被清除缓存的节点
-    ComputeLayout(available_width, available_height);
+    // 直接调用内部布局方法，跳过 ComputeLayout() 中的全局缓存清除
+    // ComputeLayoutInternal() 不会清除缓存，因此干净节点的缓存会被保留
+    // **Feature: incremental-layout-optimization**
+    // **Validates: Requirements 2.2**
+    ComputeLayoutInternal(available_width, available_height);
     
     return true;
 }
@@ -551,24 +570,17 @@ void NativeLayoutEngine::MarkNeedsLayout(RenderObject* render_obj) {
     if (it != render_to_node_.end()) {
         LayoutNode* node = GetNode(it->second);
         if (node) {
-            node->needs_layout = true;
-            
-            // 4.9 布局隔离回滚：
-            // 恢复标准逻辑。即便对于 absolute/fixed 元素，也标记 Layout dirty。
-            // 配合 UpdateStyle 的向上冒泡（或默认冒泡），确保 Root 能够感知变化。
-            // const auto& style = render_obj->GetComputedStyle();
-            // if (style.position == "absolute" || style.position == "fixed") {
-            //    return;
-            // }
-            
-            // 非定位元素：向上传播脏标记到父节点
-            NodeId parent_id = node->parent;
-            while (parent_id != 0) {
-                LayoutNode* parent = GetNode(parent_id);
-                if (!parent || parent->needs_layout) break;
-                parent->needs_layout = true;
-                parent_id = parent->parent;
-            }
+            // Determine the layout scope for this node
+            // This decides how dirty marks should propagate through the tree
+            // **Feature: incremental-layout-optimization**
+            // **Validates: Requirements 4.1, 4.2, 4.3, 4.4**
+            LayoutScope scope = DetermineLayoutScope(node);
+
+            // Use intelligent dirty mark propagation based on layout scope
+            // - Fixed-size containers don't propagate to ancestors
+            // - Auto-size containers propagate to ancestors
+            // - Flex/grid children notify parent for sibling recalculation
+            PropagateLayoutDirty(it->second, scope);
         }
     }
 }
@@ -682,9 +694,16 @@ void NativeLayoutEngine::UpdateStyle(RenderObject* render_obj, const ComputedSty
             node->grid_item_style.margin = node->style.margin;
             node->grid_item_style.inset = node->style.inset;
 
-            // 只有布局相关属性变化时才标记需要重新布局
+            // 只有布局相关属性变化时才标记需要重新布局和更新版本号
+            // **Feature: incremental-layout-optimization**
+            // **Validates: Requirements 1.3**
             if (layout_changed) {
                 node->needs_layout = true;
+                
+                // Update content version for layout-affecting style changes
+                // Pure paint styles (color, background-color, etc.) don't update version
+                uint64_t new_version = ContentVersionManager::GetInstance().GenerateVersion();
+                node->content_version = new_version;
             }
         }
     } else {
@@ -714,6 +733,291 @@ void NativeLayoutEngine::UpdateStyle(RenderObject* render_obj, const ComputedSty
     }
 }
 
+void NativeLayoutEngine::UpdateContentVersion(RenderObject* render_obj) {
+    if (!render_obj) {
+        return;
+    }
+
+    auto it = render_to_node_.find(render_obj);
+    if (it == render_to_node_.end()) {
+        return;
+    }
+
+    LayoutNode* node = GetNode(it->second);
+    if (!node) {
+        return;
+    }
+
+    // Generate a new version number
+    // **Feature: incremental-layout-optimization**
+    // **Validates: Requirements 1.1, 1.2, 1.3**
+    uint64_t new_version = ContentVersionManager::GetInstance().GenerateVersion();
+    node->content_version = new_version;
+
+    // Determine the layout scope for this node
+    // This decides how dirty marks should propagate through the tree
+    // **Feature: incremental-layout-optimization**
+    // **Validates: Requirements 4.1, 4.2, 4.3, 4.4**
+    LayoutScope scope = DetermineLayoutScope(node);
+
+    // Use intelligent dirty mark propagation based on layout scope
+    // - Fixed-size containers don't propagate to ancestors
+    // - Auto-size containers propagate to ancestors
+    PropagateLayoutDirty(it->second, scope);
+}
+
+NativeLayoutEngine::LayoutScope NativeLayoutEngine::DetermineLayoutScope(const LayoutNode* node) const {
+    // Default to SUBTREE if node is invalid
+    if (!node) {
+        return LayoutScope::SUBTREE;
+    }
+
+    // Check position first - absolute/fixed positioned elements only affect themselves
+    // They are taken out of normal flow and don't affect siblings or ancestors
+    if (node->style.position == Position::Absolute || node->style.position == Position::Fixed) {
+        return LayoutScope::SELF_ONLY;
+    }
+
+    // Check if the node has fixed dimensions (both width AND height are explicit lengths)
+    // Fixed-size containers isolate their children from affecting ancestors
+    if (HasFixedSize(node)) {
+        return LayoutScope::SELF_ONLY;
+    }
+
+    // Check if this is a flex or grid child
+    // Flex/grid children may affect sibling layouts due to space distribution
+    if (IsFlexOrGridChild(node)) {
+        return LayoutScope::SIBLINGS;
+    }
+
+    // For auto-sized elements, changes may propagate to ancestors
+    // because the parent container size may depend on child content
+    return LayoutScope::ANCESTORS;
+}
+
+bool NativeLayoutEngine::HasFixedSize(const LayoutNode* node) const {
+    if (!node) {
+        return false;
+    }
+
+    const auto& style = node->style;
+    
+    // Check if width is a fixed length (not auto, not percent)
+    bool width_fixed = style.size.width.IsLength() && !style.size.width.IsAuto();
+    
+    // Check if height is a fixed length (not auto, not percent)
+    bool height_fixed = style.size.height.IsLength() && !style.size.height.IsAuto();
+    
+    // Both dimensions must be fixed for the container to be considered "fixed size"
+    return width_fixed && height_fixed;
+}
+
+bool NativeLayoutEngine::IsFlexOrGridChild(const LayoutNode* node) const {
+    if (!node || node->parent == 0) {
+        return false;
+    }
+
+    const LayoutNode* parent = GetNode(node->parent);
+    if (!parent) {
+        return false;
+    }
+
+    // Check if parent is a flex or grid container
+    return parent->style.display == Display::Flex || parent->style.display == Display::Grid;
+}
+
+bool NativeLayoutEngine::IsWidthDependent(const LayoutNode* node) const {
+    // **Feature: incremental-layout-optimization**
+    // **Validates: Requirements 2.5**
+    
+    if (!node) {
+        return true;  // Assume dependent if node is null
+    }
+
+    const Style& style = node->style;
+
+    // Check if width is auto or percentage (depends on available width)
+    if (style.size.width.IsAuto()) {
+        return true;
+    }
+    if (style.size.width.IsPercent() || style.size.width.IsCalc()) {
+        return true;
+    }
+
+    // Check if min-width or max-width use percentage
+    if (style.min_size.width.IsPercent() || style.min_size.width.IsCalc()) {
+        return true;
+    }
+    if (style.max_size.width.IsPercent() || style.max_size.width.IsCalc()) {
+        return true;
+    }
+
+    // Check if horizontal margin uses percentage
+    if (style.margin.left.IsPercent() || style.margin.left.IsCalc() ||
+        style.margin.right.IsPercent() || style.margin.right.IsCalc()) {
+        return true;
+    }
+
+    // Check if horizontal padding uses percentage
+    if (style.padding.left.IsPercent() || style.padding.left.IsCalc() ||
+        style.padding.right.IsPercent() || style.padding.right.IsCalc()) {
+        return true;
+    }
+
+    // Flex/grid children may be affected by container width changes
+    if (IsFlexOrGridChild(node)) {
+        // Flex items with flex-grow or flex-shrink may change size
+        if (style.flex_grow > 0.0f || style.flex_shrink > 0.0f) {
+            return true;
+        }
+        // Flex items with percentage flex-basis
+        if (style.flex_basis.IsPercent() || style.flex_basis.IsCalc()) {
+            return true;
+        }
+    }
+
+    // IFC containers may need re-layout if available width changes
+    // (text wrapping depends on available width)
+    if (node->is_ifc_container) {
+        return true;
+    }
+
+    // Fixed width with explicit pixel value - not dependent on available width
+    return false;
+}
+
+void NativeLayoutEngine::ClearWidthDependentCaches(NodeId node_id) {
+    // **Feature: incremental-layout-optimization**
+    // **Validates: Requirements 2.5**
+    
+    LayoutNode* node = GetNode(node_id);
+    if (!node) {
+        return;
+    }
+
+    // Check if this node's layout depends on available width
+    bool is_dependent = IsWidthDependent(node);
+
+    if (is_dependent) {
+        // Clear cache for this node
+        node->cache.Clear();
+    }
+
+    // Recursively process children
+    // If parent cache was cleared, children may also need clearing
+    // because their available space may have changed
+    for (NodeId child_id : node->children) {
+        LayoutNode* child = GetNode(child_id);
+        if (child) {
+            if (is_dependent) {
+                // Parent is width-dependent, so children's available space changed
+                // Clear child cache regardless of child's own width dependency
+                child->cache.Clear();
+                // Still need to recurse to clear grandchildren
+                ClearWidthDependentCachesRecursive(child_id);
+            } else {
+                // Parent is not width-dependent, check child independently
+                ClearWidthDependentCaches(child_id);
+            }
+        }
+    }
+}
+
+void NativeLayoutEngine::ClearWidthDependentCachesRecursive(NodeId node_id) {
+    // Helper method to clear all caches in a subtree
+    // Used when parent is width-dependent and all children need clearing
+    LayoutNode* node = GetNode(node_id);
+    if (!node) {
+        return;
+    }
+
+    node->cache.Clear();
+
+    for (NodeId child_id : node->children) {
+        ClearWidthDependentCachesRecursive(child_id);
+    }
+}
+
+void NativeLayoutEngine::PropagateLayoutDirty(NodeId node_id, LayoutScope scope) {
+    // **Feature: incremental-layout-optimization**
+    // **Validates: Requirements 4.1, 4.2, 4.3, 4.4**
+    
+    LayoutNode* node = GetNode(node_id);
+    if (!node) {
+        return;
+    }
+
+    // Always mark the current node as needing layout
+    node->needs_layout = true;
+
+    // Determine propagation behavior based on scope
+    switch (scope) {
+        case LayoutScope::SELF_ONLY:
+            // Only mark self, don't propagate to ancestors
+            // This applies to absolute/fixed positioned elements and fixed-size containers
+            // They are isolated from the normal flow and don't affect ancestors
+            break;
+
+        case LayoutScope::SUBTREE:
+            // Mark self and subtree, but don't propagate to ancestors
+            // This applies to containers with fixed dimensions
+            // Changes within them don't affect parent container size
+            break;
+
+        case LayoutScope::SIBLINGS:
+            // Mark self and notify parent to recalculate siblings
+            // This applies to flex/grid children where space distribution may change
+            // **Validates: Requirements 4.4**
+            if (node->parent != 0) {
+                LayoutNode* parent = GetNode(node->parent);
+                if (parent && !parent->needs_layout) {
+                    parent->needs_layout = true;
+                    // For flex/grid containers, we need to propagate further up
+                    // because the container size might change
+                    LayoutScope parent_scope = DetermineLayoutScope(parent);
+                    if (parent_scope == LayoutScope::ANCESTORS || parent_scope == LayoutScope::SIBLINGS) {
+                        PropagateLayoutDirty(node->parent, parent_scope);
+                    }
+                }
+            }
+            break;
+
+        case LayoutScope::ANCESTORS:
+            // Mark self and propagate to all ancestors up to root
+            // This applies to auto-sized elements where content changes affect parent size
+            // **Validates: Requirements 4.1, 4.2**
+            {
+                NodeId parent_id = node->parent;
+                while (parent_id != 0) {
+                    LayoutNode* parent = GetNode(parent_id);
+                    if (!parent) {
+                        break;
+                    }
+
+                    // If parent is already marked dirty, we can stop propagation
+                    // This is an optimization to avoid redundant marking
+                    // **Validates: Requirements 4.2**
+                    if (parent->needs_layout) {
+                        break;
+                    }
+
+                    parent->needs_layout = true;
+
+                    // Check if this parent is a fixed-size container
+                    // If so, stop propagation here as changes won't affect its ancestors
+                    LayoutScope parent_scope = DetermineLayoutScope(parent);
+                    if (parent_scope == LayoutScope::SELF_ONLY) {
+                        // Fixed-size container isolates changes
+                        break;
+                    }
+
+                    parent_id = parent->parent;
+                }
+            }
+            break;
+    }
+}
+
 void NativeLayoutEngine::AddElement(RenderObject* render_obj, RenderObject* parent) {
     if (!render_obj || HasElement(render_obj)) {
         return;
@@ -733,6 +1037,13 @@ void NativeLayoutEngine::AddElement(RenderObject* render_obj, RenderObject* pare
         LayoutNode* parent_node = GetNode(parent_id);
         if (parent_node) {
             parent_node->children.push_back(node_id);
+            
+            // Update parent's content version when child is added
+            // **Feature: incremental-layout-optimization**
+            // **Validates: Requirements 1.2**
+            uint64_t new_version = ContentVersionManager::GetInstance().GenerateVersion();
+            parent_node->content_version = new_version;
+            parent_node->needs_layout = true;
         }
         LayoutNode* node = GetNode(node_id);
         if (node) {
@@ -758,6 +1069,13 @@ void NativeLayoutEngine::RemoveElement(RenderObject* render_obj) {
                 std::remove(children.begin(), children.end(), node_id),
                 children.end()
             );
+            
+            // Update parent's content version when child is removed
+            // **Feature: incremental-layout-optimization**
+            // **Validates: Requirements 1.2**
+            uint64_t new_version = ContentVersionManager::GetInstance().GenerateVersion();
+            parent->content_version = new_version;
+            parent->needs_layout = true;
         }
     }
 
@@ -1498,11 +1816,14 @@ LayoutOutput NativeLayoutEngine::ComputeNodeLayout(NodeId node_id, const LayoutI
         return LayoutOutput{};
     }
 
-    // Check cache
+    // Check cache (pass content_version for incremental layout invalidation)
+    // **Feature: incremental-layout-optimization**
+    // **Validates: Requirements 1.4, 1.5**
     auto cached = node->cache.Get(
         inputs.known_dimensions,
         inputs.available_space,
-        inputs.run_mode
+        inputs.run_mode,
+        node->content_version
     );
     if (cached.has_value()) {
         return *cached;
@@ -1520,11 +1841,14 @@ LayoutOutput NativeLayoutEngine::ComputeNodeLayout(NodeId node_id, const LayoutI
             type == RenderObjectType::INLINE) {
             output = MeasureLeafNode(node_id, inputs);
 
-            // Store in cache and return early
+            // Store in cache and return early (pass content_version for incremental layout)
+            // **Feature: incremental-layout-optimization**
+            // **Validates: Requirements 1.4, 1.5**
             node->cache.Store(
                 inputs.known_dimensions,
                 inputs.available_space,
                 inputs.run_mode,
+                node->content_version,
                 output
             );
             node->output = output;
@@ -1567,11 +1891,14 @@ LayoutOutput NativeLayoutEngine::ComputeNodeLayout(NodeId node_id, const LayoutI
                     output = ComputeBlockLayout(node_id, final_inputs);
                 }
 
-                // Store in cache and return
+                // Store in cache and return (pass content_version for incremental layout)
+                // **Feature: incremental-layout-optimization**
+                // **Validates: Requirements 1.4, 1.5**
                 node->cache.Store(
                     inputs.known_dimensions,
                     inputs.available_space,
                     inputs.run_mode,
+                    node->content_version,
                     output
                 );
                 node->output = output;
@@ -1603,11 +1930,14 @@ LayoutOutput NativeLayoutEngine::ComputeNodeLayout(NodeId node_id, const LayoutI
             break;
     }
 
-    // Store in cache
+    // Store in cache (pass content_version for incremental layout invalidation)
+    // **Feature: incremental-layout-optimization**
+    // **Validates: Requirements 1.4, 1.5**
     node->cache.Store(
         inputs.known_dimensions,
         inputs.available_space,
         inputs.run_mode,
+        node->content_version,
         output
     );
 
@@ -1813,11 +2143,14 @@ LayoutOutput NativeLayoutEngine::ComputeTableLayout(NodeId node_id, const Layout
     output.size.height = table_layout.height;
     output.content_size = output.size;
 
-    // 存储到缓存
+    // 存储到缓存 (pass content_version for incremental layout invalidation)
+    // **Feature: incremental-layout-optimization**
+    // **Validates: Requirements 1.4, 1.5**
     node->cache.Store(
         inputs.known_dimensions,
         inputs.available_space,
         inputs.run_mode,
+        node->content_version,
         output
     );
     node->output = output;
@@ -1927,13 +2260,15 @@ LayoutOutput NativeLayoutEngine::ComputeIFCLayout(NodeId node_id, const LayoutIn
         float min_content_width = ifc_layout_.MeasureMinContentWidth(node->render_obj);
 
         // Now layout with this minimum width to get the height
-        result = ifc_layout_.Layout(node->render_obj, min_content_width, apply_results);
+        // Pass content_version from LayoutNode for incremental layout cache validation
+        result = ifc_layout_.Layout(node->render_obj, min_content_width, apply_results, node->content_version);
 
         total_width = min_content_width + padding_left + padding_right + border_left + border_right;
         total_height = result.total_height + padding_top + padding_bottom + border_top + border_bottom;
     } else {
         // Use IFC to compute content layout with the correct content width
-        result = ifc_layout_.Layout(node->render_obj, content_width, apply_results);
+        // Pass content_version from LayoutNode for incremental layout cache validation
+        result = ifc_layout_.Layout(node->render_obj, content_width, apply_results, node->content_version);
 
         // Calculate total size including padding and border
         total_width = result.max_width + padding_left + padding_right + border_left + border_right;
@@ -1991,7 +2326,8 @@ LayoutOutput NativeLayoutEngine::ComputeIFCLayout(NodeId node_id, const LayoutIn
 
             // Clear IFC cache and relayout
             ifc_layout_.ClearCache();
-            result = ifc_layout_.Layout(node->render_obj, content_width);
+            // Pass content_version from LayoutNode for incremental layout cache validation
+            result = ifc_layout_.Layout(node->render_obj, content_width, true, node->content_version);
         }
     }
 

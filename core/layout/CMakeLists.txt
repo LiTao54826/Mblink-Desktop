@@ -2,6 +2,7 @@
 
 set(LAYOUT_SOURCES
     native_layout_engine.cpp
+    content_version.cpp
     # 布局算法
     block_layout.cpp
     flex_layout.cpp
@@ -18,6 +19,7 @@ set(LAYOUT_SOURCES
 set(LAYOUT_HEADERS
     layout_engine.h
     native_layout_engine.h
+    content_version.h
     # 布局算法
     block_layout.h
     flex_layout.h

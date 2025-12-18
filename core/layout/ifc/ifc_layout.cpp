@@ -257,7 +257,7 @@ size_t IFCLayout::GetContentVersion(RenderObject* container) const {
     return version;
 }
 
-bool IFCLayout::IsCacheValid(RenderObject* container, float available_width) const {
+bool IFCLayout::IsCacheValid(RenderObject* container, float available_width, uint64_t content_version) const {
     auto it = cache_.find(container);
     if (it == cache_.end()) return false;
 
@@ -268,7 +268,15 @@ bool IFCLayout::IsCacheValid(RenderObject* container, float available_width) con
     if (std::abs(cache.available_width - available_width) > 0.01f) return false;
 
     // 检查内容版本是否相同
-    if (cache.content_version != GetContentVersion(container)) return false;
+    // 如果传入的 content_version 为 0，使用旧的哈希计算方式（向后兼容）
+    // 否则直接比较版本号
+    if (content_version != 0) {
+        // 使用外部传入的版本号直接比较
+        if (cache.content_version != content_version) return false;
+    } else {
+        // 向后兼容：使用旧的哈希计算方式
+        if (cache.content_version != GetContentVersion(container)) return false;
+    }
 
     return true;
 }
@@ -402,7 +410,7 @@ float IFCLayout::MeasureMinContentWidth(RenderObject* container) {
 
 // ========== 主布局方法 ==========
 
-IFCLayoutResult IFCLayout::Layout(RenderObject* container, float available_width, bool apply_results) {
+IFCLayoutResult IFCLayout::Layout(RenderObject* container, float available_width, bool apply_results, uint64_t content_version) {
     IFCLayoutResult result;
 
     if (!container) {
@@ -427,8 +435,8 @@ IFCLayoutResult IFCLayout::Layout(RenderObject* container, float available_width
     }
     float container_width = available_width + padding_left + padding_right + border_left + border_right;
 
-    // 检查缓存
-    if (IsCacheValid(container, available_width)) {
+    // 检查缓存（传入外部版本号）
+    if (IsCacheValid(container, available_width, content_version)) {
         const auto& cache = cache_[container];
         line_boxes_ = cache.line_boxes;
         inline_boxes_ = cache.inline_boxes;  // Also restore inline_boxes for ApplyLayoutResults
@@ -623,7 +631,8 @@ IFCLayoutResult IFCLayout::Layout(RenderObject* container, float available_width
     cache.content_width = content_width_;
     cache.line_boxes = line_boxes_;
     cache.inline_boxes = inline_boxes_;  // Cache inline boxes for ApplyLayoutResults
-    cache.content_version = GetContentVersion(container);
+    // 使用外部传入的版本号，如果为0则使用旧的哈希计算方式（向后兼容）
+    cache.content_version = (content_version != 0) ? content_version : GetContentVersion(container);
     cache.valid = true;
 
     // 填充结果

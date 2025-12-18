@@ -53,6 +53,21 @@ public:
         native_engine_.MarkNeedsLayout(render_obj);
     }
 
+    /**
+     * @brief Update content version for a render object
+     * 
+     * Called when content changes (text, children, or layout-affecting style).
+     * Generates a new version number and propagates dirty marks to ancestors.
+     * 
+     * @param render_obj The render object whose content changed
+     * 
+     * **Feature: incremental-layout-optimization**
+     * **Validates: Requirements 1.1, 1.2, 1.3**
+     */
+    void UpdateContentVersion(RenderObject* render_obj) {
+        native_engine_.UpdateContentVersion(render_obj);
+    }
+
     void AddElement(RenderObject* render_obj, RenderObject* parent) {
         native_engine_.AddElement(render_obj, parent);
     }

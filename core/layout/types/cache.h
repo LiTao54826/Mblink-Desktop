@@ -33,6 +33,8 @@ struct CacheEntry {
     Size<std::optional<float>> known_dimensions;
     /// Available space when cached
     Size<AvailableSpace> available_space;
+    /// Content version when cached (for incremental layout invalidation)
+    uint64_t content_version;
     /// Cached content
     T content;
 };
@@ -88,10 +90,15 @@ public:
     }
 
     /// Try to retrieve a cached result
+    /// @param known_dimensions Known dimensions for the layout
+    /// @param available_space Available space for the layout
+    /// @param run_mode The run mode for layout computation
+    /// @param content_version The current content version (0 means skip version check for backward compatibility)
     std::optional<LayoutOutput> Get(
         Size<std::optional<float>> known_dimensions,
         Size<AvailableSpace> available_space,
-        RunMode run_mode
+        RunMode run_mode,
+        uint64_t content_version = 0
     ) const {
         if (run_mode == RunMode::PerformHiddenLayout) {
             return std::nullopt;
@@ -100,6 +107,13 @@ public:
         if (run_mode == RunMode::PerformLayout) {
             if (final_layout_entry_.has_value()) {
                 const auto& entry = *final_layout_entry_;
+                
+                // Check content version first (if provided)
+                // Version 0 means skip version check for backward compatibility
+                if (content_version != 0 && entry.content_version != content_version) {
+                    return std::nullopt;
+                }
+                
                 const auto cached_size = entry.content.size;
 
                 bool width_matches = 
@@ -124,6 +138,12 @@ public:
         for (const auto& entry : measure_entries_) {
             if (!entry.has_value()) continue;
 
+            // Check content version first (if provided)
+            // Version 0 means skip version check for backward compatibility
+            if (content_version != 0 && entry->content_version != content_version) {
+                continue;
+            }
+
             const auto cached_size = entry->content;
 
             bool width_matches =
@@ -146,10 +166,16 @@ public:
     }
 
     /// Store a computed result in the cache
+    /// @param known_dimensions Known dimensions for the layout
+    /// @param available_space Available space for the layout
+    /// @param run_mode The run mode for layout computation
+    /// @param content_version The current content version to store with the cache entry
+    /// @param layout_output The layout output to cache
     void Store(
         Size<std::optional<float>> known_dimensions,
         Size<AvailableSpace> available_space,
         RunMode run_mode,
+        uint64_t content_version,
         const LayoutOutput& layout_output
     ) {
         if (run_mode == RunMode::PerformHiddenLayout) {
@@ -162,6 +188,7 @@ public:
             final_layout_entry_ = CacheEntry<LayoutOutput>{
                 known_dimensions,
                 available_space,
+                content_version,
                 layout_output
             };
         } else {
@@ -169,9 +196,21 @@ public:
             measure_entries_[slot] = CacheEntry<Size<float>>{
                 known_dimensions,
                 available_space,
+                content_version,
                 layout_output.size
             };
         }
+    }
+    
+    /// Store a computed result in the cache (backward compatible overload)
+    /// @deprecated Use the version with content_version parameter
+    void Store(
+        Size<std::optional<float>> known_dimensions,
+        Size<AvailableSpace> available_space,
+        RunMode run_mode,
+        const LayoutOutput& layout_output
+    ) {
+        Store(known_dimensions, available_space, run_mode, 0, layout_output);
     }
 
     /// Clear all cache entries

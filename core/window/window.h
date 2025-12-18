@@ -423,6 +423,14 @@ public:
     AnimationController* GetAnimationController() const { return animation_controller_.get(); }
 
     /**
+     * @brief 获取布局引擎
+     * @return 布局引擎指针
+     * 
+     * **Feature: incremental-layout-optimization**
+     */
+    LayoutEngine* GetLayoutEngine() const { return layout_engine_.get(); }
+
+    /**
      * @brief 更新动画（在渲染循环中调用）
      * @param current_time 当前时间（秒）
      */

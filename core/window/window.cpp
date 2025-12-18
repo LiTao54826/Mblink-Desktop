@@ -248,6 +248,13 @@ public:
                 render_obj->MarkNeedsLayout();
                 render_obj->MarkNeedsPaint();
 
+                // Update content version for incremental layout optimization
+                // **Feature: incremental-layout-optimization**
+                // **Validates: Requirements 1.1**
+                if (auto* engine = window_->GetLayoutEngine()) {
+                    engine->UpdateContentVersion(render_obj.get());
+                }
+
                 // 记录脏矩形
                 SkRect bounds = render_obj->GetBoundingRect();
                 if (!bounds.isEmpty()) {
@@ -1689,6 +1696,13 @@ void Window::MarkRenderObjectsDirty(Node* dom_node, RenderObject* render_obj) {
                 if (render_text->GetText() != normalized_text) {
                     render_text->SetText(normalized_text);
                     render_obj->MarkNeedsLayout();  // 文本改变需要重新布局
+                    
+                    // Update content version for incremental layout optimization
+                    // **Feature: incremental-layout-optimization**
+                    // **Validates: Requirements 1.1**
+                    if (layout_engine_) {
+                        layout_engine_->UpdateContentVersion(render_obj);
+                    }
                 }
 
                 // 更新 Text 节点的样式（从父元素继承可继承属性）
@@ -1770,6 +1784,13 @@ void Window::MarkRenderObjectsDirty(Node* dom_node, RenderObject* render_obj) {
                         if (render_text->GetText() != normalized_text) {
                             render_text->SetText(normalized_text);
                             child_render_obj->MarkNeedsLayout();
+                            
+                            // Update content version for incremental layout optimization
+                            // **Feature: incremental-layout-optimization**
+                            // **Validates: Requirements 1.1**
+                            if (layout_engine_) {
+                                layout_engine_->UpdateContentVersion(child_render_obj);
+                            }
                         }
 
                         // 更新继承的样式

@@ -14,10 +14,22 @@ set(RENDER_PROPERTY_TEST_SOURCES
     render/test_clip_path_properties.cpp
 )
 
+# Layout property tests
+set(LAYOUT_PROPERTY_TEST_SOURCES
+    layout/test_content_version_properties.cpp
+    layout/test_cache_version_properties.cpp
+    layout/test_version_update_properties.cpp
+    layout/test_layout_scope_properties.cpp
+    layout/test_incremental_layout_properties.cpp
+    layout/test_layout_equivalence_properties.cpp
+    layout/test_ifc_cache_properties.cpp
+)
+
 # Create property tests executable
 add_executable(lightui_property_tests
     main.cpp
     ${RENDER_PROPERTY_TEST_SOURCES}
+    ${LAYOUT_PROPERTY_TEST_SOURCES}
 )
 
 # Add include directories
