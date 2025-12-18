@@ -483,8 +483,19 @@ IFCLayoutResult IFCLayout::Layout(RenderObject* container, float available_width
         line_breaker_.SetOverflowWrap(OverflowWrapMode::NORMAL);
     }
 
-    // 默认断词模式
-    line_breaker_.SetWordBreak(WordBreakMode::NORMAL);
+    // 解析 word-break 属性
+    if (style.word_break == "break-all") {
+        line_breaker_.SetWordBreak(WordBreakMode::BREAK_ALL);
+    } else if (style.word_break == "keep-all") {
+        line_breaker_.SetWordBreak(WordBreakMode::KEEP_ALL);
+    } else if (style.word_break == "break-word") {
+        // word-break: break-word 等同于 overflow-wrap: break-word
+        line_breaker_.SetWordBreak(WordBreakMode::NORMAL);
+        line_breaker_.SetOverflowWrap(OverflowWrapMode::BREAK_WORD);
+    } else {
+        // normal 或其他值
+        line_breaker_.SetWordBreak(WordBreakMode::NORMAL);
+    }
 
     // 设置文本间距和缩进
     float text_indent = style.text_indent.ToPx(available_width, style.font_size);

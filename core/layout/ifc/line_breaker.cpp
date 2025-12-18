@@ -119,6 +119,15 @@ bool LineBreaker::IsLineEndProhibited(uint32_t ch) {
 }
 
 bool LineBreaker::CanBreakBetween(uint32_t prev_char, uint32_t next_char) {
+    // word-break: break-all 允许在任意字符间断行
+    if (word_break_ == WordBreakMode::BREAK_ALL) {
+        // 仍然尊重行首/行尾禁止字符
+        if (IsLineStartProhibited(next_char)) return false;
+        if (IsLineEndProhibited(prev_char)) return false;
+        // 允许在任意字符间断行
+        return true;
+    }
+
     // 行首禁止字符不能出现在断行后
     if (IsLineStartProhibited(next_char)) return false;
 
@@ -138,11 +147,18 @@ bool LineBreaker::CanBreakBetween(uint32_t prev_char, uint32_t next_char) {
         return true;
     }
 
-    // CJK 字符间可以断行
-    if (IsCJK(prev_char) && IsCJK(next_char)) return true;
-
-    // CJK 和其他字符间可以断行
-    if (IsCJK(prev_char) || IsCJK(next_char)) return true;
+    // word-break: keep-all 阻止 CJK 文本内部断行
+    if (word_break_ == WordBreakMode::KEEP_ALL) {
+        // CJK 字符间不允许断行
+        if (IsCJK(prev_char) && IsCJK(next_char)) return false;
+        // CJK 和其他字符间也不允许断行
+        if (IsCJK(prev_char) || IsCJK(next_char)) return false;
+    } else {
+        // word-break: normal - CJK 字符间可以断行
+        if (IsCJK(prev_char) && IsCJK(next_char)) return true;
+        // CJK 和其他字符间可以断行
+        if (IsCJK(prev_char) || IsCJK(next_char)) return true;
+    }
 
     // 默认不断行（英文单词内部）
     return false;
@@ -311,6 +327,17 @@ std::vector<LineBox> LineBreaker::BreakIntoLines(
             // 允许换行
             if (!current_line->IsEmpty() && current_width + box_width > effective_width) {
                 need_break = true;
+            }
+            
+            // overflow-wrap: break-word - 如果单词溢出容器，允许在单词内部断行
+            // 这也处理 word-break: break-word 的情况（已映射到 overflow-wrap: break-word）
+            if (overflow_wrap_ == OverflowWrapMode::BREAK_WORD || overflow_wrap_ == OverflowWrapMode::ANYWHERE) {
+                // 如果当前行为空但盒子仍然溢出，需要在盒子内部断行
+                // 这种情况在文本渲染时处理，这里只标记需要换行
+                if (current_line->IsEmpty() && box_width > effective_width) {
+                    // 盒子太宽，需要在内部断行（由文本渲染处理）
+                    // 这里仍然添加盒子，让渲染器处理溢出
+                }
             }
         }
 

@@ -14,6 +14,7 @@
 #include "css_value.h"
 #include "css_variables.h"
 #include "css_filters.h"
+#include "css_clip_path.h"
 #include "transition.h"
 #include "transform.h"
 #include <memory>
@@ -215,6 +216,12 @@ struct ComputedStyle {
     std::string vertical_align = "baseline";  // baseline, top, middle, bottom
     std::string cursor = "default";  // default, pointer, text, etc.
 
+    // CSS Basic Interaction Properties (Phase 1)
+    std::string text_transform = "none";     // none, uppercase, lowercase, capitalize
+    std::string pointer_events = "auto";     // auto, none
+    std::string user_select = "auto";        // auto, none, text, all
+    std::string word_break = "normal";       // normal, break-all, keep-all, break-word
+
     // 表格相关属性
     std::string border_collapse = "separate";  // collapse, separate (CSS 默认值是 separate)
     CSSLength border_spacing;  // 当 border-collapse: separate 时，单元格之间的间距
@@ -229,6 +236,27 @@ struct ComputedStyle {
     std::string transform_str;  // 原始 transform 字符串
     std::optional<CSSTransform> transform;  // 解析后的 transform
     TransformOrigin transform_origin;  // transform-origin
+
+    // CSS Media Properties (Phase 2) - object-fit and object-position
+    std::string object_fit = "fill";           // fill, contain, cover, none, scale-down
+    std::string object_position = "50% 50%";   // position value (default: centered)
+
+    // CSS Layout Properties (Phase 2) - aspect-ratio
+    struct AspectRatio {
+        bool is_auto = true;
+        float ratio = 0.0f;  // width / height, 0 means no ratio
+        
+        bool HasRatio() const { return ratio > 0.0f; }
+    };
+    AspectRatio aspect_ratio;
+
+    // CSS List Style Properties (Phase 2)
+    std::string list_style_type = "disc";        // disc, circle, square, decimal, etc.
+    std::string list_style_position = "outside"; // inside, outside
+    std::string list_style_image;                // URL or empty
+
+    // CSS clip-path Property (Phase 3)
+    std::optional<CSSClipPath> clip_path;        // 裁剪路径
 
     ComputedStyle() {
         width = CSSLength(0, CSSUnit::AUTO);
@@ -611,6 +639,17 @@ public:
      * @param canvas Skia 画布
      */
     virtual void Paint(SkCanvas* canvas);
+
+    /**
+     * @brief 绘制 outline（焦点指示器）
+     * 
+     * Outline 不占用布局空间，紧贴边框外边缘绘制（符合浏览器行为）。
+     * 支持 solid、dashed、dotted 样式，以及圆角。
+     * 
+     * @param canvas Skia 画布
+     * @note 应在边框绘制之后调用
+     */
+    void PaintOutline(SkCanvas* canvas);
 
     // ========== 滚动相关方法 ==========
 

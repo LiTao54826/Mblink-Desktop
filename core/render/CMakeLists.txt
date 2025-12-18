@@ -7,13 +7,17 @@ set(RENDER_SOURCES
     paint.cpp
     shapes.cpp
     text_renderer.cpp
+    text_transform.cpp
     text/font_manager.cpp
     image/image_loader.cpp
     image/image_cache.cpp
     image/image_renderer.cpp
+    image/image_fit.cpp
     css_value.cpp
+    css_clip_path.cpp
     box_renderer.cpp
     render_object.cpp
+    list_marker.cpp
     render_inline_block.cpp
     style_resolver.cpp
     dirty_region.cpp
@@ -53,13 +57,17 @@ set(RENDER_HEADERS
     paint.h
     shapes.h
     text_renderer.h
+    text_transform.h
     text/font_manager.h
     image/image_loader.h
     image/image_cache.h
     image/image_renderer.h
+    image/image_fit.h
     css_value.h
+    css_clip_path.h
     box_renderer.h
     render_object.h
+    list_marker.h
     render_inline_block.h
     style_resolver.h
     dirty_region.h

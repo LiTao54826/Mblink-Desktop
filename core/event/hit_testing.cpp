@@ -143,6 +143,11 @@ bool HitTesting::HitTestRecursive(
                          style.overflow_y == "auto" || style.overflow_y == "scroll" ||
                          style.overflow_y == "hidden");
     
+    // 检查 pointer-events 属性
+    // 如果 pointer-events: none，跳过当前元素但仍检查子元素
+    // （子元素可能有 pointer-events: auto 覆盖）
+    bool pointer_events_none = (style.pointer_events == "none");
+    
     // 获取当前元素的滚动偏移量
     float scroll_x = render_object->GetScrollX();
     float scroll_y = render_object->GetScrollY();
@@ -194,6 +199,12 @@ bool HitTesting::HitTestRecursive(
         }
     }
 
+    // 如果 pointer-events: none，不将当前元素作为命中目标
+    // 让事件穿透到下面的元素
+    if (pointer_events_none) {
+        return false;
+    }
+
     // 没有子元素命中，当前元素就是目标（复用前面已获取的 node 和 element）
     if (element) {
         result.element = element;
@@ -209,6 +220,11 @@ bool HitTesting::HitTestRecursive(
         auto parent_node = parent_ro->GetNode();
         auto parent_element = std::dynamic_pointer_cast<Element>(parent_node);
         if (parent_element) {
+            // 检查父元素的 pointer-events 属性
+            const auto& parent_style = parent_ro->GetComputedStyle();
+            if (parent_style.pointer_events == "none") {
+                return false;  // 父元素也是 pointer-events: none，不命中
+            }
             result.element = parent_element;
             result.render_object = parent_ro;
             result.local_x = x - current_offset_x;

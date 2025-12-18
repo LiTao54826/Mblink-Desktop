@@ -120,9 +120,8 @@
                     textAlign: 'center',
                     fontFamily: 'monospace',
                     color: '#28a745'
-                },
-                textContent: time
-            })
+                }
+            }, time)  // 使用子元素而不是 textContent 属性
         );
     }
 

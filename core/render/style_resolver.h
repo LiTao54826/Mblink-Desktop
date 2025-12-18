@@ -142,6 +142,78 @@ private:
                            const std::string& value);
 
     /**
+     * @brief 解析布局相关属性 (display, width, height, margin, padding)
+     * @return true if property was handled, false otherwise
+     */
+    bool ParseLayoutProperty(ComputedStyle& style,
+                            const std::string& property,
+                            const std::string& resolved_value);
+
+    /**
+     * @brief 解析边框相关属性 (border-*)
+     * @return true if property was handled, false otherwise
+     */
+    bool ParseBorderProperty(ComputedStyle& style,
+                            const std::string& property,
+                            const std::string& resolved_value);
+
+    /**
+     * @brief 解析文本相关属性 (font-*, text-*, color)
+     * @return true if property was handled, false otherwise
+     */
+    bool ParseTextProperty(ComputedStyle& style,
+                          const std::string& property,
+                          const std::string& resolved_value);
+
+    /**
+     * @brief 解析背景相关属性 (background-*)
+     * @return true if property was handled, false otherwise
+     */
+    bool ParseBackgroundProperty(ComputedStyle& style,
+                                const std::string& property,
+                                const std::string& resolved_value);
+
+    /**
+     * @brief 解析定位相关属性 (position, top, left, z-index, etc.)
+     * @return true if property was handled, false otherwise
+     */
+    bool ParsePositionProperty(ComputedStyle& style,
+                              const std::string& property,
+                              const std::string& resolved_value);
+
+    /**
+     * @brief 解析Flexbox相关属性 (flex-*, align-*, justify-*)
+     * @return true if property was handled, false otherwise
+     */
+    bool ParseFlexProperty(ComputedStyle& style,
+                          const std::string& property,
+                          const std::string& resolved_value);
+
+    /**
+     * @brief 解析视觉效果属性 (opacity, visibility, overflow, etc.)
+     * @return true if property was handled, false otherwise
+     */
+    bool ParseVisualProperty(ComputedStyle& style,
+                            const std::string& property,
+                            const std::string& resolved_value);
+
+    /**
+     * @brief 解析交互属性 (pointer-events, user-select, cursor, etc.)
+     * @return true if property was handled, false otherwise
+     */
+    bool ParseInteractionProperty(ComputedStyle& style,
+                                 const std::string& property,
+                                 const std::string& resolved_value);
+
+    /**
+     * @brief 解析媒体和布局属性 (object-fit, object-position, aspect-ratio, list-style-*)
+     * @return true if property was handled, false otherwise
+     */
+    bool ParseMediaLayoutProperty(ComputedStyle& style,
+                                 const std::string& property,
+                                 const std::string& resolved_value);
+
+    /**
      * @brief 检查属性是否可继承
      */
     bool IsInheritableProperty(const std::string& property);

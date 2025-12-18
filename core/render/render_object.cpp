@@ -7,8 +7,10 @@
 #include "render_inline_block.h"
 #include "box_renderer.h"
 #include "text_renderer.h"
+#include "text_transform.h"
 #include "gradient_renderer.h"
 #include "shadow_renderer.h"
+#include "list_marker.h"
 #include "color.h"
 #include "core/dom/node.h"
 #include "core/dom/element.h"
@@ -349,6 +351,15 @@ Style ConvertComputedStyleToLayoutStyle(const ComputedStyle& computed) {
     style.gap.width = ConvertLengthFromCSSLength(computed.column_gap);
     style.gap.height = ConvertLengthFromCSSLength(computed.row_gap);
 
+    // Aspect ratio
+    // Convert ComputedStyle::AspectRatio to layout Style::aspect_ratio
+    // Requirements 3.1-3.7: aspect-ratio property support
+    if (!computed.aspect_ratio.is_auto && computed.aspect_ratio.HasRatio()) {
+        style.aspect_ratio = computed.aspect_ratio.ratio;
+    } else {
+        style.aspect_ratio = std::nullopt;
+    }
+
     return style;
 }
 
@@ -492,6 +503,69 @@ void RenderObject::UpdatePaintCache() {
 void RenderObject::Paint(SkCanvas* canvas) {
     // 基类默认实现：什么都不做
     needs_paint_ = false;
+}
+
+void RenderObject::PaintOutline(SkCanvas* canvas) {
+    if (!canvas) return;
+    
+    const auto& style = computed_style_;
+    const auto& layout = layout_info_;
+    
+    // Skip if outline is not visible
+    if (style.outline_style == "none" || style.outline_width.IsZero()) {
+        return;
+    }
+    
+    float outline_width = style.outline_width.ToPx();
+    float outline_offset = style.outline_offset.ToPx();
+    
+    // Use stroke drawing: line is centered on the rectangle edge
+    // To make outline inner edge touch border-box outer edge, offset by half_width
+    // So stroke center is at (outline_offset + half_width), inner edge at outline_offset
+    float half_width = outline_width / 2.0f;
+    SkRect outline_rect = SkRect::MakeXYWH(
+        -(outline_offset + half_width),
+        -(outline_offset + half_width),
+        layout.width + 2 * (outline_offset + half_width),
+        layout.height + 2 * (outline_offset + half_width)
+    );
+    
+    SkPaint outline_paint;
+    outline_paint.setColor(style.outline_color);
+    outline_paint.setStyle(SkPaint::kStroke_Style);
+    outline_paint.setStrokeWidth(outline_width);
+    outline_paint.setAntiAlias(true);
+    
+    // Set line style based on outline_style
+    if (style.outline_style == "dashed") {
+        const SkScalar intervals[] = {6.0f, 3.0f};
+        outline_paint.setPathEffect(SkDashPathEffect::Make(intervals, 2, 0));
+    } else if (style.outline_style == "dotted") {
+        const SkScalar intervals[] = {2.0f, 2.0f};
+        outline_paint.setPathEffect(SkDashPathEffect::Make(intervals, 2, 0));
+    }
+    // solid doesn't need special handling
+    
+    // If element has border-radius, outline should also have rounded corners
+    if (style.border_radius.top_left.value > 0 || style.border_radius.top_right.value > 0 ||
+        style.border_radius.bottom_left.value > 0 || style.border_radius.bottom_right.value > 0) {
+        // Calculate border-radius percentage base size
+        float box_width = outline_rect.width();
+        float box_height = outline_rect.height();
+        float base_size = std::min(box_width, box_height);
+        
+        float tl = style.border_radius.top_left.ToPx(base_size) + outline_offset + half_width;
+        float tr = style.border_radius.top_right.ToPx(base_size) + outline_offset + half_width;
+        float br = style.border_radius.bottom_right.ToPx(base_size) + outline_offset + half_width;
+        float bl = style.border_radius.bottom_left.ToPx(base_size) + outline_offset + half_width;
+        
+        SkRRect outline_rrect;
+        SkVector radii[4] = {{tl, tl}, {tr, tr}, {br, br}, {bl, bl}};
+        outline_rrect.setRectRadii(outline_rect, radii);
+        canvas->drawRRect(outline_rrect, outline_paint);
+    } else {
+        canvas->drawRect(outline_rect, outline_paint);
+    }
 }
 
 SkRect RenderObject::GetBoundingRect() const {
@@ -1214,6 +1288,13 @@ void RenderBlock::Paint(SkCanvas* canvas) {
         canvas->concat(transform_matrix);
     }
 
+    // 应用 CSS clip-path
+    if (style.clip_path.has_value() && !style.clip_path->IsNone()) {
+        SkRect bounds = SkRect::MakeWH(layout.width, layout.height);
+        SkPath clip_path = style.clip_path->ToSkPath(bounds);
+        canvas->clipPath(clip_path, true);  // true = anti-alias
+    }
+
     // 创建盒模型 - 使用缓存的值
     Box box;
 
@@ -1482,58 +1563,7 @@ void RenderBlock::Paint(SkCanvas* canvas) {
 
     // ========== 绘制 outline（焦点指示器）==========
     // outline 不占用布局空间，紧贴边框外边缘绘制（符合浏览器行为）
-    if (style.outline_style != "none" && !style.outline_width.IsZero()) {
-        float outline_width = style.outline_width.ToPx();
-        float outline_offset = style.outline_offset.ToPx();
-
-        // 使用 stroke 绘制时，线条以矩形边缘为中心
-        // 要让 outline 内边缘紧贴 border-box 外边缘，需要向外偏移 half_width
-        // 这样 stroke 中心在 (outline_offset + half_width) 处，内边缘在 outline_offset 处
-        float half_width = outline_width / 2.0f;
-        SkRect outline_rect = SkRect::MakeXYWH(
-            -(outline_offset + half_width),
-            -(outline_offset + half_width),
-            layout.width + 2 * (outline_offset + half_width),
-            layout.height + 2 * (outline_offset + half_width)
-        );
-
-        SkPaint outline_paint;
-        outline_paint.setColor(style.outline_color);
-        outline_paint.setStyle(SkPaint::kStroke_Style);
-        outline_paint.setStrokeWidth(outline_width);
-        outline_paint.setAntiAlias(true);
-
-        // 根据 outline_style 设置线条样式
-        if (style.outline_style == "dashed") {
-            const SkScalar intervals[] = {6.0f, 3.0f};
-            outline_paint.setPathEffect(SkDashPathEffect::Make(intervals, 2, 0));
-        } else if (style.outline_style == "dotted") {
-            const SkScalar intervals[] = {2.0f, 2.0f};
-            outline_paint.setPathEffect(SkDashPathEffect::Make(intervals, 2, 0));
-        }
-        // solid 不需要特殊处理
-
-        // 如果有圆角，outline 也应该有圆角
-        if (style.border_radius.top_left.value > 0 || style.border_radius.top_right.value > 0 ||
-            style.border_radius.bottom_left.value > 0 || style.border_radius.bottom_right.value > 0) {
-            // 修复：计算 border-radius 百分比的基准尺寸
-            float box_width = outline_rect.width();
-            float box_height = outline_rect.height();
-            float base_size = std::min(box_width, box_height);
-            
-            float tl = style.border_radius.top_left.ToPx(base_size) + outline_offset + half_width;
-            float tr = style.border_radius.top_right.ToPx(base_size) + outline_offset + half_width;
-            float br = style.border_radius.bottom_right.ToPx(base_size) + outline_offset + half_width;
-            float bl = style.border_radius.bottom_left.ToPx(base_size) + outline_offset + half_width;
-
-            SkRRect outline_rrect;
-            SkVector radii[4] = {{tl, tl}, {tr, tr}, {br, br}, {bl, bl}};
-            outline_rrect.setRectRadii(outline_rect, radii);
-            canvas->drawRRect(outline_rrect, outline_paint);
-        } else {
-            canvas->drawRect(outline_rect, outline_paint);
-        }
-    }
+    PaintOutline(canvas);
 
     // 绘制列表项目符号（如果是<li>元素）
     if (node && node->GetNodeType() == NodeType::ELEMENT_NODE) {
@@ -1562,130 +1592,54 @@ void RenderBlock::Paint(SkCanvas* canvas) {
             if (!parent_tag.empty() && list_element) {
                 auto parent_element = list_element;
 
-                // 设置文本样式 - 使用 FontManager 加载字体
-                FontDescriptor desc;
-                desc.family = style.font_family;
-                desc.size = style.font_size;
-                desc.weight = FontWeight::NORMAL;
-                desc.style = FontStyle::NORMAL;
-                SkFont font = FontManager::GetInstance().LoadFont(desc);
+                // 计算当前<li>在列表中的索引
+                int item_index = 1;
 
-                SkPaint paint;
-                if (!style.color.empty()) {
-                    paint.setColor(Color::Parse(style.color));
+                // 检查 <li> 是否有 value 属性
+                std::string value_attr = element2->GetAttribute("value");
+                if (!value_attr.empty()) {
+                    try {
+                        item_index = std::stoi(value_attr);
+                    } catch (...) {
+                        // 忽略解析错误
+                    }
                 } else {
-                    paint.setColor(SK_ColorBLACK);
-                }
-                paint.setAntiAlias(true);
-
-                // 计算项目符号位置
-                // 浏览器行为：符号在 content box 左边，距离文字约 0.5em
-                float marker_y = box.content_y + style.font_size * 0.8f;  // 第一行文本的基线位置
-
-                if (parent_tag == "ul") {
-                    // 无序列表：根据嵌套层级使用不同符号
-                    // 浏览器默认：disc (●) → circle (○) → square (■) → disc ...
-                    int nesting_level = 0;
-                    auto ancestor2 = parent_node;
-                    while (ancestor2) {
-                        if (ancestor2->GetNodeType() == NodeType::ELEMENT_NODE) {
-                            auto ancestor_elem = std::static_pointer_cast<Element>(ancestor2);
-                            std::string ancestor_tag = ancestor_elem->GetTagName();
-                            if (ancestor_tag == "ul" || ancestor_tag == "ol") {
-                                nesting_level++;
-                            }
-                        }
-                        ancestor2 = ancestor2->GetParentNode();
-                    }
-
-                    float bullet_radius = 3.0f;
-                    // 符号位置：在内容区左边约 0.5em 处（8px for 16px font）
-                    float bullet_x = box.content_x - 8.0f - bullet_radius;
-                    float bullet_y = marker_y - style.font_size * 0.3f;
-
-                    int marker_type = (nesting_level - 1) % 3;  // 0=disc, 1=circle, 2=square
-                    if (marker_type == 0) {
-                        // disc: 实心圆
-                        paint.setStyle(SkPaint::kFill_Style);
-                        canvas->drawCircle(bullet_x, bullet_y, bullet_radius, paint);
-                    } else if (marker_type == 1) {
-                        // circle: 空心圆
-                        paint.setStyle(SkPaint::kStroke_Style);
-                        paint.setStrokeWidth(1.5f);
-                        canvas->drawCircle(bullet_x, bullet_y, bullet_radius, paint);
-                    } else {
-                        // square: 实心方块
-                        paint.setStyle(SkPaint::kFill_Style);
-                        SkRect rect = SkRect::MakeXYWH(
-                            bullet_x - bullet_radius,
-                            bullet_y - bullet_radius,
-                            bullet_radius * 2,
-                            bullet_radius * 2
-                        );
-                        canvas->drawRect(rect, paint);
-                    }
-                } else if (parent_tag == "ol") {
-                    // 有序列表：绘制数字
-                    // 计算当前<li>在<ol>中的索引
-                    int index = 1;
-
-                    // 检查 <li> 是否有 value 属性
-                    std::string value_attr = element2->GetAttribute("value");
-                    if (!value_attr.empty()) {
+                    // 获取 ol 的 start 属性
+                    std::string start_attr = parent_element->GetAttribute("start");
+                    int start_index = 1;
+                    if (!start_attr.empty()) {
                         try {
-                            index = std::stoi(value_attr);
-                        } catch (...) {
-                            // 忽略解析错误
-                        }
-                    } else {
-                        // 获取 ol 的 start 属性
-                        std::string start_attr = parent_element->GetAttribute("start");
-                        int start_index = 1;
-                        if (!start_attr.empty()) {
-                            try {
-                                start_index = std::stoi(start_attr);
-                            } catch (...) {}
-                        }
-
-                        // 计算当前<li>在<ol>中的位置
-                        int position = 0;
-                        auto siblings = parent_element->GetChildNodes();
-                        for (const auto& sibling : siblings) {
-                            if (sibling->GetNodeType() == NodeType::ELEMENT_NODE) {
-                                auto sibling_elem = std::static_pointer_cast<Element>(sibling);
-                                if (sibling_elem->GetTagName() == "li") {
-                                    if (sibling_elem == element2) {
-                                        break;
-                                    }
-                                    // 检查前面的 li 是否有 value 属性
-                                    std::string prev_value = sibling_elem->GetAttribute("value");
-                                    if (!prev_value.empty()) {
-                                        try {
-                                            start_index = std::stoi(prev_value) + 1;
-                                            position = 0;
-                                        } catch (...) {}
-                                    }
-                                    position++;
-                                }
-                            }
-                        }
-                        index = start_index + position;
+                            start_index = std::stoi(start_attr);
+                        } catch (...) {}
                     }
 
-                    // 绘制数字，数字的右边对齐到内容区左边
-                    std::string marker_text = std::to_string(index) + ".";
-                    // 直接用固定间距，让数字紧贴着文字左边
-                    float marker_x = box.content_x - 5.0f;  // 数字右边距离内容 5px
-
-                    // 把数字右对齐：需要先测量文本宽度
-                    // 简单估算：每个字符约 0.5em
-                    float char_width = style.font_size * 0.5f;
-                    float text_width = marker_text.length() * char_width;
-                    marker_x = marker_x - text_width;
-
-                    paint.setStyle(SkPaint::kFill_Style);  // 确保是填充模式
-                    canvas->drawString(marker_text.c_str(), marker_x, marker_y, font, paint);
+                    // 计算当前<li>在列表中的位置
+                    int position = 0;
+                    auto siblings = parent_element->GetChildNodes();
+                    for (const auto& sibling : siblings) {
+                        if (sibling->GetNodeType() == NodeType::ELEMENT_NODE) {
+                            auto sibling_elem = std::static_pointer_cast<Element>(sibling);
+                            if (sibling_elem->GetTagName() == "li") {
+                                if (sibling_elem == element2) {
+                                    break;
+                                }
+                                // 检查前面的 li 是否有 value 属性
+                                std::string prev_value = sibling_elem->GetAttribute("value");
+                                if (!prev_value.empty()) {
+                                    try {
+                                        start_index = std::stoi(prev_value) + 1;
+                                        position = 0;
+                                    } catch (...) {}
+                                }
+                                position++;
+                            }
+                        }
+                    }
+                    item_index = start_index + position;
                 }
+
+                // Use the new PaintListMarker function
+                PaintListMarker(canvas, style, layout, box, item_index, parent_tag);
             }
         }
     }
@@ -2524,6 +2478,13 @@ void RenderInline::Paint(SkCanvas* canvas) {
     canvas->save();
     canvas->translate(layout.x, layout.y);
 
+    // 应用 CSS clip-path
+    if (style.clip_path.has_value() && !style.clip_path->IsNone()) {
+        SkRect bounds = SkRect::MakeWH(layout.width, layout.height);
+        SkPath clip_path = style.clip_path->ToSkPath(bounds);
+        canvas->clipPath(clip_path, true);
+    }
+
     // 创建盒模型
     Box box;
     box.padding_left = style.padding.left.ToPx(layout.width, style.font_size);
@@ -2573,6 +2534,10 @@ void RenderInline::Paint(SkCanvas* canvas) {
 
         renderer.RenderBorder(box, border_width, border_style, border_color);
     }
+
+    // ========== 绘制 outline（焦点指示器）==========
+    // outline 不占用布局空间，紧贴边框外边缘绘制（符合浏览器行为）
+    PaintOutline(canvas);
 
     // 渲染表单控件特定内容
     auto node = GetNode();
@@ -3157,6 +3122,12 @@ void RenderText::Paint(SkCanvas* canvas) {
         // Skip empty lines (but still advance y position)
         if (!line.empty()) {
             std::string text_to_render = line;
+
+            // Apply text-transform (CSS text-transform property)
+            // This transforms text for rendering only, DOM content remains unchanged
+            if (!style.text_transform.empty() && style.text_transform != "none") {
+                text_to_render = TransformText(text_to_render, style.text_transform);
+            }
 
             // Apply text-overflow: ellipsis if needed
             if (use_ellipsis && available_width > 0) {

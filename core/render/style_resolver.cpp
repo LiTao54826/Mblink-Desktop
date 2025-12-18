@@ -6,6 +6,7 @@
 #include "style_resolver.h"
 #include "render_inline_block.h"
 #include "render_svg.h"
+#include "css_clip_path.h"
 #include "core/dom/text.h"
 #include "core/dom/document.h"
 #include "core/dom/svg_element.h"
@@ -34,7 +35,16 @@ StyleResolver::StyleResolver() {
         "letter-spacing",
         "word-spacing",
         "text-indent",
-        "white-space"
+        "white-space",
+        // CSS Basic Interaction Properties (Phase 1)
+        "pointer-events",
+        "user-select",
+        // Note: text-transform is NOT inherited by default in CSS
+        // Note: word-break is NOT inherited by default in CSS
+        // CSS List Style Properties (Phase 2) - inherited
+        "list-style-type",
+        "list-style-position",
+        "list-style-image"
     };
 }
 
@@ -1155,103 +1165,120 @@ void StyleResolver::ApplyInheritance(ComputedStyle& style, const ComputedStyle* 
     style.word_spacing = parent_style->word_spacing;
     style.text_indent = parent_style->text_indent;
     style.white_space = parent_style->white_space;
+
+    // CSS Basic Interaction Properties (Phase 1) - 继承
+    style.pointer_events = parent_style->pointer_events;
+    style.user_select = parent_style->user_select;
+
+    // CSS List Style Properties (Phase 2) - 继承
+    style.list_style_type = parent_style->list_style_type;
+    style.list_style_position = parent_style->list_style_position;
+    style.list_style_image = parent_style->list_style_image;
 }
 
-void StyleResolver::ParseStyleProperty(ComputedStyle& style,
-                                       const std::string& property,
-                                       const std::string& value) {
-    // 1. 检查是否为 CSS 自定义属性（--custom-property）
-    if (IsCustomProperty(property)) {
-        style.css_variables.SetVariable(property, value);
-        return;
-    }
-
-    // 2. 解析 var() 函数（如果值包含 var()）
-    std::string resolved_value = value;
-    if (CSSVarResolver::ContainsVar(value)) {
-        resolved_value = CSSVarResolver::ResolveVar(value, style.css_variables);
-    }
-
-    // 3. 解析标准 CSS 属性
+// Helper function to parse layout properties (display, width, height, margin, padding)
+bool StyleResolver::ParseLayoutProperty(ComputedStyle& style,
+                                        const std::string& property,
+                                        const std::string& resolved_value) {
     if (property == "display") {
         style.display = ParseDisplay(resolved_value);
+        return true;
     }
-    else if (property == "box-sizing") {
-        // box-sizing: content-box | border-box
+    if (property == "box-sizing") {
         if (resolved_value == "border-box" || resolved_value == "content-box") {
             style.box_sizing = resolved_value;
         }
+        return true;
     }
-    else if (property == "width") {
+    if (property == "width") {
         style.width = CSSValue::ParseLength(resolved_value);
+        return true;
     }
-    else if (property == "height") {
+    if (property == "height") {
         style.height = CSSValue::ParseLength(resolved_value);
+        return true;
     }
-    else if (property == "min-width") {
+    if (property == "min-width") {
         style.min_width = CSSValue::ParseLength(resolved_value);
+        return true;
     }
-    else if (property == "max-width") {
+    if (property == "max-width") {
         style.max_width = CSSValue::ParseLength(resolved_value);
+        return true;
     }
-    else if (property == "min-height") {
+    if (property == "min-height") {
         style.min_height = CSSValue::ParseLength(resolved_value);
+        return true;
     }
-    else if (property == "max-height") {
+    if (property == "max-height") {
         style.max_height = CSSValue::ParseLength(resolved_value);
+        return true;
     }
-    else if (property == "margin") {
+    if (property == "margin") {
         style.margin = CSSValue::ParseEdges(resolved_value);
-        // 同步到单独的字段
         style.margin_top = style.margin.top;
         style.margin_right = style.margin.right;
         style.margin_bottom = style.margin.bottom;
         style.margin_left = style.margin.left;
+        return true;
     }
-    else if (property == "margin-top") {
+    if (property == "margin-top") {
         style.margin.top = CSSValue::ParseLength(resolved_value);
         style.margin_top = style.margin.top;
+        return true;
     }
-    else if (property == "margin-right") {
+    if (property == "margin-right") {
         style.margin.right = CSSValue::ParseLength(resolved_value);
         style.margin_right = style.margin.right;
+        return true;
     }
-    else if (property == "margin-bottom") {
+    if (property == "margin-bottom") {
         style.margin.bottom = CSSValue::ParseLength(resolved_value);
         style.margin_bottom = style.margin.bottom;
+        return true;
     }
-    else if (property == "margin-left") {
+    if (property == "margin-left") {
         style.margin.left = CSSValue::ParseLength(resolved_value);
         style.margin_left = style.margin.left;
+        return true;
     }
-    else if (property == "padding") {
+    if (property == "padding") {
         style.padding = CSSValue::ParseEdges(resolved_value);
-        // 同步到单独的字段
         style.padding_top = style.padding.top;
         style.padding_right = style.padding.right;
         style.padding_bottom = style.padding.bottom;
         style.padding_left = style.padding.left;
+        return true;
     }
-    else if (property == "padding-top") {
+    if (property == "padding-top") {
         style.padding.top = CSSValue::ParseLength(resolved_value);
         style.padding_top = style.padding.top;
+        return true;
     }
-    else if (property == "padding-right") {
+    if (property == "padding-right") {
         style.padding.right = CSSValue::ParseLength(resolved_value);
         style.padding_right = style.padding.right;
+        return true;
     }
-    else if (property == "padding-bottom") {
+    if (property == "padding-bottom") {
         style.padding.bottom = CSSValue::ParseLength(resolved_value);
         style.padding_bottom = style.padding.bottom;
+        return true;
     }
-    else if (property == "padding-left") {
+    if (property == "padding-left") {
         style.padding.left = CSSValue::ParseLength(resolved_value);
         style.padding_left = style.padding.left;
+        return true;
     }
-    // border 简写属性：border: [width] [style] [color]
-    else if (property == "border") {
+    return false;
+}
+
+// Helper function to parse border properties
+bool StyleResolver::ParseBorderProperty(ComputedStyle& style,
+                                        const std::string& property,
+                                        const std::string& resolved_value) {
+    if (property == "border") {
         auto border = ParseBorderShorthand(resolved_value, style.font_size);
-        // 设置所有边
         style.border = border;
         float width = border.width.ToPx(0, style.font_size);
         style.border_top_width = width;
@@ -1266,114 +1293,135 @@ void StyleResolver::ParseStyleProperty(ComputedStyle& style,
         style.border_right_color = border.color;
         style.border_bottom_color = border.color;
         style.border_left_color = border.color;
+        return true;
     }
-    else if (property == "border-width") {
+    if (property == "border-width") {
         style.border.width = CSSValue::ParseLength(resolved_value);
-        // 同步到单独的字段
         float width = style.border.width.ToPx(0, style.font_size);
         style.border_top_width = width;
         style.border_right_width = width;
         style.border_bottom_width = width;
         style.border_left_width = width;
+        return true;
     }
-    else if (property == "border-top-width") {
+    if (property == "border-top-width") {
         auto length = CSSValue::ParseLength(resolved_value);
         style.border_top_width = length.ToPx(0, style.font_size);
+        return true;
     }
-    else if (property == "border-right-width") {
+    if (property == "border-right-width") {
         auto length = CSSValue::ParseLength(resolved_value);
         style.border_right_width = length.ToPx(0, style.font_size);
+        return true;
     }
-    else if (property == "border-bottom-width") {
+    if (property == "border-bottom-width") {
         auto length = CSSValue::ParseLength(resolved_value);
         style.border_bottom_width = length.ToPx(0, style.font_size);
+        return true;
     }
-    else if (property == "border-left-width") {
+    if (property == "border-left-width") {
         auto length = CSSValue::ParseLength(resolved_value);
         style.border_left_width = length.ToPx(0, style.font_size);
+        return true;
     }
-    else if (property == "border-style") {
+    if (property == "border-style") {
         style.border.style = CSSValue::ParseBorderStyle(resolved_value);
-        // 同步到所有边
         style.border_top_style = style.border.style;
         style.border_right_style = style.border.style;
         style.border_bottom_style = style.border.style;
         style.border_left_style = style.border.style;
+        return true;
     }
-    else if (property == "border-color") {
+    if (property == "border-color") {
         style.border.color = CSSValue::ParseColor(resolved_value);
-        // 同步到所有边
         style.border_top_color = style.border.color;
         style.border_right_color = style.border.color;
         style.border_bottom_color = style.border.color;
         style.border_left_color = style.border.color;
+        return true;
     }
-    // 单边边框简写属性: border-left, border-right, border-top, border-bottom
-    else if (property == "border-left") {
-        // 解析 "width style color" 格式，如 "4px solid #4CAF50"
+    if (property == "border-left") {
         auto border = ParseBorderShorthand(resolved_value, style.font_size);
         style.border_left_width = border.width.ToPx(0, style.font_size);
         style.border_left_style = border.style;
         style.border_left_color = border.color;
+        return true;
     }
-    else if (property == "border-right") {
+    if (property == "border-right") {
         auto border = ParseBorderShorthand(resolved_value, style.font_size);
         style.border_right_width = border.width.ToPx(0, style.font_size);
         style.border_right_style = border.style;
         style.border_right_color = border.color;
+        return true;
     }
-    else if (property == "border-top") {
+    if (property == "border-top") {
         auto border = ParseBorderShorthand(resolved_value, style.font_size);
         style.border_top_width = border.width.ToPx(0, style.font_size);
         style.border_top_style = border.style;
         style.border_top_color = border.color;
+        return true;
     }
-    else if (property == "border-bottom") {
+    if (property == "border-bottom") {
         auto border = ParseBorderShorthand(resolved_value, style.font_size);
         style.border_bottom_width = border.width.ToPx(0, style.font_size);
         style.border_bottom_style = border.style;
         style.border_bottom_color = border.color;
+        return true;
     }
-    // 单边边框样式
-    else if (property == "border-left-style") {
+    if (property == "border-left-style") {
         style.border_left_style = CSSValue::ParseBorderStyle(resolved_value);
+        return true;
     }
-    else if (property == "border-right-style") {
+    if (property == "border-right-style") {
         style.border_right_style = CSSValue::ParseBorderStyle(resolved_value);
+        return true;
     }
-    else if (property == "border-top-style") {
+    if (property == "border-top-style") {
         style.border_top_style = CSSValue::ParseBorderStyle(resolved_value);
+        return true;
     }
-    else if (property == "border-bottom-style") {
+    if (property == "border-bottom-style") {
         style.border_bottom_style = CSSValue::ParseBorderStyle(resolved_value);
+        return true;
     }
-    // 单边边框颜色
-    else if (property == "border-left-color") {
+    if (property == "border-left-color") {
         style.border_left_color = CSSValue::ParseColor(resolved_value);
+        return true;
     }
-    else if (property == "border-right-color") {
+    if (property == "border-right-color") {
         style.border_right_color = CSSValue::ParseColor(resolved_value);
+        return true;
     }
-    else if (property == "border-top-color") {
+    if (property == "border-top-color") {
         style.border_top_color = CSSValue::ParseColor(resolved_value);
+        return true;
     }
-    else if (property == "border-bottom-color") {
+    if (property == "border-bottom-color") {
         style.border_bottom_color = CSSValue::ParseColor(resolved_value);
+        return true;
     }
-    else if (property == "border-radius") {
+    if (property == "border-radius") {
         style.border_radius = CSSValue::ParseBorderRadius(resolved_value);
+        return true;
     }
-    // 表格边框属性
-    else if (property == "border-collapse") {
-        // CSS 标准值: collapse, separate
+    if (property == "border-collapse") {
         if (resolved_value == "collapse" || resolved_value == "separate") {
             style.border_collapse = resolved_value;
         }
+        return true;
     }
-    else if (property == "border-spacing") {
+    if (property == "border-spacing") {
         style.border_spacing = CSSValue::ParseLength(resolved_value);
+        return true;
     }
-    else if (property == "background") {
+    return false;
+}
+
+// Helper function to parse background properties
+bool StyleResolver::ParseBackgroundProperty(ComputedStyle& style,
+                                            const std::string& property,
+                                            const std::string& resolved_value) {
+    if (property == "background") {
         // 处理 background 简写属性
         // 检查是否为渐变
         if (resolved_value.find("linear-gradient") != std::string::npos) {
@@ -1795,6 +1843,357 @@ void StyleResolver::ParseStyleProperty(ComputedStyle& style,
     else if (property == "cursor") {
         style.cursor = resolved_value;
     }
+    // Outline properties
+    else if (property == "outline") {
+        // Parse outline shorthand: [width] [style] [color] in any order
+        // Examples: "2px solid red", "solid 2px #ff0000", "red solid 2px"
+        std::istringstream iss(resolved_value);
+        std::vector<std::string> parts;
+        std::string part;
+        while (iss >> part) {
+            parts.push_back(part);
+        }
+        
+        // Reset to defaults
+        style.outline_width = CSSLength(0, CSSUnit::PX);
+        style.outline_style = "none";
+        style.outline_color = SK_ColorBLACK;
+        
+        for (const auto& p : parts) {
+            // Check if it's a style keyword
+            if (p == "none" || p == "solid" || p == "dashed" || p == "dotted" || p == "double") {
+                style.outline_style = p;
+            }
+            // Check if it's a length (contains digits and unit)
+            else if (p.find_first_of("0123456789") != std::string::npos) {
+                style.outline_width = CSSValue::ParseLength(p);
+            }
+            // Otherwise assume it's a color
+            else {
+                style.outline_color = CSSValue::ParseColor(p);
+            }
+        }
+    }
+    else if (property == "outline-width") {
+        style.outline_width = CSSValue::ParseLength(resolved_value);
+    }
+    else if (property == "outline-style") {
+        // Validate outline-style values: none, solid, dashed, dotted, double
+        if (resolved_value == "none" || resolved_value == "solid" || 
+            resolved_value == "dashed" || resolved_value == "dotted" || 
+            resolved_value == "double") {
+            style.outline_style = resolved_value;
+        }
+        // Invalid values are silently ignored (CSS behavior)
+    }
+    else if (property == "outline-color") {
+        style.outline_color = CSSValue::ParseColor(resolved_value);
+    }
+    else if (property == "outline-offset") {
+        style.outline_offset = CSSValue::ParseLength(resolved_value);
+    }
+    // Text transform property
+    else if (property == "text-transform") {
+        // Validate text-transform values: none, uppercase, lowercase, capitalize
+        if (resolved_value == "none" || resolved_value == "uppercase" || 
+            resolved_value == "lowercase" || resolved_value == "capitalize") {
+            style.text_transform = resolved_value;
+        }
+        // Invalid values are silently ignored (CSS behavior)
+    }
+    // Pointer events property
+    else if (property == "pointer-events") {
+        // Validate pointer-events values: auto, none
+        if (resolved_value == "auto" || resolved_value == "none") {
+            style.pointer_events = resolved_value;
+        }
+        // Invalid values are silently ignored (CSS behavior)
+    }
+    // User select property
+    else if (property == "user-select") {
+        // Validate user-select values: auto, none, text, all
+        if (resolved_value == "auto" || resolved_value == "none" || 
+            resolved_value == "text" || resolved_value == "all") {
+            style.user_select = resolved_value;
+        }
+        // Invalid values are silently ignored (CSS behavior)
+    }
+    // Word break property
+    else if (property == "word-break") {
+        // Validate word-break values: normal, break-all, keep-all, break-word
+        if (resolved_value == "normal" || resolved_value == "break-all" || 
+            resolved_value == "keep-all" || resolved_value == "break-word") {
+            style.word_break = resolved_value;
+        }
+        // Invalid values are silently ignored (CSS behavior)
+    }
+    // CSS Media Properties (Phase 2) - object-fit
+    else if (property == "object-fit") {
+        // Validate object-fit values: fill, contain, cover, none, scale-down
+        if (resolved_value == "fill" || resolved_value == "contain" || 
+            resolved_value == "cover" || resolved_value == "none" || 
+            resolved_value == "scale-down") {
+            style.object_fit = resolved_value;
+        }
+        // Invalid values are silently ignored (CSS behavior)
+    }
+    // CSS Media Properties (Phase 2) - object-position
+    else if (property == "object-position") {
+        // Store the object-position value directly
+        // Valid values include:
+        // - Keywords: center, top, bottom, left, right, and combinations
+        // - Percentages: 50% 50%
+        // - Lengths: 10px 20px
+        // - Mixed: center 10px, left 50%
+        // The value will be parsed during rendering
+        if (!resolved_value.empty()) {
+            style.object_position = resolved_value;
+        }
+        // Invalid values are silently ignored (CSS behavior)
+    }
+    // CSS Layout Properties (Phase 2) - aspect-ratio
+    else if (property == "aspect-ratio") {
+        // Parse aspect-ratio values:
+        // - auto: use intrinsic aspect ratio if available
+        // - <ratio>: e.g., "16 / 9", "4/3", "1", "1.5"
+        // - auto <ratio>: prefer intrinsic, fallback to specified ratio
+        
+        std::string trimmed = resolved_value;
+        // Trim whitespace
+        size_t start = trimmed.find_first_not_of(" \t");
+        size_t end = trimmed.find_last_not_of(" \t");
+        if (start != std::string::npos && end != std::string::npos) {
+            trimmed = trimmed.substr(start, end - start + 1);
+        }
+        
+        if (trimmed.empty()) {
+            // Invalid, keep default
+            return true;  // Property was recognized, just invalid value
+        }
+        
+        // Check for "auto" keyword
+        bool has_auto = false;
+        std::string ratio_part = trimmed;
+        
+        if (trimmed.find("auto") == 0) {
+            has_auto = true;
+            // Check if there's a ratio after "auto"
+            size_t auto_end = 4; // length of "auto"
+            if (trimmed.length() > auto_end) {
+                ratio_part = trimmed.substr(auto_end);
+                // Trim leading whitespace from ratio part
+                size_t ratio_start = ratio_part.find_first_not_of(" \t");
+                if (ratio_start != std::string::npos) {
+                    ratio_part = ratio_part.substr(ratio_start);
+                } else {
+                    ratio_part = "";
+                }
+            } else {
+                ratio_part = "";
+            }
+        }
+        
+        // Parse the ratio part
+        float ratio = 0.0f;
+        if (!ratio_part.empty()) {
+            // Check for "/" separator (e.g., "16 / 9" or "16/9")
+            size_t slash_pos = ratio_part.find('/');
+            if (slash_pos != std::string::npos) {
+                // Parse width / height format
+                std::string width_str = ratio_part.substr(0, slash_pos);
+                std::string height_str = ratio_part.substr(slash_pos + 1);
+                
+                // Trim whitespace
+                size_t ws = width_str.find_first_not_of(" \t");
+                size_t we = width_str.find_last_not_of(" \t");
+                if (ws != std::string::npos && we != std::string::npos) {
+                    width_str = width_str.substr(ws, we - ws + 1);
+                }
+                
+                size_t hs = height_str.find_first_not_of(" \t");
+                size_t he = height_str.find_last_not_of(" \t");
+                if (hs != std::string::npos && he != std::string::npos) {
+                    height_str = height_str.substr(hs, he - hs + 1);
+                }
+                
+                try {
+                    float width = std::stof(width_str);
+                    float height = std::stof(height_str);
+                    if (width > 0 && height > 0) {
+                        ratio = width / height;
+                    }
+                } catch (...) {
+                    // Invalid ratio, keep default
+                }
+            } else {
+                // Single number (e.g., "1" or "1.5")
+                try {
+                    ratio = std::stof(ratio_part);
+                    if (ratio <= 0) {
+                        ratio = 0.0f; // Invalid
+                    }
+                } catch (...) {
+                    // Invalid ratio, keep default
+                }
+            }
+        }
+        
+        // Set the aspect-ratio
+        if (has_auto && ratio == 0.0f) {
+            // Just "auto" - use intrinsic ratio
+            style.aspect_ratio.is_auto = true;
+            style.aspect_ratio.ratio = 0.0f;
+        } else if (has_auto && ratio > 0.0f) {
+            // "auto <ratio>" - prefer intrinsic, fallback to specified
+            style.aspect_ratio.is_auto = true;
+            style.aspect_ratio.ratio = ratio;
+        } else if (ratio > 0.0f) {
+            // Just a ratio - use specified ratio
+            style.aspect_ratio.is_auto = false;
+            style.aspect_ratio.ratio = ratio;
+        }
+        // Invalid values are silently ignored (CSS behavior)
+    }
+    // CSS List Style Properties (Phase 2) - list-style-type
+    else if (property == "list-style-type") {
+        // Validate list-style-type values
+        if (resolved_value == "disc" || resolved_value == "circle" || 
+            resolved_value == "square" || resolved_value == "decimal" || 
+            resolved_value == "decimal-leading-zero" || resolved_value == "lower-roman" || 
+            resolved_value == "upper-roman" || resolved_value == "lower-alpha" || 
+            resolved_value == "upper-alpha" || resolved_value == "none") {
+            style.list_style_type = resolved_value;
+        }
+        // Invalid values are silently ignored (CSS behavior)
+    }
+    // CSS List Style Properties (Phase 2) - list-style-position
+    else if (property == "list-style-position") {
+        // Validate list-style-position values: inside, outside
+        if (resolved_value == "inside" || resolved_value == "outside") {
+            style.list_style_position = resolved_value;
+        }
+        // Invalid values are silently ignored (CSS behavior)
+    }
+    // CSS List Style Properties (Phase 2) - list-style-image
+    else if (property == "list-style-image") {
+        // Parse url(...) values or "none"
+        if (resolved_value == "none") {
+            style.list_style_image = "";
+        } else if (resolved_value.find("url(") == 0) {
+            // Extract URL from url(...) format
+            size_t start = resolved_value.find('(') + 1;
+            size_t end = resolved_value.rfind(')');
+            if (start != std::string::npos && end != std::string::npos && end > start) {
+                std::string url = resolved_value.substr(start, end - start);
+                // Remove quotes if present
+                if ((url.front() == '"' && url.back() == '"') ||
+                    (url.front() == '\'' && url.back() == '\'')) {
+                    url = url.substr(1, url.length() - 2);
+                }
+                style.list_style_image = url;
+            }
+        }
+        // Invalid values are silently ignored (CSS behavior)
+    }
+    // CSS List Style Properties (Phase 2) - list-style shorthand
+    else if (property == "list-style") {
+        // Parse list-style shorthand: [type] [position] [image] in any order
+        // Examples: "disc", "circle inside", "url(marker.png) outside", "square inside url(marker.png)"
+        std::istringstream iss(resolved_value);
+        std::vector<std::string> parts;
+        std::string part;
+        
+        // Handle url() specially since it may contain spaces
+        std::string remaining = resolved_value;
+        while (!remaining.empty()) {
+            // Trim leading whitespace
+            size_t start = remaining.find_first_not_of(" \t");
+            if (start == std::string::npos) break;
+            remaining = remaining.substr(start);
+            
+            if (remaining.find("url(") == 0) {
+                // Find matching closing parenthesis
+                size_t paren_end = remaining.find(')');
+                if (paren_end != std::string::npos) {
+                    parts.push_back(remaining.substr(0, paren_end + 1));
+                    remaining = remaining.substr(paren_end + 1);
+                } else {
+                    break; // Malformed url()
+                }
+            } else {
+                // Regular token
+                size_t space_pos = remaining.find_first_of(" \t");
+                if (space_pos != std::string::npos) {
+                    parts.push_back(remaining.substr(0, space_pos));
+                    remaining = remaining.substr(space_pos);
+                } else {
+                    parts.push_back(remaining);
+                    break;
+                }
+            }
+        }
+        
+        for (const auto& p : parts) {
+            // Check if it's a type keyword
+            if (p == "disc" || p == "circle" || p == "square" || 
+                p == "decimal" || p == "decimal-leading-zero" || 
+                p == "lower-roman" || p == "upper-roman" || 
+                p == "lower-alpha" || p == "upper-alpha" || p == "none") {
+                style.list_style_type = p;
+            }
+            // Check if it's a position keyword
+            else if (p == "inside" || p == "outside") {
+                style.list_style_position = p;
+            }
+            // Check if it's a url()
+            else if (p.find("url(") == 0) {
+                size_t url_start = p.find('(') + 1;
+                size_t url_end = p.rfind(')');
+                if (url_start != std::string::npos && url_end != std::string::npos && url_end > url_start) {
+                    std::string url = p.substr(url_start, url_end - url_start);
+                    // Remove quotes if present
+                    if ((url.front() == '"' && url.back() == '"') ||
+                        (url.front() == '\'' && url.back() == '\'')) {
+                        url = url.substr(1, url.length() - 2);
+                    }
+                    style.list_style_image = url;
+                }
+            }
+        }
+    }
+    // CSS clip-path Property (Phase 3)
+    else if (property == "clip-path") {
+        // Parse clip-path values: none, inset(), circle(), ellipse(), polygon()
+        if (resolved_value == "none" || resolved_value.empty()) {
+            style.clip_path = std::nullopt;
+        } else {
+            style.clip_path = ParseClipPath(resolved_value);
+        }
+    }
+    return false;
+}
+
+void StyleResolver::ParseStyleProperty(ComputedStyle& style,
+                                       const std::string& property,
+                                       const std::string& value) {
+    // 1. Check for CSS custom properties (--custom-property)
+    if (IsCustomProperty(property)) {
+        style.css_variables.SetVariable(property, value);
+        return;
+    }
+
+    // 2. Resolve var() functions if present
+    std::string resolved_value = value;
+    if (CSSVarResolver::ContainsVar(value)) {
+        resolved_value = CSSVarResolver::ResolveVar(value, style.css_variables);
+    }
+
+    // 3. Delegate to category-specific parsers to reduce nesting depth
+    if (ParseLayoutProperty(style, property, resolved_value)) return;
+    if (ParseBorderProperty(style, property, resolved_value)) return;
+    if (ParseBackgroundProperty(style, property, resolved_value)) return;
+    
+    // Unknown property - silently ignored (CSS behavior)
 }
 
 void StyleResolver::ApplyCSSRules(ComputedStyle& style, std::shared_ptr<Element> element) {

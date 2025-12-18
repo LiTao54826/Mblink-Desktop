@@ -9,6 +9,7 @@
 #include "bindings/js_style_declaration.h"
 #include "bindings/js_event.h"
 #include "core/dom/dom_bindings.h"
+#include "core/dom/canvas_bindings.h"
 #include <iostream>
 
 namespace lightui {
@@ -24,31 +25,24 @@ WindowBindings::WindowBindings(QuickJSRuntime* runtime,
 }
 
 void WindowBindings::InitBindings() {
-    // 初始化旧的 DOM 绑定系统
+    // 初始化新的模块化 DOM 绑定系统（有 exotic 支持）
     bindings::InitNodeBinding(runtime_->GetContext());
     bindings::InitElementBinding(runtime_->GetContext());
-    bindings::InitStyleDeclarationBinding(runtime_->GetContext());
+    bindings::InitStyleDeclarationBinding(runtime_->GetContext());  // 支持 element.style.xxx = '...'
     bindings::InitEventBinding(runtime_->GetContext());
     
-    // 初始化新的 DOM 绑定系统（包含 Canvas）
-    DOMBindings::Init(runtime_->GetContext());
-    
-    // 设置全局 Document（Canvas 需要）
-    auto document = window_->GetDocument();
-    if (document) {
-        DOMBindings::SetGlobalDocument(runtime_->GetContext(), document);
-    }
+    // 初始化 Canvas 绑定（独立模块）
+    CanvasBindings::Init(runtime_->GetContext());
     
     // 设置全局 TaskScheduler（定时器需要）
     if (task_scheduler_) {
         DOMBindings::SetGlobalTaskScheduler(runtime_->GetContext(), task_scheduler_);
     }
     
-    // 绑定 Document API（使用新的 C API 实现）
+    // 绑定 Document API（使用新系统的 bindings::WrapElement）
     BindDocumentAPIs(runtime_->GetContext(), window_.get());
     
     BindWindowObject();
-    // BindDocumentObject();  // 暂时注释掉旧的实现
     BindTimers();
     BindEventListeners();
 }

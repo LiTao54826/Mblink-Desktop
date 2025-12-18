@@ -17,7 +17,10 @@
 #include "core/dom/html_select_element.h"
 #include "core/dom/html_form_controls.h"
 #include "core/dom/html_canvas_element.h"
+#include "core/dom/html_image_element.h"
 #include "core/render/canvas/canvas_rendering_context_2d.h"
+#include "image/image_fit.h"
+#include "image/image_loader.h"
 #include "core/utils/utf8_utils.h"
 #include <algorithm>
 #include <iostream>
@@ -422,6 +425,13 @@ void RenderInlineBlock::Paint(SkCanvas* canvas) {
     canvas->save();
     canvas->translate(layout.x, layout.y);
 
+    // 应用 CSS clip-path
+    if (style.clip_path.has_value() && !style.clip_path->IsNone()) {
+        SkRect bounds = SkRect::MakeWH(layout.width, layout.height);
+        SkPath clip_path = style.clip_path->ToSkPath(bounds);
+        canvas->clipPath(clip_path, true);
+    }
+
     // 创建盒模型
     Box box;
     // 设置 padding 和 border 值
@@ -636,6 +646,48 @@ void RenderInlineBlock::Paint(SkCanvas* canvas) {
                             canvas_height
                         );
                         canvas->drawImageRect(image, dst, SkSamplingOptions());
+                    }
+                }
+            }
+            canvas->restore();
+            needs_paint_ = false;
+            return;
+        }
+        
+        // Image元素 - 使用object-fit和object-position渲染图片
+        auto image_element = std::dynamic_pointer_cast<HTMLImageElement>(node);
+        if (image_element) {
+            std::string src = image_element->GetSrc();
+            if (!src.empty()) {
+                // 加载图片
+                sk_sp<SkImage> image = ImageLoader::LoadFromFile(src);
+                if (image) {
+                    // 获取图片原始尺寸
+                    float image_width = static_cast<float>(image->width());
+                    float image_height = static_cast<float>(image->height());
+                    
+                    // 获取容器区域（content box）
+                    SkRect container_rect = SkRect::MakeXYWH(
+                        box.content_x,
+                        box.content_y,
+                        box.content_width,
+                        box.content_height
+                    );
+                    
+                    // 使用object-fit和object-position计算源和目标矩形
+                    ObjectFitResult fit_result = CalculateObjectFit(
+                        image_width,
+                        image_height,
+                        container_rect,
+                        style.object_fit,
+                        style.object_position
+                    );
+                    
+                    // 绘制图片
+                    if (!fit_result.src_rect.isEmpty() && !fit_result.dst_rect.isEmpty()) {
+                        SkSamplingOptions sampling(SkFilterMode::kLinear, SkMipmapMode::kNone);
+                        canvas->drawImageRect(image, fit_result.src_rect, fit_result.dst_rect, 
+                                             sampling, nullptr, SkCanvas::kStrict_SrcRectConstraint);
                     }
                 }
             }

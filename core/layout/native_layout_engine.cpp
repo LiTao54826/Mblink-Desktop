@@ -2156,7 +2156,24 @@ LayoutOutput NativeLayoutEngine::ComputeAnonymousBlockIFCLayout(NodeId node_id, 
     LineBreaker line_breaker;
     line_breaker.SetWhiteSpace(WhiteSpaceMode::NORMAL);
     line_breaker.SetOverflowWrap(OverflowWrapMode::NORMAL);
-    line_breaker.SetWordBreak(WordBreakMode::NORMAL);
+    
+    // Configure word-break from parent style
+    if (parent && parent->render_obj) {
+        const auto& parent_style = parent->render_obj->GetComputedStyle();
+        if (parent_style.word_break == "break-all") {
+            line_breaker.SetWordBreak(WordBreakMode::BREAK_ALL);
+        } else if (parent_style.word_break == "keep-all") {
+            line_breaker.SetWordBreak(WordBreakMode::KEEP_ALL);
+        } else if (parent_style.word_break == "break-word") {
+            // word-break: break-word 等同于 overflow-wrap: break-word
+            line_breaker.SetWordBreak(WordBreakMode::NORMAL);
+            line_breaker.SetOverflowWrap(OverflowWrapMode::BREAK_WORD);
+        } else {
+            line_breaker.SetWordBreak(WordBreakMode::NORMAL);
+        }
+    } else {
+        line_breaker.SetWordBreak(WordBreakMode::NORMAL);
+    }
     
     std::vector<LineBox> line_boxes = line_breaker.BreakIntoLines(all_inline_boxes, content_width);
     
