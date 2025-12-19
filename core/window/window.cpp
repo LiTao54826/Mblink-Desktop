@@ -98,9 +98,6 @@ public:
 
 
     void OnNodeRemoved(Node* node, Node* parent) override {
-        DEBUG_LOG("[WindowDOMObserver::OnNodeRemoved] node=" << node
-                  << ", parent=" << parent
-                  << ", IsInBatch=" << (node ? IsInBatch(node) : false));
         if (window_ && !IsInBatch(node)) {
             // 节点移除时强制全量重绘以确保正确清除
             window_->SetForceFullRepaint(true);
@@ -109,11 +106,9 @@ public:
             // 使用 RenderTreeUpdater 移除 RenderObject，而不是重建整棵树
             auto* updater = window_->GetRenderTreeUpdater();
             if (updater && window_->GetCachedRenderTree()) {
-                DEBUG_LOG("[WindowDOMObserver::OnNodeRemoved] Using incremental tree update");
                 updater->RemoveRenderObject(node);
             } else {
                 // 回退：渲染树还未构建，需要完全重建
-                DEBUG_LOG("[WindowDOMObserver::OnNodeRemoved] Fallback to InvalidateRenderTree");
                 window_->InvalidateRenderTree();
             }
             window_->SetNeedsRepaint();
@@ -1932,10 +1927,16 @@ void Window::CollectDirtyRectsFromRenderTree(RenderObject* root) {
         return;
     }
 
-    // 深度优先遍历渲染树，收集所有需要重绘的对象的边界框
-    std::function<void(RenderObject*)> dfs = [&](RenderObject* obj) {
+    // 使用迭代方式代替递归，避免深层嵌套时栈溢出
+    std::vector<RenderObject*> stack;
+    stack.push_back(root);
+    
+    while (!stack.empty()) {
+        RenderObject* obj = stack.back();
+        stack.pop_back();
+        
         if (!obj) {
-            return;
+            continue;
         }
 
         // 如果该渲染对象需要重绘，收集其边界框
@@ -1946,13 +1947,12 @@ void Window::CollectDirtyRectsFromRenderTree(RenderObject* root) {
             }
         }
 
-        // 递归处理子节点
-        for (const auto& child : obj->GetChildren()) {
-            dfs(child.get());
+        // 将子节点加入栈（逆序以保持遍历顺序）
+        const auto& children = obj->GetChildren();
+        for (auto it = children.rbegin(); it != children.rend(); ++it) {
+            stack.push_back(it->get());
         }
-    };
-
-    dfs(root);
+    }
 }
 
 void Window::Clear(uint32_t color) {

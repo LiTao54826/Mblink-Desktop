@@ -95,60 +95,20 @@ void RenderTreeUpdater::RemoveRenderObject(Node* node) {
     // Get parent render object
     auto parent_ro = ro->GetParent();
 
-    // Remove from layout engine first
+    // 从布局引擎移除（布局引擎会递归移除所有子节点）
     if (auto engine = layout_engine_.lock()) {
-        // Recursively remove children from layout engine
-        // Use a stack-based approach to avoid deep recursion
-        std::vector<RenderObject*> stack;
-        stack.push_back(ro.get());
-        
-        while (!stack.empty()) {
-            RenderObject* obj = stack.back();
-            stack.pop_back();
-            
-            if (!obj) continue;
-            
-            // Add children to stack first (will be processed after parent)
-            const auto& children = obj->GetChildren();
-            for (auto it = children.rbegin(); it != children.rend(); ++it) {
-                if (*it) {
-                    stack.push_back(it->get());
-                }
-            }
-            
-            // Remove from layout engine
-            engine->RemoveElement(obj);
-        }
+        engine->RemoveElement(ro.get());
     }
 
     // Remove from parent's children
     if (parent_ro) {
         parent_ro->RemoveChild(ro);
-
         // Invalidate layout for ancestors
         InvalidateAncestorLayout(parent_ro.get());
     }
 
-    // Clear bidirectional binding - use stack-based approach
-    std::vector<Node*> nodeStack;
-    nodeStack.push_back(node);
-    
-    while (!nodeStack.empty()) {
-        Node* n = nodeStack.back();
-        nodeStack.pop_back();
-        
-        if (!n) continue;
-        
-        n->SetRenderObject(nullptr);
-        
-        // Get children snapshot to avoid issues with concurrent modification
-        const auto& children = n->GetChildNodes();
-        for (const auto& child : children) {
-            if (child) {
-                nodeStack.push_back(child.get());
-            }
-        }
-    }
+    // 清除根节点的绑定
+    node->SetRenderObject(nullptr);
 }
 
 void RenderTreeUpdater::MoveRenderObject(

@@ -314,10 +314,31 @@ int main(int argc, char** argv) {
         std::cout << "========================================" << std::endl;
 
         // 清理 DevTools
+        std::cout << "Shutting down DevTools..." << std::endl;
         devtools.Shutdown();
+        std::cout << "DevTools shutdown complete" << std::endl;
 
         // 清理（WindowBindings 会自动清理）
+        std::cout << "Cleaning up resources..." << std::endl;
 
+        // 显式清理顺序很重要
+        // 1. 先清理 QuickJS runtime（会触发 GC）
+        std::cout << "Destroying QuickJS runtime..." << std::endl;
+        runtime.reset();
+        std::cout << "QuickJS runtime destroyed" << std::endl;
+
+        // 2. 清理 document
+        std::cout << "Clearing document..." << std::endl;
+        document.reset();
+        std::cout << "Document cleared" << std::endl;
+
+        // 3. 清理 window
+        std::cout << "Destroying window..." << std::endl;
+        window_manager.UnregisterWindow(window);
+        window.reset();
+        std::cout << "Window destroyed" << std::endl;
+
+        std::cout << "All resources cleaned up, exiting..." << std::endl;
         return 0;
     }
     catch (const std::exception& e) {

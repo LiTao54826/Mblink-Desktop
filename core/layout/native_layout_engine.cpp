@@ -1126,6 +1126,7 @@ void NativeLayoutEngine::RemoveElement(RenderObject* render_obj) {
     NodeId node_id = it->second;
     LayoutNode* node = GetNode(node_id);
 
+    // 从父节点的 children 列表中移除，并清除祖先的布局缓存
     if (node && node->parent != 0) {
         LayoutNode* parent = GetNode(node->parent);
         if (parent) {
@@ -1135,21 +1136,50 @@ void NativeLayoutEngine::RemoveElement(RenderObject* render_obj) {
                 children.end()
             );
             
-            // Update parent's content version when child is removed
-            // **Feature: incremental-layout-optimization**
-            // **Validates: Requirements 1.2**
-            uint64_t new_version = ContentVersionManager::GetInstance().GenerateVersion();
-            parent->content_version = new_version;
-            parent->needs_layout = true;
+            // 清除父节点及所有祖先的布局缓存
+            // 这是关键：确保下次布局时重新计算
+            NodeId ancestor_id = node->parent;
+            while (ancestor_id != 0) {
+                LayoutNode* ancestor = GetNode(ancestor_id);
+                if (!ancestor) break;
+                
+                ancestor->cache.Clear();
+                ancestor->needs_layout = true;
+                uint64_t new_version = ContentVersionManager::GetInstance().GenerateVersion();
+                ancestor->content_version = new_version;
+                
+                ancestor_id = ancestor->parent;
+            }
         }
     }
 
-    // Remove from maps
-    nodes_.erase(node_id);
-    render_to_node_.erase(it);
-
-    if (node_id == root_node_) {
-        root_node_ = 0;
+    // 递归移除所有子节点（使用迭代方式避免栈溢出）
+    std::vector<NodeId> to_remove;
+    to_remove.push_back(node_id);
+    
+    size_t index = 0;
+    while (index < to_remove.size()) {
+        NodeId current_id = to_remove[index++];
+        LayoutNode* current = GetNode(current_id);
+        if (current) {
+            // 将所有子节点加入待移除列表
+            for (NodeId child_id : current->children) {
+                to_remove.push_back(child_id);
+            }
+        }
+    }
+    
+    // 从 maps 中移除所有节点
+    for (NodeId id : to_remove) {
+        LayoutNode* n = GetNode(id);
+        if (n && n->render_obj) {
+            render_to_node_.erase(n->render_obj);
+        }
+        nodes_.erase(id);
+        
+        if (id == root_node_) {
+            root_node_ = 0;
+        }
     }
 }
 

@@ -228,17 +228,6 @@ std::shared_ptr<Node> Node::ReplaceChild(std::shared_ptr<Node> new_child,
         throw std::invalid_argument("Old child not found");
     }
 
-    // 获取更详细的节点信息
-    std::string old_tag = "?", new_tag = "?";
-    if (old_child->GetNodeType() == NodeType::ELEMENT_NODE) {
-        old_tag = std::static_pointer_cast<Element>(old_child)->GetTagName();
-    }
-    if (new_child->GetNodeType() == NodeType::ELEMENT_NODE) {
-        new_tag = std::static_pointer_cast<Element>(new_child)->GetTagName();
-    }
-    std::cout << "[Node::ReplaceChild] Replacing <" << old_tag << "> (ptr=" << old_child.get()
-              << ") with <" << new_tag << "> (ptr=" << new_child.get() << ")" << std::endl;
-
     // 如果new_child已有父节点，先从原父节点移除
     if (auto parent = new_child->GetParentNode()) {
         parent->RemoveChild(new_child);
@@ -247,9 +236,7 @@ std::shared_ptr<Node> Node::ReplaceChild(std::shared_ptr<Node> new_child,
     // 通知观察者：旧节点被移除
     auto doc = GetOwnerDocument();
     if (doc) {
-        std::cout << "[Node::ReplaceChild] Notifying observers of node removal" << std::endl;
         doc->GetObserverManager().NotifyNodeRemoved(old_child.get(), this);
-        std::cout << "[Node::ReplaceChild] Node removal notification done" << std::endl;
     }
 
     // 替换节点
@@ -270,7 +257,6 @@ std::shared_ptr<Node> Node::ReplaceChild(std::shared_ptr<Node> new_child,
         doc->MarkLexborDirty();
     }
 
-    std::cout << "[Node::ReplaceChild] Complete" << std::endl;
     return old_child;
 }
 

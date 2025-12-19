@@ -909,102 +909,126 @@ void RenderObject::EndScrollbarDrag() {
 }
 
 float RenderObject::CalculateContentHeight() const {
-    float max_height = 0.0f;
-
+    // 使用迭代方式代替递归，避免深层嵌套时栈溢出
     // 辅助函数：检查是否设置了 overflow 隐藏/滚动
     auto hasOverflowClip = [](const ComputedStyle& s) {
         std::string oy = !s.overflow_y.empty() ? s.overflow_y : s.overflow;
         return oy == "scroll" || oy == "auto" || oy == "hidden";
     };
 
+    // 使用栈来模拟递归：存储 (RenderObject*, 累计偏移Y)
+    struct StackItem {
+        const RenderObject* obj;
+        float offset_y;  // 从根到此节点的累计Y偏移
+    };
+    
+    std::vector<StackItem> stack;
+    float global_max_height = 0.0f;
+    
+    // 初始化：将所有直接子元素加入栈
     for (const auto& child : children_) {
-        const auto& child_layout = child->GetLayoutInfo();
-        const auto& child_style = child->GetComputedStyle();
-
-        // 获取子元素的位置和高度
-        float child_y = child_layout.y;
-        float child_height = child_layout.height;
-
-        // 如果子元素也有 overflow: scroll/auto/hidden，使用其布局高度
-        // 否则，递归计算其内容高度
-        if (!hasOverflowClip(child_style)) {
-            // 递归计算子元素的内容高度
-            float child_content_height = child->CalculateContentHeight();
-            if (child_content_height > child_height) {
-                child_height = child_content_height;
+        stack.push_back({child.get(), 0.0f});
+    }
+    
+    while (!stack.empty()) {
+        StackItem item = stack.back();
+        stack.pop_back();
+        
+        const RenderObject* obj = item.obj;
+        if (!obj) continue;
+        
+        const auto& obj_layout = obj->GetLayoutInfo();
+        const auto& obj_style = obj->GetComputedStyle();
+        
+        float obj_y = item.offset_y + obj_layout.y;
+        float obj_height = obj_layout.height;
+        
+        // 更新全局最大高度
+        global_max_height = std::max(global_max_height, obj_y + obj_height);
+        
+        // 如果没有 overflow clip，继续遍历子元素
+        if (!hasOverflowClip(obj_style)) {
+            const auto& obj_children = obj->GetChildren();
+            for (const auto& grandchild : obj_children) {
+                // 子元素的偏移 = 当前元素的绝对Y位置
+                stack.push_back({grandchild.get(), obj_y});
             }
         }
-
-        // ✅ 修复：不再加 margin-bottom，因为 child_y 在 Layout 阶段已经包含了之前元素的 margin
-        // 内容高度 = 子元素位置 + 子元素高度（不加margin，避免重复计算）
-        max_height = std::max(max_height, child_y + child_height);
     }
-
-    // ✅ 修复：为最后一个子元素添加 margin-bottom（这部分在可滚动区域内应该被看到）
-    // 并且为 body 元素添加其自身的 margin-bottom
+    
+    // 处理最后一个子元素的 margin-bottom
     if (!children_.empty()) {
         const auto& last_child = children_.back();
         const auto& last_child_style = last_child->GetComputedStyle();
-        // 最后一个子元素的 margin-bottom 不会与后续元素 collapse，需要计入内容高度
         float last_margin_bottom = last_child_style.margin.bottom.ToPx(layout_info_.width, last_child_style.font_size);
-        max_height += last_margin_bottom;
+        global_max_height += last_margin_bottom;
     }
 
-    // For body element, add body's own margin-bottom to content height
-    // because it's part of the scrollable content
+    // For body element, add body's own margin-bottom
     if (IsBodyElement()) {
-        // 注意：body 的 margin-top 已经在第一个子元素的 child_y 中体现了
-        // 只需要加上 margin-bottom
         float body_margin_bottom = computed_style_.margin.bottom.ToPx(viewport_height_, computed_style_.font_size);
-        max_height += body_margin_bottom;
+        global_max_height += body_margin_bottom;
     }
 
-    // ✅ 修复：添加容器自身的 padding-bottom
-    // 原因：子元素的 y 坐标已经包含了 padding-top (从 padding-top 开始布局)
-    //      但内容高度需要延伸到 padding-bottom 的底部，这样滚动时才能看到完整的底部留白
-    // 注意：不需要加 padding-top，因为子元素的 child_y 已经是相对于 content area 的
-    //      (content area 从 border + padding-top 开始)
+    // 添加容器自身的 padding-bottom
     float padding_bottom = computed_style_.padding.bottom.ToPx(layout_info_.width, computed_style_.font_size);
-    max_height += padding_bottom;
+    global_max_height += padding_bottom;
 
-    return max_height;
+    return global_max_height;
 }
 
 float RenderObject::CalculateContentWidth() const {
-    float max_width = 0.0f;
-
-    // 辅助函数：检查是否设置了 overflow 隐藏/滚动
+    // 使用迭代方式代替递归，避免深层嵌套时栈溢出
     auto hasOverflowClip = [](const ComputedStyle& s) {
         std::string ox = !s.overflow_x.empty() ? s.overflow_x : s.overflow;
         return ox == "scroll" || ox == "auto" || ox == "hidden";
     };
 
+    // 使用栈来模拟递归：存储 (RenderObject*, 累计偏移X)
+    struct StackItem {
+        const RenderObject* obj;
+        float offset_x;  // 从根到此节点的累计X偏移
+    };
+    
+    std::vector<StackItem> stack;
+    float global_max_width = 0.0f;
+    
+    // 初始化：将所有直接子元素加入栈
     for (const auto& child : children_) {
-        const auto& child_layout = child->GetLayoutInfo();
-        const auto& child_style = child->GetComputedStyle();
-
-        // 获取子元素的位置和宽度
-        float child_x = child_layout.x;
-        float child_width = child_layout.width;
-
-        // 如果子元素也有 overflow: scroll/auto/hidden，使用其布局宽度
-        // 否则，递归计算其内容宽度
-        if (!hasOverflowClip(child_style)) {
-            // 递归计算子元素的内容宽度
-            float child_content_width = child->CalculateContentWidth();
-            if (child_content_width > child_width) {
-                child_width = child_content_width;
+        stack.push_back({child.get(), 0.0f});
+    }
+    
+    while (!stack.empty()) {
+        StackItem item = stack.back();
+        stack.pop_back();
+        
+        const RenderObject* obj = item.obj;
+        if (!obj) continue;
+        
+        const auto& obj_layout = obj->GetLayoutInfo();
+        const auto& obj_style = obj->GetComputedStyle();
+        
+        float obj_x = item.offset_x + obj_layout.x;
+        float obj_width = obj_layout.width;
+        
+        // 更新全局最大宽度
+        global_max_width = std::max(global_max_width, obj_x + obj_width);
+        
+        // 如果没有 overflow clip，继续遍历子元素
+        if (!hasOverflowClip(obj_style)) {
+            const auto& obj_children = obj->GetChildren();
+            for (const auto& grandchild : obj_children) {
+                // 子元素的偏移 = 当前元素的绝对X位置
+                stack.push_back({grandchild.get(), obj_x});
             }
         }
-
-        max_width = std::max(max_width, child_x + child_width);
     }
 
-    // ✅ 修复：添加容器自身的 padding-right（与 CalculateContentHeight 保持一致）
+    // 添加容器自身的 padding-right
     float padding_right = computed_style_.padding.right.ToPx(layout_info_.width, computed_style_.font_size);
-    max_width += padding_right;
+    global_max_width += padding_right;
 
-    return max_width;
+    return global_max_width;
 }
 
 // ========== RenderBlock 实现 ==========
