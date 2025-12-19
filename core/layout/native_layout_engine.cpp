@@ -3108,6 +3108,15 @@ void NativeLayoutEngine::ReadLayoutResults(RenderObject* render_obj) {
     // We only mark them as laid out, but preserve their positions and dimensions
     info.is_laid_out = true;
 
+    // For inline elements (like span), we need to position their children.
+    // MeasureIntrinsicSize() only calculates dimensions, not child positions.
+    // Flex layout positions the span element, but not its text children.
+    if (type == RenderObjectType::INLINE) {
+        auto* inline_obj = static_cast<RenderInline*>(render_obj);
+        // Position children without recalculating size
+        inline_obj->PositionChildrenOnly();
+    }
+
     // For inline-block elements (like button), we need to call Layout() to properly
     // position their children (e.g., apply text-align: center for button text).
     // This is necessary because:

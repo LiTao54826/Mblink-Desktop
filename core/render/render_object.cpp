@@ -2400,6 +2400,44 @@ void RenderInline::Layout(float parent_width, float parent_height) {
     }
 }
 
+void RenderInline::PositionChildrenOnly() {
+    // 只定位子元素，不重新计算尺寸
+    // 用于 flex 布局后定位内部文本
+    // 此时 layout_info_.width 和 layout_info_.height 已经由 flex 布局设置
+    
+    const auto& style = computed_style_;
+    
+    // 计算 padding（使用已设置的宽度作为参考）
+    float padding_left = style.padding.left.ToPx(layout_info_.width, style.font_size);
+    float padding_top = style.padding.top.ToPx(layout_info_.width, style.font_size);
+    float padding_bottom = style.padding.bottom.ToPx(layout_info_.width, style.font_size);
+    
+    // 确保子元素已经被测量
+    float max_height = 0;
+    for (auto& child : children_) {
+        auto& child_layout = child->GetLayoutInfo();
+        // 如果子元素还没有被布局，先布局它
+        if (child_layout.width == 0 && child_layout.height == 0) {
+            child->Layout(layout_info_.width, layout_info_.height);
+        }
+        max_height = std::max(max_height, child_layout.height);
+    }
+    
+    // 计算内容区域高度
+    float content_height = layout_info_.height - padding_top - padding_bottom;
+    
+    // 设置子元素位置（水平方向从 padding_left 开始，不做额外居中）
+    // 水平居中由 flex 布局的 justify-content 处理
+    float current_x = padding_left;
+    for (auto& child : children_) {
+        auto& child_layout = child->GetLayoutInfo();
+        child_layout.x = current_x;
+        // 垂直居中
+        child_layout.y = padding_top + (content_height - child_layout.height) / 2.0f;
+        current_x += child_layout.width;
+    }
+}
+
 std::pair<float, float> RenderInline::MeasureIntrinsicSize(float available_width) {
     const auto& style = computed_style_;
 

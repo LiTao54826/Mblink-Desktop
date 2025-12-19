@@ -916,6 +916,12 @@ public:
      */
     std::pair<float, float> MeasureIntrinsicSize(float available_width);
 
+    /**
+     * @brief 只定位子元素，不重新计算尺寸
+     * 用于 flex 布局后定位内部文本
+     */
+    void PositionChildrenOnly();
+
 private:
     // 表单控件渲染辅助方法
     void PaintInputElement(SkCanvas* canvas, HTMLInputElement* input, const Box& box);

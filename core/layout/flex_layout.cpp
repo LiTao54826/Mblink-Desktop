@@ -611,6 +611,13 @@ static std::vector<FlexItem> GenerateAnonymousFlexItems(
             continue;
         }
 
+        // Skip absolutely positioned items - they don't participate in flex layout
+        // They are laid out separately in PerformAbsoluteLayoutOnAbsoluteChildren
+        if (child_style.position == Position::Absolute || 
+            child_style.position == Position::Fixed) {
+            continue;
+        }
+
         FlexItem item;
         item.node = child;
         item.order = static_cast<uint32_t>(child_style.order);
@@ -1786,6 +1793,9 @@ static Size<float> PerformAbsoluteLayoutOnAbsoluteChildren(
         }
 
         // Measure child
+        // Use InherentSize mode so that the child's style size (width/height) is respected
+        // This is important for flex containers inside absolute positioned elements
+        // to properly calculate their inner_container_size for justify-content/align-items
         auto layout_output = tree.PerformChildLayout(
             child,
             known_dimensions,
@@ -1794,7 +1804,7 @@ static Size<float> PerformAbsoluteLayoutOnAbsoluteChildren(
                 AvailableSpace::Definite(constants.inner_container_size.width),
                 AvailableSpace::Definite(constants.inner_container_size.height)
             },
-            SizingMode::ContentSize,
+            SizingMode::InherentSize,
             LineBoolFalse()
         );
 
