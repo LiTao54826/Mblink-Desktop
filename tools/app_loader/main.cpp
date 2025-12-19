@@ -19,6 +19,8 @@
 #include "core/event/task_scheduler.h"
 #include "core/event/event_loop.h"
 #include "core/devtools/devtools_manager.h"
+#include "core/render/text/font_manager.h"
+#include <SDL3/SDL.h>
 
 #include <iostream>
 #include <fstream>
@@ -26,6 +28,7 @@
 #include <memory>
 #include <string>
 #include <filesystem>
+#include <cstdlib>
 
 using namespace lightui;
 namespace fs = std::filesystem;
@@ -332,14 +335,24 @@ int main(int argc, char** argv) {
         document.reset();
         std::cout << "Document cleared" << std::endl;
 
-        // 3. 清理 window
+        // 3. 清理字体缓存（在 Window/OpenGL 上下文销毁之前）
+        std::cout << "Clearing font cache..." << std::endl;
+        FontManager::GetInstance().ClearCache();
+        std::cout << "Font cache cleared" << std::endl;
+
+        // 4. 清理 window（这会销毁 OpenGL 上下文和调用 SDL_Quit）
         std::cout << "Destroying window..." << std::endl;
         window_manager.UnregisterWindow(window);
         window.reset();
         std::cout << "Window destroyed" << std::endl;
 
         std::cout << "All resources cleaned up, exiting..." << std::endl;
-        return 0;
+        std::cout.flush();
+        
+        // 使用 quick_exit 跳过静态对象的析构
+        // 这是因为 Skia 的 DirectWrite 字体管理器有后台线程
+        // 在程序退出时可能会卡住
+        std::quick_exit(0);
     }
     catch (const std::exception& e) {
         std::cerr << "Error: " << e.what() << std::endl;
