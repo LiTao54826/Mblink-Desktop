@@ -128,6 +128,12 @@ void DOMTreeView::Render(SkCanvas* canvas, float x, float y, float width, float 
     bg_paint.setColor(SkColorSetRGB(36, 36, 36));
     canvas->drawRect(SkRect::MakeXYWH(x, y, width, height), bg_paint);
 
+    // 渲染节点前，重置所有节点的位置信息（保留展开状态）
+    for (auto& [node_ptr, state] : node_states_) {
+        state.y_position = -99999;  // 标记为无效位置
+        state.height = 0;
+    }
+
     // 渲染节点
     if (root_node_) {
         float current_y = y - scroll_offset_;
@@ -160,25 +166,25 @@ void DOMTreeView::RenderNode(SkCanvas* canvas, std::shared_ptr<Node> node,
         }
     }
 
-    // 跳过不可见的节点
-    if (y + ROW_HEIGHT < view_y_ - scroll_offset_) {
+    // 始终保存节点位置（用于命中测试），无论是否可见
+    // y 是当前节点的渲染 Y 坐标（已考虑滚动偏移）
+    node_states_[node.get()].y_position = y;
+    node_states_[node.get()].height = ROW_HEIGHT;
+
+    // 检查节点是否在可见区域内
+    bool is_above_view = (y + ROW_HEIGHT < view_y_);
+    bool is_below_view = (y > view_y_ + view_height_);
+
+    // 如果节点不在可见区域内，跳过渲染但继续遍历子节点以更新位置
+    if (is_above_view || is_below_view) {
         y += ROW_HEIGHT;
-        // 如果展开，递归渲染子节点
         if (IsExpanded(node)) {
             for (const auto& child : node->GetChildNodes()) {
-                RenderNode(canvas, child, x + INDENT_WIDTH, y, depth + 1);
+                RenderNode(canvas, child, x, y, depth + 1);
             }
         }
         return;
     }
-
-    if (y > view_y_ + view_height_) {
-        return;  // 超出可见区域
-    }
-
-    // 保存节点位置
-    node_states_[node.get()].y_position = y;
-    node_states_[node.get()].height = ROW_HEIGHT;
 
     float node_x = x + depth * INDENT_WIDTH;
 
@@ -333,33 +339,23 @@ float DOMTreeView::CalculateContentHeight(std::shared_ptr<Node> node, int depth)
 }
 
 bool DOMTreeView::HandleMouseEvent(int mouse_x, int mouse_y, int button, bool pressed) {
-    std::cout << "[DOMTreeView] HandleMouseEvent: x=" << mouse_x << ", y=" << mouse_y 
-              << ", button=" << button << ", pressed=" << pressed << std::endl;
-    std::cout << "[DOMTreeView] view_x_=" << view_x_ << ", view_y_=" << view_y_ 
-              << ", view_width_=" << view_width_ << ", view_height_=" << view_height_ << std::endl;
-    std::cout << "[DOMTreeView] node_states_ size=" << node_states_.size() << std::endl;
-    
     if (!pressed || button != 0) return false;
 
     // mouse_x, mouse_y 是相对于 DOM 树视图的坐标（已由调用者转换）
     // 检查是否在视图区域内（使用相对坐标）
     if (mouse_x < 0 || mouse_x > view_width_ ||
         mouse_y < 0 || mouse_y > view_height_) {
-        std::cout << "[DOMTreeView] Mouse outside view area" << std::endl;
         return false;
     }
 
     // 命中测试 - 转换为绝对坐标
     float abs_x = view_x_ + mouse_x;
     float abs_y = view_y_ + mouse_y;
-    std::cout << "[DOMTreeView] HitTest at abs_x=" << abs_x << ", abs_y=" << abs_y << std::endl;
     
     auto hit_node = HitTest(abs_x, abs_y);
     if (hit_node) {
-        std::cout << "[DOMTreeView] Hit node: " << FormatNodeLabel(hit_node) << std::endl;
         // 检查是否点击了展开图标
         float node_x = 4;  // 相对于视图的 x 坐标
-        // TODO: 更精确的展开图标命中测试
 
         // 切换展开状态或选择节点
         if (!hit_node->GetChildNodes().empty() && mouse_x < node_x + EXPAND_ICON_SIZE + 20) {
@@ -372,13 +368,6 @@ bool DOMTreeView::HandleMouseEvent(int mouse_x, int mouse_y, int button, bool pr
             SelectNode(hit_node);
         }
         return true;
-    } else {
-        std::cout << "[DOMTreeView] No node hit" << std::endl;
-        // 打印所有节点的位置信息
-        for (const auto& [node_ptr, state] : node_states_) {
-            std::cout << "[DOMTreeView] Node y_position=" << state.y_position 
-                      << ", height=" << state.height << std::endl;
-        }
     }
 
     return false;
@@ -412,9 +401,11 @@ void DOMTreeView::SetScrollOffset(float offset) {
 
 std::shared_ptr<Node> DOMTreeView::HitTest(float x, float y) {
     for (const auto& [node_ptr, state] : node_states_) {
+        // 跳过无效位置的节点（位置未在本次渲染中更新）
+        if (state.height <= 0) continue;
+        
         if (y >= state.y_position && y < state.y_position + state.height) {
-            // 找到对应的 shared_ptr
-            // 这里需要遍历 DOM 树找到对应的节点
+            // 找到对应的 shared_ptr，需要遍历 DOM 树
             std::function<std::shared_ptr<Node>(std::shared_ptr<Node>)> find_node;
             find_node = [&find_node, node_ptr](std::shared_ptr<Node> node) -> std::shared_ptr<Node> {
                 if (!node) return nullptr;
