@@ -352,7 +352,7 @@ public:
      * @brief 检查是否需要重绘
      * @return true表示需要重绘
      */
-    bool NeedsRepaint() const { return needs_repaint_; }
+    bool NeedsRepaint() const { return needs_repaint_ || has_pending_resize_; }
 
     /**
      * @brief 添加脏区域（用于增量渲染）
@@ -592,6 +592,11 @@ private:
 
     // 显示后端（用于 CPU 渲染模式）
     std::unique_ptr<DisplayBackend> display_backend_;
+
+    // 待处理的 resize（用于节流后处理最后一次 resize）
+    int pending_resize_width_ = 0;
+    int pending_resize_height_ = 0;
+    bool has_pending_resize_ = false;
 };
 
 } // namespace lightui

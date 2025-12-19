@@ -1,0 +1,320 @@
+diff --git a/core/render/render_object.cpp b/core/render/render_object.cpp
+index f662b20..f3b6941 100644
+--- a/core/render/render_object.cpp
++++ b/core/render/render_object.cpp
+@@ -12,6 +12,7 @@
+ #include "shadow_renderer.h"
+ #include "list_marker.h"
+ #include "color.h"
++#include "css_value.h"
+ #include "core/dom/node.h"
+ #include "core/dom/element.h"
+ #include "core/dom/text.h"
+@@ -84,6 +85,8 @@ static float GetBrowserNormalLineHeight(float font_size) {
+ void RenderObject::SetViewportSize(float width, float height) {
+     viewport_width_ = width;
+     viewport_height_ = height;
++    // 同步更新 ViewportSize（用于 CSS vh/vw 单位计算）
++    ViewportSize::Set(width, height);
+ }
+ 
+ bool RenderObject::IsBodyElement() const {
+@@ -906,117 +909,131 @@ void RenderObject::EndScrollbarDrag() {
+ }
+ 
+ float RenderObject::CalculateContentHeight() const {
+-    float max_height = 0.0f;
+-
++    // 使用迭代方式代替递归，避免深层嵌套时栈溢出
+     // 辅助函数：检查是否设置了 overflow 隐藏/滚动
+     auto hasOverflowClip = [](const ComputedStyle& s) {
+         std::string oy = !s.overflow_y.empty() ? s.overflow_y : s.overflow;
+         return oy == "scroll" || oy == "auto" || oy == "hidden";
+     };
+ 
++    // 使用栈来模拟递归：存储 (RenderObject*, 累计偏移Y)
++    struct StackItem {
++        const RenderObject* obj;
++        float offset_y;  // 从根到此节点的累计Y偏移
++    };
++    
++    std::vector<StackItem> stack;
++    float global_max_height = 0.0f;
++    
++    // 初始化：将所有直接子元素加入栈
+     for (const auto& child : children_) {
+-        const auto& child_layout = child->GetLayoutInfo();
+-        const auto& child_style = child->GetComputedStyle();
+-
+-        // 获取子元素的位置和高度
+-        float child_y = child_layout.y;
+-        float child_height = child_layout.height;
+-
+-        // 如果子元素也有 overflow: scroll/auto/hidden，使用其布局高度
+-        // 否则，递归计算其内容高度
+-        if (!hasOverflowClip(child_style)) {
+-            // 递归计算子元素的内容高度
+-            float child_content_height = child->CalculateContentHeight();
+-            if (child_content_height > child_height) {
+-                child_height = child_content_height;
++        stack.push_back({child.get(), 0.0f});
++    }
++    
++    while (!stack.empty()) {
++        StackItem item = stack.back();
++        stack.pop_back();
++        
++        const RenderObject* obj = item.obj;
++        if (!obj) continue;
++        
++        const auto& obj_layout = obj->GetLayoutInfo();
++        const auto& obj_style = obj->GetComputedStyle();
++        
++        float obj_y = item.offset_y + obj_layout.y;
++        float obj_height = obj_layout.height;
++        
++        // 更新全局最大高度
++        global_max_height = std::max(global_max_height, obj_y + obj_height);
++        
++        // 如果没有 overflow clip，继续遍历子元素
++        if (!hasOverflowClip(obj_style)) {
++            const auto& obj_children = obj->GetChildren();
++            for (const auto& grandchild : obj_children) {
++                // 子元素的偏移 = 当前元素的绝对Y位置
++                stack.push_back({grandchild.get(), obj_y});
+             }
+         }
+-
+-        // ✅ 修复：不再加 margin-bottom，因为 child_y 在 Layout 阶段已经包含了之前元素的 margin
+-        // 内容高度 = 子元素位置 + 子元素高度（不加margin，避免重复计算）
+-        max_height = std::max(max_height, child_y + child_height);
+     }
+-
+-    // ✅ 修复：为最后一个子元素添加 margin-bottom（这部分在可滚动区域内应该被看到）
+-    // 并且为 body 元素添加其自身的 margin-bottom
++    
++    // 处理最后一个子元素的 margin-bottom
+     if (!children_.empty()) {
+         const auto& last_child = children_.back();
+         const auto& last_child_style = last_child->GetComputedStyle();
+-        // 最后一个子元素的 margin-bottom 不会与后续元素 collapse，需要计入内容高度
+         float last_margin_bottom = last_child_style.margin.bottom.ToPx(layout_info_.width, last_child_style.font_size);
+-        max_height += last_margin_bottom;
++        global_max_height += last_margin_bottom;
+     }
+ 
+-    // For body element, add body's own margin-bottom to content height
+-    // because it's part of the scrollable content
++    // For body element, add body's own margin-bottom
+     if (IsBodyElement()) {
+-        // 注意：body 的 margin-top 已经在第一个子元素的 child_y 中体现了
+-        // 只需要加上 margin-bottom
+         float body_margin_bottom = computed_style_.margin.bottom.ToPx(viewport_height_, computed_style_.font_size);
+-        max_height += body_margin_bottom;
++        global_max_height += body_margin_bottom;
+     }
+ 
+-    // ✅ 修复：添加容器自身的 padding-bottom
+-    // 原因：子元素的 y 坐标已经包含了 padding-top (从 padding-top 开始布局)
+-    //      但内容高度需要延伸到 padding-bottom 的底部，这样滚动时才能看到完整的底部留白
+-    // 注意：不需要加 padding-top，因为子元素的 child_y 已经是相对于 content area 的
+-    //      (content area 从 border + padding-top 开始)
++    // 添加容器自身的 padding-bottom
+     float padding_bottom = computed_style_.padding.bottom.ToPx(layout_info_.width, computed_style_.font_size);
+-    max_height += padding_bottom;
++    global_max_height += padding_bottom;
+ 
+-    return max_height;
++    return global_max_height;
+ }
+ 
+ float RenderObject::CalculateContentWidth() const {
+-    float max_width = 0.0f;
+-
+-    // 辅助函数：检查是否设置了 overflow 隐藏/滚动
++    // 使用迭代方式代替递归，避免深层嵌套时栈溢出
+     auto hasOverflowClip = [](const ComputedStyle& s) {
+         std::string ox = !s.overflow_x.empty() ? s.overflow_x : s.overflow;
+         return ox == "scroll" || ox == "auto" || ox == "hidden";
+     };
+ 
++    // 使用栈来模拟递归：存储 (RenderObject*, 累计偏移X)
++    struct StackItem {
++        const RenderObject* obj;
++        float offset_x;  // 从根到此节点的累计X偏移
++    };
++    
++    std::vector<StackItem> stack;
++    float global_max_width = 0.0f;
++    
++    // 初始化：将所有直接子元素加入栈
+     for (const auto& child : children_) {
+-        const auto& child_layout = child->GetLayoutInfo();
+-        const auto& child_style = child->GetComputedStyle();
+-
+-        // 获取子元素的位置和宽度
+-        float child_x = child_layout.x;
+-        float child_width = child_layout.width;
+-
+-        // 如果子元素也有 overflow: scroll/auto/hidden，使用其布局宽度
+-        // 否则，递归计算其内容宽度
+-        if (!hasOverflowClip(child_style)) {
+-            // 递归计算子元素的内容宽度
+-            float child_content_width = child->CalculateContentWidth();
+-            if (child_content_width > child_width) {
+-                child_width = child_content_width;
++        stack.push_back({child.get(), 0.0f});
++    }
++    
++    while (!stack.empty()) {
++        StackItem item = stack.back();
++        stack.pop_back();
++        
++        const RenderObject* obj = item.obj;
++        if (!obj) continue;
++        
++        const auto& obj_layout = obj->GetLayoutInfo();
++        const auto& obj_style = obj->GetComputedStyle();
++        
++        float obj_x = item.offset_x + obj_layout.x;
++        float obj_width = obj_layout.width;
++        
++        // 更新全局最大宽度
++        global_max_width = std::max(global_max_width, obj_x + obj_width);
++        
++        // 如果没有 overflow clip，继续遍历子元素
++        if (!hasOverflowClip(obj_style)) {
++            const auto& obj_children = obj->GetChildren();
++            for (const auto& grandchild : obj_children) {
++                // 子元素的偏移 = 当前元素的绝对X位置
++                stack.push_back({grandchild.get(), obj_x});
+             }
+         }
+-
+-        max_width = std::max(max_width, child_x + child_width);
+     }
+ 
+-    // ✅ 修复：添加容器自身的 padding-right（与 CalculateContentHeight 保持一致）
++    // 添加容器自身的 padding-right
+     float padding_right = computed_style_.padding.right.ToPx(layout_info_.width, computed_style_.font_size);
+-    max_width += padding_right;
++    global_max_width += padding_right;
+ 
+-    return max_width;
++    return global_max_width;
+ }
+ 
+ // ========== RenderBlock 实现 ==========
+ 
+ void RenderBlock::Layout(float parent_width, float parent_height) {
+-    // Debug: 追踪 Layout 调用
+-    auto dom_node = GetNode();
+-    if (dom_node && dom_node->GetNodeType() == NodeType::ELEMENT_NODE) {
+-        auto element = std::dynamic_pointer_cast<Element>(dom_node);
+-        if (element) {
+-            std::cout << "[RenderBlock::Layout] <" << element->GetTagName() 
+-                      << "> parent_size=(" << parent_width << "," << parent_height << ")" << std::endl;
+-        }
+-    }
+-    
+     // 使用传统块布局
+     const auto& style = computed_style_;
+     
+@@ -2312,16 +2329,6 @@ void RenderBlock::PaintTextAreaElement(SkCanvas* canvas, HTMLTextAreaElement* te
+ void RenderInline::Layout(float parent_width, float parent_height) {
+     // 🔍 调试：开始布局
+     auto node = GetNode();
+-    std::string tag_name = "?";
+-    std::string text_content = "";
+-    if (node && node->GetNodeType() == NodeType::ELEMENT_NODE) {
+-        auto elem = std::static_pointer_cast<Element>(node);
+-        tag_name = elem->GetTagName();
+-        text_content = elem->GetTextContent();
+-    }
+-    printf("[RenderInline::Layout] START - tag=%s, textContent='%s', children=%zu\n",
+-           tag_name.c_str(), text_content.c_str(), children_.size());
+-
+     const auto& style = computed_style_;
+ 
+     // 首先检查是否有显式的width/height设置（例如input元素）
+@@ -2353,11 +2360,6 @@ void RenderInline::Layout(float parent_width, float parent_height) {
+         auto& child_layout = child->GetLayoutInfo();
+         total_width += child_layout.width;
+         max_height = std::max(max_height, child_layout.height);
+-        
+-        // 🔍 调试：子元素信息
+-        printf("  child[%d]: type=%d, w=%.2f, h=%.2f\n",
+-               (int)(&child - &children_[0]), (int)child->GetType(),
+-               child_layout.width, child_layout.height);
+     }
+ 
+     // 计算 padding
+@@ -2396,10 +2398,44 @@ void RenderInline::Layout(float parent_width, float parent_height) {
+         child_layout.y = padding_top + (layout_info_.height - padding_top - padding_bottom - child_layout.height) / 2.0f;
+         current_x += child_layout.width;
+     }
++}
++
++void RenderInline::PositionChildrenOnly() {
++    // 只定位子元素，不重新计算尺寸
++    // 用于 flex 布局后定位内部文本
++    // 此时 layout_info_.width 和 layout_info_.height 已经由 flex 布局设置
++    
++    const auto& style = computed_style_;
++    
++    // 计算 padding（使用已设置的宽度作为参考）
++    float padding_left = style.padding.left.ToPx(layout_info_.width, style.font_size);
++    float padding_top = style.padding.top.ToPx(layout_info_.width, style.font_size);
++    float padding_bottom = style.padding.bottom.ToPx(layout_info_.width, style.font_size);
++    
++    // 确保子元素已经被测量
++    float max_height = 0;
++    for (auto& child : children_) {
++        auto& child_layout = child->GetLayoutInfo();
++        // 如果子元素还没有被布局，先布局它
++        if (child_layout.width == 0 && child_layout.height == 0) {
++            child->Layout(layout_info_.width, layout_info_.height);
++        }
++        max_height = std::max(max_height, child_layout.height);
++    }
++    
++    // 计算内容区域高度
++    float content_height = layout_info_.height - padding_top - padding_bottom;
+     
+-    // 🔍 调试：结束布局
+-    printf("[RenderInline::Layout] END - w=%.2f, h=%.2f, total_width=%.2f, max_height=%.2f\n",
+-           layout_info_.width, layout_info_.height, total_width, max_height);
++    // 设置子元素位置（水平方向从 padding_left 开始，不做额外居中）
++    // 水平居中由 flex 布局的 justify-content 处理
++    float current_x = padding_left;
++    for (auto& child : children_) {
++        auto& child_layout = child->GetLayoutInfo();
++        child_layout.x = current_x;
++        // 垂直居中
++        child_layout.y = padding_top + (content_height - child_layout.height) / 2.0f;
++        current_x += child_layout.width;
++    }
+ }
+ 
+ std::pair<float, float> RenderInline::MeasureIntrinsicSize(float available_width) {
+@@ -3011,20 +3047,8 @@ void RenderText::Paint(SkCanvas* canvas) {
+     SkRect paint_rect = SkRect::MakeXYWH(layout_info_.x, layout_info_.y, layout_info_.width, layout_info_.height);
+     if (canvas->quickReject(paint_rect.makeOutset(10, 10))) {
+         needs_paint_ = false;
+-        printf("[RenderText::Paint] CULLED text=\"%s\" at (%.1f, %.1f)\n", 
+-               text_.substr(0, 20).c_str(), layout_info_.x, layout_info_.y);
+-        fflush(stdout);
+         return;
+     }
+-    
+-    // Debug: Log painting
+-    if (text_.find(':') != std::string::npos && text_.length() == 8) {
+-        // Looks like a time string
+-        printf("[RenderText::Paint] Painting time text=\"%s\" at (%.1f, %.1f) size=(%.1f, %.1f) color=%s\n", 
+-               text_.c_str(), layout_info_.x, layout_info_.y, layout_info_.width, layout_info_.height,
+-               computed_style_.color.c_str());
+-        fflush(stdout);
+-    }
+ 
+     const auto& style = computed_style_;
+     const auto& layout = layout_info_;

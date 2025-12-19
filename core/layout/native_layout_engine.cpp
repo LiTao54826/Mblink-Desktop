@@ -3107,6 +3107,10 @@ void NativeLayoutEngine::ReadLayoutResults(RenderObject* render_obj) {
     // For TABLE internal elements, their layout is fully managed by RenderTable::Layout
     // We only mark them as laid out, but preserve their positions and dimensions
     info.is_laid_out = true;
+    
+    // 清除 RenderObject 的 needs_layout_ 标志
+    // 这对于 Paint 中的内容尺寸缓存优化很重要
+    render_obj->ClearNeedsLayout();
 
     // For inline elements (like span), we need to position their children.
     // MeasureIntrinsicSize() only calculates dimensions, not child positions.

@@ -62,6 +62,10 @@
 
 namespace lightui {
 
+// 从 render_object.cpp 导入的绘制统计变量
+extern std::atomic<int> g_paint_total_calls;
+extern std::atomic<int> g_paint_culled_calls;
+
 /**
  * @brief Window 的 DOM 观察者
  *
@@ -843,8 +847,14 @@ void Window::OnResize() {
     config_.width = logical_width;
     config_.height = logical_height;
 
+    std::cout << "[Window::OnResize] physical=" << width << "x" << height 
+              << ", logical=" << logical_width << "x" << logical_height 
+              << ", render_tree_valid_=" << render_tree_valid_ << std::endl;
+
     // 重新创建Skia渲染表面（使用客户区像素大小）
     if (actual_backend_ == RenderBackend::OPENGL) {
+        // 更新 OpenGL viewport
+        glViewport(0, 0, width, height);
         CreateSkiaSurface();
     } else if (actual_backend_ == RenderBackend::CPU) {
         // CPU 模式：重新创建 Skia Raster 表面
@@ -1043,29 +1053,16 @@ bool Window::HandleSDLEvent(const SDL_Event& event) {
                 int new_height = event.window.data2;
 
                 // 检查是否真的改变了大小（避免重复处理）
-                static int last_resize_width = 0, last_resize_height = 0;
-                static Uint64 last_resize_time = 0;
-                static bool resize_in_progress = false;
-                Uint64 current_time = SDL_GetTicks();
+                static int last_processed_width = 0, last_processed_height = 0;
 
-                if (new_width == last_resize_width && new_height == last_resize_height) {
+                if (new_width == last_processed_width && new_height == last_processed_height) {
                     return true;  // 大小没变，跳过
                 }
 
-                // 节流：在拖动 resize 过程中，限制处理频率到 ~30fps (33ms)
-                // 这样可以减少 CPU 开销，同时保持响应性
-                Uint64 throttle_interval = 33;  // 33ms = ~30fps
-                if (current_time - last_resize_time < throttle_interval) {
-                    // 标记 resize 正在进行中，稍后会处理
-                    resize_in_progress = true;
-                    return true;
-                }
+                last_processed_width = new_width;
+                last_processed_height = new_height;
 
-                last_resize_width = new_width;
-                last_resize_height = new_height;
-                last_resize_time = current_time;
-                resize_in_progress = false;
-
+                // 直接处理 resize，不做节流
                 OnResize();
                 InvalidateRenderTree();  // 窗口大小改变，需要用新尺寸重建渲染树和布局
                 SetNeedsRepaint();
@@ -1231,6 +1228,15 @@ void Window::Render() {
     DEBUG_LOG("[Window::Render] Called, needs_repaint_=" << needs_repaint_
               << ", render_tree_valid_=" << render_tree_valid_);
 
+    // 处理待处理的 resize（节流期间被跳过的最后一次 resize）
+    if (has_pending_resize_) {
+        has_pending_resize_ = false;
+        OnResize();
+        InvalidateRenderTree();
+        SetNeedsRepaint();
+        DispatchWindowEvent(WindowEvent(WindowEventType::RESIZE, pending_resize_width_, pending_resize_height_));
+    }
+
     if (!document_ || !surface_) {
         return;
     }
@@ -1251,8 +1257,7 @@ void Window::Render() {
     if (!needs_repaint_ && !has_active_animations && dirty_rects_.empty() && render_tree_valid_) {
         // 静态场景：完全跳过渲染
         static int skip_count = 0;
-        static bool debug_skip = std::getenv("LIGHTUI_DEBUG_RENDER_SKIP") != nullptr;
-        if (debug_skip && ++skip_count % 60 == 0) {
+        if (++skip_count % 60 == 0) {
             std::cout << "[Render] Skipped " << skip_count << " frames (no changes)" << std::endl;
         }
         return;
@@ -1277,6 +1282,16 @@ void Window::Render() {
 
     // 获取 DPI 缩放比
     float dpi_scale = GetDisplayScale();
+
+    // 调试：检查 surface 大小是否与窗口大小一致
+    if (surface_) {
+        int surface_width = surface_->width();
+        int surface_height = surface_->height();
+        if (surface_width != physical_width || surface_height != physical_height) {
+            std::cout << "[Window::Render] SIZE MISMATCH! surface=" << surface_width << "x" << surface_height
+                      << ", window=" << physical_width << "x" << physical_height << std::endl;
+        }
+    }
 
     // 计算逻辑大小（CSS 像素）- 像浏览器一样
     int width = static_cast<int>(physical_width / dpi_scale);
@@ -1307,7 +1322,15 @@ void Window::Render() {
     static float last_app_width = 0, last_app_height = 0;
     bool size_changed = (width != last_width || height != last_height);
     bool app_size_changed = (app_width != last_app_width || app_height != last_app_height);
+    
+    std::cout << "[Window::Render] render_tree_valid_=" << render_tree_valid_ 
+              << ", size_changed=" << size_changed
+              << ", current=" << width << "x" << height
+              << ", last=" << last_width << "x" << last_height << std::endl;
+    
     if (size_changed || app_size_changed) {
+        std::cout << "[Window::Render] Size changed: " << last_width << "x" << last_height 
+                  << " -> " << width << "x" << height << std::endl;
         last_width = width;
         last_height = height;
         last_app_width = app_width;
@@ -1343,6 +1366,7 @@ void Window::Render() {
         DEBUG_LOG("[Window::Render] Full layout: " << app_width << "x" << app_height);
 
         // 使用 Taffy 布局引擎计算布局
+        Uint64 layout_start = SDL_GetTicks();
         if (layout_engine_) {
             layout_engine_->BuildLayoutTree(cached_render_tree_);
             layout_engine_->ComputeLayout(app_width, app_height);
@@ -1351,6 +1375,8 @@ void Window::Render() {
             // 降级到传统布局
             cached_render_tree_->Layout(app_width, app_height);
         }
+        Uint64 layout_end = SDL_GetTicks();
+        std::cout << "[Window::Render] Layout took " << (layout_end - layout_start) << "ms" << std::endl;
 
         // 获取 body 的背景色并清空画布
         SkColor clear_color = SK_ColorWHITE;
@@ -1371,7 +1397,16 @@ void Window::Render() {
 
         // 绘制（使用逻辑坐标）
         DEBUG_LOG("[Window::Render] Mode A: Full rebuild and repaint");
+        g_paint_total_calls = 0;
+        g_paint_culled_calls = 0;
+        RenderObject::ResetPaintTimingStats();
+        Uint64 paint_start = SDL_GetTicks();
         cached_render_tree_->Paint(canvas);
+        Uint64 paint_end = SDL_GetTicks();
+        std::cout << "[Window::Render] Paint took " << (paint_end - paint_start) << "ms"
+                  << ", total_calls=" << g_paint_total_calls.load()
+                  << ", culled=" << g_paint_culled_calls.load() << std::endl;
+        RenderObject::PrintPaintTimingStats();
 
         // 更新并绘制 select 下拉菜单（在所有内容之上）
         auto& dropdown_manager = SelectDropdownManager::Instance();
@@ -1383,8 +1418,11 @@ void Window::Render() {
         canvas->restore();
 
         // 全量渲染后，清除所有脏标记
+        Uint64 clear_start = SDL_GetTicks();
         ClearDirtyFlags(body.get());
         ClearRenderObjectDirtyFlags(cached_render_tree_.get());
+        Uint64 clear_end = SDL_GetTicks();
+        std::cout << "[Window::Render] ClearFlags took " << (clear_end - clear_start) << "ms" << std::endl;
         
         // 全量渲染时，清除脏区域标记（SwapBuffers 将使用全量更新）
         has_dirty_bounds_ = false;

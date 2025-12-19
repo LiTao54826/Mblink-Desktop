@@ -36,8 +36,8 @@ float RenderObject::viewport_width_ = 0.0f;
 float RenderObject::viewport_height_ = 0.0f;
 
 // 视口剔除调试统计（用于验证 quickReject 效果）
-static std::atomic<int> g_paint_total_calls{0};
-static std::atomic<int> g_paint_culled_calls{0};
+std::atomic<int> g_paint_total_calls{0};
+std::atomic<int> g_paint_culled_calls{0};
 
 void RenderObject::ResetPaintStats() {
     g_paint_total_calls = 0;
@@ -700,9 +700,10 @@ float RenderObject::GetMaxScrollX() const {
     float visible_width = effective_width - border_left - border_right;
     float visible_height = effective_height - border_top - border_bottom;
 
-    // ✅ 修复：始终动态计算内容尺寸，不使用缓存（与GetMaxScrollY保持一致）
-    float content_width = CalculateContentWidth();
-    float content_height = CalculateContentHeight();
+    // 使用缓存的内容尺寸（在 Paint 中已计算并缓存）
+    // 如果缓存无效（首次调用或布局后），则动态计算
+    float content_width = content_width_ > 0 ? content_width_ : CalculateContentWidth();
+    float content_height = content_height_ > 0 ? content_height_ : CalculateContentHeight();
 
     // 检查是否需要垂直滚动条
     bool needs_v_scroll = content_height > visible_height;
@@ -728,11 +729,10 @@ float RenderObject::GetMaxScrollY() const {
     float visible_width = effective_width - border_left - border_right;
     float visible_height = effective_height - border_top - border_bottom;
 
-    // ✅ 修复：始终动态计算内容尺寸，不使用缓存
-    // 原因：窗口resize后，effective_height会立即更新，但content_height_可能
-    //      还是旧值（因为Paint可能被增量渲染跳过），导致滚动范围计算错误
-    float content_width = CalculateContentWidth();
-    float content_height = CalculateContentHeight();
+    // 使用缓存的内容尺寸（在 Paint 中已计算并缓存）
+    // 如果缓存无效（首次调用或布局后），则动态计算
+    float content_width = content_width_ > 0 ? content_width_ : CalculateContentWidth();
+    float content_height = content_height_ > 0 ? content_height_ : CalculateContentHeight();
 
     // 检查是否需要垂直滚动条（用于计算内容区域宽度）
     bool needs_v_scroll = content_height > visible_height;
@@ -1259,6 +1259,27 @@ void RenderBlock::Layout(float parent_width, float parent_height) {
     needs_layout_ = false;
 }
 
+// 全局计时统计
+static std::atomic<long long> g_paint_bg_time{0};
+static std::atomic<long long> g_paint_border_time{0};
+static std::atomic<long long> g_paint_children_time{0};
+static std::atomic<long long> g_paint_shadow_time{0};
+static std::atomic<long long> g_paint_scrollbar_time{0};
+
+void RenderObject::PrintPaintTimingStats() {
+    std::cout << "[Paint Timing] bg=" << (g_paint_bg_time.load() / 1000) << "ms"
+              << ", shadow=" << (g_paint_shadow_time.load() / 1000) << "ms"
+              << ", children=" << (g_paint_children_time.load() / 1000) << "ms" << std::endl;
+}
+
+void RenderObject::ResetPaintTimingStats() {
+    g_paint_bg_time = 0;
+    g_paint_border_time = 0;
+    g_paint_children_time = 0;
+    g_paint_shadow_time = 0;
+    g_paint_scrollbar_time = 0;
+}
+
 void RenderBlock::Paint(SkCanvas* canvas) {
     if (!canvas) {
         return;
@@ -1390,11 +1411,15 @@ void RenderBlock::Paint(SkCanvas* canvas) {
     }
 
     // 渲染阴影
+    auto shadow_start = std::chrono::high_resolution_clock::now();
     if (!style.box_shadow.empty()) {
         renderer.RenderBoxShadow(box, style.box_shadow, &style.border_radius);
     }
+    auto shadow_end = std::chrono::high_resolution_clock::now();
+    g_paint_shadow_time += std::chrono::duration_cast<std::chrono::microseconds>(shadow_end - shadow_start).count();
 
     // 渲染背景（优先渐变，然后纯色）
+    auto bg_start = std::chrono::high_resolution_clock::now();
     SkRect padding_box = box.GetPaddingBox();
     if (style.background_linear_gradient.has_value()) {
         GradientRenderer::RenderLinearGradient(canvas, padding_box, *style.background_linear_gradient);
@@ -1405,6 +1430,8 @@ void RenderBlock::Paint(SkCanvas* canvas) {
     else {
         renderer.RenderBackgroundAdvanced(box, styles, &style.border_radius);
     }
+    auto bg_end = std::chrono::high_resolution_clock::now();
+    g_paint_bg_time += std::chrono::duration_cast<std::chrono::microseconds>(bg_end - bg_start).count();
 
     // 渲染边框 - 使用缓存的标志位
     if (cache.has_border) {
@@ -1694,13 +1721,23 @@ void RenderBlock::Paint(SkCanvas* canvas) {
     if (isOverflowSet(overflow_x) || isOverflowSet(overflow_y)) {
         needs_clip = true;
 
-        // 使用递归方法计算子元素内容的实际尺寸
-        content_width = CalculateContentWidth();
-        content_height = CalculateContentHeight();
-
-        // 保存内容尺寸用于滚动计算
-        content_width_ = content_width;
-        content_height_ = content_height;
+        // 优化：只在布局改变后重新计算内容尺寸
+        // 使用缓存的值，避免每次 Paint 都遍历整个子树
+        if (content_width_ <= 0 || content_height_ <= 0 || needs_layout_) {
+            auto calc_start = std::chrono::high_resolution_clock::now();
+            content_width = CalculateContentWidth();
+            content_height = CalculateContentHeight();
+            auto calc_end = std::chrono::high_resolution_clock::now();
+            auto calc_ms = std::chrono::duration_cast<std::chrono::milliseconds>(calc_end - calc_start).count();
+            if (calc_ms > 10) {
+                std::cout << "[Paint] CalculateContent took " << calc_ms << "ms" << std::endl;
+            }
+            content_width_ = content_width;
+            content_height_ = content_height;
+        } else {
+            content_width = content_width_;
+            content_height = content_height_;
+        }
 
         // 判断是否需要滚动条
         float effective_width = GetEffectiveVisibleWidth();
@@ -1738,8 +1775,9 @@ void RenderBlock::Paint(SkCanvas* canvas) {
         // 场景1：用户滚动到底部后，窗口变高，此时max_scroll变小，
         //       需要自动调整scroll_y_以保持在有效范围内
         // 场景2：窗口最大化后不再需要滚动条，需要重置滚动位置
-        float max_scroll_x = GetMaxScrollX();
-        float max_scroll_y = GetMaxScrollY();
+        // 注意：这里直接使用已计算的 content_width/height，避免再次调用 GetMaxScroll
+        float max_scroll_x = std::max(0.0f, content_width - content_area_width);
+        float max_scroll_y = std::max(0.0f, content_height - content_area_height);
         
         // 只在超出范围时调整（避免不必要的重绘标记）
         if (scroll_x_ > max_scroll_x || scroll_y_ > max_scroll_y) {
@@ -1865,6 +1903,7 @@ void RenderBlock::Paint(SkCanvas* canvas) {
         canvas->clipRRect(rrect, SkClipOp::kIntersect, true);
     }
 
+    auto children_start = std::chrono::high_resolution_clock::now();
     for (auto& child : sorted_children) {
         // 跳过已经绘制的 legend
         if (is_fieldset_element && child.get() == legend_child) {
@@ -1872,6 +1911,8 @@ void RenderBlock::Paint(SkCanvas* canvas) {
         }
         child->Paint(canvas);
     }
+    auto children_end = std::chrono::high_resolution_clock::now();
+    g_paint_children_time += std::chrono::duration_cast<std::chrono::microseconds>(children_end - children_start).count();
 
     // 恢复 fieldset 的圆角裁剪状态
     if (is_fieldset_element && has_border_radius) {

@@ -456,6 +456,9 @@ public:
      */
     void MarkNeedsLayout(bool propagate_to_parent = true) {
         needs_layout_ = true;
+        // 清除内容尺寸缓存，因为布局改变后需要重新计算
+        content_width_ = 0.0f;
+        content_height_ = 0.0f;
         // 向上传播到父节点，因为父节点的大小可能依赖于子节点
         if (propagate_to_parent) {
             auto parent = parent_.lock();
@@ -787,6 +790,16 @@ public:
      * @brief 打印绘制统计（验证视口剔除效果）
      */
     static void PrintPaintStats();
+
+    /**
+     * @brief 打印绘制计时统计（分析性能瓶颈）
+     */
+    static void PrintPaintTimingStats();
+
+    /**
+     * @brief 重置绘制计时统计
+     */
+    static void ResetPaintTimingStats();
 
     /**
      * @brief 检查当前元素是否是 body 元素
