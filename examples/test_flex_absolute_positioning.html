@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Flex Container Absolute Positioning Test</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 20px;
+            font-family: Arial, sans-serif;
+        }
+        
+        h2 {
+            margin-top: 30px;
+            margin-bottom: 10px;
+        }
+        
+        .test-container {
+            display: flex;
+            flex-direction: row;
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+        
+        .test-case {
+            flex: 1;
+        }
+        
+        .test-case h3 {
+            margin: 0 0 10px 0;
+            font-size: 14px;
+        }
+        
+        /* Block container for comparison */
+        .block-container {
+            position: relative;
+            width: 200px;
+            height: 200px;
+            background-color: #e0e0e0;
+            border: 2px solid #333;
+        }
+        
+        /* Flex container */
+        .flex-container {
+            display: flex;
+            position: relative;
+            width: 200px;
+            height: 200px;
+            background-color: #d0e0f0;
+            border: 2px solid #0066cc;
+        }
+        
+        /* Absolutely positioned child */
+        .absolute-child {
+            position: absolute;
+            background-color: #ff6b6b;
+            color: white;
+            font-size: 12px;
+            padding: 5px;
+            box-sizing: border-box;
+        }
+        
+        /* Test 1: bottom: 0, right: 0 */
+        .bottom-right {
+            bottom: 0;
+            right: 0;
+            width: 80px;
+            height: 40px;
+        }
+        
+        /* Test 2: top: 0, left: 0 */
+        .top-left {
+            top: 0;
+            left: 0;
+            width: 80px;
+            height: 40px;
+        }
+        
+        /* Test 3: Stretch with top+bottom */
+        .stretch-vertical {
+            top: 20px;
+            bottom: 20px;
+            left: 10px;
+            width: 60px;
+        }
+        
+        /* Test 4: Stretch with left+right */
+        .stretch-horizontal {
+            left: 20px;
+            right: 20px;
+            top: 10px;
+            height: 40px;
+        }
+        
+        /* Test 5: Full stretch (all insets) */
+        .stretch-full {
+            top: 30px;
+            right: 30px;
+            bottom: 30px;
+            left: 30px;
+        }
+        
+        /* Test 6: Centered with margins */
+        .centered {
+            top: 50%;
+            left: 50%;
+            width: 60px;
+            height: 40px;
+            margin-top: -20px;
+            margin-left: -30px;
+        }
+        
+        .info {
+            font-size: 11px;
+            color: #666;
+            margin-top: 5px;
+        }
+    </style>
+</head>
+<body>
+    <h1>Flex Container vs Block Container: Absolute Positioning</h1>
+    <p>This test compares absolute positioning behavior between flex and block containers.</p>
+    <p>Both containers should produce identical positioning results for absolutely positioned children.</p>
+    
+    <h2>Test 1: bottom: 0, right: 0</h2>
+    <div class="test-container">
+        <div class="test-case">
+            <h3>Block Container</h3>
+            <div class="block-container">
+                <div class="absolute-child bottom-right">Block</div>
+            </div>
+            <div class="info">Expected: Child at bottom-right corner</div>
+        </div>
+        <div class="test-case">
+            <h3>Flex Container</h3>
+            <div class="flex-container">
+                <div class="absolute-child bottom-right">Flex</div>
+            </div>
+            <div class="info">Expected: Child at bottom-right corner</div>
+        </div>
+    </div>
+    
+    <h2>Test 2: top: 0, left: 0</h2>
+    <div class="test-container">
+        <div class="test-case">
+            <h3>Block Container</h3>
+            <div class="block-container">
+                <div class="absolute-child top-left">Block</div>
+            </div>
+            <div class="info">Expected: Child at top-left corner</div>
+        </div>
+        <div class="test-case">
+            <h3>Flex Container</h3>
+            <div class="flex-container">
+                <div class="absolute-child top-left">Flex</div>
+            </div>
+            <div class="info">Expected: Child at top-left corner</div>
+        </div>
+    </div>
+    
+    <h2>Test 3: Vertical Stretch (top + bottom, no height)</h2>
+    <div class="test-container">
+        <div class="test-case">
+            <h3>Block Container</h3>
+            <div class="block-container">
+                <div class="absolute-child stretch-vertical">Block</div>
+            </div>
+            <div class="info">Expected: Height = 200 - 20 - 20 = 160px</div>
+        </div>
+        <div class="test-case">
+            <h3>Flex Container</h3>
+            <div class="flex-container">
+                <div class="absolute-child stretch-vertical">Flex</div>
+            </div>
+            <div class="info">Expected: Height = 200 - 20 - 20 = 160px</div>
+        </div>
+    </div>
+    
+    <h2>Test 4: Horizontal Stretch (left + right, no width)</h2>
+    <div class="test-container">
+        <div class="test-case">
+            <h3>Block Container</h3>
+            <div class="block-container">
+                <div class="absolute-child stretch-horizontal">Block</div>
+            </div>
+            <div class="info">Expected: Width = 200 - 20 - 20 = 160px</div>
+        </div>
+        <div class="test-case">
+            <h3>Flex Container</h3>
+            <div class="flex-container">
+                <div class="absolute-child stretch-horizontal">Flex</div>
+            </div>
+            <div class="info">Expected: Width = 200 - 20 - 20 = 160px</div>
+        </div>
+    </div>
+    
+    <h2>Test 5: Full Stretch (all insets, no dimensions)</h2>
+    <div class="test-container">
+        <div class="test-case">
+            <h3>Block Container</h3>
+            <div class="block-container">
+                <div class="absolute-child stretch-full">Block</div>
+            </div>
+            <div class="info">Expected: 140x140px centered with 30px insets</div>
+        </div>
+        <div class="test-case">
+            <h3>Flex Container</h3>
+            <div class="flex-container">
+                <div class="absolute-child stretch-full">Flex</div>
+            </div>
+            <div class="info">Expected: 140x140px centered with 30px insets</div>
+        </div>
+    </div>
+    
+    <h2>Test 6: Percentage Insets</h2>
+    <div class="test-container">
+        <div class="test-case">
+            <h3>Block Container</h3>
+            <div class="block-container">
+                <div class="absolute-child" style="top: 10%; left: 10%; right: 10%; bottom: 10%;">Block</div>
+            </div>
+            <div class="info">Expected: 10% insets = 20px each side</div>
+        </div>
+        <div class="test-case">
+            <h3>Flex Container</h3>
+            <div class="flex-container">
+                <div class="absolute-child" style="top: 10%; left: 10%; right: 10%; bottom: 10%;">Flex</div>
+            </div>
+            <div class="info">Expected: 10% insets = 20px each side</div>
+        </div>
+    </div>
+    
+    <script src="preact_demo/test_flex_absolute_positioning.js"></script>
+</body>
+</html>

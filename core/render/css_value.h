@@ -26,6 +26,10 @@ enum class CSSUnit {
     PERCENT, // 百分比
     EM,      // 相对于字体大小
     REM,     // 相对于根元素字体大小
+    VW,      // 视口宽度百分比
+    VH,      // 视口高度百分比
+    VMIN,    // 视口最小尺寸百分比 (min(vw, vh))
+    VMAX,    // 视口最大尺寸百分比 (max(vw, vh))
     AUTO,    // 自动
     NONE     // 无单位
 };
@@ -65,6 +69,7 @@ struct CSSLength {
      * @param font_size 字体大小（用于 em 计算）
      * @param root_font_size 根字体大小（用于 rem 计算）
      * @return 像素值
+     * @note vh/vw 单位会自动从 RenderObject::GetViewportWidth/Height() 获取视口尺寸
      */
     float ToPx(float base_value = 0.0f, float font_size = 16.0f, float root_font_size = 16.0f) const;
 
@@ -223,6 +228,23 @@ struct CSSBackgroundSize {
 
     CSSBackgroundSize() : type(Type::AUTO) {}
 };
+
+/**
+ * @brief 视口尺寸管理（用于 vh/vw 单位计算）
+ */
+class ViewportSize {
+public:
+    static void Set(float width, float height);
+    static float GetWidth() { return width_; }
+    static float GetHeight() { return height_; }
+private:
+    static float width_;
+    static float height_;
+};
+
+// 便捷函数
+inline float GetViewportWidth() { return ViewportSize::GetWidth(); }
+inline float GetViewportHeight() { return ViewportSize::GetHeight(); }
 
 /**
  * @brief CSS 值解析器

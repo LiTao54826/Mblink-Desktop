@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>侧边栏桌面应用示例</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #f5f5f5;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        .app-container {
+            display: flex;
+            height: 100vh;
+        }
+
+        /* 侧边栏 */
+        .sidebar {
+            width: 240px;
+            background: linear-gradient(180deg, #2c3e50 0%, #1a252f 100%);
+            color: #ecf0f1;
+            display: flex;
+            flex-direction: column;
+            box-shadow: 2px 0 10px rgba(0, 0, 0, 0.1);
+        }
+
+        .sidebar-header {
+            padding: 20px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .sidebar-header h1 {
+            font-size: 18px;
+            font-weight: 600;
+            color: #fff;
+        }
+
+        .sidebar-header p {
+            font-size: 12px;
+            color: #95a5a6;
+            margin-top: 4px;
+        }
+
+        /* 菜单项 */
+        .menu {
+            flex: 1;
+            padding: 10px 0;
+            overflow-y: auto;
+        }
+
+        .menu-section {
+            padding: 10px 20px 5px;
+            font-size: 11px;
+            text-transform: uppercase;
+            color: #7f8c8d;
+            letter-spacing: 1px;
+        }
+
+        .menu-item {
+            display: flex;
+            align-items: center;
+            padding: 12px 20px;
+            color: #bdc3c7;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            border-left: 3px solid transparent;
+        }
+
+        .menu-item:hover {
+            background: rgba(255, 255, 255, 0.05);
+            color: #fff;
+        }
+
+        .menu-item.active {
+            background: rgba(52, 152, 219, 0.2);
+            color: #3498db;
+            border-left-color: #3498db;
+        }
+
+        .menu-icon {
+            width: 20px;
+            height: 20px;
+            margin-right: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 14px;
+        }
+
+        .menu-text {
+            font-size: 14px;
+        }
+
+        .menu-badge {
+            margin-left: auto;
+            background: #e74c3c;
+            color: #fff;
+            font-size: 11px;
+            padding: 2px 8px;
+            border-radius: 10px;
+        }
+
+        /* 用户区域 */
+        .sidebar-footer {
+            padding: 15px 20px;
+            border-top: 1px solid rgba(255, 255, 255, 0.1);
+            display: flex;
+            align-items: center;
+        }
+
+        .user-avatar {
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            background: #3498db;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #fff;
+            font-weight: 600;
+            margin-right: 10px;
+        }
+
+        .user-info {
+            flex: 1;
+        }
+
+        .user-name {
+            font-size: 13px;
+            color: #fff;
+        }
+
+        .user-status {
+            font-size: 11px;
+            color: #27ae60;
+        }
+</style>
+</head>
+
+<body>
+    <div class="app-container">
+        <!-- 侧边栏 -->
+        <aside class="sidebar">
+            <div class="sidebar-header">
+                <h1>📊 Dashboard</h1>
+                <p>管理控制台 v1.0</p>
+            </div>
+
+            <nav class="menu">
+                <div class="menu-section">主菜单</div>
+                <div class="menu-item active">
+                    <span class="menu-icon">🏠</span>
+                    <span class="menu-text">首页</span>
+                </div>
+                <div class="menu-item" onclick="switchPage('analytics')">
+                    <span class="menu-icon">📈</span>
+                    <span class="menu-text">数据分析</span>
+                </div>
+                <div class="menu-item" onclick="switchPage('messages')">
+                    <span class="menu-icon">💬</span>
+                    <span class="menu-text">消息中心</span>
+                    <span class="menu-badge">5</span>
+                </div>
+                <div class="menu-item" onclick="switchPage('calendar')">
+                    <span class="menu-icon">📅</span>
+                    <span class="menu-text">日程安排</span>
+                </div>
+
+                <div class="menu-section">管理</div>
+                <div class="menu-item" onclick="switchPage('users')">
+                    <span class="menu-icon">👥</span>
+                    <span class="menu-text">用户管理</span>
+                </div>
+                <div class="menu-item" onclick="switchPage('files')">
+                    <span class="menu-icon">📁</span>
+                    <span class="menu-text">文件管理</span>
+                </div>
+                <div class="menu-item" onclick="switchPage('settings')">
+                    <span class="menu-icon">⚙️</span>
+                    <span class="menu-text">系统设置</span>
+                </div>
+            </nav>
+
+            <div class="sidebar-footer">
+                <div class="user-avatar">张</div>
+                <div class="user-info">
+                    <div class="user-name">张三</div>
+                    <div class="user-status">● 在线</div>
+                </div>
+            </div>
+        </aside>
+
+        <!-- 主内容区 -->
+        <main class="main-content">
+            <header class="header">
+                <div class="header-left">
+                    <input type="text" class="search-box" placeholder="搜索...">
+                </div>
+                <div class="header-right">
+                    <button class="header-btn">🔔</button>
+                    <button class="header-btn">❓</button>
+                </div>
+            </header>
+
+            <div class="content" id="content">
+                <div class="page-title">
+                    <h2>欢迎回来，张三！</h2>
+                    <p>这是您的仪表盘概览</p>
+                </div>
+
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <div class="stat-icon" style="background: #3498db;">📊</div>
+                        <div class="stat-info">
+                            <div class="stat-value">1,234</div>
+                            <div class="stat-label">总访问量</div>
+                        </div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon" style="background: #27ae60;">👤</div>
+                        <div class="stat-info">
+                            <div class="stat-value">567</div>
+                            <div class="stat-label">活跃用户</div>
+                        </div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon" style="background: #e74c3c;">💰</div>
+                        <div class="stat-info">
+                            <div class="stat-value">¥89,012</div>
+                            <div class="stat-label">本月收入</div>
+                        </div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon" style="background: #9b59b6;">📦</div>
+                        <div class="stat-info">
+                            <div class="stat-value">345</div>
+                            <div class="stat-label">订单数量</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="content-grid">
+                    <div class="card">
+                        <div class="card-header">
+                            <h3>最近活动</h3>
+                            <button class="card-btn">查看全部</button>
+                        </div>
+                        <div class="card-body">
+                            <div class="activity-item">
+                                <div class="activity-dot" style="background: #3498db;"></div>
+                                <div class="activity-content">
+                                    <div class="activity-text">新用户注册</div>
+                                    <div class="activity-time">5 分钟前</div>
+                                </div>
+                            </div>
+                            <div class="activity-item">
+                                <div class="activity-dot" style="background: #27ae60;"></div>
+                                <div class="activity-content">
+                                    <div class="activity-text">订单 #1234 已完成</div>
+                                    <div class="activity-time">15 分钟前</div>
+                                </div>
+                            </div>
+                            <div class="activity-item">
+                                <div class="activity-dot" style="background: #e74c3c;"></div>
+                                <div class="activity-content">
+                                    <div class="activity-text">系统更新完成</div>
+                                    <div class="activity-time">1 小时前</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="card">
+                        <div class="card-header">
+                            <h3>快捷操作</h3>
+                        </div>
+                        <div class="card-body">
+                            <button class="action-btn">➕ 新建项目</button>
+                            <button class="action-btn">📤 导出报表</button>
+                            <button class="action-btn">👤 添加用户</button>
+                            <button class="action-btn">📧 发送通知</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+</body>
+
+</html>

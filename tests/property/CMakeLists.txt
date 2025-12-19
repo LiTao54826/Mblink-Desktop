@@ -23,6 +23,7 @@ set(LAYOUT_PROPERTY_TEST_SOURCES
     layout/test_incremental_layout_properties.cpp
     layout/test_layout_equivalence_properties.cpp
     layout/test_ifc_cache_properties.cpp
+    layout/test_viewport_units_properties.cpp
 )
 
 # Create property tests executable

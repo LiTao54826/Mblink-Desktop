@@ -9,9 +9,20 @@
 #include <sstream>
 #include <cctype>
 #include <cstdlib>
-#include <iostream>
 
 namespace lightui {
+
+// ========== ViewportSize 静态成员初始化 ==========
+// Default fallback values (800x600) used when viewport size is not set
+// This prevents viewport units from resolving to 0 if layout happens before initialization
+float ViewportSize::width_ = 800.0f;
+float ViewportSize::height_ = 600.0f;
+
+void ViewportSize::Set(float width, float height) {
+    // Use fallback values if invalid dimensions are provided
+    width_ = (width > 0.0f) ? width : 800.0f;
+    height_ = (height > 0.0f) ? height : 600.0f;
+}
 
 // ========== CSSLength 实现 ==========
 
@@ -31,6 +42,30 @@ float CSSLength::ToPx(float base_value, float font_size, float root_font_size) c
             return value * font_size;
         case CSSUnit::REM:
             return value * root_font_size;
+        case CSSUnit::VW: {
+            // 从 RenderObject 获取视口宽度
+            float vw = GetViewportWidth();
+            return value * vw / 100.0f;
+        }
+        case CSSUnit::VH: {
+            // 从 RenderObject 获取视口高度
+            float vh = GetViewportHeight();
+            return value * vh / 100.0f;
+        }
+        case CSSUnit::VMIN: {
+            // 视口最小尺寸
+            float vw = GetViewportWidth();
+            float vh = GetViewportHeight();
+            float vmin = std::min(vw, vh);
+            return value * vmin / 100.0f;
+        }
+        case CSSUnit::VMAX: {
+            // 视口最大尺寸
+            float vw = GetViewportWidth();
+            float vh = GetViewportHeight();
+            float vmax = std::max(vw, vh);
+            return value * vmax / 100.0f;
+        }
         case CSSUnit::AUTO:
         case CSSUnit::NONE:
         default:
@@ -119,6 +154,14 @@ CSSLength CSSValue::ParseLength(const std::string& str) {
         return CSSLength(value, CSSUnit::EM);
     } else if (unit_str == "rem") {
         return CSSLength(value, CSSUnit::REM);
+    } else if (unit_str == "vw") {
+        return CSSLength(value, CSSUnit::VW);
+    } else if (unit_str == "vh") {
+        return CSSLength(value, CSSUnit::VH);
+    } else if (unit_str == "vmin") {
+        return CSSLength(value, CSSUnit::VMIN);
+    } else if (unit_str == "vmax") {
+        return CSSLength(value, CSSUnit::VMAX);
     } else {
         // 未知单位，默认为像素
         return CSSLength(value, CSSUnit::PX);

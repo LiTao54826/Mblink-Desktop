@@ -12,6 +12,7 @@
 #include "shadow_renderer.h"
 #include "list_marker.h"
 #include "color.h"
+#include "css_value.h"
 #include "core/dom/node.h"
 #include "core/dom/element.h"
 #include "core/dom/text.h"
@@ -84,6 +85,8 @@ static float GetBrowserNormalLineHeight(float font_size) {
 void RenderObject::SetViewportSize(float width, float height) {
     viewport_width_ = width;
     viewport_height_ = height;
+    // 同步更新 ViewportSize（用于 CSS vh/vw 单位计算）
+    ViewportSize::Set(width, height);
 }
 
 bool RenderObject::IsBodyElement() const {

@@ -85,6 +85,30 @@ static LengthPercentage ConvertLength(const CSSLength& css_length) {
             return LengthPercentage::Length(css_length.value * 16.0f);
         case CSSUnit::REM:
             return LengthPercentage::Length(css_length.value * 16.0f);
+        case CSSUnit::VW: {
+            // 视口宽度单位
+            float vw = ViewportSize::GetWidth();
+            return LengthPercentage::Length(css_length.value * vw / 100.0f);
+        }
+        case CSSUnit::VH: {
+            // 视口高度单位
+            float vh = ViewportSize::GetHeight();
+            return LengthPercentage::Length(css_length.value * vh / 100.0f);
+        }
+        case CSSUnit::VMIN: {
+            // 视口最小尺寸单位
+            float vw = ViewportSize::GetWidth();
+            float vh = ViewportSize::GetHeight();
+            float vmin = std::min(vw, vh);
+            return LengthPercentage::Length(css_length.value * vmin / 100.0f);
+        }
+        case CSSUnit::VMAX: {
+            // 视口最大尺寸单位
+            float vw = ViewportSize::GetWidth();
+            float vh = ViewportSize::GetHeight();
+            float vmax = std::max(vw, vh);
+            return LengthPercentage::Length(css_length.value * vmax / 100.0f);
+        }
         case CSSUnit::AUTO:
         case CSSUnit::NONE:
         default:
@@ -1371,6 +1395,30 @@ Dimension ConvertDimension(const CSSLength& css_length) {
             return Dimension::Length(css_length.value * 16.0f);
         case CSSUnit::REM:
             return Dimension::Length(css_length.value * 16.0f);
+        case CSSUnit::VW: {
+            // 视口宽度单位
+            float vw = ViewportSize::GetWidth();
+            return Dimension::Length(css_length.value * vw / 100.0f);
+        }
+        case CSSUnit::VH: {
+            // 视口高度单位
+            float vh = ViewportSize::GetHeight();
+            return Dimension::Length(css_length.value * vh / 100.0f);
+        }
+        case CSSUnit::VMIN: {
+            // 视口最小尺寸单位
+            float vw = ViewportSize::GetWidth();
+            float vh = ViewportSize::GetHeight();
+            float vmin = std::min(vw, vh);
+            return Dimension::Length(css_length.value * vmin / 100.0f);
+        }
+        case CSSUnit::VMAX: {
+            // 视口最大尺寸单位
+            float vw = ViewportSize::GetWidth();
+            float vh = ViewportSize::GetHeight();
+            float vmax = std::max(vw, vh);
+            return Dimension::Length(css_length.value * vmax / 100.0f);
+        }
         default:
             return Dimension::Auto();
     }
@@ -1395,6 +1443,30 @@ LengthPercentageAuto ConvertLengthAuto(const CSSLength& css_length) {
             return LengthPercentageAuto::Length(css_length.value * 16.0f);
         case CSSUnit::REM:
             return LengthPercentageAuto::Length(css_length.value * 16.0f);
+        case CSSUnit::VW: {
+            // 视口宽度单位
+            float vw = ViewportSize::GetWidth();
+            return LengthPercentageAuto::Length(css_length.value * vw / 100.0f);
+        }
+        case CSSUnit::VH: {
+            // 视口高度单位
+            float vh = ViewportSize::GetHeight();
+            return LengthPercentageAuto::Length(css_length.value * vh / 100.0f);
+        }
+        case CSSUnit::VMIN: {
+            // 视口最小尺寸单位
+            float vw = ViewportSize::GetWidth();
+            float vh = ViewportSize::GetHeight();
+            float vmin = std::min(vw, vh);
+            return LengthPercentageAuto::Length(css_length.value * vmin / 100.0f);
+        }
+        case CSSUnit::VMAX: {
+            // 视口最大尺寸单位
+            float vw = ViewportSize::GetWidth();
+            float vh = ViewportSize::GetHeight();
+            float vmax = std::max(vw, vh);
+            return LengthPercentageAuto::Length(css_length.value * vmax / 100.0f);
+        }
         default:
             return LengthPercentageAuto::Auto();
     }

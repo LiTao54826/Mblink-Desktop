@@ -1688,11 +1688,24 @@ static Size<float> FinalLayoutPass(
 // Perform Absolute Layout On Absolute Children
 //------------------------------------------------------------------------------
 
+// Debug flag for absolute positioning - set to true to enable debug logging
+#ifndef LIGHTUI_DEBUG_ABSOLUTE_POSITIONING
+#define LIGHTUI_DEBUG_ABSOLUTE_POSITIONING 0
+#endif
+
 static Size<float> PerformAbsoluteLayoutOnAbsoluteChildren(
     LayoutFlexboxContainer& tree,
     NodeId node,
     const FlexAlgoConstants& constants
 ) {
+#if LIGHTUI_DEBUG_ABSOLUTE_POSITIONING
+    std::cerr << "[FlexAbsoluteLayout] PerformAbsoluteLayoutOnAbsoluteChildren called" << std::endl;
+    std::cerr << "[FlexAbsoluteLayout]   container_size: width=" << constants.container_size.width << ", height=" << constants.container_size.height << std::endl;
+    std::cerr << "[FlexAbsoluteLayout]   inner_container_size: width=" << constants.inner_container_size.width << ", height=" << constants.inner_container_size.height << std::endl;
+    std::cerr << "[FlexAbsoluteLayout]   content_box_inset: left=" << constants.content_box_inset.left << ", right=" << constants.content_box_inset.right 
+              << ", top=" << constants.content_box_inset.top << ", bottom=" << constants.content_box_inset.bottom << std::endl;
+#endif
+
     Size<float> content_size = Size<float>::Zero();
 
     size_t child_count = tree.ChildCount(node);
@@ -1710,6 +1723,10 @@ static Size<float> PerformAbsoluteLayoutOnAbsoluteChildren(
             continue;
         }
 
+#if LIGHTUI_DEBUG_ABSOLUTE_POSITIONING
+        std::cerr << "[FlexAbsoluteLayout] Processing absolute/fixed child node=" << child << std::endl;
+#endif
+
         auto aspect_ratio = child_style.aspect_ratio;
         auto padding = ResolveOrZero(child_style.padding, constants.node_inner_size.width);
         auto border = ResolveOrZero(child_style.border, constants.node_inner_size.width);
@@ -1723,6 +1740,14 @@ static Size<float> PerformAbsoluteLayoutOnAbsoluteChildren(
 
         // Resolve inset
         auto inset = MaybeResolve(child_style.inset, constants.node_inner_size.width);
+
+#if LIGHTUI_DEBUG_ABSOLUTE_POSITIONING
+        std::cerr << "[FlexAbsoluteLayout]   Inset values:" << std::endl;
+        std::cerr << "[FlexAbsoluteLayout]     left=" << (inset.left.has_value() ? std::to_string(*inset.left) : "none") << std::endl;
+        std::cerr << "[FlexAbsoluteLayout]     right=" << (inset.right.has_value() ? std::to_string(*inset.right) : "none") << std::endl;
+        std::cerr << "[FlexAbsoluteLayout]     top=" << (inset.top.has_value() ? std::to_string(*inset.top) : "none") << std::endl;
+        std::cerr << "[FlexAbsoluteLayout]     bottom=" << (inset.bottom.has_value() ? std::to_string(*inset.bottom) : "none") << std::endl;
+#endif
 
         // Resolve margin
         auto margin = ResolveOrZero(child_style.margin, constants.node_inner_size.width);
@@ -1797,6 +1822,28 @@ static Size<float> PerformAbsoluteLayoutOnAbsoluteChildren(
         } else {
             location.y = constants.content_box_inset.top + margin.top;
         }
+
+#if LIGHTUI_DEBUG_ABSOLUTE_POSITIONING
+        std::cerr << "[FlexAbsoluteLayout]   Final size: width=" << final_size.width << ", height=" << final_size.height << std::endl;
+        std::cerr << "[FlexAbsoluteLayout]   Margin: left=" << margin.left << ", right=" << margin.right 
+                  << ", top=" << margin.top << ", bottom=" << margin.bottom << std::endl;
+        std::cerr << "[FlexAbsoluteLayout]   Computed location: x=" << location.x << ", y=" << location.y << std::endl;
+        std::cerr << "[FlexAbsoluteLayout]   Position calculation details:" << std::endl;
+        if (inset.left.has_value()) {
+            std::cerr << "[FlexAbsoluteLayout]     X: using left=" << *inset.left << " -> content_box_inset.left(" << constants.content_box_inset.left << ") + left + margin.left(" << margin.left << ")" << std::endl;
+        } else if (inset.right.has_value()) {
+            std::cerr << "[FlexAbsoluteLayout]     X: using right=" << *inset.right << " -> container_size.width(" << constants.container_size.width << ") - content_box_inset.right(" << constants.content_box_inset.right << ") - right - margin.right(" << margin.right << ") - final_size.width(" << final_size.width << ")" << std::endl;
+        } else {
+            std::cerr << "[FlexAbsoluteLayout]     X: using default -> content_box_inset.left(" << constants.content_box_inset.left << ") + margin.left(" << margin.left << ")" << std::endl;
+        }
+        if (inset.top.has_value()) {
+            std::cerr << "[FlexAbsoluteLayout]     Y: using top=" << *inset.top << " -> content_box_inset.top(" << constants.content_box_inset.top << ") + top + margin.top(" << margin.top << ")" << std::endl;
+        } else if (inset.bottom.has_value()) {
+            std::cerr << "[FlexAbsoluteLayout]     Y: using bottom=" << *inset.bottom << " -> container_size.height(" << constants.container_size.height << ") - content_box_inset.bottom(" << constants.content_box_inset.bottom << ") - bottom - margin.bottom(" << margin.bottom << ") - final_size.height(" << final_size.height << ")" << std::endl;
+        } else {
+            std::cerr << "[FlexAbsoluteLayout]     Y: using default -> content_box_inset.top(" << constants.content_box_inset.top << ") + margin.top(" << margin.top << ")" << std::endl;
+        }
+#endif
 
         // Set layout
         Layout layout;

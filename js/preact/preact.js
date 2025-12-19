@@ -43,9 +43,22 @@ function h(type, props) {
         }
     }
 
+    // Ensure props object exists
+    var finalProps = props || {};
+    
+    // Add children to props for component access (standard Preact/React behavior)
+    // This allows components to access children via props.children
+    if (flatChildren.length > 0) {
+        finalProps = {};
+        for (var p in (props || {})) {
+            finalProps[p] = props[p];
+        }
+        finalProps.children = flatChildren.length === 1 ? flatChildren[0] : flatChildren;
+    }
+
     return {
         type: type,
-        props: props || {},
+        props: finalProps,
         children: flatChildren,
         key: props ? props.key : undefined,
         ref: props ? props.ref : undefined,
@@ -457,23 +470,21 @@ function setDOMProps(element, oldProps, newProps, isSVG) {
  * This is the core of Virtual DOM diffing
  */
 function diffNode(oldVNode, newVNode, parentDOM, oldDOM) {
-    var oldType = oldVNode ? (typeof oldVNode === 'object' ? oldVNode.type : typeof oldVNode) : 'null';
-    var newType = newVNode ? (typeof newVNode === 'object' ? newVNode.type : typeof newVNode) : 'null';
-    // console.log('[diffNode] old=' + oldType + ', new=' + newType);
-
     try {
         // New node is null - remove old
         if (newVNode == null || newVNode === false || newVNode === true) {
-            // console.log('[diffNode] newVNode is null/false/true, removing old');
-            if (oldDOM && parentDOM) {
-                parentDOM.removeChild(oldDOM);
+            if (oldDOM && parentDOM && oldDOM.parentNode === parentDOM) {
+                try {
+                    parentDOM.removeChild(oldDOM);
+                } catch (e) {
+                    // Ignore removal errors
+                }
             }
             return null;
         }
 
         // Old node is null - create new
         if (oldVNode == null || oldVNode === false || oldVNode === true || !oldDOM) {
-            // console.log('[diffNode] oldVNode is null, creating new');
             var newDOM = createDOMElement(newVNode);
             if (newDOM && parentDOM) {
                 parentDOM.appendChild(newDOM);
@@ -485,29 +496,30 @@ function diffNode(oldVNode, newVNode, parentDOM, oldDOM) {
         if ((typeof oldVNode === 'string' || typeof oldVNode === 'number') &&
             (typeof newVNode === 'string' || typeof newVNode === 'number')) {
             if (String(oldVNode) !== String(newVNode)) {
-                console.log('[diffNode] Updating text: "' + oldVNode + '" -> "' + newVNode + '"');
-                console.log('[diffNode] oldDOM.nodeType=' + oldDOM.nodeType + ', oldDOM.textContent="' + oldDOM.textContent + '"');
                 oldDOM.textContent = String(newVNode);
-                console.log('[diffNode] After update: oldDOM.textContent="' + oldDOM.textContent + '"');
             }
             return oldDOM;
         }
 
         // Type changed - replace entirely
         if (!isSameVNodeType(oldVNode, newVNode)) {
-            // console.log('[diffNode] Type changed, replacing');
             var replacementDOM = createDOMElement(newVNode);
-            if (parentDOM && oldDOM) {
-                parentDOM.replaceChild(replacementDOM, oldDOM);
+            if (parentDOM && oldDOM && oldDOM.parentNode === parentDOM) {
+                try {
+                    parentDOM.replaceChild(replacementDOM, oldDOM);
+                } catch (e) {
+                    // If replace fails, try append
+                    parentDOM.appendChild(replacementDOM);
+                }
+            } else if (parentDOM && replacementDOM) {
+                parentDOM.appendChild(replacementDOM);
             }
             return replacementDOM;
         }
 
         // Both are components of the same type
         if (typeof newVNode.type === 'function') {
-            // console.log('[diffNode] Both components, calling diffComponent');
-            // IMPORTANT: Transfer component reference from old to new VNode
-            // This is necessary because newVNode is freshly created and doesn't have __component
+            // Transfer component reference from old to new VNode
             if (oldVNode.__component && !newVNode.__component) {
                 newVNode.__component = oldVNode.__component;
             }
@@ -515,11 +527,18 @@ function diffNode(oldVNode, newVNode, parentDOM, oldDOM) {
         }
 
         // Both are elements of the same type - update in place
-        // console.log('[diffNode] Both elements of type ' + newVNode.type + ', calling diffElement');
         return diffElement(oldVNode, newVNode, oldDOM);
     } catch (e) {
-        // console.log('[diffNode] Error: ' + e.message);
-        throw e;
+        // On error, try to create new element as fallback
+        try {
+            var fallbackDOM = createDOMElement(newVNode);
+            if (fallbackDOM && parentDOM) {
+                parentDOM.appendChild(fallbackDOM);
+            }
+            return fallbackDOM;
+        } catch (e2) {
+            return oldDOM;
+        }
     }
 }
 
@@ -640,7 +659,6 @@ function diffElement(oldVNode, newVNode, dom) {
  */
 function diffChildren(oldChildren, newChildren, parentDOM) {
     if (!parentDOM) {
-        // console.log('[diffChildren] No parentDOM, returning');
         return;
     }
 
@@ -650,25 +668,32 @@ function diffChildren(oldChildren, newChildren, parentDOM) {
     var oldLen = oldChildren.length;
     var newLen = newChildren.length;
 
-    // console.log('[diffChildren] oldLen=' + oldLen + ', newLen=' + newLen);
-
-    // Build a map of old children by key
-    var oldKeyedMap = {};  // key -> { vnode, dom, index }
-    var oldUnkeyed = [];   // [{ vnode, dom, index }]
-
-    // Get current DOM children as static array
-    var childNodesArray = [];
-    var childNodes = parentDOM.childNodes;
-    if (childNodes) {
-        for (var k = 0; k < childNodes.length; k++) {
-            childNodesArray.push(childNodes[k]);
+    // Safety check: if parentDOM has no childNodes property, skip
+    if (!parentDOM.childNodes) {
+        for (var n = 0; n < newLen; n++) {
+            var dom = createDOMElement(newChildren[n]);
+            if (dom) {
+                parentDOM.appendChild(dom);
+            }
         }
-    } else {
-        // parentDOM.childNodes is undefined, use empty array
+        return;
     }
 
-    // Map old children
-    for (var i = 0; i < oldLen; i++) {
+    // Build a map of old children by key
+    var oldKeyedMap = {};
+    var oldUnkeyed = [];
+
+    // Get current DOM children as static array (snapshot)
+    var childNodesArray = [];
+    var childNodes = parentDOM.childNodes;
+    var childNodesLen = childNodes.length;
+    for (var k = 0; k < childNodesLen; k++) {
+        childNodesArray.push(childNodes[k]);
+    }
+
+    // Map old children - use Math.min to avoid accessing beyond array bounds
+    var mapLen = Math.min(oldLen, childNodesArray.length);
+    for (var i = 0; i < mapLen; i++) {
         var oldChild = oldChildren[i];
         var oldDOM = childNodesArray[i];
         var key = getKey(oldChild, null);
@@ -681,45 +706,56 @@ function diffChildren(oldChildren, newChildren, parentDOM) {
     }
 
     var unkeyedIndex = 0;
-    var usedOldDOMs = {};  // Track which old DOMs have been used
+    var usedOldDOMs = {};
 
     // Process new children
     for (var j = 0; j < newLen; j++) {
         var newChild = newChildren[j];
         var newKey = getKey(newChild, null);
         var oldEntry = null;
-        var oldDOM = null;
+        var matchedOldDOM = null;
 
         if (newKey != null && oldKeyedMap[newKey]) {
-            // Found matching keyed element
             oldEntry = oldKeyedMap[newKey];
-            oldDOM = oldEntry.dom;
+            matchedOldDOM = oldEntry.dom;
             usedOldDOMs[oldEntry.index] = true;
-            // console.log('[diffChildren] Matched key=' + newKey + ' at oldIndex=' + oldEntry.index);
         } else if (newKey == null && unkeyedIndex < oldUnkeyed.length) {
-            // Use next unkeyed element
             oldEntry = oldUnkeyed[unkeyedIndex++];
-            oldDOM = oldEntry.dom;
+            matchedOldDOM = oldEntry.dom;
             usedOldDOMs[oldEntry.index] = true;
         }
 
         var currentDOMAtPosition = parentDOM.childNodes[j];
 
-        if (oldDOM) {
-            // Diff with matched old DOM
-            diffNode(oldEntry.vnode, newChild, parentDOM, oldDOM);
+        if (matchedOldDOM && oldEntry) {
+            // Diff with matched old DOM - wrap in try-catch for safety
+            try {
+                diffNode(oldEntry.vnode, newChild, parentDOM, matchedOldDOM);
+            } catch (e) {
+                // If diff fails, create new element
+                var recoveryDOM = createDOMElement(newChild);
+                if (recoveryDOM) {
+                    if (matchedOldDOM.parentNode === parentDOM) {
+                        parentDOM.replaceChild(recoveryDOM, matchedOldDOM);
+                    } else if (currentDOMAtPosition) {
+                        parentDOM.insertBefore(recoveryDOM, currentDOMAtPosition);
+                    } else {
+                        parentDOM.appendChild(recoveryDOM);
+                    }
+                }
+                continue;
+            }
 
             // Move DOM to correct position if needed
-            if (oldDOM !== currentDOMAtPosition) {
+            if (matchedOldDOM !== currentDOMAtPosition && matchedOldDOM.parentNode === parentDOM) {
                 if (currentDOMAtPosition) {
-                    parentDOM.insertBefore(oldDOM, currentDOMAtPosition);
+                    parentDOM.insertBefore(matchedOldDOM, currentDOMAtPosition);
                 } else {
-                    parentDOM.appendChild(oldDOM);
+                    parentDOM.appendChild(matchedOldDOM);
                 }
             }
         } else {
             // No matching old DOM, create new
-            // console.log('[diffChildren] Creating new child at ' + j);
             var newDOM = createDOMElement(newChild);
             if (newDOM) {
                 if (currentDOMAtPosition) {
@@ -732,17 +768,18 @@ function diffChildren(oldChildren, newChildren, parentDOM) {
     }
 
     // Remove unused old DOM nodes (iterate backwards to avoid index shifting)
-    for (var m = oldLen - 1; m >= 0; m--) {
+    for (var m = mapLen - 1; m >= 0; m--) {
         if (!usedOldDOMs[m]) {
             var domToRemove = childNodesArray[m];
-            if (domToRemove && domToRemove.parentNode === parentDOM) {
-                // console.log('[diffChildren] Removing unused child at ' + m);
-                parentDOM.removeChild(domToRemove);
+            try {
+                if (domToRemove && domToRemove.parentNode === parentDOM) {
+                    parentDOM.removeChild(domToRemove);
+                }
+            } catch (e) {
+                // Ignore removal errors
             }
         }
     }
-
-    // console.log('[diffChildren] Done, final childCount=' + parentDOM.childNodes.length);
 }
 
 /**

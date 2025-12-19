@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Absolute Positioning Test - bottom/right</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        html, body {
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+        }
+        .container {
+            position: relative;
+            width: 400px;
+            height: 300px;
+            background-color: #f0f0f0;
+            border: 2px solid #333;
+            margin: 20px;
+        }
+        .label {
+            font-size: 12px;
+            font-family: Arial, sans-serif;
+            color: white;
+            padding: 5px;
+        }
+    </style>
+</head>
+<body>
+    <!-- 
+        绝对定位测试页面
+        
+        此页面用于测试 position: absolute 与 bottom/right 属性是否正确工作。
+        
+        测试用例:
+        1. bottom: 0; right: 0 - 元素应该在容器右下角
+        2. bottom: 0 - 元素应该在容器底部
+        3. right: 0 - 元素应该在容器右侧
+        4. top: 0; bottom: 0 - 元素应该拉伸填满垂直空间
+        5. left: 0; right: 0 - 元素应该拉伸填满水平空间
+        6. 百分比 inset 值测试
+        
+        在 DevTools 中检查元素的计算位置以验证值是否正确。
+    -->
+    
+    <!-- 容器 1: 测试 bottom: 0; right: 0 -->
+    <div class="container" style="position: absolute; top: 20px; left: 20px;">
+        <div style="position: absolute; top: 5px; left: 5px; font-size: 14px; font-weight: bold;">
+            Test 1: bottom: 0; right: 0
+        </div>
+        <div id="test-bottom-right" style="
+            position: absolute;
+            bottom: 0;
+            right: 0;
+            width: 80px;
+            height: 60px;
+            background-color: rgba(255, 0, 0, 0.7);
+        ">
+            <span class="label">bottom:0<br>right:0</span>
+        </div>
+    </div>
+    
+    <!-- 容器 2: 测试 bottom: 0 (无 right) -->
+    <div class="container" style="position: absolute; top: 20px; left: 460px;">
+        <div style="position: absolute; top: 5px; left: 5px; font-size: 14px; font-weight: bold;">
+            Test 2: bottom: 0 only
+        </div>
+        <div id="test-bottom-only" style="
+            position: absolute;
+            bottom: 0;
+            left: 50px;
+            width: 80px;
+            height: 60px;
+            background-color: rgba(0, 255, 0, 0.7);
+        ">
+            <span class="label">bottom:0</span>
+        </div>
+    </div>
+    
+    <!-- 容器 3: 测试 right: 0 (无 bottom) -->
+    <div class="container" style="position: absolute; top: 350px; left: 20px;">
+        <div style="position: absolute; top: 5px; left: 5px; font-size: 14px; font-weight: bold;">
+            Test 3: right: 0 only
+        </div>
+        <div id="test-right-only" style="
+            position: absolute;
+            right: 0;
+            top: 50px;
+            width: 80px;
+            height: 60px;
+            background-color: rgba(0, 0, 255, 0.7);
+        ">
+            <span class="label">right:0</span>
+        </div>
+    </div>
+    
+    <!-- 容器 4: 测试 top + bottom 拉伸 -->
+    <div class="container" style="position: absolute; top: 350px; left: 460px;">
+        <div style="position: absolute; top: 5px; left: 5px; font-size: 14px; font-weight: bold;">
+            Test 4: top: 20px; bottom: 20px (stretch)
+        </div>
+        <div id="test-top-bottom-stretch" style="
+            position: absolute;
+            top: 40px;
+            bottom: 20px;
+            left: 50px;
+            width: 80px;
+            background-color: rgba(255, 165, 0, 0.7);
+        ">
+            <span class="label">top+bottom<br>stretch</span>
+        </div>
+    </div>
+    
+    <!-- 容器 5: 测试 left + right 拉伸 -->
+    <div class="container" style="position: absolute; top: 680px; left: 20px;">
+        <div style="position: absolute; top: 5px; left: 5px; font-size: 14px; font-weight: bold;">
+            Test 5: left: 20px; right: 20px (stretch)
+        </div>
+        <div id="test-left-right-stretch" style="
+            position: absolute;
+            left: 20px;
+            right: 20px;
+            top: 50px;
+            height: 60px;
+            background-color: rgba(128, 0, 128, 0.7);
+        ">
+            <span class="label">left+right stretch</span>
+        </div>
+    </div>
+    
+    <!-- 容器 6: 测试百分比 inset -->
+    <div class="container" style="position: absolute; top: 680px; left: 460px;">
+        <div style="position: absolute; top: 5px; left: 5px; font-size: 14px; font-weight: bold;">
+            Test 6: bottom: 10%; right: 10%
+        </div>
+        <div id="test-percent-inset" style="
+            position: absolute;
+            bottom: 10%;
+            right: 10%;
+            width: 80px;
+            height: 60px;
+            background-color: rgba(0, 128, 128, 0.7);
+        ">
+            <span class="label">bottom:10%<br>right:10%</span>
+        </div>
+    </div>
+    
+    <!-- 信息面板 -->
+    <div style="
+        position: absolute;
+        top: 10px;
+        right: 10px;
+        padding: 15px;
+        background-color: white;
+        border: 1px solid #ccc;
+        border-radius: 5px;
+        font-size: 14px;
+        font-family: Arial, sans-serif;
+        max-width: 300px;
+    ">
+        <h3 style="margin: 0 0 10px 0;">绝对定位测试</h3>
+        <p style="margin: 5px 0; font-size: 12px;">
+            <strong>Test 1:</strong> bottom:0; right:0 - 右下角
+        </p>
+        <p style="margin: 5px 0; font-size: 12px;">
+            <strong>Test 2:</strong> bottom:0 - 底部
+        </p>
+        <p style="margin: 5px 0; font-size: 12px;">
+            <strong>Test 3:</strong> right:0 - 右侧
+        </p>
+        <p style="margin: 5px 0; font-size: 12px;">
+            <strong>Test 4:</strong> top+bottom - 垂直拉伸
+        </p>
+        <p style="margin: 5px 0; font-size: 12px;">
+            <strong>Test 5:</strong> left+right - 水平拉伸
+        </p>
+        <p style="margin: 5px 0; font-size: 12px;">
+            <strong>Test 6:</strong> 百分比 inset
+        </p>
+        <hr style="margin: 10px 0;">
+        <p style="margin: 5px 0; font-size: 11px; color: #666;">
+            检查控制台输出以查看调试日志<br>
+            (需要启用 LIGHTUI_DEBUG_ABSOLUTE_POSITIONING)
+        </p>
+    </div>
+</body>
+</html>

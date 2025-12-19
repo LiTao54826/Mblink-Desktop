@@ -98,13 +98,27 @@ void RenderTreeUpdater::RemoveRenderObject(Node* node) {
     // Remove from layout engine first
     if (auto engine = layout_engine_.lock()) {
         // Recursively remove children from layout engine
-        std::function<void(RenderObject*)> removeFromLayout = [&](RenderObject* obj) {
-            for (const auto& child : obj->GetChildren()) {
-                removeFromLayout(child.get());
+        // Use a stack-based approach to avoid deep recursion
+        std::vector<RenderObject*> stack;
+        stack.push_back(ro.get());
+        
+        while (!stack.empty()) {
+            RenderObject* obj = stack.back();
+            stack.pop_back();
+            
+            if (!obj) continue;
+            
+            // Add children to stack first (will be processed after parent)
+            const auto& children = obj->GetChildren();
+            for (auto it = children.rbegin(); it != children.rend(); ++it) {
+                if (*it) {
+                    stack.push_back(it->get());
+                }
             }
+            
+            // Remove from layout engine
             engine->RemoveElement(obj);
-        };
-        removeFromLayout(ro.get());
+        }
     }
 
     // Remove from parent's children
@@ -115,17 +129,26 @@ void RenderTreeUpdater::RemoveRenderObject(Node* node) {
         InvalidateAncestorLayout(parent_ro.get());
     }
 
-    // Clear bidirectional binding
-    node->SetRenderObject(nullptr);
-
-    // Recursively clear bindings for children
-    std::function<void(Node*)> clearBindings = [&](Node* n) {
+    // Clear bidirectional binding - use stack-based approach
+    std::vector<Node*> nodeStack;
+    nodeStack.push_back(node);
+    
+    while (!nodeStack.empty()) {
+        Node* n = nodeStack.back();
+        nodeStack.pop_back();
+        
+        if (!n) continue;
+        
         n->SetRenderObject(nullptr);
-        for (const auto& child : n->GetChildNodes()) {
-            clearBindings(child.get());
+        
+        // Get children snapshot to avoid issues with concurrent modification
+        const auto& children = n->GetChildNodes();
+        for (const auto& child : children) {
+            if (child) {
+                nodeStack.push_back(child.get());
+            }
         }
-    };
-    clearBindings(node);
+    }
 }
 
 void RenderTreeUpdater::MoveRenderObject(

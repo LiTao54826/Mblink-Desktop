@@ -225,6 +225,13 @@ void EventLoop::RunOnce() {
         idle_callback_();
     }
 
+    // 7.5 空闲时休眠以降低 CPU 占用
+    // 当没有事件、没有任务、没有重绘需求时，休眠一小段时间
+    // 这解决了 VSync 启用但没有渲染时的忙等待问题
+    if (!has_events && !any_needs_repaint && !task_scheduler_->HasPendingTasks()) {
+        SDL_Delay(1);  // 休眠 1ms，显著降低 CPU 占用同时保持响应性
+    }
+
     // 8. 帧率控制
     frame_controller_->EndFrame();
 }
