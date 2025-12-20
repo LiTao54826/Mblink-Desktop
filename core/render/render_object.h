@@ -22,6 +22,8 @@
 #include <unordered_map>
 #include <vector>
 #include "include/core/SkRect.h"
+#include "include/core/SkImage.h"
+#include "include/core/SkSurface.h"
 
 // 布局类型（从 layout 模块引入）
 #include "../layout/types/style.h"
@@ -843,6 +845,27 @@ protected:
     ScrollbarHitArea dragging_scrollbar_ = ScrollbarHitArea::None;
     float drag_start_scroll_ = 0.0f;      // 拖动开始时的滚动位置
     float drag_start_mouse_ = 0.0f;       // 拖动开始时的鼠标位置
+
+    // Shadow 缓存：避免每帧重新计算模糊
+    struct ShadowCache {
+        sk_sp<SkImage> image;             // 缓存的阴影图像
+        float cached_width = 0.0f;        // 缓存时的元素宽度
+        float cached_height = 0.0f;       // 缓存时的元素高度
+        size_t shadow_hash = 0;           // shadow 参数的哈希值
+        SkPoint draw_offset;              // 绘制时的偏移量
+        
+        bool IsValid(float w, float h, size_t hash) const {
+            return image && cached_width == w && cached_height == h && shadow_hash == hash;
+        }
+        
+        void Invalidate() {
+            image.reset();
+            cached_width = 0;
+            cached_height = 0;
+            shadow_hash = 0;
+        }
+    };
+    mutable ShadowCache shadow_cache_;
 
     // =========================================================================
     // 布局树统一：以下字段从 NativeLayoutEngine::LayoutNode 移入

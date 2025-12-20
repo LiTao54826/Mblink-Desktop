@@ -27,6 +27,7 @@
 #include <chrono>
 #include <atomic>
 #include "include/core/SkPathEffect.h"
+#include "include/core/SkSurface.h"
 #include "include/effects/SkDashPathEffect.h"
 
 namespace lightui {
@@ -1410,10 +1411,78 @@ void RenderBlock::Paint(SkCanvas* canvas) {
         }
     }
 
-    // 渲染阴影
+    // 渲染阴影（使用缓存优化）
     auto shadow_start = std::chrono::high_resolution_clock::now();
     if (!style.box_shadow.empty()) {
-        renderer.RenderBoxShadow(box, style.box_shadow, &style.border_radius);
+        // 计算 shadow 参数的哈希值
+        size_t shadow_hash = 0;
+        for (const auto& s : style.box_shadow) {
+            shadow_hash ^= std::hash<float>{}(s.offset_x) + 0x9e3779b9;
+            shadow_hash ^= std::hash<float>{}(s.offset_y) + 0x9e3779b9;
+            shadow_hash ^= std::hash<float>{}(s.blur_radius) + 0x9e3779b9;
+            shadow_hash ^= std::hash<float>{}(s.spread_radius) + 0x9e3779b9;
+            shadow_hash ^= std::hash<uint32_t>{}(s.color) + 0x9e3779b9;
+        }
+        
+        // 检查缓存是否有效
+        if (shadow_cache_.IsValid(layout.width, layout.height, shadow_hash)) {
+            // 使用缓存的阴影图像
+            canvas->drawImage(shadow_cache_.image, 
+                              shadow_cache_.draw_offset.x(), 
+                              shadow_cache_.draw_offset.y());
+        } else {
+            // 计算阴影边界（包含模糊扩展）
+            float max_blur = 0, max_spread = 0, min_offset_x = 0, min_offset_y = 0;
+            float max_offset_x = 0, max_offset_y = 0;
+            for (const auto& s : style.box_shadow) {
+                if (!s.inset) {
+                    max_blur = std::max(max_blur, s.blur_radius);
+                    max_spread = std::max(max_spread, s.spread_radius);
+                    min_offset_x = std::min(min_offset_x, s.offset_x);
+                    min_offset_y = std::min(min_offset_y, s.offset_y);
+                    max_offset_x = std::max(max_offset_x, s.offset_x);
+                    max_offset_y = std::max(max_offset_y, s.offset_y);
+                }
+            }
+            
+            // 阴影图像的边距（模糊半径 * 2 + spread + offset）
+            float margin = max_blur * 2 + max_spread;
+            float left_margin = margin - min_offset_x;
+            float top_margin = margin - min_offset_y;
+            float right_margin = margin + max_offset_x;
+            float bottom_margin = margin + max_offset_y;
+            
+            int img_width = static_cast<int>(layout.width + left_margin + right_margin + 1);
+            int img_height = static_cast<int>(layout.height + top_margin + bottom_margin + 1);
+            
+            // 创建离屏 surface 绘制阴影
+            SkImageInfo info = SkImageInfo::MakeN32Premul(img_width, img_height);
+            auto surface = SkSurfaces::Raster(info);
+            if (surface) {
+                auto* shadow_canvas = surface->getCanvas();
+                shadow_canvas->clear(SK_ColorTRANSPARENT);
+                
+                // 在离屏 canvas 上绘制阴影
+                shadow_canvas->translate(left_margin, top_margin);
+                BoxRenderer shadow_renderer(shadow_canvas);
+                shadow_renderer.RenderBoxShadow(box, style.box_shadow, &style.border_radius);
+                
+                // 缓存结果
+                shadow_cache_.image = surface->makeImageSnapshot();
+                shadow_cache_.cached_width = layout.width;
+                shadow_cache_.cached_height = layout.height;
+                shadow_cache_.shadow_hash = shadow_hash;
+                shadow_cache_.draw_offset = SkPoint::Make(-left_margin, -top_margin);
+                
+                // 绘制到主 canvas
+                canvas->drawImage(shadow_cache_.image, 
+                                  shadow_cache_.draw_offset.x(), 
+                                  shadow_cache_.draw_offset.y());
+            } else {
+                // 回退：直接绘制（无缓存）
+                renderer.RenderBoxShadow(box, style.box_shadow, &style.border_radius);
+            }
+        }
     }
     auto shadow_end = std::chrono::high_resolution_clock::now();
     g_paint_shadow_time += std::chrono::duration_cast<std::chrono::microseconds>(shadow_end - shadow_start).count();
