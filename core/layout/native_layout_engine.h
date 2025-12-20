@@ -119,8 +119,9 @@ public:
      * @brief Add a new render object to the layout tree
      * @param render_obj The render object to add
      * @param parent Parent render object
+     * @param insert_index Index to insert at in parent's children list (SIZE_MAX = append to end)
      */
-    void AddElement(RenderObject* render_obj, RenderObject* parent);
+    void AddElement(RenderObject* render_obj, RenderObject* parent, size_t insert_index = SIZE_MAX);
 
     /**
      * @brief Remove a render object from the layout tree
@@ -316,6 +317,14 @@ private:
      * @param parent_id Parent node ID (0 for root)
      */
     void BuildSubtree(RenderObject* render_obj, NodeId parent_id);
+
+    /**
+     * @brief Recursively build layout tree from render subtree at specific index
+     * @param render_obj Current render object
+     * @param parent_id Parent node ID (0 for root)
+     * @param insert_index Index to insert at in parent's children list
+     */
+    void BuildSubtreeAtIndex(RenderObject* render_obj, NodeId parent_id, size_t insert_index);
 
     /**
      * @brief Compute layout for a node

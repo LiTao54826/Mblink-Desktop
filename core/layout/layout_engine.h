@@ -68,8 +68,8 @@ public:
         native_engine_.UpdateContentVersion(render_obj);
     }
 
-    void AddElement(RenderObject* render_obj, RenderObject* parent) {
-        native_engine_.AddElement(render_obj, parent);
+    void AddElement(RenderObject* render_obj, RenderObject* parent, size_t insert_index = SIZE_MAX) {
+        native_engine_.AddElement(render_obj, parent, insert_index);
     }
 
     void RemoveElement(RenderObject* render_obj) {

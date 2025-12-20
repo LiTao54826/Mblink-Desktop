@@ -588,6 +588,15 @@ bool NativeLayoutEngine::ComputeIncrementalLayout(float available_width, float a
         return false;
     }
 
+    // 关键修复：当根节点需要重新布局时，重置滚动条状态缓存
+    // 这确保在页面切换等大规模 DOM 变化时，滚动条状态会被重新检测
+    // 避免使用旧的滚动条状态导致布局错误
+    LayoutNode* root = GetNode(root_node_);
+    if (root && root->needs_layout) {
+        last_needs_v_scrollbar_ = false;
+        last_effective_width_ = 0.0f;
+    }
+
     // 关键优化：只清除脏节点的缓存，而不是所有节点
     // 这样干净的节点可以保留其缓存结果，实现真正的增量布局
     // **Feature: incremental-layout-optimization**
@@ -1083,8 +1092,13 @@ void NativeLayoutEngine::PropagateLayoutDirty(NodeId node_id, LayoutScope scope)
     }
 }
 
-void NativeLayoutEngine::AddElement(RenderObject* render_obj, RenderObject* parent) {
-    if (!render_obj || HasElement(render_obj)) {
+void NativeLayoutEngine::AddElement(RenderObject* render_obj, RenderObject* parent, size_t insert_index) {
+    if (!render_obj) {
+        return;
+    }
+    
+    // 如果节点已存在，不需要重复添加
+    if (HasElement(render_obj)) {
         return;
     }
 
@@ -1096,23 +1110,43 @@ void NativeLayoutEngine::AddElement(RenderObject* render_obj, RenderObject* pare
         }
     }
 
-    NodeId node_id = CreateNode(render_obj);
+    // 关键修复：如果父节点不在布局树中，不添加子节点
+    // 这避免了孤立节点的创建
+    if (parent && parent_id == 0) {
+        // 父节点的 RenderObject 存在但不在布局树中
+        // 这可能是因为父节点是 display: none 或其他原因
+        return;
+    }
 
+    // 简化处理：总是使用 BuildSubtree 添加到末尾
+    // 布局树的顺序可能与渲染树不同（因为匿名块盒等原因）
+    // 使用 insert_index 可能导致索引越界或插入到错误位置
+    BuildSubtree(render_obj, parent_id);
+    
+    // 标记父节点需要重新布局
     if (parent_id != 0) {
         LayoutNode* parent_node = GetNode(parent_id);
         if (parent_node) {
-            parent_node->children.push_back(node_id);
-            
             // Update parent's content version when child is added
             // **Feature: incremental-layout-optimization**
             // **Validates: Requirements 1.2**
             uint64_t new_version = ContentVersionManager::GetInstance().GenerateVersion();
             parent_node->content_version = new_version;
             parent_node->needs_layout = true;
-        }
-        LayoutNode* node = GetNode(node_id);
-        if (node) {
-            node->parent = parent_id;
+            parent_node->cache.Clear();
+            
+            // 清除所有祖先的缓存
+            NodeId ancestor_id = parent_node->parent;
+            while (ancestor_id != 0) {
+                LayoutNode* ancestor = GetNode(ancestor_id);
+                if (!ancestor) break;
+                
+                ancestor->cache.Clear();
+                ancestor->needs_layout = true;
+                ancestor->content_version = ContentVersionManager::GetInstance().GenerateVersion();
+                
+                ancestor_id = ancestor->parent;
+            }
         }
     }
 }
@@ -1169,11 +1203,34 @@ void NativeLayoutEngine::RemoveElement(RenderObject* render_obj) {
         }
     }
     
-    // 从 maps 中移除所有节点
+    // 从 maps 中移除所有节点，并清除 RenderObject 的布局信息
     for (NodeId id : to_remove) {
         LayoutNode* n = GetNode(id);
-        if (n && n->render_obj) {
-            render_to_node_.erase(n->render_obj);
+        if (n) {
+            // 清除 RenderObject 的布局信息，避免残留
+            if (n->render_obj) {
+                LayoutInfo& layout = n->render_obj->GetLayoutInfo();
+                layout.is_laid_out = false;
+                layout.x = 0.0f;
+                layout.y = 0.0f;
+                layout.width = 0.0f;
+                layout.height = 0.0f;
+                render_to_node_.erase(n->render_obj);
+            }
+            
+            // 对于匿名块盒，清除其管理的内联子元素的布局信息
+            if (n->is_anonymous_block) {
+                for (RenderObject* inline_child : n->anonymous_inline_children) {
+                    if (inline_child) {
+                        LayoutInfo& child_layout = inline_child->GetLayoutInfo();
+                        child_layout.is_laid_out = false;
+                        child_layout.x = 0.0f;
+                        child_layout.y = 0.0f;
+                        child_layout.width = 0.0f;
+                        child_layout.height = 0.0f;
+                    }
+                }
+            }
         }
         nodes_.erase(id);
         
@@ -1765,8 +1822,115 @@ static bool IsBlockLevelElement(RenderObject* render_obj) {
            display == RenderObjectType::TABLE;
 }
 
+void NativeLayoutEngine::BuildSubtreeAtIndex(RenderObject* render_obj, NodeId parent_id, size_t insert_index) {
+    if (!render_obj) {
+        return;
+    }
+
+    // 检查节点是否已存在，避免重复创建
+    if (HasElement(render_obj)) {
+        return;
+    }
+
+    NodeId node_id = CreateNode(render_obj);
+
+    // Set as root if no parent
+    if (parent_id == 0) {
+        root_node_ = node_id;
+    } else {
+        LayoutNode* parent = GetNode(parent_id);
+        if (parent) {
+            // 关键修复：在指定位置插入，而不是总是添加到末尾
+            if (insert_index < parent->children.size()) {
+                parent->children.insert(parent->children.begin() + insert_index, node_id);
+            } else {
+                parent->children.push_back(node_id);
+            }
+        }
+        LayoutNode* node = GetNode(node_id);
+        if (node) {
+            node->parent = parent_id;
+        }
+    }
+
+    // Check element type
+    RenderObjectType type = render_obj->GetType();
+
+    // For INLINE_BLOCK and INLINE elements, they manage their own children
+    if (type == RenderObjectType::INLINE_BLOCK || type == RenderObjectType::INLINE) {
+        return;
+    }
+
+    // For TABLE elements, they manage their own layout
+    if (type == RenderObjectType::TABLE ||
+        type == RenderObjectType::TABLE_ROW_GROUP ||
+        type == RenderObjectType::TABLE_HEADER_GROUP ||
+        type == RenderObjectType::TABLE_FOOTER_GROUP ||
+        type == RenderObjectType::TABLE_ROW ||
+        type == RenderObjectType::TABLE_CELL ||
+        type == RenderObjectType::TABLE_CAPTION) {
+        return;
+    }
+
+    // For SVG elements, they manage their own layout
+    if (render_obj->IsSVGRenderObject()) {
+        return;
+    }
+
+    // For IFC containers, don't add children to layout tree
+    LayoutNode* node = GetNode(node_id);
+    if (node && node->is_ifc_container) {
+        return;
+    }
+
+    // 处理子节点（与 BuildSubtree 相同的逻辑）
+    const auto& children = render_obj->GetChildren();
+    bool has_block = false;
+    bool has_inline = false;
+    
+    for (const auto& child : children) {
+        if (IsBlockLevelElement(child.get())) {
+            has_block = true;
+        }
+        if (IsInlineLevelElement(child.get())) {
+            has_inline = true;
+        }
+    }
+    
+    if (has_block && has_inline) {
+        std::vector<RenderObject*> current_inline_run;
+        
+        for (const auto& child : children) {
+            if (IsBlockLevelElement(child.get())) {
+                if (!current_inline_run.empty()) {
+                    CreateAnonymousBlockBox(node_id, current_inline_run);
+                    current_inline_run.clear();
+                }
+                BuildSubtree(child.get(), node_id);
+            } else if (IsInlineLevelElement(child.get())) {
+                current_inline_run.push_back(child.get());
+            } else {
+                BuildSubtree(child.get(), node_id);
+            }
+        }
+        
+        if (!current_inline_run.empty()) {
+            CreateAnonymousBlockBox(node_id, current_inline_run);
+        }
+    } else {
+        for (auto& child : children) {
+            BuildSubtree(child.get(), node_id);
+        }
+    }
+}
+
 void NativeLayoutEngine::BuildSubtree(RenderObject* render_obj, NodeId parent_id) {
     if (!render_obj) {
+        return;
+    }
+
+    // 检查节点是否已存在，避免重复创建
+    if (HasElement(render_obj)) {
         return;
     }
 

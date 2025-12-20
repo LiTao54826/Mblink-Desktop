@@ -53,8 +53,20 @@ std::shared_ptr<RenderObject> RenderTreeUpdater::InsertRenderObject(
         return nullptr;  // display: none
     }
 
+    // 关键修复：根据 DOM 树中的位置来确定渲染树中的插入位置
+    // 当 reference 为 nullptr 时，查找 DOM 树中该节点的下一个兄弟节点
+    // 这确保在 ReplaceChild 等操作后，渲染树的顺序与 DOM 树一致
+    Node* effective_reference = reference;
+    if (!effective_reference) {
+        // 查找 DOM 树中该节点的下一个兄弟节点
+        auto next_sibling = node->GetNextSibling();
+        if (next_sibling) {
+            effective_reference = next_sibling.get();
+        }
+    }
+
     // Find insertion position
-    size_t insert_pos = FindInsertPosition(parent_ro.get(), reference);
+    size_t insert_pos = FindInsertPosition(parent_ro.get(), effective_reference);
 
     // Insert into parent's children
     auto& children = parent_ro->GetChildrenMutable();
@@ -74,9 +86,10 @@ std::shared_ptr<RenderObject> RenderTreeUpdater::InsertRenderObject(
     // Invalidate layout for ancestors
     InvalidateAncestorLayout(parent_ro.get());
 
-    // Update layout engine
+    // Update layout engine - 传递正确的插入位置
+    // 这确保布局树的顺序与渲染树一致
     if (auto engine = layout_engine_.lock()) {
-        engine->AddElement(new_ro.get(), parent_ro.get());
+        engine->AddElement(new_ro.get(), parent_ro.get(), insert_pos);
     }
 
     return new_ro;
@@ -107,8 +120,16 @@ void RenderTreeUpdater::RemoveRenderObject(Node* node) {
         InvalidateAncestorLayout(parent_ro.get());
     }
 
-    // 清除根节点的绑定
-    node->SetRenderObject(nullptr);
+    // 递归清除所有子节点的 DOM-RenderObject 绑定
+    // 这是关键修复：确保子节点的绑定也被清除，避免布局残留
+    std::function<void(Node*)> clearBindings = [&](Node* n) {
+        if (!n) return;
+        n->SetRenderObject(nullptr);
+        for (const auto& child : n->GetChildNodes()) {
+            clearBindings(child.get());
+        }
+    };
+    clearBindings(node);
 }
 
 void RenderTreeUpdater::MoveRenderObject(
@@ -234,19 +255,26 @@ size_t RenderTreeUpdater::FindInsertPosition(RenderObject* parent_ro, Node* refe
         return parent_ro ? parent_ro->GetChildren().size() : 0;
     }
 
-    auto ref_ro = reference->GetRenderObject();
-    if (!ref_ro) {
-        return parent_ro->GetChildren().size();
-    }
-
-    const auto& children = parent_ro->GetChildren();
-    for (size_t i = 0; i < children.size(); ++i) {
-        if (children[i].get() == ref_ro.get()) {
-            return i;
+    // 关键修复：如果 reference 没有 RenderObject（比如 display: none），
+    // 继续查找下一个有 RenderObject 的兄弟节点
+    Node* current_ref = reference;
+    while (current_ref) {
+        auto ref_ro = current_ref->GetRenderObject();
+        if (ref_ro) {
+            // 找到了有 RenderObject 的节点，查找它在父节点 children 中的位置
+            const auto& children = parent_ro->GetChildren();
+            for (size_t i = 0; i < children.size(); ++i) {
+                if (children[i].get() == ref_ro.get()) {
+                    return i;
+                }
+            }
+            // 如果在 children 中没找到，继续查找下一个兄弟
         }
+        current_ref = current_ref->GetNextSibling().get();
     }
 
-    return children.size();
+    // 没有找到有效的 reference，添加到末尾
+    return parent_ro->GetChildren().size();
 }
 
 void RenderTreeUpdater::InvalidateAncestorLayout(RenderObject* obj) {

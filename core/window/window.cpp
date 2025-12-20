@@ -80,22 +80,11 @@ public:
                   << ", parent=" << parent
                   << ", IsInBatch=" << (node ? IsInBatch(node) : false));
         if (window_ && !IsInBatch(node)) {
-            // Phase 2 优化：增量渲染树更新
-            // 使用 RenderTreeUpdater 插入新的 RenderObject，而不是重建整棵树
-            auto* updater = window_->GetRenderTreeUpdater();
-            if (updater && window_->GetCachedRenderTree()) {
-                DEBUG_LOG("[WindowDOMObserver::OnNodeAdded] Using incremental tree update");
-                auto new_ro = updater->InsertRenderObject(node, parent, nullptr);
-                // 新增节点时，由于 RenderObject 尚未布局，其边界矩形为空
-                // 必须强制全量重绘以确保新节点可见
-                if (new_ro) {
-                    window_->SetForceFullRepaint(true);
-                }
-            } else {
-                // 回退：渲染树还未构建，需要完全重建
-                DEBUG_LOG("[WindowDOMObserver::OnNodeAdded] Fallback to InvalidateRenderTree");
-                window_->InvalidateRenderTree();
-            }
+            // 简化处理：总是使用 InvalidateRenderTree 重建整个渲染树
+            // 这避免了增量更新可能导致的布局不一致和崩溃问题
+            // 虽然性能略低，但更加稳定可靠
+            window_->InvalidateRenderTree();
+            window_->SetForceFullRepaint(true);
             window_->SetNeedsRepaint();
         }
     }
@@ -103,18 +92,10 @@ public:
 
     void OnNodeRemoved(Node* node, Node* parent) override {
         if (window_ && !IsInBatch(node)) {
-            // 节点移除时强制全量重绘以确保正确清除
+            // 简化处理：总是使用 InvalidateRenderTree 重建整个渲染树
+            // 这避免了增量更新可能导致的布局不一致和崩溃问题
+            window_->InvalidateRenderTree();
             window_->SetForceFullRepaint(true);
-
-            // Phase 2 优化：增量渲染树更新
-            // 使用 RenderTreeUpdater 移除 RenderObject，而不是重建整棵树
-            auto* updater = window_->GetRenderTreeUpdater();
-            if (updater && window_->GetCachedRenderTree()) {
-                updater->RemoveRenderObject(node);
-            } else {
-                // 回退：渲染树还未构建，需要完全重建
-                window_->InvalidateRenderTree();
-            }
             window_->SetNeedsRepaint();
         }
     }
