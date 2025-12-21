@@ -566,6 +566,9 @@ bool NativeLayoutEngine::ComputeIncrementalLayout(float available_width, float a
         return false;
     }
 
+    // 调试日志
+    static bool debug_select = std::getenv("LIGHTUI_DEBUG_SELECT") != nullptr;
+
     // 收集需要布局的节点
     // **Feature: incremental-layout-optimization**
     // **Validates: Requirements 2.1, 2.2**
@@ -576,6 +579,17 @@ bool NativeLayoutEngine::ComputeIncrementalLayout(float available_width, float a
 
         if (node->needs_layout) {
             dirty_nodes.push_back(node_id);
+            
+            // 调试日志：输出脏节点信息
+            if (debug_select && node->render_obj) {
+                auto dom_node = node->render_obj->GetNode();
+                std::string tag = "unknown";
+                if (dom_node && dom_node->GetNodeType() == NodeType::ELEMENT_NODE) {
+                    auto elem = std::dynamic_pointer_cast<Element>(dom_node);
+                    if (elem) tag = elem->GetTagName();
+                }
+                std::cout << "[IncrementalLayout] Dirty node: " << node_id << " tag=" << tag << std::endl;
+            }
         }
 
         for (NodeId child_id : node->children) {
@@ -586,6 +600,10 @@ bool NativeLayoutEngine::ComputeIncrementalLayout(float available_width, float a
 
     if (dirty_nodes.empty()) {
         return false;
+    }
+    
+    if (debug_select) {
+        std::cout << "[IncrementalLayout] Total dirty nodes: " << dirty_nodes.size() << std::endl;
     }
 
     // 关键修复：当根节点需要重新布局时，重置滚动条状态缓存
@@ -752,6 +770,18 @@ void NativeLayoutEngine::UpdateStyle(RenderObject* render_obj, const ComputedSty
             // **Validates: Requirements 1.3**
             if (layout_changed) {
                 node->needs_layout = true;
+                
+                // 调试日志
+                static bool debug_dirty = std::getenv("LIGHTUI_DEBUG_DIRTY") != nullptr;
+                if (debug_dirty) {
+                    auto dom_node = render_obj->GetNode();
+                    std::string tag = "unknown";
+                    if (dom_node && dom_node->GetNodeType() == NodeType::ELEMENT_NODE) {
+                        auto elem = std::dynamic_pointer_cast<Element>(dom_node);
+                        if (elem) tag = elem->GetTagName();
+                    }
+                    std::cout << "[UpdateStyle] Layout changed for: " << tag << std::endl;
+                }
                 
                 // Update content version for layout-affecting style changes
                 // Pure paint styles (color, background-color, etc.) don't update version
@@ -1216,9 +1246,26 @@ void NativeLayoutEngine::RemoveElement(RenderObject* render_obj) {
                 layout.width = 0.0f;
                 layout.height = 0.0f;
                 render_to_node_.erase(n->render_obj);
+                
+                // 对于 IFC 容器，清除其子元素在 render_to_node_ 中的注册
+                // 与 BuildSubtree 中的注册对应
+                if (n->is_ifc_container && !n->is_anonymous_block) {
+                    for (auto& child : n->render_obj->GetChildren()) {
+                        if (child) {
+                            LayoutInfo& child_layout = child->GetLayoutInfo();
+                            child_layout.is_laid_out = false;
+                            child_layout.x = 0.0f;
+                            child_layout.y = 0.0f;
+                            child_layout.width = 0.0f;
+                            child_layout.height = 0.0f;
+                            render_to_node_.erase(child.get());
+                        }
+                    }
+                }
             }
             
             // 对于匿名块盒，清除其管理的内联子元素的布局信息
+            // 并从 render_to_node_ 映射中移除它们
             if (n->is_anonymous_block) {
                 for (RenderObject* inline_child : n->anonymous_inline_children) {
                     if (inline_child) {
@@ -1228,6 +1275,8 @@ void NativeLayoutEngine::RemoveElement(RenderObject* render_obj) {
                         child_layout.y = 0.0f;
                         child_layout.width = 0.0f;
                         child_layout.height = 0.0f;
+                        // 从映射中移除，与 CreateAnonymousBlockBox 中的注册对应
+                        render_to_node_.erase(inline_child);
                     }
                 }
             }
@@ -1878,8 +1927,16 @@ void NativeLayoutEngine::BuildSubtreeAtIndex(RenderObject* render_obj, NodeId pa
     }
 
     // For IFC containers, don't add children to layout tree
+    // But register them in render_to_node_ to prevent duplicate node creation
     LayoutNode* node = GetNode(node_id);
     if (node && node->is_ifc_container) {
+        // Register all children's RenderObjects to prevent them from being
+        // added as separate layout nodes during incremental layout
+        for (auto& child : render_obj->GetChildren()) {
+            if (child && !HasElement(child.get())) {
+                render_to_node_[child.get()] = node_id;
+            }
+        }
         return;
     }
 
@@ -1976,8 +2033,16 @@ void NativeLayoutEngine::BuildSubtree(RenderObject* render_obj, NodeId parent_id
     }
 
     // For IFC containers, don't add children to layout tree
+    // But register them in render_to_node_ to prevent duplicate node creation
     LayoutNode* node = GetNode(node_id);
     if (node && node->is_ifc_container) {
+        // Register all children's RenderObjects to prevent them from being
+        // added as separate layout nodes during incremental layout
+        for (auto& child : render_obj->GetChildren()) {
+            if (child && !HasElement(child.get())) {
+                render_to_node_[child.get()] = node_id;
+            }
+        }
         return;
     }
 
@@ -2069,8 +2134,16 @@ NodeId NativeLayoutEngine::CreateAnonymousBlockBox(NodeId parent_id, const std::
     anon_node.is_ifc_container = true;  // Anonymous blocks use IFC for their inline content
     
     // Store the inline children for later IFC layout
+    // Also register them in render_to_node_ to prevent duplicate node creation
+    // during incremental layout updates (e.g., when AddElement is called)
     for (RenderObject* child : inline_children) {
         anon_node.anonymous_inline_children.push_back(child);
+        // Register the inline child's RenderObject to prevent it from being
+        // added again as a separate layout node. Use a special marker (anon_id)
+        // to indicate it belongs to this anonymous block box.
+        // This fixes the bug where inline children were being duplicated
+        // as flex children during incremental layout.
+        render_to_node_[child] = anon_id;
     }
     
     // Set up default block style for the anonymous block
@@ -2992,6 +3065,9 @@ void NativeLayoutEngine::CollectInlineBoxesRecursive(
 void NativeLayoutEngine::ApplyAnonymousBlockLayoutResults(LayoutNode* node) {
     if (!node || !node->is_anonymous_block) return;
     
+    // 调试日志
+    static bool debug_select = std::getenv("LIGHTUI_DEBUG_SELECT") != nullptr;
+    
     // Get parent's position for offset calculation
     LayoutNode* parent = GetNode(node->parent);
     float offset_x = 0.0f;
@@ -3017,9 +3093,11 @@ void NativeLayoutEngine::ApplyAnonymousBlockLayoutResults(LayoutNode* node) {
     // Note: node->layout.location is the position of the anonymous block
     // relative to parent's content area (after padding+border)
     // So we should NOT add padding/border again here
-    std::cout << "[ApplyAnonymousBlock] node->layout.location=(" << node->layout.location.x 
-              << "," << node->layout.location.y << ") padding=(" << padding_left << "," << padding_top
-              << ") border=(" << border_left << "," << border_top << ")" << std::endl;
+    if (debug_select) {
+        std::cout << "[ApplyAnonymousBlock] node->layout.location=(" << node->layout.location.x 
+                  << "," << node->layout.location.y << ") padding=(" << padding_left << "," << padding_top
+                  << ") border=(" << border_left << "," << border_top << ")" << std::endl;
+    }
     
     // 问题分析：node->layout.location 可能已经是相对于内容区域的位置
     // 不需要再加 padding/border
@@ -3248,6 +3326,10 @@ void NativeLayoutEngine::ReadLayoutResults(RenderObject* render_obj) {
 
     // Update render object with layout info
     LayoutInfo& info = render_obj->GetLayoutInfo();
+    
+    // 调试日志
+    static bool debug_dirty = std::getenv("LIGHTUI_DEBUG_DIRTY") != nullptr;
+    static bool debug_select = std::getenv("LIGHTUI_DEBUG_SELECT") != nullptr;
 
     // For TABLE internal elements (ROW_GROUP, ROW, CELL, etc.), their positions
     // are managed by RenderTable::Layout, not NativeLayoutEngine.
@@ -3263,6 +3345,35 @@ void NativeLayoutEngine::ReadLayoutResults(RenderObject* render_obj) {
     if (!is_table_internal) {
         // Normal elements: update all layout info from NativeLayoutEngine
         // Use layout.location which contains the position set by the block layout algorithm
+        
+        // 检查位置是否发生变化
+        bool position_changed = (info.x != node->layout.location.x || info.y != node->layout.location.y);
+        
+        if ((debug_dirty || debug_select) && position_changed) {
+            auto dom_node = render_obj->GetNode();
+            std::string tag = "unknown";
+            std::string text_content = "";
+            if (dom_node && dom_node->GetNodeType() == NodeType::ELEMENT_NODE) {
+                auto elem = std::dynamic_pointer_cast<Element>(dom_node);
+                if (elem) {
+                    tag = elem->GetTagName();
+                    // 尝试获取文本内容
+                    if (elem->GetFirstChild() && elem->GetFirstChild()->GetNodeType() == NodeType::TEXT_NODE) {
+                        text_content = elem->GetFirstChild()->GetTextContent();
+                        if (text_content.length() > 10) text_content = text_content.substr(0, 10) + "...";
+                    }
+                }
+            }
+            std::cout << "[ReadLayout] Position changed for: " << tag 
+                      << " node_id=" << it->second
+                      << " text=\"" << text_content << "\""
+                      << " old=(" << info.x << "," << info.y << ")"
+                      << " new=(" << node->layout.location.x << "," << node->layout.location.y << ")"
+                      << " size=(" << node->output.size.width << "," << node->output.size.height << ")"
+                      << " parent=" << node->parent
+                      << std::endl;
+        }
+        
         info.x = node->layout.location.x;
         info.y = node->layout.location.y;
         info.width = node->output.size.width;

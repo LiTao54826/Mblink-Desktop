@@ -1328,6 +1328,9 @@ static void DistributeRemainingFreeSpace(
     std::vector<FlexItem>& flex_items,
     const FlexAlgoConstants& constants
 ) {
+    // 调试日志
+    static bool debug_select = std::getenv("LIGHTUI_DEBUG_SELECT") != nullptr;
+    
     bool layout_reverse = IsReverse(constants.dir);
 
     for (auto& line : flex_lines) {
@@ -1347,6 +1350,16 @@ static void DistributeRemainingFreeSpace(
         }
 
         float free_space = constants.inner_container_size.Main(constants.dir) - used_space;
+        
+        // 调试日志：输出 justify-content 计算
+        if (debug_select) {
+            std::cout << "[JustifyContent] inner_container_main=" << constants.inner_container_size.Main(constants.dir)
+                      << " used_space=" << used_space
+                      << " free_space=" << free_space
+                      << " num_items=" << (line.end_index - line.start_index)
+                      << " justify=" << static_cast<int>(constants.justify_content.value_or(JustifyContent::FlexStart))
+                      << std::endl;
+        }
 
         // Distribute to auto margins first
         if (num_auto_margins > 0 && free_space > 0.0f) {
@@ -1379,6 +1392,11 @@ static void DistributeRemainingFreeSpace(
                 size_t i = line.end_index - 1 - idx;
                 auto& item = flex_items[i];
                 item.offset_main = ComputeAlignmentOffset(free_space, num_items, gap, justify, layout_reverse, idx == 0);
+                
+                // 调试日志：输出每个子项的 offset_main
+                if (debug_select) {
+                    std::cout << "[JustifyContent] item[" << i << "] offset_main=" << item.offset_main << std::endl;
+                }
             }
         } else {
             // Normal iteration
@@ -1386,6 +1404,11 @@ static void DistributeRemainingFreeSpace(
                 size_t i = line.start_index + idx;
                 auto& item = flex_items[i];
                 item.offset_main = ComputeAlignmentOffset(free_space, num_items, gap, justify, layout_reverse, idx == 0);
+                
+                // 调试日志：输出每个子项的 offset_main
+                if (debug_select) {
+                    std::cout << "[JustifyContent] item[" << i << "] offset_main=" << item.offset_main << std::endl;
+                }
             }
         }
     }
@@ -1590,6 +1613,9 @@ static void CalculateFlexItem(
     Size<float>& content_size,
     const FlexAlgoConstants& constants
 ) {
+    // 调试日志
+    static bool debug_select = std::getenv("LIGHTUI_DEBUG_SELECT") != nullptr;
+    
     // Perform final layout
     Size<std::optional<float>> known_dimensions = {
         std::optional<float>(item.target_size.width),
@@ -1631,6 +1657,17 @@ static void CalculateFlexItem(
     } else {
         location.x = offset_cross;
         location.y = offset_main;
+    }
+
+    // 调试日志：输出 flex 子项的位置计算
+    if (debug_select) {
+        std::cout << "[FlexItem] node=" << item.node 
+                  << " total_offset_main=" << total_offset_main
+                  << " item.offset_main=" << item.offset_main
+                  << " margin_main_start=" << item.margin.MainStart(constants.dir)
+                  << " -> location=(" << location.x << "," << location.y << ")"
+                  << " size=(" << layout_output.size.width << "," << layout_output.size.height << ")"
+                  << std::endl;
     }
 
     // Set layout
