@@ -117,16 +117,16 @@ sk_sp<SkImage> ImageRenderer::LoadImageWithCache(const std::string& path) {
             return cached_image;
         }
         
-        // 从文件加载
-        sk_sp<SkImage> image = ImageLoader::LoadFromFile(path);
+        // 从文件或URL加载（支持网络URL）
+        sk_sp<SkImage> image = ImageLoader::LoadFromUrl(path);
         if (image) {
             // 添加到缓存
             ImageCache::GetInstance().Put(path, image);
         }
         return image;
     } else {
-        // 直接从文件加载
-        return ImageLoader::LoadFromFile(path);
+        // 直接从文件或URL加载
+        return ImageLoader::LoadFromUrl(path);
     }
 }
 

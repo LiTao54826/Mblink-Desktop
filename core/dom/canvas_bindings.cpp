@@ -4,7 +4,11 @@
  */
 
 #include "canvas_bindings.h"
+#include "dom_bindings.h"
+#include "html_image_element.h"
+#include "html_canvas_element.h"
 #include "quickjs/quickjs-libc.h"
+#include "core/quickjs/bindings/js_element.h"
 #include <iostream>
 
 namespace lightui {
@@ -902,14 +906,91 @@ static JSValue js_context_2d_put_image_data(JSContext* ctx, JSValueConst this_va
 // ========== Context2D 图像绘制方法 ==========
 
 // drawImage(image, dx, dy) 或 drawImage(image, dx, dy, dw, dh)
-// 注意：目前暂不支持，因为需要图片加载系统
+// 或 drawImage(image, sx, sy, sw, sh, dx, dy, dw, dh)
 static JSValue js_context_2d_draw_image(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) {
     auto context = CanvasBindings::UnwrapContext2D(ctx, this_val);
     if (!context) return JS_EXCEPTION;
     
-    // 暂时返回 undefined，因为我们还没有实现完整的图片加载系统
-    // TODO: 实现图片对象支持
-    // 需要：HTMLImageElement、Image 构造函数、图片加载
+    if (argc < 3) return JS_ThrowTypeError(ctx, "drawImage requires at least 3 arguments");
+    
+    // 获取图片源
+    sk_sp<SkImage> image = nullptr;
+    
+    // 首先尝试使用新绑定系统解包
+    auto element = bindings::UnwrapElement(ctx, argv[0]);
+    if (!element) {
+        // 如果新绑定系统失败，尝试旧绑定系统
+        element = DOMBindings::UnwrapElement(ctx, argv[0]);
+    }
+    
+    if (element) {
+        auto img_element = std::dynamic_pointer_cast<HTMLImageElement>(element);
+        if (img_element) {
+            image = img_element->GetSkImage();
+            if (!image) {
+                // 尝试同步加载
+                img_element->LoadImageSync();
+                image = img_element->GetSkImage();
+            }
+        } else {
+            // 检查是否是 HTMLCanvasElement
+            auto canvas_element = std::dynamic_pointer_cast<HTMLCanvasElement>(element);
+            if (canvas_element) {
+                auto ctx2d = canvas_element->GetContext2D();
+                if (ctx2d) {
+                    SkSurface* surface = ctx2d->GetSurface();
+                    if (surface) {
+                        image = surface->makeImageSnapshot();
+                    }
+                }
+            }
+        }
+    }
+    
+    if (!image) {
+        // 图片未加载或无效
+        return JS_UNDEFINED;
+    }
+    
+    // 解析参数
+    if (argc == 3) {
+        // drawImage(image, dx, dy)
+        double dx, dy;
+        if (JS_ToFloat64(ctx, &dx, argv[1]) != 0) return JS_EXCEPTION;
+        if (JS_ToFloat64(ctx, &dy, argv[2]) != 0) return JS_EXCEPTION;
+        
+        context->DrawImage(image, static_cast<float>(dx), static_cast<float>(dy));
+    } else if (argc == 5) {
+        // drawImage(image, dx, dy, dw, dh)
+        double dx, dy, dw, dh;
+        if (JS_ToFloat64(ctx, &dx, argv[1]) != 0) return JS_EXCEPTION;
+        if (JS_ToFloat64(ctx, &dy, argv[2]) != 0) return JS_EXCEPTION;
+        if (JS_ToFloat64(ctx, &dw, argv[3]) != 0) return JS_EXCEPTION;
+        if (JS_ToFloat64(ctx, &dh, argv[4]) != 0) return JS_EXCEPTION;
+        
+        context->DrawImage(image, 
+            static_cast<float>(dx), static_cast<float>(dy),
+            static_cast<float>(dw), static_cast<float>(dh));
+    } else if (argc >= 9) {
+        // drawImage(image, sx, sy, sw, sh, dx, dy, dw, dh)
+        double sx, sy, sw, sh, dx, dy, dw, dh;
+        if (JS_ToFloat64(ctx, &sx, argv[1]) != 0) return JS_EXCEPTION;
+        if (JS_ToFloat64(ctx, &sy, argv[2]) != 0) return JS_EXCEPTION;
+        if (JS_ToFloat64(ctx, &sw, argv[3]) != 0) return JS_EXCEPTION;
+        if (JS_ToFloat64(ctx, &sh, argv[4]) != 0) return JS_EXCEPTION;
+        if (JS_ToFloat64(ctx, &dx, argv[5]) != 0) return JS_EXCEPTION;
+        if (JS_ToFloat64(ctx, &dy, argv[6]) != 0) return JS_EXCEPTION;
+        if (JS_ToFloat64(ctx, &dw, argv[7]) != 0) return JS_EXCEPTION;
+        if (JS_ToFloat64(ctx, &dh, argv[8]) != 0) return JS_EXCEPTION;
+        
+        context->DrawImage(image,
+            static_cast<float>(sx), static_cast<float>(sy),
+            static_cast<float>(sw), static_cast<float>(sh),
+            static_cast<float>(dx), static_cast<float>(dy),
+            static_cast<float>(dw), static_cast<float>(dh));
+    } else {
+        return JS_ThrowTypeError(ctx, "drawImage requires 3, 5, or 9 arguments");
+    }
     
     return JS_UNDEFINED;
 }

@@ -777,7 +777,9 @@ void CanvasRenderingContext2D::DrawImage(void* image, double dx, double dy) {
     canvas->save();
     canvas->concat(current_state_.transform);
     
-    canvas->drawImage(sk_sp<SkImage>(sk_image), dx, dy);
+    // 使用 SkSamplingOptions 进行高质量绘制
+    SkSamplingOptions sampling(SkFilterMode::kLinear, SkMipmapMode::kNone);
+    canvas->drawImage(sk_image, dx, dy, sampling);
     
     canvas->restore();
 }
@@ -792,7 +794,52 @@ void CanvasRenderingContext2D::DrawImage(void* image, double dx, double dy, doub
     canvas->concat(current_state_.transform);
     
     SkRect dest = SkRect::MakeXYWH(dx, dy, dwidth, dheight);
-    canvas->drawImageRect(sk_sp<SkImage>(sk_image), dest, SkSamplingOptions());
+    SkSamplingOptions sampling(SkFilterMode::kLinear, SkMipmapMode::kNone);
+    canvas->drawImageRect(sk_image, dest, sampling);
+    
+    canvas->restore();
+}
+
+void CanvasRenderingContext2D::DrawImage(sk_sp<SkImage> image, float dx, float dy) {
+    if (!surface_ || !image) return;
+    
+    SkCanvas* canvas = surface_->getCanvas();
+    canvas->save();
+    canvas->concat(current_state_.transform);
+    
+    SkSamplingOptions sampling(SkFilterMode::kLinear, SkMipmapMode::kNone);
+    canvas->drawImage(image, dx, dy, sampling);
+    
+    canvas->restore();
+}
+
+void CanvasRenderingContext2D::DrawImage(sk_sp<SkImage> image, float dx, float dy, float dwidth, float dheight) {
+    if (!surface_ || !image) return;
+    
+    SkCanvas* canvas = surface_->getCanvas();
+    canvas->save();
+    canvas->concat(current_state_.transform);
+    
+    SkRect dest = SkRect::MakeXYWH(dx, dy, dwidth, dheight);
+    SkSamplingOptions sampling(SkFilterMode::kLinear, SkMipmapMode::kNone);
+    canvas->drawImageRect(image, dest, sampling);
+    
+    canvas->restore();
+}
+
+void CanvasRenderingContext2D::DrawImage(sk_sp<SkImage> image, 
+    float sx, float sy, float sw, float sh,
+    float dx, float dy, float dw, float dh) {
+    if (!surface_ || !image) return;
+    
+    SkCanvas* canvas = surface_->getCanvas();
+    canvas->save();
+    canvas->concat(current_state_.transform);
+    
+    SkRect src = SkRect::MakeXYWH(sx, sy, sw, sh);
+    SkRect dest = SkRect::MakeXYWH(dx, dy, dw, dh);
+    SkSamplingOptions sampling(SkFilterMode::kLinear, SkMipmapMode::kNone);
+    canvas->drawImageRect(image, src, dest, sampling, nullptr, SkCanvas::kStrict_SrcRectConstraint);
     
     canvas->restore();
 }

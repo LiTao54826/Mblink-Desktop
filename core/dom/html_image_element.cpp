@@ -6,8 +6,10 @@
 #include "html_image_element.h"
 #include "document.h"
 #include "event.h"
+#include "../render/image/image_loader.h"
 #include <algorithm>
 #include <cctype>
+#include <iostream>
 
 namespace lightui {
 
@@ -21,14 +23,28 @@ HTMLImageElement::HTMLImageElement()
     , natural_width_(0)
     , natural_height_(0)
     , complete_(false)
-    , image_data_(nullptr) {
+    , sk_image_(nullptr)
+    , load_state_(ImageLoadState::IDLE)
+    , error_message_("") {
 }
 
 // ========== IDL属性实现 ==========
 
 void HTMLImageElement::SetSrc(const std::string& src) {
+    if (src_ == src) {
+        return;  // 相同的 src，不重复加载
+    }
+    
     src_ = src;
     SetAttribute("src", src);
+    
+    // 重置状态
+    complete_ = false;
+    natural_width_ = 0;
+    natural_height_ = 0;
+    sk_image_ = nullptr;
+    load_state_ = ImageLoadState::IDLE;
+    error_message_ = "";
     
     // 设置src后自动触发加载
     if (!src.empty()) {
@@ -64,9 +80,19 @@ void HTMLImageElement::SetAttribute(const std::string& name, const std::string& 
     
     // 处理特殊属性
     if (name == "src") {
-        src_ = value;
-        if (!value.empty()) {
-            LoadImage();
+        if (src_ != value) {
+            src_ = value;
+            // 重置状态
+            complete_ = false;
+            natural_width_ = 0;
+            natural_height_ = 0;
+            sk_image_ = nullptr;
+            load_state_ = ImageLoadState::IDLE;
+            error_message_ = "";
+            
+            if (!value.empty()) {
+                LoadImage();
+            }
         }
     } else if (name == "alt") {
         alt_ = value;
@@ -89,7 +115,9 @@ void HTMLImageElement::RemoveAttribute(const std::string& name) {
         complete_ = false;
         natural_width_ = 0;
         natural_height_ = 0;
-        image_data_ = nullptr;
+        sk_image_ = nullptr;
+        load_state_ = ImageLoadState::IDLE;
+        error_message_ = "";
     } else if (name == "alt") {
         alt_ = "";
     } else if (name == "width") {
@@ -108,35 +136,100 @@ void HTMLImageElement::LoadImage() {
         return;
     }
     
+    std::cout << "[HTMLImageElement::LoadImage] Loading image: " << src_ << std::endl;
+    
+    // 设置加载状态
+    load_state_ = ImageLoadState::LOADING;
+    
     // 触发loadstart事件
     TriggerLoadStartEvent();
     
-    // TODO: 实际的图片加载逻辑
-    // 这里需要集成图片加载库（如stb_image）或使用Skia的图片加载功能
-    // 目前只是模拟加载流程
+    // ImageLoader 会自动处理相对路径
+    std::string url = src_;
     
-    // 模拟加载成功
-    // 在实际实现中，这里应该异步加载图片
-    // 加载成功后设置natural_width_和natural_height_
+    // 使用同步加载，确保事件在主线程中触发
+    // 这对于本地文件来说是安全的，因为加载很快
+    ImageLoadResult result = ImageLoader::LoadFromUrlWithResult(url);
     
-    // 示例：假设加载成功
-    // natural_width_ = 实际图片宽度;
-    // natural_height_ = 实际图片高度;
-    // complete_ = true;
-    // TriggerLoadEvent();
-    // TriggerLoadEndEvent();
+    std::cout << "[HTMLImageElement::LoadImage] Load result: success=" << result.success 
+              << ", error=" << result.error << std::endl;
     
-    // 目前只标记为完成（用于测试）
-    complete_ = true;
-    TriggerLoadEvent();
+    if (result.success && result.image) {
+        OnImageLoaded(result.image, "");
+    } else {
+        OnImageLoaded(nullptr, result.error);
+    }
+}
+
+bool HTMLImageElement::LoadImageSync() {
+    if (src_.empty()) {
+        return false;
+    }
+    
+    // 设置加载状态
+    load_state_ = ImageLoadState::LOADING;
+    
+    // 触发loadstart事件
+    TriggerLoadStartEvent();
+    
+    // ImageLoader 会自动处理相对路径
+    ImageLoadResult result = ImageLoader::LoadFromUrlWithResult(src_);
+    
+    if (result.success && result.image) {
+        OnImageLoaded(result.image, "");
+        return true;
+    } else {
+        OnImageLoaded(nullptr, result.error);
+        return false;
+    }
+}
+
+void HTMLImageElement::OnImageLoaded(sk_sp<SkImage> image, const std::string& error) {
+    if (image) {
+        // 加载成功
+        sk_image_ = image;
+        natural_width_ = image->width();
+        natural_height_ = image->height();
+        complete_ = true;
+        load_state_ = ImageLoadState::COMPLETE;
+        error_message_ = "";
+        
+        // 如果没有设置显示尺寸，使用原始尺寸
+        if (width_ == 0) {
+            width_ = natural_width_;
+        }
+        if (height_ == 0) {
+            height_ = natural_height_;
+        }
+        
+        // 触发load事件
+        TriggerLoadEvent();
+    } else {
+        // 加载失败
+        sk_image_ = nullptr;
+        natural_width_ = 0;
+        natural_height_ = 0;
+        complete_ = true;  // complete 在加载失败时也为 true
+        load_state_ = ImageLoadState::ERROR;
+        error_message_ = error.empty() ? "Failed to load image" : error;
+        
+        // 触发error事件
+        TriggerErrorEvent();
+    }
+    
+    // 触发loadend事件
     TriggerLoadEndEvent();
+    
+    // 标记需要重绘
+    MarkDirty();
 }
 
 void HTMLImageElement::SetImageData(void* data, unsigned long width, unsigned long height) {
-    image_data_ = data;
+    // 旧接口兼容 - 不推荐使用
     natural_width_ = width;
     natural_height_ = height;
     complete_ = true;
+    load_state_ = ImageLoadState::COMPLETE;
     
     // 如果没有设置显示尺寸，使用原始尺寸
     if (width_ == 0) {
@@ -144,6 +237,28 @@ void HTMLImageElement::SetImageData(void* data, unsigned long width, unsigned lo
     }
     if (height_ == 0) {
         height_ = height;
+    }
+}
+
+void HTMLImageElement::SetSkImage(sk_sp<SkImage> image) {
+    if (image) {
+        sk_image_ = image;
+        natural_width_ = image->width();
+        natural_height_ = image->height();
+        complete_ = true;
+        load_state_ = ImageLoadState::COMPLETE;
+        error_message_ = "";
+        
+        // 如果没有设置显示尺寸，使用原始尺寸
+        if (width_ == 0) {
+            width_ = natural_width_;
+        }
+        if (height_ == 0) {
+            height_ = natural_height_;
+        }
+        
+        // 标记需要重绘
+        MarkDirty();
     }
 }
 
@@ -155,8 +270,11 @@ void HTMLImageElement::TriggerLoadStartEvent() {
 }
 
 void HTMLImageElement::TriggerLoadEvent() {
+    std::cout << "[HTMLImageElement::TriggerLoadEvent] Dispatching load event" << std::endl;
+    
     auto event = std::make_shared<Event>("load");
-    DispatchEvent(event);
+    bool result = DispatchEvent(event);
+    std::cout << "[HTMLImageElement::TriggerLoadEvent] DispatchEvent returned: " << result << std::endl;
 }
 
 void HTMLImageElement::TriggerErrorEvent() {

@@ -21,6 +21,7 @@
 #include "dom_string_map.h"
 #include "html_input_element.h"
 #include "html_textarea_element.h"
+#include "html_image_element.h"
 #include "core/event/task_scheduler.h"
 #include <memory>
 #include <unordered_map>
@@ -168,5 +169,8 @@ private:
     static std::unordered_map<Text*, std::pair<JSContext*, JSValue>> text_cache_;
     static std::unordered_map<Document*, std::pair<JSContext*, JSValue>> document_cache_;
 };
+
+// 初始化 Image 构造函数（注册到全局对象）
+void InitImageConstructor(JSContext* ctx);
 
 } // namespace lightui

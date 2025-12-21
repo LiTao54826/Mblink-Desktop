@@ -13,6 +13,7 @@
 #include "core/dom/html_textarea_element.h"
 #include "core/dom/html_select_element.h"
 #include "core/dom/html_canvas_element.h"
+#include "core/dom/html_image_element.h"
 #include "core/dom/canvas_bindings.h"
 #include "core/dom/selector_engine.h"
 #include "core/quickjs/dom_binding_map.h"
@@ -746,6 +747,223 @@ static JSValue JSElement_getContext(JSContext* ctx, JSValueConst this_val, int a
     return JS_NULL;
 }
 
+// ========== HTMLImageElement 属性 ==========
+
+// HTMLImageElement.src getter
+static JSValue JSElement_get_img_src(JSContext* ctx, JSValueConst this_val, int magic) {
+    auto* data = static_cast<JSElementData*>(JS_GetOpaque(this_val, js_element_class_id));
+    if (!data || !data->element) return JS_NULL;
+    
+    auto img = std::dynamic_pointer_cast<HTMLImageElement>(data->element);
+    if (!img) {
+        // 不是 img 元素，返回 undefined
+        return JS_UNDEFINED;
+    }
+    
+    return JS_NewString(ctx, img->GetSrc().c_str());
+}
+
+// HTMLImageElement.src setter
+static JSValue JSElement_set_img_src(JSContext* ctx, JSValueConst this_val, JSValue val, int magic) {
+    auto* data = static_cast<JSElementData*>(JS_GetOpaque(this_val, js_element_class_id));
+    if (!data || !data->element) return JS_UNDEFINED;
+    
+    auto img = std::dynamic_pointer_cast<HTMLImageElement>(data->element);
+    if (!img) return JS_UNDEFINED;
+    
+    const char* src = JS_ToCString(ctx, val);
+    if (!src) return JS_EXCEPTION;
+    
+    img->SetSrc(src);
+    JS_FreeCString(ctx, src);
+    
+    return JS_UNDEFINED;
+}
+
+// HTMLImageElement.alt getter
+static JSValue JSElement_get_img_alt(JSContext* ctx, JSValueConst this_val, int magic) {
+    auto* data = static_cast<JSElementData*>(JS_GetOpaque(this_val, js_element_class_id));
+    if (!data || !data->element) return JS_NULL;
+    
+    auto img = std::dynamic_pointer_cast<HTMLImageElement>(data->element);
+    if (!img) return JS_UNDEFINED;
+    
+    return JS_NewString(ctx, img->GetAlt().c_str());
+}
+
+// HTMLImageElement.alt setter
+static JSValue JSElement_set_img_alt(JSContext* ctx, JSValueConst this_val, JSValue val, int magic) {
+    auto* data = static_cast<JSElementData*>(JS_GetOpaque(this_val, js_element_class_id));
+    if (!data || !data->element) return JS_UNDEFINED;
+    
+    auto img = std::dynamic_pointer_cast<HTMLImageElement>(data->element);
+    if (!img) return JS_UNDEFINED;
+    
+    const char* alt = JS_ToCString(ctx, val);
+    if (!alt) return JS_EXCEPTION;
+    
+    img->SetAlt(alt);
+    JS_FreeCString(ctx, alt);
+    
+    return JS_UNDEFINED;
+}
+
+// HTMLImageElement.naturalWidth getter
+static JSValue JSElement_get_img_naturalWidth(JSContext* ctx, JSValueConst this_val, int magic) {
+    auto* data = static_cast<JSElementData*>(JS_GetOpaque(this_val, js_element_class_id));
+    if (!data || !data->element) return JS_NewInt32(ctx, 0);
+    
+    auto img = std::dynamic_pointer_cast<HTMLImageElement>(data->element);
+    if (!img) return JS_NewInt32(ctx, 0);
+    
+    return JS_NewUint32(ctx, img->GetNaturalWidth());
+}
+
+// HTMLImageElement.naturalHeight getter
+static JSValue JSElement_get_img_naturalHeight(JSContext* ctx, JSValueConst this_val, int magic) {
+    auto* data = static_cast<JSElementData*>(JS_GetOpaque(this_val, js_element_class_id));
+    if (!data || !data->element) return JS_NewInt32(ctx, 0);
+    
+    auto img = std::dynamic_pointer_cast<HTMLImageElement>(data->element);
+    if (!img) return JS_NewInt32(ctx, 0);
+    
+    return JS_NewUint32(ctx, img->GetNaturalHeight());
+}
+
+// HTMLImageElement.complete getter
+static JSValue JSElement_get_img_complete(JSContext* ctx, JSValueConst this_val, int magic) {
+    auto* data = static_cast<JSElementData*>(JS_GetOpaque(this_val, js_element_class_id));
+    if (!data || !data->element) return JS_FALSE;
+    
+    auto img = std::dynamic_pointer_cast<HTMLImageElement>(data->element);
+    if (!img) return JS_FALSE;
+    
+    return JS_NewBool(ctx, img->GetComplete());
+}
+
+// HTMLImageElement.crossOrigin getter
+static JSValue JSElement_get_img_crossOrigin(JSContext* ctx, JSValueConst this_val, int magic) {
+    auto* data = static_cast<JSElementData*>(JS_GetOpaque(this_val, js_element_class_id));
+    if (!data || !data->element) return JS_NULL;
+    
+    auto img = std::dynamic_pointer_cast<HTMLImageElement>(data->element);
+    if (!img) return JS_NULL;
+    
+    std::string cross_origin = img->GetCrossOrigin();
+    if (cross_origin.empty()) {
+        return JS_NULL;
+    }
+    return JS_NewString(ctx, cross_origin.c_str());
+}
+
+// HTMLImageElement.crossOrigin setter
+static JSValue JSElement_set_img_crossOrigin(JSContext* ctx, JSValueConst this_val, JSValue val, int magic) {
+    auto* data = static_cast<JSElementData*>(JS_GetOpaque(this_val, js_element_class_id));
+    if (!data || !data->element) return JS_UNDEFINED;
+    
+    auto img = std::dynamic_pointer_cast<HTMLImageElement>(data->element);
+    if (!img) return JS_UNDEFINED;
+    
+    if (JS_IsNull(val) || JS_IsUndefined(val)) {
+        img->SetCrossOrigin("");
+    } else {
+        const char* cross_origin = JS_ToCString(ctx, val);
+        if (!cross_origin) return JS_EXCEPTION;
+        img->SetCrossOrigin(cross_origin);
+        JS_FreeCString(ctx, cross_origin);
+    }
+    
+    return JS_UNDEFINED;
+}
+
+// onload getter - 存储在 JS 对象的隐藏属性中
+static JSValue JSElement_get_onload(JSContext* ctx, JSValueConst this_val, int magic) {
+    return JS_GetPropertyStr(ctx, this_val, "__onload__");
+}
+
+// onload setter - 设置 load 事件监听器
+static JSValue JSElement_set_onload(JSContext* ctx, JSValueConst this_val, JSValue val, int magic) {
+    auto* data = static_cast<JSElementData*>(JS_GetOpaque(this_val, js_element_class_id));
+    if (!data || !data->element) return JS_UNDEFINED;
+    
+    std::cout << "[JSElement_set_onload] Setting onload handler" << std::endl;
+    
+    // 存储回调函数
+    JS_SetPropertyStr(ctx, this_val, "__onload__", JS_DupValue(ctx, val));
+    
+    if (JS_IsFunction(ctx, val)) {
+        std::cout << "[JSElement_set_onload] Adding load event listener" << std::endl;
+        
+        // 包装 JS 函数为 C++ lambda
+        auto listener_wrapper = std::make_shared<JSValueWrapper>(ctx, val);
+        
+        uint64_t listener_id = data->element->AddEventListener("load", 
+            [ctx, listener_wrapper](std::shared_ptr<Event> event) {
+                std::cout << "[onload callback] Executing onload callback" << std::endl;
+                JSValue event_val = WrapEvent(ctx, event);
+                JSValue result = listener_wrapper->Call(JS_UNDEFINED, 1, &event_val);
+                if (JS_IsException(result)) {
+                    JSValue exception = JS_GetException(ctx);
+                    const char* err = JS_ToCString(ctx, exception);
+                    if (err) {
+                        std::cerr << "[onload Error] " << err << std::endl;
+                        JS_FreeCString(ctx, err);
+                    }
+                    JS_FreeValue(ctx, exception);
+                }
+                JS_FreeValue(ctx, result);
+                JS_FreeValue(ctx, event_val);
+                std::cout << "[onload callback] Callback completed" << std::endl;
+            }, 
+            false, false
+        );
+        
+        std::cout << "[JSElement_set_onload] Listener added with id: " << listener_id << std::endl;
+    }
+    
+    return JS_UNDEFINED;
+}
+
+// onerror getter
+static JSValue JSElement_get_onerror(JSContext* ctx, JSValueConst this_val, int magic) {
+    return JS_GetPropertyStr(ctx, this_val, "__onerror__");
+}
+
+// onerror setter - 设置 error 事件监听器
+static JSValue JSElement_set_onerror(JSContext* ctx, JSValueConst this_val, JSValue val, int magic) {
+    auto* data = static_cast<JSElementData*>(JS_GetOpaque(this_val, js_element_class_id));
+    if (!data || !data->element) return JS_UNDEFINED;
+    
+    // 存储回调函数
+    JS_SetPropertyStr(ctx, this_val, "__onerror__", JS_DupValue(ctx, val));
+    
+    if (JS_IsFunction(ctx, val)) {
+        // 包装 JS 函数为 C++ lambda
+        auto listener_wrapper = std::make_shared<JSValueWrapper>(ctx, val);
+        
+        data->element->AddEventListener("error", 
+            [ctx, listener_wrapper](std::shared_ptr<Event> event) {
+                JSValue event_val = WrapEvent(ctx, event);
+                JSValue result = listener_wrapper->Call(JS_UNDEFINED, 1, &event_val);
+                if (JS_IsException(result)) {
+                    JSValue exception = JS_GetException(ctx);
+                    const char* err = JS_ToCString(ctx, exception);
+                    if (err) {
+                        std::cerr << "[onerror Error] " << err << std::endl;
+                        JS_FreeCString(ctx, err);
+                    }
+                    JS_FreeValue(ctx, exception);
+                }
+                JS_FreeValue(ctx, result);
+                JS_FreeValue(ctx, event_val);
+            }, 
+            false, false
+        );
+    }
+    
+    return JS_UNDEFINED;
+}
+
 // ========== 类定义 ==========
 
 static const JSCFunctionListEntry js_element_proto_funcs[] = {
@@ -760,6 +978,16 @@ static const JSCFunctionListEntry js_element_proto_funcs[] = {
     // HTMLCanvasElement 属性
     JS_CGETSET_MAGIC_DEF("width", JSElement_get_canvas_width, JSElement_set_canvas_width, 0),
     JS_CGETSET_MAGIC_DEF("height", JSElement_get_canvas_height, JSElement_set_canvas_height, 0),
+    // HTMLImageElement 属性
+    JS_CGETSET_MAGIC_DEF("src", JSElement_get_img_src, JSElement_set_img_src, 0),
+    JS_CGETSET_MAGIC_DEF("alt", JSElement_get_img_alt, JSElement_set_img_alt, 0),
+    JS_CGETSET_MAGIC_DEF("naturalWidth", JSElement_get_img_naturalWidth, nullptr, 0),
+    JS_CGETSET_MAGIC_DEF("naturalHeight", JSElement_get_img_naturalHeight, nullptr, 0),
+    JS_CGETSET_MAGIC_DEF("complete", JSElement_get_img_complete, nullptr, 0),
+    JS_CGETSET_MAGIC_DEF("crossOrigin", JSElement_get_img_crossOrigin, JSElement_set_img_crossOrigin, 0),
+    // 事件处理属性
+    JS_CGETSET_MAGIC_DEF("onload", JSElement_get_onload, JSElement_set_onload, 0),
+    JS_CGETSET_MAGIC_DEF("onerror", JSElement_get_onerror, JSElement_set_onerror, 0),
     JS_PROP_STRING_DEF("[Symbol.toStringTag]", "Element", JS_PROP_CONFIGURABLE),
     JS_CFUNC_DEF("setAttribute", 2, JSElement_setAttribute),
     JS_CFUNC_DEF("getAttribute", 1, JSElement_getAttribute),
@@ -841,6 +1069,10 @@ std::shared_ptr<Element> UnwrapElement(JSContext* ctx, JSValue value) {
         return nullptr;
     }
     return data->element;
+}
+
+JSClassID GetElementClassID() {
+    return js_element_class_id;
 }
 
 } // namespace bindings

@@ -6,14 +6,19 @@
 #include "dom_bindings.h"
 #include "canvas_bindings.h"
 #include "html_canvas_element.h"
+#include "html_image_element.h"
 #include "quickjs/quickjs-libc.h"
 #include "quickjs/js_value_wrapper.h"
+#include "quickjs/bindings/js_element.h"
 #include <cstring>
 #include <iostream>
 #include <algorithm>
 #include <cctype>
 
 namespace lightui {
+
+// 前向声明
+void InitImageConstructor(JSContext* ctx);
 
 // ========== 静态成员初始化 ==========
 
@@ -1902,6 +1907,9 @@ void DOMBindings::Init(JSContext* ctx) {
     
     // 初始化 Canvas 绑定
     CanvasBindings::Init(ctx);
+    
+    // 初始化 Image 构造函数
+    InitImageConstructor(ctx);
 
     initialized = true;
 }
@@ -2790,6 +2798,50 @@ void DOMBindings::SetGlobalTaskScheduler(JSContext* ctx, std::shared_ptr<TaskSch
     JS_SetPropertyStr(ctx, global, "requestAnimationFrame", JS_NewCFunction(ctx, js_request_animation_frame, "requestAnimationFrame", 1));
     JS_SetPropertyStr(ctx, global, "cancelAnimationFrame", JS_NewCFunction(ctx, js_cancel_animation_frame, "cancelAnimationFrame", 1));
 
+    JS_FreeValue(ctx, global);
+}
+
+// ========== Image 构造函数 ==========
+
+// Image 构造函数: new Image([width], [height])
+// 注意：HTMLImageElement 的属性（src, onload, onerror 等）已在新绑定系统 (js_element.cpp) 中实现
+static JSValue js_image_constructor(JSContext* ctx, JSValueConst new_target, int argc, JSValueConst* argv) {
+    // 创建 HTMLImageElement
+    auto img_element = std::make_shared<HTMLImageElement>();
+    
+    // 处理可选的 width 和 height 参数
+    if (argc >= 1) {
+        uint32_t width = 0;
+        if (JS_ToUint32(ctx, &width, argv[0]) == 0) {
+            img_element->SetWidth(width);
+        }
+    }
+    if (argc >= 2) {
+        uint32_t height = 0;
+        if (JS_ToUint32(ctx, &height, argv[1]) == 0) {
+            img_element->SetHeight(height);
+        }
+    }
+    
+    // 使用新绑定系统包装为 JS 对象
+    // 新绑定系统的 Element 原型已经包含了 src, onload, onerror 等属性
+    return bindings::WrapElement(ctx, img_element);
+}
+
+// 注册 Image 构造函数到全局对象
+void InitImageConstructor(JSContext* ctx) {
+    JSValue global = JS_GetGlobalObject(ctx);
+    
+    // 创建 Image 构造函数
+    JSValue image_ctor = JS_NewCFunction2(ctx, js_image_constructor, "Image", 0, JS_CFUNC_constructor, 0);
+    
+    // 设置原型（使用新绑定系统的 Element 原型）
+    JSValue proto = JS_GetClassProto(ctx, bindings::GetElementClassID());
+    
+    JS_SetConstructor(ctx, image_ctor, proto);
+    JS_SetPropertyStr(ctx, global, "Image", image_ctor);
+    
+    JS_FreeValue(ctx, proto);
     JS_FreeValue(ctx, global);
 }
 

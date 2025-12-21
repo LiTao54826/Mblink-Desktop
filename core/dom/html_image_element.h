@@ -5,7 +5,7 @@
  * 功能：
  * - 实现<img>元素
  * - 支持src, alt, width, height属性
- * - 图片加载和渲染
+ * - 图片加载和渲染（支持本地文件和网络URL）
  * - 符合WHATWG HTML标准
  */
 
@@ -14,8 +14,20 @@
 #include "element.h"
 #include <string>
 #include <memory>
+#include <functional>
+#include "include/core/SkImage.h"
 
 namespace lightui {
+
+/**
+ * @brief 图片加载状态
+ */
+enum class ImageLoadState {
+    IDLE,       ///< 空闲（未开始加载）
+    LOADING,    ///< 加载中
+    COMPLETE,   ///< 加载完成
+    ERROR       ///< 加载失败
+};
 
 /**
  * @brief HTML Image元素类
@@ -154,12 +166,24 @@ public:
      * 4. 触发loadend事件
      */
     void LoadImage();
+    
+    /**
+     * @brief 同步加载图片（阻塞）
+     * @return 是否加载成功
+     */
+    bool LoadImageSync();
 
     /**
      * @brief 获取图片数据（用于渲染）
+     * @return SkImage 智能指针，如果未加载则返回nullptr
+     */
+    sk_sp<SkImage> GetSkImage() const { return sk_image_; }
+
+    /**
+     * @brief 获取图片数据（用于渲染，旧接口兼容）
      * @return 图片数据指针，如果未加载则返回nullptr
      */
-    void* GetImageData() const { return image_data_; }
+    void* GetImageData() const { return sk_image_.get(); }
 
     /**
      * @brief 设置图片数据（用于测试或手动加载）
@@ -168,6 +192,24 @@ public:
      * @param height 图片高度
      */
     void SetImageData(void* data, unsigned long width, unsigned long height);
+    
+    /**
+     * @brief 设置 SkImage（用于直接设置图片）
+     * @param image SkImage 智能指针
+     */
+    void SetSkImage(sk_sp<SkImage> image);
+    
+    /**
+     * @brief 获取加载状态
+     * @return 当前加载状态
+     */
+    ImageLoadState GetLoadState() const { return load_state_; }
+    
+    /**
+     * @brief 获取加载错误信息
+     * @return 错误信息，如果没有错误则为空
+     */
+    std::string GetError() const { return error_message_; }
 
 private:
     /**
@@ -186,7 +228,7 @@ private:
     void TriggerErrorEvent();
 
     /**
-     * @brief 触发加载结束事件
+     * @brief 触发loadend事件
      */
     void TriggerLoadEndEvent();
 
@@ -196,6 +238,13 @@ private:
      * @return 解析后的数值，解析失败返回0
      */
     unsigned long ParseDimension(const std::string& value) const;
+    
+    /**
+     * @brief 处理图片加载完成
+     * @param image 加载的图片
+     * @param error 错误信息（如果有）
+     */
+    void OnImageLoaded(sk_sp<SkImage> image, const std::string& error);
 
 private:
     std::string src_;               ///< 图片URL
@@ -206,7 +255,9 @@ private:
     unsigned long natural_width_;   ///< 图片原始宽度
     unsigned long natural_height_;  ///< 图片原始高度
     bool complete_;                 ///< 是否加载完成
-    void* image_data_;              ///< 图片数据（实际类型取决于渲染引擎）
+    sk_sp<SkImage> sk_image_;       ///< Skia 图片对象
+    ImageLoadState load_state_;     ///< 加载状态
+    std::string error_message_;     ///< 错误信息
 };
 
 } // namespace lightui

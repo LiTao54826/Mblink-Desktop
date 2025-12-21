@@ -40,5 +40,11 @@ JSValue WrapElement(JSContext* ctx, std::shared_ptr<Element> element);
  */
 std::shared_ptr<Element> UnwrapElement(JSContext* ctx, JSValue value);
 
+/**
+ * @brief 获取 Element 类的 JSClassID
+ * @return JSClassID
+ */
+JSClassID GetElementClassID();
+
 } // namespace bindings
 } // namespace lightui

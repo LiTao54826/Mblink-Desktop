@@ -407,8 +407,8 @@ void BoxRenderer::RenderBackgroundAdvanced(const Box& box,
             }
         }
 
-        // 加载图片
-        auto image = ImageLoader::LoadFromFile(url);
+        // 加载图片（支持网络URL）
+        auto image = ImageLoader::LoadFromUrl(url);
 
         if (image) {
             // 解析 background-repeat

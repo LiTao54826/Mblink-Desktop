@@ -13,6 +13,18 @@
 
 namespace lightui {
 
+// ========== 静态成员 ==========
+
+CSSAssetProvider LexborStyleSheet::asset_provider_ = nullptr;
+
+void LexborStyleSheet::SetAssetProvider(CSSAssetProvider provider) {
+    asset_provider_ = provider;
+}
+
+CSSAssetProvider LexborStyleSheet::GetAssetProvider() {
+    return asset_provider_;
+}
+
 // ========== 构造函数和析构函数 ==========
 
 LexborStyleSheet::LexborStyleSheet()
@@ -115,7 +127,16 @@ bool LexborStyleSheet::ParseCSS(const std::string& css) {
 bool LexborStyleSheet::ParseCSSFile(const std::string& file_path) {
     errors_.clear();
     
-    // 读取文件
+    // 1. 优先从嵌入资源加载
+    if (asset_provider_) {
+        std::vector<uint8_t> asset_data;
+        if (asset_provider_(file_path, asset_data)) {
+            std::string css(asset_data.begin(), asset_data.end());
+            return ParseCSS(css);
+        }
+    }
+    
+    // 2. 回退到文件系统
     std::ifstream file(file_path, std::ios::binary);
     if (!file.is_open()) {
         errors_.push_back("Failed to open file: " + file_path);

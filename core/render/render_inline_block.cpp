@@ -562,6 +562,12 @@ void RenderInlineBlock::Paint(SkCanvas* canvas) {
     // 渲染表单控件特定内容
     if (node && node->GetNodeType() == NodeType::ELEMENT_NODE) {
         auto element = std::static_pointer_cast<Element>(node);
+        std::string tag_name = element->GetTagName();
+        
+        // Debug: 输出元素标签名
+        if (tag_name == "img") {
+            std::cout << "[RenderInlineBlock::Paint] Processing img element, tag=" << tag_name << std::endl;
+        }
 
         // Input元素
         auto input_element = std::dynamic_pointer_cast<HTMLInputElement>(node);
@@ -637,39 +643,65 @@ void RenderInlineBlock::Paint(SkCanvas* canvas) {
         
         // Image元素 - 使用object-fit和object-position渲染图片
         auto image_element = std::dynamic_pointer_cast<HTMLImageElement>(node);
+        std::cout << "[RenderInlineBlock::Paint] Checking for image element, tag=" << tag_name 
+                  << ", dynamic_cast result=" << (image_element ? "success" : "failed") << std::endl;
         if (image_element) {
-            std::string src = image_element->GetSrc();
-            if (!src.empty()) {
-                // 加载图片
-                sk_sp<SkImage> image = ImageLoader::LoadFromFile(src);
-                if (image) {
-                    // 获取图片原始尺寸
-                    float image_width = static_cast<float>(image->width());
-                    float image_height = static_cast<float>(image->height());
-                    
-                    // 获取容器区域（content box）
-                    SkRect container_rect = SkRect::MakeXYWH(
-                        box.content_x,
-                        box.content_y,
-                        box.content_width,
-                        box.content_height
-                    );
-                    
-                    // 使用object-fit和object-position计算源和目标矩形
-                    ObjectFitResult fit_result = CalculateObjectFit(
-                        image_width,
-                        image_height,
-                        container_rect,
-                        style.object_fit,
-                        style.object_position
-                    );
-                    
-                    // 绘制图片
-                    if (!fit_result.src_rect.isEmpty() && !fit_result.dst_rect.isEmpty()) {
-                        SkSamplingOptions sampling(SkFilterMode::kLinear, SkMipmapMode::kNone);
-                        canvas->drawImageRect(image, fit_result.src_rect, fit_result.dst_rect, 
-                                             sampling, nullptr, SkCanvas::kStrict_SrcRectConstraint);
+            std::cout << "[RenderInlineBlock::Paint] Found image element, src=" << image_element->GetSrc() << std::endl;
+            
+            // 优先使用已加载的图片
+            sk_sp<SkImage> image = image_element->GetSkImage();
+            std::cout << "[RenderInlineBlock::Paint] GetSkImage returned: " << (image ? "valid" : "null") << std::endl;
+            
+            // 如果图片未加载，尝试从URL加载
+            if (!image) {
+                std::string src = image_element->GetSrc();
+                if (!src.empty()) {
+                    std::cout << "[RenderInlineBlock::Paint] Trying to load image from URL: " << src << std::endl;
+                    // 使用 ImageLoader 加载（支持网络URL）
+                    image = ImageLoader::LoadFromUrl(src);
+                    if (image) {
+                        std::cout << "[RenderInlineBlock::Paint] Image loaded successfully: " << image->width() << "x" << image->height() << std::endl;
+                        // 缓存到元素中
+                        image_element->SetSkImage(image);
+                    } else {
+                        std::cout << "[RenderInlineBlock::Paint] Failed to load image" << std::endl;
                     }
+                }
+            }
+            
+            if (image) {
+                // 获取图片原始尺寸
+                float image_width = static_cast<float>(image->width());
+                float image_height = static_cast<float>(image->height());
+                
+                std::cout << "[RenderInlineBlock::Paint] Drawing image: " << image_width << "x" << image_height 
+                          << " at content box: " << box.content_x << "," << box.content_y 
+                          << " size: " << box.content_width << "x" << box.content_height << std::endl;
+                
+                // 获取容器区域（content box）
+                SkRect container_rect = SkRect::MakeXYWH(
+                    box.content_x,
+                    box.content_y,
+                    box.content_width,
+                    box.content_height
+                );
+                
+                // 使用object-fit和object-position计算源和目标矩形
+                ObjectFitResult fit_result = CalculateObjectFit(
+                    image_width,
+                    image_height,
+                    container_rect,
+                    style.object_fit,
+                    style.object_position
+                );
+                
+                // 绘制图片
+                if (!fit_result.src_rect.isEmpty() && !fit_result.dst_rect.isEmpty()) {
+                    SkSamplingOptions sampling(SkFilterMode::kLinear, SkMipmapMode::kNone);
+                    canvas->drawImageRect(image, fit_result.src_rect, fit_result.dst_rect, 
+                                         sampling, nullptr, SkCanvas::kStrict_SrcRectConstraint);
+                } else {
+                    std::cout << "[RenderInlineBlock::Paint] Skipping draw: src_rect or dst_rect is empty" << std::endl;
                 }
             }
             canvas->restore();

@@ -58,6 +58,7 @@ endif()
 
 # 工具
 add_subdirectory(tools/app_loader)
+add_subdirectory(tools/app_bundler)
 add_subdirectory(tools/html_loader)
 
 # 安装

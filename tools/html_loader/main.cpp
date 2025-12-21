@@ -23,6 +23,7 @@
 #include "core/event/event_loop.h"
 #include "core/network/fetch_bindings.h"
 #include "core/devtools/devtools_manager.h"
+#include "core/render/image/image_loader.h"
 
 #include <iostream>
 #include <fstream>
@@ -136,6 +137,16 @@ int main(int argc, char** argv) {
             document->SetJSRuntime(runtime.get());
         }
         
+        // 在加载 HTML 之前设置基础路径（用于解析相对路径的外部资源）
+        fs::path html_dir = fs::path(html_path).parent_path();
+        if (html_dir.empty()) {
+            html_dir = fs::current_path();
+        }
+        std::string base_path = fs::absolute(html_dir).string();
+        document->SetBasePath(base_path);
+        ImageLoader::SetBasePath(base_path);
+        std::cout << "  ✓ Base path: " << base_path << std::endl;
+        
         // 读取并解析 HTML
         std::string html_content = ReadFile(html_path);
         if (html_content.empty()) {
@@ -148,14 +159,6 @@ int main(int argc, char** argv) {
             return 1;
         }
         std::cout << "  ✓ HTML document loaded" << std::endl;
-
-        // 设置基础路径（用于解析相对路径的外部资源）
-        fs::path html_dir = fs::path(html_path).parent_path();
-        if (html_dir.empty()) {
-            html_dir = fs::current_path();
-        }
-        document->SetBasePath(fs::absolute(html_dir).string());
-        std::cout << "  ✓ Base path: " << document->GetBasePath() << std::endl;
 
         // 加载外部样式表
         document->LoadExternalStylesheets();

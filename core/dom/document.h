@@ -324,6 +324,21 @@ public:
     std::string ReadExternalFile(const std::string& path) const;
 
     /**
+     * @brief 资源提供者类型
+     */
+    using FileAssetProvider = std::function<bool(const std::string&, std::vector<uint8_t>&)>;
+
+    /**
+     * @brief 设置资源提供者（用于从嵌入资源加载文件）
+     */
+    static void SetAssetProvider(FileAssetProvider provider);
+
+    /**
+     * @brief 获取资源提供者
+     */
+    static FileAssetProvider GetAssetProvider();
+
+    /**
      * @brief 加载外部样式表
      *
      * 解析所有 <link rel="stylesheet"> 标签并加载外部 CSS 文件
@@ -402,6 +417,9 @@ private:
 
     // 资源加载基础路径
     std::string base_path_;
+
+    // 静态资源提供者
+    static FileAssetProvider asset_provider_;
 
 public:
     // ========== 脏区域管理 ==========

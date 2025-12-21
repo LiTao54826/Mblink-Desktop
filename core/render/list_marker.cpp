@@ -155,13 +155,13 @@ void PaintListMarker(
     
     // Try to render list-style-image first
     if (!style.list_style_image.empty()) {
-        // Load the image from cache or file
+        // Load the image from cache or file/URL
         auto& image_cache = ImageCache::GetInstance();
         auto image = image_cache.Get(style.list_style_image);
         
         if (!image) {
-            // Try to load the image from file
-            auto loaded_image = ImageLoader::LoadFromFile(style.list_style_image);
+            // Try to load the image (supports local files and network URLs)
+            auto loaded_image = ImageLoader::LoadFromUrl(style.list_style_image);
             if (loaded_image) {
                 image_cache.Put(style.list_style_image, loaded_image);
                 image = loaded_image;

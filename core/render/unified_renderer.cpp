@@ -178,7 +178,8 @@ TextMetrics UnifiedRenderer::MeasureText(const std::string& text) {
 // ==================== 图片绘制 ====================
 
 sk_sp<SkImage> UnifiedRenderer::LoadImage(const std::string& path) {
-    return ImageLoader::LoadFromFile(path);
+    // 支持本地文件和网络URL
+    return ImageLoader::LoadFromUrl(path);
 }
 
 void UnifiedRenderer::DrawImage(sk_sp<SkImage> image, float x, float y) {

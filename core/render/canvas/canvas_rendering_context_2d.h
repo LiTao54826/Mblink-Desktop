@@ -17,6 +17,7 @@
 #include "include/core/SkPath.h"
 #include "include/core/SkFont.h"
 #include "include/core/SkColor.h"
+#include "include/core/SkImage.h"
 #include <string>
 #include <vector>
 #include <memory>
@@ -226,7 +227,7 @@ public:
     // ========== 图像绘制 ==========
 
     /**
-     * @brief 绘制图像
+     * @brief 绘制图像（旧接口，使用 void* 指针）
      * @param image 图像数据指针（SkImage*）
      * @param dx 目标X坐标
      * @param dy 目标Y坐标
@@ -234,7 +235,7 @@ public:
     void DrawImage(void* image, double dx, double dy);
 
     /**
-     * @brief 绘制图像（带尺寸）
+     * @brief 绘制图像（旧接口，带尺寸）
      * @param image 图像数据指针（SkImage*）
      * @param dx 目标X坐标
      * @param dy 目标Y坐标
@@ -242,6 +243,40 @@ public:
      * @param dheight 目标高度
      */
     void DrawImage(void* image, double dx, double dy, double dwidth, double dheight);
+    
+    /**
+     * @brief 绘制图像（使用 sk_sp<SkImage>）
+     * @param image SkImage 智能指针
+     * @param dx 目标X坐标
+     * @param dy 目标Y坐标
+     */
+    void DrawImage(sk_sp<SkImage> image, float dx, float dy);
+    
+    /**
+     * @brief 绘制图像（使用 sk_sp<SkImage>，带尺寸）
+     * @param image SkImage 智能指针
+     * @param dx 目标X坐标
+     * @param dy 目标Y坐标
+     * @param dwidth 目标宽度
+     * @param dheight 目标高度
+     */
+    void DrawImage(sk_sp<SkImage> image, float dx, float dy, float dwidth, float dheight);
+    
+    /**
+     * @brief 绘制图像（使用 sk_sp<SkImage>，带源和目标矩形）
+     * @param image SkImage 智能指针
+     * @param sx 源X坐标
+     * @param sy 源Y坐标
+     * @param sw 源宽度
+     * @param sh 源高度
+     * @param dx 目标X坐标
+     * @param dy 目标Y坐标
+     * @param dw 目标宽度
+     * @param dh 目标高度
+     */
+    void DrawImage(sk_sp<SkImage> image, 
+        float sx, float sy, float sw, float sh,
+        float dx, float dy, float dw, float dh);
     
     // ========== 像素操作 ==========
     

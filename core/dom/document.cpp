@@ -53,6 +53,17 @@ namespace fs = std::filesystem;
 
 namespace lightui {
 
+// 静态成员初始化
+Document::FileAssetProvider Document::asset_provider_ = nullptr;
+
+void Document::SetAssetProvider(FileAssetProvider provider) {
+    asset_provider_ = provider;
+}
+
+Document::FileAssetProvider Document::GetAssetProvider() {
+    return asset_provider_;
+}
+
 // ========== 构造函数 ==========
 
 Document::Document()
@@ -681,6 +692,15 @@ std::string Document::ResolvePath(const std::string& path) const {
 }
 
 std::string Document::ReadExternalFile(const std::string& path) const {
+    // 1. 优先从嵌入资源加载
+    if (asset_provider_) {
+        std::vector<uint8_t> data;
+        if (asset_provider_(path, data)) {
+            return std::string(data.begin(), data.end());
+        }
+    }
+
+    // 2. 回退到文件系统
     std::string resolved_path = ResolvePath(path);
 
     if (resolved_path.empty()) {

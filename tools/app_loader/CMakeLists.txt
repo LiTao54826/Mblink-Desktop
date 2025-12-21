@@ -64,6 +64,12 @@ add_executable(app_loader
     main.cpp
     embedded_js.cpp
     embedded_js.h
+    asset_manager.cpp
+    asset_manager.h
+    ${CMAKE_SOURCE_DIR}/tools/app_bundler/payload.cpp
+    ${CMAKE_SOURCE_DIR}/tools/app_bundler/payload.h
+    ${CMAKE_SOURCE_DIR}/tools/app_bundler/bytecode_compiler.cpp
+    ${CMAKE_SOURCE_DIR}/tools/app_bundler/bytecode_compiler.h
 )
 
 # 确保在编译前生成嵌入的 JS 文件
@@ -73,6 +79,8 @@ add_dependencies(app_loader generate_embedded_js)
 target_include_directories(app_loader PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}
     ${CMAKE_CURRENT_BINARY_DIR}
+    ${CMAKE_SOURCE_DIR}/tools/app_bundler
+    ${CMAKE_SOURCE_DIR}/third_party
 )
 
 target_link_libraries(app_loader
@@ -83,6 +91,7 @@ target_link_libraries(app_loader
     lightui_quickjs
     lightui_lexbor
     lightui_devtools
+    lightui_network
     SDL3::SDL3-static
     skia
 )
@@ -93,3 +102,12 @@ set_target_properties(app_loader PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY_DEBUG "${CMAKE_BINARY_DIR}/bin/Debug"
     RUNTIME_OUTPUT_DIRECTORY_RELEASE "${CMAKE_BINARY_DIR}/bin/Release"
 )
+
+# Windows: Release 模式使用 Windows 子系统（无控制台窗口），但保留 main() 入口
+# 注意：bundler 会在打包时根据 --debug 参数动态修改 PE 头的 subsystem 字段
+if(WIN32 AND MSVC)
+    target_link_options(app_loader PRIVATE
+        $<$<CONFIG:Release>:/SUBSYSTEM:WINDOWS>
+        $<$<CONFIG:Release>:/ENTRY:mainCRTStartup>
+    )
+endif()

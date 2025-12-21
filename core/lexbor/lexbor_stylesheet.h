@@ -9,9 +9,15 @@
 #include <vector>
 #include <map>
 #include <memory>
+#include <functional>
 #include <lexbor/css/css.h>
 
 namespace lightui {
+
+/**
+ * @brief 资源提供者回调 - 用于从嵌入资源加载
+ */
+using CSSAssetProvider = std::function<bool(const std::string& path, std::vector<uint8_t>& out_data)>;
 
 /**
  * @brief CSS规则结构
@@ -58,11 +64,21 @@ public:
     bool ParseCSS(const std::string& css);
     
     /**
-     * @brief 从文件解析 CSS
+     * @brief 从文件解析 CSS（优先检查嵌入资源）
      * @param file_path 文件路径
      * @return 是否成功
      */
     bool ParseCSSFile(const std::string& file_path);
+    
+    /**
+     * @brief 设置资源提供者（用于嵌入资源）
+     */
+    static void SetAssetProvider(CSSAssetProvider provider);
+    
+    /**
+     * @brief 获取资源提供者
+     */
+    static CSSAssetProvider GetAssetProvider();
     
     /**
      * @brief 获取规则数量
@@ -151,6 +167,8 @@ private:
     lxb_css_stylesheet_t* stylesheet_;
     std::vector<std::unique_ptr<CSSRule>> rules_;
     std::vector<std::string> errors_;
+    
+    static CSSAssetProvider asset_provider_;
 };
 
 } // namespace lightui

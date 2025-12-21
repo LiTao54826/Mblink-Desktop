@@ -34,6 +34,9 @@ void WindowBindings::InitBindings() {
     // 初始化 Canvas 绑定（独立模块）
     CanvasBindings::Init(runtime_->GetContext());
     
+    // 初始化 Image 构造函数（支持 new Image()）
+    InitImageConstructor(runtime_->GetContext());
+    
     // 设置全局 TaskScheduler（定时器需要）
     if (task_scheduler_) {
         DOMBindings::SetGlobalTaskScheduler(runtime_->GetContext(), task_scheduler_);

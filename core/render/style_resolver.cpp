@@ -10,6 +10,7 @@
 #include "core/dom/text.h"
 #include "core/dom/document.h"
 #include "core/dom/svg_element.h"
+#include "core/dom/html_image_element.h"
 #include "core/lexbor/style_manager.h"
 #include "color.h"
 #include <algorithm>
@@ -829,6 +830,40 @@ void StyleResolver::ApplyElementSpecificStyle(ComputedStyle& style, const std::s
         
         style.width = CSSLength(static_cast<float>(width), CSSUnit::PX);
         style.height = CSSLength(static_cast<float>(height), CSSUnit::PX);
+    }
+    
+    // Image 元素 - 读取width/height属性设置尺寸
+    if (tag_name == "img" && element) {
+        // 读取width属性
+        std::string width_attr = element->GetAttribute("width");
+        if (!width_attr.empty()) {
+            try {
+                unsigned long width = std::stoul(width_attr);
+                style.width = CSSLength(static_cast<float>(width), CSSUnit::PX);
+            } catch (...) {}
+        }
+        
+        // 读取height属性
+        std::string height_attr = element->GetAttribute("height");
+        if (!height_attr.empty()) {
+            try {
+                unsigned long height = std::stoul(height_attr);
+                style.height = CSSLength(static_cast<float>(height), CSSUnit::PX);
+            } catch (...) {}
+        }
+        
+        // 如果没有设置宽高，尝试从 HTMLImageElement 获取图片的自然尺寸
+        auto img_element = std::dynamic_pointer_cast<HTMLImageElement>(element);
+        if (img_element) {
+            // 如果没有设置 width 属性，使用图片的自然宽度
+            if (width_attr.empty() && img_element->GetNaturalWidth() > 0) {
+                style.width = CSSLength(static_cast<float>(img_element->GetNaturalWidth()), CSSUnit::PX);
+            }
+            // 如果没有设置 height 属性，使用图片的自然高度
+            if (height_attr.empty() && img_element->GetNaturalHeight() > 0) {
+                style.height = CSSLength(static_cast<float>(img_element->GetNaturalHeight()), CSSUnit::PX);
+            }
+        }
     }
 
     // ========== 内联元素 (Inline Elements) ==========
