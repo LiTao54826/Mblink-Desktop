@@ -15,6 +15,7 @@
 #include "element.h"
 #include "text.h"
 #include "dom_observer.h"
+#include "dirty_node_tracker.h"
 #include <string>
 #include <memory>
 #include <unordered_map>
@@ -208,6 +209,20 @@ public:
         observer_manager_.RemoveObserver(observer);
     }
 
+    // ========== 脏节点追踪器 ==========
+
+    /**
+     * @brief 获取脏节点追踪器
+     * @return 脏节点追踪器引用
+     */
+    DirtyNodeTracker& GetDirtyTracker() { return dirty_tracker_; }
+
+    /**
+     * @brief 获取脏节点追踪器（const 版本）
+     * @return 脏节点追踪器常量引用
+     */
+    const DirtyNodeTracker& GetDirtyTracker() const { return dirty_tracker_; }
+
     // ========== 批量更新API (Week 2 - Task 2.3) ==========
 
     /**
@@ -364,6 +379,7 @@ private:
     std::shared_ptr<Element> body_;
     std::unordered_map<std::string, std::weak_ptr<Element>> id_map_;
     DOMObserverManager observer_manager_;
+    DirtyNodeTracker dirty_tracker_;  // 脏节点追踪器
 
     // Lexbor 集成
     std::unique_ptr<LexborDocument> lexbor_doc_;

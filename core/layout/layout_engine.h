@@ -84,6 +84,14 @@ public:
         return native_engine_.HasElement(render_obj);
     }
 
+    /**
+     * @brief Get the underlying native layout engine
+     * @return Pointer to the native layout engine
+     */
+    NativeLayoutEngine* GetNativeEngine() {
+        return &native_engine_;
+    }
+
 private:
     NativeLayoutEngine native_engine_;
 };

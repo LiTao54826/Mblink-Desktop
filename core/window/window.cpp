@@ -54,7 +54,10 @@
 #include "core/render/animation_timeline.h"
 #include "core/render/animation_controller.h"
 #include "core/render/render_tree_updater.h"
+#include "core/render/render_pipeline.h"
+#include "core/render/render_tree_synchronizer.h"
 #include "core/layout/layout_engine.h"
+#include "core/layout/native_layout_engine.h"
 #include "core/render/color.h"
 #include "core/render/select_dropdown.h"
 #include "core/utils/encoding_utils.h"
@@ -2160,6 +2163,27 @@ void Window::EnsureRenderTree() {
         render_tree_updater_->SetLayoutEngine(std::shared_ptr<LayoutEngine>(
             layout_engine_.get(), [](LayoutEngine*) {}));  // 非拥有指针
     }
+
+    // 初始化渲染管线（增量更新系统）
+    if (!render_pipeline_) {
+        render_pipeline_ = std::make_unique<RenderPipeline>();
+    }
+    if (!render_tree_synchronizer_) {
+        render_tree_synchronizer_ = std::make_shared<RenderTreeSynchronizer>();
+        render_tree_synchronizer_->SetDocument(document_);
+        render_tree_synchronizer_->SetRenderTreeBuilder(render_tree_builder_);
+        if (layout_engine_) {
+            render_tree_synchronizer_->SetLayoutEngine(std::shared_ptr<LayoutEngine>(
+                layout_engine_.get(), [](LayoutEngine*) {}));
+        }
+    }
+    render_pipeline_->SetDirtyTracker(&document_->GetDirtyTracker());
+    render_pipeline_->SetRenderTree(cached_render_tree_);
+    render_pipeline_->SetSynchronizer(render_tree_synchronizer_);
+    if (layout_engine_) {
+        render_pipeline_->SetLayoutEngine(layout_engine_->GetNativeEngine());
+    }
+    render_pipeline_->SetDocument(document_);
 
     // 恢复滚动位置
     if (!scroll_positions.empty()) {

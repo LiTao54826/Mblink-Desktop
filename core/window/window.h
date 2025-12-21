@@ -45,6 +45,8 @@ class AnimationTimeline;
 class AnimationController;
 class RenderTreeUpdater;
 class RenderTreeBuilder;
+class RenderPipeline;
+class RenderTreeSynchronizer;
 
 /**
  * @brief 渲染后端类型
@@ -431,6 +433,22 @@ public:
     LayoutEngine* GetLayoutEngine() const { return layout_engine_.get(); }
 
     /**
+     * @brief 获取渲染管线
+     * @return 渲染管线指针
+     * 
+     * **Feature: incremental-update-system**
+     */
+    RenderPipeline* GetRenderPipeline() const { return render_pipeline_.get(); }
+
+    /**
+     * @brief 获取渲染树同步器
+     * @return 渲染树同步器指针
+     * 
+     * **Feature: incremental-update-system**
+     */
+    RenderTreeSynchronizer* GetRenderTreeSynchronizer() const { return render_tree_synchronizer_.get(); }
+
+    /**
      * @brief 更新动画（在渲染循环中调用）
      * @param current_time 当前时间（秒）
      */
@@ -589,6 +607,10 @@ private:
 
     // Taffy CSS 布局引擎
     std::unique_ptr<LayoutEngine> layout_engine_;
+
+    // 渲染管线（增量更新系统）
+    std::unique_ptr<RenderPipeline> render_pipeline_;
+    std::shared_ptr<RenderTreeSynchronizer> render_tree_synchronizer_;
 
     // 显示后端（用于 CPU 渲染模式）
     std::unique_ptr<DisplayBackend> display_backend_;

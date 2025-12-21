@@ -18,9 +18,13 @@ void Text::SetData(const std::string& data) {
     data_ = data;
     MarkDirty();
 
-    // 通知观察者
+    // 通知观察者和记录变化
     auto doc = GetOwnerDocument();
     if (doc) {
+        // 记录到 DirtyNodeTracker（延迟处理）
+        doc->GetDirtyTracker().RecordTextChanged(shared_from_this(), old_data, data);
+        
+        // 通知观察者（立即处理，用于兼容旧代码）
         doc->GetObserverManager().NotifyTextChanged(this, old_data, data);
     }
 }

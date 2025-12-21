@@ -44,6 +44,8 @@ set(RENDER_SOURCES
     render_svg.cpp
     select_dropdown.cpp
     render_tree_updater.cpp
+    render_tree_synchronizer.cpp
+    render_pipeline.cpp
     canvas/canvas_rendering_context_2d.cpp
     canvas/canvas_gradient.cpp
     canvas/canvas_pattern.cpp
@@ -95,6 +97,8 @@ set(RENDER_HEADERS
     render_svg.h
     select_dropdown.h
     render_tree_updater.h
+    render_tree_synchronizer.h
+    render_pipeline.h
     canvas/canvas_rendering_context_2d.h
 )
 

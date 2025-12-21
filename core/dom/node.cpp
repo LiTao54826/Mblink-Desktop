@@ -127,9 +127,13 @@ std::shared_ptr<Node> Node::AppendChild(std::shared_ptr<Node> child) {
     // 标记为脏
     MarkDirty();
 
-    // 通知观察者
+    // 通知观察者和记录变化
     auto doc = GetOwnerDocument();
     if (doc) {
+        // 记录到 DirtyNodeTracker（延迟处理）
+        doc->GetDirtyTracker().RecordNodeAdded(child, shared_from_this(), child_nodes_.size() - 1);
+        
+        // 通知观察者（立即处理，用于兼容旧代码）
         doc->GetObserverManager().NotifyNodeAdded(child.get(), this);
         // 标记 Lexbor DOM 需要同步
         doc->MarkLexborDirty();
@@ -155,6 +159,9 @@ std::shared_ptr<Node> Node::InsertBefore(std::shared_ptr<Node> new_child,
         throw std::invalid_argument("Reference child not found");
     }
 
+    // 计算插入索引
+    size_t index = std::distance(child_nodes_.begin(), it);
+
     // 如果new_child已有父节点，先从原父节点移除
     if (auto parent = new_child->GetParentNode()) {
         parent->RemoveChild(new_child);
@@ -167,9 +174,13 @@ std::shared_ptr<Node> Node::InsertBefore(std::shared_ptr<Node> new_child,
     // 标记为脏
     MarkDirty();
 
-    // 通知观察者
+    // 通知观察者和记录变化
     auto doc = GetOwnerDocument();
     if (doc) {
+        // 记录到 DirtyNodeTracker（延迟处理）
+        doc->GetDirtyTracker().RecordNodeAdded(new_child, shared_from_this(), index);
+        
+        // 通知观察者（立即处理，用于兼容旧代码）
         doc->GetObserverManager().NotifyNodeAdded(new_child.get(), this);
         // 标记 Lexbor DOM 需要同步
         doc->MarkLexborDirty();
@@ -189,9 +200,16 @@ std::shared_ptr<Node> Node::RemoveChild(std::shared_ptr<Node> child) {
         throw std::invalid_argument("Child not found");
     }
 
-    // 通知观察者（在移除之前）
+    // 计算移除索引
+    size_t index = std::distance(child_nodes_.begin(), it);
+
+    // 通知观察者和记录变化（在移除之前）
     auto doc = GetOwnerDocument();
     if (doc) {
+        // 记录到 DirtyNodeTracker（延迟处理）
+        doc->GetDirtyTracker().RecordNodeRemoved(child, shared_from_this(), index);
+        
+        // 通知观察者（立即处理，用于兼容旧代码）
         doc->GetObserverManager().NotifyNodeRemoved(child.get(), this);
         
         // 如果被移除的是元素，清理其 ID 缓存（包括所有后代）
@@ -228,14 +246,22 @@ std::shared_ptr<Node> Node::ReplaceChild(std::shared_ptr<Node> new_child,
         throw std::invalid_argument("Old child not found");
     }
 
+    // 计算替换索引
+    size_t index = std::distance(child_nodes_.begin(), it);
+
     // 如果new_child已有父节点，先从原父节点移除
     if (auto parent = new_child->GetParentNode()) {
         parent->RemoveChild(new_child);
     }
 
-    // 通知观察者：旧节点被移除
+    // 通知观察者和记录变化
     auto doc = GetOwnerDocument();
     if (doc) {
+        // 记录为原子替换操作到 DirtyNodeTracker（延迟处理）
+        // 这解决了 ReplaceChild 的时序问题
+        doc->GetDirtyTracker().RecordNodeReplaced(old_child, new_child, shared_from_this(), index);
+        
+        // 通知观察者：旧节点被移除（立即处理，用于兼容旧代码）
         doc->GetObserverManager().NotifyNodeRemoved(old_child.get(), this);
     }
 

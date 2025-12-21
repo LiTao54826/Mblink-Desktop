@@ -8,6 +8,7 @@ set(DOM_SOURCES
     event.cpp
     dom_bindings.cpp
     dom_observer.cpp
+    dirty_node_tracker.cpp
     selector_engine.cpp
     dom_token_list.cpp
     css_style_declaration.cpp
@@ -47,6 +48,7 @@ set(DOM_HEADERS
     event.h
     dom_bindings.h
     dom_observer.h
+    dirty_node_tracker.h
     selector_engine.h
     dom_token_list.h
     css_style_declaration.h
