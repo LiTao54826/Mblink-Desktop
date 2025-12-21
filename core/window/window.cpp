@@ -53,7 +53,6 @@
 #include "core/render/transition.h"
 #include "core/render/animation_timeline.h"
 #include "core/render/animation_controller.h"
-#include "core/render/render_tree_updater.h"
 #include "core/render/render_pipeline.h"
 #include "core/render/render_tree_synchronizer.h"
 #include "core/layout/layout_engine.h"
@@ -2151,17 +2150,6 @@ void Window::EnsureRenderTree() {
 
     if (!cached_render_tree_) {
         return;
-    }
-
-    // Phase 3: 初始化渲染树增量更新器
-    if (!render_tree_updater_) {
-        render_tree_updater_ = std::make_unique<RenderTreeUpdater>();
-    }
-    render_tree_updater_->SetDocument(document_);
-    render_tree_updater_->SetRenderTreeBuilder(render_tree_builder_);
-    if (layout_engine_) {
-        render_tree_updater_->SetLayoutEngine(std::shared_ptr<LayoutEngine>(
-            layout_engine_.get(), [](LayoutEngine*) {}));  // 非拥有指针
     }
 
     // 初始化渲染管线（增量更新系统）

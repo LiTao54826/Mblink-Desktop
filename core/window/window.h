@@ -43,7 +43,6 @@ class RenderObject;
 class Node;
 class AnimationTimeline;
 class AnimationController;
-class RenderTreeUpdater;
 class RenderTreeBuilder;
 class RenderPipeline;
 class RenderTreeSynchronizer;
@@ -407,12 +406,6 @@ public:
     void EnsureRenderTree();
 
     /**
-     * @brief 获取渲染树增量更新器
-     * @return 渲染树更新器指针
-     */
-    RenderTreeUpdater* GetRenderTreeUpdater() const { return render_tree_updater_.get(); }
-
-    /**
      * @brief 获取动画时间轴
      * @return 动画时间轴指针
      */
@@ -595,8 +588,7 @@ private:
     bool enable_incremental_render_ = true;  // 启用增量渲染（局部裁剪）
     bool force_full_repaint_ = false;         // 强制全屏重绘（调试用，但保留渲染树缓存）
 
-    // Phase 3: 渲染树增量更新器
-    std::unique_ptr<RenderTreeUpdater> render_tree_updater_;
+    // 渲染树构建器
     std::shared_ptr<RenderTreeBuilder> render_tree_builder_;
 
     // CSS Transition 动画时间轴
