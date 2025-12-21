@@ -406,6 +406,13 @@ void RenderInlineBlock::Paint(SkCanvas* canvas) {
     canvas->save();
     canvas->translate(layout.x, layout.y);
 
+    // 应用 CSS transform
+    if (style.transform.has_value() && !style.transform->IsEmpty()) {
+        SkRect bounds = SkRect::MakeWH(layout.width, layout.height);
+        SkMatrix transform_matrix = style.transform->ToSkMatrix(bounds, style.transform_origin);
+        canvas->concat(transform_matrix);
+    }
+
     // 应用 CSS clip-path
     if (style.clip_path.has_value() && !style.clip_path->IsNone()) {
         SkRect bounds = SkRect::MakeWH(layout.width, layout.height);
@@ -728,6 +735,12 @@ void RenderInlineBlock::PaintInputElement(SkCanvas* canvas, HTMLInputElement* in
 
     InputType type = input->GetInputType();
     std::string value = input->GetValue();
+    
+    // 调试：输出 input 的值
+    static int debug_count = 0;
+    if (++debug_count <= 10) {
+        std::cout << "[PaintInputElement] value='" << value << "', placeholder='" << input->GetPlaceholder() << "'" << std::endl;
+    }
 
     // 处理文本类型的输入框
     if (type == InputType::Text || type == InputType::Password ||
@@ -871,14 +884,15 @@ void RenderInlineBlock::PaintInputElement(SkCanvas* canvas, HTMLInputElement* in
                     );
                 }
 
-                // 计算光标的Y坐标（从 content 顶部到底部）
-                float cursor_y_top = box.content_y;
-                float cursor_y_bottom = box.content_y + box.content_height;
+                // 计算光标的Y坐标（基于字体度量，垂直居中）
+                float font_height = font_metrics.fDescent - font_metrics.fAscent;
+                float cursor_y_top = box.content_y + (box.content_height - font_height) / 2;
+                float cursor_y_bottom = cursor_y_top + font_height;
 
                 // 绘制光标
                 SkPaint cursor_paint;
                 cursor_paint.setColor(SK_ColorBLACK);
-                cursor_paint.setStrokeWidth(1);
+                cursor_paint.setStrokeWidth(1.5f);
                 cursor_paint.setAntiAlias(true);
 
                 canvas->drawLine(cursor_x, cursor_y_top, cursor_x, cursor_y_bottom, cursor_paint);

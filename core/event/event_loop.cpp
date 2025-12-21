@@ -2046,6 +2046,28 @@ void EventLoop::HandleMouseWheelEventForDOM(const SDL_Event& event) {
         return;
     }
 
+    // 派发 wheel 事件到 DOM，让 JS 有机会阻止默认行为
+    if (hit_result.element) {
+        auto wheel_event = std::make_shared<MouseEvent>(
+            "wheel",
+            static_cast<int>(logical_x),
+            static_cast<int>(logical_y),
+            0  // button
+        );
+        // 设置滚轮增量（可以通过扩展 MouseEvent 来支持）
+        hit_result.element->DispatchEvent(wheel_event);
+        
+        // 如果事件被阻止了默认行为，不处理滚动
+        if (wheel_event->IsDefaultPrevented()) {
+            return;
+        }
+        
+        // 如果事件传播被停止，也不处理滚动（让元素自己处理）
+        if (wheel_event->IsPropagationStopped()) {
+            return;
+        }
+    }
+
     // 检查是否按住 Shift 键（用于水平滚动）
     const bool* keyboard_state = SDL_GetKeyboardState(nullptr);
     bool shift_pressed = keyboard_state[SDL_SCANCODE_LSHIFT] || keyboard_state[SDL_SCANCODE_RSHIFT];

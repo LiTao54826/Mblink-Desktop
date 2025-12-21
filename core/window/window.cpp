@@ -59,6 +59,7 @@
 #include "core/layout/native_layout_engine.h"
 #include "core/render/color.h"
 #include "core/render/select_dropdown.h"
+#include "core/render/overlay_manager.h"
 #include "core/utils/encoding_utils.h"
 #include "core/devtools/devtools_manager.h"
 
@@ -125,6 +126,29 @@ public:
                                   << bounds.left() << "," << bounds.top() << " " 
                                   << bounds.width() << "x" << bounds.height() << std::endl;
                     }
+                }
+                
+                // 关键修复：当 style 属性变化时，需要重新解析样式
+                // 这确保 transform 等属性的动态更新能正确生效
+                if (name == "style") {
+                    StyleResolver resolver;
+                    if (window_->GetDocument() && window_->GetDocument()->GetStyleManager()) {
+                        resolver.SetStyleManager(window_->GetDocument()->GetStyleManager());
+                    }
+                    auto elem_ptr = std::static_pointer_cast<Element>(element->shared_from_this());
+                    // 获取父元素样式用于继承
+                    const ComputedStyle* parent_style = nullptr;
+                    if (auto parent_node = element->GetParentNode()) {
+                        if (parent_node->GetNodeType() == NodeType::ELEMENT_NODE) {
+                            auto parent_elem = std::static_pointer_cast<Element>(parent_node);
+                            if (auto parent_render = parent_elem->GetRenderObject()) {
+                                parent_style = &parent_render->GetComputedStyle();
+                            }
+                        }
+                    }
+                    auto new_style = resolver.ResolveStyle(elem_ptr, parent_style);
+                    render_obj->SetComputedStyle(new_style);
+                    render_obj->MarkNeedsLayout();
                 }
             }
             window_->SetNeedsRepaint();
@@ -1383,8 +1407,17 @@ void Window::Render() {
         g_paint_total_calls = 0;
         g_paint_culled_calls = 0;
         RenderObject::ResetPaintTimingStats();
+        
+        // 开始新的渲染帧，清除上一帧的 overlay
+        auto& overlay_mgr = OverlayManager::Instance();
+        overlay_mgr.BeginFrame();
+        
         Uint64 paint_start = SDL_GetTicks();
         cached_render_tree_->Paint(canvas);
+        
+        // 绘制所有 overlay 元素（高 z-index 的 positioned 元素）
+        overlay_mgr.PaintOverlays(canvas);
+        
         Uint64 paint_end = SDL_GetTicks();
         std::cout << "[Window::Render] Paint took " << (paint_end - paint_start) << "ms"
                   << ", total_calls=" << g_paint_total_calls.load()
@@ -1505,6 +1538,10 @@ void Window::Render() {
                     combined_dirty_rects = dirty_rects_;
                 }
 
+                // 开始新的渲染帧，清除上一帧的 overlay
+                auto& overlay_mgr = OverlayManager::Instance();
+                overlay_mgr.BeginFrame();
+
                 // 局部绘制 - 恢复到之前正常工作的版本
                 // 计算所有脏区域的边界（用于 CPU 模式局部更新）
                 SkRect dirty_bounds = SkRect::MakeEmpty();
@@ -1544,12 +1581,25 @@ void Window::Render() {
             } else {
                 // 无脏区域但需要重绘：全量绘制（如窗口被遮挡后恢复）
                 DEBUG_LOG("[Window::Render] Full repaint (no dirty rects but needs_repaint)");
+                
+                // 开始新的渲染帧
+                auto& overlay_mgr = OverlayManager::Instance();
+                overlay_mgr.BeginFrame();
+                
                 canvas->clear(clear_color);
                 cached_render_tree_->Paint(canvas);
+                
+                // overlay 将在分支外部统一绘制
 
                 // 清除脏标记
                 ClearRenderObjectDirtyFlags(cached_render_tree_.get());
             }
+        }
+
+        // 绘制所有 overlay 元素（增量渲染路径的统一出口）
+        {
+            auto& overlay_mgr = OverlayManager::Instance();
+            overlay_mgr.PaintOverlays(canvas);
         }
 
         // 更新并绘制 select 下拉菜单

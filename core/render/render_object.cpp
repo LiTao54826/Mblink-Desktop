@@ -11,6 +11,7 @@
 #include "gradient_renderer.h"
 #include "shadow_renderer.h"
 #include "list_marker.h"
+#include "overlay_manager.h"
 #include "color.h"
 #include "css_value.h"
 #include "core/dom/node.h"
@@ -1978,6 +1979,17 @@ void RenderBlock::Paint(SkCanvas* canvas) {
         if (is_fieldset_element && child.get() == legend_child) {
             continue;
         }
+        
+        // 检查是否应该延迟绘制（高 z-index 的 positioned 元素）
+        auto& overlay_mgr = OverlayManager::Instance();
+        if (overlay_mgr.ShouldDeferPaint(child.get())) {
+            // 收集当前变换矩阵和元素信息
+            // 注意：不需要加上子元素的位置偏移，因为 Paint 函数内部会自己处理
+            SkMatrix current_matrix = canvas->getTotalMatrix();
+            overlay_mgr.AddOverlay(child, current_matrix, child->GetComputedStyle().z_index);
+            continue;  // 跳过正常绘制
+        }
+        
         child->Paint(canvas);
     }
     auto children_end = std::chrono::high_resolution_clock::now();
@@ -2252,14 +2264,15 @@ void RenderBlock::PaintInputElement(SkCanvas* canvas, HTMLInputElement* input, c
                         );
                     }
 
-                    // 计算光标的Y坐标（从文本顶部到底部）
-                    float cursor_y_top = box.content_y;
-                    float cursor_y_bottom = box.content_y + box.content_height;
+                    // 计算光标的Y坐标（基于字体度量，垂直居中）
+                    float font_height = font_metrics.fDescent - font_metrics.fAscent;
+                    float cursor_y_top = box.content_y + (box.content_height - font_height) / 2;
+                    float cursor_y_bottom = cursor_y_top + font_height;
 
                     // 绘制光标
                     SkPaint cursor_paint;
                     cursor_paint.setColor(SK_ColorBLACK);
-                    cursor_paint.setStrokeWidth(1);
+                    cursor_paint.setStrokeWidth(1.5f);
                     cursor_paint.setAntiAlias(true);
 
                     canvas->drawLine(cursor_x, cursor_y_top, cursor_x, cursor_y_bottom, cursor_paint);
@@ -2740,6 +2753,15 @@ void RenderInline::Paint(SkCanvas* canvas) {
 
     // 绘制所有子元素
     for (auto& child : sorted_children) {
+        // 检查是否应该延迟绘制（高 z-index 的 positioned 元素）
+        auto& overlay_mgr = OverlayManager::Instance();
+        if (overlay_mgr.ShouldDeferPaint(child.get())) {
+            // 收集当前变换矩阵和元素信息
+            // 注意：不需要加上子元素的位置偏移，因为 Paint 函数内部会自己处理
+            SkMatrix current_matrix = canvas->getTotalMatrix();
+            overlay_mgr.AddOverlay(child, current_matrix, child->GetComputedStyle().z_index);
+            continue;  // 跳过正常绘制
+        }
         child->Paint(canvas);
     }
 
@@ -2877,14 +2899,15 @@ void RenderInline::PaintInputElement(SkCanvas* canvas, HTMLInputElement* input, 
                         );
                     }
 
-                    // 计算光标的Y坐标（从文本顶部到底部）
-                    float cursor_y_top = box.content_y;
-                    float cursor_y_bottom = box.content_y + box.content_height;
+                    // 计算光标的Y坐标（基于字体度量，垂直居中）
+                    float font_height = font_metrics.fDescent - font_metrics.fAscent;
+                    float cursor_y_top = box.content_y + (box.content_height - font_height) / 2;
+                    float cursor_y_bottom = cursor_y_top + font_height;
 
                     // 绘制光标
                     SkPaint cursor_paint;
                     cursor_paint.setColor(SK_ColorBLACK);
-                    cursor_paint.setStrokeWidth(1);
+                    cursor_paint.setStrokeWidth(1.5f);
                     cursor_paint.setAntiAlias(true);
 
                     canvas->drawLine(cursor_x, cursor_y_top, cursor_x, cursor_y_bottom, cursor_paint);

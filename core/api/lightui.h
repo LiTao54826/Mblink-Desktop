@@ -1,19 +1,11 @@
 /**
  * @file lightui.h
- * @brief LightUI C API
- * 
- * 功能：
- * - 提供稳定的C语言API
- * - 用于各种语言的FFI绑定
- * - 窗口创建和管理
- * - JavaScript代码执行
- * - 函数绑定
- * 
- * 实现要点：
- * - 使用不透明指针隐藏实现细节
- * - 所有函数返回错误码
- * - 线程安全
- * - 内存管理清晰
+ * @brief LightUI C API - 跨语言绑定接口
+ *
+ * 特性：
+ * - 所有状态操作线程安全
+ * - 直接类型接口避免 JSON 序列化开销
+ * - 操作队列合并优化
  */
 
 #pragma once
@@ -22,219 +14,241 @@
 extern "C" {
 #endif
 
+#include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
-#include <stdbool.h>
+
+// ========== 导出宏 ==========
+#ifdef _WIN32
+#define LIGHTUI_API __declspec(dllexport)
+#else
+#define LIGHTUI_API __attribute__((visibility("default")))
+#endif
 
 // ========== 类型定义 ==========
 
-/**
- * @brief 窗口句柄（不透明指针）
- */
-typedef struct LightUIWindow* LightUIWindowHandle;
+typedef struct LightUIWindow* LightUIHandle;
 
-/**
- * @brief 错误码
- */
 typedef enum {
     LIGHTUI_OK = 0,
-    LIGHTUI_ERROR_INIT_FAILED = -1,
-    LIGHTUI_ERROR_INVALID_HANDLE = -2,
-    LIGHTUI_ERROR_INVALID_PARAMETER = -3,
-    LIGHTUI_ERROR_JS_EXECUTION_FAILED = -4,
-    LIGHTUI_ERROR_FUNCTION_NOT_FOUND = -5,
-    LIGHTUI_ERROR_OUT_OF_MEMORY = -6,
+    LIGHTUI_ERROR_INVALID_HANDLE = -1,
+    LIGHTUI_ERROR_INVALID_PARAM = -2,
+    LIGHTUI_ERROR_NOT_FOUND = -3,
+    LIGHTUI_ERROR_TYPE_MISMATCH = -4,
+    LIGHTUI_ERROR_OUT_OF_RANGE = -5,
+    LIGHTUI_ERROR_JS_ERROR = -6,
     LIGHTUI_ERROR_UNKNOWN = -99
 } LightUIError;
 
-/**
- * @brief 回调函数类型
- * @param args 参数（JSON字符串）
- * @param user_data 用户数据
- * @return 返回值（JSON字符串），调用者负责释放
- */
-typedef char* (*LightUICallback)(const char* args, void* user_data);
+typedef enum {
+    LIGHTUI_TYPE_NULL = 0,
+    LIGHTUI_TYPE_BOOL = 1,
+    LIGHTUI_TYPE_INT = 2,
+    LIGHTUI_TYPE_DOUBLE = 3,
+    LIGHTUI_TYPE_STRING = 4,
+    LIGHTUI_TYPE_ARRAY = 5,
+    LIGHTUI_TYPE_OBJECT = 6
+} LightUIType;
 
-// ========== 初始化和清理 ==========
+// 函数绑定回调
+typedef char* (*LightUICallback)(const char* args_json, void* user_data);
 
-/**
- * @brief 初始化LightUI
- * @return 错误码
- * 
- * TODO:
- * - [ ] 初始化SDL
- * - [ ] 初始化Skia
- * - [ ] 设置日志系统
- */
-int lightui_init(void);
+// 状态变更回调
+typedef void (*LightUIStateCallback)(const char* name, const char* value_json,
+                                     void* user_data);
 
-/**
- * @brief 清理LightUI
- * 
- * TODO:
- * - [ ] 清理所有窗口
- * - [ ] 清理SDL
- * - [ ] 清理Skia
- */
-void lightui_cleanup(void);
+// ========== 生命周期 ==========
 
-/**
- * @brief 获取版本字符串
- * @return 版本字符串（如"0.1.0"）
- */
-const char* lightui_get_version(void);
+LIGHTUI_API int lightui_init(void);
+LIGHTUI_API void lightui_cleanup(void);
+LIGHTUI_API const char* lightui_version(void);
 
 // ========== 窗口管理 ==========
 
-/**
- * @brief 创建窗口
- * @param title 窗口标题
- * @param width 窗口宽度
- * @param height 窗口高度
- * @return 窗口句柄，失败返回NULL
- * 
- * TODO:
- * - [ ] 创建Window对象
- * - [ ] 初始化QuickJS运行时
- * - [ ] 初始化DOM
- * - [ ] 返回句柄
- */
-LightUIWindowHandle lightui_create_window(const char* title, int width, int height);
+LIGHTUI_API LightUIHandle lightui_create(const char* title, int width,
+                                         int height);
+LIGHTUI_API void lightui_destroy(LightUIHandle handle);
+LIGHTUI_API void lightui_run(LightUIHandle handle);
+LIGHTUI_API void lightui_stop(LightUIHandle handle);
+LIGHTUI_API bool lightui_poll_events(LightUIHandle handle);
 
-/**
- * @brief 销毁窗口
- * @param window 窗口句柄
- * 
- * TODO:
- * - [ ] 清理QuickJS运行时
- * - [ ] 清理DOM
- * - [ ] 销毁Window对象
- */
-void lightui_destroy_window(LightUIWindowHandle window);
+LIGHTUI_API int lightui_set_title(LightUIHandle handle, const char* title);
+LIGHTUI_API int lightui_set_size(LightUIHandle handle, int width, int height);
 
-/**
- * @brief 显示窗口
- * @param window 窗口句柄
- * @return 错误码
- */
-int lightui_show_window(LightUIWindowHandle window);
+// ========== UI 加载 ==========
 
-/**
- * @brief 隐藏窗口
- * @param window 窗口句柄
- * @return 错误码
- */
-int lightui_hide_window(LightUIWindowHandle window);
-
-/**
- * @brief 设置窗口标题
- * @param window 窗口句柄
- * @param title 新标题
- * @return 错误码
- */
-int lightui_set_window_title(LightUIWindowHandle window, const char* title);
-
-/**
- * @brief 设置窗口大小
- * @param window 窗口句柄
- * @param width 宽度
- * @param height 高度
- * @return 错误码
- */
-int lightui_set_window_size(LightUIWindowHandle window, int width, int height);
-
-// ========== JavaScript执行 ==========
-
-/**
- * @brief 加载并执行JavaScript代码
- * @param window 窗口句柄
- * @param js_code JavaScript代码
- * @return 错误码
- * 
- * TODO:
- * - [ ] 执行JavaScript代码
- * - [ ] 处理错误
- * - [ ] 触发首次渲染
- */
-int lightui_load_ui(LightUIWindowHandle window, const char* js_code);
-
-/**
- * @brief 加载并执行JavaScript文件
- * @param window 窗口句柄
- * @param filepath 文件路径
- * @return 错误码
- */
-int lightui_load_ui_file(LightUIWindowHandle window, const char* filepath);
-
-/**
- * @brief 执行JavaScript代码
- * @param window 窗口句柄
- * @param js_code JavaScript代码
- * @param result 执行结果（JSON字符串），调用者负责释放
- * @return 错误码
- */
-int lightui_eval(LightUIWindowHandle window, const char* js_code, char** result);
+LIGHTUI_API int lightui_load_js(LightUIHandle handle, const char* js_code);
+LIGHTUI_API int lightui_load_file(LightUIHandle handle, const char* filepath);
+LIGHTUI_API int lightui_load_bytecode(LightUIHandle handle, const void* data,
+                                      size_t size);
 
 // ========== 函数绑定 ==========
 
-/**
- * @brief 绑定C函数到JavaScript
- * @param window 窗口句柄
- * @param name 函数名（在JavaScript中的名称）
- * @param callback 回调函数
- * @param user_data 用户数据
- * @return 错误码
- * 
- * TODO:
- * - [ ] 注册回调函数
- * - [ ] 在JavaScript中创建全局函数
- * - [ ] 处理参数和返回值转换
- */
-int lightui_bind_function(LightUIWindowHandle window, const char* name,
-                         LightUICallback callback, void* user_data);
+LIGHTUI_API int lightui_bind(LightUIHandle handle, const char* name,
+                             LightUICallback callback, void* user_data);
+LIGHTUI_API void lightui_unbind(LightUIHandle handle, const char* name);
 
-// ========== 事件循环 ==========
 
-/**
- * @brief 运行事件循环（阻塞）
- * @param window 窗口句柄
- * 
- * TODO:
- * - [ ] 进入主循环
- * - [ ] 处理SDL事件
- * - [ ] 触发布局和渲染
- * - [ ] 处理JavaScript事件
- */
-void lightui_run(LightUIWindowHandle window);
+// ========== 状态创建 ==========
 
-/**
- * @brief 处理一次事件（非阻塞）
- * @param window 窗口句柄
- * @return true表示应该继续，false表示应该退出
- */
-bool lightui_poll_events(LightUIWindowHandle window);
+LIGHTUI_API int lightui_state_create_null(LightUIHandle handle,
+                                          const char* name);
+LIGHTUI_API int lightui_state_create_bool(LightUIHandle handle,
+                                          const char* name, bool value);
+LIGHTUI_API int lightui_state_create_int(LightUIHandle handle, const char* name,
+                                         int64_t value);
+LIGHTUI_API int lightui_state_create_double(LightUIHandle handle,
+                                            const char* name, double value);
+LIGHTUI_API int lightui_state_create_string(LightUIHandle handle,
+                                            const char* name,
+                                            const char* value);
+LIGHTUI_API int lightui_state_create_array(LightUIHandle handle,
+                                           const char* name);
+LIGHTUI_API int lightui_state_create_object(LightUIHandle handle,
+                                            const char* name);
+LIGHTUI_API int lightui_state_create_json(LightUIHandle handle,
+                                          const char* name, const char* json);
 
-/**
- * @brief 停止事件循环
- * @param window 窗口句柄
- */
-void lightui_stop(LightUIWindowHandle window);
+// ========== 状态查询 ==========
 
-// ========== 错误处理 ==========
+LIGHTUI_API bool lightui_state_exists(LightUIHandle handle, const char* name);
+LIGHTUI_API LightUIType lightui_state_type(LightUIHandle handle,
+                                           const char* name);
+LIGHTUI_API void lightui_state_delete(LightUIHandle handle, const char* name);
 
-/**
- * @brief 获取最后一次错误信息
- * @return 错误信息字符串
- */
-const char* lightui_get_last_error(void);
+// ========== 状态读取（直接类型，无需 free） ==========
 
-/**
- * @brief 释放字符串内存
- * @param str 要释放的字符串
- */
-void lightui_free_string(char* str);
+LIGHTUI_API bool lightui_state_get_bool(LightUIHandle handle, const char* name);
+LIGHTUI_API int64_t lightui_state_get_int(LightUIHandle handle,
+                                          const char* name);
+LIGHTUI_API double lightui_state_get_double(LightUIHandle handle,
+                                            const char* name);
+LIGHTUI_API const char* lightui_state_get_string(LightUIHandle handle,
+                                                 const char* name);
+LIGHTUI_API int lightui_state_get_length(LightUIHandle handle,
+                                         const char* name);
+
+// ========== 状态读取（JSON，需要 free） ==========
+
+LIGHTUI_API char* lightui_state_get_json(LightUIHandle handle,
+                                         const char* name);
+LIGHTUI_API char* lightui_state_get_at(LightUIHandle handle, const char* name,
+                                       int index);
+LIGHTUI_API char* lightui_state_get_key(LightUIHandle handle, const char* name,
+                                        const char* key);
+
+// ========== 状态写入（直接类型，线程安全） ==========
+
+LIGHTUI_API int lightui_state_set_null(LightUIHandle handle, const char* name);
+LIGHTUI_API int lightui_state_set_bool(LightUIHandle handle, const char* name,
+                                       bool value);
+LIGHTUI_API int lightui_state_set_int(LightUIHandle handle, const char* name,
+                                      int64_t value);
+LIGHTUI_API int lightui_state_set_double(LightUIHandle handle, const char* name,
+                                         double value);
+LIGHTUI_API int lightui_state_set_string(LightUIHandle handle, const char* name,
+                                         const char* value);
+LIGHTUI_API int lightui_state_set_json(LightUIHandle handle, const char* name,
+                                       const char* json);
+
+// ========== 数组操作（线程安全） ==========
+
+LIGHTUI_API int lightui_state_array_push(LightUIHandle handle, const char* name,
+                                         const char* item_json);
+LIGHTUI_API int lightui_state_array_push_int(LightUIHandle handle,
+                                             const char* name, int64_t value);
+LIGHTUI_API int lightui_state_array_push_double(LightUIHandle handle,
+                                                const char* name, double value);
+LIGHTUI_API int lightui_state_array_push_string(LightUIHandle handle,
+                                                const char* name,
+                                                const char* value);
+LIGHTUI_API int lightui_state_array_push_bool(LightUIHandle handle,
+                                              const char* name, bool value);
+LIGHTUI_API int lightui_state_array_pop(LightUIHandle handle, const char* name);
+LIGHTUI_API int lightui_state_array_shift(LightUIHandle handle,
+                                          const char* name);
+LIGHTUI_API int lightui_state_array_unshift(LightUIHandle handle,
+                                            const char* name,
+                                            const char* item_json);
+LIGHTUI_API int lightui_state_array_remove(LightUIHandle handle,
+                                           const char* name, int index);
+LIGHTUI_API int lightui_state_array_clear(LightUIHandle handle,
+                                          const char* name);
+LIGHTUI_API int lightui_state_array_set(LightUIHandle handle, const char* name,
+                                        int index, const char* item_json);
+LIGHTUI_API int lightui_state_array_set_int(LightUIHandle handle,
+                                            const char* name, int index,
+                                            int64_t value);
+LIGHTUI_API int lightui_state_array_set_double(LightUIHandle handle,
+                                               const char* name, int index,
+                                               double value);
+LIGHTUI_API int lightui_state_array_set_string(LightUIHandle handle,
+                                               const char* name, int index,
+                                               const char* value);
+
+// ========== 对象操作（线程安全） ==========
+
+LIGHTUI_API int lightui_state_object_set(LightUIHandle handle, const char* name,
+                                         const char* key,
+                                         const char* value_json);
+LIGHTUI_API int lightui_state_object_set_int(LightUIHandle handle,
+                                             const char* name, const char* key,
+                                             int64_t value);
+LIGHTUI_API int lightui_state_object_set_double(LightUIHandle handle,
+                                                const char* name,
+                                                const char* key, double value);
+LIGHTUI_API int lightui_state_object_set_string(LightUIHandle handle,
+                                                const char* name,
+                                                const char* key,
+                                                const char* value);
+LIGHTUI_API int lightui_state_object_set_bool(LightUIHandle handle,
+                                              const char* name, const char* key,
+                                              bool value);
+LIGHTUI_API int lightui_state_object_remove(LightUIHandle handle,
+                                            const char* name, const char* key);
+LIGHTUI_API int lightui_state_object_clear(LightUIHandle handle,
+                                           const char* name);
+
+// ========== 数值操作（线程安全，原子） ==========
+
+LIGHTUI_API int lightui_state_increment(LightUIHandle handle, const char* name,
+                                        double delta);
+LIGHTUI_API int lightui_state_multiply(LightUIHandle handle, const char* name,
+                                       double factor);
+
+// ========== 字符串操作（线程安全） ==========
+
+LIGHTUI_API int lightui_state_string_append(LightUIHandle handle,
+                                            const char* name,
+                                            const char* suffix);
+LIGHTUI_API int lightui_state_string_prepend(LightUIHandle handle,
+                                             const char* name,
+                                             const char* prefix);
+
+// ========== 监听 ==========
+
+LIGHTUI_API int lightui_state_watch(LightUIHandle handle, const char* name,
+                                    LightUIStateCallback callback,
+                                    void* user_data);
+LIGHTUI_API void lightui_state_unwatch(LightUIHandle handle, int watch_id);
+
+// ========== 批量操作 ==========
+
+LIGHTUI_API void lightui_state_batch_begin(LightUIHandle handle);
+LIGHTUI_API void lightui_state_batch_end(LightUIHandle handle);
+
+// ========== 队列控制 ==========
+
+LIGHTUI_API void lightui_state_set_merge_mode(LightUIHandle handle,
+                                              bool enable);
+LIGHTUI_API int lightui_process_queue(LightUIHandle handle);
+LIGHTUI_API int lightui_queue_size(LightUIHandle handle);
+
+// ========== 工具函数 ==========
+
+LIGHTUI_API void lightui_free(void* ptr);
+LIGHTUI_API const char* lightui_last_error(void);
 
 #ifdef __cplusplus
 }
 #endif
-

@@ -181,6 +181,11 @@ function createDOMElement(vnode) {
         element = document.createElement(vnode.type);
     }
 
+    // 调试：检查是否是 input 元素
+    if (vnode.type === 'input') {
+        console.log('[createDOMElement] Creating INPUT, props.value:', vnode.props ? vnode.props.value : 'no props');
+    }
+
     // Set properties
     setDOMProps(element, {}, vnode.props || {}, isSVG);
 
@@ -421,8 +426,10 @@ function setDOMProps(element, oldProps, newProps, isSVG) {
         } else if (prop === 'value' && (element.tagName === 'INPUT' || element.tagName === 'TEXTAREA')) {
             // For controlled inputs, always check against current DOM value
             // Don't skip based on oldValue because DOM value can be changed by user input
+            console.log('[setDOMProps] Setting value on', element.tagName, 'from', element.value, 'to', newValue);
             if (element.value !== String(newValue)) {
                 element.value = newValue;
+                console.log('[setDOMProps] After set, element.value =', element.value);
             }
         } else if (newValue === oldValue) {
             // Skip unchanged non-event props

@@ -370,10 +370,14 @@ static JSValue JSElement_set_value(JSContext* ctx, JSValueConst this_val, JSValu
         return JS_UNDEFINED;
     }
 
+    // 调试输出
+    std::cout << "[JSElement_set_value] Setting value to: '" << str << "'" << std::endl;
+
     // 尝试作为 HTMLInputElement
     auto input_element = std::dynamic_pointer_cast<HTMLInputElement>(data->element);
     if (input_element) {
         input_element->SetValue(str, false);  // false = 不触发事件
+        std::cout << "[JSElement_set_value] HTMLInputElement value set, GetValue() = '" << input_element->GetValue() << "'" << std::endl;
         JS_FreeCString(ctx, str);
         return JS_UNDEFINED;
     }
