@@ -20,6 +20,7 @@
 #include "core/event/event_loop.h"
 #include "core/devtools/devtools_manager.h"
 #include "core/render/text/font_manager.h"
+#include "embedded_js.h"
 #include <SDL3/SDL.h>
 
 #include <iostream>
@@ -66,7 +67,7 @@ void PrintUsage(const char* program_name) {
     std::cout << "  " << program_name << " my_app.js --devtools" << std::endl;
 }
 
-// 查找 Preact 库路径
+// 查找 Preact 库路径（仅在不使用嵌入资源时需要）
 std::string FindPreactPath(const std::string& app_path) {
     fs::path app_dir = fs::path(app_path).parent_path();
     
@@ -90,6 +91,46 @@ std::string FindPreactPath(const std::string& app_path) {
     }
     
     return "";
+}
+
+// 使用嵌入的 JS 资源加载库
+bool LoadEmbeddedLibraries(QuickJSRuntime* runtime) {
+    using namespace lightui::embedded;
+    
+    if (!HasEmbeddedJS()) {
+        return false;
+    }
+    
+    try {
+        // 1. 加载 DOM polyfills
+        auto polyfills = GetDomPolyfillsJS();
+        if (!polyfills.empty()) {
+            std::string polyfills_str(polyfills);
+            runtime->Eval(polyfills_str, "dom.js");
+            std::cout << "  ✓ DOM polyfills loaded (embedded, " << polyfills.size() << " bytes)" << std::endl;
+        }
+        
+        // 2. 加载 Preact
+        auto preact = GetPreactJS();
+        if (!preact.empty()) {
+            std::string preact_str(preact);
+            runtime->Eval(preact_str, "preact.js");
+            std::cout << "  ✓ Preact loaded (embedded, " << preact.size() << " bytes)" << std::endl;
+        }
+        
+        // 3. 加载 Hooks
+        auto hooks = GetHooksJS();
+        if (!hooks.empty()) {
+            std::string hooks_str(hooks);
+            runtime->Eval(hooks_str, "hooks.js");
+            std::cout << "  ✓ Hooks loaded (embedded, " << hooks.size() << " bytes)" << std::endl;
+        }
+        
+        return true;
+    } catch (const std::exception& e) {
+        std::cerr << "  ✗ Error loading embedded JS: " << e.what() << std::endl;
+        return false;
+    }
 }
 
 int main(int argc, char** argv) {
@@ -184,87 +225,77 @@ int main(int argc, char** argv) {
         window_bindings.InitBindings();
         std::cout << "  ✓ Window bindings initialized" << std::endl;
 
-        // 5. 查找 Preact 路径
-        std::string preact_path = FindPreactPath(app_path);
-        if (preact_path.empty()) {
-            std::cerr << "  ✗ Could not find Preact library" << std::endl;
-            std::cerr << "  Please ensure js/preact/preact.js exists" << std::endl;
-            return 1;
-        }
-
-        // 6. 加载 DOM polyfills (必须在 Preact 之前)
-        std::cout << "[5/7] Loading DOM polyfills..." << std::endl;
-        std::string polyfills_path = preact_path + "/../polyfills/dom.js";
-        if (fs::exists(polyfills_path)) {
-            std::string polyfills_code = ReadFile(polyfills_path);
-            if (!polyfills_code.empty()) {
-                runtime->Eval(polyfills_code, "dom.js");
-                std::cout << "  ✓ DOM polyfills loaded" << std::endl;
-            }
+        // 5. 加载 JS 库（优先使用嵌入资源）
+        std::cout << "[5/7] Loading JavaScript libraries..." << std::endl;
+        
+        if (lightui::embedded::HasEmbeddedJS()) {
+            // 使用嵌入的 JS 资源
+            LoadEmbeddedLibraries(runtime.get());
         } else {
-            // 尝试其他路径
-            std::vector<std::string> polyfills_search_paths = {
-                "js/polyfills/dom.js",
-                "../js/polyfills/dom.js",
-                "../../js/polyfills/dom.js"
-            };
-            bool polyfills_loaded = false;
-            for (const auto& path : polyfills_search_paths) {
-                if (fs::exists(path)) {
-                    std::string polyfills_code = ReadFile(path);
-                    if (!polyfills_code.empty()) {
-                        runtime->Eval(polyfills_code, "dom.js");
-                        std::cout << "  ✓ DOM polyfills loaded from: " << path << std::endl;
-                        polyfills_loaded = true;
-                        break;
-                    }
+            // 回退到从文件系统加载
+            std::cout << "  ⚠ No embedded JS, loading from filesystem..." << std::endl;
+            
+            std::string preact_path = FindPreactPath(app_path);
+            if (preact_path.empty()) {
+                std::cerr << "  ✗ Could not find Preact library" << std::endl;
+                std::cerr << "  Please ensure js/preact/preact.js exists" << std::endl;
+                return 1;
+            }
+            
+            // 加载 DOM polyfills
+            std::string polyfills_path = preact_path + "/../polyfills/dom.js";
+            if (fs::exists(polyfills_path)) {
+                std::string polyfills_code = ReadFile(polyfills_path);
+                if (!polyfills_code.empty()) {
+                    runtime->Eval(polyfills_code, "dom.js");
+                    std::cout << "  ✓ DOM polyfills loaded" << std::endl;
                 }
             }
-            if (!polyfills_loaded) {
-                std::cout << "  ⚠ DOM polyfills not found, some features may not work" << std::endl;
+            
+            // 加载 Preact
+            std::string preact_code = ReadFile(preact_path + "/preact.js");
+            if (preact_code.empty()) {
+                std::cerr << "  ✗ Failed to load preact.js" << std::endl;
+                return 1;
+            }
+            runtime->Eval(preact_code, "preact.js");
+            std::cout << "  ✓ Preact loaded from: " << preact_path << std::endl;
+            
+            // 加载 Hooks
+            std::string hooks_code = ReadFile(preact_path + "/hooks.js");
+            if (!hooks_code.empty()) {
+                runtime->Eval(hooks_code, "hooks.js");
+                std::cout << "  ✓ Hooks library loaded" << std::endl;
             }
         }
 
-        // 7. 加载Preact库
-        std::cout << "[6/7] Loading Preact library..." << std::endl;
-        
-        std::string preact_code = ReadFile(preact_path + "/preact.js");
-        if (preact_code.empty()) {
-            std::cerr << "  ✗ Failed to load preact.js" << std::endl;
-            return 1;
-        }
-        runtime->Eval(preact_code, "preact.js");
-        std::cout << "  ✓ Preact loaded from: " << preact_path << std::endl;
-
-        // 加载Hooks库
-        std::string hooks_code = ReadFile(preact_path + "/hooks.js");
-        if (!hooks_code.empty()) {
-            runtime->Eval(hooks_code, "hooks.js");
-            std::cout << "  ✓ Hooks library loaded" << std::endl;
-        }
-
-        // 尝试加载 Chart.js 库（如果存在）
-        // 优先加载开发版本以便调试
+        // 6. 尝试加载 Chart.js 库（如果存在，仍从文件系统加载）
+        std::cout << "[6/7] Loading optional libraries..." << std::endl;
         std::vector<std::string> chartjs_search_paths = {
-            "js/chart.dev.js",    // 开发版本（优先）
+            "js/chart.dev.js",
             "js/chart.js",
             "../js/chart.dev.js",
             "../js/chart.js",
             "../../js/chart.dev.js",
             "../../js/chart.js"
         };
+        bool chartjs_loaded = false;
         for (const auto& path : chartjs_search_paths) {
             if (fs::exists(path)) {
                 std::string chartjs_code = ReadFile(path);
                 if (!chartjs_code.empty()) {
                     runtime->Eval(chartjs_code, "chart.js");
                     std::cout << "  ✓ Chart.js loaded from: " << path << std::endl;
+                    chartjs_loaded = true;
                     break;
                 }
             }
         }
+        if (!chartjs_loaded) {
+            std::cout << "  - Chart.js not found (optional)" << std::endl;
+        }
 
-        // 8. 加载并运行应用
+        // 7. 加载并运行用户应用
         std::cout << "[7/7] Loading application..." << std::endl;
         std::string app_code = ReadFile(app_path);
         if (app_code.empty()) {
