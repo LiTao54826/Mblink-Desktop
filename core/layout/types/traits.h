@@ -144,30 +144,6 @@ enum class BlockTextAlign {
 };
 
 //------------------------------------------------------------------------------
-// Style Traits (using CoreStyle from style.h)
-//------------------------------------------------------------------------------
-
-/// Block container style
-struct BlockContainerStyle : public CoreStyle {
-    BlockTextAlign text_align = BlockTextAlign::Auto;
-
-    /// Check if this is a block-level element
-    bool IsBlock() const {
-        return display == Display::Block || display == Display::Flex || display == Display::Grid;
-    }
-};
-
-/// Block item (child) style
-struct BlockItemStyle : public CoreStyle {
-    BoxGenerationMode box_generation_mode = BoxGenerationMode::Normal;
-
-    /// Check if this is a table element
-    bool IsTable() const {
-        return false; // Tables not yet supported
-    }
-};
-
-//------------------------------------------------------------------------------
 // Layout Tree Interface
 //------------------------------------------------------------------------------
 
@@ -212,16 +188,22 @@ public:
 };
 
 /// Interface for block layout
+/// 
+/// 接口使用统一的 Style 结构，布局算法直接从 Style 读取所需属性。
 class LayoutBlockContainer : public LayoutTree {
 public:
-    /// Get block container style
-    virtual const BlockContainerStyle& GetBlockContainerStyle(NodeId node) const = 0;
+    /// Get the style for a container node
+    /// @param node The node ID
+    /// @return Reference to the node's Style
+    virtual const Style& GetContainerStyle(NodeId node) const = 0;
+    
+    /// Get the style for a child node
+    /// @param node The child node ID
+    /// @return Reference to the child node's Style
+    virtual const Style& GetChildStyle(NodeId node) const = 0;
     
     /// Check if node is a text node (should be skipped in block layout)
     virtual bool IsTextNode(NodeId node) const = 0;
-    
-    /// Get block child style
-    virtual const BlockItemStyle& GetBlockChildStyle(NodeId node) const = 0;
 };
 
 /// Interface for flexbox layout

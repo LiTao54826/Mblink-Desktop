@@ -37,7 +37,7 @@ LayoutOutput ComputeBlockLayout(
     NodeId node_id,
     const LayoutInput& inputs
 ) {
-    const auto& style = tree.GetBlockContainerStyle(node_id);
+    const auto& style = tree.GetContainerStyle(node_id);
     
     // Resolve padding and border
     auto padding = ResolveOrZero(style.padding, inputs.parent_size.width);
@@ -128,7 +128,7 @@ LayoutOutput ComputeBlockLayoutInner(
     NodeId node_id,
     const LayoutInput& inputs
 ) {
-    const auto& style = tree.GetBlockContainerStyle(node_id);
+    const auto& style = tree.GetContainerStyle(node_id);
     
     // Resolve padding, border, margin
     auto padding = ResolveOrZero(style.padding, inputs.parent_size.width);
@@ -205,7 +205,8 @@ LayoutOutput ComputeBlockLayoutInner(
 
 
     
-    BlockTextAlign text_align = style.text_align;
+    // Convert block_text_align int to BlockTextAlign enum
+    BlockTextAlign text_align = static_cast<BlockTextAlign>(style.block_text_align);
     
     // 1. Generate items
     auto items = GenerateItemList(tree, node_id, container_content_box_size);
@@ -347,10 +348,10 @@ std::vector<BlockItem> GenerateItemList(
             continue;
         }
         
-        const auto& child_style = tree.GetBlockChildStyle(child_id);
+        const auto& child_style = tree.GetChildStyle(child_id);
 
         // Skip display:none children
-        if (child_style.box_generation_mode == BoxGenerationMode::None) {
+        if (child_style.GetBoxGenerationMode() == BoxGenerationMode::None) {
             continue;
         }
 
@@ -706,10 +707,10 @@ Size<float> PerformAbsoluteLayoutOnAbsoluteChildren(
             continue;
         }
 
-        const auto& child_style = tree.GetBlockChildStyle(item.node_id);
+        const auto& child_style = tree.GetChildStyle(item.node_id);
 
         // Skip display:none
-        if (child_style.box_generation_mode == BoxGenerationMode::None) {
+        if (child_style.GetBoxGenerationMode() == BoxGenerationMode::None) {
             continue;
         }
 

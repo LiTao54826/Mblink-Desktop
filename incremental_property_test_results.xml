@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuites tests="8" failures="0" disabled="0" errors="0" time="0.44" timestamp="2025-12-22T17:50:11.902" name="AllTests">
+  <testsuite name="IncrementalLayoutPropertyTest" tests="8" failures="0" disabled="0" skipped="0" errors="0" time="0.43" timestamp="2025-12-22T17:50:11.911">
+    <testcase name="CleanNodesRetainCache" file="C:\Users\Administrator\Desktop\code\MBink\tests\property\layout\test_incremental_layout_properties.cpp" line="140" status="run" result="completed" time="0.058" timestamp="2025-12-22T17:50:11.912" classname="IncrementalLayoutPropertyTest" />
+    <testcase name="NoDirtyNodesNoLayout" file="C:\Users\Administrator\Desktop\code\MBink\tests\property\layout\test_incremental_layout_properties.cpp" line="222" status="run" result="completed" time="0.04" timestamp="2025-12-22T17:50:11.972" classname="IncrementalLayoutPropertyTest" />
+    <testcase name="DirtyMarkPropagatesUpward" file="C:\Users\Administrator\Desktop\code\MBink\tests\property\layout\test_incremental_layout_properties.cpp" line="271" status="run" result="completed" time="0.07" timestamp="2025-12-22T17:50:12.013" classname="IncrementalLayoutPropertyTest" />
+    <testcase name="FixedSizeNodeIsolatesDirtyMark" file="C:\Users\Administrator\Desktop\code\MBink\tests\property\layout\test_incremental_layout_properties.cpp" line="318" status="run" result="completed" time="0.045" timestamp="2025-12-22T17:50:12.086" classname="IncrementalLayoutPropertyTest" />
+    <testcase name="AbsolutePositionedIsolatesDirtyMark" file="C:\Users\Administrator\Desktop\code\MBink\tests\property\layout\test_incremental_layout_properties.cpp" line="368" status="run" result="completed" time="0.039" timestamp="2025-12-22T17:50:12.134" classname="IncrementalLayoutPropertyTest" />
+    <testcase name="FlexChildPropagesToParent" file="C:\Users\Administrator\Desktop\code\MBink\tests\property\layout\test_incremental_layout_properties.cpp" line="415" status="run" result="completed" time="0.043" timestamp="2025-12-22T17:50:12.177" classname="IncrementalLayoutPropertyTest" />
+    <testcase name="IndependentSubtreesRetainCache" file="C:\Users\Administrator\Desktop\code\MBink\tests\property\layout\test_incremental_layout_properties.cpp" line="452" status="run" result="completed" time="0.062" timestamp="2025-12-22T17:50:12.223" classname="IncrementalLayoutPropertyTest" />
+    <testcase name="PropagationStopsAtDirtyAncestor" file="C:\Users\Administrator\Desktop\code\MBink\tests\property\layout\test_incremental_layout_properties.cpp" line="513" status="run" result="completed" time="0.051" timestamp="2025-12-22T17:50:12.288" classname="IncrementalLayoutPropertyTest" />
+  </testsuite>
+</testsuites>

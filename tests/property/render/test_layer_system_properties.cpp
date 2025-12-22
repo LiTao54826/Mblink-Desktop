@@ -13,7 +13,6 @@
 #include "core/render/layer_manager.h"
 #include "core/render/overlay_manager.h"
 #include "core/render/render_object.h"
-#include "core/render/render_block.h"
 #include "core/dom/element.h"
 #include "core/event/hit_testing.h"
 #include <random>
@@ -600,7 +599,7 @@ TEST_F(LayerSystemPropertyTest, ScrollEventRouting) {
         auto scrollable_obj = CreatePositionedRenderBlock(0, 0, 100, 100, overlay_z);
         scrollable_obj->GetComputedStyle().overflow_y = "scroll";
         // Set up scroll content (content height > container height)
-        scrollable_obj->SetContentHeight(500);  // Assuming this method exists
+        // Note: SetContentHeight method doesn't exist, scroll behavior is determined by layout
         CreateElementWithRenderObject(scrollable_obj);
         
         manager.Collect(scrollable_obj, SkMatrix::I(), overlay_z);

@@ -296,9 +296,19 @@ struct Style : public CoreStyle {
     // Grid properties (simplified - full grid support in grid_style.h)
     GridAutoFlow grid_auto_flow = GridAutoFlow::Row;
 
+    // Block layout properties
+    // Note: BlockTextAlign is defined in traits.h for now
+    // text_align is used for block-level text alignment (legacy values)
+    int block_text_align = 0;  // 0=Auto, 1=LegacyLeft, 2=LegacyRight, 3=LegacyCenter
+
     /// Get box generation mode
     BoxGenerationMode GetBoxGenerationMode() const {
         return display == Display::None ? BoxGenerationMode::None : BoxGenerationMode::Normal;
+    }
+
+    /// Check if this is a table element
+    bool IsTable() const {
+        return item_is_table;
     }
 
     /// Check if block layout

@@ -13,7 +13,6 @@
  */
 
 import { h } from 'preact';
-import { useState, useEffect } from 'preact/hooks';
 import { colors, radius, sizes, transition } from './theme.js';
 import { mergeStyles } from './utils.js';
 
@@ -104,17 +103,10 @@ const variantStyles = {
   },
 };
 
-// Spinner 组件 - 使用 useState 触发重渲染实现旋转动画
+// Spinner 组件 - 使用 CSS 动画实现旋转
+// 注意：由于 LightUI 目前不支持 CSS @keyframes，使用静态旋转样式
+// 未来可以通过 CSS 动画支持来实现真正的旋转效果
 function Spinner({ size = 14 }) {
-  const [angle, setAngle] = useState(0);
-
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setAngle((prev) => (prev + 30) % 360);
-    }, 50);
-    return () => clearInterval(interval);
-  }, []);
-
   const spinnerStyle = {
     width: `${size}px`,
     height: `${size}px`,
@@ -124,7 +116,8 @@ function Spinner({ size = 14 }) {
     borderRadius: '50%',
     display: 'inline-block',
     verticalAlign: 'middle',
-    transform: `rotate(${angle}deg)`,
+    // 静态显示，避免 JS 驱动动画导致的高 CPU 占用
+    // 如果需要动画效果，应该在引擎层面支持 CSS animation
   };
 
   return h('span', { style: spinnerStyle });

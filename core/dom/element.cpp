@@ -81,7 +81,12 @@ void Element::SetAttribute(const std::string& name, const std::string& value) {
     }
 
     // 智能脏标记：根据属性类型精确标记
-    if (IsLayoutAttribute(name)) {
+    if (name == "style") {
+        // style 属性特殊处理：只标记 STYLE | PAINT
+        // 布局相关的变化会在 Element::SetStyle 中单独处理
+        // 这避免了 hover 等伪类变化时不必要的布局重算
+        MarkDirty(DirtyType::STYLE | DirtyType::PAINT);
+    } else if (IsLayoutAttribute(name)) {
         // 布局属性改变：需要重新布局和绘制
         MarkDirty(DirtyType::LAYOUT | DirtyType::PAINT);
     } else if (IsStyleAttribute(name)) {

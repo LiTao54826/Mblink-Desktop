@@ -73,14 +73,16 @@ ComputedStyle StyleResolver::ResolveStyle(std::shared_ptr<Element> element,
     // 4. CSS 规则（<style> 标签和外部样式表）
     ApplyCSSRules(style, element);
 
-    // 5. 伪类样式（如 :hover, :active, :focus）
-    ApplyPseudoClassStyles(style, element);
-
-    // 6. 伪元素样式（::before, ::after）
+    // 5. 伪元素样式（::before, ::after）
     ApplyPseudoElementStyles(style, element);
 
-    // 7. 内联样式（最高优先级）- 覆盖所有
+    // 6. 内联样式
     ApplyInlineStyle(style, element);
+
+    // 7. 伪类样式（如 :hover, :active, :focus）- 最高优先级
+    // 放在内联样式之后，确保交互状态能够覆盖静态样式
+    // 这符合用户对交互反馈的预期：hover 应该有视觉变化
+    ApplyPseudoClassStyles(style, element);
 
     return style;
 }
@@ -2253,26 +2255,77 @@ void StyleResolver::ApplyPseudoClassStyles(ComputedStyle& style, std::shared_ptr
     std::string tag_name = element->GetTagName();
 
     // ========== :hover 伪类样式 ==========
-    // 参考 Chrome 浏览器默认行为
+    // 为有背景色的元素提供视觉反馈
     if (element->HasPseudoClass("hover")) {
-        if (tag_name == "button") {
-            // 按钮悬停：背景色略变深 (Chrome 默认: rgb(232, 232, 232))
-            style.background_color = "#E8E8E8";
-            // 边框颜色保持不变，与浏览器行为一致
+        if (tag_name == "button" || tag_name == "a") {
+            // 获取当前背景色，应用变暗效果
+            if (!style.background_color.empty() && style.background_color != "transparent") {
+                // 解析当前背景色
+                SkColor current_color = Color::Parse(style.background_color);
+                
+                // 将颜色变暗 15%（hover 效果）
+                int r = SkColorGetR(current_color);
+                int g = SkColorGetG(current_color);
+                int b = SkColorGetB(current_color);
+                int a = SkColorGetA(current_color);
+                
+                // 变暗：乘以 0.85
+                r = static_cast<int>(r * 0.85);
+                g = static_cast<int>(g * 0.85);
+                b = static_cast<int>(b * 0.85);
+                
+                // 设置新的背景色
+                char hex[16];
+                if (a == 255) {
+                    snprintf(hex, sizeof(hex), "#%02X%02X%02X", r, g, b);
+                } else {
+                    snprintf(hex, sizeof(hex), "#%02X%02X%02X%02X", r, g, b, a);
+                }
+                style.background_color = hex;
+            } else {
+                // 没有背景色时，使用默认的浅灰色
+                style.background_color = "#E8E8E8";
+            }
         }
-        else if (tag_name == "a") {
-            // 链接悬停：下划线
+        
+        // 链接悬停：下划线
+        if (tag_name == "a") {
             style.text_decoration = "underline";
         }
     }
 
     // ========== :active 伪类样式 ==========
-    // 参考 Chrome 浏览器默认行为
+    // 为有背景色的元素提供按下反馈
     if (element->HasPseudoClass("active")) {
-        if (tag_name == "button") {
-            // 按钮按下：背景色更深 (Chrome 默认: rgb(224, 224, 224))
-            style.background_color = "#E0E0E0";
-            // 边框颜色保持不变，与浏览器行为一致
+        if (tag_name == "button" || tag_name == "a") {
+            // 获取当前背景色，应用更深的变暗效果
+            if (!style.background_color.empty() && style.background_color != "transparent") {
+                // 解析当前背景色
+                SkColor current_color = Color::Parse(style.background_color);
+                
+                // 变暗 25%（active 效果比 hover 更深）
+                int r = SkColorGetR(current_color);
+                int g = SkColorGetG(current_color);
+                int b = SkColorGetB(current_color);
+                int a = SkColorGetA(current_color);
+                
+                // 变暗：乘以 0.75
+                r = static_cast<int>(r * 0.75);
+                g = static_cast<int>(g * 0.75);
+                b = static_cast<int>(b * 0.75);
+                
+                // 设置新的背景色
+                char hex[16];
+                if (a == 255) {
+                    snprintf(hex, sizeof(hex), "#%02X%02X%02X", r, g, b);
+                } else {
+                    snprintf(hex, sizeof(hex), "#%02X%02X%02X%02X", r, g, b, a);
+                }
+                style.background_color = hex;
+            } else {
+                // 没有背景色时，使用默认的深灰色
+                style.background_color = "#E0E0E0";
+            }
         }
     }
 

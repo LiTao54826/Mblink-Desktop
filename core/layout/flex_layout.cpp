@@ -27,7 +27,7 @@ static LayoutOutput ComputePreliminary(
 
 static FlexAlgoConstants ComputeConstants(
     LayoutFlexboxContainer& tree,
-    const FlexboxContainerStyle& style,
+    const Style& style,
     Size<std::optional<float>> known_dimensions,
     Size<std::optional<float>> parent_size
 );
@@ -287,7 +287,7 @@ LayoutOutput ComputeFlexboxLayout(
     NodeId node,
     const LayoutInput& inputs
 ) {
-    const auto& style = tree.GetFlexboxContainerStyle(node);
+    const auto& style = tree.GetContainerStyle(node);
     
     // Pull these out earlier to avoid borrowing issues
     auto aspect_ratio = style.aspect_ratio;
@@ -372,7 +372,7 @@ static LayoutOutput ComputePreliminary(
     NodeId node,
     const LayoutInput& inputs
 ) {
-    const auto& style = tree.GetFlexboxContainerStyle(node);
+    const auto& style = tree.GetContainerStyle(node);
     
     // Define some general constants we will need for the remainder of the algorithm
     auto constants = ComputeConstants(tree, style, inputs.known_dimensions, inputs.parent_size);
@@ -465,7 +465,7 @@ static LayoutOutput ComputePreliminary(
     size_t len = tree.ChildCount(node);
     for (size_t order = 0; order < len; ++order) {
         NodeId child = tree.GetChildId(node, order);
-        if (tree.GetFlexboxChildStyle(child).box_generation_mode == BoxGenerationMode::None) {
+        if (tree.GetChildStyle(child).GetBoxGenerationMode() == BoxGenerationMode::None) {
             Layout layout;
             layout.order = static_cast<uint32_t>(order);
             tree.SetUnroundedLayout(child, layout);
@@ -511,7 +511,7 @@ static LayoutOutput ComputePreliminary(
 
 static FlexAlgoConstants ComputeConstants(
     LayoutFlexboxContainer& tree,
-    const FlexboxContainerStyle& style,
+    const Style& style,
     Size<std::optional<float>> known_dimensions,
     Size<std::optional<float>> parent_size
 ) {
@@ -563,8 +563,9 @@ static FlexAlgoConstants ComputeConstants(
         MaybeResolve(style.gap.height, parent_size.height).value_or(0.0f)
     };
 
-    constants.align_items = style.align_items;
-    constants.align_content = style.align_content;
+    // Handle optional alignment properties with defaults
+    constants.align_items = style.align_items.value_or(AlignItems::Stretch);
+    constants.align_content = style.align_content.value_or(AlignContent::Stretch);
     constants.justify_content = style.justify_content;
 
     // Compute node outer size
@@ -604,10 +605,10 @@ static std::vector<FlexItem> GenerateAnonymousFlexItems(
 
     for (size_t i = 0; i < child_count; ++i) {
         NodeId child = tree.GetChildId(node, i);
-        const auto& child_style = tree.GetFlexboxChildStyle(child);
+        const auto& child_style = tree.GetChildStyle(child);
 
-        // Skip display:none items
-        if (child_style.box_generation_mode == BoxGenerationMode::None) {
+        // Skip display:none items (use GetBoxGenerationMode() for Style)
+        if (child_style.GetBoxGenerationMode() == BoxGenerationMode::None) {
             continue;
         }
 
@@ -741,7 +742,7 @@ static void DetermineFlexBaseSize(
     std::vector<FlexItem>& flex_items
 ) {
     for (auto& item : flex_items) {
-        const auto& child_style = tree.GetFlexboxChildStyle(item.node);
+        const auto& child_style = tree.GetChildStyle(item.node);
 
         // Resolve flex_basis
         auto flex_basis = child_style.flex_basis;
@@ -1755,15 +1756,15 @@ static Size<float> PerformAbsoluteLayoutOnAbsoluteChildren(
     size_t child_count = tree.ChildCount(node);
     for (size_t i = 0; i < child_count; ++i) {
         NodeId child = tree.GetChildId(node, i);
-        const auto& child_style = tree.GetFlexboxChildStyle(child);
+        const auto& child_style = tree.GetChildStyle(child);
 
         // Skip non-absolute/fixed children
         if (child_style.position != Position::Absolute && child_style.position != Position::Fixed) {
             continue;
         }
 
-        // Skip display:none
-        if (child_style.box_generation_mode == BoxGenerationMode::None) {
+        // Skip display:none (use GetBoxGenerationMode() for Style)
+        if (child_style.GetBoxGenerationMode() == BoxGenerationMode::None) {
             continue;
         }
 

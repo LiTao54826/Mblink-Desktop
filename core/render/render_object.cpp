@@ -392,30 +392,10 @@ void RenderObject::UpdateLayoutStyle() {
         return;
     }
 
-    // 转换 ComputedStyle 到布局 Style
+    // 转换 ComputedStyle 到布局 Style（统一样式存储）
     layout_style_ = ConvertComputedStyleToLayoutStyle(computed_style_);
 
-    // 更新 Block 样式
-    CopyCoreStyleFrom(block_container_style_, layout_style_);
-    CopyCoreStyleFrom(block_item_style_, layout_style_);
-
-    // 更新 Flexbox 样式
-    CopyCoreStyleFrom(flex_container_style_, layout_style_);
-    flex_container_style_.flex_direction = layout_style_.flex_direction;
-    flex_container_style_.flex_wrap = layout_style_.flex_wrap;
-    flex_container_style_.align_items = layout_style_.align_items.value_or(AlignItems::Stretch);
-    flex_container_style_.align_content = layout_style_.align_content.value_or(AlignContent::Stretch);
-    flex_container_style_.justify_content = layout_style_.justify_content;
-    flex_container_style_.gap = layout_style_.gap;
-
-    CopyCoreStyleFrom(flex_item_style_, layout_style_);
-    flex_item_style_.align_self = layout_style_.align_self;
-    flex_item_style_.flex_grow = layout_style_.flex_grow;
-    flex_item_style_.flex_shrink = layout_style_.flex_shrink;
-    flex_item_style_.flex_basis = layout_style_.flex_basis;
-    flex_item_style_.order = layout_style_.order;
-
-    // 更新 Grid 样式
+    // 更新 Grid 特有样式（这些属性不在统一的 Style 中）
     CopyCoreStyleFrom(grid_container_style_, layout_style_);
     grid_container_style_.align_items = layout_style_.align_items;
     grid_container_style_.justify_items = layout_style_.justify_items;

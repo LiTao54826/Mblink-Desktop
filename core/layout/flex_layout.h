@@ -21,43 +21,25 @@
 namespace lightui {
 
 //------------------------------------------------------------------------------
-// Flexbox Style Traits
-//------------------------------------------------------------------------------
-
-/// Style properties for flexbox containers
-struct FlexboxContainerStyle : public CoreStyle {
-    FlexDirection flex_direction = FlexDirection::Row;
-    FlexWrap flex_wrap = FlexWrap::NoWrap;
-    AlignItems align_items = AlignItems::Stretch;
-    AlignContent align_content = AlignContent::Stretch;
-    std::optional<JustifyContent> justify_content = std::nullopt;
-    Size<LengthPercentage> gap = {LengthPercentage::Zero(), LengthPercentage::Zero()};
-};
-
-/// Style properties for flexbox items (children)
-struct FlexboxItemStyle : public CoreStyle {
-    BoxGenerationMode box_generation_mode = BoxGenerationMode::Normal;
-    std::optional<AlignSelf> align_self = std::nullopt;  // None means inherit from parent
-    float flex_grow = 0.0f;
-    float flex_shrink = 1.0f;
-    Dimension flex_basis = Dimension::Auto();
-    int order = 0;  // CSS order property for flex item ordering
-};
-
-//------------------------------------------------------------------------------
 // Flexbox Layout Tree Interface
 //------------------------------------------------------------------------------
 
 /// Interface for trees that support flexbox layout
+/// 
+/// 接口使用统一的 Style 结构，布局算法直接从 Style 读取所需属性。
 class LayoutFlexboxContainer : public LayoutTree {
 public:
     virtual ~LayoutFlexboxContainer() = default;
     
-    /// Get the flexbox container style for a node
-    virtual const FlexboxContainerStyle& GetFlexboxContainerStyle(NodeId node) const = 0;
+    /// Get the style for a container node
+    /// @param node The node ID
+    /// @return Reference to the node's Style
+    virtual const Style& GetContainerStyle(NodeId node) const = 0;
     
-    /// Get the flexbox item style for a child node
-    virtual const FlexboxItemStyle& GetFlexboxChildStyle(NodeId node) const = 0;
+    /// Get the style for a child node
+    /// @param node The child node ID
+    /// @return Reference to the child node's Style
+    virtual const Style& GetChildStyle(NodeId node) const = 0;
 };
 
 //------------------------------------------------------------------------------

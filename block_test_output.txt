@@ -1,0 +1,57 @@
+Note: Google Test filter = BlockLayoutTest.*
+[==========] Running 24 tests from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 24 tests from BlockLayoutTest
+[ RUN      ] BlockLayoutTest.DisplayBlock
+[       OK ] BlockLayoutTest.DisplayBlock (0 ms)
+[ RUN      ] BlockLayoutTest.DisplayFlex
+[       OK ] BlockLayoutTest.DisplayFlex (0 ms)
+[ RUN      ] BlockLayoutTest.DisplayGrid
+[       OK ] BlockLayoutTest.DisplayGrid (0 ms)
+[ RUN      ] BlockLayoutTest.DisplayNone
+[       OK ] BlockLayoutTest.DisplayNone (0 ms)
+[ RUN      ] BlockLayoutTest.PositionRelative
+[       OK ] BlockLayoutTest.PositionRelative (0 ms)
+[ RUN      ] BlockLayoutTest.PositionAbsolute
+[       OK ] BlockLayoutTest.PositionAbsolute (0 ms)
+[ RUN      ] BlockLayoutTest.PositionFixed
+[       OK ] BlockLayoutTest.PositionFixed (0 ms)
+[ RUN      ] BlockLayoutTest.PositionSticky
+[       OK ] BlockLayoutTest.PositionSticky (0 ms)
+[ RUN      ] BlockLayoutTest.BoxSizingContentBox
+[       OK ] BlockLayoutTest.BoxSizingContentBox (0 ms)
+[ RUN      ] BlockLayoutTest.BoxSizingBorderBox
+[       OK ] BlockLayoutTest.BoxSizingBorderBox (0 ms)
+[ RUN      ] BlockLayoutTest.OverflowVisible
+[       OK ] BlockLayoutTest.OverflowVisible (0 ms)
+[ RUN      ] BlockLayoutTest.OverflowHidden
+[       OK ] BlockLayoutTest.OverflowHidden (0 ms)
+[ RUN      ] BlockLayoutTest.OverflowScroll
+[       OK ] BlockLayoutTest.OverflowScroll (0 ms)
+[ RUN      ] BlockLayoutTest.LengthPixels
+[       OK ] BlockLayoutTest.LengthPixels (0 ms)
+[ RUN      ] BlockLayoutTest.LengthPercent
+[       OK ] BlockLayoutTest.LengthPercent (0 ms)
+[ RUN      ] BlockLayoutTest.ResolvePercentage
+[       OK ] BlockLayoutTest.ResolvePercentage (0 ms)
+[ RUN      ] BlockLayoutTest.ResolveLength
+[       OK ] BlockLayoutTest.ResolveLength (0 ms)
+[ RUN      ] BlockLayoutTest.MarginCollapsePositive
+[       OK ] BlockLayoutTest.MarginCollapsePositive (0 ms)
+[ RUN      ] BlockLayoutTest.MarginCollapseNegative
+[       OK ] BlockLayoutTest.MarginCollapseNegative (0 ms)
+[ RUN      ] BlockLayoutTest.MarginCollapseMixed
+[       OK ] BlockLayoutTest.MarginCollapseMixed (0 ms)
+[ RUN      ] BlockLayoutTest.AutoMarginCentering
+[       OK ] BlockLayoutTest.AutoMarginCentering (0 ms)
+[ RUN      ] BlockLayoutTest.MinWidthConstraint
+[       OK ] BlockLayoutTest.MinWidthConstraint (0 ms)
+[ RUN      ] BlockLayoutTest.MaxWidthConstraint
+[       OK ] BlockLayoutTest.MaxWidthConstraint (0 ms)
+[ RUN      ] BlockLayoutTest.MinMaxWidthConstraint
+[       OK ] BlockLayoutTest.MinMaxWidthConstraint (0 ms)
+[----------] 24 tests from BlockLayoutTest (2 ms total)
+
+[----------] Global test environment tear-down
+[==========] 24 tests from 1 test suite ran. (3 ms total)
+[  PASSED  ] 24 tests.

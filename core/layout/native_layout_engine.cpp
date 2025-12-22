@@ -661,6 +661,33 @@ void NativeLayoutEngine::UpdateStyle(RenderObject* render_obj, const ComputedSty
     if (it != render_to_node_.end()) {
         LayoutNode* node = GetNode(it->second);
         if (node) {
+            // 调试日志
+            static bool debug_hover = std::getenv("LIGHTUI_DEBUG_HOVER") != nullptr;
+            
+            // 关键修复：检查这个 RenderObject 是否真的对应这个 LayoutNode
+            // 对于 IFC 容器的子节点（包括匿名块中的 inline 元素），
+            // 它们被映射到父节点/匿名块的 LayoutNode
+            // 这种情况下不应该更新父节点的样式
+            // 
+            // 检查条件：
+            // 1. 匿名块的 render_obj 是 nullptr
+            // 2. IFC 容器的子节点被映射到父节点
+            if (node->render_obj != render_obj) {
+                // 这是 IFC 子节点或匿名块中的 inline 元素，跳过样式更新
+                // 它们的布局由 IFC 处理，不需要单独的 LayoutNode 样式
+                if (debug_hover) {
+                    auto dom_node = render_obj->GetNode();
+                    std::string tag_name = "unknown";
+                    if (dom_node && dom_node->GetNodeType() == NodeType::ELEMENT_NODE) {
+                        auto elem = std::dynamic_pointer_cast<Element>(dom_node);
+                        if (elem) tag_name = elem->GetTagName();
+                    }
+                    std::cout << "[UpdateStyle] Skipping <" << tag_name << "> (IFC child, node->render_obj=" 
+                              << (node->render_obj ? "valid" : "null") << ")" << std::endl;
+                }
+                return;
+            }
+            
             // 转换新样式
             Style new_style = ConvertStyle(style);
 
@@ -670,12 +697,25 @@ void NativeLayoutEngine::UpdateStyle(RenderObject* render_obj, const ComputedSty
 
             // 检查影响布局的属性是否变化
             const Style& old_style = node->style;
+            
+            // 获取元素标签名用于调试
+            std::string tag_name = "unknown";
+            if (debug_hover) {
+                auto dom_node = render_obj->GetNode();
+                if (dom_node && dom_node->GetNodeType() == NodeType::ELEMENT_NODE) {
+                    auto elem = std::dynamic_pointer_cast<Element>(dom_node);
+                    if (elem) tag_name = elem->GetTagName();
+                }
+            }
 
             // Display 和 Position 变化会影响布局
             if (old_style.display != new_style.display ||
                 old_style.position != new_style.position ||
                 old_style.box_sizing != new_style.box_sizing) {
                 layout_changed = true;
+                if (debug_hover) {
+                    std::cout << "[UpdateStyle] <" << tag_name << "> Layout changed: display/position/box_sizing" << std::endl;
+                }
             }
 
             // 尺寸属性变化会影响布局
@@ -686,6 +726,9 @@ void NativeLayoutEngine::UpdateStyle(RenderObject* render_obj, const ComputedSty
                 old_style.max_size.width != new_style.max_size.width ||
                 old_style.max_size.height != new_style.max_size.height) {
                 layout_changed = true;
+                if (debug_hover) {
+                    std::cout << "[UpdateStyle] <" << tag_name << "> Layout changed: size" << std::endl;
+                }
             }
 
             // 盒模型属性变化会影响布局
@@ -694,6 +737,36 @@ void NativeLayoutEngine::UpdateStyle(RenderObject* render_obj, const ComputedSty
                 old_style.border != new_style.border ||
                 old_style.inset != new_style.inset) {
                 layout_changed = true;
+                if (debug_hover) {
+                    std::cout << "[UpdateStyle] <" << tag_name << "> Layout changed: padding/margin/border/inset" << std::endl;
+                    if (old_style.padding != new_style.padding) {
+                        std::cout << "  padding changed: " 
+                                  << old_style.padding.left.value << "," << old_style.padding.right.value 
+                                  << "," << old_style.padding.top.value << "," << old_style.padding.bottom.value
+                                  << " -> "
+                                  << new_style.padding.left.value << "," << new_style.padding.right.value 
+                                  << "," << new_style.padding.top.value << "," << new_style.padding.bottom.value << std::endl;
+                    }
+                    if (old_style.margin != new_style.margin) {
+                        std::cout << "  margin changed: " 
+                                  << old_style.margin.left.value << "," << old_style.margin.right.value 
+                                  << "," << old_style.margin.top.value << "," << old_style.margin.bottom.value
+                                  << " -> "
+                                  << new_style.margin.left.value << "," << new_style.margin.right.value 
+                                  << "," << new_style.margin.top.value << "," << new_style.margin.bottom.value << std::endl;
+                    }
+                    if (old_style.border != new_style.border) {
+                        std::cout << "  border changed: " 
+                                  << old_style.border.left.value << "," << old_style.border.right.value 
+                                  << "," << old_style.border.top.value << "," << old_style.border.bottom.value
+                                  << " -> "
+                                  << new_style.border.left.value << "," << new_style.border.right.value 
+                                  << "," << new_style.border.top.value << "," << new_style.border.bottom.value << std::endl;
+                    }
+                    if (old_style.inset != new_style.inset) {
+                        std::cout << "  inset changed" << std::endl;
+                    }
+                }
             }
 
             // Flexbox 属性变化会影响布局
@@ -722,120 +795,25 @@ void NativeLayoutEngine::UpdateStyle(RenderObject* render_obj, const ComputedSty
                 layout_changed = true;
             }
 
-            // 更新样式
+            // 更新样式 - 只需更新统一的 style 字段
             node->style = new_style;
 
-            // Also update all the specialized style structs
-            node->block_container_style.display = node->style.display;
-            node->block_container_style.box_sizing = node->style.box_sizing;
-            node->block_container_style.position = node->style.position;
-            node->block_container_style.overflow = node->style.overflow;
-            node->block_container_style.scrollbar_width = node->style.scrollbar_width;
-            node->block_container_style.size = node->style.size;
-            node->block_container_style.min_size = node->style.min_size;
-            node->block_container_style.max_size = node->style.max_size;
-            node->block_container_style.padding = node->style.padding;
-            node->block_container_style.border = node->style.border;
-            node->block_container_style.margin = node->style.margin;
-            node->block_container_style.inset = node->style.inset;
-
-            node->block_item_style.display = node->style.display;
-            node->block_item_style.box_sizing = node->style.box_sizing;
-            node->block_item_style.position = node->style.position;
-            node->block_item_style.overflow = node->style.overflow;
-            node->block_item_style.scrollbar_width = node->style.scrollbar_width;
-            node->block_item_style.size = node->style.size;
-            node->block_item_style.min_size = node->style.min_size;
-            node->block_item_style.max_size = node->style.max_size;
-            node->block_item_style.padding = node->style.padding;
-            node->block_item_style.border = node->style.border;
-            node->block_item_style.margin = node->style.margin;
-            node->block_item_style.inset = node->style.inset;
-
-            node->grid_item_style.display = node->style.display;
-            node->grid_item_style.box_sizing = node->style.box_sizing;
-            node->grid_item_style.position = node->style.position;
-            node->grid_item_style.overflow = node->style.overflow;
-            node->grid_item_style.scrollbar_width = node->style.scrollbar_width;
-            node->grid_item_style.size = node->style.size;
-            node->grid_item_style.min_size = node->style.min_size;
-            node->grid_item_style.max_size = node->style.max_size;
-            node->grid_item_style.padding = node->style.padding;
-            node->grid_item_style.border = node->style.border;
-            node->grid_item_style.margin = node->style.margin;
-            node->grid_item_style.inset = node->style.inset;
-
-            // 关键修复：更新 flexbox_item_style，这是 flex 布局获取子元素尺寸的来源
-            node->flexbox_item_style.display = node->style.display;
-            node->flexbox_item_style.box_sizing = node->style.box_sizing;
-            node->flexbox_item_style.position = node->style.position;
-            node->flexbox_item_style.overflow = node->style.overflow;
-            node->flexbox_item_style.scrollbar_width = node->style.scrollbar_width;
-            node->flexbox_item_style.size = node->style.size;
-            node->flexbox_item_style.min_size = node->style.min_size;
-            node->flexbox_item_style.max_size = node->style.max_size;
-            node->flexbox_item_style.padding = node->style.padding;
-            node->flexbox_item_style.border = node->style.border;
-            node->flexbox_item_style.margin = node->style.margin;
-            node->flexbox_item_style.inset = node->style.inset;
-            node->flexbox_item_style.align_self = node->style.align_self;
-            node->flexbox_item_style.flex_grow = node->style.flex_grow;
-            node->flexbox_item_style.flex_shrink = node->style.flex_shrink;
-            node->flexbox_item_style.flex_basis = node->style.flex_basis;
-            node->flexbox_item_style.order = node->style.order;
-
-            // 更新 flexbox_container_style
-            node->flexbox_container_style.display = node->style.display;
-            node->flexbox_container_style.box_sizing = node->style.box_sizing;
-            node->flexbox_container_style.position = node->style.position;
-            node->flexbox_container_style.overflow = node->style.overflow;
-            node->flexbox_container_style.scrollbar_width = node->style.scrollbar_width;
-            node->flexbox_container_style.size = node->style.size;
-            node->flexbox_container_style.min_size = node->style.min_size;
-            node->flexbox_container_style.max_size = node->style.max_size;
-            node->flexbox_container_style.padding = node->style.padding;
-            node->flexbox_container_style.border = node->style.border;
-            node->flexbox_container_style.margin = node->style.margin;
-            node->flexbox_container_style.inset = node->style.inset;
-            node->flexbox_container_style.flex_direction = node->style.flex_direction;
-            node->flexbox_container_style.flex_wrap = node->style.flex_wrap;
-            node->flexbox_container_style.justify_content = node->style.justify_content;
-            node->flexbox_container_style.align_items = node->style.align_items.value_or(AlignItems::Stretch);
-            node->flexbox_container_style.align_content = node->style.align_content.value_or(AlignContent::Stretch);
-            node->flexbox_container_style.gap = node->style.gap;
-
-            // 更新 grid_container_style
-            node->grid_container_style.display = node->style.display;
-            node->grid_container_style.box_sizing = node->style.box_sizing;
-            node->grid_container_style.position = node->style.position;
-            node->grid_container_style.overflow = node->style.overflow;
-            node->grid_container_style.scrollbar_width = node->style.scrollbar_width;
-            node->grid_container_style.size = node->style.size;
-            node->grid_container_style.min_size = node->style.min_size;
-            node->grid_container_style.max_size = node->style.max_size;
-            node->grid_container_style.padding = node->style.padding;
-            node->grid_container_style.border = node->style.border;
-            node->grid_container_style.margin = node->style.margin;
-            node->grid_container_style.inset = node->style.inset;
-            // Note: grid-template-columns/rows 需要从 ComputedStyle 重新解析
+            // 更新 Grid 特有数据（仅解析 Grid 特有属性，不再同步 CoreStyle 基类）
+            // 这些属性不在统一的 Style 结构中，需要单独解析
             node->grid_container_style.grid_template_columns = ParseGridTemplate(style.grid_template_columns);
             node->grid_container_style.grid_template_rows = ParseGridTemplate(style.grid_template_rows);
             node->grid_container_style.grid_auto_columns = ParseGridAutoTracks(style.grid_auto_columns);
             node->grid_container_style.grid_auto_rows = ParseGridAutoTracks(style.grid_auto_rows);
             node->grid_container_style.column_gap = ConvertLength(style.column_gap);
             node->grid_container_style.row_gap = ConvertLength(style.row_gap);
-            node->grid_container_style.align_items = node->style.align_items;
-            node->grid_container_style.justify_items = node->style.justify_items;
 
-            // 补全 grid_item_style 中遗漏的字段
+            // 解析 Grid 项目特有属性
             auto [col_start, col_end] = ParseGridLine(style.grid_column);
             auto [row_start, row_end] = ParseGridLine(style.grid_row);
             node->grid_item_style.grid_column_start = col_start;
             node->grid_item_style.grid_column_end = col_end;
             node->grid_item_style.grid_row_start = row_start;
             node->grid_item_style.grid_row_end = row_end;
-            node->grid_item_style.align_self = node->style.align_self;
-            node->grid_item_style.justify_self = node->style.justify_self;
 
             // 只有布局相关属性变化时才标记需要重新布局和更新版本号
             // **Feature: incremental-layout-optimization**
@@ -1423,124 +1401,22 @@ NodeId NativeLayoutEngine::CreateNode(RenderObject* render_obj) {
     RenderObjectType type = render_obj->GetType();
     node.is_table_container = (type == RenderObjectType::TABLE);
 
-
-    // Also fill in BlockContainerStyle and BlockItemStyle for the interfaces
-    node.block_container_style.display = node.style.display;
-    node.block_container_style.box_sizing = node.style.box_sizing;
-    node.block_container_style.position = node.style.position;
-    node.block_container_style.overflow = node.style.overflow;
-    node.block_container_style.scrollbar_width = node.style.scrollbar_width;
-    node.block_container_style.size = node.style.size;
-    node.block_container_style.min_size = node.style.min_size;
-    node.block_container_style.max_size = node.style.max_size;
-    node.block_container_style.padding = node.style.padding;
-    node.block_container_style.border = node.style.border;
-    node.block_container_style.margin = node.style.margin;
-    node.block_container_style.inset = node.style.inset;
-
-
-
-
-
-    node.block_item_style.display = node.style.display;
-    node.block_item_style.box_sizing = node.style.box_sizing;
-    node.block_item_style.position = node.style.position;
-    node.block_item_style.overflow = node.style.overflow;
-    node.block_item_style.scrollbar_width = node.style.scrollbar_width;
-    node.block_item_style.size = node.style.size;
-    node.block_item_style.min_size = node.style.min_size;
-    node.block_item_style.max_size = node.style.max_size;
-    node.block_item_style.padding = node.style.padding;
-    node.block_item_style.border = node.style.border;
-    node.block_item_style.margin = node.style.margin;
-    node.block_item_style.inset = node.style.inset;
-
-    // Fill in FlexboxContainerStyle and FlexboxItemStyle
-    node.flexbox_container_style.display = node.style.display;
-    node.flexbox_container_style.box_sizing = node.style.box_sizing;
-    node.flexbox_container_style.position = node.style.position;
-    node.flexbox_container_style.overflow = node.style.overflow;
-    node.flexbox_container_style.scrollbar_width = node.style.scrollbar_width;
-    node.flexbox_container_style.size = node.style.size;
-    node.flexbox_container_style.min_size = node.style.min_size;
-    node.flexbox_container_style.max_size = node.style.max_size;
-    node.flexbox_container_style.padding = node.style.padding;
-    node.flexbox_container_style.border = node.style.border;
-    node.flexbox_container_style.margin = node.style.margin;
-    node.flexbox_container_style.inset = node.style.inset;
-    node.flexbox_container_style.flex_direction = node.style.flex_direction;
-    node.flexbox_container_style.flex_wrap = node.style.flex_wrap;
-    node.flexbox_container_style.align_items = node.style.align_items.value_or(AlignItems::Stretch);
-    node.flexbox_container_style.align_content = node.style.align_content.value_or(AlignContent::Stretch);
-    node.flexbox_container_style.justify_content = node.style.justify_content;
-    node.flexbox_container_style.gap = node.style.gap;
-
-    node.flexbox_item_style.display = node.style.display;
-    node.flexbox_item_style.box_sizing = node.style.box_sizing;
-    node.flexbox_item_style.position = node.style.position;
-    node.flexbox_item_style.overflow = node.style.overflow;
-    node.flexbox_item_style.scrollbar_width = node.style.scrollbar_width;
-    node.flexbox_item_style.size = node.style.size;
-    node.flexbox_item_style.min_size = node.style.min_size;
-    node.flexbox_item_style.max_size = node.style.max_size;
-    node.flexbox_item_style.padding = node.style.padding;
-    node.flexbox_item_style.border = node.style.border;
-    node.flexbox_item_style.margin = node.style.margin;
-    node.flexbox_item_style.inset = node.style.inset;
-    node.flexbox_item_style.align_self = node.style.align_self;
-    node.flexbox_item_style.flex_grow = node.style.flex_grow;
-    node.flexbox_item_style.flex_shrink = node.style.flex_shrink;
-    node.flexbox_item_style.flex_basis = node.style.flex_basis;
-    node.flexbox_item_style.order = node.style.order;
-
-    // Fill in GridContainerStyle and GridItemStyle
-    node.grid_container_style.display = node.style.display;
-    node.grid_container_style.box_sizing = node.style.box_sizing;
-    node.grid_container_style.position = node.style.position;
-    node.grid_container_style.overflow = node.style.overflow;
-    node.grid_container_style.scrollbar_width = node.style.scrollbar_width;
-    node.grid_container_style.size = node.style.size;
-    node.grid_container_style.min_size = node.style.min_size;
-    node.grid_container_style.max_size = node.style.max_size;
-    node.grid_container_style.padding = node.style.padding;
-    node.grid_container_style.border = node.style.border;
-    node.grid_container_style.margin = node.style.margin;
-    node.grid_container_style.inset = node.style.inset;
-    // Parse grid-template-rows, grid-template-columns
+    // 初始化 Grid 特有数据（仅解析 Grid 特有属性，不再同步 CoreStyle 基类）
+    // 这些属性不在统一的 Style 结构中，需要单独解析
     node.grid_container_style.grid_template_columns = ParseGridTemplate(computed.grid_template_columns);
     node.grid_container_style.grid_template_rows = ParseGridTemplate(computed.grid_template_rows);
-    // Parse grid-auto-rows, grid-auto-columns
     node.grid_container_style.grid_auto_columns = ParseGridAutoTracks(computed.grid_auto_columns);
     node.grid_container_style.grid_auto_rows = ParseGridAutoTracks(computed.grid_auto_rows);
-    // Parse gap
     node.grid_container_style.column_gap = ConvertLength(computed.column_gap);
     node.grid_container_style.row_gap = ConvertLength(computed.row_gap);
-    // Parse align-items and justify-items for grid
-    node.grid_container_style.align_items = node.style.align_items;
-    node.grid_container_style.justify_items = node.style.justify_items;
 
-    node.grid_item_style.display = node.style.display;
-    node.grid_item_style.box_sizing = node.style.box_sizing;
-    node.grid_item_style.position = node.style.position;
-    node.grid_item_style.overflow = node.style.overflow;
-    node.grid_item_style.scrollbar_width = node.style.scrollbar_width;
-    node.grid_item_style.size = node.style.size;
-    node.grid_item_style.min_size = node.style.min_size;
-    node.grid_item_style.max_size = node.style.max_size;
-    node.grid_item_style.padding = node.style.padding;
-    node.grid_item_style.border = node.style.border;
-    node.grid_item_style.margin = node.style.margin;
-    node.grid_item_style.inset = node.style.inset;
-    // Parse grid-row, grid-column
+    // 解析 Grid 项目特有属性
     auto [col_start, col_end] = ParseGridLine(computed.grid_column);
     auto [row_start, row_end] = ParseGridLine(computed.grid_row);
     node.grid_item_style.grid_column_start = col_start;
     node.grid_item_style.grid_column_end = col_end;
     node.grid_item_style.grid_row_start = row_start;
     node.grid_item_style.grid_row_end = row_end;
-    // Grid item alignment (align-self, justify-self)
-    node.grid_item_style.align_self = node.style.align_self;
-    node.grid_item_style.justify_self = node.style.justify_self;
 
     nodes_[id] = std::move(node);
     render_to_node_[render_obj] = id;
@@ -2257,27 +2133,6 @@ NodeId NativeLayoutEngine::CreateAnonymousBlockBox(NodeId parent_id, const std::
     anon_node.style.border = Rect<LengthPercentage>::Zero();
     anon_node.style.margin = Rect<LengthPercentageAuto>::Zero();
     
-    // Copy block container/item styles
-    anon_node.block_container_style.display = Display::Block;
-    anon_node.block_container_style.box_sizing = BoxSizing::ContentBox;
-    anon_node.block_container_style.position = Position::Relative;  // static position (default)
-    anon_node.block_container_style.size = Size<Dimension>{Dimension::Auto(), Dimension::Auto()};
-    anon_node.block_container_style.min_size = Size<Dimension>{Dimension::Auto(), Dimension::Auto()};
-    anon_node.block_container_style.max_size = Size<Dimension>{Dimension::Auto(), Dimension::Auto()};
-    anon_node.block_container_style.padding = Rect<LengthPercentage>::Zero();
-    anon_node.block_container_style.border = Rect<LengthPercentage>::Zero();
-    anon_node.block_container_style.margin = Rect<LengthPercentageAuto>::Zero();
-    
-    anon_node.block_item_style.display = Display::Block;
-    anon_node.block_item_style.box_sizing = BoxSizing::ContentBox;
-    anon_node.block_item_style.position = Position::Relative;  // static position (default)
-    anon_node.block_item_style.size = Size<Dimension>{Dimension::Auto(), Dimension::Auto()};
-    anon_node.block_item_style.min_size = Size<Dimension>{Dimension::Auto(), Dimension::Auto()};
-    anon_node.block_item_style.max_size = Size<Dimension>{Dimension::Auto(), Dimension::Auto()};
-    anon_node.block_item_style.padding = Rect<LengthPercentage>::Zero();
-    anon_node.block_item_style.border = Rect<LengthPercentage>::Zero();
-    anon_node.block_item_style.margin = Rect<LengthPercentageAuto>::Zero();
-    
     // Store the node
     nodes_[anon_id] = std::move(anon_node);
     
@@ -2496,12 +2351,12 @@ public:
     }
 
     // LayoutFlexboxContainer interface
-    const FlexboxContainerStyle& GetFlexboxContainerStyle(NodeId node) const override {
-        return engine_.GetFlexboxContainerStyle(node);
+    const Style& GetContainerStyle(NodeId node) const override {
+        return engine_.GetStyle(node);
     }
 
-    const FlexboxItemStyle& GetFlexboxChildStyle(NodeId node) const override {
-        return engine_.GetFlexboxChildStyle(node);
+    const Style& GetChildStyle(NodeId node) const override {
+        return engine_.GetStyle(node);
     }
 
 private:
@@ -2565,7 +2420,16 @@ public:
                                         available_space, sizing_mode);
     }
 
-    // LayoutGridContainer interface
+    // LayoutGridContainer interface - unified Style methods
+    const Style& GetContainerStyle(NodeId node) const override {
+        return engine_.GetStyle(node);
+    }
+
+    const Style& GetChildStyle(NodeId node) const override {
+        return engine_.GetStyle(node);
+    }
+
+    // LayoutGridContainer interface - Grid-specific data methods
     const GridContainerStyle& GetGridContainerStyle(NodeId node) const override {
         return engine_.GetGridContainerStyle(node);
     }
@@ -3727,22 +3591,22 @@ Size<float> NativeLayoutEngine::MeasureChildSize(
 // LayoutBlockContainer Interface Implementation
 //------------------------------------------------------------------------------
 
-const BlockContainerStyle& NativeLayoutEngine::GetBlockContainerStyle(NodeId node) const {
+const Style& NativeLayoutEngine::GetContainerStyle(NodeId node) const {
     auto it = nodes_.find(node);
     if (it == nodes_.end()) {
-        static BlockContainerStyle default_style;
+        static Style default_style;
         return default_style;
     }
-    return it->second.block_container_style;
+    return it->second.style;
 }
 
-const BlockItemStyle& NativeLayoutEngine::GetBlockChildStyle(NodeId node) const {
+const Style& NativeLayoutEngine::GetChildStyle(NodeId node) const {
     auto it = nodes_.find(node);
     if (it == nodes_.end()) {
-        static BlockItemStyle default_style;
+        static Style default_style;
         return default_style;
     }
-    return it->second.block_item_style;
+    return it->second.style;
 }
 
 bool NativeLayoutEngine::IsTextNode(NodeId node) const {
@@ -3757,25 +3621,16 @@ bool NativeLayoutEngine::IsTextNode(NodeId node) const {
 }
 
 //------------------------------------------------------------------------------
-// Flexbox and Grid Style Getters
+// Style Getters
 //------------------------------------------------------------------------------
 
-const FlexboxContainerStyle& NativeLayoutEngine::GetFlexboxContainerStyle(NodeId node) const {
+const Style& NativeLayoutEngine::GetStyle(NodeId node) const {
     auto it = nodes_.find(node);
     if (it == nodes_.end()) {
-        static FlexboxContainerStyle default_style;
+        static Style default_style;
         return default_style;
     }
-    return it->second.flexbox_container_style;
-}
-
-const FlexboxItemStyle& NativeLayoutEngine::GetFlexboxChildStyle(NodeId node) const {
-    auto it = nodes_.find(node);
-    if (it == nodes_.end()) {
-        static FlexboxItemStyle default_style;
-        return default_style;
-    }
-    return it->second.flexbox_item_style;
+    return it->second.style;
 }
 
 const GridContainerStyle& NativeLayoutEngine::GetGridContainerStyle(NodeId node) const {

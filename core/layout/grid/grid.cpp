@@ -253,7 +253,10 @@ LayoutOutput ComputeGridLayout(
     NodeId node,
     const LayoutInput& inputs
 ) {
-    const auto& style = tree.GetGridContainerStyle(node);
+    // Get unified Style for common properties
+    const auto& style = tree.GetContainerStyle(node);
+    // Get Grid-specific data for grid-template-columns/rows, grid-auto-rows/columns, etc.
+    const auto& grid_style = tree.GetGridContainerStyle(node);
 
     // Extract inputs
     auto known_dimensions = inputs.known_dimensions;
@@ -262,6 +265,7 @@ LayoutOutput ComputeGridLayout(
     auto run_mode = inputs.run_mode;
 
     // 1. Compute "available grid space"
+    // Read common properties from unified Style
     auto aspect_ratio = style.aspect_ratio;
     auto padding = ResolveOrZero(style.padding, parent_size.width);
     auto border = ResolveOrZero(style.border, parent_size.width);
@@ -271,7 +275,7 @@ LayoutOutput ComputeGridLayout(
         padding_border.top + padding_border.bottom
     };
 
-    // Resolve sizes
+    // Resolve sizes from unified Style
     auto min_size = MaybeResolve(style.min_size, parent_size);
     auto max_size = MaybeResolve(style.max_size, parent_size);
     auto preferred_size = (inputs.sizing_mode == SizingMode::InherentSize)
@@ -315,21 +319,24 @@ LayoutOutput ComputeGridLayout(
     };
 
     // 2. Resolve the explicit grid
-    auto [col_auto_rep, col_count] = ComputeExplicitGridSizeInAxis(style, inner_node_size.width, AbsoluteAxis::Horizontal);
-    auto [row_auto_rep, row_count] = ComputeExplicitGridSizeInAxis(style, inner_node_size.height, AbsoluteAxis::Vertical);
+    // Use grid_style for Grid-specific properties (grid-template-columns/rows)
+    auto [col_auto_rep, col_count] = ComputeExplicitGridSizeInAxis(grid_style, inner_node_size.width, AbsoluteAxis::Horizontal);
+    auto [row_auto_rep, row_count] = ComputeExplicitGridSizeInAxis(grid_style, inner_node_size.height, AbsoluteAxis::Vertical);
 
     // 3. Estimate track counts (simplified - just use explicit counts for now)
     TrackCounts col_counts{0, col_count, 0};
     TrackCounts row_counts{0, row_count, 0};
 
     // 4. Initialize tracks
-    float col_gap = ResolveLengthPercentageValue(style.column_gap, inner_node_size.width.value_or(0.0f));
-    float row_gap = ResolveLengthPercentageValue(style.row_gap, inner_node_size.height.value_or(0.0f));
+    // Read gap from unified Style (style.gap contains row and column gaps)
+    float col_gap = ResolveLengthPercentageValue(style.gap.width, inner_node_size.width.value_or(0.0f));
+    float row_gap = ResolveLengthPercentageValue(style.gap.height, inner_node_size.height.value_or(0.0f));
 
     std::vector<GridTrack> columns;
     std::vector<GridTrack> rows;
-    InitializeGridTracks(columns, col_counts, style, AbsoluteAxis::Horizontal, col_gap);
-    InitializeGridTracks(rows, row_counts, style, AbsoluteAxis::Vertical, row_gap);
+    // Use grid_style for Grid-specific properties (grid-template-columns/rows, grid-auto-columns/rows)
+    InitializeGridTracks(columns, col_counts, grid_style, AbsoluteAxis::Horizontal, col_gap);
+    InitializeGridTracks(rows, row_counts, grid_style, AbsoluteAxis::Vertical, row_gap);
 
     // 5. Resolve track base sizes
     ResolveTrackBaseSizes(columns, inner_node_size.width);
@@ -396,8 +403,9 @@ LayoutOutput ComputeGridLayout(
             rows.push_back(gutter);
         }
         // Use grid_auto_rows if available, otherwise use Auto
-        if (!style.grid_auto_rows.empty()) {
-            const auto& auto_track = style.grid_auto_rows[auto_row_idx % style.grid_auto_rows.size()];
+        // Read from grid_style for Grid-specific properties
+        if (!grid_style.grid_auto_rows.empty()) {
+            const auto& auto_track = grid_style.grid_auto_rows[auto_row_idx % grid_style.grid_auto_rows.size()];
             auto_row_idx++;
             GridTrack track = GridTrack::New(auto_track.min, auto_track.max);
             // Resolve the track size immediately for fixed values
@@ -505,7 +513,8 @@ LayoutOutput ComputeGridLayout(
 
     for (size_t i = 0; i < child_count; i++) {
         NodeId child_id = tree.GetChildId(node, i);
-        const auto& child_style = tree.GetGridItemStyle(child_id);
+        // Get Grid-specific item style for placement properties (grid-row-start/end, grid-column-start/end)
+        const auto& grid_item_style = tree.GetGridItemStyle(child_id);
 
         // Determine grid cell for this child
         size_t col_idx = current_col;
@@ -515,35 +524,35 @@ LayoutOutput ComputeGridLayout(
         bool has_explicit_col = false;
         bool has_explicit_row = false;
 
-        // Check for explicit placement
-        if (child_style.grid_column_start.IsLine()) {
-            int16_t line = child_style.grid_column_start.value;
+        // Check for explicit placement (Grid-specific properties)
+        if (grid_item_style.grid_column_start.IsLine()) {
+            int16_t line = grid_item_style.grid_column_start.value;
             if (line > 0) col_idx = static_cast<size_t>(line - 1);
             else if (line < 0) col_idx = num_cols + line;
             has_explicit_col = true;
         }
-        if (child_style.grid_row_start.IsLine()) {
-            int16_t line = child_style.grid_row_start.value;
+        if (grid_item_style.grid_row_start.IsLine()) {
+            int16_t line = grid_item_style.grid_row_start.value;
             if (line > 0) row_idx = static_cast<size_t>(line - 1);
             else if (line < 0) row_idx = num_rows + line;
             has_explicit_row = true;
         }
 
-        // Check for span
-        if (child_style.grid_column_end.IsSpan()) {
-            col_span = static_cast<size_t>(child_style.grid_column_end.value);
-        } else if (child_style.grid_column_end.IsLine()) {
-            int16_t end_line = child_style.grid_column_end.value;
+        // Check for span (Grid-specific properties)
+        if (grid_item_style.grid_column_end.IsSpan()) {
+            col_span = static_cast<size_t>(grid_item_style.grid_column_end.value);
+        } else if (grid_item_style.grid_column_end.IsLine()) {
+            int16_t end_line = grid_item_style.grid_column_end.value;
             // CSS Grid lines are 1-based. For N columns, there are N+1 lines (1 to N+1).
             // Negative indices count from the end: -1 is the last line (N+1), -2 is N, etc.
             // So for end_line = -1 with 4 columns: end_idx = 4 + 1 + (-1) = 4 (meaning span to column 4)
             size_t end_idx = end_line > 0 ? static_cast<size_t>(end_line - 1) : num_cols + 1 + end_line;
             if (end_idx > col_idx) col_span = end_idx - col_idx;
         }
-        if (child_style.grid_row_end.IsSpan()) {
-            row_span = static_cast<size_t>(child_style.grid_row_end.value);
-        } else if (child_style.grid_row_end.IsLine()) {
-            int16_t end_line = child_style.grid_row_end.value;
+        if (grid_item_style.grid_row_end.IsSpan()) {
+            row_span = static_cast<size_t>(grid_item_style.grid_row_end.value);
+        } else if (grid_item_style.grid_row_end.IsLine()) {
+            int16_t end_line = grid_item_style.grid_row_end.value;
             // Same logic for rows
             size_t end_idx = end_line > 0 ? static_cast<size_t>(end_line - 1) : num_rows + 1 + end_line;
             if (end_idx > row_idx) row_span = end_idx - row_idx;
@@ -642,8 +651,9 @@ LayoutOutput ComputeGridLayout(
             rows.push_back(gutter);
         }
         // Use grid_auto_rows if available, otherwise use Auto
-        if (!style.grid_auto_rows.empty()) {
-            const auto& auto_track = style.grid_auto_rows[auto_row_idx % style.grid_auto_rows.size()];
+        // Read from grid_style for Grid-specific properties
+        if (!grid_style.grid_auto_rows.empty()) {
+            const auto& auto_track = grid_style.grid_auto_rows[auto_row_idx % grid_style.grid_auto_rows.size()];
             auto_row_idx++;
             GridTrack track = GridTrack::New(auto_track.min, auto_track.max);
             // Resolve the track size immediately for fixed values
@@ -782,8 +792,8 @@ LayoutOutput ComputeGridLayout(
             }
         }
 
-        // Get child's item style for align-self/justify-self
-        const auto& child_style = tree.GetGridItemStyle(placement.child_id);
+        // Get child's unified Style for common properties (align-self, justify-self, size)
+        const auto& child_style = tree.GetChildStyle(placement.child_id);
 
         // Determine final size and position based on alignment
         // Default is stretch (fill the cell)
@@ -794,10 +804,12 @@ LayoutOutput ComputeGridLayout(
 
         // Resolve justify-items (horizontal alignment within cell)
         // Child's justify-self overrides container's justify-items
+        // Read from unified Style for alignment properties
         auto justify = child_style.justify_self.value_or(
             style.justify_items.value_or(AlignItems::Stretch));
 
         // Check if child has explicit width - if so, don't stretch even if justify is Stretch
+        // Read from unified Style for size property
         bool has_explicit_width = !child_style.size.width.IsAuto();
 
         if (justify == AlignItems::Stretch && !has_explicit_width) {
@@ -838,10 +850,12 @@ LayoutOutput ComputeGridLayout(
 
         // Resolve align-items (vertical alignment within cell)
         // Child's align-self overrides container's align-items
+        // Read from unified Style for alignment properties
         auto align = child_style.align_self.value_or(
             style.align_items.value_or(AlignItems::Stretch));
 
         // Check if child has explicit height - if so, don't stretch even if align is Stretch
+        // Read from unified Style for size property
         bool has_explicit_height = !child_style.size.height.IsAuto();
 
         if (align == AlignItems::Stretch && !has_explicit_height) {

@@ -40,8 +40,6 @@ namespace lightui {
 // Forward declarations for interfaces
 class LayoutFlexboxContainer;
 class LayoutGridContainer;
-struct FlexboxContainerStyle;
-struct FlexboxItemStyle;
 struct GridContainerStyle;
 struct GridItemStyle;
 
@@ -172,18 +170,27 @@ public:
     // LayoutBlockContainer interface implementation
     //--------------------------------------------------------------------------
 
-    const BlockContainerStyle& GetBlockContainerStyle(NodeId node) const override;
-    const BlockItemStyle& GetBlockChildStyle(NodeId node) const override;
+    /// Get the unified Style for a container node
+    const Style& GetContainerStyle(NodeId node) const override;
+    
+    /// Get the unified Style for a child node
+    const Style& GetChildStyle(NodeId node) const override;
+    
     bool IsTextNode(NodeId node) const override;
 
     //--------------------------------------------------------------------------
-    // Flexbox and Grid style getters (for adapters)
+    // Grid style getters (for Grid-specific data)
     //--------------------------------------------------------------------------
 
-    const FlexboxContainerStyle& GetFlexboxContainerStyle(NodeId node) const;
-    const FlexboxItemStyle& GetFlexboxChildStyle(NodeId node) const;
     const GridContainerStyle& GetGridContainerStyle(NodeId node) const;
     const GridItemStyle& GetGridItemStyle(NodeId node) const;
+
+    //--------------------------------------------------------------------------
+    // Unified Style getters
+    //--------------------------------------------------------------------------
+
+    /// Get the unified Style for a node
+    const Style& GetStyle(NodeId node) const;
 
 private:
     /**
@@ -208,18 +215,11 @@ private:
         NodeId parent = 0;
         std::vector<NodeId> children;
 
-        // Style (converted from ComputedStyle)
+        // Style (converted from ComputedStyle) - 唯一样式存储
         Style style;
 
-        // Block layout styles (for LayoutBlockContainer interface)
-        BlockContainerStyle block_container_style;
-        BlockItemStyle block_item_style;
-
-        // Flexbox layout styles (for LayoutFlexboxContainer interface)
-        FlexboxContainerStyle flexbox_container_style;
-        FlexboxItemStyle flexbox_item_style;
-
-        // Grid layout styles (for LayoutGridContainer interface)
+        // Grid 特有数据（仅 Grid 容器/项目需要）
+        // 这些属性不在统一的 Style 结构中，需要单独存储
         GridContainerStyle grid_container_style;
         GridItemStyle grid_item_style;
 

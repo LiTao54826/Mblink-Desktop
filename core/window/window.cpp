@@ -163,10 +163,13 @@ public:
                     }
                     auto new_style = resolver.ResolveStyle(elem_ptr, parent_style);
                     render_obj->SetComputedStyle(new_style);
-                    render_obj->MarkNeedsLayout();
+                    // 注意：不再无条件调用 MarkNeedsLayout()
+                    // UpdateStyle 内部会智能判断是否需要布局
+                    // 这避免了 hover 等伪类变化时不必要的布局重算
                     
                     // 关键修复：同步更新布局引擎中的样式
-                    // 这确保 width/height 等尺寸变化能正确触发布局重算
+                    // UpdateStyle 内部会检查布局相关属性是否变化
+                    // 只有布局属性变化时才会标记 needs_layout
                     if (window_->GetLayoutEngine()) {
                         window_->GetLayoutEngine()->UpdateStyle(render_obj.get(), new_style);
                     }
@@ -1741,11 +1744,12 @@ void Window::MarkRenderObjectsDirty(Node* dom_node, RenderObject* render_obj) {
 
     // 调试日志
     static bool debug_dirty = std::getenv("LIGHTUI_DEBUG_DIRTY") != nullptr;
+    static bool debug_hover = std::getenv("LIGHTUI_DEBUG_HOVER") != nullptr;
 
     // 检查DOM节点是否有布局脏标记
     if (dom_node->IsLayoutDirty()) {
         render_obj->MarkNeedsLayout();
-        if (debug_dirty) {
+        if (debug_dirty || debug_hover) {
             auto elem = std::dynamic_pointer_cast<Element>(dom_node->shared_from_this());
             std::string tag = elem ? elem->GetTagName() : "text";
             std::cout << "[MarkDirty] Layout dirty: " << tag << std::endl;

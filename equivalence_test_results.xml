@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuites tests="4" failures="0" disabled="0" errors="0" time="0.327" timestamp="2025-12-22T17:49:48.003" name="AllTests">
+  <testsuite name="LayoutEquivalencePropertyTest" tests="4" failures="0" disabled="0" skipped="0" errors="0" time="0.321" timestamp="2025-12-22T17:49:48.007">
+    <testcase name="FullLayoutEqualsIncrementalWithAllDirty" file="C:\Users\Administrator\Desktop\code\MBink\tests\property\layout\test_layout_equivalence_properties.cpp" line="162" status="run" result="completed" time="0.07" timestamp="2025-12-22T17:49:48.010" classname="LayoutEquivalencePropertyTest" />
+    <testcase name="FlexLayoutEquivalence" file="C:\Users\Administrator\Desktop\code\MBink\tests\property\layout\test_layout_equivalence_properties.cpp" line="250" status="run" result="completed" time="0.117" timestamp="2025-12-22T17:49:48.084" classname="LayoutEquivalencePropertyTest" />
+    <testcase name="NestedTreeLayoutEquivalence" file="C:\Users\Administrator\Desktop\code\MBink\tests\property\layout\test_layout_equivalence_properties.cpp" line="320" status="run" result="completed" time="0.044" timestamp="2025-12-22T17:49:48.219" classname="LayoutEquivalencePropertyTest" />
+    <testcase name="MixedDisplayTypeLayoutEquivalence" file="C:\Users\Administrator\Desktop\code\MBink\tests\property\layout\test_layout_equivalence_properties.cpp" line="401" status="run" result="completed" time="0.057" timestamp="2025-12-22T17:49:48.270" classname="LayoutEquivalencePropertyTest" />
+  </testsuite>
+</testsuites>

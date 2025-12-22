@@ -536,30 +536,6 @@ public:
     const Style& GetLayoutStyle() const { return layout_style_; }
 
     /**
-     * @brief 获取 Block 容器样式
-     */
-    BlockContainerStyle& GetBlockContainerStyle() { return block_container_style_; }
-    const BlockContainerStyle& GetBlockContainerStyle() const { return block_container_style_; }
-
-    /**
-     * @brief 获取 Block 项目样式
-     */
-    BlockItemStyle& GetBlockItemStyle() { return block_item_style_; }
-    const BlockItemStyle& GetBlockItemStyle() const { return block_item_style_; }
-
-    /**
-     * @brief 获取 Flexbox 容器样式
-     */
-    FlexboxContainerStyle& GetFlexContainerStyle() { return flex_container_style_; }
-    const FlexboxContainerStyle& GetFlexContainerStyle() const { return flex_container_style_; }
-
-    /**
-     * @brief 获取 Flexbox 项目样式
-     */
-    FlexboxItemStyle& GetFlexItemStyle() { return flex_item_style_; }
-    const FlexboxItemStyle& GetFlexItemStyle() const { return flex_item_style_; }
-
-    /**
      * @brief 获取 Grid 容器样式
      */
     GridContainerStyle& GetGridContainerStyle() { return grid_container_style_; }
@@ -874,15 +850,7 @@ protected:
     /// 布局样式（从 ComputedStyle 转换而来，用于布局计算）
     Style layout_style_;
 
-    /// Block 布局样式
-    BlockContainerStyle block_container_style_;
-    BlockItemStyle block_item_style_;
-
-    /// Flexbox 布局样式
-    FlexboxContainerStyle flex_container_style_;
-    FlexboxItemStyle flex_item_style_;
-
-    /// Grid 布局样式
+    /// Grid 布局样式（Grid 特有数据，不在统一的 Style 中）
     GridContainerStyle grid_container_style_;
     GridItemStyle grid_item_style_;
 

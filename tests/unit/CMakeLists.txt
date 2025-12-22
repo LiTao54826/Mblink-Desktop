@@ -24,6 +24,7 @@ set(LAYOUT_TEST_SOURCES
     layout/test_native_layout_engine.cpp
     layout/test_flex_layout.cpp
     layout/test_block_layout.cpp
+    layout/test_grid_layout.cpp
 )
 
 # 渲染测试
