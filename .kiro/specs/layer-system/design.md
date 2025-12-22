@@ -294,11 +294,12 @@ Properties serve as the bridge between human-readable specifications and machine
 | `core/render/layer.h` | 已存在 | Layer 类定义 |
 | `core/render/layer.cpp` | 已存在 | Layer 类实现 |
 | `core/render/layer_manager.h` | 已存在 | LayerManager 类定义 |
-| `core/render/layer_manager.cpp` | 新增 | LayerManager 类实现 |
-| `core/render/overlay_manager.h` | 保留 | 暂时保留，后续删除 |
-| `core/render/overlay_manager.cpp` | 保留 | 暂时保留，后续删除 |
+| `core/render/layer_manager.cpp` | 已存在 | LayerManager 类实现 |
+| `core/render/overlay_manager.h` | 已删除 | 已被 LayerManager 替代 |
+| `core/render/overlay_manager.cpp` | 已删除 | 已被 LayerManager 替代 |
 | `core/event/hit_testing.h` | 修改 | 新增 HitTestWithLayers |
 | `core/event/hit_testing.cpp` | 修改 | 集成 LayerManager |
 | `core/event/event_loop.cpp` | 修改 | 使用 LayerManager |
-| `core/render/CMakeLists.txt` | 修改 | 添加 layer_manager.cpp |
-| `tests/property/layer_system_test.cpp` | 新增 | 属性测试 |
+| `core/render/CMakeLists.txt` | 修改 | 添加 layer_manager.cpp，移除 overlay_manager.cpp |
+| `tests/property/render/test_layer_system_properties.cpp` | 已存在 | 属性测试 (15个测试) |
+
