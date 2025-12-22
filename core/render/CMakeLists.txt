@@ -24,6 +24,7 @@ set(RENDER_SOURCES
     dirty_region_collector.cpp
     performance_monitor.cpp
     layer.cpp
+    layer_manager.cpp
     render_cache.cpp
     clip_optimizer.cpp
     shadow_renderer.cpp
@@ -76,6 +77,7 @@ set(RENDER_HEADERS
     dirty_region_collector.h
     performance_monitor.h
     layer.h
+    layer_manager.h
     render_cache.h
     clip_optimizer.h
     shadow_renderer.h

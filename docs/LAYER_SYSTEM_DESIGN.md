@@ -1,288 +1,194 @@
-# Layer 系统架构设计
+# Layer 分层系统设计文档
 
-## 目标效果
+## 1. 问题背景
 
-| 场景 | 当前性能 | 目标性能 | 提升 |
-|------|----------|----------|------|
-| 窗口 resize (有 shadow) | 2000-3000ms | 30-50ms | 50-100x |
-| 滚动 | 卡顿 | 60fps | - |
-| transform/opacity 动画 | 每帧重绘 | GPU 合成 | 10-50x |
-| 局部更新 (hover 等) | 全量重绘 | 局部重绘 | 5-10x |
+当前的 OverlayManager 只解决了**绘制顺序**问题，但存在以下缺陷：
 
----
+| 问题 | 现象 | 原因 |
+|------|------|------|
+| 点击穿透 | 点击 dropdown 选项无响应 | Hit Testing 不考虑 overlay |
+| 滚动穿透 | dropdown 内滚动触发页面滚动 | 滚动事件路由到错误元素 |
+| 事件错误 | hover 等事件发送到下层元素 | 事件系统不知道 overlay 存在 |
 
-## 架构概览
+## 2. 设计目标
+
+实现完整的 CSS Stacking Context，支持：
+- ✅ 正确的绘制顺序（已有）
+- 🔲 正确的 Hit Testing
+- 🔲 正确的事件路由
+- 🔲 滚动隔离
+- 🔲 多层级支持
+
+## 3. 架构设计
 
 ```
 ┌─────────────────────────────────────────────────────────┐
 │                      Window                              │
-│  ┌─────────────────────────────────────────────────┐    │
-│  │              LayerTreeHost                       │    │
-│  │  ┌─────────┐ ┌─────────┐ ┌─────────┐           │    │
-│  │  │ Layer 1 │ │ Layer 2 │ │ Layer 3 │  ...      │    │
-│  │  │(root)   │ │(shadow) │ │(scroll) │           │    │
-│  │  └────┬────┘ └────┬────┘ └────┬────┘           │    │
-│  │       │           │           │                 │    │
-│  │       ▼           ▼           ▼                 │    │
-│  │  ┌─────────┐ ┌─────────┐ ┌─────────┐           │    │
-│  │  │SkSurface│ │SkSurface│ │SkSurface│  (缓存)   │    │
-│  │  └─────────┘ └─────────┘ └─────────┘           │    │
-│  └─────────────────────────────────────────────────┘    │
-│                         │                                │
-│                         ▼                                │
-│              ┌─────────────────┐                        │
-│              │   Compositor    │  (合成所有层)           │
-│              └────────┬────────┘                        │
-│                       ▼                                  │
-│              ┌─────────────────┐                        │
-│              │  Final Surface  │  (输出到屏幕)          │
-│              └─────────────────┘                        │
+│  ┌───────────────────────────────────────────────────┐  │
+│  │                  LayerManager                      │  │
+│  │  ┌─────────────────────────────────────────────┐  │  │
+│  │  │  Layer 2: Modal (z >= 1000)                 │  │  │
+│  │  │  - RenderObjects[]                          │  │  │
+│  │  │  - HitTest() → 优先级最高                   │  │  │
+│  │  └─────────────────────────────────────────────┘  │  │
+│  │  ┌─────────────────────────────────────────────┐  │  │
+│  │  │  Layer 1: Overlay (z 100-999)               │  │  │
+│  │  │  - RenderObjects[]                          │  │  │
+│  │  │  - HitTest() → 次优先级                     │  │  │
+│  │  └─────────────────────────────────────────────┘  │  │
+│  │  ┌─────────────────────────────────────────────┐  │  │
+│  │  │  Layer 0: Base (z < 100)                    │  │  │
+│  │  │  - 完整渲染树                               │  │  │
+│  │  │  - HitTest() → 最低优先级                   │  │  │
+│  │  └─────────────────────────────────────────────┘  │  │
+│  └───────────────────────────────────────────────────┘  │
 └─────────────────────────────────────────────────────────┘
 ```
 
----
+## 4. 核心类设计
 
-## 核心类设计
-
-### 1. Layer (图层)
+### 4.1 Layer 类
 
 ```cpp
+// core/render/layer.h
 class Layer {
 public:
-    // 图层类型
-    enum class Type {
-        kNormal,        // 普通内容层
-        kShadow,        // 阴影层 (box-shadow)
-        kTransform,     // 有 transform 的层
-        kOpacity,       // 有 opacity 的层
-        kScroll,        // 滚动内容层
-        kFixed,         // position: fixed
-    };
-
-    // 核心属性
-    Type type_;
-    SkRect bounds_;                    // 层边界
-    sk_sp<SkSurface> surface_;         // 离屏缓存
-    sk_sp<SkPicture> picture_;         // 绘制命令缓存
-    bool needs_repaint_ = true;        // 是否需要重绘
-    bool needs_composite_ = true;      // 是否需要重新合成
+    int GetZIndexMin() const;
+    int GetZIndexMax() const;
     
-    // 变换属性 (合成时应用，不触发重绘)
-    SkMatrix transform_;
-    float opacity_ = 1.0f;
-    SkRect clip_;
+    // 添加/移除元素
+    void AddRenderObject(std::shared_ptr<RenderObject> obj, const SkMatrix& transform);
+    void RemoveRenderObject(RenderObject* obj);
+    void Clear();
     
-    // 关联
-    RenderObject* owner_;              // 拥有此层的渲染对象
-    Layer* parent_;
-    std::vector<Layer*> children_;
+    // 绘制
+    void Paint(SkCanvas* canvas);
     
-    // 方法
-    void Paint();                      // 绘制到 surface_
-    void Invalidate();                 // 标记需要重绘
-    void InvalidateRect(SkRect);       // 局部失效
-    bool HitTest(float x, float y);    // 命中测试
-};
-```
-
-### 2. LayerTreeHost (图层树管理器)
-
-```cpp
-class LayerTreeHost {
-public:
-    // 构建图层树
-    void BuildLayerTree(RenderObject* root);
+    // Hit Testing - 返回命中的元素
+    HitTestResult HitTest(float x, float y);
     
-    // 更新
-    void UpdateLayers();               // 重绘脏层
-    void Composite(SkCanvas* output);  // 合成到输出
-    
-    // 优化
-    void SetNeedsComposite();          // 标记需要合成
-    void SetNeedsRepaint(Layer*);      // 标记层需要重绘
+    // 滚动处理
+    bool HandleWheel(float x, float y, float delta_x, float delta_y);
     
 private:
-    Layer* root_layer_;
-    std::vector<Layer*> layers_;       // 所有层 (按 z-order)
-    bool needs_composite_ = false;
+    int z_index_min_;
+    int z_index_max_;
+    std::vector<LayerItem> items_;  // 按 z-index 排序
 };
 ```
 
-### 3. CompositingReasons (分层原因)
+### 4.2 LayerManager 类
 
 ```cpp
-enum class CompositingReason {
-    kNone = 0,
-    kBoxShadow = 1 << 0,           // 有 box-shadow
-    kTransform3D = 1 << 1,         // 有 3D transform
-    kWillChangeTransform = 1 << 2, // will-change: transform
-    kWillChangeOpacity = 1 << 3,   // will-change: opacity
-    kOpacityAnimation = 1 << 4,    // opacity 动画中
-    kTransformAnimation = 1 << 5,  // transform 动画中
-    kOverflowScroll = 1 << 6,      // overflow: scroll/auto
-    kPositionFixed = 1 << 7,       // position: fixed
-    kBackdropFilter = 1 << 8,      // backdrop-filter
-    kOverlap = 1 << 9,             // 与已分层元素重叠
+// core/render/layer_manager.h
+class LayerManager {
+public:
+    static LayerManager& Instance();
+    
+    // 帧管理
+    void BeginFrame();
+    void EndFrame();
+    
+    // 元素收集（在 Paint 过程中调用）
+    bool ShouldCollect(const RenderObject* obj) const;
+    void Collect(std::shared_ptr<RenderObject> obj, const SkMatrix& transform, int z_index);
+    
+    // 绘制所有 Layer
+    void PaintLayers(SkCanvas* canvas);
+    
+    // Hit Testing - 从最高 Layer 开始
+    HitTestResult HitTest(float x, float y);
+    
+    // 滚动处理 - 从最高 Layer 开始
+    bool HandleWheel(float x, float y, float delta_x, float delta_y);
+    
+    // 获取特定 Layer
+    Layer* GetLayer(int level);
+    
+private:
+    std::vector<std::unique_ptr<Layer>> layers_;
+    // Layer 0: z < 100 (base)
+    // Layer 1: z 100-999 (overlay)
+    // Layer 2: z >= 1000 (modal)
 };
-
-// 判断是否需要独立层
-CompositingReason GetCompositingReasons(RenderObject*);
 ```
 
----
+## 5. 实现计划
 
-## 工作流程
+### Phase 1: 重构 OverlayManager → LayerManager (1-2h)
 
-### 初始渲染
+**目标**: 保持现有功能，重构为 Layer 架构
 
-```
-1. BuildLayerTree()
-   - 遍历 RenderObject 树
-   - 根据 CompositingReasons 决定分层
-   - 创建 Layer 对象
+1. 创建 `Layer` 类
+2. 创建 `LayerManager` 类（替代 OverlayManager）
+3. 迁移现有的收集和绘制逻辑
+4. 更新 `render_object.cpp` 和 `window.cpp` 的调用
 
-2. UpdateLayers()
-   - 对每个 needs_repaint_ 的层
-   - 调用 Paint() 绘制到 surface_
+**验证**: 绘制功能不变，dropdown 仍然显示在最上层
 
-3. Composite()
-   - 按 z-order 遍历所有层
-   - 应用 transform/opacity
-   - drawImage 到最终 surface
-```
+### Phase 2: 实现 Layer Hit Testing (1-2h)
 
-### 增量更新 (如 hover)
+**目标**: 点击 overlay 元素能正确响应
 
-```
-1. RenderObject 标记 needs_paint_
-2. 找到对应的 Layer
-3. Layer.Invalidate() 或 InvalidateRect()
-4. 只重绘该层
-5. Composite() 合成所有层
-```
+1. 在 `Layer` 中实现 `HitTest()`
+2. 在 `LayerManager` 中实现从高到低的 Hit Testing
+3. 修改 `HitTesting::HitTestRenderObject()` 调用 LayerManager
+4. 修改 `EventLoop` 使用新的 Hit Testing
 
-### Resize
+**验证**: 点击 dropdown 选项能正确选中
 
-```
-1. 根层尺寸变化
-2. 重新布局
-3. 各层 surface_ 按需 resize
-4. 只重绘尺寸变化的层
-5. Composite()
+### Phase 3: 实现滚动隔离 (1h)
 
-关键优化：box-shadow 层的 surface_ 缓存不变，
-只是合成位置变化
-```
+**目标**: overlay 内滚动不影响页面
 
----
+1. 在 `Layer` 中实现 `HandleWheel()`
+2. 在 `LayerManager` 中实现滚动事件路由
+3. 修改 `EventLoop::HandleMouseWheelEventForDOM()`
 
-## 分阶段实现计划
+**验证**: 在 dropdown 上滚动不会滚动页面
 
-### Phase 1: 基础 Layer 类 (2天)
+### Phase 4: 完善事件系统 (1h)
 
-```
-目标：实现 Layer 基类和 SkSurface 缓存
-文件：core/render/layer.h, layer.cpp
+**目标**: hover、focus 等事件正确路由
 
-- Layer 类基本结构
-- SkSurface 创建和管理
-- 简单的 Paint/Composite
-```
+1. 修改 `UpdateHoverChain` 使用 LayerManager
+2. 确保 mouseenter/mouseleave 正确触发
 
-### Phase 2: LayerTreeHost (2天)
+**验证**: hover 效果在 dropdown 选项上正常工作
 
-```
-目标：实现图层树构建和管理
-文件：core/render/layer_tree_host.h, layer_tree_host.cpp
+## 6. 文件变更清单
 
-- BuildLayerTree 算法
-- 层的增删改
-- 基本的合成流程
+| 文件 | 操作 | 说明 |
+|------|------|------|
+| `core/render/layer.h` | 新增 | Layer 类定义 |
+| `core/render/layer.cpp` | 新增 | Layer 类实现 |
+| `core/render/layer_manager.h` | 新增 | LayerManager 类定义 |
+| `core/render/layer_manager.cpp` | 新增 | LayerManager 类实现 |
+| `core/render/overlay_manager.h` | 删除 | 被 LayerManager 替代 |
+| `core/render/overlay_manager.cpp` | 删除 | 被 LayerManager 替代 |
+| `core/render/render_object.cpp` | 修改 | 使用 LayerManager |
+| `core/window/window.cpp` | 修改 | 使用 LayerManager |
+| `core/event/hit_testing.cpp` | 修改 | 集成 LayerManager |
+| `core/event/event_loop.cpp` | 修改 | 使用 LayerManager 处理事件 |
+| `core/render/CMakeLists.txt` | 修改 | 更新文件列表 |
+
+## 7. 测试用例
+
+```javascript
+// test_layer_system.js
+// 1. 点击测试：点击 dropdown 选项应该选中
+// 2. 滚动测试：在 dropdown 上滚动不应该滚动页面
+// 3. Hover 测试：鼠标移到选项上应该高亮
+// 4. 多层测试：打开 Modal，Modal 应该在 dropdown 之上
 ```
 
-### Phase 3: 分层策略 (2天)
+## 8. 预计工时
 
-```
-目标：实现 CompositingReasons 判断
-文件：core/render/compositing_reasons.h, cpp
+| Phase | 工时 | 累计 |
+|-------|------|------|
+| Phase 1 | 1-2h | 1-2h |
+| Phase 2 | 1-2h | 2-4h |
+| Phase 3 | 1h | 3-5h |
+| Phase 4 | 1h | 4-6h |
 
-- box-shadow 触发分层
-- transform/opacity 触发分层
-- overflow:scroll 触发分层
-```
-
-### Phase 4: 集成到 Window (2天)
-
-```
-目标：替换现有的 Paint 流程
-文件：修改 window.cpp, render_object.cpp
-
-- Window 持有 LayerTreeHost
-- RenderObject::Paint 改为绘制到 Layer
-- 合成输出到屏幕
-```
-
-### Phase 5: 脏区域优化 (2天)
-
-```
-目标：实现局部重绘
-文件：core/render/dirty_region.h (已有，增强)
-
-- 层级别的脏标记
-- 矩形级别的脏区域
-- 增量合成
-```
-
-### Phase 6: 动画优化 (2天)
-
-```
-目标：transform/opacity 动画不触发重绘
-文件：修改 animation_controller.cpp
-
-- 动画只更新 Layer 的 transform_/opacity_
-- 只触发 Composite，不触发 Paint
-```
-
----
-
-## 工期总结
-
-| 阶段 | 工期 | 累计 | 效果 |
-|------|------|------|------|
-| Phase 1 | 2天 | 2天 | 基础框架 |
-| Phase 2 | 2天 | 4天 | 可运行 |
-| Phase 3 | 2天 | 6天 | box-shadow 优化生效 |
-| Phase 4 | 2天 | 8天 | 完整集成 |
-| Phase 5 | 2天 | 10天 | 局部更新 |
-| Phase 6 | 2天 | 12天 | 动画优化 |
-
-**总工期：2-3 周**
-
----
-
-## 风险和注意事项
-
-### 内存开销
-- 每个层一个 SkSurface，增加 GPU/CPU 内存
-- 需要实现层合并策略，避免层爆炸
-
-### 兼容性
-- 需要保证现有功能不受影响
-- 建议用 feature flag 控制，可回退
-
-### 调试
-- 需要添加层可视化工具
-- 显示层边界、重绘区域等
-
----
-
-## 替代方案：简化版 (1周)
-
-如果完整 Layer 系统工期太长，可以先做简化版：
-
-**只缓存 box-shadow**：
-- 不做完整分层
-- 只对有 box-shadow 的元素缓存 SkPicture
-- 尺寸不变时复用缓存
-
-工期：3-4 天，效果：解决 80% 的 shadow 性能问题
+**总计**: 4-6 小时

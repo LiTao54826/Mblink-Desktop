@@ -4,6 +4,14 @@
  * 
  * 解决 CSS stacking context 问题：让高 z-index 的 positioned 元素
  * 能够覆盖其他元素，即使它们不是同级的。
+ * 
+ * @deprecated 此类已被 LayerManager 替代。请使用 LayerManager 进行：
+ *   - 元素收集：LayerManager::ShouldCollect() 和 LayerManager::Collect()
+ *   - 绘制：LayerManager::PaintLayers()
+ *   - Hit Testing：LayerManager::HitTest()
+ *   - 滚动处理：LayerManager::HandleWheel()
+ * 
+ * 此文件将在后续版本中删除。
  */
 
 #pragma once

@@ -12,6 +12,7 @@
 #include "shadow_renderer.h"
 #include "list_marker.h"
 #include "overlay_manager.h"
+#include "layer_manager.h"
 #include "color.h"
 #include "css_value.h"
 #include "core/dom/node.h"
@@ -1874,8 +1875,9 @@ void RenderBlock::Paint(SkCanvas* canvas) {
     }
 
     // 按 z-index 排序子元素
+    // 使用 stable_sort 保持相同 z-index 元素的原始顺序（DOM 顺序）
     std::vector<std::shared_ptr<RenderObject>> sorted_children = children_;
-    std::sort(sorted_children.begin(), sorted_children.end(),
+    std::stable_sort(sorted_children.begin(), sorted_children.end(),
         [](const std::shared_ptr<RenderObject>& a, const std::shared_ptr<RenderObject>& b) {
             return a->GetComputedStyle().z_index < b->GetComputedStyle().z_index;
         });
@@ -1981,12 +1983,25 @@ void RenderBlock::Paint(SkCanvas* canvas) {
         }
         
         // 检查是否应该延迟绘制（高 z-index 的 positioned 元素）
-        auto& overlay_mgr = OverlayManager::Instance();
-        if (overlay_mgr.ShouldDeferPaint(child.get())) {
+        auto& layer_mgr = LayerManager::Instance();
+        if (layer_mgr.ShouldCollect(child.get())) {
             // 收集当前变换矩阵和元素信息
-            // 注意：不需要加上子元素的位置偏移，因为 Paint 函数内部会自己处理
+            // 对于 position: absolute 的元素，需要补偿父元素的滚动偏移
+            // 因为 absolute 元素相对于 positioned 祖先定位，不受滚动影响
             SkMatrix current_matrix = canvas->getTotalMatrix();
-            overlay_mgr.AddOverlay(child, current_matrix, child->GetComputedStyle().z_index);
+            
+            // 如果当前元素有滚动偏移，需要在变换矩阵中补偿回来
+            // 因为 absolute 子元素不应该受到父元素滚动的影响
+            if (needs_clip && (scroll_x_ != 0 || scroll_y_ != 0)) {
+                const auto& child_style = child->GetComputedStyle();
+                if (child_style.position == "absolute" || child_style.position == "fixed") {
+                    // 补偿滚动偏移：在变换矩阵中加回滚动量
+                    SkMatrix scroll_compensation = SkMatrix::Translate(scroll_x_, scroll_y_);
+                    current_matrix.preConcat(scroll_compensation);
+                }
+            }
+            
+            layer_mgr.Collect(child, current_matrix, child->GetComputedStyle().z_index);
             continue;  // 跳过正常绘制
         }
         
@@ -2745,8 +2760,9 @@ void RenderInline::Paint(SkCanvas* canvas) {
     }
 
     // 按 z-index 排序子元素
+    // 使用 stable_sort 保持相同 z-index 元素的原始顺序（DOM 顺序）
     std::vector<std::shared_ptr<RenderObject>> sorted_children = children_;
-    std::sort(sorted_children.begin(), sorted_children.end(),
+    std::stable_sort(sorted_children.begin(), sorted_children.end(),
         [](const std::shared_ptr<RenderObject>& a, const std::shared_ptr<RenderObject>& b) {
             return a->GetComputedStyle().z_index < b->GetComputedStyle().z_index;
         });
@@ -2754,12 +2770,12 @@ void RenderInline::Paint(SkCanvas* canvas) {
     // 绘制所有子元素
     for (auto& child : sorted_children) {
         // 检查是否应该延迟绘制（高 z-index 的 positioned 元素）
-        auto& overlay_mgr = OverlayManager::Instance();
-        if (overlay_mgr.ShouldDeferPaint(child.get())) {
+        auto& layer_mgr = LayerManager::Instance();
+        if (layer_mgr.ShouldCollect(child.get())) {
             // 收集当前变换矩阵和元素信息
             // 注意：不需要加上子元素的位置偏移，因为 Paint 函数内部会自己处理
             SkMatrix current_matrix = canvas->getTotalMatrix();
-            overlay_mgr.AddOverlay(child, current_matrix, child->GetComputedStyle().z_index);
+            layer_mgr.Collect(child, current_matrix, child->GetComputedStyle().z_index);
             continue;  // 跳过正常绘制
         }
         child->Paint(canvas);

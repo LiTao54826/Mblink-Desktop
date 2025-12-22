@@ -14,6 +14,7 @@
 #include "hit_testing.h"
 #include "event_types.h"
 #include "core/window/window_manager.h"
+#include "core/render/layer_manager.h"
 #include "core/dom/document.h"
 #include "core/dom/element.h"
 #include "core/dom/html_input_element.h"
@@ -624,8 +625,12 @@ void EventLoop::HandleMouseEventForDOM(const SDL_Event& event) {
 
     HitTestResult hit_result;
     if (root_render) {
-        // 使用渲染树进行 Hit Testing（使用逻辑坐标）
-        hit_result = hit_testing.HitTestRenderObject(root_render, logical_x, logical_y, 0.0f, 0.0f);
+        // 先在 LayerManager 的 Overlay/Modal 层中测试
+        auto& layer_manager = LayerManager::Instance();
+        if (!layer_manager.HitTest(logical_x, logical_y, hit_result)) {
+            // 如果 Overlay/Modal 层未命中，在 Base 层（渲染树）中测试
+            hit_result = hit_testing.HitTestRenderObject(root_render, logical_x, logical_y, 0.0f, 0.0f);
+        }
     }
 
     // 更新hover链（发送mouseover/mouseout事件并设置:hover伪类）
@@ -2038,6 +2043,21 @@ void EventLoop::HandleMouseWheelEventForDOM(const SDL_Event& event) {
         return;
     }
 
+    // 检查是否按住 Shift 键（用于水平滚动）
+    const bool* keyboard_state = SDL_GetKeyboardState(nullptr);
+    bool shift_pressed = keyboard_state[SDL_SCANCODE_LSHIFT] || keyboard_state[SDL_SCANCODE_RSHIFT];
+
+    // 先在 LayerManager 的 Overlay/Modal 层中处理滚动
+    auto& layer_manager = LayerManager::Instance();
+    float scroll_delta_x = shift_pressed ? wheel_y * 40.0f : wheel_x * 40.0f;
+    float scroll_delta_y = shift_pressed ? 0 : wheel_y * 40.0f;
+    
+    if (layer_manager.HandleWheel(logical_x, logical_y, scroll_delta_x, scroll_delta_y)) {
+        // Overlay/Modal 层处理了滚动事件，不传递到 Base 层
+        window->SetNeedsRepaint();
+        return;
+    }
+
     // 使用渲染树进行 Hit Testing（使用逻辑坐标）
     HitTesting hit_testing;
     HitTestResult hit_result = hit_testing.HitTestRenderObject(root_render, logical_x, logical_y, 0.0f, 0.0f);
@@ -2068,9 +2088,7 @@ void EventLoop::HandleMouseWheelEventForDOM(const SDL_Event& event) {
         }
     }
 
-    // 检查是否按住 Shift 键（用于水平滚动）
-    const bool* keyboard_state = SDL_GetKeyboardState(nullptr);
-    bool shift_pressed = keyboard_state[SDL_SCANCODE_LSHIFT] || keyboard_state[SDL_SCANCODE_RSHIFT];
+    // shift_pressed 已在上面声明
 
     // 首先检查是否是 textarea 元素
     if (hit_result.element) {

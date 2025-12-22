@@ -1,328 +1,142 @@
 /**
  * @file layer.h
- * @brief 渲染层级系统
- *
- * 功能：
- * - 支持分层渲染
- * - 支持层级合成
- * - 处理 z-index
- * - 优化渲染性能
+ * @brief Layer 类 - 管理单个渲染层级
+ * 
+ * Layer 系统用于实现 CSS Stacking Context，支持：
+ * - 正确的绘制顺序
+ * - 正确的 Hit Testing
+ * - 滚动隔离
  */
 
 #pragma once
 
+#include "render_object.h"
 #include "include/core/SkCanvas.h"
-#include "include/core/SkSurface.h"
-#include "include/core/SkRect.h"
-#include <memory>
+#include "include/core/SkMatrix.h"
 #include <vector>
-#include <string>
+#include <memory>
 
 namespace lightui {
 
 // 前向声明
-class RenderObject;
+struct HitTestResult;
 
 /**
- * @brief 层级类型
+ * @brief Layer 中的元素项
  */
-enum class LayerType {
-    NORMAL,      // 普通层级
-    TRANSFORM,   // 变换层级（支持 transform）
-    OPACITY,     // 透明度层级（支持 opacity）
-    CLIP,        // 裁剪层级（支持 clip）
+struct LayerItem {
+    std::shared_ptr<RenderObject> render_obj;  // 渲染对象
+    SkMatrix transform;                         // 收集时的变换矩阵
+    int z_index;                                // z-index 值
+    
+    // 用于 Hit Testing 的边界信息
+    float abs_x = 0;      // 绝对 X 坐标
+    float abs_y = 0;      // 绝对 Y 坐标
+    float width = 0;      // 宽度
+    float height = 0;     // 高度
 };
 
 /**
  * @brief 渲染层级
- *
- * 表示一个独立的渲染层，可以缓存渲染结果
+ * 
+ * 每个 Layer 管理一个 z-index 范围内的元素，提供：
+ * - Paint: 按 z-index 顺序绘制
+ * - HitTest: 从高 z-index 到低 z-index 测试
+ * - HandleWheel: 处理滚动事件
  */
 class Layer {
 public:
     /**
      * @brief 构造函数
-     * @param type 层级类型
+     * @param z_min z-index 最小值（包含）
+     * @param z_max z-index 最大值（包含），-1 表示无上限
+     */
+    Layer(int z_min, int z_max = -1);
+    
+    ~Layer() = default;
+    
+    // 禁止拷贝
+    Layer(const Layer&) = delete;
+    Layer& operator=(const Layer&) = delete;
+    
+    /**
+     * @brief 获取 z-index 范围
+     */
+    int GetZIndexMin() const { return z_index_min_; }
+    int GetZIndexMax() const { return z_index_max_; }
+    
+    /**
+     * @brief 检查 z-index 是否属于此 Layer
+     */
+    bool ContainsZIndex(int z_index) const;
+    
+    /**
+     * @brief 添加渲染对象
+     * @param obj 渲染对象
+     * @param transform 收集时的变换矩阵
      * @param z_index z-index 值
      */
-    explicit Layer(LayerType type = LayerType::NORMAL, int z_index = 0);
-
+    void AddItem(std::shared_ptr<RenderObject> obj, const SkMatrix& transform, int z_index);
+    
     /**
-     * @brief 析构函数
+     * @brief 清除所有元素（每帧开始时调用）
      */
-    ~Layer() = default;
-
-    // ========== 层级属性 ==========
-
+    void Clear();
+    
     /**
-     * @brief 获取层级类型
+     * @brief 检查是否为空
      */
-    LayerType GetType() const { return type_; }
-
+    bool IsEmpty() const { return items_.empty(); }
+    
     /**
-     * @brief 获取 z-index
+     * @brief 获取元素数量
      */
-    int GetZIndex() const { return z_index_; }
-
+    size_t GetItemCount() const { return items_.size(); }
+    
     /**
-     * @brief 设置 z-index
-     */
-    void SetZIndex(int z_index) { z_index_ = z_index; }
-
-    /**
-     * @brief 获取层级 ID
-     */
-    const std::string& GetId() const { return id_; }
-
-    /**
-     * @brief 设置层级 ID
-     */
-    void SetId(const std::string& id) { id_ = id; }
-
-    // ========== 层级内容 ==========
-
-    /**
-     * @brief 添加渲染对象到层级
-     * @param render_object 渲染对象
-     */
-    void AddRenderObject(std::shared_ptr<RenderObject> render_object);
-
-    /**
-     * @brief 移除渲染对象
-     * @param render_object 渲染对象
-     */
-    void RemoveRenderObject(std::shared_ptr<RenderObject> render_object);
-
-    /**
-     * @brief 清空所有渲染对象
-     */
-    void ClearRenderObjects();
-
-    /**
-     * @brief 获取所有渲染对象
-     */
-    const std::vector<std::shared_ptr<RenderObject>>& GetRenderObjects() const {
-        return render_objects_;
-    }
-
-    // ========== 层级边界 ==========
-
-    /**
-     * @brief 获取层级边界
-     */
-    const SkRect& GetBounds() const { return bounds_; }
-
-    /**
-     * @brief 设置层级边界
-     */
-    void SetBounds(const SkRect& bounds) { bounds_ = bounds; }
-
-    /**
-     * @brief 更新层级边界（根据渲染对象计算）
-     */
-    void UpdateBounds();
-
-    // ========== 层级表面 ==========
-
-    /**
-     * @brief 获取层级表面
-     */
-    SkSurface* GetSurface() const { return surface_.get(); }
-
-    /**
-     * @brief 创建层级表面
-     * @param width 宽度
-     * @param height 高度
-     */
-    void CreateSurface(int width, int height);
-
-    /**
-     * @brief 释放层级表面
-     */
-    void ReleaseSurface();
-
-    /**
-     * @brief 是否有表面
-     */
-    bool HasSurface() const { return surface_ != nullptr; }
-
-    // ========== 层级状态 ==========
-
-    /**
-     * @brief 是否需要重绘
-     */
-    bool NeedsRepaint() const { return needs_repaint_; }
-
-    /**
-     * @brief 标记需要重绘
-     */
-    void MarkNeedsRepaint() { needs_repaint_ = true; }
-
-    /**
-     * @brief 清除重绘标记
-     */
-    void ClearRepaintFlag() { needs_repaint_ = false; }
-
-    /**
-     * @brief 是否可见
-     */
-    bool IsVisible() const { return visible_; }
-
-    /**
-     * @brief 设置可见性
-     */
-    void SetVisible(bool visible) { visible_ = visible; }
-
-    // ========== 层级属性 ==========
-
-    /**
-     * @brief 获取透明度
-     */
-    float GetOpacity() const { return opacity_; }
-
-    /**
-     * @brief 设置透明度
-     */
-    void SetOpacity(float opacity) {
-        opacity_ = opacity;
-        MarkNeedsRepaint();
-    }
-
-    /**
-     * @brief 获取裁剪矩形
-     */
-    const SkRect& GetClipRect() const { return clip_rect_; }
-
-    /**
-     * @brief 设置裁剪矩形
-     */
-    void SetClipRect(const SkRect& rect) {
-        clip_rect_ = rect;
-        has_clip_ = true;
-        MarkNeedsRepaint();
-    }
-
-    /**
-     * @brief 清除裁剪
-     */
-    void ClearClip() {
-        has_clip_ = false;
-        MarkNeedsRepaint();
-    }
-
-    /**
-     * @brief 是否有裁剪
-     */
-    bool HasClip() const { return has_clip_; }
-
-    // ========== 层级渲染 ==========
-
-    /**
-     * @brief 绘制层级到画布
-     * @param canvas 目标画布
+     * @brief 绘制所有元素
+     * @param canvas 画布
      */
     void Paint(SkCanvas* canvas);
-
+    
     /**
-     * @brief 绘制层级内容到自己的表面
+     * @brief Hit Testing
+     * @param x 鼠标 X 坐标（视口坐标）
+     * @param y 鼠标 Y 坐标（视口坐标）
+     * @param result 输出结果
+     * @return true 如果命中了元素
      */
-    void PaintToSurface();
+    bool HitTest(float x, float y, HitTestResult& result);
+    
+    /**
+     * @brief 处理滚轮事件
+     * @param x 鼠标 X 坐标
+     * @param y 鼠标 Y 坐标
+     * @param delta_x 水平滚动量
+     * @param delta_y 垂直滚动量
+     * @return true 如果事件被处理
+     */
+    bool HandleWheel(float x, float y, float delta_x, float delta_y);
 
 private:
-    LayerType type_;                                          // 层级类型
-    int z_index_;                                             // z-index 值
-    std::string id_;                                          // 层级 ID
-    std::vector<std::shared_ptr<RenderObject>> render_objects_; // 渲染对象列表
-    SkRect bounds_;                                           // 层级边界
-    sk_sp<SkSurface> surface_;                                // 层级表面（用于缓存）
-    bool needs_repaint_;                                      // 是否需要重绘
-    bool visible_;                                            // 是否可见
-    float opacity_;                                           // 透明度 (0.0 - 1.0)
-    SkRect clip_rect_;                                        // 裁剪矩形
-    bool has_clip_;                                           // 是否有裁剪
-};
-
-/**
- * @brief 层级管理器
- *
- * 管理所有渲染层级，负责层级排序和合成
- */
-class LayerManager {
-public:
+    int z_index_min_;
+    int z_index_max_;  // -1 表示无上限
+    std::vector<LayerItem> items_;
+    bool needs_sort_ = false;  // 是否需要排序
+    
     /**
-     * @brief 构造函数
+     * @brief 确保元素按 z-index 排序
      */
-    LayerManager() = default;
-
+    void EnsureSorted();
+    
     /**
-     * @brief 析构函数
+     * @brief 递归 Hit Test 渲染对象
      */
-    ~LayerManager() = default;
-
-    // ========== 层级管理 ==========
-
-    /**
-     * @brief 创建层级
-     * @param type 层级类型
-     * @param z_index z-index 值
-     * @return 层级指针
-     */
-    std::shared_ptr<Layer> CreateLayer(LayerType type = LayerType::NORMAL, int z_index = 0);
-
-    /**
-     * @brief 添加层级
-     * @param layer 层级
-     */
-    void AddLayer(std::shared_ptr<Layer> layer);
-
-    /**
-     * @brief 移除层级
-     * @param layer 层级
-     */
-    void RemoveLayer(std::shared_ptr<Layer> layer);
-
-    /**
-     * @brief 根据 ID 查找层级
-     * @param id 层级 ID
-     * @return 层级指针，未找到返回 nullptr
-     */
-    std::shared_ptr<Layer> FindLayerById(const std::string& id);
-
-    /**
-     * @brief 清空所有层级
-     */
-    void ClearLayers();
-
-    /**
-     * @brief 获取所有层级
-     */
-    const std::vector<std::shared_ptr<Layer>>& GetLayers() const { return layers_; }
-
-    // ========== 层级排序 ==========
-
-    /**
-     * @brief 根据 z-index 排序层级
-     */
-    void SortLayers();
-
-    // ========== 层级合成 ==========
-
-    /**
-     * @brief 合成所有层级到画布
-     * @param canvas 目标画布
-     */
-    void Composite(SkCanvas* canvas);
-
-    /**
-     * @brief 合成指定区域的层级
-     * @param canvas 目标画布
-     * @param region 区域
-     */
-    void CompositeRegion(SkCanvas* canvas, const SkRect& region);
-
-private:
-    std::vector<std::shared_ptr<Layer>> layers_; // 层级列表
+    bool HitTestRenderObject(
+        std::shared_ptr<RenderObject> render_obj,
+        float x, float y,
+        float offset_x, float offset_y,
+        HitTestResult& result);
 };
 
 } // namespace lightui
-

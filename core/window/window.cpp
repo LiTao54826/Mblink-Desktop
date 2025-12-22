@@ -60,6 +60,7 @@
 #include "core/render/color.h"
 #include "core/render/select_dropdown.h"
 #include "core/render/overlay_manager.h"
+#include "core/render/layer_manager.h"
 #include "core/utils/encoding_utils.h"
 #include "core/devtools/devtools_manager.h"
 
@@ -82,6 +83,20 @@ public:
         DEBUG_LOG("[WindowDOMObserver::OnNodeAdded] node=" << node
                   << ", parent=" << parent
                   << ", IsInBatch=" << (node ? IsInBatch(node) : false));
+        
+        // 调试日志
+        static bool debug_select = std::getenv("LIGHTUI_DEBUG_SELECT") != nullptr;
+        if (debug_select && node) {
+            std::string tag = "unknown";
+            if (node->GetNodeType() == NodeType::ELEMENT_NODE) {
+                auto elem = std::dynamic_pointer_cast<Element>(node->shared_from_this());
+                if (elem) tag = elem->GetTagName();
+            } else if (node->GetNodeType() == NodeType::TEXT_NODE) {
+                tag = "text";
+            }
+            std::cout << "[OnNodeAdded] tag=" << tag << " IsInBatch=" << IsInBatch(node) << std::endl;
+        }
+        
         if (window_ && !IsInBatch(node)) {
             // 简化处理：总是使用 InvalidateRenderTree 重建整个渲染树
             // 这避免了增量更新可能导致的布局不一致和崩溃问题
@@ -1409,14 +1424,14 @@ void Window::Render() {
         RenderObject::ResetPaintTimingStats();
         
         // 开始新的渲染帧，清除上一帧的 overlay
-        auto& overlay_mgr = OverlayManager::Instance();
-        overlay_mgr.BeginFrame();
+        auto& layer_mgr = LayerManager::Instance();
+        layer_mgr.BeginFrame();
         
         Uint64 paint_start = SDL_GetTicks();
         cached_render_tree_->Paint(canvas);
         
         // 绘制所有 overlay 元素（高 z-index 的 positioned 元素）
-        overlay_mgr.PaintOverlays(canvas);
+        layer_mgr.PaintLayers(canvas);
         
         Uint64 paint_end = SDL_GetTicks();
         std::cout << "[Window::Render] Paint took " << (paint_end - paint_start) << "ms"
@@ -1539,8 +1554,8 @@ void Window::Render() {
                 }
 
                 // 开始新的渲染帧，清除上一帧的 overlay
-                auto& overlay_mgr = OverlayManager::Instance();
-                overlay_mgr.BeginFrame();
+                auto& layer_mgr = LayerManager::Instance();
+                layer_mgr.BeginFrame();
 
                 // 局部绘制 - 恢复到之前正常工作的版本
                 // 计算所有脏区域的边界（用于 CPU 模式局部更新）
@@ -1583,8 +1598,8 @@ void Window::Render() {
                 DEBUG_LOG("[Window::Render] Full repaint (no dirty rects but needs_repaint)");
                 
                 // 开始新的渲染帧
-                auto& overlay_mgr = OverlayManager::Instance();
-                overlay_mgr.BeginFrame();
+                auto& layer_mgr = LayerManager::Instance();
+                layer_mgr.BeginFrame();
                 
                 canvas->clear(clear_color);
                 cached_render_tree_->Paint(canvas);
@@ -1598,8 +1613,8 @@ void Window::Render() {
 
         // 绘制所有 overlay 元素（增量渲染路径的统一出口）
         {
-            auto& overlay_mgr = OverlayManager::Instance();
-            overlay_mgr.PaintOverlays(canvas);
+            auto& layer_mgr = LayerManager::Instance();
+            layer_mgr.PaintLayers(canvas);
         }
 
         // 更新并绘制 select 下拉菜单
@@ -1718,9 +1733,17 @@ void Window::MarkRenderObjectsDirty(Node* dom_node, RenderObject* render_obj) {
         return;
     }
 
+    // 调试日志
+    static bool debug_dirty = std::getenv("LIGHTUI_DEBUG_DIRTY") != nullptr;
+
     // 检查DOM节点是否有布局脏标记
     if (dom_node->IsLayoutDirty()) {
         render_obj->MarkNeedsLayout();
+        if (debug_dirty) {
+            auto elem = std::dynamic_pointer_cast<Element>(dom_node->shared_from_this());
+            std::string tag = elem ? elem->GetTagName() : "text";
+            std::cout << "[MarkDirty] Layout dirty: " << tag << std::endl;
+        }
     }
 
     // 获取父样式（用于继承）
@@ -1733,6 +1756,14 @@ void Window::MarkRenderObjectsDirty(Node* dom_node, RenderObject* render_obj) {
     // 检查DOM节点是否有绘制脏标记或样式脏标记（包括伪类变化如:focus）
     if (dom_node->IsPaintDirty() || dom_node->IsStyleDirty()) {
         render_obj->MarkNeedsPaint();
+        
+        if (debug_dirty) {
+            auto elem = std::dynamic_pointer_cast<Element>(dom_node->shared_from_this());
+            std::string tag = elem ? elem->GetTagName() : "text";
+            std::cout << "[MarkDirty] Paint/Style dirty: " << tag 
+                      << " paint=" << dom_node->IsPaintDirty() 
+                      << " style=" << dom_node->IsStyleDirty() << std::endl;
+        }
 
         // 对于 Text 节点，需要同步更新 RenderText 的文本内容和样式
         if (dom_node->GetNodeType() == NodeType::TEXT_NODE) {
@@ -1887,24 +1918,47 @@ bool Window::LayoutDirtySubtree(RenderObject* render_obj, float parent_width, fl
         return false;
     }
 
+    // 调试日志
+    static bool debug_select = std::getenv("LIGHTUI_DEBUG_SELECT") != nullptr;
+
     // 优先使用 NativeLayoutEngine 的增量布局
     if (layout_engine_) {
         // 首先标记需要布局的 RenderObject
+        int dirty_count = 0;
         std::function<void(RenderObject*)> markDirty = [&](RenderObject* obj) {
             if (!obj) return;
             if (obj->NeedsLayout()) {
                 layout_engine_->MarkNeedsLayout(obj);
+                dirty_count++;
+                
+                // 调试日志：输出需要布局的节点
+                if (debug_select) {
+                    auto dom_node = obj->GetNode();
+                    std::string tag = "unknown";
+                    if (dom_node && dom_node->GetNodeType() == NodeType::ELEMENT_NODE) {
+                        auto elem = std::dynamic_pointer_cast<Element>(dom_node);
+                        if (elem) tag = elem->GetTagName();
+                    }
+                    std::cout << "[LayoutDirtySubtree] Marking dirty: " << tag << std::endl;
+                }
             }
             for (const auto& child : obj->GetChildren()) {
                 markDirty(child.get());
             }
         };
         markDirty(render_obj);
+        
+        if (debug_select && dirty_count > 0) {
+            std::cout << "[LayoutDirtySubtree] Total dirty nodes: " << dirty_count << std::endl;
+        }
 
         // 执行增量布局
         bool did_layout = layout_engine_->ComputeIncrementalLayout(parent_width, parent_height);
 
         if (did_layout) {
+            if (debug_select) {
+                std::cout << "[LayoutDirtySubtree] Incremental layout completed" << std::endl;
+            }
             // 更新 RenderObject 的布局信息
             layout_engine_->GetLayoutInfo(cached_render_tree_);
         }

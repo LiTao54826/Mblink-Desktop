@@ -60,6 +60,19 @@ public:
     HitTestResult HitTest(std::shared_ptr<Document> document, float x, float y);
     
     /**
+     * @brief 使用 LayerManager 执行 Hit Testing
+     * 
+     * 先在 LayerManager 的 Overlay/Modal 层中测试，
+     * 如果未命中再在 Base 层（渲染树）中测试。
+     * 
+     * @param document 文档对象
+     * @param x 鼠标 X 坐标（相对于视口）
+     * @param y 鼠标 Y 坐标（相对于视口）
+     * @return Hit Testing 结果
+     */
+    HitTestResult HitTestWithLayers(std::shared_ptr<Document> document, float x, float y);
+    
+    /**
      * @brief 在渲染对象上执行 Hit Testing
      * 
      * @param render_object 渲染对象

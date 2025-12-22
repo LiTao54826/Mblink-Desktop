@@ -12,6 +12,7 @@ set(RENDER_PROPERTY_TEST_SOURCES
     render/test_list_style_properties.cpp
     render/test_aspect_ratio_properties.cpp
     render/test_clip_path_properties.cpp
+    render/test_layer_system_properties.cpp
 )
 
 # Layout property tests

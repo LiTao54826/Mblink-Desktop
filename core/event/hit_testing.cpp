@@ -7,6 +7,7 @@
 #include "core/dom/document.h"
 #include "core/dom/element.h"
 #include "core/render/render_object.h"
+#include "core/render/layer_manager.h"
 #include <iostream>
 
 namespace lightui {
@@ -27,6 +28,33 @@ HitTestResult HitTesting::HitTest(std::shared_ptr<Document> document, float x, f
 
     // 简化的 DOM 树遍历
     HitTestElement(body, x, y, 0.0f, 0.0f, result);
+
+    return result;
+}
+
+HitTestResult HitTesting::HitTestWithLayers(std::shared_ptr<Document> document, float x, float y) {
+    HitTestResult result;
+
+    if (!document) {
+        return result;
+    }
+
+    // 先在 LayerManager 的 Overlay/Modal 层中测试
+    auto& layer_manager = LayerManager::Instance();
+    if (layer_manager.HitTest(x, y, result)) {
+        return result;
+    }
+
+    // 如果 Overlay/Modal 层未命中，在 Base 层（渲染树）中测试
+    auto body = document->GetBody();
+    if (!body) {
+        return result;
+    }
+
+    auto render_object = body->GetRenderObject();
+    if (render_object) {
+        HitTestRecursive(render_object, x, y, 0.0f, 0.0f, result);
+    }
 
     return result;
 }
