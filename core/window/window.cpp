@@ -164,6 +164,12 @@ public:
                     auto new_style = resolver.ResolveStyle(elem_ptr, parent_style);
                     render_obj->SetComputedStyle(new_style);
                     render_obj->MarkNeedsLayout();
+                    
+                    // 关键修复：同步更新布局引擎中的样式
+                    // 这确保 width/height 等尺寸变化能正确触发布局重算
+                    if (window_->GetLayoutEngine()) {
+                        window_->GetLayoutEngine()->UpdateStyle(render_obj.get(), new_style);
+                    }
                 }
             }
             window_->SetNeedsRepaint();

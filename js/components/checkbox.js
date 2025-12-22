@@ -72,9 +72,10 @@ export function Checkbox(props) {
     color: disabled ? colors.textDisabled : colors.text,
   };
 
-  const handleChange = (e) => {
+  const handleClick = (e) => {
     if (disabled) return;
-    const newChecked = e.target.checked;
+    e.preventDefault();
+    const newChecked = !isChecked;
     if (!isControlled) {
       setInternalChecked(newChecked);
     }
@@ -89,22 +90,8 @@ export function Checkbox(props) {
       : null;
 
   return h(
-    'label',
-    { style: mergeStyles(wrapperStyle, style) },
-    h('input', {
-      ref: inputRef,
-      type: 'checkbox',
-      checked: isChecked,
-      disabled,
-      onChange: handleChange,
-      style: {
-        position: 'absolute',
-        opacity: 0,
-        width: 0,
-        height: 0,
-      },
-      ...rest,
-    }),
+    'div',
+    { style: mergeStyles(wrapperStyle, style), onClick: handleClick },
     h('span', { style: boxStyle }, checkIcon && h('span', { style: checkmarkStyle }, checkIcon)),
     children && h('span', { style: labelStyle }, children)
   );

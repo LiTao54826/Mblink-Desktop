@@ -765,11 +765,85 @@ void NativeLayoutEngine::UpdateStyle(RenderObject* render_obj, const ComputedSty
             node->grid_item_style.margin = node->style.margin;
             node->grid_item_style.inset = node->style.inset;
 
+            // 关键修复：更新 flexbox_item_style，这是 flex 布局获取子元素尺寸的来源
+            node->flexbox_item_style.display = node->style.display;
+            node->flexbox_item_style.box_sizing = node->style.box_sizing;
+            node->flexbox_item_style.position = node->style.position;
+            node->flexbox_item_style.overflow = node->style.overflow;
+            node->flexbox_item_style.scrollbar_width = node->style.scrollbar_width;
+            node->flexbox_item_style.size = node->style.size;
+            node->flexbox_item_style.min_size = node->style.min_size;
+            node->flexbox_item_style.max_size = node->style.max_size;
+            node->flexbox_item_style.padding = node->style.padding;
+            node->flexbox_item_style.border = node->style.border;
+            node->flexbox_item_style.margin = node->style.margin;
+            node->flexbox_item_style.inset = node->style.inset;
+            node->flexbox_item_style.align_self = node->style.align_self;
+            node->flexbox_item_style.flex_grow = node->style.flex_grow;
+            node->flexbox_item_style.flex_shrink = node->style.flex_shrink;
+            node->flexbox_item_style.flex_basis = node->style.flex_basis;
+            node->flexbox_item_style.order = node->style.order;
+
+            // 更新 flexbox_container_style
+            node->flexbox_container_style.display = node->style.display;
+            node->flexbox_container_style.box_sizing = node->style.box_sizing;
+            node->flexbox_container_style.position = node->style.position;
+            node->flexbox_container_style.overflow = node->style.overflow;
+            node->flexbox_container_style.scrollbar_width = node->style.scrollbar_width;
+            node->flexbox_container_style.size = node->style.size;
+            node->flexbox_container_style.min_size = node->style.min_size;
+            node->flexbox_container_style.max_size = node->style.max_size;
+            node->flexbox_container_style.padding = node->style.padding;
+            node->flexbox_container_style.border = node->style.border;
+            node->flexbox_container_style.margin = node->style.margin;
+            node->flexbox_container_style.inset = node->style.inset;
+            node->flexbox_container_style.flex_direction = node->style.flex_direction;
+            node->flexbox_container_style.flex_wrap = node->style.flex_wrap;
+            node->flexbox_container_style.justify_content = node->style.justify_content;
+            node->flexbox_container_style.align_items = node->style.align_items.value_or(AlignItems::Stretch);
+            node->flexbox_container_style.align_content = node->style.align_content.value_or(AlignContent::Stretch);
+            node->flexbox_container_style.gap = node->style.gap;
+
+            // 更新 grid_container_style
+            node->grid_container_style.display = node->style.display;
+            node->grid_container_style.box_sizing = node->style.box_sizing;
+            node->grid_container_style.position = node->style.position;
+            node->grid_container_style.overflow = node->style.overflow;
+            node->grid_container_style.scrollbar_width = node->style.scrollbar_width;
+            node->grid_container_style.size = node->style.size;
+            node->grid_container_style.min_size = node->style.min_size;
+            node->grid_container_style.max_size = node->style.max_size;
+            node->grid_container_style.padding = node->style.padding;
+            node->grid_container_style.border = node->style.border;
+            node->grid_container_style.margin = node->style.margin;
+            node->grid_container_style.inset = node->style.inset;
+            // Note: grid-template-columns/rows 需要从 ComputedStyle 重新解析
+            node->grid_container_style.grid_template_columns = ParseGridTemplate(style.grid_template_columns);
+            node->grid_container_style.grid_template_rows = ParseGridTemplate(style.grid_template_rows);
+            node->grid_container_style.grid_auto_columns = ParseGridAutoTracks(style.grid_auto_columns);
+            node->grid_container_style.grid_auto_rows = ParseGridAutoTracks(style.grid_auto_rows);
+            node->grid_container_style.column_gap = ConvertLength(style.column_gap);
+            node->grid_container_style.row_gap = ConvertLength(style.row_gap);
+            node->grid_container_style.align_items = node->style.align_items;
+            node->grid_container_style.justify_items = node->style.justify_items;
+
+            // 补全 grid_item_style 中遗漏的字段
+            auto [col_start, col_end] = ParseGridLine(style.grid_column);
+            auto [row_start, row_end] = ParseGridLine(style.grid_row);
+            node->grid_item_style.grid_column_start = col_start;
+            node->grid_item_style.grid_column_end = col_end;
+            node->grid_item_style.grid_row_start = row_start;
+            node->grid_item_style.grid_row_end = row_end;
+            node->grid_item_style.align_self = node->style.align_self;
+            node->grid_item_style.justify_self = node->style.justify_self;
+
             // 只有布局相关属性变化时才标记需要重新布局和更新版本号
             // **Feature: incremental-layout-optimization**
             // **Validates: Requirements 1.3**
             if (layout_changed) {
                 node->needs_layout = true;
+                // 关键修复：清除当前节点的缓存，确保布局重新计算
+                node->cache.Clear();
                 
                 // 调试日志
                 static bool debug_dirty = std::getenv("LIGHTUI_DEBUG_DIRTY") != nullptr;
@@ -787,6 +861,12 @@ void NativeLayoutEngine::UpdateStyle(RenderObject* render_obj, const ComputedSty
                 // Pure paint styles (color, background-color, etc.) don't update version
                 uint64_t new_version = ContentVersionManager::GetInstance().GenerateVersion();
                 node->content_version = new_version;
+                
+                // 关键修复：当子元素尺寸变化时，需要通知父元素重新布局
+                // 这对于flex/grid容器的居中对齐等功能至关重要
+                // 因为父容器需要根据子元素的新尺寸重新计算位置
+                LayoutScope scope = DetermineLayoutScope(node);
+                PropagateLayoutDirty(it->second, scope);
             }
         }
     } else {
@@ -861,16 +941,21 @@ NativeLayoutEngine::LayoutScope NativeLayoutEngine::DetermineLayoutScope(const L
         return LayoutScope::SELF_ONLY;
     }
 
-    // Check if the node has fixed dimensions (both width AND height are explicit lengths)
-    // Fixed-size containers isolate their children from affecting ancestors
-    if (HasFixedSize(node)) {
-        return LayoutScope::SELF_ONLY;
-    }
-
-    // Check if this is a flex or grid child
+    // 关键修复：先检查是否是 flex/grid 子元素
+    // 即使子元素有固定尺寸，当尺寸变化时也需要通知父元素重新计算位置
+    // 因为 justify-content: center 和 align-items: center 需要根据子元素尺寸计算位置
+    // Check if this is a flex or grid child BEFORE checking fixed size
     // Flex/grid children may affect sibling layouts due to space distribution
     if (IsFlexOrGridChild(node)) {
         return LayoutScope::SIBLINGS;
+    }
+
+    // Check if the node has fixed dimensions (both width AND height are explicit lengths)
+    // Fixed-size containers isolate their children from affecting ancestors
+    // Note: This check is AFTER flex/grid child check, because flex/grid children
+    // need to notify parent even if they have fixed size
+    if (HasFixedSize(node)) {
+        return LayoutScope::SELF_ONLY;
     }
 
     // For auto-sized elements, changes may propagate to ancestors
@@ -1055,6 +1140,14 @@ void NativeLayoutEngine::PropagateLayoutDirty(NodeId node_id, LayoutScope scope)
                 LayoutNode* parent = GetNode(node->parent);
                 if (parent && !parent->needs_layout) {
                     parent->needs_layout = true;
+                    // 关键修复：同时标记RenderObject需要布局
+                    // 这确保LayoutDirtySubtree能正确检测到脏节点
+                    if (parent->render_obj) {
+                        parent->render_obj->MarkNeedsLayout(false);  // false = 不再向上传播
+                    }
+                    // 关键修复：清除父元素的缓存，确保flex/grid布局重新计算
+                    // 这对于子元素尺寸变化后的居中对齐等功能至关重要
+                    parent->cache.Clear();
                     // For IFC containers, we MUST update content_version because IFC layout
                     // caches based on content_version and needs to re-collect inline content.
                     // For non-IFC containers (flex/grid), we do NOT update content_version.
@@ -1094,6 +1187,12 @@ void NativeLayoutEngine::PropagateLayoutDirty(NodeId node_id, LayoutScope scope)
                     }
 
                     parent->needs_layout = true;
+                    // 关键修复：同时标记RenderObject需要布局
+                    if (parent->render_obj) {
+                        parent->render_obj->MarkNeedsLayout(false);
+                    }
+                    // 关键修复：清除父元素的缓存，确保布局重新计算
+                    parent->cache.Clear();
                     
                     // For IFC containers, we MUST update content_version because IFC layout
                     // caches based on content_version and needs to re-collect inline content

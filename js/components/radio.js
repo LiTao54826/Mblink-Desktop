@@ -46,30 +46,35 @@ export function Radio(props) {
     width: '16px',
     height: '16px',
     borderRadius: '50%',
-    border: `1px solid ${isChecked ? colors.primary : colors.border}`,
-    backgroundColor: colors.bg,
+    border: `2px solid ${isChecked ? colors.primary : colors.border}`,
+    backgroundColor: isChecked ? colors.primary : colors.bg,
     transition: `all ${transition.fast}`,
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
   };
 
-  const dotStyle = {
-    width: '8px',
-    height: '8px',
-    borderRadius: '50%',
-    backgroundColor: colors.primary,
-    transform: isChecked ? 'scale(1)' : 'scale(0)',
-    transition: `transform ${transition.fast}`,
-  };
+  // 选中时显示白色内圈
+  const dotStyle = isChecked
+    ? {
+        width: '6px',
+        height: '6px',
+        borderRadius: '50%',
+        backgroundColor: '#ffffff',
+      }
+    : {
+        width: '0px',
+        height: '0px',
+      };
 
   const labelStyle = {
     fontSize: '14px',
     color: disabled ? colors.textDisabled : colors.text,
   };
 
-  const handleChange = (e) => {
+  const handleClick = (e) => {
     if (disabled) return;
+    e.preventDefault();
     if (!isControlled) {
       setInternalChecked(true);
     }
@@ -77,23 +82,8 @@ export function Radio(props) {
   };
 
   return h(
-    'label',
-    { style: mergeStyles(wrapperStyle, style) },
-    h('input', {
-      type: 'radio',
-      checked: isChecked,
-      disabled,
-      name,
-      value,
-      onChange: handleChange,
-      style: {
-        position: 'absolute',
-        opacity: 0,
-        width: 0,
-        height: 0,
-      },
-      ...rest,
-    }),
+    'div',
+    { style: mergeStyles(wrapperStyle, style), onClick: handleClick },
     h('span', { style: circleStyle }, h('span', { style: dotStyle })),
     children && h('span', { style: labelStyle }, children)
   );
