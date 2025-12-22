@@ -59,7 +59,6 @@
 #include "core/layout/native_layout_engine.h"
 #include "core/render/color.h"
 #include "core/render/select_dropdown.h"
-#include "core/render/overlay_manager.h"
 #include "core/render/layer_manager.h"
 #include "core/utils/encoding_utils.h"
 #include "core/devtools/devtools_manager.h"

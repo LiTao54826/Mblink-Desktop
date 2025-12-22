@@ -11,7 +11,6 @@
 #include <gtest/gtest.h>
 #include "core/render/layer.h"
 #include "core/render/layer_manager.h"
-#include "core/render/overlay_manager.h"
 #include "core/render/render_object.h"
 #include "core/dom/element.h"
 #include "core/event/hit_testing.h"
@@ -736,48 +735,5 @@ TEST_F(LayerSystemPropertyTest, HasOverlaysStateQuery) {
         
         EXPECT_TRUE(manager.HasOverlays())
             << "HasOverlays should return true when Modal layer has elements";
-    }
-}
-
-
-/**
- * **Feature: layer-system, Property 12: 兼容性 - 元素收集**
- * 
- * For any same RenderObject input, LayerManager::ShouldCollect() should return
- * the same result as OverlayManager::ShouldDeferPaint().
- * 
- * **Validates: Requirements 6.1, 6.2**
- */
-TEST_F(LayerSystemPropertyTest, CompatibilityWithOverlayManager) {
-    auto& layer_manager = LayerManager::Instance();
-    auto& overlay_manager = OverlayManager::Instance();
-    
-    for (int i = 0; i < NUM_ITERATIONS; ++i) {
-        layer_manager.BeginFrame();
-        overlay_manager.BeginFrame();
-        
-        // Test various z-index and position combinations
-        std::vector<std::pair<int, std::string>> test_cases = {
-            {rng_.randInt(0, 99), "absolute"},      // Base layer
-            {rng_.randInt(100, 999), "absolute"},   // Overlay layer
-            {rng_.randInt(1000, 2000), "fixed"},    // Modal layer
-            {rng_.randInt(100, 999), "static"},     // High z but static
-            {rng_.randInt(0, 99), "relative"},      // Low z positioned
-        };
-        
-        for (const auto& [z_index, position] : test_cases) {
-            auto obj = CreateRenderBlock(0, 0, 100, 100);
-            obj->GetComputedStyle().z_index = z_index;
-            obj->GetComputedStyle().position = position;
-            CreateElementWithRenderObject(obj);
-            
-            bool layer_should_collect = layer_manager.ShouldCollect(obj.get());
-            bool overlay_should_defer = overlay_manager.ShouldDeferPaint(obj.get());
-            
-            EXPECT_EQ(layer_should_collect, overlay_should_defer)
-                << "LayerManager::ShouldCollect and OverlayManager::ShouldDeferPaint "
-                << "should return same result for z-index=" << z_index 
-                << ", position=" << position;
-        }
     }
 }

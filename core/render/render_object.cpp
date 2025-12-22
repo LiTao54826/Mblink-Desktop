@@ -11,7 +11,6 @@
 #include "gradient_renderer.h"
 #include "shadow_renderer.h"
 #include "list_marker.h"
-#include "overlay_manager.h"
 #include "layer_manager.h"
 #include "color.h"
 #include "css_value.h"
