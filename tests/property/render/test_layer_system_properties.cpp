@@ -347,6 +347,7 @@ TEST_F(LayerSystemPropertyTest, LayerInternalZIndexSorting) {
         
         // Create multiple elements with different z-indices in Overlay layer
         std::vector<int> z_indices;
+        std::vector<std::shared_ptr<Element>> elements;  // Keep elements alive
         int num_items = rng_.randInt(3, 8);
         
         for (int j = 0; j < num_items; ++j) {
@@ -357,6 +358,7 @@ TEST_F(LayerSystemPropertyTest, LayerInternalZIndexSorting) {
             auto obj = CreatePositionedRenderBlock(0, 0, 100, 100, z);
             auto elem = CreateElementWithRenderObject(obj);
             elem->SetAttribute("z", std::to_string(z));
+            elements.push_back(elem);  // Keep element alive
             manager.Collect(obj, SkMatrix::I(), z);
         }
         
