@@ -1,41 +1,56 @@
 # Implementation Plan
 
-- [ ] 1. Create FBOManager class
-  - [ ] 1.1 Create FBOManager header file with class declaration
+- [-] 1. Create FBOManager class
+
+
+  - [x] 1.1 Create FBOManager header file with class declaration
+
     - Define FBOManager class in `core/render/fbo_manager.h`
     - Include OpenGL headers and Skia headers
     - Declare Initialize, Resize, GetSurface, Bind, Unbind, BlitToScreen, Clear methods
     - _Requirements: 2.1_
-  - [ ] 1.2 Implement FBOManager initialization and destruction
+
+  - [x] 1.2 Implement FBOManager initialization and destruction
+
     - Create FBO with glGenFramebuffers
     - Create color texture attachment with glGenTextures
     - Attach texture to FBO with glFramebufferTexture2D
     - Check FBO completeness with glCheckFramebufferStatus
     - Create Skia surface wrapping the FBO
     - _Requirements: 2.1, 4.3_
-  - [ ] 1.3 Implement FBO resize functionality
+
+  - [x] 1.3 Implement FBO resize functionality
+
     - Delete old texture and FBO if dimensions changed
     - Recreate with new dimensions
     - Recreate Skia surface
+
     - _Requirements: 2.3, 5.2_
+
   - [ ] 1.4 Implement BlitToScreen using glBlitFramebuffer
     - Bind FBO as read framebuffer
     - Bind default framebuffer (0) as draw framebuffer
     - Call glBlitFramebuffer with GL_COLOR_BUFFER_BIT
     - _Requirements: 3.4_
-  - [ ] 1.5 Write unit tests for FBOManager
+  - [x] 1.5 Write unit tests for FBOManager
+
     - Test FBO creation with valid dimensions
     - Test FBO resize
     - Test fallback on failure
     - _Requirements: 4.3_
 
-- [ ] 2. Integrate FBOManager into Window class
-  - [ ] 2.1 Add FBOManager member and initialization
+- [-] 2. Integrate FBOManager into Window class
+
+
+  - [x] 2.1 Add FBOManager member and initialization
+
     - Add `std::unique_ptr<FBOManager> fbo_manager_` to Window
     - Add `bool use_fbo_incremental_` flag
     - Initialize FBO after OpenGL context creation
     - _Requirements: 2.1_
-  - [ ] 2.2 Implement RenderIncrementalGPU method
+
+  - [x] 2.2 Implement RenderIncrementalGPU method
+
     - Collect dirty regions from render tree
     - Get FBO canvas from FBOManager
     - For each dirty region: clip, clear, repaint
@@ -46,16 +61,22 @@
   - [ ] 2.3 Write property test for dirty region collection
     - **Property 2: Dirty Region Contains Changed Objects**
     - **Validates: Requirements 1.4, 2.2**
+
+
   - [ ] 2.4 Update Render method to use FBO incremental mode
     - Check if GPU mode and FBO is valid
     - Call RenderIncrementalGPU instead of full repaint
     - Keep fallback to full repaint if FBO invalid
     - _Requirements: 2.1, 4.3_
 
+
+
 - [ ] 3. Handle window resize with FBO
   - [ ] 3.1 Update OnResize to resize FBO
     - Call fbo_manager_->Resize with new dimensions
     - Clear FBO after resize
+
+
     - Set force_full_repaint flag
     - _Requirements: 5.1, 5.2_
   - [ ] 3.2 Clear both FBO and screen buffers on resize

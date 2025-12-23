@@ -47,6 +47,7 @@ class AnimationApplicator;
 class RenderTreeBuilder;
 class RenderPipeline;
 class RenderTreeSynchronizer;
+class FBOManager;
 
 /**
  * @brief 渲染后端类型
@@ -624,6 +625,10 @@ private:
 
     // 显示后端（用于 CPU 渲染模式）
     std::unique_ptr<DisplayBackend> display_backend_;
+
+    // FBO 管理器（用于 GPU 增量渲染）
+    std::unique_ptr<FBOManager> fbo_manager_;
+    bool use_fbo_incremental_ = true;  // 是否使用 FBO 增量渲染
 
     // 待处理的 resize（用于节流后处理最后一次 resize）
     int pending_resize_width_ = 0;

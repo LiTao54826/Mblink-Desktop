@@ -64,6 +64,7 @@
 #include "core/utils/encoding_utils.h"
 #include "core/devtools/devtools_manager.h"
 #include "core/lexbor/style_manager.h"
+#include "core/render/fbo_manager.h"
 
 namespace lightui {
 
@@ -725,6 +726,21 @@ Window::Window(const WindowConfig& config) : config_(config) {
 
     // 初始化 Taffy CSS 布局引擎
     layout_engine_ = std::make_unique<LayoutEngine>();
+
+    // 初始化 FBO 管理器（用于 GPU 增量渲染）
+    if (actual_backend_ == RenderBackend::OPENGL && gr_context_) {
+        int physical_width, physical_height;
+        SDL_GetWindowSizeInPixels(sdl_window_, &physical_width, &physical_height);
+        
+        fbo_manager_ = std::make_unique<FBOManager>();
+        if (!fbo_manager_->Initialize(physical_width, physical_height, gr_context_.get())) {
+            std::cerr << "[Window] Failed to initialize FBO, falling back to full repaint mode" << std::endl;
+            fbo_manager_.reset();
+            use_fbo_incremental_ = false;
+        } else {
+            std::cout << "[Window] FBO incremental rendering enabled" << std::endl;
+        }
+    }
 }
 
 Window::~Window() {
@@ -739,6 +755,9 @@ Window::~Window() {
         display_backend_->Shutdown();
         display_backend_.reset();
     }
+
+    // 释放 FBO 管理器（在释放 Skia 资源之前）
+    fbo_manager_.reset();
 
     // 释放Skia资源
     surface_.reset();
@@ -991,6 +1010,18 @@ void Window::OnResize() {
         glClear(GL_COLOR_BUFFER_BIT);    // 清除后缓冲
         
         CreateSkiaSurface();
+
+        // 调整 FBO 大小
+        if (fbo_manager_) {
+            if (!fbo_manager_->Resize(width, height)) {
+                std::cerr << "[Window::OnResize] Failed to resize FBO, disabling FBO incremental rendering" << std::endl;
+                fbo_manager_.reset();
+                use_fbo_incremental_ = false;
+            } else {
+                // 清除 FBO 内容（避免显示旧内容）
+                fbo_manager_->Clear(SK_ColorWHITE);
+            }
+        }
     } else if (actual_backend_ == RenderBackend::CPU) {
         // CPU 模式：重新创建 Skia Raster 表面
         SkImageInfo info = SkImageInfo::MakeN32Premul(width, height);
@@ -1613,11 +1644,164 @@ void Window::Render() {
         static bool debug_render = std::getenv("LIGHTUI_DEBUG_RENDER") != nullptr;
 
         // 检查是否强制全屏重绘或禁用增量渲染
-        // GPU 模式下总是全屏绘制（因为 OpenGL 双缓冲不支持真正的局部更新）
-        // 但仍然使用增量布局来优化性能
+        // GPU 模式下：如果 FBO 可用，使用 FBO 增量渲染；否则全屏重绘
+        bool use_fbo = (actual_backend_ == RenderBackend::OPENGL) && 
+                       fbo_manager_ && fbo_manager_->IsValid() && use_fbo_incremental_;
         bool use_full_paint = force_full_repaint_ || !enable_incremental_render_ || 
-                              (actual_backend_ == RenderBackend::OPENGL);
+                              (actual_backend_ == RenderBackend::OPENGL && !use_fbo);
         
+        // GPU FBO 增量渲染模式
+        if (use_fbo && !force_full_repaint_) {
+            // 模式 D：GPU FBO 增量渲染
+            DEBUG_LOG("[Window::Render] Mode D: GPU FBO incremental rendering");
+            if (debug_render) {
+                std::cout << "[Render] Mode D: GPU FBO incremental rendering" << std::endl;
+            }
+
+            // 获取 FBO canvas
+            SkCanvas* fbo_canvas = fbo_manager_->GetCanvas();
+            if (!fbo_canvas) {
+                std::cerr << "[Render] FBO canvas is null, falling back to full repaint" << std::endl;
+                use_full_paint = true;
+                goto full_paint_fallback;
+            }
+
+            // 步骤1：从渲染树收集脏区域
+            CollectDirtyRectsFromRenderTree(cached_render_tree_.get());
+
+            // 步骤2：收集最终的脏区域
+            std::vector<SkRect> combined_dirty_rects;
+
+            if (!dirty_rects_.empty()) {
+                DirtyRegion dirty_region;
+                for (const auto& rect : dirty_rects_) {
+                    dirty_region.AddRect(rect);
+                }
+                dirty_region.OptimizeAdaptive(app_width, app_height);
+                combined_dirty_rects = dirty_region.GetRegions();
+            }
+
+            // 同步 DOM 脏标记到 RenderObject 并执行增量布局
+            MarkRenderObjectsDirty(body.get(), cached_render_tree_.get());
+            LayoutDirtySubtree(cached_render_tree_.get(), app_width, app_height);
+
+            // 重新应用动画值
+            if (animation_applicator_ && cached_render_tree_) {
+                ApplyAnimationsToRenderTree(cached_render_tree_.get());
+            }
+
+            // 布局后再次收集脏区域
+            CollectDirtyRectsFromRenderTree(cached_render_tree_.get());
+            if (!dirty_rects_.empty()) {
+                DirtyRegion dirty_region;
+                for (const auto& rect : dirty_rects_) {
+                    dirty_region.AddRect(rect);
+                }
+                dirty_region.OptimizeAdaptive(app_width, app_height);
+                combined_dirty_rects = dirty_region.GetRegions();
+            }
+
+            // 开始新的渲染帧
+            auto& layer_mgr = LayerManager::Instance();
+            layer_mgr.BeginFrame();
+
+            // 应用 DPI 缩放到 FBO canvas
+            fbo_canvas->save();
+            fbo_canvas->scale(dpi_scale, dpi_scale);
+
+            // 如果 DevTools 打开，裁剪到主应用区域
+            if (devtools.IsOpen()) {
+                fbo_canvas->clipRect(SkRect::MakeXYWH(app_x, app_y, app_width, app_height));
+            }
+
+            if (!combined_dirty_rects.empty()) {
+                // 有脏区域：增量渲染到 FBO
+                if (debug_render) {
+                    std::cout << "[Render] FBO incremental: " << combined_dirty_rects.size() << " dirty rects" << std::endl;
+                }
+
+                for (const auto& rect : combined_dirty_rects) {
+                    fbo_canvas->save();
+
+                    // 裁剪到脏区域（扩大一点以包含边缘元素）
+                    SkRect expanded_rect = rect.makeOutset(50, 50);
+                    fbo_canvas->clipRect(expanded_rect);
+
+                    // 清除脏区域
+                    SkPaint clear_paint;
+                    clear_paint.setColor(clear_color);
+                    fbo_canvas->drawRect(expanded_rect, clear_paint);
+
+                    // 绘制整棵渲染树（会被裁剪到脏区域）
+                    cached_render_tree_->Paint(fbo_canvas);
+
+                    fbo_canvas->restore();
+                }
+            } else if (needs_repaint_) {
+                // 无脏区域但需要重绘：全量绘制到 FBO
+                if (debug_render) {
+                    std::cout << "[Render] FBO full repaint (no dirty rects)" << std::endl;
+                }
+                fbo_canvas->clear(clear_color);
+                cached_render_tree_->Paint(fbo_canvas);
+            }
+
+            // 绘制 overlay 元素到 FBO
+            layer_mgr.PaintLayers(fbo_canvas);
+
+            fbo_canvas->restore();  // 恢复 DPI 缩放
+
+            // 更新并绘制 select 下拉菜单到 FBO
+            auto& dropdown_manager = SelectDropdownManager::Instance();
+            if (dropdown_manager.IsDropdownOpen()) {
+                dropdown_manager.UpdatePositionFromRenderTree(cached_render_tree_);
+            }
+            fbo_canvas->save();
+            fbo_canvas->scale(dpi_scale, dpi_scale);
+            dropdown_manager.Paint(fbo_canvas);
+            fbo_canvas->restore();
+
+            // 渲染 DevTools 到 FBO
+            fbo_canvas->save();
+            RenderDevTools(fbo_canvas, static_cast<float>(width), static_cast<float>(height));
+            fbo_canvas->restore();
+
+            // 刷新 FBO 渲染
+            fbo_manager_->Flush();
+
+            // 将 FBO 内容 blit 到屏幕
+            fbo_manager_->BlitToScreen(physical_width, physical_height);
+
+            // 清除脏标记
+            ClearDirtyFlags(body.get());
+            ClearRenderObjectDirtyFlags(cached_render_tree_.get());
+
+            // 恢复主 canvas 状态
+            canvas->restore();
+
+            // 检查是否有活动动画
+            bool has_running_animations = false;
+            if (document_ && document_->GetStyleManager()) {
+                has_running_animations = !document_->GetStyleManager()->GetAnimationController().GetRunningAnimations().empty();
+            }
+            if (!has_running_animations && animation_controller_) {
+                has_running_animations = !animation_controller_->GetRunningAnimations().empty();
+            }
+            if (!has_running_animations && animation_timeline_) {
+                has_running_animations = animation_timeline_->HasRunningTransitions();
+            }
+
+            // 清除重绘标记
+            if (!has_running_animations) {
+                needs_repaint_ = false;
+            }
+            dirty_rects_.clear();
+            force_full_repaint_ = false;
+
+            return;  // FBO 模式完成，直接返回
+        }
+
+full_paint_fallback:
         if (use_full_paint) {
             // 模式 B：使用缓存的渲染树，但全屏重绘（不做局部裁剪）
             DEBUG_LOG("[Window::Render] Mode B: Full repaint (incremental disabled or forced)");
