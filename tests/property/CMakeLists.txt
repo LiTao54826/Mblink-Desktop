@@ -13,6 +13,14 @@ set(RENDER_PROPERTY_TEST_SOURCES
     render/test_aspect_ratio_properties.cpp
     render/test_clip_path_properties.cpp
     render/test_layer_system_properties.cpp
+    render/test_animation_keyframes_properties.cpp
+    render/test_animation_parsing_properties.cpp
+    render/test_animation_interpolation_properties.cpp
+    render/test_animation_progress_properties.cpp
+    render/test_transform_interpolation_properties.cpp
+    render/test_animation_events_properties.cpp
+    render/test_animation_fillmode_properties.cpp
+    render/test_animation_playstate_properties.cpp
 )
 
 # Layout property tests

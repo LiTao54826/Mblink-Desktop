@@ -7,6 +7,7 @@
 #include "render_inline_block.h"
 #include "render_svg.h"
 #include "css_clip_path.h"
+#include "animation.h"
 #include "core/dom/text.h"
 #include "core/dom/document.h"
 #include "core/dom/svg_element.h"
@@ -2210,6 +2211,100 @@ bool StyleResolver::ParseBackgroundProperty(ComputedStyle& style,
     return false;
 }
 
+// Helper function to parse animation properties
+bool StyleResolver::ParseAnimationProperty(ComputedStyle& style,
+                                           const std::string& property,
+                                           const std::string& resolved_value) {
+    if (property == "animation") {
+        // Parse animation shorthand property
+        style.animations = CSSAnimation::Parse(resolved_value);
+        return true;
+    }
+    else if (property == "animation-name") {
+        // Parse animation-name (can be comma-separated for multiple animations)
+        auto names = CSSAnimation::ParseName(resolved_value);
+        // Ensure we have enough animation entries
+        while (style.animations.size() < names.size()) {
+            style.animations.push_back(CSSAnimation());
+        }
+        for (size_t i = 0; i < names.size(); ++i) {
+            style.animations[i].name = names[i];
+        }
+        return true;
+    }
+    else if (property == "animation-duration") {
+        auto durations = CSSAnimation::ParseDuration(resolved_value);
+        while (style.animations.size() < durations.size()) {
+            style.animations.push_back(CSSAnimation());
+        }
+        for (size_t i = 0; i < durations.size(); ++i) {
+            style.animations[i].duration = durations[i];
+        }
+        return true;
+    }
+    else if (property == "animation-timing-function") {
+        auto functions = CSSAnimation::ParseTimingFunction(resolved_value);
+        while (style.animations.size() < functions.size()) {
+            style.animations.push_back(CSSAnimation());
+        }
+        for (size_t i = 0; i < functions.size(); ++i) {
+            style.animations[i].timing_function = functions[i].first;
+            style.animations[i].bezier = functions[i].second;
+        }
+        return true;
+    }
+    else if (property == "animation-delay") {
+        auto delays = CSSAnimation::ParseDelay(resolved_value);
+        while (style.animations.size() < delays.size()) {
+            style.animations.push_back(CSSAnimation());
+        }
+        for (size_t i = 0; i < delays.size(); ++i) {
+            style.animations[i].delay = delays[i];
+        }
+        return true;
+    }
+    else if (property == "animation-iteration-count") {
+        auto counts = CSSAnimation::ParseIterationCount(resolved_value);
+        while (style.animations.size() < counts.size()) {
+            style.animations.push_back(CSSAnimation());
+        }
+        for (size_t i = 0; i < counts.size(); ++i) {
+            style.animations[i].iteration_count = counts[i];
+        }
+        return true;
+    }
+    else if (property == "animation-direction") {
+        auto directions = CSSAnimation::ParseDirection(resolved_value);
+        while (style.animations.size() < directions.size()) {
+            style.animations.push_back(CSSAnimation());
+        }
+        for (size_t i = 0; i < directions.size(); ++i) {
+            style.animations[i].direction = directions[i];
+        }
+        return true;
+    }
+    else if (property == "animation-fill-mode") {
+        auto modes = CSSAnimation::ParseFillMode(resolved_value);
+        while (style.animations.size() < modes.size()) {
+            style.animations.push_back(CSSAnimation());
+        }
+        for (size_t i = 0; i < modes.size(); ++i) {
+            style.animations[i].fill_mode = modes[i];
+        }
+        return true;
+    }
+    else if (property == "animation-play-state") {
+        // Parse play-state and apply to all animations
+        bool paused = CSSAnimation::ParsePlayState(resolved_value);
+        style.animation_play_state = paused ? "paused" : "running";
+        for (auto& anim : style.animations) {
+            anim.paused = paused;
+        }
+        return true;
+    }
+    return false;
+}
+
 void StyleResolver::ParseStyleProperty(ComputedStyle& style,
                                        const std::string& property,
                                        const std::string& value) {
@@ -2228,6 +2323,7 @@ void StyleResolver::ParseStyleProperty(ComputedStyle& style,
     // 3. Delegate to category-specific parsers to reduce nesting depth
     if (ParseLayoutProperty(style, property, resolved_value)) return;
     if (ParseBorderProperty(style, property, resolved_value)) return;
+    if (ParseAnimationProperty(style, property, resolved_value)) return;
     if (ParseBackgroundProperty(style, property, resolved_value)) return;
     
     // Unknown property - silently ignored (CSS behavior)

@@ -43,6 +43,7 @@ class RenderObject;
 class Node;
 class AnimationTimeline;
 class AnimationController;
+class AnimationApplicator;
 class RenderTreeBuilder;
 class RenderPipeline;
 class RenderTreeSynchronizer;
@@ -346,8 +347,10 @@ public:
 
     /**
      * @brief 标记渲染树需要重建
+     * 
+     * 同时清理动画状态，防止悬空指针问题。
      */
-    void InvalidateRenderTree() { render_tree_valid_ = false; }
+    void InvalidateRenderTree();
 
     /**
      * @brief 检查是否需要重绘
@@ -418,6 +421,12 @@ public:
     AnimationController* GetAnimationController() const { return animation_controller_.get(); }
 
     /**
+     * @brief 获取动画应用器
+     * @return 动画应用器指针
+     */
+    AnimationApplicator* GetAnimationApplicator() const { return animation_applicator_.get(); }
+
+    /**
      * @brief 获取布局引擎
      * @return 布局引擎指针
      * 
@@ -446,6 +455,12 @@ public:
      * @param current_time 当前时间（秒）
      */
     void UpdateAnimations(double current_time);
+
+    /**
+     * @brief 递归应用动画到渲染树
+     * @param root 渲染树根节点
+     */
+    void ApplyAnimationsToRenderTree(RenderObject* root);
 
     /**
      * @brief 获取 DPI 缩放比
@@ -596,6 +611,9 @@ private:
 
     // CSS Animation 动画控制器
     std::unique_ptr<AnimationController> animation_controller_;
+
+    // CSS Animation 动画应用器
+    std::unique_ptr<AnimationApplicator> animation_applicator_;
 
     // Taffy CSS 布局引擎
     std::unique_ptr<LayoutEngine> layout_engine_;

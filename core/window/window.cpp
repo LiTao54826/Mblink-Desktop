@@ -53,6 +53,7 @@
 #include "core/render/transition.h"
 #include "core/render/animation_timeline.h"
 #include "core/render/animation_controller.h"
+#include "core/render/animation_applicator.h"
 #include "core/render/render_pipeline.h"
 #include "core/render/render_tree_synchronizer.h"
 #include "core/layout/layout_engine.h"
@@ -62,6 +63,7 @@
 #include "core/render/layer_manager.h"
 #include "core/utils/encoding_utils.h"
 #include "core/devtools/devtools_manager.h"
+#include "core/lexbor/style_manager.h"
 
 namespace lightui {
 
@@ -94,6 +96,19 @@ public:
                 tag = "text";
             }
             std::cout << "[OnNodeAdded] tag=" << tag << " IsInBatch=" << IsInBatch(node) << std::endl;
+        }
+        
+        // 处理 <style> 元素的添加：触发样式解析
+        if (node && node->GetNodeType() == NodeType::ELEMENT_NODE) {
+            auto elem = std::dynamic_pointer_cast<Element>(node->shared_from_this());
+            if (elem && elem->GetTagName() == "style") {
+                // 获取 Document 的 StyleManager 并解析样式
+                if (auto doc = node->GetOwnerDocument()) {
+                    if (auto style_manager = doc->GetStyleManager()) {
+                        style_manager->ParseStyleElement(elem.get());
+                    }
+                }
+            }
         }
         
         if (window_ && !IsInBatch(node)) {
@@ -132,19 +147,15 @@ public:
                 if (!bounds.isEmpty()) {
                     element->SetDirtyRect(bounds);
                     window_->AddDirtyRect(bounds);
-                    
-                    // 调试输出
-                    static int debug_count = 0;
-                    if (++debug_count <= 5 && name == "style") {
-                        std::cout << "[OnAttributeChanged] Old bounds: " 
-                                  << bounds.left() << "," << bounds.top() << " " 
-                                  << bounds.width() << "x" << bounds.height() << std::endl;
-                    }
                 }
                 
                 // 关键修复：当 style 属性变化时，需要重新解析样式
                 // 这确保 transform 等属性的动态更新能正确生效
                 if (name == "style") {
+                    // 检查是否包含 animation 属性变化
+                    bool has_animation_change = (new_value.find("animation") != std::string::npos ||
+                                                  old_value.find("animation") != std::string::npos);
+                    
                     StyleResolver resolver;
                     if (window_->GetDocument() && window_->GetDocument()->GetStyleManager()) {
                         resolver.SetStyleManager(window_->GetDocument()->GetStyleManager());
@@ -161,10 +172,20 @@ public:
                         }
                     }
                     auto new_style = resolver.ResolveStyle(elem_ptr, parent_style);
+                    
+                    // 调试：如果有动画变化，打印信息
+                    if (has_animation_change) {
+                        std::cout << "[OnAttributeChanged] Animation change detected!" << std::endl;
+                        std::cout << "  old_value: " << old_value << std::endl;
+                        std::cout << "  new_value: " << new_value << std::endl;
+                        std::cout << "  resolved animations: " << new_style.animations.size() << std::endl;
+                        for (const auto& anim : new_style.animations) {
+                            std::cout << "    - " << anim.name << " duration=" << anim.duration << std::endl;
+                        }
+                    }
+                    
                     render_obj->SetComputedStyle(new_style);
-                    // 注意：不再无条件调用 MarkNeedsLayout()
-                    // UpdateStyle 内部会智能判断是否需要布局
-                    // 这避免了 hover 等伪类变化时不必要的布局重算
+                    render_obj->InvalidatePaintCache();
                     
                     // 关键修复：同步更新布局引擎中的样式
                     // UpdateStyle 内部会检查布局相关属性是否变化
@@ -196,6 +217,45 @@ public:
                     window_->SetNeedsRepaint();
                     return;
                 }
+            }
+            
+            // 特殊处理: animation 属性变化需要重新解析样式
+            if (property == "animation" || property.find("animation-") == 0) {
+                if (auto render_obj = element->GetRenderObject()) {
+                    // 重新解析样式以获取新的动画配置
+                    StyleResolver resolver;
+                    if (window_->GetDocument() && window_->GetDocument()->GetStyleManager()) {
+                        resolver.SetStyleManager(window_->GetDocument()->GetStyleManager());
+                    }
+                    
+                    // 获取父元素样式用于继承
+                    const ComputedStyle* parent_style = nullptr;
+                    if (auto parent_node = element->GetParentNode()) {
+                        if (parent_node->GetNodeType() == NodeType::ELEMENT_NODE) {
+                            auto parent_elem = std::static_pointer_cast<Element>(parent_node);
+                            if (auto parent_render = parent_elem->GetRenderObject()) {
+                                parent_style = &parent_render->GetComputedStyle();
+                            }
+                        }
+                    }
+                    
+                    auto new_style = resolver.ResolveStyle(
+                        std::static_pointer_cast<Element>(element->shared_from_this()), 
+                        parent_style);
+                    
+                    render_obj->SetComputedStyle(new_style);
+                    render_obj->MarkNeedsPaint();
+                    render_obj->InvalidatePaintCache();
+
+                    // 记录脏矩形
+                    SkRect bounds = render_obj->GetViewportBoundingRect();
+                    if (!bounds.isEmpty()) {
+                        element->SetDirtyRect(bounds);
+                        window_->AddDirtyRect(bounds);
+                    }
+                }
+                window_->SetNeedsRepaint();
+                return;
             }
             
             // Phase 1: 精确脏区域标记
@@ -292,19 +352,53 @@ public:
                              const std::string& pseudo_class,
                              bool activate) override {
         if (window_ && !IsInBatch(element.get())) {
-            // 性能优化：只有可能有视觉变化的伪类才触发重绘
-            bool needs_repaint = false;
-
+            // hover 伪类变化需要重新解析样式（可能有 :hover 选择器定义的动画）
             if (pseudo_class == "hover") {
-                // 只有这些元素有内置的 :hover 样式
-                std::string tag = element->GetTagName();
-                if (tag == "button" || tag == "a" || tag == "input" ||
-                    tag == "textarea" || tag == "select") {
-                    needs_repaint = true;
+                // 性能优化：只有当元素有 :hover 相关的 CSS 规则时才重新解析样式
+                auto style_manager = window_->GetDocument() ? window_->GetDocument()->GetStyleManager() : nullptr;
+                if (!style_manager || !style_manager->HasHoverRules(element.get())) {
+                    // 没有 hover 规则，不需要重新解析样式
+                    return;
                 }
-            } else if (pseudo_class == "active" || pseudo_class == "focus" ||
-                       pseudo_class == "focus-visible" || pseudo_class == "checked" ||
-                       pseudo_class == "disabled") {
+                
+                if (auto render_obj = element->GetRenderObject()) {
+                    // 重新解析样式以获取 :hover 伪类的样式（包括动画）
+                    StyleResolver resolver;
+                    resolver.SetStyleManager(style_manager);
+                    
+                    // 获取父元素样式用于继承
+                    const ComputedStyle* parent_style = nullptr;
+                    if (auto parent_node = element->GetParentNode()) {
+                        if (parent_node->GetNodeType() == NodeType::ELEMENT_NODE) {
+                            auto parent_elem = std::static_pointer_cast<Element>(parent_node);
+                            if (auto parent_render = parent_elem->GetRenderObject()) {
+                                parent_style = &parent_render->GetComputedStyle();
+                            }
+                        }
+                    }
+                    
+                    auto new_style = resolver.ResolveStyle(element, parent_style);
+                    
+                    render_obj->SetComputedStyle(new_style);
+                    render_obj->MarkNeedsPaint();
+                    render_obj->InvalidatePaintCache();
+
+                    // 记录脏矩形
+                    SkRect bounds = render_obj->GetViewportBoundingRect();
+                    if (!bounds.isEmpty()) {
+                        element->SetDirtyRect(bounds);
+                        window_->AddDirtyRect(bounds);
+                    }
+                }
+                window_->SetNeedsRepaint();
+                return;
+            }
+            
+            // 其他伪类的处理
+            bool needs_repaint = false;
+            if (pseudo_class == "active" || pseudo_class == "focus" ||
+                pseudo_class == "focus-visible" || pseudo_class == "checked" ||
+                pseudo_class == "disabled") {
                 needs_repaint = true;
             }
 
@@ -626,6 +720,9 @@ Window::Window(const WindowConfig& config) : config_(config) {
     // 初始化动画控制器
     animation_controller_ = std::make_unique<AnimationController>();
 
+    // 初始化动画应用器
+    animation_applicator_ = std::make_unique<AnimationApplicator>(*animation_controller_);
+
     // 初始化 Taffy CSS 布局引擎
     layout_engine_ = std::make_unique<LayoutEngine>();
 }
@@ -885,6 +982,14 @@ void Window::OnResize() {
     if (actual_backend_ == RenderBackend::OPENGL) {
         // 更新 OpenGL viewport
         glViewport(0, 0, width, height);
+        
+        // 关键修复：在重新创建 surface 之前，清除两个缓冲区
+        // OpenGL 双缓冲需要清除前后两个缓冲区，否则新增区域会显示垃圾数据
+        glClearColor(1.0f, 1.0f, 1.0f, 1.0f);  // 白色背景
+        glClear(GL_COLOR_BUFFER_BIT);
+        SDL_GL_SwapWindow(sdl_window_);  // 交换到后缓冲
+        glClear(GL_COLOR_BUFFER_BIT);    // 清除后缓冲
+        
         CreateSkiaSurface();
     } else if (actual_backend_ == RenderBackend::CPU) {
         // CPU 模式：重新创建 Skia Raster 表面
@@ -1039,6 +1144,13 @@ void Window::CreateSkiaSurface() {
     if (!surface_) {
         throw std::runtime_error("Failed to create Skia surface");
     }
+    
+    // 关键修复：清除新创建的表面，避免显示垃圾数据
+    // 这在窗口大小改变时特别重要
+    SkCanvas* canvas = surface_->getCanvas();
+    if (canvas) {
+        canvas->clear(SK_ColorWHITE);
+    }
 }
 
 void Window::InitCPURendering() {
@@ -1095,6 +1207,7 @@ bool Window::HandleSDLEvent(const SDL_Event& event) {
                 // 直接处理 resize，不做节流
                 OnResize();
                 InvalidateRenderTree();  // 窗口大小改变，需要用新尺寸重建渲染树和布局
+                SetForceFullRepaint(true);  // 关键修复：强制全量重绘，避免新区域显示垃圾数据
                 SetNeedsRepaint();
                 DispatchWindowEvent(WindowEvent(WindowEventType::RESIZE, new_width, new_height));
                 return true;
@@ -1248,6 +1361,13 @@ void Window::SetDocument(std::shared_ptr<Document> document) {
     if (document_) {
         dom_observer_ = std::make_unique<WindowDOMObserver>(this);
         document_->AddObserver(dom_observer_.get());
+        
+        // 重新创建动画应用器，使用 StyleManager 的 AnimationController
+        // 这样 @keyframes 规则可以被正确找到
+        if (document_->GetStyleManager()) {
+            animation_applicator_ = std::make_unique<AnimationApplicator>(
+                document_->GetStyleManager()->GetAnimationController());
+        }
     }
 
     // 标记需要重绘
@@ -1263,6 +1383,7 @@ void Window::Render() {
         has_pending_resize_ = false;
         OnResize();
         InvalidateRenderTree();
+        SetForceFullRepaint(true);  // 关键修复：强制全量重绘
         SetNeedsRepaint();
         DispatchWindowEvent(WindowEvent(WindowEventType::RESIZE, pending_resize_width_, pending_resize_height_));
     }
@@ -1279,6 +1400,11 @@ void Window::Render() {
     if (animation_timeline_) {
         has_active_animations = animation_timeline_->HasRunningTransitions();
     }
+    // 检查 StyleManager 的 AnimationController 中是否有活动动画
+    if (!has_active_animations && document_ && document_->GetStyleManager()) {
+        has_active_animations = !document_->GetStyleManager()->GetAnimationController().GetRunningAnimations().empty();
+    }
+    // 兼容旧代码：也检查 Window 自己的 animation_controller_
     if (!has_active_animations && animation_controller_) {
         has_active_animations = !animation_controller_->GetRunningAnimations().empty();
     }
@@ -1292,13 +1418,6 @@ void Window::Render() {
         }
         return;
     }
-
-    // 更新动画
-    static Uint64 start_time = SDL_GetPerformanceCounter();
-    Uint64 current_time = SDL_GetPerformanceCounter();
-    Uint64 frequency = SDL_GetPerformanceFrequency();
-    double timestamp_sec = static_cast<double>(current_time - start_time) / frequency;
-    UpdateAnimations(timestamp_sec);
 
     // 获取画布
     SkCanvas* canvas = surface_->getCanvas();
@@ -1353,14 +1472,7 @@ void Window::Render() {
     bool size_changed = (width != last_width || height != last_height);
     bool app_size_changed = (app_width != last_app_width || app_height != last_app_height);
     
-    std::cout << "[Window::Render] render_tree_valid_=" << render_tree_valid_ 
-              << ", size_changed=" << size_changed
-              << ", current=" << width << "x" << height
-              << ", last=" << last_width << "x" << last_height << std::endl;
-    
     if (size_changed || app_size_changed) {
-        std::cout << "[Window::Render] Size changed: " << last_width << "x" << last_height 
-                  << " -> " << width << "x" << height << std::endl;
         last_width = width;
         last_height = height;
         last_app_width = app_width;
@@ -1375,7 +1487,6 @@ void Window::Render() {
             SaveScrollPositions(cached_render_tree_.get(), scroll_positions);
         }
 
-        // 渲染树无效，需要重建（全量渲染）
         DEBUG_LOG("[Window::Render] Full render - rebuilding render tree...");
         RenderTreeBuilder builder;
         builder.SetDocument(document_.get());
@@ -1391,6 +1502,13 @@ void Window::Render() {
         if (!scroll_positions.empty()) {
             RestoreScrollPositions(cached_render_tree_.get(), scroll_positions);
         }
+
+        // 更新动画（在渲染树构建之后）
+        static Uint64 anim_start_time = SDL_GetPerformanceCounter();
+        Uint64 anim_current_time = SDL_GetPerformanceCounter();
+        Uint64 anim_frequency = SDL_GetPerformanceFrequency();
+        double timestamp_sec = static_cast<double>(anim_current_time - anim_start_time) / anim_frequency;
+        UpdateAnimations(timestamp_sec);
 
         // 新渲染树需要完整布局（使用调整后的尺寸）
         DEBUG_LOG("[Window::Render] Full layout: " << app_width << "x" << app_height);
@@ -1468,6 +1586,13 @@ void Window::Render() {
     } else {
         // 渲染树有效，尝试增量渲染
 
+        // 更新动画（在增量渲染路径中也需要）
+        static Uint64 anim_start_time_inc = SDL_GetPerformanceCounter();
+        Uint64 anim_current_time_inc = SDL_GetPerformanceCounter();
+        Uint64 anim_frequency_inc = SDL_GetPerformanceFrequency();
+        double timestamp_sec_inc = static_cast<double>(anim_current_time_inc - anim_start_time_inc) / anim_frequency_inc;
+        UpdateAnimations(timestamp_sec_inc);
+
         // 获取背景色
         SkColor clear_color = SK_ColorWHITE;
         const auto& body_style = cached_render_tree_->GetComputedStyle();
@@ -1488,21 +1613,40 @@ void Window::Render() {
         static bool debug_render = std::getenv("LIGHTUI_DEBUG_RENDER") != nullptr;
 
         // 检查是否强制全屏重绘或禁用增量渲染
-        if (force_full_repaint_ || !enable_incremental_render_) {
+        // GPU 模式下总是全屏绘制（因为 OpenGL 双缓冲不支持真正的局部更新）
+        // 但仍然使用增量布局来优化性能
+        bool use_full_paint = force_full_repaint_ || !enable_incremental_render_ || 
+                              (actual_backend_ == RenderBackend::OPENGL);
+        
+        if (use_full_paint) {
             // 模式 B：使用缓存的渲染树，但全屏重绘（不做局部裁剪）
             DEBUG_LOG("[Window::Render] Mode B: Full repaint (incremental disabled or forced)");
             if (debug_render) {
                 std::cout << "[Render] Mode B: Full repaint (force=" << force_full_repaint_ 
-                          << ", incremental=" << enable_incremental_render_ << ")" << std::endl;
+                          << ", incremental=" << enable_incremental_render_ 
+                          << ", gpu=" << (actual_backend_ == RenderBackend::OPENGL) << ")" << std::endl;
             }
 
             // 增量布局：仅布局脏子树
             MarkRenderObjectsDirty(body.get(), cached_render_tree_.get());
             LayoutDirtySubtree(cached_render_tree_.get(), app_width, app_height);
 
+            // 关键修复：MarkRenderObjectsDirty 可能重新计算了样式，覆盖了动画值
+            // 需要重新应用动画值，确保绘制时使用正确的动画状态
+            if (animation_applicator_ && cached_render_tree_) {
+                ApplyAnimationsToRenderTree(cached_render_tree_.get());
+            }
+
+            // 开始新的渲染帧，清除上一帧的 overlay
+            auto& layer_mgr = LayerManager::Instance();
+            layer_mgr.BeginFrame();
+
             // 全屏重绘
             canvas->clear(clear_color);
             cached_render_tree_->Paint(canvas);
+            
+            // 绘制所有 overlay 元素
+            layer_mgr.PaintLayers(canvas);
             
             // 全屏重绘时，清除脏区域标记（SwapBuffers 将使用全量更新）
             has_dirty_bounds_ = false;
@@ -1511,7 +1655,7 @@ void Window::Render() {
             ClearDirtyFlags(body.get());
             ClearRenderObjectDirtyFlags(cached_render_tree_.get());
         } else {
-            // 模式 C：基于脏区域的增量渲染
+            // 模式 C：基于脏区域的增量渲染（仅 CPU 模式）
             DEBUG_LOG("[Window::Render] Mode C: Incremental rendering");
 
             // 步骤1：从渲染树收集脏区域（基于 RenderObject::NeedsPaint）
@@ -1551,6 +1695,12 @@ void Window::Render() {
                 // 同步 DOM 脏标记到 RenderObject 并执行增量布局
                 MarkRenderObjectsDirty(body.get(), cached_render_tree_.get());
                 LayoutDirtySubtree(cached_render_tree_.get(), app_width, app_height);
+
+                // 关键修复：MarkRenderObjectsDirty 可能重新计算了样式，覆盖了动画值
+                // 需要重新应用动画值，确保绘制时使用正确的动画状态
+                if (animation_applicator_ && cached_render_tree_) {
+                    ApplyAnimationsToRenderTree(cached_render_tree_.get());
+                }
 
                 // 关键修复：布局更新后，位置可能发生了变化。
                 // 我们需要再次收集脏区域，以捕获元素的新位置。
@@ -1643,8 +1793,23 @@ void Window::Render() {
         gr_context_->flush();
     }
 
+    // 检查是否有活动动画，如果有，保持需要重绘
+    bool has_running_animations = false;
+    if (document_ && document_->GetStyleManager()) {
+        has_running_animations = !document_->GetStyleManager()->GetAnimationController().GetRunningAnimations().empty();
+    }
+    if (!has_running_animations && animation_controller_) {
+        has_running_animations = !animation_controller_->GetRunningAnimations().empty();
+    }
+    if (!has_running_animations && animation_timeline_) {
+        has_running_animations = animation_timeline_->HasRunningTransitions();
+    }
+
     // 清除重绘标记和脏区域
-    needs_repaint_ = false;
+    // 但如果有活动动画，保持需要重绘
+    if (!has_running_animations) {
+        needs_repaint_ = false;
+    }
     dirty_rects_.clear();
     
     // 关键修复：重置强制全屏重绘标志
@@ -2075,7 +2240,9 @@ void Window::CollectDirtyRectsFromRenderTree(RenderObject* root) {
 
         // 如果该渲染对象需要重绘，收集其边界框
         if (obj->NeedsPaint()) {
-            SkRect rect = obj->GetBoundingRect();
+            // 使用视口坐标系的边界框（考虑滚动偏移）
+            // 这样脏区域裁剪才能正确工作
+            SkRect rect = obj->GetViewportBoundingRect();
             if (!rect.isEmpty()) {
                 AddDirtyRect(rect);
             }
@@ -2179,18 +2346,50 @@ void Window::UpdateAnimations(double current_time) {
     bool has_active_animations = false;
     if (animation_timeline_) {
         animation_timeline_->Update(current_time);
-        // TODO: 检查是否有活跃的动画
+        has_active_animations = animation_timeline_->HasRunningTransitions();
     }
 
-    // 更新 CSS Animation 动画
+    // 更新 CSS Animation 动画（使用 StyleManager 的 AnimationController）
+    if (document_ && document_->GetStyleManager()) {
+        auto& controller = document_->GetStyleManager()->GetAnimationController();
+        controller.Update(current_time);
+        size_t running_count = controller.GetRunningAnimations().size();
+        has_active_animations = has_active_animations || running_count > 0;
+    }
+    // 兼容旧代码：也更新 Window 自己的 animation_controller_
     if (animation_controller_) {
         animation_controller_->Update(current_time);
-        // TODO: 检查是否有活跃的动画
+        has_active_animations = has_active_animations || 
+                                !animation_controller_->GetRunningAnimations().empty();
     }
 
-    // 只在有活跃动画时才标记需要重绘
-    // 注意：不要在这里无条件调用 SetNeedsRepaint()，否则会导致无限重绘循环
-    (void)has_active_animations;
+    // 应用动画值到渲染树
+    if (animation_applicator_ && cached_render_tree_) {
+        // 递归遍历渲染树，启动新动画并应用动画值
+        ApplyAnimationsToRenderTree(cached_render_tree_.get());
+    }
+
+    // 如果有活跃动画，标记需要重绘
+    if (has_active_animations) {
+        SetNeedsRepaint();
+    }
+}
+
+void Window::ApplyAnimationsToRenderTree(RenderObject* root) {
+    if (!root || !animation_applicator_) {
+        return;
+    }
+
+    // 启动该对象的动画（如果尚未启动）
+    animation_applicator_->StartAnimationsForObject(root);
+
+    // 应用当前动画值
+    animation_applicator_->ApplyAnimationValues(root);
+
+    // 递归处理子节点
+    for (const auto& child : root->GetChildren()) {
+        ApplyAnimationsToRenderTree(child.get());
+    }
 }
 
 float Window::GetDisplayScale() const {
@@ -2228,6 +2427,25 @@ float Window::GetDisplayScale() const {
     }
 
     return 1.0f;
+}
+
+void Window::InvalidateRenderTree() {
+    // 标记渲染树需要重建
+    render_tree_valid_ = false;
+    
+    // 清理运行中的动画状态，防止悬空指针问题
+    // 当渲染树重建时，旧的 RenderObject 指针会失效
+    // 注意：只清理运行中的动画，保留 @keyframes 规则
+    if (animation_applicator_) {
+        animation_applicator_->Clear();
+    }
+    if (animation_controller_) {
+        animation_controller_->ClearRunningAnimations();
+    }
+    // 同时清理 StyleManager 中的 AnimationController
+    if (document_ && document_->GetStyleManager()) {
+        document_->GetStyleManager()->GetAnimationController().ClearRunningAnimations();
+    }
 }
 
 void Window::EnsureRenderTree() {

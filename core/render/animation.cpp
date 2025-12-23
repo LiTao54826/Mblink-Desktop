@@ -262,6 +262,12 @@ bool CSSAnimation::ParsePlayState(const std::string& str) {
 std::vector<CSSAnimation> CSSAnimation::Parse(const std::string& str) {
     std::vector<CSSAnimation> animations;
     
+    // 处理 "none" 值 - 返回空列表
+    std::string trimmed = Trim(str);
+    if (trimmed.empty() || trimmed == "none") {
+        return animations;
+    }
+    
     // 分割多个动画 (以逗号分隔，但要注意 cubic-bezier 中的逗号)
     std::vector<std::string> animation_strs;
     size_t start = 0;

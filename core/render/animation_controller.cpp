@@ -13,6 +13,7 @@
 #include "core/dom/element.h"
 #include <algorithm>
 #include <cmath>
+#include <iostream>
 
 namespace lightui {
 
@@ -251,6 +252,28 @@ AnimationController::GetCurrentProperties(RenderObject* object, const std::strin
     
     const RunningAnimation& anim = *it;
     
+    // 处理 backwards 填充模式：在延迟期间应用第一帧样式
+    if (anim.state == CSSAnimationState::DELAYED) {
+        if (anim.config.fill_mode == AnimationFillMode::BACKWARDS ||
+            anim.config.fill_mode == AnimationFillMode::BOTH) {
+            // 返回第一帧的属性
+            return ComputeCurrentFrame(anim, 0.0f);
+        }
+        // 延迟期间且不是 backwards/both，不返回任何属性
+        return std::nullopt;
+    }
+    
+    // 处理 forwards 填充模式：动画结束后保留最后一帧样式
+    if (anim.state == CSSAnimationState::FINISHED) {
+        if (anim.config.fill_mode == AnimationFillMode::FORWARDS ||
+            anim.config.fill_mode == AnimationFillMode::BOTH) {
+            // 返回最后一帧的属性
+            return ComputeCurrentFrame(anim, 1.0f);
+        }
+        // 动画结束且不是 forwards/both，不返回任何属性
+        return std::nullopt;
+    }
+    
     // 计算进度
     float progress = ComputeProgress(anim, anim.current_time + anim.start_time);
     
@@ -381,6 +404,24 @@ void AnimationController::Clear() {
     }
 }
 
+void AnimationController::ClearRunningAnimations() {
+    // 只清除运行中的动画，保留 @keyframes 规则
+    running_animations_.clear();
+
+    // 清除优化器状态
+    if (optimization_enabled_) {
+        optimizer_.Reset();
+    }
+}
+
+const KeyframesRule* AnimationController::GetKeyframes(const std::string& name) const {
+    auto it = keyframes_rules_.find(name);
+    if (it != keyframes_rules_.end()) {
+        return &it->second;
+    }
+    return nullptr;
+}
+
 void AnimationController::UpdateSingleAnimation(RenderObject* object,
                                                 const std::string& name,
                                                 double current_time) {
@@ -488,19 +529,30 @@ void AnimationController::FireAnimationEvent(const RunningAnimation& anim,
         return;
     }
 
-    // TODO: 需要在 RenderObject 中添加获取关联 Element 的方法
-    // 目前暂时跳过事件触发
-    //
-    // 预期的实现：
-    // auto element = anim.object->GetElement();
-    // if (element) {
-    //     auto event = std::make_shared<AnimationEvent>(
-    //         event_type,
-    //         anim.config.name,
-    //         elapsed_time
-    //     );
-    //     element->DispatchEvent(event);
-    // }
+    // 获取关联的 DOM 节点
+    auto node = anim.object->GetNode();
+    if (!node) {
+        return;
+    }
+
+    // 检查节点是否为 Element
+    if (node->GetNodeType() != NodeType::ELEMENT_NODE) {
+        return;
+    }
+
+    // 转换为 Element
+    auto element = std::dynamic_pointer_cast<Element>(node);
+    if (!element) {
+        return;
+    }
+
+    // 创建并分发 AnimationEvent
+    auto event = std::make_shared<AnimationEvent>(
+        event_type,
+        anim.config.name,
+        elapsed_time
+    );
+    element->DispatchEvent(event);
 }
 
 } // namespace lightui

@@ -654,9 +654,19 @@ void Element::SetPseudoClass(const std::string& pseudo_class, bool activate) {
     // 伪类变化需要样式重计算（如:focus, :hover改变边框颜色）
     MarkDirty(DirtyType::STYLE | DirtyType::PAINT);
 
-    // 注意：不通知 DOM 观察者，因为伪类是浏览器内部状态
-    // 这样可以避免 React/Preact 等框架因伪类变化而重新渲染整个组件树
-    // 参考 Chrome 行为：:focus, :hover, :active 等伪类变化不会触发 MutationObserver
+    // 特殊处理：hover 伪类需要通知观察者以触发样式重新解析
+    // 这是因为 :hover 选择器可能定义了动画，需要重新解析样式来获取
+    // 其他伪类（如 :focus, :active）不需要，因为它们通常只改变颜色等简单属性
+    if (pseudo_class == "hover") {
+        auto doc = GetOwnerDocument();
+        if (doc) {
+            doc->GetObserverManager().NotifyPseudoClassChanged(
+                std::static_pointer_cast<Element>(shared_from_this()),
+                pseudo_class,
+                activate
+            );
+        }
+    }
 }
 
 bool Element::HasPseudoClass(const std::string& pseudo_class) const {

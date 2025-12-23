@@ -45,7 +45,6 @@ function scheduleUpdate(component) {
 }
 
 function flushUpdates() {
-    console.log('[flushUpdates] Starting, pendingUpdates.size=' + pendingUpdates.size);
     // 通知 C++ 开始批量操作
     if (typeof document !== 'undefined' && typeof document.__beginBatch === 'function') {
         document.__beginBatch();
@@ -58,13 +57,11 @@ function flushUpdates() {
 
     for (var i = 0; i < updates.length; i++) {
         var component = updates[i];
-        console.log('[flushUpdates] Processing component ' + i + ', has __rerender: ' + (component && component.__rerender ? 'yes' : 'no'));
         if (component && component.__rerender) {
             try {
                 component.__rerender();
-                console.log('[flushUpdates] Component ' + i + ' rerendered successfully');
             } catch (e) {
-                console.log('[flushUpdates] Component ' + i + ' rerender error: ' + e.message);
+                console.error('[flushUpdates] Component rerender error:', e.message);
             }
         }
     }
@@ -73,7 +70,6 @@ function flushUpdates() {
     if (typeof document !== 'undefined' && typeof document.__endBatch === 'function') {
         document.__endBatch();
     }
-    console.log('[flushUpdates] Done');
 }
 
 /**

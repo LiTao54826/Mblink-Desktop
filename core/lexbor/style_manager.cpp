@@ -6,9 +6,13 @@
 #include "style_manager.h"
 #include "core/dom/element.h"
 #include "core/dom/document.h"
+#include "core/render/keyframes.h"
 #include <algorithm>
 #include <sstream>
 #include <vector>
+#include <regex>
+#include <fstream>
+#include <iostream>
 
 namespace lightui {
 
@@ -74,6 +78,9 @@ bool StyleManager::ParseStyleElement(Element* style_element) {
         return false;
     }
     
+    // 首先提取并注册 @keyframes 规则
+    ExtractAndRegisterKeyframes(css_text);
+    
     // 创建新的样式表并解析
     auto sheet = std::make_shared<LexborStyleSheet>();
     if (!sheet->ParseCSS(css_text)) {
@@ -91,19 +98,31 @@ std::map<std::string, std::string> StyleManager::ParseInlineStyle(const std::str
 }
 
 bool StyleManager::LoadCSSFile(const std::string& file_path, int priority) {
-    auto sheet = std::make_shared<LexborStyleSheet>();
-    if (!sheet->ParseCSSFile(file_path)) {
+    // 读取文件内容
+    std::ifstream file(file_path, std::ios::binary);
+    if (!file.is_open()) {
         return false;
     }
-
-    AddStyleSheet(sheet, priority, "external-file");
-    return true;
+    
+    std::string css_text((std::istreambuf_iterator<char>(file)),
+                         std::istreambuf_iterator<char>());
+    file.close();
+    
+    if (css_text.empty()) {
+        return false;
+    }
+    
+    // 使用 ParseCSSString 来处理（包含 @keyframes 提取）
+    return ParseCSSString(css_text, priority, "external-file");
 }
 
 bool StyleManager::ParseCSSString(const std::string& css_text, int priority, const std::string& source) {
     if (css_text.empty()) {
         return false;
     }
+
+    // 首先提取并注册 @keyframes 规则
+    ExtractAndRegisterKeyframes(css_text);
 
     auto sheet = std::make_shared<LexborStyleSheet>();
     if (!sheet->ParseCSS(css_text)) {
@@ -247,27 +266,65 @@ bool StyleManager::MatchesSimpleSelector(const std::string& selector, Element* e
         return true;
     }
 
+    // 检查是否包含伪类选择器（如 .class:hover, div:active）
+    size_t pseudo_pos = selector.find(':');
+    std::string base_selector = selector;
+    std::string pseudo_class;
+    
+    if (pseudo_pos != std::string::npos) {
+        base_selector = selector.substr(0, pseudo_pos);
+        pseudo_class = selector.substr(pseudo_pos + 1);
+        
+        // 移除伪类中可能的额外部分（如 :hover::after）
+        size_t double_colon = pseudo_class.find(':');
+        if (double_colon != std::string::npos) {
+            pseudo_class = pseudo_class.substr(0, double_colon);
+        }
+        
+        // 检查元素是否有该伪类状态
+        if (!pseudo_class.empty() && !element->HasPseudoClass(pseudo_class)) {
+            return false;
+        }
+    }
+    
+    // 如果只有伪类（如 :hover），匹配所有有该伪类的元素
+    if (base_selector.empty()) {
+        return true;  // 伪类已经在上面检查过了
+    }
+
     // ID选择器 (#id)
-    if (selector[0] == '#') {
-        std::string id = selector.substr(1);
+    if (base_selector[0] == '#') {
+        std::string id = base_selector.substr(1);
         return element->GetAttribute("id") == id;
     }
 
     // 类选择器 (.class)
-    if (selector[0] == '.') {
-        std::string class_name = selector.substr(1);
+    if (base_selector[0] == '.') {
+        std::string class_name = base_selector.substr(1);
+        // 处理多个类选择器（如 .class1.class2）
+        size_t next_dot = class_name.find('.');
+        if (next_dot != std::string::npos) {
+            // 多个类选择器
+            std::string first_class = class_name.substr(0, next_dot);
+            std::string rest = class_name.substr(next_dot);
+            if (!element->HasClass(first_class)) {
+                return false;
+            }
+            // 递归检查剩余的类
+            return MatchesSimpleSelector(rest, element);
+        }
         return element->HasClass(class_name);
     }
 
     // 标签选择器 (tag)
     // 处理复合选择器（如 div.container）
-    size_t dot_pos = selector.find('.');
-    size_t hash_pos = selector.find('#');
+    size_t dot_pos = base_selector.find('.');
+    size_t hash_pos = base_selector.find('#');
 
     if (dot_pos != std::string::npos || hash_pos != std::string::npos) {
         // 复合选择器：先匹配标签
         size_t sep_pos = (dot_pos != std::string::npos) ? dot_pos : hash_pos;
-        std::string tag = selector.substr(0, sep_pos);
+        std::string tag = base_selector.substr(0, sep_pos);
 
         if (!tag.empty() && element->GetTagName() != tag) {
             return false;
@@ -275,7 +332,7 @@ bool StyleManager::MatchesSimpleSelector(const std::string& selector, Element* e
 
         // 再匹配类或ID
         if (dot_pos != std::string::npos) {
-            std::string class_name = selector.substr(dot_pos + 1);
+            std::string class_name = base_selector.substr(dot_pos + 1);
             // 移除可能的ID部分
             size_t hash_in_class = class_name.find('#');
             if (hash_in_class != std::string::npos) {
@@ -287,7 +344,7 @@ bool StyleManager::MatchesSimpleSelector(const std::string& selector, Element* e
         }
 
         if (hash_pos != std::string::npos) {
-            std::string id = selector.substr(hash_pos + 1);
+            std::string id = base_selector.substr(hash_pos + 1);
             if (element->GetAttribute("id") != id) {
                 return false;
             }
@@ -297,7 +354,7 @@ bool StyleManager::MatchesSimpleSelector(const std::string& selector, Element* e
     }
 
     // 简单标签选择器
-    return element->GetTagName() == selector;
+    return element->GetTagName() == base_selector;
 }
 
 std::map<std::string, std::string> StyleManager::ParseDeclarations(const std::string& declarations) const {
@@ -364,6 +421,108 @@ std::map<std::string, std::string> StyleManager::MergeStyles(
     }
     
     return result;
+}
+
+// ========== @keyframes 解析 ==========
+
+std::vector<std::string> StyleManager::FindKeyframesBlocks(const std::string& css_text) const {
+    std::vector<std::string> blocks;
+    
+    if (css_text.empty()) {
+        return blocks;
+    }
+    
+    // 查找所有 @keyframes 块
+    // 使用手动解析来处理嵌套大括号
+    size_t pos = 0;
+    while (pos < css_text.length()) {
+        // 查找 @keyframes 关键字
+        size_t keyframes_pos = css_text.find("@keyframes", pos);
+        if (keyframes_pos == std::string::npos) {
+            break;
+        }
+        
+        // 查找开始大括号
+        size_t brace_start = css_text.find('{', keyframes_pos);
+        if (brace_start == std::string::npos) {
+            break;
+        }
+        
+        // 计算嵌套大括号，找到匹配的结束大括号
+        int brace_count = 1;
+        size_t brace_end = brace_start + 1;
+        
+        while (brace_end < css_text.length() && brace_count > 0) {
+            if (css_text[brace_end] == '{') {
+                brace_count++;
+            } else if (css_text[brace_end] == '}') {
+                brace_count--;
+            }
+            brace_end++;
+        }
+        
+        if (brace_count == 0) {
+            // 提取完整的 @keyframes 块
+            std::string block = css_text.substr(keyframes_pos, brace_end - keyframes_pos);
+            blocks.push_back(block);
+        }
+        
+        pos = brace_end;
+    }
+    
+    return blocks;
+}
+
+void StyleManager::ExtractAndRegisterKeyframes(const std::string& css_text) {
+    // 查找所有 @keyframes 块
+    auto blocks = FindKeyframesBlocks(css_text);
+    
+    // 解析并注册每个 @keyframes 规则
+    for (const auto& block : blocks) {
+        KeyframesRule rule = KeyframesRule::Parse(block);
+        if (rule.IsValid()) {
+            // 注册到动画控制器（如果同名规则已存在，会被覆盖 - CSS 级联行为）
+            animation_controller_.RegisterKeyframes(rule);
+        }
+    }
+}
+
+bool StyleManager::HasHoverRules(Element* element) const {
+    if (!element) {
+        return false;
+    }
+    
+    // 遍历所有样式表，检查是否有匹配该元素的 :hover 规则
+    for (const auto& entry : stylesheets_) {
+        const auto& rules = entry.sheet->GetRules();
+        
+        for (const auto& rule : rules) {
+            // 检查选择器是否包含 :hover
+            if (rule->selector.find(":hover") == std::string::npos) {
+                continue;
+            }
+            
+            // 临时设置 hover 状态来检查选择器是否匹配
+            // 注意：这里需要检查选择器的基础部分是否匹配元素
+            std::string selector = rule->selector;
+            
+            // 提取 :hover 之前的基础选择器
+            size_t hover_pos = selector.find(":hover");
+            std::string base_selector = selector.substr(0, hover_pos);
+            
+            // 如果基础选择器为空（如 ":hover"），则匹配所有元素
+            if (base_selector.empty()) {
+                return true;
+            }
+            
+            // 检查基础选择器是否匹配元素
+            if (MatchesSelector(base_selector, element)) {
+                return true;
+            }
+        }
+    }
+    
+    return false;
 }
 
 } // namespace lightui

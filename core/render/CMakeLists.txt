@@ -36,6 +36,7 @@ set(RENDER_SOURCES
     keyframes.cpp
     animation.cpp
     animation_controller.cpp
+    animation_applicator.cpp
     property_interpolation.cpp
     css_variables.cpp
     css_filters.cpp
@@ -88,6 +89,7 @@ set(RENDER_HEADERS
     keyframes.h
     animation.h
     animation_controller.h
+    animation_applicator.h
     property_interpolation.h
     css_variables.h
     css_filters.h

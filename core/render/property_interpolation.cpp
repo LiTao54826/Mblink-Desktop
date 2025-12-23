@@ -125,14 +125,246 @@ SkColor PropertyInterpolation::InterpolateColorValue(SkColor from, SkColor to, f
 // Transform 插值
 // ============================================================================
 
+std::optional<PropertyInterpolation::DecomposedTransform> 
+PropertyInterpolation::DecomposeTransform(const std::string& transform_str) {
+    DecomposedTransform result;
+    
+    // 处理 "none" 或空字符串
+    if (transform_str.empty() || transform_str == "none") {
+        return result;  // 返回默认值（单位矩阵）
+    }
+    
+    // 解析各种 transform 函数
+    // 支持: translate, translateX, translateY, rotate, scale, scaleX, scaleY, skew, skewX, skewY
+    
+    // translate(x, y) 或 translate(x)
+    std::regex translate_regex(R"(translate\s*\(\s*([-+]?[\d.]+)(px|%|em|rem)?\s*(?:,\s*([-+]?[\d.]+)(px|%|em|rem)?)?\s*\))");
+    std::smatch match;
+    std::string remaining = transform_str;
+    
+    while (std::regex_search(remaining, match, translate_regex)) {
+        result.translate_x += std::stof(match[1].str());
+        if (match[3].matched) {
+            result.translate_y += std::stof(match[3].str());
+        }
+        remaining = match.suffix().str();
+    }
+    
+    // translateX(x)
+    std::regex translateX_regex(R"(translateX\s*\(\s*([-+]?[\d.]+)(px|%|em|rem)?\s*\))");
+    remaining = transform_str;
+    while (std::regex_search(remaining, match, translateX_regex)) {
+        result.translate_x += std::stof(match[1].str());
+        remaining = match.suffix().str();
+    }
+    
+    // translateY(y)
+    std::regex translateY_regex(R"(translateY\s*\(\s*([-+]?[\d.]+)(px|%|em|rem)?\s*\))");
+    remaining = transform_str;
+    while (std::regex_search(remaining, match, translateY_regex)) {
+        result.translate_y += std::stof(match[1].str());
+        remaining = match.suffix().str();
+    }
+    
+    // rotate(angle)
+    std::regex rotate_regex(R"(rotate\s*\(\s*([-+]?[\d.]+)(deg|rad|turn)?\s*\))");
+    remaining = transform_str;
+    while (std::regex_search(remaining, match, rotate_regex)) {
+        float angle = std::stof(match[1].str());
+        std::string unit = match[2].matched ? match[2].str() : "deg";
+        
+        if (unit == "deg") {
+            angle = angle * 3.14159265358979f / 180.0f;  // 转换为弧度
+        } else if (unit == "turn") {
+            angle = angle * 2.0f * 3.14159265358979f;
+        }
+        // rad 不需要转换
+        
+        result.rotate += angle;
+        remaining = match.suffix().str();
+    }
+    
+    // scale(x, y) 或 scale(x)
+    std::regex scale_regex(R"(scale\s*\(\s*([-+]?[\d.]+)\s*(?:,\s*([-+]?[\d.]+))?\s*\))");
+    remaining = transform_str;
+    while (std::regex_search(remaining, match, scale_regex)) {
+        float sx = std::stof(match[1].str());
+        float sy = match[2].matched ? std::stof(match[2].str()) : sx;
+        result.scale_x *= sx;
+        result.scale_y *= sy;
+        remaining = match.suffix().str();
+    }
+    
+    // scaleX(x)
+    std::regex scaleX_regex(R"(scaleX\s*\(\s*([-+]?[\d.]+)\s*\))");
+    remaining = transform_str;
+    while (std::regex_search(remaining, match, scaleX_regex)) {
+        result.scale_x *= std::stof(match[1].str());
+        remaining = match.suffix().str();
+    }
+    
+    // scaleY(y)
+    std::regex scaleY_regex(R"(scaleY\s*\(\s*([-+]?[\d.]+)\s*\))");
+    remaining = transform_str;
+    while (std::regex_search(remaining, match, scaleY_regex)) {
+        result.scale_y *= std::stof(match[1].str());
+        remaining = match.suffix().str();
+    }
+    
+    // skew(x, y) 或 skew(x)
+    std::regex skew_regex(R"(skew\s*\(\s*([-+]?[\d.]+)(deg|rad)?\s*(?:,\s*([-+]?[\d.]+)(deg|rad)?)?\s*\))");
+    remaining = transform_str;
+    while (std::regex_search(remaining, match, skew_regex)) {
+        float skx = std::stof(match[1].str());
+        std::string unit_x = match[2].matched ? match[2].str() : "deg";
+        if (unit_x == "deg") {
+            skx = skx * 3.14159265358979f / 180.0f;
+        }
+        result.skew_x += skx;
+        
+        if (match[3].matched) {
+            float sky = std::stof(match[3].str());
+            std::string unit_y = match[4].matched ? match[4].str() : "deg";
+            if (unit_y == "deg") {
+                sky = sky * 3.14159265358979f / 180.0f;
+            }
+            result.skew_y += sky;
+        }
+        remaining = match.suffix().str();
+    }
+    
+    // skewX(x)
+    std::regex skewX_regex(R"(skewX\s*\(\s*([-+]?[\d.]+)(deg|rad)?\s*\))");
+    remaining = transform_str;
+    while (std::regex_search(remaining, match, skewX_regex)) {
+        float skx = std::stof(match[1].str());
+        std::string unit = match[2].matched ? match[2].str() : "deg";
+        if (unit == "deg") {
+            skx = skx * 3.14159265358979f / 180.0f;
+        }
+        result.skew_x += skx;
+        remaining = match.suffix().str();
+    }
+    
+    // skewY(y)
+    std::regex skewY_regex(R"(skewY\s*\(\s*([-+]?[\d.]+)(deg|rad)?\s*\))");
+    remaining = transform_str;
+    while (std::regex_search(remaining, match, skewY_regex)) {
+        float sky = std::stof(match[1].str());
+        std::string unit = match[2].matched ? match[2].str() : "deg";
+        if (unit == "deg") {
+            sky = sky * 3.14159265358979f / 180.0f;
+        }
+        result.skew_y += sky;
+        remaining = match.suffix().str();
+    }
+    
+    return result;
+}
+
+PropertyInterpolation::DecomposedTransform 
+PropertyInterpolation::InterpolateDecomposed(
+    const DecomposedTransform& from,
+    const DecomposedTransform& to,
+    float factor) {
+    
+    DecomposedTransform result;
+    
+    // 线性插值各个组件
+    result.translate_x = from.translate_x + (to.translate_x - from.translate_x) * factor;
+    result.translate_y = from.translate_y + (to.translate_y - from.translate_y) * factor;
+    result.scale_x = from.scale_x + (to.scale_x - from.scale_x) * factor;
+    result.scale_y = from.scale_y + (to.scale_y - from.scale_y) * factor;
+    result.skew_x = from.skew_x + (to.skew_x - from.skew_x) * factor;
+    result.skew_y = from.skew_y + (to.skew_y - from.skew_y) * factor;
+    
+    // 角度插值：直接线性插值，不做最短路径优化
+    // 这样 0deg -> 360deg 会正确地旋转一整圈
+    // 如果需要最短路径，应该在 CSS 中使用 0deg -> 0deg 或其他方式
+    result.rotate = from.rotate + (to.rotate - from.rotate) * factor;
+    
+    return result;
+}
+
+std::string PropertyInterpolation::ComposeTransform(const DecomposedTransform& decomposed) {
+    std::ostringstream oss;
+    bool has_transform = false;
+    
+    // 按照标准顺序输出: translate -> rotate -> scale -> skew
+    // 注意：对于动画，我们需要输出所有非默认值，即使很小
+    // 使用更小的阈值来避免浮点误差
+    const float EPSILON = 0.0001f;
+    
+    // translate
+    if (std::abs(decomposed.translate_x) > EPSILON || std::abs(decomposed.translate_y) > EPSILON) {
+        if (has_transform) oss << " ";
+        oss << "translate(" << decomposed.translate_x << "px, " << decomposed.translate_y << "px)";
+        has_transform = true;
+    }
+    
+    // rotate - 对于旋转动画，即使是 0 度也需要输出（因为动画需要从 0 开始）
+    // 只有当 rotate 完全为 0 且没有其他变换时才返回 none
+    if (std::abs(decomposed.rotate) > EPSILON) {
+        if (has_transform) oss << " ";
+        // 转换为度数输出
+        float degrees = decomposed.rotate * 180.0f / 3.14159265358979f;
+        oss << "rotate(" << degrees << "deg)";
+        has_transform = true;
+    }
+    
+    // scale
+    if (std::abs(decomposed.scale_x - 1.0f) > EPSILON || std::abs(decomposed.scale_y - 1.0f) > EPSILON) {
+        if (has_transform) oss << " ";
+        if (std::abs(decomposed.scale_x - decomposed.scale_y) < EPSILON) {
+            oss << "scale(" << decomposed.scale_x << ")";
+        } else {
+            oss << "scale(" << decomposed.scale_x << ", " << decomposed.scale_y << ")";
+        }
+        has_transform = true;
+    }
+    
+    // skew
+    if (std::abs(decomposed.skew_x) > EPSILON || std::abs(decomposed.skew_y) > EPSILON) {
+        if (has_transform) oss << " ";
+        float skew_x_deg = decomposed.skew_x * 180.0f / 3.14159265358979f;
+        float skew_y_deg = decomposed.skew_y * 180.0f / 3.14159265358979f;
+        if (std::abs(decomposed.skew_y) < EPSILON) {
+            oss << "skewX(" << skew_x_deg << "deg)";
+        } else if (std::abs(decomposed.skew_x) < EPSILON) {
+            oss << "skewY(" << skew_y_deg << "deg)";
+        } else {
+            oss << "skew(" << skew_x_deg << "deg, " << skew_y_deg << "deg)";
+        }
+        has_transform = true;
+    }
+    
+    // 如果没有任何变换，返回 "none"
+    if (!has_transform) {
+        return "none";
+    }
+    
+    return oss.str();
+}
+
 std::optional<std::string> PropertyInterpolation::InterpolateTransform(
     const std::string& from,
     const std::string& to,
     float factor) {
     
-    // 简单实现：使用阶跃函数
-    // TODO: 实现完整的 Transform 插值
-    return factor < 0.5f ? from : to;
+    // 分解两个 transform
+    auto from_decomposed = DecomposeTransform(from);
+    auto to_decomposed = DecomposeTransform(to);
+    
+    // 如果任一分解失败，使用阶跃函数
+    if (!from_decomposed || !to_decomposed) {
+        return factor < 0.5f ? from : to;
+    }
+    
+    // 插值
+    auto interpolated = InterpolateDecomposed(*from_decomposed, *to_decomposed, factor);
+    
+    // 重组
+    return ComposeTransform(interpolated);
 }
 
 // ============================================================================

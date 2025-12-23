@@ -206,9 +206,23 @@ public:
     }
     
     /**
-     * @brief 清除所有动画
+     * @brief 清除所有动画和 @keyframes 规则
      */
     void Clear();
+    
+    /**
+     * @brief 只清除运行中的动画，保留 @keyframes 规则
+     * 
+     * 在渲染树重建时使用，避免丢失 @keyframes 定义
+     */
+    void ClearRunningAnimations();
+
+    /**
+     * @brief 获取已注册的 @keyframes 规则
+     * @param name 动画名称
+     * @return 规则指针，如果不存在返回 nullptr
+     */
+    const KeyframesRule* GetKeyframes(const std::string& name) const;
 
     /**
      * @brief 获取动画优化器

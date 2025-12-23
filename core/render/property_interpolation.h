@@ -66,6 +66,47 @@ private:
         const std::string& from,
         const std::string& to,
         float factor);
+
+    /**
+     * @brief 分解的 Transform 组件
+     * 
+     * 用于 Transform 插值的中间表示
+     */
+    struct DecomposedTransform {
+        float translate_x = 0.0f;  ///< X 方向平移 (px)
+        float translate_y = 0.0f;  ///< Y 方向平移 (px)
+        float rotate = 0.0f;       ///< 旋转角度 (弧度)
+        float scale_x = 1.0f;      ///< X 方向缩放
+        float scale_y = 1.0f;      ///< Y 方向缩放
+        float skew_x = 0.0f;       ///< X 方向倾斜 (弧度)
+        float skew_y = 0.0f;       ///< Y 方向倾斜 (弧度)
+    };
+
+    /**
+     * @brief 将 CSS transform 字符串分解为组件
+     * @param transform_str CSS transform 字符串
+     * @return 分解后的组件，如果解析失败返回 nullopt
+     */
+    static std::optional<DecomposedTransform> DecomposeTransform(const std::string& transform_str);
+
+    /**
+     * @brief 在两个分解的 Transform 之间插值
+     * @param from 起始 Transform
+     * @param to 目标 Transform
+     * @param factor 插值因子 (0.0 ~ 1.0)
+     * @return 插值后的 Transform
+     */
+    static DecomposedTransform InterpolateDecomposed(
+        const DecomposedTransform& from,
+        const DecomposedTransform& to,
+        float factor);
+
+    /**
+     * @brief 将分解的 Transform 组件重新组合为 CSS 字符串
+     * @param decomposed 分解的 Transform
+     * @return CSS transform 字符串
+     */
+    static std::string ComposeTransform(const DecomposedTransform& decomposed);
     
     /**
      * @brief 判断属性是否为数值类型

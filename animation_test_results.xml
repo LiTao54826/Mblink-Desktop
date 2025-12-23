@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuites tests="6" failures="0" disabled="0" errors="0" time="0.234" timestamp="2025-12-23T14:28:51.267" name="AllTests">
+  <testsuite name="KeyframesPropertyTest" tests="3" failures="0" disabled="0" skipped="0" errors="0" time="0.178" timestamp="2025-12-23T14:28:51.273">
+    <testcase name="KeyframesRegistrationConsistency" file="C:\Users\Administrator\Desktop\code\MBink\tests\property\render\test_animation_keyframes_properties.cpp" line="161" status="run" result="completed" time="0.042" timestamp="2025-12-23T14:28:51.276" classname="KeyframesPropertyTest" />
+    <testcase name="KeyframesCascadeOverride" file="C:\Users\Administrator\Desktop\code\MBink\tests\property\render\test_animation_keyframes_properties.cpp" line="219" status="run" result="completed" time="0.052" timestamp="2025-12-23T14:28:51.321" classname="KeyframesPropertyTest" />
+    <testcase name="MultipleDistinctKeyframesCoexist" file="C:\Users\Administrator\Desktop\code\MBink\tests\property\render\test_animation_keyframes_properties.cpp" line="280" status="run" result="completed" time="0.073" timestamp="2025-12-23T14:28:51.377" classname="KeyframesPropertyTest" />
+  </testsuite>
+  <testsuite name="AnimationParsingPropertyTest" tests="3" failures="0" disabled="0" skipped="0" errors="0" time="0.046" timestamp="2025-12-23T14:28:51.452">
+    <testcase name="AnimationShorthandParsingCompleteness" file="C:\Users\Administrator\Desktop\code\MBink\tests\property\render\test_animation_parsing_properties.cpp" line="179" status="run" result="completed" time="0.011" timestamp="2025-12-23T14:28:51.453" classname="AnimationParsingPropertyTest" />
+    <testcase name="MultiAnimationPreservation" file="C:\Users\Administrator\Desktop\code\MBink\tests\property\render\test_animation_parsing_properties.cpp" line="256" status="run" result="completed" time="0.015" timestamp="2025-12-23T14:28:51.467" classname="AnimationParsingPropertyTest" />
+    <testcase name="AnimationPlayStateParsing" file="C:\Users\Administrator\Desktop\code\MBink\tests\property\render\test_animation_parsing_properties.cpp" line="331" status="run" result="completed" time="0.013" timestamp="2025-12-23T14:28:51.484" classname="AnimationParsingPropertyTest" />
+  </testsuite>
+</testsuites>

@@ -578,7 +578,47 @@ SkRect RenderObject::GetBoundingRect() const {
         parent = parent->GetParent();
     }
 
-    return SkRect::MakeXYWH(abs_x, abs_y, layout.width, layout.height);
+    SkRect base_rect = SkRect::MakeXYWH(abs_x, abs_y, layout.width, layout.height);
+    
+    // 关键修复：如果元素有 transform，需要计算变换后的边界框
+    // 这确保脏区域能正确覆盖变换后的渲染区域
+    const auto& style = computed_style_;
+    if (style.transform.has_value() && !style.transform->IsEmpty()) {
+        // 创建以元素中心为原点的局部矩形
+        SkRect local_rect = SkRect::MakeWH(layout.width, layout.height);
+        
+        // 获取变换矩阵
+        SkMatrix transform_matrix = style.transform->ToSkMatrix(local_rect, style.transform_origin);
+        
+        // 变换四个角点，计算包围盒
+        SkPoint corners[4] = {
+            {0, 0},
+            {layout.width, 0},
+            {layout.width, layout.height},
+            {0, layout.height}
+        };
+        transform_matrix.mapPoints(corners, 4);
+        
+        // 计算变换后的边界框
+        float min_x = corners[0].x(), max_x = corners[0].x();
+        float min_y = corners[0].y(), max_y = corners[0].y();
+        for (int i = 1; i < 4; ++i) {
+            min_x = std::min(min_x, corners[i].x());
+            max_x = std::max(max_x, corners[i].x());
+            min_y = std::min(min_y, corners[i].y());
+            max_y = std::max(max_y, corners[i].y());
+        }
+        
+        // 转换回文档坐标
+        return SkRect::MakeLTRB(
+            abs_x + min_x,
+            abs_y + min_y,
+            abs_x + max_x,
+            abs_y + max_y
+        );
+    }
+    
+    return base_rect;
 }
 
 SkRect RenderObject::GetViewportBoundingRect() const {
@@ -607,7 +647,47 @@ SkRect RenderObject::GetViewportBoundingRect() const {
         parent = parent->GetParent();
     }
 
-    return SkRect::MakeXYWH(abs_x, abs_y, layout.width, layout.height);
+    SkRect base_rect = SkRect::MakeXYWH(abs_x, abs_y, layout.width, layout.height);
+    
+    // 关键修复：如果元素有 transform，需要计算变换后的边界框
+    // 这确保脏区域能正确覆盖变换后的渲染区域
+    const auto& style = computed_style_;
+    if (style.transform.has_value() && !style.transform->IsEmpty()) {
+        // 创建以元素中心为原点的局部矩形
+        SkRect local_rect = SkRect::MakeWH(layout.width, layout.height);
+        
+        // 获取变换矩阵
+        SkMatrix transform_matrix = style.transform->ToSkMatrix(local_rect, style.transform_origin);
+        
+        // 变换四个角点，计算包围盒
+        SkPoint corners[4] = {
+            {0, 0},
+            {layout.width, 0},
+            {layout.width, layout.height},
+            {0, layout.height}
+        };
+        transform_matrix.mapPoints(corners, 4);
+        
+        // 计算变换后的边界框
+        float min_x = corners[0].x(), max_x = corners[0].x();
+        float min_y = corners[0].y(), max_y = corners[0].y();
+        for (int i = 1; i < 4; ++i) {
+            min_x = std::min(min_x, corners[i].x());
+            max_x = std::max(max_x, corners[i].x());
+            min_y = std::min(min_y, corners[i].y());
+            max_y = std::max(max_y, corners[i].y());
+        }
+        
+        // 转换回视口坐标
+        return SkRect::MakeLTRB(
+            abs_x + min_x,
+            abs_y + min_y,
+            abs_x + max_x,
+            abs_y + max_y
+        );
+    }
+    
+    return base_rect;
 }
 
 void RenderObject::ScrollBy(float dx, float dy) {
@@ -1301,6 +1381,14 @@ void RenderBlock::Paint(SkCanvas* canvas) {
     canvas->save();
     canvas->translate(layout.x, layout.y);
 
+    // 应用 CSS opacity（使用 saveLayerAlpha 实现透明度）
+    bool has_opacity = style.opacity < 1.0f;
+    if (has_opacity) {
+        SkRect bounds = SkRect::MakeWH(layout.width, layout.height);
+        int alpha = static_cast<int>(style.opacity * 255);
+        canvas->saveLayerAlpha(&bounds, alpha);
+    }
+
     // 应用 CSS transform
     if (style.transform.has_value() && !style.transform->IsEmpty()) {
         SkRect element_rect = SkRect::MakeWH(layout.width, layout.height);
@@ -1363,6 +1451,9 @@ void RenderBlock::Paint(SkCanvas* canvas) {
 
             float y = layout.height / 2;
             canvas->drawLine(0, y, layout.width, y, line_paint);
+            if (has_opacity) {
+                canvas->restore(); // 恢复 opacity layer
+            }
             canvas->restore(); // 恢复 canvas 状态
             return; // 不绘制其他内容
         }
@@ -2127,6 +2218,11 @@ void RenderBlock::Paint(SkCanvas* canvas) {
         if (is_body) {
             canvas->restore();
         }
+    }
+
+    // 恢复 opacity layer（如果有）
+    if (has_opacity) {
+        canvas->restore();
     }
 
     // 恢复画布状态

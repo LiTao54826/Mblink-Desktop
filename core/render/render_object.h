@@ -17,6 +17,7 @@
 #include "css_clip_path.h"
 #include "transition.h"
 #include "transform.h"
+#include "animation.h"
 #include <memory>
 #include <string>
 #include <unordered_map>
@@ -129,6 +130,10 @@ struct ComputedStyle {
 
     // 过渡动画
     std::vector<CSSTransition> transitions;
+
+    // CSS 动画
+    std::vector<CSSAnimation> animations;
+    std::string animation_play_state = "running";  // running, paused
 
     // CSS 变量
     CSSVariables css_variables;

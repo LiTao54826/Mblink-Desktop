@@ -174,6 +174,14 @@ private:
                                 const std::string& resolved_value);
 
     /**
+     * @brief 解析动画相关属性 (animation-*)
+     * @return true if property was handled, false otherwise
+     */
+    bool ParseAnimationProperty(ComputedStyle& style,
+                               const std::string& property,
+                               const std::string& resolved_value);
+
+    /**
      * @brief 解析定位相关属性 (position, top, left, z-index, etc.)
      * @return true if property was handled, false otherwise
      */

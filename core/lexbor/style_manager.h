@@ -10,6 +10,7 @@
 #include <map>
 #include <memory>
 #include "lexbor_stylesheet.h"
+#include "core/render/animation_controller.h"
 
 namespace lightui {
 
@@ -140,6 +141,25 @@ public:
      * @return 文档指针
      */
     Document* GetDocument() const { return document_; }
+
+    /**
+     * @brief 获取动画控制器
+     * @return 动画控制器引用
+     */
+    AnimationController& GetAnimationController() { return animation_controller_; }
+
+    /**
+     * @brief 获取动画控制器 (const 版本)
+     * @return 动画控制器引用
+     */
+    const AnimationController& GetAnimationController() const { return animation_controller_; }
+
+    /**
+     * @brief 检查元素是否有 :hover 相关的 CSS 规则
+     * @param element 元素
+     * @return 是否有 hover 规则
+     */
+    bool HasHoverRules(Element* element) const;
     
 private:
     /**
@@ -174,11 +194,25 @@ private:
     std::map<std::string, std::string> MergeStyles(
         const std::map<std::string, std::string>& base,
         const std::map<std::string, std::string>& override) const;
+
+    /**
+     * @brief 从 CSS 文本中提取并注册 @keyframes 规则
+     * @param css_text CSS 文本内容
+     */
+    void ExtractAndRegisterKeyframes(const std::string& css_text);
+
+    /**
+     * @brief 查找 CSS 文本中的所有 @keyframes 块
+     * @param css_text CSS 文本内容
+     * @return @keyframes 规则字符串列表
+     */
+    std::vector<std::string> FindKeyframesBlocks(const std::string& css_text) const;
     
 private:
     Document* document_;                          // 关联的文档
     std::vector<StyleSheetEntry> stylesheets_;    // 样式表列表
     std::map<Element*, std::map<std::string, std::string>> inline_styles_; // 内联样式缓存
+    AnimationController animation_controller_;    // 动画控制器
 };
 
 } // namespace lightui

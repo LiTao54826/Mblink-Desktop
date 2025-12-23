@@ -406,6 +406,14 @@ void RenderInlineBlock::Paint(SkCanvas* canvas) {
     canvas->save();
     canvas->translate(layout.x, layout.y);
 
+    // 应用 CSS opacity（使用 saveLayerAlpha 实现透明度）
+    bool has_opacity = style.opacity < 1.0f;
+    if (has_opacity) {
+        SkRect bounds = SkRect::MakeWH(layout.width, layout.height);
+        int alpha = static_cast<int>(style.opacity * 255);
+        canvas->saveLayerAlpha(&bounds, alpha);
+    }
+
     // 应用 CSS transform
     if (style.transform.has_value() && !style.transform->IsEmpty()) {
         SkRect bounds = SkRect::MakeWH(layout.width, layout.height);
@@ -570,11 +578,6 @@ void RenderInlineBlock::Paint(SkCanvas* canvas) {
     if (node && node->GetNodeType() == NodeType::ELEMENT_NODE) {
         auto element = std::static_pointer_cast<Element>(node);
         std::string tag_name = element->GetTagName();
-        
-        // Debug: 输出元素标签名
-        if (tag_name == "img") {
-            std::cout << "[RenderInlineBlock::Paint] Processing img element, tag=" << tag_name << std::endl;
-        }
 
         // Input元素
         auto input_element = std::dynamic_pointer_cast<HTMLInputElement>(node);
@@ -587,6 +590,9 @@ void RenderInlineBlock::Paint(SkCanvas* canvas) {
         if (textarea_element) {
             PaintTextAreaElement(canvas, textarea_element.get(), box);
             // Textarea元素不绘制子元素（文本内容由value管理）
+            if (has_opacity) {
+                canvas->restore(); // 恢复 opacity layer
+            }
             canvas->restore();
             needs_paint_ = false;
             return;
@@ -596,6 +602,9 @@ void RenderInlineBlock::Paint(SkCanvas* canvas) {
         if (element->GetTagName() == "select") {
             PaintSelectElement(canvas, element.get(), box);
             // Select元素不绘制子元素（option元素由PaintSelectElement处理）
+            if (has_opacity) {
+                canvas->restore(); // 恢复 opacity layer
+            }
             canvas->restore();
             needs_paint_ = false;
             return;
@@ -605,6 +614,9 @@ void RenderInlineBlock::Paint(SkCanvas* canvas) {
         auto progress_element = std::dynamic_pointer_cast<HTMLProgressElement>(node);
         if (progress_element) {
             PaintProgressElement(canvas, progress_element.get(), box);
+            if (has_opacity) {
+                canvas->restore(); // 恢复 opacity layer
+            }
             canvas->restore();
             needs_paint_ = false;
             return;
@@ -614,6 +626,9 @@ void RenderInlineBlock::Paint(SkCanvas* canvas) {
         auto meter_element = std::dynamic_pointer_cast<HTMLMeterElement>(node);
         if (meter_element) {
             PaintMeterElement(canvas, meter_element.get(), box);
+            if (has_opacity) {
+                canvas->restore(); // 恢复 opacity layer
+            }
             canvas->restore();
             needs_paint_ = false;
             return;
@@ -643,6 +658,9 @@ void RenderInlineBlock::Paint(SkCanvas* canvas) {
                     }
                 }
             }
+            if (has_opacity) {
+                canvas->restore(); // 恢复 opacity layer
+            }
             canvas->restore();
             needs_paint_ = false;
             return;
@@ -650,28 +668,19 @@ void RenderInlineBlock::Paint(SkCanvas* canvas) {
         
         // Image元素 - 使用object-fit和object-position渲染图片
         auto image_element = std::dynamic_pointer_cast<HTMLImageElement>(node);
-        std::cout << "[RenderInlineBlock::Paint] Checking for image element, tag=" << tag_name 
-                  << ", dynamic_cast result=" << (image_element ? "success" : "failed") << std::endl;
         if (image_element) {
-            std::cout << "[RenderInlineBlock::Paint] Found image element, src=" << image_element->GetSrc() << std::endl;
-            
             // 优先使用已加载的图片
             sk_sp<SkImage> image = image_element->GetSkImage();
-            std::cout << "[RenderInlineBlock::Paint] GetSkImage returned: " << (image ? "valid" : "null") << std::endl;
             
             // 如果图片未加载，尝试从URL加载
             if (!image) {
                 std::string src = image_element->GetSrc();
                 if (!src.empty()) {
-                    std::cout << "[RenderInlineBlock::Paint] Trying to load image from URL: " << src << std::endl;
                     // 使用 ImageLoader 加载（支持网络URL）
                     image = ImageLoader::LoadFromUrl(src);
                     if (image) {
-                        std::cout << "[RenderInlineBlock::Paint] Image loaded successfully: " << image->width() << "x" << image->height() << std::endl;
                         // 缓存到元素中
                         image_element->SetSkImage(image);
-                    } else {
-                        std::cout << "[RenderInlineBlock::Paint] Failed to load image" << std::endl;
                     }
                 }
             }
@@ -680,10 +689,6 @@ void RenderInlineBlock::Paint(SkCanvas* canvas) {
                 // 获取图片原始尺寸
                 float image_width = static_cast<float>(image->width());
                 float image_height = static_cast<float>(image->height());
-                
-                std::cout << "[RenderInlineBlock::Paint] Drawing image: " << image_width << "x" << image_height 
-                          << " at content box: " << box.content_x << "," << box.content_y 
-                          << " size: " << box.content_width << "x" << box.content_height << std::endl;
                 
                 // 获取容器区域（content box）
                 SkRect container_rect = SkRect::MakeXYWH(
@@ -707,9 +712,10 @@ void RenderInlineBlock::Paint(SkCanvas* canvas) {
                     SkSamplingOptions sampling(SkFilterMode::kLinear, SkMipmapMode::kNone);
                     canvas->drawImageRect(image, fit_result.src_rect, fit_result.dst_rect, 
                                          sampling, nullptr, SkCanvas::kStrict_SrcRectConstraint);
-                } else {
-                    std::cout << "[RenderInlineBlock::Paint] Skipping draw: src_rect or dst_rect is empty" << std::endl;
                 }
+            }
+            if (has_opacity) {
+                canvas->restore(); // 恢复 opacity layer
             }
             canvas->restore();
             needs_paint_ = false;
@@ -722,6 +728,11 @@ void RenderInlineBlock::Paint(SkCanvas* canvas) {
     // 因为子元素不在 Taffy 树中，它们的重绘状态可能没有正确同步
     for (auto& child : children_) {
         child->Paint(canvas);
+    }
+
+    // 恢复 opacity layer（如果有）
+    if (has_opacity) {
+        canvas->restore();
     }
 
     // 恢复画布状态

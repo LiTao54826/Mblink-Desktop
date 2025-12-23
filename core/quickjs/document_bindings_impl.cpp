@@ -189,6 +189,40 @@ static JSValue JS_Document_get_body(JSContext* ctx, JSValueConst this_val, int m
     return bindings::WrapElement(ctx, body);
 }
 
+// ========== document.head getter 实现 ==========
+
+static JSValue JS_Document_get_head(JSContext* ctx, JSValueConst this_val, int magic) {
+    // 从全局对象获取 window
+    JSValue global = JS_GetGlobalObject(ctx);
+    JSValue window_val = JS_GetPropertyStr(ctx, global, "__lightui_window_ptr");
+    JS_FreeValue(ctx, global);
+
+    if (JS_IsUndefined(window_val)) {
+        return JS_NULL;
+    }
+
+    void* ptr = nullptr;
+    JS_ToInt64Ext(ctx, (int64_t*)&ptr, window_val);
+    JS_FreeValue(ctx, window_val);
+
+    if (!ptr) {
+        return JS_NULL;
+    }
+
+    auto* window = static_cast<Window*>(ptr);
+    auto doc = window->GetDocument();
+    if (!doc) {
+        return JS_NULL;
+    }
+
+    auto head = doc->GetHead();
+    if (!head) {
+        return JS_NULL;
+    }
+
+    return bindings::WrapElement(ctx, head);
+}
+
 // ========== 绑定函数 ==========
 
 void BindDocumentAPIs(JSContext* ctx, Window* window) {
@@ -207,6 +241,13 @@ void BindDocumentAPIs(JSContext* ctx, Window* window) {
         if (body) {
             JSValue body_val = bindings::WrapElement(ctx, body);
             JS_SetPropertyStr(ctx, document, "body", body_val);
+        }
+        
+        // 设置 head 属性
+        auto head = doc->GetHead();
+        if (head) {
+            JSValue head_val = bindings::WrapElement(ctx, head);
+            JS_SetPropertyStr(ctx, document, "head", head_val);
         }
     }
 
