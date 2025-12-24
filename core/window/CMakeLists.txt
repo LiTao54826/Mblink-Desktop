@@ -24,6 +24,9 @@ target_include_directories(lightui_window PUBLIC
 # 链接 lightui_layout
 target_link_libraries(lightui_window PUBLIC lightui_layout)
 
+# 链接 lightui_compositor（分层合成架构）
+target_link_libraries(lightui_window PUBLIC lightui_compositor)
+
 # 链接SDL3（如果可用）
 if(TARGET SDL3::SDL3)
     target_link_libraries(lightui_window PUBLIC SDL3::SDL3)

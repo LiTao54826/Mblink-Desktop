@@ -2208,6 +2208,12 @@ bool StyleResolver::ParseBackgroundProperty(ComputedStyle& style,
             style.clip_path = ParseClipPath(resolved_value);
         }
     }
+    // CSS will-change Property (用于层提升优化)
+    else if (property == "will-change") {
+        // Parse will-change values: auto, transform, opacity, scroll-position, contents, etc.
+        // 可以是逗号分隔的多个值，如 "transform, opacity"
+        style.will_change = resolved_value;
+    }
     return false;
 }
 

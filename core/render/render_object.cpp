@@ -21,6 +21,7 @@
 #include "core/dom/html_textarea_element.h"
 #include "core/dom/html_canvas_element.h"
 #include "core/render/canvas/canvas_rendering_context_2d.h"
+#include "core/compositor/compositor_layer.h"
 #include "core/utils/utf8_utils.h"
 #include <algorithm>
 #include <iostream>
@@ -2049,6 +2050,13 @@ void RenderBlock::Paint(SkCanvas* canvas) {
     for (auto& child : sorted_children) {
         // 跳过已经绘制的 legend
         if (is_fieldset_element && child.get() == legend_child) {
+            continue;
+        }
+        
+        // 关键修复：跳过有独立合成层的子元素
+        // 这些子元素会在自己的层中单独光栅化，不应该在父层中绘制
+        // 否则会导致重影（元素被绘制两次）
+        if (child->HasOwnCompositorLayer()) {
             continue;
         }
         
@@ -4627,6 +4635,26 @@ void RenderTableCaption::Paint(SkCanvas* canvas) {
 
     canvas->restore();
     needs_paint_ = false;
+}
+
+// ========== LayerInfo 实现 ==========
+
+LayerInfo::LayerInfo()
+    : compositor_layer()
+    , promotion_reason(LayerPromotionReason::None)
+    , force_own_layer(false) {
+}
+
+std::shared_ptr<CompositorLayer> RenderObject::GetCompositorLayer() const {
+    return layer_info_.compositor_layer.lock();
+}
+
+void RenderObject::SetCompositorLayer(std::shared_ptr<CompositorLayer> layer) {
+    layer_info_.compositor_layer = layer;
+}
+
+bool RenderObject::HasOwnCompositorLayer() const {
+    return !layer_info_.compositor_layer.expired();
 }
 
 } // namespace lightui

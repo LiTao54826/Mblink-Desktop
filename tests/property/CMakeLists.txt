@@ -45,12 +45,25 @@ set(BUNDLER_PROPERTY_TEST_SOURCES
     ${CMAKE_SOURCE_DIR}/tools/app_bundler/bytecode_compiler.cpp
 )
 
+# Compositor property tests
+set(COMPOSITOR_PROPERTY_TEST_SOURCES
+    compositor/test_dirty_region_properties.cpp
+    compositor/test_layer_promotion_properties.cpp
+    compositor/test_rasterizer_properties.cpp
+    compositor/test_compositor_properties.cpp
+    compositor/test_animation_layer_properties.cpp
+    compositor/test_scroll_layer_properties.cpp
+    compositor/test_render_pipeline_properties.cpp
+    compositor/test_visual_consistency_properties.cpp
+)
+
 # Create property tests executable
 add_executable(lightui_property_tests
     main.cpp
     ${RENDER_PROPERTY_TEST_SOURCES}
     ${LAYOUT_PROPERTY_TEST_SOURCES}
     ${BUNDLER_PROPERTY_TEST_SOURCES}
+    ${COMPOSITOR_PROPERTY_TEST_SOURCES}
 )
 
 # Add include directories

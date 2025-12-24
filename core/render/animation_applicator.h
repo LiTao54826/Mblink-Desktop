@@ -7,6 +7,7 @@
  * - 根据 ComputedStyle.animations 启动动画
  * - 获取当前动画属性值并应用到 RenderObject
  * - 处理动画播放状态变化
+ * - 对于 transform/opacity 动画，通过层合成系统优化更新
  */
 
 #ifndef LIGHTUI_CORE_RENDER_ANIMATION_APPLICATOR_H_
@@ -20,6 +21,9 @@
 
 namespace lightui {
 
+// 前向声明
+class WindowCompositorAdapter;
+
 /**
  * @brief 动画应用器
  * 
@@ -29,6 +33,9 @@ namespace lightui {
  * @code
  * AnimationController controller;
  * AnimationApplicator applicator(controller);
+ * 
+ * // 设置合成器适配器（用于层优化）
+ * applicator.SetCompositorAdapter(compositor_adapter);
  * 
  * // 在样式解析后启动动画
  * applicator.StartAnimationsForObject(render_object);
@@ -51,6 +58,19 @@ public:
     ~AnimationApplicator();
     
     /**
+     * @brief 设置合成器适配器
+     * 
+     * 用于 transform/opacity 动画的层优化。
+     * 当设置了合成器适配器时，transform/opacity 动画会直接更新层属性，
+     * 而不是触发完整重绘。
+     * 
+     * @param adapter 合成器适配器指针（不拥有所有权）
+     */
+    void SetCompositorAdapter(WindowCompositorAdapter* adapter) {
+        compositor_adapter_ = adapter;
+    }
+    
+    /**
      * @brief 根据 ComputedStyle 启动对象的动画
      * 
      * 读取 RenderObject 的 ComputedStyle.animations，
@@ -67,6 +87,9 @@ public:
      * 
      * 获取所有运行中动画的当前属性值，
      * 并将它们应用到 RenderObject 的 ComputedStyle。
+     * 
+     * 对于 transform/opacity 属性，如果对象有独立层，
+     * 会尝试通过层合成系统直接更新，避免重新光栅化。
      * 
      * @param object 渲染对象
      * 
@@ -118,8 +141,26 @@ public:
 private:
     AnimationController& controller_;
     
+    /// 合成器适配器（用于层优化）
+    WindowCompositorAdapter* compositor_adapter_ = nullptr;
+    
     /// 跟踪每个对象已启动的动画名称
     std::map<RenderObject*, std::set<std::string>> started_animations_;
+    
+    /**
+     * @brief 尝试通过层合成系统应用属性
+     * 
+     * 对于 transform/opacity 属性，如果对象有独立层，
+     * 直接更新层属性而不触发重绘。
+     * 
+     * @param object 渲染对象
+     * @param property 属性名
+     * @param value 属性值
+     * @return true 如果成功通过层系统应用
+     */
+    bool TryApplyViaCompositor(RenderObject* object,
+                               const std::string& property,
+                               const std::string& value);
     
     /**
      * @brief 将单个属性值应用到 ComputedStyle

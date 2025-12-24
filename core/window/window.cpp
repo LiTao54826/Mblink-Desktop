@@ -24,6 +24,7 @@
 #include <stdexcept>
 #include <iostream>
 #include <cstring>
+#include <cmath>
 #include <unordered_map>
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_opengl.h>
@@ -65,6 +66,7 @@
 #include "core/devtools/devtools_manager.h"
 #include "core/lexbor/style_manager.h"
 #include "core/render/fbo_manager.h"
+#include "core/compositor/window_compositor_adapter.h"
 
 namespace lightui {
 
@@ -741,6 +743,9 @@ Window::Window(const WindowConfig& config) : config_(config) {
             std::cout << "[Window] FBO incremental rendering enabled" << std::endl;
         }
     }
+
+    // 初始化分层合成适配器（新渲染架构）
+    compositor_adapter_ = std::make_unique<WindowCompositorAdapter>();
 }
 
 Window::~Window() {
@@ -748,6 +753,12 @@ Window::~Window() {
     // Skia 的 GrContext 在释放时需要调用 OpenGL 清理函数
     if (gl_context_ && sdl_window_) {
         SDL_GL_MakeCurrent(sdl_window_, gl_context_);
+    }
+
+    // 释放分层合成适配器（在释放其他资源之前）
+    if (compositor_adapter_) {
+        compositor_adapter_->Shutdown();
+        compositor_adapter_.reset();
     }
 
     // 释放 DisplayBackend（在销毁窗口之前）
@@ -1018,8 +1029,8 @@ void Window::OnResize() {
                 fbo_manager_.reset();
                 use_fbo_incremental_ = false;
             } else {
-                // 清除 FBO 内容（避免显示旧内容）
-                fbo_manager_->Clear(SK_ColorWHITE);
+                // FBO resize 后需要全量重绘
+                fbo_needs_full_paint_ = true;
             }
         }
     } else if (actual_backend_ == RenderBackend::CPU) {
@@ -1456,6 +1467,104 @@ void Window::Render() {
         return;
     }
 
+    // =========================================================================
+    // 分层合成渲染路径
+    // =========================================================================
+    if (use_layer_compositing_ && compositor_adapter_) {
+        // 确保渲染树已构建
+        EnsureRenderTree();
+        
+        if (cached_render_tree_) {
+            // 获取物理像素大小和 DPI 缩放
+            int physical_width, physical_height;
+            SDL_GetWindowSizeInPixels(sdl_window_, &physical_width, &physical_height);
+            float dpi_scale = GetDisplayScale();
+            int logical_width = static_cast<int>(physical_width / dpi_scale);
+            int logical_height = static_cast<int>(physical_height / dpi_scale);
+            
+            // 初始化适配器（如果尚未初始化）
+            if (!compositor_adapter_->IsInitialized()) {
+                if (!compositor_adapter_->Initialize(logical_width, logical_height)) {
+                    std::cerr << "[Window] Failed to initialize compositor adapter, falling back to legacy rendering" << std::endl;
+                    use_layer_compositing_ = false;
+                    goto legacy_render;
+                }
+                compositor_adapter_->SetUseLayerCompositing(true);
+                compositor_adapter_->SetDpiScale(dpi_scale);  // 设置 DPI 缩放
+                std::cout << "[Window] Layer compositing enabled (" << logical_width << "x" << logical_height << ", dpi=" << dpi_scale << ")" << std::endl;
+            }
+            
+            // 更新动画
+            static Uint64 anim_start_time = SDL_GetPerformanceCounter();
+            Uint64 anim_current_time = SDL_GetPerformanceCounter();
+            Uint64 anim_frequency = SDL_GetPerformanceFrequency();
+            double timestamp_sec = static_cast<double>(anim_current_time - anim_start_time) / anim_frequency;
+            UpdateAnimations(timestamp_sec);
+            
+            // 关键修复：动画更新后，标记需要重新渲染
+            // 这确保动画变化能被正确绘制
+            compositor_adapter_->MarkNeedsRender();
+            
+            // 关键修复：检查是否有活动动画，如果有则保持 needs_repaint_ 为 true
+            // 这确保动画帧能持续触发渲染
+            bool has_animations_running = false;
+            if (animation_timeline_) {
+                has_animations_running = animation_timeline_->HasRunningTransitions();
+            }
+            if (!has_animations_running && document_ && document_->GetStyleManager()) {
+                has_animations_running = !document_->GetStyleManager()->GetAnimationController().GetRunningAnimations().empty();
+            }
+            if (!has_animations_running && animation_controller_) {
+                has_animations_running = !animation_controller_->GetRunningAnimations().empty();
+            }
+            if (has_animations_running) {
+                needs_repaint_ = true;
+                // 修复：移除 ForceRasterize 调用
+                // 动画更新应该只更新层的 transform/opacity，不触发重新光栅化
+                // 这是分层合成的核心优化：动画只需要 GPU 合成，不需要 CPU 光栅化
+                // compositor_adapter_->ForceRasterize();  // 已移除
+            }
+            
+            // 开始新的渲染帧，清除上一帧的 overlay（避免重影）
+            auto& layer_mgr = LayerManager::Instance();
+            layer_mgr.BeginFrame();
+            
+            // 使用分层合成渲染
+            // 先清除背景
+            SkColor clear_color = SK_ColorWHITE;
+            if (cached_render_tree_) {
+                const auto& body_style = cached_render_tree_->GetComputedStyle();
+                if (!body_style.background_color.empty() && body_style.background_color != "transparent") {
+                    clear_color = Color::Parse(body_style.background_color);
+                }
+            }
+            canvas->clear(clear_color);
+            
+            // 注意：层位图已经是物理像素大小，合成时会缩放回逻辑像素
+            // 但最终输出到 canvas 时需要应用 DPI 缩放
+            canvas->save();
+            canvas->scale(dpi_scale, dpi_scale);
+            
+            if (compositor_adapter_->Render(cached_render_tree_.get(), canvas)) {
+                // 绘制所有 overlay 元素（高 z-index 的 positioned 元素）
+                layer_mgr.PaintLayers(canvas);
+                
+                canvas->restore();
+                // 渲染成功
+                // 关键修复：确保有动画时继续重绘
+                // 检查是否有活动动画（使用之前已经计算的 has_animations_running）
+                needs_repaint_ = has_animations_running;
+                dirty_rects_.clear();
+                return;
+            }
+            canvas->restore();
+            // 如果分层合成渲染失败，回退到旧渲染路径
+            std::cerr << "[Window] Layer compositing render failed, falling back to legacy" << std::endl;
+        }
+    }
+    
+legacy_render:
+
     // 获取物理像素大小
     int physical_width, physical_height;
     SDL_GetWindowSizeInPixels(sdl_window_, &physical_width, &physical_height);
@@ -1650,12 +1759,14 @@ void Window::Render() {
         bool use_full_paint = force_full_repaint_ || !enable_incremental_render_ || 
                               (actual_backend_ == RenderBackend::OPENGL && !use_fbo);
         
-        // GPU FBO 增量渲染模式
-        if (use_fbo && !force_full_repaint_) {
-            // 模式 D：GPU FBO 增量渲染
-            DEBUG_LOG("[Window::Render] Mode D: GPU FBO incremental rendering");
+        // GPU FBO 渲染模式（包括增量和全量）
+        // 注意：即使 force_full_repaint_ 为 true，也应该使用 FBO 模式
+        // 因为 FBO 可以正确处理全量重绘，而直接绘制到后缓冲会有双缓冲问题
+        if (use_fbo) {
+            // 模式 D：GPU FBO 渲染
+            DEBUG_LOG("[Window::Render] Mode D: GPU FBO rendering");
             if (debug_render) {
-                std::cout << "[Render] Mode D: GPU FBO incremental rendering" << std::endl;
+                std::cout << "[Render] Mode D: GPU FBO rendering (force_full=" << force_full_repaint_ << ")" << std::endl;
             }
 
             // 获取 FBO canvas
@@ -1665,6 +1776,24 @@ void Window::Render() {
                 use_full_paint = true;
                 goto full_paint_fallback;
             }
+
+            // 检测滚动变化 - 如果 body 滚动位置改变，需要全量重绘
+            bool scroll_changed = false;
+            if (cached_render_tree_) {
+                float current_scroll_x = cached_render_tree_->GetScrollX();
+                float current_scroll_y = cached_render_tree_->GetScrollY();
+                // 使用小的阈值来检测滚动变化，避免浮点数精度问题
+                float scroll_threshold = 0.1f;
+                if (std::abs(current_scroll_x - last_body_scroll_x_) > scroll_threshold || 
+                    std::abs(current_scroll_y - last_body_scroll_y_) > scroll_threshold) {
+                    scroll_changed = true;
+                    last_body_scroll_x_ = current_scroll_x;
+                    last_body_scroll_y_ = current_scroll_y;
+                }
+            }
+
+            // 检查是否需要 FBO 全量绘制（首次渲染、resize 后、滚动变化、或强制全量重绘）
+            bool need_fbo_full_paint = fbo_needs_full_paint_ || force_full_repaint_ || scroll_changed;
 
             // 步骤1：从渲染树收集脏区域
             CollectDirtyRectsFromRenderTree(cached_render_tree_.get());
@@ -1714,10 +1843,22 @@ void Window::Render() {
                 fbo_canvas->clipRect(SkRect::MakeXYWH(app_x, app_y, app_width, app_height));
             }
 
-            if (!combined_dirty_rects.empty()) {
+            if (need_fbo_full_paint) {
+                // FBO 首次渲染或 resize 后：必须全量绘制
+                if (debug_render) {
+                    std::cout << "[Render] FBO full paint (first render or after resize)" << std::endl;
+                }
+                fbo_canvas->clear(clear_color);
+                cached_render_tree_->Paint(fbo_canvas);
+                fbo_needs_full_paint_ = false;  // 标记已完成首次绘制
+            } else if (!combined_dirty_rects.empty()) {
                 // 有脏区域：增量渲染到 FBO
                 if (debug_render) {
-                    std::cout << "[Render] FBO incremental: " << combined_dirty_rects.size() << " dirty rects" << std::endl;
+                    std::cout << "[Render] FBO incremental: " << combined_dirty_rects.size() << " dirty rects";
+                    for (const auto& rect : combined_dirty_rects) {
+                        std::cout << " [" << rect.left() << "," << rect.top() << "," << rect.right() << "," << rect.bottom() << "]";
+                    }
+                    std::cout << std::endl;
                 }
 
                 for (const auto& rect : combined_dirty_rects) {
@@ -1782,17 +1923,32 @@ void Window::Render() {
             // 检查是否有活动动画
             bool has_running_animations = false;
             if (document_ && document_->GetStyleManager()) {
-                has_running_animations = !document_->GetStyleManager()->GetAnimationController().GetRunningAnimations().empty();
+                auto& ctrl = document_->GetStyleManager()->GetAnimationController();
+                size_t count = ctrl.GetRunningAnimations().size();
+                has_running_animations = count > 0;
+                if (debug_render) {
+                    std::cout << "[Render] StyleManager animations: " << count << std::endl;
+                }
             }
             if (!has_running_animations && animation_controller_) {
-                has_running_animations = !animation_controller_->GetRunningAnimations().empty();
+                size_t count = animation_controller_->GetRunningAnimations().size();
+                has_running_animations = count > 0;
+                if (debug_render) {
+                    std::cout << "[Render] Window animations: " << count << std::endl;
+                }
             }
             if (!has_running_animations && animation_timeline_) {
                 has_running_animations = animation_timeline_->HasRunningTransitions();
+                if (debug_render) {
+                    std::cout << "[Render] Transitions: " << has_running_animations << std::endl;
+                }
             }
 
             // 清除重绘标记
             if (!has_running_animations) {
+                if (debug_render) {
+                    std::cout << "[Render] Clearing needs_repaint_ (no animations)" << std::endl;
+                }
                 needs_repaint_ = false;
             }
             dirty_rects_.clear();
@@ -2425,7 +2581,8 @@ void Window::CollectDirtyRectsFromRenderTree(RenderObject* root) {
         // 如果该渲染对象需要重绘，收集其边界框
         if (obj->NeedsPaint()) {
             // 使用视口坐标系的边界框（考虑滚动偏移）
-            // 这样脏区域裁剪才能正确工作
+            // 因为 Paint 函数内部会应用 translate(-scroll_x_, -scroll_y_)
+            // 所以绘制实际上是在视口坐标系中进行的
             SkRect rect = obj->GetViewportBoundingRect();
             if (!rect.isEmpty()) {
                 AddDirtyRect(rect);
@@ -2617,6 +2774,13 @@ void Window::InvalidateRenderTree() {
     // 标记渲染树需要重建
     render_tree_valid_ = false;
     
+    // 关键修复：通知分层合成系统需要重建层树
+    // 当渲染树重建时，旧的 RenderObject 指针会失效
+    // 层树中存储的 RenderObject* 会变成悬空指针
+    if (compositor_adapter_ && use_layer_compositing_) {
+        compositor_adapter_->InvalidateLayerTree();
+    }
+    
     // 清理运行中的动画状态，防止悬空指针问题
     // 当渲染树重建时，旧的 RenderObject 指针会失效
     // 注意：只清理运行中的动画，保留 @keyframes 规则
@@ -2770,6 +2934,47 @@ void Window::RestoreScrollPositions(RenderObject* render_obj,
     // 递归处理子节点
     for (const auto& child : render_obj->GetChildren()) {
         RestoreScrollPositions(child.get(), scroll_positions);
+    }
+}
+
+// =========================================================================
+// 分层合成架构
+// =========================================================================
+
+void Window::SetUseLayerCompositing(bool use_layer_compositing) {
+    if (use_layer_compositing_ == use_layer_compositing) {
+        return;
+    }
+
+    use_layer_compositing_ = use_layer_compositing;
+
+    if (compositor_adapter_) {
+        compositor_adapter_->SetUseLayerCompositing(use_layer_compositing);
+
+        // 如果启用分层合成，初始化适配器
+        if (use_layer_compositing && !compositor_adapter_->IsInitialized()) {
+            int physical_width, physical_height;
+            SDL_GetWindowSizeInPixels(sdl_window_, &physical_width, &physical_height);
+            
+            float dpi_scale = GetDisplayScale();
+            int logical_width = static_cast<int>(physical_width / dpi_scale);
+            int logical_height = static_cast<int>(physical_height / dpi_scale);
+
+            if (compositor_adapter_->Initialize(logical_width, logical_height)) {
+                std::cout << "[Window] Layer compositing enabled (" 
+                          << logical_width << "x" << logical_height << ")" << std::endl;
+            } else {
+                std::cerr << "[Window] Failed to initialize layer compositing, falling back to legacy rendering" << std::endl;
+                use_layer_compositing_ = false;
+                compositor_adapter_->SetUseLayerCompositing(false);
+            }
+        }
+    }
+
+    // 启用分层合成时，需要重建渲染树
+    if (use_layer_compositing) {
+        InvalidateRenderTree();
+        SetNeedsRepaint();
     }
 }
 

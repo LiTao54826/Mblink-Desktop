@@ -53,6 +53,11 @@ set(UTILS_TEST_SOURCES
     utils/test_encoding.cpp
 )
 
+# Compositor 测试
+set(COMPOSITOR_TEST_SOURCES
+    compositor/test_compositor_layer.cpp
+)
+
 # 创建单元测试可执行文件
 add_executable(lightui_unit_tests
     main.cpp
@@ -63,6 +68,7 @@ add_executable(lightui_unit_tests
     ${QUICKJS_TEST_SOURCES}
     ${LEXBOR_TEST_SOURCES}
     ${UTILS_TEST_SOURCES}
+    ${COMPOSITOR_TEST_SOURCES}
 )
 
 target_link_libraries(lightui_unit_tests

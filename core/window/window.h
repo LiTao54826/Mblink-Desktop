@@ -48,6 +48,7 @@ class RenderTreeBuilder;
 class RenderPipeline;
 class RenderTreeSynchronizer;
 class FBOManager;
+class WindowCompositorAdapter;
 
 /**
  * @brief 渲染后端类型
@@ -451,6 +452,31 @@ public:
      */
     RenderTreeSynchronizer* GetRenderTreeSynchronizer() const { return render_tree_synchronizer_.get(); }
 
+    // ========== 分层合成架构 ==========
+
+    /**
+     * @brief 设置是否使用分层合成架构
+     * @param use_layer_compositing true 使用新的分层合成架构
+     * 
+     * 分层合成架构提供：
+     * - CPU 光栅化 + GPU 合成
+     * - transform/opacity 动画无需重新光栅化
+     * - 滚动优化（只更新层偏移）
+     * - 增量光栅化（只更新脏区域）
+     */
+    void SetUseLayerCompositing(bool use_layer_compositing);
+
+    /**
+     * @brief 检查是否使用分层合成架构
+     */
+    bool IsUsingLayerCompositing() const { return use_layer_compositing_; }
+
+    /**
+     * @brief 获取分层合成适配器
+     * @return 适配器指针，如果未启用则返回 nullptr
+     */
+    WindowCompositorAdapter* GetCompositorAdapter() const { return compositor_adapter_.get(); }
+
     /**
      * @brief 更新动画（在渲染循环中调用）
      * @param current_time 当前时间（秒）
@@ -628,7 +654,14 @@ private:
 
     // FBO 管理器（用于 GPU 增量渲染）
     std::unique_ptr<FBOManager> fbo_manager_;
-    bool use_fbo_incremental_ = true;  // 是否使用 FBO 增量渲染
+    bool use_fbo_incremental_ = false;  // 是否使用 FBO 增量渲染（暂时禁用，滚动时有问题）
+    bool fbo_needs_full_paint_ = true; // FBO 是否需要首次全量绘制
+
+    // 分层合成适配器（新渲染架构）
+    std::unique_ptr<WindowCompositorAdapter> compositor_adapter_;
+    bool use_layer_compositing_ = true;  // 默认启用分层合成架构
+    float last_body_scroll_x_ = 0.0f;  // 上一帧的 body 滚动位置
+    float last_body_scroll_y_ = 0.0f;
 
     // 待处理的 resize（用于节流后处理最后一次 resize）
     int pending_resize_width_ = 0;

@@ -5,6 +5,8 @@
 
 #include "animation_applicator.h"
 #include "color.h"
+#include "core/compositor/window_compositor_adapter.h"
+#include "core/compositor/animation_layer_bridge.h"
 #include <regex>
 #include <sstream>
 #include <cmath>
@@ -84,6 +86,7 @@ void AnimationApplicator::ApplyAnimationValues(RenderObject* object) {
     
     auto& style = object->GetComputedStyle();
     bool modified = false;
+    bool needs_paint = false;  // 是否需要重绘（非层优化的属性）
     
     // 检测 play-state 变化并更新动画状态
     bool should_pause = (style.animation_play_state == "paused");
@@ -112,14 +115,29 @@ void AnimationApplicator::ApplyAnimationValues(RenderObject* object) {
         
         // 应用每个属性
         for (const auto& [property, value] : *props) {
+            // 关键优化：对于 transform/opacity，尝试通过层合成系统更新
+            // 这样可以避免重新光栅化，只需要 GPU 合成
+            if (property == "transform" || property == "opacity") {
+                if (TryApplyViaCompositor(object, property, value)) {
+                    // 成功通过层系统应用，仍然需要更新 ComputedStyle
+                    // 以保持状态一致，但不需要触发重绘
+                    ApplyPropertyToStyle(style, property, value);
+                    modified = true;
+                    continue;
+                }
+            }
+            
+            // 回退：通过传统方式应用属性
             if (ApplyPropertyToStyle(style, property, value)) {
                 modified = true;
+                needs_paint = true;
             }
         }
     }
     
     // 如果有属性被修改，标记需要重绘
-    if (modified) {
+    // 但如果所有修改都通过层系统完成，则不需要重绘
+    if (modified && needs_paint) {
         // 对于 transform 动画，需要扩展脏区域以覆盖变换前后的区域
         // 简单的解决方案：标记父元素也需要重绘，这样可以确保整个区域被正确重绘
         object->MarkNeedsPaint();
@@ -192,6 +210,31 @@ void AnimationApplicator::Clear() {
     // 清理所有已启动动画的跟踪信息
     // 注意：不需要调用 controller_.StopAllAnimations()，因为 controller_ 也会被清理
     started_animations_.clear();
+}
+
+// ============================================================================
+// 层合成优化
+// ============================================================================
+
+bool AnimationApplicator::TryApplyViaCompositor(RenderObject* object,
+                                                 const std::string& property,
+                                                 const std::string& value) {
+    // 检查是否有合成器适配器
+    if (!compositor_adapter_) {
+        return false;
+    }
+    
+    // 检查对象是否有独立的合成层
+    if (!object->HasOwnCompositorLayer()) {
+        return false;
+    }
+    
+    // 通过合成器适配器更新属性
+    auto update_type = compositor_adapter_->UpdateAnimationProperty(object, property, value);
+    
+    // 检查是否成功通过层系统更新
+    return (update_type == AnimationUpdateType::Transform ||
+            update_type == AnimationUpdateType::Opacity);
 }
 
 // ============================================================================

@@ -47,6 +47,27 @@ class Node;
 class Element;
 class Text;
 class AnimationTimeline;
+class CompositorLayer;
+
+// 层提升原因（从 compositor 模块引入）
+enum class LayerPromotionReason;
+
+/**
+ * @brief 层信息 - 存储在 RenderObject 中的合成层关联信息
+ */
+struct LayerInfo {
+    // 关联的合成层（如果有）
+    std::weak_ptr<CompositorLayer> compositor_layer;
+
+    // 层提升原因
+    LayerPromotionReason promotion_reason;
+
+    // 是否强制独立层
+    bool force_own_layer = false;
+
+    // 默认构造函数
+    LayerInfo();
+};
 
 /**
  * @brief 渲染对象类型
@@ -264,6 +285,9 @@ struct ComputedStyle {
 
     // CSS clip-path Property (Phase 3)
     std::optional<CSSClipPath> clip_path;        // 裁剪路径
+
+    // CSS will-change Property (用于层提升优化)
+    std::string will_change;  // auto, transform, opacity, scroll-position, contents, etc.
 
     ComputedStyle() {
         width = CSSLength(0, CSSUnit::AUTO);
@@ -529,6 +553,33 @@ public:
      * 在样式变化时调用
      */
     void InvalidatePaintCache() { paint_cache_.valid = false; }
+
+    // =========================================================================
+    // 合成层关联
+    // =========================================================================
+
+    /**
+     * @brief 获取层信息
+     */
+    LayerInfo& GetLayerInfo() { return layer_info_; }
+    const LayerInfo& GetLayerInfo() const { return layer_info_; }
+
+    /**
+     * @brief 获取关联的合成层
+     * @return 合成层指针，如果没有则返回 nullptr
+     */
+    std::shared_ptr<CompositorLayer> GetCompositorLayer() const;
+
+    /**
+     * @brief 设置关联的合成层
+     * @param layer 合成层
+     */
+    void SetCompositorLayer(std::shared_ptr<CompositorLayer> layer);
+
+    /**
+     * @brief 检查是否有独立的合成层
+     */
+    bool HasOwnCompositorLayer() const;
 
     // =========================================================================
     // 布局树统一：布局相关公共方法
@@ -812,6 +863,7 @@ protected:
     ComputedStyle computed_style_;
     LayoutInfo layout_info_;
     PaintCache paint_cache_;  // P1优化：样式预计算缓存
+    LayerInfo layer_info_;    // 合成层关联信息
 
     bool needs_layout_ = true;
     bool needs_paint_ = true;

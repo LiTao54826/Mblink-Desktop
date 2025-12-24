@@ -27,7 +27,7 @@
 
     - _Requirements: 2.3, 5.2_
 
-  - [ ] 1.4 Implement BlitToScreen using glBlitFramebuffer
+  - [x] 1.4 Implement BlitToScreen using glBlitFramebuffer
     - Bind FBO as read framebuffer
     - Bind default framebuffer (0) as draw framebuffer
     - Call glBlitFramebuffer with GL_COLOR_BUFFER_BIT
@@ -63,7 +63,7 @@
     - **Validates: Requirements 1.4, 2.2**
 
 
-  - [ ] 2.4 Update Render method to use FBO incremental mode
+  - [x] 2.4 Update Render method to use FBO incremental mode
     - Check if GPU mode and FBO is valid
     - Call RenderIncrementalGPU instead of full repaint
     - Keep fallback to full repaint if FBO invalid
@@ -71,15 +71,16 @@
 
 
 
-- [ ] 3. Handle window resize with FBO
-  - [ ] 3.1 Update OnResize to resize FBO
+- [-] 3. Handle window resize with FBO
+  - [x] 3.1 Update OnResize to resize FBO
     - Call fbo_manager_->Resize with new dimensions
     - Clear FBO after resize
 
 
     - Set force_full_repaint flag
     - _Requirements: 5.1, 5.2_
-  - [ ] 3.2 Clear both FBO and screen buffers on resize
+  - [x] 3.2 Clear both FBO and screen buffers on resize
+
     - Clear FBO with background color
     - Clear screen back buffer
     - Swap and clear again for double buffer
