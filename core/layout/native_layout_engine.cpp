@@ -2276,6 +2276,8 @@ LayoutOutput NativeLayoutEngine::ComputeNodeLayout(NodeId node_id, const LayoutI
             }
             
             // Handle overflow: auto for block layout - if content exceeds container, add scrollbar and relayout
+            // Skip for anonymous blocks (no render_obj)
+            if (node->render_obj) {
             const auto& computed = node->render_obj->GetComputedStyle();
             std::string overflow_y = !computed.overflow_y.empty() ? computed.overflow_y : computed.overflow;
             std::string overflow_x = !computed.overflow_x.empty() ? computed.overflow_x : computed.overflow;
@@ -2326,6 +2328,7 @@ LayoutOutput NativeLayoutEngine::ComputeNodeLayout(NodeId node_id, const LayoutI
                     }
                 }
             }
+            }  // end if (node->render_obj)
             break;
         }
 
@@ -2333,6 +2336,8 @@ LayoutOutput NativeLayoutEngine::ComputeNodeLayout(NodeId node_id, const LayoutI
             output = ComputeFlexLayout(node_id, inputs);
             
             // Handle overflow: auto - if content exceeds container, add scrollbar and relayout
+            // Skip for anonymous blocks (no render_obj)
+            if (node->render_obj) {
             const auto& computed = node->render_obj->GetComputedStyle();
             std::string overflow_y = !computed.overflow_y.empty() ? computed.overflow_y : computed.overflow;
             std::string overflow_x = !computed.overflow_x.empty() ? computed.overflow_x : computed.overflow;
@@ -2378,6 +2383,7 @@ LayoutOutput NativeLayoutEngine::ComputeNodeLayout(NodeId node_id, const LayoutI
                     output = ComputeFlexLayout(node_id, inputs);
                 }
             }
+            }  // end if (node->render_obj)
             break;
         }
 
