@@ -1,37 +1,41 @@
 /**
  * @file render_pipeline.cpp
  * @brief 统一渲染管线实现
+ *
+ * 合并 RenderPipelineLegacy (V1) 和 RenderPipelineV2 的代码。
+ * 所有代码直接从已验证的 V1 和 V2 复制，不重新实现。
  */
 
 #include "render_pipeline.h"
 #include "render_object.h"
+#include "style_resolver.h"  // RenderTreeBuilder 在这里定义
 #include "render_tree_synchronizer.h"
-#include "style_resolver.h"  // RenderTreeBuilder
-#include "../dom/document.h"
-#include "../dom/dirty_node_tracker.h"
-#include "../layout/native_layout_engine.h"
-#include "../layout/layout_engine.h"
-#include "../compositor/layer_tree_builder.h"
-#include "../compositor/rasterizer.h"
-#include "../compositor/compositor.h"
-#include "../compositor/compositor_layer.h"
-#include "../compositor/animation_layer_bridge.h"
-#include "../compositor/scroll_layer_manager.h"
-#include "../compositor/property_tree/property_trees.h"
-#include "../compositor/property_tree/property_tree_builder.h"
-#include "../compositor/property_tree/paint_artifact_compositor.h"
-#include "include/core/SkCanvas.h"
-#include "include/core/SkM44.h"
+#include "core/dom/document.h"
+#include "core/dom/dirty_node_tracker.h"
+#include "core/layout/native_layout_engine.h"
 #include <chrono>
 #include <iostream>
 
 namespace lightui {
 
 // =========================================================================
+// 辅助函数（复制自 V2）
+// =========================================================================
+
+namespace {
+    double GetCurrentTimeMs() {
+        auto now = std::chrono::high_resolution_clock::now();
+        auto duration = now.time_since_epoch();
+        return std::chrono::duration<double, std::milli>(duration).count();
+    }
+}
+
+// =========================================================================
 // 构造和析构
 // =========================================================================
 
 RenderPipeline::RenderPipeline()
+    // 初始化 V2 组件（复制自 RenderPipelineV2 构造函数）
     : layer_tree_builder_(std::make_unique<LayerTreeBuilder>())
     , rasterizer_(std::make_unique<Rasterizer>())
     , compositor_(std::make_unique<Compositor>())
@@ -40,13 +44,13 @@ RenderPipeline::RenderPipeline()
     , property_trees_(std::make_unique<PropertyTrees>())
     , property_tree_builder_(std::make_unique<PropertyTreeBuilder>(*property_trees_))
     , paint_artifact_compositor_(std::make_unique<PaintArtifactCompositor>()) {
-
-    // 连接组件
+    
+    // 连接组件（复制自 V2）
     animation_bridge_->SetLayerTreeBuilder(layer_tree_builder_.get());
     scroll_manager_->SetLayerTreeBuilder(layer_tree_builder_.get());
     scroll_manager_->SetRasterizer(rasterizer_.get());
-
-    // 设置属性树系统
+    
+    // 设置属性树系统（复制自 V2）
     paint_artifact_compositor_->SetPropertyTrees(property_trees_.get());
     scroll_manager_->SetPaintArtifactCompositor(paint_artifact_compositor_.get());
     scroll_manager_->SetPropertyTrees(property_trees_.get());
@@ -57,11 +61,10 @@ RenderPipeline::~RenderPipeline() {
 }
 
 // =========================================================================
-// 初始化
+// 初始化（复制自 V2）
 // =========================================================================
 
-bool RenderPipeline::Initialize(int width, int height,
-                                 const RenderPipelineConfig& config) {
+bool RenderPipeline::Initialize(int width, int height, const UnifiedPipelineConfig& config) {
     if (initialized_) {
         return true;
     }
@@ -70,25 +73,22 @@ bool RenderPipeline::Initialize(int width, int height,
     viewport_height_ = height;
     config_ = config;
 
-    // 应用配置到组件
+    // 应用配置（复制自 V2）
     layer_tree_builder_->SetLayerPromotionEnabled(config.enable_layer_promotion);
     rasterizer_->SetIncrementalEnabled(config.enable_incremental_rasterize);
     rasterizer_->SetScrollOptimizationEnabled(config.enable_scroll_optimization);
     compositor_->SetFrameSkipEnabled(config.enable_frame_skip);
     compositor_->SetShowLayerBorders(config.show_layer_borders);
 
-    // 初始化合成器
+    // 初始化合成器（复制自 V2）
     if (config.enable_gpu_compositing) {
         if (!compositor_->Initialize(width, height)) {
-            // GPU 初始化失败，回退到 CPU
             config_.enable_gpu_compositing = false;
         }
     }
 
     initialized_ = true;
-    needs_paint_ = true;
-    needs_layer_tree_rebuild_ = true;
-
+    needs_render_ = true;
     return true;
 }
 
@@ -97,6 +97,7 @@ void RenderPipeline::Shutdown() {
         return;
     }
 
+    // 复制自 V2
     compositor_->Shutdown();
     layer_tree_builder_->Clear();
     scroll_manager_->Clear();
@@ -115,14 +116,15 @@ void RenderPipeline::Resize(int width, int height) {
     viewport_width_ = width;
     viewport_height_ = height;
 
+    // 复制自 V2
     if (compositor_->IsInitialized()) {
         compositor_->Resize(width, height);
     }
 
     // 标记需要重新渲染和重建层树
-    needs_paint_ = true;
-    needs_layout_ = true;
+    needs_render_ = true;
     needs_layer_tree_rebuild_ = true;
+    needs_layout_ = true;  // V1: 视口变化需要重新布局
 }
 
 // =========================================================================
@@ -131,35 +133,25 @@ void RenderPipeline::Resize(int width, int height) {
 
 void RenderPipeline::SetDocument(std::shared_ptr<Document> doc) {
     document_ = doc;
-
-    // 创建渲染树同步器
-    if (!synchronizer_) {
-        synchronizer_ = std::make_shared<RenderTreeSynchronizer>();
-    }
-    synchronizer_->SetDocument(doc);
-
-    // 如果有布局引擎，也设置到同步器
-    if (layout_engine_wrapper_) {
-        synchronizer_->SetLayoutEngine(layout_engine_wrapper_);
-    }
+    needs_render_ = true;
+    needs_layer_tree_rebuild_ = true;
 }
 
-void RenderPipeline::SetConfig(const RenderPipelineConfig& config) {
+void RenderPipeline::SetConfig(const UnifiedPipelineConfig& config) {
     config_ = config;
 
-    // 应用配置到组件
+    // 复制自 V2
     layer_tree_builder_->SetLayerPromotionEnabled(config.enable_layer_promotion);
     rasterizer_->SetIncrementalEnabled(config.enable_incremental_rasterize);
     rasterizer_->SetScrollOptimizationEnabled(config.enable_scroll_optimization);
     compositor_->SetFrameSkipEnabled(config.enable_frame_skip);
     compositor_->SetShowLayerBorders(config.show_layer_borders);
 
-    // GPU 合成状态变化
     if (config.enable_gpu_compositing && !compositor_->IsInitialized()) {
         compositor_->Initialize(viewport_width_, viewport_height_);
     }
 
-    needs_paint_ = true;
+    needs_render_ = true;
 }
 
 void RenderPipeline::SetDpiScale(float scale) {
@@ -167,12 +159,13 @@ void RenderPipeline::SetDpiScale(float scale) {
         scale = 1.0f;
     }
     dpi_scale_ = scale;
-
+    
+    // 复制自 V2
     if (layer_tree_builder_) {
         layer_tree_builder_->SetDpiScale(scale);
     }
-
-    needs_paint_ = true;
+    
+    needs_render_ = true;
 }
 
 void RenderPipeline::SetShowLayerBorders(bool show) {
@@ -180,8 +173,93 @@ void RenderPipeline::SetShowLayerBorders(bool show) {
     compositor_->SetShowLayerBorders(show);
 }
 
+void RenderPipeline::SetRenderTree(std::shared_ptr<RenderObject> tree) {
+    if (render_tree_ != tree) {
+        render_tree_ = tree; 
+        needs_layer_tree_rebuild_ = true;
+        needs_render_ = true;
+    }
+}
+
 // =========================================================================
-// 渲染主入口
+// 脏标记（复制自 V1）
+// =========================================================================
+
+void RenderPipeline::MarkNeedsStyleRecalc() {
+    needs_style_recalc_ = true;
+    needs_layout_ = true;  // 样式变化通常需要重新布局
+    needs_paint_ = true;
+    needs_render_ = true;
+}
+
+void RenderPipeline::MarkNeedsLayout() {
+    needs_layout_ = true;
+    needs_paint_ = true;  // 布局变化需要重新绘制
+    needs_render_ = true;
+}
+
+void RenderPipeline::MarkNeedsPaint() {
+    needs_paint_ = true;
+    needs_render_ = true;
+}
+
+void RenderPipeline::ForceFullUpdate() {
+    needs_style_recalc_ = true;
+    needs_layout_ = true;
+    needs_paint_ = true;
+    needs_render_ = true;
+    needs_layer_tree_rebuild_ = true;
+}
+
+// =========================================================================
+// 层树管理（复制自 V2）
+// =========================================================================
+
+void RenderPipeline::InvalidateLayerTree() {
+    needs_layer_tree_rebuild_ = true;
+    needs_render_ = true;
+}
+
+void RenderPipeline::ForceRasterize() {
+    if (root_layer_) {
+        root_layer_->MarkFullDirty();
+    }
+    needs_render_ = true;
+}
+
+void RenderPipeline::MarkDirty(RenderObject* object) {
+    if (!object) {
+        return;
+    }
+
+    // 复制自 V2
+    auto layer = layer_tree_builder_->GetLayerForRenderObject(object);
+    if (layer) {
+        const auto& layout = object->GetLayoutInfo();
+        SkRect bounds = SkRect::MakeXYWH(layout.x, layout.y, layout.width, layout.height);
+        layer->MarkDirty(bounds);
+    }
+
+    needs_render_ = true;
+}
+
+void RenderPipeline::MarkDirtyRegion(const SkRect& region) {
+    if (root_layer_) {
+        root_layer_->MarkDirty(region);
+    }
+    needs_render_ = true;
+}
+
+// =========================================================================
+// 检查是否需要更新
+// =========================================================================
+
+bool RenderPipeline::NeedsUpdate() const {
+    return needs_style_recalc_ || needs_layout_ || needs_paint_ || needs_render_;
+}
+
+// =========================================================================
+// 主渲染入口
 // =========================================================================
 
 bool RenderPipeline::ProcessFrame(SkCanvas* canvas) {
@@ -191,33 +269,52 @@ bool RenderPipeline::ProcessFrame(SkCanvas* canvas) {
 
     frame_start_time_ = GetCurrentTimeMs();
     current_frame_stats_.Reset();
+    current_stage_ = RenderStage::Idle;
 
-    // 1. DOM 同步阶段
+    // 注意：渲染树由 Window::EnsureRenderTree() 构建和管理
+    // RenderPipeline 不再自己构建渲染树，而是使用外部设置的渲染树
+    // 如果没有渲染树，直接返回
+    if (!render_tree_) {
+        return false;
+    }
+
+    // =========================================================================
+    // 阶段 1-3: 来自 V1 的流程
+    // =========================================================================
+
+    // 1. DOM 同步
     double stage_start = GetCurrentTimeMs();
     DoDOMSync();
     current_frame_stats_.dom_sync_time = GetCurrentTimeMs() - stage_start;
 
-    // 2. 样式计算阶段
-    stage_start = GetCurrentTimeMs();
-    DoStyleRecalc();
-    current_frame_stats_.style_time = GetCurrentTimeMs() - stage_start;
+    // 2. 样式重算
+    if (needs_style_recalc_) {
+        stage_start = GetCurrentTimeMs();
+        DoStyleRecalc();
+        current_frame_stats_.style_time = GetCurrentTimeMs() - stage_start;
+    }
 
-    // 3. 布局阶段
-    stage_start = GetCurrentTimeMs();
-    DoLayout();
-    current_frame_stats_.layout_time = GetCurrentTimeMs() - stage_start;
+    // 3. 布局（由 Window::EnsureRenderTree() 完成，这里跳过）
+    // 注意：布局在 Window 中完成，这里只清除标记
+    if (needs_layout_) {
+        needs_layout_ = false;
+    }
 
-    // 4. 层树构建阶段
+    // =========================================================================
+    // 阶段 4-6: 来自 V2 的流程
+    // =========================================================================
+
+    // 4. 层树构建
     stage_start = GetCurrentTimeMs();
     DoLayerTreeBuild();
     current_frame_stats_.layer_tree_time = GetCurrentTimeMs() - stage_start;
 
-    // 5. 光栅化阶段
+    // 5. 光栅化
     stage_start = GetCurrentTimeMs();
     DoRasterize();
     current_frame_stats_.rasterize_time = GetCurrentTimeMs() - stage_start;
 
-    // 6. 合成阶段
+    // 6. 合成
     stage_start = GetCurrentTimeMs();
     DoComposite(canvas);
     current_frame_stats_.composite_time = GetCurrentTimeMs() - stage_start;
@@ -227,110 +324,55 @@ bool RenderPipeline::ProcessFrame(SkCanvas* canvas) {
     current_frame_stats_.using_gpu = compositor_->IsUsingGPU();
     last_frame_stats_ = current_frame_stats_;
 
-    // 重置脏标记
+    // 清除脏标记
+    needs_render_ = false;
     needs_paint_ = false;
     current_stage_ = RenderStage::Idle;
 
     return true;
 }
 
-bool RenderPipeline::NeedsUpdate() const {
-    // 检查 DOM 变化
-    auto doc = document_.lock();
-    if (doc && doc->GetDirtyTracker().HasPendingChanges()) {
-        return true;
-    }
-
-    return needs_dom_sync_ || needs_style_recalc_ ||
-           needs_layout_ || needs_paint_;
-}
 
 // =========================================================================
-// 脏标记
+// 渲染阶段实现 - 来自 V1
 // =========================================================================
 
-void RenderPipeline::MarkNeedsStyleRecalc() {
-    needs_style_recalc_ = true;
-    needs_layout_ = true;
-    needs_paint_ = true;
+void RenderPipeline::EnsureRenderTree() {
+    // 注意：渲染树现在由 Window::EnsureRenderTree() 构建和管理
+    // 通过 SetRenderTree() 传入，这个方法保留为空实现以保持接口兼容
+    // 不再在这里构建渲染树，避免重复构建导致内存问题
 }
-
-void RenderPipeline::MarkNeedsLayout() {
-    needs_layout_ = true;
-    needs_paint_ = true;
-}
-
-void RenderPipeline::MarkNeedsPaint() {
-    needs_paint_ = true;
-}
-
-void RenderPipeline::MarkNeedsLayerTreeRebuild() {
-    needs_layer_tree_rebuild_ = true;
-    needs_paint_ = true;
-}
-
-void RenderPipeline::ForceFullUpdate() {
-    needs_dom_sync_ = true;
-    needs_style_recalc_ = true;
-    needs_layout_ = true;
-    needs_paint_ = true;
-    needs_layer_tree_rebuild_ = true;
-}
-
-void RenderPipeline::InvalidateLayerTree() {
-    needs_layer_tree_rebuild_ = true;
-    needs_paint_ = true;
-}
-
-void RenderPipeline::ForceRasterize() {
-    if (root_layer_) {
-        root_layer_->MarkFullDirty();
-    }
-    needs_paint_ = true;
-}
-
-// =========================================================================
-// 渲染阶段实现
-// =========================================================================
 
 void RenderPipeline::DoDOMSync() {
     current_stage_ = RenderStage::DOMSync;
 
+    // 注意：渲染树同步现在由 Window::EnsureRenderTree() 处理
+    // Window 在调用 ProcessFrame 之前会确保渲染树是最新的
+    // 这里只需要清除脏标记，不需要再次同步
+    
     auto doc = document_.lock();
     if (!doc) {
         return;
     }
 
-    auto& dirty_tracker = doc->GetDirtyTracker();
-    if (!dirty_tracker.HasPendingChanges() && !needs_dom_sync_) {
-        return;
+    // 清除脏标记（因为 Window::EnsureRenderTree() 已经处理了）
+    DirtyNodeTracker& dirty_tracker = doc->GetDirtyTracker();
+    if (dirty_tracker.HasPendingChanges()) {
+        current_frame_stats_.dirty_nodes = static_cast<int>(
+            dirty_tracker.GetStructuralChangeCount() + 
+            dirty_tracker.GetStyleChangeCount() + 
+            dirty_tracker.GetTextChangeCount()
+        );
+        dirty_tracker.Clear();
     }
-
-    // 确保渲染树存在
-    EnsureRenderTree();
-
-    // 同步渲染树
-    if (synchronizer_ && render_tree_) {
-        bool changed = synchronizer_->Synchronize(dirty_tracker, render_tree_);
-        if (changed) {
-            needs_layout_ = true;
-            needs_paint_ = true;
-            needs_layer_tree_rebuild_ = true;
-        }
-    }
-
-    needs_dom_sync_ = false;
 }
 
 void RenderPipeline::DoStyleRecalc() {
-    current_stage_ = RenderStage::Style;
+    current_stage_ = RenderStage::StyleRecalc;
 
-    if (!needs_style_recalc_) {
-        return;
-    }
-
-    // 样式在 DOM 操作时已经计算，这里主要处理级联样式变化
-    // TODO: 实现更完整的样式重算逻辑
+    // 复制自 V1 的 DoStyleRecalc
+    // 当前样式在 DOM 操作时已经计算，这里主要处理级联样式变化
+    // TODO: 实现增量样式重算
 
     needs_style_recalc_ = false;
 }
@@ -338,52 +380,60 @@ void RenderPipeline::DoStyleRecalc() {
 void RenderPipeline::DoLayout() {
     current_stage_ = RenderStage::Layout;
 
-    if (!needs_layout_ || !render_tree_) {
+    // 复制自 V1 的 DoLayout
+    if (!layout_engine_ || !render_tree_) {
+        needs_layout_ = false;
         return;
     }
 
-    // 设置视口尺寸
-    RenderObject::SetViewportSize(
-        static_cast<float>(viewport_width_),
-        static_cast<float>(viewport_height_));
-
-    // 使用布局引擎计算布局
-    if (layout_engine_) {
-        layout_engine_->ComputeLayout(
-            static_cast<float>(viewport_width_),
-            static_cast<float>(viewport_height_));
-    } else if (render_tree_) {
-        render_tree_->Layout(
-            static_cast<float>(viewport_width_),
-            static_cast<float>(viewport_height_));
-    }
+    // 执行布局计算
+    layout_engine_->ComputeLayout(
+        static_cast<float>(viewport_width_), 
+        static_cast<float>(viewport_height_)
+    );
 
     needs_layout_ = false;
+    needs_paint_ = true;  // 布局后需要重绘
 }
 
+// =========================================================================
+// 渲染阶段实现 - 来自 V2
+// =========================================================================
+
 void RenderPipeline::DoLayerTreeBuild() {
-    current_stage_ = RenderStage::LayerTree;
+    current_stage_ = RenderStage::LayerTreeBuild;
 
     if (!render_tree_) {
         return;
     }
 
-    // 构建或更新层树
+    // 复制自 V2 的 BuildLayerTree
     if (!root_layer_ || needs_layer_tree_rebuild_) {
+        // 关键修复：在构建层树前，设置 DPI 缩放
+        layer_tree_builder_->SetDpiScale(dpi_scale_);
+        
         root_layer_ = layer_tree_builder_->Build(render_tree_.get());
         needs_layer_tree_rebuild_ = false;
-
-        // 构建属性树
+        
+        // 关键修复：根层边界应该使用视口尺寸，而不是渲染树的布局尺寸
+        // 因为渲染树的布局尺寸可能小于视口（例如内容不足以填满视口）
+        if (root_layer_) {
+            root_layer_->SetBounds(SkRect::MakeWH(
+                static_cast<float>(viewport_width_), 
+                static_cast<float>(viewport_height_)));
+            root_layer_->MarkFullDirty();
+        }
+        
+        // 构建属性树（复制自 V2）
         if (config_.enable_property_trees && property_tree_builder_) {
             property_tree_builder_->Build(render_tree_.get());
         }
     } else {
-        // 更新现有层的边界
+        // 更新现有层的边界和脏区域
         UpdateLayerTreeBounds(root_layer_.get());
     }
-
-    current_frame_stats_.layers_built =
-        static_cast<int>(layer_tree_builder_->GetLayerCount());
+    
+    current_frame_stats_.layers_built = static_cast<int>(layer_tree_builder_->GetLayerCount());
 
     // 注册滚动容器
     RegisterScrollableElements(render_tree_.get());
@@ -396,11 +446,10 @@ void RenderPipeline::DoRasterize() {
         return;
     }
 
-    // 光栅化脏层
+    // 复制自 V2 的 RasterizeDirtyLayers
     int rasterized = rasterizer_->RasterizeDirtyLayers(root_layer_.get());
     current_frame_stats_.layers_rasterized = rasterized;
 
-    // 获取脏区域统计
     const auto& stats = rasterizer_->GetStats();
     current_frame_stats_.dirty_regions_count = stats.incremental_rasterizations;
 }
@@ -408,52 +457,45 @@ void RenderPipeline::DoRasterize() {
 void RenderPipeline::DoComposite(SkCanvas* canvas) {
     current_stage_ = RenderStage::Composite;
 
-    if (!root_layer_ || !canvas) {
+    if (!canvas) {
         return;
     }
 
-    // 检查帧跳过
-    if (config_.enable_frame_skip && !compositor_->NeedsComposite(root_layer_.get())) {
-        current_frame_stats_.frame_skipped = true;
+    // 优先使用层合成（如果层树已构建）
+    if (root_layer_) {
+        compositor_->CompositeToCanvas(root_layer_.get(), canvas);
+        const auto& stats = compositor_->GetStats();
+        current_frame_stats_.layers_composited = stats.layers_composited;
         return;
     }
 
-    // 合成到 Canvas
-    compositor_->CompositeToCanvas(root_layer_.get(), canvas);
-
-    // 更新统计
-    const auto& stats = compositor_->GetStats();
-    current_frame_stats_.layers_rasterized = stats.layers_composited;
+    // 回退：直接绘制渲染树（层树未构建时）
+    if (render_tree_) {
+        render_tree_->Paint(canvas);
+    }
 }
 
 // =========================================================================
-// 辅助方法
+// 辅助方法（复制自 V2）
 // =========================================================================
 
-void RenderPipeline::EnsureRenderTree() {
-    if (render_tree_) {
+void RenderPipeline::UpdateLayerTreeBounds(CompositorLayer* layer) {
+    if (!layer) {
         return;
     }
 
-    auto doc = document_.lock();
-    if (!doc) {
-        return;
-    }
-
-    // 创建渲染树构建器
-    if (!render_tree_builder_) {
-        render_tree_builder_ = std::make_shared<RenderTreeBuilder>();
-    }
-
-    // 构建渲染树
-    auto body = doc->GetBody();
-    if (body) {
-        render_tree_ = render_tree_builder_->BuildRenderTree(body, nullptr);
-
-        // 设置到同步器
-        if (synchronizer_) {
-            synchronizer_->SetRenderTreeBuilder(render_tree_builder_);
+    // 复制自 V2
+    RenderObject* render_obj = layer->GetRenderObject();
+    if (render_obj) {
+        layer_tree_builder_->UpdateLayerBounds(layer, render_obj);
+        
+        if (CheckRenderObjectNeedsPaint(render_obj)) {
+            layer->MarkFullDirty();
         }
+    }
+
+    for (const auto& child : layer->GetChildren()) {
+        UpdateLayerTreeBounds(child.get());
     }
 }
 
@@ -469,40 +511,18 @@ void RenderPipeline::RegisterScrollableElementsRecursive(RenderObject* obj) {
         return;
     }
 
-    // 检查是否是滚动容器
+    // 复制自 V2
     if (obj->IsScrollable()) {
         scroll_manager_->RegisterScrollContainer(obj);
     }
 
-    // 检查是否是固定元素
     const auto& style = obj->GetComputedStyle();
     if (style.position == "fixed") {
         scroll_manager_->RegisterFixedElement(obj);
     }
 
-    // 递归处理子元素
     for (const auto& child : obj->GetChildren()) {
         RegisterScrollableElementsRecursive(child.get());
-    }
-}
-
-void RenderPipeline::UpdateLayerTreeBounds(CompositorLayer* layer) {
-    if (!layer) {
-        return;
-    }
-
-    RenderObject* render_obj = layer->GetRenderObject();
-    if (render_obj) {
-        layer_tree_builder_->UpdateLayerBounds(layer, render_obj);
-
-        if (CheckRenderObjectNeedsPaint(render_obj)) {
-            layer->MarkFullDirty();
-        }
-    }
-
-    // 递归更新子层
-    for (const auto& child : layer->GetChildren()) {
-        UpdateLayerTreeBounds(child.get());
     }
 }
 
@@ -510,29 +530,23 @@ bool RenderPipeline::CheckRenderObjectNeedsPaint(RenderObject* obj) {
     if (!obj) {
         return false;
     }
-
+    
+    // 复制自 V2
     if (obj->NeedsPaint()) {
         return true;
     }
-
-    // 递归检查子对象
+    
     for (const auto& child : obj->GetChildren()) {
         if (CheckRenderObjectNeedsPaint(child.get())) {
             return true;
         }
     }
-
+    
     return false;
 }
 
-double RenderPipeline::GetCurrentTimeMs() const {
-    auto now = std::chrono::high_resolution_clock::now();
-    auto duration = now.time_since_epoch();
-    return std::chrono::duration<double, std::milli>(duration).count();
-}
-
 // =========================================================================
-// 滚动处理
+// 滚动处理（复制自 V2）
 // =========================================================================
 
 bool RenderPipeline::HandleScroll(RenderObject* container, float delta_x, float delta_y) {
@@ -540,17 +554,15 @@ bool RenderPipeline::HandleScroll(RenderObject* container, float delta_x, float 
         return false;
     }
 
-    // 注册滚动容器（如果尚未注册）
     if (!scroll_manager_->IsScrollContainer(container)) {
         scroll_manager_->RegisterScrollContainer(container);
     }
 
-    // 处理滚动
     bool scrolled = scroll_manager_->HandleScroll(container, delta_x, delta_y);
-
+    
     if (scrolled) {
         compositor_->MarkNeedsComposite();
-        needs_paint_ = true;
+        needs_render_ = true;
     }
 
     return scrolled;
@@ -566,17 +578,16 @@ bool RenderPipeline::ScrollTo(RenderObject* container, float scroll_x, float scr
     }
 
     bool scrolled = scroll_manager_->ScrollTo(container, scroll_x, scroll_y);
-
+    
     if (scrolled) {
         compositor_->MarkNeedsComposite();
-        needs_paint_ = true;
     }
 
     return scrolled;
 }
 
 // =========================================================================
-// 动画处理
+// 动画处理（复制自 V2）
 // =========================================================================
 
 void RenderPipeline::BeginAnimationFrame() {
@@ -585,11 +596,9 @@ void RenderPipeline::BeginAnimationFrame() {
     }
 }
 
-AnimationUpdateType RenderPipeline::UpdateAnimationProperty(
-    RenderObject* object,
-    const std::string& property,
-    const std::string& value) {
-
+AnimationUpdateType RenderPipeline::UpdateAnimationProperty(RenderObject* object,
+                                                             const std::string& property,
+                                                             const std::string& value) {
     if (!config_.enable_animation_optimization) {
         return AnimationUpdateType::Paint;
     }
@@ -603,7 +612,7 @@ bool RenderPipeline::EndAnimationFrame() {
     }
 
     bool has_layer_updates = animation_bridge_->EndAnimationUpdates();
-
+    
     if (has_layer_updates) {
         compositor_->MarkNeedsComposite();
     }
@@ -611,11 +620,9 @@ bool RenderPipeline::EndAnimationFrame() {
     return has_layer_updates;
 }
 
-void RenderPipeline::OnAnimationStart(
-    RenderObject* object,
-    const std::string& animation_name,
-    const std::vector<std::string>& properties) {
-
+void RenderPipeline::OnAnimationStart(RenderObject* object,
+                                       const std::string& animation_name,
+                                       const std::vector<std::string>& properties) {
     if (config_.enable_animation_optimization) {
         animation_bridge_->OnAnimationStart(object, animation_name, properties);
     }
@@ -625,90 +632,6 @@ void RenderPipeline::OnAnimationEnd(RenderObject* object, const std::string& ani
     if (config_.enable_animation_optimization) {
         animation_bridge_->OnAnimationEnd(object, animation_name);
     }
-}
-
-// =========================================================================
-// 属性树直接更新
-// =========================================================================
-
-bool RenderPipeline::DirectlyUpdateTransform(RenderObject* object, const SkM44& matrix) {
-    if (!config_.enable_property_trees || !paint_artifact_compositor_ || !object) {
-        return false;
-    }
-    // TODO: 需要从 RenderObject 获取对应的 TransformTreeNode
-    // 当前简化实现，后续完善
-    return false;
-}
-
-bool RenderPipeline::DirectlyUpdateOpacity(RenderObject* object, float opacity) {
-    if (!config_.enable_property_trees || !paint_artifact_compositor_ || !object) {
-        return false;
-    }
-    // TODO: 需要从 RenderObject 获取对应的 EffectTreeNode
-    // 当前简化实现，后续完善
-    return false;
-}
-
-bool RenderPipeline::DirectlyUpdateScrollOffset(RenderObject* object, const SkPoint& offset) {
-    if (!config_.enable_property_trees || !paint_artifact_compositor_ || !object) {
-        return false;
-    }
-    // TODO: 需要从 RenderObject 获取对应的 ScrollTreeNode
-    // 当前简化实现，后续完善
-    return false;
-}
-
-// =========================================================================
-// 脏区域管理
-// =========================================================================
-
-void RenderPipeline::MarkDirty(RenderObject* object) {
-    if (!object) {
-        return;
-    }
-
-    auto layer = layer_tree_builder_->GetLayerForRenderObject(object);
-    if (layer) {
-        const auto& layout = object->GetLayoutInfo();
-        SkRect bounds = SkRect::MakeXYWH(layout.x, layout.y, layout.width, layout.height);
-        layer->MarkDirty(bounds);
-    }
-
-    needs_paint_ = true;
-}
-
-void RenderPipeline::MarkDirtyRegion(const SkRect& region) {
-    if (root_layer_) {
-        root_layer_->MarkDirty(region);
-    }
-    needs_paint_ = true;
-}
-
-// =========================================================================
-// 统计
-// =========================================================================
-
-void RenderPipeline::ResetStats() {
-    last_frame_stats_.Reset();
-    current_frame_stats_.Reset();
-    rasterizer_->ResetStats();
-    compositor_->ResetStats();
-}
-
-// =========================================================================
-// 组件访问
-// =========================================================================
-
-PropertyTrees* RenderPipeline::GetPropertyTrees() const {
-    return property_trees_.get();
-}
-
-PropertyTreeBuilder* RenderPipeline::GetPropertyTreeBuilder() const {
-    return property_tree_builder_.get();
-}
-
-PaintArtifactCompositor* RenderPipeline::GetPaintArtifactCompositor() const {
-    return paint_artifact_compositor_.get();
 }
 
 } // namespace lightui

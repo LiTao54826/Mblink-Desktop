@@ -31,7 +31,7 @@
 #include "core/quickjs/quickjs_runtime.h"
 #include "core/devtools/devtools_manager.h"
 #include "core/devtools/inspector/element_picker.h"
-#include "core/compositor/window_compositor_adapter.h"
+#include "core/render/render_pipeline.h"
 #include "include/core/SkFontTypes.h"
 #include "include/core/SkFontMetrics.h"
 #include <iostream>
@@ -582,13 +582,13 @@ void EventLoop::HandleMouseEventForDOM(const SDL_Event& event) {
             float new_y = dragging_element->GetScrollY();
 
             if (new_x != old_x || new_y != old_y) {
-                // 如果滚动位置发生了变化，通知 compositor
+                // 如果滚动位置发生了变化，通知渲染管线
                 // 这样 ScrollLayerManager 才能更新层偏移
-                auto compositor_adapter = window->GetCompositorAdapter();
-                if (compositor_adapter) {
+                auto render_pipeline = window->GetRenderPipeline();
+                if (render_pipeline) {
                     float delta_x = new_x - old_x;
                     float delta_y = new_y - old_y;
-                    compositor_adapter->HandleScroll(dragging_element.get(), delta_x, delta_y);
+                    render_pipeline->HandleScroll(dragging_element.get(), delta_x, delta_y);
                 }
             }
 
@@ -2231,16 +2231,16 @@ void EventLoop::HandleMouseWheelEventForDOM(const SDL_Event& event) {
 
 
             // 应用滚动
-            // 关键修复：在分层合成模式下，需要通过compositor处理滚动
+            // 通过统一渲染管线处理滚动
             // 这样ScrollLayerManager中的层偏移才会正确更新
-            auto compositor_adapter = window->GetCompositorAdapter();
+            auto render_pipeline = window->GetRenderPipeline();
             bool scrolled = false;
             
-            if (compositor_adapter) {
-                // 分层合成模式：通过compositor处理滚动
-                scrolled = compositor_adapter->HandleScroll(render_obj.get(), scroll_delta_x, scroll_delta_y);
+            if (render_pipeline) {
+                // 通过渲染管线处理滚动
+                scrolled = render_pipeline->HandleScroll(render_obj.get(), scroll_delta_x, scroll_delta_y);
             } else {
-                // 传统模式：直接修改RenderObject
+                // 降级模式：直接修改RenderObject
                 render_obj->ScrollBy(scroll_delta_x, scroll_delta_y);
                 scrolled = true;
             }

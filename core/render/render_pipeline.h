@@ -2,14 +2,14 @@
  * @file render_pipeline.h
  * @brief 统一渲染管线
  *
- * 整合完整渲染流程：
- * - DOM 同步、样式计算、布局（来自原 V1）
- * - 层树构建、光栅化、GPU 合成（来自原 V2）
+ * 合并 RenderPipelineLegacy (V1) 和 RenderPipelineV2 的功能：
+ * - V1: DOM 同步、样式计算、布局
+ * - V2: 层树构建、光栅化、GPU 合成、动画优化、滚动优化
  *
- * 设计参考：
- * - Chromium Blink 的 DocumentLifecycle
- * - Chromium CC 的合成器架构
- * - Flutter 的渲染管线
+ * 设计原则：
+ * - 复用已验证的代码，不重新实现
+ * - 统一的渲染入口
+ * - 完整的渲染流程
  */
 
 #pragma once
@@ -19,10 +19,19 @@
 #include <string>
 #include <vector>
 
+// 复用 V2 的组件头文件
+#include "core/compositor/compositor_layer.h"
+#include "core/compositor/layer_tree_builder.h"
+#include "core/compositor/rasterizer.h"
+#include "core/compositor/compositor.h"
+#include "core/compositor/animation_layer_bridge.h"
+#include "core/compositor/scroll_layer_manager.h"
+#include "core/compositor/property_tree/property_trees.h"
+#include "core/compositor/property_tree/property_tree_builder.h"
+#include "core/compositor/property_tree/paint_artifact_compositor.h"
+
 // Skia 前向声明
 class SkCanvas;
-class SkM44;
-class SkPoint;
 class SkRect;
 
 namespace lightui {
@@ -34,36 +43,28 @@ class RenderObject;
 class RenderTreeBuilder;
 class RenderTreeSynchronizer;
 class NativeLayoutEngine;
-class LayoutEngine;
-class LayerTreeBuilder;
-class Rasterizer;
-class Compositor;
-class CompositorLayer;
-class AnimationLayerBridge;
-class ScrollLayerManager;
-class PropertyTrees;
-class PropertyTreeBuilder;
-class PaintArtifactCompositor;
-enum class AnimationUpdateType;
 
 /**
  * @brief 渲染生命周期阶段
+ * 
+ * 合并 V1 的 RenderLifecycleLegacy 和 V2 的阶段
  */
 enum class RenderStage {
     Idle,           ///< 空闲状态
-    DOMSync,        ///< DOM 同步
-    Style,          ///< 样式计算
-    Layout,         ///< 布局计算
-    LayerTree,      ///< 层树构建
-    Rasterize,      ///< 光栅化
-    Composite       ///< 合成
+    DOMSync,        ///< DOM 同步（来自 V1）
+    StyleRecalc,    ///< 样式重算（来自 V1）
+    Layout,         ///< 布局计算（来自 V1）
+    LayerTreeBuild, ///< 层树构建（来自 V2）
+    Rasterize,      ///< 光栅化（来自 V2）
+    Composite       ///< 合成（来自 V2）
 };
 
 /**
- * @brief 渲染管线配置
+ * @brief 统一渲染管线配置
+ * 
+ * 直接复制自 V2 的 RenderPipelineConfig
  */
-struct RenderPipelineConfig {
-    // 功能开关
+struct UnifiedPipelineConfig {
     bool enable_gpu_compositing = true;       ///< 启用 GPU 合成
     bool enable_layer_promotion = true;       ///< 启用层提升
     bool enable_incremental_rasterize = true; ///< 启用增量光栅化
@@ -71,18 +72,16 @@ struct RenderPipelineConfig {
     bool enable_animation_optimization = true;///< 启用动画优化
     bool enable_frame_skip = true;            ///< 启用帧跳过
     bool enable_property_trees = true;        ///< 启用属性树系统
-
-    // 调试选项
-    bool show_layer_borders = false;          ///< 显示层边界
-    bool show_dirty_regions = false;          ///< 显示脏区域
-    bool enable_stats = true;                 ///< 启用统计
+    bool show_layer_borders = false;          ///< 显示层边界（调试）
 };
 
 /**
  * @brief 帧统计信息
+ * 
+ * 合并 V1 和 V2 的统计信息
  */
-struct FrameStats {
-    // 时间统计（毫秒）
+struct UnifiedFrameStats {
+    // 各阶段耗时（毫秒）
     double dom_sync_time = 0.0;
     double style_time = 0.0;
     double layout_time = 0.0;
@@ -90,17 +89,18 @@ struct FrameStats {
     double rasterize_time = 0.0;
     double composite_time = 0.0;
     double total_time = 0.0;
-
+    
     // 计数统计
     int dirty_nodes = 0;
     int layers_built = 0;
     int layers_rasterized = 0;
+    int layers_composited = 0;
     int dirty_regions_count = 0;
-
+    
     // 状态
     bool frame_skipped = false;
     bool using_gpu = false;
-
+    
     void Reset() {
         dom_sync_time = 0.0;
         style_time = 0.0;
@@ -112,16 +112,18 @@ struct FrameStats {
         dirty_nodes = 0;
         layers_built = 0;
         layers_rasterized = 0;
+        layers_composited = 0;
         dirty_regions_count = 0;
         frame_skipped = false;
+        using_gpu = false;
     }
 };
 
 /**
  * @brief 统一渲染管线
  *
- * 管理完整的渲染生命周期，从 DOM 变化到屏幕显示。
- * 整合了原 RenderPipeline (V1) 和 RenderPipelineV2 的功能。
+ * 合并 RenderPipelineLegacy (V1) 和 RenderPipelineV2 的所有功能。
+ * 提供完整的渲染流程：DOM同步 → 样式 → 布局 → 层树 → 光栅化 → 合成
  */
 class RenderPipeline {
 public:
@@ -133,312 +135,140 @@ public:
     RenderPipeline& operator=(const RenderPipeline&) = delete;
 
     // =========================================================================
-    // 初始化
+    // 初始化（来自 V2）
     // =========================================================================
 
-    /**
-     * @brief 初始化渲染管线
-     * @param width 视口宽度
-     * @param height 视口高度
-     * @param config 配置选项
-     * @return true 如果初始化成功
-     */
-    bool Initialize(int width, int height,
-                    const RenderPipelineConfig& config = {});
-
-    /**
-     * @brief 关闭渲染管线
-     */
+    bool Initialize(int width, int height, 
+                    const UnifiedPipelineConfig& config = {});
     void Shutdown();
-
-    /**
-     * @brief 调整视口大小
-     * @param width 新宽度
-     * @param height 新高度
-     */
     void Resize(int width, int height);
-
-    /**
-     * @brief 检查是否已初始化
-     */
     bool IsInitialized() const { return initialized_; }
 
     // =========================================================================
     // 配置
     // =========================================================================
 
-    /**
-     * @brief 设置文档
-     * @param doc 文档对象
-     */
     void SetDocument(std::shared_ptr<Document> doc);
-
-    /**
-     * @brief 设置配置
-     * @param config 配置选项
-     */
-    void SetConfig(const RenderPipelineConfig& config);
-
-    /**
-     * @brief 获取当前配置
-     */
-    const RenderPipelineConfig& GetConfig() const { return config_; }
-
-    /**
-     * @brief 设置 DPI 缩放比
-     * @param scale DPI 缩放比
-     */
+    void SetConfig(const UnifiedPipelineConfig& config);
+    const UnifiedPipelineConfig& GetConfig() const { return config_; }
     void SetDpiScale(float scale);
-
-    /**
-     * @brief 获取 DPI 缩放比
-     */
     float GetDpiScale() const { return dpi_scale_; }
 
     // =========================================================================
-    // 渲染
+    // 主渲染入口
     // =========================================================================
 
     /**
      * @brief 处理一帧（主入口）
-     *
-     * 执行完整渲染流程：
-     * 1. DOM 同步（如果有变化）
-     * 2. 样式计算（如果需要）
-     * 3. 布局（如果需要）
-     * 4. 层树构建/更新
-     * 5. 光栅化脏层
-     * 6. 合成到屏幕
-     *
-     * @param canvas 目标 Canvas
-     * @return true 如果渲染成功
+     * 
+     * 完整流程：
+     * 1. DOM 同步（来自 V1）
+     * 2. 样式重算（来自 V1）
+     * 3. 布局计算（来自 V1）
+     * 4. 层树构建（来自 V2）
+     * 5. 光栅化（来自 V2）
+     * 6. 合成（来自 V2）
      */
     bool ProcessFrame(SkCanvas* canvas);
-
-    /**
-     * @brief 检查是否需要更新
-     */
+    
     bool NeedsUpdate() const;
-
-    /**
-     * @brief 标记需要渲染
-     */
-    void MarkNeedsRender() { needs_paint_ = true; }
+    void MarkNeedsRender() { needs_render_ = true; }
 
     // =========================================================================
-    // 脏标记
+    // 脏标记（来自 V1）
     // =========================================================================
 
-    /**
-     * @brief 标记需要样式重算
-     */
     void MarkNeedsStyleRecalc();
-
-    /**
-     * @brief 标记需要布局
-     */
     void MarkNeedsLayout();
-
-    /**
-     * @brief 标记需要绘制
-     */
     void MarkNeedsPaint();
-
-    /**
-     * @brief 标记需要重建层树
-     */
-    void MarkNeedsLayerTreeRebuild();
-
-    /**
-     * @brief 强制完整更新
-     */
     void ForceFullUpdate();
 
-    /**
-     * @brief 使层树无效
-     *
-     * 当渲染树被重建时调用，确保层树中的指针不会悬空
-     */
+    // =========================================================================
+    // 层树管理（来自 V2）
+    // =========================================================================
+
     void InvalidateLayerTree();
-
-    /**
-     * @brief 强制重新光栅化所有层
-     */
     void ForceRasterize();
+    void MarkDirty(RenderObject* object);
+    void MarkDirtyRegion(const SkRect& region);
 
     // =========================================================================
-    // 滚动处理
+    // 滚动处理（来自 V2）
     // =========================================================================
 
-    /**
-     * @brief 处理滚动事件
-     * @param container 滚动容器
-     * @param delta_x X 方向滚动增量
-     * @param delta_y Y 方向滚动增量
-     * @return true 如果滚动成功
-     */
     bool HandleScroll(RenderObject* container, float delta_x, float delta_y);
-
-    /**
-     * @brief 滚动到指定位置
-     * @param container 滚动容器
-     * @param scroll_x 目标 X 滚动位置
-     * @param scroll_y 目标 Y 滚动位置
-     * @return true 如果滚动成功
-     */
     bool ScrollTo(RenderObject* container, float scroll_x, float scroll_y);
 
     // =========================================================================
-    // 动画处理
+    // 动画处理（来自 V2）
     // =========================================================================
 
-    /**
-     * @brief 开始动画帧
-     */
     void BeginAnimationFrame();
-
-    /**
-     * @brief 更新动画属性
-     * @param object 渲染对象
-     * @param property 属性名
-     * @param value 属性值
-     * @return 更新类型
-     */
     AnimationUpdateType UpdateAnimationProperty(RenderObject* object,
                                                  const std::string& property,
                                                  const std::string& value);
-
-    /**
-     * @brief 结束动画帧
-     * @return true 如果有层属性更新
-     */
     bool EndAnimationFrame();
-
-    /**
-     * @brief 通知动画开始
-     */
     void OnAnimationStart(RenderObject* object,
                           const std::string& animation_name,
                           const std::vector<std::string>& properties);
-
-    /**
-     * @brief 通知动画结束
-     */
     void OnAnimationEnd(RenderObject* object, const std::string& animation_name);
-
-    // =========================================================================
-    // 属性树直接更新
-    // =========================================================================
-
-    /**
-     * @brief 直接更新变换（不触发光栅化）
-     */
-    bool DirectlyUpdateTransform(RenderObject* object, const SkM44& matrix);
-
-    /**
-     * @brief 直接更新透明度（不触发光栅化）
-     */
-    bool DirectlyUpdateOpacity(RenderObject* object, float opacity);
-
-    /**
-     * @brief 直接更新滚动偏移（不触发光栅化）
-     */
-    bool DirectlyUpdateScrollOffset(RenderObject* object, const SkPoint& offset);
-
-    // =========================================================================
-    // 脏区域管理
-    // =========================================================================
-
-    /**
-     * @brief 标记渲染对象为脏
-     */
-    void MarkDirty(RenderObject* object);
-
-    /**
-     * @brief 标记区域为脏
-     */
-    void MarkDirtyRegion(const SkRect& region);
 
     // =========================================================================
     // 状态查询
     // =========================================================================
 
-    /**
-     * @brief 获取当前渲染阶段
-     */
     RenderStage GetCurrentStage() const { return current_stage_; }
-
-    /**
-     * @brief 获取上一帧统计
-     */
-    const FrameStats& GetLastFrameStats() const { return last_frame_stats_; }
-
-    /**
-     * @brief 重置统计
-     */
-    void ResetStats();
-
-    // =========================================================================
-    // 组件访问（调试和高级用途）
-    // =========================================================================
-
-    /**
-     * @brief 获取渲染树
-     */
+    const UnifiedFrameStats& GetLastFrameStats() const { return last_frame_stats_; }
     std::shared_ptr<RenderObject> GetRenderTree() const { return render_tree_; }
-
-    /**
-     * @brief 获取层树根节点
-     */
+    void SetRenderTree(std::shared_ptr<RenderObject> tree);
     std::shared_ptr<CompositorLayer> GetRootLayer() const { return root_layer_; }
 
-    /**
-     * @brief 获取属性树
-     */
-    PropertyTrees* GetPropertyTrees() const;
+    // =========================================================================
+    // 属性树系统访问（来自 V2）
+    // =========================================================================
 
-    /**
-     * @brief 获取属性树构建器
-     */
-    PropertyTreeBuilder* GetPropertyTreeBuilder() const;
-
-    /**
-     * @brief 获取绘制产物合成器
-     */
-    PaintArtifactCompositor* GetPaintArtifactCompositor() const;
-
-    /**
-     * @brief 检查是否使用属性树系统
-     */
     bool IsUsingPropertyTreeSystem() const { return config_.enable_property_trees; }
+    PropertyTrees* GetPropertyTrees() { return property_trees_.get(); }
+    PropertyTreeBuilder* GetPropertyTreeBuilder() { return property_tree_builder_.get(); }
+    PaintArtifactCompositor* GetPaintArtifactCompositor() { return paint_artifact_compositor_.get(); }
 
-    /**
-     * @brief 设置是否显示层边界
-     */
+    // =========================================================================
+    // 组件访问（调试用，来自 V2）
+    // =========================================================================
+
+    LayerTreeBuilder* GetLayerTreeBuilder() { return layer_tree_builder_.get(); }
+    Rasterizer* GetRasterizer() { return rasterizer_.get(); }
+    Compositor* GetCompositor() { return compositor_.get(); }
+    AnimationLayerBridge* GetAnimationBridge() { return animation_bridge_.get(); }
+    ScrollLayerManager* GetScrollManager() { return scroll_manager_.get(); }
     void SetShowLayerBorders(bool show);
 
 private:
     // =========================================================================
-    // 内部方法 - 渲染阶段
+    // 渲染阶段实现
     // =========================================================================
 
-    void DoDOMSync();
-    void DoStyleRecalc();
-    void DoLayout();
-    void DoLayerTreeBuild();
-    void DoRasterize();
-    void DoComposite(SkCanvas* canvas);
+    void DoDOMSync();       // 来自 V1
+    void DoStyleRecalc();   // 来自 V1
+    void DoLayout();        // 来自 V1
+    void DoLayerTreeBuild();// 来自 V2
+    void DoRasterize();     // 来自 V2
+    void DoComposite(SkCanvas* canvas); // 来自 V2
 
     // =========================================================================
-    // 内部方法 - 辅助
+    // 辅助方法（来自 V2）
+    // =========================================================================
+
+    void UpdateLayerTreeBounds(CompositorLayer* layer);
+    void RegisterScrollableElements(RenderObject* root);
+    void RegisterScrollableElementsRecursive(RenderObject* obj);
+    bool CheckRenderObjectNeedsPaint(RenderObject* obj);
+
+    // =========================================================================
+    // 辅助方法（来自 V1）
     // =========================================================================
 
     void EnsureRenderTree();
-    void RegisterScrollableElements(RenderObject* root);
-    void RegisterScrollableElementsRecursive(RenderObject* obj);
-    void UpdateLayerTreeBounds(CompositorLayer* layer);
-    bool CheckRenderObjectNeedsPaint(RenderObject* obj);
-    double GetCurrentTimeMs() const;
 
 private:
     // =========================================================================
@@ -447,14 +277,14 @@ private:
 
     bool initialized_ = false;
     RenderStage current_stage_ = RenderStage::Idle;
-    RenderPipelineConfig config_;
+    UnifiedPipelineConfig config_;
 
-    // 脏标记
-    bool needs_dom_sync_ = false;
-    bool needs_style_recalc_ = false;
-    bool needs_layout_ = false;
-    bool needs_paint_ = false;
-    bool needs_layer_tree_rebuild_ = true;
+    // 脏标记（合并 V1 和 V2）
+    bool needs_style_recalc_ = false;  // V1
+    bool needs_layout_ = false;         // V1
+    bool needs_paint_ = false;          // V1
+    bool needs_render_ = true;          // V2
+    bool needs_layer_tree_rebuild_ = true; // V2
 
     // 视口
     int viewport_width_ = 0;
@@ -469,20 +299,20 @@ private:
     std::shared_ptr<RenderObject> render_tree_;
 
     // =========================================================================
-    // 核心组件
+    // 来自 V1 的组件
     // =========================================================================
 
     std::shared_ptr<RenderTreeBuilder> render_tree_builder_;
     std::shared_ptr<RenderTreeSynchronizer> synchronizer_;
-    std::shared_ptr<LayoutEngine> layout_engine_wrapper_;
-    NativeLayoutEngine* layout_engine_ = nullptr;
+    NativeLayoutEngine* layout_engine_ = nullptr;  // 外部持有，不拥有
 
-    // 合成器组件
+    // =========================================================================
+    // 来自 V2 的组件
+    // =========================================================================
+
     std::unique_ptr<LayerTreeBuilder> layer_tree_builder_;
     std::unique_ptr<Rasterizer> rasterizer_;
     std::unique_ptr<Compositor> compositor_;
-
-    // 优化组件
     std::unique_ptr<AnimationLayerBridge> animation_bridge_;
     std::unique_ptr<ScrollLayerManager> scroll_manager_;
 
@@ -498,8 +328,8 @@ private:
     // 统计
     // =========================================================================
 
-    FrameStats last_frame_stats_;
-    FrameStats current_frame_stats_;
+    UnifiedFrameStats last_frame_stats_;
+    UnifiedFrameStats current_frame_stats_;
     double frame_start_time_ = 0.0;
 };
 

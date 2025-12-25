@@ -23,9 +23,9 @@
 namespace lightui {
 
 // 前向声明
-class WindowCompositorAdapter;
 class PaintArtifactCompositor;
 class PropertyTrees;
+class AnimationLayerBridge;
 
 /**
  * @brief 动画应用器
@@ -61,16 +61,16 @@ public:
     ~AnimationApplicator();
     
     /**
-     * @brief 设置合成器适配器
+     * @brief 设置动画层桥接器
      * 
      * 用于 transform/opacity 动画的层优化。
-     * 当设置了合成器适配器时，transform/opacity 动画会直接更新层属性，
+     * 当设置了动画层桥接器时，transform/opacity 动画会直接更新层属性，
      * 而不是触发完整重绘。
      * 
-     * @param adapter 合成器适配器指针（不拥有所有权）
+     * @param bridge 动画层桥接器指针（不拥有所有权）
      */
-    void SetCompositorAdapter(WindowCompositorAdapter* adapter) {
-        compositor_adapter_ = adapter;
+    void SetAnimationBridge(AnimationLayerBridge* bridge) {
+        animation_bridge_ = bridge;
     }
     
     /**
@@ -172,8 +172,8 @@ public:
 private:
     AnimationController& controller_;
     
-    /// 合成器适配器（用于层优化）
-    WindowCompositorAdapter* compositor_adapter_ = nullptr;
+    /// 动画层桥接器（用于层优化）
+    AnimationLayerBridge* animation_bridge_ = nullptr;
     
     /// 绘制产物合成器（属性树系统）
     PaintArtifactCompositor* paint_artifact_compositor_ = nullptr;

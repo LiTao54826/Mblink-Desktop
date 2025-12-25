@@ -11,8 +11,6 @@ set(COMPOSITOR_SOURCES
     compositor.cpp
     animation_layer_bridge.cpp
     scroll_layer_manager.cpp
-    render_pipeline_v2.cpp
-    window_compositor_adapter.cpp
     animation_bounds_calculator.cpp
 )
 
@@ -23,8 +21,6 @@ set(COMPOSITOR_HEADERS
     compositor.h
     animation_layer_bridge.h
     scroll_layer_manager.h
-    render_pipeline_v2.h
-    window_compositor_adapter.h
     animation_bounds_calculator.h
 )
 

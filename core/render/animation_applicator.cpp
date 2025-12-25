@@ -6,7 +6,6 @@
 #include "animation_applicator.h"
 #include "color.h"
 #include "transform.h"
-#include "core/compositor/window_compositor_adapter.h"
 #include "core/compositor/animation_layer_bridge.h"
 #include "core/compositor/property_tree/paint_artifact_compositor.h"
 #include "core/compositor/property_tree/property_trees.h"
@@ -358,8 +357,8 @@ bool AnimationApplicator::TryApplyViaPropertyTree(RenderObject* object,
 bool AnimationApplicator::TryApplyViaCompositor(RenderObject* object,
                                                  const std::string& property,
                                                  const std::string& value) {
-    // 检查是否有合成器适配器
-    if (!compositor_adapter_) {
+    // 检查是否有动画层桥接器
+    if (!animation_bridge_) {
         return false;
     }
     
@@ -368,8 +367,8 @@ bool AnimationApplicator::TryApplyViaCompositor(RenderObject* object,
         return false;
     }
     
-    // 通过合成器适配器更新属性
-    auto update_type = compositor_adapter_->UpdateAnimationProperty(object, property, value);
+    // 通过动画层桥接器更新属性
+    auto update_type = animation_bridge_->ApplyAnimationProperty(object, property, value);
     
     // 检查是否成功通过层系统更新
     return (update_type == AnimationUpdateType::Transform ||

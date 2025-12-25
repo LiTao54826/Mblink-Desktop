@@ -47,7 +47,6 @@ set(RENDER_SOURCES
     select_dropdown.cpp
     render_tree_synchronizer.cpp
     render_pipeline.cpp
-    render_pipeline_legacy.cpp
     fbo_manager.cpp
     canvas/canvas_rendering_context_2d.cpp
     canvas/canvas_gradient.cpp
@@ -103,7 +102,6 @@ set(RENDER_HEADERS
     select_dropdown.h
     render_tree_synchronizer.h
     render_pipeline.h
-    render_pipeline_legacy.h
     fbo_manager.h
     canvas/canvas_rendering_context_2d.h
 )

@@ -1,6 +1,6 @@
 /**
  * @file test_render_pipeline_properties.cpp
- * @brief 渲染管线 V2 属性测试
+ * @brief 统一渲染管线属性测试
  *
  * 测试渲染管线的核心属性：
  * - 初始化和配置
@@ -11,7 +11,7 @@
  */
 
 #include <gtest/gtest.h>
-#include "core/compositor/render_pipeline_v2.h"
+#include "core/render/render_pipeline.h"
 #include "core/compositor/compositor_layer.h"
 #include "core/render/render_object.h"
 #include "include/core/SkSurface.h"
@@ -66,10 +66,10 @@ public:
 class PipelineInitializationTest : public ::testing::Test {
 protected:
     void SetUp() override {
-        pipeline_ = std::make_unique<RenderPipelineV2>();
+        pipeline_ = std::make_unique<RenderPipeline>();
     }
 
-    std::unique_ptr<RenderPipelineV2> pipeline_;
+    std::unique_ptr<RenderPipeline> pipeline_;
 };
 
 /**
@@ -105,7 +105,7 @@ TEST_F(PipelineInitializationTest, CanReinitializeAfterShutdown) {
  * Property 4: 配置正确应用
  */
 TEST_F(PipelineInitializationTest, ConfigurationApplied) {
-    RenderPipelineConfig config;
+    UnifiedPipelineConfig config;
     config.enable_layer_promotion = false;
     config.enable_frame_skip = false;
     config.show_layer_borders = true;
@@ -125,14 +125,15 @@ TEST_F(PipelineInitializationTest, ConfigurationApplied) {
 class PipelineRenderTest : public ::testing::Test {
 protected:
     void SetUp() override {
-        pipeline_ = std::make_unique<RenderPipelineV2>();
+        pipeline_ = std::make_unique<RenderPipeline>();
         pipeline_->Initialize(800, 600);
         
         root_ = std::make_shared<TestRenderObject>();
         root_->SetBounds(0, 0, 800, 600);
+        pipeline_->SetRenderTree(root_);
     }
 
-    std::unique_ptr<RenderPipelineV2> pipeline_;
+    std::unique_ptr<RenderPipeline> pipeline_;
     std::shared_ptr<TestRenderObject> root_;
 };
 
@@ -140,27 +141,30 @@ protected:
  * Property 5: 渲染成功返回 true
  */
 TEST_F(PipelineRenderTest, RenderReturnsTrue) {
-    EXPECT_TRUE(pipeline_->Render(root_.get()));
+    auto surface = SkSurfaces::Raster(SkImageInfo::MakeN32Premul(800, 600));
+    EXPECT_TRUE(pipeline_->ProcessFrame(surface->getCanvas()));
 }
 
 /**
- * Property 6: 渲染后 NeedsRender 为 false
+ * Property 6: 渲染后 NeedsUpdate 为 false
  */
-TEST_F(PipelineRenderTest, NeedsRenderFalseAfterRender) {
-    EXPECT_TRUE(pipeline_->NeedsRender());
-    pipeline_->Render(root_.get());
-    EXPECT_FALSE(pipeline_->NeedsRender());
+TEST_F(PipelineRenderTest, NeedsUpdateFalseAfterRender) {
+    EXPECT_TRUE(pipeline_->NeedsUpdate());
+    auto surface = SkSurfaces::Raster(SkImageInfo::MakeN32Premul(800, 600));
+    pipeline_->ProcessFrame(surface->getCanvas());
+    EXPECT_FALSE(pipeline_->NeedsUpdate());
 }
 
 /**
  * Property 7: MarkNeedsRender 设置标志
  */
 TEST_F(PipelineRenderTest, MarkNeedsRenderSetsFlag) {
-    pipeline_->Render(root_.get());
-    EXPECT_FALSE(pipeline_->NeedsRender());
+    auto surface = SkSurfaces::Raster(SkImageInfo::MakeN32Premul(800, 600));
+    pipeline_->ProcessFrame(surface->getCanvas());
+    EXPECT_FALSE(pipeline_->NeedsUpdate());
     
     pipeline_->MarkNeedsRender();
-    EXPECT_TRUE(pipeline_->NeedsRender());
+    EXPECT_TRUE(pipeline_->NeedsUpdate());
 }
 
 /**
@@ -170,14 +174,15 @@ TEST_F(PipelineRenderTest, RenderToCanvasSucceeds) {
     auto surface = SkSurfaces::Raster(SkImageInfo::MakeN32Premul(800, 600));
     ASSERT_NE(surface, nullptr);
     
-    EXPECT_TRUE(pipeline_->RenderToCanvas(root_.get(), surface->getCanvas()));
+    EXPECT_TRUE(pipeline_->ProcessFrame(surface->getCanvas()));
 }
 
 /**
  * Property 9: 渲染统计正确
  */
 TEST_F(PipelineRenderTest, RenderStatsCorrect) {
-    pipeline_->Render(root_.get());
+    auto surface = SkSurfaces::Raster(SkImageInfo::MakeN32Premul(800, 600));
+    pipeline_->ProcessFrame(surface->getCanvas());
     
     const auto& stats = pipeline_->GetLastFrameStats();
     EXPECT_GE(stats.total_time, 0.0);
@@ -191,18 +196,20 @@ TEST_F(PipelineRenderTest, RenderStatsCorrect) {
 class PipelineScrollTest : public ::testing::Test {
 protected:
     void SetUp() override {
-        pipeline_ = std::make_unique<RenderPipelineV2>();
+        pipeline_ = std::make_unique<RenderPipeline>();
         pipeline_->Initialize(800, 600);
         
         root_ = std::make_shared<TestRenderObject>();
         root_->SetBounds(0, 0, 800, 600);
         root_->SetScrollable(true);
+        pipeline_->SetRenderTree(root_);
         
         // 先渲染一次以构建层树
-        pipeline_->Render(root_.get());
+        auto surface = SkSurfaces::Raster(SkImageInfo::MakeN32Premul(800, 600));
+        pipeline_->ProcessFrame(surface->getCanvas());
     }
 
-    std::unique_ptr<RenderPipelineV2> pipeline_;
+    std::unique_ptr<RenderPipeline> pipeline_;
     std::shared_ptr<TestRenderObject> root_;
 };
 
@@ -240,7 +247,7 @@ TEST_F(PipelineScrollTest, ScrollSyncedToRenderObject) {
 class PipelineAnimationTest : public ::testing::Test {
 protected:
     void SetUp() override {
-        pipeline_ = std::make_unique<RenderPipelineV2>();
+        pipeline_ = std::make_unique<RenderPipeline>();
         pipeline_->Initialize(800, 600);
         
         root_ = std::make_shared<TestRenderObject>();
@@ -249,12 +256,14 @@ protected:
         animated_ = std::make_shared<TestRenderObject>();
         animated_->SetBounds(100, 100, 200, 200);
         root_->AppendChild(animated_);
+        pipeline_->SetRenderTree(root_);
         
         // 先渲染一次
-        pipeline_->Render(root_.get());
+        auto surface = SkSurfaces::Raster(SkImageInfo::MakeN32Premul(800, 600));
+        pipeline_->ProcessFrame(surface->getCanvas());
     }
 
-    std::unique_ptr<RenderPipelineV2> pipeline_;
+    std::unique_ptr<RenderPipeline> pipeline_;
     std::shared_ptr<TestRenderObject> root_;
     std::shared_ptr<TestRenderObject> animated_;
 };
@@ -294,7 +303,7 @@ TEST_F(PipelineAnimationTest, AnimationLifecycleNotificationsWork) {
 class PipelineDirtyRegionTest : public ::testing::Test {
 protected:
     void SetUp() override {
-        pipeline_ = std::make_unique<RenderPipelineV2>();
+        pipeline_ = std::make_unique<RenderPipeline>();
         pipeline_->Initialize(800, 600);
         
         root_ = std::make_shared<TestRenderObject>();
@@ -303,35 +312,37 @@ protected:
         child_ = std::make_shared<TestRenderObject>();
         child_->SetBounds(100, 100, 200, 200);
         root_->AppendChild(child_);
+        pipeline_->SetRenderTree(root_);
         
-        pipeline_->Render(root_.get());
+        auto surface = SkSurfaces::Raster(SkImageInfo::MakeN32Premul(800, 600));
+        pipeline_->ProcessFrame(surface->getCanvas());
     }
 
-    std::unique_ptr<RenderPipelineV2> pipeline_;
+    std::unique_ptr<RenderPipeline> pipeline_;
     std::shared_ptr<TestRenderObject> root_;
     std::shared_ptr<TestRenderObject> child_;
 };
 
 /**
- * Property 15: MarkDirty 设置 NeedsRender
+ * Property 15: MarkDirty 设置 NeedsUpdate
  */
-TEST_F(PipelineDirtyRegionTest, MarkDirtySetsNeedsRender) {
-    EXPECT_FALSE(pipeline_->NeedsRender());
+TEST_F(PipelineDirtyRegionTest, MarkDirtySetsNeedsUpdate) {
+    EXPECT_FALSE(pipeline_->NeedsUpdate());
     
     pipeline_->MarkDirty(child_.get());
     
-    EXPECT_TRUE(pipeline_->NeedsRender());
+    EXPECT_TRUE(pipeline_->NeedsUpdate());
 }
 
 /**
- * Property 16: MarkDirtyRegion 设置 NeedsRender
+ * Property 16: MarkDirtyRegion 设置 NeedsUpdate
  */
-TEST_F(PipelineDirtyRegionTest, MarkDirtyRegionSetsNeedsRender) {
-    EXPECT_FALSE(pipeline_->NeedsRender());
+TEST_F(PipelineDirtyRegionTest, MarkDirtyRegionSetsNeedsUpdate) {
+    EXPECT_FALSE(pipeline_->NeedsUpdate());
     
     pipeline_->MarkDirtyRegion(SkRect::MakeXYWH(0, 0, 100, 100));
     
-    EXPECT_TRUE(pipeline_->NeedsRender());
+    EXPECT_TRUE(pipeline_->NeedsUpdate());
 }
 
 // =========================================================================
@@ -341,18 +352,18 @@ TEST_F(PipelineDirtyRegionTest, MarkDirtyRegionSetsNeedsRender) {
 class PipelineConfigTest : public ::testing::Test {
 protected:
     void SetUp() override {
-        pipeline_ = std::make_unique<RenderPipelineV2>();
+        pipeline_ = std::make_unique<RenderPipeline>();
         pipeline_->Initialize(800, 600);
     }
 
-    std::unique_ptr<RenderPipelineV2> pipeline_;
+    std::unique_ptr<RenderPipeline> pipeline_;
 };
 
 /**
  * Property 17: SetConfig 更新配置
  */
 TEST_F(PipelineConfigTest, SetConfigUpdatesConfiguration) {
-    RenderPipelineConfig new_config;
+    UnifiedPipelineConfig new_config;
     new_config.enable_layer_promotion = false;
     new_config.show_layer_borders = true;
     
@@ -381,11 +392,11 @@ TEST_F(PipelineConfigTest, SetShowLayerBordersUpdatesConfig) {
 class PipelineComponentAccessTest : public ::testing::Test {
 protected:
     void SetUp() override {
-        pipeline_ = std::make_unique<RenderPipelineV2>();
+        pipeline_ = std::make_unique<RenderPipeline>();
         pipeline_->Initialize(800, 600);
     }
 
-    std::unique_ptr<RenderPipelineV2> pipeline_;
+    std::unique_ptr<RenderPipeline> pipeline_;
 };
 
 /**
@@ -405,10 +416,12 @@ TEST_F(PipelineComponentAccessTest, ComponentAccessorsReturnValidPointers) {
 TEST_F(PipelineComponentAccessTest, RootLayerExistsAfterRender) {
     auto root = std::make_shared<TestRenderObject>();
     root->SetBounds(0, 0, 800, 600);
+    pipeline_->SetRenderTree(root);
     
     EXPECT_EQ(pipeline_->GetRootLayer(), nullptr);
     
-    pipeline_->Render(root.get());
+    auto surface = SkSurfaces::Raster(SkImageInfo::MakeN32Premul(800, 600));
+    pipeline_->ProcessFrame(surface->getCanvas());
     
     EXPECT_NE(pipeline_->GetRootLayer(), nullptr);
 }
@@ -420,10 +433,10 @@ TEST_F(PipelineComponentAccessTest, RootLayerExistsAfterRender) {
 class PipelineEdgeCaseTest : public ::testing::Test {
 protected:
     void SetUp() override {
-        pipeline_ = std::make_unique<RenderPipelineV2>();
+        pipeline_ = std::make_unique<RenderPipeline>();
     }
 
-    std::unique_ptr<RenderPipelineV2> pipeline_;
+    std::unique_ptr<RenderPipeline> pipeline_;
 };
 
 /**
@@ -431,15 +444,19 @@ protected:
  */
 TEST_F(PipelineEdgeCaseTest, RenderFailsWhenNotInitialized) {
     auto root = std::make_shared<TestRenderObject>();
-    EXPECT_FALSE(pipeline_->Render(root.get()));
+    pipeline_->SetRenderTree(root);
+    auto surface = SkSurfaces::Raster(SkImageInfo::MakeN32Premul(800, 600));
+    EXPECT_FALSE(pipeline_->ProcessFrame(surface->getCanvas()));
 }
 
 /**
- * Property 22: nullptr 根节点渲染返回 false
+ * Property 22: nullptr canvas 渲染返回 false
  */
-TEST_F(PipelineEdgeCaseTest, RenderFailsWithNullRoot) {
+TEST_F(PipelineEdgeCaseTest, RenderFailsWithNullCanvas) {
     pipeline_->Initialize(800, 600);
-    EXPECT_FALSE(pipeline_->Render(nullptr));
+    auto root = std::make_shared<TestRenderObject>();
+    pipeline_->SetRenderTree(root);
+    EXPECT_FALSE(pipeline_->ProcessFrame(nullptr));
 }
 
 /**
@@ -449,28 +466,12 @@ TEST_F(PipelineEdgeCaseTest, ResizeUpdatesViewport) {
     pipeline_->Initialize(800, 600);
     
     auto root = std::make_shared<TestRenderObject>();
-    pipeline_->Render(root.get());
-    EXPECT_FALSE(pipeline_->NeedsRender());
+    pipeline_->SetRenderTree(root);
+    auto surface = SkSurfaces::Raster(SkImageInfo::MakeN32Premul(800, 600));
+    pipeline_->ProcessFrame(surface->getCanvas());
+    EXPECT_FALSE(pipeline_->NeedsUpdate());
     
     pipeline_->Resize(1024, 768);
-    EXPECT_TRUE(pipeline_->NeedsRender());
-}
-
-/**
- * Property 24: ResetStats 清除统计
- */
-TEST_F(PipelineEdgeCaseTest, ResetStatsClearsStats) {
-    pipeline_->Initialize(800, 600);
-    
-    auto root = std::make_shared<TestRenderObject>();
-    pipeline_->Render(root.get());
-    
-    // 确保有统计数据
-    EXPECT_GT(pipeline_->GetLastFrameStats().total_time, 0.0);
-    
-    pipeline_->ResetStats();
-    
-    // 统计应该被清除
-    EXPECT_FLOAT_EQ(pipeline_->GetLastFrameStats().total_time, 0.0);
+    EXPECT_TRUE(pipeline_->NeedsUpdate());
 }
 

@@ -55,7 +55,7 @@
 #include "core/render/animation_timeline.h"
 #include "core/render/animation_controller.h"
 #include "core/render/animation_applicator.h"
-#include "core/render/render_pipeline_legacy.h"
+#include "core/render/render_pipeline.h"
 #include "core/render/render_tree_synchronizer.h"
 #include "core/layout/layout_engine.h"
 #include "core/layout/native_layout_engine.h"
@@ -66,7 +66,6 @@
 #include "core/devtools/devtools_manager.h"
 #include "core/lexbor/style_manager.h"
 #include "core/render/fbo_manager.h"
-#include "core/compositor/window_compositor_adapter.h"
 
 namespace lightui {
 
@@ -733,8 +732,8 @@ Window::Window(const WindowConfig& config) : config_(config) {
         }
     }
 
-    // 初始化分层合成适配器（新渲染架构）
-    compositor_adapter_ = std::make_unique<WindowCompositorAdapter>();
+    // 初始化统一渲染管线
+    render_pipeline_ = std::make_unique<RenderPipeline>();
 }
 
 Window::~Window() {
@@ -744,10 +743,10 @@ Window::~Window() {
         SDL_GL_MakeCurrent(sdl_window_, gl_context_);
     }
 
-    // 释放分层合成适配器（在释放其他资源之前）
-    if (compositor_adapter_) {
-        compositor_adapter_->Shutdown();
-        compositor_adapter_.reset();
+    // 释放统一渲染管线（在释放其他资源之前）
+    if (render_pipeline_) {
+        render_pipeline_->Shutdown();
+        render_pipeline_.reset();
     }
 
     // 释放 DisplayBackend（在销毁窗口之前）
@@ -1408,8 +1407,9 @@ void Window::Render() {
     if (has_pending_resize_) {
         has_pending_resize_ = false;
         OnResize();
-        InvalidateRenderTree();
-        SetForceFullRepaint(true);  // 关键修复：强制全量重绘
+        if (render_pipeline_) {
+            render_pipeline_->ForceFullUpdate();
+        }
         SetNeedsRepaint();
         DispatchWindowEvent(WindowEvent(WindowEventType::RESIZE, pending_resize_width_, pending_resize_height_));
     }
@@ -1419,32 +1419,27 @@ void Window::Render() {
     }
 
     // =========================================================================
-    // P0优化：按需渲染快速路径
-    // 如果没有任何变化，直接跳过整个渲染流程
+    // 检查是否有活动动画
     // =========================================================================
     bool has_active_animations = false;
     if (animation_timeline_) {
         has_active_animations = animation_timeline_->HasRunningTransitions();
     }
-    // 检查 StyleManager 的 AnimationController 中是否有活动动画
     if (!has_active_animations && document_ && document_->GetStyleManager()) {
         has_active_animations = !document_->GetStyleManager()->GetAnimationController().GetRunningAnimations().empty();
     }
-    // 兼容旧代码：也检查 Window 自己的 animation_controller_
     if (!has_active_animations && animation_controller_) {
         has_active_animations = !animation_controller_->GetRunningAnimations().empty();
     }
-    
-    // 关键修复：检查是否有待启动的动画
-    // 当用户通过 JavaScript 动态设置 animation 属性时，动画可能还没有被启动
-    // 但 ComputedStyle 中已经有动画配置了，需要触发渲染来启动这些动画
     if (!has_active_animations && animation_applicator_ && cached_render_tree_) {
         has_active_animations = HasPendingAnimations(cached_render_tree_.get());
     }
     
     // 快速路径：无需重绘且无活动动画时直接返回
     if (!needs_repaint_ && !has_active_animations && dirty_rects_.empty() && render_tree_valid_) {
-        return;
+        if (render_pipeline_ && !render_pipeline_->NeedsUpdate()) {
+            return;
+        }
     }
 
     // 获取画布
@@ -1454,9 +1449,148 @@ void Window::Render() {
     }
 
     // =========================================================================
-    // 分层合成渲染路径
+    // 获取视口尺寸
     // =========================================================================
-    if (use_layer_compositing_ && compositor_adapter_) {
+    int physical_width, physical_height;
+    SDL_GetWindowSizeInPixels(sdl_window_, &physical_width, &physical_height);
+    float dpi_scale = GetDisplayScale();
+    int logical_width = static_cast<int>(physical_width / dpi_scale);
+    int logical_height = static_cast<int>(physical_height / dpi_scale);
+
+    // 检查 DevTools 是否打开，如果打开则调整主应用区域
+    auto& devtools = DevToolsManager::GetInstance();
+    float app_x = 0, app_y = 0;
+    float app_width = static_cast<float>(logical_width);
+    float app_height = static_cast<float>(logical_height);
+    
+    if (devtools.IsOpen()) {
+        devtools.GetMainAppBounds(static_cast<float>(logical_width), static_cast<float>(logical_height),
+                                   app_x, app_y, app_width, app_height);
+    }
+
+    // 设置视口尺寸
+    RenderObject::SetViewportSize(app_width, app_height);
+
+    // =========================================================================
+    // 初始化统一渲染管线
+    // =========================================================================
+    if (render_pipeline_ && !render_pipeline_->IsInitialized()) {
+        if (!render_pipeline_->Initialize(static_cast<int>(app_width), static_cast<int>(app_height))) {
+            std::cerr << "[Window] Failed to initialize render pipeline" << std::endl;
+            return;
+        }
+        render_pipeline_->SetDocument(document_);
+        render_pipeline_->SetDpiScale(dpi_scale);
+        
+        // 连接属性树系统到动画应用器
+        if (animation_applicator_ && render_pipeline_->IsUsingPropertyTreeSystem()) {
+            animation_applicator_->SetPaintArtifactCompositor(
+                render_pipeline_->GetPaintArtifactCompositor());
+            animation_applicator_->SetPropertyTrees(
+                render_pipeline_->GetPropertyTrees());
+        }
+    }
+
+    // =========================================================================
+    // 确保渲染树已构建
+    // =========================================================================
+    EnsureRenderTree();
+    
+    if (!cached_render_tree_) {
+        return;
+    }
+
+    // 关键：将渲染树传递给统一渲染管线
+    if (render_pipeline_ && render_pipeline_->GetRenderTree() != cached_render_tree_) {
+        render_pipeline_->SetRenderTree(cached_render_tree_);
+    }
+
+    // =========================================================================
+    // 更新动画
+    // =========================================================================
+    static Uint64 anim_start_time = SDL_GetPerformanceCounter();
+    Uint64 anim_current_time = SDL_GetPerformanceCounter();
+    Uint64 anim_frequency = SDL_GetPerformanceFrequency();
+    double timestamp_sec = static_cast<double>(anim_current_time - anim_start_time) / anim_frequency;
+    UpdateAnimations(timestamp_sec);
+
+    // =========================================================================
+    // 使用统一渲染管线渲染
+    // =========================================================================
+    if (render_pipeline_) {
+        // 开始新的渲染帧
+        auto& layer_mgr = LayerManager::Instance();
+        layer_mgr.BeginFrame();
+        
+        // 获取背景色
+        SkColor clear_color = SK_ColorWHITE;
+        if (cached_render_tree_) {
+            const auto& body_style = cached_render_tree_->GetComputedStyle();
+            if (!body_style.background_color.empty() && body_style.background_color != "transparent") {
+                clear_color = Color::Parse(body_style.background_color);
+            }
+        }
+        canvas->clear(clear_color);
+        
+        // 应用 DPI 缩放
+        canvas->save();
+        canvas->scale(dpi_scale, dpi_scale);
+        
+        // 如果 DevTools 打开，裁剪到主应用区域
+        if (devtools.IsOpen()) {
+            canvas->clipRect(SkRect::MakeXYWH(app_x, app_y, app_width, app_height));
+        }
+        
+        // 处理一帧
+        render_pipeline_->ProcessFrame(canvas);
+        
+        // 绘制 overlay 元素
+        layer_mgr.PaintLayers(canvas);
+        
+        // 更新并绘制 select 下拉菜单
+        auto& dropdown_manager = SelectDropdownManager::Instance();
+        if (dropdown_manager.IsDropdownOpen()) {
+            dropdown_manager.UpdatePositionFromRenderTree(cached_render_tree_);
+        }
+        dropdown_manager.Paint(canvas);
+        
+        canvas->restore();
+        
+        // 渲染 DevTools
+        RenderDevTools(canvas, static_cast<float>(logical_width), static_cast<float>(logical_height));
+        
+        // 刷新 GPU 命令（如果使用 GPU）
+        if (gr_context_) {
+            gr_context_->flush();
+        }
+        // 注意：Present 由 SwapBuffers() 调用，不在这里调用
+    }
+
+    // =========================================================================
+    // 检查是否有活动动画，决定是否继续重绘
+    // =========================================================================
+    bool has_running_animations = false;
+    if (document_ && document_->GetStyleManager()) {
+        has_running_animations = !document_->GetStyleManager()->GetAnimationController().GetRunningAnimations().empty();
+    }
+    if (!has_running_animations && animation_controller_) {
+        has_running_animations = !animation_controller_->GetRunningAnimations().empty();
+    }
+    if (!has_running_animations && animation_timeline_) {
+        has_running_animations = animation_timeline_->HasRunningTransitions();
+    }
+
+    // 清除重绘标记
+    if (!has_running_animations) {
+        needs_repaint_ = false;
+    }
+    dirty_rects_.clear();
+    force_full_repaint_ = false;
+}
+
+// 保留旧的 Render 方法中的辅助代码，但标记为废弃
+#if 0 // 旧的分层合成渲染路径 - 已被统一管线替代
+    if (false) {
         // 确保渲染树已构建
         EnsureRenderTree();
         
@@ -2137,6 +2271,7 @@ full_paint_fallback:
     // 这样下一帧可以恢复增量渲染模式，避免大窗口时的性能问题
     force_full_repaint_ = false;
 }
+#endif // 旧的分层合成渲染路径结束
 
 void Window::RenderDevTools(SkCanvas* canvas, float width, float height) {
     auto& devtools = DevToolsManager::GetInstance();
@@ -2786,11 +2921,10 @@ void Window::InvalidateRenderTree() {
     // 标记渲染树需要重建
     render_tree_valid_ = false;
     
-    // 关键修复：通知分层合成系统需要重建层树
-    // 当渲染树重建时，旧的 RenderObject 指针会失效
-    // 层树中存储的 RenderObject* 会变成悬空指针
-    if (compositor_adapter_ && use_layer_compositing_) {
-        compositor_adapter_->InvalidateLayerTree();
+    // 通知统一渲染管线需要重建层树
+    if (render_pipeline_) {
+        render_pipeline_->InvalidateLayerTree();
+        render_pipeline_->ForceFullUpdate();
     }
     
     // 清理运行中的动画状态，防止悬空指针问题
@@ -2843,10 +2977,7 @@ void Window::EnsureRenderTree() {
         return;
     }
 
-    // 初始化渲染管线（增量更新系统）- 使用旧版管线
-    if (!render_pipeline_) {
-        render_pipeline_ = std::make_unique<RenderPipelineLegacy>();
-    }
+    // 初始化渲染树同步器
     if (!render_tree_synchronizer_) {
         render_tree_synchronizer_ = std::make_shared<RenderTreeSynchronizer>();
         render_tree_synchronizer_->SetDocument(document_);
@@ -2856,13 +2987,6 @@ void Window::EnsureRenderTree() {
                 layout_engine_.get(), [](LayoutEngine*) {}));
         }
     }
-    render_pipeline_->SetDirtyTracker(&document_->GetDirtyTracker());
-    render_pipeline_->SetRenderTree(cached_render_tree_);
-    render_pipeline_->SetSynchronizer(render_tree_synchronizer_);
-    if (layout_engine_) {
-        render_pipeline_->SetLayoutEngine(layout_engine_->GetNativeEngine());
-    }
-    render_pipeline_->SetDocument(document_);
 
     // 恢复滚动位置
     if (!scroll_positions.empty()) {
@@ -2946,47 +3070,6 @@ void Window::RestoreScrollPositions(RenderObject* render_obj,
     // 递归处理子节点
     for (const auto& child : render_obj->GetChildren()) {
         RestoreScrollPositions(child.get(), scroll_positions);
-    }
-}
-
-// =========================================================================
-// 分层合成架构
-// =========================================================================
-
-void Window::SetUseLayerCompositing(bool use_layer_compositing) {
-    if (use_layer_compositing_ == use_layer_compositing) {
-        return;
-    }
-
-    use_layer_compositing_ = use_layer_compositing;
-
-    if (compositor_adapter_) {
-        compositor_adapter_->SetUseLayerCompositing(use_layer_compositing);
-
-        // 如果启用分层合成，初始化适配器
-        if (use_layer_compositing && !compositor_adapter_->IsInitialized()) {
-            int physical_width, physical_height;
-            SDL_GetWindowSizeInPixels(sdl_window_, &physical_width, &physical_height);
-            
-            float dpi_scale = GetDisplayScale();
-            int logical_width = static_cast<int>(physical_width / dpi_scale);
-            int logical_height = static_cast<int>(physical_height / dpi_scale);
-
-            if (compositor_adapter_->Initialize(logical_width, logical_height)) {
-                std::cout << "[Window] Layer compositing enabled (" 
-                          << logical_width << "x" << logical_height << ")" << std::endl;
-            } else {
-                std::cerr << "[Window] Failed to initialize layer compositing, falling back to legacy rendering" << std::endl;
-                use_layer_compositing_ = false;
-                compositor_adapter_->SetUseLayerCompositing(false);
-            }
-        }
-    }
-
-    // 启用分层合成时，需要重建渲染树
-    if (use_layer_compositing) {
-        InvalidateRenderTree();
-        SetNeedsRepaint();
     }
 }
 

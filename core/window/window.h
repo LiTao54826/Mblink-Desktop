@@ -45,11 +45,9 @@ class AnimationTimeline;
 class AnimationController;
 class AnimationApplicator;
 class RenderTreeBuilder;
-class RenderPipelineLegacy;  // 旧版管线，过渡期使用
-class RenderPipeline;        // 新版统一管线
+class RenderPipeline;        // 统一渲染管线
 class RenderTreeSynchronizer;
 class FBOManager;
-class WindowCompositorAdapter;
 
 /**
  * @brief 渲染后端类型
@@ -438,13 +436,10 @@ public:
     LayoutEngine* GetLayoutEngine() const { return layout_engine_.get(); }
 
     /**
-     * @brief 获取渲染管线（旧版）
+     * @brief 获取统一渲染管线
      * @return 渲染管线指针
-     * @deprecated 后续将迁移到新版 RenderPipeline
-     *
-     * **Feature: incremental-update-system**
      */
-    RenderPipelineLegacy* GetRenderPipeline() const { return render_pipeline_.get(); }
+    RenderPipeline* GetRenderPipeline() const { return render_pipeline_.get(); }
 
     /**
      * @brief 获取渲染树同步器
@@ -454,30 +449,7 @@ public:
      */
     RenderTreeSynchronizer* GetRenderTreeSynchronizer() const { return render_tree_synchronizer_.get(); }
 
-    // ========== 分层合成架构 ==========
-
-    /**
-     * @brief 设置是否使用分层合成架构
-     * @param use_layer_compositing true 使用新的分层合成架构
-     * 
-     * 分层合成架构提供：
-     * - CPU 光栅化 + GPU 合成
-     * - transform/opacity 动画无需重新光栅化
-     * - 滚动优化（只更新层偏移）
-     * - 增量光栅化（只更新脏区域）
-     */
-    void SetUseLayerCompositing(bool use_layer_compositing);
-
-    /**
-     * @brief 检查是否使用分层合成架构
-     */
-    bool IsUsingLayerCompositing() const { return use_layer_compositing_; }
-
-    /**
-     * @brief 获取分层合成适配器
-     * @return 适配器指针，如果未启用则返回 nullptr
-     */
-    WindowCompositorAdapter* GetCompositorAdapter() const { return compositor_adapter_.get(); }
+    // ========== 动画和渲染 ==========
 
     /**
      * @brief 更新动画（在渲染循环中调用）
@@ -654,8 +626,8 @@ private:
     // Taffy CSS 布局引擎
     std::unique_ptr<LayoutEngine> layout_engine_;
 
-    // 渲染管线（增量更新系统）- 使用旧版管线，后续迁移到新版
-    std::unique_ptr<RenderPipelineLegacy> render_pipeline_;
+    // 统一渲染管线
+    std::unique_ptr<RenderPipeline> render_pipeline_;
     std::shared_ptr<RenderTreeSynchronizer> render_tree_synchronizer_;
 
     // 显示后端（用于 CPU 渲染模式）
@@ -666,9 +638,6 @@ private:
     bool use_fbo_incremental_ = false;  // 是否使用 FBO 增量渲染（暂时禁用，滚动时有问题）
     bool fbo_needs_full_paint_ = true; // FBO 是否需要首次全量绘制
 
-    // 分层合成适配器（新渲染架构）
-    std::unique_ptr<WindowCompositorAdapter> compositor_adapter_;
-    bool use_layer_compositing_ = true;  // 默认启用分层合成架构
     float last_body_scroll_x_ = 0.0f;  // 上一帧的 body 滚动位置
     float last_body_scroll_y_ = 0.0f;
 

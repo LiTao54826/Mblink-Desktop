@@ -1,64 +1,182 @@
-# 渲染管线重构 - 设计文档
+# 统一渲染管线重构 - 设计文档
 
-## 1. 架构概览
+## 1. 背景与目标
 
-### 1.1 当前架构（问题）
+### 1.1 当前问题
+
+当前渲染系统存在以下问题：
+
+1. **架构分裂**：存在两套独立的渲染管线
+   - `RenderPipelineLegacy` (V1)：负责 DOM 同步、样式、布局、绘制
+   - `RenderPipelineV2`：负责层树构建、光栅化、合成
+
+2. **冗余适配层**：`WindowCompositorAdapter` 作为 V2 的包装器，增加了不必要的间接层
+
+3. **Window 类臃肿**：Window 类直接持有大量渲染相关组件，职责不清晰
+
+4. **代码重复**：两套管线有重复的脏标记、状态管理逻辑
+
+### 1.2 目标
+
+将 V1 和 V2 **合并**为一个真正统一的 `RenderPipeline`：
+
+- **单一入口**：所有渲染逻辑通过一个管线处理
+- **完整流程**：DOM同步 → 样式 → 布局 → 层树 → 光栅化 → 合成
+- **删除冗余**：移除 `WindowCompositorAdapter`、旧版管线文件
+- **简化 Window**：Window 只持有一个 `RenderPipeline` 实例
+
+---
+
+## 2. 现有代码分析
+
+### 2.1 RenderPipelineLegacy (V1) 职责
 
 ```
-Window
-  ├── render_pipeline_ (V1)           ← DOM同步、布局
-  ├── compositor_adapter_             ← 适配层（冗余）
-  │     └── RenderPipelineV2          ← 层树、光栅化、合成
-  ├── render_tree_synchronizer_       ← 散落的组件
-  ├── layout_engine_                  ← 散落的组件
-  ├── render_tree_builder_            ← 散落的组件
-  └── animation_applicator_           ← 散落的组件
+文件：core/render/render_pipeline_legacy.h/cpp
+
+职责：
+├── SetDirtyTracker()      - 设置脏节点追踪器
+├── SetRenderTree()        - 设置渲染树
+├── SetLayoutEngine()      - 设置布局引擎
+├── SetDocument()          - 设置文档
+├── SetSynchronizer()      - 设置渲染树同步器
+├── SetViewportSize()      - 设置视口尺寸
+├── SetPaintCallback()     - 设置绘制回调
+│
+├── MarkNeedsStyleRecalc() - 标记需要样式重算
+├── MarkNeedsLayout()      - 标记需要布局
+├── MarkNeedsPaint()       - 标记需要绘制
+├── NeedsUpdate()          - 检查是否需要更新
+│
+└── ProcessFrame()         - 处理一帧
+    ├── DoRenderTreeSync() - 渲染树同步
+    ├── DoStyleRecalc()    - 样式重算
+    ├── DoLayout()         - 布局计算
+    └── DoPaint()          - 绘制
+
+依赖组件：
+- DirtyNodeTracker        - 脏节点追踪
+- RenderTreeSynchronizer  - 渲染树同步
+- NativeLayoutEngine      - 布局引擎
+- Document                - 文档对象
 ```
 
-### 1.2 目标架构
+### 2.2 RenderPipelineV2 职责
 
 ```
-Window
-  └── render_pipeline_
-        └── RenderPipeline
-              ├── 阶段管理器
-              │     ├── DOMSyncStage
-              │     ├── StyleStage
-              │     ├── LayoutStage
-              │     ├── LayerTreeStage
-              │     ├── RasterizeStage
-              │     └── CompositeStage
-              │
-              ├── 核心组件
-              │     ├── DirtyNodeTracker
-              │     ├── RenderTreeSynchronizer
-              │     ├── NativeLayoutEngine
-              │     ├── LayerTreeBuilder
-              │     ├── Rasterizer
-              │     └── Compositor
-              │
-              └── 优化组件
-                    ├── AnimationLayerBridge
-                    ├── ScrollLayerManager
-                    └── PropertyTrees
+文件：core/compositor/render_pipeline_v2.h/cpp
+
+职责：
+├── Initialize()           - 初始化管线
+├── Resize()               - 调整视口大小
+├── Shutdown()             - 关闭管线
+│
+├── Render()               - 渲染一帧（到屏幕）
+├── RenderToCanvas()       - 渲染到 Canvas
+├── MarkNeedsRender()      - 标记需要渲染
+├── InvalidateLayerTree()  - 使层树无效
+├── ForceRasterize()       - 强制重新光栅化
+│
+├── HandleScroll()         - 处理滚动
+├── ScrollTo()             - 滚动到指定位置
+│
+├── BeginAnimationFrame()  - 开始动画帧
+├── UpdateAnimationProperty() - 更新动画属性
+├── EndAnimationFrame()    - 结束动画帧
+├── OnAnimationStart()     - 动画开始回调
+├── OnAnimationEnd()       - 动画结束回调
+│
+├── MarkDirty()            - 标记对象为脏
+├── MarkDirtyRegion()      - 标记区域为脏
+│
+└── 内部流程
+    ├── BuildLayerTree()   - 构建层树
+    ├── RasterizeDirtyLayers() - 光栅化脏层
+    └── CompositeLayers()  - 合成层
+
+依赖组件：
+- LayerTreeBuilder        - 层树构建器
+- Rasterizer              - 光栅化器
+- Compositor              - 合成器
+- AnimationLayerBridge    - 动画层桥接
+- ScrollLayerManager      - 滚动层管理器
+- PropertyTrees           - 属性树
+- PropertyTreeBuilder     - 属性树构建器
+- PaintArtifactCompositor - 绘制产物合成器
 ```
 
-## 2. 核心类设计
+### 2.3 WindowCompositorAdapter 职责
 
-### 2.1 RenderPipeline
+```
+文件：core/compositor/window_compositor_adapter.h/cpp
+
+职责：
+- 包装 RenderPipelineV2
+- 提供 Window 友好的接口
+- 管理属性树系统的连接
+
+问题：
+- 纯粹的适配层，没有实际逻辑
+- 增加了不必要的间接调用
+- 合并后可以删除
+```
+
+### 2.4 Window 类中的渲染相关成员
 
 ```cpp
+// 当前 Window 类持有的渲染相关成员（需要简化）
+
+// 渲染树
+std::shared_ptr<RenderObject> cached_render_tree_;
+std::shared_ptr<RenderTreeBuilder> render_tree_builder_;
+
+// 动画
+std::unique_ptr<AnimationTimeline> animation_timeline_;
+std::unique_ptr<AnimationController> animation_controller_;
+std::unique_ptr<AnimationApplicator> animation_applicator_;
+
+// 布局
+std::unique_ptr<LayoutEngine> layout_engine_;
+
+// 旧版管线
+std::unique_ptr<RenderPipelineLegacy> render_pipeline_;
+std::shared_ptr<RenderTreeSynchronizer> render_tree_synchronizer_;
+
+// 新版管线适配器
+std::unique_ptr<WindowCompositorAdapter> compositor_adapter_;
+
+// 脏区域
+std::vector<SkRect> dirty_rects_;
+bool needs_repaint_;
+bool render_tree_valid_;
+```
+
+---
+
+## 3. 统一管线设计
+
+### 3.1 新 RenderPipeline 类设计
+
+```cpp
+/**
+ * @file render_pipeline.h
+ * @brief 统一渲染管线
+ *
+ * 整合 V1 和 V2 的所有功能，提供完整的渲染流程：
+ * DOM同步 → 样式计算 → 布局 → 层树构建 → 光栅化 → 合成
+ */
+
 namespace lightui {
 
 /**
- * @brief 渲染生命周期阶段
+ * @brief 渲染阶段枚举
  */
 enum class RenderStage {
     Idle,           // 空闲
     DOMSync,        // DOM 同步
-    Style,          // 样式计算
-    Layout,         // 布局
-    LayerTree,      // 层树构建
+    StyleRecalc,    // 样式重算
+    Layout,         // 布局计算
+    LayerTreeBuild, // 层树构建
     Rasterize,      // 光栅化
     Composite       // 合成
 };
@@ -68,24 +186,25 @@ enum class RenderStage {
  */
 struct RenderPipelineConfig {
     // 功能开关
-    bool enable_gpu_compositing = true;
-    bool enable_layer_promotion = true;
-    bool enable_incremental_rasterize = true;
-    bool enable_scroll_optimization = true;
-    bool enable_animation_optimization = true;
-    bool enable_frame_skip = true;
-    bool enable_property_trees = true;
+    bool enable_gpu_compositing = true;      // GPU 合成
+    bool enable_layer_promotion = true;      // 层提升
+    bool enable_incremental_rasterize = true;// 增量光栅化
+    bool enable_scroll_optimization = true;  // 滚动优化
+    bool enable_animation_optimization = true;// 动画优化
+    bool enable_frame_skip = true;           // 帧跳过
+    bool enable_property_trees = true;       // 属性树系统
     
     // 调试选项
-    bool show_layer_borders = false;
-    bool show_dirty_regions = false;
-    bool enable_stats = true;
+    bool show_layer_borders = false;         // 显示层边界
+    bool show_dirty_regions = false;         // 显示脏区域
+    bool enable_stats = true;                // 启用统计
 };
 
 /**
  * @brief 帧统计信息
  */
 struct FrameStats {
+    // 各阶段耗时（毫秒）
     double dom_sync_time = 0.0;
     double style_time = 0.0;
     double layout_time = 0.0;
@@ -94,47 +213,63 @@ struct FrameStats {
     double composite_time = 0.0;
     double total_time = 0.0;
     
+    // 计数
     int dirty_nodes = 0;
     int layers_built = 0;
     int layers_rasterized = 0;
+    int layers_composited = 0;
+    
+    // 状态
     bool frame_skipped = false;
+    bool using_gpu = false;
+    
+    void Reset();
 };
 
 /**
- * @brief 渲染管线
+ * @brief 统一渲染管线
  */
 class RenderPipeline {
 public:
     RenderPipeline();
     ~RenderPipeline();
-    
+
     // ========== 初始化 ==========
     
+    /**
+     * @brief 初始化渲染管线
+     * @param width 视口宽度
+     * @param height 视口高度
+     * @param config 配置选项
+     */
     bool Initialize(int width, int height, 
                     const RenderPipelineConfig& config = {});
+    
     void Shutdown();
     void Resize(int width, int height);
     bool IsInitialized() const;
-    
+
     // ========== 配置 ==========
     
     void SetDocument(std::shared_ptr<Document> doc);
     void SetConfig(const RenderPipelineConfig& config);
-    const RenderPipelineConfig& GetConfig() const;
     void SetDpiScale(float scale);
-    
-    // ========== 渲染 ==========
+    float GetDpiScale() const;
+
+    // ========== 主渲染入口 ==========
     
     /**
      * @brief 处理一帧（主入口）
-     * 
-     * 执行完整渲染流程：
+     * @param canvas 目标画布
+     * @return true 如果渲染成功
+     *
+     * 完整流程：
      * 1. DOM 同步（如果有变化）
-     * 2. 样式计算（如果需要）
-     * 3. 布局（如果需要）
+     * 2. 样式重算（如果需要）
+     * 3. 布局计算（如果需要）
      * 4. 层树构建/更新
      * 5. 光栅化脏层
-     * 6. 合成到屏幕
+     * 6. 合成到画布
      */
     bool ProcessFrame(SkCanvas* canvas);
     
@@ -142,21 +277,25 @@ public:
      * @brief 检查是否需要更新
      */
     bool NeedsUpdate() const;
-    
+
     // ========== 脏标记 ==========
     
+    void MarkNeedsDOMSync();
     void MarkNeedsStyleRecalc();
     void MarkNeedsLayout();
     void MarkNeedsPaint();
     void MarkNeedsLayerTreeRebuild();
     void ForceFullUpdate();
     
-    // ========== 滚动 ==========
+    void MarkDirty(RenderObject* object);
+    void MarkDirtyRegion(const SkRect& region);
+
+    // ========== 滚动处理 ==========
     
     bool HandleScroll(RenderObject* container, float dx, float dy);
     bool ScrollTo(RenderObject* container, float x, float y);
-    
-    // ========== 动画 ==========
+
+    // ========== 动画处理 ==========
     
     void BeginAnimationFrame();
     AnimationUpdateType UpdateAnimationProperty(
@@ -169,13 +308,13 @@ public:
                           const std::string& name,
                           const std::vector<std::string>& properties);
     void OnAnimationEnd(RenderObject* object, const std::string& name);
-    
+
     // ========== 属性树直接更新 ==========
     
     bool DirectlyUpdateTransform(RenderObject* obj, const SkM44& matrix);
     bool DirectlyUpdateOpacity(RenderObject* obj, float opacity);
     bool DirectlyUpdateScrollOffset(RenderObject* obj, const SkPoint& offset);
-    
+
     // ========== 状态查询 ==========
     
     RenderStage GetCurrentStage() const;
@@ -186,9 +325,12 @@ public:
     RenderObject* GetRenderTree() const;
     CompositorLayer* GetRootLayer() const;
     PropertyTrees* GetPropertyTrees() const;
-    
+    PaintArtifactCompositor* GetPaintArtifactCompositor() const;
+    bool IsUsingPropertyTreeSystem() const;
+
 private:
-    // 阶段执行
+    // ========== 渲染阶段实现 ==========
+    
     void DoDOMSync();
     void DoStyleRecalc();
     void DoLayout();
@@ -196,6 +338,13 @@ private:
     void DoRasterize();
     void DoComposite(SkCanvas* canvas);
     
+    // ========== 辅助方法 ==========
+    
+    void UpdateLayerTreeBounds(CompositorLayer* layer);
+    void RegisterScrollableElements(RenderObject* root);
+    bool CheckRenderObjectNeedsPaint(RenderObject* obj);
+
+private:
     // 状态
     bool initialized_ = false;
     RenderStage current_stage_ = RenderStage::Idle;
@@ -206,7 +355,8 @@ private:
     bool needs_style_recalc_ = false;
     bool needs_layout_ = false;
     bool needs_paint_ = false;
-    bool needs_layer_tree_rebuild_ = false;
+    bool needs_layer_tree_rebuild_ = true;
+    bool needs_render_ = true;
     
     // 视口
     int viewport_width_ = 0;
@@ -217,17 +367,19 @@ private:
     std::weak_ptr<Document> document_;
     std::shared_ptr<RenderObject> render_tree_;
     
-    // 核心组件
+    // ========== 来自 V1 的组件 ==========
     std::unique_ptr<RenderTreeBuilder> render_tree_builder_;
-    std::unique_ptr<RenderTreeSynchronizer> synchronizer_;
+    std::shared_ptr<RenderTreeSynchronizer> synchronizer_;
     std::unique_ptr<NativeLayoutEngine> layout_engine_;
+    
+    // ========== 来自 V2 的组件 ==========
     std::unique_ptr<LayerTreeBuilder> layer_tree_builder_;
     std::unique_ptr<Rasterizer> rasterizer_;
     std::unique_ptr<Compositor> compositor_;
-    
-    // 优化组件
     std::unique_ptr<AnimationLayerBridge> animation_bridge_;
     std::unique_ptr<ScrollLayerManager> scroll_manager_;
+    
+    // 属性树系统
     std::unique_ptr<PropertyTrees> property_trees_;
     std::unique_ptr<PropertyTreeBuilder> property_tree_builder_;
     std::unique_ptr<PaintArtifactCompositor> paint_artifact_compositor_;
@@ -238,51 +390,61 @@ private:
     // 统计
     FrameStats last_frame_stats_;
     FrameStats current_frame_stats_;
+    double frame_start_time_ = 0.0;
 };
 
 } // namespace lightui
 ```
 
-## 3. 渲染流程
-
-### 3.1 ProcessFrame 流程
+### 3.2 渲染流程图
 
 ```
 ProcessFrame(canvas)
     │
-    ├─► 检查 DOM 变化
+    ├─► [1] DOM 同步阶段
     │   └─► DoDOMSync()
-    │         ├─ 获取 DirtyNodeTracker
+    │         ├─ 检查 DirtyNodeTracker
     │         ├─ 调用 RenderTreeSynchronizer
-    │         └─ 标记 needs_layout_
+    │         └─ 如果有变化 → 标记 needs_layout_
     │
-    ├─► 检查样式脏标记
+    ├─► [2] 样式重算阶段
     │   └─► DoStyleRecalc()
-    │         └─ 重算脏节点样式
+    │         ├─ 遍历脏节点
+    │         ├─ 重新解析样式
+    │         └─ 如果有变化 → 标记 needs_layout_
     │
-    ├─► 检查布局脏标记
+    ├─► [3] 布局阶段
     │   └─► DoLayout()
     │         ├─ 调用 NativeLayoutEngine
-    │         └─ 标记 needs_paint_
+    │         ├─ 计算所有节点的位置和尺寸
+    │         └─ 如果有变化 → 标记 needs_paint_
     │
-    ├─► 检查层树脏标记
+    ├─► [4] 层树构建阶段
     │   └─► DoLayerTreeBuild()
     │         ├─ 调用 LayerTreeBuilder
     │         ├─ 构建 PropertyTrees
-    │         └─ 注册滚动容器
+    │         ├─ 注册滚动容器
+    │         └─ 如果是首次或需要重建 → 完整构建
+    │             否则 → 只更新边界
     │
-    ├─► 检查绘制脏标记
+    ├─► [5] 光栅化阶段
     │   └─► DoRasterize()
-    │         └─ 调用 Rasterizer
+    │         ├─ 调用 Rasterizer
+    │         └─ 只光栅化脏层
     │
-    └─► DoComposite(canvas)
-          ├─ 检查帧跳过
-          └─ 调用 Compositor
+    └─► [6] 合成阶段
+        └─► DoComposite(canvas)
+              ├─ 检查帧跳过
+              ├─ 调用 Compositor
+              └─ 合成所有层到 canvas
 ```
 
-### 3.2 脏标记传播
+### 3.3 脏标记传播规则
 
 ```
+MarkNeedsDOMSync()
+    └─► needs_dom_sync_ = true
+
 MarkNeedsStyleRecalc()
     └─► needs_style_recalc_ = true
         └─► needs_layout_ = true
@@ -294,140 +456,217 @@ MarkNeedsLayout()
 
 MarkNeedsPaint()
     └─► needs_paint_ = true
+
+MarkNeedsLayerTreeRebuild()
+    └─► needs_layer_tree_rebuild_ = true
+        └─► needs_render_ = true
 ```
 
-## 4. 迁移策略
+---
 
-### 4.1 阶段一：创建统一管线
-1. 创建 `UnifiedRenderPipeline` 类
-2. 整合 V1 和 V2 的功能
-3. 保持旧代码可用
+## 4. Window 类简化
 
-### 4.2 阶段二：Window 迁移
-1. 在 Window 中添加 `unified_pipeline_`
-2. 添加开关切换新旧管线
-3. 验证功能一致性
-
-### 4.3 阶段三：清理
-1. 移除 `WindowCompositorAdapter`
-2. 移除 Window 中散落的组件
-3. 废弃旧的 `RenderPipeline` 和 `RenderPipelineV2`
-
-## 5. 文件结构
-
-```
-core/render/
-  ├── render_pipeline.h              # 重写（新实现）
-  ├── render_pipeline.cpp            # 重写（新实现）
-  ├── render_pipeline_legacy.h       # 旧 V1 重命名，过渡期保留
-  ├── render_pipeline_legacy.cpp     # 旧 V1 重命名，过渡期保留
-  └── ...
-
-core/compositor/
-  ├── render_pipeline_v2.h           # 过渡期保留，后续删除
-  ├── render_pipeline_v2.cpp         # 过渡期保留，后续删除
-  ├── window_compositor_adapter.h    # 过渡期保留，后续删除
-  ├── window_compositor_adapter.cpp  # 过渡期保留，后续删除
-  └── ...（其他组件保留）
-```
-
-## 6. 接口兼容
-
-### 6.1 Window 类变化
+### 4.1 简化后的 Window 渲染相关成员
 
 ```cpp
-// 旧接口（过渡期保留）
 class Window {
-    std::unique_ptr<RenderPipelineLegacy> render_pipeline_legacy_;
-    std::unique_ptr<WindowCompositorAdapter> compositor_adapter_;
-    // ...
-};
-
-// 新接口
-class Window {
+private:
+    // 文档
+    std::shared_ptr<Document> document_;
+    
+    // 统一渲染管线（唯一的渲染入口）
     std::unique_ptr<RenderPipeline> render_pipeline_;
-    bool use_new_pipeline_ = true;  // 开关
-    // ...
+    
+    // 动画系统（保留，因为动画逻辑独立于渲染管线）
+    std::unique_ptr<AnimationTimeline> animation_timeline_;
+    std::unique_ptr<AnimationController> animation_controller_;
+    std::unique_ptr<AnimationApplicator> animation_applicator_;
+    
+    // 简单状态
+    bool needs_repaint_ = true;
 };
 ```
 
-### 6.2 AnimationApplicator 适配
+### 4.2 简化后的 Window::Render()
 
 ```cpp
-// 需要更新 AnimationApplicator 使用新管线
-void AnimationApplicator::SetPipeline(RenderPipeline* pipeline) {
-    pipeline_ = pipeline;
-    // 获取属性树系统
-    property_trees_ = pipeline->GetPropertyTrees();
-    paint_artifact_compositor_ = pipeline->GetPaintArtifactCompositor();
+void Window::Render() {
+    if (!document_ || !surface_) {
+        return;
+    }
+    
+    // 检查是否需要渲染
+    bool has_active_animations = CheckActiveAnimations();
+    if (!needs_repaint_ && !has_active_animations && 
+        !render_pipeline_->NeedsUpdate()) {
+        return;
+    }
+    
+    SkCanvas* canvas = surface_->getCanvas();
+    if (!canvas) {
+        return;
+    }
+    
+    // 初始化管线（如果需要）
+    if (!render_pipeline_->IsInitialized()) {
+        InitializeRenderPipeline();
+    }
+    
+    // 更新动画
+    UpdateAnimations(GetCurrentTime());
+    
+    // 清除背景
+    canvas->clear(GetBackgroundColor());
+    
+    // 应用 DPI 缩放
+    canvas->save();
+    canvas->scale(dpi_scale_, dpi_scale_);
+    
+    // 处理一帧（所有渲染逻辑都在这里）
+    render_pipeline_->ProcessFrame(canvas);
+    
+    canvas->restore();
+    
+    // 更新状态
+    needs_repaint_ = has_active_animations;
 }
 ```
 
-## 7. 冗余代码分析
+---
 
-### 7.1 需要删除的文件
+## 5. 文件变更计划
+
+### 5.1 新建文件
+
+| 文件 | 说明 |
+|------|------|
+| `core/render/render_pipeline.h` | 统一管线头文件（重写） |
+| `core/render/render_pipeline.cpp` | 统一管线实现（重写） |
+
+### 5.2 删除文件
 
 | 文件 | 原因 |
 |------|------|
-| `window_compositor_adapter.h/cpp` | 适配层，合并后不需要 |
-| `render_pipeline_v2.h/cpp` | 功能整合到新 RenderPipeline |
-| `render_pipeline_legacy.h/cpp` | 旧 V1，过渡期后删除 |
+| `core/render/render_pipeline_legacy.h` | 功能合并到新管线 |
+| `core/render/render_pipeline_legacy.cpp` | 功能合并到新管线 |
+| `core/compositor/render_pipeline_v2.h` | 功能合并到新管线 |
+| `core/compositor/render_pipeline_v2.cpp` | 功能合并到新管线 |
+| `core/compositor/window_compositor_adapter.h` | 适配层，不再需要 |
+| `core/compositor/window_compositor_adapter.cpp` | 适配层，不再需要 |
 
-### 7.2 需要评估的潜在冗余
+### 5.3 修改文件
 
-| 组件 | 位置 | 与...可能重复 | 处理建议 |
-|------|------|--------------|----------|
-| `Layer` | core/render/ | `CompositorLayer` | 不同用途：Layer 用于 z-index 分层绘制，CompositorLayer 用于合成优化，保留两者 |
-| `LayerManager` | core/render/ | `LayerTreeBuilder` | 不同用途：LayerManager 管理 z-index 层级，LayerTreeBuilder 构建合成层树，保留两者 |
-| `DirtyRegion` | core/render/ | `Rasterizer` 脏区域 | DirtyRegion 是通用脏区域工具，Rasterizer 内部使用，保留 |
-| `DirtyRegionCollector` | core/render/ | `DirtyNodeTracker` | 功能重叠，考虑合并到 DirtyNodeTracker |
-| `UnifiedRenderer` | core/render/ | 无 | 高层 API 封装，用于 JS 绑定，保留 |
+| 文件 | 修改内容 |
+|------|----------|
+| `core/window/window.h` | 移除旧管线成员，使用新管线 |
+| `core/window/window.cpp` | 简化 Render()，使用新管线 |
+| `core/render/CMakeLists.txt` | 更新源文件列表 |
+| `core/compositor/CMakeLists.txt` | 更新源文件列表 |
 
-### 7.3 组件职责澄清
+### 5.4 保留文件（不变）
 
-```
-渲染层级系统（保留）:
-├── Layer              → CSS z-index 分层，用于正确绘制顺序
-├── LayerManager       → 管理多个 Layer（Base/Overlay/Modal）
-└── 用途：处理 dropdown、modal 等高 z-index 元素
-
-合成层系统（保留）:
-├── CompositorLayer    → GPU 合成层，用于性能优化
-├── LayerTreeBuilder   → 构建合成层树
-└── 用途：transform/opacity 动画、滚动优化
-
-脏区域系统（需整理）:
-├── DirtyRegion           → 通用脏区域工具类（保留）
-├── DirtyRegionCollector  → 从 DOM 收集脏区域（考虑合并）
-├── DirtyNodeTracker      → 追踪 DOM 节点变化（保留）
-└── Rasterizer 内部脏区域  → 层级脏区域追踪（保留）
-```
-
-### 7.4 最终目录结构
+以下组件保持不变，被新管线复用：
 
 ```
 core/render/
-  ├── render_pipeline.h/cpp      # 新统一管线
-  ├── render_object.h/cpp        # 渲染对象
-  ├── render_tree_synchronizer.h/cpp  # 渲染树同步
-  ├── layer.h/cpp                # z-index 层（保留）
-  ├── layer_manager.h/cpp        # 层管理器（保留）
-  ├── dirty_region.h/cpp         # 脏区域工具（保留）
-  ├── animation_*.h/cpp          # 动画相关（保留）
-  └── ...其他渲染工具
+├── render_object.h/cpp           # 渲染对象
+├── render_tree_builder.h/cpp     # 渲染树构建器
+├── render_tree_synchronizer.h/cpp # 渲染树同步器
+├── animation_*.h/cpp             # 动画相关
+└── ...
 
 core/compositor/
-  ├── compositor_layer.h/cpp     # 合成层（保留）
-  ├── layer_tree_builder.h/cpp   # 层树构建（保留）
-  ├── rasterizer.h/cpp           # 光栅化（保留）
-  ├── compositor.h/cpp           # 合成器（保留）
-  ├── animation_layer_bridge.h/cpp    # 动画桥接（保留）
-  ├── scroll_layer_manager.h/cpp      # 滚动管理（保留）
-  ├── animation_bounds_calculator.h/cpp # 动画边界（保留）
-  └── property_tree/             # 属性树系统（保留）
+├── compositor_layer.h/cpp        # 合成层
+├── layer_tree_builder.h/cpp      # 层树构建器
+├── rasterizer.h/cpp              # 光栅化器
+├── compositor.h/cpp              # 合成器
+├── animation_layer_bridge.h/cpp  # 动画桥接
+├── scroll_layer_manager.h/cpp    # 滚动管理器
+└── property_tree/                # 属性树系统
+    ├── property_trees.h/cpp
+    ├── property_tree_builder.h/cpp
+    ├── paint_artifact_compositor.h/cpp
+    └── ...
 
-删除:
-  ├── window_compositor_adapter.h/cpp  # 删除
-  ├── render_pipeline_v2.h/cpp         # 删除
-  └── render_pipeline_legacy.h/cpp     # 删除
+core/layout/
+├── native_layout_engine.h/cpp    # 布局引擎
+└── ...
+
+core/dom/
+├── dirty_node_tracker.h/cpp      # 脏节点追踪
+└── ...
+```
+
+---
+
+## 6. 实现策略
+
+### 6.1 渐进式迁移
+
+为了降低风险，采用渐进式迁移策略：
+
+1. **阶段一**：创建新的 `RenderPipeline`，整合 V1 和 V2 的代码
+2. **阶段二**：在 Window 中添加开关，可以切换新旧管线
+3. **阶段三**：验证新管线功能正确
+4. **阶段四**：删除旧代码
+
+### 6.2 代码复用原则
+
+- **直接复用**：V1 和 V2 中已经测试过的代码，直接复制到新管线
+- **不重写**：不要试图"改进"已经工作的代码
+- **保持接口**：组件（如 Rasterizer、Compositor）的接口保持不变
+
+### 6.3 测试策略
+
+- 使用现有的测试用例验证功能
+- 对比新旧管线的渲染结果
+- 性能测试确保没有退化
+
+---
+
+## 7. 风险与注意事项
+
+### 7.1 风险
+
+1. **动画状态丢失**：合并时需要确保动画状态正确传递
+2. **脏标记不一致**：两套管线的脏标记逻辑需要统一
+3. **组件依赖**：某些组件可能有隐式依赖关系
+
+### 7.2 注意事项
+
+1. **不要重写渲染逻辑**：只是合并，不是重新实现
+2. **保持向后兼容**：Window 的公共接口尽量不变
+3. **充分测试**：每个阶段都要验证功能
+
+---
+
+## 8. 附录：组件依赖关系
+
+```
+RenderPipeline
+├── RenderTreeBuilder
+│   └── StyleResolver
+├── RenderTreeSynchronizer
+│   └── DirtyNodeTracker
+├── NativeLayoutEngine
+│   └── Taffy (Rust FFI)
+├── LayerTreeBuilder
+│   └── CompositorLayer
+├── Rasterizer
+│   └── SkCanvas
+├── Compositor
+│   └── SkSurface
+├── AnimationLayerBridge
+│   └── CompositorLayer
+├── ScrollLayerManager
+│   └── CompositorLayer
+├── PropertyTrees
+│   ├── TransformTree
+│   ├── ClipTree
+│   ├── EffectTree
+│   └── ScrollTree
+├── PropertyTreeBuilder
+│   └── PropertyTrees
+└── PaintArtifactCompositor
+    └── PropertyTrees
 ```
