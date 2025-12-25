@@ -6,6 +6,7 @@ set(RENDER_TEST_SOURCES
     test_gradient_renderer.cpp
     test_shadow_renderer.cpp
     test_text_renderer.cpp
+    test_property_tree_visual.cpp
 )
 
 add_executable(lightui_render_tests

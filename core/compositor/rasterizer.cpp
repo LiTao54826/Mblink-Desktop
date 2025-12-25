@@ -5,6 +5,7 @@
 
 #include "rasterizer.h"
 #include "compositor_layer.h"
+#include "animation_bounds_calculator.h"
 #include "../render/render_object.h"
 #include "include/core/SkCanvas.h"
 #include "include/core/SkPaint.h"
@@ -63,6 +64,8 @@ bool Rasterizer::RasterizeLayer(CompositorLayer* layer) {
 
     // 保存 Canvas 状态
     canvas->save();
+    
+    const auto& layout = render_obj->GetLayoutInfo();
 
     // 应用滚动偏移
     const SkPoint& scroll = layer->GetScrollOffset();
@@ -74,8 +77,51 @@ bool Rasterizer::RasterizeLayer(CompositorLayer* layer) {
     // 因为 RenderObject::Paint() 内部会 translate(layout.x, layout.y)
     // 但子层应该从 (0,0) 开始绘制，位置由合成器在合成时应用
     if (layer->GetPromotionReason() != LayerPromotionReason::RootLayer) {
-        const auto& layout = render_obj->GetLayoutInfo();
         canvas->translate(-layout.x, -layout.y);
+        
+        // 关键修复：如果层有动画边界扩展，需要额外平移以补偿边界扩展的偏移
+        // 动画边界的 offset 表示边界相对于元素原始位置的偏移
+        // 我们需要将内容绘制在位图的正确位置，以便合成时显示正确
+        const AnimationBounds* anim_bounds = layer->GetAnimationBounds();
+        if (anim_bounds && anim_bounds->needs_expansion) {
+            // 动画边界偏移通常为负值（边界向左上扩展）
+            // 需要将内容向右下移动以补偿
+            canvas->translate(-anim_bounds->offset.fX, -anim_bounds->offset.fY);
+        } else {
+            // 没有动画边界，检查是否有静态变换偏移
+            // 层边界的 left/top 可能包含了变换偏移
+            const SkRect& bounds = layer->GetBounds();
+            
+            // 获取元素相对于层树父层的原始位置
+            auto parent_layer = layer->GetParent();
+            RenderObject* parent_layer_obj = parent_layer ? parent_layer->GetRenderObject() : nullptr;
+            
+            float orig_rel_x = layout.x;
+            float orig_rel_y = layout.y;
+            
+            auto parent = render_obj->GetParent();
+            while (parent && parent.get() != parent_layer_obj) {
+                const auto& parent_layout = parent->GetLayoutInfo();
+                orig_rel_x += parent_layout.x;
+                orig_rel_y += parent_layout.y;
+                orig_rel_x -= parent->GetScrollX();
+                orig_rel_y -= parent->GetScrollY();
+                parent = parent->GetParent();
+            }
+            if (parent_layer_obj) {
+                orig_rel_x -= parent_layer_obj->GetScrollX();
+                orig_rel_y -= parent_layer_obj->GetScrollY();
+            }
+            
+            // 计算变换偏移
+            float transform_offset_x = bounds.left() - orig_rel_x;
+            float transform_offset_y = bounds.top() - orig_rel_y;
+            
+            // 补偿变换偏移
+            if (transform_offset_x != 0 || transform_offset_y != 0) {
+                canvas->translate(-transform_offset_x, -transform_offset_y);
+            }
+        }
     }
 
     // 绘制渲染对象
@@ -215,15 +261,17 @@ bool Rasterizer::RasterizeRegion(CompositorLayer* layer, const SkIRect& region) 
     if (!render_obj) {
         return false;
     }
+    
+    const auto& layout = render_obj->GetLayoutInfo();
 
     // 保存 Canvas 状态
     canvas->save();
 
-    // 设置裁剪区域
+    // 清除区域为透明（在设置裁剪之前）
+    canvas->save();
     canvas->clipIRect(region);
-
-    // 清除区域为透明
     ClearRegion(canvas, region);
+    canvas->restore();
 
     // 应用滚动偏移
     const SkPoint& scroll = layer->GetScrollOffset();
@@ -235,12 +283,34 @@ bool Rasterizer::RasterizeRegion(CompositorLayer* layer, const SkIRect& region) 
     // 因为 RenderObject::Paint() 内部会 translate(layout.x, layout.y)
     // 但子层应该从 (0,0) 开始绘制，位置由合成器在合成时应用
     if (layer->GetPromotionReason() != LayerPromotionReason::RootLayer) {
-        const auto& layout = render_obj->GetLayoutInfo();
         canvas->translate(-layout.x, -layout.y);
+        
+        // 处理动画边界偏移
+        const AnimationBounds* anim_bounds = layer->GetAnimationBounds();
+        if (anim_bounds && anim_bounds->needs_expansion) {
+            canvas->translate(-anim_bounds->offset.fX, -anim_bounds->offset.fY);
+        }
     }
+    
+    // 设置裁剪区域
+    // canvas 已经 translate(-layout.x - anim_offset.x, -layout.y - anim_offset.y)
+    //现在需要将位图坐标的 region 转换到 canvas 坐标系
+    SkRect clip_rect = SkRect::Make(region);
+    // 偏移到canvas坐标系
+    float offset_x = layout.x;
+    float offset_y = layout.y;
+    if (layer->GetPromotionReason() != LayerPromotionReason::RootLayer) {
+        const AnimationBounds* anim_bounds = layer->GetAnimationBounds();
+        if (anim_bounds && anim_bounds->needs_expansion) {
+            // 加上动画偏移（anim_bounds->offset 是负值，比如 -50）
+            offset_x += anim_bounds->offset.fX;
+            offset_y += anim_bounds->offset.fY;
+        }
+    }
+    clip_rect.offset(offset_x, offset_y);
+    canvas->clipRect(clip_rect);
 
     // 绘制渲染对象
-    // 注意：RenderObject::Paint 内部已经递归绘制子对象了，不需要额外递归
     render_obj->Paint(canvas);
 
     // 恢复 Canvas 状态

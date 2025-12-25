@@ -573,8 +573,10 @@ void Compositor::CompositeLayerCPU(CompositorLayer* layer, SkCanvas* canvas, con
     const SkRect& bounds = layer->GetBounds();
     canvas->translate(bounds.left(), bounds.top());
 
-    // 应用层自身变换
-    canvas->concat(layer->GetTransform());
+    // 注意：不应用 layer->GetTransform()
+    // 因为 CSS transform 已经在 RenderObject::Paint 中应用了
+    // 层的位图已经包含了变换后的内容
+    // 如果在这里再次应用变换，会导致变换被应用两次
 
     // 应用滚动偏移
     const SkPoint& scroll = layer->GetScrollOffset();
@@ -611,7 +613,7 @@ void Compositor::CompositeLayerCPU(CompositorLayer* layer, SkCanvas* canvas, con
     canvas->save();
     canvas->concat(parent_transform);
     canvas->translate(bounds.left(), bounds.top());
-    canvas->concat(layer->GetTransform());
+    // 同样不应用 layer->GetTransform()
 
     for (const auto& child : layer->GetChildren()) {
         CompositeLayerCPU(child.get(), canvas, SkMatrix::I());

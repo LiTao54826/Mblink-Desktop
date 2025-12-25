@@ -1,6 +1,9 @@
 # Compositor 模块 CMakeLists.txt
 # 分层合成架构 - CPU 光栅化 + GPU 合成
 
+# 添加属性树子模块
+add_subdirectory(property_tree)
+
 set(COMPOSITOR_SOURCES
     compositor_layer.cpp
     layer_tree_builder.cpp
@@ -10,6 +13,7 @@ set(COMPOSITOR_SOURCES
     scroll_layer_manager.cpp
     render_pipeline_v2.cpp
     window_compositor_adapter.cpp
+    animation_bounds_calculator.cpp
 )
 
 set(COMPOSITOR_HEADERS
@@ -21,6 +25,7 @@ set(COMPOSITOR_HEADERS
     scroll_layer_manager.h
     render_pipeline_v2.h
     window_compositor_adapter.h
+    animation_bounds_calculator.h
 )
 
 add_library(lightui_compositor STATIC ${COMPOSITOR_SOURCES})
@@ -34,6 +39,7 @@ target_include_directories(lightui_compositor PUBLIC
 target_link_libraries(lightui_compositor PUBLIC
     lightui_utils
     lightui_render
+    lightui_property_tree
 )
 
 # 链接 Skia

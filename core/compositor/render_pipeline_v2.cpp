@@ -22,12 +22,22 @@ RenderPipelineV2::RenderPipelineV2()
     , rasterizer_(std::make_unique<Rasterizer>())
     , compositor_(std::make_unique<Compositor>())
     , animation_bridge_(std::make_unique<AnimationLayerBridge>())
-    , scroll_manager_(std::make_unique<ScrollLayerManager>()) {
+    , scroll_manager_(std::make_unique<ScrollLayerManager>())
+    , property_trees_(std::make_unique<PropertyTrees>())
+    , property_tree_builder_(std::make_unique<PropertyTreeBuilder>(*property_trees_))
+    , paint_artifact_compositor_(std::make_unique<PaintArtifactCompositor>()) {
     
     // 连接组件
     animation_bridge_->SetLayerTreeBuilder(layer_tree_builder_.get());
     scroll_manager_->SetLayerTreeBuilder(layer_tree_builder_.get());
     scroll_manager_->SetRasterizer(rasterizer_.get());
+    
+    // 设置属性树系统
+    paint_artifact_compositor_->SetPropertyTrees(property_trees_.get());
+    
+    // 连接属性树系统到滚动管理器
+    scroll_manager_->SetPaintArtifactCompositor(paint_artifact_compositor_.get());
+    scroll_manager_->SetPropertyTrees(property_trees_.get());
 }
 
 RenderPipelineV2::~RenderPipelineV2() {
@@ -350,6 +360,12 @@ void RenderPipelineV2::BuildLayerTree(RenderObject* root) {
     if (!root_layer_ || needs_rebuild_layer_tree_) {
         root_layer_ = layer_tree_builder_->Build(root);
         needs_rebuild_layer_tree_ = false;
+        
+        // 关键：构建属性树并将状态设置到 RenderObject 上
+        // 这样 AnimationApplicator 才能使用属性树优化
+        if (use_property_tree_system_ && property_tree_builder_) {
+            property_tree_builder_->Build(root);
+        }
     } else {
         // 更新现有层的边界和脏区域
         UpdateLayerTreeBounds(root_layer_.get());
@@ -452,61 +468,9 @@ void RenderPipelineV2::UpdateLayerTreeBounds(CompositorLayer* layer) {
     // 获取关联的渲染对象
     RenderObject* render_obj = layer->GetRenderObject();
     if (render_obj) {
-        const auto& layout = render_obj->GetLayoutInfo();
-        
-        // 更新层边界
-        SkRect new_bounds;
-        if (layer->GetPromotionReason() == LayerPromotionReason::RootLayer) {
-            new_bounds = SkRect::MakeWH(layout.width, layout.height);
-        } else {
-            // 对于非根层，需要计算相对于层树父层的位置
-            // 层树父层对应的 RenderObject 可能是当前元素的祖先（不一定是直接父元素）
-            auto parent_layer = layer->GetParent();
-            RenderObject* parent_layer_obj = parent_layer ? parent_layer->GetRenderObject() : nullptr;
-            
-            // 计算相对于层树父层的位置
-            // 需要考虑：
-            // 1. 中间祖先的 layout 位置
-            // 2. 中间祖先的滚动偏移（滚动会影响子元素的视觉位置）
-            // 3. 层树父层的滚动偏移（关键！）
-            float rel_x = layout.x;
-            float rel_y = layout.y;
-            
-            // 从当前元素的直接父元素开始，累加位置和滚动偏移
-            // 直到到达层树父层对应的 RenderObject
-            auto parent = render_obj->GetParent();
-            while (parent && parent.get() != parent_layer_obj) {
-                const auto& parent_layout = parent->GetLayoutInfo();
-                rel_x += parent_layout.x;
-                rel_y += parent_layout.y;
-                
-                // 减去父元素的滚动偏移
-                // 当父元素滚动时，子元素的视觉位置会相应移动
-                rel_x -= parent->GetScrollX();
-                rel_y -= parent->GetScrollY();
-                
-                parent = parent->GetParent();
-            }
-            
-            // 关键修复：还需要减去层树父层的滚动偏移
-            // 上面的循环在 parent == parent_layer_obj 时停止，没有减去它的滚动偏移
-            // 但层树父层的滚动偏移同样会影响子层的视觉位置
-            if (parent_layer_obj) {
-                rel_x -= parent_layer_obj->GetScrollX();
-                rel_y -= parent_layer_obj->GetScrollY();
-            }
-            
-            new_bounds = SkRect::MakeXYWH(rel_x, rel_y, layout.width, layout.height);
-        }
-        
-        // 检查边界是否改变
-        const SkRect& old_bounds = layer->GetBounds();
-        if (new_bounds != old_bounds) {
-            layer->SetBounds(new_bounds);
-            // 只有边界真正改变时才标记脏区域
-            // 这是增量更新的关键
-            layer->MarkFullDirty();
-        }
+        // 使用 LayerTreeBuilder 更新层边界
+        // 这会正确处理动画边界扩展
+        layer_tree_builder_->UpdateLayerBounds(layer, render_obj);
         
         // 修复：只检查 NeedsPaint 标志，不再因为有动画就标记脏
         // 动画只改变 transform/opacity 时不需要重新光栅化

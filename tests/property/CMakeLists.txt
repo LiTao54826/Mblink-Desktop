@@ -55,6 +55,7 @@ set(COMPOSITOR_PROPERTY_TEST_SOURCES
     compositor/test_scroll_layer_properties.cpp
     compositor/test_render_pipeline_properties.cpp
     compositor/test_visual_consistency_properties.cpp
+    compositor/test_animation_bounds_properties.cpp
 )
 
 # Create property tests executable

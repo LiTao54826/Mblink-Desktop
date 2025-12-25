@@ -1392,13 +1392,27 @@ NodeId NativeLayoutEngine::CreateNode(RenderObject* render_obj) {
     node.style = ConvertStyle(computed);
     node.is_ifc_container = ShouldUseIFC(render_obj);
     
+    // ✅ Set margins_collapse based on element type
+    // CSS spec: margins do NOT collapse for:
+    // - Inline-block elements (display: inline-block)
+    // - Absolutely positioned elements (position: absolute/fixed)
+    // - Floated elements (float: left/right)
+    // - Flex/Grid items (handled by parent container)
+    // - Elements that establish new block formatting contexts
+    RenderObjectType type = render_obj->GetType();
+    bool is_inline_block = (type == RenderObjectType::INLINE_BLOCK);
+    bool is_absolute_or_fixed = (node.style.position == Position::Absolute || 
+                                   node.style.position == Position::Fixed);
+    // Note: Float property is not currently in Style, so we skip it for now
+    // Flex/Grid items will be handled by the parent container's layout algorithm
+    node.style.margins_collapse = !is_inline_block && !is_absolute_or_fixed;
+    
     // 为 IFC 容器初始化 content_version（非零值启用版本检查）
     if (node.is_ifc_container) {
         node.content_version = ContentVersionManager::GetInstance().GenerateVersion();
     }
     
     // 检测 TABLE 容器
-    RenderObjectType type = render_obj->GetType();
     node.is_table_container = (type == RenderObjectType::TABLE);
 
     // 初始化 Grid 特有数据（仅解析 Grid 特有属性，不再同步 CoreStyle 基类）
@@ -1462,17 +1476,18 @@ bool NativeLayoutEngine::ShouldUseIFC(RenderObject* render_obj) const {
 
     for (const auto& child : children) {
         RenderObjectType child_type = child->GetType();
-        RenderObjectType child_display = child->GetComputedStyle().display;
 
+        // ✅ FIX: Use child_type (GetType()) not child_display (GetComputedStyle().display)
+        // Inline-block elements have GetType() == INLINE_BLOCK, they are inline-level
         if (child_type == RenderObjectType::TEXT) {
             has_inline = true;
-        } else if (child_display == RenderObjectType::INLINE ||
-                   child_display == RenderObjectType::INLINE_BLOCK) {
+        } else if (child_type == RenderObjectType::INLINE ||
+                   child_type == RenderObjectType::INLINE_BLOCK) {
             has_inline = true;
-        } else if (child_display == RenderObjectType::BLOCK ||
-                   child_display == RenderObjectType::FLEX ||
-                   child_display == RenderObjectType::GRID ||
-                   child_display == RenderObjectType::TABLE) {
+        } else if (child_type == RenderObjectType::BLOCK ||
+                   child_type == RenderObjectType::FLEX ||
+                   child_type == RenderObjectType::GRID ||
+                   child_type == RenderObjectType::TABLE) {
             has_block = true;
         }
     }
@@ -1816,7 +1831,6 @@ static bool IsWhitespaceOnly(const std::string& text) {
 static bool IsInlineLevelElement(RenderObject* render_obj) {
     if (!render_obj) return false;
     RenderObjectType type = render_obj->GetType();
-    RenderObjectType display = render_obj->GetComputedStyle().display;
     
     // For text nodes, check if it's whitespace-only
     // In block formatting context, whitespace-only text between block elements
@@ -1829,8 +1843,10 @@ static bool IsInlineLevelElement(RenderObject* render_obj) {
         return true;
     }
     
-    return display == RenderObjectType::INLINE ||
-           display == RenderObjectType::INLINE_BLOCK;
+    // ✅ FIX: Use GetType() not GetComputedStyle().display
+    // Inline-block elements have GetType() == INLINE_BLOCK
+    return type == RenderObjectType::INLINE ||
+           type == RenderObjectType::INLINE_BLOCK;
 }
 
 // Helper function to check if a render object is block-level
@@ -1839,11 +1855,11 @@ static bool IsBlockLevelElement(RenderObject* render_obj) {
     RenderObjectType type = render_obj->GetType();
     if (type == RenderObjectType::TEXT) return false;
     
-    RenderObjectType display = render_obj->GetComputedStyle().display;
-    return display == RenderObjectType::BLOCK ||
-           display == RenderObjectType::FLEX ||
-           display == RenderObjectType::GRID ||
-           display == RenderObjectType::TABLE;
+    // ✅ FIX: Use GetType() not GetComputedStyle().display
+    return type == RenderObjectType::BLOCK ||
+           type == RenderObjectType::FLEX ||
+           type == RenderObjectType::GRID ||
+           type == RenderObjectType::TABLE;
 }
 
 void NativeLayoutEngine::BuildSubtreeAtIndex(RenderObject* render_obj, NodeId parent_id, size_t insert_index) {
@@ -2819,8 +2835,11 @@ LayoutOutput NativeLayoutEngine::ComputeAnonymousBlockIFCLayout(NodeId node_id, 
             auto [w, h] = inline_block->MeasureIntrinsicSize(content_width);
             
             InlineBox box = InlineBox::CreateAtomicBox(inline_child, w, h, h);
-            box.margin_left = child_style.margin.left.ToPx(w, child_style.font_size);
-            box.margin_right = child_style.margin.right.ToPx(w, child_style.font_size);
+            box.margin_left = child_style.margin_left.ToPx(w, child_style.font_size);
+            box.margin_right = child_style.margin_right.ToPx(w, child_style.font_size);
+            // ✅ Add vertical margin support for inline-block elements
+            box.margin_top = child_style.margin_top.ToPx(w, child_style.font_size);
+            box.margin_bottom = child_style.margin_bottom.ToPx(w, child_style.font_size);
             box.line_height_multiplier = child_style.line_height;
             
             all_inline_boxes.push_back(std::move(box));
@@ -3008,8 +3027,11 @@ void NativeLayoutEngine::CollectInlineBoxesRecursive(
             auto [w, h] = inline_block->MeasureIntrinsicSize(available_width);
             
             InlineBox box = InlineBox::CreateAtomicBox(child.get(), w, h, h);
-            box.margin_left = child_style.margin.left.ToPx(w, child_style.font_size);
-            box.margin_right = child_style.margin.right.ToPx(w, child_style.font_size);
+            box.margin_left = child_style.margin_left.ToPx(w, child_style.font_size);
+            box.margin_right = child_style.margin_right.ToPx(w, child_style.font_size);
+            // ✅ Add vertical margin support for inline-block elements
+            box.margin_top = child_style.margin_top.ToPx(w, child_style.font_size);
+            box.margin_bottom = child_style.margin_bottom.ToPx(w, child_style.font_size);
             box.line_height_multiplier = child_style.line_height;
             
             inline_boxes.push_back(std::move(box));
@@ -3227,6 +3249,8 @@ LayoutOutput NativeLayoutEngine::MeasureLeafNode(NodeId node_id, const LayoutInp
             LayoutOutput output;
             output.size = Size<float>{width, height};
             output.content_size = output.size;
+            // Inline-block elements don't participate in margin collapsing
+            output.margins_can_collapse_through = false;
             return output;
         }
 
@@ -3237,6 +3261,12 @@ LayoutOutput NativeLayoutEngine::MeasureLeafNode(NodeId node_id, const LayoutInp
         LayoutOutput output;
         output.size = Size<float>{width, height};
         output.content_size = output.size;
+        // ✅ FIX: Inline-block elements don't participate in margin collapsing
+        // CSS spec: The margins of inline-block elements do NOT collapse with
+        // the vertical margins of adjacent elements or their descendants.
+        // By setting margins_can_collapse_through = false, we ensure that
+        // the block layout algorithm will NOT apply margin collapsing to this element.
+        output.margins_can_collapse_through = false;
         return output;
     }
 

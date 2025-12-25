@@ -1360,11 +1360,8 @@ void RenderBlock::Paint(SkCanvas* canvas) {
     // So paint_rect matches the CTM directly.
     SkRect paint_rect = SkRect::MakeXYWH(layout_info_.x, layout_info_.y, layout_info_.width, layout_info_.height);
     
+    
     // Aggressive culling: Skip if completely outside the clip.
-    // Note: This relies on Skia's quickReject which accounts for the current transform (CTM) and clip.
-    // We add a safety margin (50px) to account for shadows, outlines, or minor overflows.
-    // For large overflows (overflow: visible), strictly speaking we shouldn't cull, 
-    // but in practice large offscreen content is rare in well-designed apps.
     if (canvas->quickReject(paint_rect.makeOutset(50, 50))) {
         g_paint_culled_calls++;  // 统计：被剔除的调用
         needs_paint_ = false;
@@ -1385,7 +1382,25 @@ void RenderBlock::Paint(SkCanvas* canvas) {
     // 应用 CSS opacity（使用 saveLayerAlpha 实现透明度）
     bool has_opacity = style.opacity < 1.0f;
     if (has_opacity) {
-        SkRect bounds = SkRect::MakeWH(layout.width, layout.height);
+        // 关键修复：使用CSS指定的宽高，而不是layout.width/height
+        // layout.width可能是shrink-to-fit的结果，不代表元素的实际渲染尺寸
+        float width = layout.width;
+        float height = layout.height;
+        
+        // 优先使用CSS明确指定的宽高
+        if (style.width.unit == CSSUnit::PX && style.width.value > 0) {
+            width = style.width.value;
+        }
+        if (style.height.unit == CSSUnit::PX && style.height.value > 0) {
+            height = style.height.value;
+        }
+        
+        // 如果有transform动画，需要扩展bounds以容纳transform后的内容
+        // 使用保守的边距以确保不会裁剪（未来可以基于实际动画边界动态计算）
+        const float kOpacityLayerMargin = 100.0f;
+        SkRect bounds = SkRect::MakeLTRB(-kOpacityLayerMargin, -kOpacityLayerMargin, 
+                                         width + kOpacityLayerMargin, height + kOpacityLayerMargin);
+        
         int alpha = static_cast<int>(style.opacity * 255);
         canvas->saveLayerAlpha(&bounds, alpha);
     }
@@ -4655,6 +4670,161 @@ void RenderObject::SetCompositorLayer(std::shared_ptr<CompositorLayer> layer) {
 
 bool RenderObject::HasOwnCompositorLayer() const {
     return !layer_info_.compositor_layer.expired();
+}
+
+// =========================================================================
+// 属性树状态方法实现
+// =========================================================================
+
+bool RenderObject::NeedsTransformNode() const {
+    const auto& style = computed_style_;
+    
+    // 有 transform 属性
+    if (style.transform.has_value()) {
+        return true;
+    }
+    
+    // 有定位偏移
+    if (style.position == "relative" || style.position == "absolute" || 
+        style.position == "fixed") {
+        if (layout_info_.x != 0 || layout_info_.y != 0) {
+            return true;
+        }
+    }
+    
+    // 有 will-change: transform
+    if (style.will_change.find("transform") != std::string::npos) {
+        return true;
+    }
+    
+    // 有活动的 transform 动画
+    for (const auto& anim : style.animations) {
+        if (anim.name.find("transform") != std::string::npos ||
+            anim.name.find("move") != std::string::npos ||
+            anim.name.find("slide") != std::string::npos ||
+            anim.name.find("rotate") != std::string::npos ||
+            anim.name.find("scale") != std::string::npos) {
+            return true;
+        }
+    }
+    
+    for (const auto& trans : style.transitions) {
+        if (trans.property == "transform" || trans.property == "all") {
+            return true;
+        }
+    }
+    
+    return false;
+}
+
+bool RenderObject::NeedsClipNode() const {
+    const auto& style = computed_style_;
+    
+    // overflow: hidden/scroll/auto
+    if (style.overflow == "hidden" || style.overflow == "scroll" || 
+        style.overflow == "auto") {
+        return true;
+    }
+    if (style.overflow_x == "hidden" || style.overflow_x == "scroll" || 
+        style.overflow_x == "auto") {
+        return true;
+    }
+    if (style.overflow_y == "hidden" || style.overflow_y == "scroll" || 
+        style.overflow_y == "auto") {
+        return true;
+    }
+    
+    // 有 clip-path
+    if (style.clip_path.has_value()) {
+        return true;
+    }
+    
+    return false;
+}
+
+bool RenderObject::NeedsEffectNode() const {
+    const auto& style = computed_style_;
+    
+    // opacity < 1
+    if (style.opacity < 1.0f) {
+        return true;
+    }
+    
+    // 有 filter
+    if (style.filter.has_value()) {
+        return true;
+    }
+    
+    // 有 backdrop-filter
+    if (style.backdrop_filter.has_value()) {
+        return true;
+    }
+    
+    // 有 will-change: opacity
+    if (style.will_change.find("opacity") != std::string::npos) {
+        return true;
+    }
+    
+    // 有活动的 opacity 动画
+    for (const auto& anim : style.animations) {
+        if (anim.name.find("opacity") != std::string::npos ||
+            anim.name.find("fade") != std::string::npos) {
+            return true;
+        }
+    }
+    
+    for (const auto& trans : style.transitions) {
+        if (trans.property == "opacity" || trans.property == "all") {
+            return true;
+        }
+    }
+    
+    return false;
+}
+
+bool RenderObject::NeedsScrollNode() const {
+    const auto& style = computed_style_;
+    
+    // overflow: scroll/auto
+    if (style.overflow == "scroll" || style.overflow == "auto") {
+        return true;
+    }
+    if (style.overflow_x == "scroll" || style.overflow_x == "auto") {
+        return true;
+    }
+    if (style.overflow_y == "scroll" || style.overflow_y == "auto") {
+        return true;
+    }
+    
+    return false;
+}
+
+bool RenderObject::CanDirectlyUpdateTransform() const {
+    // 如果有独立层，可以直接更新 transform
+    if (HasOwnCompositorLayer()) {
+        return true;
+    }
+    
+    // 如果有 will-change: transform，可以直接更新
+    if (computed_style_.will_change.find("transform") != std::string::npos) {
+        return true;
+    }
+    
+    return false;
+}
+
+bool RenderObject::CanDirectlyUpdateOpacity() const {
+    // 如果有独立层，可以直接更新 opacity
+    if (HasOwnCompositorLayer()) {
+        return true;
+    }
+    
+    // 如果有 will-change: opacity，可以直接更新
+    if (computed_style_.will_change.find("opacity") != std::string::npos) {
+        return true;
+    }
+    
+    return false;
 }
 
 } // namespace lightui

@@ -6,6 +6,7 @@ set(PERFORMANCE_TEST_SOURCES
     test_layout_performance.cpp
     test_incremental_layout_performance.cpp
     test_render_performance.cpp
+    test_property_tree_performance.cpp
 )
 
 add_executable(lightui_performance_tests

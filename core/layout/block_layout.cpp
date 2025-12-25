@@ -546,14 +546,26 @@ PerformFinalLayoutOnInFlowChildren(
 
         Size<float> final_size = item_layout.size;
 
-        // Compute margin sets
-        CollapsibleMarginSet top_margin_set =
-            CollapsibleMarginSet::FromMargin(item_margin.top.value_or(0.0f));
-        top_margin_set = top_margin_set.CollapseWithMargin(item_layout.top_margin);
+        // ✅ Handle margin collapsing based on element's margins_collapse property
+        // For elements where margins_collapse=false (inline-block, absolute, etc.),
+        // margins do NOT collapse with adjacent elements or children.
+        CollapsibleMarginSet top_margin_set;
+        CollapsibleMarginSet bottom_margin_set;
+        
+        const auto& child_style = tree.GetChildStyle(item.node_id);
+        if (child_style.margins_collapse) {
+            // Normal block elements: margins collapse with children and adjacent siblings
+            top_margin_set = CollapsibleMarginSet::FromMargin(item_margin.top.value_or(0.0f));
+            top_margin_set = top_margin_set.CollapseWithMargin(item_layout.top_margin);
 
-        CollapsibleMarginSet bottom_margin_set =
-            CollapsibleMarginSet::FromMargin(item_margin.bottom.value_or(0.0f));
-        bottom_margin_set = bottom_margin_set.CollapseWithMargin(item_layout.bottom_margin);
+            bottom_margin_set = CollapsibleMarginSet::FromMargin(item_margin.bottom.value_or(0.0f));
+            bottom_margin_set = bottom_margin_set.CollapseWithMargin(item_layout.bottom_margin);
+        } else {
+            // Inline-block, absolute, etc.: margins do NOT collapse
+            // Set margin sets to just the element's own margin (no collapsing with children)
+            top_margin_set = CollapsibleMarginSet::FromMargin(item_margin.top.value_or(0.0f));
+            bottom_margin_set = CollapsibleMarginSet::FromMargin(item_margin.bottom.value_or(0.0f));
+        }
 
         // Expand auto margins
         float free_x_space = f32_max(0.0f,
@@ -576,7 +588,12 @@ PerformFinalLayoutOnInFlowChildren(
         float y_margin_offset;
         if (is_collapsing_with_first_margin_set && own_margins_collapse_with_children.start) {
             y_margin_offset = 0.0f;
+        } else if (!child_style.margins_collapse) {
+            // ✅ For inline-block and similar elements, don't collapse with previous sibling
+            // Just add the previous element's bottom margin and this element's top margin
+            y_margin_offset = active_collapsible_margin_set.Resolve() + resolved_margin.top;
         } else {
+            // Normal collapsing behavior
             y_margin_offset = active_collapsible_margin_set
                 .CollapseWithMargin(resolved_margin.top).Resolve();
         }
@@ -659,7 +676,15 @@ PerformFinalLayoutOnInFlowChildren(
                 .CollapseWithSet(top_margin_set)
                 .CollapseWithSet(bottom_margin_set);
             y_offset_for_absolute = committed_y_offset + item_layout.size.height + y_margin_offset;
+        } else if (!child_style.margins_collapse) {
+            // ✅ For inline-block and similar elements, their bottom margin should be
+            // fully committed (not put in collapsible margin set for next sibling)
+            committed_y_offset += item_layout.size.height + y_margin_offset + resolved_margin.bottom;
+            // Clear the active collapsible margin set since this element's margin doesn't collapse
+            active_collapsible_margin_set = CollapsibleMarginSet::Zero();
+            y_offset_for_absolute = committed_y_offset;
         } else {
+            // Normal block element
             committed_y_offset += item_layout.size.height + y_margin_offset;
             active_collapsible_margin_set = bottom_margin_set;
             y_offset_for_absolute = committed_y_offset + active_collapsible_margin_set.Resolve();

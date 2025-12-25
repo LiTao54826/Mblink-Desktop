@@ -893,9 +893,11 @@ void IFCLayout::CreateInlineBox(RenderObject* render_obj) {
 
             InlineBox box = InlineBox::CreateAtomicBox(render_obj, w, h, h);
 
-            // 应用 margin
+            // 应用 margin（水平和垂直）
             box.margin_left = style.margin.left.ToPx(w, style.font_size);
             box.margin_right = style.margin.right.ToPx(w, style.font_size);
+            box.margin_top = style.margin.top.ToPx(w, style.font_size);
+            box.margin_bottom = style.margin.bottom.ToPx(w, style.font_size);
 
             // 设置行高倍数（用于计算行高）
             box.line_height_multiplier = style.line_height;

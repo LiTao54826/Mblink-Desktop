@@ -4,7 +4,9 @@
  */
 
 #include "layer_tree_builder.h"
+#include "animation_bounds_calculator.h"
 #include "core/render/render_object.h"
+#include "core/render/keyframes.h"
 #include <algorithm>
 
 namespace lightui {
@@ -170,6 +172,7 @@ void LayerTreeBuilder::UpdateLayerBounds(CompositorLayer* layer, RenderObject* o
     }
 
     const auto& layout = obj->GetLayoutInfo();
+    const auto& style = obj->GetComputedStyle();
     
     // 对于根层，边界从 (0,0) 开始
     if (layer->GetPromotionReason() == LayerPromotionReason::RootLayer) {
@@ -226,7 +229,127 @@ void LayerTreeBuilder::UpdateLayerBounds(CompositorLayer* layer, RenderObject* o
         rel_y -= parent_layer_obj->GetScrollY();
     }
     
-    SkRect bounds = SkRect::MakeXYWH(rel_x, rel_y, layout.width, layout.height);
+    // 计算边界尺寸和偏移
+    float width = layout.width;
+    float height = layout.height;
+    float offset_x = 0;
+    float offset_y = 0;
+    
+    // 修复：如果 CSS 指定了宽度/高度，使用 CSS 值而不是 layout 值
+    // 这是因为 layout.width/height 可能是内容宽度（shrink-to-fit），
+    // 而不是 CSS 指定的盒子尺寸
+    if (style.width.unit != CSSUnit::NONE && style.width.unit != CSSUnit::AUTO && style.width.value > 0) {
+        width = style.width.value;
+    }
+    if (style.height.unit != CSSUnit::NONE && style.height.unit != CSSUnit::AUTO && style.height.value > 0) {
+        height = style.height.value;
+    }
+    
+    // 首先尝试使用动画边界计算器（处理动画的完整范围）
+    AnimationBounds anim_bounds;
+    bool has_animation_bounds = false;
+    
+    // 用于合并多个动画边界的绝对坐标范围
+    // 这些坐标是相对于元素原点的
+    float abs_min_x = 0.0f;
+    float abs_min_y = 0.0f;
+    float abs_max_x = width;  // 使用修正后的宽度
+    float abs_max_y = height; // 使用修正后的高度
+    
+    for (const auto& anim : style.animations) {
+        if (anim.name.empty() || anim.name == "none") {
+            continue;
+        }
+        
+        // 使用 AnimationBoundsCalculator 计算动画边界
+        // 使用修正后的尺寸（CSS 指定的尺寸优先）
+        SkSize element_size = SkSize::Make(width, height);
+        AnimationBounds bounds = AnimationBoundsCalculator::Calculate(
+            element_size, anim.name, style.transform_origin);
+        
+        if (bounds.needs_expansion) {
+            // 将边界转换为相对于元素原点的绝对坐标
+            // bounds.offset 是边界左上角相对于元素原点的偏移
+            // bounds.bounds 是边界的尺寸（从 (0,0) 开始）
+            float this_min_x = bounds.offset.fX;
+            float this_min_y = bounds.offset.fY;
+            float this_max_x = bounds.offset.fX + bounds.bounds.width();
+            float this_max_y = bounds.offset.fY + bounds.bounds.height();
+            
+            // 合并多个动画的边界（使用绝对坐标）
+            if (!has_animation_bounds) {
+                abs_min_x = this_min_x;
+                abs_min_y = this_min_y;
+                abs_max_x = this_max_x;
+                abs_max_y = this_max_y;
+                has_animation_bounds = true;
+            } else {
+                // 合并边界（取并集）
+                abs_min_x = std::min(abs_min_x, this_min_x);
+                abs_min_y = std::min(abs_min_y, this_min_y);
+                abs_max_x = std::max(abs_max_x, this_max_x);
+                abs_max_y = std::max(abs_max_y, this_max_y);
+            }
+        }
+    }
+    
+    // 如果有动画边界，构建最终的 AnimationBounds
+    if (has_animation_bounds) {
+        anim_bounds.offset = SkPoint::Make(abs_min_x, abs_min_y);
+        anim_bounds.bounds = SkRect::MakeWH(abs_max_x - abs_min_x, abs_max_y - abs_min_y);
+        anim_bounds.needs_expansion = true;
+    }
+    
+    if (has_animation_bounds) {
+        // 使用动画边界
+        width = anim_bounds.bounds.width();
+        height = anim_bounds.bounds.height();
+        offset_x = anim_bounds.offset.fX;
+        offset_y = anim_bounds.offset.fY;
+        
+        // 存储动画边界信息到层（用于光栅化时的偏移）
+        layer->SetAnimationBounds(anim_bounds);
+    } else if (style.transform.has_value() && !style.transform->IsEmpty()) {
+        // 如果没有动画边界，但有静态变换，使用当前帧的变换边界
+        // 计算变换后的边界框
+        SkRect local_rect = SkRect::MakeWH(layout.width, layout.height);
+        SkMatrix transform_matrix = style.transform->ToSkMatrix(local_rect, style.transform_origin);
+        
+        // 变换四个角点
+        SkPoint corners[4] = {
+            {0, 0},
+            {layout.width, 0},
+            {layout.width, layout.height},
+            {0, layout.height}
+        };
+        transform_matrix.mapPoints(corners, 4);
+        
+        // 计算变换后的边界框
+        float min_x = corners[0].x(), max_x = corners[0].x();
+        float min_y = corners[0].y(), max_y = corners[0].y();
+        for (int i = 1; i < 4; ++i) {
+            min_x = std::min(min_x, corners[i].x());
+            max_x = std::max(max_x, corners[i].x());
+            min_y = std::min(min_y, corners[i].y());
+            max_y = std::max(max_y, corners[i].y());
+        }
+        
+        // 扩展边界以容纳变换后的内容
+        // 添加一些额外的边距以确保动画过程中不会被裁剪
+        const float padding = 10.0f;
+        width = (max_x - min_x) + padding * 2;
+        height = (max_y - min_y) + padding * 2;
+        offset_x = min_x - padding;
+        offset_y = min_y - padding;
+        
+        // 清除动画边界（没有动画）
+        layer->ClearAnimationBounds();
+    } else {
+        // 没有变换，清除动画边界
+        layer->ClearAnimationBounds();
+    }
+    
+    SkRect bounds = SkRect::MakeXYWH(rel_x + offset_x, rel_y + offset_y, width, height);
     layer->SetBounds(bounds);
 }
 
@@ -244,7 +367,8 @@ bool LayerTreeBuilder::HasWillChangeTransform(RenderObject* obj) const {
         return false;
     }
     
-    return will_change.find("transform") != std::string::npos;
+    bool has_transform = will_change.find("transform") != std::string::npos;
+    return has_transform;
 }
 
 bool LayerTreeBuilder::HasWillChangeOpacity(RenderObject* obj) const {

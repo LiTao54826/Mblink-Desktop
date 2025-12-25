@@ -6,6 +6,10 @@
 #include "scroll_layer_manager.h"
 #include "layer_tree_builder.h"
 #include "rasterizer.h"
+#include "core/compositor/property_tree/paint_artifact_compositor.h"
+#include "core/compositor/property_tree/property_trees.h"
+#include "core/compositor/property_tree/scroll_tree_node.h"
+#include "core/compositor/property_tree/property_tree_state.h"
 #include "../render/render_object.h"
 #include <algorithm>
 #include <cmath>
@@ -116,7 +120,29 @@ bool ScrollLayerManager::HandleScroll(RenderObject* container, float delta_x, fl
         return false;  // 没有滚动
     }
 
-    // 更新层的滚动偏移（不需要重新光栅化）
+    // 优先使用属性树系统的直接更新（不触发光栅化）
+    if (IsUsingPropertyTreeSystem()) {
+        PropertyTreeState* state = container->GetPropertyTreeState();
+        if (state) {
+            ScrollTreeNode* scroll_node = state->Scroll();
+            if (scroll_node && paint_artifact_compositor_->CanDirectlyUpdateScrollOffset(scroll_node)) {
+                // 通过属性树系统直接更新滚动偏移
+                SkPoint new_offset = SkPoint::Make(info->scroll_x, info->scroll_y);
+                if (paint_artifact_compositor_->DirectlyUpdateScrollOffset(scroll_node, new_offset)) {
+                    // 同步到 RenderObject
+                    container->SetScrollX(info->scroll_x);
+                    container->SetScrollY(info->scroll_y);
+                    
+                    // 更新固定元素位置
+                    UpdateFixedElementPositions();
+                    
+                    return true;
+                }
+            }
+        }
+    }
+
+    // 回退：更新层的滚动偏移（不需要重新光栅化）
     if (info->content_layer) {
         info->content_layer->SetScrollOffset(SkPoint::Make(-info->scroll_x, -info->scroll_y));
     }

@@ -23,6 +23,9 @@
 #include "compositor.h"
 #include "animation_layer_bridge.h"
 #include "scroll_layer_manager.h"
+#include "core/compositor/property_tree/property_trees.h"
+#include "core/compositor/property_tree/property_tree_builder.h"
+#include "core/compositor/property_tree/paint_artifact_compositor.h"
 #include <memory>
 
 // 前向声明 Skia 类
@@ -319,6 +322,35 @@ public:
      */
     std::shared_ptr<CompositorLayer> GetRootLayer() const { return root_layer_; }
 
+    // =========================================================================
+    // 属性树系统
+    // =========================================================================
+
+    /**
+     * @brief 设置是否使用属性树系统
+     */
+    void SetUsePropertyTreeSystem(bool use) { use_property_tree_system_ = use; }
+
+    /**
+     * @brief 检查是否使用属性树系统
+     */
+    bool IsUsingPropertyTreeSystem() const { return use_property_tree_system_; }
+
+    /**
+     * @brief 获取属性树集合
+     */
+    PropertyTrees* GetPropertyTrees() { return property_trees_.get(); }
+
+    /**
+     * @brief 获取属性树构建器
+     */
+    PropertyTreeBuilder* GetPropertyTreeBuilder() { return property_tree_builder_.get(); }
+
+    /**
+     * @brief 获取绘制产物合成器
+     */
+    PaintArtifactCompositor* GetPaintArtifactCompositor() { return paint_artifact_compositor_.get(); }
+
 private:
     /**
      * @brief 构建或更新层树
@@ -387,6 +419,12 @@ private:
 
     // 层树
     std::shared_ptr<CompositorLayer> root_layer_;
+
+    // 属性树系统
+    bool use_property_tree_system_ = true;
+    std::unique_ptr<PropertyTrees> property_trees_;
+    std::unique_ptr<PropertyTreeBuilder> property_tree_builder_;
+    std::unique_ptr<PaintArtifactCompositor> paint_artifact_compositor_;
 
     // 统计
     RenderFrameStats last_frame_stats_;

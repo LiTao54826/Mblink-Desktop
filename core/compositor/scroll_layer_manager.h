@@ -6,6 +6,7 @@
  * - 检测可滚动容器，创建滚动内容层
  * - 实现无需重新光栅化的滚动（只更新层偏移）
  * - 处理 position: fixed 元素（滚动时保持静止）
+ * - 支持属性树系统的直接滚动偏移更新
  *
  * 设计原则：
  * - 滚动时只更新层偏移，不重新光栅化
@@ -27,6 +28,8 @@ namespace lightui {
 class RenderObject;
 class LayerTreeBuilder;
 class Rasterizer;
+class PaintArtifactCompositor;
+class PropertyTrees;
 
 /**
  * @brief 滚动容器信息
@@ -86,6 +89,29 @@ public:
      * @brief 设置光栅化器
      */
     void SetRasterizer(Rasterizer* rasterizer) { rasterizer_ = rasterizer; }
+
+    /**
+     * @brief 设置绘制产物合成器（属性树系统）
+     * @param compositor 绘制产物合成器指针（不拥有所有权）
+     */
+    void SetPaintArtifactCompositor(PaintArtifactCompositor* compositor) {
+        paint_artifact_compositor_ = compositor;
+    }
+
+    /**
+     * @brief 设置属性树集合
+     * @param trees 属性树集合指针（不拥有所有权）
+     */
+    void SetPropertyTrees(PropertyTrees* trees) {
+        property_trees_ = trees;
+    }
+
+    /**
+     * @brief 检查是否使用属性树系统
+     */
+    bool IsUsingPropertyTreeSystem() const {
+        return paint_artifact_compositor_ != nullptr && property_trees_ != nullptr;
+    }
 
     // =========================================================================
     // 滚动容器管理
@@ -274,6 +300,10 @@ private:
     // 关联的组件
     LayerTreeBuilder* layer_tree_builder_ = nullptr;
     Rasterizer* rasterizer_ = nullptr;
+    
+    // 属性树系统组件
+    PaintArtifactCompositor* paint_artifact_compositor_ = nullptr;
+    PropertyTrees* property_trees_ = nullptr;
 
     // 滚动容器映射
     std::unordered_map<RenderObject*, ScrollContainerInfo> scroll_containers_;

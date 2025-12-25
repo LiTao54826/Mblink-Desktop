@@ -4,6 +4,7 @@
  */
 
 #include "compositor_layer.h"
+#include "animation_bounds_calculator.h"
 #include "include/core/SkImageInfo.h"
 #include <algorithm>
 #include <cstring>
@@ -87,7 +88,7 @@ bool CompositorLayer::EnsureBitmap() {
     // 使用物理像素大小（DPI 缩放后的大小）以保证清晰度
     int width = static_cast<int>(std::ceil(bounds_.width() * dpi_scale_));
     int height = static_cast<int>(std::ceil(bounds_.height() * dpi_scale_));
-
+    
     if (width <= 0 || height <= 0) {
         return false;
     }
@@ -393,6 +394,30 @@ void CompositorLayer::ScrollBy(float dx, float dy) {
 }
 
 // =========================================================================
+// 增量光栅化支持
+// =========================================================================
+
+void CompositorLayer::AddRasterDirtyRect(const SkRect& rect) {
+    // 裁剪到层边界
+    SkRect clipped;
+    if (!clipped.intersect(rect, SkRect::MakeWH(bounds_.width(), bounds_.height()))) {
+        return;  // 区域在层外
+    }
+    
+    // 检查是否与已有区域重叠，如果重叠则合并
+    for (auto& existing : raster_dirty_rects_) {
+        SkRect expanded = existing;
+        expanded.outset(1, 1);  // 允许 1 像素间隙
+        if (expanded.intersects(clipped)) {
+            existing.join(clipped);
+            return;
+        }
+    }
+    
+    raster_dirty_rects_.push_back(clipped);
+}
+
+// =========================================================================
 // DPI 缩放支持
 // =========================================================================
 
@@ -410,6 +435,37 @@ void CompositorLayer::SetDpiScale(float scale) {
     // DPI 缩放改变，需要重新分配位图
     bitmap_valid_ = false;
     MarkFullDirty();
+}
+
+// =========================================================================
+// 动画边界支持
+// =========================================================================
+
+const AnimationBounds* CompositorLayer::GetAnimationBounds() const {
+    return animation_bounds_.has_value() ? &animation_bounds_.value() : nullptr;
+}
+
+void CompositorLayer::SetAnimationBounds(const AnimationBounds& bounds) {
+    // 检查动画边界是否改变
+    bool bounds_changed = !animation_bounds_.has_value() ||
+                          animation_bounds_->offset != bounds.offset ||
+                          animation_bounds_->bounds != bounds.bounds ||
+                          animation_bounds_->needs_expansion != bounds.needs_expansion;
+    
+    animation_bounds_ = bounds;
+    
+    // 如果动画边界改变，需要重新光栅化
+    if (bounds_changed && bounds.needs_expansion) {
+        MarkFullDirty();
+    }
+}
+
+void CompositorLayer::ClearAnimationBounds() {
+    animation_bounds_.reset();
+}
+
+bool CompositorLayer::HasAnimationBounds() const {
+    return animation_bounds_.has_value() && animation_bounds_->needs_expansion;
 }
 
 // =========================================================================

@@ -16,6 +16,9 @@
 #pragma once
 
 #include "render_pipeline_v2.h"
+#include "core/compositor/property_tree/property_trees.h"
+#include "core/compositor/property_tree/property_tree_builder.h"
+#include "core/compositor/property_tree/paint_artifact_compositor.h"
 #include <memory>
 
 // 前向声明 Skia 类
@@ -212,6 +215,80 @@ public:
      * @brief 获取渲染管线（用于高级配置）
      */
     RenderPipelineV2* GetPipeline() { return pipeline_.get(); }
+
+    // =========================================================================
+    // 属性树系统
+    // =========================================================================
+
+    /**
+     * @brief 设置是否使用属性树系统
+     * @param use_property_tree true 使用新的属性树系统
+     */
+    void SetUsePropertyTreeSystem(bool use_property_tree);
+
+    /**
+     * @brief 检查是否使用属性树系统
+     * @note 检查 RenderPipelineV2 的属性树系统状态
+     */
+    bool IsUsingPropertyTreeSystem() const { 
+        return pipeline_ && pipeline_->IsUsingPropertyTreeSystem(); 
+    }
+
+    /**
+     * @brief 获取属性树集合
+     * @note 返回 RenderPipelineV2 的属性树系统，确保与实际构建的属性树一致
+     */
+    PropertyTrees* GetPropertyTrees() { 
+        return pipeline_ ? pipeline_->GetPropertyTrees() : nullptr; 
+    }
+
+    /**
+     * @brief 获取属性树构建器
+     * @note 返回 RenderPipelineV2 的属性树构建器
+     */
+    PropertyTreeBuilder* GetPropertyTreeBuilder() { 
+        return pipeline_ ? pipeline_->GetPropertyTreeBuilder() : nullptr; 
+    }
+
+    /**
+     * @brief 获取绘制产物合成器
+     * @note 返回 RenderPipelineV2 的绘制产物合成器
+     */
+    PaintArtifactCompositor* GetPaintArtifactCompositor() { 
+        return pipeline_ ? pipeline_->GetPaintArtifactCompositor() : nullptr; 
+    }
+
+    /**
+     * @brief 使用属性树系统渲染
+     * @param render_tree 渲染树根节点
+     * @param canvas 目标 Canvas
+     * @return true 如果渲染成功
+     */
+    bool RenderWithPropertyTrees(RenderObject* render_tree, SkCanvas* canvas);
+
+    /**
+     * @brief 直接更新变换（不触发光栅化）
+     * @param object 渲染对象
+     * @param matrix 新变换矩阵
+     * @return true 如果更新成功
+     */
+    bool DirectlyUpdateTransform(RenderObject* object, const SkM44& matrix);
+
+    /**
+     * @brief 直接更新透明度（不触发光栅化）
+     * @param object 渲染对象
+     * @param opacity 新透明度
+     * @return true 如果更新成功
+     */
+    bool DirectlyUpdateOpacity(RenderObject* object, float opacity);
+
+    /**
+     * @brief 直接更新滚动偏移（不触发光栅化）
+     * @param object 渲染对象
+     * @param offset 新滚动偏移
+     * @return true 如果更新成功
+     */
+    bool DirectlyUpdateScrollOffset(RenderObject* object, const SkPoint& offset);
 
     // =========================================================================
     // 统计

@@ -5,11 +5,15 @@
 
 #include "window_compositor_adapter.h"
 #include "../render/render_object.h"
+#include "core/compositor/property_tree/transform_tree_node.h"
+#include "core/compositor/property_tree/effect_tree_node.h"
+#include "core/compositor/property_tree/scroll_tree_node.h"
 
 namespace lightui {
 
 WindowCompositorAdapter::WindowCompositorAdapter()
     : pipeline_(std::make_unique<RenderPipelineV2>()) {
+    // 属性树系统由 RenderPipelineV2 管理，不需要在这里初始化
 }
 
 WindowCompositorAdapter::~WindowCompositorAdapter() {
@@ -213,6 +217,128 @@ const RenderFrameStats& WindowCompositorAdapter::GetLastFrameStats() const {
         return empty_stats;
     }
     return pipeline_->GetLastFrameStats();
+}
+
+// =========================================================================
+// 属性树系统
+// =========================================================================
+
+void WindowCompositorAdapter::SetUsePropertyTreeSystem(bool use_property_tree) {
+    // 设置 RenderPipelineV2 的属性树系统状态
+    if (pipeline_) {
+        pipeline_->SetUsePropertyTreeSystem(use_property_tree);
+    }
+}
+
+bool WindowCompositorAdapter::RenderWithPropertyTrees(RenderObject* render_tree, SkCanvas* canvas) {
+    if (!render_tree || !canvas || !pipeline_) {
+        return false;
+    }
+    
+    auto* property_trees = pipeline_->GetPropertyTrees();
+    auto* property_tree_builder = pipeline_->GetPropertyTreeBuilder();
+    auto* paint_artifact_compositor = pipeline_->GetPaintArtifactCompositor();
+    
+    if (!property_trees || !property_tree_builder || !paint_artifact_compositor) {
+        return false;
+    }
+    
+    // 1. 构建属性树
+    property_tree_builder->Build(render_tree);
+    
+    // 2. 生成绘制产物（简化版本 - 实际需要 PaintController）
+    PaintArtifact artifact;
+    // TODO: 使用 PaintController 生成完整的绘制产物
+    
+    // 3. 更新合成器
+    paint_artifact_compositor->Update(artifact);
+    
+    // 4. 光栅化脏层
+    paint_artifact_compositor->RasterizeDirtyLayers();
+    
+    // 5. 合成到 Canvas
+    SkRect viewport = SkRect::MakeWH(
+        static_cast<float>(viewport_width_),
+        static_cast<float>(viewport_height_)
+    );
+    paint_artifact_compositor->CompositeToCanvas(canvas, viewport);
+    
+    return true;
+}
+
+bool WindowCompositorAdapter::DirectlyUpdateTransform(RenderObject* object, const SkM44& matrix) {
+    if (!object || !pipeline_) {
+        return false;
+    }
+    
+    auto* paint_artifact_compositor = pipeline_->GetPaintArtifactCompositor();
+    if (!paint_artifact_compositor) {
+        return false;
+    }
+    
+    // 获取对象的变换节点
+    PropertyTreeState* state = object->GetPropertyTreeState();
+    if (!state) {
+        return false;
+    }
+    
+    TransformTreeNode* transform_node = state->Transform();
+    if (!transform_node) {
+        return false;
+    }
+    
+    // 直接更新变换
+    return paint_artifact_compositor->DirectlyUpdateTransform(transform_node, matrix);
+}
+
+bool WindowCompositorAdapter::DirectlyUpdateOpacity(RenderObject* object, float opacity) {
+    if (!object || !pipeline_) {
+        return false;
+    }
+    
+    auto* paint_artifact_compositor = pipeline_->GetPaintArtifactCompositor();
+    if (!paint_artifact_compositor) {
+        return false;
+    }
+    
+    // 获取对象的效果节点
+    PropertyTreeState* state = object->GetPropertyTreeState();
+    if (!state) {
+        return false;
+    }
+    
+    EffectTreeNode* effect_node = state->Effect();
+    if (!effect_node) {
+        return false;
+    }
+    
+    // 直接更新透明度
+    return paint_artifact_compositor->DirectlyUpdateOpacity(effect_node, opacity);
+}
+
+bool WindowCompositorAdapter::DirectlyUpdateScrollOffset(RenderObject* object, const SkPoint& offset) {
+    if (!object || !pipeline_) {
+        return false;
+    }
+    
+    auto* paint_artifact_compositor = pipeline_->GetPaintArtifactCompositor();
+    if (!paint_artifact_compositor) {
+        return false;
+    }
+    
+    // 获取对象的滚动节点
+    PropertyTreeState* state = object->GetPropertyTreeState();
+    if (!state) {
+        return false;
+    }
+    
+    ScrollTreeNode* scroll_node = state->Scroll();
+    if (!scroll_node) {
+        return false;
+    }
+    
+    // 直接更新滚动偏移
+    return paint_artifact_compositor->DirectlyUpdateScrollOffset(scroll_node, offset);
 }
 
 } // namespace lightui

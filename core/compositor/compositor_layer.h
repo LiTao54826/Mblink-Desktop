@@ -7,6 +7,8 @@
  * - GPU 纹理（用于合成）
  * - 变换矩阵和透明度（用于动画）
  * - 脏区域跟踪（用于增量更新）
+ * - PropertyTreeState（属性树状态引用）
+ * - PaintChunk 引用（绘制块）
  *
  * 层提升条件：
  * - will-change: transform/opacity
@@ -19,12 +21,16 @@
 
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <vector>
 #include "include/core/SkBitmap.h"
 #include "include/core/SkCanvas.h"
 #include "include/core/SkMatrix.h"
 #include "include/core/SkRect.h"
 #include "include/core/SkPoint.h"
+#include "core/compositor/property_tree/property_tree_state.h"
+#include "core/compositor/property_tree/compositing_reasons.h"
+#include "core/compositor/animation_bounds_calculator.h"
 
 // 前向声明 OpenGL 类型
 typedef unsigned int GLuint;
@@ -33,6 +39,7 @@ namespace lightui {
 
 // 前向声明
 class RenderObject;
+class PaintChunk;
 
 /**
  * @brief 层提升原因
@@ -281,6 +288,109 @@ public:
     const std::vector<std::shared_ptr<CompositorLayer>>& GetChildren() const { return children_; }
 
     // =========================================================================
+    // 属性树状态（Property Tree System）
+    // =========================================================================
+
+    /**
+     * @brief 获取属性树状态
+     */
+    const PropertyTreeState& GetPropertyTreeState() const { return property_tree_state_; }
+
+    /**
+     * @brief 设置属性树状态
+     */
+    void SetPropertyTreeState(const PropertyTreeState& state) { property_tree_state_ = state; }
+
+    /**
+     * @brief 获取合成原因
+     */
+    CompositingReasons GetCompositingReasons() const { return compositing_reasons_; }
+
+    /**
+     * @brief 设置合成原因
+     */
+    void SetCompositingReasons(CompositingReasons reasons) { compositing_reasons_ = reasons; }
+
+    /**
+     * @brief 添加合成原因
+     */
+    void AddCompositingReason(CompositingReasons reason) { 
+        compositing_reasons_ = compositing_reasons_ | reason; 
+    }
+
+    // =========================================================================
+    // 绘制块引用（Paint Chunks）
+    // =========================================================================
+
+    /**
+     * @brief 获取关联的绘制块
+     */
+    const std::vector<const PaintChunk*>& GetPaintChunks() const { return paint_chunks_; }
+
+    /**
+     * @brief 设置关联的绘制块
+     */
+    void SetPaintChunks(std::vector<const PaintChunk*> chunks) { 
+        paint_chunks_ = std::move(chunks); 
+    }
+
+    /**
+     * @brief 添加绘制块
+     */
+    void AddPaintChunk(const PaintChunk* chunk) { 
+        if (chunk) paint_chunks_.push_back(chunk); 
+    }
+
+    /**
+     * @brief 清除绘制块引用
+     */
+    void ClearPaintChunks() { paint_chunks_.clear(); }
+
+    /**
+     * @brief 检查是否有绘制块
+     */
+    bool HasPaintChunks() const { return !paint_chunks_.empty(); }
+
+    // =========================================================================
+    // 增量光栅化支持
+    // =========================================================================
+
+    /**
+     * @brief 获取光栅化脏区域（层坐标系）
+     */
+    const std::vector<SkRect>& GetRasterDirtyRects() const { return raster_dirty_rects_; }
+
+    /**
+     * @brief 添加光栅化脏区域
+     */
+    void AddRasterDirtyRect(const SkRect& rect);
+
+    /**
+     * @brief 清除光栅化脏区域
+     */
+    void ClearRasterDirtyRects() { raster_dirty_rects_.clear(); }
+
+    /**
+     * @brief 检查是否需要光栅化
+     */
+    bool NeedsRasterization() const { return !raster_dirty_rects_.empty() || needs_full_raster_; }
+
+    /**
+     * @brief 标记需要完整光栅化
+     */
+    void MarkNeedsFullRaster() { needs_full_raster_ = true; }
+
+    /**
+     * @brief 清除完整光栅化标记
+     */
+    void ClearNeedsFullRaster() { needs_full_raster_ = false; }
+
+    /**
+     * @brief 检查是否需要完整光栅化
+     */
+    bool NeedsFullRaster() const { return needs_full_raster_; }
+
+    // =========================================================================
     // 滚动支持
     // =========================================================================
 
@@ -316,6 +426,32 @@ public:
      * @note 会触发位图重新分配
      */
     void SetDpiScale(float scale);
+
+    // =========================================================================
+    // 动画边界支持
+    // =========================================================================
+
+    /**
+     * @brief 获取动画边界信息
+     * @return 动画边界指针，如果没有则返回 nullptr
+     */
+    const AnimationBounds* GetAnimationBounds() const;
+
+    /**
+     * @brief 设置动画边界信息
+     * @param bounds 动画边界
+     */
+    void SetAnimationBounds(const AnimationBounds& bounds);
+
+    /**
+     * @brief 清除动画边界信息
+     */
+    void ClearAnimationBounds();
+
+    /**
+     * @brief 检查是否有动画边界
+     */
+    bool HasAnimationBounds() const;
 
     // =========================================================================
     // 调试支持
@@ -373,6 +509,20 @@ private:
 
     // DPI 缩放
     float dpi_scale_ = 1.0f;
+
+    // 属性树状态
+    PropertyTreeState property_tree_state_;
+    CompositingReasons compositing_reasons_ = CompositingReasons::kNone;
+
+    // 绘制块引用
+    std::vector<const PaintChunk*> paint_chunks_;
+
+    // 增量光栅化
+    std::vector<SkRect> raster_dirty_rects_;
+    bool needs_full_raster_ = true;
+
+    // 动画边界（用于扩展层边界以容纳动画）
+    std::optional<AnimationBounds> animation_bounds_;
 
     // 静态 ID 生成器
     static uint32_t next_id_;

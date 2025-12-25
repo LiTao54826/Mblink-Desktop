@@ -98,8 +98,12 @@ std::optional<CSSTransform> CSSTransform::Parse(const std::string& str) {
 
 std::optional<Transform> CSSTransform::ParseFunction(const std::string& func_name, 
                                                      const std::string& args) {
-    if (func_name == "translate" || func_name == "translateX" || func_name == "translateY") {
+    if (func_name == "translate") {
         return ParseTranslate(args);
+    } else if (func_name == "translateX") {
+        return ParseTranslateX(args);
+    } else if (func_name == "translateY") {
+        return ParseTranslateY(args);
     } else if (func_name == "rotate") {
         return ParseRotate(args);
     } else if (func_name == "scale" || func_name == "scaleX" || func_name == "scaleY") {
@@ -111,6 +115,32 @@ std::optional<Transform> CSSTransform::ParseFunction(const std::string& func_nam
     }
     
     return std::nullopt;  // 未知函数
+}
+
+std::optional<Transform> CSSTransform::ParseTranslateX(const std::string& args) {
+    Transform transform(TransformType::TRANSLATE);
+    
+    // 解析 X 值
+    auto x_length = CSSValue::ParseLength(args);
+    transform.lengths.push_back(x_length);
+    
+    // Y 值为 0
+    transform.lengths.push_back(CSSLength(0.0f, CSSUnit::PX));
+    
+    return transform;
+}
+
+std::optional<Transform> CSSTransform::ParseTranslateY(const std::string& args) {
+    Transform transform(TransformType::TRANSLATE);
+    
+    // X 值为 0
+    transform.lengths.push_back(CSSLength(0.0f, CSSUnit::PX));
+    
+    // 解析 Y 值
+    auto y_length = CSSValue::ParseLength(args);
+    transform.lengths.push_back(y_length);
+    
+    return transform;
 }
 
 std::optional<Transform> CSSTransform::ParseTranslate(const std::string& args) {

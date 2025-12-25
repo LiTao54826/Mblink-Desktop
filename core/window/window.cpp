@@ -1491,6 +1491,16 @@ void Window::Render() {
                 }
                 compositor_adapter_->SetUseLayerCompositing(true);
                 compositor_adapter_->SetDpiScale(dpi_scale);  // 设置 DPI 缩放
+                
+                // 连接属性树系统到动画应用器（关键：启用直接属性更新优化）
+                if (animation_applicator_ && compositor_adapter_->IsUsingPropertyTreeSystem()) {
+                    animation_applicator_->SetPaintArtifactCompositor(
+                        compositor_adapter_->GetPaintArtifactCompositor());
+                    animation_applicator_->SetPropertyTrees(
+                        compositor_adapter_->GetPropertyTrees());
+                    std::cout << "[Window] Animation applicator connected to property tree system" << std::endl;
+                }
+                
                 std::cout << "[Window] Layer compositing enabled (" << logical_width << "x" << logical_height << ", dpi=" << dpi_scale << ")" << std::endl;
             }
             

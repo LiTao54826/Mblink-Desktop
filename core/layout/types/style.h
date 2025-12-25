@@ -271,6 +271,11 @@ struct CoreStyle {
     Rect<LengthPercentageAuto> margin = Rect<LengthPercentageAuto>::Zero();
     Rect<LengthPercentage> padding = Rect<LengthPercentage>::Zero();
     Rect<LengthPercentage> border = Rect<LengthPercentage>::Zero();
+    
+    // Margin collapsing behavior
+    // CSS spec: margins do NOT collapse for inline-block, floats, absolutely positioned,
+    // flex/grid items, and elements that establish new block formatting contexts
+    bool margins_collapse = true;
 };
 
 /// Complete style for layout computation

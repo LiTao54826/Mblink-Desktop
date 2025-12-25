@@ -483,6 +483,10 @@ void StyleManager::ExtractAndRegisterKeyframes(const std::string& css_text) {
         if (rule.IsValid()) {
             // 注册到动画控制器（如果同名规则已存在，会被覆盖 - CSS 级联行为）
             animation_controller_.RegisterKeyframes(rule);
+            
+            // 同时注册到全局 KeyframesManager，供 AnimationBoundsCalculator 使用
+            // 这是为了解决动画边界计算时需要访问 keyframes 的问题
+            KeyframesManager::Instance().RegisterKeyframes(rule);
         }
     }
 }

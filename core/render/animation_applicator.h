@@ -8,6 +8,7 @@
  * - 获取当前动画属性值并应用到 RenderObject
  * - 处理动画播放状态变化
  * - 对于 transform/opacity 动画，通过层合成系统优化更新
+ * - 支持属性树系统的直接属性更新（不触发光栅化）
  */
 
 #ifndef LIGHTUI_CORE_RENDER_ANIMATION_APPLICATOR_H_
@@ -23,6 +24,8 @@ namespace lightui {
 
 // 前向声明
 class WindowCompositorAdapter;
+class PaintArtifactCompositor;
+class PropertyTrees;
 
 /**
  * @brief 动画应用器
@@ -68,6 +71,34 @@ public:
      */
     void SetCompositorAdapter(WindowCompositorAdapter* adapter) {
         compositor_adapter_ = adapter;
+    }
+    
+    /**
+     * @brief 设置绘制产物合成器（属性树系统）
+     * 
+     * 当使用属性树系统时，transform/opacity 动画会通过
+     * PaintArtifactCompositor 的 DirectlyUpdate 方法更新，
+     * 完全避免光栅化。
+     * 
+     * @param compositor 绘制产物合成器指针（不拥有所有权）
+     */
+    void SetPaintArtifactCompositor(PaintArtifactCompositor* compositor) {
+        paint_artifact_compositor_ = compositor;
+    }
+    
+    /**
+     * @brief 设置属性树集合
+     * @param trees 属性树集合指针（不拥有所有权）
+     */
+    void SetPropertyTrees(PropertyTrees* trees) {
+        property_trees_ = trees;
+    }
+    
+    /**
+     * @brief 检查是否使用属性树系统
+     */
+    bool IsUsingPropertyTreeSystem() const {
+        return paint_artifact_compositor_ != nullptr && property_trees_ != nullptr;
     }
     
     /**
@@ -144,8 +175,29 @@ private:
     /// 合成器适配器（用于层优化）
     WindowCompositorAdapter* compositor_adapter_ = nullptr;
     
+    /// 绘制产物合成器（属性树系统）
+    PaintArtifactCompositor* paint_artifact_compositor_ = nullptr;
+    
+    /// 属性树集合
+    PropertyTrees* property_trees_ = nullptr;
+    
     /// 跟踪每个对象已启动的动画名称
     std::map<RenderObject*, std::set<std::string>> started_animations_;
+    
+    /**
+     * @brief 尝试通过属性树系统直接更新属性
+     * 
+     * 对于 transform/opacity 属性，如果对象有属性树状态，
+     * 直接更新属性树节点而不触发光栅化。
+     * 
+     * @param object 渲染对象
+     * @param property 属性名
+     * @param value 属性值
+     * @return true 如果成功通过属性树系统应用
+     */
+    bool TryApplyViaPropertyTree(RenderObject* object,
+                                  const std::string& property,
+                                  const std::string& value);
     
     /**
      * @brief 尝试通过层合成系统应用属性

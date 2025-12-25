@@ -5,8 +5,15 @@
 
 #include "animation_applicator.h"
 #include "color.h"
+#include "transform.h"
 #include "core/compositor/window_compositor_adapter.h"
 #include "core/compositor/animation_layer_bridge.h"
+#include "core/compositor/property_tree/paint_artifact_compositor.h"
+#include "core/compositor/property_tree/property_trees.h"
+#include "core/compositor/property_tree/transform_tree_node.h"
+#include "core/compositor/property_tree/effect_tree_node.h"
+#include "core/compositor/property_tree/property_tree_state.h"
+#include "include/core/SkM44.h"
 #include <regex>
 #include <sstream>
 #include <cmath>
@@ -115,14 +122,30 @@ void AnimationApplicator::ApplyAnimationValues(RenderObject* object) {
         
         // 应用每个属性
         for (const auto& [property, value] : *props) {
-            // 关键优化：对于 transform/opacity，尝试通过层合成系统更新
-            // 这样可以避免重新光栅化，只需要 GPU 合成
+            // 优先级 1：尝试通过属性树系统直接更新（最高效，不触发光栅化）
+            if (property == "transform" || property == "opacity") {
+                if (TryApplyViaPropertyTree(object, property, value)) {
+                    // 成功通过属性树系统应用，仍然需要更新 ComputedStyle
+                    // 以保持状态一致
+                    ApplyPropertyToStyle(style, property, value);
+                    modified = true;
+                    // 关键修复：即使通过属性树更新，仍然需要触发重绘
+                    // 因为当前的渲染流程仍然依赖传统的 Paint 路径
+                    // 属性树优化的目的是避免重新光栅化层内容，但仍需要合成
+                    needs_paint = true;
+                    continue;
+                }
+            }
+            
+            // 优先级 2：尝试通过层合成系统更新（次优，可能触发部分更新）
             if (property == "transform" || property == "opacity") {
                 if (TryApplyViaCompositor(object, property, value)) {
                     // 成功通过层系统应用，仍然需要更新 ComputedStyle
-                    // 以保持状态一致，但不需要触发重绘
+                    // 以保持状态一致
                     ApplyPropertyToStyle(style, property, value);
                     modified = true;
+                    // 同样需要触发重绘
+                    needs_paint = true;
                     continue;
                 }
             }
@@ -210,6 +233,126 @@ void AnimationApplicator::Clear() {
     // 清理所有已启动动画的跟踪信息
     // 注意：不需要调用 controller_.StopAllAnimations()，因为 controller_ 也会被清理
     started_animations_.clear();
+}
+
+// ============================================================================
+// 属性树系统优化
+// ============================================================================
+
+bool AnimationApplicator::TryApplyViaPropertyTree(RenderObject* object,
+                                                   const std::string& property,
+                                                   const std::string& value) {
+    // 检查是否有属性树系统
+    if (!paint_artifact_compositor_ || !property_trees_) {
+        static bool first_warning = true;
+        if (first_warning) {
+            std::cout << "[AnimationApplicator] No property tree system available" << std::endl;
+            first_warning = false;
+        }
+        return false;
+    }
+    
+    // 检查对象是否有属性树状态
+    PropertyTreeState* state = object->GetPropertyTreeState();
+    if (!state) {
+        // 调试：输出为什么没有属性树状态
+        static bool first_warning = true;
+        if (first_warning) {
+            std::cout << "[AnimationApplicator] Warning: RenderObject has no PropertyTreeState, "
+                      << "falling back to traditional rendering path" << std::endl;
+            first_warning = false;
+        }
+        return false;
+    }
+    
+    // 检查对象是否可以直接更新
+    if (property == "transform") {
+        if (!object->CanDirectlyUpdateTransform()) {
+            static bool first_warning = true;
+            if (first_warning) {
+                const auto& style = object->GetComputedStyle();
+                std::cout << "[AnimationApplicator] Cannot directly update transform. "
+                          << "HasOwnCompositorLayer=" << object->HasOwnCompositorLayer()
+                          << ", will_change='" << style.will_change << "'" << std::endl;
+                first_warning = false;
+            }
+            return false;
+        }
+        
+        TransformTreeNode* transform_node = state->Transform();
+        if (!transform_node) {
+            static bool first_warning = true;
+            if (first_warning) {
+                std::cout << "[AnimationApplicator] No transform node in PropertyTreeState" << std::endl;
+                first_warning = false;
+            }
+            return false;
+        }
+        
+        // 检查合成器是否支持直接更新此节点
+        if (!paint_artifact_compositor_->CanDirectlyUpdateTransform(transform_node)) {
+            static bool first_warning = true;
+            if (first_warning) {
+                std::cout << "[AnimationApplicator] Compositor cannot directly update transform node" << std::endl;
+                first_warning = false;
+            }
+            return false;
+        }
+        
+        // 解析 transform 值并转换为 SkM44
+        std::optional<CSSTransform> css_transform_opt = CSSTransform::Parse(value);
+        if (!css_transform_opt.has_value() || css_transform_opt->IsEmpty()) {
+            // 空变换 = 单位矩阵
+            return paint_artifact_compositor_->DirectlyUpdateTransform(
+                transform_node, SkM44());
+        }
+        
+        const CSSTransform& css_transform = css_transform_opt.value();
+        
+        // 获取对象的布局信息用于计算变换原点
+        const auto& layout = object->GetLayoutInfo();
+        SkRect rect = SkRect::MakeXYWH(layout.x, layout.y, layout.width, layout.height);
+        
+        // 获取变换原点
+        const auto& style = object->GetComputedStyle();
+        const TransformOrigin& origin = style.transform_origin;
+        
+        // 计算 2D 变换矩阵
+        SkMatrix matrix2d = css_transform.ToSkMatrix(rect, origin);
+        
+        // 转换为 4x4 矩阵
+        SkM44 matrix = SkM44(matrix2d);
+        
+        return paint_artifact_compositor_->DirectlyUpdateTransform(transform_node, matrix);
+    }
+    else if (property == "opacity") {
+        if (!object->CanDirectlyUpdateOpacity()) {
+            return false;
+        }
+        
+        EffectTreeNode* effect_node = state->Effect();
+        if (!effect_node) {
+            return false;
+        }
+        
+        // 检查合成器是否支持直接更新此节点
+        if (!paint_artifact_compositor_->CanDirectlyUpdateOpacity(effect_node)) {
+            return false;
+        }
+        
+        // 解析 opacity 值
+        float opacity = 1.0f;
+        try {
+            opacity = std::stof(value);
+            opacity = std::max(0.0f, std::min(1.0f, opacity));  // 限制在 [0, 1]
+        } catch (...) {
+            return false;
+        }
+        
+        return paint_artifact_compositor_->DirectlyUpdateOpacity(effect_node, opacity);
+    }
+    
+    return false;
 }
 
 // ============================================================================

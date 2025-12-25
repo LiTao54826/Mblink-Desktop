@@ -99,6 +99,14 @@ public:
      */
     float GetDpiScale() const { return dpi_scale_; }
 
+    /**
+     * @brief 更新层的边界
+     * @param layer 层
+     * @param obj 关联的渲染对象
+     * @note 会计算动画边界扩展
+     */
+    void UpdateLayerBounds(CompositorLayer* layer, RenderObject* obj);
+
 private:
     /**
      * @brief 递归构建层树
@@ -114,13 +122,6 @@ private:
      * @return 新创建的层
      */
     std::shared_ptr<CompositorLayer> CreateLayer(RenderObject* obj, LayerPromotionReason reason);
-
-    /**
-     * @brief 更新层的边界
-     * @param layer 层
-     * @param obj 关联的渲染对象
-     */
-    void UpdateLayerBounds(CompositorLayer* layer, RenderObject* obj);
 
     /**
      * @brief 检查是否有 will-change: transform

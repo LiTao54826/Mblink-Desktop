@@ -37,6 +37,9 @@
 #include "../layout/flex_layout.h"
 #include "../layout/grid/grid.h"
 
+// 属性树状态（需要完整类型用于 unique_ptr）
+#include "core/compositor/property_tree/property_tree_state.h"
+
 // 前向声明 Skia 类
 class SkCanvas;
 
@@ -582,6 +585,60 @@ public:
     bool HasOwnCompositorLayer() const;
 
     // =========================================================================
+    // 属性树状态（Property Tree System）
+    // =========================================================================
+
+    /**
+     * @brief 获取属性树状态
+     * @return 属性树状态指针，如果未设置则返回 nullptr
+     */
+    PropertyTreeState* GetPropertyTreeState() const { return property_tree_state_.get(); }
+
+    /**
+     * @brief 设置属性树状态
+     * @param state 属性树状态
+     */
+    void SetPropertyTreeState(std::unique_ptr<PropertyTreeState> state) { 
+        property_tree_state_ = std::move(state); 
+    }
+
+    /**
+     * @brief 检查是否需要变换节点
+     * @note 有 transform、定位偏移、will-change: transform 或活动动画时需要
+     */
+    bool NeedsTransformNode() const;
+
+    /**
+     * @brief 检查是否需要裁剪节点
+     * @note 有 overflow: hidden/scroll/auto 或 clip-path 时需要
+     */
+    bool NeedsClipNode() const;
+
+    /**
+     * @brief 检查是否需要效果节点
+     * @note 有 opacity < 1、filter、backdrop-filter 或活动动画时需要
+     */
+    bool NeedsEffectNode() const;
+
+    /**
+     * @brief 检查是否需要滚动节点
+     * @note 有 overflow: scroll/auto 时需要
+     */
+    bool NeedsScrollNode() const;
+
+    /**
+     * @brief 是否可以直接更新 transform（不触发重新光栅化）
+     * @note 如果元素已有独立层，transform 更新不需要重新光栅化
+     */
+    bool CanDirectlyUpdateTransform() const;
+
+    /**
+     * @brief 是否可以直接更新 opacity（不触发重新光栅化）
+     * @note 如果元素已有独立层，opacity 更新不需要重新光栅化
+     */
+    bool CanDirectlyUpdateOpacity() const;
+
+    // =========================================================================
     // 布局树统一：布局相关公共方法
     // =========================================================================
 
@@ -864,6 +921,7 @@ protected:
     LayoutInfo layout_info_;
     PaintCache paint_cache_;  // P1优化：样式预计算缓存
     LayerInfo layer_info_;    // 合成层关联信息
+    std::unique_ptr<PropertyTreeState> property_tree_state_;  // 属性树状态
 
     bool needs_layout_ = true;
     bool needs_paint_ = true;

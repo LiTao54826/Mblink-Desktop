@@ -53,9 +53,11 @@ BoxVerticalMetrics VerticalAligner::GetBoxMetrics(const InlineBox& box) {
     } else if (box.IsAtomic()) {
         // 原子盒子（inline-block, 图片等）
         // 基线在底部（现代模式简化处理）
-        metrics.ascent = box.height;
-        metrics.descent = 0.0f;
-        metrics.baseline = box.height;
+        // ✅ FIX: Include vertical margin in the metrics
+        // For inline-block elements, vertical margin should affect line box height
+        metrics.ascent = box.margin_top + box.height;
+        metrics.descent = box.margin_bottom;
+        metrics.baseline = box.margin_top + box.height;
     } else {
         // 其他（inline-start, inline-end）
         // 使用父元素的度量

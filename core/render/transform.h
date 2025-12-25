@@ -130,6 +130,16 @@ private:
     static std::optional<Transform> ParseTranslate(const std::string& args);
     
     /**
+     * @brief 解析 translateX 函数
+     */
+    static std::optional<Transform> ParseTranslateX(const std::string& args);
+    
+    /**
+     * @brief 解析 translateY 函数
+     */
+    static std::optional<Transform> ParseTranslateY(const std::string& args);
+    
+    /**
      * @brief 解析 rotate 函数
      */
     static std::optional<Transform> ParseRotate(const std::string& args);

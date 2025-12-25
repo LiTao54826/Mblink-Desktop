@@ -87,13 +87,20 @@ struct InlineBox {
     float y = 0.0f;
     
     // ========== 边距/内边距/边框 ==========
-    // 仅用于 INLINE_START 和 INLINE_END 类型
+    // 水平方向：用于 INLINE_START、INLINE_END 和 ATOMIC 类型
+    // 垂直方向：仅用于 ATOMIC 类型（inline-block等）
     
     /** @brief 左边距 */
     float margin_left = 0.0f;
     
     /** @brief 右边距 */
     float margin_right = 0.0f;
+    
+    /** @brief 上边距（仅用于ATOMIC类型，如inline-block） */
+    float margin_top = 0.0f;
+    
+    /** @brief 下边距（仅用于ATOMIC类型，如inline-block） */
+    float margin_bottom = 0.0f;
     
     /** @brief 左内边距 */
     float padding_left = 0.0f;
