@@ -2268,17 +2268,97 @@ LayoutOutput NativeLayoutEngine::ComputeNodeLayout(NodeId node_id, const LayoutI
             output = LayoutOutput{};
             break;
 
-        case Display::Block:
+        case Display::Block: {
             if (node->is_ifc_container) {
                 output = ComputeIFCLayout(node_id, inputs);
             } else {
                 output = ComputeBlockLayout(node_id, inputs);
             }
+            
+            // Handle overflow: auto for block layout - if content exceeds container, add scrollbar and relayout
+            const auto& computed = node->render_obj->GetComputedStyle();
+            std::string overflow_y = !computed.overflow_y.empty() ? computed.overflow_y : computed.overflow;
+            std::string overflow_x = !computed.overflow_x.empty() ? computed.overflow_x : computed.overflow;
+            
+            // Check if we need to relayout with scrollbar space
+            bool needs_relayout = false;
+            float scrollbar_width = RenderObject::GetScrollbarWidth();
+            
+            // For overflow-y: auto, check if content height exceeds container height
+            float container_height = inputs.known_dimensions.height.value_or(output.size.height);
+            if (overflow_y == "auto" && container_height > 0) {
+                float actual_content_height = output.content_size.height;
+                if (actual_content_height > container_height && node->style.scrollbar_width == 0.0f) {
+                    // Need vertical scrollbar - update style and relayout
+                    node->style.scrollbar_width = scrollbar_width;
+                    needs_relayout = true;
+                }
+            }
+            
+            // For overflow-x: auto, check if content width exceeds container width
+            float container_width = inputs.known_dimensions.width.value_or(output.size.width);
+            if (overflow_x == "auto" && container_width > 0) {
+                float actual_content_width = output.content_size.width;
+                if (actual_content_width > container_width && node->style.scrollbar_width == 0.0f) {
+                    // Need horizontal scrollbar - update style and relayout
+                    node->style.scrollbar_width = scrollbar_width;
+                    needs_relayout = true;
+                }
+            }
+            
+            if (needs_relayout) {
+                // Clear cache and relayout with scrollbar space
+                node->cache.Clear();
+                if (node->is_ifc_container) {
+                    output = ComputeIFCLayout(node_id, inputs);
+                } else {
+                    output = ComputeBlockLayout(node_id, inputs);
+                }
+            }
             break;
+        }
 
-        case Display::Flex:
+        case Display::Flex: {
             output = ComputeFlexLayout(node_id, inputs);
+            
+            // Handle overflow: auto - if content exceeds container, add scrollbar and relayout
+            const auto& computed = node->render_obj->GetComputedStyle();
+            std::string overflow_y = !computed.overflow_y.empty() ? computed.overflow_y : computed.overflow;
+            std::string overflow_x = !computed.overflow_x.empty() ? computed.overflow_x : computed.overflow;
+            
+            // Check if we need to relayout with scrollbar space
+            bool needs_relayout = false;
+            float scrollbar_width = RenderObject::GetScrollbarWidth();
+            
+            // For overflow-y: auto, check if content height exceeds container height
+            float container_height = inputs.known_dimensions.height.value_or(output.size.height);
+            if (overflow_y == "auto" && container_height > 0) {
+                float actual_content_height = output.content_size.height;
+                if (actual_content_height > container_height && node->style.scrollbar_width == 0.0f) {
+                    // Need vertical scrollbar - update style and relayout
+                    node->style.scrollbar_width = scrollbar_width;
+                    needs_relayout = true;
+                }
+            }
+            
+            // For overflow-x: auto, check if content width exceeds container width
+            float container_width = inputs.known_dimensions.width.value_or(output.size.width);
+            if (overflow_x == "auto" && container_width > 0) {
+                float actual_content_width = output.content_size.width;
+                if (actual_content_width > container_width && node->style.scrollbar_width == 0.0f) {
+                    // Need horizontal scrollbar - update style and relayout
+                    node->style.scrollbar_width = scrollbar_width;
+                    needs_relayout = true;
+                }
+            }
+            
+            if (needs_relayout) {
+                // Clear cache and relayout with scrollbar space
+                node->cache.Clear();
+                output = ComputeFlexLayout(node_id, inputs);
+            }
             break;
+        }
 
         case Display::Grid:
             output = ComputeGridLayout(node_id, inputs);

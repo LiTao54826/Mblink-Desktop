@@ -546,8 +546,11 @@ static FlexAlgoConstants ComputeConstants(
     constants.margin = margin;
     constants.border = border;
 
-    // Scrollbar gutter (simplified - no scrollbar support for now)
-    constants.scrollbar_gutter = {0.0f, 0.0f};
+    // Scrollbar gutter - reserve space for scrollbars when overflow is scroll
+    // For overflow: auto, scrollbar space is handled dynamically in Paint
+    float scrollbar_right = (style.overflow.y == Overflow::Scroll) ? style.scrollbar_width : 0.0f;
+    float scrollbar_bottom = (style.overflow.x == Overflow::Scroll) ? style.scrollbar_width : 0.0f;
+    constants.scrollbar_gutter = {scrollbar_right, scrollbar_bottom};
 
     // Content box inset = padding + border + scrollbar_gutter
     constants.content_box_inset = {

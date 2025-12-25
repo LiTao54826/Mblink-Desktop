@@ -19,9 +19,13 @@ namespace lightui {
 namespace {
 
 /// Compute scrollbar gutter from overflow style
+/// Note: For overflow: auto, scrollbar_width is set dynamically when content exceeds container
+/// So we use scrollbar_width directly instead of checking overflow type
 Rect<float> ComputeScrollbarGutter(Point<Overflow> overflow, float scrollbar_width) {
     // Scrollbars take space in the opposite axis
-    float right = (overflow.y == Overflow::Scroll) ? scrollbar_width : 0.0f;
+    // For overflow: scroll, scrollbar_width is set in style parsing
+    // For overflow: auto, scrollbar_width is set dynamically in ComputeNodeLayout
+    float right = (overflow.y == Overflow::Scroll || scrollbar_width > 0.0f) ? scrollbar_width : 0.0f;
     float bottom = (overflow.x == Overflow::Scroll) ? scrollbar_width : 0.0f;
     return Rect<float>{0.0f, right, 0.0f, bottom};
 }
@@ -656,6 +660,13 @@ PerformFinalLayoutOnInFlowChildren(
         layout.padding = item.padding;
         layout.border = item.border;
         tree.SetUnroundedLayout(item.node_id, layout);
+
+        // Update inflow_content_size to track the bounding box of all children
+        // This is used for overflow: auto to determine if scrollbars are needed
+        float child_right = location.x + item_layout.size.width + resolved_margin.right;
+        float child_bottom = location.y + item_layout.size.height + resolved_margin.bottom;
+        inflow_content_size.width = f32_max(inflow_content_size.width, child_right);
+        inflow_content_size.height = f32_max(inflow_content_size.height, child_bottom);
 
         // Update margin tracking
         if (is_collapsing_with_first_margin_set) {
