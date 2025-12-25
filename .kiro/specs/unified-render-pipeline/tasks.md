@@ -2,75 +2,75 @@
 
 ## 阶段一：创建新 RenderPipeline
 
-### Task 1.1: 准备工作
-- [ ] 将现有 `render_pipeline.h/cpp` 重命名为 `render_pipeline_legacy.h/cpp`
-- [ ] 创建新的 `core/render/render_pipeline.h`
-- [ ] 创建新的 `core/render/render_pipeline.cpp`
-- [ ] 定义 `RenderStage` 枚举
-- [ ] 定义 `RenderPipelineConfig` 配置结构
-- [ ] 定义 `FrameStats` 统计结构
-- [ ] 实现构造函数和析构函数
-- [ ] 更新 `core/render/CMakeLists.txt`
+### Task 1.1: 准备工作 ✅
+- [x] 将现有 `render_pipeline.h/cpp` 重命名为 `render_pipeline_legacy.h/cpp`
+- [x] 创建新的 `core/render/render_pipeline.h`
+- [x] 创建新的 `core/render/render_pipeline.cpp`
+- [x] 定义 `RenderStage` 枚举
+- [x] 定义 `RenderPipelineConfig` 配置结构
+- [x] 定义 `FrameStats` 统计结构
+- [x] 实现构造函数和析构函数
+- [x] 更新 `core/render/CMakeLists.txt`
 
-### Task 1.2: 实现初始化和配置
-- [ ] 实现 `Initialize()` 方法
-- [ ] 实现 `Shutdown()` 方法
-- [ ] 实现 `Resize()` 方法
-- [ ] 实现 `SetDocument()` 方法
-- [ ] 实现 `SetConfig()` 方法
-- [ ] 实现 `SetDpiScale()` 方法
+### Task 1.2: 实现初始化和配置 ✅
+- [x] 实现 `Initialize()` 方法
+- [x] 实现 `Shutdown()` 方法
+- [x] 实现 `Resize()` 方法
+- [x] 实现 `SetDocument()` 方法
+- [x] 实现 `SetConfig()` 方法
+- [x] 实现 `SetDpiScale()` 方法
 
-### Task 1.3: 整合 DOM 同步阶段（来自 V1）
-- [ ] 集成 `DirtyNodeTracker`
-- [ ] 集成 `RenderTreeSynchronizer`
-- [ ] 集成 `RenderTreeBuilder`
-- [ ] 实现 `DoDOMSync()` 方法
+### Task 1.3: 整合 DOM 同步阶段（来自 V1）✅
+- [x] 集成 `DirtyNodeTracker`
+- [x] 集成 `RenderTreeSynchronizer`
+- [x] 集成 `RenderTreeBuilder`
+- [x] 实现 `DoDOMSync()` 方法
 
-### Task 1.4: 整合样式和布局阶段（来自 V1）
-- [ ] 集成 `NativeLayoutEngine`
-- [ ] 实现 `DoStyleRecalc()` 方法
-- [ ] 实现 `DoLayout()` 方法
+### Task 1.4: 整合样式和布局阶段（来自 V1）✅
+- [x] 集成 `NativeLayoutEngine`
+- [x] 实现 `DoStyleRecalc()` 方法
+- [x] 实现 `DoLayout()` 方法
 
-### Task 1.5: 整合层树构建阶段（来自 V2）
-- [ ] 集成 `LayerTreeBuilder`
-- [ ] 集成 `PropertyTreeBuilder`
-- [ ] 实现 `DoLayerTreeBuild()` 方法
+### Task 1.5: 整合层树构建阶段（来自 V2）✅
+- [x] 集成 `LayerTreeBuilder`
+- [x] 集成 `PropertyTreeBuilder`
+- [x] 实现 `DoLayerTreeBuild()` 方法
 
-### Task 1.6: 整合光栅化阶段（来自 V2）
-- [ ] 集成 `Rasterizer`
-- [ ] 实现 `DoRasterize()` 方法
+### Task 1.6: 整合光栅化阶段（来自 V2）✅
+- [x] 集成 `Rasterizer`
+- [x] 实现 `DoRasterize()` 方法
 
-### Task 1.7: 整合合成阶段（来自 V2）
-- [ ] 集成 `Compositor`
-- [ ] 实现 `DoComposite()` 方法
+### Task 1.7: 整合合成阶段（来自 V2）✅
+- [x] 集成 `Compositor`
+- [x] 实现 `DoComposite()` 方法
 
-### Task 1.8: 实现主渲染入口
-- [ ] 实现 `ProcessFrame()` 方法
-- [ ] 实现 `NeedsUpdate()` 方法
-- [ ] 实现脏标记方法
-- [ ] 实现 `ForceFullUpdate()` 方法
+### Task 1.8: 实现主渲染入口 ✅
+- [x] 实现 `ProcessFrame()` 方法
+- [x] 实现 `NeedsUpdate()` 方法
+- [x] 实现脏标记方法
+- [x] 实现 `ForceFullUpdate()` 方法
 
-### Task 1.9: 整合滚动优化（来自 V2）
-- [ ] 集成 `ScrollLayerManager`
-- [ ] 实现 `HandleScroll()` 方法
-- [ ] 实现 `ScrollTo()` 方法
+### Task 1.9: 整合滚动优化（来自 V2）✅
+- [x] 集成 `ScrollLayerManager`
+- [x] 实现 `HandleScroll()` 方法
+- [x] 实现 `ScrollTo()` 方法
 
-### Task 1.10: 整合动画优化（来自 V2）
-- [ ] 集成 `AnimationLayerBridge`
-- [ ] 实现 `BeginAnimationFrame()` 方法
-- [ ] 实现 `UpdateAnimationProperty()` 方法
-- [ ] 实现 `EndAnimationFrame()` 方法
-- [ ] 实现动画生命周期回调
+### Task 1.10: 整合动画优化（来自 V2）✅
+- [x] 集成 `AnimationLayerBridge`
+- [x] 实现 `BeginAnimationFrame()` 方法
+- [x] 实现 `UpdateAnimationProperty()` 方法
+- [x] 实现 `EndAnimationFrame()` 方法
+- [x] 实现动画生命周期回调
 
-### Task 1.11: 整合属性树系统（来自 V2）
-- [ ] 集成 `PropertyTrees`
-- [ ] 集成 `PaintArtifactCompositor`
-- [ ] 实现直接属性更新方法
+### Task 1.11: 整合属性树系统（来自 V2）✅
+- [x] 集成 `PropertyTrees`
+- [x] 集成 `PaintArtifactCompositor`
+- [x] 实现直接属性更新方法（简化版，TODO 完善）
 
-### Task 1.12: 实现统计和调试功能
-- [ ] 实现帧统计收集
-- [ ] 实现 `GetLastFrameStats()` 方法
-- [ ] 实现调试选项（层边界显示等）
+### Task 1.12: 实现统计和调试功能 ✅
+- [x] 实现帧统计收集
+- [x] 实现 `GetLastFrameStats()` 方法
+- [x] 实现调试选项（层边界显示等）
 
 ---
 
