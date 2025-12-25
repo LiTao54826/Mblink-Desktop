@@ -143,9 +143,7 @@ function createDOMElement(vnode) {
 
     // Handle text nodes
     if (typeof vnode === 'string' || typeof vnode === 'number') {
-        console.log('[createDOMElement] Creating text node: "' + vnode + '"');
         var textNode = document.createTextNode(String(vnode));
-        console.log('[createDOMElement] Text node created, textContent="' + textNode.textContent + '"');
         return textNode;
     }
 
