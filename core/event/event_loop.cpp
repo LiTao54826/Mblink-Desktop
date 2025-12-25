@@ -2178,15 +2178,6 @@ void EventLoop::HandleMouseWheelEventForDOM(const SDL_Event& event) {
             float max_scroll_y = render_obj->GetMaxScrollY();
             bool can_scroll_h = allow_h_scroll && max_scroll_x > 0;
             bool can_scroll_v = allow_v_scroll && max_scroll_y > 0;
-            
-            // 调试输出
-            std::cout << "[HandleMouseWheelEventForDOM] Found scrollable element: "
-                      << " overflow_x=" << overflow_x << " overflow_y=" << overflow_y
-                      << " max_scroll_x=" << max_scroll_x << " max_scroll_y=" << max_scroll_y
-                      << " can_scroll_h=" << can_scroll_h << " can_scroll_v=" << can_scroll_v
-                      << " content_w=" << render_obj->GetContentWidth() << " content_h=" << render_obj->GetContentHeight()
-                      << " layout_w=" << render_obj->GetLayoutInfo().width << " layout_h=" << render_obj->GetLayoutInfo().height
-                      << std::endl;
 
             // 计算滚动量（负值向下滚动，正值向上滚动，所以要取反）
             // 每行滚动 40 像素（类似浏览器的默认行为）
@@ -2245,13 +2236,9 @@ void EventLoop::HandleMouseWheelEventForDOM(const SDL_Event& event) {
             auto compositor_adapter = window->GetCompositorAdapter();
             bool scrolled = false;
             
-            std::cout << "[HandleMouseWheelEventForDOM] Applying scroll: compositor_adapter=" 
-                      << (compositor_adapter ? "yes" : "no") << std::endl;
-            
             if (compositor_adapter) {
                 // 分层合成模式：通过compositor处理滚动
                 scrolled = compositor_adapter->HandleScroll(render_obj.get(), scroll_delta_x, scroll_delta_y);
-                std::cout << "[HandleMouseWheelEventForDOM] compositor_adapter->HandleScroll returned " << scrolled << std::endl;
             } else {
                 // 传统模式：直接修改RenderObject
                 render_obj->ScrollBy(scroll_delta_x, scroll_delta_y);
