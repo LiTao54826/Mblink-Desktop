@@ -175,8 +175,14 @@ void LayerTreeBuilder::UpdateLayerBounds(CompositorLayer* layer, RenderObject* o
     const auto& style = obj->GetComputedStyle();
     
     // 对于根层，边界从 (0,0) 开始
+    // 对于 body 元素，使用视口尺寸而不是布局尺寸，以确保滚动条能正确绘制
     if (layer->GetPromotionReason() == LayerPromotionReason::RootLayer) {
-        SkRect bounds = SkRect::MakeWH(layout.width, layout.height);
+        float width = obj->GetEffectiveVisibleWidth();
+        float height = obj->GetEffectiveVisibleHeight();
+        // 如果视口尺寸无效，回退到布局尺寸
+        if (width <= 0) width = layout.width;
+        if (height <= 0) height = layout.height;
+        SkRect bounds = SkRect::MakeWH(width, height);
         layer->SetBounds(bounds);
         return;
     }
@@ -205,28 +211,17 @@ void LayerTreeBuilder::UpdateLayerBounds(CompositorLayer* layer, RenderObject* o
     float rel_x = layout.x;
     float rel_y = layout.y;
     
-    // 从当前元素的直接父元素开始，累加位置和滚动偏移
+    // 从当前元素的直接父元素开始，累加位置
     // 直到到达层树父层对应的 RenderObject
+    // 注意：不要减去滚动偏移！滚动偏移应该在合成时应用，而不是在计算层边界时应用
+    // 层的边界应该是相对于文档的位置，滚动偏移由合成器在绘制子层时应用
     auto parent = obj->GetParent();
     while (parent && parent.get() != parent_layer_obj) {
         const auto& parent_layout = parent->GetLayoutInfo();
         rel_x += parent_layout.x;
         rel_y += parent_layout.y;
         
-        // 减去父元素的滚动偏移
-        // 当父元素滚动时，子元素的视觉位置会相应移动
-        rel_x -= parent->GetScrollX();
-        rel_y -= parent->GetScrollY();
-        
         parent = parent->GetParent();
-    }
-    
-    // 关键修复：还需要减去层树父层的滚动偏移
-    // 上面的循环在 parent == parent_layer_obj 时停止，没有减去它的滚动偏移
-    // 但层树父层的滚动偏移同样会影响子层的视觉位置
-    if (parent_layer_obj) {
-        rel_x -= parent_layer_obj->GetScrollX();
-        rel_y -= parent_layer_obj->GetScrollY();
     }
     
     // 计算边界尺寸和偏移

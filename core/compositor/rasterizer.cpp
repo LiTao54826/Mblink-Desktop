@@ -103,18 +103,15 @@ bool Rasterizer::RasterizeLayer(CompositorLayer* layer) {
             float orig_rel_x = layout.x;
             float orig_rel_y = layout.y;
             
+            // 累加从当前元素到层树父层的位置
+            // 注意：不要减去滚动偏移！滚动偏移应该在合成时应用，而不是在光栅化时应用
+            // 这样可以避免双重滚动的问题
             auto parent = render_obj->GetParent();
             while (parent && parent.get() != parent_layer_obj) {
                 const auto& parent_layout = parent->GetLayoutInfo();
                 orig_rel_x += parent_layout.x;
                 orig_rel_y += parent_layout.y;
-                orig_rel_x -= parent->GetScrollX();
-                orig_rel_y -= parent->GetScrollY();
                 parent = parent->GetParent();
-            }
-            if (parent_layer_obj) {
-                orig_rel_x -= parent_layer_obj->GetScrollX();
-                orig_rel_y -= parent_layer_obj->GetScrollY();
             }
             
             // 计算变换偏移

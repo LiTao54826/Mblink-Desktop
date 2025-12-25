@@ -10,6 +10,7 @@
 #include "include/core/SkImageInfo.h"
 #include <chrono>
 #include <cmath>
+#include <iostream>
 
 // OpenGL headers
 #ifdef _WIN32

@@ -57,8 +57,11 @@ bool ScrollLayerManager::RegisterScrollContainer(RenderObject* container) {
     float border_bottom = style.border_bottom_width > 0 ? style.border_bottom_width : style.border.width.ToPx();
     
     // 计算可见区域（减去border）
-    float visible_width = layout.width - border_left - border_right;
-    float visible_height = layout.height - border_top - border_bottom;
+    // 对于 body 元素，使用视口尺寸而不是布局尺寸
+    float effective_width = container->GetEffectiveVisibleWidth();
+    float effective_height = container->GetEffectiveVisibleHeight();
+    float visible_width = effective_width - border_left - border_right;
+    float visible_height = effective_height - border_top - border_bottom;
     
     // 获取overflow设置
     std::string overflow_x = !style.overflow_x.empty() ? style.overflow_x : style.overflow;
@@ -123,10 +126,6 @@ bool ScrollLayerManager::RegisterScrollContainer(RenderObject* container) {
         info.viewport_height -= scrollbar_width;
     }
 
-    std::cout << "[ScrollLayerManager] Registered container " << container 
-              << " Viewport: " << info.viewport_width << "x" << info.viewport_height
-              << " Content: " << info.content_width << "x" << info.content_height 
-              << " NeedsScroll: V=" << needs_v_scroll << " H=" << needs_h_scroll << std::endl;
     
     // 获取当前滚动位置
     info.scroll_x = container->GetScrollX();
@@ -144,6 +143,9 @@ bool ScrollLayerManager::RegisterScrollContainer(RenderObject* container) {
     auto clip_layer = container->GetCompositorLayer();
     if (clip_layer) {
         // 设置初始滚动偏移
+        // 关键：只在 clip_layer 上设置滚动偏移，content_layer 不设置
+        // 因为在 CompositeLayerCPU 中，滚动偏移会被应用到子层的绘制上
+        // 如果 clip_layer 和 content_layer 都设置滚动偏移，会导致双重滚动
         clip_layer->SetScrollOffset(SkPoint::Make(container->GetScrollX(), container->GetScrollY()));
         
         // 清空 content_layer 的旧子层，防止每一帧累积重复的子层
@@ -159,11 +161,6 @@ bool ScrollLayerManager::RegisterScrollContainer(RenderObject* container) {
         
         // 2. 将 content_layer 挂载到 clip_layer 下
         clip_layer->AddChild(info.content_layer);
-        
-        std::cout << "[ScrollLayerManager] Registered scroll container " << container 
-                  << ", content_layer has " << info.content_layer->GetChildren().size() << " children" << std::endl;
-    } else {
-        std::cout << "[ScrollLayerManager] No clip_layer for container " << container << std::endl;
     }
     
     scroll_containers_[container] = std::move(info);
@@ -225,11 +222,6 @@ bool ScrollLayerManager::HandleScroll(RenderObject* container, float delta_x, fl
         // 有时候可能是因为精度问题或者已经到顶/底，但我们还是想看看日志
     }
     
-    std::cout << "[ScrollLayerManager] HandleScroll: " << container << " delta=" << delta_x << "," << delta_y 
-              << " pos=" << old_scroll_x << "," << old_scroll_y << " -> " << info->scroll_x << "," << info->scroll_y
-              << " layer=" << info->content_layer.get() 
-              << " max=" << info->max_scroll_x << "," << info->max_scroll_y << std::endl;
-
     // 检查是否实际发生了滚动
     if (std::abs(info->scroll_x - old_scroll_x) < 0.001f &&
         std::abs(info->scroll_y - old_scroll_y) < 0.001f) {
@@ -266,47 +258,35 @@ bool ScrollLayerManager::HandleScroll(RenderObject* container, float delta_x, fl
     */
 
     // 更新层的滚动偏移（用于有独立层的子元素）
+    // 关键：只在 clip_layer 上设置滚动偏移，content_layer 不设置
+    // 因为在 CompositeLayerCPU 中，滚动偏移会被应用到子层的绘制上
+    // 如果 clip_layer 和 content_layer 都设置滚动偏移，会导致双重滚动
     auto clip_layer = container->GetCompositorLayer();
-    std::cout << "[ScrollLayerManager] HandleScroll: clip_layer=" << clip_layer.get() << std::endl;
     
     if (clip_layer) {
         clip_layer->SetScrollOffset(SkPoint::Make(info->scroll_x, info->scroll_y));
     }
     
-    if (info->content_layer) {
-        info->content_layer->SetScrollOffset(SkPoint::Make(info->scroll_x, info->scroll_y));
-    }
+    // content_layer 不设置滚动偏移，它只是一个容器层
+    // 滚动偏移由 clip_layer 统一管理
     
     // 关键：滚动时必须重新光栅化
     // 因为没有独立层的子元素在 RenderObject::Paint 中绘制
     // Paint 中应用滚动偏移，所以需要重新光栅化
     if (clip_layer) {
         clip_layer->MarkFullDirty();
-        std::cout << "[ScrollLayerManager] Scroll: marked clip_layer dirty, "
-                  << "scroll=" << info->scroll_x << "," << info->scroll_y << std::endl;
     } else {
         // 滚动容器没有独立层，需要标记其父层或根层为脏
-        std::cout << "[ScrollLayerManager] No clip_layer in HandleScroll, finding parent layer" << std::endl;
-        
         bool found_layer = false;
         auto parent = container->GetParent();
         while (parent) {
             auto parent_layer = parent->GetCompositorLayer();
             if (parent_layer) {
                 parent_layer->MarkFullDirty();
-                std::cout << "[ScrollLayerManager] Marked parent layer dirty for scroll" << std::endl;
                 found_layer = true;
                 break;
             }
             parent = parent->GetParent();
-        }
-        
-        // 如果没有找到任何父层，说明整个层树只有根层
-        // 这种情况下，我们需要通过其他方式触发重绘
-        // 注意：这里我们已经调用了 container->SetScrollX/Y()，
-        // 这会设置 needs_paint_ = true，在下一帧的 UpdateLayerTreeBounds 中会被检测到
-        if (!found_layer) {
-            std::cout << "[ScrollLayerManager] No parent layer found, relying on needs_paint flag" << std::endl;
         }
     }
 
@@ -360,9 +340,11 @@ void ScrollLayerManager::UpdateContentSize(RenderObject* container) {
     float border_top = style.border_top_width > 0 ? style.border_top_width : style.border.width.ToPx();
     float border_bottom = style.border_bottom_width > 0 ? style.border_bottom_width : style.border.width.ToPx();
 
-    // 真正的可见区域（layout 减去 border）
-    float visible_width = layout.width - border_left - border_right;
-    float visible_height = layout.height - border_top - border_bottom;
+    // 真正的可见区域（对于 body 元素使用视口尺寸）
+    float effective_width = container->GetEffectiveVisibleWidth();
+    float effective_height = container->GetEffectiveVisibleHeight();
+    float visible_width = effective_width - border_left - border_right;
+    float visible_height = effective_height - border_top - border_bottom;
 
     const float scrollbar_width = 12.0f;
     bool needs_v_scroll = false;
@@ -390,10 +372,6 @@ void ScrollLayerManager::UpdateContentSize(RenderObject* container) {
         info->viewport_height -= scrollbar_width;
     }
     
-    std::cout << "[ScrollLayerManager] Updated container " << container 
-              << " Viewport: " << info->viewport_width << "x" << info->viewport_height 
-              << " Content: " << info->content_width << "x" << info->content_height << std::endl;
-
     // 重新计算滚动范围
     CalculateScrollBounds(*info);
 
@@ -550,14 +528,18 @@ std::shared_ptr<CompositorLayer> ScrollLayerManager::CreateScrollContentLayer(Re
     }
     
     // 确保至少有视口大小
-    const auto& layout = container->GetLayoutInfo();
-    content_width = std::max(content_width, layout.width);
-    content_height = std::max(content_height, layout.height);
+    // 对于 body 元素，使用视口尺寸而不是布局尺寸
+    float effective_width = container->GetEffectiveVisibleWidth();
+    float effective_height = container->GetEffectiveVisibleHeight();
+    content_width = std::max(content_width, effective_width);
+    content_height = std::max(content_height, effective_height);
     
     layer->SetBounds(SkRect::MakeWH(content_width, content_height));
 
-    // 设置初始滚动偏移
-    layer->SetScrollOffset(SkPoint::Make(container->GetScrollX(), container->GetScrollY()));
+    // 关键：content_layer 不设置滚动偏移
+    // 滚动偏移由 clip_layer 统一管理，在 CompositeLayerCPU 中应用到子层的绘制上
+    // 如果 content_layer 也设置滚动偏移，会导致双重滚动
+    layer->SetScrollOffset(SkPoint::Make(0, 0));
 
     // content_layer 没有 RenderObject，不需要光栅化
     // 它的位图是空的（透明的）
