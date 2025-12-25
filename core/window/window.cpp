@@ -176,17 +176,6 @@ public:
                     }
                     auto new_style = resolver.ResolveStyle(elem_ptr, parent_style);
                     
-                    // 调试：如果有动画变化，打印信息
-                    if (has_animation_change) {
-                        std::cout << "[OnAttributeChanged] Animation change detected!" << std::endl;
-                        std::cout << "  old_value: " << old_value << std::endl;
-                        std::cout << "  new_value: " << new_value << std::endl;
-                        std::cout << "  resolved animations: " << new_style.animations.size() << std::endl;
-                        for (const auto& anim : new_style.animations) {
-                            std::cout << "    - " << anim.name << " duration=" << anim.duration << std::endl;
-                        }
-                    }
-                    
                     render_obj->SetComputedStyle(new_style);
                     render_obj->InvalidatePaintCache();
                     
@@ -1004,10 +993,6 @@ void Window::OnResize() {
     config_.width = logical_width;
     config_.height = logical_height;
 
-    std::cout << "[Window::OnResize] physical=" << width << "x" << height 
-              << ", logical=" << logical_width << "x" << logical_height 
-              << ", render_tree_valid_=" << render_tree_valid_ << std::endl;
-
     // 重新创建Skia渲染表面（使用客户区像素大小）
     if (actual_backend_ == RenderBackend::OPENGL) {
         // 更新 OpenGL viewport
@@ -1025,7 +1010,6 @@ void Window::OnResize() {
         // 调整 FBO 大小
         if (fbo_manager_) {
             if (!fbo_manager_->Resize(width, height)) {
-                std::cerr << "[Window::OnResize] Failed to resize FBO, disabling FBO incremental rendering" << std::endl;
                 fbo_manager_.reset();
                 use_fbo_incremental_ = false;
             } else {
@@ -1451,13 +1435,15 @@ void Window::Render() {
         has_active_animations = !animation_controller_->GetRunningAnimations().empty();
     }
     
+    // 关键修复：检查是否有待启动的动画
+    // 当用户通过 JavaScript 动态设置 animation 属性时，动画可能还没有被启动
+    // 但 ComputedStyle 中已经有动画配置了，需要触发渲染来启动这些动画
+    if (!has_active_animations && animation_applicator_ && cached_render_tree_) {
+        has_active_animations = HasPendingAnimations(cached_render_tree_.get());
+    }
+    
     // 快速路径：无需重绘且无活动动画时直接返回
     if (!needs_repaint_ && !has_active_animations && dirty_rects_.empty() && render_tree_valid_) {
-        // 静态场景：完全跳过渲染
-        static int skip_count = 0;
-        if (++skip_count % 60 == 0) {
-            std::cout << "[Render] Skipped " << skip_count << " frames (no changes)" << std::endl;
-        }
         return;
     }
 
@@ -1498,10 +1484,7 @@ void Window::Render() {
                         compositor_adapter_->GetPaintArtifactCompositor());
                     animation_applicator_->SetPropertyTrees(
                         compositor_adapter_->GetPropertyTrees());
-                    std::cout << "[Window] Animation applicator connected to property tree system" << std::endl;
                 }
-                
-                std::cout << "[Window] Layer compositing enabled (" << logical_width << "x" << logical_height << ", dpi=" << dpi_scale << ")" << std::endl;
             }
             
             // 更新动画
@@ -1581,16 +1564,6 @@ legacy_render:
 
     // 获取 DPI 缩放比
     float dpi_scale = GetDisplayScale();
-
-    // 调试：检查 surface 大小是否与窗口大小一致
-    if (surface_) {
-        int surface_width = surface_->width();
-        int surface_height = surface_->height();
-        if (surface_width != physical_width || surface_height != physical_height) {
-            std::cout << "[Window::Render] SIZE MISMATCH! surface=" << surface_width << "x" << surface_height
-                      << ", window=" << physical_width << "x" << physical_height << std::endl;
-        }
-    }
 
     // 计算逻辑大小（CSS 像素）- 像浏览器一样
     int width = static_cast<int>(physical_width / dpi_scale);
@@ -1673,8 +1646,6 @@ legacy_render:
             // 降级到传统布局
             cached_render_tree_->Layout(app_width, app_height);
         }
-        Uint64 layout_end = SDL_GetTicks();
-        std::cout << "[Window::Render] Layout took " << (layout_end - layout_start) << "ms" << std::endl;
 
         // 获取 body 的背景色并清空画布
         SkColor clear_color = SK_ColorWHITE;
@@ -2741,6 +2712,37 @@ void Window::ApplyAnimationsToRenderTree(RenderObject* root) {
     for (const auto& child : root->GetChildren()) {
         ApplyAnimationsToRenderTree(child.get());
     }
+}
+
+bool Window::HasPendingAnimations(RenderObject* root) const {
+    if (!root || !animation_applicator_) {
+        return false;
+    }
+
+    // 检查当前对象是否有待启动的动画
+    const auto& style = root->GetComputedStyle();
+    for (const auto& anim : style.animations) {
+        if (anim.IsValid() && !anim.name.empty() && anim.name != "none") {
+            // 检查这个动画是否已经在运行
+            if (!animation_applicator_->HasActiveAnimations(root)) {
+                return true;  // 有动画配置但还没运行
+            }
+            // 即使有活动动画，也可能有新的动画需要启动
+            auto active_names = animation_applicator_->GetActiveAnimationNames(root);
+            if (active_names.find(anim.name) == active_names.end()) {
+                return true;  // 这个动画还没启动
+            }
+        }
+    }
+
+    // 递归检查子节点
+    for (const auto& child : root->GetChildren()) {
+        if (HasPendingAnimations(child.get())) {
+            return true;
+        }
+    }
+
+    return false;
 }
 
 float Window::GetDisplayScale() const {

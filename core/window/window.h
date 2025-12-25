@@ -490,6 +490,13 @@ public:
     void ApplyAnimationsToRenderTree(RenderObject* root);
 
     /**
+     * @brief 检查渲染树中是否有待启动的动画
+     * @param root 渲染树根节点
+     * @return 如果有待启动的动画返回 true
+     */
+    bool HasPendingAnimations(RenderObject* root) const;
+
+    /**
      * @brief 获取 DPI 缩放比
      * @return DPI 缩放比（例如：1.0, 1.5, 2.0）
      */

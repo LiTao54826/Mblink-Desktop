@@ -2068,17 +2068,6 @@ void NativeLayoutEngine::BuildSubtree(RenderObject* render_obj, NodeId parent_id
     
     // If we have mixed content, we need to create anonymous block boxes
     if (has_block && has_inline) {
-        // Debug output
-        auto dom_node = render_obj->GetNode();
-        std::string tag_name = "unknown";
-        if (dom_node && dom_node->GetNodeType() == NodeType::ELEMENT_NODE) {
-            auto element = std::dynamic_pointer_cast<Element>(dom_node);
-            if (element) tag_name = element->GetTagName();
-        }
-        std::cout << "[AnonymousBlock] Creating anonymous blocks for <" << tag_name 
-                  << "> with " << children.size() << " children (has_block=" << has_block 
-                  << ", has_inline=" << has_inline << ")" << std::endl;
-        
         std::vector<RenderObject*> current_inline_run;
         
         for (const auto& child : children) {

@@ -99,9 +99,14 @@ void AnimationApplicator::ApplyAnimationValues(RenderObject* object) {
     bool should_pause = (style.animation_play_state == "paused");
     auto& started = started_animations_[object];
     
+    if (started.empty()) {
+        return;  // 没有已启动的动画，直接返回
+    }
+    
     for (const auto& anim_name : started) {
         // 检查当前动画的暂停状态
         const auto& running_anims = controller_.GetRunningAnimations();
+        
         for (const auto& running : running_anims) {
             if (running.object == object && running.config.name == anim_name) {
                 bool is_paused = (running.state == CSSAnimationState::PAUSED);
@@ -125,13 +130,8 @@ void AnimationApplicator::ApplyAnimationValues(RenderObject* object) {
             // 优先级 1：尝试通过属性树系统直接更新（最高效，不触发光栅化）
             if (property == "transform" || property == "opacity") {
                 if (TryApplyViaPropertyTree(object, property, value)) {
-                    // 成功通过属性树系统应用，仍然需要更新 ComputedStyle
-                    // 以保持状态一致
                     ApplyPropertyToStyle(style, property, value);
                     modified = true;
-                    // 关键修复：即使通过属性树更新，仍然需要触发重绘
-                    // 因为当前的渲染流程仍然依赖传统的 Paint 路径
-                    // 属性树优化的目的是避免重新光栅化层内容，但仍需要合成
                     needs_paint = true;
                     continue;
                 }
@@ -140,11 +140,8 @@ void AnimationApplicator::ApplyAnimationValues(RenderObject* object) {
             // 优先级 2：尝试通过层合成系统更新（次优，可能触发部分更新）
             if (property == "transform" || property == "opacity") {
                 if (TryApplyViaCompositor(object, property, value)) {
-                    // 成功通过层系统应用，仍然需要更新 ComputedStyle
-                    // 以保持状态一致
                     ApplyPropertyToStyle(style, property, value);
                     modified = true;
-                    // 同样需要触发重绘
                     needs_paint = true;
                     continue;
                 }
@@ -159,7 +156,6 @@ void AnimationApplicator::ApplyAnimationValues(RenderObject* object) {
     }
     
     // 如果有属性被修改，标记需要重绘
-    // 但如果所有修改都通过层系统完成，则不需要重绘
     if (modified && needs_paint) {
         // 对于 transform 动画，需要扩展脏区域以覆盖变换前后的区域
         // 简单的解决方案：标记父元素也需要重绘，这样可以确保整个区域被正确重绘

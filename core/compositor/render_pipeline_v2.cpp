@@ -474,12 +474,10 @@ void RenderPipelineV2::UpdateLayerTreeBounds(CompositorLayer* layer) {
         // 这会正确处理动画边界扩展
         layer_tree_builder_->UpdateLayerBounds(layer, render_obj);
         
-        // 修复：只检查 NeedsPaint 标志，不再因为有动画就标记脏
-        // 动画只改变 transform/opacity 时不需要重新光栅化
-        // 只有内容真正变化（如文本、背景色等）才需要重新光栅化
-        if (render_obj->NeedsPaint()) {
+        // 修复：检查层关联的渲染对象及其所有子对象的 NeedsPaint 标志
+        // 因为动画元素可能是层内的子元素，不是层的直接关联对象
+        if (CheckRenderObjectNeedsPaint(render_obj)) {
             layer->MarkFullDirty();
-            render_obj->ClearNeedsPaint();  // 清除标志，避免重复光栅化
         }
     }
 
@@ -488,6 +486,8 @@ void RenderPipelineV2::UpdateLayerTreeBounds(CompositorLayer* layer) {
         UpdateLayerTreeBounds(child.get());
     }
 }
+
+// 移除 ClearNeedsPaintRecursive，不再需要
 
 bool RenderPipelineV2::CheckRenderObjectNeedsPaint(RenderObject* obj) {
     if (!obj) {

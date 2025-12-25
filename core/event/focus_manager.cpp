@@ -12,10 +12,6 @@
 #include "core/dom/html_textarea_element.h"
 #include "core/window/window.h"
 #include <SDL3/SDL.h>
-#include <algorithm>
-#include <unordered_set>
-#include <functional>
-#include <iostream>
 
 namespace lightui {
 
@@ -44,14 +40,12 @@ void FocusManager::RegisterWithDocument(std::shared_ptr<Document> document) {
     // 注册到新文档
     document->AddObserver(this);
     registered_document_ = document;
-    std::cout << "[FocusManager] Registered as DOM observer" << std::endl;
 }
 
 void FocusManager::UnregisterFromDocument() {
     auto doc = registered_document_.lock();
     if (doc) {
         doc->RemoveObserver(this);
-        std::cout << "[FocusManager] Unregistered from DOM observer" << std::endl;
     }
     registered_document_.reset();
 }
@@ -71,18 +65,8 @@ bool FocusManager::SetFocus(std::shared_ptr<Element> element, bool focus_visible
 
     // 如果已经是焦点元素，不需要重复设置
     if (old_focus == element) {
-        std::cout << "[FocusManager] Element <" << element->GetTagName()
-                  << "> already has focus, skipping" << std::endl;
         return true;
     }
-
-    std::cout << "[FocusManager] Setting focus: ";
-    if (old_focus) {
-        std::cout << "<" << old_focus->GetTagName() << "> -> ";
-    } else {
-        std::cout << "null -> ";
-    }
-    std::cout << "<" << element->GetTagName() << ">" << std::endl;
 
     // 注册到元素所属文档的观察者管理器
     // 这样当元素被移除时，我们会收到通知并清除焦点
@@ -101,19 +85,14 @@ bool FocusManager::SetFocus(std::shared_ptr<Element> element, bool focus_visible
     // 如果是输入元素，启用SDL文本输入
     std::string tag_name = element->GetTagName();
     if (tag_name == "input" || tag_name == "textarea") {
-        std::cout << "[FocusManager] Starting text input for <" << tag_name << ">" << std::endl;
         if (window_) {
             SDL_StartTextInput(window_->GetSDLWindow());
-            std::cout << "[FocusManager] SDL_StartTextInput called with window" << std::endl;
-        } else {
-            std::cout << "[FocusManager] Warning: No window set, cannot start text input" << std::endl;
         }
     }
 
     // 触发重绘以显示光标
     if (window_) {
         window_->SetNeedsRepaint();
-        std::cout << "[FocusManager] SetNeedsRepaint called" << std::endl;
     }
 
     return true;
@@ -126,10 +105,8 @@ void FocusManager::Blur(std::shared_ptr<Element> element) {
         // 如果是输入元素，停止SDL文本输入
         std::string tag_name = element->GetTagName();
         if (tag_name == "input" || tag_name == "textarea") {
-            std::cout << "[FocusManager] Stopping text input for <" << tag_name << ">" << std::endl;
             if (window_) {
                 SDL_StopTextInput(window_->GetSDLWindow());
-                std::cout << "[FocusManager] SDL_StopTextInput called with window" << std::endl;
             }
         }
 
@@ -226,14 +203,11 @@ bool FocusManager::TabToNextFocusableElement(std::shared_ptr<Document> current_d
 }
 
 void FocusManager::ClearFocus() {
-    std::cout << "[FocusManager] ClearFocus called" << std::endl;
     auto current_focus = focus_element_.lock();
     if (current_focus) {
-        std::cout << "[FocusManager] Current focus is <" << current_focus->GetTagName() << ">, clearing it" << std::endl;
         // 如果是输入元素，停止SDL文本输入
         std::string tag_name = current_focus->GetTagName();
         if (tag_name == "input" || tag_name == "textarea") {
-            std::cout << "[FocusManager] Stopping text input for <" << tag_name << ">" << std::endl;
             if (window_) {
                 SDL_StopTextInput(window_->GetSDLWindow());
             }
@@ -244,10 +218,7 @@ void FocusManager::ClearFocus() {
         // 触发重绘
         if (window_) {
             window_->SetNeedsRepaint();
-            std::cout << "[FocusManager] SetNeedsRepaint called after ClearFocus" << std::endl;
         }
-    } else {
-        std::cout << "[FocusManager] No focus to clear" << std::endl;
     }
     focus_element_.reset();
 }
@@ -263,8 +234,6 @@ void FocusManager::OnNodeRemoved(Node* node, Node* parent) {
 
     // 检查被移除的节点是否是焦点元素本身
     if (current_focus.get() == node) {
-        std::cout << "[FocusManager] Focus element <" << current_focus->GetTagName()
-                  << "> is being removed, clearing focus" << std::endl;
         ClearFocus();
         return;
     }
@@ -274,7 +243,6 @@ void FocusManager::OnNodeRemoved(Node* node, Node* parent) {
     std::shared_ptr<Node> current = current_focus;
     while (current) {
         if (current.get() == node) {
-            std::cout << "[FocusManager] Ancestor of focus element is being removed, clearing focus" << std::endl;
             ClearFocus();
             return;
         }
@@ -384,7 +352,6 @@ bool FocusManager::IsFocusable(std::shared_ptr<Element> element) {
     std::string tabindex_str = element->GetAttribute("tabindex");
     if (!tabindex_str.empty()) {
         // 有tabindex属性的元素都可聚焦（即使tabindex=-1）
-        std::cout << "[FocusManager] IsFocusable(<" << tag_name << ">): true (has tabindex)" << std::endl;
         return true;
     }
 
@@ -395,14 +362,11 @@ bool FocusManager::IsFocusable(std::shared_ptr<Element> element) {
         // 检查是否被禁用
         std::string disabled = element->GetAttribute("disabled");
         if (disabled == "true" || disabled == "disabled") {
-            std::cout << "[FocusManager] IsFocusable(<" << tag_name << ">): false (disabled)" << std::endl;
             return false;
         }
-        std::cout << "[FocusManager] IsFocusable(<" << tag_name << ">): true (focusable tag)" << std::endl;
         return true;
     }
 
-    std::cout << "[FocusManager] IsFocusable(<" << tag_name << ">): false (not focusable)" << std::endl;
     return false;
 }
 
@@ -490,10 +454,8 @@ void FocusManager::SendFocusEvents(std::shared_ptr<Element> old_focus,
                 element->SetPseudoClass("focus-visible", false);
             } catch (const std::exception& e) {
                 // 元素已被销毁或发生其他错误，忽略
-                std::cout << "[FocusManager] Error sending blur events: " << e.what() << std::endl;
             } catch (...) {
                 // 元素已被销毁，忽略
-                std::cout << "[FocusManager] Unknown error sending blur events" << std::endl;
             }
         }
     }
@@ -529,10 +491,8 @@ void FocusManager::SendFocusEvents(std::shared_ptr<Element> old_focus,
                 }
             } catch (const std::exception& e) {
                 // 元素已被销毁或发生其他错误，忽略
-                std::cout << "[FocusManager] Error sending focus events: " << e.what() << std::endl;
             } catch (...) {
                 // 元素已被销毁，忽略
-                std::cout << "[FocusManager] Unknown error sending focus events" << std::endl;
             }
         }
     }
