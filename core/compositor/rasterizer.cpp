@@ -67,11 +67,15 @@ bool Rasterizer::RasterizeLayer(CompositorLayer* layer) {
     
     const auto& layout = render_obj->GetLayoutInfo();
 
-    // 应用滚动偏移
-    const SkPoint& scroll = layer->GetScrollOffset();
-    if (scroll.fX != 0 || scroll.fY != 0) {
-        canvas->translate(-scroll.fX, -scroll.fY);
-    }
+    // 关键修复：光栅化阶段不应用滚动偏移
+    // 滚动偏移应该在合成阶段应用，这样滚动时只需要更新合成参数，
+    // 不需要重新光栅化，性能更好。
+    // 
+    // 旧代码（已移除）：
+    // const SkPoint& scroll = layer->GetScrollOffset();
+    // if (scroll.fX != 0 || scroll.fY != 0) {
+    //     canvas->translate(-scroll.fX, -scroll.fY);
+    // }
 
     // 关键修复：对于非根层，需要抵消元素的 layout 位置
     // 因为 RenderObject::Paint() 内部会 translate(layout.x, layout.y)
@@ -273,11 +277,14 @@ bool Rasterizer::RasterizeRegion(CompositorLayer* layer, const SkIRect& region) 
     ClearRegion(canvas, region);
     canvas->restore();
 
-    // 应用滚动偏移
-    const SkPoint& scroll = layer->GetScrollOffset();
-    if (scroll.fX != 0 || scroll.fY != 0) {
-        canvas->translate(-scroll.fX, -scroll.fY);
-    }
+    // 关键修复：光栅化阶段不应用滚动偏移
+    // 滚动偏移应该在合成阶段应用
+    // 
+    // 旧代码（已移除）：
+    // const SkPoint& scroll = layer->GetScrollOffset();
+    // if (scroll.fX != 0 || scroll.fY != 0) {
+    //     canvas->translate(-scroll.fX, -scroll.fY);
+    // }
 
     // 关键修复：对于非根层，需要抵消元素的 layout 位置
     // 因为 RenderObject::Paint() 内部会 translate(layout.x, layout.y)

@@ -31,6 +31,7 @@
 #include "core/quickjs/quickjs_runtime.h"
 #include "core/devtools/devtools_manager.h"
 #include "core/devtools/inspector/element_picker.h"
+#include "core/compositor/window_compositor_adapter.h"
 #include "include/core/SkFontTypes.h"
 #include "include/core/SkFontMetrics.h"
 #include <iostream>
@@ -569,8 +570,28 @@ void EventLoop::HandleMouseEventForDOM(const SDL_Event& event) {
     auto dragging_element = scrollbar_dragging_element_.lock();
     if (dragging_element && dragging_element->IsDraggingScrollbar()) {
         if (event.type == SDL_EVENT_MOUSE_MOTION) {
-            // 更新滚动条位置
+            // 获取旧的滚动位置
+            float old_x = dragging_element->GetScrollX();
+            float old_y = dragging_element->GetScrollY();
+
+            // 更新滚动条位置 (这会更新 RenderObject 内部状态)
             dragging_element->UpdateScrollbarDrag(logical_x, logical_y);
+
+            // 关键修复：在分层合成模式下，需要同步滚动位置到 compositor
+            float new_x = dragging_element->GetScrollX();
+            float new_y = dragging_element->GetScrollY();
+
+            if (new_x != old_x || new_y != old_y) {
+                // 如果滚动位置发生了变化，通知 compositor
+                // 这样 ScrollLayerManager 才能更新层偏移
+                auto compositor_adapter = window->GetCompositorAdapter();
+                if (compositor_adapter) {
+                    float delta_x = new_x - old_x;
+                    float delta_y = new_y - old_y;
+                    compositor_adapter->HandleScroll(dragging_element.get(), delta_x, delta_y);
+                }
+            }
+
             window->SetNeedsRepaint();
             return;  // 拖动期间不处理其他鼠标事件
         } else if (event.type == SDL_EVENT_MOUSE_BUTTON_UP && event.button.button == SDL_BUTTON_LEFT) {
@@ -2157,6 +2178,15 @@ void EventLoop::HandleMouseWheelEventForDOM(const SDL_Event& event) {
             float max_scroll_y = render_obj->GetMaxScrollY();
             bool can_scroll_h = allow_h_scroll && max_scroll_x > 0;
             bool can_scroll_v = allow_v_scroll && max_scroll_y > 0;
+            
+            // 调试输出
+            std::cout << "[HandleMouseWheelEventForDOM] Found scrollable element: "
+                      << " overflow_x=" << overflow_x << " overflow_y=" << overflow_y
+                      << " max_scroll_x=" << max_scroll_x << " max_scroll_y=" << max_scroll_y
+                      << " can_scroll_h=" << can_scroll_h << " can_scroll_v=" << can_scroll_v
+                      << " content_w=" << render_obj->GetContentWidth() << " content_h=" << render_obj->GetContentHeight()
+                      << " layout_w=" << render_obj->GetLayoutInfo().width << " layout_h=" << render_obj->GetLayoutInfo().height
+                      << std::endl;
 
             // 计算滚动量（负值向下滚动，正值向上滚动，所以要取反）
             // 每行滚动 40 像素（类似浏览器的默认行为）
@@ -2208,8 +2238,31 @@ void EventLoop::HandleMouseWheelEventForDOM(const SDL_Event& event) {
                 scroll_delta_y = 0;
             }
 
+
             // 应用滚动
-            render_obj->ScrollBy(scroll_delta_x, scroll_delta_y);
+            // 关键修复：在分层合成模式下，需要通过compositor处理滚动
+            // 这样ScrollLayerManager中的层偏移才会正确更新
+            auto compositor_adapter = window->GetCompositorAdapter();
+            bool scrolled = false;
+            
+            std::cout << "[HandleMouseWheelEventForDOM] Applying scroll: compositor_adapter=" 
+                      << (compositor_adapter ? "yes" : "no") << std::endl;
+            
+            if (compositor_adapter) {
+                // 分层合成模式：通过compositor处理滚动
+                scrolled = compositor_adapter->HandleScroll(render_obj.get(), scroll_delta_x, scroll_delta_y);
+                std::cout << "[HandleMouseWheelEventForDOM] compositor_adapter->HandleScroll returned " << scrolled << std::endl;
+            } else {
+                // 传统模式：直接修改RenderObject
+                render_obj->ScrollBy(scroll_delta_x, scroll_delta_y);
+                scrolled = true;
+            }
+            
+            if (!scrolled) {
+                // 滚动失败（可能已经到达边界），继续向上查找
+                render_obj = render_obj->GetParent();
+                continue;
+            }
 
             // 标记窗口需要重绘
             // 性能优化：检查滚动容器是否是 body 元素

@@ -486,9 +486,19 @@ bool LayerTreeBuilder::IsScrollableContainer(RenderObject* obj) const {
     }
 
     // 检查是否有溢出内容
+    // 注意：如果缓存的内容尺寸为 0，需要动态计算
+    // 这在首次构建层树时很重要，因为 Paint 还没有被调用
     const auto& layout = obj->GetLayoutInfo();
     float content_width = obj->GetContentWidth();
     float content_height = obj->GetContentHeight();
+    
+    // 如果缓存值为 0，动态计算
+    if (content_width <= 0) {
+        content_width = obj->CalculateContentWidth();
+    }
+    if (content_height <= 0) {
+        content_height = obj->CalculateContentHeight();
+    }
 
     bool has_overflow_content = 
         content_width > layout.width || 

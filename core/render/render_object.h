@@ -789,6 +789,17 @@ public:
     bool IsScrollable() const;
 
     /**
+     * @brief 设置是否使用合成器滚动
+     * 当为 true 时，Paint 不应用滚动偏移，滚动偏移在合成阶段应用
+     */
+    void SetUseCompositorScroll(bool use) { use_compositor_scroll_ = use; }
+    
+    /**
+     * @brief 检查是否使用合成器滚动
+     */
+    bool UseCompositorScroll() const { return use_compositor_scroll_; }
+
+    /**
      * @brief 获取最大滚动范围
      */
     float GetMaxScrollX() const;
@@ -931,6 +942,11 @@ protected:
     float scroll_y_ = 0.0f;
     float content_width_ = 0.0f;
     float content_height_ = 0.0f;
+    
+    // 滚动内容层标志：当为 true 时，Paint 不应用滚动偏移
+    // 滚动偏移将在合成阶段由 ScrollLayerManager 的 content_layer 应用
+    // 这是性能优化的关键：滚动时只需要 GPU 合成，不需要 CPU 光栅化
+    bool use_compositor_scroll_ = false;
 
     // 滚动条拖动状态
     ScrollbarHitArea dragging_scrollbar_ = ScrollbarHitArea::None;

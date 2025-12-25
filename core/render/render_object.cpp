@@ -1956,6 +1956,8 @@ void RenderBlock::Paint(SkCanvas* canvas) {
         canvas->clipRect(clip_rect, SkClipOp::kIntersect, true);
 
         // 应用滚动偏移
+        // 注意：始终在 Paint 中应用滚动偏移
+        // 这确保没有独立层的子元素能正确滚动
         canvas->translate(-scroll_x_, -scroll_y_);
 
     }

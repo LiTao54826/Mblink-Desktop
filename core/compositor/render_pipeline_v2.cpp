@@ -6,6 +6,7 @@
 #include "render_pipeline_v2.h"
 #include "../render/render_object.h"
 #include <chrono>
+#include <iostream>
 
 namespace lightui {
 
@@ -182,20 +183,29 @@ bool RenderPipelineV2::RenderToCanvas(RenderObject* root, SkCanvas* canvas) {
 
 bool RenderPipelineV2::HandleScroll(RenderObject* container, float delta_x, float delta_y) {
     if (!initialized_ || !container) {
+        std::cout << "[RenderPipelineV2::HandleScroll] Early return: initialized=" << initialized_ 
+                  << " container=" << container << std::endl;
         return false;
     }
 
+    std::cout << "[RenderPipelineV2::HandleScroll] container=" << container 
+              << " delta=" << delta_x << "," << delta_y << std::endl;
+
     // 注册滚动容器（如果尚未注册）
     if (!scroll_manager_->IsScrollContainer(container)) {
+        std::cout << "[RenderPipelineV2::HandleScroll] Registering scroll container" << std::endl;
         scroll_manager_->RegisterScrollContainer(container);
     }
 
     // 处理滚动
     bool scrolled = scroll_manager_->HandleScroll(container, delta_x, delta_y);
     
+    std::cout << "[RenderPipelineV2::HandleScroll] scrolled=" << scrolled << std::endl;
+    
     if (scrolled) {
-        // 滚动成功，标记需要合成（但不需要重新光栅化）
+        // 滚动成功，标记需要合成和重新渲染
         compositor_->MarkNeedsComposite();
+        needs_render_ = true;  // 关键：标记需要重新渲染
     }
 
     return scrolled;

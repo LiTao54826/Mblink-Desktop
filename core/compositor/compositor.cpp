@@ -500,20 +500,22 @@ void Compositor::CompositeLayerGPU(CompositorLayer* layer, const SkMatrix& paren
     // 应用层自身变换
     layer_transform.preConcat(layer->GetTransform());
 
-    // 应用滚动偏移
-    const SkPoint& scroll = layer->GetScrollOffset();
-    if (scroll.fX != 0 || scroll.fY != 0) {
-        layer_transform.preTranslate(-scroll.fX, -scroll.fY);
-    }
-
-    // 渲染当前层
+    // 渲染当前层（不应用滚动偏移，滚动偏移只影响子层）
     if (layer->HasTexture()) {
         RenderTexturedQuad(layer, layer_transform);
     }
 
-    // 递归渲染子层
+    // 关键修复：滚动偏移应该只应用到子层的绘制上
+    // 当滚动容器滚动时，其子层（内容）应该相应移动
+    const SkPoint& scroll = layer->GetScrollOffset();
+    SkMatrix child_transform = layer_transform;
+    if (scroll.fX != 0 || scroll.fY != 0) {
+        child_transform.preTranslate(-scroll.fX, -scroll.fY);
+    }
+
+    // 递归渲染子层（使用包含滚动偏移的变换）
     for (const auto& child : layer->GetChildren()) {
-        CompositeLayerGPU(child.get(), layer_transform);
+        CompositeLayerGPU(child.get(), child_transform);
     }
 }
 
@@ -578,13 +580,12 @@ void Compositor::CompositeLayerCPU(CompositorLayer* layer, SkCanvas* canvas, con
     // 层的位图已经包含了变换后的内容
     // 如果在这里再次应用变换，会导致变换被应用两次
 
-    // 应用滚动偏移
+    // 获取滚动偏移
     const SkPoint& scroll = layer->GetScrollOffset();
-    if (scroll.fX != 0 || scroll.fY != 0) {
-        canvas->translate(-scroll.fX, -scroll.fY);
-    }
+    bool has_scroll = (scroll.fX != 0 || scroll.fY != 0);
 
-    // 绘制层位图
+    // 绘制层位图（不应用滚动偏移，因为位图内容是静态的）
+    // 滚动偏移只影响子层的位置
     const SkBitmap& bitmap = layer->GetBitmap();
     if (!bitmap.isNull()) {
         SkPaint paint;
@@ -607,14 +608,13 @@ void Compositor::CompositeLayerCPU(CompositorLayer* layer, SkCanvas* canvas, con
         DrawLayerBorder(layer, canvas);
     }
 
-    canvas->restore();
+    // 关键修复：滚动偏移应该应用到子层的绘制上
+    // 当滚动容器滚动时，其子层（内容）应该相应移动
+    if (has_scroll) {
+        canvas->translate(-scroll.fX, -scroll.fY);
+    }
 
-    // 递归绘制子层
-    canvas->save();
-    canvas->concat(parent_transform);
-    canvas->translate(bounds.left(), bounds.top());
-    // 同样不应用 layer->GetTransform()
-
+    // 递归绘制子层（现在滚动偏移已经应用）
     for (const auto& child : layer->GetChildren()) {
         CompositeLayerCPU(child.get(), canvas, SkMatrix::I());
     }
