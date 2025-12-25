@@ -135,8 +135,8 @@ void RegisterPreactModules(QuickJSRuntime* runtime) {
 
 int main(int argc, char** argv) {
     std::string entry_path;
-    int width = 800;
-    int height = 600;
+    int width = 1200;
+    int height = 800;
     std::string title = "MBink App";
     bool open_devtools = false;
 

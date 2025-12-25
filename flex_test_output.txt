@@ -1,5 +1,0 @@
-Note: Google Test filter = *Flex*
-[==========] Running 46 tests from 4 test suites.
-[----------] Global test environment set-up.
-[----------] 9 tests from NativeLayoutEngineTest
-[ RUN      ] NativeLayoutEngineTest.FlexLayoutRow
