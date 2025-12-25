@@ -55,7 +55,7 @@
 #include "core/render/animation_timeline.h"
 #include "core/render/animation_controller.h"
 #include "core/render/animation_applicator.h"
-#include "core/render/render_pipeline.h"
+#include "core/render/render_pipeline_legacy.h"
 #include "core/render/render_tree_synchronizer.h"
 #include "core/layout/layout_engine.h"
 #include "core/layout/native_layout_engine.h"
@@ -2843,9 +2843,9 @@ void Window::EnsureRenderTree() {
         return;
     }
 
-    // 初始化渲染管线（增量更新系统）
+    // 初始化渲染管线（增量更新系统）- 使用旧版管线
     if (!render_pipeline_) {
-        render_pipeline_ = std::make_unique<RenderPipeline>();
+        render_pipeline_ = std::make_unique<RenderPipelineLegacy>();
     }
     if (!render_tree_synchronizer_) {
         render_tree_synchronizer_ = std::make_shared<RenderTreeSynchronizer>();

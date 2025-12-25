@@ -45,7 +45,8 @@ class AnimationTimeline;
 class AnimationController;
 class AnimationApplicator;
 class RenderTreeBuilder;
-class RenderPipeline;
+class RenderPipelineLegacy;  // 旧版管线，过渡期使用
+class RenderPipeline;        // 新版统一管线
 class RenderTreeSynchronizer;
 class FBOManager;
 class WindowCompositorAdapter;
@@ -437,12 +438,13 @@ public:
     LayoutEngine* GetLayoutEngine() const { return layout_engine_.get(); }
 
     /**
-     * @brief 获取渲染管线
+     * @brief 获取渲染管线（旧版）
      * @return 渲染管线指针
-     * 
+     * @deprecated 后续将迁移到新版 RenderPipeline
+     *
      * **Feature: incremental-update-system**
      */
-    RenderPipeline* GetRenderPipeline() const { return render_pipeline_.get(); }
+    RenderPipelineLegacy* GetRenderPipeline() const { return render_pipeline_.get(); }
 
     /**
      * @brief 获取渲染树同步器
@@ -652,8 +654,8 @@ private:
     // Taffy CSS 布局引擎
     std::unique_ptr<LayoutEngine> layout_engine_;
 
-    // 渲染管线（增量更新系统）
-    std::unique_ptr<RenderPipeline> render_pipeline_;
+    // 渲染管线（增量更新系统）- 使用旧版管线，后续迁移到新版
+    std::unique_ptr<RenderPipelineLegacy> render_pipeline_;
     std::shared_ptr<RenderTreeSynchronizer> render_tree_synchronizer_;
 
     // 显示后端（用于 CPU 渲染模式）

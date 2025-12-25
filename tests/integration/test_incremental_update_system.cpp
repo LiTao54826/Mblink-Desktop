@@ -13,7 +13,7 @@
 #include "dom/element.h"
 #include "dom/text.h"
 #include "dom/dirty_node_tracker.h"
-#include "render/render_pipeline.h"
+#include "render/render_pipeline_legacy.h"
 #include "render/render_tree_synchronizer.h"
 #include "render/render_object.h"
 
@@ -216,18 +216,18 @@ TEST_F(IncrementalUpdateSystemTest, MultipleChanges) {
     EXPECT_EQ(doc->GetDirtyTracker().GetStructuralChangeCount(), 5);
 }
 
-// ========== RenderPipeline 生命周期测试 ==========
+// ========== RenderPipelineLegacy 生命周期测试 ==========
 
 TEST_F(IncrementalUpdateSystemTest, RenderPipelineLifecycle) {
-    RenderPipeline pipeline;
-    
+    RenderPipelineLegacy pipeline;
+
     // 初始状态应该是 Idle
-    EXPECT_EQ(pipeline.GetLifecycle(), RenderLifecycle::Idle);
-    
+    EXPECT_EQ(pipeline.GetLifecycle(), RenderLifecycleLegacy::Idle);
+
     // 标记需要布局
     pipeline.MarkNeedsLayout();
     EXPECT_TRUE(pipeline.NeedsUpdate());
-    
+
     // 标记需要绘制
     pipeline.MarkNeedsPaint();
     EXPECT_TRUE(pipeline.NeedsUpdate());
