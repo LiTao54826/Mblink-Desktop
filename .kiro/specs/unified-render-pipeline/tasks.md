@@ -1,12 +1,13 @@
-# 统一渲染管线重构 - 任务清单
+# 渲染管线重构 - 任务清单
 
-## 阶段一：创建统一管线
+## 阶段一：创建新 RenderPipeline
 
-### Task 1.1: 创建 UnifiedRenderPipeline 基础框架
-- [ ] 创建 `core/render/unified_render_pipeline.h`
-- [ ] 创建 `core/render/unified_render_pipeline.cpp`
+### Task 1.1: 准备工作
+- [ ] 将现有 `render_pipeline.h/cpp` 重命名为 `render_pipeline_legacy.h/cpp`
+- [ ] 创建新的 `core/render/render_pipeline.h`
+- [ ] 创建新的 `core/render/render_pipeline.cpp`
 - [ ] 定义 `RenderStage` 枚举
-- [ ] 定义 `UnifiedPipelineConfig` 配置结构
+- [ ] 定义 `RenderPipelineConfig` 配置结构
 - [ ] 定义 `FrameStats` 统计结构
 - [ ] 实现构造函数和析构函数
 - [ ] 更新 `core/render/CMakeLists.txt`
@@ -75,22 +76,22 @@
 
 ## 阶段二：Window 迁移
 
-### Task 2.1: 添加统一管线到 Window
-- [ ] 在 `Window` 类中添加 `unified_pipeline_` 成员
-- [ ] 添加 `use_unified_pipeline_` 开关
-- [ ] 在 `Window::Initialize()` 中初始化统一管线
+### Task 2.1: 添加新管线到 Window
+- [ ] 在 `Window` 类中使用新的 `RenderPipeline`
+- [ ] 添加 `use_new_pipeline_` 开关
+- [ ] 在 `Window::Initialize()` 中初始化新管线
 
 ### Task 2.2: 迁移渲染逻辑
-- [ ] 修改 `Window::Render()` 使用统一管线
+- [ ] 修改 `Window::Render()` 使用新管线
 - [ ] 保留旧路径作为回退
 - [ ] 添加切换开关
 
 ### Task 2.3: 迁移滚动处理
-- [ ] 修改滚动事件处理使用统一管线
+- [ ] 修改滚动事件处理使用新管线
 - [ ] 验证滚动优化正常工作
 
 ### Task 2.4: 迁移动画处理
-- [ ] 修改 `AnimationApplicator` 使用统一管线
+- [ ] 修改 `AnimationApplicator` 使用新管线
 - [ ] 验证动画优化正常工作
 
 ### Task 2.5: 功能验证
@@ -111,14 +112,12 @@
 - [ ] 更新 CMakeLists.txt
 
 ### Task 3.2: 清理 Window 类
-- [ ] 移除 `render_pipeline_` 成员
-- [ ] 移除 `compositor_adapter_` 成员
 - [ ] 移除散落的组件成员
 - [ ] 简化 Window 头文件
 
-### Task 3.3: 废弃旧管线
-- [ ] 标记 `RenderPipeline` 为 deprecated
-- [ ] 标记 `RenderPipelineV2` 为 deprecated
+### Task 3.3: 删除旧管线
+- [ ] 删除 `render_pipeline_legacy.h/cpp`
+- [ ] 删除 `RenderPipelineV2`
 - [ ] 更新相关测试
 
 ### Task 3.4: 更新文档
@@ -131,7 +130,7 @@
 ## 阶段四：测试和优化
 
 ### Task 4.1: 单元测试
-- [ ] 为 `UnifiedRenderPipeline` 添加单元测试
+- [ ] 为 `RenderPipeline` 添加单元测试
 - [ ] 测试各阶段独立功能
 - [ ] 测试脏标记传播
 

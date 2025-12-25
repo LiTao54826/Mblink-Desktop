@@ -1,4 +1,4 @@
-# 统一渲染管线重构 - 设计文档
+# 渲染管线重构 - 设计文档
 
 ## 1. 架构概览
 
@@ -19,8 +19,8 @@ Window
 
 ```
 Window
-  └── unified_pipeline_
-        └── UnifiedRenderPipeline
+  └── render_pipeline_
+        └── RenderPipeline
               ├── 阶段管理器
               │     ├── DOMSyncStage
               │     ├── StyleStage
@@ -45,7 +45,7 @@ Window
 
 ## 2. 核心类设计
 
-### 2.1 UnifiedRenderPipeline
+### 2.1 RenderPipeline
 
 ```cpp
 namespace lightui {
@@ -64,9 +64,9 @@ enum class RenderStage {
 };
 
 /**
- * @brief 统一渲染管线配置
+ * @brief 渲染管线配置
  */
-struct UnifiedPipelineConfig {
+struct RenderPipelineConfig {
     // 功能开关
     bool enable_gpu_compositing = true;
     bool enable_layer_promotion = true;
@@ -101,17 +101,17 @@ struct FrameStats {
 };
 
 /**
- * @brief 统一渲染管线
+ * @brief 渲染管线
  */
-class UnifiedRenderPipeline {
+class RenderPipeline {
 public:
-    UnifiedRenderPipeline();
-    ~UnifiedRenderPipeline();
+    RenderPipeline();
+    ~RenderPipeline();
     
     // ========== 初始化 ==========
     
     bool Initialize(int width, int height, 
-                    const UnifiedPipelineConfig& config = {});
+                    const RenderPipelineConfig& config = {});
     void Shutdown();
     void Resize(int width, int height);
     bool IsInitialized() const;
@@ -119,8 +119,8 @@ public:
     // ========== 配置 ==========
     
     void SetDocument(std::shared_ptr<Document> doc);
-    void SetConfig(const UnifiedPipelineConfig& config);
-    const UnifiedPipelineConfig& GetConfig() const;
+    void SetConfig(const RenderPipelineConfig& config);
+    const RenderPipelineConfig& GetConfig() const;
     void SetDpiScale(float scale);
     
     // ========== 渲染 ==========
@@ -199,7 +199,7 @@ private:
     // 状态
     bool initialized_ = false;
     RenderStage current_stage_ = RenderStage::Idle;
-    UnifiedPipelineConfig config_;
+    RenderPipelineConfig config_;
     
     // 脏标记
     bool needs_dom_sync_ = false;
@@ -317,17 +317,17 @@ MarkNeedsPaint()
 
 ```
 core/render/
-  ├── unified_render_pipeline.h      # 新增
-  ├── unified_render_pipeline.cpp    # 新增
-  ├── render_pipeline.h              # 保留，后续废弃
-  ├── render_pipeline.cpp            # 保留，后续废弃
+  ├── render_pipeline.h              # 重写（新实现）
+  ├── render_pipeline.cpp            # 重写（新实现）
+  ├── render_pipeline_legacy.h       # 旧 V1 重命名，过渡期保留
+  ├── render_pipeline_legacy.cpp     # 旧 V1 重命名，过渡期保留
   └── ...
 
 core/compositor/
-  ├── render_pipeline_v2.h           # 保留，后续废弃
-  ├── render_pipeline_v2.cpp         # 保留，后续废弃
-  ├── window_compositor_adapter.h    # 保留，后续删除
-  ├── window_compositor_adapter.cpp  # 保留，后续删除
+  ├── render_pipeline_v2.h           # 过渡期保留，后续删除
+  ├── render_pipeline_v2.cpp         # 过渡期保留，后续删除
+  ├── window_compositor_adapter.h    # 过渡期保留，后续删除
+  ├── window_compositor_adapter.cpp  # 过渡期保留，后续删除
   └── ...（其他组件保留）
 ```
 
@@ -336,17 +336,17 @@ core/compositor/
 ### 6.1 Window 类变化
 
 ```cpp
-// 旧接口（保留一段时间）
+// 旧接口（过渡期保留）
 class Window {
-    std::unique_ptr<RenderPipeline> render_pipeline_;
+    std::unique_ptr<RenderPipelineLegacy> render_pipeline_legacy_;
     std::unique_ptr<WindowCompositorAdapter> compositor_adapter_;
     // ...
 };
 
 // 新接口
 class Window {
-    std::unique_ptr<UnifiedRenderPipeline> unified_pipeline_;
-    bool use_unified_pipeline_ = true;  // 开关
+    std::unique_ptr<RenderPipeline> render_pipeline_;
+    bool use_new_pipeline_ = true;  // 开关
     // ...
 };
 ```
@@ -355,7 +355,7 @@ class Window {
 
 ```cpp
 // 需要更新 AnimationApplicator 使用新管线
-void AnimationApplicator::SetPipeline(UnifiedRenderPipeline* pipeline) {
+void AnimationApplicator::SetPipeline(RenderPipeline* pipeline) {
     pipeline_ = pipeline;
     // 获取属性树系统
     property_trees_ = pipeline->GetPropertyTrees();
