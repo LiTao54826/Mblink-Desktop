@@ -362,3 +362,72 @@ void AnimationApplicator::SetPipeline(RenderPipeline* pipeline) {
     paint_artifact_compositor_ = pipeline->GetPaintArtifactCompositor();
 }
 ```
+
+## 7. 冗余代码分析
+
+### 7.1 需要删除的文件
+
+| 文件 | 原因 |
+|------|------|
+| `window_compositor_adapter.h/cpp` | 适配层，合并后不需要 |
+| `render_pipeline_v2.h/cpp` | 功能整合到新 RenderPipeline |
+| `render_pipeline_legacy.h/cpp` | 旧 V1，过渡期后删除 |
+
+### 7.2 需要评估的潜在冗余
+
+| 组件 | 位置 | 与...可能重复 | 处理建议 |
+|------|------|--------------|----------|
+| `Layer` | core/render/ | `CompositorLayer` | 不同用途：Layer 用于 z-index 分层绘制，CompositorLayer 用于合成优化，保留两者 |
+| `LayerManager` | core/render/ | `LayerTreeBuilder` | 不同用途：LayerManager 管理 z-index 层级，LayerTreeBuilder 构建合成层树，保留两者 |
+| `DirtyRegion` | core/render/ | `Rasterizer` 脏区域 | DirtyRegion 是通用脏区域工具，Rasterizer 内部使用，保留 |
+| `DirtyRegionCollector` | core/render/ | `DirtyNodeTracker` | 功能重叠，考虑合并到 DirtyNodeTracker |
+| `UnifiedRenderer` | core/render/ | 无 | 高层 API 封装，用于 JS 绑定，保留 |
+
+### 7.3 组件职责澄清
+
+```
+渲染层级系统（保留）:
+├── Layer              → CSS z-index 分层，用于正确绘制顺序
+├── LayerManager       → 管理多个 Layer（Base/Overlay/Modal）
+└── 用途：处理 dropdown、modal 等高 z-index 元素
+
+合成层系统（保留）:
+├── CompositorLayer    → GPU 合成层，用于性能优化
+├── LayerTreeBuilder   → 构建合成层树
+└── 用途：transform/opacity 动画、滚动优化
+
+脏区域系统（需整理）:
+├── DirtyRegion           → 通用脏区域工具类（保留）
+├── DirtyRegionCollector  → 从 DOM 收集脏区域（考虑合并）
+├── DirtyNodeTracker      → 追踪 DOM 节点变化（保留）
+└── Rasterizer 内部脏区域  → 层级脏区域追踪（保留）
+```
+
+### 7.4 最终目录结构
+
+```
+core/render/
+  ├── render_pipeline.h/cpp      # 新统一管线
+  ├── render_object.h/cpp        # 渲染对象
+  ├── render_tree_synchronizer.h/cpp  # 渲染树同步
+  ├── layer.h/cpp                # z-index 层（保留）
+  ├── layer_manager.h/cpp        # 层管理器（保留）
+  ├── dirty_region.h/cpp         # 脏区域工具（保留）
+  ├── animation_*.h/cpp          # 动画相关（保留）
+  └── ...其他渲染工具
+
+core/compositor/
+  ├── compositor_layer.h/cpp     # 合成层（保留）
+  ├── layer_tree_builder.h/cpp   # 层树构建（保留）
+  ├── rasterizer.h/cpp           # 光栅化（保留）
+  ├── compositor.h/cpp           # 合成器（保留）
+  ├── animation_layer_bridge.h/cpp    # 动画桥接（保留）
+  ├── scroll_layer_manager.h/cpp      # 滚动管理（保留）
+  ├── animation_bounds_calculator.h/cpp # 动画边界（保留）
+  └── property_tree/             # 属性树系统（保留）
+
+删除:
+  ├── window_compositor_adapter.h/cpp  # 删除
+  ├── render_pipeline_v2.h/cpp         # 删除
+  └── render_pipeline_legacy.h/cpp     # 删除
+```

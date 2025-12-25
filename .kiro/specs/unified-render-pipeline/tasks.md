@@ -117,10 +117,15 @@
 
 ### Task 3.3: 删除旧管线
 - [ ] 删除 `render_pipeline_legacy.h/cpp`
-- [ ] 删除 `RenderPipelineV2`
+- [ ] 删除 `render_pipeline_v2.h/cpp`
 - [ ] 更新相关测试
 
-### Task 3.4: 更新文档
+### Task 3.4: 评估并清理潜在冗余
+- [ ] 评估 `DirtyRegionCollector` 是否可合并到 `DirtyNodeTracker`
+- [ ] 检查 `core/render/` 和 `core/compositor/` 中是否有其他重复功能
+- [ ] 清理未使用的代码
+
+### Task 3.5: 更新文档
 - [ ] 更新架构文档
 - [ ] 更新 API 文档
 - [ ] 清理旧的 spec 文档
