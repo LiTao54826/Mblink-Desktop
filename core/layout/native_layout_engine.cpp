@@ -445,9 +445,9 @@ void NativeLayoutEngine::ComputeLayoutInternal(float available_width, float avai
 
         // For overflow: auto or scroll on root, we need to account for potential vertical scrollbar
         if (overflow_y == "auto" || overflow_y == "scroll") {
-            // 修复：每次都重新检查是否需要滚动条，不使用缓存
-            // 因为内容高度可能在增量更新中变化，缓存的状态可能不准确
-            // 这会导致两次布局计算，但确保滚动条状态正确
+            // 修复：每次都重新检查是否需要滚动条
+            // 为了获得准确的高度，先清除根节点的缓存
+            root->cache.Clear();
             
             // First pass: compute layout with full width, accounting for root margin
             Rect<float> first_pass_margin = ResolveOrZero(root->style.margin, std::optional<float>(available_width));
@@ -478,16 +478,16 @@ void NativeLayoutEngine::ComputeLayoutInternal(float available_width, float avai
             float total_height = first_pass.size.height + first_pass_margin.top + first_pass_margin.bottom;
             needs_v_scrollbar = (total_height > available_height) || (overflow_y == "scroll");
 
+            // 检查滚动条状态是否改变
+            bool scrollbar_state_changed = (needs_v_scrollbar != last_needs_v_scrollbar_);
+            
             if (needs_v_scrollbar) {
                 // Reduce available width by scrollbar width
                 effective_width = available_width - RenderObject::GetScrollbarWidth();
-
-                // Only clear caches if scrollbar state changed
-                if (!last_needs_v_scrollbar_) {
-                    ClearWidthDependentCaches(root_node_);
-                }
-            } else if (last_needs_v_scrollbar_) {
-                // Scrollbar was needed before but not now - need to recalculate
+            }
+            
+            if (scrollbar_state_changed) {
+                // 滚动条状态改变，需要清除所有宽度相关的缓存并重新布局
                 ClearWidthDependentCaches(root_node_);
             }
             
