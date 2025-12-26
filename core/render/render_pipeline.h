@@ -286,6 +286,7 @@ private:
     // =========================================================================
 
     void UpdateLayerTreeBounds(CompositorLayer* layer);
+    void CollectDirtyRectsForLayer(RenderObject* obj, CompositorLayer* layer);
     void RegisterScrollableElements(RenderObject* root);
     void RegisterScrollableElementsRecursive(RenderObject* obj);
     bool CheckRenderObjectNeedsPaint(RenderObject* obj);

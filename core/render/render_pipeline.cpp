@@ -510,18 +510,55 @@ void RenderPipeline::UpdateLayerTreeBounds(CompositorLayer* layer) {
         return;
     }
 
-    // 复制自 V2
     RenderObject* render_obj = layer->GetRenderObject();
     if (render_obj) {
         layer_tree_builder_->UpdateLayerBounds(layer, render_obj);
         
-        if (CheckRenderObjectNeedsPaint(render_obj)) {
-            layer->MarkFullDirty();
-        }
+        // GPU 增量渲染优化：使用精确的脏矩形而不是整层标记
+        // 只标记需要重绘的 RenderObject 的边界区域
+        CollectDirtyRectsForLayer(render_obj, layer);
     }
 
     for (const auto& child : layer->GetChildren()) {
         UpdateLayerTreeBounds(child.get());
+    }
+}
+
+void RenderPipeline::CollectDirtyRectsForLayer(RenderObject* obj, CompositorLayer* layer) {
+    if (!obj || !layer) {
+        return;
+    }
+    
+    // 如果当前节点需要重绘，标记其边界为脏
+    if (obj->NeedsPaint()) {
+        // 使用 GetBoundingRect() 获取相对于文档的绝对边界
+        SkRect bounds = obj->GetBoundingRect();
+        
+        // 对于非根层，需要将绝对坐标转换为相对于层的坐标
+        if (layer->GetPromotionReason() != LayerPromotionReason::RootLayer) {
+            // 获取层的边界（相对于文档的位置）
+            const SkRect& layer_bounds = layer->GetBounds();
+            // 转换为相对于层的坐标
+            bounds.offset(-layer_bounds.left(), -layer_bounds.top());
+        }
+        
+        // 扩展边界以包含阴影、outline 等
+        bounds.outset(50, 50);
+        layer->MarkDirty(bounds);
+    }
+    
+    // 优化：如果子节点不需要重绘，跳过整个子树
+    if (!obj->ChildNeedsPaint()) {
+        return;
+    }
+    
+    // 递归处理子节点
+    for (const auto& child : obj->GetChildren()) {
+        // 跳过有独立层的子节点（它们会在自己的层中处理）
+        if (child->HasOwnCompositorLayer()) {
+            continue;
+        }
+        CollectDirtyRectsForLayer(child.get(), layer);
     }
 }
 
