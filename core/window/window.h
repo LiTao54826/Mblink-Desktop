@@ -245,6 +245,12 @@ public:
     void SetShouldClose(bool should_close) { should_close_ = should_close; }
 
     /**
+     * @brief 获取实际使用的渲染后端
+     * @return 渲染后端类型
+     */
+    RenderBackend GetRenderBackend() const { return actual_backend_; }
+
+    /**
      * @brief 设置窗口大小调整回调
      * @param callback 回调函数
      */

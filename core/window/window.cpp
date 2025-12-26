@@ -114,11 +114,43 @@ public:
         }
         
         if (window_ && !IsInBatch(node)) {
-            // 简化处理：总是使用 InvalidateRenderTree 重建整个渲染树
-            // 这避免了增量更新可能导致的布局不一致和崩溃问题
-            // 虽然性能略低，但更加稳定可靠
-            window_->InvalidateRenderTree();
-            window_->SetForceFullRepaint(true);
+            // Phase 5: 增量节点插入优化
+            // 使用增量更新系统的脏标记，避免全量重建渲染树
+            
+            // 1. 标记节点需要样式重算
+            node->SetNeedsStyleRecalc(StyleChangeType::kSubtreeStyleChange);
+            
+            // 2. 标记节点需要布局
+            node->SetNeedsLayout();
+            
+            // 3. 标记父节点需要布局（子节点变化影响父节点布局）
+            if (parent) {
+                parent->SetNeedsLayout();
+            }
+            
+            // 4. 检查是否需要回退到全量重建
+            // 复杂情况：多个同时添加、深层嵌套结构等
+            auto doc = node->GetOwnerDocument();
+            bool needs_full_rebuild = false;
+            
+            if (doc) {
+                const auto& tracker = doc->GetDirtyTracker();
+                // 如果有太多结构变化，回退到全量重建
+                if (tracker.GetStructuralChangeCount() > 10) {
+                    needs_full_rebuild = true;
+                }
+            }
+            
+            if (needs_full_rebuild) {
+                // 回退到全量重建
+                window_->InvalidateRenderTree();
+                window_->SetForceFullRepaint(true);
+            } else {
+                // 增量更新：只标记需要重绘
+                // DirtyNodeTracker 已经在 Node::AppendChild 中记录了变化
+                // RenderTreeSynchronizer 会在渲染时处理
+            }
+            
             window_->SetNeedsRepaint();
         }
     }
@@ -126,10 +158,37 @@ public:
 
     void OnNodeRemoved(Node* node, Node* parent) override {
         if (window_ && !IsInBatch(node)) {
-            // 简化处理：总是使用 InvalidateRenderTree 重建整个渲染树
-            // 这避免了增量更新可能导致的布局不一致和崩溃问题
-            window_->InvalidateRenderTree();
-            window_->SetForceFullRepaint(true);
+            // Phase 5: 增量节点移除优化
+            // 使用增量更新系统的脏标记，避免全量重建渲染树
+            
+            // 1. 标记父节点需要布局（子节点移除影响父节点布局）
+            if (parent) {
+                parent->SetNeedsStyleRecalc(StyleChangeType::kLocalStyleChange);
+                parent->SetNeedsLayout();
+            }
+            
+            // 2. 检查是否需要回退到全量重建
+            auto doc = parent ? parent->GetOwnerDocument() : nullptr;
+            bool needs_full_rebuild = false;
+            
+            if (doc) {
+                const auto& tracker = doc->GetDirtyTracker();
+                // 如果有太多结构变化，回退到全量重建
+                if (tracker.GetStructuralChangeCount() > 10) {
+                    needs_full_rebuild = true;
+                }
+            }
+            
+            if (needs_full_rebuild) {
+                // 回退到全量重建
+                window_->InvalidateRenderTree();
+                window_->SetForceFullRepaint(true);
+            } else {
+                // 增量更新：只标记需要重绘
+                // DirtyNodeTracker 已经在 Node::RemoveChild 中记录了变化
+                // RenderTreeSynchronizer 会在渲染时处理
+            }
+            
             window_->SetNeedsRepaint();
         }
     }
@@ -249,14 +308,15 @@ public:
                 return;
             }
             
-            // Phase 1: 精确脏区域标记
+            // Phase 6: Paint-Only 优化
             // 样式变化可能影响布局或绘制
             if (auto render_obj = element->GetRenderObject()) {
                 // 某些样式属性只影响绘制，不影响布局
                 static const std::vector<std::string> paint_only_props = {
                     "color", "background-color", "background-image",
                     "border-color", "opacity", "visibility",
-                    "box-shadow", "text-shadow", "outline"
+                    "box-shadow", "text-shadow", "outline",
+                    "cursor", "caret-color", "text-decoration-color"
                 };
 
                 bool is_paint_only = false;
@@ -268,11 +328,17 @@ public:
                 }
 
                 if (is_paint_only) {
+                    // Paint-only 属性：只标记需要重绘，不需要布局
                     render_obj->MarkNeedsPaint();
+                    // 使用增量更新系统：只标记本地样式变化
+                    element->SetNeedsStyleRecalc(StyleChangeType::kLocalStyleChange);
                 } else {
                     // 其他属性可能影响布局
                     render_obj->MarkNeedsLayout();
                     render_obj->MarkNeedsPaint();
+                    // 使用增量更新系统：标记需要布局
+                    element->SetNeedsStyleRecalc(StyleChangeType::kLocalStyleChange);
+                    element->SetNeedsLayout();
                 }
 
                 // 记录脏矩形
@@ -291,14 +357,24 @@ public:
                       const std::string& old_text,
                       const std::string& new_text) override {
         if (window_ && !IsInBatch(node)) {
-            // Phase 2: 文本内容变化的局部重绘
-            // 先尝试获取节点自身的 RenderObject
+            // Phase 4: 文本内容变化的增量更新优化
+            // 使用增量更新系统的脏标记，避免全量重建渲染树
+            
+            // 1. 标记节点需要样式重算（文本变化可能影响样式）
+            node->SetNeedsStyleRecalc(StyleChangeType::kLocalStyleChange);
+            
+            // 2. 标记节点需要布局（文本尺寸可能改变）
+            node->SetNeedsLayout();
+            
+            // 3. 先尝试获取节点自身的 RenderObject
             auto render_obj = node->GetRenderObject();
 
             // 如果节点没有 RenderObject，尝试获取父节点的
             if (!render_obj) {
                 if (auto parent = node->GetParentNode()) {
                     render_obj = parent->GetRenderObject();
+                    // 也标记父节点需要布局
+                    parent->SetNeedsLayout();
                 }
             }
 
@@ -321,19 +397,102 @@ public:
                     engine->UpdateContentVersion(render_obj.get());
                 }
 
-                // 记录脏矩形
+                // 4. 记录脏矩形区域（只重绘文本节点的边界）
                 SkRect bounds = render_obj->GetBoundingRect();
                 if (!bounds.isEmpty()) {
                     node->SetDirtyRect(bounds);
                     window_->AddDirtyRect(bounds);
                 }
             }
+            
+            // 5. 标记需要重绘，但不调用 InvalidateRenderTree()
+            // 这样可以保持渲染树结构，只进行增量更新
             window_->SetNeedsRepaint();
         }
     }
 
     void OnSubtreeModified(Node* root) override {
         if (window_) {
+            // 检查是否是批量更新结束后的通知
+            // 如果是，应该根据 DirtyNodeTracker 中的变化类型决定是否需要全量重建
+            auto doc = window_->GetDocument();
+            if (doc) {
+                const auto& tracker = doc->GetDirtyTracker();
+                
+                // 调试日志
+                static bool debug_render = std::getenv("LIGHTUI_DEBUG_RENDER") != nullptr;
+                if (debug_render) {
+                    std::cout << "[OnSubtreeModified] text_changes=" << tracker.GetTextChangeCount()
+                              << ", structural_changes=" << tracker.GetStructuralChangeCount()
+                              << ", style_changes=" << tracker.GetStyleChangeCount() << std::endl;
+                }
+                
+                // 如果只有文本变化，不需要全量重建
+                // 文本变化已经通过 DirtyNodeTracker 记录，会在渲染时处理
+                if (tracker.GetTextChangeCount() > 0 && 
+                    tracker.GetStructuralChangeCount() == 0) {
+                    // 只有文本变化，走增量更新路径
+                    if (debug_render) {
+                        std::cout << "[OnSubtreeModified] Text-only changes, using incremental update" << std::endl;
+                    }
+                    // 处理 DirtyNodeTracker 中记录的文本变化
+                    for (const auto& change : tracker.GetTextChanges()) {
+                        auto node = change.node.lock();
+                        if (!node) continue;
+                        
+                        // 标记节点需要样式重算和布局
+                        node->SetNeedsStyleRecalc(StyleChangeType::kLocalStyleChange);
+                        node->SetNeedsLayout();
+                        
+                        // 获取 RenderObject 并更新
+                        auto render_obj = node->GetRenderObject();
+                        if (!render_obj) {
+                            if (auto parent = node->GetParentNode()) {
+                                render_obj = parent->GetRenderObject();
+                                parent->SetNeedsLayout();
+                            }
+                        }
+                        
+                        if (render_obj) {
+                            if (render_obj->GetType() == RenderObjectType::TEXT) {
+                                auto render_text = static_cast<RenderText*>(render_obj.get());
+                                render_text->SetText(change.new_text);
+                            }
+                            render_obj->MarkNeedsLayout();
+                            render_obj->MarkNeedsPaint();
+                            
+                            // 记录脏矩形
+                            SkRect bounds = render_obj->GetBoundingRect();
+                            if (!bounds.isEmpty()) {
+                                node->SetDirtyRect(bounds);
+                                window_->AddDirtyRect(bounds);
+                            }
+                        }
+                    }
+                    
+                    window_->SetNeedsRepaint();
+                    // 不调用 InvalidateRenderTree()
+                    return;
+                }
+                
+                // 如果有少量结构变化，也尝试增量更新
+                if (tracker.GetStructuralChangeCount() <= 10) {
+                    if (debug_render) {
+                        std::cout << "[OnSubtreeModified] Few structural changes, using incremental update" << std::endl;
+                    }
+                    // 结构变化已经在 OnNodeAdded/OnNodeRemoved 中处理
+                    // 这里只需要标记需要重绘
+                    window_->SetNeedsRepaint();
+                    // 不调用 InvalidateRenderTree()
+                    return;
+                }
+                
+                if (debug_render) {
+                    std::cout << "[OnSubtreeModified] Too many changes, falling back to full rebuild" << std::endl;
+                }
+            }
+            
+            // 大量变化或无法确定时，回退到全量重建
             window_->SetNeedsRepaint();
             window_->InvalidateRenderTree();
         }
@@ -2170,28 +2329,39 @@ full_paint_fallback:
                 auto& layer_mgr = LayerManager::Instance();
                 layer_mgr.BeginFrame();
 
-                // 局部绘制 - 恢复到之前正常工作的版本
+                // 局部绘制优化：合并所有脏区域，只遍历一次渲染树
                 // 计算所有脏区域的边界（用于 CPU 模式局部更新）
                 SkRect dirty_bounds = SkRect::MakeEmpty();
                 
+                // 使用 SkRegion 合并所有脏区域，支持非矩形裁剪
+                SkRegion dirty_region;
                 for (const auto& rect : combined_dirty_rects) {
-                    canvas->save();
-
-                    // 裁剪到脏区域（扩大一点以包含边缘元素）
+                    // 扩大一点以包含边缘元素
                     SkRect expanded_rect = rect.makeOutset(50, 50);
                     dirty_bounds.join(expanded_rect);
-                    canvas->clipRect(expanded_rect);
-
-                    // 清除扩大后的脏区域
-                    SkPaint clear_paint;
-                    clear_paint.setColor(clear_color);
-                    canvas->drawRect(expanded_rect, clear_paint);
-
-                    // 绘制整棵渲染树（会被裁剪到扩大后的脏区域）
-                    cached_render_tree_->Paint(canvas);
-
-                    canvas->restore();
+                    
+                    // 转换为整数矩形并添加到区域
+                    SkIRect irect = expanded_rect.roundOut();
+                    dirty_region.op(irect, SkRegion::kUnion_Op);
                 }
+                
+                // 只进行一次绘制，使用合并后的脏区域
+                canvas->save();
+                
+                // 使用 Region 裁剪（支持非矩形区域）
+                canvas->clipRegion(dirty_region);
+                
+                // 清除脏区域
+                SkPaint clear_paint;
+                clear_paint.setColor(clear_color);
+                canvas->drawRect(dirty_bounds, clear_paint);
+                
+                // 绘制整棵渲染树（会被裁剪到脏区域）
+                // 由于我们在子节点遍历时添加了 quickReject 优化，
+                // 不与脏区域相交的子树会被跳过
+                cached_render_tree_->Paint(canvas);
+                
+                canvas->restore();
                 
                 // 保存脏区域边界（用于 SwapBuffers 的局部更新）
                 // 注意：dirty_bounds 是逻辑坐标，需要转换为物理像素坐标
@@ -2359,6 +2529,15 @@ static std::string NormalizeTextContent(const std::string& text_data, const Comp
 
 void Window::MarkRenderObjectsDirty(Node* dom_node, RenderObject* render_obj) {
     if (!dom_node || !render_obj) {
+        return;
+    }
+
+    // 增量优化：如果 DOM 节点及其子树都不需要更新，直接返回
+    // 检查 DOM 节点的脏标记
+    bool node_is_dirty = dom_node->IsLayoutDirty() || dom_node->IsPaintDirty() || dom_node->IsStyleDirty();
+    bool child_needs_update = dom_node->ChildNeedsStyleRecalc() || dom_node->ChildNeedsLayout();
+    
+    if (!node_is_dirty && !child_needs_update) {
         return;
     }
 
@@ -2553,11 +2732,21 @@ bool Window::LayoutDirtySubtree(RenderObject* render_obj, float parent_width, fl
 
     // 优先使用 NativeLayoutEngine 的增量布局
     if (layout_engine_) {
-        // 首先标记需要布局的 RenderObject
+        // 增量优化：只标记需要布局的 RenderObject，跳过干净的子树
         int dirty_count = 0;
         std::function<void(RenderObject*)> markDirty = [&](RenderObject* obj) {
             if (!obj) return;
-            if (obj->NeedsLayout()) {
+            
+            // 检查是否需要布局
+            bool needs_layout = obj->NeedsLayout();
+            bool child_needs_layout = obj->ChildNeedsLayout();
+            
+            // 如果当前节点和子树都不需要布局，跳过
+            if (!needs_layout && !child_needs_layout) {
+                return;
+            }
+            
+            if (needs_layout) {
                 layout_engine_->MarkNeedsLayout(obj);
                 dirty_count++;
                 
@@ -2572,8 +2761,12 @@ bool Window::LayoutDirtySubtree(RenderObject* render_obj, float parent_width, fl
                     std::cout << "[LayoutDirtySubtree] Marking dirty: " << tag << std::endl;
                 }
             }
-            for (const auto& child : obj->GetChildren()) {
-                markDirty(child.get());
+            
+            // 只有子树需要布局时才递归
+            if (child_needs_layout) {
+                for (const auto& child : obj->GetChildren()) {
+                    markDirty(child.get());
+                }
             }
         };
         markDirty(render_obj);
@@ -2639,10 +2832,15 @@ void Window::ClearRenderObjectDirtyFlags(RenderObject* render_obj) {
         return;
     }
 
+    // 增量优化：如果该节点及其子树都不需要重绘，直接返回
+    if (!render_obj->IsDirtyForPaint()) {
+        return;
+    }
+
     // 清除当前渲染对象的脏标记
     render_obj->ClearDirtyFlags();
 
-    // 递归清除子节点
+    // 只有当子树需要重绘时才递归清除子节点
     const auto& children = render_obj->GetChildren();
     for (const auto& child : children) {
         ClearRenderObjectDirtyFlags(child.get());
@@ -2682,6 +2880,11 @@ void Window::CollectDirtyRectsFromRenderTree(RenderObject* root) {
         return;
     }
 
+    // 增量优化：如果根节点及其子树都不需要重绘，直接返回
+    if (!root->IsDirtyForPaint()) {
+        return;
+    }
+
     // 使用迭代方式代替递归，避免深层嵌套时栈溢出
     std::vector<RenderObject*> stack;
     stack.push_back(root);
@@ -2691,6 +2894,11 @@ void Window::CollectDirtyRectsFromRenderTree(RenderObject* root) {
         stack.pop_back();
         
         if (!obj) {
+            continue;
+        }
+
+        // 增量优化：如果该节点及其子树都不需要重绘，跳过
+        if (!obj->IsDirtyForPaint()) {
             continue;
         }
 
@@ -2705,10 +2913,13 @@ void Window::CollectDirtyRectsFromRenderTree(RenderObject* root) {
             }
         }
 
-        // 将子节点加入栈（逆序以保持遍历顺序）
-        const auto& children = obj->GetChildren();
-        for (auto it = children.rbegin(); it != children.rend(); ++it) {
-            stack.push_back(it->get());
+        // 只有当子树需要重绘时才遍历子节点
+        if (obj->ChildNeedsPaint()) {
+            // 将子节点加入栈（逆序以保持遍历顺序）
+            const auto& children = obj->GetChildren();
+            for (auto it = children.rbegin(); it != children.rend(); ++it) {
+                stack.push_back(it->get());
+            }
         }
     }
 }

@@ -12,6 +12,7 @@
 #include "render_tree_synchronizer.h"
 #include "core/dom/document.h"
 #include "core/dom/dirty_node_tracker.h"
+#include "core/dom/incremental_style_recalc.h"
 #include "core/layout/native_layout_engine.h"
 #include <chrono>
 #include <iostream>
@@ -370,9 +371,34 @@ void RenderPipeline::DoDOMSync() {
 void RenderPipeline::DoStyleRecalc() {
     current_stage_ = RenderStage::StyleRecalc;
 
-    // 复制自 V1 的 DoStyleRecalc
-    // 当前样式在 DOM 操作时已经计算，这里主要处理级联样式变化
-    // TODO: 实现增量样式重算
+    auto doc = document_.lock();
+    if (!doc) {
+        needs_style_recalc_ = false;
+        return;
+    }
+
+    // 使用增量样式重算
+    IncrementalStyleRecalc style_recalc;
+    style_recalc.RecalcStyle(doc.get());
+    
+    // 更新统计信息
+    current_frame_stats_.style_nodes_visited = style_recalc.GetNodesVisited();
+    current_frame_stats_.style_nodes_recalculated = style_recalc.GetNodesRecalculated();
+    current_frame_stats_.style_subtrees_skipped = style_recalc.GetSubtreesSkipped();
+    
+    // 计算优化比率
+    int total_nodes = current_frame_stats_.style_nodes_visited + current_frame_stats_.style_subtrees_skipped;
+    if (total_nodes > 0) {
+        current_frame_stats_.optimization_ratio = 
+            static_cast<double>(current_frame_stats_.style_subtrees_skipped) / total_nodes;
+        current_frame_stats_.used_incremental_update = 
+            (current_frame_stats_.style_subtrees_skipped > 0);
+    }
+    
+    // 更新 DirtyNodeTracker 统计
+    DirtyNodeTracker& dirty_tracker = doc->GetDirtyTracker();
+    current_frame_stats_.text_changes_count = static_cast<int>(dirty_tracker.GetTextChangeCount());
+    current_frame_stats_.structural_changes_count = static_cast<int>(dirty_tracker.GetStructuralChangeCount());
 
     needs_style_recalc_ = false;
 }

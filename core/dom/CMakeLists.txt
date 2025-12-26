@@ -9,6 +9,7 @@ set(DOM_SOURCES
     dom_bindings.cpp
     dom_observer.cpp
     dirty_node_tracker.cpp
+    incremental_style_recalc.cpp
     selector_engine.cpp
     dom_token_list.cpp
     css_style_declaration.cpp
@@ -49,6 +50,7 @@ set(DOM_HEADERS
     dom_bindings.h
     dom_observer.h
     dirty_node_tracker.h
+    incremental_style_recalc.h
     selector_engine.h
     dom_token_list.h
     css_style_declaration.h

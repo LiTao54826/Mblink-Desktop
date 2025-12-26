@@ -123,12 +123,18 @@ std::shared_ptr<Node> Node::AppendChild(std::shared_ptr<Node> child) {
     // 添加到子节点列表
     child_nodes_.push_back(child);
     child->SetParentNode(shared_from_this());
+    
+    // 传播 owner_document_ 给子节点（如果子节点没有的话）
+    // 这确保通过 SetTextContent 等方法创建的节点也能正确获取 owner_document_
+    auto doc = GetOwnerDocument();
+    if (doc && !child->owner_document_.lock()) {
+        child->owner_document_ = doc;
+    }
 
     // 标记为脏
     MarkDirty();
 
     // 通知观察者和记录变化
-    auto doc = GetOwnerDocument();
     if (doc) {
         // 记录到 DirtyNodeTracker（延迟处理）
         doc->GetDirtyTracker().RecordNodeAdded(child, shared_from_this(), child_nodes_.size() - 1);
@@ -170,12 +176,17 @@ std::shared_ptr<Node> Node::InsertBefore(std::shared_ptr<Node> new_child,
     // 在ref_child前插入
     child_nodes_.insert(it, new_child);
     new_child->SetParentNode(shared_from_this());
+    
+    // 传播 owner_document_ 给子节点（如果子节点没有的话）
+    auto doc = GetOwnerDocument();
+    if (doc && !new_child->owner_document_.lock()) {
+        new_child->owner_document_ = doc;
+    }
 
     // 标记为脏
     MarkDirty();
 
     // 通知观察者和记录变化
-    auto doc = GetOwnerDocument();
     if (doc) {
         // 记录到 DirtyNodeTracker（延迟处理）
         doc->GetDirtyTracker().RecordNodeAdded(new_child, shared_from_this(), index);
@@ -317,12 +328,37 @@ std::string Node::GetTextContent() const {
 }
 
 void Node::SetTextContent(const std::string& content) {
+    // 优化：如果只有一个 Text 子节点且内容非空，直接更新其内容
+    // 这会触发 OnTextChanged，走增量更新路径，而不是删除重建
+    // 参考 Blink 的增量更新机制
+    if (child_nodes_.size() == 1 && 
+        child_nodes_[0]->GetNodeType() == NodeType::TEXT_NODE &&
+        !content.empty()) {
+        auto text_node = std::static_pointer_cast<Text>(child_nodes_[0]);
+        // 只有内容真正改变时才更新
+        if (text_node->GetData() != content) {
+            text_node->SetData(content);  // 这会触发 OnTextChanged
+        }
+        return;
+    }
+    
+    // 如果内容为空且只有一个 Text 子节点，需要移除它
+    // 如果有多个子节点或子节点不是 Text，需要重建
+    
     // 移除所有子节点
     RemoveAllChildren();
 
     // 创建新的Text节点
     if (!content.empty()) {
-        auto text_node = std::make_shared<Text>(content);
+        // 优先使用 Document::CreateTextNode 以确保 owner_document_ 被正确设置
+        auto doc = GetOwnerDocument();
+        std::shared_ptr<Text> text_node;
+        if (doc) {
+            text_node = doc->CreateTextNode(content);
+        } else {
+            // 回退：直接创建 Text 节点（没有 owner_document_）
+            text_node = std::make_shared<Text>(content);
+        }
         AppendChild(text_node);
     }
 }
@@ -360,6 +396,81 @@ void Node::ClearDirty(DirtyType type) {
     if ((static_cast<uint32_t>(type) & static_cast<uint32_t>(DirtyType::PAINT)) != 0) {
         dirty_rect_ = SkRect::MakeEmpty();
     }
+}
+
+// ========== 增量更新样式重算 ==========
+
+void Node::MarkAncestorsWithChildNeedsStyleRecalc() {
+    // 向上遍历祖先链，只设置 ChildNeedsStyleRecalc 标志
+    // 不修改祖先的 StyleChangeType
+    auto parent = parent_node_.lock();
+    while (parent) {
+        // 如果祖先已经有 ChildNeedsStyleRecalc 标志，停止遍历
+        // 因为更上层的祖先肯定也已经被标记过了
+        if (parent->ChildNeedsStyleRecalc()) {
+            break;
+        }
+        
+        // 只设置 ChildNeedsStyleRecalc 标志
+        parent->SetChildNeedsStyleRecalc();
+        
+        // 继续向上遍历
+        parent = parent->GetParentNode();
+    }
+}
+
+void Node::SetNeedsStyleRecalc(StyleChangeType change_type) {
+    // 如果请求的是 kNoStyleChange，直接返回
+    if (change_type == StyleChangeType::kNoStyleChange) {
+        return;
+    }
+    
+    // 如果当前的 StyleChangeType 已经是更高级别的变化，不需要降级
+    // kSubtreeStyleChange > kLocalStyleChange > kNoStyleChange
+    StyleChangeType current_type = GetStyleChangeType();
+    if (static_cast<uint32_t>(current_type) >= static_cast<uint32_t>(change_type)) {
+        return;
+    }
+    
+    // 设置节点的 StyleChangeType
+    SetStyleChange(change_type);
+    
+    // 标记祖先链
+    MarkAncestorsWithChildNeedsStyleRecalc();
+}
+
+// ========== 增量更新布局 ==========
+
+void Node::MarkAncestorsWithChildNeedsLayout() {
+    // 向上遍历祖先链，只设置 ChildNeedsLayout 标志
+    // 不修改祖先的 NeedsLayout 标志
+    auto parent = parent_node_.lock();
+    while (parent) {
+        // 如果祖先已经有 ChildNeedsLayout 标志，停止遍历
+        // 因为更上层的祖先肯定也已经被标记过了
+        if (parent->ChildNeedsLayout()) {
+            break;
+        }
+        
+        // 只设置 ChildNeedsLayout 标志
+        parent->SetChildNeedsLayout();
+        
+        // 继续向上遍历
+        parent = parent->GetParentNode();
+    }
+}
+
+void Node::SetNeedsLayout() {
+    // 如果已经标记为需要布局，直接返回
+    if (NeedsLayoutFlag()) {
+        return;
+    }
+    
+    // 设置节点的 NeedsLayout 标志
+    SetNeedsLayoutFlag();
+    
+    // 标记祖先链
+    MarkAncestorsWithChildNeedsLayout();
 }
 
 // ========== Protected方法 ==========

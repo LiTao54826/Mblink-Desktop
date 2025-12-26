@@ -97,6 +97,22 @@ struct UnifiedFrameStats {
     int layers_composited = 0;
     int dirty_regions_count = 0;
     
+    // 增量样式重算统计
+    int style_nodes_visited = 0;
+    int style_nodes_recalculated = 0;
+    int style_subtrees_skipped = 0;
+    
+    // 增量布局统计
+    int layout_dirty_nodes = 0;
+    bool layout_performed = false;
+    
+    // 增量更新优化统计 (Phase 7)
+    int text_changes_count = 0;           // 文本变化数量
+    int structural_changes_count = 0;     // 结构变化数量
+    int paint_only_changes_count = 0;     // 仅绘制变化数量
+    bool used_incremental_update = false; // 是否使用了增量更新
+    double optimization_ratio = 0.0;      // 优化比率 (跳过的节点 / 总节点)
+    
     // 状态
     bool frame_skipped = false;
     bool using_gpu = false;
@@ -114,6 +130,16 @@ struct UnifiedFrameStats {
         layers_rasterized = 0;
         layers_composited = 0;
         dirty_regions_count = 0;
+        style_nodes_visited = 0;
+        style_nodes_recalculated = 0;
+        style_subtrees_skipped = 0;
+        layout_dirty_nodes = 0;
+        layout_performed = false;
+        text_changes_count = 0;
+        structural_changes_count = 0;
+        paint_only_changes_count = 0;
+        used_incremental_update = false;
+        optimization_ratio = 0.0;
         frame_skipped = false;
         using_gpu = false;
     }

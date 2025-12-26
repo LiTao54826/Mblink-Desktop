@@ -691,6 +691,35 @@ SkRect RenderObject::GetViewportBoundingRect() const {
     return base_rect;
 }
 
+void RenderObject::MarkAncestorsWithChildNeedsPaint() {
+    // 向上传播 child_needs_paint_ 标志到所有祖先节点
+    // 这是增量绘制优化的关键：允许跳过不需要重绘的子树
+    auto parent = parent_.lock();
+    while (parent) {
+        // 如果祖先已经标记了 child_needs_paint_，则无需继续
+        // 因为更上层的祖先也已经被标记过了
+        if (parent->child_needs_paint_) {
+            break;
+        }
+        parent->child_needs_paint_ = true;
+        parent = parent->GetParent();
+    }
+}
+
+void RenderObject::MarkAncestorsWithChildNeedsLayout() {
+    // 向上传播 child_needs_layout_ 标志到所有祖先节点
+    // 这是增量布局优化的关键：允许跳过不需要布局的子树
+    auto parent = parent_.lock();
+    while (parent) {
+        // 如果祖先已经标记了 child_needs_layout_，则无需继续
+        if (parent->child_needs_layout_) {
+            break;
+        }
+        parent->child_needs_layout_ = true;
+        parent = parent->GetParent();
+    }
+}
+
 void RenderObject::ScrollBy(float dx, float dy) {
     float new_x = scroll_x_ + dx;
     float new_y = scroll_y_ + dy;
@@ -2075,6 +2104,21 @@ void RenderBlock::Paint(SkCanvas* canvas) {
         // 否则会导致重影（元素被绘制两次）
         if (child->HasOwnCompositorLayer()) {
             continue;
+        }
+        
+        // 增量绘制优化：提前检查子节点是否与当前裁剪区域相交
+        // 这比在 Paint 方法内部检查更高效，因为可以跳过整个子树的递归调用
+        {
+            const auto& child_layout = child->GetLayoutInfo();
+            SkRect child_rect = SkRect::MakeXYWH(
+                child_layout.x, child_layout.y, 
+                child_layout.width, child_layout.height
+            );
+            // 扩大边界以包含可能的阴影、outline 等
+            if (canvas->quickReject(child_rect.makeOutset(50, 50))) {
+                // 子节点完全在裁剪区域外，跳过整个子树
+                continue;
+            }
         }
         
         // 检查是否应该延迟绘制（高 z-index 的 positioned 元素）

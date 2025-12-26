@@ -176,6 +176,10 @@ void RenderTreeSynchronizer::ProcessTextChanges(DirtyNodeTracker& tracker) {
         auto node = change.node.lock();
         if (!node) continue;
         
+        // 使用增量更新系统的脏标记
+        node->SetNeedsStyleRecalc(StyleChangeType::kLocalStyleChange);
+        node->SetNeedsLayout();
+        
         auto render_obj = node->GetRenderObject();
         if (!render_obj) continue;
         

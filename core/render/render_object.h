@@ -500,6 +500,8 @@ public:
                 parent->MarkNeedsLayout(true);
             }
         }
+        // 向上传播 ChildNeedsLayout 标志
+        MarkAncestorsWithChildNeedsLayout();
     }
     
     /**
@@ -508,14 +510,33 @@ public:
     bool NeedsLayout() const { return needs_layout_; }
     
     /**
+     * @brief 检查子节点是否需要布局
+     */
+    bool ChildNeedsLayout() const { return child_needs_layout_; }
+    
+    /**
+     * @brief 检查是否需要布局（自身或子节点）
+     */
+    bool IsDirtyForLayout() const { return needs_layout_ || child_needs_layout_; }
+    
+    /**
      * @brief 清除布局标记
      */
-    void ClearNeedsLayout() { needs_layout_ = false; }
+    void ClearNeedsLayout() { needs_layout_ = false; child_needs_layout_ = false; }
+    
+    /**
+     * @brief 标记祖先节点的 ChildNeedsLayout 标志
+     */
+    void MarkAncestorsWithChildNeedsLayout();
     
     /**
      * @brief 标记需要重新绘制
+     * 同时向上传播 ChildNeedsPaint 标志到祖先节点
      */
-    void MarkNeedsPaint() { needs_paint_ = true; }
+    void MarkNeedsPaint() { 
+        needs_paint_ = true; 
+        MarkAncestorsWithChildNeedsPaint();
+    }
     
     /**
      * @brief 检查是否需要重新绘制
@@ -523,9 +544,31 @@ public:
     bool NeedsPaint() const { return needs_paint_; }
     
     /**
+     * @brief 检查子节点是否需要重绘
+     */
+    bool ChildNeedsPaint() const { return child_needs_paint_; }
+    
+    /**
+     * @brief 检查是否需要绘制（自身或子节点）
+     * 用于增量绘制优化：如果都不需要，可以跳过整个子树
+     */
+    bool IsDirtyForPaint() const { return needs_paint_ || child_needs_paint_; }
+    
+    /**
      * @brief 清除绘制标记
      */
     void ClearNeedsPaint() { needs_paint_ = false; }
+    
+    /**
+     * @brief 清除子节点需要绘制标记
+     */
+    void ClearChildNeedsPaint() { child_needs_paint_ = false; }
+    
+    /**
+     * @brief 标记祖先节点的 ChildNeedsPaint 标志
+     * 只设置祖先的 child_needs_paint_，不修改祖先的 needs_paint_
+     */
+    void MarkAncestorsWithChildNeedsPaint();
 
     /**
      * @brief 清除所有脏标记（布局和绘制）
@@ -533,6 +576,7 @@ public:
     void ClearDirtyFlags() {
         needs_layout_ = false;
         needs_paint_ = false;
+        child_needs_paint_ = false;
     }
 
     // =========================================================================
@@ -936,6 +980,8 @@ protected:
 
     bool needs_layout_ = true;
     bool needs_paint_ = true;
+    bool child_needs_paint_ = false;  // 增量绘制优化：子节点需要重绘标志
+    bool child_needs_layout_ = false; // 增量布局优化：子节点需要布局标志
 
     // 滚动状态
     float scroll_x_ = 0.0f;

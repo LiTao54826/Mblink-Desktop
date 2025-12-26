@@ -184,34 +184,49 @@ void EventLoop::RunOnce() {
         // 检查第一个窗口的 VSync 状态
         auto windows = wm.GetAllWindows();
         if (!windows.empty()) {
-            // 方法1：尝试查询 SDL swap interval（需要 OpenGL 上下文）
-            int swap_interval = 0;
-            bool query_success = SDL_GL_GetSwapInterval(&swap_interval);
+            auto& window = windows[0];
             
-            // 方法2：如果查询失败，假设 VSync 默认启用（WindowConfig::vsync = true）
-            // 这是合理的假设，因为大多数情况下 VSync 都是启用的
-            bool vsync_enabled = query_success ? (swap_interval != 0) : true;
+            // 关键修复：检查是否使用 CPU 渲染后端
+            // CPU 模式下没有 VSync，必须使用帧率限制
+            bool is_cpu_mode = (window->GetRenderBackend() == RenderBackend::CPU);
             
-            frame_controller_->SetUseVSync(vsync_enabled);
-            vsync_detected_ = true;
-            
-            std::cout << "========================================" << std::endl;
-            if (query_success) {
-                if (vsync_enabled) {
-                    std::cout << "[EventLoop] ✓ VSync ENABLED (swap_interval=" << swap_interval << ")" << std::endl;
-                    std::cout << "[EventLoop] ✓ SDL_Delay DISABLED for maximum smoothness" << std::endl;
-                    std::cout << "[EventLoop] ✓ Frame rate controlled by display refresh rate" << std::endl;
-                } else {
-                    std::cout << "[EventLoop] ✗ VSync DISABLED (swap_interval=" << swap_interval << ")" << std::endl;
-                    std::cout << "[EventLoop] → Using SDL_Delay for frame rate limiting" << std::endl;
-                }
+            if (is_cpu_mode) {
+                // CPU 模式：强制使用帧率限制
+                frame_controller_->SetUseVSync(false);
+                vsync_detected_ = true;
+                
+                std::cout << "========================================" << std::endl;
+                std::cout << "[EventLoop] ℹ CPU rendering mode detected" << std::endl;
+                std::cout << "[EventLoop] → Using SDL_Delay for frame rate limiting (60 FPS)" << std::endl;
+                std::cout << "========================================" << std::endl;
             } else {
-                // 查询失败，使用默认假设
-                std::cout << "[EventLoop] ℹ VSync status query failed (OpenGL context issue)" << std::endl;
-                std::cout << "[EventLoop] ✓ Assuming VSync ENABLED (default configuration)" << std::endl;
-                std::cout << "[EventLoop] ✓ SDL_Delay DISABLED for maximum smoothness" << std::endl;
+                // GPU 模式：尝试查询 VSync 状态
+                int swap_interval = 0;
+                bool query_success = SDL_GL_GetSwapInterval(&swap_interval);
+                
+                bool vsync_enabled = query_success ? (swap_interval != 0) : true;
+                
+                frame_controller_->SetUseVSync(vsync_enabled);
+                vsync_detected_ = true;
+                
+                std::cout << "========================================" << std::endl;
+                if (query_success) {
+                    if (vsync_enabled) {
+                        std::cout << "[EventLoop] ✓ VSync ENABLED (swap_interval=" << swap_interval << ")" << std::endl;
+                        std::cout << "[EventLoop] ✓ SDL_Delay DISABLED for maximum smoothness" << std::endl;
+                        std::cout << "[EventLoop] ✓ Frame rate controlled by display refresh rate" << std::endl;
+                    } else {
+                        std::cout << "[EventLoop] ✗ VSync DISABLED (swap_interval=" << swap_interval << ")" << std::endl;
+                        std::cout << "[EventLoop] → Using SDL_Delay for frame rate limiting" << std::endl;
+                    }
+                } else {
+                    // 查询失败，使用默认假设
+                    std::cout << "[EventLoop] ℹ VSync status query failed (OpenGL context issue)" << std::endl;
+                    std::cout << "[EventLoop] ✓ Assuming VSync ENABLED (default configuration)" << std::endl;
+                    std::cout << "[EventLoop] ✓ SDL_Delay DISABLED for maximum smoothness" << std::endl;
+                }
+                std::cout << "========================================" << std::endl;
             }
-            std::cout << "========================================" << std::endl;
         }
     }
     total_frames_++;

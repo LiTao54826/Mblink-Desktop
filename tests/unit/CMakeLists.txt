@@ -9,6 +9,7 @@ set(DOM_TEST_SOURCES
     dom/test_selector_engine.cpp
     dom/test_dom_token_list.cpp
     dom/test_css_style_declaration.cpp
+    dom/test_incremental_update.cpp
 )
 
 # 事件测试

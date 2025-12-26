@@ -42,6 +42,17 @@ enum class DirtyType : uint32_t {
     ALL = LAYOUT | PAINT | STYLE
 };
 
+/**
+ * @brief 样式变化类型枚举
+ * 参考 Chromium Blink 引擎的增量更新机制
+ * 用于区分样式变化的级别，实现精细化的脏标记系统
+ */
+enum class StyleChangeType : uint32_t {
+    kNoStyleChange = 0,      // 无样式变化
+    kLocalStyleChange = 1,   // 只影响当前节点的样式变化
+    kSubtreeStyleChange = 2, // 影响整个子树的样式变化
+};
+
 // 位运算支持
 inline DirtyType operator|(DirtyType a, DirtyType b) {
     return static_cast<DirtyType>(static_cast<uint32_t>(a) | static_cast<uint32_t>(b));
@@ -249,6 +260,163 @@ public:
      */
     uint32_t GetDirtyFlags() const { return dirty_flags_; }
 
+    // ========== 增量更新样式变化类型 API ==========
+
+    /**
+     * @brief 获取样式变化类型
+     * @return 样式变化类型
+     */
+    StyleChangeType GetStyleChangeType() const {
+        return static_cast<StyleChangeType>(node_flags_ & kStyleChangeMask);
+    }
+
+    /**
+     * @brief 设置样式变化类型
+     * @param type 样式变化类型
+     */
+    void SetStyleChange(StyleChangeType type) {
+        node_flags_ = (node_flags_ & ~kStyleChangeMask) | static_cast<uint32_t>(type);
+    }
+
+    /**
+     * @brief 检查是否需要样式重算
+     * @return true表示需要样式重算
+     */
+    bool NeedsStyleRecalc() const {
+        return GetStyleChangeType() != StyleChangeType::kNoStyleChange;
+    }
+
+    /**
+     * @brief 检查子节点是否需要样式重算
+     * @return true表示子节点需要样式重算
+     */
+    bool ChildNeedsStyleRecalc() const {
+        return (node_flags_ & kChildNeedsStyleRecalcFlag) != 0;
+    }
+
+    /**
+     * @brief 设置子节点需要样式重算标志
+     */
+    void SetChildNeedsStyleRecalc() {
+        node_flags_ |= kChildNeedsStyleRecalcFlag;
+    }
+
+    /**
+     * @brief 清除子节点需要样式重算标志
+     */
+    void ClearChildNeedsStyleRecalc() {
+        node_flags_ &= ~kChildNeedsStyleRecalcFlag;
+    }
+
+    /**
+     * @brief 检查节点是否脏（需要样式重算或子节点需要）
+     * @return true表示节点脏
+     */
+    bool IsDirtyForStyleRecalc() const {
+        return NeedsStyleRecalc() || ChildNeedsStyleRecalc();
+    }
+
+    /**
+     * @brief 清除样式重算标志
+     * 清除节点的 StyleChangeType 和 ChildNeedsStyleRecalc 标志
+     */
+    void ClearNeedsStyleRecalc() {
+        SetStyleChange(StyleChangeType::kNoStyleChange);
+        ClearChildNeedsStyleRecalc();
+    }
+
+    /**
+     * @brief 标记祖先链需要子节点样式重算
+     * 向上遍历到根节点，只设置 ChildNeedsStyleRecalc 标志
+     * 如果祖先已经有 ChildNeedsStyleRecalc 标志则停止
+     * 不修改祖先的 StyleChangeType
+     */
+    void MarkAncestorsWithChildNeedsStyleRecalc();
+
+    /**
+     * @brief 设置需要样式重算
+     * 设置节点的 StyleChangeType 并调用 MarkAncestorsWithChildNeedsStyleRecalc()
+     * @param change_type 样式变化类型
+     */
+    void SetNeedsStyleRecalc(StyleChangeType change_type);
+
+    // ========== 增量更新布局脏标记 API ==========
+
+    /**
+     * @brief 检查是否需要布局（增量更新系统）
+     * @return true表示需要布局
+     */
+    bool NeedsLayoutFlag() const {
+        return (node_flags_ & kNeedsLayoutFlag) != 0;
+    }
+
+    /**
+     * @brief 设置需要布局标志
+     */
+    void SetNeedsLayoutFlag() {
+        node_flags_ |= kNeedsLayoutFlag;
+    }
+
+    /**
+     * @brief 清除需要布局标志
+     */
+    void ClearNeedsLayoutFlag() {
+        node_flags_ &= ~kNeedsLayoutFlag;
+    }
+
+    /**
+     * @brief 检查子节点是否需要布局
+     * @return true表示子节点需要布局
+     */
+    bool ChildNeedsLayout() const {
+        return (node_flags_ & kChildNeedsLayoutFlag) != 0;
+    }
+
+    /**
+     * @brief 设置子节点需要布局标志
+     */
+    void SetChildNeedsLayout() {
+        node_flags_ |= kChildNeedsLayoutFlag;
+    }
+
+    /**
+     * @brief 清除子节点需要布局标志
+     */
+    void ClearChildNeedsLayout() {
+        node_flags_ &= ~kChildNeedsLayoutFlag;
+    }
+
+    /**
+     * @brief 检查节点是否脏（需要布局或子节点需要）
+     * @return true表示节点脏
+     */
+    bool IsDirtyForLayout() const {
+        return NeedsLayoutFlag() || ChildNeedsLayout();
+    }
+
+    /**
+     * @brief 清除布局标志
+     * 清除节点的 NeedsLayout 和 ChildNeedsLayout 标志
+     */
+    void ClearNeedsLayout() {
+        ClearNeedsLayoutFlag();
+        ClearChildNeedsLayout();
+    }
+
+    /**
+     * @brief 标记祖先链需要子节点布局
+     * 向上遍历到根节点，只设置 ChildNeedsLayout 标志
+     * 如果祖先已经有 ChildNeedsLayout 标志则停止
+     * 不修改祖先的 NeedsLayout 标志
+     */
+    void MarkAncestorsWithChildNeedsLayout();
+
+    /**
+     * @brief 设置需要布局
+     * 设置节点的 NeedsLayout 标志并调用 MarkAncestorsWithChildNeedsLayout()
+     */
+    void SetNeedsLayout();
+
     // ========== RenderObject 双向绑定 ==========
 
     /**
@@ -285,6 +453,22 @@ protected:
     bool is_dirty_ = true;  // 保留用于向后兼容
     uint32_t dirty_flags_ = static_cast<uint32_t>(DirtyType::ALL);  // 脏标记标志
     SkRect dirty_rect_ = SkRect::MakeEmpty();  // 脏矩形区域
+
+    // 增量更新标志位系统（参考 Blink 引擎）
+    // 标志位布局:
+    // Bit 0-1:  StyleChangeType (0=None, 1=Local, 2=Subtree)
+    // Bit 2:    ChildNeedsStyleRecalc
+    // Bit 3:    NeedsLayout
+    // Bit 4:    ChildNeedsLayout
+    // Bit 5:    NeedsPaint
+    uint32_t node_flags_ = 0;
+
+    // 标志位常量定义
+    static constexpr uint32_t kStyleChangeMask = 0x3;              // 2 bits for StyleChangeType
+    static constexpr uint32_t kChildNeedsStyleRecalcFlag = 1 << 2; // Bit 2
+    static constexpr uint32_t kNeedsLayoutFlag = 1 << 3;           // Bit 3
+    static constexpr uint32_t kChildNeedsLayoutFlag = 1 << 4;      // Bit 4
+    static constexpr uint32_t kNeedsPaintFlag = 1 << 5;            // Bit 5
 
     // RenderObject 双向绑定（使用 weak_ptr 避免循环引用）
     std::weak_ptr<RenderObject> render_object_;

@@ -5,6 +5,7 @@
 
 #include "text.h"
 #include "document.h"
+#include <iostream>
 
 namespace lightui {
 
