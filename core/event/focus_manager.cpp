@@ -11,6 +11,8 @@
 #include "core/dom/html_input_element.h"
 #include "core/dom/html_textarea_element.h"
 #include "core/window/window.h"
+#include "core/render/render_object.h"
+#include "core/render/render_pipeline.h"
 #include <SDL3/SDL.h>
 
 namespace lightui {
@@ -90,9 +92,26 @@ bool FocusManager::SetFocus(std::shared_ptr<Element> element, bool focus_visible
         }
     }
 
+    // 关键修复：标记新旧焦点元素的 RenderObject 需要重绘
+    // 这样增量渲染系统才会重绘焦点变化的区域
+    if (old_focus) {
+        if (auto render_obj = old_focus->GetRenderObject()) {
+            render_obj->MarkNeedsPaint();
+            render_obj->InvalidatePaintCache();
+        }
+    }
+    if (auto render_obj = element->GetRenderObject()) {
+        render_obj->MarkNeedsPaint();
+        render_obj->InvalidatePaintCache();
+    }
+
     // 触发重绘以显示光标
     if (window_) {
         window_->SetNeedsRepaint();
+        // 关键修复：同时通知 RenderPipeline 需要重绘
+        if (auto pipeline = window_->GetRenderPipeline()) {
+            pipeline->MarkNeedsPaint();
+        }
     }
 
     return true;
@@ -113,12 +132,22 @@ void FocusManager::Blur(std::shared_ptr<Element> element) {
         // 发送blur事件
         SendFocusEvents(current_focus, nullptr, false);
 
+        // 关键修复：标记失去焦点元素的 RenderObject 需要重绘
+        if (auto render_obj = current_focus->GetRenderObject()) {
+            render_obj->MarkNeedsPaint();
+            render_obj->InvalidatePaintCache();
+        }
+
         // 清除焦点
         focus_element_.reset();
 
         // 触发重绘以隐藏光标
         if (window_) {
             window_->SetNeedsRepaint();
+            // 关键修复：同时通知 RenderPipeline 需要重绘
+            if (auto pipeline = window_->GetRenderPipeline()) {
+                pipeline->MarkNeedsPaint();
+            }
         }
     }
 }

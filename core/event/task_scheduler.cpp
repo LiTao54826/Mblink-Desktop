@@ -44,6 +44,12 @@ int TaskScheduler::SetInterval(std::function<void()> callback, int interval_ms) 
 }
 
 int TaskScheduler::RequestAnimationFrame(std::function<void(double)> callback) {
+    // 调试日志
+    static bool debug_raf = std::getenv("LIGHTUI_DEBUG_RAF") != nullptr;
+    if (debug_raf) {
+        std::cout << "[RequestAnimationFrame] Adding task, current count: " << animation_frame_tasks_.size() << std::endl;
+    }
+    
     Task task;
     task.id = next_task_id_++;
     task.type = TaskType::ANIMATION_FRAME;
@@ -128,6 +134,12 @@ void TaskScheduler::ProcessTasks() {
 }
 
 void TaskScheduler::ProcessAnimationFrames(double timestamp) {
+    // 调试日志
+    static bool debug_raf = std::getenv("LIGHTUI_DEBUG_RAF") != nullptr;
+    if (debug_raf && !animation_frame_tasks_.empty()) {
+        std::cout << "[ProcessAnimationFrames] Processing " << animation_frame_tasks_.size() << " tasks" << std::endl;
+    }
+    
     // 复制当前的任务列表，然后清空原列表
     // 这样在执行回调时，新的 requestAnimationFrame 调用会添加到空列表中
     std::vector<Task> tasks_to_execute = std::move(animation_frame_tasks_);
@@ -136,6 +148,9 @@ void TaskScheduler::ProcessAnimationFrames(double timestamp) {
     // 执行所有动画帧任务
     for (const auto& task : tasks_to_execute) {
         if (!task.cancelled && task.anim_callback) {
+            if (debug_raf) {
+                std::cout << "[ProcessAnimationFrames] Executing task " << task.id << std::endl;
+            }
             task.anim_callback(timestamp);
         }
     }

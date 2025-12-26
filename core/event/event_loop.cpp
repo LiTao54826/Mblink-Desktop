@@ -32,6 +32,7 @@
 #include "core/devtools/devtools_manager.h"
 #include "core/devtools/inspector/element_picker.h"
 #include "core/render/render_pipeline.h"
+#include "core/render/render_object.h"
 #include "include/core/SkFontTypes.h"
 #include "include/core/SkFontMetrics.h"
 #include <iostream>
@@ -123,6 +124,13 @@ void EventLoop::RunOnce() {
 
     task_scheduler_->ProcessAnimationFrames(timestamp_ms);
 
+    // 4.6 关键修复：ProcessAnimationFrames 可能触发 Preact 等框架的状态更新
+    // 这些更新可能通过微任务调度 DOM 变化，所以需要再次处理微任务
+    // 否则 DOM 变化不会在当前帧被渲染，导致 UI 更新延迟
+    if (quickjs_runtime_) {
+        quickjs_runtime_->RunEventLoop(1);  // 处理可能产生的微任务
+    }
+
     // 4.5 处理光标闪烁（如果有聚焦的输入框）
     static Uint64 last_cursor_blink_time = SDL_GetTicks();
     static bool cursor_visible = true;
@@ -136,10 +144,23 @@ void EventLoop::RunOnce() {
                 cursor_visible = !cursor_visible;
                 cursor_visible_ = cursor_visible;  // 保存到成员变量供渲染使用
                 last_cursor_blink_time = now;
+                
+                // 关键修复：标记输入框的 RenderObject 需要重绘
+                // 这样增量渲染系统才会重绘光标区域
+                if (auto render_obj = focus_element->GetRenderObject()) {
+                    render_obj->MarkNeedsPaint();
+                    render_obj->InvalidatePaintCache();
+                }
+                
                 // 触发重绘以更新光标
                 auto& wm = WindowManager::Instance();
                 for (auto& window : wm.GetAllWindows()) {
                     window->SetNeedsRepaint();
+                    // 关键修复：同时通知 RenderPipeline 需要重绘
+                    // 否则 RenderPipeline::NeedsUpdate() 返回 false，导致快速路径跳过渲染
+                    if (auto pipeline = window->GetRenderPipeline()) {
+                        pipeline->MarkNeedsPaint();
+                    }
                 }
             }
         }
@@ -156,22 +177,6 @@ void EventLoop::RunOnce() {
         if (window->NeedsRepaint()) {
             any_needs_repaint = true;
             break;
-        }
-    }
-
-    // 调试：追踪渲染频率
-    static bool debug_render = std::getenv("LIGHTUI_DEBUG_RENDER") != nullptr;
-    static int frame_count = 0;
-    static Uint64 last_debug_time = SDL_GetTicks();
-    frame_count++;
-
-    if (debug_render) {
-        Uint64 now = SDL_GetTicks();
-        if (now - last_debug_time >= 1000) {
-            std::cout << "[EventLoop] FPS: " << frame_count
-                      << ", needs_repaint: " << any_needs_repaint << std::endl;
-            frame_count = 0;
-            last_debug_time = now;
         }
     }
 
@@ -2158,24 +2163,40 @@ void EventLoop::HandleMouseWheelEventForDOM(const SDL_Event& event) {
                     line_height += font_size * 0.2f;
                 }
 
-                // 处理滚轮事件
-                if (shift_pressed) {
-                    // Shift+滚轮：横向滚动
-                    textarea_element->HandleMouseWheelHorizontal(-wheel_y, visible_width, font);
-                } else {
-                    // 普通滚轮：垂直滚动
-                    textarea_element->HandleMouseWheel(-wheel_y, line_height, visible_height);
-                }
+                // 检查 textarea 是否真的需要滚动（内容是否超出可见区域）
+                float content_height = textarea_element->GetContentHeight(line_height);
+                float max_scroll = std::max(0.0f, content_height - visible_height);
+                float current_scroll = textarea_element->GetScrollTop();
+                
+                // 判断滚动方向和是否可以滚动
+                bool scrolling_down = wheel_y < 0;
+                bool scrolling_up = wheel_y > 0;
+                bool can_scroll_down = current_scroll < max_scroll - 0.1f;
+                bool can_scroll_up = current_scroll > 0.1f;
+                
+                // 如果 textarea 可以在当前方向滚动，则处理滚动
+                if ((scrolling_down && can_scroll_down) || (scrolling_up && can_scroll_up)) {
+                    // 处理滚轮事件
+                    if (shift_pressed) {
+                        // Shift+滚轮：横向滚动
+                        textarea_element->HandleMouseWheelHorizontal(-wheel_y, visible_width, font);
+                    } else {
+                        // 普通滚轮：垂直滚动
+                        textarea_element->HandleMouseWheel(-wheel_y, line_height, visible_height);
+                    }
 
-                // 标记窗口需要重绘
-                window->SetNeedsRepaint();
-                return;
+                    // 标记窗口需要重绘
+                    window->SetNeedsRepaint();
+                    return;
+                }
+                // 如果 textarea 不能滚动，让事件穿透到父元素
             }
         }
     }
 
     // 从命中的元素向上遍历，找到第一个可滚动的元素
     auto render_obj = hit_result.render_object;
+    
     while (render_obj) {
         const auto& style = render_obj->GetComputedStyle();
 

@@ -138,8 +138,22 @@ void CompositorLayer::MarkDirty(const SkRect& region) {
         static_cast<int>(bounds_.height())
     );
 
-    if (!iregion.intersect(layer_bounds)) {
-        return;  // 区域在层外
+    // 关键修复：对于根层，不裁剪脏区域
+    // 因为根层的边界是视口大小，但内容可能超出视口（滚动内容）
+    // 脏区域会在光栅化时被正确裁剪
+    if (promotion_reason_ != LayerPromotionReason::RootLayer) {
+        if (!iregion.intersect(layer_bounds)) {
+            return;  // 区域在层外
+        }
+    } else {
+        // 对于根层，只确保区域不是完全在负坐标区域
+        // 但允许超出视口边界的区域（滚动内容）
+        if (iregion.right() <= 0 || iregion.bottom() <= 0) {
+            return;  // 完全在可见区域外
+        }
+        // 裁剪负坐标部分
+        if (iregion.left() < 0) iregion.fLeft = 0;
+        if (iregion.top() < 0) iregion.fTop = 0;
     }
 
     dirty_regions_.push_back(iregion);

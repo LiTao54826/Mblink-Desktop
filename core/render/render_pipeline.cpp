@@ -11,6 +11,7 @@
 #include "style_resolver.h"  // RenderTreeBuilder 在这里定义
 #include "render_tree_synchronizer.h"
 #include "core/dom/document.h"
+#include "core/dom/node.h"
 #include "core/dom/dirty_node_tracker.h"
 #include "core/dom/incremental_style_recalc.h"
 #include "core/layout/native_layout_engine.h"
@@ -531,19 +532,23 @@ void RenderPipeline::CollectDirtyRectsForLayer(RenderObject* obj, CompositorLaye
     
     // 如果当前节点需要重绘，标记其边界为脏
     if (obj->NeedsPaint()) {
-        // 使用 GetBoundingRect() 获取相对于文档的绝对边界
-        SkRect bounds = obj->GetBoundingRect();
+        SkRect bounds;
         
-        // 对于非根层，需要将绝对坐标转换为相对于层的坐标
-        if (layer->GetPromotionReason() != LayerPromotionReason::RootLayer) {
-            // 获取层的边界（相对于文档的位置）
+        // 对于根层，使用视口坐标系的边界（已经考虑了所有祖先的滚动偏移）
+        if (layer->GetPromotionReason() == LayerPromotionReason::RootLayer) {
+            // 使用 GetViewportBoundingRect() 获取视口坐标系的边界
+            // 这个方法会正确处理所有祖先元素的滚动偏移
+            bounds = obj->GetViewportBoundingRect();
+        } else {
+            // 对于非根层，使用文档坐标并转换为相对于层的坐标
+            bounds = obj->GetBoundingRect();
             const SkRect& layer_bounds = layer->GetBounds();
-            // 转换为相对于层的坐标
             bounds.offset(-layer_bounds.left(), -layer_bounds.top());
         }
         
         // 扩展边界以包含阴影、outline 等
         bounds.outset(50, 50);
+        
         layer->MarkDirty(bounds);
     }
     
