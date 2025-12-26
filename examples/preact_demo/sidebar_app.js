@@ -428,10 +428,20 @@
         var state = useState('home');
         var activePage = state[0];
         var setActivePage = state[1];
+        var contentRef = PreactHooks.useRef(null);
+
+        // 页面切换时重置滚动位置
+        function handlePageChange(page) {
+            setActivePage(page);
+            // 重置滚动位置到顶部
+            if (contentRef.current) {
+                contentRef.current.scrollTop = 0;
+            }
+        }
 
         return h('div', { style: { display: 'flex', fontFamily: 'Arial, sans-serif', height: '100vh' } },
-            h(Sidebar, { activePage: activePage, onPageChange: setActivePage }),
-            h('div', { style: { flex: 1, backgroundColor: '#f5f5f5', padding: '24px', overflowY: 'auto', overflowX: 'hidden' } },
+            h(Sidebar, { activePage: activePage, onPageChange: handlePageChange }),
+            h('div', { ref: contentRef, style: { flex: 1, backgroundColor: '#f5f5f5', padding: '24px', overflowY: 'auto', overflowX: 'hidden' } },
                 h(PageContent, { page: activePage })
             )
         );

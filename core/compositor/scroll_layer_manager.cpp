@@ -205,6 +205,17 @@ bool ScrollLayerManager::HandleScroll(RenderObject* container, float delta_x, fl
         return false;
     }
 
+    // 调试日志
+    static bool debug_scroll = std::getenv("LIGHTUI_DEBUG_SCROLL") != nullptr;
+    if (debug_scroll) {
+        std::cout << "[HandleScroll] delta_y=" << delta_y
+                  << ", scroll_y=" << info->scroll_y
+                  << ", max_scroll_y=" << info->max_scroll_y
+                  << ", content_height=" << info->content_height
+                  << ", viewport_height=" << info->viewport_height
+                  << std::endl;
+    }
+
     float old_scroll_x = info->scroll_x;
     float old_scroll_y = info->scroll_y;
 
@@ -214,6 +225,10 @@ bool ScrollLayerManager::HandleScroll(RenderObject* container, float delta_x, fl
     
     // 限制在有效范围内
     ClampScrollPosition(*info);
+    
+    if (debug_scroll) {
+        std::cout << "[HandleScroll] after clamp: scroll_y=" << info->scroll_y << std::endl;
+    }
 
     // 检查是否实际发生了滚动
     if (std::abs(info->scroll_x - old_scroll_x) < 0.001f &&
@@ -319,15 +334,29 @@ void ScrollLayerManager::UpdateContentSize(RenderObject* container) {
     }
 
     // 更新内容尺寸
-    // 注意：如果缓存的内容尺寸为 0，需要动态计算
+    // 关键修复：当容器需要布局时，必须重新计算内容尺寸
+    // 否则页面切换后会使用旧的缓存值
+    bool needs_recalc = container->NeedsLayout();
+    
     info->content_width = container->GetContentWidth();
     info->content_height = container->GetContentHeight();
     
-    if (info->content_width <= 0) {
+    // 调试日志
+    static bool debug_scroll = std::getenv("LIGHTUI_DEBUG_SCROLL") != nullptr;
+    if (debug_scroll) {
+        std::cout << "[UpdateContentSize] cached: content_width=" << info->content_width
+                  << ", content_height=" << info->content_height
+                  << ", needs_layout=" << needs_recalc << std::endl;
+    }
+    
+    if (info->content_width <= 0 || needs_recalc) {
         info->content_width = container->CalculateContentWidth();
     }
-    if (info->content_height <= 0) {
+    if (info->content_height <= 0 || needs_recalc) {
         info->content_height = container->CalculateContentHeight();
+        if (debug_scroll) {
+            std::cout << "[UpdateContentSize] recalculated: content_height=" << info->content_height << std::endl;
+        }
     }
 
     // 更新视口尺寸（与RegisterScrollContainer逻辑一致）

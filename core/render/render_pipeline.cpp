@@ -621,6 +621,10 @@ bool RenderPipeline::HandleScroll(RenderObject* container, float delta_x, float 
         scroll_manager_->RegisterScrollContainer(container);
     }
 
+    // 关键修复：在处理滚动前更新内容尺寸
+    // 这确保页面切换后滚动范围被正确更新
+    scroll_manager_->UpdateContentSize(container);
+
     bool scrolled = scroll_manager_->HandleScroll(container, delta_x, delta_y);
     
     if (scrolled) {

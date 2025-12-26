@@ -17,6 +17,7 @@
 #include "core/dom/canvas_bindings.h"
 #include "core/dom/selector_engine.h"
 #include "core/quickjs/dom_binding_map.h"
+#include "core/render/render_object.h"
 #include "js_node.h"
 #include "js_style_declaration.h"
 #include "js_event.h"
@@ -968,6 +969,66 @@ static JSValue JSElement_set_onerror(JSContext* ctx, JSValueConst this_val, JSVa
     return JS_UNDEFINED;
 }
 
+// scrollTop getter - 获取垂直滚动位置
+static JSValue JSElement_get_scrollTop(JSContext* ctx, JSValueConst this_val, int magic) {
+    auto* data = static_cast<JSElementData*>(JS_GetOpaque(this_val, js_element_class_id));
+    if (!data || !data->element) return JS_NewFloat64(ctx, 0);
+    
+    auto render_obj = data->element->GetRenderObject();
+    if (!render_obj) return JS_NewFloat64(ctx, 0);
+    
+    return JS_NewFloat64(ctx, render_obj->GetScrollY());
+}
+
+// scrollTop setter - 设置垂直滚动位置
+static JSValue JSElement_set_scrollTop(JSContext* ctx, JSValueConst this_val, JSValue val, int magic) {
+    auto* data = static_cast<JSElementData*>(JS_GetOpaque(this_val, js_element_class_id));
+    if (!data || !data->element) return JS_UNDEFINED;
+    
+    auto render_obj = data->element->GetRenderObject();
+    if (!render_obj) return JS_UNDEFINED;
+    
+    double scroll_top;
+    if (JS_ToFloat64(ctx, &scroll_top, val) != 0) return JS_EXCEPTION;
+    
+    // 确保滚动位置不为负
+    if (scroll_top < 0) scroll_top = 0;
+    
+    render_obj->SetScrollY(static_cast<float>(scroll_top));
+    
+    return JS_UNDEFINED;
+}
+
+// scrollLeft getter - 获取水平滚动位置
+static JSValue JSElement_get_scrollLeft(JSContext* ctx, JSValueConst this_val, int magic) {
+    auto* data = static_cast<JSElementData*>(JS_GetOpaque(this_val, js_element_class_id));
+    if (!data || !data->element) return JS_NewFloat64(ctx, 0);
+    
+    auto render_obj = data->element->GetRenderObject();
+    if (!render_obj) return JS_NewFloat64(ctx, 0);
+    
+    return JS_NewFloat64(ctx, render_obj->GetScrollX());
+}
+
+// scrollLeft setter - 设置水平滚动位置
+static JSValue JSElement_set_scrollLeft(JSContext* ctx, JSValueConst this_val, JSValue val, int magic) {
+    auto* data = static_cast<JSElementData*>(JS_GetOpaque(this_val, js_element_class_id));
+    if (!data || !data->element) return JS_UNDEFINED;
+    
+    auto render_obj = data->element->GetRenderObject();
+    if (!render_obj) return JS_UNDEFINED;
+    
+    double scroll_left;
+    if (JS_ToFloat64(ctx, &scroll_left, val) != 0) return JS_EXCEPTION;
+    
+    // 确保滚动位置不为负
+    if (scroll_left < 0) scroll_left = 0;
+    
+    render_obj->SetScrollX(static_cast<float>(scroll_left));
+    
+    return JS_UNDEFINED;
+}
+
 // ========== 类定义 ==========
 
 static const JSCFunctionListEntry js_element_proto_funcs[] = {
@@ -979,6 +1040,9 @@ static const JSCFunctionListEntry js_element_proto_funcs[] = {
     JS_CGETSET_MAGIC_DEF("style", JSElement_get_style, nullptr, 0),
     JS_CGETSET_MAGIC_DEF("value", JSElement_get_value, JSElement_set_value, 0),
     JS_CGETSET_MAGIC_DEF("checked", JSElement_get_checked, JSElement_set_checked, 0),
+    // 滚动属性
+    JS_CGETSET_MAGIC_DEF("scrollTop", JSElement_get_scrollTop, JSElement_set_scrollTop, 0),
+    JS_CGETSET_MAGIC_DEF("scrollLeft", JSElement_get_scrollLeft, JSElement_set_scrollLeft, 0),
     // HTMLCanvasElement 属性
     JS_CGETSET_MAGIC_DEF("width", JSElement_get_canvas_width, JSElement_set_canvas_width, 0),
     JS_CGETSET_MAGIC_DEF("height", JSElement_get_canvas_height, JSElement_set_canvas_height, 0),

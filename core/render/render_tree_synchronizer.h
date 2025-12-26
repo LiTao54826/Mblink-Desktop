@@ -211,7 +211,7 @@ private:
     // ========== 策略阈值 ==========
     
     /// 触发子树重建的变化数量阈值
-    size_t rebuild_threshold_ = 10;
+    size_t rebuild_threshold_ = 50;
     
     /// 触发子树重建的被替换节点子节点数阈值
     size_t replaced_children_threshold_ = 5;

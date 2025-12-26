@@ -124,37 +124,22 @@ public:
             node->SetNeedsLayout();
             
             // 3. 标记父节点需要布局（子节点变化影响父节点布局）
+            // 同时标记父节点的 RenderObject，清除 content_height_ 缓存
             if (parent) {
                 parent->SetNeedsLayout();
-            }
-            
-            // 4. 检查是否需要回退到全量重建
-            // 复杂情况：多个同时添加、深层嵌套结构等
-            auto doc = node->GetOwnerDocument();
-            bool needs_full_rebuild = false;
-            
-            if (doc) {
-                const auto& tracker = doc->GetDirtyTracker();
-                // 如果有太多结构变化，回退到全量重建
-                if (tracker.GetStructuralChangeCount() > 10) {
-                    needs_full_rebuild = true;
+                // 关键：向上传播到所有祖先的 RenderObject
+                // 这确保滚动容器等祖先节点的 content_height_ 缓存被清除
+                if (auto parent_ro = parent->GetRenderObject()) {
+                    parent_ro->MarkNeedsLayout(true);
                 }
             }
             
-            if (needs_full_rebuild) {
-                // 回退到全量重建
-                window_->InvalidateRenderTree();
-                window_->SetForceFullRepaint(true);
-            } else {
-                // 增量更新：只标记需要重绘
-                // DirtyNodeTracker 已经在 Node::AppendChild 中记录了变化
-                // RenderTreeSynchronizer 会在渲染时处理
-            }
-            
+            // 4. 增量更新：标记需要重绘
+            // DirtyNodeTracker 已经在 Node::AppendChild 中记录了变化
+            // RenderTreeSynchronizer 会在渲染时根据变化区域大小决定是增量更新还是全量重建
             window_->SetNeedsRepaint();
         }
     }
-
 
     void OnNodeRemoved(Node* node, Node* parent) override {
         if (window_ && !IsInBatch(node)) {
@@ -162,33 +147,20 @@ public:
             // 使用增量更新系统的脏标记，避免全量重建渲染树
             
             // 1. 标记父节点需要布局（子节点移除影响父节点布局）
+            // 同时标记父节点的 RenderObject，清除 content_height_ 缓存
             if (parent) {
                 parent->SetNeedsStyleRecalc(StyleChangeType::kLocalStyleChange);
                 parent->SetNeedsLayout();
-            }
-            
-            // 2. 检查是否需要回退到全量重建
-            auto doc = parent ? parent->GetOwnerDocument() : nullptr;
-            bool needs_full_rebuild = false;
-            
-            if (doc) {
-                const auto& tracker = doc->GetDirtyTracker();
-                // 如果有太多结构变化，回退到全量重建
-                if (tracker.GetStructuralChangeCount() > 10) {
-                    needs_full_rebuild = true;
+                // 关键：向上传播到所有祖先的 RenderObject
+                // 这确保滚动容器等祖先节点的 content_height_ 缓存被清除
+                if (auto parent_ro = parent->GetRenderObject()) {
+                    parent_ro->MarkNeedsLayout(true);
                 }
             }
             
-            if (needs_full_rebuild) {
-                // 回退到全量重建
-                window_->InvalidateRenderTree();
-                window_->SetForceFullRepaint(true);
-            } else {
-                // 增量更新：只标记需要重绘
-                // DirtyNodeTracker 已经在 Node::RemoveChild 中记录了变化
-                // RenderTreeSynchronizer 会在渲染时处理
-            }
-            
+            // 2. 增量更新：标记需要重绘
+            // DirtyNodeTracker 已经在 Node::RemoveChild 中记录了变化
+            // RenderTreeSynchronizer 会在渲染时根据变化区域大小决定是增量更新还是全量重建
             window_->SetNeedsRepaint();
         }
     }
@@ -480,8 +452,18 @@ public:
                     if (debug_render) {
                         std::cout << "[OnSubtreeModified] Few structural changes, using incremental update" << std::endl;
                     }
-                    // 结构变化已经在 OnNodeAdded/OnNodeRemoved 中处理
-                    // 这里只需要标记需要重绘
+                    // 结构变化已经在 DirtyNodeTracker 中记录
+                    // 需要确保所有受影响的祖先节点的 content_height_ 缓存被清除
+                    for (const auto& change : tracker.GetStructuralChanges()) {
+                        auto parent = change.parent.lock();
+                        if (parent) {
+                            // 向上传播到所有祖先的 RenderObject
+                            // 这确保滚动容器等祖先节点的 content_height_ 缓存被清除
+                            if (auto parent_ro = parent->GetRenderObject()) {
+                                parent_ro->MarkNeedsLayout(true);
+                            }
+                        }
+                    }
                     window_->SetNeedsRepaint();
                     // 不调用 InvalidateRenderTree()
                     return;
@@ -1651,12 +1633,70 @@ void Window::Render() {
     }
 
     // =========================================================================
+    // 检查窗口大小是否改变（需要重建布局树）
+    // =========================================================================
+    static float last_app_width_unified = 0, last_app_height_unified = 0;
+    bool app_size_changed_unified = (app_width != last_app_width_unified || app_height != last_app_height_unified);
+    
+    if (app_size_changed_unified) {
+        last_app_width_unified = app_width;
+        last_app_height_unified = app_height;
+        render_tree_valid_ = false;  // 窗口大小改变，需要重建布局树
+        
+        // 关键修复：窗口大小改变时，需要强制重建层树
+        // 因为层的边界需要根据新的视口尺寸更新
+        if (render_pipeline_) {
+            render_pipeline_->InvalidateLayerTree();
+            render_pipeline_->Resize(static_cast<int>(app_width), static_cast<int>(app_height));
+        }
+    }
+
+    // =========================================================================
     // 确保渲染树已构建
     // =========================================================================
     EnsureRenderTree();
     
     if (!cached_render_tree_) {
         return;
+    }
+
+    // =========================================================================
+    // 增量同步：处理 DOM 变化
+    // =========================================================================
+    if (document_ && render_tree_synchronizer_ && cached_render_tree_) {
+        auto& tracker = document_->GetDirtyTracker();
+        if (tracker.HasPendingChanges()) {
+            // 调用 RenderTreeSynchronizer 来同步变化
+            bool synced = render_tree_synchronizer_->Synchronize(tracker, cached_render_tree_);
+            if (synced) {
+                // 同步后需要重新布局
+                if (layout_engine_) {
+                    // 获取窗口尺寸
+                    int physical_width, physical_height;
+                    SDL_GetWindowSizeInPixels(sdl_window_, &physical_width, &physical_height);
+                    float dpi_scale = GetDisplayScale();
+                    float width = static_cast<float>(physical_width) / dpi_scale;
+                    float height = static_cast<float>(physical_height) / dpi_scale;
+                    
+                    auto& devtools = DevToolsManager::GetInstance();
+                    float sync_app_width = width;
+                    float sync_app_height = height;
+                    if (devtools.IsOpen()) {
+                        float app_x, app_y;
+                        devtools.GetMainAppBounds(width, height, app_x, app_y, sync_app_width, sync_app_height);
+                    }
+                    
+                    layout_engine_->BuildLayoutTree(cached_render_tree_);
+                    layout_engine_->ComputeLayout(sync_app_width, sync_app_height);
+                    layout_engine_->GetLayoutInfo(cached_render_tree_);
+                }
+                
+                // 标记层树需要重建
+                if (render_pipeline_) {
+                    render_pipeline_->InvalidateLayerTree();
+                }
+            }
+        }
     }
 
     // 关键：将渲染树传递给统一渲染管线

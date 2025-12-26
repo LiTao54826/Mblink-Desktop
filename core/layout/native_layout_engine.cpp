@@ -377,11 +377,23 @@ void NativeLayoutEngine::BuildLayoutTree(std::shared_ptr<RenderObject> root) {
         }
     };
 
+    // Check if viewport size has changed
+    // When viewport size changes, styles using vh/vw units need to be recalculated
+    float current_vw = ViewportSize::GetWidth();
+    float current_vh = ViewportSize::GetHeight();
+    bool viewport_changed = (cached_viewport_width_ != current_vw || 
+                             cached_viewport_height_ != current_vh);
+    
+    // Update cached viewport size
+    cached_viewport_width_ = current_vw;
+    cached_viewport_height_ = current_vh;
+
     // Check if we can reuse the existing tree
     auto cached = cached_root_.lock();
     
     if (root_node_ != 0 && cached && cached.get() == root.get()) {
-        if (root->NeedsLayout()) {
+        // If viewport size changed, we need to rebuild to recalculate vh/vw units
+        if (root->NeedsLayout() || viewport_changed) {
             // Need to rebuild - clear all layout flags first
             clearLayoutFlags(root.get());
             Clear();
@@ -510,6 +522,11 @@ void NativeLayoutEngine::ComputeLayoutInternal(float available_width, float avai
         root_margin = ResolveOrZero(root_node->style.margin, std::optional<float>(available_width));
         // Root element's width should be reduced by its horizontal margins
         root_width = effective_width - root_margin.left - root_margin.right;
+        
+        // IMPORTANT: For root element, scrollbar space is handled at viewport level
+        // (by reducing effective_width), NOT in block layout's scrollbar_gutter.
+        // So we must ensure root's scrollbar_width is 0 to avoid double-counting.
+        root_node->style.scrollbar_width = 0.0f;
     }
 
     LayoutInput inputs;
@@ -2257,7 +2274,8 @@ LayoutOutput NativeLayoutEngine::ComputeNodeLayout(NodeId node_id, const LayoutI
             
             // Handle overflow: auto for block layout - if content exceeds container, add scrollbar and relayout
             // Skip for anonymous blocks (no render_obj)
-            if (node->render_obj) {
+            // Skip for root node - its scrollbar is handled at viewport level in ComputeLayoutInternal
+            if (node->render_obj && node_id != root_node_) {
             const auto& computed = node->render_obj->GetComputedStyle();
             std::string overflow_y = !computed.overflow_y.empty() ? computed.overflow_y : computed.overflow;
             std::string overflow_x = !computed.overflow_x.empty() ? computed.overflow_x : computed.overflow;

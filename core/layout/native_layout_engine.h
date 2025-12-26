@@ -296,6 +296,11 @@ private:
     // This avoids the two-pass layout on every incremental update
     bool last_needs_v_scrollbar_ = false;
     float last_effective_width_ = 0.0f;
+    
+    // Cached viewport size for detecting viewport changes
+    // When viewport size changes, styles using vh/vw units need to be recalculated
+    float cached_viewport_width_ = 0.0f;
+    float cached_viewport_height_ = 0.0f;
 
     /**
      * @brief Create a new node

@@ -77,8 +77,47 @@ bool RenderTreeSynchronizer::Synchronize(DirtyNodeTracker& tracker,
 bool RenderTreeSynchronizer::NeedsSubtreeRebuild(const DirtyNodeTracker& tracker) const {
     const auto& changes = tracker.GetStructuralChanges();
     
-    // 规则 1：变化数量超过阈值
-    if (changes.size() > rebuild_threshold_) {
+    // 规则 1：计算变化区域的总面积
+    // 如果变化区域超过视口面积的 50%，使用全量重建更高效
+    float total_change_area = 0.0f;
+    float viewport_width = 800.0f;  // 默认值
+    float viewport_height = 600.0f;
+    
+    // 尝试从第一个有 RenderObject 的节点获取视口大小
+    for (const auto& change : changes) {
+        if (auto node = change.node.lock()) {
+            if (auto render_obj = node->GetRenderObject()) {
+                viewport_width = render_obj->GetViewportWidth();
+                viewport_height = render_obj->GetViewportHeight();
+                if (viewport_width > 0 && viewport_height > 0) break;
+            }
+        }
+    }
+    
+    float viewport_area = viewport_width * viewport_height;
+    
+    for (const auto& change : changes) {
+        // 尝试获取变化节点的渲染对象来计算面积
+        if (auto node = change.node.lock()) {
+            if (auto render_obj = node->GetRenderObject()) {
+                const auto& layout = render_obj->GetLayoutInfo();
+                total_change_area += layout.width * layout.height;
+            } else {
+                // 没有渲染对象，估算一个默认大小
+                total_change_area += 100.0f * 50.0f;
+            }
+        }
+        // 对于被移除的旧节点
+        if (auto old_node = change.old_node.lock()) {
+            if (auto render_obj = old_node->GetRenderObject()) {
+                const auto& layout = render_obj->GetLayoutInfo();
+                total_change_area += layout.width * layout.height;
+            }
+        }
+    }
+    
+    // 如果变化区域超过视口的 50%，使用全量重建
+    if (viewport_area > 0 && total_change_area > viewport_area * 0.5f) {
         return true;
     }
     
@@ -164,8 +203,8 @@ void RenderTreeSynchronizer::ProcessStyleChanges(DirtyNodeTracker& tracker) {
         // 重新解析样式
         // TODO: 使用 StyleResolver 重新计算样式
         
-        // 标记需要重新布局和绘制
-        render_obj->MarkNeedsLayout();
+        // 标记需要重新布局和绘制，并向上传播到祖先
+        InvalidateAncestorLayout(render_obj.get());
         render_obj->MarkNeedsPaint();
         render_obj->InvalidatePaintCache();
     }
@@ -191,8 +230,9 @@ void RenderTreeSynchronizer::ProcessTextChanges(DirtyNodeTracker& tracker) {
             }
         }
         
-        // 标记需要重新布局和绘制
-        render_obj->MarkNeedsLayout();
+        // 标记需要重新布局和绘制，并向上传播到祖先
+        // 这确保滚动容器等祖先节点的 content_height_ 缓存被清除
+        InvalidateAncestorLayout(render_obj.get());
         render_obj->MarkNeedsPaint();
     }
 }
@@ -211,8 +251,9 @@ void RenderTreeSynchronizer::RebuildSubtree(Node* root) {
         CreateRenderSubtree(child.get(), render_obj.get());
     }
     
-    // 标记需要重新布局
-    render_obj->MarkNeedsLayout();
+    // 标记需要重新布局，并向上传播到所有祖先
+    // 这确保滚动容器等祖先节点的 content_height_ 缓存被清除
+    InvalidateAncestorLayout(render_obj.get());
 }
 
 void RenderTreeSynchronizer::UpdateNode(Node* node) {
