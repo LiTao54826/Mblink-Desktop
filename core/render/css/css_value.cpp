@@ -4,7 +4,7 @@
  */
 
 #include "css_value.h"
-#include "color.h"
+#include "../color.h"
 #include <algorithm>
 #include <sstream>
 #include <cctype>

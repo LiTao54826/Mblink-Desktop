@@ -11,13 +11,13 @@
 
 #pragma once
 
-#include "css_value.h"
-#include "css_variables.h"
-#include "css_filters.h"
-#include "css_clip_path.h"
-#include "transition.h"
+#include "css/css_value.h"
+#include "css/css_variables.h"
+#include "css/css_filters.h"
+#include "css/css_clip_path.h"
+#include "animation/transition.h"
 #include "transform.h"
-#include "animation.h"
+#include "animation/animation.h"
 #include <memory>
 #include <string>
 #include <unordered_map>

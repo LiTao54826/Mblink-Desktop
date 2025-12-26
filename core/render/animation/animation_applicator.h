@@ -15,7 +15,7 @@
 #define LIGHTUI_CORE_RENDER_ANIMATION_APPLICATOR_H_
 
 #include "animation_controller.h"
-#include "render_object.h"
+#include "../render_object.h"
 #include <string>
 #include <set>
 #include <map>

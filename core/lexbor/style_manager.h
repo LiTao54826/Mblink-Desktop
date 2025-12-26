@@ -10,7 +10,7 @@
 #include <map>
 #include <memory>
 #include "lexbor_stylesheet.h"
-#include "core/render/animation_controller.h"
+#include "core/render/animation/animation_controller.h"
 
 namespace lightui {
 

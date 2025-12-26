@@ -4,7 +4,7 @@
  */
 
 #include <gtest/gtest.h>
-#include "render/css_variables.h"
+#include "render/css/css_variables.h"
 
 namespace lightui {
 namespace test {

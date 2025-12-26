@@ -15,7 +15,7 @@
 
 #include <gtest/gtest.h>
 #include "test_utils/test_helpers.h"
-#include "render/property_interpolation.h"
+#include "render/animation/property_interpolation.h"
 #include "render/color.h"
 #include <random>
 #include <vector>

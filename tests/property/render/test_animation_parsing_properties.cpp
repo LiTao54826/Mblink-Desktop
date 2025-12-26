@@ -18,7 +18,7 @@
 #include "lexbor/style_manager.h"
 #include "render/style_resolver.h"
 #include "render/render_object.h"
-#include "render/animation.h"
+#include "render/animation/animation.h"
 #include "dom/document.h"
 #include "dom/element.h"
 #include <random>

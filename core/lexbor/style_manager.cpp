@@ -6,7 +6,7 @@
 #include "style_manager.h"
 #include "core/dom/element.h"
 #include "core/dom/document.h"
-#include "core/render/keyframes.h"
+#include "core/render/animation/keyframes.h"
 #include <algorithm>
 #include <sstream>
 #include <vector>

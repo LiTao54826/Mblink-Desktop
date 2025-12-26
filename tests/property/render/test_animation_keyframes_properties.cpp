@@ -16,8 +16,8 @@
 #include <gtest/gtest.h>
 #include "test_utils/test_helpers.h"
 #include "lexbor/style_manager.h"
-#include "render/animation_controller.h"
-#include "render/keyframes.h"
+#include "render/animation/animation_controller.h"
+#include "render/animation/keyframes.h"
 #include "dom/document.h"
 #include <random>
 #include <vector>

@@ -78,6 +78,16 @@ vcpkg.exe
 *.bak
 project_tree.txt
 
+# Test result files (should be in build/test_results/)
+*_test_results.xml
+
+# Temporary test executables in root
+test_*.exe
+test_*.bat
+
+# DevTools state
+.devtools_state.json
+
 # Keep main documentation files in root
 # All historical task docs are in history_task_docs/
 .claude/settings.local.json

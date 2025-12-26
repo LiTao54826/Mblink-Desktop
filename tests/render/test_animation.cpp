@@ -4,8 +4,8 @@
  */
 
 #include <gtest/gtest.h>
-#include "render/animation.h"
-#include "render/easing_functions.h"
+#include "render/animation/animation.h"
+#include "render/animation/easing_functions.h"
 
 namespace lightui {
 namespace test {

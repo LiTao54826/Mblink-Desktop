@@ -4,7 +4,7 @@
  */
 
 #include "animation_optimizer.h"
-#include "render_object.h"
+#include "../render_object.h"
 #include <sstream>
 #include <iomanip>
 #include <algorithm>

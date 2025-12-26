@@ -15,9 +15,9 @@
 
 #include <gtest/gtest.h>
 #include "test_utils/test_helpers.h"
-#include "render/animation_controller.h"
+#include "render/animation/animation_controller.h"
 #include "render/render_object.h"
-#include "render/keyframes.h"
+#include "render/animation/keyframes.h"
 #include <random>
 #include <cmath>
 
