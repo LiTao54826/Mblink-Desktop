@@ -8,32 +8,39 @@
 #include "core/dom/element.h"
 #include "core/dom/document.h"
 #include "core/dom/event.h"
+#include "core/dom/drag_event.h"
+#include "core/render/render_object.h"
 #include "hit_testing.h"
 #include "mouse_event.h"
 #include <algorithm>
+#include <cmath>
+#include <iostream>
 
 namespace lightui {
 
 DragManager::DragManager()
     : drag_mode_(DragMode::None)
+    , drag_state_(DragState::None)
     , drag_started_(false)
     , drag_verbose_(false)
+    , detect_start_x_(0.0f)
+    , detect_start_y_(0.0f)
     , drag_start_x_(0.0f)
     , drag_start_y_(0.0f)
-    , data_transfer_(std::make_shared<DataTransfer>()) {
+    , data_transfer_(std::make_shared<DataTransfer>())
+    , drop_allowed_(false) {
 }
 
 DragManager::~DragManager() {
     ReleaseDragClone();
 }
 
-bool DragManager::StartDragDetection(std::shared_ptr<Element> element) {
+bool DragManager::StartDragDetection(std::shared_ptr<Element> element, float mouse_x, float mouse_y) {
     if (!element) {
         return false;
     }
 
     // 查找可拖拽的元素
-    // 参考：RmlUi/Source/Core/Context.cpp - ProcessMouseButtonDown (lines 705-720)
     auto draggable = FindDraggableElement(element);
     if (!draggable) {
         return false;
@@ -42,8 +49,13 @@ bool DragManager::StartDragDetection(std::shared_ptr<Element> element) {
     // 设置拖拽元素
     drag_element_ = draggable;
     drag_mode_ = GetDragMode(draggable);
+    drag_state_ = DragState::Detecting;  // 进入检测状态
     drag_started_ = false;
     drag_verbose_ = (drag_mode_ == DragMode::DragDrop || drag_mode_ == DragMode::Clone);
+
+    // 记录检测起始位置
+    detect_start_x_ = mouse_x;
+    detect_start_y_ = mouse_y;
 
     // 初始化DataTransfer对象
     data_transfer_ = std::make_shared<DataTransfer>();
@@ -52,24 +64,48 @@ bool DragManager::StartDragDetection(std::shared_ptr<Element> element) {
     return true;
 }
 
-bool DragManager::UpdateDrag(float mouse_x, float mouse_y, std::shared_ptr<Document> document) {
+bool DragManager::CheckDragThreshold(float mouse_x, float mouse_y) const {
+    if (drag_state_ != DragState::Detecting) {
+        return false;
+    }
+
+    // 计算鼠标移动距离
+    float dx = mouse_x - detect_start_x_;
+    float dy = mouse_y - detect_start_y_;
+    float distance = std::sqrt(dx * dx + dy * dy);
+
+    return distance >= DRAG_THRESHOLD;
+}
+
+bool DragManager::UpdateDrag(float mouse_x, float mouse_y, std::shared_ptr<Document> document,
+                             std::shared_ptr<RenderObject> root_render) {
     auto drag_element = drag_element_.lock();
     if (!drag_element) {
         return false;
     }
 
+    // 如果在检测状态，检查是否超过阈值
+    if (drag_state_ == DragState::Detecting) {
+        if (!CheckDragThreshold(mouse_x, mouse_y)) {
+            // 还没超过阈值，不开始拖拽
+            return false;
+        }
+        // 超过阈值，转换到拖拽状态
+        drag_state_ = DragState::Dragging;
+    }
+
     // 如果还没开始拖拽，发送dragstart事件
-    // 参考：RmlUi/Source/Core/Context.cpp - UpdateHoverChain (lines 1309-1322)
     if (!drag_started_) {
         drag_start_x_ = mouse_x;
         drag_start_y_ = mouse_y;
 
-        // 发送dragstart事件
-        auto dragstart_event = std::make_shared<MouseEvent>(
-            "dragstart",
+        // 发送dragstart事件（使用 DragEvent）
+        auto dragstart_event = std::make_shared<DragEvent>(
+            DragEvent::DRAG_START,
             static_cast<int>(mouse_x),
             static_cast<int>(mouse_y),
-            0
+            0,
+            data_transfer_
         );
         drag_element->DispatchEvent(dragstart_event);
         drag_started_ = true;
@@ -84,30 +120,17 @@ bool DragManager::UpdateDrag(float mouse_x, float mouse_y, std::shared_ptr<Docum
     }
 
     // 发送drag事件
-    auto drag_event = std::make_shared<MouseEvent>(
-        "drag",
+    auto drag_event = std::make_shared<DragEvent>(
+        DragEvent::DRAG,
         static_cast<int>(mouse_x),
         static_cast<int>(mouse_y),
-        0
+        0,
+        data_transfer_
     );
     drag_element->DispatchEvent(drag_event);
 
     // 更新拖拽hover链
-    UpdateDragHoverChain(mouse_x, mouse_y, document);
-
-    // 发送dragmove事件（如果是详细模式）
-    if (drag_verbose_) {
-        auto drag_hover = drag_hover_element_.lock();
-        if (drag_hover) {
-            auto dragmove_event = std::make_shared<MouseEvent>(
-                "dragmove",
-                static_cast<int>(mouse_x),
-                static_cast<int>(mouse_y),
-                0
-            );
-            drag_hover->DispatchEvent(dragmove_event);
-        }
-    }
+    UpdateDragHoverChain(mouse_x, mouse_y, document, root_render);
 
     return true;
 }
@@ -119,48 +142,74 @@ void DragManager::EndDrag(float mouse_x, float mouse_y) {
         if (data_transfer_) {
             data_transfer_->ClearData();
         }
+        drag_state_ = DragState::None;
+        drop_allowed_ = false;
         return;
     }
 
     if (drag_started_) {
-        // 参考：RmlUi/Source/Core/Context.cpp - ProcessMouseButtonUp (lines 779-803)
-        
-        // 发送dragdrop事件到拖拽悬停元素
         auto drag_hover = drag_hover_element_.lock();
-        if (drag_hover && drag_verbose_) {
-            auto dragdrop_event = std::make_shared<MouseEvent>(
-                "dragdrop",
-                static_cast<int>(mouse_x),
-                static_cast<int>(mouse_y),
-                0
-            );
-            drag_hover->DispatchEvent(dragdrop_event);
-
-            // 发送dragout事件
-            if (drag_hover) {  // 用户可能在dragdrop事件中移除了元素
-                auto dragout_event = std::make_shared<MouseEvent>(
-                    "dragout",
-                    static_cast<int>(mouse_x),
-                    static_cast<int>(mouse_y),
-                    0
-                );
-                drag_hover->DispatchEvent(dragout_event);
+        
+        // 检查是否允许 drop
+        // 1. 必须有目标元素
+        // 2. 必须是详细模式
+        // 3. dropEffect 必须与 effectAllowed 兼容
+        // 4. dragover 必须调用了 preventDefault
+        bool can_drop = drag_hover && drag_verbose_ && drop_allowed_;
+        
+        if (can_drop && data_transfer_) {
+            // 检查效果兼容性
+            DragEffect effect_allowed = data_transfer_->GetEffectAllowed();
+            DragEffect drop_effect = data_transfer_->GetDropEffect();
+            
+            if (!IsEffectCompatible(effect_allowed, drop_effect)) {
+                // 不兼容，设置为 none 并取消 drop
+                data_transfer_->SetDropEffect(DragEffect::None);
+                can_drop = false;
+            }
+            
+            // 如果 dropEffect 是 none，也取消 drop
+            if (data_transfer_->GetDropEffect() == DragEffect::None) {
+                can_drop = false;
             }
         }
-
-        // 发送dragend事件
-        if (drag_element) {  // 用户可能在dragdrop事件中移除了元素
-            auto dragend_event = std::make_shared<MouseEvent>(
-                "dragend",
+        
+        if (can_drop && drag_hover) {
+            // 发送 drop 事件
+            auto drop_event = std::make_shared<DragEvent>(
+                DragEvent::DROP,
                 static_cast<int>(mouse_x),
                 static_cast<int>(mouse_y),
-                0
+                0,
+                data_transfer_
             );
-            drag_element->DispatchEvent(dragend_event);
-
-            // 移除:drag伪类
-            drag_element->SetPseudoClass("drag", false);
+            drag_hover->DispatchEvent(drop_event);
         }
+        
+        // 发送 dragleave 事件（如果有悬停元素）
+        if (drag_hover && drag_verbose_) {
+            auto dragleave_event = std::make_shared<DragEvent>(
+                DragEvent::DRAG_LEAVE,
+                static_cast<int>(mouse_x),
+                static_cast<int>(mouse_y),
+                0,
+                data_transfer_
+            );
+            drag_hover->DispatchEvent(dragleave_event);
+        }
+
+        // 发送dragend事件（总是发送）
+        auto dragend_event = std::make_shared<DragEvent>(
+            DragEvent::DRAG_END,
+            static_cast<int>(mouse_x),
+            static_cast<int>(mouse_y),
+            0,
+            data_transfer_
+        );
+        drag_element->DispatchEvent(dragend_event);
+
+        // 移除:drag伪类
+        drag_element->SetPseudoClass("drag", false);
 
         // 释放拖拽克隆
         ReleaseDragClone();
@@ -171,8 +220,10 @@ void DragManager::EndDrag(float mouse_x, float mouse_y) {
     drag_hover_element_.reset();
     drag_hover_chain_.clear();
     drag_mode_ = DragMode::None;
+    drag_state_ = DragState::None;
     drag_started_ = false;
     drag_verbose_ = false;
+    drop_allowed_ = false;
 
     // 清理DataTransfer
     if (data_transfer_) {
@@ -195,8 +246,10 @@ void DragManager::CancelDrag() {
     drag_hover_element_.reset();
     drag_hover_chain_.clear();
     drag_mode_ = DragMode::None;
+    drag_state_ = DragState::None;
     drag_started_ = false;
     drag_verbose_ = false;
+    drop_allowed_ = false;
 
     // 清理DataTransfer
     if (data_transfer_) {
@@ -222,6 +275,48 @@ std::shared_ptr<Element> DragManager::GetDragClone() const {
 
 std::shared_ptr<DataTransfer> DragManager::GetDataTransfer() const {
     return data_transfer_;
+}
+
+bool DragManager::IsElementDraggable(std::shared_ptr<Element> element) const {
+    if (!element) {
+        return false;
+    }
+
+    DragMode mode = GetDragMode(element);
+    return mode == DragMode::Drag || mode == DragMode::DragDrop || mode == DragMode::Clone;
+}
+
+bool DragManager::IsEffectCompatible(DragEffect effect_allowed, DragEffect drop_effect) {
+    // 参考：W3C HTML5 - Drag and Drop
+    // https://html.spec.whatwg.org/multipage/dnd.html#dom-datatransfer-dropeffect
+    
+    // "none" 总是兼容的（表示不允许 drop）
+    if (drop_effect == DragEffect::None) {
+        return true;
+    }
+
+    // "uninitialized" 允许所有效果
+    if (effect_allowed == DragEffect::Uninitialized || effect_allowed == DragEffect::All) {
+        return true;
+    }
+
+    // 检查具体的兼容性
+    switch (drop_effect) {
+        case DragEffect::Copy:
+            return effect_allowed == DragEffect::Copy ||
+                   effect_allowed == DragEffect::CopyMove ||
+                   effect_allowed == DragEffect::CopyLink;
+        case DragEffect::Move:
+            return effect_allowed == DragEffect::Move ||
+                   effect_allowed == DragEffect::CopyMove ||
+                   effect_allowed == DragEffect::LinkMove;
+        case DragEffect::Link:
+            return effect_allowed == DragEffect::Link ||
+                   effect_allowed == DragEffect::CopyLink ||
+                   effect_allowed == DragEffect::LinkMove;
+        default:
+            return false;
+    }
 }
 
 std::shared_ptr<Element> DragManager::FindDraggableElement(std::shared_ptr<Element> element) {
@@ -262,12 +357,27 @@ std::shared_ptr<Element> DragManager::FindDraggableElement(std::shared_ptr<Eleme
     return nullptr;
 }
 
-DragMode DragManager::GetDragMode(std::shared_ptr<Element> element) {
+DragMode DragManager::GetDragMode(std::shared_ptr<Element> element) const {
     if (!element) {
         return DragMode::None;
     }
 
-    // 检查drag属性
+    // 优先检查 HTML5 标准 draggable 属性
+    std::string draggable_attr = element->GetAttribute("draggable");
+    if (!draggable_attr.empty()) {
+        // draggable 属性存在，优先使用
+        if (draggable_attr == "true" || draggable_attr.empty()) {
+            // draggable="true" 或 draggable（空值）表示可拖拽
+            // 使用 DragDrop 模式以发送完整的 HTML5 事件
+            return DragMode::DragDrop;
+        } else if (draggable_attr == "false") {
+            return DragMode::None;
+        }
+        // 其他无效值视为 false
+        return DragMode::None;
+    }
+
+    // 向后兼容：检查 RmlUi 风格的 drag 属性
     std::string drag_attr = element->GetAttribute("drag");
     if (drag_attr.empty()) {
         return DragMode::None;
@@ -333,16 +443,23 @@ void DragManager::ReleaseDragClone() {
     }
 }
 
-void DragManager::UpdateDragHoverChain(float mouse_x, float mouse_y, std::shared_ptr<Document> document) {
+void DragManager::UpdateDragHoverChain(float mouse_x, float mouse_y, std::shared_ptr<Document> document,
+                                       std::shared_ptr<RenderObject> root_render) {
     if (!document) {
         return;
     }
 
-    // 参考：RmlUi/Source/Core/Context.cpp - UpdateHoverChain (lines 1361-1382)
-    
     // 执行Hit Testing获取当前鼠标下的元素（忽略拖拽元素）
     HitTesting hit_testing;
-    auto hit_result = hit_testing.HitTest(document, mouse_x, mouse_y);
+    HitTestResult hit_result;
+    
+    // 优先使用渲染树进行精确 hit testing
+    if (root_render) {
+        hit_result = hit_testing.HitTestRenderObject(root_render, mouse_x, mouse_y, 0.0f, 0.0f);
+    } else {
+        // 回退到简化的 DOM 遍历（不推荐，可能不准确）
+        hit_result = hit_testing.HitTest(document, mouse_x, mouse_y);
+    }
     
     // 构建新的拖拽hover链
     std::unordered_set<Element*> new_drag_hover_chain;
@@ -366,10 +483,37 @@ void DragManager::UpdateDragHoverChain(float mouse_x, float mouse_y, std::shared
         }
     }
     
-    // 发送dragout/dragover事件（如果是详细模式）
+    // 发送 HTML5 标准事件（如果是详细模式）
     if (drag_started_ && drag_verbose_) {
-        SendDragEvents(drag_hover_chain_, new_drag_hover_chain, "dragout", mouse_x, mouse_y);
-        SendDragEvents(new_drag_hover_chain, drag_hover_chain_, "dragover", mouse_x, mouse_y);
+        // dragleave: 离开的元素（在旧链中但不在新链中）
+        SendDragEvents(drag_hover_chain_, new_drag_hover_chain, DragEvent::DRAG_LEAVE, mouse_x, mouse_y);
+        // dragenter: 进入的元素（在新链中但不在旧链中）
+        SendDragEvents(new_drag_hover_chain, drag_hover_chain_, DragEvent::DRAG_ENTER, mouse_x, mouse_y);
+        
+        // dragover: 发送到当前悬停元素
+        // 重置 drop_allowed_，等待 dragover 处理器调用 preventDefault
+        drop_allowed_ = false;
+        
+        if (new_drag_hover) {
+            try {
+                auto element_ptr = std::static_pointer_cast<Element>(new_drag_hover->shared_from_this());
+                auto dragover_event = std::make_shared<DragEvent>(
+                    DragEvent::DRAG_OVER,
+                    static_cast<int>(mouse_x),
+                    static_cast<int>(mouse_y),
+                    0,
+                    data_transfer_
+                );
+                element_ptr->DispatchEvent(dragover_event);
+                
+                // 检查是否调用了 preventDefault
+                if (dragover_event->IsDefaultPrevented()) {
+                    drop_allowed_ = true;
+                }
+            } catch (...) {
+                // 忽略
+            }
+        }
     }
     
     // 更新拖拽hover链
@@ -392,19 +536,18 @@ void DragManager::SendDragEvents(const std::unordered_set<Element*>& old_items,
                                 const std::string& event_type,
                                 float mouse_x,
                                 float mouse_y) {
-    // 参考：RmlUi/Source/Core/Context.cpp - SendEvents
     // 找出在old_items中但不在new_items中的元素
-    
     for (Element* element : old_items) {
         if (new_items.find(element) == new_items.end()) {
             // 这个元素在旧集合中但不在新集合中
             
-            // 创建拖拽事件
-            auto drag_event = std::make_shared<MouseEvent>(
+            // 创建拖拽事件（使用 DragEvent）
+            auto drag_event = std::make_shared<DragEvent>(
                 event_type,
                 static_cast<int>(mouse_x),
                 static_cast<int>(mouse_y),
-                0
+                0,
+                data_transfer_
             );
             
             // 分发事件

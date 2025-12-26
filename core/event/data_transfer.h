@@ -155,6 +155,9 @@ private:
     // 数据存储（格式 -> 数据）
     std::unordered_map<std::string, std::string> data_;
     
+    // 格式插入顺序（用于 GetTypes() 返回有序列表）
+    std::vector<std::string> format_order_;
+    
     // 允许的拖拽效果
     DragEffect effect_allowed_;
     

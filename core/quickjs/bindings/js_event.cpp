@@ -5,6 +5,8 @@
 
 #include "js_event.h"
 #include "js_node.h"
+#include "js_data_transfer.h"
+#include "core/dom/drag_event.h"
 #include <iostream>
 
 namespace lightui {
@@ -92,6 +94,177 @@ static JSValue JSEvent_get_cancelable(JSContext* ctx, JSValueConst this_val, int
     return JS_NewBool(ctx, data->event->GetCancelable());
 }
 
+// ========== MouseEvent 属性访问器 ==========
+
+// clientX
+static JSValue JSEvent_get_clientX(JSContext* ctx, JSValueConst this_val, int magic) {
+    auto* data = static_cast<JSEventData*>(JS_GetOpaque(this_val, js_event_class_id));
+    if (!data || !data->event) {
+        return JS_NewInt32(ctx, 0);
+    }
+
+    auto mouse_event = std::dynamic_pointer_cast<MouseEvent>(data->event);
+    if (!mouse_event) {
+        return JS_NewInt32(ctx, 0);
+    }
+
+    return JS_NewInt32(ctx, mouse_event->GetClientX());
+}
+
+// clientY
+static JSValue JSEvent_get_clientY(JSContext* ctx, JSValueConst this_val, int magic) {
+    auto* data = static_cast<JSEventData*>(JS_GetOpaque(this_val, js_event_class_id));
+    if (!data || !data->event) {
+        return JS_NewInt32(ctx, 0);
+    }
+
+    auto mouse_event = std::dynamic_pointer_cast<MouseEvent>(data->event);
+    if (!mouse_event) {
+        return JS_NewInt32(ctx, 0);
+    }
+
+    return JS_NewInt32(ctx, mouse_event->GetClientY());
+}
+
+// button
+static JSValue JSEvent_get_button(JSContext* ctx, JSValueConst this_val, int magic) {
+    auto* data = static_cast<JSEventData*>(JS_GetOpaque(this_val, js_event_class_id));
+    if (!data || !data->event) {
+        return JS_NewInt32(ctx, 0);
+    }
+
+    auto mouse_event = std::dynamic_pointer_cast<MouseEvent>(data->event);
+    if (!mouse_event) {
+        return JS_NewInt32(ctx, 0);
+    }
+
+    return JS_NewInt32(ctx, mouse_event->GetButton());
+}
+
+// ========== DragEvent 属性访问器 ==========
+
+// dataTransfer
+static JSValue JSEvent_get_dataTransfer(JSContext* ctx, JSValueConst this_val, int magic) {
+    auto* data = static_cast<JSEventData*>(JS_GetOpaque(this_val, js_event_class_id));
+    if (!data || !data->event) {
+        return JS_NULL;
+    }
+
+    auto drag_event = std::dynamic_pointer_cast<DragEvent>(data->event);
+    if (!drag_event) {
+        return JS_NULL;
+    }
+
+    auto data_transfer = drag_event->GetDataTransfer();
+    if (!data_transfer) {
+        return JS_NULL;
+    }
+
+    return WrapDataTransfer(ctx, data_transfer);
+}
+
+// screenX
+static JSValue JSEvent_get_screenX(JSContext* ctx, JSValueConst this_val, int magic) {
+    auto* data = static_cast<JSEventData*>(JS_GetOpaque(this_val, js_event_class_id));
+    if (!data || !data->event) {
+        return JS_NewInt32(ctx, 0);
+    }
+
+    auto drag_event = std::dynamic_pointer_cast<DragEvent>(data->event);
+    if (drag_event) {
+        return JS_NewInt32(ctx, drag_event->GetScreenX());
+    }
+
+    // 对于普通 MouseEvent，返回 clientX 作为 screenX
+    auto mouse_event = std::dynamic_pointer_cast<MouseEvent>(data->event);
+    if (mouse_event) {
+        return JS_NewInt32(ctx, mouse_event->GetClientX());
+    }
+
+    return JS_NewInt32(ctx, 0);
+}
+
+// screenY
+static JSValue JSEvent_get_screenY(JSContext* ctx, JSValueConst this_val, int magic) {
+    auto* data = static_cast<JSEventData*>(JS_GetOpaque(this_val, js_event_class_id));
+    if (!data || !data->event) {
+        return JS_NewInt32(ctx, 0);
+    }
+
+    auto drag_event = std::dynamic_pointer_cast<DragEvent>(data->event);
+    if (drag_event) {
+        return JS_NewInt32(ctx, drag_event->GetScreenY());
+    }
+
+    // 对于普通 MouseEvent，返回 clientY 作为 screenY
+    auto mouse_event = std::dynamic_pointer_cast<MouseEvent>(data->event);
+    if (mouse_event) {
+        return JS_NewInt32(ctx, mouse_event->GetClientY());
+    }
+
+    return JS_NewInt32(ctx, 0);
+}
+
+// ctrlKey
+static JSValue JSEvent_get_ctrlKey(JSContext* ctx, JSValueConst this_val, int magic) {
+    auto* data = static_cast<JSEventData*>(JS_GetOpaque(this_val, js_event_class_id));
+    if (!data || !data->event) {
+        return JS_FALSE;
+    }
+
+    auto drag_event = std::dynamic_pointer_cast<DragEvent>(data->event);
+    if (drag_event) {
+        return JS_NewBool(ctx, drag_event->GetCtrlKey());
+    }
+
+    return JS_FALSE;
+}
+
+// shiftKey
+static JSValue JSEvent_get_shiftKey(JSContext* ctx, JSValueConst this_val, int magic) {
+    auto* data = static_cast<JSEventData*>(JS_GetOpaque(this_val, js_event_class_id));
+    if (!data || !data->event) {
+        return JS_FALSE;
+    }
+
+    auto drag_event = std::dynamic_pointer_cast<DragEvent>(data->event);
+    if (drag_event) {
+        return JS_NewBool(ctx, drag_event->GetShiftKey());
+    }
+
+    return JS_FALSE;
+}
+
+// altKey
+static JSValue JSEvent_get_altKey(JSContext* ctx, JSValueConst this_val, int magic) {
+    auto* data = static_cast<JSEventData*>(JS_GetOpaque(this_val, js_event_class_id));
+    if (!data || !data->event) {
+        return JS_FALSE;
+    }
+
+    auto drag_event = std::dynamic_pointer_cast<DragEvent>(data->event);
+    if (drag_event) {
+        return JS_NewBool(ctx, drag_event->GetAltKey());
+    }
+
+    return JS_FALSE;
+}
+
+// metaKey
+static JSValue JSEvent_get_metaKey(JSContext* ctx, JSValueConst this_val, int magic) {
+    auto* data = static_cast<JSEventData*>(JS_GetOpaque(this_val, js_event_class_id));
+    if (!data || !data->event) {
+        return JS_FALSE;
+    }
+
+    auto drag_event = std::dynamic_pointer_cast<DragEvent>(data->event);
+    if (drag_event) {
+        return JS_NewBool(ctx, drag_event->GetMetaKey());
+    }
+
+    return JS_FALSE;
+}
+
 // ========== 方法实现 ==========
 
 // stopPropagation()
@@ -124,6 +297,19 @@ static const JSCFunctionListEntry js_event_proto_funcs[] = {
     JS_CGETSET_MAGIC_DEF("currentTarget", JSEvent_get_currentTarget, nullptr, 0),
     JS_CGETSET_MAGIC_DEF("bubbles", JSEvent_get_bubbles, nullptr, 0),
     JS_CGETSET_MAGIC_DEF("cancelable", JSEvent_get_cancelable, nullptr, 0),
+    // MouseEvent 属性
+    JS_CGETSET_MAGIC_DEF("clientX", JSEvent_get_clientX, nullptr, 0),
+    JS_CGETSET_MAGIC_DEF("clientY", JSEvent_get_clientY, nullptr, 0),
+    JS_CGETSET_MAGIC_DEF("button", JSEvent_get_button, nullptr, 0),
+    JS_CGETSET_MAGIC_DEF("screenX", JSEvent_get_screenX, nullptr, 0),
+    JS_CGETSET_MAGIC_DEF("screenY", JSEvent_get_screenY, nullptr, 0),
+    // DragEvent 属性
+    JS_CGETSET_MAGIC_DEF("dataTransfer", JSEvent_get_dataTransfer, nullptr, 0),
+    JS_CGETSET_MAGIC_DEF("ctrlKey", JSEvent_get_ctrlKey, nullptr, 0),
+    JS_CGETSET_MAGIC_DEF("shiftKey", JSEvent_get_shiftKey, nullptr, 0),
+    JS_CGETSET_MAGIC_DEF("altKey", JSEvent_get_altKey, nullptr, 0),
+    JS_CGETSET_MAGIC_DEF("metaKey", JSEvent_get_metaKey, nullptr, 0),
+    // 方法
     JS_CFUNC_DEF("stopPropagation", 0, JSEvent_stopPropagation),
     JS_CFUNC_DEF("preventDefault", 0, JSEvent_preventDefault),
 };

@@ -117,17 +117,43 @@ void DirtyNodeTracker::Clear() {
 }
 
 void DirtyNodeTracker::Optimize() {
-    // 优化结构变化：合并 add-then-remove 同一节点的操作
+    // 优化结构变化：合并冗余操作
     std::vector<StructuralChange> optimized_structural;
     std::unordered_set<Node*> cancelled_nodes;
     
-    // 第一遍：找出被添加后又被移除的节点
+    // 分析每个节点的操作顺序
+    // 记录每个节点的第一次操作类型
+    std::unordered_map<Node*, StructuralChangeType> first_operation;
+    
+    for (const auto& change : structural_changes_) {
+        Node* node_ptr = nullptr;
+        if (change.type == StructuralChangeType::Added || 
+            change.type == StructuralChangeType::Removed) {
+            auto node = change.node.lock();
+            if (node) {
+                node_ptr = node.get();
+            }
+        }
+        
+        if (node_ptr && first_operation.find(node_ptr) == first_operation.end()) {
+            first_operation[node_ptr] = change.type;
+        }
+    }
+    
+    // 判断哪些节点应该被取消
+    // 只有 "先 Add 后 Remove" 才取消（创建后又删除）
+    // "先 Remove 后 Add" 是移动操作，不应取消
     for (const auto& change : structural_changes_) {
         if (change.type == StructuralChangeType::Added) {
             auto node = change.node.lock();
             if (node && removed_nodes_.count(node.get())) {
-                // 这个节点被添加后又被移除，标记为取消
-                cancelled_nodes.insert(node.get());
+                // 检查第一次操作是否是 Added
+                auto it = first_operation.find(node.get());
+                if (it != first_operation.end() && it->second == StructuralChangeType::Added) {
+                    // 先 Add 后 Remove，标记为取消
+                    cancelled_nodes.insert(node.get());
+                }
+                // 如果是先 Remove 后 Add，这是移动操作，不取消
             }
         }
     }

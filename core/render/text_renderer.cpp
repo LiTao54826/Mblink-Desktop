@@ -81,6 +81,7 @@ void TextRenderer::DrawTextWithEmoji(const std::string& text, float x, float y,
 
     auto& font_manager = FontManager::GetInstance();
     sk_sp<SkTypeface> emoji_typeface = font_manager.GetEmojiTypeface();
+    sk_sp<SkTypeface> symbol_typeface = font_manager.GetSymbolTypeface();
 
     // 获取原始字体的样式（粗细、斜体等）
     SkFontStyle original_style;
@@ -96,13 +97,18 @@ void TextRenderer::DrawTextWithEmoji(const std::string& text, float x, float y,
     emoji_font.setEdging(SkFont::Edging::kAntiAlias);
     emoji_font.setSubpixel(true);
 
+    // 创建符号字体（保持相同大小）
+    SkFont symbol_font(symbol_typeface, font.getSize());
+    symbol_font.setEdging(SkFont::Edging::kAntiAlias);
+    symbol_font.setSubpixel(true);
+
     // 创建CJK字体（保持相同大小和样式）
     SkFont cjk_font(cjk_typeface, font.getSize());
     cjk_font.setEdging(SkFont::Edging::kAntiAlias);
     cjk_font.setSubpixel(true);
 
     // 字符类型枚举
-    enum class CharType { NORMAL, EMOJI, CJK };
+    enum class CharType { NORMAL, EMOJI, SYMBOL, CJK };
 
     float current_x = x;
     const char* str = text.c_str();
@@ -129,6 +135,7 @@ void TextRenderer::DrawTextWithEmoji(const std::string& text, float x, float y,
         // 零宽度修饰符跟随前一个字符的类型，返回 EMOJI
         if (isZeroWidthModifier(codepoint)) return CharType::EMOJI;
         if (FontManager::IsEmoji(codepoint)) return CharType::EMOJI;
+        if (FontManager::IsSymbol(codepoint)) return CharType::SYMBOL;
         if (FontManager::IsCJK(codepoint)) return CharType::CJK;
         return CharType::NORMAL;
     };
@@ -139,6 +146,9 @@ void TextRenderer::DrawTextWithEmoji(const std::string& text, float x, float y,
         switch (type) {
             case CharType::EMOJI:
                 use_font = emoji_typeface ? &emoji_font : &font;
+                break;
+            case CharType::SYMBOL:
+                use_font = symbol_typeface ? &symbol_font : &font;
                 break;
             case CharType::CJK:
                 use_font = cjk_typeface ? &cjk_font : &font;
@@ -266,6 +276,7 @@ float TextRenderer::MeasureTextWidthWithEmoji(const std::string& text, const SkF
 
     auto& font_manager = FontManager::GetInstance();
     sk_sp<SkTypeface> emoji_typeface = font_manager.GetEmojiTypeface();
+    sk_sp<SkTypeface> symbol_typeface = font_manager.GetSymbolTypeface();
 
     // 获取原始字体的样式（粗细、斜体等）
     SkFontStyle original_style;
@@ -281,16 +292,22 @@ float TextRenderer::MeasureTextWidthWithEmoji(const std::string& text, const SkF
     emoji_font.setEdging(SkFont::Edging::kAntiAlias);
     emoji_font.setSubpixel(true);
 
+    // 创建符号字体
+    SkFont symbol_font(symbol_typeface, font.getSize());
+    symbol_font.setEdging(SkFont::Edging::kAntiAlias);
+    symbol_font.setSubpixel(true);
+
     // 创建CJK字体（保持相同样式）
     SkFont cjk_font(cjk_typeface, font.getSize());
     cjk_font.setEdging(SkFont::Edging::kAntiAlias);
     cjk_font.setSubpixel(true);
 
     // 字符类型枚举
-    enum class CharType { NORMAL, EMOJI, CJK };
+    enum class CharType { NORMAL, EMOJI, SYMBOL, CJK };
 
     auto getCharType = [](uint32_t codepoint) -> CharType {
         if (FontManager::IsEmoji(codepoint)) return CharType::EMOJI;
+        if (FontManager::IsSymbol(codepoint)) return CharType::SYMBOL;
         if (FontManager::IsCJK(codepoint)) return CharType::CJK;
         return CharType::NORMAL;
     };
@@ -301,6 +318,9 @@ float TextRenderer::MeasureTextWidthWithEmoji(const std::string& text, const SkF
         switch (type) {
             case CharType::EMOJI:
                 use_font = emoji_typeface ? &emoji_font : &font;
+                break;
+            case CharType::SYMBOL:
+                use_font = symbol_typeface ? &symbol_font : &font;
                 break;
             case CharType::CJK:
                 use_font = cjk_typeface ? &cjk_font : &font;
@@ -371,6 +391,7 @@ float TextRenderer::MeasureMixedTextWidth(const std::string& text, const SkFont&
     }
     
     sk_sp<SkTypeface> emoji_typeface = font_manager.GetEmojiTypeface();
+    sk_sp<SkTypeface> symbol_typeface = font_manager.GetSymbolTypeface();
 
     // 获取原始字体的样式（粗细、斜体等）
     SkFontStyle original_style;
@@ -398,13 +419,18 @@ float TextRenderer::MeasureMixedTextWidth(const std::string& text, const SkFont&
     emoji_font.setEdging(SkFont::Edging::kAntiAlias);
     emoji_font.setSubpixel(true);
 
+    // 创建符号字体
+    SkFont symbol_font(symbol_typeface, font_size);
+    symbol_font.setEdging(SkFont::Edging::kAntiAlias);
+    symbol_font.setSubpixel(true);
+
     // 创建CJK字体（保持相同样式）
     SkFont cjk_font(cjk_typeface, font_size);
     cjk_font.setEdging(SkFont::Edging::kAntiAlias);
     cjk_font.setSubpixel(true);
 
     // 字符类型枚举
-    enum class CharType { NORMAL, EMOJI, CJK };
+    enum class CharType { NORMAL, EMOJI, SYMBOL, CJK };
 
     // 检查是否是零宽度修饰符（变体选择符、零宽连接符等）
     auto isZeroWidthModifier = [](uint32_t codepoint) -> bool {
@@ -424,6 +450,7 @@ float TextRenderer::MeasureMixedTextWidth(const std::string& text, const SkFont&
         // 因为这些修饰符主要用于 emoji
         if (isZeroWidthModifier(codepoint)) return CharType::EMOJI;
         if (FontManager::IsEmoji(codepoint)) return CharType::EMOJI;
+        if (FontManager::IsSymbol(codepoint)) return CharType::SYMBOL;
         if (FontManager::IsCJK(codepoint)) return CharType::CJK;
         return CharType::NORMAL;
     };
@@ -435,6 +462,9 @@ float TextRenderer::MeasureMixedTextWidth(const std::string& text, const SkFont&
         switch (type) {
             case CharType::EMOJI:
                 use_font = emoji_typeface ? &emoji_font : &working_font;
+                break;
+            case CharType::SYMBOL:
+                use_font = symbol_typeface ? &symbol_font : &working_font;
                 break;
             case CharType::CJK:
                 use_font = cjk_typeface ? &cjk_font : &working_font;

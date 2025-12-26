@@ -9,8 +9,31 @@
 
 #include "data_transfer.h"
 #include <algorithm>
+#include <cctype>
 
 namespace lightui {
+
+// 格式规范化：转换为小写，处理别名
+static std::string NormalizeFormat(const std::string& format) {
+    if (format.empty()) {
+        return format;
+    }
+
+    // 转换为小写
+    std::string normalized = format;
+    std::transform(normalized.begin(), normalized.end(), normalized.begin(),
+                   [](unsigned char c) { return std::tolower(c); });
+
+    // 处理 W3C 规范中的别名
+    // 参考：https://html.spec.whatwg.org/multipage/dnd.html#dom-datatransfer-setdata
+    if (normalized == "text") {
+        return "text/plain";
+    } else if (normalized == "url") {
+        return "text/uri-list";
+    }
+
+    return normalized;
+}
 
 DataTransfer::DataTransfer()
     : effect_allowed_(DragEffect::Uninitialized)
@@ -18,11 +41,23 @@ DataTransfer::DataTransfer()
 }
 
 void DataTransfer::SetData(const std::string& format, const std::string& data) {
-    data_[format] = data;
+    if (format.empty()) {
+        return;  // 忽略空格式
+    }
+
+    std::string normalized = NormalizeFormat(format);
+    
+    // 如果是新格式，记录插入顺序
+    if (data_.find(normalized) == data_.end()) {
+        format_order_.push_back(normalized);
+    }
+    
+    data_[normalized] = data;
 }
 
 std::string DataTransfer::GetData(const std::string& format) const {
-    auto it = data_.find(format);
+    std::string normalized = NormalizeFormat(format);
+    auto it = data_.find(normalized);
     if (it != data_.end()) {
         return it->second;
     }
@@ -33,25 +68,28 @@ void DataTransfer::ClearData(const std::string& format) {
     if (format.empty()) {
         // 清除所有数据
         data_.clear();
+        format_order_.clear();
     } else {
         // 清除特定格式的数据
-        data_.erase(format);
+        std::string normalized = NormalizeFormat(format);
+        data_.erase(normalized);
+        
+        // 从顺序列表中移除
+        auto it = std::find(format_order_.begin(), format_order_.end(), normalized);
+        if (it != format_order_.end()) {
+            format_order_.erase(it);
+        }
     }
 }
 
 bool DataTransfer::HasData(const std::string& format) const {
-    return data_.find(format) != data_.end();
+    std::string normalized = NormalizeFormat(format);
+    return data_.find(normalized) != data_.end();
 }
 
 std::vector<std::string> DataTransfer::GetTypes() const {
-    std::vector<std::string> types;
-    types.reserve(data_.size());
-    
-    for (const auto& [format, _] : data_) {
-        types.push_back(format);
-    }
-    
-    return types;
+    // 返回按插入顺序排列的格式列表
+    return format_order_;
 }
 
 void DataTransfer::SetEffectAllowed(DragEffect effect) {

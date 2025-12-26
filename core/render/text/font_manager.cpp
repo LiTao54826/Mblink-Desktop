@@ -53,6 +53,9 @@ void FontManager::Initialize() {
     // 初始化emoji字体
     InitializeEmojiFont();
 
+    // 初始化符号字体
+    InitializeSymbolFont();
+
     // 初始化CJK字体
     InitializeCJKFont();
 
@@ -279,6 +282,39 @@ void FontManager::InitializeEmojiFont() {
     }
 }
 
+void FontManager::InitializeSymbolFont() {
+    if (!font_mgr_) {
+        return;
+    }
+
+    // 符号字体优先级列表
+    const std::vector<const char*> symbol_fonts = {
+#ifdef _WIN32
+        "Segoe UI Symbol",          // Windows 符号字体（包含大量 Unicode 符号）
+        "Segoe UI",                 // Windows UI 字体
+        "Segoe UI Emoji",           // Windows Emoji 字体（也包含一些符号）
+        "Arial Unicode MS",         // 包含大量 Unicode 字符
+        "Lucida Sans Unicode",      // Unicode 字体
+        "Cambria Math",             // 数学符号字体
+#elif defined(__APPLE__)
+        "Apple Symbols",            // macOS 符号字体
+        "Menlo",                    // 等宽字体，包含符号
+#else
+        "Symbola",                  // Linux 符号字体
+        "DejaVu Sans",              // 包含大量符号
+        "Noto Sans Symbols",        // Google Noto 符号字体
+        "Noto Sans Symbols2",       // Google Noto 符号字体2
+#endif
+    };
+
+    for (const char* font_name : symbol_fonts) {
+        symbol_typeface_ = font_mgr_->matchFamilyStyle(font_name, SkFontStyle());
+        if (symbol_typeface_) {
+            break;
+        }
+    }
+}
+
 SkFont FontManager::GetEmojiFont(float size) {
     if (!initialized_) {
         Initialize();
@@ -319,6 +355,53 @@ sk_sp<SkTypeface> FontManager::GetEmojiTypeface() {
     }
 
     return SkTypeface::MakeEmpty();
+}
+
+sk_sp<SkTypeface> FontManager::GetSymbolTypeface() {
+    if (!initialized_) {
+        Initialize();
+    }
+
+    if (symbol_typeface_) {
+        return symbol_typeface_;
+    }
+
+    // 如果没有符号字体，尝试使用 emoji 字体
+    if (emoji_typeface_) {
+        return emoji_typeface_;
+    }
+
+    // 最后返回默认字体
+    if (font_mgr_) {
+        return font_mgr_->matchFamilyStyle(nullptr, SkFontStyle());
+    }
+
+    return SkTypeface::MakeEmpty();
+}
+
+SkFont FontManager::GetSymbolFont(float size) {
+    if (!initialized_) {
+        Initialize();
+    }
+
+    // 检查缓存
+    std::string cache_key = "symbol_" + std::to_string(size);
+    auto it = font_cache_.find(cache_key);
+    if (it != font_cache_.end()) {
+        return it->second;
+    }
+
+    sk_sp<SkTypeface> typeface = GetSymbolTypeface();
+
+    // 创建字体
+    SkFont font(typeface, size);
+    font.setEdging(SkFont::Edging::kAntiAlias);
+    font.setSubpixel(true);
+
+    // 缓存字体
+    font_cache_[cache_key] = font;
+
+    return font;
 }
 
 // ========== CJK(中日韩)字体支持 ==========
@@ -503,7 +586,19 @@ bool FontManager::IsEmoji(uint32_t codepoint) {
     if (codepoint >= 0x2700 && codepoint <= 0x27BF) return true;
 
     // Miscellaneous Symbols (U+2600–U+26FF) - 包含☀ ☁ ☂等
-    if (codepoint >= 0x2600 && codepoint <= 0x26FF) return true;
+    // 注意：这个范围包含很多符号，有些在 emoji 字体中，有些在符号字体中
+    // 只将真正的 emoji 符号归类为 EMOJI，其他的让 IsSymbol 处理
+    // 常见 emoji: ☀(2600) ☁(2601) ☂(2602) ☃(2603) ☄(2604) ★(2605) ☆(2606)
+    //            ☎(260E) ☑(2611) ☔(2614) ☕(2615) ☘(2618) ☝(261D)
+    //            ☠(2620) ☢(2622) ☣(2623) ☦(2626) ☪(262A) ☮(262E) ☯(262F)
+    //            ☸(2638) ☹(2639) ☺(263A) ♈-♓(2648-2653) ♠♣♥♦(2660-2666)
+    //            ♨(2668) ♻(267B) ♿(267F) ⚠(26A0) ⚡(26A1) 等
+    // 不包含: ☰(2630) 三卦符号 - 这个应该用符号字体
+    if (codepoint >= 0x2600 && codepoint <= 0x26FF) {
+        // 排除一些不是 emoji 的符号（如八卦符号 U+2630-U+2637）
+        if (codepoint >= 0x2630 && codepoint <= 0x2637) return false;  // 八卦符号
+        return true;
+    }
 
     // Miscellaneous Technical (U+2300–U+23FF) - 包含⏳ (U+231B), ⌚ (U+231A) 等
     if (codepoint >= 0x2300 && codepoint <= 0x23FF) return true;
@@ -530,6 +625,67 @@ bool FontManager::IsEmoji(uint32_t codepoint) {
     // Variation Selectors (emoji style) - 用于指定显示为emoji样式
     if (codepoint == 0xFE0F) return true;
 
+    // Miscellaneous Symbols and Arrows (U+2B00–U+2BFF) - 包含 ⭐(2B50)
+    // 这个范围包含一些 emoji 风格的符号
+    if (codepoint >= 0x2B00 && codepoint <= 0x2BFF) return true;
+
+    return false;
+}
+
+bool FontManager::IsSymbol(uint32_t codepoint) {
+    // 检查需要符号字体的字符范围
+    
+    // 八卦符号 (U+2630–U+2637) - ☰ ☱ ☲ ☳ ☴ ☵ ☶ ☷
+    if (codepoint >= 0x2630 && codepoint <= 0x2637) return true;
+    
+    // 箭头 (U+2190–U+21FF)
+    if (codepoint >= 0x2190 && codepoint <= 0x21FF) return true;
+    
+    // 数学运算符 (U+2200–U+22FF)
+    if (codepoint >= 0x2200 && codepoint <= 0x22FF) return true;
+    
+    // 杂项技术符号 (U+2300–U+23FF) 中不是 emoji 的部分
+    // 大部分已经在 IsEmoji 中处理，这里处理剩余的
+    
+    // 几何图形 (U+25A0–U+25FF)
+    if (codepoint >= 0x25A0 && codepoint <= 0x25FF) return true;
+    
+    // 杂项符号 (U+2600–U+26FF) 中不是 emoji 的部分
+    // 八卦符号已在上面处理
+    
+    // 装饰符号 (U+2700–U+27BF) 中不是 emoji 的部分
+    // 大部分已经在 IsEmoji 中处理
+    
+    // 杂项数学符号-A (U+27C0–U+27EF)
+    if (codepoint >= 0x27C0 && codepoint <= 0x27EF) return true;
+    
+    // 杂项数学符号-B (U+2980–U+29FF)
+    if (codepoint >= 0x2980 && codepoint <= 0x29FF) return true;
+    
+    // 补充箭头-A (U+27F0–U+27FF)
+    if (codepoint >= 0x27F0 && codepoint <= 0x27FF) return true;
+    
+    // 补充箭头-B (U+2900–U+297F)
+    if (codepoint >= 0x2900 && codepoint <= 0x297F) return true;
+    
+    // 盒子绘制字符 (U+2500–U+257F)
+    if (codepoint >= 0x2500 && codepoint <= 0x257F) return true;
+    
+    // 块元素 (U+2580–U+259F)
+    if (codepoint >= 0x2580 && codepoint <= 0x259F) return true;
+    
+    // 通用标点 (U+2000–U+206F) 中的特殊符号
+    if (codepoint >= 0x2010 && codepoint <= 0x2027) return true;  // 各种破折号和引号
+    
+    // 货币符号 (U+20A0–U+20CF) - 包含 ₹(20B9) ₽(20BD) ₿(20BF)
+    if (codepoint >= 0x20A0 && codepoint <= 0x20CF) return true;
+    
+    // 字母符号 (U+2100–U+214F)
+    if (codepoint >= 0x2100 && codepoint <= 0x214F) return true;
+    
+    // 数字形式 (U+2150–U+218F)
+    if (codepoint >= 0x2150 && codepoint <= 0x218F) return true;
+    
     return false;
 }
 

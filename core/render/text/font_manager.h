@@ -128,6 +128,19 @@ public:
     sk_sp<SkTypeface> GetEmojiTypeface();
 
     /**
+     * @brief 获取符号字体的typeface
+     * @return 符号字体的typeface
+     */
+    sk_sp<SkTypeface> GetSymbolTypeface();
+
+    /**
+     * @brief 获取符号字体
+     * @param size 字体大小
+     * @return 符号字体
+     */
+    SkFont GetSymbolFont(float size = 16.0f);
+
+    /**
      * @brief 获取CJK(中日韩)字体的typeface
      * @return CJK字体的typeface
      */
@@ -153,6 +166,13 @@ public:
      * @return true如果是CJK字符
      */
     static bool IsCJK(uint32_t codepoint);
+
+    /**
+     * @brief 检查字符是否是需要符号字体的符号
+     * @param codepoint Unicode码点
+     * @return true如果是符号字符
+     */
+    static bool IsSymbol(uint32_t codepoint);
 
     /**
      * @brief 检查typeface是否包含指定字符
@@ -186,6 +206,11 @@ private:
     void InitializeEmojiFont();
 
     /**
+     * @brief 初始化符号字体
+     */
+    void InitializeSymbolFont();
+
+    /**
      * @brief 初始化CJK字体
      */
     void InitializeCJKFont();
@@ -195,6 +220,7 @@ private:
     std::unordered_map<std::string, SkFont> font_cache_;            ///< 字体缓存
     std::unordered_map<std::string, sk_sp<SkTypeface>> typeface_cache_;  ///< 字体族缓存
     sk_sp<SkTypeface> emoji_typeface_;                              ///< Emoji字体
+    sk_sp<SkTypeface> symbol_typeface_;                             ///< 符号字体
     sk_sp<SkTypeface> cjk_typeface_;                                ///< CJK(中日韩)字体
     bool initialized_;                                              ///< 是否已初始化
 };

@@ -1192,7 +1192,7 @@ void EventLoop::HandleMouseEventForDOM(const SDL_Event& event) {
         // 拖拽检测（参考RmlUi/Source/Core/Context.cpp - ProcessMouseButtonDown）
         // 只在左键按下时检测拖拽
         if (event.button.button == SDL_BUTTON_LEFT) {
-            drag_manager_->StartDragDetection(hit_result.element);
+            drag_manager_->StartDragDetection(hit_result.element, mouse_x, mouse_y);
         }
     } else if (event.type == SDL_EVENT_MOUSE_BUTTON_UP) {
         // mouseup时移除:active伪类
@@ -1509,8 +1509,9 @@ void EventLoop::HandleMouseEventForDOM(const SDL_Event& event) {
         }
 
         // 更新拖拽状态（参考RmlUi/Source/Core/Context.cpp - ProcessMouseMove）
-        if (drag_manager_->IsDragging()) {
-            drag_manager_->UpdateDrag(mouse_x, mouse_y, document);
+        // 支持拖拽阈值检测：在 Detecting 状态时也需要调用 UpdateDrag
+        if (drag_manager_->IsDragging() || drag_manager_->IsDetecting()) {
+            drag_manager_->UpdateDrag(logical_x, logical_y, document, root_render);
         }
     }
 }
