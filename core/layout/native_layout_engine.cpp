@@ -445,62 +445,53 @@ void NativeLayoutEngine::ComputeLayoutInternal(float available_width, float avai
 
         // For overflow: auto or scroll on root, we need to account for potential vertical scrollbar
         if (overflow_y == "auto" || overflow_y == "scroll") {
-            // Optimization for incremental layout: use cached scrollbar state
-            // This avoids the expensive two-pass layout on every incremental update
-            // **Feature: incremental-layout-optimization**
-            // **Validates: Requirements 2.5**
-            if (last_effective_width_ > 0 && last_needs_v_scrollbar_) {
-                // Use cached scrollbar state - skip the first pass
+            // 修复：每次都重新检查是否需要滚动条，不使用缓存
+            // 因为内容高度可能在增量更新中变化，缓存的状态可能不准确
+            // 这会导致两次布局计算，但确保滚动条状态正确
+            
+            // First pass: compute layout with full width, accounting for root margin
+            Rect<float> first_pass_margin = ResolveOrZero(root->style.margin, std::optional<float>(available_width));
+            float first_pass_width = available_width - first_pass_margin.left - first_pass_margin.right;
+            
+            LayoutInput inputs;
+            inputs.run_mode = RunMode::PerformLayout;
+            inputs.sizing_mode = SizingMode::InherentSize;
+            inputs.known_dimensions = Size<std::optional<float>>{
+                std::optional<float>(first_pass_width),
+                std::nullopt
+            };
+            inputs.parent_size = Size<std::optional<float>>{
+                std::optional<float>(available_width),
+                std::optional<float>(available_height)
+            };
+            inputs.available_space = Size<AvailableSpace>{
+                AvailableSpace::Definite(first_pass_width),
+                AvailableSpace::Definite(available_height)
+            };
+            // Enable vertical margin collapsing
+            inputs.vertical_margins_are_collapsible = Line<bool>{true, true};
+
+            LayoutOutput first_pass = ComputeNodeLayout(root_node_, inputs);
+
+            // Check if content height exceeds available height (needs vertical scrollbar)
+            // or if overflow-y is scroll (always show scrollbar)
+            float total_height = first_pass.size.height + first_pass_margin.top + first_pass_margin.bottom;
+            needs_v_scrollbar = (total_height > available_height) || (overflow_y == "scroll");
+
+            if (needs_v_scrollbar) {
+                // Reduce available width by scrollbar width
                 effective_width = available_width - RenderObject::GetScrollbarWidth();
-                needs_v_scrollbar = true;
-            } else {
-                // First pass: compute layout with full width, accounting for root margin
-                Rect<float> first_pass_margin = ResolveOrZero(root->style.margin, std::optional<float>(available_width));
-                float first_pass_width = available_width - first_pass_margin.left - first_pass_margin.right;
-                
-                LayoutInput inputs;
-                inputs.run_mode = RunMode::PerformLayout;
-                inputs.sizing_mode = SizingMode::InherentSize;
-                inputs.known_dimensions = Size<std::optional<float>>{
-                    std::optional<float>(first_pass_width),
-                    std::nullopt
-                };
-                inputs.parent_size = Size<std::optional<float>>{
-                    std::optional<float>(available_width),
-                    std::optional<float>(available_height)
-                };
-                inputs.available_space = Size<AvailableSpace>{
-                    AvailableSpace::Definite(first_pass_width),
-                    AvailableSpace::Definite(available_height)
-                };
-                // Enable vertical margin collapsing
-                inputs.vertical_margins_are_collapsible = Line<bool>{true, true};
 
-                LayoutOutput first_pass = ComputeNodeLayout(root_node_, inputs);
-
-                // Check if content height exceeds available height (needs vertical scrollbar)
-                // or if overflow-y is scroll (always show scrollbar)
-                // Use size.height instead of content_size.height for the actual rendered height
-                // Add root margin to get total height
-                float total_height = first_pass.size.height + first_pass_margin.top + first_pass_margin.bottom;
-                needs_v_scrollbar = (total_height > available_height) ||
-                                          (overflow_y == "scroll");
-
-                if (needs_v_scrollbar) {
-                    // Reduce available width by scrollbar width
-                    effective_width = available_width - RenderObject::GetScrollbarWidth();
-
-                    // Optimization: Only clear caches for nodes affected by width change
-                    // Nodes with fixed width (explicit pixel values) that don't depend on
-                    // the available width can keep their cache results from the first pass.
-                    // This significantly improves performance for layouts with many fixed-size elements.
-                    // **Feature: incremental-layout-optimization**
-                    // **Validates: Requirements 2.5**
+                // Only clear caches if scrollbar state changed
+                if (!last_needs_v_scrollbar_) {
                     ClearWidthDependentCaches(root_node_);
                 }
+            } else if (last_needs_v_scrollbar_) {
+                // Scrollbar was needed before but not now - need to recalculate
+                ClearWidthDependentCaches(root_node_);
             }
             
-            // Cache the scrollbar state for future incremental layouts
+            // Cache the scrollbar state for future reference
             last_needs_v_scrollbar_ = needs_v_scrollbar;
             last_effective_width_ = effective_width;
         }
