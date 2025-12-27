@@ -131,6 +131,31 @@ bool ContentEditableHandler::HandleKeyDown(
             }
             break;
 
+        // 方向键
+        case 37:  // Left Arrow
+            if (ctrl_key) {
+                return MoveCursorToPreviousWord(document, shift_key);
+            }
+            return MoveCursorLeft(document, shift_key);
+
+        case 39:  // Right Arrow
+            if (ctrl_key) {
+                return MoveCursorToNextWord(document, shift_key);
+            }
+            return MoveCursorRight(document, shift_key);
+
+        case 38:  // Up Arrow
+            return MoveCursorUp(document, shift_key);
+
+        case 40:  // Down Arrow
+            return MoveCursorDown(document, shift_key);
+
+        case 36:  // Home
+            return MoveCursorToLineStart(document, shift_key);
+
+        case 35:  // End
+            return MoveCursorToLineEnd(document, shift_key);
+
         default:
             // 处理 Ctrl 组合键
             if (ctrl_key) {
@@ -143,6 +168,16 @@ bool ContentEditableHandler::HandleKeyDown(
                         return ExecCommand(document, "underline");
                     case 65:  // Ctrl+A (Select All)
                         return ExecCommand(document, "selectAll");
+                    case 67:  // Ctrl+C (Copy) - 由系统处理
+                        return false;
+                    case 86:  // Ctrl+V (Paste) - 由系统处理
+                        return false;
+                    case 88:  // Ctrl+X (Cut) - 由系统处理
+                        return false;
+                    case 90:  // Ctrl+Z (Undo) - TODO: 实现撤销
+                        return false;
+                    case 89:  // Ctrl+Y (Redo) - TODO: 实现重做
+                        return false;
                 }
             }
             break;
@@ -1173,6 +1208,526 @@ bool ContentEditableHandler::MergeToPreviousNode(
 
     std::cout << "[MergeToPreviousNode] No previous node to merge with" << std::endl;
     return false;
+}
+
+// ========== 光标移动实现 ==========
+
+bool ContentEditableHandler::MoveCursorLeft(
+    std::shared_ptr<Document> document,
+    bool extend_selection) {
+
+    if (!document) return false;
+
+    auto selection = GetSelection(document);
+    if (!selection) return false;
+
+    auto anchor_node = selection->GetAnchorNode();
+    int anchor_offset = selection->GetAnchorOffset();
+
+    if (!anchor_node) return false;
+
+    // 如果有选中内容且不是扩展选择，折叠到选择起点
+    if (!selection->IsCollapsed() && !extend_selection) {
+        selection->CollapseToStart();
+        return true;
+    }
+
+    // 处理文本节点
+    if (anchor_node->GetNodeType() == NodeType::TEXT_NODE) {
+        auto text_node = std::dynamic_pointer_cast<Text>(anchor_node);
+        if (!text_node) return false;
+
+        std::string content = text_node->GetTextContent();
+
+        if (anchor_offset > 0) {
+            // 向左移动一个字符（处理 UTF-8）
+            int new_offset = anchor_offset - 1;
+            while (new_offset > 0 && (static_cast<unsigned char>(content[new_offset]) & 0xC0) == 0x80) {
+                new_offset--;
+            }
+
+            if (extend_selection) {
+                selection->Extend(anchor_node, new_offset);
+            } else {
+                selection->Collapse(anchor_node, new_offset);
+            }
+            return true;
+        } else {
+            // 已在文本节点开头，移动到前一个文本节点
+            auto prev_text = FindPreviousTextNode(anchor_node);
+            if (prev_text) {
+                auto prev_text_node = std::dynamic_pointer_cast<Text>(prev_text);
+                if (prev_text_node) {
+                    int new_offset = static_cast<int>(prev_text_node->GetTextContent().length());
+                    if (extend_selection) {
+                        selection->Extend(prev_text, new_offset);
+                    } else {
+                        selection->Collapse(prev_text, new_offset);
+                    }
+                    return true;
+                }
+            }
+        }
+    }
+
+    return false;
+}
+
+bool ContentEditableHandler::MoveCursorRight(
+    std::shared_ptr<Document> document,
+    bool extend_selection) {
+
+    if (!document) return false;
+
+    auto selection = GetSelection(document);
+    if (!selection) return false;
+
+    auto anchor_node = selection->GetAnchorNode();
+    int anchor_offset = selection->GetAnchorOffset();
+
+    if (!anchor_node) return false;
+
+    // 如果有选中内容且不是扩展选择，折叠到选择终点
+    if (!selection->IsCollapsed() && !extend_selection) {
+        selection->CollapseToEnd();
+        return true;
+    }
+
+    // 处理文本节点
+    if (anchor_node->GetNodeType() == NodeType::TEXT_NODE) {
+        auto text_node = std::dynamic_pointer_cast<Text>(anchor_node);
+        if (!text_node) return false;
+
+        std::string content = text_node->GetTextContent();
+        int content_length = static_cast<int>(content.length());
+
+        if (anchor_offset < content_length) {
+            // 向右移动一个字符（处理 UTF-8）
+            int new_offset = anchor_offset;
+            unsigned char c = content[new_offset];
+            if ((c & 0x80) == 0) new_offset += 1;
+            else if ((c & 0xE0) == 0xC0) new_offset += 2;
+            else if ((c & 0xF0) == 0xE0) new_offset += 3;
+            else if ((c & 0xF8) == 0xF0) new_offset += 4;
+            else new_offset += 1;
+
+            if (new_offset > content_length) new_offset = content_length;
+
+            if (extend_selection) {
+                selection->Extend(anchor_node, new_offset);
+            } else {
+                selection->Collapse(anchor_node, new_offset);
+            }
+            return true;
+        } else {
+            // 已在文本节点末尾，移动到下一个文本节点
+            auto next_text = FindNextTextNode(anchor_node);
+            if (next_text) {
+                if (extend_selection) {
+                    selection->Extend(next_text, 0);
+                } else {
+                    selection->Collapse(next_text, 0);
+                }
+                return true;
+            }
+        }
+    }
+
+    return false;
+}
+
+bool ContentEditableHandler::MoveCursorUp(
+    std::shared_ptr<Document> document,
+    bool extend_selection) {
+
+    // TODO: 实现上移光标（需要布局信息）
+    // 暂时移动到行首
+    return MoveCursorToLineStart(document, extend_selection);
+}
+
+bool ContentEditableHandler::MoveCursorDown(
+    std::shared_ptr<Document> document,
+    bool extend_selection) {
+
+    // TODO: 实现下移光标（需要布局信息）
+    // 暂时移动到行尾
+    return MoveCursorToLineEnd(document, extend_selection);
+}
+
+bool ContentEditableHandler::MoveCursorToLineStart(
+    std::shared_ptr<Document> document,
+    bool extend_selection) {
+
+    if (!document) return false;
+
+    auto selection = GetSelection(document);
+    if (!selection) return false;
+
+    auto anchor_node = selection->GetAnchorNode();
+    if (!anchor_node) return false;
+
+    // 查找当前行的块级元素
+    auto current = anchor_node;
+    std::shared_ptr<Element> block_element = nullptr;
+
+    while (current) {
+        if (current->GetNodeType() == NodeType::ELEMENT_NODE) {
+            auto elem = std::dynamic_pointer_cast<Element>(current);
+            if (elem) {
+                std::string tag = elem->GetTagName();
+                for (auto& c : tag) {
+                    c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+                }
+                if (tag == "p" || tag == "div" || tag == "li" || tag == "h1" ||
+                    tag == "h2" || tag == "h3" || tag == "h4" || tag == "h5" || tag == "h6") {
+                    block_element = elem;
+                    break;
+                }
+            }
+        }
+        current = current->GetParentNode();
+    }
+
+    if (block_element) {
+        // 找到块级元素中的第一个文本节点
+        std::function<std::shared_ptr<Text>(std::shared_ptr<Node>)> findFirstTextNode;
+        findFirstTextNode = [&](std::shared_ptr<Node> node) -> std::shared_ptr<Text> {
+            if (!node) return nullptr;
+            if (node->GetNodeType() == NodeType::TEXT_NODE) {
+                return std::dynamic_pointer_cast<Text>(node);
+            }
+            if (node->GetNodeType() == NodeType::ELEMENT_NODE) {
+                auto elem = std::dynamic_pointer_cast<Element>(node);
+                if (elem) {
+                    for (auto& child : elem->GetChildNodes()) {
+                        auto result = findFirstTextNode(child);
+                        if (result) return result;
+                    }
+                }
+            }
+            return nullptr;
+        };
+
+        auto first_text = findFirstTextNode(block_element);
+        if (first_text) {
+            if (extend_selection) {
+                selection->Extend(first_text, 0);
+            } else {
+                selection->Collapse(first_text, 0);
+            }
+            return true;
+        }
+    }
+
+    // 回退：移动到当前文本节点开头
+    if (anchor_node->GetNodeType() == NodeType::TEXT_NODE) {
+        if (extend_selection) {
+            selection->Extend(anchor_node, 0);
+        } else {
+            selection->Collapse(anchor_node, 0);
+        }
+        return true;
+    }
+
+    return false;
+}
+
+bool ContentEditableHandler::MoveCursorToLineEnd(
+    std::shared_ptr<Document> document,
+    bool extend_selection) {
+
+    if (!document) return false;
+
+    auto selection = GetSelection(document);
+    if (!selection) return false;
+
+    auto anchor_node = selection->GetAnchorNode();
+    if (!anchor_node) return false;
+
+    // 查找当前行的块级元素
+    auto current = anchor_node;
+    std::shared_ptr<Element> block_element = nullptr;
+
+    while (current) {
+        if (current->GetNodeType() == NodeType::ELEMENT_NODE) {
+            auto elem = std::dynamic_pointer_cast<Element>(current);
+            if (elem) {
+                std::string tag = elem->GetTagName();
+                for (auto& c : tag) {
+                    c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+                }
+                if (tag == "p" || tag == "div" || tag == "li" || tag == "h1" ||
+                    tag == "h2" || tag == "h3" || tag == "h4" || tag == "h5" || tag == "h6") {
+                    block_element = elem;
+                    break;
+                }
+            }
+        }
+        current = current->GetParentNode();
+    }
+
+    if (block_element) {
+        // 找到块级元素中的最后一个文本节点
+        std::function<std::shared_ptr<Text>(std::shared_ptr<Node>)> findLastTextNode;
+        findLastTextNode = [&](std::shared_ptr<Node> node) -> std::shared_ptr<Text> {
+            if (!node) return nullptr;
+            if (node->GetNodeType() == NodeType::TEXT_NODE) {
+                return std::dynamic_pointer_cast<Text>(node);
+            }
+            if (node->GetNodeType() == NodeType::ELEMENT_NODE) {
+                auto elem = std::dynamic_pointer_cast<Element>(node);
+                if (elem) {
+                    auto children = elem->GetChildNodes();
+                    for (auto it = children.rbegin(); it != children.rend(); ++it) {
+                        auto result = findLastTextNode(*it);
+                        if (result) return result;
+                    }
+                }
+            }
+            return nullptr;
+        };
+
+        auto last_text = findLastTextNode(block_element);
+        if (last_text) {
+            int end_offset = static_cast<int>(last_text->GetTextContent().length());
+            if (extend_selection) {
+                selection->Extend(last_text, end_offset);
+            } else {
+                selection->Collapse(last_text, end_offset);
+            }
+            return true;
+        }
+    }
+
+    // 回退：移动到当前文本节点末尾
+    if (anchor_node->GetNodeType() == NodeType::TEXT_NODE) {
+        auto text_node = std::dynamic_pointer_cast<Text>(anchor_node);
+        if (text_node) {
+            int end_offset = static_cast<int>(text_node->GetTextContent().length());
+            if (extend_selection) {
+                selection->Extend(anchor_node, end_offset);
+            } else {
+                selection->Collapse(anchor_node, end_offset);
+            }
+            return true;
+        }
+    }
+
+    return false;
+}
+
+bool ContentEditableHandler::MoveCursorToPreviousWord(
+    std::shared_ptr<Document> document,
+    bool extend_selection) {
+
+    if (!document) return false;
+
+    auto selection = GetSelection(document);
+    if (!selection) return false;
+
+    auto anchor_node = selection->GetAnchorNode();
+    int anchor_offset = selection->GetAnchorOffset();
+
+    if (!anchor_node || anchor_node->GetNodeType() != NodeType::TEXT_NODE) {
+        return MoveCursorLeft(document, extend_selection);
+    }
+
+    auto text_node = std::dynamic_pointer_cast<Text>(anchor_node);
+    if (!text_node) return false;
+
+    std::string content = text_node->GetTextContent();
+
+    // 跳过当前位置前的空白
+    int pos = anchor_offset;
+    while (pos > 0 && std::isspace(static_cast<unsigned char>(content[pos - 1]))) {
+        pos--;
+    }
+
+    // 跳过单词字符
+    while (pos > 0 && !std::isspace(static_cast<unsigned char>(content[pos - 1]))) {
+        pos--;
+    }
+
+    if (pos != anchor_offset) {
+        if (extend_selection) {
+            selection->Extend(anchor_node, pos);
+        } else {
+            selection->Collapse(anchor_node, pos);
+        }
+        return true;
+    }
+
+    // 如果已在开头，移动到前一个文本节点
+    auto prev_text = FindPreviousTextNode(anchor_node);
+    if (prev_text) {
+        auto prev_text_node = std::dynamic_pointer_cast<Text>(prev_text);
+        if (prev_text_node) {
+            int new_offset = static_cast<int>(prev_text_node->GetTextContent().length());
+            if (extend_selection) {
+                selection->Extend(prev_text, new_offset);
+            } else {
+                selection->Collapse(prev_text, new_offset);
+            }
+            return true;
+        }
+    }
+
+    return false;
+}
+
+bool ContentEditableHandler::MoveCursorToNextWord(
+    std::shared_ptr<Document> document,
+    bool extend_selection) {
+
+    if (!document) return false;
+
+    auto selection = GetSelection(document);
+    if (!selection) return false;
+
+    auto anchor_node = selection->GetAnchorNode();
+    int anchor_offset = selection->GetAnchorOffset();
+
+    if (!anchor_node || anchor_node->GetNodeType() != NodeType::TEXT_NODE) {
+        return MoveCursorRight(document, extend_selection);
+    }
+
+    auto text_node = std::dynamic_pointer_cast<Text>(anchor_node);
+    if (!text_node) return false;
+
+    std::string content = text_node->GetTextContent();
+    int content_length = static_cast<int>(content.length());
+
+    // 跳过当前位置后的单词字符
+    int pos = anchor_offset;
+    while (pos < content_length && !std::isspace(static_cast<unsigned char>(content[pos]))) {
+        pos++;
+    }
+
+    // 跳过空白
+    while (pos < content_length && std::isspace(static_cast<unsigned char>(content[pos]))) {
+        pos++;
+    }
+
+    if (pos != anchor_offset) {
+        if (extend_selection) {
+            selection->Extend(anchor_node, pos);
+        } else {
+            selection->Collapse(anchor_node, pos);
+        }
+        return true;
+    }
+
+    // 如果已在末尾，移动到下一个文本节点
+    auto next_text = FindNextTextNode(anchor_node);
+    if (next_text) {
+        if (extend_selection) {
+            selection->Extend(next_text, 0);
+        } else {
+            selection->Collapse(next_text, 0);
+        }
+        return true;
+    }
+
+    return false;
+}
+
+std::shared_ptr<Node> ContentEditableHandler::FindPreviousTextNode(
+    std::shared_ptr<Node> current_node) {
+
+    if (!current_node) return nullptr;
+
+    // 查找可编辑区域的根元素
+    auto editable_root = FindEditableElement(current_node);
+    if (!editable_root) return nullptr;
+
+    // 辅助函数：在节点中查找最后一个文本节点
+    std::function<std::shared_ptr<Node>(std::shared_ptr<Node>)> findLastTextNode;
+    findLastTextNode = [&](std::shared_ptr<Node> node) -> std::shared_ptr<Node> {
+        if (!node) return nullptr;
+        if (node->GetNodeType() == NodeType::TEXT_NODE) {
+            return node;
+        }
+        if (node->GetNodeType() == NodeType::ELEMENT_NODE) {
+            auto elem = std::dynamic_pointer_cast<Element>(node);
+            if (elem) {
+                auto children = elem->GetChildNodes();
+                for (auto it = children.rbegin(); it != children.rend(); ++it) {
+                    auto result = findLastTextNode(*it);
+                    if (result) return result;
+                }
+            }
+        }
+        return nullptr;
+    };
+
+    // 先检查前一个兄弟
+    auto prev_sibling = current_node->GetPreviousSibling();
+    if (prev_sibling) {
+        auto result = findLastTextNode(prev_sibling);
+        if (result) return result;
+    }
+
+    // 向上遍历父节点
+    auto parent = current_node->GetParentNode();
+    while (parent && parent != editable_root) {
+        auto parent_prev = parent->GetPreviousSibling();
+        if (parent_prev) {
+            auto result = findLastTextNode(parent_prev);
+            if (result) return result;
+        }
+        parent = parent->GetParentNode();
+    }
+
+    return nullptr;
+}
+
+std::shared_ptr<Node> ContentEditableHandler::FindNextTextNode(
+    std::shared_ptr<Node> current_node) {
+
+    if (!current_node) return nullptr;
+
+    // 查找可编辑区域的根元素
+    auto editable_root = FindEditableElement(current_node);
+    if (!editable_root) return nullptr;
+
+    // 辅助函数：在节点中查找第一个文本节点
+    std::function<std::shared_ptr<Node>(std::shared_ptr<Node>)> findFirstTextNode;
+    findFirstTextNode = [&](std::shared_ptr<Node> node) -> std::shared_ptr<Node> {
+        if (!node) return nullptr;
+        if (node->GetNodeType() == NodeType::TEXT_NODE) {
+            return node;
+        }
+        if (node->GetNodeType() == NodeType::ELEMENT_NODE) {
+            auto elem = std::dynamic_pointer_cast<Element>(node);
+            if (elem) {
+                for (auto& child : elem->GetChildNodes()) {
+                    auto result = findFirstTextNode(child);
+                    if (result) return result;
+                }
+            }
+        }
+        return nullptr;
+    };
+
+    // 先检查下一个兄弟
+    auto next_sibling = current_node->GetNextSibling();
+    if (next_sibling) {
+        auto result = findFirstTextNode(next_sibling);
+        if (result) return result;
+    }
+
+    // 向上遍历父节点
+    auto parent = current_node->GetParentNode();
+    while (parent && parent != editable_root) {
+        auto parent_next = parent->GetNextSibling();
+        if (parent_next) {
+            auto result = findFirstTextNode(parent_next);
+            if (result) return result;
+        }
+        parent = parent->GetParentNode();
+    }
+
+    return nullptr;
 }
 
 } // namespace lightui

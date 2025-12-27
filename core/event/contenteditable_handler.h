@@ -221,6 +221,86 @@ private:
      */
     bool MergeToPreviousNode(std::shared_ptr<Document> document, std::shared_ptr<Node> current_node);
 
+    // ========== 光标移动 ==========
+
+    /**
+     * @brief 移动光标到左边一个字符
+     * @param document 文档
+     * @param extend_selection 是否扩展选择（Shift键）
+     * @return true 如果移动成功
+     */
+    bool MoveCursorLeft(std::shared_ptr<Document> document, bool extend_selection);
+
+    /**
+     * @brief 移动光标到右边一个字符
+     * @param document 文档
+     * @param extend_selection 是否扩展选择（Shift键）
+     * @return true 如果移动成功
+     */
+    bool MoveCursorRight(std::shared_ptr<Document> document, bool extend_selection);
+
+    /**
+     * @brief 移动光标到上一行
+     * @param document 文档
+     * @param extend_selection 是否扩展选择（Shift键）
+     * @return true 如果移动成功
+     */
+    bool MoveCursorUp(std::shared_ptr<Document> document, bool extend_selection);
+
+    /**
+     * @brief 移动光标到下一行
+     * @param document 文档
+     * @param extend_selection 是否扩展选择（Shift键）
+     * @return true 如果移动成功
+     */
+    bool MoveCursorDown(std::shared_ptr<Document> document, bool extend_selection);
+
+    /**
+     * @brief 移动光标到行首
+     * @param document 文档
+     * @param extend_selection 是否扩展选择（Shift键）
+     * @return true 如果移动成功
+     */
+    bool MoveCursorToLineStart(std::shared_ptr<Document> document, bool extend_selection);
+
+    /**
+     * @brief 移动光标到行尾
+     * @param document 文档
+     * @param extend_selection 是否扩展选择（Shift键）
+     * @return true 如果移动成功
+     */
+    bool MoveCursorToLineEnd(std::shared_ptr<Document> document, bool extend_selection);
+
+    /**
+     * @brief 移动光标到前一个单词
+     * @param document 文档
+     * @param extend_selection 是否扩展选择（Shift键）
+     * @return true 如果移动成功
+     */
+    bool MoveCursorToPreviousWord(std::shared_ptr<Document> document, bool extend_selection);
+
+    /**
+     * @brief 移动光标到下一个单词
+     * @param document 文档
+     * @param extend_selection 是否扩展选择（Shift键）
+     * @return true 如果移动成功
+     */
+    bool MoveCursorToNextWord(std::shared_ptr<Document> document, bool extend_selection);
+
+    /**
+     * @brief 查找前一个文本节点
+     * @param current_node 当前节点
+     * @return 前一个文本节点，如果没有返回 nullptr
+     */
+    std::shared_ptr<Node> FindPreviousTextNode(std::shared_ptr<Node> current_node);
+
+    /**
+     * @brief 查找下一个文本节点
+     * @param current_node 当前节点
+     * @return 下一个文本节点，如果没有返回 nullptr
+     */
+    std::shared_ptr<Node> FindNextTextNode(std::shared_ptr<Node> current_node);
+
 private:
     SelectionManager* selection_manager_;
 };
