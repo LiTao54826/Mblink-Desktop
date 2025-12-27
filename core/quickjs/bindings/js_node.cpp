@@ -9,6 +9,7 @@
 #include "core/dom/element.h"
 #include "core/dom/text.h"
 #include <iostream>
+#include <cctype>
 
 namespace lightui {
 namespace bindings {
@@ -129,6 +130,64 @@ static JSValue JSNode_get_textContent(JSContext* ctx, JSValueConst this_val, int
 
     std::string text = node->GetTextContent();
     return JS_NewString(ctx, text.c_str());
+}
+
+// nodeName getter
+static JSValue JSNode_get_nodeName(JSContext* ctx, JSValueConst this_val, int magic) {
+    auto node = UnwrapNode(ctx, this_val);
+    if (!node) {
+        return JS_NULL;
+    }
+
+    // 对于 Element，返回大写的标签名
+    auto element = std::dynamic_pointer_cast<Element>(node);
+    if (element) {
+        std::string tag_name = element->GetTagName();
+        // 转换为大写
+        for (auto& c : tag_name) {
+            c = std::toupper(c);
+        }
+        return JS_NewString(ctx, tag_name.c_str());
+    }
+    
+    // 对于 Text 节点，返回 "#text"
+    if (node->GetNodeType() == NodeType::TEXT_NODE) {
+        return JS_NewString(ctx, "#text");
+    }
+    
+    // 对于 Document 节点，返回 "#document"
+    if (node->GetNodeType() == NodeType::DOCUMENT_NODE) {
+        return JS_NewString(ctx, "#document");
+    }
+    
+    return JS_NewString(ctx, "");
+}
+
+// nodeType getter
+static JSValue JSNode_get_nodeType(JSContext* ctx, JSValueConst this_val, int magic) {
+    auto node = UnwrapNode(ctx, this_val);
+    if (!node) {
+        return JS_NewInt32(ctx, 0);
+    }
+
+    // 返回 DOM 标准的 nodeType 值
+    // ELEMENT_NODE = 1, TEXT_NODE = 3, DOCUMENT_NODE = 9
+    int type = 0;
+    switch (node->GetNodeType()) {
+        case NodeType::ELEMENT_NODE:
+            type = 1;
+            break;
+        case NodeType::TEXT_NODE:
+            type = 3;
+            break;
+        case NodeType::DOCUMENT_NODE:
+            type = 9;
+            break;
+        default:
+            type = 0;
+            break;
+    }
+    return JS_NewInt32(ctx, type);
 }
 
 // textContent setter
@@ -290,6 +349,8 @@ static const JSCFunctionListEntry js_node_proto_funcs[] = {
     JS_CGETSET_MAGIC_DEF("previousSibling", JSNode_get_previousSibling, nullptr, 0),
     JS_CGETSET_MAGIC_DEF("textContent", JSNode_get_textContent, JSNode_set_textContent, 0),
     JS_CGETSET_MAGIC_DEF("childNodes", JSNode_get_childNodes, nullptr, 0),
+    JS_CGETSET_MAGIC_DEF("nodeName", JSNode_get_nodeName, nullptr, 0),
+    JS_CGETSET_MAGIC_DEF("nodeType", JSNode_get_nodeType, nullptr, 0),
     JS_CFUNC_DEF("appendChild", 1, JSNode_appendChild),
     JS_CFUNC_DEF("removeChild", 1, JSNode_removeChild),
     JS_CFUNC_DEF("insertBefore", 2, JSNode_insertBefore),

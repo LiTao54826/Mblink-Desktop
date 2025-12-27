@@ -20,6 +20,7 @@
 #include "core/render/layer_manager.h"
 #include "core/dom/document.h"
 #include "core/dom/element.h"
+#include "core/dom/selection.h"
 #include "core/dom/html_input_element.h"
 #include "core/dom/html_textarea_element.h"
 #include "core/dom/html_button_element.h"
@@ -41,6 +42,8 @@
 #include <iostream>
 #include <algorithm>
 #include <sstream>
+#include <functional>
+#include <limits>
 
 namespace lightui {
 
@@ -145,13 +148,15 @@ void EventLoop::RunOnce() {
         quickjs_runtime_->RunEventLoop(1);  // 处理可能产生的微任务
     }
 
-    // 4.5 处理光标闪烁（如果有聚焦的输入框）
+    // 4.5 处理光标闪烁（如果有聚焦的输入框或 contentEditable 元素）
     static Uint64 last_cursor_blink_time = SDL_GetTicks();
     static bool cursor_visible = true;
     auto focus_element = focus_manager_->GetFocusElement();
     if (focus_element) {
         std::string tag_name = focus_element->GetTagName();
-        if (tag_name == "input" || tag_name == "textarea") {
+        bool is_editable = (tag_name == "input" || tag_name == "textarea" || focus_element->IsContentEditable());
+        
+        if (is_editable) {
             // 每500毫秒切换光标显示状态
             Uint64 now = SDL_GetTicks();
             if (now - last_cursor_blink_time >= 500) {
@@ -159,7 +164,10 @@ void EventLoop::RunOnce() {
                 cursor_visible_ = cursor_visible;  // 保存到成员变量供渲染使用
                 last_cursor_blink_time = now;
                 
-                // 关键修复：标记输入框的 RenderObject 需要重绘
+                // 设置全局光标可见状态（供 RenderObject 使用）
+                RenderObject::SetCursorVisible(cursor_visible);
+                
+                // 关键修复：标记元素的 RenderObject 需要重绘
                 // 这样增量渲染系统才会重绘光标区域
                 if (auto render_obj = focus_element->GetRenderObject()) {
                     render_obj->MarkNeedsPaint();
@@ -179,9 +187,10 @@ void EventLoop::RunOnce() {
             }
         }
     } else {
-        // 没有聚焦的输入框时，重置光标状态
+        // 没有聚焦的可编辑元素时，重置光标状态
         cursor_visible = true;
         cursor_visible_ = true;
+        RenderObject::SetCursorVisible(true);
     }
 
     // 5. 只在有窗口需要重绘时才渲染
@@ -1271,12 +1280,299 @@ void EventLoop::HandleMouseEventForDOM(const SDL_Event& event) {
             // 对于非输入元素（button 等），在 click 事件后设置焦点
             // 这样可以确保 click 事件正确触发，避免 focus 事件导致 Preact 重渲染
             std::string tag_name = hit_result.element->GetTagName();
+            std::cout << "[EventLoop] Click on element: " << tag_name << std::endl;
+            std::cout << "[EventLoop] IsContentEditable: " << hit_result.element->IsContentEditable() << std::endl;
             if (tag_name != "input" && tag_name != "textarea") {
                 focus_manager_->SetWindow(window.get());
                 bool focus_set = focus_manager_->SetFocus(hit_result.element, false);
+                std::cout << "[EventLoop] SetFocus result: " << focus_set << std::endl;
                 if (!focus_set && !focus_manager_->IsFocusable(hit_result.element)) {
                     // 如果点击的是非可聚焦元素，清除当前焦点
+                    std::cout << "[EventLoop] Element not focusable, clearing focus" << std::endl;
                     focus_manager_->ClearFocus();
+                }
+                
+                // 为 contentEditable 元素初始化 Selection
+                if (hit_result.element->IsContentEditable()) {
+                    std::cout << "[EventLoop] ContentEditable element: " << hit_result.element->GetTagName() << std::endl;
+                    if (hit_result.render_object) {
+                        const auto& layout = hit_result.render_object->GetLayoutInfo();
+                        std::cout << "[EventLoop] RenderObject layout: x=" << layout.x << " y=" << layout.y 
+                                  << " w=" << layout.width << " h=" << layout.height << std::endl;
+                    }
+                    
+                    auto doc = std::dynamic_pointer_cast<Document>(hit_result.element->GetOwnerDocument());
+                    if (doc && selection_manager_) {
+                        auto selection = selection_manager_->GetSelection(doc);
+                        if (selection) {
+                            std::shared_ptr<Node> target_text_node = nullptr;
+                            int target_offset = 0;
+                            
+                            // 从被点击元素的 RenderObject 中查找文本节点
+                            // 使用 local_x, local_y 来确定点击的是哪个文本节点
+                            if (hit_result.render_object) {
+                                float click_x = hit_result.local_x;
+                                float click_y = hit_result.local_y;
+                                
+                                // 减去 padding 和 border
+                                const auto& style = hit_result.render_object->GetComputedStyle();
+                                float padding_left = style.padding.left.ToPx();
+                                float padding_top = style.padding.top.ToPx();
+                                float border_left = style.border_left_width;
+                                float border_top = style.border_top_width;
+                                click_x -= padding_left + border_left;
+                                click_y -= padding_top + border_top;
+                                
+                                std::cout << "[EventLoop] ContentEditable click: local=(" << hit_result.local_x << "," << hit_result.local_y 
+                                          << ") content=(" << click_x << "," << click_y << ")" << std::endl;
+                                
+                                // 打印所有子 RenderObject 的布局信息
+                                std::function<void(RenderObject*, int)> printTree;
+                                printTree = [&](RenderObject* obj, int depth) {
+                                    const auto& l = obj->GetLayoutInfo();
+                                    auto node = obj->GetNode();
+                                    std::string name = "?";
+                                    if (node) {
+                                        if (node->GetNodeType() == NodeType::TEXT_NODE) {
+                                            auto text = std::dynamic_pointer_cast<Text>(node);
+                                            name = "#text: " + (text ? text->GetTextContent().substr(0, 20) : "");
+                                        } else if (node->GetNodeType() == NodeType::ELEMENT_NODE) {
+                                            auto elem = std::dynamic_pointer_cast<Element>(node);
+                                            name = elem ? elem->GetTagName() : "?";
+                                        }
+                                    }
+                                    std::cout << std::string(depth * 2, ' ') << name 
+                                              << " x=" << l.x << " y=" << l.y 
+                                              << " w=" << l.width << " h=" << l.height << std::endl;
+                                    for (auto& child : obj->GetChildren()) {
+                                        printTree(child.get(), depth + 1);
+                                    }
+                                };
+                                std::cout << "[EventLoop] RenderObject tree:" << std::endl;
+                                printTree(hit_result.render_object.get(), 0);
+                                
+                                // 遍历子 RenderObject 找到被点击的文本节点
+                                // 需要累加从当前元素到文本节点的所有偏移
+                                std::function<bool(RenderObject*, float, float, float, float)> findTextAtPosition;
+                                findTextAtPosition = [&](RenderObject* obj, float acc_x, float acc_y, float target_x, float target_y) -> bool {
+                                    const auto& layout = obj->GetLayoutInfo();
+                                    float new_x = acc_x + layout.x;
+                                    float new_y = acc_y + layout.y;
+                                    
+                                    // 检查是否是文本节点
+                                    auto node = obj->GetNode();
+                                    if (node && node->GetNodeType() == NodeType::TEXT_NODE) {
+                                        auto text_node = std::dynamic_pointer_cast<Text>(node);
+                                        std::string text_preview = text_node ? text_node->GetTextContent().substr(0, 10) : "?";
+                                        
+                                        // 检查点击位置是否在这个文本节点的范围内
+                                        bool in_x = target_x >= new_x && target_x < new_x + layout.width;
+                                        bool in_y = target_y >= new_y && target_y < new_y + layout.height;
+                                        
+                                        std::cout << "[findTextAtPosition] TEXT '" << text_preview << "' range=(" 
+                                                  << new_x << "-" << (new_x + layout.width) << ", " 
+                                                  << new_y << "-" << (new_y + layout.height) << ") "
+                                                  << "target=(" << target_x << "," << target_y << ") "
+                                                  << "in_x=" << in_x << " in_y=" << in_y << std::endl;
+                                        
+                                        if (in_x && in_y) {
+                                            if (text_node) {
+                                                std::string text = text_node->GetTextContent();
+                                                
+                                                // 获取字体信息和间距
+                                                // 注意：文本节点的样式可能没有正确继承，需要从父元素获取
+                                                const auto& text_style = obj->GetComputedStyle();
+                                                FontDescriptor desc;
+                                                desc.family = !text_style.font_family.empty() ? text_style.font_family : "Arial";
+                                                desc.size = text_style.font_size > 0 ? text_style.font_size : 16.0f;
+                                                desc.weight = (text_style.font_weight == "bold" || text_style.font_weight == "700") 
+                                                              ? FontWeight::BOLD : FontWeight::NORMAL;
+                                                desc.style = (text_style.font_style == "italic") 
+                                                             ? FontStyle::ITALIC : FontStyle::NORMAL;
+                                                SkFont font = FontManager::GetInstance().LoadFont(desc);
+                                                
+                                                // 获取 letter-spacing 和 word-spacing
+                                                // 优先从文本节点样式获取，如果为0则尝试从父元素获取
+                                                float letter_spacing = text_style.letter_spacing.ToPx(0, text_style.font_size);
+                                                float word_spacing = text_style.word_spacing.ToPx(0, text_style.font_size);
+                                                
+                                                // 如果文本节点没有 word_spacing，尝试从父 RenderObject 获取
+                                                if (word_spacing == 0.0f || letter_spacing == 0.0f) {
+                                                    auto parent_render = obj->GetParent();
+                                                    while (parent_render) {
+                                                        const auto& parent_style = parent_render->GetComputedStyle();
+                                                        if (word_spacing == 0.0f) {
+                                                            word_spacing = parent_style.word_spacing.ToPx(0, parent_style.font_size);
+                                                        }
+                                                        if (letter_spacing == 0.0f) {
+                                                            letter_spacing = parent_style.letter_spacing.ToPx(0, parent_style.font_size);
+                                                        }
+                                                        if (word_spacing != 0.0f && letter_spacing != 0.0f) break;
+                                                        parent_render = parent_render->GetParent();
+                                                    }
+                                                }
+                                                
+                                                std::cout << "[findTextAtPosition] word_spacing=" << word_spacing 
+                                                          << " letter_spacing=" << letter_spacing << std::endl;
+                                                
+                                                // 计算相对于文本节点的 x 坐标
+                                                float text_x = target_x - new_x;
+                                                
+                                                // 计算光标偏移
+                                                int offset = 0;
+                                                float accumulated_width = 0;
+                                                int char_index = 0;
+                                                
+                                                for (size_t i = 0; i < text.length(); ) {
+                                                    size_t char_len = 1;
+                                                    unsigned char c = text[i];
+                                                    if ((c & 0x80) == 0) char_len = 1;
+                                                    else if ((c & 0xE0) == 0xC0) char_len = 2;
+                                                    else if ((c & 0xF0) == 0xE0) char_len = 3;
+                                                    else if ((c & 0xF8) == 0xF0) char_len = 4;
+                                                    
+                                                    std::string char_str = text.substr(i, char_len);
+                                                    // 使用 TextRenderer::MeasureMixedTextWidth 来测量字符宽度
+                                                    // 这样可以确保与 IFC 布局使用相同的测量方法（正确处理 CJK 字符）
+                                                    float char_width = TextRenderer::MeasureMixedTextWidth(char_str, font);
+                                                    
+                                                    // 添加 word-spacing（空格额外宽度）
+                                                    if (char_str == " ") {
+                                                        char_width += word_spacing;
+                                                    }
+                                                    
+                                                    // 添加 letter-spacing（字符间距，最后一个字符后不加）
+                                                    // 注意：letter-spacing 在字符后面，所以在判断时要考虑
+                                                    float total_char_width = char_width;
+                                                    if (i + char_len < text.length()) {
+                                                        total_char_width += letter_spacing;
+                                                    }
+                                                    
+                                                    if (accumulated_width + char_width / 2 > text_x) {
+                                                        break;
+                                                    }
+                                                    accumulated_width += total_char_width;
+                                                    offset += static_cast<int>(char_len);
+                                                    i += char_len;
+                                                    char_index++;
+                                                }
+                                                
+                                                target_text_node = text_node;
+                                                target_offset = offset;
+                                                
+                                                std::cout << "[EventLoop] Found text node at acc=(" << new_x << "," << new_y 
+                                                          << ") text_x=" << text_x << " offset=" << offset << std::endl;
+                                                return true;
+                                            }
+                                        }
+                                    }
+                                    
+                                    // 递归检查子节点
+                                    for (auto& child : obj->GetChildren()) {
+                                        if (findTextAtPosition(child.get(), new_x, new_y, target_x, target_y)) {
+                                            return true;
+                                        }
+                                    }
+                                    return false;
+                                };
+                                
+                                // 从当前元素开始，初始累加偏移为 0
+                                // 因为 click_x/click_y 已经是相对于当前元素内容区域的坐标
+                                // 而当前元素的 layout.x/y 是相对于父元素的，不应该被加进去
+                                const auto& root_layout = hit_result.render_object->GetLayoutInfo();
+                                findTextAtPosition(hit_result.render_object.get(), -root_layout.x, -root_layout.y, click_x, click_y);
+                                
+                                // 如果没找到精确的文本节点，需要找到最近的文本节点
+                                if (!target_text_node) {
+                                    // 收集所有文本节点及其位置信息
+                                    struct TextNodeInfo {
+                                        std::shared_ptr<Text> node;
+                                        float x, y, width, height;
+                                    };
+                                    std::vector<TextNodeInfo> text_nodes;
+                                    
+                                    std::function<void(RenderObject*, float, float)> collectTextNodes;
+                                    collectTextNodes = [&](RenderObject* obj, float acc_x, float acc_y) {
+                                        const auto& layout = obj->GetLayoutInfo();
+                                        float new_x = acc_x + layout.x;
+                                        float new_y = acc_y + layout.y;
+                                        
+                                        auto node = obj->GetNode();
+                                        if (node && node->GetNodeType() == NodeType::TEXT_NODE) {
+                                            auto text_node = std::dynamic_pointer_cast<Text>(node);
+                                            if (text_node && !text_node->GetTextContent().empty()) {
+                                                text_nodes.push_back({text_node, new_x, new_y, layout.width, layout.height});
+                                            }
+                                        }
+                                        
+                                        for (auto& child : obj->GetChildren()) {
+                                            collectTextNodes(child.get(), new_x, new_y);
+                                        }
+                                    };
+                                    collectTextNodes(hit_result.render_object.get(), -root_layout.x, -root_layout.y);
+                                    
+                                    if (!text_nodes.empty()) {
+                                        // 找到与点击位置在同一行（y 范围重叠）的文本节点
+                                        std::vector<TextNodeInfo*> same_line_nodes;
+                                        for (auto& info : text_nodes) {
+                                            if (click_y >= info.y && click_y < info.y + info.height) {
+                                                same_line_nodes.push_back(&info);
+                                            }
+                                        }
+                                        
+                                        if (!same_line_nodes.empty()) {
+                                            // 在同一行中，找到最接近点击位置的文本节点
+                                            TextNodeInfo* closest = nullptr;
+                                            float min_distance = std::numeric_limits<float>::max();
+                                            
+                                            for (auto* info : same_line_nodes) {
+                                                float distance;
+                                                if (click_x < info->x) {
+                                                    distance = info->x - click_x;
+                                                } else if (click_x > info->x + info->width) {
+                                                    distance = click_x - (info->x + info->width);
+                                                } else {
+                                                    distance = 0;
+                                                }
+                                                
+                                                if (distance < min_distance) {
+                                                    min_distance = distance;
+                                                    closest = info;
+                                                }
+                                            }
+                                            
+                                            if (closest) {
+                                                target_text_node = closest->node;
+                                                // 如果点击在文本节点右边，光标放在末尾
+                                                if (click_x >= closest->x + closest->width) {
+                                                    target_offset = static_cast<int>(closest->node->GetTextContent().length());
+                                                } else {
+                                                    target_offset = 0;
+                                                }
+                                                std::cout << "[EventLoop] Fallback to closest text node on same line, offset=" << target_offset << std::endl;
+                                            }
+                                        } else {
+                                            // 没有同一行的文本节点，使用最后一个文本节点
+                                            auto& last = text_nodes.back();
+                                            target_text_node = last.node;
+                                            target_offset = static_cast<int>(last.node->GetTextContent().length());
+                                            std::cout << "[EventLoop] Fallback to last text node, offset=" << target_offset << std::endl;
+                                        }
+                                    } else {
+                                        // 没有文本节点，回退到元素本身
+                                        std::cout << "[EventLoop] No text nodes found" << std::endl;
+                                    }
+                                }
+                            }
+                            
+                            if (target_text_node) {
+                                selection->Collapse(target_text_node, target_offset);
+                            } else {
+                                selection->Collapse(hit_result.element, 0);
+                            }
+                            std::cout << "[EventLoop] Selection initialized for contentEditable" << std::endl;
+                        }
+                    }
                 }
             }
 
@@ -2003,6 +2299,28 @@ void EventLoop::HandleKeyboardEventForDOM(const SDL_Event& event) {
                 input_element->HandleKeyPress(key, ctrl_key);
             } else if (textarea_element) {
                 textarea_element->HandleKeyPress(key, ctrl_key, shift_key);
+            } else {
+                // 检查是否是 contentEditable 元素或其子元素
+                auto element = std::dynamic_pointer_cast<Element>(focus_element);
+                if (element) {
+                    // 向上查找 contentEditable 元素
+                    auto editable_element = element;
+                    while (editable_element && !editable_element->IsContentEditable()) {
+                        auto parent = editable_element->GetParentNode();
+                        if (parent && parent->GetNodeType() == NodeType::ELEMENT_NODE) {
+                            editable_element = std::dynamic_pointer_cast<Element>(parent);
+                        } else {
+                            editable_element = nullptr;
+                        }
+                    }
+                    
+                    if (editable_element && editable_element->IsContentEditable()) {
+                        // 使用 ContentEditableHandler 处理键盘事件
+                        if (contenteditable_handler_) {
+                            contenteditable_handler_->HandleKeyDown(editable_element, key_code, ctrl_key, shift_key, alt_key);
+                        }
+                    }
+                }
             }
 
             // 处理Tab键导航
@@ -2041,14 +2359,36 @@ void EventLoop::HandleKeyboardEventForDOM(const SDL_Event& event) {
         // 注意：这是SDL特有的事件，W3C标准中没有直接对应
         // 用于处理IME输入和普通文本输入
 
+        std::cout << "[EventLoop] SDL_EVENT_TEXT_INPUT: '" << event.text.text << "'" << std::endl;
+        std::cout << "[EventLoop] focus_element: " << (focus_element ? focus_element->GetTagName() : "null") << std::endl;
+
         // 检查是否是表单元素
         auto input_element = std::dynamic_pointer_cast<HTMLInputElement>(focus_element);
         auto textarea_element = std::dynamic_pointer_cast<HTMLTextAreaElement>(focus_element);
 
         if (input_element) {
+            std::cout << "[EventLoop] Handling as HTMLInputElement" << std::endl;
             input_element->HandleTextInput(event.text.text);
         } else if (textarea_element) {
+            std::cout << "[EventLoop] Handling as HTMLTextAreaElement" << std::endl;
             textarea_element->HandleTextInput(event.text.text);
+        } else {
+            // 检查是否是 contentEditable 元素
+            auto element = std::dynamic_pointer_cast<Element>(focus_element);
+            std::cout << "[EventLoop] element: " << (element ? "yes" : "no") << std::endl;
+            if (element) {
+                std::cout << "[EventLoop] IsContentEditable: " << element->IsContentEditable() << std::endl;
+            }
+            if (element && element->IsContentEditable()) {
+                std::cout << "[EventLoop] Handling as contentEditable" << std::endl;
+                // 使用 ContentEditableHandler 处理文本输入
+                if (contenteditable_handler_) {
+                    auto doc = std::dynamic_pointer_cast<Document>(element->GetOwnerDocument());
+                    if (doc) {
+                        contenteditable_handler_->HandleTextInput(element, event.text.text);
+                    }
+                }
+            }
         }
     }
 }

@@ -126,7 +126,7 @@ static MutationObserverInit ParseObserverInit(JSContext* ctx, JSValue options) {
 
     // attributeFilter
     val = JS_GetPropertyStr(ctx, options, "attributeFilter");
-    if (JS_IsArray(ctx, val) > 0) {
+    if (JS_IsArray(val)) {
         uint32_t len = 0;
         JSValue lenVal = JS_GetPropertyStr(ctx, val, "length");
         JS_ToUint32(ctx, &len, lenVal);
@@ -376,11 +376,11 @@ void InitMutationObserverBinding(JSContext* ctx) {
     JSRuntime* rt = JS_GetRuntime(ctx);
 
     // 注册 MutationObserver 类
-    JS_NewClassID(&js_mutation_observer_class_id);
+    JS_NewClassID(rt, &js_mutation_observer_class_id);
     JS_NewClass(rt, js_mutation_observer_class_id, &js_mutation_observer_class);
 
     // 注册 MutationRecord 类
-    JS_NewClassID(&js_mutation_record_class_id);
+    JS_NewClassID(rt, &js_mutation_record_class_id);
     JS_NewClass(rt, js_mutation_record_class_id, &js_mutation_record_class);
 
     // 创建 MutationObserver 原型
@@ -392,6 +392,9 @@ void InitMutationObserverBinding(JSContext* ctx) {
     // 创建 MutationObserver 构造函数
     JSValue ctor = JS_NewCFunction2(ctx, js_mutation_observer_constructor,
         "MutationObserver", 1, JS_CFUNC_constructor, 0);
+
+    // 设置构造函数的 prototype 属性
+    JS_SetConstructor(ctx, ctor, proto);
 
     // 注册到全局对象
     JSValue global = JS_GetGlobalObject(ctx);

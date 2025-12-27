@@ -17,6 +17,8 @@
 #include "core/dom/node.h"
 #include "core/dom/element.h"
 #include "core/dom/text.h"
+#include "core/dom/document.h"
+#include "core/dom/selection.h"
 #include "core/dom/html_input_element.h"
 #include "core/dom/html_textarea_element.h"
 #include "core/dom/html_canvas_element.h"
@@ -37,6 +39,7 @@ namespace lightui {
 // 静态成员初始化
 float RenderObject::viewport_width_ = 0.0f;
 float RenderObject::viewport_height_ = 0.0f;
+bool RenderObject::cursor_visible_ = true;
 
 // 视口剔除调试统计（用于验证 quickReject 效果）
 std::atomic<int> g_paint_total_calls{0};
@@ -2289,6 +2292,15 @@ void RenderBlock::Paint(SkCanvas* canvas) {
         }
     }
 
+    // ========== 绘制 contentEditable 光标 ==========
+    // 参考 textarea 的光标渲染实现
+    if (node && node->GetNodeType() == NodeType::ELEMENT_NODE) {
+        auto element = std::static_pointer_cast<Element>(node);
+        if (element->IsContentEditable() && element->HasPseudoClass("focus")) {
+            PaintContentEditableCaret(canvas, element.get(), box);
+        }
+    }
+
     // 恢复 opacity layer（如果有）
     if (has_opacity) {
         canvas->restore();
@@ -2604,6 +2616,255 @@ void RenderBlock::PaintTextAreaElement(SkCanvas* canvas, HTMLTextAreaElement* te
             }
         }
     }
+}
+
+// ========== contentEditable 光标渲染 ==========
+
+void RenderBlock::PaintContentEditableCaret(SkCanvas* canvas, Element* element, const Box& box) {
+    if (!canvas || !element) return;
+
+    // 只在最外层的 contentEditable 元素上绘制光标
+    auto parent = element->GetParentNode();
+    while (parent) {
+        if (parent->GetNodeType() == NodeType::ELEMENT_NODE) {
+            auto parent_elem = std::dynamic_pointer_cast<Element>(parent);
+            if (parent_elem && parent_elem->IsContentEditable()) {
+                return;  // 父元素也是 contentEditable，跳过
+            }
+        }
+        parent = parent->GetParentNode();
+    }
+
+    // 获取文档的 Selection
+    auto doc = element->GetOwnerDocument();
+    if (!doc) {
+        return;
+    }
+
+    auto document = std::dynamic_pointer_cast<Document>(doc);
+    if (!document) {
+        return;
+    }
+
+    auto selection = document->GetSelection();
+    if (!selection) {
+        std::cout << "[PaintContentEditableCaret] No selection" << std::endl;
+        return;
+    }
+    
+    if (!selection->IsCollapsed()) {
+        return;
+    }
+
+    // 获取光标位置
+    auto anchor_node = selection->GetAnchorNode();
+    int anchor_offset = selection->GetAnchorOffset();
+    if (!anchor_node) {
+        std::cout << "[PaintContentEditableCaret] No anchor node" << std::endl;
+        return;
+    }
+
+    std::cout << "[PaintContentEditableCaret] anchor_node type=" << static_cast<int>(anchor_node->GetNodeType())
+              << " offset=" << anchor_offset << std::endl;
+
+    // 检查光标是否在当前 contentEditable 元素内
+    bool is_inside = false;
+    auto current = anchor_node;
+    while (current) {
+        if (current.get() == element) {
+            is_inside = true;
+            break;
+        }
+        current = current->GetParentNode();
+    }
+    if (!is_inside) {
+        std::cout << "[PaintContentEditableCaret] anchor not inside this element" << std::endl;
+        return;
+    }
+
+    // 使用全局光标可见状态（由 EventLoop 控制闪烁）
+    if (!RenderObject::IsCursorVisible()) {
+        return;
+    }
+
+    // 获取字体信息 - 从 anchor_node 的父元素获取样式
+    float font_size = 16.0f;
+    std::string font_family = "Arial";
+    FontWeight font_weight = FontWeight::NORMAL;
+    FontStyle font_style = FontStyle::NORMAL;
+
+    // 查找 anchor_node 对应的 RenderObject 或其父元素的 RenderObject 来获取正确的字体样式
+    auto anchor_parent = anchor_node->GetParentNode();
+    if (anchor_parent && anchor_parent->GetNodeType() == NodeType::ELEMENT_NODE) {
+        auto parent_elem = std::dynamic_pointer_cast<Element>(anchor_parent);
+        if (parent_elem) {
+            auto parent_render = parent_elem->GetRenderObject();
+            if (parent_render) {
+                const auto& parent_style = parent_render->GetComputedStyle();
+                font_size = parent_style.font_size > 0 ? parent_style.font_size : 16.0f;
+                font_family = !parent_style.font_family.empty() ? parent_style.font_family : "Arial";
+                // font_weight 是 string 类型: "normal", "bold", "100"-"900"
+                if (parent_style.font_weight == "bold" || parent_style.font_weight == "700" ||
+                    parent_style.font_weight == "800" || parent_style.font_weight == "900") {
+                    font_weight = FontWeight::BOLD;
+                }
+                if (parent_style.font_style == "italic") {
+                    font_style = FontStyle::ITALIC;
+                }
+            }
+        }
+    }
+
+    FontDescriptor desc;
+    desc.family = font_family;
+    desc.size = font_size;
+    desc.weight = font_weight;
+    desc.style = font_style;
+
+    SkFont font = FontManager::GetInstance().LoadFont(desc);
+    SkFontMetrics font_metrics;
+    font.getMetrics(&font_metrics);
+    float cursor_height = font_metrics.fDescent - font_metrics.fAscent;
+
+    // 计算光标位置
+    // 注意：canvas 已经被 translate 到当前元素的位置，所以坐标是相对于当前元素的
+    float cursor_x = box.content_x;
+    float cursor_y = box.content_y;
+
+    if (anchor_node->GetNodeType() == NodeType::TEXT_NODE) {
+        auto text_node = std::dynamic_pointer_cast<Text>(anchor_node);
+        if (text_node) {
+            std::string text = text_node->GetTextContent();
+            std::string text_before_cursor = text.substr(0, std::min(static_cast<size_t>(anchor_offset), text.length()));
+
+            std::cout << "[PaintContentEditableCaret] text='" << text << "' before_cursor='" << text_before_cursor << "'" << std::endl;
+
+            // 查找文本节点对应的 RenderObject，累加从当前元素到文本节点的所有偏移
+            std::function<bool(RenderObject*, Node*, float, float, float&, float&)> findTextPosition;
+            findTextPosition = [&](RenderObject* obj, Node* target, float acc_x, float acc_y, float& out_x, float& out_y) -> bool {
+                const auto& layout = obj->GetLayoutInfo();
+                float new_x = acc_x + layout.x;
+                float new_y = acc_y + layout.y;
+                
+                auto obj_node = obj->GetNode();
+                std::string node_name = "?";
+                if (obj_node) {
+                    if (obj_node->GetNodeType() == NodeType::TEXT_NODE) {
+                        node_name = "#text";
+                    } else if (obj_node->GetNodeType() == NodeType::ELEMENT_NODE) {
+                        auto elem = std::dynamic_pointer_cast<Element>(obj_node);
+                        if (elem) node_name = elem->GetTagName();
+                    }
+                }
+                std::cout << "[findTextPosition] " << node_name << " layout=(" << layout.x << "," << layout.y 
+                          << ") acc=(" << new_x << "," << new_y << ")" << std::endl;
+                
+                if (obj_node.get() == target) {
+                    out_x = new_x;
+                    out_y = new_y;
+                    std::cout << "[findTextPosition] FOUND at (" << out_x << "," << out_y << ")" << std::endl;
+                    return true;
+                }
+                for (auto& child : obj->GetChildren()) {
+                    if (findTextPosition(child.get(), target, new_x, new_y, out_x, out_y)) {
+                        return true;
+                    }
+                }
+                return false;
+            };
+
+            float text_x = 0, text_y = 0;
+            // 从当前元素开始搜索，初始偏移为 0（因为 canvas 已经 translate 到当前元素）
+            // 但是当前元素自己的 layout.x/y 不应该被加进去，所以从 -layout_info_.x, -layout_info_.y 开始
+            std::cout << "[PaintContentEditableCaret] this layout=(" << layout_info_.x << "," << layout_info_.y << ")" << std::endl;
+            if (findTextPosition(const_cast<RenderBlock*>(this), text_node.get(), -layout_info_.x, -layout_info_.y, text_x, text_y)) {
+                cursor_x = text_x;
+                cursor_y = text_y;
+
+                // 测量光标前的文本宽度，考虑 word-spacing 和 letter-spacing
+                if (!text_before_cursor.empty()) {
+                    // 获取文本节点的样式 - 需要向上遍历祖先元素查找 word-spacing 和 letter-spacing
+                    float letter_spacing = 0.0f;
+                    float word_spacing = 0.0f;
+                    
+                    // 从文本节点的父元素开始向上查找
+                    auto current_node = text_node->GetParentNode();
+                    while (current_node) {
+                        if (current_node->GetNodeType() == NodeType::ELEMENT_NODE) {
+                            auto elem = std::dynamic_pointer_cast<Element>(current_node);
+                            if (elem) {
+                                auto render = elem->GetRenderObject();
+                                if (render) {
+                                    const auto& style = render->GetComputedStyle();
+                                    if (word_spacing == 0.0f) {
+                                        word_spacing = style.word_spacing.ToPx(0, style.font_size);
+                                    }
+                                    if (letter_spacing == 0.0f) {
+                                        letter_spacing = style.letter_spacing.ToPx(0, style.font_size);
+                                    }
+                                    // 如果都找到了，停止搜索
+                                    if (word_spacing != 0.0f && letter_spacing != 0.0f) break;
+                                }
+                            }
+                        }
+                        current_node = current_node->GetParentNode();
+                    }
+                    
+                    std::cout << "[PaintContentEditableCaret] word_spacing=" << word_spacing 
+                              << " letter_spacing=" << letter_spacing << std::endl;
+                    
+                    // 逐字符测量宽度
+                    float text_width = 0;
+                    int char_count = 0;
+                    for (size_t i = 0; i < text_before_cursor.length(); ) {
+                        size_t char_len = 1;
+                        unsigned char c = text_before_cursor[i];
+                        if ((c & 0x80) == 0) char_len = 1;
+                        else if ((c & 0xE0) == 0xC0) char_len = 2;
+                        else if ((c & 0xF0) == 0xE0) char_len = 3;
+                        else if ((c & 0xF8) == 0xF0) char_len = 4;
+                        
+                        std::string char_str = text_before_cursor.substr(i, char_len);
+                        // 使用 TextRenderer::MeasureMixedTextWidth 来测量字符宽度
+                        // 这样可以确保与 IFC 布局使用相同的测量方法（正确处理 CJK 字符）
+                        float char_width = TextRenderer::MeasureMixedTextWidth(char_str, font);
+                        
+                        // 添加 word-spacing
+                        if (char_str == " ") {
+                            char_width += word_spacing;
+                        }
+                        
+                        text_width += char_width;
+                        
+                        // 添加 letter-spacing（最后一个字符后不加）
+                        if (i + char_len < text_before_cursor.length()) {
+                            text_width += letter_spacing;
+                        }
+                        
+                        i += char_len;
+                        char_count++;
+                    }
+                    
+                    cursor_x += text_width;
+                }
+                std::cout << "[PaintContentEditableCaret] cursor at (" << cursor_x << "," << cursor_y << ")" << std::endl;
+            } else {
+                std::cout << "[PaintContentEditableCaret] text node RenderObject NOT FOUND!" << std::endl;
+            }
+        }
+    }
+
+    // 绘制光标
+    SkPaint cursor_paint;
+    cursor_paint.setColor(SK_ColorBLACK);
+    cursor_paint.setStrokeWidth(2.0f);  // 加粗一点更容易看到
+    cursor_paint.setAntiAlias(true);
+
+    std::cout << "[PaintContentEditableCaret] Drawing cursor at (" << cursor_x << "," << cursor_y 
+              << ") to (" << cursor_x << "," << cursor_y + cursor_height << ")" 
+              << " height=" << cursor_height << std::endl;
+
+    canvas->drawLine(cursor_x, cursor_y, cursor_x, cursor_y + cursor_height, cursor_paint);
 }
 
 // ========== RenderInline 实现 ==========

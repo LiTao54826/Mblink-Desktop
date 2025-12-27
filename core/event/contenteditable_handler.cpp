@@ -44,25 +44,33 @@ bool ContentEditableHandler::HandleTextInput(
     std::shared_ptr<Element> target,
     const std::string& text) {
 
+    std::cout << "[ContentEditableHandler::HandleTextInput] text='" << text << "'" << std::endl;
+
     if (!target || !IsEditable(target)) {
+        std::cout << "[ContentEditableHandler::HandleTextInput] target not editable" << std::endl;
         return false;
     }
 
     // 分发 beforeinput 事件
     if (!DispatchBeforeInputEvent(target, "insertText", text)) {
+        std::cout << "[ContentEditableHandler::HandleTextInput] beforeinput cancelled" << std::endl;
         return false;  // 事件被取消
     }
 
     // 获取文档
     auto document = target->GetOwnerDocument();
     if (!document) {
+        std::cout << "[ContentEditableHandler::HandleTextInput] no document" << std::endl;
         return false;
     }
 
     // 插入文本
     if (!InsertText(document, text)) {
+        std::cout << "[ContentEditableHandler::HandleTextInput] InsertText failed" << std::endl;
         return false;
     }
+
+    std::cout << "[ContentEditableHandler::HandleTextInput] success" << std::endl;
 
     // 分发 input 事件
     DispatchInputEvent(target, "insertText", text);
@@ -77,18 +85,23 @@ bool ContentEditableHandler::HandleKeyDown(
     bool shift_key,
     bool alt_key) {
 
+    std::cout << "[ContentEditableHandler::HandleKeyDown] key_code=" << key_code << std::endl;
+
     if (!target || !IsEditable(target)) {
+        std::cout << "[ContentEditableHandler::HandleKeyDown] target not editable" << std::endl;
         return false;
     }
 
     auto document = target->GetOwnerDocument();
     if (!document) {
+        std::cout << "[ContentEditableHandler::HandleKeyDown] no document" << std::endl;
         return false;
     }
 
     // 处理特殊键
     switch (key_code) {
         case 8:  // Backspace
+            std::cout << "[ContentEditableHandler::HandleKeyDown] Backspace pressed" << std::endl;
             if (!DispatchBeforeInputEvent(target, "deleteContentBackward", "")) {
                 return false;
             }
@@ -144,14 +157,20 @@ bool ContentEditableHandler::InsertText(
     std::shared_ptr<Document> document,
     const std::string& text) {
 
+    std::cout << "[ContentEditableHandler::InsertText] text='" << text << "'" << std::endl;
+
     if (!document || text.empty()) {
+        std::cout << "[ContentEditableHandler::InsertText] no document or empty text" << std::endl;
         return false;
     }
 
     auto selection = GetSelection(document);
     if (!selection) {
+        std::cout << "[ContentEditableHandler::InsertText] no selection" << std::endl;
         return false;
     }
+
+    std::cout << "[ContentEditableHandler::InsertText] selection isCollapsed=" << selection->IsCollapsed() << std::endl;
 
     // 如果有选中内容，先删除
     if (!selection->IsCollapsed()) {
@@ -163,8 +182,12 @@ bool ContentEditableHandler::InsertText(
     int anchor_offset = selection->GetAnchorOffset();
 
     if (!anchor_node) {
+        std::cout << "[ContentEditableHandler::InsertText] no anchor node" << std::endl;
         return false;
     }
+
+    std::cout << "[ContentEditableHandler::InsertText] anchor_node type=" << static_cast<int>(anchor_node->GetNodeType()) 
+              << " offset=" << anchor_offset << std::endl;
 
     // 如果是文本节点，直接插入
     if (anchor_node->GetNodeType() == NodeType::TEXT_NODE) {
@@ -260,8 +283,12 @@ bool ContentEditableHandler::DeleteCharacter(
 
     auto selection = GetSelection(document);
     if (!selection) {
+        std::cout << "[ContentEditableHandler::DeleteCharacter] no selection" << std::endl;
         return false;
     }
+
+    std::cout << "[ContentEditableHandler::DeleteCharacter] forward=" << forward 
+              << " isCollapsed=" << selection->IsCollapsed() << std::endl;
 
     // 如果有选中内容，删除选中内容
     if (!selection->IsCollapsed()) {
@@ -273,8 +300,13 @@ bool ContentEditableHandler::DeleteCharacter(
     int anchor_offset = selection->GetAnchorOffset();
 
     if (!anchor_node) {
+        std::cout << "[ContentEditableHandler::DeleteCharacter] no anchor node" << std::endl;
         return false;
     }
+
+    std::cout << "[ContentEditableHandler::DeleteCharacter] anchor_node type=" 
+              << static_cast<int>(anchor_node->GetNodeType()) 
+              << " offset=" << anchor_offset << std::endl;
 
     // 处理文本节点
     if (anchor_node->GetNodeType() == NodeType::TEXT_NODE) {
@@ -284,26 +316,57 @@ bool ContentEditableHandler::DeleteCharacter(
         }
 
         std::string content = text_node->GetTextContent();
+        std::cout << "[ContentEditableHandler::DeleteCharacter] content='" << content 
+                  << "' length=" << content.length() << std::endl;
 
         if (forward) {
             // Delete: 删除光标后的字符
             if (anchor_offset >= static_cast<int>(content.length())) {
-                return false;  // 已在末尾
+                // 已在末尾，尝试合并下一个节点
+                // TODO: 实现向前合并
+                std::cout << "[ContentEditableHandler::DeleteCharacter] already at end, try merge next" << std::endl;
+                return false;
             }
-            content.erase(anchor_offset, 1);
+            
+            // 计算要删除的字符长度（处理 UTF-8 多字节字符）
+            size_t char_len = 1;
+            if (anchor_offset < static_cast<int>(content.length())) {
+                unsigned char c = content[anchor_offset];
+                if ((c & 0x80) == 0) char_len = 1;
+                else if ((c & 0xE0) == 0xC0) char_len = 2;
+                else if ((c & 0xF0) == 0xE0) char_len = 3;
+                else if ((c & 0xF8) == 0xF0) char_len = 4;
+            }
+            
+            content.erase(anchor_offset, char_len);
             text_node->SetTextContent(content);
             // 光标位置不变
         } else {
             // Backspace: 删除光标前的字符
             if (anchor_offset <= 0) {
-                return false;  // 已在开头
+                // 已在开头，尝试合并到前一个节点或删除空元素
+                std::cout << "[ContentEditableHandler::DeleteCharacter] at beginning, try merge previous" << std::endl;
+                return MergeToPreviousNode(document, anchor_node);
             }
-            content.erase(anchor_offset - 1, 1);
+            
+            // 计算要删除的字符的起始位置和长度（处理 UTF-8 多字节字符）
+            // 需要找到 anchor_offset 前一个字符的起始位置
+            size_t delete_start = anchor_offset - 1;
+            size_t char_len = 1;
+            
+            // 向前查找 UTF-8 字符的起始位置
+            while (delete_start > 0 && (static_cast<unsigned char>(content[delete_start]) & 0xC0) == 0x80) {
+                delete_start--;
+            }
+            char_len = anchor_offset - delete_start;
+            
+            content.erase(delete_start, char_len);
             text_node->SetTextContent(content);
-            // 光标前移一位
-            selection->Collapse(anchor_node, anchor_offset - 1);
+            // 光标前移
+            selection->Collapse(anchor_node, static_cast<int>(delete_start));
         }
 
+        std::cout << "[ContentEditableHandler::DeleteCharacter] success, new content='" << content << "'" << std::endl;
         return true;
     }
 
@@ -749,6 +812,367 @@ std::shared_ptr<Element> ContentEditableHandler::FindEditableElement(
     }
 
     return nullptr;
+}
+
+bool ContentEditableHandler::MergeToPreviousNode(
+    std::shared_ptr<Document> document,
+    std::shared_ptr<Node> current_node) {
+
+    if (!document || !current_node) {
+        return false;
+    }
+
+    auto selection = GetSelection(document);
+    if (!selection) {
+        return false;
+    }
+
+    std::cout << "[MergeToPreviousNode] Starting merge" << std::endl;
+
+    // 辅助函数：查找节点中最后一个文本节点
+    std::function<std::shared_ptr<Text>(std::shared_ptr<Node>)> findLastTextNode;
+    findLastTextNode = [&](std::shared_ptr<Node> node) -> std::shared_ptr<Text> {
+        if (!node) return nullptr;
+        
+        if (node->GetNodeType() == NodeType::TEXT_NODE) {
+            return std::dynamic_pointer_cast<Text>(node);
+        }
+        
+        if (node->GetNodeType() == NodeType::ELEMENT_NODE) {
+            auto elem = std::dynamic_pointer_cast<Element>(node);
+            if (elem) {
+                auto children = elem->GetChildNodes();
+                for (auto it = children.rbegin(); it != children.rend(); ++it) {
+                    auto result = findLastTextNode(*it);
+                    if (result) return result;
+                }
+            }
+        }
+        return nullptr;
+    };
+
+    // 辅助函数：将光标移动到节点末尾（确保光标在文本节点上）
+    auto moveCursorToEndOfNode = [&](std::shared_ptr<Node> node) -> bool {
+        if (!node) return false;
+        
+        // 先尝试找到最后一个文本节点
+        auto last_text = findLastTextNode(node);
+        if (last_text) {
+            selection->Collapse(last_text, static_cast<int>(last_text->GetTextContent().length()));
+            std::cout << "[MergeToPreviousNode] Cursor moved to end of text node" << std::endl;
+            return true;
+        }
+        
+        // 如果没有文本节点，在元素中创建一个空文本节点
+        if (node->GetNodeType() == NodeType::ELEMENT_NODE) {
+            auto elem = std::dynamic_pointer_cast<Element>(node);
+            if (elem) {
+                auto empty_text = std::make_shared<Text>("");
+                elem->AppendChild(empty_text);
+                selection->Collapse(empty_text, 0);
+                std::cout << "[MergeToPreviousNode] Created empty text node and set cursor" << std::endl;
+                return true;
+            }
+        }
+        
+        return false;
+    };
+
+    // 辅助函数：检查元素是否为空（没有文本内容）
+    std::function<bool(std::shared_ptr<Node>)> isNodeEmpty;
+    isNodeEmpty = [&](std::shared_ptr<Node> node) -> bool {
+        if (!node) return true;
+        
+        if (node->GetNodeType() == NodeType::TEXT_NODE) {
+            auto text = std::dynamic_pointer_cast<Text>(node);
+            return !text || text->GetTextContent().empty();
+        }
+        
+        if (node->GetNodeType() == NodeType::ELEMENT_NODE) {
+            auto elem = std::dynamic_pointer_cast<Element>(node);
+            if (elem) {
+                for (auto& child : elem->GetChildNodes()) {
+                    if (!isNodeEmpty(child)) return false;
+                }
+            }
+        }
+        return true;
+    };
+
+    // 辅助函数：检查是否是块级元素
+    auto isBlockElement = [](const std::string& tag) -> bool {
+        return tag == "p" || tag == "div" || tag == "h1" || tag == "h2" || 
+               tag == "h3" || tag == "h4" || tag == "h5" || tag == "h6" ||
+               tag == "li" || tag == "blockquote" || tag == "pre";
+    };
+
+    // 辅助函数：检查是否是格式化元素
+    auto isFormattingElement = [](const std::string& tag) -> bool {
+        return tag == "em" || tag == "strong" || tag == "b" || 
+               tag == "i" || tag == "u" || tag == "s" || 
+               tag == "span" || tag == "a" || tag == "code";
+    };
+
+    // 获取当前节点的父元素
+    auto parent = current_node->GetParentNode();
+    if (!parent) {
+        std::cout << "[MergeToPreviousNode] No parent" << std::endl;
+        return false;
+    }
+
+    // 查找前一个兄弟节点
+    auto prev_sibling = current_node->GetPreviousSibling();
+    
+    // 如果当前文本节点为空，检查是否应该删除父元素
+    if (current_node->GetNodeType() == NodeType::TEXT_NODE) {
+        auto text_node = std::dynamic_pointer_cast<Text>(current_node);
+        if (text_node && text_node->GetTextContent().empty()) {
+            // 文本节点为空，检查父元素
+            if (parent->GetNodeType() == NodeType::ELEMENT_NODE) {
+                auto parent_elem = std::dynamic_pointer_cast<Element>(parent);
+                if (parent_elem) {
+                    std::string tag = parent_elem->GetTagName();
+                    // 转换为小写
+                    for (auto& c : tag) {
+                        c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+                    }
+                    
+                    // 检查父元素是否为空
+                    bool parent_is_empty = isNodeEmpty(parent_elem);
+                    
+                    std::cout << "[MergeToPreviousNode] Parent tag=" << tag 
+                              << " isEmpty=" << parent_is_empty << std::endl;
+                    
+                    // 情况1：空的格式化元素（em, strong 等）
+                    if (isFormattingElement(tag) && parent_is_empty) {
+                        std::cout << "[MergeToPreviousNode] Removing empty formatting element: " << tag << std::endl;
+                        
+                        auto format_prev = parent_elem->GetPreviousSibling();
+                        auto grandparent = parent_elem->GetParentNode();
+                        
+                        if (grandparent) {
+                            auto grandparent_elem = std::dynamic_pointer_cast<Element>(grandparent);
+                            if (grandparent_elem) {
+                                // 删除空的格式化元素
+                                grandparent_elem->RemoveChild(parent_elem);
+                                
+                                // 将光标移动到前一个节点的末尾
+                                if (format_prev) {
+                                    auto last_text = findLastTextNode(format_prev);
+                                    if (last_text) {
+                                        selection->Collapse(last_text, static_cast<int>(last_text->GetTextContent().length()));
+                                        std::cout << "[MergeToPreviousNode] Cursor moved to previous text node" << std::endl;
+                                        return true;
+                                    }
+                                    // 使用辅助函数确保光标在文本节点上
+                                    if (moveCursorToEndOfNode(format_prev)) {
+                                        return true;
+                                    }
+                                }
+                                
+                                // 没有前一个兄弟，检查祖父元素是否为空
+                                if (isNodeEmpty(grandparent_elem)) {
+                                    // 祖父元素为空，递归处理
+                                    return MergeToPreviousNode(document, grandparent_elem);
+                                }
+                                
+                                // 祖父元素不为空，但当前格式化元素没有前一个兄弟
+                                // 尝试在祖父元素中找到其他文本节点
+                                auto last_text_in_grandparent = findLastTextNode(grandparent_elem);
+                                if (last_text_in_grandparent) {
+                                    selection->Collapse(last_text_in_grandparent, static_cast<int>(last_text_in_grandparent->GetTextContent().length()));
+                                    std::cout << "[MergeToPreviousNode] Cursor moved to last text in grandparent" << std::endl;
+                                    return true;
+                                }
+                                
+                                // 使用辅助函数确保光标在文本节点上
+                                if (moveCursorToEndOfNode(grandparent)) {
+                                    return true;
+                                }
+                                return false;
+                            }
+                        }
+                    }
+                    
+                    // 情况2：空的块级元素（p, div 等）- 删除整行并移动到上一行
+                    if (isBlockElement(tag) && parent_is_empty) {
+                        std::cout << "[MergeToPreviousNode] Removing empty block element: " << tag << std::endl;
+                        
+                        auto block_prev = parent_elem->GetPreviousSibling();
+                        auto grandparent = parent_elem->GetParentNode();
+                        
+                        if (grandparent) {
+                            auto grandparent_elem = std::dynamic_pointer_cast<Element>(grandparent);
+                            if (grandparent_elem) {
+                                // 删除空的块级元素
+                                grandparent_elem->RemoveChild(parent_elem);
+                                
+                                // 将光标移动到前一个块级元素的末尾
+                                if (block_prev) {
+                                    auto last_text = findLastTextNode(block_prev);
+                                    if (last_text) {
+                                        selection->Collapse(last_text, static_cast<int>(last_text->GetTextContent().length()));
+                                        std::cout << "[MergeToPreviousNode] Cursor moved to end of previous block" << std::endl;
+                                        return true;
+                                    }
+                                    
+                                    // 如果前一个块级元素没有文本，使用辅助函数确保光标在文本节点上
+                                    if (moveCursorToEndOfNode(block_prev)) {
+                                        return true;
+                                    }
+                                    return false;
+                                }
+                                
+                                // 没有前一个兄弟，使用辅助函数确保光标在文本节点上
+                                if (moveCursorToEndOfNode(grandparent)) {
+                                    return true;
+                                }
+                                return false;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    // 情况3：当前节点是元素节点且为空（可能是递归调用）
+    if (current_node->GetNodeType() == NodeType::ELEMENT_NODE) {
+        auto elem = std::dynamic_pointer_cast<Element>(current_node);
+        if (elem && isNodeEmpty(elem)) {
+            // 不要删除 contentEditable 的根元素
+            if (elem->IsContentEditable()) {
+                // 检查父元素是否也是 contentEditable
+                auto parent_node = elem->GetParentNode();
+                if (!parent_node || parent_node->GetNodeType() != NodeType::ELEMENT_NODE) {
+                    std::cout << "[MergeToPreviousNode] Cannot delete contentEditable root" << std::endl;
+                    return false;
+                }
+                auto parent_elem_check = std::dynamic_pointer_cast<Element>(parent_node);
+                if (!parent_elem_check || !parent_elem_check->IsContentEditable()) {
+                    std::cout << "[MergeToPreviousNode] Cannot delete contentEditable root" << std::endl;
+                    return false;
+                }
+            }
+            
+            std::string tag = elem->GetTagName();
+            for (auto& c : tag) {
+                c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+            }
+            
+            if (isBlockElement(tag) || isFormattingElement(tag)) {
+                std::cout << "[MergeToPreviousNode] Removing empty element (recursive): " << tag << std::endl;
+                
+                auto elem_prev = elem->GetPreviousSibling();
+                auto elem_parent = elem->GetParentNode();
+                
+                std::cout << "[MergeToPreviousNode] elem_prev=" << (elem_prev ? "exists" : "null") 
+                          << " elem_parent=" << (elem_parent ? "exists" : "null") << std::endl;
+                
+                if (elem_parent) {
+                    auto parent_elem = std::dynamic_pointer_cast<Element>(elem_parent);
+                    if (parent_elem) {
+                        parent_elem->RemoveChild(elem);
+                        
+                        if (elem_prev) {
+                            std::cout << "[MergeToPreviousNode] Looking for last text in prev sibling" << std::endl;
+                            auto last_text = findLastTextNode(elem_prev);
+                            if (last_text) {
+                                std::cout << "[MergeToPreviousNode] Found last text: '" << last_text->GetTextContent() << "'" << std::endl;
+                                selection->Collapse(last_text, static_cast<int>(last_text->GetTextContent().length()));
+                                std::cout << "[MergeToPreviousNode] Cursor set to end of previous element" << std::endl;
+                                return true;
+                            }
+                            std::cout << "[MergeToPreviousNode] No text found, using moveCursorToEndOfNode" << std::endl;
+                            // 使用辅助函数确保光标在文本节点上
+                            if (moveCursorToEndOfNode(elem_prev)) {
+                                return true;
+                            }
+                        }
+                        
+                        // 检查父元素是否也为空了
+                        if (isNodeEmpty(parent_elem)) {
+                            std::string parent_tag = parent_elem->GetTagName();
+                            for (auto& c : parent_tag) {
+                                c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+                            }
+                            if (isBlockElement(parent_tag) || isFormattingElement(parent_tag)) {
+                                return MergeToPreviousNode(document, parent_elem);
+                            }
+                        }
+                        
+                        // 使用辅助函数确保光标在文本节点上
+                        if (moveCursorToEndOfNode(elem_parent)) {
+                            return true;
+                        }
+                        return false;
+                    }
+                }
+            }
+        }
+    }
+
+    // 情况4：有前一个兄弟节点，删除其最后一个字符
+    if (prev_sibling) {
+        auto prev_text = findLastTextNode(prev_sibling);
+        if (prev_text) {
+            std::string content = prev_text->GetTextContent();
+            if (!content.empty()) {
+                // 删除前一个文本节点的最后一个字符
+                size_t delete_start = content.length() - 1;
+                while (delete_start > 0 && (static_cast<unsigned char>(content[delete_start]) & 0xC0) == 0x80) {
+                    delete_start--;
+                }
+                
+                content.erase(delete_start);
+                prev_text->SetTextContent(content);
+                selection->Collapse(prev_text, static_cast<int>(content.length()));
+                std::cout << "[MergeToPreviousNode] Deleted last char from previous text node" << std::endl;
+                return true;
+            } else {
+                // 前一个文本节点也为空，递归处理
+                return MergeToPreviousNode(document, prev_text);
+            }
+        }
+    }
+    
+    // 情况5：没有前一个兄弟，检查父元素是否需要处理
+    if (!prev_sibling && parent->GetNodeType() == NodeType::ELEMENT_NODE) {
+        auto parent_elem = std::dynamic_pointer_cast<Element>(parent);
+        if (parent_elem) {
+            std::string tag = parent_elem->GetTagName();
+            for (auto& c : tag) {
+                c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+            }
+            
+            // 如果父元素是格式化或块级元素，且当前节点是第一个子节点
+            if (isFormattingElement(tag) || isBlockElement(tag)) {
+                // 检查父元素的前一个兄弟
+                auto parent_prev = parent_elem->GetPreviousSibling();
+                if (parent_prev) {
+                    auto last_text = findLastTextNode(parent_prev);
+                    if (last_text) {
+                        std::string content = last_text->GetTextContent();
+                        if (!content.empty()) {
+                            // 删除前一个元素最后一个字符
+                            size_t delete_start = content.length() - 1;
+                            while (delete_start > 0 && (static_cast<unsigned char>(content[delete_start]) & 0xC0) == 0x80) {
+                                delete_start--;
+                            }
+                            content.erase(delete_start);
+                            last_text->SetTextContent(content);
+                            selection->Collapse(last_text, static_cast<int>(content.length()));
+                            std::cout << "[MergeToPreviousNode] Deleted last char from parent's previous sibling" << std::endl;
+                            return true;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    std::cout << "[MergeToPreviousNode] No previous node to merge with" << std::endl;
+    return false;
 }
 
 } // namespace lightui

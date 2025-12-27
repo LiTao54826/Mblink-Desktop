@@ -142,16 +142,26 @@ function createDOMElement(vnode) {
     // Handle regular elements
     const element = document.createElement(vnode.type);
     
+    // Check for dangerouslySetInnerHTML first
+    let hasDangerousHTML = false;
+    
     if (vnode.props) {
         for (const [key, value] of Object.entries(vnode.props)) {
             if (key === 'key' || key === 'ref' || key === 'children') continue;
             
-            if (key.startsWith('on') && typeof value === 'function') {
+            if (key === 'dangerouslySetInnerHTML' && value && value.__html != null) {
+                // Handle dangerouslySetInnerHTML - set innerHTML directly
+                element.innerHTML = value.__html;
+                hasDangerousHTML = true;
+            } else if (key.startsWith('on') && typeof value === 'function') {
                 element.addEventListener(key.substring(2).toLowerCase(), value);
             } else if (key === 'className') {
                 element.className = value;
             } else if (key === 'style' && typeof value === 'object') {
                 Object.assign(element.style, value);
+            } else if (key === 'contentEditable') {
+                // contentEditable 需要设置为字符串 "true" 或 "false"
+                element.setAttribute('contenteditable', value === true ? 'true' : String(value));
             } else if (typeof value === 'boolean') {
                 if (value) element.setAttribute(key, '');
             } else if (value != null) {
@@ -160,7 +170,8 @@ function createDOMElement(vnode) {
         }
     }
     
-    if (vnode.children) {
+    // Only add children if dangerouslySetInnerHTML was not used
+    if (!hasDangerousHTML && vnode.children) {
         for (const child of vnode.children) {
             const childDOM = createDOMElement(child);
             if (childDOM) {

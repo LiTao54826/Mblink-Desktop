@@ -928,6 +928,17 @@ public:
     static float GetViewportHeight() { return viewport_height_; }
 
     /**
+     * @brief 设置光标可见状态（用于光标闪烁）
+     * @param visible 是否可见
+     */
+    static void SetCursorVisible(bool visible) { cursor_visible_ = visible; }
+
+    /**
+     * @brief 获取光标可见状态
+     */
+    static bool IsCursorVisible() { return cursor_visible_; }
+
+    /**
      * @brief 重置绘制统计（每帧开始时调用）
      */
     static void ResetPaintStats();
@@ -966,6 +977,8 @@ protected:
     // 静态成员：视口尺寸
     static float viewport_width_;
     static float viewport_height_;
+    // 静态成员：光标可见状态（用于光标闪烁）
+    static bool cursor_visible_;
 
     RenderObjectType type_;
     std::weak_ptr<Node> node_;
@@ -1078,6 +1091,14 @@ private:
      * @param box 盒模型
      */
     void PaintTextAreaElement(SkCanvas* canvas, HTMLTextAreaElement* textarea, const Box& box);
+
+    /**
+     * @brief 渲染contentEditable元素的光标
+     * @param canvas Skia画布
+     * @param element contentEditable元素指针
+     * @param box 盒模型
+     */
+    void PaintContentEditableCaret(SkCanvas* canvas, Element* element, const Box& box);
 };
 
 /**

@@ -450,11 +450,19 @@ function setDOMProps(element, oldProps, newProps, isSVG) {
                     element.style[styleProp] = newValue[styleProp];
                 }
             }
+        } else if (prop === 'contentEditable') {
+            // contentEditable 需要设置为字符串 "true" 或 "false"
+            element.setAttribute('contenteditable', newValue === true ? 'true' : String(newValue));
         } else if (typeof newValue === 'boolean') {
             if (newValue) {
                 element.setAttribute(prop, '');
             } else {
                 element.removeAttribute(prop);
+            }
+        } else if (prop === 'dangerouslySetInnerHTML') {
+            // Handle React/Preact's dangerouslySetInnerHTML
+            if (newValue && newValue.__html != null) {
+                element.innerHTML = newValue.__html;
             }
         } else if (prop === 'innerHTML') {
             // innerHTML 是 DOM 属性，不是 HTML 属性

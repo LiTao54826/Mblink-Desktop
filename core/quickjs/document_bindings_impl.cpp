@@ -6,8 +6,14 @@
 #include "window_bindings.h"
 #include "bindings/js_node.h"
 #include "bindings/js_element.h"
+#include "bindings/js_selection.h"
+#include "bindings/js_range.h"
 #include "core/dom/document.h"
+#include "core/dom/dom_bindings.h"
 #include "core/window/window.h"
+#include "core/event/event_loop.h"
+#include "core/event/selection_manager.h"
+#include "core/event/contenteditable_handler.h"
 
 namespace lightui {
 
@@ -223,6 +229,254 @@ static JSValue JS_Document_get_head(JSContext* ctx, JSValueConst this_val, int m
     return bindings::WrapElement(ctx, head);
 }
 
+// ========== window.getSelection / document.getSelection 实现 ==========
+
+static JSValue JS_Window_getSelection(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) {
+    // 从全局对象获取 window
+    JSValue global = JS_GetGlobalObject(ctx);
+    JSValue window_val = JS_GetPropertyStr(ctx, global, "__lightui_window_ptr");
+    JS_FreeValue(ctx, global);
+
+    if (JS_IsUndefined(window_val)) {
+        return JS_NULL;
+    }
+
+    void* ptr = nullptr;
+    JS_ToInt64Ext(ctx, (int64_t*)&ptr, window_val);
+    JS_FreeValue(ctx, window_val);
+
+    if (!ptr) {
+        return JS_NULL;
+    }
+
+    auto* window = static_cast<Window*>(ptr);
+    auto doc = window->GetDocument();
+    if (!doc) {
+        return JS_NULL;
+    }
+
+    // 获取 EventLoop 中的 SelectionManager
+    auto event_loop = DOMBindings::GetGlobalEventLoop();
+    if (!event_loop) {
+        return JS_NULL;
+    }
+
+    auto selection_manager = event_loop->GetSelectionManager();
+    if (!selection_manager) {
+        return JS_NULL;
+    }
+
+    auto selection = selection_manager->GetSelection(doc);
+    if (!selection) {
+        return JS_NULL;
+    }
+
+    return bindings::WrapSelection(ctx, selection);
+}
+
+// ========== document.createRange 实现 ==========
+
+static JSValue JS_Document_createRange(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) {
+    // 从全局对象获取 window
+    JSValue global = JS_GetGlobalObject(ctx);
+    JSValue window_val = JS_GetPropertyStr(ctx, global, "__lightui_window_ptr");
+    JS_FreeValue(ctx, global);
+
+    if (JS_IsUndefined(window_val)) {
+        return JS_NULL;
+    }
+
+    void* ptr = nullptr;
+    JS_ToInt64Ext(ctx, (int64_t*)&ptr, window_val);
+    JS_FreeValue(ctx, window_val);
+
+    if (!ptr) {
+        return JS_NULL;
+    }
+
+    auto* window = static_cast<Window*>(ptr);
+    auto doc = window->GetDocument();
+    if (!doc) {
+        return JS_NULL;
+    }
+
+    auto range = doc->CreateRange();
+    if (!range) {
+        return JS_NULL;
+    }
+
+    return bindings::WrapRange(ctx, range);
+}
+
+// ========== document.execCommand 实现 ==========
+
+static JSValue JS_Document_execCommand(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) {
+    if (argc < 1) {
+        return JS_ThrowTypeError(ctx, "execCommand requires at least 1 argument");
+    }
+
+    const char* command = JS_ToCString(ctx, argv[0]);
+    if (!command) {
+        return JS_EXCEPTION;
+    }
+
+    std::string cmd(command);
+    JS_FreeCString(ctx, command);
+
+    // 获取可选的 value 参数
+    std::string value;
+    if (argc >= 3) {
+        const char* val = JS_ToCString(ctx, argv[2]);
+        if (val) {
+            value = val;
+            JS_FreeCString(ctx, val);
+        }
+    }
+
+    // 从全局对象获取 window
+    JSValue global = JS_GetGlobalObject(ctx);
+    JSValue window_val = JS_GetPropertyStr(ctx, global, "__lightui_window_ptr");
+    JS_FreeValue(ctx, global);
+
+    if (JS_IsUndefined(window_val)) {
+        return JS_NewBool(ctx, false);
+    }
+
+    void* ptr = nullptr;
+    JS_ToInt64Ext(ctx, (int64_t*)&ptr, window_val);
+    JS_FreeValue(ctx, window_val);
+
+    if (!ptr) {
+        return JS_NewBool(ctx, false);
+    }
+
+    auto* window = static_cast<Window*>(ptr);
+    auto doc = window->GetDocument();
+    if (!doc) {
+        return JS_NewBool(ctx, false);
+    }
+
+    // 获取 EventLoop 中的 ContentEditableHandler
+    auto event_loop = DOMBindings::GetGlobalEventLoop();
+    if (!event_loop) {
+        return JS_NewBool(ctx, false);
+    }
+
+    auto handler = event_loop->GetContentEditableHandler();
+    if (!handler) {
+        return JS_NewBool(ctx, false);
+    }
+
+    bool result = handler->ExecCommand(doc, cmd, value);
+    return JS_NewBool(ctx, result);
+}
+
+// ========== document.queryCommandState 实现 ==========
+
+static JSValue JS_Document_queryCommandState(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) {
+    if (argc < 1) {
+        return JS_ThrowTypeError(ctx, "queryCommandState requires 1 argument");
+    }
+
+    const char* command = JS_ToCString(ctx, argv[0]);
+    if (!command) {
+        return JS_EXCEPTION;
+    }
+
+    std::string cmd(command);
+    JS_FreeCString(ctx, command);
+
+    // 从全局对象获取 window
+    JSValue global = JS_GetGlobalObject(ctx);
+    JSValue window_val = JS_GetPropertyStr(ctx, global, "__lightui_window_ptr");
+    JS_FreeValue(ctx, global);
+
+    if (JS_IsUndefined(window_val)) {
+        return JS_NewBool(ctx, false);
+    }
+
+    void* ptr = nullptr;
+    JS_ToInt64Ext(ctx, (int64_t*)&ptr, window_val);
+    JS_FreeValue(ctx, window_val);
+
+    if (!ptr) {
+        return JS_NewBool(ctx, false);
+    }
+
+    auto* window = static_cast<Window*>(ptr);
+    auto doc = window->GetDocument();
+    if (!doc) {
+        return JS_NewBool(ctx, false);
+    }
+
+    // 获取 EventLoop 中的 ContentEditableHandler
+    auto event_loop = DOMBindings::GetGlobalEventLoop();
+    if (!event_loop) {
+        return JS_NewBool(ctx, false);
+    }
+
+    auto handler = event_loop->GetContentEditableHandler();
+    if (!handler) {
+        return JS_NewBool(ctx, false);
+    }
+
+    bool result = handler->QueryCommandState(doc, cmd);
+    return JS_NewBool(ctx, result);
+}
+
+// ========== document.queryCommandEnabled 实现 ==========
+
+static JSValue JS_Document_queryCommandEnabled(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) {
+    if (argc < 1) {
+        return JS_ThrowTypeError(ctx, "queryCommandEnabled requires 1 argument");
+    }
+
+    const char* command = JS_ToCString(ctx, argv[0]);
+    if (!command) {
+        return JS_EXCEPTION;
+    }
+
+    std::string cmd(command);
+    JS_FreeCString(ctx, command);
+
+    // 从全局对象获取 window
+    JSValue global = JS_GetGlobalObject(ctx);
+    JSValue window_val = JS_GetPropertyStr(ctx, global, "__lightui_window_ptr");
+    JS_FreeValue(ctx, global);
+
+    if (JS_IsUndefined(window_val)) {
+        return JS_NewBool(ctx, false);
+    }
+
+    void* ptr = nullptr;
+    JS_ToInt64Ext(ctx, (int64_t*)&ptr, window_val);
+    JS_FreeValue(ctx, window_val);
+
+    if (!ptr) {
+        return JS_NewBool(ctx, false);
+    }
+
+    auto* window = static_cast<Window*>(ptr);
+    auto doc = window->GetDocument();
+    if (!doc) {
+        return JS_NewBool(ctx, false);
+    }
+
+    // 获取 EventLoop 中的 ContentEditableHandler
+    auto event_loop = DOMBindings::GetGlobalEventLoop();
+    if (!event_loop) {
+        return JS_NewBool(ctx, false);
+    }
+
+    auto handler = event_loop->GetContentEditableHandler();
+    if (!handler) {
+        return JS_NewBool(ctx, false);
+    }
+
+    bool result = handler->QueryCommandEnabled(doc, cmd);
+    return JS_NewBool(ctx, result);
+}
+
 // ========== 绑定函数 ==========
 
 void BindDocumentAPIs(JSContext* ctx, Window* window) {
@@ -263,8 +517,41 @@ void BindDocumentAPIs(JSContext* ctx, Window* window) {
     JS_SetPropertyStr(ctx, document, "createTextNode",
         JS_NewCFunction(ctx, JS_Document_createTextNode, "createTextNode", 1));
 
+    // 设置 createRange 方法
+    JS_SetPropertyStr(ctx, document, "createRange",
+        JS_NewCFunction(ctx, JS_Document_createRange, "createRange", 0));
+
+    // 设置 execCommand 方法
+    JS_SetPropertyStr(ctx, document, "execCommand",
+        JS_NewCFunction(ctx, JS_Document_execCommand, "execCommand", 3));
+
+    // 设置 queryCommandState 方法
+    JS_SetPropertyStr(ctx, document, "queryCommandState",
+        JS_NewCFunction(ctx, JS_Document_queryCommandState, "queryCommandState", 1));
+
+    // 设置 queryCommandEnabled 方法
+    JS_SetPropertyStr(ctx, document, "queryCommandEnabled",
+        JS_NewCFunction(ctx, JS_Document_queryCommandEnabled, "queryCommandEnabled", 1));
+
+    // 设置 getSelection 方法（document.getSelection 是 window.getSelection 的别名）
+    JS_SetPropertyStr(ctx, document, "getSelection",
+        JS_NewCFunction(ctx, JS_Window_getSelection, "getSelection", 0));
+
     // 设置到全局对象
     JS_SetPropertyStr(ctx, global, "document", document);
+
+    // 设置 window.getSelection
+    JSValue window_obj = JS_GetPropertyStr(ctx, global, "window");
+    if (!JS_IsUndefined(window_obj) && !JS_IsNull(window_obj)) {
+        JS_SetPropertyStr(ctx, window_obj, "getSelection",
+            JS_NewCFunction(ctx, JS_Window_getSelection, "getSelection", 0));
+        JS_FreeValue(ctx, window_obj);
+    }
+
+    // 也设置到 globalThis 上（有些代码直接调用 getSelection()）
+    JS_SetPropertyStr(ctx, global, "getSelection",
+        JS_NewCFunction(ctx, JS_Window_getSelection, "getSelection", 0));
+
     JS_FreeValue(ctx, global);
 }
 

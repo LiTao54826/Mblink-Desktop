@@ -255,8 +255,13 @@ bool HitTesting::HitTestRecursive(
             }
             result.element = parent_element;
             result.render_object = parent_ro;
-            result.local_x = x - current_offset_x;
-            result.local_y = y - current_offset_y;
+            // 计算相对于父元素的坐标
+            // 需要从当前文本节点的绝对位置回退到父元素的绝对位置
+            const auto& parent_layout = parent_ro->GetLayoutInfo();
+            float parent_offset_x = current_offset_x - layout.x;  // 回退文本节点的偏移
+            float parent_offset_y = current_offset_y - layout.y;
+            result.local_x = x - parent_offset_x;
+            result.local_y = y - parent_offset_y;
             return true;
         }
         parent_ro = parent_ro->GetParent();

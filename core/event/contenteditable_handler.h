@@ -213,6 +213,14 @@ private:
      */
     std::shared_ptr<Element> FindEditableElement(std::shared_ptr<Node> node);
 
+    /**
+     * @brief 合并到前一个节点（处理跨节点删除）
+     * @param document 文档
+     * @param current_node 当前节点
+     * @return true 如果合并成功
+     */
+    bool MergeToPreviousNode(std::shared_ptr<Document> document, std::shared_ptr<Node> current_node);
+
 private:
     SelectionManager* selection_manager_;
 };

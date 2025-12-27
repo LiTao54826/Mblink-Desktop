@@ -84,9 +84,9 @@ bool FocusManager::SetFocus(std::shared_ptr<Element> element, bool focus_visible
     // 更新焦点元素
     focus_element_ = element;
 
-    // 如果是输入元素，启用SDL文本输入
+    // 如果是输入元素或 contentEditable 元素，启用SDL文本输入
     std::string tag_name = element->GetTagName();
-    if (tag_name == "input" || tag_name == "textarea") {
+    if (tag_name == "input" || tag_name == "textarea" || element->IsContentEditable()) {
         if (window_) {
             SDL_StartTextInput(window_->GetSDLWindow());
         }
@@ -121,9 +121,9 @@ void FocusManager::Blur(std::shared_ptr<Element> element) {
     auto current_focus = focus_element_.lock();
 
     if (current_focus == element) {
-        // 如果是输入元素，停止SDL文本输入
+        // 如果是输入元素或 contentEditable 元素，停止SDL文本输入
         std::string tag_name = element->GetTagName();
-        if (tag_name == "input" || tag_name == "textarea") {
+        if (tag_name == "input" || tag_name == "textarea" || element->IsContentEditable()) {
             if (window_) {
                 SDL_StopTextInput(window_->GetSDLWindow());
             }
@@ -234,9 +234,9 @@ bool FocusManager::TabToNextFocusableElement(std::shared_ptr<Document> current_d
 void FocusManager::ClearFocus() {
     auto current_focus = focus_element_.lock();
     if (current_focus) {
-        // 如果是输入元素，停止SDL文本输入
+        // 如果是输入元素或 contentEditable 元素，停止SDL文本输入
         std::string tag_name = current_focus->GetTagName();
-        if (tag_name == "input" || tag_name == "textarea") {
+        if (tag_name == "input" || tag_name == "textarea" || current_focus->IsContentEditable()) {
             if (window_) {
                 SDL_StopTextInput(window_->GetSDLWindow());
             }
@@ -381,6 +381,11 @@ bool FocusManager::IsFocusable(std::shared_ptr<Element> element) {
     std::string tabindex_str = element->GetAttribute("tabindex");
     if (!tabindex_str.empty()) {
         // 有tabindex属性的元素都可聚焦（即使tabindex=-1）
+        return true;
+    }
+
+    // 检查是否是 contentEditable 元素
+    if (element->IsContentEditable()) {
         return true;
     }
 

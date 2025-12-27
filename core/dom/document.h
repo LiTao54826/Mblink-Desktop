@@ -15,6 +15,7 @@
 #include "element.h"
 #include "text.h"
 #include "range.h"
+#include "selection.h"
 #include "dom_observer.h"
 #include "dirty_node_tracker.h"
 #include <string>
@@ -366,6 +367,20 @@ public:
      */
     void SetActiveElement(std::shared_ptr<Element> element);
 
+    // ========== Selection 管理 ==========
+
+    /**
+     * @brief 获取文档的 Selection 对象
+     * @return Selection 对象
+     */
+    std::shared_ptr<Selection> GetSelection() const { return selection_.lock(); }
+
+    /**
+     * @brief 设置文档的 Selection 对象
+     * @param selection Selection 对象
+     */
+    void SetSelection(std::shared_ptr<Selection> selection) { selection_ = selection; }
+
     // ========== Node 接口实现 ==========
 
     /**
@@ -418,6 +433,9 @@ private:
 
     // 焦点管理
     std::weak_ptr<Element> active_element_;
+
+    // Selection 管理（用于 contentEditable 光标渲染）
+    std::weak_ptr<Selection> selection_;
 
     // 脏区域收集（用于移动元素双区域标记优化）
     std::vector<SkRect> dirty_rects_;

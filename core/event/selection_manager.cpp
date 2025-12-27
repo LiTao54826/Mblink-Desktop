@@ -38,6 +38,10 @@ std::shared_ptr<Selection> SelectionManager::GetSelection(std::shared_ptr<Docume
     // 创建新的 Selection 对象
     auto selection = std::make_shared<Selection>(document);
     selections_[doc_ptr] = selection;
+    
+    // 设置到 Document 中，以便渲染时可以访问
+    document->SetSelection(selection);
+    
     return selection;
 }
 

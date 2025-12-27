@@ -50,12 +50,13 @@ void WindowBindings::InitBindings() {
         DOMBindings::SetGlobalTaskScheduler(runtime_->GetContext(), task_scheduler_);
     }
     
-    // 绑定 Document API（使用新系统的 bindings::WrapElement）
-    BindDocumentAPIs(runtime_->GetContext(), window_.get());
-    
+    // 先绑定 window 对象（创建空的 window 对象）
     BindWindowObject();
     BindTimers();
     BindEventListeners();
+    
+    // 然后绑定 Document API（会向 window 对象添加 getSelection 等方法）
+    BindDocumentAPIs(runtime_->GetContext(), window_.get());
 }
 
 void WindowBindings::BindWindowObject() {
@@ -93,21 +94,27 @@ void WindowBindings::BindWindowObject() {
         return nullptr;
     });
     
-    // 创建 window 对象
+    // 创建 window 对象（如果不存在则创建，否则扩展现有对象）
     std::string window_code = R"(
-        globalThis.window = {};
+        if (!globalThis.window) {
+            globalThis.window = {};
+        }
         Object.defineProperty(globalThis.window, 'innerWidth', {
-            get: function() { return __getInnerWidth(); }
+            get: function() { return __getInnerWidth(); },
+            configurable: true
         });
         Object.defineProperty(globalThis.window, 'innerHeight', {
-            get: function() { return __getInnerHeight(); }
+            get: function() { return __getInnerHeight(); },
+            configurable: true
         });
         Object.defineProperty(globalThis.window, 'devicePixelRatio', {
-            get: function() { return __getDevicePixelRatio(); }
+            get: function() { return __getDevicePixelRatio(); },
+            configurable: true
         });
         Object.defineProperty(globalThis.window, 'title', {
             get: function() { return __getTitle(); },
-            set: function(value) { __setTitle(value); }
+            set: function(value) { __setTitle(value); },
+            configurable: true
         });
     )";
     

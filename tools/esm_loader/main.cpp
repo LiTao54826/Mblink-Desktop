@@ -35,6 +35,12 @@ extern "C" {
 #include <string>
 #include <filesystem>
 
+#ifdef _WIN32
+#include <windows.h>
+#include <io.h>
+#include <fcntl.h>
+#endif
+
 using namespace lightui;
 namespace fs = std::filesystem;
 
@@ -135,6 +141,17 @@ void RegisterPreactModules(QuickJSRuntime* runtime) {
 }
 
 int main(int argc, char** argv) {
+#ifdef _WIN32
+    // 设置 Windows 控制台为 UTF-8 编码
+    SetConsoleOutputCP(CP_UTF8);
+    SetConsoleCP(CP_UTF8);
+    // 启用 ANSI 转义序列支持（用于颜色等）
+    HANDLE hOut = GetStdHandle(STD_OUTPUT_HANDLE);
+    DWORD dwMode = 0;
+    GetConsoleMode(hOut, &dwMode);
+    SetConsoleMode(hOut, dwMode | ENABLE_VIRTUAL_TERMINAL_PROCESSING);
+#endif
+
     std::string entry_path;
     int width = 1200;
     int height = 800;

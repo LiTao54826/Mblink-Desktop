@@ -999,6 +999,76 @@ static JSValue JSElement_set_scrollTop(JSContext* ctx, JSValueConst this_val, JS
     return JS_UNDEFINED;
 }
 
+// isContentEditable getter - 检查元素是否可编辑
+static JSValue JSElement_get_isContentEditable(JSContext* ctx, JSValueConst this_val, int magic) {
+    auto* data = static_cast<JSElementData*>(JS_GetOpaque(this_val, js_element_class_id));
+    if (!data || !data->element) return JS_FALSE;
+    
+    return JS_NewBool(ctx, data->element->IsContentEditable());
+}
+
+// contentEditable getter - 获取 contenteditable 属性值
+static JSValue JSElement_get_contentEditable(JSContext* ctx, JSValueConst this_val, int magic) {
+    auto* data = static_cast<JSElementData*>(JS_GetOpaque(this_val, js_element_class_id));
+    if (!data || !data->element) return JS_NewString(ctx, "inherit");
+    
+    std::string value = data->element->GetAttribute("contenteditable");
+    if (value.empty()) {
+        return JS_NewString(ctx, "inherit");
+    }
+    return JS_NewString(ctx, value.c_str());
+}
+
+// contentEditable setter - 设置 contenteditable 属性值
+static JSValue JSElement_set_contentEditable(JSContext* ctx, JSValueConst this_val, JSValue val, int magic) {
+    auto* data = static_cast<JSElementData*>(JS_GetOpaque(this_val, js_element_class_id));
+    if (!data || !data->element) return JS_UNDEFINED;
+    
+    const char* str = JS_ToCString(ctx, val);
+    if (!str) return JS_EXCEPTION;
+    
+    std::string value(str);
+    JS_FreeCString(ctx, str);
+    
+    if (value == "true" || value == "false" || value == "inherit") {
+        data->element->SetAttribute("contenteditable", value);
+    } else {
+        return JS_ThrowTypeError(ctx, "contentEditable must be 'true', 'false', or 'inherit'");
+    }
+    
+    return JS_UNDEFINED;
+}
+
+// innerHTML getter
+static JSValue JSElement_get_innerHTML(JSContext* ctx, JSValueConst this_val, int magic) {
+    auto* data = static_cast<JSElementData*>(JS_GetOpaque(this_val, js_element_class_id));
+    if (!data || !data->element) return JS_NewString(ctx, "");
+    
+    return JS_NewString(ctx, data->element->GetInnerHTML().c_str());
+}
+
+// innerHTML setter
+static JSValue JSElement_set_innerHTML(JSContext* ctx, JSValueConst this_val, JSValue val, int magic) {
+    auto* data = static_cast<JSElementData*>(JS_GetOpaque(this_val, js_element_class_id));
+    if (!data || !data->element) return JS_UNDEFINED;
+    
+    const char* str = JS_ToCString(ctx, val);
+    if (!str) return JS_EXCEPTION;
+    
+    data->element->SetInnerHTML(str);
+    JS_FreeCString(ctx, str);
+    
+    return JS_UNDEFINED;
+}
+
+// outerHTML getter
+static JSValue JSElement_get_outerHTML(JSContext* ctx, JSValueConst this_val, int magic) {
+    auto* data = static_cast<JSElementData*>(JS_GetOpaque(this_val, js_element_class_id));
+    if (!data || !data->element) return JS_NewString(ctx, "");
+    
+    return JS_NewString(ctx, data->element->GetOuterHTML().c_str());
+}
+
 // scrollLeft getter - 获取水平滚动位置
 static JSValue JSElement_get_scrollLeft(JSContext* ctx, JSValueConst this_val, int magic) {
     auto* data = static_cast<JSElementData*>(JS_GetOpaque(this_val, js_element_class_id));
@@ -1043,6 +1113,12 @@ static const JSCFunctionListEntry js_element_proto_funcs[] = {
     // 滚动属性
     JS_CGETSET_MAGIC_DEF("scrollTop", JSElement_get_scrollTop, JSElement_set_scrollTop, 0),
     JS_CGETSET_MAGIC_DEF("scrollLeft", JSElement_get_scrollLeft, JSElement_set_scrollLeft, 0),
+    // contentEditable 属性
+    JS_CGETSET_MAGIC_DEF("isContentEditable", JSElement_get_isContentEditable, nullptr, 0),
+    JS_CGETSET_MAGIC_DEF("contentEditable", JSElement_get_contentEditable, JSElement_set_contentEditable, 0),
+    // innerHTML/outerHTML 属性
+    JS_CGETSET_MAGIC_DEF("innerHTML", JSElement_get_innerHTML, JSElement_set_innerHTML, 0),
+    JS_CGETSET_MAGIC_DEF("outerHTML", JSElement_get_outerHTML, nullptr, 0),
     // HTMLCanvasElement 属性
     JS_CGETSET_MAGIC_DEF("width", JSElement_get_canvas_width, JSElement_set_canvas_width, 0),
     JS_CGETSET_MAGIC_DEF("height", JSElement_get_canvas_height, JSElement_set_canvas_height, 0),
