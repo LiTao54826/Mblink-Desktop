@@ -30,6 +30,7 @@ class FocusManager;
 class DragManager;
 class SelectionManager;
 class ContentEditableHandler;
+class ContentEditableController;
 class ClipboardManager;
 struct HitTestResult;
 class RenderObject;
@@ -368,6 +369,7 @@ private:
     // 富文本编辑子系统
     std::unique_ptr<SelectionManager> selection_manager_;
     std::unique_ptr<ContentEditableHandler> contenteditable_handler_;
+    std::unique_ptr<ContentEditableController> contenteditable_controller_;
     std::unique_ptr<ClipboardManager> clipboard_manager_;
 
     // Hover链追踪（参考RmlUi的hover_chain）

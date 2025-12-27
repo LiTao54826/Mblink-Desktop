@@ -17,6 +17,7 @@ set(EVENT_SOURCES
     data_transfer.cpp
     selection_manager.cpp
     contenteditable_handler.cpp
+    contenteditable_controller.cpp
     clipboard_manager.cpp
 )
 
@@ -37,6 +38,7 @@ set(EVENT_HEADERS
     data_transfer.h
     selection_manager.h
     contenteditable_handler.h
+    contenteditable_controller.h
     clipboard_manager.h
 )
 

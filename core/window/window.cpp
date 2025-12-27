@@ -447,30 +447,53 @@ public:
                     return;
                 }
                 
-                // 如果有少量结构变化，也尝试增量更新
-                if (tracker.GetStructuralChangeCount() <= 10) {
-                    if (debug_render) {
-                        std::cout << "[OnSubtreeModified] Few structural changes, using incremental update" << std::endl;
-                    }
-                    // 结构变化已经在 DirtyNodeTracker 中记录
-                    // 需要确保所有受影响的祖先节点的 content_height_ 缓存被清除
+                // 基于区域大小判断是否需要全量重建
+                if (tracker.GetStructuralChangeCount() > 0) {
+                    // 计算变化区域的总面积
+                    float total_change_area = 0.0f;
+                    int width = 800, height = 600;
+                    window_->GetSize(&width, &height);
+                    float viewport_area = static_cast<float>(width * height);
+                    
                     for (const auto& change : tracker.GetStructuralChanges()) {
                         auto parent = change.parent.lock();
                         if (parent) {
-                            // 向上传播到所有祖先的 RenderObject
-                            // 这确保滚动容器等祖先节点的 content_height_ 缓存被清除
-                            if (auto parent_ro = parent->GetRenderObject()) {
-                                parent_ro->MarkNeedsLayout(true);
+                            if (auto render_obj = parent->GetRenderObject()) {
+                                const auto& layout = render_obj->GetLayoutInfo();
+                                total_change_area += layout.width * layout.height;
+                            } else {
+                                // 没有渲染对象，估算一个默认大小
+                                total_change_area += 100.0f * 50.0f;
                             }
                         }
                     }
-                    window_->SetNeedsRepaint();
-                    // 不调用 InvalidateRenderTree()
-                    return;
-                }
-                
-                if (debug_render) {
-                    std::cout << "[OnSubtreeModified] Too many changes, falling back to full rebuild" << std::endl;
+                    
+                    // 如果变化区域小于视口的 50%，使用增量更新
+                    if (viewport_area > 0 && total_change_area < viewport_area * 0.5f) {
+                        if (debug_render) {
+                            std::cout << "[OnSubtreeModified] Change area " << total_change_area 
+                                      << " < 50% viewport " << viewport_area 
+                                      << ", using incremental update" << std::endl;
+                        }
+                        // 标记受影响的节点需要重新布局
+                        for (const auto& change : tracker.GetStructuralChanges()) {
+                            auto parent = change.parent.lock();
+                            if (parent) {
+                                if (auto parent_ro = parent->GetRenderObject()) {
+                                    parent_ro->MarkNeedsLayout(true);
+                                    parent_ro->MarkNeedsPaint();
+                                }
+                            }
+                        }
+                        window_->SetNeedsRepaint();
+                        return;
+                    }
+                    
+                    if (debug_render) {
+                        std::cout << "[OnSubtreeModified] Change area " << total_change_area 
+                                  << " >= 50% viewport " << viewport_area 
+                                  << ", falling back to full rebuild" << std::endl;
+                    }
                 }
             }
             

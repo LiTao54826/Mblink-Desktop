@@ -3,12 +3,20 @@
  */
 
 import { h, render } from 'preact';
-import { useRef, useEffect } from 'preact/hooks';
+import { useRef, useEffect, useState } from 'preact/hooks';
 
 console.log('=== 调试编辑器测试 ===');
 
 function DebugEditor() {
   const editorRef = useRef(null);
+  const [sourceCode, setSourceCode] = useState('');
+
+  // 更新源码显示
+  const updateSourceCode = () => {
+    if (editorRef.current) {
+      setSourceCode(editorRef.current.innerHTML);
+    }
+  };
 
   useEffect(() => {
     if (editorRef.current) {
@@ -23,6 +31,9 @@ function DebugEditor() {
         const child = editorRef.current.childNodes[i];
         console.log(`子节点 ${i}:`, child.nodeName, child.textContent);
       }
+      
+      // 初始化源码显示
+      updateSourceCode();
     }
   }, []);
 
@@ -48,37 +59,37 @@ function DebugEditor() {
       dangerouslySetInnerHTML: {
         __html: '<p>这是通过 dangerouslySetInnerHTML 设置的内容</p><p><strong>粗体</strong> 和 <em>斜体</em></p>'
       }
+      // 暂时移除事件监听器以测试焦点问题
+      // onInput: updateSourceCode,
+      // onKeyUp: updateSourceCode,
+      // onMouseUp: updateSourceCode
     }),
     
-    // 测试 2: 直接使用子元素
-    h('h3', {}, '测试 2: 直接子元素 + contentEditable'),
-    h('div', {
-      contentEditable: true,
+    // 刷新按钮
+    h('button', {
+      onClick: updateSourceCode,
       style: {
-        border: '2px solid green',
-        padding: '10px',
-        minHeight: '100px',
-        marginBottom: '20px'
+        padding: '8px 16px',
+        marginBottom: '10px',
+        cursor: 'pointer'
       }
-    }, [
-      h('p', {}, '这是直接作为子元素的内容'),
-      h('p', {}, [
-        h('strong', {}, '粗体'),
-        ' 和 ',
-        h('em', {}, '斜体')
-      ])
-    ]),
+    }, '刷新源码'),
     
-    // 测试 3: 纯文本
-    h('h3', {}, '测试 3: 纯文本 + contentEditable'),
-    h('div', {
-      contentEditable: true,
+    // 源码显示框
+    h('h3', {}, 'innerHTML 源码:'),
+    h('pre', {
       style: {
-        border: '2px solid red',
+        border: '1px solid #ccc',
         padding: '10px',
-        minHeight: '100px'
+        backgroundColor: '#f5f5f5',
+        whiteSpace: 'pre-wrap',
+        wordBreak: 'break-all',
+        minHeight: '60px',
+        marginBottom: '20px',
+        fontFamily: 'monospace',
+        fontSize: '12px'
       }
-    }, '这是纯文本内容，可以编辑')
+    }, sourceCode || '(空)')
   ]);
 }
 

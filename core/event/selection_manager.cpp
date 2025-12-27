@@ -115,6 +115,56 @@ void SelectionManager::HandleMouseMove(std::shared_ptr<Element> target, int x, i
 
 void SelectionManager::HandleMouseUp(std::shared_ptr<Element> target, int x, int y) {
     is_selecting_ = false;
+    is_drag_selecting_ = false;
+}
+
+// ========== 拖拽选择支持 ==========
+
+void SelectionManager::StartDragSelection(
+    std::shared_ptr<Document> document,
+    std::shared_ptr<Node> start_node,
+    int start_offset) {
+
+    if (!document || !start_node) {
+        return;
+    }
+
+    is_drag_selecting_ = true;
+    drag_start_node_ = start_node;
+    drag_start_offset_ = start_offset;
+
+    // 设置选择起始位置
+    auto selection = GetSelection(document);
+    if (selection) {
+        selection->Collapse(start_node, start_offset);
+    }
+
+    // 重置光标闪烁
+    ResetCaretBlink();
+}
+
+void SelectionManager::UpdateDragSelection(
+    std::shared_ptr<Document> document,
+    std::shared_ptr<Node> end_node,
+    int end_offset) {
+
+    if (!is_drag_selecting_ || !document || !end_node || !drag_start_node_) {
+        return;
+    }
+
+    auto selection = GetSelection(document);
+    if (selection) {
+        selection->UpdateFromUserAction(
+            drag_start_node_, drag_start_offset_,
+            end_node, end_offset
+        );
+    }
+}
+
+void SelectionManager::EndDragSelection(std::shared_ptr<Document> document) {
+    is_drag_selecting_ = false;
+    drag_start_node_ = nullptr;
+    drag_start_offset_ = 0;
 }
 
 // ========== 键盘选择处理 ==========

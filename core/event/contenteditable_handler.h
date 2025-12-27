@@ -8,6 +8,7 @@
  * - 处理换行（Enter）
  * - 支持 execCommand API
  * - 分发 beforeinput/input 事件
+ * - 撤销/重做支持
  *
  * 参考：https://w3c.github.io/editing/docs/execCommand/
  */
@@ -17,6 +18,8 @@
 #include <memory>
 #include <string>
 #include <functional>
+#include <vector>
+#include <deque>
 
 namespace lightui {
 
@@ -24,9 +27,23 @@ namespace lightui {
 class Document;
 class Element;
 class Node;
+class Range;
 class SelectionManager;
 class Selection;
 struct KeyEvent;
+
+/**
+ * @brief 撤销状态结构
+ */
+struct UndoState {
+    std::string innerHTML;                    // 元素的 innerHTML
+    std::weak_ptr<Element> element;           // 可编辑元素
+    std::weak_ptr<Node> anchor_node;          // 光标锚点节点
+    int anchor_offset = 0;                    // 光标锚点偏移量
+    std::weak_ptr<Node> focus_node;           // 光标焦点节点
+    int focus_offset = 0;                     // 光标焦点偏移量
+    bool is_collapsed = true;                 // 选择是否折叠
+};
 
 /**
  * @brief ContentEditable 输入处理器
@@ -177,6 +194,41 @@ private:
     // ========== 格式化命令 ==========
 
     /**
+     * @brief 应用格式化（统一方法）
+     * @param document 文档
+     * @param tag_name 标签名（如 "strong", "em", "u"）
+     * @return true 如果成功
+     */
+    bool ApplyFormatting(std::shared_ptr<Document> document, const std::string& tag_name);
+
+    /**
+     * @brief 移除格式化
+     * @param document 文档
+     * @param tag_name 标签名（如 "strong", "em", "u"）
+     * @return true 如果成功
+     */
+    bool RemoveFormatting(std::shared_ptr<Document> document, const std::string& tag_name);
+
+    /**
+     * @brief 切换格式化（如果已有则移除，否则添加）
+     * @param document 文档
+     * @param tag_name 标签名（如 "strong", "em", "u"）
+     * @return true 如果成功
+     */
+    bool ToggleFormatting(std::shared_ptr<Document> document, const std::string& tag_name);
+
+    /**
+     * @brief 应用格式化到范围（支持跨节点）
+     * @param document 文档
+     * @param range 范围
+     * @param tag_name 标签名
+     * @return true 如果成功
+     */
+    bool ApplyFormattingToRange(std::shared_ptr<Document> document, 
+                                std::shared_ptr<Range> range,
+                                const std::string& tag_name);
+
+    /**
      * @brief 应用粗体格式
      * @param document 文档
      * @return true 如果成功
@@ -220,6 +272,14 @@ private:
      * @return true 如果合并成功
      */
     bool MergeToPreviousNode(std::shared_ptr<Document> document, std::shared_ptr<Node> current_node);
+
+    /**
+     * @brief 合并到下一个节点（处理 Delete 键跨节点删除）
+     * @param document 文档
+     * @param current_node 当前节点
+     * @return true 如果合并成功
+     */
+    bool MergeToNextNode(std::shared_ptr<Document> document, std::shared_ptr<Node> current_node);
 
     // ========== 光标移动 ==========
 
@@ -301,8 +361,56 @@ private:
      */
     std::shared_ptr<Node> FindNextTextNode(std::shared_ptr<Node> current_node);
 
+    // ========== 撤销/重做 ==========
+
+    /**
+     * @brief 保存当前状态到撤销栈
+     * @param element 可编辑元素
+     */
+    void SaveUndoState(std::shared_ptr<Element> element);
+
+    /**
+     * @brief 执行撤销操作
+     * @param document 文档
+     * @return true 如果撤销成功
+     */
+    bool Undo(std::shared_ptr<Document> document);
+
+    /**
+     * @brief 执行重做操作
+     * @param document 文档
+     * @return true 如果重做成功
+     */
+    bool Redo(std::shared_ptr<Document> document);
+
+    /**
+     * @brief 开始撤销组（连续操作合并为一个撤销操作）
+     * @param element 可编辑元素
+     */
+    void BeginUndoGroup(std::shared_ptr<Element> element);
+
+    /**
+     * @brief 结束撤销组
+     */
+    void EndUndoGroup();
+
+    /**
+     * @brief 检查是否在撤销组中
+     * @return true 如果在撤销组中
+     */
+    bool IsInUndoGroup() const { return in_undo_group_; }
+
 private:
     SelectionManager* selection_manager_;
+    
+    // 撤销/重做栈
+    std::deque<UndoState> undo_stack_;
+    std::deque<UndoState> redo_stack_;
+    static constexpr size_t MAX_UNDO_STACK_SIZE = 100;
+
+    // 撤销组状态
+    bool in_undo_group_ = false;
+    UndoState undo_group_start_state_;
 };
 
 } // namespace lightui

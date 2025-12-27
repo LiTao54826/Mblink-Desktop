@@ -243,9 +243,10 @@ int SDLKeycodeToKeyCode(SDL_Keycode keycode) {
     // 字母键：65-90 (A-Z)
     // 数字键：48-57 (0-9)
 
-    // SDL3中字母键是大写的（SDLK_A到SDLK_Z）
+    // SDL3中字母键是小写的（SDLK_a到SDLK_z，值为97-122）
+    // 需要转换为大写的 keyCode（65-90）
     if (keycode >= SDLK_A && keycode <= SDLK_Z) {
-        return keycode;  // 直接返回，因为已经是大写
+        return keycode - 32;  // 转换为大写 (97 -> 65, 122 -> 90)
     }
 
     if (keycode >= SDLK_0 && keycode <= SDLK_9) {

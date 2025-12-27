@@ -2648,26 +2648,20 @@ void RenderBlock::PaintContentEditableCaret(SkCanvas* canvas, Element* element, 
 
     auto selection = document->GetSelection();
     if (!selection) {
-        std::cout << "[PaintContentEditableCaret] No selection" << std::endl;
-        return;
-    }
-    
-    if (!selection->IsCollapsed()) {
         return;
     }
 
-    // 获取光标位置
+    // 获取锚点和焦点
     auto anchor_node = selection->GetAnchorNode();
+    auto focus_node = selection->GetFocusNode();
     int anchor_offset = selection->GetAnchorOffset();
+    int focus_offset = selection->GetFocusOffset();
+    
     if (!anchor_node) {
-        std::cout << "[PaintContentEditableCaret] No anchor node" << std::endl;
         return;
     }
 
-    std::cout << "[PaintContentEditableCaret] anchor_node type=" << static_cast<int>(anchor_node->GetNodeType())
-              << " offset=" << anchor_offset << std::endl;
-
-    // 检查光标是否在当前 contentEditable 元素内
+    // 检查锚点是否在当前 contentEditable 元素内
     bool is_inside = false;
     auto current = anchor_node;
     while (current) {
@@ -2678,10 +2672,249 @@ void RenderBlock::PaintContentEditableCaret(SkCanvas* canvas, Element* element, 
         current = current->GetParentNode();
     }
     if (!is_inside) {
-        std::cout << "[PaintContentEditableCaret] anchor not inside this element" << std::endl;
         return;
     }
 
+    // 如果有选择范围（不是折叠状态），绘制选择高亮
+    bool is_collapsed = selection->IsCollapsed();
+    if (!is_collapsed && focus_node) {
+        // 绘制选择高亮
+        SkPaint highlight_paint;
+        highlight_paint.setColor(SkColorSetARGB(100, 51, 153, 255));  // 半透明蓝色
+        highlight_paint.setStyle(SkPaint::kFill_Style);
+        
+        // 简化实现：如果锚点和焦点在同一个文本节点
+        if (anchor_node == focus_node && anchor_node->GetNodeType() == NodeType::TEXT_NODE) {
+            auto text_node = std::dynamic_pointer_cast<Text>(anchor_node);
+            if (text_node) {
+                std::string text = text_node->GetTextContent();
+                
+                // 获取字体
+                float font_size = 16.0f;
+                std::string font_family = "Arial";
+                auto anchor_parent = anchor_node->GetParentNode();
+                if (anchor_parent && anchor_parent->GetNodeType() == NodeType::ELEMENT_NODE) {
+                    auto parent_elem = std::dynamic_pointer_cast<Element>(anchor_parent);
+                    if (parent_elem) {
+                        auto parent_render = parent_elem->GetRenderObject();
+                        if (parent_render) {
+                            const auto& parent_style = parent_render->GetComputedStyle();
+                            font_size = parent_style.font_size > 0 ? parent_style.font_size : 16.0f;
+                            font_family = !parent_style.font_family.empty() ? parent_style.font_family : "Arial";
+                        }
+                    }
+                }
+                
+                FontDescriptor desc;
+                desc.family = font_family;
+                desc.size = font_size;
+                SkFont font = FontManager::GetInstance().LoadFont(desc);
+                SkFontMetrics font_metrics;
+                font.getMetrics(&font_metrics);
+                float line_height = font_metrics.fDescent - font_metrics.fAscent;
+                
+                // 查找文本节点位置
+                std::function<bool(RenderObject*, Node*, float, float, float&, float&)> findTextPosition;
+                findTextPosition = [&](RenderObject* obj, Node* target, float acc_x, float acc_y, float& out_x, float& out_y) -> bool {
+                    const auto& layout = obj->GetLayoutInfo();
+                    float new_x = acc_x + layout.x;
+                    float new_y = acc_y + layout.y;
+                    
+                    auto obj_node = obj->GetNode();
+                    if (obj_node.get() == target) {
+                        out_x = new_x;
+                        out_y = new_y;
+                        return true;
+                    }
+                    for (auto& child : obj->GetChildren()) {
+                        if (findTextPosition(child.get(), target, new_x, new_y, out_x, out_y)) {
+                            return true;
+                        }
+                    }
+                    return false;
+                };
+                
+                float text_x = 0, text_y = 0;
+                if (findTextPosition(const_cast<RenderBlock*>(this), text_node.get(), -layout_info_.x, -layout_info_.y, text_x, text_y)) {
+                    int start_offset = std::min(anchor_offset, focus_offset);
+                    int end_offset = std::max(anchor_offset, focus_offset);
+                    
+                    // 测量选择开始位置
+                    float start_x = text_x;
+                    for (int i = 0; i < start_offset && i < static_cast<int>(text.length()); ) {
+                        size_t char_len = 1;
+                        unsigned char c = text[i];
+                        if ((c & 0x80) == 0) char_len = 1;
+                        else if ((c & 0xE0) == 0xC0) char_len = 2;
+                        else if ((c & 0xF0) == 0xE0) char_len = 3;
+                        else if ((c & 0xF8) == 0xF0) char_len = 4;
+                        
+                        std::string char_str = text.substr(i, char_len);
+                        start_x += TextRenderer::MeasureMixedTextWidth(char_str, font);
+                        i += char_len;
+                    }
+                    
+                    // 测量选择结束位置
+                    float end_x = text_x;
+                    for (int i = 0; i < end_offset && i < static_cast<int>(text.length()); ) {
+                        size_t char_len = 1;
+                        unsigned char c = text[i];
+                        if ((c & 0x80) == 0) char_len = 1;
+                        else if ((c & 0xE0) == 0xC0) char_len = 2;
+                        else if ((c & 0xF0) == 0xE0) char_len = 3;
+                        else if ((c & 0xF8) == 0xF0) char_len = 4;
+                        
+                        std::string char_str = text.substr(i, char_len);
+                        end_x += TextRenderer::MeasureMixedTextWidth(char_str, font);
+                        i += char_len;
+                    }
+                    
+                    // 绘制高亮矩形
+                    SkRect highlight_rect = SkRect::MakeLTRB(start_x, text_y, end_x, text_y + line_height);
+                    canvas->drawRect(highlight_rect, highlight_paint);
+                }
+            }
+        } else {
+            // 跨节点选择 - 简化实现：只高亮锚点和焦点所在的文本节点
+            // TODO: 完整实现需要遍历所有中间节点
+            
+            // 获取字体
+            float font_size = 16.0f;
+            std::string font_family = "Arial";
+            auto anchor_parent = anchor_node->GetParentNode();
+            if (anchor_parent && anchor_parent->GetNodeType() == NodeType::ELEMENT_NODE) {
+                auto parent_elem = std::dynamic_pointer_cast<Element>(anchor_parent);
+                if (parent_elem) {
+                    auto parent_render = parent_elem->GetRenderObject();
+                    if (parent_render) {
+                        const auto& parent_style = parent_render->GetComputedStyle();
+                        font_size = parent_style.font_size > 0 ? parent_style.font_size : 16.0f;
+                        font_family = !parent_style.font_family.empty() ? parent_style.font_family : "Arial";
+                    }
+                }
+            }
+            
+            FontDescriptor desc;
+            desc.family = font_family;
+            desc.size = font_size;
+            SkFont font = FontManager::GetInstance().LoadFont(desc);
+            SkFontMetrics font_metrics;
+            font.getMetrics(&font_metrics);
+            float line_height = font_metrics.fDescent - font_metrics.fAscent;
+            
+            // 查找文本节点位置的辅助函数
+            std::function<bool(RenderObject*, Node*, float, float, float&, float&)> findTextPosition;
+            findTextPosition = [&](RenderObject* obj, Node* target, float acc_x, float acc_y, float& out_x, float& out_y) -> bool {
+                const auto& layout = obj->GetLayoutInfo();
+                float new_x = acc_x + layout.x;
+                float new_y = acc_y + layout.y;
+                
+                auto obj_node = obj->GetNode();
+                if (obj_node.get() == target) {
+                    out_x = new_x;
+                    out_y = new_y;
+                    return true;
+                }
+                for (auto& child : obj->GetChildren()) {
+                    if (findTextPosition(child.get(), target, new_x, new_y, out_x, out_y)) {
+                        return true;
+                    }
+                }
+                return false;
+            };
+            
+            // 收集所有文本节点及其位置
+            struct TextNodeInfo {
+                std::shared_ptr<Text> node;
+                float x, y, width, height;
+            };
+            std::vector<TextNodeInfo> text_nodes;
+            
+            std::function<void(RenderObject*, float, float)> collectTextNodes;
+            collectTextNodes = [&](RenderObject* obj, float acc_x, float acc_y) {
+                const auto& layout = obj->GetLayoutInfo();
+                float new_x = acc_x + layout.x;
+                float new_y = acc_y + layout.y;
+                
+                auto node = obj->GetNode();
+                if (node && node->GetNodeType() == NodeType::TEXT_NODE) {
+                    auto text_node = std::dynamic_pointer_cast<Text>(node);
+                    if (text_node && !text_node->GetTextContent().empty()) {
+                        text_nodes.push_back({text_node, new_x, new_y, layout.width, layout.height});
+                    }
+                }
+                
+                for (auto& child : obj->GetChildren()) {
+                    collectTextNodes(child.get(), new_x, new_y);
+                }
+            };
+            collectTextNodes(const_cast<RenderBlock*>(this), -layout_info_.x, -layout_info_.y);
+            
+            // 找到锚点和焦点在文本节点列表中的索引
+            int anchor_idx = -1, focus_idx = -1;
+            for (size_t i = 0; i < text_nodes.size(); i++) {
+                if (text_nodes[i].node == anchor_node) anchor_idx = static_cast<int>(i);
+                if (text_nodes[i].node == focus_node) focus_idx = static_cast<int>(i);
+            }
+            
+            if (anchor_idx >= 0 && focus_idx >= 0) {
+                int start_idx = std::min(anchor_idx, focus_idx);
+                int end_idx = std::max(anchor_idx, focus_idx);
+                int start_off = (anchor_idx < focus_idx) ? anchor_offset : focus_offset;
+                int end_off = (anchor_idx < focus_idx) ? focus_offset : anchor_offset;
+                
+                for (int i = start_idx; i <= end_idx; i++) {
+                    auto& info = text_nodes[i];
+                    std::string text = info.node->GetTextContent();
+                    
+                    float highlight_start_x = info.x;
+                    float highlight_end_x = info.x + info.width;
+                    
+                    if (i == start_idx) {
+                        // 第一个节点：从 start_off 开始
+                        for (int j = 0; j < start_off && j < static_cast<int>(text.length()); ) {
+                            size_t char_len = 1;
+                            unsigned char c = text[j];
+                            if ((c & 0x80) == 0) char_len = 1;
+                            else if ((c & 0xE0) == 0xC0) char_len = 2;
+                            else if ((c & 0xF0) == 0xE0) char_len = 3;
+                            else if ((c & 0xF8) == 0xF0) char_len = 4;
+                            
+                            std::string char_str = text.substr(j, char_len);
+                            highlight_start_x += TextRenderer::MeasureMixedTextWidth(char_str, font);
+                            j += char_len;
+                        }
+                    }
+                    
+                    if (i == end_idx) {
+                        // 最后一个节点：到 end_off 结束
+                        highlight_end_x = info.x;
+                        for (int j = 0; j < end_off && j < static_cast<int>(text.length()); ) {
+                            size_t char_len = 1;
+                            unsigned char c = text[j];
+                            if ((c & 0x80) == 0) char_len = 1;
+                            else if ((c & 0xE0) == 0xC0) char_len = 2;
+                            else if ((c & 0xF0) == 0xE0) char_len = 3;
+                            else if ((c & 0xF8) == 0xF0) char_len = 4;
+                            
+                            std::string char_str = text.substr(j, char_len);
+                            highlight_end_x += TextRenderer::MeasureMixedTextWidth(char_str, font);
+                            j += char_len;
+                        }
+                    }
+                    
+                    // 绘制高亮矩形
+                    if (highlight_end_x > highlight_start_x) {
+                        SkRect highlight_rect = SkRect::MakeLTRB(highlight_start_x, info.y, highlight_end_x, info.y + line_height);
+                        canvas->drawRect(highlight_rect, highlight_paint);
+                    }
+                }
+            }
+        }
+        
+        return;  // 有选择时不绘制光标
+    }
+    
     // 使用全局光标可见状态（由 EventLoop 控制闪烁）
     if (!RenderObject::IsCursorVisible()) {
         return;
@@ -2737,8 +2970,6 @@ void RenderBlock::PaintContentEditableCaret(SkCanvas* canvas, Element* element, 
             std::string text = text_node->GetTextContent();
             std::string text_before_cursor = text.substr(0, std::min(static_cast<size_t>(anchor_offset), text.length()));
 
-            std::cout << "[PaintContentEditableCaret] text='" << text << "' before_cursor='" << text_before_cursor << "'" << std::endl;
-
             // 查找文本节点对应的 RenderObject，累加从当前元素到文本节点的所有偏移
             std::function<bool(RenderObject*, Node*, float, float, float&, float&)> findTextPosition;
             findTextPosition = [&](RenderObject* obj, Node* target, float acc_x, float acc_y, float& out_x, float& out_y) -> bool {
@@ -2747,22 +2978,10 @@ void RenderBlock::PaintContentEditableCaret(SkCanvas* canvas, Element* element, 
                 float new_y = acc_y + layout.y;
                 
                 auto obj_node = obj->GetNode();
-                std::string node_name = "?";
-                if (obj_node) {
-                    if (obj_node->GetNodeType() == NodeType::TEXT_NODE) {
-                        node_name = "#text";
-                    } else if (obj_node->GetNodeType() == NodeType::ELEMENT_NODE) {
-                        auto elem = std::dynamic_pointer_cast<Element>(obj_node);
-                        if (elem) node_name = elem->GetTagName();
-                    }
-                }
-                std::cout << "[findTextPosition] " << node_name << " layout=(" << layout.x << "," << layout.y 
-                          << ") acc=(" << new_x << "," << new_y << ")" << std::endl;
                 
                 if (obj_node.get() == target) {
                     out_x = new_x;
                     out_y = new_y;
-                    std::cout << "[findTextPosition] FOUND at (" << out_x << "," << out_y << ")" << std::endl;
                     return true;
                 }
                 for (auto& child : obj->GetChildren()) {
@@ -2776,7 +2995,6 @@ void RenderBlock::PaintContentEditableCaret(SkCanvas* canvas, Element* element, 
             float text_x = 0, text_y = 0;
             // 从当前元素开始搜索，初始偏移为 0（因为 canvas 已经 translate 到当前元素）
             // 但是当前元素自己的 layout.x/y 不应该被加进去，所以从 -layout_info_.x, -layout_info_.y 开始
-            std::cout << "[PaintContentEditableCaret] this layout=(" << layout_info_.x << "," << layout_info_.y << ")" << std::endl;
             if (findTextPosition(const_cast<RenderBlock*>(this), text_node.get(), -layout_info_.x, -layout_info_.y, text_x, text_y)) {
                 cursor_x = text_x;
                 cursor_y = text_y;
@@ -2809,9 +3027,6 @@ void RenderBlock::PaintContentEditableCaret(SkCanvas* canvas, Element* element, 
                         }
                         current_node = current_node->GetParentNode();
                     }
-                    
-                    std::cout << "[PaintContentEditableCaret] word_spacing=" << word_spacing 
-                              << " letter_spacing=" << letter_spacing << std::endl;
                     
                     // 逐字符测量宽度
                     float text_width = 0;
@@ -2847,9 +3062,6 @@ void RenderBlock::PaintContentEditableCaret(SkCanvas* canvas, Element* element, 
                     
                     cursor_x += text_width;
                 }
-                std::cout << "[PaintContentEditableCaret] cursor at (" << cursor_x << "," << cursor_y << ")" << std::endl;
-            } else {
-                std::cout << "[PaintContentEditableCaret] text node RenderObject NOT FOUND!" << std::endl;
             }
         }
     }
@@ -2859,10 +3071,6 @@ void RenderBlock::PaintContentEditableCaret(SkCanvas* canvas, Element* element, 
     cursor_paint.setColor(SK_ColorBLACK);
     cursor_paint.setStrokeWidth(2.0f);  // 加粗一点更容易看到
     cursor_paint.setAntiAlias(true);
-
-    std::cout << "[PaintContentEditableCaret] Drawing cursor at (" << cursor_x << "," << cursor_y 
-              << ") to (" << cursor_x << "," << cursor_y + cursor_height << ")" 
-              << " height=" << cursor_height << std::endl;
 
     canvas->drawLine(cursor_x, cursor_y, cursor_x, cursor_y + cursor_height, cursor_paint);
 }

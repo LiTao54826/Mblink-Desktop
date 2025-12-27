@@ -71,23 +71,72 @@ void Selection::SelectAllChildren(std::shared_ptr<Node> node) {
         return;
     }
 
-    // 设置锚点为节点的第一个位置
-    anchor_node_ = node;
-    anchor_offset_ = 0;
-
-    // 设置焦点为节点的最后一个位置
-    focus_node_ = node;
-    
-    // 计算节点的长度
-    if (node->GetNodeType() == NodeType::TEXT_NODE) {
-        auto text_node = std::dynamic_pointer_cast<Text>(node);
-        if (text_node) {
-            focus_offset_ = static_cast<int>(text_node->GetData().length());
-        } else {
-            focus_offset_ = 0;
+    // 辅助函数：查找第一个文本节点
+    std::function<std::shared_ptr<Text>(std::shared_ptr<Node>)> findFirstTextNode;
+    findFirstTextNode = [&](std::shared_ptr<Node> n) -> std::shared_ptr<Text> {
+        if (!n) return nullptr;
+        if (n->GetNodeType() == NodeType::TEXT_NODE) {
+            return std::dynamic_pointer_cast<Text>(n);
         }
+        if (n->GetNodeType() == NodeType::ELEMENT_NODE) {
+            auto elem = std::dynamic_pointer_cast<Element>(n);
+            if (elem) {
+                for (auto& child : elem->GetChildNodes()) {
+                    auto result = findFirstTextNode(child);
+                    if (result) return result;
+                }
+            }
+        }
+        return nullptr;
+    };
+
+    // 辅助函数：查找最后一个文本节点
+    std::function<std::shared_ptr<Text>(std::shared_ptr<Node>)> findLastTextNode;
+    findLastTextNode = [&](std::shared_ptr<Node> n) -> std::shared_ptr<Text> {
+        if (!n) return nullptr;
+        if (n->GetNodeType() == NodeType::TEXT_NODE) {
+            return std::dynamic_pointer_cast<Text>(n);
+        }
+        if (n->GetNodeType() == NodeType::ELEMENT_NODE) {
+            auto elem = std::dynamic_pointer_cast<Element>(n);
+            if (elem) {
+                auto children = elem->GetChildNodes();
+                for (auto it = children.rbegin(); it != children.rend(); ++it) {
+                    auto result = findLastTextNode(*it);
+                    if (result) return result;
+                }
+            }
+        }
+        return nullptr;
+    };
+
+    auto first_text = findFirstTextNode(node);
+    auto last_text = findLastTextNode(node);
+
+    if (first_text && last_text) {
+        // 设置锚点为第一个文本节点的开头
+        anchor_node_ = first_text;
+        anchor_offset_ = 0;
+
+        // 设置焦点为最后一个文本节点的末尾
+        focus_node_ = last_text;
+        focus_offset_ = static_cast<int>(last_text->GetData().length());
     } else {
-        focus_offset_ = static_cast<int>(node->GetChildNodes().size());
+        // 没有文本节点，回退到原来的行为
+        anchor_node_ = node;
+        anchor_offset_ = 0;
+        focus_node_ = node;
+        
+        if (node->GetNodeType() == NodeType::TEXT_NODE) {
+            auto text_node = std::dynamic_pointer_cast<Text>(node);
+            if (text_node) {
+                focus_offset_ = static_cast<int>(text_node->GetData().length());
+            } else {
+                focus_offset_ = 0;
+            }
+        } else {
+            focus_offset_ = static_cast<int>(node->GetChildNodes().size());
+        }
     }
 
     UpdateRangeFromSelection();
