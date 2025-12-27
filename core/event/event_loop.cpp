@@ -719,6 +719,11 @@ void EventLoop::HandleMouseEventForDOM(const SDL_Event& event) {
     static std::shared_ptr<Element> last_click_element;
     static Uint64 last_click_time = 0;
     static const Uint64 DOUBLE_CLICK_TIME_MS = 500;  // 500ms内的两次click算作dblclick
+    
+    // contentEditable 拖动选择状态
+    static bool contenteditable_dragging = false;
+    static std::shared_ptr<Node> contenteditable_drag_start_node;
+    static int contenteditable_drag_start_offset = 0;
 
     // 注意：hit_result 已在上面计算，直接使用
 
@@ -1217,6 +1222,197 @@ void EventLoop::HandleMouseEventForDOM(const SDL_Event& event) {
                 }
             }
         }
+        // 处理 contentEditable 元素的 mousedown
+        else if (hit_result.element->IsContentEditable() && event.button.button == SDL_BUTTON_LEFT) {
+            focus_manager_->SetWindow(window.get());
+            focus_manager_->SetFocus(hit_result.element, false);
+            
+            // 初始化 Selection 并开始拖动选择
+            auto doc = std::dynamic_pointer_cast<Document>(hit_result.element->GetOwnerDocument());
+            if (doc && selection_manager_ && hit_result.render_object) {
+                auto selection = selection_manager_->GetSelection(doc);
+                if (selection) {
+                    // 查找点击位置对应的文本节点和偏移量
+                    std::shared_ptr<Node> target_text_node = nullptr;
+                    int target_offset = 0;
+                    
+                    float click_x = hit_result.local_x;
+                    float click_y = hit_result.local_y;
+                    
+                    // 减去 padding 和 border
+                    const auto& style = hit_result.render_object->GetComputedStyle();
+                    float padding_left = style.padding.left.ToPx();
+                    float padding_top = style.padding.top.ToPx();
+                    float border_left = style.border_left_width;
+                    float border_top = style.border_top_width;
+                    click_x -= padding_left + border_left;
+                    click_y -= padding_top + border_top;
+                    
+                    // 查找文本节点的辅助函数
+                    const auto& root_layout = hit_result.render_object->GetLayoutInfo();
+                    
+                    std::function<bool(RenderObject*, float, float, float, float)> findTextAtPosition;
+                    findTextAtPosition = [&](RenderObject* obj, float acc_x, float acc_y, float target_x, float target_y) -> bool {
+                        const auto& layout = obj->GetLayoutInfo();
+                        float new_x = acc_x + layout.x;
+                        float new_y = acc_y + layout.y;
+                        
+                        auto node = obj->GetNode();
+                        if (node && node->GetNodeType() == NodeType::TEXT_NODE) {
+                            auto text_node = std::dynamic_pointer_cast<Text>(node);
+                            
+                            bool in_x = target_x >= new_x && target_x < new_x + layout.width;
+                            bool in_y = target_y >= new_y && target_y < new_y + layout.height;
+                            
+                            if (in_x && in_y && text_node) {
+                                std::string text = text_node->GetTextContent();
+                                const auto& text_style = obj->GetComputedStyle();
+                                FontDescriptor desc;
+                                desc.family = !text_style.font_family.empty() ? text_style.font_family : "Arial";
+                                desc.size = text_style.font_size > 0 ? text_style.font_size : 16.0f;
+                                desc.weight = (text_style.font_weight == "bold" || text_style.font_weight == "700") 
+                                              ? FontWeight::BOLD : FontWeight::NORMAL;
+                                desc.style = (text_style.font_style == "italic") 
+                                             ? FontStyle::ITALIC : FontStyle::NORMAL;
+                                SkFont font = FontManager::GetInstance().LoadFont(desc);
+                                
+                                float letter_spacing = text_style.letter_spacing.ToPx(0, text_style.font_size);
+                                float word_spacing = text_style.word_spacing.ToPx(0, text_style.font_size);
+                                
+                                float text_x = target_x - new_x;
+                                int offset = 0;
+                                float accumulated_width = 0;
+                                
+                                for (size_t i = 0; i < text.length(); ) {
+                                    size_t char_len = 1;
+                                    unsigned char c = text[i];
+                                    if ((c & 0x80) == 0) char_len = 1;
+                                    else if ((c & 0xE0) == 0xC0) char_len = 2;
+                                    else if ((c & 0xF0) == 0xE0) char_len = 3;
+                                    else if ((c & 0xF8) == 0xF0) char_len = 4;
+                                    
+                                    std::string char_str = text.substr(i, char_len);
+                                    float char_width = TextRenderer::MeasureMixedTextWidth(char_str, font);
+                                    if (char_str == " ") char_width += word_spacing;
+                                    float total_char_width = char_width;
+                                    if (i + char_len < text.length()) total_char_width += letter_spacing;
+                                    
+                                    if (accumulated_width + char_width / 2 > text_x) break;
+                                    accumulated_width += total_char_width;
+                                    offset += static_cast<int>(char_len);
+                                    i += char_len;
+                                }
+                                
+                                target_text_node = text_node;
+                                target_offset = offset;
+                                return true;
+                            }
+                        }
+                        
+                        for (auto& child : obj->GetChildren()) {
+                            if (findTextAtPosition(child.get(), new_x, new_y, target_x, target_y)) {
+                                return true;
+                            }
+                        }
+                        return false;
+                    };
+                    
+                    findTextAtPosition(hit_result.render_object.get(), -root_layout.x, -root_layout.y, click_x, click_y);
+                    
+                    // 如果没找到精确的文本节点，找最近的
+                    if (!target_text_node) {
+                        struct TextNodeInfo {
+                            std::shared_ptr<Text> node;
+                            float x, y, width, height;
+                        };
+                        std::vector<TextNodeInfo> text_nodes;
+                        
+                        std::function<void(RenderObject*, float, float)> collectTextNodes;
+                        collectTextNodes = [&](RenderObject* obj, float acc_x, float acc_y) {
+                            const auto& layout = obj->GetLayoutInfo();
+                            float new_x = acc_x + layout.x;
+                            float new_y = acc_y + layout.y;
+                            
+                            auto node = obj->GetNode();
+                            if (node && node->GetNodeType() == NodeType::TEXT_NODE) {
+                                auto text_node = std::dynamic_pointer_cast<Text>(node);
+                                if (text_node && !text_node->GetTextContent().empty()) {
+                                    text_nodes.push_back({text_node, new_x, new_y, layout.width, layout.height});
+                                }
+                            }
+                            
+                            for (auto& child : obj->GetChildren()) {
+                                collectTextNodes(child.get(), new_x, new_y);
+                            }
+                        };
+                        collectTextNodes(hit_result.render_object.get(), -root_layout.x, -root_layout.y);
+                        
+                        if (!text_nodes.empty()) {
+                            std::vector<TextNodeInfo*> same_line_nodes;
+                            for (auto& info : text_nodes) {
+                                if (click_y >= info.y && click_y < info.y + info.height) {
+                                    same_line_nodes.push_back(&info);
+                                }
+                            }
+                            
+                            if (!same_line_nodes.empty()) {
+                                TextNodeInfo* closest = nullptr;
+                                float min_distance = std::numeric_limits<float>::max();
+                                
+                                for (auto* info : same_line_nodes) {
+                                    float distance;
+                                    if (click_x < info->x) distance = info->x - click_x;
+                                    else if (click_x > info->x + info->width) distance = click_x - (info->x + info->width);
+                                    else distance = 0;
+                                    
+                                    if (distance < min_distance) {
+                                        min_distance = distance;
+                                        closest = info;
+                                    }
+                                }
+                                
+                                if (closest) {
+                                    target_text_node = closest->node;
+                                    if (click_x >= closest->x + closest->width) {
+                                        target_offset = static_cast<int>(closest->node->GetTextContent().length());
+                                    } else {
+                                        target_offset = 0;
+                                    }
+                                }
+                            } else if (!text_nodes.empty()) {
+                                auto& last = text_nodes.back();
+                                target_text_node = last.node;
+                                target_offset = static_cast<int>(last.node->GetTextContent().length());
+                            }
+                        }
+                    }
+                    
+                    // 检查是否按住 Shift 键
+                    SDL_Keymod mod_state = SDL_GetModState();
+                    bool shift_key = (mod_state & SDL_KMOD_SHIFT) != 0;
+                    
+                    if (target_text_node) {
+                        if (shift_key) {
+                            // Shift+点击：扩展选择
+                            selection->Extend(target_text_node, target_offset);
+                        } else {
+                            // 普通点击：设置光标位置
+                            selection->Collapse(target_text_node, target_offset);
+                        }
+                        
+                        // 记录拖动开始位置
+                        contenteditable_dragging = true;
+                        contenteditable_drag_start_node = selection->GetAnchorNode();
+                        contenteditable_drag_start_offset = selection->GetAnchorOffset();
+                    } else {
+                        selection->Collapse(hit_result.element, 0);
+                        contenteditable_dragging = true;
+                        contenteditable_drag_start_node = hit_result.element;
+                        contenteditable_drag_start_offset = 0;
+                    }
+                }
+            }
+        }
         // 对于其他可聚焦元素（button 等），不在 mousedown 时设置焦点
         // 焦点将在 click 事件后设置，避免 focus 事件触发 Preact 重渲染导致元素被替换
         // 如果点击的是非可聚焦元素，清除当前焦点
@@ -1264,6 +1460,13 @@ void EventLoop::HandleMouseEventForDOM(const SDL_Event& event) {
                         textarea_element->HandleMouseUp();
                     }
                 }
+            }
+            
+            // 结束 contentEditable 拖动选择
+            if (contenteditable_dragging) {
+                contenteditable_dragging = false;
+                contenteditable_drag_start_node = nullptr;
+                contenteditable_drag_start_offset = 0;
             }
         }
 
@@ -1822,6 +2025,208 @@ void EventLoop::HandleMouseEventForDOM(const SDL_Event& event) {
                                     HandleTextAreaMouseInteraction(textarea_element, text_local_x, text_local_y, event.type,
                                                                    style.font_size, style.font_family, false,
                                                                    visible_width, visible_height);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            
+            // 处理 contentEditable 的拖动选择
+            if (contenteditable_dragging && last_mousedown_element && last_mousedown_element->IsContentEditable()) {
+                auto doc = std::dynamic_pointer_cast<Document>(last_mousedown_element->GetOwnerDocument());
+                if (doc && selection_manager_) {
+                    auto selection = selection_manager_->GetSelection(doc);
+                    if (selection && contenteditable_drag_start_node) {
+                        // 查找当前鼠标位置对应的文本节点和偏移量
+                        std::shared_ptr<Node> target_text_node = nullptr;
+                        int target_offset = 0;
+                        
+                        // 需要找到 contentEditable 元素的渲染对象
+                        auto root_render = window->GetCachedRenderTree();
+                        if (root_render) {
+                            struct FindResult {
+                                std::shared_ptr<RenderObject> render_obj;
+                                float abs_x = 0;
+                                float abs_y = 0;
+                            };
+                            std::function<FindResult(std::shared_ptr<RenderObject>, float, float)> findRenderObj;
+                            findRenderObj = [&](std::shared_ptr<RenderObject> obj, float offset_x, float offset_y) -> FindResult {
+                                if (!obj) return {};
+                                const auto& layout = obj->GetLayoutInfo();
+                                float current_x = offset_x + layout.x;
+                                float current_y = offset_y + layout.y;
+                                
+                                auto node = obj->GetNode();
+                                if (node && node == last_mousedown_element) {
+                                    return {obj, current_x, current_y};
+                                }
+                                float child_offset_x = current_x - obj->GetScrollX();
+                                float child_offset_y = current_y - obj->GetScrollY();
+                                for (auto& child : obj->GetChildren()) {
+                                    auto result = findRenderObj(child, child_offset_x, child_offset_y);
+                                    if (result.render_obj) return result;
+                                }
+                                return {};
+                            };
+                            
+                            auto find_result = findRenderObj(root_render, 0.0f, 0.0f);
+                            if (find_result.render_obj) {
+                                const auto& style = find_result.render_obj->GetComputedStyle();
+                                float padding_left = style.padding.left.ToPx();
+                                float padding_top = style.padding.top.ToPx();
+                                float border_left = style.border_left_width;
+                                float border_top = style.border_top_width;
+                                
+                                float click_x = logical_x - find_result.abs_x - padding_left - border_left;
+                                float click_y = logical_y - find_result.abs_y - padding_top - border_top;
+                                
+                                const auto& root_layout = find_result.render_obj->GetLayoutInfo();
+                                
+                                // 查找文本节点
+                                std::function<bool(RenderObject*, float, float, float, float)> findTextAtPosition;
+                                findTextAtPosition = [&](RenderObject* obj, float acc_x, float acc_y, float target_x, float target_y) -> bool {
+                                    const auto& layout = obj->GetLayoutInfo();
+                                    float new_x = acc_x + layout.x;
+                                    float new_y = acc_y + layout.y;
+                                    
+                                    auto node = obj->GetNode();
+                                    if (node && node->GetNodeType() == NodeType::TEXT_NODE) {
+                                        auto text_node = std::dynamic_pointer_cast<Text>(node);
+                                        
+                                        bool in_x = target_x >= new_x && target_x < new_x + layout.width;
+                                        bool in_y = target_y >= new_y && target_y < new_y + layout.height;
+                                        
+                                        if (in_x && in_y && text_node) {
+                                            std::string text = text_node->GetTextContent();
+                                            const auto& text_style = obj->GetComputedStyle();
+                                            FontDescriptor desc;
+                                            desc.family = !text_style.font_family.empty() ? text_style.font_family : "Arial";
+                                            desc.size = text_style.font_size > 0 ? text_style.font_size : 16.0f;
+                                            desc.weight = (text_style.font_weight == "bold" || text_style.font_weight == "700") 
+                                                          ? FontWeight::BOLD : FontWeight::NORMAL;
+                                            desc.style = (text_style.font_style == "italic") 
+                                                         ? FontStyle::ITALIC : FontStyle::NORMAL;
+                                            SkFont font = FontManager::GetInstance().LoadFont(desc);
+                                            
+                                            float letter_spacing = text_style.letter_spacing.ToPx(0, text_style.font_size);
+                                            float word_spacing = text_style.word_spacing.ToPx(0, text_style.font_size);
+                                            
+                                            float text_x = target_x - new_x;
+                                            int offset = 0;
+                                            float accumulated_width = 0;
+                                            
+                                            for (size_t i = 0; i < text.length(); ) {
+                                                size_t char_len = 1;
+                                                unsigned char c = text[i];
+                                                if ((c & 0x80) == 0) char_len = 1;
+                                                else if ((c & 0xE0) == 0xC0) char_len = 2;
+                                                else if ((c & 0xF0) == 0xE0) char_len = 3;
+                                                else if ((c & 0xF8) == 0xF0) char_len = 4;
+                                                
+                                                std::string char_str = text.substr(i, char_len);
+                                                float char_width = TextRenderer::MeasureMixedTextWidth(char_str, font);
+                                                if (char_str == " ") char_width += word_spacing;
+                                                float total_char_width = char_width;
+                                                if (i + char_len < text.length()) total_char_width += letter_spacing;
+                                                
+                                                if (accumulated_width + char_width / 2 > text_x) break;
+                                                accumulated_width += total_char_width;
+                                                offset += static_cast<int>(char_len);
+                                                i += char_len;
+                                            }
+                                            
+                                            target_text_node = text_node;
+                                            target_offset = offset;
+                                            return true;
+                                        }
+                                    }
+                                    
+                                    for (auto& child : obj->GetChildren()) {
+                                        if (findTextAtPosition(child.get(), new_x, new_y, target_x, target_y)) {
+                                            return true;
+                                        }
+                                    }
+                                    return false;
+                                };
+                                
+                                findTextAtPosition(find_result.render_obj.get(), -root_layout.x, -root_layout.y, click_x, click_y);
+                                
+                                // 如果没找到精确的文本节点，找最近的
+                                if (!target_text_node) {
+                                    struct TextNodeInfo {
+                                        std::shared_ptr<Text> node;
+                                        float x, y, width, height;
+                                    };
+                                    std::vector<TextNodeInfo> text_nodes;
+                                    
+                                    std::function<void(RenderObject*, float, float)> collectTextNodes;
+                                    collectTextNodes = [&](RenderObject* obj, float acc_x, float acc_y) {
+                                        const auto& layout = obj->GetLayoutInfo();
+                                        float new_x = acc_x + layout.x;
+                                        float new_y = acc_y + layout.y;
+                                        
+                                        auto node = obj->GetNode();
+                                        if (node && node->GetNodeType() == NodeType::TEXT_NODE) {
+                                            auto text_node = std::dynamic_pointer_cast<Text>(node);
+                                            if (text_node && !text_node->GetTextContent().empty()) {
+                                                text_nodes.push_back({text_node, new_x, new_y, layout.width, layout.height});
+                                            }
+                                        }
+                                        
+                                        for (auto& child : obj->GetChildren()) {
+                                            collectTextNodes(child.get(), new_x, new_y);
+                                        }
+                                    };
+                                    collectTextNodes(find_result.render_obj.get(), -root_layout.x, -root_layout.y);
+                                    
+                                    if (!text_nodes.empty()) {
+                                        std::vector<TextNodeInfo*> same_line_nodes;
+                                        for (auto& info : text_nodes) {
+                                            if (click_y >= info.y && click_y < info.y + info.height) {
+                                                same_line_nodes.push_back(&info);
+                                            }
+                                        }
+                                        
+                                        if (!same_line_nodes.empty()) {
+                                            TextNodeInfo* closest = nullptr;
+                                            float min_distance = std::numeric_limits<float>::max();
+                                            
+                                            for (auto* info : same_line_nodes) {
+                                                float distance;
+                                                if (click_x < info->x) distance = info->x - click_x;
+                                                else if (click_x > info->x + info->width) distance = click_x - (info->x + info->width);
+                                                else distance = 0;
+                                                
+                                                if (distance < min_distance) {
+                                                    min_distance = distance;
+                                                    closest = info;
+                                                }
+                                            }
+                                            
+                                            if (closest) {
+                                                target_text_node = closest->node;
+                                                if (click_x >= closest->x + closest->width) {
+                                                    target_offset = static_cast<int>(closest->node->GetTextContent().length());
+                                                } else {
+                                                    target_offset = 0;
+                                                }
+                                            }
+                                        } else if (!text_nodes.empty()) {
+                                            auto& last = text_nodes.back();
+                                            target_text_node = last.node;
+                                            target_offset = static_cast<int>(last.node->GetTextContent().length());
+                                        }
+                                    }
+                                }
+                                
+                                // 更新选择（扩展到当前位置）
+                                if (target_text_node) {
+                                    selection->UpdateFromUserAction(
+                                        contenteditable_drag_start_node, contenteditable_drag_start_offset,
+                                        target_text_node, target_offset
+                                    );
+                                    window->SetNeedsRepaint();
                                 }
                             }
                         }
