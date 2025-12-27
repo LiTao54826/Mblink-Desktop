@@ -400,6 +400,31 @@ public:
      */
     bool IsLexborDirty() const { return lexbor_dirty_; }
 
+    // ========== ContentEditable 支持 ==========
+
+    /**
+     * @brief 检查元素是否可编辑
+     * @return true 如果元素可编辑
+     *
+     * 实现 contenteditable 继承逻辑：
+     * - contenteditable="true" -> 可编辑
+     * - contenteditable="false" -> 不可编辑
+     * - contenteditable="inherit" 或无属性 -> 继承父元素
+     */
+    bool IsContentEditable() const;
+
+    /**
+     * @brief 获取 contenteditable 属性值
+     * @return "true", "false", "inherit" 或空字符串
+     */
+    std::string GetContentEditable() const;
+
+    /**
+     * @brief 设置 contenteditable 属性
+     * @param value "true", "false", "inherit" 或空字符串
+     */
+    void SetContentEditable(const std::string& value);
+
 private:
     /**
      * @brief 处理事件（内部方法）

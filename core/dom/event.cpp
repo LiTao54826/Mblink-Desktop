@@ -122,5 +122,25 @@ AnimationEvent::AnimationEvent(const std::string& type,
     , pseudo_element_(pseudo_element) {
 }
 
+// ========== InputEvent 类实现 ==========
+
+InputEvent::InputEvent(const std::string& type,
+                       const std::string& input_type,
+                       const std::string& data,
+                       bool is_composing)
+    : Event(type, true, type == "beforeinput")  // beforeinput 可取消，input 不可取消
+    , input_type_(input_type)
+    , data_(data)
+    , is_composing_(is_composing) {
+}
+
+// ========== ClipboardEvent 类实现 ==========
+
+ClipboardEvent::ClipboardEvent(const std::string& type,
+                               const std::string& clipboard_data)
+    : Event(type, true, true)  // 剪贴板事件冒泡且可取消
+    , clipboard_data_(clipboard_data) {
+}
+
 } // namespace lightui
 

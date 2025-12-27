@@ -15,6 +15,9 @@ set(EVENT_SOURCES
     focus_manager.cpp
     drag_manager.cpp
     data_transfer.cpp
+    selection_manager.cpp
+    contenteditable_handler.cpp
+    clipboard_manager.cpp
 )
 
 set(EVENT_HEADERS
@@ -32,6 +35,9 @@ set(EVENT_HEADERS
     focus_manager.h
     drag_manager.h
     data_transfer.h
+    selection_manager.h
+    contenteditable_handler.h
+    clipboard_manager.h
 )
 
 add_library(lightui_event STATIC ${EVENT_SOURCES})

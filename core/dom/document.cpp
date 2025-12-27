@@ -14,6 +14,7 @@
 #endif
 
 #include "document.h"
+#include "range.h"
 #include "html_input_element.h"
 #include "html_textarea_element.h"
 #include "html_button_element.h"
@@ -264,6 +265,11 @@ std::shared_ptr<Text> Document::CreateTextNode(const std::string& data) {
     // 设置 owner_document
     text->owner_document_ = std::static_pointer_cast<Document>(shared_from_this());
     return text;
+}
+
+std::shared_ptr<Range> Document::CreateRange() {
+    auto range = std::make_shared<Range>(std::static_pointer_cast<Document>(shared_from_this()));
+    return range;
 }
 
 // ========== 文档属性 ==========

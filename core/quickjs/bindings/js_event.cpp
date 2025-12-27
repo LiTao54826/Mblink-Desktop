@@ -265,6 +265,164 @@ static JSValue JSEvent_get_metaKey(JSContext* ctx, JSValueConst this_val, int ma
     return JS_FALSE;
 }
 
+// ========== InputEvent 属性访问器 ==========
+
+// inputType
+static JSValue JSEvent_get_inputType(JSContext* ctx, JSValueConst this_val, int magic) {
+    auto* data = static_cast<JSEventData*>(JS_GetOpaque(this_val, js_event_class_id));
+    if (!data || !data->event) {
+        return JS_NULL;
+    }
+
+    auto input_event = std::dynamic_pointer_cast<InputEvent>(data->event);
+    if (!input_event) {
+        return JS_NULL;
+    }
+
+    return JS_NewString(ctx, input_event->GetInputType().c_str());
+}
+
+// data (InputEvent)
+static JSValue JSEvent_get_data(JSContext* ctx, JSValueConst this_val, int magic) {
+    auto* data = static_cast<JSEventData*>(JS_GetOpaque(this_val, js_event_class_id));
+    if (!data || !data->event) {
+        return JS_NULL;
+    }
+
+    auto input_event = std::dynamic_pointer_cast<InputEvent>(data->event);
+    if (!input_event) {
+        return JS_NULL;
+    }
+
+    std::string event_data = input_event->GetData();
+    if (event_data.empty()) {
+        return JS_NULL;
+    }
+
+    return JS_NewString(ctx, event_data.c_str());
+}
+
+// isComposing
+static JSValue JSEvent_get_isComposing(JSContext* ctx, JSValueConst this_val, int magic) {
+    auto* data = static_cast<JSEventData*>(JS_GetOpaque(this_val, js_event_class_id));
+    if (!data || !data->event) {
+        return JS_FALSE;
+    }
+
+    auto input_event = std::dynamic_pointer_cast<InputEvent>(data->event);
+    if (!input_event) {
+        return JS_FALSE;
+    }
+
+    return JS_NewBool(ctx, input_event->IsComposing());
+}
+
+// defaultPrevented
+static JSValue JSEvent_get_defaultPrevented(JSContext* ctx, JSValueConst this_val, int magic) {
+    auto* data = static_cast<JSEventData*>(JS_GetOpaque(this_val, js_event_class_id));
+    if (!data || !data->event) {
+        return JS_FALSE;
+    }
+
+    return JS_NewBool(ctx, data->event->IsDefaultPrevented());
+}
+
+// ========== ClipboardEvent 属性访问器 ==========
+
+// clipboardData (返回一个包含 getData/setData 方法的对象)
+static JSValue JSEvent_get_clipboardData(JSContext* ctx, JSValueConst this_val, int magic) {
+    auto* data = static_cast<JSEventData*>(JS_GetOpaque(this_val, js_event_class_id));
+    if (!data || !data->event) {
+        return JS_NULL;
+    }
+
+    auto clipboard_event = std::dynamic_pointer_cast<ClipboardEvent>(data->event);
+    if (!clipboard_event) {
+        return JS_NULL;
+    }
+
+    // 创建一个简单的 clipboardData 对象
+    // 注意：完整的 DataTransfer API 更复杂，这里实现简化版本
+    JSValue clipboard_data_obj = JS_NewObject(ctx);
+
+    // 存储剪贴板数据到对象属性中（用于 getData/setData）
+    std::string text_data = clipboard_event->GetClipboardData();
+    JS_SetPropertyStr(ctx, clipboard_data_obj, "_textData", JS_NewString(ctx, text_data.c_str()));
+
+    // 保存事件引用以便 setData 可以更新
+    JS_SetPropertyStr(ctx, clipboard_data_obj, "_event", JS_DupValue(ctx, this_val));
+
+    // getData(format) 方法
+    JSValue get_data_func = JS_NewCFunction(ctx, [](JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) -> JSValue {
+        if (argc < 1) {
+            return JS_NewString(ctx, "");
+        }
+
+        const char* format = JS_ToCString(ctx, argv[0]);
+        if (!format) {
+            return JS_NewString(ctx, "");
+        }
+
+        std::string format_str(format);
+        JS_FreeCString(ctx, format);
+
+        // 只支持 text/plain 格式
+        if (format_str == "text/plain" || format_str == "text") {
+            JSValue text_data = JS_GetPropertyStr(ctx, this_val, "_textData");
+            if (JS_IsString(text_data)) {
+                return text_data;
+            }
+            JS_FreeValue(ctx, text_data);
+        }
+
+        return JS_NewString(ctx, "");
+    }, "getData", 1);
+    JS_SetPropertyStr(ctx, clipboard_data_obj, "getData", get_data_func);
+
+    // setData(format, data) 方法
+    JSValue set_data_func = JS_NewCFunction(ctx, [](JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) -> JSValue {
+        if (argc < 2) {
+            return JS_UNDEFINED;
+        }
+
+        const char* format = JS_ToCString(ctx, argv[0]);
+        const char* data_str = JS_ToCString(ctx, argv[1]);
+
+        if (!format || !data_str) {
+            if (format) JS_FreeCString(ctx, format);
+            if (data_str) JS_FreeCString(ctx, data_str);
+            return JS_UNDEFINED;
+        }
+
+        std::string format_str(format);
+        JS_FreeCString(ctx, format);
+
+        // 只支持 text/plain 格式
+        if (format_str == "text/plain" || format_str == "text") {
+            JS_SetPropertyStr(ctx, this_val, "_textData", JS_NewString(ctx, data_str));
+
+            // 更新原始事件中的数据
+            JSValue event_val = JS_GetPropertyStr(ctx, this_val, "_event");
+            if (!JS_IsNull(event_val) && !JS_IsUndefined(event_val)) {
+                auto* event_data = static_cast<JSEventData*>(JS_GetOpaque(event_val, js_event_class_id));
+                if (event_data && event_data->event) {
+                    auto clipboard_event = std::dynamic_pointer_cast<ClipboardEvent>(event_data->event);
+                    if (clipboard_event) {
+                        clipboard_event->SetClipboardData(data_str);
+                    }
+                }
+            }
+            JS_FreeValue(ctx, event_val);
+        }
+
+        JS_FreeCString(ctx, data_str);
+        return JS_UNDEFINED;
+    }, "setData", 2);
+    JS_SetPropertyStr(ctx, clipboard_data_obj, "setData", set_data_func);
+
+    return clipboard_data_obj;
+}
+
 // ========== 方法实现 ==========
 
 // stopPropagation()
@@ -297,6 +455,7 @@ static const JSCFunctionListEntry js_event_proto_funcs[] = {
     JS_CGETSET_MAGIC_DEF("currentTarget", JSEvent_get_currentTarget, nullptr, 0),
     JS_CGETSET_MAGIC_DEF("bubbles", JSEvent_get_bubbles, nullptr, 0),
     JS_CGETSET_MAGIC_DEF("cancelable", JSEvent_get_cancelable, nullptr, 0),
+    JS_CGETSET_MAGIC_DEF("defaultPrevented", JSEvent_get_defaultPrevented, nullptr, 0),
     // MouseEvent 属性
     JS_CGETSET_MAGIC_DEF("clientX", JSEvent_get_clientX, nullptr, 0),
     JS_CGETSET_MAGIC_DEF("clientY", JSEvent_get_clientY, nullptr, 0),
@@ -309,6 +468,12 @@ static const JSCFunctionListEntry js_event_proto_funcs[] = {
     JS_CGETSET_MAGIC_DEF("shiftKey", JSEvent_get_shiftKey, nullptr, 0),
     JS_CGETSET_MAGIC_DEF("altKey", JSEvent_get_altKey, nullptr, 0),
     JS_CGETSET_MAGIC_DEF("metaKey", JSEvent_get_metaKey, nullptr, 0),
+    // InputEvent 属性
+    JS_CGETSET_MAGIC_DEF("inputType", JSEvent_get_inputType, nullptr, 0),
+    JS_CGETSET_MAGIC_DEF("data", JSEvent_get_data, nullptr, 0),
+    JS_CGETSET_MAGIC_DEF("isComposing", JSEvent_get_isComposing, nullptr, 0),
+    // ClipboardEvent 属性
+    JS_CGETSET_MAGIC_DEF("clipboardData", JSEvent_get_clipboardData, nullptr, 0),
     // 方法
     JS_CFUNC_DEF("stopPropagation", 0, JSEvent_stopPropagation),
     JS_CFUNC_DEF("preventDefault", 0, JSEvent_preventDefault),

@@ -31,6 +31,7 @@ enum class TaskType {
  * 2. setInterval - 定期重复执行
  * 3. requestAnimationFrame - 下一帧执行
  * 4. 任务优先级管理
+ * 5. 微任务队列
  */
 class TaskScheduler {
 public:
@@ -43,6 +44,13 @@ public:
      * @brief 析构函数
      */
     ~TaskScheduler() = default;
+
+    /**
+     * @brief 获取全局单例实例
+     * 
+     * @return TaskScheduler& 全局实例引用
+     */
+    static TaskScheduler& Instance();
 
     /**
      * @brief setTimeout - 延迟执行
@@ -126,6 +134,22 @@ public:
      */
     void ClearAllTasks();
 
+    /**
+     * @brief 添加微任务到队列
+     * 
+     * 微任务会在当前任务完成后立即执行，优先于宏任务
+     * 
+     * @param callback 微任务回调函数
+     */
+    void PostMicrotask(std::function<void()> callback);
+
+    /**
+     * @brief 处理所有微任务
+     * 
+     * 执行队列中的所有微任务
+     */
+    void ProcessMicrotasks();
+
 private:
     /**
      * @brief 任务结构
@@ -170,6 +194,9 @@ private:
     
     // 动画帧任务（每帧执行一次）
     std::vector<Task> animation_frame_tasks_;
+
+    // 微任务队列（FIFO）
+    std::vector<std::function<void()>> microtasks_;
 };
 
 } // namespace lightui

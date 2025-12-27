@@ -28,6 +28,9 @@
 
 namespace lightui {
 
+// 前向声明
+class EventLoop;
+
 /**
  * @brief DOM 绑定类
  */
@@ -52,6 +55,19 @@ public:
      * @param scheduler TaskScheduler 对象
      */
     static void SetGlobalTaskScheduler(JSContext* ctx, std::shared_ptr<TaskScheduler> scheduler);
+
+    /**
+     * @brief 设置全局 EventLoop
+     * @param ctx QuickJS 上下文
+     * @param event_loop EventLoop 指针
+     */
+    static void SetGlobalEventLoop(JSContext* ctx, EventLoop* event_loop);
+
+    /**
+     * @brief 获取全局 EventLoop
+     * @return EventLoop 指针
+     */
+    static EventLoop* GetGlobalEventLoop();
 
     /**
      * @brief 清理 DOM 绑定

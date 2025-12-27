@@ -28,6 +28,9 @@ class HTMLButtonElement;
 class HTMLFormElement;
 class FocusManager;
 class DragManager;
+class SelectionManager;
+class ContentEditableHandler;
+class ClipboardManager;
 struct HitTestResult;
 class RenderObject;
 class QuickJSRuntime;
@@ -163,6 +166,26 @@ public:
      * @param runtime QuickJS 运行时指针
      */
     void SetQuickJSRuntime(QuickJSRuntime* runtime) { quickjs_runtime_ = runtime; }
+
+    // ========== 富文本编辑管理器 ==========
+
+    /**
+     * @brief 获取选择管理器
+     * @return SelectionManager 指针
+     */
+    SelectionManager* GetSelectionManager();
+
+    /**
+     * @brief 获取可编辑内容处理器
+     * @return ContentEditableHandler 指针
+     */
+    ContentEditableHandler* GetContentEditableHandler();
+
+    /**
+     * @brief 获取剪贴板管理器
+     * @return ClipboardManager 指针
+     */
+    ClipboardManager* GetClipboardManager();
 
 private:
     /**
@@ -341,6 +364,11 @@ private:
     std::shared_ptr<TaskScheduler> task_scheduler_;  // 可以是外部的或内部创建的
     std::unique_ptr<FocusManager> focus_manager_;
     std::unique_ptr<DragManager> drag_manager_;
+
+    // 富文本编辑子系统
+    std::unique_ptr<SelectionManager> selection_manager_;
+    std::unique_ptr<ContentEditableHandler> contenteditable_handler_;
+    std::unique_ptr<ClipboardManager> clipboard_manager_;
 
     // Hover链追踪（参考RmlUi的hover_chain）
     // 存储当前鼠标悬停的元素链（从目标元素到根元素）

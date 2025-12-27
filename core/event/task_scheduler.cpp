@@ -9,6 +9,11 @@
 
 namespace lightui {
 
+TaskScheduler& TaskScheduler::Instance() {
+    static TaskScheduler instance;
+    return instance;
+}
+
 TaskScheduler::TaskScheduler()
     : next_task_id_(1)
     , performance_frequency_(SDL_GetPerformanceFrequency())
@@ -191,6 +196,29 @@ Uint64 TaskScheduler::GetCurrentTime() const {
 
 Uint64 TaskScheduler::MillisecondsToTicks(int ms) const {
     return (static_cast<Uint64>(ms) * performance_frequency_) / 1000;
+}
+
+void TaskScheduler::PostMicrotask(std::function<void()> callback) {
+    if (callback) {
+        microtasks_.push_back(std::move(callback));
+    }
+}
+
+void TaskScheduler::ProcessMicrotasks() {
+    // 处理所有微任务，注意微任务可能会添加新的微任务
+    // 所以需要循环处理直到队列为空
+    while (!microtasks_.empty()) {
+        // 取出当前所有微任务
+        std::vector<std::function<void()>> tasks_to_execute = std::move(microtasks_);
+        microtasks_.clear();
+
+        // 执行所有微任务
+        for (auto& task : tasks_to_execute) {
+            if (task) {
+                task();
+            }
+        }
+    }
 }
 
 } // namespace lightui

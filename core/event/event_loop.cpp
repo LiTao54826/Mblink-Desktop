@@ -9,6 +9,9 @@
 #include "task_scheduler.h"
 #include "focus_manager.h"
 #include "drag_manager.h"
+#include "selection_manager.h"
+#include "contenteditable_handler.h"
+#include "clipboard_manager.h"
 #include "mouse_event.h"
 #include "keyboard_utils.h"
 #include "hit_testing.h"
@@ -49,8 +52,13 @@ EventLoop::EventLoop()
     , task_scheduler_(std::make_shared<TaskScheduler>())
     , focus_manager_(std::make_unique<FocusManager>())
     , drag_manager_(std::make_unique<DragManager>())
+    , selection_manager_(std::make_unique<SelectionManager>())
     , vsync_detected_(false)
 {
+    // 初始化富文本编辑子系统（需要在 selection_manager_ 之后）
+    contenteditable_handler_ = std::make_unique<ContentEditableHandler>(selection_manager_.get());
+    clipboard_manager_ = std::make_unique<ClipboardManager>(selection_manager_.get(), contenteditable_handler_.get());
+
     InitSystemCursors();
 }
 
@@ -62,11 +70,17 @@ EventLoop::EventLoop(std::shared_ptr<TaskScheduler> task_scheduler)
     , task_scheduler_(task_scheduler)
     , focus_manager_(std::make_unique<FocusManager>())
     , drag_manager_(std::make_unique<DragManager>())
+    , selection_manager_(std::make_unique<SelectionManager>())
     , vsync_detected_(false)
 {
     if (!task_scheduler_) {
         throw std::invalid_argument("TaskScheduler cannot be null");
     }
+
+    // 初始化富文本编辑子系统（需要在 selection_manager_ 之后）
+    contenteditable_handler_ = std::make_unique<ContentEditableHandler>(selection_manager_.get());
+    clipboard_manager_ = std::make_unique<ClipboardManager>(selection_manager_.get(), contenteditable_handler_.get());
+
     InitSystemCursors();
 }
 
@@ -292,6 +306,18 @@ TaskScheduler& EventLoop::GetTaskScheduler() {
 
 std::shared_ptr<TaskScheduler> EventLoop::GetTaskSchedulerPtr() {
     return task_scheduler_;
+}
+
+SelectionManager* EventLoop::GetSelectionManager() {
+    return selection_manager_.get();
+}
+
+ContentEditableHandler* EventLoop::GetContentEditableHandler() {
+    return contenteditable_handler_.get();
+}
+
+ClipboardManager* EventLoop::GetClipboardManager() {
+    return clipboard_manager_.get();
 }
 
 bool EventLoop::ProcessEvents() {

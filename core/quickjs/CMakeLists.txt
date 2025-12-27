@@ -10,6 +10,9 @@ set(QUICKJS_RUNTIME_SOURCES
     bindings/js_style_declaration.cpp
     bindings/js_event.cpp
     bindings/js_data_transfer.cpp
+    bindings/js_range.cpp
+    bindings/js_selection.cpp
+    bindings/js_mutation_observer.cpp
 )
 
 set(QUICKJS_RUNTIME_HEADERS
@@ -22,6 +25,9 @@ set(QUICKJS_RUNTIME_HEADERS
     bindings/js_style_declaration.h
     bindings/js_event.h
     bindings/js_data_transfer.h
+    bindings/js_range.h
+    bindings/js_selection.h
+    bindings/js_mutation_observer.h
 )
 
 add_library(lightui_quickjs STATIC ${QUICKJS_RUNTIME_SOURCES})

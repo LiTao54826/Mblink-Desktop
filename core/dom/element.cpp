@@ -1213,4 +1213,62 @@ void Element::SetupInlineEventHandler(const std::string& event_type, const std::
     std::cout << "[Element::SetupInlineEventHandler] Handler setup complete, listener_id=" << listener_id << std::endl;
 }
 
+// ========== ContentEditable 支持 ==========
+
+bool Element::IsContentEditable() const {
+    // 获取 contenteditable 属性
+    std::string value = GetContentEditable();
+
+    if (value == "true") {
+        return true;
+    }
+
+    if (value == "false") {
+        return false;
+    }
+
+    // 继承父元素的可编辑状态
+    auto parent = GetParentNode();
+    if (parent && parent->GetNodeType() == NodeType::ELEMENT_NODE) {
+        auto parent_element = std::dynamic_pointer_cast<Element>(parent);
+        if (parent_element) {
+            return parent_element->IsContentEditable();
+        }
+    }
+
+    // 默认不可编辑
+    return false;
+}
+
+std::string Element::GetContentEditable() const {
+    auto it = attributes_.find("contenteditable");
+    if (it != attributes_.end()) {
+        const std::string& value = it->second;
+        // 标准化值
+        if (value == "true" || value == "") {
+            return "true";
+        }
+        if (value == "false") {
+            return "false";
+        }
+        if (value == "inherit") {
+            return "inherit";
+        }
+        // 其他值视为 "inherit"
+        return "inherit";
+    }
+    return "inherit";
+}
+
+void Element::SetContentEditable(const std::string& value) {
+    if (value == "true" || value == "false" || value == "inherit") {
+        SetAttribute("contenteditable", value);
+    } else if (value.empty()) {
+        RemoveAttribute("contenteditable");
+    } else {
+        // 无效值，设置为 "inherit"
+        SetAttribute("contenteditable", "inherit");
+    }
+}
+
 } // namespace lightui

@@ -14,6 +14,7 @@
 #include "node.h"
 #include "element.h"
 #include "text.h"
+#include "range.h"
 #include "dom_observer.h"
 #include "dirty_node_tracker.h"
 #include <string>
@@ -65,6 +66,12 @@ public:
      * @return 文本节点
      */
     std::shared_ptr<Text> CreateTextNode(const std::string& data);
+
+    /**
+     * @brief 创建 Range 对象
+     * @return 新的 Range 对象
+     */
+    std::shared_ptr<Range> CreateRange();
 
     // ========== 文档属性 ==========
 

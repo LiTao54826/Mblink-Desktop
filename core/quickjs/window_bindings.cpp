@@ -9,6 +9,9 @@
 #include "bindings/js_style_declaration.h"
 #include "bindings/js_event.h"
 #include "bindings/js_data_transfer.h"
+#include "bindings/js_range.h"
+#include "bindings/js_selection.h"
+#include "bindings/js_mutation_observer.h"
 #include "core/dom/dom_bindings.h"
 #include "core/dom/canvas_bindings.h"
 #include <iostream>
@@ -32,6 +35,9 @@ void WindowBindings::InitBindings() {
     bindings::InitStyleDeclarationBinding(runtime_->GetContext());  // 支持 element.style.xxx = '...'
     bindings::InitEventBinding(runtime_->GetContext());
     bindings::InitDataTransferBinding(runtime_->GetContext());  // 支持 DragEvent.dataTransfer
+    bindings::InitRangeBinding(runtime_->GetContext());  // 支持 Range API
+    bindings::InitSelectionBinding(runtime_->GetContext());  // 支持 Selection API
+    bindings::InitMutationObserverBinding(runtime_->GetContext());  // 支持 MutationObserver API
     
     // 初始化 Canvas 绑定（独立模块）
     CanvasBindings::Init(runtime_->GetContext());

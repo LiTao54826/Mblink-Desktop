@@ -7,9 +7,15 @@
 #include "canvas_bindings.h"
 #include "html_canvas_element.h"
 #include "html_image_element.h"
+#include "range.h"
 #include "quickjs/quickjs-libc.h"
 #include "quickjs/js_value_wrapper.h"
 #include "quickjs/bindings/js_element.h"
+#include "quickjs/bindings/js_range.h"
+#include "core/event/event_loop.h"
+#include "core/event/selection_manager.h"
+#include "core/event/contenteditable_handler.h"
+#include "core/event/clipboard_manager.h"
 #include <cstring>
 #include <iostream>
 #include <algorithm>
@@ -1455,6 +1461,17 @@ static JSValue js_document_create_text_node(JSContext* ctx, JSValueConst this_va
     return DOMBindings::WrapText(ctx, text);
 }
 
+// Document.createRange()
+static JSValue js_document_create_range(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) {
+    auto document = DOMBindings::UnwrapDocument(ctx, this_val);
+    if (!document) {
+        return JS_EXCEPTION;
+    }
+
+    auto range = document->CreateRange();
+    return bindings::WrapRange(ctx, range);
+}
+
 // Document.getElementById(id)
 static JSValue js_document_get_element_by_id(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) {
     auto document = DOMBindings::UnwrapDocument(ctx, this_val);
@@ -1661,12 +1678,127 @@ static JSValue js_document_is_in_batch(JSContext* ctx, JSValueConst this_val, in
     return JS_NewBool(ctx, document->IsInBatch());
 }
 
+// ========== execCommand API ==========
+
+// document.execCommand(command, showUI, value)
+static JSValue js_document_exec_command(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) {
+    auto document = DOMBindings::UnwrapDocument(ctx, this_val);
+    if (!document) {
+        return JS_EXCEPTION;
+    }
+
+    if (argc < 1) {
+        return JS_ThrowTypeError(ctx, "execCommand requires at least 1 argument");
+    }
+
+    const char* command = JS_ToCString(ctx, argv[0]);
+    if (!command) {
+        return JS_EXCEPTION;
+    }
+
+    std::string cmd(command);
+    JS_FreeCString(ctx, command);
+
+    // 获取可选的 value 参数
+    std::string value;
+    if (argc >= 3) {
+        const char* val = JS_ToCString(ctx, argv[2]);
+        if (val) {
+            value = val;
+            JS_FreeCString(ctx, val);
+        }
+    }
+
+    // 获取 EventLoop 中的 ContentEditableHandler
+    auto event_loop = DOMBindings::GetGlobalEventLoop();
+    if (!event_loop) {
+        return JS_NewBool(ctx, false);
+    }
+
+    auto handler = event_loop->GetContentEditableHandler();
+    if (!handler) {
+        return JS_NewBool(ctx, false);
+    }
+
+    bool result = handler->ExecCommand(document, cmd, value);
+    return JS_NewBool(ctx, result);
+}
+
+// document.queryCommandState(command)
+static JSValue js_document_query_command_state(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) {
+    auto document = DOMBindings::UnwrapDocument(ctx, this_val);
+    if (!document) {
+        return JS_EXCEPTION;
+    }
+
+    if (argc < 1) {
+        return JS_ThrowTypeError(ctx, "queryCommandState requires 1 argument");
+    }
+
+    const char* command = JS_ToCString(ctx, argv[0]);
+    if (!command) {
+        return JS_EXCEPTION;
+    }
+
+    std::string cmd(command);
+    JS_FreeCString(ctx, command);
+
+    // 获取 EventLoop 中的 ContentEditableHandler
+    auto event_loop = DOMBindings::GetGlobalEventLoop();
+    if (!event_loop) {
+        return JS_NewBool(ctx, false);
+    }
+
+    auto handler = event_loop->GetContentEditableHandler();
+    if (!handler) {
+        return JS_NewBool(ctx, false);
+    }
+
+    bool result = handler->QueryCommandState(document, cmd);
+    return JS_NewBool(ctx, result);
+}
+
+// document.queryCommandEnabled(command)
+static JSValue js_document_query_command_enabled(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) {
+    auto document = DOMBindings::UnwrapDocument(ctx, this_val);
+    if (!document) {
+        return JS_EXCEPTION;
+    }
+
+    if (argc < 1) {
+        return JS_ThrowTypeError(ctx, "queryCommandEnabled requires 1 argument");
+    }
+
+    const char* command = JS_ToCString(ctx, argv[0]);
+    if (!command) {
+        return JS_EXCEPTION;
+    }
+
+    std::string cmd(command);
+    JS_FreeCString(ctx, command);
+
+    // 获取 EventLoop 中的 ContentEditableHandler
+    auto event_loop = DOMBindings::GetGlobalEventLoop();
+    if (!event_loop) {
+        return JS_NewBool(ctx, false);
+    }
+
+    auto handler = event_loop->GetContentEditableHandler();
+    if (!handler) {
+        return JS_NewBool(ctx, false);
+    }
+
+    bool result = handler->QueryCommandEnabled(document, cmd);
+    return JS_NewBool(ctx, result);
+}
+
 // Document 类定义
 static const JSCFunctionListEntry js_document_proto_funcs[] = {
     JS_CGETSET_MAGIC_DEF("body", js_document_get_body, nullptr, 0),
     JS_CFUNC_DEF("createElement", 1, js_document_create_element),
     JS_CFUNC_DEF("createElementNS", 2, js_document_create_element_ns),
     JS_CFUNC_DEF("createTextNode", 1, js_document_create_text_node),
+    JS_CFUNC_DEF("createRange", 0, js_document_create_range),
     JS_CFUNC_DEF("getElementById", 1, js_document_get_element_by_id),
 
     // 阶段2: 查询选择器
@@ -1679,6 +1811,11 @@ static const JSCFunctionListEntry js_document_proto_funcs[] = {
     JS_CFUNC_DEF("__beginBatch", 0, js_document_begin_batch),
     JS_CFUNC_DEF("__endBatch", 0, js_document_end_batch),
     JS_CFUNC_DEF("__isInBatch", 0, js_document_is_in_batch),
+
+    // execCommand API
+    JS_CFUNC_DEF("execCommand", 3, js_document_exec_command),
+    JS_CFUNC_DEF("queryCommandState", 1, js_document_query_command_state),
+    JS_CFUNC_DEF("queryCommandEnabled", 1, js_document_query_command_enabled),
 };
 
 void DOMBindings::InitDocumentClass(JSContext* ctx) {
@@ -2619,6 +2756,17 @@ void DOMBindings::InitDOMStringMapClass(JSContext* ctx) {
 
 // 全局 TaskScheduler 实例
 static std::shared_ptr<TaskScheduler> g_task_scheduler = nullptr;
+
+// 全局 EventLoop 实例
+static EventLoop* g_event_loop = nullptr;
+
+void DOMBindings::SetGlobalEventLoop(JSContext* ctx, EventLoop* event_loop) {
+    g_event_loop = event_loop;
+}
+
+EventLoop* DOMBindings::GetGlobalEventLoop() {
+    return g_event_loop;
+}
 
 // setTimeout(callback, delay)
 static JSValue js_set_timeout(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) {

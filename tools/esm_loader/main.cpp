@@ -15,6 +15,7 @@
 #include "core/window/window_manager.h"
 #include "core/dom/document.h"
 #include "core/dom/element.h"
+#include "core/dom/dom_bindings.h"
 #include "core/quickjs/quickjs_runtime.h"
 #include "core/quickjs/window_bindings.h"
 #include "core/event/task_scheduler.h"
@@ -266,6 +267,11 @@ int main(int argc, char** argv) {
 
         // 事件循环
         EventLoop event_loop(task_scheduler);
+        event_loop.SetQuickJSRuntime(runtime.get());
+
+        // 设置全局 EventLoop 以便 execCommand 等 API 可以访问
+        DOMBindings::SetGlobalEventLoop(runtime->GetContext(), &event_loop);
+
         event_loop.SetRenderCallback([window]() {
             if (window->NeedsRepaint()) {
                 window->Render();

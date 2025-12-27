@@ -7,6 +7,9 @@ set(DOM_SOURCES
     document.cpp
     event.cpp
     drag_event.cpp
+    range.cpp
+    selection.cpp
+    mutation_observer.cpp
     dom_bindings.cpp
     dom_observer.cpp
     dirty_node_tracker.cpp
@@ -49,6 +52,9 @@ set(DOM_HEADERS
     document.h
     event.h
     drag_event.h
+    range.h
+    selection.h
+    mutation_observer.h
     dom_bindings.h
     dom_observer.h
     dirty_node_tracker.h

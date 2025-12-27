@@ -358,5 +358,103 @@ private:
     std::string pseudo_element_;    // 伪元素选择器
 };
 
+/**
+ * @brief 输入事件类
+ *
+ * 用于 contenteditable 元素的输入事件：
+ * - beforeinput: 输入前触发（可取消）
+ * - input: 输入后触发（不可取消）
+ *
+ * inputType 常见值：
+ * - "insertText": 插入文本
+ * - "insertLineBreak": 插入换行
+ * - "deleteContentBackward": 向后删除（Backspace）
+ * - "deleteContentForward": 向前删除（Delete）
+ * - "deleteByCut": 剪切删除
+ * - "insertFromPaste": 粘贴插入
+ * - "formatBold": 加粗格式
+ * - "formatItalic": 斜体格式
+ * - "formatUnderline": 下划线格式
+ *
+ * 参考：
+ * - W3C UI Events - InputEvent
+ * - MDN Web Docs - InputEvent
+ */
+class InputEvent : public Event {
+public:
+    /**
+     * @brief 构造函数
+     * @param type 事件类型（"beforeinput" 或 "input"）
+     * @param input_type 输入类型（如 "insertText", "deleteContentBackward"）
+     * @param data 输入的数据（如插入的文本），可为空
+     * @param is_composing 是否在输入法组合中
+     */
+    InputEvent(const std::string& type,
+               const std::string& input_type,
+               const std::string& data = "",
+               bool is_composing = false);
+
+    /**
+     * @brief 获取输入类型
+     * @return 输入类型（如 "insertText", "deleteContentBackward"）
+     */
+    std::string GetInputType() const { return input_type_; }
+
+    /**
+     * @brief 获取输入数据
+     * @return 输入的数据（如插入的文本），可能为空
+     */
+    std::string GetData() const { return data_; }
+
+    /**
+     * @brief 检查是否在输入法组合中
+     * @return true 表示在输入法组合中
+     */
+    bool IsComposing() const { return is_composing_; }
+
+private:
+    std::string input_type_;    ///< 输入类型
+    std::string data_;          ///< 输入数据
+    bool is_composing_;         ///< 是否在输入法组合中
+};
+
+/**
+ * @brief 剪贴板事件类
+ *
+ * 用于剪贴板操作事件：
+ * - copy: 复制时触发
+ * - cut: 剪切时触发
+ * - paste: 粘贴时触发
+ *
+ * 参考：
+ * - W3C Clipboard API - ClipboardEvent
+ * - MDN Web Docs - ClipboardEvent
+ */
+class ClipboardEvent : public Event {
+public:
+    /**
+     * @brief 构造函数
+     * @param type 事件类型（"copy", "cut", "paste"）
+     * @param clipboard_data 剪贴板数据（文本内容）
+     */
+    ClipboardEvent(const std::string& type,
+                   const std::string& clipboard_data = "");
+
+    /**
+     * @brief 获取剪贴板数据
+     * @return 剪贴板中的文本数据
+     */
+    std::string GetClipboardData() const { return clipboard_data_; }
+
+    /**
+     * @brief 设置剪贴板数据
+     * @param data 要设置的数据
+     */
+    void SetClipboardData(const std::string& data) { clipboard_data_ = data; }
+
+private:
+    std::string clipboard_data_;    ///< 剪贴板数据
+};
+
 } // namespace lightui
 
