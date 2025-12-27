@@ -44,33 +44,25 @@ bool ContentEditableHandler::HandleTextInput(
     std::shared_ptr<Element> target,
     const std::string& text) {
 
-    std::cout << "[ContentEditableHandler::HandleTextInput] text='" << text << "'" << std::endl;
-
     if (!target || !IsEditable(target)) {
-        std::cout << "[ContentEditableHandler::HandleTextInput] target not editable" << std::endl;
         return false;
     }
 
     // 分发 beforeinput 事件
     if (!DispatchBeforeInputEvent(target, "insertText", text)) {
-        std::cout << "[ContentEditableHandler::HandleTextInput] beforeinput cancelled" << std::endl;
         return false;  // 事件被取消
     }
 
     // 获取文档
     auto document = target->GetOwnerDocument();
     if (!document) {
-        std::cout << "[ContentEditableHandler::HandleTextInput] no document" << std::endl;
         return false;
     }
 
     // 插入文本
     if (!InsertText(document, text)) {
-        std::cout << "[ContentEditableHandler::HandleTextInput] InsertText failed" << std::endl;
         return false;
     }
-
-    std::cout << "[ContentEditableHandler::HandleTextInput] success" << std::endl;
 
     // 分发 input 事件
     DispatchInputEvent(target, "insertText", text);
@@ -187,16 +179,12 @@ bool ContentEditableHandler::InsertText(
     std::shared_ptr<Document> document,
     const std::string& text) {
 
-    std::cout << "[ContentEditableHandler::InsertText] text='" << text << "'" << std::endl;
-
     if (!document || text.empty()) {
-        std::cout << "[ContentEditableHandler::InsertText] no document or empty text" << std::endl;
         return false;
     }
 
     auto selection = GetSelection(document);
     if (!selection) {
-        std::cout << "[ContentEditableHandler::InsertText] no selection" << std::endl;
         return false;
     }
 
@@ -206,8 +194,6 @@ bool ContentEditableHandler::InsertText(
     if (editable_for_undo) {
         SaveUndoState(editable_for_undo);
     }
-
-    std::cout << "[ContentEditableHandler::InsertText] selection isCollapsed=" << selection->IsCollapsed() << std::endl;
 
     // 如果有选中内容，先删除
     if (!selection->IsCollapsed()) {
@@ -219,12 +205,8 @@ bool ContentEditableHandler::InsertText(
     int anchor_offset = selection->GetAnchorOffset();
 
     if (!anchor_node) {
-        std::cout << "[ContentEditableHandler::InsertText] no anchor node" << std::endl;
         return false;
     }
-
-    std::cout << "[ContentEditableHandler::InsertText] anchor_node type=" << static_cast<int>(anchor_node->GetNodeType()) 
-              << " offset=" << anchor_offset << std::endl;
 
     // 如果是文本节点，直接插入
     if (anchor_node->GetNodeType() == NodeType::TEXT_NODE) {
@@ -431,7 +413,6 @@ bool ContentEditableHandler::DeleteCharacter(
 
     auto selection = GetSelection(document);
     if (!selection) {
-        std::cout << "[ContentEditableHandler::DeleteCharacter] no selection" << std::endl;
         return false;
     }
 
@@ -441,9 +422,6 @@ bool ContentEditableHandler::DeleteCharacter(
     if (editable_for_undo) {
         SaveUndoState(editable_for_undo);
     }
-
-    std::cout << "[ContentEditableHandler::DeleteCharacter] forward=" << forward 
-              << " isCollapsed=" << selection->IsCollapsed() << std::endl;
 
     // 如果有选中内容，删除选中内容
     if (!selection->IsCollapsed()) {
@@ -455,13 +433,8 @@ bool ContentEditableHandler::DeleteCharacter(
     int anchor_offset = selection->GetAnchorOffset();
 
     if (!anchor_node) {
-        std::cout << "[ContentEditableHandler::DeleteCharacter] no anchor node" << std::endl;
         return false;
     }
-
-    std::cout << "[ContentEditableHandler::DeleteCharacter] anchor_node type=" 
-              << static_cast<int>(anchor_node->GetNodeType()) 
-              << " offset=" << anchor_offset << std::endl;
 
     // 处理文本节点
     if (anchor_node->GetNodeType() == NodeType::TEXT_NODE) {
@@ -471,14 +444,11 @@ bool ContentEditableHandler::DeleteCharacter(
         }
 
         std::string content = text_node->GetTextContent();
-        std::cout << "[ContentEditableHandler::DeleteCharacter] content='" << content 
-                  << "' length=" << content.length() << std::endl;
 
         if (forward) {
             // Delete: 删除光标后的字符
             if (anchor_offset >= static_cast<int>(content.length())) {
                 // 已在末尾，尝试合并下一个节点
-                std::cout << "[ContentEditableHandler::DeleteCharacter] already at end, try merge next" << std::endl;
                 return MergeToNextNode(document, anchor_node);
             }
             
@@ -499,7 +469,6 @@ bool ContentEditableHandler::DeleteCharacter(
             // Backspace: 删除光标前的字符
             if (anchor_offset <= 0) {
                 // 已在开头，尝试合并到前一个节点或删除空元素
-                std::cout << "[ContentEditableHandler::DeleteCharacter] at beginning, try merge previous" << std::endl;
                 return MergeToPreviousNode(document, anchor_node);
             }
             
@@ -518,9 +487,13 @@ bool ContentEditableHandler::DeleteCharacter(
             text_node->SetTextContent(content);
             // 光标前移
             selection->Collapse(anchor_node, static_cast<int>(delete_start));
+            
+            // 如果删除后文本节点变空，立即触发合并到上一行
+            if (content.empty()) {
+                return MergeToPreviousNode(document, anchor_node);
+            }
         }
 
-        std::cout << "[ContentEditableHandler::DeleteCharacter] success, new content='" << content << "'" << std::endl;
         return true;
     }
 
@@ -1049,8 +1022,6 @@ bool ContentEditableHandler::MergeToPreviousNode(
         return false;
     }
 
-    std::cout << "[MergeToPreviousNode] Starting merge" << std::endl;
-
     // 辅助函数：查找节点中最后一个文本节点
     std::function<std::shared_ptr<Text>(std::shared_ptr<Node>)> findLastTextNode;
     findLastTextNode = [&](std::shared_ptr<Node> node) -> std::shared_ptr<Text> {
@@ -1081,7 +1052,6 @@ bool ContentEditableHandler::MergeToPreviousNode(
         auto last_text = findLastTextNode(node);
         if (last_text) {
             selection->Collapse(last_text, static_cast<int>(last_text->GetTextContent().length()));
-            std::cout << "[MergeToPreviousNode] Cursor moved to end of text node" << std::endl;
             return true;
         }
         
@@ -1092,7 +1062,6 @@ bool ContentEditableHandler::MergeToPreviousNode(
                 auto empty_text = std::make_shared<Text>("");
                 elem->AppendChild(empty_text);
                 selection->Collapse(empty_text, 0);
-                std::cout << "[MergeToPreviousNode] Created empty text node and set cursor" << std::endl;
                 return true;
             }
         }
@@ -1138,7 +1107,6 @@ bool ContentEditableHandler::MergeToPreviousNode(
     // 获取当前节点的父元素
     auto parent = current_node->GetParentNode();
     if (!parent) {
-        std::cout << "[MergeToPreviousNode] No parent" << std::endl;
         return false;
     }
 
@@ -1162,12 +1130,8 @@ bool ContentEditableHandler::MergeToPreviousNode(
                     // 检查父元素是否为空
                     bool parent_is_empty = isNodeEmpty(parent_elem);
                     
-                    std::cout << "[MergeToPreviousNode] Parent tag=" << tag 
-                              << " isEmpty=" << parent_is_empty << std::endl;
-                    
                     // 情况1：空的格式化元素（em, strong 等）
                     if (isFormattingElement(tag) && parent_is_empty) {
-                        std::cout << "[MergeToPreviousNode] Removing empty formatting element: " << tag << std::endl;
                         
                         auto format_prev = parent_elem->GetPreviousSibling();
                         auto grandparent = parent_elem->GetParentNode();
@@ -1183,7 +1147,6 @@ bool ContentEditableHandler::MergeToPreviousNode(
                                     auto last_text = findLastTextNode(format_prev);
                                     if (last_text) {
                                         selection->Collapse(last_text, static_cast<int>(last_text->GetTextContent().length()));
-                                        std::cout << "[MergeToPreviousNode] Cursor moved to previous text node" << std::endl;
                                         return true;
                                     }
                                     // 使用辅助函数确保光标在文本节点上
@@ -1203,7 +1166,6 @@ bool ContentEditableHandler::MergeToPreviousNode(
                                 auto last_text_in_grandparent = findLastTextNode(grandparent_elem);
                                 if (last_text_in_grandparent) {
                                     selection->Collapse(last_text_in_grandparent, static_cast<int>(last_text_in_grandparent->GetTextContent().length()));
-                                    std::cout << "[MergeToPreviousNode] Cursor moved to last text in grandparent" << std::endl;
                                     return true;
                                 }
                                 
@@ -1218,7 +1180,6 @@ bool ContentEditableHandler::MergeToPreviousNode(
                     
                     // 情况2：空的块级元素（p, div 等）- 删除整行并移动到上一行
                     if (isBlockElement(tag) && parent_is_empty) {
-                        std::cout << "[MergeToPreviousNode] Removing empty block element: " << tag << std::endl;
                         
                         auto block_prev = parent_elem->GetPreviousSibling();
                         auto grandparent = parent_elem->GetParentNode();
@@ -1234,7 +1195,6 @@ bool ContentEditableHandler::MergeToPreviousNode(
                                     auto last_text = findLastTextNode(block_prev);
                                     if (last_text) {
                                         selection->Collapse(last_text, static_cast<int>(last_text->GetTextContent().length()));
-                                        std::cout << "[MergeToPreviousNode] Cursor moved to end of previous block" << std::endl;
                                         return true;
                                     }
                                     
@@ -1267,12 +1227,10 @@ bool ContentEditableHandler::MergeToPreviousNode(
                 // 检查父元素是否也是 contentEditable
                 auto parent_node = elem->GetParentNode();
                 if (!parent_node || parent_node->GetNodeType() != NodeType::ELEMENT_NODE) {
-                    std::cout << "[MergeToPreviousNode] Cannot delete contentEditable root" << std::endl;
                     return false;
                 }
                 auto parent_elem_check = std::dynamic_pointer_cast<Element>(parent_node);
                 if (!parent_elem_check || !parent_elem_check->IsContentEditable()) {
-                    std::cout << "[MergeToPreviousNode] Cannot delete contentEditable root" << std::endl;
                     return false;
                 }
             }
@@ -1283,13 +1241,8 @@ bool ContentEditableHandler::MergeToPreviousNode(
             }
             
             if (isBlockElement(tag) || isFormattingElement(tag)) {
-                std::cout << "[MergeToPreviousNode] Removing empty element (recursive): " << tag << std::endl;
-                
                 auto elem_prev = elem->GetPreviousSibling();
                 auto elem_parent = elem->GetParentNode();
-                
-                std::cout << "[MergeToPreviousNode] elem_prev=" << (elem_prev ? "exists" : "null") 
-                          << " elem_parent=" << (elem_parent ? "exists" : "null") << std::endl;
                 
                 if (elem_parent) {
                     auto parent_elem = std::dynamic_pointer_cast<Element>(elem_parent);
@@ -1297,15 +1250,12 @@ bool ContentEditableHandler::MergeToPreviousNode(
                         parent_elem->RemoveChild(elem);
                         
                         if (elem_prev) {
-                            std::cout << "[MergeToPreviousNode] Looking for last text in prev sibling" << std::endl;
                             auto last_text = findLastTextNode(elem_prev);
                             if (last_text) {
-                                std::cout << "[MergeToPreviousNode] Found last text: '" << last_text->GetTextContent() << "'" << std::endl;
-                                selection->Collapse(last_text, static_cast<int>(last_text->GetTextContent().length()));
-                                std::cout << "[MergeToPreviousNode] Cursor set to end of previous element" << std::endl;
+                                int new_offset = static_cast<int>(last_text->GetTextContent().length());
+                                selection->Collapse(last_text, new_offset);
                                 return true;
                             }
-                            std::cout << "[MergeToPreviousNode] No text found, using moveCursorToEndOfNode" << std::endl;
                             // 使用辅助函数确保光标在文本节点上
                             if (moveCursorToEndOfNode(elem_prev)) {
                                 return true;
@@ -1349,7 +1299,6 @@ bool ContentEditableHandler::MergeToPreviousNode(
                 content.erase(delete_start);
                 prev_text->SetTextContent(content);
                 selection->Collapse(prev_text, static_cast<int>(content.length()));
-                std::cout << "[MergeToPreviousNode] Deleted last char from previous text node" << std::endl;
                 return true;
             } else {
                 // 前一个文本节点也为空，递归处理
@@ -1384,7 +1333,6 @@ bool ContentEditableHandler::MergeToPreviousNode(
                             content.erase(delete_start);
                             last_text->SetTextContent(content);
                             selection->Collapse(last_text, static_cast<int>(content.length()));
-                            std::cout << "[MergeToPreviousNode] Deleted last char from parent's previous sibling" << std::endl;
                             return true;
                         }
                     }
@@ -1393,7 +1341,6 @@ bool ContentEditableHandler::MergeToPreviousNode(
         }
     }
 
-    std::cout << "[MergeToPreviousNode] No previous node to merge with" << std::endl;
     return false;
 }
 
@@ -1409,8 +1356,6 @@ bool ContentEditableHandler::MergeToNextNode(
     if (!selection) {
         return false;
     }
-
-    std::cout << "[MergeToNextNode] Starting merge" << std::endl;
 
     // 辅助函数：查找节点中第一个文本节点
     std::function<std::shared_ptr<Text>(std::shared_ptr<Node>)> findFirstTextNode;
@@ -1471,7 +1416,6 @@ bool ContentEditableHandler::MergeToNextNode(
     // 获取当前节点的父元素
     auto parent = current_node->GetParentNode();
     if (!parent) {
-        std::cout << "[MergeToNextNode] No parent" << std::endl;
         return false;
     }
 
@@ -1519,7 +1463,6 @@ bool ContentEditableHandler::MergeToNextNode(
                     }
                 }
                 
-                std::cout << "[MergeToNextNode] Deleted first char from next text node" << std::endl;
                 // 光标位置不变
                 return true;
             } else {
@@ -1571,7 +1514,6 @@ bool ContentEditableHandler::MergeToNextNode(
                                                     next_content.erase(0, char_len);
                                                     first_text->SetTextContent(next_content);
                                                     
-                                                    std::cout << "[MergeToNextNode] Deleted first char from next block" << std::endl;
                                                     return true;
                                                 }
                                             }
@@ -1583,7 +1525,6 @@ bool ContentEditableHandler::MergeToNextNode(
                                                     auto block_parent_elem = std::dynamic_pointer_cast<Element>(block_parent);
                                                     if (block_parent_elem) {
                                                         block_parent_elem->RemoveChild(next_elem);
-                                                        std::cout << "[MergeToNextNode] Removed empty next block" << std::endl;
                                                         return true;
                                                     }
                                                 }
@@ -1603,7 +1544,6 @@ bool ContentEditableHandler::MergeToNextNode(
         }
     }
 
-    std::cout << "[MergeToNextNode] No next node to merge with" << std::endl;
     return false;
 }
 
@@ -2341,10 +2281,6 @@ void ContentEditableHandler::SaveUndoState(std::shared_ptr<Element> element) {
         }
     }
 
-    std::cout << "[SaveUndoState] Saving element tag=" << element->GetTagName() 
-              << " innerHTML length=" << state.innerHTML.length() 
-              << " stack size=" << undo_stack_.size() << std::endl;
-
     // 添加到撤销栈
     undo_stack_.push_back(state);
 
@@ -2358,10 +2294,7 @@ void ContentEditableHandler::SaveUndoState(std::shared_ptr<Element> element) {
 }
 
 bool ContentEditableHandler::Undo(std::shared_ptr<Document> document) {
-    std::cout << "[Undo] Called, undo_stack size=" << undo_stack_.size() << std::endl;
-    
     if (!document || undo_stack_.empty()) {
-        std::cout << "[Undo] No document or empty stack" << std::endl;
         return false;
     }
 
@@ -2371,7 +2304,6 @@ bool ContentEditableHandler::Undo(std::shared_ptr<Document> document) {
     
     auto target_element = prev_state.element.lock();
     if (!target_element) {
-        std::cout << "[Undo] Element expired" << std::endl;
         return false;
     }
 
@@ -2391,8 +2323,6 @@ bool ContentEditableHandler::Undo(std::shared_ptr<Document> document) {
             current_state.is_collapsed = selection->IsCollapsed();
         }
     }
-    
-    std::cout << "[Undo] Target element tag=" << target_element->GetTagName() << std::endl;
 
     // 只有当内容不同时才保存到重做栈
     if (current_state.innerHTML != prev_state.innerHTML) {
@@ -2441,10 +2371,7 @@ bool ContentEditableHandler::Undo(std::shared_ptr<Document> document) {
 }
 
 bool ContentEditableHandler::Redo(std::shared_ptr<Document> document) {
-    std::cout << "[Redo] Called, redo_stack size=" << redo_stack_.size() << std::endl;
-    
     if (!document || redo_stack_.empty()) {
-        std::cout << "[Redo] No document or empty stack" << std::endl;
         return false;
     }
 
@@ -2454,7 +2381,6 @@ bool ContentEditableHandler::Redo(std::shared_ptr<Document> document) {
     
     auto target_element = redo_state.element.lock();
     if (!target_element) {
-        std::cout << "[Redo] Element expired" << std::endl;
         return false;
     }
 
@@ -2475,9 +2401,6 @@ bool ContentEditableHandler::Redo(std::shared_ptr<Document> document) {
         }
     }
     current_state.element = target_element;
-    
-    std::cout << "[Redo] Current innerHTML length=" << current_state.innerHTML.length() 
-              << ", restoring to length=" << redo_state.innerHTML.length() << std::endl;
 
     // 只有当内容不同时才保存到撤销栈
     if (current_state.innerHTML != redo_state.innerHTML) {
@@ -2546,8 +2469,6 @@ void ContentEditableHandler::BeginUndoGroup(std::shared_ptr<Element> element) {
             undo_group_start_state_.is_collapsed = selection->IsCollapsed();
         }
     }
-
-    std::cout << "[BeginUndoGroup] Started undo group" << std::endl;
 }
 
 void ContentEditableHandler::EndUndoGroup() {
@@ -2566,7 +2487,6 @@ void ContentEditableHandler::EndUndoGroup() {
     std::string current_html = element->GetInnerHTML();
     if (current_html == undo_group_start_state_.innerHTML) {
         // 没有变化，不保存
-        std::cout << "[EndUndoGroup] No changes, not saving" << std::endl;
         return;
     }
 
@@ -2580,8 +2500,6 @@ void ContentEditableHandler::EndUndoGroup() {
 
     // 清空重做栈
     redo_stack_.clear();
-
-    std::cout << "[EndUndoGroup] Saved undo group state" << std::endl;
 }
 
 } // namespace lightui

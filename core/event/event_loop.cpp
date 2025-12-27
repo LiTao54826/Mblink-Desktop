@@ -1453,8 +1453,24 @@ void EventLoop::HandleMouseEventForDOM(const SDL_Event& event) {
         }
         // 处理 contentEditable 元素的 mousedown
         else if (hit_result.element->IsContentEditable() && event.button.button == SDL_BUTTON_LEFT) {
+            // 找到 contentEditable 的根元素（设置了 contenteditable="true" 的元素）
+            std::shared_ptr<Element> contenteditable_root_for_focus = std::dynamic_pointer_cast<Element>(hit_result.element);
+            while (contenteditable_root_for_focus) {
+                auto attr = contenteditable_root_for_focus->GetAttribute("contenteditable");
+                if (attr == "true") {
+                    break;
+                }
+                auto parent = contenteditable_root_for_focus->GetParentNode();
+                contenteditable_root_for_focus = std::dynamic_pointer_cast<Element>(parent);
+            }
+            if (!contenteditable_root_for_focus) {
+                contenteditable_root_for_focus = std::dynamic_pointer_cast<Element>(hit_result.element);
+            }
+            
             focus_manager_->SetWindow(window.get());
-            focus_manager_->SetFocus(hit_result.element, false);
+            // 将焦点设置到 contentEditable 根元素，而不是被点击的子元素
+            // 这样当子元素被删除时，焦点不会丢失
+            focus_manager_->SetFocus(contenteditable_root_for_focus, false);
             
             // 初始化 Selection 并开始拖动选择
             auto doc = std::dynamic_pointer_cast<Document>(hit_result.element->GetOwnerDocument());
