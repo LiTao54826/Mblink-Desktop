@@ -5,6 +5,10 @@ set(RENDER_SOURCES
     renderer.cpp
     render_context.cpp
     render_object.cpp
+    render_table.cpp
+    render_text.cpp
+    render_inline.cpp
+    render_block.cpp
     render_pipeline.cpp
     render_cache.cpp
     render_inline_block.cpp
@@ -82,6 +86,15 @@ set(RENDER_SOURCES
     
     # Filter cache
     filter_cache.cpp
+    
+    # Painters (subdirectory)
+    painters/background_painter.cpp
+    painters/border_painter.cpp
+    painters/scrollbar_painter.cpp
+    painters/form_element_painter.cpp
+    
+    # Scrollbar controller
+    scrollbar_controller.cpp
 )
 
 set(RENDER_HEADERS
@@ -166,6 +179,15 @@ set(RENDER_HEADERS
     
     # Filter cache
     filter_cache.h
+    
+    # Painters (subdirectory)
+    painters/background_painter.h
+    painters/border_painter.h
+    painters/scrollbar_painter.h
+    painters/form_element_painter.h
+    
+    # Scrollbar controller
+    scrollbar_controller.h
 )
 
 add_library(lightui_render STATIC ${RENDER_SOURCES})
@@ -174,7 +196,8 @@ target_include_directories(lightui_render PUBLIC
     ${CMAKE_SOURCE_DIR}
     ${CMAKE_SOURCE_DIR}/core
     ${CMAKE_SOURCE_DIR}/core/render
-    ${CMAKE_SOURCE_DIR}/third_party/skia
+    $<$<CONFIG:Debug>:${CMAKE_SOURCE_DIR}/third_party/skia/Debug>
+    $<$<NOT:$<CONFIG:Debug>>:${CMAKE_SOURCE_DIR}/third_party/skia/Release>
 )
 
 target_link_libraries(lightui_render PUBLIC

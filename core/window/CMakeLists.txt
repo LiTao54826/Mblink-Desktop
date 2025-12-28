@@ -3,15 +3,29 @@
 set(WINDOW_SOURCES
     window.cpp
     window_manager.cpp
+    window_renderer.cpp
+    window_dom_observer.cpp
     display_backend.cpp
 )
+
+# Windows 平台特定源文件
+if(WIN32)
+    list(APPEND WINDOW_SOURCES window_win32.cpp)
+endif()
 
 set(WINDOW_HEADERS
     window.h
     window_event.h
     window_manager.h
+    window_renderer.h
+    window_dom_observer.h
     display_backend.h
 )
+
+# Windows 平台特定头文件
+if(WIN32)
+    list(APPEND WINDOW_HEADERS window_win32.h)
+endif()
 
 add_library(lightui_window STATIC ${WINDOW_SOURCES})
 
@@ -41,7 +55,11 @@ message(STATUS "Window module: Checking for skia target...")
 if(TARGET skia)
     message(STATUS "Window module: Linking Skia")
     target_link_libraries(lightui_window PUBLIC skia)
-    target_include_directories(lightui_window PUBLIC ${CMAKE_SOURCE_DIR}/third_party/skia)
+    # Add Skia include directories based on build configuration
+    target_include_directories(lightui_window PUBLIC
+        $<$<CONFIG:Debug>:${CMAKE_SOURCE_DIR}/third_party/skia/Debug>
+        $<$<NOT:$<CONFIG:Debug>>:${CMAKE_SOURCE_DIR}/third_party/skia/Release>
+    )
 
     # Match Skia's runtime library settings (MSVC)
     # Skia 138 is compiled with Release runtime (/MT) and _ITERATOR_DEBUG_LEVEL=0
@@ -64,11 +82,6 @@ if(TARGET skia)
     endif()
 else()
     message(STATUS "Window module: Skia target not found, skipping")
-    # 尝试手动添加include目录
-    if(EXISTS "${CMAKE_SOURCE_DIR}/third_party/skia")
-        message(STATUS "Window module: Manually adding Skia include directory")
-        target_include_directories(lightui_window PUBLIC ${CMAKE_SOURCE_DIR}/third_party/skia)
-    endif()
 endif()
 
 # 链接 OpenGL（用于 DisplayBackend）

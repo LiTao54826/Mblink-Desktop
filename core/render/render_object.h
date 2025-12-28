@@ -18,6 +18,7 @@
 #include "animation/transition.h"
 #include "transform.h"
 #include "animation/animation.h"
+#include "scrollbar_controller.h"
 #include <memory>
 #include <string>
 #include <unordered_map>
@@ -850,15 +851,10 @@ public:
     float GetMaxScrollY() const;
 
     /**
-     * @brief 滚动条区域类型
+     * @brief 滚动条区域类型（使用 ScrollbarController 中定义的枚举）
+     * @note 为了向后兼容，保留此类型别名
      */
-    enum class ScrollbarHitArea {
-        None,           // 不在滚动条区域
-        HorizontalTrack,// 水平滚动条轨道
-        HorizontalThumb,// 水平滚动条滑块
-        VerticalTrack,  // 垂直滚动条轨道
-        VerticalThumb   // 垂直滚动条滑块
-    };
+    using ScrollbarHitArea = lightui::ScrollbarHitArea;
 
     /**
      * @brief 检测点是否在滚动条区域内
@@ -871,7 +867,7 @@ public:
     /**
      * @brief 获取滚动条宽度
      */
-    static constexpr float GetScrollbarWidth() { return 12.0f; }
+    static constexpr float GetScrollbarWidth() { return ScrollbarController::kScrollbarWidth; }
 
     /**
      * @brief 开始拖动滚动条
@@ -891,12 +887,12 @@ public:
     /**
      * @brief 检查是否正在拖动滚动条
      */
-    bool IsDraggingScrollbar() const { return dragging_scrollbar_ != ScrollbarHitArea::None; }
+    bool IsDraggingScrollbar() const { return scrollbar_controller_.IsDragging(); }
 
     /**
      * @brief 获取正在拖动的滚动条类型
      */
-    ScrollbarHitArea GetDraggingScrollbar() const { return dragging_scrollbar_; }
+    ScrollbarHitArea GetDraggingScrollbar() const { return scrollbar_controller_.GetDraggingArea(); }
 
     /**
      * @brief 递归计算子元素的实际内容高度
@@ -1007,10 +1003,8 @@ protected:
     // 这是性能优化的关键：滚动时只需要 GPU 合成，不需要 CPU 光栅化
     bool use_compositor_scroll_ = false;
 
-    // 滚动条拖动状态
-    ScrollbarHitArea dragging_scrollbar_ = ScrollbarHitArea::None;
-    float drag_start_scroll_ = 0.0f;      // 拖动开始时的滚动位置
-    float drag_start_mouse_ = 0.0f;       // 拖动开始时的鼠标位置
+    // 滚动条控制器（管理滚动条拖动状态和逻辑）
+    mutable ScrollbarController scrollbar_controller_;
 
     // Shadow 缓存：避免每帧重新计算模糊
     struct ShadowCache {

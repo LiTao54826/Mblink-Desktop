@@ -16,6 +16,7 @@ set(EVENT_SOURCES
     data_transfer.cpp
     dispatch/mouse_event_dispatcher.cpp
     dispatch/keyboard_event_dispatcher.cpp
+    dispatch/wheel_event_dispatcher.cpp
 )
 
 set(EVENT_HEADERS
@@ -34,6 +35,7 @@ set(EVENT_HEADERS
     data_transfer.h
     dispatch/mouse_event_dispatcher.h
     dispatch/keyboard_event_dispatcher.h
+    dispatch/wheel_event_dispatcher.h
 )
 
 add_library(lightui_event STATIC ${EVENT_SOURCES})

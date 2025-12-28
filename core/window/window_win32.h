@@ -1,0 +1,64 @@
+/**
+ * @file window_win32.h
+ * @brief Windows 平台特定代码
+ * 
+ * 从 window.cpp 提取的 Windows 子类化窗口过程。
+ * 用于拦截可能导致闪烁的消息。
+ */
+
+#ifndef LIGHTUI_WINDOW_WIN32_H
+#define LIGHTUI_WINDOW_WIN32_H
+
+#ifdef _WIN32
+
+// windows.h 已在 window.h 中 include
+// 这里只需要确保 NOMINMAX 已定义
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#include <windows.h>
+
+namespace lightui {
+
+class Window;
+
+namespace win32 {
+
+/**
+ * @brief 子类化窗口，拦截闪烁相关消息
+ * @param hwnd 窗口句柄
+ * @param window 关联的 Window 对象
+ */
+void SubclassWindow(HWND hwnd, Window* window);
+
+/**
+ * @brief 移除窗口子类化
+ * @param hwnd 窗口句柄
+ */
+void UnsubclassWindow(HWND hwnd);
+
+/**
+ * @brief 设置调试消息开关
+ * @param enable 是否启用
+ */
+void SetDebugMessages(bool enable);
+
+/**
+ * @brief 增加 Present 计数（用于统计）
+ */
+void IncrementPresentCount();
+
+/**
+ * @brief 打印统计信息
+ */
+void PrintStats();
+
+}  // namespace win32
+}  // namespace lightui
+
+#endif  // _WIN32
+
+#endif  // LIGHTUI_WINDOW_WIN32_H

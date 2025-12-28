@@ -21,6 +21,21 @@
 
 #pragma once
 
+// Windows: 必须在 Skia 头文件之前 include windows.h
+#ifdef _WIN32
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#include <windows.h>
+// 取消 Windows 头文件中可能与项目代码冲突的宏
+#ifdef ERROR
+#undef ERROR
+#endif
+#endif
+
 #include <string>
 #include <memory>
 #include <functional>
@@ -48,6 +63,7 @@ class RenderTreeBuilder;
 class RenderPipeline;        // 统一渲染管线
 class RenderTreeSynchronizer;
 class FBOManager;
+class WindowRenderer;        // 窗口渲染器
 
 /**
  * @brief 渲染后端类型
@@ -88,6 +104,9 @@ struct WindowConfig {
  * 管理SDL窗口和Skia渲染上下文
  */
 class Window {
+    // 允许 WindowRenderer 访问私有成员
+    friend class WindowRenderer;
+    
 public:
     /**
      * @brief 构造函数
@@ -514,31 +533,6 @@ private:
     void InitCPURendering();
 
     /**
-     * @brief 递归清除DOM节点的脏标记
-     * @param node 要清除的节点
-     */
-    void ClearDirtyFlags(Node* node);
-
-    /**
-     * @brief 递归清除RenderObject的脏标记
-     * @param render_obj 要清除的渲染对象
-     */
-    void ClearRenderObjectDirtyFlags(RenderObject* render_obj);
-
-    /**
-     * @brief 从渲染树收集脏区域（基于RenderObject的NeedsPaint标记）
-     * @param root 渲染树根节点
-     */
-    void CollectDirtyRectsFromRenderTree(RenderObject* root);
-
-    /**
-     * @brief 检查是否有需要布局的脏节点
-     * @param node DOM节点
-     * @return true表示有脏节点需要布局
-     */
-    bool HasDirtyLayoutNodes(Node* node);
-
-    /**
      * @brief 增量布局：只布局需要布局的子树
      * @param render_obj 渲染对象
      * @param parent_width 父元素宽度
@@ -553,22 +547,6 @@ private:
      * @param render_obj 渲染对象
      */
     void MarkRenderObjectsDirty(Node* dom_node, RenderObject* render_obj);
-
-    /**
-     * @brief 保存渲染树中所有元素的滚动位置
-     * @param render_obj 渲染对象
-     * @param scroll_positions 滚动位置映射表（DOM节点指针 -> 滚动位置）
-     */
-    void SaveScrollPositions(RenderObject* render_obj,
-                             std::unordered_map<Node*, std::pair<float, float>>& scroll_positions);
-
-    /**
-     * @brief 恢复渲染树中元素的滚动位置
-     * @param render_obj 渲染对象
-     * @param scroll_positions 滚动位置映射表
-     */
-    void RestoreScrollPositions(RenderObject* render_obj,
-                                const std::unordered_map<Node*, std::pair<float, float>>& scroll_positions);
 
     /**
      * @brief 渲染 DevTools 面板
@@ -635,6 +613,9 @@ private:
     // 统一渲染管线
     std::unique_ptr<RenderPipeline> render_pipeline_;
     std::shared_ptr<RenderTreeSynchronizer> render_tree_synchronizer_;
+
+    // 窗口渲染器（负责动画和渲染辅助方法）
+    std::unique_ptr<WindowRenderer> window_renderer_;
 
     // 显示后端（用于 CPU 渲染模式）
     std::unique_ptr<DisplayBackend> display_backend_;

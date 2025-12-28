@@ -29,7 +29,8 @@ add_library(lightui_compositor STATIC ${COMPOSITOR_SOURCES})
 target_include_directories(lightui_compositor PUBLIC
     ${CMAKE_SOURCE_DIR}
     ${CMAKE_SOURCE_DIR}/core
-    ${CMAKE_SOURCE_DIR}/third_party/skia
+    $<$<CONFIG:Debug>:${CMAKE_SOURCE_DIR}/third_party/skia/Debug>
+    $<$<NOT:$<CONFIG:Debug>>:${CMAKE_SOURCE_DIR}/third_party/skia/Release>
 )
 
 target_link_libraries(lightui_compositor PUBLIC

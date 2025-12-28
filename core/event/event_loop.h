@@ -32,6 +32,9 @@ class SelectionManager;
 class ContentEditableHandler;
 class ContentEditableController;
 class ClipboardManager;
+class MouseEventDispatcher;
+class KeyboardEventDispatcher;
+class WheelEventDispatcher;
 struct HitTestResult;
 class RenderObject;
 class QuickJSRuntime;
@@ -366,24 +369,20 @@ private:
     std::unique_ptr<FocusManager> focus_manager_;
     std::unique_ptr<DragManager> drag_manager_;
 
+    // 鼠标事件分发器
+    std::unique_ptr<MouseEventDispatcher> mouse_event_dispatcher_;
+
+    // 键盘事件分发器
+    std::unique_ptr<KeyboardEventDispatcher> keyboard_event_dispatcher_;
+
+    // 滚轮事件分发器
+    std::unique_ptr<WheelEventDispatcher> wheel_event_dispatcher_;
+
     // 富文本编辑子系统
     std::unique_ptr<SelectionManager> selection_manager_;
     std::unique_ptr<ContentEditableHandler> contenteditable_handler_;
     std::unique_ptr<ContentEditableController> contenteditable_controller_;
     std::unique_ptr<ClipboardManager> clipboard_manager_;
-
-    // Hover链追踪（参考RmlUi的hover_chain）
-    // 存储当前鼠标悬停的元素链（从目标元素到根元素）
-    // 使用 weak_ptr 避免悬空指针问题
-    std::vector<std::weak_ptr<Element>> hover_chain_;
-
-    // 当前悬停的元素（最深层的元素）
-    // 使用 weak_ptr 避免悬空指针问题
-    std::weak_ptr<Element> hover_element_;
-
-    // 滚动条拖动状态
-    std::weak_ptr<RenderObject> scrollbar_dragging_element_;  // 正在拖动滚动条的元素
-    Uint32 scrollbar_dragging_window_id_ = 0;                 // 拖动所在窗口的ID
 
     // 光标闪烁状态
     bool cursor_visible_ = true;  // 光标是否可见（用于闪烁效果）

@@ -25,6 +25,7 @@ class Document;
 class Window;
 class FocusManager;
 class ContentEditableHandler;
+class ContentEditableController;
 class ClipboardManager;
 
 /**
@@ -52,14 +53,16 @@ public:
      * @brief 设置依赖的管理器
      * @param focus_manager 焦点管理器
      * @param contenteditable_handler 可编辑内容处理器
+     * @param contenteditable_controller 可编辑内容控制器
      * @param clipboard_manager 剪贴板管理器
      */
     void SetManagers(FocusManager* focus_manager,
                      ContentEditableHandler* contenteditable_handler,
+                     ContentEditableController* contenteditable_controller,
                      ClipboardManager* clipboard_manager);
 
     /**
-     * @brief 处理键盘事件
+     * @brief 处理键盘事件（keydown/keyup/textinput）
      * @param event SDL 键盘事件
      * @param window 目标窗口
      * @param document 目标文档
@@ -70,17 +73,6 @@ public:
                               std::shared_ptr<Document> document);
 
     /**
-     * @brief 处理文本输入事件
-     * @param event SDL 文本输入事件
-     * @param window 目标窗口
-     * @param document 目标文档
-     * @return true 如果事件被处理
-     */
-    bool HandleTextInputEvent(const SDL_Event& event,
-                               std::shared_ptr<Window> window,
-                               std::shared_ptr<Document> document);
-
-    /**
      * @brief 获取当前焦点元素
      * @return 当前焦点元素
      */
@@ -88,38 +80,32 @@ public:
 
 private:
     /**
-     * @brief 处理快捷键
-     * @param keycode 按键码
-     * @param ctrl 是否按住 Ctrl
-     * @param shift 是否按住 Shift
-     * @param alt 是否按住 Alt
-     * @param document 目标文档
-     * @return true 如果快捷键被处理
+     * @brief 处理 keydown 事件
      */
-    bool HandleShortcut(SDL_Keycode keycode,
-                        bool ctrl,
-                        bool shift,
-                        bool alt,
-                        std::shared_ptr<Document> document);
+    void HandleKeyDown(const SDL_Event& event,
+                       std::shared_ptr<Element> focus_element,
+                       std::shared_ptr<Document> document,
+                       bool ctrl_key, bool shift_key, bool alt_key, bool meta_key);
 
     /**
-     * @brief 将 SDL 按键码转换为 DOM key 字符串
-     * @param keycode SDL 按键码
-     * @return DOM key 字符串
+     * @brief 处理 keyup 事件
      */
-    static std::string SDLKeycodeToDOMKey(SDL_Keycode keycode);
+    void HandleKeyUp(const SDL_Event& event,
+                     std::shared_ptr<Element> focus_element,
+                     bool ctrl_key, bool shift_key, bool alt_key, bool meta_key);
 
     /**
-     * @brief 将 SDL 按键码转换为 DOM code 字符串
-     * @param scancode SDL 扫描码
-     * @return DOM code 字符串
+     * @brief 处理文本输入事件
      */
-    static std::string SDLScancodeToDOMCode(SDL_Scancode scancode);
+    void HandleTextInput(const SDL_Event& event,
+                         std::shared_ptr<Element> focus_element,
+                         std::shared_ptr<Document> document);
 
 private:
     // 依赖的管理器（不拥有所有权）
     FocusManager* focus_manager_ = nullptr;
     ContentEditableHandler* contenteditable_handler_ = nullptr;
+    ContentEditableController* contenteditable_controller_ = nullptr;
     ClipboardManager* clipboard_manager_ = nullptr;
 };
 

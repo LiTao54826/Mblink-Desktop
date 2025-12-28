@@ -46,7 +46,8 @@ add_library(lightui_property_tree STATIC ${PROPERTY_TREE_SOURCES})
 target_include_directories(lightui_property_tree PUBLIC
     ${CMAKE_SOURCE_DIR}
     ${CMAKE_SOURCE_DIR}/core
-    ${CMAKE_SOURCE_DIR}/third_party/skia
+    $<$<CONFIG:Debug>:${CMAKE_SOURCE_DIR}/third_party/skia/Debug>
+    $<$<NOT:$<CONFIG:Debug>>:${CMAKE_SOURCE_DIR}/third_party/skia/Release>
 )
 
 target_link_libraries(lightui_property_tree PUBLIC

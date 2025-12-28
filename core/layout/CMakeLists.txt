@@ -64,7 +64,10 @@ target_link_libraries(lightui_layout PUBLIC
 # 链接Skia（如果启用）
 if(TARGET skia)
     target_link_libraries(lightui_layout PUBLIC skia)
-    target_include_directories(lightui_layout PUBLIC ${CMAKE_SOURCE_DIR}/third_party/skia)
+    target_include_directories(lightui_layout PUBLIC
+        $<$<CONFIG:Debug>:${CMAKE_SOURCE_DIR}/third_party/skia/Debug>
+        $<$<NOT:$<CONFIG:Debug>>:${CMAKE_SOURCE_DIR}/third_party/skia/Release>
+    )
 
     # Match Skia's runtime library settings (MSVC)
     if(MSVC)
