@@ -14,7 +14,7 @@
 #include "core/compositor/compositor_layer.h"
 #include "core/compositor/compositor.h"
 #include "core/compositor/rasterizer.h"
-#include "core/render/render_object.h"
+#include "core/render/objects/render_object.h"
 #include "include/core/SkSurface.h"
 #include "include/core/SkCanvas.h"
 #include "include/core/SkBitmap.h"

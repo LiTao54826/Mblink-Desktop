@@ -34,7 +34,7 @@
 #include <lexbor/dom/interfaces/element.h>
 #include <lexbor/dom/interfaces/text.h>
 #include "core/lexbor/lexbor_document.h"
-#include "core/render/render_object.h"
+#include "core/render/objects/render_object.h"
 #include "../quickjs/quickjs.h"
 #include "../quickjs/quickjs-libc.h"
 #include "../quickjs/quickjs_runtime.h"

@@ -5,7 +5,7 @@
 
 #include "computed_styles_view.h"
 #include "core/window/window_manager.h"
-#include "core/render/render_object.h"
+#include "core/render/objects/render_object.h"
 #include "core/render/text/font_manager.h"
 
 #include "include/core/SkCanvas.h"

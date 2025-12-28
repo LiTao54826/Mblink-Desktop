@@ -9,7 +9,7 @@
 #include "core/compositor/property_tree/effect_tree_node.h"
 #include "core/compositor/property_tree/scroll_tree_node.h"
 #include "core/compositor/property_tree/paint_chunk.h"
-#include "core/render/render_object.h"
+#include "core/render/objects/render_object.h"
 #include "include/core/SkPaint.h"
 #include "include/core/SkImage.h"
 

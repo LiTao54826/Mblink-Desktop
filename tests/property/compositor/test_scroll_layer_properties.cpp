@@ -14,7 +14,7 @@
 #include "core/compositor/compositor_layer.h"
 #include "core/compositor/layer_tree_builder.h"
 #include "core/compositor/rasterizer.h"
-#include "core/render/render_object.h"
+#include "core/render/objects/render_object.h"
 #include <memory>
 #include <cmath>
 

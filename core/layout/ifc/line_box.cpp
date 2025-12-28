@@ -8,7 +8,7 @@
  */
 
 #include "line_box.h"
-#include "core/render/render_object.h"
+#include "core/render/objects/render_object.h"
 #include <algorithm>
 #include <cmath>
 #include <iostream>

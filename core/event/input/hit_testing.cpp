@@ -6,7 +6,7 @@
 #include "hit_testing.h"
 #include "core/dom/document.h"
 #include "core/dom/element.h"
-#include "core/render/render_object.h"
+#include "core/render/objects/render_object.h"
 #include "core/render/layer/layer_manager.h"
 #include <iostream>
 

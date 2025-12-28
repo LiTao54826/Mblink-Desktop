@@ -4,7 +4,7 @@
  */
 
 #include "vertical_aligner.h"
-#include "core/render/render_object.h"
+#include "core/render/objects/render_object.h"
 #include <algorithm>
 #include <cmath>
 #include <iostream>

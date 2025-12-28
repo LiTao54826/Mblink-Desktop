@@ -6,7 +6,7 @@
  */
 
 #include "scrollbar_painter.h"
-#include "core/render/render_object.h"
+#include "core/render/objects/render_object.h"
 #include "include/core/SkRRect.h"
 #include <algorithm>
 

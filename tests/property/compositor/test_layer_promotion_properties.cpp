@@ -12,7 +12,7 @@
 #include <gtest/gtest.h>
 #include "core/compositor/layer_tree_builder.h"
 #include "core/compositor/compositor_layer.h"
-#include "core/render/render_object.h"
+#include "core/render/objects/render_object.h"
 #include <random>
 #include <vector>
 #include <string>

@@ -8,7 +8,7 @@
 #include "document.h"
 #include "element.h"
 #include "dom_observer.h"
-#include "core/render/render_object.h"
+#include "core/render/objects/render_object.h"
 #include <algorithm>
 #include <stdexcept>
 #include <iostream>

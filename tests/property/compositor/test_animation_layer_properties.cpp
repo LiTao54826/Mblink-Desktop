@@ -11,7 +11,7 @@
 #include "core/compositor/animation_layer_bridge.h"
 #include "core/compositor/compositor_layer.h"
 #include "core/compositor/layer_tree_builder.h"
-#include "core/render/render_object.h"
+#include "core/render/objects/render_object.h"
 #include "include/core/SkMatrix.h"
 #include <memory>
 

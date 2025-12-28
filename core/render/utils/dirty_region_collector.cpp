@@ -5,7 +5,7 @@
 
 #include "dirty_region_collector.h"
 #include "core/dom/element.h"
-#include "core/render/render_object.h"
+#include "core/render/objects/render_object.h"
 
 namespace lightui {
 

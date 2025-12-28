@@ -11,9 +11,9 @@
  */
 
 #include <gtest/gtest.h>
-#include "core/render/render_pipeline.h"
+#include "core/render/pipeline/render_pipeline.h"
 #include "core/compositor/compositor_layer.h"
-#include "core/render/render_object.h"
+#include "core/render/objects/render_object.h"
 #include "include/core/SkSurface.h"
 #include "include/core/SkCanvas.h"
 #include <memory>

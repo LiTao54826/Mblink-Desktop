@@ -17,7 +17,7 @@
 #include "core/dom/canvas_bindings.h"
 #include "core/dom/selector_engine.h"
 #include "core/quickjs/dom_binding_map.h"
-#include "core/render/render_object.h"
+#include "core/render/objects/render_object.h"
 #include "js_node.h"
 #include "js_style_declaration.h"
 #include "js_event.h"

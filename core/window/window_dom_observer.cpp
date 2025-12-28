@@ -19,7 +19,7 @@
 #include "core/dom/element.h"
 #include "core/dom/node.h"
 #include "core/dom/text.h"
-#include "core/render/render_object.h"
+#include "core/render/objects/render_object.h"
 #include "core/render/css/style_resolver.h"
 #include "core/layout/layout_engine.h"
 #include "core/lexbor/style_manager.h"

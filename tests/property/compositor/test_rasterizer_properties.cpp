@@ -11,7 +11,7 @@
 #include <gtest/gtest.h>
 #include "core/compositor/rasterizer.h"
 #include "core/compositor/compositor_layer.h"
-#include "core/render/render_object.h"
+#include "core/render/objects/render_object.h"
 #include "include/core/SkBitmap.h"
 #include "include/core/SkCanvas.h"
 #include "include/core/SkColor.h"

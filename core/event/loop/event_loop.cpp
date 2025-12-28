@@ -57,8 +57,8 @@
 #include "core/quickjs/quickjs_runtime.h"
 #include "core/devtools/devtools_manager.h"
 #include "core/devtools/inspector/element_picker.h"
-#include "core/render/render_pipeline.h"
-#include "core/render/render_object.h"
+#include "core/render/pipeline/render_pipeline.h"
+#include "core/render/objects/render_object.h"
 #include "include/core/SkFontTypes.h"
 #include "include/core/SkFontMetrics.h"
 #include <iostream>

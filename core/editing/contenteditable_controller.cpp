@@ -10,7 +10,7 @@
 #include "core/dom/element.h"
 #include "core/dom/text.h"
 #include "core/dom/selection.h"
-#include "core/render/render_object.h"
+#include "core/render/objects/render_object.h"
 #include "core/render/text/text_renderer.h"
 #include "core/window/window.h"
 #include <iostream>

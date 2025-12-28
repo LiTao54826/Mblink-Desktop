@@ -5,7 +5,7 @@
 
 #include "layer_tree_builder.h"
 #include "animation_bounds_calculator.h"
-#include "core/render/render_object.h"
+#include "core/render/objects/render_object.h"
 #include "core/render/animation/keyframes.h"
 #include <algorithm>
 

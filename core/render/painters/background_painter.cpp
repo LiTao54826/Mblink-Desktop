@@ -6,9 +6,9 @@
  */
 
 #include "background_painter.h"
-#include "core/render/render_object.h"
-#include "core/render/color.h"
-#include "core/render/gradient_renderer.h"
+#include "core/render/objects/render_object.h"
+#include "core/render/utils/color.h"
+#include "core/render/utils/gradient_renderer.h"
 #include "core/render/image/image_loader.h"
 #include "include/core/SkPath.h"
 #include "include/core/SkRRect.h"

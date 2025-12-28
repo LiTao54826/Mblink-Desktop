@@ -6,9 +6,9 @@
  */
 
 #include "border_painter.h"
-#include "core/render/render_object.h"
-#include "core/render/paint.h"
-#include "core/render/shapes.h"
+#include "core/render/objects/render_object.h"
+#include "core/render/utils/paint.h"
+#include "core/render/utils/shapes.h"
 #include "core/dom/element.h"
 #include "include/core/SkRRect.h"
 #include "include/core/SkPathEffect.h"

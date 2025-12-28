@@ -11,7 +11,7 @@
 #include <gtest/gtest.h>
 #include "core/render/layer/layer.h"
 #include "core/render/layer/layer_manager.h"
-#include "core/render/render_object.h"
+#include "core/render/objects/render_object.h"
 #include "core/dom/element.h"
 #include "core/event/input/hit_testing.h"
 #include <random>

@@ -7,7 +7,7 @@
  */
 
 #include "render_pipeline.h"
-#include "core/render/render_object.h"
+#include "core/render/objects/render_object.h"
 #include "core/render/css/style_resolver.h"  // RenderTreeBuilder 在这里定义
 #include "render_tree_synchronizer.h"
 #include "core/dom/document.h"

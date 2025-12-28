@@ -5,7 +5,7 @@
 
 #include "element_highlighter.h"
 #include "core/window/window_manager.h"
-#include "core/render/render_object.h"
+#include "core/render/objects/render_object.h"
 #include "core/render/text/font_manager.h"
 #include "include/core/SkCanvas.h"
 #include "include/core/SkPaint.h"
