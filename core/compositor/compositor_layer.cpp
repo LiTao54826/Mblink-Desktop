@@ -4,7 +4,7 @@
  */
 
 #include "compositor_layer.h"
-#include "animation_bounds_calculator.h"
+#include "animation/animation_bounds_calculator.h"
 #include "include/core/SkImageInfo.h"
 #include <algorithm>
 #include <cstring>

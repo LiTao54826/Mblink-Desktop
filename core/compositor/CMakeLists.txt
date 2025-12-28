@@ -1,17 +1,18 @@
 # Compositor 模块 CMakeLists.txt
 # 分层合成架构 - CPU 光栅化 + GPU 合成
 
-# 添加属性树子模块
+# 添加子模块
 add_subdirectory(property_tree)
+add_subdirectory(animation)
 
 set(COMPOSITOR_SOURCES
     compositor_layer.cpp
     layer_tree_builder.cpp
     rasterizer.cpp
     compositor.cpp
-    animation_layer_bridge.cpp
     scroll_layer_manager.cpp
-    animation_bounds_calculator.cpp
+    animation/animation_layer_bridge.cpp
+    animation/animation_bounds_calculator.cpp
 )
 
 set(COMPOSITOR_HEADERS
@@ -19,9 +20,9 @@ set(COMPOSITOR_HEADERS
     layer_tree_builder.h
     rasterizer.h
     compositor.h
-    animation_layer_bridge.h
     scroll_layer_manager.h
-    animation_bounds_calculator.h
+    animation/animation_layer_bridge.h
+    animation/animation_bounds_calculator.h
 )
 
 add_library(lightui_compositor STATIC ${COMPOSITOR_SOURCES})

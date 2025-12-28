@@ -30,7 +30,7 @@
 #include "include/core/SkPoint.h"
 #include "core/compositor/property_tree/property_tree_state.h"
 #include "core/compositor/property_tree/compositing_reasons.h"
-#include "core/compositor/animation_bounds_calculator.h"
+#include "core/compositor/animation/animation_bounds_calculator.h"
 
 // 前向声明 OpenGL 类型
 typedef unsigned int GLuint;

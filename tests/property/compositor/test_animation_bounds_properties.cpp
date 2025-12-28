@@ -14,7 +14,7 @@
 #include <gtest/gtest.h>
 #include <random>
 #include <cmath>
-#include "core/compositor/animation_bounds_calculator.h"
+#include "core/compositor/animation/animation_bounds_calculator.h"
 #include "include/core/SkMatrix.h"
 
 namespace lightui {

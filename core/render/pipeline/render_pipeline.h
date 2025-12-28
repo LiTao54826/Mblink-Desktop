@@ -24,7 +24,7 @@
 #include "core/compositor/layer_tree_builder.h"
 #include "core/compositor/rasterizer.h"
 #include "core/compositor/compositor.h"
-#include "core/compositor/animation_layer_bridge.h"
+#include "core/compositor/animation/animation_layer_bridge.h"
 #include "core/compositor/scroll_layer_manager.h"
 #include "core/compositor/property_tree/property_trees.h"
 #include "core/compositor/property_tree/property_tree_builder.h"

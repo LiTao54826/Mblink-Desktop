@@ -11,6 +11,12 @@
 | `layer_tree_builder.h/cpp` | 图层树构建器 |
 | `rasterizer.h/cpp` | 光栅化器 |
 | `scroll_layer_manager.h/cpp` | 滚动图层管理器 |
+
+### animation/ 子目录
+动画与合成层系统的桥接模块。
+
+| 文件 | 描述 |
+|------|------|
 | `animation_bounds_calculator.h/cpp` | 动画边界计算器 |
 | `animation_layer_bridge.h/cpp` | 动画图层桥接 |
 

@@ -5,7 +5,7 @@
 
 #include "rasterizer.h"
 #include "compositor_layer.h"
-#include "animation_bounds_calculator.h"
+#include "animation/animation_bounds_calculator.h"
 #include "core/render/objects/render_object.h"
 #include "include/core/SkCanvas.h"
 #include "include/core/SkPaint.h"
