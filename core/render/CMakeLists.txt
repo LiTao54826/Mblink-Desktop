@@ -19,7 +19,7 @@ set(RENDER_SOURCES
     color.cpp
     paint.cpp
     shapes.cpp
-    box_renderer.cpp
+    painters/box_renderer.cpp
     shadow_renderer.cpp
     gradient_renderer.cpp
     list_marker.cpp
@@ -37,8 +37,8 @@ set(RENDER_SOURCES
     layer_manager.cpp
     fbo_manager.cpp
     
-    # Style resolution
-    style_resolver.cpp
+    # Style resolution (css subdirectory)
+    css/style_resolver.cpp
     
     # Performance monitoring
     performance_monitor.cpp
@@ -52,8 +52,8 @@ set(RENDER_SOURCES
     
     # Text rendering (subdirectory)
     text/font_manager.cpp
-    text_renderer.cpp
-    text_transform.cpp
+    text/text_renderer.cpp
+    text/text_transform.cpp
     
     # Image handling (subdirectory)
     image/image_loader.cpp

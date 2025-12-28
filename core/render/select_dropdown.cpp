@@ -4,7 +4,7 @@
  */
 
 #include "select_dropdown.h"
-#include "text_renderer.h"
+#include "text/text_renderer.h"
 #include "text/font_manager.h"
 #include "color.h"
 #include "core/dom/element.h"

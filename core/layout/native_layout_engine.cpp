@@ -26,7 +26,7 @@
 #include "../render/render_object.h"
 #include "../render/render_inline_block.h"
 #include "../render/render_svg.h"
-#include "../render/text_renderer.h"
+#include "../render/text/text_renderer.h"
 #include "../render/text/font_manager.h"
 #include "util/resolve.h"
 #include "util/math.h"

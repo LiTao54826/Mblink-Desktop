@@ -18,16 +18,16 @@
  */
 
 #include "style_resolver.h"
-#include "render_inline_block.h"
-#include "render_svg.h"
-#include "css/css_clip_path.h"
-#include "animation/animation.h"
+#include "../render_inline_block.h"
+#include "../render_svg.h"
+#include "css_clip_path.h"
+#include "../animation/animation.h"
 #include "core/dom/text.h"
 #include "core/dom/document.h"
 #include "core/dom/elements/svg_element.h"
 #include "core/dom/elements/html_image_element.h"
 #include "core/lexbor/style_manager.h"
-#include "color.h"
+#include "../color.h"
 #include <algorithm>
 #include <sstream>
 #include <iostream>

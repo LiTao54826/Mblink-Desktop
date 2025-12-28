@@ -14,8 +14,8 @@
 
 #pragma once
 
-#include "core/render/box_renderer.h"
-#include "core/render/css/css_value.h"
+#include "box_renderer.h"
+#include "../css/css_value.h"
 #include "include/core/SkCanvas.h"
 #include "include/core/SkRect.h"
 #include "include/core/SkColor.h"

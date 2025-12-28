@@ -7,8 +7,8 @@
  */
 
 #include "render_object.h"
-#include "text_renderer.h"
-#include "text_transform.h"
+#include "text/text_renderer.h"
+#include "text/text_transform.h"
 #include "shadow_renderer.h"
 #include "color.h"
 #include <algorithm>

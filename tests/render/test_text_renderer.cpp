@@ -4,7 +4,7 @@
  */
 
 #include <gtest/gtest.h>
-#include "render/text_renderer.h"
+#include "render/text/text_renderer.h"
 
 namespace lightui {
 namespace test {

@@ -29,7 +29,7 @@
 #include "core/render/render_pipeline.h"
 #include "core/render/select_dropdown.h"
 #include "core/render/text/font_manager.h"
-#include "core/render/text_renderer.h"
+#include "core/render/text/text_renderer.h"
 #include "core/utils/utf8_utils.h"
 #include "core/window/window.h"
 #include "core/window/window_manager.h"

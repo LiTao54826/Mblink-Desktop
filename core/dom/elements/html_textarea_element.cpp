@@ -6,7 +6,7 @@
 #include "html_textarea_element.h"
 #include "../event.h"
 #include "../utils/utf8_utils.h"
-#include "../render/text_renderer.h"
+#include "../render/text/text_renderer.h"
 #include <algorithm>
 #include <iostream>
 #include <sstream>

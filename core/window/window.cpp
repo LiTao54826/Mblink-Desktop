@@ -66,7 +66,7 @@
 #include "core/dom/dom_observer.h"
 #include "core/render/renderer.h"
 #include "core/render/render_object.h"
-#include "core/render/style_resolver.h"
+#include "core/render/css/style_resolver.h"
 #include "core/render/text/font_manager.h"
 #include "core/render/dirty_region.h"
 #include "core/render/dirty_region_collector.h"

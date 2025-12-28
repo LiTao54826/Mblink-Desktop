@@ -16,8 +16,8 @@
 
 #include "render_object.h"
 #include "render_inline_block.h"
-#include "box_renderer.h"
-#include "text_renderer.h"
+#include "painters/box_renderer.h"
+#include "text/text_renderer.h"
 #include "gradient_renderer.h"
 #include "shadow_renderer.h"
 #include "layer_manager.h"

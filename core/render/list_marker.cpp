@@ -5,7 +5,7 @@
 
 #include "list_marker.h"
 #include "render_object.h"
-#include "box_renderer.h"
+#include "painters/box_renderer.h"
 #include "color.h"
 #include "text/font_manager.h"
 #include "image/image_loader.h"

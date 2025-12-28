@@ -16,7 +16,7 @@
 #include <gtest/gtest.h>
 #include "test_utils/test_helpers.h"
 #include "lexbor/style_manager.h"
-#include "render/style_resolver.h"
+#include "render/css/style_resolver.h"
 #include "render/render_object.h"
 #include "render/animation/animation.h"
 #include "dom/document.h"

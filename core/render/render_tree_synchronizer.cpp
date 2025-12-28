@@ -5,7 +5,7 @@
 
 #include "render_tree_synchronizer.h"
 #include "render_object.h"
-#include "style_resolver.h"  // RenderTreeBuilder 在这里定义
+#include "css/style_resolver.h"  // RenderTreeBuilder 在这里定义
 #include "../dom/dirty_node_tracker.h"
 #include "../dom/node.h"
 #include "../dom/element.h"

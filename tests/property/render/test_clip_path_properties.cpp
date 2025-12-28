@@ -10,7 +10,7 @@
  */
 
 #include <gtest/gtest.h>
-#include "render/style_resolver.h"
+#include "render/css/style_resolver.h"
 #include "render/render_object.h"
 #include "render/css/css_clip_path.h"
 #include "dom/element.h"

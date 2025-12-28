@@ -8,7 +8,7 @@
  */
 
 #include "render_object.h"
-#include "box_renderer.h"
+#include "painters/box_renderer.h"
 #include "layer_manager.h"
 #include "painters/form_element_painter.h"
 #include "core/dom/element.h"

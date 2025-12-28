@@ -12,7 +12,7 @@
 
 // Skia 字体测量
 #include "../../render/text/font_manager.h"
-#include "../../render/text_renderer.h"
+#include "../../render/text/text_renderer.h"
 #include "../../render/render_inline_block.h"
 #include "../../render/render_svg.h"
 

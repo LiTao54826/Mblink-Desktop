@@ -8,7 +8,7 @@
 #include "element.h"
 #include "text.h"
 #include "node.h"
-#include "core/render/style_resolver.h"
+#include "core/render/css/style_resolver.h"
 #include "core/render/render_object.h"
 
 namespace lightui {
