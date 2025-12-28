@@ -176,3 +176,23 @@ jobs:
         # find core -name "*.cpp" -o -name "*.h" | xargs clang-format --dry-run --Werror
         echo "TODO: Check format"
 
+  # ========== 代码结构检查 ==========
+  code-structure-check:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Setup Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+    
+    - name: Check Code Structure
+      run: |
+        python scripts/check_code_structure.py
+    
+    - name: Check Circular Dependencies
+      run: |
+        python scripts/check_circular_deps.py
+

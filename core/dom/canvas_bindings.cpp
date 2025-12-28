@@ -5,8 +5,8 @@
 
 #include "canvas_bindings.h"
 #include "dom_bindings.h"
-#include "html_image_element.h"
-#include "html_canvas_element.h"
+#include "elements/html_image_element.h"
+#include "elements/html_canvas_element.h"
 #include "quickjs/quickjs-libc.h"
 #include "core/quickjs/bindings/js_element.h"
 #include <iostream>

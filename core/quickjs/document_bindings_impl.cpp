@@ -12,8 +12,8 @@
 #include "core/dom/dom_bindings.h"
 #include "core/window/window.h"
 #include "core/event/event_loop.h"
-#include "core/event/selection_manager.h"
-#include "core/event/contenteditable_handler.h"
+#include "core/editing/selection_manager.h"
+#include "core/editing/contenteditable_handler.h"
 
 namespace lightui {
 

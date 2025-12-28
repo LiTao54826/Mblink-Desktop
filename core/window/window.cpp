@@ -2,6 +2,22 @@
  * @file window.cpp
  * @brief 窗口管理模块实现
  *
+ * @note 大文件说明 (3352 行)
+ * 本文件包含 Window 类的完整实现，是应用程序的核心窗口管理组件。
+ * 文件较大的原因：
+ * 1. 包含 SDL3 窗口创建和生命周期管理
+ * 2. 包含 OpenGL/CPU 渲染后端初始化
+ * 3. 包含 Skia 渲染表面管理
+ * 4. 包含 DOM 观察者实现 (WindowDOMObserver)
+ * 5. 包含渲染管线集成
+ * 6. 包含 Windows 平台特定代码 (子类化窗口)
+ *
+ * 计划重构：
+ * - 提取 WindowDOMObserver 到独立文件
+ * - 提取渲染相关代码到 WindowRenderer 类
+ * - 提取平台特定代码到 platform/ 子目录
+ * 参见: .kiro/specs/code-structure-refactoring/tasks.md Phase 5
+ *
  * 实现内容：
  * - SDL3窗口创建和管理
  * - OpenGL上下文初始化

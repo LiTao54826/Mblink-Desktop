@@ -4,7 +4,7 @@
  */
 
 #include "render_svg.h"
-#include "dom/svg_element.h"
+#include "core/dom/elements/svg_element.h"
 #include "color.h"
 #include "text/font_manager.h"
 #include "include/core/SkCanvas.h"

@@ -13,12 +13,9 @@ set(EVENT_SOURCES
     event_system.cpp
     event_types.cpp
     focus_manager.cpp
-    drag_manager.cpp
     data_transfer.cpp
-    selection_manager.cpp
-    contenteditable_handler.cpp
-    contenteditable_controller.cpp
-    clipboard_manager.cpp
+    dispatch/mouse_event_dispatcher.cpp
+    dispatch/keyboard_event_dispatcher.cpp
 )
 
 set(EVENT_HEADERS
@@ -34,12 +31,9 @@ set(EVENT_HEADERS
     event_system.h
     event_types.h
     focus_manager.h
-    drag_manager.h
     data_transfer.h
-    selection_manager.h
-    contenteditable_handler.h
-    contenteditable_controller.h
-    clipboard_manager.h
+    dispatch/mouse_event_dispatcher.h
+    dispatch/keyboard_event_dispatcher.h
 )
 
 add_library(lightui_event STATIC ${EVENT_SOURCES})
@@ -58,6 +52,9 @@ endif()
 
 # 链接窗口模块
 target_link_libraries(lightui_event PUBLIC lightui_window)
+
+# 链接编辑模块（用于 DragManager, SelectionManager 等）
+target_link_libraries(lightui_event PUBLIC lightui_editing)
 
 # MSVC 特定设置
 if(MSVC)

@@ -1,6 +1,20 @@
 /**
  * @file native_layout_engine.cpp
  * @brief Native layout engine implementation
+ * 
+ * @note 大文件说明 (3790 行)
+ * 本文件包含原生布局引擎的完整实现。
+ * 文件较大的原因：
+ * 1. 实现完整的 CSS 布局算法（块级、行内、Flex、Grid）
+ * 2. 包含复杂的尺寸计算逻辑
+ * 3. 包含定位（relative、absolute、fixed）处理
+ * 4. 包含浮动和清除浮动逻辑
+ * 5. 包含表格布局支持
+ * 6. 需要处理各种 CSS 属性的交互
+ *
+ * 计划重构：
+ * - 已有部分拆分（flex_layout.cpp、grid/）
+ * - 可进一步提取块级布局和行内布局
  */
 
 #include "native_layout_engine.h"

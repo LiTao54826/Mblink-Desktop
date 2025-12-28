@@ -1,21 +1,34 @@
 /**
  * @file dom_bindings.cpp
  * @brief DOM JavaScript 绑定实现
+ * 
+ * @note 大文件说明 (2996 行)
+ * 本文件包含 DOM API 的 JavaScript 绑定实现。
+ * 文件较大的原因：
+ * 1. 实现完整的 DOM API（Element、Node、Document 等）
+ * 2. 包含大量属性 getter/setter 绑定
+ * 3. 包含事件处理绑定
+ * 4. 包含样式操作绑定
+ * 5. 需要处理 C++ 和 JavaScript 之间的类型转换
+ *
+ * 计划重构：
+ * - 按 DOM 接口拆分到 quickjs/bindings/ 子目录
+ * - 使用代码生成减少重复代码
  */
 
 #include "dom_bindings.h"
 #include "canvas_bindings.h"
-#include "html_canvas_element.h"
-#include "html_image_element.h"
+#include "elements/html_canvas_element.h"
+#include "elements/html_image_element.h"
 #include "range.h"
 #include "quickjs/quickjs-libc.h"
 #include "quickjs/js_value_wrapper.h"
 #include "quickjs/bindings/js_element.h"
 #include "quickjs/bindings/js_range.h"
 #include "core/event/event_loop.h"
-#include "core/event/selection_manager.h"
-#include "core/event/contenteditable_handler.h"
-#include "core/event/clipboard_manager.h"
+#include "core/editing/selection_manager.h"
+#include "core/editing/contenteditable_handler.h"
+#include "core/editing/clipboard_manager.h"
 #include <cstring>
 #include <iostream>
 #include <algorithm>

@@ -1,6 +1,23 @@
 /**
  * @file event_loop.cpp
  * @brief 主事件循环实现
+ * 
+ * @note 大文件说明 (3903 行)
+ * 本文件包含 EventLoop 类的完整实现，是应用程序的核心事件处理组件。
+ * 文件较大的原因：
+ * 1. 包含完整的鼠标事件处理逻辑（点击、拖动、hover 链管理）
+ * 2. 包含完整的键盘事件处理逻辑（快捷键、文本输入、IME）
+ * 3. 包含滚轮事件处理和滚动逻辑
+ * 4. 包含 DevTools 集成代码
+ * 5. 包含表单元素交互处理（input、textarea、select）
+ * 6. 包含 contentEditable 编辑支持
+ * 7. 包含拖放功能支持
+ *
+ * 计划重构：
+ * - 提取鼠标事件处理到 MouseEventDispatcher 类
+ * - 提取键盘事件处理到 KeyboardEventDispatcher 类
+ * - 提取滚动条控制到 ScrollbarController 类
+ * 参见: .kiro/specs/code-structure-refactoring/tasks.md Phase 3
  */
 
 #include "event_loop.h"
@@ -8,11 +25,11 @@
 #include "input_handler.h"
 #include "task_scheduler.h"
 #include "focus_manager.h"
-#include "drag_manager.h"
-#include "selection_manager.h"
-#include "contenteditable_handler.h"
-#include "contenteditable_controller.h"
-#include "clipboard_manager.h"
+#include "core/editing/drag_manager.h"
+#include "core/editing/selection_manager.h"
+#include "core/editing/contenteditable_handler.h"
+#include "core/editing/contenteditable_controller.h"
+#include "core/editing/clipboard_manager.h"
 #include "mouse_event.h"
 #include "keyboard_utils.h"
 #include "hit_testing.h"
@@ -22,11 +39,11 @@
 #include "core/dom/document.h"
 #include "core/dom/element.h"
 #include "core/dom/selection.h"
-#include "core/dom/html_input_element.h"
-#include "core/dom/html_textarea_element.h"
-#include "core/dom/html_button_element.h"
-#include "core/dom/html_form_element.h"
-#include "core/dom/html_select_element.h"
+#include "core/dom/elements/html_input_element.h"
+#include "core/dom/elements/html_textarea_element.h"
+#include "core/dom/elements/html_button_element.h"
+#include "core/dom/elements/html_form_element.h"
+#include "core/dom/elements/html_select_element.h"
 #include "core/render/select_dropdown.h"
 #include "core/render/style_resolver.h"
 #include "core/render/render_inline_block.h"

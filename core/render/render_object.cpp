@@ -1,6 +1,20 @@
 /**
  * @file render_object.cpp
  * @brief 渲染对象实现
+ * 
+ * @note 大文件说明 (5346 行)
+ * 本文件包含 RenderObject 类的完整实现，是渲染系统的核心组件。
+ * 文件较大的原因：
+ * 1. RenderObject 是所有渲染对象的基类，包含布局、绘制、滚动等核心功能
+ * 2. 包含复杂的 CSS 属性处理逻辑（边框、背景、阴影、变换等）
+ * 3. 包含滚动条渲染和交互逻辑
+ * 4. 包含增量更新和缓存管理逻辑
+ * 
+ * 计划重构：
+ * - 提取布局逻辑到 RenderObjectLayout 类
+ * - 提取绘制逻辑到 RenderObjectPainter 类
+ * - 提取滚动逻辑到 RenderObjectScroll 类
+ * 参见: .kiro/specs/code-structure-refactoring/tasks.md Phase 4
  */
 
 #include "render_object.h"
@@ -19,9 +33,9 @@
 #include "core/dom/text.h"
 #include "core/dom/document.h"
 #include "core/dom/selection.h"
-#include "core/dom/html_input_element.h"
-#include "core/dom/html_textarea_element.h"
-#include "core/dom/html_canvas_element.h"
+#include "core/dom/elements/html_input_element.h"
+#include "core/dom/elements/html_textarea_element.h"
+#include "core/dom/elements/html_canvas_element.h"
 #include "core/render/canvas/canvas_rendering_context_2d.h"
 #include "core/compositor/compositor_layer.h"
 #include "core/utils/utf8_utils.h"

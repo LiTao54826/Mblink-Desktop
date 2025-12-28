@@ -6,6 +6,7 @@ message(STATUS "Configuring core library...")
 add_subdirectory(window)
 add_subdirectory(quickjs)
 add_subdirectory(dom)
+add_subdirectory(editing)
 add_subdirectory(event)
 add_subdirectory(layout)
 add_subdirectory(render)
@@ -25,6 +26,7 @@ target_link_libraries(lightui INTERFACE
     lightui_window
     lightui_quickjs
     lightui_dom
+    lightui_editing
     lightui_event
     lightui_layout
     lightui_render

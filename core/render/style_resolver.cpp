@@ -1,6 +1,20 @@
 /**
  * @file style_resolver.cpp
  * @brief 样式解析器实现
+ * 
+ * @note 大文件说明 (3054 行)
+ * 本文件包含 CSS 样式解析和计算的完整实现。
+ * 文件较大的原因：
+ * 1. 解析所有 CSS 属性（100+ 属性）
+ * 2. 处理 CSS 值的各种格式（长度、颜色、关键字等）
+ * 3. 实现样式继承和级联
+ * 4. 处理简写属性展开
+ * 5. 支持 CSS 变量和 calc()
+ * 6. 包含默认样式处理
+ *
+ * 计划重构：
+ * - 按属性类别拆分解析函数
+ * - 提取值解析到 css/ 子目录
  */
 
 #include "style_resolver.h"
@@ -10,8 +24,8 @@
 #include "animation/animation.h"
 #include "core/dom/text.h"
 #include "core/dom/document.h"
-#include "core/dom/svg_element.h"
-#include "core/dom/html_image_element.h"
+#include "core/dom/elements/svg_element.h"
+#include "core/dom/elements/html_image_element.h"
 #include "core/lexbor/style_manager.h"
 #include "color.h"
 #include <algorithm>

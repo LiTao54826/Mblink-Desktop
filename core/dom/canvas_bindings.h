@@ -12,7 +12,7 @@
 #pragma once
 
 #include "quickjs/quickjs.h"
-#include "html_canvas_element.h"
+#include "elements/html_canvas_element.h"
 #include "core/render/canvas/canvas_rendering_context_2d.h"
 #include "core/render/canvas/canvas_gradient.h"
 #include "core/render/canvas/canvas_pattern.h"
