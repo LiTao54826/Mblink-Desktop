@@ -4,7 +4,7 @@
  */
 
 #include "inline_styles_view.h"
-#include "core/dom/css_style_declaration.h"
+#include "core/dom/style/css_style_declaration.h"
 #include "core/dom/document.h"
 #include "core/lexbor/style_manager.h"
 #include "core/render/text/font_manager.h"

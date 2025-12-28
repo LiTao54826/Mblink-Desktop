@@ -16,9 +16,9 @@
 #pragma once
 
 #include "box_renderer.h"
-#include "../text/text_renderer.h"
-#include "../paint.h"
-#include "../text/font_manager.h"
+#include "core/render/text/text_renderer.h"
+#include "core/render/utils/paint.h"
+#include "core/render/text/font_manager.h"
 #include "include/core/SkCanvas.h"
 #include "include/core/SkRect.h"
 #include "include/core/SkColor.h"

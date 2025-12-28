@@ -5,7 +5,7 @@
  * 从 render_object.cpp 提取的滚动条逻辑代码
  */
 
-#include "core/render/scrollbar_controller.h"
+#include "scrollbar_controller.h"
 
 #include <algorithm>
 #include <cmath>

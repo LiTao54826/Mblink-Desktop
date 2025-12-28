@@ -16,7 +16,7 @@
 #include "css/css_filters.h"
 #include "css/css_clip_path.h"
 #include "animation/transition.h"
-#include "transform.h"
+#include "utils/transform.h"
 #include "animation/animation.h"
 #include "scrollbar_controller.h"
 #include <memory>
@@ -28,15 +28,15 @@
 #include "include/core/SkSurface.h"
 
 // 布局类型（从 layout 模块引入）
-#include "../layout/types/style.h"
-#include "../layout/types/layout.h"
-#include "../layout/types/cache.h"
-#include "../layout/types/traits.h"
+#include "core/layout/types/style.h"
+#include "core/layout/types/layout.h"
+#include "core/layout/types/cache.h"
+#include "core/layout/types/traits.h"
 
 // 布局样式类型（Block、Flex、Grid）
-#include "../layout/block_layout.h"
-#include "../layout/flex_layout.h"
-#include "../layout/grid/grid.h"
+#include "core/layout/block_layout.h"
+#include "core/layout/flex_layout.h"
+#include "core/layout/grid/grid.h"
 
 // 属性树状态（需要完整类型用于 unique_ptr）
 #include "core/compositor/property_tree/property_tree_state.h"

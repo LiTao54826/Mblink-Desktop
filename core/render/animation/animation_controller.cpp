@@ -8,7 +8,7 @@
 #include "animation_controller.h"
 #include "easing_functions.h"
 #include "property_interpolation.h"
-#include "../render_object.h"
+#include "core/render/objects/render_object.h"
 #include "core/dom/event.h"
 #include "core/dom/element.h"
 #include <algorithm>

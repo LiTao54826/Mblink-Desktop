@@ -15,7 +15,7 @@
 #include "core/window/window_manager.h"
 #include "core/dom/document.h"
 #include "core/dom/element.h"
-#include "core/dom/dom_bindings.h"
+#include "core/dom/bindings/dom_bindings.h"
 #include "core/quickjs/quickjs_runtime.h"
 #include "core/quickjs/window_bindings.h"
 #include "core/event/loop/task_scheduler.h"

@@ -4,8 +4,8 @@
  */
 
 #include "box_renderer.h"
-#include "../color.h"
-#include "../image/image_loader.h"
+#include "core/render/utils/color.h"
+#include "core/render/image/image_loader.h"
 #include "include/core/SkPathEffect.h"
 #include "include/core/SkRRect.h"
 #include "include/core/SkMaskFilter.h"

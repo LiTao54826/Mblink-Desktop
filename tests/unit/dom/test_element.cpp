@@ -17,8 +17,8 @@
 #include "dom/element.h"
 #include "dom/document.h"
 #include "dom/event.h"
-#include "dom/dom_token_list.h"
-#include "dom/css_style_declaration.h"
+#include "dom/utils/dom_token_list.h"
+#include "dom/style/css_style_declaration.h"
 
 namespace lightui {
 namespace test {

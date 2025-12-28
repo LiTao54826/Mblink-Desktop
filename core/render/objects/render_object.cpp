@@ -36,7 +36,7 @@
 #include "core/dom/element.h"
 #include "core/dom/text.h"
 #include "core/dom/document.h"
-#include "core/dom/selection.h"
+#include "core/dom/selection/selection.h"
 #include "core/dom/elements/html_input_element.h"
 #include "core/dom/elements/html_textarea_element.h"
 #include "core/dom/elements/html_canvas_element.h"

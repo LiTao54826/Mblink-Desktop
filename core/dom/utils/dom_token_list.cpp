@@ -8,8 +8,8 @@
  * - RmlUi/Source/Core/Element.cpp (SetClass, IsClassSet)
  */
 
-#include "dom/dom_token_list.h"
-#include "dom/element.h"
+#include "dom_token_list.h"
+#include "core/dom/element.h"
 #include <sstream>
 #include <algorithm>
 #include <stdexcept>

@@ -4,7 +4,7 @@
  */
 
 #include "css_filters.h"
-#include "../color.h"
+#include "core/render/utils/color.h"
 #include "include/effects/SkImageFilters.h"
 #include "include/effects/SkColorMatrix.h"
 #include "include/core/SkColorFilter.h"

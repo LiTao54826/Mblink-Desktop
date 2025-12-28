@@ -9,7 +9,7 @@
 #include "core/dom/elements/html_input_element.h"
 #include "core/dom/elements/html_textarea_element.h"
 #include "core/dom/element.h"
-#include "core/render/color.h"
+#include "core/render/utils/color.h"
 #include "core/utils/utf8_utils.h"
 #include <algorithm>
 #include <chrono>

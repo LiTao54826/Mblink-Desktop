@@ -9,7 +9,7 @@
 #include "bindings/js_selection.h"
 #include "bindings/js_range.h"
 #include "core/dom/document.h"
-#include "core/dom/dom_bindings.h"
+#include "core/dom/bindings/dom_bindings.h"
 #include "core/window/window.h"
 #include "core/event/loop/event_loop.h"
 #include "core/editing/selection_manager.h"

@@ -1,9 +1,9 @@
 #ifndef LIGHTUI_UNIFIED_RENDERER_H
 #define LIGHTUI_UNIFIED_RENDERER_H
 
-#include "core/render/color.h"
-#include "core/render/paint.h"
-#include "core/render/shapes.h"
+#include "core/render/utils/color.h"
+#include "core/render/utils/paint.h"
+#include "core/render/utils/shapes.h"
 #include "core/render/text/text_renderer.h"
 #include "core/render/text/font_manager.h"
 #include "core/render/image/image_loader.h"

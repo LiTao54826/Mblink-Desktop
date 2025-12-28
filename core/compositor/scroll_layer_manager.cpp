@@ -10,7 +10,7 @@
 #include "core/compositor/property_tree/property_trees.h"
 #include "core/compositor/property_tree/scroll_tree_node.h"
 #include "core/compositor/property_tree/property_tree_state.h"
-#include "../render/render_object.h"
+#include "core/render/objects/render_object.h"
 #include <algorithm>
 #include <cmath>
 #include <iostream>

@@ -7,7 +7,7 @@
 #include "image_cache.h"
 #include "include/core/SkImage.h"
 #include "include/codec/SkCodec.h"
-#include "../../network/http_client.h"
+#include "core/network/http_client.h"
 #include <thread>
 #include <fstream>
 #include <algorithm>

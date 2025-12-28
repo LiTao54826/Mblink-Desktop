@@ -4,8 +4,8 @@
  */
 
 #include "mutation_observer.h"
-#include "node.h"
-#include "element.h"
+#include "core/dom/node.h"
+#include "core/dom/element.h"
 #include "core/event/loop/task_scheduler.h"
 #include <algorithm>
 #include <stdexcept>

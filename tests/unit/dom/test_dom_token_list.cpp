@@ -5,7 +5,7 @@
 
 #include <gtest/gtest.h>
 #include "test_utils/test_helpers.h"
-#include "dom/dom_token_list.h"
+#include "dom/utils/dom_token_list.h"
 #include "dom/element.h"
 
 namespace lightui {

@@ -16,7 +16,7 @@
 #include "include/core/SkRect.h"
 #include "include/core/SkPath.h"
 #include "include/core/SkCanvas.h"
-#include "paint.h"
+#include "core/render/utils/paint.h"
 
 namespace lightui {
 

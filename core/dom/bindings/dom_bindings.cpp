@@ -18,9 +18,9 @@
 
 #include "dom_bindings.h"
 #include "canvas_bindings.h"
-#include "elements/html_canvas_element.h"
-#include "elements/html_image_element.h"
-#include "range.h"
+#include "core/dom/elements/html_canvas_element.h"
+#include "core/dom/elements/html_image_element.h"
+#include "core/dom/selection/range.h"
 #include "quickjs/quickjs-libc.h"
 #include "quickjs/js_value_wrapper.h"
 #include "quickjs/bindings/js_element.h"

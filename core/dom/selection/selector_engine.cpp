@@ -6,8 +6,8 @@
  */
 
 #include "selector_engine.h"
-#include "node.h"
-#include "text.h"
+#include "core/dom/node.h"
+#include "core/dom/text.h"
 #include <algorithm>
 #include <cctype>
 #include <iostream>

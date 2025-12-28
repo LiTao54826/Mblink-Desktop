@@ -1,28 +1,62 @@
 # DOM模块 CMakeLists.txt
 
-# 包含 elements 子目录
+# 包含子目录
 add_subdirectory(elements)
+add_subdirectory(bindings)
+add_subdirectory(observers)
+add_subdirectory(selection)
+add_subdirectory(style)
+add_subdirectory(utils)
 
-set(DOM_SOURCES
+# DOM 核心源文件（保留在根目录）
+set(DOM_CORE_SOURCES
     node.cpp
     element.cpp
     text.cpp
     document.cpp
     event.cpp
     drag_event.cpp
-    range.cpp
-    selection.cpp
-    mutation_observer.cpp
-    dom_bindings.cpp
-    dom_observer.cpp
-    dirty_node_tracker.cpp
-    incremental_style_recalc.cpp
-    selector_engine.cpp
-    dom_token_list.cpp
-    css_style_declaration.cpp
-    dom_string_map.cpp
-    canvas_bindings.cpp
-    # HTML 元素文件已移动到 elements/ 子目录
+)
+
+set(DOM_CORE_HEADERS
+    node.h
+    element.h
+    text.h
+    document.h
+    event.h
+    drag_event.h
+)
+
+# 子目录源文件
+set(DOM_BINDINGS_SOURCES
+    bindings/dom_bindings.cpp
+    bindings/canvas_bindings.cpp
+)
+
+set(DOM_OBSERVERS_SOURCES
+    observers/dom_observer.cpp
+    observers/mutation_observer.cpp
+    observers/dirty_node_tracker.cpp
+)
+
+set(DOM_SELECTION_SOURCES
+    selection/selection.cpp
+    selection/range.cpp
+    selection/selector_engine.cpp
+)
+
+set(DOM_STYLE_SOURCES
+    style/css_style_declaration.cpp
+    style/incremental_style_recalc.cpp
+)
+
+set(DOM_UTILS_SOURCES
+    utils/dom_token_list.cpp
+    utils/dom_string_map.cpp
+)
+
+# HTML 元素源文件
+set(DOM_ELEMENTS_SOURCES
     elements/html_input_element.cpp
     elements/html_textarea_element.cpp
     elements/html_button_element.cpp
@@ -49,50 +83,15 @@ set(DOM_SOURCES
     elements/html_link_element.cpp
 )
 
-set(DOM_HEADERS
-    node.h
-    element.h
-    text.h
-    document.h
-    event.h
-    drag_event.h
-    range.h
-    selection.h
-    mutation_observer.h
-    dom_bindings.h
-    dom_observer.h
-    dirty_node_tracker.h
-    incremental_style_recalc.h
-    selector_engine.h
-    dom_token_list.h
-    css_style_declaration.h
-    dom_string_map.h
-    canvas_bindings.h
-    # HTML 元素头文件已移动到 elements/ 子目录
-    elements/html_input_element.h
-    elements/html_textarea_element.h
-    elements/html_button_element.h
-    elements/html_form_element.h
-    elements/html_select_element.h
-    elements/html_option_element.h
-    elements/html_anchor_element.h
-    elements/html_label_element.h
-    elements/html_image_element.h
-    elements/html_div_element.h
-    elements/html_span_element.h
-    elements/html_paragraph_element.h
-    elements/html_heading_element.h
-    elements/html_ulist_element.h
-    elements/html_olist_element.h
-    elements/html_li_element.h
-    elements/html_table_element.h
-    elements/html_form_controls.h
-    elements/html_canvas_element.h
-    elements/svg_element.h
-    elements/html_head_element.h
-    elements/html_style_element.h
-    elements/html_script_element.h
-    elements/html_link_element.h
+# 合并所有源文件
+set(DOM_SOURCES
+    ${DOM_CORE_SOURCES}
+    ${DOM_BINDINGS_SOURCES}
+    ${DOM_OBSERVERS_SOURCES}
+    ${DOM_SELECTION_SOURCES}
+    ${DOM_STYLE_SOURCES}
+    ${DOM_UTILS_SOURCES}
+    ${DOM_ELEMENTS_SOURCES}
 )
 
 add_library(lightui_dom STATIC ${DOM_SOURCES})

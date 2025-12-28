@@ -8,8 +8,8 @@
  * - RmlUi/Source/Core/ElementStyle.cpp
  */
 
-#include "dom/css_style_declaration.h"
-#include "dom/element.h"
+#include "css_style_declaration.h"
+#include "core/dom/element.h"
 #include <sstream>
 #include <algorithm>
 #include <cctype>

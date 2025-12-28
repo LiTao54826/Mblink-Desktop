@@ -16,7 +16,7 @@
 #include <functional>
 #include "core/dom/document.h"
 #include "core/dom/element.h"
-#include "core/dom/dom_observer.h"
+#include "core/dom/observers/dom_observer.h"
 
 // 前向声明
 class SkCanvas;

@@ -4,7 +4,7 @@
  */
 
 #include "canvas_gradient.h"
-#include "core/render/color.h"
+#include "core/render/utils/color.h"
 #include <algorithm>
 
 namespace lightui {

@@ -12,7 +12,7 @@
 
 #include <memory>
 #include "quickjs.h"
-#include "core/dom/css_style_declaration.h"
+#include "core/dom/style/css_style_declaration.h"
 
 namespace lightui {
 namespace bindings {

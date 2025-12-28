@@ -4,10 +4,10 @@
  */
 
 #include "incremental_style_recalc.h"
-#include "document.h"
-#include "element.h"
-#include "text.h"
-#include "node.h"
+#include "core/dom/document.h"
+#include "core/dom/element.h"
+#include "core/dom/text.h"
+#include "core/dom/node.h"
 #include "core/render/css/style_resolver.h"
 #include "core/render/objects/render_object.h"
 

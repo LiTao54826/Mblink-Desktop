@@ -6,12 +6,12 @@
 #include "render_tree_synchronizer.h"
 #include "core/render/objects/render_object.h"
 #include "core/render/css/style_resolver.h"  // RenderTreeBuilder 在这里定义
-#include "../dom/dirty_node_tracker.h"
-#include "../dom/node.h"
-#include "../dom/element.h"
-#include "../dom/text.h"
-#include "../dom/document.h"
-#include "../layout/layout_engine.h"
+#include "core/dom/observers/dirty_node_tracker.h"
+#include "core/dom/node.h"
+#include "core/dom/element.h"
+#include "core/dom/text.h"
+#include "core/dom/document.h"
+#include "core/layout/layout_engine.h"
 #include <algorithm>
 
 namespace lightui {

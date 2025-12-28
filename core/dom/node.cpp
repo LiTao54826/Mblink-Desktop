@@ -7,7 +7,7 @@
 #include "text.h"
 #include "document.h"
 #include "element.h"
-#include "dom_observer.h"
+#include "observers/dom_observer.h"
 #include "core/render/objects/render_object.h"
 #include <algorithm>
 #include <stdexcept>

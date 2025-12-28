@@ -6,7 +6,7 @@
 #include <gtest/gtest.h>
 #include "quickjs/quickjs_runtime.h"
 #include "dom/document.h"
-#include "dom/dom_bindings.h"
+#include "dom/bindings/dom_bindings.h"
 
 namespace lightui {
 namespace test {

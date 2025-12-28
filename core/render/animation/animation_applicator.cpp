@@ -4,8 +4,8 @@
  */
 
 #include "animation_applicator.h"
-#include "../color.h"
-#include "../transform.h"
+#include "core/render/utils/color.h"
+#include "core/render/utils/transform.h"
 #include "core/compositor/animation_layer_bridge.h"
 #include "core/compositor/property_tree/paint_artifact_compositor.h"
 #include "core/compositor/property_tree/property_trees.h"

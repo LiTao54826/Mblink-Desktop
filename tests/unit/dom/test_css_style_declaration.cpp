@@ -5,7 +5,7 @@
 
 #include <gtest/gtest.h>
 #include "test_utils/test_helpers.h"
-#include "dom/css_style_declaration.h"
+#include "dom/style/css_style_declaration.h"
 #include "dom/element.h"
 
 namespace lightui {

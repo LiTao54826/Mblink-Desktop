@@ -4,10 +4,10 @@
  */
 
 #include "range.h"
-#include "node.h"
-#include "document.h"
-#include "text.h"
-#include "element.h"
+#include "core/dom/node.h"
+#include "core/dom/document.h"
+#include "core/dom/text.h"
+#include "core/dom/element.h"
 #include <stdexcept>
 #include <vector>
 #include <algorithm>

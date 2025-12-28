@@ -4,8 +4,8 @@
  */
 
 #include "dirty_node_tracker.h"
-#include "node.h"
-#include "element.h"
+#include "core/dom/node.h"
+#include "core/dom/element.h"
 #include <algorithm>
 
 namespace lightui {

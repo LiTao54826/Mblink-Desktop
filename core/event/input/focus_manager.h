@@ -10,7 +10,7 @@
 
 #include <memory>
 #include <vector>
-#include "core/dom/dom_observer.h"
+#include "core/dom/observers/dom_observer.h"
 
 namespace lightui {
 

@@ -7,8 +7,8 @@
  * - MDN Web Docs - HTMLElement.dataset
  */
 
-#include "dom/dom_string_map.h"
-#include "dom/element.h"
+#include "dom_string_map.h"
+#include "core/dom/element.h"
 #include <cctype>
 #include <algorithm>
 

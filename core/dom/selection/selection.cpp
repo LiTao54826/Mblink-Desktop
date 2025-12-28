@@ -5,9 +5,9 @@
 
 #include "selection.h"
 #include "range.h"
-#include "node.h"
-#include "document.h"
-#include "text.h"
+#include "core/dom/node.h"
+#include "core/dom/document.h"
+#include "core/dom/text.h"
 #include <algorithm>
 
 namespace lightui {

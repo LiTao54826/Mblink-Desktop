@@ -6,8 +6,8 @@
 #include "animation_layer_bridge.h"
 #include "compositor_layer.h"
 #include "layer_tree_builder.h"
-#include "../render/render_object.h"
-#include "../render/transform.h"
+#include "core/render/objects/render_object.h"
+#include "core/render/utils/transform.h"
 #include "include/core/SkMatrix.h"
 #include "include/core/SkRect.h"
 #include <algorithm>

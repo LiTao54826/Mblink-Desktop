@@ -14,7 +14,7 @@
 #endif
 
 #include "document.h"
-#include "range.h"
+#include "selection/range.h"
 #include "elements/html_input_element.h"
 #include "elements/html_textarea_element.h"
 #include "elements/html_button_element.h"

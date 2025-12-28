@@ -17,7 +17,7 @@
 #include "include/core/SkImage.h"
 #include "include/core/SkRect.h"
 #include "include/core/SkSamplingOptions.h"
-#include "../paint.h"
+#include "core/render/utils/paint.h"
 #include "image_loader.h"
 #include "image_cache.h"
 

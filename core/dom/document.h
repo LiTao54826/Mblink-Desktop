@@ -14,10 +14,10 @@
 #include "node.h"
 #include "element.h"
 #include "text.h"
-#include "range.h"
-#include "selection.h"
-#include "dom_observer.h"
-#include "dirty_node_tracker.h"
+#include "selection/range.h"
+#include "selection/selection.h"
+#include "observers/dom_observer.h"
+#include "observers/dirty_node_tracker.h"
 #include <string>
 #include <memory>
 #include <unordered_map>

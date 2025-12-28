@@ -12,7 +12,7 @@
 
 #include <memory>
 #include "quickjs.h"
-#include "core/dom/mutation_observer.h"
+#include "core/dom/observers/mutation_observer.h"
 
 namespace lightui {
 

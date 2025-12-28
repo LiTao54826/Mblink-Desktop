@@ -12,7 +12,7 @@
 
 #include <memory>
 #include "quickjs.h"
-#include "core/dom/range.h"
+#include "core/dom/selection/range.h"
 
 namespace lightui {
 

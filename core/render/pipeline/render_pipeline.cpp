@@ -12,8 +12,8 @@
 #include "render_tree_synchronizer.h"
 #include "core/dom/document.h"
 #include "core/dom/node.h"
-#include "core/dom/dirty_node_tracker.h"
-#include "core/dom/incremental_style_recalc.h"
+#include "core/dom/observers/dirty_node_tracker.h"
+#include "core/dom/style/incremental_style_recalc.h"
 #include "core/layout/native_layout_engine.h"
 #include <chrono>
 #include <iostream>

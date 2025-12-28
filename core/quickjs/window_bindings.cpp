@@ -12,8 +12,8 @@
 #include "bindings/js_range.h"
 #include "bindings/js_selection.h"
 #include "bindings/js_mutation_observer.h"
-#include "core/dom/dom_bindings.h"
-#include "core/dom/canvas_bindings.h"
+#include "core/dom/bindings/dom_bindings.h"
+#include "core/dom/bindings/canvas_bindings.h"
 #include <iostream>
 
 namespace lightui {

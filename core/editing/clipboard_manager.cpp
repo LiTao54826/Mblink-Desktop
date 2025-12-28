@@ -11,7 +11,7 @@
 #include "core/dom/document.h"
 #include "core/dom/element.h"
 #include "core/dom/event.h"
-#include "core/dom/selection.h"
+#include "core/dom/selection/selection.h"
 
 #ifdef _WIN32
 #include <SDL3/SDL.h>

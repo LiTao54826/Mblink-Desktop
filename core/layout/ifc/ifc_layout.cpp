@@ -11,14 +11,14 @@
 #include <iostream>
 
 // Skia 字体测量
-#include "../../render/text/font_manager.h"
-#include "../../render/text/text_renderer.h"
-#include "../../render/render_inline_block.h"
-#include "../../render/render_svg.h"
+#include "core/render/text/font_manager.h"
+#include "core/render/text/text_renderer.h"
+#include "core/render/objects/render_inline_block.h"
+#include "core/render/objects/render_svg.h"
 
 // DOM 类型（用于检测 BR 元素）
-#include "../../dom/element.h"
-#include "../../dom/text.h"
+#include "core/dom/element.h"
+#include "core/dom/text.h"
 
 // 调试开关
 #define IFC_DEBUG 0
