@@ -128,137 +128,137 @@ core/render/
 ### Phase 1: 扩展已有子目录 (风险: 低)
 
 #### 1.1 扩展 css/ 子目录
-- [ ] 1.1.1 移动 style_resolver.h 到 css/
-- [ ] 1.1.2 移动 style_resolver.cpp 到 css/
-- [ ] 1.1.3 更新 css/ 内文件的 include 路径
-- [ ] 1.1.4 更新 CMakeLists.txt
-- [ ] 1.1.5 Checkpoint - 编译验证
+- [x] 1.1.1 移动 style_resolver.h 到 css/
+- [x] 1.1.2 移动 style_resolver.cpp 到 css/
+- [x] 1.1.3 更新 css/ 内文件的 include 路径
+- [x] 1.1.4 更新 CMakeLists.txt
+- [x] 1.1.5 Checkpoint - 编译验证
 
 #### 1.2 扩展 text/ 子目录
-- [ ] 1.2.1 移动 text_renderer.h 到 text/
-- [ ] 1.2.2 移动 text_renderer.cpp 到 text/
-- [ ] 1.2.3 移动 text_transform.h 到 text/
-- [ ] 1.2.4 移动 text_transform.cpp 到 text/
-- [ ] 1.2.5 更新 text/ 内文件的 include 路径
-- [ ] 1.2.6 更新 CMakeLists.txt
-- [ ] 1.2.7 Checkpoint - 编译验证
+- [x] 1.2.1 移动 text_renderer.h 到 text/
+- [x] 1.2.2 移动 text_renderer.cpp 到 text/
+- [x] 1.2.3 移动 text_transform.h 到 text/
+- [x] 1.2.4 移动 text_transform.cpp 到 text/
+- [x] 1.2.5 更新 text/ 内文件的 include 路径
+- [x] 1.2.6 更新 CMakeLists.txt
+- [x] 1.2.7 Checkpoint - 编译验证
 
 #### 1.3 扩展 painters/ 子目录
-- [ ] 1.3.1 移动 box_renderer.h 到 painters/
-- [ ] 1.3.2 移动 box_renderer.cpp 到 painters/
-- [ ] 1.3.3 更新 painters/ 内文件的 include 路径
-- [ ] 1.3.4 更新 CMakeLists.txt
-- [ ] 1.3.5 Checkpoint - 编译验证
+- [x] 1.3.1 移动 box_renderer.h 到 painters/
+- [x] 1.3.2 移动 box_renderer.cpp 到 painters/
+- [x] 1.3.3 更新 painters/ 内文件的 include 路径
+- [x] 1.3.4 更新 CMakeLists.txt
+- [x] 1.3.5 Checkpoint - 编译验证
 
 ---
 
 ### Phase 2: 创建 layer/ 子目录 (风险: 低)
 
-- [ ] 2.1 创建 layer/ 目录
-- [ ] 2.2 移动 layer.h 到 layer/
-- [ ] 2.3 移动 layer.cpp 到 layer/
-- [ ] 2.4 移动 layer_manager.h 到 layer/
-- [ ] 2.5 移动 layer_manager.cpp 到 layer/
-- [ ] 2.6 移动 fbo_manager.h 到 layer/
-- [ ] 2.7 移动 fbo_manager.cpp 到 layer/
-- [ ] 2.8 更新 layer/ 内文件的 include 路径
-- [ ] 2.9 更新 CMakeLists.txt
-- [ ] 2.10 创建 layer/README.md
-- [ ] 2.11 Checkpoint - 编译验证
+- [x] 2.1 创建 layer/ 目录
+- [x] 2.2 移动 layer.h 到 layer/
+- [x] 2.3 移动 layer.cpp 到 layer/
+- [x] 2.4 移动 layer_manager.h 到 layer/
+- [x] 2.5 移动 layer_manager.cpp 到 layer/
+- [x] 2.6 移动 fbo_manager.h 到 layer/
+- [x] 2.7 移动 fbo_manager.cpp 到 layer/
+- [x] 2.8 更新 layer/ 内文件的 include 路径
+- [x] 2.9 更新 CMakeLists.txt
+- [x] 2.10 创建 layer/README.md
+- [x] 2.11 Checkpoint - 编译验证
 
 ---
 
 ### Phase 3: 创建 utils/ 子目录 (风险: 中)
 
 #### 3.1 基础工具类
-- [ ] 3.1.1 创建 utils/ 目录
-- [ ] 3.1.2 移动 color.h/cpp 到 utils/
-- [ ] 3.1.3 移动 transform.h/cpp 到 utils/
-- [ ] 3.1.4 移动 shapes.h/cpp 到 utils/
-- [ ] 3.1.5 移动 paint.h/cpp 到 utils/
-- [ ] 3.1.6 Checkpoint - 编译验证
+- [x] 3.1.1 创建 utils/ 目录
+- [x] 3.1.2 移动 color.h/cpp 到 utils/
+- [x] 3.1.3 移动 transform.h/cpp 到 utils/
+- [x] 3.1.4 移动 shapes.h/cpp 到 utils/
+- [x] 3.1.5 移动 paint.h/cpp 到 utils/
+- [x] 3.1.6 Checkpoint - 编译验证
 
 #### 3.2 渲染辅助类
-- [ ] 3.2.1 移动 gradient_renderer.h/cpp 到 utils/
-- [ ] 3.2.2 移动 shadow_renderer.h/cpp 到 utils/
-- [ ] 3.2.3 移动 filter_cache.h/cpp 到 utils/
-- [ ] 3.2.4 Checkpoint - 编译验证
+- [x] 3.2.1 移动 gradient_renderer.h/cpp 到 utils/
+- [x] 3.2.2 移动 shadow_renderer.h/cpp 到 utils/
+- [x] 3.2.3 移动 filter_cache.h/cpp 到 utils/
+- [x] 3.2.4 Checkpoint - 编译验证
 
 #### 3.3 脏区域和优化
-- [ ] 3.3.1 移动 dirty_region.h/cpp 到 utils/
-- [ ] 3.3.2 移动 dirty_region_collector.h/cpp 到 utils/
-- [ ] 3.3.3 移动 clip_optimizer.h/cpp 到 utils/
-- [ ] 3.3.4 移动 performance_monitor.h/cpp 到 utils/
-- [ ] 3.3.5 移动 object_pool.h 到 utils/
-- [ ] 3.3.6 更新 utils/ 内文件的 include 路径
-- [ ] 3.3.7 更新 CMakeLists.txt
-- [ ] 3.3.8 创建 utils/README.md
-- [ ] 3.3.9 Checkpoint - 编译验证
+- [x] 3.3.1 移动 dirty_region.h/cpp 到 utils/
+- [x] 3.3.2 移动 dirty_region_collector.h/cpp 到 utils/
+- [x] 3.3.3 移动 clip_optimizer.h/cpp 到 utils/
+- [x] 3.3.4 移动 performance_monitor.h/cpp 到 utils/
+- [x] 3.3.5 移动 object_pool.h 到 utils/
+- [x] 3.3.6 更新 utils/ 内文件的 include 路径
+- [x] 3.3.7 更新 CMakeLists.txt
+- [x] 3.3.8 创建 utils/README.md
+- [x] 3.3.9 Checkpoint - 编译验证
 
 ---
 
 ### Phase 4: 创建 pipeline/ 子目录 (风险: 中)
 
-- [ ] 4.1 创建 pipeline/ 目录
-- [ ] 4.2 移动 renderer.h/cpp 到 pipeline/
-- [ ] 4.3 移动 render_pipeline.h/cpp 到 pipeline/
-- [ ] 4.4 移动 unified_renderer.h/cpp 到 pipeline/
-- [ ] 4.5 移动 render_context.h/cpp 到 pipeline/
-- [ ] 4.6 移动 render_cache.h/cpp 到 pipeline/
-- [ ] 4.7 移动 render_tree_synchronizer.h/cpp 到 pipeline/
-- [ ] 4.8 更新 pipeline/ 内文件的 include 路径
-- [ ] 4.9 更新 CMakeLists.txt
-- [ ] 4.10 创建 pipeline/README.md
-- [ ] 4.11 Checkpoint - 编译验证
+- [x] 4.1 创建 pipeline/ 目录
+- [x] 4.2 移动 renderer.h/cpp 到 pipeline/
+- [x] 4.3 移动 render_pipeline.h/cpp 到 pipeline/
+- [x] 4.4 移动 unified_renderer.h/cpp 到 pipeline/
+- [x] 4.5 移动 render_context.h/cpp 到 pipeline/
+- [x] 4.6 移动 render_cache.h/cpp 到 pipeline/
+- [x] 4.7 移动 render_tree_synchronizer.h/cpp 到 pipeline/
+- [x] 4.8 更新 pipeline/ 内文件的 include 路径
+- [x] 4.9 更新 CMakeLists.txt
+- [x] 4.10 创建 pipeline/README.md
+- [x] 4.11 Checkpoint - 编译验证
 
 ---
 
 ### Phase 5: 创建 objects/ 子目录 (风险: 高)
 
 #### 5.1 核心渲染对象
-- [ ] 5.1.1 创建 objects/ 目录
-- [ ] 5.1.2 移动 render_object.h 到 objects/
-- [ ] 5.1.3 移动 render_object.cpp 到 objects/
-- [ ] 5.1.4 移动 render_block.cpp 到 objects/
-- [ ] 5.1.5 移动 render_inline.cpp 到 objects/
-- [ ] 5.1.6 移动 render_text.cpp 到 objects/
-- [ ] 5.1.7 Checkpoint - 编译验证
+- [x] 5.1.1 创建 objects/ 目录
+- [x] 5.1.2 移动 render_object.h 到 objects/
+- [x] 5.1.3 移动 render_object.cpp 到 objects/
+- [x] 5.1.4 移动 render_block.cpp 到 objects/
+- [x] 5.1.5 移动 render_inline.cpp 到 objects/
+- [x] 5.1.6 移动 render_text.cpp 到 objects/
+- [x] 5.1.7 Checkpoint - 编译验证
 
 #### 5.2 特殊渲染对象
-- [ ] 5.2.1 移动 render_inline_block.h/cpp 到 objects/
-- [ ] 5.2.2 移动 render_table.cpp 到 objects/
-- [ ] 5.2.3 移动 render_svg.h/cpp 到 objects/
-- [ ] 5.2.4 移动 svg_path_parser.h/cpp 到 objects/
-- [ ] 5.2.5 Checkpoint - 编译验证
+- [x] 5.2.1 移动 render_inline_block.h/cpp 到 objects/
+- [x] 5.2.2 移动 render_table.cpp 到 objects/
+- [x] 5.2.3 移动 render_svg.h/cpp 到 objects/
+- [x] 5.2.4 移动 svg_path_parser.h/cpp 到 objects/
+- [x] 5.2.5 Checkpoint - 编译验证
 
 #### 5.3 辅助组件
-- [ ] 5.3.1 移动 scrollbar_controller.h/cpp 到 objects/
-- [ ] 5.3.2 移动 list_marker.h/cpp 到 objects/
-- [ ] 5.3.3 移动 select_dropdown.h/cpp 到 objects/
-- [ ] 5.3.4 更新 objects/ 内文件的 include 路径
-- [ ] 5.3.5 更新 CMakeLists.txt
-- [ ] 5.3.6 创建 objects/README.md
-- [ ] 5.3.7 Checkpoint - 编译验证
+- [x] 5.3.1 移动 scrollbar_controller.h/cpp 到 objects/
+- [x] 5.3.2 移动 list_marker.h/cpp 到 objects/
+- [x] 5.3.3 移动 select_dropdown.h/cpp 到 objects/
+- [x] 5.3.4 更新 objects/ 内文件的 include 路径
+- [x] 5.3.5 更新 CMakeLists.txt
+- [x] 5.3.6 创建 objects/README.md
+- [x] 5.3.7 Checkpoint - 编译验证
 
 ---
 
 ### Phase 6: 更新外部依赖 (风险: 高)
 
-- [ ] 6.1 搜索并更新 core/dom/ 中的 render include 路径
-- [ ] 6.2 搜索并更新 core/window/ 中的 render include 路径
-- [ ] 6.3 搜索并更新 core/event/ 中的 render include 路径
-- [ ] 6.4 搜索并更新 core/quickjs/ 中的 render include 路径
-- [ ] 6.5 搜索并更新 core/editing/ 中的 render include 路径
-- [ ] 6.6 搜索并更新 tests/ 中的 render include 路径
-- [ ] 6.7 Checkpoint - 全项目编译验证
+- [x] 6.1 搜索并更新 core/dom/ 中的 render include 路径
+- [x] 6.2 搜索并更新 core/window/ 中的 render include 路径
+- [x] 6.3 搜索并更新 core/event/ 中的 render include 路径
+- [x] 6.4 搜索并更新 core/quickjs/ 中的 render include 路径
+- [x] 6.5 搜索并更新 core/editing/ 中的 render include 路径
+- [x] 6.6 搜索并更新 tests/ 中的 render include 路径
+- [x] 6.7 Checkpoint - 全项目编译验证
 
 ---
 
 ### Phase 7: 清理和文档
 
-- [ ] 7.1 更新 core/render/README.md 反映新结构
-- [ ] 7.2 验证根目录文件数 ≤ 5
-- [ ] 7.3 git commit
+- [x] 7.1 更新 core/render/README.md 反映新结构
+- [x] 7.2 验证根目录文件数 ≤ 5
+- [x] 7.3 git commit
 
 ---
 
