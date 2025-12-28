@@ -7,10 +7,10 @@
  */
 
 #include "render_object.h"
-#include "text/text_renderer.h"
-#include "text/text_transform.h"
-#include "shadow_renderer.h"
-#include "color.h"
+#include "core/render/text/text_renderer.h"
+#include "core/render/text/text_transform.h"
+#include "core/render/utils/shadow_renderer.h"
+#include "core/render/utils/color.h"
 #include <algorithm>
 #include <sstream>
 #include "include/core/SkPathEffect.h"

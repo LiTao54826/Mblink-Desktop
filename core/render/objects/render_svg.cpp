@@ -5,8 +5,8 @@
 
 #include "render_svg.h"
 #include "core/dom/elements/svg_element.h"
-#include "color.h"
-#include "text/font_manager.h"
+#include "core/render/utils/color.h"
+#include "core/render/text/font_manager.h"
 #include "include/core/SkCanvas.h"
 #include "include/core/SkFont.h"
 #include "include/core/SkFontMetrics.h"

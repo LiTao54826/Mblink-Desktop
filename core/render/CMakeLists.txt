@@ -1,36 +1,42 @@
 # Render Module CMakeLists.txt
 
 set(RENDER_SOURCES
-    # Core rendering
-    renderer.cpp
-    render_context.cpp
-    render_object.cpp
-    render_table.cpp
-    render_text.cpp
-    render_inline.cpp
-    render_block.cpp
-    render_pipeline.cpp
-    render_cache.cpp
-    render_inline_block.cpp
-    render_tree_synchronizer.cpp
-    # unified_renderer.cpp  # TODO: Fix Skia API compatibility issues
+    # Core rendering (pipeline subdirectory)
+    pipeline/renderer.cpp
+    pipeline/render_context.cpp
+    pipeline/render_pipeline.cpp
+    pipeline/render_cache.cpp
+    pipeline/render_tree_synchronizer.cpp
+    # pipeline/unified_renderer.cpp  # TODO: Fix Skia API compatibility issues
     
-    # Basic rendering primitives
-    color.cpp
-    paint.cpp
-    shapes.cpp
+    # Render objects (objects subdirectory)
+    objects/render_object.cpp
+    objects/render_table.cpp
+    objects/render_text.cpp
+    objects/render_inline.cpp
+    objects/render_block.cpp
+    objects/render_inline_block.cpp
+    objects/render_svg.cpp
+    objects/svg_path_parser.cpp
+    objects/scrollbar_controller.cpp
+    objects/list_marker.cpp
+    objects/select_dropdown.cpp
+    
+    # Basic rendering primitives (utils subdirectory)
+    utils/color.cpp
+    utils/paint.cpp
+    utils/shapes.cpp
     painters/box_renderer.cpp
-    shadow_renderer.cpp
-    gradient_renderer.cpp
-    list_marker.cpp
+    utils/shadow_renderer.cpp
+    utils/gradient_renderer.cpp
     
-    # Transform and clipping
-    transform.cpp
-    clip_optimizer.cpp
+    # Transform and clipping (utils subdirectory)
+    utils/transform.cpp
+    utils/clip_optimizer.cpp
     
-    # Dirty region tracking
-    dirty_region.cpp
-    dirty_region_collector.cpp
+    # Dirty region tracking (utils subdirectory)
+    utils/dirty_region.cpp
+    utils/dirty_region_collector.cpp
     
     # Layer management (subdirectory)
     layer/layer.cpp
@@ -40,15 +46,8 @@ set(RENDER_SOURCES
     # Style resolution (css subdirectory)
     css/style_resolver.cpp
     
-    # Performance monitoring
-    performance_monitor.cpp
-    
-    # SVG support
-    svg_path_parser.cpp
-    render_svg.cpp
-    
-    # UI components
-    select_dropdown.cpp
+    # Performance monitoring (utils subdirectory)
+    utils/performance_monitor.cpp
     
     # Text rendering (subdirectory)
     text/font_manager.cpp
@@ -84,46 +83,49 @@ set(RENDER_SOURCES
     css/css_filters.cpp
     css/css_clip_path.cpp
     
-    # Filter cache
-    filter_cache.cpp
+    # Filter cache (utils subdirectory)
+    utils/filter_cache.cpp
     
     # Painters (subdirectory)
     painters/background_painter.cpp
     painters/border_painter.cpp
     painters/scrollbar_painter.cpp
     painters/form_element_painter.cpp
-    
-    # Scrollbar controller
-    scrollbar_controller.cpp
 )
 
 set(RENDER_HEADERS
-    # Core rendering
-    renderer.h
-    render_context.h
-    render_object.h
-    render_pipeline.h
-    render_cache.h
-    render_inline_block.h
-    render_tree_synchronizer.h
-    # unified_renderer.h  # TODO: Fix Skia API compatibility issues
+    # Core rendering (pipeline subdirectory)
+    pipeline/renderer.h
+    pipeline/render_context.h
+    pipeline/render_pipeline.h
+    pipeline/render_cache.h
+    pipeline/render_tree_synchronizer.h
+    # pipeline/unified_renderer.h  # TODO: Fix Skia API compatibility issues
     
-    # Basic rendering primitives
-    color.h
-    paint.h
-    shapes.h
+    # Render objects (objects subdirectory)
+    objects/render_object.h
+    objects/render_inline_block.h
+    objects/render_svg.h
+    objects/svg_path_parser.h
+    objects/scrollbar_controller.h
+    objects/list_marker.h
+    objects/select_dropdown.h
+    
+    # Basic rendering primitives (utils subdirectory)
+    utils/color.h
+    utils/paint.h
+    utils/shapes.h
     box_renderer.h
-    shadow_renderer.h
-    gradient_renderer.h
-    list_marker.h
+    utils/shadow_renderer.h
+    utils/gradient_renderer.h
     
-    # Transform and clipping
-    transform.h
-    clip_optimizer.h
+    # Transform and clipping (utils subdirectory)
+    utils/transform.h
+    utils/clip_optimizer.h
     
-    # Dirty region tracking
-    dirty_region.h
-    dirty_region_collector.h
+    # Dirty region tracking (utils subdirectory)
+    utils/dirty_region.h
+    utils/dirty_region_collector.h
     
     # Layer management
     layer.h
@@ -133,18 +135,11 @@ set(RENDER_HEADERS
     # Style resolution
     style_resolver.h
     
-    # Performance monitoring
-    performance_monitor.h
+    # Performance monitoring (utils subdirectory)
+    utils/performance_monitor.h
     
-    # SVG support
-    svg_path_parser.h
-    render_svg.h
-    
-    # UI components
-    select_dropdown.h
-    
-    # Utilities
-    object_pool.h
+    # Utilities (utils subdirectory)
+    utils/object_pool.h
     
     # Text rendering (subdirectory)
     text/font_manager.h
@@ -177,17 +172,14 @@ set(RENDER_HEADERS
     css/css_filters.h
     css/css_clip_path.h
     
-    # Filter cache
-    filter_cache.h
+    # Filter cache (utils subdirectory)
+    utils/filter_cache.h
     
     # Painters (subdirectory)
     painters/background_painter.h
     painters/border_painter.h
     painters/scrollbar_painter.h
     painters/form_element_painter.h
-    
-    # Scrollbar controller
-    scrollbar_controller.h
 )
 
 add_library(lightui_render STATIC ${RENDER_SOURCES})

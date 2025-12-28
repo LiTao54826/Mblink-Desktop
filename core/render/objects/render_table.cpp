@@ -11,8 +11,8 @@
  */
 
 #include "render_object.h"
-#include "painters/box_renderer.h"
-#include "color.h"
+#include "core/render/painters/box_renderer.h"
+#include "core/render/utils/color.h"
 #include "core/dom/element.h"
 #include <algorithm>
 #include <limits>

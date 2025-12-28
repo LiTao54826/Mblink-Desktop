@@ -4,11 +4,11 @@
  */
 
 #include "render_inline_block.h"
-#include "painters/box_renderer.h"
-#include "text/text_renderer.h"
-#include "gradient_renderer.h"
-#include "color.h"
-#include "text/font_manager.h"
+#include "core/render/painters/box_renderer.h"
+#include "core/render/text/text_renderer.h"
+#include "core/render/utils/gradient_renderer.h"
+#include "core/render/utils/color.h"
+#include "core/render/text/font_manager.h"
 #include "core/dom/node.h"
 #include "core/dom/element.h"
 #include "core/dom/text.h"
@@ -19,8 +19,8 @@
 #include "core/dom/elements/html_canvas_element.h"
 #include "core/dom/elements/html_image_element.h"
 #include "core/render/canvas/canvas_rendering_context_2d.h"
-#include "image/image_fit.h"
-#include "image/image_loader.h"
+#include "core/render/image/image_fit.h"
+#include "core/render/image/image_loader.h"
 #include "core/utils/utf8_utils.h"
 #include <algorithm>
 #include <iostream>

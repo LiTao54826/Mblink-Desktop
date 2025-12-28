@@ -11,8 +11,8 @@
 
 #pragma once
 
-#include "render_object.h"
-#include "filter_cache.h"
+#include "core/render/objects/render_object.h"
+#include "core/render/utils/filter_cache.h"
 #include "core/dom/element.h"
 #include <memory>
 #include <string>

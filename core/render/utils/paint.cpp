@@ -165,4 +165,3 @@ void Paint::Reset() {
 }
 
 } // namespace lightui
-

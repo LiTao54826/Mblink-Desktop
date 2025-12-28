@@ -7,17 +7,10 @@
 
 namespace lightui {
 
-// ========== Shapes 类实现 ==========
-
-Shapes::Shapes(SkCanvas* canvas)
-    : canvas_(canvas) {
-}
-
-// ========== 矩形绘制 ==========
+Shapes::Shapes(SkCanvas* canvas) : canvas_(canvas) {}
 
 void Shapes::FillRect(float x, float y, float width, float height, const Paint& paint) {
     if (!canvas_) return;
-    
     SkRect rect = SkRect::MakeXYWH(x, y, width, height);
     Paint fill_paint = paint;
     fill_paint.SetStyle(PaintStyle::FILL);
@@ -26,7 +19,6 @@ void Shapes::FillRect(float x, float y, float width, float height, const Paint& 
 
 void Shapes::StrokeRect(float x, float y, float width, float height, const Paint& paint) {
     if (!canvas_) return;
-    
     SkRect rect = SkRect::MakeXYWH(x, y, width, height);
     Paint stroke_paint = paint;
     stroke_paint.SetStyle(PaintStyle::STROKE);
@@ -38,11 +30,8 @@ void Shapes::DrawRect(const SkRect& rect, const Paint& paint) {
     canvas_->drawRect(rect, paint.GetSkPaint());
 }
 
-// ========== 圆形绘制 ==========
-
 void Shapes::FillCircle(float cx, float cy, float radius, const Paint& paint) {
     if (!canvas_) return;
-    
     Paint fill_paint = paint;
     fill_paint.SetStyle(PaintStyle::FILL);
     canvas_->drawCircle(cx, cy, radius, fill_paint.GetSkPaint());
@@ -50,7 +39,6 @@ void Shapes::FillCircle(float cx, float cy, float radius, const Paint& paint) {
 
 void Shapes::StrokeCircle(float cx, float cy, float radius, const Paint& paint) {
     if (!canvas_) return;
-    
     Paint stroke_paint = paint;
     stroke_paint.SetStyle(PaintStyle::STROKE);
     canvas_->drawCircle(cx, cy, radius, stroke_paint.GetSkPaint());
@@ -61,11 +49,8 @@ void Shapes::DrawCircle(float cx, float cy, float radius, const Paint& paint) {
     canvas_->drawCircle(cx, cy, radius, paint.GetSkPaint());
 }
 
-// ========== 椭圆绘制 ==========
-
 void Shapes::FillOval(float x, float y, float width, float height, const Paint& paint) {
     if (!canvas_) return;
-    
     SkRect rect = SkRect::MakeXYWH(x, y, width, height);
     Paint fill_paint = paint;
     fill_paint.SetStyle(PaintStyle::FILL);
@@ -74,7 +59,6 @@ void Shapes::FillOval(float x, float y, float width, float height, const Paint& 
 
 void Shapes::StrokeOval(float x, float y, float width, float height, const Paint& paint) {
     if (!canvas_) return;
-    
     SkRect rect = SkRect::MakeXYWH(x, y, width, height);
     Paint stroke_paint = paint;
     stroke_paint.SetStyle(PaintStyle::STROKE);
@@ -86,11 +70,8 @@ void Shapes::DrawOval(const SkRect& rect, const Paint& paint) {
     canvas_->drawOval(rect, paint.GetSkPaint());
 }
 
-// ========== 线条绘制 ==========
-
 void Shapes::DrawLine(float x1, float y1, float x2, float y2, const Paint& paint) {
     if (!canvas_) return;
-    
     Paint stroke_paint = paint;
     stroke_paint.SetStyle(PaintStyle::STROKE);
     canvas_->drawLine(x1, y1, x2, y2, stroke_paint.GetSkPaint());
@@ -98,54 +79,42 @@ void Shapes::DrawLine(float x1, float y1, float x2, float y2, const Paint& paint
 
 void Shapes::DrawPolyline(const std::vector<SkPoint>& points, const Paint& paint) {
     if (!canvas_ || points.size() < 2) return;
-    
     SkPath path;
     path.moveTo(points[0]);
     for (size_t i = 1; i < points.size(); ++i) {
         path.lineTo(points[i]);
     }
-    
     Paint stroke_paint = paint;
     stroke_paint.SetStyle(PaintStyle::STROKE);
     canvas_->drawPath(path, stroke_paint.GetSkPaint());
 }
 
-// ========== 圆角矩形绘制 ==========
-
-void Shapes::FillRoundRect(float x, float y, float width, float height, float radius, const Paint& paint) {
+void Shapes::FillRoundRect(float x, float y, float w, float h, float r, const Paint& paint) {
     if (!canvas_) return;
-    
-    SkRect rect = SkRect::MakeXYWH(x, y, width, height);
-    SkRRect rrect = SkRRect::MakeRectXY(rect, radius, radius);
-    
+    SkRect rect = SkRect::MakeXYWH(x, y, w, h);
+    SkRRect rrect = SkRRect::MakeRectXY(rect, r, r);
     Paint fill_paint = paint;
     fill_paint.SetStyle(PaintStyle::FILL);
     canvas_->drawRRect(rrect, fill_paint.GetSkPaint());
 }
 
-void Shapes::StrokeRoundRect(float x, float y, float width, float height, float radius, const Paint& paint) {
+void Shapes::StrokeRoundRect(float x, float y, float w, float h, float r, const Paint& paint) {
     if (!canvas_) return;
-    
-    SkRect rect = SkRect::MakeXYWH(x, y, width, height);
-    SkRRect rrect = SkRRect::MakeRectXY(rect, radius, radius);
-    
+    SkRect rect = SkRect::MakeXYWH(x, y, w, h);
+    SkRRect rrect = SkRRect::MakeRectXY(rect, r, r);
     Paint stroke_paint = paint;
     stroke_paint.SetStyle(PaintStyle::STROKE);
     canvas_->drawRRect(rrect, stroke_paint.GetSkPaint());
 }
 
-void Shapes::DrawRoundRect(float x, float y, float width, float height, 
+void Shapes::DrawRoundRect(float x, float y, float w, float h, 
                            const std::vector<float>& radii, const Paint& paint) {
     if (!canvas_ || radii.size() < 4) return;
-    
-    SkRect rect = SkRect::MakeXYWH(x, y, width, height);
+    SkRect rect = SkRect::MakeXYWH(x, y, w, h);
     SkVector corners[4] = {
-        {radii[0], radii[0]},  // 左上
-        {radii[1], radii[1]},  // 右上
-        {radii[2], radii[2]},  // 右下
-        {radii[3], radii[3]}   // 左下
+        {radii[0], radii[0]}, {radii[1], radii[1]},
+        {radii[2], radii[2]}, {radii[3], radii[3]}
     };
-    
     SkRRect rrect;
     rrect.setRectRadii(rect, corners);
     canvas_->drawRRect(rrect, paint.GetSkPaint());
@@ -156,11 +125,8 @@ void Shapes::DrawRoundRect(const SkRRect& rrect, const Paint& paint) {
     canvas_->drawRRect(rrect, paint.GetSkPaint());
 }
 
-// ========== 路径绘制 ==========
-
 void Shapes::FillPath(const SkPath& path, const Paint& paint) {
     if (!canvas_) return;
-    
     Paint fill_paint = paint;
     fill_paint.SetStyle(PaintStyle::FILL);
     canvas_->drawPath(path, fill_paint.GetSkPaint());
@@ -168,7 +134,6 @@ void Shapes::FillPath(const SkPath& path, const Paint& paint) {
 
 void Shapes::StrokePath(const SkPath& path, const Paint& paint) {
     if (!canvas_) return;
-    
     Paint stroke_paint = paint;
     stroke_paint.SetStyle(PaintStyle::STROKE);
     canvas_->drawPath(path, stroke_paint.GetSkPaint());
@@ -179,10 +144,8 @@ void Shapes::DrawPath(const SkPath& path, const Paint& paint) {
     canvas_->drawPath(path, paint.GetSkPaint());
 }
 
-// ========== PathBuilder 类实现 ==========
-
-PathBuilder::PathBuilder() {
-}
+// PathBuilder 实现
+PathBuilder::PathBuilder() {}
 
 PathBuilder& PathBuilder::MoveTo(float x, float y) {
     path_.moveTo(x, y);
@@ -214,4 +177,3 @@ void PathBuilder::Reset() {
 }
 
 } // namespace lightui
-

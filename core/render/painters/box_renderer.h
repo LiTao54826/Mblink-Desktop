@@ -12,8 +12,8 @@
 #pragma once
 
 #include "css/css_value.h"
-#include "paint.h"
-#include "shapes.h"
+#include "utils/paint.h"
+#include "utils/shapes.h"
 #include "include/core/SkCanvas.h"
 #include "include/core/SkRect.h"
 #include <memory>

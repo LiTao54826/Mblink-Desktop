@@ -4,9 +4,9 @@
  */
 
 #include "select_dropdown.h"
-#include "text/text_renderer.h"
-#include "text/font_manager.h"
-#include "color.h"
+#include "core/render/text/text_renderer.h"
+#include "core/render/text/font_manager.h"
+#include "core/render/utils/color.h"
 #include "core/dom/element.h"
 #include "core/dom/text.h"
 #include "include/core/SkPaint.h"

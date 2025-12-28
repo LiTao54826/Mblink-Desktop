@@ -4,7 +4,7 @@
  */
 
 #include "clip_optimizer.h"
-#include "render_object.h"
+#include "core/render/render_object.h"
 
 namespace lightui {
 
