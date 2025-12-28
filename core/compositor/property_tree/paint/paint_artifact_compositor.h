@@ -16,8 +16,8 @@
 #include <unordered_map>
 #include "core/compositor/property_tree/property_trees.h"
 #include "core/compositor/property_tree/property_tree_state.h"
-#include "core/compositor/property_tree/paint_artifact.h"
-#include "core/compositor/property_tree/pending_layer.h"
+#include "core/compositor/property_tree/paint/paint_artifact.h"
+#include "core/compositor/property_tree/paint/pending_layer.h"
 #include "core/compositor/property_tree/layerizer.h"
 #include "core/compositor/property_tree/raster_invalidator.h"
 #include "core/compositor/property_tree/geometry_mapper.h"

@@ -12,8 +12,8 @@
 
 #pragma once
 
-#include "core/compositor/property_tree/display_item.h"
-#include "core/compositor/property_tree/paint_chunk.h"
+#include "core/compositor/property_tree/paint/display_item.h"
+#include "core/compositor/property_tree/paint/paint_chunk.h"
 #include <vector>
 
 namespace lightui {

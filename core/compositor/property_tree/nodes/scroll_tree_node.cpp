@@ -3,8 +3,8 @@
  * @brief 滚动树节点实现
  */
 
-#include "core/compositor/property_tree/scroll_tree_node.h"
-#include "core/compositor/property_tree/transform_tree_node.h"
+#include "core/compositor/property_tree/nodes/scroll_tree_node.h"
+#include "core/compositor/property_tree/nodes/transform_tree_node.h"
 #include <algorithm>
 
 namespace lightui {

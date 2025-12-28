@@ -3,7 +3,7 @@
  * @brief 绘制块实现
  */
 
-#include "core/compositor/property_tree/paint_chunk.h"
+#include "core/compositor/property_tree/paint/paint_chunk.h"
 
 namespace lightui {
 

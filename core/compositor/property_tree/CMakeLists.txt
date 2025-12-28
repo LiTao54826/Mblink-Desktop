@@ -1,43 +1,53 @@
 # Property Tree 模块 CMakeLists.txt
 # 属性树系统 - 参考 Chromium Blink 设计
 
+# 添加子模块
+add_subdirectory(nodes)
+add_subdirectory(paint)
+
 set(PROPERTY_TREE_SOURCES
-    transform_tree_node.cpp
-    clip_tree_node.cpp
-    effect_tree_node.cpp
-    scroll_tree_node.cpp
+    # nodes/ 子目录
+    nodes/transform_tree_node.cpp
+    nodes/clip_tree_node.cpp
+    nodes/effect_tree_node.cpp
+    nodes/scroll_tree_node.cpp
+    # paint/ 子目录
+    paint/display_item.cpp
+    paint/paint_chunk.cpp
+    paint/paint_artifact.cpp
+    paint/pending_layer.cpp
+    paint/paint_artifact_compositor.cpp
+    # 根目录
     property_tree_state.cpp
     property_trees.cpp
     property_tree_builder.cpp
     geometry_mapper.cpp
-    display_item.cpp
-    paint_chunk.cpp
-    paint_artifact.cpp
-    pending_layer.cpp
     layerizer.cpp
     raster_invalidator.cpp
-    paint_artifact_compositor.cpp
     property_tree_error.cpp
 )
 
 set(PROPERTY_TREE_HEADERS
-    property_tree_node.h
-    transform_tree_node.h
-    clip_tree_node.h
-    effect_tree_node.h
-    scroll_tree_node.h
+    # nodes/ 子目录
+    nodes/property_tree_node.h
+    nodes/transform_tree_node.h
+    nodes/clip_tree_node.h
+    nodes/effect_tree_node.h
+    nodes/scroll_tree_node.h
+    # paint/ 子目录
+    paint/display_item.h
+    paint/paint_chunk.h
+    paint/paint_artifact.h
+    paint/pending_layer.h
+    paint/paint_artifact_compositor.h
+    # 根目录
     property_tree_state.h
     property_trees.h
     property_tree_builder.h
     geometry_mapper.h
-    display_item.h
-    paint_chunk.h
-    paint_artifact.h
     compositing_reasons.h
-    pending_layer.h
     layerizer.h
     raster_invalidator.h
-    paint_artifact_compositor.h
     property_tree_error.h
 )
 

@@ -6,9 +6,9 @@
 #include "scroll_layer_manager.h"
 #include "layer_tree_builder.h"
 #include "rasterizer.h"
-#include "core/compositor/property_tree/paint_artifact_compositor.h"
+#include "core/compositor/property_tree/paint/paint_artifact_compositor.h"
 #include "core/compositor/property_tree/property_trees.h"
-#include "core/compositor/property_tree/scroll_tree_node.h"
+#include "core/compositor/property_tree/nodes/scroll_tree_node.h"
 #include "core/compositor/property_tree/property_tree_state.h"
 #include "core/render/objects/render_object.h"
 #include <algorithm>

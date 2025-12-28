@@ -14,12 +14,12 @@
 #include "test_utils/test_helpers.h"
 #include "core/compositor/property_tree/property_trees.h"
 #include "core/compositor/property_tree/property_tree_builder.h"
-#include "core/compositor/property_tree/paint_artifact_compositor.h"
+#include "core/compositor/property_tree/paint/paint_artifact_compositor.h"
 #include "core/compositor/property_tree/geometry_mapper.h"
 #include "core/compositor/property_tree/layerizer.h"
 #include "core/compositor/property_tree/raster_invalidator.h"
-#include "core/compositor/property_tree/paint_artifact.h"
-#include "core/compositor/property_tree/paint_chunk.h"
+#include "core/compositor/property_tree/paint/paint_artifact.h"
+#include "core/compositor/property_tree/paint/paint_chunk.h"
 #include "include/core/SkM44.h"
 #include <chrono>
 #include <iostream>

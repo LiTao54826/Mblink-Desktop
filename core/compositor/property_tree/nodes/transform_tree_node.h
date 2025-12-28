@@ -13,7 +13,7 @@
 
 #pragma once
 
-#include "core/compositor/property_tree/property_tree_node.h"
+#include "core/compositor/property_tree/nodes/property_tree_node.h"
 #include "include/core/SkM44.h"
 #include "include/core/SkPoint3.h"
 

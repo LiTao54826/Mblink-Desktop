@@ -3,7 +3,7 @@
  * @brief 显示项实现
  */
 
-#include "core/compositor/property_tree/display_item.h"
+#include "core/compositor/property_tree/paint/display_item.h"
 
 namespace lightui {
 

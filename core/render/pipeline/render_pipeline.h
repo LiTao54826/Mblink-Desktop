@@ -28,7 +28,7 @@
 #include "core/compositor/scroll_layer_manager.h"
 #include "core/compositor/property_tree/property_trees.h"
 #include "core/compositor/property_tree/property_tree_builder.h"
-#include "core/compositor/property_tree/paint_artifact_compositor.h"
+#include "core/compositor/property_tree/paint/paint_artifact_compositor.h"
 
 // Skia 前向声明
 class SkCanvas;

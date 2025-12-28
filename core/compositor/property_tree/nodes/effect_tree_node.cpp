@@ -3,7 +3,7 @@
  * @brief 效果树节点实现
  */
 
-#include "core/compositor/property_tree/effect_tree_node.h"
+#include "core/compositor/property_tree/nodes/effect_tree_node.h"
 #include <algorithm>
 
 namespace lightui {

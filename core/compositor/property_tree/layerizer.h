@@ -12,8 +12,8 @@
 
 #pragma once
 
-#include "core/compositor/property_tree/pending_layer.h"
-#include "core/compositor/property_tree/paint_artifact.h"
+#include "core/compositor/property_tree/paint/pending_layer.h"
+#include "core/compositor/property_tree/paint/paint_artifact.h"
 #include "core/compositor/property_tree/geometry_mapper.h"
 #include <vector>
 

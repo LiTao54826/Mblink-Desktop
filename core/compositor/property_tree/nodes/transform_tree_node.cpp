@@ -3,7 +3,7 @@
  * @brief 变换树节点实现
  */
 
-#include "core/compositor/property_tree/transform_tree_node.h"
+#include "core/compositor/property_tree/nodes/transform_tree_node.h"
 #include <cmath>
 
 namespace lightui {

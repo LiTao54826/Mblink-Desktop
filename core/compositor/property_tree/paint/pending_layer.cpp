@@ -3,7 +3,7 @@
  * @brief 待定层实现
  */
 
-#include "core/compositor/property_tree/pending_layer.h"
+#include "core/compositor/property_tree/paint/pending_layer.h"
 
 namespace lightui {
 

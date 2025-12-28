@@ -3,8 +3,8 @@
  * @brief 裁剪树节点实现
  */
 
-#include "core/compositor/property_tree/clip_tree_node.h"
-#include "core/compositor/property_tree/transform_tree_node.h"
+#include "core/compositor/property_tree/nodes/clip_tree_node.h"
+#include "core/compositor/property_tree/nodes/transform_tree_node.h"
 
 namespace lightui {
 

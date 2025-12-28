@@ -13,7 +13,7 @@
 
 #pragma once
 
-#include "core/compositor/property_tree/paint_chunk.h"
+#include "core/compositor/property_tree/paint/paint_chunk.h"
 #include "core/compositor/property_tree/property_tree_state.h"
 #include "core/compositor/property_tree/compositing_reasons.h"
 #include "include/core/SkRect.h"

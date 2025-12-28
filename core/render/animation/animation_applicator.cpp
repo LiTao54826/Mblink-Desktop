@@ -7,10 +7,10 @@
 #include "core/render/utils/color.h"
 #include "core/render/utils/transform.h"
 #include "core/compositor/animation/animation_layer_bridge.h"
-#include "core/compositor/property_tree/paint_artifact_compositor.h"
+#include "core/compositor/property_tree/paint/paint_artifact_compositor.h"
 #include "core/compositor/property_tree/property_trees.h"
-#include "core/compositor/property_tree/transform_tree_node.h"
-#include "core/compositor/property_tree/effect_tree_node.h"
+#include "core/compositor/property_tree/nodes/transform_tree_node.h"
+#include "core/compositor/property_tree/nodes/effect_tree_node.h"
 #include "core/compositor/property_tree/property_tree_state.h"
 #include "include/core/SkM44.h"
 #include <regex>

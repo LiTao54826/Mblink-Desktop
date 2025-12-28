@@ -3,7 +3,7 @@
  * @brief 绘制产物实现
  */
 
-#include "core/compositor/property_tree/paint_artifact.h"
+#include "core/compositor/property_tree/paint/paint_artifact.h"
 #include <unordered_set>
 
 namespace lightui {

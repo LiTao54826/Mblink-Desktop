@@ -7,17 +7,41 @@
 属性树是一种优化技术，将渲染属性从渲染对象中分离出来，
 形成独立的树结构，便于增量更新和属性继承计算。
 
-## 模块列表
+## 目录结构
+
+### nodes/ 子目录
+属性树节点类型定义。
 
 | 文件 | 描述 |
 |------|------|
-| `property_trees.h/cpp` | 属性树集合管理 |
-| `transform_tree_node.h/cpp` | 变换属性节点 |
-| `clip_tree_node.h/cpp` | 裁剪属性节点 |
-| `effect_tree_node.h/cpp` | 效果属性节点（透明度、滤镜等） |
-| `scroll_tree_node.h/cpp` | 滚动属性节点 |
-| `paint_artifact_compositor.h/cpp` | 绘制工件合成器 |
-| `property_tree_error.h/cpp` | 错误处理 |
+| `property_tree_node.h` | 节点基类模板 |
+| `transform_tree_node.*` | 变换属性节点 |
+| `clip_tree_node.*` | 裁剪属性节点 |
+| `effect_tree_node.*` | 效果属性节点 |
+| `scroll_tree_node.*` | 滚动属性节点 |
+
+### paint/ 子目录
+绘制系统相关类型。
+
+| 文件 | 描述 |
+|------|------|
+| `display_item.*` | 绘制指令 |
+| `paint_chunk.*` | 绘制块 |
+| `paint_artifact.*` | 绘制产物 |
+| `paint_artifact_compositor.*` | 绘制产物合成器 |
+| `pending_layer.*` | 待定层 |
+
+### 根目录
+| 文件 | 描述 |
+|------|------|
+| `property_trees.*` | 属性树集合管理 |
+| `property_tree_state.*` | 属性树状态 |
+| `property_tree_builder.*` | 属性树构建器 |
+| `geometry_mapper.*` | 几何映射器 |
+| `layerizer.*` | 层化器 |
+| `raster_invalidator.*` | 光栅化失效器 |
+| `compositing_reasons.h` | 合成原因枚举 |
+| `property_tree_error.*` | 错误处理 |
 
 ## 架构说明
 
