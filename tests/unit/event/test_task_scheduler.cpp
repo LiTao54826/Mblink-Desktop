@@ -4,7 +4,7 @@
  */
 
 #include <gtest/gtest.h>
-#include "event/task_scheduler.h"
+#include "event/loop/task_scheduler.h"
 #include <thread>
 #include <chrono>
 

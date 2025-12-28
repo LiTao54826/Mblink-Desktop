@@ -4,7 +4,7 @@
  */
 
 #include <gtest/gtest.h>
-#include "event/input_handler.h"
+#include "event/input/input_handler.h"
 
 namespace lightui {
 namespace test {

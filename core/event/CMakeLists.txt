@@ -1,38 +1,48 @@
 # Event Loop Module
 
 set(EVENT_SOURCES
-    event_loop.cpp
-    frame_controller.cpp
-    input_handler.cpp
-    task_scheduler.cpp
-    mouse_event.cpp
-    keyboard_event.cpp
-    keyboard_utils.cpp
-    hit_testing.cpp
-    event.cpp
+    # loop/ - 事件循环核心
+    loop/event_loop.cpp
+    loop/frame_controller.cpp
+    loop/task_scheduler.cpp
+    # types/ - 事件类型定义
+    types/event.cpp
+    types/event_types.cpp
+    types/mouse_event.cpp
+    types/keyboard_event.cpp
+    types/data_transfer.cpp
+    # input/ - 输入处理
+    input/input_handler.cpp
+    input/keyboard_utils.cpp
+    input/hit_testing.cpp
+    input/focus_manager.cpp
+    # 根目录
     event_system.cpp
-    event_types.cpp
-    focus_manager.cpp
-    data_transfer.cpp
+    # dispatch/ - 事件分发器
     dispatch/mouse_event_dispatcher.cpp
     dispatch/keyboard_event_dispatcher.cpp
     dispatch/wheel_event_dispatcher.cpp
 )
 
 set(EVENT_HEADERS
-    event_loop.h
-    frame_controller.h
-    input_handler.h
-    task_scheduler.h
-    mouse_event.h
-    keyboard_event.h
-    keyboard_utils.h
-    hit_testing.h
-    event.h
+    # loop/ - 事件循环核心
+    loop/event_loop.h
+    loop/frame_controller.h
+    loop/task_scheduler.h
+    # types/ - 事件类型定义
+    types/event.h
+    types/event_types.h
+    types/mouse_event.h
+    types/keyboard_event.h
+    types/data_transfer.h
+    # input/ - 输入处理
+    input/input_handler.h
+    input/keyboard_utils.h
+    input/hit_testing.h
+    input/focus_manager.h
+    # 根目录
     event_system.h
-    event_types.h
-    focus_manager.h
-    data_transfer.h
+    # dispatch/ - 事件分发器
     dispatch/mouse_event_dispatcher.h
     dispatch/keyboard_event_dispatcher.h
     dispatch/wheel_event_dispatcher.h

@@ -22,7 +22,7 @@
 #include "elements/html_input_element.h"
 #include "elements/html_textarea_element.h"
 #include "elements/html_image_element.h"
-#include "core/event/task_scheduler.h"
+#include "core/event/loop/task_scheduler.h"
 #include <memory>
 #include <unordered_map>
 

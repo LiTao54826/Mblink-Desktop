@@ -10,7 +10,7 @@
 #include "core/dom/document.h"
 #include "core/dom/element.h"
 #include "core/dom/elements/html_textarea_element.h"
-#include "core/event/hit_testing.h"
+#include "core/event/input/hit_testing.h"
 #include "core/render/render_object.h"
 #include "core/render/render_pipeline.h"
 #include "core/render/text/font_manager.h"

@@ -2,20 +2,43 @@
 
 事件循环核心组件。
 
-## 计划包含的文件
+## 文件列表
 
-当重构完成后，此目录将包含：
-- `event_loop.h/cpp` - 主事件循环
-- `frame_controller.h/cpp` - 帧控制器
-- `task_scheduler.h/cpp` - 任务调度器
-
-## 当前状态
-
-这些文件目前位于 `core/event/` 根目录。
-由于涉及大量 include 路径更新，移动操作暂缓执行。
+| 文件 | 描述 |
+|------|------|
+| `event_loop.h/cpp` | 主事件循环，处理 SDL 事件分发 |
+| `frame_controller.h/cpp` | 帧率控制器，管理 FPS 和帧时间 |
+| `task_scheduler.h/cpp` | 任务调度器，实现 setTimeout/setInterval/requestAnimationFrame |
 
 ## 依赖关系
 
-- 依赖 `input/` 子模块的输入处理
-- 依赖 `dispatch/` 子模块的事件分发
-- 依赖 `types/` 子模块的事件类型定义
+### 依赖的模块
+- `../dispatch/` - 事件分发器
+- `../input/` - 输入处理（待迁移）
+- `../types/` - 事件类型定义（待迁移）
+- `core/dom` - DOM 元素
+- `core/window` - 窗口管理
+- `core/editing` - 编辑子系统
+
+### 被依赖的模块
+- `core/quickjs` - JavaScript 绑定
+- `tools/*` - 应用加载器
+
+## 使用示例
+
+```cpp
+#include "core/event/loop/event_loop.h"
+#include "core/event/loop/task_scheduler.h"
+
+// 创建事件循环
+auto event_loop = std::make_unique<EventLoop>();
+
+// 设置定时任务
+auto& scheduler = event_loop->GetTaskScheduler();
+scheduler.SetTimeout([]() {
+    std::cout << "Hello after 1 second!" << std::endl;
+}, 1000);
+
+// 运行事件循环
+event_loop->Run();
+```

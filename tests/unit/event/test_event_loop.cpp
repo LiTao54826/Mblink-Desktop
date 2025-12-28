@@ -4,8 +4,8 @@
  */
 
 #include <gtest/gtest.h>
-#include "event/event_loop.h"
-#include "event/task_scheduler.h"
+#include "event/loop/event_loop.h"
+#include "event/loop/task_scheduler.h"
 
 namespace lightui {
 namespace test {

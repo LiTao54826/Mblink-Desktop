@@ -6,7 +6,7 @@
 #include "mutation_observer.h"
 #include "node.h"
 #include "element.h"
-#include "core/event/task_scheduler.h"
+#include "core/event/loop/task_scheduler.h"
 #include <algorithm>
 #include <stdexcept>
 

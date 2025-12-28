@@ -11,7 +11,7 @@
 #include "core/dom/document.h"
 #include "core/dom/dom_bindings.h"
 #include "core/window/window.h"
-#include "core/event/event_loop.h"
+#include "core/event/loop/event_loop.h"
 #include "core/editing/selection_manager.h"
 #include "core/editing/contenteditable_handler.h"
 

@@ -4,7 +4,7 @@
  */
 
 #include "layer_manager.h"
-#include "core/event/hit_testing.h"
+#include "core/event/input/hit_testing.h"
 #include <iostream>
 #include <cstdlib>
 

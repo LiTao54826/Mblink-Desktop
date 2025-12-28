@@ -6,51 +6,62 @@
 
 ```
 core/event/
-├── dispatch/          # 事件分发器（计划中）
-├── input/             # 输入处理组件（计划中）
-├── loop/              # 事件循环核心（计划中）
-├── types/             # 事件类型定义（计划中）
-├── event_loop.cpp     # 主事件循环
-├── frame_controller.* # 帧控制器
-├── task_scheduler.*   # 任务调度器
-├── event.*            # 基础事件类
-├── mouse_event.*      # 鼠标事件
-├── keyboard_event.*   # 键盘事件
-├── hit_testing.*      # 命中测试
-├── focus_manager.*    # 焦点管理
-└── ...
+├── CMakeLists.txt
+├── README.md
+├── dispatch/           # 事件分发器
+│   ├── mouse_event_dispatcher.*
+│   ├── keyboard_event_dispatcher.*
+│   └── wheel_event_dispatcher.*
+├── loop/               # 事件循环核心
+│   ├── event_loop.*
+│   ├── frame_controller.*
+│   └── task_scheduler.*
+├── types/              # 事件类型定义
+│   ├── event.*
+│   ├── event_types.*
+│   ├── mouse_event.*
+│   ├── keyboard_event.*
+│   └── data_transfer.*
+├── input/              # 输入处理
+│   ├── input_handler.*
+│   ├── hit_testing.*
+│   ├── focus_manager.*
+│   └── keyboard_utils.*
+└── event_system.*      # 事件系统（待评估）
 ```
 
 ## 模块列表
 
-### 核心循环
+### loop/ - 事件循环核心
 | 文件 | 描述 |
 |------|------|
 | `event_loop.h/cpp` | 主事件循环，处理 SDL 事件分发 |
 | `frame_controller.h/cpp` | 帧率控制器，管理 FPS 和帧时间 |
 | `task_scheduler.h/cpp` | 任务调度器，实现 setTimeout/setInterval/requestAnimationFrame |
 
-### 事件类型
+### types/ - 事件类型定义
 | 文件 | 描述 |
 |------|------|
 | `event.h/cpp` | 基础事件类 |
-| `event_types.h/cpp` | 事件类型定义 |
-| `mouse_event.h/cpp` | 鼠标事件 |
-| `keyboard_event.h/cpp` | 键盘事件 |
-| `keyboard_utils.h/cpp` | 键盘工具函数 |
+| `event_types.h/cpp` | 事件类型枚举和工具函数 |
+| `mouse_event.h/cpp` | 鼠标事件类 |
+| `keyboard_event.h/cpp` | 键盘事件类 |
+| `data_transfer.h/cpp` | 拖拽数据传输（DataTransfer API） |
 
-### 输入处理
+### input/ - 输入处理
 | 文件 | 描述 |
 |------|------|
 | `input_handler.h/cpp` | 输入事件处理器 |
 | `hit_testing.h/cpp` | Hit Testing 引擎 |
 | `focus_manager.h/cpp` | 焦点管理器 |
+| `keyboard_utils.h/cpp` | 键盘工具函数 |
 
-### 其他
+### dispatch/ - 事件分发器
 | 文件 | 描述 |
 |------|------|
-| `event_system.h/cpp` | 事件系统 |
-| `data_transfer.h/cpp` | 数据传输（拖放） |
+| `mouse_event_dispatcher.h/cpp` | 鼠标事件分发器 |
+| `keyboard_event_dispatcher.h/cpp` | 键盘事件分发器 |
+| `wheel_event_dispatcher.h/cpp` | 滚轮事件分发器 |
 
 ## 依赖关系
 
@@ -79,7 +90,21 @@ core/event/
 SDL Event → EventLoop → Hit Testing → DOM Element → Event Handlers
 ```
 
-## 注意事项
+## 使用示例
 
-- `event_loop.cpp` 当前超过 3900 行，计划拆分为独立的事件分发器
-- 鼠标和键盘事件处理逻辑较复杂，包含 hover 链管理和焦点处理
+```cpp
+#include "core/event/loop/event_loop.h"
+#include "core/event/loop/task_scheduler.h"
+
+// 创建事件循环
+auto event_loop = std::make_unique<EventLoop>();
+
+// 设置定时任务
+auto& scheduler = event_loop->GetTaskScheduler();
+scheduler.SetTimeout([]() {
+    std::cout << "Hello after 1 second!" << std::endl;
+}, 1000);
+
+// 运行事件循环
+event_loop->Run();
+```

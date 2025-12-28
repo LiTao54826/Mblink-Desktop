@@ -4,7 +4,7 @@
  */
 
 #include "layer.h"
-#include "core/event/hit_testing.h"
+#include "core/event/input/hit_testing.h"
 #include "core/dom/element.h"
 #include <algorithm>
 #include <iostream>

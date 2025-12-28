@@ -25,7 +25,7 @@
 #include "quickjs/js_value_wrapper.h"
 #include "quickjs/bindings/js_element.h"
 #include "quickjs/bindings/js_range.h"
-#include "core/event/event_loop.h"
+#include "core/event/loop/event_loop.h"
 #include "core/editing/selection_manager.h"
 #include "core/editing/contenteditable_handler.h"
 #include "core/editing/clipboard_manager.h"

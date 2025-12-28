@@ -13,7 +13,7 @@
 #include "core/render/layer_manager.h"
 #include "core/render/render_object.h"
 #include "core/dom/element.h"
-#include "core/event/hit_testing.h"
+#include "core/event/input/hit_testing.h"
 #include <random>
 #include <vector>
 #include <string>

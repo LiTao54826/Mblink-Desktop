@@ -14,7 +14,7 @@
 #include "quickjs_runtime.h"
 #include "core/window/window.h"
 #include "core/dom/document.h"
-#include "core/event/task_scheduler.h"
+#include "core/event/loop/task_scheduler.h"
 #include <memory>
 
 namespace lightui {

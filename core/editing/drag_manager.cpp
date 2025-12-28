@@ -4,14 +4,14 @@
  */
 
 #include "drag_manager.h"
-#include "core/event/data_transfer.h"
+#include "core/event/types/data_transfer.h"
 #include "core/dom/element.h"
 #include "core/dom/document.h"
 #include "core/dom/event.h"
 #include "core/dom/drag_event.h"
 #include "core/render/render_object.h"
-#include "core/event/hit_testing.h"
-#include "core/event/mouse_event.h"
+#include "core/event/input/hit_testing.h"
+#include "core/event/types/mouse_event.h"
 #include <algorithm>
 #include <cmath>
 #include <iostream>
