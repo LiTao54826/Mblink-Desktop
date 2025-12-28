@@ -24,7 +24,7 @@
 #include "core/event/input/focus_manager.h"
 #include "core/event/input/hit_testing.h"
 #include "core/event/types/mouse_event.h"
-#include "core/render/layer_manager.h"
+#include "core/render/layer/layer_manager.h"
 #include "core/render/render_object.h"
 #include "core/render/render_pipeline.h"
 #include "core/render/select_dropdown.h"

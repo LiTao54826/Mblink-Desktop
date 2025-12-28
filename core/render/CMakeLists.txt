@@ -32,10 +32,10 @@ set(RENDER_SOURCES
     dirty_region.cpp
     dirty_region_collector.cpp
     
-    # Layer management
-    layer.cpp
-    layer_manager.cpp
-    fbo_manager.cpp
+    # Layer management (subdirectory)
+    layer/layer.cpp
+    layer/layer_manager.cpp
+    layer/fbo_manager.cpp
     
     # Style resolution (css subdirectory)
     css/style_resolver.cpp

@@ -20,7 +20,7 @@
 #include "text/text_renderer.h"
 #include "gradient_renderer.h"
 #include "shadow_renderer.h"
-#include "layer_manager.h"
+#include "layer/layer_manager.h"
 #include "color.h"
 #include "list_marker.h"
 #include "painters/background_painter.h"
