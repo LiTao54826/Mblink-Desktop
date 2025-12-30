@@ -27,7 +27,7 @@ namespace lightui {
 class Element;
 class Text;
 class Document;
-class LayoutBox;
+struct LayoutBox;
 class RenderObject;
 
 /**

@@ -186,7 +186,7 @@ std::map<std::string, std::string> CascadeEngine::ApplyCascade(
 }
 
 std::string CascadeEngine::MergePropertyValues(
-    const std::string& property,
+    const std::string& /*property*/,
     const std::vector<PropertyValue>& values
 ) const {
     if (values.empty()) {

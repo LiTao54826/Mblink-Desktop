@@ -218,8 +218,8 @@ bool ContentEditableController::HandleMouseMove(
 }
 
 bool ContentEditableController::HandleMouseUp(
-    std::shared_ptr<Element> target,
-    float x, float y) {
+    std::shared_ptr<Element> /*target*/,
+    float /*x*/, float /*y*/) {
 
     bool was_dragging = drag_state_.is_active;
     

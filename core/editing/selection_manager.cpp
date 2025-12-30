@@ -114,7 +114,7 @@ void SelectionManager::HandleMouseMove(std::shared_ptr<Element> target, int x, i
     }
 }
 
-void SelectionManager::HandleMouseUp(std::shared_ptr<Element> target, int x, int y) {
+void SelectionManager::HandleMouseUp(std::shared_ptr<Element> /*target*/, int /*x*/, int /*y*/) {
     is_selecting_ = false;
     is_drag_selecting_ = false;
 }
@@ -162,7 +162,7 @@ void SelectionManager::UpdateDragSelection(
     }
 }
 
-void SelectionManager::EndDragSelection(std::shared_ptr<Document> document) {
+void SelectionManager::EndDragSelection(std::shared_ptr<Document> /*document*/) {
     is_drag_selecting_ = false;
     drag_start_node_ = nullptr;
     drag_start_offset_ = 0;

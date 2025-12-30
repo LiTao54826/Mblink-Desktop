@@ -4,7 +4,7 @@
  */
 
 #include <gtest/gtest.h>
-#include "render/gradient_renderer.h"
+#include "render/utils/gradient_renderer.h"
 #include "render/css/css_value.h"
 
 namespace lightui {

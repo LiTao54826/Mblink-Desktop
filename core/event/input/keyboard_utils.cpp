@@ -105,7 +105,7 @@ std::string SDLKeycodeToKey(SDL_Keycode keycode, bool shift) {
     if (keycode >= SDLK_A && keycode <= SDLK_Z) {
         char c = static_cast<char>(keycode);  // 已经是小写
         if (shift) {
-            c = std::toupper(c);
+            c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
         }
         return std::string(1, c);
     }
@@ -157,13 +157,13 @@ std::string SDLScancodeToCode(SDL_Scancode scancode) {
     
     // 字母键
     if (scancode >= SDL_SCANCODE_A && scancode <= SDL_SCANCODE_Z) {
-        char c = 'A' + (scancode - SDL_SCANCODE_A);
+        char c = static_cast<char>('A' + (scancode - SDL_SCANCODE_A));
         return "Key" + std::string(1, c);
     }
     
     // 数字键
     if (scancode >= SDL_SCANCODE_1 && scancode <= SDL_SCANCODE_9) {
-        char c = '1' + (scancode - SDL_SCANCODE_1);
+        char c = static_cast<char>('1' + (scancode - SDL_SCANCODE_1));
         return "Digit" + std::string(1, c);
     }
     if (scancode == SDL_SCANCODE_0) {

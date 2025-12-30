@@ -11,7 +11,7 @@
 
 #include <gtest/gtest.h>
 #include "test_utils/test_helpers.h"
-#include "dom/selector_engine.h"
+#include "dom/selection/selector_engine.h"
 #include "dom/element.h"
 #include "dom/document.h"
 

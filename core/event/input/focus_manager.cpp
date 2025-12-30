@@ -253,7 +253,7 @@ void FocusManager::ClearFocus() {
     focus_element_.reset();
 }
 
-void FocusManager::OnNodeRemoved(Node* node, Node* parent) {
+void FocusManager::OnNodeRemoved(Node* node, Node* /*parent*/) {
     // 参考 Chrome/Blink: 当焦点元素被从 DOM 移除时，自动清除焦点
     // 这是正确的焦点管理行为，而不是在 GetFocusElement 中检查
 
@@ -487,7 +487,7 @@ void FocusManager::SendFocusEvents(std::shared_ptr<Element> old_focus,
                 // 移除:focus和:focus-visible伪类
                 element->SetPseudoClass("focus", false);
                 element->SetPseudoClass("focus-visible", false);
-            } catch (const std::exception& e) {
+            } catch (const std::exception&) {
                 // 元素已被销毁或发生其他错误，忽略
             } catch (...) {
                 // 元素已被销毁，忽略
@@ -524,7 +524,7 @@ void FocusManager::SendFocusEvents(std::shared_ptr<Element> old_focus,
                 if (focus_visible) {
                     element->SetPseudoClass("focus-visible", true);
                 }
-            } catch (const std::exception& e) {
+            } catch (const std::exception&) {
                 // 元素已被销毁或发生其他错误，忽略
             } catch (...) {
                 // 元素已被销毁，忽略

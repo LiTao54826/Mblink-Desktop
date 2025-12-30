@@ -89,7 +89,7 @@ bool ContentEditableHandler::HandleKeyDown(
     int key_code,
     bool ctrl_key,
     bool shift_key,
-    bool alt_key) {
+    bool /*alt_key*/) {
 
     if (!target || !IsEditable(target)) {
         return false;
@@ -1447,11 +1447,11 @@ bool ContentEditableHandler::MergeToNextNode(
             if (!content.empty()) {
                 // 删除下一个文本节点的第一个字符
                 size_t char_len = 1;
-                unsigned char c = content[0];
-                if ((c & 0x80) == 0) char_len = 1;
-                else if ((c & 0xE0) == 0xC0) char_len = 2;
-                else if ((c & 0xF0) == 0xE0) char_len = 3;
-                else if ((c & 0xF8) == 0xF0) char_len = 4;
+                unsigned char first_char = content[0];
+                if ((first_char & 0x80) == 0) char_len = 1;
+                else if ((first_char & 0xE0) == 0xC0) char_len = 2;
+                else if ((first_char & 0xF0) == 0xE0) char_len = 3;
+                else if ((first_char & 0xF8) == 0xF0) char_len = 4;
                 
                 content.erase(0, char_len);
                 next_text->SetTextContent(content);
@@ -1463,8 +1463,8 @@ bool ContentEditableHandler::MergeToNextNode(
                         auto next_parent_elem = std::dynamic_pointer_cast<Element>(next_parent);
                         if (next_parent_elem && isNodeEmpty(next_parent_elem)) {
                             std::string tag = next_parent_elem->GetTagName();
-                            for (auto& c : tag) {
-                                c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+                            for (auto& ch : tag) {
+                                ch = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
                             }
                             if (isFormattingElement(tag)) {
                                 // 删除空的格式化元素
@@ -1700,7 +1700,7 @@ bool ContentEditableHandler::MoveCursorUp(
     if (!selection) return false;
 
     auto anchor_node = selection->GetAnchorNode();
-    int anchor_offset = selection->GetAnchorOffset();
+    (void)selection->GetAnchorOffset();  // 暂未使用，但保留调用以确保 selection 状态正确
     if (!anchor_node) return false;
 
     // 查找当前节点所在的块级元素
@@ -1795,7 +1795,7 @@ bool ContentEditableHandler::MoveCursorDown(
     if (!selection) return false;
 
     auto anchor_node = selection->GetAnchorNode();
-    int anchor_offset = selection->GetAnchorOffset();
+    (void)selection->GetAnchorOffset();  // 暂未使用，但保留调用以确保 selection 状态正确
     if (!anchor_node) return false;
 
     // 查找当前节点所在的块级元素

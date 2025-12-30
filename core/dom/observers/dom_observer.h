@@ -34,14 +34,14 @@ public:
      * @param node 被添加的节点
      * @param parent 父节点
      */
-    virtual void OnNodeAdded(Node* node, Node* parent) {}
+    virtual void OnNodeAdded(Node* /*node*/, Node* /*parent*/) {}
     
     /**
      * @brief 节点被移除时调用
      * @param node 被移除的节点
      * @param parent 原父节点
      */
-    virtual void OnNodeRemoved(Node* node, Node* parent) {}
+    virtual void OnNodeRemoved(Node* /*node*/, Node* /*parent*/) {}
     
     /**
      * @brief 元素属性被修改时调用
@@ -50,10 +50,10 @@ public:
      * @param old_value 旧值
      * @param new_value 新值
      */
-    virtual void OnAttributeChanged(Element* element, 
-                                   const std::string& name,
-                                   const std::string& old_value,
-                                   const std::string& new_value) {}
+    virtual void OnAttributeChanged(Element* /*element*/, 
+                                   const std::string& /*name*/,
+                                   const std::string& /*old_value*/,
+                                   const std::string& /*new_value*/) {}
     
     /**
      * @brief 元素样式被修改时调用
@@ -62,10 +62,10 @@ public:
      * @param old_value 旧值
      * @param new_value 新值
      */
-    virtual void OnStyleChanged(Element* element,
-                               const std::string& property,
-                               const std::string& old_value,
-                               const std::string& new_value) {}
+    virtual void OnStyleChanged(Element* /*element*/,
+                               const std::string& /*property*/,
+                               const std::string& /*old_value*/,
+                               const std::string& /*new_value*/) {}
     
     /**
      * @brief 文本内容被修改时调用
@@ -73,9 +73,9 @@ public:
      * @param old_text 旧文本
      * @param new_text 新文本
      */
-    virtual void OnTextChanged(Node* node,
-                              const std::string& old_text,
-                              const std::string& new_text) {}
+    virtual void OnTextChanged(Node* /*node*/,
+                              const std::string& /*old_text*/,
+                              const std::string& /*new_text*/) {}
 
     /**
      * @brief CSS伪类状态被修改时调用
@@ -83,15 +83,15 @@ public:
      * @param pseudo_class 伪类名称（如"hover", "active", "focus"）
      * @param activate true表示激活，false表示移除
      */
-    virtual void OnPseudoClassChanged(std::shared_ptr<Element> element,
-                                     const std::string& pseudo_class,
-                                     bool activate) {}
+    virtual void OnPseudoClassChanged(std::shared_ptr<Element> /*element*/,
+                                     const std::string& /*pseudo_class*/,
+                                     bool /*activate*/) {}
 
     /**
      * @brief 子树被修改时调用（批量变化）
      * @param root 子树根节点
      */
-    virtual void OnSubtreeModified(Node* root) {}
+    virtual void OnSubtreeModified(Node* /*root*/) {}
 };
 
 /**

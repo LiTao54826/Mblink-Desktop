@@ -6,6 +6,7 @@
 #include "task_scheduler.h"
 #include <algorithm>
 #include <iostream>
+#include <cstdlib>
 
 namespace lightui {
 
@@ -50,7 +51,19 @@ int TaskScheduler::SetInterval(std::function<void()> callback, int interval_ms) 
 
 int TaskScheduler::RequestAnimationFrame(std::function<void(double)> callback) {
     // 调试日志
+#ifdef _WIN32
+    static bool debug_raf = false;
+    static bool debug_raf_checked = false;
+    if (!debug_raf_checked) {
+        char* env_val = nullptr;
+        size_t env_len = 0;
+        debug_raf = (_dupenv_s(&env_val, &env_len, "LIGHTUI_DEBUG_RAF") == 0 && env_val != nullptr);
+        free(env_val);
+        debug_raf_checked = true;
+    }
+#else
     static bool debug_raf = std::getenv("LIGHTUI_DEBUG_RAF") != nullptr;
+#endif
     if (debug_raf) {
         std::cout << "[RequestAnimationFrame] Adding task, current count: " << animation_frame_tasks_.size() << std::endl;
     }
@@ -140,7 +153,19 @@ void TaskScheduler::ProcessTasks() {
 
 void TaskScheduler::ProcessAnimationFrames(double timestamp) {
     // 调试日志
+#ifdef _WIN32
+    static bool debug_raf = false;
+    static bool debug_raf_checked = false;
+    if (!debug_raf_checked) {
+        char* env_val = nullptr;
+        size_t env_len = 0;
+        debug_raf = (_dupenv_s(&env_val, &env_len, "LIGHTUI_DEBUG_RAF") == 0 && env_val != nullptr);
+        free(env_val);
+        debug_raf_checked = true;
+    }
+#else
     static bool debug_raf = std::getenv("LIGHTUI_DEBUG_RAF") != nullptr;
+#endif
     if (debug_raf && !animation_frame_tasks_.empty()) {
         std::cout << "[ProcessAnimationFrames] Processing " << animation_frame_tasks_.size() << " tasks" << std::endl;
     }

@@ -200,10 +200,10 @@ void RenderSVGRoot::Layout(float parent_width, float parent_height) {
     }
 }
 
-std::pair<float, float> RenderSVGRoot::MeasureIntrinsicSize(float available_width) {
+std::pair<float, float> RenderSVGRoot::MeasureIntrinsicSize(float /*available_width*/) {
     auto element = svg_svg_element_.lock();
     if (!element) {
-        return {0, 0};
+        return {0.0f, 0.0f};
     }
 
     float width = 0, height = 0;

@@ -4,7 +4,7 @@
  */
 
 #include <gtest/gtest.h>
-#include "render/shadow_renderer.h"
+#include "render/utils/shadow_renderer.h"
 #include "render/css/css_value.h"
 
 namespace lightui {

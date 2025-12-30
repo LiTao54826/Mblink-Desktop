@@ -32,7 +32,7 @@
 
 // Skia 前向声明
 class SkCanvas;
-class SkRect;
+struct SkRect;
 
 namespace lightui {
 

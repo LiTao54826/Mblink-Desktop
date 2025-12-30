@@ -17,8 +17,8 @@
 #include "dom/element.h"
 #include "dom/text.h"
 #include "dom/document.h"
-#include "dom/incremental_style_recalc.h"
-#include "dom/dirty_node_tracker.h"
+#include "dom/style/incremental_style_recalc.h"
+#include "dom/observers/dirty_node_tracker.h"
 
 namespace lightui {
 namespace test {

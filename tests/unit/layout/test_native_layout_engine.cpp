@@ -12,7 +12,7 @@
 #include <gtest/gtest.h>
 #include "test_utils/test_helpers.h"
 #include "layout/native_layout_engine.h"
-#include "render/render_object.h"
+#include "render/objects/render_object.h"
 #include "dom/document.h"
 #include "dom/element.h"
 

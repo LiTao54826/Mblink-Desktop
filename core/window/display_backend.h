@@ -74,7 +74,7 @@ public:
      * 子类可以重写此方法以实现局部更新优化。
      */
     virtual void PresentPartial(const void* pixels, int width, int height, int stride,
-                                int dirty_x, int dirty_y, int dirty_width, int dirty_height) {
+                                int /*dirty_x*/, int /*dirty_y*/, int /*dirty_width*/, int /*dirty_height*/) {
         // 默认实现：复制整个 surface
         Present(pixels, width, height, stride);
     }
@@ -111,7 +111,7 @@ public:
      * @param enabled 是否启用
      * @return 是否设置成功
      */
-    virtual bool SetVSync(bool enabled) { (void)enabled; return false; }
+    virtual bool SetVSync(bool /*enabled*/) { return false; }
 
     /**
      * @brief 创建指定类型的显示后端

@@ -1443,16 +1443,15 @@ void MouseEventDispatcher::HandleMouseDown(std::shared_ptr<Window> window,
             focus_manager_->SetFocus(hit_result.element, false);
         }
 
-        // 初始化 Selection
+        // 初始化拖动选择状态
         if (selection_manager_) {
             auto selection = selection_manager_->GetSelection(document);
             if (selection && hit_result.render_object) {
                 // 记录拖动开始位置
                 contenteditable_dragging_ = true;
                 
-                // 简化处理：将光标设置到元素开始位置
-                // 完整的文本节点定位逻辑较复杂，这里保持基本功能
-                selection->Collapse(hit_result.element, 0);
+                // 注意：Selection 已经在 UpdateSelectionFromClick 中正确设置
+                // 这里只需要记录拖动起始位置，不需要重置 Selection
                 contenteditable_drag_start_node_ = selection->GetAnchorNode();
                 contenteditable_drag_start_offset_ = selection->GetAnchorOffset();
             }
@@ -1470,7 +1469,7 @@ void MouseEventDispatcher::HandleMouseDown(std::shared_ptr<Window> window,
 }
 
 void MouseEventDispatcher::HandleMouseUp(std::shared_ptr<Window> window,
-                                          std::shared_ptr<Document> document,
+                                          std::shared_ptr<Document> /*document*/,
                                           const HitTestResult& hit_result,
                                           const SDL_Event& event,
                                           float logical_x,
@@ -1581,15 +1580,9 @@ void MouseEventDispatcher::HandleMouseUp(std::shared_ptr<Window> window,
                 }
             }
 
-            // 为 contentEditable 元素初始化 Selection
-            if (hit_result.element->IsContentEditable() && !was_contenteditable_dragging) {
-                if (selection_manager_) {
-                    auto selection = selection_manager_->GetSelection(document);
-                    if (selection) {
-                        selection->Collapse(hit_result.element, 0);
-                    }
-                }
-            }
+            // 注意：不再在这里重置 Selection
+            // Selection 已经在 mousedown 时通过 UpdateSelectionFromClick 正确设置
+            // 如果在这里重置为 (element, 0)，会覆盖掉正确的字符偏移位置
         }
 
         // 检查双击
@@ -1718,8 +1711,8 @@ void MouseEventDispatcher::HandleMouseMove(std::shared_ptr<Window> window,
 }
 
 void MouseEventDispatcher::HandleContentEditableDragSelection(std::shared_ptr<Window> window,
-                                                               float logical_x,
-                                                               float logical_y,
+                                                               float /*logical_x*/,
+                                                               float /*logical_y*/,
                                                                Uint32 event_type) {
     (void)event_type;
     

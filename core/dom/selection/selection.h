@@ -205,6 +205,9 @@ private:
     // 是否有方向性（用于 modify 等操作）
     bool is_directional_ = false;
 
+    // 是否有待处理的 selectionchange 事件（用于合并多次触发）
+    bool pending_selectionchange_ = false;
+
     // 缓存的 Range
     std::vector<std::shared_ptr<Range>> ranges_;
 };

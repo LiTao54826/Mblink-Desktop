@@ -242,7 +242,7 @@ LexborElement* LexborDocument::QuerySelector(const std::string& selector) {
     // 查找第一个匹配的元素
     lxb_dom_element_t* result = nullptr;
     
-    auto callback = [](lxb_dom_node_t* node, lxb_css_selector_specificity_t spec, void* ctx) -> lxb_status_t {
+    auto callback = [](lxb_dom_node_t* node, lxb_css_selector_specificity_t /*spec*/, void* ctx) -> lxb_status_t {
         lxb_dom_element_t** result_ptr = static_cast<lxb_dom_element_t**>(ctx);
         *result_ptr = lxb_dom_interface_element(node);
         return LXB_STATUS_STOP;  // 只需要第一个
@@ -282,7 +282,7 @@ std::vector<LexborElement*> LexborDocument::QuerySelectorAll(const std::string& 
     }
     
     // 查找所有匹配的元素
-    auto callback = [](lxb_dom_node_t* node, lxb_css_selector_specificity_t spec, void* ctx) -> lxb_status_t {
+    auto callback = [](lxb_dom_node_t* node, lxb_css_selector_specificity_t /*spec*/, void* ctx) -> lxb_status_t {
         auto* results_ptr = static_cast<std::vector<lxb_dom_element_t*>*>(ctx);
         results_ptr->push_back(lxb_dom_interface_element(node));
         return LXB_STATUS_OK;
@@ -933,7 +933,7 @@ LexborElement* LexborElement::QuerySelector(const std::string& selector) {
     // 查找第一个匹配的元素（从当前元素开始）
     lxb_dom_element_t* result = nullptr;
 
-    auto callback = [](lxb_dom_node_t* node, lxb_css_selector_specificity_t spec, void* ctx) -> lxb_status_t {
+    auto callback = [](lxb_dom_node_t* node, lxb_css_selector_specificity_t /*spec*/, void* ctx) -> lxb_status_t {
         lxb_dom_element_t** result_ptr = static_cast<lxb_dom_element_t**>(ctx);
         *result_ptr = lxb_dom_interface_element(node);
         return LXB_STATUS_STOP;  // 只需要第一个
@@ -978,7 +978,7 @@ std::vector<LexborElement*> LexborElement::QuerySelectorAll(const std::string& s
     }
 
     // 查找所有匹配的元素（从当前元素开始）
-    auto callback = [](lxb_dom_node_t* node, lxb_css_selector_specificity_t spec, void* ctx) -> lxb_status_t {
+    auto callback = [](lxb_dom_node_t* node, lxb_css_selector_specificity_t /*spec*/, void* ctx) -> lxb_status_t {
         auto* results_ptr = static_cast<std::vector<LexborElement*>*>(ctx);
         lxb_dom_element_t* elem = lxb_dom_interface_element(node);
 

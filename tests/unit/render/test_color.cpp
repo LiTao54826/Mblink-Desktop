@@ -4,7 +4,7 @@
  */
 
 #include <gtest/gtest.h>
-#include "render/color.h"
+#include "render/utils/color.h"
 
 namespace lightui {
 namespace test {

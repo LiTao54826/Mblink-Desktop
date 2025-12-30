@@ -1290,21 +1290,12 @@ static JSValue JSElement_contains(JSContext* ctx, JSValueConst this_val, int arg
     
     if (argc < 1) return JS_FALSE;
     
-    auto other = UnwrapElement(ctx, argv[0]);
+    // 尝试解包为 Node（支持 Element 和 Text 节点）
+    auto other = UnwrapNode(ctx, argv[0]);
     if (!other) return JS_FALSE;
     
-    // 检查 other 是否是 this 的后代
-    auto current = other;
-    while (current) {
-        if (current.get() == data->element.get()) {
-            return JS_TRUE;
-        }
-        auto parent = current->GetParentNode();
-        if (!parent) break;
-        current = std::dynamic_pointer_cast<Element>(parent);
-    }
-    
-    return JS_FALSE;
+    // 使用 Node::Contains 方法检查
+    return JS_NewBool(ctx, data->element->Contains(other));
 }
 
 // matches - 检查元素是否匹配选择器

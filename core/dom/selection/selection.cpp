@@ -12,6 +12,7 @@
 #include "core/dom/event.h"
 #include "core/dom/node.h"
 #include "core/dom/text.h"
+#include "core/event/loop/task_scheduler.h"
 #include <algorithm>
 #include <iostream>
 
@@ -655,8 +656,10 @@ std::pair<std::shared_ptr<Node>, int> Selection::ResolveElementPosition(
     }
 
     if (offset >= static_cast<int>(children.size())) {
-        // offset >= 子节点数量：定位到最后一个文本节点的末尾
-        auto text_node = findLastText(node);
+        // offset >= 子节点数量：定位到最后一个子节点的最后一个文本节点的末尾
+        // 注意：要从最后一个子节点开始找，而不是从 node 本身
+        auto last_child = children.back();
+        auto text_node = findLastText(last_child);
         if (text_node) {
             int text_len = static_cast<int>(text_node->GetData().length());
             return {text_node, text_len};
@@ -687,21 +690,45 @@ std::pair<std::shared_ptr<Node>, int> Selection::ResolveElementPosition(
 }
 
 void Selection::DispatchSelectionChangeEvent() {
-    auto doc = document_.lock();
-    if (!doc) {
+    // 使用微任务延迟触发 selectionchange 事件
+    // 这样可以避免在 CodeMirror 等编辑器的 updateSelection 过程中
+    // 触发嵌套的 EditorView.update 调用
+    // 
+    // 参考：CodeMirror 6 的 ignore 机制会在 updateSelection 中调用
+    // collapse/extend 等方法，如果同步触发 selectionchange 事件，
+    // 会导致 "Calls to EditorView.update are not allowed while an update is in progress" 错误
+    
+    // 检查是否已经有待处理的 selectionchange 事件
+    if (pending_selectionchange_) {
         return;
     }
+    pending_selectionchange_ = true;
 
-    // 创建 selectionchange 事件
-    // 根据规范，selectionchange 事件不冒泡，不可取消
-    auto event = std::make_shared<Event>("selectionchange", false, false);
+    std::weak_ptr<Selection> weak_self = shared_from_this();
+    TaskScheduler::Instance().PostMicrotask([weak_self]() {
+        auto self = weak_self.lock();
+        if (!self) {
+            return;
+        }
+        
+        self->pending_selectionchange_ = false;
+        
+        auto doc = self->document_.lock();
+        if (!doc) {
+            return;
+        }
 
-    // 获取 document 的 body 元素来分发事件
-    // 因为 Document 没有 DispatchEvent，我们通过 body 分发
-    auto body = doc->GetBody();
-    if (body) {
-        body->DispatchEvent(event);
-    }
+        // 创建 selectionchange 事件
+        // 根据规范，selectionchange 事件不冒泡，不可取消
+        auto event = std::make_shared<Event>("selectionchange", false, false);
+
+        // 获取 document 的 body 元素来分发事件
+        // 因为 Document 没有 DispatchEvent，我们通过 body 分发
+        auto body = doc->GetBody();
+        if (body) {
+            body->DispatchEvent(event);
+        }
+    });
 }
 
 } // namespace lightui

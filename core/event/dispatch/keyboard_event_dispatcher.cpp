@@ -103,7 +103,7 @@ bool KeyboardEventDispatcher::HandleKeyboardEvent(const SDL_Event& event,
 
 void KeyboardEventDispatcher::HandleKeyDown(const SDL_Event& event,
                                              std::shared_ptr<Element> focus_element,
-                                             std::shared_ptr<Document> document,
+                                             std::shared_ptr<Document> /*document*/,
                                              std::shared_ptr<Window> window,
                                              bool ctrl_key, bool shift_key,
                                              bool alt_key, bool meta_key) {

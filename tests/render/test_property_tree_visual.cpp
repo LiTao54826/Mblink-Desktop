@@ -16,7 +16,7 @@
 #include "core/compositor/property_tree/property_tree_builder.h"
 #include "core/compositor/property_tree/paint/paint_artifact_compositor.h"
 #include "core/compositor/property_tree/geometry_mapper.h"
-#include "core/render/render_pipeline.h"
+#include "render/pipeline/render_pipeline.h"
 #include "include/core/SkCanvas.h"
 #include "include/core/SkSurface.h"
 #include "include/core/SkBitmap.h"
