@@ -191,6 +191,10 @@ void EventLoop::RunOnce() {
 
     // 2. 执行调度任务
     task_scheduler_->ProcessTasks();
+    
+    // 2.1 处理全局单例 TaskScheduler 的微任务
+    // Selection 等组件使用 TaskScheduler::Instance() 发布微任务
+    TaskScheduler::Instance().ProcessMicrotasks();
 
     // 2.5 处理 QuickJS 定时器和微任务
     if (quickjs_runtime_) {
@@ -217,6 +221,9 @@ void EventLoop::RunOnce() {
     if (quickjs_runtime_) {
         quickjs_runtime_->RunEventLoop(1);  // 处理可能产生的微任务
     }
+    
+    // 4.7 处理全局单例 TaskScheduler 的微任务（动画帧可能触发新的微任务）
+    TaskScheduler::Instance().ProcessMicrotasks();
 
     // 4.5 处理光标闪烁（如果有聚焦的输入框或 contentEditable 元素）
     static Uint64 last_cursor_blink_time = SDL_GetTicks();
@@ -420,7 +427,17 @@ bool EventLoop::ProcessEvents() {
         has_events = true;
 
         // 调试：输出事件类型（可以通过环境变量控制）
+#ifdef _WIN32
+        static bool debug_events = []() {
+            char* env_val = nullptr;
+            size_t env_len = 0;
+            bool result = (_dupenv_s(&env_val, &env_len, "LIGHTUI_DEBUG_EVENTS") == 0 && env_val != nullptr);
+            free(env_val);
+            return result;
+        }();
+#else
         static bool debug_events = std::getenv("LIGHTUI_DEBUG_EVENTS") != nullptr;
+#endif
         if (debug_events) {
             // 过滤掉高频的鼠标移动事件
             if (event.type != SDL_EVENT_MOUSE_MOTION) {
@@ -1096,7 +1113,7 @@ void EventLoop::SetSystemCursor(SDL_SystemCursor cursor_type) {
     }
 }
 
-void EventLoop::UpdateMouseCursor(const HitTestResult& hit_result, Uint32 window_id) {
+void EventLoop::UpdateMouseCursor(const HitTestResult& hit_result, Uint32 /*window_id*/) {
     // 默认使用箭头光标
     SDL_SystemCursor target_cursor = SDL_SYSTEM_CURSOR_DEFAULT;
 

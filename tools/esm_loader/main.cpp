@@ -292,6 +292,7 @@ int main(int argc, char** argv) {
                 window->SwapBuffers();
             }
         });
+        
         event_loop.Run();
 
         // 清理
