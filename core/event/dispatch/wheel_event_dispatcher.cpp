@@ -10,6 +10,8 @@
 #include "core/dom/document.h"
 #include "core/dom/element.h"
 #include "core/dom/elements/html_textarea_element.h"
+#include "core/dom/elements/terminal/html_terminal_element.h"
+#include "core/dom/elements/logview/html_logview_element.h"
 #include "core/event/input/hit_testing.h"
 #include "core/render/objects/render_object.h"
 #include "core/render/pipeline/render_pipeline.h"
@@ -64,9 +66,25 @@ bool WheelEventDispatcher::HandleWheelEvent(const SDL_Event& event,
     HitTestResult hit_result = hit_testing.HitTestRenderObject(
         root_render, logical_x, logical_y, 0.0f, 0.0f);
 
-    // 检查是否命中了 textarea 元素
+    // 检查是否命中了特殊元素
     if (hit_result.IsValid() && hit_result.element) {
         std::string tag_name = hit_result.element->GetTagName();
+        
+        // 处理 terminal 元素的滚轮事件
+        if (tag_name == "terminal") {
+            if (HandleTerminalWheel(window, hit_result.element, wheel_y)) {
+                return true;
+            }
+        }
+        
+        // 处理 logview 元素的滚轮事件
+        if (tag_name == "logview") {
+            if (HandleLogViewWheel(window, hit_result.element, wheel_y)) {
+                return true;
+            }
+        }
+        
+        // 处理 textarea 元素的滚轮事件
         if (tag_name == "textarea") {
             if (HandleTextAreaWheel(window, hit_result.element, hit_result.render_object,
                                     wheel_x, wheel_y, shift_pressed)) {
@@ -88,6 +106,56 @@ bool WheelEventDispatcher::HandleWheelEvent(const SDL_Event& event,
     }
 
     return false;
+}
+
+bool WheelEventDispatcher::HandleTerminalWheel(std::shared_ptr<Window> window,
+                                                std::shared_ptr<Element> element,
+                                                float wheel_y) {
+    if (!element) {
+        return false;
+    }
+
+    auto terminal_element = std::dynamic_pointer_cast<HTMLTerminalElement>(element);
+    if (!terminal_element) {
+        return false;
+    }
+
+    // 将滚轮增量转换为像素（每行约 40 像素）
+    float delta = -wheel_y * 40.0f;
+    terminal_element->HandleWheel(delta);
+
+    // 标记窗口需要重绘
+    window->SetNeedsRepaint();
+    if (auto pipeline = window->GetRenderPipeline()) {
+        pipeline->ForceRasterize();
+    }
+
+    return true;
+}
+
+bool WheelEventDispatcher::HandleLogViewWheel(std::shared_ptr<Window> window,
+                                               std::shared_ptr<Element> element,
+                                               float wheel_y) {
+    if (!element) {
+        return false;
+    }
+
+    auto logview_element = std::dynamic_pointer_cast<HTMLLogViewElement>(element);
+    if (!logview_element) {
+        return false;
+    }
+
+    // 将滚轮增量转换为像素（每行约 40 像素）
+    float delta = -wheel_y * 40.0f;
+    logview_element->OnWheel(delta);
+
+    // 标记窗口需要重绘
+    window->SetNeedsRepaint();
+    if (auto pipeline = window->GetRenderPipeline()) {
+        pipeline->ForceRasterize();
+    }
+
+    return true;
 }
 
 bool WheelEventDispatcher::HandleTextAreaWheel(std::shared_ptr<Window> window,

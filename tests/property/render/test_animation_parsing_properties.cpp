@@ -15,12 +15,12 @@
 
 #include <gtest/gtest.h>
 #include "test_utils/test_helpers.h"
-#include "lexbor/style_manager.h"
-#include "render/css/style_resolver.h"
-#include "render/render_object.h"
-#include "render/animation/animation.h"
-#include "dom/document.h"
-#include "dom/element.h"
+#include "core/lexbor/style_manager.h"
+#include "core/render/css/style_resolver.h"
+#include "core/render/objects/render_object.h"
+#include "core/render/animation/animation.h"
+#include "core/dom/document.h"
+#include "core/dom/element.h"
 #include <random>
 #include <vector>
 #include <string>

@@ -355,6 +355,62 @@ static JSValue JSRange_toString(JSContext* ctx, JSValueConst this_val, int argc,
     return JS_NewString(ctx, text.c_str());
 }
 
+// getBoundingClientRect()
+static JSValue JSRange_getBoundingClientRect(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) {
+    auto* data = static_cast<JSRangeData*>(JS_GetOpaque(this_val, js_range_class_id));
+    if (!data || !data->range) {
+        return JS_NULL;
+    }
+
+    auto rect = data->range->GetBoundingClientRect();
+    
+    JSValue obj = JS_NewObject(ctx);
+    JS_SetPropertyStr(ctx, obj, "x", JS_NewFloat64(ctx, rect.x));
+    JS_SetPropertyStr(ctx, obj, "y", JS_NewFloat64(ctx, rect.y));
+    JS_SetPropertyStr(ctx, obj, "width", JS_NewFloat64(ctx, rect.width));
+    JS_SetPropertyStr(ctx, obj, "height", JS_NewFloat64(ctx, rect.height));
+    JS_SetPropertyStr(ctx, obj, "top", JS_NewFloat64(ctx, rect.top));
+    JS_SetPropertyStr(ctx, obj, "right", JS_NewFloat64(ctx, rect.right));
+    JS_SetPropertyStr(ctx, obj, "bottom", JS_NewFloat64(ctx, rect.bottom));
+    JS_SetPropertyStr(ctx, obj, "left", JS_NewFloat64(ctx, rect.left));
+    
+    return obj;
+}
+
+// getClientRects() - 返回 Range 的所有边界矩形
+static JSValue JSRange_getClientRects(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) {
+    auto* data = static_cast<JSRangeData*>(JS_GetOpaque(this_val, js_range_class_id));
+    
+    // 创建数组来存储矩形
+    JSValue arr = JS_NewArray(ctx);
+    
+    if (!data || !data->range) {
+        return arr;  // 返回空数组
+    }
+
+    auto rects = data->range->GetClientRects();
+    
+    for (size_t i = 0; i < rects.size(); ++i) {
+        const auto& rect = rects[i];
+        
+        // 创建 DOMRect 对象
+        JSValue obj = JS_NewObject(ctx);
+        JS_SetPropertyStr(ctx, obj, "x", JS_NewFloat64(ctx, rect.x));
+        JS_SetPropertyStr(ctx, obj, "y", JS_NewFloat64(ctx, rect.y));
+        JS_SetPropertyStr(ctx, obj, "width", JS_NewFloat64(ctx, rect.width));
+        JS_SetPropertyStr(ctx, obj, "height", JS_NewFloat64(ctx, rect.height));
+        JS_SetPropertyStr(ctx, obj, "top", JS_NewFloat64(ctx, rect.top));
+        JS_SetPropertyStr(ctx, obj, "right", JS_NewFloat64(ctx, rect.right));
+        JS_SetPropertyStr(ctx, obj, "bottom", JS_NewFloat64(ctx, rect.bottom));
+        JS_SetPropertyStr(ctx, obj, "left", JS_NewFloat64(ctx, rect.left));
+        
+        // 添加到数组
+        JS_SetPropertyUint32(ctx, arr, static_cast<uint32_t>(i), obj);
+    }
+    
+    return arr;
+}
+
 // ========== 类定义 ==========
 
 static const JSCFunctionListEntry js_range_proto_funcs[] = {
@@ -375,6 +431,8 @@ static const JSCFunctionListEntry js_range_proto_funcs[] = {
     JS_CFUNC_DEF("collapse", 1, JSRange_collapse),
     JS_CFUNC_DEF("cloneRange", 0, JSRange_cloneRange),
     JS_CFUNC_DEF("toString", 0, JSRange_toString),
+    JS_CFUNC_DEF("getBoundingClientRect", 0, JSRange_getBoundingClientRect),
+    JS_CFUNC_DEF("getClientRects", 0, JSRange_getClientRects),
 };
 
 static JSClassDef js_range_class = {

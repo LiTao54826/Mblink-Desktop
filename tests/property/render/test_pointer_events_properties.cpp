@@ -9,10 +9,10 @@
  */
 
 #include <gtest/gtest.h>
-#include "event/input/hit_testing.h"
-#include "render/render_object.h"
-#include "dom/element.h"
-#include "dom/document.h"
+#include "core/event/input/hit_testing.h"
+#include "core/render/objects/render_object.h"
+#include "core/dom/element.h"
+#include "core/dom/document.h"
 #include <random>
 #include <vector>
 #include <string>

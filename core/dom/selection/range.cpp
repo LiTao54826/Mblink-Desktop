@@ -4,13 +4,18 @@
  */
 
 #include "range.h"
-#include "core/dom/node.h"
 #include "core/dom/document.h"
-#include "core/dom/text.h"
 #include "core/dom/element.h"
+#include "core/dom/node.h"
+#include "core/dom/text.h"
+#include "core/render/objects/render_object.h"
+#include "core/render/text/font_manager.h"
+#include "include/core/SkFont.h"
+#include "include/core/SkTextBlob.h"
+#include <algorithm>
+#include <iostream>
 #include <stdexcept>
 #include <vector>
-#include <algorithm>
 
 namespace lightui {
 
@@ -242,6 +247,303 @@ std::string Range::ToString() const {
     return result;
 }
 
+// ========== 几何信息 ==========
+
+/**
+ * @brief 计算文本节点在指定偏移范围内的矩形
+ * @param text_node 文本节点
+ * @param start_offset 起始偏移
+ * @param end_offset 结束偏移
+ * @return 矩形区域
+ */
+Range::DOMRect Range::ComputeTextRect(
+    std::shared_ptr<Text> text_node,
+    int start_offset,
+    int end_offset) const {
+    
+    DOMRect rect;
+    if (!text_node) {
+        return rect;
+    }
+    
+    // 获取父元素
+    auto parent = text_node->GetParentNode();
+    if (!parent) {
+        return rect;
+    }
+    
+    auto element = std::dynamic_pointer_cast<Element>(parent);
+    if (!element) {
+        return rect;
+    }
+    
+    // 获取元素的边界矩形
+    auto elem_rect = element->GetBoundingClientRect();
+    
+    // 获取字体信息
+    float font_size = 14.0f;
+    float line_height = font_size * 1.4f;
+    std::string font_family = "monospace";
+    float padding_left = 0.0f;
+    float padding_top = 0.0f;
+    
+    auto render_obj = element->GetRenderObject();
+    if (render_obj) {
+        const auto& computed = render_obj->GetComputedStyle();
+        font_size = computed.font_size;
+        line_height = font_size * 1.4f;
+        if (!computed.font_family.empty()) {
+            font_family = computed.font_family;
+        }
+        padding_left = computed.padding_left.ToPx();
+        padding_top = computed.padding_top.ToPx();
+    }
+    
+    // 使用 FontManager 测量文本
+    FontDescriptor desc;
+    desc.family = font_family;
+    desc.size = font_size;
+    desc.weight = FontWeight::NORMAL;
+    desc.style = FontStyle::NORMAL;
+    
+    SkFont font = FontManager::GetInstance().LoadFont(desc);
+    
+    // 获取文本内容
+    std::string full_text = text_node->GetData();
+    int text_len = static_cast<int>(full_text.length());
+    
+    // 限制偏移范围
+    start_offset = std::max(0, std::min(start_offset, text_len));
+    end_offset = std::max(start_offset, std::min(end_offset, text_len));
+    
+    // 计算起始偏移的 x 位置
+    float start_x = elem_rect.x + padding_left;
+    if (start_offset > 0) {
+        std::string prefix = full_text.substr(0, start_offset);
+        float prefix_width = font.measureText(
+            prefix.c_str(), prefix.size(), SkTextEncoding::kUTF8, nullptr);
+        start_x = elem_rect.x + padding_left + prefix_width;
+    }
+    
+    // 计算范围的宽度
+    float width = 0;
+    int char_count = end_offset - start_offset;
+    if (char_count > 0) {
+        std::string range_text = full_text.substr(start_offset, char_count);
+        width = font.measureText(
+            range_text.c_str(), range_text.size(), SkTextEncoding::kUTF8, nullptr);
+    }
+    
+    rect.x = start_x;
+    rect.left = start_x;
+    rect.y = elem_rect.y + padding_top;
+    rect.top = elem_rect.y + padding_top;
+    rect.width = width;
+    rect.height = line_height;
+    rect.right = start_x + width;
+    rect.bottom = elem_rect.y + padding_top + line_height;
+    
+    return rect;
+}
+
+/**
+ * @brief 合并两个矩形
+ */
+void Range::UnionRect(DOMRect& result, const DOMRect& other) const {
+    if (other.width <= 0 && other.height <= 0) {
+        return;
+    }
+    
+    if (result.width <= 0 && result.height <= 0) {
+        result = other;
+        return;
+    }
+    
+    float min_left = std::min(result.left, other.left);
+    float min_top = std::min(result.top, other.top);
+    float max_right = std::max(result.right, other.right);
+    float max_bottom = std::max(result.bottom, other.bottom);
+    
+    result.x = min_left;
+    result.left = min_left;
+    result.y = min_top;
+    result.top = min_top;
+    result.right = max_right;
+    result.bottom = max_bottom;
+    result.width = max_right - min_left;
+    result.height = max_bottom - min_top;
+}
+
+/**
+ * @brief 深度优先遍历收集 Range 内所有节点的矩形
+ */
+void Range::CollectRects(
+    std::shared_ptr<Node> node,
+    std::vector<DOMRect>& rects,
+    bool& in_range,
+    bool& done) const {
+    
+    if (!node || done) {
+        return;
+    }
+    
+    auto start_node = start_container_.lock();
+    auto end_node = end_container_.lock();
+    
+    // 检查是否是起始节点
+    if (node == start_node) {
+        in_range = true;
+        
+        if (node->GetNodeType() == NodeType::TEXT_NODE) {
+            auto text_node = std::dynamic_pointer_cast<Text>(node);
+            if (text_node) {
+                int text_len = static_cast<int>(text_node->GetData().length());
+                int start_off = start_offset_;
+                int end_off = (start_node == end_node) ? end_offset_ : text_len;
+                
+                auto rect = ComputeTextRect(text_node, start_off, end_off);
+                if (rect.width > 0 || rect.height > 0) {
+                    rects.push_back(rect);
+                }
+                
+                if (start_node == end_node) {
+                    done = true;
+                    return;
+                }
+            }
+        }
+    }
+    // 检查是否是结束节点
+    else if (node == end_node) {
+        // 如果结束节点是元素节点，需要处理其子节点
+        if (node->GetNodeType() == NodeType::ELEMENT_NODE) {
+            // 结束在元素节点上，offset 表示子节点索引
+            // 需要包含 offset 之前的所有子节点
+            const auto& children = node->GetChildNodes();
+            for (int i = 0; i < end_offset_ && i < static_cast<int>(children.size()); ++i) {
+                auto child = children[i];
+                if (child->GetNodeType() == NodeType::TEXT_NODE) {
+                    auto text_node = std::dynamic_pointer_cast<Text>(child);
+                    if (text_node) {
+                        int text_len = static_cast<int>(text_node->GetData().length());
+                        auto rect = ComputeTextRect(text_node, 0, text_len);
+                        if (rect.width > 0 || rect.height > 0) {
+                            rects.push_back(rect);
+                        }
+                    }
+                }
+            }
+        } else if (node->GetNodeType() == NodeType::TEXT_NODE) {
+            auto text_node = std::dynamic_pointer_cast<Text>(node);
+            if (text_node) {
+                auto rect = ComputeTextRect(text_node, 0, end_offset_);
+                if (rect.width > 0 || rect.height > 0) {
+                    rects.push_back(rect);
+                }
+            }
+        }
+        done = true;
+        return;
+    }
+    // 在范围内的文本节点
+    else if (in_range && node->GetNodeType() == NodeType::TEXT_NODE) {
+        auto text_node = std::dynamic_pointer_cast<Text>(node);
+        if (text_node) {
+            int text_len = static_cast<int>(text_node->GetData().length());
+            auto rect = ComputeTextRect(text_node, 0, text_len);
+            if (rect.width > 0 || rect.height > 0) {
+                rects.push_back(rect);
+            }
+        }
+    }
+    
+    // 递归处理子节点
+    for (const auto& child : node->GetChildNodes()) {
+        if (done) {
+            break;
+        }
+        CollectRects(child, rects, in_range, done);
+    }
+}
+
+Range::DOMRect Range::GetBoundingClientRect() const {
+    DOMRect rect;
+    
+    auto start_node = start_container_.lock();
+    auto end_node = end_container_.lock();
+    
+    if (!start_node || !end_node) {
+        return rect;
+    }
+    
+    // 强制同步布局
+    auto doc = owner_document_.lock();
+    if (doc) {
+        doc->ForceLayout();
+    }
+    
+    // 获取所有矩形
+    auto rects = GetClientRects();
+    
+    // 合并所有矩形
+    for (const auto& r : rects) {
+        UnionRect(rect, r);
+    }
+    
+    // 如果没有找到任何矩形，尝试返回折叠位置的矩形
+    if (rects.empty() && start_node->GetNodeType() == NodeType::TEXT_NODE) {
+        auto text_node = std::dynamic_pointer_cast<Text>(start_node);
+        if (text_node) {
+            // 对于折叠的 Range，返回光标位置
+            rect = ComputeTextRect(text_node, start_offset_, start_offset_);
+        }
+    }
+    
+    return rect;
+}
+
+std::vector<Range::DOMRect> Range::GetClientRects() const {
+    std::vector<DOMRect> rects;
+    
+    auto start_node = start_container_.lock();
+    auto end_node = end_container_.lock();
+    
+    if (!start_node || !end_node) {
+        return rects;
+    }
+    
+    // 强制同步布局
+    auto doc = owner_document_.lock();
+    if (doc) {
+        doc->ForceLayout();
+    }
+    
+    // 获取公共祖先
+    auto common_ancestor = GetCommonAncestorContainer();
+    if (!common_ancestor) {
+        return rects;
+    }
+    
+    // 收集所有矩形
+    bool in_range = false;
+    bool done = false;
+    CollectRects(common_ancestor, rects, in_range, done);
+    
+    // 如果没有找到任何矩形，尝试返回折叠位置的矩形
+    if (rects.empty() && start_node->GetNodeType() == NodeType::TEXT_NODE) {
+        auto text_node = std::dynamic_pointer_cast<Text>(start_node);
+        if (text_node) {
+            // 对于折叠的 Range，返回光标位置
+            auto rect = ComputeTextRect(text_node, start_offset_, start_offset_);
+            if (rect.height > 0) {
+                rects.push_back(rect);
+            }
+        }
+    }
+    
+    return rects;
+}
+
 // ========== 私有辅助方法 ==========
 
 int Range::GetNodeIndex(std::shared_ptr<Node> node) const {
@@ -363,11 +665,33 @@ void Range::CollectText(std::shared_ptr<Node> node, std::string& result, bool& i
     }
 
     // 递归处理子节点
+    bool first_child = true;
     for (const auto& child : node->GetChildNodes()) {
         if (!in_range && child == end_node) {
             break;
         }
+        
+        // 在块级元素之间添加换行符（除了第一个子元素）
+        if (in_range && !first_child && child->GetNodeType() == NodeType::ELEMENT_NODE) {
+            auto elem = std::dynamic_pointer_cast<Element>(child);
+            if (elem) {
+                std::string tag = elem->GetTagName();
+                // 转换为小写
+                for (auto& c : tag) {
+                    c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+                }
+                // 块级元素：div, p, br 等
+                if (tag == "div" || tag == "p" || tag == "br" || tag == "li" || 
+                    tag == "h1" || tag == "h2" || tag == "h3" || tag == "h4" || 
+                    tag == "h5" || tag == "h6" || tag == "pre") {
+                    result += "\n";
+                }
+            }
+        }
+        
         CollectText(child, result, in_range);
+        first_child = false;
+        
         if (!in_range) {
             break;
         }

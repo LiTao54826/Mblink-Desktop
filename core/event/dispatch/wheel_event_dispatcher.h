@@ -53,6 +53,22 @@ public:
 
 private:
     /**
+     * @brief 处理 terminal 元素的滚轮事件
+     * @return true 如果事件被处理
+     */
+    bool HandleTerminalWheel(std::shared_ptr<Window> window,
+                             std::shared_ptr<Element> element,
+                             float wheel_y);
+
+    /**
+     * @brief 处理 logview 元素的滚轮事件
+     * @return true 如果事件被处理
+     */
+    bool HandleLogViewWheel(std::shared_ptr<Window> window,
+                            std::shared_ptr<Element> element,
+                            float wheel_y);
+
+    /**
      * @brief 处理 textarea 元素的滚轮事件
      * @return true 如果事件被处理
      */

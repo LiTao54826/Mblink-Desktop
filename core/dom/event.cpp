@@ -67,11 +67,13 @@ void Event::Reset() {
 
 // ========== MouseEvent 类实现 ==========
 
-MouseEvent::MouseEvent(const std::string& type, int x, int y, int button)
+MouseEvent::MouseEvent(const std::string& type, int x, int y, int button, int detail, int buttons)
     : Event(type, true, true)
     , client_x_(x)
     , client_y_(y)
-    , button_(button) {
+    , button_(button)
+    , buttons_(buttons)
+    , detail_(detail) {
 }
 
 // ========== KeyboardEvent 类实现 ==========

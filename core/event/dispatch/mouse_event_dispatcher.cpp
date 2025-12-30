@@ -18,6 +18,8 @@
 #include "core/dom/elements/html_button_element.h"
 #include "core/dom/elements/html_form_element.h"
 #include "core/dom/elements/html_select_element.h"
+#include "core/dom/elements/terminal/html_terminal_element.h"
+#include "core/dom/elements/logview/html_logview_element.h"
 #include "core/editing/drag_manager.h"
 #include "core/editing/selection_manager.h"
 #include "core/editing/contenteditable_handler.h"
@@ -32,6 +34,8 @@
 #include "core/render/text/text_renderer.h"
 #include "core/utils/utf8_utils.h"
 #include "core/window/window.h"
+
+#include <cmath>
 #include "core/window/window_manager.h"
 
 #include <algorithm>
@@ -341,6 +345,8 @@ void MouseEventDispatcher::UpdateHoverChain(std::shared_ptr<Window> window,
             "mouseleave",
             static_cast<int>(mouse_x),
             static_cast<int>(mouse_y),
+            0,
+            1,
             0
         );
         old_hover->DispatchEvent(leave_event);
@@ -352,6 +358,8 @@ void MouseEventDispatcher::UpdateHoverChain(std::shared_ptr<Window> window,
             "mouseenter",
             static_cast<int>(mouse_x),
             static_cast<int>(mouse_y),
+            0,
+            1,
             0
         );
         new_hover->DispatchEvent(enter_event);
@@ -401,6 +409,8 @@ bool MouseEventDispatcher::SendEvents(const std::vector<std::weak_ptr<Element>>&
                 event_type,
                 static_cast<int>(mouse_x),
                 static_cast<int>(mouse_y),
+                0,
+                1,
                 0
             );
 
@@ -929,8 +939,17 @@ void MouseEventDispatcher::HandleNoHitMouseUp(std::shared_ptr<Window> window,
                                                const SDL_Event& event,
                                                float logical_x,
                                                float logical_y) {
-    (void)logical_x;
-    (void)logical_y;
+    // 分发 mouseup 事件到 last_mousedown 元素（即使鼠标不在元素上）
+    int button = SDLButtonToMouseButton(event.button.button);
+    auto mouseup_event = std::make_shared<MouseEvent>(
+        "mouseup",
+        static_cast<int>(logical_x),
+        static_cast<int>(logical_y),
+        button - 1,  // button: 0=左键, 1=中键, 2=右键 (W3C标准)
+        1,
+        0  // buttons: 按钮已释放
+    );
+    last_mousedown->DispatchEvent(mouseup_event);
     
     std::string tag_name = last_mousedown->GetTagName();
     if (tag_name == "textarea") {
@@ -942,6 +961,21 @@ void MouseEventDispatcher::HandleNoHitMouseUp(std::shared_ptr<Window> window,
             if (textarea_element->IsDraggingSelection()) {
                 textarea_element->HandleMouseUp();
             }
+        }
+    } else if (tag_name == "terminal") {
+        auto terminal_element = std::dynamic_pointer_cast<HTMLTerminalElement>(last_mousedown);
+        if (terminal_element) {
+            terminal_element->HandleMouseUp(logical_x, logical_y, 0);
+            window->SetNeedsRepaint();
+            if (auto pipeline = window->GetRenderPipeline()) {
+                pipeline->ForceRasterize();
+            }
+        }
+    } else if (tag_name == "logview") {
+        auto logview_element = std::dynamic_pointer_cast<HTMLLogViewElement>(last_mousedown);
+        if (logview_element) {
+            logview_element->OnMouseUp(logical_x, logical_y, 0);
+            window->SetNeedsRepaint();
         }
     } else if (tag_name == "input") {
         auto input_element = std::dynamic_pointer_cast<HTMLInputElement>(last_mousedown);
@@ -1069,6 +1103,92 @@ void MouseEventDispatcher::HandleNoHitMouseMotion(std::shared_ptr<Window> window
             }
         }
     }
+    // 处理 terminal 的滚动条拖动
+    else if (tag_name == "terminal") {
+        auto terminal_element = std::dynamic_pointer_cast<HTMLTerminalElement>(last_mousedown);
+        if (terminal_element) {
+            // 需要找到 terminal 元素的渲染对象来计算本地坐标
+            auto root_render = window->GetCachedRenderTree();
+            if (root_render) {
+                struct FindResult {
+                    std::shared_ptr<RenderObject> render_obj;
+                    float abs_x = 0;
+                    float abs_y = 0;
+                };
+                std::function<FindResult(std::shared_ptr<RenderObject>, float, float)> findRenderObj;
+                findRenderObj = [&](std::shared_ptr<RenderObject> obj, float offset_x, float offset_y) -> FindResult {
+                    if (!obj) return {};
+                    const auto& layout = obj->GetLayoutInfo();
+                    float current_x = offset_x + layout.x;
+                    float current_y = offset_y + layout.y;
+
+                    auto node = obj->GetNode();
+                    if (node && std::dynamic_pointer_cast<HTMLTerminalElement>(node) == terminal_element) {
+                        return {obj, current_x, current_y};
+                    }
+                    float child_offset_x = current_x - obj->GetScrollX();
+                    float child_offset_y = current_y - obj->GetScrollY();
+                    for (auto& child : obj->GetChildren()) {
+                        auto result = findRenderObj(child, child_offset_x, child_offset_y);
+                        if (result.render_obj) return result;
+                    }
+                    return {};
+                };
+
+                auto find_result = findRenderObj(root_render, 0.0f, 0.0f);
+                if (find_result.render_obj) {
+                    float local_x = logical_x - find_result.abs_x;
+                    float local_y = logical_y - find_result.abs_y;
+                    terminal_element->HandleMouseMove(local_x, local_y);
+                    window->SetNeedsRepaint();
+                    if (auto pipeline = window->GetRenderPipeline()) {
+                        pipeline->ForceRasterize();
+                    }
+                }
+            }
+        }
+    }
+    // 处理 logview 的拖动选择
+    else if (tag_name == "logview") {
+        auto logview_element = std::dynamic_pointer_cast<HTMLLogViewElement>(last_mousedown);
+        if (logview_element) {
+            auto root_render = window->GetCachedRenderTree();
+            if (root_render) {
+                struct FindResult {
+                    std::shared_ptr<RenderObject> render_obj;
+                    float abs_x = 0;
+                    float abs_y = 0;
+                };
+                std::function<FindResult(std::shared_ptr<RenderObject>, float, float)> findRenderObj;
+                findRenderObj = [&](std::shared_ptr<RenderObject> obj, float offset_x, float offset_y) -> FindResult {
+                    if (!obj) return {};
+                    const auto& layout = obj->GetLayoutInfo();
+                    float current_x = offset_x + layout.x;
+                    float current_y = offset_y + layout.y;
+
+                    auto node = obj->GetNode();
+                    if (node && std::dynamic_pointer_cast<HTMLLogViewElement>(node) == logview_element) {
+                        return {obj, current_x, current_y};
+                    }
+                    float child_offset_x = current_x - obj->GetScrollX();
+                    float child_offset_y = current_y - obj->GetScrollY();
+                    for (auto& child : obj->GetChildren()) {
+                        auto result = findRenderObj(child, child_offset_x, child_offset_y);
+                        if (result.render_obj) return result;
+                    }
+                    return {};
+                };
+
+                auto find_result = findRenderObj(root_render, 0.0f, 0.0f);
+                if (find_result.render_obj) {
+                    float local_x = logical_x - find_result.abs_x;
+                    float local_y = logical_y - find_result.abs_y;
+                    logview_element->OnMouseMove(local_x, local_y);
+                    window->SetNeedsRepaint();
+                }
+            }
+        }
+    }
     // 处理 contentEditable 的拖动选择
     else if (contenteditable_dragging_ && last_mousedown->IsContentEditable()) {
         HandleContentEditableDragSelection(window, logical_x, logical_y, event.type);
@@ -1125,12 +1245,31 @@ void MouseEventDispatcher::HandleMouseDown(std::shared_ptr<Window> window,
                                             std::shared_ptr<RenderObject> root_render) {
     (void)root_render;
     
+    // 更新鼠标按钮状态（用于 mousemove 事件的 buttons 属性）
+    if (button == 1) mouse_buttons_state_ |= 1;       // 左键
+    else if (button == 3) mouse_buttons_state_ |= 2;  // 右键
+    else if (button == 2) mouse_buttons_state_ |= 4;  // 中键
+    
+    // 浏览器行为：mousedown 时自动更新 Selection 到点击位置
+    // 这对于 CodeMirror 等库正确处理点击定位至关重要
+    if (button == 1 && selection_manager_ && document) {  // 左键点击
+        UpdateSelectionFromClick(document, hit_result, logical_x, logical_y);
+    }
+    
     // 创建并分发 mousedown 事件
+    // buttons: 1=左键, 2=右键, 4=中键
+    int buttons = 0;
+    if (button == 1) buttons = 1;       // 左键
+    else if (button == 3) buttons = 2;  // 右键
+    else if (button == 2) buttons = 4;  // 中键
+    
     auto mousedown_event = std::make_shared<MouseEvent>(
         "mousedown",
         static_cast<int>(logical_x),
         static_cast<int>(logical_y),
-        button
+        button - 1,  // button: 0=左键, 1=中键, 2=右键 (W3C标准)
+        1,
+        buttons
     );
     hit_result.element->DispatchEvent(mousedown_event);
 
@@ -1224,6 +1363,79 @@ void MouseEventDispatcher::HandleMouseDown(std::shared_ptr<Window> window,
             }
         }
     }
+    // 处理 terminal 元素
+    else if (tag_name == "terminal") {
+        auto terminal_element = std::dynamic_pointer_cast<HTMLTerminalElement>(hit_result.element);
+        if (terminal_element) {
+            // 计算点击次数
+            Uint64 now = SDL_GetTicks();
+            float dx = logical_x - last_click_x_;
+            float dy = logical_y - last_click_y_;
+            float distance = std::sqrt(dx * dx + dy * dy);
+            
+            if ((now - last_click_time_) < DOUBLE_CLICK_TIME_MS && 
+                distance < CLICK_DISTANCE_THRESHOLD) {
+                click_count_++;
+                if (click_count_ > 3) click_count_ = 3;  // 最多三击
+            } else {
+                click_count_ = 1;
+            }
+            
+            last_click_time_ = now;
+            last_click_x_ = logical_x;
+            last_click_y_ = logical_y;
+            
+            terminal_element->HandleMouseDown(hit_result.local_x, hit_result.local_y, 0, click_count_);
+            
+            // 设置焦点
+            if (focus_manager_) {
+                focus_manager_->SetWindow(window.get());
+                focus_manager_->SetFocus(hit_result.element, false);
+            }
+            
+            // 标记需要重绘
+            window->SetNeedsRepaint();
+            if (auto pipeline = window->GetRenderPipeline()) {
+                pipeline->ForceRasterize();
+            }
+        }
+    }
+    // 处理 logview 元素
+    else if (tag_name == "logview") {
+        auto logview_element = std::dynamic_pointer_cast<HTMLLogViewElement>(hit_result.element);
+        if (logview_element) {
+            // 计算点击次数
+            Uint64 now = SDL_GetTicks();
+            float dx = logical_x - last_click_x_;
+            float dy = logical_y - last_click_y_;
+            float distance = std::sqrt(dx * dx + dy * dy);
+            
+            if ((now - last_click_time_) < DOUBLE_CLICK_TIME_MS && 
+                distance < CLICK_DISTANCE_THRESHOLD) {
+                click_count_++;
+                if (click_count_ > 3) click_count_ = 3;
+            } else {
+                click_count_ = 1;
+            }
+            
+            last_click_time_ = now;
+            last_click_x_ = logical_x;
+            last_click_y_ = logical_y;
+            
+            logview_element->OnMouseDown(hit_result.local_x, hit_result.local_y, 0, click_count_);
+            
+            // 设置焦点
+            if (focus_manager_) {
+                focus_manager_->SetWindow(window.get());
+                focus_manager_->SetFocus(hit_result.element, false);
+            }
+            
+            window->SetNeedsRepaint();
+            if (auto pipeline = window->GetRenderPipeline()) {
+                pipeline->ForceRasterize();
+            }
+        }
+    }
     // 处理 contentEditable 元素
     else if (hit_result.element->IsContentEditable()) {
         if (focus_manager_) {
@@ -1267,6 +1479,11 @@ void MouseEventDispatcher::HandleMouseUp(std::shared_ptr<Window> window,
                                           std::shared_ptr<RenderObject> root_render) {
     (void)root_render;
     
+    // 清除鼠标按钮状态
+    if (button == 1) mouse_buttons_state_ &= ~1;       // 左键
+    else if (button == 3) mouse_buttons_state_ &= ~2;  // 右键
+    else if (button == 2) mouse_buttons_state_ &= ~4;  // 中键
+    
     auto last_mousedown = last_mousedown_element_.lock();
     
     // 移除 :active 伪类
@@ -1299,6 +1516,24 @@ void MouseEventDispatcher::HandleMouseUp(std::shared_ptr<Window> window,
                     textarea_element->HandleMouseUp();
                 }
             }
+        } else if (tag_name == "terminal") {
+            auto terminal_element = std::dynamic_pointer_cast<HTMLTerminalElement>(last_mousedown);
+            if (terminal_element) {
+                terminal_element->HandleMouseUp(logical_x, logical_y, 0);
+                window->SetNeedsRepaint();
+                if (auto pipeline = window->GetRenderPipeline()) {
+                    pipeline->ForceRasterize();
+                }
+            }
+        } else if (tag_name == "logview") {
+            auto logview_element = std::dynamic_pointer_cast<HTMLLogViewElement>(last_mousedown);
+            if (logview_element) {
+                logview_element->OnMouseUp(logical_x, logical_y, 0);
+                window->SetNeedsRepaint();
+                if (auto pipeline = window->GetRenderPipeline()) {
+                    pipeline->ForceRasterize();
+                }
+            }
         }
 
         // 结束 contentEditable 拖动选择
@@ -1310,6 +1545,18 @@ void MouseEventDispatcher::HandleMouseUp(std::shared_ptr<Window> window,
         }
     }
 
+    // 分发 mouseup 事件到当前命中的元素
+    // mouseup 时按钮已释放，buttons 为 0
+    auto mouseup_event = std::make_shared<MouseEvent>(
+        "mouseup",
+        static_cast<int>(logical_x),
+        static_cast<int>(logical_y),
+        button - 1,  // button: 0=左键, 1=中键, 2=右键 (W3C标准)
+        1,
+        0  // buttons: 按钮已释放
+    );
+    hit_result.element->DispatchEvent(mouseup_event);
+
     // 检查是否在同一元素上 mousedown 和 mouseup
     if (last_mousedown == hit_result.element) {
         // 触发 click 事件
@@ -1317,7 +1564,9 @@ void MouseEventDispatcher::HandleMouseUp(std::shared_ptr<Window> window,
             "click",
             static_cast<int>(logical_x),
             static_cast<int>(logical_y),
-            button
+            button - 1,  // button: 0=左键, 1=中键, 2=右键 (W3C标准)
+            1,
+            0  // buttons: 按钮已释放
         );
         hit_result.element->DispatchEvent(click_event);
 
@@ -1351,7 +1600,9 @@ void MouseEventDispatcher::HandleMouseUp(std::shared_ptr<Window> window,
                 "dblclick",
                 static_cast<int>(logical_x),
                 static_cast<int>(logical_y),
-                button
+                button - 1,  // button: 0=左键, 1=中键, 2=右键 (W3C标准)
+                2,
+                0  // buttons: 按钮已释放
             );
             hit_result.element->DispatchEvent(dblclick_event);
         }
@@ -1374,12 +1625,17 @@ void MouseEventDispatcher::HandleMouseMove(std::shared_ptr<Window> window,
                                             float logical_x,
                                             float logical_y,
                                             std::shared_ptr<RenderObject> root_render) {
+    // 使用跟踪的鼠标按钮状态（而不是 SDL_GetMouseState，因为它在某些情况下返回 0）
+    int buttons = mouse_buttons_state_;
+    
     // 创建并分发 mousemove 事件
     auto mousemove_event = std::make_shared<MouseEvent>(
         "mousemove",
         static_cast<int>(logical_x),
         static_cast<int>(logical_y),
-        0
+        0,
+        0,
+        buttons
     );
     hit_result.element->DispatchEvent(mousemove_event);
 
@@ -1430,6 +1686,24 @@ void MouseEventDispatcher::HandleMouseMove(std::shared_ptr<Window> window,
                                                    visible_width, visible_height);
                 }
             }
+        } else if (tag_name == "terminal") {
+            auto terminal_element = std::dynamic_pointer_cast<HTMLTerminalElement>(last_mousedown);
+            if (terminal_element) {
+                terminal_element->HandleMouseMove(hit_result.local_x, hit_result.local_y);
+                window->SetNeedsRepaint();
+                if (auto pipeline = window->GetRenderPipeline()) {
+                    pipeline->ForceRasterize();
+                }
+            }
+        } else if (tag_name == "logview") {
+            auto logview_element = std::dynamic_pointer_cast<HTMLLogViewElement>(last_mousedown);
+            if (logview_element) {
+                logview_element->OnMouseMove(hit_result.local_x, hit_result.local_y);
+                window->SetNeedsRepaint();
+                if (auto pipeline = window->GetRenderPipeline()) {
+                    pipeline->ForceRasterize();
+                }
+            }
         }
         // 处理 contentEditable 拖动选择
         else if (contenteditable_dragging_ && last_mousedown->IsContentEditable()) {
@@ -1471,6 +1745,126 @@ void MouseEventDispatcher::HandleContentEditableDragSelection(std::shared_ptr<Wi
     // 迁移时保持功能等价，但简化实现
     
     window->SetNeedsRepaint();
+}
+
+void MouseEventDispatcher::UpdateSelectionFromClick(
+    std::shared_ptr<Document> document,
+    const HitTestResult& hit_result,
+    float logical_x,
+    float logical_y) {
+    
+    (void)logical_x;
+    (void)logical_y;
+    
+    if (!document || !hit_result.IsValid() || !selection_manager_) {
+        return;
+    }
+
+    auto selection = selection_manager_->GetSelection(document);
+    if (!selection) {
+        return;
+    }
+
+    // 查找点击位置的文本节点
+    std::shared_ptr<Text> text_node = nullptr;
+    std::shared_ptr<RenderObject> text_render = nullptr;
+    
+    if (hit_result.render_object) {
+        auto node = hit_result.render_object->GetNode();
+        if (node && node->GetNodeType() == NodeType::TEXT_NODE) {
+            text_node = std::dynamic_pointer_cast<Text>(node);
+            text_render = hit_result.render_object;
+        } else {
+            // 遍历子 RenderObject 查找文本节点
+            for (const auto& child : hit_result.render_object->GetChildren()) {
+                auto child_node = child->GetNode();
+                if (child_node && child_node->GetNodeType() == NodeType::TEXT_NODE) {
+                    text_node = std::dynamic_pointer_cast<Text>(child_node);
+                    text_render = child;
+                    break;
+                }
+            }
+        }
+    }
+
+    // 如果没有找到文本节点，尝试从元素的子节点中查找
+    if (!text_node) {
+        for (const auto& child : hit_result.element->GetChildNodes()) {
+            if (child->GetNodeType() == NodeType::TEXT_NODE) {
+                text_node = std::dynamic_pointer_cast<Text>(child);
+                break;
+            }
+        }
+    }
+
+    if (!text_node) {
+        // 没有文本节点，将 Selection 折叠到元素开头
+        selection->Collapse(hit_result.element, 0);
+        return;
+    }
+
+    // 计算字符偏移量
+    std::string text = text_node->GetTextContent();
+    if (text.empty()) {
+        selection->Collapse(text_node, 0);
+        return;
+    }
+
+    // 获取文本渲染的样式信息
+    float font_size = 16.0f;
+    std::string font_family = "sans-serif";
+    
+    if (text_render) {
+        const auto& style = text_render->GetComputedStyle();
+        font_size = style.font_size;
+        font_family = style.font_family.empty() ? "sans-serif" : style.font_family;
+    } else if (hit_result.render_object) {
+        const auto& style = hit_result.render_object->GetComputedStyle();
+        font_size = style.font_size;
+        font_family = style.font_family.empty() ? "sans-serif" : style.font_family;
+    }
+
+    // 创建字体
+    FontDescriptor desc;
+    desc.family = font_family;
+    desc.size = font_size;
+    desc.weight = FontWeight::NORMAL;
+    desc.style = FontStyle::NORMAL;
+    SkFont font = FontManager::GetInstance().LoadFont(desc);
+
+    // 计算 local_x（相对于文本起始位置）
+    float local_x = hit_result.local_x;
+    
+    // 如果有 padding，需要减去
+    if (hit_result.render_object) {
+        const auto& style = hit_result.render_object->GetComputedStyle();
+        local_x -= style.padding.left.ToPx();
+    }
+
+    // 遍历字符计算偏移量
+    TextRenderer text_renderer(nullptr);
+    size_t char_count = utf8::CharCount(text);
+    int char_offset = 0;
+    float accumulated_width = 0.0f;
+
+    for (size_t i = 0; i < char_count; ++i) {
+        size_t byte_start = utf8::CharPosToBytePos(text, static_cast<int>(i));
+        size_t byte_end = utf8::CharPosToBytePos(text, static_cast<int>(i + 1));
+        std::string char_str = text.substr(byte_start, byte_end - byte_start);
+        
+        float char_width = text_renderer.MeasureTextWidthWithEmoji(char_str, font);
+        
+        // 如果点击位置在字符中间偏左，选择当前字符；偏右则选择下一个
+        if (local_x < accumulated_width + char_width / 2) {
+            break;
+        }
+        
+        accumulated_width += char_width;
+        char_offset = static_cast<int>(i + 1);
+    }
+
+    // 更新 Selection 到点击位置
+    selection->Collapse(text_node, char_offset);
 }
 
 } // namespace lightui

@@ -14,6 +14,7 @@ set(DOM_CORE_SOURCES
     element.cpp
     text.cpp
     document.cpp
+    document_fragment.cpp
     event.cpp
     drag_event.cpp
 )
@@ -31,6 +32,7 @@ set(DOM_CORE_HEADERS
 set(DOM_BINDINGS_SOURCES
     bindings/dom_bindings.cpp
     bindings/canvas_bindings.cpp
+    bindings/terminal_bindings.cpp
 )
 
 set(DOM_OBSERVERS_SOURCES
@@ -110,6 +112,9 @@ target_link_libraries(lightui_dom PUBLIC
     lightui_lexbor
     lightui_render
     lexbor_static
+    virtual_text
+    terminal_element
+    logview_element
 )
 
 # 链接Skia（如果启用）- 需要SkRect.h

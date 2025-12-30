@@ -18,6 +18,8 @@
 #include "core/dom/elements/html_form_controls.h"
 #include "core/dom/elements/html_canvas_element.h"
 #include "core/dom/elements/html_image_element.h"
+#include "core/dom/elements/terminal/html_terminal_element.h"
+#include "core/dom/elements/logview/html_logview_element.h"
 #include "core/render/canvas/canvas_rendering_context_2d.h"
 #include "core/render/image/image_fit.h"
 #include "core/render/image/image_loader.h"
@@ -399,6 +401,18 @@ void RenderInlineBlock::Paint(SkCanvas* canvas) {
     }
 
     auto node = GetNode();
+
+    // 调试：检查是否是终端元素
+    if (node && node->GetNodeType() == NodeType::ELEMENT_NODE) {
+        auto elem = std::static_pointer_cast<Element>(node);
+        if (elem->GetTagName() == "terminal") {
+            static int term_ib_paint = 0;
+            if (++term_ib_paint <= 3) {
+                std::cout << "[RenderInlineBlock::Paint] START painting terminal, node=" << node.get() << std::endl;
+            }
+        }
+    }
+
     const auto& style = computed_style_;
     const auto& layout = layout_info_;
 
@@ -592,6 +606,43 @@ void RenderInlineBlock::Paint(SkCanvas* canvas) {
             // Textarea元素不绘制子元素（文本内容由value管理）
             if (has_opacity) {
                 canvas->restore(); // 恢复 opacity layer
+            }
+            canvas->restore();
+            needs_paint_ = false;
+            return;
+        }
+
+        // Terminal元素
+        if (element->GetTagName() == "terminal") {
+            auto terminal_element = std::dynamic_pointer_cast<HTMLTerminalElement>(node);
+            static int term_ib_debug_count = 0;
+            if (++term_ib_debug_count <= 5) {
+                std::cout << "[RenderInlineBlock::Paint] Found terminal tag, cast result: " 
+                          << (terminal_element ? "success" : "failed")
+                          << ", node type: " << typeid(*node).name() << std::endl;
+            }
+            if (terminal_element) {
+                std::cout << "[RenderInlineBlock::Paint] Painting terminal element, box=" 
+                          << box.content_x << "," << box.content_y << " " 
+                          << box.content_width << "x" << box.content_height << std::endl;
+                terminal_element->Render(canvas, box.content_x, box.content_y, box.content_width, box.content_height);
+            }
+            if (has_opacity) {
+                canvas->restore();
+            }
+            canvas->restore();
+            needs_paint_ = false;
+            return;
+        }
+
+        // LogView元素
+        if (element->GetTagName() == "logview") {
+            auto logview_element = std::dynamic_pointer_cast<HTMLLogViewElement>(node);
+            if (logview_element) {
+                logview_element->Render(canvas, box.content_x, box.content_y, box.content_width, box.content_height);
+            }
+            if (has_opacity) {
+                canvas->restore();
             }
             canvas->restore();
             needs_paint_ = false;

@@ -58,6 +58,16 @@ set(COMPOSITOR_PROPERTY_TEST_SOURCES
     compositor/test_animation_bounds_properties.cpp
 )
 
+# Virtual text property tests
+set(VIRTUAL_TEXT_PROPERTY_TEST_SOURCES
+    virtual_text/test_virtual_buffer_properties.cpp
+    virtual_text/test_virtual_scroll_properties.cpp
+    virtual_text/test_selection_properties.cpp
+    virtual_text/test_ansi_parser_properties.cpp
+    virtual_text/test_terminal_buffer_properties.cpp
+    virtual_text/test_logview_properties.cpp
+)
+
 # Create property tests executable
 add_executable(lightui_property_tests
     main.cpp
@@ -65,6 +75,7 @@ add_executable(lightui_property_tests
     ${LAYOUT_PROPERTY_TEST_SOURCES}
     ${BUNDLER_PROPERTY_TEST_SOURCES}
     ${COMPOSITOR_PROPERTY_TEST_SOURCES}
+    ${VIRTUAL_TEXT_PROPERTY_TEST_SOURCES}
 )
 
 # Add include directories

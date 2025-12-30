@@ -180,9 +180,11 @@ public:
      * @param type 事件类型
      * @param x 鼠标 X 坐标
      * @param y 鼠标 Y 坐标
-     * @param button 鼠标按钮
+     * @param button 鼠标按钮（触发事件的按钮：0=左键，1=中键，2=右键）
+     * @param detail 点击次数（1=单击，2=双击，3=三击）
+     * @param buttons 当前按下的按钮位掩码（1=左键，2=右键，4=中键）
      */
-    MouseEvent(const std::string& type, int x, int y, int button = 0);
+    MouseEvent(const std::string& type, int x, int y, int button = 0, int detail = 1, int buttons = 0);
     
     /**
      * @brief 获取鼠标 X 坐标
@@ -195,14 +197,29 @@ public:
     int GetClientY() const { return client_y_; }
     
     /**
-     * @brief 获取鼠标按钮
+     * @brief 获取鼠标按钮（触发事件的按钮）
+     * @return 0=左键，1=中键，2=右键
      */
     int GetButton() const { return button_; }
+    
+    /**
+     * @brief 获取当前按下的按钮位掩码
+     * @return 位掩码：1=左键，2=右键，4=中键
+     */
+    int GetButtons() const { return buttons_; }
+    
+    /**
+     * @brief 获取点击次数
+     * @return 点击次数（1=单击，2=双击，3=三击）
+     */
+    int GetDetail() const { return detail_; }
 
 private:
     int client_x_;
     int client_y_;
     int button_;
+    int buttons_;
+    int detail_;
 };
 
 /**

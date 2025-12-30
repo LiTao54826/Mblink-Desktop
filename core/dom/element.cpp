@@ -1271,4 +1271,139 @@ void Element::SetContentEditable(const std::string& value) {
     }
 }
 
+// ========== 几何信息 ==========
+
+Element::DOMRect Element::GetBoundingClientRect() const {
+    DOMRect rect;
+
+    // 强制同步布局（模拟浏览器的 forced reflow）
+    auto doc = GetOwnerDocument();
+    if (doc) {
+        doc->ForceLayout();
+    }
+
+    // 尝试从关联的 RenderObject 获取布局信息
+    auto render_object = GetRenderObject();
+    if (render_object) {
+        const auto& layout = render_object->GetLayoutInfo();
+        
+        // 获取绝对位置（相对于视口）
+        float abs_x = layout.x;
+        float abs_y = layout.y;
+        
+        // 累加所有祖先的位置，同时考虑滚动偏移
+        auto parent = render_object->GetParent();
+        while (parent) {
+            const auto& parent_layout = parent->GetLayoutInfo();
+            abs_x += parent_layout.x;
+            abs_y += parent_layout.y;
+            
+            // 减去父元素的滚动偏移（视口坐标需要考虑滚动）
+            abs_x -= parent->GetScrollX();
+            abs_y -= parent->GetScrollY();
+            
+            parent = parent->GetParent();
+        }
+
+        rect.x = abs_x;
+        rect.y = abs_y;
+        rect.width = layout.width;
+        rect.height = layout.height;
+        rect.top = abs_y;
+        rect.left = abs_x;
+        rect.right = abs_x + layout.width;
+        rect.bottom = abs_y + layout.height;
+    }
+
+    return rect;
+}
+
+void Element::ScrollIntoView(bool align_to_top) {
+    // 获取关联的 RenderObject
+    auto render_object = GetRenderObject();
+    if (!render_object) {
+        return;
+    }
+
+    // 查找最近的可滚动祖先
+    std::shared_ptr<RenderObject> scrollable_ancestor = render_object->GetParent();
+    while (scrollable_ancestor) {
+        if (scrollable_ancestor->IsScrollable()) {
+            break;
+        }
+        scrollable_ancestor = scrollable_ancestor->GetParent();
+    }
+
+    if (!scrollable_ancestor) {
+        return;
+    }
+
+    // 计算元素相对于可滚动祖先的位置
+    const auto& layout = render_object->GetLayoutInfo();
+    float element_top = 0;
+    float element_bottom = 0;
+    auto current = render_object->GetParent();
+
+    while (current && current.get() != scrollable_ancestor.get()) {
+        const auto& current_layout = current->GetLayoutInfo();
+        element_top += current_layout.y;
+        current = current->GetParent();
+    }
+    element_top += layout.y;
+    element_bottom = element_top + layout.height;
+
+    // 获取当前滚动位置和可视区域
+    float scroll_top = scrollable_ancestor->GetScrollY();
+    const auto& ancestor_layout = scrollable_ancestor->GetLayoutInfo();
+    float viewport_height = ancestor_layout.height;
+
+    // 计算新的滚动位置
+    float new_scroll_top = scroll_top;
+
+    if (align_to_top) {
+        // 顶部对齐
+        new_scroll_top = element_top;
+    } else {
+        // 底部对齐
+        new_scroll_top = element_bottom - viewport_height;
+    }
+
+    // 设置滚动位置
+    scrollable_ancestor->SetScrollY(new_scroll_top);
+}
+
+void Element::Focus() {
+    // 设置 :focus 伪类
+    SetPseudoClass("focus", true);
+    
+    // 获取所属文档并设置为活动元素
+    auto doc = GetOwnerDocument();
+    if (doc) {
+        auto self = std::static_pointer_cast<Element>(shared_from_this());
+        doc->SetActiveElement(self);
+    }
+    
+    // 触发 focus 事件（focus 事件不冒泡）
+    auto event = std::make_shared<Event>("focus", false, false);
+    DispatchEvent(event);
+}
+
+void Element::Blur() {
+    // 移除 :focus 伪类
+    SetPseudoClass("focus", false);
+    
+    // 获取所属文档，如果当前元素是活动元素则清除
+    auto doc = GetOwnerDocument();
+    if (doc) {
+        auto active = doc->GetActiveElement();
+        if (active.get() == this) {
+            doc->SetActiveElement(nullptr);
+        }
+    }
+    
+    // 触发 blur 事件（blur 事件不冒泡）
+    auto event = std::make_shared<Event>("blur", false, false);
+    DispatchEvent(event);
+}
+
 } // namespace lightui

@@ -168,7 +168,10 @@ bool ContentEditableHandler::HandleKeyDown(
                     case 85:  // Ctrl+U (Underline)
                         return ExecCommand(document, "underline");
                     case 65:  // Ctrl+A (Select All)
-                        return ExecCommand(document, "selectAll");
+                        // 不拦截 Ctrl+A，让应用层（如 CodeMirror）处理
+                        // 因为 DOM Selection 基于 textContent，不包含换行符，
+                        // 会导致选择范围不正确
+                        return false;
                     case 67:  // Ctrl+C (Copy) - 由系统处理
                         return false;
                     case 86:  // Ctrl+V (Paste) - 由系统处理

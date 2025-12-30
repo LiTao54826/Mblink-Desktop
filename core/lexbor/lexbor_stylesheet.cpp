@@ -239,7 +239,7 @@ void LexborStyleSheet::ProcessStyleRule(lxb_css_rule_style_t* style_rule) {
     
     auto rule = std::make_unique<CSSRule>();
     
-    // 序列化选择器
+    // 序列化选择器 - 使用 list_chain 版本来正确处理逗号分隔的选择器列表
     std::string selector_str;
     auto callback = [](const lxb_char_t* data, size_t len, void* ctx) -> lxb_status_t {
         auto* str = static_cast<std::string*>(ctx);
@@ -247,7 +247,7 @@ void LexborStyleSheet::ProcessStyleRule(lxb_css_rule_style_t* style_rule) {
         return LXB_STATUS_OK;
     };
     
-    lxb_css_selector_serialize_list(style_rule->selector, callback, &selector_str);
+    lxb_css_selector_serialize_list_chain(style_rule->selector, callback, &selector_str);
     rule->selector = selector_str;
     rule->specificity = CalculateSpecificity(selector_str);
     
@@ -285,9 +285,22 @@ void LexborStyleSheet::ProcessStyleRule(lxb_css_rule_style_t* style_rule) {
                         prop_value = prop_value.substr(start, end - start + 1);
                     }
 
+                    // 处理 !important：从值中移除并标记
+                    bool is_important = declaration->important;
+                    size_t important_pos = prop_value.find("!important");
+                    if (important_pos != std::string::npos) {
+                        is_important = true;
+                        prop_value = prop_value.substr(0, important_pos);
+                        // 去除尾部空格
+                        end = prop_value.find_last_not_of(" \t\n\r");
+                        if (end != std::string::npos) {
+                            prop_value = prop_value.substr(0, end + 1);
+                        }
+                    }
+
                     rule->declarations[prop_name] = prop_value;
 
-                    if (declaration->important) {
+                    if (is_important) {
                         rule->important = true;
                     }
                 }

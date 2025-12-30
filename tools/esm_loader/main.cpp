@@ -217,7 +217,6 @@ int main(int argc, char** argv) {
         auto document = std::make_shared<Document>();
         document->Initialize();
         auto body = document->CreateElement("body");
-        body->SetAttribute("style", "overflow: auto;");
         document->SetBody(body);
         window->SetDocument(document);
         std::cout << "  ✓ Document initialized" << std::endl;
@@ -233,6 +232,11 @@ int main(int argc, char** argv) {
         WindowBindings window_bindings(runtime.get(), window, task_scheduler);
         window_bindings.InitBindings();
         std::cout << "  ✓ Window bindings initialized" << std::endl;
+
+        // 创建事件循环（需要在加载模块之前，以便 getSelection 等 API 可用）
+        EventLoop event_loop(task_scheduler);
+        event_loop.SetQuickJSRuntime(runtime.get());
+        DOMBindings::SetGlobalEventLoop(runtime->GetContext(), &event_loop);
 
         // 加载嵌入的库
         if (lightui::embedded::HasEmbeddedJS()) {
@@ -281,13 +285,6 @@ int main(int argc, char** argv) {
         std::cout << "========================================" << std::endl;
         std::cout << "  Press F12 to toggle DevTools" << std::endl;
         std::cout << std::endl;
-
-        // 事件循环
-        EventLoop event_loop(task_scheduler);
-        event_loop.SetQuickJSRuntime(runtime.get());
-
-        // 设置全局 EventLoop 以便 execCommand 等 API 可以访问
-        DOMBindings::SetGlobalEventLoop(runtime->GetContext(), &event_loop);
 
         event_loop.SetRenderCallback([window]() {
             if (window->NeedsRepaint()) {

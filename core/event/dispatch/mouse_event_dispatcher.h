@@ -302,6 +302,18 @@ private:
                          float logical_y,
                          std::shared_ptr<RenderObject> root_render);
 
+    /**
+     * @brief 更新 Selection 到点击位置（模拟浏览器原生行为）
+     * @param document 文档
+     * @param hit_result Hit Testing 结果
+     * @param logical_x 逻辑 X 坐标
+     * @param logical_y 逻辑 Y 坐标
+     */
+    void UpdateSelectionFromClick(std::shared_ptr<Document> document,
+                                  const HitTestResult& hit_result,
+                                  float logical_x,
+                                  float logical_y);
+
 private:
     // 依赖的管理器（不拥有所有权）
     DragManager* drag_manager_ = nullptr;
@@ -320,7 +332,11 @@ private:
     std::weak_ptr<Element> last_mousedown_element_;
     std::weak_ptr<Element> last_click_element_;
     Uint64 last_click_time_ = 0;
+    int click_count_ = 0;  // 连续点击次数（1=单击, 2=双击, 3=三击）
+    float last_click_x_ = 0;
+    float last_click_y_ = 0;
     static constexpr Uint64 DOUBLE_CLICK_TIME_MS = 500;
+    static constexpr float CLICK_DISTANCE_THRESHOLD = 5.0f;  // 点击位置容差
 
     // 滚动条拖动状态
     std::weak_ptr<RenderObject> scrollbar_dragging_element_;
@@ -330,6 +346,9 @@ private:
     bool contenteditable_dragging_ = false;
     std::weak_ptr<Node> contenteditable_drag_start_node_;
     int contenteditable_drag_start_offset_ = 0;
+
+    // 鼠标按钮状态跟踪（用于 mousemove 事件的 buttons 属性）
+    int mouse_buttons_state_ = 0;  // W3C buttons 位掩码: 1=左键, 2=右键, 4=中键
 };
 
 } // namespace lightui

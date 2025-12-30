@@ -10,7 +10,7 @@
  */
 
 #include <gtest/gtest.h>
-#include "core/render/render_pipeline.h"
+#include "core/render/pipeline/render_pipeline.h"
 #include "core/compositor/compositor_layer.h"
 #include "core/compositor/compositor.h"
 #include "core/compositor/rasterizer.h"

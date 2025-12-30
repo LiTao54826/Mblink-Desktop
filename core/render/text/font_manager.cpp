@@ -644,8 +644,8 @@ bool FontManager::IsSymbol(uint32_t codepoint) {
     // 数学运算符 (U+2200–U+22FF)
     if (codepoint >= 0x2200 && codepoint <= 0x22FF) return true;
     
-    // 杂项技术符号 (U+2300–U+23FF) 中不是 emoji 的部分
-    // 大部分已经在 IsEmoji 中处理，这里处理剩余的
+    // 杂项技术符号 (U+2300–U+23FF) - 包含 ⌄ (U+2304) 等符号
+    if (codepoint >= 0x2300 && codepoint <= 0x23FF) return true;
     
     // 几何图形 (U+25A0–U+25FF)
     if (codepoint >= 0x25A0 && codepoint <= 0x25FF) return true;
@@ -675,7 +675,8 @@ bool FontManager::IsSymbol(uint32_t codepoint) {
     if (codepoint >= 0x2580 && codepoint <= 0x259F) return true;
     
     // 通用标点 (U+2000–U+206F) 中的特殊符号
-    if (codepoint >= 0x2010 && codepoint <= 0x2027) return true;  // 各种破折号和引号
+    // 包含 › (U+203A) 等引号符号
+    if (codepoint >= 0x2010 && codepoint <= 0x2044) return true;
     
     // 货币符号 (U+20A0–U+20CF) - 包含 ₹(20B9) ₽(20BD) ₿(20BF)
     if (codepoint >= 0x20A0 && codepoint <= 0x20CF) return true;

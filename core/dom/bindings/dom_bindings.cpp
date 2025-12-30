@@ -18,8 +18,11 @@
 
 #include "dom_bindings.h"
 #include "canvas_bindings.h"
+#include "terminal_bindings.h"
 #include "core/dom/elements/html_canvas_element.h"
 #include "core/dom/elements/html_image_element.h"
+#include "core/dom/elements/terminal/html_terminal_element.h"
+#include "core/dom/elements/logview/html_logview_element.h"
 #include "core/dom/selection/range.h"
 #include "quickjs/quickjs-libc.h"
 #include "quickjs/js_value_wrapper.h"
@@ -1241,6 +1244,54 @@ static JSValue js_element_get_context(JSContext* ctx, JSValueConst this_val, int
     return JS_NULL;
 }
 
+// Element.getBoundingClientRect()
+static JSValue js_element_get_bounding_client_rect(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) {
+    auto element = DOMBindings::UnwrapElement(ctx, this_val);
+    if (!element) {
+        return JS_EXCEPTION;
+    }
+
+    auto rect = element->GetBoundingClientRect();
+
+    // 创建 DOMRect 对象
+    JSValue obj = JS_NewObject(ctx);
+    JS_SetPropertyStr(ctx, obj, "x", JS_NewFloat64(ctx, rect.x));
+    JS_SetPropertyStr(ctx, obj, "y", JS_NewFloat64(ctx, rect.y));
+    JS_SetPropertyStr(ctx, obj, "width", JS_NewFloat64(ctx, rect.width));
+    JS_SetPropertyStr(ctx, obj, "height", JS_NewFloat64(ctx, rect.height));
+    JS_SetPropertyStr(ctx, obj, "top", JS_NewFloat64(ctx, rect.top));
+    JS_SetPropertyStr(ctx, obj, "right", JS_NewFloat64(ctx, rect.right));
+    JS_SetPropertyStr(ctx, obj, "bottom", JS_NewFloat64(ctx, rect.bottom));
+    JS_SetPropertyStr(ctx, obj, "left", JS_NewFloat64(ctx, rect.left));
+
+    return obj;
+}
+
+// Element.scrollIntoView(alignToTop)
+static JSValue js_element_scroll_into_view(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) {
+    auto element = DOMBindings::UnwrapElement(ctx, this_val);
+    if (!element) {
+        return JS_EXCEPTION;
+    }
+
+    bool align_to_top = true;
+    if (argc > 0 && !JS_IsUndefined(argv[0])) {
+        align_to_top = JS_ToBool(ctx, argv[0]);
+    }
+
+    element->ScrollIntoView(align_to_top);
+    return JS_UNDEFINED;
+}
+
+// Element.isContentEditable getter
+static JSValue js_element_get_is_content_editable(JSContext* ctx, JSValueConst this_val, int magic) {
+    auto element = DOMBindings::UnwrapElement(ctx, this_val);
+    if (!element) {
+        return JS_EXCEPTION;
+    }
+    return JS_NewBool(ctx, element->IsContentEditable());
+}
+
 // Element 类定义
 static const JSCFunctionListEntry js_element_proto_funcs[] = {
     // 基础属性
@@ -1304,6 +1355,13 @@ static const JSCFunctionListEntry js_element_proto_funcs[] = {
     
     // HTMLCanvasElement: getContext方法
     JS_CFUNC_DEF("getContext", 1, js_element_get_context),
+
+    // 几何信息
+    JS_CFUNC_DEF("getBoundingClientRect", 0, js_element_get_bounding_client_rect),
+    JS_CFUNC_DEF("scrollIntoView", 1, js_element_scroll_into_view),
+
+    // ContentEditable
+    JS_CGETSET_MAGIC_DEF("isContentEditable", js_element_get_is_content_editable, nullptr, 0),
 };
 
 void DOMBindings::InitElementClass(JSContext* ctx) {
@@ -1659,6 +1717,26 @@ static JSValue js_document_get_body(JSContext* ctx, JSValueConst this_val, int m
     return DOMBindings::WrapElement(ctx, body);
 }
 
+// Document.activeElement getter
+static JSValue js_document_get_active_element(JSContext* ctx, JSValueConst this_val, int magic) {
+    auto document = DOMBindings::UnwrapDocument(ctx, this_val);
+    if (!document) {
+        return JS_EXCEPTION;
+    }
+
+    auto active = document->GetActiveElement();
+    if (!active) {
+        // 如果没有焦点元素，返回 body
+        auto body = document->GetBody();
+        if (body) {
+            return DOMBindings::WrapElement(ctx, body);
+        }
+        return JS_NULL;
+    }
+
+    return DOMBindings::WrapElement(ctx, active);
+}
+
 // Phase 4: 批量更新 API - document.__beginBatch()
 static JSValue js_document_begin_batch(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) {
     auto document = DOMBindings::UnwrapDocument(ctx, this_val);
@@ -1808,6 +1886,7 @@ static JSValue js_document_query_command_enabled(JSContext* ctx, JSValueConst th
 // Document 类定义
 static const JSCFunctionListEntry js_document_proto_funcs[] = {
     JS_CGETSET_MAGIC_DEF("body", js_document_get_body, nullptr, 0),
+    JS_CGETSET_MAGIC_DEF("activeElement", js_document_get_active_element, nullptr, 0),
     JS_CFUNC_DEF("createElement", 1, js_document_create_element),
     JS_CFUNC_DEF("createElementNS", 2, js_document_create_element_ns),
     JS_CFUNC_DEF("createTextNode", 1, js_document_create_text_node),
@@ -2057,6 +2136,9 @@ void DOMBindings::Init(JSContext* ctx) {
     
     // 初始化 Canvas 绑定
     CanvasBindings::Init(ctx);
+    
+    // 初始化 Terminal 和 LogView 绑定
+    TerminalBindings::Init(ctx);
     
     // 初始化 Image 构造函数
     InitImageConstructor(ctx);

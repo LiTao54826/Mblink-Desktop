@@ -190,6 +190,53 @@ static JSValue JSNode_get_nodeType(JSContext* ctx, JSValueConst this_val, int ma
     return JS_NewInt32(ctx, type);
 }
 
+// nodeValue getter - 对于文本节点返回文本内容，对于元素节点返回 null
+static JSValue JSNode_get_nodeValue(JSContext* ctx, JSValueConst this_val, int magic) {
+    auto node = UnwrapNode(ctx, this_val);
+    if (!node) {
+        return JS_NULL;
+    }
+
+    // 对于文本节点，返回文本内容
+    if (node->GetNodeType() == NodeType::TEXT_NODE) {
+        auto text_node = std::dynamic_pointer_cast<Text>(node);
+        if (text_node) {
+            return JS_NewString(ctx, text_node->GetData().c_str());
+        }
+        // 回退到 textContent
+        return JS_NewString(ctx, node->GetTextContent().c_str());
+    }
+    
+    // 对于元素节点和文档节点，返回 null
+    return JS_NULL;
+}
+
+// nodeValue setter - 对于文本节点设置文本内容
+static JSValue JSNode_set_nodeValue(JSContext* ctx, JSValueConst this_val, JSValue val, int magic) {
+    auto node = UnwrapNode(ctx, this_val);
+    if (!node) {
+        return JS_UNDEFINED;
+    }
+
+    // 只有文本节点可以设置 nodeValue
+    if (node->GetNodeType() == NodeType::TEXT_NODE) {
+        const char* str = JS_ToCString(ctx, val);
+        if (!str) {
+            return JS_EXCEPTION;
+        }
+        
+        auto text_node = std::dynamic_pointer_cast<Text>(node);
+        if (text_node) {
+            text_node->SetData(str);
+        } else {
+            node->SetTextContent(str);
+        }
+        JS_FreeCString(ctx, str);
+    }
+    
+    return JS_UNDEFINED;
+}
+
 // textContent setter
 static JSValue JSNode_set_textContent(JSContext* ctx, JSValueConst this_val, JSValue val, int magic) {
     auto node = UnwrapNode(ctx, this_val);
@@ -339,6 +386,21 @@ static JSValue JSNode_replaceChild(JSContext* ctx, JSValueConst this_val, int ar
     }
 }
 
+// remove() - DOM4 方法，从 DOM 中移除节点
+static JSValue JSNode_remove(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) {
+    auto node = UnwrapNode(ctx, this_val);
+    if (!node) {
+        return JS_UNDEFINED;
+    }
+
+    auto parent = node->GetParentNode();
+    if (parent) {
+        parent->RemoveChild(node);
+    }
+
+    return JS_UNDEFINED;
+}
+
 // ========== 类定义 ==========
 
 static const JSCFunctionListEntry js_node_proto_funcs[] = {
@@ -351,10 +413,12 @@ static const JSCFunctionListEntry js_node_proto_funcs[] = {
     JS_CGETSET_MAGIC_DEF("childNodes", JSNode_get_childNodes, nullptr, 0),
     JS_CGETSET_MAGIC_DEF("nodeName", JSNode_get_nodeName, nullptr, 0),
     JS_CGETSET_MAGIC_DEF("nodeType", JSNode_get_nodeType, nullptr, 0),
+    JS_CGETSET_MAGIC_DEF("nodeValue", JSNode_get_nodeValue, JSNode_set_nodeValue, 0),
     JS_CFUNC_DEF("appendChild", 1, JSNode_appendChild),
     JS_CFUNC_DEF("removeChild", 1, JSNode_removeChild),
     JS_CFUNC_DEF("insertBefore", 2, JSNode_insertBefore),
     JS_CFUNC_DEF("replaceChild", 2, JSNode_replaceChild),
+    JS_CFUNC_DEF("remove", 0, JSNode_remove),
 };
 
 static JSClassDef js_node_class = {

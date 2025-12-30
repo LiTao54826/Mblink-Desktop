@@ -91,3 +91,4 @@ test_*.bat
 # Keep main documentation files in root
 # All historical task docs are in history_task_docs/
 .claude/settings.local.json
+参考/

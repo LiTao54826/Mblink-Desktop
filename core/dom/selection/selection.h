@@ -2,13 +2,8 @@
  * @file selection.h
  * @brief DOM Selection API 实现
  *
- * 功能：
- * - 表示用户的文本选择状态
- * - 支持获取和设置选择的锚点和焦点
- * - 支持选择操作（折叠、扩展、选择所有子节点）
- * - 支持 Range 管理
- *
- * 参考：https://w3c.github.io/selection-api/
+ * 参考 Blink 实现和 W3C Selection API 规范
+ * https://w3c.github.io/selection-api/
  */
 
 #pragma once
@@ -25,72 +20,91 @@ class Document;
 class Range;
 
 /**
+ * @brief 选择方向枚举
+ */
+enum class SelectionDirection {
+    kNone,      // 无方向（折叠状态）
+    kForward,   // 向前选择（anchor 在 focus 之前）
+    kBackward   // 向后选择（anchor 在 focus 之后）
+};
+
+/**
+ * @brief 选择类型枚举
+ */
+enum class SelectionType {
+    kNone,   // 无选择
+    kCaret,  // 光标（折叠状态）
+    kRange   // 范围选择
+};
+
+/**
  * @brief DOM Selection 类
  *
  * Selection 表示用户选择的文本范围或光标位置。
  * 选择由锚点（anchor）和焦点（focus）定义：
- * - 锚点是选择开始的位置
+ * - 锚点是选择开始的位置（用户开始拖动的位置）
  * - 焦点是选择结束的位置（用户拖动到的位置）
+ *
+ * 注意：anchor 和 focus 的顺序可能与 start/end 不同
+ * - 如果用户从左向右选择，anchor 在 focus 之前
+ * - 如果用户从右向左选择，anchor 在 focus 之后
  */
 class Selection : public std::enable_shared_from_this<Selection> {
 public:
-    /**
-     * @brief 构造函数
-     * @param document 所属文档
-     */
     explicit Selection(std::shared_ptr<Document> document);
-
-    /**
-     * @brief 析构函数
-     */
     ~Selection();
 
-    // ========== 锚点和焦点属性 ==========
+    // ========== 锚点和焦点属性（用户选择方向） ==========
+    // 这些方法返回原始存储的节点和偏移量（可能是 Element 节点）
 
-    /**
-     * @brief 获取锚点节点
-     * @return 选择开始的节点
-     */
-    std::shared_ptr<Node> GetAnchorNode() const { return anchor_node_.lock(); }
+    std::shared_ptr<Node> GetAnchorNode() const;
+    int GetAnchorOffset() const;
+    std::shared_ptr<Node> GetFocusNode() const;
+    int GetFocusOffset() const;
 
-    /**
-     * @brief 获取焦点节点
-     * @return 选择结束的节点
-     */
-    std::shared_ptr<Node> GetFocusNode() const { return focus_node_.lock(); }
+    // ========== 计算后的位置属性（用于光标渲染） ==========
+    // 参考 Blink 的 Position::ComputeContainerNode/ComputeOffsetInContainerNode
+    // 这些方法将 Element 节点位置解析为 Text 节点位置
 
-    /**
-     * @brief 获取锚点偏移量
-     * @return 锚点在节点内的偏移量
-     */
-    int GetAnchorOffset() const { return anchor_offset_; }
+    std::shared_ptr<Node> GetComputedAnchorNode() const;
+    int GetComputedAnchorOffset() const;
+    std::shared_ptr<Node> GetComputedFocusNode() const;
+    int GetComputedFocusOffset() const;
 
-    /**
-     * @brief 获取焦点偏移量
-     * @return 焦点在节点内的偏移量
-     */
-    int GetFocusOffset() const { return focus_offset_; }
+    // ========== 起始和结束属性（文档顺序） ==========
 
-    /**
-     * @brief 检查选择是否折叠（光标状态）
-     * @return true 如果锚点和焦点在同一位置
-     */
+    std::shared_ptr<Node> GetStartNode() const;
+    int GetStartOffset() const;
+    std::shared_ptr<Node> GetEndNode() const;
+    int GetEndOffset() const;
+
+    // ========== 状态属性 ==========
+
     bool IsCollapsed() const;
+    int GetRangeCount() const;
+    SelectionType GetType() const;
+    SelectionDirection GetDirection() const;
+    std::string GetDirectionString() const;
+
+    // ========== 核心选择操作 ==========
 
     /**
-     * @brief 获取 Range 数量
-     * @return Range 数量（通常为 0 或 1）
+     * @brief 设置选择的基点和扩展点（核心 API）
+     * @param anchor_node 锚点节点
+     * @param anchor_offset 锚点偏移量
+     * @param focus_node 焦点节点
+     * @param focus_offset 焦点偏移量
+     *
+     * 这是最重要的方法，CodeMirror 6 主要使用此方法设置选择
      */
-    int GetRangeCount() const { return ranges_.empty() ? 0 : 1; }
-
-    // ========== 选择操作 ==========
+    void SetBaseAndExtent(
+        std::shared_ptr<Node> anchor_node, int anchor_offset,
+        std::shared_ptr<Node> focus_node, int focus_offset);
 
     /**
      * @brief 折叠选择到指定位置
-     * @param node 目标节点
+     * @param node 目标节点（如果为 null，清除选择）
      * @param offset 偏移量
-     *
-     * 将锚点和焦点都移动到指定位置
      */
     void Collapse(std::shared_ptr<Node> node, int offset);
 
@@ -109,79 +123,89 @@ public:
      */
     void SelectAllChildren(std::shared_ptr<Node> node);
 
-    /**
-     * @brief 折叠到选择的开始位置
-     */
     void CollapseToStart();
-
-    /**
-     * @brief 折叠到选择的结束位置
-     */
     void CollapseToEnd();
 
     // ========== Range 管理 ==========
 
-    /**
-     * @brief 移除所有 Range
-     */
     void RemoveAllRanges();
-
-    /**
-     * @brief 添加 Range
-     * @param range 要添加的 Range
-     */
     void AddRange(std::shared_ptr<Range> range);
-
-    /**
-     * @brief 获取指定索引的 Range
-     * @param index 索引
-     * @return Range 对象，如果索引无效返回 nullptr
-     */
+    void RemoveRange(std::shared_ptr<Range> range);
     std::shared_ptr<Range> GetRangeAt(int index) const;
 
-    // ========== 转换 ==========
+    // ========== 其他方法 ==========
 
-    /**
-     * @brief 获取选中的文本
-     * @return 选中的文本内容
-     */
+    void Empty();  // 等同于 RemoveAllRanges
+    void DeleteFromDocument();
+    bool ContainsNode(std::shared_ptr<Node> node, bool allow_partial = false) const;
     std::string ToString() const;
 
     // ========== 内部更新 ==========
 
-    /**
-     * @brief 从用户操作更新选择状态
-     * @param anchor 锚点节点
-     * @param anchor_offset 锚点偏移量
-     * @param focus 焦点节点
-     * @param focus_offset 焦点偏移量
-     *
-     * 由事件系统调用，用于响应用户的鼠标或键盘选择操作
-     */
     void UpdateFromUserAction(
         std::shared_ptr<Node> anchor, int anchor_offset,
         std::shared_ptr<Node> focus, int focus_offset);
 
-    // ========== 所属文档 ==========
-
-    /**
-     * @brief 获取所属文档
-     * @return 所属文档
-     */
     std::shared_ptr<Document> GetDocument() const { return document_.lock(); }
 
 private:
+    /**
+     * @brief 比较两个位置的文档顺序
+     * @return 负数表示 a 在 b 之前，0 表示相同，正数表示 a 在 b 之后
+     */
+    int ComparePositions(
+        std::shared_ptr<Node> node_a, int offset_a,
+        std::shared_ptr<Node> node_b, int offset_b) const;
+
+    /**
+     * @brief 检查锚点是否在焦点之前
+     */
+    bool IsAnchorFirst() const;
+
     /**
      * @brief 从选择状态更新内部 Range
      */
     void UpdateRangeFromSelection();
 
+    /**
+     * @brief 验证节点和偏移量是否有效
+     */
+    bool ValidateNodeOffset(std::shared_ptr<Node> node, int offset) const;
+
+    /**
+     * @brief 获取节点的最大有效偏移量
+     */
+    int GetNodeLength(std::shared_ptr<Node> node) const;
+
+    /**
+     * @brief 将 Element 节点位置解析为 Text 节点位置
+     * @param node Element 节点
+     * @param offset 子节点索引
+     * @return pair<解析后的节点, 解析后的偏移量>
+     */
+    std::pair<std::shared_ptr<Node>, int> ResolveElementPosition(
+        std::shared_ptr<Node> node, int offset) const;
+
+    /**
+     * @brief 分发 selectionchange 事件到 Document
+     * 
+     * CodeMirror 6 等编辑器依赖此事件同步选择状态
+     */
+    void DispatchSelectionChangeEvent();
+
 private:
     std::weak_ptr<Document> document_;
+
+    // 锚点和焦点（保持用户选择方向）
     std::weak_ptr<Node> anchor_node_;
     std::weak_ptr<Node> focus_node_;
     int anchor_offset_ = 0;
     int focus_offset_ = 0;
+
+    // 是否有方向性（用于 modify 等操作）
+    bool is_directional_ = false;
+
+    // 缓存的 Range
     std::vector<std::shared_ptr<Range>> ranges_;
 };
 

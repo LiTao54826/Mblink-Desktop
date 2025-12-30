@@ -12,12 +12,14 @@
 #pragma once
 
 #include "node.h"
+#include "document_fragment.h"
 #include "element.h"
 #include "text.h"
 #include "selection/range.h"
 #include "selection/selection.h"
 #include "observers/dom_observer.h"
 #include "observers/dirty_node_tracker.h"
+#include <functional>
 #include <string>
 #include <memory>
 #include <unordered_map>
@@ -67,6 +69,12 @@ public:
      * @return 文本节点
      */
     std::shared_ptr<Text> CreateTextNode(const std::string& data);
+
+    /**
+     * @brief 创建文档片段
+     * @return 文档片段节点
+     */
+    std::shared_ptr<DocumentFragment> CreateDocumentFragment();
 
     /**
      * @brief 创建 Range 对象
@@ -367,6 +375,33 @@ public:
      */
     void SetActiveElement(std::shared_ptr<Element> element);
 
+    // ========== 同步布局 ==========
+
+    /**
+     * @brief 同步布局回调类型
+     * 
+     * 当需要强制同步布局时（如 getBoundingClientRect），调用此回调
+     */
+    using SyncLayoutCallback = std::function<void()>;
+
+    /**
+     * @brief 设置同步布局回调
+     * @param callback 回调函数
+     */
+    void SetSyncLayoutCallback(SyncLayoutCallback callback) { sync_layout_callback_ = callback; }
+
+    /**
+     * @brief 强制同步布局
+     * 
+     * 在调用 getBoundingClientRect 等需要最新布局信息的方法前调用
+     * 这模拟了浏览器的强制 reflow 行为
+     */
+    void ForceLayout() {
+        if (sync_layout_callback_) {
+            sync_layout_callback_();
+        }
+    }
+
     // ========== Selection 管理 ==========
 
     /**
@@ -439,6 +474,9 @@ private:
 
     // 脏区域收集（用于移动元素双区域标记优化）
     std::vector<SkRect> dirty_rects_;
+
+    // 同步布局回调
+    SyncLayoutCallback sync_layout_callback_;
 
     // 资源加载基础路径
     std::string base_path_;

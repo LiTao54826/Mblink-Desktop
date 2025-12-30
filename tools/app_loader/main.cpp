@@ -351,7 +351,6 @@ int RunApp(int width, int height, const std::string& title,
 
         // 创建body元素
         auto body = document->CreateElement("body");
-        body->SetAttribute("style", "overflow: auto;");
         document->SetBody(body);
         
         // **重要：先将文档关联到窗口**

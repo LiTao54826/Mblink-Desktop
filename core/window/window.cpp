@@ -447,7 +447,12 @@ void Window::OnResize() {
         
         // 关键修复：在重新创建 surface 之前，清除两个缓冲区
         // OpenGL 双缓冲需要清除前后两个缓冲区，否则新增区域会显示垃圾数据
-        glClearColor(1.0f, 1.0f, 1.0f, 1.0f);  // 白色背景
+        // 使用缓存的 body 背景色，避免浮点精度问题导致的边缘颜色不一致
+        float r = SkColorGetR(cached_body_bg_color_) / 255.0f;
+        float g = SkColorGetG(cached_body_bg_color_) / 255.0f;
+        float b = SkColorGetB(cached_body_bg_color_) / 255.0f;
+        float a = SkColorGetA(cached_body_bg_color_) / 255.0f;
+        glClearColor(r, g, b, a);
         glClear(GL_COLOR_BUFFER_BIT);
         SDL_GL_SwapWindow(sdl_window_);  // 交换到后缓冲
         glClear(GL_COLOR_BUFFER_BIT);    // 清除后缓冲
@@ -835,6 +840,11 @@ void Window::SetDocument(std::shared_ptr<Document> document) {
         dom_observer_ = std::make_unique<WindowDOMObserver>(this);
         document_->AddObserver(dom_observer_.get());
         
+        // 注册同步布局回调（用于 getBoundingClientRect 等需要强制 reflow 的操作）
+        document_->SetSyncLayoutCallback([this]() {
+            ForceLayoutSync();
+        });
+        
         // 重新创建动画应用器，使用 StyleManager 的 AnimationController
         // 这样 @keyframes 规则可以被正确找到
         if (document_->GetStyleManager()) {
@@ -902,17 +912,18 @@ void Window::Render() {
     int physical_width, physical_height;
     SDL_GetWindowSizeInPixels(sdl_window_, &physical_width, &physical_height);
     float dpi_scale = GetDisplayScale();
-    int logical_width = static_cast<int>(physical_width / dpi_scale);
-    int logical_height = static_cast<int>(physical_height / dpi_scale);
+    // 使用浮点数保持精度，避免截断导致的白边问题
+    float logical_width = physical_width / dpi_scale;
+    float logical_height = physical_height / dpi_scale;
 
     // 检查 DevTools 是否打开，如果打开则调整主应用区域
     auto& devtools = DevToolsManager::GetInstance();
     float app_x = 0, app_y = 0;
-    float app_width = static_cast<float>(logical_width);
-    float app_height = static_cast<float>(logical_height);
+    float app_width = logical_width;
+    float app_height = logical_height;
     
     if (devtools.IsOpen()) {
-        devtools.GetMainAppBounds(static_cast<float>(logical_width), static_cast<float>(logical_height),
+        devtools.GetMainAppBounds(logical_width, logical_height,
                                    app_x, app_y, app_width, app_height);
     }
 
@@ -1028,12 +1039,13 @@ void Window::Render() {
         auto& layer_mgr = LayerManager::Instance();
         layer_mgr.BeginFrame();
         
-        // 获取背景色
-        SkColor clear_color = SK_ColorWHITE;
+        // 获取背景色 - 优先使用 body 的背景色，避免白边问题
+        SkColor clear_color = cached_body_bg_color_;  // 使用缓存的背景色
         if (cached_render_tree_) {
             const auto& body_style = cached_render_tree_->GetComputedStyle();
             if (!body_style.background_color.empty() && body_style.background_color != "transparent") {
                 clear_color = Color::Parse(body_style.background_color);
+                cached_body_bg_color_ = clear_color;  // 更新缓存
             }
         }
         canvas->clear(clear_color);
@@ -1605,6 +1617,51 @@ float Window::GetDisplayScale() const {
     }
 
     return 1.0f;
+}
+
+void Window::ForceLayoutSync() {
+    // 强制同步布局 - 模拟浏览器的 forced reflow
+    // 当 JS 调用 getBoundingClientRect 等方法时，需要立即获取最新的布局信息
+    
+    if (!document_ || !layout_engine_) {
+        return;
+    }
+    
+    // 确保渲染树已构建
+    EnsureRenderTree();
+    
+    if (!cached_render_tree_) {
+        return;
+    }
+    
+    // 获取视口尺寸
+    int physical_width, physical_height;
+    SDL_GetWindowSizeInPixels(sdl_window_, &physical_width, &physical_height);
+    float dpi_scale = GetDisplayScale();
+    float width = static_cast<float>(physical_width) / dpi_scale;
+    float height = static_cast<float>(physical_height) / dpi_scale;
+    
+    // 考虑 DevTools 面板
+    auto& devtools = DevToolsManager::GetInstance();
+    float app_width = width;
+    float app_height = height;
+    if (devtools.IsOpen()) {
+        float app_x, app_y;
+        devtools.GetMainAppBounds(width, height, app_x, app_y, app_width, app_height);
+    }
+    
+    // 处理待处理的 DOM 变化
+    if (render_tree_synchronizer_) {
+        auto& tracker = document_->GetDirtyTracker();
+        if (tracker.HasPendingChanges()) {
+            render_tree_synchronizer_->Synchronize(tracker, cached_render_tree_);
+        }
+    }
+    
+    // 重建布局树并计算布局
+    layout_engine_->BuildLayoutTree(cached_render_tree_);
+    layout_engine_->ComputeLayout(app_width, app_height);
+    layout_engine_->GetLayoutInfo(cached_render_tree_);
 }
 
 void Window::InvalidateRenderTree() {

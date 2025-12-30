@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Browser textContent Test</title>
+</head>
+<body>
+    <h1>Browser textContent Test</h1>
+    
+    <div id="test-container">
+        <div>Line 1</div>
+        <div>Line 2</div>
+        <div>Line 3</div>
+    </div>
+    
+    <pre id="output"></pre>
+    
+    <script>
+        const container = document.getElementById('test-container');
+        const output = document.getElementById('output');
+        
+        const textContent = container.textContent;
+        const textLength = textContent.length;
+        
+        output.textContent = `
+textContent: ${JSON.stringify(textContent)}
+textContent.length: ${textLength}
+
+Children:
+${Array.from(container.children).map((child, i) => 
+    `Child ${i}: ${child.tagName} - textContent: ${JSON.stringify(child.textContent)} (length: ${child.textContent.length})`
+).join('\n')}
+
+Analysis:
+- Container has ${container.children.length} children
+- Each child is a <div> element
+- textContent does ${textContent.includes('\\n') ? '' : 'NOT '}include newlines between divs
+        `.trim();
+        
+        console.log('textContent:', JSON.stringify(textContent));
+        console.log('textContent.length:', textLength);
+    </script>
+</body>
+</html>

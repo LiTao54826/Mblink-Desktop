@@ -170,6 +170,13 @@ void RenderInline::Paint(SkCanvas* canvas) {
         return;
     }
 
+    // 跳过零高度元素（如 CodeMirror 的测量占位元素）
+    // 这些元素有宽度但高度为0，用于测量文本宽度
+    if (layout_info_.height <= 0) {
+        needs_paint_ = false;
+        return;
+    }
+
     // Viewport Culling
     SkRect paint_rect = SkRect::MakeXYWH(layout_info_.x, layout_info_.y, 
                                           layout_info_.width, layout_info_.height);

@@ -2150,3 +2150,21 @@ select::-internal-select-autofill-preview-text {
     }
   }
 }
+
+
+/* ========== 虚拟文本组件 ========== */
+terminal {
+    display: block;
+    font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+    font-size: 14px;
+    background-color: #1e1e1e;
+    color: #d4d4d4;
+}
+
+logview {
+    display: block;
+    font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+    font-size: 14px;
+    background-color: #1e1e1e;
+    color: #d4d4d4;
+}

@@ -116,6 +116,23 @@ void WindowBindings::BindWindowObject() {
             set: function(value) { __setTitle(value); },
             configurable: true
         });
+
+        // 创建 navigator 对象（用于平台/浏览器检测）
+        if (!globalThis.navigator) {
+            globalThis.navigator = {
+                platform: 'Win32',
+                userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                vendor: 'Google Inc.',
+                language: 'zh-CN',
+                languages: ['zh-CN', 'en'],
+                onLine: true,
+                cookieEnabled: false,
+                clipboard: undefined,
+                maxTouchPoints: 0
+            };
+        }
+        // 也设置到 window 上
+        globalThis.window.navigator = globalThis.navigator;
     )";
     
     runtime_->Eval(window_code, "<window_bindings>");

@@ -14,6 +14,7 @@
 #include "core/render/objects/render_object.h"
 #include "core/render/pipeline/render_pipeline.h"
 #include <SDL3/SDL.h>
+#include <iostream>
 
 namespace lightui {
 
@@ -84,9 +85,9 @@ bool FocusManager::SetFocus(std::shared_ptr<Element> element, bool focus_visible
     // 更新焦点元素
     focus_element_ = element;
 
-    // 如果是输入元素或 contentEditable 元素，启用SDL文本输入
+    // 如果是输入元素、contentEditable 元素或终端元素，启用SDL文本输入
     std::string tag_name = element->GetTagName();
-    if (tag_name == "input" || tag_name == "textarea" || element->IsContentEditable()) {
+    if (tag_name == "input" || tag_name == "textarea" || tag_name == "terminal" || element->IsContentEditable()) {
         if (window_) {
             SDL_StartTextInput(window_->GetSDLWindow());
         }
@@ -392,7 +393,7 @@ bool FocusManager::IsFocusable(std::shared_ptr<Element> element) {
     // 检查是否是默认可聚焦的元素
     if (tag_name == "input" || tag_name == "button" ||
         tag_name == "select" || tag_name == "textarea" ||
-        tag_name == "a") {
+        tag_name == "a" || tag_name == "terminal" || tag_name == "logview") {
         // 检查是否被禁用
         std::string disabled = element->GetAttribute("disabled");
         if (disabled == "true" || disabled == "disabled") {
@@ -415,7 +416,7 @@ int FocusManager::GetTabIndex(std::shared_ptr<Element> element) {
         std::string tag_name = element->GetTagName();
         if (tag_name == "input" || tag_name == "button" || 
             tag_name == "select" || tag_name == "textarea" ||
-            tag_name == "a") {
+            tag_name == "a" || tag_name == "terminal" || tag_name == "logview") {
             return 0;
         }
         return -1;

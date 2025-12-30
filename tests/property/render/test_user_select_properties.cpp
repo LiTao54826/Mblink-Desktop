@@ -10,10 +10,10 @@
  */
 
 #include <gtest/gtest.h>
-#include "render/render_object.h"
-#include "render/css/style_resolver.h"
-#include "dom/element.h"
-#include "dom/document.h"
+#include "core/render/objects/render_object.h"
+#include "core/render/css/style_resolver.h"
+#include "core/dom/element.h"
+#include "core/dom/document.h"
 #include <random>
 #include <vector>
 #include <string>

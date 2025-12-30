@@ -425,6 +425,51 @@ public:
      */
     void SetContentEditable(const std::string& value);
 
+    // ========== 几何信息 ==========
+
+    /**
+     * @brief 获取元素的边界矩形
+     * @return DOMRect 结构 {x, y, width, height, top, right, bottom, left}
+     *
+     * 符合 W3C Element.getBoundingClientRect() 接口
+     * 返回元素相对于视口的位置和尺寸
+     */
+    struct DOMRect {
+        float x = 0;
+        float y = 0;
+        float width = 0;
+        float height = 0;
+        float top = 0;
+        float right = 0;
+        float bottom = 0;
+        float left = 0;
+    };
+    DOMRect GetBoundingClientRect() const;
+
+    /**
+     * @brief 滚动元素到可见区域
+     * @param align_to_top true 表示顶部对齐，false 表示底部对齐
+     *
+     * 符合 W3C Element.scrollIntoView() 接口
+     */
+    void ScrollIntoView(bool align_to_top = true);
+
+    // ========== 焦点管理 ==========
+
+    /**
+     * @brief 使元素获得焦点
+     *
+     * 符合 W3C HTMLElement.focus() 接口
+     */
+    virtual void Focus();
+
+    /**
+     * @brief 使元素失去焦点
+     *
+     * 符合 W3C HTMLElement.blur() 接口
+     */
+    virtual void Blur();
+
 private:
     /**
      * @brief 处理事件（内部方法）

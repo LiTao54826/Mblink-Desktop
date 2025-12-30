@@ -130,13 +130,10 @@ void WindowDOMObserver::OnAttributeChanged(Element* element,
                 window_->AddDirtyRect(bounds);
             }
             
-            // 关键修复：当 style 属性变化时，需要重新解析样式
-            // 这确保 transform 等属性的动态更新能正确生效
-            if (name == "style") {
-                // 检查是否包含 animation 属性变化
-                bool has_animation_change = (new_value.find("animation") != std::string::npos ||
-                                              old_value.find("animation") != std::string::npos);
-                
+            // 关键修复：当 style 或 class 属性变化时，需要重新解析样式
+            // style: 确保 transform 等属性的动态更新能正确生效
+            // class: 确保 CSS 类选择器匹配的样式能正确应用（如 .cm-activeLine）
+            if (name == "style" || name == "class") {
                 StyleResolver resolver;
                 if (window_->GetDocument() && window_->GetDocument()->GetStyleManager()) {
                     resolver.SetStyleManager(window_->GetDocument()->GetStyleManager());

@@ -11,6 +11,12 @@
 cmake_minimum_required(VERSION 3.15)
 project(LightUI VERSION 0.1.0 LANGUAGES CXX C)
 
+# Default to Release build type if not specified
+if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
+    set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type" FORCE)
+    message(STATUS "Setting build type to 'Release' as none was specified.")
+endif()
+
 # C++ Standard (quickjs-ng requires C++20 for certain features)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)

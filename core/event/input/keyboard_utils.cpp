@@ -16,7 +16,10 @@ namespace lightui {
 std::string SDLKeycodeToKey(SDL_Keycode keycode, bool shift) {
     // 参考：W3C UI Events - KeyboardEvent.key
     // https://www.w3.org/TR/uievents-key/
-    
+
+    // 调试输出
+    // std::cout << "[SDLKeycodeToKey] keycode=" << keycode << " (0x" << std::hex << keycode << std::dec << ")" << std::endl;
+
     // 特殊键
     switch (keycode) {
         // 修饰键
@@ -32,7 +35,7 @@ std::string SDLKeycodeToKey(SDL_Keycode keycode, bool shift) {
         case SDLK_LGUI:
         case SDLK_RGUI:
             return "Meta";
-            
+
         // 导航键
         case SDLK_DOWN:
             return "ArrowDown";
@@ -50,7 +53,7 @@ std::string SDLKeycodeToKey(SDL_Keycode keycode, bool shift) {
             return "PageDown";
         case SDLK_PAGEUP:
             return "PageUp";
-            
+
         // 编辑键
         case SDLK_BACKSPACE:
             return "Backspace";
@@ -58,18 +61,19 @@ std::string SDLKeycodeToKey(SDL_Keycode keycode, bool shift) {
             return "Delete";
         case SDLK_INSERT:
             return "Insert";
-            
+
         // UI键
         case SDLK_ESCAPE:
             return "Escape";
         case SDLK_RETURN:
         case SDLK_RETURN2:
+        case SDLK_KP_ENTER:  // 小键盘回车
             return "Enter";
         case SDLK_TAB:
             return "Tab";
         case SDLK_SPACE:
             return " ";
-            
+
         // 功能键
         case SDLK_F1: return "F1";
         case SDLK_F2: return "F2";
@@ -97,11 +101,11 @@ std::string SDLKeycodeToKey(SDL_Keycode keycode, bool shift) {
     }
     
     // 字母和数字键
-    // SDL3中字母键是大写的（SDLK_A到SDLK_Z）
+    // SDL3中字母键是小写的（SDLK_A到SDLK_Z，值为0x61-0x7a，即97-122）
     if (keycode >= SDLK_A && keycode <= SDLK_Z) {
-        char c = static_cast<char>(keycode);
-        if (!shift) {
-            c = std::tolower(c);
+        char c = static_cast<char>(keycode);  // 已经是小写
+        if (shift) {
+            c = std::toupper(c);
         }
         return std::string(1, c);
     }

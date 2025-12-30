@@ -10,9 +10,9 @@
 #include <vector>
 #include <functional>
 
-#include "dom/element.h"
-#include "dom/event.h"
-#include "dom/dom_observer.h"
+#include "core/dom/element.h"
+#include "core/dom/event.h"
+#include "core/dom/observers/dom_observer.h"
 
 namespace lightui {
 namespace test {

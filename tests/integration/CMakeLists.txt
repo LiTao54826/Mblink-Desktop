@@ -9,6 +9,7 @@ set(INTEGRATION_TEST_SOURCES
     test_javascript_integration.cpp
     test_incremental_layout_integration.cpp
     test_incremental_update_system.cpp
+    test_terminal_logview_integration.cpp
 )
 
 add_executable(lightui_integration_tests

@@ -198,7 +198,7 @@ bool StyleManager::MatchesSelector(const std::string& selector, Element* element
     }
 
     // 简化的选择器匹配实现
-    // 支持：标签选择器、类选择器、ID选择器、后代选择器
+    // 支持：标签选择器、类选择器、ID选择器、后代选择器、逗号分隔选择器
 
     std::string trimmed_selector = selector;
     // 去除前后空格
@@ -208,49 +208,136 @@ bool StyleManager::MatchesSelector(const std::string& selector, Element* element
         trimmed_selector = trimmed_selector.substr(start, end - start + 1);
     }
 
-    // 检查是否是后代选择器（包含空格）
-    size_t space_pos = trimmed_selector.find(' ');
-    if (space_pos != std::string::npos) {
-        // 后代选择器：从右向左匹配
-        // 例如 "#test4 .inline-block-item" 分解为 ["#test4", ".inline-block-item"]
-        std::vector<std::string> parts;
+    // 检查是否是逗号分隔的选择器组（如 "html, body"）
+    size_t comma_pos = trimmed_selector.find(',');
+    if (comma_pos != std::string::npos) {
+        // 分割逗号分隔的选择器，任一匹配即返回 true
         std::istringstream iss(trimmed_selector);
-        std::string part;
-        while (iss >> part) {
-            if (!part.empty()) {
-                parts.push_back(part);
+        std::string single_selector;
+        while (std::getline(iss, single_selector, ',')) {
+            // 去除前后空格
+            size_t s_start = single_selector.find_first_not_of(" \t\n\r");
+            size_t s_end = single_selector.find_last_not_of(" \t\n\r");
+            if (s_start != std::string::npos && s_end != std::string::npos) {
+                single_selector = single_selector.substr(s_start, s_end - s_start + 1);
+                // 递归调用匹配单个选择器
+                if (MatchesSelector(single_selector, element)) {
+                    return true;
+                }
             }
         }
+        return false;
+    }
 
-        if (parts.empty()) {
-            return false;
-        }
-
-        // 最后一个选择器必须匹配当前元素
-        if (!MatchesSimpleSelector(parts.back(), element)) {
-            return false;
-        }
-
-        // 从右向左检查祖先元素
-        if (parts.size() > 1) {
-            auto parent_node = element->GetParentNode();
-            Element* ancestor = dynamic_cast<Element*>(parent_node.get());
-            int part_index = static_cast<int>(parts.size()) - 2;
-
-            while (ancestor && part_index >= 0) {
-                if (MatchesSimpleSelector(parts[part_index], ancestor)) {
-                    part_index--;
+    // 解析复合选择器（支持后代选择器和子选择器）
+    // 将选择器分解为 parts 和 combinators
+    // 例如 ".parent > .child .grandchild" 分解为:
+    //   parts: [".parent", ".child", ".grandchild"]
+    //   combinators: ['>', ' ']  (> 表示子选择器，空格表示后代选择器)
+    
+    std::vector<std::string> parts;
+    std::vector<char> combinators;  // '>' 或 ' '
+    
+    std::string current_part;
+    bool last_was_space = false;
+    bool last_was_combinator = false;
+    
+    for (size_t i = 0; i < trimmed_selector.size(); ++i) {
+        char c = trimmed_selector[i];
+        
+        if (c == '>') {
+            // 子选择器
+            if (!current_part.empty()) {
+                // 去除 current_part 的前后空格
+                size_t ps = current_part.find_first_not_of(" \t");
+                size_t pe = current_part.find_last_not_of(" \t");
+                if (ps != std::string::npos && pe != std::string::npos) {
+                    parts.push_back(current_part.substr(ps, pe - ps + 1));
                 }
+                current_part.clear();
+            }
+            combinators.push_back('>');
+            last_was_combinator = true;
+            last_was_space = false;
+        } else if (c == ' ' || c == '\t') {
+            if (!current_part.empty() && !last_was_combinator) {
+                // 可能是后代选择器，但需要等待看下一个非空字符
+                last_was_space = true;
+            }
+        } else {
+            // 普通字符
+            if (last_was_space && !current_part.empty()) {
+                // 这是一个后代选择器（空格分隔）
+                size_t ps = current_part.find_first_not_of(" \t");
+                size_t pe = current_part.find_last_not_of(" \t");
+                if (ps != std::string::npos && pe != std::string::npos) {
+                    parts.push_back(current_part.substr(ps, pe - ps + 1));
+                }
+                current_part.clear();
+                combinators.push_back(' ');
+            }
+            current_part += c;
+            last_was_space = false;
+            last_was_combinator = false;
+        }
+    }
+    
+    // 添加最后一个部分
+    if (!current_part.empty()) {
+        size_t ps = current_part.find_first_not_of(" \t");
+        size_t pe = current_part.find_last_not_of(" \t");
+        if (ps != std::string::npos && pe != std::string::npos) {
+            parts.push_back(current_part.substr(ps, pe - ps + 1));
+        }
+    }
+    
+    if (parts.empty()) {
+        return false;
+    }
+    
+    // 如果只有一个部分，直接匹配
+    if (parts.size() == 1) {
+        return MatchesSimpleSelector(parts[0], element);
+    }
+    
+    // 最后一个选择器必须匹配当前元素
+    if (!MatchesSimpleSelector(parts.back(), element)) {
+        return false;
+    }
+    
+    // 从右向左检查祖先元素
+    auto parent_node = element->GetParentNode();
+    Element* ancestor = dynamic_cast<Element*>(parent_node.get());
+    int part_index = static_cast<int>(parts.size()) - 2;
+    int comb_index = static_cast<int>(combinators.size()) - 1;
+    
+    while (ancestor && part_index >= 0 && comb_index >= 0) {
+        char combinator = combinators[comb_index];
+        
+        if (combinator == '>') {
+            // 子选择器：必须是直接父元素
+            if (MatchesSimpleSelector(parts[part_index], ancestor)) {
+                part_index--;
+                comb_index--;
                 parent_node = ancestor->GetParentNode();
                 ancestor = dynamic_cast<Element*>(parent_node.get());
+            } else {
+                // 直接父元素不匹配，整个选择器不匹配
+                return false;
             }
-
-            // 所有部分都必须匹配
-            return part_index < 0;
+        } else {
+            // 后代选择器：可以是任意祖先
+            if (MatchesSimpleSelector(parts[part_index], ancestor)) {
+                part_index--;
+                comb_index--;
+            }
+            parent_node = ancestor->GetParentNode();
+            ancestor = dynamic_cast<Element*>(parent_node.get());
         }
-
-        return true;
     }
+    
+    // 所有部分都必须匹配
+    return part_index < 0;
 
     // 简单选择器匹配
     return MatchesSimpleSelector(trimmed_selector, element);

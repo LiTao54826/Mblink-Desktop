@@ -3,11 +3,13 @@
 set(DOM_BINDINGS_SOURCES
     dom_bindings.cpp
     canvas_bindings.cpp
+    terminal_bindings.cpp
 )
 
 set(DOM_BINDINGS_HEADERS
     dom_bindings.h
     canvas_bindings.h
+    terminal_bindings.h
 )
 
 # 将源文件列表传递给父目录

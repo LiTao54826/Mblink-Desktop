@@ -11,8 +11,8 @@
  */
 
 #include <gtest/gtest.h>
-#include "layout/ifc/ifc_layout.h"
-#include "render/render_object.h"
+#include "core/layout/ifc/ifc_layout.h"
+#include "core/render/objects/render_object.h"
 #include <random>
 #include <memory>
 #include <vector>

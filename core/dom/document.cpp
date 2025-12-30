@@ -39,6 +39,8 @@
 #include "elements/html_script_element.h"
 #include "elements/html_link_element.h"
 #include "elements/svg_element.h"
+#include "elements/terminal/html_terminal_element.h"
+#include "elements/logview/html_logview_element.h"
 #include "core/lexbor/lexbor_document.h"
 #include "core/lexbor/style_manager.h"
 #include "core/quickjs/quickjs_runtime.h"
@@ -239,6 +241,12 @@ std::shared_ptr<Element> Document::CreateElement(const std::string& tag_name) {
         element = std::make_shared<HTMLScriptElement>();
     } else if (tag_name == "link") {
         element = std::make_shared<HTMLLinkElement>();
+    }
+    // ========== 虚拟文本组件 ==========
+    else if (tag_name == "terminal") {
+        element = std::make_shared<HTMLTerminalElement>();
+    } else if (tag_name == "logview") {
+        element = std::make_shared<HTMLLogViewElement>();
     } else {
         // 所有其他标签使用通用 Element 类
         // 包括：语义化标签（header, footer, nav, section, article, aside, main, figure, figcaption）
@@ -265,6 +273,13 @@ std::shared_ptr<Text> Document::CreateTextNode(const std::string& data) {
     // 设置 owner_document
     text->owner_document_ = std::static_pointer_cast<Document>(shared_from_this());
     return text;
+}
+
+std::shared_ptr<DocumentFragment> Document::CreateDocumentFragment() {
+    auto fragment = std::make_shared<DocumentFragment>();
+    // 设置 owner_document
+    fragment->owner_document_ = std::static_pointer_cast<Document>(shared_from_this());
+    return fragment;
 }
 
 std::shared_ptr<Range> Document::CreateRange() {

@@ -14,7 +14,10 @@
 #include "core/dom/elements/html_select_element.h"
 #include "core/dom/elements/html_canvas_element.h"
 #include "core/dom/elements/html_image_element.h"
+#include "core/dom/elements/terminal/html_terminal_element.h"
+#include "core/dom/elements/logview/html_logview_element.h"
 #include "core/dom/bindings/canvas_bindings.h"
+#include "core/dom/bindings/terminal_bindings.h"
 #include "core/dom/selection/selector_engine.h"
 #include "core/quickjs/dom_binding_map.h"
 #include "core/render/objects/render_object.h"
@@ -309,6 +312,66 @@ static JSValue JSElement_get_children(JSContext* ctx, JSValueConst this_val, int
     }
 
     return array;
+}
+
+// attributes getter - 返回 NamedNodeMap 对象
+static JSValue JSElement_get_attributes(JSContext* ctx, JSValueConst this_val, int magic) {
+    auto* data = static_cast<JSElementData*>(JS_GetOpaque(this_val, js_element_class_id));
+    if (!data || !data->element) {
+        // 返回空的类数组对象
+        JSValue obj = JS_NewObject(ctx);
+        JS_SetPropertyStr(ctx, obj, "length", JS_NewInt32(ctx, 0));
+        return obj;
+    }
+
+    // 获取所有属性
+    const auto& attrs = data->element->GetAllAttributes();
+    
+    // 创建类数组对象（模拟 NamedNodeMap）
+    JSValue obj = JS_NewObject(ctx);
+    int index = 0;
+    
+    for (const auto& [name, value] : attrs) {
+        // 创建 Attr 对象
+        JSValue attr = JS_NewObject(ctx);
+        JS_SetPropertyStr(ctx, attr, "name", JS_NewString(ctx, name.c_str()));
+        JS_SetPropertyStr(ctx, attr, "value", JS_NewString(ctx, value.c_str()));
+        JS_SetPropertyStr(ctx, attr, "nodeName", JS_NewString(ctx, name.c_str()));
+        JS_SetPropertyStr(ctx, attr, "nodeValue", JS_NewString(ctx, value.c_str()));
+        
+        // 按索引设置
+        JS_SetPropertyUint32(ctx, obj, index, attr);
+        
+        // 按名称设置（用于 getNamedItem）
+        JS_SetPropertyStr(ctx, obj, name.c_str(), JS_DupValue(ctx, attr));
+        
+        index++;
+    }
+    
+    // 设置 length 属性
+    JS_SetPropertyStr(ctx, obj, "length", JS_NewInt32(ctx, index));
+    
+    // 添加 getNamedItem 方法
+    JS_SetPropertyStr(ctx, obj, "getNamedItem",
+        JS_NewCFunction(ctx, [](JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) -> JSValue {
+            if (argc < 1) return JS_NULL;
+            const char* name = JS_ToCString(ctx, argv[0]);
+            if (!name) return JS_NULL;
+            JSValue result = JS_GetPropertyStr(ctx, this_val, name);
+            JS_FreeCString(ctx, name);
+            return result;
+        }, "getNamedItem", 1));
+    
+    // 添加 item 方法
+    JS_SetPropertyStr(ctx, obj, "item",
+        JS_NewCFunction(ctx, [](JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) -> JSValue {
+            if (argc < 1) return JS_NULL;
+            uint32_t index;
+            if (JS_ToUint32(ctx, &index, argv[0]) != 0) return JS_NULL;
+            return JS_GetPropertyUint32(ctx, this_val, index);
+        }, "item", 1));
+    
+    return obj;
 }
 
 // style getter
@@ -635,6 +698,16 @@ static JSValue JSElement_addEventListener(JSContext* ctx, JSValueConst this_val,
                 if (err) {
                     std::cerr << "[Event Listener Error] " << err << std::endl;
                     JS_FreeCString(ctx, err);
+                }
+                // 尝试获取堆栈信息
+                JSValue stack = JS_GetPropertyStr(ctx, exception, "stack");
+                if (!JS_IsUndefined(stack)) {
+                    const char* stack_str = JS_ToCString(ctx, stack);
+                    if (stack_str) {
+                        std::cerr << "[Event Listener Stack] " << stack_str << std::endl;
+                        JS_FreeCString(ctx, stack_str);
+                    }
+                    JS_FreeValue(ctx, stack);
                 }
                 JS_FreeValue(ctx, exception);
             }
@@ -1099,6 +1172,253 @@ static JSValue JSElement_set_scrollLeft(JSContext* ctx, JSValueConst this_val, J
     return JS_UNDEFINED;
 }
 
+// getBoundingClientRect - 获取元素的边界矩形
+static JSValue JSElement_getBoundingClientRect(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) {
+    auto* data = static_cast<JSElementData*>(JS_GetOpaque(this_val, js_element_class_id));
+    if (!data || !data->element) {
+        // 返回空的 DOMRect
+        JSValue obj = JS_NewObject(ctx);
+        JS_SetPropertyStr(ctx, obj, "x", JS_NewFloat64(ctx, 0));
+        JS_SetPropertyStr(ctx, obj, "y", JS_NewFloat64(ctx, 0));
+        JS_SetPropertyStr(ctx, obj, "width", JS_NewFloat64(ctx, 0));
+        JS_SetPropertyStr(ctx, obj, "height", JS_NewFloat64(ctx, 0));
+        JS_SetPropertyStr(ctx, obj, "top", JS_NewFloat64(ctx, 0));
+        JS_SetPropertyStr(ctx, obj, "right", JS_NewFloat64(ctx, 0));
+        JS_SetPropertyStr(ctx, obj, "bottom", JS_NewFloat64(ctx, 0));
+        JS_SetPropertyStr(ctx, obj, "left", JS_NewFloat64(ctx, 0));
+        return obj;
+    }
+
+    auto rect = data->element->GetBoundingClientRect();
+
+    // 创建 DOMRect 对象
+    JSValue obj = JS_NewObject(ctx);
+    JS_SetPropertyStr(ctx, obj, "x", JS_NewFloat64(ctx, rect.x));
+    JS_SetPropertyStr(ctx, obj, "y", JS_NewFloat64(ctx, rect.y));
+    JS_SetPropertyStr(ctx, obj, "width", JS_NewFloat64(ctx, rect.width));
+    JS_SetPropertyStr(ctx, obj, "height", JS_NewFloat64(ctx, rect.height));
+    JS_SetPropertyStr(ctx, obj, "top", JS_NewFloat64(ctx, rect.top));
+    JS_SetPropertyStr(ctx, obj, "right", JS_NewFloat64(ctx, rect.right));
+    JS_SetPropertyStr(ctx, obj, "bottom", JS_NewFloat64(ctx, rect.bottom));
+    JS_SetPropertyStr(ctx, obj, "left", JS_NewFloat64(ctx, rect.left));
+
+    return obj;
+}
+
+// getClientRects - 获取元素的所有边界矩形（用于多行文本等）
+static JSValue JSElement_getClientRects(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) {
+    auto* data = static_cast<JSElementData*>(JS_GetOpaque(this_val, js_element_class_id));
+    
+    // 创建数组来存储矩形
+    JSValue arr = JS_NewArray(ctx);
+    
+    if (!data || !data->element) {
+        return arr;  // 返回空数组
+    }
+
+    // 获取单个边界矩形（简化实现，对于大多数元素只有一个矩形）
+    auto rect = data->element->GetBoundingClientRect();
+
+    // 创建 DOMRect 对象
+    JSValue obj = JS_NewObject(ctx);
+    JS_SetPropertyStr(ctx, obj, "x", JS_NewFloat64(ctx, rect.x));
+    JS_SetPropertyStr(ctx, obj, "y", JS_NewFloat64(ctx, rect.y));
+    JS_SetPropertyStr(ctx, obj, "width", JS_NewFloat64(ctx, rect.width));
+    JS_SetPropertyStr(ctx, obj, "height", JS_NewFloat64(ctx, rect.height));
+    JS_SetPropertyStr(ctx, obj, "top", JS_NewFloat64(ctx, rect.top));
+    JS_SetPropertyStr(ctx, obj, "right", JS_NewFloat64(ctx, rect.right));
+    JS_SetPropertyStr(ctx, obj, "bottom", JS_NewFloat64(ctx, rect.bottom));
+    JS_SetPropertyStr(ctx, obj, "left", JS_NewFloat64(ctx, rect.left));
+
+    // 添加到数组
+    JS_SetPropertyUint32(ctx, arr, 0, obj);
+
+    return arr;
+}
+
+// scrollIntoView - 滚动元素到可见区域
+static JSValue JSElement_scrollIntoView(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) {
+    auto* data = static_cast<JSElementData*>(JS_GetOpaque(this_val, js_element_class_id));
+    if (!data || !data->element) return JS_UNDEFINED;
+
+    bool align_to_top = true;
+    if (argc > 0 && !JS_IsUndefined(argv[0])) {
+        align_to_top = JS_ToBool(ctx, argv[0]);
+    }
+
+    data->element->ScrollIntoView(align_to_top);
+    return JS_UNDEFINED;
+}
+
+// select - 选中输入框中的所有文本（用于 input/textarea）
+static JSValue JSElement_select(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) {
+    auto* data = static_cast<JSElementData*>(JS_GetOpaque(this_val, js_element_class_id));
+    if (!data || !data->element) return JS_UNDEFINED;
+
+    // 获取 value 属性的长度
+    std::string value = data->element->GetAttribute("value");
+    
+    // 设置 selectionStart 和 selectionEnd
+    data->element->SetAttribute("selectionStart", "0");
+    data->element->SetAttribute("selectionEnd", std::to_string(value.length()));
+    
+    return JS_UNDEFINED;
+}
+
+// focus - 使元素获得焦点
+static JSValue JSElement_focus(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) {
+    auto* data = static_cast<JSElementData*>(JS_GetOpaque(this_val, js_element_class_id));
+    if (!data || !data->element) return JS_UNDEFINED;
+    
+    data->element->Focus();
+    return JS_UNDEFINED;
+}
+
+// blur - 使元素失去焦点
+static JSValue JSElement_blur(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) {
+    auto* data = static_cast<JSElementData*>(JS_GetOpaque(this_val, js_element_class_id));
+    if (!data || !data->element) return JS_UNDEFINED;
+    
+    data->element->Blur();
+    return JS_UNDEFINED;
+}
+
+// contains - 检查元素是否包含另一个节点
+static JSValue JSElement_contains(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) {
+    auto* data = static_cast<JSElementData*>(JS_GetOpaque(this_val, js_element_class_id));
+    if (!data || !data->element) return JS_FALSE;
+    
+    if (argc < 1) return JS_FALSE;
+    
+    auto other = UnwrapElement(ctx, argv[0]);
+    if (!other) return JS_FALSE;
+    
+    // 检查 other 是否是 this 的后代
+    auto current = other;
+    while (current) {
+        if (current.get() == data->element.get()) {
+            return JS_TRUE;
+        }
+        auto parent = current->GetParentNode();
+        if (!parent) break;
+        current = std::dynamic_pointer_cast<Element>(parent);
+    }
+    
+    return JS_FALSE;
+}
+
+// matches - 检查元素是否匹配选择器
+static JSValue JSElement_matches(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) {
+    auto* data = static_cast<JSElementData*>(JS_GetOpaque(this_val, js_element_class_id));
+    if (!data || !data->element) return JS_FALSE;
+    
+    if (argc < 1) return JS_ThrowTypeError(ctx, "matches requires 1 argument");
+    
+    const char* selector = JS_ToCString(ctx, argv[0]);
+    if (!selector) return JS_EXCEPTION;
+    
+    bool result = data->element->Matches(selector);
+    JS_FreeCString(ctx, selector);
+    
+    return JS_NewBool(ctx, result);
+}
+
+// closest - 查找最近的匹配选择器的祖先元素
+static JSValue JSElement_closest(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) {
+    auto* data = static_cast<JSElementData*>(JS_GetOpaque(this_val, js_element_class_id));
+    if (!data || !data->element) return JS_NULL;
+    
+    if (argc < 1) return JS_ThrowTypeError(ctx, "closest requires 1 argument");
+    
+    const char* selector = JS_ToCString(ctx, argv[0]);
+    if (!selector) return JS_EXCEPTION;
+    
+    auto result = data->element->Closest(selector);
+    JS_FreeCString(ctx, selector);
+    
+    if (!result) return JS_NULL;
+    return WrapElement(ctx, result);
+}
+
+// cloneNode - 克隆节点
+static JSValue JSElement_cloneNode(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) {
+    auto* data = static_cast<JSElementData*>(JS_GetOpaque(this_val, js_element_class_id));
+    if (!data || !data->element) return JS_NULL;
+    
+    bool deep = false;
+    if (argc > 0) {
+        deep = JS_ToBool(ctx, argv[0]);
+    }
+    
+    auto cloned = data->element->CloneNode(deep);
+    if (!cloned) return JS_NULL;
+    
+    auto cloned_element = std::dynamic_pointer_cast<Element>(cloned);
+    if (!cloned_element) return JS_NULL;
+    
+    return WrapElement(ctx, cloned_element);
+}
+
+// remove - 从 DOM 中移除元素（DOM4 方法）
+static JSValue JSElement_remove(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) {
+    auto* data = static_cast<JSElementData*>(JS_GetOpaque(this_val, js_element_class_id));
+    if (!data || !data->element) return JS_UNDEFINED;
+    
+    auto parent = data->element->GetParentNode();
+    if (parent) {
+        parent->RemoveChild(data->element);
+    }
+    
+    return JS_UNDEFINED;
+}
+
+// ownerDocument getter - 获取元素所属的文档
+static JSValue JSElement_get_ownerDocument(JSContext* ctx, JSValueConst this_val, int magic) {
+    auto* data = static_cast<JSElementData*>(JS_GetOpaque(this_val, js_element_class_id));
+    if (!data || !data->element) return JS_NULL;
+
+    // 返回全局的 document 对象
+    JSValue global = JS_GetGlobalObject(ctx);
+    JSValue document = JS_GetPropertyStr(ctx, global, "document");
+    JS_FreeValue(ctx, global);
+    
+    return document;
+}
+
+// parentNode getter - 获取父节点
+static JSValue JSElement_get_parentNode(JSContext* ctx, JSValueConst this_val, int magic) {
+    auto* data = static_cast<JSElementData*>(JS_GetOpaque(this_val, js_element_class_id));
+    if (!data || !data->element) return JS_NULL;
+
+    auto parent = data->element->GetParentNode();
+    if (!parent) return JS_NULL;
+
+    // 尝试转换为 Element
+    auto parent_element = std::dynamic_pointer_cast<Element>(parent);
+    if (parent_element) {
+        return WrapElement(ctx, parent_element);
+    }
+
+    return JS_NULL;
+}
+
+// parentElement getter - 获取父元素
+static JSValue JSElement_get_parentElement(JSContext* ctx, JSValueConst this_val, int magic) {
+    auto* data = static_cast<JSElementData*>(JS_GetOpaque(this_val, js_element_class_id));
+    if (!data || !data->element) return JS_NULL;
+
+    auto parent = data->element->GetParentNode();
+    if (!parent) return JS_NULL;
+
+    // 只返回 Element 类型的父节点
+    auto parent_element = std::dynamic_pointer_cast<Element>(parent);
+    if (parent_element) {
+        return WrapElement(ctx, parent_element);
+    }
+
+    return JS_NULL;
+}
+
 // ========== 类定义 ==========
 
 static const JSCFunctionListEntry js_element_proto_funcs[] = {
@@ -1107,9 +1427,14 @@ static const JSCFunctionListEntry js_element_proto_funcs[] = {
     JS_CGETSET_MAGIC_DEF("className", JSElement_get_className, JSElement_set_className, 0),
     JS_CGETSET_MAGIC_DEF("classList", JSElement_get_classList, nullptr, 0),
     JS_CGETSET_MAGIC_DEF("children", JSElement_get_children, nullptr, 0),
+    JS_CGETSET_MAGIC_DEF("attributes", JSElement_get_attributes, nullptr, 0),
     JS_CGETSET_MAGIC_DEF("style", JSElement_get_style, nullptr, 0),
     JS_CGETSET_MAGIC_DEF("value", JSElement_get_value, JSElement_set_value, 0),
     JS_CGETSET_MAGIC_DEF("checked", JSElement_get_checked, JSElement_set_checked, 0),
+    // DOM 树导航
+    JS_CGETSET_MAGIC_DEF("ownerDocument", JSElement_get_ownerDocument, nullptr, 0),
+    JS_CGETSET_MAGIC_DEF("parentNode", JSElement_get_parentNode, nullptr, 0),
+    JS_CGETSET_MAGIC_DEF("parentElement", JSElement_get_parentElement, nullptr, 0),
     // 滚动属性
     JS_CGETSET_MAGIC_DEF("scrollTop", JSElement_get_scrollTop, JSElement_set_scrollTop, 0),
     JS_CGETSET_MAGIC_DEF("scrollLeft", JSElement_get_scrollLeft, JSElement_set_scrollLeft, 0),
@@ -1140,6 +1465,17 @@ static const JSCFunctionListEntry js_element_proto_funcs[] = {
     JS_CFUNC_DEF("querySelectorAll", 1, JSElement_querySelectorAll),
     JS_CFUNC_DEF("addEventListener", 3, JSElement_addEventListener),
     JS_CFUNC_DEF("getContext", 1, JSElement_getContext),
+    JS_CFUNC_DEF("getBoundingClientRect", 0, JSElement_getBoundingClientRect),
+    JS_CFUNC_DEF("getClientRects", 0, JSElement_getClientRects),
+    JS_CFUNC_DEF("scrollIntoView", 1, JSElement_scrollIntoView),
+    JS_CFUNC_DEF("select", 0, JSElement_select),
+    JS_CFUNC_DEF("focus", 0, JSElement_focus),
+    JS_CFUNC_DEF("blur", 0, JSElement_blur),
+    JS_CFUNC_DEF("contains", 1, JSElement_contains),
+    JS_CFUNC_DEF("matches", 1, JSElement_matches),
+    JS_CFUNC_DEF("closest", 1, JSElement_closest),
+    JS_CFUNC_DEF("cloneNode", 1, JSElement_cloneNode),
+    JS_CFUNC_DEF("remove", 0, JSElement_remove),
 };
 
 static JSClassDef js_element_class = {
@@ -1203,6 +1539,292 @@ JSValue WrapElement(JSContext* ctx, std::shared_ptr<Element> element) {
 
     // 记录到映射表
     map.SetJSValue(element.get(), obj, ctx);
+
+    // 如果是 Terminal 元素，添加 Terminal 特定方法
+    if (auto* terminal = dynamic_cast<HTMLTerminalElement*>(element.get())) {
+        // 添加 write 方法
+        JS_SetPropertyStr(ctx, obj, "write", JS_NewCFunction(ctx, 
+            [](JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) -> JSValue {
+                auto elem = UnwrapElement(ctx, this_val);
+                if (!elem) return JS_EXCEPTION;
+                auto* terminal = dynamic_cast<HTMLTerminalElement*>(elem.get());
+                if (!terminal) return JS_EXCEPTION;
+                if (argc < 1) return JS_ThrowTypeError(ctx, "write requires 1 argument");
+                const char* data = JS_ToCString(ctx, argv[0]);
+                if (!data) return JS_EXCEPTION;
+                terminal->Write(data);
+                JS_FreeCString(ctx, data);
+                return JS_UNDEFINED;
+            }, "write", 1));
+        
+        // 添加 clear 方法
+        JS_SetPropertyStr(ctx, obj, "clear", JS_NewCFunction(ctx,
+            [](JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) -> JSValue {
+                auto elem = UnwrapElement(ctx, this_val);
+                if (!elem) return JS_EXCEPTION;
+                auto* terminal = dynamic_cast<HTMLTerminalElement*>(elem.get());
+                if (!terminal) return JS_EXCEPTION;
+                terminal->Clear();
+                return JS_UNDEFINED;
+            }, "clear", 0));
+
+        // 添加 scrollTo 方法
+        JS_SetPropertyStr(ctx, obj, "scrollTo", JS_NewCFunction(ctx,
+            [](JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) -> JSValue {
+                auto elem = UnwrapElement(ctx, this_val);
+                if (!elem) return JS_EXCEPTION;
+                auto* terminal = dynamic_cast<HTMLTerminalElement*>(elem.get());
+                if (!terminal) return JS_EXCEPTION;
+                if (argc < 1) return JS_ThrowTypeError(ctx, "scrollTo requires 1 argument");
+                int32_t line;
+                if (JS_ToInt32(ctx, &line, argv[0]) != 0) return JS_EXCEPTION;
+                terminal->ScrollTo(line);
+                return JS_UNDEFINED;
+            }, "scrollTo", 1));
+
+        // 添加 focus 方法
+        JS_SetPropertyStr(ctx, obj, "focus", JS_NewCFunction(ctx,
+            [](JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) -> JSValue {
+                auto elem = UnwrapElement(ctx, this_val);
+                if (!elem) return JS_EXCEPTION;
+                auto* terminal = dynamic_cast<HTMLTerminalElement*>(elem.get());
+                if (!terminal) return JS_EXCEPTION;
+                terminal->Focus();
+                return JS_UNDEFINED;
+            }, "focus", 0));
+
+        // 添加 execute 方法
+        JS_SetPropertyStr(ctx, obj, "execute", JS_NewCFunction(ctx,
+            [](JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) -> JSValue {
+                auto elem = UnwrapElement(ctx, this_val);
+                if (!elem) return JS_EXCEPTION;
+                auto* terminal = dynamic_cast<HTMLTerminalElement*>(elem.get());
+                if (!terminal) return JS_EXCEPTION;
+                if (argc < 1) return JS_ThrowTypeError(ctx, "execute requires 1 argument");
+                const char* cmd = JS_ToCString(ctx, argv[0]);
+                if (!cmd) return JS_EXCEPTION;
+                terminal->Execute(cmd);
+                JS_FreeCString(ctx, cmd);
+                return JS_UNDEFINED;
+            }, "execute", 1));
+
+        // 添加 serialize 方法
+        JS_SetPropertyStr(ctx, obj, "serialize", JS_NewCFunction(ctx,
+            [](JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) -> JSValue {
+                auto elem = UnwrapElement(ctx, this_val);
+                if (!elem) return JS_EXCEPTION;
+                auto* terminal = dynamic_cast<HTMLTerminalElement*>(elem.get());
+                if (!terminal) return JS_EXCEPTION;
+                std::string text = terminal->Serialize();
+                return JS_NewString(ctx, text.c_str());
+            }, "serialize", 0));
+
+        // 添加 startShell 方法
+        JS_SetPropertyStr(ctx, obj, "startShell", JS_NewCFunction(ctx,
+            [](JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) -> JSValue {
+                auto elem = UnwrapElement(ctx, this_val);
+                if (!elem) return JS_EXCEPTION;
+                auto* terminal = dynamic_cast<HTMLTerminalElement*>(elem.get());
+                if (!terminal) return JS_EXCEPTION;
+                std::string shell;
+                if (argc >= 1) {
+                    const char* s = JS_ToCString(ctx, argv[0]);
+                    if (s) {
+                        shell = s;
+                        JS_FreeCString(ctx, s);
+                    }
+                }
+                terminal->StartShell(shell);
+                return JS_UNDEFINED;
+            }, "startShell", 1));
+
+        // 添加 sendInput 方法
+        JS_SetPropertyStr(ctx, obj, "sendInput", JS_NewCFunction(ctx,
+            [](JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) -> JSValue {
+                auto elem = UnwrapElement(ctx, this_val);
+                if (!elem) return JS_EXCEPTION;
+                auto* terminal = dynamic_cast<HTMLTerminalElement*>(elem.get());
+                if (!terminal) return JS_EXCEPTION;
+                if (argc < 1) return JS_ThrowTypeError(ctx, "sendInput requires 1 argument");
+                const char* input = JS_ToCString(ctx, argv[0]);
+                if (!input) return JS_EXCEPTION;
+                terminal->SendInput(input);
+                JS_FreeCString(ctx, input);
+                return JS_UNDEFINED;
+            }, "sendInput", 1));
+
+        // 添加 resize 方法
+        JS_SetPropertyStr(ctx, obj, "resize", JS_NewCFunction(ctx,
+            [](JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) -> JSValue {
+                auto elem = UnwrapElement(ctx, this_val);
+                if (!elem) return JS_EXCEPTION;
+                auto* terminal = dynamic_cast<HTMLTerminalElement*>(elem.get());
+                if (!terminal) return JS_EXCEPTION;
+                if (argc < 2) return JS_ThrowTypeError(ctx, "resize requires 2 arguments");
+                int32_t rows, cols;
+                if (JS_ToInt32(ctx, &rows, argv[0]) != 0) return JS_EXCEPTION;
+                if (JS_ToInt32(ctx, &cols, argv[1]) != 0) return JS_EXCEPTION;
+                terminal->Resize(rows, cols);
+                return JS_UNDEFINED;
+            }, "resize", 2));
+    }
+
+    // 如果是 LogView 元素，添加 LogView 特定方法
+    if (auto* logview = dynamic_cast<HTMLLogViewElement*>(element.get())) {
+        // 添加 append 方法
+        JS_SetPropertyStr(ctx, obj, "append", JS_NewCFunction(ctx,
+            [](JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) -> JSValue {
+                auto elem = UnwrapElement(ctx, this_val);
+                if (!elem) return JS_EXCEPTION;
+                auto* logview = dynamic_cast<HTMLLogViewElement*>(elem.get());
+                if (!logview) return JS_EXCEPTION;
+                if (argc < 3) return JS_ThrowTypeError(ctx, "append requires 3 arguments");
+                const char* level = JS_ToCString(ctx, argv[0]);
+                const char* source = JS_ToCString(ctx, argv[1]);
+                const char* message = JS_ToCString(ctx, argv[2]);
+                if (!level || !source || !message) {
+                    if (level) JS_FreeCString(ctx, level);
+                    if (source) JS_FreeCString(ctx, source);
+                    if (message) JS_FreeCString(ctx, message);
+                    return JS_EXCEPTION;
+                }
+                logview->Append(level, source, message);
+                JS_FreeCString(ctx, level);
+                JS_FreeCString(ctx, source);
+                JS_FreeCString(ctx, message);
+                return JS_UNDEFINED;
+            }, "append", 3));
+        
+        // 添加 clear 方法
+        JS_SetPropertyStr(ctx, obj, "clear", JS_NewCFunction(ctx,
+            [](JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) -> JSValue {
+                auto elem = UnwrapElement(ctx, this_val);
+                if (!elem) return JS_EXCEPTION;
+                auto* logview = dynamic_cast<HTMLLogViewElement*>(elem.get());
+                if (!logview) return JS_EXCEPTION;
+                logview->Clear();
+                return JS_UNDEFINED;
+            }, "clear", 0));
+
+        // 添加 scrollTo 方法
+        JS_SetPropertyStr(ctx, obj, "scrollTo", JS_NewCFunction(ctx,
+            [](JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) -> JSValue {
+                auto elem = UnwrapElement(ctx, this_val);
+                if (!elem) return JS_EXCEPTION;
+                auto* logview = dynamic_cast<HTMLLogViewElement*>(elem.get());
+                if (!logview) return JS_EXCEPTION;
+                if (argc < 1) return JS_ThrowTypeError(ctx, "scrollTo requires 1 argument");
+                int32_t line;
+                if (JS_ToInt32(ctx, &line, argv[0]) != 0) return JS_EXCEPTION;
+                logview->ScrollTo(line);
+                return JS_UNDEFINED;
+            }, "scrollTo", 1));
+
+        // 添加 search 方法
+        JS_SetPropertyStr(ctx, obj, "search", JS_NewCFunction(ctx,
+            [](JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) -> JSValue {
+                auto elem = UnwrapElement(ctx, this_val);
+                if (!elem) return JS_EXCEPTION;
+                auto* logview = dynamic_cast<HTMLLogViewElement*>(elem.get());
+                if (!logview) return JS_EXCEPTION;
+                if (argc < 1) return JS_ThrowTypeError(ctx, "search requires 1 argument");
+                const char* query = JS_ToCString(ctx, argv[0]);
+                if (!query) return JS_EXCEPTION;
+                bool use_regex = (argc >= 2) ? JS_ToBool(ctx, argv[1]) : false;
+                int count = logview->Search(query, use_regex);
+                JS_FreeCString(ctx, query);
+                return JS_NewInt32(ctx, count);
+            }, "search", 1));
+
+        // 添加 clearSearch 方法
+        JS_SetPropertyStr(ctx, obj, "clearSearch", JS_NewCFunction(ctx,
+            [](JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) -> JSValue {
+                auto elem = UnwrapElement(ctx, this_val);
+                if (!elem) return JS_EXCEPTION;
+                auto* logview = dynamic_cast<HTMLLogViewElement*>(elem.get());
+                if (!logview) return JS_EXCEPTION;
+                logview->ClearSearch();
+                return JS_UNDEFINED;
+            }, "clearSearch", 0));
+
+        // 添加 export 方法
+        JS_SetPropertyStr(ctx, obj, "export", JS_NewCFunction(ctx,
+            [](JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) -> JSValue {
+                auto elem = UnwrapElement(ctx, this_val);
+                if (!elem) return JS_EXCEPTION;
+                auto* logview = dynamic_cast<HTMLLogViewElement*>(elem.get());
+                if (!logview) return JS_EXCEPTION;
+                const char* format = "text";
+                if (argc >= 1) {
+                    format = JS_ToCString(ctx, argv[0]);
+                    if (!format) return JS_EXCEPTION;
+                }
+                std::string content = logview->Export(format);
+                if (argc >= 1) JS_FreeCString(ctx, format);
+                return JS_NewString(ctx, content.c_str());
+            }, "export", 0));
+
+        // 添加 setLevelFilter 方法
+        JS_SetPropertyStr(ctx, obj, "setLevelFilter", JS_NewCFunction(ctx,
+            [](JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) -> JSValue {
+                auto elem = UnwrapElement(ctx, this_val);
+                if (!elem) return JS_EXCEPTION;
+                auto* logview = dynamic_cast<HTMLLogViewElement*>(elem.get());
+                if (!logview) return JS_EXCEPTION;
+                if (argc < 1 || !JS_IsArray(argv[0])) {
+                    return JS_ThrowTypeError(ctx, "setLevelFilter requires an array argument");
+                }
+                std::vector<std::string> levels;
+                JSValue length_val = JS_GetPropertyStr(ctx, argv[0], "length");
+                int32_t length;
+                JS_ToInt32(ctx, &length, length_val);
+                JS_FreeValue(ctx, length_val);
+                for (int32_t i = 0; i < length; i++) {
+                    JSValue item = JS_GetPropertyUint32(ctx, argv[0], i);
+                    const char* str = JS_ToCString(ctx, item);
+                    if (str) {
+                        levels.push_back(str);
+                        JS_FreeCString(ctx, str);
+                    }
+                    JS_FreeValue(ctx, item);
+                }
+                logview->SetLevelFilter(levels);
+                return JS_UNDEFINED;
+            }, "setLevelFilter", 1));
+
+        // 添加 clearFilter 方法
+        JS_SetPropertyStr(ctx, obj, "clearFilter", JS_NewCFunction(ctx,
+            [](JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) -> JSValue {
+                auto elem = UnwrapElement(ctx, this_val);
+                if (!elem) return JS_EXCEPTION;
+                auto* logview = dynamic_cast<HTMLLogViewElement*>(elem.get());
+                if (!logview) return JS_EXCEPTION;
+                logview->ClearFilter();
+                return JS_UNDEFINED;
+            }, "clearFilter", 0));
+
+        // 添加 nextMatch 方法
+        JS_SetPropertyStr(ctx, obj, "nextMatch", JS_NewCFunction(ctx,
+            [](JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) -> JSValue {
+                auto elem = UnwrapElement(ctx, this_val);
+                if (!elem) return JS_EXCEPTION;
+                auto* logview = dynamic_cast<HTMLLogViewElement*>(elem.get());
+                if (!logview) return JS_EXCEPTION;
+                logview->NextMatch();
+                return JS_UNDEFINED;
+            }, "nextMatch", 0));
+
+        // 添加 prevMatch 方法
+        JS_SetPropertyStr(ctx, obj, "prevMatch", JS_NewCFunction(ctx,
+            [](JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) -> JSValue {
+                auto elem = UnwrapElement(ctx, this_val);
+                if (!elem) return JS_EXCEPTION;
+                auto* logview = dynamic_cast<HTMLLogViewElement*>(elem.get());
+                if (!logview) return JS_EXCEPTION;
+                logview->PrevMatch();
+                return JS_UNDEFINED;
+            }, "prevMatch", 0));
+    }
 
     return obj;
 }

@@ -7,6 +7,7 @@
 #include "js_node.h"
 #include "js_data_transfer.h"
 #include "core/dom/drag_event.h"
+#include <SDL3/SDL.h>
 #include <iostream>
 
 namespace lightui {
@@ -141,6 +142,36 @@ static JSValue JSEvent_get_button(JSContext* ctx, JSValueConst this_val, int mag
     return JS_NewInt32(ctx, mouse_event->GetButton());
 }
 
+// buttons (bitmask of currently pressed buttons: 1=left, 2=right, 4=middle)
+static JSValue JSEvent_get_buttons(JSContext* ctx, JSValueConst this_val, int magic) {
+    auto* data = static_cast<JSEventData*>(JS_GetOpaque(this_val, js_event_class_id));
+    if (!data || !data->event) {
+        return JS_NewInt32(ctx, 0);
+    }
+
+    auto mouse_event = std::dynamic_pointer_cast<MouseEvent>(data->event);
+    if (!mouse_event) {
+        return JS_NewInt32(ctx, 0);
+    }
+
+    return JS_NewInt32(ctx, mouse_event->GetButtons());
+}
+
+// detail (click count: 1=single, 2=double, 3=triple)
+static JSValue JSEvent_get_detail(JSContext* ctx, JSValueConst this_val, int magic) {
+    auto* data = static_cast<JSEventData*>(JS_GetOpaque(this_val, js_event_class_id));
+    if (!data || !data->event) {
+        return JS_NewInt32(ctx, 0);
+    }
+
+    auto mouse_event = std::dynamic_pointer_cast<MouseEvent>(data->event);
+    if (!mouse_event) {
+        return JS_NewInt32(ctx, 0);
+    }
+
+    return JS_NewInt32(ctx, mouse_event->GetDetail());
+}
+
 // ========== DragEvent 属性访问器 ==========
 
 // dataTransfer
@@ -205,11 +236,95 @@ static JSValue JSEvent_get_screenY(JSContext* ctx, JSValueConst this_val, int ma
     return JS_NewInt32(ctx, 0);
 }
 
-// ctrlKey
-static JSValue JSEvent_get_ctrlKey(JSContext* ctx, JSValueConst this_val, int magic) {
+// DragEvent 属性访问器已合并到 KeyboardEvent 部分
+
+// ========== KeyboardEvent 属性访问器 ==========
+
+// key
+static JSValue JSEvent_get_key(JSContext* ctx, JSValueConst this_val, int magic) {
+    auto* data = static_cast<JSEventData*>(JS_GetOpaque(this_val, js_event_class_id));
+    if (!data || !data->event) {
+        return JS_UNDEFINED;
+    }
+
+    auto keyboard_event = std::dynamic_pointer_cast<KeyboardEvent>(data->event);
+    if (!keyboard_event) {
+        return JS_UNDEFINED;
+    }
+
+    return JS_NewString(ctx, keyboard_event->GetKey().c_str());
+}
+
+// code
+static JSValue JSEvent_get_code(JSContext* ctx, JSValueConst this_val, int magic) {
+    auto* data = static_cast<JSEventData*>(JS_GetOpaque(this_val, js_event_class_id));
+    if (!data || !data->event) {
+        return JS_UNDEFINED;
+    }
+
+    auto keyboard_event = std::dynamic_pointer_cast<KeyboardEvent>(data->event);
+    if (!keyboard_event) {
+        return JS_UNDEFINED;
+    }
+
+    return JS_NewString(ctx, keyboard_event->GetCode().c_str());
+}
+
+// keyCode
+static JSValue JSEvent_get_keyCode(JSContext* ctx, JSValueConst this_val, int magic) {
+    auto* data = static_cast<JSEventData*>(JS_GetOpaque(this_val, js_event_class_id));
+    if (!data || !data->event) {
+        return JS_NewInt32(ctx, 0);
+    }
+
+    auto keyboard_event = std::dynamic_pointer_cast<KeyboardEvent>(data->event);
+    if (!keyboard_event) {
+        return JS_NewInt32(ctx, 0);
+    }
+
+    return JS_NewInt32(ctx, keyboard_event->GetKeyCode());
+}
+
+// charCode
+static JSValue JSEvent_get_charCode(JSContext* ctx, JSValueConst this_val, int magic) {
+    auto* data = static_cast<JSEventData*>(JS_GetOpaque(this_val, js_event_class_id));
+    if (!data || !data->event) {
+        return JS_NewInt32(ctx, 0);
+    }
+
+    auto keyboard_event = std::dynamic_pointer_cast<KeyboardEvent>(data->event);
+    if (!keyboard_event) {
+        return JS_NewInt32(ctx, 0);
+    }
+
+    return JS_NewInt32(ctx, keyboard_event->GetCharCode());
+}
+
+// repeat
+static JSValue JSEvent_get_repeat(JSContext* ctx, JSValueConst this_val, int magic) {
     auto* data = static_cast<JSEventData*>(JS_GetOpaque(this_val, js_event_class_id));
     if (!data || !data->event) {
         return JS_FALSE;
+    }
+
+    auto keyboard_event = std::dynamic_pointer_cast<KeyboardEvent>(data->event);
+    if (!keyboard_event) {
+        return JS_FALSE;
+    }
+
+    return JS_NewBool(ctx, keyboard_event->GetRepeat());
+}
+
+// KeyboardEvent 的修饰键属性（覆盖 DragEvent 的实现）
+static JSValue JSEvent_get_keyboard_ctrlKey(JSContext* ctx, JSValueConst this_val, int magic) {
+    auto* data = static_cast<JSEventData*>(JS_GetOpaque(this_val, js_event_class_id));
+    if (!data || !data->event) {
+        return JS_FALSE;
+    }
+
+    auto keyboard_event = std::dynamic_pointer_cast<KeyboardEvent>(data->event);
+    if (keyboard_event) {
+        return JS_NewBool(ctx, keyboard_event->GetCtrlKey());
     }
 
     auto drag_event = std::dynamic_pointer_cast<DragEvent>(data->event);
@@ -220,11 +335,15 @@ static JSValue JSEvent_get_ctrlKey(JSContext* ctx, JSValueConst this_val, int ma
     return JS_FALSE;
 }
 
-// shiftKey
-static JSValue JSEvent_get_shiftKey(JSContext* ctx, JSValueConst this_val, int magic) {
+static JSValue JSEvent_get_keyboard_shiftKey(JSContext* ctx, JSValueConst this_val, int magic) {
     auto* data = static_cast<JSEventData*>(JS_GetOpaque(this_val, js_event_class_id));
     if (!data || !data->event) {
         return JS_FALSE;
+    }
+
+    auto keyboard_event = std::dynamic_pointer_cast<KeyboardEvent>(data->event);
+    if (keyboard_event) {
+        return JS_NewBool(ctx, keyboard_event->GetShiftKey());
     }
 
     auto drag_event = std::dynamic_pointer_cast<DragEvent>(data->event);
@@ -235,11 +354,15 @@ static JSValue JSEvent_get_shiftKey(JSContext* ctx, JSValueConst this_val, int m
     return JS_FALSE;
 }
 
-// altKey
-static JSValue JSEvent_get_altKey(JSContext* ctx, JSValueConst this_val, int magic) {
+static JSValue JSEvent_get_keyboard_altKey(JSContext* ctx, JSValueConst this_val, int magic) {
     auto* data = static_cast<JSEventData*>(JS_GetOpaque(this_val, js_event_class_id));
     if (!data || !data->event) {
         return JS_FALSE;
+    }
+
+    auto keyboard_event = std::dynamic_pointer_cast<KeyboardEvent>(data->event);
+    if (keyboard_event) {
+        return JS_NewBool(ctx, keyboard_event->GetAltKey());
     }
 
     auto drag_event = std::dynamic_pointer_cast<DragEvent>(data->event);
@@ -250,11 +373,15 @@ static JSValue JSEvent_get_altKey(JSContext* ctx, JSValueConst this_val, int mag
     return JS_FALSE;
 }
 
-// metaKey
-static JSValue JSEvent_get_metaKey(JSContext* ctx, JSValueConst this_val, int magic) {
+static JSValue JSEvent_get_keyboard_metaKey(JSContext* ctx, JSValueConst this_val, int magic) {
     auto* data = static_cast<JSEventData*>(JS_GetOpaque(this_val, js_event_class_id));
     if (!data || !data->event) {
         return JS_FALSE;
+    }
+
+    auto keyboard_event = std::dynamic_pointer_cast<KeyboardEvent>(data->event);
+    if (keyboard_event) {
+        return JS_NewBool(ctx, keyboard_event->GetMetaKey());
     }
 
     auto drag_event = std::dynamic_pointer_cast<DragEvent>(data->event);
@@ -367,12 +494,28 @@ static JSValue JSEvent_get_clipboardData(JSContext* ctx, JSValueConst this_val, 
         JS_FreeCString(ctx, format);
 
         // 只支持 text/plain 格式
-        if (format_str == "text/plain" || format_str == "text") {
+        if (format_str == "text/plain" || format_str == "text" || format_str == "text/uri-list") {
+            // 首先尝试从事件数据获取
             JSValue text_data = JS_GetPropertyStr(ctx, this_val, "_textData");
             if (JS_IsString(text_data)) {
-                return text_data;
+                const char* str = JS_ToCString(ctx, text_data);
+                if (str && strlen(str) > 0) {
+                    JSValue result = JS_NewString(ctx, str);
+                    JS_FreeCString(ctx, str);
+                    JS_FreeValue(ctx, text_data);
+                    return result;
+                }
+                if (str) JS_FreeCString(ctx, str);
             }
             JS_FreeValue(ctx, text_data);
+            
+            // 如果事件数据为空，从系统剪贴板读取
+            char* clipboard_text = SDL_GetClipboardText();
+            if (clipboard_text) {
+                JSValue result = JS_NewString(ctx, clipboard_text);
+                SDL_free(clipboard_text);
+                return result;
+            }
         }
 
         return JS_NewString(ctx, "");
@@ -401,6 +544,9 @@ static JSValue JSEvent_get_clipboardData(JSContext* ctx, JSValueConst this_val, 
         if (format_str == "text/plain" || format_str == "text") {
             JS_SetPropertyStr(ctx, this_val, "_textData", JS_NewString(ctx, data_str));
 
+            // 写入系统剪贴板
+            SDL_SetClipboardText(data_str);
+
             // 更新原始事件中的数据
             JSValue event_val = JS_GetPropertyStr(ctx, this_val, "_event");
             if (!JS_IsNull(event_val) && !JS_IsUndefined(event_val)) {
@@ -419,6 +565,14 @@ static JSValue JSEvent_get_clipboardData(JSContext* ctx, JSValueConst this_val, 
         return JS_UNDEFINED;
     }, "setData", 2);
     JS_SetPropertyStr(ctx, clipboard_data_obj, "setData", set_data_func);
+
+    // clearData(format) 方法 - 清除指定格式的数据
+    JSValue clear_data_func = JS_NewCFunction(ctx, [](JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) -> JSValue {
+        // 清除文本数据
+        JS_SetPropertyStr(ctx, this_val, "_textData", JS_NewString(ctx, ""));
+        return JS_UNDEFINED;
+    }, "clearData", 1);
+    JS_SetPropertyStr(ctx, clipboard_data_obj, "clearData", clear_data_func);
 
     return clipboard_data_obj;
 }
@@ -460,14 +614,23 @@ static const JSCFunctionListEntry js_event_proto_funcs[] = {
     JS_CGETSET_MAGIC_DEF("clientX", JSEvent_get_clientX, nullptr, 0),
     JS_CGETSET_MAGIC_DEF("clientY", JSEvent_get_clientY, nullptr, 0),
     JS_CGETSET_MAGIC_DEF("button", JSEvent_get_button, nullptr, 0),
+    JS_CGETSET_MAGIC_DEF("buttons", JSEvent_get_buttons, nullptr, 0),
+    JS_CGETSET_MAGIC_DEF("detail", JSEvent_get_detail, nullptr, 0),
     JS_CGETSET_MAGIC_DEF("screenX", JSEvent_get_screenX, nullptr, 0),
     JS_CGETSET_MAGIC_DEF("screenY", JSEvent_get_screenY, nullptr, 0),
     // DragEvent 属性
     JS_CGETSET_MAGIC_DEF("dataTransfer", JSEvent_get_dataTransfer, nullptr, 0),
-    JS_CGETSET_MAGIC_DEF("ctrlKey", JSEvent_get_ctrlKey, nullptr, 0),
-    JS_CGETSET_MAGIC_DEF("shiftKey", JSEvent_get_shiftKey, nullptr, 0),
-    JS_CGETSET_MAGIC_DEF("altKey", JSEvent_get_altKey, nullptr, 0),
-    JS_CGETSET_MAGIC_DEF("metaKey", JSEvent_get_metaKey, nullptr, 0),
+    // KeyboardEvent 属性
+    JS_CGETSET_MAGIC_DEF("key", JSEvent_get_key, nullptr, 0),
+    JS_CGETSET_MAGIC_DEF("code", JSEvent_get_code, nullptr, 0),
+    JS_CGETSET_MAGIC_DEF("keyCode", JSEvent_get_keyCode, nullptr, 0),
+    JS_CGETSET_MAGIC_DEF("charCode", JSEvent_get_charCode, nullptr, 0),
+    JS_CGETSET_MAGIC_DEF("repeat", JSEvent_get_repeat, nullptr, 0),
+    // 修饰键属性（支持 KeyboardEvent 和 DragEvent）
+    JS_CGETSET_MAGIC_DEF("ctrlKey", JSEvent_get_keyboard_ctrlKey, nullptr, 0),
+    JS_CGETSET_MAGIC_DEF("shiftKey", JSEvent_get_keyboard_shiftKey, nullptr, 0),
+    JS_CGETSET_MAGIC_DEF("altKey", JSEvent_get_keyboard_altKey, nullptr, 0),
+    JS_CGETSET_MAGIC_DEF("metaKey", JSEvent_get_keyboard_metaKey, nullptr, 0),
     // InputEvent 属性
     JS_CGETSET_MAGIC_DEF("inputType", JSEvent_get_inputType, nullptr, 0),
     JS_CGETSET_MAGIC_DEF("data", JSEvent_get_data, nullptr, 0),

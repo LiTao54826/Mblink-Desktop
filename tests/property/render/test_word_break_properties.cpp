@@ -9,10 +9,10 @@
  */
 
 #include <gtest/gtest.h>
-#include "layout/ifc/line_breaker.h"
-#include "layout/ifc/inline_box.h"
-#include "layout/ifc/line_box.h"
-#include "render/render_object.h"
+#include "core/layout/ifc/line_breaker.h"
+#include "core/layout/ifc/inline_box.h"
+#include "core/layout/ifc/line_box.h"
+#include "core/render/objects/render_object.h"
 #include <random>
 #include <vector>
 #include <string>

@@ -15,6 +15,7 @@
 
 #include <memory>
 #include <string>
+#include <vector>
 
 namespace lightui {
 
@@ -165,6 +166,34 @@ public:
      */
     std::string ToString() const;
 
+    // ========== 几何信息 ==========
+
+    /**
+     * @brief DOMRect 结构，表示矩形区域
+     */
+    struct DOMRect {
+        float x = 0;
+        float y = 0;
+        float width = 0;
+        float height = 0;
+        float top = 0;
+        float right = 0;
+        float bottom = 0;
+        float left = 0;
+    };
+
+    /**
+     * @brief 获取 Range 的边界矩形
+     * @return Range 内容的边界矩形
+     */
+    DOMRect GetBoundingClientRect() const;
+
+    /**
+     * @brief 获取 Range 的所有边界矩形（每行一个）
+     * @return Range 内容的边界矩形列表
+     */
+    std::vector<DOMRect> GetClientRects() const;
+
     // ========== 所属文档 ==========
 
     /**
@@ -205,6 +234,38 @@ private:
      * @param in_range 是否在 Range 内
      */
     void CollectText(std::shared_ptr<Node> node, std::string& result, bool& in_range) const;
+
+    /**
+     * @brief 计算文本节点在指定偏移范围内的矩形
+     * @param text_node 文本节点
+     * @param start_offset 起始偏移
+     * @param end_offset 结束偏移
+     * @return 矩形区域
+     */
+    DOMRect ComputeTextRect(
+        std::shared_ptr<class Text> text_node,
+        int start_offset,
+        int end_offset) const;
+
+    /**
+     * @brief 合并两个矩形
+     * @param result 结果矩形（会被修改）
+     * @param other 要合并的矩形
+     */
+    void UnionRect(DOMRect& result, const DOMRect& other) const;
+
+    /**
+     * @brief 深度优先遍历收集 Range 内所有节点的矩形
+     * @param node 当前节点
+     * @param rects 收集的矩形列表
+     * @param in_range 是否在 Range 内
+     * @param done 是否已完成
+     */
+    void CollectRects(
+        std::shared_ptr<Node> node,
+        std::vector<DOMRect>& rects,
+        bool& in_range,
+        bool& done) const;
 
 private:
     std::weak_ptr<Document> owner_document_;

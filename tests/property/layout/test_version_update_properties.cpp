@@ -14,9 +14,9 @@
  */
 
 #include <gtest/gtest.h>
-#include "layout/native_layout_engine.h"
-#include "layout/content_version.h"
-#include "render/render_object.h"
+#include "core/layout/native_layout_engine.h"
+#include "core/layout/content_version.h"
+#include "core/render/objects/render_object.h"
 #include <random>
 #include <memory>
 #include <vector>

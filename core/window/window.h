@@ -372,6 +372,14 @@ public:
     }
 
     /**
+     * @brief 强制同步布局
+     * 
+     * 立即执行布局计算，用于 getBoundingClientRect 等需要最新布局信息的操作。
+     * 这模拟了浏览器的强制 reflow 行为。
+     */
+    void ForceLayoutSync();
+
+    /**
      * @brief 标记渲染树需要重建
      * 
      * 同时清理动画状态，防止悬空指针问题。
@@ -627,6 +635,9 @@ private:
 
     float last_body_scroll_x_ = 0.0f;  // 上一帧的 body 滚动位置
     float last_body_scroll_y_ = 0.0f;
+
+    // 缓存的 body 背景色（用于 resize 时清除缓冲区）
+    SkColor cached_body_bg_color_ = SK_ColorWHITE;
 
     // 待处理的 resize（用于节流后处理最后一次 resize）
     int pending_resize_width_ = 0;

@@ -14,12 +14,12 @@
 
 #include <gtest/gtest.h>
 #include "test_utils/test_helpers.h"
-#include "dom/document.h"
-#include "dom/element.h"
-#include "dom/text.h"
-#include "layout/native_layout_engine.h"
-#include "layout/content_version.h"
-#include "render/render_object.h"
+#include "core/dom/document.h"
+#include "core/dom/element.h"
+#include "core/dom/text.h"
+#include "core/layout/native_layout_engine.h"
+#include "core/layout/content_version.h"
+#include "core/render/objects/render_object.h"
 #include <memory>
 #include <vector>
 #include <chrono>

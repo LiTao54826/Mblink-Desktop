@@ -260,6 +260,10 @@ void StyleResolver::ApplyDefaultStyle(ComputedStyle& style, const std::string& t
         // 这里先设置为 block，后续会根据 open 属性调整
         style.display = RenderObjectType::BLOCK;
     }
+    // ========== 虚拟文本组件 ==========
+    else if (tag_name == "terminal" || tag_name == "logview") {
+        style.display = RenderObjectType::BLOCK;
+    }
     // ========== SVG 元素 ==========
     else if (tag_name == "svg") {
         style.display = RenderObjectType::INLINE_BLOCK;  // SVG 内联块
@@ -277,16 +281,26 @@ void StyleResolver::ApplyDefaultStyle(ComputedStyle& style, const std::string& t
 void StyleResolver::ApplyElementSpecificStyle(ComputedStyle& style, const std::string& tag_name, std::shared_ptr<Element> element) {
     // ========== 块级元素 ==========
 
-    // HTML, BODY
-    if (tag_name == "html" || tag_name == "body") {
+    // HTML - 默认填满视口
+    if (tag_name == "html") {
         style.margin.top = CSSLength(0, CSSUnit::PX);
         style.margin.bottom = CSSLength(0, CSSUnit::PX);
         style.margin.left = CSSLength(0, CSSUnit::PX);
         style.margin.right = CSSLength(0, CSSUnit::PX);
+        // html 元素默认 100% 宽高，让子元素的百分比高度能生效
+        style.width = CSSLength(100, CSSUnit::PERCENT);
+        style.height = CSSLength(100, CSSUnit::PERCENT);
     }
 
-    // BODY - 默认启用滚动条（当内容超出视口时）
+    // BODY - 默认填满视口并启用滚动条
     if (tag_name == "body") {
+        style.margin.top = CSSLength(0, CSSUnit::PX);
+        style.margin.bottom = CSSLength(0, CSSUnit::PX);
+        style.margin.left = CSSLength(0, CSSUnit::PX);
+        style.margin.right = CSSLength(0, CSSUnit::PX);
+        // body 元素默认 100% 宽高，让子元素的百分比高度能生效
+        style.width = CSSLength(100, CSSUnit::PERCENT);
+        style.height = CSSLength(100, CSSUnit::PERCENT);
         style.overflow = "auto";
         style.overflow_x = "auto";
         style.overflow_y = "auto";

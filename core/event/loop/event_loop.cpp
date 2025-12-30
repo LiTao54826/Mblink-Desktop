@@ -48,6 +48,7 @@
 #include "core/dom/elements/html_button_element.h"
 #include "core/dom/elements/html_form_element.h"
 #include "core/dom/elements/html_select_element.h"
+#include "core/dom/elements/terminal/html_terminal_element.h"
 #include "core/render/objects/select_dropdown.h"
 #include "core/render/css/style_resolver.h"
 #include "core/render/objects/render_inline_block.h"
@@ -264,6 +265,19 @@ void EventLoop::RunOnce() {
 
     // 5. 只在有窗口需要重绘时才渲染
     auto& wm = WindowManager::Instance();
+    
+    // 5.1 检查终端是否需要重绘（PTY 数据到达）
+    bool terminal_repaint = TerminalNeedsRepaint();
+    if (terminal_repaint) {
+        for (auto& window : wm.GetAllWindows()) {
+            window->SetNeedsRepaint();
+            // 关键：强制重新光栅化，确保终端内容被重绘
+            if (auto pipeline = window->GetRenderPipeline()) {
+                pipeline->ForceRasterize();
+            }
+        }
+    }
+    
     bool any_needs_repaint = false;
     for (auto& window : wm.GetAllWindows()) {
         if (window->NeedsRepaint()) {
@@ -958,19 +972,31 @@ void EventLoop::HandleKeyboardEventForDOM(const SDL_Event& event) {
     Uint32 window_id = 0;
     if (event.type == SDL_EVENT_KEY_DOWN || event.type == SDL_EVENT_KEY_UP) {
         window_id = event.key.windowID;
+        std::cout << "[EventLoop] Keyboard event: type=" << (event.type == SDL_EVENT_KEY_DOWN ? "KEY_DOWN" : "KEY_UP") 
+                  << ", windowID=" << window_id << std::endl;
     } else if (event.type == SDL_EVENT_TEXT_INPUT) {
         window_id = event.text.windowID;
+        std::cout << "[EventLoop] Text input event: '" << event.text.text << "', windowID=" << window_id << std::endl;
     }
 
     // 查找对应的窗口
     auto window = window_manager.FindWindowByID(window_id);
     if (!window) {
-        return;
+        // 尝试获取第一个窗口作为后备
+        auto all_windows = window_manager.GetAllWindows();
+        if (!all_windows.empty()) {
+            window = all_windows[0];
+            std::cout << "[EventLoop] Using fallback window" << std::endl;
+        } else {
+            std::cout << "[EventLoop] Window not found for keyboard event, no fallback available" << std::endl;
+            return;
+        }
     }
 
     // 获取窗口的文档
     auto document = window->GetDocument();
     if (!document) {
+        std::cout << "[EventLoop] Document not found for keyboard event" << std::endl;
         return;
     }
 

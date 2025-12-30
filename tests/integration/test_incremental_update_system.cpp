@@ -9,13 +9,13 @@
 
 #include <gtest/gtest.h>
 #include "test_utils/test_helpers.h"
-#include "dom/document.h"
-#include "dom/element.h"
-#include "dom/text.h"
-#include "dom/dirty_node_tracker.h"
-#include "render/render_pipeline.h"
-#include "render/render_tree_synchronizer.h"
-#include "render/render_object.h"
+#include "core/dom/document.h"
+#include "core/dom/element.h"
+#include "core/dom/text.h"
+#include "core/dom/observers/dirty_node_tracker.h"
+#include "core/render/pipeline/render_pipeline.h"
+#include "core/render/pipeline/render_tree_synchronizer.h"
+#include "core/render/objects/render_object.h"
 
 namespace lightui {
 namespace test {

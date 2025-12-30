@@ -57,3 +57,8 @@ set(ELEMENTS_HEADERS
 # 将源文件列表导出给父目录
 set(ELEMENTS_SOURCES ${ELEMENTS_SOURCES} PARENT_SCOPE)
 set(ELEMENTS_HEADERS ${ELEMENTS_HEADERS} PARENT_SCOPE)
+
+# 虚拟文本组件子目录
+add_subdirectory(virtual_text)
+add_subdirectory(terminal)
+add_subdirectory(logview)

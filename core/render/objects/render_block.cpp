@@ -35,6 +35,8 @@
 #include "core/dom/elements/html_input_element.h"
 #include "core/dom/elements/html_textarea_element.h"
 #include "core/dom/elements/html_canvas_element.h"
+#include "core/dom/elements/terminal/html_terminal_element.h"
+#include "core/dom/elements/logview/html_logview_element.h"
 #include "core/render/canvas/canvas_rendering_context_2d.h"
 #include "core/utils/utf8_utils.h"
 #include <algorithm>
@@ -242,6 +244,24 @@ void RenderBlock::Paint(SkCanvas* canvas) {
         return;
     }
 
+    // 跳过零高度元素（如 CodeMirror 的测量占位元素）
+    // 但如果元素有绝对定位的子元素，仍然需要绘制（如 cm-selectionLayer）
+    if (layout_info_.height <= 0) {
+        // 检查是否有绝对定位的子元素需要渲染
+        bool has_absolute_children = false;
+        for (const auto& child : children_) {
+            const auto& child_style = child->GetComputedStyle();
+            if (child_style.position == "absolute" || child_style.position == "fixed") {
+                has_absolute_children = true;
+                break;
+            }
+        }
+        if (!has_absolute_children) {
+            needs_paint_ = false;
+            return;
+        }
+    }
+
     // 统计：每次 Paint 调用
     extern std::atomic<int> g_paint_total_calls;
     extern std::atomic<int> g_paint_culled_calls;
@@ -254,9 +274,22 @@ void RenderBlock::Paint(SkCanvas* canvas) {
     // So paint_rect matches the CTM directly.
     SkRect paint_rect = SkRect::MakeXYWH(layout_info_.x, layout_info_.y, layout_info_.width, layout_info_.height);
     
+    // 对于高度为0但有绝对定位子元素的容器（如 CodeMirror 的 cm-selectionLayer），
+    // 不能跳过渲染，因为其绝对定位子元素可能需要渲染
+    bool has_absolute_children_need_paint = false;
+    if (layout_info_.height <= 0 || layout_info_.width <= 0) {
+        for (const auto& child : children_) {
+            const auto& child_style = child->GetComputedStyle();
+            if (child_style.position == "absolute" || child_style.position == "fixed") {
+                has_absolute_children_need_paint = true;
+                break;
+            }
+        }
+    }
     
     // Aggressive culling: Skip if completely outside the clip.
-    if (canvas->quickReject(paint_rect.makeOutset(50, 50))) {
+    // 但如果有绝对定位子元素且尺寸为0，不跳过
+    if (!has_absolute_children_need_paint && canvas->quickReject(paint_rect.makeOutset(50, 50))) {
         g_paint_culled_calls++;  // 统计：被剔除的调用
         needs_paint_ = false;
         return;
@@ -268,6 +301,11 @@ void RenderBlock::Paint(SkCanvas* canvas) {
     const auto& style = computed_style_;
     const auto& layout = layout_info_;
     const auto& cache = paint_cache_;  // 使用缓存的值
+
+    // CSS visibility 处理
+    // visibility: hidden 时，不绘制当前元素的内容，但仍需绘制子元素
+    // 因为子元素可能有 visibility: visible 覆盖
+    bool is_hidden = (style.visibility == "hidden");
 
     // 保存画布状态
     canvas->save();
@@ -348,8 +386,10 @@ void RenderBlock::Paint(SkCanvas* canvas) {
     // 渲染器
     BoxRenderer renderer(canvas);
 
-    // 检查是否是 <hr> 元素
+    // 获取关联的 DOM 节点
     auto node = GetNode();
+
+    // 检查是否是 <hr> 元素
     if (node && node->GetNodeType() == NodeType::ELEMENT_NODE) {
         auto element = std::static_pointer_cast<Element>(node);
         if (element->GetTagName() == "hr") {
@@ -392,6 +432,10 @@ void RenderBlock::Paint(SkCanvas* canvas) {
             // Canvas元素绘制完Surface后继续正常绘制背景边框等
         }
     }
+
+    // visibility: hidden 时跳过自身内容绘制（阴影、背景、边框等）
+    // 但仍需继续处理子元素，因为子元素可能有 visibility: visible
+    if (!is_hidden) {
 
     // 渲染阴影（使用缓存优化）
     auto shadow_start = std::chrono::high_resolution_clock::now();
@@ -472,6 +516,21 @@ void RenderBlock::Paint(SkCanvas* canvas) {
     // 渲染背景（优先渐变，然后纯色）
     auto bg_start = std::chrono::high_resolution_clock::now();
     SkRect padding_box = box.GetPaddingBox();
+    
+    // 对于 body 元素，扩展背景绘制区域以覆盖整个 viewport
+    // 这解决了浮点精度问题导致的边缘白线
+    Box bg_box = box;
+    if (IsBodyElement()) {
+        // 向上取整确保完全覆盖 viewport
+        bg_box.content_x = 0;
+        bg_box.content_y = 0;
+        bg_box.content_width = std::ceil(viewport_width_);
+        bg_box.content_height = std::ceil(viewport_height_);
+        bg_box.padding_top = bg_box.padding_right = bg_box.padding_bottom = bg_box.padding_left = 0;
+        bg_box.border_top_width = bg_box.border_right_width = bg_box.border_bottom_width = bg_box.border_left_width = 0;
+        padding_box = SkRect::MakeXYWH(0, 0, std::ceil(viewport_width_), std::ceil(viewport_height_));
+    }
+    
     if (style.background_linear_gradient.has_value()) {
         GradientRenderer::RenderLinearGradient(canvas, padding_box, *style.background_linear_gradient);
     }
@@ -479,7 +538,7 @@ void RenderBlock::Paint(SkCanvas* canvas) {
         GradientRenderer::RenderRadialGradient(canvas, padding_box, *style.background_radial_gradient);
     }
     else {
-        renderer.RenderBackgroundAdvanced(box, styles, &style.border_radius);
+        renderer.RenderBackgroundAdvanced(IsBodyElement() ? bg_box : box, styles, &style.border_radius);
     }
     auto bg_end = std::chrono::high_resolution_clock::now();
     g_paint_bg_time += std::chrono::duration_cast<std::chrono::microseconds>(bg_end - bg_start).count();
@@ -752,7 +811,26 @@ void RenderBlock::Paint(SkCanvas* canvas) {
         if (textarea_element) {
             PaintTextAreaElement(canvas, textarea_element.get(), box);
         }
+
+        // 渲染 terminal 元素
+        auto element = std::dynamic_pointer_cast<Element>(node);
+        if (element && element->GetTagName() == "terminal") {
+            auto terminal_element = std::dynamic_pointer_cast<HTMLTerminalElement>(node);
+            if (terminal_element) {
+                terminal_element->Render(canvas, box.content_x, box.content_y, box.content_width, box.content_height);
+            }
+        }
+
+        // 渲染 logview 元素
+        if (element && element->GetTagName() == "logview") {
+            auto logview_element = std::dynamic_pointer_cast<HTMLLogViewElement>(node);
+            if (logview_element) {
+                logview_element->Render(canvas, box.content_x, box.content_y, box.content_width, box.content_height);
+            }
+        }
     }
+
+    } // end of if (!is_hidden) - 自身内容绘制结束
 
     // 应用 overflow 裁剪
     bool needs_clip = false;
@@ -796,27 +874,33 @@ void RenderBlock::Paint(SkCanvas* canvas) {
         float visible_width = effective_width - box.border_left_width - box.border_right_width;
         float visible_height = effective_height - box.border_top_width - box.border_bottom_width;
 
-
-
         bool allow_v_scroll = (overflow_y == "scroll" || overflow_y == "auto");
         bool allow_h_scroll = (overflow_x == "scroll" || overflow_x == "auto");
 
-        bool needs_v_scroll = allow_v_scroll && (content_height > visible_height || overflow_y == "scroll");
+        // 使用容差值来避免浮点误差导致的滚动条误显示
+        // 当内容高度和可见高度差异小于 1px 时，认为不需要滚动条
+        const float kScrollTolerance = 1.0f;
+        
+        bool needs_v_scroll = allow_v_scroll && 
+            ((content_height > visible_height + kScrollTolerance) || overflow_y == "scroll");
 
         float content_area_width = visible_width;
         if (needs_v_scroll) {
             content_area_width -= scrollbar_width;
         }
 
-        bool needs_h_scroll = allow_h_scroll && (content_width > content_area_width || overflow_x == "scroll");
+        bool needs_h_scroll = allow_h_scroll && 
+            ((content_width > content_area_width + kScrollTolerance) || overflow_x == "scroll");
 
         float content_area_height = visible_height;
         if (needs_h_scroll) {
             content_area_height -= scrollbar_width;
-            if (allow_v_scroll && !needs_v_scroll && content_height > content_area_height) {
+            if (allow_v_scroll && !needs_v_scroll && 
+                content_height > content_area_height + kScrollTolerance) {
                 needs_v_scroll = true;
                 content_area_width = visible_width - scrollbar_width;
-                needs_h_scroll = allow_h_scroll && content_width > content_area_width;
+                needs_h_scroll = allow_h_scroll && 
+                    content_width > content_area_width + kScrollTolerance;
             }
         }
 
@@ -1513,11 +1597,12 @@ void RenderBlock::PaintContentEditableCaret(SkCanvas* canvas, Element* element, 
         return;
     }
 
-    // 获取锚点和焦点
-    auto anchor_node = selection->GetAnchorNode();
-    auto focus_node = selection->GetFocusNode();
-    int anchor_offset = selection->GetAnchorOffset();
-    int focus_offset = selection->GetFocusOffset();
+    // 获取锚点和焦点 - 使用 Computed 方法获取解析后的位置
+    // 参考 Blink：原始位置可能是 Element 节点，需要解析为 Text 节点用于渲染
+    auto anchor_node = selection->GetComputedAnchorNode();
+    auto focus_node = selection->GetComputedFocusNode();
+    int anchor_offset = selection->GetComputedAnchorOffset();
+    int focus_offset = selection->GetComputedFocusOffset();
     
     if (!anchor_node) {
         return;
