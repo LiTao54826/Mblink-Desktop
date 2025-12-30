@@ -35,9 +35,18 @@
 #include <lexbor/dom/interfaces/text.h>
 #include "core/lexbor/lexbor_document.h"
 #include "core/render/objects/render_object.h"
+#include "core/window/window.h"
+#include "core/render/pipeline/render_pipeline.h"
+#include "core/event/input/focus_manager.h"
 #include "../quickjs/quickjs.h"
 #include "../quickjs/quickjs-libc.h"
 #include "../quickjs/quickjs_runtime.h"
+#include <SDL3/SDL.h>
+
+// Windows API 宏冲突修复：取消 GetClassName 宏定义
+#ifdef GetClassName
+#undef GetClassName
+#endif
 
 namespace lightui {
 
@@ -1373,37 +1382,121 @@ void Element::ScrollIntoView(bool align_to_top) {
 }
 
 void Element::Focus() {
-    // 设置 :focus 伪类
-    SetPseudoClass("focus", true);
+    std::cout << "[Element::Focus] Called on <" << tag_name_ << ">" << std::endl;
     
-    // 获取所属文档并设置为活动元素
+    // 获取所属文档
     auto doc = GetOwnerDocument();
-    if (doc) {
-        auto self = std::static_pointer_cast<Element>(shared_from_this());
-        doc->SetActiveElement(self);
+    if (!doc) {
+        std::cout << "[Element::Focus] ERROR: No owner document!" << std::endl;
+        return;
     }
     
-    // 触发 focus 事件（focus 事件不冒泡）
-    auto event = std::make_shared<Event>("focus", false, false);
-    DispatchEvent(event);
+    // 获取 Window 和 FocusManager
+    Window* window = doc->GetWindow();
+    if (!window) {
+        std::cout << "[Element::Focus] WARNING: No window!" << std::endl;
+        // 回退到简单的焦点处理
+        SetPseudoClass("focus", true);
+        auto self = std::static_pointer_cast<Element>(shared_from_this());
+        doc->SetActiveElement(self);
+        auto event = std::make_shared<Event>("focus", false, false);
+        DispatchEvent(event);
+        return;
+    }
+    
+    // 关键修复：使用 FocusManager 来设置焦点
+    // 这样光标闪烁和键盘输入才能正常工作
+    FocusManager* focus_manager = window->GetFocusManager();
+    if (focus_manager) {
+        std::cout << "[Element::Focus] Using FocusManager::SetFocus()" << std::endl;
+        focus_manager->SetWindow(window);
+        auto self = std::static_pointer_cast<Element>(shared_from_this());
+        focus_manager->SetFocus(self, false);
+    } else {
+        std::cout << "[Element::Focus] WARNING: No FocusManager, using fallback" << std::endl;
+        // 回退到原来的实现
+        auto old_active = doc->GetActiveElement();
+        if (old_active && old_active.get() != this) {
+            old_active->SetPseudoClass("focus", false);
+            old_active->SetPseudoClass("focus-visible", false);
+            if (auto render_obj = old_active->GetRenderObject()) {
+                render_obj->MarkNeedsPaint();
+                render_obj->InvalidatePaintCache();
+            }
+            auto blur_event = std::make_shared<Event>("blur", false, false);
+            old_active->DispatchEvent(blur_event);
+        }
+        
+        SetPseudoClass("focus", true);
+        auto self = std::static_pointer_cast<Element>(shared_from_this());
+        doc->SetActiveElement(self);
+        
+        if (auto render_obj = GetRenderObject()) {
+            render_obj->MarkNeedsPaint();
+            render_obj->InvalidatePaintCache();
+        }
+        
+        if (tag_name_ == "input" || tag_name_ == "textarea" || tag_name_ == "terminal" || IsContentEditable()) {
+            if (window->GetSDLWindow()) {
+                SDL_StartTextInput(window->GetSDLWindow());
+            }
+        }
+        
+        window->SetNeedsRepaint();
+        if (auto pipeline = window->GetRenderPipeline()) {
+            pipeline->MarkNeedsPaint();
+        }
+        
+        auto event = std::make_shared<Event>("focus", false, false);
+        DispatchEvent(event);
+    }
 }
 
 void Element::Blur() {
-    // 移除 :focus 伪类
-    SetPseudoClass("focus", false);
-    
-    // 获取所属文档，如果当前元素是活动元素则清除
+    // 获取所属文档
     auto doc = GetOwnerDocument();
-    if (doc) {
-        auto active = doc->GetActiveElement();
-        if (active.get() == this) {
-            doc->SetActiveElement(nullptr);
-        }
-    }
     
-    // 触发 blur 事件（blur 事件不冒泡）
-    auto event = std::make_shared<Event>("blur", false, false);
-    DispatchEvent(event);
+    // 获取 Window 和 FocusManager
+    Window* window = doc ? doc->GetWindow() : nullptr;
+    FocusManager* focus_manager = window ? window->GetFocusManager() : nullptr;
+    
+    if (focus_manager) {
+        // 使用 FocusManager 来处理 blur
+        auto self = std::static_pointer_cast<Element>(shared_from_this());
+        focus_manager->Blur(self);
+    } else {
+        // 回退到原来的实现
+        SetPseudoClass("focus", false);
+        SetPseudoClass("focus-visible", false);
+        
+        if (doc) {
+            auto active = doc->GetActiveElement();
+            if (active.get() == this) {
+                doc->SetActiveElement(nullptr);
+            }
+        }
+        
+        if (auto render_obj = GetRenderObject()) {
+            render_obj->MarkNeedsPaint();
+            render_obj->InvalidatePaintCache();
+        }
+        
+        if (tag_name_ == "input" || tag_name_ == "textarea" || tag_name_ == "terminal" || IsContentEditable()) {
+            if (window && window->GetSDLWindow()) {
+                SDL_StopTextInput(window->GetSDLWindow());
+            }
+        }
+        
+        if (window) {
+            window->SetNeedsRepaint();
+            if (auto pipeline = window->GetRenderPipeline()) {
+                pipeline->MarkNeedsPaint();
+            }
+        }
+        
+        auto event = std::make_shared<Event>("blur", false, false);
+        DispatchEvent(event);
+    }
 }
 
 } // namespace lightui

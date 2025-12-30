@@ -439,6 +439,10 @@ void RenderPipeline::DoLayerTreeBuild() {
         // 关键修复：在构建层树前，设置 DPI 缩放
         layer_tree_builder_->SetDpiScale(dpi_scale_);
         
+        std::cout << "[DEBUG LayerTreeBuild] Building layer tree, viewport=" 
+                  << viewport_width_ << "x" << viewport_height_ 
+                  << ", dpi_scale=" << dpi_scale_ << std::endl;
+        
         root_layer_ = layer_tree_builder_->Build(render_tree_.get());
         needs_layer_tree_rebuild_ = false;
         
@@ -448,6 +452,9 @@ void RenderPipeline::DoLayerTreeBuild() {
             root_layer_->SetBounds(SkRect::MakeWH(
                 static_cast<float>(viewport_width_), 
                 static_cast<float>(viewport_height_)));
+            
+            std::cout << "[DEBUG LayerTreeBuild] Root layer bounds set to " 
+                      << viewport_width_ << "x" << viewport_height_ << std::endl;
             root_layer_->MarkFullDirty();
         }
         
@@ -473,9 +480,15 @@ void RenderPipeline::DoRasterize() {
         return;
     }
 
+    std::cout << "[DEBUG DoRasterize] Starting rasterization, root_layer bounds=" 
+              << root_layer_->GetBounds().width() << "x" << root_layer_->GetBounds().height()
+              << ", has_dirty=" << root_layer_->HasDirtyRegions() << std::endl;
+
     // 复制自 V2 的 RasterizeDirtyLayers
     int rasterized = rasterizer_->RasterizeDirtyLayers(root_layer_.get());
     current_frame_stats_.layers_rasterized = rasterized;
+    
+    std::cout << "[DEBUG DoRasterize] Rasterized " << rasterized << " layers" << std::endl;
 
     const auto& stats = rasterizer_->GetStats();
     current_frame_stats_.dirty_regions_count = stats.incremental_rasterizations;
@@ -490,6 +503,10 @@ void RenderPipeline::DoComposite(SkCanvas* canvas) {
 
     // 优先使用层合成（如果层树已构建）
     if (root_layer_) {
+        std::cout << "[DEBUG DoComposite] Compositing root_layer, bounds=" 
+                  << root_layer_->GetBounds().width() << "x" << root_layer_->GetBounds().height()
+                  << ", bitmap_valid=" << !root_layer_->GetBitmap().isNull() << std::endl;
+        
         compositor_->CompositeToCanvas(root_layer_.get(), canvas);
         const auto& stats = compositor_->GetStats();
         current_frame_stats_.layers_composited = stats.layers_composited;
@@ -498,6 +515,7 @@ void RenderPipeline::DoComposite(SkCanvas* canvas) {
 
     // 回退：直接绘制渲染树（层树未构建时）
     if (render_tree_) {
+        std::cout << "[DEBUG DoComposite] Fallback: painting render_tree directly" << std::endl;
         render_tree_->Paint(canvas);
     }
 }

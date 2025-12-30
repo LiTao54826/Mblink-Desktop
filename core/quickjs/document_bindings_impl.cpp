@@ -153,6 +153,57 @@ static JSValue JS_Document_createElement(JSContext* ctx, JSValueConst this_val, 
     return bindings::WrapElement(ctx, element);
 }
 
+// ========== document.createElementNS 实现 ==========
+
+static JSValue JS_Document_createElementNS(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) {
+    if (argc < 2) {
+        return JS_ThrowTypeError(ctx, "createElementNS requires 2 arguments");
+    }
+
+    // 第一个参数是命名空间 URI（我们忽略它）
+    // 第二个参数是标签名
+    const char* qualified_name = JS_ToCString(ctx, argv[1]);
+    if (!qualified_name) {
+        return JS_EXCEPTION;
+    }
+
+    // 从全局对象获取 window
+    JSValue global = JS_GetGlobalObject(ctx);
+    JSValue window_val = JS_GetPropertyStr(ctx, global, "__lightui_window_ptr");
+    JS_FreeValue(ctx, global);
+
+    if (JS_IsUndefined(window_val)) {
+        JS_FreeCString(ctx, qualified_name);
+        return JS_NULL;
+    }
+
+    void* ptr = nullptr;
+    JS_ToInt64Ext(ctx, (int64_t*)&ptr, window_val);
+    JS_FreeValue(ctx, window_val);
+
+    if (!ptr) {
+        JS_FreeCString(ctx, qualified_name);
+        return JS_NULL;
+    }
+
+    auto* window = static_cast<Window*>(ptr);
+    auto doc = window->GetDocument();
+    if (!doc) {
+        JS_FreeCString(ctx, qualified_name);
+        return JS_NULL;
+    }
+
+    // 使用 CreateElement 创建元素（它会根据标签名自动处理 SVG 元素）
+    auto element = doc->CreateElement(qualified_name);
+    JS_FreeCString(ctx, qualified_name);
+
+    if (!element) {
+        return JS_NULL;
+    }
+
+    return bindings::WrapElement(ctx, element);
+}
+
 // ========== document.createTextNode 实现 ==========
 
 static JSValue JS_Document_createTextNode(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) {
@@ -1351,6 +1402,10 @@ void BindDocumentAPIs(JSContext* ctx, Window* window) {
     // 设置 createElement 方法
     JS_SetPropertyStr(ctx, document, "createElement",
         JS_NewCFunction(ctx, JS_Document_createElement, "createElement", 1));
+
+    // 设置 createElementNS 方法（用于 SVG 等命名空间元素）
+    JS_SetPropertyStr(ctx, document, "createElementNS",
+        JS_NewCFunction(ctx, JS_Document_createElementNS, "createElementNS", 2));
 
     // 设置 createTextNode 方法
     JS_SetPropertyStr(ctx, document, "createTextNode",

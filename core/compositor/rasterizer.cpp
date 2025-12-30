@@ -14,6 +14,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cstring>
+#include <iostream>
 
 namespace lightui {
 
@@ -33,11 +34,13 @@ bool Rasterizer::RasterizeLayer(CompositorLayer* layer) {
 
     // 确保位图已分配
     if (!layer->EnsureBitmap()) {
+        std::cout << "[DEBUG RasterizeLayer] EnsureBitmap failed for layer " << layer->GetId() << std::endl;
         return false;
     }
 
     SkCanvas* canvas = layer->GetCanvas();
     if (!canvas) {
+        std::cout << "[DEBUG RasterizeLayer] GetCanvas failed for layer " << layer->GetId() << std::endl;
         return false;
     }
 
@@ -59,13 +62,22 @@ bool Rasterizer::RasterizeLayer(CompositorLayer* layer) {
         return true;
     }
 
+    const auto& layout = render_obj->GetLayoutInfo();
+    const SkRect& bounds = layer->GetBounds();
+    float dpi_scale = layer->GetDpiScale();
+    
+    std::cout << "[DEBUG RasterizeLayer] Layer " << layer->GetId() 
+              << ", bounds=(" << bounds.left() << "," << bounds.top() << "," << bounds.width() << "x" << bounds.height() << ")"
+              << ", layout=(" << layout.x << "," << layout.y << "," << layout.width << "x" << layout.height << ")"
+              << ", dpi_scale=" << dpi_scale
+              << ", bitmap_size=" << layer->GetBitmap().width() << "x" << layer->GetBitmap().height()
+              << ", promotion=" << static_cast<int>(layer->GetPromotionReason()) << std::endl;
+
     // 清除整个位图
     canvas->clear(SK_ColorTRANSPARENT);
 
     // 保存 Canvas 状态
     canvas->save();
-    
-    const auto& layout = render_obj->GetLayoutInfo();
 
     // 关键修复：光栅化阶段不应用滚动偏移
     // 滚动偏移应该在合成阶段应用，这样滚动时只需要更新合成参数，
@@ -204,6 +216,15 @@ bool Rasterizer::RasterizeDirtyRegions(CompositorLayer* layer) {
 
     // 获取关联的渲染对象
     RenderObject* render_obj = layer->GetRenderObject();
+    
+    // 调试日志
+    const SkRect& bounds = layer->GetBounds();
+    float dpi_scale = layer->GetDpiScale();
+    std::cout << "[DEBUG RasterizeDirtyRegions] Layer " << layer->GetId() 
+              << ", bounds=(" << bounds.left() << "," << bounds.top() << "," << bounds.width() << "x" << bounds.height() << ")"
+              << ", dpi_scale=" << dpi_scale
+              << ", bitmap_size=" << layer->GetBitmap().width() << "x" << layer->GetBitmap().height()
+              << std::endl;
 
     // 合并脏区域
     layer->MergeDirtyRegions();
@@ -211,9 +232,13 @@ bool Rasterizer::RasterizeDirtyRegions(CompositorLayer* layer) {
     const auto& dirty_regions = layer->GetDirtyRegions();
     int total_dirty_pixels = 0;
     int layer_pixels = static_cast<int>(layer->GetBounds().width() * layer->GetBounds().height());
+    
+    std::cout << "[DEBUG RasterizeDirtyRegions] dirty_regions count=" << dirty_regions.size() << std::endl;
 
     // 对每个脏区域进行光栅化
     for (const auto& region : dirty_regions) {
+        std::cout << "[DEBUG RasterizeDirtyRegions] region=(" << region.left() << "," << region.top() 
+                  << "," << region.width() << "x" << region.height() << ")" << std::endl;
         if (render_obj) {
             if (!RasterizeRegion(layer, region)) {
                 continue;
@@ -274,15 +299,6 @@ bool Rasterizer::RasterizeRegion(CompositorLayer* layer, const SkIRect& region) 
     ClearRegion(canvas, region);
     canvas->restore();
 
-    // 关键修复：光栅化阶段不应用滚动偏移
-    // 滚动偏移应该在合成阶段应用
-    // 
-    // 旧代码（已移除）：
-    // const SkPoint& scroll = layer->GetScrollOffset();
-    // if (scroll.fX != 0 || scroll.fY != 0) {
-    //     canvas->translate(-scroll.fX, -scroll.fY);
-    // }
-
     // 关键修复：对于非根层，需要抵消元素的 layout 位置
     // 因为 RenderObject::Paint() 内部会 translate(layout.x, layout.y)
     // 但子层应该从 (0,0) 开始绘制，位置由合成器在合成时应用
@@ -297,21 +313,21 @@ bool Rasterizer::RasterizeRegion(CompositorLayer* layer, const SkIRect& region) 
     }
     
     // 设置裁剪区域
-    // canvas 已经 translate(-layout.x - anim_offset.x, -layout.y - anim_offset.y)
-    //现在需要将位图坐标的 region 转换到 canvas 坐标系
+    // 对于根层：region 是位图坐标，Paint 会 translate(layout.x, layout.y)
+    //          所以裁剪区域不需要偏移
+    // 对于非根层：canvas 已经 translate(-layout.x, -layout.y)
+    //           需要将位图坐标的 region 转换到 canvas 坐标系
     SkRect clip_rect = SkRect::Make(region);
-    // 偏移到canvas坐标系
-    float offset_x = layout.x;
-    float offset_y = layout.y;
     if (layer->GetPromotionReason() != LayerPromotionReason::RootLayer) {
+        float offset_x = layout.x;
+        float offset_y = layout.y;
         const AnimationBounds* anim_bounds = layer->GetAnimationBounds();
         if (anim_bounds && anim_bounds->needs_expansion) {
-            // 加上动画偏移（anim_bounds->offset 是负值，比如 -50）
             offset_x += anim_bounds->offset.fX;
             offset_y += anim_bounds->offset.fY;
         }
+        clip_rect.offset(offset_x, offset_y);
     }
-    clip_rect.offset(offset_x, offset_y);
     canvas->clipRect(clip_rect);
 
     // 绘制渲染对象

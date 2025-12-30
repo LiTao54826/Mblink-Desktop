@@ -62,11 +62,13 @@ void PrintUsage(const char* program_name) {
     std::cout << "  --height <高度>     窗口高度 (默认: 600)" << std::endl;
     std::cout << "  --title <标题>      窗口标题 (默认: MBink App)" << std::endl;
     std::cout << "  --devtools          启动时打开开发者工具" << std::endl;
+    std::cout << "  -q, --quit <帧数>   渲染指定帧数后自动退出 (用于调试)" << std::endl;
     std::cout << "  --help              显示此帮助信息" << std::endl;
     std::cout << std::endl;
     std::cout << "示例:" << std::endl;
     std::cout << "  " << program_name << " app.js" << std::endl;
     std::cout << "  " << program_name << " app.js --width 1024 --height 768" << std::endl;
+    std::cout << "  " << program_name << " app.js -q 3  # 渲染3帧后退出" << std::endl;
 }
 
 // 加载嵌入的 JS 库
@@ -119,6 +121,9 @@ void RegisterPreactModules(QuickJSRuntime* runtime) {
         export const Fragment = globalThis.Preact.Fragment;
         export const createRef = globalThis.Preact.createRef;
         export const createElement = globalThis.Preact.createElement;
+        export const createContext = globalThis.Preact.createContext;
+        export const cloneElement = globalThis.Preact.cloneElement;
+        export const isValidElement = globalThis.Preact.isValidElement;
         export default globalThis.Preact;
     )");
 
@@ -157,6 +162,7 @@ int main(int argc, char** argv) {
     int height = 800;
     std::string title = "MBink App";
     bool open_devtools = false;
+    int quit_after_frames = 0;  // 0 表示不自动退出
 
     // 解析命令行参数
     for (int i = 1; i < argc; i++) {
@@ -173,6 +179,8 @@ int main(int argc, char** argv) {
             title = argv[++i];
         } else if (arg == "--devtools") {
             open_devtools = true;
+        } else if ((arg == "-q" || arg == "--quit") && i + 1 < argc) {
+            quit_after_frames = std::stoi(argv[++i]);
         } else if (arg[0] != '-') {
             entry_path = arg;
         }
@@ -286,12 +294,25 @@ int main(int argc, char** argv) {
         std::cout << "  Press F12 to toggle DevTools" << std::endl;
         std::cout << std::endl;
 
+        // 设置渲染回调
         event_loop.SetRenderCallback([window]() {
             if (window->NeedsRepaint()) {
                 window->Render();
                 window->SwapBuffers();
             }
         });
+        
+        // 如果设置了自动退出，使用更新回调计数帧
+        if (quit_after_frames > 0) {
+            int frame_count = 0;
+            event_loop.SetUpdateCallback([&frame_count, quit_after_frames, &event_loop](float) {
+                frame_count++;
+                if (frame_count >= quit_after_frames) {
+                    std::cout << "[Auto-quit] Completed " << frame_count << " frames, exiting..." << std::endl;
+                    event_loop.Stop();
+                }
+            });
+        }
         
         event_loop.Run();
 

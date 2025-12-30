@@ -258,6 +258,65 @@ export class Component {
     }
 }
 
+/**
+ * Create a Context object for passing data through the component tree
+ * @param {any} defaultValue - Default value when no Provider is found
+ * @returns {object} Context object with Provider and Consumer
+ */
+export function createContext(defaultValue) {
+    const context = {
+        __defaultValue: defaultValue,
+        __currentValue: defaultValue,
+        __listeners: []
+    };
+
+    /**
+     * Provider component - provides value to descendants
+     */
+    function Provider(props) {
+        const value = props.value !== undefined ? props.value : defaultValue;
+        context.__currentValue = value;
+
+        // Notify listeners
+        for (const listener of context.__listeners) {
+            listener(value);
+        }
+
+        return props.children;
+    }
+
+    /**
+     * Consumer component - consumes context value via render prop
+     */
+    function Consumer(props) {
+        const children = props.children;
+        if (typeof children === 'function') {
+            return children(context.__currentValue);
+        }
+        return children;
+    }
+
+    context.Provider = Provider;
+    context.Consumer = Consumer;
+
+    // For useContext hook support
+    context.__getValue = function() {
+        return context.__currentValue;
+    };
+
+    context.__subscribe = function(listener) {
+        context.__listeners.push(listener);
+        return function() {
+            const idx = context.__listeners.indexOf(listener);
+            if (idx > -1) {
+                context.__listeners.splice(idx, 1);
+            }
+        };
+    };
+
+    return context;
+}
+
 // Default export
-export default { h, createElement, render, Fragment, Component, createRef, cloneElement, isValidElement };
+export default { h, createElement, render, Fragment, Component, createRef, cloneElement, isValidElement, createContext };
 

@@ -110,6 +110,12 @@ EventLoop::EventLoop()
     );
 
     InitSystemCursors();
+    
+    // 设置所有现有窗口的 FocusManager
+    auto& wm = WindowManager::Instance();
+    for (auto& window : wm.GetAllWindows()) {
+        window->SetFocusManager(focus_manager_.get());
+    }
 }
 
 EventLoop::EventLoop(std::shared_ptr<TaskScheduler> task_scheduler)
@@ -155,6 +161,12 @@ EventLoop::EventLoop(std::shared_ptr<TaskScheduler> task_scheduler)
     );
 
     InitSystemCursors();
+    
+    // 设置所有现有窗口的 FocusManager
+    auto& wm = WindowManager::Instance();
+    for (auto& window : wm.GetAllWindows()) {
+        window->SetFocusManager(focus_manager_.get());
+    }
 }
 
 EventLoop::~EventLoop() {
@@ -171,6 +183,12 @@ void EventLoop::Run() {
 
     running_ = true;
     should_quit_ = false;
+
+    // 设置所有窗口的 FocusManager
+    auto& wm = WindowManager::Instance();
+    for (auto& window : wm.GetAllWindows()) {
+        window->SetFocusManager(focus_manager_.get());
+    }
 
     while (running_ && !should_quit_) {
         RunOnce();

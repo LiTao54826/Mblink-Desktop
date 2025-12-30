@@ -64,6 +64,7 @@ class RenderPipeline;        // 统一渲染管线
 class RenderTreeSynchronizer;
 class FBOManager;
 class WindowRenderer;        // 窗口渲染器
+class FocusManager;          // 焦点管理器
 
 /**
  * @brief 渲染后端类型
@@ -643,6 +644,22 @@ private:
     int pending_resize_width_ = 0;
     int pending_resize_height_ = 0;
     bool has_pending_resize_ = false;
+
+    // FocusManager 引用（不拥有所有权，由 EventLoop 管理）
+    FocusManager* focus_manager_ = nullptr;
+
+public:
+    /**
+     * @brief 设置 FocusManager
+     * @param focus_manager FocusManager 指针
+     */
+    void SetFocusManager(FocusManager* focus_manager) { focus_manager_ = focus_manager; }
+
+    /**
+     * @brief 获取 FocusManager
+     * @return FocusManager 指针
+     */
+    FocusManager* GetFocusManager() const { return focus_manager_; }
 };
 
 } // namespace lightui

@@ -11,7 +11,9 @@
 #include "core/render/text/text_transform.h"
 #include "core/render/utils/shadow_renderer.h"
 #include "core/render/utils/color.h"
+#include "core/dom/element.h"
 #include <algorithm>
+#include <iostream>
 #include <sstream>
 #include "include/core/SkPathEffect.h"
 #include "include/effects/SkDashPathEffect.h"
@@ -119,7 +121,6 @@ void RenderText::Paint(SkCanvas* canvas) {
     }
 
     // 跳过零高度元素（如 CodeMirror 的测量占位元素）
-    // 这些元素有宽度但高度为0，用于测量文本宽度
     if (layout_info_.height <= 0) {
         needs_paint_ = false;
         return;
@@ -131,6 +132,35 @@ void RenderText::Paint(SkCanvas* canvas) {
     if (canvas->quickReject(paint_rect.makeOutset(10, 10))) {
         needs_paint_ = false;
         return;
+    }
+
+    // 获取 canvas 的当前变换矩阵，用于调试
+    SkMatrix ctm = canvas->getTotalMatrix();
+    static int text_paint_count = 0;
+    text_paint_count++;
+    
+    // 获取父元素信息
+    std::string parent_info = "no_parent";
+    {
+        auto parent_obj = GetParent();
+        if (parent_obj) {
+            auto parent_node = parent_obj->GetNode();
+            if (parent_node && parent_node->GetNodeType() == NodeType::ELEMENT_NODE) {
+                auto parent_elem = std::static_pointer_cast<Element>(parent_node);
+                parent_info = parent_elem->GetTagName();
+            }
+        }
+    }
+    
+    // 只打印前 30 次文本绘制的日志
+    if (text_paint_count <= 30) {
+        std::cout << "[DEBUG RenderText::Paint] #" << text_paint_count 
+                  << " text=\"" << (text_.length() > 20 ? text_.substr(0, 20) + "..." : text_) << "\""
+                  << ", layout=(" << layout_info_.x << "," << layout_info_.y << ")"
+                  << ", CTM translate=(" << ctm.getTranslateX() << "," << ctm.getTranslateY() << ")"
+                  << ", CTM scale=(" << ctm.getScaleX() << "," << ctm.getScaleY() << ")"
+                  << ", parent=<" << parent_info << ">"
+                  << std::endl;
     }
 
     const auto& style = computed_style_;
@@ -156,13 +186,22 @@ void RenderText::Paint(SkCanvas* canvas) {
     font.getMetrics(&font_metrics);
 
     float skia_text_height = -font_metrics.fAscent + font_metrics.fDescent;
-    float css_line_height = style.line_height * style.font_size;
-
-    float half_leading = 0.0f;
-    if (css_line_height > skia_text_height) {
-        half_leading = (css_line_height - skia_text_height) / 2.0f;
+    
+    // 计算 css_line_height - 必须与 Layout 中的计算保持一致！
+    // 如果 style.line_height 是默认值 1.2，使用浏览器风格的 line-height: normal
+    float css_line_height;
+    if (std::abs(style.line_height - 1.2f) < 0.001f) {
+        css_line_height = GetBrowserNormalLineHeight(style.font_size);
+    } else {
+        css_line_height = style.line_height * style.font_size;
     }
 
+    // 计算 half_leading - 用于垂直居中文本
+    // 当 css_line_height > skia_text_height 时，leading 为正，文本在行框内居中
+    // 当 css_line_height < skia_text_height 时，leading 为负，文本会超出行框但保持视觉居中
+    float half_leading = (css_line_height - skia_text_height) / 2.0f;
+
+    // baseline_y 是从行框顶部到文本基线的距离
     float baseline_y = half_leading + (-font_metrics.fAscent);
 
     // 处理 vertical-align
@@ -211,7 +250,8 @@ void RenderText::Paint(SkCanvas* canvas) {
     }
 
     float current_y = baseline_y;
-    float line_height = style.line_height * style.font_size;
+    // 多行文本的行间距也需要与 Layout 保持一致
+    float line_height = css_line_height;
 
     for (const auto& line : lines_to_render) {
         if (!line.empty()) {

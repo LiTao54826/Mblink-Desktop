@@ -118,16 +118,28 @@ function render(vnode, container) {
         return __preact_internal.render(vnode, container);
     }
 
-    // Get old vnode from container
-    var oldVNode = container.__preactVNode;
-    var oldDOM = container.__preactDOM;
+    // 开始批量更新，避免每次 DOM 操作都触发重绘
+    if (typeof document !== 'undefined' && typeof document.__beginBatch === 'function') {
+        document.__beginBatch();
+    }
 
-    // Diff and patch
-    var newDOM = diffNode(oldVNode, vnode, container, oldDOM);
+    try {
+        // Get old vnode from container
+        var oldVNode = container.__preactVNode;
+        var oldDOM = container.__preactDOM;
 
-    // Store references
-    container.__preactVNode = vnode;
-    container.__preactDOM = newDOM;
+        // Diff and patch
+        var newDOM = diffNode(oldVNode, vnode, container, oldDOM);
+
+        // Store references
+        container.__preactVNode = vnode;
+        container.__preactDOM = newDOM;
+    } finally {
+        // 结束批量更新，触发一次性重绘
+        if (typeof document !== 'undefined' && typeof document.__endBatch === 'function') {
+            document.__endBatch();
+        }
+    }
 }
 
 /**
@@ -881,6 +893,68 @@ function isValidElement(value) {
         return null;
     };
 
+    /**
+     * Create a Context object for passing data through the component tree
+     * @param {any} defaultValue - Default value when no Provider is found
+     * @returns {object} Context object with Provider and Consumer
+     */
+    function createContext(defaultValue) {
+        var context = {
+            __defaultValue: defaultValue,
+            __currentValue: defaultValue,
+            __listeners: []
+        };
+
+        /**
+         * Provider component - provides value to descendants
+         */
+        function Provider(props) {
+            // Update current value
+            var value = props.value !== undefined ? props.value : defaultValue;
+            context.__currentValue = value;
+
+            // Notify listeners (for future use with useContext)
+            for (var i = 0; i < context.__listeners.length; i++) {
+                context.__listeners[i](value);
+            }
+
+            // Just render children
+            return props.children;
+        }
+
+        /**
+         * Consumer component - consumes context value via render prop
+         */
+        function Consumer(props) {
+            var children = props.children;
+            if (typeof children === 'function') {
+                return children(context.__currentValue);
+            }
+            return children;
+        }
+
+        // Attach Provider and Consumer to context
+        context.Provider = Provider;
+        context.Consumer = Consumer;
+
+        // For useContext hook support
+        context.__getValue = function() {
+            return context.__currentValue;
+        };
+
+        context.__subscribe = function(listener) {
+            context.__listeners.push(listener);
+            return function() {
+                var idx = context.__listeners.indexOf(listener);
+                if (idx > -1) {
+                    context.__listeners.splice(idx, 1);
+                }
+            };
+        };
+
+        return context;
+    }
+
     // Export all APIs as global object (for script loading)
     var Preact = {
         h: h,
@@ -890,7 +964,8 @@ function isValidElement(value) {
         Component: Component,
         createRef: createRef,
         cloneElement: cloneElement,
-        isValidElement: isValidElement
+        isValidElement: isValidElement,
+        createContext: createContext
     };
 
     // 添加小写别名以提高兼容性

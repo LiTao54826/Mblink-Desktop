@@ -1618,7 +1618,7 @@ static void CalculateFlexItem(
     const FlexAlgoConstants& constants
 ) {
     // 调试日志
-    static bool debug_select = std::getenv("LIGHTUI_DEBUG_SELECT") != nullptr;
+    static bool debug_flex = std::getenv("DEBUG_FLEX") != nullptr;
     
     // Perform final layout
     Size<std::optional<float>> known_dimensions = {
@@ -1664,13 +1664,13 @@ static void CalculateFlexItem(
     }
 
     // 调试日志：输出 flex 子项的位置计算
-    if (debug_select) {
+    if (debug_flex) {
         std::cout << "[FlexItem] node=" << item.node 
-                  << " total_offset_main=" << total_offset_main
-                  << " item.offset_main=" << item.offset_main
-                  << " margin_main_start=" << item.margin.MainStart(constants.dir)
+                  << " target_size=(" << item.target_size.width << "," << item.target_size.height << ")"
+                  << " layout_output.size=(" << layout_output.size.width << "," << layout_output.size.height << ")"
+                  << " offset_cross=" << item.offset_cross
+                  << " align_self=" << static_cast<int>(item.align_self)
                   << " -> location=(" << location.x << "," << location.y << ")"
-                  << " size=(" << layout_output.size.width << "," << layout_output.size.height << ")"
                   << std::endl;
     }
 

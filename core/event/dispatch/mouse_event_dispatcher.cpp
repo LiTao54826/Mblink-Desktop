@@ -1457,10 +1457,16 @@ void MouseEventDispatcher::HandleMouseDown(std::shared_ptr<Window> window,
             }
         }
     }
-    // 对于其他非可聚焦元素，清除焦点
-    else if (focus_manager_ && !focus_manager_->IsFocusable(hit_result.element)) {
-        focus_manager_->ClearFocus();
-    }
+    // 参考 Blink/Chrome 的行为：
+    // 点击非可聚焦元素时，不应该清除焦点
+    // 这允许 JavaScript 在 click 事件中调用 element.focus() 来转移焦点
+    // 焦点只在以下情况改变：
+    // 1. 点击了另一个可聚焦元素（焦点转移到新元素）
+    // 2. 调用了 element.focus() 或 element.blur()
+    // 3. 按 Tab 键导航
+    // 
+    // 注意：之前这里有 ClearFocus() 调用，这是错误的行为
+    // 它会导致 Fluent Input 等组件无法正常工作（外层 div 点击后调用 input.focus()）
 
     // 拖拽检测
     if (event.button.button == SDL_BUTTON_LEFT && drag_manager_) {
@@ -1569,21 +1575,15 @@ void MouseEventDispatcher::HandleMouseUp(std::shared_ptr<Window> window,
         );
         hit_result.element->DispatchEvent(click_event);
 
-        // 对于非输入元素，在 click 事件后设置焦点
-        std::string tag_name = hit_result.element->GetTagName();
-        if (tag_name != "input" && tag_name != "textarea") {
-            if (focus_manager_) {
-                focus_manager_->SetWindow(window.get());
-                bool focus_set = focus_manager_->SetFocus(hit_result.element, false);
-                if (!focus_set && !focus_manager_->IsFocusable(hit_result.element)) {
-                    focus_manager_->ClearFocus();
-                }
-            }
-
-            // 注意：不再在这里重置 Selection
-            // Selection 已经在 mousedown 时通过 UpdateSelectionFromClick 正确设置
-            // 如果在这里重置为 (element, 0)，会覆盖掉正确的字符偏移位置
-        }
+        // 参考 Blink/Chrome 的行为：
+        // click 事件分发后，不应该再尝试设置焦点或清除焦点
+        // 因为 JavaScript 的 click 处理器可能已经调用了 element.focus()
+        // 如果我们在这里清除焦点，会覆盖 JavaScript 设置的焦点状态
+        // 
+        // 焦点管理应该完全由以下方式控制：
+        // 1. mousedown 时点击可聚焦元素 → 焦点转移
+        // 2. JavaScript 调用 element.focus() / element.blur()
+        // 3. Tab 键导航
 
         // 检查双击
         Uint64 now = SDL_GetTicks();

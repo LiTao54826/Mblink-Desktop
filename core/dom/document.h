@@ -29,6 +29,7 @@ namespace lightui {
     class LexborDocument;
     class StyleManager;
     class QuickJSRuntime;
+    class Window;
 }
 
 namespace lightui {
@@ -375,6 +376,20 @@ public:
      */
     void SetActiveElement(std::shared_ptr<Element> element);
 
+    // ========== Window 关联 ==========
+
+    /**
+     * @brief 设置关联的 Window
+     * @param window Window 指针（不拥有所有权）
+     */
+    void SetWindow(Window* window) { window_ = window; }
+
+    /**
+     * @brief 获取关联的 Window
+     * @return Window 指针
+     */
+    Window* GetWindow() const { return window_; }
+
     // ========== 同步布局 ==========
 
     /**
@@ -465,6 +480,9 @@ private:
 
     // JavaScript 运行时
     QuickJSRuntime* js_runtime_ = nullptr;
+
+    // 关联的 Window（不拥有所有权）
+    Window* window_ = nullptr;
 
     // 焦点管理
     std::weak_ptr<Element> active_element_;

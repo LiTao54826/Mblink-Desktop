@@ -55,7 +55,7 @@ void WindowBindings::InitBindings() {
     BindTimers();
     BindEventListeners();
     
-    // 然后绑定 Document API（会向 window 对象添加 getSelection 等方法）
+    // 然后绑定 Document API（会创建完整的 document 对象）
     BindDocumentAPIs(runtime_->GetContext(), window_.get());
 }
 
@@ -136,132 +136,6 @@ void WindowBindings::BindWindowObject() {
     )";
     
     runtime_->Eval(window_code, "<window_bindings>");
-}
-
-void WindowBindings::BindDocumentObject() {
-    // 绑定 document.body
-    runtime_->RegisterFunction("__getDocumentBody", [this](const json& args) -> json {
-        auto doc = window_->GetDocument();
-        if (!doc) {
-            return nullptr;
-        }
-        
-        auto body = doc->GetBody();
-        if (!body) {
-            return nullptr;
-        }
-        
-        // 返回一个简单的对象表示
-        json result;
-        result["tagName"] = body->GetTagName();
-        result["id"] = body->GetAttribute("id");
-        return result;
-    });
-    
-    // 绑定 document.documentElement
-    runtime_->RegisterFunction("__getDocumentElement", [this](const json& args) -> json {
-        auto doc = window_->GetDocument();
-        if (!doc) {
-            return nullptr;
-        }
-        
-        auto root = doc->GetDocumentElement();
-        if (!root) {
-            return nullptr;
-        }
-        
-        json result;
-        result["tagName"] = root->GetTagName();
-        result["id"] = root->GetAttribute("id");
-        return result;
-    });
-    
-    // 绑定 document.getElementById
-    runtime_->RegisterFunction("__getElementById", [this](const json& args) -> json {
-        auto doc = window_->GetDocument();
-        // args 是数组，第一个元素是 id 字符串
-        if (!doc || !args.is_array() || args.empty() || !args[0].is_string()) {
-            return nullptr;
-        }
-
-        auto element = doc->GetElementById(args[0].get<std::string>());
-        if (!element) {
-            return nullptr;
-        }
-
-        json result;
-        result["tagName"] = element->GetTagName();
-        result["id"] = element->GetAttribute("id");
-        result["textContent"] = element->GetTextContent();
-        return result;
-    });
-
-    // 绑定 element.textContent setter
-    runtime_->RegisterFunction("__setTextContent", [this](const json& args) -> json {
-        auto doc = window_->GetDocument();
-        // args[0] = element id, args[1] = new text content
-        if (!doc || !args.is_array() || args.size() < 2 ||
-            !args[0].is_string() || !args[1].is_string()) {
-            return false;
-        }
-
-        std::string id = args[0].get<std::string>();
-        std::string content = args[1].get<std::string>();
-
-        auto element = doc->GetElementById(id);
-        if (!element) {
-            return false;
-        }
-
-        element->SetTextContent(content);
-        return true;
-    });
-
-    // 绑定 document.createElement
-    runtime_->RegisterFunction("__createElement", [this](const json& args) -> json {
-        auto doc = window_->GetDocument();
-        // args 是数组，第一个元素是标签名字符串
-        if (!doc || !args.is_array() || args.empty() || !args[0].is_string()) {
-            return nullptr;
-        }
-
-        auto element = doc->CreateElement(args[0].get<std::string>());
-        if (!element) {
-            return nullptr;
-        }
-
-        json result;
-        result["tagName"] = element->GetTagName();
-        result["id"] = element->GetAttribute("id");
-        return result;
-    });
-    
-    // 创建 document 对象
-    std::string document_code = R"(
-        globalThis.document = {
-            get body() { return __getDocumentBody(); },
-            get documentElement() { return __getDocumentElement(); },
-            getElementById: function(id) {
-                const elem = __getElementById(id);
-                if (!elem) return null;
-
-                // 创建一个代理对象，支持 textContent setter
-                return {
-                    tagName: elem.tagName,
-                    id: elem.id,
-                    get textContent() {
-                        return elem.textContent;
-                    },
-                    set textContent(value) {
-                        __setTextContent(elem.id, value);
-                    }
-                };
-            },
-            createElement: function(tagName) { return __createElement(tagName); }
-        };
-    )";
-
-    runtime_->Eval(document_code, "<document_bindings>");
 }
 
 void WindowBindings::BindTimers() {

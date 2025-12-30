@@ -1267,10 +1267,16 @@ static JSValue JSElement_select(JSContext* ctx, JSValueConst this_val, int argc,
 
 // focus - 使元素获得焦点
 static JSValue JSElement_focus(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) {
+    std::cout << "[JSElement_focus] Called" << std::endl;
     auto* data = static_cast<JSElementData*>(JS_GetOpaque(this_val, js_element_class_id));
-    if (!data || !data->element) return JS_UNDEFINED;
+    if (!data || !data->element) {
+        std::cout << "[JSElement_focus] ERROR: No element data!" << std::endl;
+        return JS_UNDEFINED;
+    }
     
+    std::cout << "[JSElement_focus] Calling Focus() on <" << data->element->GetTagName() << ">" << std::endl;
     data->element->Focus();
+    std::cout << "[JSElement_focus] Focus() returned" << std::endl;
     return JS_UNDEFINED;
 }
 

@@ -15,6 +15,7 @@
 #include "core/dom/elements/html_input_element.h"
 #include "core/dom/elements/html_textarea_element.h"
 #include <algorithm>
+#include <iostream>
 
 namespace lightui {
 
@@ -107,14 +108,31 @@ void RenderInline::PositionChildrenOnly() {
     float current_x = padding_left;
     for (auto& child : children_) {
         auto& child_layout = child->GetLayoutInfo();
+        float child_y = padding_top + (content_height - child_layout.height) / 2.0f;
+        
         child_layout.x = current_x;
-        child_layout.y = padding_top + (content_height - child_layout.height) / 2.0f;
+        child_layout.y = child_y;
         current_x += child_layout.width;
     }
 }
 
 std::pair<float, float> RenderInline::MeasureIntrinsicSize(float available_width) {
     const auto& style = computed_style_;
+
+    // 调试日志
+    static bool debug_inline = std::getenv("DEBUG_INLINE") != nullptr;
+    if (debug_inline) {
+        auto node = GetNode();
+        std::string tag = "?";
+        if (node && node->GetNodeType() == NodeType::ELEMENT_NODE) {
+            auto elem = std::static_pointer_cast<Element>(node);
+            tag = elem->GetTagName();
+        }
+        std::cout << "[RenderInline::MeasureIntrinsicSize] tag=" << tag 
+                  << " available_width=" << available_width
+                  << " children=" << children_.size()
+                  << std::endl;
+    }
 
     float padding_left = style.padding.left.ToPx(available_width, style.font_size);
     float padding_right = style.padding.right.ToPx(available_width, style.font_size);
@@ -161,6 +179,13 @@ std::pair<float, float> RenderInline::MeasureIntrinsicSize(float available_width
     float height = has_explicit_height ? explicit_height :
         (max_height > 0 ? max_height + padding_top + padding_bottom + border_top + border_bottom : 20.0f);
 
+    if (debug_inline) {
+        std::cout << "[RenderInline::MeasureIntrinsicSize] total_width=" << total_width
+                  << " max_height=" << max_height
+                  << " -> width=" << width << " height=" << height
+                  << std::endl;
+    }
+
     return {width, height};
 }
 
@@ -170,8 +195,7 @@ void RenderInline::Paint(SkCanvas* canvas) {
         return;
     }
 
-    // 跳过零高度元素（如 CodeMirror 的测量占位元素）
-    // 这些元素有宽度但高度为0，用于测量文本宽度
+    // 跳过零高度元素
     if (layout_info_.height <= 0) {
         needs_paint_ = false;
         return;

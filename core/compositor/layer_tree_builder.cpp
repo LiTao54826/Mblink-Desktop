@@ -7,7 +7,9 @@
 #include "animation/animation_bounds_calculator.h"
 #include "core/render/objects/render_object.h"
 #include "core/render/animation/keyframes.h"
+#include "core/dom/element.h"
 #include <algorithm>
+#include <iostream>
 
 namespace lightui {
 
@@ -126,11 +128,18 @@ void LayerTreeBuilder::BuildRecursive(RenderObject* obj, CompositorLayer* parent
     CompositorLayer* current_layer = parent_layer;
 
     // 检查是否需要为此节点创建新层
-    LayerPromotionReason reason = ShouldPromote(obj);
-    if (reason != LayerPromotionReason::None) {
-        auto new_layer = CreateLayer(obj, reason);
-        parent_layer->AddChild(new_layer);
-        current_layer = new_layer.get();
+    // 关键修复：如果节点已经有层了（例如根节点），不要再创建新层
+    auto existing_layer = render_object_to_layer_.find(obj);
+    if (existing_layer != render_object_to_layer_.end()) {
+        // 节点已经有层了，使用现有层
+        current_layer = existing_layer->second.get();
+    } else {
+        LayerPromotionReason reason = ShouldPromote(obj);
+        if (reason != LayerPromotionReason::None) {
+            auto new_layer = CreateLayer(obj, reason);
+            parent_layer->AddChild(new_layer);
+            current_layer = new_layer.get();
+        }
     }
 
     // 递归处理子节点
@@ -146,6 +155,21 @@ std::shared_ptr<CompositorLayer> LayerTreeBuilder::CreateLayer(
     layer->SetRenderObject(obj);
     layer->SetPromotionReason(reason);
     layer->SetDpiScale(dpi_scale_);  // 设置 DPI 缩放
+
+    // 调试日志：打印被提升的元素信息
+    if (obj) {
+        auto node = obj->GetNode();
+        std::string tag_name = "unknown";
+        if (node && node->GetNodeType() == NodeType::ELEMENT_NODE) {
+            auto element = std::static_pointer_cast<Element>(node);
+            tag_name = element->GetTagName();
+        }
+        const auto& layout = obj->GetLayoutInfo();
+        std::cout << "[DEBUG CreateLayer] Creating layer for <" << tag_name << ">"
+                  << ", reason=" << static_cast<int>(reason)
+                  << ", layout=(" << layout.x << "," << layout.y << "," << layout.width << "x" << layout.height << ")"
+                  << std::endl;
+    }
 
     // 设置层边界
     UpdateLayerBounds(layer.get(), obj);

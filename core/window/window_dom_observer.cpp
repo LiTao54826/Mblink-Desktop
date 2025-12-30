@@ -172,6 +172,14 @@ void WindowDOMObserver::OnStyleChanged(Element* element,
                                        const std::string& old_value,
                                        const std::string& new_value) {
     if (window_ && !IsInBatch(element)) {
+        // 调试日志
+        if (property == "line-height") {
+            std::cout << "[OnStyleChanged] property=" << property 
+                      << " value=" << new_value 
+                      << " hasRenderObj=" << (element->GetRenderObject() != nullptr)
+                      << std::endl;
+        }
+        
         // 特殊处理: display 属性变化影响元素的 RenderObject 存在性
         // display: none 的元素没有 RenderObject，变为 block/flex 等需要创建
         // 反之亦然，需要删除 RenderObject
@@ -186,48 +194,32 @@ void WindowDOMObserver::OnStyleChanged(Element* element,
             }
         }
         
-        // 特殊处理: animation 属性变化需要重新解析样式
-        if (property == "animation" || property.find("animation-") == 0) {
-            if (auto render_obj = element->GetRenderObject()) {
-                // 重新解析样式以获取新的动画配置
-                StyleResolver resolver;
-                if (window_->GetDocument() && window_->GetDocument()->GetStyleManager()) {
-                    resolver.SetStyleManager(window_->GetDocument()->GetStyleManager());
-                }
-                
-                // 获取父元素样式用于继承
-                const ComputedStyle* parent_style = nullptr;
-                if (auto parent_node = element->GetParentNode()) {
-                    if (parent_node->GetNodeType() == NodeType::ELEMENT_NODE) {
-                        auto parent_elem = std::static_pointer_cast<Element>(parent_node);
-                        if (auto parent_render = parent_elem->GetRenderObject()) {
-                            parent_style = &parent_render->GetComputedStyle();
-                        }
+        // 获取渲染对象
+        auto render_obj = element->GetRenderObject();
+        if (render_obj) {
+            // 重新解析样式以获取新的样式配置
+            StyleResolver resolver;
+            if (window_->GetDocument() && window_->GetDocument()->GetStyleManager()) {
+                resolver.SetStyleManager(window_->GetDocument()->GetStyleManager());
+            }
+            
+            // 获取父元素样式用于继承
+            const ComputedStyle* parent_style = nullptr;
+            if (auto parent_node = element->GetParentNode()) {
+                if (parent_node->GetNodeType() == NodeType::ELEMENT_NODE) {
+                    auto parent_elem = std::static_pointer_cast<Element>(parent_node);
+                    if (auto parent_render = parent_elem->GetRenderObject()) {
+                        parent_style = &parent_render->GetComputedStyle();
                     }
                 }
-                
-                auto new_style = resolver.ResolveStyle(
-                    std::static_pointer_cast<Element>(element->shared_from_this()), 
-                    parent_style);
-                
-                render_obj->SetComputedStyle(new_style);
-                render_obj->MarkNeedsPaint();
-                render_obj->InvalidatePaintCache();
-
-                // 记录脏矩形
-                SkRect bounds = render_obj->GetViewportBoundingRect();
-                if (!bounds.isEmpty()) {
-                    element->SetDirtyRect(bounds);
-                    window_->AddDirtyRect(bounds);
-                }
             }
-            window_->SetNeedsRepaint();
-            return;
-        }
-        
-        // Phase 6: Paint-Only 优化
-        // 样式变化可能影响布局或绘制
-        if (auto render_obj = element->GetRenderObject()) {
+            
+            auto new_style = resolver.ResolveStyle(
+                std::static_pointer_cast<Element>(element->shared_from_this()), 
+                parent_style);
+            
+            render_obj->SetComputedStyle(new_style);
+            
             // 某些样式属性只影响绘制，不影响布局
             static const std::vector<std::string> paint_only_props = {
                 "color", "background-color", "background-image",
@@ -247,16 +239,13 @@ void WindowDOMObserver::OnStyleChanged(Element* element,
             if (is_paint_only) {
                 // Paint-only 属性：只标记需要重绘，不需要布局
                 render_obj->MarkNeedsPaint();
-                // 使用增量更新系统：只标记本地样式变化
-                element->SetNeedsStyleRecalc(StyleChangeType::kLocalStyleChange);
             } else {
                 // 其他属性可能影响布局
                 render_obj->MarkNeedsLayout();
                 render_obj->MarkNeedsPaint();
-                // 使用增量更新系统：标记需要布局
-                element->SetNeedsStyleRecalc(StyleChangeType::kLocalStyleChange);
-                element->SetNeedsLayout();
             }
+            
+            render_obj->InvalidatePaintCache();
 
             // 记录脏矩形
             SkRect bounds = render_obj->GetBoundingRect();
@@ -266,7 +255,6 @@ void WindowDOMObserver::OnStyleChanged(Element* element,
             }
         }
         window_->SetNeedsRepaint();
-        // 样式变化不调用 InvalidateRenderTree()，保持渲染树结构
     }
 }
 

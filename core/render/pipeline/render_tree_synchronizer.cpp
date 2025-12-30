@@ -13,6 +13,7 @@
 #include "core/dom/document.h"
 #include "core/layout/layout_engine.h"
 #include <algorithm>
+#include <iostream>
 
 namespace lightui {
 
@@ -193,6 +194,11 @@ void RenderTreeSynchronizer::ProcessStyleChanges(DirtyNodeTracker& tracker) {
     auto doc = document_.lock();
     if (!doc) return;
     
+    StyleResolver resolver;
+    if (doc->GetStyleManager()) {
+        resolver.SetStyleManager(doc->GetStyleManager());
+    }
+    
     for (const auto& change : tracker.GetStyleChanges()) {
         auto element = change.element.lock();
         if (!element) continue;
@@ -200,8 +206,20 @@ void RenderTreeSynchronizer::ProcessStyleChanges(DirtyNodeTracker& tracker) {
         auto render_obj = element->GetRenderObject();
         if (!render_obj) continue;
         
+        // 获取父元素样式用于继承
+        const ComputedStyle* parent_style = nullptr;
+        if (auto parent_node = element->GetParentNode()) {
+            if (parent_node->GetNodeType() == NodeType::ELEMENT_NODE) {
+                auto parent_elem = std::static_pointer_cast<Element>(parent_node);
+                if (auto parent_render = parent_elem->GetRenderObject()) {
+                    parent_style = &parent_render->GetComputedStyle();
+                }
+            }
+        }
+        
         // 重新解析样式
-        // TODO: 使用 StyleResolver 重新计算样式
+        ComputedStyle new_style = resolver.ResolveStyle(element, parent_style);
+        render_obj->SetComputedStyle(new_style);
         
         // 标记需要重新布局和绘制，并向上传播到祖先
         InvalidateAncestorLayout(render_obj.get());
@@ -270,6 +288,11 @@ std::shared_ptr<RenderObject> RenderTreeSynchronizer::InsertRenderObject(
     Node* node, Node* parent, size_t index) {
     
     if (!node || !parent) return nullptr;
+    
+    // 关键修复：如果节点已经有渲染对象，不要重复创建
+    if (node->GetRenderObject()) {
+        return node->GetRenderObject();
+    }
     
     auto parent_ro = parent->GetRenderObject();
     if (!parent_ro) return nullptr;
@@ -410,6 +433,17 @@ std::shared_ptr<RenderObject> RenderTreeSynchronizer::CreateRenderObjectForNode(
 
 void RenderTreeSynchronizer::CreateRenderSubtree(Node* node, RenderObject* parent_ro) {
     if (!node || !parent_ro) return;
+    
+    // 关键修复：如果节点已经有渲染对象，不要重复创建
+    // 这可能发生在 BuildRenderTree 之后 Synchronize 被调用的情况
+    if (node->GetRenderObject()) {
+        // 节点已经有渲染对象，只需要递归处理子节点
+        auto existing_ro = node->GetRenderObject();
+        for (const auto& child : node->GetChildNodes()) {
+            CreateRenderSubtree(child.get(), existing_ro.get());
+        }
+        return;
+    }
     
     auto render_obj = CreateRenderObjectForNode(node);
     if (!render_obj) return;

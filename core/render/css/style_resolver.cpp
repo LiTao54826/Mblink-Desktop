@@ -1563,9 +1563,10 @@ bool StyleResolver::ParseBackgroundProperty(ComputedStyle& style,
     }
     else if (property == "line-height") {
         // line-height 可以是：
-        // 1. 无单位数字（如 "1.6"）- 表示 font-size 的倍数
-        // 2. 带单位的长度（如 "24px", "1.5em"）- 转换为 font-size 的倍数
-        // 3. 百分比（如 "150%"）- 表示 font-size 的百分比
+        // 1. "normal" - 使用浏览器默认值（约 1.2 倍）
+        // 2. 无单位数字（如 "1.6"）- 表示 font-size 的倍数
+        // 3. 带单位的长度（如 "24px", "1.5em"）- 转换为 font-size 的倍数
+        // 4. 百分比（如 "150%"）- 表示 font-size 的百分比
         std::string trimmed = resolved_value;
         // 去除首尾空格
         size_t start = trimmed.find_first_not_of(" \t");
@@ -1574,32 +1575,63 @@ bool StyleResolver::ParseBackgroundProperty(ComputedStyle& style,
             trimmed = trimmed.substr(start, end - start + 1);
         }
 
-        // 检查是否为纯数字（无单位）
-        bool is_pure_number = true;
-        bool has_digit = false;
-        for (char c : trimmed) {
-            if (std::isdigit(c) || c == '.' || c == '-') {
-                if (std::isdigit(c)) has_digit = true;
-            } else {
-                is_pure_number = false;
-                break;
-            }
+        // 调试日志
+        static bool debug_line_height = std::getenv("DEBUG_LINE_HEIGHT") != nullptr;
+        if (debug_line_height) {
+            std::cout << "[line-height] resolved_value=\"" << resolved_value 
+                      << "\" trimmed=\"" << trimmed << "\"" << std::endl;
         }
 
-        if (is_pure_number && has_digit) {
-            // 无单位数字，直接作为倍数
-            try {
-                style.line_height = std::stof(trimmed);
-            } catch (...) {
-                style.line_height = 1.2f; // 默认值
+        // 处理 "normal" 关键字 - 使用默认值 1.2（会在渲染时使用 GetBrowserNormalLineHeight）
+        if (trimmed == "normal") {
+            style.line_height = 1.2f;
+            if (debug_line_height) {
+                std::cout << "[line-height] -> normal, set to 1.2" << std::endl;
             }
         } else {
-            // 带单位的值，解析并转换为倍数
-            auto length = CSSValue::ParseLength(resolved_value);
-            if (length.unit == CSSUnit::PERCENT) {
-                style.line_height = length.value / 100.0f;
+            // 检查是否为纯数字（无单位）
+            bool is_pure_number = true;
+            bool has_digit = false;
+            for (char c : trimmed) {
+                if (std::isdigit(c) || c == '.' || c == '-') {
+                    if (std::isdigit(c)) has_digit = true;
+                } else {
+                    is_pure_number = false;
+                    break;
+                }
+            }
+
+            if (is_pure_number && has_digit) {
+                // 无单位数字，直接作为倍数
+                try {
+                    style.line_height = std::stof(trimmed);
+                    if (debug_line_height) {
+                        std::cout << "[line-height] -> pure number, set to " << style.line_height << std::endl;
+                    }
+                } catch (...) {
+                    style.line_height = 1.2f; // 默认值
+                }
             } else {
-                style.line_height = length.ToPx(style.font_size, style.font_size) / style.font_size;
+                // 带单位的值，解析并转换为倍数
+                auto length = CSSValue::ParseLength(resolved_value);
+                if (debug_line_height) {
+                    std::cout << "[line-height] -> ParseLength: value=" << length.value 
+                              << " unit=" << static_cast<int>(length.unit) << std::endl;
+                }
+                if (length.unit == CSSUnit::PERCENT) {
+                    style.line_height = length.value / 100.0f;
+                } else {
+                    float px_value = length.ToPx(style.font_size, style.font_size);
+                    // 防止除以零或无效值
+                    if (style.font_size > 0 && px_value > 0) {
+                        style.line_height = px_value / style.font_size;
+                    } else {
+                        style.line_height = 1.2f; // 默认值
+                    }
+                }
+                if (debug_line_height) {
+                    std::cout << "[line-height] -> final value: " << style.line_height << std::endl;
+                }
             }
         }
     }

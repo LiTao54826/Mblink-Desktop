@@ -837,6 +837,9 @@ void Window::SetDocument(std::shared_ptr<Document> document) {
 
     // 创建并注册 DOM 观察者
     if (document_) {
+        // 关键：设置 Document 对 Window 的引用，用于 Element::Focus() 等方法
+        document_->SetWindow(this);
+        
         dom_observer_ = std::make_unique<WindowDOMObserver>(this);
         document_->AddObserver(dom_observer_.get());
         
