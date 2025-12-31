@@ -1865,8 +1865,9 @@ static bool IsInlineLevelElement(RenderObject* render_obj) {
         return true;
     }
     
-    // ✅ FIX: Use GetType() not GetComputedStyle().display
+    // ✅ FIX: Use GetType() for actual render object type
     // Inline-block elements have GetType() == INLINE_BLOCK
+    // Inline elements have GetType() == INLINE
     return type == RenderObjectType::INLINE ||
            type == RenderObjectType::INLINE_BLOCK;
 }
@@ -1877,10 +1878,14 @@ static bool IsBlockLevelElement(RenderObject* render_obj) {
     RenderObjectType type = render_obj->GetType();
     if (type == RenderObjectType::TEXT) return false;
     
-    // ✅ FIX: Use GetType() not GetComputedStyle().display
+    // ✅ FIX: Check computed style display for FLEX/GRID containers
+    // because they use RenderBlock but should be treated as block-level
+    const auto& style = render_obj->GetComputedStyle();
+    RenderObjectType display = style.display;
+    
     return type == RenderObjectType::BLOCK ||
-           type == RenderObjectType::FLEX ||
-           type == RenderObjectType::GRID ||
+           display == RenderObjectType::FLEX ||
+           display == RenderObjectType::GRID ||
            type == RenderObjectType::TABLE;
 }
 
@@ -2055,6 +2060,19 @@ void NativeLayoutEngine::BuildSubtree(RenderObject* render_obj, NodeId parent_id
             if (child && !HasElement(child.get())) {
                 render_to_node_[child.get()] = node_id;
             }
+        }
+        return;
+    }
+
+    // ✅ FIX: For FLEX/GRID containers, process all children directly
+    // FLEX/GRID containers don't use anonymous block boxes - they handle
+    // all children (both block and inline) as flex/grid items
+    const auto& computed = render_obj->GetComputedStyle();
+    if (computed.display == RenderObjectType::FLEX ||
+        computed.display == RenderObjectType::GRID) {
+        const auto& children = render_obj->GetChildren();
+        for (auto& child : children) {
+            BuildSubtree(child.get(), node_id);
         }
         return;
     }
@@ -3335,6 +3353,10 @@ LayoutOutput NativeLayoutEngine::MeasureLeafNode(NodeId node_id, const LayoutInp
             available_width = inputs.available_space.width.value;
         } else if (inputs.available_space.width.type == AvailableSpace::Type::MaxContent) {
             available_width = 10000.0f;
+        } else if (inputs.available_space.width.type == AvailableSpace::Type::MinContent) {
+            // For MinContent, use a large value to measure intrinsic size,
+            // then the caller will use the minimum width
+            available_width = 10000.0f;
         }
 
         auto* inline_obj = static_cast<RenderInline*>(render_obj);
@@ -3344,7 +3366,7 @@ LayoutOutput NativeLayoutEngine::MeasureLeafNode(NodeId node_id, const LayoutInp
         LayoutInfo& layout = inline_obj->GetLayoutInfo();
         layout.width = width;
         layout.height = height;
-       layout.is_laid_out = true;
+        layout.is_laid_out = true;
 
         LayoutOutput output;
         output.size = Size<float>{width, height};
