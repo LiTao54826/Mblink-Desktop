@@ -102,7 +102,86 @@ void DOMTreeView::SelectNode(std::shared_ptr<Node> node) {
 }
 
 void DOMTreeView::ScrollToNode(std::shared_ptr<Node> node) {
-    // TODO: 实现滚动到节点
+    if (!node || !root_node_) return;
+
+    // 1. 确保所有祖先节点都已展开
+    std::vector<std::shared_ptr<Node>> ancestors;
+    auto parent = node->GetParentNode();
+    while (parent) {
+        ancestors.push_back(parent);
+        parent = parent->GetParentNode();
+    }
+    // 从根到叶展开
+    for (auto it = ancestors.rbegin(); it != ancestors.rend(); ++it) {
+        node_states_[it->get()].expanded = true;
+    }
+
+    // 2. 重新计算内容高度（因为可能展开了新节点）
+    content_height_ = CalculateContentHeight(root_node_, 0);
+
+    // 3. 计算目标节点的 Y 位置
+    float target_y = 0;
+    bool found = false;
+
+    std::function<void(std::shared_ptr<Node>, float&)> find_node_y;
+    find_node_y = [this, &node, &found, &find_node_y](std::shared_ptr<Node> current, float& y) {
+        if (!current || found) return;
+
+        // 跳过纯空白的文本节点（与 RenderNode 逻辑一致）
+        if (current->GetNodeType() == NodeType::TEXT_NODE) {
+            auto text = std::dynamic_pointer_cast<Text>(current);
+            if (text) {
+                std::string content = text->GetData();
+                bool is_whitespace_only = true;
+                for (char c : content) {
+                    if (c != ' ' && c != '\t' && c != '\n' && c != '\r') {
+                        is_whitespace_only = false;
+                        break;
+                    }
+                }
+                if (is_whitespace_only) {
+                    return;
+                }
+            }
+        }
+
+        if (current == node) {
+            found = true;
+            return;
+        }
+
+        y += ROW_HEIGHT;
+
+        if (IsExpanded(current)) {
+            for (const auto& child : current->GetChildNodes()) {
+                find_node_y(child, y);
+                if (found) return;
+            }
+        }
+    };
+
+    find_node_y(root_node_, target_y);
+
+    if (!found) return;
+
+    // 4. 调整滚动偏移使节点可见
+    // 如果 view_height_ 还没有设置（首次渲染前），使用默认值
+    float effective_view_height = view_height_ > 0 ? view_height_ : 300.0f;
+    
+    // 如果节点在可见区域上方，滚动到节点位置
+    // 如果节点在可见区域下方，滚动使节点出现在底部
+    float visible_top = scroll_offset_;
+    float visible_bottom = scroll_offset_ + effective_view_height;
+
+    if (target_y < visible_top) {
+        // 节点在可见区域上方，滚动到节点位置（留一点边距）
+        scroll_offset_ = std::max(0.0f, target_y - ROW_HEIGHT);
+    } else if (target_y + ROW_HEIGHT > visible_bottom) {
+        // 节点在可见区域下方，滚动使节点出现在底部
+        float max_scroll = std::max(0.0f, content_height_ - effective_view_height);
+        scroll_offset_ = std::min(max_scroll, target_y - effective_view_height + ROW_HEIGHT * 2);
+    }
+    // 如果节点已在可见区域内，不需要滚动
 }
 
 void DOMTreeView::SetSearchResults(const std::vector<std::shared_ptr<Node>>& results) {
