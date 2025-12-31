@@ -68,11 +68,8 @@ BoxModelData BoxModelView::GetBoxModelData() const {
     
     auto render_obj = find_render_object(root_render);
     if (!render_obj) {
-        std::cout << "[BoxModelView] RenderObject not found for element: <" << element->GetTagName() << ">" << std::endl;
         return data;
     }
-    
-    std::cout << "[BoxModelView] Found RenderObject for element: <" << element->GetTagName() << ">" << std::endl;
     
     // 从 RenderObject 获取布局信息和计算样式
     const auto& layout = render_obj->GetLayoutInfo();
@@ -123,18 +120,6 @@ BoxModelData BoxModelView::GetBoxModelData() const {
     // 确保内容尺寸不为负
     if (data.content_width < 0) data.content_width = 0;
     if (data.content_height < 0) data.content_height = 0;
-
-    // 调试输出
-    std::cout << "[BoxModelView] Element found, layout: " << layout.width << "x" << layout.height << std::endl;
-    std::cout << "[BoxModelView] Margin CSSEdges: top=" << style.margin.top.value 
-              << " right=" << style.margin.right.value << " bottom=" << style.margin.bottom.value 
-              << " left=" << style.margin.left.value << std::endl;
-    std::cout << "[BoxModelView] Margin: " << data.margin_top << " " << data.margin_right << " " 
-              << data.margin_bottom << " " << data.margin_left << std::endl;
-    std::cout << "[BoxModelView] Padding: " << data.padding_top << " " << data.padding_right << " " 
-              << data.padding_bottom << " " << data.padding_left << std::endl;
-    std::cout << "[BoxModelView] Border: " << data.border_top << " " << data.border_right << " " 
-              << data.border_bottom << " " << data.border_left << std::endl;
 
     return data;
 }
