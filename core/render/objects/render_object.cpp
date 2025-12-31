@@ -861,6 +861,52 @@ float RenderObject::GetMaxScrollY() const {
     return max_scroll;
 }
 
+float RenderObject::GetScrollWidth() const {
+    // **Feature: unified-scrollbar-system**
+    // **Validates: Requirements 4.1**
+    // 返回内容总宽度，包括溢出部分
+    
+    // 使用缓存的内容尺寸（在 Paint 中已计算并缓存）
+    // 如果缓存无效（首次调用或布局后），则动态计算
+    float content_width = content_width_ > 0 ? content_width_ : CalculateContentWidth();
+    
+    // scrollWidth 至少等于元素的可见宽度
+    float visible_width = GetEffectiveVisibleWidth();
+    
+    // 计算 border 宽度
+    const auto& style = computed_style_;
+    float border_left = style.border_left_width > 0 ? style.border_left_width : style.border.width.ToPx();
+    float border_right = style.border_right_width > 0 ? style.border_right_width : style.border.width.ToPx();
+    
+    // 可见内容区域宽度（不包括 border）
+    float client_width = visible_width - border_left - border_right;
+    
+    return std::max(content_width, client_width);
+}
+
+float RenderObject::GetScrollHeight() const {
+    // **Feature: unified-scrollbar-system**
+    // **Validates: Requirements 4.2**
+    // 返回内容总高度，包括溢出部分
+    
+    // 使用缓存的内容尺寸（在 Paint 中已计算并缓存）
+    // 如果缓存无效（首次调用或布局后），则动态计算
+    float content_height = content_height_ > 0 ? content_height_ : CalculateContentHeight();
+    
+    // scrollHeight 至少等于元素的可见高度
+    float visible_height = GetEffectiveVisibleHeight();
+    
+    // 计算 border 宽度
+    const auto& style = computed_style_;
+    float border_top = style.border_top_width > 0 ? style.border_top_width : style.border.width.ToPx();
+    float border_bottom = style.border_bottom_width > 0 ? style.border_bottom_width : style.border.width.ToPx();
+    
+    // 可见内容区域高度（不包括 border）
+    float client_height = visible_height - border_top - border_bottom;
+    
+    return std::max(content_height, client_height);
+}
+
 RenderObject::ScrollbarHitArea RenderObject::HitTestScrollbar(float local_x, float local_y) const {
     const auto& style = computed_style_;
 

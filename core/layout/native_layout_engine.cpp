@@ -440,11 +440,6 @@ void NativeLayoutEngine::ComputeLayout(float available_width, float available_he
         pair.second.cache.Clear();
         pair.second.needs_layout = false;  // Clear dirty flag after full layout
     }
-    
-    // Reset cached scrollbar state for full layout
-    // This forces re-detection of scrollbar need
-    last_needs_v_scrollbar_ = false;
-    last_effective_width_ = 0.0f;
 
     // Delegate to internal method for actual layout computation
     ComputeLayoutInternal(available_width, available_height);
@@ -455,92 +450,30 @@ void NativeLayoutEngine::ComputeLayoutInternal(float available_width, float avai
     // This allows incremental layout to selectively clear only dirty node caches
     // **Feature: incremental-layout-optimization**
     // **Validates: Requirements 2.2**
+    // 
+    // 统一滚动条处理：
+    // 所有元素（包括 root/body）的滚动条检测都在 ComputeNodeLayout 中统一处理
+    // 这里只处理 root margin 和位置
+    // **Feature: unified-scrollbar-system**
+    // **Validates: Requirements 1.4, 3.1, 3.2**
     
     if (root_node_ == 0) {
         return;
     }
 
-    // Check if root node has overflow: auto or scroll and might need scrollbar
-    LayoutNode* root = GetNode(root_node_);
-    float effective_width = available_width;
-    bool needs_v_scrollbar = false;
-
-    if (root && root->render_obj) {
-        const auto& style = root->render_obj->GetComputedStyle();
-        std::string overflow_y = !style.overflow_y.empty() ? style.overflow_y : style.overflow;
-
-        // For overflow: auto or scroll on root, we need to account for potential vertical scrollbar
-        if (overflow_y == "auto" || overflow_y == "scroll") {
-            // 修复：每次都重新检查是否需要滚动条
-            // 为了获得准确的高度，先清除根节点的缓存
-            root->cache.Clear();
-            
-            // First pass: compute layout with full width, accounting for root margin
-            Rect<float> first_pass_margin = ResolveOrZero(root->style.margin, std::optional<float>(available_width));
-            float first_pass_width = available_width - first_pass_margin.left - first_pass_margin.right;
-            
-            LayoutInput inputs;
-            inputs.run_mode = RunMode::PerformLayout;
-            inputs.sizing_mode = SizingMode::InherentSize;
-            inputs.known_dimensions = Size<std::optional<float>>{
-                std::optional<float>(first_pass_width),
-                std::nullopt
-            };
-            inputs.parent_size = Size<std::optional<float>>{
-                std::optional<float>(available_width),
-                std::optional<float>(available_height)
-            };
-            inputs.available_space = Size<AvailableSpace>{
-                AvailableSpace::Definite(first_pass_width),
-                AvailableSpace::Definite(available_height)
-            };
-            // Enable vertical margin collapsing
-            inputs.vertical_margins_are_collapsible = Line<bool>{true, true};
-
-            LayoutOutput first_pass = ComputeNodeLayout(root_node_, inputs);
-
-            // Check if content height exceeds available height (needs vertical scrollbar)
-            // or if overflow-y is scroll (always show scrollbar)
-            float total_height = first_pass.size.height + first_pass_margin.top + first_pass_margin.bottom;
-            needs_v_scrollbar = (total_height > available_height) || (overflow_y == "scroll");
-
-            // 检查滚动条状态是否改变
-            bool scrollbar_state_changed = (needs_v_scrollbar != last_needs_v_scrollbar_);
-            
-            if (needs_v_scrollbar) {
-                // Reduce available width by scrollbar width
-                effective_width = available_width - RenderObject::GetScrollbarWidth();
-            }
-            
-            if (scrollbar_state_changed) {
-                // 滚动条状态改变，需要清除所有宽度相关的缓存并重新布局
-                ClearWidthDependentCaches(root_node_);
-            }
-            
-            // Cache the scrollbar state for future reference
-            last_needs_v_scrollbar_ = needs_v_scrollbar;
-            last_effective_width_ = effective_width;
-        }
-    }
-
     // For root element (body), we need to handle margin specially:
     // - Root element's margin offsets it from the viewport edge
-    // - Root element's width = effective_width - margin_left - margin_right
-    // - Scrollbar is in viewport, outside of body's margin
+    // - Root element's width = available_width - margin_left - margin_right
+    // - Scrollbar handling is unified in ComputeNodeLayout
     LayoutNode* root_node = GetNode(root_node_);
     Rect<float> root_margin = {0.0f, 0.0f, 0.0f, 0.0f};
-    float root_width = effective_width;
+    float root_width = available_width;
     
     if (root_node) {
         // Resolve root element's margin based on available_width (viewport width)
         root_margin = ResolveOrZero(root_node->style.margin, std::optional<float>(available_width));
         // Root element's width should be reduced by its horizontal margins
-        root_width = effective_width - root_margin.left - root_margin.right;
-        
-        // IMPORTANT: For root element, scrollbar space is handled at viewport level
-        // (by reducing effective_width), NOT in block layout's scrollbar_gutter.
-        // So we must ensure root's scrollbar_width is 0 to avoid double-counting.
-        root_node->style.scrollbar_width = 0.0f;
+        root_width = available_width - root_margin.left - root_margin.right;
     }
 
     LayoutInput inputs;
@@ -626,15 +559,6 @@ bool NativeLayoutEngine::ComputeIncrementalLayout(float available_width, float a
     
     if (debug_select) {
         std::cout << "[IncrementalLayout] Total dirty nodes: " << dirty_nodes.size() << std::endl;
-    }
-
-    // 关键修复：当根节点需要重新布局时，重置滚动条状态缓存
-    // 这确保在页面切换等大规模 DOM 变化时，滚动条状态会被重新检测
-    // 避免使用旧的滚动条状态导致布局错误
-    LayoutNode* root = GetNode(root_node_);
-    if (root && root->needs_layout) {
-        last_needs_v_scrollbar_ = false;
-        last_effective_width_ = 0.0f;
     }
 
     // 关键优化：只清除脏节点的缓存，而不是所有节点
@@ -2306,8 +2230,10 @@ LayoutOutput NativeLayoutEngine::ComputeNodeLayout(NodeId node_id, const LayoutI
             
             // Handle overflow: auto for block layout - if content exceeds container, add scrollbar and relayout
             // Skip for anonymous blocks (no render_obj)
-            // Skip for root node - its scrollbar is handled at viewport level in ComputeLayoutInternal
-            if (node->render_obj && node_id != root_node_) {
+            // 统一滚动条处理：包括 root 节点
+            // **Feature: unified-scrollbar-system**
+            // **Validates: Requirements 1.1, 1.4, 3.1**
+            if (node->render_obj) {
             const auto& computed = node->render_obj->GetComputedStyle();
             std::string overflow_y = !computed.overflow_y.empty() ? computed.overflow_y : computed.overflow;
             std::string overflow_x = !computed.overflow_x.empty() ? computed.overflow_x : computed.overflow;
@@ -2326,7 +2252,12 @@ LayoutOutput NativeLayoutEngine::ComputeNodeLayout(NodeId node_id, const LayoutI
                 }
                 
                 // For overflow-y: auto, check if content height exceeds container height
-                float container_height = inputs.known_dimensions.height.value_or(output.size.height);
+                // 对于 root 节点，使用 available_space.height 作为容器高度
+                // **Feature: unified-scrollbar-system**
+                // **Validates: Requirements 1.1, 1.4**
+                float fallback_height = inputs.available_space.height.IsDefinite() ? 
+                    inputs.available_space.height.value : output.size.height;
+                float container_height = inputs.known_dimensions.height.value_or(fallback_height);
                 if (overflow_y == "auto" && container_height > 0) {
                     float actual_content_height = output.content_size.height;
                     if (actual_content_height > container_height) {
@@ -2340,7 +2271,12 @@ LayoutOutput NativeLayoutEngine::ComputeNodeLayout(NodeId node_id, const LayoutI
                 float container_width = inputs.known_dimensions.width.value_or(output.size.width);
                 if (overflow_x == "auto" && container_width > 0) {
                     float actual_content_width = output.content_size.width;
-                    if (actual_content_width > container_width) {
+                    // 考虑垂直滚动条占用的宽度
+                    float effective_container_width = container_width;
+                    if (node->style.scrollbar_width > 0) {
+                        effective_container_width -= node->style.scrollbar_width;
+                    }
+                    if (actual_content_width > effective_container_width) {
                         // Need horizontal scrollbar - update style and relayout
                         node->style.scrollbar_width = scrollbar_width;
                         needs_relayout = true;
@@ -2351,6 +2287,12 @@ LayoutOutput NativeLayoutEngine::ComputeNodeLayout(NodeId node_id, const LayoutI
                 if (needs_relayout && node->style.scrollbar_width != old_scrollbar_width) {
                     // Clear cache and relayout with scrollbar space
                     node->cache.Clear();
+                    
+                    // 滚动条空间由 ComputeBlockLayoutInner 中的 scrollbar_gutter 处理
+                    // 不需要在这里修改 known_dimensions，否则会导致双重减少
+                    // **Feature: unified-scrollbar-system**
+                    // **Validates: Requirements 1.5, 2.2**
+                    
                     if (node->is_ifc_container) {
                         output = ComputeIFCLayout(node_id, inputs);
                     } else {

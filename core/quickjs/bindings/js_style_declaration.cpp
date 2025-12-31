@@ -241,9 +241,20 @@ static int JSStyleDeclaration_set_property(JSContext* ctx, JSValueConst obj,
     std::string prop_str(prop_name);
     JS_FreeCString(ctx, prop_name);
 
-    // 跳过内置属性
-    if (prop_str == "cssText" || prop_str == "length") {
+    // 跳过 length 属性（只读）
+    if (prop_str == "length") {
         return 0;  // 让默认处理器处理
+    }
+    
+    // 特殊处理 cssText 属性
+    if (prop_str == "cssText") {
+        const char* value_str = JS_ToCString(ctx, value);
+        if (!value_str) {
+            return -1;
+        }
+        data->style->SetCssText(value_str);
+        JS_FreeCString(ctx, value_str);
+        return 1;
     }
 
     // 将 camelCase 转换为 kebab-case

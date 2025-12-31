@@ -1054,6 +1054,8 @@ static JSValue JSElement_get_scrollTop(JSContext* ctx, JSValueConst this_val, in
 }
 
 // scrollTop setter - 设置垂直滚动位置
+// **Feature: unified-scrollbar-system**
+// **Validates: Requirements 4.5**
 static JSValue JSElement_set_scrollTop(JSContext* ctx, JSValueConst this_val, JSValue val, int magic) {
     auto* data = static_cast<JSElementData*>(JS_GetOpaque(this_val, js_element_class_id));
     if (!data || !data->element) return JS_UNDEFINED;
@@ -1064,8 +1066,10 @@ static JSValue JSElement_set_scrollTop(JSContext* ctx, JSValueConst this_val, JS
     double scroll_top;
     if (JS_ToFloat64(ctx, &scroll_top, val) != 0) return JS_EXCEPTION;
     
-    // 确保滚动位置不为负
+    // Clamp 滚动位置到有效范围 [0, maxScrollY]
     if (scroll_top < 0) scroll_top = 0;
+    float max_scroll_y = render_obj->GetMaxScrollY();
+    if (scroll_top > max_scroll_y) scroll_top = max_scroll_y;
     
     render_obj->SetScrollY(static_cast<float>(scroll_top));
     
@@ -1154,6 +1158,8 @@ static JSValue JSElement_get_scrollLeft(JSContext* ctx, JSValueConst this_val, i
 }
 
 // scrollLeft setter - 设置水平滚动位置
+// **Feature: unified-scrollbar-system**
+// **Validates: Requirements 4.6**
 static JSValue JSElement_set_scrollLeft(JSContext* ctx, JSValueConst this_val, JSValue val, int magic) {
     auto* data = static_cast<JSElementData*>(JS_GetOpaque(this_val, js_element_class_id));
     if (!data || !data->element) return JS_UNDEFINED;
@@ -1164,12 +1170,40 @@ static JSValue JSElement_set_scrollLeft(JSContext* ctx, JSValueConst this_val, J
     double scroll_left;
     if (JS_ToFloat64(ctx, &scroll_left, val) != 0) return JS_EXCEPTION;
     
-    // 确保滚动位置不为负
+    // Clamp 滚动位置到有效范围 [0, maxScrollX]
     if (scroll_left < 0) scroll_left = 0;
+    float max_scroll_x = render_obj->GetMaxScrollX();
+    if (scroll_left > max_scroll_x) scroll_left = max_scroll_x;
     
     render_obj->SetScrollX(static_cast<float>(scroll_left));
     
     return JS_UNDEFINED;
+}
+
+// scrollWidth getter - 获取内容总宽度
+// **Feature: unified-scrollbar-system**
+// **Validates: Requirements 4.1**
+static JSValue JSElement_get_scrollWidth(JSContext* ctx, JSValueConst this_val, int magic) {
+    auto* data = static_cast<JSElementData*>(JS_GetOpaque(this_val, js_element_class_id));
+    if (!data || !data->element) return JS_NewFloat64(ctx, 0);
+    
+    auto render_obj = data->element->GetRenderObject();
+    if (!render_obj) return JS_NewFloat64(ctx, 0);
+    
+    return JS_NewFloat64(ctx, render_obj->GetScrollWidth());
+}
+
+// scrollHeight getter - 获取内容总高度
+// **Feature: unified-scrollbar-system**
+// **Validates: Requirements 4.2**
+static JSValue JSElement_get_scrollHeight(JSContext* ctx, JSValueConst this_val, int magic) {
+    auto* data = static_cast<JSElementData*>(JS_GetOpaque(this_val, js_element_class_id));
+    if (!data || !data->element) return JS_NewFloat64(ctx, 0);
+    
+    auto render_obj = data->element->GetRenderObject();
+    if (!render_obj) return JS_NewFloat64(ctx, 0);
+    
+    return JS_NewFloat64(ctx, render_obj->GetScrollHeight());
 }
 
 // getBoundingClientRect - 获取元素的边界矩形
@@ -1435,6 +1469,8 @@ static const JSCFunctionListEntry js_element_proto_funcs[] = {
     // 滚动属性
     JS_CGETSET_MAGIC_DEF("scrollTop", JSElement_get_scrollTop, JSElement_set_scrollTop, 0),
     JS_CGETSET_MAGIC_DEF("scrollLeft", JSElement_get_scrollLeft, JSElement_set_scrollLeft, 0),
+    JS_CGETSET_MAGIC_DEF("scrollWidth", JSElement_get_scrollWidth, nullptr, 0),
+    JS_CGETSET_MAGIC_DEF("scrollHeight", JSElement_get_scrollHeight, nullptr, 0),
     // contentEditable 属性
     JS_CGETSET_MAGIC_DEF("isContentEditable", JSElement_get_isContentEditable, nullptr, 0),
     JS_CGETSET_MAGIC_DEF("contentEditable", JSElement_get_contentEditable, JSElement_set_contentEditable, 0),

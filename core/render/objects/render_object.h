@@ -851,6 +851,20 @@ public:
     float GetMaxScrollY() const;
 
     /**
+     * @brief 获取内容总宽度（scrollWidth）
+     * **Feature: unified-scrollbar-system**
+     * **Validates: Requirements 4.1**
+     */
+    float GetScrollWidth() const;
+
+    /**
+     * @brief 获取内容总高度（scrollHeight）
+     * **Feature: unified-scrollbar-system**
+     * **Validates: Requirements 4.2**
+     */
+    float GetScrollHeight() const;
+
+    /**
      * @brief 滚动条区域类型（使用 ScrollbarController 中定义的枚举）
      * @note 为了向后兼容，保留此类型别名
      */
