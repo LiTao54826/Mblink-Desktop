@@ -1295,23 +1295,31 @@ Element::DOMRect Element::GetBoundingClientRect() const {
     auto render_object = GetRenderObject();
     if (render_object) {
         const auto& layout = render_object->GetLayoutInfo();
+        const auto& style = render_object->GetComputedStyle();
+        
+        // 检查是否是 position: fixed 元素
+        bool is_fixed = (style.position == "fixed");
         
         // 获取绝对位置（相对于视口）
         float abs_x = layout.x;
         float abs_y = layout.y;
         
-        // 累加所有祖先的位置，同时考虑滚动偏移
-        auto parent = render_object->GetParent();
-        while (parent) {
-            const auto& parent_layout = parent->GetLayoutInfo();
-            abs_x += parent_layout.x;
-            abs_y += parent_layout.y;
-            
-            // 减去父元素的滚动偏移（视口坐标需要考虑滚动）
-            abs_x -= parent->GetScrollX();
-            abs_y -= parent->GetScrollY();
-            
-            parent = parent->GetParent();
+        // 对于 position: fixed 元素，layout.x/y 已经是视口绝对坐标
+        // 不需要累加祖先位置
+        if (!is_fixed) {
+            // 累加所有祖先的位置，同时考虑滚动偏移
+            auto parent = render_object->GetParent();
+            while (parent) {
+                const auto& parent_layout = parent->GetLayoutInfo();
+                abs_x += parent_layout.x;
+                abs_y += parent_layout.y;
+                
+                // 减去父元素的滚动偏移（视口坐标需要考虑滚动）
+                abs_x -= parent->GetScrollX();
+                abs_y -= parent->GetScrollY();
+                
+                parent = parent->GetParent();
+            }
         }
 
         rect.x = abs_x;

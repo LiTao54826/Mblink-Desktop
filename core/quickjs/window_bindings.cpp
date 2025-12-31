@@ -60,18 +60,20 @@ void WindowBindings::InitBindings() {
 }
 
 void WindowBindings::BindWindowObject() {
-    // 绑定 window.innerWidth
+    // 绑定 window.innerWidth - 返回 DPI 缩放后的逻辑宽度
     runtime_->RegisterFunction("__getInnerWidth", [this](const json& args) -> json {
         int width, height;
         window_->GetSize(&width, &height);
-        return width;
+        float dpi_scale = window_->GetDisplayScale();
+        return static_cast<int>(static_cast<float>(width) / dpi_scale);
     });
 
-    // 绑定 window.innerHeight
+    // 绑定 window.innerHeight - 返回 DPI 缩放后的逻辑高度
     runtime_->RegisterFunction("__getInnerHeight", [this](const json& args) -> json {
         int width, height;
         window_->GetSize(&width, &height);
-        return height;
+        float dpi_scale = window_->GetDisplayScale();
+        return static_cast<int>(static_cast<float>(height) / dpi_scale);
     });
 
     // 绑定 window.devicePixelRatio

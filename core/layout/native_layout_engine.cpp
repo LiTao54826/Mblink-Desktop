@@ -2866,11 +2866,178 @@ LayoutOutput NativeLayoutEngine::ComputeIFCLayout(NodeId node_id, const LayoutIn
         total_width = std::max(total_width, min_width);
     }
 
+    // Layout absolutely positioned children (position: absolute/fixed)
+    // IFC containers can have absolutely positioned children that need to be laid out
+    // relative to the container (for absolute) or viewport (for fixed)
+    // Note: We handle this differently from block layout to avoid infinite recursion.
+    // For IFC containers, we directly set the layout for absolute/fixed children
+    // without calling MeasureChildSize/PerformChildLayout which would trigger
+    // the parent's IFC layout again.
+    if (inputs.run_mode == RunMode::PerformLayout) {
+        LayoutAbsoluteChildrenInIFC(node_id, total_width, total_height,
+                                     padding_left + border_left,
+                                     padding_right + border_right,
+                                     padding_top + border_top,
+                                     padding_bottom + border_bottom);
+    }
+
     LayoutOutput output;
     output.size = Size<float>{total_width, total_height};
     output.content_size = Size<float>{result.max_width, result.total_height};
 
     return output;
+}
+
+void NativeLayoutEngine::LayoutAbsoluteChildrenInIFC(
+    NodeId node_id,
+    float container_width,
+    float container_height,
+    float padding_border_left,
+    float padding_border_right,
+    float padding_border_top,
+    float padding_border_bottom
+) {
+    LayoutNode* node = GetNode(node_id);
+    if (!node || !node->render_obj) {
+        return;
+    }
+    
+    // Calculate content box area for absolute positioning
+    float content_box_left = padding_border_left;
+    float content_box_right = padding_border_right;
+    float content_box_top = padding_border_top;
+    float content_box_bottom = padding_border_bottom;
+    
+    float area_width = container_width - content_box_left - content_box_right;
+    float area_height = container_height - content_box_top - content_box_bottom;
+    
+    // IFC containers don't have children in the layout tree (node->children)
+    // Instead, we need to iterate through the render object's children
+    const auto& render_children = node->render_obj->GetChildren();
+    
+    for (const auto& child_render_obj : render_children) {
+        if (!child_render_obj) continue;
+        
+        // Get the child's computed style to check position
+        const auto& child_computed = child_render_obj->GetComputedStyle();
+        
+        // Skip non-absolute/fixed children
+        if (child_computed.position != "absolute" && child_computed.position != "fixed") {
+            continue;
+        }
+        
+        // For position: fixed, use viewport size instead of parent container size
+        bool is_fixed = (child_computed.position == "fixed");
+        Size<float> containing_block_size = is_fixed 
+            ? Size<float>{ViewportSize::GetWidth(), ViewportSize::GetHeight()}
+            : Size<float>{area_width, area_height};
+        Point<float> containing_block_offset = is_fixed 
+            ? Point<float>{0.0f, 0.0f}
+            : Point<float>{content_box_left, content_box_top};
+        
+        // Parse inset values directly from computed style
+        float left_val = 0.0f, right_val = 0.0f, top_val = 0.0f, bottom_val = 0.0f;
+        bool has_left = false, has_right = false, has_top = false, has_bottom = false;
+        
+        if (child_computed.left.unit == CSSUnit::PX) {
+            left_val = child_computed.left.value;
+            has_left = true;
+        } else if (child_computed.left.unit == CSSUnit::PERCENT) {
+            left_val = (child_computed.left.value / 100.0f) * containing_block_size.width;
+            has_left = true;
+        }
+        
+        if (child_computed.right.unit == CSSUnit::PX) {
+            right_val = child_computed.right.value;
+            has_right = true;
+        } else if (child_computed.right.unit == CSSUnit::PERCENT) {
+            right_val = (child_computed.right.value / 100.0f) * containing_block_size.width;
+            has_right = true;
+        }
+        
+        if (child_computed.top.unit == CSSUnit::PX) {
+            top_val = child_computed.top.value;
+            has_top = true;
+        } else if (child_computed.top.unit == CSSUnit::PERCENT) {
+            top_val = (child_computed.top.value / 100.0f) * containing_block_size.height;
+            has_top = true;
+        }
+        
+        if (child_computed.bottom.unit == CSSUnit::PX) {
+            bottom_val = child_computed.bottom.value;
+            has_bottom = true;
+        } else if (child_computed.bottom.unit == CSSUnit::PERCENT) {
+            bottom_val = (child_computed.bottom.value / 100.0f) * containing_block_size.height;
+            has_bottom = true;
+        }
+        
+        // Parse size from computed style
+        float width = 0.0f, height = 0.0f;
+        bool has_width = false, has_height = false;
+        
+        if (child_computed.width.unit == CSSUnit::PX && child_computed.width.value > 0) {
+            width = child_computed.width.value;
+            has_width = true;
+        } else if (child_computed.width.unit == CSSUnit::PERCENT) {
+            width = (child_computed.width.value / 100.0f) * containing_block_size.width;
+            has_width = true;
+        }
+        
+        if (child_computed.height.unit == CSSUnit::PX && child_computed.height.value > 0) {
+            height = child_computed.height.value;
+            has_height = true;
+        } else if (child_computed.height.unit == CSSUnit::PERCENT) {
+            height = (child_computed.height.value / 100.0f) * containing_block_size.height;
+            has_height = true;
+        }
+        
+        // If no explicit size, use a default size for inline-block elements
+        // (We can't call MeasureChildSize here as it would cause infinite recursion)
+        if (!has_width) width = 100.0f;  // Default width
+        if (!has_height) height = 40.0f; // Default height
+        
+        // Add padding and border to size
+        float padding_left = child_computed.padding_left.ToPx(containing_block_size.width, child_computed.font_size);
+        float padding_right = child_computed.padding_right.ToPx(containing_block_size.width, child_computed.font_size);
+        float padding_top = child_computed.padding_top.ToPx(containing_block_size.height, child_computed.font_size);
+        float padding_bottom = child_computed.padding_bottom.ToPx(containing_block_size.height, child_computed.font_size);
+        
+        float border_left_w = child_computed.border_left_width;
+        float border_right_w = child_computed.border_right_width;
+        float border_top_w = child_computed.border_top_width;
+        float border_bottom_w = child_computed.border_bottom_width;
+        
+        float total_width = width + padding_left + padding_right + border_left_w + border_right_w;
+        float total_height = height + padding_top + padding_bottom + border_top_w + border_bottom_w;
+        
+        // Compute location
+        float loc_x = 0.0f, loc_y = 0.0f;
+        
+        // X position
+        if (has_left) {
+            loc_x = containing_block_offset.x + left_val;
+        } else if (has_right) {
+            loc_x = containing_block_offset.x + containing_block_size.width - total_width - right_val;
+        } else {
+            loc_x = containing_block_offset.x;
+        }
+        
+        // Y position
+        if (has_top) {
+            loc_y = containing_block_offset.y + top_val;
+        } else if (has_bottom) {
+            loc_y = containing_block_offset.y + containing_block_size.height - total_height - bottom_val;
+        } else {
+            loc_y = containing_block_offset.y;
+        }
+        
+        // Set layout directly on the render object
+        auto& layout_info = child_render_obj->GetLayoutInfo();
+        layout_info.x = loc_x;
+        layout_info.y = loc_y;
+        layout_info.width = total_width;
+        layout_info.height = total_height;
+    }
 }
 
 LayoutOutput NativeLayoutEngine::ComputeAnonymousBlockIFCLayout(NodeId node_id, const LayoutInput& inputs) {

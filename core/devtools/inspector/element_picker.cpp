@@ -211,12 +211,16 @@ std::shared_ptr<Element> ElementPicker::HitTest(int x, int y) {
         const auto& layout = obj->GetLayoutInfo();
         if (!layout.is_laid_out) return;
         
-        // 计算当前元素在文档中的绝对位置
-        float abs_x = offset_x + layout.x;
-        float abs_y = offset_y + layout.y;
-        
         // 检查当前元素是否有 overflow 属性
         const auto& style = obj->GetComputedStyle();
+        
+        // 检查是否是 position: fixed 元素
+        bool is_fixed = (style.position == "fixed");
+        
+        // 对于 fixed 元素，layout.x/y 已经是视口绝对坐标，不需要累加父元素偏移
+        float abs_x = is_fixed ? layout.x : (offset_x + layout.x);
+        float abs_y = is_fixed ? layout.y : (offset_y + layout.y);
+        
         bool has_overflow = (style.overflow == "auto" || style.overflow == "scroll" || 
                              style.overflow == "hidden" ||
                              style.overflow_y == "auto" || style.overflow_y == "scroll" ||
@@ -235,7 +239,13 @@ std::shared_ptr<Element> ElementPicker::HitTest(int x, int y) {
         auto elem = node ? std::dynamic_pointer_cast<Element>(node) : nullptr;
         bool is_body = elem && (elem->GetTagName() == "body" || elem->GetTagName() == "BODY");
         
-        if (has_overflow && is_body) {
+        // 对于 fixed 元素，直接检查点是否在元素边界内（使用视口坐标）
+        if (is_fixed) {
+            SkRect bounds = SkRect::MakeXYWH(abs_x, abs_y, layout.width, layout.height);
+            if (!bounds.contains(test_x, test_y)) {
+                return;  // 点不在 fixed 元素内
+            }
+        } else if (has_overflow && is_body) {
             // 对于 body 元素，它的可见区域是整个视口，不是 CSS 设置的高度
             // 所以不需要检查边界，直接将鼠标坐标转换为文档坐标
             child_test_x = test_x + scroll_x;

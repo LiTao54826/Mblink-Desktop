@@ -7,6 +7,7 @@
  */
 
 #include "block_layout.h"
+#include "../render/css/css_value.h"  // For ViewportSize
 #include <algorithm>
 #include <iostream>
 
@@ -733,6 +734,7 @@ Size<float> PerformAbsoluteLayoutOnAbsoluteChildren(
     std::cerr << "[AbsoluteLayout] PerformAbsoluteLayoutOnAbsoluteChildren called" << std::endl;
     std::cerr << "[AbsoluteLayout]   area_size: width=" << area_size.width << ", height=" << area_size.height << std::endl;
     std::cerr << "[AbsoluteLayout]   area_offset: x=" << area_offset.x << ", y=" << area_offset.y << std::endl;
+    std::cerr << "[AbsoluteLayout]   ViewportSize: width=" << ViewportSize::GetWidth() << ", height=" << ViewportSize::GetHeight() << std::endl;
 #endif
 
     Size<float> absolute_content_size = Size<float>::Zero();
@@ -750,15 +752,29 @@ Size<float> PerformAbsoluteLayoutOnAbsoluteChildren(
             continue;
         }
 
+        // For position: fixed, use viewport size instead of parent container size
+        // CSS spec: fixed positioned elements are positioned relative to the viewport
+        bool is_fixed = (item.position == Position::Fixed);
+        Size<float> containing_block_size = is_fixed 
+            ? Size<float>{ViewportSize::GetWidth(), ViewportSize::GetHeight()}
+            : area_size;
+        Point<float> containing_block_offset = is_fixed 
+            ? Point<float>{0.0f, 0.0f}
+            : area_offset;
+
 #if LIGHTUI_DEBUG_ABSOLUTE_POSITIONING
         std::cerr << "[AbsoluteLayout] Processing absolute/fixed child node_id=" << item.node_id << std::endl;
+        if (is_fixed) {
+            std::cerr << "[AbsoluteLayout]   Using viewport size: " << containing_block_size.width << "x" << containing_block_size.height << std::endl;
+        }
 #endif
 
-        // Resolve inset
-        auto left = MaybeResolve(child_style.inset.left, std::optional<float>(area_size.width));
-        auto right = MaybeResolve(child_style.inset.right, std::optional<float>(area_size.width));
-        auto top = MaybeResolve(child_style.inset.top, std::optional<float>(area_size.height));
-        auto bottom = MaybeResolve(child_style.inset.bottom, std::optional<float>(area_size.height));
+        // Resolve inset - use containing block size for percentage resolution
+        auto left = MaybeResolve(child_style.inset.left, std::optional<float>(containing_block_size.width));
+        auto right = MaybeResolve(child_style.inset.right, std::optional<float>(containing_block_size.width));
+
+        auto top = MaybeResolve(child_style.inset.top, std::optional<float>(containing_block_size.height));
+        auto bottom = MaybeResolve(child_style.inset.bottom, std::optional<float>(containing_block_size.height));
 
 #if LIGHTUI_DEBUG_ABSOLUTE_POSITIONING
         std::cerr << "[AbsoluteLayout]   Inset values:" << std::endl;
@@ -768,12 +784,12 @@ Size<float> PerformAbsoluteLayoutOnAbsoluteChildren(
         std::cerr << "[AbsoluteLayout]     bottom=" << (bottom.has_value() ? std::to_string(*bottom) : "none") << std::endl;
 #endif
 
-        // Resolve margin
-        auto margin = MaybeResolve(child_style.margin, std::optional<float>(area_size.width));
+        // Resolve margin - use containing block size for percentage resolution
+        auto margin = MaybeResolve(child_style.margin, std::optional<float>(containing_block_size.width));
 
-        // Resolve padding and border
-        auto padding = ResolveOrZero(child_style.padding, std::optional<float>(area_size.width));
-        auto border = ResolveOrZero(child_style.border, std::optional<float>(area_size.width));
+        // Resolve padding and border - use containing block size for percentage resolution
+        auto padding = ResolveOrZero(child_style.padding, std::optional<float>(containing_block_size.width));
+        auto border = ResolveOrZero(child_style.border, std::optional<float>(containing_block_size.width));
         Size<float> padding_border_sum = {
             padding.left + padding.right + border.left + border.right,
             padding.top + padding.bottom + border.top + border.bottom
@@ -782,43 +798,44 @@ Size<float> PerformAbsoluteLayoutOnAbsoluteChildren(
         Size<float> box_sizing_adjustment =
             (child_style.box_sizing == BoxSizing::ContentBox) ? padding_border_sum : Size<float>::Zero();
 
-        // Resolve size constraints
+        // Resolve size constraints - use containing block size for percentage resolution
         auto style_size = MaybeResolve(child_style.size, Size<std::optional<float>>{
-            std::optional<float>(area_size.width),
-            std::optional<float>(area_size.height)
+            std::optional<float>(containing_block_size.width),
+            std::optional<float>(containing_block_size.height)
         });
         style_size = MaybeApplyAspectRatio(style_size, child_style.aspect_ratio);
         style_size = MaybeAdd(style_size, box_sizing_adjustment);
 
         auto min_size = MaybeResolve(child_style.min_size, Size<std::optional<float>>{
-            std::optional<float>(area_size.width),
-            std::optional<float>(area_size.height)
+            std::optional<float>(containing_block_size.width),
+            std::optional<float>(containing_block_size.height)
         });
         min_size = MaybeApplyAspectRatio(min_size, child_style.aspect_ratio);
         min_size = MaybeAdd(min_size, box_sizing_adjustment);
 
         auto max_size = MaybeResolve(child_style.max_size, Size<std::optional<float>>{
-            std::optional<float>(area_size.width),
-            std::optional<float>(area_size.height)
+            std::optional<float>(containing_block_size.width),
+            std::optional<float>(containing_block_size.height)
         });
         max_size = MaybeApplyAspectRatio(max_size, child_style.aspect_ratio);
         max_size = MaybeAdd(max_size, box_sizing_adjustment);
 
         auto known_dimensions = MaybeClamp(style_size, min_size, max_size);
 
-        // Fill in width from left/right
+        // Fill in width from left/right - use containing block size
         if (!known_dimensions.width.has_value() && left.has_value() && right.has_value()) {
-            float new_width = area_size.width - *left - *right;
+            float new_width = containing_block_size.width - *left - *right;
             if (margin.left.has_value()) new_width -= *margin.left;
             if (margin.right.has_value()) new_width -= *margin.right;
             known_dimensions.width = std::optional<float>(f32_max(new_width, 0.0f));
             known_dimensions = MaybeApplyAspectRatio(known_dimensions, child_style.aspect_ratio);
+
             known_dimensions = MaybeClamp(known_dimensions, min_size, max_size);
         }
 
-        // Fill in height from top/bottom
+        // Fill in height from top/bottom - use containing block size
         if (!known_dimensions.height.has_value() && top.has_value() && bottom.has_value()) {
-            float new_height = area_size.height - *top - *bottom;
+            float new_height = containing_block_size.height - *top - *bottom;
             if (margin.top.has_value()) new_height -= *margin.top;
             if (margin.bottom.has_value()) new_height -= *margin.bottom;
             known_dimensions.height = std::optional<float>(f32_max(new_height, 0.0f));
@@ -826,17 +843,17 @@ Size<float> PerformAbsoluteLayoutOnAbsoluteChildren(
             known_dimensions = MaybeClamp(known_dimensions, min_size, max_size);
         }
 
-        // Measure child
+        // Measure child - use containing block size
         auto measured_size = tree.MeasureChildSize(
             item.node_id,
             known_dimensions,
             Size<std::optional<float>>{
-                std::optional<float>(area_size.width),
-                std::optional<float>(area_size.height)
+                std::optional<float>(containing_block_size.width),
+                std::optional<float>(containing_block_size.height)
             },
             Size<AvailableSpace>{
-                AvailableSpace::Definite(area_size.width),
-                AvailableSpace::Definite(area_size.height)
+                AvailableSpace::Definite(containing_block_size.width),
+                AvailableSpace::Definite(containing_block_size.height)
             },
             SizingMode::ContentSize
         );
@@ -847,7 +864,7 @@ Size<float> PerformAbsoluteLayoutOnAbsoluteChildren(
         };
         final_size = Clamp(final_size, min_size, max_size);
 
-        // Perform layout
+        // Perform layout - use containing block size
         auto layout_output = tree.PerformChildLayout(
             item.node_id,
             Size<std::optional<float>>{
@@ -855,12 +872,12 @@ Size<float> PerformAbsoluteLayoutOnAbsoluteChildren(
                 std::optional<float>(final_size.height)
             },
             Size<std::optional<float>>{
-                std::optional<float>(area_size.width),
-                std::optional<float>(area_size.height)
+                std::optional<float>(containing_block_size.width),
+                std::optional<float>(containing_block_size.height)
             },
             Size<AvailableSpace>{
-                AvailableSpace::Definite(area_size.width),
-                AvailableSpace::Definite(area_size.height)
+                AvailableSpace::Definite(containing_block_size.width),
+                AvailableSpace::Definite(containing_block_size.height)
             },
             SizingMode::ContentSize,
             LineBoolFalse()
@@ -874,23 +891,23 @@ Size<float> PerformAbsoluteLayoutOnAbsoluteChildren(
             margin.bottom.value_or(0.0f)
         };
 
-        // Compute location
+        // Compute location - use containing block offset and size
         Point<float> location;
 
         // X position
         if (left.has_value()) {
-            location.x = area_offset.x + *left + resolved_margin.left;
+            location.x = containing_block_offset.x + *left + resolved_margin.left;
         } else if (right.has_value()) {
-            location.x = area_offset.x + area_size.width - final_size.width - *right - resolved_margin.right;
+            location.x = containing_block_offset.x + containing_block_size.width - final_size.width - *right - resolved_margin.right;
         } else {
             location.x = item.static_position.x + resolved_margin.left;
         }
 
         // Y position
         if (top.has_value()) {
-            location.y = area_offset.y + *top + resolved_margin.top;
+            location.y = containing_block_offset.y + *top + resolved_margin.top;
         } else if (bottom.has_value()) {
-            location.y = area_offset.y + area_size.height - final_size.height - *bottom - resolved_margin.bottom;
+            location.y = containing_block_offset.y + containing_block_size.height - final_size.height - *bottom - resolved_margin.bottom;
         } else {
             location.y = item.static_position.y + resolved_margin.top;
         }
@@ -901,6 +918,8 @@ Size<float> PerformAbsoluteLayoutOnAbsoluteChildren(
                   << ", top=" << resolved_margin.top << ", bottom=" << resolved_margin.bottom << std::endl;
         std::cerr << "[AbsoluteLayout]   Computed location: x=" << location.x << ", y=" << location.y << std::endl;
         std::cerr << "[AbsoluteLayout]   Position calculation details:" << std::endl;
+        std::cerr << "[AbsoluteLayout]     is_fixed=" << (is_fixed ? "true" : "false") << std::endl;
+        std::cerr << "[AbsoluteLayout]     containing_block_size: " << containing_block_size.width << "x" << containing_block_size.height << std::endl;
         if (left.has_value()) {
             std::cerr << "[AbsoluteLayout]     X: using left=" << *left << " -> area_offset.x(" << area_offset.x << ") + left + margin.left(" << resolved_margin.left << ")" << std::endl;
         } else if (right.has_value()) {

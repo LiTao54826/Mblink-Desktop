@@ -96,13 +96,15 @@ public:
      * @param y 鼠标 Y 坐标（相对于视口）
      * @param offset_x 累积的 X 偏移
      * @param offset_y 累积的 Y 偏移
+     * @param is_fixed 是否是 position: fixed 元素
      * @return true 如果点在元素边界内
      */
     bool IsPointInBounds(
         std::shared_ptr<RenderObject> render_object,
         float x, float y,
         float offset_x,
-        float offset_y);
+        float offset_y,
+        bool is_fixed = false);
 
 private:
     /**

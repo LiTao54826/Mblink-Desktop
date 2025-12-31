@@ -134,35 +134,6 @@ void RenderText::Paint(SkCanvas* canvas) {
         return;
     }
 
-    // 获取 canvas 的当前变换矩阵，用于调试
-    SkMatrix ctm = canvas->getTotalMatrix();
-    static int text_paint_count = 0;
-    text_paint_count++;
-    
-    // 获取父元素信息
-    std::string parent_info = "no_parent";
-    {
-        auto parent_obj = GetParent();
-        if (parent_obj) {
-            auto parent_node = parent_obj->GetNode();
-            if (parent_node && parent_node->GetNodeType() == NodeType::ELEMENT_NODE) {
-                auto parent_elem = std::static_pointer_cast<Element>(parent_node);
-                parent_info = parent_elem->GetTagName();
-            }
-        }
-    }
-    
-    // 只打印前 30 次文本绘制的日志
-    if (text_paint_count <= 30) {
-        std::cout << "[DEBUG RenderText::Paint] #" << text_paint_count 
-                  << " text=\"" << (text_.length() > 20 ? text_.substr(0, 20) + "..." : text_) << "\""
-                  << ", layout=(" << layout_info_.x << "," << layout_info_.y << ")"
-                  << ", CTM translate=(" << ctm.getTranslateX() << "," << ctm.getTranslateY() << ")"
-                  << ", CTM scale=(" << ctm.getScaleX() << "," << ctm.getScaleY() << ")"
-                  << ", parent=<" << parent_info << ">"
-                  << std::endl;
-    }
-
     const auto& style = computed_style_;
     const auto& layout = layout_info_;
 

@@ -131,12 +131,14 @@ private:
     
     /**
      * @brief 递归 Hit Test 渲染对象
+     * @param is_root 是否是 Layer 中的根元素（直接被收集的元素）
      */
     bool HitTestRenderObject(
         std::shared_ptr<RenderObject> render_obj,
         float x, float y,
         float offset_x, float offset_y,
-        HitTestResult& result);
+        HitTestResult& result,
+        bool is_root = false);
 };
 
 } // namespace lightui

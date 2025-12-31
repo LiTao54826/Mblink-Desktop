@@ -1048,6 +1048,29 @@ void RenderBlock::Paint(SkCanvas* canvas) {
             continue;
         }
         
+        // 获取子元素样式，用于后续检查
+        const auto& child_style = child->GetComputedStyle();
+        bool is_fixed_or_absolute = (child_style.position == "fixed" || child_style.position == "absolute");
+        
+        // 检查是否应该延迟绘制（高 z-index 的 positioned 元素）
+        // 注意：即使有独立合成层，也需要收集到 LayerManager 中用于 hit testing
+        auto& layer_mgr = LayerManager::Instance();
+        if (layer_mgr.ShouldCollect(child.get())) {
+            // 收集当前变换矩阵和元素信息
+            SkMatrix current_matrix = canvas->getTotalMatrix();
+            
+            // 如果当前元素有滚动偏移，需要在变换矩阵中补偿回来
+            if (needs_clip && (scroll_x_ != 0 || scroll_y_ != 0)) {
+                if (child_style.position == "absolute" || child_style.position == "fixed") {
+                    SkMatrix scroll_compensation = SkMatrix::Translate(scroll_x_, scroll_y_);
+                    current_matrix.preConcat(scroll_compensation);
+                }
+            }
+            
+            layer_mgr.Collect(child, current_matrix, child->GetComputedStyle().z_index);
+            continue;  // 跳过正常绘制（无论是否有合成层）
+        }
+        
         // 关键修复：跳过有独立合成层的子元素
         // 这些子元素会在自己的层中单独光栅化，不应该在父层中绘制
         // 否则会导致重影（元素被绘制两次）
@@ -1056,41 +1079,16 @@ void RenderBlock::Paint(SkCanvas* canvas) {
         }
         
         // 增量绘制优化：提前检查子节点是否与当前裁剪区域相交
-        // 这比在 Paint 方法内部检查更高效，因为可以跳过整个子树的递归调用
-        {
+        // 注意：对于 position: fixed/absolute 且高 z-index 的元素，不能使用 quickReject
+        if (!is_fixed_or_absolute || child_style.z_index < 100) {
             const auto& child_layout = child->GetLayoutInfo();
             SkRect child_rect = SkRect::MakeXYWH(
                 child_layout.x, child_layout.y, 
                 child_layout.width, child_layout.height
             );
-            // 扩大边界以包含可能的阴影、outline 等
             if (canvas->quickReject(child_rect.makeOutset(50, 50))) {
-                // 子节点完全在裁剪区域外，跳过整个子树
                 continue;
             }
-        }
-        
-        // 检查是否应该延迟绘制（高 z-index 的 positioned 元素）
-        auto& layer_mgr = LayerManager::Instance();
-        if (layer_mgr.ShouldCollect(child.get())) {
-            // 收集当前变换矩阵和元素信息
-            // 对于 position: absolute 的元素，需要补偿父元素的滚动偏移
-            // 因为 absolute 元素相对于 positioned 祖先定位，不受滚动影响
-            SkMatrix current_matrix = canvas->getTotalMatrix();
-            
-            // 如果当前元素有滚动偏移，需要在变换矩阵中补偿回来
-            // 因为 absolute 子元素不应该受到父元素滚动的影响
-            if (needs_clip && (scroll_x_ != 0 || scroll_y_ != 0)) {
-                const auto& child_style = child->GetComputedStyle();
-                if (child_style.position == "absolute" || child_style.position == "fixed") {
-                    // 补偿滚动偏移：在变换矩阵中加回滚动量
-                    SkMatrix scroll_compensation = SkMatrix::Translate(scroll_x_, scroll_y_);
-                    current_matrix.preConcat(scroll_compensation);
-                }
-            }
-            
-            layer_mgr.Collect(child, current_matrix, child->GetComputedStyle().z_index);
-            continue;  // 跳过正常绘制
         }
         
         child->Paint(canvas);

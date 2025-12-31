@@ -797,12 +797,6 @@ void RenderInlineBlock::PaintInputElement(SkCanvas* canvas, HTMLInputElement* in
 
     InputType type = input->GetInputType();
     std::string value = input->GetValue();
-    
-    // 调试：输出 input 的值
-    static int debug_count = 0;
-    if (++debug_count <= 10) {
-        std::cout << "[PaintInputElement] value='" << value << "', placeholder='" << input->GetPlaceholder() << "'" << std::endl;
-    }
 
     // 处理文本类型的输入框
     if (type == InputType::Text || type == InputType::Password ||

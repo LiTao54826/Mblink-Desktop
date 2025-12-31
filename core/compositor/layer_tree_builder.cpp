@@ -164,11 +164,6 @@ std::shared_ptr<CompositorLayer> LayerTreeBuilder::CreateLayer(
             auto element = std::static_pointer_cast<Element>(node);
             tag_name = element->GetTagName();
         }
-        const auto& layout = obj->GetLayoutInfo();
-        std::cout << "[DEBUG CreateLayer] Creating layer for <" << tag_name << ">"
-                  << ", reason=" << static_cast<int>(reason)
-                  << ", layout=(" << layout.x << "," << layout.y << "," << layout.width << "x" << layout.height << ")"
-                  << std::endl;
     }
 
     // 设置层边界

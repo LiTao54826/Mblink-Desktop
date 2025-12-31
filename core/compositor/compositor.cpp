@@ -575,17 +575,6 @@ void Compositor::CompositeLayerCPU(CompositorLayer* layer, SkCanvas* canvas, con
     // 应用层位置
     const SkRect& bounds = layer->GetBounds();
     canvas->translate(bounds.left(), bounds.top());
-    
-    static int composite_count = 0;
-    composite_count++;
-    if (composite_count <= 10) {
-        std::cout << "[DEBUG CompositeLayerCPU] #" << composite_count 
-                  << " layer=" << layer->GetId()
-                  << ", bounds=(" << bounds.left() << "," << bounds.top() << "," << bounds.width() << "x" << bounds.height() << ")"
-                  << ", bitmap_valid=" << !layer->GetBitmap().isNull()
-                  << ", promotion=" << static_cast<int>(layer->GetPromotionReason())
-                  << std::endl;
-    }
 
     // 注意：不应用 layer->GetTransform()
     // 因为 CSS transform 已经在 RenderObject::Paint 中应用了

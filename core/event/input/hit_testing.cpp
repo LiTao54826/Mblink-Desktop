@@ -8,7 +8,9 @@
 #include "core/dom/element.h"
 #include "core/render/objects/render_object.h"
 #include "core/render/layer/layer_manager.h"
+#include <algorithm>
 #include <iostream>
+#include <vector>
 
 namespace lightui {
 
@@ -121,7 +123,8 @@ bool HitTesting::IsPointInBounds(
     std::shared_ptr<RenderObject> render_object,
     float x, float y,
     float offset_x,
-    float offset_y) {
+    float offset_y,
+    bool is_fixed) {
     
     if (!render_object) {
         return false;
@@ -132,9 +135,9 @@ bool HitTesting::IsPointInBounds(
         return false;
     }
     
-    // 计算元素的绝对位置
-    float abs_x = offset_x + layout.x;
-    float abs_y = offset_y + layout.y;
+    // 对于 position: fixed 元素，layout.x/y 已经是视口绝对坐标
+    float abs_x = is_fixed ? layout.x : (offset_x + layout.x);
+    float abs_y = is_fixed ? layout.y : (offset_y + layout.y);
     
     // 检查点是否在元素边界内
     bool in_bounds = (x >= abs_x && x < abs_x + layout.width &&
@@ -160,80 +163,104 @@ bool HitTesting::HitTestRecursive(
         return false;
     }
 
-    // 计算当前元素在文档中的绝对位置
-    float current_offset_x = offset_x + layout.x;
-    float current_offset_y = offset_y + layout.y;
+    // 检查当前元素的 position 属性
+    const auto& style = render_object->GetComputedStyle();
+    bool is_fixed = (style.position == "fixed");
+    
+    // 计算当前元素的绝对位置
+    // 对于 position: fixed 元素，其 layout.x/y 已经是相对于视口的绝对坐标
+    // 对于普通元素，需要加上父元素的偏移量
+    float current_offset_x, current_offset_y;
+    if (is_fixed) {
+        // fixed 元素：layout.x/y 是视口绝对坐标，不需要加 offset
+        current_offset_x = layout.x;
+        current_offset_y = layout.y;
+    } else {
+        // 普通元素：layout.x/y 是相对于父元素的，需要加上父元素的偏移
+        current_offset_x = offset_x + layout.x;
+        current_offset_y = offset_y + layout.y;
+    }
 
     // 检查当前元素是否有 overflow 属性
-    const auto& style = render_object->GetComputedStyle();
     bool has_overflow = (style.overflow == "auto" || style.overflow == "scroll" || 
                          style.overflow == "hidden" ||
                          style.overflow_y == "auto" || style.overflow_y == "scroll" ||
                          style.overflow_y == "hidden");
     
     // 检查 pointer-events 属性
-    // 如果 pointer-events: none，跳过当前元素但仍检查子元素
-    // （子元素可能有 pointer-events: auto 覆盖）
     bool pointer_events_none = (style.pointer_events == "none");
     
     // 获取当前元素的滚动偏移量
     float scroll_x = render_object->GetScrollX();
     float scroll_y = render_object->GetScrollY();
     
-    // 用于检查子元素的鼠标坐标（可能需要转换为文档坐标）
+    // 用于检查子元素的鼠标坐标
     float child_test_x = x;
     float child_test_y = y;
     
-    // 检查是否是 body 元素（根滚动容器）
+    // 获取 DOM 节点和元素
     auto node = render_object->GetNode();
     auto element = std::dynamic_pointer_cast<Element>(node);
+    
+    // 检查是否是 body 元素（根滚动容器）
     bool is_body = element && (element->GetTagName() == "body" || element->GetTagName() == "BODY");
     
-    if (has_overflow && is_body) {
-        // 对于 body 元素，它的可见区域是整个视口，不是 CSS 设置的高度
-        // 所以不需要检查边界，直接将鼠标坐标转换为文档坐标
-        // 
-        // 例如：body CSS 高度 400px，但视口高度 800px，滚动了 100px
-        // - 鼠标在视口 y=500（超出 body 的 CSS 高度）
-        // - 转换为文档坐标：y=500+100=600
-        // - 子元素布局位置 y=600，可以命中
+    // 边界检查
+    bool in_bounds = (x >= current_offset_x && x < current_offset_x + layout.width &&
+                      y >= current_offset_y && y < current_offset_y + layout.height);
+    
+    if (is_fixed) {
+        // fixed 元素：直接检查边界
+        if (!in_bounds) {
+            return false;
+        }
+    } else if (has_overflow && is_body) {
+        // body 元素：不检查边界，转换坐标用于滚动
         child_test_x = x + scroll_x;
         child_test_y = y + scroll_y;
     } else if (has_overflow) {
-        // 对于其他有 overflow 的容器，检查点是否在可见区域内
-        if (!IsPointInBounds(render_object, x, y, offset_x, offset_y)) {
-            return false;  // 点不在可见区域内，跳过此元素及其子元素
+        // 有 overflow 的容器：检查边界，转换坐标
+        if (!in_bounds) {
+            return false;
         }
-        
-        // 将鼠标坐标转换为文档坐标
         child_test_x = x + scroll_x;
         child_test_y = y + scroll_y;
     } else {
-        // 对于普通元素，检查点是否在边界内
-        if (!IsPointInBounds(render_object, x, y, offset_x, offset_y)) {
+        // 普通元素：检查边界
+        if (!in_bounds) {
             return false;
         }
     }
 
-    // 从后向前遍历子元素（后面的元素在上层）
+    // 参考 Blink 的做法：按 z-index 排序子元素，高 z-index 优先测试
+    // 将子元素分为三组：positive z-index, normal flow, negative z-index
     const auto& children = render_object->GetChildren();
     
-    for (auto it = children.rbegin(); it != children.rend(); ++it) {
-        const auto& child = *it;
-
-        // 递归检查子元素，使用转换后的坐标
+    // 收集并按 z-index 排序子元素
+    std::vector<std::shared_ptr<RenderObject>> sorted_children(children.begin(), children.end());
+    std::stable_sort(sorted_children.begin(), sorted_children.end(),
+        [](const std::shared_ptr<RenderObject>& a, const std::shared_ptr<RenderObject>& b) {
+            const auto& style_a = a->GetComputedStyle();
+            const auto& style_b = b->GetComputedStyle();
+            // 高 z-index 排在前面（优先测试）
+            return style_a.z_index > style_b.z_index;
+        });
+    
+    // 从高 z-index 到低 z-index 遍历子元素
+    for (const auto& child : sorted_children) {
+        // 子元素的偏移量 = 当前元素的绝对位置
+        // 这样子元素的绝对位置 = child_offset + child.layout.x/y
         if (HitTestRecursive(child, child_test_x, child_test_y, current_offset_x, current_offset_y, result)) {
             return true;
         }
     }
 
     // 如果 pointer-events: none，不将当前元素作为命中目标
-    // 让事件穿透到下面的元素
     if (pointer_events_none) {
         return false;
     }
 
-    // 没有子元素命中，当前元素就是目标（复用前面已获取的 node 和 element）
+    // 没有子元素命中，当前元素就是目标
     if (element) {
         result.element = element;
         result.render_object = render_object;
@@ -248,17 +275,13 @@ bool HitTesting::HitTestRecursive(
         auto parent_node = parent_ro->GetNode();
         auto parent_element = std::dynamic_pointer_cast<Element>(parent_node);
         if (parent_element) {
-            // 检查父元素的 pointer-events 属性
             const auto& parent_style = parent_ro->GetComputedStyle();
             if (parent_style.pointer_events == "none") {
-                return false;  // 父元素也是 pointer-events: none，不命中
+                return false;
             }
             result.element = parent_element;
             result.render_object = parent_ro;
-            // 计算相对于父元素的坐标
-            // 需要从当前文本节点的绝对位置回退到父元素的绝对位置
-            // const auto& parent_layout = parent_ro->GetLayoutInfo();  // 暂未使用
-            float parent_offset_x = current_offset_x - layout.x;  // 回退文本节点的偏移
+            float parent_offset_x = current_offset_x - layout.x;
             float parent_offset_y = current_offset_y - layout.y;
             result.local_x = x - parent_offset_x;
             result.local_y = y - parent_offset_y;

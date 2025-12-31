@@ -216,15 +216,6 @@ bool Rasterizer::RasterizeDirtyRegions(CompositorLayer* layer) {
 
     // 获取关联的渲染对象
     RenderObject* render_obj = layer->GetRenderObject();
-    
-    // 调试日志
-    const SkRect& bounds = layer->GetBounds();
-    float dpi_scale = layer->GetDpiScale();
-    std::cout << "[DEBUG RasterizeDirtyRegions] Layer " << layer->GetId() 
-              << ", bounds=(" << bounds.left() << "," << bounds.top() << "," << bounds.width() << "x" << bounds.height() << ")"
-              << ", dpi_scale=" << dpi_scale
-              << ", bitmap_size=" << layer->GetBitmap().width() << "x" << layer->GetBitmap().height()
-              << std::endl;
 
     // 合并脏区域
     layer->MergeDirtyRegions();
@@ -232,13 +223,9 @@ bool Rasterizer::RasterizeDirtyRegions(CompositorLayer* layer) {
     const auto& dirty_regions = layer->GetDirtyRegions();
     int total_dirty_pixels = 0;
     int layer_pixels = static_cast<int>(layer->GetBounds().width() * layer->GetBounds().height());
-    
-    std::cout << "[DEBUG RasterizeDirtyRegions] dirty_regions count=" << dirty_regions.size() << std::endl;
 
     // 对每个脏区域进行光栅化
     for (const auto& region : dirty_regions) {
-        std::cout << "[DEBUG RasterizeDirtyRegions] region=(" << region.left() << "," << region.top() 
-                  << "," << region.width() << "x" << region.height() << ")" << std::endl;
         if (render_obj) {
             if (!RasterizeRegion(layer, region)) {
                 continue;

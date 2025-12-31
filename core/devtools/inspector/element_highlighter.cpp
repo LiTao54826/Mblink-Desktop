@@ -180,6 +180,7 @@ void ElementHighlighter::RenderBoxModelHighlight(SkCanvas* canvas, std::shared_p
         std::shared_ptr<RenderObject> render_obj;
         float abs_x = 0;
         float abs_y = 0;
+        bool is_fixed = false;  // 标记是否是 fixed 定位元素
     };
     
     std::function<FindResult(std::shared_ptr<RenderObject>, float, float)> find_render_object;
@@ -187,18 +188,24 @@ void ElementHighlighter::RenderBoxModelHighlight(SkCanvas* canvas, std::shared_p
         if (!obj) return {};
         
         const auto& layout = obj->GetLayoutInfo();
-        // 当前元素的绝对位置（不受自身滚动影响）
-        float current_x = offset_x + layout.x;
-        float current_y = offset_y + layout.y;
+        const auto& obj_style = obj->GetComputedStyle();
+        
+        // 检查是否是 position: fixed 元素
+        bool is_fixed = (obj_style.position == "fixed");
+        
+        // 对于 fixed 元素，layout.x/y 已经是视口绝对坐标，不需要累加父元素偏移
+        float current_x = is_fixed ? layout.x : (offset_x + layout.x);
+        float current_y = is_fixed ? layout.y : (offset_y + layout.y);
         
         auto node = obj->GetNode();
         if (node && node.get() == element.get()) {
             // 找到目标元素，返回其绝对位置（不减去自身滚动）
-            return {obj, current_x, current_y};
+            return {obj, current_x, current_y, is_fixed};
         }
         
         // 查找子元素时，需要减去当前元素的滚动偏移
         // 因为子元素的可见位置会随父元素滚动而移动
+        // 但对于 fixed 元素的子元素，它们的位置是相对于 fixed 元素的
         float child_offset_x = current_x - obj->GetScrollX();
         float child_offset_y = current_y - obj->GetScrollY();
         

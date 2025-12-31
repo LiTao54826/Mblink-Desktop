@@ -124,6 +124,7 @@ private:
     int overlay_threshold_ = 100;   // z-index >= 100 进入 Overlay 层
     int modal_threshold_ = 1000;    // z-index >= 1000 进入 Modal 层
     bool painting_layers_ = false;  // 是否正在绘制 Layer
+    bool frame_started_ = false;    // 新帧是否开始（用于延迟清空）
     
     /**
      * @brief 根据 z-index 获取对应的 Layer 级别

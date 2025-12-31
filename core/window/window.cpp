@@ -187,6 +187,15 @@ Window::Window(const WindowConfig& config) : config_(config) {
 
     // 初始化窗口渲染器
     window_renderer_ = std::make_unique<WindowRenderer>(this);
+
+    // 初始化视口尺寸（使用 DPI 缩放后的逻辑尺寸）
+    // 这确保 position: fixed 元素在首次布局时能正确使用视口尺寸
+    int physical_width, physical_height;
+    SDL_GetWindowSizeInPixels(sdl_window_, &physical_width, &physical_height);
+    float dpi_scale = GetDisplayScale();
+    float logical_width = static_cast<float>(physical_width) / dpi_scale;
+    float logical_height = static_cast<float>(physical_height) / dpi_scale;
+    RenderObject::SetViewportSize(logical_width, logical_height);
 }
 
 Window::~Window() {
@@ -1038,8 +1047,11 @@ void Window::Render() {
     // 使用统一渲染管线渲染
     // =========================================================================
     if (render_pipeline_) {
-        // 开始新的渲染帧
         auto& layer_mgr = LayerManager::Instance();
+        
+        // 关键修复：在渲染开始时清空 Layer，然后在 Paint 过程中重新收集
+        // 这样 HitTest 可以使用上一帧收集的元素（在 BeginFrame 之前）
+        // 注意：BeginFrame 必须在 Paint 之前调用，否则会清空刚收集的元素
         layer_mgr.BeginFrame();
         
         // 获取背景色 - 优先使用 body 的背景色，避免白边问题
@@ -1693,11 +1705,7 @@ void Window::InvalidateRenderTree() {
 }
 
 void Window::EnsureRenderTree() {
-    // 减少日志输出
-    // std::cout << "[EnsureRenderTree] Called, render_tree_valid_=" << render_tree_valid_ << std::endl;
-    
     if (render_tree_valid_ && cached_render_tree_) {
-        // std::cout << "[EnsureRenderTree] Tree already valid, skipping" << std::endl;
         return;  // 渲染树已经有效
     }
 

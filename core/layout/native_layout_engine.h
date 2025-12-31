@@ -380,6 +380,26 @@ private:
     LayoutOutput ComputeIFCLayout(NodeId node_id, const LayoutInput& inputs);
     
     /**
+     * @brief Layout absolutely positioned children in an IFC container
+     * @param node_id The IFC container node
+     * @param container_width Container width
+     * @param container_height Container height
+     * @param padding_border_left Left padding + border
+     * @param padding_border_right Right padding + border
+     * @param padding_border_top Top padding + border
+     * @param padding_border_bottom Bottom padding + border
+     */
+    void LayoutAbsoluteChildrenInIFC(
+        NodeId node_id,
+        float container_width,
+        float container_height,
+        float padding_border_left,
+        float padding_border_right,
+        float padding_border_top,
+        float padding_border_bottom
+    );
+    
+    /**
      * @brief Compute IFC layout for an anonymous block box
      * @param node_id Anonymous block node to layout
      * @param inputs Layout input parameters

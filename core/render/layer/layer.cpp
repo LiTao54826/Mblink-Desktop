@@ -31,34 +31,48 @@ void Layer::AddItem(std::shared_ptr<RenderObject> obj, const SkMatrix& transform
     item.z_index = z_index;
     
     const auto& layout = obj->GetLayoutInfo();
+    const auto& style = obj->GetComputedStyle();
+    
+    // 检查是否是 position: fixed 元素
+    bool is_fixed = (style.position == "fixed");
     
     // 计算绝对逻辑坐标
-    // transform 包含: scale(dpi_scale) * translate(parent_logical_x * dpi_scale, parent_logical_y * dpi_scale)
-    // 所以 getTranslateX/Y 返回的是 parent_logical_x * dpi_scale^2（因为 scale 在 translate 之前）
-    // 
-    // 实际上 canvas 的变换顺序是：
-    // 1. canvas->scale(dpi_scale, dpi_scale)  - 应用 DPI 缩放
-    // 2. 绘制时 translate 到元素位置
-    // 
-    // 所以 transform 矩阵是: scale(dpi) * translate(parent_x, parent_y)
-    // getTranslateX() = parent_x * dpi_scale
-    // getScaleX() = dpi_scale
-    //
-    // 要得到逻辑坐标: parent_x = getTranslateX() / getScaleX()
-    // 然后加上当前元素的相对位置 layout.x
+    // 对于 position: fixed 元素，layout.x/y 已经是视口绝对坐标（由布局引擎计算）
+    // 对于其他元素，需要从 transform 中提取父元素偏移并加上 layout.x/y
     
-    float scale_x = transform.getScaleX();
-    float scale_y = transform.getScaleY();
-    if (scale_x == 0) scale_x = 1;
-    if (scale_y == 0) scale_y = 1;
+    if (is_fixed) {
+        // position: fixed 元素：layout.x/y 已经是视口绝对坐标
+        item.abs_x = layout.x;
+        item.abs_y = layout.y;
+    } else {
+        // 其他元素：需要计算父元素偏移
+        // transform 包含: scale(dpi_scale) * translate(parent_logical_x * dpi_scale, parent_logical_y * dpi_scale)
+        // 
+        // 实际上 canvas 的变换顺序是：
+        // 1. canvas->scale(dpi_scale, dpi_scale)  - 应用 DPI 缩放
+        // 2. 绘制时 translate 到元素位置
+        // 
+        // 所以 transform 矩阵是: scale(dpi) * translate(parent_x, parent_y)
+        // getTranslateX() = parent_x * dpi_scale
+        // getScaleX() = dpi_scale
+        //
+        // 要得到逻辑坐标: parent_x = getTranslateX() / getScaleX()
+        // 然后加上当前元素的相对位置 layout.x
+        
+        float scale_x = transform.getScaleX();
+        float scale_y = transform.getScaleY();
+        if (scale_x == 0) scale_x = 1;
+        if (scale_y == 0) scale_y = 1;
+        
+        // 父元素的逻辑绝对坐标
+        float parent_abs_x = transform.getTranslateX() / scale_x;
+        float parent_abs_y = transform.getTranslateY() / scale_y;
+        
+        // 当前元素的逻辑绝对坐标 = 父元素绝对坐标 + 当前元素相对坐标
+        item.abs_x = parent_abs_x + layout.x;
+        item.abs_y = parent_abs_y + layout.y;
+    }
     
-    // 父元素的逻辑绝对坐标
-    float parent_abs_x = transform.getTranslateX() / scale_x;
-    float parent_abs_y = transform.getTranslateY() / scale_y;
-    
-    // 当前元素的逻辑绝对坐标 = 父元素绝对坐标 + 当前元素相对坐标
-    item.abs_x = parent_abs_x + layout.x;
-    item.abs_y = parent_abs_y + layout.y;
     item.width = layout.width;
     item.height = layout.height;
     
@@ -66,9 +80,8 @@ void Layer::AddItem(std::shared_ptr<RenderObject> obj, const SkMatrix& transform
     static bool debug = std::getenv("LIGHTUI_DEBUG_LAYERS") != nullptr;
     if (debug) {
         std::cout << "[Layer::AddItem] z=" << z_index 
+                  << " position=" << style.position
                   << " layout=(" << layout.x << "," << layout.y << "," << layout.width << "," << layout.height << ")"
-                  << " scale=" << scale_x
-                  << " parent_abs=(" << parent_abs_x << "," << parent_abs_y << ")"
                   << " -> abs=(" << item.abs_x << "," << item.abs_y << ")"
                   << std::endl;
     }
@@ -113,9 +126,6 @@ bool Layer::HitTest(float x, float y, HitTestResult& result) {
     
     EnsureSorted();
     
-    // 调试输出
-    static bool debug = std::getenv("LIGHTUI_DEBUG_LAYERS") != nullptr;
-    
     // 从高 z-index 到低 z-index 测试（后绘制的在上面）
     for (auto it = items_.rbegin(); it != items_.rend(); ++it) {
         const auto& item = *it;
@@ -126,20 +136,10 @@ bool Layer::HitTest(float x, float y, HitTestResult& result) {
             continue;
         }
         
-        if (debug) {
-            std::cout << "[Layer::HitTest] mouse=(" << x << "," << y << ")"
-                      << " item_bounds=(" << item.abs_x << "," << item.abs_y 
-                      << "," << item.width << "," << item.height << ")"
-                      << " z=" << item.z_index << std::endl;
-        }
-        
-        // 使用存储的逻辑绝对坐标作为偏移
-        // 注意：item.abs_x/abs_y 已经包含了 layout.x/y，所以这里传入父元素的绝对坐标
-        float parent_abs_x = item.abs_x - item.render_obj->GetLayoutInfo().x;
-        float parent_abs_y = item.abs_y - item.render_obj->GetLayoutInfo().y;
-        
-        // 递归测试渲染对象及其子元素
-        if (HitTestRenderObject(item.render_obj, x, y, parent_abs_x, parent_abs_y, result)) {
+        // 对于 Layer 中的元素，item.abs_x/abs_y 是元素的绝对位置
+        // 递归测试时，需要传入当前元素的绝对位置作为子元素的偏移基准
+        // 注意：这里直接传入 item.abs_x/abs_y，因为 HitTestRenderObject 会处理 fixed 元素
+        if (HitTestRenderObject(item.render_obj, x, y, item.abs_x, item.abs_y, result, true)) {
             return true;
         }
     }
@@ -151,16 +151,35 @@ bool Layer::HitTestRenderObject(
     std::shared_ptr<RenderObject> render_obj,
     float x, float y,
     float offset_x, float offset_y,
-    HitTestResult& result) {
+    HitTestResult& result,
+    bool is_root) {
     
     if (!render_obj) return false;
     
     const auto& layout = render_obj->GetLayoutInfo();
     if (!layout.is_laid_out) return false;
     
+    // 检查当前元素的 position 属性
+    const auto& style = render_obj->GetComputedStyle();
+    bool is_fixed = (style.position == "fixed");
+    
     // 计算当前元素的绝对位置
-    float current_x = offset_x + layout.x;
-    float current_y = offset_y + layout.y;
+    // 对于根元素（Layer 中的元素），offset_x/y 已经是元素的绝对位置
+    // 对于子元素，需要加上相对于父元素的偏移
+    float current_x, current_y;
+    if (is_root) {
+        // 根元素：offset_x/y 就是绝对位置
+        current_x = offset_x;
+        current_y = offset_y;
+    } else if (is_fixed) {
+        // 非根的 fixed 元素：layout.x/y 是视口绝对坐标
+        current_x = layout.x;
+        current_y = layout.y;
+    } else {
+        // 普通子元素：相对于父元素
+        current_x = offset_x + layout.x;
+        current_y = offset_y + layout.y;
+    }
     
     // 边界检查
     if (x < current_x || x >= current_x + layout.width ||
@@ -169,7 +188,6 @@ bool Layer::HitTestRenderObject(
     }
     
     // 检查 pointer-events
-    const auto& style = render_obj->GetComputedStyle();
     bool pointer_events_none = (style.pointer_events == "none");
     
     // 处理滚动偏移
@@ -181,7 +199,7 @@ bool Layer::HitTestRenderObject(
     // 从后向前遍历子元素
     const auto& children = render_obj->GetChildren();
     for (auto it = children.rbegin(); it != children.rend(); ++it) {
-        if (HitTestRenderObject(*it, child_test_x, child_test_y, current_x, current_y, result)) {
+        if (HitTestRenderObject(*it, child_test_x, child_test_y, current_x, current_y, result, false)) {
             return true;
         }
     }

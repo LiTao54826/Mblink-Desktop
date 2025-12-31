@@ -38,10 +38,13 @@ LayerManager::LayerManager() {
 }
 
 void LayerManager::BeginFrame() {
-    // 清除所有 Layer 中的元素
-    for (auto& layer : layers_) {
-        layer->Clear();
-    }
+    // 关键修复：不在这里清空 Layer
+    // Layer 的内容会在下一次 Collect 时被替换
+    // 这样 HitTest 可以使用上一帧收集的元素，直到新的渲染完成
+    
+    // 只设置一个标志，表示新帧开始
+    // 实际清空在 PaintLayers 之前进行
+    frame_started_ = true;
 }
 
 LayerLevel LayerManager::GetLayerLevel(int z_index) const {
@@ -66,24 +69,27 @@ bool LayerManager::ShouldCollect(const RenderObject* render_obj) const {
                           style.position == "fixed" || 
                           style.position == "relative");
     
-    return is_positioned && style.z_index >= overlay_threshold_;
+    bool should = is_positioned && style.z_index >= overlay_threshold_;
+    return should;
 }
 
 void LayerManager::Collect(std::shared_ptr<RenderObject> render_obj, const SkMatrix& transform, int z_index) {
     if (!render_obj) return;
+    
+    // 延迟清空：在新帧第一次收集时清空所有 Layer
+    // 这样 HitTest 可以使用上一帧的元素，直到新的渲染开始收集
+    if (frame_started_) {
+        for (auto& layer : layers_) {
+            layer->Clear();
+        }
+        frame_started_ = false;
+    }
     
     LayerLevel level = GetLayerLevel(z_index);
     int layer_index = static_cast<int>(level);
     
     if (layer_index >= 0 && layer_index < static_cast<int>(layers_.size())) {
         layers_[layer_index]->AddItem(render_obj, transform, z_index);
-        
-        // 调试输出
-        if (IsDebugLayersEnabled()) {
-            const char* level_names[] = {"Base", "Overlay", "Modal"};
-            std::cout << "[LayerManager] Collected element to " << level_names[layer_index] 
-                      << " layer, z-index=" << z_index << std::endl;
-        }
     }
 }
 
@@ -118,12 +124,6 @@ bool LayerManager::HitTest(float x, float y, HitTestResult& result) {
     // 注意：Base 层不在这里测试，由原有的 HitTesting 处理
     for (int i = static_cast<int>(layers_.size()) - 1; i >= 1; --i) {
         if (layers_[i]->HitTest(x, y, result)) {
-            // 调试输出
-            if (IsDebugLayersEnabled()) {
-                const char* level_names[] = {"Base", "Overlay", "Modal"};
-                std::cout << "[LayerManager] HitTest hit in " << level_names[i] 
-                          << " layer at (" << x << ", " << y << ")" << std::endl;
-            }
             return true;
         }
     }

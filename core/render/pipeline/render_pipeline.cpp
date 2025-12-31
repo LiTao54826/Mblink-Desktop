@@ -439,10 +439,6 @@ void RenderPipeline::DoLayerTreeBuild() {
         // 关键修复：在构建层树前，设置 DPI 缩放
         layer_tree_builder_->SetDpiScale(dpi_scale_);
         
-        std::cout << "[DEBUG LayerTreeBuild] Building layer tree, viewport=" 
-                  << viewport_width_ << "x" << viewport_height_ 
-                  << ", dpi_scale=" << dpi_scale_ << std::endl;
-        
         root_layer_ = layer_tree_builder_->Build(render_tree_.get());
         needs_layer_tree_rebuild_ = false;
         
@@ -453,8 +449,6 @@ void RenderPipeline::DoLayerTreeBuild() {
                 static_cast<float>(viewport_width_), 
                 static_cast<float>(viewport_height_)));
             
-            std::cout << "[DEBUG LayerTreeBuild] Root layer bounds set to " 
-                      << viewport_width_ << "x" << viewport_height_ << std::endl;
             root_layer_->MarkFullDirty();
         }
         
