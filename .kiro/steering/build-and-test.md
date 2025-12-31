@@ -110,7 +110,7 @@ console.log("[TEST_END]");
 ```cmd
 # Windows CMD 示例
 build\bin\Release\esm_loader.exe tests\js\test_xxx.js >> debuglog.txt
-不需要人工干预的情况下加上 -q 自动退出避免卡组
+不需要人工干预的情况下加上 -q 5 自动退出避免卡住
 # 检查测试结果（过滤搜索，不读取全部日志）
 findstr "TEST_FAIL" debuglog.txt
 findstr "TEST_PASS" debuglog.txt
