@@ -1,5 +1,22 @@
 # Implementation Plan
 
+## 强制要求
+
+> **自动化测试规范** (参考 #[[file:.kiro/steering/build-and-test.md]])
+> 
+> 1. **每个任务完成后必须编译验证**：`cmake --build build --config Release --target esm_loader`
+> 2. **每个 Checkpoint 必须运行自动化测试**：
+>    ```cmd
+>    build\bin\Release\esm_loader.exe tests\js\test_modal_animation.js -q 5 >> debuglog.txt
+>    findstr "TEST_PASS TEST_FAIL ERROR" debuglog.txt
+>    del debuglog.txt
+>    ```
+> 3. **测试失败时自动修复**：除非遇到需要人工判断的情况，否则自动排查并修复问题
+> 4. **记录排除方向**：修复 bug 时，每排除一个方向就记录，避免反复排查已排除的问题
+> 5. **测试通过后才能继续下一个任务**
+
+---
+
 - [ ] 1. 修改 RunningAnimation 和 RunningTransition 结构体
   - [ ] 1.1 修改 RunningAnimation 结构体使用 Element 引用
     - 将 `RenderObject* object` 改为 `std::weak_ptr<Element> element`
