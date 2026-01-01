@@ -1679,18 +1679,15 @@ void Window::InvalidateRenderTree() {
         render_pipeline_->ForceFullUpdate();
     }
     
-    // 清理运行中的动画状态，防止悬空指针问题
-    // 当渲染树重建时，旧的 RenderObject 指针会失效
-    // 注意：只清理运行中的动画，保留 @keyframes 规则
+    // 注意：不再清理运行中的动画状态
+    // 动画现在通过 Element 引用关联，而不是 RenderObject 指针
+    // 渲染树重建时，动画会通过 Element 获取新的 RenderObject
+    // 这样动画可以在 DOM 变化（如添加 Modal）时继续运行
+    
+    // 只清理 AnimationApplicator 的跟踪信息（started_animations_ map）
+    // 因为它使用 RenderObject* 作为键
     if (animation_applicator_) {
         animation_applicator_->Clear();
-    }
-    if (animation_controller_) {
-        animation_controller_->ClearRunningAnimations();
-    }
-    // 同时清理 StyleManager 中的 AnimationController
-    if (document_ && document_->GetStyleManager()) {
-        document_->GetStyleManager()->GetAnimationController().ClearRunningAnimations();
     }
 }
 

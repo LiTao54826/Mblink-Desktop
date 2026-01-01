@@ -18,6 +18,18 @@
 namespace lightui {
 
 // ============================================================================
+// RunningAnimation 实现
+// ============================================================================
+
+RenderObject* RunningAnimation::GetRenderObject() const {
+    if (auto elem = element.lock()) {
+        auto render_obj = elem->GetRenderObject();
+        return render_obj.get();
+    }
+    return nullptr;
+}
+
+// ============================================================================
 // 构造/析构
 // ============================================================================
 
@@ -38,11 +50,11 @@ void AnimationController::RegisterKeyframes(const KeyframesRule& rule) {
 }
 
 // ============================================================================
-// 动画控制
+// 动画控制 - Element 版本
 // ============================================================================
 
-void AnimationController::StartAnimation(RenderObject* object, const CSSAnimation& animation) {
-    if (!object || !animation.IsValid()) {
+void AnimationController::StartAnimation(std::shared_ptr<Element> element, const CSSAnimation& animation) {
+    if (!element || !animation.IsValid()) {
         return;
     }
     
@@ -53,11 +65,11 @@ void AnimationController::StartAnimation(RenderObject* object, const CSSAnimatio
     }
     
     // 停止已存在的同名动画
-    StopAnimation(object, animation.name);
+    StopAnimation(element, animation.name);
     
     // 创建新的运行中动画
     RunningAnimation anim;
-    anim.object = object;
+    anim.element = element;  // 使用 Element 引用
     anim.config = animation;
     anim.keyframes = &it->second;
     anim.state = animation.delay > 0 ? CSSAnimationState::DELAYED : CSSAnimationState::RUNNING;
@@ -71,55 +83,116 @@ void AnimationController::StartAnimation(RenderObject* object, const CSSAnimatio
 
     running_animations_.push_back(anim);
 
-    // 标记为脏
+    // 标记为脏 - 使用 RenderObject 指针
     if (optimization_enabled_) {
-        optimizer_.GetDirtyTracker().MarkDirty(object, animation.name);
+        RenderObject* render_obj = element->GetRenderObject().get();
+        if (render_obj) {
+            optimizer_.GetDirtyTracker().MarkDirty(render_obj, animation.name);
+        }
     }
 }
 
-void AnimationController::StopAnimation(RenderObject* object, const std::string& name) {
-    auto it = FindAnimation(object, name);
+// ============================================================================
+// 动画控制 - RenderObject 兼容版本
+// ============================================================================
+
+void AnimationController::StartAnimation(RenderObject* object, const CSSAnimation& animation) {
+    if (!object || !animation.IsValid()) {
+        return;
+    }
+    
+    // 从 RenderObject 提取 Element
+    auto element = ExtractElement(object);
+    if (!element) {
+        return;
+    }
+    
+    // 调用 Element 版本
+    StartAnimation(element, animation);
+}
+
+void AnimationController::StopAnimation(std::shared_ptr<Element> element, const std::string& name) {
+    auto it = FindAnimation(element, name);
     if (it != running_animations_.end()) {
         running_animations_.erase(it);
     }
 }
 
-void AnimationController::StopAllAnimations(RenderObject* object) {
+void AnimationController::StopAnimation(RenderObject* object, const std::string& name) {
+    auto element = ExtractElement(object);
+    if (element) {
+        StopAnimation(element, name);
+    }
+}
+
+void AnimationController::StopAllAnimations(std::shared_ptr<Element> element) {
+    if (!element) return;
+    
+    Element* elem_ptr = element.get();
     running_animations_.erase(
         std::remove_if(running_animations_.begin(), running_animations_.end(),
-            [object](const RunningAnimation& anim) {
-                return anim.object == object;
+            [elem_ptr](const RunningAnimation& anim) {
+                auto anim_elem = anim.GetElement();
+                return anim_elem && anim_elem.get() == elem_ptr;
             }),
         running_animations_.end()
     );
 }
 
-void AnimationController::PauseAnimation(RenderObject* object, const std::string& name) {
-    auto it = FindAnimation(object, name);
+void AnimationController::StopAllAnimations(RenderObject* object) {
+    auto element = ExtractElement(object);
+    if (element) {
+        StopAllAnimations(element);
+    }
+}
+
+void AnimationController::PauseAnimation(std::shared_ptr<Element> element, const std::string& name) {
+    auto it = FindAnimation(element, name);
     if (it != running_animations_.end()) {
         it->state = CSSAnimationState::PAUSED;
     }
 }
 
-void AnimationController::ResumeAnimation(RenderObject* object, const std::string& name) {
-    auto it = FindAnimation(object, name);
+void AnimationController::PauseAnimation(RenderObject* object, const std::string& name) {
+    auto element = ExtractElement(object);
+    if (element) {
+        PauseAnimation(element, name);
+    }
+}
+
+void AnimationController::ResumeAnimation(std::shared_ptr<Element> element, const std::string& name) {
+    auto it = FindAnimation(element, name);
     if (it != running_animations_.end() && it->state == CSSAnimationState::PAUSED) {
         it->state = CSSAnimationState::RUNNING;
     }
 }
+
+void AnimationController::ResumeAnimation(RenderObject* object, const std::string& name) {
+    auto element = ExtractElement(object);
+    if (element) {
+        ResumeAnimation(element, name);
+    }
+}
+
 
 // ============================================================================
 // 动画更新
 // ============================================================================
 
 void AnimationController::Update(double current_time) {
+    // 首先清理无效动画（Element 已销毁）
+    CleanupInvalidAnimations();
+    
     // 如果启用了批量更新优化
     if (optimization_enabled_ && optimizer_.GetBatchUpdater().IsEnabled()) {
         // 收集所有需要更新的动画
         for (auto& anim : running_animations_) {
-            if (anim.state != CSSAnimationState::PAUSED) {
-                optimizer_.GetBatchUpdater().AddUpdateRequest(
-                    anim.object, anim.config.name, current_time);
+            if (anim.state != CSSAnimationState::PAUSED && anim.IsValid()) {
+                auto elem = anim.GetElement();
+                if (elem) {
+                    optimizer_.GetBatchUpdater().AddUpdateRequest(
+                        anim.GetRenderObject(), anim.config.name, current_time);
+                }
             }
         }
 
@@ -127,18 +200,32 @@ void AnimationController::Update(double current_time) {
         auto requests = optimizer_.GetBatchUpdater().GetPendingRequests();
         optimizer_.GetBatchUpdater().Clear();
 
-        // 处理每个请求
+        // 处理每个请求 - 通过 Element 查找动画
         for (const auto& req : requests) {
-            UpdateSingleAnimation(req.object, req.animation_name, req.current_time);
+            // 从 RenderObject 获取 Element
+            auto element = ExtractElement(req.object);
+            if (element) {
+                UpdateSingleAnimation(element, req.animation_name, req.current_time);
+            }
         }
     } else {
         // 正常更新流程
         for (auto it = running_animations_.begin(); it != running_animations_.end(); ) {
             RunningAnimation& anim = *it;
+            
+            // 检查动画是否有效
+            if (!anim.IsValid()) {
+                it = running_animations_.erase(it);
+                continue;
+            }
+            
+            // 获取当前 RenderObject（可能为 null，如渲染树重建中）
+            RenderObject* render_object = anim.GetRenderObject();
+            auto elem = anim.GetElement();
 
             // 检查脏标记优化
-            if (optimization_enabled_ &&
-                !optimizer_.GetDirtyTracker().IsDirty(anim.object, anim.config.name)) {
+            if (optimization_enabled_ && render_object &&
+                !optimizer_.GetDirtyTracker().IsDirty(render_object, anim.config.name)) {
                 ++it;
                 continue;
             }
@@ -155,83 +242,83 @@ void AnimationController::Update(double current_time) {
                 continue;
             }
 
-        // 计算从开始到现在的总时间
-        double total_elapsed = current_time - anim.start_time;
+            // 计算从开始到现在的总时间
+            double total_elapsed = current_time - anim.start_time;
 
-        // 处理延迟
-        if (anim.state == CSSAnimationState::DELAYED) {
-            if (total_elapsed >= anim.config.delay) {
-                anim.state = CSSAnimationState::RUNNING;
+            // 处理延迟
+            if (anim.state == CSSAnimationState::DELAYED) {
+                if (total_elapsed >= anim.config.delay) {
+                    anim.state = CSSAnimationState::RUNNING;
 
-                // 触发 animationstart 事件
-                if (!anim.start_event_fired) {
-                    FireAnimationEvent(anim, "animationstart", 0.0f);
-                    anim.start_event_fired = true;
+                    // 触发 animationstart 事件
+                    if (!anim.start_event_fired) {
+                        FireAnimationEvent(anim, "animationstart", 0.0f);
+                        anim.start_event_fired = true;
+                    }
+                } else {
+                    ++it;
+                    continue;
                 }
+            }
+
+            // 计算动画实际运行时间（减去延迟）
+            if (anim.config.delay > 0) {
+                anim.current_time = total_elapsed - anim.config.delay;
             } else {
+                anim.current_time = total_elapsed;
+            }
+
+            // 计算动画进度
+            double elapsed = anim.current_time;
+            double duration = anim.config.duration;
+
+            if (duration <= 0) {
                 ++it;
                 continue;
             }
-        }
 
-        // 计算动画实际运行时间（减去延迟）
-        if (anim.config.delay > 0) {
-            anim.current_time = total_elapsed - anim.config.delay;
-        } else {
-            anim.current_time = total_elapsed;
-        }
+            // 检查是否完成
+            if (anim.config.iteration_count > 0) {
+                // 有限次迭代
+                double total_duration = duration * anim.config.iteration_count;
+                if (elapsed >= total_duration) {
+                    anim.state = CSSAnimationState::FINISHED;
 
-        // 计算动画进度
-        double elapsed = anim.current_time;
-        double duration = anim.config.duration;
+                    // 触发 animationend 事件
+                    if (!anim.end_event_fired) {
+                        FireAnimationEvent(anim, "animationend", static_cast<float>(elapsed));
+                        anim.end_event_fired = true;
+                    }
 
-        if (duration <= 0) {
-            ++it;
-            continue;
-        }
-
-        // 检查是否完成
-        if (anim.config.iteration_count > 0) {
-            // 有限次迭代
-            double total_duration = duration * anim.config.iteration_count;
-            if (elapsed >= total_duration) {
-                anim.state = CSSAnimationState::FINISHED;
-
-                // 触发 animationend 事件
-                if (!anim.end_event_fired) {
-                    FireAnimationEvent(anim, "animationend", static_cast<float>(elapsed));
-                    anim.end_event_fired = true;
+                    // 根据 fill-mode 决定是否保留
+                    if (anim.config.fill_mode == AnimationFillMode::FORWARDS ||
+                        anim.config.fill_mode == AnimationFillMode::BOTH) {
+                        // 保留最后一帧
+                        anim.current_iteration = anim.config.iteration_count - 1;
+                        ++it;
+                    } else {
+                        // 移除动画
+                        it = running_animations_.erase(it);
+                    }
+                    continue;
                 }
-
-                // 根据 fill-mode 决定是否保留
-                if (anim.config.fill_mode == AnimationFillMode::FORWARDS ||
-                    anim.config.fill_mode == AnimationFillMode::BOTH) {
-                    // 保留最后一帧
-                    anim.current_iteration = anim.config.iteration_count - 1;
-                    ++it;
-                } else {
-                    // 移除动画
-                    it = running_animations_.erase(it);
-                }
-                continue;
             }
-        }
 
-        // 计算当前迭代
-        int new_iteration = static_cast<int>(elapsed / duration);
+            // 计算当前迭代
+            int new_iteration = static_cast<int>(elapsed / duration);
 
-        // 检测迭代变化，触发 animationiteration 事件
-        if (new_iteration > anim.last_iteration && anim.last_iteration >= 0) {
-            // 迭代次数增加，触发事件
-            FireAnimationEvent(anim, "animationiteration", static_cast<float>(elapsed));
-        }
+            // 检测迭代变化，触发 animationiteration 事件
+            if (new_iteration > anim.last_iteration && anim.last_iteration >= 0) {
+                // 迭代次数增加，触发事件
+                FireAnimationEvent(anim, "animationiteration", static_cast<float>(elapsed));
+            }
 
             anim.current_iteration = new_iteration;
             anim.last_iteration = new_iteration;
 
             // 清除脏标记
-            if (optimization_enabled_) {
-                optimizer_.GetDirtyTracker().ClearDirty(anim.object, anim.config.name);
+            if (optimization_enabled_ && render_object) {
+                optimizer_.GetDirtyTracker().ClearDirty(render_object, anim.config.name);
             }
 
             ++it;
@@ -244,8 +331,8 @@ void AnimationController::Update(double current_time) {
 // ============================================================================
 
 std::optional<std::map<std::string, std::string>> 
-AnimationController::GetCurrentProperties(RenderObject* object, const std::string& name) const {
-    auto it = FindAnimation(object, name);
+AnimationController::GetCurrentProperties(std::shared_ptr<Element> element, const std::string& name) const {
+    auto it = FindAnimation(element, name);
     if (it == running_animations_.end()) {
         return std::nullopt;
     }
@@ -279,6 +366,15 @@ AnimationController::GetCurrentProperties(RenderObject* object, const std::strin
     
     // 计算当前帧属性
     return ComputeCurrentFrame(anim, progress);
+}
+
+std::optional<std::map<std::string, std::string>> 
+AnimationController::GetCurrentProperties(RenderObject* object, const std::string& name) const {
+    auto element = ExtractElement(object);
+    if (element) {
+        return GetCurrentProperties(element, name);
+    }
+    return std::nullopt;
 }
 
 std::map<std::string, std::string> AnimationController::ComputeCurrentFrame(
@@ -374,24 +470,79 @@ float AnimationController::ApplyEasing(float progress, TimingFunction timing_fun
     }
 }
 
+
 // ============================================================================
 // 辅助函数
 // ============================================================================
 
 std::vector<RunningAnimation>::iterator 
-AnimationController::FindAnimation(RenderObject* object, const std::string& name) {
+AnimationController::FindAnimation(std::shared_ptr<Element> element, const std::string& name) {
+    if (!element) {
+        return running_animations_.end();
+    }
+    
+    Element* elem_ptr = element.get();
     return std::find_if(running_animations_.begin(), running_animations_.end(),
-        [object, &name](const RunningAnimation& anim) {
-            return anim.object == object && anim.config.name == name;
+        [elem_ptr, &name](const RunningAnimation& anim) {
+            auto anim_elem = anim.GetElement();
+            return anim_elem && anim_elem.get() == elem_ptr && anim.config.name == name;
         });
 }
 
 std::vector<RunningAnimation>::const_iterator 
-AnimationController::FindAnimation(RenderObject* object, const std::string& name) const {
+AnimationController::FindAnimation(std::shared_ptr<Element> element, const std::string& name) const {
+    if (!element) {
+        return running_animations_.end();
+    }
+    
+    Element* elem_ptr = element.get();
     return std::find_if(running_animations_.begin(), running_animations_.end(),
-        [object, &name](const RunningAnimation& anim) {
-            return anim.object == object && anim.config.name == name;
+        [elem_ptr, &name](const RunningAnimation& anim) {
+            auto anim_elem = anim.GetElement();
+            return anim_elem && anim_elem.get() == elem_ptr && anim.config.name == name;
         });
+}
+
+std::vector<RunningAnimation>::iterator 
+AnimationController::FindAnimation(RenderObject* object, const std::string& name) {
+    auto element = ExtractElement(object);
+    return FindAnimation(element, name);
+}
+
+std::vector<RunningAnimation>::const_iterator 
+AnimationController::FindAnimation(RenderObject* object, const std::string& name) const {
+    auto element = ExtractElement(object);
+    return FindAnimation(element, name);
+}
+
+std::shared_ptr<Element> AnimationController::ExtractElement(RenderObject* object) const {
+    if (!object) {
+        return nullptr;
+    }
+    
+    // 获取关联的 DOM 节点
+    auto node = object->GetNode();
+    if (!node) {
+        return nullptr;
+    }
+    
+    // 检查节点是否为 Element
+    if (node->GetNodeType() != NodeType::ELEMENT_NODE) {
+        return nullptr;
+    }
+    
+    // 转换为 Element
+    return std::dynamic_pointer_cast<Element>(node);
+}
+
+void AnimationController::CleanupInvalidAnimations() {
+    running_animations_.erase(
+        std::remove_if(running_animations_.begin(), running_animations_.end(),
+            [](const RunningAnimation& anim) {
+                return !anim.IsValid();
+            }),
+        running_animations_.end()
+    );
 }
 
 void AnimationController::Clear() {
@@ -422,15 +573,20 @@ const KeyframesRule* AnimationController::GetKeyframes(const std::string& name) 
     return nullptr;
 }
 
-void AnimationController::UpdateSingleAnimation(RenderObject* object,
+void AnimationController::UpdateSingleAnimation(std::shared_ptr<Element> element,
                                                 const std::string& name,
                                                 double current_time) {
-    auto it = FindAnimation(object, name);
+    auto it = FindAnimation(element, name);
     if (it == running_animations_.end()) {
         return;
     }
 
     RunningAnimation& anim = *it;
+    
+    // 检查动画是否有效
+    if (!anim.IsValid()) {
+        return;
+    }
 
     // 初始化开始时间
     if (!anim.initialized) {
@@ -512,8 +668,9 @@ void AnimationController::UpdateSingleAnimation(RenderObject* object,
     anim.last_iteration = new_iteration;
 
     // 清除脏标记
-    if (optimization_enabled_) {
-        optimizer_.GetDirtyTracker().ClearDirty(anim.object, anim.config.name);
+    RenderObject* render_object = anim.GetRenderObject();
+    if (optimization_enabled_ && render_object) {
+        optimizer_.GetDirtyTracker().ClearDirty(render_object, anim.config.name);
     }
 }
 
@@ -524,24 +681,8 @@ void AnimationController::UpdateSingleAnimation(RenderObject* object,
 void AnimationController::FireAnimationEvent(const RunningAnimation& anim,
                                              const std::string& event_type,
                                              float elapsed_time) {
-    // 获取 RenderObject 关联的 DOM 元素
-    if (!anim.object) {
-        return;
-    }
-
-    // 获取关联的 DOM 节点
-    auto node = anim.object->GetNode();
-    if (!node) {
-        return;
-    }
-
-    // 检查节点是否为 Element
-    if (node->GetNodeType() != NodeType::ELEMENT_NODE) {
-        return;
-    }
-
-    // 转换为 Element
-    auto element = std::dynamic_pointer_cast<Element>(node);
+    // 直接从动画获取 Element
+    auto element = anim.GetElement();
     if (!element) {
         return;
     }
@@ -556,4 +697,3 @@ void AnimationController::FireAnimationEvent(const RunningAnimation& anim,
 }
 
 } // namespace lightui
-

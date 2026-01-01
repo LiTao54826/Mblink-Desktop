@@ -12,6 +12,7 @@
 #include "core/compositor/property_tree/nodes/transform_tree_node.h"
 #include "core/compositor/property_tree/nodes/effect_tree_node.h"
 #include "core/compositor/property_tree/property_tree_state.h"
+#include "core/dom/element.h"
 #include "include/core/SkM44.h"
 #include <regex>
 #include <sstream>
@@ -40,8 +41,14 @@ void AnimationApplicator::StartAnimationsForObject(RenderObject* object) {
         return;
     }
     
+    // 从 RenderObject 提取 Element
+    Element* element = ExtractElement(object);
+    if (!element) {
+        return;
+    }
+    
     const auto& style = object->GetComputedStyle();
-    auto& started = started_animations_[object];
+    auto& started = started_animations_[element];  // 使用 Element* 作为键
     
     // 遍历 ComputedStyle 中定义的所有动画
     for (const auto& anim : style.animations) {
@@ -90,13 +97,19 @@ void AnimationApplicator::ApplyAnimationValues(RenderObject* object) {
         return;
     }
     
+    // 从 RenderObject 提取 Element
+    Element* element = ExtractElement(object);
+    if (!element) {
+        return;
+    }
+    
     auto& style = object->GetComputedStyle();
     bool modified = false;
     bool needs_paint = false;  // 是否需要重绘（非层优化的属性）
     
     // 检测 play-state 变化并更新动画状态
     bool should_pause = (style.animation_play_state == "paused");
-    auto& started = started_animations_[object];
+    auto& started = started_animations_[element];  // 使用 Element* 作为键
     
     if (started.empty()) {
         return;  // 没有已启动的动画，直接返回
@@ -107,7 +120,8 @@ void AnimationApplicator::ApplyAnimationValues(RenderObject* object) {
         const auto& running_anims = controller_.GetRunningAnimations();
         
         for (const auto& running : running_anims) {
-            if (running.object == object && running.config.name == anim_name) {
+            // 使用 GetRenderObject() 获取当前 RenderObject
+            if (running.GetRenderObject() == object && running.config.name == anim_name) {
                 bool is_paused = (running.state == CSSAnimationState::PAUSED);
                 if (should_pause && !is_paused) {
                     controller_.PauseAnimation(object, anim_name);
@@ -180,8 +194,14 @@ void AnimationApplicator::StopAnimationsForObject(RenderObject* object) {
         return;
     }
     
+    // 从 RenderObject 提取 Element
+    Element* element = ExtractElement(object);
+    if (!element) {
+        return;
+    }
+    
     controller_.StopAllAnimations(object);
-    started_animations_.erase(object);
+    started_animations_.erase(element);  // 使用 Element* 作为键
 }
 
 void AnimationApplicator::SetAnimationsPaused(RenderObject* object, bool paused) {
@@ -189,7 +209,13 @@ void AnimationApplicator::SetAnimationsPaused(RenderObject* object, bool paused)
         return;
     }
     
-    auto it = started_animations_.find(object);
+    // 从 RenderObject 提取 Element
+    Element* element = ExtractElement(object);
+    if (!element) {
+        return;
+    }
+    
+    auto it = started_animations_.find(element);  // 使用 Element* 作为键
     if (it == started_animations_.end()) {
         return;
     }
@@ -208,7 +234,13 @@ bool AnimationApplicator::HasActiveAnimations(RenderObject* object) const {
         return false;
     }
     
-    auto it = started_animations_.find(object);
+    // 从 RenderObject 提取 Element
+    Element* element = const_cast<AnimationApplicator*>(this)->ExtractElement(object);
+    if (!element) {
+        return false;
+    }
+    
+    auto it = started_animations_.find(element);  // 使用 Element* 作为键
     return it != started_animations_.end() && !it->second.empty();
 }
 
@@ -217,7 +249,13 @@ std::set<std::string> AnimationApplicator::GetActiveAnimationNames(RenderObject*
         return {};
     }
     
-    auto it = started_animations_.find(object);
+    // 从 RenderObject 提取 Element
+    Element* element = const_cast<AnimationApplicator*>(this)->ExtractElement(object);
+    if (!element) {
+        return {};
+    }
+    
+    auto it = started_animations_.find(element);  // 使用 Element* 作为键
     if (it != started_animations_.end()) {
         return it->second;
     }
@@ -226,8 +264,30 @@ std::set<std::string> AnimationApplicator::GetActiveAnimationNames(RenderObject*
 
 void AnimationApplicator::Clear() {
     // 清理所有已启动动画的跟踪信息
-    // 注意：不需要调用 controller_.StopAllAnimations()，因为 controller_ 也会被清理
+    // 注意：不再清除 AnimationController 中的动画
+    // 因为动画现在通过 Element 引用关联，渲染树重建不会影响动画
     started_animations_.clear();
+}
+
+Element* AnimationApplicator::ExtractElement(RenderObject* object) const {
+    if (!object) {
+        return nullptr;
+    }
+    
+    // 获取关联的 DOM 节点
+    auto node = object->GetNode();
+    if (!node) {
+        return nullptr;
+    }
+    
+    // 检查节点是否为 Element
+    if (node->GetNodeType() != NodeType::ELEMENT_NODE) {
+        return nullptr;
+    }
+    
+    // 转换为 Element
+    auto element = std::dynamic_pointer_cast<Element>(node);
+    return element.get();
 }
 
 // ============================================================================
