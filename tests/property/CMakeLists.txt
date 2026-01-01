@@ -12,7 +12,7 @@ set(RENDER_PROPERTY_TEST_SOURCES
     render/test_list_style_properties.cpp
     render/test_aspect_ratio_properties.cpp
     render/test_clip_path_properties.cpp
-    render/test_layer_system_properties.cpp
+    render/test_paint_layer_properties.cpp
     render/test_animation_keyframes_properties.cpp
     render/test_animation_parsing_properties.cpp
     render/test_animation_interpolation_properties.cpp

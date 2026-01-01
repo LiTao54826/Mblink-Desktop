@@ -39,7 +39,7 @@
 #include "../input/hit_testing.h"
 #include "../types/event_types.h"
 #include "core/window/window_manager.h"
-#include "core/render/layer/layer_manager.h"
+#include "core/render/layer/paint_layer.h"
 #include "core/dom/document.h"
 #include "core/dom/element.h"
 #include "core/dom/selection/selection.h"

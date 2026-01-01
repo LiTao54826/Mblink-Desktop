@@ -7,7 +7,7 @@
 #include "core/dom/document.h"
 #include "core/dom/element.h"
 #include "core/render/objects/render_object.h"
-#include "core/render/layer/layer_manager.h"
+#include "core/render/layer/paint_layer.h"
 #include <algorithm>
 #include <iostream>
 #include <vector>
@@ -41,13 +41,7 @@ HitTestResult HitTesting::HitTestWithLayers(std::shared_ptr<Document> document, 
         return result;
     }
 
-    // 先在 LayerManager 的 Overlay/Modal 层中测试
-    auto& layer_manager = LayerManager::Instance();
-    if (layer_manager.HitTest(x, y, result)) {
-        return result;
-    }
-
-    // 如果 Overlay/Modal 层未命中，在 Base 层（渲染树）中测试
+    // 使用 PaintLayer 进行 hit testing
     auto body = document->GetBody();
     if (!body) {
         return result;
@@ -55,6 +49,15 @@ HitTestResult HitTesting::HitTestWithLayers(std::shared_ptr<Document> document, 
 
     auto render_object = body->GetRenderObject();
     if (render_object) {
+        // 如果有 PaintLayer，使用 PaintLayer 的 HitTest
+        PaintLayer* paint_layer = render_object->GetPaintLayer();
+        if (paint_layer) {
+            if (paint_layer->HitTest(x, y, result)) {
+                return result;
+            }
+        }
+        
+        // 回退到传统的 HitTest
         HitTestRecursive(render_object, x, y, 0.0f, 0.0f, result);
     }
 

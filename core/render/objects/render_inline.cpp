@@ -9,7 +9,6 @@
 
 #include "render_object.h"
 #include "core/render/painters/box_renderer.h"
-#include "core/render/layer/layer_manager.h"
 #include "painters/form_element_painter.h"
 #include "core/dom/element.h"
 #include "core/dom/elements/html_input_element.h"
@@ -338,10 +337,8 @@ void RenderInline::Paint(SkCanvas* canvas) {
 
     // 绘制所有子元素
     for (auto& child : sorted_children) {
-        auto& layer_mgr = LayerManager::Instance();
-        if (layer_mgr.ShouldCollect(child.get())) {
-            SkMatrix current_matrix = canvas->getTotalMatrix();
-            layer_mgr.Collect(child, current_matrix, child->GetComputedStyle().z_index);
+        // 跳过有独立合成层的子元素
+        if (child->HasOwnCompositorLayer()) {
             continue;
         }
         child->Paint(canvas);

@@ -1,10 +1,10 @@
 /**
- * LayerManager 测试
+ * Fixed Position Element Test
  * 
- * 验证 LayerManager 不会收集已有 CompositorLayer 的元素
+ * 验证 position: fixed 元素的正确行为
  */
 
-console.log('[TEST_START] LayerManager Test');
+console.log('[TEST_START] Fixed Position Test');
 
 // 创建测试 DOM 结构
 const container = document.createElement('div');
@@ -18,17 +18,17 @@ setTimeout(() => {
     // 检查元素是否存在
     const elem = document.getElementById('test-container');
     if (elem) {
-        console.log('[TEST_PASS] Toast container created');
+        console.log('[TEST_PASS] Fixed container created');
     } else {
-        console.log('[TEST_FAIL] Toast container not found');
+        console.log('[TEST_FAIL] Fixed container not found');
     }
     
     // 检查样式
     const style = window.getComputedStyle(elem);
     if (style.position === 'fixed') {
-        console.log('[TEST_PASS] Toast has fixed position');
+        console.log('[TEST_PASS] Element has fixed position');
     } else {
-        console.log('[TEST_FAIL] Toast position is not fixed: ' + style.position);
+        console.log('[TEST_FAIL] Element position is not fixed: ' + style.position);
     }
     
     console.log('[TEST_END]');

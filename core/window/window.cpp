@@ -80,7 +80,7 @@
 #include "core/layout/native_layout_engine.h"
 #include "core/render/utils/color.h"
 #include "core/render/objects/select_dropdown.h"
-#include "core/render/layer/layer_manager.h"
+#include "core/render/layer/paint_layer.h"
 #include "core/utils/encoding_utils.h"
 #include "core/devtools/devtools_manager.h"
 #include "core/lexbor/style_manager.h"
@@ -1047,13 +1047,6 @@ void Window::Render() {
     // 使用统一渲染管线渲染
     // =========================================================================
     if (render_pipeline_) {
-        auto& layer_mgr = LayerManager::Instance();
-        
-        // 关键修复：在渲染开始时清空 Layer，然后在 Paint 过程中重新收集
-        // 这样 HitTest 可以使用上一帧收集的元素（在 BeginFrame 之前）
-        // 注意：BeginFrame 必须在 Paint 之前调用，否则会清空刚收集的元素
-        layer_mgr.BeginFrame();
-        
         // 获取背景色 - 优先使用 body 的背景色，避免白边问题
         SkColor clear_color = cached_body_bg_color_;  // 使用缓存的背景色
         if (cached_render_tree_) {
@@ -1076,9 +1069,6 @@ void Window::Render() {
         
         // 处理一帧
         render_pipeline_->ProcessFrame(canvas);
-        
-        // 绘制 overlay 元素
-        layer_mgr.PaintLayers(canvas);
         
         // 更新并绘制 select 下拉菜单
         auto& dropdown_manager = SelectDropdownManager::Instance();

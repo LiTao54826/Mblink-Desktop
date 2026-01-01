@@ -41,6 +41,9 @@
 // 属性树状态（需要完整类型用于 unique_ptr）
 #include "core/compositor/property_tree/property_tree_state.h"
 
+// PaintLayer（需要完整类型用于 unique_ptr）
+#include "core/render/layer/paint_layer.h"
+
 // 前向声明 Skia 类
 class SkCanvas;
 
@@ -52,6 +55,7 @@ class Element;
 class Text;
 class AnimationTimeline;
 class CompositorLayer;
+class PaintLayer;
 
 // 层提升原因（从 compositor 模块引入）
 enum class LayerPromotionReason;
@@ -630,6 +634,31 @@ public:
     bool HasOwnCompositorLayer() const;
 
     // =========================================================================
+    // PaintLayer 支持
+    // =========================================================================
+
+    /**
+     * @brief 获取 PaintLayer（可能为 nullptr）
+     */
+    PaintLayer* GetPaintLayer() const { return paint_layer_.get(); }
+
+    /**
+     * @brief 获取或创建 PaintLayer
+     * 只有需要 PaintLayer 的元素才会创建
+     */
+    PaintLayer* EnsurePaintLayer();
+
+    /**
+     * @brief 检查是否需要 PaintLayer
+     *
+     * 需要 PaintLayer 的条件：
+     * - 是 stacking context（z-index + position、opacity < 1、transform 等）
+     * - 需要 compositing（will-change、动画、fixed、滚动）
+     * - 是根元素
+     */
+    bool NeedsPaintLayer() const;
+
+    // =========================================================================
     // 属性树状态（Property Tree System）
     // =========================================================================
 
@@ -1000,6 +1029,7 @@ protected:
     PaintCache paint_cache_;  // P1优化：样式预计算缓存
     LayerInfo layer_info_;    // 合成层关联信息
     std::unique_ptr<PropertyTreeState> property_tree_state_;  // 属性树状态
+    std::unique_ptr<PaintLayer> paint_layer_;  // 统一绘制层
 
     bool needs_layout_ = true;
     bool needs_paint_ = true;

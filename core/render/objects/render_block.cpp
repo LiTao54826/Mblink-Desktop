@@ -20,7 +20,6 @@
 #include "core/render/text/text_renderer.h"
 #include "core/render/utils/gradient_renderer.h"
 #include "core/render/utils/shadow_renderer.h"
-#include "core/render/layer/layer_manager.h"
 #include "core/render/utils/color.h"
 #include "list_marker.h"
 #include "core/render/painters/background_painter.h"
@@ -1062,29 +1061,8 @@ void RenderBlock::Paint(SkCanvas* canvas) {
         
         // 获取子元素样式，用于后续检查
         const auto& child_style = child->GetComputedStyle();
-        bool is_fixed_or_absolute = (child_style.position == "fixed" || child_style.position == "absolute");
-        
-        // 检查是否应该延迟绘制（高 z-index 的 positioned 元素）
-        // 注意：即使有独立合成层，也需要收集到 LayerManager 中用于 hit testing
-        auto& layer_mgr = LayerManager::Instance();
-        
-        // 关键修复：如果当前正在绘制 Layer，不要再次收集子元素
-        // 因为我们已经在正确的渲染上下文中了（Layer 的 Paint 调用）
-        if (!layer_mgr.IsPaintingLayers() && layer_mgr.ShouldCollect(child.get())) {
-            // 收集当前变换矩阵和元素信息
-            SkMatrix current_matrix = canvas->getTotalMatrix();
-            
-            // 如果当前元素有滚动偏移，需要在变换矩阵中补偿回来
-            if (needs_clip && (scroll_x_ != 0 || scroll_y_ != 0)) {
-                if (child_style.position == "absolute" || child_style.position == "fixed") {
-                    SkMatrix scroll_compensation = SkMatrix::Translate(scroll_x_, scroll_y_);
-                    current_matrix.preConcat(scroll_compensation);
-                }
-            }
-            
-            layer_mgr.Collect(child, current_matrix, child->GetComputedStyle().z_index);
-            continue;  // 跳过正常绘制（无论是否有合成层）
-        }
+        bool is_fixed = (child_style.position == "fixed");
+        bool is_fixed_or_absolute = (is_fixed || child_style.position == "absolute");
         
         // 关键修复：跳过有独立合成层的子元素
         // 这些子元素会在自己的层中单独光栅化，不应该在父层中绘制
@@ -1106,7 +1084,31 @@ void RenderBlock::Paint(SkCanvas* canvas) {
             }
         }
         
-        child->Paint(canvas);
+        // position: fixed 元素需要特殊处理
+        // fixed 元素的 layout.x/y 是视口绝对坐标，需要重置到视口坐标系绘制
+        if (is_fixed) {
+            // 获取当前 canvas 的变换矩阵
+            SkMatrix current_matrix = canvas->getTotalMatrix();
+            
+            // 提取 DPI 缩放因子（假设是均匀缩放）
+            float scale_x = current_matrix.getScaleX();
+            float scale_y = current_matrix.getScaleY();
+            
+            // 保存当前状态
+            canvas->save();
+            
+            // 重置变换矩阵，只保留 DPI 缩放
+            canvas->resetMatrix();
+            canvas->scale(scale_x, scale_y);
+            
+            // 绘制 fixed 元素（使用其视口绝对坐标）
+            child->Paint(canvas);
+            
+            // 恢复之前的变换矩阵
+            canvas->restore();
+        } else {
+            child->Paint(canvas);
+        }
     }
     auto children_end = std::chrono::high_resolution_clock::now();
     g_paint_children_time += std::chrono::duration_cast<std::chrono::microseconds>(children_end - children_start).count();

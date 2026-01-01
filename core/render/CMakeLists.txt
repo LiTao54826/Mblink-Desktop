@@ -39,9 +39,8 @@ set(RENDER_SOURCES
     utils/dirty_region_collector.cpp
     
     # Layer management (subdirectory)
-    layer/layer.cpp
-    layer/layer_manager.cpp
     layer/fbo_manager.cpp
+    layer/paint_layer.cpp
     
     # Style resolution (css subdirectory)
     css/style_resolver.cpp
@@ -128,9 +127,8 @@ set(RENDER_HEADERS
     utils/dirty_region_collector.h
     
     # Layer management
-    layer.h
-    layer_manager.h
-    fbo_manager.h
+    layer/fbo_manager.h
+    layer/paint_layer.h
     
     # Style resolution
     style_resolver.h
