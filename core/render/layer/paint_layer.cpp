@@ -408,7 +408,20 @@ bool PaintLayer::HitTest(float x, float y, HitTestResult& result) {
         }
     }
     
-    // 2. 测试自身
+    // 2. 在测试自身边界之前，先测试 fixed 子元素
+    // fixed 元素使用视口坐标，不受父元素边界和滚动的限制
+    const auto& children = render_object_->GetChildren();
+    for (auto it = children.rbegin(); it != children.rend(); ++it) {
+        const auto& child_style = (*it)->GetComputedStyle();
+        if (child_style.position == "fixed") {
+            // fixed 元素使用原始视口坐标进行测试
+            if (HitTestRenderObject(it->get(), x, y, 0, 0, result, false)) {
+                return true;
+            }
+        }
+    }
+    
+    // 3. 测试自身
     float abs_x, abs_y;
     GetAbsolutePosition(abs_x, abs_y);
     
@@ -416,7 +429,7 @@ bool PaintLayer::HitTest(float x, float y, HitTestResult& result) {
     if (x >= abs_x && x < abs_x + layout.width &&
         y >= abs_y && y < abs_y + layout.height) {
         
-        // 递归测试子元素
+        // 递归测试子元素（非 fixed）
         if (HitTestChildren(x, y, result)) {
             return true;
         }
@@ -436,7 +449,7 @@ bool PaintLayer::HitTest(float x, float y, HitTestResult& result) {
         }
     }
     
-    // 3. 最后测试负 z-index 子层（从高到低）
+    // 4. 最后测试负 z-index 子层（从高到低）
     for (auto it = neg_z_order_list_.rbegin(); it != neg_z_order_list_.rend(); ++it) {
         if (*it && (*it)->HitTest(x, y, result)) {
             return true;
@@ -460,10 +473,27 @@ bool PaintLayer::HitTestChildren(float x, float y, HitTestResult& result) {
     float child_test_y = y + scroll_y;
     
     // 从后向前遍历子元素（后绘制的在上面）
+    // 先测试 fixed 元素（它们不受滚动影响，使用原始坐标）
+    // 再测试普通元素（使用滚动调整后的坐标）
     const auto& children = render_object_->GetChildren();
+    
+    // 第一遍：测试 fixed 元素（使用原始视口坐标）
     for (auto it = children.rbegin(); it != children.rend(); ++it) {
-        if (HitTestRenderObject(it->get(), child_test_x, child_test_y, abs_x, abs_y, result, false)) {
-            return true;
+        const auto& child_style = (*it)->GetComputedStyle();
+        if (child_style.position == "fixed") {
+            if (HitTestRenderObject(it->get(), x, y, abs_x, abs_y, result, false)) {
+                return true;
+            }
+        }
+    }
+    
+    // 第二遍：测试非 fixed 元素（使用滚动调整后的坐标）
+    for (auto it = children.rbegin(); it != children.rend(); ++it) {
+        const auto& child_style = (*it)->GetComputedStyle();
+        if (child_style.position != "fixed") {
+            if (HitTestRenderObject(it->get(), child_test_x, child_test_y, abs_x, abs_y, result, false)) {
+                return true;
+            }
         }
     }
     
@@ -514,10 +544,27 @@ bool PaintLayer::HitTestRenderObject(
     float child_test_y = y + scroll_y;
     
     // 从后向前遍历子元素
+    // 先测试 fixed 元素（使用原始视口坐标）
+    // 再测试非 fixed 元素（使用滚动调整后的坐标）
     const auto& children = render_obj->GetChildren();
+    
+    // 第一遍：测试 fixed 元素
     for (auto it = children.rbegin(); it != children.rend(); ++it) {
-        if (HitTestRenderObject(it->get(), child_test_x, child_test_y, current_x, current_y, result, false)) {
-            return true;
+        const auto& child_style = (*it)->GetComputedStyle();
+        if (child_style.position == "fixed") {
+            if (HitTestRenderObject(it->get(), x, y, current_x, current_y, result, false)) {
+                return true;
+            }
+        }
+    }
+    
+    // 第二遍：测试非 fixed 元素
+    for (auto it = children.rbegin(); it != children.rend(); ++it) {
+        const auto& child_style = (*it)->GetComputedStyle();
+        if (child_style.position != "fixed") {
+            if (HitTestRenderObject(it->get(), child_test_x, child_test_y, current_x, current_y, result, false)) {
+                return true;
+            }
         }
     }
     
@@ -527,8 +574,8 @@ bool PaintLayer::HitTestRenderObject(
     }
     
     // 当前元素命中
-    auto node = render_obj->GetNode();
-    auto element = std::dynamic_pointer_cast<Element>(node);
+    auto hit_node = render_obj->GetNode();
+    auto element = std::dynamic_pointer_cast<Element>(hit_node);
     if (element) {
         result.element = element;
         result.render_object = render_obj->shared_from_this();
