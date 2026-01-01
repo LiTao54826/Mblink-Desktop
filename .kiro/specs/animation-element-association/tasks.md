@@ -15,6 +15,35 @@
 > 4. **记录排除方向**：修复 bug 时，每排除一个方向就记录，避免反复排查已排除的问题
 > 5. **测试通过后才能继续下一个任务**
 
+> **真实 UI 测试验收规范**
+> 
+> 1. **使用 JS 测试脚本进行真实 UI 测试**：测试脚本必须创建真实的 DOM 元素和动画
+> 2. **配合 C++/JS 日志验证**：
+>    - JS 端使用 `console.log("[TEST_PASS]")` / `console.log("[TEST_FAIL]")` 输出测试结果
+>    - C++ 端可通过 `LOG_DEBUG` 输出关键状态信息（如动画数量、Element 关联状态）
+> 3. **测试场景必须覆盖**：
+>    - 动画启动后添加新 DOM 元素（如 Modal）
+>    - 渲染树重建后动画是否继续运行
+>    - 动画关联的 Element 被移除后是否正确清理
+> 4. **测试脚本模板**：
+>    ```javascript
+>    // 创建带动画的元素
+>    const spinner = document.createElement('div');
+>    spinner.style.animation = 'spin 1s infinite';
+>    document.body.appendChild(spinner);
+>    
+>    // 触发 DOM 变化（如添加 Modal）
+>    setTimeout(() => {
+>        const modal = document.createElement('div');
+>        modal.className = 'modal';
+>        document.body.appendChild(modal);
+>        
+>        // 验证动画是否继续运行
+>        // 通过检查 C++ 日志或 JS API 获取动画状态
+>    }, 500);
+>    ```
+> 5. **自动化验收**：测试脚本自动判断通过/失败，无需人工干预
+
 ---
 
 - [ ] 1. 修改 RunningAnimation 和 RunningTransition 结构体
