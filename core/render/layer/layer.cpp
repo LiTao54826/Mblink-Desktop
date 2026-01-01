@@ -88,16 +88,6 @@ void Layer::AddItem(std::shared_ptr<RenderObject> obj, const SkMatrix& transform
     
     items_.push_back(item);
     needs_sort_ = true;
-    
-    // Debug: 检查是否添加了 Toast 容器
-    auto node = obj->GetNode();
-    if (node && node->GetNodeType() == NodeType::ELEMENT_NODE) {
-        auto elem = std::dynamic_pointer_cast<Element>(node);
-        if (elem && elem->GetAttribute("id") == "lightui-toast-container") {
-            std::cout << "[Layer::AddItem] Added toast container to layer, z_index=" << z_index 
-                      << " total_items=" << items_.size() << std::endl;
-        }
-    }
 }
 
 void Layer::Clear() {
@@ -124,15 +114,6 @@ void Layer::Paint(SkCanvas* canvas) {
     
     // 按 z-index 顺序绘制
     for (const auto& item : items_) {
-        // Debug: 检查是否是 Toast 容器
-        auto node = item.render_obj->GetNode();
-        if (node && node->GetNodeType() == NodeType::ELEMENT_NODE) {
-            auto elem = std::dynamic_pointer_cast<Element>(node);
-            if (elem && elem->GetAttribute("id") == "lightui-toast-container") {
-                std::cout << "[Layer::Paint] Painting toast container from layer, z_index=" << item.z_index << std::endl;
-            }
-        }
-        
         canvas->save();
         canvas->setMatrix(item.transform);
         item.render_obj->Paint(canvas);

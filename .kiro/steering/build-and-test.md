@@ -36,6 +36,7 @@ cmake --build build --config Release --target esm_loader
 
 使用 `esm_loader` 运行 JavaScript 测试脚本，配合日志输出进行自动化验证。
 不需要认为干预的加上 -q 3 自动退出参数
+
 修复bug时，每排除一个地方就记录已经排除的方向，不要反复在已经排除的问题上来回的排查
 ### 运行测试命令
 

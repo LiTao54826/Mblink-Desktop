@@ -162,7 +162,7 @@ int main(int argc, char** argv) {
     int height = 800;
     std::string title = "MBink App";
     bool open_devtools = false;
-    int quit_after_frames = 0;  // 0 表示不自动退出
+    float quit_after_seconds = 0;  // 0 表示不自动退出，单位：秒
 
     // 解析命令行参数
     for (int i = 1; i < argc; i++) {
@@ -180,7 +180,7 @@ int main(int argc, char** argv) {
         } else if (arg == "--devtools") {
             open_devtools = true;
         } else if ((arg == "-q" || arg == "--quit") && i + 1 < argc) {
-            quit_after_frames = std::stoi(argv[++i]);
+            quit_after_seconds = std::stof(argv[++i]);
         } else if (arg[0] != '-') {
             entry_path = arg;
         }
@@ -302,13 +302,17 @@ int main(int argc, char** argv) {
             }
         });
         
-        // 如果设置了自动退出，使用更新回调计数帧
-        if (quit_after_frames > 0) {
-            int frame_count = 0;
-            event_loop.SetUpdateCallback([&frame_count, quit_after_frames, &event_loop](float) {
-                frame_count++;
-                if (frame_count >= quit_after_frames) {
-                    std::cout << "[Auto-quit] Completed " << frame_count << " frames, exiting..." << std::endl;
+        // 如果设置了自动退出，使用更新回调计时
+        if (quit_after_seconds > 0) {
+            std::cout << "[Auto-quit] Will quit after " << quit_after_seconds << " seconds" << std::endl;
+            auto elapsed_time = std::make_shared<float>(0.0f);
+            auto frame_count = std::make_shared<int>(0);
+            event_loop.SetUpdateCallback([elapsed_time, frame_count, quit_after_seconds, &event_loop](float delta_time) {
+                (*frame_count)++;
+                *elapsed_time += delta_time;
+                // 每 60 帧输出一次调试信息
+                if (*elapsed_time >= quit_after_seconds) {
+                    std::cout << "[Auto-quit] Completed " << *elapsed_time << " seconds (" << *frame_count << " frames), exiting..." << std::endl;
                     event_loop.Stop();
                 }
             });

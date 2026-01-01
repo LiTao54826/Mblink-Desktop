@@ -83,10 +83,11 @@ LayerPromotionReason LayerTreeBuilder::ShouldPromote(RenderObject* obj) const {
         return LayerPromotionReason::WillChangeOpacity;
     }
 
-    // 3. position: fixed
-    if (HasPositionFixed(obj)) {
-        return LayerPromotionReason::PositionFixed;
-    }
+    // 3. position: fixed - 暂时禁用，由 LayerManager 处理
+    // fixed 元素需要特殊的视口坐标处理，CompositorLayer 系统目前不支持
+    // if (HasPositionFixed(obj)) {
+    //     return LayerPromotionReason::PositionFixed;
+    // }
 
     // 4. transform 动画
     if (HasTransformAnimation(obj)) {
@@ -206,22 +207,6 @@ void LayerTreeBuilder::UpdateLayerBounds(CompositorLayer* layer, RenderObject* o
         return;
     }
     
-    // 对于非根层，需要计算相对于层树父层的位置
-    // 
-    // 关键理解：
-    // - 层树父层对应的 RenderObject 可能是当前元素的祖先（不一定是直接父元素）
-    // - 例如：RenderObject 树是 A -> B -> C -> D，其中 A 和 D 有独立层
-    // - 层树是：A层 -> D层
-    // - D 的 layout.x, layout.y 是相对于 C 的
-    // - 但在层树中，D层的父层是 A层
-    // - 所以 D层的边界应该是 D 相对于 A 的位置
-    //
-    // 合成器 (compositor.cpp) 在 CompositeLayerCPU 中会递归应用父层的位置：
-    //   canvas->translate(bounds.left(), bounds.top());
-    // 然后递归绘制子层时，canvas 已经被平移到了父层的位置。
-    //
-    // 所以这里需要计算的是：相对于层树父层对应的 RenderObject 的位置
-    
     // 获取层树父层对应的 RenderObject
     auto parent_layer = layer->GetParent();
     RenderObject* parent_layer_obj = parent_layer ? parent_layer->GetRenderObject() : nullptr;
@@ -230,18 +215,25 @@ void LayerTreeBuilder::UpdateLayerBounds(CompositorLayer* layer, RenderObject* o
     float rel_x = layout.x;
     float rel_y = layout.y;
     
-    // 从当前元素的直接父元素开始，累加位置
-    // 直到到达层树父层对应的 RenderObject
-    // 注意：不要减去滚动偏移！滚动偏移应该在合成时应用，而不是在计算层边界时应用
-    // 层的边界应该是相对于文档的位置，滚动偏移由合成器在绘制子层时应用
-    auto parent = obj->GetParent();
-    while (parent && parent.get() != parent_layer_obj) {
-        const auto& parent_layout = parent->GetLayoutInfo();
-        rel_x += parent_layout.x;
-        rel_y += parent_layout.y;
-        
-        parent = parent->GetParent();
+    // 关键修复：position: fixed 元素的位置是相对于视口的
+    // 不需要累加父元素的位置，因为 layout.x/y 已经是视口坐标
+    // 同时，fixed 元素应该直接作为根层的子层，位置就是视口坐标
+    bool is_fixed = (style.position == "fixed");
+    
+    if (!is_fixed) {
+        // 对于非 fixed 元素，需要累加父元素位置
+        // 从当前元素的直接父元素开始，累加位置
+        // 直到到达层树父层对应的 RenderObject
+        auto parent = obj->GetParent();
+        while (parent && parent.get() != parent_layer_obj) {
+            const auto& parent_layout = parent->GetLayoutInfo();
+            rel_x += parent_layout.x;
+            rel_y += parent_layout.y;
+            
+            parent = parent->GetParent();
+        }
     }
+    // 对于 fixed 元素，rel_x 和 rel_y 保持为 layout.x 和 layout.y（视口坐标）
     
     // 计算边界尺寸和偏移
     float width = layout.width;

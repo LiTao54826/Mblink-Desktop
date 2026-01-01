@@ -4,6 +4,7 @@
  */
 
 #include "layer_manager.h"
+#include "core/dom/element.h"
 #include "core/event/input/hit_testing.h"
 #include <iostream>
 #include <cstdlib>
@@ -70,6 +71,7 @@ bool LayerManager::ShouldCollect(const RenderObject* render_obj) const {
                           style.position == "relative");
     
     bool should = is_positioned && style.z_index >= overlay_threshold_;
+    
     return should;
 }
 
