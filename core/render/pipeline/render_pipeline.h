@@ -22,6 +22,7 @@
 // 复用 V2 的组件头文件
 #include "core/compositor/compositor_layer.h"
 #include "core/compositor/layer_tree_builder.h"
+#include "core/compositor/layer_tree_manager.h"
 #include "core/compositor/rasterizer.h"
 #include "core/compositor/compositor.h"
 #include "core/compositor/animation/animation_layer_bridge.h"
@@ -72,6 +73,7 @@ struct UnifiedPipelineConfig {
     bool enable_animation_optimization = true;///< 启用动画优化
     bool enable_frame_skip = true;            ///< 启用帧跳过
     bool enable_property_trees = true;        ///< 启用属性树系统
+    bool enable_incremental_layer_tree = true;   ///< 启用增量层树更新
     bool show_layer_borders = false;          ///< 显示层边界（调试）
 };
 
@@ -267,6 +269,7 @@ public:
     Compositor* GetCompositor() { return compositor_.get(); }
     AnimationLayerBridge* GetAnimationBridge() { return animation_bridge_.get(); }
     ScrollLayerManager* GetScrollManager() { return scroll_manager_.get(); }
+    LayerTreeManager* GetLayerTreeManager() { return layer_tree_manager_.get(); }
     void SetShowLayerBorders(bool show);
 
 private:
@@ -338,6 +341,7 @@ private:
     // =========================================================================
 
     std::unique_ptr<LayerTreeBuilder> layer_tree_builder_;
+    std::unique_ptr<LayerTreeManager> layer_tree_manager_;
     std::unique_ptr<Rasterizer> rasterizer_;
     std::unique_ptr<Compositor> compositor_;
     std::unique_ptr<AnimationLayerBridge> animation_bridge_;

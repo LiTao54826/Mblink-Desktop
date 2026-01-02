@@ -472,10 +472,71 @@ public:
      */
     static const char* PromotionReasonToString(LayerPromotionReason reason);
 
+    // =========================================================================
+    // 增量更新支持
+    // =========================================================================
+
+    /**
+     * @brief 获取层的唯一标识（用于增量更新时识别层）
+     *
+     * 与 GetId() 的区别：
+     * - layer_identity_ 在层的整个生命周期内不变
+     * - 即使层被重新创建，只要是同一个 RenderObject，identity 应该相同
+     */
+    uint64_t GetLayerIdentity() const { return layer_identity_; }
+
+    /**
+     * @brief 设置层的唯一标识
+     */
+    void SetLayerIdentity(uint64_t identity) { layer_identity_ = identity; }
+
+    /**
+     * @brief 检查层是否为 fixed 层
+     */
+    bool IsFixedLayer() const {
+        return promotion_reason_ == LayerPromotionReason::PositionFixed;
+    }
+
+    /**
+     * @brief 获取层在层树中的深度
+     * @return 深度值，根层为 0
+     */
+    int GetTreeDepth() const;
+
+    /**
+     * @brief 重新附加到新的父层
+     * @param new_parent 新的父层
+     *
+     * 操作步骤：
+     * 1. 从当前父层移除
+     * 2. 添加到新父层
+     * 3. 更新 parent_ 引用
+     */
+    void ReparentTo(std::shared_ptr<CompositorLayer> new_parent);
+
+    /**
+     * @brief 按 z-index 插入子层
+     * @param child 要插入的子层
+     * @param z_index z-index 值
+     *
+     * 保持子层按 z-index 升序排列
+     */
+    void InsertChildByZIndex(std::shared_ptr<CompositorLayer> child, int z_index);
+
+    /**
+     * @brief 获取关联 RenderObject 的 z-index
+     * @return z-index 值，默认为 0
+     */
+    int GetZIndex() const;
+
 private:
     // 层标识
     uint32_t id_;
     std::string debug_name_;
+
+    // 层的唯一标识，在层的生命周期内不变（用于增量更新）
+    uint64_t layer_identity_ = 0;
+    static uint64_t next_layer_identity_;
 
     // 关联的渲染对象
     RenderObject* render_object_ = nullptr;

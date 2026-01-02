@@ -5,6 +5,7 @@
 
 #include "compositor_layer.h"
 #include "animation/animation_bounds_calculator.h"
+#include "core/render/objects/render_object.h"
 #include "include/core/SkImageInfo.h"
 #include <algorithm>
 #include <cstring>
@@ -40,9 +41,11 @@ namespace lightui {
 
 // 静态 ID 生成器
 uint32_t CompositorLayer::next_id_ = 1;
+uint64_t CompositorLayer::next_layer_identity_ = 1;
 
 CompositorLayer::CompositorLayer(uint32_t id)
-    : id_(id == 0 ? next_id_++ : id) {
+    : id_(id == 0 ? next_id_++ : id)
+    , layer_identity_(next_layer_identity_++) {
 }
 
 CompositorLayer::~CompositorLayer() {
@@ -509,6 +512,65 @@ const char* CompositorLayer::PromotionReasonToString(LayerPromotionReason reason
         default:
             return "unknown";
     }
+}
+
+// =========================================================================
+// 增量更新支持
+// =========================================================================
+
+int CompositorLayer::GetTreeDepth() const {
+    int depth = 0;
+    auto parent = parent_.lock();
+    while (parent) {
+        depth++;
+        parent = parent->parent_.lock();
+    }
+    return depth;
+}
+
+void CompositorLayer::ReparentTo(std::shared_ptr<CompositorLayer> new_parent) {
+    // 从当前父层移除
+    if (auto old_parent = parent_.lock()) {
+        old_parent->RemoveChild(this);
+    }
+    
+    // 添加到新父层
+    if (new_parent) {
+        new_parent->AddChild(shared_from_this());
+    } else {
+        parent_.reset();
+    }
+}
+
+void CompositorLayer::InsertChildByZIndex(std::shared_ptr<CompositorLayer> child, int z_index) {
+    if (!child) {
+        return;
+    }
+    
+    // 从旧父层移除
+    if (auto old_parent = child->GetParent()) {
+        old_parent->RemoveChild(child.get());
+    }
+    
+    child->SetParent(shared_from_this());
+    
+    // 找到正确的插入位置（按 z-index 升序）
+    auto it = std::find_if(children_.begin(), children_.end(),
+        [z_index](const std::shared_ptr<CompositorLayer>& c) {
+            return c->GetZIndex() > z_index;
+        });
+    
+    children_.insert(it, child);
+}
+
+int CompositorLayer::GetZIndex() const {
+    if (!render_object_) {
+        return 0;
+    }
+    
+    // 从关联的 RenderObject 获取 z-index
+    const auto& style = render_object_->GetComputedStyle();
+    return style.z_index;
 }
 
 // =========================================================================

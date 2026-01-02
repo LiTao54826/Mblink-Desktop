@@ -19,11 +19,13 @@
 #include "compositor_layer.h"
 #include <memory>
 #include <unordered_map>
+#include <vector>
 
 namespace lightui {
 
 // 前向声明
 class RenderObject;
+struct PendingLayerUpdate;
 
 /**
  * @brief 层树构建器
@@ -107,6 +109,96 @@ public:
      */
     void UpdateLayerBounds(CompositorLayer* layer, RenderObject* obj);
 
+    // =========================================================================
+    // 增量更新接口（新增）
+    // =========================================================================
+
+    /**
+     * @brief 查找 RenderObject 应该附加到的父层
+     * @param obj RenderObject
+     * @return 父层，如果是 fixed 元素返回根层
+     *
+     * 查找逻辑：
+     * 1. 如果是 fixed 元素，返回根层
+     * 2. 否则，向上遍历 RenderObject 树，找到第一个有层的祖先
+     */
+    CompositorLayer* FindParentLayerForObject(RenderObject* obj) const;
+
+    /**
+     * @brief 为 RenderObject 添加层（增量）
+     * @param obj 需要层的 RenderObject
+     * @param reason 层提升原因
+     * @return 新创建的层，失败返回 nullptr
+     *
+     * 关键改进：
+     * 1. 先找到正确的父层
+     * 2. 创建层并附加到父层
+     * 3. 附加后再计算边界（此时有父层信息）
+     */
+    std::shared_ptr<CompositorLayer> AddLayerForObject(
+        RenderObject* obj, LayerPromotionReason reason);
+
+    /**
+     * @brief 移除 RenderObject 的层（增量）
+     * @param obj 要移除层的 RenderObject
+     * @return 是否成功移除
+     *
+     * 关键改进：
+     * 1. 将子层转移到父层
+     * 2. 从父层移除当前层
+     * 3. 清理映射关系
+     */
+    bool RemoveLayerForObject(RenderObject* obj);
+
+    /**
+     * @brief 延迟更新层边界（在父层已知后调用）
+     * @param layer 要更新的层
+     * @param obj 关联的 RenderObject
+     *
+     * 与 UpdateLayerBounds() 的区别：
+     * - 确保在层已附加到父层后调用
+     * - 正确处理 fixed 元素的视口坐标
+     */
+    void UpdateLayerBoundsDeferred(CompositorLayer* layer, RenderObject* obj);
+
+    /**
+     * @brief 检查是否可以增量更新
+     * @return 如果可以增量更新返回 true
+     *
+     * 不能增量更新的情况：
+     * - 根层不存在
+     * - 层树结构严重损坏
+     * - 需要重新排序大量层
+     */
+    bool CanIncrementalUpdate() const;
+
+    /**
+     * @brief 获取层树版本号（用于检测变化）
+     */
+    uint64_t GetTreeVersion() const { return tree_version_; }
+
+    /**
+     * @brief 递增层树版本号
+     */
+    void IncrementTreeVersion() { ++tree_version_; }
+
+    /**
+     * @brief 获取根层
+     */
+    std::shared_ptr<CompositorLayer> GetRootLayer() const { return root_layer_; }
+
+    /**
+     * @brief 增量构建层树
+     * @param root 渲染树根节点
+     * @param pending_updates 待处理的更新列表
+     * @return 是否成功
+     *
+     * 与 Build() 不同，IncrementalBuild() 不会清除现有层树，
+     * 而是根据 pending_updates 进行增量修改。
+     */
+    bool IncrementalBuild(RenderObject* root,
+                          const std::vector<PendingLayerUpdate>& pending_updates);
+
 private:
     /**
      * @brief 递归构建层树
@@ -167,6 +259,9 @@ private:
 
     // DPI 缩放比
     float dpi_scale_ = 1.0f;
+
+    // 层树版本号，每次修改递增
+    uint64_t tree_version_ = 0;
 };
 
 } // namespace lightui

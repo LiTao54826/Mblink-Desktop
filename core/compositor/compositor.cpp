@@ -13,6 +13,7 @@
 #include <chrono>
 #include <cmath>
 #include <iostream>
+#include <sstream>
 
 // OpenGL headers
 #ifdef _WIN32
@@ -579,11 +580,21 @@ void Compositor::CompositeLayerCPU(CompositorLayer* layer, SkCanvas* canvas, con
 
     canvas->save();
 
-    // 应用父变换
+    // 应用父变换（包括累积的滚动偏移）
     canvas->concat(parent_transform);
 
     // 应用层位置
     const SkRect& bounds = layer->GetBounds();
+    const SkPoint& scroll = layer->GetScrollOffset();
+    
+    // 调试：检查 Root 层的滚动偏移
+    if (layer->GetPromotionReason() == LayerPromotionReason::RootLayer) {
+        static float last_root_scroll = -1;
+        if (scroll.fY != last_root_scroll) {
+            std::cout << "[Composite] RootLayer scroll=(" << scroll.fX << "," << scroll.fY << ")" << std::endl;
+            last_root_scroll = scroll.fY;
+        }
+    }
     
     // 对于所有层，使用 bounds 的位置
     // bounds 已经包含了正确的位置信息：
@@ -596,9 +607,23 @@ void Compositor::CompositeLayerCPU(CompositorLayer* layer, SkCanvas* canvas, con
     // 层的位图已经包含了变换后的内容
     // 如果在这里再次应用变换，会导致变换被应用两次
 
-    // 获取滚动偏移
-    const SkPoint& scroll = layer->GetScrollOffset();
+    // 获取当前层的滚动偏移
     bool has_scroll = (scroll.fX != 0 || scroll.fY != 0);
+    
+    // 计算传递给子层的累积变换
+    // 关键修复：child_transform 需要包含：
+    // 1. parent_transform（从根层累积下来的变换）
+    // 2. 当前层的位置偏移（bounds.left(), bounds.top()）
+    // 3. 当前层的滚动偏移（如果有）
+    // 
+    // 这样子层才能正确继承所有祖先层的位置和滚动偏移
+    SkMatrix child_transform = parent_transform;
+    // 先应用当前层的位置偏移
+    child_transform.preTranslate(bounds.left(), bounds.top());
+    // 再应用滚动偏移（滚动偏移是负的，因为内容向上滚动时，子层应该向上移动）
+    if (has_scroll) {
+        child_transform.preTranslate(-scroll.fX, -scroll.fY);
+    }
 
     // 绘制层位图（不应用滚动偏移，因为位图内容是静态的）
     // 滚动偏移只影响子层的位置
@@ -639,6 +664,14 @@ void Compositor::CompositeLayerCPU(CompositorLayer* layer, SkCanvas* canvas, con
             return GetLayerZIndex(a) < GetLayerZIndex(b);
         });
 
+    // 调试日志：输出滚动偏移传递情况
+    if (has_scroll) {
+        std::cout << "[Composite] Layer has scroll: scroll_y=" << scroll.fY 
+                  << " child_transform.ty=" << child_transform.getTranslateY()
+                  << " children=" << sorted_children.size()
+                  << std::endl;
+    }
+
     // 递归绘制排序后的子层
     for (CompositorLayer* child : sorted_children) {
         // 关键修复：position: fixed 元素不应该受到父层滚动偏移的影响
@@ -646,15 +679,12 @@ void Compositor::CompositeLayerCPU(CompositorLayer* layer, SkCanvas* canvas, con
         bool child_is_fixed = (child->GetPromotionReason() == LayerPromotionReason::PositionFixed);
         
         if (child_is_fixed) {
-            // fixed 元素：不应用滚动偏移，直接绘制
+            // fixed 元素：不应用任何滚动偏移，重置变换
             CompositeLayerCPU(child, canvas, SkMatrix::I());
-        } else if (has_scroll) {
-            // 非 fixed 元素：应用滚动偏移
-            SkMatrix scroll_transform = SkMatrix::Translate(-scroll.fX, -scroll.fY);
-            CompositeLayerCPU(child, canvas, scroll_transform);
         } else {
-            // 无滚动：直接绘制
-            CompositeLayerCPU(child, canvas, SkMatrix::I());
+            // 非 fixed 元素：传递累积的滚动偏移
+            // child_transform 包含了从根层到当前层的所有滚动偏移
+            CompositeLayerCPU(child, canvas, child_transform);
         }
     }
 

@@ -4,6 +4,7 @@
  */
 
 #include "layer_tree_builder.h"
+#include "layer_tree_manager.h"
 #include "animation/animation_bounds_calculator.h"
 #include "core/render/objects/render_object.h"
 #include "core/render/animation/keyframes.h"
@@ -128,8 +129,7 @@ void LayerTreeBuilder::BuildRecursive(RenderObject* obj, CompositorLayer* parent
 
     CompositorLayer* current_layer = parent_layer;
 
-    // 检查是否需要为此节点创建新层
-    // 关键修复：如果节点已经有层了（例如根节点），不要再创建新层
+    // 检查节点是否已经有层了（例如根节点）
     auto existing_layer = render_object_to_layer_.find(obj);
     if (existing_layer != render_object_to_layer_.end()) {
         // 节点已经有层了，使用现有层
@@ -138,8 +138,20 @@ void LayerTreeBuilder::BuildRecursive(RenderObject* obj, CompositorLayer* parent
         LayerPromotionReason reason = ShouldPromote(obj);
         if (reason != LayerPromotionReason::None) {
             auto new_layer = CreateLayer(obj, reason);
-            parent_layer->AddChild(new_layer);
+            
+            // 关键修复：Fixed 元素直接挂在根层下，不受 DOM 层级影响
+            // 这确保 fixed 元素不会被滚动容器的层结构影响
+            CompositorLayer* target_parent = parent_layer;
+            if (reason == LayerPromotionReason::PositionFixed && root_layer_) {
+                target_parent = root_layer_.get();
+            }
+            
+            target_parent->AddChild(new_layer);
             current_layer = new_layer.get();
+            
+            // 关键修复：在添加到父层后重新计算 bounds
+            // 因为 UpdateLayerBounds 需要知道父层来正确计算相对位置
+            UpdateLayerBounds(current_layer, obj);
         }
     }
 
@@ -194,6 +206,9 @@ void LayerTreeBuilder::UpdateLayerBounds(CompositorLayer* layer, RenderObject* o
     const auto& layout = obj->GetLayoutInfo();
     const auto& style = obj->GetComputedStyle();
     
+    // 调试日志
+    static bool debug_layer = std::getenv("LIGHTUI_DEBUG_LAYER") != nullptr;
+    
     // 性能优化：跳过 0 大小的元素（如空的 Toast 容器）
     // 这些元素没有可见内容，不需要计算复杂的 transform 边界
     if (layout.width <= 0 && layout.height <= 0) {
@@ -228,6 +243,30 @@ void LayerTreeBuilder::UpdateLayerBounds(CompositorLayer* layer, RenderObject* o
     // 同时，fixed 元素应该直接作为根层的子层，位置就是视口坐标
     bool is_fixed = (style.position == "fixed");
     
+    // 检查是否有动画（用于调试）
+    bool has_animation = false;
+    for (const auto& anim : style.animations) {
+        if (!anim.name.empty() && anim.name != "none") {
+            has_animation = true;
+            break;
+        }
+    }
+    
+    // 调试日志：输出 fixed 元素的布局信息
+    if (is_fixed) {
+        auto node = obj->GetNode();
+        std::string tag_name = "unknown";
+        if (node && node->GetNodeType() == NodeType::ELEMENT_NODE) {
+            auto element = std::static_pointer_cast<Element>(node);
+            tag_name = element->GetTagName();
+        }
+        std::cout << "[UpdateLayerBounds] FIXED element: " << tag_name 
+                  << " layout=(" << layout.x << "," << layout.y 
+                  << "," << layout.width << "x" << layout.height << ")"
+                  << " has_transform=" << (style.transform.has_value() ? "yes" : "no")
+                  << std::endl;
+    }
+    
     if (!is_fixed) {
         // 对于非 fixed 元素，需要累加父元素位置
         // 从当前元素的直接父元素开始，累加位置
@@ -239,6 +278,25 @@ void LayerTreeBuilder::UpdateLayerBounds(CompositorLayer* layer, RenderObject* o
             rel_y += parent_layout.y;
             
             parent = parent->GetParent();
+        }
+        
+        // 注意：不在这里减去滚动偏移！
+        // 层的 bounds 保持文档坐标，滚动偏移在 CompositeLayerCPU 中应用
+        // 这样可以避免双重减去滚动偏移的问题
+        
+        // 调试日志：只输出有动画的元素
+        if (debug_layer && has_animation) {
+            auto node = obj->GetNode();
+            std::string tag_name = "unknown";
+            if (node && node->GetNodeType() == NodeType::ELEMENT_NODE) {
+                auto element = std::static_pointer_cast<Element>(node);
+                tag_name = element->GetTagName();
+            }
+            std::cout << "[UpdateLayerBounds] " << tag_name 
+                      << " layout=(" << layout.x << "," << layout.y << ")"
+                      << " rel=(" << rel_x << "," << rel_y << ")"
+                      << " parent_layer_obj=" << (parent_layer_obj ? "yes" : "no")
+                      << std::endl;
         }
     }
     // 对于 fixed 元素，rel_x 和 rel_y 保持为 layout.x 和 layout.y（视口坐标）
@@ -412,6 +470,16 @@ void LayerTreeBuilder::UpdateLayerBounds(CompositorLayer* layer, RenderObject* o
     
     SkRect bounds = SkRect::MakeXYWH(rel_x + offset_x, rel_y + offset_y, width, height);
     layer->SetBounds(bounds);
+    
+    // 调试日志：输出最终边界
+    if (is_fixed) {
+        std::cout << "[UpdateLayerBounds] FIXED final bounds=(" 
+                  << bounds.left() << "," << bounds.top() 
+                  << "," << bounds.width() << "x" << bounds.height() << ")"
+                  << " rel=(" << rel_x << "," << rel_y << ")"
+                  << " offset=(" << offset_x << "," << offset_y << ")"
+                  << std::endl;
+    }
 }
 
 bool LayerTreeBuilder::HasWillChangeTransform(RenderObject* obj) const {
@@ -566,6 +634,182 @@ bool LayerTreeBuilder::IsScrollableContainer(RenderObject* obj) const {
         content_height > layout.height;
 
     return has_overflow_content;
+}
+
+// ============================================================================
+// 增量更新接口（新增）
+// ============================================================================
+
+CompositorLayer* LayerTreeBuilder::FindParentLayerForObject(RenderObject* obj) const {
+    if (!obj || !root_layer_) {
+        return nullptr;
+    }
+    
+    // 如果是 fixed 元素，直接返回根层
+    if (HasPositionFixed(obj)) {
+        return root_layer_.get();
+    }
+    
+    // 向上遍历 RenderObject 树，找到第一个有层的祖先
+    auto parent = obj->GetParent();
+    while (parent) {
+        auto it = render_object_to_layer_.find(parent.get());
+        if (it != render_object_to_layer_.end()) {
+            return it->second.get();
+        }
+        parent = parent->GetParent();
+    }
+    
+    // 如果没有找到有层的祖先，返回根层
+    return root_layer_.get();
+}
+
+std::shared_ptr<CompositorLayer> LayerTreeBuilder::AddLayerForObject(
+    RenderObject* obj, LayerPromotionReason reason) {
+    
+    if (!obj || !root_layer_) {
+        return nullptr;
+    }
+    
+    // 检查是否已经有层
+    auto existing = render_object_to_layer_.find(obj);
+    if (existing != render_object_to_layer_.end()) {
+        return existing->second;  // 已经有层了
+    }
+    
+    // 找到正确的父层
+    CompositorLayer* parent_layer = FindParentLayerForObject(obj);
+    if (!parent_layer) {
+        return nullptr;
+    }
+    
+    // 创建新层
+    auto new_layer = CreateLayer(obj, reason);
+    if (!new_layer) {
+        return nullptr;
+    }
+    
+    // 附加到父层
+    parent_layer->AddChild(new_layer);
+    
+    // 在附加后重新计算边界（此时有父层信息）
+    UpdateLayerBoundsDeferred(new_layer.get(), obj);
+    
+    // 递增版本号
+    IncrementTreeVersion();
+    
+    return new_layer;
+}
+
+bool LayerTreeBuilder::RemoveLayerForObject(RenderObject* obj) {
+    if (!obj) {
+        return false;
+    }
+    
+    auto it = render_object_to_layer_.find(obj);
+    if (it == render_object_to_layer_.end()) {
+        return false;  // 没有层
+    }
+    
+    auto layer = it->second;
+    auto parent = layer->GetParent();
+    
+    if (parent) {
+        // 将子层转移到父层
+        const auto& children = layer->GetChildren();
+        for (const auto& child : children) {
+            parent->AddChild(child);
+        }
+        
+        // 从父层移除当前层
+        parent->RemoveChild(layer.get());
+    }
+    
+    // 清理 RenderObject 的层关联
+    obj->SetCompositorLayer(nullptr);
+    
+    // 从映射中移除
+    render_object_to_layer_.erase(it);
+    layer_count_--;
+    
+    // 递增版本号
+    IncrementTreeVersion();
+    
+    return true;
+}
+
+void LayerTreeBuilder::UpdateLayerBoundsDeferred(CompositorLayer* layer, RenderObject* obj) {
+    // 委托给 UpdateLayerBounds，它已经正确处理了父层信息
+    UpdateLayerBounds(layer, obj);
+}
+
+bool LayerTreeBuilder::CanIncrementalUpdate() const {
+    // 检查根层是否存在
+    if (!root_layer_) {
+        return false;
+    }
+    
+    // 检查层树是否一致（基本检查）
+    // 如果层数量为 0 但根层存在，说明有问题
+    if (layer_count_ == 0) {
+        return false;
+    }
+    
+    return true;
+}
+
+bool LayerTreeBuilder::IncrementalBuild(RenderObject* root,
+                                         const std::vector<PendingLayerUpdate>& pending_updates) {
+    if (!root || !CanIncrementalUpdate()) {
+        return false;
+    }
+    
+    // 遍历待处理更新
+    for (const auto& update : pending_updates) {
+        if (!update.target) {
+            continue;
+        }
+        
+        switch (update.type) {
+            case LayerUpdateType::Add:
+                AddLayerForObject(update.target, update.reason);
+                break;
+                
+            case LayerUpdateType::Remove:
+                RemoveLayerForObject(update.target);
+                break;
+                
+            case LayerUpdateType::UpdateBounds: {
+                auto layer = GetLayerForRenderObject(update.target);
+                if (layer) {
+                    UpdateLayerBoundsDeferred(layer.get(), update.target);
+                }
+                break;
+            }
+            
+            case LayerUpdateType::Reparent: {
+                // 重新附加父层：先移除再添加
+                auto layer = GetLayerForRenderObject(update.target);
+                if (layer) {
+                    auto reason = layer->GetPromotionReason();
+                    RemoveLayerForObject(update.target);
+                    AddLayerForObject(update.target, reason);
+                }
+                break;
+            }
+            
+            case LayerUpdateType::UpdateZIndex: {
+                // z-index 更新：需要重新排序
+                // TODO: 实现 z-index 排序
+                break;
+            }
+        }
+    }
+    
+    // 递增版本号
+    IncrementTreeVersion();
+    
+    return true;
 }
 
 } // namespace lightui

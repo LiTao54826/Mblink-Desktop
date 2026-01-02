@@ -8,6 +8,7 @@ add_subdirectory(animation)
 set(COMPOSITOR_SOURCES
     compositor_layer.cpp
     layer_tree_builder.cpp
+    layer_tree_manager.cpp
     rasterizer.cpp
     compositor.cpp
     scroll_layer_manager.cpp
@@ -18,6 +19,7 @@ set(COMPOSITOR_SOURCES
 set(COMPOSITOR_HEADERS
     compositor_layer.h
     layer_tree_builder.h
+    layer_tree_manager.h
     rasterizer.h
     compositor.h
     scroll_layer_manager.h

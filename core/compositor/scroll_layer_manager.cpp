@@ -33,8 +33,17 @@ bool ScrollLayerManager::RegisterScrollContainer(RenderObject* container) {
     }
 
     // 检查是否已注册
-    if (scroll_containers_.find(container) != scroll_containers_.end()) {
-        return true;  // 已注册
+    auto it = scroll_containers_.find(container);
+    if (it != scroll_containers_.end()) {
+        // 已注册，但需要检查层是否被重建
+        // 如果层树被重建，clip_layer 会是新的层，需要重新设置滚动偏移
+        auto clip_layer = container->GetCompositorLayer();
+        if (clip_layer) {
+            // 关键修复：确保新的 clip_layer 有正确的滚动偏移
+            ScrollContainerInfo& info = it->second;
+            clip_layer->SetScrollOffset(SkPoint::Make(info.scroll_x, info.scroll_y));
+        }
+        return true;
     }
 
     // 检查是否可滚动
@@ -354,12 +363,7 @@ void ScrollLayerManager::UpdateContentSize(RenderObject* container) {
     
     // 调试日志
     static bool debug_scroll = std::getenv("LIGHTUI_DEBUG_SCROLL") != nullptr;
-    if (debug_scroll) {
-        std::cout << "[UpdateContentSize] cached: content_width=" << info->content_width
-                  << ", content_height=" << info->content_height
-                  << ", needs_layout=" << needs_recalc << std::endl;
-    }
-    
+
     if (info->content_width <= 0 || needs_recalc) {
         info->content_width = container->CalculateContentWidth();
     }

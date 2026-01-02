@@ -21,10 +21,12 @@
 #include "core/dom/text.h"
 #include "core/render/objects/render_object.h"
 #include "core/render/css/style_resolver.h"
+#include "core/render/pipeline/render_pipeline.h"
 #include "core/layout/layout_engine.h"
 #include "core/layout/layout_boundary_detector.h"
 #include "core/layout/incremental_layout_manager.h"
 #include "core/lexbor/style_manager.h"
+#include "core/compositor/layer_tree_manager.h"
 #include <iostream>
 #include <cstdlib>
 #include <vector>
@@ -80,7 +82,21 @@ void WindowDOMObserver::OnNodeAdded(Node* node, Node* parent) {
                     // 脱离文档流元素：使用增量布局管理器处理
                     if (auto* manager = window_->GetIncrementalLayoutManager()) {
                         if (manager->AddOutOfFlowElement(elem.get(), parent)) {
-                            // 成功处理，不需要全量重建
+                            // 成功处理布局，现在通知层树管理器添加新层
+                            // 这样可以避免完整重建层树
+                            if (auto* pipeline = window_->GetRenderPipeline()) {
+                                if (auto* layer_manager = pipeline->GetLayerTreeManager()) {
+                                    // 确定层提升原因
+                                    LayerPromotionReason reason = LayerPromotionReason::None;
+                                    if (style.position == "fixed") {
+                                        reason = LayerPromotionReason::PositionFixed;
+                                    }
+                                    // 请求增量添加层
+                                    if (reason != LayerPromotionReason::None) {
+                                        layer_manager->RequestAddLayer(elem->GetRenderObject().get(), reason);
+                                    }
+                                }
+                            }
                             window_->SetNeedsRepaint();
                             return;
                         }
@@ -157,7 +173,15 @@ void WindowDOMObserver::OnNodeRemoved(Node* node, Node* parent) {
                     // 脱离文档流元素：使用增量布局管理器处理
                     if (auto* manager = window_->GetIncrementalLayoutManager()) {
                         if (manager->RemoveOutOfFlowElement(elem.get())) {
-                            // 成功处理，不需要全量重建
+                            // 成功处理布局，现在通知层树管理器移除层
+                            if (auto* pipeline = window_->GetRenderPipeline()) {
+                                if (auto* layer_manager = pipeline->GetLayerTreeManager()) {
+                                    // 请求增量移除层
+                                    if (style.position == "fixed") {
+                                        layer_manager->RequestRemoveLayer(elem->GetRenderObject().get());
+                                    }
+                                }
+                            }
                             window_->SetNeedsRepaint();
                             return;
                         }
