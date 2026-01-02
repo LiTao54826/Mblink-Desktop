@@ -1103,8 +1103,9 @@ protected:
     // 滚动状态
     float scroll_x_ = 0.0f;
     float scroll_y_ = 0.0f;
-    float content_width_ = 0.0f;
-    float content_height_ = 0.0f;
+    mutable float content_width_ = 0.0f;
+    mutable float content_height_ = 0.0f;
+    mutable float last_layout_width_ = 0.0f;  // 上次布局时的宽度，用于检测宽度变化
     
     // 滚动内容层标志：当为 true 时，Paint 不应用滚动偏移
     // 滚动偏移将在合成阶段由 ScrollLayerManager 的 content_layer 应用

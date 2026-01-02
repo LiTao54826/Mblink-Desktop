@@ -860,6 +860,15 @@ void RenderBlock::Paint(SkCanvas* canvas) {
     if (isOverflowSet(overflow_x) || isOverflowSet(overflow_y)) {
         needs_clip = true;
 
+        // 检测布局宽度是否变化（如滚动条出现/消失导致可用宽度变化）
+        // 当宽度变化时，需要重新计算 content_width_
+        float current_layout_width = layout_info_.width;
+        bool layout_width_changed = (last_layout_width_ != current_layout_width && last_layout_width_ > 0);
+        if (layout_width_changed) {
+            content_width_ = 0.0f;  // 清除缓存，强制重新计算
+        }
+        last_layout_width_ = current_layout_width;
+
         // 优化：只在布局改变后重新计算内容尺寸
         // 使用缓存的值，避免每次 Paint 都遍历整个子树
         if (content_width_ <= 0 || content_height_ <= 0 || needs_layout_) {

@@ -31,6 +31,27 @@ void CSSStyleDeclaration::SetProperty(const std::string& property, const std::st
         return;
     }
     
+    // 如果值为空，等同于移除该属性
+    if (value.empty()) {
+        // 检查是否是 overflow 相关属性，需要触发布局更新
+        bool needs_layout = (normalized_property == "overflow" || 
+                             normalized_property == "overflow-x" || 
+                             normalized_property == "overflow-y");
+        
+        // 移除属性
+        auto it = properties_.find(normalized_property);
+        if (it != properties_.end()) {
+            properties_.erase(it);
+            priorities_.erase(normalized_property);
+            property_order_.erase(
+                std::remove(property_order_.begin(), property_order_.end(), normalized_property),
+                property_order_.end()
+            );
+            UpdateStyleAttribute(needs_layout);
+        }
+        return;
+    }
+    
     // 检查值是否真的改变了
     auto it = properties_.find(normalized_property);
     bool value_changed = (it == properties_.end() || it->second != value);
@@ -63,8 +84,13 @@ void CSSStyleDeclaration::SetProperty(const std::string& property, const std::st
         priorities_.erase(normalized_property);
     }
     
+    // overflow 属性会影响滚动条显示，需要触发布局更新
+    bool needs_layout = (normalized_property == "overflow" || 
+                         normalized_property == "overflow-x" || 
+                         normalized_property == "overflow-y");
+    
     // 更新元素的style属性（这会触发重绘）
-    UpdateStyleAttribute();
+    UpdateStyleAttribute(needs_layout);
 }
 
 std::string CSSStyleDeclaration::GetPropertyValue(const std::string& property) const {
@@ -342,7 +368,7 @@ std::string CSSStyleDeclaration::NormalizePropertyName(const std::string& proper
     return result;
 }
 
-void CSSStyleDeclaration::UpdateStyleAttribute() {
+void CSSStyleDeclaration::UpdateStyleAttribute(bool needs_layout) {
     auto elem = element_.lock();
     if (!elem) {
         return;
@@ -356,6 +382,12 @@ void CSSStyleDeclaration::UpdateStyleAttribute() {
     std::string current_style = elem->GetAttribute("style");
     if (current_style == css_text) {
         return;  // 没有变化，跳过更新
+    }
+    
+    // 如果是布局属性变更，先标记布局脏
+    // 这样 SetAttribute 中的 STYLE | PAINT 标记会被正确合并
+    if (needs_layout) {
+        elem->MarkDirty(DirtyType::LAYOUT);
     }
     
     elem->SetAttribute("style", css_text);

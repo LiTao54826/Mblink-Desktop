@@ -50,6 +50,9 @@ bool ScrollLayerManager::RegisterScrollContainer(RenderObject* container) {
     const auto& layout = container->GetLayoutInfo();
     const auto& style = container->GetComputedStyle();
     
+    // 初始化布局宽度跟踪
+    info.last_layout_width = layout.width;
+    
     // 获取 border 宽度（从ComputedStyle）
     float border_left = style.border_left_width > 0 ? style.border_left_width : style.border.width.ToPx();
     float border_right = style.border_right_width > 0 ? style.border_right_width : style.border.width.ToPx();
@@ -338,6 +341,14 @@ void ScrollLayerManager::UpdateContentSize(RenderObject* container) {
     // 否则页面切换后会使用旧的缓存值
     bool needs_recalc = container->NeedsLayout();
     
+    // 关键修复：检测布局宽度是否变化（如滚动条出现/消失导致可用宽度变化）
+    // 当宽度变化时，需要重新计算 content_width
+    const auto& layout = container->GetLayoutInfo();
+    if (info->last_layout_width != layout.width && info->last_layout_width > 0) {
+        needs_recalc = true;
+    }
+    info->last_layout_width = layout.width;
+    
     info->content_width = container->GetContentWidth();
     info->content_height = container->GetContentHeight();
     
@@ -360,7 +371,6 @@ void ScrollLayerManager::UpdateContentSize(RenderObject* container) {
     }
 
     // 更新视口尺寸（与RegisterScrollContainer逻辑一致）
-    const auto& layout = container->GetLayoutInfo();
     const auto& style = container->GetComputedStyle();
     
     // 获取 border 宽度

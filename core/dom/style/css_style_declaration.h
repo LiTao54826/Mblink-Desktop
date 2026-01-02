@@ -159,8 +159,9 @@ private:
     
     /**
      * @brief 更新元素的style属性
+     * @param needs_layout 是否需要触发布局更新
      */
-    void UpdateStyleAttribute();
+    void UpdateStyleAttribute(bool needs_layout = false);
 
 private:
     std::weak_ptr<Element> element_;  // 关联的元素（弱引用避免循环引用）

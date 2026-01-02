@@ -583,6 +583,9 @@ void RenderPipeline::RegisterScrollableElementsRecursive(RenderObject* obj) {
     // 复制自 V2
     if (obj->IsScrollable()) {
         scroll_manager_->RegisterScrollContainer(obj);
+        // 关键修复：每次渲染时更新内容尺寸
+        // 这确保当 overflow 变化导致布局宽度变化时，滚动条能正确更新
+        scroll_manager_->UpdateContentSize(obj);
     }
 
     const auto& style = obj->GetComputedStyle();

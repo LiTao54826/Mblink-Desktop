@@ -994,39 +994,55 @@ void Window::Render() {
     // =========================================================================
     // 增量同步：处理 DOM 变化
     // =========================================================================
+    bool needs_layout_update = false;
     if (document_ && render_tree_synchronizer_ && cached_render_tree_) {
         auto& tracker = document_->GetDirtyTracker();
         if (tracker.HasPendingChanges()) {
             // 调用 RenderTreeSynchronizer 来同步变化
             bool synced = render_tree_synchronizer_->Synchronize(tracker, cached_render_tree_);
             if (synced) {
-                // 同步后需要重新布局
-                if (layout_engine_) {
-                    // 获取窗口尺寸
-                    int physical_width, physical_height;
-                    SDL_GetWindowSizeInPixels(sdl_window_, &physical_width, &physical_height);
-                    float dpi_scale = GetDisplayScale();
-                    float width = static_cast<float>(physical_width) / dpi_scale;
-                    float height = static_cast<float>(physical_height) / dpi_scale;
-                    
-                    auto& devtools = DevToolsManager::GetInstance();
-                    float sync_app_width = width;
-                    float sync_app_height = height;
-                    if (devtools.IsOpen()) {
-                        float app_x, app_y;
-                        devtools.GetMainAppBounds(width, height, app_x, app_y, sync_app_width, sync_app_height);
-                    }
-                    
-                    layout_engine_->BuildLayoutTree(cached_render_tree_);
-                    layout_engine_->ComputeLayout(sync_app_width, sync_app_height);
-                    layout_engine_->GetLayoutInfo(cached_render_tree_);
-                }
-                
-                // 标记层树需要重建
-                if (render_pipeline_) {
-                    render_pipeline_->InvalidateLayerTree();
-                }
+                needs_layout_update = true;
             }
+        }
+    }
+    
+    // =========================================================================
+    // 增量布局：处理样式变更导致的布局需求
+    // =========================================================================
+    // 即使没有 DOM 结构变化，样式变更（如 overflow）也可能需要重新布局
+    if (layout_engine_ && cached_render_tree_) {
+        // 获取窗口尺寸
+        int physical_width, physical_height;
+        SDL_GetWindowSizeInPixels(sdl_window_, &physical_width, &physical_height);
+        float dpi_scale = GetDisplayScale();
+        float width = static_cast<float>(physical_width) / dpi_scale;
+        float height = static_cast<float>(physical_height) / dpi_scale;
+        
+        auto& devtools = DevToolsManager::GetInstance();
+        float sync_app_width = width;
+        float sync_app_height = height;
+        if (devtools.IsOpen()) {
+            float app_x, app_y;
+            devtools.GetMainAppBounds(width, height, app_x, app_y, sync_app_width, sync_app_height);
+        }
+        
+        if (needs_layout_update) {
+            // DOM 结构变化，需要重建布局树
+            layout_engine_->BuildLayoutTree(cached_render_tree_);
+            layout_engine_->ComputeLayout(sync_app_width, sync_app_height);
+            layout_engine_->GetLayoutInfo(cached_render_tree_);
+        } else {
+            // 尝试增量布局（处理样式变更导致的布局需求）
+            bool did_incremental = layout_engine_->ComputeIncrementalLayout(sync_app_width, sync_app_height);
+            if (did_incremental) {
+                layout_engine_->GetLayoutInfo(cached_render_tree_);
+                needs_layout_update = true;
+            }
+        }
+        
+        // 标记层树需要重建
+        if (needs_layout_update && render_pipeline_) {
+            render_pipeline_->InvalidateLayerTree();
         }
     }
 

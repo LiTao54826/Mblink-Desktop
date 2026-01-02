@@ -52,6 +52,9 @@ struct ScrollContainerInfo {
     // 视口尺寸
     float viewport_width = 0.0f;
     float viewport_height = 0.0f;
+    
+    // 上次布局宽度（用于检测宽度变化）
+    float last_layout_width = 0.0f;
 };
 
 /**

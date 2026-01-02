@@ -735,9 +735,11 @@ void NativeLayoutEngine::UpdateStyle(RenderObject* render_obj, const ComputedSty
             }
 
             // Overflow 变化可能影响布局（滚动条）
-            if (old_style.overflow.x != new_style.overflow.x ||
-                old_style.overflow.y != new_style.overflow.y ||
-                old_style.scrollbar_width != new_style.scrollbar_width) {
+            // 当 overflow 变化时，滚动条的出现/消失会影响子元素的可用宽度
+            bool overflow_changed = (old_style.overflow.x != new_style.overflow.x ||
+                                     old_style.overflow.y != new_style.overflow.y ||
+                                     old_style.scrollbar_width != new_style.scrollbar_width);
+            if (overflow_changed) {
                 layout_changed = true;
             }
 
@@ -768,6 +770,31 @@ void NativeLayoutEngine::UpdateStyle(RenderObject* render_obj, const ComputedSty
                 node->needs_layout = true;
                 // 关键修复：清除当前节点的缓存，确保布局重新计算
                 node->cache.Clear();
+                
+                // 关键修复：当 overflow 变化时，滚动条的出现/消失会影响子元素的可用宽度
+                // 需要清除所有子元素的布局缓存，确保它们使用新的可用宽度重新布局
+                if (overflow_changed) {
+                    // 关键修复：清除当前元素自身的 content_width_/content_height_ 缓存
+                    // 当 overflow 变化时，滚动条的出现/消失会影响内容区域宽度的判断
+                    // 必须重新计算 content_width_ 以正确判断是否需要水平滚动条
+                    render_obj->SetContentSize(0.0f, 0.0f);
+                    
+                    std::function<void(NodeId)> clearChildrenCache = [&](NodeId child_id) {
+                        LayoutNode* child = GetNode(child_id);
+                        if (!child) return;
+                        child->cache.Clear();
+                        child->needs_layout = true;
+                        if (child->render_obj) {
+                            child->render_obj->MarkNeedsLayout(false);
+                        }
+                        for (NodeId grandchild_id : child->children) {
+                            clearChildrenCache(grandchild_id);
+                        }
+                    };
+                    for (NodeId child_id : node->children) {
+                        clearChildrenCache(child_id);
+                    }
+                }
                 
                 // 调试日志
                 static bool debug_dirty = std::getenv("LIGHTUI_DEBUG_DIRTY") != nullptr;

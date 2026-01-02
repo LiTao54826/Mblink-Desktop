@@ -1054,6 +1054,12 @@ float RenderObject::CalculateContentHeight() const {
         std::string oy = !s.overflow_y.empty() ? s.overflow_y : s.overflow;
         return oy == "scroll" || oy == "auto" || oy == "hidden";
     };
+    
+    // 辅助函数：检查是否是 out-of-flow 定位（fixed 或 absolute）
+    // 这些元素脱离文档流，不应该参与父元素的 content_size 计算
+    auto isOutOfFlow = [](const ComputedStyle& s) {
+        return s.position == "fixed" || s.position == "absolute";
+    };
 
     // 使用栈来模拟递归：存储 (RenderObject*, 累计偏移Y)
     struct StackItem {
@@ -1064,9 +1070,12 @@ float RenderObject::CalculateContentHeight() const {
     std::vector<StackItem> stack;
     float global_max_height = 0.0f;
     
-    // 初始化：将所有直接子元素加入栈
+    // 初始化：将所有直接子元素加入栈（跳过 out-of-flow 元素）
     for (const auto& child : children_) {
-        stack.push_back({child.get(), 0.0f});
+        const auto& child_style = child->GetComputedStyle();
+        if (!isOutOfFlow(child_style)) {
+            stack.push_back({child.get(), 0.0f});
+        }
     }
     
     while (!stack.empty()) {
@@ -1089,8 +1098,12 @@ float RenderObject::CalculateContentHeight() const {
         if (!hasOverflowClip(obj_style)) {
             const auto& obj_children = obj->GetChildren();
             for (const auto& grandchild : obj_children) {
-                // 子元素的偏移 = 当前元素的绝对Y位置
-                stack.push_back({grandchild.get(), obj_y});
+                const auto& grandchild_style = grandchild->GetComputedStyle();
+                // 跳过 out-of-flow 元素
+                if (!isOutOfFlow(grandchild_style)) {
+                    // 子元素的偏移 = 当前元素的绝对Y位置
+                    stack.push_back({grandchild.get(), obj_y});
+                }
             }
         }
     }
@@ -1122,6 +1135,12 @@ float RenderObject::CalculateContentWidth() const {
         std::string ox = !s.overflow_x.empty() ? s.overflow_x : s.overflow;
         return ox == "scroll" || ox == "auto" || ox == "hidden";
     };
+    
+    // 辅助函数：检查是否是 out-of-flow 定位（fixed 或 absolute）
+    // 这些元素脱离文档流，不应该参与父元素的 content_size 计算
+    auto isOutOfFlow = [](const ComputedStyle& s) {
+        return s.position == "fixed" || s.position == "absolute";
+    };
 
     // 使用栈来模拟递归：存储 (RenderObject*, 累计偏移X)
     struct StackItem {
@@ -1132,9 +1151,12 @@ float RenderObject::CalculateContentWidth() const {
     std::vector<StackItem> stack;
     float global_max_width = 0.0f;
     
-    // 初始化：将所有直接子元素加入栈
+    // 初始化：将所有直接子元素加入栈（跳过 out-of-flow 元素）
     for (const auto& child : children_) {
-        stack.push_back({child.get(), 0.0f});
+        const auto& child_style = child->GetComputedStyle();
+        if (!isOutOfFlow(child_style)) {
+            stack.push_back({child.get(), 0.0f});
+        }
     }
     
     while (!stack.empty()) {
@@ -1157,8 +1179,12 @@ float RenderObject::CalculateContentWidth() const {
         if (!hasOverflowClip(obj_style)) {
             const auto& obj_children = obj->GetChildren();
             for (const auto& grandchild : obj_children) {
-                // 子元素的偏移 = 当前元素的绝对X位置
-                stack.push_back({grandchild.get(), obj_x});
+                const auto& grandchild_style = grandchild->GetComputedStyle();
+                // 跳过 out-of-flow 元素
+                if (!isOutOfFlow(grandchild_style)) {
+                    // 子元素的偏移 = 当前元素的绝对X位置
+                    stack.push_back({grandchild.get(), obj_x});
+                }
             }
         }
     }
