@@ -1,6 +1,7 @@
 #include "animation_timeline.h"
 #include "easing_functions.h"
 #include "core/render/objects/render_object.h"
+#include "core/dom/element.h"
 #include <algorithm>
 #include <cmath>
 
@@ -9,6 +10,14 @@ namespace lightui {
 // ============================================================================
 // RunningTransition Implementation
 // ============================================================================
+
+RenderObject* RunningTransition::GetRenderObject() const {
+    if (auto elem = element.lock()) {
+        auto render_obj = elem->GetRenderObject();
+        return render_obj.get();
+    }
+    return nullptr;
+}
 
 float RunningTransition::GetProgress() const {
     if (state != AnimationState::RUNNING) {
@@ -48,21 +57,26 @@ AnimationTimeline::AnimationTimeline() {
 AnimationTimeline::~AnimationTimeline() {
 }
 
-void AnimationTimeline::StartTransition(RenderObject* object,
+
+// ============================================================================
+// 过渡控制 - Element 版本
+// ============================================================================
+
+void AnimationTimeline::StartTransition(std::shared_ptr<Element> element,
                                        const std::string& property,
                                        const CSSTransition& transition,
                                        const TransitionValue& start_value,
                                        const TransitionValue& end_value) {
-    if (!object) {
+    if (!element) {
         return;
     }
     
     // 停止已存在的相同属性的过渡
-    StopTransition(object, property);
+    StopTransition(element, property);
     
     // 创建新的过渡
     RunningTransition trans;
-    trans.object = object;
+    trans.element = element;  // 使用 Element 引用
     trans.property = property;
     trans.transition = transition;
     trans.start_value = start_value;
@@ -80,8 +94,39 @@ void AnimationTimeline::StartTransition(RenderObject* object,
     running_transitions_.push_back(trans);
 }
 
+// ============================================================================
+// 过渡控制 - RenderObject 兼容版本
+// ============================================================================
+
+void AnimationTimeline::StartTransition(RenderObject* object,
+                                       const std::string& property,
+                                       const CSSTransition& transition,
+                                       const TransitionValue& start_value,
+                                       const TransitionValue& end_value) {
+    if (!object) {
+        return;
+    }
+    
+    // 从 RenderObject 提取 Element
+    auto element = ExtractElement(object);
+    if (!element) {
+        return;
+    }
+    
+    // 调用 Element 版本
+    StartTransition(element, property, transition, start_value, end_value);
+}
+
 void AnimationTimeline::Update(double current_time) {
+    // 首先清理无效过渡（Element 已销毁）
+    CleanupInvalidTransitions();
+    
     for (auto& trans : running_transitions_) {
+        // 检查过渡是否有效
+        if (!trans.IsValid()) {
+            continue;
+        }
+        
         trans.current_time = current_time;
 
         // 初始化开始时间
@@ -119,10 +164,16 @@ void AnimationTimeline::Update(double current_time) {
     RemoveFinishedTransitions();
 }
 
-std::optional<TransitionValue> AnimationTimeline::GetCurrentValue(RenderObject* object,
+std::optional<TransitionValue> AnimationTimeline::GetCurrentValue(std::shared_ptr<Element> element,
                                                                    const std::string& property) const {
+    if (!element) {
+        return std::nullopt;
+    }
+    
+    Element* elem_ptr = element.get();
     for (const auto& trans : running_transitions_) {
-        if (trans.object == object && trans.property == property) {
+        auto trans_elem = trans.GetElement();
+        if (trans_elem && trans_elem.get() == elem_ptr && trans.property == property) {
             if (trans.state == AnimationState::RUNNING) {
                 return trans.GetCurrentValue();
             }
@@ -132,22 +183,57 @@ std::optional<TransitionValue> AnimationTimeline::GetCurrentValue(RenderObject* 
     return std::nullopt;
 }
 
-void AnimationTimeline::StopTransition(RenderObject* object, const std::string& property) {
+std::optional<TransitionValue> AnimationTimeline::GetCurrentValue(RenderObject* object,
+                                                                   const std::string& property) const {
+    auto element = ExtractElement(object);
+    if (element) {
+        return GetCurrentValue(element, property);
+    }
+    return std::nullopt;
+}
+
+void AnimationTimeline::StopTransition(std::shared_ptr<Element> element, const std::string& property) {
+    if (!element) {
+        return;
+    }
+    
+    Element* elem_ptr = element.get();
     auto it = std::remove_if(running_transitions_.begin(), running_transitions_.end(),
-        [object, &property](const RunningTransition& trans) {
-            return trans.object == object && trans.property == property;
+        [elem_ptr, &property](const RunningTransition& trans) {
+            auto trans_elem = trans.GetElement();
+            return trans_elem && trans_elem.get() == elem_ptr && trans.property == property;
+        });
+    
+    running_transitions_.erase(it, running_transitions_.end());
+}
+
+void AnimationTimeline::StopTransition(RenderObject* object, const std::string& property) {
+    auto element = ExtractElement(object);
+    if (element) {
+        StopTransition(element, property);
+    }
+}
+
+void AnimationTimeline::StopAllTransitions(std::shared_ptr<Element> element) {
+    if (!element) {
+        return;
+    }
+    
+    Element* elem_ptr = element.get();
+    auto it = std::remove_if(running_transitions_.begin(), running_transitions_.end(),
+        [elem_ptr](const RunningTransition& trans) {
+            auto trans_elem = trans.GetElement();
+            return trans_elem && trans_elem.get() == elem_ptr;
         });
     
     running_transitions_.erase(it, running_transitions_.end());
 }
 
 void AnimationTimeline::StopAllTransitions(RenderObject* object) {
-    auto it = std::remove_if(running_transitions_.begin(), running_transitions_.end(),
-        [object](const RunningTransition& trans) {
-            return trans.object == object;
-        });
-    
-    running_transitions_.erase(it, running_transitions_.end());
+    auto element = ExtractElement(object);
+    if (element) {
+        StopAllTransitions(element);
+    }
 }
 
 void AnimationTimeline::StopAll() {
@@ -165,11 +251,46 @@ size_t AnimationTimeline::GetRunningTransitionCount() const {
 void AnimationTimeline::RemoveFinishedTransitions() {
     auto it = std::remove_if(running_transitions_.begin(), running_transitions_.end(),
         [](const RunningTransition& trans) {
-            return trans.state == AnimationState::FINISHED;
+            return trans.state == AnimationState::FINISHED || !trans.IsValid();
         });
     
     running_transitions_.erase(it, running_transitions_.end());
 }
+
+void AnimationTimeline::CleanupInvalidTransitions() {
+    running_transitions_.erase(
+        std::remove_if(running_transitions_.begin(), running_transitions_.end(),
+            [](const RunningTransition& trans) {
+                return !trans.IsValid();
+            }),
+        running_transitions_.end()
+    );
+}
+
+std::shared_ptr<Element> AnimationTimeline::ExtractElement(RenderObject* object) const {
+    if (!object) {
+        return nullptr;
+    }
+    
+    // 获取关联的 DOM 节点
+    auto node = object->GetNode();
+    if (!node) {
+        return nullptr;
+    }
+    
+    // 检查节点是否为 Element
+    if (node->GetNodeType() != NodeType::ELEMENT_NODE) {
+        return nullptr;
+    }
+    
+    // 转换为 Element
+    return std::dynamic_pointer_cast<Element>(node);
+}
+
+
+// ============================================================================
+// 插值函数
+// ============================================================================
 
 TransitionValue AnimationTimeline::Interpolate(const TransitionValue& start,
                                                const TransitionValue& end,
@@ -258,4 +379,3 @@ CSSTransform AnimationTimeline::InterpolateTransform(const CSSTransform& start,
 }
 
 } // namespace lightui
-

@@ -19,6 +19,7 @@
 #include <string>
 #include <set>
 #include <map>
+#include <memory>
 
 namespace lightui {
 
@@ -26,6 +27,7 @@ namespace lightui {
 class PaintArtifactCompositor;
 class PropertyTrees;
 class AnimationLayerBridge;
+class Element;
 
 /**
  * @brief 动画应用器
@@ -181,8 +183,16 @@ private:
     /// 属性树集合
     PropertyTrees* property_trees_ = nullptr;
     
-    /// 跟踪每个对象已启动的动画名称
-    std::map<RenderObject*, std::set<std::string>> started_animations_;
+    /// 跟踪每个 Element 已启动的动画名称
+    /// 使用 Element* 作为键，因为 Element 在渲染树重建时保持稳定
+    std::map<Element*, std::set<std::string>> started_animations_;
+    
+    /**
+     * @brief 从 RenderObject 提取关联的 Element
+     * @param object 渲染对象
+     * @return Element 指针，如果无法提取返回 nullptr
+     */
+    Element* ExtractElement(RenderObject* object) const;
     
     /**
      * @brief 尝试通过属性树系统直接更新属性

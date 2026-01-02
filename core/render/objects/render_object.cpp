@@ -29,7 +29,7 @@
 #include "core/render/utils/shadow_renderer.h"
 #include "scrollbar_controller.h"
 #include "list_marker.h"
-#include "core/render/layer/layer_manager.h"
+#include "core/render/layer/paint_layer.h"
 #include "core/render/utils/color.h"
 #include "core/render/css/css_value.h"
 #include "core/dom/node.h"
@@ -172,6 +172,14 @@ void RenderObject::AppendChild(std::shared_ptr<RenderObject> child) {
     children_.push_back(child);
     child->SetParent(shared_from_this());
 
+    // 同步更新 PaintLayer 树
+    if (child->NeedsPaintLayer()) {
+        PaintLayer* child_layer = child->EnsurePaintLayer();
+        if (child_layer && paint_layer_) {
+            paint_layer_->AddChild(child_layer);
+        }
+    }
+
     MarkNeedsLayout();
     MarkNeedsPaint();
 }
@@ -179,6 +187,12 @@ void RenderObject::AppendChild(std::shared_ptr<RenderObject> child) {
 void RenderObject::RemoveChild(std::shared_ptr<RenderObject> child) {
     auto it = std::find(children_.begin(), children_.end(), child);
     if (it != children_.end()) {
+        // 同步更新 PaintLayer 树
+        PaintLayer* child_layer = (*it)->GetPaintLayer();
+        if (child_layer && paint_layer_) {
+            paint_layer_->RemoveChild(child_layer);
+        }
+
         (*it)->SetParent(nullptr);
         children_.erase(it);
         MarkNeedsLayout();
@@ -188,6 +202,12 @@ void RenderObject::RemoveChild(std::shared_ptr<RenderObject> child) {
 
 void RenderObject::RemoveAllChildren() {
     for (auto& child : children_) {
+        // 同步更新 PaintLayer 树
+        PaintLayer* child_layer = child->GetPaintLayer();
+        if (child_layer && paint_layer_) {
+            paint_layer_->RemoveChild(child_layer);
+        }
+
         child->SetParent(nullptr);
     }
 
@@ -1193,6 +1213,73 @@ bool RenderObject::HasOwnCompositorLayer() const {
 }
 
 // =========================================================================
+// PaintLayer 支持
+// =========================================================================
+
+PaintLayer* RenderObject::EnsurePaintLayer() {
+    if (!paint_layer_) {
+        if (NeedsPaintLayer()) {
+            paint_layer_ = std::make_unique<PaintLayer>(this);
+        }
+    }
+    return paint_layer_.get();
+}
+
+bool RenderObject::NeedsPaintLayer() const {
+    const auto& style = computed_style_;
+    
+    // 根元素总是需要 PaintLayer
+    if (!parent_.lock()) {
+        return true;
+    }
+    
+    // position: absolute/relative/fixed/sticky 且 z-index != 0
+    bool has_position = (style.position == "absolute" || 
+                         style.position == "relative" || 
+                         style.position == "fixed" ||
+                         style.position == "sticky");
+    if (has_position && style.z_index != 0) {
+        return true;
+    }
+    
+    // position: fixed 总是需要 PaintLayer
+    if (style.position == "fixed") {
+        return true;
+    }
+    
+    // opacity < 1
+    if (style.opacity < 1.0f) {
+        return true;
+    }
+    
+    // transform != none
+    if (style.transform.has_value()) {
+        return true;
+    }
+    
+    // filter != none
+    if (style.filter.has_value()) {
+        return true;
+    }
+    
+    // will-change: transform/opacity
+    if (!style.will_change.empty()) {
+        if (style.will_change.find("transform") != std::string::npos ||
+            style.will_change.find("opacity") != std::string::npos) {
+            return true;
+        }
+    }
+    
+    // 可滚动容器
+    std::string overflow_y = !style.overflow_y.empty() ? style.overflow_y : style.overflow;
+    if (overflow_y == "scroll" || overflow_y == "auto") {
+        return true;
+    }
+    
+    return false;
+}
+
+// =========================================================================
 // 属性树状态方法实现
 // =========================================================================
 
@@ -1345,6 +1432,89 @@ bool RenderObject::CanDirectlyUpdateOpacity() const {
     }
     
     return false;
+}
+
+// ============================================================================
+// 布局边界支持（增量布局优化）
+// ============================================================================
+
+bool RenderObject::IsLayoutBoundary() const {
+    if (!boundary_cache_valid_) {
+        const_cast<RenderObject*>(this)->UpdateLayoutBoundaryCache();
+    }
+    return cached_boundary_type_ != 0;  // 0 = None
+}
+
+int RenderObject::GetLayoutBoundaryType() const {
+    if (!boundary_cache_valid_) {
+        const_cast<RenderObject*>(this)->UpdateLayoutBoundaryCache();
+    }
+    return cached_boundary_type_;
+}
+
+void RenderObject::UpdateLayoutBoundaryCache() {
+    const auto& style = computed_style_;
+    
+    // 1. 脱离文档流 - 最强的布局边界
+    if (style.position == "fixed" || style.position == "absolute") {
+        cached_boundary_type_ = 1;  // OutOfFlow
+        boundary_cache_valid_ = true;
+        return;
+    }
+    
+    // 2. CSS Containment
+    if (style.HasLayoutContainment()) {
+        cached_boundary_type_ = 4;  // CSSContainment
+        boundary_cache_valid_ = true;
+        return;
+    }
+    
+    // 检查是否有固定尺寸
+    bool width_fixed = (style.width.unit == CSSUnit::PX ||
+                        style.width.unit == CSSUnit::VW ||
+                        style.width.unit == CSSUnit::VH ||
+                        style.width.unit == CSSUnit::VMIN ||
+                        style.width.unit == CSSUnit::VMAX);
+    
+    bool height_fixed = (style.height.unit == CSSUnit::PX ||
+                         style.height.unit == CSSUnit::VW ||
+                         style.height.unit == CSSUnit::VH ||
+                         style.height.unit == CSSUnit::VMIN ||
+                         style.height.unit == CSSUnit::VMAX);
+    
+    bool has_fixed_size = width_fixed && height_fixed;
+    
+    // 3. 滚动容器 + 固定尺寸
+    bool is_scroll_container = (style.overflow_x == "scroll" || style.overflow_x == "auto" ||
+                                style.overflow_y == "scroll" || style.overflow_y == "auto" ||
+                                style.overflow == "scroll" || style.overflow == "auto");
+    
+    if (is_scroll_container && has_fixed_size) {
+        cached_boundary_type_ = 2;  // ScrollContainer
+        boundary_cache_valid_ = true;
+        return;
+    }
+    
+    // 4. 固定尺寸容器
+    if (has_fixed_size) {
+        cached_boundary_type_ = 3;  // FixedSize
+        boundary_cache_valid_ = true;
+        return;
+    }
+    
+    // 5. Flex 固定项
+    if (style.flex_grow == 0.0f && style.flex_shrink == 0.0f && 
+        style.flex_basis.unit != CSSUnit::AUTO) {
+        auto parent = parent_.lock();
+        if (parent && parent->GetComputedStyle().display == RenderObjectType::FLEX) {
+            cached_boundary_type_ = 5;  // FlexFixed
+            boundary_cache_valid_ = true;
+            return;
+        }
+    }
+    
+    cached_boundary_type_ = 0;  // None
+    boundary_cache_valid_ = true;
 }
 
 } // namespace lightui

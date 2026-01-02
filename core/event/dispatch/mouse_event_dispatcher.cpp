@@ -26,7 +26,7 @@
 #include "core/event/input/focus_manager.h"
 #include "core/event/input/hit_testing.h"
 #include "core/event/types/mouse_event.h"
-#include "core/render/layer/layer_manager.h"
+#include "core/render/layer/paint_layer.h"
 #include "core/render/objects/render_object.h"
 #include "core/render/pipeline/render_pipeline.h"
 #include "core/render/objects/select_dropdown.h"
@@ -159,8 +159,14 @@ bool MouseEventDispatcher::HandleMouseEvent(const SDL_Event& event,
     HitTestResult hit_result;
     
     if (root_render) {
-        auto& layer_manager = LayerManager::Instance();
-        if (!layer_manager.HitTest(logical_x, logical_y, hit_result)) {
+        // 使用 PaintLayer 进行 hit testing
+        PaintLayer* paint_layer = root_render->GetPaintLayer();
+        if (paint_layer) {
+            if (!paint_layer->HitTest(logical_x, logical_y, hit_result)) {
+                // 回退到传统的 HitTest
+                hit_result = hit_testing.HitTestRenderObject(root_render, logical_x, logical_y, 0.0f, 0.0f);
+            }
+        } else {
             hit_result = hit_testing.HitTestRenderObject(root_render, logical_x, logical_y, 0.0f, 0.0f);
         }
     }

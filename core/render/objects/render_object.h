@@ -41,6 +41,9 @@
 // 属性树状态（需要完整类型用于 unique_ptr）
 #include "core/compositor/property_tree/property_tree_state.h"
 
+// PaintLayer（需要完整类型用于 unique_ptr）
+#include "core/render/layer/paint_layer.h"
+
 // 前向声明 Skia 类
 class SkCanvas;
 
@@ -52,6 +55,7 @@ class Element;
 class Text;
 class AnimationTimeline;
 class CompositorLayer;
+class PaintLayer;
 
 // 层提升原因（从 compositor 模块引入）
 enum class LayerPromotionReason;
@@ -293,6 +297,33 @@ struct ComputedStyle {
     // CSS will-change Property (用于层提升优化)
     std::string will_change;  // auto, transform, opacity, scroll-position, contents, etc.
 
+    // CSS Containment Property (用于布局边界优化)
+    // 可能的值：none, layout, paint, size, style, content, strict
+    // content = layout + paint + style
+    // strict = layout + paint + size + style
+    std::string contain = "none";
+
+    /**
+     * @brief 检查是否有布局包含
+     * @return 如果 contain 包含 layout 则返回 true
+     */
+    bool HasLayoutContainment() const {
+        return contain == "layout" || 
+               contain == "content" || 
+               contain == "strict" ||
+               contain.find("layout") != std::string::npos;
+    }
+
+    /**
+     * @brief 检查是否有尺寸包含
+     * @return 如果 contain 包含 size 则返回 true
+     */
+    bool HasSizeContainment() const {
+        return contain == "size" || 
+               contain == "strict" ||
+               contain.find("size") != std::string::npos;
+    }
+
     ComputedStyle() {
         width = CSSLength(0, CSSUnit::AUTO);
         height = CSSLength(0, CSSUnit::AUTO);
@@ -472,11 +503,12 @@ public:
     
     /**
      * @brief 设置计算后的样式
-     * 自动使绘制缓存失效
+     * 自动使绘制缓存和布局边界缓存失效
      */
     void SetComputedStyle(const ComputedStyle& style) { 
         computed_style_ = style; 
         paint_cache_.valid = false;  // P1优化：样式变化时使缓存失效
+        boundary_cache_valid_ = false;  // 布局边界缓存失效
     }
     
     /**
@@ -581,6 +613,38 @@ public:
     }
 
     // =========================================================================
+    // 布局边界支持（增量布局优化）
+    // =========================================================================
+
+    /**
+     * @brief 检查是否为布局边界
+     *
+     * 布局边界内的变化不会影响外部布局。
+     * 参考 Blink ObjectIsRelayoutBoundary
+     *
+     * @return 如果是布局边界返回 true
+     */
+    bool IsLayoutBoundary() const;
+
+    /**
+     * @brief 获取布局边界类型
+     * @return 布局边界类型枚举值
+     */
+    int GetLayoutBoundaryType() const;
+
+    /**
+     * @brief 更新布局边界缓存
+     *
+     * 在样式变化时调用，避免每次都重新计算
+     */
+    void UpdateLayoutBoundaryCache();
+
+    /**
+     * @brief 使布局边界缓存失效
+     */
+    void InvalidateLayoutBoundaryCache() { boundary_cache_valid_ = false; }
+
+    // =========================================================================
     // P1优化：样式预计算缓存
     // =========================================================================
 
@@ -628,6 +692,31 @@ public:
      * @brief 检查是否有独立的合成层
      */
     bool HasOwnCompositorLayer() const;
+
+    // =========================================================================
+    // PaintLayer 支持
+    // =========================================================================
+
+    /**
+     * @brief 获取 PaintLayer（可能为 nullptr）
+     */
+    PaintLayer* GetPaintLayer() const { return paint_layer_.get(); }
+
+    /**
+     * @brief 获取或创建 PaintLayer
+     * 只有需要 PaintLayer 的元素才会创建
+     */
+    PaintLayer* EnsurePaintLayer();
+
+    /**
+     * @brief 检查是否需要 PaintLayer
+     *
+     * 需要 PaintLayer 的条件：
+     * - 是 stacking context（z-index + position、opacity < 1、transform 等）
+     * - 需要 compositing（will-change、动画、fixed、滚动）
+     * - 是根元素
+     */
+    bool NeedsPaintLayer() const;
 
     // =========================================================================
     // 属性树状态（Property Tree System）
@@ -1000,11 +1089,16 @@ protected:
     PaintCache paint_cache_;  // P1优化：样式预计算缓存
     LayerInfo layer_info_;    // 合成层关联信息
     std::unique_ptr<PropertyTreeState> property_tree_state_;  // 属性树状态
+    std::unique_ptr<PaintLayer> paint_layer_;  // 统一绘制层
 
     bool needs_layout_ = true;
     bool needs_paint_ = true;
     bool child_needs_paint_ = false;  // 增量绘制优化：子节点需要重绘标志
     bool child_needs_layout_ = false; // 增量布局优化：子节点需要布局标志
+
+    // 布局边界缓存（增量布局优化）
+    mutable int cached_boundary_type_ = 0;  // 缓存的布局边界类型
+    mutable bool boundary_cache_valid_ = false;  // 布局边界缓存是否有效
 
     // 滚动状态
     float scroll_x_ = 0.0f;

@@ -20,7 +20,6 @@
 #include "core/render/text/text_renderer.h"
 #include "core/render/utils/gradient_renderer.h"
 #include "core/render/utils/shadow_renderer.h"
-#include "core/render/layer/layer_manager.h"
 #include "core/render/utils/color.h"
 #include "list_marker.h"
 #include "core/render/painters/background_painter.h"
@@ -254,48 +253,6 @@ void RenderBlock::Paint(SkCanvas* canvas) {
     if (!canvas) {
         return;
     }
-    
-    // Debug: 追踪 Toast 容器的 Paint 调用
-    {
-        auto debug_node = GetNode();
-        if (debug_node && debug_node->GetNodeType() == NodeType::ELEMENT_NODE) {
-            auto debug_elem = std::dynamic_pointer_cast<Element>(debug_node);
-            if (debug_elem && debug_elem->GetAttribute("id") == "lightui-toast-container") {
-                SkMatrix matrix = canvas->getTotalMatrix();
-                
-                // 追踪父元素
-                auto parent_ro = GetParent();
-                std::string parent_info = "none";
-                if (parent_ro) {
-                    auto parent_node = parent_ro->GetNode();
-                    if (parent_node && parent_node->GetNodeType() == NodeType::ELEMENT_NODE) {
-                        auto parent_elem = std::dynamic_pointer_cast<Element>(parent_node);
-                        if (parent_elem) {
-                            parent_info = parent_elem->GetTagName();
-                            std::string parent_id = parent_elem->GetAttribute("id");
-                            if (!parent_id.empty()) {
-                                parent_info += "#" + parent_id;
-                            }
-                        }
-                    }
-                }
-                
-                std::cout << "[Paint.Entry] Toast container Paint called, matrix=(" 
-                          << matrix.getTranslateX() << "," << matrix.getTranslateY() << ")"
-                          << " parent=" << parent_info << std::endl;
-                
-                // 输出调用栈（Windows）
-                #ifdef _WIN32
-                void* stack[10];
-                unsigned short frames = CaptureStackBackTrace(0, 10, stack, nullptr);
-                std::cout << "  Stack trace (" << frames << " frames):" << std::endl;
-                for (unsigned short i = 0; i < frames && i < 5; i++) {
-                    std::cout << "    [" << i << "] " << stack[i] << std::endl;
-                }
-                #endif
-            }
-        }
-    }
 
     // 跳过零高度元素（如 CodeMirror 的测量占位元素）
     // 但如果元素有绝对定位的子元素，仍然需要绘制（如 cm-selectionLayer）
@@ -363,25 +320,6 @@ void RenderBlock::Paint(SkCanvas* canvas) {
     // 保存画布状态
     canvas->save();
     canvas->translate(layout.x, layout.y);
-    
-    // Debug: 检查是否绘制 Toast 相关元素
-    {
-        auto debug_node = GetNode();
-        if (debug_node && debug_node->GetNodeType() == NodeType::ELEMENT_NODE) {
-            auto debug_element = std::dynamic_pointer_cast<Element>(debug_node);
-            if (debug_element) {
-                std::string elem_id = debug_element->GetAttribute("id");
-                if (elem_id.find("toast") != std::string::npos || elem_id == "lightui-toast-container") {
-                    SkMatrix matrix = canvas->getTotalMatrix();
-                    std::cout << "[PAINT] Painting element id='" << elem_id 
-                              << "' at layout=(" << layout.x << "," << layout.y << "," << layout.width << "," << layout.height << ")"
-                              << " matrix_translate=(" << matrix.getTranslateX() << "," << matrix.getTranslateY() << ")"
-                              << " position=" << style.position << " z-index=" << style.z_index 
-                              << std::endl;
-                }
-            }
-        }
-    }
 
     // 应用 CSS opacity（使用 saveLayerAlpha 实现透明度）
     bool has_opacity = style.opacity < 1.0f;
@@ -1115,17 +1053,6 @@ void RenderBlock::Paint(SkCanvas* canvas) {
 
     auto children_start = std::chrono::high_resolution_clock::now();
     
-    // Debug: 检查 Body 元素是否多次绘制子元素
-    {
-        auto debug_node = GetNode();
-        if (debug_node && debug_node->GetNodeType() == NodeType::ELEMENT_NODE) {
-            auto debug_elem = std::dynamic_pointer_cast<Element>(debug_node);
-            if (debug_elem && debug_elem->GetTagName() == "body") {
-                std::cout << "[BODY] Starting to paint " << sorted_children.size() << " children" << std::endl;
-            }
-        }
-    }
-    
     for (auto& child : sorted_children) {
         // 跳过已经绘制的 legend
         if (is_fieldset_element && child.get() == legend_child) {
@@ -1134,56 +1061,8 @@ void RenderBlock::Paint(SkCanvas* canvas) {
         
         // 获取子元素样式，用于后续检查
         const auto& child_style = child->GetComputedStyle();
-        bool is_fixed_or_absolute = (child_style.position == "fixed" || child_style.position == "absolute");
-        
-        // 检查是否应该延迟绘制（高 z-index 的 positioned 元素）
-        // 注意：即使有独立合成层，也需要收集到 LayerManager 中用于 hit testing
-        auto& layer_mgr = LayerManager::Instance();
-        
-        // Debug: 检查 Toast 容器的处理流程
-        {
-            auto debug_node = child->GetNode();
-            if (debug_node && debug_node->GetNodeType() == NodeType::ELEMENT_NODE) {
-                auto debug_elem = std::dynamic_pointer_cast<Element>(debug_node);
-                if (debug_elem && debug_elem->GetAttribute("id") == "lightui-toast-container") {
-                    bool is_painting_layers = layer_mgr.IsPaintingLayers();
-                    bool should_collect = layer_mgr.ShouldCollect(child.get());
-                    std::cout << "[CHILD_LOOP] Toast container: IsPaintingLayers=" << is_painting_layers
-                              << " ShouldCollect=" << should_collect
-                              << " position=" << child_style.position
-                              << " z-index=" << child_style.z_index << std::endl;
-                }
-            }
-        }
-        
-        // 关键修复：如果当前正在绘制 Layer，不要再次收集子元素
-        // 因为我们已经在正确的渲染上下文中了（Layer 的 Paint 调用）
-        if (!layer_mgr.IsPaintingLayers() && layer_mgr.ShouldCollect(child.get())) {
-            // 收集当前变换矩阵和元素信息
-            SkMatrix current_matrix = canvas->getTotalMatrix();
-            
-            // Debug: 确认收集
-            {
-                auto debug_node = child->GetNode();
-                if (debug_node && debug_node->GetNodeType() == NodeType::ELEMENT_NODE) {
-                    auto debug_elem = std::dynamic_pointer_cast<Element>(debug_node);
-                    if (debug_elem && debug_elem->GetAttribute("id") == "lightui-toast-container") {
-                        std::cout << "[CHILD_LOOP] Collecting toast container, will skip Paint" << std::endl;
-                    }
-                }
-            }
-            
-            // 如果当前元素有滚动偏移，需要在变换矩阵中补偿回来
-            if (needs_clip && (scroll_x_ != 0 || scroll_y_ != 0)) {
-                if (child_style.position == "absolute" || child_style.position == "fixed") {
-                    SkMatrix scroll_compensation = SkMatrix::Translate(scroll_x_, scroll_y_);
-                    current_matrix.preConcat(scroll_compensation);
-                }
-            }
-            
-            layer_mgr.Collect(child, current_matrix, child->GetComputedStyle().z_index);
-            continue;  // 跳过正常绘制（无论是否有合成层）
-        }
+        bool is_fixed = (child_style.position == "fixed");
+        bool is_fixed_or_absolute = (is_fixed || child_style.position == "absolute");
         
         // 关键修复：跳过有独立合成层的子元素
         // 这些子元素会在自己的层中单独光栅化，不应该在父层中绘制
@@ -1205,7 +1084,31 @@ void RenderBlock::Paint(SkCanvas* canvas) {
             }
         }
         
-        child->Paint(canvas);
+        // position: fixed 元素需要特殊处理
+        // fixed 元素的 layout.x/y 是视口绝对坐标，需要重置到视口坐标系绘制
+        if (is_fixed) {
+            // 获取当前 canvas 的变换矩阵
+            SkMatrix current_matrix = canvas->getTotalMatrix();
+            
+            // 提取 DPI 缩放因子（假设是均匀缩放）
+            float scale_x = current_matrix.getScaleX();
+            float scale_y = current_matrix.getScaleY();
+            
+            // 保存当前状态
+            canvas->save();
+            
+            // 重置变换矩阵，只保留 DPI 缩放
+            canvas->resetMatrix();
+            canvas->scale(scale_x, scale_y);
+            
+            // 绘制 fixed 元素（使用其视口绝对坐标）
+            child->Paint(canvas);
+            
+            // 恢复之前的变换矩阵
+            canvas->restore();
+        } else {
+            child->Paint(canvas);
+        }
     }
     auto children_end = std::chrono::high_resolution_clock::now();
     g_paint_children_time += std::chrono::duration_cast<std::chrono::microseconds>(children_end - children_start).count();

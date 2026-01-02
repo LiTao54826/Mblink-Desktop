@@ -4,10 +4,12 @@
  */
 
 #include "compositor.h"
+#include "core/render/objects/render_object.h"
 #include "include/core/SkCanvas.h"
 #include "include/core/SkPaint.h"
 #include "include/core/SkSurface.h"
 #include "include/core/SkImageInfo.h"
+#include <algorithm>
 #include <chrono>
 #include <cmath>
 #include <iostream>
@@ -562,6 +564,14 @@ void Compositor::RenderTexturedQuad(CompositorLayer* layer, const SkMatrix& tran
 // CPU 合成
 // =========================================================================
 
+// 辅助函数：获取层的 z-index
+static int GetLayerZIndex(CompositorLayer* layer) {
+    if (!layer) return 0;
+    RenderObject* obj = layer->GetRenderObject();
+    if (!obj) return 0;
+    return obj->GetComputedStyle().z_index;
+}
+
 void Compositor::CompositeLayerCPU(CompositorLayer* layer, SkCanvas* canvas, const SkMatrix& parent_transform) {
     if (!layer || !canvas) {
         return;
@@ -609,15 +619,38 @@ void Compositor::CompositeLayerCPU(CompositorLayer* layer, SkCanvas* canvas, con
         DrawLayerBorder(layer, canvas);
     }
 
-    // 关键修复：滚动偏移应该应用到子层的绘制上
-    // 当滚动容器滚动时，其子层（内容）应该相应移动
-    if (has_scroll) {
-        canvas->translate(-scroll.fX, -scroll.fY);
+    // 关键修复：按 z-index 排序子层后再绘制
+    // 这确保高 z-index 的元素（如 Modal）绘制在低 z-index 元素之上
+    const auto& children = layer->GetChildren();
+    std::vector<CompositorLayer*> sorted_children;
+    sorted_children.reserve(children.size());
+    for (const auto& child : children) {
+        sorted_children.push_back(child.get());
     }
+    
+    // 按 z-index 升序排序（低 z-index 先绘制，高 z-index 后绘制覆盖在上面）
+    std::sort(sorted_children.begin(), sorted_children.end(),
+        [](CompositorLayer* a, CompositorLayer* b) {
+            return GetLayerZIndex(a) < GetLayerZIndex(b);
+        });
 
-    // 递归绘制子层（现在滚动偏移已经应用）
-    for (const auto& child : layer->GetChildren()) {
-        CompositeLayerCPU(child.get(), canvas, SkMatrix::I());
+    // 递归绘制排序后的子层
+    for (CompositorLayer* child : sorted_children) {
+        // 关键修复：position: fixed 元素不应该受到父层滚动偏移的影响
+        // fixed 元素的位置是相对于视口的，不随滚动变化
+        bool child_is_fixed = (child->GetPromotionReason() == LayerPromotionReason::PositionFixed);
+        
+        if (child_is_fixed) {
+            // fixed 元素：不应用滚动偏移，直接绘制
+            CompositeLayerCPU(child, canvas, SkMatrix::I());
+        } else if (has_scroll) {
+            // 非 fixed 元素：应用滚动偏移
+            SkMatrix scroll_transform = SkMatrix::Translate(-scroll.fX, -scroll.fY);
+            CompositeLayerCPU(child, canvas, scroll_transform);
+        } else {
+            // 无滚动：直接绘制
+            CompositeLayerCPU(child, canvas, SkMatrix::I());
+        }
     }
 
     canvas->restore();

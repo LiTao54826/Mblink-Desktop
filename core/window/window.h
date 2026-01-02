@@ -62,6 +62,7 @@ class AnimationApplicator;
 class RenderTreeBuilder;
 class RenderPipeline;        // 统一渲染管线
 class RenderTreeSynchronizer;
+class IncrementalLayoutManager;  // 增量布局管理器
 class FBOManager;
 class WindowRenderer;        // 窗口渲染器
 class FocusManager;          // 焦点管理器
@@ -483,6 +484,14 @@ public:
      */
     RenderTreeSynchronizer* GetRenderTreeSynchronizer() const { return render_tree_synchronizer_.get(); }
 
+    /**
+     * @brief 获取增量布局管理器
+     * @return 增量布局管理器指针
+     * 
+     * **Feature: incremental-layout-boundary**
+     */
+    IncrementalLayoutManager* GetIncrementalLayoutManager() const { return incremental_layout_manager_.get(); }
+
     // ========== 动画和渲染 ==========
 
     /**
@@ -622,6 +631,9 @@ private:
     // 统一渲染管线
     std::unique_ptr<RenderPipeline> render_pipeline_;
     std::shared_ptr<RenderTreeSynchronizer> render_tree_synchronizer_;
+
+    // 增量布局管理器
+    std::unique_ptr<IncrementalLayoutManager> incremental_layout_manager_;
 
     // 窗口渲染器（负责动画和渲染辅助方法）
     std::unique_ptr<WindowRenderer> window_renderer_;

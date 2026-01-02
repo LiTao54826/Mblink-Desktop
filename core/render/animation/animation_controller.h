@@ -12,6 +12,7 @@
 #include "keyframes.h"
 #include "animation_optimizer.h"
 #include <map>
+#include <memory>
 #include <vector>
 #include <optional>
 #include <string>
@@ -20,6 +21,7 @@ namespace lightui {
 
 // 前向声明
 class RenderObject;
+class Element;
 
 /**
  * @brief CSS 动画状态
@@ -36,9 +38,11 @@ enum class CSSAnimationState {
  * @brief 运行中的动画
  * 
  * 表示一个正在运行的动画实例，包含动画配置、状态和时间信息。
+ * 动画通过 Element 引用关联，而不是 RenderObject 指针，
+ * 这样渲染树重建时动画不会丢失。
  */
 struct RunningAnimation {
-    RenderObject* object;           ///< 关联的渲染对象
+    std::weak_ptr<Element> element; ///< 关联的 DOM 元素（弱引用避免循环引用）
     CSSAnimation config;            ///< 动画配置
     const KeyframesRule* keyframes; ///< 关键帧规则
     CSSAnimationState state;        ///< 当前状态
@@ -54,8 +58,7 @@ struct RunningAnimation {
      * @brief 默认构造函数
      */
     RunningAnimation()
-        : object(nullptr)
-        , keyframes(nullptr)
+        : keyframes(nullptr)
         , state(CSSAnimationState::IDLE)
         , start_time(0)
         , current_time(0)
@@ -64,6 +67,28 @@ struct RunningAnimation {
         , initialized(false)
         , start_event_fired(false)
         , end_event_fired(false) {}
+    
+    /**
+     * @brief 获取当前关联的 RenderObject
+     * @return RenderObject 指针，如果 Element 已销毁或无 RenderObject 则返回 nullptr
+     */
+    RenderObject* GetRenderObject() const;
+    
+    /**
+     * @brief 获取关联的 Element
+     * @return Element 共享指针，如果已销毁返回 nullptr
+     */
+    std::shared_ptr<Element> GetElement() const {
+        return element.lock();
+    }
+    
+    /**
+     * @brief 检查动画是否仍然有效（Element 未销毁）
+     * @return true 如果 Element 仍然存在
+     */
+    bool IsValid() const {
+        return !element.expired();
+    }
 };
 
 /**
@@ -123,20 +148,44 @@ public:
     void RegisterKeyframes(const KeyframesRule& rule);
     
     /**
-     * @brief 启动动画
+     * @brief 启动动画 (Element 版本，推荐使用)
      * 
-     * 为指定的渲染对象启动一个动画。
+     * 为指定的 DOM 元素启动一个动画。
+     * 
+     * @param element DOM 元素
+     * @param animation 动画配置
+     * 
+     * @note 如果元素已有同名动画，将被替换
+     * @note 如果找不到对应的 @keyframes 规则，动画不会启动
+     */
+    void StartAnimation(std::shared_ptr<Element> element, const CSSAnimation& animation);
+    
+    /**
+     * @brief 启动动画 (RenderObject 版本，兼容接口)
+     * 
+     * 为指定的渲染对象启动一个动画。内部会提取关联的 Element。
      * 
      * @param object 渲染对象
      * @param animation 动画配置
      * 
      * @note 如果对象已有同名动画，将被替换
      * @note 如果找不到对应的 @keyframes 规则，动画不会启动
+     * @deprecated 推荐使用 Element 版本
      */
     void StartAnimation(RenderObject* object, const CSSAnimation& animation);
     
     /**
-     * @brief 停止动画
+     * @brief 停止动画 (Element 版本)
+     * 
+     * 停止指定元素的指定动画。
+     * 
+     * @param element DOM 元素
+     * @param name 动画名称
+     */
+    void StopAnimation(std::shared_ptr<Element> element, const std::string& name);
+    
+    /**
+     * @brief 停止动画 (RenderObject 版本，兼容接口)
      * 
      * 停止指定对象的指定动画。
      * 
@@ -146,7 +195,16 @@ public:
     void StopAnimation(RenderObject* object, const std::string& name);
     
     /**
-     * @brief 停止所有动画
+     * @brief 停止所有动画 (Element 版本)
+     * 
+     * 停止指定元素的所有动画。
+     * 
+     * @param element DOM 元素
+     */
+    void StopAllAnimations(std::shared_ptr<Element> element);
+    
+    /**
+     * @brief 停止所有动画 (RenderObject 版本，兼容接口)
      * 
      * 停止指定对象的所有动画。
      * 
@@ -155,7 +213,17 @@ public:
     void StopAllAnimations(RenderObject* object);
     
     /**
-     * @brief 暂停动画
+     * @brief 暂停动画 (Element 版本)
+     * 
+     * 暂停指定元素的指定动画。
+     * 
+     * @param element DOM 元素
+     * @param name 动画名称
+     */
+    void PauseAnimation(std::shared_ptr<Element> element, const std::string& name);
+    
+    /**
+     * @brief 暂停动画 (RenderObject 版本，兼容接口)
      * 
      * 暂停指定对象的指定动画。
      * 
@@ -165,7 +233,17 @@ public:
     void PauseAnimation(RenderObject* object, const std::string& name);
     
     /**
-     * @brief 恢复动画
+     * @brief 恢复动画 (Element 版本)
+     * 
+     * 恢复指定元素的指定动画。
+     * 
+     * @param element DOM 元素
+     * @param name 动画名称
+     */
+    void ResumeAnimation(std::shared_ptr<Element> element, const std::string& name);
+    
+    /**
+     * @brief 恢复动画 (RenderObject 版本，兼容接口)
      * 
      * 恢复指定对象的指定动画。
      * 
@@ -186,7 +264,19 @@ public:
     void Update(double current_time);
     
     /**
-     * @brief 获取当前动画属性值
+     * @brief 获取当前动画属性值 (Element 版本)
+     * 
+     * 获取指定元素的指定动画在当前时刻的属性值。
+     * 
+     * @param element DOM 元素
+     * @param name 动画名称
+     * @return 属性映射 (属性名 -> 属性值)，如果动画不存在返回 std::nullopt
+     */
+    std::optional<std::map<std::string, std::string>> 
+        GetCurrentProperties(std::shared_ptr<Element> element, const std::string& name) const;
+    
+    /**
+     * @brief 获取当前动画属性值 (RenderObject 版本，兼容接口)
      * 
      * 获取指定对象的指定动画在当前时刻的属性值。
      * 
@@ -291,7 +381,23 @@ private:
                      const CubicBezier& bezier) const;
     
     /**
-     * @brief 查找运行中的动画
+     * @brief 查找运行中的动画 (Element 版本)
+     * 
+     * @param element DOM 元素
+     * @param name 动画名称
+     * @return 动画迭代器，如果未找到返回 end()
+     */
+    std::vector<RunningAnimation>::iterator FindAnimation(
+        std::shared_ptr<Element> element, const std::string& name);
+    
+    /**
+     * @brief 查找运行中的动画 (Element 版本，const)
+     */
+    std::vector<RunningAnimation>::const_iterator FindAnimation(
+        std::shared_ptr<Element> element, const std::string& name) const;
+    
+    /**
+     * @brief 查找运行中的动画 (RenderObject 版本，兼容接口)
      * 
      * @param object 渲染对象
      * @param name 动画名称
@@ -301,10 +407,22 @@ private:
         RenderObject* object, const std::string& name);
     
     /**
-     * @brief 查找运行中的动画 (const 版本)
+     * @brief 查找运行中的动画 (RenderObject 版本，const)
      */
     std::vector<RunningAnimation>::const_iterator FindAnimation(
         RenderObject* object, const std::string& name) const;
+    
+    /**
+     * @brief 从 RenderObject 提取关联的 Element
+     * @param object 渲染对象
+     * @return Element 共享指针，如果无法提取返回 nullptr
+     */
+    std::shared_ptr<Element> ExtractElement(RenderObject* object) const;
+    
+    /**
+     * @brief 清理无效动画（Element 已销毁）
+     */
+    void CleanupInvalidAnimations();
 
     /**
      * @brief 触发动画事件
@@ -322,11 +440,11 @@ private:
     /**
      * @brief 更新单个动画（用于批量更新）
      *
-     * @param object 渲染对象
+     * @param element DOM 元素
      * @param name 动画名称
      * @param current_time 当前时间
      */
-    void UpdateSingleAnimation(RenderObject* object, const std::string& name, double current_time);
+    void UpdateSingleAnimation(std::shared_ptr<Element> element, const std::string& name, double current_time);
 };
 
 } // namespace lightui

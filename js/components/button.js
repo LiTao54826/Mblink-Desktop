@@ -16,6 +16,20 @@ import { h } from 'preact';
 import { colors, radius, sizes, transition } from './theme.js';
 import { mergeStyles } from './utils.js';
 
+// 注入 spinner 动画的 @keyframes 规则（只注入一次）
+let spinnerStyleInjected = false;
+function injectSpinnerStyle() {
+  if (spinnerStyleInjected || typeof document === 'undefined') return;
+  const style = document.createElement('style');
+  style.textContent = `
+@keyframes lightui-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}`;
+  document.head.appendChild(style);
+  spinnerStyleInjected = true;
+}
+
 // 变体样式
 const variantStyles = {
   primary: {
@@ -104,9 +118,10 @@ const variantStyles = {
 };
 
 // Spinner 组件 - 使用 CSS 动画实现旋转
-// 注意：由于 LightUI 目前不支持 CSS @keyframes，使用静态旋转样式
-// 未来可以通过 CSS 动画支持来实现真正的旋转效果
 function Spinner({ size = 14 }) {
+  // 确保 @keyframes 规则已注入
+  injectSpinnerStyle();
+  
   const spinnerStyle = {
     width: `${size}px`,
     height: `${size}px`,
@@ -116,8 +131,7 @@ function Spinner({ size = 14 }) {
     borderRadius: '50%',
     display: 'inline-block',
     verticalAlign: 'middle',
-    // 静态显示，避免 JS 驱动动画导致的高 CPU 占用
-    // 如果需要动画效果，应该在引擎层面支持 CSS animation
+    animation: 'lightui-spin 1s linear infinite',
   };
 
   return h('span', { style: spinnerStyle });
