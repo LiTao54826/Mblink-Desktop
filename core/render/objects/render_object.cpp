@@ -1434,5 +1434,88 @@ bool RenderObject::CanDirectlyUpdateOpacity() const {
     return false;
 }
 
+// ============================================================================
+// 布局边界支持（增量布局优化）
+// ============================================================================
+
+bool RenderObject::IsLayoutBoundary() const {
+    if (!boundary_cache_valid_) {
+        const_cast<RenderObject*>(this)->UpdateLayoutBoundaryCache();
+    }
+    return cached_boundary_type_ != 0;  // 0 = None
+}
+
+int RenderObject::GetLayoutBoundaryType() const {
+    if (!boundary_cache_valid_) {
+        const_cast<RenderObject*>(this)->UpdateLayoutBoundaryCache();
+    }
+    return cached_boundary_type_;
+}
+
+void RenderObject::UpdateLayoutBoundaryCache() {
+    const auto& style = computed_style_;
+    
+    // 1. 脱离文档流 - 最强的布局边界
+    if (style.position == "fixed" || style.position == "absolute") {
+        cached_boundary_type_ = 1;  // OutOfFlow
+        boundary_cache_valid_ = true;
+        return;
+    }
+    
+    // 2. CSS Containment
+    if (style.HasLayoutContainment()) {
+        cached_boundary_type_ = 4;  // CSSContainment
+        boundary_cache_valid_ = true;
+        return;
+    }
+    
+    // 检查是否有固定尺寸
+    bool width_fixed = (style.width.unit == CSSUnit::PX ||
+                        style.width.unit == CSSUnit::VW ||
+                        style.width.unit == CSSUnit::VH ||
+                        style.width.unit == CSSUnit::VMIN ||
+                        style.width.unit == CSSUnit::VMAX);
+    
+    bool height_fixed = (style.height.unit == CSSUnit::PX ||
+                         style.height.unit == CSSUnit::VW ||
+                         style.height.unit == CSSUnit::VH ||
+                         style.height.unit == CSSUnit::VMIN ||
+                         style.height.unit == CSSUnit::VMAX);
+    
+    bool has_fixed_size = width_fixed && height_fixed;
+    
+    // 3. 滚动容器 + 固定尺寸
+    bool is_scroll_container = (style.overflow_x == "scroll" || style.overflow_x == "auto" ||
+                                style.overflow_y == "scroll" || style.overflow_y == "auto" ||
+                                style.overflow == "scroll" || style.overflow == "auto");
+    
+    if (is_scroll_container && has_fixed_size) {
+        cached_boundary_type_ = 2;  // ScrollContainer
+        boundary_cache_valid_ = true;
+        return;
+    }
+    
+    // 4. 固定尺寸容器
+    if (has_fixed_size) {
+        cached_boundary_type_ = 3;  // FixedSize
+        boundary_cache_valid_ = true;
+        return;
+    }
+    
+    // 5. Flex 固定项
+    if (style.flex_grow == 0.0f && style.flex_shrink == 0.0f && 
+        style.flex_basis.unit != CSSUnit::AUTO) {
+        auto parent = parent_.lock();
+        if (parent && parent->GetComputedStyle().display == RenderObjectType::FLEX) {
+            cached_boundary_type_ = 5;  // FlexFixed
+            boundary_cache_valid_ = true;
+            return;
+        }
+    }
+    
+    cached_boundary_type_ = 0;  // None
+    boundary_cache_valid_ = true;
+}
+
 } // namespace lightui
 

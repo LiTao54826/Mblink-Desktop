@@ -46,25 +46,18 @@
 
 ---
 
+## 已完成任务
+
 - [x] 1. 修改 RunningAnimation 和 RunningTransition 结构体
 
-
   - [x] 1.1 修改 RunningAnimation 结构体使用 Element 引用
-
-
     - 将 `RenderObject* object` 改为 `std::weak_ptr<Element> element`
     - 添加 `GetRenderObject()` 方法
     - 添加 `IsValid()` 方法
     - 文件: `core/render/animation/animation_controller.h`
     - _Requirements: 2.1_
 
-  - [ ]* 1.2 编写 RunningAnimation 属性测试
-    - **Property 5: Graceful Handling of Null RenderObject**
-    - **Validates: Requirements 2.4, 3.4, 4.3**
-
-  - [x] 1.3 修改 RunningTransition 结构体使用 Element 引用
-
-
+  - [x] 1.2 修改 RunningTransition 结构体使用 Element 引用
     - 将 `RenderObject* object` 改为 `std::weak_ptr<Element> element`
     - 添加 `GetRenderObject()` 方法
     - 添加 `IsValid()` 方法
@@ -73,160 +66,128 @@
 
 - [x] 2. 重构 AnimationController
 
-
   - [x] 2.1 添加 Element 版本的 StartAnimation 方法
-
     - 新增 `StartAnimation(std::shared_ptr<Element>, const CSSAnimation&)`
     - 修改原有 `StartAnimation(RenderObject*, ...)` 内部提取 Element
     - 文件: `core/render/animation/animation_controller.h`, `animation_controller.cpp`
     - _Requirements: 2.3_
 
   - [x] 2.2 修改 AnimationController::Update 使用 Element 获取 RenderObject
-
     - 遍历动画时通过 `anim.GetRenderObject()` 获取当前 RenderObject
     - 如果 RenderObject 为 null，跳过应用但保留状态
     - 清理无效动画（Element 已销毁）
     - 文件: `core/render/animation/animation_controller.cpp`
     - _Requirements: 2.2, 2.4_
 
-  - [ ]* 2.3 编写 AnimationController 属性测试
-    - **Property 1: Animation State Preservation Across Render Tree Rebuilds**
-    - **Validates: Requirements 1.1, 1.2**
-
-  - [x] 2.4 修改 FindAnimation 和其他查找方法
-
+  - [x] 2.3 修改 FindAnimation 和其他查找方法
     - 使用 Element 指针作为查找键
     - 更新 `StopAnimation`, `PauseAnimation`, `ResumeAnimation` 等方法
     - 文件: `core/render/animation/animation_controller.cpp`
     - _Requirements: 2.2_
 
-  - [ ]* 2.5 编写 AnimationController 属性测试
-    - **Property 4: RenderObject Lookup from Element**
-    - **Validates: Requirements 2.2, 3.2, 4.1, 5.3**
+- [x] 3. 重构 AnimationTimeline
 
-- [x] 3. Checkpoint - 确保所有测试通过
-
-
-  - Ensure all tests pass, ask the user if questions arise.
-
-- [x] 4. 重构 AnimationTimeline
-
-
-  - [x] 4.1 添加 Element 版本的 StartTransition 方法
-
+  - [x] 3.1 添加 Element 版本的 StartTransition 方法
     - 新增 `StartTransition(std::shared_ptr<Element>, ...)`
     - 修改原有方法内部提取 Element
     - 文件: `core/render/animation/animation_timeline.h`, `animation_timeline.cpp`
     - _Requirements: 3.3_
 
-  - [x] 4.2 修改 AnimationTimeline::Update 使用 Element 获取 RenderObject
-
+  - [x] 3.2 修改 AnimationTimeline::Update 使用 Element 获取 RenderObject
     - 遍历过渡时通过 `trans.GetRenderObject()` 获取当前 RenderObject
     - 如果 RenderObject 为 null，跳过应用但保留状态
     - 清理无效过渡
     - 文件: `core/render/animation/animation_timeline.cpp`
     - _Requirements: 3.2, 3.4_
 
-  - [x] 4.3 修改 GetCurrentValue 和其他查找方法
-
+  - [x] 3.3 修改 GetCurrentValue 和其他查找方法
     - 使用 Element 指针作为查找键
     - 更新 `StopTransition`, `StopAllTransitions` 等方法
     - 文件: `core/render/animation/animation_timeline.cpp`
     - _Requirements: 3.2_
 
-- [x] 5. 重构 AnimationApplicator
+- [x] 4. 重构 AnimationApplicator
 
-
-  - [x] 5.1 添加 Element 版本的方法
-
-
+  - [x] 4.1 添加 Element 版本的方法
     - 修改 `started_animations_` 使用 `Element*` 作为键
     - 添加 `ExtractElement()` 方法从 RenderObject 获取 Element
     - 修改内部实现通过 Element 获取 RenderObject
     - 文件: `core/render/animation/animation_applicator.h`, `animation_applicator.cpp`
     - _Requirements: 4.1, 4.2, 4.3_
 
-  - [ ]* 5.2 编写 AnimationApplicator 属性测试
-    - **Property 2: Animation Re-association After Rebuild**
-    - **Validates: Requirements 1.3, 2.3, 3.3**
+- [x] 5. AnimationOptimizer 保持现有实现
 
-- [x] 6. Checkpoint - 确保所有测试通过
-
-  - Ensure all tests pass, ask the user if questions arise.
-
-- [x] 7. 重构 AnimationOptimizer
-
-
-
-  - [x] 7.1 AnimationDirtyTracker 保持使用 RenderObject* 键
-
-
+  - [x] 5.1 AnimationDirtyTracker 保持使用 RenderObject* 键
     - 注意：AnimationDirtyTracker 仍使用 `RenderObject*` 作为键
     - 这是因为脏标记是每帧重置的，不需要跨渲染树重建保持
     - 文件: `core/render/animation/animation_optimizer.h`, `animation_optimizer.cpp`
     - _Requirements: 5.1_
 
-
-  - [x] 7.2 BatchAnimationUpdater 保持使用 RenderObject* 键
-
+  - [x] 5.2 BatchAnimationUpdater 保持使用 RenderObject* 键
     - 注意：BatchAnimationUpdater 仍使用 `RenderObject*`
     - 批量更新是每帧操作，不需要跨渲染树重建保持
     - 文件: `core/render/animation/animation_optimizer.h`, `animation_optimizer.cpp`
-
     - _Requirements: 5.1_
 
-- [x] 8. AnimationLayerBridge 保持现有实现
+- [x] 6. AnimationLayerBridge 保持现有实现
 
-
-
-  - [x] 8.1 AnimationLayerBridge 保持使用 RenderObject* 键
+  - [x] 6.1 AnimationLayerBridge 保持使用 RenderObject* 键
     - 注意：AnimationLayerBridge 仍使用 `RenderObject*` 作为键
     - 层桥接器跟踪的是层状态，与 RenderObject 生命周期一致
     - 渲染树重建时层也会重建，所以不需要改为 Element 引用
     - 文件: `core/compositor/animation/animation_layer_bridge.h`, `animation_layer_bridge.cpp`
     - _Requirements: 5.2, 5.3_
 
-  - [ ]* 8.2 编写 AnimationLayerBridge 属性测试
-    - **Property 3: Animation Cleanup on Element Removal**
-    - **Validates: Requirements 1.4**
+- [x] 7. 修改 Window::InvalidateRenderTree
 
-- [x] 9. 修改 Window::InvalidateRenderTree
-
-
-  - [x] 9.1 移除 InvalidateRenderTree 中清除动画的代码
-
-
+  - [x] 7.1 移除 InvalidateRenderTree 中清除动画的代码
     - 已确认：不再调用 `animation_controller_->ClearRunningAnimations()`
     - 已确认：不再调用 `animation_timeline_->StopAll()`
     - 只保留渲染树和层树的失效逻辑，以及 AnimationApplicator::Clear()
     - 文件: `core/window/window.cpp`
     - _Requirements: 6.1, 6.2, 6.3_
 
-  - [ ]* 9.2 编写 InvalidateRenderTree 属性测试
-    - **Property 6: InvalidateRenderTree Does Not Clear Animations**
-    - **Validates: Requirements 6.1, 6.2, 6.3**
+- [x] 8. 集成测试
 
-
-- [x] 10. Checkpoint - 确保所有测试通过
-
-  - Ensure all tests pass, ask the user if questions arise.
-
-- [x] 11. 集成测试
-
-  - [x] 11.1 更新 Modal 动画测试
-
-
+  - [x] 8.1 更新 Modal 动画测试
     - 修改 `tests/js/test_modal_animation.js`
     - 验证 spinner 动画在 Modal 打开后继续运行
     - 需要添加 @keyframes 规则并验证动画状态
     - _Requirements: 1.1_
 
-  - [ ]* 11.2 编写 DOM 变化集成测试
+---
+
+## 可选任务（属性测试）
+
+以下任务为可选的属性测试任务，用于进一步验证实现的正确性：
+
+- [ ]* 9. 编写属性测试
+
+  - [ ]* 9.1 编写 RunningAnimation 属性测试
+    - **Property 5: Graceful Handling of Null RenderObject**
+    - **Validates: Requirements 2.4, 3.4, 4.3**
+
+  - [ ]* 9.2 编写 AnimationController 属性测试
+    - **Property 1: Animation State Preservation Across Render Tree Rebuilds**
+    - **Validates: Requirements 1.1, 1.2**
+
+  - [ ]* 9.3 编写 AnimationController 属性测试
+    - **Property 4: RenderObject Lookup from Element**
+    - **Validates: Requirements 2.2, 3.2, 4.1, 5.3**
+
+  - [ ]* 9.4 编写 AnimationApplicator 属性测试
+    - **Property 2: Animation Re-association After Rebuild**
+    - **Validates: Requirements 1.3, 2.3, 3.3**
+
+  - [ ]* 9.5 编写 AnimationLayerBridge 属性测试
+    - **Property 3: Animation Cleanup on Element Removal**
+    - **Validates: Requirements 1.4**
+
+  - [ ]* 9.6 编写 InvalidateRenderTree 属性测试
+    - **Property 6: InvalidateRenderTree Does Not Clear Animations**
+    - **Validates: Requirements 6.1, 6.2, 6.3**
+
+  - [ ]* 9.7 编写 DOM 变化集成测试
     - 测试添加/删除兄弟元素时动画不受影响
     - 测试渲染树完整重建时动画状态保持
     - _Requirements: 1.2, 1.3_
-
-- [x] 12. Final Checkpoint - 确保所有测试通过
-
-
-  - Ensure all tests pass, ask the user if questions arise.

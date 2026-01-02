@@ -2274,6 +2274,18 @@ bool StyleResolver::ParseBackgroundProperty(ComputedStyle& style,
         // 可以是逗号分隔的多个值，如 "transform, opacity"
         style.will_change = resolved_value;
     }
+    // CSS Containment Property (用于布局边界优化)
+    else if (property == "contain") {
+        // Parse contain values: none, layout, paint, size, style, content, strict
+        // content = layout + paint + style
+        // strict = layout + paint + size + style
+        // 也可以是空格分隔的多个值，如 "layout paint"
+        if (resolved_value.empty()) {
+            style.contain = "none";
+        } else {
+            style.contain = resolved_value;
+        }
+    }
     return false;
 }
 

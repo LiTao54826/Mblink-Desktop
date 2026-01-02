@@ -78,6 +78,7 @@
 #include "core/render/pipeline/render_tree_synchronizer.h"
 #include "core/layout/layout_engine.h"
 #include "core/layout/native_layout_engine.h"
+#include "core/layout/incremental_layout_manager.h"
 #include "core/render/utils/color.h"
 #include "core/render/objects/select_dropdown.h"
 #include "core/render/layer/paint_layer.h"
@@ -1731,6 +1732,11 @@ void Window::EnsureRenderTree() {
             render_tree_synchronizer_->SetLayoutEngine(std::shared_ptr<LayoutEngine>(
                 layout_engine_.get(), [](LayoutEngine*) {}));
         }
+    }
+
+    // 初始化增量布局管理器
+    if (!incremental_layout_manager_) {
+        incremental_layout_manager_ = std::make_unique<IncrementalLayoutManager>(this);
     }
 
     // 恢复滚动位置

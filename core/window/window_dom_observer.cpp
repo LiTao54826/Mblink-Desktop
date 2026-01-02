@@ -22,6 +22,8 @@
 #include "core/render/objects/render_object.h"
 #include "core/render/css/style_resolver.h"
 #include "core/layout/layout_engine.h"
+#include "core/layout/layout_boundary_detector.h"
+#include "core/layout/incremental_layout_manager.h"
 #include "core/lexbor/style_manager.h"
 #include <iostream>
 #include <cstdlib>
@@ -63,8 +65,56 @@ void WindowDOMObserver::OnNodeAdded(Node* node, Node* parent) {
     }
     
     if (window_ && !IsInBatch(node)) {
-        // Phase 5: 增量节点插入优化
-        // 使用增量更新系统的脏标记，避免全量重建渲染树
+        // =========================================================================
+        // 增量布局边界优化
+        // =========================================================================
+        
+        // 检查是否为元素节点
+        if (node->GetNodeType() == NodeType::ELEMENT_NODE) {
+            auto elem = std::dynamic_pointer_cast<Element>(node->shared_from_this());
+            if (elem && elem->GetRenderObject()) {
+                const auto& style = elem->GetRenderObject()->GetComputedStyle();
+                
+                // 1. 检查是否为脱离文档流的元素 (position: fixed/absolute)
+                if (LayoutBoundaryDetector::IsOutOfFlow(style)) {
+                    // 脱离文档流元素：使用增量布局管理器处理
+                    if (auto* manager = window_->GetIncrementalLayoutManager()) {
+                        if (manager->AddOutOfFlowElement(elem.get(), parent)) {
+                            // 成功处理，不需要全量重建
+                            window_->SetNeedsRepaint();
+                            return;
+                        }
+                    }
+                }
+                
+                // 2. 查找最近的布局边界祖先
+                Element* boundary = LayoutBoundaryDetector::FindNearestLayoutBoundary(parent);
+                if (boundary) {
+                    // 有布局边界：只标记边界需要重新布局
+                    if (auto* manager = window_->GetIncrementalLayoutManager()) {
+                        manager->MarkBoundaryNeedsLayout(boundary);
+                        
+                        // 如果是滚动容器，更新滚动尺寸
+                        if (auto boundary_ro = boundary->GetRenderObject()) {
+                            if (LayoutBoundaryDetector::IsScrollContainer(boundary_ro->GetComputedStyle())) {
+                                manager->UpdateScrollContainerSize(boundary);
+                            }
+                        }
+                    }
+                    
+                    // 标记节点需要样式重算和布局
+                    node->SetNeedsStyleRecalc(StyleChangeType::kSubtreeStyleChange);
+                    node->SetNeedsLayout();
+                    
+                    window_->SetNeedsRepaint();
+                    return;
+                }
+            }
+        }
+        
+        // =========================================================================
+        // 回退到原有逻辑（无布局边界时）
+        // =========================================================================
         
         // 1. 标记节点需要样式重算
         node->SetNeedsStyleRecalc(StyleChangeType::kSubtreeStyleChange);
@@ -92,8 +142,58 @@ void WindowDOMObserver::OnNodeAdded(Node* node, Node* parent) {
 
 void WindowDOMObserver::OnNodeRemoved(Node* node, Node* parent) {
     if (window_ && !IsInBatch(node)) {
-        // Phase 5: 增量节点移除优化
-        // 使用增量更新系统的脏标记，避免全量重建渲染树
+        // =========================================================================
+        // 增量布局边界优化
+        // =========================================================================
+        
+        // 检查是否为元素节点
+        if (node->GetNodeType() == NodeType::ELEMENT_NODE) {
+            auto elem = std::dynamic_pointer_cast<Element>(node->shared_from_this());
+            if (elem && elem->GetRenderObject()) {
+                const auto& style = elem->GetRenderObject()->GetComputedStyle();
+                
+                // 1. 检查是否为脱离文档流的元素 (position: fixed/absolute)
+                if (LayoutBoundaryDetector::IsOutOfFlow(style)) {
+                    // 脱离文档流元素：使用增量布局管理器处理
+                    if (auto* manager = window_->GetIncrementalLayoutManager()) {
+                        if (manager->RemoveOutOfFlowElement(elem.get())) {
+                            // 成功处理，不需要全量重建
+                            window_->SetNeedsRepaint();
+                            return;
+                        }
+                    }
+                }
+                
+                // 2. 查找最近的布局边界祖先
+                Element* boundary = LayoutBoundaryDetector::FindNearestLayoutBoundary(parent);
+                if (boundary) {
+                    // 有布局边界：只标记边界需要重新布局
+                    if (auto* manager = window_->GetIncrementalLayoutManager()) {
+                        manager->MarkBoundaryNeedsLayout(boundary);
+                        
+                        // 如果是滚动容器，更新滚动尺寸
+                        if (auto boundary_ro = boundary->GetRenderObject()) {
+                            if (LayoutBoundaryDetector::IsScrollContainer(boundary_ro->GetComputedStyle())) {
+                                manager->UpdateScrollContainerSize(boundary);
+                            }
+                        }
+                    }
+                    
+                    // 标记父节点需要布局
+                    if (parent) {
+                        parent->SetNeedsStyleRecalc(StyleChangeType::kLocalStyleChange);
+                        parent->SetNeedsLayout();
+                    }
+                    
+                    window_->SetNeedsRepaint();
+                    return;
+                }
+            }
+        }
+        
+        // =========================================================================
+        // 回退到原有逻辑（无布局边界时）
+        // =========================================================================
         
         // 1. 标记父节点需要布局（子节点移除影响父节点布局）
         // 同时标记父节点的 RenderObject，清除 content_height_ 缓存

@@ -297,6 +297,33 @@ struct ComputedStyle {
     // CSS will-change Property (用于层提升优化)
     std::string will_change;  // auto, transform, opacity, scroll-position, contents, etc.
 
+    // CSS Containment Property (用于布局边界优化)
+    // 可能的值：none, layout, paint, size, style, content, strict
+    // content = layout + paint + style
+    // strict = layout + paint + size + style
+    std::string contain = "none";
+
+    /**
+     * @brief 检查是否有布局包含
+     * @return 如果 contain 包含 layout 则返回 true
+     */
+    bool HasLayoutContainment() const {
+        return contain == "layout" || 
+               contain == "content" || 
+               contain == "strict" ||
+               contain.find("layout") != std::string::npos;
+    }
+
+    /**
+     * @brief 检查是否有尺寸包含
+     * @return 如果 contain 包含 size 则返回 true
+     */
+    bool HasSizeContainment() const {
+        return contain == "size" || 
+               contain == "strict" ||
+               contain.find("size") != std::string::npos;
+    }
+
     ComputedStyle() {
         width = CSSLength(0, CSSUnit::AUTO);
         height = CSSLength(0, CSSUnit::AUTO);
@@ -476,11 +503,12 @@ public:
     
     /**
      * @brief 设置计算后的样式
-     * 自动使绘制缓存失效
+     * 自动使绘制缓存和布局边界缓存失效
      */
     void SetComputedStyle(const ComputedStyle& style) { 
         computed_style_ = style; 
         paint_cache_.valid = false;  // P1优化：样式变化时使缓存失效
+        boundary_cache_valid_ = false;  // 布局边界缓存失效
     }
     
     /**
@@ -583,6 +611,38 @@ public:
         needs_paint_ = false;
         child_needs_paint_ = false;
     }
+
+    // =========================================================================
+    // 布局边界支持（增量布局优化）
+    // =========================================================================
+
+    /**
+     * @brief 检查是否为布局边界
+     *
+     * 布局边界内的变化不会影响外部布局。
+     * 参考 Blink ObjectIsRelayoutBoundary
+     *
+     * @return 如果是布局边界返回 true
+     */
+    bool IsLayoutBoundary() const;
+
+    /**
+     * @brief 获取布局边界类型
+     * @return 布局边界类型枚举值
+     */
+    int GetLayoutBoundaryType() const;
+
+    /**
+     * @brief 更新布局边界缓存
+     *
+     * 在样式变化时调用，避免每次都重新计算
+     */
+    void UpdateLayoutBoundaryCache();
+
+    /**
+     * @brief 使布局边界缓存失效
+     */
+    void InvalidateLayoutBoundaryCache() { boundary_cache_valid_ = false; }
 
     // =========================================================================
     // P1优化：样式预计算缓存
@@ -1035,6 +1095,10 @@ protected:
     bool needs_paint_ = true;
     bool child_needs_paint_ = false;  // 增量绘制优化：子节点需要重绘标志
     bool child_needs_layout_ = false; // 增量布局优化：子节点需要布局标志
+
+    // 布局边界缓存（增量布局优化）
+    mutable int cached_boundary_type_ = 0;  // 缓存的布局边界类型
+    mutable bool boundary_cache_valid_ = false;  // 布局边界缓存是否有效
 
     // 滚动状态
     float scroll_x_ = 0.0f;
