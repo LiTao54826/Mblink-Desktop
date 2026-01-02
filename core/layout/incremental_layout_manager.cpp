@@ -129,8 +129,7 @@ void IncrementalLayoutManager::MarkBoundaryNeedsLayout(RenderObject* boundary) {
 
     dirty_render_boundaries_.insert(boundary);
 
-    std::cout << "[IncrementalLayout] Marked boundary for layout (type: " 
-              << boundary->GetLayoutBoundaryType() << ")" << std::endl;
+
 }
 
 void IncrementalLayoutManager::UpdateScrollContainerSize(Element* scroll_container) {

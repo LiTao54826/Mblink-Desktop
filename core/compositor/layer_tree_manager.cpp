@@ -303,36 +303,7 @@ bool LayerTreeManager::SetScrollPosition(RenderObject* container, float x, float
             layer->SetScrollOffset(SkPoint::Make(state.scroll_x, state.scroll_y));
             layer->MarkFullDirty();  // 需要重新光栅化
             
-            // 调试日志：输出层树的滚动偏移信息
-            std::cout << "[Scroll] ===== Layer Tree After Scroll =====" << std::endl;
-            std::function<void(CompositorLayer*, int)> dumpLayer = [&](CompositorLayer* l, int depth) {
-                if (!l) return;
-                std::string indent(depth * 2, ' ');
-                const SkPoint& scroll = l->GetScrollOffset();
-                const SkRect& bounds = l->GetBounds();
-                std::string reason_str;
-                switch (l->GetPromotionReason()) {
-                    case LayerPromotionReason::RootLayer: reason_str = "Root"; break;
-                    case LayerPromotionReason::TransformAnimation: reason_str = "TransformAnim"; break;
-                    case LayerPromotionReason::OpacityAnimation: reason_str = "OpacityAnim"; break;
-                    case LayerPromotionReason::ScrollableContent: reason_str = "ScrollContent"; break;
-                    case LayerPromotionReason::PositionFixed: reason_str = "Fixed"; break;
-                    default: reason_str = "Other"; break;
-                }
-                std::cout << indent << "[" << reason_str << "] scroll=(" << scroll.fX << "," << scroll.fY 
-                          << ") bounds=(" << bounds.left() << "," << bounds.top() << ")" << std::endl;
-                for (const auto& child : l->GetChildren()) {
-                    dumpLayer(child.get(), depth + 1);
-                }
-            };
-            
-            // 找到根层
-            std::shared_ptr<CompositorLayer> root = layer;
-            while (root->GetParent()) {
-                root = root->GetParent();
-            }
-            dumpLayer(root.get(), 0);
-            std::cout << "[Scroll] ========================================" << std::endl;
+
         }
         
         // 同步到 RenderObject

@@ -474,9 +474,7 @@ void RenderPipeline::DoLayerTreeBuild() {
         UpdateLayerTreeBounds(root_layer_.get());
     } else if (!root_layer_ || needs_layer_tree_rebuild_) {
         // 完整重建路径
-        static int rebuild_count = 0;
-        rebuild_count++;
-        std::cout << "[LayerTree] Full rebuild #" << rebuild_count << std::endl;
+
         
         root_layer_ = layer_tree_builder_->Build(render_tree_.get());
         needs_layer_tree_rebuild_ = false;

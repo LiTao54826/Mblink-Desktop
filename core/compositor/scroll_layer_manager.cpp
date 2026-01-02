@@ -41,6 +41,12 @@ bool ScrollLayerManager::RegisterScrollContainer(RenderObject* container) {
         if (clip_layer) {
             // 关键修复：确保新的 clip_layer 有正确的滚动偏移
             ScrollContainerInfo& info = it->second;
+            
+            // 冲突修复：LayerTreeManager 可能已经更新了 RenderObject 的滚动位置
+            // 这里我们需要同步 info 的滚动位置，而不是用旧的 info 覆盖层
+            info.scroll_x = container->GetScrollX();
+            info.scroll_y = container->GetScrollY();
+            
             clip_layer->SetScrollOffset(SkPoint::Make(info.scroll_x, info.scroll_y));
         }
         return true;

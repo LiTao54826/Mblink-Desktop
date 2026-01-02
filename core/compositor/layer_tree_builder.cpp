@@ -253,22 +253,7 @@ void LayerTreeBuilder::UpdateLayerBounds(CompositorLayer* layer, RenderObject* o
     }
     
     // 调试日志：输出 fixed 元素的布局信息
-    if (is_fixed) {
-        auto node = obj->GetNode();
-        std::string tag_name = "unknown";
-        if (node && node->GetNodeType() == NodeType::ELEMENT_NODE) {
-            auto element = std::static_pointer_cast<Element>(node);
-            tag_name = element->GetTagName();
-        }
-        std::cout << "[UpdateLayerBounds] FIXED element: " << tag_name 
-                  << " layout=(" << layout.x << "," << layout.y 
-                  << "," << layout.width << "x" << layout.height << ")"
-                  << " has_transform=" << (style.transform.has_value() ? "yes" : "no")
-                  << std::endl;
-    }
-    
     if (!is_fixed) {
-        // 对于非 fixed 元素，需要累加父元素位置
         // 从当前元素的直接父元素开始，累加位置
         // 直到到达层树父层对应的 RenderObject
         auto parent = obj->GetParent();
@@ -471,15 +456,6 @@ void LayerTreeBuilder::UpdateLayerBounds(CompositorLayer* layer, RenderObject* o
     SkRect bounds = SkRect::MakeXYWH(rel_x + offset_x, rel_y + offset_y, width, height);
     layer->SetBounds(bounds);
     
-    // 调试日志：输出最终边界
-    if (is_fixed) {
-        std::cout << "[UpdateLayerBounds] FIXED final bounds=(" 
-                  << bounds.left() << "," << bounds.top() 
-                  << "," << bounds.width() << "x" << bounds.height() << ")"
-                  << " rel=(" << rel_x << "," << rel_y << ")"
-                  << " offset=(" << offset_x << "," << offset_y << ")"
-                  << std::endl;
-    }
 }
 
 bool LayerTreeBuilder::HasWillChangeTransform(RenderObject* obj) const {
