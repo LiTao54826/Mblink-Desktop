@@ -1062,6 +1062,10 @@ void RenderBlock::Paint(SkCanvas* canvas) {
 
     auto children_start = std::chrono::high_resolution_clock::now();
     
+    // 收集直接子元素中的 fixed 元素，稍后在滚动条之后绘制
+    // 注意：如果 fixed 元素被提升为独立合成层，会在 HasOwnCompositorLayer() 检查中跳过
+    std::vector<std::shared_ptr<RenderObject>> fixed_children;
+    
     for (auto& child : sorted_children) {
         // 跳过已经绘制的 legend
         if (is_fieldset_element && child.get() == legend_child) {
@@ -1080,8 +1084,14 @@ void RenderBlock::Paint(SkCanvas* canvas) {
             continue;
         }
         
+        // position: fixed 元素延迟到滚动条之后绘制
+        if (is_fixed) {
+            fixed_children.push_back(child);
+            continue;
+        }
+        
         // 增量绘制优化：提前检查子节点是否与当前裁剪区域相交
-        // 注意：对于 position: fixed/absolute 且高 z-index 的元素，不能使用 quickReject
+        // 注意：对于 position: absolute 且高 z-index 的元素，不能使用 quickReject
         if (!is_fixed_or_absolute || child_style.z_index < 100) {
             const auto& child_layout = child->GetLayoutInfo();
             SkRect child_rect = SkRect::MakeXYWH(
@@ -1093,31 +1103,8 @@ void RenderBlock::Paint(SkCanvas* canvas) {
             }
         }
         
-        // position: fixed 元素需要特殊处理
-        // fixed 元素的 layout.x/y 是视口绝对坐标，需要重置到视口坐标系绘制
-        if (is_fixed) {
-            // 获取当前 canvas 的变换矩阵
-            SkMatrix current_matrix = canvas->getTotalMatrix();
-            
-            // 提取 DPI 缩放因子（假设是均匀缩放）
-            float scale_x = current_matrix.getScaleX();
-            float scale_y = current_matrix.getScaleY();
-            
-            // 保存当前状态
-            canvas->save();
-            
-            // 重置变换矩阵，只保留 DPI 缩放
-            canvas->resetMatrix();
-            canvas->scale(scale_x, scale_y);
-            
-            // 绘制 fixed 元素（使用其视口绝对坐标）
-            child->Paint(canvas);
-            
-            // 恢复之前的变换矩阵
-            canvas->restore();
-        } else {
-            child->Paint(canvas);
-        }
+        // 绘制非 fixed 子元素
+        child->Paint(canvas);
     }
     auto children_end = std::chrono::high_resolution_clock::now();
     g_paint_children_time += std::chrono::duration_cast<std::chrono::microseconds>(children_end - children_start).count();
@@ -1137,7 +1124,7 @@ void RenderBlock::Paint(SkCanvas* canvas) {
         canvas->restore();
     }
 
-    // 绘制滚动条 (在裁剪区域外绘制)
+    // 绘制滚动条 (在裁剪区域外绘制，但在 fixed 元素之前)
     if (needs_scrollbar) {
         // For body element, scrollbar should be drawn relative to viewport, not body
         // Save current transform and adjust for body's margin
@@ -1155,22 +1142,22 @@ void RenderBlock::Paint(SkCanvas* canvas) {
         float visible_height = effective_height - box.border_top_width - box.border_bottom_width;
 
         // 获取独立的 overflow-x 和 overflow-y 值
-        std::string overflow_x = !style.overflow_x.empty() ? style.overflow_x : style.overflow;
-        std::string overflow_y = !style.overflow_y.empty() ? style.overflow_y : style.overflow;
+        std::string overflow_x_sb = !style.overflow_x.empty() ? style.overflow_x : style.overflow;
+        std::string overflow_y_sb = !style.overflow_y.empty() ? style.overflow_y : style.overflow;
 
         // 判断是否允许显示滚动条
-        bool allow_v_scroll = (overflow_y == "scroll" || overflow_y == "auto");
-        bool allow_h_scroll = (overflow_x == "scroll" || overflow_x == "auto");
+        bool allow_v_scroll = (overflow_y_sb == "scroll" || overflow_y_sb == "auto");
+        bool allow_h_scroll = (overflow_x_sb == "scroll" || overflow_x_sb == "auto");
 
         // 使用与上面相同的逻辑判断是否需要滚动条
-        bool needs_v_scroll = allow_v_scroll && (content_height > visible_height || overflow_y == "scroll");
-        float content_area_width = visible_width - (needs_v_scroll ? scrollbar_width : 0);
-        bool needs_h_scroll = allow_h_scroll && (content_width > content_area_width || overflow_x == "scroll");
+        bool needs_v_scroll = allow_v_scroll && (content_height > visible_height || overflow_y_sb == "scroll");
+        float content_area_width_sb = visible_width - (needs_v_scroll ? scrollbar_width : 0);
+        bool needs_h_scroll = allow_h_scroll && (content_width > content_area_width_sb || overflow_x_sb == "scroll");
 
         // 如果需要水平滚动条，调整高度并重新检查
         if (needs_h_scroll) {
-            float content_area_height = visible_height - scrollbar_width;
-            if (allow_v_scroll && !needs_v_scroll && content_height > content_area_height) {
+            float content_area_height_sb = visible_height - scrollbar_width;
+            if (allow_v_scroll && !needs_v_scroll && content_height > content_area_height_sb) {
                 needs_v_scroll = true;
             }
         }
@@ -1260,6 +1247,31 @@ void RenderBlock::Paint(SkCanvas* canvas) {
         if (is_body) {
             canvas->restore();
         }
+    }
+
+    // 绘制 position: fixed 元素（在滚动条之后）
+    // 注意：如果 fixed 元素被提升为独立合成层，这里的 fixed_children 会是空的
+    // 因为它们在上面的循环中被 HasOwnCompositorLayer() 跳过了
+    for (auto& child : fixed_children) {
+        // 获取当前 canvas 的变换矩阵
+        SkMatrix current_matrix = canvas->getTotalMatrix();
+            
+        // 提取 DPI 缩放因子（假设是均匀缩放）
+        float scale_x = current_matrix.getScaleX();
+        float scale_y = current_matrix.getScaleY();
+        
+        // 保存当前状态
+        canvas->save();
+        
+        // 重置变换矩阵，只保留 DPI 缩放
+        canvas->resetMatrix();
+        canvas->scale(scale_x, scale_y);
+        
+        // 绘制 fixed 元素（使用其视口绝对坐标）
+        child->Paint(canvas);
+        
+        // 恢复之前的变换矩阵
+        canvas->restore();
     }
 
     // ========== 绘制 contentEditable 光标 ==========

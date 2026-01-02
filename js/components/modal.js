@@ -56,14 +56,14 @@ export function Modal(props) {
 
   // 禁止背景滚动
   useEffect(() => {
-    if (visible) {
-      document.body.style.overflow = 'hidden';
-    } else {
-      document.body.style.overflow = '';
-    }
-    return () => {
-      document.body.style.overflow = '';
-    };
+    // if (visible) {
+    //   document.body.style.overflow = 'hidden';
+    // } else {
+    //   document.body.style.overflow = '';
+    // }
+    // return () => {
+    //   document.body.style.overflow = '';
+    // };
   }, [visible]);
 
   if (!visible) return null;

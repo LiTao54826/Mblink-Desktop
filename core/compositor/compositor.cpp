@@ -584,6 +584,11 @@ void Compositor::CompositeLayerCPU(CompositorLayer* layer, SkCanvas* canvas, con
 
     // 应用层位置
     const SkRect& bounds = layer->GetBounds();
+    
+    // 对于所有层，使用 bounds 的位置
+    // bounds 已经包含了正确的位置信息：
+    // - 对于普通层：相对于父层的位置
+    // - 对于 fixed 层：视口坐标 + transform 偏移
     canvas->translate(bounds.left(), bounds.top());
 
     // 注意：不应用 layer->GetTransform()

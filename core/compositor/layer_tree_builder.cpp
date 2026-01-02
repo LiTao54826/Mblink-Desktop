@@ -83,11 +83,11 @@ LayerPromotionReason LayerTreeBuilder::ShouldPromote(RenderObject* obj) const {
         return LayerPromotionReason::WillChangeOpacity;
     }
 
-    // 3. position: fixed - 暂时禁用，由 LayerManager 处理
-    // fixed 元素需要特殊的视口坐标处理，CompositorLayer 系统目前不支持
-    // if (HasPositionFixed(obj)) {
-    //     return LayerPromotionReason::PositionFixed;
-    // }
+    // 3. position: fixed - 提升为独立合成层
+    // fixed 元素需要在滚动条之上绘制，通过独立层实现正确的 stacking order
+    if (HasPositionFixed(obj)) {
+        return LayerPromotionReason::PositionFixed;
+    }
 
     // 4. transform 动画
     if (HasTransformAnimation(obj)) {
@@ -193,6 +193,14 @@ void LayerTreeBuilder::UpdateLayerBounds(CompositorLayer* layer, RenderObject* o
 
     const auto& layout = obj->GetLayoutInfo();
     const auto& style = obj->GetComputedStyle();
+    
+    // 性能优化：跳过 0 大小的元素（如空的 Toast 容器）
+    // 这些元素没有可见内容，不需要计算复杂的 transform 边界
+    if (layout.width <= 0 && layout.height <= 0) {
+        // 设置一个最小边界，避免后续处理出错
+        layer->SetBounds(SkRect::MakeXYWH(layout.x, layout.y, 0, 0));
+        return;
+    }
     
     // 对于根层，边界从 (0,0) 开始
     // 对于 body 元素，使用视口尺寸而不是布局尺寸，以确保滚动条能正确绘制
@@ -315,7 +323,11 @@ void LayerTreeBuilder::UpdateLayerBounds(CompositorLayer* layer, RenderObject* o
         
         // 存储动画边界信息到层（用于光栅化时的偏移）
         layer->SetAnimationBounds(anim_bounds);
-    } else if (style.transform.has_value() && !style.transform->IsEmpty()) {
+    } else if (!is_fixed && style.transform.has_value() && !style.transform->IsEmpty()) {
+        // 对于 position: fixed 元素，不计算 transform 偏移
+        // 因为在合成时我们使用 layout.x/y 定位，transform 在 Paint 中应用
+        // 位图需要足够大以容纳变换后的内容，但不需要偏移
+        
         // 如果没有动画边界，但有静态变换，使用当前帧的变换边界
         // 计算变换后的边界框
         SkRect local_rect = SkRect::MakeWH(layout.width, layout.height);
@@ -349,6 +361,49 @@ void LayerTreeBuilder::UpdateLayerBounds(CompositorLayer* layer, RenderObject* o
         offset_y = min_y - padding;
         
         // 清除动画边界（没有动画）
+        layer->ClearAnimationBounds();
+    } else if (is_fixed && style.transform.has_value() && !style.transform->IsEmpty()) {
+        // position: fixed 元素有 transform 时，需要扩展位图大小以容纳变换后的内容
+        // 同时需要记录 transform 偏移，以便光栅化和合成时正确处理
+        SkRect local_rect = SkRect::MakeWH(layout.width, layout.height);
+        SkMatrix transform_matrix = style.transform->ToSkMatrix(local_rect, style.transform_origin);
+        
+        // 变换四个角点
+        SkPoint corners[4] = {
+            {0, 0},
+            {layout.width, 0},
+            {layout.width, layout.height},
+            {0, layout.height}
+        };
+        transform_matrix.mapPoints(corners, 4);
+        
+        // 计算变换后的边界框
+        float min_x = corners[0].x(), max_x = corners[0].x();
+        float min_y = corners[0].y(), max_y = corners[0].y();
+        for (int i = 1; i < 4; ++i) {
+            min_x = std::min(min_x, corners[i].x());
+            max_x = std::max(max_x, corners[i].x());
+            min_y = std::min(min_y, corners[i].y());
+            max_y = std::max(max_y, corners[i].y());
+        }
+        
+        // 扩展位图大小以容纳变换后的内容
+        // 对于 translateX(-50%)，min_x 会是负值，需要扩展左边
+        const float padding = 10.0f;
+        float expanded_width = (max_x - min_x) + padding * 2;
+        float expanded_height = (max_y - min_y) + padding * 2;
+        
+        // 使用扩展后的尺寸
+        width = expanded_width;
+        height = expanded_height;
+        
+        // 关键修复：对于 fixed 元素，需要应用 transform 偏移
+        // 这样合成时才能正确定位
+        // min_x - padding 是变换后内容相对于原点的偏移
+        offset_x = min_x - padding;
+        offset_y = min_y - padding;
+        
+        // 清除动画边界
         layer->ClearAnimationBounds();
     } else {
         // 没有变换，清除动画边界

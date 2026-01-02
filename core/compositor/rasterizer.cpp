@@ -65,13 +65,6 @@ bool Rasterizer::RasterizeLayer(CompositorLayer* layer) {
     const auto& layout = render_obj->GetLayoutInfo();
     const SkRect& bounds = layer->GetBounds();
     float dpi_scale = layer->GetDpiScale();
-    
-    std::cout << "[DEBUG RasterizeLayer] Layer " << layer->GetId() 
-              << ", bounds=(" << bounds.left() << "," << bounds.top() << "," << bounds.width() << "x" << bounds.height() << ")"
-              << ", layout=(" << layout.x << "," << layout.y << "," << layout.width << "x" << layout.height << ")"
-              << ", dpi_scale=" << dpi_scale
-              << ", bitmap_size=" << layer->GetBitmap().width() << "x" << layer->GetBitmap().height()
-              << ", promotion=" << static_cast<int>(layer->GetPromotionReason()) << std::endl;
 
     // 清除整个位图
     canvas->clear(SK_ColorTRANSPARENT);
@@ -95,44 +88,66 @@ bool Rasterizer::RasterizeLayer(CompositorLayer* layer) {
     if (layer->GetPromotionReason() != LayerPromotionReason::RootLayer) {
         canvas->translate(-layout.x, -layout.y);
         
-        // 关键修复：如果层有动画边界扩展，需要额外平移以补偿边界扩展的偏移
-        // 动画边界的 offset 表示边界相对于元素原始位置的偏移
-        // 我们需要将内容绘制在位图的正确位置，以便合成时显示正确
-        const AnimationBounds* anim_bounds = layer->GetAnimationBounds();
-        if (anim_bounds && anim_bounds->needs_expansion) {
-            // 动画边界偏移通常为负值（边界向左上扩展）
-            // 需要将内容向右下移动以补偿
-            canvas->translate(-anim_bounds->offset.fX, -anim_bounds->offset.fY);
-        } else {
-            // 没有动画边界，检查是否有静态变换偏移
-            // 层边界的 left/top 可能包含了变换偏移
-            const SkRect& bounds = layer->GetBounds();
-            
-            // 获取元素相对于层树父层的原始位置
-            auto parent_layer = layer->GetParent();
-            RenderObject* parent_layer_obj = parent_layer ? parent_layer->GetRenderObject() : nullptr;
-            
-            float orig_rel_x = layout.x;
-            float orig_rel_y = layout.y;
-            
-            // 累加从当前元素到层树父层的位置
-            // 注意：不要减去滚动偏移！滚动偏移应该在合成时应用，而不是在光栅化时应用
-            // 这样可以避免双重滚动的问题
-            auto parent = render_obj->GetParent();
-            while (parent && parent.get() != parent_layer_obj) {
-                const auto& parent_layout = parent->GetLayoutInfo();
-                orig_rel_x += parent_layout.x;
-                orig_rel_y += parent_layout.y;
-                parent = parent->GetParent();
+        // 对于 position: fixed 元素，需要补偿 bounds 中的 transform 偏移
+        // bounds 包含了 transform 偏移（例如 translateX(-50%) 导致的负偏移）
+        // 我们需要将内容绘制在位图的正确位置
+        bool is_fixed = (layer->GetPromotionReason() == LayerPromotionReason::PositionFixed);
+        if (is_fixed) {
+            const auto& style = render_obj->GetComputedStyle();
+            if (style.transform.has_value() && !style.transform->IsEmpty()) {
+                // 获取 bounds 中记录的偏移
+                // bounds.left() = layout.x + offset_x，其中 offset_x = min_x - padding
+                // 所以 offset_x = bounds.left() - layout.x
+                const SkRect& bounds = layer->GetBounds();
+                float offset_x = bounds.left() - layout.x;
+                float offset_y = bounds.top() - layout.y;
+                
+                // 补偿 bounds 中的偏移
+                // 这样内容会绘制在位图的 (-offset_x, -offset_y) 位置
+                // 即 (padding - min_x, padding - min_y) 位置
+                // Paint 应用 transform 后，内容会移动到 (padding, padding)
+                canvas->translate(-offset_x, -offset_y);
             }
-            
-            // 计算变换偏移
-            float transform_offset_x = bounds.left() - orig_rel_x;
-            float transform_offset_y = bounds.top() - orig_rel_y;
-            
-            // 补偿变换偏移
-            if (transform_offset_x != 0 || transform_offset_y != 0) {
-                canvas->translate(-transform_offset_x, -transform_offset_y);
+        } else {
+            // 关键修复：如果层有动画边界扩展，需要额外平移以补偿边界扩展的偏移
+            // 动画边界的 offset 表示边界相对于元素原始位置的偏移
+            // 我们需要将内容绘制在位图的正确位置，以便合成时显示正确
+            const AnimationBounds* anim_bounds = layer->GetAnimationBounds();
+            if (anim_bounds && anim_bounds->needs_expansion) {
+                // 动画边界偏移通常为负值（边界向左上扩展）
+                // 需要将内容向右下移动以补偿
+                canvas->translate(-anim_bounds->offset.fX, -anim_bounds->offset.fY);
+            } else {
+                // 没有动画边界，检查是否有静态变换偏移
+                // 层边界的 left/top 可能包含了变换偏移
+                const SkRect& bounds = layer->GetBounds();
+                
+                // 获取元素相对于层树父层的原始位置
+                auto parent_layer = layer->GetParent();
+                RenderObject* parent_layer_obj = parent_layer ? parent_layer->GetRenderObject() : nullptr;
+                
+                float orig_rel_x = layout.x;
+                float orig_rel_y = layout.y;
+                
+                // 累加从当前元素到层树父层的位置
+                // 注意：不要减去滚动偏移！滚动偏移应该在合成时应用，而不是在光栅化时应用
+                // 这样可以避免双重滚动的问题
+                auto parent = render_obj->GetParent();
+                while (parent && parent.get() != parent_layer_obj) {
+                    const auto& parent_layout = parent->GetLayoutInfo();
+                    orig_rel_x += parent_layout.x;
+                    orig_rel_y += parent_layout.y;
+                    parent = parent->GetParent();
+                }
+                
+                // 计算变换偏移
+                float transform_offset_x = bounds.left() - orig_rel_x;
+                float transform_offset_y = bounds.top() - orig_rel_y;
+                
+                // 补偿变换偏移
+                if (transform_offset_x != 0 || transform_offset_y != 0) {
+                    canvas->translate(-transform_offset_x, -transform_offset_y);
+                }
             }
         }
     }
@@ -292,10 +307,22 @@ bool Rasterizer::RasterizeRegion(CompositorLayer* layer, const SkIRect& region) 
     if (layer->GetPromotionReason() != LayerPromotionReason::RootLayer) {
         canvas->translate(-layout.x, -layout.y);
         
-        // 处理动画边界偏移
-        const AnimationBounds* anim_bounds = layer->GetAnimationBounds();
-        if (anim_bounds && anim_bounds->needs_expansion) {
-            canvas->translate(-anim_bounds->offset.fX, -anim_bounds->offset.fY);
+        // 对于 position: fixed 元素，需要补偿 bounds 中的 transform 偏移
+        bool is_fixed = (layer->GetPromotionReason() == LayerPromotionReason::PositionFixed);
+        if (is_fixed) {
+            const auto& style = render_obj->GetComputedStyle();
+            if (style.transform.has_value() && !style.transform->IsEmpty()) {
+                const SkRect& bounds = layer->GetBounds();
+                float offset_x = bounds.left() - layout.x;
+                float offset_y = bounds.top() - layout.y;
+                canvas->translate(-offset_x, -offset_y);
+            }
+        } else {
+            // 处理动画边界偏移
+            const AnimationBounds* anim_bounds = layer->GetAnimationBounds();
+            if (anim_bounds && anim_bounds->needs_expansion) {
+                canvas->translate(-anim_bounds->offset.fX, -anim_bounds->offset.fY);
+            }
         }
     }
     
@@ -308,10 +335,21 @@ bool Rasterizer::RasterizeRegion(CompositorLayer* layer, const SkIRect& region) 
     if (layer->GetPromotionReason() != LayerPromotionReason::RootLayer) {
         float offset_x = layout.x;
         float offset_y = layout.y;
-        const AnimationBounds* anim_bounds = layer->GetAnimationBounds();
-        if (anim_bounds && anim_bounds->needs_expansion) {
-            offset_x += anim_bounds->offset.fX;
-            offset_y += anim_bounds->offset.fY;
+        
+        bool is_fixed = (layer->GetPromotionReason() == LayerPromotionReason::PositionFixed);
+        if (is_fixed) {
+            const auto& style = render_obj->GetComputedStyle();
+            if (style.transform.has_value() && !style.transform->IsEmpty()) {
+                const SkRect& bounds = layer->GetBounds();
+                offset_x += (bounds.left() - layout.x);
+                offset_y += (bounds.top() - layout.y);
+            }
+        } else {
+            const AnimationBounds* anim_bounds = layer->GetAnimationBounds();
+            if (anim_bounds && anim_bounds->needs_expansion) {
+                offset_x += anim_bounds->offset.fX;
+                offset_y += anim_bounds->offset.fY;
+            }
         }
         clip_rect.offset(offset_x, offset_y);
     }
