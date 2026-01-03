@@ -105,6 +105,12 @@ LayerPromotionReason LayerTreeBuilder::ShouldPromote(RenderObject* obj) const {
         return LayerPromotionReason::ScrollableContent;
     }
 
+    // 7. 高 z-index 的绝对定位元素（如下拉菜单、弹出层）
+    // 这些元素需要独立层以避免被父元素的 overflow: hidden 裁剪
+    if (HasHighZIndex(obj)) {
+        return LayerPromotionReason::HighZIndex;
+    }
+
     return LayerPromotionReason::None;
 }
 
@@ -610,6 +616,30 @@ bool LayerTreeBuilder::IsScrollableContainer(RenderObject* obj) const {
         content_height > layout.height;
 
     return has_overflow_content;
+}
+
+bool LayerTreeBuilder::HasHighZIndex(RenderObject* obj) const {
+    if (!obj) {
+        return false;
+    }
+
+    const auto& style = obj->GetComputedStyle();
+    
+    // 只有绝对定位或固定定位的元素才考虑高 z-index 提升
+    // 因为普通流中的元素不会被 overflow 裁剪问题影响
+    if (style.position != "absolute" && style.position != "fixed") {
+        return false;
+    }
+    
+    // z-index 阈值：100 以上认为是需要提升的高 z-index
+    // 这个阈值可以覆盖大多数下拉菜单、弹出层、tooltip 等场景
+    // 常见的 z-index 约定：
+    // - 下拉菜单/弹出层: 100-999
+    // - Modal/对话框: 1000-1999
+    // - Toast/通知: 2000+
+    const int HIGH_ZINDEX_THRESHOLD = 100;
+    
+    return style.z_index >= HIGH_ZINDEX_THRESHOLD;
 }
 
 // ============================================================================

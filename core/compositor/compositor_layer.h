@@ -52,6 +52,7 @@ enum class LayerPromotionReason {
     TransformAnimation,     // CSS transform 动画
     OpacityAnimation,       // CSS opacity 动画
     ScrollableContent,      // 可滚动内容
+    HighZIndex,             // 高 z-index（如下拉菜单、弹出层）
     Explicit,               // 显式请求（调试用）
     RootLayer               // 根层
 };

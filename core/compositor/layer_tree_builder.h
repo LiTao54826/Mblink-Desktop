@@ -245,6 +245,12 @@ private:
      */
     bool IsScrollableContainer(RenderObject* obj) const;
 
+    /**
+     * @brief 检查是否有高 z-index（需要提升为独立层）
+     * @note 高 z-index 的绝对定位元素需要独立层以避免被父元素 overflow 裁剪
+     */
+    bool HasHighZIndex(RenderObject* obj) const;
+
     // 根层
     std::shared_ptr<CompositorLayer> root_layer_;
 

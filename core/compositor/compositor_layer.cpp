@@ -505,6 +505,8 @@ const char* CompositorLayer::PromotionReasonToString(LayerPromotionReason reason
             return "opacity animation";
         case LayerPromotionReason::ScrollableContent:
             return "scrollable content";
+        case LayerPromotionReason::HighZIndex:
+            return "high z-index";
         case LayerPromotionReason::Explicit:
             return "explicit";
         case LayerPromotionReason::RootLayer:
