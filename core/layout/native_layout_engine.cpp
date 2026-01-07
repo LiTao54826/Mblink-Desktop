@@ -377,7 +377,7 @@ NativeLayoutEngine::~NativeLayoutEngine() {
 // Public Interface
 //------------------------------------------------------------------------------
 
-void NativeLayoutEngine::BuildLayoutTree(std::shared_ptr<RenderObject> root) {
+void NativeLayoutEngine::BuildLayoutTree(std::shared_ptr<RenderObject> root, bool force_rebuild) {
     if (!root) {
         return;
     }
@@ -407,7 +407,12 @@ void NativeLayoutEngine::BuildLayoutTree(std::shared_ptr<RenderObject> root) {
     
     if (root_node_ != 0 && cached && cached.get() == root.get()) {
         // If viewport size changed, we need to rebuild to recalculate vh/vw units
-        if (root->NeedsLayout() || viewport_changed) {
+        // Also rebuild if root or any child needs layout
+        // force_rebuild is used when DOM structure has changed (e.g., after Synchronize)
+        bool needs_layout = root->NeedsLayout();
+        bool child_needs_layout = root->ChildNeedsLayout();
+        
+        if (needs_layout || child_needs_layout || viewport_changed || force_rebuild) {
             // Need to rebuild - clear all layout flags first
             clearLayoutFlags(root.get());
             Clear();
@@ -513,6 +518,7 @@ void NativeLayoutEngine::GetLayoutInfo(std::shared_ptr<RenderObject> root) {
     if (!root) {
         return;
     }
+    
     ReadLayoutResults(root.get());
 }
 
@@ -2103,6 +2109,7 @@ void NativeLayoutEngine::BuildSubtree(RenderObject* render_obj, NodeId parent_id
     if (computed.display == RenderObjectType::FLEX ||
         computed.display == RenderObjectType::GRID) {
         const auto& children = render_obj->GetChildren();
+        
         for (auto& child : children) {
             BuildSubtree(child.get(), node_id);
         }

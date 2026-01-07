@@ -2623,6 +2623,7 @@ RenderObjectType StyleResolver::ParseDisplay(const std::string& value) {
     if (value == "grid") return RenderObjectType::GRID;
     if (value == "inline-grid") return RenderObjectType::GRID;  // inline-grid 也使用 GRID 类型
     if (value == "none") return RenderObjectType::NONE;
+    if (value == "contents") return RenderObjectType::CONTENTS;  // display: contents
     // 表格相关display类型
     if (value == "table") return RenderObjectType::TABLE;
     if (value == "table-row-group") return RenderObjectType::TABLE_ROW_GROUP;
@@ -2699,6 +2700,16 @@ std::shared_ptr<RenderObject> RenderTreeBuilder::BuildRenderTree(
     // 根据节点类型创建渲染对象
     if (node->GetNodeType() == NodeType::ELEMENT_NODE) {
         auto element = std::static_pointer_cast<Element>(node);
+        
+        // 先计算样式，检查是否是 display: contents
+        auto style = style_resolver_.ResolveStyle(element, parent_style);
+        
+        // display: contents 元素不创建渲染对象，但需要处理子元素
+        // 子元素会在父级的 BuildRenderTree 中被处理
+        if (style.display == RenderObjectType::CONTENTS) {
+            return nullptr;  // 不创建渲染对象
+        }
+        
         render_obj = CreateRenderObjectForElement(element, parent_style);
     }
     else if (node->GetNodeType() == NodeType::TEXT_NODE) {
@@ -2744,13 +2755,8 @@ std::shared_ptr<RenderObject> RenderTreeBuilder::BuildRenderTree(
         render_obj->AppendChild(before_text);
     }
 
-    // 递归构建子树
-    for (const auto& child : node->GetChildNodes()) {
-        auto child_render_obj = BuildRenderTree(child, &render_obj->GetComputedStyle());
-        if (child_render_obj) {
-            render_obj->AppendChild(child_render_obj);
-        }
-    }
+    // 递归构建子树，处理 display: contents 元素
+    BuildChildRenderObjects(node, render_obj, &render_obj->GetComputedStyle());
 
     // 处理 ::after 伪元素
     if (style.has_after && !style.content_after.empty()) {
@@ -2774,6 +2780,34 @@ std::shared_ptr<RenderObject> RenderTreeBuilder::BuildRenderTree(
     }
 
     return render_obj;
+}
+
+void RenderTreeBuilder::BuildChildRenderObjects(
+    std::shared_ptr<Node> node,
+    std::shared_ptr<RenderObject> parent_render_obj,
+    const ComputedStyle* parent_style) {
+    
+    for (const auto& child : node->GetChildNodes()) {
+        if (child->GetNodeType() == NodeType::ELEMENT_NODE) {
+            auto child_element = std::static_pointer_cast<Element>(child);
+            
+            // 计算子元素样式
+            auto child_style = style_resolver_.ResolveStyle(child_element, parent_style);
+            
+            // 如果子元素是 display: contents，递归处理其子元素
+            if (child_style.display == RenderObjectType::CONTENTS) {
+                // 递归处理 contents 元素的子元素，使用 contents 元素的样式作为继承基础
+                BuildChildRenderObjects(child, parent_render_obj, &child_style);
+                continue;
+            }
+        }
+        
+        // 正常构建子元素的渲染对象
+        auto child_render_obj = BuildRenderTree(child, parent_style);
+        if (child_render_obj) {
+            parent_render_obj->AppendChild(child_render_obj);
+        }
+    }
 }
 
 std::shared_ptr<RenderObject> RenderTreeBuilder::CreateRenderObjectForElement(
@@ -3045,6 +3079,8 @@ std::shared_ptr<RenderObject> RenderTreeBuilder::CreateRenderObjectByType(Render
             return std::make_shared<RenderTableCell>();
         case RenderObjectType::TABLE_CAPTION:
             return std::make_shared<RenderTableCaption>();
+        case RenderObjectType::CONTENTS:
+            return nullptr;  // display: contents 不创建渲染对象
         case RenderObjectType::NONE:
             return nullptr;
         default:

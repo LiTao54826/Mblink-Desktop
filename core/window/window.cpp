@@ -1028,7 +1028,8 @@ void Window::Render() {
         
         if (needs_layout_update) {
             // DOM 结构变化，需要重建布局树
-            layout_engine_->BuildLayoutTree(cached_render_tree_);
+            // force_rebuild=true 确保即使缓存有效也会重建
+            layout_engine_->BuildLayoutTree(cached_render_tree_, true);
             layout_engine_->ComputeLayout(sync_app_width, sync_app_height);
             layout_engine_->GetLayoutInfo(cached_render_tree_);
         } else {
@@ -1672,15 +1673,19 @@ void Window::ForceLayoutSync() {
     }
     
     // 处理待处理的 DOM 变化
+    bool needs_rebuild = false;
     if (render_tree_synchronizer_) {
         auto& tracker = document_->GetDirtyTracker();
-        if (tracker.HasPendingChanges()) {
-            render_tree_synchronizer_->Synchronize(tracker, cached_render_tree_);
+        bool has_pending = tracker.HasPendingChanges();
+        
+        if (has_pending) {
+            needs_rebuild = render_tree_synchronizer_->Synchronize(tracker, cached_render_tree_);
         }
     }
     
     // 重建布局树并计算布局
-    layout_engine_->BuildLayoutTree(cached_render_tree_);
+    // 如果有 DOM 变化，强制重建布局树
+    layout_engine_->BuildLayoutTree(cached_render_tree_, needs_rebuild);
     layout_engine_->ComputeLayout(app_width, app_height);
     layout_engine_->GetLayoutInfo(cached_render_tree_);
 }

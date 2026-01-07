@@ -914,6 +914,7 @@ static JSValue JS_Window_getComputedStyle(JSContext* ctx, JSValueConst this_val,
         case RenderObjectType::FLEX: display_str = "flex"; break;
         case RenderObjectType::GRID: display_str = "grid"; break;
         case RenderObjectType::NONE: display_str = "none"; break;
+        case RenderObjectType::CONTENTS: display_str = "contents"; break;
         default: display_str = "block"; break;
     }
     JS_SetPropertyStr(ctx, style_obj, "display", JS_NewString(ctx, display_str));

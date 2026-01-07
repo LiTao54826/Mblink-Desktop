@@ -130,6 +130,7 @@ enum class RenderObjectType {
     TABLE_ROW,  // 表格行（display: table-row, 如 tr）
     TABLE_CELL, // 表格单元格（display: table-cell, 如 td, th）
     TABLE_CAPTION, // 表格标题（display: table-caption, 如 caption）
+    CONTENTS,   // display: contents - 元素本身不生成盒子，子元素提升到父级
     NONE        // 不渲染（display: none）
 };
 

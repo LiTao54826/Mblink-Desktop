@@ -327,6 +327,17 @@ private:
      */
     std::shared_ptr<RenderObject> CreateRenderObjectByType(RenderObjectType type);
 
+    /**
+     * @brief 递归构建子元素的渲染对象，处理 display: contents
+     * @param node 当前 DOM 节点
+     * @param parent_render_obj 父渲染对象
+     * @param parent_style 父元素的计算样式
+     */
+    void BuildChildRenderObjects(
+        std::shared_ptr<Node> node,
+        std::shared_ptr<RenderObject> parent_render_obj,
+        const ComputedStyle* parent_style);
+
 private:
     StyleResolver style_resolver_;
     Document* document_ = nullptr;
