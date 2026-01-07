@@ -40,27 +40,40 @@ void AnimationApplicator::StartAnimationsForObject(RenderObject* object) {
     if (!object) {
         return;
     }
-    
+
     // 从 RenderObject 提取 Element
     Element* element = ExtractElement(object);
     if (!element) {
         return;
     }
-    
+
     const auto& style = object->GetComputedStyle();
     auto& started = started_animations_[element];  // 使用 Element* 作为键
-    
+
+    // 调试日志
+    static bool debug_anim = std::getenv("LIGHTUI_DEBUG_ANIM") != nullptr;
+
     // 遍历 ComputedStyle 中定义的所有动画
     for (const auto& anim : style.animations) {
         if (!anim.IsValid()) {
+            if (debug_anim && !anim.name.empty()) {
+                std::cout << "[AnimationApplicator] Invalid animation: " << anim.name << std::endl;
+            }
             continue;
         }
-        
+
         // 检查是否已启动
         if (started.find(anim.name) != started.end()) {
             continue;
         }
-        
+
+        if (debug_anim) {
+            std::cout << "[AnimationApplicator] Starting animation: " << anim.name
+                      << " duration=" << anim.duration << "s"
+                      << " iteration=" << anim.iteration_count
+                      << std::endl;
+        }
+
         // 启动动画
         controller_.StartAnimation(object, anim);
         started.insert(anim.name);
@@ -174,7 +187,7 @@ void AnimationApplicator::ApplyAnimationValues(RenderObject* object) {
         // 简单的解决方案：标记父元素也需要重绘，这样可以确保整个区域被正确重绘
         object->MarkNeedsPaint();
         object->InvalidatePaintCache();
-        
+
         // 如果有 transform，也标记父元素需要重绘
         // 这确保了变换前的位置也会被清除
         if ((style.transform.has_value() && !style.transform->IsEmpty()) || !style.transform_str.empty()) {

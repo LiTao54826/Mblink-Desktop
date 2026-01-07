@@ -781,7 +781,11 @@ void RenderObject::ScrollTo(float x, float y) {
     // 只有滚动位置真正改变时才标记重绘
     if (scroll_x_ != old_scroll_x || scroll_y_ != old_scroll_y) {
         MarkNeedsPaint();
-        
+
+        // 关键修复：滚动时使所有子孙元素的 ViewportBounds 缓存失效
+        // 因为子元素的视口坐标改变了
+        InvalidateDescendantViewportBounds();
+
         // 关键修复：滚动时，标记所有子元素也需要重绘
         // 因为子元素的视觉位置改变了（即使布局位置没变）
         std::function<void(RenderObject*)> mark_children = [&](RenderObject* obj) {
@@ -1224,6 +1228,240 @@ LayerInfo::LayerInfo()
     : compositor_layer()
     , promotion_reason(LayerPromotionReason::None)
     , force_own_layer(false) {
+}
+
+// ========== ViewportBounds 实现 ==========
+
+bool ViewportBounds::Contains(float viewport_x, float viewport_y) const {
+    if (!valid) {
+        return false;
+    }
+
+    // 如果有变换，使用变换后的包围盒
+    if (has_transform) {
+        return transformed_bounds.contains(viewport_x, viewport_y);
+    }
+
+    // 普通边界检查
+    return viewport_x >= x && viewport_x < x + width &&
+           viewport_y >= y && viewport_y < y + height;
+}
+
+SkPoint ViewportBounds::ToLocalCoordinates(float viewport_x, float viewport_y) const {
+    if (!valid) {
+        return SkPoint::Make(std::numeric_limits<float>::quiet_NaN(),
+                             std::numeric_limits<float>::quiet_NaN());
+    }
+
+    // 先转换为元素坐标系（相对于元素左上角）
+    float local_x = viewport_x - x;
+    float local_y = viewport_y - y;
+
+    // 如果有变换且可逆，应用逆变换
+    if (has_transform && transform_invertible) {
+        SkMatrix inverse;
+        if (transform.invert(&inverse)) {
+            SkPoint pt = SkPoint::Make(local_x, local_y);
+            inverse.mapPoints(&pt, 1);
+            return pt;
+        }
+    }
+
+    return SkPoint::Make(local_x, local_y);
+}
+
+// ========== 命中测试优化：视口坐标缓存 ==========
+
+void RenderObject::UpdateViewportBounds() {
+    const auto& layout = layout_info_;
+    const auto& style = computed_style_;
+
+    // 未布局的元素，缓存无效
+    if (!layout.is_laid_out) {
+        viewport_bounds_.valid = false;
+        return;
+    }
+
+    // =========================================================================
+    // 规则 1：position: fixed 元素
+    // =========================================================================
+    // Fixed 元素相对于视口定位，layout.x/y 已经是视口坐标
+    // 不受任何祖先的滚动影响
+    if (style.position == "fixed") {
+        viewport_bounds_.x = layout.x;
+        viewport_bounds_.y = layout.y;
+        viewport_bounds_.width = layout.width;
+        viewport_bounds_.height = layout.height;
+        viewport_bounds_.valid = true;
+        ApplyTransformToViewportBounds();
+        return;
+    }
+
+    // =========================================================================
+    // 规则 2：position: absolute 元素
+    // =========================================================================
+    // Absolute 元素的 layout.x/y 是相对于直接父元素的坐标
+    // 需要累加所有祖先的偏移直到视口
+    if (style.position == "absolute") {
+        float abs_x = layout.x;
+        float abs_y = layout.y;
+
+        // 累加所有祖先的偏移（与普通元素相同的逻辑）
+        auto parent = parent_.lock();
+        while (parent) {
+            const auto& parent_style = parent->GetComputedStyle();
+
+            // 遇到 fixed 祖先，使用其缓存的视口坐标
+            if (parent_style.position == "fixed") {
+                const auto& parent_bounds = parent->GetViewportBounds();
+                if (parent_bounds.valid) {
+                    abs_x += parent_bounds.x;
+                    abs_y += parent_bounds.y;
+                }
+                break;
+            }
+
+            const auto& parent_layout = parent->GetLayoutInfo();
+            abs_x += parent_layout.x;
+            abs_y += parent_layout.y;
+
+            // 减去父元素的滚动偏移
+            abs_x -= parent->GetScrollX();
+            abs_y -= parent->GetScrollY();
+
+            parent = parent->GetParent();
+        }
+
+        viewport_bounds_.x = abs_x;
+        viewport_bounds_.y = abs_y;
+        viewport_bounds_.width = layout.width;
+        viewport_bounds_.height = layout.height;
+        viewport_bounds_.valid = true;
+        ApplyTransformToViewportBounds();
+        return;
+    }
+
+    // =========================================================================
+    // 规则 3：position: static/relative 元素（普通流）
+    // =========================================================================
+    // 普通元素需要累加所有祖先的偏移，并减去滚动偏移
+    // relative 元素的 layout.x/y 已经包含了 top/left 偏移
+    float abs_x = layout.x;
+    float abs_y = layout.y;
+
+    auto parent = parent_.lock();
+    while (parent) {
+        const auto& parent_style = parent->GetComputedStyle();
+
+        // 遇到 fixed 祖先，使用其缓存的视口坐标
+        if (parent_style.position == "fixed") {
+            const auto& parent_bounds = parent->GetViewportBounds();
+            if (parent_bounds.valid) {
+                abs_x += parent_bounds.x;
+                abs_y += parent_bounds.y;
+            }
+            break;
+        }
+
+        const auto& parent_layout = parent->GetLayoutInfo();
+        abs_x += parent_layout.x;
+        abs_y += parent_layout.y;
+
+        // 减去父元素的滚动偏移
+        abs_x -= parent->GetScrollX();
+        abs_y -= parent->GetScrollY();
+
+        parent = parent->GetParent();
+    }
+
+    viewport_bounds_.x = abs_x;
+    viewport_bounds_.y = abs_y;
+    viewport_bounds_.width = layout.width;
+    viewport_bounds_.height = layout.height;
+    viewport_bounds_.valid = true;
+
+    ApplyTransformToViewportBounds();
+}
+
+void RenderObject::ApplyTransformToViewportBounds() {
+    const auto& style = computed_style_;
+
+    if (!style.transform.has_value() || style.transform->IsEmpty()) {
+        viewport_bounds_.has_transform = false;
+        return;
+    }
+
+    // 计算变换矩阵
+    SkRect local_rect = SkRect::MakeWH(viewport_bounds_.width, viewport_bounds_.height);
+    SkMatrix transform = style.transform->ToSkMatrix(local_rect, style.transform_origin);
+
+    // 检查是否可逆
+    SkMatrix inverse;
+    viewport_bounds_.transform_invertible = transform.invert(&inverse);
+    viewport_bounds_.transform = transform;
+
+    // 变换四个角点，计算包围盒
+    SkPoint corners[4] = {
+        {0, 0},
+        {viewport_bounds_.width, 0},
+        {viewport_bounds_.width, viewport_bounds_.height},
+        {0, viewport_bounds_.height}
+    };
+    transform.mapPoints(corners, 4);
+
+    float min_x = corners[0].x(), max_x = corners[0].x();
+    float min_y = corners[0].y(), max_y = corners[0].y();
+    for (int i = 1; i < 4; ++i) {
+        min_x = std::min(min_x, corners[i].x());
+        max_x = std::max(max_x, corners[i].x());
+        min_y = std::min(min_y, corners[i].y());
+        max_y = std::max(max_y, corners[i].y());
+    }
+
+    viewport_bounds_.transformed_bounds = SkRect::MakeLTRB(
+        viewport_bounds_.x + min_x,
+        viewport_bounds_.y + min_y,
+        viewport_bounds_.x + max_x,
+        viewport_bounds_.y + max_y
+    );
+    viewport_bounds_.has_transform = true;
+}
+
+void RenderObject::InvalidateDescendantViewportBounds() {
+    for (auto& child : children_) {
+        child->InvalidateViewportBounds();
+        child->InvalidateDescendantViewportBounds();
+    }
+}
+
+std::shared_ptr<RenderObject> RenderObject::FindContainingBlock() const {
+    auto parent = parent_.lock();
+    while (parent) {
+        const auto& parent_style = parent->GetComputedStyle();
+        // 定位祖先：position 是 relative/absolute/fixed/sticky，或者有 transform/filter/perspective
+        // 注意：空字符串和 "static" 都不是定位祖先
+        bool is_positioned = !parent_style.position.empty() &&
+                             parent_style.position != "static";
+        bool has_transform = parent_style.transform.has_value() &&
+                             !parent_style.transform->IsEmpty();
+        bool has_filter = parent_style.filter.has_value();
+
+        if (is_positioned || has_transform || has_filter) {
+            return parent;
+        }
+        parent = parent->GetParent();
+    }
+    return nullptr;  // 没有定位祖先，使用初始包含块
+}
+
+bool RenderObject::IsScrollContainer() const {
+    const auto& style = computed_style_;
+    return style.overflow == "auto" ||
+           style.overflow == "scroll" ||
+           style.overflow_x == "auto" ||
+           style.overflow_x == "scroll" ||
+           style.overflow_y == "auto" ||
+           style.overflow_y == "scroll";
 }
 
 std::shared_ptr<CompositorLayer> RenderObject::GetCompositorLayer() const {

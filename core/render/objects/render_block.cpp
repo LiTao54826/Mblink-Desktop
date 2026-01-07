@@ -1076,14 +1076,14 @@ void RenderBlock::Paint(SkCanvas* canvas) {
         const auto& child_style = child->GetComputedStyle();
         bool is_fixed = (child_style.position == "fixed");
         bool is_fixed_or_absolute = (is_fixed || child_style.position == "absolute");
-        
+
         // 关键修复：跳过有独立合成层的子元素
         // 这些子元素会在自己的层中单独光栅化，不应该在父层中绘制
         // 否则会导致重影（元素被绘制两次）
         if (child->HasOwnCompositorLayer()) {
             continue;
         }
-        
+
         // position: fixed 元素延迟到滚动条之后绘制
         if (is_fixed) {
             fixed_children.push_back(child);

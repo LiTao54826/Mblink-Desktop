@@ -43,6 +43,7 @@ cmake --build build --config Release --target esm_loader
 ```cmd
 # 运行测试脚本，日志追加到文件
 build\bin\Release\esm_loader.exe tests\js\test_xxx.js >> debuglog.txt
+不要人工干预的情况下加上 -q 5 自动退出避免卡死
 
 # 搜索过滤需要的日志（不要读取全部日志）
 findstr "TEST_PASS TEST_FAIL ERROR" debuglog.txt
@@ -155,6 +156,52 @@ function testPropertyXxx() {
 - 测试文件名：`test_{feature}.js`
 - 测试函数名：`test{Feature}{Case}`
 - 示例：`testFocusControllerSetFocus`
+
+## 任务执行规范
+
+### 自动任务流程
+
+执行 spec 任务时，遵循以下规则：
+
+1. **自动继续**：完成一个任务后，自动开始下一个任务，无需用户确认
+2. **减少询问**：除非遇到以下情况，否则不要询问用户：
+   - 任务需求不明确或有歧义
+   - 需要用户做出设计决策
+   - 遇到无法自动解决的错误
+   - 任务涉及破坏性变更
+3. **进度报告**：每完成一个任务，简短报告完成状态，然后继续下一个
+
+### 任务前置测试要求
+
+开始每个任务前，必须：
+
+1. **编译验证**：确保当前代码能够编译通过
+   ```cmd
+   cmake --build build --config Release --target esm_loader
+   ```
+
+2. **运行现有测试**：确保不破坏现有功能
+   ```cmd
+   build\bin\Release\esm_loader.exe tests\js\test_xxx.js -q 5 >> debuglog.txt
+   findstr "TEST_FAIL" debuglog.txt
+   del debuglog.txt
+   ```
+
+3. **如果测试失败**：先修复失败的测试，再开始新任务
+
+### 任务完成检查清单
+
+完成每个任务后，必须：
+- [ ] 代码编译通过
+- [ ] 相关测试通过
+- [ ] 更新 tasks.md 中的任务状态为 `[x]`
+- [ ] 自动开始下一个任务
+
+### 错误处理
+
+- 遇到编译错误：立即修复，不要跳过
+- 遇到测试失败：分析原因，修复后继续
+- 遇到设计问题：记录问题，尝试合理解决方案，只有无法决策时才询问用户
 
 ## 参考文档
 

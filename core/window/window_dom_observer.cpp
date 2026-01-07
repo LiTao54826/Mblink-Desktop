@@ -82,21 +82,22 @@ void WindowDOMObserver::OnNodeAdded(Node* node, Node* parent) {
                     // 脱离文档流元素：使用增量布局管理器处理
                     if (auto* manager = window_->GetIncrementalLayoutManager()) {
                         if (manager->AddOutOfFlowElement(elem.get(), parent)) {
-                            // 成功处理布局，现在通知层树管理器添加新层
-                            // 这样可以避免完整重建层树
-                            if (auto* pipeline = window_->GetRenderPipeline()) {
-                                if (auto* layer_manager = pipeline->GetLayerTreeManager()) {
-                                    // 确定层提升原因
-                                    LayerPromotionReason reason = LayerPromotionReason::None;
-                                    if (style.position == "fixed") {
-                                        reason = LayerPromotionReason::PositionFixed;
-                                    }
-                                    // 请求增量添加层
-                                    if (reason != LayerPromotionReason::None) {
-                                        layer_manager->RequestAddLayer(elem->GetRenderObject().get(), reason);
-                                    }
-                                }
-                            }
+                            // 关键修复：不在这里请求层创建！
+                            // 层创建应该在布局完成后由 DoLayerTreeBuild 自动处理
+                            // 这样可以确保层边界使用正确的布局信息
+                            //
+                            // 之前的问题：
+                            // 1. AddOutOfFlowElement 只标记需要布局，不执行布局
+                            // 2. RequestAddLayer 在布局前就被调用
+                            // 3. 层创建时使用的是旧的/空的布局信息
+                            // 4. 导致第一帧元素出现在错误位置闪烁
+                            //
+                            // 修复后：
+                            // 1. 这里只添加到渲染树并标记需要布局
+                            // 2. 布局在 Window::EnsureRenderTree 中执行
+                            // 3. DoLayerTreeBuild 会检测需要层的元素并创建
+                            // 4. 层边界使用正确的布局信息
+
                             window_->SetNeedsRepaint();
                             return;
                         }
@@ -218,7 +219,7 @@ void WindowDOMObserver::OnNodeRemoved(Node* node, Node* parent) {
         // =========================================================================
         // 回退到原有逻辑（无布局边界时）
         // =========================================================================
-        
+
         // 1. 标记父节点需要布局（子节点移除影响父节点布局）
         // 同时标记父节点的 RenderObject，清除 content_height_ 缓存
         if (parent) {
@@ -229,8 +230,23 @@ void WindowDOMObserver::OnNodeRemoved(Node* node, Node* parent) {
             if (auto parent_ro = parent->GetRenderObject()) {
                 parent_ro->MarkNeedsLayout(true);
             }
+
+            // 关键修复：如果父节点是 fixed 元素，触发渲染树重建
+            // 因为 fixed 元素的子元素变化会影响层的边界
+            if (parent->GetNodeType() == NodeType::ELEMENT_NODE) {
+                auto parent_elem = std::dynamic_pointer_cast<Element>(parent->shared_from_this());
+                if (parent_elem && parent_elem->GetRenderObject()) {
+                    const auto& parent_style = parent_elem->GetRenderObject()->GetComputedStyle();
+                    if (parent_style.position == "fixed") {
+                        std::cout << "[OnNodeRemoved] Parent is fixed, triggering render tree rebuild" << std::endl;
+                        window_->InvalidateRenderTree();
+                        window_->SetNeedsRepaint();
+                        return;
+                    }
+                }
+            }
         }
-        
+
         // 2. 增量更新：标记需要重绘
         // DirtyNodeTracker 已经在 Node::RemoveChild 中记录了变化
         // RenderTreeSynchronizer 会在渲染时根据变化区域大小决定是增量更新还是全量重建

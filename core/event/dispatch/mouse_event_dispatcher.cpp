@@ -25,6 +25,7 @@
 #include "core/editing/contenteditable_handler.h"
 #include "core/event/input/focus_manager.h"
 #include "core/event/input/hit_testing.h"
+#include "core/event/input/hit_test_controller.h"
 #include "core/event/types/mouse_event.h"
 #include "core/render/layer/paint_layer.h"
 #include "core/render/objects/render_object.h"
@@ -155,19 +156,37 @@ bool MouseEventDispatcher::HandleMouseEvent(const SDL_Event& event,
     }
 
     // ===== 执行 Hit Testing =====
-    HitTesting hit_testing;
+    // 功能开关：使用新的 HitTestController（基于 ViewportBounds 缓存）
+    // 设置为 true 启用新系统，false 使用旧系统
+    static constexpr bool USE_NEW_HIT_TEST_SYSTEM = true;
+
     HitTestResult hit_result;
-    
+
     if (root_render) {
-        // 使用 PaintLayer 进行 hit testing
-        PaintLayer* paint_layer = root_render->GetPaintLayer();
-        if (paint_layer) {
-            if (!paint_layer->HitTest(logical_x, logical_y, hit_result)) {
-                // 回退到传统的 HitTest
-                hit_result = hit_testing.HitTestRenderObject(root_render, logical_x, logical_y, 0.0f, 0.0f);
+        if (USE_NEW_HIT_TEST_SYSTEM) {
+            // 新系统：使用 HitTestController
+            HitTestController hit_controller;
+            HitTestRequest request;
+            auto result_ex = hit_controller.HitTest(root_render, logical_x, logical_y, request);
+
+            // 转换为旧的 HitTestResult 格式
+            if (result_ex.IsValid()) {
+                hit_result.element = result_ex.element;
+                hit_result.render_object = result_ex.render_object;
+                hit_result.local_x = result_ex.local_x;
+                hit_result.local_y = result_ex.local_y;
             }
         } else {
-            hit_result = hit_testing.HitTestRenderObject(root_render, logical_x, logical_y, 0.0f, 0.0f);
+            // 旧系统：使用 PaintLayer 或 HitTesting
+            HitTesting hit_testing;
+            PaintLayer* paint_layer = root_render->GetPaintLayer();
+            if (paint_layer) {
+                if (!paint_layer->HitTest(logical_x, logical_y, hit_result)) {
+                    hit_result = hit_testing.HitTestRenderObject(root_render, logical_x, logical_y, 0.0f, 0.0f);
+                }
+            } else {
+                hit_result = hit_testing.HitTestRenderObject(root_render, logical_x, logical_y, 0.0f, 0.0f);
+            }
         }
     }
 

@@ -1089,30 +1089,46 @@ void NativeLayoutEngine::PropagateLayoutDirty(NodeId node_id, LayoutScope scope)
             // **Validates: Requirements 4.4**
             if (node->parent != 0) {
                 LayoutNode* parent = GetNode(node->parent);
-                if (parent && !parent->needs_layout) {
-                    parent->needs_layout = true;
-                    // 关键修复：同时标记RenderObject需要布局
-                    // 这确保LayoutDirtySubtree能正确检测到脏节点
-                    if (parent->render_obj) {
-                        parent->render_obj->MarkNeedsLayout(false);  // false = 不再向上传播
+                if (parent) {
+                    // 关键修复：标记所有兄弟元素需要布局并清除缓存
+                    // 因为 flex/grid 布局中，一个子元素尺寸变化会影响其他子元素的位置和尺寸
+                    for (NodeId sibling_id : parent->children) {
+                        if (sibling_id == node_id) continue;  // 跳过自己
+                        LayoutNode* sibling = GetNode(sibling_id);
+                        if (sibling) {
+                            sibling->needs_layout = true;
+                            sibling->cache.Clear();
+                            if (sibling->render_obj) {
+                                sibling->render_obj->MarkNeedsLayout(false);
+                            }
+                        }
                     }
-                    // 关键修复：清除父元素的缓存，确保flex/grid布局重新计算
-                    // 这对于子元素尺寸变化后的居中对齐等功能至关重要
-                    parent->cache.Clear();
-                    // For IFC containers, we MUST update content_version because IFC layout
-                    // caches based on content_version and needs to re-collect inline content.
-                    // For non-IFC containers (flex/grid), we do NOT update content_version.
-                    // **Feature: incremental-layout-optimization**
-                    // **Validates: Requirements 4.4**
-                    if (parent->is_ifc_container) {
-                        parent->content_version = ContentVersionManager::GetInstance().GenerateVersion();
-                    }
-                    
-                    // For flex/grid containers, we need to propagate further up
-                    // because the container size might change
-                    LayoutScope parent_scope = DetermineLayoutScope(parent);
-                    if (parent_scope == LayoutScope::ANCESTORS || parent_scope == LayoutScope::SIBLINGS) {
-                        PropagateLayoutDirty(node->parent, parent_scope);
+
+                    if (!parent->needs_layout) {
+                        parent->needs_layout = true;
+                        // 关键修复：同时标记RenderObject需要布局
+                        // 这确保LayoutDirtySubtree能正确检测到脏节点
+                        if (parent->render_obj) {
+                            parent->render_obj->MarkNeedsLayout(false);  // false = 不再向上传播
+                        }
+                        // 关键修复：清除父元素的缓存，确保flex/grid布局重新计算
+                        // 这对于子元素尺寸变化后的居中对齐等功能至关重要
+                        parent->cache.Clear();
+                        // For IFC containers, we MUST update content_version because IFC layout
+                        // caches based on content_version and needs to re-collect inline content.
+                        // For non-IFC containers (flex/grid), we do NOT update content_version.
+                        // **Feature: incremental-layout-optimization**
+                        // **Validates: Requirements 4.4**
+                        if (parent->is_ifc_container) {
+                            parent->content_version = ContentVersionManager::GetInstance().GenerateVersion();
+                        }
+
+                        // For flex/grid containers, we need to propagate further up
+                        // because the container size might change
+                        LayoutScope parent_scope = DetermineLayoutScope(parent);
+                        if (parent_scope == LayoutScope::ANCESTORS || parent_scope == LayoutScope::SIBLINGS) {
+                            PropagateLayoutDirty(node->parent, parent_scope);
+                        }
                     }
                 }
             }
@@ -1176,25 +1192,41 @@ void NativeLayoutEngine::AddElement(RenderObject* render_obj, RenderObject* pare
     if (!render_obj) {
         return;
     }
-    
+
+    // 调试日志
+    std::string node_info = "unknown";
+    if (render_obj->GetNode() && render_obj->GetNode()->GetNodeType() == NodeType::ELEMENT_NODE) {
+        auto elem = std::dynamic_pointer_cast<Element>(render_obj->GetNode());
+        if (elem) {
+            node_info = "<" + elem->GetTagName() + " class=\"" + elem->GetAttribute("class") + "\">";
+        }
+    }
+    std::cout << "[AddElement] Called for " << node_info << std::endl;
+
     // 如果节点已存在，不需要重复添加
     if (HasElement(render_obj)) {
+        std::cout << "[AddElement] Node already exists, skipping" << std::endl;
         return;
     }
 
     NodeId parent_id = 0;
-    if (parent) {
-        auto it = render_to_node_.find(parent);
+    RenderObject* layout_parent = parent;
+
+    // 关键修复：如果直接父节点不在布局树中，向上查找最近的在布局树中的祖先
+    // 这处理了 IFC 容器中的 inline 元素（如 span）不在布局树中的情况
+    while (layout_parent) {
+        auto it = render_to_node_.find(layout_parent);
         if (it != render_to_node_.end()) {
             parent_id = it->second;
+            break;
         }
+        // 向上查找
+        auto parent_ptr = layout_parent->GetParent();
+        layout_parent = parent_ptr ? parent_ptr.get() : nullptr;
     }
 
-    // 关键修复：如果父节点不在布局树中，不添加子节点
-    // 这避免了孤立节点的创建
+    // 如果找不到任何在布局树中的祖先，不添加子节点
     if (parent && parent_id == 0) {
-        // 父节点的 RenderObject 存在但不在布局树中
-        // 这可能是因为父节点是 display: none 或其他原因
         return;
     }
 
@@ -1214,17 +1246,66 @@ void NativeLayoutEngine::AddElement(RenderObject* render_obj, RenderObject* pare
             parent_node->content_version = new_version;
             parent_node->needs_layout = true;
             parent_node->cache.Clear();
-            
+
+            // 关键修复：如果父节点是 flex/grid 容器，清除所有兄弟节点的缓存
+            // 因为 flex/grid 布局中，添加新子元素会影响其他子元素的位置和尺寸
+            if (parent_node->style.display == Display::Flex ||
+                parent_node->style.display == Display::Grid) {
+                for (NodeId sibling_id : parent_node->children) {
+                    LayoutNode* sibling = GetNode(sibling_id);
+                    if (sibling) {
+                        sibling->needs_layout = true;
+                        sibling->cache.Clear();
+                        if (sibling->render_obj) {
+                            sibling->render_obj->MarkNeedsLayout(false);
+                        }
+                    }
+                }
+            }
+
             // 清除所有祖先的缓存
             NodeId ancestor_id = parent_node->parent;
             while (ancestor_id != 0) {
                 LayoutNode* ancestor = GetNode(ancestor_id);
                 if (!ancestor) break;
-                
+
                 ancestor->cache.Clear();
                 ancestor->needs_layout = true;
                 ancestor->content_version = ContentVersionManager::GetInstance().GenerateVersion();
-                
+
+                // 关键修复：清除祖先的所有子元素的缓存
+                // 因为添加新元素可能影响兄弟元素的布局（特别是 flex/grid 容器）
+                // 不检查 display 类型，因为 style.display 可能没有正确反映 CSS display 属性
+                for (NodeId child_id : ancestor->children) {
+                    LayoutNode* child = GetNode(child_id);
+                    if (child) {
+                        child->needs_layout = true;
+                        child->cache.Clear();
+
+                        // 调试日志
+                        static bool debug_add = std::getenv("LIGHTUI_DEBUG_ADD") != nullptr;
+                        if (debug_add && child->render_obj) {
+                            auto node = child->render_obj->GetNode();
+                            if (node && node->GetNodeType() == NodeType::ELEMENT_NODE) {
+                                auto elem = std::dynamic_pointer_cast<Element>(node);
+                                if (elem) {
+                                    std::string cls = elem->GetAttribute("class");
+                                    if (cls.find("btn") != std::string::npos) {
+                                        std::cout << "[AddElement] Marking sibling dirty: <"
+                                                  << elem->GetTagName() << " class=\"" << cls << "\">"
+                                                  << " node_id=" << child_id
+                                                  << std::endl;
+                                    }
+                                }
+                            }
+                        }
+
+                        if (child->render_obj) {
+                            child->render_obj->MarkNeedsLayout(false);
+                        }
+                    }
+                }
+
                 ancestor_id = ancestor->parent;
             }
         }
@@ -2569,6 +2650,47 @@ private:
 //------------------------------------------------------------------------------
 
 LayoutOutput NativeLayoutEngine::ComputeFlexLayout(NodeId node_id, const LayoutInput& inputs) {
+    // 调试日志：检查 modal-footer 的子元素缓存状态
+    static bool debug_flex = std::getenv("LIGHTUI_DEBUG_FLEX") != nullptr;
+    if (debug_flex) {
+        LayoutNode* node = GetNode(node_id);
+        if (node && node->render_obj) {
+            auto dom_node = node->render_obj->GetNode();
+            if (dom_node && dom_node->GetNodeType() == NodeType::ELEMENT_NODE) {
+                auto elem = std::dynamic_pointer_cast<Element>(dom_node);
+                if (elem) {
+                    std::string cls = elem->GetAttribute("class");
+                    if (cls.find("modal-footer") != std::string::npos) {
+                        std::cout << "[ComputeFlexLayout] modal-footer children:" << std::endl;
+                        for (NodeId child_id : node->children) {
+                            LayoutNode* child = GetNode(child_id);
+                            if (child && child->render_obj) {
+                                auto child_dom = child->render_obj->GetNode();
+                                if (child_dom && child_dom->GetNodeType() == NodeType::ELEMENT_NODE) {
+                                    auto child_elem = std::dynamic_pointer_cast<Element>(child_dom);
+                                    if (child_elem) {
+                                        std::string child_cls = child_elem->GetAttribute("class");
+                                        bool has_cache = child->cache.Get(
+                                            inputs.known_dimensions,
+                                            inputs.available_space,
+                                            inputs.run_mode,
+                                            child->content_version
+                                        ).has_value();
+                                        std::cout << "  - <" << child_elem->GetTagName()
+                                                  << " class=\"" << child_cls << "\">"
+                                                  << " needs_layout=" << child->needs_layout
+                                                  << " has_cache=" << has_cache
+                                                  << std::endl;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     // Create adapter and call translated Taffy algorithm
     FlexboxAdapter adapter(*this);
     return ComputeFlexboxLayout(adapter, node_id, inputs);
@@ -3615,10 +3737,11 @@ void NativeLayoutEngine::ReadLayoutResults(RenderObject* render_obj) {
     if (!is_table_internal) {
         // Normal elements: update all layout info from NativeLayoutEngine
         // Use layout.location which contains the position set by the block layout algorithm
-        
-        // 检查位置是否发生变化
+
+        // 检查位置或尺寸是否发生变化
         bool position_changed = (info.x != node->layout.location.x || info.y != node->layout.location.y);
-        
+        bool size_changed = (info.width != node->output.size.width || info.height != node->output.size.height);
+
         if ((debug_dirty || debug_select) && position_changed) {
             auto dom_node = render_obj->GetNode();
             std::string tag = "unknown";
@@ -3634,7 +3757,7 @@ void NativeLayoutEngine::ReadLayoutResults(RenderObject* render_obj) {
                     }
                 }
             }
-            std::cout << "[ReadLayout] Position changed for: " << tag 
+            std::cout << "[ReadLayout] Position changed for: " << tag
                       << " node_id=" << it->second
                       << " text=\"" << text_content << "\""
                       << " old=(" << info.x << "," << info.y << ")"
@@ -3643,7 +3766,14 @@ void NativeLayoutEngine::ReadLayoutResults(RenderObject* render_obj) {
                       << " parent=" << node->parent
                       << std::endl;
         }
-        
+
+        // 关键修复：当位置或尺寸变化时，标记元素需要重绘
+        // 这确保了当兄弟元素尺寸变化导致当前元素位置移动时，
+        // 当前元素会在新位置重新绘制，旧位置会被清除
+        if (position_changed || size_changed) {
+            render_obj->MarkNeedsPaint();
+        }
+
         info.x = node->layout.location.x;
         info.y = node->layout.location.y;
         info.width = node->output.size.width;

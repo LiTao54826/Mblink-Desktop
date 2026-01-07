@@ -443,7 +443,10 @@ function setDOMProps(element, oldProps, newProps, isSVG) {
             element.className = newValue || '';
         } else if (prop === 'style') {
             if (typeof newValue === 'string') {
-                element.style.cssText = newValue;
+                // 优化：只在字符串值真正变化时才设置
+                if (element.style.cssText !== newValue) {
+                    element.style.cssText = newValue;
+                }
             } else if (typeof newValue === 'object') {
                 // Clear old styles first if old value was also object
                 if (typeof oldValue === 'object' && oldValue) {
@@ -453,8 +456,14 @@ function setDOMProps(element, oldProps, newProps, isSVG) {
                         }
                     }
                 }
+                // 优化：只在属性值真正变化时才设置
+                // 这避免了不必要的 DOM 更新和重绘
                 for (var styleProp in newValue) {
-                    element.style[styleProp] = newValue[styleProp];
+                    var newStyleValue = newValue[styleProp];
+                    var oldStyleValue = oldValue && oldValue[styleProp];
+                    if (newStyleValue !== oldStyleValue) {
+                        element.style[styleProp] = newStyleValue;
+                    }
                 }
             }
         } else if (prop === 'contentEditable') {

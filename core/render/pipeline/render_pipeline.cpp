@@ -17,6 +17,10 @@
 #include "core/layout/native_layout_engine.h"
 #include <chrono>
 #include <iostream>
+#include <unordered_set>
+
+// 全局变量：用于控制调试日志输出（放在全局命名空间，方便其他编译单元访问）
+int g_debug_frames_remaining = 0;
 
 namespace lightui {
 
@@ -199,8 +203,13 @@ void RenderPipeline::SetShowLayerBorders(bool show) {
 
 void RenderPipeline::SetRenderTree(std::shared_ptr<RenderObject> tree) {
     if (render_tree_ != tree) {
-        render_tree_ = tree; 
-        needs_layer_tree_rebuild_ = true;
+        // 只有当渲染树根节点真正改变时才需要完整重建
+        // 如果只是添加/删除子元素，不需要完整重建
+        bool is_new_tree = (render_tree_ == nullptr);
+        render_tree_ = tree;
+        if (is_new_tree) {
+            needs_layer_tree_rebuild_ = true;
+        }
         needs_render_ = true;
     }
 }
@@ -466,29 +475,38 @@ void RenderPipeline::DoLayerTreeBuild() {
                            layer_tree_builder_->CanIncrementalUpdate() &&
                            layer_tree_manager_->HasPendingUpdates();
 
+    static bool debug_layer_build = std::getenv("LIGHTUI_DEBUG_LAYER_BUILD") != nullptr;
+
+    // 递减调试帧计数器
+    if (g_debug_frames_remaining > 0) {
+        if (debug_layer_build) {
+            std::cout << "\n[Frame " << (4 - g_debug_frames_remaining) << "/3] ========== START ==========\n" << std::endl;
+        }
+    }
+
     if (use_incremental) {
         // 增量更新路径
         layer_tree_manager_->ApplyPendingUpdates();
-        
+
         // 更新现有层的边界和脏区域
         UpdateLayerTreeBounds(root_layer_.get());
     } else if (!root_layer_ || needs_layer_tree_rebuild_) {
         // 完整重建路径
+        std::cout << "[RenderPipeline] FULL REBUILD triggered" << std::endl;
 
-        
         root_layer_ = layer_tree_builder_->Build(render_tree_.get());
         needs_layer_tree_rebuild_ = false;
         layer_tree_manager_->ClearFullRebuildFlag();
-        
+
         // 关键修复：根层边界应该使用视口尺寸，而不是渲染树的布局尺寸
         // 因为渲染树的布局尺寸可能小于视口（例如内容不足以填满视口）
         if (root_layer_) {
             root_layer_->SetBounds(SkRect::MakeWH(
-                static_cast<float>(viewport_width_), 
+                static_cast<float>(viewport_width_),
                 static_cast<float>(viewport_height_)));
-            
+
             root_layer_->MarkFullDirty();
-            
+
             // 关键修复：层树重建后，立即恢复滚动偏移
             // 这确保第一帧渲染时滚动偏移就是正确的
             RenderObject* root_obj = root_layer_->GetRenderObject();
@@ -504,14 +522,31 @@ void RenderPipeline::DoLayerTreeBuild() {
             property_tree_builder_->Build(render_tree_.get());
         }
     } else {
-        // 更新现有层的边界和脏区域
+        // 更新边界路径：先检测并创建新层，再更新边界和收集脏区域
+        // 同时检测并删除孤立层（对应的 RenderObject 已被删除）
+
+        // 1. 检测并删除孤立层
+        RemoveOrphanedLayers(root_layer_.get());
+
+        // 2. 检测并创建新层
+        DetectAndCreateNewLayers(render_tree_.get());
+
+        // 3. 更新现有层的边界和脏区域
         UpdateLayerTreeBounds(root_layer_.get());
     }
-    
+
     current_frame_stats_.layers_built = static_cast<int>(layer_tree_builder_->GetLayerCount());
 
     // 注册滚动容器
     RegisterScrollableElements(render_tree_.get());
+
+    // 递减调试帧计数器
+    if (g_debug_frames_remaining > 0) {
+        g_debug_frames_remaining--;
+        if (debug_layer_build) {
+            std::cout << "\n[Frame End] Remaining debug frames: " << g_debug_frames_remaining << "\n" << std::endl;
+        }
+    }
 }
 
 void RenderPipeline::DoRasterize() {
@@ -562,7 +597,7 @@ void RenderPipeline::UpdateLayerTreeBounds(CompositorLayer* layer) {
     RenderObject* render_obj = layer->GetRenderObject();
     if (render_obj) {
         layer_tree_builder_->UpdateLayerBounds(layer, render_obj);
-        
+
         // 关键修复：更新滚动偏移
         // 每帧都需要同步滚动偏移，确保动画层能正确跟随滚动
         if (render_obj->IsScrollable()) {
@@ -570,7 +605,7 @@ void RenderPipeline::UpdateLayerTreeBounds(CompositorLayer* layer) {
             float scroll_y = render_obj->GetScrollY();
             layer->SetScrollOffset(SkPoint::Make(scroll_x, scroll_y));
         }
-        
+
         // GPU 增量渲染优化：使用精确的脏矩形而不是整层标记
         // 只标记需要重绘的 RenderObject 的边界区域
         CollectDirtyRectsForLayer(render_obj, layer);
@@ -585,34 +620,53 @@ void RenderPipeline::CollectDirtyRectsForLayer(RenderObject* obj, CompositorLaye
     if (!obj || !layer) {
         return;
     }
-    
+
     // 如果当前节点需要重绘，标记其边界为脏
     if (obj->NeedsPaint()) {
         SkRect bounds;
-        
+
         // 对于根层，使用视口坐标系的边界（已经考虑了所有祖先的滚动偏移）
         if (layer->GetPromotionReason() == LayerPromotionReason::RootLayer) {
-            // 使用 GetViewportBoundingRect() 获取视口坐标系的边界
-            // 这个方法会正确处理所有祖先元素的滚动偏移
             bounds = obj->GetViewportBoundingRect();
+
+            // 关键调试：在新层创建后的几帧内，输出所有导致根层被标记为脏的元素
+            if (g_debug_frames_remaining > 0) {
+                std::string tag_name = "unknown";
+                std::string element_id = "";
+                if (auto node = obj->GetNode()) {
+                    if (node->GetNodeType() == NodeType::ELEMENT_NODE) {
+                        auto element = std::static_pointer_cast<Element>(node);
+                        tag_name = element->GetTagName();
+                        element_id = element->GetAttribute("id");
+                    }
+                }
+                const auto& style = obj->GetComputedStyle();
+                std::cout << "[ROOT_DIRTY] <" << tag_name;
+                if (!element_id.empty()) {
+                    std::cout << " id=\"" << element_id << "\"";
+                }
+                std::cout << "> position=" << style.position
+                          << " hasOwnLayer=" << obj->HasOwnCompositorLayer()
+                          << std::endl;
+            }
         } else {
             // 对于非根层，使用文档坐标并转换为相对于层的坐标
             bounds = obj->GetBoundingRect();
             const SkRect& layer_bounds = layer->GetBounds();
             bounds.offset(-layer_bounds.left(), -layer_bounds.top());
         }
-        
+
         // 扩展边界以包含阴影、outline 等
         bounds.outset(50, 50);
-        
+
         layer->MarkDirty(bounds);
     }
-    
+
     // 优化：如果子节点不需要重绘，跳过整个子树
     if (!obj->ChildNeedsPaint()) {
         return;
     }
-    
+
     // 递归处理子节点
     for (const auto& child : obj->GetChildren()) {
         // 跳过有独立层的子节点（它们会在自己的层中处理）
@@ -668,8 +722,184 @@ bool RenderPipeline::CheckRenderObjectNeedsPaint(RenderObject* obj) {
             return true;
         }
     }
-    
+
     return false;
+}
+
+void RenderPipeline::DetectAndCreateNewLayers(RenderObject* root) {
+    if (!root || !root_layer_ || !layer_tree_builder_) {
+        return;
+    }
+    DetectAndCreateNewLayersRecursive(root);
+}
+
+void RenderPipeline::DetectAndCreateNewLayersRecursive(RenderObject* obj) {
+    if (!obj) {
+        return;
+    }
+
+    // 检查这个元素是否需要层但还没有层
+    if (!obj->HasOwnCompositorLayer()) {
+        LayerPromotionReason reason = layer_tree_builder_->ShouldPromote(obj);
+        if (reason != LayerPromotionReason::None) {
+            // 获取元素信息
+            std::string tag_name = "unknown";
+            std::string element_id = "";
+            if (auto node = obj->GetNode()) {
+                if (node->GetNodeType() == NodeType::ELEMENT_NODE) {
+                    auto element = std::static_pointer_cast<Element>(node);
+                    tag_name = element->GetTagName();
+                    element_id = element->GetAttribute("id");
+                }
+            }
+
+            // 只对 position: fixed 元素输出详细日志
+            bool is_fixed = (reason == LayerPromotionReason::PositionFixed);
+            if (is_fixed) {
+                std::cout << "\n========== FIXED LAYER CREATION ==========" << std::endl;
+                std::cout << "[NEW_FIXED_LAYER] <" << tag_name;
+                if (!element_id.empty()) {
+                    std::cout << " id=\"" << element_id << "\"";
+                }
+                const auto& layout = obj->GetLayoutInfo();
+                std::cout << "> layout=(" << layout.x << "," << layout.y
+                          << "," << layout.width << "," << layout.height << ")";
+                std::cout << " needsPaint=" << obj->NeedsPaint() << std::endl;
+            }
+
+            // 创建层
+            auto new_layer = layer_tree_builder_->AddLayerForObject(obj, reason);
+            if (new_layer) {
+                new_layer->MarkFullDirty();
+
+                if (is_fixed) {
+                    std::cout << "[NEW_FIXED_LAYER] Layer created, id=" << new_layer->GetId() << std::endl;
+                    std::cout << "========================================\n" << std::endl;
+                    // 启用接下来3帧的详细日志
+                    g_debug_frames_remaining = 3;
+                }
+            } else if (is_fixed) {
+                std::cout << "[NEW_FIXED_LAYER] FAILED to create layer!" << std::endl;
+                std::cout << "========================================\n" << std::endl;
+            }
+        }
+    }
+
+    // 递归处理子节点
+    for (const auto& child : obj->GetChildren()) {
+        DetectAndCreateNewLayersRecursive(child.get());
+    }
+}
+
+void RenderPipeline::RemoveOrphanedLayers(CompositorLayer* layer) {
+    if (!layer || !render_tree_) {
+        return;
+    }
+
+    // 收集渲染树中所有有效的 RenderObject 指针
+    std::unordered_set<RenderObject*> valid_objects;
+    std::function<void(RenderObject*)> collect = [&](RenderObject* obj) {
+        if (!obj) return;
+        valid_objects.insert(obj);
+        for (const auto& child : obj->GetChildren()) {
+            collect(child.get());
+        }
+    };
+    collect(render_tree_.get());
+
+    // 调试：输出收集到的对象数量
+    static bool debug_orphan = std::getenv("LIGHTUI_DEBUG_ORPHAN") != nullptr;
+    if (debug_orphan) {
+        std::cout << "[RemoveOrphanedLayers] Collected " << valid_objects.size() << " valid RenderObjects" << std::endl;
+    }
+
+    // 收集需要删除的子层
+    std::vector<std::shared_ptr<CompositorLayer>> layers_to_remove;
+
+    // 检查所有子层
+    for (const auto& child : layer->GetChildren()) {
+        // 跳过根层
+        if (child->GetPromotionReason() == LayerPromotionReason::RootLayer) {
+            continue;
+        }
+
+        // 跳过 ScrollableContent 层 - 这些层故意不设置 RenderObject
+        // 它们是容器层，用于组织子层并应用滚动偏移
+        if (child->GetPromotionReason() == LayerPromotionReason::ScrollableContent) {
+            // 递归检查其子层
+            RemoveOrphanedLayers(child.get());
+            continue;
+        }
+
+        // 检查层对应的 RenderObject 是否还在渲染树中
+        RenderObject* render_obj = child->GetRenderObject();
+
+        // 调试：输出层信息
+        if (debug_orphan && render_obj) {
+            std::string tag_name = "unknown";
+            if (auto node = render_obj->GetNode()) {
+                if (node->GetNodeType() == NodeType::ELEMENT_NODE) {
+                    auto element = std::static_pointer_cast<Element>(node);
+                    tag_name = element->GetTagName();
+                }
+            }
+            bool is_valid = (valid_objects.find(render_obj) != valid_objects.end());
+            std::cout << "[RemoveOrphanedLayers] Layer " << child->GetId()
+                      << " <" << tag_name << ">"
+                      << " reason=" << static_cast<int>(child->GetPromotionReason())
+                      << " render_obj=" << render_obj
+                      << " is_valid=" << is_valid
+                      << std::endl;
+        }
+
+        if (!render_obj || valid_objects.find(render_obj) == valid_objects.end()) {
+            // RenderObject 已被删除或不在渲染树中
+            layers_to_remove.push_back(child);
+
+            std::string tag_name = "unknown";
+            if (render_obj) {
+                if (auto node = render_obj->GetNode()) {
+                    if (node->GetNodeType() == NodeType::ELEMENT_NODE) {
+                        auto element = std::static_pointer_cast<Element>(node);
+                        tag_name = element->GetTagName();
+                    }
+                }
+            }
+
+            std::cout << "[RemoveOrphanedLayers] Removing orphaned layer " << child->GetId()
+                      << " <" << tag_name << ">"
+                      << " reason=" << static_cast<int>(child->GetPromotionReason())
+                      << " render_obj=" << render_obj
+                      << std::endl;
+        } else {
+            // 递归检查子层的子层
+            RemoveOrphanedLayers(child.get());
+        }
+    }
+
+    // 删除孤立层
+    for (const auto& orphan : layers_to_remove) {
+        // 清除 RenderObject 的层引用
+        if (orphan->GetRenderObject()) {
+            orphan->GetRenderObject()->SetCompositorLayer(nullptr);
+        }
+        // 从父层移除
+        layer->RemoveChild(orphan.get());
+    }
+}
+
+void RenderPipeline::MarkAllLayersDirty(CompositorLayer* layer) {
+    if (!layer) {
+        return;
+    }
+
+    // 标记当前层为脏
+    layer->MarkFullDirty();
+
+    // 递归标记所有子层
+    for (const auto& child : layer->GetChildren()) {
+        MarkAllLayersDirty(child.get());
+    }
 }
 
 // =========================================================================

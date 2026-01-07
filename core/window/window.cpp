@@ -1039,11 +1039,10 @@ void Window::Render() {
                 needs_layout_update = true;
             }
         }
-        
-        // 标记层树需要重建
-        if (needs_layout_update && render_pipeline_) {
-            render_pipeline_->InvalidateLayerTree();
-        }
+
+        // 注意：不再在每次布局更新时触发完整层树重建
+        // 层树会在 RenderPipeline::DoLayerTreeBuild 中通过 DetectAndCreateNewLayers 增量更新
+        // 只有在窗口大小改变等重大变化时才需要完整重建（在上面的 app_size_changed_unified 分支处理）
     }
 
     // 关键：将渲染树传递给统一渲染管线
@@ -1687,20 +1686,22 @@ void Window::ForceLayoutSync() {
 }
 
 void Window::InvalidateRenderTree() {
+    std::cout << "[InvalidateRenderTree] Called - will trigger full rebuild" << std::endl;
+
     // 标记渲染树需要重建
     render_tree_valid_ = false;
-    
+
     // 通知统一渲染管线需要重建层树
     if (render_pipeline_) {
         render_pipeline_->InvalidateLayerTree();
         render_pipeline_->ForceFullUpdate();
     }
-    
+
     // 注意：不再清理运行中的动画状态
     // 动画现在通过 Element 引用关联，而不是 RenderObject 指针
     // 渲染树重建时，动画会通过 Element 获取新的 RenderObject
     // 这样动画可以在 DOM 变化（如添加 Modal）时继续运行
-    
+
     // 只清理 AnimationApplicator 的跟踪信息（started_animations_ map）
     // 因为它使用 RenderObject* 作为键
     if (animation_applicator_) {

@@ -578,66 +578,69 @@ void Compositor::CompositeLayerCPU(CompositorLayer* layer, SkCanvas* canvas, con
         return;
     }
 
+    const SkRect& bounds = layer->GetBounds();
+
+    // 关键修复：对于空边界的层（如空的 Toast 容器），跳过自身绘制但仍需绘制子层
+    // 因为子层可能有有效内容（如动画层）
+    bool skip_self_draw = bounds.isEmpty();
+
     canvas->save();
 
-    // 关键修复：不再使用 canvas->concat(parent_transform)
-    // 因为这会导致变换被递归累积两次
-    // 相反，我们从 parent_transform 中提取累积的平移偏移，手动应用
-    
     // 从 parent_transform 中提取累积的平移
     float accumulated_x = parent_transform.getTranslateX();
     float accumulated_y = parent_transform.getTranslateY();
-    
+
     // 应用层位置
-    const SkRect& bounds = layer->GetBounds();
     const SkPoint& scroll = layer->GetScrollOffset();
-    
+
     // 计算当前层的最终位置：累积偏移 + 层位置
     float final_x = accumulated_x + bounds.left();
     float final_y = accumulated_y + bounds.top();
-    
+
     // 移动到最终位置
-    canvas->translate(final_x, final_y);
+    if (!skip_self_draw) {
+        canvas->translate(final_x, final_y);
+    }
 
     // 获取当前层的滚动偏移
     bool has_scroll = (scroll.fX != 0 || scroll.fY != 0);
-    
+
     // 计算传递给子层的累积偏移
-    // 关键修复：只传递累积的偏移量，不再使用矩阵变换
-    // 子层的累积偏移 = 当前累积偏移 + 当前层位置 - 滚动偏移
     SkMatrix child_transform = SkMatrix::I();
     float child_accumulated_x = accumulated_x + bounds.left();
     float child_accumulated_y = accumulated_y + bounds.top();
-    
+
     if (has_scroll) {
         child_accumulated_x -= scroll.fX;
         child_accumulated_y -= scroll.fY;
     }
-    
+
     child_transform.setTranslate(child_accumulated_x, child_accumulated_y);
 
     // 绘制层位图（不应用滚动偏移，因为位图内容是静态的）
     // 滚动偏移只影响子层的位置
-    const SkBitmap& bitmap = layer->GetBitmap();
-    if (!bitmap.isNull()) {
-        SkPaint paint;
-        paint.setAlpha(static_cast<int>(layer->GetOpacity() * 255));
+    if (!skip_self_draw) {
+        const SkBitmap& bitmap = layer->GetBitmap();
+        if (!bitmap.isNull()) {
+            SkPaint paint;
+            paint.setAlpha(static_cast<int>(layer->GetOpacity() * 255));
 
-        // 位图是物理像素大小，需要缩放回逻辑像素大小绘制
-        float dpi_scale = layer->GetDpiScale();
-        if (dpi_scale != 1.0f) {
-            canvas->save();
-            canvas->scale(1.0f / dpi_scale, 1.0f / dpi_scale);
-            canvas->drawImage(bitmap.asImage(), 0, 0, SkSamplingOptions(SkFilterMode::kLinear), &paint);
-            canvas->restore();
-        } else {
-            canvas->drawImage(bitmap.asImage(), 0, 0, SkSamplingOptions(), &paint);
+            // 位图是物理像素大小，需要缩放回逻辑像素大小绘制
+            float dpi_scale = layer->GetDpiScale();
+            if (dpi_scale != 1.0f) {
+                canvas->save();
+                canvas->scale(1.0f / dpi_scale, 1.0f / dpi_scale);
+                canvas->drawImage(bitmap.asImage(), 0, 0, SkSamplingOptions(SkFilterMode::kLinear), &paint);
+                canvas->restore();
+            } else {
+                canvas->drawImage(bitmap.asImage(), 0, 0, SkSamplingOptions(), &paint);
+            }
         }
-    }
 
-    // 绘制层边界（调试）
-    if (show_layer_borders_) {
-        DrawLayerBorder(layer, canvas);
+        // 绘制层边界（调试）
+        if (show_layer_borders_) {
+            DrawLayerBorder(layer, canvas);
+        }
     }
 
     // 关键修复：按 z-index 排序子层后再绘制
@@ -648,7 +651,7 @@ void Compositor::CompositeLayerCPU(CompositorLayer* layer, SkCanvas* canvas, con
     for (const auto& child : children) {
         sorted_children.push_back(child.get());
     }
-    
+
     // 按 z-index 升序排序（低 z-index 先绘制，高 z-index 后绘制覆盖在上面）
     std::sort(sorted_children.begin(), sorted_children.end(),
         [](CompositorLayer* a, CompositorLayer* b) {
@@ -658,13 +661,13 @@ void Compositor::CompositeLayerCPU(CompositorLayer* layer, SkCanvas* canvas, con
     // 关键修复：在递归调用子层之前，先恢复 canvas 到干净状态
     // 这样子层不会继承当前层的 canvas 变换
     canvas->restore();
-    
+
     // 递归绘制排序后的子层
     for (CompositorLayer* child : sorted_children) {
         // 关键修复：position: fixed 元素不应该受到父层滚动偏移的影响
         // fixed 元素的位置是相对于视口的，不随滚动变化
         bool child_is_fixed = (child->GetPromotionReason() == LayerPromotionReason::PositionFixed);
-        
+
         if (child_is_fixed) {
             // fixed 元素：不应用任何滚动偏移，重置变换
             CompositeLayerCPU(child, canvas, SkMatrix::I());

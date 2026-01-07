@@ -93,7 +93,7 @@ void IncrementalStyleRecalc::RecalcStyleForElement(std::shared_ptr<Element> elem
     
     if (needs_recalc) {
         stats_.nodes_recalculated++;
-        
+
         // 获取关联的 RenderObject
         auto render_obj = element->GetRenderObject();
         if (render_obj) {
@@ -102,16 +102,58 @@ void IncrementalStyleRecalc::RecalcStyleForElement(std::shared_ptr<Element> elem
             // 为了简化，我们直接创建一个临时的 StyleResolver
             StyleResolver resolver;
             ComputedStyle new_style = resolver.ResolveStyle(element, parent_style);
-            
+
+            // 保存旧样式用于比较
+            const ComputedStyle& old_style = render_obj->GetComputedStyle();
+
+            // 检查是否有布局相关属性变化
+            // 只有布局属性变化时才标记需要布局，纯视觉属性变化只需要重绘
+            bool layout_changed =
+                old_style.display != new_style.display ||
+                old_style.position != new_style.position ||
+                old_style.width != new_style.width ||
+                old_style.height != new_style.height ||
+                old_style.min_width != new_style.min_width ||
+                old_style.min_height != new_style.min_height ||
+                old_style.max_width != new_style.max_width ||
+                old_style.max_height != new_style.max_height ||
+                old_style.padding_top != new_style.padding_top ||
+                old_style.padding_right != new_style.padding_right ||
+                old_style.padding_bottom != new_style.padding_bottom ||
+                old_style.padding_left != new_style.padding_left ||
+                old_style.margin_top != new_style.margin_top ||
+                old_style.margin_right != new_style.margin_right ||
+                old_style.margin_bottom != new_style.margin_bottom ||
+                old_style.margin_left != new_style.margin_left ||
+                old_style.border_top_width != new_style.border_top_width ||
+                old_style.border_right_width != new_style.border_right_width ||
+                old_style.border_bottom_width != new_style.border_bottom_width ||
+                old_style.border_left_width != new_style.border_left_width ||
+                old_style.flex_direction != new_style.flex_direction ||
+                old_style.flex_wrap != new_style.flex_wrap ||
+                old_style.flex_grow != new_style.flex_grow ||
+                old_style.flex_shrink != new_style.flex_shrink ||
+                old_style.flex_basis != new_style.flex_basis ||
+                old_style.justify_content != new_style.justify_content ||
+                old_style.align_items != new_style.align_items ||
+                old_style.align_content != new_style.align_content ||
+                old_style.gap != new_style.gap ||
+                old_style.overflow != new_style.overflow;
+
             // 更新 RenderObject 的样式
             render_obj->SetComputedStyle(new_style);
-            
+
             // 更新布局样式
             render_obj->UpdateLayoutStyle();
-            
-            // 标记需要布局（样式变化可能影响布局）
-            render_obj->MarkNeedsLayout();
-            
+
+            // 只有布局属性变化时才标记需要布局
+            if (layout_changed) {
+                render_obj->MarkNeedsLayout();
+            }
+
+            // 总是标记需要重绘（样式变化至少需要重绘）
+            render_obj->MarkNeedsPaint();
+
             // 使用新样式作为子节点的父样式
             style_for_children = &render_obj->GetComputedStyle();
         }

@@ -15,6 +15,7 @@ set(EVENT_SOURCES
     input/input_handler.cpp
     input/keyboard_utils.cpp
     input/hit_testing.cpp
+    input/hit_test_controller.cpp
     input/focus_manager.cpp
     # 根目录
     event_system.cpp
@@ -39,6 +40,7 @@ set(EVENT_HEADERS
     input/input_handler.h
     input/keyboard_utils.h
     input/hit_testing.h
+    input/hit_test_controller.h
     input/focus_manager.h
     # 根目录
     event_system.h

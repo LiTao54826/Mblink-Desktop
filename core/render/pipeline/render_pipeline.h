@@ -294,6 +294,16 @@ private:
     void RegisterScrollableElementsRecursive(RenderObject* obj);
     bool CheckRenderObjectNeedsPaint(RenderObject* obj);
 
+    // 检测并为新添加的元素创建层（增量更新优化）
+    void DetectAndCreateNewLayers(RenderObject* root);
+    void DetectAndCreateNewLayersRecursive(RenderObject* obj);
+
+    // 检测并删除孤立层（对应的 RenderObject 已被删除）
+    void RemoveOrphanedLayers(CompositorLayer* layer);
+
+    // 标记所有层为脏（完整重建后使用）
+    void MarkAllLayersDirty(CompositorLayer* layer);
+
     // =========================================================================
     // 辅助方法（来自 V1）
     // =========================================================================

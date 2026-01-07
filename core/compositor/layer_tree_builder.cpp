@@ -211,15 +211,28 @@ void LayerTreeBuilder::UpdateLayerBounds(CompositorLayer* layer, RenderObject* o
 
     const auto& layout = obj->GetLayoutInfo();
     const auto& style = obj->GetComputedStyle();
-    
+
     // 调试日志
     static bool debug_layer = std::getenv("LIGHTUI_DEBUG_LAYER") != nullptr;
-    
+
+    // 检查是否有动画
+    bool has_animation = false;
+    for (const auto& anim : style.animations) {
+        if (!anim.name.empty() && anim.name != "none") {
+            has_animation = true;
+            break;
+        }
+    }
+
     // 性能优化：跳过 0 大小的元素（如空的 Toast 容器）
-    // 这些元素没有可见内容，不需要计算复杂的 transform 边界
-    if (layout.width <= 0 && layout.height <= 0) {
-        // 设置一个最小边界，避免后续处理出错
-        layer->SetBounds(SkRect::MakeXYWH(layout.x, layout.y, 0, 0));
+    // 但是！如果元素有动画，不能跳过，因为动画可能需要绘制内容
+    if (layout.width <= 0 && layout.height <= 0 && !has_animation) {
+        // 关键修复：对于 0 大小的元素，设置空边界
+        // 这样在绘制时会被跳过（isEmpty() 返回 true）
+        layer->SetBounds(SkRect::MakeEmpty());
+
+        // 标记层为脏，以便重新光栅化（清除旧内容）
+        layer->MarkFullDirty();
         return;
     }
     
@@ -248,16 +261,7 @@ void LayerTreeBuilder::UpdateLayerBounds(CompositorLayer* layer, RenderObject* o
     // 不需要累加父元素的位置，因为 layout.x/y 已经是视口坐标
     // 同时，fixed 元素应该直接作为根层的子层，位置就是视口坐标
     bool is_fixed = (style.position == "fixed");
-    
-    // 检查是否有动画（用于调试）
-    bool has_animation = false;
-    for (const auto& anim : style.animations) {
-        if (!anim.name.empty() && anim.name != "none") {
-            has_animation = true;
-            break;
-        }
-    }
-    
+
     // 调试日志：输出 fixed 元素的布局信息
     if (!is_fixed) {
         // 从当前元素的直接父元素开始，累加位置
@@ -514,19 +518,32 @@ bool LayerTreeBuilder::HasTransformAnimation(RenderObject* obj) const {
 
     const auto& style = obj->GetComputedStyle();
 
+    // 获取元素信息用于调试
+    std::string tag_name = "unknown";
+    if (auto node = obj->GetNode()) {
+        if (node->GetNodeType() == NodeType::ELEMENT_NODE) {
+            auto element = std::static_pointer_cast<Element>(node);
+            tag_name = element->GetTagName();
+        }
+    }
+
     // 检查是否有活动的 CSS 动画
     // 策略：如果元素有非空的动画名称，检查是否可能影响 transform
     for (const auto& anim : style.animations) {
         if (anim.name.empty() || anim.name == "none") {
             continue;
         }
-        
+
+        // 调试日志
+        std::cout << "[HasTransformAnimation] <" << tag_name << "> Found animation: " << anim.name << std::endl;
+
         // 方法1：检查元素当前是否有 transform 属性
         // 如果有 transform 且有动画，很可能是 transform 动画
         if (style.transform.has_value()) {
+            std::cout << "[HasTransformAnimation] <" << tag_name << "> Has transform, returning true" << std::endl;
             return true;
         }
-        
+
         // 方法2：检查动画名称是否包含 transform 相关关键字
         // 这是一个启发式方法，不完美但有用
         std::string lower_name = anim.name;
@@ -539,6 +556,7 @@ bool LayerTreeBuilder::HasTransformAnimation(RenderObject* obj) const {
             lower_name.find("slide") != std::string::npos ||
             lower_name.find("spin") != std::string::npos ||
             lower_name.find("bounce") != std::string::npos) {
+            std::cout << "[HasTransformAnimation] <" << tag_name << "> Name matches '" << lower_name << "', returning true" << std::endl;
             return true;
         }
     }

@@ -78,6 +78,42 @@ struct LayerInfo {
 };
 
 /**
+ * @brief 视口坐标缓存 - 用于命中测试优化
+ *
+ * 在布局完成后预计算每个元素在视口坐标系中的位置，
+ * 命中测试时直接使用缓存进行 O(1) 边界检查，无需动态累积变换。
+ */
+struct ViewportBounds {
+    float x = 0;              ///< 视口 X 坐标
+    float y = 0;              ///< 视口 Y 坐标
+    float width = 0;          ///< 宽度
+    float height = 0;         ///< 高度
+    bool valid = false;       ///< 缓存是否有效
+
+    // CSS Transform 相关
+    bool has_transform = false;       ///< 是否有 CSS 变换
+    bool transform_invertible = true; ///< 变换是否可逆
+    SkMatrix transform;               ///< CSS 变换矩阵
+    SkRect transformed_bounds;        ///< 变换后的包围盒
+
+    /**
+     * @brief 检查视口坐标点是否在边界内
+     * @param viewport_x 视口 X 坐标
+     * @param viewport_y 视口 Y 坐标
+     * @return 如果点在边界内返回 true
+     */
+    bool Contains(float viewport_x, float viewport_y) const;
+
+    /**
+     * @brief 将视口坐标转换为元素局部坐标
+     * @param viewport_x 视口 X 坐标
+     * @param viewport_y 视口 Y 坐标
+     * @return 局部坐标点
+     */
+    SkPoint ToLocalCoordinates(float viewport_x, float viewport_y) const;
+};
+
+/**
  * @brief 渲染对象类型
  */
 enum class RenderObjectType {
@@ -855,6 +891,54 @@ public:
      */
     SkRect GetViewportBoundingRect() const;
 
+    // =========================================================================
+    // 命中测试优化：视口坐标缓存 API
+    // =========================================================================
+
+    /**
+     * @brief 获取视口坐标缓存
+     * @return 视口坐标边界的常量引用
+     */
+    const ViewportBounds& GetViewportBounds() const { return viewport_bounds_; }
+
+    /**
+     * @brief 更新视口坐标缓存
+     * 在布局完成后调用，计算元素在视口中的绝对位置
+     */
+    void UpdateViewportBounds();
+
+    /**
+     * @brief 使视口坐标缓存失效
+     */
+    void InvalidateViewportBounds() { viewport_bounds_.valid = false; }
+
+    /**
+     * @brief 使所有子孙元素的视口坐标缓存失效
+     */
+    void InvalidateDescendantViewportBounds();
+
+    /**
+     * @brief 检查点是否在元素的视口边界内
+     * @param viewport_x 视口 X 坐标
+     * @param viewport_y 视口 Y 坐标
+     * @return 如果点在边界内返回 true
+     */
+    bool ContainsViewportPoint(float viewport_x, float viewport_y) const {
+        return viewport_bounds_.Contains(viewport_x, viewport_y);
+    }
+
+    /**
+     * @brief 查找包含块（最近的定位祖先）
+     * @return 包含块的共享指针，如果没有则返回 nullptr
+     */
+    std::shared_ptr<RenderObject> FindContainingBlock() const;
+
+    /**
+     * @brief 检查是否是滚动容器
+     * @return 如果是滚动容器返回 true
+     */
+    bool IsScrollContainer() const;
+
     /**
      * @brief 执行布局
      * @param parent_width 父元素宽度
@@ -889,9 +973,22 @@ public:
 
     /**
      * @brief 设置滚动偏移量
+     * @note 滚动时会使所有子孙元素的 ViewportBounds 缓存失效
      */
-    void SetScrollX(float x) { scroll_x_ = x; MarkNeedsPaint(); }
-    void SetScrollY(float y) { scroll_y_ = y; MarkNeedsPaint(); }
+    void SetScrollX(float x) {
+        if (scroll_x_ != x) {
+            scroll_x_ = x;
+            MarkNeedsPaint();
+            InvalidateDescendantViewportBounds();
+        }
+    }
+    void SetScrollY(float y) {
+        if (scroll_y_ != y) {
+            scroll_y_ = y;
+            MarkNeedsPaint();
+            InvalidateDescendantViewportBounds();
+        }
+    }
 
     /**
      * @brief 滚动指定距离
@@ -1058,6 +1155,12 @@ public:
     static void ResetPaintTimingStats();
 
     /**
+     * @brief 应用 CSS Transform 到视口边界
+     * 计算变换后的包围盒，用于命中测试
+     */
+    void ApplyTransformToViewportBounds();
+
+    /**
      * @brief 检查当前元素是否是 body 元素
      */
     bool IsBodyElement() const;
@@ -1135,6 +1238,13 @@ protected:
         }
     };
     mutable ShadowCache shadow_cache_;
+
+    // =========================================================================
+    // 命中测试优化：视口坐标缓存
+    // =========================================================================
+
+    /// 视口坐标缓存（布局后更新，命中测试时使用）
+    mutable ViewportBounds viewport_bounds_;
 
     // =========================================================================
     // 布局树统一：以下字段从 NativeLayoutEngine::LayoutNode 移入

@@ -7,6 +7,8 @@
 #include "compositor_layer.h"
 #include "animation/animation_bounds_calculator.h"
 #include "core/render/objects/render_object.h"
+#include "core/dom/node.h"
+#include "core/dom/element.h"
 #include "include/core/SkCanvas.h"
 #include "include/core/SkPaint.h"
 #include "include/core/SkPath.h"
@@ -185,10 +187,38 @@ int Rasterizer::RasterizeDirtyLayers(CompositorLayer* root) {
         return 0;
     }
 
+    static bool debug_rasterize = std::getenv("LIGHTUI_DEBUG_RASTERIZE") != nullptr;
+
+    // 访问全局调试帧计数器（在 render_pipeline.cpp 中定义）
+    extern int g_debug_frames_remaining;
+
     int count = 0;
 
     // 光栅化当前层（如果有脏区域）
     if (root->HasDirtyRegions()) {
+        // 只在新层创建后的几帧内输出详细日志
+        if (debug_rasterize && g_debug_frames_remaining > 0) {
+            bool is_root = (root->GetPromotionReason() == LayerPromotionReason::RootLayer);
+            bool is_fixed = (root->GetPromotionReason() == LayerPromotionReason::PositionFixed);
+
+            if (is_root || is_fixed) {
+                std::string tag_name = "unknown";
+                if (auto obj = root->GetRenderObject()) {
+                    if (auto node = obj->GetNode()) {
+                        if (node->GetNodeType() == NodeType::ELEMENT_NODE) {
+                            auto element = std::static_pointer_cast<Element>(node);
+                            tag_name = element->GetTagName();
+                        }
+                    }
+                }
+                std::cout << "[RasterizeDirtyLayers] Rasterizing layer " << root->GetId()
+                          << " <" << tag_name << ">"
+                          << " reason=" << static_cast<int>(root->GetPromotionReason())
+                          << " incremental=" << incremental_enabled_
+                          << std::endl;
+            }
+        }
+
         if (incremental_enabled_) {
             if (RasterizeDirtyRegions(root)) {
                 count++;

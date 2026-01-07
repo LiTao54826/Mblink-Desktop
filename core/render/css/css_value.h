@@ -82,6 +82,21 @@ struct CSSLength {
      * @brief 是否为零值
      */
     bool IsZero() const { return value == 0.0f && unit != CSSUnit::AUTO && !is_calc; }
+
+    /**
+     * @brief 比较运算符
+     */
+    bool operator==(const CSSLength& other) const {
+        if (is_calc != other.is_calc) return false;
+        if (is_calc) {
+            return calc_percent == other.calc_percent && calc_px == other.calc_px;
+        }
+        return value == other.value && unit == other.unit;
+    }
+
+    bool operator!=(const CSSLength& other) const {
+        return !(*this == other);
+    }
 };
 
 /**
