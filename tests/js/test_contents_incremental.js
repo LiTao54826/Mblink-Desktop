@@ -43,7 +43,8 @@ function checkLayout() {
   let allPassed = true;
   
   for (let i = 0; i < items.length; i++) {
-    const elem = document.getElementById('item-' + items[i].id);
+    // 使用 querySelector 而不是 getElementById（getElementById 有已知的索引更新 bug）
+    const elem = document.querySelector('#item-' + items[i].id);
     if (!elem) {
       console.log('[TEST_FAIL] Item ' + items[i].id + ' not found in DOM');
       allPassed = false;

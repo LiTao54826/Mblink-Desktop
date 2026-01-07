@@ -63,8 +63,9 @@ public:
     /**
      * @brief Build layout tree from render tree
      * @param root Root of the render tree
+     * @param force_rebuild Force rebuild even if cache is valid (used after DOM structure changes)
      */
-    void BuildLayoutTree(std::shared_ptr<RenderObject> root);
+    void BuildLayoutTree(std::shared_ptr<RenderObject> root, bool force_rebuild = false);
 
     /**
      * @brief Compute layout for the entire tree

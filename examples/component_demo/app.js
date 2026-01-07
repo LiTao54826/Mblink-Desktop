@@ -20,6 +20,8 @@ import { Modal } from '../../js/components/modal.js';
 import { Toast } from '../../js/components/toast.js';
 import { colors } from '../../js/components/theme.js';
 
+let toastCounter = 0;
+
 function App() {
   const [inputValue, setInputValue] = useState('');
   const [selectValue, setSelectValue] = useState(null);
@@ -176,7 +178,10 @@ function App() {
     h(Card, { key: 'feedback', title: 'Feedback' }, [
       h(Row, { gap: 8 }, [
         h(Button, { onClick: () => setModalVisible(true) }, 'Open Modal'),
-        h(Button, { variant: 'secondary', onClick: () => Toast.success('Success!') }, 'Toast'),
+        h(Button, { variant: 'secondary', onClick: () => {
+          toastCounter++;
+          Toast.success('Toast #' + toastCounter);
+        } }, 'Toast'),
       ]),
     ]),
 

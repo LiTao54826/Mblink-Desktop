@@ -3101,13 +3101,19 @@ std::shared_ptr<RenderObject> RenderTreeBuilder::CreateRenderObjectForElement(El
     }
 
     // 获取父元素的样式作为继承基础
+    // 注意：display: contents 元素虽然不生成渲染对象，但其样式仍应被子元素继承
+    // 需要向上查找有渲染对象的祖先，或者使用 display: contents 元素的计算样式
     const ComputedStyle* parent_style = nullptr;
     if (auto parent_node = element->GetParentNode()) {
         auto parent_elem = std::dynamic_pointer_cast<Element>(parent_node);
-        if (parent_elem) {
+        while (parent_elem) {
             if (auto parent_ro = parent_elem->GetRenderObject()) {
                 parent_style = &parent_ro->GetComputedStyle();
+                break;
             }
+            // 继续向上查找
+            auto grandparent = parent_elem->GetParentNode();
+            parent_elem = std::dynamic_pointer_cast<Element>(grandparent);
         }
     }
 

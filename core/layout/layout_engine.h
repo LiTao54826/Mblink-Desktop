@@ -29,8 +29,8 @@ public:
     LayoutEngine(const LayoutEngine&) = delete;
     LayoutEngine& operator=(const LayoutEngine&) = delete;
 
-    void BuildLayoutTree(std::shared_ptr<RenderObject> root) {
-        native_engine_.BuildLayoutTree(root);
+    void BuildLayoutTree(std::shared_ptr<RenderObject> root, bool force_rebuild = false) {
+        native_engine_.BuildLayoutTree(root, force_rebuild);
     }
 
     void ComputeLayout(float available_width, float available_height) {

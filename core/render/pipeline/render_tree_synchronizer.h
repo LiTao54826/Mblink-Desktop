@@ -167,6 +167,15 @@ private:
     void ReplaceRenderObject(Node* old_node, Node* new_node, Node* parent, size_t index);
     
     /**
+     * @brief 移动渲染对象（不清除关联）
+     * @param node DOM 节点
+     * @param old_parent 旧父 DOM 节点
+     * @param new_parent 新父 DOM 节点
+     * @param index 在新父节点中的索引
+     */
+    void MoveRenderObject(Node* node, Node* old_parent, Node* new_parent, size_t index);
+    
+    /**
      * @brief 创建单个节点的渲染对象
      * @param node DOM 节点
      * @return 创建的渲染对象，如果 display: none 则返回 nullptr
