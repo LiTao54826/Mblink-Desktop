@@ -302,15 +302,12 @@ void LayerTreeBuilder::UpdateLayerBounds(CompositorLayer* layer, RenderObject* o
     float offset_x = 0;
     float offset_y = 0;
     
-    // 修复：如果 CSS 指定了宽度/高度，使用 CSS 值而不是 layout 值
-    // 这是因为 layout.width/height 可能是内容宽度（shrink-to-fit），
-    // 而不是 CSS 指定的盒子尺寸
-    if (style.width.unit != CSSUnit::NONE && style.width.unit != CSSUnit::AUTO && style.width.value > 0) {
-        width = style.width.value;
-    }
-    if (style.height.unit != CSSUnit::NONE && style.height.unit != CSSUnit::AUTO && style.height.value > 0) {
-        height = style.height.value;
-    }
+    // 注意：不要用 CSS 的 style.width/height 覆盖 layout 值！
+    // layout.width/height 已经是布局引擎计算后的最终值，包括：
+    // - 百分比解析（如 width: 100% 已经解析为实际像素值）
+    // - box-sizing 调整
+    // - min/max 约束
+    // 直接使用 style.width.value 会导致百分比值（如 100）被误用为像素值
     
     // 首先尝试使用动画边界计算器（处理动画的完整范围）
     AnimationBounds anim_bounds;
