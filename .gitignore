@@ -52,6 +52,8 @@ Thumbs.db
 *.log
 debug*.log
 *.log.*
+debuglog.txt
+build_log.txt
 
 # Test output
 test_output/

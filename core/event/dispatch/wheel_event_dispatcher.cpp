@@ -13,7 +13,7 @@
 #include "core/dom/elements/html_textarea_element.h"
 #include "core/dom/elements/terminal/html_terminal_element.h"
 #include "core/dom/elements/logview/html_logview_element.h"
-#include "core/event/input/hit_testing.h"
+#include "core/event/input/hit_test_controller.h"
 #include "core/render/objects/render_object.h"
 #include "core/render/pipeline/render_pipeline.h"
 #include "core/render/text/font_manager.h"
@@ -91,9 +91,17 @@ bool WheelEventDispatcher::HandleWheelEvent(const SDL_Event& event,
         return false;
     }
 
-    HitTesting hit_testing;
-    HitTestResult hit_result = hit_testing.HitTestRenderObject(
-        root_render, logical_x, logical_y, 0.0f, 0.0f);
+    HitTestController hit_controller;
+    HitTestRequest request;
+    auto result_ex = hit_controller.HitTest(root_render, logical_x, logical_y, request);
+    
+    HitTestResult hit_result;
+    if (result_ex.IsValid()) {
+        hit_result.element = result_ex.element;
+        hit_result.render_object = result_ex.render_object;
+        hit_result.local_x = result_ex.local_x;
+        hit_result.local_y = result_ex.local_y;
+    }
 
     // 检查是否命中了特殊元素
     if (hit_result.IsValid() && hit_result.element) {

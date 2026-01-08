@@ -10,7 +10,7 @@
 #include "core/dom/event.h"
 #include "core/dom/drag_event.h"
 #include "core/render/objects/render_object.h"
-#include "core/event/input/hit_testing.h"
+#include "core/event/input/hit_test_controller.h"
 #include "core/event/types/mouse_event.h"
 #include <algorithm>
 #include <cmath>
@@ -450,15 +450,19 @@ void DragManager::UpdateDragHoverChain(float mouse_x, float mouse_y, std::shared
     }
 
     // 执行Hit Testing获取当前鼠标下的元素（忽略拖拽元素）
-    HitTesting hit_testing;
     HitTestResult hit_result;
     
-    // 优先使用渲染树进行精确 hit testing
+    // 使用 HitTestController 进行精确 hit testing
     if (root_render) {
-        hit_result = hit_testing.HitTestRenderObject(root_render, mouse_x, mouse_y, 0.0f, 0.0f);
-    } else {
-        // 回退到简化的 DOM 遍历（不推荐，可能不准确）
-        hit_result = hit_testing.HitTest(document, mouse_x, mouse_y);
+        HitTestController hit_controller;
+        HitTestRequest request;
+        auto result_ex = hit_controller.HitTest(root_render, mouse_x, mouse_y, request);
+        if (result_ex.IsValid()) {
+            hit_result.element = result_ex.element;
+            hit_result.render_object = result_ex.render_object;
+            hit_result.local_x = result_ex.local_x;
+            hit_result.local_y = result_ex.local_y;
+        }
     }
     
     // 构建新的拖拽hover链

@@ -36,6 +36,20 @@ struct HitTestRequest {
 };
 
 /**
+ * @brief 基础命中测试结果（向后兼容）
+ */
+struct HitTestResult {
+    std::shared_ptr<Element> element;           ///< 命中的元素
+    std::shared_ptr<RenderObject> render_object; ///< 对应的渲染对象
+    float local_x = 0;                          ///< 元素局部 X 坐标
+    float local_y = 0;                          ///< 元素局部 Y 坐标
+
+    HitTestResult() : element(nullptr), render_object(nullptr), local_x(0), local_y(0) {}
+
+    bool IsValid() const { return element != nullptr; }
+};
+
+/**
  * @brief 命中测试结果（扩展版）
  */
 struct HitTestResultEx {

@@ -36,7 +36,7 @@
 #include "core/editing/clipboard_manager.h"
 #include "../types/mouse_event.h"
 #include "../input/keyboard_utils.h"
-#include "../input/hit_testing.h"
+#include "../input/hit_test_controller.h"
 #include "../types/event_types.h"
 #include "core/window/window_manager.h"
 #include "core/render/layer/paint_layer.h"
@@ -567,7 +567,8 @@ void EventLoop::HandleMouseEventForDOM(const SDL_Event& event) {
     }
 
     // 执行 Hit Testing
-    HitTesting hit_testing;
+    HitTestController hit_controller;
+    HitTestRequest request;
     float mouse_x = 0, mouse_y = 0;
 
     if (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN || event.type == SDL_EVENT_MOUSE_BUTTON_UP) {
@@ -716,8 +717,14 @@ void EventLoop::HandleMouseEventForDOM(const SDL_Event& event) {
                     
                     // 处理鼠标移动：更新悬停高亮
                     if (event.type == SDL_EVENT_MOUSE_MOTION) {
-                        HitTestResult hit_result = hit_testing.HitTestRenderObject(
-                            root_render, app_relative_x, app_relative_y, 0.0f, 0.0f);
+                        auto result_ex = hit_controller.HitTest(root_render, app_relative_x, app_relative_y, request);
+                        HitTestResult hit_result;
+                        if (result_ex.IsValid()) {
+                            hit_result.element = result_ex.element;
+                            hit_result.render_object = result_ex.render_object;
+                            hit_result.local_x = result_ex.local_x;
+                            hit_result.local_y = result_ex.local_y;
+                        }
                         
                         if (hit_result.IsValid() && hit_result.element) {
                             devtools.GetElementPicker()->SetHoverElement(hit_result.element, hit_result.render_object);
@@ -727,8 +734,14 @@ void EventLoop::HandleMouseEventForDOM(const SDL_Event& event) {
                     // 处理鼠标点击：选中元素
                     else if (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN && 
                              event.button.button == SDL_BUTTON_LEFT) {
-                        HitTestResult hit_result = hit_testing.HitTestRenderObject(
-                            root_render, app_relative_x, app_relative_y, 0.0f, 0.0f);
+                        auto result_ex = hit_controller.HitTest(root_render, app_relative_x, app_relative_y, request);
+                        HitTestResult hit_result;
+                        if (result_ex.IsValid()) {
+                            hit_result.element = result_ex.element;
+                            hit_result.render_object = result_ex.render_object;
+                            hit_result.local_x = result_ex.local_x;
+                            hit_result.local_y = result_ex.local_y;
+                        }
                         
                         if (hit_result.IsValid() && hit_result.element) {
                             // 选中元素并停止选择器模式
@@ -982,8 +995,16 @@ void EventLoop::UpdateHoverChain(Uint32 window_id, float mouse_x, float mouse_y)
     float logical_x = mouse_x / dpi_scale;
     float logical_y = mouse_y / dpi_scale;
 
-    HitTesting hit_testing;
-    HitTestResult hit_result = hit_testing.HitTestRenderObject(root_render, logical_x, logical_y, 0.0f, 0.0f);
+    HitTestController hit_controller;
+    HitTestRequest request;
+    auto result_ex = hit_controller.HitTest(root_render, logical_x, logical_y, request);
+    HitTestResult hit_result;
+    if (result_ex.IsValid()) {
+        hit_result.element = result_ex.element;
+        hit_result.render_object = result_ex.render_object;
+        hit_result.local_x = result_ex.local_x;
+        hit_result.local_y = result_ex.local_y;
+    }
 
     // 委托给 MouseEventDispatcher
     mouse_event_dispatcher_->UpdateHoverChain(window, logical_x, logical_y, hit_result);

@@ -9,7 +9,7 @@
  */
 
 #include <gtest/gtest.h>
-#include "core/event/input/hit_testing.h"
+#include "core/event/input/hit_test_controller.h"
 #include "core/render/objects/render_object.h"
 #include "core/dom/element.h"
 #include "core/dom/document.h"

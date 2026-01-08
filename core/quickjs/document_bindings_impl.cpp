@@ -11,7 +11,7 @@
 #include "core/dom/document.h"
 #include "core/dom/text.h"
 #include "core/dom/bindings/dom_bindings.h"
-#include "core/event/input/hit_testing.h"
+#include "core/event/input/hit_test_controller.h"
 #include "core/event/loop/event_loop.h"
 #include "core/editing/selection_manager.h"
 #include "core/editing/contenteditable_handler.h"
@@ -1183,14 +1183,22 @@ static JSValue JS_Document_caretRangeFromPoint(JSContext* ctx, JSValueConst this
         return JS_NULL;
     }
 
-    // 使用 HitTesting 找到坐标处的元素
+    // 使用 HitTestController 找到坐标处的元素
     auto root_render = window->GetCachedRenderTree();
     if (!root_render) {
         return JS_NULL;
     }
 
-    HitTesting hit_testing;
-    HitTestResult hit_result = hit_testing.HitTestRenderObject(root_render, static_cast<float>(x), static_cast<float>(y), 0.0f, 0.0f);
+    HitTestController hit_controller;
+    HitTestRequest request;
+    auto result_ex = hit_controller.HitTest(root_render, static_cast<float>(x), static_cast<float>(y), request);
+    HitTestResult hit_result;
+    if (result_ex.IsValid()) {
+        hit_result.element = result_ex.element;
+        hit_result.render_object = result_ex.render_object;
+        hit_result.local_x = result_ex.local_x;
+        hit_result.local_y = result_ex.local_y;
+    }
 
     if (!hit_result.IsValid() || !hit_result.element) {
         return JS_NULL;
@@ -1345,14 +1353,22 @@ static JSValue JS_Document_elementFromPoint(JSContext* ctx, JSValueConst this_va
         return JS_NULL;
     }
 
-    // 使用 HitTesting 找到坐标处的元素
+    // 使用 HitTestController 找到坐标处的元素
     auto root_render = window->GetCachedRenderTree();
     if (!root_render) {
         return JS_NULL;
     }
 
-    HitTesting hit_testing;
-    HitTestResult hit_result = hit_testing.HitTestRenderObject(root_render, static_cast<float>(x), static_cast<float>(y), 0.0f, 0.0f);
+    HitTestController hit_controller;
+    HitTestRequest request;
+    auto result_ex = hit_controller.HitTest(root_render, static_cast<float>(x), static_cast<float>(y), request);
+    HitTestResult hit_result;
+    if (result_ex.IsValid()) {
+        hit_result.element = result_ex.element;
+        hit_result.render_object = result_ex.render_object;
+        hit_result.local_x = result_ex.local_x;
+        hit_result.local_y = result_ex.local_y;
+    }
 
     if (!hit_result.IsValid() || !hit_result.element) {
         return JS_NULL;
