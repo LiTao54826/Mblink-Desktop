@@ -248,12 +248,28 @@ void DirtyNodeTracker::Optimize() {
             return get_depth(node_a.get()) < get_depth(node_b.get());
         });
     
-    // 合并：先处理 Added（按深度排序），再处理其他操作
-    optimized_structural.reserve(added_changes.size() + other_changes.size());
+    // 合并：先处理 Replaced，再处理 Added（按深度排序），最后处理其他操作
+    // Replaced 操作应该先处理，因为它会创建新的渲染对象
+    // 这样后续的 Added 操作才能正确计算插入位置
+    std::vector<StructuralChange> replaced_changes;
+    std::vector<StructuralChange> remaining_changes;
+    
+    for (auto& change : other_changes) {
+        if (change.type == StructuralChangeType::Replaced) {
+            replaced_changes.push_back(std::move(change));
+        } else {
+            remaining_changes.push_back(std::move(change));
+        }
+    }
+    
+    optimized_structural.reserve(replaced_changes.size() + added_changes.size() + remaining_changes.size());
+    for (auto& change : replaced_changes) {
+        optimized_structural.push_back(std::move(change));
+    }
     for (auto& change : added_changes) {
         optimized_structural.push_back(std::move(change));
     }
-    for (auto& change : other_changes) {
+    for (auto& change : remaining_changes) {
         optimized_structural.push_back(std::move(change));
     }
     
