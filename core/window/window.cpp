@@ -1007,6 +1007,32 @@ void Window::Render() {
     }
     
     // =========================================================================
+    // 增量样式更新：处理 style 属性变化导致的样式重算
+    // =========================================================================
+    // 当 style 属性变化时，DOM 节点会被标记为 IsStyleDirty()
+    // 需要遍历 DOM 树，将脏标记同步到 RenderObject 并重新计算样式
+    if (document_ && cached_render_tree_) {
+        auto body = document_->GetBody();
+        if (body && cached_render_tree_) {
+            // 检查是否有样式脏标记需要处理
+            bool has_style_dirty = body->IsStyleDirty() || body->IsPaintDirty() || 
+                                   body->ChildNeedsStyleRecalc();
+            if (has_style_dirty) {
+                MarkRenderObjectsDirty(body.get(), cached_render_tree_.get());
+                // 清除 DOM 节点的脏标记（递归清除整个子树）
+                std::function<void(Node*)> clearDirtyRecursive = [&](Node* node) {
+                    if (!node) return;
+                    node->ClearDirty();
+                    for (const auto& child : node->GetChildNodes()) {
+                        clearDirtyRecursive(child.get());
+                    }
+                };
+                clearDirtyRecursive(body.get());
+            }
+        }
+    }
+    
+    // =========================================================================
     // 增量布局：处理样式变更导致的布局需求
     // =========================================================================
     // 即使没有 DOM 结构变化，样式变更（如 overflow）也可能需要重新布局
@@ -1032,12 +1058,21 @@ void Window::Render() {
             layout_engine_->BuildLayoutTree(cached_render_tree_, true);
             layout_engine_->ComputeLayout(sync_app_width, sync_app_height);
             layout_engine_->GetLayoutInfo(cached_render_tree_);
+            
+            // 关键修复：布局完成后，使所有元素的 ViewportBounds 缓存失效
+            // 这样下次 hit testing 时会重新计算正确的视口坐标
+            cached_render_tree_->InvalidateViewportBounds();
+            cached_render_tree_->InvalidateDescendantViewportBounds();
         } else {
             // 尝试增量布局（处理样式变更导致的布局需求）
             bool did_incremental = layout_engine_->ComputeIncrementalLayout(sync_app_width, sync_app_height);
             if (did_incremental) {
                 layout_engine_->GetLayoutInfo(cached_render_tree_);
                 needs_layout_update = true;
+                
+                // 关键修复：增量布局后也需要使 ViewportBounds 缓存失效
+                cached_render_tree_->InvalidateViewportBounds();
+                cached_render_tree_->InvalidateDescendantViewportBounds();
             }
         }
 
