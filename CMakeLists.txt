@@ -28,7 +28,7 @@ option(LIGHTUI_BUILD_RUST_BINDING "Build Rust binding" OFF)
 option(LIGHTUI_BUILD_GO_BINDING "Build Go binding" OFF)
 option(LIGHTUI_USE_SKIA "Use Skia for rendering (requires Skia)" ON)
 option(LIGHTUI_BUILD_TESTS "Build tests" OFF)
-option(LIGHTUI_ENABLE_LTO "Enable Link Time Optimization" ON)
+option(LIGHTUI_ENABLE_LTO "Enable Link Time Optimization (slower build, smaller binary)" OFF)
 
 # Link Time Optimization (LTO)
 # LTO allows the compiler to optimize across translation units, removing unused code
