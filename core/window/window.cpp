@@ -694,10 +694,15 @@ bool Window::HandleSDLEvent(const SDL_Event& event) {
 
                 // 直接处理 resize，不做节流
                 OnResize();
+                std::cout << "[RESIZE] Before InvalidateRenderTree" << std::endl; std::cout.flush();
                 InvalidateRenderTree();  // 窗口大小改变，需要用新尺寸重建渲染树和布局
+                std::cout << "[RESIZE] After InvalidateRenderTree" << std::endl; std::cout.flush();
                 SetForceFullRepaint(true);  // 关键修复：强制全量重绘，避免新区域显示垃圾数据
+                std::cout << "[RESIZE] After SetForceFullRepaint" << std::endl; std::cout.flush();
                 SetNeedsRepaint();
+                std::cout << "[RESIZE] After SetNeedsRepaint" << std::endl; std::cout.flush();
                 DispatchWindowEvent(WindowEvent(WindowEventType::RESIZE, new_width, new_height));
+                std::cout << "[RESIZE] After DispatchWindowEvent, returning" << std::endl; std::cout.flush();
                 return true;
             }
 
@@ -994,8 +999,9 @@ void Window::Render() {
     // =========================================================================
     // 增量同步：处理 DOM 变化
     // =========================================================================
+    // 关键修复：只有当渲染树有效时才处理增量同步
     bool needs_layout_update = false;
-    if (document_ && render_tree_synchronizer_ && cached_render_tree_) {
+    if (document_ && render_tree_synchronizer_ && cached_render_tree_ && render_tree_valid_) {
         auto& tracker = document_->GetDirtyTracker();
         if (tracker.HasPendingChanges()) {
             // 调用 RenderTreeSynchronizer 来同步变化
@@ -1011,7 +1017,8 @@ void Window::Render() {
     // =========================================================================
     // 当 style 属性变化时，DOM 节点会被标记为 IsStyleDirty()
     // 需要遍历 DOM 树，将脏标记同步到 RenderObject 并重新计算样式
-    if (document_ && cached_render_tree_) {
+    // 关键修复：只有当渲染树有效时才处理增量更新，否则等待 EnsureRenderTree 重建
+    if (document_ && cached_render_tree_ && render_tree_valid_) {
         auto body = document_->GetBody();
         if (body && cached_render_tree_) {
             // 检查是否有样式脏标记需要处理
@@ -1719,10 +1726,19 @@ void Window::ForceLayoutSync() {
 }
 
 void Window::InvalidateRenderTree() {
-    std::cout << "[InvalidateRenderTree] Called - will trigger full rebuild" << std::endl;
-
     // 标记渲染树需要重建
     render_tree_valid_ = false;
+
+    // 关键修复：清理 LayoutEngine 的映射
+    // NativeLayoutEngine 持有 render_to_node_ 映射（RenderObject* -> NodeId）
+    // 当渲染树重建时，旧的 RenderObject 被销毁，映射中的指针变成悬空指针
+    // 必须在销毁渲染树之前清理，否则后续访问会崩溃
+    if (layout_engine_) {
+        layout_engine_->Clear();
+    }
+
+    // 清空旧的渲染树
+    cached_render_tree_.reset();
 
     // 通知统一渲染管线需要重建层树
     if (render_pipeline_) {

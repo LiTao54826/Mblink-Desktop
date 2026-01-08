@@ -39,6 +39,113 @@ extern "C" {
 #include <windows.h>
 #include <io.h>
 #include <fcntl.h>
+#include <dbghelp.h>
+#pragma comment(lib, "dbghelp.lib")
+
+// 打印调用栈
+void PrintStackTrace(CONTEXT* context) {
+    HANDLE process = GetCurrentProcess();
+    HANDLE thread = GetCurrentThread();
+    
+    // 初始化符号处理
+    SymSetOptions(SYMOPT_UNDNAME | SYMOPT_DEFERRED_LOADS | SYMOPT_LOAD_LINES);
+    if (!SymInitialize(process, NULL, TRUE)) {
+        std::cerr << "[CRASH] Failed to initialize symbols" << std::endl;
+        return;
+    }
+    
+    STACKFRAME64 stackFrame = {};
+    DWORD machineType;
+    
+#ifdef _M_X64
+    machineType = IMAGE_FILE_MACHINE_AMD64;
+    stackFrame.AddrPC.Offset = context->Rip;
+    stackFrame.AddrPC.Mode = AddrModeFlat;
+    stackFrame.AddrFrame.Offset = context->Rbp;
+    stackFrame.AddrFrame.Mode = AddrModeFlat;
+    stackFrame.AddrStack.Offset = context->Rsp;
+    stackFrame.AddrStack.Mode = AddrModeFlat;
+#else
+    machineType = IMAGE_FILE_MACHINE_I386;
+    stackFrame.AddrPC.Offset = context->Eip;
+    stackFrame.AddrPC.Mode = AddrModeFlat;
+    stackFrame.AddrFrame.Offset = context->Ebp;
+    stackFrame.AddrFrame.Mode = AddrModeFlat;
+    stackFrame.AddrStack.Offset = context->Esp;
+    stackFrame.AddrStack.Mode = AddrModeFlat;
+#endif
+    
+    std::cerr << "\n[CRASH] Call Stack:" << std::endl;
+    
+    char symbolBuffer[sizeof(SYMBOL_INFO) + MAX_SYM_NAME * sizeof(TCHAR)];
+    PSYMBOL_INFO symbol = (PSYMBOL_INFO)symbolBuffer;
+    symbol->SizeOfStruct = sizeof(SYMBOL_INFO);
+    symbol->MaxNameLen = MAX_SYM_NAME;
+    
+    IMAGEHLP_LINE64 line = {};
+    line.SizeOfStruct = sizeof(IMAGEHLP_LINE64);
+    
+    int frameNum = 0;
+    while (StackWalk64(machineType, process, thread, &stackFrame, context,
+                       NULL, SymFunctionTableAccess64, SymGetModuleBase64, NULL)) {
+        if (stackFrame.AddrPC.Offset == 0) break;
+        if (frameNum >= 30) break;  // 限制栈深度
+        
+        DWORD64 displacement = 0;
+        DWORD lineDisplacement = 0;
+        
+        std::cerr << "  [" << frameNum << "] 0x" << std::hex << stackFrame.AddrPC.Offset << std::dec;
+        
+        if (SymFromAddr(process, stackFrame.AddrPC.Offset, &displacement, symbol)) {
+            std::cerr << " " << symbol->Name;
+        }
+        
+        if (SymGetLineFromAddr64(process, stackFrame.AddrPC.Offset, &lineDisplacement, &line)) {
+            std::cerr << " (" << line.FileName << ":" << line.LineNumber << ")";
+        }
+        
+        std::cerr << std::endl;
+        frameNum++;
+    }
+    
+    SymCleanup(process);
+}
+
+// Windows 崩溃处理
+LONG WINAPI CrashHandler(EXCEPTION_POINTERS* pExceptionInfo) {
+    std::cerr << "\n[CRASH] Unhandled exception caught!" << std::endl;
+    std::cerr << "[CRASH] Exception code: 0x" << std::hex << pExceptionInfo->ExceptionRecord->ExceptionCode << std::dec << std::endl;
+    std::cerr << "[CRASH] Exception address: 0x" << std::hex << pExceptionInfo->ExceptionRecord->ExceptionAddress << std::dec << std::endl;
+    
+    // 输出异常类型
+    switch (pExceptionInfo->ExceptionRecord->ExceptionCode) {
+        case EXCEPTION_ACCESS_VIOLATION:
+            std::cerr << "[CRASH] Type: Access Violation (null pointer or invalid memory access)" << std::endl;
+            if (pExceptionInfo->ExceptionRecord->NumberParameters >= 2) {
+                std::cerr << "[CRASH] " << (pExceptionInfo->ExceptionRecord->ExceptionInformation[0] ? "Write" : "Read") 
+                          << " at address: 0x" << std::hex << pExceptionInfo->ExceptionRecord->ExceptionInformation[1] << std::dec << std::endl;
+            }
+            break;
+        case EXCEPTION_STACK_OVERFLOW:
+            std::cerr << "[CRASH] Type: Stack Overflow" << std::endl;
+            break;
+        case EXCEPTION_INT_DIVIDE_BY_ZERO:
+            std::cerr << "[CRASH] Type: Integer Divide by Zero" << std::endl;
+            break;
+        case EXCEPTION_ILLEGAL_INSTRUCTION:
+            std::cerr << "[CRASH] Type: Illegal Instruction" << std::endl;
+            break;
+        default:
+            std::cerr << "[CRASH] Type: Unknown" << std::endl;
+            break;
+    }
+    
+    // 打印调用栈
+    PrintStackTrace(pExceptionInfo->ContextRecord);
+    
+    std::cerr.flush();
+    return EXCEPTION_EXECUTE_HANDLER;
+}
 #endif
 
 using namespace lightui;
@@ -147,6 +254,9 @@ void RegisterPreactModules(QuickJSRuntime* runtime) {
 
 int main(int argc, char** argv) {
 #ifdef _WIN32
+    // 注册崩溃处理器
+    SetUnhandledExceptionFilter(CrashHandler);
+    
     // 设置 Windows 控制台为 UTF-8 编码
     SetConsoleOutputCP(CP_UTF8);
     SetConsoleCP(CP_UTF8);
@@ -205,46 +315,61 @@ int main(int argc, char** argv) {
         std::cout << "  Size: " << width << "x" << height << std::endl;
         std::cout << "========================================" << std::endl;
         std::cout << std::endl;
+        std::cout.flush();
 
         // 1. 创建窗口
         std::cout << "[1/5] Creating window..." << std::endl;
+        std::cout.flush();
         WindowConfig config;
         config.title = title;
         config.width = width;
         config.height = height;
         config.resizable = true;
         config.vsync = true;
+        std::cout << "[DEBUG] WindowConfig created" << std::endl; std::cout.flush();
 
         auto window = std::make_shared<Window>(config);
+        std::cout << "[DEBUG] Window object created" << std::endl; std::cout.flush();
         auto& window_manager = WindowManager::Instance();
+        std::cout << "[DEBUG] WindowManager instance obtained" << std::endl; std::cout.flush();
         window_manager.RegisterWindow(window);
-        std::cout << "  ✓ Window created" << std::endl;
+        std::cout << "  ✓ Window created" << std::endl; std::cout.flush();
 
         // 2. 创建文档
-        std::cout << "[2/5] Creating document..." << std::endl;
+        std::cout << "[2/5] Creating document..." << std::endl; std::cout.flush();
         auto document = std::make_shared<Document>();
+        std::cout << "[DEBUG] Document object created" << std::endl; std::cout.flush();
         document->Initialize();
+        std::cout << "[DEBUG] Document initialized" << std::endl; std::cout.flush();
         auto body = document->CreateElement("body");
+        std::cout << "[DEBUG] Body element created" << std::endl; std::cout.flush();
         document->SetBody(body);
+        std::cout << "[DEBUG] Body set to document" << std::endl; std::cout.flush();
         window->SetDocument(document);
-        std::cout << "  ✓ Document initialized" << std::endl;
+        std::cout << "  ✓ Document initialized" << std::endl; std::cout.flush();
 
         // 3. 创建 QuickJS 运行时
-        std::cout << "[3/5] Creating QuickJS runtime..." << std::endl;
+        std::cout << "[3/5] Creating QuickJS runtime..." << std::endl; std::cout.flush();
         auto runtime = std::make_unique<QuickJSRuntime>();
+        std::cout << "[DEBUG] QuickJSRuntime created" << std::endl; std::cout.flush();
         auto task_scheduler = std::make_shared<TaskScheduler>();
-        std::cout << "  ✓ QuickJS runtime created" << std::endl;
+        std::cout << "  ✓ QuickJS runtime created" << std::endl; std::cout.flush();
 
         // 4. 初始化绑定和库
-        std::cout << "[4/5] Initializing bindings..." << std::endl;
+        std::cout << "[4/5] Initializing bindings..." << std::endl; std::cout.flush();
         WindowBindings window_bindings(runtime.get(), window, task_scheduler);
+        std::cout << "[DEBUG] WindowBindings created" << std::endl; std::cout.flush();
         window_bindings.InitBindings();
-        std::cout << "  ✓ Window bindings initialized" << std::endl;
+        std::cout << "  ✓ Window bindings initialized" << std::endl; std::cout.flush();
 
         // 创建事件循环（需要在加载模块之前，以便 getSelection 等 API 可用）
+        std::cout << "[DEBUG] Creating EventLoop..." << std::endl; std::cout.flush();
         EventLoop event_loop(task_scheduler);
+        std::cout << "[DEBUG] EventLoop created" << std::endl; std::cout.flush();
         event_loop.SetQuickJSRuntime(runtime.get());
+        std::cout << "[DEBUG] EventLoop SetQuickJSRuntime done" << std::endl; std::cout.flush();
         DOMBindings::SetGlobalEventLoop(runtime->GetContext(), &event_loop);
+        std::cout << "[DEBUG] SetGlobalEventLoop done" << std::endl; std::cout.flush();
 
         // 加载嵌入的库
         if (lightui::embedded::HasEmbeddedJS()) {

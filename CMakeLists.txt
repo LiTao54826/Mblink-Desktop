@@ -50,6 +50,9 @@ if(MSVC)
     # Use static runtime /MT to match prebuilt Skia library
     # Skia uses /MT for both Debug and Release configurations
     add_compile_options(/MT)
+    # 生成调试符号（用于崩溃调试）
+    add_compile_options(/Zi)
+    add_link_options(/DEBUG)
     add_compile_definitions(_ITERATOR_DEBUG_LEVEL=0)
     set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded" CACHE STRING "MSVC runtime library" FORCE)
 else()

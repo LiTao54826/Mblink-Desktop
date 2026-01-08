@@ -238,9 +238,11 @@ void WindowDOMObserver::OnNodeRemoved(Node* node, Node* parent) {
                 if (parent_elem && parent_elem->GetRenderObject()) {
                     const auto& parent_style = parent_elem->GetRenderObject()->GetComputedStyle();
                     if (parent_style.position == "fixed") {
-                        std::cout << "[OnNodeRemoved] Parent is fixed, triggering render tree rebuild" << std::endl;
+                        std::cout << "[OnNodeRemoved] Parent is fixed, triggering render tree rebuild" << std::endl; std::cout.flush();
                         window_->InvalidateRenderTree();
+                        std::cout << "[OnNodeRemoved] After InvalidateRenderTree" << std::endl; std::cout.flush();
                         window_->SetNeedsRepaint();
+                        std::cout << "[OnNodeRemoved] After SetNeedsRepaint, returning" << std::endl; std::cout.flush();
                         return;
                     }
                 }
@@ -570,8 +572,11 @@ void WindowDOMObserver::OnSubtreeModified(Node* root) {
         }
         
         // 大量变化或无法确定时，回退到全量重建
+        std::cout << "[OnBatchMutations] Before SetNeedsRepaint" << std::endl; std::cout.flush();
         window_->SetNeedsRepaint();
+        std::cout << "[OnBatchMutations] Before InvalidateRenderTree" << std::endl; std::cout.flush();
         window_->InvalidateRenderTree();
+        std::cout << "[OnBatchMutations] After InvalidateRenderTree, returning" << std::endl; std::cout.flush();
     }
 }
 

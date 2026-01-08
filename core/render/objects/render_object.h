@@ -569,9 +569,10 @@ public:
             if (parent) {
                 parent->MarkNeedsLayout(true);
             }
+            // 向上传播 ChildNeedsLayout 标志
+            // 只有当需要向上传播时才调用，避免访问可能无效的 parent_
+            MarkAncestorsWithChildNeedsLayout();
         }
-        // 向上传播 ChildNeedsLayout 标志
-        MarkAncestorsWithChildNeedsLayout();
     }
     
     /**
