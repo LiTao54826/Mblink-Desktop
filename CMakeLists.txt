@@ -28,6 +28,20 @@ option(LIGHTUI_BUILD_RUST_BINDING "Build Rust binding" OFF)
 option(LIGHTUI_BUILD_GO_BINDING "Build Go binding" OFF)
 option(LIGHTUI_USE_SKIA "Use Skia for rendering (requires Skia)" ON)
 option(LIGHTUI_BUILD_TESTS "Build tests" OFF)
+option(LIGHTUI_ENABLE_LTO "Enable Link Time Optimization" ON)
+
+# Link Time Optimization (LTO)
+# LTO allows the compiler to optimize across translation units, removing unused code
+if(LIGHTUI_ENABLE_LTO)
+    include(CheckIPOSupported)
+    check_ipo_supported(RESULT LTO_SUPPORTED OUTPUT LTO_ERROR)
+    if(LTO_SUPPORTED)
+        set(CMAKE_INTERPROCEDURAL_OPTIMIZATION TRUE)
+        message(STATUS "LTO enabled - this may reduce binary size")
+    else()
+        message(WARNING "LTO not supported: ${LTO_ERROR}")
+    endif()
+endif()
 
 # Compiler Settings
 # Disable warnings and configure runtime library to match Skia
