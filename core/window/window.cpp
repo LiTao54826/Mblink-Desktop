@@ -1058,21 +1058,14 @@ void Window::Render() {
             layout_engine_->BuildLayoutTree(cached_render_tree_, true);
             layout_engine_->ComputeLayout(sync_app_width, sync_app_height);
             layout_engine_->GetLayoutInfo(cached_render_tree_);
-            
-            // 关键修复：布局完成后，使所有元素的 ViewportBounds 缓存失效
-            // 这样下次 hit testing 时会重新计算正确的视口坐标
-            cached_render_tree_->InvalidateViewportBounds();
-            cached_render_tree_->InvalidateDescendantViewportBounds();
+            // 注意：ViewportBounds 缓存失效已在 ReadLayoutResults 中按需处理
         } else {
             // 尝试增量布局（处理样式变更导致的布局需求）
             bool did_incremental = layout_engine_->ComputeIncrementalLayout(sync_app_width, sync_app_height);
             if (did_incremental) {
                 layout_engine_->GetLayoutInfo(cached_render_tree_);
                 needs_layout_update = true;
-                
-                // 关键修复：增量布局后也需要使 ViewportBounds 缓存失效
-                cached_render_tree_->InvalidateViewportBounds();
-                cached_render_tree_->InvalidateDescendantViewportBounds();
+                // 注意：ViewportBounds 缓存失效已在 ReadLayoutResults 中按需处理
             }
         }
 

@@ -3893,6 +3893,11 @@ void NativeLayoutEngine::ReadLayoutResults(RenderObject* render_obj) {
         // 当前元素会在新位置重新绘制，旧位置会被清除
         if (position_changed || size_changed) {
             render_obj->MarkNeedsPaint();
+            // 关键修复：位置或尺寸变化时，使 ViewportBounds 缓存失效
+            // 这样 hit testing 时会重新计算正确的视口坐标
+            render_obj->InvalidateViewportBounds();
+            // 子元素的视口坐标也会受影响，需要递归失效
+            render_obj->InvalidateDescendantViewportBounds();
         }
 
         info.x = node->layout.location.x;
