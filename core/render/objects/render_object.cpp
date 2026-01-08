@@ -1041,9 +1041,11 @@ void RenderObject::UpdateScrollbarDrag(float mouse_x, float mouse_y) {
     float new_scroll_y = scroll_y_;
     
     if (scrollbar_controller_.UpdateDrag(mouse_x, mouse_y, params, new_scroll_x, new_scroll_y)) {
-        scroll_x_ = new_scroll_x;
-        scroll_y_ = new_scroll_y;
-        MarkNeedsPaint();
+        // 关键修复：使用 ScrollTo 而不是直接设置 scroll_x_/scroll_y_
+        // ScrollTo 会调用 InvalidateDescendantViewportBounds()，
+        // 确保子元素的 ViewportBounds 缓存被正确失效，
+        // 这样 hit testing 才能正确计算滚动后的坐标
+        ScrollTo(new_scroll_x, new_scroll_y);
     }
 }
 
