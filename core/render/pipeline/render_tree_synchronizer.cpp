@@ -43,8 +43,14 @@ bool RenderTreeSynchronizer::Synchronize(DirtyNodeTracker& tracker,
     // 优化变化列表（合并冗余操作）
     tracker.Optimize();
     
+    // 调试日志
+    static bool debug_sync = std::getenv("LIGHTUI_DEBUG_SYNC") != nullptr;
+    
     // 判断是否需要子树重建
     if (NeedsSubtreeRebuild(tracker)) {
+        if (debug_sync) {
+            std::cout << "[Synchronize] Using RebuildSubtree path" << std::endl;
+        }
         // 收集受影响的根节点
         std::unordered_set<Node*> affected_roots;
         
@@ -59,6 +65,40 @@ bool RenderTreeSynchronizer::Synchronize(DirtyNodeTracker& tracker,
             RebuildSubtree(root);
         }
     } else {
+        if (debug_sync) {
+            std::cout << "[Synchronize] Using ProcessStructuralChanges path" << std::endl;
+            for (const auto& change : tracker.GetStructuralChanges()) {
+                std::string type_str;
+                switch (change.type) {
+                    case DirtyNodeTracker::StructuralChangeType::Added: type_str = "Added"; break;
+                    case DirtyNodeTracker::StructuralChangeType::Removed: type_str = "Removed"; break;
+                    case DirtyNodeTracker::StructuralChangeType::Replaced: type_str = "Replaced"; break;
+                    case DirtyNodeTracker::StructuralChangeType::Moved: type_str = "Moved"; break;
+                }
+                
+                auto getNodeInfo = [](std::shared_ptr<Node> node) -> std::string {
+                    if (!node) return "null";
+                    if (node->GetNodeType() == NodeType::ELEMENT_NODE) {
+                        auto elem = std::dynamic_pointer_cast<Element>(node);
+                        if (elem) return "Element<" + elem->GetTagName() + ">";
+                    } else if (node->GetNodeType() == NodeType::TEXT_NODE) {
+                        return "Text";
+                    }
+                    return "unknown";
+                };
+                
+                if (change.type == DirtyNodeTracker::StructuralChangeType::Replaced) {
+                    std::cout << "  Change: type=" << type_str 
+                              << " old=" << getNodeInfo(change.old_node.lock())
+                              << " new=" << getNodeInfo(change.new_node.lock())
+                              << " index=" << change.index << std::endl;
+                } else {
+                    std::cout << "  Change: type=" << type_str 
+                              << " node=" << getNodeInfo(change.node.lock())
+                              << " index=" << change.index << std::endl;
+                }
+            }
+        }
         // 增量更新
         ProcessStructuralChanges(tracker);
     }
@@ -345,6 +385,8 @@ static RenderObject* GetLastLayoutDescendant(Node* node) {
 // 辅助函数：查找前一个布局兄弟节点的渲染对象
 // 参考 Blink 的 PreviousLayoutSibling
 static RenderObject* FindPreviousLayoutSiblingRenderObject(Node* node) {
+    static bool debug_sync = std::getenv("LIGHTUI_DEBUG_SYNC") != nullptr;
+    
     if (!node) return nullptr;
     
     auto parent = node->GetParentNode();
@@ -361,9 +403,19 @@ static RenderObject* FindPreviousLayoutSiblingRenderObject(Node* node) {
         }
     }
     
+    if (debug_sync) {
+        std::cout << "[FindPreviousLayoutSibling] node_index=" << node_index 
+                  << " siblings.size()=" << siblings.size() << std::endl;
+    }
+    
     // 从当前节点向前查找有渲染对象的兄弟节点
     for (size_t i = node_index; i > 0; --i) {
         Node* sibling = siblings[i - 1].get();
+        
+        if (debug_sync) {
+            std::cout << "  Checking sibling " << (i-1) << " type=" << static_cast<int>(sibling->GetNodeType())
+                      << " has_ro=" << (sibling->GetRenderObject() ? "yes" : "no") << std::endl;
+        }
         
         // 如果兄弟节点有渲染对象，返回它
         if (auto ro = sibling->GetRenderObject()) {
@@ -417,6 +469,20 @@ std::shared_ptr<RenderObject> RenderTreeSynchronizer::InsertRenderObject(
     
     if (!node || !parent) return nullptr;
     
+    // 调试日志
+    static bool debug_sync = std::getenv("LIGHTUI_DEBUG_SYNC") != nullptr;
+    
+    if (debug_sync) {
+        std::string node_info = "unknown";
+        if (node->GetNodeType() == NodeType::ELEMENT_NODE) {
+            auto elem = std::dynamic_pointer_cast<Element>(node->shared_from_this());
+            if (elem) node_info = "Element<" + elem->GetTagName() + ">";
+        } else if (node->GetNodeType() == NodeType::TEXT_NODE) {
+            node_info = "Text";
+        }
+        std::cout << "[InsertRenderObject] node=" << node_info << " index=" << index << std::endl;
+    }
+    
     // 关键修复：如果节点已经有渲染对象，不要重复创建
     if (node->GetRenderObject()) {
         return node->GetRenderObject();
@@ -445,18 +511,66 @@ std::shared_ptr<RenderObject> RenderTreeSynchronizer::InsertRenderObject(
         return nullptr;
     }
     
-    // 使用 Blink 风格的插入位置计算：
-    // 找到前一个布局兄弟节点的渲染对象，然后在它后面插入
-    RenderObject* prev_sibling_ro = FindPreviousLayoutSiblingRenderObject(node);
-    size_t insert_pos = CalculateInsertPositionByPreviousSibling(prev_sibling_ro, parent_ro.get());
+    // 计算插入位置
+    // 关键修复：当父元素是 display: contents 时，使用原始的 parent 节点来计算插入位置
+    // 因为 display: contents 元素的子元素在 DOM 中的顺序应该被保留
+    // layout_parent 是真正的布局父级（跳过 display: contents），但它的 DOM 子节点
+    // 只包含 display: contents 包装器，而不是实际的子元素
+    Node* position_parent = parent;  // 使用原始的 parent 来计算位置
+    size_t insert_pos = FindInsertPosition(parent_ro.get(), index, position_parent);
+    
+    if (debug_sync) {
+        std::cout << "[InsertRenderObject] index=" << index 
+                  << " insert_pos=" << insert_pos 
+                  << " parent_children=" << parent_ro->GetChildren().size() << std::endl;
+    }
     
     // 插入到父渲染对象
     auto& children = parent_ro->GetChildrenMutable();
+    if (debug_sync) {
+        std::cout << "[InsertRenderObject] Before insert, children count=" << children.size() << std::endl;
+        for (size_t i = 0; i < children.size(); ++i) {
+            auto child_node = children[i]->GetNode();
+            std::string info = "unknown";
+            if (child_node) {
+                if (child_node->GetNodeType() == NodeType::ELEMENT_NODE) {
+                    auto elem = std::dynamic_pointer_cast<Element>(child_node);
+                    if (elem) info = "Element<" + elem->GetTagName() + ">";
+                } else if (child_node->GetNodeType() == NodeType::TEXT_NODE) {
+                    info = "Text";
+                }
+            }
+            std::cout << "  children[" << i << "] = " << info << std::endl;
+        }
+    }
     if (insert_pos >= children.size()) {
+        if (debug_sync) {
+            std::cout << "[InsertRenderObject] AppendChild at end" << std::endl;
+        }
         parent_ro->AppendChild(render_obj);
     } else {
+        if (debug_sync) {
+            std::cout << "[InsertRenderObject] Insert at position " << insert_pos << std::endl;
+        }
         children.insert(children.begin() + insert_pos, render_obj);
         render_obj->SetParent(parent_ro);
+    }
+    
+    if (debug_sync) {
+        std::cout << "[InsertRenderObject] After insert, children count=" << children.size() << std::endl;
+        for (size_t i = 0; i < children.size(); ++i) {
+            auto child_node = children[i]->GetNode();
+            std::string info = "unknown";
+            if (child_node) {
+                if (child_node->GetNodeType() == NodeType::ELEMENT_NODE) {
+                    auto elem = std::dynamic_pointer_cast<Element>(child_node);
+                    if (elem) info = "Element<" + elem->GetTagName() + ">";
+                } else if (child_node->GetNodeType() == NodeType::TEXT_NODE) {
+                    info = "Text";
+                }
+            }
+            std::cout << "  children[" << i << "] = " << info << std::endl;
+        }
     }
     
     // 递归创建子树
@@ -514,6 +628,8 @@ void RenderTreeSynchronizer::RemoveRenderObject(Node* node) {
 void RenderTreeSynchronizer::ReplaceRenderObject(
     Node* old_node, Node* new_node, Node* parent, size_t index) {
     
+    static bool debug_sync = std::getenv("LIGHTUI_DEBUG_SYNC") != nullptr;
+    
     if (!old_node || !new_node || !parent) return;
     
     // 查找布局父级（跳过 display: contents 元素）
@@ -531,16 +647,29 @@ void RenderTreeSynchronizer::ReplaceRenderObject(
     // 创建新的渲染对象
     auto new_ro = CreateRenderObjectForNode(new_node);
     
+    if (debug_sync) {
+        std::cout << "[ReplaceRenderObject] old_ro=" << (old_ro ? "exists" : "null")
+                  << " new_ro=" << (new_ro ? "exists" : "null")
+                  << " index=" << index << std::endl;
+    }
+    
     if (old_ro) {
         // 找到旧渲染对象在父节点中的位置
         auto& children = parent_ro->GetChildrenMutable();
         auto it = std::find(children.begin(), children.end(), old_ro);
         
         if (it != children.end()) {
+            size_t old_pos = std::distance(children.begin(), it);
+            if (debug_sync) {
+                std::cout << "  Found old_ro at position " << old_pos << std::endl;
+            }
             if (new_ro) {
                 // 原子替换：直接替换，不经过中间状态
                 *it = new_ro;
                 new_ro->SetParent(parent_ro);
+                if (debug_sync) {
+                    std::cout << "  Replaced at position " << old_pos << std::endl;
+                }
             } else {
                 // 新节点是 display: none 或 display: contents
                 children.erase(it);
@@ -751,17 +880,33 @@ void RenderTreeSynchronizer::CreateRenderSubtree(Node* node, RenderObject* paren
 size_t RenderTreeSynchronizer::FindInsertPosition(
     RenderObject* parent_ro, size_t dom_index, Node* parent_node) {
     
+    static bool debug_sync = std::getenv("LIGHTUI_DEBUG_SYNC") != nullptr;
+    
     if (!parent_ro || !parent_node) return 0;
     
     const auto& dom_children = parent_node->GetChildNodes();
     const auto& ro_children = parent_ro->GetChildren();
     
+    if (debug_sync) {
+        std::cout << "[FindInsertPosition] dom_index=" << dom_index 
+                  << " dom_children.size()=" << dom_children.size()
+                  << " ro_children.size()=" << ro_children.size() << std::endl;
+    }
+    
     // 遍历 DOM 子节点，找到在 dom_index 之前有多少个有渲染对象的节点
     size_t ro_index = 0;
     for (size_t i = 0; i < dom_index && i < dom_children.size(); ++i) {
-        if (dom_children[i]->GetRenderObject()) {
+        bool has_ro = dom_children[i]->GetRenderObject() != nullptr;
+        if (debug_sync) {
+            std::cout << "  dom_children[" << i << "] has_ro=" << (has_ro ? "yes" : "no") << std::endl;
+        }
+        if (has_ro) {
             ++ro_index;
         }
+    }
+    
+    if (debug_sync) {
+        std::cout << "  result ro_index=" << ro_index << std::endl;
     }
     
     return std::min(ro_index, ro_children.size());

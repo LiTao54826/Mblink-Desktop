@@ -381,6 +381,11 @@ void NativeLayoutEngine::BuildLayoutTree(std::shared_ptr<RenderObject> root, boo
     if (!root) {
         return;
     }
+    
+    static bool debug_sync = std::getenv("LIGHTUI_DEBUG_SYNC") != nullptr;
+    if (debug_sync) {
+        std::cout << "[BuildLayoutTree] force_rebuild=" << (force_rebuild ? "true" : "false") << std::endl;
+    }
 
     // Helper function to recursively clear is_laid_out flags
     std::function<void(RenderObject*)> clearLayoutFlags = [&](RenderObject* obj) {
@@ -412,8 +417,18 @@ void NativeLayoutEngine::BuildLayoutTree(std::shared_ptr<RenderObject> root, boo
         bool needs_layout = root->NeedsLayout();
         bool child_needs_layout = root->ChildNeedsLayout();
         
+        if (debug_sync) {
+            std::cout << "[BuildLayoutTree] needs_layout=" << needs_layout 
+                      << " child_needs_layout=" << child_needs_layout
+                      << " viewport_changed=" << viewport_changed
+                      << " force_rebuild=" << force_rebuild << std::endl;
+        }
+        
         if (needs_layout || child_needs_layout || viewport_changed || force_rebuild) {
             // Need to rebuild - clear all layout flags first
+            if (debug_sync) {
+                std::cout << "[BuildLayoutTree] Rebuilding layout tree" << std::endl;
+            }
             clearLayoutFlags(root.get());
             Clear();
             cached_root_ = root;
@@ -426,6 +441,9 @@ void NativeLayoutEngine::BuildLayoutTree(std::shared_ptr<RenderObject> root, boo
     }
 
     // New tree - clear all layout flags before building
+    if (debug_sync) {
+        std::cout << "[BuildLayoutTree] Building new layout tree" << std::endl;
+    }
     clearLayoutFlags(root.get());
     Clear();
     cached_root_ = root;
@@ -1200,6 +1218,7 @@ void NativeLayoutEngine::AddElement(RenderObject* render_obj, RenderObject* pare
     }
 
     // 调试日志
+    static bool debug_sync = std::getenv("LIGHTUI_DEBUG_SYNC") != nullptr;
     std::string node_info = "unknown";
     if (render_obj->GetNode() && render_obj->GetNode()->GetNodeType() == NodeType::ELEMENT_NODE) {
         auto elem = std::dynamic_pointer_cast<Element>(render_obj->GetNode());
@@ -1207,11 +1226,15 @@ void NativeLayoutEngine::AddElement(RenderObject* render_obj, RenderObject* pare
             node_info = "<" + elem->GetTagName() + " class=\"" + elem->GetAttribute("class") + "\">";
         }
     }
-    std::cout << "[AddElement] Called for " << node_info << std::endl;
+    if (debug_sync) {
+        std::cout << "[AddElement] Called for " << node_info << " insert_index=" << insert_index << std::endl;
+    }
 
     // 如果节点已存在，不需要重复添加
     if (HasElement(render_obj)) {
-        std::cout << "[AddElement] Node already exists, skipping" << std::endl;
+        if (debug_sync) {
+            std::cout << "[AddElement] Node already exists, skipping" << std::endl;
+        }
         return;
     }
 
@@ -1236,10 +1259,33 @@ void NativeLayoutEngine::AddElement(RenderObject* render_obj, RenderObject* pare
         return;
     }
 
-    // 简化处理：总是使用 BuildSubtree 添加到末尾
-    // 布局树的顺序可能与渲染树不同（因为匿名块盒等原因）
-    // 使用 insert_index 可能导致索引越界或插入到错误位置
-    BuildSubtree(render_obj, parent_id);
+    // 关键修复：计算正确的插入位置
+    // 遍历父渲染对象的子元素，找到当前元素应该插入的位置
+    size_t layout_insert_index = 0;
+    if (parent_id != 0 && layout_parent) {
+        LayoutNode* parent_node = GetNode(parent_id);
+        if (parent_node) {
+            // 遍历父渲染对象的子元素，计算在布局树中的插入位置
+            const auto& render_children = layout_parent->GetChildren();
+            for (size_t i = 0; i < render_children.size(); ++i) {
+                if (render_children[i].get() == render_obj) {
+                    // 找到当前元素在渲染树中的位置
+                    break;
+                }
+                // 检查这个渲染子元素是否在布局树中
+                if (HasElement(render_children[i].get())) {
+                    ++layout_insert_index;
+                }
+            }
+            if (debug_sync) {
+                std::cout << "[AddElement] Calculated layout_insert_index=" << layout_insert_index 
+                          << " parent_children.size()=" << parent_node->children.size() << std::endl;
+            }
+        }
+    }
+
+    // 使用 BuildSubtreeAtIndex 在正确位置插入
+    BuildSubtreeAtIndex(render_obj, parent_id, layout_insert_index);
     
     // 标记父节点需要重新布局
     if (parent_id != 0) {
@@ -1509,6 +1555,8 @@ const NativeLayoutEngine::LayoutNode* NativeLayoutEngine::GetNode(NodeId id) con
 }
 
 bool NativeLayoutEngine::ShouldUseIFC(RenderObject* render_obj) const {
+    static bool debug_sync = std::getenv("LIGHTUI_DEBUG_SYNC") != nullptr;
+    
     if (!render_obj) return false;
 
     const auto& style = render_obj->GetComputedStyle();
@@ -1522,6 +1570,15 @@ bool NativeLayoutEngine::ShouldUseIFC(RenderObject* render_obj) const {
     // Flex and Grid containers don't use IFC
     if (style.display == RenderObjectType::FLEX ||
         style.display == RenderObjectType::GRID) {
+        if (debug_sync) {
+            auto dom_node = render_obj->GetNode();
+            if (dom_node && dom_node->GetNodeType() == NodeType::ELEMENT_NODE) {
+                auto elem = std::dynamic_pointer_cast<Element>(dom_node);
+                if (elem) {
+                    std::cout << "[ShouldUseIFC] " << elem->GetTagName() << " is FLEX/GRID, returning false" << std::endl;
+                }
+            }
+        }
         return false;
     }
 
@@ -2038,6 +2095,8 @@ void NativeLayoutEngine::BuildSubtreeAtIndex(RenderObject* render_obj, NodeId pa
 }
 
 void NativeLayoutEngine::BuildSubtree(RenderObject* render_obj, NodeId parent_id) {
+    static bool debug_sync = std::getenv("LIGHTUI_DEBUG_SYNC") != nullptr;
+    
     if (!render_obj) {
         return;
     }
@@ -2049,6 +2108,19 @@ void NativeLayoutEngine::BuildSubtree(RenderObject* render_obj, NodeId parent_id
 
     // 调试：检查 result 类元素
     NodeId node_id = CreateNode(render_obj);
+    
+    if (debug_sync) {
+        std::string node_info = "unknown";
+        if (render_obj->GetNode()) {
+            if (render_obj->GetNode()->GetNodeType() == NodeType::ELEMENT_NODE) {
+                auto elem = std::dynamic_pointer_cast<Element>(render_obj->GetNode());
+                if (elem) node_info = "Element<" + elem->GetTagName() + ">";
+            } else if (render_obj->GetNode()->GetNodeType() == NodeType::TEXT_NODE) {
+                node_info = "Text";
+            }
+        }
+        std::cout << "[BuildSubtree] node=" << node_info << " node_id=" << node_id << " parent_id=" << parent_id << std::endl;
+    }
 
     // Set as root if no parent
     if (parent_id == 0) {
@@ -2057,6 +2129,19 @@ void NativeLayoutEngine::BuildSubtree(RenderObject* render_obj, NodeId parent_id
         LayoutNode* parent = GetNode(parent_id);
         if (parent) {
             parent->children.push_back(node_id);
+            if (debug_sync) {
+                auto dom_node = render_obj->GetNode();
+                if (dom_node && dom_node->GetNodeType() == NodeType::ELEMENT_NODE) {
+                    auto elem = std::dynamic_pointer_cast<Element>(dom_node);
+                    if (elem) {
+                        std::cout << "[BuildSubtree] Added " << elem->GetTagName() << " to parent " << parent_id 
+                                  << ", parent->children.size()=" << parent->children.size() << std::endl;
+                    }
+                } else if (dom_node && dom_node->GetNodeType() == NodeType::TEXT_NODE) {
+                    std::cout << "[BuildSubtree] Added Text to parent " << parent_id 
+                              << ", parent->children.size()=" << parent->children.size() << std::endl;
+                }
+            }
         }
         LayoutNode* node = GetNode(node_id);
         if (node) {
@@ -2066,6 +2151,19 @@ void NativeLayoutEngine::BuildSubtree(RenderObject* render_obj, NodeId parent_id
 
     // Check element type
     RenderObjectType type = render_obj->GetType();
+    
+    // 调试：检查 button 的类型和子节点
+    if (debug_sync) {
+        auto dom_node = render_obj->GetNode();
+        if (dom_node && dom_node->GetNodeType() == NodeType::ELEMENT_NODE) {
+            auto elem = std::dynamic_pointer_cast<Element>(dom_node);
+            if (elem && elem->GetTagName() == "button") {
+                std::cout << "[BuildSubtree] button type=" << static_cast<int>(type) 
+                          << " display=" << static_cast<int>(render_obj->GetComputedStyle().display)
+                          << " render_children.size()=" << render_obj->GetChildren().size() << std::endl;
+            }
+        }
+    }
 
     // For INLINE_BLOCK and INLINE elements, they manage their own children
     if (type == RenderObjectType::INLINE_BLOCK || type == RenderObjectType::INLINE) {
@@ -3693,6 +3791,8 @@ void NativeLayoutEngine::PositionChildren(NodeId node_id) {
 }
 
 void NativeLayoutEngine::ReadLayoutResults(RenderObject* render_obj) {
+    static bool debug_sync = std::getenv("LIGHTUI_DEBUG_SYNC") != nullptr;
+    
     if (!render_obj) {
         return;
     }
@@ -3721,6 +3821,20 @@ void NativeLayoutEngine::ReadLayoutResults(RenderObject* render_obj) {
     LayoutNode* node = GetNode(it->second);
     if (!node) {
         return;
+    }
+    
+    // 调试日志：检查 button 的子节点
+    if (debug_sync) {
+        auto dom_node = render_obj->GetNode();
+        if (dom_node && dom_node->GetNodeType() == NodeType::ELEMENT_NODE) {
+            auto elem = std::dynamic_pointer_cast<Element>(dom_node);
+            if (elem && elem->GetTagName() == "button") {
+                std::cout << "[ReadLayoutResults] button node_id=" << it->second 
+                          << " node->children.size()=" << node->children.size()
+                          << " render_obj->GetChildren().size()=" << render_obj->GetChildren().size()
+                          << std::endl;
+            }
+        }
     }
 
     // Update render object with layout info
@@ -3957,11 +4071,39 @@ size_t NativeLayoutEngine::ChildCount(NodeId node) const {
 }
 
 NodeId NativeLayoutEngine::GetChildId(NodeId node, size_t index) const {
+    static bool debug_sync = std::getenv("LIGHTUI_DEBUG_SYNC") != nullptr;
+    
     auto it = nodes_.find(node);
     if (it == nodes_.end() || index >= it->second.children.size()) {
         return INVALID_NODE_ID;
     }
-    return it->second.children[index];
+    
+    NodeId child_id = it->second.children[index];
+    
+    if (debug_sync && it->second.render_obj) {
+        auto render_obj = it->second.render_obj;
+        if (render_obj->GetNode() && render_obj->GetNode()->GetNodeType() == NodeType::ELEMENT_NODE) {
+            auto elem = std::dynamic_pointer_cast<Element>(render_obj->GetNode());
+            if (elem && elem->GetTagName() == "button") {
+                auto child_it = nodes_.find(child_id);
+                if (child_it != nodes_.end() && child_it->second.render_obj) {
+                    std::string child_info = "unknown";
+                    auto child_node = child_it->second.render_obj->GetNode();
+                    if (child_node) {
+                        if (child_node->GetNodeType() == NodeType::ELEMENT_NODE) {
+                            auto child_elem = std::dynamic_pointer_cast<Element>(child_node);
+                            if (child_elem) child_info = "Element<" + child_elem->GetTagName() + ">";
+                        } else if (child_node->GetNodeType() == NodeType::TEXT_NODE) {
+                            child_info = "Text";
+                        }
+                    }
+                    std::cout << "[GetChildId] button child[" << index << "] = " << child_info << " (id=" << child_id << ")" << std::endl;
+                }
+            }
+        }
+    }
+    
+    return child_id;
 }
 
 Cache& NativeLayoutEngine::GetCache(NodeId node) {

@@ -287,9 +287,9 @@ Range::DOMRect Range::ComputeTextRect(
     float padding_left = 0.0f;
     float padding_top = 0.0f;
     
-    auto render_obj = element->GetRenderObject();
-    if (render_obj) {
-        const auto& computed = render_obj->GetComputedStyle();
+    auto parent_render_obj = element->GetRenderObject();
+    if (parent_render_obj) {
+        const auto& computed = parent_render_obj->GetComputedStyle();
         font_size = computed.font_size;
         line_height = font_size * 1.4f;
         if (!computed.font_family.empty()) {
@@ -317,12 +317,30 @@ Range::DOMRect Range::ComputeTextRect(
     end_offset = std::max(start_offset, std::min(end_offset, text_len));
     
     // 计算起始偏移的 x 位置
+    // 关键修复：对于 flex/grid 容器中的文本节点，使用文本节点自己的渲染对象位置
+    // 而不是简单地使用父元素的 padding_left
     float start_x = elem_rect.x + padding_left;
+    float start_y = elem_rect.y + padding_top;
+    
+    // 检查文本节点是否有自己的渲染对象（在 flex/grid 容器中）
+    auto text_render_obj = text_node->GetRenderObject();
+    if (text_render_obj && parent_render_obj) {
+        const auto& parent_style = parent_render_obj->GetComputedStyle();
+        // 如果父元素是 flex 或 grid 容器，使用文本节点的布局位置
+        if (parent_style.display == RenderObjectType::FLEX ||
+            parent_style.display == RenderObjectType::GRID) {
+            const auto& text_layout = text_render_obj->GetLayoutInfo();
+            // 文本节点的位置是相对于父元素的，需要加上父元素的绝对位置
+            start_x = elem_rect.x + text_layout.x;
+            start_y = elem_rect.y + text_layout.y;
+        }
+    }
+    
     if (start_offset > 0) {
         std::string prefix = full_text.substr(0, start_offset);
         float prefix_width = font.measureText(
             prefix.c_str(), prefix.size(), SkTextEncoding::kUTF8, nullptr);
-        start_x = elem_rect.x + padding_left + prefix_width;
+        start_x += prefix_width;
     }
     
     // 计算范围的宽度
@@ -336,12 +354,12 @@ Range::DOMRect Range::ComputeTextRect(
     
     rect.x = start_x;
     rect.left = start_x;
-    rect.y = elem_rect.y + padding_top;
-    rect.top = elem_rect.y + padding_top;
+    rect.y = start_y;
+    rect.top = start_y;
     rect.width = width;
     rect.height = line_height;
     rect.right = start_x + width;
-    rect.bottom = elem_rect.y + padding_top + line_height;
+    rect.bottom = start_y + line_height;
     
     return rect;
 }
