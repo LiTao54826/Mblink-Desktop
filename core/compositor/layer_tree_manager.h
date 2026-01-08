@@ -7,87 +7,25 @@
  * - 维护滚动状态的单一数据源（SSOT）
  * - 提供统一的坐标转换
  * - 协调 LayerTreeBuilder、Rasterizer、Compositor
- *
- * 设计原则：
- * - 最小化重建：只更新变化的层，保持其他层不变
- * - 单一数据源：每个状态只存储在一个地方
- * - 坐标系一致性：所有组件使用相同的坐标系
- * - 职责分离：明确各组件的职责边界
  */
 
 #pragma once
 
-#include "compositor_layer.h"
+#include "layer_tree_types.h"
 #include "animation/animation_bounds_calculator.h"
 #include "include/core/SkPoint.h"
 #include "include/core/SkRect.h"
-#include <cstdint>
-#include <functional>
 #include <memory>
-#include <string>
 #include <unordered_map>
 #include <vector>
 
 namespace lightui {
 
 // 前向声明
-class RenderObject;
 class LayerTreeBuilder;
 class Rasterizer;
 class Compositor;
-
-/**
- * @brief 层更新操作类型
- */
-enum class LayerUpdateType {
-    Add,            ///< 添加层
-    Remove,         ///< 移除层
-    UpdateBounds,   ///< 更新边界
-    Reparent,       ///< 重新附加父层
-    UpdateZIndex    ///< 更新 z-index
-};
-
-/**
- * @brief 待处理的层更新操作
- */
-struct PendingLayerUpdate {
-    LayerUpdateType type;                                   ///< 操作类型
-    RenderObject* target = nullptr;                         ///< 目标 RenderObject
-    LayerPromotionReason reason = LayerPromotionReason::None;  ///< 层提升原因
-    int z_index = 0;                                        ///< z-index 值
-    std::string debug_info;                                 ///< 调试信息
-};
-
-/**
- * @brief 滚动状态（单一数据源）
- *
- * 所有滚动相关的状态都存储在这里，其他组件只读访问。
- */
-struct ScrollState {
-    float scroll_x = 0.0f;          ///< 当前 X 滚动位置
-    float scroll_y = 0.0f;          ///< 当前 Y 滚动位置
-    float max_scroll_x = 0.0f;      ///< 最大 X 滚动位置
-    float max_scroll_y = 0.0f;      ///< 最大 Y 滚动位置
-    float content_width = 0.0f;     ///< 内容宽度
-    float content_height = 0.0f;    ///< 内容高度
-    float viewport_width = 0.0f;    ///< 视口宽度
-    float viewport_height = 0.0f;   ///< 视口高度
-    uint64_t version = 0;           ///< 版本号，用于检测变化
-};
-
-/**
- * @brief 坐标空间类型
- */
-enum class CoordinateSpace {
-    Document,   ///< 文档坐标（相对于文档左上角）
-    Viewport,   ///< 视口坐标（相对于可见区域左上角）
-    Layer       ///< 层坐标（相对于层左上角）
-};
-
-/**
- * @brief 滚动变化监听器类型
- */
-using ScrollListener = std::function<void(RenderObject*, const ScrollState&)>;
+class CompositorLayer;
 
 /**
  * @brief 层树管理器
@@ -385,11 +323,6 @@ public:
      * @brief 获取最后一次完整重建的原因
      */
     const std::string& GetLastRebuildReason() const { return last_rebuild_reason_; }
-
-    /**
-     * @brief 获取层更新类型的字符串描述
-     */
-    static const char* LayerUpdateTypeToString(LayerUpdateType type);
 
     // =========================================================================
     // 脏标记优化

@@ -503,17 +503,6 @@ size_t LayerTreeManager::GetLayerCount() const {
 // 调试支持
 // ============================================================================
 
-const char* LayerTreeManager::LayerUpdateTypeToString(LayerUpdateType type) {
-    switch (type) {
-        case LayerUpdateType::Add: return "Add";
-        case LayerUpdateType::Remove: return "Remove";
-        case LayerUpdateType::UpdateBounds: return "UpdateBounds";
-        case LayerUpdateType::Reparent: return "Reparent";
-        case LayerUpdateType::UpdateZIndex: return "UpdateZIndex";
-        default: return "Unknown";
-    }
-}
-
 void LayerTreeManager::LogDebug(const std::string& message) const {
     if (debug_logging_) {
         std::cout << "[LayerTreeManager] " << message << std::endl;

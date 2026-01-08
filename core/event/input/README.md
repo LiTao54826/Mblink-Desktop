@@ -7,7 +7,7 @@
 | 文件 | 描述 |
 |------|------|
 | `input_handler.h/cpp` | 输入事件处理器 |
-| `hit_testing.h/cpp` | 命中测试（Hit Testing）引擎 |
+| `hit_test_controller.h/cpp` | 命中测试控制器，统一的 Hit Testing 接口 |
 | `focus_manager.h/cpp` | 焦点管理器，处理 Tab 导航 |
 | `keyboard_utils.h/cpp` | 键盘工具函数（按键映射等） |
 
@@ -26,12 +26,12 @@
 ## 使用示例
 
 ```cpp
-#include "core/event/input/hit_testing.h"
+#include "core/event/input/hit_test_controller.h"
 #include "core/event/input/focus_manager.h"
 
 // 执行命中测试
-HitTesting hit_testing;
-auto result = hit_testing.HitTestRenderObject(root_render, x, y, 0, 0);
+HitTestController hit_test;
+auto result = hit_test.HitTestRenderObject(root_render, x, y, 0, 0);
 
 // 焦点管理
 FocusManager focus_manager;

@@ -8,8 +8,9 @@
 |------|------|
 | `compositor.h/cpp` | 主合成器，管理图层合成 |
 | `compositor_layer.h/cpp` | 合成器图层 |
-| `layer_tree_builder.h/cpp` | 图层树构建器 |
-| `layer_tree_manager.h/cpp` | 图层树管理器（增量更新核心） |
+| `layer_tree_builder.h/cpp` | 图层树构建器，负责从渲染树构建层树 |
+| `layer_tree_manager.h/cpp` | 图层树管理器，协调增量更新和状态管理 |
+| `layer_tree_types.h` | 层树公共类型定义（LayerUpdateType, PendingLayerUpdate 等） |
 | `rasterizer.h/cpp` | 光栅化器 |
 | `scroll_layer_manager.h/cpp` | 滚动图层管理器 |
 
