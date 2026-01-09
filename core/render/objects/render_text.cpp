@@ -167,13 +167,48 @@ void RenderText::Paint(SkCanvas* canvas) {
         css_line_height = style.line_height * style.font_size;
     }
 
-    // 计算 half_leading - 用于垂直居中文本
-    // 当 css_line_height > skia_text_height 时，leading 为正，文本在行框内居中
-    // 当 css_line_height < skia_text_height 时，leading 为负，文本会超出行框但保持视觉居中
-    float half_leading = (css_line_height - skia_text_height) / 2.0f;
+    // 计算 baseline_y - 用于垂直居中文本
+    // 必须与 vertical_aligner.cpp 中的 GetBoxMetrics 保持一致的逻辑
+    // 
+    // GetBoxMetrics 的逻辑：
+    // - 当 box.height > content_height 时，添加 half-leading
+    // - 当 box.height < content_height 时，按比例缩放 ascent/descent
+    // - baseline = ascent (缩放后的)
+    //
+    // 这里 box.height 对应 css_line_height，content_height 对应 skia_text_height
+    float baseline_y;
+    float raw_ascent = -font_metrics.fAscent;
+    float raw_descent = font_metrics.fDescent;
+    
+    if (css_line_height > skia_text_height) {
+        // 有额外空间，添加 half-leading
+        float half_leading = (css_line_height - skia_text_height) / 2.0f;
+        baseline_y = half_leading + raw_ascent;
+    } else if (css_line_height < skia_text_height) {
+        // line-height 小于 Skia 测量的高度，按比例缩放
+        // 这与 GetBoxMetrics 中的处理保持一致
+        float scale = css_line_height / skia_text_height;
+        float scaled_ascent = raw_ascent * scale;
+        // baseline 就是缩放后的 ascent
+        baseline_y = scaled_ascent;
+    } else {
+        // 完全相等
+        baseline_y = raw_ascent;
+    }
 
-    // baseline_y 是从行框顶部到文本基线的距离
-    float baseline_y = half_leading + (-font_metrics.fAscent);
+    // DEBUG: 输出文字渲染位置信息
+    static bool debug_text_paint = std::getenv("DEBUG_TEXT_PAINT") != nullptr;
+    if (debug_text_paint) {
+        std::cout << "[RenderText::Paint] text=\"" << text_.substr(0, 20) << "\""
+                  << " layout_y=" << layout.y
+                  << " layout_h=" << layout.height
+                  << " font_size=" << style.font_size
+                  << " css_lh=" << css_line_height
+                  << " skia_h=" << skia_text_height
+                  << " baseline_y=" << baseline_y
+                  << " raw_asc=" << raw_ascent
+                  << std::endl;
+    }
 
     // 处理 vertical-align
     if (style.vertical_align == "super") {
