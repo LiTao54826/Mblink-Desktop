@@ -18,6 +18,7 @@
 #include "core/dom/bindings/dom_bindings.h"
 #include "core/quickjs/quickjs_runtime.h"
 #include "core/quickjs/window_bindings.h"
+#include "core/quickjs/dom_binding_map.h"
 #include "core/event/loop/task_scheduler.h"
 #include "core/event/loop/event_loop.h"
 #include "core/devtools/devtools_manager.h"
@@ -445,15 +446,32 @@ int main(int argc, char** argv) {
         
         event_loop.Run();
 
-        // 清理
+        // 清理 - 注意顺序：先释放持有 JSValue 的对象，最后释放 QuickJS 运行时
         std::cout << std::endl;
         std::cout << "Shutting down..." << std::endl;
+        
+        // 1. 关闭 DevTools（可能持有 DOM 引用）
         devtools.Shutdown();
-        runtime.reset();
-        document.reset();
+        
+        // 2. 清理字体缓存
         FontManager::GetInstance().ClearCache();
+        
+        // 3. 注销并释放窗口（可能持有事件回调）
         window_manager.UnregisterWindow(window);
         window.reset();
+        
+        // 4. 释放 document（持有 DOM 树和事件监听器，这些可能包含 JSValue）
+        document.reset();
+        
+        // 5. 清理 DOM 绑定缓存（释放缓存中的 JSValue）
+        DOMBindings::Cleanup(runtime->GetContext());
+        
+        // 6. 清理 DOM 绑定映射（释放所有 Node* -> JSValue 的映射）
+        // 必须在 QuickJS 运行时销毁之前调用
+        DOMBindingMap::GetInstance().Clear();
+        
+        // 7. 最后释放 QuickJS 运行时（此时所有 JSValue 应该已被释放）
+        runtime.reset();
 
         std::quick_exit(0);
     } catch (const std::exception& e) {
