@@ -1721,10 +1721,13 @@ static JSValue js_document_get_body(JSContext* ctx, JSValueConst this_val, int m
 static JSValue js_document_get_active_element(JSContext* ctx, JSValueConst this_val, int magic) {
     auto document = DOMBindings::UnwrapDocument(ctx, this_val);
     if (!document) {
+        std::cout << "[js_document_get_active_element] UnwrapDocument returned null" << std::endl;
         return JS_EXCEPTION;
     }
 
     auto active = document->GetActiveElement();
+    std::cout << "[js_document_get_active_element] GetActiveElement returned: " 
+              << (active ? active->GetTagName() : "null") << std::endl;
     if (!active) {
         // 如果没有焦点元素，返回 body
         auto body = document->GetBody();

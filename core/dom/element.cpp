@@ -1390,19 +1390,15 @@ void Element::ScrollIntoView(bool align_to_top) {
 }
 
 void Element::Focus() {
-    std::cout << "[Element::Focus] Called on <" << tag_name_ << ">" << std::endl;
-    
     // 获取所属文档
     auto doc = GetOwnerDocument();
     if (!doc) {
-        std::cout << "[Element::Focus] ERROR: No owner document!" << std::endl;
         return;
     }
     
     // 获取 Window 和 FocusManager
     Window* window = doc->GetWindow();
     if (!window) {
-        std::cout << "[Element::Focus] WARNING: No window!" << std::endl;
         // 回退到简单的焦点处理
         SetPseudoClass("focus", true);
         auto self = std::static_pointer_cast<Element>(shared_from_this());
@@ -1416,12 +1412,10 @@ void Element::Focus() {
     // 这样光标闪烁和键盘输入才能正常工作
     FocusManager* focus_manager = window->GetFocusManager();
     if (focus_manager) {
-        std::cout << "[Element::Focus] Using FocusManager::SetFocus()" << std::endl;
         focus_manager->SetWindow(window);
         auto self = std::static_pointer_cast<Element>(shared_from_this());
         focus_manager->SetFocus(self, false);
     } else {
-        std::cout << "[Element::Focus] WARNING: No FocusManager, using fallback" << std::endl;
         // 回退到原来的实现
         auto old_active = doc->GetActiveElement();
         if (old_active && old_active.get() != this) {

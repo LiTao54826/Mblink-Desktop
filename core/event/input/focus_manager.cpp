@@ -280,9 +280,17 @@ void FocusManager::OnNodeRemoved(Node* node, Node* /*parent*/) {
         return;
     }
 
+    // 关键修复：如果焦点元素正在被替换（如 Preact/React 重新渲染），
+    // 不要立即清除焦点。让新元素有机会获取焦点。
+    // 这种情况下，SetFocus 会在 OnNodeRemoved 之后被调用，
+    // 所以我们需要延迟检查焦点是否真的需要清除。
+    
     // 检查被移除的节点是否是焦点元素本身
     if (current_focus.get() == node) {
-        ClearFocus();
+        // 不立即清除焦点，而是重置 focus_element_
+        // 这样如果新元素调用 SetFocus，焦点会正确转移
+        // 如果没有新元素获取焦点，activeElement 会返回 body（符合规范）
+        focus_element_.reset();
         return;
     }
 
@@ -291,7 +299,8 @@ void FocusManager::OnNodeRemoved(Node* node, Node* /*parent*/) {
     std::shared_ptr<Node> current = current_focus;
     while (current) {
         if (current.get() == node) {
-            ClearFocus();
+            // 同样，不立即清除焦点
+            focus_element_.reset();
             return;
         }
         current = current->GetParentNode();

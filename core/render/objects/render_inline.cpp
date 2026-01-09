@@ -104,10 +104,23 @@ void RenderInline::PositionChildrenOnly() {
     
     float content_height = layout_info_.height - padding_top - padding_bottom;
     
+    // DEBUG: 输出 inline 元素子元素定位信息
+    static bool debug_inline = std::getenv("DEBUG_INLINE_POS") != nullptr;
+    
     float current_x = padding_left;
     for (auto& child : children_) {
         auto& child_layout = child->GetLayoutInfo();
         float child_y = padding_top + (content_height - child_layout.height) / 2.0f;
+        
+        if (debug_inline) {
+            std::cout << "[RenderInline::PositionChildrenOnly]"
+                      << " parent_h=" << layout_info_.height
+                      << " content_h=" << content_height
+                      << " child_h=" << child_layout.height
+                      << " child_y=" << child_y
+                      << " padding_top=" << padding_top
+                      << std::endl;
+        }
         
         child_layout.x = current_x;
         child_layout.y = child_y;
