@@ -85,6 +85,12 @@ bool FocusManager::SetFocus(std::shared_ptr<Element> element, bool focus_visible
     // 更新焦点元素
     focus_element_ = element;
 
+    // 关键修复：同步更新 Document 的 activeElement
+    // 这样 document.activeElement 才能返回正确的值
+    if (doc) {
+        doc->SetActiveElement(element);
+    }
+
     // 如果是输入元素、contentEditable 元素或终端元素，启用SDL文本输入
     std::string tag_name = element->GetTagName();
     if (tag_name == "input" || tag_name == "textarea" || tag_name == "terminal" || element->IsContentEditable()) {
@@ -141,6 +147,12 @@ void FocusManager::Blur(std::shared_ptr<Element> element) {
 
         // 清除焦点
         focus_element_.reset();
+
+        // 同步清除 Document 的 activeElement
+        auto doc = std::dynamic_pointer_cast<Document>(element->GetOwnerDocument());
+        if (doc) {
+            doc->SetActiveElement(nullptr);
+        }
 
         // 触发重绘以隐藏光标
         if (window_) {
@@ -244,6 +256,12 @@ void FocusManager::ClearFocus() {
         }
 
         SendFocusEvents(current_focus, nullptr, false);
+
+        // 同步清除 Document 的 activeElement
+        auto doc = std::dynamic_pointer_cast<Document>(current_focus->GetOwnerDocument());
+        if (doc) {
+            doc->SetActiveElement(nullptr);
+        }
 
         // 触发重绘
         if (window_) {
