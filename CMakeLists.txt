@@ -48,15 +48,35 @@ endif()
 if(MSVC)
     add_compile_options(/W0 /utf-8)
     # Use static runtime /MT to match prebuilt Skia library
-    # Skia uses /MT for both Debug and Release configurations
     add_compile_options(/MT)
-    # 生成调试符号（用于崩溃调试）
-    add_compile_options(/Zi)
-    add_link_options(/DEBUG)
     add_compile_definitions(_ITERATOR_DEBUG_LEVEL=0)
     set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded" CACHE STRING "MSVC runtime library" FORCE)
+    
+    # Release 优化：移除调试符号，启用最大优化
+    if(CMAKE_BUILD_TYPE STREQUAL "Release" OR CMAKE_CONFIGURATION_TYPES)
+        add_compile_options(
+            $<$<CONFIG:Release>:/O2>      # 最大速度优化
+            $<$<CONFIG:Release>:/Ob2>     # 内联扩展
+            $<$<CONFIG:Release>:/Oi>      # 启用内部函数
+            $<$<CONFIG:Release>:/Gy>      # 函数级链接
+            $<$<CONFIG:Release>:/GS->     # 禁用安全检查
+        )
+        add_link_options(
+            $<$<CONFIG:Release>:/OPT:REF>   # 移除未引用函数
+            $<$<CONFIG:Release>:/OPT:ICF>   # 相同 COMDAT 折叠
+            $<$<CONFIG:Release>:/DEBUG:NONE> # 不生成调试信息
+        )
+    endif()
+    # Debug 配置保留调试符号
+    add_compile_options($<$<CONFIG:Debug>:/Zi>)
+    add_link_options($<$<CONFIG:Debug>:/DEBUG>)
 else()
     add_compile_options(-w)  # Disable all warnings
+    # Release 优化
+    if(CMAKE_BUILD_TYPE STREQUAL "Release")
+        add_compile_options(-O3 -fvisibility=hidden -ffunction-sections -fdata-sections)
+        add_link_options(-Wl,--gc-sections -s)
+    endif()
 endif()
 
 # Output Directories
@@ -77,8 +97,7 @@ add_subdirectory(core)
 
 # Language Bindings
 if(LIGHTUI_BUILD_PYTHON_BINDING)
-    # Python binding is built via setup.py, not CMake
-    message(STATUS "Python binding will be built via setup.py")
+    add_subdirectory(bindings/python)
 endif()
 
 # Tools

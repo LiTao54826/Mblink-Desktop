@@ -398,6 +398,12 @@ private:
     SDL_Cursor* cursor_ew_resize_ = nullptr;  // 水平调整大小光标（分割线）
     SDL_Cursor* cursor_ns_resize_ = nullptr;  // 垂直调整大小光标（面板边界）
     SDL_SystemCursor current_cursor_type_ = SDL_SYSTEM_CURSOR_DEFAULT;  // 当前光标类型
+    bool cursors_initialized_ = false;  // 光标是否已初始化（延迟初始化）
+
+    /**
+     * @brief 确保光标已初始化（延迟初始化）
+     */
+    void EnsureCursorsInitialized();
 
     /**
      * @brief 初始化系统光标

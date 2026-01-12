@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>侧边菜单测试</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            display: flex;
+            height: 100vh;
+            background: #f5f5f5;
+        }
+        
+        /* 侧边栏 */
+        .sidebar {
+            width: 240px;
+            background: linear-gradient(180deg, #1a1a2e 0%, #16213e 100%);
+            color: white;
+            display: flex;
+            flex-direction: column;
+            flex-shrink: 0;
+        }
+        
+        .sidebar-header {
+            padding: 24px 20px;
+            border-bottom: 1px solid rgba(255,255,255,0.1);
+        }
+        
+        .sidebar-header h1 {
+            font-size: 20px;
+            font-weight: 600;
+            color: #e94560;
+        }
+        
+        .nav-menu {
+            flex: 1;
+            padding: 16px 0;
+        }
+        
+        .nav-item {
+            display: flex;
+            align-items: center;
+            padding: 12px 20px;
+            color: rgba(255,255,255,0.7);
+            cursor: pointer;
+            transition: all 0.2s;
+            border-left: 3px solid transparent;
+        }
+        
+        .nav-item:hover {
+            background: rgba(255,255,255,0.05);
+            color: white;
+        }
+        
+        .nav-item.active {
+            background: rgba(233, 69, 96, 0.15);
+            color: #e94560;
+            border-left-color: #e94560;
+        }
+        
+        .nav-icon {
+            width: 20px;
+            margin-right: 12px;
+            text-align: center;
+        }
+        
+        /* 主内容区 */
+        .main-content {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+        
+        .header {
+            height: 60px;
+            background: white;
+            border-bottom: 1px solid #e0e0e0;
+            display: flex;
+            align-items: center;
+            padding: 0 24px;
+        }
+        
+        .header-title {
+            font-size: 18px;
+            font-weight: 600;
+            color: #333;
+        }
+        
+        .content {
+            flex: 1;
+            padding: 24px;
+            overflow-y: auto;
+        }
+        
+        .page {
+            display: none;
+        }
+        
+        .page.active {
+            display: block;
+        }
+        
+        .card {
+            background: white;
+            border-radius: 12px;
+            padding: 24px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+        }
+        
+        .card-title {
+            font-size: 16px;
+            font-weight: 600;
+            color: #333;
+            margin-bottom: 16px;
+        }
+        
+        .card-content {
+            color: #666;
+            line-height: 1.6;
+        }
+    </style>
+</head>
+<body>
+    <!-- 侧边栏 -->
+    <div class="sidebar">
+        <div class="sidebar-header">
+            <h1>🚀 LightUI</h1>
+        </div>
+        
+        <div class="nav-menu">
+            <div class="nav-item active" id="nav-home" onclick="navigateTo('home')">
+                <span class="nav-icon">🏠</span>
+                <span>首页</span>
+            </div>
+            <div class="nav-item" id="nav-dashboard" onclick="navigateTo('dashboard')">
+                <span class="nav-icon">📊</span>
+                <span>数据面板</span>
+            </div>
+            <div class="nav-item" id="nav-settings" onclick="navigateTo('settings')">
+                <span class="nav-icon">⚙️</span>
+                <span>设置</span>
+            </div>
+        </div>
+    </div>
+    
+    <!-- 主内容区 -->
+    <div class="main-content">
+        <div class="header">
+            <div class="header-title" id="page-title">首页</div>
+        </div>
+        
+        <div class="content">
+            <div class="page active" id="page-home">
+                <div class="card">
+                    <div class="card-title">首页内容</div>
+                    <div class="card-content">这是首页的内容区域。</div>
+                </div>
+            </div>
+            
+            <div class="page" id="page-dashboard">
+                <div class="card">
+                    <div class="card-title">数据面板</div>
+                    <div class="card-content">这是数据面板的内容区域。</div>
+                </div>
+            </div>
+            
+            <div class="page" id="page-settings">
+                <div class="card">
+                    <div class="card-title">设置</div>
+                    <div class="card-content">这是设置页面的内容区域。</div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        var pageTitles = {
+            'home': '首页',
+            'dashboard': '数据面板',
+            'settings': '设置'
+        };
+        
+        function navigateTo(pageId) {
+            console.log('navigateTo: ' + pageId);
+            
+            // 方法1: 使用 setAttribute 而不是直接设置 className
+            // 更新导航高亮
+            var navItems = document.querySelectorAll('.nav-item');
+            console.log('Found nav items: ' + navItems.length);
+            for (var i = 0; i < navItems.length; i++) {
+                navItems[i].setAttribute('class', 'nav-item');
+            }
+            var activeNav = document.getElementById('nav-' + pageId);
+            if (activeNav) {
+                activeNav.setAttribute('class', 'nav-item active');
+                console.log('Set active nav: nav-' + pageId);
+            }
+            
+            // 切换页面显示
+            var pages = document.querySelectorAll('.page');
+            console.log('Found pages: ' + pages.length);
+            for (var i = 0; i < pages.length; i++) {
+                pages[i].setAttribute('class', 'page');
+            }
+            var activePage = document.getElementById('page-' + pageId);
+            if (activePage) {
+                activePage.setAttribute('class', 'page active');
+                console.log('Set active page: page-' + pageId);
+            }
+            
+            // 更新标题
+            var titleEl = document.getElementById('page-title');
+            if (titleEl && pageTitles[pageId]) {
+                titleEl.textContent = pageTitles[pageId];
+                console.log('Set title: ' + pageTitles[pageId]);
+            }
+        }
+        
+        console.log('侧边菜单测试已加载');
+    </script>
+</body>
+</html>

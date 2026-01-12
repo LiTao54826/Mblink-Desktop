@@ -131,6 +131,20 @@ typedef enum {
     LIGHTUI_TYPE_OBJECT
 } LightUIType;
 
+// 错误码
+typedef enum {
+    LIGHTUI_OK = 0,
+    LIGHTUI_ERR_INVALID_HANDLE = -1,
+    LIGHTUI_ERR_NOT_FOUND = -2,
+    LIGHTUI_ERR_TYPE_MISMATCH = -3,
+    LIGHTUI_ERR_INDEX_OUT_OF_RANGE = -4,
+    LIGHTUI_ERR_INVALID_JSON = -5,
+    LIGHTUI_ERR_ALREADY_EXISTS = -6,
+    LIGHTUI_ERR_INVALID_NAME = -7,
+    LIGHTUI_ERR_QUEUE_FULL = -8,
+    LIGHTUI_ERR_UNKNOWN = -99
+} LightUIError;
+
 // ========== 生命周期 ==========
 int lightui_init(void);
 void lightui_cleanup(void);
@@ -246,21 +260,23 @@ import lightui
 app = lightui.App(title="My App", width=800, height=600)
 
 # ========== 状态管理 ==========
-users = app.state("users", [])
-count = app.state("count", 0)
-config = app.state("config", {"theme": "light"})
+# state() 返回 State 代理对象，而非原始值
+# State 对象提供类型安全的读写方法
+users = app.state("users", [])      # State[list]
+count = app.state("count", 0)       # State[int]
+config = app.state("config", {"theme": "light"})  # State[dict]
 
-# 读取
-print(users.get())
-print(count.get())
+# 读取 - 返回当前值的拷贝
+print(users.get())    # -> [...]
+print(count.get())    # -> 0
 
-# 写入（线程安全）
+# 写入（线程安全，操作入队后立即返回）
 users.set([{"name": "Alice"}, {"name": "Bob"}])
 users.append({"name": "Charlie"})
 count.set(10)
 count.increment(1)
 
-# 监听变化
+# 监听变化（回调在主线程的下一帧触发）
 @users.watch
 def on_users_change(new_value):
     print(f"Users: {len(new_value)}")
@@ -285,26 +301,80 @@ app.load_file("ui/app.js")
 app.run()
 ```
 
+### State 类型定义
+
+```python
+from typing import TypeVar, Generic, Callable, List, Dict, Any
+
+T = TypeVar('T')
+
+class State(Generic[T]):
+    """状态代理对象，提供线程安全的读写操作"""
+    
+    def get(self) -> T:
+        """获取当前值的拷贝"""
+        ...
+    
+    def set(self, value: T) -> None:
+        """设置新值（入队，立即返回）"""
+        ...
+    
+    def watch(self, callback: Callable[[T], None]) -> int:
+        """监听变化，返回 watch_id"""
+        ...
+    
+    def unwatch(self, watch_id: int) -> None:
+        """取消监听"""
+        ...
+
+class IntState(State[int]):
+    """整数状态，支持原子操作"""
+    def increment(self, delta: int = 1) -> None: ...
+    def multiply(self, factor: float) -> None: ...
+
+class ListState(State[List[Any]]):
+    """列表状态，支持数组操作"""
+    def append(self, item: Any) -> None: ...
+    def pop(self) -> None: ...
+    def remove(self, index: int) -> None: ...
+    def clear(self) -> None: ...
+
+class DictState(State[Dict[str, Any]]):
+    """字典状态，支持对象操作"""
+    def set_key(self, key: str, value: Any) -> None: ...
+    def remove_key(self, key: str) -> None: ...
+    def clear(self) -> None: ...
+
+class StringState(State[str]):
+    """字符串状态，支持字符串操作"""
+    def append(self, suffix: str) -> None: ...
+    def prepend(self, prefix: str) -> None: ...
+```
+
 ## JavaScript API
 
 ```javascript
 // ========== 调用宿主语言函数 ==========
+// 同步调用，阻塞等待结果
 const data = host.call('get_data');
 const result = host.call('save_item', {name: 'test'});
 
 // ========== 共享状态 ==========
-// 获取
+// 获取（返回当前值的拷贝）
 const users = host.state.get('users');
 
-// 设置（会通知 Python）
+// 设置（入队后立即返回，Python 回调在下一帧触发）
 host.state.set('users', [...users, newUser]);
 
-// 监听（Python 修改时触发）
+// 监听（Python 端修改时，在下一帧触发回调）
 host.state.watch('users', (newValue) => {
     console.log('Users updated:', newValue);
 });
 
 // ========== React/Preact Hook ==========
+// useSharedState 返回 [value, setter] 元组
+// - value: 当前状态值，状态变化时自动触发重渲染
+// - setter: 设置函数，调用后入队并立即返回
 function UserList() {
     const [users, setUsers] = useSharedState('users');
     const [count, setCount] = useSharedState('count');
@@ -318,6 +388,32 @@ function UserList() {
         h('button', { onClick: () => setCount(count + 1) }, '+1')
     ]);
 }
+```
+
+### 同步机制说明
+
+```
+  Python Thread              Main Thread (Event Loop)
+       │                              │
+  state.set(value)                    │
+       │                              │
+       ├─► 入队操作 ─────────────────►│
+       │   (立即返回)                 │
+       │                              ▼
+       │                     ┌────────────────┐
+       │                     │ processQueue() │
+       │                     │  (每帧调用)    │
+       │                     └───────┬────────┘
+       │                             │
+       │                             ▼
+       │                     ┌────────────────┐
+       │                     │ 应用状态变更    │
+       │                     └───────┬────────┘
+       │                             │
+       │                             ├─► 通知 Python 回调
+       │                             │
+       │                             └─► 通知 JS 监听器
+       │                                  └─► 触发 React 重渲染
 ```
 
 
@@ -436,18 +532,7 @@ render(h(TaskManager), document.body);
 
 namespace lightui {
 
-// 状态值类型
-using StateValue = std::variant<
-    std::nullptr_t,                              // null
-    bool,                                        // bool
-    int64_t,                                     // int
-    double,                                      // double
-    std::string,                                 // string
-    std::vector<StateValue>,                     // array (递归需要特殊处理)
-    std::unordered_map<std::string, StateValue>  // object
->;
-
-// 简化：使用 nlohmann::json 作为内部存储
+// 使用 nlohmann::json 作为内部存储，天然支持递归结构
 #include "nlohmann/json.hpp"
 using json = nlohmann::json;
 
@@ -684,20 +769,25 @@ lightui/
 - [ ] StateManager 实现
 - [ ] C API 实现
 - [ ] JS host 对象绑定
-- [ ] useSharedState Hook
 
-### Phase 2: Python 绑定
+### Phase 2: JS 状态集成
+- [ ] useSharedState Hook 实现
+- [ ] 状态变更触发重渲染
+- [ ] 端到端验证（C++ ↔ JS 双向同步）
+
+### Phase 3: Python 绑定
 - [ ] pybind11 封装
 - [ ] App 类
-- [ ] State 类
+- [ ] State 类（含类型特化）
 - [ ] 装饰器支持
+- [ ] 端到端验证（Python ↔ C++ ↔ JS 三向同步）
 
-### Phase 3: 组件库
+### Phase 4: 组件库
 - [ ] 基础组件 (Button, Input, Select)
 - [ ] 布局组件 (Row, Column, Grid)
 - [ ] 数据组件 (Table, List)
 - [ ] 反馈组件 (Modal, Toast)
 
-### Phase 4: 其他语言
+### Phase 5: 其他语言
 - [ ] Rust 绑定
 - [ ] Go 绑定

@@ -109,7 +109,8 @@ EventLoop::EventLoop()
         clipboard_manager_.get()
     );
 
-    InitSystemCursors();
+    // 延迟初始化光标（在第一次使用时初始化，避免 SDL 未初始化的问题）
+    // InitSystemCursors() 将在 EnsureCursorsInitialized() 中调用
     
     // 设置所有现有窗口的 FocusManager
     auto& wm = WindowManager::Instance();
@@ -160,7 +161,8 @@ EventLoop::EventLoop(std::shared_ptr<TaskScheduler> task_scheduler)
         clipboard_manager_.get()
     );
 
-    InitSystemCursors();
+    // 延迟初始化光标（在第一次使用时初始化，避免 SDL 未初始化的问题）
+    // InitSystemCursors() 将在 EnsureCursorsInitialized() 中调用
     
     // 设置所有现有窗口的 FocusManager
     auto& wm = WindowManager::Instance();
@@ -1085,6 +1087,13 @@ void EventLoop::HandleMouseWheelEventForDOM(const SDL_Event& event) {
 // ===== 系统光标管理实现 =====
 // 参考：RmlUi/Backends/RmlUi_Platform_SDL.cpp
 
+void EventLoop::EnsureCursorsInitialized() {
+    if (!cursors_initialized_) {
+        InitSystemCursors();
+        cursors_initialized_ = true;
+    }
+}
+
 void EventLoop::InitSystemCursors() {
     // 创建系统光标（SDL3 API）
     cursor_default_ = SDL_CreateSystemCursor(SDL_SYSTEM_CURSOR_DEFAULT);
@@ -1119,6 +1128,9 @@ void EventLoop::DestroySystemCursors() {
 }
 
 void EventLoop::SetSystemCursor(SDL_SystemCursor cursor_type) {
+    // 延迟初始化光标
+    EnsureCursorsInitialized();
+    
     // 避免重复设置相同的光标
     if (cursor_type == current_cursor_type_) {
         return;

@@ -23,6 +23,8 @@
 #include "core/event/loop/event_loop.h"
 #include "core/devtools/devtools_manager.h"
 #include "core/render/text/font_manager.h"
+#include "core/bridge/host_bridge.h"
+#include "core/bridge/state_manager.h"
 #include "embedded_js.h"
 
 extern "C" {
@@ -362,6 +364,12 @@ int main(int argc, char** argv) {
         std::cout << "[DEBUG] WindowBindings created" << std::endl; std::cout.flush();
         window_bindings.InitBindings();
         std::cout << "  ✓ Window bindings initialized" << std::endl; std::cout.flush();
+
+        // 初始化 StateManager 和 HostBridge
+        auto state_manager = std::make_unique<StateManager>();
+        auto host_bridge = std::make_unique<HostBridge>(runtime->GetContext(), state_manager.get());
+        host_bridge->registerGlobal();
+        std::cout << "  ✓ Host bridge initialized" << std::endl; std::cout.flush();
 
         // 创建事件循环（需要在加载模块之前，以便 getSelection 等 API 可用）
         std::cout << "[DEBUG] Creating EventLoop..." << std::endl; std::cout.flush();

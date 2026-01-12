@@ -26,6 +26,7 @@ target_link_libraries(esm_loader PRIVATE
     lightui_layout
     lightui_lexbor
     lightui_network
+    lightui_bridge
     SDL3::SDL3-static
     skia
 )

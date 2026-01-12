@@ -94,3 +94,4 @@ test_*.bat
 # All historical task docs are in history_task_docs/
 .claude/settings.local.json
 参考/
+.hypothesis/
