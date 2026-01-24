@@ -4,14 +4,17 @@
  *
  * 使用 pybind11 将 LightUI C++ API 暴露给 Python。
  * 编译成 .pyd (Windows) 或 .so (Linux/macOS) 扩展模块。
- * 
+ *
  * Phase 1: 状态管理功能（已完成）
  * Phase 2: Window 绑定（已完成）
+ * Phase 3: 完整功能修复（增量渲染、FetchBindings、DevTools 等）
  */
 
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
 #include <pybind11/functional.h>
+
+#include <iostream>
 
 #include "core/bridge/state_manager.h"
 #include "core/bridge/host_bridge.h"
@@ -20,23 +23,31 @@
 #include "core/dom/document.h"
 #include "core/dom/element.h"
 #include "core/dom/bindings/dom_bindings.h"
+
 #include "core/event/loop/event_loop.h"
 #include "core/event/loop/task_scheduler.h"
 #include "core/quickjs/quickjs_runtime.h"
 #include "core/quickjs/window_bindings.h"
+#include "core/network/fetch_bindings.h"
+#include "core/devtools/devtools_manager.h"
+#include "core/render/image/image_loader.h"
+#include "core/render/text/font_manager.h"
 #include "nlohmann/json.hpp"
 
 #include <memory>
 #include <unordered_map>
 #include <string>
 #include <cstdlib>
+#include <filesystem>
 
 namespace py = pybind11;
 using namespace lightui;
 using json = nlohmann::json;
+namespace fs = std::filesystem;
 
 // 前向声明
 class PyRuntime;
+class PyWindow;
 
 // ========== JSON ↔ Python 转换 ==========
 
@@ -513,16 +524,27 @@ public:
         if (!doc_) return false;
         bool result = doc_->LoadHTML(html);
         if (result) {
+            // 重新设置全局 document（因为 LoadHTML 会重建 DOM 树）
+            // 这样 JS 端的 document.head/body 才能正确获取
+            auto runtime = doc_->GetJSRuntime();
+            if (runtime) {
+                DOMBindings::SetGlobalDocument(runtime->GetContext(), doc_);
+            }
             // 自动执行 <script> 标签中的代码
             doc_->ExecuteScripts();
         }
         return result;
     }
-    
+
     bool loadHTMLFile(const std::string& path) {
         if (!doc_) return false;
         bool result = doc_->LoadHTMLFile(path);
         if (result) {
+            // 重新设置全局 document（因为 LoadHTML 会重建 DOM 树）
+            auto runtime = doc_->GetJSRuntime();
+            if (runtime) {
+                DOMBindings::SetGlobalDocument(runtime->GetContext(), doc_);
+            }
             // 自动执行 <script> 标签中的代码
             doc_->ExecuteScripts();
         }
@@ -714,8 +736,23 @@ public:
         }
     }
     
+    /**
+     * @brief 检查窗口是否需要重绘（增量渲染）
+     */
+    bool needsRepaint() const {
+        return window_ ? window_->NeedsRepaint() : false;
+    }
+
+    /**
+     * @brief 标记窗口需要重绘
+     */
+    void markDirty() {
+        if (window_) window_->SetNeedsRepaint();
+    }
+
     std::shared_ptr<Window> getWindow() const { return window_; }
-    
+    std::shared_ptr<Document> getDocumentPtr() const { return document_; }
+
     bool isValid() const { return window_ != nullptr; }
 
 private:
@@ -726,21 +763,21 @@ private:
 };
 
 /**
- * @brief PyEventLoop - 事件循环包装类
+ * @brief PyEventLoop - 事件循环包装类（支持增量渲染）
  */
 class PyEventLoop {
 public:
     PyEventLoop() : event_loop_(std::make_unique<EventLoop>()) {}
-    
+
     /**
      * @brief 使用 TaskScheduler 创建事件循环（支持 setTimeout 等异步任务）
      */
-    PyEventLoop(std::shared_ptr<TaskScheduler> task_scheduler) 
+    PyEventLoop(std::shared_ptr<TaskScheduler> task_scheduler)
         : task_scheduler_(task_scheduler)
         , event_loop_(std::make_unique<EventLoop>(task_scheduler)) {}
-    
+
     ~PyEventLoop() = default;
-    
+
     void run() {
         if (event_loop_) {
             // 设置内部更新回调，每帧处理 StateManager 队列
@@ -750,7 +787,7 @@ public:
                 event_loop_->SetUpdateCallback([sm, user_callback](float dt) {
                     // 先处理状态队列（主线程）
                     sm->processQueue();
-                    
+
                     // 再调用用户回调
                     if (user_callback) {
                         py::gil_scoped_acquire acquire;
@@ -758,7 +795,18 @@ public:
                     }
                 });
             }
-            
+
+            // 设置默认渲染回调（增量渲染）
+            if (!user_render_callback_ && window_) {
+                auto win = window_;
+                event_loop_->SetRenderCallback([win]() {
+                    if (win->NeedsRepaint()) {
+                        win->Render();
+                        win->SwapBuffers();
+                    }
+                });
+            }
+
             py::gil_scoped_release release;
             event_loop_->Run();
         }
@@ -766,11 +814,11 @@ public:
         // 参考 esm_loader 的实现
         std::quick_exit(0);
     }
-    
+
     void stop() {
         if (event_loop_) event_loop_->Stop();
     }
-    
+
     void runOnce() {
         if (event_loop_) {
             // 处理状态队列
@@ -781,34 +829,45 @@ public:
             event_loop_->RunOnce();
         }
     }
-    
+
     bool isRunning() const {
         return event_loop_ ? event_loop_->IsRunning() : false;
     }
-    
+
     bool shouldQuit() const {
         return event_loop_ ? event_loop_->ShouldQuit() : true;
     }
-    
+
     /**
      * @brief 设置 QuickJS 运行时（用于执行 JS 定时器回调）
      */
     void setQuickJSRuntime(QuickJSRuntime* runtime) {
         if (event_loop_) {
             event_loop_->SetQuickJSRuntime(runtime);
+            // 设置全局 EventLoop（用于 execCommand 等 DOM API）
+            if (runtime) {
+                DOMBindings::SetGlobalEventLoop(runtime->GetContext(), event_loop_.get());
+            }
         }
     }
-    
+
+    /**
+     * @brief 设置 Window（用于自动增量渲染）
+     */
+    void setWindow(std::shared_ptr<Window> window) {
+        window_ = window;
+    }
+
     /**
      * @brief 设置 StateManager（用于线程安全的状态队列处理）
-     * 
+     *
      * 设置后，EventLoop 会在每帧自动调用 StateManager::processQueue()
      * 这样后台线程的状态更新会在主线程统一处理
      */
     void setStateManager(StateManager* sm) {
         state_manager_ = sm;
     }
-    
+
     void setUpdateCallback(py::function callback) {
         user_update_callback_ = callback;
         // 如果还没有 StateManager，直接设置回调
@@ -820,17 +879,27 @@ public:
             });
         }
     }
-    
+
     void setRenderCallback(py::function callback) {
+        user_render_callback_ = callback;
         if (event_loop_) {
             auto cb = callback;
-            event_loop_->SetRenderCallback([cb]() {
+            auto win = window_;
+            event_loop_->SetRenderCallback([cb, win]() {
                 py::gil_scoped_acquire acquire;
-                try { cb(); } catch (...) {}
+                try {
+                    cb();
+                } catch (...) {}
+
+                // 如果用户没有手动渲染，自动执行增量渲染
+                if (win && win->NeedsRepaint()) {
+                    win->Render();
+                    win->SwapBuffers();
+                }
             });
         }
     }
-    
+
     void setIdleCallback(py::function callback) {
         if (event_loop_) {
             auto cb = callback;
@@ -840,48 +909,110 @@ public:
             });
         }
     }
-    
+
     EventLoop* getEventLoop() const { return event_loop_.get(); }
 
 private:
     std::shared_ptr<TaskScheduler> task_scheduler_;
     std::unique_ptr<EventLoop> event_loop_;
+    std::shared_ptr<Window> window_;         // 窗口（用于自动增量渲染）
     StateManager* state_manager_ = nullptr;  // 状态管理器（用于线程安全队列处理）
     py::function user_update_callback_;      // 用户的更新回调
+    py::function user_render_callback_;      // 用户的渲染回调
 };
 
 /**
- * @brief PyRuntime - QuickJS 运行时包装类
+ * @brief PyRuntime - QuickJS 运行时包装类（支持 ES 模块和 FetchBindings）
  */
 class PyRuntime {
 public:
     PyRuntime() : runtime_(std::make_unique<QuickJSRuntime>()) {}
-    
-    ~PyRuntime() = default;
-    
+
+    ~PyRuntime() {
+        // 清理 FetchBindings
+        fetch_bindings_.reset();
+
+        // 清理 DOM 绑定
+        if (runtime_) {
+            DOMBindings::Cleanup(runtime_->GetContext());
+        }
+
+        // 清理运行时
+        runtime_.reset();
+    }
+
     py::object eval(const std::string& code, const std::string& filename = "<eval>") {
         if (!runtime_) return py::none();
-        auto result = runtime_->Eval(code, filename);
-        return jsonToPython(result);
+
+        try {
+            auto result = runtime_->Eval(code, filename);
+            return jsonToPython(result);
+        } catch (const std::exception& e) {
+            std::cerr << "[JS Error] " << filename << ": " << e.what() << std::endl;
+            throw py::value_error(std::string("JavaScript execution failed: ") + e.what());
+        }
     }
-    
+
     py::object evalModule(const std::string& code, const std::string& filename = "<module>") {
         if (!runtime_) return py::none();
-        auto result = runtime_->EvalModule(code, filename);
-        return jsonToPython(result);
+
+        try {
+            auto result = runtime_->EvalModule(code, filename);
+            return jsonToPython(result);
+        } catch (const std::exception& e) {
+            std::cerr << "[JS Module Error] " << filename << ": " << e.what() << std::endl;
+            throw py::value_error(std::string("JavaScript module execution failed: ") + e.what());
+        }
     }
-    
+
     py::object evalFile(const std::string& path) {
         if (!runtime_) return py::none();
-        auto result = runtime_->EvalFile(path);
-        return jsonToPython(result);
+
+        try {
+            auto result = runtime_->EvalFile(path);
+            return jsonToPython(result);
+        } catch (const std::exception& e) {
+            std::cerr << "[JS File Error] " << path << ": " << e.what() << std::endl;
+            throw py::value_error(std::string("JavaScript file execution failed: ") + e.what());
+        }
     }
-    
+
+    /**
+     * @brief 注册虚拟 ES 模块
+     * @param name 模块名（如 "preact", "preact/hooks"）
+     * @param code 模块代码（必须包含 export 语句）
+     */
+    void registerModule(const std::string& name, const std::string& code) {
+        if (runtime_) {
+            runtime_->RegisterModule(name, code);
+        }
+    }
+
+    /**
+     * @brief 设置模块基础路径（用于解析相对路径的模块）
+     */
+    void setBaseModulePath(const std::string& path) {
+        if (runtime_) {
+            runtime_->SetBaseModulePath(path);
+        }
+    }
+
+    /**
+     * @brief 初始化 FetchBindings（网络请求 API）
+     */
+    void initFetchBindings(std::shared_ptr<TaskScheduler> scheduler) {
+        if (runtime_ && scheduler) {
+            fetch_bindings_ = std::make_unique<FetchBindings>(runtime_->GetContext(), scheduler);
+            fetch_bindings_->InitBindings();
+        }
+    }
+
     QuickJSRuntime* getRuntime() const { return runtime_.get(); }
     JSContext* getContext() const { return runtime_ ? runtime_->GetContext() : nullptr; }
 
 private:
     std::unique_ptr<QuickJSRuntime> runtime_;
+    std::unique_ptr<FetchBindings> fetch_bindings_;
 };
 
 /**
@@ -1109,6 +1240,21 @@ PYBIND11_MODULE(lightui_core, m) {
         .def("load_html", &PyDocument::loadHTML, py::arg("html"))
         .def("load_html_file", &PyDocument::loadHTMLFile, py::arg("path"))
         .def("save_html", &PyDocument::saveHTML)
+        .def("set_base_path", [](PyDocument& self, const std::string& path) {
+            if (self.getDocument()) {
+                self.getDocument()->SetBasePath(path);
+            }
+        }, py::arg("path"), "Set base path for resolving relative URLs")
+        .def("load_external_stylesheets", [](PyDocument& self) {
+            if (self.getDocument()) {
+                self.getDocument()->LoadExternalStylesheets();
+            }
+        }, "Load external stylesheets referenced in the document")
+        .def("execute_scripts", [](PyDocument& self) {
+            if (self.getDocument()) {
+                self.getDocument()->ExecuteScripts();
+            }
+        }, "Execute all script tags in the document")
         .def("is_valid", &PyDocument::isValid);
     
     py::class_<PyWindow, std::shared_ptr<PyWindow>>(m, "Window")
@@ -1135,6 +1281,8 @@ PYBIND11_MODULE(lightui_core, m) {
         .def("should_close", &PyWindow::shouldClose)
         .def("render", &PyWindow::render)
         .def("swap_buffers", &PyWindow::swapBuffers)
+        .def("needs_repaint", &PyWindow::needsRepaint, "Check if window needs repainting (incremental rendering)")
+        .def("mark_dirty", &PyWindow::markDirty, "Mark window as needing repaint")
         .def_property_readonly("document", &PyWindow::getDocument)
         .def("set_js_runtime", [](PyWindow& self, PyRuntime& runtime) {
             self.setJSRuntime(runtime.getRuntime());
@@ -1143,7 +1291,7 @@ PYBIND11_MODULE(lightui_core, m) {
         .def("set_on_close", &PyWindow::setOnClose, py::arg("callback"))
         .def("set_on_focus", &PyWindow::setOnFocus, py::arg("callback"))
         .def("set_on_blur", &PyWindow::setOnBlur, py::arg("callback"))
-        .def("get_task_scheduler", &PyWindow::getTaskScheduler, 
+        .def("get_task_scheduler", &PyWindow::getTaskScheduler,
              "Get the TaskScheduler for use with EventLoop")
         .def("is_valid", &PyWindow::isValid);
     
@@ -1158,7 +1306,10 @@ PYBIND11_MODULE(lightui_core, m) {
         .def("stop", &PyEventLoop::stop)
         .def("set_quickjs_runtime", [](PyEventLoop& self, PyRuntime& runtime) {
             self.setQuickJSRuntime(runtime.getRuntime());
-        }, py::arg("runtime"), "Set QuickJS runtime for executing JS timer callbacks")
+        }, py::arg("runtime"), "Set QuickJS runtime for executing JS timer callbacks and global EventLoop")
+        .def("set_window", [](PyEventLoop& self, std::shared_ptr<PyWindow> window) {
+            self.setWindow(window->getWindow());
+        }, py::arg("window"), "Set Window for automatic incremental rendering")
         .def("set_state_manager", [](PyEventLoop& self, PyApp& app) {
             self.setStateManager(app.getStateManager());
         }, py::arg("app"), "Set StateManager for thread-safe state queue processing (called each frame)")
@@ -1172,9 +1323,17 @@ PYBIND11_MODULE(lightui_core, m) {
     py::class_<PyRuntime>(m, "Runtime")
         .def(py::init<>())
         .def("eval", &PyRuntime::eval, py::arg("code"), py::arg("filename") = "<eval>")
-        .def("eval_module", &PyRuntime::evalModule, py::arg("code"), py::arg("filename") = "<module>")
-        .def("eval_file", &PyRuntime::evalFile, py::arg("path"));
-    
+        .def("eval_module", &PyRuntime::evalModule, py::arg("code"), py::arg("filename") = "<module>",
+             "Execute ES6 module code (supports import/export)")
+        .def("eval_file", &PyRuntime::evalFile, py::arg("path"))
+        .def("register_module", &PyRuntime::registerModule, py::arg("name"), py::arg("code"),
+             "Register a virtual ES module (e.g., 'preact', 'preact/hooks')")
+        .def("set_base_module_path", &PyRuntime::setBaseModulePath, py::arg("path"),
+             "Set base path for resolving relative module imports")
+        .def("init_fetch_bindings", [](PyRuntime& self, std::shared_ptr<TaskScheduler> scheduler) {
+            self.initFetchBindings(scheduler);
+        }, py::arg("task_scheduler"), "Initialize fetch API for network requests");
+
     py::class_<PyHostBridge>(m, "HostBridge")
         .def(py::init<PyRuntime*, PyApp*>(), py::arg("runtime"), py::arg("app"),
              "Create HostBridge from Runtime and App")
@@ -1186,6 +1345,40 @@ PYBIND11_MODULE(lightui_core, m) {
              "Call a function registered in the bridge")
         .def("is_valid", &PyHostBridge::isValid,
              "Check if the bridge is properly initialized");
-    
-    m.def("version", []() { return "0.4.0"; });
+
+    // ===== DevTools 支持 =====
+    // DevToolsManager 是单例，析构函数是私有的
+    // 使用 std::unique_ptr 的自定义删除器（不删除）来绑定
+    py::class_<DevToolsManager, std::unique_ptr<DevToolsManager, py::nodelete>>(m, "DevToolsManager")
+        .def_static("get_instance", []() -> DevToolsManager* {
+            return &DevToolsManager::GetInstance();
+        }, py::return_value_policy::reference,
+           "Get the singleton DevTools manager instance")
+        .def("initialize", [](DevToolsManager& self, std::shared_ptr<PyDocument> doc, std::shared_ptr<PyWindow> win) {
+            if (doc && win) {
+                self.Initialize(doc->getDocument().get(), win->getWindow().get());
+            }
+        }, py::arg("document"), py::arg("window"), "Initialize DevTools with document and window")
+        .def("open", &DevToolsManager::Open, "Open the DevTools panel")
+        .def("close", &DevToolsManager::Close, "Close the DevTools panel")
+        .def("toggle", &DevToolsManager::Toggle, "Toggle DevTools visibility")
+        .def("is_open", &DevToolsManager::IsOpen, "Check if DevTools is open")
+        .def("shutdown", &DevToolsManager::Shutdown, "Shutdown DevTools");
+
+    // ===== 全局辅助函数 =====
+    m.def("set_image_base_path", [](const std::string& path) {
+        ImageLoader::SetBasePath(path);
+    }, py::arg("path"), "Set base path for loading images");
+
+    m.def("clear_font_cache", []() {
+        FontManager::GetInstance().ClearCache();
+    }, "Clear the font cache");
+
+    m.def("cleanup_dom_bindings", [](PyRuntime& runtime) {
+        if (runtime.getContext()) {
+            DOMBindings::Cleanup(runtime.getContext());
+        }
+    }, py::arg("runtime"), "Clean up DOM bindings (call before destroying runtime)");
+
+    m.def("version", []() { return "0.5.0"; });
 }

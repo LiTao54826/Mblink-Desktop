@@ -161,28 +161,34 @@ JSValue HostBridge::jsPyCall(JSContext* ctx, JSValueConst thisVal,
                              int argc, JSValueConst* argv, int magic, JSValue* func_data) {
     (void)thisVal;
     (void)magic;
-    
+
     // func_data[0] = bridge 指针, func_data[1] = 函数名
     int64_t ptr;
     JS_ToInt64(ctx, &ptr, func_data[0]);
     auto* bridge = reinterpret_cast<HostBridge*>(ptr);
-    
+
     const char* name = JS_ToCString(ctx, func_data[1]);
     if (!bridge || !name) {
         if (name) JS_FreeCString(ctx, name);
         return JS_UNDEFINED;
     }
-    
+
     // 获取参数（如果有）
     std::string args = "null";
     if (argc > 0) {
         args = jsValueToJson(ctx, argv[0]);
     }
-    
+
     // 调用宿主函数
     std::string result = bridge->call(name, args);
     JS_FreeCString(ctx, name);
-    
+
+    // 立即处理 StateManager 队列，确保后续 get 能读到最新数据
+    // 这是关键：Python 函数可能修改了状态，需要立即应用
+    if (bridge->stateManager_) {
+        bridge->stateManager_->processQueue();
+    }
+
     // 返回结果
     return jsonToJsValue(ctx, result);
 }

@@ -32,6 +32,7 @@
 #include <memory>
 #include <string>
 #include <filesystem>
+#include <cstdlib>
 
 using namespace lightui;
 namespace fs = std::filesystem;
@@ -58,11 +59,13 @@ void PrintUsage(const char* program_name) {
     std::cout << "  --height <高度>     窗口高度 (默认: 600)" << std::endl;
     std::cout << "  --title <标题>      窗口标题 (默认: 从HTML title标签获取)" << std::endl;
     std::cout << "  --no-scripts        不执行脚本" << std::endl;
+    std::cout << "  -q, --quit <秒>     自动退出时间（秒）" << std::endl;
     std::cout << "  --help              显示此帮助信息" << std::endl;
     std::cout << std::endl;
     std::cout << "示例:" << std::endl;
     std::cout << "  " << program_name << " index.html" << std::endl;
     std::cout << "  " << program_name << " app.html --width 1024 --height 768" << std::endl;
+    std::cout << "  " << program_name << " test.html -q 5  # 5秒后自动退出" << std::endl;
 }
 
 // 从文档中获取 title
@@ -81,6 +84,7 @@ int main(int argc, char** argv) {
     int height = 1000;
     std::string title;
     bool execute_scripts = true;
+    float quit_after_seconds = 0;  // 0 表示不自动退出，单位：秒
     
     for (int i = 1; i < argc; i++) {
         std::string arg = argv[i];
@@ -96,6 +100,8 @@ int main(int argc, char** argv) {
             title = argv[++i];
         } else if (arg == "--no-scripts") {
             execute_scripts = false;
+        } else if ((arg == "-q" || arg == "--quit") && i + 1 < argc) {
+            quit_after_seconds = std::stof(argv[++i]);
         } else if (arg[0] != '-') {
             html_path = arg;
         }
@@ -245,6 +251,21 @@ int main(int argc, char** argv) {
             }
         });
 
+        // 如果设置了自动退出，使用更新回调计时
+        if (quit_after_seconds > 0) {
+            std::cout << "[Auto-quit] Will quit after " << quit_after_seconds << " seconds" << std::endl;
+            auto elapsed_time = std::make_shared<float>(0.0f);
+            auto frame_count = std::make_shared<int>(0);
+            event_loop.SetUpdateCallback([elapsed_time, frame_count, quit_after_seconds, &event_loop](float delta_time) {
+                (*frame_count)++;
+                *elapsed_time += delta_time;
+                if (*elapsed_time >= quit_after_seconds) {
+                    std::cout << "[Auto-quit] Completed " << *elapsed_time << " seconds (" << *frame_count << " frames), exiting..." << std::endl;
+                    event_loop.Stop();
+                }
+            });
+        }
+
         // 运行事件循环
         event_loop.Run();
 
@@ -256,7 +277,8 @@ int main(int argc, char** argv) {
         std::cout << "  👋 Application Closed" << std::endl;
         std::cout << "========================================" << std::endl;
 
-        return 0;
+        // 强制退出，避免清理时卡住
+        std::quick_exit(0);
     }
     catch (const std::exception& e) {
         std::cerr << "Error: " << e.what() << std::endl;

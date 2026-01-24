@@ -53,7 +53,7 @@ void WindowDOMObserver::OnNodeAdded(Node* node, Node* parent) {
         std::cout << "[OnNodeAdded] tag=" << tag << " IsInBatch=" << IsInBatch(node) << std::endl;
     }
     
-    // 处理 <style> 元素的添加：触发样式解析
+    // 处理 <style> 元素的添加：触发样式解析和渲染树重建
     if (node && node->GetNodeType() == NodeType::ELEMENT_NODE) {
         auto elem = std::dynamic_pointer_cast<Element>(node->shared_from_this());
         if (elem && elem->GetTagName() == "style") {
@@ -61,8 +61,16 @@ void WindowDOMObserver::OnNodeAdded(Node* node, Node* parent) {
             if (auto doc = node->GetOwnerDocument()) {
                 if (auto style_manager = doc->GetStyleManager()) {
                     style_manager->ParseStyleElement(elem.get());
+
+                    // 关键修复：样式表变化后需要重建渲染树
+                    // 否则新样式不会应用到已有的 DOM 元素
+                    if (window_) {
+                        window_->InvalidateRenderTree();
+                        window_->SetNeedsRepaint();
+                    }
                 }
             }
+            return;  // <style> 元素本身不需要渲染
         }
     }
     
@@ -276,6 +284,10 @@ void WindowDOMObserver::OnAttributeChanged(Element* element,
             // style: 确保 transform 等属性的动态更新能正确生效
             // class: 确保 CSS 类选择器匹配的样式能正确应用（如 .cm-activeLine）
             if (name == "style" || name == "class") {
+                // 保存旧的 display 值，用于检测可见性变化
+                const auto& old_style = render_obj->GetComputedStyle();
+                RenderObjectType old_display = old_style.display;
+                
                 StyleResolver resolver;
                 if (window_->GetDocument() && window_->GetDocument()->GetStyleManager()) {
                     resolver.SetStyleManager(window_->GetDocument()->GetStyleManager());
@@ -292,6 +304,17 @@ void WindowDOMObserver::OnAttributeChanged(Element* element,
                     }
                 }
                 auto new_style = resolver.ResolveStyle(elem_ptr, parent_style);
+                
+                // 关键修复：检测 display 属性变化（修复 CSS 类切换不触发渲染树更新的 Bug）
+                // 当 class 属性变化导致 display 从 none 变为其他值（或反之）时，需要重建渲染树
+                bool was_none = (old_display == RenderObjectType::NONE);
+                bool is_none = (new_style.display == RenderObjectType::NONE);
+                if (was_none != is_none) {
+                    // 可见性发生变化，需要重建渲染树
+                    window_->InvalidateRenderTree();
+                    window_->SetNeedsRepaint();
+                    return;
+                }
                 
                 render_obj->SetComputedStyle(new_style);
                 render_obj->InvalidatePaintCache();

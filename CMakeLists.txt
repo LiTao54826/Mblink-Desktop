@@ -46,7 +46,7 @@ endif()
 # Compiler Settings
 # Disable warnings and configure runtime library to match Skia
 if(MSVC)
-    add_compile_options(/W0 /utf-8)
+    add_compile_options(/W0 /utf-8 /EHsc)
     # Use static runtime /MT to match prebuilt Skia library
     add_compile_options(/MT)
     add_compile_definitions(_ITERATOR_DEBUG_LEVEL=0)
@@ -65,6 +65,7 @@ if(MSVC)
             $<$<CONFIG:Release>:/OPT:REF>   # 移除未引用函数
             $<$<CONFIG:Release>:/OPT:ICF>   # 相同 COMDAT 折叠
             $<$<CONFIG:Release>:/DEBUG:NONE> # 不生成调试信息
+            $<$<CONFIG:Release>:/INCREMENTAL:NO>  # 禁用增量链接（与 /OPT:ICF 兼容）
         )
     endif()
     # Debug 配置保留调试符号

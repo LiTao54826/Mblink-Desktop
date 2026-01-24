@@ -324,7 +324,7 @@ def main():
         print(f"统计: {get_stats(None)}")
         
         # 运行事件循环
-        # app.run()  # 取消注释以运行窗口
+        app.run()  # 取消注释以运行窗口
 
 
 if __name__ == "__main__":

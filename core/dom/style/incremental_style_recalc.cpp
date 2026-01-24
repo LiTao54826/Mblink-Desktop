@@ -98,9 +98,11 @@ void IncrementalStyleRecalc::RecalcStyleForElement(std::shared_ptr<Element> elem
         auto render_obj = element->GetRenderObject();
         if (render_obj) {
             // 使用 StyleResolver 重新计算样式
-            // 注意：这里需要访问 Document 的 RenderTreeBuilder 来获取 StyleResolver
-            // 为了简化，我们直接创建一个临时的 StyleResolver
+            // 关键修复：必须设置 StyleManager，否则 CSS 规则不会被应用
             StyleResolver resolver;
+            if (current_document_ && current_document_->GetStyleManager()) {
+                resolver.SetStyleManager(current_document_->GetStyleManager());
+            }
             ComputedStyle new_style = resolver.ResolveStyle(element, parent_style);
 
             // 保存旧样式用于比较

@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>C++ vs Python Test</title>
+</head>
+<body>
+    <h1>Test Page</h1>
+    <div id="result"></div>
+    
+    <script>
+        console.log('=== document.head/body 测试 ===');
+        console.log('document.head:', document.head);
+        console.log('document.body:', document.body);
+        console.log('document.head type:', typeof document.head);
+        console.log('document.body type:', typeof document.body);
+        
+        if (document.head) {
+            console.log('✅ document.head 存在');
+            console.log('  tagName:', document.head.tagName);
+        } else {
+            console.log('❌ document.head 不存在!');
+        }
+        
+        if (document.body) {
+            console.log('✅ document.body 存在');
+            console.log('  tagName:', document.body.tagName);
+        } else {
+            console.log('❌ document.body 不存在!');
+        }
+        
+        // 尝试创建元素并添加到 head
+        try {
+            var style = document.createElement('style');
+            style.textContent = 'body { background: #f0f0f0; }';
+            document.head.appendChild(style);
+            console.log('✅ 成功添加 style 到 head');
+        } catch (e) {
+            console.log('❌ 添加 style 失败:', e.message);
+        }
+        
+        // 尝试创建元素并添加到 body
+        try {
+            var div = document.createElement('div');
+            div.textContent = 'Dynamic content';
+            document.body.appendChild(div);
+            console.log('✅ 成功添加 div 到 body');
+        } catch (e) {
+            console.log('❌ 添加 div 失败:', e.message);
+        }
+        
+        console.log('=== 测试完成 ===');
+    </script>
+</body>
+</html>
+

@@ -871,7 +871,12 @@ void Window::SetDocument(std::shared_ptr<Document> document) {
         }
     }
 
-    // 标记需要重绘
+    // 关键修复：设置新文档时需要完整初始化渲染
+    // 1. 标记渲染树无效，需要重建
+    InvalidateRenderTree();
+    // 2. 强制全量重绘（避免增量渲染导致的显示问题）
+    SetForceFullRepaint(true);
+    // 3. 标记需要重绘
     SetNeedsRepaint();
 }
 

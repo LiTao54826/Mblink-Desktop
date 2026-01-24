@@ -1717,6 +1717,21 @@ static JSValue js_document_get_body(JSContext* ctx, JSValueConst this_val, int m
     return DOMBindings::WrapElement(ctx, body);
 }
 
+// Document.head getter
+static JSValue js_document_get_head(JSContext* ctx, JSValueConst this_val, int magic) {
+    auto document = DOMBindings::UnwrapDocument(ctx, this_val);
+    if (!document) {
+        return JS_EXCEPTION;
+    }
+
+    auto head = document->GetHead();
+    if (!head) {
+        return JS_NULL;
+    }
+
+    return DOMBindings::WrapElement(ctx, head);
+}
+
 // Document.activeElement getter
 static JSValue js_document_get_active_element(JSContext* ctx, JSValueConst this_val, int magic) {
     auto document = DOMBindings::UnwrapDocument(ctx, this_val);
@@ -1889,6 +1904,7 @@ static JSValue js_document_query_command_enabled(JSContext* ctx, JSValueConst th
 // Document 类定义
 static const JSCFunctionListEntry js_document_proto_funcs[] = {
     JS_CGETSET_MAGIC_DEF("body", js_document_get_body, nullptr, 0),
+    JS_CGETSET_MAGIC_DEF("head", js_document_get_head, nullptr, 0),
     JS_CGETSET_MAGIC_DEF("activeElement", js_document_get_active_element, nullptr, 0),
     JS_CFUNC_DEF("createElement", 1, js_document_create_element),
     JS_CFUNC_DEF("createElementNS", 2, js_document_create_element_ns),

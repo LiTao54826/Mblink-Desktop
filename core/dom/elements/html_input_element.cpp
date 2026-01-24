@@ -5,8 +5,10 @@
 
 #include "html_input_element.h"
 #include "../event.h"
+#include "../document.h"
 #include "../utils/utf8_utils.h"
-#include "../window/window_manager.h"
+#include "core/window/window.h"
+#include "core/window/window_manager.h"
 #include <algorithm>
 #include <cmath>
 #include <iostream>
@@ -113,6 +115,20 @@ void HTMLInputElement::SetChecked(bool checked, bool trigger_events) {
 
     // 注意：不更新checked属性，checked属性保持为默认值
     // 这符合HTML标准：checked属性是默认值，checked_是当前值
+
+    // 标记需要重绘（checkbox 视觉状态改变）
+    if (old_checked != checked) {
+        MarkDirty(DirtyType::PAINT);
+
+        // 增量重绘：通知窗口只重绘该元素区域
+        auto doc = GetOwnerDocument();
+        if (doc) {
+            Window* window = doc->GetWindow();
+            if (window) {
+                window->SetNeedsRepaint();
+            }
+        }
+    }
 
     // 触发change事件
     if (trigger_events && old_checked != checked) {
