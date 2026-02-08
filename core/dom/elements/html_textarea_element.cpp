@@ -661,7 +661,6 @@ void HTMLTextAreaElement::HandleMouseWheel(float delta_y, float line_height, flo
     float old_scroll_top = scroll_top_;
     scroll_top_ = std::clamp(scroll_top_ + scroll_amount, 0.0f, max_scroll);
 
-    // std::cout << "[HandleMouseWheel] delta_y=" << delta_y
     //           << " line_height=" << line_height
     //           << " visible_height=" << visible_height
     //           << " content_height=" << content_height

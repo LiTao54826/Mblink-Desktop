@@ -1,7 +1,7 @@
 /**
  * @file dom_bindings.cpp
  * @brief DOM JavaScript 绑定实现
- * 
+ *
  * @note 大文件说明 (2996 行)
  * 本文件包含 DOM API 的 JavaScript 绑定实现。
  * 文件较大的原因：
@@ -57,6 +57,13 @@ bool DOMBindings::initialized = false;
 std::unordered_map<Element*, std::pair<JSContext*, JSValue>> DOMBindings::element_cache_;
 std::unordered_map<Text*, std::pair<JSContext*, JSValue>> DOMBindings::text_cache_;
 std::unordered_map<Document*, std::pair<JSContext*, JSValue>> DOMBindings::document_cache_;
+
+
+// 全局 TaskScheduler / EventLoop 实例（供定时器与 RAF 绑定使用）
+namespace {
+std::shared_ptr<TaskScheduler> g_task_scheduler = nullptr;
+EventLoop* g_event_loop = nullptr;
+}
 
 // ========== 辅助函数 ==========
 
@@ -462,7 +469,6 @@ static JSValue js_element_replace_child(JSContext* ctx, JSValueConst this_val, i
     try {
         element->ReplaceChild(new_child, old_child);
     } catch (const std::exception& e) {
-        std::cerr << "[js_element_replace_child] Exception: " << e.what() << std::endl;
         return JS_ThrowInternalError(ctx, "replaceChild failed: %s", e.what());
     }
 
@@ -556,18 +562,13 @@ static JSValue js_element_add_event_listener(JSContext* ctx, JSValueConst this_v
     // Lambda 捕获 shared_ptr，当 Element 被销毁时，lambda 也会被销毁，
     // shared_ptr 引用计数归零，JSValueWrapper 析构函数自动调用 JS_FreeValue
     uint64_t listener_id = element->AddEventListener(type, [ctx, listener_wrapper, event_type_str](std::shared_ptr<Event> event) {
-        std::cout << "[JS_EventListener] START event=" << event_type_str << std::endl;
         JSValue event_obj = DOMBindings::WrapEvent(ctx, event);
-        std::cout << "[JS_EventListener] About to JS_Call" << std::endl;
         JSValue ret = JS_Call(ctx, listener_wrapper->Get(), JS_UNDEFINED, 1, &event_obj);
-        std::cout << "[JS_EventListener] JS_Call returned" << std::endl;
         JS_FreeValue(ctx, event_obj);
         if (JS_IsException(ret)) {
-            std::cout << "[JS_EventListener] Exception occurred!" << std::endl;
             js_std_dump_error(ctx);
         }
         JS_FreeValue(ctx, ret);
-        std::cout << "[JS_EventListener] END" << std::endl;
     }, use_capture, once);
 
     JS_FreeCString(ctx, type);
@@ -971,12 +972,8 @@ static JSValue js_element_get_value(JSContext* ctx, JSValueConst this_val, int m
 
 // Element.value setter (for input/textarea elements)
 static JSValue js_element_set_value(JSContext* ctx, JSValueConst this_val, JSValueConst val, int magic) {
-    std::cerr << "[js_element_set_value] START" << std::endl;
-    std::cerr.flush();
-
     auto element = DOMBindings::UnwrapElement(ctx, this_val);
     if (!element) {
-        std::cerr << "[js_element_set_value] element is null" << std::endl;
         return JS_EXCEPTION;
     }
 
@@ -1154,10 +1151,10 @@ static JSValue js_element_closest(JSContext* ctx, JSValueConst this_val, int arg
 static JSValue js_element_get_canvas_width(JSContext* ctx, JSValueConst this_val, int magic) {
     auto element = DOMBindings::UnwrapElement(ctx, this_val);
     if (!element) return JS_EXCEPTION;
-    
+
     auto canvas = std::dynamic_pointer_cast<HTMLCanvasElement>(element);
     if (!canvas) return JS_NewInt32(ctx, 0);
-    
+
     return JS_NewInt32(ctx, static_cast<int>(canvas->GetWidth()));
 }
 
@@ -1165,10 +1162,10 @@ static JSValue js_element_get_canvas_width(JSContext* ctx, JSValueConst this_val
 static JSValue js_element_set_canvas_width(JSContext* ctx, JSValueConst this_val, JSValueConst val, int magic) {
     auto element = DOMBindings::UnwrapElement(ctx, this_val);
     if (!element) return JS_EXCEPTION;
-    
+
     auto canvas = std::dynamic_pointer_cast<HTMLCanvasElement>(element);
     if (!canvas) return JS_UNDEFINED;
-    
+
     int32_t width;
     if (JS_ToInt32(ctx, &width, val) != 0) return JS_EXCEPTION;
     if (width > 0) {
@@ -1181,10 +1178,10 @@ static JSValue js_element_set_canvas_width(JSContext* ctx, JSValueConst this_val
 static JSValue js_element_get_canvas_height(JSContext* ctx, JSValueConst this_val, int magic) {
     auto element = DOMBindings::UnwrapElement(ctx, this_val);
     if (!element) return JS_EXCEPTION;
-    
+
     auto canvas = std::dynamic_pointer_cast<HTMLCanvasElement>(element);
     if (!canvas) return JS_NewInt32(ctx, 0);
-    
+
     return JS_NewInt32(ctx, static_cast<int>(canvas->GetHeight()));
 }
 
@@ -1192,10 +1189,10 @@ static JSValue js_element_get_canvas_height(JSContext* ctx, JSValueConst this_va
 static JSValue js_element_set_canvas_height(JSContext* ctx, JSValueConst this_val, JSValueConst val, int magic) {
     auto element = DOMBindings::UnwrapElement(ctx, this_val);
     if (!element) return JS_EXCEPTION;
-    
+
     auto canvas = std::dynamic_pointer_cast<HTMLCanvasElement>(element);
     if (!canvas) return JS_UNDEFINED;
-    
+
     int32_t height;
     if (JS_ToInt32(ctx, &height, val) != 0) return JS_EXCEPTION;
     if (height > 0) {
@@ -1210,37 +1207,37 @@ static JSValue js_element_get_context(JSContext* ctx, JSValueConst this_val, int
     if (!element) {
         return JS_EXCEPTION;
     }
-    
+
     // 尝试转换为 HTMLCanvasElement
     auto canvas = std::dynamic_pointer_cast<HTMLCanvasElement>(element);
     if (!canvas) {
         return JS_UNDEFINED;  // 不是canvas元素，返回undefined
     }
-    
+
     if (argc < 1) {
        return JS_ThrowTypeError(ctx, "getContext requires 1 argument");
     }
-    
+
     const char* context_id = JS_ToCString(ctx, argv[0]);
     if (!context_id) {
         return JS_EXCEPTION;
     }
-    
+
     // 保存context_id比较结果
     std::string context_id_str(context_id);
     void* context = canvas->GetContext(context_id);
     JS_FreeCString(ctx, context_id);
-    
+
     if (!context) {
         return JS_NULL;
     }
-    
+
     // 目前只支持 "2d" context
     if (context_id_str == "2d") {
         auto context_2d = static_cast<CanvasRenderingContext2D*>(context);
         return CanvasBindings::WrapContext2D(ctx, context_2d);
     }
-    
+
     return JS_NULL;
 }
 
@@ -1322,7 +1319,7 @@ static const JSCFunctionListEntry js_element_proto_funcs[] = {
     // HTMLInputElement / HTMLTextAreaElement 特殊属性
     JS_CGETSET_MAGIC_DEF("value", js_element_get_value, js_element_set_value, 0),
     JS_CGETSET_MAGIC_DEF("checked", js_element_get_checked, js_element_set_checked, 0),
-    
+
     // HTMLCanvasElement 属性
     JS_CGETSET_MAGIC_DEF("width", js_element_get_canvas_width, js_element_set_canvas_width, 0),
     JS_CGETSET_MAGIC_DEF("height", js_element_get_canvas_height, js_element_set_canvas_height, 0),
@@ -1352,7 +1349,7 @@ static const JSCFunctionListEntry js_element_proto_funcs[] = {
     JS_CFUNC_DEF("querySelectorAll", 1, js_element_query_selector_all),
     JS_CFUNC_DEF("matches", 1, js_element_matches),
     JS_CFUNC_DEF("closest", 1, js_element_closest),
-    
+
     // HTMLCanvasElement: getContext方法
     JS_CFUNC_DEF("getContext", 1, js_element_get_context),
 
@@ -1407,17 +1404,14 @@ static JSValue js_text_get_data(JSContext* ctx, JSValueConst this_val, int magic
 static JSValue js_text_set_data(JSContext* ctx, JSValueConst this_val, JSValueConst val, int magic) {
     auto text = DOMBindings::UnwrapText(ctx, this_val);
     if (!text) {
-        std::cerr << "[js_text_set_data] text is null!" << std::endl;
         return JS_EXCEPTION;
     }
 
     const char* data = JS_ToCString(ctx, val);
     if (!data) {
-        std::cerr << "[js_text_set_data] data is null!" << std::endl;
         return JS_EXCEPTION;
     }
 
-    std::cerr << "[js_text_set_data] old=" << text->GetData() << ", new=" << data << std::endl;
     text->SetData(data);
     JS_FreeCString(ctx, data);
 
@@ -1736,13 +1730,10 @@ static JSValue js_document_get_head(JSContext* ctx, JSValueConst this_val, int m
 static JSValue js_document_get_active_element(JSContext* ctx, JSValueConst this_val, int magic) {
     auto document = DOMBindings::UnwrapDocument(ctx, this_val);
     if (!document) {
-        std::cout << "[js_document_get_active_element] UnwrapDocument returned null" << std::endl;
         return JS_EXCEPTION;
     }
 
     auto active = document->GetActiveElement();
-    std::cout << "[js_document_get_active_element] GetActiveElement returned: " 
-              << (active ? active->GetTagName() : "null") << std::endl;
     if (!active) {
         // 如果没有焦点元素，返回 body
         auto body = document->GetBody();
@@ -2152,13 +2143,13 @@ void DOMBindings::Init(JSContext* ctx) {
     InitDOMTokenListClass(ctx);
     InitCSSStyleDeclarationClass(ctx);
     InitDOMStringMapClass(ctx);
-    
+
     // 初始化 Canvas 绑定
     CanvasBindings::Init(ctx);
-    
+
     // 初始化 Terminal 和 LogView 绑定
     TerminalBindings::Init(ctx);
-    
+
     // 初始化 Image 构造函数
     InitImageConstructor(ctx);
 
@@ -2181,12 +2172,82 @@ void DOMBindings::SetGlobalDocument(JSContext* ctx, std::shared_ptr<Document> do
 }
 
 void DOMBindings::Cleanup(JSContext* ctx) {
-    // 清除全局 document 对象
+    // ========== 阶段1：清理 JS 全局变量中的函数引用 ==========
+    // 必须在 C++ DOM 树销毁之前执行，否则 JS Function 对象仍被全局变量引用，
+    // 导致 JS_FreeRuntime 时 gc_obj_list 不为空，触发断言失败。
+    if (ctx) {
+        // 清理 Preact __elementDataStore（事件回调函数的主要泄漏源）
+        // 以及 __event_* 全局属性（window.addEventListener 注册的回调）
+        // 和 Preact/hooks 全局对象
+        const char* cleanup_script = R"(
+            // 1. 调用 Preact IIFE 内部的清理函数，释放 __elementDataStore 中的事件回调
+            if (typeof __preactCleanup === 'function') {
+                console.log('[Cleanup] calling __preactCleanup');
+                try { __preactCleanup(); } catch(e) { console.log('[Cleanup] __preactCleanup error:', e.message); }
+            } else {
+                console.log('[Cleanup] __preactCleanup not found, type=' + typeof __preactCleanup);
+            }
+
+            // 2. 调用 PreactHooks IIFE 内部的清理函数
+            if (typeof __preactHooksCleanup === 'function') {
+                console.log('[Cleanup] calling __preactHooksCleanup');
+                try { __preactHooksCleanup(); } catch(e) { console.log('[Cleanup] __preactHooksCleanup error:', e.message); }
+            }
+
+            // 3. 清理 window.addEventListener 注册的 __event_* 全局回调
+            (function() {
+                var keys = Object.getOwnPropertyNames(globalThis);
+                var count = 0;
+                for (var i = 0; i < keys.length; i++) {
+                    if (keys[i].indexOf('__event_') === 0) {
+                        delete globalThis[keys[i]];
+                        count++;
+                    }
+                }
+                console.log('[Cleanup] deleted ' + count + ' __event_* globals');
+            })();
+
+            // 4. 清理 Preact/hooks 全局对象及清理函数本身
+            if (typeof Preact !== 'undefined') { Preact = undefined; }
+            if (typeof preact !== 'undefined') { preact = undefined; }
+            if (typeof PreactHooks !== 'undefined') { PreactHooks = undefined; }
+            if (typeof preactHooks !== 'undefined') { preactHooks = undefined; }
+            if (typeof __preactCleanup !== 'undefined') { __preactCleanup = undefined; }
+            if (typeof __preactHooksCleanup !== 'undefined') { __preactHooksCleanup = undefined; }
+            console.log('[Cleanup] JS cleanup script completed');
+        )";
+
+        JSValue result = JS_Eval(ctx, cleanup_script, strlen(cleanup_script),
+                                 "<cleanup>", JS_EVAL_TYPE_GLOBAL);
+        if (JS_IsException(result)) {
+            JSValue ex = JS_GetException(ctx);
+            const char* msg = JS_ToCString(ctx, ex);
+            if (msg) {
+                std::cerr << "[DOMBindings::Cleanup] cleanup script error: " << msg << std::endl;
+                JS_FreeCString(ctx, msg);
+            }
+            JS_FreeValue(ctx, ex);
+        }
+        JS_FreeValue(ctx, result);
+
+        // 清理后运行 GC，使不可达的函数对象被回收
+        JS_RunGC(JS_GetRuntime(ctx));
+    }
+
+    // ========== 阶段2：清除全局 document 对象 ==========
     if (ctx) {
         JSValue global = JS_GetGlobalObject(ctx);
         JS_SetPropertyStr(ctx, global, "document", JS_UNDEFINED);
         JS_FreeValue(ctx, global);
     }
+
+    // ========== 阶段3：清理 C++ 侧资源 ==========
+    // 清理调度器中的任务，避免 JS 回调闭包残留
+    if (g_task_scheduler) {
+        g_task_scheduler->ClearAllTasks();
+    }
+    g_task_scheduler.reset();
+    g_event_loop = nullptr;
 
     // 清理所有缓存
     // 注意：缓存使用弱引用（不调用 JS_DupValue），所以不需要调用 JS_FreeValue
@@ -2868,12 +2929,6 @@ void DOMBindings::InitDOMStringMapClass(JSContext* ctx) {
 
 // ========== TaskScheduler 绑定 ==========
 
-// 全局 TaskScheduler 实例
-static std::shared_ptr<TaskScheduler> g_task_scheduler = nullptr;
-
-// 全局 EventLoop 实例
-static EventLoop* g_event_loop = nullptr;
-
 void DOMBindings::SetGlobalEventLoop(JSContext* ctx, EventLoop* event_loop) {
     g_event_loop = event_loop;
 }
@@ -2936,46 +2991,36 @@ static JSValue js_clear_timeout(JSContext* ctx, JSValueConst this_val, int argc,
 
 // setInterval(callback, interval)
 static JSValue js_set_interval(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) {
-    std::cout << "[js_set_interval] Called with argc=" << argc << std::endl;
 
     if (!g_task_scheduler) {
-        std::cout << "[js_set_interval] ERROR: TaskScheduler not initialized!" << std::endl;
         return JS_ThrowInternalError(ctx, "TaskScheduler not initialized");
     }
 
     if (argc < 2) {
-        std::cout << "[js_set_interval] ERROR: Not enough arguments" << std::endl;
         return JS_ThrowTypeError(ctx, "setInterval requires 2 arguments");
     }
 
     if (!JS_IsFunction(ctx, argv[0])) {
-        std::cout << "[js_set_interval] ERROR: First argument is not a function" << std::endl;
         return JS_ThrowTypeError(ctx, "setInterval requires a function as first argument");
     }
 
     int interval = 0;
     if (JS_ToInt32(ctx, &interval, argv[1]) != 0) {
-        std::cout << "[js_set_interval] ERROR: Second argument is not a number" << std::endl;
         return JS_ThrowTypeError(ctx, "setInterval requires a number as second argument");
     }
 
-    std::cout << "[js_set_interval] Creating interval with " << interval << "ms" << std::endl;
 
     // 使用 JSValueWrapper 管理回调函数的生命周期
     auto callback_wrapper = std::make_shared<JSValueWrapper>(ctx, argv[0]);
 
     int timer_id = g_task_scheduler->SetInterval([ctx, callback_wrapper]() {
-        std::cout << "[setInterval callback] Executing..." << std::endl;
         JSValue ret = JS_Call(ctx, callback_wrapper->Get(), JS_UNDEFINED, 0, nullptr);
         if (JS_IsException(ret)) {
-            std::cout << "[setInterval callback] Exception occurred!" << std::endl;
             js_std_dump_error(ctx);
         }
         JS_FreeValue(ctx, ret);
-        std::cout << "[setInterval callback] Completed" << std::endl;
     }, interval);
 
-    std::cout << "[js_set_interval] Created timer ID: " << timer_id << std::endl;
     return JS_NewInt32(ctx, timer_id);
 }
 
@@ -3070,7 +3115,7 @@ void DOMBindings::SetGlobalTaskScheduler(JSContext* ctx, std::shared_ptr<TaskSch
 static JSValue js_image_constructor(JSContext* ctx, JSValueConst new_target, int argc, JSValueConst* argv) {
     // 创建 HTMLImageElement
     auto img_element = std::make_shared<HTMLImageElement>();
-    
+
     // 处理可选的 width 和 height 参数
     if (argc >= 1) {
         uint32_t width = 0;
@@ -3084,7 +3129,7 @@ static JSValue js_image_constructor(JSContext* ctx, JSValueConst new_target, int
             img_element->SetHeight(height);
         }
     }
-    
+
     // 使用新绑定系统包装为 JS 对象
     // 新绑定系统的 Element 原型已经包含了 src, onload, onerror 等属性
     return bindings::WrapElement(ctx, img_element);
@@ -3093,16 +3138,16 @@ static JSValue js_image_constructor(JSContext* ctx, JSValueConst new_target, int
 // 注册 Image 构造函数到全局对象
 void InitImageConstructor(JSContext* ctx) {
     JSValue global = JS_GetGlobalObject(ctx);
-    
+
     // 创建 Image 构造函数
     JSValue image_ctor = JS_NewCFunction2(ctx, js_image_constructor, "Image", 0, JS_CFUNC_constructor, 0);
-    
+
     // 设置原型（使用新绑定系统的 Element 原型）
     JSValue proto = JS_GetClassProto(ctx, bindings::GetElementClassID());
-    
+
     JS_SetConstructor(ctx, image_ctor, proto);
     JS_SetPropertyStr(ctx, global, "Image", image_ctor);
-    
+
     JS_FreeValue(ctx, proto);
     JS_FreeValue(ctx, global);
 }

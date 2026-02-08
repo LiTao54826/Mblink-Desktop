@@ -14,6 +14,7 @@
 #include "../util/resolve.h"
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
 
 namespace lightui {
 
@@ -31,40 +32,83 @@ static float ResolveLengthPercentageValue(const LengthPercentage& lp, float pare
     return 0.0f;
 }
 
+/// Get the minimum size from a MinTrackSizingFunction for auto-repeat calculation
+static float GetMinTrackSize(const MinTrackSizingFunction& min_func, float available_space) {
+    if (min_func.type == MinTrackSizingFunctionType::Fixed) {
+        if (min_func.is_percent) {
+            return min_func.value * available_space;
+        }
+        return min_func.value;
+    }
+    // For auto, min-content, max-content, use a reasonable default
+    return 0.0f;
+}
+
 /// Compute the explicit grid size in one axis
 static std::pair<uint16_t, uint16_t> ComputeExplicitGridSizeInAxis(
     const GridContainerStyle& style,
     std::optional<float> available_space,
     AbsoluteAxis axis
 ) {
-    const auto& template_tracks = (axis == AbsoluteAxis::Horizontal) 
-        ? style.grid_template_columns 
+    const auto& template_tracks = (axis == AbsoluteAxis::Horizontal)
+        ? style.grid_template_columns
         : style.grid_template_rows;
-    
+
+    // Get gap for this axis
+    float gap = (axis == AbsoluteAxis::Horizontal)
+        ? (style.column_gap.IsLength() ? style.column_gap.value : 0.0f)
+        : (style.row_gap.IsLength() ? style.row_gap.value : 0.0f);
+
     uint16_t auto_repetition_count = 1;
     uint16_t track_count = 0;
-    
+
     for (const auto& track : template_tracks) {
         if (track.type == TrackSizingFunction::Type::Single) {
             track_count++;
         } else {
             // Repeat
-            if (track.repeat_count == 0) {
-                // auto-fill: compute based on available space
-                // For now, use 1 as default
-                auto_repetition_count = 1;
-                track_count += static_cast<uint16_t>(track.repeat_tracks.size());
-            } else if (track.repeat_count == UINT16_MAX) {
-                // auto-fit: similar to auto-fill
-                auto_repetition_count = 1;
-                track_count += static_cast<uint16_t>(track.repeat_tracks.size());
+            if (track.repeat_count == 0 || track.repeat_count == UINT16_MAX) {
+                // auto-fill (0) or auto-fit (UINT16_MAX): compute based on available space
+                if (available_space.has_value() && !track.repeat_tracks.empty()) {
+                    float space = available_space.value();
+
+                    // Calculate the minimum size of one repetition (sum of all tracks in repeat)
+                    float min_repetition_size = 0.0f;
+                    for (const auto& repeat_track : track.repeat_tracks) {
+                        float track_min = GetMinTrackSize(repeat_track.min, space);
+                        min_repetition_size += track_min;
+                    }
+
+                    // Add gaps between tracks within one repetition
+                    if (track.repeat_tracks.size() > 1) {
+                        min_repetition_size += gap * (track.repeat_tracks.size() - 1);
+                    }
+
+                    if (min_repetition_size > 0.0f) {
+                        // Calculate how many repetitions fit
+                        // Formula: floor((available_space + gap) / (min_repetition_size + gap))
+                        // This accounts for gaps between repetitions
+                        float effective_space = space + gap;
+                        float effective_track_size = min_repetition_size + gap;
+                        auto_repetition_count = static_cast<uint16_t>(
+                            std::max(1.0f, std::floor(effective_space / effective_track_size))
+                        );
+                    } else {
+                        // If min size is 0 (e.g., auto), use a reasonable default
+                        auto_repetition_count = 1;
+                    }
+                } else {
+                    // No available space, use 1 as default
+                    auto_repetition_count = 1;
+                }
+                track_count += auto_repetition_count * static_cast<uint16_t>(track.repeat_tracks.size());
             } else {
                 // Fixed repeat count
                 track_count += track.repeat_count * static_cast<uint16_t>(track.repeat_tracks.size());
             }
         }
     }
-    
+
     return {auto_repetition_count, track_count};
 }
 
@@ -74,24 +118,25 @@ static void InitializeGridTracks(
     TrackCounts track_counts,
     const GridContainerStyle& style,
     AbsoluteAxis axis,
-    float gap
+    float gap,
+    uint16_t auto_repetition_count
 ) {
-    const auto& template_tracks = (axis == AbsoluteAxis::Horizontal) 
-        ? style.grid_template_columns 
+    const auto& template_tracks = (axis == AbsoluteAxis::Horizontal)
+        ? style.grid_template_columns
         : style.grid_template_rows;
-    const auto& auto_tracks = (axis == AbsoluteAxis::Horizontal) 
-        ? style.grid_auto_columns 
+    const auto& auto_tracks = (axis == AbsoluteAxis::Horizontal)
+        ? style.grid_auto_columns
         : style.grid_auto_rows;
-    
+
     tracks.clear();
-    
+
     // Add negative implicit tracks
     for (uint16_t i = 0; i < track_counts.negative_implicit; i++) {
         // Add gutter before track (except for first)
         if (!tracks.empty()) {
             tracks.push_back(GridTrack::Gutter(gap));
         }
-        
+
         // Add implicit track
         if (!auto_tracks.empty()) {
             size_t idx = i % auto_tracks.size();
@@ -100,7 +145,7 @@ static void InitializeGridTracks(
             tracks.push_back(GridTrack::New(MinTrackSizingFunction::Auto(), MaxTrackSizingFunction::Auto()));
         }
     }
-    
+
     // Add explicit tracks
     for (const auto& track_func : template_tracks) {
         if (track_func.type == TrackSizingFunction::Type::Single) {
@@ -111,9 +156,14 @@ static void InitializeGridTracks(
             tracks.push_back(GridTrack::New(track_func.single.min, track_func.single.max));
         } else {
             // Repeat
-            uint16_t count = (track_func.repeat_count == 0 || track_func.repeat_count == UINT16_MAX) 
-                ? 1 
-                : track_func.repeat_count;
+            uint16_t count;
+            if (track_func.repeat_count == 0 || track_func.repeat_count == UINT16_MAX) {
+                // auto-fill or auto-fit: use the calculated auto_repetition_count
+                count = auto_repetition_count;
+            } else {
+                // Fixed repeat count
+                count = track_func.repeat_count;
+            }
             for (uint16_t r = 0; r < count; r++) {
                 for (const auto& repeat_track : track_func.repeat_tracks) {
                     if (!tracks.empty()) {
@@ -124,13 +174,13 @@ static void InitializeGridTracks(
             }
         }
     }
-    
+
     // Add positive implicit tracks
     for (uint16_t i = 0; i < track_counts.positive_implicit; i++) {
         if (!tracks.empty()) {
             tracks.push_back(GridTrack::Gutter(gap));
         }
-        
+
         if (!auto_tracks.empty()) {
             size_t idx = i % auto_tracks.size();
             tracks.push_back(GridTrack::New(auto_tracks[idx].min, auto_tracks[idx].max));
@@ -323,9 +373,39 @@ LayoutOutput ComputeGridLayout(
     auto [col_auto_rep, col_count] = ComputeExplicitGridSizeInAxis(grid_style, inner_node_size.width, AbsoluteAxis::Horizontal);
     auto [row_auto_rep, row_count] = ComputeExplicitGridSizeInAxis(grid_style, inner_node_size.height, AbsoluteAxis::Vertical);
 
-    // 3. Estimate track counts (simplified - just use explicit counts for now)
+    // 3. Calculate required rows for auto-placement
+    // Count only element children (skip text nodes)
+    size_t total_child_count = tree.ChildCount(node);
+    size_t grid_item_count = 0;
+    for (size_t i = 0; i < total_child_count; i++) {
+        NodeId child_id = tree.GetChildId(node, i);
+        if (!tree.IsTextNode(child_id)) {
+            grid_item_count++;
+        }
+    }
+
+    size_t num_cols = col_count > 0 ? col_count : 1;
+    size_t num_rows = row_count > 0 ? row_count : 1;
+
+    // Expand rows if needed for auto-placement
+    while (num_rows * num_cols < grid_item_count) {
+        num_rows++;
+    }
+
+    // Update row_count to include implicit rows needed for auto-placement
+    uint16_t implicit_rows_needed = 0;
+    if (row_count == 0 && grid_item_count > 0) {
+        // No explicit rows, all rows are implicit
+        implicit_rows_needed = static_cast<uint16_t>(num_rows);
+    } else if (num_rows > row_count) {
+        // Some implicit rows needed beyond explicit rows
+        implicit_rows_needed = static_cast<uint16_t>(num_rows - row_count);
+    }
+
+    // 4. Estimate track counts
     TrackCounts col_counts{0, col_count, 0};
-    TrackCounts row_counts{0, row_count, 0};
+    // For rows: if no explicit rows, put all needed rows as positive_implicit
+    TrackCounts row_counts{0, row_count, implicit_rows_needed};
 
     // 4. Initialize tracks
     // Read gap from unified Style (style.gap contains row and column gaps)
@@ -335,8 +415,9 @@ LayoutOutput ComputeGridLayout(
     std::vector<GridTrack> columns;
     std::vector<GridTrack> rows;
     // Use grid_style for Grid-specific properties (grid-template-columns/rows, grid-auto-columns/rows)
-    InitializeGridTracks(columns, col_counts, grid_style, AbsoluteAxis::Horizontal, col_gap);
-    InitializeGridTracks(rows, row_counts, grid_style, AbsoluteAxis::Vertical, row_gap);
+    // Pass auto_repetition_count for auto-fit/auto-fill support
+    InitializeGridTracks(columns, col_counts, grid_style, AbsoluteAxis::Horizontal, col_gap, col_auto_rep);
+    InitializeGridTracks(rows, row_counts, grid_style, AbsoluteAxis::Vertical, row_gap, row_auto_rep);
 
     // 5. Resolve track base sizes
     ResolveTrackBaseSizes(columns, inner_node_size.width);
@@ -375,16 +456,7 @@ LayoutOutput ComputeGridLayout(
     CalculateTrackOffsets(rows, padding_border.top);
 
     // 9. Layout children - place items in grid cells
-    size_t child_count = tree.ChildCount(node);
-
-    // Auto-placement: place children in grid cells row by row
-    size_t num_cols = col_count > 0 ? col_count : 1;
-    size_t num_rows = row_count > 0 ? row_count : 1;
-
-    // Expand rows if needed for auto-placement
-    while (num_rows * num_cols < child_count) {
-        num_rows++;
-    }
+    // (child_count, num_cols, num_rows already calculated above)
 
     // Calculate required number of track slots (tracks + gutters between them)
     // For n tracks, we need: track, gutter, track, gutter, ..., track = 2*n - 1 slots
@@ -443,7 +515,7 @@ LayoutOutput ComputeGridLayout(
         float measured_height;
     };
     std::vector<ChildPlacement> placements;
-    placements.reserve(child_count);
+    placements.reserve(grid_item_count);
 
     // Cell occupancy matrix to track which cells are occupied
     // True means the cell is occupied
@@ -511,8 +583,14 @@ LayoutOutput ComputeGridLayout(
     size_t current_col = 0;
     size_t current_row = 0;
 
-    for (size_t i = 0; i < child_count; i++) {
+    for (size_t i = 0; i < total_child_count; i++) {
         NodeId child_id = tree.GetChildId(node, i);
+
+        // Skip text nodes - they don't participate in grid layout
+        if (tree.IsTextNode(child_id)) {
+            continue;
+        }
+
         // Get Grid-specific item style for placement properties (grid-row-start/end, grid-column-start/end)
         const auto& grid_item_style = tree.GetGridItemStyle(child_id);
 

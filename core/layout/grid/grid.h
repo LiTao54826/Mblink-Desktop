@@ -184,37 +184,42 @@ struct GridItemStyle : public CoreStyle {
 //------------------------------------------------------------------------------
 
 /// Interface for trees that support grid layout
-/// 
+///
 /// 重构说明：接口现在使用统一的 Style 结构，而非专门的 GridContainerStyle/GridItemStyle。
 /// 这消除了样式同步问题，布局算法直接从 Style 读取所需属性。
 /// Grid 特有数据（如 grid-template-columns/rows）通过单独的方法获取。
 class LayoutGridContainer : public LayoutTree {
 public:
     virtual ~LayoutGridContainer() = default;
-    
+
     /// Get the style for a container node
     /// @param node The node ID
     /// @return Reference to the node's Style
     virtual const Style& GetContainerStyle(NodeId node) const = 0;
-    
+
     /// Get the style for a child node
     /// @param node The child node ID
     /// @return Reference to the child node's Style
     virtual const Style& GetChildStyle(NodeId node) const = 0;
-    
+
     /// Get the grid container style for a node (Grid-specific data)
     /// This provides access to Grid-specific properties like grid-template-columns/rows
     /// that are not part of the unified Style structure.
     /// @param node The node ID
     /// @return Reference to the node's GridContainerStyle
     virtual const GridContainerStyle& GetGridContainerStyle(NodeId node) const = 0;
-    
+
     /// Get the grid item style for a child node (Grid-specific data)
     /// This provides access to Grid-specific properties like grid-row-start/end
     /// that are not part of the unified Style structure.
     /// @param node The child node ID
     /// @return Reference to the child node's GridItemStyle
     virtual const GridItemStyle& GetGridItemStyle(NodeId node) const = 0;
+
+    /// Check if node is a text node (should be skipped in grid layout)
+    /// @param node The node ID
+    /// @return true if the node is a text node
+    virtual bool IsTextNode(NodeId node) const = 0;
 };
 
 //------------------------------------------------------------------------------

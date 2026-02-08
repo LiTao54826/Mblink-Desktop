@@ -152,13 +152,8 @@ void WindowRenderer::UpdateAnimations(double current_time) {
         has_active_animations = has_active_animations || running_count > 0;
     }
     
-    // 兼容旧代码：也更新 Window 自己的 animation_controller_
-    AnimationController* animation_controller = window_->GetAnimationController();
-    if (animation_controller) {
-        animation_controller->Update(current_time);
-        has_active_animations = has_active_animations || 
-                                !animation_controller->GetRunningAnimations().empty();
-    }
+    // 注意：AnimationApplicator 绑定的是 Document/StyleManager 的 controller。
+    // 这里不再更新 Window 自己的 animation_controller_，避免双 controller 状态源不一致。
 
     // 应用动画值到渲染树
     AnimationApplicator* applicator = window_->GetAnimationApplicator();

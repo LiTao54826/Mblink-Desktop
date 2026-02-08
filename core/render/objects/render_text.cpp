@@ -15,6 +15,7 @@
 #include <algorithm>
 #include <iostream>
 #include <sstream>
+#include <cstdio>
 #include "include/core/SkPathEffect.h"
 #include "include/effects/SkDashPathEffect.h"
 
@@ -45,6 +46,38 @@ static float GetBrowserNormalLineHeight(float font_size) {
     }
 }
 
+// 辅助函数：解析 font-weight 字符串为 FontWeight 枚举
+static FontWeight ParseFontWeight(const std::string& weight_str) {
+    if (weight_str.empty() || weight_str == "normal") {
+        return FontWeight::NORMAL;
+    }
+    if (weight_str == "bold") {
+        return FontWeight::BOLD;
+    }
+    if (weight_str == "lighter") {
+        return FontWeight::LIGHT;
+    }
+    if (weight_str == "bolder") {
+        return FontWeight::EXTRA_BOLD;
+    }
+
+    // 尝试解析数字值 (100-900)
+    try {
+        int weight_num = std::stoi(weight_str);
+        if (weight_num <= 100) return FontWeight::THIN;
+        if (weight_num <= 200) return FontWeight::EXTRA_LIGHT;
+        if (weight_num <= 300) return FontWeight::LIGHT;
+        if (weight_num <= 400) return FontWeight::NORMAL;
+        if (weight_num <= 500) return FontWeight::MEDIUM;
+        if (weight_num <= 600) return FontWeight::SEMI_BOLD;
+        if (weight_num <= 700) return FontWeight::BOLD;
+        if (weight_num <= 800) return FontWeight::EXTRA_BOLD;
+        return FontWeight::BLACK;
+    } catch (...) {
+        return FontWeight::NORMAL;
+    }
+}
+
 // ========== RenderText 实现 ==========
 
 void RenderText::Layout(float parent_width, float parent_height) {
@@ -54,7 +87,7 @@ void RenderText::Layout(float parent_width, float parent_height) {
     FontDescriptor desc;
     desc.family = style.font_family;
     desc.size = style.font_size;
-    desc.weight = (style.font_weight == "bold") ? FontWeight::BOLD : FontWeight::NORMAL;
+    desc.weight = ParseFontWeight(style.font_weight);
     desc.style = (style.font_style == "italic") ? FontStyle::ITALIC : FontStyle::NORMAL;
 
     SkFont font = FontManager::GetInstance().LoadFont(desc);
@@ -115,21 +148,33 @@ void RenderText::Layout(float parent_width, float parent_height) {
 }
 
 void RenderText::Paint(SkCanvas* canvas) {
+    // 🔍 DEBUG: 增量更新问题调试
+    static bool debug_paint = std::getenv("DEBUG_INCREMENTAL_PAINT") != nullptr;
+
     if (!canvas || text_.empty()) {
+        if (debug_paint && !text_.empty()) {
+        }
         needs_paint_ = false;
         return;
     }
 
     // 跳过零高度元素（如 CodeMirror 的测量占位元素）
     if (layout_info_.height <= 0) {
+        if (debug_paint) {
+        }
         needs_paint_ = false;
         return;
     }
 
     // Viewport Culling
-    SkRect paint_rect = SkRect::MakeXYWH(layout_info_.x, layout_info_.y, 
+    SkRect paint_rect = SkRect::MakeXYWH(layout_info_.x, layout_info_.y,
                                           layout_info_.width, layout_info_.height);
-    if (canvas->quickReject(paint_rect.makeOutset(10, 10))) {
+    bool culled = canvas->quickReject(paint_rect.makeOutset(10, 10));
+
+    if (debug_paint) {
+    }
+
+    if (culled) {
         needs_paint_ = false;
         return;
     }
@@ -147,7 +192,7 @@ void RenderText::Paint(SkCanvas* canvas) {
     FontDescriptor desc;
     desc.family = style.font_family;
     desc.size = style.font_size;
-    desc.weight = (style.font_weight == "bold") ? FontWeight::BOLD : FontWeight::NORMAL;
+    desc.weight = ParseFontWeight(style.font_weight);
     desc.style = (style.font_style == "italic") ? FontStyle::ITALIC : FontStyle::NORMAL;
 
     SkFont font = FontManager::GetInstance().LoadFont(desc);
@@ -199,15 +244,6 @@ void RenderText::Paint(SkCanvas* canvas) {
     // DEBUG: 输出文字渲染位置信息
     static bool debug_text_paint = std::getenv("DEBUG_TEXT_PAINT") != nullptr;
     if (debug_text_paint) {
-        std::cout << "[RenderText::Paint] text=\"" << text_.substr(0, 20) << "\""
-                  << " layout_y=" << layout.y
-                  << " layout_h=" << layout.height
-                  << " font_size=" << style.font_size
-                  << " css_lh=" << css_line_height
-                  << " skia_h=" << skia_text_height
-                  << " baseline_y=" << baseline_y
-                  << " raw_asc=" << raw_ascent
-                  << std::endl;
     }
 
     // 处理 vertical-align
@@ -304,8 +340,8 @@ void RenderText::Paint(SkCanvas* canvas) {
             }
 
             if (!style.text_shadow.empty()) {
-                ShadowRenderer::RenderTextWithShadow(canvas, text_to_render, font, 
-                                                     0, current_y, text_color, style.text_shadow);
+                ShadowRenderer::RenderTextWithShadow(canvas, text_to_render, font,
+                                                     0, current_y, text_color, style.text_shadow, text_renderer);
             } else {
                 lightui::Paint text_paint;
                 text_paint.SetColor(text_color);

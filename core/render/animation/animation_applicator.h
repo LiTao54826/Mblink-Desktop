@@ -173,20 +173,38 @@ public:
 
 private:
     AnimationController& controller_;
-    
+
     /// 动画层桥接器（用于层优化）
     AnimationLayerBridge* animation_bridge_ = nullptr;
-    
+
     /// 绘制产物合成器（属性树系统）
     PaintArtifactCompositor* paint_artifact_compositor_ = nullptr;
-    
+
     /// 属性树集合
     PropertyTrees* property_trees_ = nullptr;
-    
+
     /// 跟踪每个 Element 已启动的动画名称
-    /// 使用 Element* 作为键，因为 Element 在渲染树重建时保持稳定
+    /// 使用 Element* 作为键，跨渲染树重建时可保持动画启动状态
     std::map<Element*, std::set<std::string>> started_animations_;
-    
+
+    /**
+     * @brief 清理 started_animations_ 中已失效的 Element 键
+     *
+     * AnimationController 使用 weak_ptr<Element> 维护运行态，
+     * 这里按运行态反查，移除 applicator 中陈旧的裸指针键，避免状态污染。
+     */
+    void PruneStaleStartedAnimations();
+
+    /**
+     * @brief 是否启用动画调试日志（兼容两个环境变量）
+     */
+    bool IsDebugAnimationEnabled() const;
+
+    /**
+     * @brief 从 controller 运行态判断某元素动画是否已真正启动
+     */
+    bool IsAnimationRunningForElement(Element* element, const std::string& animation_name) const;
+
     /**
      * @brief 从 RenderObject 提取关联的 Element
      * @param object 渲染对象

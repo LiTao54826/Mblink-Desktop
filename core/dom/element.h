@@ -393,7 +393,7 @@ public:
     /**
      * @brief 标记 Lexbor 需要同步
      */
-    void MarkLexborDirty() { lexbor_dirty_ = true; }
+    void MarkLexborDirty();
 
     /**
      * @brief 检查 Lexbor 是否需要同步

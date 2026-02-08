@@ -25,6 +25,7 @@
 #include "core/render/text/font_manager.h"
 #include "core/bridge/host_bridge.h"
 #include "core/bridge/state_manager.h"
+#include "core/quickjs/bindings/js_element.h"
 #include "embedded_js.h"
 
 extern "C" {
@@ -457,28 +458,71 @@ int main(int argc, char** argv) {
         // 清理 - 注意顺序：先释放持有 JSValue 的对象，最后释放 QuickJS 运行时
         std::cout << std::endl;
         std::cout << "Shutting down..." << std::endl;
-        
+
         // 1. 关闭 DevTools（可能持有 DOM 引用）
         devtools.Shutdown();
-        
+
         // 2. 清理字体缓存
         FontManager::GetInstance().ClearCache();
-        
+
         // 3. 注销并释放窗口（可能持有事件回调）
         window_manager.UnregisterWindow(window);
         window.reset();
-        
-        // 4. 释放 document（持有 DOM 树和事件监听器，这些可能包含 JSValue）
-        document.reset();
-        
-        // 5. 清理 DOM 绑定缓存（释放缓存中的 JSValue）
+
+        // 4. 先清理 Preact/Hooks 在全局对象上的闭包引用（事件处理函数、调度器状态等）
+        // 必须在 DOMBindings::Cleanup() 之前，因为 Cleanup 会把 global.document 设为 undefined，
+        // 而 __preactCleanup 内部需要调用 element.removeEventListener。
+        lightui::bindings::DumpElementListenerStats();
+        try {
+            runtime->Eval(R"(
+                (function() {
+                    if (globalThis.__preactCleanup) {
+                        try { globalThis.__preactCleanup(); } catch (_) {}
+                    }
+                    if (globalThis.__preactHooksCleanup) {
+                        try { globalThis.__preactHooksCleanup(); } catch (_) {}
+                    }
+                    globalThis.__preactCleanup = undefined;
+                    globalThis.__preactHooksCleanup = undefined;
+                    globalThis.Preact = undefined;
+                    globalThis.preact = undefined;
+                    globalThis.PreactHooks = undefined;
+                    globalThis.preactHooks = undefined;
+                })();
+            )", "<shutdown-cleanup>");
+        } catch (...) {
+            // 忽略清理脚本异常，继续执行原生清理流程
+        }
+        lightui::bindings::DumpElementListenerStats();
+
+        // 5. 清理 DOM 绑定缓存 + JS 全局变量
         DOMBindings::Cleanup(runtime->GetContext());
-        
-        // 6. 清理 DOM 绑定映射（释放所有 Node* -> JSValue 的映射）
+        lightui::bindings::DumpElementListenerStats();
+
+        // 6. 释放 document（持有 DOM 树和事件监听器，这些可能包含 JSValue）
+        document.reset();
+        lightui::bindings::DumpElementListenerStats();
+
+        // 7. 清理 DOM 绑定映射（释放所有 Node* -> JSValue 的映射）
         // 必须在 QuickJS 运行时销毁之前调用
         DOMBindingMap::GetInstance().Clear();
-        
-        // 7. 最后释放 QuickJS 运行时（此时所有 JSValue 应该已被释放）
+        lightui::bindings::DumpElementListenerStats();
+
+        // 8. 清理 HostBridge/StateManager 的监听器，释放 watch 回调里的 JSValue 引用
+        if (state_manager) {
+            state_manager->clearWatchers();
+        }
+        lightui::bindings::DumpElementListenerStats();
+
+        // 9. 在 runtime 销毁前显式释放桥接对象，避免 quick_exit 跳过析构导致残留
+        host_bridge.reset();
+        state_manager.reset();
+
+        // 10. document 销毁 + 全局闭包清理后触发一次 GC
+        runtime->RunGC();
+        lightui::bindings::DumpElementListenerStats();
+
+        // 11. 最后释放 QuickJS 运行时（此时所有 JSValue 应该已被释放）
         runtime.reset();
 
         std::quick_exit(0);

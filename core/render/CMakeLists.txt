@@ -16,6 +16,8 @@ set(RENDER_SOURCES
     objects/render_inline.cpp
     objects/render_block.cpp
     objects/render_inline_block.cpp
+    objects/render_inline_flex.cpp
+    objects/render_flex.cpp
     objects/render_svg.cpp
     objects/svg_path_parser.cpp
     objects/scrollbar_controller.cpp
@@ -104,6 +106,7 @@ set(RENDER_HEADERS
     # Render objects (objects subdirectory)
     objects/render_object.h
     objects/render_inline_block.h
+    objects/render_inline_flex.h
     objects/render_svg.h
     objects/svg_path_parser.h
     objects/scrollbar_controller.h

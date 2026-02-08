@@ -203,13 +203,18 @@ void RenderPipeline::SetShowLayerBorders(bool show) {
 
 void RenderPipeline::SetRenderTree(std::shared_ptr<RenderObject> tree) {
     if (render_tree_ != tree) {
-        // 只有当渲染树根节点真正改变时才需要完整重建
-        // 如果只是添加/删除子元素，不需要完整重建
-        bool is_new_tree = (render_tree_ == nullptr);
+        // 关键修复：只要 RenderTree 根指针变化，就必须完整重建层树。
+        // 旧逻辑只在 render_tree_ 由 nullptr -> 非空时重建，
+        // 会导致渲染树已重建但层树仍绑定旧 RenderObject（出现“双实例/动画打到旧对象”）。
         render_tree_ = tree;
-        if (is_new_tree) {
-            needs_layer_tree_rebuild_ = true;
+        needs_layer_tree_rebuild_ = true;
+
+        // 主动丢弃旧层树，避免同一帧内误用旧 root_layer_。
+        if (layer_tree_builder_) {
+            layer_tree_builder_->Clear();
         }
+        root_layer_.reset();
+
         needs_render_ = true;
     }
 }
@@ -480,7 +485,6 @@ void RenderPipeline::DoLayerTreeBuild() {
     // 递减调试帧计数器
     if (g_debug_frames_remaining > 0) {
         if (debug_layer_build) {
-            std::cout << "\n[Frame " << (4 - g_debug_frames_remaining) << "/3] ========== START ==========\n" << std::endl;
         }
     }
 
@@ -492,7 +496,6 @@ void RenderPipeline::DoLayerTreeBuild() {
         UpdateLayerTreeBounds(root_layer_.get());
     } else if (!root_layer_ || needs_layer_tree_rebuild_) {
         // 完整重建路径
-        std::cout << "[RenderPipeline] FULL REBUILD triggered" << std::endl;
 
         root_layer_ = layer_tree_builder_->Build(render_tree_.get());
         needs_layer_tree_rebuild_ = false;
@@ -544,7 +547,6 @@ void RenderPipeline::DoLayerTreeBuild() {
     if (g_debug_frames_remaining > 0) {
         g_debug_frames_remaining--;
         if (debug_layer_build) {
-            std::cout << "\n[Frame End] Remaining debug frames: " << g_debug_frames_remaining << "\n" << std::endl;
         }
     }
 }
@@ -621,43 +623,55 @@ void RenderPipeline::CollectDirtyRectsForLayer(RenderObject* obj, CompositorLaye
         return;
     }
 
+    // 🐛 hover bug 调试日志
+    static bool debug_hover = std::getenv("LIGHTUI_DEBUG_HOVER_BUG") != nullptr;
+
     // 如果当前节点需要重绘，标记其边界为脏
     if (obj->NeedsPaint()) {
         SkRect bounds;
+
+        // 获取元素信息用于调试
+        std::string tag_name = "unknown";
+        std::string element_id = "";
+        if (auto node = obj->GetNode()) {
+            if (node->GetNodeType() == NodeType::ELEMENT_NODE) {
+                auto element = std::static_pointer_cast<Element>(node);
+                tag_name = element->GetTagName();
+                element_id = element->GetAttribute("id");
+            } else if (node->GetNodeType() == NodeType::TEXT_NODE) {
+                tag_name = "#text";
+            }
+        }
 
         // 对于根层，使用视口坐标系的边界（已经考虑了所有祖先的滚动偏移）
         if (layer->GetPromotionReason() == LayerPromotionReason::RootLayer) {
             bounds = obj->GetViewportBoundingRect();
 
+            // 🐛 hover bug 调试日志
+            if (debug_hover) {
+            }
+
             // 关键调试：在新层创建后的几帧内，输出所有导致根层被标记为脏的元素
             if (g_debug_frames_remaining > 0) {
-                std::string tag_name = "unknown";
-                std::string element_id = "";
-                if (auto node = obj->GetNode()) {
-                    if (node->GetNodeType() == NodeType::ELEMENT_NODE) {
-                        auto element = std::static_pointer_cast<Element>(node);
-                        tag_name = element->GetTagName();
-                        element_id = element->GetAttribute("id");
-                    }
-                }
                 const auto& style = obj->GetComputedStyle();
-                std::cout << "[ROOT_DIRTY] <" << tag_name;
                 if (!element_id.empty()) {
-                    std::cout << " id=\"" << element_id << "\"";
                 }
-                std::cout << "> position=" << style.position
-                          << " hasOwnLayer=" << obj->HasOwnCompositorLayer()
-                          << std::endl;
             }
         } else {
             // 对于非根层，使用文档坐标并转换为相对于层的坐标
             bounds = obj->GetBoundingRect();
             const SkRect& layer_bounds = layer->GetBounds();
             bounds.offset(-layer_bounds.left(), -layer_bounds.top());
+
+            if (debug_hover) {
+            }
         }
 
         // 扩展边界以包含阴影、outline 等
         bounds.outset(50, 50);
+
+        if (debug_hover) {
+        }
 
         layer->MarkDirty(bounds);
     }
@@ -753,18 +767,14 @@ void RenderPipeline::DetectAndCreateNewLayersRecursive(RenderObject* obj) {
                 }
             }
 
-            // 只对 position: fixed 元素输出详细日志
+            // 只对 position: fixed 元素输出详细日志（默认关闭）
             bool is_fixed = (reason == LayerPromotionReason::PositionFixed);
-            if (is_fixed) {
-                std::cout << "\n========== FIXED LAYER CREATION ==========" << std::endl;
-                std::cout << "[NEW_FIXED_LAYER] <" << tag_name;
+            static bool debug_layers = std::getenv("LIGHTUI_DEBUG_LAYERS") != nullptr ||
+                                       std::getenv("LIGHTUI_DEBUG_DIRTY") != nullptr;
+            if (is_fixed && debug_layers) {
                 if (!element_id.empty()) {
-                    std::cout << " id=\"" << element_id << "\"";
                 }
                 const auto& layout = obj->GetLayoutInfo();
-                std::cout << "> layout=(" << layout.x << "," << layout.y
-                          << "," << layout.width << "," << layout.height << ")";
-                std::cout << " needsPaint=" << obj->NeedsPaint() << std::endl;
             }
 
             // 创建层
@@ -772,15 +782,11 @@ void RenderPipeline::DetectAndCreateNewLayersRecursive(RenderObject* obj) {
             if (new_layer) {
                 new_layer->MarkFullDirty();
 
-                if (is_fixed) {
-                    std::cout << "[NEW_FIXED_LAYER] Layer created, id=" << new_layer->GetId() << std::endl;
-                    std::cout << "========================================\n" << std::endl;
+                if (is_fixed && debug_layers) {
                     // 启用接下来3帧的详细日志
                     g_debug_frames_remaining = 3;
                 }
-            } else if (is_fixed) {
-                std::cout << "[NEW_FIXED_LAYER] FAILED to create layer!" << std::endl;
-                std::cout << "========================================\n" << std::endl;
+            } else if (is_fixed && debug_layers) {
             }
         }
     }
@@ -810,7 +816,6 @@ void RenderPipeline::RemoveOrphanedLayers(CompositorLayer* layer) {
     // 调试：输出收集到的对象数量
     static bool debug_orphan = std::getenv("LIGHTUI_DEBUG_ORPHAN") != nullptr;
     if (debug_orphan) {
-        std::cout << "[RemoveOrphanedLayers] Collected " << valid_objects.size() << " valid RenderObjects" << std::endl;
     }
 
     // 收集需要删除的子层
@@ -844,12 +849,6 @@ void RenderPipeline::RemoveOrphanedLayers(CompositorLayer* layer) {
                 }
             }
             bool is_valid = (valid_objects.find(render_obj) != valid_objects.end());
-            std::cout << "[RemoveOrphanedLayers] Layer " << child->GetId()
-                      << " <" << tag_name << ">"
-                      << " reason=" << static_cast<int>(child->GetPromotionReason())
-                      << " render_obj=" << render_obj
-                      << " is_valid=" << is_valid
-                      << std::endl;
         }
 
         if (!render_obj || valid_objects.find(render_obj) == valid_objects.end()) {
@@ -866,11 +865,6 @@ void RenderPipeline::RemoveOrphanedLayers(CompositorLayer* layer) {
                 }
             }
 
-            std::cout << "[RemoveOrphanedLayers] Removing orphaned layer " << child->GetId()
-                      << " <" << tag_name << ">"
-                      << " reason=" << static_cast<int>(child->GetPromotionReason())
-                      << " render_obj=" << render_obj
-                      << std::endl;
         } else {
             // 递归检查子层的子层
             RemoveOrphanedLayers(child.get());

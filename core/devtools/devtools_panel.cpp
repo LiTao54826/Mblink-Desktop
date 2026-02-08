@@ -27,13 +27,10 @@ DevToolsPanel::DevToolsPanel(Document* document)
 
     // 设置选择回调
     dom_tree_view_->SetOnSelectionChanged([this](std::shared_ptr<Node> node) {
-        std::cout << "[DevToolsPanel] Selection changed callback called" << std::endl;
         auto element = std::dynamic_pointer_cast<Element>(node);
         if (element) {
-            std::cout << "[DevToolsPanel] Setting element: <" << element->GetTagName() << ">" << std::endl;
             styles_panel_->SetElement(element);
         } else {
-            std::cout << "[DevToolsPanel] Node is not an Element" << std::endl;
         }
     });
 }

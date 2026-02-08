@@ -48,14 +48,46 @@
 #define NOMINMAX
 #define WIN32_LEAN_AND_MEAN
 #include <Windows.h>
+#include <dbghelp.h>
+#pragma comment(lib, "dbghelp.lib")
 #undef NOMINMAX
 #undef WIN32_LEAN_AND_MEAN
 #undef DrawText
 #undef min
 #undef max
+#undef ERROR  // 防止与 LogLevel::ERROR 冲突
 #endif
 
 namespace lightui {
+
+// 🐛 调试辅助函数：打印调用栈
+#ifdef _WIN32
+static void PrintCallStack() {
+    static bool sym_initialized = false;
+    if (!sym_initialized) {
+        SymInitialize(GetCurrentProcess(), NULL, TRUE);
+        sym_initialized = true;
+    }
+
+    void* stack[20];
+    unsigned short frames = CaptureStackBackTrace(0, 20, stack, NULL);
+
+    char buffer[sizeof(SYMBOL_INFO) + MAX_SYM_NAME * sizeof(TCHAR)];
+    PSYMBOL_INFO symbol = (PSYMBOL_INFO)buffer;
+    symbol->SizeOfStruct = sizeof(SYMBOL_INFO);
+    symbol->MaxNameLen = MAX_SYM_NAME;
+
+    for (unsigned short i = 0; i < frames; i++) {
+        DWORD64 address = (DWORD64)(stack[i]);
+        if (SymFromAddr(GetCurrentProcess(), address, 0, symbol)) {
+        } else {
+        }
+    }
+}
+#else
+static void PrintCallStack() {
+}
+#endif
 
 // 外部全局变量声明（定义在 render_object.cpp）
 extern std::atomic<long long> g_paint_bg_time;
@@ -68,7 +100,13 @@ extern std::atomic<int> g_paint_culled_calls;
 
 void RenderBlock::Layout(float parent_width, float parent_height) {
     const auto& style = computed_style_;
-    
+
+    // ✅ 检查是否是 flex 容器，如果是则使用 flex 布局
+    if (style.display == RenderObjectType::FLEX) {
+        LayoutAsFlex(parent_width, parent_height);
+        return;
+    }
+
     // 计算宽度
     float width = parent_width;
     if (!style.width.IsAuto()) {
@@ -102,6 +140,16 @@ void RenderBlock::Layout(float parent_width, float parent_height) {
     
     // 布局子元素 - 第一遍：计算尺寸
     for (auto& child : children_) {
+        auto& child_style = child->GetComputedStyle();
+
+        // position:absolute/fixed 子元素不参与正常流，但仍需布局以计算自身尺寸
+        if (child_style.position == "absolute" || child_style.position == "fixed") {
+            if (child->NeedsLayout()) {
+                child->Layout(content_width, 0);
+            }
+            continue;
+        }
+
         if (child->NeedsLayout()) {
             auto child_node = child->GetNode();
             bool is_legend = false;
@@ -117,10 +165,10 @@ void RenderBlock::Layout(float parent_width, float parent_height) {
                     auto& gc_layout = grandchild->GetLayoutInfo();
                     max_right = std::max(max_right, gc_layout.x + gc_layout.width);
                 }
-                auto& child_style = child->GetComputedStyle();
-                float legend_padding_right = child_style.padding.right.ToPx();
-                float legend_border_right = child_style.border_right_width > 0 ? 
-                    child_style.border_right_width : child_style.border.width.ToPx();
+                auto& child_style_legend = child->GetComputedStyle();
+                float legend_padding_right = child_style_legend.padding.right.ToPx();
+                float legend_border_right = child_style_legend.border_right_width > 0 ?
+                    child_style_legend.border_right_width : child_style_legend.border.width.ToPx();
                 child->GetLayoutInfo().width = max_right + legend_padding_right + legend_border_right;
             } else {
                 child->Layout(content_width, 0);
@@ -144,6 +192,11 @@ void RenderBlock::Layout(float parent_width, float parent_height) {
         auto& child_layout = child->GetLayoutInfo();
         auto& child_style = child->GetComputedStyle();
 
+        // 跳过 position:absolute/fixed 子元素 - 它们不参与正常流定位
+        if (child_style.position == "absolute" || child_style.position == "fixed") {
+            continue;
+        }
+
         float child_margin_top = child_style.margin.top.ToPx(width, child_style.font_size);
         float child_margin_bottom = child_style.margin.bottom.ToPx(width, child_style.font_size);
         float child_margin_left = child_style.margin.left.ToPx(width, child_style.font_size);
@@ -164,7 +217,7 @@ void RenderBlock::Layout(float parent_width, float parent_height) {
 
         if (is_inline) {
             float child_width = child_layout.width + child_margin_left + child_margin_right;
-            if (current_x + child_width > width - padding_right - border_right && 
+            if (current_x + child_width > width - padding_right - border_right &&
                 current_x > padding_left + border_left) {
                 current_y += line_height;
                 current_x = padding_left + border_left;
@@ -231,18 +284,316 @@ void RenderBlock::Layout(float parent_width, float parent_height) {
     
     layout_info_.width = width;
     layout_info_.height = height;
-    
+
+    // 第三遍：处理 position:absolute/fixed 子元素的定位
+    // absolute 子元素相对于最近的 positioned ancestor（即本元素）的 content box 定位
+    float container_w = content_width;
+    float container_h = height - padding_top - padding_bottom - border_top - border_bottom;
+
+    for (auto& child : children_) {
+        auto& child_style = child->GetComputedStyle();
+        if (child_style.position != "absolute" && child_style.position != "fixed") {
+            continue;
+        }
+
+        auto& child_layout = child->GetLayoutInfo();
+
+        bool has_left = !child_style.left.IsAuto();
+        bool has_top = !child_style.top.IsAuto();
+        bool has_right = !child_style.right.IsAuto();
+        bool has_bottom = !child_style.bottom.IsAuto();
+
+        // 水平定位
+        if (has_left) {
+            child_layout.x = padding_left + border_left + child_style.left.ToPx(container_w, child_style.font_size);
+        } else if (has_right) {
+            child_layout.x = padding_left + border_left + container_w - child_layout.width - child_style.right.ToPx(container_w, child_style.font_size);
+        } else {
+            child_layout.x = padding_left + border_left;
+        }
+
+        // 垂直定位
+        if (has_top) {
+            child_layout.y = padding_top + border_top + child_style.top.ToPx(container_h, child_style.font_size);
+        } else if (has_bottom) {
+            child_layout.y = padding_top + border_top + container_h - child_layout.height - child_style.bottom.ToPx(container_h, child_style.font_size);
+        } else {
+            child_layout.y = padding_top + border_top;
+        }
+    }
+
     layout_info_.content_rect = SkRect::MakeXYWH(
         padding_left + border_left, padding_top + border_top,
         content_width, current_y
     );
-    
+
     layout_info_.padding_rect = SkRect::MakeXYWH(
         border_left, border_top,
         content_width + padding_left + padding_right,
         current_y + padding_top + padding_bottom
     );
-    
+
+    layout_info_.border_rect = SkRect::MakeXYWH(0, 0, width, height);
+    layout_info_.is_laid_out = true;
+    needs_layout_ = false;
+}
+
+void RenderBlock::LayoutAsFlex(float parent_width, float parent_height) {
+    const auto& style = computed_style_;
+
+    // 计算宽度
+    float width = parent_width;
+    if (!style.width.IsAuto()) {
+        width = style.width.ToPx(parent_width, style.font_size);
+    }
+
+    // 应用 min-width 和 max-width
+    if (!style.min_width.IsZero()) {
+        float min_w = style.min_width.ToPx(parent_width, style.font_size);
+        width = std::max(width, min_w);
+    }
+    if (style.max_width.unit != CSSUnit::NONE) {
+        float max_w = style.max_width.ToPx(parent_width, style.font_size);
+        width = std::min(width, max_w);
+    }
+
+    // 计算 padding
+    float padding_left = style.padding.left.ToPx(width, style.font_size);
+    float padding_right = style.padding.right.ToPx(width, style.font_size);
+    float padding_top = style.padding.top.ToPx(width, style.font_size);
+    float padding_bottom = style.padding.bottom.ToPx(width, style.font_size);
+
+    // 计算 border
+    float border_left = style.border_left_width > 0 ? style.border_left_width : style.border.width.ToPx();
+    float border_right = style.border_right_width > 0 ? style.border_right_width : style.border.width.ToPx();
+    float border_top = style.border_top_width > 0 ? style.border_top_width : style.border.width.ToPx();
+    float border_bottom = style.border_bottom_width > 0 ? style.border_bottom_width : style.border.width.ToPx();
+
+    // 计算内容区域尺寸
+    float content_width = width - padding_left - padding_right - border_left - border_right;
+
+    // 计算高度
+    float height = 0;
+    float content_height = 0;
+    if (!style.height.IsAuto()) {
+        height = style.height.ToPx(parent_height, style.font_size);
+        content_height = height - padding_top - padding_bottom - border_top - border_bottom;
+    }
+
+    // 确定 flex 方向
+    bool is_row = (style.flex_direction == "row" || style.flex_direction == "row-reverse");
+    bool is_reverse = (style.flex_direction == "row-reverse" || style.flex_direction == "column-reverse");
+
+    // 第一遍：布局所有子元素获取尺寸
+    float total_main_size = 0;
+    float max_cross_size = 0;
+
+    for (auto& child : children_) {
+        auto& child_style = child->GetComputedStyle();
+
+        // 跳过 position:absolute/fixed 子元素 - 它们不参与 flex 尺寸计算
+        // 但仍需布局以计算自身尺寸
+        if (child_style.position == "absolute" || child_style.position == "fixed") {
+            if (child->NeedsLayout()) {
+                child->Layout(content_width, content_height > 0 ? content_height : 0);
+            }
+            continue;
+        }
+
+        if (child->NeedsLayout()) {
+            child->Layout(content_width, content_height > 0 ? content_height : 0);
+        }
+
+        auto& child_layout = child->GetLayoutInfo();
+
+        float child_margin_main_start = is_row ?
+            child_style.margin.left.ToPx(width, child_style.font_size) :
+            child_style.margin.top.ToPx(width, child_style.font_size);
+        float child_margin_main_end = is_row ?
+            child_style.margin.right.ToPx(width, child_style.font_size) :
+            child_style.margin.bottom.ToPx(width, child_style.font_size);
+        float child_margin_cross_start = is_row ?
+            child_style.margin.top.ToPx(width, child_style.font_size) :
+            child_style.margin.left.ToPx(width, child_style.font_size);
+        float child_margin_cross_end = is_row ?
+            child_style.margin.bottom.ToPx(width, child_style.font_size) :
+            child_style.margin.right.ToPx(width, child_style.font_size);
+
+        float child_main_size = is_row ? child_layout.width : child_layout.height;
+        float child_cross_size = is_row ? child_layout.height : child_layout.width;
+
+        total_main_size += child_main_size + child_margin_main_start + child_margin_main_end;
+        max_cross_size = std::max(max_cross_size, child_cross_size + child_margin_cross_start + child_margin_cross_end);
+    }
+
+    // 如果高度是 auto，根据内容计算
+    if (style.height.IsAuto()) {
+        if (is_row) {
+            content_height = max_cross_size;
+        } else {
+            content_height = total_main_size;
+        }
+        height = content_height + padding_top + padding_bottom + border_top + border_bottom;
+    }
+
+    // 应用 min-height 和 max-height
+    if (!style.min_height.IsZero()) {
+        float min_h = style.min_height.ToPx(parent_height, style.font_size);
+        height = std::max(height, min_h);
+        content_height = height - padding_top - padding_bottom - border_top - border_bottom;
+    }
+    if (style.max_height.unit != CSSUnit::NONE) {
+        float max_h = style.max_height.ToPx(parent_height, style.font_size);
+        height = std::min(height, max_h);
+        content_height = height - padding_top - padding_bottom - border_top - border_bottom;
+    }
+
+    // 计算主轴可用空间
+    float main_size = is_row ? content_width : content_height;
+    float cross_size = is_row ? content_height : content_width;
+    float free_space = main_size - total_main_size;
+
+    // 根据 justify-content 计算主轴起始位置
+    float main_start = 0;
+    float gap = 0;
+    // 只计算非 absolute/fixed 子元素数量
+    size_t num_children = 0;
+    for (auto& child : children_) {
+        auto& cs = child->GetComputedStyle();
+        if (cs.position != "absolute" && cs.position != "fixed") {
+            num_children++;
+        }
+    }
+
+    if (style.justify_content == "flex-start" || style.justify_content == "start") {
+        main_start = is_reverse ? free_space : 0;
+    } else if (style.justify_content == "flex-end" || style.justify_content == "end") {
+        main_start = is_reverse ? 0 : free_space;
+    } else if (style.justify_content == "center") {
+        main_start = free_space / 2.0f;
+    } else if (style.justify_content == "space-between" && num_children > 1) {
+        main_start = 0;
+        gap = free_space / (num_children - 1);
+    } else if (style.justify_content == "space-around" && num_children > 0) {
+        gap = free_space / num_children;
+        main_start = gap / 2.0f;
+    } else if (style.justify_content == "space-evenly" && num_children > 0) {
+        gap = free_space / (num_children + 1);
+        main_start = gap;
+    }
+
+    // 第二遍：设置子元素位置（跳过 absolute/fixed）
+    float current_main = main_start;
+
+    for (size_t i = 0; i < children_.size(); ++i) {
+        size_t idx = is_reverse ? (children_.size() - 1 - i) : i;
+        auto& child = children_[idx];
+        auto& child_layout = child->GetLayoutInfo();
+        auto& child_style = child->GetComputedStyle();
+
+        // 跳过 position:absolute/fixed 子元素
+        if (child_style.position == "absolute" || child_style.position == "fixed") {
+            continue;
+        }
+
+        float child_margin_main_start = is_row ?
+            child_style.margin.left.ToPx(width, child_style.font_size) :
+            child_style.margin.top.ToPx(width, child_style.font_size);
+        float child_margin_main_end = is_row ?
+            child_style.margin.right.ToPx(width, child_style.font_size) :
+            child_style.margin.bottom.ToPx(width, child_style.font_size);
+        float child_margin_cross_start = is_row ?
+            child_style.margin.top.ToPx(width, child_style.font_size) :
+            child_style.margin.left.ToPx(width, child_style.font_size);
+        float child_margin_cross_end = is_row ?
+            child_style.margin.bottom.ToPx(width, child_style.font_size) :
+            child_style.margin.right.ToPx(width, child_style.font_size);
+
+        float child_main_size = is_row ? child_layout.width : child_layout.height;
+        float child_cross_size = is_row ? child_layout.height : child_layout.width;
+
+        // 计算交叉轴位置（根据 align-items）
+        float cross_offset = 0;
+        float cross_free_space = cross_size - child_cross_size - child_margin_cross_start - child_margin_cross_end;
+
+        // 检查子元素的 align-self
+        std::string align = child_style.align_self;
+        if (align == "auto" || align.empty()) {
+            align = style.align_items;
+        }
+
+        if (align == "flex-start" || align == "start") {
+            cross_offset = 0;
+        } else if (align == "flex-end" || align == "end") {
+            cross_offset = cross_free_space;
+        } else if (align == "center") {
+            cross_offset = cross_free_space / 2.0f;
+        } else if (align == "stretch") {
+            cross_offset = 0;
+        } else {
+            cross_offset = 0;
+        }
+
+        // 设置子元素位置
+        if (is_row) {
+            child_layout.x = padding_left + border_left + current_main + child_margin_main_start;
+            child_layout.y = padding_top + border_top + cross_offset + child_margin_cross_start;
+        } else {
+            child_layout.x = padding_left + border_left + cross_offset + child_margin_cross_start;
+            child_layout.y = padding_top + border_top + current_main + child_margin_main_start;
+        }
+
+        current_main += child_margin_main_start + child_main_size + child_margin_main_end + gap;
+    }
+
+    // 设置布局信息
+    layout_info_.width = width;
+    layout_info_.height = height;
+
+    // 第三遍：处理 position:absolute/fixed 子元素的定位
+    for (auto& child : children_) {
+        auto& child_style = child->GetComputedStyle();
+        if (child_style.position != "absolute" && child_style.position != "fixed") {
+            continue;
+        }
+
+        auto& child_layout = child->GetLayoutInfo();
+
+        bool has_left = !child_style.left.IsAuto();
+        bool has_top = !child_style.top.IsAuto();
+        bool has_right = !child_style.right.IsAuto();
+        bool has_bottom = !child_style.bottom.IsAuto();
+
+        // 水平定位
+        if (has_left) {
+            child_layout.x = padding_left + border_left + child_style.left.ToPx(content_width, child_style.font_size);
+        } else if (has_right) {
+            child_layout.x = padding_left + border_left + content_width - child_layout.width - child_style.right.ToPx(content_width, child_style.font_size);
+        } else {
+            child_layout.x = padding_left + border_left;
+        }
+
+        // 垂直定位
+        if (has_top) {
+            child_layout.y = padding_top + border_top + child_style.top.ToPx(content_height, child_style.font_size);
+        } else if (has_bottom) {
+            child_layout.y = padding_top + border_top + content_height - child_layout.height - child_style.bottom.ToPx(content_height, child_style.font_size);
+        } else {
+            child_layout.y = padding_top + border_top;
+        }
+    }
+
+    layout_info_.content_rect = SkRect::MakeXYWH(
+        padding_left + border_left, padding_top + border_top,
+        content_width, content_height
+    );
+
+    layout_info_.padding_rect = SkRect::MakeXYWH(
+        border_left, border_top,
+        content_width + padding_left + padding_right,
+        content_height + padding_top + padding_bottom
+    );
+
     layout_info_.border_rect = SkRect::MakeXYWH(0, 0, width, height);
     layout_info_.is_laid_out = true;
     needs_layout_ = false;
@@ -252,6 +603,25 @@ void RenderBlock::Layout(float parent_width, float parent_height) {
 void RenderBlock::Paint(SkCanvas* canvas) {
     if (!canvas) {
         return;
+    }
+
+    // 🐛 hover bug 调试日志
+    static bool debug_hover_bug = std::getenv("LIGHTUI_DEBUG_HOVER_BUG") != nullptr;
+    if (debug_hover_bug) {
+        std::string tag = "unknown";
+        std::string id = "";
+        auto node_locked = node_.lock();
+        if (node_locked) {
+            if (node_locked->GetNodeType() == NodeType::ELEMENT_NODE) {
+                auto elem = std::dynamic_pointer_cast<Element>(node_locked);
+                if (elem) {
+                    tag = elem->GetTagName();
+                    id = elem->GetAttribute("id");
+                }
+            } else if (node_locked->GetNodeType() == NodeType::TEXT_NODE) {
+                tag = "#text";
+            }
+        }
     }
 
     // 跳过零高度元素（如 CodeMirror 的测量占位元素）
@@ -317,9 +687,38 @@ void RenderBlock::Paint(SkCanvas* canvas) {
     // 因为子元素可能有 visibility: visible 覆盖
     bool is_hidden = (style.visibility == "hidden");
 
+    // 🐛 调试：追踪 clip 变化
+    static bool debug_clip = std::getenv("LIGHTUI_DEBUG_SHADOW") != nullptr;
+    if (debug_clip && style.position == "fixed") {
+        SkRect local_clip = canvas->getLocalClipBounds();
+        SkIRect device_clip = canvas->getDeviceClipBounds();
+        SkMatrix matrix = canvas->getTotalMatrix();
+
+        // 🐛 添加父元素信息
+        auto parent = GetParent();
+        if (parent) {
+            const auto& parent_style = parent->GetComputedStyle();
+            const auto& parent_layout = parent->GetLayoutInfo();
+        } else {
+        }
+
+        // 🐛 添加调用栈
+        PrintCallStack();
+
+    }
+
     // 保存画布状态
     canvas->save();
+
+    if (debug_clip && style.position == "fixed") {
+        SkRect local_clip = canvas->getLocalClipBounds();
+    }
+
     canvas->translate(layout.x, layout.y);
+
+    if (debug_clip && style.position == "fixed") {
+        SkRect local_clip = canvas->getLocalClipBounds();
+    }
 
     // 应用 CSS opacity（使用 saveLayerAlpha 实现透明度）
     bool has_opacity = style.opacity < 1.0f;
@@ -450,7 +849,14 @@ void RenderBlock::Paint(SkCanvas* canvas) {
     // 渲染阴影（使用缓存优化）
     auto shadow_start = std::chrono::high_resolution_clock::now();
     if (!style.box_shadow.empty()) {
+        // 🐛 实验：禁用阴影缓存，直接绘制
+        // 原因：缓存可能导致圆角信息丢失
+        // 调试日志已移除
+        renderer.RenderBoxShadow(box, style.box_shadow, &style.border_radius);
+
+        /* 原缓存代码（暂时禁用）
         // 计算 shadow 参数的哈希值
+        // 🐛 修复：必须包含 border_radius，否则不同圆角的元素会共享同一个阴影缓存
         size_t shadow_hash = 0;
         for (const auto& s : style.box_shadow) {
             shadow_hash ^= std::hash<float>{}(s.offset_x) + 0x9e3779b9;
@@ -459,12 +865,22 @@ void RenderBlock::Paint(SkCanvas* canvas) {
             shadow_hash ^= std::hash<float>{}(s.spread_radius) + 0x9e3779b9;
             shadow_hash ^= std::hash<uint32_t>{}(s.color) + 0x9e3779b9;
         }
+        // 加入 border_radius 到哈希值中
+        shadow_hash ^= std::hash<float>{}(style.border_radius.top_left.value) + 0x9e3779b9;
+        shadow_hash ^= std::hash<int>{}(static_cast<int>(style.border_radius.top_left.unit)) + 0x9e3779b9;
+        shadow_hash ^= std::hash<float>{}(style.border_radius.top_right.value) + 0x9e3779b9;
+        shadow_hash ^= std::hash<int>{}(static_cast<int>(style.border_radius.top_right.unit)) + 0x9e3779b9;
+        shadow_hash ^= std::hash<float>{}(style.border_radius.bottom_right.value) + 0x9e3779b9;
+        shadow_hash ^= std::hash<int>{}(static_cast<int>(style.border_radius.bottom_right.unit)) + 0x9e3779b9;
+        shadow_hash ^= std::hash<float>{}(style.border_radius.bottom_left.value) + 0x9e3779b9;
+        shadow_hash ^= std::hash<int>{}(static_cast<int>(style.border_radius.bottom_left.unit)) + 0x9e3779b9;
         
         // 检查缓存是否有效
         if (shadow_cache_.IsValid(layout.width, layout.height, shadow_hash)) {
             // 使用缓存的阴影图像
-            canvas->drawImage(shadow_cache_.image, 
-                              shadow_cache_.draw_offset.x(), 
+            // 调试日志已移除
+            canvas->drawImage(shadow_cache_.image,
+                              shadow_cache_.draw_offset.x(),
                               shadow_cache_.draw_offset.y());
         } else {
             // 计算阴影边界（包含模糊扩展）
@@ -490,16 +906,21 @@ void RenderBlock::Paint(SkCanvas* canvas) {
             
             int img_width = static_cast<int>(layout.width + left_margin + right_margin + 1);
             int img_height = static_cast<int>(layout.height + top_margin + bottom_margin + 1);
-            
+
+            // 调试日志已移除
+
             // 创建离屏 surface 绘制阴影
             SkImageInfo info = SkImageInfo::MakeN32Premul(img_width, img_height);
             auto surface = SkSurfaces::Raster(info);
             if (surface) {
                 auto* shadow_canvas = surface->getCanvas();
                 shadow_canvas->clear(SK_ColorTRANSPARENT);
-                
+
                 // 在离屏 canvas 上绘制阴影
                 shadow_canvas->translate(left_margin, top_margin);
+
+                // 调试日志已移除
+
                 BoxRenderer shadow_renderer(shadow_canvas);
                 shadow_renderer.RenderBoxShadow(box, style.box_shadow, &style.border_radius);
                 
@@ -519,6 +940,7 @@ void RenderBlock::Paint(SkCanvas* canvas) {
                 renderer.RenderBoxShadow(box, style.box_shadow, &style.border_radius);
             }
         }
+        */ // 缓存代码结束
     }
     auto shadow_end = std::chrono::high_resolution_clock::now();
     g_paint_shadow_time += std::chrono::duration_cast<std::chrono::microseconds>(shadow_end - shadow_start).count();
@@ -540,8 +962,30 @@ void RenderBlock::Paint(SkCanvas* canvas) {
         bg_box.border_top_width = bg_box.border_right_width = bg_box.border_bottom_width = bg_box.border_left_width = 0;
         padding_box = SkRect::MakeXYWH(0, 0, std::ceil(viewport_width_), std::ceil(viewport_height_));
     }
-    
-    if (style.background_linear_gradient.has_value()) {
+
+    // 优先检查多层渐变（CSS网格背景等）
+    if (!style.background_linear_gradients.empty()) {
+        // 先绘制背景色（如果有）
+        if (!style.background_color.empty()) {
+            renderer.RenderBackgroundAdvanced(IsBodyElement() ? bg_box : box, styles, &style.border_radius);
+        }
+
+        // 准备 background-sizes 向量
+        // 如果 background_sizes 为空但有单个 background_size，则为所有渐变层使用该尺寸
+        std::vector<CSSBackgroundSize> sizes_to_use = style.background_sizes;
+        if (sizes_to_use.empty() && style.background_size.type != CSSBackgroundSize::Type::AUTO) {
+            // 为每个渐变层复制相同的 background_size
+            for (size_t i = 0; i < style.background_linear_gradients.size(); i++) {
+                sizes_to_use.push_back(style.background_size);
+            }
+        }
+
+        // 然后绘制多层渐变
+        GradientRenderer::RenderMultipleLinearGradients(canvas, padding_box,
+                                                         style.background_linear_gradients,
+                                                         sizes_to_use);
+    }
+    else if (style.background_linear_gradient.has_value()) {
         GradientRenderer::RenderLinearGradient(canvas, padding_box, *style.background_linear_gradient);
     }
     else if (style.background_radial_gradient.has_value()) {
@@ -842,6 +1286,12 @@ void RenderBlock::Paint(SkCanvas* canvas) {
 
     } // end of if (!is_hidden) - 自身内容绘制结束
 
+    // 检查是否有 border-radius（用于 overflow 裁剪和 fieldset 渲染）
+    bool has_border_radius = style.border_radius.top_left.value > 0 ||
+                             style.border_radius.top_right.value > 0 ||
+                             style.border_radius.bottom_left.value > 0 ||
+                             style.border_radius.bottom_right.value > 0;
+
     // 应用 overflow 裁剪
     bool needs_clip = false;
     bool needs_scrollbar = false;
@@ -878,7 +1328,6 @@ void RenderBlock::Paint(SkCanvas* canvas) {
             auto calc_end = std::chrono::high_resolution_clock::now();
             auto calc_ms = std::chrono::duration_cast<std::chrono::milliseconds>(calc_end - calc_start).count();
             if (calc_ms > 10) {
-                std::cout << "[Paint] CalculateContent took " << calc_ms << "ms" << std::endl;
             }
             content_width_ = content_width;
             content_height_ = content_height;
@@ -950,7 +1399,28 @@ void RenderBlock::Paint(SkCanvas* canvas) {
             clip_height
         );
         canvas->save();
-        canvas->clipRect(clip_rect, SkClipOp::kIntersect, true);
+
+        // 根据是否有 border-radius 选择裁剪方式
+        if (has_border_radius) {
+            // 使用圆角裁剪
+            float box_width = clip_rect.width();
+            float box_height = clip_rect.height();
+            float base_size = std::min(box_width, box_height);
+
+            SkRRect rrect;
+            float tl = style.border_radius.top_left.ToPx(base_size);
+            float tr = style.border_radius.top_right.ToPx(base_size);
+            float br = style.border_radius.bottom_right.ToPx(base_size);
+            float bl = style.border_radius.bottom_left.ToPx(base_size);
+            SkVector radii[4] = {
+                {tl, tl}, {tr, tr}, {br, br}, {bl, bl}
+            };
+            rrect.setRectRadii(clip_rect, radii);
+            canvas->clipRRect(rrect, SkClipOp::kIntersect, true);
+        } else {
+            // 使用矩形裁剪
+            canvas->clipRect(clip_rect, SkClipOp::kIntersect, true);
+        }
 
         // 应用滚动偏移
         // 注意：始终在 Paint 中应用滚动偏移
@@ -987,36 +1457,6 @@ void RenderBlock::Paint(SkCanvas* canvas) {
                 }
             }
         }
-    }
-
-    // 浏览器行为：当元素有 border-radius 时，子元素会被裁剪到圆角区域内
-    // 即使没有设置 overflow: hidden
-    // 但是 fieldset 的 legend 不应该被裁剪
-    bool has_border_radius = style.border_radius.top_left.value > 0 ||
-                             style.border_radius.top_right.value > 0 ||
-                             style.border_radius.bottom_left.value > 0 ||
-                             style.border_radius.bottom_right.value > 0;
-
-    bool needs_radius_clip = has_border_radius && !needs_clip && !is_fieldset_element;
-    if (needs_radius_clip) {
-        canvas->save();
-        SkRect clip_rect = box.GetPaddingBox();
-        
-        // 修复：计算 border-radius 百分比的基准尺寸
-        float box_width = clip_rect.width();
-        float box_height = clip_rect.height();
-        float base_size = std::min(box_width, box_height);
-        
-        SkRRect rrect;
-        float tl = style.border_radius.top_left.ToPx(base_size);
-        float tr = style.border_radius.top_right.ToPx(base_size);
-        float br = style.border_radius.bottom_right.ToPx(base_size);
-        float bl = style.border_radius.bottom_left.ToPx(base_size);
-        SkVector radii[4] = {
-            {tl, tl}, {tr, tr}, {br, br}, {bl, bl}
-        };
-        rrect.setRectRadii(clip_rect, radii);
-        canvas->clipRRect(rrect, SkClipOp::kIntersect, true);
     }
 
     // 对于 fieldset，先在裁剪区域外绘制 legend
@@ -1061,31 +1501,55 @@ void RenderBlock::Paint(SkCanvas* canvas) {
     }
 
     auto children_start = std::chrono::high_resolution_clock::now();
-    
+
     // 收集直接子元素中的 fixed 元素，稍后在滚动条之后绘制
     // 注意：如果 fixed 元素被提升为独立合成层，会在 HasOwnCompositorLayer() 检查中跳过
     std::vector<std::shared_ptr<RenderObject>> fixed_children;
+
+    // 🐛 调试：追踪父元素的 Paint() 调用
+    if (debug_clip) {
+        // 检查是否有 fixed 子元素
+        bool has_fixed_child = false;
+        for (const auto& child : sorted_children) {
+            if (child->GetComputedStyle().position == "fixed") {
+                has_fixed_child = true;
+                break;
+            }
+        }
+
+        if (has_fixed_child) {
+            SkRect local_clip = canvas->getLocalClipBounds();
+        }
+    }
     
     for (auto& child : sorted_children) {
         // 跳过已经绘制的 legend
         if (is_fieldset_element && child.get() == legend_child) {
             continue;
         }
-        
+
         // 获取子元素样式，用于后续检查
         const auto& child_style = child->GetComputedStyle();
         bool is_fixed = (child_style.position == "fixed");
         bool is_fixed_or_absolute = (is_fixed || child_style.position == "absolute");
 
+        // 🐛 调试：追踪 fixed 元素的处理
+        if (debug_clip && is_fixed) {
+        }
+
         // 关键修复：跳过有独立合成层的子元素
         // 这些子元素会在自己的层中单独光栅化，不应该在父层中绘制
         // 否则会导致重影（元素被绘制两次）
         if (child->HasOwnCompositorLayer()) {
+            if (debug_clip && is_fixed) {
+            }
             continue;
         }
 
         // position: fixed 元素延迟到滚动条之后绘制
         if (is_fixed) {
+            if (debug_clip) {
+            }
             fixed_children.push_back(child);
             continue;
         }
@@ -1104,6 +1568,20 @@ void RenderBlock::Paint(SkCanvas* canvas) {
         }
         
         // 绘制非 fixed 子元素
+        if (debug_hover_bug) {
+            std::string child_tag = "unknown";
+            std::string child_id = "";
+            if (auto child_node = child->GetNode()) {
+                if (child_node->GetNodeType() == NodeType::ELEMENT_NODE) {
+                    auto elem = std::static_pointer_cast<Element>(child_node);
+                    child_tag = elem->GetTagName();
+                    child_id = elem->GetAttribute("id");
+                } else if (child_node->GetNodeType() == NodeType::TEXT_NODE) {
+                    child_tag = "#text";
+                }
+            }
+            const auto& child_layout = child->GetLayoutInfo();
+        }
         child->Paint(canvas);
     }
     auto children_end = std::chrono::high_resolution_clock::now();
@@ -1111,11 +1589,6 @@ void RenderBlock::Paint(SkCanvas* canvas) {
 
     // 恢复 fieldset 的圆角裁剪状态
     if (is_fieldset_element && has_border_radius) {
-        canvas->restore();
-    }
-
-    // 恢复圆角裁剪状态
-    if (needs_radius_clip) {
         canvas->restore();
     }
 
@@ -1252,25 +1725,49 @@ void RenderBlock::Paint(SkCanvas* canvas) {
     // 绘制 position: fixed 元素（在滚动条之后）
     // 注意：如果 fixed 元素被提升为独立合成层，这里的 fixed_children 会是空的
     // 因为它们在上面的循环中被 HasOwnCompositorLayer() 跳过了
+
+    // 🐛 调试：检查 fixed_children 数量
+    if (debug_clip) {
+    }
+
+    // 🐛 调试：在 fixed 循环前查看 clip
+    if (debug_clip && !fixed_children.empty()) {
+        SkRect local_clip = canvas->getLocalClipBounds();
+        SkIRect device_clip = canvas->getDeviceClipBounds();
+        SkMatrix matrix = canvas->getTotalMatrix();
+    }
+
     for (auto& child : fixed_children) {
         // 获取当前 canvas 的变换矩阵
         SkMatrix current_matrix = canvas->getTotalMatrix();
-            
+
         // 提取 DPI 缩放因子（假设是均匀缩放）
         float scale_x = current_matrix.getScaleX();
         float scale_y = current_matrix.getScaleY();
-        
-        // 保存当前状态
+
+        // 🐛 实验：使用 setMatrix 代替 resetMatrix + scale
+        // 原因：resetMatrix 可能影响 MaskFilter 的行为
         canvas->save();
-        
-        // 重置变换矩阵，只保留 DPI 缩放
-        canvas->resetMatrix();
-        canvas->scale(scale_x, scale_y);
-        
+
+        if (debug_clip) {
+            SkRect local_clip = canvas->getLocalClipBounds();
+            SkIRect device_clip = canvas->getDeviceClipBounds();
+        }
+
+        // 创建一个只包含 DPI 缩放的矩阵
+        SkMatrix fixed_matrix;
+        fixed_matrix.setScale(scale_x, scale_y);
+        canvas->setMatrix(fixed_matrix);
+
+        if (debug_clip) {
+            SkRect local_clip = canvas->getLocalClipBounds();
+            SkMatrix matrix = canvas->getTotalMatrix();
+        }
+
         // 绘制 fixed 元素（使用其视口绝对坐标）
         child->Paint(canvas);
-        
-        // 恢复之前的变换矩阵
+
+        // 恢复之前的状态（包括裁剪区域和变换矩阵）
         canvas->restore();
     }
 

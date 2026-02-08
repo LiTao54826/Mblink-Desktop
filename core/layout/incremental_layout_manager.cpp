@@ -65,8 +65,6 @@ bool IncrementalLayoutManager::AddOutOfFlowElement(Element* element, Node* paren
     // 标记脏区域
     window_->SetNeedsRepaint();
 
-    std::cout << "[IncrementalLayout] Added out-of-flow element without full rebuild" << std::endl;
-
     return true;
 }
 
@@ -90,8 +88,6 @@ bool IncrementalLayoutManager::RemoveOutOfFlowElement(Element* element) {
 
     // 标记需要重绘
     window_->SetNeedsRepaint();
-
-    std::cout << "[IncrementalLayout] Removed out-of-flow element without full rebuild" << std::endl;
 
     return true;
 }
@@ -147,9 +143,6 @@ void IncrementalLayoutManager::UpdateScrollContainerSize(Element* scroll_contain
     float content_height = render_object->CalculateContentHeight();
 
     render_object->SetContentSize(content_width, content_height);
-
-    std::cout << "[IncrementalLayout] Updated scroll container size: " 
-              << content_width << "x" << content_height << std::endl;
 }
 
 bool IncrementalLayoutManager::HasPendingUpdates() const {

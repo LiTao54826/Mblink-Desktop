@@ -18,7 +18,6 @@ std::string SDLKeycodeToKey(SDL_Keycode keycode, bool shift) {
     // https://www.w3.org/TR/uievents-key/
 
     // 调试输出
-    // std::cout << "[SDLKeycodeToKey] keycode=" << keycode << " (0x" << std::hex << keycode << std::dec << ")" << std::endl;
 
     // 特殊键
     switch (keycode) {

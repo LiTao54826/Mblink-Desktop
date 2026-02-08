@@ -144,12 +144,12 @@ class LightUIApp:
         else:
             self._devtools = None
 
-        # 状态缓存
-        self._states: Dict[str, Any] = {}
-
         # 绑定函数缓存
         self._bound_functions: Dict[str, Callable] = {}
-    
+
+        # 防止重复清理
+        self._cleaned_up = False
+
     def __enter__(self) -> "LightUIApp":
         """上下文管理器入口"""
         return self
@@ -157,9 +157,6 @@ class LightUIApp:
     def __exit__(self, exc_type, exc_val, exc_tb) -> None:
         """上下文管理器退出"""
         self.cleanup()
-        # 强制退出以避免资源清理时卡住
-        import os
-        os._exit(0)
 
     def cleanup(self) -> None:
         """
@@ -172,6 +169,9 @@ class LightUIApp:
         4. 清理 DOM 绑定
         5. 关闭窗口
         """
+        if self._cleaned_up:
+            return
+
         # 1. 停止事件循环
         if self._event_loop.is_running():
             self._event_loop.stop()
@@ -188,7 +188,9 @@ class LightUIApp:
 
         # 5. 关闭窗口
         self._window.close()
-    
+
+        self._cleaned_up = True
+
     # ========== 窗口操作 ==========
     
     @property

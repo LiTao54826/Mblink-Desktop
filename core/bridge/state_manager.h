@@ -280,9 +280,14 @@ public:
      * @brief 取消监听
      */
     void unwatch(int watchId);
-    
+
+    /**
+     * @brief 清理所有监听器（释放其捕获资源）
+     */
+    void clearWatchers();
+
     // ========== 批量/队列 ==========
-    
+
     /**
      * @brief 进入批量模式
      */

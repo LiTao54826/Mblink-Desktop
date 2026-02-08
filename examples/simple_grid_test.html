@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>简单网格测试</title>
+    <style>
+        .box1 {
+            width: 300px;
+            height: 300px;
+            border: 2px solid black;
+            margin: 20px;
+            
+            /* 纯色网格 - 最明显 */
+            background-color: yellow;
+            background-image:
+                linear-gradient(red 2px, transparent 2px),
+                linear-gradient(90deg, blue 2px, transparent 2px);
+            background-size: 20px 20px;
+        }
+        
+        .box2 {
+            width: 300px;
+            height: 300px;
+            border: 2px solid black;
+            margin: 20px;
+            
+            /* 单个渐变测试 */
+            background-image: linear-gradient(red, blue);
+        }
+        
+        .box3 {
+            width: 300px;
+            height: 300px;
+            border: 2px solid black;
+            margin: 20px;
+            
+            /* 纯色背景测试 */
+            background-color: green;
+        }
+    </style>
+</head>
+<body>
+    <h1>简单测试</h1>
+    <div class="box1">Box 1: 网格背景（黄底+红蓝网格）</div>
+    <div class="box2">Box 2: 单个渐变（红到蓝）</div>
+    <div class="box3">Box 3: 纯色背景（绿色）</div>
+</body>
+</html>
+

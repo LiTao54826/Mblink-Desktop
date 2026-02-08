@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Scroll Reset Test</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 20px;
+            font-family: Arial, sans-serif;
+        }
+        
+        .container {
+            width: 400px;
+            height: 300px;
+            border: 2px solid #333;
+            overflow: auto;
+            margin-bottom: 20px;
+        }
+        
+        .content {
+            width: 800px;
+            height: 600px;
+            background: linear-gradient(to bottom, #f0f0f0, #e0e0e0);
+            padding: 20px;
+        }
+        
+        .marker {
+            position: absolute;
+            background: red;
+            color: white;
+            padding: 5px 10px;
+            font-weight: bold;
+        }
+        
+        button {
+            padding: 10px 20px;
+            font-size: 16px;
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+    <h1>滚动位置重置测试</h1>
+    <p>步骤：</p>
+    <ol>
+        <li>滚动下面的容器到中间位置</li>
+        <li>点击"触发全量重绘"按钮</li>
+        <li>观察滚动位置是否被重置到顶部</li>
+    </ol>
+    
+    <button id="triggerBtn">触发全量重绘</button>
+    
+    <div class="container" id="scrollContainer">
+        <div class="content">
+            <div class="marker" style="top: 0; left: 0;">起点 (0, 0)</div>
+            <div class="marker" style="top: 200px; left: 200px;">中间 (200, 200)</div>
+            <div class="marker" style="top: 400px; left: 400px;">中间 (400, 400)</div>
+            <div class="marker" style="bottom: 0; right: 0;">终点</div>
+            
+            <p style="margin-top: 100px;">这是一个可滚动的容器</p>
+            <p>内容宽度: 800px</p>
+            <p>内容高度: 600px</p>
+            <p>容器宽度: 400px</p>
+            <p>容器高度: 300px</p>
+        </div>
+    </div>
+    
+    <div id="info">
+        <p>当前滚动位置: <span id="scrollPos">0, 0</span></p>
+    </div>
+    
+    <script>
+        const container = document.getElementById('scrollContainer');
+        const scrollPos = document.getElementById('scrollPos');
+        const triggerBtn = document.getElementById('triggerBtn');
+        
+        // 显示滚动位置
+        container.addEventListener('scroll', () => {
+            scrollPos.textContent = `${container.scrollLeft}, ${container.scrollTop}`;
+        });
+        
+        // 触发全量重绘
+        triggerBtn.addEventListener('click', () => {
+            console.log('触发前滚动位置:', container.scrollLeft, container.scrollTop);
+            
+            // 方法1: 修改 DOM 触发重建
+            const dummy = document.createElement('div');
+            dummy.style.display = 'none';
+            document.body.appendChild(dummy);
+            document.body.removeChild(dummy);
+            
+            // 等待一帧后检查
+            requestAnimationFrame(() => {
+                console.log('触发后滚动位置:', container.scrollLeft, container.scrollTop);
+            });
+        });
+    </script>
+</body>
+</html>
+

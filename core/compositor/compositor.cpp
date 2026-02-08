@@ -625,15 +625,26 @@ void Compositor::CompositeLayerCPU(CompositorLayer* layer, SkCanvas* canvas, con
             SkPaint paint;
             paint.setAlpha(static_cast<int>(layer->GetOpacity() * 255));
 
+            // 🐛 修复：如果有 shadow_extent，需要调整绘制位置
+            // bitmap 比元素大，需要向左上偏移 shadow_extent
+            // 优化：使用四个方向独立的扩展值
+            const auto& shadow_extent = layer->GetShadowExtent();
+            float draw_offset_x = -shadow_extent.left;
+            float draw_offset_y = -shadow_extent.top;
+
             // 位图是物理像素大小，需要缩放回逻辑像素大小绘制
             float dpi_scale = layer->GetDpiScale();
             if (dpi_scale != 1.0f) {
                 canvas->save();
                 canvas->scale(1.0f / dpi_scale, 1.0f / dpi_scale);
-                canvas->drawImage(bitmap.asImage(), 0, 0, SkSamplingOptions(SkFilterMode::kLinear), &paint);
+                // 应用 DPI 缩放到偏移
+                canvas->drawImage(bitmap.asImage(),
+                                  draw_offset_x * dpi_scale,
+                                  draw_offset_y * dpi_scale,
+                                  SkSamplingOptions(SkFilterMode::kLinear), &paint);
                 canvas->restore();
             } else {
-                canvas->drawImage(bitmap.asImage(), 0, 0, SkSamplingOptions(), &paint);
+                canvas->drawImage(bitmap.asImage(), draw_offset_x, draw_offset_y, SkSamplingOptions(), &paint);
             }
         }
 

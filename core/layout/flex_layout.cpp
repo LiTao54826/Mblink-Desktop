@@ -55,7 +55,8 @@ static void DetermineFlexBaseSize(
 static std::vector<FlexLine> CollectFlexLines(
     const FlexAlgoConstants& constants,
     Size<AvailableSpace> available_space,
-    std::vector<FlexItem>& flex_items
+    std::vector<FlexItem>& flex_items,
+    Size<std::optional<float>> parent_size
 );
 
 static void DetermineContainerMainSize(
@@ -390,10 +391,10 @@ static LayoutOutput ComputePreliminary(
     DetermineFlexBaseSize(tree, constants, available_space, flex_items);
     
     // 4. Determine the main size of the flex container (already done in compute_constants)
-    
+
     // 9.3. Main Size Determination
     // 5. Collect flex items into flex lines
-    auto flex_lines = CollectFlexLines(constants, available_space, flex_items);
+    auto flex_lines = CollectFlexLines(constants, available_space, flex_items, inputs.parent_size);
     
     // If container size is undefined, determine the container's main size
     auto main_inner = constants.node_inner_size.Main(constants.dir);
@@ -771,6 +772,9 @@ static void DetermineFlexBaseSize(
         }
         // C. If the used flex basis is content or depends on its available space
         else {
+            // 调试日志
+            static bool debug_flex = std::getenv("DEBUG_FLEX") != nullptr;
+
             // Measure the item
             auto child_available_space = available_space;
 
@@ -778,6 +782,10 @@ static void DetermineFlexBaseSize(
             if (item.size.Cross(constants.dir).has_value()) {
                 child_available_space.SetCross(constants.dir,
                     AvailableSpace::Definite(*item.size.Cross(constants.dir)));
+            }
+
+            // 🔍 DEBUG: 打印测量前的 available_space
+            if (debug_flex) {
             }
 
             auto measured_size = tree.MeasureChildSize(
@@ -789,6 +797,10 @@ static void DetermineFlexBaseSize(
             );
 
             item.flex_basis = measured_size.Main(constants.dir);
+
+            // 🔍 DEBUG: 打印测量结果
+            if (debug_flex) {
+            }
         }
 
         // Compute padding + border sum for main axis
@@ -815,7 +827,21 @@ static void DetermineFlexBaseSize(
         item.inner_flex_basis = f32_max(item.flex_basis - main_padding_border, 0.0f);
 
         // Compute hypothetical main size
+        // Per CSS Flexbox spec, the hypothetical main size is the flex base size
+        // clamped by min and max main size constraints.
+        // This is important for flex-wrap to work correctly with min-width.
+        // See: https://www.w3.org/TR/css-flexbox-1/#algo-main-item
         float hypothetical_inner_main = item.flex_basis;
+
+        // Apply min-width constraint to hypothetical size
+        if (main_min.has_value()) {
+            hypothetical_inner_main = f32_max(hypothetical_inner_main, *main_min);
+        }
+        // Apply max-width constraint to hypothetical size
+        if (main_max.has_value()) {
+            hypothetical_inner_main = f32_min(hypothetical_inner_main, *main_max);
+        }
+
         float hypothetical_outer_main = hypothetical_inner_main +
             item.margin.MainStart(constants.dir) + item.margin.MainEnd(constants.dir);
 
@@ -853,9 +879,13 @@ static void DetermineFlexBaseSize(
 static std::vector<FlexLine> CollectFlexLines(
     const FlexAlgoConstants& constants,
     Size<AvailableSpace> available_space,
-    std::vector<FlexItem>& flex_items
+    std::vector<FlexItem>& flex_items,
+    Size<std::optional<float>> parent_size
 ) {
     std::vector<FlexLine> lines;
+
+    // Debug logging for flex-wrap
+    static bool debug_flex_wrap = std::getenv("LIGHTUI_DEBUG_FLEX_WRAP") != nullptr;
 
     if (flex_items.empty()) {
         return lines;
@@ -863,6 +893,8 @@ static std::vector<FlexLine> CollectFlexLines(
 
     // If not wrapping, all items go in one line
     if (!constants.is_wrap) {
+        if (debug_flex_wrap) {
+        }
         FlexLine line;
         line.start_index = 0;
         line.end_index = flex_items.size();
@@ -873,7 +905,54 @@ static std::vector<FlexLine> CollectFlexLines(
     }
 
     // Get available main space
+    // First try available_space, then fall back to node_inner_size, then parent_size
+    // This fixes the bug where flex-wrap doesn't work when container has no explicit width
     float available_main = available_space.Main(constants.dir).IntoOption().value_or(INFINITY);
+    if (std::isinf(available_main)) {
+        auto node_inner_main = constants.node_inner_size.Main(constants.dir);
+        if (node_inner_main.has_value()) {
+            available_main = *node_inner_main;
+        } else {
+            // Fall back to parent_size if node_inner_size is not available
+            auto parent_main = parent_size.Main(constants.dir);
+            if (parent_main.has_value()) {
+                // Subtract content_box_inset to get inner available space
+                float inset = RectMainAxisSum(constants.content_box_inset, constants.dir);
+                available_main = f32_max(*parent_main - inset, 0.0f);
+            }
+        }
+    }
+
+    if (debug_flex_wrap) {
+        if (available_space.width.IsDefinite()) {
+        } else if (available_space.width.IsMaxContent()) {
+        } else {
+        }
+        if (available_space.height.IsDefinite()) {
+        } else if (available_space.height.IsMaxContent()) {
+        } else {
+        }
+
+        if (constants.node_inner_size.width.has_value()) {
+        } else {
+        }
+        if (constants.node_inner_size.height.has_value()) {
+        } else {
+        }
+
+        if (parent_size.width.has_value()) {
+        } else {
+        }
+        if (parent_size.height.has_value()) {
+        } else {
+        }
+
+        // Print each item's hypothetical size
+        for (size_t i = 0; i < flex_items.size(); ++i) {
+            const auto& item = flex_items[i];
+            float item_main = item.hypothetical_outer_size.Main(constants.dir);
+        }
+    }
 
     size_t line_start = 0;
     float line_main_size = 0.0f;
@@ -886,8 +965,11 @@ static std::vector<FlexLine> CollectFlexLines(
         bool should_break = false;
         if (i > line_start) {
             float gap = constants.gap.Main(constants.dir);
-            if (line_main_size + gap + item_main_size > available_main) {
+            float total_with_new_item = line_main_size + gap + item_main_size;
+            if (total_with_new_item > available_main) {
                 should_break = true;
+                if (debug_flex_wrap) {
+                }
             }
         }
 
@@ -918,6 +1000,11 @@ static std::vector<FlexLine> CollectFlexLines(
     line.cross_size = 0.0f;
     line.offset_cross = 0.0f;
     lines.push_back(line);
+
+    if (debug_flex_wrap) {
+        for (size_t i = 0; i < lines.size(); ++i) {
+        }
+    }
 
     return lines;
 }
@@ -1359,12 +1446,6 @@ static void DistributeRemainingFreeSpace(
         
         // 调试日志：输出 justify-content 计算
         if (debug_select) {
-            std::cout << "[JustifyContent] inner_container_main=" << constants.inner_container_size.Main(constants.dir)
-                      << " used_space=" << used_space
-                      << " free_space=" << free_space
-                      << " num_items=" << (line.end_index - line.start_index)
-                      << " justify=" << static_cast<int>(constants.justify_content.value_or(JustifyContent::FlexStart))
-                      << std::endl;
         }
 
         // Distribute to auto margins first
@@ -1401,7 +1482,6 @@ static void DistributeRemainingFreeSpace(
                 
                 // 调试日志：输出每个子项的 offset_main
                 if (debug_select) {
-                    std::cout << "[JustifyContent] item[" << i << "] offset_main=" << item.offset_main << std::endl;
                 }
             }
         } else {
@@ -1413,7 +1493,6 @@ static void DistributeRemainingFreeSpace(
                 
                 // 调试日志：输出每个子项的 offset_main
                 if (debug_select) {
-                    std::cout << "[JustifyContent] item[" << i << "] offset_main=" << item.offset_main << std::endl;
                 }
             }
         }
@@ -1543,6 +1622,8 @@ static void AlignFlexLinesPerAlignContent(
     const FlexAlgoConstants& constants,
     float total_line_cross_size
 ) {
+    static bool debug_flex_wrap = std::getenv("LIGHTUI_DEBUG_FLEX_WRAP") != nullptr;
+
     float inner_cross = constants.inner_container_size.Cross(constants.dir);
     float free_space = inner_cross - total_line_cross_size;
 
@@ -1550,6 +1631,11 @@ static void AlignFlexLinesPerAlignContent(
 
     float initial_offset = 0.0f;
     float gap_between = constants.gap.Cross(constants.dir);
+
+    if (debug_flex_wrap) {
+        for (size_t i = 0; i < flex_lines.size(); ++i) {
+        }
+    }
 
     switch (constants.align_content) {
         case AlignContent::FlexStart:
@@ -1667,19 +1753,32 @@ static void CalculateFlexItem(
 
     // 调试日志：输出 flex 子项的位置计算
     if (debug_flex) {
-        std::cout << "[FlexItem] node=" << item.node 
-                  << " target_size=(" << item.target_size.width << "," << item.target_size.height << ")"
-                  << " layout_output.size=(" << layout_output.size.width << "," << layout_output.size.height << ")"
-                  << " offset_cross=" << item.offset_cross
-                  << " align_self=" << static_cast<int>(item.align_self)
-                  << " -> location=(" << location.x << "," << location.y << ")"
-                  << std::endl;
     }
 
     // Set layout
     Layout layout;
     layout.order = item.order;
-    layout.size = layout_output.size;
+
+    // 🔧 FIX: 智能选择尺寸来源
+    // 如果 target_size 看起来不合理（接近0），但 layout_output.size 有效且更大，
+    // 则使用 layout_output.size（这处理了 shrink-to-fit 测量失败的情况）
+    // 否则使用 target_size（保留 min/max 约束）
+    Size<float> final_size = item.target_size;
+    bool target_too_small = item.target_size.Main(constants.dir) < 1.0f;
+    bool layout_output_valid = layout_output.size.Main(constants.dir) > 1.0f;
+
+    // 🔍 DEBUG: 打印尺寸选择
+    if (debug_flex) {
+    }
+
+    if (target_too_small && layout_output_valid) {
+        final_size = layout_output.size;
+        if (debug_flex) {
+        }
+    } else if (debug_flex) {
+    }
+
+    layout.size = final_size;
     layout.content_size = layout_output.content_size;
     layout.location = location;
     layout.padding = item.padding;
@@ -1687,11 +1786,11 @@ static void CalculateFlexItem(
     tree.SetUnroundedLayout(item.node, layout);
 
     // Update total_offset_main for next item
-    total_offset_main += item.offset_main + RectMainAxisSum(item.margin, constants.dir) + layout_output.size.Main(constants.dir);
+    total_offset_main += item.offset_main + RectMainAxisSum(item.margin, constants.dir) + final_size.Main(constants.dir);
 
     // Update content size
-    float right = location.x + layout_output.size.width;
-    float bottom = location.y + layout_output.size.height;
+    float right = location.x + final_size.width;
+    float bottom = location.y + final_size.height;
     content_size.width = f32_max(content_size.width, right);
     content_size.height = f32_max(content_size.height, bottom);
 }
@@ -1749,11 +1848,6 @@ static Size<float> PerformAbsoluteLayoutOnAbsoluteChildren(
     const FlexAlgoConstants& constants
 ) {
 #if LIGHTUI_DEBUG_ABSOLUTE_POSITIONING
-    std::cerr << "[FlexAbsoluteLayout] PerformAbsoluteLayoutOnAbsoluteChildren called" << std::endl;
-    std::cerr << "[FlexAbsoluteLayout]   container_size: width=" << constants.container_size.width << ", height=" << constants.container_size.height << std::endl;
-    std::cerr << "[FlexAbsoluteLayout]   inner_container_size: width=" << constants.inner_container_size.width << ", height=" << constants.inner_container_size.height << std::endl;
-    std::cerr << "[FlexAbsoluteLayout]   content_box_inset: left=" << constants.content_box_inset.left << ", right=" << constants.content_box_inset.right 
-              << ", top=" << constants.content_box_inset.top << ", bottom=" << constants.content_box_inset.bottom << std::endl;
 #endif
 
     Size<float> content_size = Size<float>::Zero();
@@ -1785,9 +1879,7 @@ static Size<float> PerformAbsoluteLayoutOnAbsoluteChildren(
         };
 
 #if LIGHTUI_DEBUG_ABSOLUTE_POSITIONING
-        std::cerr << "[FlexAbsoluteLayout] Processing absolute/fixed child node=" << child << std::endl;
         if (is_fixed) {
-            std::cerr << "[FlexAbsoluteLayout]   Using viewport size: " << containing_block_size.width << "x" << containing_block_size.height << std::endl;
         }
 #endif
 
@@ -1806,11 +1898,6 @@ static Size<float> PerformAbsoluteLayoutOnAbsoluteChildren(
         auto inset = MaybeResolve(child_style.inset, containing_block_size_opt.width);
 
 #if LIGHTUI_DEBUG_ABSOLUTE_POSITIONING
-        std::cerr << "[FlexAbsoluteLayout]   Inset values:" << std::endl;
-        std::cerr << "[FlexAbsoluteLayout]     left=" << (inset.left.has_value() ? std::to_string(*inset.left) : "none") << std::endl;
-        std::cerr << "[FlexAbsoluteLayout]     right=" << (inset.right.has_value() ? std::to_string(*inset.right) : "none") << std::endl;
-        std::cerr << "[FlexAbsoluteLayout]     top=" << (inset.top.has_value() ? std::to_string(*inset.top) : "none") << std::endl;
-        std::cerr << "[FlexAbsoluteLayout]     bottom=" << (inset.bottom.has_value() ? std::to_string(*inset.bottom) : "none") << std::endl;
 #endif
 
         // Resolve margin - use containing block size for percentage resolution
@@ -1899,26 +1986,13 @@ static Size<float> PerformAbsoluteLayoutOnAbsoluteChildren(
         }
 
 #if LIGHTUI_DEBUG_ABSOLUTE_POSITIONING
-        std::cerr << "[FlexAbsoluteLayout]   Final size: width=" << final_size.width << ", height=" << final_size.height << std::endl;
-        std::cerr << "[FlexAbsoluteLayout]   Margin: left=" << margin.left << ", right=" << margin.right 
-                  << ", top=" << margin.top << ", bottom=" << margin.bottom << std::endl;
-        std::cerr << "[FlexAbsoluteLayout]   Computed location: x=" << location.x << ", y=" << location.y << std::endl;
-        std::cerr << "[FlexAbsoluteLayout]   Position calculation details:" << std::endl;
-        std::cerr << "[FlexAbsoluteLayout]     is_fixed=" << (is_fixed ? "true" : "false") << std::endl;
-        std::cerr << "[FlexAbsoluteLayout]     containing_block_size: " << containing_block_size.width << "x" << containing_block_size.height << std::endl;
         if (inset.left.has_value()) {
-            std::cerr << "[FlexAbsoluteLayout]     X: using left=" << *inset.left << " -> content_box_left(" << content_box_left << ") + left + margin.left(" << margin.left << ")" << std::endl;
         } else if (inset.right.has_value()) {
-            std::cerr << "[FlexAbsoluteLayout]     X: using right=" << *inset.right << " -> container_width(" << container_width << ") - content_box_right(" << content_box_right << ") - right - margin.right(" << margin.right << ") - final_size.width(" << final_size.width << ")" << std::endl;
         } else {
-            std::cerr << "[FlexAbsoluteLayout]     X: using default -> content_box_left(" << content_box_left << ") + margin.left(" << margin.left << ")" << std::endl;
         }
         if (inset.top.has_value()) {
-            std::cerr << "[FlexAbsoluteLayout]     Y: using top=" << *inset.top << " -> content_box_top(" << content_box_top << ") + top + margin.top(" << margin.top << ")" << std::endl;
         } else if (inset.bottom.has_value()) {
-            std::cerr << "[FlexAbsoluteLayout]     Y: using bottom=" << *inset.bottom << " -> container_height(" << container_height << ") - content_box_bottom(" << content_box_bottom << ") - bottom - margin.bottom(" << margin.bottom << ") - final_size.height(" << final_size.height << ")" << std::endl;
         } else {
-            std::cerr << "[FlexAbsoluteLayout]     Y: using default -> content_box_top(" << content_box_top << ") + margin.top(" << margin.top << ")" << std::endl;
         }
 #endif
 

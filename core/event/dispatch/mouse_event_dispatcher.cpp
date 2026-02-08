@@ -227,10 +227,19 @@ bool MouseEventDispatcher::HandleMouseEvent(const SDL_Event& event,
                 ancestors.push_back(current);
                 current = current->GetParent();
             }
+            // 计算元素的绝对位置时，需要考虑父元素的滚动偏移
+            // 滚动条是固定在容器视口内的，不随内容滚动
+            // 所以计算 local 坐标时，需要减去父元素的滚动偏移
             for (auto it = ancestors.rbegin(); it != ancestors.rend(); ++it) {
                 const auto& l = (*it)->GetLayoutInfo();
                 elem_abs_x += l.x;
                 elem_abs_y += l.y;
+                // 对于非目标元素的祖先，需要减去其滚动偏移
+                // 因为子元素的视觉位置会随父元素滚动而移动
+                if ((*it) != scrollable) {
+                    elem_abs_x -= (*it)->GetScrollX();
+                    elem_abs_y -= (*it)->GetScrollY();
+                }
             }
 
             float local_x = logical_x - elem_abs_x;

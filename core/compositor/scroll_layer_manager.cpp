@@ -13,8 +13,6 @@
 #include "core/render/objects/render_object.h"
 #include <algorithm>
 #include <cmath>
-#include <iostream>
-#include "core/dom/element.h"
 
 namespace lightui {
 
@@ -223,30 +221,15 @@ bool ScrollLayerManager::HandleScroll(RenderObject* container, float delta_x, fl
         return false;
     }
 
-    // 调试日志
-    static bool debug_scroll = std::getenv("LIGHTUI_DEBUG_SCROLL") != nullptr;
-    if (debug_scroll) {
-        std::cout << "[HandleScroll] delta_y=" << delta_y
-                  << ", scroll_y=" << info->scroll_y
-                  << ", max_scroll_y=" << info->max_scroll_y
-                  << ", content_height=" << info->content_height
-                  << ", viewport_height=" << info->viewport_height
-                  << std::endl;
-    }
-
     float old_scroll_x = info->scroll_x;
     float old_scroll_y = info->scroll_y;
 
     // 更新滚动位置
     info->scroll_x += delta_x;
     info->scroll_y += delta_y;
-    
+
     // 限制在有效范围内
     ClampScrollPosition(*info);
-    
-    if (debug_scroll) {
-        std::cout << "[HandleScroll] after clamp: scroll_y=" << info->scroll_y << std::endl;
-    }
 
     // 检查是否实际发生了滚动
     if (std::abs(info->scroll_x - old_scroll_x) < 0.001f &&
@@ -254,7 +237,7 @@ bool ScrollLayerManager::HandleScroll(RenderObject* container, float delta_x, fl
         // 如果两次滚动尝试都失败，才返回false。
         // 有时候可能是因为精度问题或者已经到顶/底，但我们还是想看看日志
     }
-    
+
     // 检查是否实际发生了滚动
     if (std::abs(info->scroll_x - old_scroll_x) < 0.001f &&
         std::abs(info->scroll_y - old_scroll_y) < 0.001f) {
@@ -366,18 +349,12 @@ void ScrollLayerManager::UpdateContentSize(RenderObject* container) {
     
     info->content_width = container->GetContentWidth();
     info->content_height = container->GetContentHeight();
-    
-    // 调试日志
-    static bool debug_scroll = std::getenv("LIGHTUI_DEBUG_SCROLL") != nullptr;
 
     if (info->content_width <= 0 || needs_recalc) {
         info->content_width = container->CalculateContentWidth();
     }
     if (info->content_height <= 0 || needs_recalc) {
         info->content_height = container->CalculateContentHeight();
-        if (debug_scroll) {
-            std::cout << "[UpdateContentSize] recalculated: content_height=" << info->content_height << std::endl;
-        }
     }
 
     // 更新视口尺寸（与RegisterScrollContainer逻辑一致）

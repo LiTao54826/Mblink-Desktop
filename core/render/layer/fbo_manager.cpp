@@ -92,12 +92,10 @@ static bool LoadGLExtensions() {
         !glCheckFramebufferStatus || !glFramebufferTexture2D ||
         !glGenRenderbuffers || !glDeleteRenderbuffers || !glBindRenderbuffer ||
         !glRenderbufferStorage || !glFramebufferRenderbuffer || !glBlitFramebuffer) {
-        std::cerr << "[FBOManager] Failed to load OpenGL FBO extensions" << std::endl;
         return false;
     }
     
     g_gl_extensions_loaded = true;
-    std::cout << "[FBOManager] OpenGL FBO extensions loaded successfully" << std::endl;
     return true;
 }
 
@@ -123,18 +121,15 @@ FBOManager::~FBOManager() {
 
 bool FBOManager::Initialize(int width, int height, GrDirectContext* gr_context) {
     if (width <= 0 || height <= 0) {
-        std::cerr << "[FBOManager] Invalid dimensions: " << width << "x" << height << std::endl;
         return false;
     }
 
     if (!gr_context) {
-        std::cerr << "[FBOManager] Invalid GrDirectContext" << std::endl;
         return false;
     }
 
     // 加载 OpenGL 扩展
     if (!LoadGLExtensions()) {
-        std::cerr << "[FBOManager] Failed to load OpenGL extensions" << std::endl;
         return false;
     }
 
@@ -145,20 +140,17 @@ bool FBOManager::Initialize(int width, int height, GrDirectContext* gr_context) 
 
     // Create FBO
     if (!CreateFBO()) {
-        std::cerr << "[FBOManager] Failed to create FBO" << std::endl;
         Destroy();
         return false;
     }
 
     // Create Skia surface
     if (!CreateSkiaSurface()) {
-        std::cerr << "[FBOManager] Failed to create Skia surface" << std::endl;
         Destroy();
         return false;
     }
 
     valid_ = true;
-    std::cout << "[FBOManager] Initialized " << width << "x" << height << " FBO" << std::endl;
     return true;
 }
 
@@ -223,7 +215,6 @@ bool FBOManager::CreateFBO() {
     // Check FBO completeness
     GLenum status = glCheckFramebufferStatus(GL_FRAMEBUFFER);
     if (status != GL_FRAMEBUFFER_COMPLETE) {
-        std::cerr << "[FBOManager] FBO incomplete, status: 0x" << std::hex << status << std::dec << std::endl;
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
         return false;
     }
@@ -259,7 +250,6 @@ bool FBOManager::CreateSkiaSurface() {
     );
 
     if (!surface_) {
-        std::cerr << "[FBOManager] Failed to create Skia surface from FBO" << std::endl;
         return false;
     }
 
@@ -293,7 +283,6 @@ void FBOManager::Destroy() {
 
 bool FBOManager::Resize(int width, int height) {
     if (width <= 0 || height <= 0) {
-        std::cerr << "[FBOManager] Invalid resize dimensions: " << width << "x" << height << std::endl;
         return false;
     }
 
@@ -302,8 +291,6 @@ bool FBOManager::Resize(int width, int height) {
         return true;
     }
 
-    std::cout << "[FBOManager] Resizing from " << width_ << "x" << height_ 
-              << " to " << width << "x" << height << std::endl;
 
     // Store context
     GrDirectContext* ctx = gr_context_;
@@ -346,7 +333,6 @@ void FBOManager::BlitToScreen(int screen_width, int screen_height) {
     );
 
     if (!CheckGLError("glBlitFramebuffer")) {
-        std::cerr << "[FBOManager] BlitToScreen failed" << std::endl;
     }
 
     // Restore default framebuffer binding
@@ -387,8 +373,6 @@ void FBOManager::Flush() {
 bool FBOManager::CheckGLError(const char* operation) {
     GLenum error = glGetError();
     if (error != GL_NO_ERROR) {
-        std::cerr << "[FBOManager] OpenGL error after " << operation 
-                  << ": 0x" << std::hex << error << std::dec << std::endl;
         return false;
     }
     return true;

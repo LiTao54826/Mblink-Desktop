@@ -410,7 +410,6 @@ void FetchBindings::EvalJS(const std::string& code, const std::string& filename)
         JSValue exception = JS_GetException(ctx_);
         const char* err_str = JS_ToCString(ctx_, exception);
         if (err_str) {
-            std::cerr << "JS Error in " << filename << ": " << err_str << std::endl;
             JS_FreeCString(ctx_, err_str);
         }
         JS_FreeValue(ctx_, exception);

@@ -43,7 +43,15 @@ function renderToasts() {
   render(
     h(
       'div',
-      { style: { display: 'contents' } },
+      {
+        style: {
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          gap: '8px',
+          pointerEvents: 'none',
+        },
+      },
       toasts.map((toast) => h(ToastItem, { key: toast.id, ...toast }))
     ),
     container

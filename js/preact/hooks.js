@@ -13,6 +13,8 @@
     // Global state for hooks
     var currentComponent = null;
     var currentHookIndex = 0;
+    // Track components that ever used hooks so shutdown can run all effect cleanups
+    var mountedComponents = new Set();
 
 // Phase 4: Preact 调度器 - 批量更新支持
 var pendingUpdates = new Set();
@@ -79,6 +81,9 @@ function flushUpdates() {
 function setCurrentComponent(component) {
     currentComponent = component;
     currentHookIndex = 0;
+    if (component) {
+        mountedComponents.add(component);
+    }
 }
 
 /**
@@ -330,5 +335,27 @@ function createContext(defaultValue) {
     // 暴露到全局作用域
     global.PreactHooks = PreactHooks;
     global.preactHooks = preactHooks;
+
+    // 暴露清理函数，供 C++ 关闭时调用以释放 IIFE 内部的闭包引用
+    global.__preactHooksCleanup = function() {
+        // 1) 先执行所有组件 hooks 的 cleanup，解除 document/window 级监听器等副作用
+        mountedComponents.forEach(function(component) {
+            if (!component || !component.__hooks) return;
+            for (var i = 0; i < component.__hooks.length; i++) {
+                var hookState = component.__hooks[i];
+                if (hookState && typeof hookState.cleanup === 'function') {
+                    try { hookState.cleanup(); } catch (_) {}
+                    hookState.cleanup = null;
+                }
+            }
+            component.__hooks = [];
+        });
+        mountedComponents.clear();
+
+        // 2) 清空调度器状态，避免残留闭包引用
+        pendingUpdates.clear();
+        updateScheduled = false;
+        currentComponent = null;
+    };
 
 })(typeof globalThis !== 'undefined' ? globalThis : typeof window !== 'undefined' ? window : typeof global !== 'undefined' ? global : this);

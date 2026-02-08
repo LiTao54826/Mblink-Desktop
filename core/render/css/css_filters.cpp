@@ -121,7 +121,8 @@ sk_sp<SkImageFilter> CSSFilterRenderer::CreateSkiaFilter(const CSSFilter& filter
                                                          sk_sp<SkImageFilter> input) {
     switch (filter.type) {
         case CSSFilterType::Blur: {
-            float sigma = filter.value / 2.0f;
+            // CSS blur-radius 直接作为 Skia sigma 使用，以匹配浏览器渲染效果
+            float sigma = filter.value;
             return SkImageFilters::Blur(sigma, sigma, input);
         }
         
@@ -239,7 +240,8 @@ sk_sp<SkImageFilter> CSSFilterRenderer::CreateSkiaFilter(const CSSFilter& filter
         
         case CSSFilterType::DropShadow: {
             // 投影：使用 drop shadow 滤镜
-            float sigma = filter.blur_radius / 2.0f;
+            // CSS blur-radius 直接作为 Skia sigma 使用，以匹配浏览器渲染效果
+            float sigma = filter.blur_radius;
             return SkImageFilters::DropShadow(
                 filter.offset_x, filter.offset_y,
                 sigma, sigma,

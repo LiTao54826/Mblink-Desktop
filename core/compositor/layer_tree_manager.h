@@ -305,19 +305,8 @@ public:
     size_t GetLayerCount() const;
 
     // =========================================================================
-    // 调试支持
+    // 状态查询
     // =========================================================================
-
-    /**
-     * @brief 启用/禁用调试日志
-     * @param enabled 是否启用
-     */
-    void SetDebugLogging(bool enabled) { debug_logging_ = enabled; }
-
-    /**
-     * @brief 检查调试日志是否启用
-     */
-    bool IsDebugLoggingEnabled() const { return debug_logging_; }
 
     /**
      * @brief 获取最后一次完整重建的原因
@@ -421,7 +410,7 @@ public:
     std::vector<LayerInspectionInfo> InspectAllLayers() const;
 
     /**
-     * @brief 打印层树结构（调试用）
+     * @brief 打印层树结构
      */
     void DumpLayerTree() const;
 
@@ -457,12 +446,6 @@ private:
      */
     void ClampScrollPosition(ScrollState& state);
 
-    /**
-     * @brief 记录调试日志
-     * @param message 日志消息
-     */
-    void LogDebug(const std::string& message) const;
-
     // =========================================================================
     // 成员变量
     // =========================================================================
@@ -495,9 +478,6 @@ private:
     bool needs_full_rebuild_ = true;
     std::string last_rebuild_reason_ = "initial";
     uint64_t tree_version_ = 0;
-
-    // 调试
-    bool debug_logging_ = false;
 };
 
 } // namespace lightui

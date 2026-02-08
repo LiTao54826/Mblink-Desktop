@@ -28,8 +28,8 @@ BackgroundPainter::BackgroundPainter(SkCanvas* canvas)
     : canvas_(canvas) {
 }
 
-void BackgroundPainter::Paint(const Box& box, 
-                              const ComputedStyle& style, 
+void BackgroundPainter::Paint(const Box& box,
+                              const ComputedStyle& style,
                               const PaintCache& cache) {
     if (!canvas_) {
         return;
@@ -37,16 +37,129 @@ void BackgroundPainter::Paint(const Box& box,
 
     // 使用 border_box 绘制背景（符合 CSS 规范 background-clip: border-box 默认值）
     SkRect border_box = box.GetBorderBox();
+    SkRect padding_box = box.GetPaddingBox();
 
-    // 优先级：线性渐变 > 径向渐变 > 纯色背景
-    if (style.background_linear_gradient.has_value()) {
-        // 使用 padding_box 绘制渐变（与原有逻辑一致）
-        SkRect padding_box = box.GetPaddingBox();
-        GradientRenderer::RenderLinearGradient(canvas_, padding_box, 
+    // 优先级：多层渐变 > 单个渐变 > 径向渐变 > 纯色背景
+    if (!style.background_linear_gradients.empty()) {
+        // 多层线性渐变（CSS规范：列表中第一个在最上层，最后一个在最下层）
+        // 因此需要反向绘制：先绘制最后一个（底层），最后绘制第一个（顶层）
+        for (int i = static_cast<int>(style.background_linear_gradients.size()) - 1; i >= 0; i--) {
+            const auto& gradient = style.background_linear_gradients[i];
+
+            // 获取对应的 background-size（如果有）
+            CSSBackgroundSize bg_size;
+            if (!style.background_sizes.empty()) {
+                // 如果 size 数量少于 gradient，则循环使用
+                size_t size_index = i % style.background_sizes.size();
+                bg_size = style.background_sizes[size_index];
+            } else if (style.background_size.type != CSSBackgroundSize::Type::AUTO) {
+                // 如果没有多个 size，但有单个 size，使用单个 size（向后兼容）
+                bg_size = style.background_size;
+            } else {
+            }
+
+            if (bg_size.type == CSSBackgroundSize::Type::LENGTH) {
+            }
+
+            // 使用 background-size 调整渲染区域
+            SkRect render_rect = padding_box;
+            if (bg_size.type == CSSBackgroundSize::Type::LENGTH) {
+                if (!bg_size.width.IsAuto() && !bg_size.height.IsAuto()) {
+                    float width = bg_size.width.ToPx(padding_box.width());
+                    float height = bg_size.height.ToPx(padding_box.height());
+
+
+                    // 创建平铺效果：使用 shader 的平铺模式
+                    // 先绘制一个小的渐变单元，然后通过 shader 平铺
+                    SkRect tile_rect = SkRect::MakeXYWH(padding_box.left(), padding_box.top(), width, height);
+
+                    // 提取颜色和位置
+                    std::vector<SkColor> colors;
+                    std::vector<SkScalar> positions;
+                    for (const auto& stop : gradient.stops) {
+                        colors.push_back(stop.color);
+                        positions.push_back(stop.position);
+                    }
+
+                    if (colors.size() >= 2) {
+                        // 计算渐变方向（使用相对坐标系统，从 (0,0) 到 (width, height)）
+                        float angle_rad = (gradient.angle - 90.0f) * M_PI / 180.0f;
+
+                        float dx = std::cos(angle_rad);
+                        float dy = std::sin(angle_rad);
+
+                        // 对于平铺背景，渐变应该在一个 tile 单元内完成
+                        // 起点和终点基于 tile 的尺寸
+                        // CSS 渐变角度：0deg=向上, 90deg=向右, 180deg=向下(默认), 270deg=向左
+                        SkPoint pts[2];
+
+                        if (std::abs(gradient.angle) < 0.01f) {
+                            // 0度：向上（从下到上）
+                            pts[0] = SkPoint::Make(0, height);
+                            pts[1] = SkPoint::Make(0, 0);
+                        } else if (std::abs(gradient.angle - 180.0f) < 0.01f) {
+                            // 180度：向下（从上到下）- CSS 默认方向
+                            pts[0] = SkPoint::Make(0, 0);
+                            pts[1] = SkPoint::Make(0, height);
+                        } else if (std::abs(gradient.angle - 90.0f) < 0.01f) {
+                            // 90度：向右（从左到右）
+                            pts[0] = SkPoint::Make(0, 0);
+                            pts[1] = SkPoint::Make(width, 0);
+                        } else if (std::abs(gradient.angle - 270.0f) < 0.01f) {
+                            // 270度：向左（从右到左）
+                            pts[0] = SkPoint::Make(width, 0);
+                            pts[1] = SkPoint::Make(0, 0);
+                        } else {
+                            // 其他角度
+                            float halfWidth = width / 2.0f;
+                            float halfHeight = height / 2.0f;
+                            float distance;
+
+                            if (std::abs(dx) < 0.0001f) {
+                                distance = halfHeight;
+                            } else if (std::abs(dy) < 0.0001f) {
+                                distance = halfWidth;
+                            } else {
+                                float distX = std::abs(halfWidth / dx);
+                                float distY = std::abs(halfHeight / dy);
+                                distance = std::min(distX, distY);
+                            }
+
+                            pts[0] = SkPoint::Make(halfWidth - dx * distance, halfHeight - dy * distance);
+                            pts[1] = SkPoint::Make(halfWidth + dx * distance, halfHeight + dy * distance);
+                        }
+
+                        // 创建平铺的渐变 shader（使用局部矩阵进行平铺）
+                        sk_sp<SkShader> gradient_shader = SkGradientShader::MakeLinear(
+                            pts, colors.data(), positions.data(),
+                            static_cast<int>(colors.size()), SkTileMode::kRepeat);
+
+                        // 创建矩阵变换，将 shader 平移到正确的位置
+                        SkMatrix matrix;
+                        matrix.setTranslate(padding_box.left(), padding_box.top());
+
+                        sk_sp<SkShader> shader = gradient_shader->makeWithLocalMatrix(matrix);
+
+                        SkPaint paint;
+                        paint.setShader(shader);
+                        paint.setAntiAlias(true);
+
+                        canvas_->drawRect(padding_box, paint);
+                    }
+
+                    continue;
+                }
+            }
+
+            // 默认渲染（无特殊 size 或 auto）
+            GradientRenderer::RenderLinearGradient(canvas_, padding_box, gradient);
+        }
+    } else if (style.background_linear_gradient.has_value()) {
+        // 单个线性渐变（向后兼容）
+        GradientRenderer::RenderLinearGradient(canvas_, padding_box,
                                                *style.background_linear_gradient);
     } else if (style.background_radial_gradient.has_value()) {
-        SkRect padding_box = box.GetPaddingBox();
-        GradientRenderer::RenderRadialGradient(canvas_, padding_box, 
+        GradientRenderer::RenderRadialGradient(canvas_, padding_box,
                                                *style.background_radial_gradient);
     } else {
         // 使用样式映射绘制背景（支持图片和纯色）

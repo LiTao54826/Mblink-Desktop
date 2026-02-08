@@ -56,6 +56,7 @@ class Text;
 class AnimationTimeline;
 class CompositorLayer;
 class PaintLayer;
+class NativeLayoutEngine;
 
 // 层提升原因（从 compositor 模块引入）
 enum class LayerPromotionReason;
@@ -121,8 +122,10 @@ enum class RenderObjectType {
     INLINE,     // 内联元素（span, a等）
     TEXT,       // 文本节点
     INLINE_BLOCK, // 内联块（img, button等）
-    FLEX,       // Flex 容器
-    GRID,       // Grid 容器
+    FLEX,       // Flex 容器（display: flex）
+    INLINE_FLEX, // 内联 Flex 容器（display: inline-flex）
+    GRID,       // Grid 容器（display: grid）
+    INLINE_GRID, // 内联 Grid 容器（display: inline-grid）
     TABLE,      // 表格（display: table）
     TABLE_ROW_GROUP,  // 表格行组（display: table-row-group, 如 tbody）
     TABLE_HEADER_GROUP, // 表格头组（display: table-header-group, 如 thead）
@@ -161,7 +164,7 @@ struct ComputedStyle {
     std::string background_image;
     CSSBackgroundRepeat background_repeat = CSSBackgroundRepeat::REPEAT;
     CSSBackgroundSize background_size;
-    
+
     // 文本
     std::string color;
     std::string font_family;
@@ -176,7 +179,7 @@ struct ComputedStyle {
     CSSLength text_indent;           // 首行缩进
     CSSLength letter_spacing;        // 字符间距
     CSSLength word_spacing;          // 单词间距
-    
+
     // 阴影
     std::vector<CSSBoxShadow> box_shadow;
     std::vector<CSSTextShadow> text_shadow;
@@ -187,9 +190,13 @@ struct ComputedStyle {
     SkColor outline_color = SK_ColorBLACK;
     CSSLength outline_offset;  // outline 与边框的距离
 
-    // 渐变
+    // 渐变（单个渐变，保持向后兼容）
     std::optional<CSSLinearGradient> background_linear_gradient;
     std::optional<CSSRadialGradient> background_radial_gradient;
+
+    // 多层背景支持（CSS规范：支持多个背景图像和渐变）
+    std::vector<CSSLinearGradient> background_linear_gradients;
+    std::vector<CSSBackgroundSize> background_sizes;
 
     // 透明度
     float opacity = 1.0f;
@@ -542,8 +549,8 @@ public:
      * @brief 设置计算后的样式
      * 自动使绘制缓存和布局边界缓存失效
      */
-    void SetComputedStyle(const ComputedStyle& style) { 
-        computed_style_ = style; 
+    void SetComputedStyle(const ComputedStyle& style) {
+        computed_style_ = style;
         paint_cache_.valid = false;  // P1优化：样式变化时使缓存失效
         boundary_cache_valid_ = false;  // 布局边界缓存失效
     }
@@ -604,10 +611,7 @@ public:
      * @brief 标记需要重新绘制
      * 同时向上传播 ChildNeedsPaint 标志到祖先节点
      */
-    void MarkNeedsPaint() { 
-        needs_paint_ = true; 
-        MarkAncestorsWithChildNeedsPaint();
-    }
+    void MarkNeedsPaint();
     
     /**
      * @brief 检查是否需要重新绘制
@@ -1125,6 +1129,23 @@ public:
      */
     static float GetViewportHeight() { return viewport_height_; }
 
+    // =========================================================================
+    // 布局引擎访问
+    // =========================================================================
+
+    /**
+     * @brief 设置布局引擎引用
+     * @param engine 布局引擎指针（不拥有所有权）
+     * @note 布局引擎的生命周期必须长于所有 RenderObject
+     */
+    void SetLayoutEngine(NativeLayoutEngine* engine) { layout_engine_ = engine; }
+
+    /**
+     * @brief 获取布局引擎引用
+     * @return 布局引擎指针
+     */
+    NativeLayoutEngine* GetLayoutEngine() const { return layout_engine_; }
+
     /**
      * @brief 设置光标可见状态（用于光标闪烁）
      * @param visible 是否可见
@@ -1262,6 +1283,9 @@ protected:
     /// 布局缓存（避免重复计算）
     Cache layout_cache_;
 
+    /// 布局引擎引用（不拥有所有权，用于检查是否需要特殊处理）
+    NativeLayoutEngine* layout_engine_ = nullptr;
+
     /// 布局输出结果
     LayoutOutput layout_output_;
 
@@ -1314,6 +1338,14 @@ private:
      * @param box 盒模型
      */
     void PaintContentEditableCaret(SkCanvas* canvas, Element* element, const Box& box);
+
+    /**
+     * @brief 作为 flex 容器进行布局
+     * @param parent_width 父元素宽度
+     * @param parent_height 父元素高度
+     * @note 当 display 为 FLEX 时调用，处理 align-items 和 justify-content
+     */
+    void LayoutAsFlex(float parent_width, float parent_height);
 };
 
 /**
@@ -1353,7 +1385,15 @@ public:
     RenderText() : RenderObject(RenderObjectType::TEXT) {}
     RenderText(const std::string& text) : RenderObject(RenderObjectType::TEXT), text_(text) {}
 
-    void SetText(const std::string& text) { text_ = text; wrapped_lines_.clear(); }
+    void SetText(const std::string& text) {
+        if (text_ == text) return;
+        text_ = text;
+        wrapped_lines_.clear();
+        // 通用增量布局语义：文本内容变化会影响内在尺寸，必须重新布局
+        layout_info_.is_laid_out = false;
+        MarkNeedsLayout(true);
+        MarkNeedsPaint();
+    }
     std::string GetText() const { return text_; }
 
     // Get wrapped lines (populated after layout with width constraint)

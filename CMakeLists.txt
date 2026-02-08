@@ -52,7 +52,7 @@ if(MSVC)
     add_compile_definitions(_ITERATOR_DEBUG_LEVEL=0)
     set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded" CACHE STRING "MSVC runtime library" FORCE)
     
-    # Release 优化：移除调试符号，启用最大优化
+    # Release 优化：启用最大优化，但保留调试信息用于分析
     if(CMAKE_BUILD_TYPE STREQUAL "Release" OR CMAKE_CONFIGURATION_TYPES)
         add_compile_options(
             $<$<CONFIG:Release>:/O2>      # 最大速度优化
@@ -60,11 +60,12 @@ if(MSVC)
             $<$<CONFIG:Release>:/Oi>      # 启用内部函数
             $<$<CONFIG:Release>:/Gy>      # 函数级链接
             $<$<CONFIG:Release>:/GS->     # 禁用安全检查
+            $<$<CONFIG:Release>:/Zi>      # 生成调试信息（PDB）
         )
         add_link_options(
             $<$<CONFIG:Release>:/OPT:REF>   # 移除未引用函数
             $<$<CONFIG:Release>:/OPT:ICF>   # 相同 COMDAT 折叠
-            $<$<CONFIG:Release>:/DEBUG:NONE> # 不生成调试信息
+            $<$<CONFIG:Release>:/DEBUG>     # 生成 PDB 文件
             $<$<CONFIG:Release>:/INCREMENTAL:NO>  # 禁用增量链接（与 /OPT:ICF 兼容）
         )
     endif()

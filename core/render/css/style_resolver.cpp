@@ -19,6 +19,8 @@
 
 #include "style_resolver.h"
 #include "core/render/objects/render_inline_block.h"
+#include "core/render/objects/render_inline_flex.h"
+#include "core/render/objects/render_flex.h"
 #include "core/render/objects/render_svg.h"
 #include "css_clip_path.h"
 #include "core/render/animation/animation.h"
@@ -31,6 +33,7 @@
 #include <algorithm>
 #include <sstream>
 #include <iostream>
+#include <cstdio>
 
 namespace lightui {
 
@@ -120,6 +123,9 @@ ComputedStyle StyleResolver::GetDefaultStyle(const std::string& tag_name) {
 }
 
 void StyleResolver::ApplyDefaultStyle(ComputedStyle& style, const std::string& tag_name, bool is_root) {
+    // Flexbox 默认值 - 所有元素都需要设置
+    style.flex_basis = CSSLength{0.0f, CSSUnit::AUTO};  // flex-basis 的初始值是 auto
+
     // 只在根元素时设置基础默认值
     if (is_root) {
         style.color = "#000000";
@@ -1336,6 +1342,139 @@ bool StyleResolver::ParseLayoutProperty(ComputedStyle& style,
         style.padding_left = style.padding.left;
         return true;
     }
+    // Flexbox item properties
+    if (property == "flex") {
+        // 解析 flex 简写属性
+        // flex: none => flex-grow: 0; flex-shrink: 0; flex-basis: auto
+        // flex: auto => flex-grow: 1; flex-shrink: 1; flex-basis: auto
+        // flex: <number> => flex-grow: <number>; flex-shrink: 1; flex-basis: 0%
+        // flex: <number> <number> => flex-grow; flex-shrink; flex-basis: 0%
+        // flex: <number> <number> <length> => flex-grow; flex-shrink; flex-basis
+        if (resolved_value == "none") {
+            style.flex_grow = 0.0f;
+            style.flex_shrink = 0.0f;
+            style.flex_basis = CSSLength{0.0f, CSSUnit::AUTO};
+        } else if (resolved_value == "auto") {
+            style.flex_grow = 1.0f;
+            style.flex_shrink = 1.0f;
+            style.flex_basis = CSSLength{0.0f, CSSUnit::AUTO};
+        } else if (resolved_value == "initial") {
+            style.flex_grow = 0.0f;
+            style.flex_shrink = 1.0f;
+            style.flex_basis = CSSLength{0.0f, CSSUnit::AUTO};
+        } else {
+            // 尝试解析数值
+            std::istringstream iss(resolved_value);
+            std::vector<std::string> parts;
+            std::string part;
+            while (iss >> part) {
+                parts.push_back(part);
+            }
+
+            if (parts.size() == 1) {
+                // flex: <number> => flex-grow: <number>; flex-shrink: 1; flex-basis: 0%
+                try {
+                    style.flex_grow = std::stof(parts[0]);
+                    style.flex_shrink = 1.0f;
+                    style.flex_basis = CSSLength{0.0f, CSSUnit::PERCENT};
+                } catch (...) {
+                    // 可能是 flex-basis 值如 "100px"
+                    style.flex_grow = 1.0f;
+                    style.flex_shrink = 1.0f;
+                    style.flex_basis = CSSValue::ParseLength(parts[0]);
+                }
+            } else if (parts.size() == 2) {
+                // flex: <number> <number> => flex-grow; flex-shrink; flex-basis: 0%
+                try {
+                    style.flex_grow = std::stof(parts[0]);
+                    style.flex_shrink = std::stof(parts[1]);
+                    style.flex_basis = CSSLength{0.0f, CSSUnit::PERCENT};
+                } catch (...) {
+                    // 第二个可能是 flex-basis
+                    try {
+                        style.flex_grow = std::stof(parts[0]);
+                        style.flex_shrink = 1.0f;
+                        style.flex_basis = CSSValue::ParseLength(parts[1]);
+                    } catch (...) {}
+                }
+            } else if (parts.size() >= 3) {
+                // flex: <number> <number> <length>
+                try {
+                    style.flex_grow = std::stof(parts[0]);
+                    style.flex_shrink = std::stof(parts[1]);
+                    style.flex_basis = CSSValue::ParseLength(parts[2]);
+                } catch (...) {}
+            }
+        }
+        return true;
+    }
+    if (property == "flex-grow") {
+        try {
+            style.flex_grow = std::stof(resolved_value);
+        } catch (...) {
+            style.flex_grow = 0.0f;
+        }
+        return true;
+    }
+    if (property == "flex-shrink") {
+        try {
+            style.flex_shrink = std::stof(resolved_value);
+        } catch (...) {
+            style.flex_shrink = 1.0f;
+        }
+        return true;
+    }
+    if (property == "flex-basis") {
+        style.flex_basis = CSSValue::ParseLength(resolved_value);
+        return true;
+    }
+    if (property == "order") {
+        try {
+            style.order = std::stoi(resolved_value);
+        } catch (...) {
+            style.order = 0;
+        }
+        return true;
+    }
+    // Flexbox container properties
+    if (property == "flex-direction") {
+        style.flex_direction = resolved_value;
+        return true;
+    }
+    if (property == "flex-wrap") {
+        style.flex_wrap = resolved_value;
+        return true;
+    }
+    if (property == "justify-content") {
+        style.justify_content = resolved_value;
+        return true;
+    }
+    if (property == "align-items") {
+        style.align_items = resolved_value;
+        return true;
+    }
+    if (property == "align-content") {
+        style.align_content = resolved_value;
+        return true;
+    }
+    if (property == "align-self") {
+        style.align_self = resolved_value;
+        return true;
+    }
+    if (property == "gap") {
+        style.gap = CSSValue::ParseLength(resolved_value);
+        style.row_gap = style.gap;
+        style.column_gap = style.gap;
+        return true;
+    }
+    if (property == "row-gap") {
+        style.row_gap = CSSValue::ParseLength(resolved_value);
+        return true;
+    }
+    if (property == "column-gap") {
+        style.column_gap = CSSValue::ParseLength(resolved_value);
+        return true;
+    }
     return false;
 }
 
@@ -1520,7 +1659,14 @@ bool StyleResolver::ParseBackgroundProperty(ComputedStyle& style,
         style.background_repeat = CSSValue::ParseBackgroundRepeat(resolved_value);
     }
     else if (property == "background-size") {
-        style.background_size = CSSValue::ParseBackgroundSize(resolved_value);
+        // 检测是否有多个值（逗号分隔）
+        if (resolved_value.find(',') != std::string::npos) {
+            // 多个背景尺寸
+            style.background_sizes = CSSValue::ParseMultipleBackgroundSizes(resolved_value);
+        } else {
+            // 单个背景尺寸（向后兼容）
+            style.background_size = CSSValue::ParseBackgroundSize(resolved_value);
+        }
     }
     else if (property == "color") {
         style.color = resolved_value;
@@ -1578,15 +1724,12 @@ bool StyleResolver::ParseBackgroundProperty(ComputedStyle& style,
         // 调试日志
         static bool debug_line_height = std::getenv("DEBUG_LINE_HEIGHT") != nullptr;
         if (debug_line_height) {
-            std::cout << "[line-height] resolved_value=\"" << resolved_value 
-                      << "\" trimmed=\"" << trimmed << "\"" << std::endl;
         }
 
         // 处理 "normal" 关键字 - 使用默认值 1.2（会在渲染时使用 GetBrowserNormalLineHeight）
         if (trimmed == "normal") {
             style.line_height = 1.2f;
             if (debug_line_height) {
-                std::cout << "[line-height] -> normal, set to 1.2" << std::endl;
             }
         } else {
             // 检查是否为纯数字（无单位）
@@ -1606,7 +1749,6 @@ bool StyleResolver::ParseBackgroundProperty(ComputedStyle& style,
                 try {
                     style.line_height = std::stof(trimmed);
                     if (debug_line_height) {
-                        std::cout << "[line-height] -> pure number, set to " << style.line_height << std::endl;
                     }
                 } catch (...) {
                     style.line_height = 1.2f; // 默认值
@@ -1615,8 +1757,6 @@ bool StyleResolver::ParseBackgroundProperty(ComputedStyle& style,
                 // 带单位的值，解析并转换为倍数
                 auto length = CSSValue::ParseLength(resolved_value);
                 if (debug_line_height) {
-                    std::cout << "[line-height] -> ParseLength: value=" << length.value 
-                              << " unit=" << static_cast<int>(length.unit) << std::endl;
                 }
                 if (length.unit == CSSUnit::PERCENT) {
                     style.line_height = length.value / 100.0f;
@@ -1630,7 +1770,6 @@ bool StyleResolver::ParseBackgroundProperty(ComputedStyle& style,
                     }
                 }
                 if (debug_line_height) {
-                    std::cout << "[line-height] -> final value: " << style.line_height << std::endl;
                 }
             }
         }
@@ -1644,12 +1783,23 @@ bool StyleResolver::ParseBackgroundProperty(ComputedStyle& style,
     else if (property == "background-image") {
         // 检查是否为渐变
         if (resolved_value.find("linear-gradient") != std::string::npos) {
-            auto gradient = CSSValue::ParseLinearGradient(resolved_value);
-            if (gradient.has_value()) {
-                style.background_linear_gradient = gradient;
+            // 检测是否有多个渐变（顶层逗号分隔）
+            // 简单检测：如果有多个 linear-gradient 关键字，则为多个渐变
+            size_t first_pos = resolved_value.find("linear-gradient");
+            size_t second_pos = resolved_value.find("linear-gradient", first_pos + 15);
+
+            if (second_pos != std::string::npos) {
+                // 多个线性渐变
+                style.background_linear_gradients = CSSValue::ParseMultipleLinearGradients(resolved_value);
             } else {
-                // 解析失败，存储原始值
-                style.background_image = resolved_value;
+                // 单个线性渐变（向后兼容）
+                auto gradient = CSSValue::ParseLinearGradient(resolved_value);
+                if (gradient.has_value()) {
+                    style.background_linear_gradient = gradient;
+                } else {
+                    // 解析失败，存储原始值
+                    style.background_image = resolved_value;
+                }
             }
         }
         else if (resolved_value.find("radial-gradient") != std::string::npos) {
@@ -1692,172 +1842,6 @@ bool StyleResolver::ParseBackgroundProperty(ComputedStyle& style,
     }
     else if (property == "backdrop-filter") {
         style.backdrop_filter = CSSFilterParser::Parse(resolved_value);
-    }
-    // Flexbox 属性
-    else if (property == "flex-direction") {
-        style.flex_direction = resolved_value;
-    }
-    else if (property == "flex-wrap") {
-        style.flex_wrap = resolved_value;
-    }
-    else if (property == "justify-content") {
-        style.justify_content = resolved_value;
-    }
-    else if (property == "align-items") {
-        style.align_items = resolved_value;
-    }
-    else if (property == "align-content") {
-        style.align_content = resolved_value;
-    }
-    else if (property == "align-self") {
-        style.align_self = resolved_value;
-    }
-    else if (property == "justify-items") {
-        style.justify_items = resolved_value;
-    }
-    else if (property == "justify-self") {
-        style.justify_self = resolved_value;
-    }
-    else if (property == "place-items") {
-        // place-items: <align-items> <justify-items>?
-        // If only one value, it applies to both
-        std::istringstream iss(resolved_value);
-        std::vector<std::string> parts;
-        std::string part;
-        while (iss >> part) {
-            parts.push_back(part);
-        }
-        if (parts.size() >= 1) {
-            style.align_items = parts[0];
-            style.justify_items = (parts.size() >= 2) ? parts[1] : parts[0];
-        }
-    }
-    else if (property == "place-self") {
-        // place-self: <align-self> <justify-self>?
-        // If only one value, it applies to both
-        std::istringstream iss(resolved_value);
-        std::vector<std::string> parts;
-        std::string part;
-        while (iss >> part) {
-            parts.push_back(part);
-        }
-        if (parts.size() >= 1) {
-            style.align_self = parts[0];
-            style.justify_self = (parts.size() >= 2) ? parts[1] : parts[0];
-        }
-    }
-    else if (property == "place-content") {
-        // place-content: <align-content> <justify-content>?
-        // If only one value, it applies to both
-        std::istringstream iss(resolved_value);
-        std::vector<std::string> parts;
-        std::string part;
-        while (iss >> part) {
-            parts.push_back(part);
-        }
-        if (parts.size() >= 1) {
-            style.align_content = parts[0];
-            style.justify_content = (parts.size() >= 2) ? parts[1] : parts[0];
-        }
-    }
-    else if (property == "flex") {
-        // 解析 flex 简写属性
-        // flex: none => flex-grow: 0; flex-shrink: 0; flex-basis: auto
-        // flex: auto => flex-grow: 1; flex-shrink: 1; flex-basis: auto
-        // flex: <number> => flex-grow: <number>; flex-shrink: 1; flex-basis: 0%
-        // flex: <number> <number> => flex-grow; flex-shrink; flex-basis: 0%
-        // flex: <number> <number> <length> => flex-grow; flex-shrink; flex-basis
-        if (resolved_value == "none") {
-            style.flex_grow = 0.0f;
-            style.flex_shrink = 0.0f;
-            style.flex_basis = CSSLength{0.0f, CSSUnit::AUTO};
-        } else if (resolved_value == "auto") {
-            style.flex_grow = 1.0f;
-            style.flex_shrink = 1.0f;
-            style.flex_basis = CSSLength{0.0f, CSSUnit::AUTO};
-        } else if (resolved_value == "initial") {
-            style.flex_grow = 0.0f;
-            style.flex_shrink = 1.0f;
-            style.flex_basis = CSSLength{0.0f, CSSUnit::AUTO};
-        } else {
-            // 尝试解析数值
-            std::istringstream iss(resolved_value);
-            std::vector<std::string> parts;
-            std::string part;
-            while (iss >> part) {
-                parts.push_back(part);
-            }
-
-            if (parts.size() == 1) {
-                // flex: <number> => flex-grow: <number>; flex-shrink: 1; flex-basis: 0%
-                try {
-                    style.flex_grow = std::stof(parts[0]);
-                    style.flex_shrink = 1.0f;
-                    style.flex_basis = CSSLength{0.0f, CSSUnit::PERCENT};
-                } catch (...) {
-                    // 可能是 flex-basis 值如 "100px"
-                    style.flex_grow = 1.0f;
-                    style.flex_shrink = 1.0f;
-                    style.flex_basis = CSSValue::ParseLength(parts[0]);
-                }
-            } else if (parts.size() == 2) {
-                // flex: <number> <number> => flex-grow; flex-shrink; flex-basis: 0%
-                try {
-                    style.flex_grow = std::stof(parts[0]);
-                    style.flex_shrink = std::stof(parts[1]);
-                    style.flex_basis = CSSLength{0.0f, CSSUnit::PERCENT};
-                } catch (...) {
-                    // 第二个可能是 flex-basis
-                    try {
-                        style.flex_grow = std::stof(parts[0]);
-                        style.flex_shrink = 1.0f;
-                        style.flex_basis = CSSValue::ParseLength(parts[1]);
-                    } catch (...) {}
-                }
-            } else if (parts.size() >= 3) {
-                // flex: <number> <number> <length>
-                try {
-                    style.flex_grow = std::stof(parts[0]);
-                    style.flex_shrink = std::stof(parts[1]);
-                    style.flex_basis = CSSValue::ParseLength(parts[2]);
-                } catch (...) {}
-            }
-        }
-    }
-    else if (property == "flex-grow") {
-        try {
-            style.flex_grow = std::stof(resolved_value);
-        } catch (...) {
-            style.flex_grow = 0.0f;
-        }
-    }
-    else if (property == "flex-shrink") {
-        try {
-            style.flex_shrink = std::stof(resolved_value);
-        } catch (...) {
-            style.flex_shrink = 1.0f;
-        }
-    }
-    else if (property == "flex-basis") {
-        style.flex_basis = CSSValue::ParseLength(resolved_value);
-    }
-    else if (property == "order") {
-        try {
-            style.order = std::stoi(resolved_value);
-        } catch (...) {
-            style.order = 0;
-        }
-    }
-    else if (property == "gap") {
-        style.gap = CSSValue::ParseLength(resolved_value);
-        style.row_gap = style.gap;
-        style.column_gap = style.gap;
-    }
-    else if (property == "row-gap") {
-        style.row_gap = CSSValue::ParseLength(resolved_value);
-    }
-    else if (property == "column-gap") {
-        style.column_gap = CSSValue::ParseLength(resolved_value);
     }
     // Grid 属性
     else if (property == "grid-template-columns") {
@@ -2619,9 +2603,9 @@ RenderObjectType StyleResolver::ParseDisplay(const std::string& value) {
     if (value == "inline") return RenderObjectType::INLINE;
     if (value == "inline-block") return RenderObjectType::INLINE_BLOCK;
     if (value == "flex") return RenderObjectType::FLEX;
-    if (value == "inline-flex") return RenderObjectType::FLEX;  // inline-flex 也使用 FLEX 类型
+    if (value == "inline-flex") return RenderObjectType::INLINE_FLEX;  // inline-flex 使用独立的 INLINE_FLEX 类型
     if (value == "grid") return RenderObjectType::GRID;
-    if (value == "inline-grid") return RenderObjectType::GRID;  // inline-grid 也使用 GRID 类型
+    if (value == "inline-grid") return RenderObjectType::INLINE_GRID;  // inline-grid 使用独立的 INLINE_GRID 类型
     if (value == "none") return RenderObjectType::NONE;
     if (value == "contents") return RenderObjectType::CONTENTS;  // display: contents
     // 表格相关display类型
@@ -2645,32 +2629,71 @@ CSSBorder StyleResolver::ParseBorderShorthand(const std::string& value, float fo
         return border;
     }
 
-    // 分割值，格式如 "4px solid #4CAF50"
-    std::istringstream iss(value);
+    // 处理 rgb()/rgba()/hsl()/hsla() 颜色函数，避免被空格分割
+    std::string processed_value = value;
+    std::string color_part;
+    size_t color_start = std::string::npos;
+    size_t color_end = std::string::npos;
+
+    // 查找颜色函数
+    size_t rgb_pos = processed_value.find("rgb(");
+    size_t rgba_pos = processed_value.find("rgba(");
+    size_t hsl_pos = processed_value.find("hsl(");
+    size_t hsla_pos = processed_value.find("hsla(");
+
+    if (rgb_pos != std::string::npos) {
+        color_start = rgb_pos;
+    } else if (rgba_pos != std::string::npos) {
+        color_start = rgba_pos;
+    } else if (hsl_pos != std::string::npos) {
+        color_start = hsl_pos;
+    } else if (hsla_pos != std::string::npos) {
+        color_start = hsla_pos;
+    }
+
+    // 如果找到颜色函数，提取完整的颜色字符串
+    if (color_start != std::string::npos) {
+        color_end = processed_value.find(')', color_start);
+        if (color_end != std::string::npos) {
+            color_part = processed_value.substr(color_start, color_end - color_start + 1);
+            // 从原字符串中移除颜色部分
+            processed_value = processed_value.substr(0, color_start) +
+                            processed_value.substr(color_end + 1);
+        }
+    }
+
+    // 分割剩余的值
+    std::istringstream iss(processed_value);
     std::vector<std::string> parts;
     std::string part;
     while (iss >> part) {
         parts.push_back(part);
     }
 
+    // 解析各个部分
     for (const auto& p : parts) {
         // 尝试解析为长度值（宽度）
         if (p.find("px") != std::string::npos ||
             p.find("em") != std::string::npos ||
             p.find("rem") != std::string::npos ||
-            (std::isdigit(p[0]) && p.find("px") == std::string::npos && p.find("em") == std::string::npos)) {
+            (!p.empty() && std::isdigit(p[0]))) {
             border.width = CSSValue::ParseLength(p);
         }
         // 尝试解析为样式
         else if (p == "solid" || p == "dashed" || p == "dotted" || p == "double" || p == "none") {
             border.style = CSSValue::ParseBorderStyle(p);
         }
-        // 尝试解析为颜色
-        else if (p[0] == '#' || p.find("rgb") == 0 || p.find("hsl") == 0 ||
+        // 尝试解析为颜色（非函数形式）
+        else if (p[0] == '#' ||
                  p == "black" || p == "white" || p == "red" || p == "green" || p == "blue" ||
                  p == "transparent" || p == "currentColor") {
             border.color = CSSValue::ParseColor(p);
         }
+    }
+
+    // 解析提取的颜色函数
+    if (!color_part.empty()) {
+        border.color = CSSValue::ParseColor(color_part);
     }
 
     return border;
@@ -2826,7 +2849,6 @@ std::shared_ptr<RenderObject> RenderTreeBuilder::CreateRenderObjectForElement(
     if (tag_name == "svg" || tag_name == "circle" || tag_name == "rect" ||
         tag_name == "ellipse" || tag_name == "line" || tag_name == "path" ||
         tag_name == "polyline" || tag_name == "polygon" || tag_name == "g") {
-        // std::cerr << "[SVG] CreateRenderObjectForElement: tag=" << tag_name << std::endl;
     }
 
     if (tag_name == "svg") {
@@ -2972,6 +2994,20 @@ std::shared_ptr<RenderObject> RenderTreeBuilder::CreateRenderObjectForText(
         if (text_data.empty()) {
             return nullptr;
         }
+
+        // CSS Flexbox 规范 (W3C CSS Flexible Box Layout Module Level 1, Section 4):
+        // "if the entire text sequences contains only document white space characters
+        //  it is instead not rendered (just as if its text nodes were display:none)"
+        //
+        // 当父元素是 flex 或 inline-flex 容器时，纯空白文本节点不应该被渲染
+        // 这是 Chrome/Firefox/Safari 等主流浏览器的标准行为
+        if (parent_style && (parent_style->display == RenderObjectType::FLEX ||
+                             parent_style->display == RenderObjectType::INLINE_FLEX ||
+                             parent_style->display == RenderObjectType::GRID ||
+                             parent_style->display == RenderObjectType::INLINE_GRID)) {
+            return nullptr;
+        }
+
         // 纯空白文本节点折叠为单个空格，用于 inline 元素之间的间距
         // 不跳过，让 IFC 布局来处理
     }
@@ -3061,9 +3097,13 @@ std::shared_ptr<RenderObject> RenderTreeBuilder::CreateRenderObjectByType(Render
         case RenderObjectType::INLINE_BLOCK:
             return std::make_shared<RenderInlineBlock>(); // 使用真正的InlineBlock
         case RenderObjectType::FLEX:
-            return std::make_shared<RenderBlock>(); // 简化：暂时用 Block
+            return std::make_shared<RenderFlex>(); // 🎯 关键修复：使用专门的 RenderFlex 类
+        case RenderObjectType::INLINE_FLEX:
+            return std::make_shared<RenderInlineFlex>(); // inline-flex 使用独立的 RenderInlineFlex 类
         case RenderObjectType::GRID:
             return std::make_shared<RenderBlock>(); // 简化：暂时用 Block
+        case RenderObjectType::INLINE_GRID:
+            return std::make_shared<RenderBlock>(); // inline-grid 暂时用 Block，未来可创建 RenderInlineGrid
         // 表格相关类型
         case RenderObjectType::TABLE:
             return std::make_shared<RenderTable>();

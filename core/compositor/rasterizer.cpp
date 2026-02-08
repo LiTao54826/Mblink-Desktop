@@ -7,8 +7,6 @@
 #include "compositor_layer.h"
 #include "animation/animation_bounds_calculator.h"
 #include "core/render/objects/render_object.h"
-#include "core/dom/node.h"
-#include "core/dom/element.h"
 #include "include/core/SkCanvas.h"
 #include "include/core/SkPaint.h"
 #include "include/core/SkPath.h"
@@ -16,7 +14,6 @@
 #include <algorithm>
 #include <chrono>
 #include <cstring>
-#include <iostream>
 
 namespace lightui {
 
@@ -28,6 +25,8 @@ Rasterizer::~Rasterizer() = default;
 // =========================================================================
 
 bool Rasterizer::RasterizeLayer(CompositorLayer* layer) {
+    // 调试日志已移除
+
     if (!layer) {
         return false;
     }
@@ -36,13 +35,11 @@ bool Rasterizer::RasterizeLayer(CompositorLayer* layer) {
 
     // 确保位图已分配
     if (!layer->EnsureBitmap()) {
-        std::cout << "[DEBUG RasterizeLayer] EnsureBitmap failed for layer " << layer->GetId() << std::endl;
         return false;
     }
 
     SkCanvas* canvas = layer->GetCanvas();
     if (!canvas) {
-        std::cout << "[DEBUG RasterizeLayer] GetCanvas failed for layer " << layer->GetId() << std::endl;
         return false;
     }
 
@@ -68,11 +65,16 @@ bool Rasterizer::RasterizeLayer(CompositorLayer* layer) {
     const SkRect& bounds = layer->GetBounds();
     float dpi_scale = layer->GetDpiScale();
 
+    // 调试日志已移除
+    bool is_fixed = (layer->GetPromotionReason() == LayerPromotionReason::PositionFixed);
+
     // 清除整个位图
     canvas->clear(SK_ColorTRANSPARENT);
 
     // 保存 Canvas 状态
     canvas->save();
+
+    // 调试日志已移除
 
     // 关键修复：光栅化阶段不应用滚动偏移
     // 滚动偏移应该在合成阶段应用，这样滚动时只需要更新合成参数，
@@ -88,7 +90,11 @@ bool Rasterizer::RasterizeLayer(CompositorLayer* layer) {
     // 因为 RenderObject::Paint() 内部会 translate(layout.x, layout.y)
     // 但子层应该从 (0,0) 开始绘制，位置由合成器在合成时应用
     if (layer->GetPromotionReason() != LayerPromotionReason::RootLayer) {
+        // 调试日志已移除
+
         canvas->translate(-layout.x, -layout.y);
+
+        // 调试日志已移除
         
         // 对于 position: fixed 元素，需要补偿 bounds 中的 transform 偏移
         // bounds 包含了 transform 偏移（例如 translateX(-50%) 导致的负偏移）
@@ -156,7 +162,11 @@ bool Rasterizer::RasterizeLayer(CompositorLayer* layer) {
 
     // 绘制渲染对象
     // 注意：RenderObject::Paint 内部已经递归绘制子对象了，不需要额外递归
+    // 调试日志已移除
+
     render_obj->Paint(canvas);
+
+    // 调试日志已移除
 
     // 恢复 Canvas 状态
     canvas->restore();
@@ -187,38 +197,10 @@ int Rasterizer::RasterizeDirtyLayers(CompositorLayer* root) {
         return 0;
     }
 
-    static bool debug_rasterize = std::getenv("LIGHTUI_DEBUG_RASTERIZE") != nullptr;
-
-    // 访问全局调试帧计数器（在 render_pipeline.cpp 中定义）
-    extern int g_debug_frames_remaining;
-
     int count = 0;
 
     // 光栅化当前层（如果有脏区域）
     if (root->HasDirtyRegions()) {
-        // 只在新层创建后的几帧内输出详细日志
-        if (debug_rasterize && g_debug_frames_remaining > 0) {
-            bool is_root = (root->GetPromotionReason() == LayerPromotionReason::RootLayer);
-            bool is_fixed = (root->GetPromotionReason() == LayerPromotionReason::PositionFixed);
-
-            if (is_root || is_fixed) {
-                std::string tag_name = "unknown";
-                if (auto obj = root->GetRenderObject()) {
-                    if (auto node = obj->GetNode()) {
-                        if (node->GetNodeType() == NodeType::ELEMENT_NODE) {
-                            auto element = std::static_pointer_cast<Element>(node);
-                            tag_name = element->GetTagName();
-                        }
-                    }
-                }
-                std::cout << "[RasterizeDirtyLayers] Rasterizing layer " << root->GetId()
-                          << " <" << tag_name << ">"
-                          << " reason=" << static_cast<int>(root->GetPromotionReason())
-                          << " incremental=" << incremental_enabled_
-                          << std::endl;
-            }
-        }
-
         if (incremental_enabled_) {
             if (RasterizeDirtyRegions(root)) {
                 count++;
@@ -261,6 +243,9 @@ bool Rasterizer::RasterizeDirtyRegions(CompositorLayer* layer) {
 
     // 获取关联的渲染对象
     RenderObject* render_obj = layer->GetRenderObject();
+
+    // 调试日志已移除
+    bool is_fixed = (layer->GetPromotionReason() == LayerPromotionReason::PositionFixed);
 
     // 合并脏区域
     layer->MergeDirtyRegions();
@@ -319,26 +304,34 @@ bool Rasterizer::RasterizeRegion(CompositorLayer* layer, const SkIRect& region) 
     if (!render_obj) {
         return false;
     }
-    
+
     const auto& layout = render_obj->GetLayoutInfo();
+
+    // 提前判断是否为 fixed 元素
+    bool is_fixed = (layer->GetPromotionReason() == LayerPromotionReason::PositionFixed);
 
     // 保存 Canvas 状态
     canvas->save();
 
     // 清除区域为透明（在设置裁剪之前）
-    canvas->save();
-    canvas->clipIRect(region);
-    ClearRegion(canvas, region);
-    canvas->restore();
+    // 🐛 修复：对于 fixed 元素，不使用 region clip 清除，因为会限制后续的 clip
+    if (!is_fixed) {
+        canvas->save();
+        canvas->clipIRect(region);
+        ClearRegion(canvas, region);
+        canvas->restore();
+    } else {
+        // fixed 元素：直接清除整个 canvas
+        canvas->clear(SK_ColorTRANSPARENT);
+    }
 
     // 关键修复：对于非根层，需要抵消元素的 layout 位置
     // 因为 RenderObject::Paint() 内部会 translate(layout.x, layout.y)
     // 但子层应该从 (0,0) 开始绘制，位置由合成器在合成时应用
     if (layer->GetPromotionReason() != LayerPromotionReason::RootLayer) {
         canvas->translate(-layout.x, -layout.y);
-        
+
         // 对于 position: fixed 元素，需要补偿 bounds 中的 transform 偏移
-        bool is_fixed = (layer->GetPromotionReason() == LayerPromotionReason::PositionFixed);
         if (is_fixed) {
             const auto& style = render_obj->GetComputedStyle();
             if (style.transform.has_value() && !style.transform->IsEmpty()) {
@@ -355,7 +348,7 @@ bool Rasterizer::RasterizeRegion(CompositorLayer* layer, const SkIRect& region) 
             }
         }
     }
-    
+
     // 设置裁剪区域
     // 对于根层：region 是位图坐标，Paint 会 translate(layout.x, layout.y)
     //          所以裁剪区域不需要偏移
@@ -365,8 +358,7 @@ bool Rasterizer::RasterizeRegion(CompositorLayer* layer, const SkIRect& region) 
     if (layer->GetPromotionReason() != LayerPromotionReason::RootLayer) {
         float offset_x = layout.x;
         float offset_y = layout.y;
-        
-        bool is_fixed = (layer->GetPromotionReason() == LayerPromotionReason::PositionFixed);
+
         if (is_fixed) {
             const auto& style = render_obj->GetComputedStyle();
             if (style.transform.has_value() && !style.transform->IsEmpty()) {
@@ -383,7 +375,25 @@ bool Rasterizer::RasterizeRegion(CompositorLayer* layer, const SkIRect& region) 
         }
         clip_rect.offset(offset_x, offset_y);
     }
+
+    // 🐛 修复：对于 fixed 元素，使用 viewport 大小的 clip 而不是 region
+    if (is_fixed) {
+        const auto& style = render_obj->GetComputedStyle();
+
+        // 调试日志已移除
+
+        // 对于 fixed 元素，使用一个足够大的 clip 区域
+        // 这样 box-shadow 就不会被裁剪
+        float viewport_width = 10000.0f;  // 使用一个很大的值
+        float viewport_height = 10000.0f;
+        clip_rect = SkRect::MakeXYWH(-5000, -5000, viewport_width, viewport_height);
+
+        // 调试日志已移除
+    }
+
     canvas->clipRect(clip_rect);
+
+    // 调试日志已移除
 
     // 绘制渲染对象
     render_obj->Paint(canvas);

@@ -95,3 +95,4 @@ test_*.bat
 .claude/settings.local.json
 参考/
 .hypothesis/
+.devtools_state.json

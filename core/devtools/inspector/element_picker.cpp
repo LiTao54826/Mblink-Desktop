@@ -40,8 +40,6 @@ void ElementPicker::Stop() {
 void ElementPicker::SetHoverElement(std::shared_ptr<Element> element, std::shared_ptr<RenderObject> render_obj) {
     hovered_element_ = element;
     hovered_render_object_ = render_obj;
-    std::cout << "[ElementPicker::SetHoverElement] element=" << (element ? element->GetTagName() : "null")
-              << " render_obj=" << render_obj.get() << std::endl;
 }
 
 bool ElementPicker::HandleEvent(const Event& event) {
@@ -79,39 +77,40 @@ bool ElementPicker::HandleMouseClick(int x, int y) {
 void ElementPicker::RenderHoverHighlight(SkCanvas* canvas) {
     if (!active_ || !hovered_element_) return;
 
-    // 始终从element获取最新的RenderObject，因为render tree可能已重建
-    auto render_obj = hovered_element_->GetRenderObject();
-    
+    // 优先使用 HitTest 命中的 RenderObject，避免 element->GetRenderObject() 在层提升/重建后指向非可见对象
+    auto render_obj = hovered_render_object_;
     if (!render_obj) {
-        std::cout << "[ElementPicker] No render_obj for element " << hovered_element_->GetTagName() << std::endl;
+        // 回退路径：从 element 获取最新 RenderObject
+        render_obj = hovered_element_->GetRenderObject();
+    }
+
+    if (!render_obj) {
         return;
     }
-    
-    // 检查render_obj是否有效（parent chain是否完整）
-    const auto& layout = render_obj->GetLayoutInfo();
-    
-    // 追踪parent chain
-    int parent_count = 0;
-    auto parent = render_obj->GetParent();
-    while (parent) {
-        parent_count++;
-        parent = parent->GetParent();
-    }
-    
-    std::cout << "[ElementPicker] element=" << hovered_element_->GetTagName()
-              << " class=" << hovered_element_->GetAttribute("class")
-              << " render_obj=" << render_obj.get()
-              << " parent_chain_depth=" << parent_count
-              << " is_laid_out=" << layout.is_laid_out
-              << " layout=(" << layout.x << "," << layout.y << "," << layout.width << "," << layout.height << ")"
-              << " self_scroll=(" << render_obj->GetScrollX() << "," << render_obj->GetScrollY() << ")"
-              << " has_parent=" << (render_obj->GetParent() != nullptr)
-              << std::endl;
 
-    // 获取元素的视口坐标边界矩形（已经考虑了滚动偏移）
-    SkRect bounds = render_obj->GetViewportBoundingRect();
+    const auto& layout = render_obj->GetLayoutInfo();
+    if (!layout.is_laid_out) {
+        return;
+    }
+
+    // 使用视口坐标缓存优先，确保 fixed 元素在滚动后仍按视口坐标高亮
+    if (!render_obj->GetViewportBounds().valid) {
+        render_obj->UpdateViewportBounds();
+    }
+
+    SkRect bounds;
+    const auto& viewport_bounds = render_obj->GetViewportBounds();
+    if (viewport_bounds.valid) {
+        bounds = viewport_bounds.has_transform
+            ? viewport_bounds.transformed_bounds
+            : SkRect::MakeXYWH(viewport_bounds.x, viewport_bounds.y,
+                               viewport_bounds.width, viewport_bounds.height);
+    } else {
+        // 回退路径
+        bounds = render_obj->GetViewportBoundingRect();
+    }
+
     if (bounds.isEmpty()) {
-        std::cout << "[ElementPicker] Empty bounds for element " << hovered_element_->GetTagName() << std::endl;
         return;
     }
 
@@ -119,8 +118,6 @@ void ElementPicker::RenderHoverHighlight(SkCanvas* canvas) {
     float y = bounds.y();
     float width = bounds.width();
     float height = bounds.height();
-    
-    std::cout << "[ElementPicker] Absolute bounds: (" << x << "," << y << ") " << width << "x" << height << std::endl;
 
     // 半透明蓝色覆盖
     SkPaint fill_paint;
@@ -191,104 +188,60 @@ std::shared_ptr<Element> ElementPicker::HitTest(int x, int y) {
     auto& wm = WindowManager::Instance();
     auto windows = wm.GetAllWindows();
     if (windows.empty()) return nullptr;
-    
+
     auto window = windows[0];
     auto root_render = window->GetCachedRenderTree();
     if (!root_render) return nullptr;
-    
-    // 递归查找命中的元素
+
+    // 递归查找命中的元素（统一使用视口坐标，避免滚动后 fixed 命中偏移）
     std::shared_ptr<Element> hit_element;
     std::shared_ptr<RenderObject> hit_render_obj;
-    
-    // traverse 函数参数：
-    // - obj: 当前检查的渲染对象
-    // - offset_x/y: 父元素在文档中的绝对位置
-    // - test_x/y: 用于命中测试的坐标（可能是可视坐标或文档坐标）
-    std::function<void(std::shared_ptr<RenderObject>, float, float, float, float)> traverse;
-    traverse = [&](std::shared_ptr<RenderObject> obj, float offset_x, float offset_y, float test_x, float test_y) {
-        if (!obj) return;
-        
+
+    const float test_x = static_cast<float>(x);
+    const float test_y = static_cast<float>(y);
+
+    std::function<void(std::shared_ptr<RenderObject>)> traverse;
+    traverse = [&](std::shared_ptr<RenderObject> obj) {
+        if (!obj || hit_element) return;
+
         const auto& layout = obj->GetLayoutInfo();
         if (!layout.is_laid_out) return;
-        
-        // 检查当前元素是否有 overflow 属性
-        const auto& style = obj->GetComputedStyle();
-        
-        // 检查是否是 position: fixed 元素
-        bool is_fixed = (style.position == "fixed");
-        
-        // 对于 fixed 元素，layout.x/y 已经是视口绝对坐标，不需要累加父元素偏移
-        float abs_x = is_fixed ? layout.x : (offset_x + layout.x);
-        float abs_y = is_fixed ? layout.y : (offset_y + layout.y);
-        
-        bool has_overflow = (style.overflow == "auto" || style.overflow == "scroll" || 
-                             style.overflow == "hidden" ||
-                             style.overflow_y == "auto" || style.overflow_y == "scroll" ||
-                             style.overflow_y == "hidden");
-        
-        // 获取滚动偏移
-        float scroll_x = obj->GetScrollX();
-        float scroll_y = obj->GetScrollY();
-        
-        // 用于检查子元素的坐标
-        float child_test_x = test_x;
-        float child_test_y = test_y;
-        
-        // 检查是否是 body 元素
-        auto node = obj->GetNode();
-        auto elem = node ? std::dynamic_pointer_cast<Element>(node) : nullptr;
-        bool is_body = elem && (elem->GetTagName() == "body" || elem->GetTagName() == "BODY");
-        
-        // 对于 fixed 元素，直接检查点是否在元素边界内（使用视口坐标）
-        if (is_fixed) {
-            SkRect bounds = SkRect::MakeXYWH(abs_x, abs_y, layout.width, layout.height);
-            if (!bounds.contains(test_x, test_y)) {
-                return;  // 点不在 fixed 元素内
-            }
-        } else if (has_overflow && is_body) {
-            // 对于 body 元素，它的可见区域是整个视口，不是 CSS 设置的高度
-            // 所以不需要检查边界，直接将鼠标坐标转换为文档坐标
-            child_test_x = test_x + scroll_x;
-            child_test_y = test_y + scroll_y;
-        } else if (has_overflow) {
-            // 对于其他有 overflow 的容器，检查点是否在可见区域内
-            SkRect visible_bounds = SkRect::MakeXYWH(abs_x, abs_y, layout.width, layout.height);
-            if (!visible_bounds.contains(test_x, test_y)) {
-                return;  // 点不在可见区域内，跳过此元素及其子元素
-            }
-            
-            // 将可视坐标转换为文档坐标
-            child_test_x = test_x + scroll_x;
-            child_test_y = test_y + scroll_y;
-        } else {
-            // 对于普通元素，检查点是否在边界内
-            SkRect bounds = SkRect::MakeXYWH(abs_x, abs_y, layout.width, layout.height);
-            if (!bounds.contains(test_x, test_y)) {
-                return;  // 点不在当前元素内
-            }
+
+        // 优先使用视口缓存，必要时更新
+        if (!obj->GetViewportBounds().valid) {
+            obj->UpdateViewportBounds();
         }
-        
+
+        const auto& viewport_bounds = obj->GetViewportBounds();
+        if (!viewport_bounds.valid) return;
+
+        // 使用统一的视口命中，避免 body/overflow 坐标换算把 fixed 元素命中搞偏
+        if (!obj->ContainsViewportPoint(test_x, test_y)) {
+            return;
+        }
+
         // 先递归检查子元素（优先命中深层元素）
         for (const auto& child : obj->GetChildren()) {
-            traverse(child, abs_x, abs_y, child_test_x, child_test_y);
-            if (hit_element) return;  // 已经找到，提前返回
+            traverse(child);
+            if (hit_element) return;
         }
-        
-        // 如果子元素没有命中，当前元素就是目标（复用前面已获取的 node）
+
+        // 如果子元素没有命中，当前元素就是目标
+        auto node = obj->GetNode();
         if (node && node->GetNodeType() == NodeType::ELEMENT_NODE) {
             hit_element = std::static_pointer_cast<Element>(node);
             hit_render_obj = obj;
         }
     };
-    
-    traverse(root_render, 0, 0, static_cast<float>(x), static_cast<float>(y));
-    
+
+    traverse(root_render);
+
     // 更新 hovered_render_object_ 以便高亮显示
     if (hit_element) {
         hovered_render_object_ = hit_render_obj;
     }
-    
-    return hit_element ? hit_element : document_->GetBody();  // 如果没找到，返回body
+
+    return hit_element ? hit_element : document_->GetBody();
 }
 
 } // namespace lightui

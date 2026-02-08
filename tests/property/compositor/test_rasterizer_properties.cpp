@@ -107,7 +107,7 @@ TEST_F(RasterizeCorrectnessTest, LayerWithRenderObjectRasterizesCorrectly) {
     layer->SetBounds(SkRect::MakeWH(100, 100));
 
     // 创建一个红色矩形渲染对象
-    auto render_obj = std::make_shared<TestRenderObject>(SK_ColorRED, 10, 10, 50, 50);
+    auto render_obj = std::make_shared<TestRenderObject>(SK_ColorRED, 10.0f, 10.0f, 50.0f, 50.0f);
     layer->SetRenderObject(render_obj.get());
 
     ASSERT_TRUE(rasterizer_->RasterizeLayer(layer.get()));
@@ -168,7 +168,7 @@ TEST_F(IncrementalRasterizeTest, OnlyDirtyRegionsAreUpdated) {
     layer->SetBounds(SkRect::MakeWH(100, 100));
 
     // 创建渲染对象
-    auto render_obj = std::make_shared<TestRenderObject>(SK_ColorBLUE, 0, 0, 100, 100);
+    auto render_obj = std::make_shared<TestRenderObject>(SK_ColorBLUE, 0.0f, 0.0f, 100.0f, 100.0f);
     layer->SetRenderObject(render_obj.get());
 
     // 首次完整光栅化
@@ -216,7 +216,7 @@ TEST_F(IncrementalRasterizeTest, MultipleDirtyRegionsMerged) {
     auto layer = CreateCompositorLayer();
     layer->SetBounds(SkRect::MakeWH(100, 100));
 
-    auto render_obj = std::make_shared<TestRenderObject>(SK_ColorRED, 0, 0, 100, 100);
+    auto render_obj = std::make_shared<TestRenderObject>(SK_ColorRED, 0.0f, 0.0f, 100.0f, 100.0f);
     layer->SetRenderObject(render_obj.get());
 
     // 首次光栅化
@@ -311,7 +311,7 @@ TEST_F(ScrollOptimizationTest, SmallScrollPreservesPixels) {
     auto layer = CreateCompositorLayer();
     layer->SetBounds(SkRect::MakeWH(100, 100));
 
-    auto render_obj = std::make_shared<TestRenderObject>(SK_ColorBLUE, 0, 0, 100, 100);
+    auto render_obj = std::make_shared<TestRenderObject>(SK_ColorBLUE, 0.0f, 0.0f, 100.0f, 100.0f);
     layer->SetRenderObject(render_obj.get());
 
     // 首次光栅化
@@ -346,7 +346,7 @@ TEST_F(ScrollOptimizationTest, LargeScrollTriggersFullRasterize) {
     auto layer = CreateCompositorLayer();
     layer->SetBounds(SkRect::MakeWH(100, 100));
 
-    auto render_obj = std::make_shared<TestRenderObject>(SK_ColorRED, 0, 0, 100, 100);
+    auto render_obj = std::make_shared<TestRenderObject>(SK_ColorRED, 0.0f, 0.0f, 100.0f, 100.0f);
     layer->SetRenderObject(render_obj.get());
 
     // 首次光栅化

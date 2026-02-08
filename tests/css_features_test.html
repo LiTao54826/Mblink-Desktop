@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>CSS Features Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .section {
+            margin-bottom: 30px;
+            padding: 15px;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        h2 {
+            margin-top: 0;
+            color: #333;
+            border-bottom: 2px solid #007bff;
+            padding-bottom: 10px;
+        }
+        
+        /* Test 1: font-weight */
+        .font-weight-100 { font-weight: 100; }
+        .font-weight-200 { font-weight: 200; }
+        .font-weight-300 { font-weight: 300; }
+        .font-weight-400 { font-weight: 400; }
+        .font-weight-500 { font-weight: 500; }
+        .font-weight-600 { font-weight: 600; }
+        .font-weight-700 { font-weight: 700; }
+        .font-weight-800 { font-weight: 800; }
+        .font-weight-900 { font-weight: 900; }
+        .font-weight-normal { font-weight: normal; }
+        .font-weight-bold { font-weight: bold; }
+        
+        /* Test 2: text-transform */
+        .text-uppercase { text-transform: uppercase; }
+        .text-lowercase { text-transform: lowercase; }
+        .text-capitalize { text-transform: capitalize; }
+        .text-none { text-transform: none; }
+        
+        /* Test 3: text-shadow */
+        .text-shadow-simple { text-shadow: 2px 2px 4px rgba(0,0,0,0.5); }
+        .text-shadow-colored { text-shadow: 1px 1px 2px red; }
+        .text-shadow-multiple { text-shadow: 1px 1px 2px red, -1px -1px 2px blue; }
+        .text-shadow-glow { text-shadow: 0 0 10px #00ff00; }
+        
+        /* Test 4: grid-template-columns with repeat(auto-fit, minmax()) */
+        .grid-container {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 10px;
+            padding: 10px;
+            background: #e0e0e0;
+        }
+        .grid-item {
+            background: #007bff;
+            color: white;
+            padding: 20px;
+            text-align: center;
+            border-radius: 4px;
+        }
+        
+        /* Additional grid tests */
+        .grid-fixed {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 10px;
+            padding: 10px;
+            background: #e0e0e0;
+        }
+        .grid-minmax {
+            display: grid;
+            grid-template-columns: minmax(100px, 200px) 1fr minmax(100px, 200px);
+            gap: 10px;
+            padding: 10px;
+            background: #e0e0e0;
+        }
+    </style>
+</head>
+<body>
+    <h1>CSS Features Test</h1>
+    
+    <!-- Test 1: font-weight -->
+    <div class="section">
+        <h2>1. font-weight</h2>
+        <p class="font-weight-100">Font Weight 100 (Thin)</p>
+        <p class="font-weight-200">Font Weight 200 (Extra Light)</p>
+        <p class="font-weight-300">Font Weight 300 (Light)</p>
+        <p class="font-weight-400">Font Weight 400 (Normal)</p>
+        <p class="font-weight-500">Font Weight 500 (Medium)</p>
+        <p class="font-weight-600">Font Weight 600 (Semi Bold)</p>
+        <p class="font-weight-700">Font Weight 700 (Bold)</p>
+        <p class="font-weight-800">Font Weight 800 (Extra Bold)</p>
+        <p class="font-weight-900">Font Weight 900 (Black)</p>
+        <p class="font-weight-normal">Font Weight Normal</p>
+        <p class="font-weight-bold">Font Weight Bold</p>
+    </div>
+    
+    <!-- Test 2: text-transform -->
+    <div class="section">
+        <h2>2. text-transform</h2>
+        <p class="text-uppercase">This text should be UPPERCASE</p>
+        <p class="text-lowercase">THIS TEXT SHOULD BE lowercase</p>
+        <p class="text-capitalize">this text should be capitalized</p>
+        <p class="text-none">This Text Should Be Normal</p>
+        <p class="text-uppercase">中文测试 Chinese Test</p>
+    </div>
+    
+    <!-- Test 3: text-shadow -->
+    <div class="section">
+        <h2>3. text-shadow</h2>
+        <p class="text-shadow-simple" style="font-size: 24px;">Simple Shadow</p>
+        <p class="text-shadow-colored" style="font-size: 24px;">Colored Shadow (Red)</p>
+        <p class="text-shadow-multiple" style="font-size: 24px;">Multiple Shadows</p>
+        <p class="text-shadow-glow" style="font-size: 24px; color: #006600;">Glow Effect</p>
+    </div>
+    
+    <!-- Test 4: grid-template-columns with repeat(auto-fit, minmax()) -->
+    <div class="section">
+        <h2>4. grid-template-columns: repeat(auto-fit, minmax(150px, 1fr))</h2>
+        <p>Resize the window to see the grid items reflow automatically:</p>
+        <div class="grid-container">
+            <div class="grid-item">Item 1</div>
+            <div class="grid-item">Item 2</div>
+            <div class="grid-item">Item 3</div>
+            <div class="grid-item">Item 4</div>
+            <div class="grid-item">Item 5</div>
+            <div class="grid-item">Item 6</div>
+        </div>
+    </div>
+    
+    <!-- Test 5: Fixed repeat grid -->
+    <div class="section">
+        <h2>5. grid-template-columns: repeat(3, 1fr)</h2>
+        <div class="grid-fixed">
+            <div class="grid-item">Item 1</div>
+            <div class="grid-item">Item 2</div>
+            <div class="grid-item">Item 3</div>
+            <div class="grid-item">Item 4</div>
+            <div class="grid-item">Item 5</div>
+            <div class="grid-item">Item 6</div>
+        </div>
+    </div>
+    
+    <!-- Test 6: minmax grid -->
+    <div class="section">
+        <h2>6. grid-template-columns: minmax(100px, 200px) 1fr minmax(100px, 200px)</h2>
+        <div class="grid-minmax">
+            <div class="grid-item">Left</div>
+            <div class="grid-item">Center (flexible)</div>
+            <div class="grid-item">Right</div>
+        </div>
+    </div>
+</body>
+</html>
+

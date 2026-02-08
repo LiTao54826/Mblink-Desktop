@@ -47,7 +47,7 @@ public:
      * @param canvas Skia 画布
      * @param rect 渲染区域
      * @param gradient 径向渐变定义
-     * 
+     *
      * 注意：
      * - 支持圆形和椭圆形
      * - 中心点坐标为相对位置（0.0-1.0）
@@ -55,6 +55,36 @@ public:
     static void RenderRadialGradient(SkCanvas* canvas,
                                      const SkRect& rect,
                                      const CSSRadialGradient& gradient);
+
+    /**
+     * @brief 渲染平铺的线性渐变（支持 background-size）
+     * @param canvas Skia 画布
+     * @param rect 渲染区域
+     * @param gradient 线性渐变定义
+     * @param tile_width 平铺单元宽度（像素）
+     * @param tile_height 平铺单元高度（像素）
+     *
+     * 用于实现 CSS 网格背景等需要重复平铺的渐变效果
+     */
+    static void RenderTiledLinearGradient(SkCanvas* canvas,
+                                          const SkRect& rect,
+                                          const CSSLinearGradient& gradient,
+                                          float tile_width,
+                                          float tile_height);
+
+    /**
+     * @brief 渲染多层线性渐变（支持 CSS 多背景）
+     * @param canvas Skia 画布
+     * @param rect 渲染区域
+     * @param gradients 线性渐变数组（CSS顺序：第一个在最上层）
+     * @param sizes 每层渐变对应的 background-size
+     *
+     * 按照 CSS 规范，从后往前绘制（最后一个先绘制，第一个最后绘制在最上面）
+     */
+    static void RenderMultipleLinearGradients(SkCanvas* canvas,
+                                              const SkRect& rect,
+                                              const std::vector<CSSLinearGradient>& gradients,
+                                              const std::vector<CSSBackgroundSize>& sizes);
 
 private:
     /**

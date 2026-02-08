@@ -29,8 +29,7 @@
 // #define LIGHTUI_DEBUG_RENDERING
 
 #ifdef LIGHTUI_DEBUG_RENDERING
-    #define DEBUG_LOG(msg) std::cout << msg << std::endl
-    #define DEBUG_LOG_FLUSH() std::cout.flush()
+    #define DEBUG_LOG_FLUSH() ((void)0)
 #else
     #define DEBUG_LOG(msg) ((void)0)
     #define DEBUG_LOG_FLUSH() ((void)0)
@@ -116,7 +115,6 @@ Window::Window(const WindowConfig& config) : config_(config) {
     // 检查调试环境变量
     if (getenv("LIGHTUI_DEBUG_MESSAGES")) {
         win32::SetDebugMessages(true);
-        std::cout << "[Window] Message debugging enabled" << std::endl;
     }
 
     // Windows: 子类化窗口以拦截 WM_PAINT 和 WM_ERASEBKGND，防止闪烁
@@ -134,13 +132,10 @@ Window::Window(const WindowConfig& config) : config_(config) {
             InitSkia();
             CreateSkiaSurface();
             actual_backend_ = RenderBackend::OPENGL;
-            std::cout << "[Window] Using GPU (OpenGL) rendering backend" << std::endl;
         } catch (const std::exception& e) {
             // GPU 初始化失败，降级到 CPU 软件渲染
-            std::cerr << "GPU rendering failed: " << e.what() << ", falling back to CPU" << std::endl;
             InitCPURendering();
             actual_backend_ = RenderBackend::CPU;
-            std::cout << "[Window] Using CPU rendering backend" << std::endl;
         }
     } else if (config_.backend == RenderBackend::OPENGL) {
         // 仅 GPU 模式
@@ -148,12 +143,10 @@ Window::Window(const WindowConfig& config) : config_(config) {
         InitSkia();
         CreateSkiaSurface();
         actual_backend_ = RenderBackend::OPENGL;
-        std::cout << "[Window] Using GPU (OpenGL) rendering backend (forced)" << std::endl;
     } else if (config_.backend == RenderBackend::CPU) {
         // 仅 CPU 模式
         InitCPURendering();
         actual_backend_ = RenderBackend::CPU;
-        std::cout << "[Window] Using CPU rendering backend (forced)" << std::endl;
     }
 
     // 初始化动画时间轴
@@ -175,11 +168,9 @@ Window::Window(const WindowConfig& config) : config_(config) {
         
         fbo_manager_ = std::make_unique<FBOManager>();
         if (!fbo_manager_->Initialize(physical_width, physical_height, gr_context_.get())) {
-            std::cerr << "[Window] Failed to initialize FBO, falling back to full repaint mode" << std::endl;
             fbo_manager_.reset();
             use_fbo_incremental_ = false;
         } else {
-            std::cout << "[Window] FBO incremental rendering enabled" << std::endl;
         }
     }
 
@@ -389,7 +380,6 @@ void Window::SwapBuffers() {
         // CPU 模式：使用 DisplayBackend 显示像素
         SkPixmap pixmap;
         if (!surface_->peekPixels(&pixmap)) {
-            std::cerr << "Failed to peek pixels from Skia surface" << std::endl;
             return;
         }
 
@@ -504,6 +494,9 @@ void Window::InitSDL() {
         SDL_SetHint(SDL_HINT_WINDOWS_ENABLE_MESSAGELOOP, "1");
         // 禁用屏幕保护程序（可选）
         SDL_SetHint(SDL_HINT_VIDEO_ALLOW_SCREENSAVER, "0");
+        // 允许点击穿透：当窗口失去焦点后，点击窗口时同时激活窗口并生成点击事件
+        // 解决"窗口失去焦点后直接点击按钮需要点击两次才能响应"的问题
+        SDL_SetHint(SDL_HINT_MOUSE_FOCUS_CLICKTHROUGH, "1");
 
         if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS)) {
             throw std::runtime_error(std::string("Failed to initialize SDL: ") + SDL_GetError());
@@ -660,7 +653,6 @@ void Window::InitCPURendering() {
     // 创建最佳显示后端（按优先级：OpenGL → LayeredWindow → GDI → SDL_Surface）
     display_backend_ = DisplayBackend::CreateBest(sdl_window_, width, height);
     if (!display_backend_) {
-        std::cerr << "Warning: Failed to create display backend, falling back to SDL Surface" << std::endl;
         // 如果 CreateBest 失败，尝试 SDL Surface 作为最后回退
         display_backend_ = DisplayBackend::Create(DisplayBackendType::SDL_SURFACE);
         if (display_backend_) {
@@ -694,15 +686,21 @@ bool Window::HandleSDLEvent(const SDL_Event& event) {
 
                 // 直接处理 resize，不做节流
                 OnResize();
-                std::cout << "[RESIZE] Before InvalidateRenderTree" << std::endl; std::cout.flush();
+                static bool debug_resize = std::getenv("LIGHTUI_DEBUG_RESIZE") != nullptr;
+                if (debug_resize) {
+                }
                 InvalidateRenderTree();  // 窗口大小改变，需要用新尺寸重建渲染树和布局
-                std::cout << "[RESIZE] After InvalidateRenderTree" << std::endl; std::cout.flush();
+                if (debug_resize) {
+                }
                 SetForceFullRepaint(true);  // 关键修复：强制全量重绘，避免新区域显示垃圾数据
-                std::cout << "[RESIZE] After SetForceFullRepaint" << std::endl; std::cout.flush();
+                if (debug_resize) {
+                }
                 SetNeedsRepaint();
-                std::cout << "[RESIZE] After SetNeedsRepaint" << std::endl; std::cout.flush();
+                if (debug_resize) {
+                }
                 DispatchWindowEvent(WindowEvent(WindowEventType::RESIZE, new_width, new_height));
-                std::cout << "[RESIZE] After DispatchWindowEvent, returning" << std::endl; std::cout.flush();
+                if (debug_resize) {
+                }
                 return true;
             }
 
@@ -741,7 +739,6 @@ bool Window::HandleSDLEvent(const SDL_Event& event) {
                 // 窗口最大化时需要触发重绘
                 // 注意：不在这里调用 InvalidateRenderTree()，因为此时窗口尺寸可能还未更新
                 // RESIZED 事件会随后触发，届时会正确处理渲染树重建
-                std::cout << "[Window] MAXIMIZED event received" << std::endl;
                 SetNeedsRepaint();
                 DispatchWindowEvent(WindowEvent(WindowEventType::MAXIMIZE));
                 return true;
@@ -781,7 +778,6 @@ bool Window::HandleSDLEvent(const SDL_Event& event) {
                 // 我们的渲染由 needs_repaint_ 标志控制，不需要响应 EXPOSED 事件
                 static bool debug_events = std::getenv("LIGHTUI_DEBUG_EVENTS") != nullptr;
                 if (debug_events) {
-                    std::cout << "[Window] Ignoring EXPOSED event" << std::endl;
                 }
                 return true;
             }
@@ -790,7 +786,6 @@ bool Window::HandleSDLEvent(const SDL_Event& event) {
                 // 忽略显示缩放变化事件，避免可能的循环
                 static bool debug_events = std::getenv("LIGHTUI_DEBUG_EVENTS") != nullptr;
                 if (debug_events) {
-                    std::cout << "[Window] Ignoring DISPLAY_SCALE_CHANGED event" << std::endl;
                 }
                 return true;
             }
@@ -915,7 +910,7 @@ void Window::Render() {
     if (!has_active_animations && animation_applicator_ && cached_render_tree_) {
         has_active_animations = HasPendingAnimations(cached_render_tree_.get());
     }
-    
+
     // 快速路径：无需重绘且无活动动画时直接返回
     if (!needs_repaint_ && !has_active_animations && dirty_rects_.empty() && render_tree_valid_) {
         if (render_pipeline_ && !render_pipeline_->NeedsUpdate()) {
@@ -944,7 +939,7 @@ void Window::Render() {
     float app_x = 0, app_y = 0;
     float app_width = logical_width;
     float app_height = logical_height;
-    
+
     if (devtools.IsOpen()) {
         devtools.GetMainAppBounds(logical_width, logical_height,
                                    app_x, app_y, app_width, app_height);
@@ -958,12 +953,11 @@ void Window::Render() {
     // =========================================================================
     if (render_pipeline_ && !render_pipeline_->IsInitialized()) {
         if (!render_pipeline_->Initialize(static_cast<int>(app_width), static_cast<int>(app_height))) {
-            std::cerr << "[Window] Failed to initialize render pipeline" << std::endl;
             return;
         }
         render_pipeline_->SetDocument(document_);
         render_pipeline_->SetDpiScale(dpi_scale);
-        
+
         // 连接属性树系统到动画应用器
         if (animation_applicator_ && render_pipeline_->IsUsingPropertyTreeSystem()) {
             animation_applicator_->SetPaintArtifactCompositor(
@@ -977,13 +971,16 @@ void Window::Render() {
     // 检查窗口大小是否改变（需要重建布局树）
     // =========================================================================
     static float last_app_width_unified = 0, last_app_height_unified = 0;
-    bool app_size_changed_unified = (app_width != last_app_width_unified || app_height != last_app_height_unified);
-    
+    constexpr float kViewportSizeEpsilon = 0.01f;
+    bool app_size_changed_unified =
+        std::fabs(app_width - last_app_width_unified) > kViewportSizeEpsilon ||
+        std::fabs(app_height - last_app_height_unified) > kViewportSizeEpsilon;
+
     if (app_size_changed_unified) {
         last_app_width_unified = app_width;
         last_app_height_unified = app_height;
         render_tree_valid_ = false;  // 窗口大小改变，需要重建布局树
-        
+
         // 关键修复：窗口大小改变时，需要强制重建层树
         // 因为层的边界需要根据新的视口尺寸更新
         if (render_pipeline_) {
@@ -995,18 +992,24 @@ void Window::Render() {
     // =========================================================================
     // 确保渲染树已构建
     // =========================================================================
+    const bool render_tree_rebuild_required = (!render_tree_valid_ || !cached_render_tree_);
     EnsureRenderTree();
-    
+
     if (!cached_render_tree_) {
         return;
+    }
+
+    // 关键修复：全量重建后丢弃 DirtyTracker 的结构增量，避免“全量后再增量”造成重复实例
+    if (render_tree_rebuild_required && document_) {
+        document_->GetDirtyTracker().Clear();
     }
 
     // =========================================================================
     // 增量同步：处理 DOM 变化
     // =========================================================================
-    // 关键修复：只有当渲染树有效时才处理增量同步
+    // 关键修复：全量重建帧跳过增量同步，避免同帧重复插入 out-of-flow 节点
     bool needs_layout_update = false;
-    if (document_ && render_tree_synchronizer_ && cached_render_tree_ && render_tree_valid_) {
+    if (!render_tree_rebuild_required && document_ && render_tree_synchronizer_ && cached_render_tree_ && render_tree_valid_) {
         auto& tracker = document_->GetDirtyTracker();
         if (tracker.HasPendingChanges()) {
             // 调用 RenderTreeSynchronizer 来同步变化
@@ -1016,7 +1019,7 @@ void Window::Render() {
             }
         }
     }
-    
+
     // =========================================================================
     // 增量样式更新：处理 style 属性变化导致的样式重算
     // =========================================================================
@@ -1027,14 +1030,16 @@ void Window::Render() {
         auto body = document_->GetBody();
         if (body && cached_render_tree_) {
             // 检查是否有样式脏标记需要处理
-            bool has_style_dirty = body->IsStyleDirty() || body->IsPaintDirty() || 
-                                   body->ChildNeedsStyleRecalc();
+            bool has_style_dirty = body->IsLayoutDirty() || body->IsStyleDirty() || body->IsPaintDirty() ||
+                                   body->ChildNeedsStyleRecalc() || body->ChildNeedsLayout();
             if (has_style_dirty) {
                 MarkRenderObjectsDirty(body.get(), cached_render_tree_.get());
-                // 清除 DOM 节点的脏标记（递归清除整个子树）
+                // 清除 DOM 节点的脏标记和增量标记（递归清除整个子树）
                 std::function<void(Node*)> clearDirtyRecursive = [&](Node* node) {
                     if (!node) return;
                     node->ClearDirty();
+                    node->ClearNeedsStyleRecalc();
+                    node->ClearNeedsLayout();
                     for (const auto& child : node->GetChildNodes()) {
                         clearDirtyRecursive(child.get());
                     }
@@ -1070,6 +1075,12 @@ void Window::Render() {
             layout_engine_->BuildLayoutTree(cached_render_tree_, true);
             layout_engine_->ComputeLayout(sync_app_width, sync_app_height);
             layout_engine_->GetLayoutInfo(cached_render_tree_);
+
+            // 关键修复：结构变化后强制层树重建，避免父层残留旧位图导致“重影/双实例”
+            if (render_pipeline_) {
+                render_pipeline_->InvalidateLayerTree();
+                render_pipeline_->ForceFullUpdate();
+            }
             // 注意：ViewportBounds 缓存失效已在 ReadLayoutResults 中按需处理
         } else {
             // 尝试增量布局（处理样式变更导致的布局需求）
@@ -1160,8 +1171,17 @@ void Window::Render() {
         has_running_animations = animation_timeline_->HasRunningTransitions();
     }
 
+    // 关键修复：除了“正在运行”的动画，还要考虑“待启动”动画。
+    // 典型场景：Spinner 首次渲染时动态注入 <style>@keyframes ...</style>，
+    // 本帧可能尚未完成 keyframes 注册，StartAnimation 会暂时失败。
+    // 若此时直接停止重绘，后续帧不会再推进，动画表现为“卡住不动”。
+    bool has_pending_animations = false;
+    if (cached_render_tree_) {
+        has_pending_animations = HasPendingAnimations(cached_render_tree_.get());
+    }
+
     // 清除重绘标记
-    if (!has_running_animations) {
+    if (!has_running_animations && !has_pending_animations) {
         needs_repaint_ = false;
     }
     dirty_rects_.clear();
@@ -1261,23 +1281,14 @@ void Window::MarkRenderObjectsDirty(Node* dom_node, RenderObject* render_obj) {
     // 检查 DOM 节点的脏标记
     bool node_is_dirty = dom_node->IsLayoutDirty() || dom_node->IsPaintDirty() || dom_node->IsStyleDirty();
     bool child_needs_update = dom_node->ChildNeedsStyleRecalc() || dom_node->ChildNeedsLayout();
-    
+
     if (!node_is_dirty && !child_needs_update) {
         return;
     }
 
-    // 调试日志
-    static bool debug_dirty = std::getenv("LIGHTUI_DEBUG_DIRTY") != nullptr;
-    static bool debug_hover = std::getenv("LIGHTUI_DEBUG_HOVER") != nullptr;
-
     // 检查DOM节点是否有布局脏标记
     if (dom_node->IsLayoutDirty()) {
         render_obj->MarkNeedsLayout();
-        if (debug_dirty || debug_hover) {
-            auto elem = std::dynamic_pointer_cast<Element>(dom_node->shared_from_this());
-            std::string tag = elem ? elem->GetTagName() : "text";
-            std::cout << "[MarkDirty] Layout dirty: " << tag << std::endl;
-        }
     }
 
     // 获取父样式（用于继承）
@@ -1290,14 +1301,6 @@ void Window::MarkRenderObjectsDirty(Node* dom_node, RenderObject* render_obj) {
     // 检查DOM节点是否有绘制脏标记或样式脏标记（包括伪类变化如:focus）
     if (dom_node->IsPaintDirty() || dom_node->IsStyleDirty()) {
         render_obj->MarkNeedsPaint();
-        
-        if (debug_dirty) {
-            auto elem = std::dynamic_pointer_cast<Element>(dom_node->shared_from_this());
-            std::string tag = elem ? elem->GetTagName() : "text";
-            std::cout << "[MarkDirty] Paint/Style dirty: " << tag 
-                      << " paint=" << dom_node->IsPaintDirty() 
-                      << " style=" << dom_node->IsStyleDirty() << std::endl;
-        }
 
         // 对于 Text 节点，需要同步更新 RenderText 的文本内容和样式
         if (dom_node->GetNodeType() == NodeType::TEXT_NODE) {
@@ -1331,6 +1334,7 @@ void Window::MarkRenderObjectsDirty(Node* dom_node, RenderObject* render_obj) {
                     text_style.line_height = parent_style->line_height;
                     text_style.text_align = parent_style->text_align;
                     text_style.text_decoration = parent_style->text_decoration;
+                    text_style.text_shadow = parent_style->text_shadow;  // 继承 text-shadow
                     render_obj->SetComputedStyle(text_style);
                 }
             }
@@ -1385,7 +1389,7 @@ void Window::MarkRenderObjectsDirty(Node* dom_node, RenderObject* render_obj) {
             RenderObject* child_render_obj = render_child.get();
 
             // 如果当前节点样式改变，子节点的可继承样式也需要更新
-            bool current_is_dirty = dom_node->IsPaintDirty() || dom_node->IsStyleDirty();
+            bool current_is_dirty = dom_node->IsStyleDirty() || dom_node->NeedsStyleRecalc();
             if (current_is_dirty) {
                 // 对于 Text 子节点，更新继承的样式
                 if (child_dom_node->GetNodeType() == NodeType::TEXT_NODE) {
@@ -1452,41 +1456,25 @@ bool Window::LayoutDirtySubtree(RenderObject* render_obj, float parent_width, fl
         return false;
     }
 
-    // 调试日志
-    static bool debug_select = std::getenv("LIGHTUI_DEBUG_SELECT") != nullptr;
-
     // 优先使用 NativeLayoutEngine 的增量布局
     if (layout_engine_) {
         // 增量优化：只标记需要布局的 RenderObject，跳过干净的子树
-        int dirty_count = 0;
         std::function<void(RenderObject*)> markDirty = [&](RenderObject* obj) {
             if (!obj) return;
-            
+
             // 检查是否需要布局
             bool needs_layout = obj->NeedsLayout();
             bool child_needs_layout = obj->ChildNeedsLayout();
-            
+
             // 如果当前节点和子树都不需要布局，跳过
             if (!needs_layout && !child_needs_layout) {
                 return;
             }
-            
+
             if (needs_layout) {
                 layout_engine_->MarkNeedsLayout(obj);
-                dirty_count++;
-                
-                // 调试日志：输出需要布局的节点
-                if (debug_select) {
-                    auto dom_node = obj->GetNode();
-                    std::string tag = "unknown";
-                    if (dom_node && dom_node->GetNodeType() == NodeType::ELEMENT_NODE) {
-                        auto elem = std::dynamic_pointer_cast<Element>(dom_node);
-                        if (elem) tag = elem->GetTagName();
-                    }
-                    std::cout << "[LayoutDirtySubtree] Marking dirty: " << tag << std::endl;
-                }
             }
-            
+
             // 只有子树需要布局时才递归
             if (child_needs_layout) {
                 for (const auto& child : obj->GetChildren()) {
@@ -1495,18 +1483,11 @@ bool Window::LayoutDirtySubtree(RenderObject* render_obj, float parent_width, fl
             }
         };
         markDirty(render_obj);
-        
-        if (debug_select && dirty_count > 0) {
-            std::cout << "[LayoutDirtySubtree] Total dirty nodes: " << dirty_count << std::endl;
-        }
 
         // 执行增量布局
         bool did_layout = layout_engine_->ComputeIncrementalLayout(parent_width, parent_height);
 
         if (did_layout) {
-            if (debug_select) {
-                std::cout << "[LayoutDirtySubtree] Incremental layout completed" << std::endl;
-            }
             // 更新 RenderObject 的布局信息
             layout_engine_->GetLayoutInfo(cached_render_tree_);
         }
@@ -1588,23 +1569,23 @@ void Window::AddDirtyRect(const SkRect& rect) {
         while (dirty_rects_.size() > kMaxDirtyRects) {
             float min_distance = std::numeric_limits<float>::max();
             size_t merge_i = 0, merge_j = 1;
-            
+
             // 找到距离最近的两个矩形
             for (size_t i = 0; i < dirty_rects_.size(); ++i) {
                 for (size_t j = i + 1; j < dirty_rects_.size(); ++j) {
                     const auto& r1 = dirty_rects_[i];
                     const auto& r2 = dirty_rects_[j];
-                    
+
                     // 计算两个矩形中心点的距离
                     float cx1 = (r1.left() + r1.right()) / 2.0f;
                     float cy1 = (r1.top() + r1.bottom()) / 2.0f;
                     float cx2 = (r2.left() + r2.right()) / 2.0f;
                     float cy2 = (r2.top() + r2.bottom()) / 2.0f;
-                    
+
                     float dx = cx2 - cx1;
                     float dy = cy2 - cy1;
                     float distance = dx * dx + dy * dy;  // 不需要开方，比较大小即可
-                    
+
                     if (distance < min_distance) {
                         min_distance = distance;
                         merge_i = i;
@@ -1612,13 +1593,11 @@ void Window::AddDirtyRect(const SkRect& rect) {
                     }
                 }
             }
-            
+
             // 合并最近的两个矩形
             dirty_rects_[merge_i].join(dirty_rects_[merge_j]);
             dirty_rects_.erase(dirty_rects_.begin() + merge_j);
         }
-        
-        std::cout << "[AddDirtyRect] Merged nearby rects, now have " << dirty_rects_.size() << " rects" << std::endl;
     }
 }
 
@@ -1684,25 +1663,31 @@ float Window::GetDisplayScale() const {
 void Window::ForceLayoutSync() {
     // 强制同步布局 - 模拟浏览器的 forced reflow
     // 当 JS 调用 getBoundingClientRect 等方法时，需要立即获取最新的布局信息
-    
+
     if (!document_ || !layout_engine_) {
         return;
     }
-    
+
     // 确保渲染树已构建
+    const bool render_tree_rebuild_required = (!render_tree_valid_ || !cached_render_tree_);
     EnsureRenderTree();
-    
+
     if (!cached_render_tree_) {
         return;
     }
-    
+
+    // 关键修复：ForceLayoutSync 也需要避免“全量后再增量”重复同步
+    if (render_tree_rebuild_required) {
+        document_->GetDirtyTracker().Clear();
+    }
+
     // 获取视口尺寸
     int physical_width, physical_height;
     SDL_GetWindowSizeInPixels(sdl_window_, &physical_width, &physical_height);
     float dpi_scale = GetDisplayScale();
     float width = static_cast<float>(physical_width) / dpi_scale;
     float height = static_cast<float>(physical_height) / dpi_scale;
-    
+
     // 考虑 DevTools 面板
     auto& devtools = DevToolsManager::GetInstance();
     float app_width = width;
@@ -1711,18 +1696,18 @@ void Window::ForceLayoutSync() {
         float app_x, app_y;
         devtools.GetMainAppBounds(width, height, app_x, app_y, app_width, app_height);
     }
-    
+
     // 处理待处理的 DOM 变化
     bool needs_rebuild = false;
-    if (render_tree_synchronizer_) {
+    if (!render_tree_rebuild_required && render_tree_synchronizer_) {
         auto& tracker = document_->GetDirtyTracker();
         bool has_pending = tracker.HasPendingChanges();
-        
+
         if (has_pending) {
             needs_rebuild = render_tree_synchronizer_->Synchronize(tracker, cached_render_tree_);
         }
     }
-    
+
     // 重建布局树并计算布局
     // 如果有 DOM 变化，强制重建布局树
     layout_engine_->BuildLayoutTree(cached_render_tree_, needs_rebuild);
@@ -1733,6 +1718,13 @@ void Window::ForceLayoutSync() {
 void Window::InvalidateRenderTree() {
     // 标记渲染树需要重建
     render_tree_valid_ = false;
+
+    // 关键修复：在清空渲染树之前保存滚动位置
+    // 这样 EnsureRenderTree() 重建时可以恢复滚动状态
+    if (cached_render_tree_ && window_renderer_) {
+        saved_scroll_positions_.clear();
+        window_renderer_->SaveScrollPositions(cached_render_tree_.get(), saved_scroll_positions_);
+    }
 
     // 关键修复：清理 LayoutEngine 的映射
     // NativeLayoutEngine 持有 render_to_node_ 映射（RenderObject* -> NodeId）
@@ -1777,9 +1769,13 @@ void Window::EnsureRenderTree() {
         return;
     }
 
-    // 在重建渲染树前，保存旧渲染树的滚动位置
+    // 在重建渲染树前，优先使用 InvalidateRenderTree 保存的滚动位置
+    // 如果没有（说明不是通过 InvalidateRenderTree 触发的重建），则尝试从当前渲染树保存
     std::unordered_map<Node*, std::pair<float, float>> scroll_positions;
-    if (cached_render_tree_ && window_renderer_) {
+    if (!saved_scroll_positions_.empty()) {
+        scroll_positions = std::move(saved_scroll_positions_);
+        saved_scroll_positions_.clear();
+    } else if (cached_render_tree_ && window_renderer_) {
         window_renderer_->SaveScrollPositions(cached_render_tree_.get(), scroll_positions);
     }
 
@@ -1810,32 +1806,27 @@ void Window::EnsureRenderTree() {
         incremental_layout_manager_ = std::make_unique<IncrementalLayoutManager>(this);
     }
 
-    // 恢复滚动位置
-    if (!scroll_positions.empty() && window_renderer_) {
-        window_renderer_->RestoreScrollPositions(cached_render_tree_.get(), scroll_positions);
-    }
-
     // 获取窗口尺寸
     int physical_width, physical_height;
     SDL_GetWindowSizeInPixels(sdl_window_, &physical_width, &physical_height);
-    
+
     // 获取 DPI 缩放比
     float dpi_scale = GetDisplayScale();
-    
+
     // 计算逻辑大小
     float width = static_cast<float>(physical_width) / dpi_scale;
     float height = static_cast<float>(physical_height) / dpi_scale;
-    
+
     // 检查 DevTools 是否打开，如果打开则调整主应用区域
     auto& devtools = DevToolsManager::GetInstance();
     float app_width = width;
     float app_height = height;
-    
+
     if (devtools.IsOpen()) {
         float app_x, app_y;
         devtools.GetMainAppBounds(width, height, app_x, app_y, app_width, app_height);
     }
-    
+
     // 设置视口尺寸
     RenderObject::SetViewportSize(app_width, app_height);
 
@@ -1846,6 +1837,12 @@ void Window::EnsureRenderTree() {
         layout_engine_->GetLayoutInfo(cached_render_tree_);
     } else {
         cached_render_tree_->Layout(app_width, app_height);
+    }
+
+    // 关键修复：在布局计算完成后恢复滚动位置
+    // 这样可以确保滚动位置不会被布局计算重置
+    if (!scroll_positions.empty() && window_renderer_) {
+        window_renderer_->RestoreScrollPositions(cached_render_tree_.get(), scroll_positions);
     }
 
     render_tree_valid_ = true;

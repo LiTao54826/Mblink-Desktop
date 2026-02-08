@@ -23,6 +23,7 @@
 #include "core/dom/document.h"
 #include "core/dom/element.h"
 #include "core/dom/bindings/dom_bindings.h"
+#include "core/quickjs/dom_binding_map.h"
 
 #include "core/event/loop/event_loop.h"
 #include "core/event/loop/task_scheduler.h"
@@ -932,9 +933,11 @@ public:
         // 清理 FetchBindings
         fetch_bindings_.reset();
 
-        // 清理 DOM 绑定
+        // 清理 DOM 绑定和全局 Node* -> JSValue 映射
         if (runtime_) {
-            DOMBindings::Cleanup(runtime_->GetContext());
+            JSContext* ctx = runtime_->GetContext();
+            DOMBindings::Cleanup(ctx);
+            DOMBindingMap::GetInstance().Clear();
         }
 
         // 清理运行时
@@ -1376,9 +1379,11 @@ PYBIND11_MODULE(lightui_core, m) {
 
     m.def("cleanup_dom_bindings", [](PyRuntime& runtime) {
         if (runtime.getContext()) {
-            DOMBindings::Cleanup(runtime.getContext());
+            JSContext* ctx = runtime.getContext();
+            DOMBindings::Cleanup(ctx);
+            DOMBindingMap::GetInstance().Clear();
         }
-    }, py::arg("runtime"), "Clean up DOM bindings (call before destroying runtime)");
+    }, py::arg("runtime"), "Clean up DOM bindings and binding map (call before destroying runtime)");
 
     m.def("version", []() { return "0.5.0"; });
 }

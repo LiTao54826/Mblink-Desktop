@@ -64,8 +64,6 @@ void PrintStats() {
     DWORD now = GetTickCount();
     if (now - g_last_stats_time >= 1000) {
         if (g_debug_messages && (g_paint_count > 0 || g_present_count > 0)) {
-            std::cout << "[Stats] WM_PAINT: " << g_paint_count
-                      << "/s, Present: " << g_present_count << "/s" << std::endl;
         }
         g_paint_count = 0;
         g_present_count = 0;
@@ -92,7 +90,6 @@ static LRESULT CALLBACK SubclassWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPAR
     if (g_debug_messages) {
         const char* name = GetMessageName(msg);
         if (name) {
-            std::cout << "[WndProc] " << name << " (0x" << std::hex << msg << std::dec << ")" << std::endl;
         }
     }
 
@@ -115,9 +112,6 @@ static LRESULT CALLBACK SubclassWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPAR
                     RECT& cached = rect_it->second;
                     int cached_width = cached.right - cached.left;
                     int cached_height = cached.bottom - cached.top;
-                    std::cout << "[WndProc] WINDOWPOSCHANGING: cached=" << cached_width << "x" << cached_height
-                              << " new=" << wp->cx << "x" << wp->cy
-                              << " flags=0x" << std::hex << wp->flags << std::dec << std::endl;
                 }
             }
 
@@ -136,7 +130,6 @@ static LRESULT CALLBACK SubclassWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPAR
                     if (dw <= 5 && dh <= 5) {
                         wp->flags |= SWP_NOSIZE;
                         if (g_debug_messages && (dw > 0 || dh > 0)) {
-                            std::cout << "[WndProc] Blocked resize: dw=" << dw << ", dh=" << dh << std::endl;
                         }
                     }
                 }
@@ -158,7 +151,6 @@ static LRESULT CALLBACK SubclassWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPAR
         case WM_NCACTIVATE: {
             // 尝试：阻止非客户区激活导致的重绘循环
             if (g_debug_messages) {
-                std::cout << "[WndProc] WM_NCACTIVATE: wParam=" << wParam << std::endl;
             }
             // 关键：使用 lParam = -1 告诉系统不要重绘非客户区
             // 但仍然调用 DefWindowProc 来更新窗口状态
@@ -214,7 +206,6 @@ static LRESULT CALLBACK SubclassWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPAR
                 if (size_count > 2) {
                     // 在 100ms 内收到超过 2 次 WM_SIZE，可能是循环
                     if (g_debug_messages) {
-                        std::cout << "[WndProc] Blocked WM_SIZE loop (count=" << size_count << ")" << std::endl;
                     }
                     return 0;  // 不传递给 SDL
                 }

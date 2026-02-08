@@ -41,6 +41,9 @@ void AnimationApplicator::StartAnimationsForObject(RenderObject* object) {
         return;
     }
 
+    // 先清理陈旧状态，避免旧 Element* 污染启动判定
+    PruneStaleStartedAnimations();
+
     // 从 RenderObject 提取 Element
     Element* element = ExtractElement(object);
     if (!element) {
@@ -50,14 +53,13 @@ void AnimationApplicator::StartAnimationsForObject(RenderObject* object) {
     const auto& style = object->GetComputedStyle();
     auto& started = started_animations_[element];  // 使用 Element* 作为键
 
-    // 调试日志
-    static bool debug_anim = std::getenv("LIGHTUI_DEBUG_ANIM") != nullptr;
+    // 调试日志（兼容 LIGHTUI_DEBUG_ANIMATION / LIGHTUI_DEBUG_ANIM）
+    const bool debug_anim = IsDebugAnimationEnabled();
 
     // 遍历 ComputedStyle 中定义的所有动画
     for (const auto& anim : style.animations) {
         if (!anim.IsValid()) {
             if (debug_anim && !anim.name.empty()) {
-                std::cout << "[AnimationApplicator] Invalid animation: " << anim.name << std::endl;
             }
             continue;
         }
@@ -68,17 +70,21 @@ void AnimationApplicator::StartAnimationsForObject(RenderObject* object) {
         }
 
         if (debug_anim) {
-            std::cout << "[AnimationApplicator] Starting animation: " << anim.name
-                      << " duration=" << anim.duration << "s"
-                      << " iteration=" << anim.iteration_count
-                      << std::endl;
         }
 
-        // 启动动画
+        // 启动动画（注意：StartAnimation 可能因 keyframes 尚未注册而失败）
         controller_.StartAnimation(object, anim);
-        started.insert(anim.name);
+
+        // 只有真正进入 running_animations_ 后，才标记为 started。
+        // 否则首次失败会被永久跳过重试，表现为“动画不动”。
+        bool started_ok = IsAnimationRunningForElement(element, anim.name);
+
+        if (started_ok) {
+            started.insert(anim.name);
+        } else if (debug_anim) {
+        }
     }
-    
+
     // 清理不再需要的动画
     std::set<std::string> current_names;
     for (const auto& anim : style.animations) {
@@ -86,7 +92,7 @@ void AnimationApplicator::StartAnimationsForObject(RenderObject* object) {
             current_names.insert(anim.name);
         }
     }
-    
+
     // 停止不在当前样式中的动画
     std::vector<std::string> to_remove;
     for (const auto& name : started) {
@@ -95,7 +101,7 @@ void AnimationApplicator::StartAnimationsForObject(RenderObject* object) {
             to_remove.push_back(name);
         }
     }
-    
+
     for (const auto& name : to_remove) {
         started.erase(name);
     }
@@ -109,29 +115,29 @@ void AnimationApplicator::ApplyAnimationValues(RenderObject* object) {
     if (!object) {
         return;
     }
-    
+
     // 从 RenderObject 提取 Element
     Element* element = ExtractElement(object);
     if (!element) {
         return;
     }
-    
+
     auto& style = object->GetComputedStyle();
     bool modified = false;
     bool needs_paint = false;  // 是否需要重绘（非层优化的属性）
-    
+
     // 检测 play-state 变化并更新动画状态
     bool should_pause = (style.animation_play_state == "paused");
     auto& started = started_animations_[element];  // 使用 Element* 作为键
-    
+
     if (started.empty()) {
         return;  // 没有已启动的动画，直接返回
     }
-    
+
     for (const auto& anim_name : started) {
         // 检查当前动画的暂停状态
         const auto& running_anims = controller_.GetRunningAnimations();
-        
+
         for (const auto& running : running_anims) {
             // 使用 GetRenderObject() 获取当前 RenderObject
             if (running.GetRenderObject() == object && running.config.name == anim_name) {
@@ -144,13 +150,13 @@ void AnimationApplicator::ApplyAnimationValues(RenderObject* object) {
                 break;
             }
         }
-        
+
         // 获取当前动画属性值
         auto props = controller_.GetCurrentProperties(object, anim_name);
         if (!props) {
             continue;
         }
-        
+
         // 应用每个属性
         for (const auto& [property, value] : *props) {
             // 优先级 1：尝试通过属性树系统直接更新（最高效，不触发光栅化）
@@ -162,7 +168,7 @@ void AnimationApplicator::ApplyAnimationValues(RenderObject* object) {
                     continue;
                 }
             }
-            
+
             // 优先级 2：尝试通过层合成系统更新（次优，可能触发部分更新）
             if (property == "transform" || property == "opacity") {
                 if (TryApplyViaCompositor(object, property, value)) {
@@ -172,7 +178,7 @@ void AnimationApplicator::ApplyAnimationValues(RenderObject* object) {
                     continue;
                 }
             }
-            
+
             // 回退：通过传统方式应用属性
             if (ApplyPropertyToStyle(style, property, value)) {
                 modified = true;
@@ -180,7 +186,7 @@ void AnimationApplicator::ApplyAnimationValues(RenderObject* object) {
             }
         }
     }
-    
+
     // 如果有属性被修改，标记需要重绘
     if (modified && needs_paint) {
         // 对于 transform 动画，需要扩展脏区域以覆盖变换前后的区域
@@ -206,13 +212,13 @@ void AnimationApplicator::StopAnimationsForObject(RenderObject* object) {
     if (!object) {
         return;
     }
-    
+
     // 从 RenderObject 提取 Element
     Element* element = ExtractElement(object);
     if (!element) {
         return;
     }
-    
+
     controller_.StopAllAnimations(object);
     started_animations_.erase(element);  // 使用 Element* 作为键
 }
@@ -221,18 +227,18 @@ void AnimationApplicator::SetAnimationsPaused(RenderObject* object, bool paused)
     if (!object) {
         return;
     }
-    
+
     // 从 RenderObject 提取 Element
     Element* element = ExtractElement(object);
     if (!element) {
         return;
     }
-    
+
     auto it = started_animations_.find(element);  // 使用 Element* 作为键
     if (it == started_animations_.end()) {
         return;
     }
-    
+
     for (const auto& name : it->second) {
         if (paused) {
             controller_.PauseAnimation(object, name);
@@ -246,13 +252,16 @@ bool AnimationApplicator::HasActiveAnimations(RenderObject* object) const {
     if (!object) {
         return false;
     }
-    
+
+    // 惰性清理陈旧键，避免历史状态误判为 active
+    const_cast<AnimationApplicator*>(this)->PruneStaleStartedAnimations();
+
     // 从 RenderObject 提取 Element
     Element* element = const_cast<AnimationApplicator*>(this)->ExtractElement(object);
     if (!element) {
         return false;
     }
-    
+
     auto it = started_animations_.find(element);  // 使用 Element* 作为键
     return it != started_animations_.end() && !it->second.empty();
 }
@@ -261,13 +270,16 @@ std::set<std::string> AnimationApplicator::GetActiveAnimationNames(RenderObject*
     if (!object) {
         return {};
     }
-    
+
+    // 惰性清理陈旧键，避免历史状态误判
+    const_cast<AnimationApplicator*>(this)->PruneStaleStartedAnimations();
+
     // 从 RenderObject 提取 Element
     Element* element = const_cast<AnimationApplicator*>(this)->ExtractElement(object);
     if (!element) {
         return {};
     }
-    
+
     auto it = started_animations_.find(element);  // 使用 Element* 作为键
     if (it != started_animations_.end()) {
         return it->second;
@@ -282,22 +294,66 @@ void AnimationApplicator::Clear() {
     started_animations_.clear();
 }
 
+bool AnimationApplicator::IsDebugAnimationEnabled() const {
+    static const bool debug_enabled =
+        (std::getenv("LIGHTUI_DEBUG_ANIMATION") != nullptr) ||
+        (std::getenv("LIGHTUI_DEBUG_ANIM") != nullptr);
+    return debug_enabled;
+}
+
+bool AnimationApplicator::IsAnimationRunningForElement(Element* element,
+                                                       const std::string& animation_name) const {
+    if (!element || animation_name.empty()) {
+        return false;
+    }
+
+    for (const auto& running : controller_.GetRunningAnimations()) {
+        auto running_elem = running.GetElement();
+        if (running_elem && running_elem.get() == element && running.config.name == animation_name) {
+            return true;
+        }
+    }
+    return false;
+}
+
+void AnimationApplicator::PruneStaleStartedAnimations() {
+    if (started_animations_.empty()) {
+        return;
+    }
+
+    std::set<Element*> alive_elements;
+    for (const auto& running : controller_.GetRunningAnimations()) {
+        auto elem = running.GetElement();
+        if (elem) {
+            alive_elements.insert(elem.get());
+        }
+    }
+
+    for (auto it = started_animations_.begin(); it != started_animations_.end();) {
+        if (alive_elements.find(it->first) == alive_elements.end()) {
+            it = started_animations_.erase(it);
+        } else {
+            ++it;
+        }
+    }
+}
+
 Element* AnimationApplicator::ExtractElement(RenderObject* object) const {
     if (!object) {
         return nullptr;
     }
-    
+
     // 获取关联的 DOM 节点
     auto node = object->GetNode();
     if (!node) {
         return nullptr;
     }
-    
+
     // 检查节点是否为 Element
     if (node->GetNodeType() != NodeType::ELEMENT_NODE) {
         return nullptr;
     }
-    
+
     // 转换为 Element
     auto element = std::dynamic_pointer_cast<Element>(node);
     return element.get();
@@ -314,59 +370,51 @@ bool AnimationApplicator::TryApplyViaPropertyTree(RenderObject* object,
     if (!paint_artifact_compositor_ || !property_trees_) {
         static bool first_warning = true;
         if (first_warning) {
-            std::cout << "[AnimationApplicator] No property tree system available" << std::endl;
             first_warning = false;
         }
         return false;
     }
-    
+
     // 检查对象是否有属性树状态
     PropertyTreeState* state = object->GetPropertyTreeState();
     if (!state) {
         // 调试：输出为什么没有属性树状态
         static bool first_warning = true;
         if (first_warning) {
-            std::cout << "[AnimationApplicator] Warning: RenderObject has no PropertyTreeState, "
-                      << "falling back to traditional rendering path" << std::endl;
             first_warning = false;
         }
         return false;
     }
-    
+
     // 检查对象是否可以直接更新
     if (property == "transform") {
         if (!object->CanDirectlyUpdateTransform()) {
             static bool first_warning = true;
             if (first_warning) {
                 const auto& style = object->GetComputedStyle();
-                std::cout << "[AnimationApplicator] Cannot directly update transform. "
-                          << "HasOwnCompositorLayer=" << object->HasOwnCompositorLayer()
-                          << ", will_change='" << style.will_change << "'" << std::endl;
                 first_warning = false;
             }
             return false;
         }
-        
+
         TransformTreeNode* transform_node = state->Transform();
         if (!transform_node) {
             static bool first_warning = true;
             if (first_warning) {
-                std::cout << "[AnimationApplicator] No transform node in PropertyTreeState" << std::endl;
                 first_warning = false;
             }
             return false;
         }
-        
+
         // 检查合成器是否支持直接更新此节点
         if (!paint_artifact_compositor_->CanDirectlyUpdateTransform(transform_node)) {
             static bool first_warning = true;
             if (first_warning) {
-                std::cout << "[AnimationApplicator] Compositor cannot directly update transform node" << std::endl;
                 first_warning = false;
             }
             return false;
         }
-        
+
         // 解析 transform 值并转换为 SkM44
         std::optional<CSSTransform> css_transform_opt = CSSTransform::Parse(value);
         if (!css_transform_opt.has_value() || css_transform_opt->IsEmpty()) {
@@ -374,40 +422,40 @@ bool AnimationApplicator::TryApplyViaPropertyTree(RenderObject* object,
             return paint_artifact_compositor_->DirectlyUpdateTransform(
                 transform_node, SkM44());
         }
-        
+
         const CSSTransform& css_transform = css_transform_opt.value();
-        
+
         // 获取对象的布局信息用于计算变换原点
         const auto& layout = object->GetLayoutInfo();
         SkRect rect = SkRect::MakeXYWH(layout.x, layout.y, layout.width, layout.height);
-        
+
         // 获取变换原点
         const auto& style = object->GetComputedStyle();
         const TransformOrigin& origin = style.transform_origin;
-        
+
         // 计算 2D 变换矩阵
         SkMatrix matrix2d = css_transform.ToSkMatrix(rect, origin);
-        
+
         // 转换为 4x4 矩阵
         SkM44 matrix = SkM44(matrix2d);
-        
+
         return paint_artifact_compositor_->DirectlyUpdateTransform(transform_node, matrix);
     }
     else if (property == "opacity") {
         if (!object->CanDirectlyUpdateOpacity()) {
             return false;
         }
-        
+
         EffectTreeNode* effect_node = state->Effect();
         if (!effect_node) {
             return false;
         }
-        
+
         // 检查合成器是否支持直接更新此节点
         if (!paint_artifact_compositor_->CanDirectlyUpdateOpacity(effect_node)) {
             return false;
         }
-        
+
         // 解析 opacity 值
         float opacity = 1.0f;
         try {
@@ -416,10 +464,10 @@ bool AnimationApplicator::TryApplyViaPropertyTree(RenderObject* object,
         } catch (...) {
             return false;
         }
-        
+
         return paint_artifact_compositor_->DirectlyUpdateOpacity(effect_node, opacity);
     }
-    
+
     return false;
 }
 
@@ -434,15 +482,15 @@ bool AnimationApplicator::TryApplyViaCompositor(RenderObject* object,
     if (!animation_bridge_) {
         return false;
     }
-    
+
     // 检查对象是否有独立的合成层
     if (!object->HasOwnCompositorLayer()) {
         return false;
     }
-    
+
     // 通过动画层桥接器更新属性
     auto update_type = animation_bridge_->ApplyAnimationProperty(object, property, value);
-    
+
     // 检查是否成功通过层系统更新
     return (update_type == AnimationUpdateType::Transform ||
             update_type == AnimationUpdateType::Opacity);
@@ -464,7 +512,7 @@ bool AnimationApplicator::ApplyPropertyToStyle(ComputedStyle& style,
             return false;
         }
     }
-    
+
     // transform
     if (property == "transform") {
         style.transform_str = value;
@@ -472,19 +520,19 @@ bool AnimationApplicator::ApplyPropertyToStyle(ComputedStyle& style,
         style.transform = CSSTransform::Parse(value);
         return true;
     }
-    
+
     // color
     if (property == "color") {
         style.color = value;
         return true;
     }
-    
+
     // background-color
     if (property == "background-color") {
         style.background_color = value;
         return true;
     }
-    
+
     // width
     if (property == "width") {
         auto [val, unit] = ParseNumberWithUnit(value);
@@ -501,7 +549,7 @@ bool AnimationApplicator::ApplyPropertyToStyle(ComputedStyle& style,
         }
         return true;
     }
-    
+
     // height
     if (property == "height") {
         auto [val, unit] = ParseNumberWithUnit(value);
@@ -518,7 +566,7 @@ bool AnimationApplicator::ApplyPropertyToStyle(ComputedStyle& style,
         }
         return true;
     }
-    
+
     // margin
     if (property == "margin-top") {
         auto [val, unit] = ParseNumberWithUnit(value);
@@ -540,7 +588,7 @@ bool AnimationApplicator::ApplyPropertyToStyle(ComputedStyle& style,
         style.margin_left = CSSLength(val, unit == "%" ? CSSUnit::PERCENT : CSSUnit::PX);
         return true;
     }
-    
+
     // padding
     if (property == "padding-top") {
         auto [val, unit] = ParseNumberWithUnit(value);
@@ -562,7 +610,7 @@ bool AnimationApplicator::ApplyPropertyToStyle(ComputedStyle& style,
         style.padding_left = CSSLength(val, unit == "%" ? CSSUnit::PERCENT : CSSUnit::PX);
         return true;
     }
-    
+
     // border-width
     if (property == "border-top-width") {
         auto [val, unit] = ParseNumberWithUnit(value);
@@ -584,7 +632,7 @@ bool AnimationApplicator::ApplyPropertyToStyle(ComputedStyle& style,
         style.border_left_width = val;
         return true;
     }
-    
+
     // border-color
     if (property == "border-top-color") {
         style.border_top_color = ParseColor(value);
@@ -602,7 +650,7 @@ bool AnimationApplicator::ApplyPropertyToStyle(ComputedStyle& style,
         style.border_left_color = ParseColor(value);
         return true;
     }
-    
+
     // border-radius
     if (property == "border-top-left-radius") {
         auto [val, unit] = ParseNumberWithUnit(value);
@@ -624,28 +672,28 @@ bool AnimationApplicator::ApplyPropertyToStyle(ComputedStyle& style,
         style.border_radius.bottom_right = CSSLength(val, unit == "%" ? CSSUnit::PERCENT : CSSUnit::PX);
         return true;
     }
-    
+
     // font-size
     if (property == "font-size") {
         auto [val, unit] = ParseNumberWithUnit(value);
         style.font_size = val;
         return true;
     }
-    
+
     // line-height
     if (property == "line-height") {
         auto [val, unit] = ParseNumberWithUnit(value);
         style.line_height = val;
         return true;
     }
-    
+
     // letter-spacing
     if (property == "letter-spacing") {
         auto [val, unit] = ParseNumberWithUnit(value);
         style.letter_spacing = CSSLength(val, CSSUnit::PX);
         return true;
     }
-    
+
     // top, right, bottom, left (positioning)
     if (property == "top") {
         auto [val, unit] = ParseNumberWithUnit(value);
@@ -667,7 +715,7 @@ bool AnimationApplicator::ApplyPropertyToStyle(ComputedStyle& style,
         style.left = CSSLength(val, unit == "%" ? CSSUnit::PERCENT : CSSUnit::PX);
         return true;
     }
-    
+
     // z-index
     if (property == "z-index") {
         try {
@@ -677,7 +725,7 @@ bool AnimationApplicator::ApplyPropertyToStyle(ComputedStyle& style,
             return false;
         }
     }
-    
+
     // flex properties
     if (property == "flex-grow") {
         try {
@@ -695,7 +743,7 @@ bool AnimationApplicator::ApplyPropertyToStyle(ComputedStyle& style,
             return false;
         }
     }
-    
+
     // 未知属性
     return false;
 }
@@ -707,13 +755,13 @@ bool AnimationApplicator::ApplyPropertyToStyle(ComputedStyle& style,
 std::pair<float, std::string> AnimationApplicator::ParseNumberWithUnit(const std::string& str) const {
     std::regex number_regex(R"(^([-+]?[0-9]*\.?[0-9]+)([a-z%]*)$)");
     std::smatch match;
-    
+
     if (std::regex_match(str, match, number_regex)) {
         float value = std::stof(match[1].str());
         std::string unit = match[2].str();
         return {value, unit};
     }
-    
+
     return {0.0f, ""};
 }
 

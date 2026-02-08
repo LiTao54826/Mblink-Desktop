@@ -75,7 +75,6 @@ bool ContentEditableController::HandleMouseDown(
         return false;
     }
 
-    std::cout << "[ContentEditableController] HandleMouseDown on: " << target->GetTagName() << std::endl;
 
     auto doc = target->GetOwnerDocument();
     if (!doc || !selection_manager_ || !render_object) {
@@ -96,7 +95,6 @@ bool ContentEditableController::HandleMouseDown(
         contenteditable_root = target;
     }
 
-    std::cout << "[ContentEditableController] ContentEditable root: " << contenteditable_root->GetTagName() << std::endl;
 
     // 找到根元素的渲染对象
     float abs_x = 0, abs_y = 0;
@@ -141,7 +139,6 @@ bool ContentEditableController::HandleMouseDown(
         drag_state_.start_node = selection->GetAnchorNode();
         drag_state_.start_offset = selection->GetAnchorOffset();
         
-        std::cout << "[ContentEditableController] Started drag selection" << std::endl;
     } else {
         // 没找到文本节点，折叠到元素
         selection->Collapse(target, 0);
@@ -173,7 +170,6 @@ bool ContentEditableController::HandleMouseMove(
         return false;
     }
 
-    std::cout << "[ContentEditableController] HandleMouseMove during drag" << std::endl;
 
     // 找到 contentEditable 根元素的渲染对象
     float abs_x = 0, abs_y = 0;
@@ -211,7 +207,6 @@ bool ContentEditableController::HandleMouseMove(
             window->SetNeedsRepaint();
         }
         
-        std::cout << "[ContentEditableController] Updated selection to offset=" << target_offset << std::endl;
     }
 
     return true;
@@ -226,7 +221,6 @@ bool ContentEditableController::HandleMouseUp(
     // 结束拖拽选择
     drag_state_.Reset();
     
-    std::cout << "[ContentEditableController] HandleMouseUp, was_dragging=" << was_dragging << std::endl;
     
     return was_dragging;
 }

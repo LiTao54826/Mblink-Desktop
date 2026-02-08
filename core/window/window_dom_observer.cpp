@@ -1,17 +1,10 @@
 /**
  * @file window_dom_observer.cpp
  * @brief Window 的 DOM 观察者实现
- * 
+ *
  * 从 window.cpp 提取的 DOM 观察者类实现。
  * 监听 DOM 变化并触发窗口重绘。
  */
-
-// 性能优化：默认关闭调试日志
-#ifdef LIGHTUI_DEBUG_RENDERING
-    #define DEBUG_LOG(msg) std::cout << msg << std::endl
-#else
-    #define DEBUG_LOG(msg) ((void)0)
-#endif
 
 #include "window_dom_observer.h"
 #include "window.h"
@@ -27,8 +20,6 @@
 #include "core/layout/incremental_layout_manager.h"
 #include "core/lexbor/style_manager.h"
 #include "core/compositor/layer_tree_manager.h"
-#include <iostream>
-#include <cstdlib>
 #include <vector>
 
 namespace lightui {
@@ -36,23 +27,6 @@ namespace lightui {
 WindowDOMObserver::WindowDOMObserver(Window* window) : window_(window) {}
 
 void WindowDOMObserver::OnNodeAdded(Node* node, Node* parent) {
-    DEBUG_LOG("[WindowDOMObserver::OnNodeAdded] node=" << node
-              << ", parent=" << parent
-              << ", IsInBatch=" << (node ? IsInBatch(node) : false));
-    
-    // 调试日志
-    static bool debug_select = std::getenv("LIGHTUI_DEBUG_SELECT") != nullptr;
-    if (debug_select && node) {
-        std::string tag = "unknown";
-        if (node->GetNodeType() == NodeType::ELEMENT_NODE) {
-            auto elem = std::dynamic_pointer_cast<Element>(node->shared_from_this());
-            if (elem) tag = elem->GetTagName();
-        } else if (node->GetNodeType() == NodeType::TEXT_NODE) {
-            tag = "text";
-        }
-        std::cout << "[OnNodeAdded] tag=" << tag << " IsInBatch=" << IsInBatch(node) << std::endl;
-    }
-    
     // 处理 <style> 元素的添加：触发样式解析和渲染树重建
     if (node && node->GetNodeType() == NodeType::ELEMENT_NODE) {
         auto elem = std::dynamic_pointer_cast<Element>(node->shared_from_this());
@@ -87,29 +61,16 @@ void WindowDOMObserver::OnNodeAdded(Node* node, Node* parent) {
                 
                 // 1. 检查是否为脱离文档流的元素 (position: fixed/absolute)
                 if (LayoutBoundaryDetector::IsOutOfFlow(style)) {
-                    // 脱离文档流元素：使用增量布局管理器处理
-                    if (auto* manager = window_->GetIncrementalLayoutManager()) {
-                        if (manager->AddOutOfFlowElement(elem.get(), parent)) {
-                            // 关键修复：不在这里请求层创建！
-                            // 层创建应该在布局完成后由 DoLayerTreeBuild 自动处理
-                            // 这样可以确保层边界使用正确的布局信息
-                            //
-                            // 之前的问题：
-                            // 1. AddOutOfFlowElement 只标记需要布局，不执行布局
-                            // 2. RequestAddLayer 在布局前就被调用
-                            // 3. 层创建时使用的是旧的/空的布局信息
-                            // 4. 导致第一帧元素出现在错误位置闪烁
-                            //
-                            // 修复后：
-                            // 1. 这里只添加到渲染树并标记需要布局
-                            // 2. 布局在 Window::EnsureRenderTree 中执行
-                            // 3. DoLayerTreeBuild 会检测需要层的元素并创建
-                            // 4. 层边界使用正确的布局信息
-
-                            window_->SetNeedsRepaint();
-                            return;
-                        }
-                    }
+                    // 关键修复：禁止在 DOMObserver 增量路径里直接改挂接 RenderObject。
+                    // 这会和 RenderTreeSynchronizer 的插入/重建路径竞争，导致
+                    // 1) fixed/absolute 元素出现双实例（文档流坐标 + 视口坐标）
+                    // 2) 动画可能更新到“不可见那一份”对象
+                    // 3) 关闭后残留对象持续触发脏标记日志刷屏
+                    //
+                    // 对 out-of-flow 统一走渲染树重建，确保 DOM->RenderTree 单一真源。
+                    window_->InvalidateRenderTree();
+                    window_->SetNeedsRepaint();
+                    return;
                 }
                 
                 // 2. 查找最近的布局边界祖先
@@ -179,22 +140,12 @@ void WindowDOMObserver::OnNodeRemoved(Node* node, Node* parent) {
                 
                 // 1. 检查是否为脱离文档流的元素 (position: fixed/absolute)
                 if (LayoutBoundaryDetector::IsOutOfFlow(style)) {
-                    // 脱离文档流元素：使用增量布局管理器处理
-                    if (auto* manager = window_->GetIncrementalLayoutManager()) {
-                        if (manager->RemoveOutOfFlowElement(elem.get())) {
-                            // 成功处理布局，现在通知层树管理器移除层
-                            if (auto* pipeline = window_->GetRenderPipeline()) {
-                                if (auto* layer_manager = pipeline->GetLayerTreeManager()) {
-                                    // 请求增量移除层
-                                    if (style.position == "fixed") {
-                                        layer_manager->RequestRemoveLayer(elem->GetRenderObject().get());
-                                    }
-                                }
-                            }
-                            window_->SetNeedsRepaint();
-                            return;
-                        }
-                    }
+                    // 关键修复：禁止在 DOMObserver 增量路径里直接移除 out-of-flow RenderObject。
+                    // 直接移除会与同步器/层树路径竞争，可能留下残留对象或脏状态。
+                    // 统一触发重建，确保 fixed/absolute 元素生命周期一致。
+                    window_->InvalidateRenderTree();
+                    window_->SetNeedsRepaint();
+                    return;
                 }
                 
                 // 2. 查找最近的布局边界祖先
@@ -246,11 +197,8 @@ void WindowDOMObserver::OnNodeRemoved(Node* node, Node* parent) {
                 if (parent_elem && parent_elem->GetRenderObject()) {
                     const auto& parent_style = parent_elem->GetRenderObject()->GetComputedStyle();
                     if (parent_style.position == "fixed") {
-                        std::cout << "[OnNodeRemoved] Parent is fixed, triggering render tree rebuild" << std::endl; std::cout.flush();
                         window_->InvalidateRenderTree();
-                        std::cout << "[OnNodeRemoved] After InvalidateRenderTree" << std::endl; std::cout.flush();
                         window_->SetNeedsRepaint();
-                        std::cout << "[OnNodeRemoved] After SetNeedsRepaint, returning" << std::endl; std::cout.flush();
                         return;
                     }
                 }
@@ -323,7 +271,26 @@ void WindowDOMObserver::OnAttributeChanged(Element* element,
                 // UpdateStyle 内部会检查布局相关属性是否变化
                 // 只有布局属性变化时才会标记 needs_layout
                 if (window_->GetLayoutEngine()) {
-                    window_->GetLayoutEngine()->UpdateStyle(render_obj.get(), new_style);
+                    auto* layout_engine = window_->GetLayoutEngine();
+
+                    if (layout_engine->HasElement(render_obj.get())) {
+                        // 元素在布局树中，直接更新样式
+                        layout_engine->UpdateStyle(render_obj.get(), new_style);
+                    } else {
+                        // 关键修复：元素不在布局树中（如 INLINE_FLEX 的子孙元素）
+                        // UpdateStyle 对这些元素静默失败，需要向上查找最近的
+                        // 有 LayoutNode 的祖先，标记其需要重新布局
+                        // 这样 Wrapper(inline-flex) 会重新触发 LayoutAsFlex()，
+                        // 从而让 Track 重新 Layout()，进而让 Dot 的 left 生效
+                        auto ancestor = render_obj->GetParent();
+                        while (ancestor) {
+                            if (layout_engine->HasElement(ancestor.get())) {
+                                layout_engine->MarkNeedsLayout(ancestor.get());
+                                break;
+                            }
+                            ancestor = ancestor->GetParent();
+                        }
+                    }
                 }
             }
         }
@@ -337,14 +304,6 @@ void WindowDOMObserver::OnStyleChanged(Element* element,
                                        const std::string& old_value,
                                        const std::string& new_value) {
     if (window_ && !IsInBatch(element)) {
-        // 调试日志
-        if (property == "line-height") {
-            std::cout << "[OnStyleChanged] property=" << property 
-                      << " value=" << new_value 
-                      << " hasRenderObj=" << (element->GetRenderObject() != nullptr)
-                      << std::endl;
-        }
-        
         // 特殊处理: display 属性变化影响元素的 RenderObject 存在性
         // display: none 的元素没有 RenderObject，变为 block/flex 等需要创建
         // 反之亦然，需要删除 RenderObject
@@ -358,7 +317,7 @@ void WindowDOMObserver::OnStyleChanged(Element* element,
                 return;
             }
         }
-        
+
         // 获取渲染对象
         auto render_obj = element->GetRenderObject();
         if (render_obj) {
@@ -367,7 +326,7 @@ void WindowDOMObserver::OnStyleChanged(Element* element,
             if (window_->GetDocument() && window_->GetDocument()->GetStyleManager()) {
                 resolver.SetStyleManager(window_->GetDocument()->GetStyleManager());
             }
-            
+
             // 获取父元素样式用于继承
             const ComputedStyle* parent_style = nullptr;
             if (auto parent_node = element->GetParentNode()) {
@@ -378,13 +337,13 @@ void WindowDOMObserver::OnStyleChanged(Element* element,
                     }
                 }
             }
-            
+
             auto new_style = resolver.ResolveStyle(
-                std::static_pointer_cast<Element>(element->shared_from_this()), 
+                std::static_pointer_cast<Element>(element->shared_from_this()),
                 parent_style);
-            
+
             render_obj->SetComputedStyle(new_style);
-            
+
             // 某些样式属性只影响绘制，不影响布局
             static const std::vector<std::string> paint_only_props = {
                 "color", "background-color", "background-image",
@@ -408,8 +367,36 @@ void WindowDOMObserver::OnStyleChanged(Element* element,
                 // 其他属性可能影响布局
                 render_obj->MarkNeedsLayout();
                 render_obj->MarkNeedsPaint();
+
+                // 关键修复：同步更新布局引擎中的样式！
+                // 与 OnAttributeChanged 中 style/class 变化的处理保持一致
+                // 没有这一步，LayoutNode 不会被标记为 needs_layout，
+                // ComputeIncrementalLayout() 找不到脏节点，布局不会重新计算，
+                // 导致 absolute 定位元素的 left/top 等属性变化不生效
+                if (window_->GetLayoutEngine()) {
+                    auto* layout_engine = window_->GetLayoutEngine();
+
+                    // 首先尝试直接更新当前元素的 LayoutNode
+                    if (layout_engine->HasElement(render_obj.get())) {
+                        layout_engine->UpdateStyle(render_obj.get(), new_style);
+                    } else {
+                        // 当前元素不在布局树中（例如 INLINE_FLEX 的子孙元素）
+                        // 需要向上查找最近的在布局树中的祖先，标记其 LayoutNode 为 dirty
+                        // 这样 ComputeIncrementalLayout 才能重新计算布局，
+                        // 进而触发 ReadLayoutResults → RenderInlineFlex::Layout() 等
+                        // 重新定位 absolute 子元素
+                        auto ancestor = render_obj->GetParent();
+                        while (ancestor) {
+                            if (layout_engine->HasElement(ancestor.get())) {
+                                layout_engine->MarkNeedsLayout(ancestor.get());
+                                break;
+                            }
+                            ancestor = ancestor->GetParent();
+                        }
+                    }
+                }
             }
-            
+
             render_obj->InvalidatePaintCache();
 
             // 记录脏矩形
@@ -427,54 +414,16 @@ void WindowDOMObserver::OnTextChanged(Node* node,
                                       const std::string& old_text,
                                       const std::string& new_text) {
     if (window_ && !IsInBatch(node)) {
-        // Phase 4: 文本内容变化的增量更新优化
-        // 使用增量更新系统的脏标记，避免全量重建渲染树
-        
-        // 1. 标记节点需要样式重算（文本变化可能影响样式）
+        (void)old_text;
+        (void)new_text;
+
+        // 文本变化统一走 DirtyNodeTracker + RenderTreeSynchronizer authoritative 路径，
+        // Observer 侧仅做通用脏标记与重绘请求，避免与同步器重复打脏造成时序抖动。
         node->SetNeedsStyleRecalc(StyleChangeType::kLocalStyleChange);
-        
-        // 2. 标记节点需要布局（文本尺寸可能改变）
         node->SetNeedsLayout();
-        
-        // 3. 先尝试获取节点自身的 RenderObject
-        auto render_obj = node->GetRenderObject();
 
-        // 如果节点没有 RenderObject，尝试获取父节点的
-        if (!render_obj) {
-            if (auto parent = node->GetParentNode()) {
-                render_obj = parent->GetRenderObject();
-                // 也标记父节点需要布局
-                parent->SetNeedsLayout();
-            }
-        }
-
-        if (render_obj) {
-            // 如果是 RenderText，直接更新文本内容
-            if (render_obj->GetType() == RenderObjectType::TEXT) {
-                auto render_text = static_cast<RenderText*>(render_obj.get());
-                // 直接设置新文本（SyncRenderTree 会处理规范化）
-                render_text->SetText(new_text);
-            }
-
-            // 文本内容变化需要重新布局（尺寸可能改变）
-            render_obj->MarkNeedsLayout();
-            render_obj->MarkNeedsPaint();
-
-            // Update content version for incremental layout optimization
-            if (auto* engine = window_->GetLayoutEngine()) {
-                engine->UpdateContentVersion(render_obj.get());
-            }
-
-            // 4. 记录脏矩形区域（只重绘文本节点的边界）
-            SkRect bounds = render_obj->GetBoundingRect();
-            if (!bounds.isEmpty()) {
-                node->SetDirtyRect(bounds);
-                window_->AddDirtyRect(bounds);
-            }
-        }
-        
-        // 5. 标记需要重绘，但不调用 InvalidateRenderTree()
-        // 这样可以保持渲染树结构，只进行增量更新
+        // 不在这里直接 SetText / UpdateContentVersion / 逐节点 MarkNeedsLayout，
+        // 统一由 ProcessTextChanges 执行，确保单一语义入口。
         window_->SetNeedsRepaint();
     }
 }
@@ -487,63 +436,17 @@ void WindowDOMObserver::OnSubtreeModified(Node* root) {
         auto doc = window_->GetDocument();
         if (doc) {
             const auto& tracker = doc->GetDirtyTracker();
-            
-            // 调试日志
-            static bool debug_render = std::getenv("LIGHTUI_DEBUG_RENDER") != nullptr;
-            if (debug_render) {
-                std::cout << "[OnSubtreeModified] text_changes=" << tracker.GetTextChangeCount()
-                          << ", structural_changes=" << tracker.GetStructuralChangeCount()
-                          << ", style_changes=" << tracker.GetStyleChangeCount() << std::endl;
-            }
-            
+
             // 如果只有文本变化，不需要全量重建
-            // 文本变化已经通过 DirtyNodeTracker 记录，会在渲染时处理
-            if (tracker.GetTextChangeCount() > 0 && 
+            // 文本内容更新统一由 RenderTreeSynchronizer::ProcessTextChanges 处理，
+            // 这里不再重复 SetText/MarkNeedsLayout，避免双路径重复导致时序抖动。
+            if (tracker.GetTextChangeCount() > 0 &&
                 tracker.GetStructuralChangeCount() == 0) {
-                // 只有文本变化，走增量更新路径
-                if (debug_render) {
-                    std::cout << "[OnSubtreeModified] Text-only changes, using incremental update" << std::endl;
-                }
-                // 处理 DirtyNodeTracker 中记录的文本变化
-                for (const auto& change : tracker.GetTextChanges()) {
-                    auto node = change.node.lock();
-                    if (!node) continue;
-                    
-                    // 标记节点需要样式重算和布局
-                    node->SetNeedsStyleRecalc(StyleChangeType::kLocalStyleChange);
-                    node->SetNeedsLayout();
-                    
-                    // 获取 RenderObject 并更新
-                    auto render_obj = node->GetRenderObject();
-                    if (!render_obj) {
-                        if (auto parent = node->GetParentNode()) {
-                            render_obj = parent->GetRenderObject();
-                            parent->SetNeedsLayout();
-                        }
-                    }
-                    
-                    if (render_obj) {
-                        if (render_obj->GetType() == RenderObjectType::TEXT) {
-                            auto render_text = static_cast<RenderText*>(render_obj.get());
-                            render_text->SetText(change.new_text);
-                        }
-                        render_obj->MarkNeedsLayout();
-                        render_obj->MarkNeedsPaint();
-                        
-                        // 记录脏矩形
-                        SkRect bounds = render_obj->GetBoundingRect();
-                        if (!bounds.isEmpty()) {
-                            node->SetDirtyRect(bounds);
-                            window_->AddDirtyRect(bounds);
-                        }
-                    }
-                }
-                
+                // 保持增量路径：触发重绘，但不触发全量渲染树失效
                 window_->SetNeedsRepaint();
-                // 不调用 InvalidateRenderTree()
                 return;
             }
-            
+
             // 基于区域大小判断是否需要全量重建
             if (tracker.GetStructuralChangeCount() > 0) {
                 // 计算变化区域的总面积
@@ -551,7 +454,7 @@ void WindowDOMObserver::OnSubtreeModified(Node* root) {
                 int width = 800, height = 600;
                 window_->GetSize(&width, &height);
                 float viewport_area = static_cast<float>(width * height);
-                
+
                 for (const auto& change : tracker.GetStructuralChanges()) {
                     auto parent = change.parent.lock();
                     if (parent) {
@@ -564,14 +467,9 @@ void WindowDOMObserver::OnSubtreeModified(Node* root) {
                         }
                     }
                 }
-                
+
                 // 如果变化区域小于视口的 50%，使用增量更新
                 if (viewport_area > 0 && total_change_area < viewport_area * 0.5f) {
-                    if (debug_render) {
-                        std::cout << "[OnSubtreeModified] Change area " << total_change_area 
-                                  << " < 50% viewport " << viewport_area 
-                                  << ", using incremental update" << std::endl;
-                    }
                     // 标记受影响的节点需要重新布局
                     for (const auto& change : tracker.GetStructuralChanges()) {
                         auto parent = change.parent.lock();
@@ -585,21 +483,12 @@ void WindowDOMObserver::OnSubtreeModified(Node* root) {
                     window_->SetNeedsRepaint();
                     return;
                 }
-                
-                if (debug_render) {
-                    std::cout << "[OnSubtreeModified] Change area " << total_change_area 
-                              << " >= 50% viewport " << viewport_area 
-                              << ", falling back to full rebuild" << std::endl;
-                }
             }
         }
-        
+
         // 大量变化或无法确定时，回退到全量重建
-        std::cout << "[OnBatchMutations] Before SetNeedsRepaint" << std::endl; std::cout.flush();
         window_->SetNeedsRepaint();
-        std::cout << "[OnBatchMutations] Before InvalidateRenderTree" << std::endl; std::cout.flush();
         window_->InvalidateRenderTree();
-        std::cout << "[OnBatchMutations] After InvalidateRenderTree, returning" << std::endl; std::cout.flush();
     }
 }
 

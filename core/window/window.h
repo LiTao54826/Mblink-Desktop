@@ -657,6 +657,9 @@ private:
     int pending_resize_height_ = 0;
     bool has_pending_resize_ = false;
 
+    // 保存的滚动位置（用于 InvalidateRenderTree 后恢复）
+    std::unordered_map<Node*, std::pair<float, float>> saved_scroll_positions_;
+
     // FocusManager 引用（不拥有所有权，由 EventLoop 管理）
     FocusManager* focus_manager_ = nullptr;
 

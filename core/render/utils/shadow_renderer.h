@@ -23,6 +23,9 @@
 
 namespace lightui {
 
+// 前向声明
+class TextRenderer;
+
 /**
  * @brief 阴影渲染器
  *
@@ -56,17 +59,20 @@ public:
      * @param y Y 坐标
      * @param text_color 文本颜色
      * @param shadows 阴影列表（支持多重阴影）
+     * @param text_renderer 文本渲染器（用于支持emoji）
      *
      * 注意：
      * - 先渲染阴影，再渲染文本
      * - 阴影从后往前渲染
+     * - 支持emoji正确渲染
      */
     static void RenderTextWithShadow(SkCanvas* canvas,
                                     const std::string& text,
                                     const SkFont& font,
                                     float x, float y,
                                     SkColor text_color,
-                                    const std::vector<CSSTextShadow>& shadows);
+                                    const std::vector<CSSTextShadow>& shadows,
+                                    TextRenderer& text_renderer);
 
 private:
     /**

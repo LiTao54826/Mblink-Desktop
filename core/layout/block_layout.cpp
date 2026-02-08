@@ -731,10 +731,6 @@ Size<float> PerformAbsoluteLayoutOnAbsoluteChildren(
     Point<float> area_offset
 ) {
 #if LIGHTUI_DEBUG_ABSOLUTE_POSITIONING
-    std::cerr << "[AbsoluteLayout] PerformAbsoluteLayoutOnAbsoluteChildren called" << std::endl;
-    std::cerr << "[AbsoluteLayout]   area_size: width=" << area_size.width << ", height=" << area_size.height << std::endl;
-    std::cerr << "[AbsoluteLayout]   area_offset: x=" << area_offset.x << ", y=" << area_offset.y << std::endl;
-    std::cerr << "[AbsoluteLayout]   ViewportSize: width=" << ViewportSize::GetWidth() << ", height=" << ViewportSize::GetHeight() << std::endl;
 #endif
 
     Size<float> absolute_content_size = Size<float>::Zero();
@@ -763,9 +759,7 @@ Size<float> PerformAbsoluteLayoutOnAbsoluteChildren(
             : area_offset;
 
 #if LIGHTUI_DEBUG_ABSOLUTE_POSITIONING
-        std::cerr << "[AbsoluteLayout] Processing absolute/fixed child node_id=" << item.node_id << std::endl;
         if (is_fixed) {
-            std::cerr << "[AbsoluteLayout]   Using viewport size: " << containing_block_size.width << "x" << containing_block_size.height << std::endl;
         }
 #endif
 
@@ -777,11 +771,6 @@ Size<float> PerformAbsoluteLayoutOnAbsoluteChildren(
         auto bottom = MaybeResolve(child_style.inset.bottom, std::optional<float>(containing_block_size.height));
 
 #if LIGHTUI_DEBUG_ABSOLUTE_POSITIONING
-        std::cerr << "[AbsoluteLayout]   Inset values:" << std::endl;
-        std::cerr << "[AbsoluteLayout]     left=" << (left.has_value() ? std::to_string(*left) : "none") << std::endl;
-        std::cerr << "[AbsoluteLayout]     right=" << (right.has_value() ? std::to_string(*right) : "none") << std::endl;
-        std::cerr << "[AbsoluteLayout]     top=" << (top.has_value() ? std::to_string(*top) : "none") << std::endl;
-        std::cerr << "[AbsoluteLayout]     bottom=" << (bottom.has_value() ? std::to_string(*bottom) : "none") << std::endl;
 #endif
 
         // Resolve margin - use containing block size for percentage resolution
@@ -913,26 +902,13 @@ Size<float> PerformAbsoluteLayoutOnAbsoluteChildren(
         }
 
 #if LIGHTUI_DEBUG_ABSOLUTE_POSITIONING
-        std::cerr << "[AbsoluteLayout]   Final size: width=" << final_size.width << ", height=" << final_size.height << std::endl;
-        std::cerr << "[AbsoluteLayout]   Resolved margin: left=" << resolved_margin.left << ", right=" << resolved_margin.right 
-                  << ", top=" << resolved_margin.top << ", bottom=" << resolved_margin.bottom << std::endl;
-        std::cerr << "[AbsoluteLayout]   Computed location: x=" << location.x << ", y=" << location.y << std::endl;
-        std::cerr << "[AbsoluteLayout]   Position calculation details:" << std::endl;
-        std::cerr << "[AbsoluteLayout]     is_fixed=" << (is_fixed ? "true" : "false") << std::endl;
-        std::cerr << "[AbsoluteLayout]     containing_block_size: " << containing_block_size.width << "x" << containing_block_size.height << std::endl;
         if (left.has_value()) {
-            std::cerr << "[AbsoluteLayout]     X: using left=" << *left << " -> area_offset.x(" << area_offset.x << ") + left + margin.left(" << resolved_margin.left << ")" << std::endl;
         } else if (right.has_value()) {
-            std::cerr << "[AbsoluteLayout]     X: using right=" << *right << " -> area_offset.x(" << area_offset.x << ") + area_size.width(" << area_size.width << ") - final_size.width(" << final_size.width << ") - right - margin.right(" << resolved_margin.right << ")" << std::endl;
         } else {
-            std::cerr << "[AbsoluteLayout]     X: using static_position.x=" << item.static_position.x << std::endl;
         }
         if (top.has_value()) {
-            std::cerr << "[AbsoluteLayout]     Y: using top=" << *top << " -> area_offset.y(" << area_offset.y << ") + top + margin.top(" << resolved_margin.top << ")" << std::endl;
         } else if (bottom.has_value()) {
-            std::cerr << "[AbsoluteLayout]     Y: using bottom=" << *bottom << " -> area_offset.y(" << area_offset.y << ") + area_size.height(" << area_size.height << ") - final_size.height(" << final_size.height << ") - bottom - margin.bottom(" << resolved_margin.bottom << ")" << std::endl;
         } else {
-            std::cerr << "[AbsoluteLayout]     Y: using static_position.y=" << item.static_position.y << std::endl;
         }
 #endif
 

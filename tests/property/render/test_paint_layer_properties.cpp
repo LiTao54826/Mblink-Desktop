@@ -11,9 +11,8 @@
 #include <gtest/gtest.h>
 #include "core/render/layer/paint_layer.h"
 #include "core/render/objects/render_object.h"
-#include "core/render/objects/render_block.h"
+#include "core/compositor/compositor_layer.h"
 #include "core/dom/element.h"
-#include "core/event/input/hit_testing.h"
 #include <random>
 #include <vector>
 #include <string>

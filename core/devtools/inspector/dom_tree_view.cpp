@@ -95,12 +95,9 @@ bool DOMTreeView::IsExpanded(std::shared_ptr<Node> node) const {
 void DOMTreeView::SelectNode(std::shared_ptr<Node> node) {
     if (selected_node_ != node) {
         selected_node_ = node;
-        std::cout << "[DOMTreeView] SelectNode: " << FormatNodeLabel(node) << std::endl;
         if (on_selection_changed_) {
-            std::cout << "[DOMTreeView] Calling on_selection_changed_ callback" << std::endl;
             on_selection_changed_(node);
         } else {
-            std::cout << "[DOMTreeView] WARNING: on_selection_changed_ is not set!" << std::endl;
         }
         // 滚动到可见
         ScrollToNode(node);
@@ -639,7 +636,6 @@ void DOMTreeView::ExecuteContextMenuAction(ContextMenuItem item) {
             if (context_menu_node_) {
                 std::string html = GetOuterHTML(context_menu_node_);
                 SDL_SetClipboardText(html.c_str());
-                std::cout << "[DOMTreeView] Copied outerHTML to clipboard" << std::endl;
             }
             break;
         }
@@ -647,7 +643,6 @@ void DOMTreeView::ExecuteContextMenuAction(ContextMenuItem item) {
             if (context_menu_node_) {
                 std::string html = GetInnerHTML(context_menu_node_);
                 SDL_SetClipboardText(html.c_str());
-                std::cout << "[DOMTreeView] Copied innerHTML to clipboard" << std::endl;
             }
             break;
         }
@@ -655,7 +650,6 @@ void DOMTreeView::ExecuteContextMenuAction(ContextMenuItem item) {
             if (context_menu_node_) {
                 std::string selector = GetCSSSelector(context_menu_node_);
                 SDL_SetClipboardText(selector.c_str());
-                std::cout << "[DOMTreeView] Copied selector to clipboard: " << selector << std::endl;
             }
             break;
         }

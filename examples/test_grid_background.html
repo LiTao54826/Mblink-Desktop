@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>网格背景测试</title>
+    <style>
+        body {
+            padding: 20px;
+            background: white;
+        }
+
+        .test-box {
+            width: 200px;
+            height: 200px;
+            margin: 20px;
+            border: 2px solid #333;
+        }
+
+        /* 测试1: 网格背景 */
+        .grid-background {
+            background-color: #f0f0f0;  /* 浅灰色背景，让网格更明显 */
+            background-image:
+                linear-gradient(rgba(0,0,0,0.05) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(0,0,0,0.05) 1px, transparent 1px);
+            background-size: 8px 8px;
+        }
+
+        /* 测试2: 更明显的网格 */
+        .grid-visible {
+            background-color: white;  /* 白色背景 */
+            background-image:
+                linear-gradient(rgba(255,0,0,0.5) 2px, transparent 2px),
+                linear-gradient(90deg, rgba(0,0,255,0.5) 2px, transparent 2px);
+            background-size: 20px 20px;
+        }
+
+        /* 测试4: 纯色网格（最明显） */
+        .grid-solid {
+            background-color: white;  /* 白色背景 */
+            background-image:
+                linear-gradient(red 1px, transparent 1px),
+                linear-gradient(90deg, blue 1px, transparent 1px);
+            background-size: 10px 10px;
+        }
+
+        /* 测试3: 单个渐变（对比） */
+        .single-gradient {
+            background-image: linear-gradient(red, blue);
+        }
+    </style>
+</head>
+<body>
+    <h1>网格背景测试</h1>
+    
+    <h2>测试1: 细网格 (8px x 8px)</h2>
+    <div class="test-box grid-background"></div>
+    
+    <h2>测试2: 粗网格 (20px x 20px, 半透明)</h2>
+    <div class="test-box grid-visible"></div>
+
+    <h2>测试3: 单个渐变（对比）</h2>
+    <div class="test-box single-gradient"></div>
+
+    <h2>测试4: 纯色网格 (10px x 10px, 最明显)</h2>
+    <div class="test-box grid-solid"></div>
+</body>
+</html>
+

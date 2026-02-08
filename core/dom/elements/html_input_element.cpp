@@ -472,11 +472,8 @@ void HTMLInputElement::TriggerChangeEvent() {
 }
 
 void HTMLInputElement::TriggerInputEvent() {
-    std::cout << "[HTMLInputElement::TriggerInputEvent] START this=" << this << std::endl;
     auto input_event = std::make_shared<Event>("input");
-    std::cout << "[HTMLInputElement::TriggerInputEvent] About to DispatchEvent" << std::endl;
     DispatchEvent(input_event);
-    std::cout << "[HTMLInputElement::TriggerInputEvent] END" << std::endl;
 }
 
 std::string HTMLInputElement::InputTypeToString(InputType type) {

@@ -142,7 +142,6 @@ void WindowBindings::BindWindowObject() {
 
 void WindowBindings::BindTimers() {
     if (!task_scheduler_) {
-        std::cerr << "Warning: TaskScheduler is null, timers will not work" << std::endl;
         return;
     }
     
@@ -162,7 +161,6 @@ void WindowBindings::BindTimers() {
             try {
                 runtime_->CallFunction(callback_name, json::array());
             } catch (const std::exception& e) {
-                std::cerr << "Error in setTimeout callback: " << e.what() << std::endl;
             }
         }, delay_ms);
 
@@ -182,7 +180,6 @@ void WindowBindings::BindTimers() {
             try {
                 runtime_->CallFunction(callback_name, json::array());
             } catch (const std::exception& e) {
-                std::cerr << "Error in setInterval callback: " << e.what() << std::endl;
             }
         }, interval_ms);
         
@@ -228,7 +225,6 @@ void WindowBindings::BindTimers() {
                 callback_args.push_back(timestamp);
                 runtime_->CallFunction(callback_name, callback_args);
             } catch (const std::exception& e) {
-                std::cerr << "Error in requestAnimationFrame callback: " << e.what() << std::endl;
             }
         });
 
@@ -279,7 +275,6 @@ void WindowBindings::BindEventListeners() {
         std::string callback_name = args[1].get<std::string>();
         
         // TODO: 实现事件监听器注册
-        std::cout << "addEventListener: " << event_type << std::endl;
         
         return true;
     });

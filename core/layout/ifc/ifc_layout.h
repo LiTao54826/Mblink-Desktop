@@ -109,6 +109,8 @@ public:
      * @param letter_spacing 字符间距
      * @param word_spacing 词间距
      * @param line_height_multiplier 行高倍数
+     * @param font_weight 字体粗细 (normal, bold, 100-900)
+     * @param font_style 字体样式 (normal, italic)
      * @return TextMeasureResult 包含宽度、高度、ascent 和 descent
      */
     static TextMeasureResult MeasureTextStatic(
@@ -117,7 +119,9 @@ public:
         const std::string& font_family,
         float letter_spacing = 0.0f,
         float word_spacing = 0.0f,
-        float line_height_multiplier = 1.2f
+        float line_height_multiplier = 1.2f,
+        const std::string& font_weight = "normal",
+        const std::string& font_style = "normal"
     );
 
     /**

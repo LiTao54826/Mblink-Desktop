@@ -23,6 +23,7 @@ namespace bindings {
  * @param ctx QuickJS 上下文
  */
 void InitElementBinding(JSContext* ctx);
+void DumpElementListenerStats();
 
 /**
  * @brief 将 C++ Element 包装为 JSValue

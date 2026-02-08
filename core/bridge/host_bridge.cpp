@@ -5,6 +5,7 @@
 
 #include "host_bridge.h"
 #include "state_manager.h"
+#include "quickjs/js_value_wrapper.h"
 
 extern "C" {
 #include "quickjs.h"
@@ -250,35 +251,39 @@ JSValue HostBridge::jsStateWatch(JSContext* ctx, JSValueConst thisVal,
                                  int argc, JSValueConst* argv, int magic, JSValue* func_data) {
     (void)thisVal;
     (void)magic;
-    
+
     int64_t ptr;
     JS_ToInt64(ctx, &ptr, func_data[0]);
     auto* bridge = reinterpret_cast<HostBridge*>(ptr);
-    
-    if (!bridge || argc < 2) {
+
+    if (!bridge || argc < 2 || !bridge->stateManager_) {
         return JS_NewInt32(ctx, -1);
     }
-    
+
+    if (!JS_IsFunction(ctx, argv[1])) {
+        return JS_ThrowTypeError(ctx, "host.state.watch requires a function as callback");
+    }
+
     const char* name = JS_ToCString(ctx, argv[0]);
     if (!name) return JS_NewInt32(ctx, -1);
-    
-    // 复制回调函数
-    JSValue callback = JS_DupValue(ctx, argv[1]);
+
     std::string stateName(name);
     JS_FreeCString(ctx, name);
-    
+
+    // 使用 RAII 包装 JS 回调，确保在 unwatch/clearWatchers 时自动释放
+    auto callback_wrapper = std::make_shared<JSValueWrapper>(ctx, argv[1]);
+
     // 注册监听器
-    int watchId = bridge->stateManager_->watch(stateName, 
-        [ctx, callback](const std::string& /*name*/, const json& v) {
-            // 只传递 value 给回调（符合设计文档）
+    int watchId = bridge->stateManager_->watch(stateName,
+        [ctx, callback_wrapper](const std::string& /*name*/, const json& v) {
             JSValue arg = jsonToJsValue(ctx, v.dump());
-            
+            JSValue callback = callback_wrapper->Get();
             JSValue result = JS_Call(ctx, callback, JS_UNDEFINED, 1, &arg);
-            
+
             JS_FreeValue(ctx, arg);
             JS_FreeValue(ctx, result);
         });
-    
+
     return JS_NewInt32(ctx, watchId);
 }
 

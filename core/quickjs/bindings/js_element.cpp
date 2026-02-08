@@ -28,27 +28,77 @@
 #include <memory>
 #include <string>
 #include <iostream>
+#include <vector>
+#include <utility>
 
 namespace lightui {
 namespace bindings {
 
 // ========== Opaque 数据结构 ==========
 
+struct JSElementListenerBinding {
+    std::string event_type;
+    uint64_t listener_id = 0;
+    bool use_capture = false;
+    JSValue js_listener = JS_UNDEFINED;  // 仅用于 removeEventListener 的函数匹配
+};
+
 struct JSElementData {
     std::shared_ptr<Element> element;
+    std::vector<JSElementListenerBinding> listeners;
+    bool has_onload_listener = false;
+    uint64_t onload_listener_id = 0;
+    bool has_onerror_listener = false;
+    uint64_t onerror_listener_id = 0;
 };
+
+static size_t g_js_element_listener_add_count = 0;
+static size_t g_js_element_listener_remove_count = 0;
+static size_t g_js_element_listener_finalizer_remove_count = 0;
+static size_t g_js_element_listener_finalize_free_js_count = 0;
+static size_t g_js_element_listener_live_bindings = 0;
+
+void DumpElementListenerStats() {
+    std::cout << "[JSElementStats] add=" << g_js_element_listener_add_count
+              << " remove=" << g_js_element_listener_remove_count
+              << " finalizer_remove=" << g_js_element_listener_finalizer_remove_count
+              << " finalizer_free_js=" << g_js_element_listener_finalize_free_js_count
+              << " live_bindings=" << g_js_element_listener_live_bindings
+              << std::endl;
+}
+
+
 
 // ========== ClassID ==========
 
 static JSClassID js_element_class_id = 0;
+
+// ========== 前置声明 ==========
+static JSValue JSElement_set_onload(JSContext* ctx, JSValueConst this_val, JSValue val, int magic);
+static JSValue JSElement_set_onerror(JSContext* ctx, JSValueConst this_val, JSValue val, int magic);
+
 
 // ========== 析构函数 ==========
 
 static void JSElementFinalizer(JSRuntime* rt, JSValue val) {
     auto* data = static_cast<JSElementData*>(JS_GetOpaque(val, js_element_class_id));
     if (data) {
-        // 从映射表中移除
         if (data->element) {
+            for (auto& binding : data->listeners) {
+                data->element->RemoveEventListener(binding.event_type, binding.listener_id);
+                g_js_element_listener_finalizer_remove_count++;
+                if (g_js_element_listener_live_bindings > 0) {
+                    g_js_element_listener_live_bindings--;
+                }
+                if (!JS_IsUndefined(binding.js_listener)) {
+                    JS_FreeValueRT(rt, binding.js_listener);
+                    g_js_element_listener_finalize_free_js_count++;
+                    binding.js_listener = JS_UNDEFINED;
+                }
+            }
+            data->listeners.clear();
+
+            // 从映射表中移除
             DOMBindingMap::GetInstance().Remove(data->element.get());
         }
         delete data;
@@ -135,26 +185,26 @@ static JSValue JSElement_get_classList(JSContext* ctx, JSValueConst this_val, in
 
     // 创建 classList 对象
     JSValue classList = JS_NewObject(ctx);
-    
+
     // add(className) 方法
     JSValue add_func = JS_NewCFunction(ctx, [](JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) -> JSValue {
         // 从闭包中获取 element
         JSValue element_val = JS_GetPropertyStr(ctx, this_val, "__element__");
         auto* data = static_cast<JSElementData*>(JS_GetOpaque(element_val, js_element_class_id));
         JS_FreeValue(ctx, element_val);
-        
+
         if (!data || !data->element || argc < 1) {
             return JS_UNDEFINED;
         }
-        
+
         const char* className = JS_ToCString(ctx, argv[0]);
         if (!className) {
             return JS_UNDEFINED;
         }
-        
+
         std::string currentClasses = data->element->GetClassName();
         std::string newClass = className;
-        
+
         // 检查是否已存在
         if (currentClasses.find(newClass) == std::string::npos) {
             if (!currentClasses.empty()) {
@@ -163,30 +213,30 @@ static JSValue JSElement_get_classList(JSContext* ctx, JSValueConst this_val, in
             currentClasses += newClass;
             data->element->SetClassName(currentClasses);
         }
-        
+
         JS_FreeCString(ctx, className);
         return JS_UNDEFINED;
     }, "__add__", 1);
-    
+
     // remove(className) 方法
     JSValue remove_func = JS_NewCFunction(ctx, [](JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) -> JSValue {
         JSValue element_val = JS_GetPropertyStr(ctx, this_val, "__element__");
         auto* data = static_cast<JSElementData*>(JS_GetOpaque(element_val, js_element_class_id));
         JS_FreeValue(ctx, element_val);
-        
+
         if (!data || !data->element || argc < 1) {
             return JS_UNDEFINED;
         }
-        
+
         const char* className = JS_ToCString(ctx, argv[0]);
         if (!className) {
             return JS_UNDEFINED;
         }
-        
+
         std::string currentClasses = data->element->GetClassName();
         std::string toRemove = className;
         size_t pos = currentClasses.find(toRemove);
-        
+
         if (pos != std::string::npos) {
             // 移除类名
             currentClasses.erase(pos, toRemove.length());
@@ -202,30 +252,30 @@ static JSValue JSElement_get_classList(JSContext* ctx, JSValueConst this_val, in
             }
             data->element->SetClassName(currentClasses);
         }
-        
+
         JS_FreeCString(ctx, className);
         return JS_UNDEFINED;
     }, "__remove__", 1);
-    
+
     // toggle(className) 方法
     JSValue toggle_func = JS_NewCFunction(ctx, [](JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) -> JSValue {
         JSValue element_val = JS_GetPropertyStr(ctx, this_val, "__element__");
         auto* data = static_cast<JSElementData*>(JS_GetOpaque(element_val, js_element_class_id));
         JS_FreeValue(ctx, element_val);
-        
+
         if (!data || !data->element || argc < 1) {
             return JS_FALSE;
         }
-        
+
         const char* className = JS_ToCString(ctx, argv[0]);
         if (!className) {
             return JS_FALSE;
         }
-        
+
         std::string currentClasses = data->element->GetClassName();
         std::string toToggle = className;
         bool exists = currentClasses.find(toToggle) != std::string::npos;
-        
+
         if (exists) {
             // 移除
             size_t pos = currentClasses.find(toToggle);
@@ -248,43 +298,43 @@ static JSValue JSElement_get_classList(JSContext* ctx, JSValueConst this_val, in
             currentClasses += toToggle;
             data->element->SetClassName(currentClasses);
         }
-        
+
         JS_FreeCString(ctx, className);
         return JS_NewBool(ctx, !exists);  // 返回切换后的状态
     }, "__toggle__", 1);
-    
+
     // contains(className) 方法
     JSValue contains_func = JS_NewCFunction(ctx, [](JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) -> JSValue {
         JSValue element_val = JS_GetPropertyStr(ctx, this_val, "__element__");
         auto* data = static_cast<JSElementData*>(JS_GetOpaque(element_val, js_element_class_id));
         JS_FreeValue(ctx, element_val);
-        
+
         if (!data || !data->element || argc < 1) {
             return JS_FALSE;
         }
-        
+
         const char* className = JS_ToCString(ctx, argv[0]);
         if (!className) {
             return JS_FALSE;
         }
-        
+
         std::string currentClasses = data->element->GetClassName();
         std::string toCheck = className;
         bool exists = currentClasses.find(toCheck) != std::string::npos;
-        
+
         JS_FreeCString(ctx, className);
         return JS_NewBool(ctx, exists);
     }, "__contains__", 1);
-    
+
     // 将 element 引用存储到 classList 对象
     JS_SetPropertyStr(ctx, classList, "__element__", JS_DupValue(ctx, this_val));
-    
+
     // 设置方法
     JS_SetPropertyStr(ctx, classList, "add", add_func);
     JS_SetPropertyStr(ctx, classList, "remove", remove_func);
     JS_SetPropertyStr(ctx, classList, "toggle", toggle_func);
     JS_SetPropertyStr(ctx, classList, "contains", contains_func);
-    
+
     return classList;
 }
 
@@ -326,11 +376,11 @@ static JSValue JSElement_get_attributes(JSContext* ctx, JSValueConst this_val, i
 
     // 获取所有属性
     const auto& attrs = data->element->GetAllAttributes();
-    
+
     // 创建类数组对象（模拟 NamedNodeMap）
     JSValue obj = JS_NewObject(ctx);
     int index = 0;
-    
+
     for (const auto& [name, value] : attrs) {
         // 创建 Attr 对象
         JSValue attr = JS_NewObject(ctx);
@@ -338,19 +388,19 @@ static JSValue JSElement_get_attributes(JSContext* ctx, JSValueConst this_val, i
         JS_SetPropertyStr(ctx, attr, "value", JS_NewString(ctx, value.c_str()));
         JS_SetPropertyStr(ctx, attr, "nodeName", JS_NewString(ctx, name.c_str()));
         JS_SetPropertyStr(ctx, attr, "nodeValue", JS_NewString(ctx, value.c_str()));
-        
+
         // 按索引设置
         JS_SetPropertyUint32(ctx, obj, index, attr);
-        
+
         // 按名称设置（用于 getNamedItem）
         JS_SetPropertyStr(ctx, obj, name.c_str(), JS_DupValue(ctx, attr));
-        
+
         index++;
     }
-    
+
     // 设置 length 属性
     JS_SetPropertyStr(ctx, obj, "length", JS_NewInt32(ctx, index));
-    
+
     // 添加 getNamedItem 方法
     JS_SetPropertyStr(ctx, obj, "getNamedItem",
         JS_NewCFunction(ctx, [](JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) -> JSValue {
@@ -361,7 +411,7 @@ static JSValue JSElement_get_attributes(JSContext* ctx, JSValueConst this_val, i
             JS_FreeCString(ctx, name);
             return result;
         }, "getNamedItem", 1));
-    
+
     // 添加 item 方法
     JS_SetPropertyStr(ctx, obj, "item",
         JS_NewCFunction(ctx, [](JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) -> JSValue {
@@ -370,7 +420,7 @@ static JSValue JSElement_get_attributes(JSContext* ctx, JSValueConst this_val, i
             if (JS_ToUint32(ctx, &index, argv[0]) != 0) return JS_NULL;
             return JS_GetPropertyUint32(ctx, this_val, index);
         }, "item", 1));
-    
+
     return obj;
 }
 
@@ -435,13 +485,11 @@ static JSValue JSElement_set_value(JSContext* ctx, JSValueConst this_val, JSValu
     }
 
     // 调试输出
-    std::cout << "[JSElement_set_value] Setting value to: '" << str << "'" << std::endl;
 
     // 尝试作为 HTMLInputElement
     auto input_element = std::dynamic_pointer_cast<HTMLInputElement>(data->element);
     if (input_element) {
         input_element->SetValue(str, false);  // false = 不触发事件
-        std::cout << "[JSElement_set_value] HTMLInputElement value set, GetValue() = '" << input_element->GetValue() << "'" << std::endl;
         JS_FreeCString(ctx, str);
         return JS_UNDEFINED;
     }
@@ -517,7 +565,7 @@ static JSValue JSElement_setAttribute(JSContext* ctx, JSValueConst this_val, int
 
     const char* name = JS_ToCString(ctx, argv[0]);
     const char* value = JS_ToCString(ctx, argv[1]);
-    
+
     if (!name || !value) {
         if (name) JS_FreeCString(ctx, name);
         if (value) JS_FreeCString(ctx, value);
@@ -572,6 +620,13 @@ static JSValue JSElement_removeAttribute(JSContext* ctx, JSValueConst this_val, 
     }
 
     data->element->RemoveAttribute(name);
+
+    if (strcmp(name, "onload") == 0) {
+        JSElement_set_onload(ctx, this_val, JS_UNDEFINED, 0);
+    } else if (strcmp(name, "onerror") == 0) {
+        JSElement_set_onerror(ctx, this_val, JS_UNDEFINED, 0);
+    }
+
     JS_FreeCString(ctx, name);
 
     return JS_UNDEFINED;
@@ -681,22 +736,21 @@ static JSValue JSElement_addEventListener(JSContext* ctx, JSValueConst this_val,
 
     // 包装 JS 函数为 C++ lambda
     auto listener_wrapper = std::make_shared<JSValueWrapper>(ctx, argv[1]);
-    
-    uint64_t listener_id = data->element->AddEventListener(type, 
+
+    uint64_t listener_id = data->element->AddEventListener(type,
         [ctx, listener_wrapper](std::shared_ptr<Event> event) {
             // 包装 Event 对象
             JSValue event_val = WrapEvent(ctx, event);
-            
+
             // 调用 JS 监听器函数
             JSValue result = listener_wrapper->Call(JS_UNDEFINED, 1, &event_val);
-            
+
             // 释放
             if (JS_IsException(result)) {
                 // 输出错误但不中断
                 JSValue exception = JS_GetException(ctx);
                 const char* err = JS_ToCString(ctx, exception);
                 if (err) {
-                    std::cerr << "[Event Listener Error] " << err << std::endl;
                     JS_FreeCString(ctx, err);
                 }
                 // 尝试获取堆栈信息
@@ -704,7 +758,6 @@ static JSValue JSElement_addEventListener(JSContext* ctx, JSValueConst this_val,
                 if (!JS_IsUndefined(stack)) {
                     const char* stack_str = JS_ToCString(ctx, stack);
                     if (stack_str) {
-                        std::cerr << "[Event Listener Stack] " << stack_str << std::endl;
                         JS_FreeCString(ctx, stack_str);
                     }
                     JS_FreeValue(ctx, stack);
@@ -713,24 +766,110 @@ static JSValue JSElement_addEventListener(JSContext* ctx, JSValueConst this_val,
             }
             JS_FreeValue(ctx, result);
             JS_FreeValue(ctx, event_val);
-        }, 
-        use_capture, 
+        },
+        use_capture,
         once
     );
+
+    JSElementListenerBinding binding;
+    binding.event_type = type;
+    binding.listener_id = listener_id;
+    binding.use_capture = use_capture;
+    binding.js_listener = JS_DupValue(ctx, argv[1]);
+    data->listeners.emplace_back(std::move(binding));
+    g_js_element_listener_add_count++;
+    g_js_element_listener_live_bindings++;
 
     JS_FreeCString(ctx, type);
 
     return JS_NewInt64(ctx, listener_id);
 }
 
+// removeEventListener(type, listenerOrId)
+static JSValue JSElement_removeEventListener(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) {
+    auto* data = static_cast<JSElementData*>(JS_GetOpaque(this_val, js_element_class_id));
+    if (!data || !data->element) {
+        return JS_EXCEPTION;
+    }
+
+    if (argc < 2) {
+        return JS_ThrowTypeError(ctx, "removeEventListener requires at least 2 arguments");
+    }
+
+    const char* type = JS_ToCString(ctx, argv[0]);
+    if (!type) {
+        return JS_EXCEPTION;
+    }
+
+    bool removed = false;
+
+    if (JS_IsFunction(ctx, argv[1])) {
+        for (auto it = data->listeners.begin(); it != data->listeners.end(); ++it) {
+            if (it->event_type == type &&
+                JS_IsFunction(ctx, it->js_listener) &&
+                JS_VALUE_GET_PTR(it->js_listener) == JS_VALUE_GET_PTR(argv[1])) {
+                removed = data->element->RemoveEventListener(type, it->listener_id);
+                JS_FreeValue(ctx, it->js_listener);
+                it->js_listener = JS_UNDEFINED;
+                data->listeners.erase(it);
+                if (removed) {
+                    g_js_element_listener_remove_count++;
+                    if (g_js_element_listener_live_bindings > 0) {
+                        g_js_element_listener_live_bindings--;
+                    }
+                }
+                break;
+            }
+        }
+    } else {
+        uint64_t listener_id = 0;
+        bool id_valid = false;
+
+        if (JS_IsBigInt(argv[1])) {
+            if (JS_ToBigUint64(ctx, &listener_id, argv[1]) == 0) {
+                id_valid = true;
+            }
+        } else {
+            int64_t id = 0;
+            if (JS_ToInt64(ctx, &id, argv[1]) == 0 && id >= 0) {
+                listener_id = static_cast<uint64_t>(id);
+                id_valid = true;
+            }
+        }
+
+        if (id_valid) {
+            for (auto it = data->listeners.begin(); it != data->listeners.end(); ++it) {
+                if (it->event_type == type && it->listener_id == listener_id) {
+                    removed = data->element->RemoveEventListener(type, listener_id);
+                    if (!JS_IsUndefined(it->js_listener)) {
+                        JS_FreeValue(ctx, it->js_listener);
+                        it->js_listener = JS_UNDEFINED;
+                    }
+                    data->listeners.erase(it);
+                    if (removed) {
+                        g_js_element_listener_remove_count++;
+                        if (g_js_element_listener_live_bindings > 0) {
+                            g_js_element_listener_live_bindings--;
+                        }
+                    }
+                    break;
+                }
+            }
+        }
+    }
+
+    JS_FreeCString(ctx, type);
+    return JS_NewBool(ctx, removed);
+}
+
 // HTMLCanvasElement.width getter
 static JSValue JSElement_get_canvas_width(JSContext* ctx, JSValueConst this_val, int magic) {
     auto* data = static_cast<JSElementData*>(JS_GetOpaque(this_val, js_element_class_id));
     if (!data || !data->element) return JS_NewInt32(ctx, 0);
-    
+
     auto canvas = std::dynamic_pointer_cast<HTMLCanvasElement>(data->element);
     if (!canvas) return JS_NewInt32(ctx, 0);
-    
+
     return JS_NewInt32(ctx, static_cast<int>(canvas->GetWidth()));
 }
 
@@ -738,10 +877,10 @@ static JSValue JSElement_get_canvas_width(JSContext* ctx, JSValueConst this_val,
 static JSValue JSElement_set_canvas_width(JSContext* ctx, JSValueConst this_val, JSValue val, int magic) {
     auto* data = static_cast<JSElementData*>(JS_GetOpaque(this_val, js_element_class_id));
     if (!data || !data->element) return JS_UNDEFINED;
-    
+
     auto canvas = std::dynamic_pointer_cast<HTMLCanvasElement>(data->element);
     if (!canvas) return JS_UNDEFINED;
-    
+
     int32_t width;
     if (JS_ToInt32(ctx, &width, val) != 0) return JS_EXCEPTION;
     if (width > 0) {
@@ -754,10 +893,10 @@ static JSValue JSElement_set_canvas_width(JSContext* ctx, JSValueConst this_val,
 static JSValue JSElement_get_canvas_height(JSContext* ctx, JSValueConst this_val, int magic) {
     auto* data = static_cast<JSElementData*>(JS_GetOpaque(this_val, js_element_class_id));
     if (!data || !data->element) return JS_NewInt32(ctx, 0);
-    
+
     auto canvas = std::dynamic_pointer_cast<HTMLCanvasElement>(data->element);
     if (!canvas) return JS_NewInt32(ctx, 0);
-    
+
     return JS_NewInt32(ctx, static_cast<int>(canvas->GetHeight()));
 }
 
@@ -765,10 +904,10 @@ static JSValue JSElement_get_canvas_height(JSContext* ctx, JSValueConst this_val
 static JSValue JSElement_set_canvas_height(JSContext* ctx, JSValueConst this_val, JSValue val, int magic) {
     auto* data = static_cast<JSElementData*>(JS_GetOpaque(this_val, js_element_class_id));
     if (!data || !data->element) return JS_UNDEFINED;
-    
+
     auto canvas = std::dynamic_pointer_cast<HTMLCanvasElement>(data->element);
     if (!canvas) return JS_UNDEFINED;
-    
+
     int32_t height;
     if (JS_ToInt32(ctx, &height, val) != 0) return JS_EXCEPTION;
     if (height > 0) {
@@ -783,45 +922,45 @@ static JSValue JSElement_getContext(JSContext* ctx, JSValueConst this_val, int a
     if (!data || !data->element) {
         return JS_UNDEFINED;
     }
-    
+
     // 尝试转换为 HTMLCanvasElement
     auto canvas = std::dynamic_pointer_cast<HTMLCanvasElement>(data->element);
     if (!canvas) {
         return JS_UNDEFINED;  // 不是canvas元素，返回undefined
     }
-    
+
     if (argc < 1) {
         return JS_ThrowTypeError(ctx, "getContext requires 1 argument");
     }
-    
+
     const char* context_id = JS_ToCString(ctx, argv[0]);
     if (!context_id) {
         return JS_EXCEPTION;
     }
-    
+
     // 保存context_id用于后续比较
     std::string context_id_str(context_id);
     void* context = canvas->GetContext(context_id);
     JS_FreeCString(ctx, context_id);
-    
+
     if (!context) {
         return JS_NULL;
     }
-    
+
     // 目前只支持 "2d" context
     if (context_id_str == "2d") {
         auto context_2d = static_cast<CanvasRenderingContext2D*>(context);
         JSValue context_obj = CanvasBindings::WrapContext2D(ctx, context_2d);
-        
+
         // 重要：设置 canvas 属性，指向原始的 canvas 元素
         // Chart.js 需要通过 ctx.canvas 来访问 canvas 元素
         if (!JS_IsException(context_obj)) {
             JS_SetPropertyStr(ctx, context_obj, "canvas", JS_DupValue(ctx, this_val));
         }
-        
+
         return context_obj;
     }
-    
+
     return JS_NULL;
 }
 
@@ -831,13 +970,13 @@ static JSValue JSElement_getContext(JSContext* ctx, JSValueConst this_val, int a
 static JSValue JSElement_get_img_src(JSContext* ctx, JSValueConst this_val, int magic) {
     auto* data = static_cast<JSElementData*>(JS_GetOpaque(this_val, js_element_class_id));
     if (!data || !data->element) return JS_NULL;
-    
+
     auto img = std::dynamic_pointer_cast<HTMLImageElement>(data->element);
     if (!img) {
         // 不是 img 元素，返回 undefined
         return JS_UNDEFINED;
     }
-    
+
     return JS_NewString(ctx, img->GetSrc().c_str());
 }
 
@@ -845,16 +984,16 @@ static JSValue JSElement_get_img_src(JSContext* ctx, JSValueConst this_val, int 
 static JSValue JSElement_set_img_src(JSContext* ctx, JSValueConst this_val, JSValue val, int magic) {
     auto* data = static_cast<JSElementData*>(JS_GetOpaque(this_val, js_element_class_id));
     if (!data || !data->element) return JS_UNDEFINED;
-    
+
     auto img = std::dynamic_pointer_cast<HTMLImageElement>(data->element);
     if (!img) return JS_UNDEFINED;
-    
+
     const char* src = JS_ToCString(ctx, val);
     if (!src) return JS_EXCEPTION;
-    
+
     img->SetSrc(src);
     JS_FreeCString(ctx, src);
-    
+
     return JS_UNDEFINED;
 }
 
@@ -862,10 +1001,10 @@ static JSValue JSElement_set_img_src(JSContext* ctx, JSValueConst this_val, JSVa
 static JSValue JSElement_get_img_alt(JSContext* ctx, JSValueConst this_val, int magic) {
     auto* data = static_cast<JSElementData*>(JS_GetOpaque(this_val, js_element_class_id));
     if (!data || !data->element) return JS_NULL;
-    
+
     auto img = std::dynamic_pointer_cast<HTMLImageElement>(data->element);
     if (!img) return JS_UNDEFINED;
-    
+
     return JS_NewString(ctx, img->GetAlt().c_str());
 }
 
@@ -873,16 +1012,16 @@ static JSValue JSElement_get_img_alt(JSContext* ctx, JSValueConst this_val, int 
 static JSValue JSElement_set_img_alt(JSContext* ctx, JSValueConst this_val, JSValue val, int magic) {
     auto* data = static_cast<JSElementData*>(JS_GetOpaque(this_val, js_element_class_id));
     if (!data || !data->element) return JS_UNDEFINED;
-    
+
     auto img = std::dynamic_pointer_cast<HTMLImageElement>(data->element);
     if (!img) return JS_UNDEFINED;
-    
+
     const char* alt = JS_ToCString(ctx, val);
     if (!alt) return JS_EXCEPTION;
-    
+
     img->SetAlt(alt);
     JS_FreeCString(ctx, alt);
-    
+
     return JS_UNDEFINED;
 }
 
@@ -890,10 +1029,10 @@ static JSValue JSElement_set_img_alt(JSContext* ctx, JSValueConst this_val, JSVa
 static JSValue JSElement_get_img_naturalWidth(JSContext* ctx, JSValueConst this_val, int magic) {
     auto* data = static_cast<JSElementData*>(JS_GetOpaque(this_val, js_element_class_id));
     if (!data || !data->element) return JS_NewInt32(ctx, 0);
-    
+
     auto img = std::dynamic_pointer_cast<HTMLImageElement>(data->element);
     if (!img) return JS_NewInt32(ctx, 0);
-    
+
     return JS_NewUint32(ctx, img->GetNaturalWidth());
 }
 
@@ -901,10 +1040,10 @@ static JSValue JSElement_get_img_naturalWidth(JSContext* ctx, JSValueConst this_
 static JSValue JSElement_get_img_naturalHeight(JSContext* ctx, JSValueConst this_val, int magic) {
     auto* data = static_cast<JSElementData*>(JS_GetOpaque(this_val, js_element_class_id));
     if (!data || !data->element) return JS_NewInt32(ctx, 0);
-    
+
     auto img = std::dynamic_pointer_cast<HTMLImageElement>(data->element);
     if (!img) return JS_NewInt32(ctx, 0);
-    
+
     return JS_NewUint32(ctx, img->GetNaturalHeight());
 }
 
@@ -912,10 +1051,10 @@ static JSValue JSElement_get_img_naturalHeight(JSContext* ctx, JSValueConst this
 static JSValue JSElement_get_img_complete(JSContext* ctx, JSValueConst this_val, int magic) {
     auto* data = static_cast<JSElementData*>(JS_GetOpaque(this_val, js_element_class_id));
     if (!data || !data->element) return JS_FALSE;
-    
+
     auto img = std::dynamic_pointer_cast<HTMLImageElement>(data->element);
     if (!img) return JS_FALSE;
-    
+
     return JS_NewBool(ctx, img->GetComplete());
 }
 
@@ -923,10 +1062,10 @@ static JSValue JSElement_get_img_complete(JSContext* ctx, JSValueConst this_val,
 static JSValue JSElement_get_img_crossOrigin(JSContext* ctx, JSValueConst this_val, int magic) {
     auto* data = static_cast<JSElementData*>(JS_GetOpaque(this_val, js_element_class_id));
     if (!data || !data->element) return JS_NULL;
-    
+
     auto img = std::dynamic_pointer_cast<HTMLImageElement>(data->element);
     if (!img) return JS_NULL;
-    
+
     std::string cross_origin = img->GetCrossOrigin();
     if (cross_origin.empty()) {
         return JS_NULL;
@@ -938,10 +1077,10 @@ static JSValue JSElement_get_img_crossOrigin(JSContext* ctx, JSValueConst this_v
 static JSValue JSElement_set_img_crossOrigin(JSContext* ctx, JSValueConst this_val, JSValue val, int magic) {
     auto* data = static_cast<JSElementData*>(JS_GetOpaque(this_val, js_element_class_id));
     if (!data || !data->element) return JS_UNDEFINED;
-    
+
     auto img = std::dynamic_pointer_cast<HTMLImageElement>(data->element);
     if (!img) return JS_UNDEFINED;
-    
+
     if (JS_IsNull(val) || JS_IsUndefined(val)) {
         img->SetCrossOrigin("");
     } else {
@@ -950,7 +1089,7 @@ static JSValue JSElement_set_img_crossOrigin(JSContext* ctx, JSValueConst this_v
         img->SetCrossOrigin(cross_origin);
         JS_FreeCString(ctx, cross_origin);
     }
-    
+
     return JS_UNDEFINED;
 }
 
@@ -963,42 +1102,65 @@ static JSValue JSElement_get_onload(JSContext* ctx, JSValueConst this_val, int m
 static JSValue JSElement_set_onload(JSContext* ctx, JSValueConst this_val, JSValue val, int magic) {
     auto* data = static_cast<JSElementData*>(JS_GetOpaque(this_val, js_element_class_id));
     if (!data || !data->element) return JS_UNDEFINED;
-    
-    std::cout << "[JSElement_set_onload] Setting onload handler" << std::endl;
-    
-    // 存储回调函数
+
+    if (data->has_onload_listener) {
+        bool removed_old = data->element->RemoveEventListener("load", data->onload_listener_id);
+        for (auto it = data->listeners.begin(); it != data->listeners.end(); ++it) {
+            if (it->event_type == "load" && it->listener_id == data->onload_listener_id) {
+                if (!JS_IsUndefined(it->js_listener)) {
+                    JS_FreeValue(ctx, it->js_listener);
+                    it->js_listener = JS_UNDEFINED;
+                }
+                data->listeners.erase(it);
+                break;
+            }
+        }
+        if (removed_old) {
+            g_js_element_listener_remove_count++;
+            if (g_js_element_listener_live_bindings > 0) {
+                g_js_element_listener_live_bindings--;
+            }
+        }
+        data->has_onload_listener = false;
+        data->onload_listener_id = 0;
+    }
+
     JS_SetPropertyStr(ctx, this_val, "__onload__", JS_DupValue(ctx, val));
-    
+
     if (JS_IsFunction(ctx, val)) {
-        std::cout << "[JSElement_set_onload] Adding load event listener" << std::endl;
-        
-        // 包装 JS 函数为 C++ lambda
         auto listener_wrapper = std::make_shared<JSValueWrapper>(ctx, val);
-        
-        uint64_t listener_id = data->element->AddEventListener("load", 
+
+        uint64_t listener_id = data->element->AddEventListener("load",
             [ctx, listener_wrapper](std::shared_ptr<Event> event) {
-                std::cout << "[onload callback] Executing onload callback" << std::endl;
                 JSValue event_val = WrapEvent(ctx, event);
                 JSValue result = listener_wrapper->Call(JS_UNDEFINED, 1, &event_val);
                 if (JS_IsException(result)) {
                     JSValue exception = JS_GetException(ctx);
                     const char* err = JS_ToCString(ctx, exception);
                     if (err) {
-                        std::cerr << "[onload Error] " << err << std::endl;
                         JS_FreeCString(ctx, err);
                     }
                     JS_FreeValue(ctx, exception);
                 }
                 JS_FreeValue(ctx, result);
                 JS_FreeValue(ctx, event_val);
-                std::cout << "[onload callback] Callback completed" << std::endl;
-            }, 
+            },
             false, false
         );
-        
-        std::cout << "[JSElement_set_onload] Listener added with id: " << listener_id << std::endl;
+
+        data->has_onload_listener = true;
+        data->onload_listener_id = listener_id;
+
+        JSElementListenerBinding binding;
+        binding.event_type = "load";
+        binding.listener_id = listener_id;
+        binding.use_capture = false;
+        binding.js_listener = JS_DupValue(ctx, val);
+        data->listeners.emplace_back(std::move(binding));
+        g_js_element_listener_add_count++;
+        g_js_element_listener_live_bindings++;
     }
-    
+
     return JS_UNDEFINED;
 }
 
@@ -1011,15 +1173,35 @@ static JSValue JSElement_get_onerror(JSContext* ctx, JSValueConst this_val, int 
 static JSValue JSElement_set_onerror(JSContext* ctx, JSValueConst this_val, JSValue val, int magic) {
     auto* data = static_cast<JSElementData*>(JS_GetOpaque(this_val, js_element_class_id));
     if (!data || !data->element) return JS_UNDEFINED;
-    
-    // 存储回调函数
+
+    if (data->has_onerror_listener) {
+        bool removed_old = data->element->RemoveEventListener("error", data->onerror_listener_id);
+        for (auto it = data->listeners.begin(); it != data->listeners.end(); ++it) {
+            if (it->event_type == "error" && it->listener_id == data->onerror_listener_id) {
+                if (!JS_IsUndefined(it->js_listener)) {
+                    JS_FreeValue(ctx, it->js_listener);
+                    it->js_listener = JS_UNDEFINED;
+                }
+                data->listeners.erase(it);
+                break;
+            }
+        }
+        if (removed_old) {
+            g_js_element_listener_remove_count++;
+            if (g_js_element_listener_live_bindings > 0) {
+                g_js_element_listener_live_bindings--;
+            }
+        }
+        data->has_onerror_listener = false;
+        data->onerror_listener_id = 0;
+    }
+
     JS_SetPropertyStr(ctx, this_val, "__onerror__", JS_DupValue(ctx, val));
-    
+
     if (JS_IsFunction(ctx, val)) {
-        // 包装 JS 函数为 C++ lambda
         auto listener_wrapper = std::make_shared<JSValueWrapper>(ctx, val);
-        
-        data->element->AddEventListener("error", 
+
+        uint64_t listener_id = data->element->AddEventListener("error",
             [ctx, listener_wrapper](std::shared_ptr<Event> event) {
                 JSValue event_val = WrapEvent(ctx, event);
                 JSValue result = listener_wrapper->Call(JS_UNDEFINED, 1, &event_val);
@@ -1027,18 +1209,29 @@ static JSValue JSElement_set_onerror(JSContext* ctx, JSValueConst this_val, JSVa
                     JSValue exception = JS_GetException(ctx);
                     const char* err = JS_ToCString(ctx, exception);
                     if (err) {
-                        std::cerr << "[onerror Error] " << err << std::endl;
                         JS_FreeCString(ctx, err);
                     }
                     JS_FreeValue(ctx, exception);
                 }
                 JS_FreeValue(ctx, result);
                 JS_FreeValue(ctx, event_val);
-            }, 
+            },
             false, false
         );
+
+        data->has_onerror_listener = true;
+        data->onerror_listener_id = listener_id;
+
+        JSElementListenerBinding binding;
+        binding.event_type = "error";
+        binding.listener_id = listener_id;
+        binding.use_capture = false;
+        binding.js_listener = JS_DupValue(ctx, val);
+        data->listeners.emplace_back(std::move(binding));
+        g_js_element_listener_add_count++;
+        g_js_element_listener_live_bindings++;
     }
-    
+
     return JS_UNDEFINED;
 }
 
@@ -1046,10 +1239,10 @@ static JSValue JSElement_set_onerror(JSContext* ctx, JSValueConst this_val, JSVa
 static JSValue JSElement_get_scrollTop(JSContext* ctx, JSValueConst this_val, int magic) {
     auto* data = static_cast<JSElementData*>(JS_GetOpaque(this_val, js_element_class_id));
     if (!data || !data->element) return JS_NewFloat64(ctx, 0);
-    
+
     auto render_obj = data->element->GetRenderObject();
     if (!render_obj) return JS_NewFloat64(ctx, 0);
-    
+
     return JS_NewFloat64(ctx, render_obj->GetScrollY());
 }
 
@@ -1059,20 +1252,20 @@ static JSValue JSElement_get_scrollTop(JSContext* ctx, JSValueConst this_val, in
 static JSValue JSElement_set_scrollTop(JSContext* ctx, JSValueConst this_val, JSValue val, int magic) {
     auto* data = static_cast<JSElementData*>(JS_GetOpaque(this_val, js_element_class_id));
     if (!data || !data->element) return JS_UNDEFINED;
-    
+
     auto render_obj = data->element->GetRenderObject();
     if (!render_obj) return JS_UNDEFINED;
-    
+
     double scroll_top;
     if (JS_ToFloat64(ctx, &scroll_top, val) != 0) return JS_EXCEPTION;
-    
+
     // Clamp 滚动位置到有效范围 [0, maxScrollY]
     if (scroll_top < 0) scroll_top = 0;
     float max_scroll_y = render_obj->GetMaxScrollY();
     if (scroll_top > max_scroll_y) scroll_top = max_scroll_y;
-    
+
     render_obj->SetScrollY(static_cast<float>(scroll_top));
-    
+
     return JS_UNDEFINED;
 }
 
@@ -1080,7 +1273,7 @@ static JSValue JSElement_set_scrollTop(JSContext* ctx, JSValueConst this_val, JS
 static JSValue JSElement_get_isContentEditable(JSContext* ctx, JSValueConst this_val, int magic) {
     auto* data = static_cast<JSElementData*>(JS_GetOpaque(this_val, js_element_class_id));
     if (!data || !data->element) return JS_FALSE;
-    
+
     return JS_NewBool(ctx, data->element->IsContentEditable());
 }
 
@@ -1088,7 +1281,7 @@ static JSValue JSElement_get_isContentEditable(JSContext* ctx, JSValueConst this
 static JSValue JSElement_get_contentEditable(JSContext* ctx, JSValueConst this_val, int magic) {
     auto* data = static_cast<JSElementData*>(JS_GetOpaque(this_val, js_element_class_id));
     if (!data || !data->element) return JS_NewString(ctx, "inherit");
-    
+
     std::string value = data->element->GetAttribute("contenteditable");
     if (value.empty()) {
         return JS_NewString(ctx, "inherit");
@@ -1100,19 +1293,19 @@ static JSValue JSElement_get_contentEditable(JSContext* ctx, JSValueConst this_v
 static JSValue JSElement_set_contentEditable(JSContext* ctx, JSValueConst this_val, JSValue val, int magic) {
     auto* data = static_cast<JSElementData*>(JS_GetOpaque(this_val, js_element_class_id));
     if (!data || !data->element) return JS_UNDEFINED;
-    
+
     const char* str = JS_ToCString(ctx, val);
     if (!str) return JS_EXCEPTION;
-    
+
     std::string value(str);
     JS_FreeCString(ctx, str);
-    
+
     if (value == "true" || value == "false" || value == "inherit") {
         data->element->SetAttribute("contenteditable", value);
     } else {
         return JS_ThrowTypeError(ctx, "contentEditable must be 'true', 'false', or 'inherit'");
     }
-    
+
     return JS_UNDEFINED;
 }
 
@@ -1120,7 +1313,7 @@ static JSValue JSElement_set_contentEditable(JSContext* ctx, JSValueConst this_v
 static JSValue JSElement_get_innerHTML(JSContext* ctx, JSValueConst this_val, int magic) {
     auto* data = static_cast<JSElementData*>(JS_GetOpaque(this_val, js_element_class_id));
     if (!data || !data->element) return JS_NewString(ctx, "");
-    
+
     return JS_NewString(ctx, data->element->GetInnerHTML().c_str());
 }
 
@@ -1128,13 +1321,13 @@ static JSValue JSElement_get_innerHTML(JSContext* ctx, JSValueConst this_val, in
 static JSValue JSElement_set_innerHTML(JSContext* ctx, JSValueConst this_val, JSValue val, int magic) {
     auto* data = static_cast<JSElementData*>(JS_GetOpaque(this_val, js_element_class_id));
     if (!data || !data->element) return JS_UNDEFINED;
-    
+
     const char* str = JS_ToCString(ctx, val);
     if (!str) return JS_EXCEPTION;
-    
+
     data->element->SetInnerHTML(str);
     JS_FreeCString(ctx, str);
-    
+
     return JS_UNDEFINED;
 }
 
@@ -1142,7 +1335,7 @@ static JSValue JSElement_set_innerHTML(JSContext* ctx, JSValueConst this_val, JS
 static JSValue JSElement_get_outerHTML(JSContext* ctx, JSValueConst this_val, int magic) {
     auto* data = static_cast<JSElementData*>(JS_GetOpaque(this_val, js_element_class_id));
     if (!data || !data->element) return JS_NewString(ctx, "");
-    
+
     return JS_NewString(ctx, data->element->GetOuterHTML().c_str());
 }
 
@@ -1150,10 +1343,10 @@ static JSValue JSElement_get_outerHTML(JSContext* ctx, JSValueConst this_val, in
 static JSValue JSElement_get_scrollLeft(JSContext* ctx, JSValueConst this_val, int magic) {
     auto* data = static_cast<JSElementData*>(JS_GetOpaque(this_val, js_element_class_id));
     if (!data || !data->element) return JS_NewFloat64(ctx, 0);
-    
+
     auto render_obj = data->element->GetRenderObject();
     if (!render_obj) return JS_NewFloat64(ctx, 0);
-    
+
     return JS_NewFloat64(ctx, render_obj->GetScrollX());
 }
 
@@ -1163,20 +1356,20 @@ static JSValue JSElement_get_scrollLeft(JSContext* ctx, JSValueConst this_val, i
 static JSValue JSElement_set_scrollLeft(JSContext* ctx, JSValueConst this_val, JSValue val, int magic) {
     auto* data = static_cast<JSElementData*>(JS_GetOpaque(this_val, js_element_class_id));
     if (!data || !data->element) return JS_UNDEFINED;
-    
+
     auto render_obj = data->element->GetRenderObject();
     if (!render_obj) return JS_UNDEFINED;
-    
+
     double scroll_left;
     if (JS_ToFloat64(ctx, &scroll_left, val) != 0) return JS_EXCEPTION;
-    
+
     // Clamp 滚动位置到有效范围 [0, maxScrollX]
     if (scroll_left < 0) scroll_left = 0;
     float max_scroll_x = render_obj->GetMaxScrollX();
     if (scroll_left > max_scroll_x) scroll_left = max_scroll_x;
-    
+
     render_obj->SetScrollX(static_cast<float>(scroll_left));
-    
+
     return JS_UNDEFINED;
 }
 
@@ -1186,10 +1379,10 @@ static JSValue JSElement_set_scrollLeft(JSContext* ctx, JSValueConst this_val, J
 static JSValue JSElement_get_scrollWidth(JSContext* ctx, JSValueConst this_val, int magic) {
     auto* data = static_cast<JSElementData*>(JS_GetOpaque(this_val, js_element_class_id));
     if (!data || !data->element) return JS_NewFloat64(ctx, 0);
-    
+
     auto render_obj = data->element->GetRenderObject();
     if (!render_obj) return JS_NewFloat64(ctx, 0);
-    
+
     return JS_NewFloat64(ctx, render_obj->GetScrollWidth());
 }
 
@@ -1199,10 +1392,10 @@ static JSValue JSElement_get_scrollWidth(JSContext* ctx, JSValueConst this_val, 
 static JSValue JSElement_get_scrollHeight(JSContext* ctx, JSValueConst this_val, int magic) {
     auto* data = static_cast<JSElementData*>(JS_GetOpaque(this_val, js_element_class_id));
     if (!data || !data->element) return JS_NewFloat64(ctx, 0);
-    
+
     auto render_obj = data->element->GetRenderObject();
     if (!render_obj) return JS_NewFloat64(ctx, 0);
-    
+
     return JS_NewFloat64(ctx, render_obj->GetScrollHeight());
 }
 
@@ -1242,10 +1435,10 @@ static JSValue JSElement_getBoundingClientRect(JSContext* ctx, JSValueConst this
 // getClientRects - 获取元素的所有边界矩形（用于多行文本等）
 static JSValue JSElement_getClientRects(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) {
     auto* data = static_cast<JSElementData*>(JS_GetOpaque(this_val, js_element_class_id));
-    
+
     // 创建数组来存储矩形
     JSValue arr = JS_NewArray(ctx);
-    
+
     if (!data || !data->element) {
         return arr;  // 返回空数组
     }
@@ -1291,26 +1484,22 @@ static JSValue JSElement_select(JSContext* ctx, JSValueConst this_val, int argc,
 
     // 获取 value 属性的长度
     std::string value = data->element->GetAttribute("value");
-    
+
     // 设置 selectionStart 和 selectionEnd
     data->element->SetAttribute("selectionStart", "0");
     data->element->SetAttribute("selectionEnd", std::to_string(value.length()));
-    
+
     return JS_UNDEFINED;
 }
 
 // focus - 使元素获得焦点
 static JSValue JSElement_focus(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) {
-    std::cout << "[JSElement_focus] Called" << std::endl;
     auto* data = static_cast<JSElementData*>(JS_GetOpaque(this_val, js_element_class_id));
     if (!data || !data->element) {
-        std::cout << "[JSElement_focus] ERROR: No element data!" << std::endl;
         return JS_UNDEFINED;
     }
-    
-    std::cout << "[JSElement_focus] Calling Focus() on <" << data->element->GetTagName() << ">" << std::endl;
+
     data->element->Focus();
-    std::cout << "[JSElement_focus] Focus() returned" << std::endl;
     return JS_UNDEFINED;
 }
 
@@ -1318,7 +1507,7 @@ static JSValue JSElement_focus(JSContext* ctx, JSValueConst this_val, int argc, 
 static JSValue JSElement_blur(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) {
     auto* data = static_cast<JSElementData*>(JS_GetOpaque(this_val, js_element_class_id));
     if (!data || !data->element) return JS_UNDEFINED;
-    
+
     data->element->Blur();
     return JS_UNDEFINED;
 }
@@ -1327,13 +1516,13 @@ static JSValue JSElement_blur(JSContext* ctx, JSValueConst this_val, int argc, J
 static JSValue JSElement_contains(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) {
     auto* data = static_cast<JSElementData*>(JS_GetOpaque(this_val, js_element_class_id));
     if (!data || !data->element) return JS_FALSE;
-    
+
     if (argc < 1) return JS_FALSE;
-    
+
     // 尝试解包为 Node（支持 Element 和 Text 节点）
     auto other = UnwrapNode(ctx, argv[0]);
     if (!other) return JS_FALSE;
-    
+
     // 使用 Node::Contains 方法检查
     return JS_NewBool(ctx, data->element->Contains(other));
 }
@@ -1342,15 +1531,15 @@ static JSValue JSElement_contains(JSContext* ctx, JSValueConst this_val, int arg
 static JSValue JSElement_matches(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) {
     auto* data = static_cast<JSElementData*>(JS_GetOpaque(this_val, js_element_class_id));
     if (!data || !data->element) return JS_FALSE;
-    
+
     if (argc < 1) return JS_ThrowTypeError(ctx, "matches requires 1 argument");
-    
+
     const char* selector = JS_ToCString(ctx, argv[0]);
     if (!selector) return JS_EXCEPTION;
-    
+
     bool result = data->element->Matches(selector);
     JS_FreeCString(ctx, selector);
-    
+
     return JS_NewBool(ctx, result);
 }
 
@@ -1358,15 +1547,15 @@ static JSValue JSElement_matches(JSContext* ctx, JSValueConst this_val, int argc
 static JSValue JSElement_closest(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) {
     auto* data = static_cast<JSElementData*>(JS_GetOpaque(this_val, js_element_class_id));
     if (!data || !data->element) return JS_NULL;
-    
+
     if (argc < 1) return JS_ThrowTypeError(ctx, "closest requires 1 argument");
-    
+
     const char* selector = JS_ToCString(ctx, argv[0]);
     if (!selector) return JS_EXCEPTION;
-    
+
     auto result = data->element->Closest(selector);
     JS_FreeCString(ctx, selector);
-    
+
     if (!result) return JS_NULL;
     return WrapElement(ctx, result);
 }
@@ -1375,18 +1564,18 @@ static JSValue JSElement_closest(JSContext* ctx, JSValueConst this_val, int argc
 static JSValue JSElement_cloneNode(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) {
     auto* data = static_cast<JSElementData*>(JS_GetOpaque(this_val, js_element_class_id));
     if (!data || !data->element) return JS_NULL;
-    
+
     bool deep = false;
     if (argc > 0) {
         deep = JS_ToBool(ctx, argv[0]);
     }
-    
+
     auto cloned = data->element->CloneNode(deep);
     if (!cloned) return JS_NULL;
-    
+
     auto cloned_element = std::dynamic_pointer_cast<Element>(cloned);
     if (!cloned_element) return JS_NULL;
-    
+
     return WrapElement(ctx, cloned_element);
 }
 
@@ -1394,12 +1583,12 @@ static JSValue JSElement_cloneNode(JSContext* ctx, JSValueConst this_val, int ar
 static JSValue JSElement_remove(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) {
     auto* data = static_cast<JSElementData*>(JS_GetOpaque(this_val, js_element_class_id));
     if (!data || !data->element) return JS_UNDEFINED;
-    
+
     auto parent = data->element->GetParentNode();
     if (parent) {
         parent->RemoveChild(data->element);
     }
-    
+
     return JS_UNDEFINED;
 }
 
@@ -1412,7 +1601,7 @@ static JSValue JSElement_get_ownerDocument(JSContext* ctx, JSValueConst this_val
     JSValue global = JS_GetGlobalObject(ctx);
     JSValue document = JS_GetPropertyStr(ctx, global, "document");
     JS_FreeValue(ctx, global);
-    
+
     return document;
 }
 
@@ -1497,6 +1686,7 @@ static const JSCFunctionListEntry js_element_proto_funcs[] = {
     JS_CFUNC_DEF("querySelector", 1, JSElement_querySelector),
     JS_CFUNC_DEF("querySelectorAll", 1, JSElement_querySelectorAll),
     JS_CFUNC_DEF("addEventListener", 3, JSElement_addEventListener),
+    JS_CFUNC_DEF("removeEventListener", 3, JSElement_removeEventListener),
     JS_CFUNC_DEF("getContext", 1, JSElement_getContext),
     JS_CFUNC_DEF("getBoundingClientRect", 0, JSElement_getBoundingClientRect),
     JS_CFUNC_DEF("getClientRects", 0, JSElement_getClientRects),
@@ -1530,7 +1720,7 @@ void InitElementBinding(JSContext* ctx) {
 
     // 创建原型对象
     JSValue proto = JS_NewObject(ctx);
-    
+
     // 设置原型链：Element.prototype.__proto__ = Node.prototype
     // 这样 Element 就能继承 Node 的所有属性和方法（firstChild, nextSibling等）
     JSValue node_proto = JS_GetClassProto(ctx, GetNodeClassID());
@@ -1538,9 +1728,9 @@ void InitElementBinding(JSContext* ctx) {
         JS_SetPrototype(ctx, proto, node_proto);
         JS_FreeValue(ctx, node_proto);
     }
-    
+
     // 设置 Element 自己的属性和方法
-    JS_SetPropertyFunctionList(ctx, proto, js_element_proto_funcs, 
+    JS_SetPropertyFunctionList(ctx, proto, js_element_proto_funcs,
                                sizeof(js_element_proto_funcs) / sizeof(js_element_proto_funcs[0]));
 
     // 设置类的原型
@@ -1576,7 +1766,7 @@ JSValue WrapElement(JSContext* ctx, std::shared_ptr<Element> element) {
     // 如果是 Terminal 元素，添加 Terminal 特定方法
     if (auto* terminal = dynamic_cast<HTMLTerminalElement*>(element.get())) {
         // 添加 write 方法
-        JS_SetPropertyStr(ctx, obj, "write", JS_NewCFunction(ctx, 
+        JS_SetPropertyStr(ctx, obj, "write", JS_NewCFunction(ctx,
             [](JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) -> JSValue {
                 auto elem = UnwrapElement(ctx, this_val);
                 if (!elem) return JS_EXCEPTION;
@@ -1589,7 +1779,7 @@ JSValue WrapElement(JSContext* ctx, std::shared_ptr<Element> element) {
                 JS_FreeCString(ctx, data);
                 return JS_UNDEFINED;
             }, "write", 1));
-        
+
         // 添加 clear 方法
         JS_SetPropertyStr(ctx, obj, "clear", JS_NewCFunction(ctx,
             [](JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) -> JSValue {
@@ -1727,7 +1917,7 @@ JSValue WrapElement(JSContext* ctx, std::shared_ptr<Element> element) {
                 JS_FreeCString(ctx, message);
                 return JS_UNDEFINED;
             }, "append", 3));
-        
+
         // 添加 clear 方法
         JS_SetPropertyStr(ctx, obj, "clear", JS_NewCFunction(ctx,
             [](JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) -> JSValue {

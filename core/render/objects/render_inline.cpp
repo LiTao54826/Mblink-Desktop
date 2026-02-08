@@ -21,8 +21,17 @@ namespace lightui {
 // ========== RenderInline 实现 ==========
 
 void RenderInline::Layout(float parent_width, float parent_height) {
+    static bool debug_iflex = std::getenv("DEBUG_INLINE_FLEX") != nullptr;
     auto node = GetNode();
     const auto& style = computed_style_;
+
+    if (debug_iflex) {
+        std::string tag = "?";
+        if (node && node->GetNodeType() == NodeType::ELEMENT_NODE) {
+            auto elem = std::static_pointer_cast<Element>(node);
+            if (elem) tag = elem->GetTagName();
+        }
+    }
 
     // 检查是否有显式的width/height设置
     float explicit_width = 0;
@@ -30,12 +39,12 @@ void RenderInline::Layout(float parent_width, float parent_height) {
     bool has_explicit_width = false;
     bool has_explicit_height = false;
 
-    if (style.width.unit != CSSUnit::NONE) {
+    if (style.width.unit != CSSUnit::NONE && style.width.unit != CSSUnit::AUTO) {
         explicit_width = style.width.ToPx(parent_width, style.font_size);
         has_explicit_width = true;
     }
 
-    if (style.height.unit != CSSUnit::NONE) {
+    if (style.height.unit != CSSUnit::NONE && style.height.unit != CSSUnit::AUTO) {
         explicit_height = style.height.ToPx(parent_height, style.font_size);
         has_explicit_height = true;
     }
@@ -44,11 +53,28 @@ void RenderInline::Layout(float parent_width, float parent_height) {
     float total_width = 0;
     float max_height = 0;
 
+    // 父节点进入本轮布局时，子节点尺寸需要参与最新测量，
+    // 不能只依赖子节点自身的 NeedsLayout 标志。
+    const bool parent_layout_pass = needs_layout_ || child_needs_layout_;
+
     for (auto& child : children_) {
-        if (child->NeedsLayout()) {
+        if (debug_iflex) {
+            std::string ctag = "?";
+            auto cnode = child->GetNode();
+            if (cnode && cnode->GetNodeType() == NodeType::ELEMENT_NODE) {
+                auto celem = std::dynamic_pointer_cast<Element>(cnode);
+                if (celem) ctag = celem->GetTagName();
+            } else if (cnode && cnode->GetNodeType() == NodeType::TEXT_NODE) {
+                ctag = "#text";
+            }
+        }
+
+        if (child->NeedsLayout() || parent_layout_pass) {
             child->Layout(parent_width, parent_height);
         }
         auto& child_layout = child->GetLayoutInfo();
+        if (debug_iflex) {
+        }
         total_width += child_layout.width;
         max_height = std::max(max_height, child_layout.height);
     }
@@ -64,6 +90,9 @@ void RenderInline::Layout(float parent_width, float parent_height) {
     layout_info_.height = has_explicit_height ? explicit_height : (max_height > 0 ? max_height + padding_top + padding_bottom : 20.0f);
     layout_info_.is_laid_out = true;
     needs_layout_ = false;
+
+    if (debug_iflex) {
+    }
 
     // 计算内容区域宽度
     float content_width = layout_info_.width - padding_left - padding_right;
@@ -113,13 +142,6 @@ void RenderInline::PositionChildrenOnly() {
         float child_y = padding_top + (content_height - child_layout.height) / 2.0f;
         
         if (debug_inline) {
-            std::cout << "[RenderInline::PositionChildrenOnly]"
-                      << " parent_h=" << layout_info_.height
-                      << " content_h=" << content_height
-                      << " child_h=" << child_layout.height
-                      << " child_y=" << child_y
-                      << " padding_top=" << padding_top
-                      << std::endl;
         }
         
         child_layout.x = current_x;
@@ -140,10 +162,6 @@ std::pair<float, float> RenderInline::MeasureIntrinsicSize(float available_width
             auto elem = std::static_pointer_cast<Element>(node);
             tag = elem->GetTagName();
         }
-        std::cout << "[RenderInline::MeasureIntrinsicSize] tag=" << tag 
-                  << " available_width=" << available_width
-                  << " children=" << children_.size()
-                  << std::endl;
     }
 
     float padding_left = style.padding.left.ToPx(available_width, style.font_size);
@@ -192,10 +210,6 @@ std::pair<float, float> RenderInline::MeasureIntrinsicSize(float available_width
         (max_height > 0 ? max_height + padding_top + padding_bottom + border_top + border_bottom : 20.0f);
 
     if (debug_inline) {
-        std::cout << "[RenderInline::MeasureIntrinsicSize] total_width=" << total_width
-                  << " max_height=" << max_height
-                  << " -> width=" << width << " height=" << height
-                  << std::endl;
     }
 
     return {width, height};

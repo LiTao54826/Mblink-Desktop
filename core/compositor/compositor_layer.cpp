@@ -88,10 +88,25 @@ SkCanvas* CompositorLayer::GetCanvas() {
 }
 
 bool CompositorLayer::EnsureBitmap() {
+    // 🐛 修复：对于有 box-shadow 的 fixed 元素，扩展 bitmap 以容纳阴影
+    // 优化：使用四个方向独立的扩展值，节省内存并提高精确度
+
+    // shadow_extent 是逻辑像素，需要乘以 DPI 缩放
+    float left_physical = shadow_extent_.left * dpi_scale_;
+    float right_physical = shadow_extent_.right * dpi_scale_;
+    float top_physical = shadow_extent_.top * dpi_scale_;
+    float bottom_physical = shadow_extent_.bottom * dpi_scale_;
+
     // 使用物理像素大小（DPI 缩放后的大小）以保证清晰度
-    int width = static_cast<int>(std::ceil(bounds_.width() * dpi_scale_));
-    int height = static_cast<int>(std::ceil(bounds_.height() * dpi_scale_));
-    
+    // 宽度 = 元素宽度 + 左边扩展 + 右边扩展
+    // 高度 = 元素高度 + 上边扩展 + 下边扩展
+    int width = static_cast<int>(std::ceil(
+        bounds_.width() * dpi_scale_ + left_physical + right_physical
+    ));
+    int height = static_cast<int>(std::ceil(
+        bounds_.height() * dpi_scale_ + top_physical + bottom_physical
+    ));
+
     if (width <= 0 || height <= 0) {
         return false;
     }
@@ -116,6 +131,13 @@ bool CompositorLayer::EnsureBitmap() {
     if (dpi_scale_ != 1.0f) {
         canvas_->scale(dpi_scale_, dpi_scale_);
     }
+
+    // 🐛 修复：如果有 shadow_extent，应用初始 translate
+    // 这样元素会绘制在 bitmap 的正确位置，周围留出空间给阴影
+    if (shadow_extent_.HasExtent()) {
+        canvas_->translate(shadow_extent_.left, shadow_extent_.top);
+    }
+
     bitmap_valid_ = true;
 
     return true;
@@ -309,8 +331,14 @@ bool CompositorLayer::CreateTexture() {
         return true;  // 已存在
     }
 
-    int width = static_cast<int>(bounds_.width());
-    int height = static_cast<int>(bounds_.height());
+    // 🐛 修复：使用 bitmap 的实际大小，而不是 bounds_
+    // 因为 bitmap 可能包含 shadow_extent 扩展
+    if (!EnsureBitmap()) {
+        return false;
+    }
+
+    int width = bitmap_.width();
+    int height = bitmap_.height();
 
     if (width <= 0 || height <= 0) {
         return false;

@@ -241,11 +241,6 @@ LineVerticalMetrics VerticalAligner::CalculateLineMetrics(
     }
 
 #if VA_DEBUG
-    std::cout << "[VA] CalculateLineMetrics: max_ascent=" << max_ascent
-              << ", max_descent=" << max_descent
-              << ", max_line_height=" << max_line_height
-              << ", content_height=" << content_height
-              << ", line_height=" << metrics.line_height << std::endl;
 #endif
 
     return metrics;
@@ -360,11 +355,6 @@ void VerticalAligner::AlignBoxes(
 
 #if VA_DEBUG
         if (box->IsAtomic()) {
-            std::cout << "[VA] AlignBoxes ATOMIC: align_type=" << static_cast<int>(align.type)
-                      << ", box_height=" << box_metrics.height
-                      << ", line_height=" << line_metrics.line_height
-                      << ", y_offset=" << y_offset
-                      << ", final_y=" << box->y << std::endl;
         }
 #endif
     }

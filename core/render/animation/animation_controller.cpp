@@ -54,19 +54,27 @@ void AnimationController::RegisterKeyframes(const KeyframesRule& rule) {
 // ============================================================================
 
 void AnimationController::StartAnimation(std::shared_ptr<Element> element, const CSSAnimation& animation) {
+    static bool debug_animation =
+        std::getenv("LIGHTUI_DEBUG_ANIMATION") != nullptr ||
+        std::getenv("LIGHTUI_DEBUG_ANIM") != nullptr;
+
     if (!element || !animation.IsValid()) {
+        if (debug_animation) {
+        }
         return;
     }
-    
+
     // 查找 @keyframes 规则
     auto it = keyframes_rules_.find(animation.name);
     if (it == keyframes_rules_.end()) {
+        if (debug_animation) {
+        }
         return;  // 找不到对应的 @keyframes
     }
-    
+
     // 停止已存在的同名动画
     StopAnimation(element, animation.name);
-    
+
     // 创建新的运行中动画
     RunningAnimation anim;
     anim.element = element;  // 使用 Element 引用
@@ -82,6 +90,9 @@ void AnimationController::StartAnimation(std::shared_ptr<Element> element, const
     }
 
     running_animations_.push_back(anim);
+
+    if (debug_animation) {
+    }
 
     // 标记为脏 - 使用 RenderObject 指针
     if (optimization_enabled_) {
@@ -223,12 +234,9 @@ void AnimationController::Update(double current_time) {
             RenderObject* render_object = anim.GetRenderObject();
             auto elem = anim.GetElement();
 
-            // 检查脏标记优化
-            if (optimization_enabled_ && render_object &&
-                !optimizer_.GetDirtyTracker().IsDirty(render_object, anim.config.name)) {
-                ++it;
-                continue;
-            }
+            // 关键修复：不能用 DirtyTracker 决定是否推进动画时间
+            // 否则在首帧 ClearDirty 后，后续帧会被跳过，导致动画看起来“卡住不动”。
+            // 动画时间轴必须每帧推进，脏标记仅用于渲染优化，不应阻断状态更新。
 
             // 初始化开始时间
             if (!anim.initialized) {

@@ -188,7 +188,11 @@ struct CSSTextShadow {
  */
 struct CSSGradientStop {
     SkColor color;
-    float position; // 0.0 到 1.0
+    float position; // 0.0 到 1.0（相对位置）
+
+    // 像素值支持：当使用像素单位时，需要在渲染时根据 background-size 动态计算
+    bool is_pixel = false;      // 是否使用像素单位
+    float pixel_value = 0.0f;   // 原始像素值
 
     CSSGradientStop() : color(SK_ColorBLACK), position(0.0f) {}
     CSSGradientStop(SkColor c, float p) : color(c), position(p) {}
@@ -198,10 +202,10 @@ struct CSSGradientStop {
  * @brief CSS 线性渐变定义
  */
 struct CSSLinearGradient {
-    float angle;  // 角度（度数）
+    float angle;  // 角度（度数），CSS 默认是 180度（从上到下）
     std::vector<CSSGradientStop> stops;
 
-    CSSLinearGradient() : angle(0.0f) {}
+    CSSLinearGradient() : angle(180.0f) {}  // CSS 默认方向是从上到下
 };
 
 /**
@@ -376,6 +380,25 @@ public:
      * @return CSSBackgroundSize 对象
      */
     static CSSBackgroundSize ParseBackgroundSize(const std::string& str);
+
+    /**
+     * @brief 解析多个线性渐变（逗号分隔）
+     * @param str CSS background-image 字符串，包含多个 linear-gradient
+     * @return CSSLinearGradient 对象列表
+     *
+     * 示例: "linear-gradient(red, blue), linear-gradient(90deg, green, yellow)"
+     * 注意: 正确处理渐变函数内部的逗号（不作为分隔符）
+     */
+    static std::vector<CSSLinearGradient> ParseMultipleLinearGradients(const std::string& str);
+
+    /**
+     * @brief 解析多个背景尺寸（逗号分隔）
+     * @param str CSS background-size 字符串，包含多个尺寸值
+     * @return CSSBackgroundSize 对象列表
+     *
+     * 示例: "8px 8px, cover, 100% 50%"
+     */
+    static std::vector<CSSBackgroundSize> ParseMultipleBackgroundSizes(const std::string& str);
 
     /**
      * @brief 去除字符串首尾空格

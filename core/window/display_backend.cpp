@@ -122,34 +122,28 @@ std::unique_ptr<DisplayBackend> DisplayBackend::CreateBest(SDL_Window* window, i
     // 检测虚拟机环境
     bool is_vm = IsRunningInVirtualMachine();
     if (is_vm) {
-        std::cout << "[DisplayBackend] Virtual machine detected" << std::endl;
     }
 
     // 虚拟机环境：优先使用 PaintMode 后端（基于 WM_PAINT，与系统窗口管理器协作更好）
     if (is_vm) {
         auto backend = std::make_unique<PaintModeDisplayBackend>();
         if (backend->Initialize(window, width, height)) {
-            std::cout << "[DisplayBackend] Using PaintMode backend (VM-friendly)" << std::endl;
             return backend;
         }
-        std::cout << "[DisplayBackend] PaintMode backend failed, trying D3D11..." << std::endl;
     }
 
     // 1. 物理机上优先使用 Direct3D 11 - 最稳定的无闪烁方案
     {
         auto backend = std::make_unique<D3D11DisplayBackend>();
         if (backend->Initialize(window, width, height)) {
-            std::cout << "[DisplayBackend] Using Direct3D 11 backend" << std::endl;
             return backend;
         }
-        std::cout << "[DisplayBackend] D3D11 backend failed, trying fallback..." << std::endl;
     }
 
     // 2. PaintMode 作为第二选择（如果 D3D11 失败）
     if (!is_vm) {
         auto backend = std::make_unique<PaintModeDisplayBackend>();
         if (backend->Initialize(window, width, height)) {
-            std::cout << "[DisplayBackend] Using PaintMode backend (fallback)" << std::endl;
             return backend;
         }
     }
@@ -158,7 +152,6 @@ std::unique_ptr<DisplayBackend> DisplayBackend::CreateBest(SDL_Window* window, i
     {
         auto backend = std::make_unique<GDIDisplayBackend>();
         if (backend->Initialize(window, width, height)) {
-            std::cout << "[DisplayBackend] Using GDI backend (fallback)" << std::endl;
             return backend;
         }
     }
@@ -168,7 +161,6 @@ std::unique_ptr<DisplayBackend> DisplayBackend::CreateBest(SDL_Window* window, i
     if (IsOpenGLAvailable()) {
         auto backend = std::make_unique<OpenGLDisplayBackend>();
         if (backend->Initialize(window, width, height)) {
-            std::cout << "[DisplayBackend] Using OpenGL backend" << std::endl;
             return backend;
         }
     }
@@ -177,12 +169,10 @@ std::unique_ptr<DisplayBackend> DisplayBackend::CreateBest(SDL_Window* window, i
     {
         auto backend = std::make_unique<SDLSurfaceDisplayBackend>();
         if (backend->Initialize(window, width, height)) {
-            std::cout << "[DisplayBackend] Using SDL_Surface backend (fallback)" << std::endl;
             return backend;
         }
     }
 
-    std::cerr << "[DisplayBackend] Failed to create any display backend!" << std::endl;
     return nullptr;
 }
 
@@ -256,7 +246,6 @@ bool D3D11DisplayBackend::Initialize(SDL_Window* window, int width, int height) 
         SDL_PROP_WINDOW_WIN32_HWND_POINTER, NULL);
 
     if (!hwnd_) {
-        std::cerr << "[D3D11DisplayBackend] Failed to get HWND from SDL window" << std::endl;
         return false;
     }
 
@@ -283,8 +272,6 @@ bool D3D11DisplayBackend::Initialize(SDL_Window* window, int width, int height) 
         return false;
     }
 
-    std::cout << "[D3D11DisplayBackend] Initialized successfully ("
-              << width << "x" << height << ")" << std::endl;
     return true;
 }
 
@@ -351,8 +338,6 @@ bool D3D11DisplayBackend::CreateDeviceAndSwapChain() {
     }
 
     if (FAILED(hr)) {
-        std::cerr << "[D3D11DisplayBackend] Failed to create device and swap chain: 0x"
-                  << std::hex << hr << std::dec << std::endl;
         return false;
     }
 
@@ -370,7 +355,6 @@ bool D3D11DisplayBackend::CreateRenderTarget() {
     ID3D11Texture2D* back_buffer = nullptr;
     HRESULT hr = swap_chain->GetBuffer(0, __uuidof(ID3D11Texture2D), (void**)&back_buffer);
     if (FAILED(hr)) {
-        std::cerr << "[D3D11DisplayBackend] Failed to get back buffer" << std::endl;
         return false;
     }
 
@@ -379,7 +363,6 @@ bool D3D11DisplayBackend::CreateRenderTarget() {
     back_buffer->Release();
 
     if (FAILED(hr)) {
-        std::cerr << "[D3D11DisplayBackend] Failed to create render target view" << std::endl;
         return false;
     }
 
@@ -405,7 +388,6 @@ bool D3D11DisplayBackend::CreateTexture(int width, int height) {
     ID3D11Texture2D* texture = nullptr;
     HRESULT hr = device->CreateTexture2D(&tex_desc, nullptr, &texture);
     if (FAILED(hr)) {
-        std::cerr << "[D3D11DisplayBackend] Failed to create texture" << std::endl;
         return false;
     }
 
@@ -419,7 +401,6 @@ bool D3D11DisplayBackend::CreateTexture(int width, int height) {
     hr = device->CreateShaderResourceView(texture, &srv_desc, &srv);
     if (FAILED(hr)) {
         texture->Release();
-        std::cerr << "[D3D11DisplayBackend] Failed to create shader resource view" << std::endl;
         return false;
     }
 
@@ -435,7 +416,6 @@ bool D3D11DisplayBackend::CreateTexture(int width, int height) {
     if (FAILED(hr)) {
         texture->Release();
         srv->Release();
-        std::cerr << "[D3D11DisplayBackend] Failed to create sampler state" << std::endl;
         return false;
     }
 
@@ -463,8 +443,6 @@ bool D3D11DisplayBackend::CreateShaders() {
 
     if (FAILED(hr)) {
         if (error_blob) {
-            std::cerr << "[D3D11DisplayBackend] VS compile error: "
-                      << (char*)error_blob->GetBufferPointer() << std::endl;
             error_blob->Release();
         }
         return false;
@@ -477,7 +455,6 @@ bool D3D11DisplayBackend::CreateShaders() {
     );
     if (FAILED(hr)) {
         vs_blob->Release();
-        std::cerr << "[D3D11DisplayBackend] Failed to create vertex shader" << std::endl;
         return false;
     }
 
@@ -497,7 +474,6 @@ bool D3D11DisplayBackend::CreateShaders() {
 
     if (FAILED(hr)) {
         vs->Release();
-        std::cerr << "[D3D11DisplayBackend] Failed to create input layout" << std::endl;
         return false;
     }
 
@@ -512,8 +488,6 @@ bool D3D11DisplayBackend::CreateShaders() {
 
     if (FAILED(hr)) {
         if (error_blob) {
-            std::cerr << "[D3D11DisplayBackend] PS compile error: "
-                      << (char*)error_blob->GetBufferPointer() << std::endl;
             error_blob->Release();
         }
         vs->Release();
@@ -531,7 +505,6 @@ bool D3D11DisplayBackend::CreateShaders() {
     if (FAILED(hr)) {
         vs->Release();
         input_layout->Release();
-        std::cerr << "[D3D11DisplayBackend] Failed to create pixel shader" << std::endl;
         return false;
     }
 
@@ -557,7 +530,6 @@ bool D3D11DisplayBackend::CreateShaders() {
         vs->Release();
         ps->Release();
         input_layout->Release();
-        std::cerr << "[D3D11DisplayBackend] Failed to create vertex buffer" << std::endl;
         return false;
     }
 
@@ -663,7 +635,6 @@ void D3D11DisplayBackend::OnResize(int width, int height) {
     // 调整交换链大小
     HRESULT hr = swap_chain->ResizeBuffers(0, width, height, DXGI_FORMAT_UNKNOWN, 0);
     if (FAILED(hr)) {
-        std::cerr << "[D3D11DisplayBackend] Failed to resize swap chain" << std::endl;
         return;
     }
 
@@ -711,7 +682,6 @@ bool PaintModeDisplayBackend::Initialize(SDL_Window* window, int width, int heig
         SDL_PROP_WINDOW_WIN32_HWND_POINTER, NULL);
 
     if (!hwnd_) {
-        std::cerr << "[PaintModeDisplayBackend] Failed to get HWND from SDL window" << std::endl;
         return false;
     }
 
@@ -720,8 +690,6 @@ bool PaintModeDisplayBackend::Initialize(SDL_Window* window, int width, int heig
         return false;
     }
 
-    std::cout << "[PaintModeDisplayBackend] Initialized successfully ("
-              << width << "x" << height << ")" << std::endl;
     return true;
 }
 
@@ -737,7 +705,6 @@ bool PaintModeDisplayBackend::CreateBuffer(int width, int height) {
     HWND hwnd = (HWND)hwnd_;
     HDC hdc_window = GetDC(hwnd);
     if (!hdc_window) {
-        std::cerr << "[PaintModeDisplayBackend] Failed to get window DC" << std::endl;
         return false;
     }
 
@@ -745,7 +712,6 @@ bool PaintModeDisplayBackend::CreateBuffer(int width, int height) {
     HDC hdc_mem = CreateCompatibleDC(hdc_window);
     if (!hdc_mem) {
         ReleaseDC(hwnd, hdc_window);
-        std::cerr << "[PaintModeDisplayBackend] Failed to create memory DC" << std::endl;
         return false;
     }
 
@@ -765,7 +731,6 @@ bool PaintModeDisplayBackend::CreateBuffer(int width, int height) {
 
     if (!hbitmap || !bits) {
         DeleteDC(hdc_mem);
-        std::cerr << "[PaintModeDisplayBackend] Failed to create DIB section" << std::endl;
         return false;
     }
 
@@ -915,7 +880,6 @@ bool OpenGLDisplayBackend::Initialize(SDL_Window* window, int width, int height)
     // 创建 OpenGL 上下文
     gl_context_ = SDL_GL_CreateContext(window);
     if (!gl_context_) {
-        std::cerr << "[OpenGLDisplayBackend] Failed to create GL context: " << SDL_GetError() << std::endl;
         return false;
     }
 
@@ -945,7 +909,6 @@ bool OpenGLDisplayBackend::Initialize(SDL_Window* window, int width, int height)
     glEnable(GL_TEXTURE_2D);
     glDisable(GL_DEPTH_TEST);
 
-    std::cout << "[OpenGLDisplayBackend] Initialized successfully (" << width << "x" << height << ")" << std::endl;
     return true;
 }
 
@@ -1049,11 +1012,9 @@ bool SDLSurfaceDisplayBackend::Initialize(SDL_Window* window, int width, int hei
 
     sdl_surface_ = SDL_GetWindowSurface(window);
     if (!sdl_surface_) {
-        std::cerr << "[SDLSurfaceDisplayBackend] Failed to get window surface: " << SDL_GetError() << std::endl;
         return false;
     }
 
-    std::cout << "[SDLSurfaceDisplayBackend] Initialized successfully" << std::endl;
     return true;
 }
 
@@ -1129,7 +1090,6 @@ bool LayeredWindowDisplayBackend::Initialize(SDL_Window* window, int width, int 
     hwnd_ = (void*)SDL_GetPointerProperty(SDL_GetWindowProperties(window),
                                            SDL_PROP_WINDOW_WIN32_HWND_POINTER, NULL);
     if (!hwnd_) {
-        std::cerr << "[LayeredWindowDisplayBackend] Failed to get HWND" << std::endl;
         return false;
     }
 
@@ -1145,7 +1105,6 @@ bool LayeredWindowDisplayBackend::Initialize(SDL_Window* window, int width, int 
     ReleaseDC(NULL, hdcScreen);
 
     if (!hdc_mem_) {
-        std::cerr << "[LayeredWindowDisplayBackend] Failed to create memory DC" << std::endl;
         return false;
     }
 
@@ -1160,7 +1119,6 @@ bool LayeredWindowDisplayBackend::Initialize(SDL_Window* window, int width, int 
 
     hbitmap_ = CreateDIBSection((HDC)hdc_mem_, &bmi, DIB_RGB_COLORS, &bitmap_bits_, NULL, 0);
     if (!hbitmap_) {
-        std::cerr << "[LayeredWindowDisplayBackend] Failed to create DIB section" << std::endl;
         Shutdown();
         return false;
     }
@@ -1169,7 +1127,6 @@ bool LayeredWindowDisplayBackend::Initialize(SDL_Window* window, int width, int 
     bitmap_width_ = width;
     bitmap_height_ = height;
 
-    std::cout << "[LayeredWindowDisplayBackend] Initialized successfully (" << width << "x" << height << ")" << std::endl;
     return true;
 }
 
@@ -1294,7 +1251,6 @@ bool GDIDisplayBackend::Initialize(SDL_Window* window, int width, int height) {
     hwnd_ = (void*)SDL_GetPointerProperty(SDL_GetWindowProperties(window),
                                            SDL_PROP_WINDOW_WIN32_HWND_POINTER, NULL);
     if (!hwnd_) {
-        std::cerr << "[GDIDisplayBackend] Failed to get HWND" << std::endl;
         return false;
     }
 
@@ -1304,7 +1260,6 @@ bool GDIDisplayBackend::Initialize(SDL_Window* window, int width, int height) {
     ReleaseDC((HWND)hwnd_, hdcWindow);
 
     if (!hdc_mem_) {
-        std::cerr << "[GDIDisplayBackend] Failed to create memory DC" << std::endl;
         return false;
     }
 
@@ -1319,7 +1274,6 @@ bool GDIDisplayBackend::Initialize(SDL_Window* window, int width, int height) {
 
     hbitmap_ = CreateDIBSection((HDC)hdc_mem_, &bmi, DIB_RGB_COLORS, &bitmap_bits_, NULL, 0);
     if (!hbitmap_) {
-        std::cerr << "[GDIDisplayBackend] Failed to create DIB section" << std::endl;
         Shutdown();
         return false;
     }
@@ -1328,7 +1282,6 @@ bool GDIDisplayBackend::Initialize(SDL_Window* window, int width, int height) {
     bitmap_width_ = width;
     bitmap_height_ = height;
 
-    std::cout << "[GDIDisplayBackend] Initialized successfully (" << width << "x" << height << ")" << std::endl;
     return true;
 }
 

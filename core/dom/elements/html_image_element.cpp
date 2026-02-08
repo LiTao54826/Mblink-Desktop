@@ -136,7 +136,6 @@ void HTMLImageElement::LoadImage() {
         return;
     }
     
-    std::cout << "[HTMLImageElement::LoadImage] Loading image: " << src_ << std::endl;
     
     // 设置加载状态
     load_state_ = ImageLoadState::LOADING;
@@ -151,8 +150,6 @@ void HTMLImageElement::LoadImage() {
     // 这对于本地文件来说是安全的，因为加载很快
     ImageLoadResult result = ImageLoader::LoadFromUrlWithResult(url);
     
-    std::cout << "[HTMLImageElement::LoadImage] Load result: success=" << result.success 
-              << ", error=" << result.error << std::endl;
     
     if (result.success && result.image) {
         OnImageLoaded(result.image, "");
@@ -270,11 +267,9 @@ void HTMLImageElement::TriggerLoadStartEvent() {
 }
 
 void HTMLImageElement::TriggerLoadEvent() {
-    std::cout << "[HTMLImageElement::TriggerLoadEvent] Dispatching load event" << std::endl;
     
     auto event = std::make_shared<Event>("load");
     bool result = DispatchEvent(event);
-    std::cout << "[HTMLImageElement::TriggerLoadEvent] DispatchEvent returned: " << result << std::endl;
 }
 
 void HTMLImageElement::TriggerErrorEvent() {

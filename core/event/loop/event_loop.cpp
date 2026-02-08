@@ -332,38 +332,15 @@ void EventLoop::RunOnce() {
                 // CPU 模式：强制使用帧率限制
                 frame_controller_->SetUseVSync(false);
                 vsync_detected_ = true;
-                
-                std::cout << "========================================" << std::endl;
-                std::cout << "[EventLoop] ℹ CPU rendering mode detected" << std::endl;
-                std::cout << "[EventLoop] → Using SDL_Delay for frame rate limiting (60 FPS)" << std::endl;
-                std::cout << "========================================" << std::endl;
             } else {
                 // GPU 模式：尝试查询 VSync 状态
                 int swap_interval = 0;
                 bool query_success = SDL_GL_GetSwapInterval(&swap_interval);
-                
+
                 bool vsync_enabled = query_success ? (swap_interval != 0) : true;
-                
+
                 frame_controller_->SetUseVSync(vsync_enabled);
                 vsync_detected_ = true;
-                
-                std::cout << "========================================" << std::endl;
-                if (query_success) {
-                    if (vsync_enabled) {
-                        std::cout << "[EventLoop] ✓ VSync ENABLED (swap_interval=" << swap_interval << ")" << std::endl;
-                        std::cout << "[EventLoop] ✓ SDL_Delay DISABLED for maximum smoothness" << std::endl;
-                        std::cout << "[EventLoop] ✓ Frame rate controlled by display refresh rate" << std::endl;
-                    } else {
-                        std::cout << "[EventLoop] ✗ VSync DISABLED (swap_interval=" << swap_interval << ")" << std::endl;
-                        std::cout << "[EventLoop] → Using SDL_Delay for frame rate limiting" << std::endl;
-                    }
-                } else {
-                    // 查询失败，使用默认假设
-                    std::cout << "[EventLoop] ℹ VSync status query failed (OpenGL context issue)" << std::endl;
-                    std::cout << "[EventLoop] ✓ Assuming VSync ENABLED (default configuration)" << std::endl;
-                    std::cout << "[EventLoop] ✓ SDL_Delay DISABLED for maximum smoothness" << std::endl;
-                }
-                std::cout << "========================================" << std::endl;
             }
         }
     }
@@ -446,25 +423,6 @@ bool EventLoop::ProcessEvents() {
     while (SDL_PollEvent(&event)) {
         has_events = true;
 
-        // 调试：输出事件类型（可以通过环境变量控制）
-#ifdef _WIN32
-        static bool debug_events = []() {
-            char* env_val = nullptr;
-            size_t env_len = 0;
-            bool result = (_dupenv_s(&env_val, &env_len, "LIGHTUI_DEBUG_EVENTS") == 0 && env_val != nullptr);
-            free(env_val);
-            return result;
-        }();
-#else
-        static bool debug_events = std::getenv("LIGHTUI_DEBUG_EVENTS") != nullptr;
-#endif
-        if (debug_events) {
-            // 过滤掉高频的鼠标移动事件
-            if (event.type != SDL_EVENT_MOUSE_MOTION) {
-                std::cout << "[EventLoop] SDL Event: type=" << event.type << std::endl;
-            }
-        }
-
         // 处理退出事件
         if (event.type == SDL_EVENT_QUIT) {
             should_quit_ = true;
@@ -540,11 +498,6 @@ bool EventLoop::HasWork() const {
 }
 
 void EventLoop::HandleMouseEventForDOM(const SDL_Event& event) {
-    // 调试：检查 mousemove 事件是否被触发
-    // if (event.type == SDL_EVENT_MOUSE_MOTION) {
-    //     std::cout << "[EventLoop] HandleMouseEventForDOM: MOTION event received" << std::endl;
-    // }
-    
     // 获取窗口管理器
     auto& window_manager = WindowManager::Instance();
 
@@ -699,23 +652,14 @@ void EventLoop::HandleMouseEventForDOM(const SDL_Event& event) {
                 float app_x, app_y, app_width, app_height;
                 devtools.GetMainAppBounds(width, height, app_x, app_y, app_width, app_height);
                 
-                // 调试：输出关键信息
-                std::cout << "[ElementPicker] window size: " << width << "x" << height 
-                          << " dpi_scale=" << dpi_scale
-                          << " app_bounds: (" << app_x << "," << app_y << "," << app_width << "," << app_height << ")"
-                          << " mouse: (" << logical_x << "," << logical_y << ")"
-                          << std::endl;
-                
                 // 检查是否在主应用区域内
                 if (logical_x >= app_x && logical_x < app_x + app_width &&
                     logical_y >= app_y && logical_y < app_y + app_height) {
-                    
+
                     // 将窗口绝对坐标转换为相对于主应用区域的坐标
                     // 这样 hit testing 才能正确命中元素，无论窗口是否最大化
                     float app_relative_x = logical_x - app_x;
                     float app_relative_y = logical_y - app_y;
-                    
-                    std::cout << "[ElementPicker] app_relative: (" << app_relative_x << "," << app_relative_y << ")" << std::endl;
                     
                     // 处理鼠标移动：更新悬停高亮
                     if (event.type == SDL_EVENT_MOUSE_MOTION) {
@@ -1030,11 +974,8 @@ void EventLoop::HandleKeyboardEventForDOM(const SDL_Event& event) {
     Uint32 window_id = 0;
     if (event.type == SDL_EVENT_KEY_DOWN || event.type == SDL_EVENT_KEY_UP) {
         window_id = event.key.windowID;
-        std::cout << "[EventLoop] Keyboard event: type=" << (event.type == SDL_EVENT_KEY_DOWN ? "KEY_DOWN" : "KEY_UP") 
-                  << ", windowID=" << window_id << std::endl;
     } else if (event.type == SDL_EVENT_TEXT_INPUT) {
         window_id = event.text.windowID;
-        std::cout << "[EventLoop] Text input event: '" << event.text.text << "', windowID=" << window_id << std::endl;
     }
 
     // 查找对应的窗口
@@ -1044,9 +985,7 @@ void EventLoop::HandleKeyboardEventForDOM(const SDL_Event& event) {
         auto all_windows = window_manager.GetAllWindows();
         if (!all_windows.empty()) {
             window = all_windows[0];
-            std::cout << "[EventLoop] Using fallback window" << std::endl;
         } else {
-            std::cout << "[EventLoop] Window not found for keyboard event, no fallback available" << std::endl;
             return;
         }
     }
@@ -1054,7 +993,6 @@ void EventLoop::HandleKeyboardEventForDOM(const SDL_Event& event) {
     // 获取窗口的文档
     auto document = window->GetDocument();
     if (!document) {
-        std::cout << "[EventLoop] Document not found for keyboard event" << std::endl;
         return;
     }
 

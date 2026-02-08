@@ -149,6 +149,56 @@ public:
      */
     void SetOpacity(float opacity) { opacity_ = opacity; }
 
+    /**
+     * @brief box-shadow 扩展范围结构
+     *
+     * 分别记录四个方向的阴影扩展距离，相比单一的 shadow_extent 更精确，
+     * 可以节省内存（特别是对于有偏移的阴影）。
+     */
+    struct ShadowExtent {
+        float left = 0.0f;    ///< 向左扩展的距离
+        float right = 0.0f;   ///< 向右扩展的距离
+        float top = 0.0f;     ///< 向上扩展的距离
+        float bottom = 0.0f;  ///< 向下扩展的距离
+
+        /**
+         * @brief 检查是否有任何扩展
+         */
+        bool HasExtent() const {
+            return left > 0 || right > 0 || top > 0 || bottom > 0;
+        }
+
+        /**
+         * @brief 比较运算符
+         */
+        bool operator==(const ShadowExtent& other) const {
+            return left == other.left && right == other.right &&
+                   top == other.top && bottom == other.bottom;
+        }
+
+        bool operator!=(const ShadowExtent& other) const {
+            return !(*this == other);
+        }
+    };
+
+    /**
+     * @brief 获取 box-shadow 扩展范围
+     * @return shadow extent 结构
+     */
+    const ShadowExtent& GetShadowExtent() const { return shadow_extent_; }
+
+    /**
+     * @brief 设置 box-shadow 扩展范围
+     * @param extent shadow extent 结构
+     * @note 会触发位图重新分配
+     */
+    void SetShadowExtent(const ShadowExtent& extent) {
+        if (shadow_extent_ != extent) {
+            shadow_extent_ = extent;
+            bitmap_valid_ = false;  // 触发重新分配
+        }
+    }
+
     // =========================================================================
     // CPU 位图管理
     // =========================================================================
@@ -585,6 +635,10 @@ private:
 
     // 动画边界（用于扩展层边界以容纳动画）
     std::optional<AnimationBounds> animation_bounds_;
+
+    // 🐛 修复：box-shadow 扩展范围（用于扩展 bitmap 以容纳阴影）
+    // 优化：使用四个方向独立的扩展值，节省内存并提高精确度
+    ShadowExtent shadow_extent_;
 
     // 静态 ID 生成器
     static uint32_t next_id_;

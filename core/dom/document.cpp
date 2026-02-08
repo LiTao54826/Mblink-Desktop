@@ -3,16 +3,6 @@
  * @brief Document 类实现
  */
 
-// 性能优化：默认关闭调试日志
-// #define LIGHTUI_DEBUG_BATCH
-
-#ifdef LIGHTUI_DEBUG_BATCH
-    #include <iostream>
-    #define DEBUG_BATCH_LOG(msg) std::cout << msg << std::endl
-#else
-    #define DEBUG_BATCH_LOG(msg) ((void)0)
-#endif
-
 #include "document.h"
 #include "selection/range.h"
 #include "elements/html_input_element.h"
@@ -554,22 +544,17 @@ void Document::RebuildIdMap(std::shared_ptr<Element> root) {
 
 void Document::BeginBatch() {
     batch_depth_++;
-    DEBUG_BATCH_LOG("[Document::BeginBatch] Batch depth: " << batch_depth_);
 }
 
 void Document::EndBatch() {
     if (batch_depth_ <= 0) {
-        DEBUG_BATCH_LOG("[Document::EndBatch] Warning: EndBatch() called without matching BeginBatch()");
         return;
     }
 
     batch_depth_--;
-    DEBUG_BATCH_LOG("[Document::EndBatch] Batch depth: " << batch_depth_);
 
     // 只在最外层批量结束时触发重绘
     if (batch_depth_ == 0) {
-        DEBUG_BATCH_LOG("[Document::EndBatch] Batch complete, notifying observers...");
-
         // 通知观察者整个文档子树已修改
         // 这会触发Window的SetNeedsRepaint()
         observer_manager_.NotifySubtreeModified(this);
@@ -648,14 +633,11 @@ void Document::ExecuteScripts(QuickJSRuntime* runtime) {
             code = ReadExternalFile(src);
 
             if (code.empty()) {
-                std::cerr << "[Document::ExecuteScripts] Warning: Failed to load external script: "
-                          << src << std::endl;
                 script->MarkExecuted();
                 continue;
             }
 
             script_name = src;
-            std::cout << "  ✓ External script loaded: " << src << std::endl;
         } else {
             // 内联脚本
             code = script->GetScriptText();
@@ -681,8 +663,6 @@ void Document::ExecuteScripts(QuickJSRuntime* runtime) {
 
             script->MarkExecuted();
         } catch (const std::exception& e) {
-            std::cerr << "[Document::ExecuteScripts] Script execution error: "
-                      << e.what() << std::endl;
             script->MarkExecuted();  // 标记为已执行，避免重复执行失败的脚本
         }
     }
@@ -730,14 +710,12 @@ std::string Document::ReadExternalFile(const std::string& path) const {
 
     // 检查文件是否存在
     if (!fs::exists(resolved_path)) {
-        std::cerr << "[Document::ReadExternalFile] File not found: " << resolved_path << std::endl;
         return "";
     }
 
     // 读取文件内容
     std::ifstream file(resolved_path, std::ios::binary);
     if (!file.is_open()) {
-        std::cerr << "[Document::ReadExternalFile] Failed to open file: " << resolved_path << std::endl;
         return "";
     }
 
@@ -776,20 +754,13 @@ void Document::LoadExternalStylesheets() {
         std::string css = ReadExternalFile(href);
 
         if (css.empty()) {
-            std::cerr << "[Document::LoadExternalStylesheets] Warning: Failed to load stylesheet: "
-                      << href << std::endl;
             link->MarkLoaded();
             continue;
         }
 
         // 解析 CSS 并添加到样式管理器
         if (style_manager_) {
-            if (style_manager_->ParseCSSString(css, 50, "external-link")) {
-                std::cout << "  ✓ External stylesheet loaded: " << href << std::endl;
-            } else {
-                std::cerr << "[Document::LoadExternalStylesheets] Warning: Failed to parse CSS: "
-                          << href << std::endl;
-            }
+            style_manager_->ParseCSSString(css, 50, "external-link");
         }
 
         link->MarkLoaded();

@@ -73,10 +73,6 @@ void RenderObject::PrintPaintStats() {
     int culled = g_paint_culled_calls.load();
     int painted = total - culled;
     float cull_rate = total > 0 ? (culled * 100.0f / total) : 0.0f;
-    std::cout << "[ViewportCulling] Total: " << total 
-              << ", Painted: " << painted 
-              << ", Culled: " << culled 
-              << " (" << cull_rate << "%)" << std::endl;
 }
 
 // 辅助函数：计算浏览器风格的 line-height: normal
@@ -672,28 +668,35 @@ SkRect RenderObject::GetViewportBoundingRect() const {
         return SkRect::MakeEmpty();
     }
 
-    // 计算绝对位置（需要累加所有祖先的偏移）
+    // 检查是否是 position: fixed 元素
+    const auto& style = computed_style_;
+    bool is_fixed = (style.position == "fixed");
+
+    // 计算绝对位置
     float abs_x = layout.x;
     float abs_y = layout.y;
 
-    auto parent = parent_.lock();
-    while (parent) {
-        const auto& parent_layout = parent->GetLayoutInfo();
-        abs_x += parent_layout.x;
-        abs_y += parent_layout.y;
+    // 对于 fixed 元素，layout.x/y 已经是视口绝对坐标，不需要累加父元素偏移
+    // 对于非 fixed 元素，需要累加所有祖先的偏移并减去滚动
+    if (!is_fixed) {
+        auto parent = parent_.lock();
+        while (parent) {
+            const auto& parent_layout = parent->GetLayoutInfo();
+            abs_x += parent_layout.x;
+            abs_y += parent_layout.y;
 
-        // 减去父元素的滚动偏移，转换为视口坐标
-        abs_x -= parent->GetScrollX();
-        abs_y -= parent->GetScrollY();
+            // 减去父元素的滚动偏移，转换为视口坐标
+            abs_x -= parent->GetScrollX();
+            abs_y -= parent->GetScrollY();
 
-        parent = parent->GetParent();
+            parent = parent->GetParent();
+        }
     }
 
     SkRect base_rect = SkRect::MakeXYWH(abs_x, abs_y, layout.width, layout.height);
-    
+
     // 关键修复：如果元素有 transform，需要计算变换后的边界框
     // 这确保脏区域能正确覆盖变换后的渲染区域
-    const auto& style = computed_style_;
     if (style.transform.has_value() && !style.transform->IsEmpty()) {
         // 创建以元素中心为原点的局部矩形
         SkRect local_rect = SkRect::MakeWH(layout.width, layout.height);
@@ -732,6 +735,30 @@ SkRect RenderObject::GetViewportBoundingRect() const {
     return base_rect;
 }
 
+void RenderObject::MarkNeedsPaint() {
+    // 🐛 hover bug 调试日志
+    static bool debug_hover = std::getenv("LIGHTUI_DEBUG_HOVER_BUG") != nullptr;
+    if (debug_hover) {
+        std::string tag = "unknown";
+        std::string id = "";
+        auto node_locked = node_.lock();
+        if (node_locked) {
+            if (node_locked->GetNodeType() == NodeType::ELEMENT_NODE) {
+                auto elem = std::dynamic_pointer_cast<Element>(node_locked);
+                if (elem) {
+                    tag = elem->GetTagName();
+                    id = elem->GetAttribute("id");
+                }
+            } else if (node_locked->GetNodeType() == NodeType::TEXT_NODE) {
+                tag = "#text";
+            }
+        }
+    }
+
+    needs_paint_ = true;
+    MarkAncestorsWithChildNeedsPaint();
+}
+
 void RenderObject::MarkAncestorsWithChildNeedsPaint() {
     // 向上传播 child_needs_paint_ 标志到所有祖先节点
     // 这是增量绘制优化的关键：允许跳过不需要重绘的子树
@@ -768,6 +795,9 @@ void RenderObject::ScrollBy(float dx, float dy) {
 }
 
 void RenderObject::ScrollTo(float x, float y) {
+    // 🔍 DEBUG: 增量更新问题调试
+    static bool debug_scroll = std::getenv("DEBUG_INCREMENTAL_PAINT") != nullptr;
+
     // 限制滚动范围
     float max_x = GetMaxScrollX();
     float max_y = GetMaxScrollY();
@@ -780,6 +810,15 @@ void RenderObject::ScrollTo(float x, float y) {
 
     // 只有滚动位置真正改变时才标记重绘
     if (scroll_x_ != old_scroll_x || scroll_y_ != old_scroll_y) {
+        if (debug_scroll) {
+            auto node = GetNode();
+            std::string tag_name = "?";
+            if (node && node->GetNodeType() == NodeType::ELEMENT_NODE) {
+                auto elem = std::static_pointer_cast<Element>(node);
+                tag_name = elem->GetTagName();
+            }
+        }
+
         MarkNeedsPaint();
 
         // 关键修复：滚动时使所有子孙元素的 ViewportBounds 缓存失效
@@ -788,14 +827,34 @@ void RenderObject::ScrollTo(float x, float y) {
 
         // 关键修复：滚动时，标记所有子元素也需要重绘
         // 因为子元素的视觉位置改变了（即使布局位置没变）
-        std::function<void(RenderObject*)> mark_children = [&](RenderObject* obj) {
+        std::function<void(RenderObject*, int)> mark_children = [&](RenderObject* obj, int depth) {
             if (!obj) return;
             obj->MarkNeedsPaint();
+
+            if (debug_scroll && depth <= 2) {
+                auto child_node = obj->GetNode();
+                std::string child_tag = "?";
+                std::string child_type = "?";
+                if (child_node) {
+                    if (child_node->GetNodeType() == NodeType::ELEMENT_NODE) {
+                        auto elem = std::static_pointer_cast<Element>(child_node);
+                        child_tag = elem->GetTagName();
+                    } else if (child_node->GetNodeType() == NodeType::TEXT_NODE) {
+                        child_tag = "TEXT";
+                        auto text_node = std::static_pointer_cast<Text>(child_node);
+                        child_type = text_node->GetData().substr(0, 20);
+                    }
+                }
+            }
+
             for (const auto& child : obj->GetChildren()) {
-                mark_children(child.get());
+                mark_children(child.get(), depth + 1);
             }
         };
-        mark_children(this);
+        mark_children(this, 0);
+
+        if (debug_scroll) {
+        }
     }
 }
 
@@ -1211,9 +1270,6 @@ std::atomic<long long> g_paint_shadow_time{0};
 std::atomic<long long> g_paint_scrollbar_time{0};
 
 void RenderObject::PrintPaintTimingStats() {
-    std::cout << "[Paint Timing] bg=" << (g_paint_bg_time.load() / 1000) << "ms"
-              << ", shadow=" << (g_paint_shadow_time.load() / 1000) << "ms"
-              << ", children=" << (g_paint_children_time.load() / 1000) << "ms" << std::endl;
 }
 
 void RenderObject::ResetPaintTimingStats() {
@@ -1311,14 +1367,24 @@ void RenderObject::UpdateViewportBounds() {
         // 累加所有祖先的偏移（与普通元素相同的逻辑）
         auto parent = parent_.lock();
         while (parent) {
+            if (!parent->GetViewportBounds().valid) {
+                parent->UpdateViewportBounds();
+            }
+
             const auto& parent_style = parent->GetComputedStyle();
+            const auto& parent_bounds = parent->GetViewportBounds();
 
             // 遇到 fixed 祖先，使用其缓存的视口坐标
             if (parent_style.position == "fixed") {
-                const auto& parent_bounds = parent->GetViewportBounds();
                 if (parent_bounds.valid) {
                     abs_x += parent_bounds.x;
                     abs_y += parent_bounds.y;
+
+                    // 祖先 transform 对后代位置的影响（如 toast 容器 translateX）
+                    if (parent_bounds.has_transform) {
+                        abs_x += (parent_bounds.transformed_bounds.x() - parent_bounds.x);
+                        abs_y += (parent_bounds.transformed_bounds.y() - parent_bounds.y);
+                    }
                 }
                 break;
             }
@@ -1330,6 +1396,12 @@ void RenderObject::UpdateViewportBounds() {
             // 减去父元素的滚动偏移
             abs_x -= parent->GetScrollX();
             abs_y -= parent->GetScrollY();
+
+            // 祖先 transform 对后代位置的影响（平移/旋转/缩放产生的包围盒偏移）
+            if (parent_bounds.valid && parent_bounds.has_transform) {
+                abs_x += (parent_bounds.transformed_bounds.x() - parent_bounds.x);
+                abs_y += (parent_bounds.transformed_bounds.y() - parent_bounds.y);
+            }
 
             parent = parent->GetParent();
         }
@@ -1353,14 +1425,24 @@ void RenderObject::UpdateViewportBounds() {
 
     auto parent = parent_.lock();
     while (parent) {
+        if (!parent->GetViewportBounds().valid) {
+            parent->UpdateViewportBounds();
+        }
+
         const auto& parent_style = parent->GetComputedStyle();
+        const auto& parent_bounds = parent->GetViewportBounds();
 
         // 遇到 fixed 祖先，使用其缓存的视口坐标
         if (parent_style.position == "fixed") {
-            const auto& parent_bounds = parent->GetViewportBounds();
             if (parent_bounds.valid) {
                 abs_x += parent_bounds.x;
                 abs_y += parent_bounds.y;
+
+                // 祖先 transform 对后代位置的影响（如 toast 容器 translateX）
+                if (parent_bounds.has_transform) {
+                    abs_x += (parent_bounds.transformed_bounds.x() - parent_bounds.x);
+                    abs_y += (parent_bounds.transformed_bounds.y() - parent_bounds.y);
+                }
             }
             break;
         }
@@ -1372,6 +1454,12 @@ void RenderObject::UpdateViewportBounds() {
         // 减去父元素的滚动偏移
         abs_x -= parent->GetScrollX();
         abs_y -= parent->GetScrollY();
+
+        // 祖先 transform 对后代位置的影响（平移/旋转/缩放产生的包围盒偏移）
+        if (parent_bounds.valid && parent_bounds.has_transform) {
+            abs_x += (parent_bounds.transformed_bounds.x() - parent_bounds.x);
+            abs_y += (parent_bounds.transformed_bounds.y() - parent_bounds.y);
+        }
 
         parent = parent->GetParent();
     }
@@ -1472,6 +1560,45 @@ std::shared_ptr<CompositorLayer> RenderObject::GetCompositorLayer() const {
 
 void RenderObject::SetCompositorLayer(std::shared_ptr<CompositorLayer> layer) {
     layer_info_.compositor_layer = layer;
+
+    // 🐛 修复：对于 fixed 元素，计算并设置 shadow_extent
+    if (layer && layer->GetPromotionReason() == LayerPromotionReason::PositionFixed) {
+        // 优化：分别计算四个方向的阴影扩展范围
+        CompositorLayer::ShadowExtent extent;
+
+        if (!computed_style_.box_shadow.empty()) {
+            for (const auto& shadow : computed_style_.box_shadow) {
+                if (!shadow.inset) {  // 只考虑外阴影
+                    // 阴影向左扩展 = blur + spread - offset_x
+                    // 如果 offset_x > 0（向右偏移），左边扩展减少
+                    float left = shadow.blur_radius + shadow.spread_radius - shadow.offset_x;
+
+                    // 阴影向右扩展 = blur + spread + offset_x
+                    // 如果 offset_x > 0（向右偏移），右边扩展增加
+                    float right = shadow.blur_radius + shadow.spread_radius + shadow.offset_x;
+
+                    // 阴影向上扩展 = blur + spread - offset_y
+                    // 如果 offset_y > 0（向下偏移），上边扩展减少
+                    float top = shadow.blur_radius + shadow.spread_radius - shadow.offset_y;
+
+                    // 阴影向下扩展 = blur + spread + offset_y
+                    // 如果 offset_y > 0（向下偏移），下边扩展增加
+                    float bottom = shadow.blur_radius + shadow.spread_radius + shadow.offset_y;
+
+                    // 取所有阴影的最大扩展（支持多个阴影）
+                    extent.left = std::max(extent.left, std::max(0.0f, left));
+                    extent.right = std::max(extent.right, std::max(0.0f, right));
+                    extent.top = std::max(extent.top, std::max(0.0f, top));
+                    extent.bottom = std::max(extent.bottom, std::max(0.0f, bottom));
+                }
+            }
+        }
+
+        // 设置 shadow_extent
+        if (extent.HasExtent()) {
+            layer->SetShadowExtent(extent);
+        }
+    }
 }
 
 bool RenderObject::HasOwnCompositorLayer() const {

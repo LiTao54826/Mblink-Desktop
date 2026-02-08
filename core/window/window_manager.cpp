@@ -29,9 +29,7 @@ void WindowManager::RegisterWindow(std::shared_ptr<Window> window) {
     if (window->GetSDLWindow()) {
         Uint32 window_id = SDL_GetWindowID(window->GetSDLWindow());
         window_id_map_[window_id] = window;
-        std::cout << "[WindowManager] Registered window with ID: " << window_id << std::endl;
     } else {
-        std::cout << "[WindowManager] Warning: Window has no SDL window!" << std::endl;
     }
 }
 

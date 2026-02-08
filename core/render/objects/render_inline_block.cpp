@@ -63,6 +63,9 @@ void RenderInlineBlock::Layout(float parent_width, float parent_height) {
         border_left = border_right = border_width;
     }
 
+    // ✅ DEBUG: 添加调试日志
+    static bool debug = std::getenv("LIGHTUI_DEBUG_INLINE_BLOCK") != nullptr;
+
     // 1. 计算宽度 (only if not externally set)
     if (!dimensions_externally_set) {
         if (style.width.unit != CSSUnit::NONE && style.width.unit != CSSUnit::AUTO) {
@@ -78,9 +81,21 @@ void RenderInlineBlock::Layout(float parent_width, float parent_height) {
                 // border-box
                 layout_info_.width = specified_width;
             }
+
+            if (debug) {
+            }
         } else {
             // 使用shrink-to-fit算法（包含 padding）
+            if (debug) {
+            }
+
             layout_info_.width = CalculateShrinkToFitWidth(parent_width);
+
+            if (debug) {
+            }
+        }
+    } else {
+        if (debug) {
         }
     }
 
@@ -95,8 +110,27 @@ void RenderInlineBlock::Layout(float parent_width, float parent_height) {
     // MeasureIntrinsicSize won't layout children, leaving their dimensions as 0.
     // We need to layout them here to get correct dimensions for text-align calculation.
     for (auto& child : children_) {
-        child->Layout(content_width, reference_height);
+        // 检查子元素是否是 flex 或 grid 容器
+        // 如果是，并且有 layout_engine_ 引用，则跳过 Layout 调用
+        // （因为 flex/grid 布局应该由 NativeLayoutEngine 处理）
+        auto& child_style = child->GetComputedStyle();
+        bool is_flex_or_grid = (child_style.display == RenderObjectType::FLEX ||
+                               child_style.display == RenderObjectType::GRID);
 
+        if (is_flex_or_grid && layout_engine_) {
+            // 检查子元素是否已经被布局
+            if (!child->GetLayoutInfo().is_laid_out) {
+                // 还没有被布局，调用 Layout
+                child->Layout(content_width, reference_height);
+            }
+            // 如果已经被布局，跳过（保留 layout_engine_ 计算的结果）
+        } else {
+            // 普通子元素，直接调用 Layout
+            child->Layout(content_width, reference_height);
+        }
+
+        // 🎯 修复：inline-block 不是 flex 容器，应该保留空白文本节点
+        // 只有 flex/inline-flex/grid/inline-grid 容器才应该跳过纯空白文本节点
         auto& child_layout = child->GetLayoutInfo();
         total_child_width += child_layout.width;
         content_height = std::max(content_height, child_layout.height);
@@ -153,17 +187,28 @@ void RenderInlineBlock::Layout(float parent_width, float parent_height) {
     float content_area_height = layout_info_.height - padding_top - padding_bottom - border_top - border_bottom;
     float start_x = padding_left + border_left;
 
+    if (debug) {
+    }
+
     // 处理 text-align
     if (style.text_align == "center" && total_child_width < content_width) {
         // 居中对齐
         start_x = padding_left + border_left + (content_width - total_child_width) / 2.0f;
+
+        if (debug) {
+        }
     } else if (style.text_align == "right" && total_child_width < content_width) {
         // 右对齐
         start_x = padding_left + border_left + content_width - total_child_width;
+
+        if (debug) {
+        }
     }
 
     float current_x = start_x;
     for (auto& child : children_) {
+        // 🎯 修复：inline-block 不是 flex 容器，应该保留空白文本节点
+        // 只有 flex/inline-flex/grid/inline-grid 容器才应该跳过纯空白文本节点
         auto& child_layout = child->GetLayoutInfo();
         child_layout.x = current_x;
         // 垂直居中：如果内容高度小于内容区域高度，则居中
@@ -173,6 +218,10 @@ void RenderInlineBlock::Layout(float parent_width, float parent_height) {
         } else {
             child_layout.y = padding_top + border_top;
         }
+
+        if (debug) {
+        }
+
         current_x += child_layout.width;
     }
 
@@ -184,22 +233,43 @@ float RenderInlineBlock::CalculateShrinkToFitWidth(float available_width) {
     // CSS shrink-to-fit 算法：
     // 1. 如果 available_width >= preferred_width，使用 preferred_width
     // 2. 如果 available_width < preferred_width，使用 max(preferred_min, available_width)
+
+    // ✅ DEBUG: 添加调试日志
+    static bool debug = std::getenv("LIGHTUI_DEBUG_INLINE_BLOCK") != nullptr;
+
     float preferred = CalculatePreferredWidth();
 
+    if (debug) {
+    }
+
     if (available_width >= preferred) {
+        if (debug) {
+        }
         return preferred;
     }
 
     float preferred_min = CalculatePreferredMinimumWidth();
-    return std::max(preferred_min, available_width);
+    float result = std::max(preferred_min, available_width);
+
+    if (debug) {
+    }
+
+    return result;
 }
 
 float RenderInlineBlock::CalculatePreferredMinimumWidth() {
     // 计算内容不换行的最小宽度
     const auto& style = computed_style_;
+
+    // ✅ DEBUG: 添加调试日志
+    static bool debug = std::getenv("LIGHTUI_DEBUG_INLINE_BLOCK") != nullptr;
+
     float padding_left = style.padding.left.ToPx();
     float padding_right = style.padding.right.ToPx();
     float border_width = style.border.width.ToPx();
+
+    if (debug) {
+    }
 
     float content_width = 0;
 
@@ -251,8 +321,8 @@ float RenderInlineBlock::CalculatePreferredMinimumWidth() {
                 FontDescriptor desc;
                 desc.family = style.font_family;
                 desc.size = style.font_size;
-                desc.weight = FontWeight::NORMAL;
-                desc.style = FontStyle::NORMAL;
+                desc.weight = (style.font_weight == "bold") ? FontWeight::BOLD : FontWeight::NORMAL;
+                desc.style = (style.font_style == "italic") ? FontStyle::ITALIC : FontStyle::NORMAL;
 
                 SkFont font = FontManager::GetInstance().LoadFont(desc);
                 // 使用支持CJK/Emoji的测量方法
@@ -267,28 +337,112 @@ float RenderInlineBlock::CalculatePreferredMinimumWidth() {
 
     // 对于其他元素，使用子元素计算或使用字体测量
     if (content_width == 0) {
+        // ✅ FIX: inline-block 内部建立 inline formatting context
+        // 子元素（文本节点、inline元素、inline-block元素）水平排列，宽度需要累加
+        float total_width = 0;
+
         for (auto& child : children_) {
             if (child->GetType() == RenderObjectType::TEXT) {
                 auto text_child = std::static_pointer_cast<RenderText>(child);
                 std::string text = text_child->GetText();
 
+                // 🎯 修复：inline-block 不是 flex 容器，应该保留空白文本节点
+                // 空白文本节点应该被折叠为单个空格，而不是完全跳过
+                // 只有 flex/inline-flex/grid/inline-grid 容器才应该完全跳过纯空白文本节点
+                bool is_whitespace_only = true;
+                for (char c : text) {
+                    if (c != ' ' && c != '\t' && c != '\n' && c != '\r') {
+                        is_whitespace_only = false;
+                        break;
+                    }
+                }
+
                 // 使用实际字体测量宽度（支持CJK/Emoji字符）
                 FontDescriptor desc;
                 desc.family = style.font_family;
                 desc.size = style.font_size;
-                desc.weight = FontWeight::NORMAL;
-                desc.style = FontStyle::NORMAL;
+                desc.weight = (style.font_weight == "bold") ? FontWeight::BOLD : FontWeight::NORMAL;
+                desc.style = (style.font_style == "italic") ? FontStyle::ITALIC : FontStyle::NORMAL;
 
                 SkFont font = FontManager::GetInstance().LoadFont(desc);
-                // 使用支持CJK/Emoji的测量方法
-                float text_width = TextRenderer::MeasureMixedTextWidth(text, font);
-                content_width = std::max(content_width, text_width);
+
+                float text_width = 0;
+                if (is_whitespace_only && style.white_space != "pre" && style.white_space != "pre-wrap") {
+                    // 空白文本折叠为单个空格，测量空格宽度
+                    text_width = TextRenderer::MeasureMixedTextWidth(" ", font);
+                } else {
+                    // 使用支持CJK/Emoji的测量方法
+                    text_width = TextRenderer::MeasureMixedTextWidth(text, font);
+                }
+                total_width += text_width;
+
+                if (debug) {
+                }
+            } else {
+                // ✅ FIX: 处理非文本子元素（inline-block, inline-flex, inline等）
+
+                if (debug) {
+                }
+
+                float child_width = 0;
+                const auto& child_style = child->GetComputedStyle();
+
+                // ✅ FIX: 如果子元素有显式宽度，直接使用 CSS 宽度，避免调用 Layout
+                // 这对于 flex 容器特别重要，因为调用 Layout 会破坏其内部布局状态
+                if (child_style.width.unit != CSSUnit::NONE && child_style.width.unit != CSSUnit::AUTO) {
+                    // 有显式宽度，直接计算
+                    float specified_width = child_style.width.ToPx(10000.0f, child_style.font_size);
+
+                    // 考虑 padding 和 border
+                    float child_padding_left = child_style.padding.left.ToPx(specified_width, child_style.font_size);
+                    float child_padding_right = child_style.padding.right.ToPx(specified_width, child_style.font_size);
+                    float child_border_left = child_style.border_left_width;
+                    float child_border_right = child_style.border_right_width;
+                    if (child_border_left == 0 && child_border_right == 0) {
+                        float border_width = child_style.border.width.ToPx(specified_width, child_style.font_size);
+                        child_border_left = child_border_right = border_width;
+                    }
+
+                    // 根据 box-sizing 计算总宽度
+                    if (child_style.box_sizing == "content-box") {
+                        child_width = specified_width + child_padding_left + child_padding_right +
+                                     child_border_left + child_border_right;
+                    } else {
+                        // border-box
+                        child_width = specified_width;
+                    }
+
+                    if (debug) {
+                    }
+                } else {
+                    // 没有显式宽度，需要调用 Layout 测量
+                    child->Layout(10000.0f, 0);
+                    child_width = child->GetLayoutInfo().width;
+
+                    // ✅ FIX: 重置 is_laid_out 标志，让后续的 Layout 可以重新布局
+                    child->GetLayoutInfo().is_laid_out = false;
+
+                    if (debug) {
+                    }
+                }
+
+                total_width += child_width;
             }
+        }
+
+        content_width = total_width;
+
+        if (debug) {
         }
     }
 
     // 总宽度 = 内容宽度 + padding + border
-    return content_width + padding_left + padding_right + border_width * 2;
+    float total_width = content_width + padding_left + padding_right + border_width * 2;
+
+    if (debug) {
+    }
+
+    return total_width;
 }
 
 float RenderInlineBlock::CalculatePreferredWidth() {
@@ -299,6 +453,12 @@ float RenderInlineBlock::CalculatePreferredWidth() {
 
 std::pair<float, float> RenderInlineBlock::MeasureIntrinsicSize(float available_width) {
     const auto& style = computed_style_;
+
+    // ✅ DEBUG: 添加调试日志
+    static bool debug = std::getenv("LIGHTUI_DEBUG_INLINE_BLOCK") != nullptr;
+
+    if (debug) {
+    }
 
     // 计算 padding
     float padding_left = style.padding.left.ToPx(available_width, style.font_size);
@@ -331,9 +491,18 @@ std::pair<float, float> RenderInlineBlock::MeasureIntrinsicSize(float available_
             // border-box
             width = specified_width;
         }
+
+        if (debug) {
+        }
     } else {
         // 使用 shrink-to-fit 算法
+        if (debug) {
+        }
+
         width = CalculateShrinkToFitWidth(available_width);
+
+        if (debug) {
+        }
     }
 
     // 计算高度
@@ -384,18 +553,37 @@ std::pair<float, float> RenderInlineBlock::MeasureIntrinsicSize(float available_
         }
     }
 
+    if (debug) {
+    }
+
     return {width, height};
 }
 
 void RenderInlineBlock::Paint(SkCanvas* canvas) {
+    // 🔍 DEBUG: 增量更新问题调试
+    static bool debug_paint = std::getenv("DEBUG_INCREMENTAL_PAINT") != nullptr;
+
     if (!canvas) {
+        if (debug_paint) {
+        }
         needs_paint_ = false;
         return;
     }
 
     // Viewport Culling: Skip inline-block elements outside clip region
     SkRect paint_rect = SkRect::MakeXYWH(layout_info_.x, layout_info_.y, layout_info_.width, layout_info_.height);
-    if (canvas->quickReject(paint_rect.makeOutset(50, 50))) {
+    bool culled = canvas->quickReject(paint_rect.makeOutset(50, 50));
+
+    if (debug_paint) {
+        auto node = GetNode();
+        std::string tag_name = "?";
+        if (node && node->GetNodeType() == NodeType::ELEMENT_NODE) {
+            auto elem = std::static_pointer_cast<Element>(node);
+            tag_name = elem->GetTagName();
+        }
+    }
+
+    if (culled) {
         needs_paint_ = false;
         return;
     }
@@ -408,7 +596,6 @@ void RenderInlineBlock::Paint(SkCanvas* canvas) {
         if (elem->GetTagName() == "terminal") {
             static int term_ib_paint = 0;
             if (++term_ib_paint <= 3) {
-                std::cout << "[RenderInlineBlock::Paint] START painting terminal, node=" << node.get() << std::endl;
             }
         }
     }
@@ -469,9 +656,30 @@ void RenderInlineBlock::Paint(SkCanvas* canvas) {
         renderer.RenderBoxShadow(box, style.box_shadow, &style.border_radius);
     }
 
-    // 渲染背景（优先渐变，然后纯色）
+    // 渲染背景（优先多层渐变，然后单个渐变，最后纯色）
     SkRect padding_box = box.GetPaddingBox();
-    if (style.background_linear_gradient.has_value()) {
+
+    // 优先检查多层渐变（CSS网格背景等）
+    if (!style.background_linear_gradients.empty()) {
+        // 先绘制背景色（如果有）
+        if (!style.background_color.empty()) {
+            std::unordered_map<std::string, std::string> styles;
+            styles["background-color"] = style.background_color;
+            renderer.RenderBackgroundAdvanced(box, styles, &style.border_radius);
+        }
+
+        // 准备 background-sizes 向量
+        std::vector<CSSBackgroundSize> sizes_to_use = style.background_sizes;
+        if (sizes_to_use.empty() && style.background_size.type != CSSBackgroundSize::Type::AUTO) {
+            // 为所有渐变层使用相同的 background-size
+            sizes_to_use.resize(style.background_linear_gradients.size(), style.background_size);
+        }
+
+        // 渲染多层渐变
+        GradientRenderer::RenderMultipleLinearGradients(canvas, padding_box,
+            style.background_linear_gradients, sizes_to_use);
+    }
+    else if (style.background_linear_gradient.has_value()) {
         GradientRenderer::RenderLinearGradient(canvas, padding_box, *style.background_linear_gradient);
     }
     else if (style.background_radial_gradient.has_value()) {
@@ -617,14 +825,8 @@ void RenderInlineBlock::Paint(SkCanvas* canvas) {
             auto terminal_element = std::dynamic_pointer_cast<HTMLTerminalElement>(node);
             static int term_ib_debug_count = 0;
             if (++term_ib_debug_count <= 5) {
-                std::cout << "[RenderInlineBlock::Paint] Found terminal tag, cast result: " 
-                          << (terminal_element ? "success" : "failed")
-                          << ", node type: " << typeid(*node).name() << std::endl;
             }
             if (terminal_element) {
-                std::cout << "[RenderInlineBlock::Paint] Painting terminal element, box=" 
-                          << box.content_x << "," << box.content_y << " " 
-                          << box.content_width << "x" << box.content_height << std::endl;
                 terminal_element->Render(canvas, box.content_x, box.content_y, box.content_width, box.content_height);
             }
             if (has_opacity) {

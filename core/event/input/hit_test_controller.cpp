@@ -109,8 +109,6 @@ bool HitTestController::HitTestRenderObject(
     std::string tag_name = element ? element->GetTagName() : "unknown";
 
     if (g_debug_hit_test && style.position == "absolute") {
-        std::cout << "[HitTest] Testing absolute element: " << tag_name
-                  << " at viewport(" << viewport_x << ", " << viewport_y << ")" << std::endl;
     }
 
     // 检查 visibility
@@ -133,10 +131,6 @@ bool HitTestController::HitTestRenderObject(
 
     if (g_debug_hit_test && style.position == "absolute") {
         const auto& b = render_obj->GetViewportBounds();
-        std::cout << "[HitTest]   bounds: (" << b.x << ", " << b.y
-                  << ", " << b.width << ", " << b.height << ") valid=" << b.valid << std::endl;
-        std::cout << "[HitTest]   layout: (" << layout.x << ", " << layout.y
-                  << ", " << layout.width << ", " << layout.height << ")" << std::endl;
 
         // 打印父元素链
         auto parent = render_obj->GetParent();
@@ -144,13 +138,10 @@ bool HitTestController::HitTestRenderObject(
         while (parent && depth < 5) {
             const auto& p_layout = parent->GetLayoutInfo();
             const auto& p_style = parent->GetComputedStyle();
-            std::cout << "[HitTest]   parent[" << depth << "]: layout=("
-                      << p_layout.x << ", " << p_layout.y << ") pos=" << p_style.position << std::endl;
             parent = parent->GetParent();
             depth++;
         }
 
-        std::cout << "[HitTest]   contains point: " << render_obj->ContainsViewportPoint(viewport_x, viewport_y) << std::endl;
     }
 
     // 关键修复：先递归测试所有后代中的 absolute/fixed 元素

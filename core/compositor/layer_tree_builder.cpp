@@ -212,9 +212,6 @@ void LayerTreeBuilder::UpdateLayerBounds(CompositorLayer* layer, RenderObject* o
     const auto& layout = obj->GetLayoutInfo();
     const auto& style = obj->GetComputedStyle();
 
-    // 调试日志
-    static bool debug_layer = std::getenv("LIGHTUI_DEBUG_LAYER") != nullptr;
-
     // 检查是否有动画
     bool has_animation = false;
     for (const auto& anim : style.animations) {
@@ -278,21 +275,6 @@ void LayerTreeBuilder::UpdateLayerBounds(CompositorLayer* layer, RenderObject* o
         // 注意：不在这里减去滚动偏移！
         // 层的 bounds 保持文档坐标，滚动偏移在 CompositeLayerCPU 中应用
         // 这样可以避免双重减去滚动偏移的问题
-        
-        // 调试日志：只输出有动画的元素
-        if (debug_layer && has_animation) {
-            auto node = obj->GetNode();
-            std::string tag_name = "unknown";
-            if (node && node->GetNodeType() == NodeType::ELEMENT_NODE) {
-                auto element = std::static_pointer_cast<Element>(node);
-                tag_name = element->GetTagName();
-            }
-            std::cout << "[UpdateLayerBounds] " << tag_name 
-                      << " layout=(" << layout.x << "," << layout.y << ")"
-                      << " rel=(" << rel_x << "," << rel_y << ")"
-                      << " parent_layer_obj=" << (parent_layer_obj ? "yes" : "no")
-                      << std::endl;
-        }
     }
     // 对于 fixed 元素，rel_x 和 rel_y 保持为 layout.x 和 layout.y（视口坐标）
     
@@ -515,15 +497,6 @@ bool LayerTreeBuilder::HasTransformAnimation(RenderObject* obj) const {
 
     const auto& style = obj->GetComputedStyle();
 
-    // 获取元素信息用于调试
-    std::string tag_name = "unknown";
-    if (auto node = obj->GetNode()) {
-        if (node->GetNodeType() == NodeType::ELEMENT_NODE) {
-            auto element = std::static_pointer_cast<Element>(node);
-            tag_name = element->GetTagName();
-        }
-    }
-
     // 检查是否有活动的 CSS 动画
     // 策略：如果元素有非空的动画名称，检查是否可能影响 transform
     for (const auto& anim : style.animations) {
@@ -531,13 +504,9 @@ bool LayerTreeBuilder::HasTransformAnimation(RenderObject* obj) const {
             continue;
         }
 
-        // 调试日志
-        std::cout << "[HasTransformAnimation] <" << tag_name << "> Found animation: " << anim.name << std::endl;
-
         // 方法1：检查元素当前是否有 transform 属性
         // 如果有 transform 且有动画，很可能是 transform 动画
         if (style.transform.has_value()) {
-            std::cout << "[HasTransformAnimation] <" << tag_name << "> Has transform, returning true" << std::endl;
             return true;
         }
 
@@ -553,7 +522,6 @@ bool LayerTreeBuilder::HasTransformAnimation(RenderObject* obj) const {
             lower_name.find("slide") != std::string::npos ||
             lower_name.find("spin") != std::string::npos ||
             lower_name.find("bounce") != std::string::npos) {
-            std::cout << "[HasTransformAnimation] <" << tag_name << "> Name matches '" << lower_name << "', returning true" << std::endl;
             return true;
         }
     }

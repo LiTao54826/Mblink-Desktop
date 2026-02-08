@@ -18,7 +18,6 @@
 #include "elements/html_form_element.h"
 #include "elements/html_select_element.h"
 #include "elements/html_option_element.h"
-#include <iostream>
 #include "elements/html_anchor_element.h"
 #include "elements/html_label_element.h"
 #include "elements/html_image_element.h"
@@ -50,6 +49,15 @@
 
 namespace lightui {
 
+void Element::MarkLexborDirty() {
+    lexbor_dirty_ = true;
+
+    auto doc = GetOwnerDocument();
+    if (doc) {
+        doc->MarkLexborDirty();
+    }
+}
+
 // 初始化静态成员
 uint64_t Element::next_listener_id_ = 1;
 
@@ -78,10 +86,41 @@ void Element::SetAttribute(const std::string& name, const std::string& value) {
 
     attributes_[name] = value;
 
-    // TODO: 特殊处理 style 属性：解析并应用内联样式
-    // if (name == "style") {
-    //     ParseStyleAttribute(value);
-    // }
+    // 特殊处理 style 属性：解析并应用内联样式到 styles_ map
+    if (name == "style") {
+        styles_.clear();
+
+        std::istringstream declarations(value);
+        std::string declaration;
+        while (std::getline(declarations, declaration, ';')) {
+            auto pos = declaration.find(':');
+            if (pos == std::string::npos) {
+                continue;
+            }
+
+            std::string property = declaration.substr(0, pos);
+            std::string style_value = declaration.substr(pos + 1);
+
+            auto trim = [](std::string& s) {
+                const char* whitespace = " \t\n\r";
+                size_t start = s.find_first_not_of(whitespace);
+                if (start == std::string::npos) {
+                    s.clear();
+                    return;
+                }
+                size_t end = s.find_last_not_of(whitespace);
+                s = s.substr(start, end - start + 1);
+            };
+
+            trim(property);
+            trim(style_value);
+            if (property.empty()) {
+                continue;
+            }
+
+            styles_[property] = style_value;
+        }
+    }
 
     // 特殊处理内联事件处理器（onclick, onload, onmouseover等）
     if (name.length() > 2 && name[0] == 'o' && name[1] == 'n') {
@@ -295,12 +334,15 @@ void Element::SetStyle(const std::string& property, const std::string& value) {
     if (is_position_offset) {
         // 检查元素的 position 属性
         std::string position = GetStyle("position");
-        // 关键发现：absolute/fixed/relative 的位置偏移都不影响布局！
-        // - absolute/fixed: 脱离文档流
-        // - relative: 只是视觉偏移，仍占据原始空间
-        // 只有 static（默认）时 left/top 无效，但也不需要布局
-        skip_layout = (position == "absolute" || position == "fixed" || 
-                      position == "relative" || position == "static" || position.empty());
+        // absolute/fixed 元素的 left/top/right/bottom 需要触发布局！
+        // 因为 RenderBlock::Layout() 的第三遍会解析这些属性来定位 absolute 子元素
+        // relative 只是视觉偏移，不需要布局
+        // static 时 left/top 无效，也不需要布局
+        if (position == "absolute" || position == "fixed") {
+            skip_layout = false;  // 需要触发布局以重新定位
+        } else {
+            skip_layout = true;   // relative/static 不需要布局
+        }
     }
     
     // 总是触发布局的属性（无论定位方式）
@@ -329,8 +371,12 @@ void Element::SetStyle(const std::string& property, const std::string& value) {
     
     if (is_position_offset && skip_layout) {
         // 位置偏移属性（left/top/right/bottom）：只需要重绘！
-        // 适用于 absolute/fixed/relative，都不影响其他元素的布局
+        // 适用于 relative/static，不影响其他元素的布局
         MarkDirty(DirtyType::PAINT);
+    } else if (is_position_offset && !skip_layout) {
+        // absolute/fixed 元素的 left/top/right/bottom 变化需要触发布局！
+        // 因为 RenderBlock::Layout() 的第三遍会解析这些属性来定位 absolute 子元素
+        MarkDirty(DirtyType::LAYOUT | DirtyType::PAINT);
     } else if (always_layout_properties.count(property) > 0) {
         // 总是触发布局的属性
         MarkDirty(DirtyType::LAYOUT | DirtyType::PAINT);
@@ -558,20 +604,9 @@ bool Element::DispatchEvent(std::shared_ptr<Event> event) {
 }
 
 void Element::HandleEvent(std::shared_ptr<Event> event, bool use_capture) {
-    // 只对 input 事件打印详细日志
-    bool verbose = (event->GetType() == "input");
-    if (verbose) {
-        std::cout << "[Element::HandleEvent] Event: " << event->GetType()
-                  << " on <" << tag_name_ << ">, capture=" << use_capture << std::endl;
-    }
-
     auto it = event_listeners_.find(event->GetType());
     if (it == event_listeners_.end()) {
         return;
-    }
-
-    if (verbose) {
-        std::cout << "[Element::HandleEvent] Found " << it->second.size() << " listeners" << std::endl;
     }
 
     // 收集需要移除的once监听器ID
@@ -579,7 +614,6 @@ void Element::HandleEvent(std::shared_ptr<Event> event, bool use_capture) {
 
     // 调用匹配捕获阶段的监听器
     // 参考：RmlUi的事件分发机制
-    int listener_index = 0;
     for (const auto& entry : it->second) {
         // 只调用匹配当前阶段的监听器
         if (entry.use_capture != use_capture) {
@@ -590,23 +624,13 @@ void Element::HandleEvent(std::shared_ptr<Event> event, bool use_capture) {
             break;
         }
 
-        if (verbose) {
-            std::cout << "[Element::HandleEvent] Calling listener " << listener_index
-                      << " (id=" << entry.id << ")" << std::endl;
-        }
-
         // 调用监听器
         entry.listener(event);
-
-        if (verbose) {
-            std::cout << "[Element::HandleEvent] Listener " << listener_index << " returned" << std::endl;
-        }
 
         // 如果是once监听器，标记为待移除
         if (entry.once) {
             once_listeners_to_remove.push_back(entry.id);
         }
-        listener_index++;
     }
 
     // 移除once监听器
@@ -871,7 +895,6 @@ void Element::SetOuterHTML(const std::string& html) {
 
     if (!doc) {
         // 改为返回而不是抛出异常，避免崩溃
-        std::cerr << "Warning: Cannot set outerHTML without document" << std::endl;
         return;
     }
 
@@ -1163,9 +1186,6 @@ void Element::SyncToLexbor() {
 }
 
 void Element::SetupInlineEventHandler(const std::string& event_type, const std::string& handler_code) {
-    std::cout << "[Element::SetupInlineEventHandler] Setting up handler for event '" << event_type 
-              << "' with code: " << handler_code << std::endl;
-
     // 移除旧的内联事件处理器（如果存在）
     auto it = inline_event_handlers_.find(event_type);
     if (it != inline_event_handlers_.end()) {
@@ -1181,45 +1201,36 @@ void Element::SetupInlineEventHandler(const std::string& event_type, const std::
     // 创建事件监听器，在事件触发时动态获取 JS 上下文并执行代码
     // 这样可以确保在脚本执行后，全局函数已经定义
     std::string code = handler_code;  // 复制一份，避免引用悬空
-    
+
     uint64_t listener_id = AddEventListener(event_type, [this, code, event_type](std::shared_ptr<Event> event) {
-        std::cout << "[InlineEventHandler] Executing inline handler for '" << event_type << "': " << code << std::endl;
-        
         // 动态获取 Document 和 JavaScript 上下文
         auto doc = std::dynamic_pointer_cast<Document>(GetOwnerDocument());
         if (!doc) {
-            std::cerr << "[InlineEventHandler] No document, cannot execute inline handler" << std::endl;
             return;
         }
 
         auto js_runtime = doc->GetJSRuntime();
         if (!js_runtime) {
-            std::cerr << "[InlineEventHandler] No JS runtime, cannot execute inline handler" << std::endl;
             return;
         }
 
         auto js_ctx = js_runtime->GetContext();
         if (!js_ctx) {
-            std::cerr << "[InlineEventHandler] No JS context, cannot execute inline handler" << std::endl;
             return;
         }
-        
+
         // 在全局作用域执行代码
         JSValue result = JS_Eval(js_ctx, code.c_str(), code.length(), "<inline>", JS_EVAL_TYPE_GLOBAL);
-        
+
         if (JS_IsException(result)) {
-            std::cerr << "[InlineEventHandler] Exception in inline handler:" << std::endl;
             js_std_dump_error(js_ctx);
         }
-        
+
         JS_FreeValue(js_ctx, result);
-        std::cout << "[InlineEventHandler] Inline handler completed" << std::endl;
     }, false, false);
 
     // 记录listener ID，以便后续移除
     inline_event_handlers_[event_type] = listener_id;
-    
-    std::cout << "[Element::SetupInlineEventHandler] Handler setup complete, listener_id=" << listener_id << std::endl;
 }
 
 // ========== ContentEditable 支持 ==========

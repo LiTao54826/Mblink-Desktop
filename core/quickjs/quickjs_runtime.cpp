@@ -30,10 +30,6 @@ QuickJSRuntime::QuickJSRuntime() {
 }
 
 QuickJSRuntime::~QuickJSRuntime() {
-    std::cout << "[QuickJSRuntime] Destructor called" << std::endl;
-    std::cout << "[QuickJSRuntime] Stack trace:" << std::endl;
-    std::cout << "  Called from: " << __FILE__ << ":" << __LINE__ << std::endl;
-
     // 清理所有待处理的任务和定时器
     // JSValueWrapper会在Task被销毁时自动释放JSValue
     active_timers_.clear();
@@ -44,33 +40,25 @@ QuickJSRuntime::~QuickJSRuntime() {
     timer_queue_.clear();
     active_timers_.clear();
 
-    std::cout << "[QuickJSRuntime] About to run GC" << std::endl;
-
-    // 运行GC确保所有JavaScript对象被释放
-    if (ctx_ && rt_) {
-        // 先运行多次 GC 确保所有对象都被释放
-        for (int i = 0; i < 5; i++) {
-            std::cout << "[QuickJSRuntime] Running GC pass " << (i + 1) << std::endl;
-            JS_RunGC(rt_);
-        }
-    }
-
-    std::cout << "[QuickJSRuntime] GC completed, freeing context" << std::endl;
-
+    // 先释放 context，再进行 runtime 级 GC，避免 context root 持有对象
     if (ctx_) {
         JS_FreeContext(ctx_);
         ctx_ = nullptr;
     }
 
-    std::cout << "[QuickJSRuntime] Context freed, freeing runtime" << std::endl;
-    std::cout << "[QuickJSRuntime] WARNING: If assertion fails, there are leaked JSValue objects" << std::endl;
-
     if (rt_) {
+        // 打开泄漏诊断输出，便于定位 gc_obj_list 断言问题
+        uint64_t dump_flags = JS_GetDumpFlags(rt_);
+        JS_SetDumpFlags(rt_, dump_flags | JS_DUMP_LEAKS | JS_DUMP_ATOM_LEAKS);
+
+        // 多次 GC 尝试清理循环引用/延迟可回收对象
+        for (int i = 0; i < 8; i++) {
+            JS_RunGC(rt_);
+        }
+
         JS_FreeRuntime(rt_);
         rt_ = nullptr;
     }
-
-    std::cout << "[QuickJSRuntime] Runtime freed, destructor complete" << std::endl;
 }
 
 json QuickJSRuntime::Eval(const std::string& code, const std::string& filename) {
@@ -118,6 +106,10 @@ void QuickJSRuntime::RegisterFunction(const std::string& name, NativeFunction fu
     JSValue func_obj = JS_NewCFunctionData(
         ctx_, NativeFunctionWrapper, 0, 0, 1, &func_name
     );
+
+    // JS_NewCFunctionData internally duplicates func_data values,
+    // so we must release our local reference to avoid leaks.
+    JS_FreeValue(ctx_, func_name);
 
     JSValue global = JS_GetGlobalObject(ctx_);
     JS_SetPropertyStr(ctx_, global, name.c_str(), func_obj);
@@ -346,17 +338,6 @@ void QuickJSRuntime::InitStdLib() {
 
     // Add console API
     RegisterFunction("print", [](const json& args) -> json {
-        if (args.is_array() && !args.empty()) {
-            for (const auto& arg : args) {
-                if (arg.is_string()) {
-                    std::cout << arg.get<std::string>();
-                } else {
-                    std::cout << arg.dump();
-                }
-                std::cout << " ";
-            }
-            std::cout << std::endl;
-        }
         return nullptr;
     });
 }
@@ -418,40 +399,6 @@ void QuickJSRuntime::InitConsole() {
 
 JSValue QuickJSRuntime::ConsoleLog(JSContext* ctx, JSValueConst this_val,
                                    int argc, JSValueConst* argv, int magic) {
-    // Determine log level prefix based on magic value
-    const char* prefix = "";
-    switch (magic) {
-        case 0: prefix = ""; break;           // log
-        case 1: prefix = "[ERROR] "; break;   // error
-        case 2: prefix = "[WARN] "; break;    // warn
-        case 3: prefix = "[INFO] "; break;    // info
-        default: prefix = ""; break;
-    }
-
-    // Print prefix
-    if (prefix[0] != '\0') {
-        printf("%s", prefix);
-    }
-
-    // Print all arguments separated by space
-    for (int i = 0; i < argc; i++) {
-        if (i > 0) {
-            printf(" ");
-        }
-
-        // Convert JSValue to string
-        const char* str = JS_ToCString(ctx, argv[i]);
-        if (str) {
-            printf("%s", str);
-            JS_FreeCString(ctx, str);
-        } else {
-            printf("[Error converting to string]");
-        }
-    }
-
-    printf("\n");
-    fflush(stdout);  // Ensure output is flushed
-
     return JS_UNDEFINED;
 }
 
@@ -1031,7 +978,6 @@ void QuickJSRuntime::ProcessTasks() {
             if (JS_IsException(result)) {
                 // Log error but continue
                 std::string error = GetJSError();
-                fprintf(stderr, "[Timer Error] %s\n", error.c_str());
             }
 
             JS_FreeValue(ctx_, result);
@@ -1055,7 +1001,6 @@ void QuickJSRuntime::ProcessMicrotasks() {
         if (ret < 0) {
             // Error occurred
             std::string error = GetJSError();
-            fprintf(stderr, "[Microtask Error] %s\n", error.c_str());
             break;
         }
     }
@@ -1117,7 +1062,6 @@ void QuickJSRuntime::RunEventLoop(int max_iterations) {
 
             if (JS_IsException(result)) {
                 std::string error = GetJSError();
-                fprintf(stderr, "[Timer Error] %s\n", error.c_str());
             }
 
             JS_FreeValue(ctx_, result);

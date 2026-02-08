@@ -14,6 +14,7 @@
 #include "core/render/text/font_manager.h"
 #include "core/render/text/text_renderer.h"
 #include "core/render/objects/render_inline_block.h"
+#include "core/render/objects/render_inline_flex.h"
 #include "core/render/objects/render_svg.h"
 
 // DOM 类型（用于检测 BR 元素）
@@ -59,13 +60,47 @@ bool IFCLayout::IsInlineLevel(RenderObject* render_obj) {
 // 内部使用的别名，兼容旧代码
 using TextMeasurement = TextMeasureResult;
 
+// 辅助函数：解析 font-weight 字符串为 FontWeight 枚举
+static FontWeight ParseFontWeight(const std::string& weight_str) {
+    if (weight_str.empty() || weight_str == "normal") {
+        return FontWeight::NORMAL;
+    }
+    if (weight_str == "bold") {
+        return FontWeight::BOLD;
+    }
+    if (weight_str == "lighter") {
+        return FontWeight::LIGHT;
+    }
+    if (weight_str == "bolder") {
+        return FontWeight::EXTRA_BOLD;
+    }
+
+    // 尝试解析数字值 (100-900)
+    try {
+        int weight_num = std::stoi(weight_str);
+        if (weight_num <= 100) return FontWeight::THIN;
+        if (weight_num <= 200) return FontWeight::EXTRA_LIGHT;
+        if (weight_num <= 300) return FontWeight::LIGHT;
+        if (weight_num <= 400) return FontWeight::NORMAL;
+        if (weight_num <= 500) return FontWeight::MEDIUM;
+        if (weight_num <= 600) return FontWeight::SEMI_BOLD;
+        if (weight_num <= 700) return FontWeight::BOLD;
+        if (weight_num <= 800) return FontWeight::EXTRA_BOLD;
+        return FontWeight::BLACK;
+    } catch (...) {
+        return FontWeight::NORMAL;
+    }
+}
+
 TextMeasureResult IFCLayout::MeasureTextStatic(
     const std::string& text,
     float font_size,
     const std::string& font_family,
     float letter_spacing,
     float word_spacing,
-    float line_height_multiplier
+    float line_height_multiplier,
+    const std::string& font_weight,
+    const std::string& font_style
 ) {
     TextMeasureResult result;
 
@@ -83,8 +118,8 @@ TextMeasureResult IFCLayout::MeasureTextStatic(
     FontDescriptor font_desc;
     font_desc.family = font_family.empty() ? "Arial" : font_family;
     font_desc.size = font_size;
-    font_desc.weight = FontWeight::NORMAL;
-    font_desc.style = FontStyle::NORMAL;
+    font_desc.weight = ParseFontWeight(font_weight);
+    font_desc.style = (font_style == "italic") ? FontStyle::ITALIC : FontStyle::NORMAL;
 
     // 加载字体
     SkFont font = font_manager.LoadFont(font_desc);
@@ -226,9 +261,11 @@ static inline TextMeasurement MeasureTextForIFC(
     const std::string& font_family,
     float letter_spacing,
     float word_spacing,
-    float line_height_multiplier = 1.2f
+    float line_height_multiplier = 1.2f,
+    const std::string& font_weight = "normal",
+    const std::string& font_style = "normal"
 ) {
-    return IFCLayout::MeasureTextStatic(text, font_size, font_family, letter_spacing, word_spacing, line_height_multiplier);
+    return IFCLayout::MeasureTextStatic(text, font_size, font_family, letter_spacing, word_spacing, line_height_multiplier, font_weight, font_style);
 }
 
 // ========== 缓存方法 ==========
@@ -330,8 +367,8 @@ float IFCLayout::MeasureMinContentWidth(RenderObject* container) {
             FontDescriptor font_desc;
             font_desc.family = style.font_family.empty() ? "Arial" : style.font_family;
             font_desc.size = style.font_size;
-            font_desc.weight = FontWeight::NORMAL;
-            font_desc.style = FontStyle::NORMAL;
+            font_desc.weight = ParseFontWeight(style.font_weight);
+            font_desc.style = (style.font_style == "italic") ? FontStyle::ITALIC : FontStyle::NORMAL;
             SkFont font = font_manager.LoadFont(font_desc);
 
             // Measure the minimum content width (longest word)
@@ -571,8 +608,6 @@ IFCLayoutResult IFCLayout::Layout(RenderObject* container, float available_width
         }
 
 #if IFC_DEBUG
-        std::cout << "[IFC] Container line-height: " << container_line_height
-                  << " (multiplier=" << style.line_height << ", font_size=" << style.font_size << ")" << std::endl;
 #endif
 
         // 计算行度量，传入容器的 line-height
@@ -581,9 +616,6 @@ IFCLayoutResult IFCLayout::Layout(RenderObject* container, float available_width
         line.baseline = line_metrics.baseline;
 
 #if IFC_DEBUG
-        std::cout << "[IFC] Line metrics: line_height=" << line_metrics.line_height
-                  << ", baseline=" << line_metrics.baseline
-                  << ", boxes=" << box_ptrs.size() << std::endl;
 #endif
 
         // 设置行位置
@@ -608,7 +640,6 @@ IFCLayoutResult IFCLayout::Layout(RenderObject* container, float available_width
 
         // 更新统计
 #if IFC_DEBUG
-        std::cout << "[IFC] current_y: " << current_y << " -> " << (current_y + line_metrics.line_height) << std::endl;
 #endif
         current_y += line_metrics.line_height;
         content_width_ = std::max(content_width_, line.content_width);
@@ -616,7 +647,6 @@ IFCLayoutResult IFCLayout::Layout(RenderObject* container, float available_width
 
     content_height_ = current_y;
 #if IFC_DEBUG
-    std::cout << "[IFC] Total content_height: " << content_height_ << std::endl;
 #endif
 
     // 5. 应用布局结果到渲染对象 (only if requested)
@@ -699,6 +729,25 @@ void IFCLayout::CreateInlineBox(RenderObject* render_obj) {
     RenderObjectType type = render_obj->GetType();
     const auto& style = render_obj->GetComputedStyle();
 
+    // 🔍 DEBUG: 输出 CreateInlineBox 调用
+    static bool debug_ifc = std::getenv("DEBUG_INCREMENTAL_PAINT") != nullptr;
+    if (debug_ifc) {
+        std::string type_str = std::to_string(static_cast<int>(type));
+        if (type == RenderObjectType::TEXT) type_str = "TEXT";
+        else if (type == RenderObjectType::INLINE) type_str = "INLINE";
+        else if (type == RenderObjectType::INLINE_BLOCK) type_str = "INLINE_BLOCK";
+        else if (type == RenderObjectType::INLINE_FLEX) type_str = "INLINE_FLEX";
+        else if (type == RenderObjectType::INLINE_GRID) type_str = "INLINE_GRID";
+
+        std::string tag_name = "?";
+        auto node = render_obj->GetNode();
+        if (node && node->GetNodeType() == NodeType::ELEMENT_NODE) {
+            auto elem = std::static_pointer_cast<Element>(node);
+            tag_name = elem->GetTagName();
+        }
+
+    }
+
     switch (type) {
         case RenderObjectType::TEXT: {
             // 文本节点
@@ -735,7 +784,6 @@ void IFCLayout::CreateInlineBox(RenderObject* render_obj) {
                 }
 
 #if IFC_DEBUG
-                std::cout << "[IFC CreateInlineBox] PRE mode: split into " << lines.size() << " lines by \\n" << std::endl;
 #endif
 
                 // 保存换行后的文本到 RenderText 对象
@@ -748,7 +796,7 @@ void IFCLayout::CreateInlineBox(RenderObject* render_obj) {
                     // 对于空行，使用空格来获取正确的行高
                     std::string measure_text = line_text.empty() ? " " : line_text;
                     TextMeasurement line_measurement = MeasureTextForIFC(
-                        measure_text, style.font_size, style.font_family, letter_spacing, word_spacing, style.line_height);
+                        measure_text, style.font_size, style.font_family, letter_spacing, word_spacing, style.line_height, style.font_weight, style.font_style);
 
                     // 空行宽度为0
                     if (line_text.empty()) {
@@ -782,14 +830,10 @@ void IFCLayout::CreateInlineBox(RenderObject* render_obj) {
             } else {
                 // 测量整个文本
                 TextMeasurement measurement = MeasureTextForIFC(
-                    text, style.font_size, style.font_family, letter_spacing, word_spacing, style.line_height);
+                    text, style.font_size, style.font_family, letter_spacing, word_spacing, style.line_height, style.font_weight, style.font_style);
 
                 // 如果文本宽度超过可用宽度且允许换行，则分割文本
 #if IFC_DEBUG
-                std::cout << "[IFC CreateInlineBox] TEXT: wrap_allowed=" << wrap_allowed
-                          << ", available_width=" << current_available_width_
-                          << ", text_width=" << measurement.width
-                          << ", text=" << text.substr(0, 50) << "..." << std::endl;
 #endif
                 if (wrap_allowed && current_available_width_ > 0 && measurement.width > current_available_width_) {
                     // 使用 TextRenderer::WrapText 进行文本换行
@@ -797,17 +841,15 @@ void IFCLayout::CreateInlineBox(RenderObject* render_obj) {
                     FontDescriptor font_desc;
                     font_desc.family = style.font_family.empty() ? "Arial" : style.font_family;
                     font_desc.size = style.font_size;
-                    font_desc.weight = FontWeight::NORMAL;
-                    font_desc.style = FontStyle::NORMAL;
+                    font_desc.weight = ParseFontWeight(style.font_weight);
+                    font_desc.style = (style.font_style == "italic") ? FontStyle::ITALIC : FontStyle::NORMAL;
                     SkFont font = font_manager.LoadFont(font_desc);
 
                     TextRenderer text_renderer(nullptr);  // 创建 TextRenderer 实例
                     std::vector<std::string> wrapped_lines = text_renderer.WrapText(text, current_available_width_, font);
 
 #if IFC_DEBUG
-                    std::cout << "[IFC CreateInlineBox] Wrapped into " << wrapped_lines.size() << " lines:" << std::endl;
                     for (size_t i = 0; i < wrapped_lines.size(); ++i) {
-                        std::cout << "  Line " << i << ": \"" << wrapped_lines[i] << "\"" << std::endl;
                     }
 #endif
 
@@ -820,7 +862,7 @@ void IFCLayout::CreateInlineBox(RenderObject* render_obj) {
                         if (line_text.empty()) continue;
 
                         TextMeasurement line_measurement = MeasureTextForIFC(
-                            line_text, style.font_size, style.font_family, letter_spacing, word_spacing, style.line_height);
+                            line_text, style.font_size, style.font_family, letter_spacing, word_spacing, style.line_height, style.font_weight, style.font_style);
 
                         InlineBox box = InlineBox::CreateTextBox(render_obj);
                         box.width = line_measurement.width;
@@ -906,6 +948,36 @@ void IFCLayout::CreateInlineBox(RenderObject* render_obj) {
             break;
         }
 
+        case RenderObjectType::INLINE_FLEX:
+        case RenderObjectType::INLINE_GRID: {
+            // inline-flex 和 inline-grid 元素（原子内联元素）
+            float w = 0, h = 0;
+
+            if (type == RenderObjectType::INLINE_FLEX) {
+                // inline-flex 元素使用 RenderInlineFlex::MeasureIntrinsicSize
+                auto* inline_flex = static_cast<RenderInlineFlex*>(render_obj);
+                std::tie(w, h) = inline_flex->MeasureIntrinsicSize(current_available_width_);
+            } else {
+                // inline-grid 暂时使用默认尺寸（未来可以创建 RenderInlineGrid 类）
+                w = 100;
+                h = 100;
+            }
+
+            InlineBox box = InlineBox::CreateAtomicBox(render_obj, w, h, h);
+
+            // 应用 margin（水平和垂直）
+            box.margin_left = style.margin.left.ToPx(w, style.font_size);
+            box.margin_right = style.margin.right.ToPx(w, style.font_size);
+            box.margin_top = style.margin.top.ToPx(w, style.font_size);
+            box.margin_bottom = style.margin.bottom.ToPx(w, style.font_size);
+
+            // 设置行高倍数（用于计算行高）
+            box.line_height_multiplier = style.line_height;
+
+            inline_boxes_.push_back(std::move(box));
+            break;
+        }
+
         case RenderObjectType::INLINE: {
             // 检查是否是 BR 元素
             auto node = render_obj->GetNode();
@@ -920,7 +992,6 @@ void IFCLayout::CreateInlineBox(RenderObject* render_obj) {
                 text_content = element->GetTextContent();
             }
             size_t children_count = render_obj->GetChildren().size();
-            printf("[IFC CreateInlineBox] INLINE: tag=%s, textContent='%s', children=%zu\n",
                    tag_name.c_str(), text_content.c_str(), children_count);
             */
             
@@ -985,7 +1056,7 @@ std::pair<float, float> IFCLayout::MeasureText(
 ) {
     float letter_spacing = style.letter_spacing.ToPx(0, style.font_size);
     float word_spacing = style.word_spacing.ToPx(0, style.font_size);
-    TextMeasurement measurement = MeasureTextForIFC(text, style.font_size, style.font_family, letter_spacing, word_spacing, style.line_height);
+    TextMeasurement measurement = MeasureTextForIFC(text, style.font_size, style.font_family, letter_spacing, word_spacing, style.line_height, style.font_weight, style.font_style);
     return {measurement.width, measurement.height};
 }
 
@@ -1028,9 +1099,29 @@ void IFCLayout::ApplyLayoutResults(RenderObject* container, float container_widt
     // 第一遍：收集所有内联盒的位置信息
     std::vector<RenderObject*> inline_stack;  // 当前活跃的内联元素栈
 
+    // 🔍 DEBUG: 输出 inline_boxes 的内容
+    static bool debug_ifc = std::getenv("DEBUG_INCREMENTAL_PAINT") != nullptr;
+    if (debug_ifc) {
+    }
+
     for (const auto& box : inline_boxes_) {
         RenderObject* render_obj = box.render_object;
         if (!render_obj) continue;
+
+        // 🔍 DEBUG: 输出每个盒子的信息
+        if (debug_ifc) {
+            std::string box_type_str = "?";
+            if (box.type == InlineBoxType::TEXT) box_type_str = "TEXT";
+            else if (box.type == InlineBoxType::ATOMIC) box_type_str = "ATOMIC";
+            else if (box.type == InlineBoxType::INLINE_START) box_type_str = "INLINE_START";
+            else if (box.type == InlineBoxType::INLINE_END) box_type_str = "INLINE_END";
+
+            std::string obj_type_str = std::to_string(static_cast<int>(render_obj->GetType()));
+            if (render_obj->GetType() == RenderObjectType::INLINE_FLEX) obj_type_str = "INLINE_FLEX";
+            else if (render_obj->GetType() == RenderObjectType::INLINE_BLOCK) obj_type_str = "INLINE_BLOCK";
+            else if (render_obj->GetType() == RenderObjectType::TEXT) obj_type_str = "TEXT";
+
+        }
 
         if (box.type == InlineBoxType::INLINE_START) {
             // 开始一个新的内联元素
@@ -1052,10 +1143,6 @@ void IFCLayout::ApplyLayoutResults(RenderObject* container, float container_widt
 
 #if IFC_DEBUG
             if (box.type == InlineBoxType::TEXT) {
-                std::cout << "[IFC Apply] TEXT box: x=" << box.x << ", y=" << box.y
-                          << ", width=" << box.width << ", height=" << box.height
-                          << ", offset_x=" << offset_x << ", box_left=" << box_left
-                          << std::endl;
             }
 #endif
 
@@ -1076,19 +1163,32 @@ void IFCLayout::ApplyLayoutResults(RenderObject* container, float container_widt
                 }
             } else {
                 // ATOMIC 盒子直接更新布局信息
+                if (debug_ifc) {
+                }
+
                 LayoutInfo& layout = render_obj->GetLayoutInfo();
                 layout.x = box_left;
                 layout.y = box_top;
                 layout.width = box.width;
                 layout.height = box.height;
 
-                // 对于 inline-block 元素，需要调用 Layout 来设置其内部子元素的位置
-                // 这样才能正确应用 text-align 等属性
-                if (render_obj->GetType() == RenderObjectType::INLINE_BLOCK) {
+                // 对于 inline-block、inline-flex、inline-grid 元素，需要调用 Layout 来设置其内部子元素的位置
+                // 这样才能正确应用 text-align、justify-content 等属性
+                RenderObjectType obj_type = render_obj->GetType();
+                if (obj_type == RenderObjectType::INLINE_BLOCK) {
+                    if (debug_ifc) {
+                    }
                     auto* inline_block = static_cast<RenderInlineBlock*>(render_obj);
                     // 调用 Layout 来设置子元素位置（尺寸已经在 MeasureIntrinsicSize 中计算过了）
                     inline_block->Layout(box.width, box.height);
+                } else if (obj_type == RenderObjectType::INLINE_FLEX) {
+                    if (debug_ifc) {
+                    }
+                    auto* inline_flex = static_cast<RenderInlineFlex*>(render_obj);
+                    // 调用 Layout 来设置子元素位置（尺寸已经在 MeasureIntrinsicSize 中计算过了）
+                    inline_flex->Layout(box.width, box.height);
                 }
+                // inline-grid 暂时不处理，未来可以添加
             }
 
             // 更新所有父级内联元素的边界

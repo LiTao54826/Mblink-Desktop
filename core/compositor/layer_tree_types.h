@@ -36,7 +36,7 @@ struct PendingLayerUpdate {
     RenderObject* target = nullptr;                         ///< 目标 RenderObject
     LayerPromotionReason reason = LayerPromotionReason::None;  ///< 层提升原因
     int z_index = 0;                                        ///< z-index 值
-    std::string debug_info;                                 ///< 调试信息
+    std::string update_info;                                ///< 更新信息
 };
 
 /**

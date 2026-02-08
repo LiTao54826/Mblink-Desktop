@@ -269,8 +269,6 @@ static int JSStyleDeclaration_set_property(JSContext* ctx, JSValueConst obj,
     // 调试日志
     static bool debug_style = std::getenv("DEBUG_STYLE") != nullptr;
     if (debug_style && css_property == "line-height") {
-        std::cout << "[JSStyle] set " << prop_str << " -> " << css_property 
-                  << " = \"" << value_str << "\"" << std::endl;
     }
 
     // 设置属性

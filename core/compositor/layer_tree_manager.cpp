@@ -10,7 +10,6 @@
 #include "core/render/objects/render_object.h"
 #include <algorithm>
 #include <functional>
-#include <iostream>
 
 namespace lightui {
 
@@ -36,17 +35,12 @@ void LayerTreeManager::Initialize(LayerTreeBuilder* builder,
     builder_ = builder;
     rasterizer_ = rasterizer;
     compositor_ = compositor;
-    
-    LogDebug("LayerTreeManager initialized");
 }
 
 void LayerTreeManager::SetViewport(float width, float height, float dpi_scale) {
     viewport_width_ = width;
     viewport_height_ = height;
     dpi_scale_ = dpi_scale;
-    
-    LogDebug("Viewport set: " + std::to_string(width) + "x" + 
-             std::to_string(height) + " @ " + std::to_string(dpi_scale) + "x");
 }
 
 // ============================================================================
@@ -57,100 +51,88 @@ void LayerTreeManager::RequestAddLayer(RenderObject* obj, LayerPromotionReason r
     if (!obj) {
         return;
     }
-    
+
     PendingLayerUpdate update;
     update.type = LayerUpdateType::Add;
     update.target = obj;
     update.reason = reason;
-    update.debug_info = std::string("Add layer for ") + 
+    update.update_info = std::string("Add layer for ") +
         CompositorLayer::PromotionReasonToString(reason);
-    
+
     pending_updates_.push_back(update);
-    
-    LogDebug("Requested add layer: " + update.debug_info);
 }
 
 void LayerTreeManager::RequestRemoveLayer(RenderObject* obj) {
     if (!obj) {
         return;
     }
-    
+
     PendingLayerUpdate update;
     update.type = LayerUpdateType::Remove;
     update.target = obj;
-    update.debug_info = "Remove layer";
-    
+    update.update_info = "Remove layer";
+
     pending_updates_.push_back(update);
-    
-    LogDebug("Requested remove layer");
 }
 
 void LayerTreeManager::RequestUpdateBounds(RenderObject* obj) {
     if (!obj) {
         return;
     }
-    
+
     PendingLayerUpdate update;
     update.type = LayerUpdateType::UpdateBounds;
     update.target = obj;
-    update.debug_info = "Update bounds";
-    
+    update.update_info = "Update bounds";
+
     pending_updates_.push_back(update);
-    
-    LogDebug("Requested update bounds");
 }
 
 void LayerTreeManager::RequestReparent(RenderObject* obj) {
     if (!obj) {
         return;
     }
-    
+
     PendingLayerUpdate update;
     update.type = LayerUpdateType::Reparent;
     update.target = obj;
-    update.debug_info = "Reparent layer";
-    
+    update.update_info = "Reparent layer";
+
     pending_updates_.push_back(update);
-    
-    LogDebug("Requested reparent");
 }
 
 void LayerTreeManager::RequestUpdateZIndex(RenderObject* obj, int z_index) {
     if (!obj) {
         return;
     }
-    
+
     PendingLayerUpdate update;
     update.type = LayerUpdateType::UpdateZIndex;
     update.target = obj;
     update.z_index = z_index;
-    update.debug_info = "Update z-index to " + std::to_string(z_index);
-    
+    update.update_info = "Update z-index to " + std::to_string(z_index);
+
     pending_updates_.push_back(update);
-    
-    LogDebug("Requested update z-index: " + std::to_string(z_index));
 }
 
 bool LayerTreeManager::ApplyPendingUpdates() {
     if (pending_updates_.empty()) {
         return false;
     }
-    
-    LogDebug("Applying " + std::to_string(pending_updates_.size()) + " pending updates");
-    
+
     bool any_applied = false;
     for (const auto& update : pending_updates_) {
         if (ApplyUpdate(update)) {
             any_applied = true;
         }
     }
-    
+
     pending_updates_.clear();
-    
+
     if (any_applied) {
         IncrementTreeVersion();
     }
-    
+
     return any_applied;
 }
 
@@ -158,21 +140,21 @@ bool LayerTreeManager::ApplyUpdate(const PendingLayerUpdate& update) {
     if (!update.target || !builder_) {
         return false;
     }
-    
+
     bool success = false;
-    
+
     switch (update.type) {
         case LayerUpdateType::Add: {
             auto layer = builder_->AddLayerForObject(update.target, update.reason);
             success = (layer != nullptr);
             break;
         }
-        
+
         case LayerUpdateType::Remove: {
             success = builder_->RemoveLayerForObject(update.target);
             break;
         }
-        
+
         case LayerUpdateType::UpdateBounds: {
             auto layer = builder_->GetLayerForRenderObject(update.target);
             if (layer) {
@@ -181,7 +163,7 @@ bool LayerTreeManager::ApplyUpdate(const PendingLayerUpdate& update) {
             }
             break;
         }
-        
+
         case LayerUpdateType::Reparent: {
             // 重新附加父层：先移除再添加
             auto layer = builder_->GetLayerForRenderObject(update.target);
@@ -193,7 +175,7 @@ bool LayerTreeManager::ApplyUpdate(const PendingLayerUpdate& update) {
             }
             break;
         }
-        
+
         case LayerUpdateType::UpdateZIndex: {
             // z-index 更新：需要重新排序
             auto layer = builder_->GetLayerForRenderObject(update.target);
@@ -202,25 +184,20 @@ bool LayerTreeManager::ApplyUpdate(const PendingLayerUpdate& update) {
                 auto parent = layer->GetParent();
                 parent->RemoveChild(layer.get());
                 parent->InsertChildByZIndex(
-                    builder_->GetLayerForRenderObject(update.target), 
+                    builder_->GetLayerForRenderObject(update.target),
                     update.z_index);
                 success = true;
             }
             break;
         }
     }
-    
-    LogDebug("Applied update: " + update.debug_info + 
-             (success ? " (success)" : " (failed)"));
-    
+
     return success;
 }
 
 void LayerTreeManager::ForceFullRebuild(const std::string& reason) {
     needs_full_rebuild_ = true;
     last_rebuild_reason_ = reason;
-    
-    LogDebug("Forced full rebuild: " + reason);
 }
 
 // ============================================================================
@@ -231,20 +208,39 @@ bool LayerTreeManager::RegisterScrollContainer(RenderObject* container) {
     if (!container) {
         return false;
     }
-    
+
     // 检查是否已注册
-    if (scroll_states_.find(container) != scroll_states_.end()) {
-        return true;  // 已注册
+    auto it = scroll_states_.find(container);
+    if (it != scroll_states_.end()) {
+        // 已注册，但需要同步 RenderObject 的当前滚动位置
+        // 关键修复：全量重绘后，RenderObject 的滚动位置已被恢复
+        // 但 ScrollState 可能还是旧值（0,0），需要同步
+        ScrollState& state = it->second;
+        float ro_scroll_x = container->GetScrollX();
+        float ro_scroll_y = container->GetScrollY();
+        if (state.scroll_x != ro_scroll_x || state.scroll_y != ro_scroll_y) {
+            state.scroll_x = ro_scroll_x;
+            state.scroll_y = ro_scroll_y;
+            // 更新层的滚动偏移
+            auto layer = container->GetCompositorLayer();
+            if (layer) {
+                layer->SetScrollOffset(SkPoint::Make(state.scroll_x, state.scroll_y));
+            }
+        }
+        return true;
     }
-    
+
     // 创建新的滚动状态
     ScrollState state;
     CalculateScrollBounds(state, container);
-    
+
+    // 关键修复：初始化时从 RenderObject 获取当前滚动位置
+    // 这样全量重绘后恢复的滚动位置不会丢失
+    state.scroll_x = container->GetScrollX();
+    state.scroll_y = container->GetScrollY();
+
     scroll_states_[container] = state;
-    
-    LogDebug("Registered scroll container");
-    
+
     return true;
 }
 
@@ -252,11 +248,10 @@ void LayerTreeManager::UnregisterScrollContainer(RenderObject* container) {
     if (!container) {
         return;
     }
-    
+
     auto it = scroll_states_.find(container);
     if (it != scroll_states_.end()) {
         scroll_states_.erase(it);
-        LogDebug("Unregistered scroll container");
     }
 }
 
@@ -277,43 +272,38 @@ bool LayerTreeManager::SetScrollPosition(RenderObject* container, float x, float
     if (it == scroll_states_.end()) {
         return false;
     }
-    
+
     ScrollState& state = it->second;
-    
+
     // 保存旧值用于检测变化
     float old_x = state.scroll_x;
     float old_y = state.scroll_y;
-    
+
     // 设置新值
     state.scroll_x = x;
     state.scroll_y = y;
-    
+
     // 限制在有效范围内
     ClampScrollPosition(state);
-    
+
     // 检查是否有变化
     if (state.scroll_x != old_x || state.scroll_y != old_y) {
         state.version++;
         NotifyScrollListeners(container, state);
-        
+
         // 关键修复：更新层的滚动偏移
         // 这样合成时才能正确应用滚动偏移
         auto layer = container->GetCompositorLayer();
         if (layer) {
             layer->SetScrollOffset(SkPoint::Make(state.scroll_x, state.scroll_y));
             layer->MarkFullDirty();  // 需要重新光栅化
-            
-
         }
-        
+
         // 同步到 RenderObject
         container->SetScrollX(state.scroll_x);
         container->SetScrollY(state.scroll_y);
-        
-        LogDebug("Scroll position set: (" + std::to_string(state.scroll_x) + 
-                 ", " + std::to_string(state.scroll_y) + ")");
     }
-    
+
     return true;
 }
 
@@ -322,7 +312,7 @@ bool LayerTreeManager::ScrollBy(RenderObject* container, float dx, float dy) {
     if (it == scroll_states_.end()) {
         return false;
     }
-    
+
     const ScrollState& state = it->second;
     return SetScrollPosition(container, state.scroll_x + dx, state.scroll_y + dy);
 }
@@ -332,12 +322,10 @@ void LayerTreeManager::UpdateScrollContentSize(RenderObject* container) {
     if (it == scroll_states_.end()) {
         return;
     }
-    
+
     ScrollState& state = it->second;
     CalculateScrollBounds(state, container);
     ClampScrollPosition(state);
-    
-    LogDebug("Updated scroll content size");
 }
 
 uint32_t LayerTreeManager::AddScrollListener(ScrollListener listener) {
@@ -500,16 +488,6 @@ size_t LayerTreeManager::GetLayerCount() const {
 }
 
 // ============================================================================
-// 调试支持
-// ============================================================================
-
-void LayerTreeManager::LogDebug(const std::string& message) const {
-    if (debug_logging_) {
-        std::cout << "[LayerTreeManager] " << message << std::endl;
-    }
-}
-
-// ============================================================================
 // 脏标记优化
 // ============================================================================
 
@@ -517,7 +495,7 @@ void LayerTreeManager::MarkContentDirty(RenderObject* obj) {
     if (!obj || !builder_) {
         return;
     }
-    
+
     // 找到对应的层
     auto layer = builder_->GetLayerForRenderObject(obj);
     if (layer) {
@@ -525,8 +503,6 @@ void LayerTreeManager::MarkContentDirty(RenderObject* obj) {
         const auto& layout = obj->GetLayoutInfo();
         SkRect bounds = SkRect::MakeXYWH(0, 0, layout.width, layout.height);
         layer->MarkDirty(bounds);
-        
-        LogDebug("Marked content dirty for layer");
     }
 }
 
@@ -534,7 +510,7 @@ void LayerTreeManager::MarkTransformDirty(RenderObject* obj) {
     if (!obj || !builder_) {
         return;
     }
-    
+
     // Transform 变化不需要重新光栅化
     // 只需要在合成时应用新的 transform
     auto layer = builder_->GetLayerForRenderObject(obj);
@@ -549,8 +525,6 @@ void LayerTreeManager::MarkTransformDirty(RenderObject* obj) {
         } else {
             layer->SetTransform(SkMatrix::I());
         }
-        
-        LogDebug("Marked transform dirty (no rasterization needed)");
     }
 }
 
@@ -558,15 +532,13 @@ void LayerTreeManager::MarkOpacityDirty(RenderObject* obj) {
     if (!obj || !builder_) {
         return;
     }
-    
+
     // Opacity 变化不需要重新光栅化
     // 只需要在合成时应用新的 opacity
     auto layer = builder_->GetLayerForRenderObject(obj);
     if (layer) {
         const auto& style = obj->GetComputedStyle();
         layer->SetOpacity(style.opacity);
-        
-        LogDebug("Marked opacity dirty (no rasterization needed)");
     }
 }
 
@@ -574,22 +546,19 @@ void LayerTreeManager::MarkBoundsDirty(RenderObject* obj) {
     if (!obj || !builder_) {
         return;
     }
-    
+
     auto layer = builder_->GetLayerForRenderObject(obj);
     if (layer) {
         // 更新层边界
         builder_->UpdateLayerBoundsDeferred(layer.get(), obj);
-        
+
         // 检查是否需要重新光栅化
         // 如果新边界比旧边界大，需要重新光栅化以显示新内容
         const SkRect& old_bounds = layer->GetBounds();
         const auto& layout = obj->GetLayoutInfo();
-        
+
         if (layout.width > old_bounds.width() || layout.height > old_bounds.height()) {
             layer->MarkFullDirty();
-            LogDebug("Bounds increased, marked for rasterization");
-        } else {
-            LogDebug("Bounds changed (no rasterization needed)");
         }
     }
 }
@@ -625,15 +594,13 @@ void LayerTreeManager::RestoreAnimationState(CompositorLayer* layer,
     if (!layer) {
         return;
     }
-    
+
     layer->SetTransform(state.transform);
     layer->SetOpacity(state.opacity);
-    
+
     if (state.has_animation_bounds) {
         layer->SetAnimationBounds(state.animation_bounds);
     }
-    
-    LogDebug("Restored animation state to layer");
 }
 
 void LayerTreeManager::TransferAnimationState(CompositorLayer* old_layer,
@@ -641,14 +608,12 @@ void LayerTreeManager::TransferAnimationState(CompositorLayer* old_layer,
     if (!old_layer || !new_layer) {
         return;
     }
-    
+
     // 保存旧层的动画状态
     AnimationStateData state = SaveAnimationState(old_layer);
-    
+
     // 恢复到新层
     RestoreAnimationState(new_layer, state);
-    
-    LogDebug("Transferred animation state from old layer to new layer");
 }
 
 // ============================================================================
@@ -738,52 +703,6 @@ std::vector<LayerTreeManager::LayerInspectionInfo> LayerTreeManager::InspectAllL
 }
 
 void LayerTreeManager::DumpLayerTree() const {
-    if (!builder_) {
-        std::cout << "[LayerTreeManager] No layer tree builder" << std::endl;
-        return;
-    }
-    
-    auto root = builder_->GetRootLayer();
-    if (!root) {
-        std::cout << "[LayerTreeManager] No root layer" << std::endl;
-        return;
-    }
-    
-    std::cout << "[LayerTreeManager] Layer Tree Dump:" << std::endl;
-    std::cout << "  Version: " << tree_version_ << std::endl;
-    std::cout << "  Layer Count: " << GetLayerCount() << std::endl;
-    std::cout << "  Scroll Containers: " << scroll_states_.size() << std::endl;
-    std::cout << std::endl;
-    
-    // 递归打印层树
-    std::function<void(CompositorLayer*, int)> dump = [&](CompositorLayer* layer, int indent) {
-        if (!layer) return;
-        
-        std::string prefix(indent * 2, ' ');
-        auto info = InspectLayer(layer);
-        
-        std::cout << prefix << "Layer #" << info.layer_id 
-                  << " (identity=" << info.layer_identity << ")" << std::endl;
-        std::cout << prefix << "  Name: " << info.debug_name << std::endl;
-        std::cout << prefix << "  Reason: " 
-                  << CompositorLayer::PromotionReasonToString(info.promotion_reason) << std::endl;
-        std::cout << prefix << "  Bounds: (" << info.bounds.left() << ", " << info.bounds.top()
-                  << ", " << info.bounds.width() << "x" << info.bounds.height() << ")" << std::endl;
-        std::cout << prefix << "  Z-Index: " << info.z_index << std::endl;
-        std::cout << prefix << "  Depth: " << info.tree_depth << std::endl;
-        
-        if (info.has_scroll_offset) {
-            std::cout << prefix << "  Scroll: (" << info.scroll_x << ", " << info.scroll_y << ")" << std::endl;
-        }
-        
-        std::cout << prefix << "  Children: " << info.children_count << std::endl;
-        
-        for (const auto& child : layer->GetChildren()) {
-            dump(child.get(), indent + 1);
-        }
-    };
-    
-    dump(root.get(), 0);
 }
 
 } // namespace lightui

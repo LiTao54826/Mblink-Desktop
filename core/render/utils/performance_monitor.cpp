@@ -173,8 +173,6 @@ PerformanceTimer::PerformanceTimer(const std::string& name)
 
 PerformanceTimer::~PerformanceTimer() {
     float elapsed = GetElapsed();
-    std::cout << "[PerformanceTimer] " << name_ << ": " 
-              << std::fixed << std::setprecision(2) << elapsed << " ms" << std::endl;
 }
 
 float PerformanceTimer::GetElapsed() const {

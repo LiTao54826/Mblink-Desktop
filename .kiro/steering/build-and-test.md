@@ -179,10 +179,10 @@ function testPropertyXxx() {
    ```cmd
    cmake --build build --config Release --target esm_loader
    ```
-
+ 
 2. **运行现有测试**：确保不破坏现有功能
    ```cmd
-   build\bin\Release\esm_loader.exe tests\js\test_xxx.js -q 5 >> debuglog.txt
+   build\bin\Release\esm_loader.exe xxx.js -q 5 >> debuglog.txt
    findstr "TEST_FAIL" debuglog.txt
    del debuglog.txt
    ```

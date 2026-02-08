@@ -418,7 +418,6 @@ void CanvasRenderingContext2D::SetFillStyle(const std::string& color) {
         current_state_.fill_paint.setColor(ParseColor(color));
         current_state_.fill_paint.setShader(nullptr);  // 清除之前的渐变
     } catch (const std::exception& e) {
-        std::cerr << "Error in SetFillStyle: " << e.what() << std::endl;
         current_state_.fill_paint.setColor(SK_ColorBLACK);
     }
 }
@@ -470,7 +469,6 @@ CanvasPattern* CanvasRenderingContext2D::CreatePattern(void* image, const std::s
     try {
         return CanvasPattern::Create(image, repetition);
     } catch (const std::exception& e) {
-        std::cerr << "Error in CreatePattern: " << e.what() << std::endl;
         return nullptr;
     }
 }

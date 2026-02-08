@@ -47,7 +47,6 @@ bool KeyboardEventDispatcher::HandleKeyboardEvent(const SDL_Event& event,
                                                    std::shared_ptr<Window> window,
                                                    std::shared_ptr<Document> document) {
     if (!window || !document) {
-        std::cout << "[KeyboardDispatcher] Window or document is null" << std::endl;
         return false;
     }
 
@@ -72,12 +71,10 @@ bool KeyboardEventDispatcher::HandleKeyboardEvent(const SDL_Event& event,
     // 获取焦点元素
     auto focus_element = focus_manager_ ? focus_manager_->GetFocusElement() : nullptr;
     if (!focus_element) {
-        std::cout << "[KeyboardDispatcher] No focus element!" << std::endl;
         // 没有焦点元素，不分发键盘事件
         return false;
     }
     
-    std::cout << "[KeyboardDispatcher] Focus element: " << focus_element->GetTagName() << std::endl;
 
     // 获取修饰键状态
     SDL_Keymod mod = SDL_GetModState();
@@ -159,7 +156,6 @@ void KeyboardEventDispatcher::HandleKeyDown(const SDL_Event& event,
             textarea_element->HandleKeyPress(key, ctrl_key, shift_key);
         } else if (terminal_element) {
             // Terminal 元素：将按键转换为终端序列并发送
-            std::cout << "[KeyboardDispatcher] Terminal keydown: key='" << key << "'" << std::endl;
             int modifiers = (ctrl_key ? 1 : 0) | (shift_key ? 2 : 0) | (alt_key ? 4 : 0);
             terminal_element->HandleKeyInput(key, modifiers);
         } else {
@@ -224,7 +220,6 @@ void KeyboardEventDispatcher::HandleTextInput(const SDL_Event& event,
         textarea_element->HandleTextInput(text);
     } else if (terminal_element) {
         // Terminal 元素：直接发送文本输入
-        std::cout << "[KeyboardDispatcher] Terminal text input: '" << text << "'" << std::endl;
         terminal_element->SendInput(text);
     } else {
         // 检查是否是 contentEditable 元素

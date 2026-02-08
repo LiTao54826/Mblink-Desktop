@@ -540,11 +540,13 @@ void BoxRenderer::RenderBoxShadow(const Box& box,
     }
 
     SkRect border_box = box.GetBorderBox();
-    
+
     // 修复：计算 border-radius 百分比的基准尺寸
     float box_width = border_box.width();
     float box_height = border_box.height();
     float base_size = std::min(box_width, box_height);
+
+    // 调试日志已移除
 
     for (const auto& shadow : shadows) {
         // 创建路径
@@ -567,8 +569,7 @@ void BoxRenderer::RenderBoxShadow(const Box& box,
         paint.SetColor(shadow.color);
 
         if (!shadow.inset) {
-            // 外阴影：使用 MaskFilter（比 ImageFilter 快 10-50 倍）
-            // respectCTM=false 避免随变换缩放模糊，进一步提升性能
+            // 外阴影：使用 MaskFilter
             if (shadow.blur_radius > 0) {
                 float sigma = shadow.blur_radius / 2.0f;
                 paint.GetSkPaint().setMaskFilter(
@@ -584,6 +585,8 @@ void BoxRenderer::RenderBoxShadow(const Box& box,
 
             // 使用 drawRRect 替代 drawPath（对于圆角矩形更快）
             if (border_radius) {
+                // 调试日志已移除
+
                 float spread = shadow.spread_radius;
                 SkRRect rrect;
                 SkVector radii[4] = {
@@ -597,8 +600,13 @@ void BoxRenderer::RenderBoxShadow(const Box& box,
                      border_radius->bottom_left.ToPx(base_size) + spread}
                 };
                 rrect.setRectRadii(shadow_rect, radii);
+
+                // 调试日志已移除
+
                 canvas_->drawRRect(rrect, paint.GetSkPaint());
+
             } else {
+                // 没有 border_radius，使用矩形
                 canvas_->drawRect(shadow_rect, paint.GetSkPaint());
             }
         } else {

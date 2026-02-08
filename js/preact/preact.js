@@ -322,7 +322,7 @@ function getElementId(element) {
     if (!id) {
         id = String(__elementIdCounter++);
         element.setAttribute('data-preact-id', id);
-        __elementDataStore[id] = { listeners: {}, handlers: {} };
+        __elementDataStore[id] = { element: element, listeners: {}, handlers: {} };
     }
     return id;
 }
@@ -330,7 +330,9 @@ function getElementId(element) {
 function getElementData(element) {
     var id = getElementId(element);
     if (!__elementDataStore[id]) {
-        __elementDataStore[id] = { listeners: {}, handlers: {} };
+        __elementDataStore[id] = { element: element, listeners: {}, handlers: {} };
+    } else if (!__elementDataStore[id].element) {
+        __elementDataStore[id].element = element;
     }
     return __elementDataStore[id];
 }
@@ -978,6 +980,53 @@ function isValidElement(value) {
     // 暴露到全局作用域
     global.Preact = Preact;
     global.preact = preact;
+
+    // 暴露清理函数，供 C++ 关闭时调用以释放 IIFE 内部的函数引用
+    // __elementDataStore 是 IIFE 局部变量，外部无法直接访问
+    global.__preactCleanup = function() {
+        for (var id in __elementDataStore) {
+            var data = __elementDataStore[id];
+            if (data) {
+                // 先从 DOM 上移除稳定监听器（关键：触发 C++ RemoveEventListener 释放 JSValue）
+                if (data.element && data.listeners) {
+                    for (var k in data.listeners) {
+                        var stable = data.listeners[k];
+                        if (typeof stable !== 'function') continue;
+
+                        // _input 后缀必须优先判断，否则会被前面的 onXxx 分支吞掉
+                        var eventName = null;
+                        if (k.length > 6 && k.substring(k.length - 6) === '_input') {
+                            eventName = 'input';
+                        } else if (k.length > 2 && k.substring(0, 2) === 'on') {
+                            eventName = k.substring(2).toLowerCase();
+                        }
+
+                        if (eventName) {
+                            try { data.element.removeEventListener(eventName, stable); } catch (_) {}
+                        }
+
+                        delete data.listeners[k];
+                    }
+                } else if (data.listeners) {
+                    for (var lk in data.listeners) { delete data.listeners[lk]; }
+                }
+
+                if (data.handlers) {
+                    for (var hk in data.handlers) { delete data.handlers[hk]; }
+                }
+
+                // 删除回指，打断 element <-> store 的引用链
+                if (data.element) {
+                    try { data.element.removeAttribute('data-preact-id'); } catch (_) {}
+                    data.element = null;
+                }
+                if (data.vnode) {
+                    data.vnode = null;
+                }
+            }
+            delete __elementDataStore[id];
+        }
+    };
 
     // Note: For ES6 module usage, use js/preact/preact.mjs
 

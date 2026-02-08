@@ -4,10 +4,13 @@
  */
 
 #include "shadow_renderer.h"
+#include "core/render/text/text_renderer.h"
+#include "core/render/utils/color.h"
 #include "include/core/SkBlurTypes.h"
 #include "include/core/SkPath.h"
 #include "include/core/SkClipOp.h"
 #include <algorithm>
+#include <cstdio>
 
 namespace lightui {
 
@@ -48,11 +51,13 @@ void ShadowRenderer::RenderOutsetShadow(SkCanvas* canvas,
     SkPaint paint;
     paint.setColor(shadow.color);
     paint.setAntiAlias(true);
-    
+
     // 3. 应用模糊滤镜
     if (shadow.blur_radius > 0) {
-        // Skia 的 MakeBlur 使用 sigma 值，通常是 CSS blur-radius 的一半
-        float sigma = shadow.blur_radius / 2.0f;
+        // CSS blur-radius 转换为 Skia sigma
+        // 根据测试，使用 blur_radius 作为 sigma 值效果最接近浏览器
+        // 注意：不同浏览器的实现可能略有差异
+        float sigma = shadow.blur_radius;
         paint.setMaskFilter(CreateBlurFilter(sigma));
     }
     
@@ -104,7 +109,10 @@ void ShadowRenderer::RenderInsetShadow(SkCanvas* canvas,
     
     // 4. 应用模糊滤镜
     if (shadow.blur_radius > 0) {
-        float sigma = shadow.blur_radius / 2.0f;
+        // CSS blur-radius 转换为 Skia sigma
+        // 根据测试，使用 blur_radius 作为 sigma 值效果最接近浏览器
+        // 注意：不同浏览器的实现可能略有差异
+        float sigma = shadow.blur_radius;
         paint.setMaskFilter(CreateBlurFilter(sigma));
     }
     
@@ -141,39 +149,38 @@ void ShadowRenderer::RenderTextWithShadow(SkCanvas* canvas,
                                          const SkFont& font,
                                          float x, float y,
                                          SkColor text_color,
-                                         const std::vector<CSSTextShadow>& shadows) {
+                                         const std::vector<CSSTextShadow>& shadows,
+                                         TextRenderer& text_renderer) {
     if (text.empty()) {
         return;
     }
-    
+
     // 1. 先渲染阴影（从后往前）
     for (auto it = shadows.rbegin(); it != shadows.rend(); ++it) {
         const auto& shadow = *it;
-        
-        SkPaint shadow_paint;
-        shadow_paint.setColor(shadow.color);
-        shadow_paint.setAntiAlias(true);
-        
+
+        // 创建阴影画笔
+        Paint shadow_paint;
+        shadow_paint.SetColor(shadow.color);
+
         // 应用模糊
         if (shadow.blur_radius > 0) {
-            float sigma = shadow.blur_radius / 2.0f;
-            shadow_paint.setMaskFilter(CreateBlurFilter(sigma));
+            // CSS blur-radius 转换为 Skia sigma
+            // 根据测试，使用 blur_radius 作为 sigma 值效果最接近浏览器
+            // 注意：不同浏览器的实现可能略有差异
+            float sigma = shadow.blur_radius;
+            shadow_paint.GetSkPaint().setMaskFilter(CreateBlurFilter(sigma));
         }
-        
-        // 绘制阴影文本
-        canvas->drawString(text.c_str(), 
-                          x + shadow.offset_x, 
-                          y + shadow.offset_y, 
-                          font, 
-                          shadow_paint);
+
+        // 使用TextRenderer绘制阴影文本（支持emoji）
+        // 直接在偏移后的坐标绘制，避免使用translate影响canvas状态
+        text_renderer.DrawTextWithEmoji(text, x + shadow.offset_x, y + shadow.offset_y, font, shadow_paint);
     }
-    
+
     // 2. 再渲染文本本身
-    SkPaint text_paint;
-    text_paint.setColor(text_color);
-    text_paint.setAntiAlias(true);
-    
-    canvas->drawString(text.c_str(), x, y, font, text_paint);
+    Paint text_paint;
+    text_paint.SetColor(text_color);
+    text_renderer.DrawTextWithEmoji(text, x, y, font, text_paint);
 }
 
 sk_sp<SkMaskFilter> ShadowRenderer::CreateBlurFilter(float blur_radius) {

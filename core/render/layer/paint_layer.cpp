@@ -723,7 +723,6 @@ std::string PaintLayer::ToDebugString() const {
 
 void PaintLayer::DumpTree(int indent) const {
     std::string prefix(indent * 2, ' ');
-    std::cout << prefix << ToDebugString() << std::endl;
     
     for (auto* child : children_) {
         if (child) {

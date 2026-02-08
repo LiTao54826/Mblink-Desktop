@@ -515,7 +515,7 @@ std::vector<CSSTextShadow> CSSValue::ParseTextShadow(const std::string& str) {
         return shadows;
     }
 
-    // 支持多个阴影，用逗号分隔
+    // 支持多个阴影,用逗号分隔
     // 格式：offset-x offset-y blur-radius color
     // 例如：2px 2px 4px rgba(0,0,0,0.5), 1px 1px white
 
@@ -523,7 +523,7 @@ std::vector<CSSTextShadow> CSSValue::ParseTextShadow(const std::string& str) {
     std::vector<std::string> shadow_strings;
     std::string current;
     int paren_depth = 0;
-    
+
     for (char c : trimmed) {
         if (c == '(') {
             paren_depth++;
@@ -540,13 +540,15 @@ std::vector<CSSTextShadow> CSSValue::ParseTextShadow(const std::string& str) {
             current += c;
         }
     }
-    
+
     if (!current.empty()) {
         shadow_strings.push_back(Trim(current));
     }
 
     // 解析每个阴影
-    for (const auto& shadow_str : shadow_strings) {
+    for (size_t i = 0; i < shadow_strings.size(); i++) {
+        const auto& shadow_str = shadow_strings[i];
+
         CSSTextShadow shadow;
         std::vector<std::string> parts = Split(shadow_str, ' ');
 
@@ -575,7 +577,7 @@ std::vector<CSSTextShadow> CSSValue::ParseTextShadow(const std::string& str) {
 
         shadows.push_back(shadow);
     }
-    
+
     return shadows;
 }
 
@@ -595,7 +597,36 @@ std::optional<CSSLinearGradient> CSSValue::ParseLinearGradient(const std::string
     }
 
     std::string content = trimmed.substr(start + 1, end - start - 1);
-    std::vector<std::string> parts = Split(content, ',');
+
+    // 智能分割：正确处理括号内的逗号（如 rgba(0,0,0,0.05) 中的逗号）
+    std::vector<std::string> parts;
+    std::string current;
+    int paren_depth = 0;
+
+    for (size_t i = 0; i < content.length(); i++) {
+        char c = content[i];
+
+        if (c == '(') {
+            paren_depth++;
+            current += c;
+        } else if (c == ')') {
+            paren_depth--;
+            current += c;
+        } else if (c == ',' && paren_depth == 0) {
+            // 顶层逗号，作为分隔符
+            if (!current.empty()) {
+                parts.push_back(Trim(current));
+                current.clear();
+            }
+        } else {
+            current += c;
+        }
+    }
+
+    // 添加最后一个
+    if (!current.empty()) {
+        parts.push_back(Trim(current));
+    }
 
     if (parts.empty()) {
         return std::nullopt;
@@ -616,6 +647,9 @@ std::optional<CSSLinearGradient> CSSValue::ParseLinearGradient(const std::string
         else if (first == "to bottom") gradient.angle = 180.0f;
         else if (first == "to left") gradient.angle = 270.0f;
         idx = 1;
+    } else {
+        // 🎯 CSS规范：如果没有指定角度或方向，默认为 "to bottom" (180deg)
+        gradient.angle = 180.0f;
     }
 
     // 解析颜色停止点
@@ -629,7 +663,22 @@ std::optional<CSSLinearGradient> CSSValue::ParseLinearGradient(const std::string
         stop.color = ParseColor(stop_parts[0]);
 
         if (stop_parts.size() > 1) {
-            stop.position = ParseFloat(stop_parts[1]) / 100.0f; // 假设为百分比
+            std::string pos_str = stop_parts[1];
+            if (pos_str.find('%') != std::string::npos) {
+                // 百分比
+                stop.position = ParseFloat(pos_str) / 100.0f;
+                stop.is_pixel = false;
+            } else if (pos_str.find("px") != std::string::npos) {
+                // 像素值 - 保存原始值，在渲染时根据 background-size 动态计算
+                float px_value = ParseFloat(pos_str);
+                stop.is_pixel = true;
+                stop.pixel_value = px_value;
+                stop.position = 0.0f;  // 临时值，渲染时会重新计算
+            } else {
+                // 无单位，尝试解析为数字（0-1）
+                stop.position = ParseFloat(pos_str);
+                stop.is_pixel = false;
+            }
         } else {
             // 自动计算位置
             if (gradient.stops.empty()) {
@@ -664,7 +713,36 @@ std::optional<CSSRadialGradient> CSSValue::ParseRadialGradient(const std::string
     }
 
     std::string content = trimmed.substr(start + 1, end - start - 1);
-    std::vector<std::string> parts = Split(content, ',');
+
+    // 智能分割：正确处理括号内的逗号（如 rgba(0,0,0,0.05) 中的逗号）
+    std::vector<std::string> parts;
+    std::string current;
+    int paren_depth = 0;
+
+    for (size_t i = 0; i < content.length(); i++) {
+        char c = content[i];
+
+        if (c == '(') {
+            paren_depth++;
+            current += c;
+        } else if (c == ')') {
+            paren_depth--;
+            current += c;
+        } else if (c == ',' && paren_depth == 0) {
+            // 顶层逗号，作为分隔符
+            if (!current.empty()) {
+                parts.push_back(Trim(current));
+                current.clear();
+            }
+        } else {
+            current += c;
+        }
+    }
+
+    // 添加最后一个
+    if (!current.empty()) {
+        parts.push_back(Trim(current));
+    }
 
     if (parts.empty()) {
         return std::nullopt;
@@ -745,6 +823,95 @@ CSSBackgroundSize CSSValue::ParseBackgroundSize(const std::string& str) {
     }
 
     return size;
+}
+
+std::vector<CSSLinearGradient> CSSValue::ParseMultipleLinearGradients(const std::string& str) {
+    std::vector<CSSLinearGradient> gradients;
+    std::string trimmed = Trim(str);
+
+    if (trimmed.empty()) {
+        return gradients;
+    }
+
+    // 分割多个渐变，需要正确处理嵌套括号内的逗号
+    std::vector<std::string> gradient_strings;
+    std::string current;
+    int paren_depth = 0;
+
+    for (size_t i = 0; i < trimmed.length(); i++) {
+        char c = trimmed[i];
+
+        if (c == '(') {
+            paren_depth++;
+            current += c;
+        } else if (c == ')') {
+            paren_depth--;
+            current += c;
+        } else if (c == ',' && paren_depth == 0) {
+            // 顶层逗号，作为分隔符
+            if (!current.empty()) {
+                gradient_strings.push_back(Trim(current));
+                current.clear();
+            }
+        } else {
+            current += c;
+        }
+    }
+
+    // 添加最后一个
+    if (!current.empty()) {
+        gradient_strings.push_back(Trim(current));
+    }
+
+    // 解析每个渐变
+    for (const auto& gradient_str : gradient_strings) {
+        if (gradient_str.find("linear-gradient") != std::string::npos) {
+            auto gradient = ParseLinearGradient(gradient_str);
+            if (gradient.has_value()) {
+                gradients.push_back(*gradient);
+            }
+        }
+    }
+
+    return gradients;
+}
+
+std::vector<CSSBackgroundSize> CSSValue::ParseMultipleBackgroundSizes(const std::string& str) {
+    std::vector<CSSBackgroundSize> sizes;
+    std::string trimmed = Trim(str);
+
+    if (trimmed.empty()) {
+        return sizes;
+    }
+
+    // 分割多个尺寸值（逗号分隔）
+    std::vector<std::string> size_strings;
+    std::string current;
+
+    for (size_t i = 0; i < trimmed.length(); i++) {
+        char c = trimmed[i];
+
+        if (c == ',') {
+            if (!current.empty()) {
+                size_strings.push_back(Trim(current));
+                current.clear();
+            }
+        } else {
+            current += c;
+        }
+    }
+
+    // 添加最后一个
+    if (!current.empty()) {
+        size_strings.push_back(Trim(current));
+    }
+
+    // 解析每个尺寸
+    for (const auto& size_str : size_strings) {
+        sizes.push_back(ParseBackgroundSize(size_str));
+    }
+
+    return sizes;
 }
 
 } // namespace lightui
