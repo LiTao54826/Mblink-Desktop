@@ -1,8 +1,12 @@
 /**
  * @file main.cpp
- * @brief MBink ESM Loader - 支持 ES 模块的应用加载器
+ * @brief MBink ESM Loader - 支持 ES 模块和 HTML 的应用加载器
  *
- * 用法: esm_loader.exe <entry.js> [选项]
+ * 用法: esm_loader.exe <entry.js|index.html> [选项]
+ *
+ * 支持两种入口模式：
+ *   1. JS 模式 (.js/.mjs) - 加载 ES 模块，适合 Preact 应用
+ *   2. HTML 模式 (.html/.htm) - 解析 HTML 文件，执行其中的 <script> 标签
  *
  * 选项:
  *   --width <宽度>      窗口宽度 (默认: 800)
@@ -21,8 +25,10 @@
 #include "core/quickjs/dom_binding_map.h"
 #include "core/event/loop/task_scheduler.h"
 #include "core/event/loop/event_loop.h"
+#include "core/network/fetch_bindings.h"
 #include "core/devtools/devtools_manager.h"
 #include "core/render/text/font_manager.h"
+#include "core/render/image/image_loader.h"
 #include "core/bridge/host_bridge.h"
 #include "core/bridge/state_manager.h"
 #include "core/quickjs/bindings/js_element.h"
@@ -37,6 +43,7 @@ extern "C" {
 #include <sstream>
 #include <memory>
 #include <string>
+#include <algorithm>
 #include <filesystem>
 
 #ifdef _WIN32
@@ -163,23 +170,46 @@ std::string ReadFile(const std::string& path) {
     return buffer.str();
 }
 
+// 判断入口文件是否为 HTML 文件
+bool IsHTMLFile(const std::string& path) {
+    fs::path p(path);
+    auto ext = p.extension().string();
+    std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
+    return ext == ".html" || ext == ".htm";
+}
+
+// 从文档中获取 <title> 标签内容
+std::string GetDocumentTitle(std::shared_ptr<Document> doc) {
+    auto titles = doc->GetElementsByTagName("title");
+    if (!titles.empty()) {
+        return titles[0]->GetTextContent();
+    }
+    return "";
+}
+
 void PrintUsage(const char* program_name) {
-    std::cout << "MBink ESM Loader - ES 模块加载器" << std::endl;
+    std::cout << "MBink Loader - ES 模块 / HTML 应用加载器" << std::endl;
     std::cout << std::endl;
-    std::cout << "用法: " << program_name << " <entry.js> [选项]" << std::endl;
+    std::cout << "用法: " << program_name << " <entry.js|index.html> [选项]" << std::endl;
+    std::cout << std::endl;
+    std::cout << "支持两种入口模式:" << std::endl;
+    std::cout << "  .js/.mjs   JS 模式 - 加载 ES 模块，适合 Preact 应用" << std::endl;
+    std::cout << "  .html/.htm HTML 模式 - 解析 HTML，执行 <script> 标签" << std::endl;
     std::cout << std::endl;
     std::cout << "选项:" << std::endl;
-    std::cout << "  --width <宽度>      窗口宽度 (默认: 800)" << std::endl;
-    std::cout << "  --height <高度>     窗口高度 (默认: 600)" << std::endl;
-    std::cout << "  --title <标题>      窗口标题 (默认: MBink App)" << std::endl;
+    std::cout << "  --width <宽度>      窗口宽度 (默认: 1200)" << std::endl;
+    std::cout << "  --height <高度>     窗口高度 (默认: 800)" << std::endl;
+    std::cout << "  --title <标题>      窗口标题 (默认: MBink App / HTML title)" << std::endl;
+    std::cout << "  --no-scripts        不执行脚本 (仅 HTML 模式)" << std::endl;
     std::cout << "  --devtools          启动时打开开发者工具" << std::endl;
-    std::cout << "  -q, --quit <帧数>   渲染指定帧数后自动退出 (用于调试)" << std::endl;
+    std::cout << "  -q, --quit <秒>     自动退出时间（秒）" << std::endl;
     std::cout << "  --help              显示此帮助信息" << std::endl;
     std::cout << std::endl;
     std::cout << "示例:" << std::endl;
     std::cout << "  " << program_name << " app.js" << std::endl;
-    std::cout << "  " << program_name << " app.js --width 1024 --height 768" << std::endl;
-    std::cout << "  " << program_name << " app.js -q 3  # 渲染3帧后退出" << std::endl;
+    std::cout << "  " << program_name << " index.html" << std::endl;
+    std::cout << "  " << program_name << " app.html --width 1024 --height 768" << std::endl;
+    std::cout << "  " << program_name << " test.html -q 5  # 5秒后自动退出" << std::endl;
 }
 
 // 加载嵌入的 JS 库
@@ -275,7 +305,9 @@ int main(int argc, char** argv) {
     int width = 1200;
     int height = 800;
     std::string title = "MBink App";
+    bool title_from_user = false;  // 用户是否通过 --title 指定了标题
     bool open_devtools = false;
+    bool execute_scripts = true;
     float quit_after_seconds = 0;  // 0 表示不自动退出，单位：秒
 
     // 解析命令行参数
@@ -291,8 +323,11 @@ int main(int argc, char** argv) {
             height = std::stoi(argv[++i]);
         } else if (arg == "--title" && i + 1 < argc) {
             title = argv[++i];
+            title_from_user = true;
         } else if (arg == "--devtools") {
             open_devtools = true;
+        } else if (arg == "--no-scripts") {
+            execute_scripts = false;
         } else if ((arg == "-q" || arg == "--quit") && i + 1 < argc) {
             quit_after_seconds = std::stof(argv[++i]);
         } else if (arg[0] != '-') {
@@ -311,12 +346,18 @@ int main(int argc, char** argv) {
         return 1;
     }
 
+    // 检测入口文件类型
+    bool is_html = IsHTMLFile(entry_path);
+
     try {
         std::cout << "========================================" << std::endl;
-        std::cout << "  MBink ESM Loader" << std::endl;
+        std::cout << "  MBink Loader (" << (is_html ? "HTML" : "ESM") << " mode)" << std::endl;
         std::cout << "========================================" << std::endl;
         std::cout << "  Entry: " << entry_path << std::endl;
         std::cout << "  Size: " << width << "x" << height << std::endl;
+        if (is_html) {
+            std::cout << "  Scripts: " << (execute_scripts ? "enabled" : "disabled") << std::endl;
+        }
         std::cout << "========================================" << std::endl;
         std::cout << std::endl;
         std::cout.flush();
@@ -330,41 +371,80 @@ int main(int argc, char** argv) {
         config.height = height;
         config.resizable = true;
         config.vsync = true;
-        std::cout << "[DEBUG] WindowConfig created" << std::endl; std::cout.flush();
 
         auto window = std::make_shared<Window>(config);
-        std::cout << "[DEBUG] Window object created" << std::endl; std::cout.flush();
         auto& window_manager = WindowManager::Instance();
-        std::cout << "[DEBUG] WindowManager instance obtained" << std::endl; std::cout.flush();
         window_manager.RegisterWindow(window);
         std::cout << "  ✓ Window created" << std::endl; std::cout.flush();
 
         // 2. 创建文档
         std::cout << "[2/5] Creating document..." << std::endl; std::cout.flush();
         auto document = std::make_shared<Document>();
-        std::cout << "[DEBUG] Document object created" << std::endl; std::cout.flush();
-        document->Initialize();
-        std::cout << "[DEBUG] Document initialized" << std::endl; std::cout.flush();
-        auto body = document->CreateElement("body");
-        std::cout << "[DEBUG] Body element created" << std::endl; std::cout.flush();
-        document->SetBody(body);
-        std::cout << "[DEBUG] Body set to document" << std::endl; std::cout.flush();
+
+        if (is_html) {
+            // ===== HTML 模式：解析 HTML 文件 =====
+            fs::path html_dir = fs::absolute(entry_path).parent_path();
+            std::string base_path = html_dir.string();
+            document->SetBasePath(base_path);
+            ImageLoader::SetBasePath(base_path);
+            std::cout << "  ✓ Base path: " << base_path << std::endl;
+
+            // 读取并解析 HTML
+            std::string html_content = ReadFile(entry_path);
+            if (html_content.empty()) {
+                std::cerr << "  ✗ Failed to read HTML file" << std::endl;
+                return 1;
+            }
+            if (!document->LoadHTML(html_content)) {
+                std::cerr << "  ✗ Failed to parse HTML" << std::endl;
+                return 1;
+            }
+            std::cout << "  ✓ HTML document loaded" << std::endl;
+
+            // 加载外部样式表
+            document->LoadExternalStylesheets();
+
+            // 统计标签
+            auto styles = document->GetElementsByTagName("style");
+            auto links = document->GetElementsByTagName("link");
+            auto scripts = document->GetElementsByTagName("script");
+            std::cout << "  ✓ Found " << styles.size() << " <style>, "
+                      << links.size() << " <link>, "
+                      << scripts.size() << " <script>" << std::endl;
+
+            // 从 HTML 获取 title（如果用户没有通过 --title 指定）
+            if (!title_from_user) {
+                std::string html_title = GetDocumentTitle(document);
+                if (!html_title.empty()) {
+                    title = html_title;
+                    window->SetTitle(title);
+                }
+            }
+            std::cout << "  ✓ Title: " << title << std::endl;
+        } else {
+            // ===== JS 模式：创建空文档 =====
+            document->Initialize();
+        }
+
         window->SetDocument(document);
-        std::cout << "  ✓ Document initialized" << std::endl; std::cout.flush();
+        std::cout << "  ✓ Document ready" << std::endl; std::cout.flush();
 
         // 3. 创建 QuickJS 运行时
         std::cout << "[3/5] Creating QuickJS runtime..." << std::endl; std::cout.flush();
         auto runtime = std::make_unique<QuickJSRuntime>();
-        std::cout << "[DEBUG] QuickJSRuntime created" << std::endl; std::cout.flush();
         auto task_scheduler = std::make_shared<TaskScheduler>();
         std::cout << "  ✓ QuickJS runtime created" << std::endl; std::cout.flush();
 
         // 4. 初始化绑定和库
         std::cout << "[4/5] Initializing bindings..." << std::endl; std::cout.flush();
         WindowBindings window_bindings(runtime.get(), window, task_scheduler);
-        std::cout << "[DEBUG] WindowBindings created" << std::endl; std::cout.flush();
         window_bindings.InitBindings();
         std::cout << "  ✓ Window bindings initialized" << std::endl; std::cout.flush();
+
+        // 初始化 FetchBindings（HTML 模式下需要网络请求能力）
+        FetchBindings fetch_bindings(runtime->GetContext(), task_scheduler);
+        fetch_bindings.InitBindings();
+        std::cout << "  ✓ Fetch bindings initialized" << std::endl; std::cout.flush();
 
         // 初始化 StateManager 和 HostBridge
         auto state_manager = std::make_unique<StateManager>();
@@ -373,13 +453,10 @@ int main(int argc, char** argv) {
         std::cout << "  ✓ Host bridge initialized" << std::endl; std::cout.flush();
 
         // 创建事件循环（需要在加载模块之前，以便 getSelection 等 API 可用）
-        std::cout << "[DEBUG] Creating EventLoop..." << std::endl; std::cout.flush();
         EventLoop event_loop(task_scheduler);
-        std::cout << "[DEBUG] EventLoop created" << std::endl; std::cout.flush();
         event_loop.SetQuickJSRuntime(runtime.get());
-        std::cout << "[DEBUG] EventLoop SetQuickJSRuntime done" << std::endl; std::cout.flush();
         DOMBindings::SetGlobalEventLoop(runtime->GetContext(), &event_loop);
-        std::cout << "[DEBUG] SetGlobalEventLoop done" << std::endl; std::cout.flush();
+        std::cout << "  ✓ Event loop created" << std::endl; std::cout.flush();
 
         // 加载嵌入的库
         if (lightui::embedded::HasEmbeddedJS()) {
@@ -389,27 +466,37 @@ int main(int argc, char** argv) {
             std::cerr << "  ⚠ No embedded JS libraries" << std::endl;
         }
 
-        // 5. 加载入口模块
-        std::cout << "[5/5] Loading entry module..." << std::endl;
+        // 5. 执行脚本
+        std::cout << "[5/5] Loading entry..." << std::endl;
 
         // 设置模块基础路径
         fs::path abs_path = fs::absolute(entry_path);
         runtime->SetBaseModulePath(abs_path.string());
 
-        // 读取入口文件
-        std::string entry_code = ReadFile(entry_path);
-        if (entry_code.empty()) {
-            std::cerr << "  ✗ Failed to read: " << entry_path << std::endl;
-            return 1;
-        }
+        if (is_html) {
+            // ===== HTML 模式：设置 JSRuntime 并执行 <script> 标签 =====
+            document->SetJSRuntime(runtime.get());
+            if (execute_scripts) {
+                document->ExecuteScripts();
+                std::cout << "  ✓ HTML scripts executed" << std::endl;
+            } else {
+                std::cout << "  ✓ Scripts skipped (--no-scripts)" << std::endl;
+            }
+        } else {
+            // ===== JS 模式：加载 ES 模块 =====
+            std::string entry_code = ReadFile(entry_path);
+            if (entry_code.empty()) {
+                std::cerr << "  ✗ Failed to read: " << entry_path << std::endl;
+                return 1;
+            }
 
-        // 使用 EvalModule 执行 ES 模块
-        try {
-            runtime->EvalModule(entry_code, abs_path.string());
-            std::cout << "  ✓ Entry module loaded" << std::endl;
-        } catch (const std::exception& e) {
-            std::cerr << "  ✗ Module error: " << e.what() << std::endl;
-            return 1;
+            try {
+                runtime->EvalModule(entry_code, abs_path.string());
+                std::cout << "  ✓ Entry module loaded" << std::endl;
+            } catch (const std::exception& e) {
+                std::cerr << "  ✗ Module error: " << e.what() << std::endl;
+                return 1;
+            }
         }
 
         // 显示窗口
@@ -468,6 +555,13 @@ int main(int argc, char** argv) {
         // 3. 注销并释放窗口（可能持有事件回调）
         window_manager.UnregisterWindow(window);
         window.reset();
+
+        // HTML 模式：与 html_loader 一致，基础清理后直接退出
+        // 避免 Preact 专用清理流程触发 QuickJS GC 断言
+        if (is_html) {
+            std::cout << "  ✓ HTML mode cleanup done" << std::endl;
+            std::quick_exit(0);
+        }
 
         // 4. 先清理 Preact/Hooks 在全局对象上的闭包引用（事件处理函数、调度器状态等）
         // 必须在 DOMBindings::Cleanup() 之前，因为 Cleanup 会把 global.document 设为 undefined，
