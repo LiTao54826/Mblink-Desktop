@@ -103,9 +103,9 @@ if(LIGHTUI_BUILD_PYTHON_BINDING)
 endif()
 
 # Tools
-add_subdirectory(tools/app_loader)
+# add_subdirectory(tools/app_loader)
 add_subdirectory(tools/app_bundler)
-add_subdirectory(tools/html_loader)
+# add_subdirectory(tools/html_loader)
 add_subdirectory(tools/esm_loader)
 
 # Installation
