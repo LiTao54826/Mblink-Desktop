@@ -91,6 +91,7 @@ bool RenderPipeline::Initialize(int width, int height, const UnifiedPipelineConf
     layer_tree_builder_->SetLayerPromotionEnabled(config.enable_layer_promotion);
     rasterizer_->SetIncrementalEnabled(config.enable_incremental_rasterize);
     rasterizer_->SetScrollOptimizationEnabled(config.enable_scroll_optimization);
+    rasterizer_->SetViewportSize(static_cast<float>(width), static_cast<float>(height));
     compositor_->SetFrameSkipEnabled(config.enable_frame_skip);
     compositor_->SetShowLayerBorders(config.show_layer_borders);
 
@@ -141,6 +142,9 @@ void RenderPipeline::Resize(int width, int height) {
     if (compositor_->IsInitialized()) {
         compositor_->Resize(width, height);
     }
+
+    // 同步 Rasterizer 视口尺寸（用于 fixed 元素 clip rect）
+    rasterizer_->SetViewportSize(static_cast<float>(width), static_cast<float>(height));
 
     // 更新 LayerTreeManager 视口
     layer_tree_manager_->SetViewport(
@@ -496,7 +500,6 @@ void RenderPipeline::DoLayerTreeBuild() {
         UpdateLayerTreeBounds(root_layer_.get());
     } else if (!root_layer_ || needs_layer_tree_rebuild_) {
         // 完整重建路径
-
         root_layer_ = layer_tree_builder_->Build(render_tree_.get());
         needs_layer_tree_rebuild_ = false;
         layer_tree_manager_->ClearFullRebuildFlag();
@@ -511,15 +514,22 @@ void RenderPipeline::DoLayerTreeBuild() {
             root_layer_->MarkFullDirty();
 
             // 关键修复：层树重建后，立即恢复滚动偏移
-            // 这确保第一帧渲染时滚动偏移就是正确的
+            // 注意：不能依赖 IsScrollable()，因为新创建的 RenderObject 可能
+            // IsScrollable() 返回 false，但 GetScrollY() 已经有值（从 DOM 同步过来）
             RenderObject* root_obj = root_layer_->GetRenderObject();
-            if (root_obj && root_obj->IsScrollable()) {
+            if (root_obj) {
                 float scroll_x = root_obj->GetScrollX();
                 float scroll_y = root_obj->GetScrollY();
-                root_layer_->SetScrollOffset(SkPoint::Make(scroll_x, scroll_y));
+                if (scroll_x != 0 || scroll_y != 0) {
+                    root_layer_->SetScrollOffset(SkPoint::Make(scroll_x, scroll_y));
+                }
             }
+
+            // 🐛 修复：完整重建后，恢复所有可滚动层的滚动偏移
+            // 不仅仅是 root 层，中间的可滚动容器也需要恢复
+            RestoreScrollOffsetsAfterRebuild(root_layer_.get());
         }
-        
+
         // 构建属性树（复制自 V2）
         if (config_.enable_property_trees && property_tree_builder_) {
             property_tree_builder_->Build(render_tree_.get());
@@ -602,10 +612,14 @@ void RenderPipeline::UpdateLayerTreeBounds(CompositorLayer* layer) {
 
         // 关键修复：更新滚动偏移
         // 每帧都需要同步滚动偏移，确保动画层能正确跟随滚动
-        if (render_obj->IsScrollable()) {
+        // 注意：不能依赖 IsScrollable()，因为 root 元素等可能
+        // IsScrollable() 返回 false，但 GetScrollX/Y 已经有值
+        {
             float scroll_x = render_obj->GetScrollX();
             float scroll_y = render_obj->GetScrollY();
-            layer->SetScrollOffset(SkPoint::Make(scroll_x, scroll_y));
+            if (scroll_x != 0 || scroll_y != 0) {
+                layer->SetScrollOffset(SkPoint::Make(scroll_x, scroll_y));
+            }
         }
 
         // GPU 增量渲染优化：使用精确的脏矩形而不是整层标记
@@ -782,6 +796,14 @@ void RenderPipeline::DetectAndCreateNewLayersRecursive(RenderObject* obj) {
             if (new_layer) {
                 new_layer->MarkFullDirty();
 
+                // 关键修复：标记父层为脏，确保父层重新光栅化
+                // 当子元素被提升为独立层后，父层的 bitmap 中还残留该元素的旧内容
+                // 必须重新光栅化父层，使其 Paint 时跳过已有独立层的子元素
+                auto parent_layer = new_layer->GetParent();
+                if (parent_layer) {
+                    parent_layer->MarkFullDirty();
+                }
+
                 if (is_fixed && debug_layers) {
                     // 启用接下来3帧的详细日志
                     g_debug_frames_remaining = 3;
@@ -882,6 +904,27 @@ void RenderPipeline::RemoveOrphanedLayers(CompositorLayer* layer) {
     }
 }
 
+void RenderPipeline::RestoreScrollOffsetsAfterRebuild(CompositorLayer* layer) {
+    if (!layer) return;
+
+    // 恢复当前层的滚动偏移
+    // 注意：不能依赖 IsScrollable()，因为新创建的 RenderObject 可能
+    // IsScrollable() 返回 false，但 GetScrollX/Y 已经有值
+    RenderObject* obj = layer->GetRenderObject();
+    if (obj) {
+        float sx = obj->GetScrollX();
+        float sy = obj->GetScrollY();
+        if (sx != 0 || sy != 0) {
+            layer->SetScrollOffset(SkPoint::Make(sx, sy));
+        }
+    }
+
+    // 递归处理子层
+    for (const auto& child : layer->GetChildren()) {
+        RestoreScrollOffsetsAfterRebuild(child.get());
+    }
+}
+
 void RenderPipeline::MarkAllLayersDirty(CompositorLayer* layer) {
     if (!layer) {
         return;
@@ -914,13 +957,17 @@ bool RenderPipeline::HandleScroll(RenderObject* container, float delta_x, float 
     scroll_manager_->UpdateContentSize(container);
 
     bool scrolled = false;
-    
+
     // 如果启用了增量层树更新，使用 LayerTreeManager 处理滚动
     if (config_.enable_incremental_layer_tree) {
         // 注册到 LayerTreeManager（如果尚未注册）
         if (!layer_tree_manager_->IsScrollContainer(container)) {
             layer_tree_manager_->RegisterScrollContainer(container);
         }
+        // 关键修复：在滚动前更新 LayerTreeManager 的滚动范围
+        // 之前只更新了 scroll_manager_ 的内容尺寸，但走 layer_tree_manager_ 路径时
+        // 没有更新其 max_scroll_y，导致使用注册时的旧值，鼠标滚轮无法滚到底部
+        layer_tree_manager_->UpdateScrollContentSize(container);
         scrolled = layer_tree_manager_->ScrollBy(container, delta_x, delta_y);
     } else {
         scrolled = scroll_manager_->HandleScroll(container, delta_x, delta_y);

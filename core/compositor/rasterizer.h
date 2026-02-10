@@ -16,6 +16,7 @@
 #pragma once
 
 #include "compositor_layer.h"
+#include "core/render/objects/render_object.h"
 #include <memory>
 #include <unordered_map>
 #include <vector>
@@ -25,9 +26,6 @@ class SkCanvas;
 class SkRegion;
 
 namespace lightui {
-
-// 前向声明
-class RenderObject;
 
 /**
  * @brief 光栅化统计信息
@@ -161,6 +159,16 @@ public:
      */
     bool IsScrollOptimizationEnabled() const { return scroll_optimization_enabled_; }
 
+    /**
+     * @brief 设置视口尺寸（用于 fixed 元素的 clip rect）
+     * @param width 视口宽度
+     * @param height 视口高度
+     */
+    void SetViewportSize(float width, float height) {
+        viewport_width_ = width;
+        viewport_height_ = height;
+    }
+
 private:
     /**
      * @brief 绘制渲染对象到 Canvas
@@ -177,6 +185,20 @@ private:
      * @param clip_rect 裁剪区域（可选）
      */
     void PaintRenderObjectRecursive(SkCanvas* canvas, RenderObject* obj, const SkIRect* clip_rect);
+
+    /**
+     * @brief 应用非根层的 canvas 偏移补偿
+     *
+     * 统一处理非根层的 layout 位置抵消、fixed 元素 transform 偏移、
+     * 动画边界偏移和静态变换偏移的补偿逻辑。
+     *
+     * @param canvas 目标 Canvas
+     * @param layer 合成层
+     * @param render_obj 关联的渲染对象
+     * @param layout 渲染对象的布局信息
+     */
+    void ApplyLayerCanvasOffset(SkCanvas* canvas, CompositorLayer* layer,
+                                RenderObject* render_obj, const LayoutInfo& layout);
 
     /**
      * @brief 清除区域为透明
@@ -202,6 +224,10 @@ private:
     // 配置选项
     bool incremental_enabled_ = true;
     bool scroll_optimization_enabled_ = true;
+
+    // 视口尺寸（用于 fixed 元素的 clip rect，替代 hardcoded 10000x10000）
+    float viewport_width_ = 0.0f;
+    float viewport_height_ = 0.0f;
 
     // 滚动状态缓存（用于检测滚动方向和距离）
     std::unordered_map<uint32_t, SkPoint> last_scroll_offsets_;

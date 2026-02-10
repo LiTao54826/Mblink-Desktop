@@ -347,22 +347,27 @@ void LayerTreeManager::NotifyScrollListeners(RenderObject* container,
     }
 }
 
-void LayerTreeManager::CalculateScrollBounds(ScrollState& state, 
+void LayerTreeManager::CalculateScrollBounds(ScrollState& state,
                                               RenderObject* container) {
     if (!container) {
         return;
     }
-    
-    // 从 RenderObject 获取尺寸信息
-    const LayoutInfo& layout = container->GetLayoutInfo();
-    state.viewport_width = layout.width;
-    state.viewport_height = layout.height;
+
+    // 更新尺寸信息（用于滚动条绘制等）
     state.content_width = container->GetScrollWidth();
     state.content_height = container->GetScrollHeight();
-    
-    // 计算最大滚动位置
-    state.max_scroll_x = std::max(0.0f, state.content_width - state.viewport_width);
-    state.max_scroll_y = std::max(0.0f, state.content_height - state.viewport_height);
+    state.viewport_width = container->GetEffectiveVisibleWidth();
+    state.viewport_height = container->GetEffectiveVisibleHeight();
+
+    // 关键修复：直接使用 RenderObject 的精确计算
+    // RenderObject::GetMaxScrollX/Y 正确处理了：
+    //   1. body 元素使用视口尺寸（GetEffectiveVisibleHeight）
+    //   2. 减去 border 宽度
+    //   3. 考虑水平/垂直滚动条占用的空间
+    // 之前直接用 layout.height 作为 viewport_height 会偏大，
+    // 导致 max_scroll_y 偏小，鼠标滚轮无法滚动到最底部
+    state.max_scroll_x = container->GetMaxScrollX();
+    state.max_scroll_y = container->GetMaxScrollY();
 }
 
 void LayerTreeManager::ClampScrollPosition(ScrollState& state) {

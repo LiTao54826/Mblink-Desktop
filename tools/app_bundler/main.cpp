@@ -297,7 +297,7 @@ int main(int argc, char** argv) {
     if (template_path.empty()) {
         template_path = ExeWriter::FindTemplate(argv[0]);
         if (template_path.empty()) {
-            std::cerr << "错误: 找不到 app_loader.exe 模板\n";
+            std::cerr << "错误: 找不到模板 exe (esm_loader.exe 或 app_loader.exe)\n";
             std::cerr << "请使用 --template 选项指定模板路径\n";
             return 1;
         }

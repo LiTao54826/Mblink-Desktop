@@ -37,6 +37,7 @@
 #include <cmath>
 #include <iostream>
 #include <algorithm>
+#include <limits>
 
 namespace lightui {
 
@@ -3439,7 +3440,7 @@ void NativeLayoutEngine::ApplyAnonymousBlockLayoutResults(LayoutNode* node) {
     // Apply positions to all inline boxes
     for (const auto& box : node->ifc_inline_boxes) {
         if (!box.render_object) continue;
-        
+
         if (box.type == InlineBoxType::TEXT || box.type == InlineBoxType::ATOMIC) {
             LayoutInfo& layout = box.render_object->GetLayoutInfo();
             // box.x 已经是内容区域的起始位置（margin_left 已经在布局时处理过了）
@@ -3448,11 +3449,110 @@ void NativeLayoutEngine::ApplyAnonymousBlockLayoutResults(LayoutNode* node) {
             layout.width = box.width;
             layout.height = box.height;
             layout.is_laid_out = true;  // 标记为已布局，防止 ReadLayoutResults 覆盖
-            
+
             // For inline-block elements, call Layout to position children
             if (box.render_object->GetType() == RenderObjectType::INLINE_BLOCK) {
                 auto* inline_block = static_cast<RenderInlineBlock*>(box.render_object);
                 inline_block->Layout(box.width, box.height);
+            }
+        }
+    }
+
+    // ✅ Fix: Calculate bounding boxes for inline elements (INLINE_START/INLINE_END pairs)
+    // Previously, only TEXT and ATOMIC boxes got layout info applied.
+    // INLINE_START/INLINE_END markers (representing <span>, <em>, etc.) were skipped,
+    // causing inline elements to have width=0, height=0.
+    //
+    // IMPORTANT: RenderInline::Paint() does canvas->translate(layout.x, layout.y) then
+    // paints children. So children's layout.x/y must be RELATIVE to their parent
+    // RenderInline, not absolute. We use a 3-step approach:
+    // Step 1 (above): Set text/atomic to absolute coordinates
+    // Step 2: Calculate inline element bounding boxes, set to absolute coordinates
+    // Step 3: Adjust children of RenderInline to be relative to their parent
+
+    // Step 2: Calculate bounding boxes using stack for nested inline elements
+    struct InlineTracker {
+        RenderObject* render_obj;
+        float min_x;
+        float min_y;
+        float max_right;
+        float max_bottom;
+    };
+    std::vector<InlineTracker> inline_stack;
+    // Map to store each RenderInline's absolute position (for step 3)
+    std::unordered_map<RenderObject*, std::pair<float, float>> inline_abs_positions;
+
+    for (const auto& box : node->ifc_inline_boxes) {
+        if (!box.render_object) continue;
+
+        if (box.type == InlineBoxType::INLINE_START) {
+            inline_stack.push_back({
+                box.render_object,
+                std::numeric_limits<float>::max(),
+                std::numeric_limits<float>::max(),
+                0.0f,
+                0.0f
+            });
+        } else if (box.type == InlineBoxType::INLINE_END) {
+            if (!inline_stack.empty() && inline_stack.back().render_obj == box.render_object) {
+                auto& tracker = inline_stack.back();
+                if (tracker.min_x != std::numeric_limits<float>::max()) {
+                    LayoutInfo& layout = tracker.render_obj->GetLayoutInfo();
+                    float abs_x = tracker.min_x + offset_x;
+                    float abs_y = tracker.min_y + offset_y;
+                    layout.x = abs_x;
+                    layout.y = abs_y;
+                    layout.width = tracker.max_right - tracker.min_x;
+                    layout.height = tracker.max_bottom - tracker.min_y;
+                    layout.is_laid_out = true;
+                    // Store absolute position for step 3
+                    inline_abs_positions[tracker.render_obj] = {abs_x, abs_y};
+                }
+                inline_stack.pop_back();
+            }
+        } else if (box.type == InlineBoxType::TEXT || box.type == InlineBoxType::ATOMIC) {
+            for (auto& tracker : inline_stack) {
+                tracker.min_x = std::min(tracker.min_x, box.x);
+                tracker.min_y = std::min(tracker.min_y, box.y);
+                tracker.max_right = std::max(tracker.max_right, box.x + box.width);
+                tracker.max_bottom = std::max(tracker.max_bottom, box.y + box.height);
+            }
+        }
+    }
+
+    // Step 3: Adjust positions to create correct relative coordinate chain.
+    // RenderInline::Paint() translates by (layout.x, layout.y) then paints children.
+    // So children must have positions RELATIVE to their parent RenderInline.
+    // Also, nested RenderInline elements must be relative to their parent RenderInline.
+    if (!inline_abs_positions.empty()) {
+        // Adjust TEXT/ATOMIC children: make relative to parent RenderInline
+        for (const auto& box : node->ifc_inline_boxes) {
+            if (!box.render_object) continue;
+            if (box.type == InlineBoxType::TEXT || box.type == InlineBoxType::ATOMIC) {
+                auto parent_sp = box.render_object->GetParent();
+                RenderObject* parent = parent_sp.get();
+                if (parent) {
+                    auto it = inline_abs_positions.find(parent);
+                    if (it != inline_abs_positions.end()) {
+                        LayoutInfo& layout = box.render_object->GetLayoutInfo();
+                        layout.x -= it->second.first;
+                        layout.y -= it->second.second;
+                    }
+                }
+            }
+        }
+
+        // Adjust nested RenderInline elements: make relative to parent RenderInline
+        for (auto& [render_obj, abs_pos] : inline_abs_positions) {
+            auto parent_sp = render_obj->GetParent();
+            RenderObject* parent = parent_sp.get();
+            if (parent) {
+                auto it = inline_abs_positions.find(parent);
+                if (it != inline_abs_positions.end()) {
+                    LayoutInfo& layout = render_obj->GetLayoutInfo();
+                    layout.x -= it->second.first;
+                    layout.y -= it->second.second;
+                }
             }
         }
     }

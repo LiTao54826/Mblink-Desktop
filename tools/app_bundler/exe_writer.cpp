@@ -154,9 +154,17 @@ bool ExeWriter::WriteOutput(const std::string& output_path,
 
 std::string ExeWriter::FindTemplate(const std::string& bundler_path) {
     fs::path bundler = fs::path(bundler_path);
-    
-    // 搜索路径列表
+
+    // 搜索路径列表：优先查找 esm_loader.exe（ESM 基座），其次 app_loader.exe（旧基座）
     std::vector<fs::path> search_paths = {
+        // esm_loader（新基座，支持 ESM import/export）
+        bundler.parent_path() / "esm_loader.exe",
+        bundler.parent_path().parent_path() / "esm_loader.exe",
+        bundler.parent_path() / "Debug" / "esm_loader.exe",
+        bundler.parent_path() / "Release" / "esm_loader.exe",
+        bundler.parent_path().parent_path() / "Debug" / "esm_loader.exe",
+        bundler.parent_path().parent_path() / "Release" / "esm_loader.exe",
+        // app_loader（旧基座，兼容回退）
         bundler.parent_path() / "app_loader.exe",
         bundler.parent_path().parent_path() / "app_loader.exe",
         bundler.parent_path() / "Debug" / "app_loader.exe",

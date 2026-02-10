@@ -18,7 +18,7 @@ import { Text } from '../../js/components/text.js';
 import { Card } from '../../js/components/card.js';
 import { Modal } from '../../js/components/modal.js';
 import { Toast } from '../../js/components/toast.js';
-import { colors } from '../../js/components/theme.js';
+import { colors, lineHeight } from '../../js/components/theme.js';
 
 let toastCounter = 0;
 
@@ -57,15 +57,20 @@ function App() {
       setModalVisible(false);
     }, 1500);
   };
-  return h(Modal, {
-      key: 'modal',
-      visible: modalVisible,
-      title: 'Confirm',
-      onClose: () => setModalVisible(false),
-      onOk: handleSubmit,
-      okLoading: loading,
-    }, [
-      h(Text, {}, 'Are you sure you want to proceed?'),
+  return h(Card, { key: 'select', title: 'Select' }, [
+      h(Row, { gap: 8 }, [
+          h(Button, { loading: true }, 'Loading'),
+      ]),
+      h(h(Text, { size: '2xl', weight: 'bold', key: 'title', height:"300px" }, 'LightUI Components')),
+      h(Row, { gap: 12 }, [
+        h(Select, {
+          options: selectOptions,
+          value: selectValue,
+          onChange: setSelectValue,
+          placeholder: 'Select option',
+          style: { flex: 1 },
+        })
+      ]),
     ])
 }
 

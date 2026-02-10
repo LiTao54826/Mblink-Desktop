@@ -1,9 +1,15 @@
-# ESM Loader - ES 模块加载器
+# ESM Loader - ES 模块加载器（支持嵌入 payload 模式，可作为 app_bundler 基座）
 
 add_executable(esm_loader
     main.cpp
     ${CMAKE_SOURCE_DIR}/tools/app_loader/embedded_js.cpp
     ${CMAKE_SOURCE_DIR}/tools/app_loader/embedded_js.h
+    ${CMAKE_SOURCE_DIR}/tools/app_loader/asset_manager.cpp
+    ${CMAKE_SOURCE_DIR}/tools/app_loader/asset_manager.h
+    ${CMAKE_SOURCE_DIR}/tools/app_bundler/payload.cpp
+    ${CMAKE_SOURCE_DIR}/tools/app_bundler/payload.h
+    ${CMAKE_SOURCE_DIR}/tools/app_bundler/bytecode_compiler.cpp
+    ${CMAKE_SOURCE_DIR}/tools/app_bundler/bytecode_compiler.h
 )
 
 # 确保在编译前生成嵌入的 JS 文件
@@ -13,6 +19,7 @@ target_include_directories(esm_loader PRIVATE
     ${CMAKE_SOURCE_DIR}
     ${CMAKE_SOURCE_DIR}/tools/app_loader
     ${CMAKE_BINARY_DIR}/tools/app_loader
+    ${CMAKE_SOURCE_DIR}/tools/app_bundler
     ${CMAKE_SOURCE_DIR}/third_party
 )
 

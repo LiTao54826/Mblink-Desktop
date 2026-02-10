@@ -14,6 +14,8 @@
 #include <algorithm>
 #include <chrono>
 #include <cstring>
+#include <iostream>
+
 
 namespace lightui {
 
@@ -86,79 +88,8 @@ bool Rasterizer::RasterizeLayer(CompositorLayer* layer) {
     //     canvas->translate(-scroll.fX, -scroll.fY);
     // }
 
-    // 关键修复：对于非根层，需要抵消元素的 layout 位置
-    // 因为 RenderObject::Paint() 内部会 translate(layout.x, layout.y)
-    // 但子层应该从 (0,0) 开始绘制，位置由合成器在合成时应用
-    if (layer->GetPromotionReason() != LayerPromotionReason::RootLayer) {
-        // 调试日志已移除
-
-        canvas->translate(-layout.x, -layout.y);
-
-        // 调试日志已移除
-        
-        // 对于 position: fixed 元素，需要补偿 bounds 中的 transform 偏移
-        // bounds 包含了 transform 偏移（例如 translateX(-50%) 导致的负偏移）
-        // 我们需要将内容绘制在位图的正确位置
-        bool is_fixed = (layer->GetPromotionReason() == LayerPromotionReason::PositionFixed);
-        if (is_fixed) {
-            const auto& style = render_obj->GetComputedStyle();
-            if (style.transform.has_value() && !style.transform->IsEmpty()) {
-                // 获取 bounds 中记录的偏移
-                // bounds.left() = layout.x + offset_x，其中 offset_x = min_x - padding
-                // 所以 offset_x = bounds.left() - layout.x
-                const SkRect& bounds = layer->GetBounds();
-                float offset_x = bounds.left() - layout.x;
-                float offset_y = bounds.top() - layout.y;
-                
-                // 补偿 bounds 中的偏移
-                // 这样内容会绘制在位图的 (-offset_x, -offset_y) 位置
-                // 即 (padding - min_x, padding - min_y) 位置
-                // Paint 应用 transform 后，内容会移动到 (padding, padding)
-                canvas->translate(-offset_x, -offset_y);
-            }
-        } else {
-            // 关键修复：如果层有动画边界扩展，需要额外平移以补偿边界扩展的偏移
-            // 动画边界的 offset 表示边界相对于元素原始位置的偏移
-            // 我们需要将内容绘制在位图的正确位置，以便合成时显示正确
-            const AnimationBounds* anim_bounds = layer->GetAnimationBounds();
-            if (anim_bounds && anim_bounds->needs_expansion) {
-                // 动画边界偏移通常为负值（边界向左上扩展）
-                // 需要将内容向右下移动以补偿
-                canvas->translate(-anim_bounds->offset.fX, -anim_bounds->offset.fY);
-            } else {
-                // 没有动画边界，检查是否有静态变换偏移
-                // 层边界的 left/top 可能包含了变换偏移
-                const SkRect& bounds = layer->GetBounds();
-                
-                // 获取元素相对于层树父层的原始位置
-                auto parent_layer = layer->GetParent();
-                RenderObject* parent_layer_obj = parent_layer ? parent_layer->GetRenderObject() : nullptr;
-                
-                float orig_rel_x = layout.x;
-                float orig_rel_y = layout.y;
-                
-                // 累加从当前元素到层树父层的位置
-                // 注意：不要减去滚动偏移！滚动偏移应该在合成时应用，而不是在光栅化时应用
-                // 这样可以避免双重滚动的问题
-                auto parent = render_obj->GetParent();
-                while (parent && parent.get() != parent_layer_obj) {
-                    const auto& parent_layout = parent->GetLayoutInfo();
-                    orig_rel_x += parent_layout.x;
-                    orig_rel_y += parent_layout.y;
-                    parent = parent->GetParent();
-                }
-                
-                // 计算变换偏移
-                float transform_offset_x = bounds.left() - orig_rel_x;
-                float transform_offset_y = bounds.top() - orig_rel_y;
-                
-                // 补偿变换偏移
-                if (transform_offset_x != 0 || transform_offset_y != 0) {
-                    canvas->translate(-transform_offset_x, -transform_offset_y);
-                }
-            }
-        }
-    }
+    // 应用非根层的 canvas 偏移补偿（layout 位置、transform、动画边界等）
+    ApplyLayerCanvasOffset(canvas, layer, render_obj, layout);
 
     // 绘制渲染对象
     // 注意：RenderObject::Paint 内部已经递归绘制子对象了，不需要额外递归
@@ -325,29 +256,9 @@ bool Rasterizer::RasterizeRegion(CompositorLayer* layer, const SkIRect& region) 
         canvas->clear(SK_ColorTRANSPARENT);
     }
 
-    // 关键修复：对于非根层，需要抵消元素的 layout 位置
-    // 因为 RenderObject::Paint() 内部会 translate(layout.x, layout.y)
-    // 但子层应该从 (0,0) 开始绘制，位置由合成器在合成时应用
-    if (layer->GetPromotionReason() != LayerPromotionReason::RootLayer) {
-        canvas->translate(-layout.x, -layout.y);
-
-        // 对于 position: fixed 元素，需要补偿 bounds 中的 transform 偏移
-        if (is_fixed) {
-            const auto& style = render_obj->GetComputedStyle();
-            if (style.transform.has_value() && !style.transform->IsEmpty()) {
-                const SkRect& bounds = layer->GetBounds();
-                float offset_x = bounds.left() - layout.x;
-                float offset_y = bounds.top() - layout.y;
-                canvas->translate(-offset_x, -offset_y);
-            }
-        } else {
-            // 处理动画边界偏移
-            const AnimationBounds* anim_bounds = layer->GetAnimationBounds();
-            if (anim_bounds && anim_bounds->needs_expansion) {
-                canvas->translate(-anim_bounds->offset.fX, -anim_bounds->offset.fY);
-            }
-        }
-    }
+    // 应用非根层的 canvas 偏移补偿（layout 位置、transform、动画边界等）
+    // 注意：此处之前缺少静态变换偏移的 fallback 逻辑，现在通过公共方法补全
+    ApplyLayerCanvasOffset(canvas, layer, render_obj, layout);
 
     // 设置裁剪区域
     // 对于根层：region 是位图坐标，Paint 会 translate(layout.x, layout.y)
@@ -376,19 +287,16 @@ bool Rasterizer::RasterizeRegion(CompositorLayer* layer, const SkIRect& region) 
         clip_rect.offset(offset_x, offset_y);
     }
 
-    // 🐛 修复：对于 fixed 元素，使用 viewport 大小的 clip 而不是 region
+    // 修复：对于 fixed 元素，使用实际 viewport 大小的 clip 而不是 region
+    // 之前使用 hardcoded 10000x10000，现在使用真实 viewport 尺寸 + padding
     if (is_fixed) {
         const auto& style = render_obj->GetComputedStyle();
 
-        // 调试日志已移除
-
-        // 对于 fixed 元素，使用一个足够大的 clip 区域
-        // 这样 box-shadow 就不会被裁剪
-        float viewport_width = 10000.0f;  // 使用一个很大的值
-        float viewport_height = 10000.0f;
-        clip_rect = SkRect::MakeXYWH(-5000, -5000, viewport_width, viewport_height);
-
-        // 调试日志已移除
+        // 使用实际 viewport 尺寸，加上足够的 padding 以容纳 box-shadow 等溢出效果
+        float vp_w = viewport_width_ > 0 ? viewport_width_ : 10000.0f;
+        float vp_h = viewport_height_ > 0 ? viewport_height_ : 10000.0f;
+        float padding = 200.0f;  // 足够容纳大多数 box-shadow
+        clip_rect = SkRect::MakeXYWH(-padding, -padding, vp_w + padding * 2, vp_h + padding * 2);
     }
 
     canvas->clipRect(clip_rect);
@@ -607,6 +515,106 @@ void Rasterizer::CopyPixels(CompositorLayer* layer,
 
     // 通知位图像素已修改
     bitmap.notifyPixelsChanged();
+}
+
+// =========================================================================
+// 偏移补偿（公共方法，消除 RasterizeLayer/RasterizeRegion 中的重复逻辑）
+// =========================================================================
+
+void Rasterizer::ApplyLayerCanvasOffset(SkCanvas* canvas, CompositorLayer* layer,
+                                         RenderObject* render_obj, const LayoutInfo& layout) {
+    if (!canvas || !layer || !render_obj) return;
+    // 根层不做 layout 位置抵消：根层 bitmap 代表整个 viewport，
+    // body 的 Paint() 会 translate(layout.x, layout.y) 保留 body margin。
+    if (layer->GetPromotionReason() == LayerPromotionReason::RootLayer) {
+        return;
+    }
+
+    // 1. 基础 layout 位置抵消
+    // RenderObject::Paint() 内部会 translate(layout.x, layout.y)
+    // 但子层应该从 (0,0) 开始绘制，位置由合成器在合成时应用
+    canvas->translate(-layout.x, -layout.y);
+
+    // 2. 根据层类型应用不同的偏移补偿
+    bool is_fixed = (layer->GetPromotionReason() == LayerPromotionReason::PositionFixed);
+
+    if (is_fixed) {
+        // Fixed 元素：补偿 bounds 中的 transform 偏移
+        const auto& style = render_obj->GetComputedStyle();
+        if (style.transform.has_value() && !style.transform->IsEmpty()) {
+            const SkRect& bounds = layer->GetBounds();
+            float offset_x = bounds.left() - layout.x;
+            float offset_y = bounds.top() - layout.y;
+            canvas->translate(-offset_x, -offset_y);
+        }
+    } else {
+        // 非 Fixed 元素：先检查动画边界，再检查静态变换偏移
+        const AnimationBounds* anim_bounds = layer->GetAnimationBounds();
+        if (anim_bounds && anim_bounds->needs_expansion) {
+            // 动画边界偏移通常为负值（边界向左上扩展）
+            // 需要将内容向右下移动以补偿
+            canvas->translate(-anim_bounds->offset.fX, -anim_bounds->offset.fY);
+        } else {
+            // 没有动画边界，检查是否有静态变换偏移
+            // 层边界的 left/top 可能包含了变换偏移
+            const SkRect& bounds = layer->GetBounds();
+
+            // 获取元素相对于层树父层的原始位置
+            auto parent_layer = layer->GetParent();
+            RenderObject* parent_layer_obj = parent_layer ? parent_layer->GetRenderObject() : nullptr;
+
+            // 关键修复：与 UpdateLayerBounds 保持一致
+            // 如果父层没有 RenderObject（如 content_layer），向上查找祖先层。
+            // 同时追踪 effective_parent_layer：提供 parent_layer_obj 的实际祖先层，
+            // 用于后续 RootLayer 补偿检查，避免中间层（如 ScrollableContent）干扰。
+            CompositorLayer* effective_parent_layer = parent_layer.get();
+            if (!parent_layer_obj && parent_layer) {
+                auto ancestor = parent_layer->GetParent();
+                while (ancestor) {
+                    if (ancestor->GetRenderObject()) {
+                        parent_layer_obj = ancestor->GetRenderObject();
+                        effective_parent_layer = ancestor.get();
+                        break;
+                    }
+                    ancestor = ancestor->GetParent();
+                }
+            }
+
+            float orig_rel_x = layout.x;
+            float orig_rel_y = layout.y;
+
+            // 累加从当前元素到层树父层的位置
+            // 注意：不要减去滚动偏移！滚动偏移应该在合成时应用
+            auto parent = render_obj->GetParent();
+            while (parent && parent.get() != parent_layer_obj) {
+                const auto& parent_layout = parent->GetLayoutInfo();
+                orig_rel_x += parent_layout.x;
+                orig_rel_y += parent_layout.y;
+                parent = parent->GetParent();
+            }
+
+            // 根层补偿：根层不做 translate(-layout.x, -layout.y)，
+            // body 的 Paint() 保留了 translate(layout.x, layout.y)，
+            // 所以子层 bounds 需要包含根层 RenderObject 的 layout 偏移。
+            // 使用 effective_parent_layer 而非 parent_layer 进行检查，
+            // 确保即使 ScrollLayerManager 插入了 content_layer 也能正确补偿。
+            if (effective_parent_layer &&
+                effective_parent_layer->GetPromotionReason() == LayerPromotionReason::RootLayer
+                && parent_layer_obj) {
+                const auto& root_layout = parent_layer_obj->GetLayoutInfo();
+                orig_rel_x += root_layout.x;
+                orig_rel_y += root_layout.y;
+            }
+
+            // 计算并补偿变换偏移
+            float transform_offset_x = bounds.left() - orig_rel_x;
+            float transform_offset_y = bounds.top() - orig_rel_y;
+
+            if (transform_offset_x != 0 || transform_offset_y != 0) {
+                canvas->translate(-transform_offset_x, -transform_offset_y);
+            }
+        }
+    }
 }
 
 } // namespace lightui

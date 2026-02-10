@@ -304,6 +304,9 @@ private:
     // 标记所有层为脏（完整重建后使用）
     void MarkAllLayersDirty(CompositorLayer* layer);
 
+    // 🐛 修复：完整重建后恢复所有可滚动层的滚动偏移
+    void RestoreScrollOffsetsAfterRebuild(CompositorLayer* layer);
+
     // =========================================================================
     // 辅助方法（来自 V1）
     // =========================================================================

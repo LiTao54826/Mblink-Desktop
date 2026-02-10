@@ -5,6 +5,7 @@
 
 #include "compositor.h"
 #include "core/render/objects/render_object.h"
+#include "core/dom/element.h"
 #include "include/core/SkCanvas.h"
 #include "include/core/SkPaint.h"
 #include "include/core/SkSurface.h"
@@ -235,6 +236,8 @@ void Compositor::Resize(int width, int height) {
         cpu_surface_ = SkSurfaces::Raster(info);
     }
 
+    // 视口变化，合成缓存失效
+    cache_valid_ = false;
     needs_composite_ = true;
 }
 
@@ -422,12 +425,18 @@ bool Compositor::CompositeToCanvas(CompositorLayer* root, SkCanvas* canvas) {
         return false;
     }
 
-    // 关键修复：清除画布以避免重影
-    // 当动画元素移动时，旧位置的内容需要被清除
-    // 调用者应该在调用此方法前设置好背景色
-    // 这里不清除，让调用者在外部处理背景
-    
+    // 注意：CompositeToCanvas 不使用帧跳过优化！
+    // 原因：调用方（window.cpp）每帧都会 canvas->clear(clear_color) 清除画布，
+    // 如果跳过合成，canvas 上就只有背景色，导致画面闪烁空白帧。
+    // 帧跳过优化仅适用于 GPU 路径的 Composite() 函数（有独立 framebuffer）。
+    //
+    // 同时不使用中间 SkBitmap 缓存，因为目标 canvas 可能带有 DPI 缩放矩阵，
+    // 中间 bitmap 会丢失缩放信息导致文字模糊和子像素渲染失效。
+
+    // 直接在目标 canvas 上合成（保留 canvas 的 DPI 缩放和子像素渲染能力）
     CompositeLayerCPU(root, canvas, SkMatrix::I());
+
+    needs_composite_ = false;
 
     return true;
 }

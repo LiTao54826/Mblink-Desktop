@@ -17,6 +17,7 @@
 #pragma once
 
 #include "compositor_layer.h"
+#include "include/core/SkBitmap.h"
 #include <memory>
 #include <vector>
 
@@ -136,7 +137,7 @@ public:
     /**
      * @brief 标记需要重新合成
      */
-    void MarkNeedsComposite() { needs_composite_ = true; }
+    void MarkNeedsComposite() { needs_composite_ = true; cache_valid_ = false; }
 
     // =========================================================================
     // 帧管理
@@ -300,6 +301,11 @@ private:
 
     // CPU 回退 Surface
     sk_sp<SkSurface> cpu_surface_;
+
+    // 合成缓存（CompositeToCanvas 路径的帧跳过优化）
+    // 当没有任何层变化时，直接 blit 缓存到目标 canvas，避免遍历整个层树
+    SkBitmap composite_cache_;
+    bool cache_valid_ = false;
 
     // 统计
     CompositeStats stats_;

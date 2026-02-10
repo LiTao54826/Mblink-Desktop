@@ -11,6 +11,7 @@
 #include "core/dom/element.h"
 #include <algorithm>
 #include <iostream>
+#include <cmath>
 
 namespace lightui {
 
@@ -249,11 +250,33 @@ void LayerTreeBuilder::UpdateLayerBounds(CompositorLayer* layer, RenderObject* o
     // 获取层树父层对应的 RenderObject
     auto parent_layer = layer->GetParent();
     RenderObject* parent_layer_obj = parent_layer ? parent_layer->GetRenderObject() : nullptr;
-    
+
+    // 关键修复：如果父层没有 RenderObject（如 ScrollableContent 的 content_layer），
+    // 向上查找有 RenderObject 的祖先层作为位置计算的终止点。
+    // 同时追踪 effective_parent_layer：提供 parent_layer_obj 的实际祖先层，
+    // 用于后续 RootLayer 补偿检查，避免中间层（如 ScrollableContent）干扰。
+    //
+    // 层结构示例：
+    //   root_layer (RenderObject = body, RootLayer)  ← effective_parent_layer
+    //     └── content_layer (RenderObject = nullptr, ScrollableContent)
+    //          └── child_layer (当前层)
+    CompositorLayer* effective_parent_layer = parent_layer.get();
+    if (!parent_layer_obj && parent_layer) {
+        auto ancestor = parent_layer->GetParent();
+        while (ancestor) {
+            if (ancestor->GetRenderObject()) {
+                parent_layer_obj = ancestor->GetRenderObject();
+                effective_parent_layer = ancestor.get();
+                break;
+            }
+            ancestor = ancestor->GetParent();
+        }
+    }
+
     // 计算相对于层树父层的位置
     float rel_x = layout.x;
     float rel_y = layout.y;
-    
+
     // 关键修复：position: fixed 元素的位置是相对于视口的
     // 不需要累加父元素的位置，因为 layout.x/y 已经是视口坐标
     // 同时，fixed 元素应该直接作为根层的子层，位置就是视口坐标
@@ -268,16 +291,29 @@ void LayerTreeBuilder::UpdateLayerBounds(CompositorLayer* layer, RenderObject* o
             const auto& parent_layout = parent->GetLayoutInfo();
             rel_x += parent_layout.x;
             rel_y += parent_layout.y;
-            
+
             parent = parent->GetParent();
         }
-        
+
+        // 根层补偿：根层不做 translate(-layout.x, -layout.y)，
+        // body 的 Paint() 保留了 translate(layout.x, layout.y)，
+        // 所以子层 bounds 需要包含根层 RenderObject 的 layout 偏移。
+        // 使用 effective_parent_layer 而非 parent_layer 进行检查，
+        // 确保即使 ScrollLayerManager 插入了 content_layer 也能正确补偿。
+        if (effective_parent_layer &&
+            effective_parent_layer->GetPromotionReason() == LayerPromotionReason::RootLayer
+            && parent_layer_obj) {
+            const auto& root_layout = parent_layer_obj->GetLayoutInfo();
+            rel_x += root_layout.x;
+            rel_y += root_layout.y;
+        }
+
         // 注意：不在这里减去滚动偏移！
         // 层的 bounds 保持文档坐标，滚动偏移在 CompositeLayerCPU 中应用
         // 这样可以避免双重减去滚动偏移的问题
     }
     // 对于 fixed 元素，rel_x 和 rel_y 保持为 layout.x 和 layout.y（视口坐标）
-    
+
     // 计算边界尺寸和偏移
     float width = layout.width;
     float height = layout.height;
@@ -443,8 +479,9 @@ void LayerTreeBuilder::UpdateLayerBounds(CompositorLayer* layer, RenderObject* o
     }
     
     SkRect bounds = SkRect::MakeXYWH(rel_x + offset_x, rel_y + offset_y, width, height);
+
     layer->SetBounds(bounds);
-    
+
 }
 
 bool LayerTreeBuilder::HasWillChangeTransform(RenderObject* obj) const {
@@ -633,24 +670,40 @@ CompositorLayer* LayerTreeBuilder::FindParentLayerForObject(RenderObject* obj) c
     if (!obj || !root_layer_) {
         return nullptr;
     }
-    
+
     // 如果是 fixed 元素，直接返回根层
     if (HasPositionFixed(obj)) {
         return root_layer_.get();
     }
-    
+
     // 向上遍历 RenderObject 树，找到第一个有层的祖先
+    CompositorLayer* found_layer = nullptr;
     auto parent = obj->GetParent();
     while (parent) {
         auto it = render_object_to_layer_.find(parent.get());
         if (it != render_object_to_layer_.end()) {
-            return it->second.get();
+            found_layer = it->second.get();
+            break;
         }
         parent = parent->GetParent();
     }
-    
-    // 如果没有找到有层的祖先，返回根层
-    return root_layer_.get();
+
+    if (!found_layer) {
+        // 如果没有找到有层的祖先，返回根层
+        return root_layer_.get();
+    }
+
+    // 关键修复：如果找到的父层是滚动容器的 clip_layer，
+    // 新层应该添加到其 content_layer（ScrollableContent）下面，
+    // 而不是直接添加到 clip_layer 下面。
+    // 这样新层才能正确地被 content_layer 组织，与其他滚动内容子层保持一致。
+    for (const auto& child : found_layer->GetChildren()) {
+        if (child->GetPromotionReason() == LayerPromotionReason::ScrollableContent) {
+            return child.get();
+        }
+    }
+
+    return found_layer;
 }
 
 std::shared_ptr<CompositorLayer> LayerTreeBuilder::AddLayerForObject(
@@ -680,7 +733,7 @@ std::shared_ptr<CompositorLayer> LayerTreeBuilder::AddLayerForObject(
     
     // 附加到父层
     parent_layer->AddChild(new_layer);
-    
+
     // 在附加后重新计算边界（此时有父层信息）
     UpdateLayerBoundsDeferred(new_layer.get(), obj);
     
@@ -788,8 +841,17 @@ bool LayerTreeBuilder::IncrementalBuild(RenderObject* root,
             }
             
             case LayerUpdateType::UpdateZIndex: {
-                // z-index 更新：需要重新排序
-                // TODO: 实现 z-index 排序
+                // z-index 更新：从父层移除后按新 z-index 重新插入
+                auto layer = GetLayerForRenderObject(update.target);
+                if (layer) {
+                    auto parent = layer->GetParent();
+                    if (parent) {
+                        // 先持有 shared_ptr 防止被释放
+                        auto layer_shared = GetLayerForRenderObject(update.target);
+                        parent->RemoveChild(layer.get());
+                        parent->InsertChildByZIndex(layer_shared, update.z_index);
+                    }
+                }
                 break;
             }
         }

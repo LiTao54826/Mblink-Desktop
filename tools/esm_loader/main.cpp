@@ -32,7 +32,11 @@
 #include "core/bridge/host_bridge.h"
 #include "core/bridge/state_manager.h"
 #include "core/quickjs/bindings/js_element.h"
+#include "core/lexbor/lexbor_stylesheet.h"
 #include "embedded_js.h"
+#include "payload.h"
+#include "bytecode_compiler.h"
+#include "asset_manager.h"
 
 extern "C" {
 #include "quickjs/quickjs.h"
@@ -286,11 +290,125 @@ void RegisterPreactModules(QuickJSRuntime* runtime) {
     std::cout << "  ✓ Preact ES modules registered" << std::endl;
 }
 
+// ============================================================
+// Payload 嵌入模式支持（作为 app_bundler 基座）
+// ============================================================
+
+// JS API: loadAsset(path) - 返回 ArrayBuffer
+static JSValue js_loadAsset(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) {
+    if (argc < 1) return JS_ThrowTypeError(ctx, "loadAsset requires a path argument");
+    const char* path = JS_ToCString(ctx, argv[0]);
+    if (!path) return JS_ThrowTypeError(ctx, "loadAsset path must be a string");
+    std::vector<uint8_t> data;
+    bool found = lightui::AssetManager::Instance().GetAsset(path, data);
+    JS_FreeCString(ctx, path);
+    if (!found) return JS_NULL;
+    return JS_NewArrayBufferCopy(ctx, data.data(), data.size());
+}
+
+// JS API: getAssetUrl(path) - 返回 data:// URL
+static JSValue js_getAssetUrl(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) {
+    if (argc < 1) return JS_ThrowTypeError(ctx, "getAssetUrl requires a path argument");
+    const char* path = JS_ToCString(ctx, argv[0]);
+    if (!path) return JS_ThrowTypeError(ctx, "getAssetUrl path must be a string");
+    std::string url = lightui::AssetManager::Instance().GetAssetDataUrl(path);
+    JS_FreeCString(ctx, path);
+    if (url.empty()) return JS_NULL;
+    return JS_NewString(ctx, url.c_str());
+}
+
+// JS API: hasAsset(path) - 检查资源是否存在
+static JSValue js_hasAsset(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) {
+    if (argc < 1) return JS_FALSE;
+    const char* path = JS_ToCString(ctx, argv[0]);
+    if (!path) return JS_FALSE;
+    bool exists = lightui::AssetManager::Instance().HasAsset(path);
+    JS_FreeCString(ctx, path);
+    return exists ? JS_TRUE : JS_FALSE;
+}
+
+// JS API: listAssets() - 列出所有资源
+static JSValue js_listAssets(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) {
+    auto paths = lightui::AssetManager::Instance().GetAssetPaths();
+    JSValue array = JS_NewArray(ctx);
+    for (size_t i = 0; i < paths.size(); i++) {
+        JS_SetPropertyUint32(ctx, array, i, JS_NewString(ctx, paths[i].c_str()));
+    }
+    return array;
+}
+
+// 注册资源 API 到全局对象
+void RegisterAssetAPI(QuickJSRuntime* runtime) {
+    JSContext* ctx = runtime->GetContext();
+    JSValue global = JS_GetGlobalObject(ctx);
+    JS_SetPropertyStr(ctx, global, "loadAsset",
+        JS_NewCFunction(ctx, js_loadAsset, "loadAsset", 1));
+    JS_SetPropertyStr(ctx, global, "getAssetUrl",
+        JS_NewCFunction(ctx, js_getAssetUrl, "getAssetUrl", 1));
+    JS_SetPropertyStr(ctx, global, "hasAsset",
+        JS_NewCFunction(ctx, js_hasAsset, "hasAsset", 1));
+    JS_SetPropertyStr(ctx, global, "listAssets",
+        JS_NewCFunction(ctx, js_listAssets, "listAssets", 0));
+    JS_FreeValue(ctx, global);
+}
+
+// 检测并加载嵌入的 payload
+bool TryLoadEmbeddedPayload(const std::string& exe_path, mbink::PayloadData& payload_data) {
+    return mbink::PayloadBuilder::ParseFromFile(exe_path, payload_data);
+}
+
+// 执行嵌入的字节码模块
+bool ExecuteEmbeddedBytecode(QuickJSRuntime* runtime, const mbink::PayloadData& payload_data, bool verbose = true) {
+    auto modules = mbink::BytecodeCompiler::ParseMergedBytecode(payload_data.bytecode);
+    if (modules.empty()) {
+        std::cerr << "  ✗ No modules found in payload" << std::endl;
+        return false;
+    }
+    if (verbose) std::cout << "  Found " << modules.size() << " modules in payload" << std::endl;
+
+    JSContext* ctx = runtime->GetContext();
+    if (!ctx) {
+        std::cerr << "  ✗ Failed to get QuickJS context" << std::endl;
+        return false;
+    }
+
+    for (const auto& module : modules) {
+        if (verbose) {
+            std::cout << "  Loading module: " << module.id;
+            if (module.is_entry) std::cout << " (entry)";
+            std::cout << std::endl;
+        }
+
+        JSValue obj = JS_ReadObject(ctx, module.bytecode.data(), module.bytecode.size(),
+                                    JS_READ_OBJ_BYTECODE);
+        if (JS_IsException(obj)) {
+            JSValue exception = JS_GetException(ctx);
+            const char* msg = JS_ToCString(ctx, exception);
+            std::cerr << "  ✗ Failed to load bytecode: " << (msg ? msg : "unknown error") << std::endl;
+            if (msg) JS_FreeCString(ctx, msg);
+            JS_FreeValue(ctx, exception);
+            return false;
+        }
+
+        JSValue result = JS_EvalFunction(ctx, obj);
+        if (JS_IsException(result)) {
+            JSValue exception = JS_GetException(ctx);
+            const char* msg = JS_ToCString(ctx, exception);
+            std::cerr << "  ✗ Execution error: " << (msg ? msg : "unknown error") << std::endl;
+            if (msg) JS_FreeCString(ctx, msg);
+            JS_FreeValue(ctx, exception);
+            return false;
+        }
+        JS_FreeValue(ctx, result);
+    }
+    return true;
+}
+
 int main(int argc, char** argv) {
 #ifdef _WIN32
     // 注册崩溃处理器
     SetUnhandledExceptionFilter(CrashHandler);
-    
+
     // 设置 Windows 控制台为 UTF-8 编码
     SetConsoleOutputCP(CP_UTF8);
     SetConsoleCP(CP_UTF8);
@@ -301,16 +419,42 @@ int main(int argc, char** argv) {
     SetConsoleMode(hOut, dwMode | ENABLE_VIRTUAL_TERMINAL_PROCESSING);
 #endif
 
+    // ============================================================
+    // 检查是否有嵌入的 payload（app_bundler 打包模式）
+    // ============================================================
+    mbink::PayloadData embedded_payload;
+    bool has_embedded = TryLoadEmbeddedPayload(argv[0], embedded_payload);
+
+#ifdef _WIN32
+    // 嵌入模式下，如果没有 --verbose 参数，释放控制台
+    if (has_embedded && embedded_payload.valid) {
+        bool want_console = false;
+        for (int i = 1; i < argc; i++) {
+            std::string arg = argv[i];
+            if (arg == "--verbose" || arg == "-v") {
+                want_console = true;
+                break;
+            }
+        }
+        if (!want_console) {
+            FreeConsole();
+        }
+    }
+#endif
+
+    // ============================================================
+    // 解析命令行参数
+    // ============================================================
     std::string entry_path;
-    int width = 1200;
-    int height = 800;
-    std::string title = "MBink App";
-    bool title_from_user = false;  // 用户是否通过 --title 指定了标题
+    int width = has_embedded ? embedded_payload.config.width : 1200;
+    int height = has_embedded ? embedded_payload.config.height : 800;
+    std::string title = has_embedded ? embedded_payload.config.title : "MBink App";
+    bool title_from_user = false;
     bool open_devtools = false;
     bool execute_scripts = true;
-    float quit_after_seconds = 0;  // 0 表示不自动退出，单位：秒
+    bool verbose = !has_embedded;  // 嵌入模式默认静默
+    float quit_after_seconds = 0;
 
-    // 解析命令行参数
     for (int i = 1; i < argc; i++) {
         std::string arg = argv[i];
 
@@ -328,6 +472,8 @@ int main(int argc, char** argv) {
             open_devtools = true;
         } else if (arg == "--no-scripts") {
             execute_scripts = false;
+        } else if (arg == "--verbose" || arg == "-v") {
+            verbose = true;
         } else if ((arg == "-q" || arg == "--quit") && i + 1 < argc) {
             quit_after_seconds = std::stof(argv[++i]);
         } else if (arg[0] != '-') {
@@ -335,36 +481,51 @@ int main(int argc, char** argv) {
         }
     }
 
-    if (entry_path.empty()) {
-        std::cerr << "错误: 未指定入口文件" << std::endl;
-        PrintUsage(argv[0]);
-        return 1;
+    // 用于条件输出的宏
+    #define LOG(x) if (verbose) { std::cout << x << std::endl; }
+
+    // 非嵌入模式下，必须指定入口文件
+    if (!has_embedded || !embedded_payload.valid) {
+        if (entry_path.empty()) {
+            std::cerr << "错误: 未指定入口文件" << std::endl;
+            PrintUsage(argv[0]);
+            return 1;
+        }
+        if (!fs::exists(entry_path)) {
+            std::cerr << "错误: 文件不存在: " << entry_path << std::endl;
+            return 1;
+        }
     }
 
-    if (!fs::exists(entry_path)) {
-        std::cerr << "错误: 文件不存在: " << entry_path << std::endl;
-        return 1;
-    }
-
-    // 检测入口文件类型
-    bool is_html = IsHTMLFile(entry_path);
+    // 检测入口文件类型（嵌入模式下不需要）
+    bool is_html = !entry_path.empty() && IsHTMLFile(entry_path);
+    bool is_embedded = has_embedded && embedded_payload.valid;
 
     try {
-        std::cout << "========================================" << std::endl;
-        std::cout << "  MBink Loader (" << (is_html ? "HTML" : "ESM") << " mode)" << std::endl;
-        std::cout << "========================================" << std::endl;
-        std::cout << "  Entry: " << entry_path << std::endl;
-        std::cout << "  Size: " << width << "x" << height << std::endl;
-        if (is_html) {
-            std::cout << "  Scripts: " << (execute_scripts ? "enabled" : "disabled") << std::endl;
+        if (is_embedded) {
+            LOG("========================================");
+            LOG("  MBink Loader (Embedded Bytecode mode)");
+            LOG("========================================");
+            LOG("  Size: " << width << "x" << height);
+            LOG("  Title: " << title);
+            LOG("========================================");
+        } else {
+            LOG("========================================");
+            LOG("  MBink Loader (" << (is_html ? "HTML" : "ESM") << " mode)");
+            LOG("========================================");
+            LOG("  Entry: " << entry_path);
+            LOG("  Size: " << width << "x" << height);
+            if (is_html) {
+                LOG("  Scripts: " << (execute_scripts ? "enabled" : "disabled"));
+            }
+            LOG("========================================");
         }
-        std::cout << "========================================" << std::endl;
-        std::cout << std::endl;
-        std::cout.flush();
+        LOG("");
+        if (verbose) std::cout.flush();
 
         // 1. 创建窗口
-        std::cout << "[1/5] Creating window..." << std::endl;
-        std::cout.flush();
+        LOG("[1/5] Creating window...");
+        if (verbose) std::cout.flush();
         WindowConfig config;
         config.title = title;
         config.width = width;
@@ -375,19 +536,22 @@ int main(int argc, char** argv) {
         auto window = std::make_shared<Window>(config);
         auto& window_manager = WindowManager::Instance();
         window_manager.RegisterWindow(window);
-        std::cout << "  ✓ Window created" << std::endl; std::cout.flush();
+        LOG("  ✓ Window created");
 
         // 2. 创建文档
-        std::cout << "[2/5] Creating document..." << std::endl; std::cout.flush();
+        LOG("[2/5] Creating document...");
         auto document = std::make_shared<Document>();
 
-        if (is_html) {
+        if (is_embedded) {
+            // ===== 嵌入模式：创建空文档 =====
+            document->Initialize();
+        } else if (is_html) {
             // ===== HTML 模式：解析 HTML 文件 =====
             fs::path html_dir = fs::absolute(entry_path).parent_path();
             std::string base_path = html_dir.string();
             document->SetBasePath(base_path);
             ImageLoader::SetBasePath(base_path);
-            std::cout << "  ✓ Base path: " << base_path << std::endl;
+            LOG("  ✓ Base path: " << base_path);
 
             // 读取并解析 HTML
             std::string html_content = ReadFile(entry_path);
@@ -399,7 +563,7 @@ int main(int argc, char** argv) {
                 std::cerr << "  ✗ Failed to parse HTML" << std::endl;
                 return 1;
             }
-            std::cout << "  ✓ HTML document loaded" << std::endl;
+            LOG("  ✓ HTML document loaded");
 
             // 加载外部样式表
             document->LoadExternalStylesheets();
@@ -408,9 +572,9 @@ int main(int argc, char** argv) {
             auto styles = document->GetElementsByTagName("style");
             auto links = document->GetElementsByTagName("link");
             auto scripts = document->GetElementsByTagName("script");
-            std::cout << "  ✓ Found " << styles.size() << " <style>, "
+            LOG("  ✓ Found " << styles.size() << " <style>, "
                       << links.size() << " <link>, "
-                      << scripts.size() << " <script>" << std::endl;
+                      << scripts.size() << " <script>");
 
             // 从 HTML 获取 title（如果用户没有通过 --title 指定）
             if (!title_from_user) {
@@ -420,70 +584,104 @@ int main(int argc, char** argv) {
                     window->SetTitle(title);
                 }
             }
-            std::cout << "  ✓ Title: " << title << std::endl;
+            LOG("  ✓ Title: " << title);
         } else {
             // ===== JS 模式：创建空文档 =====
             document->Initialize();
         }
 
         window->SetDocument(document);
-        std::cout << "  ✓ Document ready" << std::endl; std::cout.flush();
+        LOG("  ✓ Document ready");
 
         // 3. 创建 QuickJS 运行时
-        std::cout << "[3/5] Creating QuickJS runtime..." << std::endl; std::cout.flush();
+        LOG("[3/5] Creating QuickJS runtime...");
         auto runtime = std::make_unique<QuickJSRuntime>();
         auto task_scheduler = std::make_shared<TaskScheduler>();
-        std::cout << "  ✓ QuickJS runtime created" << std::endl; std::cout.flush();
+        LOG("  ✓ QuickJS runtime created");
 
         // 4. 初始化绑定和库
-        std::cout << "[4/5] Initializing bindings..." << std::endl; std::cout.flush();
+        LOG("[4/5] Initializing bindings...");
         WindowBindings window_bindings(runtime.get(), window, task_scheduler);
         window_bindings.InitBindings();
-        std::cout << "  ✓ Window bindings initialized" << std::endl; std::cout.flush();
+        LOG("  ✓ Window bindings initialized");
 
-        // 初始化 FetchBindings（HTML 模式下需要网络请求能力）
+        // 初始化 FetchBindings
         FetchBindings fetch_bindings(runtime->GetContext(), task_scheduler);
         fetch_bindings.InitBindings();
-        std::cout << "  ✓ Fetch bindings initialized" << std::endl; std::cout.flush();
+        LOG("  ✓ Fetch bindings initialized");
 
         // 初始化 StateManager 和 HostBridge
         auto state_manager = std::make_unique<StateManager>();
         auto host_bridge = std::make_unique<HostBridge>(runtime->GetContext(), state_manager.get());
         host_bridge->registerGlobal();
-        std::cout << "  ✓ Host bridge initialized" << std::endl; std::cout.flush();
+        LOG("  ✓ Host bridge initialized");
 
         // 创建事件循环（需要在加载模块之前，以便 getSelection 等 API 可用）
         EventLoop event_loop(task_scheduler);
         event_loop.SetQuickJSRuntime(runtime.get());
         DOMBindings::SetGlobalEventLoop(runtime->GetContext(), &event_loop);
-        std::cout << "  ✓ Event loop created" << std::endl; std::cout.flush();
+        LOG("  ✓ Event loop created");
 
-        // 加载嵌入的库
+        // 加载嵌入的库（Preact 等）
         if (lightui::embedded::HasEmbeddedJS()) {
             LoadEmbeddedLibraries(runtime.get());
             RegisterPreactModules(runtime.get());
         } else {
-            std::cerr << "  ⚠ No embedded JS libraries" << std::endl;
+            if (verbose) std::cerr << "  ⚠ No embedded JS libraries" << std::endl;
         }
 
-        // 5. 执行脚本
-        std::cout << "[5/5] Loading entry..." << std::endl;
+        // 5. 执行脚本 / 字节码
+        LOG("[5/5] Loading entry...");
 
-        // 设置模块基础路径
-        fs::path abs_path = fs::absolute(entry_path);
-        runtime->SetBaseModulePath(abs_path.string());
+        if (is_embedded) {
+            // ===== 嵌入模式：初始化资源管理器 + 执行字节码 =====
+            if (!embedded_payload.assets_index.empty()) {
+                lightui::AssetManager::Instance().Initialize(
+                    embedded_payload.assets_data,
+                    embedded_payload.assets_index
+                );
 
-        if (is_html) {
+                // 注册 ImageLoader 的资源提供者
+                ImageLoader::SetAssetProvider([](const std::string& path, std::vector<uint8_t>& data) {
+                    return lightui::AssetManager::Instance().GetAsset(path, data);
+                });
+
+                // 注册 CSS 的资源提供者
+                LexborStyleSheet::SetAssetProvider([](const std::string& path, std::vector<uint8_t>& data) {
+                    return lightui::AssetManager::Instance().GetAsset(path, data);
+                });
+
+                // 注册 Document 的资源提供者（用于 link 元素加载 CSS）
+                Document::SetAssetProvider([](const std::string& path, std::vector<uint8_t>& data) {
+                    return lightui::AssetManager::Instance().GetAsset(path, data);
+                });
+
+                LOG("  ✓ Loaded " << embedded_payload.assets_index.size() << " embedded assets");
+            }
+
+            // 注册资源 API
+            RegisterAssetAPI(runtime.get());
+
+            // 执行嵌入的字节码
+            LOG("  Executing embedded bytecode...");
+            if (!ExecuteEmbeddedBytecode(runtime.get(), embedded_payload, verbose)) {
+                return 1;
+            }
+            LOG("  ✓ Bytecode executed");
+        } else if (is_html) {
             // ===== HTML 模式：设置 JSRuntime 并执行 <script> 标签 =====
             document->SetJSRuntime(runtime.get());
             if (execute_scripts) {
                 document->ExecuteScripts();
-                std::cout << "  ✓ HTML scripts executed" << std::endl;
+                LOG("  ✓ HTML scripts executed");
             } else {
-                std::cout << "  ✓ Scripts skipped (--no-scripts)" << std::endl;
+                LOG("  ✓ Scripts skipped (--no-scripts)");
             }
         } else {
-            // ===== JS 模式：加载 ES 模块 =====
+            // ===== JS/ESM 模式：加载 ES 模块 =====
+            fs::path abs_path = fs::absolute(entry_path);
+            runtime->SetBaseModulePath(abs_path.string());
+
             std::string entry_code = ReadFile(entry_path);
             if (entry_code.empty()) {
                 std::cerr << "  ✗ Failed to read: " << entry_path << std::endl;
@@ -492,7 +690,7 @@ int main(int argc, char** argv) {
 
             try {
                 runtime->EvalModule(entry_code, abs_path.string());
-                std::cout << "  ✓ Entry module loaded" << std::endl;
+                LOG("  ✓ Entry module loaded");
             } catch (const std::exception& e) {
                 std::cerr << "  ✗ Module error: " << e.what() << std::endl;
                 return 1;
@@ -509,12 +707,12 @@ int main(int argc, char** argv) {
             devtools.Open();
         }
 
-        std::cout << std::endl;
-        std::cout << "========================================" << std::endl;
-        std::cout << "  🚀 Application Started!" << std::endl;
-        std::cout << "========================================" << std::endl;
-        std::cout << "  Press F12 to toggle DevTools" << std::endl;
-        std::cout << std::endl;
+        LOG("");
+        LOG("========================================");
+        LOG("  🚀 Application Started!");
+        LOG("========================================");
+        LOG("  Press F12 to toggle DevTools");
+        LOG("");
 
         // 设置渲染回调
         event_loop.SetRenderCallback([window]() {
@@ -556,10 +754,10 @@ int main(int argc, char** argv) {
         window_manager.UnregisterWindow(window);
         window.reset();
 
-        // HTML 模式：与 html_loader 一致，基础清理后直接退出
+        // HTML/嵌入模式：基础清理后直接退出
         // 避免 Preact 专用清理流程触发 QuickJS GC 断言
-        if (is_html) {
-            std::cout << "  ✓ HTML mode cleanup done" << std::endl;
+        if (is_html || is_embedded) {
+            LOG("  ✓ " << (is_embedded ? "Embedded" : "HTML") << " mode cleanup done");
             std::quick_exit(0);
         }
 
