@@ -11,13 +11,30 @@ extern "C" {
 #include "quickjs.h"
 }
 
+#include <algorithm>
+#include <cstdio>
+
 namespace lightui {
 
 HostBridge::HostBridge(JSContext* ctx, StateManager* stateManager)
     : ctx_(ctx), stateManager_(stateManager) {
 }
 
-HostBridge::~HostBridge() = default;
+HostBridge::~HostBridge() {
+    // 释放所有 Listener 的 JS 回调引用
+    for (auto& listener : listeners_) {
+        JS_FreeValue(ctx_, listener.callback);
+    }
+    listeners_.clear();
+
+    // 清理 auto-watchers
+    if (stateManager_) {
+        for (auto& [name, aw] : autoWatchers_) {
+            stateManager_->unwatch(aw.watcherId);
+        }
+    }
+    autoWatchers_.clear();
+}
 
 void HostBridge::registerGlobal() {
     if (!ctx_) return;
@@ -62,6 +79,13 @@ void HostBridge::registerGlobal() {
         JS_NewCFunctionData(ctx_, jsStateType, 1, 0, 1, &bridgePtr));
     
     JS_SetPropertyStr(ctx_, host, "state", state);
+    
+    // host.on / host.off（事件系统）
+    JS_SetPropertyStr(ctx_, host, "on",
+        JS_NewCFunctionData(ctx_, jsHostOn, 2, 0, 1, &bridgePtr));
+    JS_SetPropertyStr(ctx_, host, "off",
+        JS_NewCFunctionData(ctx_, jsHostOff, 1, 0, 1, &bridgePtr));
+    
     JS_SetPropertyStr(ctx_, global, "host", host);
     
     // 创建 py 命名空间对象（用于直接调用 Python 函数）
@@ -154,6 +178,13 @@ JSValue HostBridge::jsCall(JSContext* ctx, JSValueConst thisVal,
     std::string result = bridge->call(name, args);
     JS_FreeCString(ctx, name);
     
+    // 触发状态变更通知（写操作已同步执行，这里只处理 watcher 回调）
+    if (bridge->stateManager_) {
+        bridge->stateManager_->processQueue();
+    }
+    // flush 事件队列（状态 watcher 可能产生了事件）
+    bridge->flushEvents();
+    
     // 返回结果
     return jsonToJsValue(ctx, result);
 }
@@ -184,11 +215,12 @@ JSValue HostBridge::jsPyCall(JSContext* ctx, JSValueConst thisVal,
     std::string result = bridge->call(name, args);
     JS_FreeCString(ctx, name);
 
-    // 立即处理 StateManager 队列，确保后续 get 能读到最新数据
-    // 这是关键：Python 函数可能修改了状态，需要立即应用
+    // 触发状态变更通知（写操作已同步执行，这里只处理 watcher 回调）
     if (bridge->stateManager_) {
         bridge->stateManager_->processQueue();
     }
+    // flush 事件队列（状态 watcher 可能产生了事件）
+    bridge->flushEvents();
 
     // 返回结果
     return jsonToJsValue(ctx, result);
@@ -239,6 +271,8 @@ JSValue HostBridge::jsStateSet(JSContext* ctx, JSValueConst thisVal,
         bridge->stateManager_->setJson(name, value);
         // 立即处理队列以应用更改
         bridge->stateManager_->processQueue();
+        // flush 事件队列（状态 watcher 可能产生了事件）
+        bridge->flushEvents();
     } catch (...) {
         // 解析失败，忽略
     }
@@ -362,6 +396,150 @@ JSValue HostBridge::jsStateType(JSContext* ctx, JSValueConst thisVal,
     }
     
     return JS_NewString(ctx, typeStr);
+}
+
+// ========== 事件系统实现 ==========
+
+int HostBridge::on(const std::string& eventName, JSValue callback) {
+    int id = nextListenerId_++;
+    JS_DupValue(ctx_, callback);
+    listeners_.push_back({id, eventName, callback});
+
+    // 检查是否需要创建 auto-watcher
+    if (stateManager_ && stateManager_->exists(eventName)) {
+        auto it = autoWatchers_.find(eventName);
+        if (it == autoWatchers_.end()) {
+            // 首次监听该状态名，注册 StateManager watcher
+            std::string name = eventName;
+            int watcherId = stateManager_->watch(eventName,
+                [this, name](const std::string& /*n*/, const json& value) {
+                    emit(name, value.dump());
+                });
+            autoWatchers_[eventName] = {watcherId, 1};
+        } else {
+            it->second.listenerCount++;
+        }
+    }
+
+    return id;
+}
+
+void HostBridge::off(int listenerId) {
+    auto it = std::find_if(listeners_.begin(), listeners_.end(),
+        [listenerId](const HostEventListener& l) { return l.id == listenerId; });
+    
+    if (it == listeners_.end()) return;
+
+    std::string eventName = it->eventName;
+    JS_FreeValue(ctx_, it->callback);
+    listeners_.erase(it);
+
+    // 检查是否需要移除 auto-watcher
+    auto awIt = autoWatchers_.find(eventName);
+    if (awIt != autoWatchers_.end()) {
+        awIt->second.listenerCount--;
+        if (awIt->second.listenerCount <= 0) {
+            if (stateManager_) {
+                stateManager_->unwatch(awIt->second.watcherId);
+            }
+            autoWatchers_.erase(awIt);
+        }
+    }
+}
+
+void HostBridge::emit(const std::string& eventName, const std::string& dataJson) {
+    std::lock_guard<std::mutex> lock(eventQueueMutex_);
+    eventQueue_.push_back({eventName, dataJson});
+}
+
+void HostBridge::flushEvents() {
+    // 取出队列中所有事件
+    std::vector<PendingEvent> events;
+    {
+        std::lock_guard<std::mutex> lock(eventQueueMutex_);
+        std::swap(events, eventQueue_);
+    }
+
+    if (events.empty() || !ctx_) return;
+
+    // 按入队顺序分发事件
+    for (const auto& event : events) {
+        JSValue data = jsonToJsValue(ctx_, event.dataJson);
+
+        for (const auto& listener : listeners_) {
+            if (listener.eventName == event.eventName) {
+                JSValue result = JS_Call(ctx_, listener.callback, JS_UNDEFINED, 1, &data);
+                if (JS_IsException(result)) {
+                    // 捕获异常，输出日志，继续执行后续 Listener
+                    JSValue exception = JS_GetException(ctx_);
+                    const char* msg = JS_ToCString(ctx_, exception);
+                    if (msg) {
+                        fprintf(stderr, "[HostBridge] Event callback error (%s): %s\n",
+                                event.eventName.c_str(), msg);
+                        JS_FreeCString(ctx_, msg);
+                    }
+                    JS_FreeValue(ctx_, exception);
+                }
+                JS_FreeValue(ctx_, result);
+            }
+        }
+
+        JS_FreeValue(ctx_, data);
+    }
+}
+
+JSValue HostBridge::jsHostOn(JSContext* ctx, JSValueConst thisVal,
+                             int argc, JSValueConst* argv, int magic, JSValue* func_data) {
+    (void)thisVal;
+    (void)magic;
+
+    int64_t ptr;
+    JS_ToInt64(ctx, &ptr, func_data[0]);
+    auto* bridge = reinterpret_cast<HostBridge*>(ptr);
+
+    if (!bridge || argc < 2) {
+        return JS_NewInt32(ctx, -1);
+    }
+
+    // 参数校验：eventName 必须是字符串
+    if (!JS_IsString(argv[0])) {
+        return JS_NewInt32(ctx, -1);
+    }
+
+    // 参数校验：callback 必须是函数
+    if (!JS_IsFunction(ctx, argv[1])) {
+        return JS_NewInt32(ctx, -1);
+    }
+
+    const char* name = JS_ToCString(ctx, argv[0]);
+    if (!name) return JS_NewInt32(ctx, -1);
+
+    int id = bridge->on(name, argv[1]);
+    JS_FreeCString(ctx, name);
+
+    return JS_NewInt32(ctx, id);
+}
+
+JSValue HostBridge::jsHostOff(JSContext* ctx, JSValueConst thisVal,
+                              int argc, JSValueConst* argv, int magic, JSValue* func_data) {
+    (void)thisVal;
+    (void)magic;
+
+    int64_t ptr;
+    JS_ToInt64(ctx, &ptr, func_data[0]);
+    auto* bridge = reinterpret_cast<HostBridge*>(ptr);
+
+    if (!bridge || argc < 1) {
+        return JS_UNDEFINED;
+    }
+
+    int32_t listenerId;
+    if (JS_ToInt32(ctx, &listenerId, argv[0]) < 0) {
+        return JS_UNDEFINED;
+    }
+
+    bridge->off(listenerId);
+    return JS_UNDEFINED;
 }
 
 // ========== 辅助函数 ==========

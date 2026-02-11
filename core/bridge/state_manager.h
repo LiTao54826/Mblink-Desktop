@@ -338,10 +338,10 @@ private:
     mutable std::unordered_map<std::string, std::string> stringCache_;
     static const std::string emptyString_;
     
-    // 操作队列
-    std::deque<StateOperation> opQueue_;
-    mutable std::mutex queueMutex_;
-    bool mergeMode_ = true;
+    // 操作队列 → 改为待通知集合（写操作已同步执行）
+    std::set<std::string> pendingNotifications_;
+    mutable std::mutex notifyMutex_;
+    bool mergeMode_ = true;  // 保留兼容性，但不再影响行为
     
     // 监听器
     std::vector<Watcher> watchers_;

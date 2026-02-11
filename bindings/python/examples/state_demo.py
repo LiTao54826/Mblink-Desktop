@@ -1,204 +1,156 @@
 """
-LightUI Python Binding - 状态管理演示
+LightUI 状态类型演示
 
-展示所有状态类型的使用：
-- IntState: 整数状态，支持原子操作
-- StringState: 字符串状态，支持追加/前置
-- ListState: 列表状态，支持数组操作
-- DictState: 字典状态，支持对象操作
+演示所有状态类型的 API 用法（纯控制台输出，不创建窗口）。
+
+演示功能：
+- IntState: get/set/increment/decrement/multiply
+- StringState: get/set/append/prepend/len
+- ListState: get/append/pop/shift/unshift/len/索引
+- DictState: get/set_key/remove_key/keys/索引/in
+- watch/unwatch 状态监听
+- batch 批量操作
+
+运行方式：
+    python state_demo.py
 """
 
 import sys
 import os
-
-# 添加 lightui 包到路径
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
-from lightui import LightUIApp
+import lightui as ui
+
+
+def demo_int_state(app):
+    print("=" * 50)
+    print("【IntState 整数状态】")
+    counter = app.state("counter", 0)
+    print(f"  初始值: {counter.get()}")
+    counter.set(10)
+    print(f"  set(10): {counter.get()}")
+    counter.increment()
+    print(f"  increment(): {counter.get()}")
+    counter.increment(5)
+    print(f"  increment(5): {counter.get()}")
+    counter.decrement()
+    print(f"  decrement(): {counter.get()}")
+    counter.decrement(3)
+    print(f"  decrement(3): {counter.get()}")
+    counter.multiply(2)
+    print(f"  multiply(2): {counter.get()}")
+    print()
+
+
+def demo_string_state(app):
+    print("=" * 50)
+    print("【StringState 字符串状态】")
+    greeting = app.state("greeting", "Hello")
+    print(f"  初始值: '{greeting.get()}'")
+    greeting.set("你好")
+    print(f"  set('你好'): '{greeting.get()}'")
+    greeting.append("，世界")
+    print(f"  append('，世界'): '{greeting.get()}'")
+    greeting.prepend("【")
+    print(f"  prepend('【'): '{greeting.get()}'")
+    greeting.append("】")
+    print(f"  append('】'): '{greeting.get()}'")
+    print(f"  len(): {len(greeting)}")
+    print()
+
+
+def demo_list_state(app):
+    print("=" * 50)
+    print("【ListState 列表状态】")
+    items = app.state("items", [])
+    print(f"  初始值: {items.get()}")
+    items.append("苹果")
+    items.append("香蕉")
+    items.append("橙子")
+    print(f"  append 三个: {items.get()}")
+    print(f"  items[0]: '{items[0]}'")
+    print(f"  len(): {len(items)}")
+    items.pop()
+    print(f"  pop(): {items.get()}")
+    items.unshift("葡萄")
+    print(f"  unshift('葡萄'): {items.get()}")
+    items.shift()
+    print(f"  shift(): {items.get()}")
+    print()
+
+
+def demo_dict_state(app):
+    print("=" * 50)
+    print("【DictState 字典状态】")
+    config = app.state("config", {})
+    config.set_key("theme", "dark")
+    config.set_key("language", "zh-CN")
+    config.set_key("font_size", 14)
+    print(f"  set_key 三个: {config.get()}")
+    print(f"  config['theme']: '{config['theme']}'")
+    print(f"  'language' in config: {'language' in config}")
+    print(f"  keys(): {config.keys()}")
+    config.remove_key("font_size")
+    print(f"  remove_key('font_size'): {config.get()}")
+    print()
+
+
+def demo_watch(app):
+    print("=" * 50)
+    print("【watch / unwatch 状态监听】")
+    score = app.state("score", 0)
+
+    def on_change(v):
+        print(f"    [回调] score = {v}")
+
+    wid = score.watch(on_change)
+    print(f"  注册监听 (id={wid})")
+    score.increment()
+    score.set(100)
+    score.unwatch(wid)
+    print(f"  取消监听后 increment():")
+    score.increment()
+    print(f"  当前值: {score.get()}")
+    print()
+
+
+def demo_batch(app):
+    print("=" * 50)
+    print("【batch 批量操作】")
+    amount = app.state("amount", 0)
+    count = [0]
+
+    def on_change(v):
+        count[0] += 1
+
+    amount.watch(on_change)
+
+    amount.increment()
+    amount.increment()
+    amount.increment()
+    print(f"  不用 batch: 通知 {count[0]} 次")
+
+    count[0] = 0
+    with app.batch():
+        amount.increment()
+        amount.increment()
+        amount.increment()
+    print(f"  用 batch: 通知 {count[0]} 次")
+    print(f"  最终值: {amount.get()}")
+    print()
 
 
 def main():
-    print("=" * 60)
-    print("LightUI 状态管理演示")
-    print("=" * 60)
-    
-    with LightUIApp("State Demo", 800, 600, headless=True) as app:
-        
-        # ========== IntState 演示 ==========
-        print("\n--- IntState 演示 ---")
-        counter = app.state("counter", 0)
-        print(f"类型: {type(counter).__name__}")
-        print(f"初始值: {counter.get()}")
-        
-        counter.increment()
-        print(f"increment() 后: {counter.get()}")
-        
-        counter.increment(5)
-        print(f"increment(5) 后: {counter.get()}")
-        
-        counter.multiply(2)
-        print(f"multiply(2) 后: {counter.get()}")
-        
-        counter.set(100)
-        print(f"set(100) 后: {counter.get()}")
-        
-        # ========== StringState 演示 ==========
-        print("\n--- StringState 演示 ---")
-        message = app.state("message", "Hello")
-        print(f"类型: {type(message).__name__}")
-        print(f"初始值: '{message.get()}'")
-        
-        message.append(" World")
-        print(f"append(' World') 后: '{message.get()}'")
-        
-        message.prepend(">>> ")
-        print(f"prepend('>>> ') 后: '{message.get()}'")
-        
-        print(f"字符串长度: {len(message)}")
-        
-        # ========== ListState 演示 ==========
-        print("\n--- ListState 演示 ---")
-        items = app.state("items", [1, 2, 3])
-        print(f"类型: {type(items).__name__}")
-        print(f"初始值: {items.get()}")
-        
-        items.append(4)
-        print(f"append(4) 后: {items.get()}")
-        
-        items[0] = 10
-        print(f"items[0] = 10 后: {items.get()}")
-        
-        print(f"items[1] = {items[1]}")
-        
-        items.pop()
-        print(f"pop() 后: {items.get()}")
-        
-        items.remove(1)  # 移除索引 1 的元素
-        print(f"remove(1) 后: {items.get()}")
-        
-        print(f"列表长度: {len(items)}")
-        
-        items.clear()
-        print(f"clear() 后: {items.get()}")
-        
-        # ========== DictState 演示 ==========
-        print("\n--- DictState 演示 ---")
-        config = app.state("config", {"theme": "dark", "fontSize": 14})
-        print(f"类型: {type(config).__name__}")
-        print(f"初始值: {config.get()}")
-        
-        config.set_key("language", "zh-CN")
-        print(f"set_key('language', 'zh-CN') 后: {config.get()}")
-        
-        config["debug"] = True
-        print(f"config['debug'] = True 后: {config.get()}")
-        
-        print(f"config['theme'] = {config['theme']}")
-        print(f"'debug' in config: {'debug' in config}")
-        print(f"'unknown' in config: {'unknown' in config}")
-        print(f"所有键: {config.keys()}")
-        
-        config.remove_key("debug")
-        print(f"remove_key('debug') 后: {config.get()}")
-        
-        config.clear()
-        print(f"clear() 后: {config.get()}")
-        
-        # ========== 状态监听演示 ==========
-        print("\n--- 状态监听演示 ---")
-        score = app.state("score", 0)
-        
-        changes = []
-        def on_score_change(value):
-            changes.append(value)
-            print(f"  [回调] score 变化为: {value}")
-        
-        watch_id = score.watch(on_score_change)
-        print("已添加监听器")
-        
-        print("执行 score.increment(10):")
-        score.increment(10)
-        
-        print("执行 score.increment(20):")
-        score.increment(20)
-        
-        score.unwatch(watch_id)
-        print("已移除监听器")
-        
-        print("执行 score.increment(30) (无回调):")
-        score.increment(30)
-        print(f"最终 score: {score.get()}")
-        print(f"收到的变化通知: {changes}")
-        
-        # ========== 批量操作演示 ==========
-        print("\n--- 批量操作演示 ---")
-        batch_counter = app.state("batch_counter", 0)
-        
-        notifications = []
-        def on_batch_change(value):
-            notifications.append(value)
-        
-        watch_id = batch_counter.watch(on_batch_change)
-        
-        print("普通模式下 3 次 increment:")
-        batch_counter.increment()
-        batch_counter.increment()
-        batch_counter.increment()
-        print(f"  通知次数: {len(notifications)}")
-        
-        notifications.clear()
-        
-        print("批量模式下 3 次 increment:")
-        with app.batch():
-            batch_counter.increment()
-            batch_counter.increment()
-            batch_counter.increment()
-        print(f"  通知次数: {len(notifications)} (批量结束后统一通知)")
-        
-        batch_counter.unwatch(watch_id)
-        print(f"最终 batch_counter: {batch_counter.get()}")
-        
-        # ========== 类型推断演示 ==========
-        print("\n--- 类型推断演示 ---")
-        
-        int_state = app.state("auto_int", 42)
-        print(f"app.state('auto_int', 42) -> {type(int_state).__name__}")
-        
-        float_state = app.state("auto_float", 3.14)
-        print(f"app.state('auto_float', 3.14) -> {type(float_state).__name__}")
-        
-        str_state = app.state("auto_str", "hello")
-        print(f"app.state('auto_str', 'hello') -> {type(str_state).__name__}")
-        
-        list_state = app.state("auto_list", [1, 2, 3])
-        print(f"app.state('auto_list', [1,2,3]) -> {type(list_state).__name__}")
-        
-        dict_state = app.state("auto_dict", {"a": 1})
-        print(f"app.state('auto_dict', {{'a':1}}) -> {type(dict_state).__name__}")
-        
-        bool_state = app.state("auto_bool", True)
-        print(f"app.state('auto_bool', True) -> {type(bool_state).__name__}")
-        
-        null_state = app.state("auto_null", None)
-        print(f"app.state('auto_null', None) -> {type(null_state).__name__}")
-        
-        # ========== 状态代理身份演示 ==========
-        print("\n--- 状态代理身份演示 ---")
-        state1 = app.state("shared", 100)
-        state2 = app.state("shared", 999)  # 初始值被忽略
-        
-        print(f"state1 is state2: {state1 is state2}")
-        print(f"state1.get(): {state1.get()}")
-        print(f"state2.get(): {state2.get()}")
-        
-        state1.set(200)
-        print(f"state1.set(200) 后:")
-        print(f"  state1.get(): {state1.get()}")
-        print(f"  state2.get(): {state2.get()}")
-        
-        print("\n" + "=" * 60)
-        print("演示完成!")
-        print("=" * 60)
+    print("LightUI 状态类型 API 演示")
+    print()
+    app = ui.App("状态演示", 400, 300, headless=True, enable_devtools=False)
+    demo_int_state(app)
+    demo_string_state(app)
+    demo_list_state(app)
+    demo_dict_state(app)
+    demo_watch(app)
+    demo_batch(app)
+    print("演示完成")
 
 
 if __name__ == "__main__":

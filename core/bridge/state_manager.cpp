@@ -424,17 +424,14 @@ void StateManager::setMergeMode(bool enable) {
 }
 
 void StateManager::processQueue() {
-    std::deque<StateOperation> ops;
+    // 写操作已同步执行，这里只处理待通知
+    std::set<std::string> changed;
     {
-        std::lock_guard lock(queueMutex_);
-        std::swap(ops, opQueue_);
+        std::lock_guard lock(notifyMutex_);
+        std::swap(changed, pendingNotifications_);
     }
 
-    std::set<std::string> changed;
-    for (auto& op : ops) {
-        applyOp(op);
-        changed.insert(op.name);
-    }
+    if (changed.empty()) return;
 
     if (!batchMode_) {
         for (const auto& name : changed) {
@@ -446,26 +443,20 @@ void StateManager::processQueue() {
 }
 
 size_t StateManager::queueSize() const {
-    std::lock_guard lock(queueMutex_);
-    return opQueue_.size();
+    std::lock_guard lock(notifyMutex_);
+    return pendingNotifications_.size();
 }
 
 // ========== 私有方法 ==========
 
 void StateManager::enqueue(StateOperation op) {
-    std::lock_guard lock(queueMutex_);
-
-    if (mergeMode_ && op.op == StateOp::Set) {
-        // 查找并替换同名的 SET 操作
-        for (auto& existing : opQueue_) {
-            if (existing.name == op.name && existing.op == StateOp::Set) {
-                existing.value = std::move(op.value);
-                return;
-            }
-        }
-    }
-
-    opQueue_.push_back(std::move(op));
+    // 立即执行操作（同步写入 states_）
+    std::string name = op.name;
+    applyOp(op);
+    
+    // 记录待通知的状态名
+    std::lock_guard lock(notifyMutex_);
+    pendingNotifications_.insert(std::move(name));
 }
 
 void StateManager::applyOp(const StateOperation& op) {

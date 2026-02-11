@@ -785,9 +785,15 @@ public:
             if (state_manager_) {
                 auto sm = state_manager_;
                 auto user_callback = user_update_callback_;
-                event_loop_->SetUpdateCallback([sm, user_callback](float dt) {
+                auto bridge = host_bridge_;
+                event_loop_->SetUpdateCallback([sm, user_callback, bridge](float dt) {
                     // 先处理状态队列（主线程）
                     sm->processQueue();
+
+                    // 刷新事件队列（状态 watcher 可能产生了事件）
+                    if (bridge) {
+                        bridge->flushEvents();
+                    }
 
                     // 再调用用户回调
                     if (user_callback) {
@@ -869,6 +875,15 @@ public:
         state_manager_ = sm;
     }
 
+    /**
+     * @brief 设置 HostBridge（用于事件队列刷新）
+     *
+     * 设置后，EventLoop 会在每帧 processQueue 之后自动调用 flushEvents()
+     */
+    void setHostBridge(HostBridge* bridge) {
+        host_bridge_ = bridge;
+    }
+
     void setUpdateCallback(py::function callback) {
         user_update_callback_ = callback;
         // 如果还没有 StateManager，直接设置回调
@@ -918,6 +933,7 @@ private:
     std::unique_ptr<EventLoop> event_loop_;
     std::shared_ptr<Window> window_;         // 窗口（用于自动增量渲染）
     StateManager* state_manager_ = nullptr;  // 状态管理器（用于线程安全队列处理）
+    HostBridge* host_bridge_ = nullptr;      // HostBridge（用于事件队列刷新）
     py::function user_update_callback_;      // 用户的更新回调
     py::function user_render_callback_;      // 用户的渲染回调
 };
@@ -1137,6 +1153,41 @@ public:
     
     HostBridge* getBridge() const { return bridge_.get(); }
 
+    /**
+     * @brief 从 Python 端向 JS 端发送事件
+     * @param eventName 事件名
+     * @param data Python 对象（基本类型）
+     */
+    void emit(const std::string& eventName, const py::object& data) {
+        if (!bridge_) {
+            throw std::runtime_error("HostBridge not initialized");
+        }
+        if (eventName.empty()) {
+            throw py::value_error("eventName must not be empty");
+        }
+
+        json j;
+        try {
+            j = pythonToJson(data);
+        } catch (...) {
+            throw py::type_error("data is not JSON-serializable");
+        }
+        if (!data.is_none() && j.is_null()) {
+            throw py::type_error("data is not JSON-serializable: unsupported type");
+        }
+
+        bridge_->emit(eventName, j.dump());
+    }
+
+    /**
+     * @brief 刷新事件队列，执行 JS 回调
+     */
+    void flushEvents() {
+        if (bridge_) {
+            bridge_->flushEvents();
+        }
+    }
+
 private:
     void initBridge() {
         if (runtime_ && runtime_->getContext() && stateManager_) {
@@ -1316,6 +1367,9 @@ PYBIND11_MODULE(lightui_core, m) {
         .def("set_state_manager", [](PyEventLoop& self, PyApp& app) {
             self.setStateManager(app.getStateManager());
         }, py::arg("app"), "Set StateManager for thread-safe state queue processing (called each frame)")
+        .def("set_host_bridge", [](PyEventLoop& self, PyHostBridge& bridge) {
+            self.setHostBridge(bridge.getBridge());
+        }, py::arg("bridge"), "Set HostBridge for automatic event queue flushing after state processing")
         .def("run_once", &PyEventLoop::runOnce)
         .def("is_running", &PyEventLoop::isRunning)
         .def("should_quit", &PyEventLoop::shouldQuit)
@@ -1346,6 +1400,10 @@ PYBIND11_MODULE(lightui_core, m) {
              "Unbind a previously bound function")
         .def("call", &PyHostBridge::call, py::arg("name"), py::arg("args") = py::none(),
              "Call a function registered in the bridge")
+        .def("emit", &PyHostBridge::emit, py::arg("event_name"), py::arg("data") = py::none(),
+             "Emit an event to JS listeners (thread-safe)")
+        .def("flush_events", &PyHostBridge::flushEvents,
+             "Flush event queue and execute JS callbacks")
         .def("is_valid", &PyHostBridge::isValid,
              "Check if the bridge is properly initialized");
 

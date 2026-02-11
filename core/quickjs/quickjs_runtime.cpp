@@ -399,6 +399,20 @@ void QuickJSRuntime::InitConsole() {
 
 JSValue QuickJSRuntime::ConsoleLog(JSContext* ctx, JSValueConst this_val,
                                    int argc, JSValueConst* argv, int magic) {
+    // magic: 0=log, 1=error, 2=warn, 3=info
+    FILE* out = (magic == 1) ? stderr : stdout;
+
+    for (int i = 0; i < argc; i++) {
+        if (i > 0) fputc(' ', out);
+        const char* str = JS_ToCString(ctx, argv[i]);
+        if (str) {
+            fputs(str, out);
+            JS_FreeCString(ctx, str);
+        }
+    }
+    fputc('\n', out);
+    fflush(out);
+
     return JS_UNDEFINED;
 }
 
