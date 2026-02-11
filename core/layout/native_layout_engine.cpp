@@ -1,7 +1,7 @@
 /**
  * @file native_layout_engine.cpp
  * @brief Native layout engine implementation
- * 
+ *
  * @note 大文件说明 (3790 行)
  * 本文件包含原生布局引擎的完整实现。
  * 文件较大的原因：
@@ -461,13 +461,13 @@ void NativeLayoutEngine::ComputeLayoutInternal(float available_width, float avai
     // This allows incremental layout to selectively clear only dirty node caches
     // **Feature: incremental-layout-optimization**
     // **Validates: Requirements 2.2**
-    // 
+    //
     // 统一滚动条处理：
     // 所有元素（包括 root/body）的滚动条检测都在 ComputeNodeLayout 中统一处理
     // 这里只处理 root margin 和位置
     // **Feature: unified-scrollbar-system**
     // **Validates: Requirements 1.4, 3.1, 3.2**
-    
+
     if (root_node_ == 0) {
         return;
     }
@@ -479,7 +479,7 @@ void NativeLayoutEngine::ComputeLayoutInternal(float available_width, float avai
     LayoutNode* root_node = GetNode(root_node_);
     Rect<float> root_margin = {0.0f, 0.0f, 0.0f, 0.0f};
     float root_width = available_width;
-    
+
     if (root_node) {
         // Resolve root element's margin based on available_width (viewport width)
         root_margin = ResolveOrZero(root_node->style.margin, std::optional<float>(available_width));
@@ -508,7 +508,7 @@ void NativeLayoutEngine::ComputeLayoutInternal(float available_width, float avai
     inputs.vertical_margins_are_collapsible = Line<bool>{true, true};
 
     ComputeNodeLayout(root_node_, inputs);
-    
+
     // Set root element position based on its margin
     // In CSS, the root element's margin offsets it from the viewport edge
     if (root_node) {
@@ -516,7 +516,7 @@ void NativeLayoutEngine::ComputeLayoutInternal(float available_width, float avai
         root_node->y = root_margin.top;
         root_node->layout.location = Point<float>{root_margin.left, root_margin.top};
     }
-    
+
     PositionChildren(root_node_);
 }
 
@@ -524,7 +524,7 @@ void NativeLayoutEngine::GetLayoutInfo(std::shared_ptr<RenderObject> root) {
     if (!root) {
         return;
     }
-    
+
     ReadLayoutResults(root.get());
 }
 
@@ -624,7 +624,7 @@ void NativeLayoutEngine::UpdateStyle(RenderObject* render_obj, const ComputedSty
                 PropagateLayoutDirty(it->second, scope);
                 return;
             }
-            
+
             // 转换新样式
             Style new_style = ConvertStyle(style);
 
@@ -634,7 +634,7 @@ void NativeLayoutEngine::UpdateStyle(RenderObject* render_obj, const ComputedSty
 
             // 检查影响布局的属性是否变化
             const Style& old_style = node->style;
-            
+
             // Display 和 Position 变化会影响布局
             if (old_style.display != new_style.display ||
                 old_style.position != new_style.position ||
@@ -897,13 +897,13 @@ bool NativeLayoutEngine::HasFixedSize(const LayoutNode* node) const {
     }
 
     const auto& style = node->style;
-    
+
     // Check if width is a fixed length (not auto, not percent)
     bool width_fixed = style.size.width.IsLength() && !style.size.width.IsAuto();
-    
+
     // Check if height is a fixed length (not auto, not percent)
     bool height_fixed = style.size.height.IsLength() && !style.size.height.IsAuto();
-    
+
     // Both dimensions must be fixed for the container to be considered "fixed size"
     return width_fixed && height_fixed;
 }
@@ -925,7 +925,7 @@ bool NativeLayoutEngine::IsFlexOrGridChild(const LayoutNode* node) const {
 bool NativeLayoutEngine::IsWidthDependent(const LayoutNode* node) const {
     // **Feature: incremental-layout-optimization**
     // **Validates: Requirements 2.5**
-    
+
     if (!node) {
         return true;  // Assume dependent if node is null
     }
@@ -985,7 +985,7 @@ bool NativeLayoutEngine::IsWidthDependent(const LayoutNode* node) const {
 void NativeLayoutEngine::ClearWidthDependentCaches(NodeId node_id) {
     // **Feature: incremental-layout-optimization**
     // **Validates: Requirements 2.5**
-    
+
     LayoutNode* node = GetNode(node_id);
     if (!node) {
         return;
@@ -1037,7 +1037,7 @@ void NativeLayoutEngine::ClearWidthDependentCachesRecursive(NodeId node_id) {
 void NativeLayoutEngine::PropagateLayoutDirty(NodeId node_id, LayoutScope scope) {
     // **Feature: incremental-layout-optimization**
     // **Validates: Requirements 4.1, 4.2, 4.3, 4.4**
-    
+
     LayoutNode* node = GetNode(node_id);
     if (!node) {
         return;
@@ -1137,7 +1137,7 @@ void NativeLayoutEngine::PropagateLayoutDirty(NodeId node_id, LayoutScope scope)
                     }
                     // 关键修复：清除父元素的缓存，确保布局重新计算
                     parent->cache.Clear();
-                    
+
                     // For IFC containers, we MUST update content_version because IFC layout
                     // caches based on content_version and needs to re-collect inline content
                     // when any child changes.
@@ -1219,7 +1219,7 @@ void NativeLayoutEngine::AddElement(RenderObject* render_obj, RenderObject* pare
 
     // 使用 BuildSubtreeAtIndex 在正确位置插入
     BuildSubtreeAtIndex(render_obj, parent_id, layout_insert_index);
-    
+
     // 标记父节点需要重新布局
     if (parent_id != 0) {
         LayoutNode* parent_node = GetNode(parent_id);
@@ -1297,19 +1297,19 @@ void NativeLayoutEngine::RemoveElement(RenderObject* render_obj) {
                 std::remove(children.begin(), children.end(), node_id),
                 children.end()
             );
-            
+
             // 清除父节点及所有祖先的布局缓存
             // 这是关键：确保下次布局时重新计算
             NodeId ancestor_id = node->parent;
             while (ancestor_id != 0) {
                 LayoutNode* ancestor = GetNode(ancestor_id);
                 if (!ancestor) break;
-                
+
                 ancestor->cache.Clear();
                 ancestor->needs_layout = true;
                 uint64_t new_version = ContentVersionManager::GetInstance().GenerateVersion();
                 ancestor->content_version = new_version;
-                
+
                 ancestor_id = ancestor->parent;
             }
         }
@@ -1318,7 +1318,7 @@ void NativeLayoutEngine::RemoveElement(RenderObject* render_obj) {
     // 递归移除所有子节点（使用迭代方式避免栈溢出）
     std::vector<NodeId> to_remove;
     to_remove.push_back(node_id);
-    
+
     size_t index = 0;
     while (index < to_remove.size()) {
         NodeId current_id = to_remove[index++];
@@ -1330,7 +1330,7 @@ void NativeLayoutEngine::RemoveElement(RenderObject* render_obj) {
             }
         }
     }
-    
+
     // 从 maps 中移除所有节点，并清除 RenderObject 的布局信息
     for (NodeId id : to_remove) {
         LayoutNode* n = GetNode(id);
@@ -1344,7 +1344,7 @@ void NativeLayoutEngine::RemoveElement(RenderObject* render_obj) {
                 layout.width = 0.0f;
                 layout.height = 0.0f;
                 render_to_node_.erase(n->render_obj);
-                
+
                 // 对于 IFC 容器，清除其子元素在 render_to_node_ 中的注册
                 // 与 BuildSubtree 中的注册对应
                 if (n->is_ifc_container && !n->is_anonymous_block) {
@@ -1361,7 +1361,7 @@ void NativeLayoutEngine::RemoveElement(RenderObject* render_obj) {
                     }
                 }
             }
-            
+
             // 对于匿名块盒，清除其管理的内联子元素的布局信息
             // 并从 render_to_node_ 映射中移除它们
             if (n->is_anonymous_block) {
@@ -1380,7 +1380,7 @@ void NativeLayoutEngine::RemoveElement(RenderObject* render_obj) {
             }
         }
         nodes_.erase(id);
-        
+
         if (id == root_node_) {
             root_node_ = 0;
         }
@@ -1412,7 +1412,7 @@ NodeId NativeLayoutEngine::CreateNode(RenderObject* render_obj) {
     const auto& computed = render_obj->GetComputedStyle();
     node.style = ConvertStyle(computed);
     node.is_ifc_container = ShouldUseIFC(render_obj);
-    
+
     // ✅ Set margins_collapse based on element type
     // CSS spec: margins do NOT collapse for:
     // - Inline-block elements (display: inline-block)
@@ -1422,17 +1422,17 @@ NodeId NativeLayoutEngine::CreateNode(RenderObject* render_obj) {
     // - Elements that establish new block formatting contexts
     RenderObjectType type = render_obj->GetType();
     bool is_inline_block = (type == RenderObjectType::INLINE_BLOCK);
-    bool is_absolute_or_fixed = (node.style.position == Position::Absolute || 
+    bool is_absolute_or_fixed = (node.style.position == Position::Absolute ||
                                    node.style.position == Position::Fixed);
     // Note: Float property is not currently in Style, so we skip it for now
     // Flex/Grid items will be handled by the parent container's layout algorithm
     node.style.margins_collapse = !is_inline_block && !is_absolute_or_fixed;
-    
+
     // 为 IFC 容器初始化 content_version（非零值启用版本检查）
     if (node.is_ifc_container) {
         node.content_version = ContentVersionManager::GetInstance().GenerateVersion();
     }
-    
+
     // 检测 TABLE 容器
     node.is_table_container = (type == RenderObjectType::TABLE);
 
@@ -1858,7 +1858,7 @@ static bool IsWhitespaceOnly(const std::string& text) {
 static bool IsInlineLevelElement(RenderObject* render_obj) {
     if (!render_obj) return false;
     RenderObjectType type = render_obj->GetType();
-    
+
     // For text nodes, check if it's whitespace-only
     // In block formatting context, whitespace-only text between block elements
     // should be ignored (CSS white-space processing)
@@ -1869,7 +1869,7 @@ static bool IsInlineLevelElement(RenderObject* render_obj) {
         }
         return true;
     }
-    
+
     // ✅ FIX: Use GetType() for actual render object type
     // Inline-block elements have GetType() == INLINE_BLOCK
     // Inline elements have GetType() == INLINE
@@ -1882,12 +1882,12 @@ static bool IsBlockLevelElement(RenderObject* render_obj) {
     if (!render_obj) return false;
     RenderObjectType type = render_obj->GetType();
     if (type == RenderObjectType::TEXT) return false;
-    
+
     // ✅ FIX: Check computed style display for FLEX/GRID containers
     // because they use RenderBlock but should be treated as block-level
     const auto& style = render_obj->GetComputedStyle();
     RenderObjectType display = style.display;
-    
+
     return type == RenderObjectType::BLOCK ||
            display == RenderObjectType::FLEX ||
            display == RenderObjectType::GRID ||
@@ -1980,7 +1980,7 @@ void NativeLayoutEngine::BuildSubtreeAtIndex(RenderObject* render_obj, NodeId pa
     const auto& children = render_obj->GetChildren();
     bool has_block = false;
     bool has_inline = false;
-    
+
     for (const auto& child : children) {
         if (IsBlockLevelElement(child.get())) {
             has_block = true;
@@ -1989,10 +1989,10 @@ void NativeLayoutEngine::BuildSubtreeAtIndex(RenderObject* render_obj, NodeId pa
             has_inline = true;
         }
     }
-    
+
     if (has_block && has_inline) {
         std::vector<RenderObject*> current_inline_run;
-        
+
         for (const auto& child : children) {
             if (IsBlockLevelElement(child.get())) {
                 if (!current_inline_run.empty()) {
@@ -2006,7 +2006,7 @@ void NativeLayoutEngine::BuildSubtreeAtIndex(RenderObject* render_obj, NodeId pa
                 BuildSubtree(child.get(), node_id);
             }
         }
-        
+
         if (!current_inline_run.empty()) {
             CreateAnonymousBlockBox(node_id, current_inline_run);
         }
@@ -2110,17 +2110,17 @@ void NativeLayoutEngine::BuildSubtree(RenderObject* render_obj, NodeId parent_id
     // Example:
     //   <div>
     //     <h2>Title</h2>           <!-- block -->
-    //     <button>A</button>       <!-- inline-block --> 
+    //     <button>A</button>       <!-- inline-block -->
     //     <button>B</button>       <!-- inline-block --> wrapped in anonymous block
     //     <button>C</button>       <!-- inline-block -->
     //   </div>
     //
     // The buttons should be wrapped in an anonymous block box that uses IFC layout.
-    
+
     const auto& children = render_obj->GetChildren();
     bool has_block = false;
     bool has_inline = false;
-    
+
     // First pass: check if we have mixed content
     for (const auto& child : children) {
         if (IsBlockLevelElement(child.get())) {
@@ -2130,11 +2130,11 @@ void NativeLayoutEngine::BuildSubtree(RenderObject* render_obj, NodeId parent_id
             has_inline = true;
         }
     }
-    
+
     // If we have mixed content, we need to create anonymous block boxes
     if (has_block && has_inline) {
         std::vector<RenderObject*> current_inline_run;
-        
+
         for (const auto& child : children) {
             if (IsBlockLevelElement(child.get())) {
                 // If we have accumulated inline elements, create an anonymous block for them
@@ -2152,7 +2152,7 @@ void NativeLayoutEngine::BuildSubtree(RenderObject* render_obj, NodeId parent_id
                 BuildSubtree(child.get(), node_id);
             }
         }
-        
+
         // Don't forget the last run of inline elements
         if (!current_inline_run.empty()) {
             CreateAnonymousBlockBox(node_id, current_inline_run);
@@ -2167,17 +2167,17 @@ void NativeLayoutEngine::BuildSubtree(RenderObject* render_obj, NodeId parent_id
 
 NodeId NativeLayoutEngine::CreateAnonymousBlockBox(NodeId parent_id, const std::vector<RenderObject*>& inline_children) {
     if (inline_children.empty()) return 0;
-    
+
     // Create a new node ID for the anonymous block
     NodeId anon_id = next_node_id_++;
-    
+
     LayoutNode anon_node;
     anon_node.id = anon_id;
     anon_node.render_obj = nullptr;  // Anonymous blocks have no render object
     anon_node.parent = parent_id;
     anon_node.is_anonymous_block = true;
     anon_node.is_ifc_container = true;  // Anonymous blocks use IFC for their inline content
-    
+
     // Store the inline children for later IFC layout
     // Also register them in render_to_node_ to prevent duplicate node creation
     // during incremental layout updates (e.g., when AddElement is called)
@@ -2190,7 +2190,7 @@ NodeId NativeLayoutEngine::CreateAnonymousBlockBox(NodeId parent_id, const std::
         // as flex children during incremental layout.
         render_to_node_[child] = anon_id;
     }
-    
+
     // Set up default block style for the anonymous block
     // Note: Position::Relative is used as the default (equivalent to static in this engine)
     anon_node.style.display = Display::Block;
@@ -2202,16 +2202,16 @@ NodeId NativeLayoutEngine::CreateAnonymousBlockBox(NodeId parent_id, const std::
     anon_node.style.padding = Rect<LengthPercentage>::Zero();
     anon_node.style.border = Rect<LengthPercentage>::Zero();
     anon_node.style.margin = Rect<LengthPercentageAuto>::Zero();
-    
+
     // Store the node
     nodes_[anon_id] = std::move(anon_node);
-    
+
     // Add to parent's children
     LayoutNode* parent = GetNode(parent_id);
     if (parent) {
         parent->children.push_back(anon_id);
     }
-    
+
     return anon_id;
 }
 
@@ -2330,7 +2330,7 @@ LayoutOutput NativeLayoutEngine::ComputeNodeLayout(NodeId node_id, const LayoutI
             } else {
                 output = ComputeBlockLayout(node_id, inputs);
             }
-            
+
             // Handle overflow: auto for block layout - if content exceeds container, add scrollbar and relayout
             // Skip for anonymous blocks (no render_obj)
             // 统一滚动条处理：包括 root 节点
@@ -2340,25 +2340,25 @@ LayoutOutput NativeLayoutEngine::ComputeNodeLayout(NodeId node_id, const LayoutI
             const auto& computed = node->render_obj->GetComputedStyle();
             std::string overflow_y = !computed.overflow_y.empty() ? computed.overflow_y : computed.overflow;
             std::string overflow_x = !computed.overflow_x.empty() ? computed.overflow_x : computed.overflow;
-            
+
             // Only handle overflow: auto (overflow: scroll is handled in style parsing)
             if (overflow_y == "auto" || overflow_x == "auto") {
                 // Check if we need to relayout with scrollbar space
                 bool needs_relayout = false;
                 float scrollbar_width = RenderObject::GetScrollbarWidth();
-                
+
                 // Reset scrollbar_width for overflow: auto (it's dynamically determined)
                 // Note: Don't reset if overflow is scroll (it's set in style parsing)
                 float old_scrollbar_width = node->style.scrollbar_width;
                 if (computed.overflow_y != "scroll" && computed.overflow_x != "scroll") {
                     node->style.scrollbar_width = 0.0f;
                 }
-                
+
                 // For overflow-y: auto, check if content height exceeds container height
                 // 对于 root 节点，使用 available_space.height 作为容器高度
                 // **Feature: unified-scrollbar-system**
                 // **Validates: Requirements 1.1, 1.4**
-                float fallback_height = inputs.available_space.height.IsDefinite() ? 
+                float fallback_height = inputs.available_space.height.IsDefinite() ?
                     inputs.available_space.height.value : output.size.height;
                 float container_height = inputs.known_dimensions.height.value_or(fallback_height);
                 if (overflow_y == "auto" && container_height > 0) {
@@ -2369,7 +2369,7 @@ LayoutOutput NativeLayoutEngine::ComputeNodeLayout(NodeId node_id, const LayoutI
                         needs_relayout = true;
                     }
                 }
-                
+
                 // For overflow-x: auto, check if content width exceeds container width
                 float container_width = inputs.known_dimensions.width.value_or(output.size.width);
                 if (overflow_x == "auto" && container_width > 0) {
@@ -2385,17 +2385,17 @@ LayoutOutput NativeLayoutEngine::ComputeNodeLayout(NodeId node_id, const LayoutI
                         needs_relayout = true;
                     }
                 }
-                
+
                 // Only relayout if scrollbar_width changed
                 if (needs_relayout && node->style.scrollbar_width != old_scrollbar_width) {
                     // Clear cache and relayout with scrollbar space
                     node->cache.Clear();
-                    
+
                     // 滚动条空间由 ComputeBlockLayoutInner 中的 scrollbar_gutter 处理
                     // 不需要在这里修改 known_dimensions，否则会导致双重减少
                     // **Feature: unified-scrollbar-system**
                     // **Validates: Requirements 1.5, 2.2**
-                    
+
                     if (node->is_ifc_container) {
                         output = ComputeIFCLayout(node_id, inputs);
                     } else {
@@ -2409,26 +2409,26 @@ LayoutOutput NativeLayoutEngine::ComputeNodeLayout(NodeId node_id, const LayoutI
 
         case Display::Flex: {
             output = ComputeFlexLayout(node_id, inputs);
-            
+
             // Handle overflow: auto - if content exceeds container, add scrollbar and relayout
             // Skip for anonymous blocks (no render_obj)
             if (node->render_obj) {
             const auto& computed = node->render_obj->GetComputedStyle();
             std::string overflow_y = !computed.overflow_y.empty() ? computed.overflow_y : computed.overflow;
             std::string overflow_x = !computed.overflow_x.empty() ? computed.overflow_x : computed.overflow;
-            
+
             // Only handle overflow: auto (overflow: scroll is handled in style parsing)
             if (overflow_y == "auto" || overflow_x == "auto") {
                 // Check if we need to relayout with scrollbar space
                 bool needs_relayout = false;
                 float scrollbar_width = RenderObject::GetScrollbarWidth();
-                
+
                 // Reset scrollbar_width for overflow: auto (it's dynamically determined)
                 float old_scrollbar_width = node->style.scrollbar_width;
                 if (computed.overflow_y != "scroll" && computed.overflow_x != "scroll") {
                     node->style.scrollbar_width = 0.0f;
                 }
-                
+
                 // For overflow-y: auto, check if content height exceeds container height
                 float container_height = inputs.known_dimensions.height.value_or(output.size.height);
                 if (overflow_y == "auto" && container_height > 0) {
@@ -2439,7 +2439,7 @@ LayoutOutput NativeLayoutEngine::ComputeNodeLayout(NodeId node_id, const LayoutI
                         needs_relayout = true;
                     }
                 }
-                
+
                 // For overflow-x: auto, check if content width exceeds container width
                 float container_width = inputs.known_dimensions.width.value_or(output.size.width);
                 if (overflow_x == "auto" && container_width > 0) {
@@ -2450,7 +2450,7 @@ LayoutOutput NativeLayoutEngine::ComputeNodeLayout(NodeId node_id, const LayoutI
                         needs_relayout = true;
                     }
                 }
-                
+
                 // Only relayout if scrollbar_width changed
                 if (needs_relayout && node->style.scrollbar_width != old_scrollbar_width) {
                     // Clear cache and relayout with scrollbar space
@@ -2713,12 +2713,12 @@ LayoutOutput NativeLayoutEngine::ComputeIFCLayout(NodeId node_id, const LayoutIn
     if (!node) {
         return LayoutOutput{};
     }
-    
+
     // Handle anonymous block boxes (they have no render_obj but contain inline children)
     if (node->is_anonymous_block) {
         return ComputeAnonymousBlockIFCLayout(node_id, inputs);
     }
-    
+
     if (!node->render_obj) {
         return LayoutOutput{};
     }
@@ -2950,44 +2950,44 @@ void NativeLayoutEngine::LayoutAbsoluteChildrenInIFC(
     if (!node || !node->render_obj) {
         return;
     }
-    
+
     // Calculate content box area for absolute positioning
     float content_box_left = padding_border_left;
     float content_box_right = padding_border_right;
     float content_box_top = padding_border_top;
     float content_box_bottom = padding_border_bottom;
-    
+
     float area_width = container_width - content_box_left - content_box_right;
     float area_height = container_height - content_box_top - content_box_bottom;
-    
+
     // IFC containers don't have children in the layout tree (node->children)
     // Instead, we need to iterate through the render object's children
     const auto& render_children = node->render_obj->GetChildren();
-    
+
     for (const auto& child_render_obj : render_children) {
         if (!child_render_obj) continue;
-        
+
         // Get the child's computed style to check position
         const auto& child_computed = child_render_obj->GetComputedStyle();
-        
+
         // Skip non-absolute/fixed children
         if (child_computed.position != "absolute" && child_computed.position != "fixed") {
             continue;
         }
-        
+
         // For position: fixed, use viewport size instead of parent container size
         bool is_fixed = (child_computed.position == "fixed");
-        Size<float> containing_block_size = is_fixed 
+        Size<float> containing_block_size = is_fixed
             ? Size<float>{ViewportSize::GetWidth(), ViewportSize::GetHeight()}
             : Size<float>{area_width, area_height};
-        Point<float> containing_block_offset = is_fixed 
+        Point<float> containing_block_offset = is_fixed
             ? Point<float>{0.0f, 0.0f}
             : Point<float>{content_box_left, content_box_top};
-        
+
         // Parse inset values directly from computed style
         float left_val = 0.0f, right_val = 0.0f, top_val = 0.0f, bottom_val = 0.0f;
         bool has_left = false, has_right = false, has_top = false, has_bottom = false;
-        
+
         if (child_computed.left.unit == CSSUnit::PX) {
             left_val = child_computed.left.value;
             has_left = true;
@@ -2995,7 +2995,7 @@ void NativeLayoutEngine::LayoutAbsoluteChildrenInIFC(
             left_val = (child_computed.left.value / 100.0f) * containing_block_size.width;
             has_left = true;
         }
-        
+
         if (child_computed.right.unit == CSSUnit::PX) {
             right_val = child_computed.right.value;
             has_right = true;
@@ -3003,7 +3003,7 @@ void NativeLayoutEngine::LayoutAbsoluteChildrenInIFC(
             right_val = (child_computed.right.value / 100.0f) * containing_block_size.width;
             has_right = true;
         }
-        
+
         if (child_computed.top.unit == CSSUnit::PX) {
             top_val = child_computed.top.value;
             has_top = true;
@@ -3011,7 +3011,7 @@ void NativeLayoutEngine::LayoutAbsoluteChildrenInIFC(
             top_val = (child_computed.top.value / 100.0f) * containing_block_size.height;
             has_top = true;
         }
-        
+
         if (child_computed.bottom.unit == CSSUnit::PX) {
             bottom_val = child_computed.bottom.value;
             has_bottom = true;
@@ -3019,11 +3019,11 @@ void NativeLayoutEngine::LayoutAbsoluteChildrenInIFC(
             bottom_val = (child_computed.bottom.value / 100.0f) * containing_block_size.height;
             has_bottom = true;
         }
-        
+
         // Parse size from computed style
         float width = 0.0f, height = 0.0f;
         bool has_width = false, has_height = false;
-        
+
         if (child_computed.width.unit == CSSUnit::PX && child_computed.width.value > 0) {
             width = child_computed.width.value;
             has_width = true;
@@ -3031,7 +3031,7 @@ void NativeLayoutEngine::LayoutAbsoluteChildrenInIFC(
             width = (child_computed.width.value / 100.0f) * containing_block_size.width;
             has_width = true;
         }
-        
+
         if (child_computed.height.unit == CSSUnit::PX && child_computed.height.value > 0) {
             height = child_computed.height.value;
             has_height = true;
@@ -3039,29 +3039,29 @@ void NativeLayoutEngine::LayoutAbsoluteChildrenInIFC(
             height = (child_computed.height.value / 100.0f) * containing_block_size.height;
             has_height = true;
         }
-        
+
         // If no explicit size, use a default size for inline-block elements
         // (We can't call MeasureChildSize here as it would cause infinite recursion)
         if (!has_width) width = 100.0f;  // Default width
         if (!has_height) height = 40.0f; // Default height
-        
+
         // Add padding and border to size
         float padding_left = child_computed.padding_left.ToPx(containing_block_size.width, child_computed.font_size);
         float padding_right = child_computed.padding_right.ToPx(containing_block_size.width, child_computed.font_size);
         float padding_top = child_computed.padding_top.ToPx(containing_block_size.height, child_computed.font_size);
         float padding_bottom = child_computed.padding_bottom.ToPx(containing_block_size.height, child_computed.font_size);
-        
+
         float border_left_w = child_computed.border_left_width;
         float border_right_w = child_computed.border_right_width;
         float border_top_w = child_computed.border_top_width;
         float border_bottom_w = child_computed.border_bottom_width;
-        
+
         float total_width = width + padding_left + padding_right + border_left_w + border_right_w;
         float total_height = height + padding_top + padding_bottom + border_top_w + border_bottom_w;
-        
+
         // Compute location
         float loc_x = 0.0f, loc_y = 0.0f;
-        
+
         // X position
         if (has_left) {
             loc_x = containing_block_offset.x + left_val;
@@ -3070,7 +3070,7 @@ void NativeLayoutEngine::LayoutAbsoluteChildrenInIFC(
         } else {
             loc_x = containing_block_offset.x;
         }
-        
+
         // Y position
         if (has_top) {
             loc_y = containing_block_offset.y + top_val;
@@ -3079,7 +3079,7 @@ void NativeLayoutEngine::LayoutAbsoluteChildrenInIFC(
         } else {
             loc_y = containing_block_offset.y;
         }
-        
+
         // Set layout directly on the render object
         auto& layout_info = child_render_obj->GetLayoutInfo();
         layout_info.x = loc_x;
@@ -3094,7 +3094,7 @@ LayoutOutput NativeLayoutEngine::ComputeAnonymousBlockIFCLayout(NodeId node_id, 
     if (!node || !node->is_anonymous_block || node->anonymous_inline_children.empty()) {
         return LayoutOutput{};
     }
-    
+
     // Anonymous blocks inherit text-align from parent
     // Get parent node to inherit styles
     LayoutNode* parent = GetNode(node->parent);
@@ -3102,7 +3102,7 @@ LayoutOutput NativeLayoutEngine::ComputeAnonymousBlockIFCLayout(NodeId node_id, 
     float font_size = 16.0f;
     float line_height = 1.2f;
     std::string font_family = "Arial";
-    
+
     if (parent && parent->render_obj) {
         const auto& parent_style = parent->render_obj->GetComputedStyle();
         text_align = parent_style.text_align;
@@ -3110,52 +3110,115 @@ LayoutOutput NativeLayoutEngine::ComputeAnonymousBlockIFCLayout(NodeId node_id, 
         line_height = parent_style.line_height;
         font_family = parent_style.font_family;
     }
-    
+
+    // Only apply layout results in PerformLayout mode
+    bool apply_results = (inputs.run_mode == RunMode::PerformLayout);
+    static bool debug_fab_inline = std::getenv("DEBUG_FAB_INLINE") != nullptr;
+
     // Resolve container width
+    // IMPORTANT: For anonymous blocks in mixed-content containers, parent->layout.size.width
+    // may still be 0 in an early PerformLayout pass. In that case, prefer stable parent width
+    // sources to avoid falling back to outer available_space width (which can over-shift center).
     float container_width = 0.0f;
-    if (inputs.known_dimensions.width.has_value()) {
-        container_width = *inputs.known_dimensions.width;
-    } else if (inputs.available_space.width.type == AvailableSpace::Type::Definite) {
-        container_width = inputs.available_space.width.value;
-    } else if (inputs.available_space.width.type == AvailableSpace::Type::MaxContent) {
-        container_width = 10000.0f;
+    const char* container_width_source = "none";
+    if (apply_results && parent) {
+        float parent_layout_width = parent->layout.size.width;
+        if (parent_layout_width > 0.0f) {
+            container_width = parent_layout_width;
+            container_width_source = "parent.layout";
+        }
     }
-    
+
+    if (container_width <= 0.0f && apply_results && parent) {
+        float parent_output_width = parent->output.size.width;
+        if (parent_output_width > 0.0f) {
+            container_width = parent_output_width;
+            container_width_source = "parent.output";
+        }
+    }
+
+    if (container_width <= 0.0f && parent && parent->render_obj) {
+        const auto& parent_style = parent->render_obj->GetComputedStyle();
+        if (parent_style.width.unit == CSSUnit::PX && parent_style.width.value > 0.0f) {
+            container_width = parent_style.width.value;
+            container_width_source = "parent.style.px";
+        } else if (parent_style.width.unit == CSSUnit::PERCENT && inputs.parent_size.width.has_value()) {
+            container_width = (parent_style.width.value / 100.0f) * (*inputs.parent_size.width);
+            container_width_source = "parent.style.percent";
+        }
+    }
+
+    if (container_width <= 0.0f && inputs.parent_size.width.has_value() &&
+        *inputs.parent_size.width > 0.0f) {
+        container_width = *inputs.parent_size.width;
+        container_width_source = "inputs.parent_size";
+    }
+
+    if (container_width <= 0.0f) {
+        if (inputs.known_dimensions.width.has_value()) {
+            container_width = *inputs.known_dimensions.width;
+            container_width_source = "inputs.known_dimensions";
+        } else if (inputs.available_space.width.type == AvailableSpace::Type::Definite) {
+            container_width = inputs.available_space.width.value;
+            container_width_source = "inputs.available.definite";
+        } else if (inputs.available_space.width.type == AvailableSpace::Type::MaxContent) {
+            container_width = 10000.0f;
+            container_width_source = "inputs.available.max_content";
+        }
+    }
+
+    if (debug_fab_inline) {
+        std::cout << "[FAB_IFC_SRC] node=" << node->id
+                  << " parent=" << (parent ? parent->id : 0)
+                  << " apply=" << (apply_results ? 1 : 0)
+                  << " run_mode=" << static_cast<int>(inputs.run_mode)
+                  << " container_w=" << container_width
+                  << " src=" << container_width_source
+                  << " parent_layout_w=" << (parent ? parent->layout.size.width : -1.0f)
+                  << " parent_output_w=" << (parent ? parent->output.size.width : -1.0f)
+                  << " in_parent_w=" << (inputs.parent_size.width.has_value() ? *inputs.parent_size.width : -1.0f)
+                  << " in_known_w=" << (inputs.known_dimensions.width.has_value() ? *inputs.known_dimensions.width : -1.0f)
+                  << " in_avail_type=" << static_cast<int>(inputs.available_space.width.type)
+                  << " in_avail_w=" << inputs.available_space.width.value
+                  << std::endl;
+    }
+
     // Anonymous blocks have no padding/border/margin
     float content_width = container_width;
-    
+
     // Use IFC to layout the inline children
     // We need to create a temporary container for IFC layout
     // The inline children are stored in anonymous_inline_children
-    
+
     float total_width = 0.0f;
     float total_height = 0.0f;
-    
-    // Only apply layout results in PerformLayout mode
-    bool apply_results = (inputs.run_mode == RunMode::PerformLayout);
-    
+
     // Create inline boxes for all inline children and perform IFC layout
     // We'll use the IFCLayout class directly with the inline children
-    
-    // Clear previous IFC state
-    node->ifc_inline_boxes.clear();
-    node->ifc_line_boxes.clear();
-    
+
+    // Only PerformLayout pass can update IFC cached results used by ReadLayoutResults().
+    // Measure pass should not clear/write these caches, otherwise it may overwrite
+    // correct coordinates with temporary measurement coordinates.
+    if (apply_results) {
+        node->ifc_inline_boxes.clear();
+        node->ifc_line_boxes.clear();
+    }
+
     // Collect inline boxes from all inline children
     std::vector<InlineBox> all_inline_boxes;
-    
+
     for (RenderObject* inline_child : node->anonymous_inline_children) {
         if (!inline_child) continue;
-        
+
         RenderObjectType child_type = inline_child->GetType();
         const auto& child_style = inline_child->GetComputedStyle();
-        
+
         if (child_type == RenderObjectType::TEXT) {
             // Text node - create text inline box
             RenderText* text_obj = static_cast<RenderText*>(inline_child);
             const std::string& text = text_obj->GetText();
             if (text.empty()) continue;
-            
+
             // Measure text
             float letter_spacing = child_style.letter_spacing.ToPx(0, child_style.font_size);
             float word_spacing = child_style.word_spacing.ToPx(0, child_style.font_size);
@@ -3163,7 +3226,7 @@ LayoutOutput NativeLayoutEngine::ComputeAnonymousBlockIFCLayout(NodeId node_id, 
                 text, child_style.font_size, child_style.font_family,
                 letter_spacing, word_spacing, child_style.line_height,
                 child_style.font_weight, child_style.font_style);
-            
+
             InlineBox box = InlineBox::CreateTextBox(inline_child);
             box.width = measurement.width;
             box.height = measurement.height;
@@ -3171,7 +3234,7 @@ LayoutOutput NativeLayoutEngine::ComputeAnonymousBlockIFCLayout(NodeId node_id, 
             box.skia_ascent = measurement.skia_ascent;
             box.skia_descent = measurement.skia_descent;
             box.line_height_multiplier = child_style.line_height;
-            
+
             TextRun run;
             run.text = text;
             run.start_offset = 0;
@@ -3180,14 +3243,14 @@ LayoutOutput NativeLayoutEngine::ComputeAnonymousBlockIFCLayout(NodeId node_id, 
             run.height = measurement.height;
             run.baseline = measurement.skia_ascent;
             box.text_runs.push_back(run);
-            
+
             all_inline_boxes.push_back(std::move(box));
         }
         else if (child_type == RenderObjectType::INLINE_BLOCK) {
             // Inline-block element (e.g., button)
             auto* inline_block = static_cast<RenderInlineBlock*>(inline_child);
             auto [w, h] = inline_block->MeasureIntrinsicSize(content_width);
-            
+
             InlineBox box = InlineBox::CreateAtomicBox(inline_child, w, h, h);
             box.margin_left = child_style.margin_left.ToPx(w, child_style.font_size);
             box.margin_right = child_style.margin_right.ToPx(w, child_style.font_size);
@@ -3195,7 +3258,7 @@ LayoutOutput NativeLayoutEngine::ComputeAnonymousBlockIFCLayout(NodeId node_id, 
             box.margin_top = child_style.margin_top.ToPx(w, child_style.font_size);
             box.margin_bottom = child_style.margin_bottom.ToPx(w, child_style.font_size);
             box.line_height_multiplier = child_style.line_height;
-            
+
             all_inline_boxes.push_back(std::move(box));
         }
         else if (child_type == RenderObjectType::INLINE) {
@@ -3204,16 +3267,16 @@ LayoutOutput NativeLayoutEngine::ComputeAnonymousBlockIFCLayout(NodeId node_id, 
             CollectInlineBoxesRecursive(inline_child, all_inline_boxes, content_width);
         }
     }
-    
+
     if (all_inline_boxes.empty()) {
         return LayoutOutput{};
     }
-    
+
     // Use LineBreaker to break into lines
     LineBreaker line_breaker;
     line_breaker.SetWhiteSpace(WhiteSpaceMode::NORMAL);
     line_breaker.SetOverflowWrap(OverflowWrapMode::NORMAL);
-    
+
     // Configure word-break from parent style
     if (parent && parent->render_obj) {
         const auto& parent_style = parent->render_obj->GetComputedStyle();
@@ -3231,14 +3294,14 @@ LayoutOutput NativeLayoutEngine::ComputeAnonymousBlockIFCLayout(NodeId node_id, 
     } else {
         line_breaker.SetWordBreak(WordBreakMode::NORMAL);
     }
-    
+
     std::vector<LineBox> line_boxes = line_breaker.BreakIntoLines(all_inline_boxes, content_width);
-    
+
     // Calculate line heights and positions
     VerticalAligner vertical_aligner;
     float current_y = 0.0f;
     float max_line_width = 0.0f;
-    
+
     // Calculate container line-height
     float container_line_height;
     if (std::abs(line_height - 1.2f) < 0.001f) {
@@ -3246,11 +3309,11 @@ LayoutOutput NativeLayoutEngine::ComputeAnonymousBlockIFCLayout(NodeId node_id, 
     } else {
         container_line_height = line_height * font_size;
     }
-    
+
     for (auto& line : line_boxes) {
         std::vector<InlineBox*> box_ptrs;
         std::vector<VerticalAlignInfo> aligns;
-        
+
         for (auto* box : line.boxes) {
             box_ptrs.push_back(box);
             VerticalAlignInfo align_info{VerticalAlignType::BASELINE, 0.0f};
@@ -3261,12 +3324,33 @@ LayoutOutput NativeLayoutEngine::ComputeAnonymousBlockIFCLayout(NodeId node_id, 
             }
             aligns.push_back(align_info);
         }
-        
+
         auto line_metrics = vertical_aligner.CalculateLineMetrics(box_ptrs, aligns, container_line_height);
         line.height = line_metrics.line_height;
         line.baseline = line_metrics.baseline;
         line.y = current_y;
-        
+
+        if (debug_fab_inline) {
+            std::cout << "[FAB_IFC_LINE_PRE] node=" << node->id
+                      << " line_y=" << line.y
+                      << " line_x=" << line.x
+                      << " avail_w=" << line.available_width
+                      << " content_w=" << line.content_width
+                      << " align=" << text_align
+                      << " box_count=" << line.boxes.size()
+                      << std::endl;
+            for (auto* dbg_box : line.boxes) {
+                if (!dbg_box) continue;
+                if (dbg_box->type == InlineBoxType::TEXT) {
+                    std::cout << "[FAB_IFC_LINE_PRE_BOX] type=TEXT x=" << dbg_box->x
+                              << " y=" << dbg_box->y
+                              << " w=" << dbg_box->width
+                              << " h=" << dbg_box->height
+                              << std::endl;
+                }
+            }
+        }
+
         // Set horizontal positions
         float current_x = line.x;
         for (auto* box : line.boxes) {
@@ -3277,53 +3361,78 @@ LayoutOutput NativeLayoutEngine::ComputeAnonymousBlockIFCLayout(NodeId node_id, 
             box->x = current_x;             // 内容区域从这里开始
             current_x += box->width + box->margin_right;  // 移动到下一个盒子的起始位置
         }
-        
+
         // Apply vertical alignment
         vertical_aligner.AlignBoxes(box_ptrs, aligns, current_y, container_line_height);
-        
+
         // Apply text-align
         line.ApplyTextAlign(text_align);
-        
+
+        if (debug_fab_inline) {
+            std::cout << "[FAB_IFC_LINE_POST] node=" << node->id
+                      << " line_y=" << line.y
+                      << " line_x=" << line.x
+                      << " avail_w=" << line.available_width
+                      << " content_w=" << line.content_width
+                      << " align=" << text_align
+                      << std::endl;
+            for (auto* dbg_box : line.boxes) {
+                if (!dbg_box) continue;
+                if (dbg_box->type == InlineBoxType::TEXT) {
+                    std::cout << "[FAB_IFC_LINE_POST_BOX] type=TEXT x=" << dbg_box->x
+                              << " y=" << dbg_box->y
+                              << " w=" << dbg_box->width
+                              << " h=" << dbg_box->height
+                              << std::endl;
+                }
+            }
+        }
+
         current_y += line_metrics.line_height;
         max_line_width = std::max(max_line_width, line.content_width);
     }
-    
+
     total_height = current_y;
     total_width = max_line_width;
-    
-    // Store inline boxes first (line_boxes contains pointers to all_inline_boxes)
-    node->ifc_inline_boxes = std::move(all_inline_boxes);
-    
-    // Now update line_boxes to point to the new location of inline boxes
-    // and store them
-    for (auto& line : line_boxes) {
-        for (size_t i = 0; i < line.boxes.size(); ++i) {
-            // Find the corresponding box in node->ifc_inline_boxes
-            // The boxes are in the same order, so we can use index mapping
-            // But since line.boxes contains pointers, we need to find by render_object
-            InlineBox* old_ptr = line.boxes[i];
-            if (old_ptr) {
-                for (auto& new_box : node->ifc_inline_boxes) {
-                    if (new_box.render_object == old_ptr->render_object &&
-                        new_box.type == old_ptr->type) {
-                        line.boxes[i] = &new_box;
-                        break;
+
+    // Persist IFC caches only in PerformLayout pass.
+    // This prevents measure-pass coordinates (e.g. container_w=388/400) from
+    // polluting final ApplyAnonymousBlockLayoutResults() in ReadLayoutResults().
+    if (apply_results) {
+        // Store inline boxes first (line_boxes contains pointers to all_inline_boxes)
+        node->ifc_inline_boxes = std::move(all_inline_boxes);
+
+        // Now update line_boxes to point to the new location of inline boxes
+        // and store them
+        for (auto& line : line_boxes) {
+            for (size_t i = 0; i < line.boxes.size(); ++i) {
+                // Find the corresponding box in node->ifc_inline_boxes
+                // The boxes are in the same order, so we can use index mapping
+                // But since line.boxes contains pointers, we need to find by render_object
+                InlineBox* old_ptr = line.boxes[i];
+                if (old_ptr) {
+                    for (auto& new_box : node->ifc_inline_boxes) {
+                        if (new_box.render_object == old_ptr->render_object &&
+                            new_box.type == old_ptr->type) {
+                            line.boxes[i] = &new_box;
+                            break;
+                        }
                     }
                 }
             }
         }
+        node->ifc_line_boxes = std::move(line_boxes);
     }
-    node->ifc_line_boxes = std::move(line_boxes);
-    
+
     // Apply layout results to render objects if in PerformLayout mode
     if (apply_results) {
         ApplyAnonymousBlockLayoutResults(node);
     }
-    
+
     LayoutOutput output;
     output.size = Size<float>{total_width, total_height};
     output.content_size = output.size;
-    
+
     return output;
 }
 
@@ -3334,30 +3443,30 @@ void NativeLayoutEngine::CollectInlineBoxesRecursive(
     float available_width
 ) {
     if (!render_obj) return;
-    
+
     const auto& style = render_obj->GetComputedStyle();
-    
+
     // Add INLINE_START marker
     InlineBox start = InlineBox::CreateInlineStart(render_obj);
     inline_boxes.push_back(std::move(start));
-    
+
     // Process children
     for (const auto& child : render_obj->GetChildren()) {
         RenderObjectType child_type = child->GetType();
         const auto& child_style = child->GetComputedStyle();
-        
+
         if (child_type == RenderObjectType::TEXT) {
             RenderText* text_obj = static_cast<RenderText*>(child.get());
             const std::string& text = text_obj->GetText();
             if (text.empty()) continue;
-            
+
             float letter_spacing = child_style.letter_spacing.ToPx(0, child_style.font_size);
             float word_spacing = child_style.word_spacing.ToPx(0, child_style.font_size);
             auto measurement = IFCLayout::MeasureTextStatic(
                 text, child_style.font_size, child_style.font_family,
                 letter_spacing, word_spacing, child_style.line_height,
                 child_style.font_weight, child_style.font_style);
-            
+
             InlineBox box = InlineBox::CreateTextBox(child.get());
             box.width = measurement.width;
             box.height = measurement.height;
@@ -3365,7 +3474,7 @@ void NativeLayoutEngine::CollectInlineBoxesRecursive(
             box.skia_ascent = measurement.skia_ascent;
             box.skia_descent = measurement.skia_descent;
             box.line_height_multiplier = child_style.line_height;
-            
+
             TextRun run;
             run.text = text;
             run.start_offset = 0;
@@ -3374,13 +3483,13 @@ void NativeLayoutEngine::CollectInlineBoxesRecursive(
             run.height = measurement.height;
             run.baseline = measurement.skia_ascent;
             box.text_runs.push_back(run);
-            
+
             inline_boxes.push_back(std::move(box));
         }
         else if (child_type == RenderObjectType::INLINE_BLOCK) {
             auto* inline_block = static_cast<RenderInlineBlock*>(child.get());
             auto [w, h] = inline_block->MeasureIntrinsicSize(available_width);
-            
+
             InlineBox box = InlineBox::CreateAtomicBox(child.get(), w, h, h);
             box.margin_left = child_style.margin_left.ToPx(w, child_style.font_size);
             box.margin_right = child_style.margin_right.ToPx(w, child_style.font_size);
@@ -3388,14 +3497,14 @@ void NativeLayoutEngine::CollectInlineBoxesRecursive(
             box.margin_top = child_style.margin_top.ToPx(w, child_style.font_size);
             box.margin_bottom = child_style.margin_bottom.ToPx(w, child_style.font_size);
             box.line_height_multiplier = child_style.line_height;
-            
+
             inline_boxes.push_back(std::move(box));
         }
         else if (child_type == RenderObjectType::INLINE) {
             CollectInlineBoxesRecursive(child.get(), inline_boxes, available_width);
         }
     }
-    
+
     // Add INLINE_END marker
     InlineBox end = InlineBox::CreateInlineEnd(render_obj);
     inline_boxes.push_back(std::move(end));
@@ -3407,36 +3516,37 @@ void NativeLayoutEngine::ApplyAnonymousBlockLayoutResults(LayoutNode* node) {
 
     // Get parent's position for offset calculation
     LayoutNode* parent = GetNode(node->parent);
-    float offset_x = 0.0f;
-    float offset_y = 0.0f;
+    float offset_x = node->layout.location.x;
+    float offset_y = node->layout.location.y;
 
-    float padding_left = 0, padding_top = 0, border_left = 0, border_top = 0;
+    // node->layout.location is relative to parent's content box.
+    // RenderObject child layout coordinates are relative to parent's border box origin,
+    // so we must add parent's padding+border to keep paint/hit-test coordinates consistent.
     if (parent && parent->render_obj) {
         const auto& parent_style = parent->render_obj->GetComputedStyle();
-        // Anonymous block is positioned relative to parent's content area
-        // Add parent's padding and border
         float parent_width = parent->layout.size.width;
-        padding_left = parent_style.padding.left.ToPx(parent_width, parent_style.font_size);
-        border_left = parent_style.border_left_width > 0 ? parent_style.border_left_width :
-                    parent_style.border.width.ToPx(parent_width, parent_style.font_size);
-        padding_top = parent_style.padding.top.ToPx(parent_width, parent_style.font_size);
-        border_top = parent_style.border_top_width > 0 ? parent_style.border_top_width :
-                    parent_style.border.width.ToPx(parent_width, parent_style.font_size);
-        offset_x = padding_left + border_left;
-        offset_y = padding_top + border_top;
-    }
-    
-    // Add the anonymous block's own position
-    // Note: node->layout.location is the position of the anonymous block
-    // relative to parent's content area (after padding+border)
-    // So we should NOT add padding/border again here
 
-    // 问题分析：node->layout.location 可能已经是相对于内容区域的位置
-    // 不需要再加 padding/border
-    // 暂时只使用 node->layout.location
-    offset_x = node->layout.location.x;
-    offset_y = node->layout.location.y;
-    
+        float padding_left = parent_style.padding.left.ToPx(parent_width, parent_style.font_size);
+        float border_left = parent_style.border_left_width > 0 ? parent_style.border_left_width :
+                    parent_style.border.width.ToPx(parent_width, parent_style.font_size);
+        float padding_top = parent_style.padding.top.ToPx(parent_width, parent_style.font_size);
+        float border_top = parent_style.border_top_width > 0 ? parent_style.border_top_width :
+                    parent_style.border.width.ToPx(parent_width, parent_style.font_size);
+
+        offset_x += padding_left + border_left;
+        offset_y += padding_top + border_top;
+    }
+
+    static bool debug_fab_inline = std::getenv("DEBUG_FAB_INLINE") != nullptr;
+
+    if (debug_fab_inline) {
+        std::cout << "[FAB_IFC] anon parent_w=" << (parent ? parent->layout.size.width : -1.0f)
+                  << " anon_loc=(" << node->layout.location.x << "," << node->layout.location.y << ")"
+                  << " offset=(" << offset_x << "," << offset_y << ")"
+                  << std::endl;
+    }
+
+
     // Apply positions to all inline boxes
     for (const auto& box : node->ifc_inline_boxes) {
         if (!box.render_object) continue;
@@ -3446,6 +3556,14 @@ void NativeLayoutEngine::ApplyAnonymousBlockLayoutResults(LayoutNode* node) {
             // box.x 已经是内容区域的起始位置（margin_left 已经在布局时处理过了）
             layout.x = box.x + offset_x;
             layout.y = box.y + offset_y;
+            if (debug_fab_inline) {
+                std::cout << "[FAB_IFC_BOX] type=" << static_cast<int>(box.type)
+                          << " box_xy=(" << box.x << "," << box.y << ")"
+                          << " box_wh=(" << box.width << "," << box.height << ")"
+                          << " final_xy=(" << layout.x << "," << layout.y << ")"
+                          << std::endl;
+            }
+
             layout.width = box.width;
             layout.height = box.height;
             layout.is_laid_out = true;  // 标记为已布局，防止 ReadLayoutResults 覆盖
@@ -3869,7 +3987,7 @@ void NativeLayoutEngine::ReadLayoutResults(RenderObject* render_obj) {
     // For TABLE internal elements, their layout is fully managed by RenderTable::Layout
     // We only mark them as laid out, but preserve their positions and dimensions
     info.is_laid_out = true;
-    
+
     // 清除 RenderObject 的 needs_layout_ 标志
     // 这对于 Paint 中的内容尺寸缓存优化很重要
     render_obj->ClearNeedsLayout();
@@ -4013,12 +4131,12 @@ void NativeLayoutEngine::ReadLayoutResults(RenderObject* render_obj) {
     for (NodeId child_id : node->children) {
         LayoutNode* child_node = GetNode(child_id);
         if (!child_node) continue;
-        
+
         // Skip anonymous blocks - they were already processed above (lines 2646-2652)
         if (child_node->is_anonymous_block) {
             continue;
         }
-        
+
         // Process normal layout tree children
         if (child_node->render_obj) {
             ReadLayoutResults(child_node->render_obj);
