@@ -338,6 +338,14 @@ struct ComputedStyle {
     // CSS clip-path Property (Phase 3)
     std::optional<CSSClipPath> clip_path;        // 裁剪路径
 
+    // CSS -webkit-app-region Property (用于无边框窗口拖拽区域)
+    // 值: "drag", "no-drag", 或空字符串（默认，不参与拖拽判定）
+    std::string app_region;
+
+    // CSS -webkit-window-control Property (用于无边框窗口控制按钮)
+    // 值: "close", "minimize", "maximize", 或空字符串（默认）
+    std::string window_control;
+
     // CSS will-change Property (用于层提升优化)
     std::string will_change;  // auto, transform, opacity, scroll-position, contents, etc.
 

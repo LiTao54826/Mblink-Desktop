@@ -19,6 +19,10 @@
 #include <unordered_map>
 #include <iostream>
 #include <cstdlib>
+#include <dwmapi.h>
+#include <windowsx.h>  // GET_X_LPARAM, GET_Y_LPARAM
+#undef SubclassWindow  // windowsx.h 定义了 SubclassWindow 宏，与我们的函数名冲突
+#pragma comment(lib, "dwmapi.lib")
 
 namespace lightui {
 namespace win32 {
@@ -98,6 +102,79 @@ static LRESULT CALLBACK SubclassWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPAR
     Window* window = (window_it != g_hwnd_to_window.end()) ? window_it->second : nullptr;
 
     switch (msg) {
+        case WM_NCHITTEST: {
+            // 无边框窗口的自定义 Hit-Test
+            // 实现窗口拖拽和边缘调整大小
+            if (window && window->IsBorderless()) {
+                POINT pt = { GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam) };
+                ScreenToClient(hwnd, &pt);
+
+                RECT rc;
+                GetClientRect(hwnd, &rc);
+
+                const int BORDER_WIDTH = window->GetResizeBorderWidth();
+
+                // 检查是否在调整大小边缘区域
+                bool at_left   = pt.x < BORDER_WIDTH;
+                bool at_right  = pt.x >= rc.right - BORDER_WIDTH;
+                bool at_top    = pt.y < BORDER_WIDTH;
+                bool at_bottom = pt.y >= rc.bottom - BORDER_WIDTH;
+
+                // 四个角优先（角的区域更大，更容易抓取）
+                if (at_top && at_left)     return HTTOPLEFT;
+                if (at_top && at_right)    return HTTOPRIGHT;
+                if (at_bottom && at_left)  return HTBOTTOMLEFT;
+                if (at_bottom && at_right) return HTBOTTOMRIGHT;
+
+                // 四条边
+                if (at_left)   return HTLEFT;
+                if (at_right)  return HTRIGHT;
+                if (at_top)    return HTTOP;
+                if (at_bottom) return HTBOTTOM;
+
+                // 检查是否在 CSS -webkit-window-control 区域
+                // 注意：不返回 HTCLOSE/HTMINBUTTON/HTMAXBUTTON，
+                // 因为那会触发 Windows 绘制系统按钮图标。
+                // 改为返回 HTCLIENT，在 WM_LBUTTONUP 中手动处理。
+                std::string control = window->HitTestWindowControl(GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam));
+                if (!control.empty()) {
+                    return HTCLIENT;
+                }
+
+                // 检查是否在 CSS -webkit-app-region: drag 区域
+                if (window->HitTestDragRegion(GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam))) {
+                    return HTCAPTION;
+                }
+
+                return HTCLIENT;
+            }
+            break;
+        }
+
+        case WM_LBUTTONUP: {
+            // 处理 CSS -webkit-window-control 按钮点击
+            if (window && window->IsBorderless()) {
+                POINT screen_pt = { GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam) };
+                ClientToScreen(hwnd, &screen_pt);
+                std::string control = window->HitTestWindowControl(screen_pt.x, screen_pt.y);
+                if (!control.empty()) {
+                    if (control == "close") {
+                        PostMessage(hwnd, WM_CLOSE, 0, 0);
+                    } else if (control == "minimize") {
+                        ShowWindow(hwnd, SW_MINIMIZE);
+                    } else if (control == "maximize") {
+                        if (IsZoomed(hwnd)) {
+                            ShowWindow(hwnd, SW_RESTORE);
+                        } else {
+                            ShowWindow(hwnd, SW_MAXIMIZE);
+                        }
+                    }
+                    return 0;
+                }
+            }
+            break;
+        }
+
         case WM_ERASEBKGND:
             // 阻止 Windows 擦除背景，避免闪烁
             return 1;
@@ -262,7 +339,7 @@ void SubclassWindow(HWND hwnd, Window* window) {
 
 void UnsubclassWindow(HWND hwnd) {
     if (!hwnd) return;
-    
+
     auto it = g_original_wndprocs.find(hwnd);
     if (it != g_original_wndprocs.end()) {
         SetWindowLongPtr(hwnd, GWLP_WNDPROC, (LONG_PTR)it->second);
@@ -270,6 +347,15 @@ void UnsubclassWindow(HWND hwnd) {
     }
     g_hwnd_to_window.erase(hwnd);
     g_window_rects.erase(hwnd);
+}
+
+void EnableBorderlessShadow(HWND hwnd) {
+    if (!hwnd) return;
+
+    // 通过 DwmExtendFrameIntoClientArea 为无边框窗口添加系统阴影
+    // bottom margin = 1 即可触发 DWM 绘制阴影，而不会影响客户区布局
+    MARGINS margins = { 0, 0, 0, 1 };
+    DwmExtendFrameIntoClientArea(hwnd, &margins);
 }
 
 }  // namespace win32

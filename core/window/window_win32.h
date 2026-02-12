@@ -41,6 +41,15 @@ void SubclassWindow(HWND hwnd, Window* window);
 void UnsubclassWindow(HWND hwnd);
 
 /**
+ * @brief 启用无边框窗口的 DWM 阴影效果
+ * @param hwnd 窗口句柄
+ *
+ * 通过 DwmExtendFrameIntoClientArea 为无边框窗口添加系统阴影，
+ * 使其看起来更像原生窗口。
+ */
+void EnableBorderlessShadow(HWND hwnd);
+
+/**
  * @brief 设置调试消息开关
  * @param enable 是否启用
  */

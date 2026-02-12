@@ -2270,6 +2270,24 @@ bool StyleResolver::ParseBackgroundProperty(ComputedStyle& style,
             style.contain = resolved_value;
         }
     }
+    // CSS -webkit-app-region / app-region Property (用于无边框窗口拖拽区域)
+    else if (property == "-webkit-app-region" || property == "app-region") {
+        if (resolved_value == "drag" || resolved_value == "no-drag") {
+            style.app_region = resolved_value;
+        } else {
+            style.app_region = "";
+        }
+        return true;
+    }
+    // CSS -webkit-window-control / window-control Property (用于无边框窗口控制按钮)
+    else if (property == "-webkit-window-control" || property == "window-control") {
+        if (resolved_value == "close" || resolved_value == "minimize" || resolved_value == "maximize") {
+            style.window_control = resolved_value;
+        } else {
+            style.window_control = "";
+        }
+        return true;
+    }
     return false;
 }
 

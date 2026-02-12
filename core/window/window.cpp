@@ -88,6 +88,7 @@
 #include "core/lexbor/style_manager.h"
 #include "core/render/layer/fbo_manager.h"
 #include "core/render/image/image_cache.h"
+#include "core/event/input/hit_test_controller.h"
 
 namespace lightui {
 
@@ -135,6 +136,11 @@ Window::Window(const WindowConfig& config) : config_(config) {
     HWND hwnd = (HWND)SDL_GetPointerProperty(SDL_GetWindowProperties(sdl_window_), SDL_PROP_WINDOW_WIN32_HWND_POINTER, NULL);
     if (hwnd) {
         win32::SubclassWindow(hwnd, this);
+
+        // 无边框窗口：启用 DWM 阴影效果
+        if (config_.borderless) {
+            win32::EnableBorderlessShadow(hwnd);
+        }
     }
 #endif
 
@@ -539,6 +545,7 @@ void Window::CreateSDLWindow() {
     if (config_.resizable) flags |= SDL_WINDOW_RESIZABLE;
     if (config_.fullscreen) flags |= SDL_WINDOW_FULLSCREEN;
     if (config_.borderless) flags |= SDL_WINDOW_BORDERLESS;
+    if (config_.transparent) flags |= SDL_WINDOW_TRANSPARENT;
     if (config_.maximized) flags |= SDL_WINDOW_MAXIMIZED;
     if (config_.minimized) flags |= SDL_WINDOW_MINIMIZED;
     if (config_.hidden) flags |= SDL_WINDOW_HIDDEN;
@@ -1896,6 +1903,115 @@ void Window::EnsureRenderTree() {
     }
 
     render_tree_valid_ = true;
+}
+
+bool Window::HitTestDragRegion(int screen_x, int screen_y) const {
+    // 无边框模式下才需要判断拖拽区域
+    if (!config_.borderless || !sdl_window_ || !cached_render_tree_) {
+        return false;
+    }
+
+    // 将屏幕坐标转换为窗口客户区坐标
+    int window_x, window_y;
+    SDL_GetWindowPosition(sdl_window_, &window_x, &window_y);
+    int client_x = screen_x - window_x;
+    int client_y = screen_y - window_y;
+
+    // 转换为逻辑坐标（考虑 DPI 缩放）
+    float dpi_scale = GetDisplayScale();
+    float logical_x = static_cast<float>(client_x) / dpi_scale;
+    float logical_y = static_cast<float>(client_y) / dpi_scale;
+
+    // 使用 HitTestController 查找命中的元素
+    HitTestController hit_controller;
+    HitTestRequest request;
+    request.ignore_pointer_events = true;  // 拖拽区域不受 pointer-events 影响
+    request.test_visibility = true;
+    request.test_opacity = false;          // 透明元素也可以是拖拽区域
+
+    auto result = hit_controller.HitTest(cached_render_tree_, logical_x, logical_y, request);
+    if (!result.IsValid() || !result.element) {
+        return false;
+    }
+
+    // 从命中元素向上遍历 DOM 树，查找最近的 app_region 设置
+    // 规则：最近的 app_region 设置生效（no-drag 覆盖 drag）
+    auto element = result.element;
+    while (element) {
+        // 查找元素关联的渲染对象
+        auto node = std::dynamic_pointer_cast<Node>(element);
+        if (node) {
+            auto render_obj = node->GetRenderObject();
+            if (render_obj) {
+                const auto& style = render_obj->GetComputedStyle();
+                if (!style.app_region.empty()) {
+                    return style.app_region == "drag";
+                }
+            }
+        }
+
+        // 向上遍历到父元素
+        auto parent_node = element->GetParentNode();
+        if (!parent_node || parent_node->GetNodeType() != NodeType::ELEMENT_NODE) {
+            break;
+        }
+        element = std::dynamic_pointer_cast<Element>(parent_node);
+    }
+
+    return false;
+}
+
+std::string Window::HitTestWindowControl(int screen_x, int screen_y) const {
+    // 无边框模式下才需要判断窗口控制区域
+    if (!config_.borderless || !sdl_window_ || !cached_render_tree_) {
+        return "";
+    }
+
+    // 将屏幕坐标转换为窗口客户区坐标
+    int window_x, window_y;
+    SDL_GetWindowPosition(sdl_window_, &window_x, &window_y);
+    int client_x = screen_x - window_x;
+    int client_y = screen_y - window_y;
+
+    // 转换为逻辑坐标（考虑 DPI 缩放）
+    float dpi_scale = GetDisplayScale();
+    float logical_x = static_cast<float>(client_x) / dpi_scale;
+    float logical_y = static_cast<float>(client_y) / dpi_scale;
+
+    // 使用 HitTestController 查找命中的元素
+    HitTestController hit_controller;
+    HitTestRequest request;
+    request.ignore_pointer_events = true;
+    request.test_visibility = true;
+    request.test_opacity = false;
+
+    auto result = hit_controller.HitTest(cached_render_tree_, logical_x, logical_y, request);
+    if (!result.IsValid() || !result.element) {
+        return "";
+    }
+
+    // 从命中元素向上遍历 DOM 树，查找最近的 window_control 设置
+    auto element = result.element;
+    while (element) {
+        auto node = std::dynamic_pointer_cast<Node>(element);
+        if (node) {
+            auto render_obj = node->GetRenderObject();
+            if (render_obj) {
+                const auto& style = render_obj->GetComputedStyle();
+                if (!style.window_control.empty()) {
+                    return style.window_control;
+                }
+            }
+        }
+
+        auto parent_node = element->GetParentNode();
+        if (!parent_node || parent_node->GetNodeType() != NodeType::ELEMENT_NODE) {
+            break;
+        }
+        element = std::dynamic_pointer_cast<Element>(parent_node);
+    }
+
+    return "";
 }
 
 } // namespace lightui

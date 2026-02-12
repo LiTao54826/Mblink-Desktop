@@ -15,6 +15,7 @@
 #include "core/dom/bindings/dom_bindings.h"
 #include "core/dom/bindings/canvas_bindings.h"
 #include <iostream>
+#include <SDL3/SDL.h>
 
 namespace lightui {
 
@@ -95,7 +96,32 @@ void WindowBindings::BindWindowObject() {
         }
         return nullptr;
     });
-    
+
+    // 窗口控制函数：最小化、最大化、还原、关闭
+    runtime_->RegisterFunction("__windowMinimize", [this](const json& args) -> json {
+        window_->Minimize();
+        return true;
+    });
+
+    runtime_->RegisterFunction("__windowMaximize", [this](const json& args) -> json {
+        window_->Maximize();
+        return true;
+    });
+
+    runtime_->RegisterFunction("__windowRestore", [this](const json& args) -> json {
+        window_->Restore();
+        return true;
+    });
+
+    runtime_->RegisterFunction("__windowClose", [this](const json& args) -> json {
+        // 推送 SDL_QUIT 事件，让事件循环正常退出
+        SDL_Event quit_event;
+        quit_event.type = SDL_EVENT_QUIT;
+        quit_event.quit.timestamp = SDL_GetTicksNS();
+        SDL_PushEvent(&quit_event);
+        return true;
+    });
+
     // 创建 window 对象（如果不存在则创建，否则扩展现有对象）
     std::string window_code = R"(
         if (!globalThis.window) {
@@ -118,6 +144,12 @@ void WindowBindings::BindWindowObject() {
             set: function(value) { __setTitle(value); },
             configurable: true
         });
+
+        // 窗口控制方法
+        globalThis.window.minimize = function() { return __windowMinimize(); };
+        globalThis.window.maximize = function() { return __windowMaximize(); };
+        globalThis.window.restore = function() { return __windowRestore(); };
+        globalThis.window.close = function() { return __windowClose(); };
 
         // 创建 navigator 对象（用于平台/浏览器检测）
         if (!globalThis.navigator) {

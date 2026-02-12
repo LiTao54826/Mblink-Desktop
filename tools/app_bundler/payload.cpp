@@ -84,7 +84,9 @@ std::string PayloadBuilder::SerializeConfig() const {
         else ss << c;
     }
     ss << "\",";
-    ss << "\"module_count\":" << config_.module_count;
+    ss << "\"module_count\":" << config_.module_count << ",";
+    ss << "\"borderless\":" << (config_.borderless ? "true" : "false") << ",";
+    ss << "\"transparent\":" << (config_.transparent ? "true" : "false");
     ss << "}";
     return ss.str();
 }
@@ -137,7 +139,17 @@ bool PayloadBuilder::DeserializeConfig(const std::string& json, PayloadConfig& c
     if (pos != std::string::npos) {
         config.module_count = std::stoul(json.substr(pos + 15));
     }
-    
+
+    pos = json.find("\"borderless\":");
+    if (pos != std::string::npos) {
+        config.borderless = (json.substr(pos + 13, 4) == "true");
+    }
+
+    pos = json.find("\"transparent\":");
+    if (pos != std::string::npos) {
+        config.transparent = (json.substr(pos + 14, 4) == "true");
+    }
+
     return true;
 }
 

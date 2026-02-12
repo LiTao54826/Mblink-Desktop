@@ -49,6 +49,8 @@ struct BundlerOptions {
     int width = 800;
     int height = 600;
     std::string title = "MBink App";
+    bool borderless = false;                   // 无边框窗口模式
+    bool transparent = false;                  // 透明窗口
 
     bool verbose = false;
     bool no_overwrite = false;
@@ -67,6 +69,8 @@ void PrintUsage(const char* program_name) {
     std::cout << "  --width <value>         窗口宽度 (默认: 800)\n";
     std::cout << "  --height <value>        窗口高度 (默认: 600)\n";
     std::cout << "  --title <value>         窗口标题 (默认: MBink App)\n";
+    std::cout << "  --borderless            无边框窗口模式（支持不规则窗体）\n";
+    std::cout << "  --transparent           透明窗口（需配合 --borderless 使用）\n";
     std::cout << "  --include <file>        包含额外的 JS 文件 (可多次使用)\n";
     std::cout << "  --template <file>       指定模板 exe 路径\n";
     std::cout << "  --verbose               显示详细信息\n";
@@ -130,6 +134,10 @@ bool ParseArguments(int argc, char** argv, BundlerOptions& options) {
                 return false;
             }
             options.title = argv[++i];
+        } else if (arg == "--borderless") {
+            options.borderless = true;
+        } else if (arg == "--transparent") {
+            options.transparent = true;
         } else if (arg == "--include") {
             if (i + 1 >= argc) {
                 std::cerr << "错误: --include 需要一个参数\n";
@@ -383,6 +391,18 @@ int main(int argc, char** argv) {
     builder.SetTitle(options.title);
     builder.SetModuleCount(static_cast<uint32_t>(compiled.size()));
     builder.SetBytecode(merged_bytecode);
+
+    // 设置无边框/透明窗口配置
+    {
+        PayloadConfig cfg;
+        cfg.width = options.width;
+        cfg.height = options.height;
+        cfg.title = options.title;
+        cfg.module_count = static_cast<uint32_t>(compiled.size());
+        cfg.borderless = options.borderless;
+        cfg.transparent = options.transparent;
+        builder.SetConfig(cfg);
+    }
     
     // 添加资源文件
     for (const auto& asset_file : options.asset_files) {

@@ -94,10 +94,12 @@ struct WindowConfig {
     bool hidden = false;
     bool always_on_top = false;
     bool high_dpi = true;
+    bool transparent = false;  // 透明窗口（用于不规则窗体，需配合 borderless 使用）
     bool vsync = true;  // 启用 VSync
     int fps_limit = 60;
     RenderBackend backend = RenderBackend::AUTO;  // 渲染后端
     bool headless = false;  // 无头模式（不创建窗口，仅渲染到内存）
+    int resize_border_width = 8;  // 无边框窗口的调整大小边缘宽度（像素）
 };
 
 /**
@@ -213,6 +215,43 @@ public:
      * @param on_top 是否置顶
      */
     void SetAlwaysOnTop(bool on_top);
+
+    /**
+     * @brief 获取是否无边框模式
+     */
+    bool IsBorderless() const { return config_.borderless; }
+
+    /**
+     * @brief 获取是否透明窗口
+     */
+    bool IsTransparent() const { return config_.transparent; }
+
+    /**
+     * @brief 获取调整大小边缘宽度
+     */
+    int GetResizeBorderWidth() const { return config_.resize_border_width; }
+
+    /**
+     * @brief 检测屏幕坐标处是否为拖拽区域（-webkit-app-region: drag）
+     * @param screen_x 屏幕 X 坐标
+     * @param screen_y 屏幕 Y 坐标
+     * @return true 表示该位置是拖拽区域
+     *
+     * 用于无边框窗口的 WM_NCHITTEST 处理，遍历渲染树查询
+     * 命中元素的 app_region 样式属性。
+     */
+    bool HitTestDragRegion(int screen_x, int screen_y) const;
+
+    /**
+     * @brief 命中测试窗口控制区域
+     * @param screen_x 屏幕坐标X
+     * @param screen_y 屏幕坐标Y
+     * @return 窗口控制类型: "close", "minimize", "maximize", 或空字符串
+     *
+     * 用于无边框窗口的 WM_NCHITTEST 处理，遍历渲染树查询
+     * 命中元素的 window_control 样式属性。
+     */
+    std::string HitTestWindowControl(int screen_x, int screen_y) const;
 
     /**
      * @brief 获取SDL窗口句柄

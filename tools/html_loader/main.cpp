@@ -85,10 +85,12 @@ int main(int argc, char** argv) {
     std::string title;
     bool execute_scripts = true;
     float quit_after_seconds = 0;  // 0 表示不自动退出，单位：秒
-    
+    bool borderless = false;       // 无边框窗口模式
+    bool transparent = false;      // 透明窗口模式
+
     for (int i = 1; i < argc; i++) {
         std::string arg = argv[i];
-        
+
         if (arg == "--help" || arg == "-h") {
             PrintUsage(argv[0]);
             return 0;
@@ -102,6 +104,10 @@ int main(int argc, char** argv) {
             execute_scripts = false;
         } else if ((arg == "-q" || arg == "--quit") && i + 1 < argc) {
             quit_after_seconds = std::stof(argv[++i]);
+        } else if (arg == "--borderless") {
+            borderless = true;
+        } else if (arg == "--transparent") {
+            transparent = true;
         } else if (arg[0] != '-') {
             html_path = arg;
         }

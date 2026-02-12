@@ -34,6 +34,8 @@ struct PayloadConfig {
     int32_t height = 600;
     std::string title = "MBink App";
     uint32_t module_count = 0;
+    bool borderless = false;
+    bool transparent = false;
 };
 
 /**
