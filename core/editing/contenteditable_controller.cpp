@@ -4,6 +4,7 @@
  */
 
 #include "contenteditable_controller.h"
+#include "core/render/text/font_manager.h"
 #include "core/editing/selection_manager.h"
 #include "core/editing/contenteditable_handler.h"
 #include "core/dom/document.h"
@@ -339,8 +340,7 @@ bool ContentEditableController::FindTextNodeAtPosition(
                 FontDescriptor desc;
                 desc.family = !text_style.font_family.empty() ? text_style.font_family : "Arial";
                 desc.size = text_style.font_size > 0 ? text_style.font_size : 16.0f;
-                desc.weight = (text_style.font_weight == "bold" || text_style.font_weight == "700") 
-                              ? FontWeight::BOLD : FontWeight::NORMAL;
+                desc.weight = ParseCSSFontWeight(text_style.font_weight);
                 desc.style = (text_style.font_style == "italic") 
                              ? FontStyle::ITALIC : FontStyle::NORMAL;
                 SkFont font = FontManager::GetInstance().LoadFont(desc);

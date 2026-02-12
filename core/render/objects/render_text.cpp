@@ -7,6 +7,7 @@
  */
 
 #include "render_object.h"
+#include "core/render/text/font_manager.h"
 #include "core/render/text/text_renderer.h"
 #include "core/render/text/text_transform.h"
 #include "core/render/utils/shadow_renderer.h"
@@ -46,39 +47,9 @@ static float GetBrowserNormalLineHeight(float font_size) {
     }
 }
 
-// 辅助函数：解析 font-weight 字符串为 FontWeight 枚举
-static FontWeight ParseFontWeight(const std::string& weight_str) {
-    if (weight_str.empty() || weight_str == "normal") {
-        return FontWeight::NORMAL;
-    }
-    if (weight_str == "bold") {
-        return FontWeight::BOLD;
-    }
-    if (weight_str == "lighter") {
-        return FontWeight::LIGHT;
-    }
-    if (weight_str == "bolder") {
-        return FontWeight::EXTRA_BOLD;
-    }
-
-    // 尝试解析数字值 (100-900)
-    try {
-        int weight_num = std::stoi(weight_str);
-        if (weight_num <= 100) return FontWeight::THIN;
-        if (weight_num <= 200) return FontWeight::EXTRA_LIGHT;
-        if (weight_num <= 300) return FontWeight::LIGHT;
-        if (weight_num <= 400) return FontWeight::NORMAL;
-        if (weight_num <= 500) return FontWeight::MEDIUM;
-        if (weight_num <= 600) return FontWeight::SEMI_BOLD;
-        if (weight_num <= 700) return FontWeight::BOLD;
-        if (weight_num <= 800) return FontWeight::EXTRA_BOLD;
-        return FontWeight::BLACK;
-    } catch (...) {
-        return FontWeight::NORMAL;
-    }
-}
 
 // ========== RenderText 实现 ==========
+
 
 void RenderText::Layout(float parent_width, float parent_height) {
     const auto& style = computed_style_;
@@ -87,7 +58,7 @@ void RenderText::Layout(float parent_width, float parent_height) {
     FontDescriptor desc;
     desc.family = style.font_family;
     desc.size = style.font_size;
-    desc.weight = ParseFontWeight(style.font_weight);
+    desc.weight = ParseCSSFontWeight(style.font_weight);
     desc.style = (style.font_style == "italic") ? FontStyle::ITALIC : FontStyle::NORMAL;
 
     SkFont font = FontManager::GetInstance().LoadFont(desc);
@@ -192,7 +163,7 @@ void RenderText::Paint(SkCanvas* canvas) {
     FontDescriptor desc;
     desc.family = style.font_family;
     desc.size = style.font_size;
-    desc.weight = ParseFontWeight(style.font_weight);
+    desc.weight = ParseCSSFontWeight(style.font_weight);
     desc.style = (style.font_style == "italic") ? FontStyle::ITALIC : FontStyle::NORMAL;
 
     SkFont font = FontManager::GetInstance().LoadFont(desc);

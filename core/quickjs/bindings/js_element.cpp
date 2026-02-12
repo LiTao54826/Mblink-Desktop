@@ -28,6 +28,7 @@
 #include <memory>
 #include <string>
 #include <iostream>
+#include <sstream>
 #include <vector>
 #include <utility>
 
@@ -177,6 +178,32 @@ static JSValue JSElement_set_className(JSContext* ctx, JSValueConst this_val, JS
 }
 
 // classList getter - 返回 DOMTokenList 对象
+// 辅助函数：精确匹配 class 名称（按空格分词）
+static bool HasExactClass(const std::string& class_list, const std::string& class_name) {
+    std::istringstream iss(class_list);
+    std::string token;
+    while (iss >> token) {
+        if (token == class_name) {
+            return true;
+        }
+    }
+    return false;
+}
+
+// 辅助函数：精确移除 class 名称
+static std::string RemoveExactClass(const std::string& class_list, const std::string& class_name) {
+    std::istringstream iss(class_list);
+    std::string token;
+    std::string result;
+    while (iss >> token) {
+        if (token != class_name) {
+            if (!result.empty()) result += " ";
+            result += token;
+        }
+    }
+    return result;
+}
+
 static JSValue JSElement_get_classList(JSContext* ctx, JSValueConst this_val, int magic) {
     auto* data = static_cast<JSElementData*>(JS_GetOpaque(this_val, js_element_class_id));
     if (!data || !data->element) {
@@ -205,8 +232,8 @@ static JSValue JSElement_get_classList(JSContext* ctx, JSValueConst this_val, in
         std::string currentClasses = data->element->GetClassName();
         std::string newClass = className;
 
-        // 检查是否已存在
-        if (currentClasses.find(newClass) == std::string::npos) {
+        // 检查是否已存在（精确匹配）
+        if (!HasExactClass(currentClasses, newClass)) {
             if (!currentClasses.empty()) {
                 currentClasses += " ";
             }
@@ -235,22 +262,10 @@ static JSValue JSElement_get_classList(JSContext* ctx, JSValueConst this_val, in
 
         std::string currentClasses = data->element->GetClassName();
         std::string toRemove = className;
-        size_t pos = currentClasses.find(toRemove);
 
-        if (pos != std::string::npos) {
-            // 移除类名
-            currentClasses.erase(pos, toRemove.length());
-            // 清理多余空格
-            while (currentClasses.find("  ") != std::string::npos) {
-                currentClasses.replace(currentClasses.find("  "), 2, " ");
-            }
-            if (!currentClasses.empty() && currentClasses[0] == ' ') {
-                currentClasses = currentClasses.substr(1);
-            }
-            if (!currentClasses.empty() && currentClasses.back() == ' ') {
-                currentClasses.pop_back();
-            }
-            data->element->SetClassName(currentClasses);
+        if (HasExactClass(currentClasses, toRemove)) {
+            std::string result = RemoveExactClass(currentClasses, toRemove);
+            data->element->SetClassName(result);
         }
 
         JS_FreeCString(ctx, className);
@@ -274,22 +289,12 @@ static JSValue JSElement_get_classList(JSContext* ctx, JSValueConst this_val, in
 
         std::string currentClasses = data->element->GetClassName();
         std::string toToggle = className;
-        bool exists = currentClasses.find(toToggle) != std::string::npos;
+        bool exists = HasExactClass(currentClasses, toToggle);
 
         if (exists) {
             // 移除
-            size_t pos = currentClasses.find(toToggle);
-            currentClasses.erase(pos, toToggle.length());
-            while (currentClasses.find("  ") != std::string::npos) {
-                currentClasses.replace(currentClasses.find("  "), 2, " ");
-            }
-            if (!currentClasses.empty() && currentClasses[0] == ' ') {
-                currentClasses = currentClasses.substr(1);
-            }
-            if (!currentClasses.empty() && currentClasses.back() == ' ') {
-                currentClasses.pop_back();
-            }
-            data->element->SetClassName(currentClasses);
+            std::string result = RemoveExactClass(currentClasses, toToggle);
+            data->element->SetClassName(result);
         } else {
             // 添加
             if (!currentClasses.empty()) {
@@ -320,7 +325,7 @@ static JSValue JSElement_get_classList(JSContext* ctx, JSValueConst this_val, in
 
         std::string currentClasses = data->element->GetClassName();
         std::string toCheck = className;
-        bool exists = currentClasses.find(toCheck) != std::string::npos;
+        bool exists = HasExactClass(currentClasses, toCheck);
 
         JS_FreeCString(ctx, className);
         return JS_NewBool(ctx, exists);

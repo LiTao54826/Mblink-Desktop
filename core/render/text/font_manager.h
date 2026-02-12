@@ -45,6 +45,13 @@ enum class FontWeight {
 };
 
 /**
+ * @brief 解析 CSS font-weight 字符串
+ * @param weight_str 支持 normal/bold/lighter/bolder 及 100~900 数字字符串
+ * @return 对应的 FontWeight，解析失败时返回 NORMAL
+ */
+FontWeight ParseCSSFontWeight(const std::string& weight_str);
+
+/**
  * @brief 字体描述符
  */
 struct FontDescriptor {

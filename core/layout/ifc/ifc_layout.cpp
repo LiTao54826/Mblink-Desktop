@@ -4,6 +4,7 @@
  */
 
 #include "ifc_layout.h"
+#include "core/render/text/font_manager.h"
 #include <algorithm>
 #include <cmath>
 #include <limits>
@@ -60,38 +61,6 @@ bool IFCLayout::IsInlineLevel(RenderObject* render_obj) {
 // 内部使用的别名，兼容旧代码
 using TextMeasurement = TextMeasureResult;
 
-// 辅助函数：解析 font-weight 字符串为 FontWeight 枚举
-static FontWeight ParseFontWeight(const std::string& weight_str) {
-    if (weight_str.empty() || weight_str == "normal") {
-        return FontWeight::NORMAL;
-    }
-    if (weight_str == "bold") {
-        return FontWeight::BOLD;
-    }
-    if (weight_str == "lighter") {
-        return FontWeight::LIGHT;
-    }
-    if (weight_str == "bolder") {
-        return FontWeight::EXTRA_BOLD;
-    }
-
-    // 尝试解析数字值 (100-900)
-    try {
-        int weight_num = std::stoi(weight_str);
-        if (weight_num <= 100) return FontWeight::THIN;
-        if (weight_num <= 200) return FontWeight::EXTRA_LIGHT;
-        if (weight_num <= 300) return FontWeight::LIGHT;
-        if (weight_num <= 400) return FontWeight::NORMAL;
-        if (weight_num <= 500) return FontWeight::MEDIUM;
-        if (weight_num <= 600) return FontWeight::SEMI_BOLD;
-        if (weight_num <= 700) return FontWeight::BOLD;
-        if (weight_num <= 800) return FontWeight::EXTRA_BOLD;
-        return FontWeight::BLACK;
-    } catch (...) {
-        return FontWeight::NORMAL;
-    }
-}
-
 TextMeasureResult IFCLayout::MeasureTextStatic(
     const std::string& text,
     float font_size,
@@ -118,7 +87,7 @@ TextMeasureResult IFCLayout::MeasureTextStatic(
     FontDescriptor font_desc;
     font_desc.family = font_family.empty() ? "Arial" : font_family;
     font_desc.size = font_size;
-    font_desc.weight = ParseFontWeight(font_weight);
+    font_desc.weight = ParseCSSFontWeight(font_weight);
     font_desc.style = (font_style == "italic") ? FontStyle::ITALIC : FontStyle::NORMAL;
 
     // 加载字体
@@ -367,7 +336,7 @@ float IFCLayout::MeasureMinContentWidth(RenderObject* container) {
             FontDescriptor font_desc;
             font_desc.family = style.font_family.empty() ? "Arial" : style.font_family;
             font_desc.size = style.font_size;
-            font_desc.weight = ParseFontWeight(style.font_weight);
+            font_desc.weight = ParseCSSFontWeight(style.font_weight);
             font_desc.style = (style.font_style == "italic") ? FontStyle::ITALIC : FontStyle::NORMAL;
             SkFont font = font_manager.LoadFont(font_desc);
 
@@ -715,9 +684,9 @@ void IFCLayout::CollectInlineContent(RenderObject* container) {
         (void)node; // unused
     }
     */
-    
+
     const auto& children = container->GetChildren();
-    
+
     for (const auto& child : children) {
         CreateInlineBox(child.get());
     }
@@ -841,7 +810,7 @@ void IFCLayout::CreateInlineBox(RenderObject* render_obj) {
                     FontDescriptor font_desc;
                     font_desc.family = style.font_family.empty() ? "Arial" : style.font_family;
                     font_desc.size = style.font_size;
-                    font_desc.weight = ParseFontWeight(style.font_weight);
+                    font_desc.weight = ParseCSSFontWeight(style.font_weight);
                     font_desc.style = (style.font_style == "italic") ? FontStyle::ITALIC : FontStyle::NORMAL;
                     SkFont font = font_manager.LoadFont(font_desc);
 
@@ -981,7 +950,7 @@ void IFCLayout::CreateInlineBox(RenderObject* render_obj) {
         case RenderObjectType::INLINE: {
             // 检查是否是 BR 元素
             auto node = render_obj->GetNode();
-            
+
             // 🔍 调试：输出INLINE元素信息（已禁用）
             /*
             std::string tag_name = "?";
@@ -994,7 +963,7 @@ void IFCLayout::CreateInlineBox(RenderObject* render_obj) {
             size_t children_count = render_obj->GetChildren().size();
                    tag_name.c_str(), text_content.c_str(), children_count);
             */
-            
+
             if (node && node->GetNodeType() == NodeType::ELEMENT_NODE) {
                 auto element = std::static_pointer_cast<Element>(node);
                 std::string tag_name = element->GetTagName();

@@ -196,15 +196,32 @@ static LRESULT CALLBACK SubclassWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPAR
             return 0;
 
         case WM_SIZE: {
-            // 关键：检测循环并阻止
+            // 修复：仅过滤“短时间内重复且尺寸完全相同”的噪声 WM_SIZE，
+            // 不能拦截 maximize/restore 等真实窗口状态切换事件。
             static DWORD last_size_time = 0;
             static int size_count = 0;
-            DWORD now = GetTickCount();
+            static UINT last_size_type = 0;
+            static int last_width = -1;
+            static int last_height = -1;
 
-            if (now - last_size_time < 100) {
+            DWORD now = GetTickCount();
+            int width = LOWORD(lParam);
+            int height = HIWORD(lParam);
+
+            bool is_state_change =
+                (wParam == SIZE_MAXIMIZED) ||
+                (wParam == SIZE_RESTORED) ||
+                (wParam == SIZE_MINIMIZED);
+
+            bool same_size_event =
+                (width == last_width) &&
+                (height == last_height) &&
+                (wParam == last_size_type);
+
+            if (!is_state_change && same_size_event && (now - last_size_time < 100)) {
                 size_count++;
-                if (size_count > 2) {
-                    // 在 100ms 内收到超过 2 次 WM_SIZE，可能是循环
+                // 只在明显重复风暴时拦截，避免吞掉真实 resize
+                if (size_count > 6) {
                     if (g_debug_messages) {
                     }
                     return 0;  // 不传递给 SDL
@@ -212,7 +229,11 @@ static LRESULT CALLBACK SubclassWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPAR
             } else {
                 size_count = 1;
             }
+
             last_size_time = now;
+            last_size_type = static_cast<UINT>(wParam);
+            last_width = width;
+            last_height = height;
             break;
         }
 
