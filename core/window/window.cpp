@@ -45,6 +45,8 @@
 #include <iostream>
 #include <cstring>
 #include <cmath>
+#include <chrono>
+#include <algorithm>
 #include <unordered_map>
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_opengl.h>
@@ -85,6 +87,7 @@
 #include "core/devtools/devtools_manager.h"
 #include "core/lexbor/style_manager.h"
 #include "core/render/layer/fbo_manager.h"
+#include "core/render/image/image_cache.h"
 
 namespace lightui {
 
@@ -95,6 +98,17 @@ extern std::atomic<int> g_paint_culled_calls;
 // 静态成员：SDL初始化计数器
 static int sdl_init_count = 0;
 
+// P0 内存优化参数
+static constexpr int kResizeDebounceMs = 120;
+static constexpr size_t kSkiaResizeCacheLimitBytes = 48 * 1024 * 1024;      // 48MB
+static constexpr size_t kSkiaRestoreCacheLimitBytes = 32 * 1024 * 1024;     // 32MB
+static constexpr size_t kImageCacheShrinkBytes = 48 * 1024 * 1024;          // 48MB
+
+// P1 连续 resize 累积治理参数
+static constexpr int kResizeBurstWindowMs = 1200;  // 连续 resize 视窗
+static constexpr int kResizeBurstThreshold = 6;     // 视窗内触发次数阈值
+static constexpr size_t kSkiaBurstCacheLimitBytes = 24 * 1024 * 1024;  // 24MB
+static constexpr size_t kImageCacheBurstShrinkBytes = 24 * 1024 * 1024; // 24MB
 
 // SDL 事件过滤器：过滤掉可能导致闪烁的事件
 // 返回 true 表示保留事件，返回 false 表示丢弃事件
@@ -444,7 +458,7 @@ void Window::OnResize() {
     if (actual_backend_ == RenderBackend::OPENGL) {
         // 更新 OpenGL viewport
         glViewport(0, 0, width, height);
-        
+
         // 关键修复：在重新创建 surface 之前，清除两个缓冲区
         // OpenGL 双缓冲需要清除前后两个缓冲区，否则新增区域会显示垃圾数据
         // 使用缓存的 body 背景色，避免浮点精度问题导致的边缘颜色不一致
@@ -456,7 +470,7 @@ void Window::OnResize() {
         glClear(GL_COLOR_BUFFER_BIT);
         SDL_GL_SwapWindow(sdl_window_);  // 交换到后缓冲
         glClear(GL_COLOR_BUFFER_BIT);    // 清除后缓冲
-        
+
         CreateSkiaSurface();
 
         // 调整 FBO 大小
@@ -468,6 +482,12 @@ void Window::OnResize() {
                 // FBO resize 后需要全量重绘
                 fbo_needs_full_paint_ = true;
             }
+        }
+
+        // P0: resize 后主动做一次 GPU 资源预算与延迟回收，降低高水位驻留
+        if (gr_context_) {
+            gr_context_->setResourceCacheLimit(kSkiaResizeCacheLimitBytes);
+            gr_context_->performDeferredCleanup(std::chrono::milliseconds(0));
         }
     } else if (actual_backend_ == RenderBackend::CPU) {
         // CPU 模式：重新创建 Skia Raster 表面
@@ -676,31 +696,52 @@ bool Window::HandleSDLEvent(const SDL_Event& event) {
 
                 // 检查是否真的改变了大小（避免重复处理）
                 static int last_processed_width = 0, last_processed_height = 0;
-
                 if (new_width == last_processed_width && new_height == last_processed_height) {
                     return true;  // 大小没变，跳过
                 }
-
                 last_processed_width = new_width;
                 last_processed_height = new_height;
 
-                // 直接处理 resize，不做节流
+                // P1: 识别连续 resize burst（例如用户持续拖拽/反复放大缩小）
+                const Uint64 now = SDL_GetTicks();
+                if (resize_burst_window_start_tick_ == 0 ||
+                    (now - resize_burst_window_start_tick_) > static_cast<Uint64>(kResizeBurstWindowMs)) {
+                    resize_burst_window_start_tick_ = now;
+                    resize_burst_count_ = 1;
+                } else {
+                    ++resize_burst_count_;
+                }
+
+                // P0: resize 事件节流（合并短时间连续 resize）
+                static Uint64 last_resize_tick = 0;
+                const bool should_debounce = (last_resize_tick != 0) &&
+                                             ((now - last_resize_tick) < static_cast<Uint64>(kResizeDebounceMs));
+
+                // P1: burst 期间更激进收缩缓存，降低连续 resize 的累积高水位
+                const bool in_resize_burst = resize_burst_count_ >= kResizeBurstThreshold;
+                if (in_resize_burst) {
+                    ImageCache::GetInstance().SetMaxCacheSize(kImageCacheBurstShrinkBytes);
+                    if (gr_context_) {
+                        gr_context_->setResourceCacheLimit(kSkiaBurstCacheLimitBytes);
+                        gr_context_->performDeferredCleanup(std::chrono::milliseconds(0));
+                    }
+                }
+
+                if (should_debounce) {
+                    pending_resize_width_ = new_width;
+                    pending_resize_height_ = new_height;
+                    has_pending_resize_ = true;
+                    SetNeedsRepaint();
+                    return true;
+                }
+
+                last_resize_tick = now;
+
                 OnResize();
-                static bool debug_resize = std::getenv("LIGHTUI_DEBUG_RESIZE") != nullptr;
-                if (debug_resize) {
-                }
                 InvalidateRenderTree();  // 窗口大小改变，需要用新尺寸重建渲染树和布局
-                if (debug_resize) {
-                }
                 SetForceFullRepaint(true);  // 关键修复：强制全量重绘，避免新区域显示垃圾数据
-                if (debug_resize) {
-                }
                 SetNeedsRepaint();
-                if (debug_resize) {
-                }
                 DispatchWindowEvent(WindowEvent(WindowEventType::RESIZE, new_width, new_height));
-                if (debug_resize) {
-                }
                 return true;
             }
 
@@ -749,6 +790,19 @@ bool Window::HandleSDLEvent(const SDL_Event& event) {
                 // 注意：不在这里调用 InvalidateRenderTree()，因为此时窗口尺寸可能还未更新
                 // RESIZED 事件会随后触发，届时会正确处理渲染树重建
                 SetNeedsRepaint();
+
+                // P0: 还原后主动触发缓存回收，帮助内存从高水位回落
+                ImageCache::GetInstance().SetMaxCacheSize(kImageCacheShrinkBytes);
+                ImageCache::GetInstance().Clear();
+
+                if (gr_context_) {
+                    gr_context_->setResourceCacheLimit(kSkiaRestoreCacheLimitBytes);
+                    gr_context_->performDeferredCleanup(std::chrono::milliseconds(0));
+                    gr_context_->purgeUnlockedResources(GrPurgeResourceOptions::kAllResources);
+                    gr_context_->flush();
+                    gr_context_->freeGpuResources();
+                }
+
                 DispatchWindowEvent(WindowEvent(WindowEventType::RESTORE));
                 return true;
             }
@@ -776,17 +830,11 @@ bool Window::HandleSDLEvent(const SDL_Event& event) {
                 // 完全忽略 EXPOSED 事件
                 // 在 Windows 上，SDL_RenderPresent 会触发 EXPOSED 事件，形成无限循环
                 // 我们的渲染由 needs_repaint_ 标志控制，不需要响应 EXPOSED 事件
-                static bool debug_events = std::getenv("LIGHTUI_DEBUG_EVENTS") != nullptr;
-                if (debug_events) {
-                }
                 return true;
             }
 
             case SDL_EVENT_WINDOW_DISPLAY_SCALE_CHANGED: {
                 // 忽略显示缩放变化事件，避免可能的循环
-                static bool debug_events = std::getenv("LIGHTUI_DEBUG_EVENTS") != nullptr;
-                if (debug_events) {
-                }
                 return true;
             }
 
@@ -886,6 +934,8 @@ void Window::Render() {
         if (render_pipeline_) {
             render_pipeline_->ForceFullUpdate();
         }
+        InvalidateRenderTree();
+        SetForceFullRepaint(true);
         SetNeedsRepaint();
         DispatchWindowEvent(WindowEvent(WindowEventType::RESIZE, pending_resize_width_, pending_resize_height_));
     }

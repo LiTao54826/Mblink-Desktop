@@ -484,7 +484,9 @@ PerformFinalLayoutOnInFlowChildren(
     float container_inner_width = container_outer_width -
         content_box_inset.left - content_box_inset.right;
     Size<std::optional<float>> parent_size = {
-        std::optional<float>(container_outer_width),
+        // ✅ 根因修复：in-flow 子元素的百分比宽度应基于父 content-box 宽度解析，
+        // 不能使用父 outer(border-box) 宽度，否则 width:100% 会把 padding/border 重复算入，导致横向溢出。
+        std::optional<float>(container_inner_width),
         std::nullopt
     };
     Size<AvailableSpace> available_space = {

@@ -223,10 +223,12 @@ void ElementHighlighter::RenderBoxModelHighlight(SkCanvas* canvas, std::shared_p
     const auto& layout = result.render_obj->GetLayoutInfo();
     const auto& style = result.render_obj->GetComputedStyle();
     
-    // 对于有滚动的元素，高亮位置需要减去自身的滚动偏移
-    // 这样高亮才能正确显示元素内容的实际渲染位置（可能在负坐标）
-    float x = result.abs_x - result.render_obj->GetScrollX();
-    float y = result.abs_y - result.render_obj->GetScrollY();
+    // 目标元素的盒模型高亮应基于其 border box 位置。
+    // 在递归查找阶段已经扣除了祖先滚动偏移（包括 body/document 滚动）。
+    // 这里不能再扣目标元素自身 scroll，否则会把高亮错误地偏移到可滚动内容坐标，
+    // 导致出现“高亮区域脱离父元素并覆盖到其他区域”的问题。
+    float x = result.abs_x;
+    float y = result.abs_y;
     float width = layout.width;
     float height = layout.height;
     

@@ -4,6 +4,7 @@
  */
 
 #include "render_inline_block.h"
+#include "core/render/text/font_manager.h"
 #include "core/render/painters/box_renderer.h"
 #include "core/render/text/text_renderer.h"
 #include "core/render/utils/gradient_renderer.h"
@@ -33,6 +34,7 @@
 #include "include/effects/SkDashPathEffect.h"
 
 namespace lightui {
+
 
 void RenderInlineBlock::Layout(float parent_width, float parent_height) {
     const auto& style = computed_style_;
@@ -321,7 +323,7 @@ float RenderInlineBlock::CalculatePreferredMinimumWidth() {
                 FontDescriptor desc;
                 desc.family = style.font_family;
                 desc.size = style.font_size;
-                desc.weight = (style.font_weight == "bold") ? FontWeight::BOLD : FontWeight::NORMAL;
+                desc.weight = ParseCSSFontWeight(style.font_weight);
                 desc.style = (style.font_style == "italic") ? FontStyle::ITALIC : FontStyle::NORMAL;
 
                 SkFont font = FontManager::GetInstance().LoadFont(desc);
@@ -361,7 +363,7 @@ float RenderInlineBlock::CalculatePreferredMinimumWidth() {
                 FontDescriptor desc;
                 desc.family = style.font_family;
                 desc.size = style.font_size;
-                desc.weight = (style.font_weight == "bold") ? FontWeight::BOLD : FontWeight::NORMAL;
+                desc.weight = ParseCSSFontWeight(style.font_weight);
                 desc.style = (style.font_style == "italic") ? FontStyle::ITALIC : FontStyle::NORMAL;
 
                 SkFont font = FontManager::GetInstance().LoadFont(desc);
@@ -708,7 +710,7 @@ void RenderInlineBlock::Paint(SkCanvas* canvas) {
 
         if (has_border_radius) {
             // 有圆角：使用 RenderRoundedBorderAdvanced（支持每边独立属性）
-            
+
             // 准备四边宽度数组 [top, right, bottom, left]
             float border_widths[4] = {
                 style.border_top_width > 0 ? style.border_top_width : style.border.width.ToPx(),
@@ -716,7 +718,7 @@ void RenderInlineBlock::Paint(SkCanvas* canvas) {
                 style.border_bottom_width > 0 ? style.border_bottom_width : style.border.width.ToPx(),
                 style.border_left_width > 0 ? style.border_left_width : style.border.width.ToPx()
             };
-            
+
             // 准备四边样式数组
             CSSBorderStyle border_styles[4] = {
                 style.border_top_style != CSSBorderStyle::NONE ? style.border_top_style : style.border.style,
@@ -724,7 +726,7 @@ void RenderInlineBlock::Paint(SkCanvas* canvas) {
                 style.border_bottom_style != CSSBorderStyle::NONE ? style.border_bottom_style : style.border.style,
                 style.border_left_style != CSSBorderStyle::NONE ? style.border_left_style : style.border.style
             };
-            
+
             // 准备四边颜色数组
             SkColor border_colors[4] = {
                 style.border_top_style != CSSBorderStyle::NONE ? style.border_top_color : style.border.color,
@@ -732,7 +734,7 @@ void RenderInlineBlock::Paint(SkCanvas* canvas) {
                 style.border_bottom_style != CSSBorderStyle::NONE ? style.border_bottom_color : style.border.color,
                 style.border_left_style != CSSBorderStyle::NONE ? style.border_left_color : style.border.color
             };
-            
+
             renderer.RenderRoundedBorderAdvanced(box, border_widths, border_styles, border_colors, style.border_radius);
         } else {
             // 无圆角：使用普通边框渲染
@@ -886,7 +888,7 @@ void RenderInlineBlock::Paint(SkCanvas* canvas) {
             needs_paint_ = false;
             return;
         }
-        
+
         // Canvas元素 - 将Canvas内部surface内容绘制到窗口画布
         auto canvas_element = std::dynamic_pointer_cast<HTMLCanvasElement>(node);
         if (canvas_element) {
@@ -900,7 +902,7 @@ void RenderInlineBlock::Paint(SkCanvas* canvas) {
                         // 因为JS可能在渲染树构建后修改了width/height属性
                         float canvas_width = static_cast<float>(canvas_element->GetWidth());
                         float canvas_height = static_cast<float>(canvas_element->GetHeight());
-                        
+
                         SkRect dst = SkRect::MakeXYWH(
                             box.content_x,
                             box.content_y,
@@ -918,13 +920,13 @@ void RenderInlineBlock::Paint(SkCanvas* canvas) {
             needs_paint_ = false;
             return;
         }
-        
+
         // Image元素 - 使用object-fit和object-position渲染图片
         auto image_element = std::dynamic_pointer_cast<HTMLImageElement>(node);
         if (image_element) {
             // 优先使用已加载的图片
             sk_sp<SkImage> image = image_element->GetSkImage();
-            
+
             // 如果图片未加载，尝试从URL加载
             if (!image) {
                 std::string src = image_element->GetSrc();
@@ -937,12 +939,12 @@ void RenderInlineBlock::Paint(SkCanvas* canvas) {
                     }
                 }
             }
-            
+
             if (image) {
                 // 获取图片原始尺寸
                 float image_width = static_cast<float>(image->width());
                 float image_height = static_cast<float>(image->height());
-                
+
                 // 获取容器区域（content box）
                 SkRect container_rect = SkRect::MakeXYWH(
                     box.content_x,
@@ -950,7 +952,7 @@ void RenderInlineBlock::Paint(SkCanvas* canvas) {
                     box.content_width,
                     box.content_height
                 );
-                
+
                 // 使用object-fit和object-position计算源和目标矩形
                 ObjectFitResult fit_result = CalculateObjectFit(
                     image_width,
@@ -959,11 +961,11 @@ void RenderInlineBlock::Paint(SkCanvas* canvas) {
                     style.object_fit,
                     style.object_position
                 );
-                
+
                 // 绘制图片
                 if (!fit_result.src_rect.isEmpty() && !fit_result.dst_rect.isEmpty()) {
                     SkSamplingOptions sampling(SkFilterMode::kLinear, SkMipmapMode::kNone);
-                    canvas->drawImageRect(image, fit_result.src_rect, fit_result.dst_rect, 
+                    canvas->drawImageRect(image, fit_result.src_rect, fit_result.dst_rect,
                                          sampling, nullptr, SkCanvas::kStrict_SrcRectConstraint);
                 }
             }

@@ -145,23 +145,29 @@ void Element::SetAttribute(const std::string& name, const std::string& value) {
         MarkDirty(DirtyType::ALL);
     }
 
+    // 合并 GetOwnerDocument() 调用，避免重复
+    auto doc = GetOwnerDocument();
+
     // 特殊处理 id 属性
-    if (name == "id") {
-        auto doc = GetOwnerDocument();
-        if (doc) {
-            // 取消注册旧 ID
-            if (!old_value.empty()) {
-                doc->UnregisterElementId(old_value);
-            }
-            // 注册新 ID
-            if (!value.empty()) {
-                doc->RegisterElementId(value, std::static_pointer_cast<Element>(shared_from_this()));
-            }
+    if (name == "id" && doc) {
+        // 取消注册旧 ID
+        if (!old_value.empty()) {
+            doc->UnregisterElementId(old_value);
+        }
+        // 注册新 ID
+        if (!value.empty()) {
+            doc->RegisterElementId(value, std::static_pointer_cast<Element>(shared_from_this()));
         }
     }
 
-    // 通知观察者
-    auto doc = GetOwnerDocument();
+    // 记录到 DirtyNodeTracker（延迟处理，支持同帧合并）
+    if (doc) {
+        doc->GetDirtyTracker().RecordStyleChanged(
+            std::static_pointer_cast<Element>(shared_from_this()),
+            name, old_value, value);
+    }
+
+    // 通知观察者（即时处理，保持向后兼容）
     if (doc) {
         doc->GetObserverManager().NotifyAttributeChanged(this, name, old_value, value);
     }
@@ -195,12 +201,14 @@ void Element::RemoveAttribute(const std::string& name) {
     MarkDirty();
     MarkLexborDirty();
 
-    // 通知观察者（只有当属性存在时才通知）
-    if (!old_value.empty()) {
-        auto doc = GetOwnerDocument();
-        if (doc) {
-            doc->GetObserverManager().NotifyAttributeChanged(this, name, old_value, "");
-        }
+    // 记录到 DirtyNodeTracker 并通知观察者（只有当属性存在时）
+    auto doc = GetOwnerDocument();
+    if (!old_value.empty() && doc) {
+        doc->GetDirtyTracker().RecordStyleChanged(
+            std::static_pointer_cast<Element>(shared_from_this()),
+            name, old_value, "");
+
+        doc->GetObserverManager().NotifyAttributeChanged(this, name, old_value, "");
     }
 }
 
@@ -385,9 +393,11 @@ void Element::SetStyle(const std::string& property, const std::string& value) {
         MarkDirty(DirtyType::PAINT);
     }
 
+    // 合并 GetOwnerDocument() 调用，避免重复
+    auto doc = GetOwnerDocument();
+
     // 移动元素双区域标记：添加旧位置到脏区域列表
     if (is_position_change && !old_bounds.isEmpty()) {
-        auto doc = GetOwnerDocument();
         if (doc) {
             // 将旧位置添加到文档的脏区域列表
             // 这样渲染时会同时重绘旧位置（擦除残影）和新位置
@@ -395,9 +405,13 @@ void Element::SetStyle(const std::string& property, const std::string& value) {
         }
     }
 
-    // 通知观察者
-    auto doc = GetOwnerDocument();
     if (doc) {
+        // 记录到 DirtyNodeTracker（延迟处理，支持同帧合并）
+        doc->GetDirtyTracker().RecordStyleChanged(
+            std::static_pointer_cast<Element>(shared_from_this()),
+            property, old_value, value);
+
+        // 通知观察者（即时处理，保持向后兼容）
         doc->GetObserverManager().NotifyStyleChanged(this, property, old_value, value);
     }
 }

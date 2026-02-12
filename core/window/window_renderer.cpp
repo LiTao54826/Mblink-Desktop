@@ -358,17 +358,20 @@ void WindowRenderer::RestoreScrollPositions(RenderObject* render_obj,
     if (!render_obj) {
         return;
     }
-    
+
     // 查找是否有保存的滚动位置
     auto node = render_obj->GetNode();
     if (node) {
         auto it = scroll_positions.find(node.get());
         if (it != scroll_positions.end()) {
-            render_obj->SetScrollX(it->second.first);
-            render_obj->SetScrollY(it->second.second);
+            // 使用 ScrollTo 统一恢复路径：
+            // 1) 自动按当前内容尺寸进行 clamp
+            // 2) 触发后代 ViewportBounds 失效
+            // 3) 触发必要的重绘标记传播
+            render_obj->ScrollTo(it->second.first, it->second.second);
         }
     }
-    
+
     // 递归处理子节点
     for (const auto& child : render_obj->GetChildren()) {
         RestoreScrollPositions(child.get(), scroll_positions);

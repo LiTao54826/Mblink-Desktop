@@ -38,174 +38,87 @@ def removeTodo(index):
 app.load_html("""
 <!DOCTYPE html>
 <html>
-
 <head>
-    <title>Fetch API Demo</title>
     <style>
         body {
             font-family: Arial, sans-serif;
-            padding: 20px;
-            /* background: #1a1a2e;
-            color: #eee; */
-            margin: 8px;
-            height: 400px;
-            /* 固定高度以触发滚动 */
-            overflow: auto;
-            /* 启用滚动条 */
+            max-width: 460px;
+            margin: 20px auto;
+            padding: 0 10px;
+            background: #f5f5f5;
         }
-
-        h1 {
-            color: #00d4ff;
+        h1 { color: #333; text-align: center; }
+        .input-row { display: flex; gap: 8px; margin-bottom: 16px; }
+        input[type="text"] {
+            flex: 1; padding: 8px 12px; font-size: 14px;
+            border: 1px solid #ccc; border-radius: 4px; outline: none;
         }
-
-        .container {
-            max-width: 800px;
-            margin: 0 auto;
+        input[type="text"]:focus { border-color: #2196F3; }
+        .btn-add {
+            padding: 8px 16px; font-size: 14px; border: none;
+            border-radius: 4px; background: #4CAF50; color: white; cursor: pointer;
         }
-
-        .result {
-            background: #16213e;
-            border-radius: 8px;
-            padding: 15px;
-            margin: 10px 0;
-            border-left: 4px solid #00d4ff;
+        .btn-add:hover { opacity: 0.85; }
+        ul { list-style: none; padding: 0; }
+        li {
+            display: flex; justify-content: space-between; align-items: center;
+            padding: 10px 12px; margin-bottom: 6px; background: white;
+            border-radius: 4px; box-shadow: 0 1px 2px rgba(0,0,0,0.1);
         }
-
-        .loading {
-            color: #ffd700;
+        .btn-remove {
+            padding: 4px 10px; font-size: 12px; border: none;
+            border-radius: 3px; background: #f44336; color: white; cursor: pointer;
         }
-
-        .success {
-            color: #00ff88;
-        }
-
-        .error {
-            color: #ff4444;
-        }
-
-        pre {
-            background: #0f3460;
-            padding: 10px;
-            border-radius: 4px;
-            overflow: auto;
-            font-size: 12px;
-        }
-
-        button {
-            background: #00d4ff;
-            color: #1a1a2e;
-            border: none;
-            padding: 10px 20px;
-            border-radius: 4px;
-            cursor: pointer;
-            font-size: 14px;
-            margin: 5px;
-        }
-
-        button:hover {
-            background: #00b8e6;
-        }
+        .btn-remove:hover { opacity: 0.85; }
+        .empty-msg { text-align: center; color: #999; padding: 20px; }
     </style>
 </head>
-
 <body>
-    <div class="container">
-        <h1>🌐 Fetch API Demo</h1>
-        <p>Testing async HTTP requests with MBink's fetch implementation</p>
-        <div>
-            <button id="btn-get">GET Request</button>
-            <button id="btn-post">POST Request</button>
-        </div>
-
-        <div id="results">
-            <div class="result loading">GET Request: Loading...</div>
-            <div class="result success">Response Status: 200 OK</div>
-            <div class="result success"><span>GET Response Data</span>
-                <pre>{
-  "userId": 1,
-  "id": 1,
-  "title": "sunt aut facere repellat provident occaecati excepturi optio reprehenderit",
-  "body": "quia et suscipit\nsuscipit recusandae consequuntur expedita et cum\nreprehenderit molestiae ut ut quas totam\nnostrum rerum est autem sunt rem eveniet architecto"
-}</pre>
-            </div>
-        </div>
+    <h1>待办事项</h1>
+    <div class="input-row">
+        <input type="text" id="todoInput" placeholder="输入待办事项..." />
+        <button class="btn-add" onclick="doAdd()">添加</button>
     </div>
+    <ul id="todoList">
+        <div class="empty-msg">暂无待办事项</div>
+    </ul>
 
     <script>
-        const resultsDiv = document.getElementById('results');
-
-        function addResult(title, content, status) {
-            const div = document.createElement('div');
-            div.className = 'result ' + status;
-            div.textContent = title + ': ' + content;
-            resultsDiv.appendChild(div);
+        function doAdd() {
+            var input = document.getElementById('todoInput');
+            var text = input.value.trim();
+            if (!text) return;
+            py.addTodo(text);
+            input.value = '';
         }
 
-        function addJsonResult(title, data) {
-            const div = document.createElement('div');
-            div.className = 'result success';
+        // 用 JS 注册 keydown，避免内联属性中 event 不可用的问题
+        document.getElementById('todoInput').addEventListener('keydown', function(e) {
+            if (e.key === 'Enter') doAdd();
+        });
 
-            const titleSpan = document.createElement('span');
-            titleSpan.textContent = title;
-            div.appendChild(titleSpan);
-
-            const pre = document.createElement('pre');
-            pre.textContent = JSON.stringify(data, null, 2);
-            div.appendChild(pre);
-
-            resultsDiv.appendChild(div);
+        function renderList(items) {
+            var ul = document.getElementById('todoList');
+            ul.innerHTML = '';
+            if (!items || items.length === 0) {
+                ul.innerHTML = '<div class="empty-msg">暂无待办事项</div>';
+                return;
+            }
+            for (var i = 0; i < items.length; i++) {
+                var li = document.createElement('li');
+                li.innerHTML =
+                    '<span>' + items[i] + '</span>' +
+                    '<button class="btn-remove" onclick="py.removeTodo(' + i + ')">删除</button>';
+                ul.appendChild(li);
+            }
         }
 
-        // GET 请求测试
-        document.getElementById('btn-get').addEventListener('click', function () {
-            addResult('GET Request', 'Loading...', 'loading');
-
-            fetch('https://jsonplaceholder.typicode.com/posts/1')
-                .then(function (response) {
-                    addResult('Response Status', response.status + ' ' + (response.ok ? 'OK' : 'Failed'), response.ok ? 'success' : 'error');
-                    return response.json();
-                })
-                .then(function (data) {
-                    console.log("aaa", data)
-                    addJsonResult('GET Response Data', data);
-                })
-                .catch(function (error) {
-                    addResult('Error', error.message, 'error');
-                });
+        // 监听 todos 状态变化，自动重新渲染列表
+        host.on("todos", function(items) {
+            renderList(items);
         });
-
-        // POST 请求测试
-        document.getElementById('btn-post').addEventListener('click', function () {
-            addResult('POST Request', 'Loading...', 'loading');
-
-            fetch('https://jsonplaceholder.typicode.com/posts', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({
-                    title: 'Test Post',
-                    body: 'This is a test post from MBink',
-                    userId: 1
-                })
-            })
-                .then(function (response) {
-                    addResult('Response Status', response.status + ' ' + (response.ok ? 'OK' : 'Failed'), response.ok ? 'success' : 'error');
-                    return response.json();
-                })
-                .then(function (data) {
-                    addJsonResult('POST Response Data', data);
-                })
-                .catch(function (error) {
-                    addResult('Error', error.message, 'error');
-                });
-        });
-
-        // 初始消息
-        addResult('Status', 'Ready - Click a button to test', 'success');
     </script>
 </body>
-
 </html>
 """)
 

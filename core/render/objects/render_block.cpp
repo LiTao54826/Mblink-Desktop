@@ -18,6 +18,7 @@
 #include "render_inline_block.h"
 #include "core/render/painters/box_renderer.h"
 #include "core/render/text/text_renderer.h"
+#include "core/render/text/font_manager.h"
 #include "core/render/utils/gradient_renderer.h"
 #include "core/render/utils/shadow_renderer.h"
 #include "core/render/utils/color.h"
@@ -2417,10 +2418,7 @@ void RenderBlock::PaintContentEditableCaret(SkCanvas* canvas, Element* element, 
                 font_size = parent_style.font_size > 0 ? parent_style.font_size : 16.0f;
                 font_family = !parent_style.font_family.empty() ? parent_style.font_family : "Arial";
                 // font_weight 是 string 类型: "normal", "bold", "100"-"900"
-                if (parent_style.font_weight == "bold" || parent_style.font_weight == "700" ||
-                    parent_style.font_weight == "800" || parent_style.font_weight == "900") {
-                    font_weight = FontWeight::BOLD;
-                }
+                font_weight = ParseCSSFontWeight(parent_style.font_weight);
                 if (parent_style.font_style == "italic") {
                     font_style = FontStyle::ITALIC;
                 }

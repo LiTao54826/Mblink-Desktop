@@ -3116,12 +3116,25 @@ LayoutOutput NativeLayoutEngine::ComputeAnonymousBlockIFCLayout(NodeId node_id, 
     static bool debug_fab_inline = std::getenv("DEBUG_FAB_INLINE") != nullptr;
 
     // Resolve container width
-    // IMPORTANT: For anonymous blocks in mixed-content containers, parent->layout.size.width
-    // may still be 0 in an early PerformLayout pass. In that case, prefer stable parent width
-    // sources to avoid falling back to outer available_space width (which can over-shift center).
+    // Root cause fix: percentage width for inline/inline-block children inside anonymous block
+    // must prefer parent content-box width passed in via inputs.parent_size.width.
+    // parent->layout/output can be parent outer(border-box) width in some passes, which makes
+    // width:100% (content-box) elements add padding+border again and overflow.
     float container_width = 0.0f;
     const char* container_width_source = "none";
-    if (apply_results && parent) {
+
+    if (inputs.parent_size.width.has_value() && *inputs.parent_size.width > 0.0f) {
+        container_width = *inputs.parent_size.width;
+        container_width_source = "inputs.parent_size";
+    }
+
+    if (container_width <= 0.0f && inputs.known_dimensions.width.has_value() &&
+        *inputs.known_dimensions.width > 0.0f) {
+        container_width = *inputs.known_dimensions.width;
+        container_width_source = "inputs.known_dimensions";
+    }
+
+    if (container_width <= 0.0f && apply_results && parent) {
         float parent_layout_width = parent->layout.size.width;
         if (parent_layout_width > 0.0f) {
             container_width = parent_layout_width;
@@ -3148,17 +3161,8 @@ LayoutOutput NativeLayoutEngine::ComputeAnonymousBlockIFCLayout(NodeId node_id, 
         }
     }
 
-    if (container_width <= 0.0f && inputs.parent_size.width.has_value() &&
-        *inputs.parent_size.width > 0.0f) {
-        container_width = *inputs.parent_size.width;
-        container_width_source = "inputs.parent_size";
-    }
-
     if (container_width <= 0.0f) {
-        if (inputs.known_dimensions.width.has_value()) {
-            container_width = *inputs.known_dimensions.width;
-            container_width_source = "inputs.known_dimensions";
-        } else if (inputs.available_space.width.type == AvailableSpace::Type::Definite) {
+        if (inputs.available_space.width.type == AvailableSpace::Type::Definite) {
             container_width = inputs.available_space.width.value;
             container_width_source = "inputs.available.definite";
         } else if (inputs.available_space.width.type == AvailableSpace::Type::MaxContent) {
@@ -3514,33 +3518,16 @@ void NativeLayoutEngine::CollectInlineBoxesRecursive(
 void NativeLayoutEngine::ApplyAnonymousBlockLayoutResults(LayoutNode* node) {
     if (!node || !node->is_anonymous_block) return;
 
-    // Get parent's position for offset calculation
-    LayoutNode* parent = GetNode(node->parent);
+    // Use anonymous block's own layout location as offset base.
+    // Its location is already in the same coordinate space used by child layout writeback,
+    // so adding parent padding/border again would double-offset inline children.
     float offset_x = node->layout.location.x;
     float offset_y = node->layout.location.y;
-
-    // node->layout.location is relative to parent's content box.
-    // RenderObject child layout coordinates are relative to parent's border box origin,
-    // so we must add parent's padding+border to keep paint/hit-test coordinates consistent.
-    if (parent && parent->render_obj) {
-        const auto& parent_style = parent->render_obj->GetComputedStyle();
-        float parent_width = parent->layout.size.width;
-
-        float padding_left = parent_style.padding.left.ToPx(parent_width, parent_style.font_size);
-        float border_left = parent_style.border_left_width > 0 ? parent_style.border_left_width :
-                    parent_style.border.width.ToPx(parent_width, parent_style.font_size);
-        float padding_top = parent_style.padding.top.ToPx(parent_width, parent_style.font_size);
-        float border_top = parent_style.border_top_width > 0 ? parent_style.border_top_width :
-                    parent_style.border.width.ToPx(parent_width, parent_style.font_size);
-
-        offset_x += padding_left + border_left;
-        offset_y += padding_top + border_top;
-    }
 
     static bool debug_fab_inline = std::getenv("DEBUG_FAB_INLINE") != nullptr;
 
     if (debug_fab_inline) {
-        std::cout << "[FAB_IFC] anon parent_w=" << (parent ? parent->layout.size.width : -1.0f)
+        std::cout << "[FAB_IFC] anon parent_w=" << -1.0f
                   << " anon_loc=(" << node->layout.location.x << "," << node->layout.location.y << ")"
                   << " offset=(" << offset_x << "," << offset_y << ")"
                   << std::endl;
@@ -3700,7 +3687,7 @@ LayoutOutput NativeLayoutEngine::MeasureLeafNode(NodeId node_id, const LayoutInp
         FontDescriptor desc;
         desc.family = style.font_family;
         desc.size = style.font_size;
-        desc.weight = (style.font_weight == "bold") ? FontWeight::BOLD : FontWeight::NORMAL;
+        desc.weight = ParseCSSFontWeight(style.font_weight);
         desc.style = (style.font_style == "italic") ? FontStyle::ITALIC : FontStyle::NORMAL;
 
         SkFont font = FontManager::GetInstance().LoadFont(desc);

@@ -480,10 +480,14 @@ void Node::SetParentNode(std::shared_ptr<Node> parent) {
 }
 
 void Node::RemoveAllChildren() {
-    // 通知观察者（在移除之前）
+    // 通知观察者和记录变化（在移除之前）
     auto doc = GetOwnerDocument();
     if (doc) {
-        for (auto& child : child_nodes_) {
+        for (size_t i = 0; i < child_nodes_.size(); ++i) {
+            auto& child = child_nodes_[i];
+            // 记录到 DirtyNodeTracker（延迟处理）
+            doc->GetDirtyTracker().RecordNodeRemoved(child, shared_from_this(), i);
+            // 通知观察者（即时处理）
             doc->GetObserverManager().NotifyNodeRemoved(child.get(), this);
         }
     }

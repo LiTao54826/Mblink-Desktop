@@ -21,6 +21,36 @@ std::string FontDescriptor::GetCacheKey() const {
     return oss.str();
 }
 
+FontWeight ParseCSSFontWeight(const std::string& weight_str) {
+    if (weight_str.empty() || weight_str == "normal") {
+        return FontWeight::NORMAL;
+    }
+    if (weight_str == "bold") {
+        return FontWeight::BOLD;
+    }
+    if (weight_str == "lighter") {
+        return FontWeight::LIGHT;
+    }
+    if (weight_str == "bolder") {
+        return FontWeight::EXTRA_BOLD;
+    }
+
+    try {
+        int weight_num = std::stoi(weight_str);
+        if (weight_num <= 100) return FontWeight::THIN;
+        if (weight_num <= 200) return FontWeight::EXTRA_LIGHT;
+        if (weight_num <= 300) return FontWeight::LIGHT;
+        if (weight_num <= 400) return FontWeight::NORMAL;
+        if (weight_num <= 500) return FontWeight::MEDIUM;
+        if (weight_num <= 600) return FontWeight::SEMI_BOLD;
+        if (weight_num <= 700) return FontWeight::BOLD;
+        if (weight_num <= 800) return FontWeight::EXTRA_BOLD;
+        return FontWeight::BLACK;
+    } catch (...) {
+        return FontWeight::NORMAL;
+    }
+}
+
 // ========== FontManager 实现 ==========
 
 FontManager::FontManager()

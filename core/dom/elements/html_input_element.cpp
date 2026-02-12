@@ -91,6 +91,19 @@ void HTMLInputElement::SetValue(const std::string& value, bool trigger_events) {
     // 注意：不更新value属性，value属性保持为默认值
     // 这符合HTML标准：value属性是默认值，value_是当前值
 
+    // 值变化时标记脏并通知重绘（与 trigger_events 独立）
+    if (old_value != new_value) {
+        MarkDirty(DirtyType::PAINT);
+
+        auto doc = GetOwnerDocument();
+        if (doc) {
+            Window* window = doc->GetWindow();
+            if (window) {
+                window->SetNeedsRepaint();
+            }
+        }
+    }
+
     // 触发事件
     if (trigger_events && old_value != new_value) {
         TriggerInputEvent();

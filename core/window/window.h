@@ -657,6 +657,10 @@ private:
     int pending_resize_height_ = 0;
     bool has_pending_resize_ = false;
 
+    // 连续 resize 追踪（用于 burst 场景更激进回收）
+    Uint64 resize_burst_window_start_tick_ = 0;
+    int resize_burst_count_ = 0;
+
     // 保存的滚动位置（用于 InvalidateRenderTree 后恢复）
     std::unordered_map<Node*, std::pair<float, float>> saved_scroll_positions_;
 

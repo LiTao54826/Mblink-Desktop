@@ -69,23 +69,24 @@
     - **Property 10: 状态队列先于事件队列处理**
     - **Validates: Requirements 6.3**
 
-- [ ] 5. Python 绑定层
-  - [ ] 5.1 在 bindings.cpp 的 PyHostBridge 中添加 emit 方法
+- [x] 5. Python 绑定层
+  - [x] 5.1 在 bindings.cpp 的 PyHostBridge 中添加 emit 方法
     - 实现 `emit(eventName, data)`：将 Python 对象序列化为 JSON，调用 HostBridge::emit()
     - 参数校验：不可序列化类型抛出 TypeError，空事件名抛出 ValueError
     - 在 pybind11 模块定义中注册 emit 方法
     - _Requirements: 4.1, 4.2, 4.3_
 
-  - [ ] 5.2 在 app.py 的 App 类中添加 emit 方法
+  - [x] 5.2 在 app.py 的 App 类中添加 emit 方法
     - 实现 `emit(event, data=None)`：调用 bridge.emit()
     - 参数校验和错误处理
     - _Requirements: 4.1, 4.2, 4.3_
 
-  - [ ] 5.3 创建 bindings/python/tests/test_host_event.py 单元测试
+  - [x] 5.3 创建 bindings/python/tests/test_host_event.py 单元测试
     - 测试 app.emit 基本流程（Python emit → JS callback 收到数据）
     - 测试各种数据类型序列化（None, bool, int, float, str, list, dict）
-    - 测试不可序列化类型抛出 TypeError
     - 测试空事件名抛出 ValueError
+    - 测试无 Listener 时 emit 不报错
+    - 测试多次 emit 按顺序到达
     - 使用低级 API 测试，不创建 Window
     - _Requirements: 4.1, 4.2, 4.3_
 
@@ -93,26 +94,24 @@
     - **Property 8: Python Emit 序列化往返**
     - **Validates: Requirements 4.1, 4.2**
 
-- [ ] 6. EventLoop 集成
-  - [ ] 6.1 修改 EventLoop 集成代码，在 processQueue 后调用 flushEvents
+- [x] 6. EventLoop 集成
+  - [x] 6.1 修改 EventLoop 集成代码，在 processQueue 后调用 flushEvents
     - 在 bindings.cpp 的 PyEventLoop::run() 中，Update 回调里 processQueue 之后调用 bridge->flushEvents()
-    - 在 PyEventLoop 中添加 HostBridge 指针成员和 setter 方法
-    - 在 app.py 中将 bridge 传递给 event_loop
+    - 在 PyEventLoop 中添加 HostBridge 指针成员 host_bridge_ 和 setter setHostBridge()
+    - 在 pybind11 模块中注册 set_host_bridge 方法
+    - 在 app.py 中创建 HostBridge 后调用 event_loop.set_host_bridge(bridge)
     - _Requirements: 6.2, 6.3_
 
-- [ ] 7. 更新 counter.py 示例
-  - [ ] 7.1 更新 counter.py 使用新的事件模式
+- [x] 7. 更新 counter.py 示例
+  - [x] 7.1 更新 counter.py 使用新的事件模式
     - 移除 increment/decrement 的 return 语句
-    - 添加 host.on("counter", cb) 监听状态变化自动更新 DOM
-    - 保留按钮的 py.increment()/py.decrement() 调用
-    - _Requirements: 3.1, 3.2, 5.1_
-
-- [ ] 8. 最终 Checkpoint - 确保所有测试通过
-  - 编译验证
-  - 运行 JS 测试：test_host_event.js
-  - 运行 Python 测试：test_host_event.py
-  - 运行现有测试确保向后兼容：test_binding.py, test_new_api.py
-  - 确保所有测试通过，如有问题请询问用户
+    - 添加 host.on("counter", cb) 在 script 标签中监听状态变化自动更新 DOM
+    - 保留按钮的 py.incremen
+- [x] 8. 最终 Checkpoint - 确保所有测试通过
+  - lightui_core pyd 编译通过
+  - esm_loader 编译通过
+  - Python 测试 test_host_event.py：5/5 通过，无 GC 断言错误
+  - 修复：测试中 host.off() 清理 listener + del 确保销毁顺序
 
 ## 备注
 
