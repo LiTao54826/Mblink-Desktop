@@ -4,14 +4,14 @@
  */
 import { h, render } from 'preact';
 import { useState, useReducer, useCallback, useEffect } from 'preact/hooks';
-import { colors, spacing, fonts, ToastContext } from './res/theme.js';
-import { ToastContainer } from './res/components.js';
-import { TitleBar } from './res/titlebar.js';
-import { Sidebar } from './res/sidebar.js';
-import { DashboardPage } from './res/dashboard.js';
-import { KanbanPage } from './res/kanban.js';
-import { TeamPage } from './res/team.js';
-import { SettingsPage } from './res/settings.js';
+import { colors, spacing, fonts, ToastContext } from './src/theme.js';
+import { ToastContainer } from './src/components.js';
+import { TitleBar } from './src/titlebar.js';
+import { Sidebar } from './src/sidebar.js';
+import { DashboardPage } from './src/dashboard.js';
+import { KanbanPage } from './src/kanban.js';
+import { TeamPage } from './src/team.js';
+import { SettingsPage } from './src/settings.js';
 
 // ========== Toast 通知 Reducer ==========
 var toastId = 0;
