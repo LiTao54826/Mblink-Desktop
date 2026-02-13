@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <title>Window Min/Max Size Test</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body {
+      width: 100%; height: 100%;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #1a1a2e;
+      color: #eee;
+      overflow: hidden;
+    }
+    .container {
+      width: 100%; height: 100%;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 32px;
+    }
+    h1 {
+      font-size: 24px;
+      margin-bottom: 16px;
+      color: #e94560;
+    }
+    .info {
+      font-size: 14px;
+      line-height: 1.8;
+      text-align: center;
+      opacity: 0.85;
+      max-width: 500px;
+    }
+    .highlight {
+      color: #0f3460;
+      background: #e94560;
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-weight: 600;
+    }
+    .size-display {
+      margin-top: 24px;
+      font-size: 48px;
+      font-weight: 700;
+      color: #16213e;
+      background: linear-gradient(135deg, #e94560, #0f3460);
+      padding: 16px 32px;
+      border-radius: 12px;
+      color: white;
+    }
+    .hint {
+      margin-top: 20px;
+      font-size: 12px;
+      opacity: 0.5;
+    }
+    .feature-list {
+      margin-top: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      font-size: 13px;
+    }
+    .feature-item { display: flex; align-items: center; gap: 8px; }
+    .check { color: #28c840; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>🪟 窗口尺寸限制测试</h1>
+    <div class="info">
+      请尝试拖拽窗口边缘调整大小。<br>
+      最小尺寸: <span class="highlight">400 x 300</span><br>
+      最大尺寸: <span class="highlight">1200 x 900</span>
+    </div>
+    <div class="size-display" id="sizeDisplay">-- x --</div>
+    <div class="feature-list">
+      <div class="feature-item"><span class="check">✓</span> WM_GETMINMAXINFO 拖拽限制</div>
+      <div class="feature-item"><span class="check">✓</span> SDL MinimumSize / MaximumSize</div>
+      <div class="feature-item"><span class="check">✓</span> SetSize() clamp 限制</div>
+    </div>
+    <div class="hint">LightUI Window Min/Max Size Constraint System</div>
+  </div>
+  <script>
+    function updateSize() {
+      var w = window.innerWidth || 0;
+      var h = window.innerHeight || 0;
+      var el = document.getElementById('sizeDisplay');
+      if (el) {
+        el.textContent = w + ' x ' + h;
+      }
+    }
+    updateSize();
+    window.addEventListener('resize', updateSize);
+  </script>
+</body>
+</html>
+

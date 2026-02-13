@@ -100,6 +100,10 @@ struct WindowConfig {
     RenderBackend backend = RenderBackend::AUTO;  // 渲染后端
     bool headless = false;  // 无头模式（不创建窗口，仅渲染到内存）
     int resize_border_width = 8;  // 无边框窗口的调整大小边缘宽度（像素）
+    int min_width = 0;   // 窗口最小宽度（0 表示不限制）
+    int min_height = 0;  // 窗口最小高度（0 表示不限制）
+    int max_width = 0;   // 窗口最大宽度（0 表示不限制）
+    int max_height = 0;  // 窗口最大高度（0 表示不限制）
 };
 
 /**
@@ -230,6 +234,34 @@ public:
      * @brief 获取调整大小边缘宽度
      */
     int GetResizeBorderWidth() const { return config_.resize_border_width; }
+
+    /**
+     * @brief 设置窗口最小尺寸
+     * @param width 最小宽度（0 表示不限制）
+     * @param height 最小高度（0 表示不限制）
+     */
+    void SetMinSize(int width, int height);
+
+    /**
+     * @brief 设置窗口最大尺寸
+     * @param width 最大宽度（0 表示不限制）
+     * @param height 最大高度（0 表示不限制）
+     */
+    void SetMaxSize(int width, int height);
+
+    /**
+     * @brief 获取窗口最小尺寸
+     * @param width 最小宽度输出
+     * @param height 最小高度输出
+     */
+    void GetMinSize(int* width, int* height) const;
+
+    /**
+     * @brief 获取窗口最大尺寸
+     * @param width 最大宽度输出
+     * @param height 最大高度输出
+     */
+    void GetMaxSize(int* width, int* height) const;
 
     /**
      * @brief 检测屏幕坐标处是否为拖拽区域（-webkit-app-region: drag）

@@ -123,6 +123,12 @@ static bool SDLCALL SDLEventFilter(void* userdata, SDL_Event* event) {
 }
 
 Window::Window(const WindowConfig& config) : config_(config) {
+    // 透明窗口（不规则窗体）本质上没有系统标题栏，必须启用无边框模式
+    // 否则 WM_NCHITTEST 中的自定义 hit test（拖拽区域、窗口控制按钮）不会生效
+    if (config_.transparent) {
+        config_.borderless = true;
+    }
+
     InitSDL();
     CreateSDLWindow();
 
@@ -138,14 +144,20 @@ Window::Window(const WindowConfig& config) : config_(config) {
         win32::SubclassWindow(hwnd, this);
 
         // 无边框窗口：启用 DWM 阴影效果
-        if (config_.borderless) {
+        // 透明窗口（不规则窗体）不需要系统阴影，阴影会破坏不规则形状
+        if (config_.borderless && !config_.transparent) {
             win32::EnableBorderlessShadow(hwnd);
         }
     }
 #endif
 
     // 根据配置选择渲染后端
-    if (config_.backend == RenderBackend::AUTO) {
+    if (config_.transparent) {
+        // 透明窗口（不规则窗体）：强制使用 CPU 渲染 + LayeredWindow 后端
+        // 因为 WS_EX_LAYERED + UpdateLayeredWindow 与 OpenGL 不兼容
+        InitCPURendering();
+        actual_backend_ = RenderBackend::CPU;
+    } else if (config_.backend == RenderBackend::AUTO) {
         // 自动模式：先尝试 GPU，失败则降级到 CPU
         try {
             InitOpenGL();
@@ -293,6 +305,12 @@ void Window::SetTitle(const std::string& title) {
 }
 
 void Window::SetSize(int width, int height) {
+    // Clamp to min/max constraints
+    if (config_.min_width > 0 && width < config_.min_width) width = config_.min_width;
+    if (config_.min_height > 0 && height < config_.min_height) height = config_.min_height;
+    if (config_.max_width > 0 && width > config_.max_width) width = config_.max_width;
+    if (config_.max_height > 0 && height > config_.max_height) height = config_.max_height;
+
     config_.width = width;
     config_.height = height;
     if (sdl_window_) {
@@ -308,6 +326,36 @@ void Window::GetSize(int* width, int* height) const {
         if (width) *width = config_.width;
         if (height) *height = config_.height;
     }
+}
+
+void Window::SetMinSize(int width, int height) {
+    config_.min_width = width;
+    config_.min_height = height;
+    if (sdl_window_) {
+        SDL_SetWindowMinimumSize(sdl_window_,
+            width > 0 ? width : 1,
+            height > 0 ? height : 1);
+    }
+}
+
+void Window::SetMaxSize(int width, int height) {
+    config_.max_width = width;
+    config_.max_height = height;
+    if (sdl_window_) {
+        SDL_SetWindowMaximumSize(sdl_window_,
+            width > 0 ? width : 16384,
+            height > 0 ? height : 16384);
+    }
+}
+
+void Window::GetMinSize(int* width, int* height) const {
+    if (width) *width = config_.min_width;
+    if (height) *height = config_.min_height;
+}
+
+void Window::GetMaxSize(int* width, int* height) const {
+    if (width) *width = config_.max_width;
+    if (height) *height = config_.max_height;
 }
 
 void Window::SetPosition(int x, int y) {
@@ -538,9 +586,13 @@ void Window::CreateSDLWindow() {
     // 构建窗口标志
     SDL_WindowFlags flags = 0;
 
-    // 所有模式都使用 OpenGL 窗口
-    // CPU 模式也通过 OpenGL 纹理显示，利用 VSync 避免闪烁
-    flags |= SDL_WINDOW_OPENGL;
+    // 透明窗口（不规则窗体）使用 LayeredWindow 后端，不能用 OpenGL
+    // 因为 WS_EX_LAYERED + UpdateLayeredWindow 与 OpenGL 渲染管线不兼容
+    if (!config_.transparent) {
+        // 非透明模式：所有模式都使用 OpenGL 窗口
+        // CPU 模式也通过 OpenGL 纹理显示，利用 VSync 避免闪烁
+        flags |= SDL_WINDOW_OPENGL;
+    }
 
     if (config_.resizable) flags |= SDL_WINDOW_RESIZABLE;
     if (config_.fullscreen) flags |= SDL_WINDOW_FULLSCREEN;
@@ -563,6 +615,18 @@ void Window::CreateSDLWindow() {
 
     if (!sdl_window_) {
         throw std::runtime_error(std::string("Failed to create SDL window: ") + SDL_GetError());
+    }
+
+    // 设置窗口最小/最大尺寸限制
+    if (config_.min_width > 0 || config_.min_height > 0) {
+        SDL_SetWindowMinimumSize(sdl_window_,
+            config_.min_width > 0 ? config_.min_width : 1,
+            config_.min_height > 0 ? config_.min_height : 1);
+    }
+    if (config_.max_width > 0 || config_.max_height > 0) {
+        SDL_SetWindowMaximumSize(sdl_window_,
+            config_.max_width > 0 ? config_.max_width : 16384,
+            config_.max_height > 0 ? config_.max_height : 16384);
     }
 
     // 设置窗口位置（如果指定）
@@ -677,7 +741,26 @@ void Window::InitCPURendering() {
         throw std::runtime_error("Failed to create CPU rendering surface");
     }
 
-    // 创建最佳显示后端（按优先级：OpenGL → LayeredWindow → GDI → SDL_Surface）
+#ifdef _WIN32
+    if (config_.transparent) {
+        // 透明窗口（不规则窗体）：强制使用 LayeredWindow 后端
+        // LayeredWindow 使用 UpdateLayeredWindow + ULW_ALPHA 实现逐像素透明
+        display_backend_ = DisplayBackend::Create(DisplayBackendType::LAYERED_WINDOW);
+        if (display_backend_ && display_backend_->Initialize(sdl_window_, width, height)) {
+            // 透明窗口：清除画布为全透明
+            SkCanvas* canvas = surface_->getCanvas();
+            if (canvas) {
+                canvas->clear(SK_ColorTRANSPARENT);
+            }
+            return;
+        }
+        // LayeredWindow 失败，回退到普通后端
+        display_backend_.reset();
+        std::cerr << "[Window] LayeredWindow backend failed, falling back to normal backend" << std::endl;
+    }
+#endif
+
+    // 创建最佳显示后端（按优先级：D3D11 → PaintMode → GDI → OpenGL → SDL_Surface）
     display_backend_ = DisplayBackend::CreateBest(sdl_window_, width, height);
     if (!display_backend_) {
         // 如果 CreateBest 失败，尝试 SDL Surface 作为最后回退
@@ -1173,12 +1256,18 @@ void Window::Render() {
     // =========================================================================
     if (render_pipeline_) {
         // 获取背景色 - 优先使用 body 的背景色，避免白边问题
-        SkColor clear_color = cached_body_bg_color_;  // 使用缓存的背景色
-        if (cached_render_tree_) {
-            const auto& body_style = cached_render_tree_->GetComputedStyle();
-            if (!body_style.background_color.empty() && body_style.background_color != "transparent") {
-                clear_color = Color::Parse(body_style.background_color);
-                cached_body_bg_color_ = clear_color;  // 更新缓存
+        // 透明窗口（不规则窗体）：始终使用透明背景
+        SkColor clear_color;
+        if (config_.transparent) {
+            clear_color = SK_ColorTRANSPARENT;
+        } else {
+            clear_color = cached_body_bg_color_;  // 使用缓存的背景色
+            if (cached_render_tree_) {
+                const auto& body_style = cached_render_tree_->GetComputedStyle();
+                if (!body_style.background_color.empty() && body_style.background_color != "transparent") {
+                    clear_color = Color::Parse(body_style.background_color);
+                    cached_body_bg_color_ = clear_color;  // 更新缓存
+                }
             }
         }
         canvas->clear(clear_color);

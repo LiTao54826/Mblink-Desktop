@@ -206,6 +206,10 @@ void PrintUsage(const char* program_name) {
     std::cout << "  --title <标题>      窗口标题 (默认: MBink App / HTML title)" << std::endl;
     std::cout << "  --borderless        无边框窗口模式（支持不规则窗体）" << std::endl;
     std::cout << "  --transparent       透明窗口（需配合 --borderless 使用）" << std::endl;
+    std::cout << "  --min-width <宽度>  窗口最小宽度" << std::endl;
+    std::cout << "  --min-height <高度> 窗口最小高度" << std::endl;
+    std::cout << "  --max-width <宽度>  窗口最大宽度" << std::endl;
+    std::cout << "  --max-height <高度> 窗口最大高度" << std::endl;
     std::cout << "  --no-scripts        不执行脚本 (仅 HTML 模式)" << std::endl;
     std::cout << "  --devtools          启动时打开开发者工具" << std::endl;
     std::cout << "  -q, --quit <秒>     自动退出时间（秒）" << std::endl;
@@ -458,6 +462,10 @@ int main(int argc, char** argv) {
     float quit_after_seconds = 0;
     bool borderless = has_embedded ? embedded_payload.config.borderless : false;
     bool transparent = has_embedded ? embedded_payload.config.transparent : false;
+    int min_width = has_embedded ? embedded_payload.config.min_width : 0;
+    int min_height = has_embedded ? embedded_payload.config.min_height : 0;
+    int max_width = has_embedded ? embedded_payload.config.max_width : 0;
+    int max_height = has_embedded ? embedded_payload.config.max_height : 0;
 
     for (int i = 1; i < argc; i++) {
         std::string arg = argv[i];
@@ -484,6 +492,14 @@ int main(int argc, char** argv) {
             verbose = true;
         } else if ((arg == "-q" || arg == "--quit") && i + 1 < argc) {
             quit_after_seconds = std::stof(argv[++i]);
+        } else if (arg == "--min-width" && i + 1 < argc) {
+            min_width = std::stoi(argv[++i]);
+        } else if (arg == "--min-height" && i + 1 < argc) {
+            min_height = std::stoi(argv[++i]);
+        } else if (arg == "--max-width" && i + 1 < argc) {
+            max_width = std::stoi(argv[++i]);
+        } else if (arg == "--max-height" && i + 1 < argc) {
+            max_height = std::stoi(argv[++i]);
         } else if (arg[0] != '-') {
             entry_path = arg;
         }
@@ -540,8 +556,12 @@ int main(int argc, char** argv) {
         config.height = height;
         config.resizable = true;
         config.vsync = true;
-        config.borderless = borderless;
+        config.borderless = borderless || transparent;  // 透明窗口隐含无边框
         config.transparent = transparent;
+        config.min_width = min_width;
+        config.min_height = min_height;
+        config.max_width = max_width;
+        config.max_height = max_height;
 
         auto window = std::make_shared<Window>(config);
         auto& window_manager = WindowManager::Instance();

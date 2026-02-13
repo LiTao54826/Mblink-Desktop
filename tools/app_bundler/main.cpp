@@ -51,6 +51,10 @@ struct BundlerOptions {
     std::string title = "MBink App";
     bool borderless = false;                   // 无边框窗口模式
     bool transparent = false;                  // 透明窗口
+    int min_width = 0;                         // 窗口最小宽度（0 表示不限制）
+    int min_height = 0;                        // 窗口最小高度（0 表示不限制）
+    int max_width = 0;                         // 窗口最大宽度（0 表示不限制）
+    int max_height = 0;                        // 窗口最大高度（0 表示不限制）
 
     bool verbose = false;
     bool no_overwrite = false;
@@ -71,6 +75,10 @@ void PrintUsage(const char* program_name) {
     std::cout << "  --title <value>         窗口标题 (默认: MBink App)\n";
     std::cout << "  --borderless            无边框窗口模式（支持不规则窗体）\n";
     std::cout << "  --transparent           透明窗口（需配合 --borderless 使用）\n";
+    std::cout << "  --min-width <value>     窗口最小宽度\n";
+    std::cout << "  --min-height <value>    窗口最小高度\n";
+    std::cout << "  --max-width <value>     窗口最大宽度\n";
+    std::cout << "  --max-height <value>    窗口最大高度\n";
     std::cout << "  --include <file>        包含额外的 JS 文件 (可多次使用)\n";
     std::cout << "  --template <file>       指定模板 exe 路径\n";
     std::cout << "  --verbose               显示详细信息\n";
@@ -138,6 +146,18 @@ bool ParseArguments(int argc, char** argv, BundlerOptions& options) {
             options.borderless = true;
         } else if (arg == "--transparent") {
             options.transparent = true;
+        } else if (arg == "--min-width") {
+            if (i + 1 >= argc) { std::cerr << "错误: --min-width 需要一个参数\n"; return false; }
+            try { options.min_width = std::stoi(argv[++i]); } catch (...) { std::cerr << "错误: --min-width 参数无效\n"; return false; }
+        } else if (arg == "--min-height") {
+            if (i + 1 >= argc) { std::cerr << "错误: --min-height 需要一个参数\n"; return false; }
+            try { options.min_height = std::stoi(argv[++i]); } catch (...) { std::cerr << "错误: --min-height 参数无效\n"; return false; }
+        } else if (arg == "--max-width") {
+            if (i + 1 >= argc) { std::cerr << "错误: --max-width 需要一个参数\n"; return false; }
+            try { options.max_width = std::stoi(argv[++i]); } catch (...) { std::cerr << "错误: --max-width 参数无效\n"; return false; }
+        } else if (arg == "--max-height") {
+            if (i + 1 >= argc) { std::cerr << "错误: --max-height 需要一个参数\n"; return false; }
+            try { options.max_height = std::stoi(argv[++i]); } catch (...) { std::cerr << "错误: --max-height 参数无效\n"; return false; }
         } else if (arg == "--include") {
             if (i + 1 >= argc) {
                 std::cerr << "错误: --include 需要一个参数\n";
@@ -401,6 +421,10 @@ int main(int argc, char** argv) {
         cfg.module_count = static_cast<uint32_t>(compiled.size());
         cfg.borderless = options.borderless;
         cfg.transparent = options.transparent;
+        cfg.min_width = options.min_width;
+        cfg.min_height = options.min_height;
+        cfg.max_width = options.max_width;
+        cfg.max_height = options.max_height;
         builder.SetConfig(cfg);
     }
     

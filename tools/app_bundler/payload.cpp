@@ -86,7 +86,11 @@ std::string PayloadBuilder::SerializeConfig() const {
     ss << "\",";
     ss << "\"module_count\":" << config_.module_count << ",";
     ss << "\"borderless\":" << (config_.borderless ? "true" : "false") << ",";
-    ss << "\"transparent\":" << (config_.transparent ? "true" : "false");
+    ss << "\"transparent\":" << (config_.transparent ? "true" : "false") << ",";
+    ss << "\"min_width\":" << config_.min_width << ",";
+    ss << "\"min_height\":" << config_.min_height << ",";
+    ss << "\"max_width\":" << config_.max_width << ",";
+    ss << "\"max_height\":" << config_.max_height;
     ss << "}";
     return ss.str();
 }
@@ -148,6 +152,26 @@ bool PayloadBuilder::DeserializeConfig(const std::string& json, PayloadConfig& c
     pos = json.find("\"transparent\":");
     if (pos != std::string::npos) {
         config.transparent = (json.substr(pos + 14, 4) == "true");
+    }
+
+    pos = json.find("\"min_width\":");
+    if (pos != std::string::npos) {
+        config.min_width = std::stoi(json.substr(pos + 12));
+    }
+
+    pos = json.find("\"min_height\":");
+    if (pos != std::string::npos) {
+        config.min_height = std::stoi(json.substr(pos + 13));
+    }
+
+    pos = json.find("\"max_width\":");
+    if (pos != std::string::npos) {
+        config.max_width = std::stoi(json.substr(pos + 12));
+    }
+
+    pos = json.find("\"max_height\":");
+    if (pos != std::string::npos) {
+        config.max_height = std::stoi(json.substr(pos + 13));
     }
 
     return true;

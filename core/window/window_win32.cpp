@@ -102,6 +102,27 @@ static LRESULT CALLBACK SubclassWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPAR
     Window* window = (window_it != g_hwnd_to_window.end()) ? window_it->second : nullptr;
 
     switch (msg) {
+        case WM_GETMINMAXINFO: {
+            // 窗口最小/最大尺寸限制
+            if (window) {
+                MINMAXINFO* mmi = (MINMAXINFO*)lParam;
+                int min_w = 0, min_h = 0, max_w = 0, max_h = 0;
+                window->GetMinSize(&min_w, &min_h);
+                window->GetMaxSize(&max_w, &max_h);
+
+                if (min_w > 0 || min_h > 0) {
+                    if (min_w > 0) mmi->ptMinTrackSize.x = min_w;
+                    if (min_h > 0) mmi->ptMinTrackSize.y = min_h;
+                }
+                if (max_w > 0 || max_h > 0) {
+                    if (max_w > 0) mmi->ptMaxTrackSize.x = max_w;
+                    if (max_h > 0) mmi->ptMaxTrackSize.y = max_h;
+                }
+            }
+            // 继续传递给原始窗口过程，让系统也处理
+            break;
+        }
+
         case WM_NCHITTEST: {
             // 无边框窗口的自定义 Hit-Test
             // 实现窗口拖拽和边缘调整大小
@@ -246,6 +267,13 @@ static LRESULT CALLBACK SubclassWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPAR
         case WM_PAINT: {
             g_paint_count++;
             PrintStats();
+
+            // LayeredWindow 后端：不需要 WM_PAINT 绘制
+            // UpdateLayeredWindow 直接操作窗口像素，WM_PAINT 只需验证区域
+            if (window && window->IsTransparent()) {
+                ValidateRect(hwnd, NULL);
+                return 0;
+            }
 
             // 检查是否使用 PaintMode 后端
             if (window && window->GetPaintModeBackend()) {

@@ -36,6 +36,10 @@ struct PayloadConfig {
     uint32_t module_count = 0;
     bool borderless = false;
     bool transparent = false;
+    int32_t min_width = 0;   // 窗口最小宽度（0 表示不限制）
+    int32_t min_height = 0;  // 窗口最小高度（0 表示不限制）
+    int32_t max_width = 0;   // 窗口最大宽度（0 表示不限制）
+    int32_t max_height = 0;  // 窗口最大高度（0 表示不限制）
 };
 
 /**
