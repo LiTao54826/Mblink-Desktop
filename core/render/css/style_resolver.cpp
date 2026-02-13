@@ -2281,7 +2281,7 @@ bool StyleResolver::ParseBackgroundProperty(ComputedStyle& style,
     }
     // CSS -webkit-window-control / window-control Property (用于无边框窗口控制按钮)
     else if (property == "-webkit-window-control" || property == "window-control") {
-        if (resolved_value == "close" || resolved_value == "minimize" || resolved_value == "maximize") {
+        if (resolved_value == "close" || resolved_value == "minimize" || resolved_value == "maximize" || resolved_value == "pin") {
             style.window_control = resolved_value;
         } else {
             style.window_control = "";

@@ -278,7 +278,7 @@ public:
      * @brief 命中测试窗口控制区域
      * @param screen_x 屏幕坐标X
      * @param screen_y 屏幕坐标Y
-     * @return 窗口控制类型: "close", "minimize", "maximize", 或空字符串
+     * @return 窗口控制类型: "close", "minimize", "maximize", "pin", 或空字符串
      *
      * 用于无边框窗口的 WM_NCHITTEST 处理，遍历渲染树查询
      * 命中元素的 window_control 样式属性。

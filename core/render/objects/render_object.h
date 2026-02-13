@@ -343,7 +343,7 @@ struct ComputedStyle {
     std::string app_region;
 
     // CSS -webkit-window-control Property (用于无边框窗口控制按钮)
-    // 值: "close", "minimize", "maximize", 或空字符串（默认）
+    // 值: "close", "minimize", "maximize", "pin", 或空字符串（默认）
     std::string window_control;
 
     // CSS will-change Property (用于层提升优化)

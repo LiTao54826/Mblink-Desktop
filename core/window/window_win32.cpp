@@ -189,6 +189,16 @@ static LRESULT CALLBACK SubclassWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPAR
                         } else {
                             ShowWindow(hwnd, SW_MAXIMIZE);
                         }
+                    } else if (control == "pin") {
+                        // 切换窗口置顶状态
+                        DWORD ex_style = GetWindowLong(hwnd, GWL_EXSTYLE);
+                        bool is_topmost = (ex_style & WS_EX_TOPMOST) != 0;
+                        SetWindowPos(hwnd, is_topmost ? HWND_NOTOPMOST : HWND_TOPMOST,
+                                     0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE);
+                        // 同步更新 Window 配置
+                        if (window) {
+                            window->SetAlwaysOnTop(!is_topmost);
+                        }
                     }
                     return 0;
                 }
