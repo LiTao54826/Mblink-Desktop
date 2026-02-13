@@ -56,6 +56,11 @@ struct ScrollbarPaintParams {
     // 是否需要滚动条
     bool needs_h_scroll = false;
     bool needs_v_scroll = false;
+
+    // CSS scrollbar-color 自定义颜色
+    bool scrollbar_color_auto = true;
+    SkColor scrollbar_thumb_color = SK_ColorTRANSPARENT;
+    SkColor scrollbar_track_color = SK_ColorTRANSPARENT;
 };
 
 /**

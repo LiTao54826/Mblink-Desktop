@@ -2288,6 +2288,50 @@ bool StyleResolver::ParseBackgroundProperty(ComputedStyle& style,
         }
         return true;
     }
+    // CSS scrollbar-color Property (CSS Scrollbars Styling Module Level 1)
+    // 格式: scrollbar-color: auto | <thumb-color> <track-color>
+    else if (property == "scrollbar-color") {
+        if (resolved_value == "auto" || resolved_value.empty()) {
+            style.scrollbar_color_auto = true;
+            return true;
+        }
+        // 解析两个颜色值: <thumb-color> <track-color>
+        // 需要处理 rgb()/rgba() 等包含空格的颜色函数
+        std::string val = resolved_value;
+        std::string thumb_str, track_str;
+
+        // 查找第二个颜色的起始位置（跳过第一个颜色值）
+        size_t pos = 0;
+        int paren_depth = 0;
+        bool found_first = false;
+
+        for (size_t i = 0; i < val.size(); i++) {
+            if (val[i] == '(') paren_depth++;
+            else if (val[i] == ')') paren_depth--;
+            else if (val[i] == ' ' && paren_depth == 0 && !found_first) {
+                // 跳过连续空格
+                thumb_str = val.substr(0, i);
+                // 跳过空格找到第二个值
+                size_t j = i;
+                while (j < val.size() && val[j] == ' ') j++;
+                if (j < val.size()) {
+                    track_str = val.substr(j);
+                    found_first = true;
+                }
+                break;
+            }
+        }
+
+        if (!thumb_str.empty() && !track_str.empty()) {
+            style.scrollbar_color_auto = false;
+            style.scrollbar_thumb_color = Color::Parse(thumb_str);
+            style.scrollbar_track_color = Color::Parse(track_str);
+        } else {
+            // 只有一个值，当作 auto
+            style.scrollbar_color_auto = true;
+        }
+        return true;
+    }
     return false;
 }
 

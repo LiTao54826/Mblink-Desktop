@@ -346,6 +346,13 @@ struct ComputedStyle {
     // 值: "close", "minimize", "maximize", "pin", 或空字符串（默认）
     std::string window_control;
 
+    // CSS scrollbar-color Property (CSS Scrollbars Styling Module Level 1)
+    // 格式: scrollbar-color: auto | <thumb-color> <track-color>
+    // 当 scrollbar_color_auto 为 true 时使用引擎默认颜色
+    bool scrollbar_color_auto = true;
+    SkColor scrollbar_thumb_color = SK_ColorTRANSPARENT;
+    SkColor scrollbar_track_color = SK_ColorTRANSPARENT;
+
     // CSS will-change Property (用于层提升优化)
     std::string will_change;  // auto, transform, opacity, scroll-position, contents, etc.
 

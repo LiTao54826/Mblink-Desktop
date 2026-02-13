@@ -1639,14 +1639,20 @@ void RenderBlock::Paint(SkCanvas* canvas) {
         const float scrollbar_margin = 2.0f;
         const float corner_radius = 4.0f;
 
-        // 滚动条轨道颜色 (更接近浏览器的浅灰色)
+        // 滚动条颜色：优先使用 CSS scrollbar-color 属性，否则使用默认值
+        SkColor track_color = SkColorSetRGB(241, 241, 241);  // 默认浅灰色轨道
+        SkColor thumb_color = SkColorSetRGB(193, 193, 193);  // 默认深灰色滑块
+        if (!style.scrollbar_color_auto) {
+            thumb_color = style.scrollbar_thumb_color;
+            track_color = style.scrollbar_track_color;
+        }
+
         SkPaint track_paint;
-        track_paint.setColor(SkColorSetRGB(241, 241, 241));
+        track_paint.setColor(track_color);
         track_paint.setAntiAlias(true);
 
-        // 滚动条滑块颜色 (深灰色)
         SkPaint thumb_paint;
-        thumb_paint.setColor(SkColorSetRGB(193, 193, 193));
+        thumb_paint.setColor(thumb_color);
         thumb_paint.setAntiAlias(true);
 
         // 滚动条区域尺寸

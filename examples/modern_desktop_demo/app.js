@@ -92,7 +92,8 @@ function App() {
                 h('div', {
                     style: {
                         flex: 1, padding: spacing.xl, overflowY: 'auto',
-                        backgroundColor: colors.bg
+                        backgroundColor: colors.bg,
+                        'scrollbar-color': '#555570 #1a1a2e'
                     }
                 },
                     h(PageContent, { page: activePage, addToast: addToast })

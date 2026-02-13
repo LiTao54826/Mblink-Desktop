@@ -17,14 +17,20 @@ ScrollbarPainter::ScrollbarPainter(SkCanvas* canvas)
 }
 
 void ScrollbarPainter::Paint(const ScrollbarPaintParams& params) {
+    // 应用 CSS scrollbar-color 自定义颜色
+    if (!params.scrollbar_color_auto) {
+        SetThumbColor(params.scrollbar_thumb_color);
+        SetTrackColor(params.scrollbar_track_color);
+    }
+
     if (params.needs_h_scroll) {
         PaintHorizontalScrollbar(params);
     }
-    
+
     if (params.needs_v_scroll) {
         PaintVerticalScrollbar(params);
     }
-    
+
     // 绘制滚动条角落（当两个滚动条都存在时）
     if (params.needs_h_scroll && params.needs_v_scroll) {
         PaintScrollbarCorner(params);
@@ -206,6 +212,11 @@ ScrollbarPaintParams ScrollbarPainter::CreateParams(
         }
     }
     
+    // CSS scrollbar-color 属性
+    params.scrollbar_color_auto = style.scrollbar_color_auto;
+    params.scrollbar_thumb_color = style.scrollbar_thumb_color;
+    params.scrollbar_track_color = style.scrollbar_track_color;
+
     return params;
 }
 

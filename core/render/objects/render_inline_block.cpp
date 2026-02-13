@@ -1613,8 +1613,13 @@ void RenderInlineBlock::PaintTextAreaElement(SkCanvas* canvas, HTMLTextAreaEleme
     // 滚动条应该在 padding 区域内，贴着 border 内侧
     // scrollbar_width 已在前面定义
     const float scrollbar_min_size = 20.0f;
-    const SkColor scrollbar_track_color = SkColorSetARGB(30, 0, 0, 0);
-    const SkColor scrollbar_thumb_color = SkColorSetARGB(128, 100, 100, 100);
+    // 滚动条颜色：优先使用 CSS scrollbar-color 属性，否则使用默认半透明颜色
+    SkColor scrollbar_track_color = SkColorSetARGB(30, 0, 0, 0);
+    SkColor scrollbar_thumb_color = SkColorSetARGB(128, 100, 100, 100);
+    if (!computed_style_.scrollbar_color_auto) {
+        scrollbar_thumb_color = computed_style_.scrollbar_thumb_color;
+        scrollbar_track_color = computed_style_.scrollbar_track_color;
+    }
     // content_height, max_line_width, need_v_scrollbar, need_h_scrollbar 已在前面计算
 
     // 绘制垂直滚动条 - 贴紧右边框（在 padding 区域的右边缘）
