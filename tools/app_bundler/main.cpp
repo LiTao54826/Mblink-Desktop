@@ -269,34 +269,37 @@ std::string ReadFile(const std::string& path) {
     return buffer.str();
 }
 
-// 获取嵌入的 Preact 源码（从 app_loader 的嵌入资源）
-// 注意：这里我们需要从 js/ 目录读取，因为 bundler 不嵌入这些资源
-std::string GetPreactSource(const std::string& bundler_path) {
-    fs::path base = fs::path(bundler_path).parent_path();
-    std::vector<fs::path> search_paths = {
-        base / "js" / "preact" / "preact.js",
-        base / ".." / "js" / "preact" / "preact.js",
-        base / ".." / ".." / "js" / "preact" / "preact.js",
-        "js/preact/preact.js",
-    };
-    for (const auto& p : search_paths) {
-        if (fs::exists(p)) return ReadFile(p.string());
-    }
-    return "";
+// 获取 Preact 模块包装器源码（必须与 esm_loader 运行时的 RegisterPreactModules 一致）
+// 运行时 Preact 通过 globalThis.Preact/PreactHooks 暴露，这里提供编译时的 ES module 包装器
+std::string GetPreactSource(const std::string& /*bundler_path*/) {
+    return R"(
+        export const h = globalThis.Preact.h;
+        export const render = globalThis.Preact.render;
+        export const Component = globalThis.Preact.Component;
+        export const Fragment = globalThis.Preact.Fragment;
+        export const createRef = globalThis.Preact.createRef;
+        export const createElement = globalThis.Preact.createElement;
+        export const createContext = globalThis.Preact.createContext;
+        export const cloneElement = globalThis.Preact.cloneElement;
+        export const isValidElement = globalThis.Preact.isValidElement;
+        export default globalThis.Preact;
+    )";
 }
 
-std::string GetHooksSource(const std::string& bundler_path) {
-    fs::path base = fs::path(bundler_path).parent_path();
-    std::vector<fs::path> search_paths = {
-        base / "js" / "preact" / "hooks.js",
-        base / ".." / "js" / "preact" / "hooks.js",
-        base / ".." / ".." / "js" / "preact" / "hooks.js",
-        "js/preact/hooks.js",
-    };
-    for (const auto& p : search_paths) {
-        if (fs::exists(p)) return ReadFile(p.string());
-    }
-    return "";
+std::string GetHooksSource(const std::string& /*bundler_path*/) {
+    return R"(
+        export const useState = globalThis.PreactHooks.useState;
+        export const useEffect = globalThis.PreactHooks.useEffect;
+        export const useRef = globalThis.PreactHooks.useRef;
+        export const useMemo = globalThis.PreactHooks.useMemo;
+        export const useCallback = globalThis.PreactHooks.useCallback;
+        export const useContext = globalThis.PreactHooks.useContext;
+        export const useReducer = globalThis.PreactHooks.useReducer;
+        export const useLayoutEffect = globalThis.PreactHooks.useLayoutEffect;
+        export const useImperativeHandle = globalThis.PreactHooks.useImperativeHandle;
+        export const useDebugValue = globalThis.PreactHooks.useDebugValue;
+        export default globalThis.PreactHooks;
+    )";
 }
 
 int main(int argc, char** argv) {

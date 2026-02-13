@@ -8,11 +8,13 @@
 #include <string>
 #include <vector>
 #include <cstdint>
+#include <unordered_map>
 #include "module_resolver.h"
 
 // Forward declarations for QuickJS types
 struct JSRuntime;
 struct JSContext;
+typedef struct JSModuleDef JSModuleDef;
 
 namespace mbink {
 
@@ -120,6 +122,9 @@ private:
     bool strip_debug_ = false;
     bool verbose_ = false;
 
+    // 模块源码映射 (绝对路径 -> 源码)，供 module loader 回调使用
+    std::unordered_map<std::string, std::string> module_sources_;
+
     // 初始化 QuickJS 运行时
     bool Initialize();
 
@@ -134,6 +139,14 @@ private:
 
     // 从 QuickJS 异常中提取错误信息
     void ExtractException();
+
+    // QuickJS 模块名标准化回调（解析相对路径为绝对路径）
+    static char* ModuleNormalize(JSContext* ctx, const char* module_base,
+                                  const char* module_name, void* opaque);
+
+    // QuickJS 模块加载器回调（从 module_sources_ 中查找源码）
+    static JSModuleDef* ModuleLoader(JSContext* ctx, const char* module_name,
+                                      void* opaque);
 };
 
 }  // namespace mbink
