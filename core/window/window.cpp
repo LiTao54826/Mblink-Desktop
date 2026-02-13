@@ -157,6 +157,11 @@ Window::Window(const WindowConfig& config) : config_(config) {
         // 因为 WS_EX_LAYERED + UpdateLayeredWindow 与 OpenGL 不兼容
         InitCPURendering();
         actual_backend_ = RenderBackend::CPU;
+    } else if (!config_.gpu) {
+        // GPU加速已关闭：强制使用 CPU 渲染，适用于小挂件等轻量应用减少内存占用
+        InitCPURendering();
+        actual_backend_ = RenderBackend::CPU;
+        std::cout << "[Window] GPU acceleration disabled, using CPU rendering backend" << std::endl;
     } else if (config_.backend == RenderBackend::AUTO) {
         // 自动模式：先尝试 GPU，失败则降级到 CPU
         try {
@@ -588,8 +593,9 @@ void Window::CreateSDLWindow() {
 
     // 透明窗口（不规则窗体）使用 LayeredWindow 后端，不能用 OpenGL
     // 因为 WS_EX_LAYERED + UpdateLayeredWindow 与 OpenGL 渲染管线不兼容
-    if (!config_.transparent) {
-        // 非透明模式：所有模式都使用 OpenGL 窗口
+    // GPU加速关闭时也不创建 OpenGL 窗口，避免不必要的 GPU 资源占用
+    if (!config_.transparent && config_.gpu) {
+        // 非透明 + GPU模式：所有模式都使用 OpenGL 窗口
         // CPU 模式也通过 OpenGL 纹理显示，利用 VSync 避免闪烁
         flags |= SDL_WINDOW_OPENGL;
     }

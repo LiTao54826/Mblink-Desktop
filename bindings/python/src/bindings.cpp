@@ -577,7 +577,8 @@ public:
              bool transparent = false,
              bool always_on_top = false,
              bool resizable = true,
-             int resize_border_width = 8) {
+             int resize_border_width = 8,
+             bool gpu = true) {
         WindowConfig config;
         config.title = title;
         config.width = width;
@@ -588,6 +589,7 @@ public:
         config.always_on_top = always_on_top;
         config.resizable = resizable;
         config.resize_border_width = resize_border_width;
+        config.gpu = gpu;
         window_ = std::make_shared<Window>(config);
         
         // 创建 Document 并设置到窗口
@@ -1354,7 +1356,7 @@ PYBIND11_MODULE(lightui_core, m) {
         .def("is_valid", &PyDocument::isValid);
     
     py::class_<PyWindow, std::shared_ptr<PyWindow>>(m, "Window")
-        .def(py::init<const std::string&, int, int, bool, bool, bool, bool, bool, int>(),
+        .def(py::init<const std::string&, int, int, bool, bool, bool, bool, bool, int, bool>(),
              py::arg("title") = "LightUI Window",
              py::arg("width") = 800,
              py::arg("height") = 600,
@@ -1363,7 +1365,8 @@ PYBIND11_MODULE(lightui_core, m) {
              py::arg("transparent") = false,
              py::arg("always_on_top") = false,
              py::arg("resizable") = true,
-             py::arg("resize_border_width") = 8)
+             py::arg("resize_border_width") = 8,
+             py::arg("gpu") = true)
         .def("show", &PyWindow::show)
         .def("hide", &PyWindow::hide)
         .def("close", &PyWindow::close)

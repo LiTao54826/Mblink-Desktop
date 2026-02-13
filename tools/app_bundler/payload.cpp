@@ -87,6 +87,7 @@ std::string PayloadBuilder::SerializeConfig() const {
     ss << "\"module_count\":" << config_.module_count << ",";
     ss << "\"borderless\":" << (config_.borderless ? "true" : "false") << ",";
     ss << "\"transparent\":" << (config_.transparent ? "true" : "false") << ",";
+    ss << "\"gpu\":" << (config_.gpu ? "true" : "false") << ",";
     ss << "\"min_width\":" << config_.min_width << ",";
     ss << "\"min_height\":" << config_.min_height << ",";
     ss << "\"max_width\":" << config_.max_width << ",";
@@ -152,6 +153,11 @@ bool PayloadBuilder::DeserializeConfig(const std::string& json, PayloadConfig& c
     pos = json.find("\"transparent\":");
     if (pos != std::string::npos) {
         config.transparent = (json.substr(pos + 14, 4) == "true");
+    }
+
+    pos = json.find("\"gpu\":");
+    if (pos != std::string::npos) {
+        config.gpu = (json.substr(pos + 6, 4) == "true");
     }
 
     pos = json.find("\"min_width\":");

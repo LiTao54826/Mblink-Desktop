@@ -234,7 +234,8 @@ class App:
         transparent: bool = False,
         always_on_top: bool = False,
         resizable: bool = True,
-        resize_border_width: int = 8
+        resize_border_width: int = 8,
+        gpu: bool = True
     ):
         """
         创建 LightUI 应用
@@ -250,6 +251,7 @@ class App:
             always_on_top: 是否窗口置顶
             resizable: 是否可调整大小
             resize_border_width: 无边框窗口的调整大小边缘宽度（像素）
+            gpu: 是否启用GPU加速（False时使用CPU渲染，适用于小挂件等轻量应用减少内存占用）
         """
         self._title = title
         self._width = width
@@ -266,7 +268,8 @@ class App:
             transparent=transparent,
             always_on_top=always_on_top,
             resizable=resizable,
-            resize_border_width=resize_border_width
+            resize_border_width=resize_border_width,
+            gpu=gpu
         )
         self._runtime = _core.Runtime()
 

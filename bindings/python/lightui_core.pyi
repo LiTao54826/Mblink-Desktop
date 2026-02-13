@@ -280,6 +280,7 @@ class Window:
         always_on_top: bool = False,
         resizable: bool = True,
         resize_border_width: int = 8,
+        gpu: bool = True,
     ) -> None: ...
 
     @property

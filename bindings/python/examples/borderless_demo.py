@@ -18,7 +18,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 import lightui as ui
 
-app = ui.App("无边框窗口", 800, 600, borderless=True, resizable=True)
+app = ui.App("无边框窗口", 800, 600, borderless=True, resizable=True, gpu=False)
 
 app.load_html("""
 <!DOCTYPE html>

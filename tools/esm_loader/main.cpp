@@ -206,6 +206,7 @@ void PrintUsage(const char* program_name) {
     std::cout << "  --title <标题>      窗口标题 (默认: MBink App / HTML title)" << std::endl;
     std::cout << "  --borderless        无边框窗口模式（支持不规则窗体）" << std::endl;
     std::cout << "  --transparent       透明窗口（需配合 --borderless 使用）" << std::endl;
+    std::cout << "  --no-gpu            关闭GPU加速（使用CPU渲染，减少内存占用）" << std::endl;
     std::cout << "  --min-width <宽度>  窗口最小宽度" << std::endl;
     std::cout << "  --min-height <高度> 窗口最小高度" << std::endl;
     std::cout << "  --max-width <宽度>  窗口最大宽度" << std::endl;
@@ -462,6 +463,7 @@ int main(int argc, char** argv) {
     float quit_after_seconds = 0;
     bool borderless = has_embedded ? embedded_payload.config.borderless : false;
     bool transparent = has_embedded ? embedded_payload.config.transparent : false;
+    bool gpu = has_embedded ? embedded_payload.config.gpu : true;
     int min_width = has_embedded ? embedded_payload.config.min_width : 0;
     int min_height = has_embedded ? embedded_payload.config.min_height : 0;
     int max_width = has_embedded ? embedded_payload.config.max_width : 0;
@@ -488,6 +490,8 @@ int main(int argc, char** argv) {
             borderless = true;
         } else if (arg == "--transparent") {
             transparent = true;
+        } else if (arg == "--no-gpu") {
+            gpu = false;
         } else if (arg == "--verbose" || arg == "-v") {
             verbose = true;
         } else if ((arg == "-q" || arg == "--quit") && i + 1 < argc) {
@@ -558,6 +562,7 @@ int main(int argc, char** argv) {
         config.vsync = true;
         config.borderless = borderless || transparent;  // 透明窗口隐含无边框
         config.transparent = transparent;
+        config.gpu = gpu;
         config.min_width = min_width;
         config.min_height = min_height;
         config.max_width = max_width;

@@ -99,6 +99,7 @@ struct WindowConfig {
     int fps_limit = 60;
     RenderBackend backend = RenderBackend::AUTO;  // 渲染后端
     bool headless = false;  // 无头模式（不创建窗口，仅渲染到内存）
+    bool gpu = true;  // 是否启用GPU加速（false时强制CPU渲染，适用于小挂件等轻量应用减少内存占用）
     int resize_border_width = 8;  // 无边框窗口的调整大小边缘宽度（像素）
     int min_width = 0;   // 窗口最小宽度（0 表示不限制）
     int min_height = 0;  // 窗口最小高度（0 表示不限制）

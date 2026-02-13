@@ -52,6 +52,7 @@ struct BundlerOptions {
     std::string title = "MBink App";
     bool borderless = false;                   // 无边框窗口模式
     bool transparent = false;                  // 透明窗口
+    bool gpu = true;                           // GPU加速（默认启用）
     int min_width = 0;                         // 窗口最小宽度（0 表示不限制）
     int min_height = 0;                        // 窗口最小高度（0 表示不限制）
     int max_width = 0;                         // 窗口最大宽度（0 表示不限制）
@@ -76,6 +77,7 @@ void PrintUsage(const char* program_name) {
     std::cout << "  --title <value>         窗口标题 (默认: MBink App)\n";
     std::cout << "  --borderless            无边框窗口模式（支持不规则窗体）\n";
     std::cout << "  --transparent           透明窗口（需配合 --borderless 使用）\n";
+    std::cout << "  --no-gpu               关闭GPU加速（使用CPU渲染，减少内存占用）\n";
     std::cout << "  --min-width <value>     窗口最小宽度\n";
     std::cout << "  --min-height <value>    窗口最小高度\n";
     std::cout << "  --max-width <value>     窗口最大宽度\n";
@@ -148,6 +150,8 @@ bool ParseArguments(int argc, char** argv, BundlerOptions& options) {
             options.borderless = true;
         } else if (arg == "--transparent") {
             options.transparent = true;
+        } else if (arg == "--no-gpu") {
+            options.gpu = false;
         } else if (arg == "--min-width") {
             if (i + 1 >= argc) { std::cerr << "错误: --min-width 需要一个参数\n"; return false; }
             try { options.min_width = std::stoi(argv[++i]); } catch (...) { std::cerr << "错误: --min-width 参数无效\n"; return false; }
@@ -437,6 +441,7 @@ int main(int argc, char** argv) {
         cfg.module_count = static_cast<uint32_t>(compiled.size());
         cfg.borderless = options.borderless;
         cfg.transparent = options.transparent;
+        cfg.gpu = options.gpu;
         cfg.min_width = options.min_width;
         cfg.min_height = options.min_height;
         cfg.max_width = options.max_width;
