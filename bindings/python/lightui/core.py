@@ -18,9 +18,19 @@ import sys
 import os
 
 # 确保 pyd 所在的 bin 目录在搜索路径中
-_bin_path = os.path.join(os.path.dirname(__file__), 'bin')
+# 兼容 PyInstaller 打包环境（_MEIPASS 为临时解压目录）
+if getattr(sys, 'frozen', False):
+    _base = sys._MEIPASS
+else:
+    _base = os.path.dirname(__file__)
+
+_bin_path = os.path.join(_base, 'lightui', 'bin') if getattr(sys, 'frozen', False) else os.path.join(_base, 'bin')
 if _bin_path not in sys.path:
     sys.path.insert(0, _bin_path)
+
+# PyInstaller 打包后，DLL 依赖可能在 _MEIPASS 根目录，需要加入 PATH
+if getattr(sys, 'frozen', False):
+    os.environ['PATH'] = sys._MEIPASS + os.pathsep + os.environ.get('PATH', '')
 
 try:
     import lightui_core

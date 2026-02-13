@@ -229,7 +229,12 @@ class App:
         width: int = 800,
         height: int = 600,
         headless: bool = False,
-        enable_devtools: bool = True
+        enable_devtools: bool = True,
+        borderless: bool = False,
+        transparent: bool = False,
+        always_on_top: bool = False,
+        resizable: bool = True,
+        resize_border_width: int = 8
     ):
         """
         创建 LightUI 应用
@@ -240,6 +245,11 @@ class App:
             height: 窗口高度
             headless: 是否无头模式（不显示窗口，用于测试）
             enable_devtools: 是否启用开发者工具（F12 打开）
+            borderless: 是否无边框窗口
+            transparent: 是否透明窗口（不规则窗体，自动启用 borderless）
+            always_on_top: 是否窗口置顶
+            resizable: 是否可调整大小
+            resize_border_width: 无边框窗口的调整大小边缘宽度（像素）
         """
         self._title = title
         self._width = width
@@ -249,7 +259,15 @@ class App:
 
         # 创建核心组件
         self._app = _core.App(title, width, height)
-        self._window = _core.Window(title, width, height, headless)
+        self._window = _core.Window(
+            title, width, height,
+            headless=headless,
+            borderless=borderless,
+            transparent=transparent,
+            always_on_top=always_on_top,
+            resizable=resizable,
+            resize_border_width=resize_border_width
+        )
         self._runtime = _core.Runtime()
 
         # 将 JS 运行时设置到窗口的 Document，这样内联脚本才能执行

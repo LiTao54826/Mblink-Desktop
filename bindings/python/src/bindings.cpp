@@ -570,14 +570,24 @@ private:
  */
 class PyWindow {
 public:
-    PyWindow(const std::string& title = "LightUI Window", 
+    PyWindow(const std::string& title = "LightUI Window",
              int width = 800, int height = 600,
-             bool headless = false) {
+             bool headless = false,
+             bool borderless = false,
+             bool transparent = false,
+             bool always_on_top = false,
+             bool resizable = true,
+             int resize_border_width = 8) {
         WindowConfig config;
         config.title = title;
         config.width = width;
         config.height = height;
         config.headless = headless;
+        config.borderless = borderless;
+        config.transparent = transparent;
+        config.always_on_top = always_on_top;
+        config.resizable = resizable;
+        config.resize_border_width = resize_border_width;
         window_ = std::make_shared<Window>(config);
         
         // 创建 Document 并设置到窗口
@@ -648,7 +658,39 @@ public:
     void setAlwaysOnTop(bool onTop) {
         if (window_) window_->SetAlwaysOnTop(onTop);
     }
-    
+
+    bool isBorderless() const {
+        return window_ ? window_->IsBorderless() : false;
+    }
+
+    bool isTransparent() const {
+        return window_ ? window_->IsTransparent() : false;
+    }
+
+    int getResizeBorderWidth() const {
+        return window_ ? window_->GetResizeBorderWidth() : 8;
+    }
+
+    void setMinSize(int width, int height) {
+        if (window_) window_->SetMinSize(width, height);
+    }
+
+    void setMaxSize(int width, int height) {
+        if (window_) window_->SetMaxSize(width, height);
+    }
+
+    py::tuple getMinSize() const {
+        int w = 0, h = 0;
+        if (window_) window_->GetMinSize(&w, &h);
+        return py::make_tuple(w, h);
+    }
+
+    py::tuple getMaxSize() const {
+        int w = 0, h = 0;
+        if (window_) window_->GetMaxSize(&w, &h);
+        return py::make_tuple(w, h);
+    }
+
     void minimize() { if (window_) window_->Minimize(); }
     void maximize() { if (window_) window_->Maximize(); }
     void restore() { if (window_) window_->Restore(); }
@@ -1312,11 +1354,16 @@ PYBIND11_MODULE(lightui_core, m) {
         .def("is_valid", &PyDocument::isValid);
     
     py::class_<PyWindow, std::shared_ptr<PyWindow>>(m, "Window")
-        .def(py::init<const std::string&, int, int, bool>(),
+        .def(py::init<const std::string&, int, int, bool, bool, bool, bool, bool, int>(),
              py::arg("title") = "LightUI Window",
              py::arg("width") = 800,
              py::arg("height") = 600,
-             py::arg("headless") = false)
+             py::arg("headless") = false,
+             py::arg("borderless") = false,
+             py::arg("transparent") = false,
+             py::arg("always_on_top") = false,
+             py::arg("resizable") = true,
+             py::arg("resize_border_width") = 8)
         .def("show", &PyWindow::show)
         .def("hide", &PyWindow::hide)
         .def("close", &PyWindow::close)
@@ -1329,6 +1376,13 @@ PYBIND11_MODULE(lightui_core, m) {
         .def("set_resizable", &PyWindow::setResizable, py::arg("resizable"))
         .def("set_borderless", &PyWindow::setBorderless, py::arg("borderless"))
         .def("set_always_on_top", &PyWindow::setAlwaysOnTop, py::arg("on_top"))
+        .def_property_readonly("is_borderless", &PyWindow::isBorderless, "Check if window is borderless")
+        .def_property_readonly("is_transparent", &PyWindow::isTransparent, "Check if window is transparent")
+        .def_property_readonly("resize_border_width", &PyWindow::getResizeBorderWidth, "Get resize border width for borderless window")
+        .def("set_min_size", &PyWindow::setMinSize, py::arg("width"), py::arg("height"), "Set minimum window size (0 = no limit)")
+        .def("set_max_size", &PyWindow::setMaxSize, py::arg("width"), py::arg("height"), "Set maximum window size (0 = no limit)")
+        .def_property_readonly("min_size", &PyWindow::getMinSize, "Get minimum window size as (width, height)")
+        .def_property_readonly("max_size", &PyWindow::getMaxSize, "Get maximum window size as (width, height)")
         .def("minimize", &PyWindow::minimize)
         .def("maximize", &PyWindow::maximize)
         .def("restore", &PyWindow::restore)
