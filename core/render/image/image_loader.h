@@ -207,6 +207,19 @@ public:
      */
     static bool IsDataUrl(const std::string& url);
 
+    /**
+     * @brief 检查是否是 exe 图标特殊路径 (./exe.ico 或 exe.ico)
+     * @param url URL字符串
+     * @return true 如果是 exe 图标路径
+     */
+    static bool IsExeIconUrl(const std::string& url);
+
+    /**
+     * @brief 加载当前运行的 exe 文件的图标
+     * @return SkImage 智能指针，非 Windows 平台返回 nullptr
+     */
+    static sk_sp<SkImage> LoadCurrentExeIcon();
+
 private:
     static AssetProvider asset_provider_;
     static std::string base_path_;

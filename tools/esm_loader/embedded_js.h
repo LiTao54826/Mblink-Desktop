@@ -36,3 +36,4 @@ bool HasEmbeddedJS();
 
 }  // namespace embedded
 }  // namespace lightui
+

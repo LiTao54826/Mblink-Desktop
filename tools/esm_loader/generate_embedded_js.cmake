@@ -45,3 +45,4 @@ const size_t ${VAR_NAME}_size = ${FILE_SIZE};
 file(WRITE "${OUTPUT_FILE}" "${OUTPUT_CONTENT}")
 
 message(STATUS "Generated ${OUTPUT_FILE} from ${INPUT_FILE} (${FILE_SIZE} bytes)")
+

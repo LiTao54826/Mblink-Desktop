@@ -6,12 +6,28 @@
 #include "image_loader.h"
 #include "image_cache.h"
 #include "include/core/SkImage.h"
+#include "include/core/SkImageInfo.h"
+#include "include/core/SkPixmap.h"
 #include "include/codec/SkCodec.h"
 #include "core/network/http_client.h"
 #include <thread>
 #include <fstream>
 #include <algorithm>
 #include <cctype>
+
+#ifdef _WIN32
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#include <windows.h>
+#include <shellapi.h>
+#ifdef ERROR
+#undef ERROR
+#endif
+#endif
 
 namespace lightui {
 
@@ -45,6 +61,122 @@ bool ImageLoader::IsNetworkUrl(const std::string& url) {
 bool ImageLoader::IsDataUrl(const std::string& url) {
     return url.find("data:") == 0;
 }
+
+bool ImageLoader::IsExeIconUrl(const std::string& url) {
+    return url == "./exe.ico" || url == "exe.ico";
+}
+
+// ========== EXE 图标加载 ==========
+
+#ifdef _WIN32
+sk_sp<SkImage> ImageLoader::LoadCurrentExeIcon() {
+    // 1. 获取当前 exe 路径
+    wchar_t exe_path[MAX_PATH] = {0};
+    DWORD len = GetModuleFileNameW(NULL, exe_path, MAX_PATH);
+    if (len == 0 || len >= MAX_PATH) {
+        return nullptr;
+    }
+
+    // 2. 提取大图标 (尝试获取 256x256，回退到系统默认大小)
+    HICON hIconLarge = NULL;
+
+    // 先尝试 PrivateExtractIcons 获取高分辨率图标
+    UINT icon_count = PrivateExtractIconsW(exe_path, 0, 256, 256, &hIconLarge, NULL, 1, 0);
+    if (icon_count == 0 || hIconLarge == NULL) {
+        // 回退到 48x48
+        icon_count = PrivateExtractIconsW(exe_path, 0, 48, 48, &hIconLarge, NULL, 1, 0);
+    }
+    if (icon_count == 0 || hIconLarge == NULL) {
+        // 最后回退到 ExtractIconExW
+        ExtractIconExW(exe_path, 0, &hIconLarge, NULL, 1);
+    }
+
+    if (!hIconLarge) {
+        return nullptr;
+    }
+
+    // 3. 获取图标信息
+    ICONINFO icon_info = {0};
+    if (!GetIconInfo(hIconLarge, &icon_info)) {
+        DestroyIcon(hIconLarge);
+        return nullptr;
+    }
+
+    // 4. 获取位图尺寸
+    BITMAP bmp = {0};
+    GetObject(icon_info.hbmColor ? icon_info.hbmColor : icon_info.hbmMask, sizeof(BITMAP), &bmp);
+
+    int width = bmp.bmWidth;
+    int height = bmp.bmHeight;
+
+    if (width <= 0 || height <= 0) {
+        if (icon_info.hbmColor) DeleteObject(icon_info.hbmColor);
+        if (icon_info.hbmMask) DeleteObject(icon_info.hbmMask);
+        DestroyIcon(hIconLarge);
+        return nullptr;
+    }
+
+    // 5. 提取 BGRA 像素数据
+    HDC hdc = GetDC(NULL);
+    HDC mem_dc = CreateCompatibleDC(hdc);
+
+    BITMAPINFO bmi = {0};
+    bmi.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+    bmi.bmiHeader.biWidth = width;
+    bmi.bmiHeader.biHeight = -height;  // 自顶向下
+    bmi.bmiHeader.biPlanes = 1;
+    bmi.bmiHeader.biBitCount = 32;
+    bmi.bmiHeader.biCompression = BI_RGB;
+
+    std::vector<uint8_t> pixels(width * height * 4);
+
+    if (icon_info.hbmColor) {
+        // 有颜色位图，直接获取 BGRA 数据
+        GetDIBits(mem_dc, icon_info.hbmColor, 0, height, pixels.data(), &bmi, DIB_RGB_COLORS);
+    }
+
+    // 6. 用 DrawIconEx 绘制到 DIB 上，确保 alpha 通道正确
+    // 某些图标的 alpha 通道可能全为 0，需要通过绘制来获取正确的像素
+    void* dib_bits = nullptr;
+    HBITMAP hDIB = CreateDIBSection(mem_dc, &bmi, DIB_RGB_COLORS, &dib_bits, NULL, 0);
+    if (hDIB && dib_bits) {
+        HBITMAP old_bmp = (HBITMAP)SelectObject(mem_dc, hDIB);
+
+        // 先清除为全透明
+        memset(dib_bits, 0, width * height * 4);
+
+        // 绘制图标
+        DrawIconEx(mem_dc, 0, 0, hIconLarge, width, height, 0, NULL, DI_NORMAL);
+
+        SelectObject(mem_dc, old_bmp);
+
+        // 复制绘制结果
+        memcpy(pixels.data(), dib_bits, width * height * 4);
+        DeleteObject(hDIB);
+    }
+
+    DeleteDC(mem_dc);
+    ReleaseDC(NULL, hdc);
+
+    // 7. BGRA -> RGBA 转换（Skia 在某些配置下需要 RGBA）
+    // N32 在 Windows 上通常是 BGRA，直接用 kBGRA_8888
+    SkImageInfo info = SkImageInfo::Make(width, height, kBGRA_8888_SkColorType, kPremul_SkAlphaType);
+    SkPixmap pixmap(info, pixels.data(), width * 4);
+    sk_sp<SkImage> image = SkImages::RasterFromPixmapCopy(pixmap);
+
+    // 8. 清理资源
+    if (icon_info.hbmColor) DeleteObject(icon_info.hbmColor);
+    if (icon_info.hbmMask) DeleteObject(icon_info.hbmMask);
+    DestroyIcon(hIconLarge);
+
+    return image;
+}
+#else
+sk_sp<SkImage> ImageLoader::LoadCurrentExeIcon() {
+    // 非 Windows 平台暂不支持
+    return nullptr;
+}
+#endif
 
 // ========== Base64 解码 ==========
 
@@ -192,7 +324,22 @@ ImageLoadResult ImageLoader::LoadFromUrlWithResult(const std::string& url) {
         result.success = true;
         return result;
     }
-    
+
+    // 处理 exe 图标特殊路径: ./exe.ico
+    if (IsExeIconUrl(url)) {
+        result.image = LoadCurrentExeIcon();
+        if (result.image) {
+            result.natural_width = result.image->width();
+            result.natural_height = result.image->height();
+            result.success = true;
+            // 缓存结果，避免重复提取
+            ImageCache::GetInstance().Put(url, result.image);
+        } else {
+            result.error = "Failed to extract exe icon";
+        }
+        return result;
+    }
+
     // 处理 data: URL
     if (IsDataUrl(url)) {
         result.image = LoadFromDataUrl(url);

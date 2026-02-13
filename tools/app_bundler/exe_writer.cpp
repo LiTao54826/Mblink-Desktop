@@ -7,14 +7,25 @@
 #include <fstream>
 #include <filesystem>
 #include <cstring>
+#include <iostream>
+
+#ifdef _WIN32
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#include <windows.h>
+#endif
 
 namespace fs = std::filesystem;
 
 namespace mbink {
 
-// PE 文件常量
-constexpr uint16_t IMAGE_SUBSYSTEM_WINDOWS_GUI = 2;
-constexpr uint16_t IMAGE_SUBSYSTEM_WINDOWS_CUI = 3;
+// PE 文件常量（避免与 windows.h 宏冲突）
+constexpr uint16_t kSubsystemWindowsGUI = 2;
+constexpr uint16_t kSubsystemWindowsCUI = 3;
 
 bool ExeWriter::LoadTemplate(const std::string& template_path) {
     error_.clear();
@@ -92,7 +103,7 @@ bool ExeWriter::SetSubsystem(std::vector<uint8_t>& data, bool use_console) {
     }
 
     // 设置 subsystem
-    uint16_t subsystem = use_console ? IMAGE_SUBSYSTEM_WINDOWS_CUI : IMAGE_SUBSYSTEM_WINDOWS_GUI;
+    uint16_t subsystem = use_console ? kSubsystemWindowsCUI : kSubsystemWindowsGUI;
     std::memcpy(&data[subsystem_offset], &subsystem, sizeof(subsystem));
 
     return true;
@@ -100,7 +111,8 @@ bool ExeWriter::SetSubsystem(std::vector<uint8_t>& data, bool use_console) {
 
 bool ExeWriter::WriteOutput(const std::string& output_path,
                             const std::vector<uint8_t>& payload,
-                            bool show_console) {
+                            bool show_console,
+                            const std::string& icon_path) {
     error_.clear();
 
     if (template_data_.empty()) {
@@ -127,21 +139,36 @@ bool ExeWriter::WriteOutput(const std::string& output_path,
         }
     }
 
-    std::ofstream file(output_path, std::ios::binary);
-    if (!file.is_open()) {
-        error_ = "Failed to create output file: " + output_path;
-        return false;
+    // 步骤1: 先写模板 exe（不含 payload）
+    {
+        std::ofstream file(output_path, std::ios::binary);
+        if (!file.is_open()) {
+            error_ = "Failed to create output file: " + output_path;
+            return false;
+        }
+        if (!file.write(reinterpret_cast<const char*>(output_data.data()),
+                        static_cast<std::streamsize>(output_data.size()))) {
+            error_ = "Failed to write template data";
+            return false;
+        }
+    }  // 文件关闭
+
+    // 步骤2: 如果指定了图标，用 UpdateResource 注入（必须在 payload 追加之前）
+    if (!icon_path.empty()) {
+        if (!SetIcon(output_path, icon_path)) {
+            // SetIcon 已设置 error_，但不阻断打包流程，仅警告
+            std::cerr << "  ⚠ 图标设置失败: " << error_ << "\n";
+            error_.clear();
+        }
     }
 
-    // 写入修改后的模板 exe
-    if (!file.write(reinterpret_cast<const char*>(output_data.data()),
-                    static_cast<std::streamsize>(output_data.size()))) {
-        error_ = "Failed to write template data";
-        return false;
-    }
-
-    // 追加 payload
+    // 步骤3: 追加 payload
     if (!payload.empty()) {
+        std::ofstream file(output_path, std::ios::binary | std::ios::app);
+        if (!file.is_open()) {
+            error_ = "Failed to reopen output file for payload: " + output_path;
+            return false;
+        }
         if (!file.write(reinterpret_cast<const char*>(payload.data()),
                         static_cast<std::streamsize>(payload.size()))) {
             error_ = "Failed to write payload data";
@@ -151,6 +178,162 @@ bool ExeWriter::WriteOutput(const std::string& output_path,
 
     return true;
 }
+
+#ifdef _WIN32
+
+// ICO 文件格式结构体
+#pragma pack(push, 1)
+struct ICONDIR_FILE {
+    uint16_t reserved;   // 保留，必须为 0
+    uint16_t type;       // 资源类型，1 = ICO
+    uint16_t count;      // 图像数量
+};
+
+struct ICONDIRENTRY_FILE {
+    uint8_t  width;       // 宽度（0 表示 256）
+    uint8_t  height;      // 高度（0 表示 256）
+    uint8_t  colorCount;  // 颜色数（0 表示 >=256）
+    uint8_t  reserved;
+    uint16_t planes;
+    uint16_t bitCount;
+    uint32_t bytesInRes;  // 图像数据大小
+    uint32_t imageOffset; // 图像数据在文件中的偏移
+};
+
+// RT_GROUP_ICON 中的条目（最后字段是 nID 而不是 imageOffset）
+struct GRPICONDIRENTRY {
+    uint8_t  width;
+    uint8_t  height;
+    uint8_t  colorCount;
+    uint8_t  reserved;
+    uint16_t planes;
+    uint16_t bitCount;
+    uint32_t bytesInRes;
+    uint16_t nID;         // RT_ICON 资源 ID
+};
+#pragma pack(pop)
+
+bool ExeWriter::SetIcon(const std::string& exe_path, const std::string& ico_path) {
+    // 1. 读取 ICO 文件
+    std::ifstream ico_file(ico_path, std::ios::binary | std::ios::ate);
+    if (!ico_file.is_open()) {
+        error_ = "Failed to open icon file: " + ico_path;
+        return false;
+    }
+
+    std::streamsize ico_size = ico_file.tellg();
+    ico_file.seekg(0, std::ios::beg);
+
+    if (ico_size < static_cast<std::streamsize>(sizeof(ICONDIR_FILE))) {
+        error_ = "Invalid ICO file: too small";
+        return false;
+    }
+
+    std::vector<uint8_t> ico_data(static_cast<size_t>(ico_size));
+    if (!ico_file.read(reinterpret_cast<char*>(ico_data.data()), ico_size)) {
+        error_ = "Failed to read icon file";
+        return false;
+    }
+    ico_file.close();
+
+    // 2. 解析 ICONDIR
+    auto* icon_dir = reinterpret_cast<const ICONDIR_FILE*>(ico_data.data());
+    if (icon_dir->reserved != 0 || icon_dir->type != 1 || icon_dir->count == 0) {
+        error_ = "Invalid ICO file format";
+        return false;
+    }
+
+    uint16_t image_count = icon_dir->count;
+    size_t entries_end = sizeof(ICONDIR_FILE) + image_count * sizeof(ICONDIRENTRY_FILE);
+    if (entries_end > ico_data.size()) {
+        error_ = "Invalid ICO file: truncated directory";
+        return false;
+    }
+
+    auto* entries = reinterpret_cast<const ICONDIRENTRY_FILE*>(
+        ico_data.data() + sizeof(ICONDIR_FILE));
+
+    // 3. 使用 UpdateResource 注入图标
+    std::wstring wide_path(exe_path.begin(), exe_path.end());
+    HANDLE hUpdate = BeginUpdateResourceW(wide_path.c_str(), FALSE);
+    if (!hUpdate) {
+        error_ = "BeginUpdateResource failed (error " + std::to_string(GetLastError()) + ")";
+        return false;
+    }
+
+    // 4. 写入每个 RT_ICON 资源（ID 从 1 开始）
+    for (uint16_t i = 0; i < image_count; i++) {
+        const auto& entry = entries[i];
+
+        if (entry.imageOffset + entry.bytesInRes > ico_data.size()) {
+            EndUpdateResourceW(hUpdate, TRUE);  // 丢弃
+            error_ = "Invalid ICO file: image data out of bounds";
+            return false;
+        }
+
+        if (!UpdateResourceW(hUpdate,
+                             MAKEINTRESOURCEW(3),  // RT_ICON = 3
+                             MAKEINTRESOURCEW(i + 1),
+                             MAKELANGID(LANG_NEUTRAL, SUBLANG_NEUTRAL),
+                             static_cast<LPVOID>(const_cast<uint8_t*>(ico_data.data() + entry.imageOffset)),
+                             entry.bytesInRes)) {
+            EndUpdateResourceW(hUpdate, TRUE);
+            error_ = "UpdateResource RT_ICON failed (error " + std::to_string(GetLastError()) + ")";
+            return false;
+        }
+    }
+
+    // 5. 构建 RT_GROUP_ICON 资源
+    size_t grp_size = sizeof(ICONDIR_FILE) + image_count * sizeof(GRPICONDIRENTRY);
+    std::vector<uint8_t> grp_data(grp_size);
+
+    auto* grp_header = reinterpret_cast<ICONDIR_FILE*>(grp_data.data());
+    grp_header->reserved = 0;
+    grp_header->type = 1;
+    grp_header->count = image_count;
+
+    auto* grp_entries = reinterpret_cast<GRPICONDIRENTRY*>(
+        grp_data.data() + sizeof(ICONDIR_FILE));
+
+    for (uint16_t i = 0; i < image_count; i++) {
+        grp_entries[i].width      = entries[i].width;
+        grp_entries[i].height     = entries[i].height;
+        grp_entries[i].colorCount = entries[i].colorCount;
+        grp_entries[i].reserved   = entries[i].reserved;
+        grp_entries[i].planes     = entries[i].planes;
+        grp_entries[i].bitCount   = entries[i].bitCount;
+        grp_entries[i].bytesInRes = entries[i].bytesInRes;
+        grp_entries[i].nID        = i + 1;  // 对应 RT_ICON 的 ID
+    }
+
+    if (!UpdateResourceW(hUpdate,
+                         MAKEINTRESOURCEW(14),  // RT_GROUP_ICON = 14
+                         MAKEINTRESOURCEW(1),   // 主图标组 ID = 1
+                         MAKELANGID(LANG_NEUTRAL, SUBLANG_NEUTRAL),
+                         static_cast<LPVOID>(grp_data.data()),
+                         static_cast<DWORD>(grp_size))) {
+        EndUpdateResourceW(hUpdate, TRUE);
+        error_ = "UpdateResource RT_GROUP_ICON failed (error " + std::to_string(GetLastError()) + ")";
+        return false;
+    }
+
+    // 6. 提交更改
+    if (!EndUpdateResourceW(hUpdate, FALSE)) {
+        error_ = "EndUpdateResource failed (error " + std::to_string(GetLastError()) + ")";
+        return false;
+    }
+
+    return true;
+}
+
+#else
+
+bool ExeWriter::SetIcon(const std::string& /*exe_path*/, const std::string& /*ico_path*/) {
+    error_ = "Icon injection is only supported on Windows";
+    return false;
+}
+
+#endif  // _WIN32
 
 std::string ExeWriter::FindTemplate(const std::string& bundler_path) {
     fs::path bundler = fs::path(bundler_path);

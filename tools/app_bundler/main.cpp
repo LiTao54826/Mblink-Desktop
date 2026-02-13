@@ -44,6 +44,7 @@ struct BundlerOptions {
     std::vector<std::string> include_files;   // 额外包含的 JS 文件
     std::vector<std::string> asset_files;     // 单个资源文件
     std::vector<std::string> asset_dirs;      // 资源目录
+    std::string icon_file;                     // ICO 图标文件
 
     // 窗口配置
     int width = 800;
@@ -87,6 +88,7 @@ void PrintUsage(const char* program_name) {
     std::cout << "  --compress              使用 UPX 压缩输出文件\n";
     std::cout << "  --asset <file>          打包单个资源文件 (可多次使用)\n";
     std::cout << "  --assets <dir>          打包资源目录 (可多次使用)\n";
+    std::cout << "  --icon <file.ico>       设置输出 exe 的图标\n";
     std::cout << "  --help                  显示帮助信息\n";
     std::cout << "\n";
     std::cout << "示例:\n";
@@ -190,6 +192,12 @@ bool ParseArguments(int argc, char** argv, BundlerOptions& options) {
                 return false;
             }
             options.asset_dirs.push_back(argv[++i]);
+        } else if (arg == "--icon") {
+            if (i + 1 >= argc) {
+                std::cerr << "错误: --icon 需要一个参数\n";
+                return false;
+            }
+            options.icon_file = argv[++i];
         } else if (arg[0] != '-') {
             if (options.input_file.empty()) {
                 options.input_file = arg;
@@ -237,6 +245,11 @@ bool ValidateOptions(const BundlerOptions& options) {
 
     if (!options.template_exe.empty() && !fs::exists(options.template_exe)) {
         std::cerr << "错误: 模板文件不存在: " << options.template_exe << "\n";
+        return false;
+    }
+
+    if (!options.icon_file.empty() && !fs::exists(options.icon_file)) {
+        std::cerr << "错误: 图标文件不存在: " << options.icon_file << "\n";
         return false;
     }
 
@@ -314,8 +327,11 @@ int main(int argc, char** argv) {
         std::cout << "  包含: " << options.include_files.size() << " 个额外文件\n";
     }
     if (!options.asset_files.empty() || !options.asset_dirs.empty()) {
-        std::cout << "  资源: " << options.asset_files.size() << " 个文件, " 
+        std::cout << "  资源: " << options.asset_files.size() << " 个文件, "
                   << options.asset_dirs.size() << " 个目录\n";
+    }
+    if (!options.icon_file.empty()) {
+        std::cout << "  图标: " << options.icon_file << "\n";
     }
     std::cout << "========================================\n";
     std::cout << "\n";
@@ -472,7 +488,7 @@ int main(int argc, char** argv) {
         return 1;
     }
     
-    if (!writer.WriteOutput(options.output_file, payload, options.debug)) {
+    if (!writer.WriteOutput(options.output_file, payload, options.debug, options.icon_file)) {
         std::cerr << "  ✗ " << writer.GetError() << "\n";
         return 1;
     }

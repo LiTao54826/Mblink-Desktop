@@ -130,7 +130,7 @@ std::string AssetManager::Base64Encode(const uint8_t* data, size_t length) {
         "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
     
     std::string result;
-    result.reserve((length + 2) / 3 * 4);
+  result.reserve((length + 2) / 3 * 4);
     
     for (size_t i = 0; i < length; i += 3) {
         uint32_t n = static_cast<uint32_t>(data[i]) << 16;
@@ -166,3 +166,4 @@ std::vector<std::string> AssetManager::GetAssetPaths() const {
 }
 
 }  // namespace lightui
+

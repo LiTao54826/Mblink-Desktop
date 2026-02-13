@@ -1,11 +1,74 @@
 # ESM Loader - ES 模块加载器（支持嵌入 payload 模式，可作为 app_bundler 基座）
 
+# ============================================================
+# 生成嵌入的 JS 文件（从 app_loader 剥离，自包含）
+# ============================================================
+set(GENERATED_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated")
+file(MAKE_DIRECTORY ${GENERATED_DIR})
+
+# JS 源文件路径
+set(JS_DIR "${CMAKE_SOURCE_DIR}/js")
+set(PREACT_JS "${JS_DIR}/preact/preact.js")
+set(HOOKS_JS "${JS_DIR}/preact/hooks.js")
+set(DOM_POLYFILLS_JS "${JS_DIR}/polyfills/dom.js")
+
+# 生成的 .inc 文件路径
+set(PREACT_JS_INC "${GENERATED_DIR}/preact_js.inc")
+set(HOOKS_JS_INC "${GENERATED_DIR}/hooks_js.inc")
+set(DOM_POLYFILLS_JS_INC "${GENERATED_DIR}/dom_polyfills_js.inc")
+
+# CMake 脚本路径
+set(GENERATE_SCRIPT "${CMAKE_CURRENT_SOURCE_DIR}/generate_embedded_js.cmake")
+
+add_custom_command(
+    OUTPUT ${PREACT_JS_INC}
+    COMMAND ${CMAKE_COMMAND}
+        -DINPUT_FILE=${PREACT_JS}
+        -DOUTPUT_FILE=${PREACT_JS_INC}
+        -DVAR_NAME=preact_js
+        -P ${GENERATE_SCRIPT}
+    DEPENDS ${PREACT_JS} ${GENERATE_SCRIPT}
+    COMMENT "Embedding preact.js"
+)
+
+add_custom_command(
+    OUTPUT ${HOOKS_JS_INC}
+    COMMAND ${CMAKE_COMMAND}
+        -DINPUT_FILE=${HOOKS_JS}
+        -DOUTPUT_FILE=${HOOKS_JS_INC}
+        -DVAR_NAME=hooks_js
+        -P ${GENERATE_SCRIPT}
+    DEPENDS ${HOOKS_JS} ${GENERATE_SCRIPT}
+    COMMENT "Embedding hooks.js"
+)
+
+add_custom_command(
+    OUTPUT ${DOM_POLYFILLS_JS_INC}
+    COMMAND ${CMAKE_COMMAND}
+        -DINPUT_FILE=${DOM_POLYFILLS_JS}
+        -DOUTPUT_FILE=${DOM_POLYFILLS_JS_INC}
+        -DVAR_NAME=dom_polyfills_js
+        -P ${GENERATE_SCRIPT}
+    DEPENDS ${DOM_POLYFILLS_JS} ${GENERATE_SCRIPT}
+    COMMENT "Embedding dom.js polyfills"
+)
+
+add_custom_target(generate_embedded_js
+    DEPENDS
+        ${PREACT_JS_INC}
+        ${HOOKS_JS_INC}
+        ${DOM_POLYFILLS_JS_INC}
+)
+
+# ============================================================
+# esm_loader 目标
+# ============================================================
 add_executable(esm_loader
     main.cpp
-    ${CMAKE_SOURCE_DIR}/tools/app_loader/embedded_js.cpp
-    ${CMAKE_SOURCE_DIR}/tools/app_loader/embedded_js.h
-    ${CMAKE_SOURCE_DIR}/tools/app_loader/asset_manager.cpp
-    ${CMAKE_SOURCE_DIR}/tools/app_loader/asset_manager.h
+    embedded_js.cpp
+    embedded_js.h
+    asset_manager.cpp
+    asset_manager.h
     ${CMAKE_SOURCE_DIR}/tools/app_bundler/payload.cpp
     ${CMAKE_SOURCE_DIR}/tools/app_bundler/payload.h
     ${CMAKE_SOURCE_DIR}/tools/app_bundler/bytecode_compiler.cpp
@@ -17,8 +80,8 @@ add_dependencies(esm_loader generate_embedded_js)
 
 target_include_directories(esm_loader PRIVATE
     ${CMAKE_SOURCE_DIR}
-    ${CMAKE_SOURCE_DIR}/tools/app_loader
-    ${CMAKE_BINARY_DIR}/tools/app_loader
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${CMAKE_CURRENT_BINARY_DIR}
     ${CMAKE_SOURCE_DIR}/tools/app_bundler
     ${CMAKE_SOURCE_DIR}/third_party
 )
