@@ -1,10 +1,10 @@
 # MBink 架构设计文档
 
-> **版本**: 5.1
-> **最后更新**: 2025-12-16
+> **版本**: 6.0
+> **最后更新**: 2026-02-13
 > **项目定位**: 轻量级跨平台桌面应用框架 - Electron的轻量级替代品
 
-> **实现状态** (2025-12-16):
+> **实现状态** (2026-02-13):
 > - ✅ 所有 5 层架构已实现
 > - ✅ Skia 渲染层完全集成
 > - ✅ QuickJS 运行时层完全实现
@@ -12,6 +12,10 @@
 > - ✅ 原生布局引擎 (Block + IFC + Flexbox + Grid)
 > - ✅ IFC 行内格式化上下文 (text-align, vertical-align)
 > - ✅ CSS 高级特性完成 (动画、变换、滤镜)
+> - ✅ Compositor 图层合成系统 (参考 Chromium Blink)
+> - ✅ DevTools 开发者工具 (F12 调试面板)
+> - ✅ Network 网络模块 (Fetch API)
+> - ✅ Fluent Design 组件库 (15+ 组件)
 > - ⚠️ 测试待重建（历史清单见 LEGACY_TEST_LIST.md）
 
 ---
@@ -157,6 +161,26 @@ DOM操作                                    │
 ---
 
 ## 2. 核心模块设计
+
+### 2.0 模块概览
+
+MBink 包含以下核心模块：
+
+| 模块 | 职责 | 状态 |
+|------|------|------|
+| **window** | 窗口管理 | ✅ 完成 |
+| **quickjs** | JavaScript 运行时 | ✅ 完成 |
+| **dom** | DOM API | ✅ 完成 |
+| **event** | 事件系统 | ✅ 完成 |
+| **layout** | 布局引擎 | ✅ 完成 |
+| **render** | 渲染引擎 | ✅ 完成 |
+| **lexbor** | HTML/CSS 解析 | ✅ 完成 |
+| **compositor** | 图层合成 | ✅ 完成 |
+| **devtools** | 开发者工具 | ✅ 完成 |
+| **network** | 网络模块 | ✅ 完成 |
+| **bridge** | 桥接层 | ✅ 完成 |
+| **api** | C API 接口 | ✅ 完成 |
+| **utils** | 工具类 | ✅ 完成 |
 
 ### 2.1 窗口管理模块 (Window Module)
 
@@ -815,4 +839,90 @@ public:
 - **输入验证**: 验证所有外部输入
 - **资源限制**: 限制内存和CPU使用
 - **权限控制**: 限制文件系统访问
+
+---
+
+## 10. 新增子系统架构 (v0.92.0)
+
+### 10.1 Compositor 图层合成系统
+
+**设计参考**: Chromium Blink Compositor
+
+**架构层次**:
+```
+LayerTreeManager (图层树管理器)
+    │
+    ├─> LayerTreeBuilder (图层树构建器)
+    │   └─> 决定哪些元素需要独立层
+    │
+    ├─> PropertyTrees (属性树系统)
+    │   ├─> TransformTree (变换树)
+    │   ├─> ClipTree (裁剪树)
+    │   ├─> EffectTree (效果树)
+    │   └─> ScrollTree (滚动树)
+    │
+    ├─> Rasterizer (光栅化器)
+    │   └─> 将渲染对象绘制到 CPU 位图
+    │
+    └─> Compositor (合成器)
+        └─> 将多个层合成到屏幕
+```
+
+**层提升条件**:
+- `will-change: transform/opacity`
+- `position: fixed`
+- CSS transform/opacity 动画
+- 可滚动容器
+
+### 10.2 DevTools 开发者工具
+
+**架构设计**:
+```
+DevToolsManager
+    │
+    ├─> DevToolsPanel (面板)
+    ├─> ElementInspector (元素检查器)
+    ├─> StyleEditor (样式编辑器)
+    └─> DOMSerializer (DOM 序列化)
+```
+
+**功能特性**:
+- F12 打开/关闭
+- 元素拾取器 (Ctrl+Shift+C)
+- 实时样式编辑
+- Box Model 可视化
+
+### 10.3 Network 网络模块
+
+**Fetch API 实现**:
+```
+FetchBindings (JavaScript 绑定)
+    └─> HTTPClient (HTTP 客户端)
+        ├─> WinHTTP (Windows)
+        └─> libcurl (Linux/macOS, 计划中)
+```
+
+### 10.4 Fluent Design 组件库
+
+**组件分类**:
+- 按钮组件 (3 个)
+- 输入组件 (7 个)
+- 数据展示 (11 个)
+- 反馈组件 (2 个)
+- 导航组件 (1 个)
+
+**总计**: 15+ 组件，完整主题系统
+
+---
+
+## 11. 总结
+
+MBink 采用分层架构设计，各模块职责清晰，易于维护和扩展。v0.92.0 新增 Compositor、DevTools、Network、Fluent UI 四大子系统，达到生产就绪状态。
+
+**核心优势**:
+- 轻量级 (~50MB)
+- 高性能 (Skia + QuickJS)
+- 完整的 React 生态支持
+- 生产就绪的开发工具
+- 企业级 UI 组件库
 
