@@ -40,7 +40,8 @@ export function Sidebar({ activePage, onPageChange }) {
         style: {
             width: '220px', minWidth: '220px', backgroundColor: colors.bgSidebar,
             display: 'flex', flexDirection: 'column',
-            borderRight: '1px solid ' + colors.border
+            borderRight: '1px solid ' + colors.border,
+            overflow: 'hidden'
         }
     },
         // Logo 区域
@@ -64,15 +65,33 @@ export function Sidebar({ activePage, onPageChange }) {
         ),
 
         // 导航菜单
+        // 注意：某些引擎/实现对 "overflow" + "display:flex" 的滚动支持不完整。
+        // 这里用外层 block 容器负责滚动，内层再用 flex 做纵向排列。
         h('div', {
-            style: { flex: 1, paddingTop: spacing.sm, display: 'flex', flexDirection: 'column', gap: '2px' }
-        }, items.map(function (item) {
-            return h(NavItem, {
-                key: item.id, item: item,
-                active: activePage === item.id,
-                onClick: onPageChange
-            });
-        })),
+            style: {
+                flex: 1,
+                minHeight: 0,
+                paddingTop: spacing.sm,
+                paddingBottom: spacing.sm,
+                overflowY: 'auto',
+                overflowX: 'hidden',
+                'scrollbar-color': (colors.textMuted + ' ' + colors.bgSidebar)
+            }
+        },
+            h('div', {
+                style: {
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '2px'
+                }
+            }, items.map(function (item) {
+                return h(NavItem, {
+                    key: item.id, item: item,
+                    active: activePage === item.id,
+                    onClick: onPageChange
+                });
+            }))
+        ),
 
         // 底部用户信息
         h('div', {

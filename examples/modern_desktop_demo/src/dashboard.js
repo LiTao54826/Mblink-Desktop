@@ -52,7 +52,7 @@ export function DashboardPage({ addToast }) {
         ),
 
         // 统计卡片行
-        h('div', { style: { display: 'flex', gap: spacing.lg, marginBottom: spacing.xl } },
+        h('div', { style: { display: 'flex', flexWrap: 'wrap', gap: spacing.lg, marginBottom: spacing.xl } },
             h(StatCard, { icon: '📊', label: 'Total Tasks', value: '2,847', trend: '+12%', gradient: colors.gradPrimary }),
             h(StatCard, { icon: '✅', label: 'Completed', value: '1,523', trend: '+8%', gradient: colors.gradSuccess }),
             h(StatCard, { icon: '⏳', label: 'In Progress', value: '384', trend: '-3%', gradient: colors.gradWarning }),
