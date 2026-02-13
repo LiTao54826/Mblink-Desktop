@@ -2228,14 +2228,23 @@ LayoutOutput NativeLayoutEngine::ComputeNodeLayout(NodeId node_id, const LayoutI
     // Check cache (pass content_version for incremental layout invalidation)
     // **Feature: incremental-layout-optimization**
     // **Validates: Requirements 1.4, 1.5**
-    auto cached = node->cache.Get(
-        inputs.known_dimensions,
-        inputs.available_space,
-        inputs.run_mode,
-        node->content_version
-    );
-    if (cached.has_value()) {
-        return *cached;
+    // NOTE:
+    // IFC/匿名块在 PerformLayout 阶段除了产出 size，还会回写 RenderObject 坐标与 wrapped-lines。
+    // 仅返回缓存的 LayoutOutput 会丢失这些 side effects，导致“高度是两行但绘制仍单行”等时序问题。
+    // 因此在 PerformLayout + IFC 路径下禁用该层缓存读取。
+    bool disable_cache_read = (inputs.run_mode == RunMode::PerformLayout) &&
+                              (node->is_ifc_container || node->is_anonymous_block);
+
+    if (!disable_cache_read) {
+        auto cached = node->cache.Get(
+            inputs.known_dimensions,
+            inputs.available_space,
+            inputs.run_mode,
+            node->content_version
+        );
+        if (cached.has_value()) {
+            return *cached;
+        }
     }
 
     LayoutOutput output;
@@ -2757,6 +2766,19 @@ LayoutOutput NativeLayoutEngine::ComputeIFCLayout(NodeId node_id, const LayoutIn
                 container_width = 0.0f;  // Will be handled specially below
             }
         }
+    }
+
+    // IMPORTANT:
+    // min/max-width 必须在 IFC 断行前参与可用宽度计算。
+    // 否则会出现：宽窗口下先按大宽度排成单行，最后 total_width 被 max-width 裁到 400，
+    // 但高度仍保留单行，导致“视觉换行了但块高度没涨”。
+    float pre_ifc_min_width = style.min_width.ToPx(container_width, style.font_size);
+    float pre_ifc_max_width = style.max_width.ToPx(container_width, style.font_size);
+    if (pre_ifc_max_width > 0) {
+        container_width = std::min(container_width, pre_ifc_max_width);
+    }
+    if (pre_ifc_min_width > 0) {
+        container_width = std::max(container_width, pre_ifc_min_width);
     }
 
     // Handle MinContent mode specially
@@ -3518,150 +3540,180 @@ void NativeLayoutEngine::CollectInlineBoxesRecursive(
 void NativeLayoutEngine::ApplyAnonymousBlockLayoutResults(LayoutNode* node) {
     if (!node || !node->is_anonymous_block) return;
 
-    // Use anonymous block's own layout location as offset base.
-    // Its location is already in the same coordinate space used by child layout writeback,
-    // so adding parent padding/border again would double-offset inline children.
     float offset_x = node->layout.location.x;
     float offset_y = node->layout.location.y;
 
-    static bool debug_fab_inline = std::getenv("DEBUG_FAB_INLINE") != nullptr;
+    // 预聚合：把匿名块 IFC 的实际断行结果同步给 RenderText
+    std::unordered_map<RenderObject*, std::vector<std::string>> text_wrapped_lines;
+    std::unordered_map<RenderObject*, std::vector<float>> text_wrapped_line_first_x;
+    for (const auto& line_box : node->ifc_line_boxes) {
+        std::unordered_map<RenderObject*, std::string> line_fragments;
+        std::unordered_map<RenderObject*, float> line_first_x;
 
-    if (debug_fab_inline) {
-        std::cout << "[FAB_IFC] anon parent_w=" << -1.0f
-                  << " anon_loc=(" << node->layout.location.x << "," << node->layout.location.y << ")"
-                  << " offset=(" << offset_x << "," << offset_y << ")"
-                  << std::endl;
+        for (InlineBox* line_box_item : line_box.boxes) {
+            if (!line_box_item || !line_box_item->IsText() || !line_box_item->render_object) continue;
+            RenderObject* text_render_obj = line_box_item->render_object;
+            if (text_render_obj->GetType() != RenderObjectType::TEXT) continue;
+
+            std::string fragment;
+            for (const auto& run : line_box_item->text_runs) {
+                fragment += run.text;
+            }
+            line_fragments[text_render_obj] += fragment;
+
+            if (line_first_x.find(text_render_obj) == line_first_x.end()) {
+                line_first_x[text_render_obj] = line_box_item->x + offset_x;
+            }
+        }
+
+        for (auto& [text_obj, line_text] : line_fragments) {
+            if (line_text.empty()) continue;
+            text_wrapped_lines[text_obj].push_back(line_text);
+            auto it_x = line_first_x.find(text_obj);
+            text_wrapped_line_first_x[text_obj].push_back(
+                it_x != line_first_x.end() ? it_x->second : 0.0f);
+        }
     }
 
+    struct Bounds {
+        float min_x = std::numeric_limits<float>::max();
+        float min_y = std::numeric_limits<float>::max();
+        float max_x = std::numeric_limits<float>::lowest();
+        float max_y = std::numeric_limits<float>::lowest();
+        float first_x = 0.0f;
+        float first_y = 0.0f;
+        bool has_first = false;
+        bool has_content = false;
+    };
 
-    // Apply positions to all inline boxes
+    std::unordered_map<RenderObject*, Bounds> inline_bounds;
+    std::unordered_map<RenderObject*, Bounds> text_bounds;
+    std::vector<RenderObject*> inline_stack;
+
+    // 第一遍：写回原子盒；文本盒只累计边界，避免被最后一个 fragment 覆盖
     for (const auto& box : node->ifc_inline_boxes) {
         if (!box.render_object) continue;
 
-        if (box.type == InlineBoxType::TEXT || box.type == InlineBoxType::ATOMIC) {
-            LayoutInfo& layout = box.render_object->GetLayoutInfo();
-            // box.x 已经是内容区域的起始位置（margin_left 已经在布局时处理过了）
-            layout.x = box.x + offset_x;
-            layout.y = box.y + offset_y;
-            if (debug_fab_inline) {
-                std::cout << "[FAB_IFC_BOX] type=" << static_cast<int>(box.type)
-                          << " box_xy=(" << box.x << "," << box.y << ")"
-                          << " box_wh=(" << box.width << "," << box.height << ")"
-                          << " final_xy=(" << layout.x << "," << layout.y << ")"
-                          << std::endl;
+        if (box.type == InlineBoxType::INLINE_START) {
+            inline_stack.push_back(box.render_object);
+            inline_bounds[box.render_object] = Bounds{};
+            continue;
+        }
+        if (box.type == InlineBoxType::INLINE_END) {
+            if (!inline_stack.empty() && inline_stack.back() == box.render_object) {
+                inline_stack.pop_back();
             }
+            continue;
+        }
 
+        if (box.type != InlineBoxType::TEXT && box.type != InlineBoxType::ATOMIC) continue;
+
+        float box_left = box.x + offset_x;
+        float box_top = box.y + offset_y;
+        float box_right = box_left + box.width;
+        float box_bottom = box_top + box.height;
+
+        if (box.type == InlineBoxType::TEXT) {
+            auto& b = text_bounds[box.render_object];
+            if (!b.has_content) {
+                b.min_x = box_left; b.min_y = box_top; b.max_x = box_right; b.max_y = box_bottom;
+                b.has_content = true;
+            } else {
+                b.min_x = std::min(b.min_x, box_left);
+                b.min_y = std::min(b.min_y, box_top);
+                b.max_x = std::max(b.max_x, box_right);
+                b.max_y = std::max(b.max_y, box_bottom);
+            }
+            if (!b.has_first) {
+                b.first_x = box_left;
+                b.first_y = box_top;
+                b.has_first = true;
+            }
+        } else {
+            LayoutInfo& layout = box.render_object->GetLayoutInfo();
+            layout.x = box_left;
+            layout.y = box_top;
             layout.width = box.width;
             layout.height = box.height;
-            layout.is_laid_out = true;  // 标记为已布局，防止 ReadLayoutResults 覆盖
+            layout.is_laid_out = true;
 
-            // For inline-block elements, call Layout to position children
             if (box.render_object->GetType() == RenderObjectType::INLINE_BLOCK) {
                 auto* inline_block = static_cast<RenderInlineBlock*>(box.render_object);
                 inline_block->Layout(box.width, box.height);
             }
         }
-    }
 
-    // ✅ Fix: Calculate bounding boxes for inline elements (INLINE_START/INLINE_END pairs)
-    // Previously, only TEXT and ATOMIC boxes got layout info applied.
-    // INLINE_START/INLINE_END markers (representing <span>, <em>, etc.) were skipped,
-    // causing inline elements to have width=0, height=0.
-    //
-    // IMPORTANT: RenderInline::Paint() does canvas->translate(layout.x, layout.y) then
-    // paints children. So children's layout.x/y must be RELATIVE to their parent
-    // RenderInline, not absolute. We use a 3-step approach:
-    // Step 1 (above): Set text/atomic to absolute coordinates
-    // Step 2: Calculate inline element bounding boxes, set to absolute coordinates
-    // Step 3: Adjust children of RenderInline to be relative to their parent
-
-    // Step 2: Calculate bounding boxes using stack for nested inline elements
-    struct InlineTracker {
-        RenderObject* render_obj;
-        float min_x;
-        float min_y;
-        float max_right;
-        float max_bottom;
-    };
-    std::vector<InlineTracker> inline_stack;
-    // Map to store each RenderInline's absolute position (for step 3)
-    std::unordered_map<RenderObject*, std::pair<float, float>> inline_abs_positions;
-
-    for (const auto& box : node->ifc_inline_boxes) {
-        if (!box.render_object) continue;
-
-        if (box.type == InlineBoxType::INLINE_START) {
-            inline_stack.push_back({
-                box.render_object,
-                std::numeric_limits<float>::max(),
-                std::numeric_limits<float>::max(),
-                0.0f,
-                0.0f
-            });
-        } else if (box.type == InlineBoxType::INLINE_END) {
-            if (!inline_stack.empty() && inline_stack.back().render_obj == box.render_object) {
-                auto& tracker = inline_stack.back();
-                if (tracker.min_x != std::numeric_limits<float>::max()) {
-                    LayoutInfo& layout = tracker.render_obj->GetLayoutInfo();
-                    float abs_x = tracker.min_x + offset_x;
-                    float abs_y = tracker.min_y + offset_y;
-                    layout.x = abs_x;
-                    layout.y = abs_y;
-                    layout.width = tracker.max_right - tracker.min_x;
-                    layout.height = tracker.max_bottom - tracker.min_y;
-                    layout.is_laid_out = true;
-                    // Store absolute position for step 3
-                    inline_abs_positions[tracker.render_obj] = {abs_x, abs_y};
-                }
-                inline_stack.pop_back();
-            }
-        } else if (box.type == InlineBoxType::TEXT || box.type == InlineBoxType::ATOMIC) {
-            for (auto& tracker : inline_stack) {
-                tracker.min_x = std::min(tracker.min_x, box.x);
-                tracker.min_y = std::min(tracker.min_y, box.y);
-                tracker.max_right = std::max(tracker.max_right, box.x + box.width);
-                tracker.max_bottom = std::max(tracker.max_bottom, box.y + box.height);
-            }
+        for (RenderObject* inline_elem : inline_stack) {
+            auto& b = inline_bounds[inline_elem];
+            b.min_x = std::min(b.min_x, box_left);
+            b.min_y = std::min(b.min_y, box_top);
+            b.max_x = std::max(b.max_x, box_right);
+            b.max_y = std::max(b.max_y, box_bottom);
+            b.has_content = true;
         }
     }
 
-    // Step 3: Adjust positions to create correct relative coordinate chain.
-    // RenderInline::Paint() translates by (layout.x, layout.y) then paints children.
-    // So children must have positions RELATIVE to their parent RenderInline.
-    // Also, nested RenderInline elements must be relative to their parent RenderInline.
-    if (!inline_abs_positions.empty()) {
-        // Adjust TEXT/ATOMIC children: make relative to parent RenderInline
-        for (const auto& box : node->ifc_inline_boxes) {
-            if (!box.render_object) continue;
-            if (box.type == InlineBoxType::TEXT || box.type == InlineBoxType::ATOMIC) {
-                auto parent_sp = box.render_object->GetParent();
-                RenderObject* parent = parent_sp.get();
-                if (parent) {
-                    auto it = inline_abs_positions.find(parent);
-                    if (it != inline_abs_positions.end()) {
-                        LayoutInfo& layout = box.render_object->GetLayoutInfo();
-                        layout.x -= it->second.first;
-                        layout.y -= it->second.second;
-                    }
-                }
-            }
+    // 第二遍：内联元素边界
+    for (auto& [render_obj, b] : inline_bounds) {
+        if (!b.has_content) continue;
+        LayoutInfo& layout = render_obj->GetLayoutInfo();
+        layout.x = b.min_x;
+        layout.y = b.min_y;
+        layout.width = b.max_x - b.min_x;
+        layout.height = b.max_y - b.min_y;
+        layout.is_laid_out = true;
+    }
+
+    // 第三遍：文本节点合并边界（高度 = 多行总高度）
+    for (auto& [render_obj, b] : text_bounds) {
+        if (!b.has_content) continue;
+        LayoutInfo& layout = render_obj->GetLayoutInfo();
+
+        auto parent = render_obj->GetParent();
+        if (parent && parent->GetType() == RenderObjectType::INLINE) {
+            const LayoutInfo& parent_layout = parent->GetLayoutInfo();
+            layout.x = (b.has_first ? b.first_x : b.min_x) - parent_layout.x;
+            layout.y = (b.has_first ? b.first_y : b.min_y) - parent_layout.y;
+        } else {
+            layout.x = b.has_first ? b.first_x : b.min_x;
+            layout.y = b.has_first ? b.first_y : b.min_y;
         }
 
-        // Adjust nested RenderInline elements: make relative to parent RenderInline
-        for (auto& [render_obj, abs_pos] : inline_abs_positions) {
-            auto parent_sp = render_obj->GetParent();
-            RenderObject* parent = parent_sp.get();
-            if (parent) {
-                auto it = inline_abs_positions.find(parent);
-                if (it != inline_abs_positions.end()) {
-                    LayoutInfo& layout = render_obj->GetLayoutInfo();
-                    layout.x -= it->second.first;
-                    layout.y -= it->second.second;
-                }
-            }
+        layout.width = b.max_x - b.min_x;
+        layout.height = b.max_y - b.min_y;
+        layout.is_laid_out = true;
+    }
+
+    // 第四遍：同步 IFC 实际分行与每行 x 偏移到 RenderText
+    for (auto& [render_obj, lines] : text_wrapped_lines) {
+        if (!render_obj || render_obj->GetType() != RenderObjectType::TEXT) continue;
+
+        auto it_x = text_wrapped_line_first_x.find(render_obj);
+        const std::vector<float> empty_offsets;
+        const std::vector<float>& line_abs_x_list = (it_x != text_wrapped_line_first_x.end()) ? it_x->second : empty_offsets;
+
+        const LayoutInfo& text_layout = render_obj->GetLayoutInfo();
+        float abs_text_origin_x = text_layout.x;
+        auto parent = render_obj->GetParent();
+        if (parent && parent->GetType() == RenderObjectType::INLINE) {
+            abs_text_origin_x += parent->GetLayoutInfo().x;
+        }
+
+        std::vector<float> local_offsets;
+        local_offsets.reserve(line_abs_x_list.size());
+        for (float abs_x : line_abs_x_list) {
+            local_offsets.push_back(abs_x - abs_text_origin_x);
+        }
+
+        auto* text_obj = static_cast<RenderText*>(render_obj);
+        if (!local_offsets.empty() && local_offsets.size() == lines.size()) {
+            text_obj->SetWrappedLinesWithOffsets(lines, local_offsets);
+        } else {
+            text_obj->SetWrappedLines(lines);
         }
     }
 }
+
 
 LayoutOutput NativeLayoutEngine::MeasureLeafNode(NodeId node_id, const LayoutInput& inputs) {
     LayoutNode* node = GetNode(node_id);

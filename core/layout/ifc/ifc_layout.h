@@ -180,8 +180,7 @@ private:
         float available_width = 0.0f;
         float content_height = 0.0f;
         float content_width = 0.0f;
-        std::vector<LineBox> line_boxes;
-        std::vector<InlineBox> inline_boxes;  // Cache inline boxes for ApplyLayoutResults
+        size_t line_count = 0;
         uint64_t content_version = 0;  // 内容版本号（从外部传入，不再内部计算哈希）
         bool valid = false;
     };

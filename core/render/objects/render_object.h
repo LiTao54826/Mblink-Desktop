@@ -568,7 +568,14 @@ public:
      */
     LayoutInfo& GetLayoutInfo() { return layout_info_; }
     const LayoutInfo& GetLayoutInfo() const { return layout_info_; }
-    
+
+    /**
+     * @brief 设置 flex container 分配的目标主轴尺寸
+     * @param size 分配的尺寸，-1 表示未设置
+     */
+    void SetFlexTargetMainSize(float size) { flex_target_main_size_ = size; }
+    float GetFlexTargetMainSize() const { return flex_target_main_size_; }
+
     /**
      * @brief 标记需要重新布局
      * @param propagate_to_parent 是否向上传播到父节点（默认true）
@@ -1240,6 +1247,11 @@ protected:
     mutable float content_width_ = 0.0f;
     mutable float content_height_ = 0.0f;
     mutable float last_layout_width_ = 0.0f;  // 上次布局时的宽度，用于检测宽度变化
+
+    // flex-grow/flex-shrink 分配后的目标主轴尺寸
+    // 当 flex container 分配了空间给 flex item 时设置此值
+    // -1 表示未设置（使用正常的 auto 计算）
+    float flex_target_main_size_ = -1.0f;
     
     // 滚动内容层标志：当为 true 时，Paint 不应用滚动偏移
     // 滚动偏移将在合成阶段由 ScrollLayerManager 的 content_layer 应用
@@ -1397,6 +1409,7 @@ public:
         if (text_ == text) return;
         text_ = text;
         wrapped_lines_.clear();
+        wrapped_line_x_offsets_.clear();
         // 通用增量布局语义：文本内容变化会影响内在尺寸，必须重新布局
         layout_info_.is_laid_out = false;
         MarkNeedsLayout(true);
@@ -1408,7 +1421,17 @@ public:
     const std::vector<std::string>& GetWrappedLines() const { return wrapped_lines_; }
 
     // Set wrapped lines (called by measure function)
-    void SetWrappedLines(const std::vector<std::string>& lines) { wrapped_lines_ = lines; }
+    void SetWrappedLines(const std::vector<std::string>& lines) {
+        wrapped_lines_ = lines;
+        wrapped_line_x_offsets_.clear();
+    }
+
+    // Set wrapped lines with per-line x offsets (from IFC line fragments)
+    void SetWrappedLinesWithOffsets(const std::vector<std::string>& lines,
+                                    const std::vector<float>& x_offsets) {
+        wrapped_lines_ = lines;
+        wrapped_line_x_offsets_ = x_offsets;
+    }
 
     // Get/Set actual measured text width (for text-align calculation)
     float GetActualTextWidth() const { return actual_text_width_; }
@@ -1420,6 +1443,7 @@ public:
 private:
     std::string text_;
     std::vector<std::string> wrapped_lines_;  // Cached wrapped lines for rendering
+    std::vector<float> wrapped_line_x_offsets_;  // Per-line x offset in local coordinates
     float actual_text_width_ = 0.0f;  // Actual measured text width (for text-align)
 };
 

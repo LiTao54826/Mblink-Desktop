@@ -93,8 +93,9 @@ TextMeasureResult IFCLayout::MeasureTextStatic(
     // 加载字体
     SkFont font = font_manager.LoadFont(font_desc);
 
-    // 使用 Skia 测量文本宽度（支持混合字符：ASCII、CJK、emoji）
-    result.width = TextRenderer::MeasureMixedTextWidth(text, font);
+    // 使用与 RenderText/WrapText 一致的测量函数，避免布局与绘制断行阈值不一致
+    TextRenderer text_renderer(nullptr);
+    result.width = text_renderer.MeasureTextWidthWithEmoji(text, font);
 
     // 获取字体度量计算高度
     SkFontMetrics metrics;
@@ -442,23 +443,26 @@ IFCLayoutResult IFCLayout::Layout(RenderObject* container, float available_width
     float container_width = available_width + padding_left + padding_right + border_left + border_right;
 
     // 检查缓存（传入外部版本号）
+    // ⚠️ 注意：line_boxes_ 内部保存 InlineBox* 指针。
+    // 直接从缓存恢复 line_boxes_ 可能携带失效指针（缓存复制后地址变化），
+    // 会导致 ApplyLayoutResults 阶段读取到错误的文本片段边界。
+    // 因此：
+    // - 纯测量阶段（apply_results=false）可以安全复用缓存尺寸；
+    // - 需要回写渲染对象位置时（apply_results=true）必须走完整重排，重建有效指针。
     if (IsCacheValid(container, available_width, content_version)) {
         const auto& cache = cache_[container];
-        line_boxes_ = cache.line_boxes;
-        inline_boxes_ = cache.inline_boxes;  // Also restore inline_boxes for ApplyLayoutResults
-        content_height_ = cache.content_height;
-        content_width_ = cache.content_width;
 
-        // Re-apply layout results to update render object positions (only if requested)
-        if (apply_results) {
-            ApplyLayoutResults(container, container_width);
+        if (!apply_results) {
+            content_height_ = cache.content_height;
+            content_width_ = cache.content_width;
+
+            result.total_height = content_height_;
+            result.max_width = content_width_;
+            result.line_count = static_cast<size_t>(cache.line_count);
+            result.success = true;
+            return result;
         }
-
-        result.total_height = content_height_;
-        result.max_width = content_width_;
-        result.line_count = line_boxes_.size();
-        result.success = true;
-        return result;
+        // apply_results=true: 继续往下完整重算并重建 line_boxes_/inline_boxes_
     }
 
     // 清除之前的结果
@@ -628,8 +632,7 @@ IFCLayoutResult IFCLayout::Layout(RenderObject* container, float available_width
     cache.available_width = available_width;
     cache.content_height = content_height_;
     cache.content_width = content_width_;
-    cache.line_boxes = line_boxes_;
-    cache.inline_boxes = inline_boxes_;  // Cache inline boxes for ApplyLayoutResults
+    cache.line_count = line_boxes_.size();
     // 使用外部传入的版本号，如果为0则使用旧的哈希计算方式（向后兼容）
     cache.content_version = (content_version != 0) ? content_version : GetContentVersion(container);
     cache.valid = true;
@@ -731,7 +734,6 @@ void IFCLayout::CreateInlineBox(RenderObject* render_obj) {
             float word_spacing = style.word_spacing.ToPx(0, style.font_size);
 
             // 检查 white-space 属性
-            bool wrap_allowed = (style.white_space != "nowrap" && style.white_space != "pre");
             bool preserve_newlines = (style.white_space == "pre" || style.white_space == "pre-wrap" || style.white_space == "pre-line");
 
             // 如果 white-space: pre/pre-wrap/pre-line，需要按 \n 分割文本
@@ -797,90 +799,32 @@ void IFCLayout::CreateInlineBox(RenderObject* render_obj) {
                     inline_boxes_.push_back(std::move(box));
                 }
             } else {
-                // 测量整个文本
+                // 普通文本不在收集阶段预拆行；统一交给 LineBreaker 决策
+                // 仅保留显式换行（\n）和 <br> 的强制换行语义
                 TextMeasurement measurement = MeasureTextForIFC(
                     text, style.font_size, style.font_family, letter_spacing, word_spacing, style.line_height, style.font_weight, style.font_style);
 
-                // 如果文本宽度超过可用宽度且允许换行，则分割文本
-#if IFC_DEBUG
-#endif
-                if (wrap_allowed && current_available_width_ > 0 && measurement.width > current_available_width_) {
-                    // 使用 TextRenderer::WrapText 进行文本换行
-                    auto& font_manager = FontManager::GetInstance();
-                    FontDescriptor font_desc;
-                    font_desc.family = style.font_family.empty() ? "Arial" : style.font_family;
-                    font_desc.size = style.font_size;
-                    font_desc.weight = ParseCSSFontWeight(style.font_weight);
-                    font_desc.style = (style.font_style == "italic") ? FontStyle::ITALIC : FontStyle::NORMAL;
-                    SkFont font = font_manager.LoadFont(font_desc);
+                text_obj->SetWrappedLines({});  // 清除之前的换行信息
 
-                    TextRenderer text_renderer(nullptr);  // 创建 TextRenderer 实例
-                    std::vector<std::string> wrapped_lines = text_renderer.WrapText(text, current_available_width_, font);
+                InlineBox box = InlineBox::CreateTextBox(render_obj);
+                box.width = measurement.width;
+                box.height = measurement.height;
+                box.baseline = measurement.skia_ascent;
+                box.skia_ascent = measurement.skia_ascent;
+                box.skia_descent = measurement.skia_descent;
+                box.line_height_multiplier = style.line_height;
 
-#if IFC_DEBUG
-                    for (size_t i = 0; i < wrapped_lines.size(); ++i) {
-                    }
-#endif
+                // 添加 TextRun
+                TextRun run;
+                run.text = text;
+                run.start_offset = 0;
+                run.end_offset = text.size();
+                run.width = measurement.width;
+                run.height = measurement.height;
+                run.baseline = measurement.skia_ascent;
+                box.text_runs.push_back(run);
 
-                    // 保存换行后的文本到 RenderText 对象
-                    text_obj->SetWrappedLines(wrapped_lines);
-
-                    // 为每一行创建一个 InlineBox
-                    for (size_t i = 0; i < wrapped_lines.size(); ++i) {
-                        const std::string& line_text = wrapped_lines[i];
-                        if (line_text.empty()) continue;
-
-                        TextMeasurement line_measurement = MeasureTextForIFC(
-                            line_text, style.font_size, style.font_family, letter_spacing, word_spacing, style.line_height, style.font_weight, style.font_style);
-
-                        InlineBox box = InlineBox::CreateTextBox(render_obj);
-                        box.width = line_measurement.width;
-                        box.height = line_measurement.height;
-                        box.baseline = line_measurement.skia_ascent;
-                        box.skia_ascent = line_measurement.skia_ascent;
-                        box.skia_descent = line_measurement.skia_descent;
-                        box.line_height_multiplier = style.line_height;
-
-                        // 添加 TextRun
-                        TextRun run;
-                        run.text = line_text;
-                        run.start_offset = 0;
-                        run.end_offset = line_text.size();
-                        run.width = line_measurement.width;
-                        run.height = line_measurement.height;
-                        run.baseline = line_measurement.skia_ascent;
-                        // 标记除最后一行外的所有行为强制换行
-                        if (i < wrapped_lines.size() - 1) {
-                            run.is_forced_break = true;
-                        }
-                        box.text_runs.push_back(run);
-
-                        inline_boxes_.push_back(std::move(box));
-                    }
-                } else {
-                    // 不需要换行，创建单个 InlineBox
-                    text_obj->SetWrappedLines({});  // 清除之前的换行信息
-
-                    InlineBox box = InlineBox::CreateTextBox(render_obj);
-                    box.width = measurement.width;
-                    box.height = measurement.height;
-                    box.baseline = measurement.skia_ascent;
-                    box.skia_ascent = measurement.skia_ascent;
-                    box.skia_descent = measurement.skia_descent;
-                    box.line_height_multiplier = style.line_height;
-
-                    // 添加 TextRun
-                    TextRun run;
-                    run.text = text;
-                    run.start_offset = 0;
-                    run.end_offset = text.size();
-                    run.width = measurement.width;
-                    run.height = measurement.height;
-                    run.baseline = measurement.skia_ascent;
-                    box.text_runs.push_back(run);
-
-                    inline_boxes_.push_back(std::move(box));
-                }
+                inline_boxes_.push_back(std::move(box));
             }
             break;
         }
@@ -1058,12 +1002,55 @@ void IFCLayout::ApplyLayoutResults(RenderObject* container, float container_widt
         float min_y = std::numeric_limits<float>::max();
         float max_x = std::numeric_limits<float>::lowest();
         float max_y = std::numeric_limits<float>::lowest();
+        // 保留首个片段位置，避免多行文本按 min_x/min_y 回退导致首行与前序 inline 重叠
+        float first_x = 0.0f;
+        float first_y = 0.0f;
+        bool has_first = false;
         bool has_content = false;
     };
     std::unordered_map<RenderObject*, InlineElementBounds> inline_bounds;
 
     // 用于跟踪文本节点的边界（多行文本需要合并边界）
     std::unordered_map<RenderObject*, InlineElementBounds> text_bounds;
+
+    // 预聚合：按 line_boxes_ 为每个 RenderText 生成可绘制的分行文本及每行起始 x
+    // 这样 RenderText::Paint 可以使用 IFC 实际断行和行内偏移，避免不同文本节点在同一行重叠。
+    std::unordered_map<RenderObject*, std::vector<std::string>> text_wrapped_lines;
+    std::unordered_map<RenderObject*, std::vector<float>> text_wrapped_line_first_x;
+    for (const auto& line_box : line_boxes_) {
+        std::unordered_map<RenderObject*, std::string> line_fragments;
+        std::unordered_map<RenderObject*, float> line_first_x;
+
+        for (InlineBox* line_box_item : line_box.boxes) {
+            if (!line_box_item || !line_box_item->IsText() || !line_box_item->render_object) {
+                continue;
+            }
+
+            RenderObject* text_render_obj = line_box_item->render_object;
+            if (text_render_obj->GetType() != RenderObjectType::TEXT) {
+                continue;
+            }
+
+            std::string fragment;
+            for (const auto& run : line_box_item->text_runs) {
+                fragment += run.text;
+            }
+            line_fragments[text_render_obj] += fragment;
+
+            if (line_first_x.find(text_render_obj) == line_first_x.end()) {
+                line_first_x[text_render_obj] = line_box_item->x + offset_x;
+            }
+        }
+
+        for (auto& [text_obj, line_text] : line_fragments) {
+            if (!line_text.empty()) {
+                text_wrapped_lines[text_obj].push_back(line_text);
+                auto it_x = line_first_x.find(text_obj);
+                text_wrapped_line_first_x[text_obj].push_back(
+                    it_x != line_first_x.end() ? it_x->second : 0.0f);
+            }
+        }
+    }
 
     // 第一遍：收集所有内联盒的位置信息
     std::vector<RenderObject*> inline_stack;  // 当前活跃的内联元素栈
@@ -1129,6 +1116,12 @@ void IFCLayout::ApplyLayoutResults(RenderObject* container, float container_widt
                     bounds.min_y = std::min(bounds.min_y, box_top);
                     bounds.max_x = std::max(bounds.max_x, box_right);
                     bounds.max_y = std::max(bounds.max_y, box_bottom);
+                }
+
+                if (!bounds.has_first) {
+                    bounds.first_x = box_left;
+                    bounds.first_y = box_top;
+                    bounds.has_first = true;
                 }
             } else {
                 // ATOMIC 盒子直接更新布局信息
@@ -1198,17 +1191,49 @@ void IFCLayout::ApplyLayoutResults(RenderObject* container, float container_widt
         // 如果是，则文本位置需要相对于父 INLINE 元素
         if (parent && parent->GetType() == RenderObjectType::INLINE) {
             const LayoutInfo& parent_layout = parent->GetLayoutInfo();
-            // 文本位置 = 绝对位置 - 父元素绝对位置
-            layout.x = bounds.min_x - parent_layout.x;
-            layout.y = bounds.min_y - parent_layout.y;
+            // 文本位置使用首个片段位置，避免多行时回退到 min_x/min_y 导致首行重叠
+            layout.x = (bounds.has_first ? bounds.first_x : bounds.min_x) - parent_layout.x;
+            layout.y = (bounds.has_first ? bounds.first_y : bounds.min_y) - parent_layout.y;
         } else {
             // 没有 INLINE 父元素，使用绝对位置
-            layout.x = bounds.min_x;
-            layout.y = bounds.min_y;
+            layout.x = bounds.has_first ? bounds.first_x : bounds.min_x;
+            layout.y = bounds.has_first ? bounds.first_y : bounds.min_y;
         }
 
         layout.width = bounds.max_x - bounds.min_x;
         layout.height = bounds.max_y - bounds.min_y;
+    }
+
+    // 第四遍：把 IFC 的实际断行结果同步给 RenderText（包含每行起始 x），用于绘制阶段按行渲染
+    for (auto& [render_obj, lines] : text_wrapped_lines) {
+        if (!render_obj) continue;
+        if (render_obj->GetType() != RenderObjectType::TEXT) continue;
+
+        auto it_x = text_wrapped_line_first_x.find(render_obj);
+        const std::vector<float> empty_offsets;
+        const std::vector<float>& line_abs_x_list = (it_x != text_wrapped_line_first_x.end()) ? it_x->second : empty_offsets;
+
+        // 把“绝对 line_x”换算为 RenderText 本地坐标：local_x = abs_line_x - abs_text_origin_x
+        // abs_text_origin_x = layout.x + (parent_layout.x if parent is INLINE)
+        const LayoutInfo& text_layout = render_obj->GetLayoutInfo();
+        float abs_text_origin_x = text_layout.x;
+        auto parent = render_obj->GetParent();
+        if (parent && parent->GetType() == RenderObjectType::INLINE) {
+            abs_text_origin_x += parent->GetLayoutInfo().x;
+        }
+
+        std::vector<float> local_offsets;
+        local_offsets.reserve(line_abs_x_list.size());
+        for (float abs_x : line_abs_x_list) {
+            local_offsets.push_back(abs_x - abs_text_origin_x);
+        }
+
+        auto* text_obj = static_cast<RenderText*>(render_obj);
+        if (!local_offsets.empty() && local_offsets.size() == lines.size()) {
+            text_obj->SetWrappedLinesWithOffsets(lines, local_offsets);
+        } else {
+            text_obj->SetWrappedLines(lines);
+        }
     }
 }
 

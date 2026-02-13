@@ -37,89 +37,147 @@ def removeTodo(index):
 
 app.load_html("""
 <!DOCTYPE html>
-<html>
+<html lang="zh-CN">
 <head>
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            max-width: 460px;
-            margin: 20px auto;
-            padding: 0 10px;
-            background: #f5f5f5;
-        }
-        h1 { color: #333; text-align: center; }
-        .input-row { display: flex; gap: 8px; margin-bottom: 16px; }
-        input[type="text"] {
-            flex: 1; padding: 8px 12px; font-size: 14px;
-            border: 1px solid #ccc; border-radius: 4px; outline: none;
-        }
-        input[type="text"]:focus { border-color: #2196F3; }
-        .btn-add {
-            padding: 8px 16px; font-size: 14px; border: none;
-            border-radius: 4px; background: #4CAF50; color: white; cursor: pointer;
-        }
-        .btn-add:hover { opacity: 0.85; }
-        ul { list-style: none; padding: 0; }
-        li {
-            display: flex; justify-content: space-between; align-items: center;
-            padding: 10px 12px; margin-bottom: 6px; background: white;
-            border-radius: 4px; box-shadow: 0 1px 2px rgba(0,0,0,0.1);
-        }
-        .btn-remove {
-            padding: 4px 10px; font-size: 12px; border: none;
-            border-radius: 3px; background: #f44336; color: white; cursor: pointer;
-        }
-        .btn-remove:hover { opacity: 0.85; }
-        .empty-msg { text-align: center; color: #999; padding: 20px; }
-    </style>
+  <meta charset="UTF-8">
+  <title>Borderless Window Demo</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    html, body {
+      width: 100%; height: 100%;
+      background: transparent;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      overflow: hidden;
+    }
+
+    .window-frame {
+      width: 100%; height: 100%;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      border-radius: 12px;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.3);
+    }
+
+    /* 标题栏 - 可拖拽区域 */
+    .titlebar {
+      -webkit-app-region: drag;
+      height: 40px;
+      display: flex;
+      align-items: center;
+      padding: 0 12px;
+      background: rgba(0,0,0,0.15);
+      color: white;
+      font-size: 13px;
+      font-weight: 600;
+      user-select: none;
+    }
+
+    .titlebar-icon { margin-right: 8px; font-size: 16px; }
+    .titlebar-text { flex: 1; }
+
+    /* 窗口控制按钮 - 不可拖拽 */
+    .titlebar-buttons {
+      -webkit-app-region: no-drag;
+      display: flex;
+      gap: 8px;
+    }
+
+    .btn-control {
+      width: 14px; height: 14px;
+      border-radius: 50%;
+      border: none;
+      cursor: pointer;
+    }
+    .btn-minimize { background: #febc2e; -webkit-window-control: minimize; }
+    .btn-maximize { background: #28c840; -webkit-window-control: maximize; }
+    .btn-close    { background: #ff5f57; -webkit-window-control: close; }
+
+    /* 内容区域 */
+    .content {
+      flex: 1;
+      min-height: 0;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      color: white;
+      padding: 24px;
+    }
+
+    .content h1 {
+      font-size: 28px;
+      margin-bottom: 12px;
+      text-shadow: 0 2px 8px rgba(0,0,0,0.2);
+    }
+
+    .content p {
+      font-size: 14px;
+      opacity: 0.85;
+      text-align: center;
+      line-height: 1.6;
+      max-width: 400px;
+    }
+
+    .feature-list {
+      margin-top: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .feature-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 13px;
+      opacity: 0.9;
+    }
+
+    .feature-check { color: #28c840; }
+
+    .footer {
+      padding: 10px;
+      text-align: center;
+      font-size: 11px;
+      opacity: 0.5;
+      color: white;
+    }
+  </style>
 </head>
 <body>
-    <h1>待办事项</h1>
-    <div class="input-row">
-        <input type="text" id="todoInput" placeholder="输入待办事项..." />
-        <button class="btn-add" onclick="doAdd()">添加</button>
+  <div class="window-frame">
+    <div class="titlebar">
+      <span class="titlebar-icon">🪟</span>
+      <span class="titlebar-text">Borderless Window Demo</span>
+      <div class="titlebar-buttons">
+        <div class="btn-control btn-minimize"></div>
+        <div class="btn-control btn-maximize"></div>
+        <div class="btn-control btn-close"></div>
+      </div>
     </div>
-    <ul id="todoList">
-        <div class="empty-msg">暂无待办事项</div>
-    </ul>
-
-    <script>
-        function doAdd() {
-            var input = document.getElementById('todoInput');
-            var text = input.value.trim();
-            if (!text) return;
-            py.addTodo(text);
-            input.value = '';
-        }
-
-        // 用 JS 注册 keydown，避免内联属性中 event 不可用的问题
-        document.getElementById('todoInput').addEventListener('keydown', function(e) {
-            if (e.key === 'Enter') doAdd();
-        });
-
-        function renderList(items) {
-            var ul = document.getElementById('todoList');
-            ul.innerHTML = '';
-            if (!items || items.length === 0) {
-                ul.innerHTML = '<div class="empty-msg">暂无待办事项</div>';
-                return;
-            }
-            for (var i = 0; i < items.length; i++) {
-                var li = document.createElement('li');
-                li.innerHTML =
-                    '<span>' + items[i] + '</span>' +
-                    '<button class="btn-remove" onclick="py.removeTodo(' + i + ')">删除</button>';
-                ul.appendChild(li);
-            }
-        }
-
-        // 监听 todos 状态变化，自动重新渲染列表
-        host.on("todos", function(items) {
-            renderList(items);
-        });
-    </script>
+    <div class="content">
+      <h1>无边框窗口 🎉</h1>
+      <p>这是一个使用 CSS <code>-webkit-app-region</code> 实现的无边框窗口演示。</p>
+      <div class="feature-list">
+        <div class="feature-item"><span class="feature-check">✓</span> 标题栏拖拽移动窗口</div>
+        <div class="feature-item"><span class="feature-check">✓</span> 按钮区域不触发拖拽</div>
+        <div class="feature-item"><span class="feature-check">✓</span> 窗口边缘调整大小</div>
+        <div class="feature-item"><span class="feature-check">✓</span> DWM 阴影效果</div>
+        <div class="feature-item"><span class="feature-check">✓</span> 圆角窗口样式</div>
+      </div>
+    </div>
+    <div class="footer">LightUI Borderless Window System</div>
+  </div>
+  <script>
+  </script>
 </body>
 </html>
+
+
 """)
 
 app.run()

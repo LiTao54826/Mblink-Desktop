@@ -234,17 +234,36 @@ void RenderText::Paint(SkCanvas* canvas) {
     }
 
     // Determine lines to render
+    // 优先使用与当前布局高度一致的 wrapped_lines_，避免旧测量阶段遗留的 wrapped_lines_
+    // 导致“布局单行但绘制多行”的不一致。
     std::vector<std::string> lines_to_render;
     if (!wrapped_lines_.empty()) {
-        lines_to_render = wrapped_lines_;
-    } else if (text_.find('\n') != std::string::npos) {
-        std::istringstream iss(text_);
-        std::string line;
-        while (std::getline(iss, line)) {
-            lines_to_render.push_back(line);
+        const float expected_height = css_line_height * static_cast<float>(wrapped_lines_.size());
+        const float tolerance = 0.5f;
+        const bool wrapped_matches_layout = (layout.height + tolerance >= expected_height);
+
+        if (wrapped_matches_layout) {
+            lines_to_render = wrapped_lines_;
+        } else {
+            // wrapped_lines_ 与当前 layout 高度不匹配，视为过期数据，回退到单行/显式换行路径
+            if (debug_text_paint) {
+                std::cout << "[TEXT_PAINT] ignore stale wrapped_lines: lines=" << wrapped_lines_.size()
+                          << " layout_h=" << layout.height
+                          << " expected_h=" << expected_height << std::endl;
+            }
         }
-    } else {
-        lines_to_render.push_back(text_);
+    }
+
+    if (lines_to_render.empty()) {
+        if (text_.find('\n') != std::string::npos) {
+            std::istringstream iss(text_);
+            std::string line;
+            while (std::getline(iss, line)) {
+                lines_to_render.push_back(line);
+            }
+        } else {
+            lines_to_render.push_back(text_);
+        }
     }
 
     // Check for text-overflow: ellipsis
@@ -266,7 +285,13 @@ void RenderText::Paint(SkCanvas* canvas) {
     // 多行文本的行间距也需要与 Layout 保持一致
     float line_height = css_line_height;
 
-    for (const auto& line : lines_to_render) {
+    for (size_t i = 0; i < lines_to_render.size(); ++i) {
+        const auto& line = lines_to_render[i];
+        float line_x = 0.0f;
+        if (i < wrapped_line_x_offsets_.size()) {
+            line_x = wrapped_line_x_offsets_[i];
+        }
+
         if (!line.empty()) {
             std::string text_to_render = line;
 
@@ -312,11 +337,11 @@ void RenderText::Paint(SkCanvas* canvas) {
 
             if (!style.text_shadow.empty()) {
                 ShadowRenderer::RenderTextWithShadow(canvas, text_to_render, font,
-                                                     0, current_y, text_color, style.text_shadow, text_renderer);
+                                                     line_x, current_y, text_color, style.text_shadow, text_renderer);
             } else {
                 lightui::Paint text_paint;
                 text_paint.SetColor(text_color);
-                text_renderer.DrawTextWithEmoji(text_to_render, 0, current_y, font, text_paint);
+                text_renderer.DrawTextWithEmoji(text_to_render, line_x, current_y, font, text_paint);
             }
         }
         current_y += line_height;
@@ -343,7 +368,13 @@ void RenderText::Paint(SkCanvas* canvas) {
 
         float decoration_current_y = baseline_y;
 
-        for (const auto& line : lines_to_render) {
+        for (size_t i = 0; i < lines_to_render.size(); ++i) {
+            const auto& line = lines_to_render[i];
+            float line_x = 0.0f;
+            if (i < wrapped_line_x_offsets_.size()) {
+                line_x = wrapped_line_x_offsets_[i];
+            }
+
             float line_width = text_renderer.MeasureTextWidthWithEmoji(line, font);
             if (line_width <= 0) {
                 decoration_current_y += line_height;
@@ -355,7 +386,7 @@ void RenderText::Paint(SkCanvas* canvas) {
                 float underline_thickness = font_metrics.fUnderlineThickness;
                 if (underline_thickness < 1.0f) underline_thickness = 1.0f;
                 line_paint.setStrokeWidth(underline_thickness);
-                canvas->drawLine(0, underline_y, line_width, underline_y, line_paint);
+                canvas->drawLine(line_x, underline_y, line_x + line_width, underline_y, line_paint);
             }
 
             if (has_line_through) {
@@ -363,7 +394,7 @@ void RenderText::Paint(SkCanvas* canvas) {
                 float strikethrough_thickness = font_metrics.fStrikeoutThickness;
                 if (strikethrough_thickness < 1.0f) strikethrough_thickness = 1.0f;
                 line_paint.setStrokeWidth(strikethrough_thickness);
-                canvas->drawLine(0, strikethrough_y, line_width, strikethrough_y, line_paint);
+                canvas->drawLine(line_x, strikethrough_y, line_x + line_width, strikethrough_y, line_paint);
             }
 
             decoration_current_y += line_height;

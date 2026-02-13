@@ -163,6 +163,8 @@ static AlignContent ApplyAlignmentFallback(
 
     // 1. If there is only a single item being aligned and alignment is a distributed alignment keyword
     //    https://www.w3.org/TR/css-align-3/#distribution-values
+    // 2. 在 LightUI 的 flex 实现中，为避免负剩余空间下出现“向前轴负偏移”导致的可视重叠，
+    //    对 Center 在 free_space<=0 时也回退到 Start（safe-start 行为）。
     if (num_items <= 1 || free_space <= 0.0f) {
         switch (alignment_mode) {
             case AlignContent::Stretch:
@@ -180,6 +182,12 @@ static AlignContent ApplyAlignmentFallback(
             case AlignContent::SpaceEvenly:
                 alignment_mode = AlignContent::Center;
                 is_safe = true;
+                break;
+            case AlignContent::Center:
+                if (free_space <= 0.0f) {
+                    alignment_mode = AlignContent::Start;
+                    is_safe = true;
+                }
                 break;
             default:
                 break;

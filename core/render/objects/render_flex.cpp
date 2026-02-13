@@ -91,6 +91,14 @@ void RenderFlex::LayoutAsFlex(float parent_width, float parent_height) {
     if (!style.height.IsAuto()) {
         height = style.height.ToPx(parent_height, style.font_size);
         content_height = height - padding_top - padding_bottom - border_top - border_bottom;
+    } else if (flex_target_main_size_ >= 0) {
+        // flex container 通过 flex-grow/flex-shrink 分配了固定的主轴尺寸
+        // 对于 column 方向的父容器，flex_target_main_size_ 是分配给本元素的高度
+        // 对于 row 方向的父容器，flex_target_main_size_ 是分配给本元素的宽度（此处不影响 height）
+        // 需要判断：如果父容器是 column 方向，则 flex_target_main_size_ 代表高度
+        // 简化处理：当 height 是 auto 且有 flex_target_main_size_ 时，用它作为内容高度
+        content_height = flex_target_main_size_;
+        height = content_height + padding_top + padding_bottom + border_top + border_bottom;
     }
 
     // 确定 flex 方向
@@ -162,8 +170,8 @@ void RenderFlex::LayoutAsFlex(float parent_width, float parent_height) {
         max_cross_size = std::max(max_cross_size, child_cross_size + child_margin_cross_start + child_margin_cross_end);
     }
 
-    // 如果高度是 auto，根据内容计算
-    if (style.height.IsAuto()) {
+    // 如果高度是 auto 且没有被 flex container 分配固定尺寸，根据内容计算
+    if (style.height.IsAuto() && flex_target_main_size_ < 0) {
         if (is_row) {
             content_height = max_cross_size;
         } else {
@@ -187,27 +195,155 @@ void RenderFlex::LayoutAsFlex(float parent_width, float parent_height) {
     // 计算主轴可用空间
     float main_size = is_row ? content_width : content_height;
     float cross_size = is_row ? content_height : content_width;
-    float free_space = main_size - total_main_size;
+
+    // === flex-grow / flex-shrink 分配 ===
+    // 收集参与 flex 布局的子元素信息，使用 flex-basis 计算 base_main_size
+    struct FlexChildInfo {
+        size_t index;
+        float flex_grow;
+        float flex_shrink;
+        float base_main_size;  // flex base size（基于 flex-basis）
+        float margin_main;     // 主轴方向 margin 总和
+    };
+    std::vector<FlexChildInfo> flex_children;
+    float total_flex_grow = 0.0f;
+    float total_flex_shrink_scaled = 0.0f;
+    float total_base_main = 0.0f;  // 基于 flex-basis 的总主轴尺寸
+
+    for (size_t i = 0; i < children_.size(); ++i) {
+        auto& cs = children_[i]->GetComputedStyle();
+        if (cs.position == "absolute" || cs.position == "fixed") continue;
+
+        auto& cl = children_[i]->GetLayoutInfo();
+        float child_natural_main = is_row ? cl.width : cl.height;
+
+        // 根据 flex-basis 确定 base_main_size
+        // flex-basis: auto → 使用自然尺寸（布局后的实际尺寸）
+        // flex-basis: 0%, 100px 等 → 使用 flex-basis 计算值
+        float base_main;
+        if (cs.flex_basis.IsAuto()) {
+            base_main = child_natural_main;
+        } else {
+            base_main = cs.flex_basis.ToPx(main_size, cs.font_size);
+        }
+
+        float m_start = is_row ?
+            cs.margin.left.ToPx(width, cs.font_size) :
+            cs.margin.top.ToPx(width, cs.font_size);
+        float m_end = is_row ?
+            cs.margin.right.ToPx(width, cs.font_size) :
+            cs.margin.bottom.ToPx(width, cs.font_size);
+
+        total_flex_grow += cs.flex_grow;
+        if (base_main > 0) {
+            total_flex_shrink_scaled += cs.flex_shrink * base_main;
+        }
+        total_base_main += base_main + m_start + m_end;
+        flex_children.push_back({i, cs.flex_grow, cs.flex_shrink, base_main, m_start + m_end});
+    }
+
+    // 基于 flex-basis 计算 free_space（而非自然尺寸）
+    float free_space = main_size - total_base_main;
+
+    // 🔍 DEBUG: 写文件日志（定位问题后删除）
+    {
+        static FILE* dbg = nullptr;
+        if (!dbg) dbg = fopen("D:\\code\\C\\MBink\\flex_debug.log", "w");
+        if (dbg) {
+            auto nd = GetNode();
+            std::string tn = "?", cn = "";
+            if (nd && nd->GetNodeType() == NodeType::ELEMENT_NODE) {
+                auto el = std::static_pointer_cast<Element>(nd);
+                tn = el->GetTagName(); cn = el->GetAttribute("class");
+            }
+            fprintf(dbg, "[FLEX] <%s class='%s'> dir=%s main_size=%.1f total_natural=%.1f total_base=%.1f free=%.1f content_h=%.1f h=%.1f parent_h=%.1f flex_target=%.1f\n",
+                tn.c_str(), cn.c_str(), style.flex_direction.c_str(), main_size, total_main_size, total_base_main, free_space, content_height, height, parent_height, flex_target_main_size_);
+            for (auto& fi : flex_children) {
+                auto& cs2 = children_[fi.index]->GetComputedStyle();
+                auto& cl2 = children_[fi.index]->GetLayoutInfo();
+                auto cn2 = children_[fi.index]->GetNode();
+                std::string t2 = "?", c2 = "";
+                if (cn2 && cn2->GetNodeType() == NodeType::ELEMENT_NODE) {
+                    auto e2 = std::static_pointer_cast<Element>(cn2);
+                    t2 = e2->GetTagName(); c2 = e2->GetAttribute("class");
+                }
+                fprintf(dbg, "  [%zu] <%s class='%s'> grow=%.1f shrink=%.1f basis_unit=%d basis_val=%.1f base_main=%.1f natural_h=%.1f\n",
+                    fi.index, t2.c_str(), c2.c_str(), fi.flex_grow, fi.flex_shrink,
+                    (int)cs2.flex_basis.unit, cs2.flex_basis.value, fi.base_main_size, cl2.height);
+            }
+            fprintf(dbg, "  => will %s (free=%.1f grow_total=%.1f shrink_total=%.1f)\n",
+                (free_space > 0 && total_flex_grow > 0) ? "GROW" : (free_space < 0 && total_flex_shrink_scaled > 0) ? "SHRINK" : "NONE",
+                free_space, total_flex_grow, total_flex_shrink_scaled);
+            fflush(dbg);
+        }
+    }
+
+    if (free_space > 0 && total_flex_grow > 0) {
+        // Growing: 按 flex-grow 比例分配剩余空间
+        for (auto& item : flex_children) {
+            if (item.flex_grow <= 0) continue;
+            float extra = free_space * (item.flex_grow / total_flex_grow);
+            float new_main = item.base_main_size + extra;
+            auto& child = children_[item.index];
+            // 告诉子元素它被 flex container 分配了固定的主轴尺寸
+            child->SetFlexTargetMainSize(new_main);
+            if (is_row) {
+                child->Layout(new_main, content_height > 0 ? content_height : 0);
+            } else {
+                child->Layout(content_width, new_main);
+            }
+            child->SetFlexTargetMainSize(-1.0f);  // 重置，避免污染后续布局
+        }
+        // 重新计算 total_main_size 和 free_space
+        total_main_size = 0;
+        for (auto& item : flex_children) {
+            auto& cl = children_[item.index]->GetLayoutInfo();
+            float child_main = is_row ? cl.width : cl.height;
+            total_main_size += child_main + item.margin_main;
+        }
+        free_space = main_size - total_main_size;
+    } else if (free_space < 0 && total_flex_shrink_scaled > 0) {
+        // Shrinking: 按 flex-shrink * base_size 比例收缩
+        for (auto& item : flex_children) {
+            if (item.flex_shrink <= 0 || item.base_main_size <= 0) continue;
+            float shrink_ratio = (item.flex_shrink * item.base_main_size) / total_flex_shrink_scaled;
+            float shrink_amount = (-free_space) * shrink_ratio;
+            float new_main = std::max(0.0f, item.base_main_size - shrink_amount);
+            if (new_main != item.base_main_size) {
+                auto& child = children_[item.index];
+                child->SetFlexTargetMainSize(new_main);
+                if (is_row) {
+                    child->Layout(new_main, content_height > 0 ? content_height : 0);
+                } else {
+                    child->Layout(content_width, new_main);
+                }
+                child->SetFlexTargetMainSize(-1.0f);
+            }
+        }
+        // 重新计算 total_main_size 和 free_space
+        total_main_size = 0;
+        for (auto& item : flex_children) {
+            auto& cl = children_[item.index]->GetLayoutInfo();
+            float child_main = is_row ? cl.width : cl.height;
+            total_main_size += child_main + item.margin_main;
+        }
+        free_space = main_size - total_main_size;
+    }
 
     // 根据 justify-content 计算主轴起始位置
     float main_start = 0;
     float gap = 0;
 
     // 计算参与 flex 布局的子元素数量（排除 absolute/fixed）
-    size_t num_children = 0;
-    for (auto& child : children_) {
-        auto& cs = child->GetComputedStyle();
-        if (cs.position != "absolute" && cs.position != "fixed") {
-            num_children++;
-        }
-    }
+    size_t num_children = flex_children.size();
 
     if (style.justify_content == "flex-start" || style.justify_content == "start") {
         main_start = is_reverse ? free_space : 0;
     } else if (style.justify_content == "flex-end" || style.justify_content == "end") {
         main_start = is_reverse ? 0 : free_space;
     } else if (style.justify_content == "center") {
-        main_start = free_space / 2.0f;
+        // Safe center: 防止 free_space 为负时内容向上溢出
+        main_start = std::max(0.0f, free_space / 2.0f);
     } else if (style.justify_content == "space-between" && num_children > 1) {
         main_start = 0;
         gap = free_space / (num_children - 1);
@@ -474,6 +610,25 @@ void RenderFlex::Paint(SkCanvas* canvas) {
         renderer.RenderRoundedBorderAdvanced(box, border_widths, border_styles, border_colors, style.border_radius);
     }
 
+    // 应用 overflow 裁剪（与 RenderBlock 行为对齐）
+    bool needs_clip = false;
+    std::string overflow_x = !style.overflow_x.empty() ? style.overflow_x : style.overflow;
+    std::string overflow_y = !style.overflow_y.empty() ? style.overflow_y : style.overflow;
+    auto isOverflowSet = [](const std::string& v) {
+        return v == "hidden" || v == "scroll" || v == "auto";
+    };
+    if (isOverflowSet(overflow_x) || isOverflowSet(overflow_y)) {
+        needs_clip = true;
+        SkRect clip_rect = SkRect::MakeXYWH(
+            box.border_left_width,
+            box.border_top_width,
+            layout.width - box.border_left_width - box.border_right_width,
+            layout.height - box.border_top_width - box.border_bottom_width
+        );
+        canvas->save();
+        canvas->clipRect(clip_rect, SkClipOp::kIntersect, true);
+    }
+
     // 绘制子元素
     // ⚠️ 关键：有独立合成层的子元素必须跳过，避免父层重复绘制造成重影/双实例
     for (auto& child : children_) {
@@ -481,6 +636,11 @@ void RenderFlex::Paint(SkCanvas* canvas) {
             continue;
         }
         child->Paint(canvas);
+    }
+
+    // 恢复 overflow 裁剪状态
+    if (needs_clip) {
+        canvas->restore();
     }
 
     // 恢复画布状态

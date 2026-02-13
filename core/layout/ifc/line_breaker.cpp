@@ -300,16 +300,16 @@ std::vector<LineBox> LineBreaker::BreakIntoLines(
     std::vector<LineBox> lines;
     if (boxes.empty()) return lines;
 
-    // 第一行应用首行缩进
+    // 可能在断行时对文本盒做细粒度切分，预留容量避免插入后指针失效
+    boxes.reserve(boxes.size() + 8192);
+
     bool is_first_line = true;
     float first_line_indent = text_indent_;
 
-    // 创建第一行（考虑首行缩进）
     float effective_width = available_width - (is_first_line ? first_line_indent : 0.0f);
     lines.emplace_back(effective_width);
     LineBox* current_line = &lines.back();
 
-    // 设置首行的起始 x 偏移
     if (is_first_line && first_line_indent > 0) {
         current_line->x = first_line_indent;
     }
@@ -318,30 +318,107 @@ std::vector<LineBox> LineBreaker::BreakIntoLines(
 
     for (size_t i = 0; i < boxes.size(); ++i) {
         InlineBox& box = boxes[i];
-        float box_width = box.GetTotalWidth();
 
-        // 检查是否需要换行
-        bool need_break = false;
+        if (box.IsInlineStart() || box.IsInlineEnd()) {
+            current_line->AddBox(&box);
+            current_width += box.GetTotalWidth();
+            continue;
+        }
 
-        if (white_space_ != WhiteSpaceMode::NOWRAP && white_space_ != WhiteSpaceMode::PRE) {
-            // 允许换行
-            if (!current_line->IsEmpty() && current_width + box_width > effective_width) {
-                need_break = true;
-            }
-            
-            // overflow-wrap: break-word - 如果单词溢出容器，允许在单词内部断行
-            // 这也处理 word-break: break-word 的情况（已映射到 overflow-wrap: break-word）
-            if (overflow_wrap_ == OverflowWrapMode::BREAK_WORD || overflow_wrap_ == OverflowWrapMode::ANYWHERE) {
-                // 如果当前行为空但盒子仍然溢出，需要在盒子内部断行
-                // 这种情况在文本渲染时处理，这里只标记需要换行
-                if (current_line->IsEmpty() && box_width > effective_width) {
-                    // 盒子太宽，需要在内部断行（由文本渲染处理）
-                    // 这里仍然添加盒子，让渲染器处理溢出
+        // 字符级切分：当文本盒在当前行放不下时，尝试在合法断点切分为前后两段
+        if (box.IsText() && !current_line->IsEmpty() &&
+            white_space_ != WhiteSpaceMode::NOWRAP && white_space_ != WhiteSpaceMode::PRE &&
+            current_width + box.GetTotalWidth() > effective_width && !box.text_runs.empty()) {
+
+            TextRun& run = box.text_runs[0];
+            const std::string& text = run.text;
+            if (!text.empty()) {
+                float content_limit = effective_width - current_width - box.GetLeftSpace() - box.GetRightSpace();
+                if (content_limit > 0.0f && run.width > content_limit) {
+                    size_t total_chars = std::max<size_t>(1, run.CharacterCount());
+                    float avg_char_width = run.width / static_cast<float>(total_chars);
+
+                    size_t pos = 0;
+                    size_t prev_pos = 0;
+                    uint32_t prev_char = 0;
+                    float used_width = 0.0f;
+                    size_t used_chars = 0;
+                    size_t best_break_byte = 0;
+                    size_t best_break_chars = 0;
+
+                    while (pos < text.size()) {
+                        prev_pos = pos;
+                        uint32_t ch = DecodeUTF8(text, pos);
+
+                        float next_w = used_width + avg_char_width;
+                        if (next_w > content_limit && used_chars > 0) {
+                            break;
+                        }
+
+                        used_width = next_w;
+                        used_chars++;
+
+                        if (prev_char != 0 && CanBreakBetween(prev_char, ch)) {
+                            best_break_byte = prev_pos;
+                            best_break_chars = used_chars - 1;
+                        }
+
+                        prev_char = ch;
+                    }
+
+                    bool allow_anywhere = (overflow_wrap_ == OverflowWrapMode::ANYWHERE ||
+                                           overflow_wrap_ == OverflowWrapMode::BREAK_WORD ||
+                                           word_break_ == WordBreakMode::BREAK_ALL);
+
+                    size_t split_byte = best_break_byte;
+                    size_t split_chars = best_break_chars;
+
+                    if (split_byte == 0 && allow_anywhere && used_chars > 0) {
+                        split_byte = prev_pos;
+                        split_chars = used_chars;
+                    }
+
+                    if (split_byte > 0 && split_byte < text.size()) {
+                        InlineBox tail = box;
+
+                        std::string head_text = text.substr(0, split_byte);
+                        std::string tail_text = text.substr(split_byte);
+
+                        float head_w = avg_char_width * static_cast<float>(split_chars);
+                        if (head_w <= 0.0f) head_w = std::max(0.0f, used_width);
+                        head_w = std::min(head_w, run.width);
+                        float tail_w = std::max(0.0f, run.width - head_w);
+
+                        run.text = head_text;
+                        run.end_offset = run.start_offset + split_byte;
+                        run.width = head_w;
+                        box.width = head_w;
+
+                        tail.text_runs.clear();
+                        TextRun tail_run = run;
+                        tail_run.text = tail_text;
+                        tail_run.start_offset = run.end_offset;
+                        tail_run.end_offset = tail_run.start_offset + tail_text.size();
+                        tail_run.width = tail_w;
+                        tail_run.is_forced_break = false;
+                        tail.text_runs.push_back(tail_run);
+                        tail.width = tail_w;
+
+                        boxes.insert(boxes.begin() + static_cast<long long>(i + 1), std::move(tail));
+                    }
                 }
             }
         }
 
-        // 检查强制换行
+        float box_width = box.GetTotalWidth();
+        bool need_break = false;
+
+        if (white_space_ != WhiteSpaceMode::NOWRAP && white_space_ != WhiteSpaceMode::PRE) {
+            if (!current_line->IsEmpty() && current_width + box_width > effective_width) {
+                need_break = true;
+            }
+        }
+
         bool has_forced_break = false;
         if (box.IsText()) {
             for (const auto& run : box.text_runs) {
@@ -353,7 +430,6 @@ std::vector<LineBox> LineBreaker::BreakIntoLines(
         }
 
         if (need_break) {
-            // 创建新行（不再是第一行）
             is_first_line = false;
             effective_width = available_width;
             lines.emplace_back(effective_width);
@@ -361,13 +437,10 @@ std::vector<LineBox> LineBreaker::BreakIntoLines(
             current_width = 0.0f;
         }
 
-        // 添加盒子到当前行
         current_line->AddBox(&box);
         current_width += box_width;
 
-        // 强制换行后创建新行
         if (has_forced_break) {
-            // 强制换行后也不是第一行了
             is_first_line = false;
             effective_width = available_width;
             lines.emplace_back(effective_width);
@@ -376,7 +449,6 @@ std::vector<LineBox> LineBreaker::BreakIntoLines(
         }
     }
 
-    // 移除末尾空行
     while (!lines.empty() && lines.back().IsEmpty()) {
         lines.pop_back();
     }
