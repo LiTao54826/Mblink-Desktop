@@ -564,11 +564,12 @@ static FlexAlgoConstants ComputeConstants(
     constants.scrollbar_gutter = {scrollbar_right, scrollbar_bottom};
 
     // Content box inset = padding + border + scrollbar_gutter
+    // Rect 顺序: {left, right, top, bottom}
     constants.content_box_inset = {
-        padding.left + border.left + constants.scrollbar_gutter.x,
-        padding.right + border.right,
-        padding.top + border.top + constants.scrollbar_gutter.y,
-        padding.bottom + border.bottom
+        padding.left + border.left,
+        padding.right + border.right + constants.scrollbar_gutter.x,
+        padding.top + border.top,
+        padding.bottom + border.bottom + constants.scrollbar_gutter.y
     };
 
     // Resolve gap
