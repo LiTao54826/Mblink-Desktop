@@ -56,21 +56,19 @@ char* BytecodeCompiler::ModuleNormalize(JSContext* ctx, const char* module_base,
         return js_strdup(ctx, module_name);
     }
 
-    // 相对路径：基于 module_base 解析为绝对路径
+    // 相对路径：基于 module_base 解析
     if (base.empty()) {
         return js_strdup(ctx, module_name);
     }
 
+    // module_base 现在是相对路径（如 "app.js", "src/components.js"）
+    // 基于它的 parent 目录拼接 import 路径
     fs::path base_path(base);
     fs::path resolved = (base_path.parent_path() / name).lexically_normal();
 
-    // 规范化为与 ModuleResolver 一致的格式
-    std::string resolved_str;
-    try {
-        resolved_str = fs::weakly_canonical(resolved).string();
-    } catch (...) {
-        resolved_str = resolved.string();
-    }
+    // 统一使用正斜杠
+    std::string resolved_str = resolved.string();
+    std::replace(resolved_str.begin(), resolved_str.end(), '\\', '/');
 
     return js_strdup(ctx, resolved_str.c_str());
 }

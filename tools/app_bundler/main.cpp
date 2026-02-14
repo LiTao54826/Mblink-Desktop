@@ -403,7 +403,14 @@ int main(int argc, char** argv) {
     BytecodeCompiler compiler;
     compiler.SetVerbose(options.verbose);
     compiler.SetStripSource(true);  // 去除源码信息减小体积
-    
+
+    // 设置入口文件目录，让 ModuleNormalize 能正确解析相对路径
+    {
+        namespace fs = std::filesystem;
+        std::string entry_dir = fs::path(fs::weakly_canonical(options.input_file)).parent_path().string();
+        compiler.SetEntryDir(entry_dir);
+    }
+
     auto compiled = compiler.CompileModules(modules);
     
     if (compiler.HasErrors()) {

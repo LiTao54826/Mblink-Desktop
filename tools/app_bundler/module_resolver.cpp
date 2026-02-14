@@ -250,33 +250,68 @@ std::vector<ResolvedModule> ModuleResolver::TopologicalSort() {
     return result;
 }
 
+std::string ModuleResolver::ToRelativeId(const std::string& abs_path) const {
+    if (entry_dir_.empty()) return abs_path;
+    try {
+        std::string rel = fs::relative(fs::path(abs_path), fs::path(entry_dir_)).string();
+        // 统一使用正斜杠
+        std::replace(rel.begin(), rel.end(), '\\', '/');
+        return rel;
+    } catch (...) {
+        return abs_path;
+    }
+}
+
 std::vector<ResolvedModule> ModuleResolver::Resolve(const std::string& entry_file) {
     errors_.clear();
     resolved_cache_.clear();
-    
+
     // 规范化入口文件路径
     std::string entry_id = NormalizePath(entry_file);
-    
+
+    // 记录入口文件所在目录（用于后续计算相对路径）
+    entry_dir_ = fs::path(entry_id).parent_path().string();
+
     if (!fs::exists(entry_file)) {
         AddError("Entry file not found: " + entry_file);
         return {};
     }
-    
+
     if (verbose_) {
         std::cout << "Resolving modules from: " << entry_id << std::endl;
     }
-    
-    // 开始解析
+
+    // 开始解析（内部使用绝对路径进行文件读取和去重）
     std::unordered_set<std::string> visiting;
     ResolveModule(entry_id, "", visiting);
-    
+
     if (HasErrors()) {
         return {};
     }
-    
+
     // 拓扑排序
     auto sorted = TopologicalSort();
-    
+
+    // 将所有非 builtin 模块的 id 和 dependencies 转换为相对路径
+    // 构建绝对路径 -> 相对路径的映射表
+    std::unordered_map<std::string, std::string> path_map;
+    for (auto& module : sorted) {
+        if (!module.is_builtin) {
+            std::string rel_id = ToRelativeId(module.id);
+            path_map[module.id] = rel_id;
+            module.id = rel_id;
+        }
+    }
+    // 更新 dependencies 中的路径引用
+    for (auto& module : sorted) {
+        for (auto& dep : module.dependencies) {
+            auto it = path_map.find(dep);
+            if (it != path_map.end()) {
+                dep = it->second;
+            }
+        }
+    }
+
     if (verbose_) {
         std::cout << "Module order:" << std::endl;
         for (size_t i = 0; i < sorted.size(); i++) {
@@ -285,7 +320,7 @@ std::vector<ResolvedModule> ModuleResolver::Resolve(const std::string& entry_fil
             std::cout << std::endl;
         }
     }
-    
+
     return sorted;
 }
 

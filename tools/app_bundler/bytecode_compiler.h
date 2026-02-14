@@ -114,6 +114,11 @@ public:
      */
     void SetVerbose(bool verbose) { verbose_ = verbose; }
 
+    /**
+     * @brief 设置入口文件目录（用于 ModuleNormalize 计算相对路径）
+     */
+    void SetEntryDir(const std::string& dir) { entry_dir_ = dir; }
+
 private:
     JSRuntime* runtime_;
     JSContext* ctx_;
@@ -122,7 +127,10 @@ private:
     bool strip_debug_ = false;
     bool verbose_ = false;
 
-    // 模块源码映射 (绝对路径 -> 源码)，供 module loader 回调使用
+    // 入口文件所在目录（用于 ModuleNormalize 计算相对路径）
+    std::string entry_dir_;
+
+    // 模块源码映射 (相对路径 -> 源码)，供 module loader 回调使用
     std::unordered_map<std::string, std::string> module_sources_;
 
     // 初始化 QuickJS 运行时
@@ -140,7 +148,7 @@ private:
     // 从 QuickJS 异常中提取错误信息
     void ExtractException();
 
-    // QuickJS 模块名标准化回调（解析相对路径为绝对路径）
+    // QuickJS 模块名标准化回调（解析相对路径）
     static char* ModuleNormalize(JSContext* ctx, const char* module_base,
                                   const char* module_name, void* opaque);
 

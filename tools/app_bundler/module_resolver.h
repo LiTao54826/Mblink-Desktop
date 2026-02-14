@@ -97,6 +97,12 @@ private:
     // 详细输出
     bool verbose_ = false;
 
+    // 入口文件所在目录（用于计算相对路径）
+    std::string entry_dir_;
+
+    // 将绝对路径转换为相对于 entry_dir_ 的相对路径
+    std::string ToRelativeId(const std::string& abs_path) const;
+
     // 递归解析模块
     bool ResolveModule(const std::string& module_id, 
                        const std::string& from_file,
