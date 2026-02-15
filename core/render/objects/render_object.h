@@ -919,6 +919,16 @@ public:
      */
     SkRect GetViewportBoundingRect() const;
 
+    /**
+     * @brief 获取相对于指定祖先 RenderObject 的边界矩形
+     * @param ancestor 祖先 RenderObject（若为 nullptr 则等同于 GetBoundingRect）
+     * @return 相对于 ancestor 局部坐标的边界矩形（含 transform 扩展）
+     *
+     * 该方法与 LayerTreeBuilder::UpdateLayerBounds 中 rel_x/rel_y 的累加逻辑一致，
+     * 用于在 CollectDirtyRectsForLayer 中正确计算非根层的脏区域坐标。
+     */
+    SkRect GetBoundingRectRelativeTo(const RenderObject* ancestor) const;
+
     // =========================================================================
     // 命中测试优化：视口坐标缓存 API
     // =========================================================================

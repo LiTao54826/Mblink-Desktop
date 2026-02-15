@@ -659,6 +659,69 @@ SkRect RenderObject::GetBoundingRect() const {
     return base_rect;
 }
 
+SkRect RenderObject::GetBoundingRectRelativeTo(const RenderObject* ancestor) const {
+    // 计算相对于指定祖先 RenderObject 的边界矩形。
+    // 坐标累加逻辑与 LayerTreeBuilder::UpdateLayerBounds 中 rel_x/rel_y 保持一致，
+    // 从而保证 CollectDirtyRectsForLayer 的脏区域坐标与层 bounds 坐标系统一。
+    const auto& layout = layout_info_;
+
+    if (!layout.is_laid_out) {
+        return SkRect::MakeEmpty();
+    }
+
+    // 如果没有指定祖先，回退到完整的文档坐标
+    if (!ancestor) {
+        return GetBoundingRect();
+    }
+
+    // 累加 layout.x/y 直到到达指定的祖先 RenderObject（不包含祖先本身的 layout 偏移）
+    float rel_x = layout.x;
+    float rel_y = layout.y;
+
+    auto parent = parent_.lock();
+    while (parent && parent.get() != ancestor) {
+        const auto& parent_layout = parent->GetLayoutInfo();
+        rel_x += parent_layout.x;
+        rel_y += parent_layout.y;
+        parent = parent->GetParent();
+    }
+
+    SkRect base_rect = SkRect::MakeXYWH(rel_x, rel_y, layout.width, layout.height);
+
+    // 如果元素有 transform，计算变换后的边界框
+    const auto& style = computed_style_;
+    if (style.transform.has_value() && !style.transform->IsEmpty()) {
+        SkRect local_rect = SkRect::MakeWH(layout.width, layout.height);
+        SkMatrix transform_matrix = style.transform->ToSkMatrix(local_rect, style.transform_origin);
+
+        SkPoint corners[4] = {
+            {0, 0},
+            {layout.width, 0},
+            {layout.width, layout.height},
+            {0, layout.height}
+        };
+        transform_matrix.mapPoints(corners, 4);
+
+        float min_x = corners[0].x(), max_x = corners[0].x();
+        float min_y = corners[0].y(), max_y = corners[0].y();
+        for (int i = 1; i < 4; ++i) {
+            min_x = std::min(min_x, corners[i].x());
+            max_x = std::max(max_x, corners[i].x());
+            min_y = std::min(min_y, corners[i].y());
+            max_y = std::max(max_y, corners[i].y());
+        }
+
+        return SkRect::MakeLTRB(
+            rel_x + min_x,
+            rel_y + min_y,
+            rel_x + max_x,
+            rel_y + max_y
+        );
+    }
+
+    return base_rect;
+}
+
 SkRect RenderObject::GetViewportBoundingRect() const {
     // 使用布局信息计算边界框（视口坐标系，用于元素选择器高亮）
     const auto& layout = layout_info_;
