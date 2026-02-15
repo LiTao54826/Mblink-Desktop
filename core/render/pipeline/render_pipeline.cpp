@@ -735,17 +735,32 @@ void RenderPipeline::CollectDirtyRectsForLayer(RenderObject* obj, CompositorLaye
             //   这与 LayerTreeBuilder::UpdateLayerBounds 中 rel_x/rel_y 的累加逻辑一致，
             //   保证坐标系统一，避免脏区域落到层边界之外被丢弃。
             //
+            // 性能优化：对于小尺寸独立层（如单个动画元素），全层标记为脏的开销很小，
+            //   精确计算脏区域反而有 CPU 开销（坐标累加、transform 计算）。
+            //   因此对于小尺寸层，直接标记整层为脏，简化计算路径。
+            //
             // 旧代码使用 GetBoundingRect()（文档绝对坐标）减去 layer_bounds.left/top
             // （相对于父层坐标），两者坐标系不匹配，当存在中间层（如 ScrollableContent）时
             // 脏区域会偏移到层位图之外，导致 MarkDirty 中被 intersect 丢弃。
 
             RenderObject* layer_render_obj = layer->GetRenderObject();
-            if (obj == layer_render_obj) {
-                // 情况 1: 层自身的 RenderObject → 标记整个层为脏
-                const SkRect& layer_bounds = layer->GetBounds();
+            const SkRect& layer_bounds = layer->GetBounds();
+
+            // 小尺寸层阈值（可通过环境变量配置）
+            static float small_layer_threshold = []() {
+                const char* env = std::getenv("LIGHTUI_SMALL_LAYER_THRESHOLD");
+                return env ? std::atof(env) : 200.0f;
+            }();
+
+            // 判断是否为小尺寸层
+            bool is_small_layer = (layer_bounds.width() <= small_layer_threshold &&
+                                   layer_bounds.height() <= small_layer_threshold);
+
+            if (obj == layer_render_obj || is_small_layer) {
+                // 情况 1: 层自身的 RenderObject OR 小尺寸层 → 标记整个层为脏
                 bounds = SkRect::MakeWH(layer_bounds.width(), layer_bounds.height());
             } else {
-                // 情况 2: 子元素 → 计算相对于层 RenderObject 的位置
+                // 情况 2: 大尺寸层的子元素 → 计算精确脏区域
                 bounds = obj->GetBoundingRectRelativeTo(layer_render_obj);
             }
 
