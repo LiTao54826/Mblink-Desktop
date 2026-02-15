@@ -30,6 +30,7 @@
 #include "core/lexbor/style_manager.h"
 #include <iostream>
 #include <vector>
+#include <cstdlib>
 
 namespace lightui {
 
@@ -135,23 +136,31 @@ void WindowRenderer::UpdateAnimations(double current_time) {
         return;
     }
 
+    // 调试开关：LIGHTUI_DEBUG_ANIM_LOOP=1
+    static const bool debug_anim_loop = (std::getenv("LIGHTUI_DEBUG_ANIM_LOOP") != nullptr);
+    static uint64_t debug_frame = 0;
+    ++debug_frame;
+
     // 更新 CSS Transition 动画
     bool has_active_animations = false;
+    bool has_running_transitions = false;
     AnimationTimeline* timeline = window_->GetAnimationTimeline();
     if (timeline) {
         timeline->Update(current_time);
-        has_active_animations = timeline->HasRunningTransitions();
+        has_running_transitions = timeline->HasRunningTransitions();
+        has_active_animations = has_running_transitions;
     }
 
     // 更新 CSS Animation 动画（使用 StyleManager 的 AnimationController）
+    size_t running_css_animations = 0;
     Document* document = window_->GetDocument().get();
     if (document && document->GetStyleManager()) {
         auto& controller = document->GetStyleManager()->GetAnimationController();
         controller.Update(current_time);
-        size_t running_count = controller.GetRunningAnimations().size();
-        has_active_animations = has_active_animations || running_count > 0;
+        running_css_animations = controller.GetRunningAnimations().size();
+        has_active_animations = has_active_animations || running_css_animations > 0;
     }
-    
+
     // 注意：AnimationApplicator 绑定的是 Document/StyleManager 的 controller。
     // 这里不再更新 Window 自己的 animation_controller_，避免双 controller 状态源不一致。
 
@@ -163,11 +172,38 @@ void WindowRenderer::UpdateAnimations(double current_time) {
         ApplyAnimationsToRenderTree(cached_tree);
     }
 
-    // 如果有活跃动画，标记需要重绘
-    if (has_active_animations) {
+    // 关键修复：只靠 running 动画判定会在某些帧出现“短暂空窗”，
+    // 导致主循环停止请求重绘，表现为动画只在交互事件时跳一下。
+    // 这里把 pending（样式中已声明但尚未进入 running）也纳入持续重绘条件。
+    bool has_pending_animations = false;
+    if (cached_tree) {
+        has_pending_animations = HasPendingAnimations(cached_tree);
+    }
+
+    bool should_request_repaint = has_active_animations || has_pending_animations;
+    if (should_request_repaint) {
         window_->SetNeedsRepaint();
     }
+
+    if (debug_anim_loop && (debug_frame <= 120 || (debug_frame % 60 == 0))) {
+        bool pipeline_needs_update = false;
+        if (auto pipeline = window_->GetRenderPipeline()) {
+            pipeline_needs_update = pipeline->NeedsUpdate();
+        }
+
+        std::cout << "[ANIM_LOOP] t=" << current_time
+                  << " frame=" << debug_frame
+                  << " runningTransitions=" << (has_running_transitions ? 1 : 0)
+                  << " runningCss=" << running_css_animations
+                  << " pending=" << (has_pending_animations ? 1 : 0)
+                  << " requestRepaint=" << (should_request_repaint ? 1 : 0)
+                  << " needsRepaintNow=" << (window_->NeedsRepaint() ? 1 : 0)
+                  << " pipelineNeedsUpdate=" << (pipeline_needs_update ? 1 : 0)
+                  << std::endl;
+    }
 }
+
+
 
 void WindowRenderer::ApplyAnimationsToRenderTree(RenderObject* root) {
     if (!root || !window_) {
@@ -201,19 +237,16 @@ bool WindowRenderer::HasPendingAnimations(RenderObject* root) const {
         return false;
     }
 
-    // 检查当前对象是否有待启动的动画
+    // 关键修复：以“动画声明”作为 pending 条件，不依赖 started_animations_。
+    // 之前依赖 HasActiveAnimations() 会被历史/局部状态误导，
+    // 可能在 running_animations_ 暂时为空的帧把窗口判定为“不需要重绘”，
+    // 造成动画只在交互事件触发时才跳一下。
+
+    // 检查当前对象是否声明了可启动动画
     const auto& style = root->GetComputedStyle();
     for (const auto& anim : style.animations) {
         if (anim.IsValid() && !anim.name.empty() && anim.name != "none") {
-            // 检查这个动画是否已经在运行
-            if (!applicator->HasActiveAnimations(root)) {
-                return true;  // 有动画配置但还没运行
-            }
-            // 即使有活动动画，也可能有新的动画需要启动
-            auto active_names = applicator->GetActiveAnimationNames(root);
-            if (active_names.find(anim.name) == active_names.end()) {
-                return true;  // 这个动画还没启动
-            }
+            return true;
         }
     }
 

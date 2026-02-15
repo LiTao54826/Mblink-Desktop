@@ -12,6 +12,78 @@
 #include "core/render/objects/render_object.h"
 #include "include/core/SkPaint.h"
 #include "include/core/SkImage.h"
+#include <cmath>
+#include <cstdlib>
+#include <iostream>
+#include <unordered_map>
+#include <unordered_set>
+
+namespace {
+inline bool IsAnimFinalDebugEnabled() {
+    static const bool enabled = (std::getenv("LIGHTUI_DEBUG_ANIM_FINAL") != nullptr);
+    return enabled;
+}
+
+inline bool IsLayerReuseDebugEnabled() {
+    static const bool enabled = (std::getenv("LIGHTUI_DEBUG_LAYER_REUSE") != nullptr);
+    return enabled;
+}
+
+inline bool IsAnimMapDebugEnabled() {
+    static const bool enabled = (std::getenv("LIGHTUI_DEBUG_ANIM_MAP") != nullptr);
+    return enabled;
+}
+
+inline bool ShouldLogSetTransformChanged(int layer_id, const SkMatrix& transform) {
+    struct LastTransform {
+        float m00 = 0.0f;
+        float m01 = 0.0f;
+        float m02 = 0.0f;
+        float m10 = 0.0f;
+        float m11 = 0.0f;
+        float m12 = 0.0f;
+    };
+
+    static std::unordered_map<int, LastTransform> last_values;
+    LastTransform current;
+    current.m00 = transform[SkMatrix::kMScaleX];
+    current.m01 = transform[SkMatrix::kMSkewX];
+    current.m02 = transform[SkMatrix::kMTransX];
+    current.m10 = transform[SkMatrix::kMSkewY];
+    current.m11 = transform[SkMatrix::kMScaleY];
+    current.m12 = transform[SkMatrix::kMTransY];
+
+    auto it = last_values.find(layer_id);
+    if (it != last_values.end()) {
+        const LastTransform& prev = it->second;
+        const float eps = 0.0001f;
+        bool same = std::fabs(prev.m00 - current.m00) < eps &&
+                    std::fabs(prev.m01 - current.m01) < eps &&
+                    std::fabs(prev.m02 - current.m02) < eps &&
+                    std::fabs(prev.m10 - current.m10) < eps &&
+                    std::fabs(prev.m11 - current.m11) < eps &&
+                    std::fabs(prev.m12 - current.m12) < eps;
+        if (same) {
+            return false;
+        }
+    }
+
+    last_values[layer_id] = current;
+    return true;
+}
+
+inline bool ShouldLogSetOpacityChanged(int layer_id, float opacity) {
+    static std::unordered_map<int, float> last_opacity;
+    auto it = last_opacity.find(layer_id);
+    if (it != last_opacity.end()) {
+        if (std::fabs(it->second - opacity) < 0.0001f) {
+            return false;
+        }
+    }
+    last_opacity[layer_id] = opacity;
+    return true;
+}
+}
 
 namespace lightui {
 
@@ -150,6 +222,15 @@ bool PaintArtifactCompositor::DirectlyUpdateTransform(
     
     // 查找关联的层并更新其变换
     CompositorLayer* layer = FindLayerForTransformNode(transform_node);
+    if (IsAnimMapDebugEnabled()) {
+        std::cout << "[ANIM_MAP_DIRECT]"
+                  << " transform_node=" << transform_node
+                  << " hit_layer=" << (layer ? layer->GetId() : 0)
+                  << " hit_ro=" << (layer ? layer->GetRenderObject() : nullptr)
+                  << " tx=" << new_matrix.rc(0, 3)
+                  << " ty=" << new_matrix.rc(1, 3)
+                  << "\n";
+    }
     if (layer) {
         // 将 SkM44 转换为 SkMatrix（2D 变换）
         SkMatrix matrix;
@@ -159,8 +240,23 @@ bool PaintArtifactCompositor::DirectlyUpdateTransform(
             new_matrix.rc(3, 0), new_matrix.rc(3, 1), new_matrix.rc(3, 3)
         );
         layer->SetTransform(matrix);
+
+        if (IsAnimFinalDebugEnabled()) {
+            const SkMatrix& applied = layer->GetTransform();
+            if (ShouldLogSetTransformChanged(layer->GetId(), applied)) {
+                std::cout << "[ANIM_FINAL_SET] path=property_tree property=transform"
+                          << " layer_id=" << layer->GetId()
+                          << " m00=" << applied[SkMatrix::kMScaleX]
+                          << " m01=" << applied[SkMatrix::kMSkewX]
+                          << " m02=" << applied[SkMatrix::kMTransX]
+                          << " m10=" << applied[SkMatrix::kMSkewY]
+                          << " m11=" << applied[SkMatrix::kMScaleY]
+                          << " m12=" << applied[SkMatrix::kMTransY]
+                          << "\n";
+            }
+        }
     }
-    
+
     // 更新统计
     statistics_.direct_updates++;
     
@@ -183,8 +279,18 @@ bool PaintArtifactCompositor::DirectlyUpdateOpacity(
     CompositorLayer* layer = FindLayerForEffectNode(effect_node);
     if (layer) {
         layer->SetOpacity(new_opacity);
+
+        if (IsAnimFinalDebugEnabled()) {
+            const float opacity = layer->GetOpacity();
+            if (ShouldLogSetOpacityChanged(layer->GetId(), opacity)) {
+                std::cout << "[ANIM_FINAL_SET] path=property_tree property=opacity"
+                          << " layer_id=" << layer->GetId()
+                          << " opacity=" << opacity
+                          << "\n";
+            }
+        }
     }
-    
+
     // 更新统计
     statistics_.direct_updates++;
     
@@ -509,6 +615,14 @@ std::shared_ptr<CompositorLayer> PaintArtifactCompositor::CreateLayerFromPending
     for (const auto* chunk : pending_layer.GetChunks()) {
         chunks.push_back(chunk);
     }
+
+    // 关键：绑定层与 RenderObject，供后续稳定复用（MatchLayers fallback）
+    RenderObject* render_object = nullptr;
+    if (!chunks.empty() && chunks[0]) {
+        render_object = chunks[0]->GetRenderObject();
+    }
+    layer->SetRenderObject(render_object);
+
     layer->SetPaintChunks(std::move(chunks));
     
     // 标记需要完整光栅化
@@ -558,47 +672,192 @@ void PaintArtifactCompositor::UpdateExistingLayer(
     for (const auto* chunk : pending_layer.GetChunks()) {
         chunks.push_back(chunk);
     }
+
+    // 关键：同步更新 RenderObject 关联，避免 fallback 复用键失效
+    RenderObject* render_object = nullptr;
+    if (!chunks.empty() && chunks[0]) {
+        render_object = chunks[0]->GetRenderObject();
+    }
+    layer->SetRenderObject(render_object);
+
     layer->SetPaintChunks(std::move(chunks));
 }
 
 void PaintArtifactCompositor::MatchLayers(
     const std::vector<PendingLayer>& new_pending_layers) {
-    
+
     // 清除旧的映射
     transform_to_layer_.clear();
     effect_to_layer_.clear();
     scroll_to_layer_.clear();
-    
-    // 简单策略：按索引匹配
-    // 如果新层数量与旧层数量相同，尝试复用
-    // 否则重新创建所有层
-    
-    if (new_pending_layers.size() == layers_.size() && !needs_full_update_) {
-        // 尝试复用现有层
-        for (size_t i = 0; i < new_pending_layers.size(); ++i) {
-            UpdateExistingLayer(layers_[i].get(), new_pending_layers[i]);
-            
-            // 重建映射
-            const auto& state = new_pending_layers[i].GetState();
-            if (state.Transform()) {
-                transform_to_layer_[state.Transform()] = layers_[i].get();
-            }
-            if (state.Effect()) {
-                effect_to_layer_[state.Effect()] = layers_[i].get();
-            }
-            if (state.Scroll()) {
-                scroll_to_layer_[state.Scroll()] = layers_[i].get();
-            }
-        }
-    } else {
-        // 重新创建所有层
-        layers_.clear();
-        layers_.reserve(new_pending_layers.size());
-        
-        for (const auto& pending_layer : new_pending_layers) {
-            layers_.push_back(CreateLayerFromPendingLayer(pending_layer));
+
+    // 构建旧层索引，尽量按稳定键复用，避免 layer id 持续增长
+    std::unordered_map<const TransformTreeNode*, std::shared_ptr<CompositorLayer>> old_by_transform;
+    std::unordered_map<const EffectTreeNode*, std::shared_ptr<CompositorLayer>> old_by_effect;
+    std::unordered_map<const ScrollTreeNode*, std::shared_ptr<CompositorLayer>> old_by_scroll;
+    std::unordered_map<RenderObject*, std::shared_ptr<CompositorLayer>> old_by_render_object;
+
+    for (const auto& layer : layers_) {
+        if (!layer) continue;
+        const auto& old_state = layer->GetPropertyTreeState();
+        if (old_state.Transform()) old_by_transform[old_state.Transform()] = layer;
+        if (old_state.Effect()) old_by_effect[old_state.Effect()] = layer;
+        if (old_state.Scroll()) old_by_scroll[old_state.Scroll()] = layer;
+
+        if (RenderObject* obj = layer->GetRenderObject()) {
+            old_by_render_object[obj] = layer;
         }
     }
+
+    std::unordered_set<CompositorLayer*> used_layers;
+    std::vector<std::shared_ptr<CompositorLayer>> new_layers;
+    new_layers.reserve(new_pending_layers.size());
+
+    for (const auto& pending_layer : new_pending_layers) {
+        const auto& state = pending_layer.GetState();
+        std::shared_ptr<CompositorLayer> matched;
+        const char* match_stage = "none";
+
+        // 1) 优先按属性树节点复用
+        if (!matched && state.Transform()) {
+            auto it = old_by_transform.find(state.Transform());
+            if (it != old_by_transform.end() && !used_layers.count(it->second.get())) {
+                matched = it->second;
+                match_stage = "transform_node";
+            }
+        }
+        if (!matched && state.Effect()) {
+            auto it = old_by_effect.find(state.Effect());
+            if (it != old_by_effect.end() && !used_layers.count(it->second.get())) {
+                matched = it->second;
+                match_stage = "effect_node";
+            }
+        }
+        if (!matched && state.Scroll()) {
+            auto it = old_by_scroll.find(state.Scroll());
+            if (it != old_by_scroll.end() && !used_layers.count(it->second.get())) {
+                matched = it->second;
+                match_stage = "scroll_node";
+            }
+        }
+
+        // 2) 回退：按第一个 chunk 的 RenderObject 复用
+        if (!matched) {
+            const auto& chunks = pending_layer.GetChunks();
+            if (!chunks.empty() && chunks[0]) {
+                RenderObject* obj = chunks[0]->GetRenderObject();
+                if (obj) {
+                    auto it = old_by_render_object.find(obj);
+                    if (it != old_by_render_object.end() && !used_layers.count(it->second.get())) {
+                        matched = it->second;
+                        match_stage = "render_object";
+                    }
+                }
+            }
+        }
+
+        // 3) 回退：按几何特征 + compositing reasons 复用（应对 RenderObject/节点重建）
+        if (!matched) {
+            const SkRect& new_bounds = pending_layer.GetBounds();
+            const auto new_reasons = pending_layer.GetCompositingReasons();
+
+            float best_score = -1.0f;
+            std::shared_ptr<CompositorLayer> best_layer;
+
+            for (const auto& old_layer : layers_) {
+                if (!old_layer || used_layers.count(old_layer.get())) {
+                    continue;
+                }
+
+                // 优先约束：合成原因一致
+                if (old_layer->GetCompositingReasons() != new_reasons) {
+                    continue;
+                }
+
+                const SkRect& old_bounds = old_layer->GetBounds();
+
+                // 先做快速尺寸过滤
+                const float w_diff = std::fabs(old_bounds.width() - new_bounds.width());
+                const float h_diff = std::fabs(old_bounds.height() - new_bounds.height());
+                if (w_diff > 1.0f || h_diff > 1.0f) {
+                    continue;
+                }
+
+                // 计算重叠率作为评分
+                SkRect intersection;
+                if (!intersection.intersect(old_bounds, new_bounds)) {
+                    continue;
+                }
+
+                const float inter_area = intersection.width() * intersection.height();
+                const float old_area = std::max(1.0f, old_bounds.width() * old_bounds.height());
+                const float new_area = std::max(1.0f, new_bounds.width() * new_bounds.height());
+                const float score = inter_area / std::max(old_area, new_area);
+
+                if (score > best_score) {
+                    best_score = score;
+                    best_layer = old_layer;
+                }
+            }
+
+            if (best_layer && best_score > 0.6f) {
+                matched = best_layer;
+                match_stage = "geometry";
+            }
+        }
+
+        if (matched) {
+            UpdateExistingLayer(matched.get(), pending_layer);
+            used_layers.insert(matched.get());
+            new_layers.push_back(matched);
+        } else {
+            new_layers.push_back(CreateLayerFromPendingLayer(pending_layer));
+
+            if (IsLayerReuseDebugEnabled()) {
+                const auto& chunks = pending_layer.GetChunks();
+                RenderObject* obj = (!chunks.empty() && chunks[0]) ? chunks[0]->GetRenderObject() : nullptr;
+                const SkRect& b = pending_layer.GetBounds();
+                std::cout << "[LAYER_REUSE_MISS]"
+                          << " reason=create_new"
+                          << " t=" << (state.Transform() ? 1 : 0)
+                          << " e=" << (state.Effect() ? 1 : 0)
+                          << " s=" << (state.Scroll() ? 1 : 0)
+                          << " ro=" << (obj ? 1 : 0)
+                          << " chunk_count=" << chunks.size()
+                          << " comp_reasons=" << static_cast<uint32_t>(pending_layer.GetCompositingReasons())
+                          << " bounds=" << b.left() << "," << b.top() << "," << b.width() << "x" << b.height()
+                          << "\n";
+            }
+        }
+
+        if (IsLayerReuseDebugEnabled() && matched) {
+            std::cout << "[LAYER_REUSE_HIT]"
+                      << " stage=" << match_stage
+                      << " layer_id=" << matched->GetId()
+                      << "\n";
+        }
+
+        // 重建映射（使用 new_layers 最后一个）
+        CompositorLayer* layer_ptr = new_layers.back().get();
+        if (state.Transform()) {
+            auto it = transform_to_layer_.find(state.Transform());
+            if (IsAnimMapDebugEnabled() && it != transform_to_layer_.end() && it->second != layer_ptr) {
+                std::cout << "[ANIM_MAP_OVERWRITE]"
+                          << " kind=transform"
+                          << " node=" << state.Transform()
+                          << " old_layer=" << (it->second ? it->second->GetId() : 0)
+                          << " old_ro=" << (it->second ? it->second->GetRenderObject() : nullptr)
+                          << " new_layer=" << layer_ptr->GetId()
+                          << " new_ro=" << layer_ptr->GetRenderObject()
+                          << "\n";
+            }
+            transform_to_layer_[state.Transform()] = layer_ptr;
+        }
+        if (state.Effect()) effect_to_layer_[state.Effect()] = layer_ptr;
+        if (state.Scroll()) scroll_to_layer_[state.Scroll()] = layer_ptr;
+    }
+
+    layers_ = std::move(new_layers);
 }
 
 void PaintArtifactCompositor::ComputeLayerInvalidation(
@@ -684,9 +943,18 @@ void PaintArtifactCompositor::RasterizeLayerChunks(CompositorLayer* layer) {
         
         // 计算从绘制块状态到层状态的变换
         if (geometry_mapper_) {
+            // 关键修复：GetClipRect(source, target) 返回的是 target(层)坐标系中的裁剪区域
+            // 当前 canvas 尚未 concat 时正处于层坐标系，因此必须先 clip 再 concat。
+            // 否则会把 layer 坐标系的 clip 当作 chunk 坐标系使用，导致布局变化时裁剪异常。
+            SkRect clip_rect = geometry_mapper_->GetClipRect(
+                chunk->GetState(), layer_state);
+            if (!clip_rect.isEmpty()) {
+                canvas->clipRect(clip_rect);
+            }
+
             SkM44 transform = geometry_mapper_->GetTransformMatrix(
                 chunk->GetState(), layer_state);
-            
+
             // 应用变换（转换为 SkMatrix）
             SkMatrix matrix;
             matrix.setAll(
@@ -695,13 +963,6 @@ void PaintArtifactCompositor::RasterizeLayerChunks(CompositorLayer* layer) {
                 transform.rc(3, 0), transform.rc(3, 1), transform.rc(3, 3)
             );
             canvas->concat(matrix);
-            
-            // 应用裁剪
-            SkRect clip_rect = geometry_mapper_->GetClipRect(
-                chunk->GetState(), layer_state);
-            if (!clip_rect.isEmpty()) {
-                canvas->clipRect(clip_rect);
-            }
         }
         
         // 绘制绘制块关联的 RenderObject

@@ -13,7 +13,6 @@
 #include "core/dom/element.h"
 #include <algorithm>
 #include <cmath>
-#include <iostream>
 
 namespace lightui {
 
@@ -34,6 +33,11 @@ RenderObject* RunningAnimation::GetRenderObject() const {
 // ============================================================================
 
 AnimationController::AnimationController() {
+    // 关键修复：禁用批量更新路径。
+    // 批量路径依赖 RenderObject* 请求，渲染树重建/切换阶段可能拿到空对象，
+    // 会导致该帧动画时间不推进，表现为“只在交互触发时动一下”。
+    // 保持走逐动画 Update 路径，确保时间轴每帧连续推进。
+    optimizer_.GetBatchUpdater().SetEnabled(false);
 }
 
 AnimationController::~AnimationController() {
@@ -371,7 +375,7 @@ AnimationController::GetCurrentProperties(std::shared_ptr<Element> element, cons
     
     // 计算进度
     float progress = ComputeProgress(anim, anim.current_time + anim.start_time);
-    
+
     // 计算当前帧属性
     return ComputeCurrentFrame(anim, progress);
 }
@@ -392,13 +396,8 @@ std::map<std::string, std::string> AnimationController::ComputeCurrentFrame(
         return {};
     }
 
-    // 尝试从缓存获取
-    if (optimization_enabled_) {
-        auto cached = optimizer_.GetInterpolationCache().Get(anim.config.name, progress);
-        if (cached.has_value()) {
-            return cached.value();
-        }
-    }
+#include <algorithm>
+#include <cmath>
 
     // 获取当前进度对应的关键帧
     auto [prev, next, factor] = anim.keyframes->GetKeyframesAt(progress);

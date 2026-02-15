@@ -17,7 +17,14 @@
 #include <regex>
 #include <sstream>
 #include <cmath>
-#include <iostream>
+#include <cstdlib>
+
+namespace {
+inline bool IsAnimForceStyleEnabled() {
+    static const bool enabled = (std::getenv("LIGHTUI_DEBUG_ANIM_FORCE_STYLE") != nullptr);
+    return enabled;
+}
+}
 
 namespace lightui {
 
@@ -159,8 +166,11 @@ void AnimationApplicator::ApplyAnimationValues(RenderObject* object) {
 
         // 应用每个属性
         for (const auto& [property, value] : *props) {
+            const bool force_style = IsAnimForceStyleEnabled() &&
+                                     (property == "transform" || property == "opacity");
+
             // 优先级 1：尝试通过属性树系统直接更新（最高效，不触发光栅化）
-            if (property == "transform" || property == "opacity") {
+            if (!force_style && (property == "transform" || property == "opacity")) {
                 if (TryApplyViaPropertyTree(object, property, value)) {
                     ApplyPropertyToStyle(style, property, value);
                     modified = true;
@@ -170,7 +180,7 @@ void AnimationApplicator::ApplyAnimationValues(RenderObject* object) {
             }
 
             // 优先级 2：尝试通过层合成系统更新（次优，可能触发部分更新）
-            if (property == "transform" || property == "opacity") {
+            if (!force_style && (property == "transform" || property == "opacity")) {
                 if (TryApplyViaCompositor(object, property, value)) {
                     ApplyPropertyToStyle(style, property, value);
                     modified = true;
@@ -201,6 +211,7 @@ void AnimationApplicator::ApplyAnimationValues(RenderObject* object) {
                 parent->MarkNeedsPaint();
             }
         }
+
     }
 }
 

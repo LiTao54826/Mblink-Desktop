@@ -8,6 +8,7 @@
 #include <sstream>
 #include <iomanip>
 #include <algorithm>
+#include <cstdlib>
 
 namespace lightui {
 
@@ -82,11 +83,16 @@ void KeyframeInterpolationCache::ResetStats() {
     miss_count_ = 0;
 }
 
-std::string KeyframeInterpolationCache::MakeKey(const std::string& animation_name, 
+std::string KeyframeInterpolationCache::MakeKey(const std::string& animation_name,
                                                 float progress) const {
-    // 将进度值量化到 0.01 精度，减少缓存条目数
-    int quantized_progress = static_cast<int>(progress * 100.0f);
-    
+    // 调试开关：LIGHTUI_DEBUG_ANIM_CACHE_FINE=1 时提高量化精度，验证“缓存步进过粗”假设
+    const bool fine_quantization = (std::getenv("LIGHTUI_DEBUG_ANIM_CACHE_FINE") != nullptr);
+
+    // 默认 0.01；调试时 0.001
+    int quantized_progress = fine_quantization
+                                 ? static_cast<int>(progress * 1000.0f)
+                                 : static_cast<int>(progress * 100.0f);
+
     std::ostringstream oss;
     oss << animation_name << "_" << quantized_progress;
     return oss.str();

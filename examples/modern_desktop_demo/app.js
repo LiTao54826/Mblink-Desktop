@@ -12,6 +12,7 @@ import { DashboardPage } from './src/dashboard.js';
 import { KanbanPage } from './src/kanban.js';
 import { TeamPage } from './src/team.js';
 import { SettingsPage } from './src/settings.js';
+import { ShowcasePage } from './src/showcase.js';
 
 // ========== Toast 通知 Reducer ==========
 var toastId = 0;
@@ -32,6 +33,7 @@ function PageContent({ page, addToast }) {
         case 'kanban':    return h(KanbanPage, { addToast: addToast });
         case 'team':      return h(TeamPage, null);
         case 'settings':  return h(SettingsPage, { addToast: addToast });
+        case 'showcase':  return h(ShowcasePage, { addToast: addToast });
         default:          return h(DashboardPage, { addToast: addToast });
     }
 }

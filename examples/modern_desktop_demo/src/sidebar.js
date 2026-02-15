@@ -12,6 +12,7 @@ const MENU = [
     { id: 'kanban',    icon: '▦', text: 'Projects' },
     { id: 'team',      icon: '◎', text: 'Team' },
     { id: 'settings',  icon: '⚙', text: 'Settings' },
+    { id: 'showcase',  icon: '★', text: 'Showcase' },
 ];
 
 function NavItem({ item, active, onClick }) {

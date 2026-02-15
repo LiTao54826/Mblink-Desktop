@@ -290,6 +290,21 @@ void EventLoop::RunOnce() {
         RenderObject::SetCursorVisible(true);
     }
 
+    // 5. 先推进动画时间轴（即使当前帧尚未标记重绘）
+    // 关键修复：如果只在 Window::Render() 内更新动画，会形成“需要重绘才会推进动画”的循环依赖。
+    // 表现就是动画只在点击等事件触发重绘时“跳一下”。
+    // 这里在主循环中每帧都推进动画，让动画自己持续请求重绘。
+    static Uint64 anim_start_time = SDL_GetPerformanceCounter();
+    {
+        Uint64 anim_current_time = SDL_GetPerformanceCounter();
+        Uint64 anim_frequency = SDL_GetPerformanceFrequency();
+        double timestamp_sec = static_cast<double>(anim_current_time - anim_start_time) / anim_frequency;
+
+        for (auto& window : WindowManager::Instance().GetAllWindows()) {
+            window->UpdateAnimations(timestamp_sec);
+        }
+    }
+
     // 5. 只在有窗口需要重绘时才渲染
     auto& wm = WindowManager::Instance();
     

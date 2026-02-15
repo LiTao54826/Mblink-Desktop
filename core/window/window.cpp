@@ -111,6 +111,14 @@ static constexpr int kResizeBurstThreshold = 6;     // 视窗内触发次数阈�
 static constexpr size_t kSkiaBurstCacheLimitBytes = 24 * 1024 * 1024;  // 24MB
 static constexpr size_t kImageCacheBurstShrinkBytes = 24 * 1024 * 1024; // 24MB
 
+
+namespace {
+inline bool IsAnimFrameDebugEnabled() {
+    static const bool enabled = (std::getenv("LIGHTUI_DEBUG_ANIM_FRAME") != nullptr);
+    return enabled;
+}
+}
+
 // SDL 事件过滤器：过滤掉可能导致闪烁的事件
 // 返回 true 表示保留事件，返回 false 表示丢弃事件
 static bool SDLCALL SDLEventFilter(void* userdata, SDL_Event* event) {
@@ -202,7 +210,7 @@ Window::Window(const WindowConfig& config) : config_(config) {
     if (actual_backend_ == RenderBackend::OPENGL && gr_context_) {
         int physical_width, physical_height;
         SDL_GetWindowSizeInPixels(sdl_window_, &physical_width, &physical_height);
-        
+
         fbo_manager_ = std::make_unique<FBOManager>();
         if (!fbo_manager_->Initialize(physical_width, physical_height, gr_context_.get())) {
             fbo_manager_.reset();
@@ -444,10 +452,21 @@ void Window::SwapBuffers() {
         return;
     }
 
+    const bool debug_anim_frame = IsAnimFrameDebugEnabled();
+    static uint64_t swap_frame = 0;
+    ++swap_frame;
+
     if (actual_backend_ == RenderBackend::OPENGL && gr_context_) {
         // GPU 模式：刷新 Skia 命令并交换 OpenGL 缓冲区
         gr_context_->flush();
         SDL_GL_SwapWindow(sdl_window_);
+
+        if (debug_anim_frame && (swap_frame <= 120 || (swap_frame % 60 == 0))) {
+            std::cout << "[ANIM_FRAME_SWAP] frame=" << swap_frame
+                      << " backend=OPENGL"
+                      << " present=SDL_GL_SwapWindow"
+                      << "\n";
+        }
     }
     else if (actual_backend_ == RenderBackend::CPU && surface_) {
         // CPU 模式：使用 DisplayBackend 显示像素
@@ -468,7 +487,7 @@ void Window::SwapBuffers() {
                 int dirty_y = static_cast<int>(last_dirty_bounds_.top());
                 int dirty_width = static_cast<int>(last_dirty_bounds_.width());
                 int dirty_height = static_cast<int>(last_dirty_bounds_.height());
-                
+
                 // 边界检查
                 int surface_width = static_cast<int>(pixmap.width());
                 int surface_height = static_cast<int>(pixmap.height());
@@ -476,8 +495,17 @@ void Window::SwapBuffers() {
                 if (dirty_y < 0) dirty_y = 0;
                 if (dirty_x + dirty_width > surface_width) dirty_width = surface_width - dirty_x;
                 if (dirty_y + dirty_height > surface_height) dirty_height = surface_height - dirty_y;
-                
+
                 if (dirty_width > 0 && dirty_height > 0) {
+                    if (debug_anim_frame && (swap_frame <= 120 || (swap_frame % 60 == 0))) {
+                        std::cout << "[ANIM_FRAME_SWAP] frame=" << swap_frame
+                                  << " backend=CPU"
+                                  << " present=PresentPartial"
+                                  << " dirty=" << dirty_x << "," << dirty_y
+                                  << "," << dirty_width << "x" << dirty_height
+                                  << "\n";
+                    }
+
                     display_backend_->PresentPartial(
                         pixmap.addr(),
                         surface_width,
@@ -487,6 +515,14 @@ void Window::SwapBuffers() {
                     );
                 }
             } else {
+                if (debug_anim_frame && (swap_frame <= 120 || (swap_frame % 60 == 0))) {
+                    std::cout << "[ANIM_FRAME_SWAP] frame=" << swap_frame
+                              << " backend=CPU"
+                              << " present=Present(full)"
+                              << " size=" << pixmap.width() << "x" << pixmap.height()
+                              << "\n";
+                }
+
                 // 无脏区域边界或全量渲染：更新整个 surface
                 display_backend_->Present(
                     pixmap.addr(),
@@ -722,7 +758,7 @@ void Window::CreateSkiaSurface() {
     if (!surface_) {
         throw std::runtime_error("Failed to create Skia surface");
     }
-    
+
     // 关键修复：清除新创建的表面，避免显示垃圾数据
     // 这在窗口大小改变时特别重要
     SkCanvas* canvas = surface_->getCanvas();
@@ -993,15 +1029,15 @@ void Window::SetDocument(std::shared_ptr<Document> document) {
     if (document_) {
         // 关键：设置 Document 对 Window 的引用，用于 Element::Focus() 等方法
         document_->SetWindow(this);
-        
+
         dom_observer_ = std::make_unique<WindowDOMObserver>(this);
         document_->AddObserver(dom_observer_.get());
-        
+
         // 注册同步布局回调（用于 getBoundingClientRect 等需要强制 reflow 的操作）
         document_->SetSyncLayoutCallback([this]() {
             ForceLayoutSync();
         });
-        
+
         // 重新创建动画应用器，使用 StyleManager 的 AnimationController
         // 这样 @keyframes 规则可以被正确找到
         if (document_->GetStyleManager()) {
@@ -1116,22 +1152,28 @@ void Window::Render() {
     // =========================================================================
     // 检查窗口大小是否改变（需要重建布局树）
     // =========================================================================
-    static float last_app_width_unified = 0, last_app_height_unified = 0;
-    constexpr float kViewportSizeEpsilon = 0.01f;
+    // 关键修复：视口尺寸按像素取整后比较，避免浮点抖动导致每帧都被判定为尺寸变化。
+    // 之前使用 float + epsilon(0.01) 在部分 DPI/DevTools 场景下会持续触发，
+    // 从而每帧置位 needs_layer_tree_rebuild_，压制增量路径。
+    static int last_app_width_px = -1;
+    static int last_app_height_px = -1;
+
+    const int app_width_px = std::max(0, static_cast<int>(std::lround(app_width)));
+    const int app_height_px = std::max(0, static_cast<int>(std::lround(app_height)));
     bool app_size_changed_unified =
-        std::fabs(app_width - last_app_width_unified) > kViewportSizeEpsilon ||
-        std::fabs(app_height - last_app_height_unified) > kViewportSizeEpsilon;
+        (app_width_px != last_app_width_px) ||
+        (app_height_px != last_app_height_px);
 
     if (app_size_changed_unified) {
-        last_app_width_unified = app_width;
-        last_app_height_unified = app_height;
+        last_app_width_px = app_width_px;
+        last_app_height_px = app_height_px;
         render_tree_valid_ = false;  // 窗口大小改变，需要重建布局树
 
         // 关键修复：窗口大小改变时，需要强制重建层树
         // 因为层的边界需要根据新的视口尺寸更新
         if (render_pipeline_) {
             render_pipeline_->InvalidateLayerTree();
-            render_pipeline_->Resize(static_cast<int>(app_width), static_cast<int>(app_height));
+            render_pipeline_->Resize(app_width_px, app_height_px);
         }
     }
 
@@ -1194,7 +1236,7 @@ void Window::Render() {
             }
         }
     }
-    
+
     // =========================================================================
     // 增量布局：处理样式变更导致的布局需求
     // =========================================================================
@@ -1206,7 +1248,7 @@ void Window::Render() {
         float dpi_scale = GetDisplayScale();
         float width = static_cast<float>(physical_width) / dpi_scale;
         float height = static_cast<float>(physical_height) / dpi_scale;
-        
+
         auto& devtools = DevToolsManager::GetInstance();
         float sync_app_width = width;
         float sync_app_height = height;
@@ -1214,7 +1256,7 @@ void Window::Render() {
             float app_x, app_y;
             devtools.GetMainAppBounds(width, height, app_x, app_y, sync_app_width, sync_app_height);
         }
-        
+
         if (needs_layout_update) {
             // DOM 结构变化，需要重建布局树
             // force_rebuild=true 确保即使缓存有效也会重建
@@ -1277,31 +1319,43 @@ void Window::Render() {
             }
         }
         canvas->clear(clear_color);
-        
+
         // 应用 DPI 缩放
         canvas->save();
         canvas->scale(dpi_scale, dpi_scale);
-        
+
         // 如果 DevTools 打开，裁剪到主应用区域
         if (devtools.IsOpen()) {
             canvas->clipRect(SkRect::MakeXYWH(app_x, app_y, app_width, app_height));
         }
-        
+
         // 处理一帧
-        render_pipeline_->ProcessFrame(canvas);
-        
+        bool process_ok = render_pipeline_->ProcessFrame(canvas);
+
+        if (IsAnimFrameDebugEnabled()) {
+            static uint64_t render_frame = 0;
+            ++render_frame;
+            if (render_frame <= 120 || (render_frame % 60 == 0)) {
+                std::cout << "[ANIM_FRAME_RENDER] frame=" << render_frame
+                          << " processOk=" << (process_ok ? 1 : 0)
+                          << " needsRepaint=" << (needs_repaint_ ? 1 : 0)
+                          << " pipelineNeedsUpdate=" << (render_pipeline_->NeedsUpdate() ? 1 : 0)
+                          << "\n";
+            }
+        }
+
         // 更新并绘制 select 下拉菜单
         auto& dropdown_manager = SelectDropdownManager::Instance();
         if (dropdown_manager.IsDropdownOpen()) {
             dropdown_manager.UpdatePositionFromRenderTree(cached_render_tree_);
         }
         dropdown_manager.Paint(canvas);
-        
+
         canvas->restore();
-        
+
         // 渲染 DevTools
         RenderDevTools(canvas, static_cast<float>(logical_width), static_cast<float>(logical_height));
-        
+
         // 刷新 GPU 命令（如果使用 GPU）
         if (gr_context_) {
             gr_context_->flush();
@@ -1342,28 +1396,28 @@ void Window::Render() {
 
 void Window::RenderDevTools(SkCanvas* canvas, float width, float height) {
     auto& devtools = DevToolsManager::GetInstance();
-    
+
     if (!devtools.IsOpen()) {
         return;
     }
-    
+
     // 获取 DPI 缩放比
     float dpi_scale = GetDisplayScale();
-    
+
     // 注意：传入的 width 和 height 已经是逻辑尺寸（CSS 像素）
     // 不需要再除以 dpi_scale
-    
+
     // 获取主应用区域
     float app_x, app_y, app_width, app_height;
     devtools.GetMainAppBounds(width, height, app_x, app_y, app_width, app_height);
-    
+
     // 先渲染元素高亮覆盖层（在主应用区域内）
     canvas->save();
     canvas->scale(dpi_scale, dpi_scale);
     canvas->clipRect(SkRect::MakeXYWH(app_x, app_y, app_width, app_height));
     devtools.RenderHighlight(canvas);
     canvas->restore();
-    
+
     // 再渲染 DevTools 面板
     canvas->save();
     canvas->scale(dpi_scale, dpi_scale);
@@ -1466,7 +1520,7 @@ void Window::MarkRenderObjectsDirty(Node* dom_node, RenderObject* render_obj) {
                 if (render_text->GetText() != normalized_text) {
                     render_text->SetText(normalized_text);
                     render_obj->MarkNeedsLayout();  // 文本改变需要重新布局
-                    
+
                     // Update content version for incremental layout optimization
                     // **Feature: incremental-layout-optimization**
                     // **Validates: Requirements 1.1**
@@ -1555,7 +1609,7 @@ void Window::MarkRenderObjectsDirty(Node* dom_node, RenderObject* render_obj) {
                         if (render_text->GetText() != normalized_text) {
                             render_text->SetText(normalized_text);
                             child_render_obj->MarkNeedsLayout();
-                            
+
                             // Update content version for incremental layout optimization
                             // **Feature: incremental-layout-optimization**
                             // **Validates: Requirements 1.1**

@@ -13,8 +13,10 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <cstdlib>
 #include <iostream>
 #include <sstream>
+#include <unordered_map>
 
 // OpenGL headers
 #ifdef _WIN32
@@ -80,6 +82,162 @@ typedef void (APIENTRY *PFNGLACTIVETEXTUREPROC)(GLenum);
 #endif
 
 namespace lightui {
+
+inline bool IsAnimFinalDebugEnabled() {
+    static const bool enabled = (std::getenv("LIGHTUI_DEBUG_ANIM_FINAL") != nullptr);
+    return enabled;
+}
+
+inline bool ShouldLogAnimFinalLayer(const CompositorLayer* layer) {
+    if (!layer) {
+        return false;
+    }
+    RenderObject* obj = layer->GetRenderObject();
+    return obj != nullptr;
+}
+
+inline bool LogTransformChanged(int layer_id, float opacity, const SkMatrix& transform) {
+    struct LastValue {
+        bool initialized = false;
+        float opacity = 0.0f;
+        float m00 = 0.0f;
+        float m01 = 0.0f;
+        float m02 = 0.0f;
+        float m10 = 0.0f;
+        float m11 = 0.0f;
+        float m12 = 0.0f;
+    };
+
+    static std::unordered_map<int, LastValue> last_values;
+    LastValue current;
+    current.initialized = true;
+    current.opacity = opacity;
+    current.m00 = transform[SkMatrix::kMScaleX];
+    current.m01 = transform[SkMatrix::kMSkewX];
+    current.m02 = transform[SkMatrix::kMTransX];
+    current.m10 = transform[SkMatrix::kMSkewY];
+    current.m11 = transform[SkMatrix::kMScaleY];
+    current.m12 = transform[SkMatrix::kMTransY];
+
+    auto it = last_values.find(layer_id);
+    if (it != last_values.end()) {
+        const LastValue& prev = it->second;
+        const float eps = 0.0001f;
+        bool same = std::fabs(prev.opacity - current.opacity) < eps &&
+                    std::fabs(prev.m00 - current.m00) < eps &&
+                    std::fabs(prev.m01 - current.m01) < eps &&
+                    std::fabs(prev.m02 - current.m02) < eps &&
+                    std::fabs(prev.m10 - current.m10) < eps &&
+                    std::fabs(prev.m11 - current.m11) < eps &&
+                    std::fabs(prev.m12 - current.m12) < eps;
+        if (same) {
+            return false;
+        }
+    }
+
+    last_values[layer_id] = current;
+    return true;
+}
+
+inline void LogAnimFinalConsume(const char* path, CompositorLayer* layer, const SkMatrix& transform) {
+    if (!IsAnimFinalDebugEnabled() || !ShouldLogAnimFinalLayer(layer)) {
+        return;
+    }
+
+    const int layer_id = layer->GetId();
+    const float opacity = layer->GetOpacity();
+    if (!LogTransformChanged(layer_id, opacity, transform)) {
+        return;
+    }
+
+    std::cout << "[ANIM_FINAL_CONSUME] path=" << path
+              << " layer_id=" << layer_id
+              << " opacity=" << opacity
+              << " m00=" << transform[SkMatrix::kMScaleX]
+              << " m01=" << transform[SkMatrix::kMSkewX]
+              << " m02=" << transform[SkMatrix::kMTransX]
+              << " m10=" << transform[SkMatrix::kMSkewY]
+              << " m11=" << transform[SkMatrix::kMScaleY]
+              << " m12=" << transform[SkMatrix::kMTransY]
+              << "\n";
+}
+
+inline bool IsAnimDrawDebugEnabled() {
+    static const bool enabled = (std::getenv("LIGHTUI_DEBUG_ANIM_DRAW") != nullptr) || IsAnimFinalDebugEnabled();
+    return enabled;
+}
+
+inline bool ShouldLogAnimDrawChanged(int layer_id,
+                                     bool skip_self_draw,
+                                     bool bitmap_null,
+                                     bool drew_bitmap,
+                                     float m02,
+                                     float m12) {
+    struct LastDraw {
+        bool initialized = false;
+        bool skip_self_draw = false;
+        bool bitmap_null = true;
+        bool drew_bitmap = false;
+        float m02 = 0.0f;
+        float m12 = 0.0f;
+    };
+
+    static std::unordered_map<int, LastDraw> last_draw;
+    LastDraw current;
+    current.initialized = true;
+    current.skip_self_draw = skip_self_draw;
+    current.bitmap_null = bitmap_null;
+    current.drew_bitmap = drew_bitmap;
+    current.m02 = m02;
+    current.m12 = m12;
+
+    auto it = last_draw.find(layer_id);
+    if (it != last_draw.end()) {
+        const LastDraw& prev = it->second;
+        const float eps = 0.0001f;
+        bool same = (prev.skip_self_draw == current.skip_self_draw) &&
+                    (prev.bitmap_null == current.bitmap_null) &&
+                    (prev.drew_bitmap == current.drew_bitmap) &&
+                    (std::fabs(prev.m02 - current.m02) < eps) &&
+                    (std::fabs(prev.m12 - current.m12) < eps);
+        if (same) {
+            return false;
+        }
+    }
+
+    last_draw[layer_id] = current;
+    return true;
+}
+
+inline void LogAnimDrawCPU(CompositorLayer* layer,
+                           bool skip_self_draw,
+                           bool bitmap_null,
+                           bool drew_bitmap,
+                           const SkRect& bounds,
+                           const SkMatrix& transform) {
+    if (!IsAnimDrawDebugEnabled() || !ShouldLogAnimFinalLayer(layer)) {
+        return;
+    }
+
+    const int layer_id = layer->GetId();
+    const float m02 = transform[SkMatrix::kMTransX];
+    const float m12 = transform[SkMatrix::kMTransY];
+    if (!ShouldLogAnimDrawChanged(layer_id, skip_self_draw, bitmap_null, drew_bitmap, m02, m12)) {
+        return;
+    }
+
+    std::cout << "[ANIM_DRAW_CPU]"
+              << " layer_id=" << layer_id
+              << " skip_self_draw=" << (skip_self_draw ? 1 : 0)
+              << " bitmap_null=" << (bitmap_null ? 1 : 0)
+              << " drew_bitmap=" << (drew_bitmap ? 1 : 0)
+              << " bounds=" << bounds.left() << "," << bounds.top() << ","
+              << bounds.width() << "x" << bounds.height()
+              << " m02=" << m02
+              << " m12=" << m12
+              << "\n";
+}
+
 
 // 静态 OpenGL 函数指针
 static PFNGLATTACHSHADERPROC glAttachShader_ptr = nullptr;
@@ -561,6 +719,8 @@ void Compositor::RenderTexturedQuad(CompositorLayer* layer, const SkMatrix& tran
     glUniformMatrix3fv_ptr(uniform_transform_, 1, GL_FALSE, matrix);
     glUniform1f_ptr(uniform_opacity_, layer->GetOpacity());
 
+    LogAnimFinalConsume("gpu", layer, transform);
+
     // 绑定纹理
     glActiveTexture_ptr(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, layer->GetTextureId());
@@ -595,42 +755,41 @@ void Compositor::CompositeLayerCPU(CompositorLayer* layer, SkCanvas* canvas, con
 
     canvas->save();
 
-    // 从 parent_transform 中提取累积的平移
-    float accumulated_x = parent_transform.getTranslateX();
-    float accumulated_y = parent_transform.getTranslateY();
+    // 构建当前层的完整变换（与 GPU 路径保持一致）
+    // 1) 继承父层变换
+    // 2) 应用当前层位置
+    // 3) 应用当前层自身变换（transform 动画）
+    SkMatrix layer_transform = parent_transform;
+    layer_transform.preTranslate(bounds.left(), bounds.top());
+    layer_transform.preConcat(layer->GetTransform());
 
-    // 应用层位置
-    const SkPoint& scroll = layer->GetScrollOffset();
-
-    // 计算当前层的最终位置：累积偏移 + 层位置
-    float final_x = accumulated_x + bounds.left();
-    float final_y = accumulated_y + bounds.top();
-
-    // 移动到最终位置
-    if (!skip_self_draw) {
-        canvas->translate(final_x, final_y);
-    }
+    LogAnimFinalConsume("cpu", layer, layer_transform);
 
     // 获取当前层的滚动偏移
+    const SkPoint& scroll = layer->GetScrollOffset();
     bool has_scroll = (scroll.fX != 0 || scroll.fY != 0);
 
-    // 计算传递给子层的累积偏移
-    SkMatrix child_transform = SkMatrix::I();
-    float child_accumulated_x = accumulated_x + bounds.left();
-    float child_accumulated_y = accumulated_y + bounds.top();
-
+    // 计算传递给子层的累积变换
+    // 滚动偏移只影响子层（内容），不影响当前层位图
+    SkMatrix child_transform = layer_transform;
     if (has_scroll) {
-        child_accumulated_x -= scroll.fX;
-        child_accumulated_y -= scroll.fY;
+        child_transform.preTranslate(-scroll.fX, -scroll.fY);
     }
 
-    child_transform.setTranslate(child_accumulated_x, child_accumulated_y);
+    // 应用当前层变换到画布
+    if (!skip_self_draw) {
+        canvas->concat(layer_transform);
+    }
+
+    bool bitmap_null = true;
+    bool drew_bitmap = false;
 
     // 绘制层位图（不应用滚动偏移，因为位图内容是静态的）
     // 滚动偏移只影响子层的位置
     if (!skip_self_draw) {
         const SkBitmap& bitmap = layer->GetBitmap();
-        if (!bitmap.isNull()) {
+        bitmap_null = bitmap.isNull();
+        if (!bitmap_null) {
             SkPaint paint;
             paint.setAlpha(static_cast<int>(layer->GetOpacity() * 255));
 
@@ -655,6 +814,7 @@ void Compositor::CompositeLayerCPU(CompositorLayer* layer, SkCanvas* canvas, con
             } else {
                 canvas->drawImage(bitmap.asImage(), draw_offset_x, draw_offset_y, SkSamplingOptions(), &paint);
             }
+            drew_bitmap = true;
         }
 
         // 绘制层边界（调试）
@@ -662,6 +822,8 @@ void Compositor::CompositeLayerCPU(CompositorLayer* layer, SkCanvas* canvas, con
             DrawLayerBorder(layer, canvas);
         }
     }
+
+    LogAnimDrawCPU(layer, skip_self_draw, bitmap_null, drew_bitmap, bounds, layer_transform);
 
     // 关键修复：按 z-index 排序子层后再绘制
     // 这确保高 z-index 的元素（如 Modal）绘制在低 z-index 元素之上
@@ -672,8 +834,8 @@ void Compositor::CompositeLayerCPU(CompositorLayer* layer, SkCanvas* canvas, con
         sorted_children.push_back(child.get());
     }
 
-    // 按 z-index 升序排序（低 z-index 先绘制，高 z-index 后绘制覆盖在上面）
-    std::sort(sorted_children.begin(), sorted_children.end(),
+    // 按 z-index 升序稳定排序（低 z-index 先绘制；同 z-index 保持原文档顺序）
+    std::stable_sort(sorted_children.begin(), sorted_children.end(),
         [](CompositorLayer* a, CompositorLayer* b) {
             return GetLayerZIndex(a) < GetLayerZIndex(b);
         });
