@@ -1,39 +1,31 @@
 """
-LightUI — 用 Python 构建桌面应用
+LightUI — 用 Python 构建桌面应用 (v2 ctypes 绑定)
 
 快速开始：
-    import lightui as ui
+    from lightui import App
 
-    app = ui.App("My App", 800, 600)
+    app = App("My App", 800, 600)
     counter = app.state("counter", 0)
 
-    @app.bindable
-    def increment():
-        counter.increment()
-        return counter.get()
+    @app.bind("increment")
+    def increment(args):
+        counter.value += 1
+        return {"count": counter.value}
 
-    app.load_html('<button onclick="py.increment()">Click</button>')
+    app.load_html('<button onclick="host.call(\'increment\')">Click</button>')
     app.run()
-
-低级 API（直接访问 C++ 绑定）：
-    from lightui.core import Window, Runtime, HostBridge
 """
 
-__version__ = "0.5.0"
+__version__ = "2.0.0"
 __author__ = "LightUI Team"
 
-# 高级 API
-from .app import App
+# v2 高级 API (ctypes)
+from .app_v2 import App
+from ._state import State
 
-# 版本函数（从 C++ 绑定获取）
-try:
-    from .core import version
-except ImportError:
-    def version():
-        """返回 LightUI 版本号（C++ 模块不可用时返回 Python 包版本）"""
-        return __version__
+# 版本函数
+def version():
+    """返回 LightUI Python 包版本号"""
+    return __version__
 
-# 向后兼容：LightUIApp 作为 App 的别名
-LightUIApp = App
-
-__all__ = ["App", "version"]
+__all__ = ["App", "State", "version"]
