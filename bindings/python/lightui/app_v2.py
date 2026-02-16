@@ -6,6 +6,7 @@ LightUI Python App 类
 import json
 import ctypes
 import atexit
+import warnings
 from ._ffi import (
     load_dll, LightUIConfig, LightUICallback, LightUIResizeCallback,
     LightUIVoidCallback, LightUIUpdateCallback, c_int, c_char_p, c_void_p,
@@ -55,7 +56,15 @@ class App:
 
     def run(self):
         """启动事件循环（阻塞）"""
-        self._lib.lightui_run(self._handle)
+        # ctypes CFUNCTYPE 回调返回 c_char_p 时 Python 3.12+ 会报
+        # RuntimeWarning: memory leak in callback function
+        # C 端已经 copy 返回值到 std::string（不 free），此警告可安全忽略
+        with warnings.catch_warnings():
+            warnings.filterwarnings(
+                "ignore", message="memory leak in callback function",
+                category=RuntimeWarning,
+            )
+            self._lib.lightui_run(self._handle)
 
     def stop(self):
         """停止事件循环"""

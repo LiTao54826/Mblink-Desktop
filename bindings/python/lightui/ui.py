@@ -15,47 +15,56 @@ LightUI 声明式 Python UI 组件库
 
 import html as _html
 
-# ========== 响应式JS脚本 ==========
-# 自动注入到 HTML 中，实现 state → DOM 的响应式绑定
+# ========== 响应式绑定收集 ==========
+# 不再使用 querySelectorAll 属性选择器（SelectorEngine 回退路径不支持）
+# 改为遍历组件树，精确生成 getElementById + host.state.watch 代码
 
-_REACTIVE_JS = r"""
-(function() {
-  // 文本绑定: data-bind="state_name"
-  document.querySelectorAll('[data-bind]').forEach(function(el) {
-    var name = el.getAttribute('data-bind');
-    host.state.watch(name, function(v) { el.textContent = v; });
-  });
 
-  // 输入双向绑定: data-bind-input="state_name"
-  document.querySelectorAll('[data-bind-input]').forEach(function(el) {
-    var name = el.getAttribute('data-bind-input');
-    host.state.watch(name, function(v) {
-      if (document.activeElement !== el) el.value = v;
-    });
-    el.addEventListener('input', function(e) {
-      host.state.set(name, e.target.value);
-    });
-  });
+def _collect_bindings(comp, bindings):
+    """遍历组件树，收集所有 bind 信息: [(kind, elem_id, state_name), ...]"""
+    if isinstance(comp, Text) and comp._bind is not None:
+        sn = comp._bind._name if hasattr(comp._bind, '_name') else str(comp._bind)
+        bindings.append(('text', comp._id, sn))
+    elif isinstance(comp, Input) and comp._bind is not None:
+        sn = comp._bind._name if hasattr(comp._bind, '_name') else str(comp._bind)
+        bindings.append(('input', comp._id, sn))
+    elif isinstance(comp, Checkbox) and comp._bind is not None:
+        sn = comp._bind._name if hasattr(comp._bind, '_name') else str(comp._bind)
+        bindings.append(('checkbox', comp._id, sn))
 
-  // Checkbox 绑定: data-bind-checked="state_name"
-  document.querySelectorAll('[data-bind-checked]').forEach(function(el) {
-    var name = el.getAttribute('data-bind-checked');
-    host.state.watch(name, function(v) { el.checked = !!v; });
-    el.addEventListener('change', function(e) {
-      host.state.set(name, e.target.checked);
-    });
-  });
+    for child in getattr(comp, '_children', []):
+        _collect_bindings(child, bindings)
 
-  // 可见性绑定: data-bind-visible="state_name"
-  document.querySelectorAll('[data-bind-visible]').forEach(function(el) {
-    var name = el.getAttribute('data-bind-visible');
-    var orig = el.style.display || '';
-    host.state.watch(name, function(v) {
-      el.style.display = v ? orig : 'none';
-    });
-  });
-})();
-"""
+
+def _generate_watch_js(bindings):
+    """为每个绑定生成精确的 getElementById + watch JS 代码"""
+    if not bindings:
+        return ""
+    lines = ["(function() {"]
+    for kind, elem_id, state_name in bindings:
+        var = elem_id.replace('-', '_')
+        lines.append(f"  var {var} = document.getElementById('{elem_id}');")
+        if kind == 'text':
+            lines.append(
+                f"  if ({var}) host.state.watch('{state_name}', "
+                f"function(v) {{ {var}.textContent = String(v); }});"
+            )
+        elif kind == 'input':
+            lines.append(f"  if ({var}) {{")
+            lines.append(
+                f"    host.state.watch('{state_name}', "
+                f"function(v) {{ if (document.activeElement !== {var}) {var}.value = String(v); }});"
+            )
+            lines.append(f"  }}")
+        elif kind == 'checkbox':
+            lines.append(f"  if ({var}) {{")
+            lines.append(
+                f"    host.state.watch('{state_name}', "
+                f"function(v) {{ {var}.checked = !!v; }});"
+            )
+            lines.append(f"  }}")
+    lines.append("})();")
+    return "\n".join(lines)
 
 # ========== 样式映射 ==========
 
@@ -297,6 +306,14 @@ hr { margin: 8px 0; }
 def build_html(root_component):
     """将组件树渲染为完整的 HTML 文档"""
     body_html = root_component.render()
+
+    # 收集所有绑定，生成精确的 watch JS
+    bindings = []
+    _collect_bindings(root_component, bindings)
+    watch_js = _generate_watch_js(bindings)
+
+    script_block = f"<script>\n{watch_js}\n</script>" if watch_js else ""
+
     return f"""<!DOCTYPE html>
 <html>
 <head>
@@ -307,9 +324,7 @@ def build_html(root_component):
 </head>
 <body>
 {body_html}
-<script>
-{_REACTIVE_JS}
-</script>
+{script_block}
 </body>
 </html>"""
 

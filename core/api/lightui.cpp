@@ -495,6 +495,8 @@ int lightui_load_html(LightUIHandle handle, const char* html) {
     auto ctx = getContext(handle);
     if (ctx->document) {
         ctx->document->LoadHTML(html);
+        // 执行 HTML 中嵌入的 <script> 标签
+        ctx->document->ExecuteScripts();
     }
     return LIGHTUI_OK;
 }
@@ -507,6 +509,8 @@ int lightui_load_html_file(LightUIHandle handle, const char* filepath) {
         auto ctx = getContext(handle);
         if (ctx->document) {
             ctx->document->LoadHTML(content);
+            // 执行 HTML 中嵌入的 <script> 标签
+            ctx->document->ExecuteScripts();
         }
         return LIGHTUI_OK;
     } catch (const std::exception& e) {
@@ -622,7 +626,10 @@ int lightui_bind(LightUIHandle handle, const char* name,
             char* result = cb(args.c_str(), ud);
             if (result) {
                 std::string ret(result);
-                free(result);
+                // 注意：不调用 free(result)
+                // 返回值的内存由回调方自行管理（Python ctypes 自动维护引用，
+                // C 回调可使用 static buffer，其他语言各自处理）
+                // std::string 已经拷贝了数据，后续使用 ret 即可
                 return ret;
             }
             return "null";

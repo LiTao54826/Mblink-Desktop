@@ -63,10 +63,14 @@ def _find_dll():
         names = ["liblightui.so"]
 
     # 搜索路径
+    pkg_dir = os.path.dirname(os.path.abspath(__file__))
+    proj_root = os.path.normpath(os.path.join(pkg_dir, "..", "..", ".."))
     search_dirs = [
-        os.path.dirname(os.path.abspath(__file__)),  # 当前包目录
-        os.path.join(os.path.dirname(os.path.abspath(__file__)), "bin"),  # bin 子目录
+        pkg_dir,  # 当前包目录
+        os.path.join(pkg_dir, "bin"),  # bin 子目录
         os.getcwd(),  # 当前工作目录
+        os.path.join(proj_root, "build", "bin", "Release"),  # CMake Release 输出
+        os.path.join(proj_root, "build", "bin", "Debug"),    # CMake Debug 输出
     ]
 
     # 从环境变量获取额外搜索路径
