@@ -95,6 +95,37 @@ class App:
         self._lib.lightui_load_js_file(self._handle, filepath.encode("utf-8"))
         return self
 
+    # ========== 声明式 UI ==========
+
+    def ui(self, root_component):
+        """设置声明式 UI，接受组件树，自动生成 HTML 并加载
+
+        用法:
+            from lightui.ui import Column, Text, Button
+            app.ui(Column(Text("Hello"), Button("Click", on_click="handler")))
+        """
+        self._auto_bind_counter = 0
+        self._process_component(root_component)
+
+        from .ui import build_html
+        html = build_html(root_component)
+        self.load_html(html)
+        return self
+
+    def _process_component(self, comp):
+        """遍历组件树，将 callable 的 on_click 等自动注册为 bind"""
+        if hasattr(comp, '_on_click') and callable(comp._on_click):
+            name = f"_auto_click_{self._auto_bind_counter}"
+            self._auto_bind_counter += 1
+            fn = comp._on_click
+            @self.bind(name)
+            def _handler(args, _fn=fn):
+                _fn()
+            comp._on_click = name
+
+        for child in getattr(comp, '_children', []):
+            self._process_component(child)
+
     # ========== 函数绑定 ==========
 
     def bind(self, name_or_func=None):
@@ -145,6 +176,21 @@ class App:
         self._lib.lightui_emit(
             self._handle, event.encode("utf-8"), data_json.encode("utf-8")
         )
+
+    # ========== 状态管理 ==========
+
+    def state(self, name: str, initial=None):
+        """创建或获取一个 State 对象
+
+        用法:
+            count = app.state("count", 0)
+            count.value += 1
+        """
+        if name in self._states:
+            return self._states[name]
+        s = State(self._lib, self._handle, name, initial)
+        self._states[name] = s
+        return s
 
 
     # ========== 窗口属性 ==========
