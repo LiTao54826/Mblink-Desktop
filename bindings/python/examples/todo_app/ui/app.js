@@ -53,7 +53,7 @@ function App() {
   return h('div', { style: S.app },
     h('div', { style: S.header },
       h('span', { style: S.title }, 'Todo List'),
-      h('span', { style: S.clock }, clock)
+      h('span', { style: S.clock, id: 'clock-display' }, clock)
     ),
     h('div', { style: S.inputRow },
       h('input', { id: 'todo-input', style: S.input, placeholder: 'add task', onKeyDown: handleKey }),
@@ -91,6 +91,17 @@ function rerender() {
     console.error('[rerender error]', e && e.message, e && e.stack);
   }
 }
-globalThis.__onSharedUpdate = function() { rerender(); };
+// 脏标记 + setTimeout(0)：把 rerender 推迟到下一个事件循环迭代
+// 这样同一帧内多次 state 更新只触发一次 rerender，且不阻塞输入处理
+var _renderScheduled = false;
+globalThis.__onSharedUpdate = function() {
+  if (!_renderScheduled) {
+    _renderScheduled = true;
+    setTimeout(function() {
+      _renderScheduled = false;
+      rerender();
+    }, 0);
+  }
+};
 rerender();
 

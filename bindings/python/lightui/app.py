@@ -94,7 +94,11 @@ class App:
         return self
 
     def eval_js(self, code: str):
-        self._lib.lightui_eval_js(self._handle, code.encode("utf-8"))
+        ret = self._lib.lightui_eval_js(self._handle, code.encode("utf-8"))
+        if ret != 0:
+            err = self._lib.lightui_last_error()
+            msg = err.decode("utf-8") if err else "unknown JS error"
+            print(f"[JS Error] {msg}", flush=True)
         return self
 
     def eval_module(self, code: str, filename: str = "<module>"):
@@ -321,7 +325,10 @@ class App:
         """callback(width, height)"""
         @LightUIResizeCallback
         def _cb(w, h, _ud):
-            callback(w, h)
+            try:
+                callback(w, h)
+            except Exception as e:
+                import traceback; traceback.print_exc()
         self._callbacks.append(_cb)
         self._lib.lightui_on_resize(self._handle, _cb, None)
         return callback
@@ -330,7 +337,10 @@ class App:
         """callback()"""
         @LightUIVoidCallback
         def _cb(_ud):
-            callback()
+            try:
+                callback()
+            except Exception as e:
+                import traceback; traceback.print_exc()
         self._callbacks.append(_cb)
         self._lib.lightui_on_close(self._handle, _cb, None)
         return callback
@@ -339,7 +349,10 @@ class App:
         """callback()"""
         @LightUIVoidCallback
         def _cb(_ud):
-            callback()
+            try:
+                callback()
+            except Exception as e:
+                import traceback; traceback.print_exc()
         self._callbacks.append(_cb)
         self._lib.lightui_on_focus(self._handle, _cb, None)
         return callback
@@ -348,7 +361,10 @@ class App:
         """callback()"""
         @LightUIVoidCallback
         def _cb(_ud):
-            callback()
+            try:
+                callback()
+            except Exception as e:
+                import traceback; traceback.print_exc()
         self._callbacks.append(_cb)
         self._lib.lightui_on_blur(self._handle, _cb, None)
         return callback
@@ -357,7 +373,10 @@ class App:
         """callback(delta_time)"""
         @LightUIUpdateCallback
         def _cb(dt, _ud):
-            callback(dt)
+            try:
+                callback(dt)
+            except Exception as e:
+                import traceback; traceback.print_exc()
         self._callbacks.append(_cb)
         self._lib.lightui_on_update(self._handle, _cb, None)
         return callback
