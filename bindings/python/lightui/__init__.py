@@ -1,49 +1,29 @@
 """
-LightUI — 用 Python 构建桌面应用 (v2 ctypes 绑定)
+LightUI — 用 Python 构建桌面应用
 
-快速开始（声明式 API）：
+快速开始：
     from lightui import App
-    from lightui.ui import Column, Text, Button
 
     app = App("Counter", 400, 300)
-    count = app.state("count", 0)
+    data = app.shared("data")
+    data.count = 0
 
     @app.bind("increment")
-    def increment(args):
-        count.value += 1
+    def _(args):
+        data.count += 1
 
-    app.ui(
-        Column(
-            Text(bind=count, font_size=48),
-            Button("+1", on_click="increment"),
-            align="center", padding=32, gap=16
-        )
-    )
+    app.load_html('<html><body><div id="root"></div></body></html>')
+    app.load_preact("ui/app.js")
     app.run()
 """
 
-__version__ = "2.1.0"
+__version__ = "3.0.0"
 __author__ = "LightUI Team"
 
-# v2 高级 API (ctypes)
 from .app_v2 import App
-from ._state import State
+from .shared import SharedState
 
-# 声明式 UI 组件
-from .ui import (
-    Column, Row, Box, Spacer,
-    Text, Button, Input, Checkbox, Image, Link, Divider,
-    build_html,
-)
-
-# 版本函数
 def version():
-    """返回 LightUI Python 包版本号"""
     return __version__
 
-__all__ = [
-    "App", "State", "version",
-    "Column", "Row", "Box", "Spacer",
-    "Text", "Button", "Input", "Checkbox", "Image", "Link", "Divider",
-    "build_html",
-]
+__all__ = ["App", "SharedState", "version"]
