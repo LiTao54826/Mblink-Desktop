@@ -17,6 +17,13 @@ app = App("Todo App", 480, 600)
 # ── 共享状态（初始值在 load_html 之后设置）──────────────────
 state = app.shared("state")
 _next_id = 1
+_todos = []   # Python 侧本地维护，避免在 JS 回调里重入 QuickJS
+
+def _push_todos():
+    """把本地 _todos 推送到 JS，并更新标题"""
+    state.todos = list(_todos)
+    active = sum(1 for t in _todos if not t["done"])
+    app.title = f"Todo App ({active} 待完成)"
 
 # ── Python 函数（供 JS 调用）────────────────────────────────
 @app.bind("addTodo")
@@ -25,28 +32,24 @@ def _(args):
     text = (args or {}).get("text", "").strip()
     if not text:
         return
-    todos = list(state.todos)
-    todos.append({"id": _next_id, "text": text, "done": False})
+    _todos.append({"id": _next_id, "text": text, "done": False})
     _next_id += 1
-    state.todos = todos
-    # 更新标题显示未完成数量
-    _update_title()
+    _push_todos()
 
 @app.bind("toggleTodo")
 def _(args):
     tid = (args or {}).get("id")
-    todos = [
-        {**t, "done": not t["done"]} if t["id"] == tid else t
-        for t in state.todos
-    ]
-    state.todos = todos
-    _update_title()
+    for t in _todos:
+        if t["id"] == tid:
+            t["done"] = not t["done"]
+            break
+    _push_todos()
 
 @app.bind("deleteTodo")
 def _(args):
     tid = (args or {}).get("id")
-    state.todos = [t for t in state.todos if t["id"] != tid]
-    _update_title()
+    _todos[:] = [t for t in _todos if t["id"] != tid]
+    _push_todos()
 
 @app.bind("setFilter")
 def _(args):
@@ -54,12 +57,8 @@ def _(args):
 
 @app.bind("clearDone")
 def _(args):
-    state.todos = [t for t in state.todos if not t["done"]]
-    _update_title()
-
-def _update_title():
-    active = sum(1 for t in state.todos if not t["done"])
-    app.title = f"Todo App ({active} 待完成)"
+    _todos[:] = [t for t in _todos if not t["done"]]
+    _push_todos()
 
 # ── 时钟（on_update 在主线程事件循环里调用，QuickJS 线程安全）──
 _last_clock = ""
