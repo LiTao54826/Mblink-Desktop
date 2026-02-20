@@ -341,6 +341,72 @@ LIGHTUI_API void lightui_state_set_merge_mode(LightUIHandle handle,
 LIGHTUI_API int lightui_process_queue(LightUIHandle handle);
 LIGHTUI_API int lightui_queue_size(LightUIHandle handle);
 
+// ========== 共享 C 对象 (SharedObject) ==========
+//
+// 核心思想：Python/JS 共享同一个 QuickJS JSValue 对象。
+// - Python 通过 ctypes 调用 set/get 操作同一个 C 对象
+// - JS 通过 globalThis.<name> 直接读写同一个对象
+// - Python 写入后自动触发 JS __onSharedUpdate() → Preact re-render
+//
+// 用法：
+//   Python: data = app.shared("data"); data.count = 0
+//   JS:     data.count  →  0
+//           py.increment()  →  Python: data.count += 1  →  UI 自动更新
+
+// 不透明句柄
+typedef struct LightUISharedObject* LightUISharedHandle;
+
+// 创建共享对象，注册为 JS globalThis.<name>
+LIGHTUI_API LightUISharedHandle lightui_shared_create(LightUIHandle handle,
+                                                       const char* name);
+
+// 销毁共享对象
+LIGHTUI_API void lightui_shared_destroy(LightUISharedHandle shared);
+
+// ---- 类型化 setter（自动触发 JS __onSharedUpdate） ----
+
+LIGHTUI_API int lightui_shared_set_int(LightUISharedHandle shared,
+                                        const char* key, int64_t value);
+LIGHTUI_API int lightui_shared_set_double(LightUISharedHandle shared,
+                                           const char* key, double value);
+LIGHTUI_API int lightui_shared_set_string(LightUISharedHandle shared,
+                                           const char* key, const char* value);
+LIGHTUI_API int lightui_shared_set_bool(LightUISharedHandle shared,
+                                         const char* key, bool value);
+LIGHTUI_API int lightui_shared_set_null(LightUISharedHandle shared,
+                                         const char* key);
+LIGHTUI_API int lightui_shared_set_json(LightUISharedHandle shared,
+                                         const char* key, const char* json_str);
+
+// ---- 类型化 getter ----
+
+LIGHTUI_API int64_t lightui_shared_get_int(LightUISharedHandle shared,
+                                            const char* key);
+LIGHTUI_API double lightui_shared_get_double(LightUISharedHandle shared,
+                                              const char* key);
+// 返回值由调用者通过 lightui_free() 释放
+LIGHTUI_API const char* lightui_shared_get_string(LightUISharedHandle shared,
+                                                    const char* key);
+LIGHTUI_API bool lightui_shared_get_bool(LightUISharedHandle shared,
+                                          const char* key);
+// 返回 JSON 字符串，调用者通过 lightui_free() 释放
+LIGHTUI_API const char* lightui_shared_get_json(LightUISharedHandle shared,
+                                                  const char* key);
+
+// ---- 属性查询 ----
+
+LIGHTUI_API int lightui_shared_get_type(LightUISharedHandle shared,
+                                         const char* key);
+LIGHTUI_API int lightui_shared_delete(LightUISharedHandle shared,
+                                       const char* key);
+LIGHTUI_API bool lightui_shared_has(LightUISharedHandle shared,
+                                     const char* key);
+
+// ---- 批量更新（抑制中间 __onSharedUpdate 调用） ----
+
+LIGHTUI_API void lightui_shared_batch_begin(LightUISharedHandle shared);
+LIGHTUI_API void lightui_shared_batch_end(LightUISharedHandle shared);
+
 // ========== 工具函数 ==========
 
 LIGHTUI_API void lightui_free(void* ptr);

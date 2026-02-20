@@ -38,6 +38,55 @@ std::mutex g_errorMutex;
 
 // ========== WindowContext ==========
 
+// ========== SharedObject 结构体 ==========
+// Python/JS 共享的 C 对象，内含 QuickJS JSValue
+struct SharedObjectData {
+    JSContext* ctx = nullptr;
+    JSValue js_obj = JS_UNDEFINED;     // 实际的 JS 对象（globalThis.<name>）
+    JSValue updater_func = JS_UNDEFINED; // __onSharedUpdate 函数缓存
+    std::string name;                   // globalThis 上的名字
+    bool batch_mode = false;            // 批量模式（抑制中间通知）
+    int pending_updates = 0;            // 批量模式中的待处理更新数
+
+    void notifyUpdate(const char* key) {
+        if (batch_mode) {
+            pending_updates++;
+            return;
+        }
+        // 调用 globalThis.__onSharedUpdate(key, value)
+        if (!JS_IsUndefined(updater_func) && !JS_IsNull(updater_func)) {
+            JSValue args[2];
+            args[0] = JS_NewString(ctx, key);
+            args[1] = JS_GetPropertyStr(ctx, js_obj, key);
+            JSValue ret = JS_Call(ctx, updater_func, JS_UNDEFINED, 2, args);
+            JS_FreeValue(ctx, args[0]);
+            JS_FreeValue(ctx, args[1]);
+            if (JS_IsException(ret)) {
+                JSValue exc = JS_GetException(ctx);
+                JS_FreeValue(ctx, exc);
+            }
+            JS_FreeValue(ctx, ret);
+        }
+    }
+
+    void flushBatch() {
+        if (pending_updates > 0) {
+            pending_updates = 0;
+            // 发送一次总更新通知
+            if (!JS_IsUndefined(updater_func) && !JS_IsNull(updater_func)) {
+                JSValue arg = JS_NewString(ctx, "*");
+                JSValue ret = JS_Call(ctx, updater_func, JS_UNDEFINED, 1, &arg);
+                JS_FreeValue(ctx, arg);
+                if (JS_IsException(ret)) {
+                    JSValue exc = JS_GetException(ctx);
+                    JS_FreeValue(ctx, exc);
+                }
+                JS_FreeValue(ctx, ret);
+            }
+        }
+    }
+};
+
 struct WindowContext {
     // 核心组件（完整初始化链）
     std::shared_ptr<lightui::Window> window;
@@ -49,6 +98,9 @@ struct WindowContext {
     std::unique_ptr<lightui::HostBridge> hostBridge;
     std::unique_ptr<lightui::FetchBindings> fetchBindings;
     std::unique_ptr<lightui::StateManager> stateManager;
+
+    // 共享对象存储
+    std::unordered_map<std::string, SharedObjectData*> sharedObjects;
 
     // 回调存储
     std::unordered_map<int, std::pair<LightUIStateCallback, void*>> watchCallbacks;
@@ -1203,6 +1255,271 @@ int lightui_queue_size(LightUIHandle handle) {
     if (!handle) return 0;
     auto ctx = getContext(handle);
     return static_cast<int>(ctx->stateManager->queueSize());
+}
+
+// ========== 共享 C 对象 (SharedObject) ==========
+
+LightUISharedHandle lightui_shared_create(LightUIHandle handle, const char* name) {
+    if (!handle || !name) return nullptr;
+    auto ctx = getContext(handle);
+    if (!ctx->runtime) return nullptr;
+
+    auto jsCtx = ctx->runtime->GetContext();
+
+    // 创建 SharedObjectData
+    auto* shared = new SharedObjectData();
+    shared->ctx = jsCtx;
+    shared->name = name;
+    shared->js_obj = JS_NewObject(jsCtx);
+
+    // 注册为 globalThis.<name>
+    JSValue global = JS_GetGlobalObject(jsCtx);
+    JS_DupValue(jsCtx, shared->js_obj);
+    JS_SetPropertyStr(jsCtx, global, name, shared->js_obj);
+
+    // 缓存 __onSharedUpdate 函数引用
+    shared->updater_func = JS_GetPropertyStr(jsCtx, global, "__onSharedUpdate");
+    JS_FreeValue(jsCtx, global);
+
+    // 存储到 WindowContext
+    ctx->sharedObjects[name] = shared;
+
+    return reinterpret_cast<LightUISharedHandle>(shared);
+}
+
+void lightui_shared_destroy(LightUISharedHandle shared_handle) {
+    if (!shared_handle) return;
+    auto* shared = reinterpret_cast<SharedObjectData*>(shared_handle);
+
+    if (shared->ctx) {
+        // 从 globalThis 移除
+        JSValue global = JS_GetGlobalObject(shared->ctx);
+        JS_DeleteProperty(shared->ctx, global,
+            JS_NewAtom(shared->ctx, shared->name.c_str()), 0);
+        JS_FreeValue(shared->ctx, global);
+
+        // 释放 JS 值
+        JS_FreeValue(shared->ctx, shared->js_obj);
+        if (!JS_IsUndefined(shared->updater_func)) {
+            JS_FreeValue(shared->ctx, shared->updater_func);
+        }
+    }
+    delete shared;
+}
+
+// ---- Setter 实现 ----
+
+int lightui_shared_set_int(LightUISharedHandle shared_handle,
+                            const char* key, int64_t value) {
+    if (!shared_handle || !key) return LIGHTUI_ERROR_INVALID_PARAM;
+    auto* shared = reinterpret_cast<SharedObjectData*>(shared_handle);
+
+    JS_SetPropertyStr(shared->ctx, shared->js_obj, key, JS_NewInt64(shared->ctx, value));
+    // 每次 set 后刷新 updater_func 缓存（用户可能在 set 之后才定义 __onSharedUpdate）
+    if (JS_IsUndefined(shared->updater_func)) {
+        JSValue global = JS_GetGlobalObject(shared->ctx);
+        shared->updater_func = JS_GetPropertyStr(shared->ctx, global, "__onSharedUpdate");
+        JS_FreeValue(shared->ctx, global);
+    }
+    shared->notifyUpdate(key);
+    return LIGHTUI_OK;
+}
+
+int lightui_shared_set_double(LightUISharedHandle shared_handle,
+                               const char* key, double value) {
+    if (!shared_handle || !key) return LIGHTUI_ERROR_INVALID_PARAM;
+    auto* shared = reinterpret_cast<SharedObjectData*>(shared_handle);
+
+    JS_SetPropertyStr(shared->ctx, shared->js_obj, key, JS_NewFloat64(shared->ctx, value));
+    if (JS_IsUndefined(shared->updater_func)) {
+        JSValue global = JS_GetGlobalObject(shared->ctx);
+        shared->updater_func = JS_GetPropertyStr(shared->ctx, global, "__onSharedUpdate");
+        JS_FreeValue(shared->ctx, global);
+    }
+    shared->notifyUpdate(key);
+    return LIGHTUI_OK;
+}
+
+int lightui_shared_set_string(LightUISharedHandle shared_handle,
+                               const char* key, const char* value) {
+    if (!shared_handle || !key) return LIGHTUI_ERROR_INVALID_PARAM;
+    auto* shared = reinterpret_cast<SharedObjectData*>(shared_handle);
+
+    JS_SetPropertyStr(shared->ctx, shared->js_obj, key,
+        value ? JS_NewString(shared->ctx, value) : JS_NULL);
+    if (JS_IsUndefined(shared->updater_func)) {
+        JSValue global = JS_GetGlobalObject(shared->ctx);
+        shared->updater_func = JS_GetPropertyStr(shared->ctx, global, "__onSharedUpdate");
+        JS_FreeValue(shared->ctx, global);
+    }
+    shared->notifyUpdate(key);
+    return LIGHTUI_OK;
+}
+
+int lightui_shared_set_bool(LightUISharedHandle shared_handle,
+                             const char* key, bool value) {
+    if (!shared_handle || !key) return LIGHTUI_ERROR_INVALID_PARAM;
+    auto* shared = reinterpret_cast<SharedObjectData*>(shared_handle);
+
+    JS_SetPropertyStr(shared->ctx, shared->js_obj, key, JS_NewBool(shared->ctx, value));
+    if (JS_IsUndefined(shared->updater_func)) {
+        JSValue global = JS_GetGlobalObject(shared->ctx);
+        shared->updater_func = JS_GetPropertyStr(shared->ctx, global, "__onSharedUpdate");
+        JS_FreeValue(shared->ctx, global);
+    }
+    shared->notifyUpdate(key);
+    return LIGHTUI_OK;
+}
+
+int lightui_shared_set_null(LightUISharedHandle shared_handle, const char* key) {
+    if (!shared_handle || !key) return LIGHTUI_ERROR_INVALID_PARAM;
+    auto* shared = reinterpret_cast<SharedObjectData*>(shared_handle);
+    JS_SetPropertyStr(shared->ctx, shared->js_obj, key, JS_NULL);
+    if (JS_IsUndefined(shared->updater_func)) {
+        JSValue global = JS_GetGlobalObject(shared->ctx);
+        shared->updater_func = JS_GetPropertyStr(shared->ctx, global, "__onSharedUpdate");
+        JS_FreeValue(shared->ctx, global);
+    }
+    shared->notifyUpdate(key);
+    return LIGHTUI_OK;
+}
+
+int lightui_shared_set_json(LightUISharedHandle shared_handle,
+                             const char* key, const char* json_str) {
+    if (!shared_handle || !key || !json_str) return LIGHTUI_ERROR_INVALID_PARAM;
+    auto* shared = reinterpret_cast<SharedObjectData*>(shared_handle);
+
+    JSValue val = JS_ParseJSON(shared->ctx, json_str, strlen(json_str), "<json>");
+    if (JS_IsException(val)) {
+        JSValue exc = JS_GetException(shared->ctx);
+        JS_FreeValue(shared->ctx, exc);
+        return LIGHTUI_ERROR_INVALID_PARAM;
+    }
+    JS_SetPropertyStr(shared->ctx, shared->js_obj, key, val);
+    if (JS_IsUndefined(shared->updater_func)) {
+        JSValue global = JS_GetGlobalObject(shared->ctx);
+        shared->updater_func = JS_GetPropertyStr(shared->ctx, global, "__onSharedUpdate");
+        JS_FreeValue(shared->ctx, global);
+    }
+    shared->notifyUpdate(key);
+    return LIGHTUI_OK;
+}
+
+// ---- Getter 实现 ----
+
+int64_t lightui_shared_get_int(LightUISharedHandle shared_handle, const char* key) {
+    if (!shared_handle || !key) return 0;
+    auto* shared = reinterpret_cast<SharedObjectData*>(shared_handle);
+    JSValue val = JS_GetPropertyStr(shared->ctx, shared->js_obj, key);
+    int64_t result = 0;
+    JS_ToInt64(shared->ctx, &result, val);
+    JS_FreeValue(shared->ctx, val);
+    return result;
+}
+
+double lightui_shared_get_double(LightUISharedHandle shared_handle, const char* key) {
+    if (!shared_handle || !key) return 0.0;
+    auto* shared = reinterpret_cast<SharedObjectData*>(shared_handle);
+    JSValue val = JS_GetPropertyStr(shared->ctx, shared->js_obj, key);
+    double result = 0.0;
+    JS_ToFloat64(shared->ctx, &result, val);
+    JS_FreeValue(shared->ctx, val);
+    return result;
+}
+
+const char* lightui_shared_get_string(LightUISharedHandle shared_handle, const char* key) {
+    if (!shared_handle || !key) return nullptr;
+    auto* shared = reinterpret_cast<SharedObjectData*>(shared_handle);
+    JSValue val = JS_GetPropertyStr(shared->ctx, shared->js_obj, key);
+    const char* str = JS_ToCString(shared->ctx, val);
+    JS_FreeValue(shared->ctx, val);
+    if (!str) return nullptr;
+    char* result = duplicateString(str);
+    JS_FreeCString(shared->ctx, str);
+    return result;
+}
+
+bool lightui_shared_get_bool(LightUISharedHandle shared_handle, const char* key) {
+    if (!shared_handle || !key) return false;
+    auto* shared = reinterpret_cast<SharedObjectData*>(shared_handle);
+    JSValue val = JS_GetPropertyStr(shared->ctx, shared->js_obj, key);
+    int result = JS_ToBool(shared->ctx, val);
+    JS_FreeValue(shared->ctx, val);
+    return result != 0;
+}
+
+const char* lightui_shared_get_json(LightUISharedHandle shared_handle, const char* key) {
+    if (!shared_handle || !key) return nullptr;
+    auto* shared = reinterpret_cast<SharedObjectData*>(shared_handle);
+    JSValue val = JS_GetPropertyStr(shared->ctx, shared->js_obj, key);
+    JSValue json_val = JS_JSONStringify(shared->ctx, val, JS_UNDEFINED, JS_UNDEFINED);
+    JS_FreeValue(shared->ctx, val);
+    if (JS_IsException(json_val)) {
+        JSValue exc = JS_GetException(shared->ctx);
+        JS_FreeValue(shared->ctx, exc);
+        return nullptr;
+    }
+    const char* str = JS_ToCString(shared->ctx, json_val);
+    JS_FreeValue(shared->ctx, json_val);
+    if (!str) return nullptr;
+    char* result = duplicateString(str);
+    JS_FreeCString(shared->ctx, str);
+    return result;
+}
+
+// ---- 属性查询 ----
+
+int lightui_shared_get_type(LightUISharedHandle shared_handle, const char* key) {
+    if (!shared_handle || !key) return LIGHTUI_TYPE_NULL;
+    auto* shared = reinterpret_cast<SharedObjectData*>(shared_handle);
+    JSValue val = JS_GetPropertyStr(shared->ctx, shared->js_obj, key);
+    int tag = JS_VALUE_GET_TAG(val);
+    int result;
+    if (JS_IsNull(val) || JS_IsUndefined(val)) result = LIGHTUI_TYPE_NULL;
+    else if (JS_IsBool(val)) result = LIGHTUI_TYPE_BOOL;
+    else if (tag == JS_TAG_INT) result = LIGHTUI_TYPE_INT;
+    else if (JS_TAG_IS_FLOAT64(tag)) result = LIGHTUI_TYPE_DOUBLE;
+    else if (JS_IsString(val)) result = LIGHTUI_TYPE_STRING;
+    else if (JS_IsArray(val)) result = LIGHTUI_TYPE_ARRAY;
+    else if (JS_IsObject(val)) result = LIGHTUI_TYPE_OBJECT;
+    else result = LIGHTUI_TYPE_NULL;
+    JS_FreeValue(shared->ctx, val);
+    return result;
+}
+
+int lightui_shared_delete(LightUISharedHandle shared_handle, const char* key) {
+    if (!shared_handle || !key) return LIGHTUI_ERROR_INVALID_PARAM;
+    auto* shared = reinterpret_cast<SharedObjectData*>(shared_handle);
+    JSAtom atom = JS_NewAtom(shared->ctx, key);
+    JS_DeleteProperty(shared->ctx, shared->js_obj, atom, 0);
+    JS_FreeAtom(shared->ctx, atom);
+    shared->notifyUpdate(key);
+    return LIGHTUI_OK;
+}
+
+bool lightui_shared_has(LightUISharedHandle shared_handle, const char* key) {
+    if (!shared_handle || !key) return false;
+    auto* shared = reinterpret_cast<SharedObjectData*>(shared_handle);
+    JSAtom atom = JS_NewAtom(shared->ctx, key);
+    int has = JS_HasProperty(shared->ctx, shared->js_obj, atom);
+    JS_FreeAtom(shared->ctx, atom);
+    return has > 0;
+}
+
+// ---- 批量更新 ----
+
+void lightui_shared_batch_begin(LightUISharedHandle shared_handle) {
+    if (!shared_handle) return;
+    auto* shared = reinterpret_cast<SharedObjectData*>(shared_handle);
+    shared->batch_mode = true;
+    shared->pending_updates = 0;
+}
+
+void lightui_shared_batch_end(LightUISharedHandle shared_handle) {
+    if (!shared_handle) return;
+    auto* shared = reinterpret_cast<SharedObjectData*>(shared_handle);
+    shared->batch_mode = false;
+    shared->flushBatch();
 }
 
 // ========== 工具函数 ==========

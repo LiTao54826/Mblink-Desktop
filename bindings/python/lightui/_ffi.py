@@ -351,3 +351,51 @@ def _bind_functions(lib):
     lib.lightui_free.argtypes = [c_void_p]
     lib.lightui_last_error.restype = c_char_p
     lib.lightui_last_error.argtypes = []
+
+    # ========== 共享 C 对象 (SharedObject) ==========
+    SH = c_void_p  # LightUISharedHandle
+
+    lib.lightui_shared_create.restype = SH
+    lib.lightui_shared_create.argtypes = [H, c_char_p]
+    lib.lightui_shared_destroy.restype = None
+    lib.lightui_shared_destroy.argtypes = [SH]
+
+    # setter
+    lib.lightui_shared_set_int.restype = c_int
+    lib.lightui_shared_set_int.argtypes = [SH, c_char_p, c_int64]
+    lib.lightui_shared_set_double.restype = c_int
+    lib.lightui_shared_set_double.argtypes = [SH, c_char_p, c_double]
+    lib.lightui_shared_set_string.restype = c_int
+    lib.lightui_shared_set_string.argtypes = [SH, c_char_p, c_char_p]
+    lib.lightui_shared_set_bool.restype = c_int
+    lib.lightui_shared_set_bool.argtypes = [SH, c_char_p, c_bool]
+    lib.lightui_shared_set_null.restype = c_int
+    lib.lightui_shared_set_null.argtypes = [SH, c_char_p]
+    lib.lightui_shared_set_json.restype = c_int
+    lib.lightui_shared_set_json.argtypes = [SH, c_char_p, c_char_p]
+
+    # getter
+    lib.lightui_shared_get_int.restype = c_int64
+    lib.lightui_shared_get_int.argtypes = [SH, c_char_p]
+    lib.lightui_shared_get_double.restype = c_double
+    lib.lightui_shared_get_double.argtypes = [SH, c_char_p]
+    lib.lightui_shared_get_string.restype = c_char_p
+    lib.lightui_shared_get_string.argtypes = [SH, c_char_p]
+    lib.lightui_shared_get_bool.restype = c_bool
+    lib.lightui_shared_get_bool.argtypes = [SH, c_char_p]
+    lib.lightui_shared_get_json.restype = c_char_p
+    lib.lightui_shared_get_json.argtypes = [SH, c_char_p]
+
+    # 属性查询
+    lib.lightui_shared_get_type.restype = c_int
+    lib.lightui_shared_get_type.argtypes = [SH, c_char_p]
+    lib.lightui_shared_delete.restype = c_int
+    lib.lightui_shared_delete.argtypes = [SH, c_char_p]
+    lib.lightui_shared_has.restype = c_bool
+    lib.lightui_shared_has.argtypes = [SH, c_char_p]
+
+    # 批量更新
+    lib.lightui_shared_batch_begin.restype = None
+    lib.lightui_shared_batch_begin.argtypes = [SH]
+    lib.lightui_shared_batch_end.restype = None
+    lib.lightui_shared_batch_end.argtypes = [SH]

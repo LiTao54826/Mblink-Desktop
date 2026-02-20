@@ -48,6 +48,8 @@ class App:
 
         self._callbacks = []  # prevent GC
         self._states = {}     # name -> State
+        self._shared_objects = {}   # name -> SharedState proxy
+        self._shared_handles = {}   # name -> c_void_p handle
         self._title_bytes = cfg.title  # keep alive
 
         atexit.register(self._cleanup)
@@ -76,6 +78,12 @@ class App:
 
     def _cleanup(self):
         if self._handle:
+            # 销毁所有共享对象
+            for name, sh in self._shared_handles.items():
+                self._lib.lightui_shared_destroy(sh)
+            self._shared_handles.clear()
+            self._shared_objects.clear()
+
             self._lib.lightui_destroy(self._handle)
             self._handle = None
             self._lib.lightui_cleanup()
@@ -103,6 +111,98 @@ class App:
     def load_js_file(self, filepath: str):
         self._lib.lightui_load_js_file(self._handle, filepath.encode("utf-8"))
         return self
+
+    # ========== 共享 C 对象 ==========
+
+    def shared(self, name: str = "data"):
+        """创建/获取共享 C 对象，注册为 JS globalThis.<name>
+
+        用法：
+            data = app.shared("data")
+            data.count = 0          # → JS: data.count = 0
+            data.count += 1         # → 自动触发 Preact 重渲染
+
+        返回 SharedState 代理对象。
+        """
+        if name in self._shared_objects:
+            return self._shared_objects[name]
+
+        from .shared import SharedState
+        sh = self._lib.lightui_shared_create(
+            self._handle, name.encode("utf-8")
+        )
+        if not sh:
+            raise RuntimeError(f"lightui_shared_create('{name}') 返回 NULL")
+
+        proxy = SharedState(self._lib, self._handle, sh, name)
+        self._shared_objects[name] = proxy
+        self._shared_handles[name] = sh
+        return proxy
+
+    def load_preact(self, js_file: str):
+        """加载 Preact 应用（.js 入口文件）
+
+        自动完成：
+        1. 加载 Preact + Hooks 到 globalThis
+        2. 以 module 模式加载入口 JS 文件
+
+        用法：
+            app.load_preact("ui/app.js")
+        """
+        import os
+
+        # ① 自动查找并加载 Preact 库（设置 globalThis.Preact / globalThis.PreactHooks）
+        if not getattr(self, '_preact_loaded', False):
+            self._load_preact_libs()
+
+        # ② 解析用户 JS 文件路径
+        if not os.path.isabs(js_file):
+            import inspect
+            caller_dir = os.path.dirname(
+                os.path.abspath(inspect.stack()[1].filename)
+            )
+            js_file = os.path.join(caller_dir, js_file)
+
+        with open(js_file, 'r', encoding='utf-8') as f:
+            code = f.read()
+
+        # ③ 以普通脚本模式 eval（同步执行，避免 module 异步问题）
+        # 如果用户需要 import/export，可直接调用 app.eval_module()
+        self.eval_js(code)
+        return self
+
+    def _load_preact_libs(self):
+        """从项目目录加载 preact.js 和 hooks.js"""
+        import os
+        pkg_dir = os.path.dirname(os.path.abspath(__file__))
+        proj_root = os.path.normpath(os.path.join(pkg_dir, "..", "..", ".."))
+
+        preact_js = os.path.join(proj_root, "js", "preact", "preact.js")
+        hooks_js = os.path.join(proj_root, "js", "preact", "hooks.js")
+
+        # 尝试从环境变量获取路径
+        env_root = os.environ.get("LIGHTUI_ROOT", "")
+        if env_root:
+            alt_preact = os.path.join(env_root, "js", "preact", "preact.js")
+            alt_hooks = os.path.join(env_root, "js", "preact", "hooks.js")
+            if os.path.exists(alt_preact):
+                preact_js = alt_preact
+                hooks_js = alt_hooks
+
+        if os.path.exists(preact_js):
+            with open(preact_js, 'r', encoding='utf-8') as f:
+                self.eval_js(f.read())
+        else:
+            raise FileNotFoundError(
+                f"找不到 preact.js: {preact_js}\n"
+                f"请设置 LIGHTUI_ROOT 环境变量指向项目根目录"
+            )
+
+        if os.path.exists(hooks_js):
+            with open(hooks_js, 'r', encoding='utf-8') as f:
+                self.eval_js(f.read())
+
+        self._preact_loaded = True
 
     # ========== 声明式 UI ==========
 
