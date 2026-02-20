@@ -39,3 +39,11 @@ set_target_properties(lightui_api PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
     LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/lib"
 )
+
+# 编译后自动复制 DLL 到 Python binding 目录（失败不阻断构建）
+set(PYTHON_BIN_DIR "${CMAKE_SOURCE_DIR}/bindings/python/lightui/bin")
+add_custom_command(TARGET lightui_api POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E make_directory "${PYTHON_BIN_DIR}"
+    COMMAND cmd /c robocopy "$<TARGET_FILE_DIR:lightui_api>" "${PYTHON_BIN_DIR}" "$<TARGET_FILE_NAME:lightui_api>" /njh /njs /ndl /nc /ns || exit 0
+    COMMENT "Copying lightui.dll -> bindings/python/lightui/bin/"
+)

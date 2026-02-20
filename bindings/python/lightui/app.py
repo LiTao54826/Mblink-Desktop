@@ -56,15 +56,14 @@ class App:
 
     def run(self):
         """启动事件循环（阻塞）"""
-        # ctypes CFUNCTYPE 回调返回 c_char_p 时 Python 3.12+ 会报
-        # RuntimeWarning: memory leak in callback function
-        # C 端已经 copy 返回值到 std::string（不 free），此警告可安全忽略
         with warnings.catch_warnings():
             warnings.filterwarnings(
                 "ignore", message="memory leak in callback function",
                 category=RuntimeWarning,
             )
             self._lib.lightui_run(self._handle)
+        # 事件循环结束后立即清理，避免 SDL 后台线程阻止进程退出
+        self._cleanup()
 
     def stop(self):
         """停止事件循环"""
@@ -76,15 +75,13 @@ class App:
 
     def _cleanup(self):
         if self._handle:
-            # 销毁所有共享对象
+            # destroy shared objects first (releases JS refs)
             for name, sh in self._shared_handles.items():
                 self._lib.lightui_shared_destroy(sh)
             self._shared_handles.clear()
             self._shared_objects.clear()
-
+            # lightui_destroy 内部会调用 TerminateProcess/quick_exit，不会返回
             self._lib.lightui_destroy(self._handle)
-            self._handle = None
-            self._lib.lightui_cleanup()
 
     # ========== UI 加载 ==========
 

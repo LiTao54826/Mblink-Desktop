@@ -19,6 +19,12 @@
 #include "core/event/loop/event_loop.h"
 #include "core/event/loop/task_scheduler.h"
 #include "core/network/fetch_bindings.h"
+#include "core/quickjs/dom_binding_map.h"
+
+#include <cstdlib>
+#ifdef _WIN32
+#include <windows.h>
+#endif
 
 #include <string>
 #include <memory>
@@ -331,23 +337,85 @@ void lightui_destroy(LightUIHandle handle) {
     if (!handle) return;
     auto ctx = getContext(handle);
 
-    // 停止事件循环
+    // 1. 停止事件循环
     if (ctx->eventLoop && ctx->running) {
         ctx->eventLoop->Stop();
         ctx->running = false;
     }
 
-    // 清理 DOM 绑定
+    // 2. JS 清理：unmount Preact + 清空全局引用（必须在 DOMBindings::Cleanup 之前）
+    if (ctx->runtime) {
+        auto jsCtx = ctx->runtime->GetContext();
+        const char* cleanupScript =
+            "(function(){"
+            "  if(typeof __preactCleanup==='function'){try{__preactCleanup();}catch(e){}}"
+            "  if(typeof __preactHooksCleanup==='function'){try{__preactHooksCleanup();}catch(e){}}"
+            "  var keys=['Preact','PreactHooks','preact','preactHooks',"
+            "            '__preactCleanup','__preactHooksCleanup',"
+            "            '__onSharedUpdate','data','py'];"
+            "  for(var i=0;i<keys.length;i++){"
+            "    try{globalThis[keys[i]]=undefined;}catch(e){}"
+            "  }"
+            "})();";
+        JSValue res = JS_Eval(jsCtx, cleanupScript, strlen(cleanupScript),
+                              "<cleanup>", JS_EVAL_TYPE_GLOBAL);
+        if (JS_IsException(res)) {
+            JSValue exc = JS_GetException(jsCtx);
+            JS_FreeValue(jsCtx, exc);
+        }
+        JS_FreeValue(jsCtx, res);
+    }
+
+    // 3. 清理 DOM 绑定
     if (ctx->runtime) {
         lightui::DOMBindings::Cleanup(ctx->runtime->GetContext());
     }
 
-    // 从 WindowManager 注销
+    // 4. 释放 document
+    ctx->document.reset();
+
+    // 5. 清理 DOMBindingMap（Node* -> JSValue 映射）
+    lightui::DOMBindingMap::GetInstance().Clear();
+
+    // 6. 释放 HostBridge 和 StateManager
+    if (ctx->stateManager) {
+        ctx->stateManager->clearWatchers();
+    }
+    ctx->hostBridge.reset();
+    ctx->stateManager.reset();
+
+    // 7. GC
+    if (ctx->runtime) {
+        ctx->runtime->RunGC();
+    }
+
+    // 8. 释放 runtime
+    ctx->runtime.reset();
+
+    // 9. 释放 eventLoop（SDL_DestroyCursor 必须在 SDL_Quit 之前）
+    ctx->eventLoop.reset();
+
+    // 10. 释放 windowBindings/fetchBindings/taskScheduler
+    //     windowBindings 持有 shared_ptr<Window>，必须在 window 析构之前 reset
+    ctx->windowBindings.reset();
+    ctx->fetchBindings.reset();
+    ctx->taskScheduler.reset();
+
+    // 11. 从 WindowManager 注销（不调用 window.reset()，避免 Window::~Window 卡在 SDL/Skia 清理）
     if (ctx->window) {
         lightui::WindowManager::Instance().UnregisterWindow(ctx->window);
     }
 
-    delete ctx;
+    ctx->sharedObjects.clear();
+    ctx->watchCallbacks.clear();
+    ctx->boundFunctions.clear();
+
+    // SDL 有后台线程无法正常退出，参考 esm_loader 使用强制退出
+#ifdef _WIN32
+    ::TerminateProcess(::GetCurrentProcess(), 0);
+#else
+    std::quick_exit(0);
+#endif
 }
 
 void lightui_run(LightUIHandle handle) {
@@ -1292,10 +1360,11 @@ void lightui_shared_destroy(LightUISharedHandle shared_handle) {
     auto* shared = reinterpret_cast<SharedObjectData*>(shared_handle);
 
     if (shared->ctx) {
-        // 从 globalThis 移除
+        // 从 globalThis 移除（必须先 FreeAtom 避免 atom leak）
         JSValue global = JS_GetGlobalObject(shared->ctx);
-        JS_DeleteProperty(shared->ctx, global,
-            JS_NewAtom(shared->ctx, shared->name.c_str()), 0);
+        JSAtom atom = JS_NewAtom(shared->ctx, shared->name.c_str());
+        JS_DeleteProperty(shared->ctx, global, atom, 0);
+        JS_FreeAtom(shared->ctx, atom);
         JS_FreeValue(shared->ctx, global);
 
         // 释放 JS 值
