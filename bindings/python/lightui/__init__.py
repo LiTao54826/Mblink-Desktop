@@ -20,7 +20,7 @@ LightUI — 用 Python 构建桌面应用
 __version__ = "3.0.0"
 __author__ = "LightUI Team"
 
-from .app_v2 import App
+from .app import App
 from .shared import SharedState
 
 def version():
