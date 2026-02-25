@@ -1118,10 +1118,9 @@ void RenderInlineBlock::PaintInputElement(SkCanvas* canvas, HTMLInputElement* in
                 canvas->drawRect(SkRect::MakeXYWH(sel_start_x, sel_y_top, sel_width, sel_height), sel_paint);
             }
 
-            // 基于时间的光标闪烁：每500毫秒切换一次
-            auto now = std::chrono::steady_clock::now();
-            auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()).count();
-            bool cursor_visible = (ms / 500) % 2 == 0;
+            // 使用 RenderObject 的全局光标状态，避免重复的系统时间调用
+            // 光标闪烁由 EventLoop 统一管理
+            bool cursor_visible = RenderObject::IsCursorVisible();
 
             if (cursor_visible) {
                 // 计算光标位置 - 使用 UTF-8 字符位置
@@ -1561,10 +1560,9 @@ void RenderInlineBlock::PaintTextAreaElement(SkCanvas* canvas, HTMLTextAreaEleme
             }
         }
 
-        // 绘制光标（基于时间的闪烁）
-        auto now = std::chrono::steady_clock::now();
-        auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()).count();
-        bool cursor_visible = (ms / 500) % 2 == 0;
+        // 使用 RenderObject 的全局光标状态，避免重复的系统时间调用
+        // 光标闪烁由 EventLoop 统一管理
+        bool cursor_visible = RenderObject::IsCursorVisible();
 
         if (cursor_visible) {
             // 计算光标位置 - 使用 sel_end 作为光标位置

@@ -14,6 +14,7 @@ SharedState — Python/JS 共享 C 对象代理类
         data.z = 3
 """
 
+import ctypes
 import json as _json
 from contextlib import contextmanager
 
@@ -82,17 +83,19 @@ class SharedState:
         elif t == _TYPE_STRING:
             raw = lib.lightui_shared_get_string(sh, k)
             if raw:
-                result = raw.decode('utf-8')
-                lib.lightui_free(raw)
-                return result
+                try:
+                    return ctypes.string_at(raw).decode('utf-8')
+                finally:
+                    lib.lightui_free(raw)
             return None
         else:
             # ARRAY / OBJECT → JSON 反序列化
             raw = lib.lightui_shared_get_json(sh, k)
             if raw:
-                result = _json.loads(raw.decode('utf-8'))
-                lib.lightui_free(raw)
-                return result
+                try:
+                    return _json.loads(ctypes.string_at(raw).decode('utf-8'))
+                finally:
+                    lib.lightui_free(raw)
             return None
 
     def __delattr__(self, key):

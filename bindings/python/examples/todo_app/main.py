@@ -9,7 +9,6 @@ Todo App 示例 — 展示 LightUI Python 绑定的核心功能
   - 动态修改窗口标题
 """
 
-import time
 from lightui import App
 
 app = App("Todo App", 480, 600)
@@ -60,16 +59,7 @@ def _(args):
     _todos[:] = [t for t in _todos if not t["done"]]
     _push_todos()
 
-# ── 时钟（on_update 在主线程事件循环里调用，QuickJS 线程安全）──
-_last_clock = ""
 
-@app.on_update
-def _(dt):
-    global _last_clock
-    now = time.strftime("%H:%M:%S")
-    if now != _last_clock:
-        _last_clock = now
-        state.clock = now
 
 # ── 加载 UI ───────────────────────────────────────────────
 app.load_html("""<!DOCTYPE html>
@@ -79,7 +69,6 @@ app.load_html("""<!DOCTYPE html>
 
 # ── 共享状态初始值（load_html 之后设置，确保 JS runtime 就绪）──
 state.todos = []
-state.clock = time.strftime("%H:%M:%S")
 state.filter = "all"
 
 app.load_preact("ui/app.js")

@@ -226,10 +226,10 @@ class App:
                     args = json.loads(args_str)
                     result = func(args)
                     ret = json.dumps(result, ensure_ascii=False)
-                    return ret.encode("utf-8")
+                    return self._lib.lightui_copy_string(ret.encode("utf-8"))
                 except Exception as e:
                     err = json.dumps({"error": str(e)})
-                    return err.encode("utf-8")
+                    return self._lib.lightui_copy_string(err.encode("utf-8"))
 
             self._callbacks.append(_callback)  # prevent GC
             self._lib.lightui_bind(

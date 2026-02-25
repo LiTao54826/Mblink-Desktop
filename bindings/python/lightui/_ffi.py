@@ -21,7 +21,8 @@ POINTER = ctypes.POINTER
 
 # ========== 回调类型 ==========
 # char* (*LightUICallback)(const char* args_json, void* user_data)
-LightUICallback = ctypes.CFUNCTYPE(c_char_p, c_char_p, c_void_p)
+# 注意：回调返回值必须来自 lightui_copy_string()，由 LightUI 在 C 侧释放
+LightUICallback = ctypes.CFUNCTYPE(c_void_p, c_char_p, c_void_p)
 # void (*LightUIStateCallback)(const char* name, const char* value_json, void* user_data)
 LightUIStateCallback = ctypes.CFUNCTYPE(None, c_char_p, c_char_p, c_void_p)
 # void (*LightUIResizeCallback)(int width, int height, void* user_data)
@@ -349,6 +350,9 @@ def _bind_functions(lib):
     # 工具
     lib.lightui_free.restype = None
     lib.lightui_free.argtypes = [c_void_p]
+    lib.lightui_copy_string.restype = c_void_p
+    lib.lightui_copy_string.argtypes = [c_char_p]
+
     lib.lightui_last_error.restype = c_char_p
     lib.lightui_last_error.argtypes = []
 
@@ -379,11 +383,11 @@ def _bind_functions(lib):
     lib.lightui_shared_get_int.argtypes = [SH, c_char_p]
     lib.lightui_shared_get_double.restype = c_double
     lib.lightui_shared_get_double.argtypes = [SH, c_char_p]
-    lib.lightui_shared_get_string.restype = c_char_p
+    lib.lightui_shared_get_string.restype = c_void_p
     lib.lightui_shared_get_string.argtypes = [SH, c_char_p]
     lib.lightui_shared_get_bool.restype = c_bool
     lib.lightui_shared_get_bool.argtypes = [SH, c_char_p]
-    lib.lightui_shared_get_json.restype = c_char_p
+    lib.lightui_shared_get_json.restype = c_void_p
     lib.lightui_shared_get_json.argtypes = [SH, c_char_p]
 
     # 属性查询

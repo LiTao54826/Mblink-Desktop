@@ -32,7 +32,6 @@ var delBtnStyle = { background: 'none', border: 'none', cursor: 'pointer', color
 function App() {
   var todos  = (state.todos  || []).slice();
   var filter = state.filter  || 'all';
-  var clock  = state.clock   || '';
 
   var visible = todos.filter(function(t) {
     return filter === 'all' ? true : filter === 'active' ? !t.done : t.done;
@@ -53,7 +52,7 @@ function App() {
   return h('div', { style: S.app },
     h('div', { style: S.header },
       h('span', { style: S.title }, 'Todo List'),
-      h('span', { style: S.clock, id: 'clock-display' }, clock)
+      h('span', { style: S.clock, id: 'clock-display' })
     ),
     h('div', { style: S.inputRow },
       h('input', { id: 'todo-input', style: S.input, placeholder: 'add task', onKeyDown: handleKey }),
@@ -87,12 +86,12 @@ var _root = document.getElementById('root');
 function rerender() {
   try {
     render(h(App), _root);
+    _updateClock(); // rerender 后补写时钟，防止 Preact diff 清空
   } catch(e) {
     console.error('[rerender error]', e && e.message, e && e.stack);
   }
 }
 // 脏标记 + setTimeout(0)：把 rerender 推迟到下一个事件循环迭代
-// 这样同一帧内多次 state 更新只触发一次 rerender，且不阻塞输入处理
 var _renderScheduled = false;
 globalThis.__onSharedUpdate = function() {
   if (!_renderScheduled) {
@@ -103,5 +102,22 @@ globalThis.__onSharedUpdate = function() {
     }, 0);
   }
 };
+
+// ── 时钟：纯 JS setInterval，不走 Python on_update ──────────
+function _pad(n) { return (n < 10 ? '0' : '') + n; }
+function _updateClock() {
+  try {
+    var now = new Date();
+    var s = _pad(now.getHours()) + ':' + _pad(now.getMinutes()) + ':' + _pad(now.getSeconds());
+    var el = document.getElementById('clock-display');
+    if (el) el.textContent = s;
+  } catch(e) {
+    console.error('[clock error]', e && e.message);
+  }
+}
+_updateClock();
+setInterval(_updateClock, 1000);
+
 rerender();
+
 

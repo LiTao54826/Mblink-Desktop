@@ -79,7 +79,9 @@ typedef struct {
 
 // ========== 回调类型 ==========
 
-// 函数绑定回调: JS 调用 py.xxx() 时触发，返回 JSON 字符串（调用者需 free）
+// 函数绑定回调: JS 调用 py.xxx() 时触发，返回 JSON 字符串。
+// 返回值必须由 LightUI 运行时通过 lightui_free() 释放。
+// 建议绑定层使用 lightui_copy_string() 分配返回字符串，确保分配/释放在同一运行时。
 typedef char* (*LightUICallback)(const char* args_json, void* user_data);
 
 // 状态变更回调
@@ -408,6 +410,9 @@ LIGHTUI_API void lightui_shared_batch_begin(LightUISharedHandle shared);
 LIGHTUI_API void lightui_shared_batch_end(LightUISharedHandle shared);
 
 // ========== 工具函数 ==========
+
+// 拷贝字符串到 LightUI 运行时分配的内存；调用者需通过 lightui_free() 释放
+LIGHTUI_API char* lightui_copy_string(const char* str);
 
 LIGHTUI_API void lightui_free(void* ptr);
 LIGHTUI_API const char* lightui_last_error(void);

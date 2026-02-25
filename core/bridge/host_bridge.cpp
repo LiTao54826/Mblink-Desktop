@@ -151,40 +151,45 @@ std::string HostBridge::call(const std::string& name, const std::string& args) {
 
 // ========== JS 回调实现 ==========
 
-JSValue HostBridge::jsCall(JSContext* ctx, JSValueConst thisVal, 
+JSValue HostBridge::jsCall(JSContext* ctx, JSValueConst thisVal,
                            int argc, JSValueConst* argv, int magic, JSValue* func_data) {
     (void)thisVal;
     (void)magic;
-    
+
     int64_t ptr;
     JS_ToInt64(ctx, &ptr, func_data[0]);
     auto* bridge = reinterpret_cast<HostBridge*>(ptr);
-    
+
     if (!bridge || argc < 1) {
         return JS_UNDEFINED;
     }
-    
+
     // 获取函数名
     const char* name = JS_ToCString(ctx, argv[0]);
     if (!name) return JS_UNDEFINED;
-    
+
     // 获取参数（如果有）
     std::string args = "null";
     if (argc > 1) {
         args = jsValueToJson(ctx, argv[1]);
     }
-    
-    // 调用宿主函数
-    std::string result = bridge->call(name, args);
-    JS_FreeCString(ctx, name);
-    
-    // 触发状态变更通知（写操作已同步执行，这里只处理 watcher 回调）
-    if (bridge->stateManager_) {
-        bridge->stateManager_->processQueue();
+
+    std::string result;
+    try {
+        // 调用宿主函数
+        result = bridge->call(name, args);
+    } catch (const std::exception& e) {
+        std::fprintf(stderr, "[HostBridge::jsCall] exception in host callback '%s': %s\n", name, e.what());
+        result = std::string("{\"error\":\"Host callback exception: ") + e.what() + "\"}";
+    } catch (...) {
+        std::fprintf(stderr, "[HostBridge::jsCall] unknown exception in host callback '%s'\n", name);
+        result = R"({"error":"Host callback unknown exception"})";
     }
-    // flush 事件队列（状态 watcher 可能产生了事件）
-    bridge->flushEvents();
-    
+    JS_FreeCString(ctx, name);
+
+    // 注意：不在这里调用 processQueue() / flushEvents()！同 jsPyCall 的原因。
+    // 这两个函数已由 EventLoop update 回调定期处理，在 JS 调用栈中调用会造成重入。
+
     // 返回结果
     return jsonToJsValue(ctx, result);
 }
@@ -211,16 +216,24 @@ JSValue HostBridge::jsPyCall(JSContext* ctx, JSValueConst thisVal,
         args = jsValueToJson(ctx, argv[0]);
     }
 
-    // 调用宿主函数
-    std::string result = bridge->call(name, args);
+    std::string result;
+    try {
+        // 调用宿主函数
+        result = bridge->call(name, args);
+    } catch (const std::exception& e) {
+        std::fprintf(stderr, "[HostBridge::jsPyCall] exception in host callback '%s': %s\n", name, e.what());
+        result = std::string("{\"error\":\"Host callback exception: ") + e.what() + "\"}";
+    } catch (...) {
+        std::fprintf(stderr, "[HostBridge::jsPyCall] unknown exception in host callback '%s'\n", name);
+        result = R"({"error":"Host callback unknown exception"})";
+    }
     JS_FreeCString(ctx, name);
 
-    // 触发状态变更通知（写操作已同步执行，这里只处理 watcher 回调）
-    if (bridge->stateManager_) {
-        bridge->stateManager_->processQueue();
-    }
-    // flush 事件队列（状态 watcher 可能产生了事件）
-    bridge->flushEvents();
+    // 注意：不在这里调用 processQueue() / flushEvents()！
+    // 原因：jsPyCall 本身是在 QuickJS JS 调用栈中执行的（由 JS onClick 事件触发），
+    // 在 JS 执行栈中再次调用 JS 回调（processQueue/flushEvents 可能触发 JS watcher/listener 回调）
+    // 会造成 QuickJS 重入，可能导致迭代器失效和 use-after-free 崩溃。
+    // processQueue() 和 flushEvents() 已由 EventLoop 的 update 回调定期处理，此处无需手动调用。
 
     // 返回结果
     return jsonToJsValue(ctx, result);

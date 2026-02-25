@@ -207,19 +207,44 @@ void EventLoop::RunOnce() {
     frame_controller_->BeginFrame();
 
     // 1. 处理所有 SDL 事件
-    bool has_events = ProcessEvents();
+    bool has_events = false;
+    try {
+        has_events = ProcessEvents();
+    } catch (const std::exception& e) {
+        std::cerr << "[EventLoop::RunOnce] EXCEPTION in ProcessEvents: " << e.what() << std::endl;
+    } catch (...) {
+        std::cerr << "[EventLoop::RunOnce] UNKNOWN EXCEPTION in ProcessEvents" << std::endl;
+    }
 
     // 2. 执行调度任务
-    task_scheduler_->ProcessTasks();
-    
+    try {
+        task_scheduler_->ProcessTasks();
+    } catch (const std::exception& e) {
+        std::cerr << "[EventLoop::RunOnce] EXCEPTION in task_scheduler_->ProcessTasks: " << e.what() << std::endl;
+    } catch (...) {
+        std::cerr << "[EventLoop::RunOnce] UNKNOWN EXCEPTION in task_scheduler_->ProcessTasks" << std::endl;
+    }
+
     // 2.1 处理全局单例 TaskScheduler 的微任务
     // Selection 等组件使用 TaskScheduler::Instance() 发布微任务
-    TaskScheduler::Instance().ProcessMicrotasks();
+    try {
+        TaskScheduler::Instance().ProcessMicrotasks();
+    } catch (const std::exception& e) {
+        std::cerr << "[EventLoop::RunOnce] EXCEPTION in ProcessMicrotasks: " << e.what() << std::endl;
+    } catch (...) {
+        std::cerr << "[EventLoop::RunOnce] UNKNOWN EXCEPTION in ProcessMicrotasks" << std::endl;
+    }
 
     // 2.5 处理 QuickJS 定时器和微任务
     if (quickjs_runtime_) {
-        // 处理 QuickJS 内部的定时器队列
-        quickjs_runtime_->RunEventLoop(1);  // 只运行一次迭代
+        try {
+            // 处理 QuickJS 内部的定时器队列
+            quickjs_runtime_->RunEventLoop(1);  // 只运行一次迭代
+        } catch (const std::exception& e) {
+            std::cerr << "[EventLoop::RunOnce] EXCEPTION in quickjs_runtime_->RunEventLoop: " << e.what() << std::endl;
+        } catch (...) {
+            std::cerr << "[EventLoop::RunOnce] UNKNOWN EXCEPTION in quickjs_runtime_->RunEventLoop" << std::endl;
+        }
     }
 
     // 3. 更新应用状态
@@ -233,17 +258,35 @@ void EventLoop::RunOnce() {
     Uint64 frequency = SDL_GetPerformanceFrequency();
     double timestamp_ms = ((current_time - start_time) * 1000.0) / frequency;
 
-    task_scheduler_->ProcessAnimationFrames(timestamp_ms);
+    try {
+        task_scheduler_->ProcessAnimationFrames(timestamp_ms);
+    } catch (const std::exception& e) {
+        std::cerr << "[EventLoop::RunOnce] EXCEPTION in ProcessAnimationFrames: " << e.what() << std::endl;
+    } catch (...) {
+        std::cerr << "[EventLoop::RunOnce] UNKNOWN EXCEPTION in ProcessAnimationFrames" << std::endl;
+    }
 
     // 4.6 关键修复：ProcessAnimationFrames 可能触发 Preact 等框架的状态更新
     // 这些更新可能通过微任务调度 DOM 变化，所以需要再次处理微任务
     // 否则 DOM 变化不会在当前帧被渲染，导致 UI 更新延迟
     if (quickjs_runtime_) {
-        quickjs_runtime_->RunEventLoop(1);  // 处理可能产生的微任务
+        try {
+            quickjs_runtime_->RunEventLoop(1);  // 处理可能产生的微任务
+        } catch (const std::exception& e) {
+            std::cerr << "[EventLoop::RunOnce] EXCEPTION in quickjs_runtime_->RunEventLoop (post-anim): " << e.what() << std::endl;
+        } catch (...) {
+            std::cerr << "[EventLoop::RunOnce] UNKNOWN EXCEPTION in quickjs_runtime_->RunEventLoop (post-anim)" << std::endl;
+        }
     }
-    
+
     // 4.7 处理全局单例 TaskScheduler 的微任务（动画帧可能触发新的微任务）
-    TaskScheduler::Instance().ProcessMicrotasks();
+    try {
+        TaskScheduler::Instance().ProcessMicrotasks();
+    } catch (const std::exception& e) {
+        std::cerr << "[EventLoop::RunOnce] EXCEPTION in ProcessMicrotasks (post-anim): " << e.what() << std::endl;
+    } catch (...) {
+        std::cerr << "[EventLoop::RunOnce] UNKNOWN EXCEPTION in ProcessMicrotasks (post-anim)" << std::endl;
+    }
 
     // 4.5 处理光标闪烁（如果有聚焦的输入框或 contentEditable 元素）
     static Uint64 last_cursor_blink_time = SDL_GetTicks();
@@ -448,27 +491,61 @@ bool EventLoop::ProcessEvents() {
         if (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN ||
             event.type == SDL_EVENT_MOUSE_BUTTON_UP ||
             event.type == SDL_EVENT_MOUSE_MOTION) {
-            HandleMouseEventForDOM(event);
+            try {
+                HandleMouseEventForDOM(event);
+            } catch (const std::exception& e) {
+                std::cerr << "[EventLoop] EXCEPTION in HandleMouseEventForDOM"
+                          << " (event.type=" << event.type << "): " << e.what() << std::endl;
+            } catch (...) {
+                std::cerr << "[EventLoop] UNKNOWN EXCEPTION in HandleMouseEventForDOM"
+                          << " (event.type=" << event.type << ")" << std::endl;
+            }
         }
 
         // 处理鼠标滚轮事件
         if (event.type == SDL_EVENT_MOUSE_WHEEL) {
-            HandleMouseWheelEventForDOM(event);
+            try {
+                HandleMouseWheelEventForDOM(event);
+            } catch (const std::exception& e) {
+                std::cerr << "[EventLoop] EXCEPTION in HandleMouseWheelEventForDOM: " << e.what() << std::endl;
+            } catch (...) {
+                std::cerr << "[EventLoop] UNKNOWN EXCEPTION in HandleMouseWheelEventForDOM" << std::endl;
+            }
         }
 
         // 处理键盘事件并分发到 DOM
         if (event.type == SDL_EVENT_KEY_DOWN ||
             event.type == SDL_EVENT_KEY_UP ||
             event.type == SDL_EVENT_TEXT_INPUT) {
-            HandleKeyboardEventForDOM(event);
+            try {
+                HandleKeyboardEventForDOM(event);
+            } catch (const std::exception& e) {
+                std::cerr << "[EventLoop] EXCEPTION in HandleKeyboardEventForDOM"
+                          << " (event.type=" << event.type << "): " << e.what() << std::endl;
+            } catch (...) {
+                std::cerr << "[EventLoop] UNKNOWN EXCEPTION in HandleKeyboardEventForDOM"
+                          << " (event.type=" << event.type << ")" << std::endl;
+            }
         }
 
         // 分发到输入处理器
-        input_handler_->HandleSDLEvent(event);
+        try {
+            input_handler_->HandleSDLEvent(event);
+        } catch (const std::exception& e) {
+            std::cerr << "[EventLoop] EXCEPTION in input_handler_->HandleSDLEvent: " << e.what() << std::endl;
+        } catch (...) {
+            std::cerr << "[EventLoop] UNKNOWN EXCEPTION in input_handler_->HandleSDLEvent" << std::endl;
+        }
 
         // 分发到窗口管理器
         auto& window_manager = WindowManager::Instance();
-        window_manager.HandleEvent(event);
+        try {
+            window_manager.HandleEvent(event);
+        } catch (const std::exception& e) {
+            std::cerr << "[EventLoop] EXCEPTION in window_manager.HandleEvent: " << e.what() << std::endl;
+        } catch (...) {
+            std::cerr << "[EventLoop] UNKNOWN EXCEPTION in window_manager.HandleEvent" << std::endl;
+        }
     }
 
     return has_events;
@@ -476,21 +553,39 @@ bool EventLoop::ProcessEvents() {
 
 void EventLoop::Update(float delta_time) {
     if (update_callback_) {
-        update_callback_(delta_time);
+        try {
+            update_callback_(delta_time);
+        } catch (const std::exception& e) {
+            std::cerr << "[EventLoop] EXCEPTION in update_callback_: " << e.what() << std::endl;
+        } catch (...) {
+            std::cerr << "[EventLoop] UNKNOWN EXCEPTION in update_callback_" << std::endl;
+        }
     }
 }
 
 void EventLoop::Render() {
     if (render_callback_) {
-        render_callback_();
+        try {
+            render_callback_();
+        } catch (const std::exception& e) {
+            std::cerr << "[EventLoop] EXCEPTION in render_callback_: " << e.what() << std::endl;
+        } catch (...) {
+            std::cerr << "[EventLoop] UNKNOWN EXCEPTION in render_callback_" << std::endl;
+        }
     }
 
     // 渲染所有窗口
     auto& window_manager = WindowManager::Instance();
     for (auto& window : window_manager.GetAllWindows()) {
         if (window->NeedsRepaint()) {
-            window->Render();
-            window->SwapBuffers();
+            try {
+                window->Render();
+                window->SwapBuffers();
+            } catch (const std::exception& e) {
+                std::cerr << "[EventLoop] EXCEPTION in window->Render()/SwapBuffers(): " << e.what() << std::endl;
+            } catch (...) {
+                std::cerr << "[EventLoop] UNKNOWN EXCEPTION in window->Render()/SwapBuffers()" << std::endl;
+            }
         }
     }
 }

@@ -9,10 +9,10 @@
 #include "core/dom/elements/html_input_element.h"
 #include "core/dom/elements/html_textarea_element.h"
 #include "core/dom/element.h"
+#include "core/render/objects/render_object.h"
 #include "core/render/utils/color.h"
 #include "core/utils/utf8_utils.h"
 #include <algorithm>
-#include <chrono>
 
 namespace lightui {
 
@@ -344,10 +344,9 @@ void FormElementPainter::PaintTextAreaCursor(float text_x,
 }
 
 bool FormElementPainter::IsCursorVisible() const {
-    // 基于时间的光标闪烁：每 500 毫秒切换一次
-    auto now = std::chrono::steady_clock::now();
-    auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()).count();
-    return (ms / 500) % 2 == 0;
+    // 使用 RenderObject 的全局光标状态，避免重复的系统时间调用
+    // 光标闪烁由 EventLoop 统一管理，每 500ms 切换一次
+    return RenderObject::IsCursorVisible();
 }
 
 SkFont FormElementPainter::CreateFont(const FormElementPaintParams& params) {

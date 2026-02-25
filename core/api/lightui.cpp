@@ -22,6 +22,8 @@
 #include "core/quickjs/dom_binding_map.h"
 
 #include <cstdlib>
+#include <cstring>
+
 #ifdef _WIN32
 #include <windows.h>
 #endif
@@ -33,6 +35,7 @@
 #include <fstream>
 #include <sstream>
 #include <iostream>
+#include <exception>
 
 namespace {
 
@@ -53,20 +56,29 @@ struct SharedObjectData {
     std::string name;                   // globalThis 上的名字
     bool batch_mode = false;            // 批量模式（抑制中间通知）
     int pending_updates = 0;            // 批量模式中的待处理更新数
+    bool pending_notify_ = false;       // 是否有待处理的非批量通知（延迟刷新用）
 
-    void notifyUpdate(const char* key) {
+    // notifyUpdate：记录待通知，不立即调用 JS。
+    // 真正的通知由 flushPendingNotify() 在事件循环帧中统一触发，
+    // 避免在 Python 回调的 C 调用链中嵌套执行 QuickJS JS 代码（QuickJS 重入）。
+    void notifyUpdate(const char* /*key*/) {
         if (batch_mode) {
             pending_updates++;
             return;
         }
-        // 调用 globalThis.__onSharedUpdate(key, value)
+        // 只设置标志，不立即调用 JS_Call
+        pending_notify_ = true;
+    }
+
+    // flushPendingNotify：由事件循环在安全时机调用，真正触发 JS 通知。
+    // 此时 JS 调用栈已清空，调用 JS_Call 是安全的。
+    void flushPendingNotify() {
+        if (!pending_notify_) return;
+        pending_notify_ = false;
         if (!JS_IsUndefined(updater_func) && !JS_IsNull(updater_func)) {
-            JSValue args[2];
-            args[0] = JS_NewString(ctx, key);
-            args[1] = JS_GetPropertyStr(ctx, js_obj, key);
-            JSValue ret = JS_Call(ctx, updater_func, JS_UNDEFINED, 2, args);
-            JS_FreeValue(ctx, args[0]);
-            JS_FreeValue(ctx, args[1]);
+            JSValue arg = JS_NewString(ctx, "*");
+            JSValue ret = JS_Call(ctx, updater_func, JS_UNDEFINED, 1, &arg);
+            JS_FreeValue(ctx, arg);
             if (JS_IsException(ret)) {
                 JSValue exc = JS_GetException(ctx);
                 JS_FreeValue(ctx, exc);
@@ -78,17 +90,8 @@ struct SharedObjectData {
     void flushBatch() {
         if (pending_updates > 0) {
             pending_updates = 0;
-            // 发送一次总更新通知
-            if (!JS_IsUndefined(updater_func) && !JS_IsNull(updater_func)) {
-                JSValue arg = JS_NewString(ctx, "*");
-                JSValue ret = JS_Call(ctx, updater_func, JS_UNDEFINED, 1, &arg);
-                JS_FreeValue(ctx, arg);
-                if (JS_IsException(ret)) {
-                    JSValue exc = JS_GetException(ctx);
-                    JS_FreeValue(ctx, exc);
-                }
-                JS_FreeValue(ctx, ret);
-            }
+            // 批量结束时同样延迟通知，保持一致性
+            pending_notify_ = true;
         }
     }
 };
@@ -134,6 +137,33 @@ void setLastError(const std::string& error) {
     g_lastError = error;
 }
 
+void reportNativeError(const std::string& error) {
+    setLastError(error);
+    std::fprintf(stderr, "[LightUI Native Error] %s\n", error.c_str());
+#ifdef _WIN32
+    std::string out = "[LightUI Native Error] " + error + "\n";
+    ::OutputDebugStringA(out.c_str());
+#endif
+    std::ofstream log("lightui_native_error.log", std::ios::app);
+    if (log.is_open()) {
+        log << error << std::endl;
+    }
+}
+
+#ifdef _WIN32
+LONG WINAPI lightuiUnhandledExceptionFilter(EXCEPTION_POINTERS* exceptionInfo) {
+    unsigned int code = exceptionInfo ? exceptionInfo->ExceptionRecord->ExceptionCode : 0;
+    void* address = (exceptionInfo && exceptionInfo->ExceptionRecord)
+                        ? exceptionInfo->ExceptionRecord->ExceptionAddress
+                        : nullptr;
+    std::string error = "Unhandled SEH exception, code=0x" + std::to_string(code) +
+                        ", address=" + std::to_string(reinterpret_cast<uintptr_t>(address));
+    reportNativeError(error);
+    return EXCEPTION_CONTINUE_SEARCH;
+}
+#endif
+
+
 int toErrorCode(lightui::LightUIError err) {
     switch (err) {
         case lightui::LightUIError::Ok: return LIGHTUI_OK;
@@ -172,6 +202,37 @@ char* duplicateString(const std::string& str) {
     }
     return result;
 }
+
+char* duplicateString(const char* str) {
+    if (!str) return nullptr;
+    size_t len = strlen(str);
+    char* result = static_cast<char*>(malloc(len + 1));
+    if (result) {
+        memcpy(result, str, len + 1);
+    }
+    return result;
+}
+
+#ifdef _WIN32
+char* invokeCallbackWithSEH(LightUICallback cb, const char* args, void* user_data, unsigned int* sehCode) {
+    if (sehCode) {
+        *sehCode = 0;
+    }
+
+    char* result = nullptr;
+    __try {
+        result = cb(args, user_data);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        if (sehCode) {
+            *sehCode = static_cast<unsigned int>(GetExceptionCode());
+        }
+        result = nullptr;
+    }
+    return result;
+}
+#endif
+
+
 
 std::string readFileContents(const char* filepath) {
     std::ifstream file(filepath);
@@ -247,6 +308,10 @@ WindowContext* createWindowContext(const lightui::WindowConfig& wc) {
     ctx->fetchBindings->InitBindings();
 
     // 11. 创建 StateManager + HostBridge
+#ifdef _WIN32
+    SetUnhandledExceptionFilter(lightuiUnhandledExceptionFilter);
+#endif
+
     ctx->stateManager = std::make_unique<lightui::StateManager>();
     ctx->hostBridge = std::make_unique<lightui::HostBridge>(jsCtx, ctx->stateManager.get());
     ctx->hostBridge->registerGlobal();
@@ -426,7 +491,7 @@ void lightui_run(LightUIHandle handle) {
 
     ctx->running = true;
 
-    // 设置 update callback：处理 StateManager 队列 + HostBridge 事件 + 用户回调
+    // 设置 update callback：处理 StateManager 队列 + HostBridge 事件 + SharedObject 延迟通知 + 用户回调
     ctx->eventLoop->SetUpdateCallback([ctx](float dt) {
         // 处理状态变更队列
         if (ctx->stateManager) {
@@ -435,6 +500,11 @@ void lightui_run(LightUIHandle handle) {
         // 刷新 HostBridge 事件队列到 JS 端
         if (ctx->hostBridge) {
             ctx->hostBridge->flushEvents();
+        }
+        // 刷新所有 SharedObject 的延迟通知（由 notifyUpdate/flushBatch 标记的 pending_notify_）
+        // 在事件循环帧中调用，此时 JS 调用栈已清空，调用 JS_Call 是安全的
+        for (auto& kv : ctx->sharedObjects) {
+            kv.second->flushPendingNotify();
         }
         // 调用用户的 update 回调
         if (ctx->onUpdateCallback) {
@@ -466,6 +536,10 @@ bool lightui_poll_events(LightUIHandle handle) {
     }
     if (ctx->hostBridge) {
         ctx->hostBridge->flushEvents();
+    }
+    // 刷新 SharedObject 的延迟通知
+    for (auto& kv : ctx->sharedObjects) {
+        kv.second->flushPendingNotify();
     }
 
     // 单次事件循环迭代
@@ -742,17 +816,38 @@ int lightui_bind(LightUIHandle handle, const char* name,
     if (ctx->hostBridge) {
         LightUICallback cb = callback;
         void* ud = user_data;
-        ctx->hostBridge->bind(name, [cb, ud](const std::string& args) -> std::string {
-            char* result = cb(args.c_str(), ud);
-            if (result) {
-                std::string ret(result);
-                // 注意：不调用 free(result)
-                // 返回值的内存由回调方自行管理（Python ctypes 自动维护引用，
-                // C 回调可使用 static buffer，其他语言各自处理）
-                // std::string 已经拷贝了数据，后续使用 ret 即可
-                return ret;
+        std::string funcName = name;
+        ctx->hostBridge->bind(name, [cb, ud, funcName](const std::string& args) -> std::string {
+            char* result = nullptr;
+
+#ifdef _WIN32
+            unsigned int sehCode = 0;
+            result = invokeCallbackWithSEH(cb, args.c_str(), ud, &sehCode);
+            if (!result && sehCode != 0) {
+                reportNativeError("SEH exception in bound callback '" + funcName +
+                                  "', code=0x" + std::to_string(sehCode));
+                return R"({"error":"Native SEH exception in callback"})";
             }
-            return "null";
+#else
+            try {
+                result = cb(args.c_str(), ud);
+            } catch (const std::exception& e) {
+                reportNativeError("C++ exception in bound callback '" + funcName +
+                                  "': " + e.what());
+                return std::string("{\"error\":\"Native callback exception: ") + e.what() + "\"}";
+            } catch (...) {
+                reportNativeError("Unknown C++ exception in bound callback '" + funcName + "'");
+                return R"({"error":"Native callback unknown exception"})";
+            }
+#endif
+
+            if (!result) {
+                return "null";
+            }
+
+            std::string ret(result);
+            lightui_free(result);
+            return ret;
         });
     }
     return LIGHTUI_OK;
@@ -1595,6 +1690,10 @@ void lightui_shared_batch_end(LightUISharedHandle shared_handle) {
 
 void lightui_free(void* ptr) {
     free(ptr);
+}
+
+char* lightui_copy_string(const char* str) {
+    return duplicateString(str);
 }
 
 const char* lightui_last_error(void) {
