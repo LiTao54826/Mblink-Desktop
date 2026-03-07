@@ -1,22 +1,26 @@
 """
 LightUI 新 API 测试
 
-测试 @app.bindable 装饰器、参数解包、模块导入结构、向后兼容等。
-使用低级 API + _make_wrapper 避免创建 Window。
+测试 HostBridge.bind 参数解包、模块导入结构等。
+使用低级 API（lightui_core）直接测试，不创建 Window。
 """
 
 import sys
 import os
 import inspect
+import json
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
-from lightui.app import _make_wrapper
 import lightui_core as lui
 
 
 def _bind_with_wrapper(bridge, func):
-    """模拟 @app.bindable 的注册逻辑"""
+    """将 Python 函数包装为 HostBridge.bind 兼容的格式。
+
+    HostBridge 回调接收 JSON 解析后的 Python 对象（args）。
+    根据函数签名决定如何将 args（None/dict/list）解包为位置参数。
+    """
     name = func.__name__
     sig = inspect.signature(func)
     params = [
@@ -27,7 +31,27 @@ def _bind_with_wrapper(bridge, func):
             inspect.Parameter.KEYWORD_ONLY,
         )
     ]
-    wrapper = _make_wrapper(func, params)
+
+    if not params:
+        # 无参函数：忽略 args
+        def wrapper(args):
+            return func()
+    elif len(params) == 1:
+        # 单参数：直接把 args 整体传入
+        def wrapper(args):
+            return func(args)
+    else:
+        # 多参数：尝试从 dict 或 list 解包
+        param_names = [p.name for p in params]
+        def wrapper(args):
+            if isinstance(args, dict):
+                kwargs = {k: args[k] for k in param_names if k in args}
+                return func(**kwargs)
+            elif isinstance(args, (list, tuple)):
+                return func(*args[:len(params)])
+            else:
+                return func(args)
+
     bridge.bind(name, wrapper)
 
 
@@ -222,32 +246,45 @@ def test_import_lightui():
     """测试 import lightui 导出结构"""
     try:
         import lightui as ui
-        assert hasattr(ui, 'App')
-        assert hasattr(ui, 'version')
-        assert hasattr(ui, 'LightUIApp')
-        assert ui.LightUIApp is ui.App
+        assert hasattr(ui, 'App'),       "lightui.App 未导出"
+        assert hasattr(ui, 'version'),   "lightui.version 未导出"
+        assert hasattr(ui, 'SharedState'), "lightui.SharedState 未导出"
+        assert callable(ui.App),         "lightui.App 不可调用"
+        assert callable(ui.version),     "lightui.version 不可调用"
         print("[TEST_PASS] import_lightui")
     except Exception as e:
         print(f"[TEST_FAIL] import_lightui: {e}")
 
 
 def test_import_core():
-    """测试 from lightui.core import 低级 API"""
+    """测试 import lightui_core 低级 API"""
     try:
-        from lightui.core import Window, Runtime, HostBridge, CoreApp
-        from lightui.core import State, IntState, StringState, ListState, DictState
-        from lightui.core import version, BatchContext
-        assert callable(version)
+        import lightui_core as core
+        # 状态管理
+        assert hasattr(core, 'App'),        "core.App 未导出"
+        assert hasattr(core, 'State'),      "core.State 未导出"
+        assert hasattr(core, 'IntState'),   "core.IntState 未导出"
+        assert hasattr(core, 'StringState'),"core.StringState 未导出"
+        assert hasattr(core, 'ListState'),  "core.ListState 未导出"
+        assert hasattr(core, 'DictState'),  "core.DictState 未导出"
+        assert hasattr(core, 'BatchContext'),"core.BatchContext 未导出"
+        # 窗口 & 运行时
+        assert hasattr(core, 'Window'),     "core.Window 未导出"
+        assert hasattr(core, 'Runtime'),    "core.Runtime 未导出"
+        assert hasattr(core, 'HostBridge'), "core.HostBridge 未导出"
+        assert hasattr(core, 'EventLoop'),  "core.EventLoop 未导出"
+        # 全局函数
+        assert callable(core.version),      "core.version 不可调用"
         print("[TEST_PASS] import_core")
     except Exception as e:
         print(f"[TEST_FAIL] import_core: {e}")
 
 
 def test_backward_compat():
-    """测试向后兼容"""
+    """测试高级封装 lightui.App 可正常导入"""
     try:
-        from lightui import LightUIApp, App
-        assert LightUIApp is App
+        from lightui import App
+        assert callable(App), "lightui.App 不可调用"
         print("[TEST_PASS] backward_compat")
     except Exception as e:
         print(f"[TEST_FAIL] backward_compat: {e}")

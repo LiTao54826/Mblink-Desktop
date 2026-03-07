@@ -19,24 +19,30 @@ import sys
 # 项目根目录
 ROOT_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-# 版本信息
+# 版本信息（与 lightui/__init__.py 及 lightui_core 保持一致）
 VERSION = "0.5.0"
+
+# 本目录的 README（Python 绑定专用文档）
+_HERE = os.path.dirname(os.path.abspath(__file__))
+_readme_path = os.path.join(_HERE, 'README.md')
+_long_desc = open(_readme_path, encoding='utf-8').read() if os.path.exists(_readme_path) else ""
 
 
 setup(
     name='lightui',
     version=VERSION,
-    description='Lightweight cross-language UI framework',
-    long_description=open(os.path.join(ROOT_DIR, 'README.md'), encoding='utf-8').read(),
+    description='Lightweight Python desktop UI framework (ctypes + C ABI)',
+    long_description=_long_desc,
     long_description_content_type='text/markdown',
     author='LightUI Team',
     author_email='team@lightui.dev',
     url='https://github.com/lightui/lightui',
     license='MIT',
-    
+
     packages=['lightui'],
     package_dir={'lightui': 'lightui'},
-    package_data={'lightui': ['bin/*.pyd', 'bin/*.so']},
+    # 包含预编译扩展和 DLL（Windows: .pyd + .dll，Linux/macOS: .so）
+    package_data={'lightui': ['bin/*.pyd', 'bin/*.so', 'bin/*.dll']},
     
     install_requires=[
         # 运行时依赖

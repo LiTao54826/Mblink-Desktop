@@ -17,7 +17,7 @@ LightUI — 用 Python 构建桌面应用
     app.run()
 """
 
-__version__ = "3.0.0"
+__version__ = "0.5.0"
 __author__ = "LightUI Team"
 
 from .app import App

@@ -4,6 +4,7 @@ LightUI C API ctypes 绑定层
 """
 
 import ctypes
+import ctypes.util
 import os
 import sys
 import platform

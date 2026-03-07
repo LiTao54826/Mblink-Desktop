@@ -23,6 +23,7 @@ class App:
                  gpu=True, fullscreen=False, min_size=None, max_size=None):
         self._lib = load_dll(dll_path)
         self._lib.lightui_init()
+        self._destroyed = False
 
         # 使用 create_ex 支持全量配置
         cfg = self._lib.lightui_default_config()
@@ -54,8 +55,13 @@ class App:
 
     # ========== 生命周期 ==========
 
+    def _ensure_alive(self):
+        if self._destroyed or not self._handle:
+            raise RuntimeError("LightUI App 已销毁，不能继续调用此操作")
+
     def run(self):
         """启动事件循环（阻塞）"""
+        self._ensure_alive()
         with warnings.catch_warnings():
             warnings.filterwarnings(
                 "ignore", message="memory leak in callback function",
@@ -67,33 +73,41 @@ class App:
 
     def stop(self):
         """停止事件循环"""
+        self._ensure_alive()
         self._lib.lightui_stop(self._handle)
 
     def poll(self) -> bool:
         """手动轮询一次事件，返回 True 表示窗口仍存活"""
+        self._ensure_alive()
         return bool(self._lib.lightui_poll_events(self._handle))
 
     def _cleanup(self):
+        if self._destroyed:
+            return
         if self._handle:
             # destroy shared objects first (releases JS refs)
-            for name, sh in self._shared_handles.items():
+            for _name, sh in list(self._shared_handles.items()):
                 self._lib.lightui_shared_destroy(sh)
             self._shared_handles.clear()
             self._shared_objects.clear()
-            # lightui_destroy 内部会调用 TerminateProcess/quick_exit，不会返回
             self._lib.lightui_destroy(self._handle)
+            self._handle = None
+        self._destroyed = True
 
     # ========== UI 加载 ==========
 
     def load_html(self, html: str):
+        self._ensure_alive()
         self._lib.lightui_load_html(self._handle, html.encode("utf-8"))
         return self
 
     def load_html_file(self, filepath: str):
+        self._ensure_alive()
         self._lib.lightui_load_html_file(self._handle, filepath.encode("utf-8"))
         return self
 
     def eval_js(self, code: str):
+        self._ensure_alive()
         ret = self._lib.lightui_eval_js(self._handle, code.encode("utf-8"))
         if ret != 0:
             err = self._lib.lightui_last_error()
@@ -102,12 +116,14 @@ class App:
         return self
 
     def eval_module(self, code: str, filename: str = "<module>"):
+        self._ensure_alive()
         self._lib.lightui_eval_module(
             self._handle, code.encode("utf-8"), filename.encode("utf-8")
         )
         return self
 
     def load_js_file(self, filepath: str):
+        self._ensure_alive()
         self._lib.lightui_load_js_file(self._handle, filepath.encode("utf-8"))
         return self
 
@@ -123,6 +139,7 @@ class App:
 
         返回 SharedState 代理对象。
         """
+        self._ensure_alive()
         if name in self._shared_objects:
             return self._shared_objects[name]
 
@@ -216,6 +233,7 @@ class App:
         也可直接调用：
             app.bind("greet", greet_func)
         """
+        self._ensure_alive()
         def _decorator(func, fname=None):
             fn_name = fname or func.__name__
 
@@ -246,9 +264,11 @@ class App:
             return _wrapper
 
     def unbind(self, name: str):
+        self._ensure_alive()
         self._lib.lightui_unbind(self._handle, name.encode("utf-8"))
 
     def emit(self, event: str, data=None):
+        self._ensure_alive()
         data_json = json.dumps(data, ensure_ascii=False) if data is not None else "null"
         self._lib.lightui_emit(
             self._handle, event.encode("utf-8"), data_json.encode("utf-8")
@@ -258,76 +278,94 @@ class App:
 
     @property
     def title(self):
-        return self._title_bytes
+        return self._title_bytes.decode("utf-8") if self._title_bytes else ""
 
     @title.setter
     def title(self, value: str):
+        self._ensure_alive()
         b = value.encode("utf-8")
         self._title_bytes = b
         self._lib.lightui_set_title(self._handle, b)
 
     @property
     def size(self):
+        self._ensure_alive()
         w, h = c_int(0), c_int(0)
         self._lib.lightui_get_size(self._handle, ctypes.byref(w), ctypes.byref(h))
         return (w.value, h.value)
 
     @size.setter
     def size(self, wh):
+        self._ensure_alive()
         self._lib.lightui_set_size(self._handle, wh[0], wh[1])
 
     @property
     def position(self):
+        self._ensure_alive()
         x, y = c_int(0), c_int(0)
         self._lib.lightui_get_position(self._handle, ctypes.byref(x), ctypes.byref(y))
         return (x.value, y.value)
 
     @position.setter
     def position(self, xy):
+        self._ensure_alive()
         self._lib.lightui_set_position(self._handle, xy[0], xy[1])
 
     def set_min_size(self, width: int, height: int):
+        self._ensure_alive()
         self._lib.lightui_set_min_size(self._handle, width, height)
 
     def set_max_size(self, width: int, height: int):
+        self._ensure_alive()
         self._lib.lightui_set_max_size(self._handle, width, height)
 
     def minimize(self):
+        self._ensure_alive()
         self._lib.lightui_minimize(self._handle)
 
     def maximize(self):
+        self._ensure_alive()
         self._lib.lightui_maximize(self._handle)
 
     def restore(self):
+        self._ensure_alive()
         self._lib.lightui_restore(self._handle)
 
     def show(self):
+        self._ensure_alive()
         self._lib.lightui_show(self._handle)
 
     def hide(self):
+        self._ensure_alive()
         self._lib.lightui_hide(self._handle)
 
     def set_fullscreen(self, fullscreen: bool):
+        self._ensure_alive()
         self._lib.lightui_set_fullscreen(self._handle, fullscreen)
 
     def set_resizable(self, resizable: bool):
+        self._ensure_alive()
         self._lib.lightui_set_resizable(self._handle, resizable)
 
     def set_borderless(self, borderless: bool):
+        self._ensure_alive()
         self._lib.lightui_set_borderless(self._handle, borderless)
 
     def set_always_on_top(self, on_top: bool):
+        self._ensure_alive()
         self._lib.lightui_set_always_on_top(self._handle, on_top)
 
     # ========== 事件回调 ==========
 
     def on_resize(self, callback):
         """callback(width, height)"""
+        self._ensure_alive()
+
         @LightUIResizeCallback
         def _cb(w, h, _ud):
             try:
                 callback(w, h)
-            except Exception as e:
+            except Exception:
                 import traceback; traceback.print_exc()
         self._callbacks.append(_cb)
         self._lib.lightui_on_resize(self._handle, _cb, None)
@@ -335,11 +373,13 @@ class App:
 
     def on_close(self, callback):
         """callback()"""
+        self._ensure_alive()
+
         @LightUIVoidCallback
         def _cb(_ud):
             try:
                 callback()
-            except Exception as e:
+            except Exception:
                 import traceback; traceback.print_exc()
         self._callbacks.append(_cb)
         self._lib.lightui_on_close(self._handle, _cb, None)
@@ -347,11 +387,13 @@ class App:
 
     def on_focus(self, callback):
         """callback()"""
+        self._ensure_alive()
+
         @LightUIVoidCallback
         def _cb(_ud):
             try:
                 callback()
-            except Exception as e:
+            except Exception:
                 import traceback; traceback.print_exc()
         self._callbacks.append(_cb)
         self._lib.lightui_on_focus(self._handle, _cb, None)
@@ -359,11 +401,13 @@ class App:
 
     def on_blur(self, callback):
         """callback()"""
+        self._ensure_alive()
+
         @LightUIVoidCallback
         def _cb(_ud):
             try:
                 callback()
-            except Exception as e:
+            except Exception:
                 import traceback; traceback.print_exc()
         self._callbacks.append(_cb)
         self._lib.lightui_on_blur(self._handle, _cb, None)
@@ -371,11 +415,13 @@ class App:
 
     def on_update(self, callback):
         """callback(delta_time)"""
+        self._ensure_alive()
+
         @LightUIUpdateCallback
         def _cb(dt, _ud):
             try:
                 callback(dt)
-            except Exception as e:
+            except Exception:
                 import traceback; traceback.print_exc()
         self._callbacks.append(_cb)
         self._lib.lightui_on_update(self._handle, _cb, None)
@@ -385,14 +431,17 @@ class App:
 
     def batch(self):
         """上下文管理器：批量状态更新"""
+        self._ensure_alive()
         return _BatchContext(self._lib, self._handle)
 
     # ========== DevTools ==========
 
     def devtools_open(self):
+        self._ensure_alive()
         self._lib.lightui_devtools_open(self._handle)
 
     def devtools_close(self):
+        self._ensure_alive()
         self._lib.lightui_devtools_close(self._handle)
 
 
@@ -403,8 +452,11 @@ class _BatchContext:
         self._handle = handle
 
     def __enter__(self):
+        if not self._handle:
+            raise RuntimeError("LightUI App 已销毁，不能进入 batch 上下文")
         self._lib.lightui_state_batch_begin(self._handle)
         return self
 
     def __exit__(self, *args):
-        self._lib.lightui_state_batch_end(self._handle)
+        if self._handle:
+            self._lib.lightui_state_batch_end(self._handle)
