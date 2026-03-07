@@ -9,6 +9,7 @@
 #include "core/dom/elements/html_input_element.h"
 #include "core/dom/elements/html_textarea_element.h"
 #include "core/dom/element.h"
+#include "core/render/input/input_paint_model.h"
 #include "core/render/objects/render_object.h"
 #include "core/render/utils/color.h"
 #include "core/utils/utf8_utils.h"
@@ -160,70 +161,78 @@ void FormElementPainter::PaintRadio(const Box& box, bool checked) {
     }
 }
 
-void FormElementPainter::PaintTextInput(HTMLInputElement* input, 
-                                        const Box& box, 
+void FormElementPainter::PaintTextInput(HTMLInputElement* input,
+                                        const Box& box,
                                         const FormElementPaintParams& params,
                                         bool is_password) {
-    std::string value = input->GetValue();
-    std::string display_text = value;
-    bool is_placeholder = false;
-
-    // 如果是密码类型，显示为星号
-    if (is_password && !value.empty()) {
-        display_text = std::string(value.length(), '*');
+    InputPaintModel model = InputPaintModel::FromInputElement(input);
+    if (model.display_text.empty()) {
+        return;
     }
 
-    // 如果值为空，显示 placeholder
-    if (value.empty()) {
-        display_text = input->GetPlaceholder();
-        is_placeholder = true;
+    SkFont font = CreateFont(params);
+
+    SkFontMetrics font_metrics;
+    font.getMetrics(&font_metrics);
+
+    float text_x = box.content_x;
+    float text_y = box.content_y + (box.content_height - font_metrics.fDescent + font_metrics.fAscent) / 2 - font_metrics.fAscent;
+
+    PaintInputTextLayer(model, text_x, text_y, font, params);
+
+    if (!params.has_focus) {
+        return;
     }
 
-    if (!display_text.empty()) {
-        // 创建字体
-        SkFont font = CreateFont(params);
+    PaintInputSelectionLayer(model, text_x, box, font, is_password);
 
-        // 获取字体度量信息
-        SkFontMetrics font_metrics;
-        font.getMetrics(&font_metrics);
-
-        // 计算文本位置（左对齐，垂直居中）
-        float text_x = box.content_x;
-        float text_y = box.content_y + (box.content_height - font_metrics.fDescent + font_metrics.fAscent) / 2 - font_metrics.fAscent;
-
-        // 创建文本渲染器
-        TextRenderer text_renderer(canvas_);
-
-        // 设置文本颜色
-        lightui::Paint text_paint;
-        text_paint.SetColor(GetTextColor(params, is_placeholder));
-
-        // 绘制文本
-        text_renderer.DrawText(display_text, text_x, text_y, font, text_paint);
-
-        // 如果有焦点，绘制选中高亮和光标
-        if (params.has_focus) {
-            int sel_start = input->GetSelectionStart();
-            int sel_end = input->GetSelectionEnd();
-
-            // 绘制选中区域高亮
-            if (sel_start != sel_end && !is_placeholder) {
-                PaintSelectionHighlight(text_x, box, font, value, sel_start, sel_end, is_password);
-            }
-
-            // 绘制光标
-            if (IsCursorVisible()) {
-                PaintCursor(text_x, box, font, font_metrics, value, sel_end, is_password);
-            }
-        }
+    if (IsCursorVisible()) {
+        PaintInputCaretLayer(model, text_x, box, font, font_metrics, is_password);
     }
 }
 
-void FormElementPainter::PaintSelectionHighlight(float text_x, 
-                                                 const Box& box, 
+void FormElementPainter::PaintInputTextLayer(const InputPaintModel& model,
+                                             float text_x,
+                                             float text_y,
+                                             const SkFont& font,
+                                             const FormElementPaintParams& params) {
+    TextRenderer text_renderer(canvas_);
+
+    lightui::Paint text_paint;
+    text_paint.SetColor(GetTextColor(params, model.is_placeholder));
+
+    text_renderer.DrawTextWithEmoji(model.display_text, text_x, text_y, font, text_paint);
+}
+
+void FormElementPainter::PaintInputSelectionLayer(const InputPaintModel& model,
+                                                  float text_x,
+                                                  const Box& box,
+                                                  const SkFont& font,
+                                                  bool is_password) {
+    if (!model.HasSelection() || model.is_placeholder) {
+        return;
+    }
+
+    PaintSelectionHighlight(text_x, box, font, model.value,
+                            model.selection_start, model.selection_end,
+                            is_password);
+}
+
+void FormElementPainter::PaintInputCaretLayer(const InputPaintModel& model,
+                                              float text_x,
+                                              const Box& box,
+                                              const SkFont& font,
+                                              const SkFontMetrics& font_metrics,
+                                              bool is_password) {
+    PaintCursor(text_x, box, font, font_metrics, model.value,
+                model.caret_position, is_password);
+}
+
+void FormElementPainter::PaintSelectionHighlight(float text_x,
+                                                 const Box& box,
                                                  const SkFont& font,
                                                  const std::string& value,
-                                                 int sel_start, 
+                                                 int sel_start,
                                                  int sel_end,
                                                  bool is_password) {
     int start_char = std::min(sel_start, sel_end);
@@ -242,11 +251,8 @@ void FormElementPainter::PaintSelectionHighlight(float text_x,
         selected_text = std::string(end_char - start_char, '*');
     }
 
-    float sel_start_x = text_x;
-    if (start_char > 0) {
-        sel_start_x += font.measureText(text_before_sel.c_str(), text_before_sel.length(), SkTextEncoding::kUTF8);
-    }
-    float sel_width = font.measureText(selected_text.c_str(), selected_text.length(), SkTextEncoding::kUTF8);
+    float sel_start_x = text_x + MeasureInputTextWidth(text_before_sel, font);
+    float sel_width = MeasureInputTextWidth(selected_text, font);
 
     // 绘制选中背景
     SkPaint sel_paint;
@@ -256,8 +262,8 @@ void FormElementPainter::PaintSelectionHighlight(float text_x,
     canvas_->drawRect(SkRect::MakeXYWH(sel_start_x, box.content_y, sel_width, box.content_height), sel_paint);
 }
 
-void FormElementPainter::PaintCursor(float text_x, 
-                                     const Box& box, 
+void FormElementPainter::PaintCursor(float text_x,
+                                     const Box& box,
                                      const SkFont& font,
                                      const SkFontMetrics& font_metrics,
                                      const std::string& value,
@@ -273,14 +279,7 @@ void FormElementPainter::PaintCursor(float text_x,
     }
 
     // 测量光标前的文本宽度
-    float cursor_x = text_x;
-    if (cursor_pos > 0) {
-        cursor_x += font.measureText(
-            text_before_cursor.c_str(),
-            text_before_cursor.length(),
-            SkTextEncoding::kUTF8
-        );
-    }
+    float cursor_x = text_x + MeasureInputTextWidth(text_before_cursor, font);
 
     // 计算光标的 Y 坐标（基于字体度量，垂直居中）
     float font_height = font_metrics.fDescent - font_metrics.fAscent;
@@ -296,7 +295,17 @@ void FormElementPainter::PaintCursor(float text_x,
     canvas_->drawLine(cursor_x, cursor_y_top, cursor_x, cursor_y_bottom, cursor_paint);
 }
 
-void FormElementPainter::PaintTextAreaCursor(float text_x, 
+float FormElementPainter::MeasureInputTextWidth(const std::string& text,
+                                                const SkFont& font) const {
+    if (text.empty()) {
+        return 0.0f;
+    }
+
+    TextRenderer text_renderer(nullptr);
+    return text_renderer.MeasureTextWidthWithEmoji(text, font);
+}
+
+void FormElementPainter::PaintTextAreaCursor(float text_x,
                                              float text_y, 
                                              const SkFont& font,
                                              const SkFontMetrics& font_metrics,
@@ -324,14 +333,7 @@ void FormElementPainter::PaintTextAreaCursor(float text_x,
     }
 
     // 测量光标前的文本宽度
-    float cursor_x = text_x;
-    if (!current_line_before_cursor.empty()) {
-        cursor_x += font.measureText(
-            current_line_before_cursor.c_str(),
-            current_line_before_cursor.length(),
-            SkTextEncoding::kUTF8
-        );
-    }
+    float cursor_x = text_x + MeasureInputTextWidth(current_line_before_cursor, font);
 
     // 绘制光标
     SkPaint cursor_paint;

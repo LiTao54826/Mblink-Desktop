@@ -569,6 +569,7 @@ void MouseEventDispatcher::HandleInputMouseInteraction(
     if (local_x <= 0 || total_chars == 0) {
         char_pos = 0;
     } else {
+        TextRenderer text_renderer(nullptr);
         float accumulated_width = 0.0f;
         size_t byte_pos = 0;
 
@@ -582,7 +583,7 @@ void MouseEventDispatcher::HandleInputMouseInteraction(
                 char_str = value.substr(byte_pos, next_byte_pos - byte_pos);
             }
 
-            float char_width = font.measureText(char_str.c_str(), char_str.size(), SkTextEncoding::kUTF8);
+            float char_width = text_renderer.MeasureTextWidthWithEmoji(char_str, font);
 
             if (local_x < accumulated_width + char_width / 2) {
                 char_pos = static_cast<int>(i);

@@ -176,7 +176,6 @@ void RenderInlineBlock::Layout(float parent_width, float parent_height) {
                     }
                 }
 
-                // Chrome text input 元素: content_height ≈ font-size * 0.85 (约 13.5px for 16px font)
                 // 其他元素: content_height ≈ font-size * 1.2 (line-height: normal)
                 float content_line_height = is_text_input ? (style.font_size * 0.85f) : (style.font_size * 1.2f);
                 layout_info_.height = content_line_height + padding_top + padding_bottom + border_top + border_bottom;
@@ -548,7 +547,6 @@ std::pair<float, float> RenderInlineBlock::MeasureIntrinsicSize(float available_
                 }
             }
 
-            // Chrome text input 元素: content_height ≈ font-size * 0.85 (约 13.5px for 16px font)
             // 其他元素: content_height ≈ font-size * 1.2 (line-height: normal)
             float content_line_height = is_text_input ? (style.font_size * 0.85f) : (style.font_size * 1.2f);
             height = content_line_height + padding_top + padding_bottom + border_top + border_bottom;
@@ -1025,7 +1023,8 @@ void RenderInlineBlock::PaintInputElement(SkCanvas* canvas, HTMLInputElement* in
         SkFontMetrics font_metrics;
         font.getMetrics(&font_metrics);
         float text_height = -font_metrics.fAscent + font_metrics.fDescent;
-        float text_y = box.content_y + (box.content_height - text_height) / 2 - font_metrics.fAscent;
+        float text_box_top = box.content_y + (box.content_height - text_height) / 2.0f;
+        float text_y = text_box_top - font_metrics.fAscent;
         float text_x = box.content_x;
 
         // 文本可用宽度（减去 spinner 宽度）
@@ -1043,9 +1042,9 @@ void RenderInlineBlock::PaintInputElement(SkCanvas* canvas, HTMLInputElement* in
         canvas->save();
         SkRect text_clip_rect = SkRect::MakeXYWH(
             text_x,
-            box.content_y,
+            std::max(box.content_y, text_box_top - 1.0f),
             text_available_width,
-            box.content_height
+            std::min(box.content_height, text_height + 2.0f)
         );
         canvas->clipRect(text_clip_rect);
 
@@ -1102,10 +1101,11 @@ void RenderInlineBlock::PaintInputElement(SkCanvas* canvas, HTMLInputElement* in
                 }
 
                 float sel_start_x = text_x;
+                TextRenderer temp_renderer(canvas);
                 if (start_char > 0) {
-                    sel_start_x += font.measureText(text_before_sel.c_str(), text_before_sel.length(), SkTextEncoding::kUTF8);
+                    sel_start_x += temp_renderer.MeasureTextWidthWithEmoji(text_before_sel, font);
                 }
-                float sel_width = font.measureText(selected_text.c_str(), selected_text.length(), SkTextEncoding::kUTF8);
+                float sel_width = temp_renderer.MeasureTextWidthWithEmoji(selected_text, font);
 
                 // 绘制选中背景
                 SkPaint sel_paint;
@@ -1136,11 +1136,8 @@ void RenderInlineBlock::PaintInputElement(SkCanvas* canvas, HTMLInputElement* in
                 // 测量光标前的文本宽度
                 float cursor_x = text_x;
                 if (!text_before_cursor.empty()) {
-                    cursor_x += font.measureText(
-                        text_before_cursor.c_str(),
-                        text_before_cursor.length(),
-                        SkTextEncoding::kUTF8
-                    );
+                    TextRenderer temp_renderer(canvas);
+                    cursor_x += temp_renderer.MeasureTextWidthWithEmoji(text_before_cursor, font);
                 }
 
                 // 计算光标的Y坐标（基于字体度量，垂直居中）

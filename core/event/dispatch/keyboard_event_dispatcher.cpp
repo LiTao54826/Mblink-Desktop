@@ -18,6 +18,7 @@
 #include "core/editing/clipboard_manager.h"
 #include "core/editing/contenteditable_controller.h"
 #include "core/editing/contenteditable_handler.h"
+#include "core/editing/input_edit_command.h"
 #include "core/event/input/focus_manager.h"
 #include "core/event/input/keyboard_utils.h"
 #include "core/render/pipeline/render_pipeline.h"
@@ -134,12 +135,14 @@ void KeyboardEventDispatcher::HandleKeyDown(const SDL_Event& event,
         } else if (key_code == 86) {  // 'V' - Paste
             clipboard_event_type = "paste";
         }
-        
+
         if (!clipboard_event_type.empty()) {
-            // 创建并分发剪贴板事件
+            // 创建并分发剪贴板事件；只有事件显式阻止默认行为时才停止后续默认编辑命令
             auto clipboard_event = std::make_shared<ClipboardEvent>(clipboard_event_type, "");
             focus_element->DispatchEvent(clipboard_event);
-            return;
+            if (clipboard_event->IsDefaultPrevented() || keydown_event->IsDefaultPrevented()) {
+                return;
+            }
         }
     }
 
@@ -151,7 +154,42 @@ void KeyboardEventDispatcher::HandleKeyDown(const SDL_Event& event,
         auto terminal_element = std::dynamic_pointer_cast<HTMLTerminalElement>(focus_element);
 
         if (input_element) {
-            input_element->HandleKeyPress(key, ctrl_key);
+            bool handled = false;
+            if (shift_key && key == "ArrowLeft") {
+                handled = input_element->ExecuteEditCommand(InputEditCommand::ExtendSelectionLeft());
+            } else if (shift_key && key == "ArrowRight") {
+                handled = input_element->ExecuteEditCommand(InputEditCommand::ExtendSelectionRight());
+            } else if (shift_key && key == "Home") {
+                handled = input_element->ExecuteEditCommand(InputEditCommand::ExtendSelectionToStart());
+            } else if (shift_key && key == "End") {
+                handled = input_element->ExecuteEditCommand(InputEditCommand::ExtendSelectionToEnd());
+            } else if (key == "Backspace") {
+                handled = input_element->ExecuteEditCommand(MakeCommand(InputEditCommandType::DeleteBackward));
+            } else if (key == "Delete") {
+                handled = input_element->ExecuteEditCommand(MakeCommand(InputEditCommandType::DeleteForward));
+            } else if (key == "ArrowLeft") {
+                handled = input_element->ExecuteEditCommand(MakeCommand(InputEditCommandType::MoveCaretLeft));
+            } else if (key == "ArrowRight") {
+                handled = input_element->ExecuteEditCommand(MakeCommand(InputEditCommandType::MoveCaretRight));
+            } else if (key == "Home") {
+                handled = input_element->ExecuteEditCommand(MakeCommand(InputEditCommandType::MoveCaretToStart));
+            } else if (key == "End") {
+                handled = input_element->ExecuteEditCommand(MakeCommand(InputEditCommandType::MoveCaretToEnd));
+            } else if (ctrl_key && (key == "a" || key == "A")) {
+                handled = input_element->ExecuteEditCommand(MakeCommand(InputEditCommandType::SelectAll));
+            } else if (ctrl_key && (key == "x" || key == "X")) {
+                handled = input_element->ExecuteEditCommand(MakeCommand(InputEditCommandType::CutSelection));
+            } else if (ctrl_key && (key == "v" || key == "V")) {
+                char* clipboard_text = SDL_GetClipboardText();
+                if (clipboard_text && clipboard_text[0] != '\0') {
+                    handled = input_element->ExecuteEditCommand(InputEditCommand::PasteText(clipboard_text));
+                }
+                SDL_free(clipboard_text);
+            }
+
+            if (!handled) {
+                input_element->HandleKeyPress(key, ctrl_key);
+            }
         } else if (textarea_element) {
             textarea_element->HandleKeyPress(key, ctrl_key, shift_key);
         } else if (terminal_element) {
@@ -215,7 +253,7 @@ void KeyboardEventDispatcher::HandleTextInput(const SDL_Event& event,
     auto terminal_element = std::dynamic_pointer_cast<HTMLTerminalElement>(focus_element);
 
     if (input_element) {
-        input_element->HandleTextInput(text);
+        input_element->ExecuteEditCommand(InputEditCommand::InsertText(text));
     } else if (textarea_element) {
         textarea_element->HandleTextInput(text);
     } else if (terminal_element) {

@@ -35,6 +35,7 @@ class HTMLInputElement;
 class HTMLTextAreaElement;
 class Element;
 struct ComputedStyle;
+struct InputPaintModel;
 
 /**
  * @brief 表单元素绘制参数
@@ -135,10 +136,29 @@ public:
      * @param params 绘制参数
      * @param is_password 是否为密码类型
      */
-    void PaintTextInput(HTMLInputElement* input, 
-                        const Box& box, 
+    void PaintTextInput(HTMLInputElement* input,
+                        const Box& box,
                         const FormElementPaintParams& params,
                         bool is_password);
+
+    void PaintInputTextLayer(const InputPaintModel& model,
+                             float text_x,
+                             float text_y,
+                             const SkFont& font,
+                             const FormElementPaintParams& params);
+
+    void PaintInputSelectionLayer(const InputPaintModel& model,
+                                  float text_x,
+                                  const Box& box,
+                                  const SkFont& font,
+                                  bool is_password);
+
+    void PaintInputCaretLayer(const InputPaintModel& model,
+                              float text_x,
+                              const Box& box,
+                              const SkFont& font,
+                              const SkFontMetrics& font_metrics,
+                              bool is_password);
 
 private:
     /**
@@ -169,13 +189,16 @@ private:
      * @param cursor_pos 光标位置
      * @param is_password 是否为密码类型
      */
-    void PaintCursor(float text_x, 
-                     const Box& box, 
+    void PaintCursor(float text_x,
+                     const Box& box,
                      const SkFont& font,
                      const SkFontMetrics& font_metrics,
                      const std::string& value,
                      int cursor_pos,
                      bool is_password);
+
+    float MeasureInputTextWidth(const std::string& text,
+                                const SkFont& font) const;
 
     /**
      * @brief 绘制多行文本框光标

@@ -6,11 +6,21 @@ set(EDITING_SOURCES
     clipboard_manager.cpp
     contenteditable_handler.cpp
     contenteditable_controller.cpp
+    input_edit_state.cpp
+    input_edit_command.cpp
+    input_editing_controller.cpp
+
+
     drag_manager.cpp
 )
 
 set(EDITING_HEADERS
     selection_manager.h
+    input_editing_controller.h
+
+    input_edit_state.h
+    input_edit_command.h
+
     clipboard_manager.h
     contenteditable_handler.h
     contenteditable_controller.h

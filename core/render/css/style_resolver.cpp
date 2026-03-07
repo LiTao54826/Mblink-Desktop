@@ -2573,10 +2573,12 @@ void StyleResolver::ApplyPseudoClassStyles(ComputedStyle& style, std::shared_ptr
         }
 
         if (needs_outline) {
+            // Chrome 的焦点 ring 不是一条固定死黑线，而更接近系统 accent color 的半透明 focus ring。
+            // 这里用接近 Chromium 的蓝色半透明描边来模拟更自然的视觉效果。
             style.outline_width = CSSLength(2, CSSUnit::PX);
             style.outline_style = "solid";
-            style.outline_color = SkColorSetRGB(0, 0, 0);  // 黑色轮廓
-            style.outline_offset = CSSLength(0, CSSUnit::PX);  // 紧贴边框外边缘
+            style.outline_color = SkColorSetARGB(168, 26, 115, 232);
+            style.outline_offset = CSSLength(0, CSSUnit::PX);
         }
         // button, select, a, range, checkbox, radio 等元素鼠标点击时不显示 outline
     }
@@ -2597,11 +2599,11 @@ void StyleResolver::ApplyPseudoClassStyles(ComputedStyle& style, std::shared_ptr
         }
 
         if (needs_outline) {
-            // 键盘导航焦点：使用 outline 显示（不影响布局）
+            // 键盘焦点同样使用接近 Chromium 的蓝色 focus ring，保证与鼠标 focus 视觉一致。
             style.outline_width = CSSLength(2, CSSUnit::PX);
             style.outline_style = "solid";
-            style.outline_color = SkColorSetRGB(0, 0, 0);  // 黑色轮廓
-            style.outline_offset = CSSLength(0, CSSUnit::PX);  // 紧贴边框外边缘
+            style.outline_color = SkColorSetARGB(168, 26, 115, 232);
+            style.outline_offset = CSSLength(0, CSSUnit::PX);
         }
     }
 
