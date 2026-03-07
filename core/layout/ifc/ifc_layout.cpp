@@ -598,11 +598,22 @@ IFCLayoutResult IFCLayout::Layout(RenderObject* container, float available_width
         float current_x = line.x;  // 行的起始 x 位置（可能有 text-indent）
         for (auto* box : line.boxes) {
             if (!box) continue;
-            // 盒子的 x 位置是内容区域的起始位置（在 margin_left 之后）
-            // current_x 指向当前可用空间的起始位置
-            current_x += box->margin_left;  // 先跳过左边距
-            box->x = current_x;             // 内容区域从这里开始
-            current_x += box->width + box->margin_right;  // 移动到下一个盒子的起始位置
+            if (box->IsInlineStart()) {
+                // INLINE_START：跳过左侧 margin + padding + border，推进 current_x
+                // 这样后续文本盒的 x 会正确从 padding 之后开始
+                current_x += box->margin_left + box->padding_left + box->border_left;
+                box->x = current_x;
+                // width = 0，右侧由对应 INLINE_END 处理
+            } else if (box->IsInlineEnd()) {
+                // INLINE_END：先记录当前位置，再跳过右侧 padding + border + margin
+                box->x = current_x;
+                current_x += box->padding_right + box->border_right + box->margin_right;
+            } else {
+                // TEXT 或 ATOMIC：正常处理 margin + width
+                current_x += box->margin_left;  // 先跳过左边距
+                box->x = current_x;             // 内容区域从这里开始
+                current_x += box->width + box->margin_right;  // 移动到下一个盒子的起始位置
+            }
         }
 
         // 应用垂直对齐，传入容器的 line-height
@@ -800,9 +811,22 @@ void IFCLayout::CreateInlineBox(RenderObject* render_obj) {
                 }
             } else {
                 // 普通文本不在收集阶段预拆行；统一交给 LineBreaker 决策
-                // 仅保留显式换行（\n）和 <br> 的强制换行语义
+                // 对 white-space:normal/nowrap 模式，按 CSS 规范先折叠连续空白为单个空格
+                bool is_normal_ws = (style.white_space != "pre" &&
+                                     style.white_space != "pre-wrap" &&
+                                     style.white_space != "pre-line");
+                std::string collapsed_text = text;
+                if (is_normal_ws) {
+                    collapsed_text = line_breaker_.ProcessWhitespace(text);
+                }
+                // 折叠后为纯空白（空串）则跳过，不创建 InlineBox
+                if (collapsed_text.empty()) {
+                    text_obj->SetWrappedLines({});
+                    break;
+                }
+
                 TextMeasurement measurement = MeasureTextForIFC(
-                    text, style.font_size, style.font_family, letter_spacing, word_spacing, style.line_height, style.font_weight, style.font_style);
+                    collapsed_text, style.font_size, style.font_family, letter_spacing, word_spacing, style.line_height, style.font_weight, style.font_style);
 
                 text_obj->SetWrappedLines({});  // 清除之前的换行信息
 
@@ -816,9 +840,9 @@ void IFCLayout::CreateInlineBox(RenderObject* render_obj) {
 
                 // 添加 TextRun
                 TextRun run;
-                run.text = text;
+                run.text = collapsed_text;
                 run.start_offset = 0;
-                run.end_offset = text.size();
+                run.end_offset = collapsed_text.size();
                 run.width = measurement.width;
                 run.height = measurement.height;
                 run.baseline = measurement.skia_ascent;
@@ -1013,13 +1037,15 @@ void IFCLayout::ApplyLayoutResults(RenderObject* container, float container_widt
     // 用于跟踪文本节点的边界（多行文本需要合并边界）
     std::unordered_map<RenderObject*, InlineElementBounds> text_bounds;
 
-    // 预聚合：按 line_boxes_ 为每个 RenderText 生成可绘制的分行文本及每行起始 x
+    // 预聚合：按 line_boxes_ 为每个 RenderText 生成可绘制的分行文本及每行起始 x/y
     // 这样 RenderText::Paint 可以使用 IFC 实际断行和行内偏移，避免不同文本节点在同一行重叠。
     std::unordered_map<RenderObject*, std::vector<std::string>> text_wrapped_lines;
     std::unordered_map<RenderObject*, std::vector<float>> text_wrapped_line_first_x;
+    std::unordered_map<RenderObject*, std::vector<float>> text_wrapped_line_first_y;
     for (const auto& line_box : line_boxes_) {
         std::unordered_map<RenderObject*, std::string> line_fragments;
         std::unordered_map<RenderObject*, float> line_first_x;
+        std::unordered_map<RenderObject*, float> line_first_y;
 
         for (InlineBox* line_box_item : line_box.boxes) {
             if (!line_box_item || !line_box_item->IsText() || !line_box_item->render_object) {
@@ -1039,6 +1065,7 @@ void IFCLayout::ApplyLayoutResults(RenderObject* container, float container_widt
 
             if (line_first_x.find(text_render_obj) == line_first_x.end()) {
                 line_first_x[text_render_obj] = line_box_item->x + offset_x;
+                line_first_y[text_render_obj] = line_box_item->y + offset_y;
             }
         }
 
@@ -1048,6 +1075,9 @@ void IFCLayout::ApplyLayoutResults(RenderObject* container, float container_widt
                 auto it_x = line_first_x.find(text_obj);
                 text_wrapped_line_first_x[text_obj].push_back(
                     it_x != line_first_x.end() ? it_x->second : 0.0f);
+                auto it_y = line_first_y.find(text_obj);
+                text_wrapped_line_first_y[text_obj].push_back(
+                    it_y != line_first_y.end() ? it_y->second : 0.0f);
             }
         }
     }
@@ -1082,10 +1112,32 @@ void IFCLayout::ApplyLayoutResults(RenderObject* container, float container_widt
         if (box.type == InlineBoxType::INLINE_START) {
             // 开始一个新的内联元素
             inline_stack.push_back(render_obj);
-            inline_bounds[render_obj] = InlineElementBounds{};
+            InlineElementBounds empty_bounds{};
+            // [Bug3 Fix] 记录 INLINE_START 自身的位置，用于空 inline 元素（无子内容）的 layout 设置。
+            // box.x 是跳过 margin_left+padding_left+border_left 后的内容起始位置，
+            // 因此真正的 border-box 左边缘 = box.x - margin_left - padding_left - border_left + offset_x。
+            // 这里存储内容起始 x（带 offset），第二遍中会减去 padding/border 得到 border-box。
+            empty_bounds.first_x = box.x + offset_x;
+            empty_bounds.first_y = box.y + offset_y;
+            empty_bounds.has_first = true;
+            // 同步初始化 min_x/max_x 防止空 span 时默认极值被误用
+            empty_bounds.min_x = box.x + offset_x;
+            empty_bounds.min_y = box.y + offset_y;
+            empty_bounds.max_x = box.x + offset_x;
+            empty_bounds.max_y = box.y + offset_y + box.height;
+            inline_bounds[render_obj] = empty_bounds;
         } else if (box.type == InlineBoxType::INLINE_END) {
             // 结束当前内联元素
             if (!inline_stack.empty() && inline_stack.back() == render_obj) {
+                // [Bug3 Fix] 若 span 内没有子内容（has_content=false），
+                // 用 INLINE_END 的 x 更新 max_x，使宽度正确（空 span 宽度 = 0）。
+                auto it = inline_bounds.find(render_obj);
+                if (it != inline_bounds.end() && !it->second.has_content) {
+                    // 空 span：max_x = INLINE_END 的 x + offset_x（即内容区结束处）
+                    it->second.max_x = box.x + offset_x;
+                    it->second.max_y = box.y + offset_y + box.height;
+                    it->second.has_content = true;  // 标记已有足够信息可设置 layout
+                }
                 inline_stack.pop_back();
             }
         } else {
@@ -1156,6 +1208,13 @@ void IFCLayout::ApplyLayoutResults(RenderObject* container, float container_widt
             // 更新所有父级内联元素的边界
             for (RenderObject* inline_elem : inline_stack) {
                 auto& bounds = inline_bounds[inline_elem];
+                // [Bug2 Fix] 记录首个子盒的位置（first_x/first_y），
+                // 用于多行 inline 元素时 layout.x/y 从第一行开始而非最左 min_x。
+                if (!bounds.has_content) {
+                    bounds.first_x = box_left;
+                    bounds.first_y = box_top;
+                    bounds.has_first = true;
+                }
                 bounds.min_x = std::min(bounds.min_x, box_left);
                 bounds.min_y = std::min(bounds.min_y, box_top);
                 bounds.max_x = std::max(bounds.max_x, box_right);
@@ -1166,14 +1225,42 @@ void IFCLayout::ApplyLayoutResults(RenderObject* container, float container_widt
     }
 
     // 第二遍：先应用内联元素的边界（因为子元素需要相对于父元素的位置）
+    // 同时将 layout 扩展以包含该内联元素自身的 padding 和 border，
+    // 这样绘制背景时能覆盖正确区域（文本内容区 + padding + border）
     for (auto& [render_obj, bounds] : inline_bounds) {
         if (!bounds.has_content) continue;
 
+        const auto& iline_style = render_obj->GetComputedStyle();
+        float ipl = iline_style.padding.left.ToPx(0.0f, iline_style.font_size);
+        float ipr = iline_style.padding.right.ToPx(0.0f, iline_style.font_size);
+        float ipt = iline_style.padding.top.ToPx(0.0f, iline_style.font_size);
+        float ipb = iline_style.padding.bottom.ToPx(0.0f, iline_style.font_size);
+        // 优先使用分侧 border 宽度，回退到统一 border.width
+        float ibl = (iline_style.border_left_width > 0.0f)
+                        ? iline_style.border_left_width
+                        : iline_style.border.width.ToPx(0.0f, iline_style.font_size);
+        float ibr = (iline_style.border_right_width > 0.0f)
+                        ? iline_style.border_right_width
+                        : iline_style.border.width.ToPx(0.0f, iline_style.font_size);
+        float ibt = (iline_style.border_top_width > 0.0f)
+                        ? iline_style.border_top_width
+                        : iline_style.border.width.ToPx(0.0f, iline_style.font_size);
+        float ibb = (iline_style.border_bottom_width > 0.0f)
+                        ? iline_style.border_bottom_width
+                        : iline_style.border.width.ToPx(0.0f, iline_style.font_size);
+
         LayoutInfo& layout = render_obj->GetLayoutInfo();
-        layout.x = bounds.min_x;
-        layout.y = bounds.min_y;
-        layout.width = bounds.max_x - bounds.min_x;
-        layout.height = bounds.max_y - bounds.min_y;
+        // [Bug2 Fix] 用 first_x/first_y（首行位置）而非 min_x/min_y（全局最小值）
+        // 来定位 inline 元素的 border-box 左上角，与文本节点保持一致。
+        // 对于单行 inline 元素两者相同；对于多行 inline 元素，first_x 是首片段位置。
+        float origin_x = bounds.has_first ? bounds.first_x : bounds.min_x;
+        float origin_y = bounds.has_first ? bounds.first_y : bounds.min_y;
+        // 向左/上扩展 padding + border，让 layout 的原点指向 border-box 左上角
+        layout.x = origin_x - ipl - ibl;
+        layout.y = origin_y - ipt - ibt;
+        // 宽高加上两侧 padding + border
+        layout.width  = (bounds.max_x - bounds.min_x) + ipl + ipr + ibl + ibr;
+        layout.height = (bounds.max_y - bounds.min_y) + ipt + ipb + ibt + ibb;
     }
 
     // 第三遍：应用文本节点的合并边界
@@ -1204,33 +1291,45 @@ void IFCLayout::ApplyLayoutResults(RenderObject* container, float container_widt
         layout.height = bounds.max_y - bounds.min_y;
     }
 
-    // 第四遍：把 IFC 的实际断行结果同步给 RenderText（包含每行起始 x），用于绘制阶段按行渲染
+    // 第四遍：把 IFC 的实际断行结果同步给 RenderText（包含每行起始 x/y），用于绘制阶段按行渲染
     for (auto& [render_obj, lines] : text_wrapped_lines) {
         if (!render_obj) continue;
         if (render_obj->GetType() != RenderObjectType::TEXT) continue;
 
         auto it_x = text_wrapped_line_first_x.find(render_obj);
+        auto it_y = text_wrapped_line_first_y.find(render_obj);
         const std::vector<float> empty_offsets;
         const std::vector<float>& line_abs_x_list = (it_x != text_wrapped_line_first_x.end()) ? it_x->second : empty_offsets;
+        const std::vector<float>& line_abs_y_list = (it_y != text_wrapped_line_first_y.end()) ? it_y->second : empty_offsets;
 
-        // 把“绝对 line_x”换算为 RenderText 本地坐标：local_x = abs_line_x - abs_text_origin_x
-        // abs_text_origin_x = layout.x + (parent_layout.x if parent is INLINE)
+        // 把“绝对 line_x/line_y”换算为 RenderText 本地坐标
         const LayoutInfo& text_layout = render_obj->GetLayoutInfo();
         float abs_text_origin_x = text_layout.x;
+        float abs_text_origin_y = text_layout.y;
         auto parent = render_obj->GetParent();
         if (parent && parent->GetType() == RenderObjectType::INLINE) {
             abs_text_origin_x += parent->GetLayoutInfo().x;
+            abs_text_origin_y += parent->GetLayoutInfo().y;
         }
 
-        std::vector<float> local_offsets;
-        local_offsets.reserve(line_abs_x_list.size());
+        std::vector<float> local_x_offsets;
+        local_x_offsets.reserve(line_abs_x_list.size());
         for (float abs_x : line_abs_x_list) {
-            local_offsets.push_back(abs_x - abs_text_origin_x);
+            local_x_offsets.push_back(abs_x - abs_text_origin_x);
+        }
+
+        std::vector<float> local_y_offsets;
+        local_y_offsets.reserve(line_abs_y_list.size());
+        for (float abs_y : line_abs_y_list) {
+            local_y_offsets.push_back(abs_y - abs_text_origin_y);
         }
 
         auto* text_obj = static_cast<RenderText*>(render_obj);
-        if (!local_offsets.empty() && local_offsets.size() == lines.size()) {
-            text_obj->SetWrappedLinesWithOffsets(lines, local_offsets);
+        if (!local_x_offsets.empty() && local_x_offsets.size() == lines.size() &&
+            !local_y_offsets.empty() && local_y_offsets.size() == lines.size()) {
+            text_obj->SetWrappedLinesWithOffsets(lines, local_x_offsets, local_y_offsets);
+        } else if (!local_x_offsets.empty() && local_x_offsets.size() == lines.size()) {
+            text_obj->SetWrappedLinesWithOffsets(lines, local_x_offsets);
         } else {
             text_obj->SetWrappedLines(lines);
         }

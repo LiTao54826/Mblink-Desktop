@@ -5,6 +5,7 @@
 
 #include "inline_box.h"
 #include "core/render/objects/render_object.h"
+#include <cmath>
 
 namespace lightui {
 
@@ -50,6 +51,24 @@ InlineBox InlineBox::CreateInlineStart(RenderObject* render_obj) {
 
         // 标记盒本身无内容宽度
         box.width = 0.0f;
+
+        // [Bug1 Fix] 设置 INLINE_START 的 strut 高度：
+        // CSS 规范要求每个内联盒都有一个基于自身 font-size 和 line-height 的 strut，
+        // 让 inline 元素（如 <span>）自身的 line-height 能参与行高计算。
+        // line_height_multiplier 若为默认值 1.2 则使用浏览器 normal 估算值（~1.156）。
+        float lh_multiplier = style.line_height;
+        float effective_lh;
+        if (std::abs(lh_multiplier - 1.2f) < 0.001f) {
+            effective_lh = style.font_size * 1.156f;
+        } else {
+            effective_lh = style.font_size * lh_multiplier;
+        }
+        box.height = effective_lh;
+        box.line_height_multiplier = lh_multiplier;
+        // skia_ascent/descent 按 80/20 估算，与 CalculateLineMetrics 的 strut 逻辑一致
+        box.skia_ascent = effective_lh * 0.8f;
+        box.skia_descent = effective_lh * 0.2f;
+        box.baseline = box.skia_ascent;
     }
 
     return box;

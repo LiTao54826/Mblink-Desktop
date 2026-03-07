@@ -4,6 +4,7 @@
  */
 
 #include "line_breaker.h"
+#include "ifc_layout.h"
 #include <algorithm>
 #include <cctype>
 
@@ -293,6 +294,115 @@ std::vector<BreakOpportunity> LineBreaker::FindBreakOpportunities(
 
 // ========== 执行断行 ==========
 
+static bool IsCollapsibleWhitespaceMode(WhiteSpaceMode mode) {
+    return mode == WhiteSpaceMode::NORMAL ||
+           mode == WhiteSpaceMode::NOWRAP ||
+           mode == WhiteSpaceMode::PRE_LINE;
+}
+
+static bool IsWhitespaceOnlyTextBox(const InlineBox& box, WhiteSpaceMode mode) {
+    if (!box.IsText() || !IsCollapsibleWhitespaceMode(mode) || box.text_runs.empty()) {
+        return false;
+    }
+
+    for (const auto& run : box.text_runs) {
+        if (run.is_forced_break || !run.IsOnlyWhitespace()) {
+            return false;
+        }
+    }
+    return true;
+}
+
+static bool LineHasVisibleContent(const LineBox& line, WhiteSpaceMode mode) {
+    for (auto* box : line.boxes) {
+        if (!box) continue;
+        if (box->IsInlineStart() || box->IsInlineEnd()) continue;
+        if (IsWhitespaceOnlyTextBox(*box, mode)) continue;
+        return true;
+    }
+    return false;
+}
+
+static bool TrimLeadingCollapsibleWhitespaceFromTextBox(InlineBox& box, WhiteSpaceMode mode) {
+    if (!box.IsText() || !IsCollapsibleWhitespaceMode(mode) || box.text_runs.empty() || !box.style) {
+        return false;
+    }
+
+    TextRun& run = box.text_runs[0];
+    if (run.is_forced_break || run.text.empty()) {
+        return false;
+    }
+
+    size_t trim_len = 0;
+    while (trim_len < run.text.size()) {
+        char c = run.text[trim_len];
+        if (c == ' ' || c == '\t') {
+            ++trim_len;
+            continue;
+        }
+        break;
+    }
+
+    if (trim_len == 0) {
+        return false;
+    }
+
+    const ComputedStyle& style = *box.style;
+    std::string trimmed_text = run.text.substr(trim_len);
+    if (trimmed_text.empty()) {
+        run.text.clear();
+        run.start_offset += trim_len;
+        run.end_offset = run.start_offset;
+        run.width = 0.0f;
+        run.height = style.font_size * style.line_height;
+        run.baseline = style.font_size * 0.8f;
+        run.is_whitespace = true;
+        box.width = 0.0f;
+        return true;
+    }
+
+    auto measurement = IFCLayout::MeasureTextStatic(
+        trimmed_text,
+        style.font_size,
+        style.font_family,
+        style.letter_spacing.ToPx(0, style.font_size),
+        style.word_spacing.ToPx(0, style.font_size),
+        style.line_height,
+        style.font_weight,
+        style.font_style);
+
+    run.text = trimmed_text;
+    run.start_offset += trim_len;
+    run.end_offset = run.start_offset + trimmed_text.size();
+    run.width = measurement.width;
+    run.height = measurement.height;
+    run.baseline = measurement.skia_ascent;
+    run.is_whitespace = run.IsOnlyWhitespace();
+
+    box.width = measurement.width;
+    box.height = measurement.height;
+    box.baseline = measurement.skia_ascent;
+    box.skia_ascent = measurement.skia_ascent;
+    box.skia_descent = measurement.skia_descent;
+    return true;
+}
+
+static void TrimTrailingCollapsibleWhitespace(LineBox* line, float& current_width, WhiteSpaceMode mode) {
+    if (!line || !IsCollapsibleWhitespaceMode(mode)) return;
+
+    while (!line->boxes.empty()) {
+        InlineBox* last = line->boxes.back();
+        if (!last || !IsWhitespaceOnlyTextBox(*last, mode)) {
+            break;
+        }
+
+        float removed_width = last->GetTotalWidth();
+        line->boxes.pop_back();
+        line->content_width = std::max(0.0f, line->content_width - removed_width);
+        current_width = std::max(0.0f, current_width - removed_width);
+    }
+}
+
 std::vector<LineBox> LineBreaker::BreakIntoLines(
     std::vector<InlineBox>& boxes,
     float available_width
@@ -325,42 +435,65 @@ std::vector<LineBox> LineBreaker::BreakIntoLines(
             continue;
         }
 
+        bool is_leading_collapsible_ws =
+            IsWhitespaceOnlyTextBox(box, white_space_) &&
+            !LineHasVisibleContent(*current_line, white_space_);
+        if (is_leading_collapsible_ws) {
+            continue;
+        }
+
+        if (!LineHasVisibleContent(*current_line, white_space_)) {
+            TrimLeadingCollapsibleWhitespaceFromTextBox(box, white_space_);
+            if (box.IsText() && box.text_runs.empty()) {
+                continue;
+            }
+            if (box.IsText() && !box.text_runs.empty() && box.text_runs[0].text.empty()) {
+                continue;
+            }
+        }
+
+        bool box_was_split = false;
+
         // 字符级切分：当文本盒在当前行放不下时，尝试在合法断点切分为前后两段
-        if (box.IsText() && !current_line->IsEmpty() &&
+        if (box.IsText() &&
             white_space_ != WhiteSpaceMode::NOWRAP && white_space_ != WhiteSpaceMode::PRE &&
             current_width + box.GetTotalWidth() > effective_width && !box.text_runs.empty()) {
 
             TextRun& run = box.text_runs[0];
             const std::string& text = run.text;
-            if (!text.empty()) {
+            if (!text.empty() && box.style) {
                 float content_limit = effective_width - current_width - box.GetLeftSpace() - box.GetRightSpace();
                 if (content_limit > 0.0f && run.width > content_limit) {
-                    size_t total_chars = std::max<size_t>(1, run.CharacterCount());
-                    float avg_char_width = run.width / static_cast<float>(total_chars);
-
+                    const ComputedStyle& style = *box.style;
                     size_t pos = 0;
                     size_t prev_pos = 0;
                     uint32_t prev_char = 0;
-                    float used_width = 0.0f;
-                    size_t used_chars = 0;
                     size_t best_break_byte = 0;
-                    size_t best_break_chars = 0;
+                    TextMeasureResult best_head_measure;
+                    bool found_break = false;
 
                     while (pos < text.size()) {
                         prev_pos = pos;
                         uint32_t ch = DecodeUTF8(text, pos);
 
-                        float next_w = used_width + avg_char_width;
-                        if (next_w > content_limit && used_chars > 0) {
-                            break;
-                        }
-
-                        used_width = next_w;
-                        used_chars++;
-
                         if (prev_char != 0 && CanBreakBetween(prev_char, ch)) {
-                            best_break_byte = prev_pos;
-                            best_break_chars = used_chars - 1;
+                            std::string candidate = text.substr(0, prev_pos);
+                            auto candidate_measure = IFCLayout::MeasureTextStatic(
+                                candidate,
+                                style.font_size,
+                                style.font_family,
+                                letter_spacing_,
+                                word_spacing_,
+                                style.line_height,
+                                style.font_weight,
+                                style.font_style);
+                            if (candidate_measure.width <= content_limit) {
+                                best_break_byte = prev_pos;
+                                best_head_measure = candidate_measure;
+                                found_break = true;
+                            } else {
+                                break;
+                            }
                         }
 
                         prev_char = ch;
@@ -370,41 +503,82 @@ std::vector<LineBox> LineBreaker::BreakIntoLines(
                                            overflow_wrap_ == OverflowWrapMode::BREAK_WORD ||
                                            word_break_ == WordBreakMode::BREAK_ALL);
 
-                    size_t split_byte = best_break_byte;
-                    size_t split_chars = best_break_chars;
+                    if (!found_break && allow_anywhere) {
+                        pos = 0;
+                        size_t fallback_prev_pos = 0;
+                        while (pos < text.size()) {
+                            fallback_prev_pos = pos;
+                            DecodeUTF8(text, pos);
+                            if (fallback_prev_pos == 0) {
+                                continue;
+                            }
 
-                    if (split_byte == 0 && allow_anywhere && used_chars > 0) {
-                        split_byte = prev_pos;
-                        split_chars = used_chars;
+                            std::string candidate = text.substr(0, fallback_prev_pos);
+                            auto candidate_measure = IFCLayout::MeasureTextStatic(
+                                candidate,
+                                style.font_size,
+                                style.font_family,
+                                letter_spacing_,
+                                word_spacing_,
+                                style.line_height,
+                                style.font_weight,
+                                style.font_style);
+                            if (candidate_measure.width <= content_limit) {
+                                best_break_byte = fallback_prev_pos;
+                                best_head_measure = candidate_measure;
+                                found_break = true;
+                            } else {
+                                break;
+                            }
+                        }
                     }
 
-                    if (split_byte > 0 && split_byte < text.size()) {
+                    if (found_break && best_break_byte > 0 && best_break_byte < text.size()) {
                         InlineBox tail = box;
+                        std::string head_text = text.substr(0, best_break_byte);
+                        std::string tail_text = text.substr(best_break_byte);
 
-                        std::string head_text = text.substr(0, split_byte);
-                        std::string tail_text = text.substr(split_byte);
-
-                        float head_w = avg_char_width * static_cast<float>(split_chars);
-                        if (head_w <= 0.0f) head_w = std::max(0.0f, used_width);
-                        head_w = std::min(head_w, run.width);
-                        float tail_w = std::max(0.0f, run.width - head_w);
+                        auto tail_measure = IFCLayout::MeasureTextStatic(
+                            tail_text,
+                            style.font_size,
+                            style.font_family,
+                            letter_spacing_,
+                            word_spacing_,
+                            style.line_height,
+                            style.font_weight,
+                            style.font_style);
 
                         run.text = head_text;
-                        run.end_offset = run.start_offset + split_byte;
-                        run.width = head_w;
-                        box.width = head_w;
+                        run.end_offset = run.start_offset + best_break_byte;
+                        run.width = best_head_measure.width;
+                        run.height = best_head_measure.height;
+                        run.baseline = best_head_measure.skia_ascent;
+                        run.is_whitespace = run.IsOnlyWhitespace();
+                        box.width = best_head_measure.width;
+                        box.height = best_head_measure.height;
+                        box.baseline = best_head_measure.skia_ascent;
+                        box.skia_ascent = best_head_measure.skia_ascent;
+                        box.skia_descent = best_head_measure.skia_descent;
 
                         tail.text_runs.clear();
                         TextRun tail_run = run;
                         tail_run.text = tail_text;
                         tail_run.start_offset = run.end_offset;
                         tail_run.end_offset = tail_run.start_offset + tail_text.size();
-                        tail_run.width = tail_w;
+                        tail_run.width = tail_measure.width;
+                        tail_run.height = tail_measure.height;
+                        tail_run.baseline = tail_measure.skia_ascent;
                         tail_run.is_forced_break = false;
+                        tail_run.is_whitespace = tail_run.IsOnlyWhitespace();
                         tail.text_runs.push_back(tail_run);
-                        tail.width = tail_w;
+                        tail.width = tail_measure.width;
+                        tail.height = tail_measure.height;
+                        tail.baseline = tail_measure.skia_ascent;
+                        tail.skia_ascent = tail_measure.skia_ascent;
+                        tail.skia_descent = tail_measure.skia_descent;
 
                         boxes.insert(boxes.begin() + static_cast<long long>(i + 1), std::move(tail));
+                        box_was_split = true;
                     }
                 }
             }
@@ -430,23 +604,44 @@ std::vector<LineBox> LineBreaker::BreakIntoLines(
         }
 
         if (need_break) {
+            TrimTrailingCollapsibleWhitespace(current_line, current_width, white_space_);
             is_first_line = false;
             effective_width = available_width;
             lines.emplace_back(effective_width);
             current_line = &lines.back();
             current_width = 0.0f;
+
+            if (IsWhitespaceOnlyTextBox(box, white_space_) &&
+                !LineHasVisibleContent(*current_line, white_space_)) {
+                continue;
+            }
         }
 
         current_line->AddBox(&box);
         current_width += box_width;
 
+        if (box_was_split) {
+            TrimTrailingCollapsibleWhitespace(current_line, current_width, white_space_);
+            is_first_line = false;
+            effective_width = available_width;
+            lines.emplace_back(effective_width);
+            current_line = &lines.back();
+            current_width = 0.0f;
+            continue;
+        }
+
         if (has_forced_break) {
+            TrimTrailingCollapsibleWhitespace(current_line, current_width, white_space_);
             is_first_line = false;
             effective_width = available_width;
             lines.emplace_back(effective_width);
             current_line = &lines.back();
             current_width = 0.0f;
         }
+    }
+
+    if (!lines.empty()) {
+        TrimTrailingCollapsibleWhitespace(&lines.back(), current_width, white_space_);
     }
 
     while (!lines.empty() && lines.back().IsEmpty()) {

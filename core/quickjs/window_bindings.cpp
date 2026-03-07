@@ -61,20 +61,20 @@ void WindowBindings::InitBindings() {
 }
 
 void WindowBindings::BindWindowObject() {
-    // 绑定 window.innerWidth - 返回 DPI 缩放后的逻辑宽度
+    // 绑定 window.innerWidth - 返回布局宽度（与 getBoundingClientRect 坐标系一致）
     runtime_->RegisterFunction("__getInnerWidth", [this](const json& args) -> json {
         int width, height;
         window_->GetSize(&width, &height);
-        float dpi_scale = window_->GetDisplayScale();
-        return static_cast<int>(static_cast<float>(width) / dpi_scale);
+        // 注意：直接返回物理像素宽度，与布局引擎 getBoundingClientRect 坐标系保持一致
+        // Chrome headless viewport 也以相同像素数设置，保证对比基准一致
+        return width;
     });
 
-    // 绑定 window.innerHeight - 返回 DPI 缩放后的逻辑高度
+    // 绑定 window.innerHeight - 返回布局高度（与 getBoundingClientRect 坐标系一致）
     runtime_->RegisterFunction("__getInnerHeight", [this](const json& args) -> json {
         int width, height;
         window_->GetSize(&width, &height);
-        float dpi_scale = window_->GetDisplayScale();
-        return static_cast<int>(static_cast<float>(height) / dpi_scale);
+        return height;
     });
 
     // 绑定 window.devicePixelRatio

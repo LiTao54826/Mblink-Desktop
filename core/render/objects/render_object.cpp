@@ -133,10 +133,28 @@ float RenderObject::GetEffectiveVisibleHeight() const {
         return viewport_height_;
     }
 
-    // 如果设置了 max-height，使用 max-height 作为可见高度
+    // CSS 的 max-height 默认作用于 content-box。
+    // Paint/scrollbar/clip 路径这里需要返回 border-box 可见高度，
+    // 否则会把 padding 区也错误地挤进 max-height 里，导致可见行数偏多、
+    // 半行距被裁掉，视觉上像“没有行间距”。
     float max_height_px = computed_style_.max_height.ToPx();
-    if (max_height_px > 0 && max_height_px < layout_info_.height) {
-        return max_height_px;
+    if (max_height_px > 0) {
+        float visible_height = max_height_px;
+
+        if (computed_style_.box_sizing != "border-box") {
+            float reference_width = layout_info_.width > 0 ? layout_info_.width : 0.0f;
+            float padding_top = computed_style_.padding.top.ToPx(reference_width, computed_style_.font_size);
+            float padding_bottom = computed_style_.padding.bottom.ToPx(reference_width, computed_style_.font_size);
+            float border_top = computed_style_.border_top_width > 0 ?
+                computed_style_.border_top_width : computed_style_.border.width.ToPx(reference_width, computed_style_.font_size);
+            float border_bottom = computed_style_.border_bottom_width > 0 ?
+                computed_style_.border_bottom_width : computed_style_.border.width.ToPx(reference_width, computed_style_.font_size);
+            visible_height += padding_top + padding_bottom + border_top + border_bottom;
+        }
+
+        if (visible_height < layout_info_.height) {
+            return visible_height;
+        }
     }
 
     return layout_info_.height;

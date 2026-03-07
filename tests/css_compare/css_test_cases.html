@@ -1,0 +1,371 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>CSS Layout Compare Test Cases</title>
+<style>
+* { box-sizing: border-box; }
+body { margin: 0; padding: 20px; font-family: Arial, sans-serif; background: #f0f0f0; }
+.section { margin-bottom: 30px; background: white; padding: 16px; border-radius: 6px; }
+.label { font-size: 12px; color: #666; margin-bottom: 8px; font-weight: bold; }
+</style>
+</head>
+<body>
+<div id="test-root">
+
+<!-- ==================== 1. 盒模型 Box Model ==================== -->
+<div class="section">
+  <div class="label">Box Model: content-box</div>
+  <div data-testid="boxmodel/content-box"
+       style="width:200px;height:100px;padding:20px;border:5px solid #2196f3;box-sizing:content-box;background:#bbdefb;">
+  </div>
+</div>
+
+<div class="section">
+  <div class="label">Box Model: border-box</div>
+  <div data-testid="boxmodel/border-box"
+       style="width:200px;height:100px;padding:20px;border:5px solid #4caf50;box-sizing:border-box;background:#c8e6c9;">
+  </div>
+</div>
+
+<!-- ==================== 2. Flexbox: flex-direction ==================== -->
+<div class="section">
+  <div class="label">Flex Row</div>
+  <div data-testid="flex-row/container"
+       style="display:flex;flex-direction:row;gap:10px;background:#e3f2fd;padding:10px;width:500px;height:80px;">
+    <div data-testid="flex-row/item-1" style="width:80px;height:60px;background:#2196f3;"></div>
+    <div data-testid="flex-row/item-2" style="width:80px;height:60px;background:#1976d2;"></div>
+    <div data-testid="flex-row/item-3" style="width:80px;height:60px;background:#1565c0;"></div>
+  </div>
+</div>
+
+<div class="section">
+  <div class="label">Flex Column</div>
+  <div data-testid="flex-col/container"
+       style="display:flex;flex-direction:column;gap:8px;background:#e8f5e9;padding:10px;width:200px;">
+    <div data-testid="flex-col/item-1" style="height:40px;background:#4caf50;"></div>
+    <div data-testid="flex-col/item-2" style="height:40px;background:#388e3c;"></div>
+    <div data-testid="flex-col/item-3" style="height:40px;background:#2e7d32;"></div>
+  </div>
+</div>
+
+<!-- ==================== 3. Flexbox: justify-content ==================== -->
+<div class="section">
+  <div class="label">justify-content: flex-start</div>
+  <div data-testid="justify/flex-start"
+       style="display:flex;justify-content:flex-start;gap:8px;background:#fff3e0;padding:10px;width:500px;height:60px;">
+    <div data-testid="justify/flex-start/item-1" style="width:60px;height:40px;background:#ff9800;"></div>
+    <div data-testid="justify/flex-start/item-2" style="width:60px;height:40px;background:#f57c00;"></div>
+    <div data-testid="justify/flex-start/item-3" style="width:60px;height:40px;background:#ef6c00;"></div>
+  </div>
+</div>
+
+<div class="section">
+  <div class="label">justify-content: center</div>
+  <div data-testid="justify/center"
+       style="display:flex;justify-content:center;gap:8px;background:#fff3e0;padding:10px;width:500px;height:60px;">
+    <div data-testid="justify/center/item-1" style="width:60px;height:40px;background:#ff9800;"></div>
+    <div data-testid="justify/center/item-2" style="width:60px;height:40px;background:#f57c00;"></div>
+    <div data-testid="justify/center/item-3" style="width:60px;height:40px;background:#ef6c00;"></div>
+  </div>
+</div>
+
+<div class="section">
+  <div class="label">justify-content: flex-end</div>
+  <div data-testid="justify/flex-end"
+       style="display:flex;justify-content:flex-end;gap:8px;background:#fff3e0;padding:10px;width:500px;height:60px;">
+    <div data-testid="justify/flex-end/item-1" style="width:60px;height:40px;background:#ff9800;"></div>
+    <div data-testid="justify/flex-end/item-2" style="width:60px;height:40px;background:#f57c00;"></div>
+    <div data-testid="justify/flex-end/item-3" style="width:60px;height:40px;background:#ef6c00;"></div>
+  </div>
+</div>
+
+<div class="section">
+  <div class="label">justify-content: space-between</div>
+  <div data-testid="justify/space-between"
+       style="display:flex;justify-content:space-between;background:#fff3e0;padding:10px;width:500px;height:60px;">
+    <div data-testid="justify/space-between/item-1" style="width:60px;height:40px;background:#ff9800;"></div>
+    <div data-testid="justify/space-between/item-2" style="width:60px;height:40px;background:#f57c00;"></div>
+    <div data-testid="justify/space-between/item-3" style="width:60px;height:40px;background:#ef6c00;"></div>
+  </div>
+</div>
+
+<div class="section">
+  <div class="label">justify-content: space-around</div>
+  <div data-testid="justify/space-around"
+       style="display:flex;justify-content:space-around;background:#fff3e0;padding:10px;width:500px;height:60px;">
+    <div data-testid="justify/space-around/item-1" style="width:60px;height:40px;background:#ff9800;"></div>
+    <div data-testid="justify/space-around/item-2" style="width:60px;height:40px;background:#f57c00;"></div>
+    <div data-testid="justify/space-around/item-3" style="width:60px;height:40px;background:#ef6c00;"></div>
+  </div>
+</div>
+
+
+<!-- ==================== 4. Flexbox: align-items ==================== -->
+<div class="section">
+  <div class="label">align-items: flex-start</div>
+  <div data-testid="align/flex-start"
+       style="display:flex;align-items:flex-start;gap:8px;background:#f3e5f5;padding:10px;width:400px;height:120px;">
+    <div data-testid="align/flex-start/item-1" style="width:60px;height:40px;background:#9c27b0;"></div>
+    <div data-testid="align/flex-start/item-2" style="width:60px;height:70px;background:#7b1fa2;"></div>
+    <div data-testid="align/flex-start/item-3" style="width:60px;height:100px;background:#6a1b9a;"></div>
+  </div>
+</div>
+
+<div class="section">
+  <div class="label">align-items: center</div>
+  <div data-testid="align/center"
+       style="display:flex;align-items:center;gap:8px;background:#f3e5f5;padding:10px;width:400px;height:120px;">
+    <div data-testid="align/center/item-1" style="width:60px;height:40px;background:#9c27b0;"></div>
+    <div data-testid="align/center/item-2" style="width:60px;height:70px;background:#7b1fa2;"></div>
+    <div data-testid="align/center/item-3" style="width:60px;height:100px;background:#6a1b9a;"></div>
+  </div>
+</div>
+
+<div class="section">
+  <div class="label">align-items: flex-end</div>
+  <div data-testid="align/flex-end"
+       style="display:flex;align-items:flex-end;gap:8px;background:#f3e5f5;padding:10px;width:400px;height:120px;">
+    <div data-testid="align/flex-end/item-1" style="width:60px;height:40px;background:#9c27b0;"></div>
+    <div data-testid="align/flex-end/item-2" style="width:60px;height:70px;background:#7b1fa2;"></div>
+    <div data-testid="align/flex-end/item-3" style="width:60px;height:100px;background:#6a1b9a;"></div>
+  </div>
+</div>
+
+<div class="section">
+  <div class="label">align-items: stretch</div>
+  <div data-testid="align/stretch"
+       style="display:flex;align-items:stretch;gap:8px;background:#f3e5f5;padding:10px;width:400px;height:120px;">
+    <div data-testid="align/stretch/item-1" style="width:60px;background:#9c27b0;"></div>
+    <div data-testid="align/stretch/item-2" style="width:60px;background:#7b1fa2;"></div>
+    <div data-testid="align/stretch/item-3" style="width:60px;background:#6a1b9a;"></div>
+  </div>
+</div>
+
+<!-- ==================== 5. Flexbox: flex-grow ==================== -->
+<div class="section">
+  <div class="label">flex-grow: 1 中间项</div>
+  <div data-testid="flex-grow/container"
+       style="display:flex;gap:8px;background:#ffebee;padding:10px;width:600px;height:60px;">
+    <div data-testid="flex-grow/fixed-1" style="width:100px;background:#f44336;"></div>
+    <div data-testid="flex-grow/grow"    style="flex-grow:1;background:#e53935;"></div>
+    <div data-testid="flex-grow/fixed-2" style="width:100px;background:#d32f2f;"></div>
+  </div>
+</div>
+
+<div class="section">
+  <div class="label">flex-grow 按比例 1:2:1</div>
+  <div data-testid="flex-ratio/container"
+       style="display:flex;gap:8px;background:#ffebee;padding:10px;width:600px;height:60px;">
+    <div data-testid="flex-ratio/grow-1a" style="flex-grow:1;background:#f44336;"></div>
+    <div data-testid="flex-ratio/grow-2"  style="flex-grow:2;background:#e53935;"></div>
+    <div data-testid="flex-ratio/grow-1b" style="flex-grow:1;background:#d32f2f;"></div>
+  </div>
+</div>
+
+<!-- ==================== 6. Flexbox: flex-wrap ==================== -->
+<div class="section">
+  <div class="label">flex-wrap: wrap</div>
+  <div data-testid="flex-wrap/container"
+       style="display:flex;flex-wrap:wrap;gap:8px;background:#e0f7fa;padding:10px;width:400px;">
+    <div data-testid="flex-wrap/item-1" style="width:100px;height:50px;background:#00bcd4;"></div>
+    <div data-testid="flex-wrap/item-2" style="width:100px;height:50px;background:#00acc1;"></div>
+    <div data-testid="flex-wrap/item-3" style="width:100px;height:50px;background:#0097a7;"></div>
+    <div data-testid="flex-wrap/item-4" style="width:100px;height:50px;background:#00838f;"></div>
+    <div data-testid="flex-wrap/item-5" style="width:100px;height:50px;background:#006064;"></div>
+  </div>
+</div>
+
+<!-- ==================== 7. 定位 Positioning ==================== -->
+<div class="section">
+  <div class="label">position: relative</div>
+  <div style="background:#e8eaf6;padding:20px;width:400px;height:150px;">
+    <div data-testid="pos/relative-parent"
+         style="position:relative;width:200px;height:80px;background:#3f51b5;top:10px;left:20px;">
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <div class="label">position: absolute</div>
+  <div data-testid="pos/abs-container"
+       style="position:relative;background:#e8eaf6;width:400px;height:150px;">
+    <div data-testid="pos/abs-child"
+         style="position:absolute;width:100px;height:60px;background:#f44336;top:30px;right:20px;">
+    </div>
+  </div>
+</div>
+
+<!-- ==================== 8. min/max 尺寸 ==================== -->
+<div class="section">
+  <div class="label">min-width / max-width</div>
+  <div data-testid="minmax/min-width"
+       style="min-width:200px;max-width:400px;height:50px;background:#a5d6a7;padding:8px;">
+    min200 max400
+  </div>
+</div>
+
+<div class="section">
+  <div class="label">min-height / max-height with overflow</div>
+  <div data-testid="minmax/max-height"
+       style="min-height:50px;max-height:80px;overflow:hidden;background:#ffcc80;width:300px;padding:8px;">
+    内容超出max-height会被裁剪，这里填充足够多的内容来测试。
+    这是更多内容，确保触发max-height限制。行3。行4。行5。
+  </div>
+</div>
+
+<!-- ==================== 9. 嵌套布局 Nested ==================== -->
+<div class="section">
+  <div class="label">嵌套 Flex + 卡片网格</div>
+  <div data-testid="nested/outer"
+       style="display:flex;gap:12px;flex-wrap:wrap;background:#fce4ec;padding:12px;width:600px;">
+    <div data-testid="nested/card-1"
+         style="display:flex;flex-direction:column;gap:6px;width:180px;padding:12px;background:white;border-radius:6px;">
+      <div data-testid="nested/card-1/title" style="height:20px;background:#e91e63;border-radius:3px;"></div>
+      <div data-testid="nested/card-1/body"  style="height:40px;background:#f8bbd0;border-radius:3px;"></div>
+    </div>
+    <div data-testid="nested/card-2"
+         style="display:flex;flex-direction:column;gap:6px;width:180px;padding:12px;background:white;border-radius:6px;">
+      <div data-testid="nested/card-2/title" style="height:20px;background:#e91e63;border-radius:3px;"></div>
+      <div data-testid="nested/card-2/body"  style="height:40px;background:#f8bbd0;border-radius:3px;"></div>
+    </div>
+    <div data-testid="nested/card-3"
+         style="display:flex;flex-direction:column;gap:6px;width:180px;padding:12px;background:white;border-radius:6px;">
+      <div data-testid="nested/card-3/title" style="height:20px;background:#e91e63;border-radius:3px;"></div>
+      <div data-testid="nested/card-3/body"  style="height:40px;background:#f8bbd0;border-radius:3px;"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== 10. 行内 vs 块级 ==================== -->
+<div class="section">
+  <div class="label">display: inline vs block</div>
+  <div style="background:#f1f8e9;padding:10px;width:500px;">
+    <span data-testid="display/inline-1" style="background:#8bc34a;color:white;padding:4px 8px;">inline-1</span>
+    <span data-testid="display/inline-2" style="background:#7cb342;color:white;padding:4px 8px;">inline-2</span>
+    <div  data-testid="display/block-1"  style="background:#558b2f;color:white;padding:4px 8px;margin-top:8px;">block</div>
+  </div>
+</div>
+
+</div><!-- #test-root -->
+
+<!-- ==================== 布局数据采集脚本 ==================== -->
+<script>
+(function() {
+  function collectLayoutData() {
+    var root = document.getElementById('test-root') || document.body;
+    var elements = [];
+
+    // 先收集所有带 testid 的元素 rect，建立 testid->rect 映射
+    var rectMap = {};
+    function firstPass(el) {
+      if (!el) return;
+      var tid = el.getAttribute ? el.getAttribute('data-testid') : null;
+      if (tid) {
+        var r = el.getBoundingClientRect();
+        rectMap[tid] = { el: el, x: r.x, y: r.y, w: r.width, h: r.height,
+                         left: r.left, top: r.top, right: r.right, bottom: r.bottom };
+      }
+      var ch = el.children || [];
+      for (var i = 0; i < ch.length; i++) firstPass(ch[i]);
+    }
+    firstPass(root);
+
+    // 找最近的带 testid 的祖先
+    function nearestParentTid(el) {
+      var p = el.parentElement;
+      while (p) {
+        var t = p.getAttribute ? p.getAttribute('data-testid') : null;
+        if (t) return t;
+        p = p.parentElement;
+      }
+      return null;
+    }
+
+    // 第二轮：收集完整信息
+    function secondPass(el) {
+      if (!el) return;
+      var tid = el.getAttribute ? el.getAttribute('data-testid') : null;
+      if (tid) {
+        try {
+          var r   = el.getBoundingClientRect();
+          var ptid = nearestParentTid(el);
+          var pr  = ptid ? rectMap[ptid] : null;
+
+          // 相对父 testid 容器的偏移
+          var relX = pr ? Math.round((r.left - pr.left) * 100) / 100 : null;
+          var relY = pr ? Math.round((r.top  - pr.top)  * 100) / 100 : null;
+
+          // 内容溢出检测
+          var overflowX = el.scrollWidth  > el.clientWidth  + 1;
+          var overflowY = el.scrollHeight > el.clientHeight + 1;
+
+          // 相对父容器的中心对齐偏差（用于检测 align-items: center 等）
+          var centerOffX = null, centerOffY = null;
+          if (pr) {
+            var selfCX  = r.left   + r.width  / 2;
+            var selfCY  = r.top    + r.height / 2;
+            var parCX   = pr.left  + pr.w     / 2;
+            var parCY   = pr.top   + pr.h     / 2;
+            centerOffX  = Math.round((selfCX - parCX) * 100) / 100;
+            centerOffY  = Math.round((selfCY - parCY) * 100) / 100;
+          }
+
+          elements.push({
+            testid:      tid,
+            parentTestid: ptid,
+            // 绝对位置（调试用）
+            x:      Math.round(r.x      * 100) / 100,
+            y:      Math.round(r.y      * 100) / 100,
+            width:  Math.round(r.width  * 100) / 100,
+            height: Math.round(r.height * 100) / 100,
+            top:    Math.round(r.top    * 100) / 100,
+            left:   Math.round(r.left   * 100) / 100,
+            right:  Math.round(r.right  * 100) / 100,
+            bottom: Math.round(r.bottom * 100) / 100,
+            // 相对父容器（核心对比字段）
+            relX:   relX,
+            relY:   relY,
+            // 内部对齐偏差（相对父容器中心）
+            centerOffX: centerOffX,
+            centerOffY: centerOffY,
+            // 溢出检测
+            overflowX:   overflowX,
+            overflowY:   overflowY,
+            scrollWidth:  el.scrollWidth,
+            scrollHeight: el.scrollHeight,
+            clientWidth:  el.clientWidth,
+            clientHeight: el.clientHeight
+          });
+        } catch(e) {
+          elements.push({ testid: tid, error: String(e) });
+        }
+      }
+      var ch = el.children || [];
+      for (var i = 0; i < ch.length; i++) secondPass(ch[i]);
+    }
+
+    secondPass(root);
+
+    var viewportW = window.innerWidth  || document.documentElement.clientWidth  || 0;
+    var viewportH = window.innerHeight || document.documentElement.clientHeight || 0;
+    var data = {
+      timestamp: Date.now(),
+      viewport:  { width: viewportW, height: viewportH },
+      count:     elements.length,
+      items:     elements
+    };
+    console.log('LAYOUT_DATA:' + JSON.stringify(data));
+    return data;
+  }
+
+  setTimeout(function() {
+    try { collectLayoutData(); }
+    catch(e) { console.log('LAYOUT_ERROR:' + String(e)); }
+  }, 800);
+})();
+</script>
+
+</body>
+</html>
+

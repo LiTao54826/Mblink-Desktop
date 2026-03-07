@@ -1853,28 +1853,94 @@ static bool IsWhitespaceOnly(const std::string& text) {
     return true;
 }
 
+static std::string DebugEscapeText(const std::string& text) {
+    std::string out;
+    out.reserve(text.size() * 2);
+    for (char c : text) {
+        switch (c) {
+            case '\n': out += "\\n"; break;
+            case '\r': out += "\\r"; break;
+            case '\t': out += "\\t"; break;
+            default: out += c; break;
+        }
+    }
+    return out;
+}
+
+static const char* DebugRenderObjectTypeName(RenderObjectType type) {
+    switch (type) {
+        case RenderObjectType::TEXT: return "TEXT";
+        case RenderObjectType::INLINE: return "INLINE";
+        case RenderObjectType::INLINE_BLOCK: return "INLINE_BLOCK";
+        case RenderObjectType::BLOCK: return "BLOCK";
+        case RenderObjectType::FLEX: return "FLEX";
+        case RenderObjectType::INLINE_FLEX: return "INLINE_FLEX";
+        case RenderObjectType::GRID: return "GRID";
+        case RenderObjectType::INLINE_GRID: return "INLINE_GRID";
+        case RenderObjectType::TABLE: return "TABLE";
+        case RenderObjectType::TABLE_ROW_GROUP: return "TABLE_ROW_GROUP";
+        case RenderObjectType::TABLE_HEADER_GROUP: return "TABLE_HEADER_GROUP";
+        case RenderObjectType::TABLE_FOOTER_GROUP: return "TABLE_FOOTER_GROUP";
+        case RenderObjectType::TABLE_ROW: return "TABLE_ROW";
+        case RenderObjectType::TABLE_CELL: return "TABLE_CELL";
+        case RenderObjectType::TABLE_CAPTION: return "TABLE_CAPTION";
+        case RenderObjectType::CONTENTS: return "CONTENTS";
+        case RenderObjectType::NONE: return "NONE";
+        default: return "OTHER";
+    }
+}
+
 // Helper function to check if a render object is inline-level
-// Note: Pure whitespace text nodes in block context should be ignored
+// Inline formatting context 的文本语义必须完整保留，
+// whitespace 是否最终可见应由 white-space 处理和断行阶段决定，
+// 不能在 tree building / anonymous block grouping 阶段提前过滤。
 static bool IsInlineLevelElement(RenderObject* render_obj) {
+    static bool debug_anon_inline_ws = std::getenv("DEBUG_ANON_INLINE_WS") != nullptr;
     if (!render_obj) return false;
     RenderObjectType type = render_obj->GetType();
 
-    // For text nodes, check if it's whitespace-only
-    // In block formatting context, whitespace-only text between block elements
-    // should be ignored (CSS white-space processing)
     if (type == RenderObjectType::TEXT) {
         auto* text_obj = static_cast<RenderText*>(render_obj);
-        if (text_obj && IsWhitespaceOnly(text_obj->GetText())) {
-            return false;  // Ignore whitespace-only text in mixed block/inline context
+        std::string text = text_obj ? text_obj->GetText() : std::string();
+        bool is_ws_only = IsWhitespaceOnly(text);
+        bool result = true;
+        if (debug_anon_inline_ws) {
+            std::cout << "[ANON_WS_INLINE_CHECK] type=TEXT ptr=" << render_obj
+                      << " raw='" << DebugEscapeText(text) << "'"
+                      << " ws_only=" << (is_ws_only ? 1 : 0)
+                      << " result=" << (result ? 1 : 0)
+                      << std::endl;
         }
-        return true;
+        return result;
     }
 
-    // ✅ FIX: Use GetType() for actual render object type
-    // Inline-block elements have GetType() == INLINE_BLOCK
-    // Inline elements have GetType() == INLINE
-    return type == RenderObjectType::INLINE ||
-           type == RenderObjectType::INLINE_BLOCK;
+    bool result = type == RenderObjectType::INLINE ||
+                  type == RenderObjectType::INLINE_BLOCK;
+    if (debug_anon_inline_ws) {
+        std::cout << "[ANON_WS_INLINE_CHECK] type=" << DebugRenderObjectTypeName(type)
+                  << " ptr=" << render_obj
+                  << " result=" << (result ? 1 : 0)
+                  << std::endl;
+    }
+    return result;
+}
+
+static WhiteSpaceMode ResolveWhiteSpaceMode(const ComputedStyle& style) {
+    if (style.white_space == "pre") return WhiteSpaceMode::PRE;
+    if (style.white_space == "pre-wrap") return WhiteSpaceMode::PRE_WRAP;
+    if (style.white_space == "pre-line") return WhiteSpaceMode::PRE_LINE;
+    if (style.white_space == "nowrap") return WhiteSpaceMode::NOWRAP;
+    return WhiteSpaceMode::NORMAL;
+}
+
+static std::string NormalizeInlineTextForWhiteSpace(
+    const std::string& text,
+    const ComputedStyle& style
+) {
+    WhiteSpaceMode mode = ResolveWhiteSpaceMode(style);
+    LineBreaker breaker;
+    breaker.SetWhiteSpace(mode);
+    return breaker.ProcessWhitespace(text);
 }
 
 // Helper function to check if a render object is block-level
@@ -2133,12 +2199,28 @@ void NativeLayoutEngine::BuildSubtree(RenderObject* render_obj, NodeId parent_id
 
     // If we have mixed content, we need to create anonymous block boxes
     if (has_block && has_inline) {
+        static bool debug_anon_inline_ws = std::getenv("DEBUG_ANON_INLINE_WS") != nullptr;
         std::vector<RenderObject*> current_inline_run;
 
         for (const auto& child : children) {
+            if (debug_anon_inline_ws) {
+                std::cout << "[ANON_WS_CHILD_SCAN] parent_node=" << node_id
+                          << " child_ptr=" << child.get()
+                          << " type=" << DebugRenderObjectTypeName(child->GetType());
+                if (child->GetType() == RenderObjectType::TEXT) {
+                    auto* text_obj = static_cast<RenderText*>(child.get());
+                    std::cout << " raw='" << DebugEscapeText(text_obj ? text_obj->GetText() : std::string()) << "'";
+                }
+                std::cout << std::endl;
+            }
+
             if (IsBlockLevelElement(child.get())) {
                 // If we have accumulated inline elements, create an anonymous block for them
                 if (!current_inline_run.empty()) {
+                    if (debug_anon_inline_ws) {
+                        std::cout << "[ANON_WS_FLUSH_RUN] parent_node=" << node_id
+                                  << " run_size=" << current_inline_run.size() << std::endl;
+                    }
                     CreateAnonymousBlockBox(node_id, current_inline_run);
                     current_inline_run.clear();
                 }
@@ -2147,6 +2229,16 @@ void NativeLayoutEngine::BuildSubtree(RenderObject* render_obj, NodeId parent_id
             } else if (IsInlineLevelElement(child.get())) {
                 // Accumulate inline elements
                 current_inline_run.push_back(child.get());
+                if (debug_anon_inline_ws) {
+                    std::cout << "[ANON_WS_PUSH_RUN] parent_node=" << node_id
+                              << " child_ptr=" << child.get()
+                              << " type=" << DebugRenderObjectTypeName(child->GetType());
+                    if (child->GetType() == RenderObjectType::TEXT) {
+                        auto* text_obj = static_cast<RenderText*>(child.get());
+                        std::cout << " raw='" << DebugEscapeText(text_obj ? text_obj->GetText() : std::string()) << "'";
+                    }
+                    std::cout << std::endl;
+                }
             } else {
                 // Other elements (display:none, etc.) - process normally
                 BuildSubtree(child.get(), node_id);
@@ -2155,6 +2247,10 @@ void NativeLayoutEngine::BuildSubtree(RenderObject* render_obj, NodeId parent_id
 
         // Don't forget the last run of inline elements
         if (!current_inline_run.empty()) {
+            if (debug_anon_inline_ws) {
+                std::cout << "[ANON_WS_FLUSH_RUN] parent_node=" << node_id
+                          << " run_size=" << current_inline_run.size() << std::endl;
+            }
             CreateAnonymousBlockBox(node_id, current_inline_run);
         }
     } else {
@@ -2168,6 +2264,8 @@ void NativeLayoutEngine::BuildSubtree(RenderObject* render_obj, NodeId parent_id
 NodeId NativeLayoutEngine::CreateAnonymousBlockBox(NodeId parent_id, const std::vector<RenderObject*>& inline_children) {
     if (inline_children.empty()) return 0;
 
+    static bool debug_anon_inline_ws = std::getenv("DEBUG_ANON_INLINE_WS") != nullptr;
+
     // Create a new node ID for the anonymous block
     NodeId anon_id = next_node_id_++;
 
@@ -2178,10 +2276,26 @@ NodeId NativeLayoutEngine::CreateAnonymousBlockBox(NodeId parent_id, const std::
     anon_node.is_anonymous_block = true;
     anon_node.is_ifc_container = true;  // Anonymous blocks use IFC for their inline content
 
+    if (debug_anon_inline_ws) {
+        std::cout << "[ANON_WS_CREATE_BLOCK] parent_node=" << parent_id
+                  << " anon_node=" << anon_id
+                  << " child_count=" << inline_children.size() << std::endl;
+    }
+
     // Store the inline children for later IFC layout
     // Also register them in render_to_node_ to prevent duplicate node creation
     // during incremental layout updates (e.g., when AddElement is called)
     for (RenderObject* child : inline_children) {
+        if (debug_anon_inline_ws) {
+            std::cout << "[ANON_WS_BLOCK_CHILD] anon_node=" << anon_id
+                      << " child_ptr=" << child
+                      << " type=" << DebugRenderObjectTypeName(child ? child->GetType() : RenderObjectType::TEXT);
+            if (child && child->GetType() == RenderObjectType::TEXT) {
+                auto* text_obj = static_cast<RenderText*>(child);
+                std::cout << " raw='" << DebugEscapeText(text_obj ? text_obj->GetText() : std::string()) << "'";
+            }
+            std::cout << std::endl;
+        }
         anon_node.anonymous_inline_children.push_back(child);
         // Register the inline child's RenderObject to prevent it from being
         // added again as a separate layout node. Use a special marker (anon_id)
@@ -2916,12 +3030,24 @@ LayoutOutput NativeLayoutEngine::ComputeIFCLayout(NodeId node_id, const LayoutIn
     }
 
     // Apply min/max constraints
-    // Note: min-height and max-height need to be applied even for IFC containers
+    // Note: min-height and max-height 默认约束 content-box。
+    // 当前 total_height / total_width 已经包含 padding + border，
+    // 因此在 content-box 模式下需要把 padding/border 加回去再做外框约束。
     // CSS spec: when min > max, min wins (apply max first, then min)
     float min_height = style.min_height.ToPx(0, style.font_size);
     float max_height = style.max_height.ToPx(0, style.font_size);
     float min_width = style.min_width.ToPx(container_width, style.font_size);
     float max_width = style.max_width.ToPx(container_width, style.font_size);
+
+    float vertical_non_content = padding_top + padding_bottom + border_top + border_bottom;
+    float horizontal_non_content = padding_left + padding_right + border_left + border_right;
+
+    if (style.box_sizing != "border-box") {
+        if (min_height > 0) min_height += vertical_non_content;
+        if (max_height > 0) max_height += vertical_non_content;
+        if (min_width > 0) min_width += horizontal_non_content;
+        if (max_width > 0) max_width += horizontal_non_content;
+    }
 
     // Apply max first, then min - ensures min wins when min > max
     if (max_height > 0) {
@@ -3232,6 +3358,7 @@ LayoutOutput NativeLayoutEngine::ComputeAnonymousBlockIFCLayout(NodeId node_id, 
 
     // Collect inline boxes from all inline children
     std::vector<InlineBox> all_inline_boxes;
+    static bool debug_anon_inline_ws = std::getenv("DEBUG_ANON_INLINE_WS") != nullptr;
 
     for (RenderObject* inline_child : node->anonymous_inline_children) {
         if (!inline_child) continue;
@@ -3245,11 +3372,21 @@ LayoutOutput NativeLayoutEngine::ComputeAnonymousBlockIFCLayout(NodeId node_id, 
             const std::string& text = text_obj->GetText();
             if (text.empty()) continue;
 
-            // Measure text
             float letter_spacing = child_style.letter_spacing.ToPx(0, child_style.font_size);
             float word_spacing = child_style.word_spacing.ToPx(0, child_style.font_size);
+
+            std::string processed_text = NormalizeInlineTextForWhiteSpace(text, child_style);
+            if (debug_anon_inline_ws) {
+                std::cout << "[ANON_WS_TEXT_BOX] node=" << node->id
+                          << " child_ptr=" << inline_child
+                          << " raw='" << DebugEscapeText(text) << "'"
+                          << " processed='" << DebugEscapeText(processed_text) << "'"
+                          << std::endl;
+            }
+            if (processed_text.empty()) continue;
+
             auto measurement = IFCLayout::MeasureTextStatic(
-                text, child_style.font_size, child_style.font_family,
+                processed_text, child_style.font_size, child_style.font_family,
                 letter_spacing, word_spacing, child_style.line_height,
                 child_style.font_weight, child_style.font_style);
 
@@ -3262,13 +3399,23 @@ LayoutOutput NativeLayoutEngine::ComputeAnonymousBlockIFCLayout(NodeId node_id, 
             box.line_height_multiplier = child_style.line_height;
 
             TextRun run;
-            run.text = text;
+            run.text = processed_text;
             run.start_offset = 0;
-            run.end_offset = text.size();
+            run.end_offset = processed_text.size();
             run.width = measurement.width;
             run.height = measurement.height;
             run.baseline = measurement.skia_ascent;
+            run.is_whitespace = run.IsOnlyWhitespace();
             box.text_runs.push_back(run);
+
+            if (debug_anon_inline_ws) {
+                std::cout << "[ANON_WS_TEXT_MEASURE] node=" << node->id
+                          << " child_ptr=" << inline_child
+                          << " width=" << measurement.width
+                          << " height=" << measurement.height
+                          << " is_whitespace=" << (run.is_whitespace ? 1 : 0)
+                          << std::endl;
+            }
 
             all_inline_boxes.push_back(std::move(box));
         }
@@ -3300,12 +3447,19 @@ LayoutOutput NativeLayoutEngine::ComputeAnonymousBlockIFCLayout(NodeId node_id, 
 
     // Use LineBreaker to break into lines
     LineBreaker line_breaker;
-    line_breaker.SetWhiteSpace(WhiteSpaceMode::NORMAL);
     line_breaker.SetOverflowWrap(OverflowWrapMode::NORMAL);
 
-    // Configure word-break from parent style
+    // 对齐主 IFC 的 white-space / word-break 处理
     if (parent && parent->render_obj) {
         const auto& parent_style = parent->render_obj->GetComputedStyle();
+        if (parent_style.white_space == "pre" || parent_style.white_space == "pre-wrap") {
+            line_breaker.SetWhiteSpace(WhiteSpaceMode::PRE_WRAP);
+        } else if (parent_style.white_space == "nowrap") {
+            line_breaker.SetWhiteSpace(WhiteSpaceMode::NOWRAP);
+        } else {
+            line_breaker.SetWhiteSpace(WhiteSpaceMode::NORMAL);
+        }
+
         if (parent_style.word_break == "break-all") {
             line_breaker.SetWordBreak(WordBreakMode::BREAK_ALL);
         } else if (parent_style.word_break == "keep-all") {
@@ -3318,6 +3472,7 @@ LayoutOutput NativeLayoutEngine::ComputeAnonymousBlockIFCLayout(NodeId node_id, 
             line_breaker.SetWordBreak(WordBreakMode::NORMAL);
         }
     } else {
+        line_breaker.SetWhiteSpace(WhiteSpaceMode::NORMAL);
         line_breaker.SetWordBreak(WordBreakMode::NORMAL);
     }
 
@@ -3381,11 +3536,39 @@ LayoutOutput NativeLayoutEngine::ComputeAnonymousBlockIFCLayout(NodeId node_id, 
         float current_x = line.x;
         for (auto* box : line.boxes) {
             if (!box) continue;
-            // 盒子的 x 位置是内容区域的起始位置（在 margin_left 之后）
-            // current_x 指向当前可用空间的起始位置
-            current_x += box->margin_left;  // 先跳过左边距
-            box->x = current_x;             // 内容区域从这里开始
-            current_x += box->width + box->margin_right;  // 移动到下一个盒子的起始位置
+
+            if (box->IsInlineStart()) {
+                // INLINE_START：跳过左侧 margin + padding + border，推进 current_x
+                // 这样后续文本盒的 x 会正确从 padding 之后开始
+                current_x += box->margin_left + box->padding_left + box->border_left;
+                box->x = current_x;
+                // width = 0，右侧由对应 INLINE_END 处理
+            } else if (box->IsInlineEnd()) {
+                // INLINE_END：先记录当前位置，再跳过右侧 padding + border + margin
+                box->x = current_x;
+                current_x += box->padding_right + box->border_right + box->margin_right;
+            } else {
+                // TEXT 或 ATOMIC：正常处理 margin + width
+                current_x += box->margin_left;  // 先跳过左边距
+                box->x = current_x;             // 内容区域从这里开始
+                current_x += box->width + box->margin_right;  // 移动到下一个盒子的起始位置
+            }
+
+            if (debug_anon_inline_ws) {
+                std::cout << "[ANON_WS_BOX_POS] node=" << node->id
+                          << " type="
+                          << (box->IsInlineStart() ? "INLINE_START" :
+                              box->IsInlineEnd() ? "INLINE_END" :
+                              box->IsText() ? "TEXT" :
+                              box->IsAtomic() ? "ATOMIC" : "OTHER")
+                          << " render_obj=" << box->render_object
+                          << " x=" << box->x
+                          << " w=" << box->width;
+                if (box->IsText() && !box->text_runs.empty()) {
+                    std::cout << " text='" << DebugEscapeText(box->text_runs[0].text) << "'";
+                }
+                std::cout << std::endl;
+            }
         }
 
         // Apply vertical alignment
@@ -3488,8 +3671,12 @@ void NativeLayoutEngine::CollectInlineBoxesRecursive(
 
             float letter_spacing = child_style.letter_spacing.ToPx(0, child_style.font_size);
             float word_spacing = child_style.word_spacing.ToPx(0, child_style.font_size);
+
+            std::string processed_text = NormalizeInlineTextForWhiteSpace(text, child_style);
+            if (processed_text.empty()) continue;
+
             auto measurement = IFCLayout::MeasureTextStatic(
-                text, child_style.font_size, child_style.font_family,
+                processed_text, child_style.font_size, child_style.font_family,
                 letter_spacing, word_spacing, child_style.line_height,
                 child_style.font_weight, child_style.font_style);
 
@@ -3502,12 +3689,13 @@ void NativeLayoutEngine::CollectInlineBoxesRecursive(
             box.line_height_multiplier = child_style.line_height;
 
             TextRun run;
-            run.text = text;
+            run.text = processed_text;
             run.start_offset = 0;
-            run.end_offset = text.size();
+            run.end_offset = processed_text.size();
             run.width = measurement.width;
             run.height = measurement.height;
             run.baseline = measurement.skia_ascent;
+            run.is_whitespace = run.IsOnlyWhitespace();
             box.text_runs.push_back(run);
 
             inline_boxes.push_back(std::move(box));
@@ -3546,9 +3734,11 @@ void NativeLayoutEngine::ApplyAnonymousBlockLayoutResults(LayoutNode* node) {
     // 预聚合：把匿名块 IFC 的实际断行结果同步给 RenderText
     std::unordered_map<RenderObject*, std::vector<std::string>> text_wrapped_lines;
     std::unordered_map<RenderObject*, std::vector<float>> text_wrapped_line_first_x;
+    std::unordered_map<RenderObject*, std::vector<float>> text_wrapped_line_first_y;
     for (const auto& line_box : node->ifc_line_boxes) {
         std::unordered_map<RenderObject*, std::string> line_fragments;
         std::unordered_map<RenderObject*, float> line_first_x;
+        std::unordered_map<RenderObject*, float> line_first_y;
 
         for (InlineBox* line_box_item : line_box.boxes) {
             if (!line_box_item || !line_box_item->IsText() || !line_box_item->render_object) continue;
@@ -3563,6 +3753,7 @@ void NativeLayoutEngine::ApplyAnonymousBlockLayoutResults(LayoutNode* node) {
 
             if (line_first_x.find(text_render_obj) == line_first_x.end()) {
                 line_first_x[text_render_obj] = line_box_item->x + offset_x;
+                line_first_y[text_render_obj] = line_box_item->y + offset_y;
             }
         }
 
@@ -3572,6 +3763,9 @@ void NativeLayoutEngine::ApplyAnonymousBlockLayoutResults(LayoutNode* node) {
             auto it_x = line_first_x.find(text_obj);
             text_wrapped_line_first_x[text_obj].push_back(
                 it_x != line_first_x.end() ? it_x->second : 0.0f);
+            auto it_y = line_first_y.find(text_obj);
+            text_wrapped_line_first_y[text_obj].push_back(
+                it_y != line_first_y.end() ? it_y->second : 0.0f);
         }
     }
 
@@ -3645,6 +3839,12 @@ void NativeLayoutEngine::ApplyAnonymousBlockLayoutResults(LayoutNode* node) {
 
         for (RenderObject* inline_elem : inline_stack) {
             auto& b = inline_bounds[inline_elem];
+            // [BugFix] 记录首片段位置，用于多行 inline 元素的 layout 起点
+            if (!b.has_content) {
+                b.first_x = box_left;
+                b.first_y = box_top;
+                b.has_first = true;
+            }
             b.min_x = std::min(b.min_x, box_left);
             b.min_y = std::min(b.min_y, box_top);
             b.max_x = std::max(b.max_x, box_right);
@@ -3654,13 +3854,41 @@ void NativeLayoutEngine::ApplyAnonymousBlockLayoutResults(LayoutNode* node) {
     }
 
     // 第二遍：内联元素边界
+    // [BugFix] 计算 inline 元素的 layout 时需要包含 padding 和 border，
+    // 与 ifc_layout.cpp 中 ApplyLayoutResults 的第二遍逻辑保持一致。
+    // 原实现只使用 min_x/min_y 作为 layout.x/y，不包含 padding/border，
+    // 导致背景绘制区域仅覆盖文本内容而非整个 padding+border 区域。
     for (auto& [render_obj, b] : inline_bounds) {
         if (!b.has_content) continue;
+
+        const auto& iline_style = render_obj->GetComputedStyle();
+        float ipl = iline_style.padding.left.ToPx(0.0f, iline_style.font_size);
+        float ipr = iline_style.padding.right.ToPx(0.0f, iline_style.font_size);
+        float ipt = iline_style.padding.top.ToPx(0.0f, iline_style.font_size);
+        float ipb = iline_style.padding.bottom.ToPx(0.0f, iline_style.font_size);
+        // 优先使用分侧 border 宽度，回退到统一 border.width
+        float ibl = (iline_style.border_left_width > 0.0f)
+                        ? iline_style.border_left_width
+                        : iline_style.border.width.ToPx(0.0f, iline_style.font_size);
+        float ibr = (iline_style.border_right_width > 0.0f)
+                        ? iline_style.border_right_width
+                        : iline_style.border.width.ToPx(0.0f, iline_style.font_size);
+        float ibt = (iline_style.border_top_width > 0.0f)
+                        ? iline_style.border_top_width
+                        : iline_style.border.width.ToPx(0.0f, iline_style.font_size);
+        float ibb = (iline_style.border_bottom_width > 0.0f)
+                        ? iline_style.border_bottom_width
+                        : iline_style.border.width.ToPx(0.0f, iline_style.font_size);
+
         LayoutInfo& layout = render_obj->GetLayoutInfo();
-        layout.x = b.min_x;
-        layout.y = b.min_y;
-        layout.width = b.max_x - b.min_x;
-        layout.height = b.max_y - b.min_y;
+        // 用首片段位置（first_x）定位 border-box 左上角，向左/上扩展 padding+border
+        float origin_x = b.has_first ? b.first_x : b.min_x;
+        float origin_y = b.has_first ? b.first_y : b.min_y;
+        layout.x = origin_x - ipl - ibl;
+        layout.y = origin_y - ipt - ibt;
+        // 宽高加上两侧 padding + border
+        layout.width  = (b.max_x - b.min_x) + ipl + ipr + ibl + ibr;
+        layout.height = (b.max_y - b.min_y) + ipt + ipb + ibt + ibb;
         layout.is_laid_out = true;
     }
 
@@ -3684,30 +3912,43 @@ void NativeLayoutEngine::ApplyAnonymousBlockLayoutResults(LayoutNode* node) {
         layout.is_laid_out = true;
     }
 
-    // 第四遍：同步 IFC 实际分行与每行 x 偏移到 RenderText
+    // 第四遍：同步 IFC 实际分行与每行 x/y 偏移到 RenderText
     for (auto& [render_obj, lines] : text_wrapped_lines) {
         if (!render_obj || render_obj->GetType() != RenderObjectType::TEXT) continue;
 
         auto it_x = text_wrapped_line_first_x.find(render_obj);
+        auto it_y = text_wrapped_line_first_y.find(render_obj);
         const std::vector<float> empty_offsets;
         const std::vector<float>& line_abs_x_list = (it_x != text_wrapped_line_first_x.end()) ? it_x->second : empty_offsets;
+        const std::vector<float>& line_abs_y_list = (it_y != text_wrapped_line_first_y.end()) ? it_y->second : empty_offsets;
 
         const LayoutInfo& text_layout = render_obj->GetLayoutInfo();
         float abs_text_origin_x = text_layout.x;
+        float abs_text_origin_y = text_layout.y;
         auto parent = render_obj->GetParent();
         if (parent && parent->GetType() == RenderObjectType::INLINE) {
             abs_text_origin_x += parent->GetLayoutInfo().x;
+            abs_text_origin_y += parent->GetLayoutInfo().y;
         }
 
-        std::vector<float> local_offsets;
-        local_offsets.reserve(line_abs_x_list.size());
+        std::vector<float> local_x_offsets;
+        local_x_offsets.reserve(line_abs_x_list.size());
         for (float abs_x : line_abs_x_list) {
-            local_offsets.push_back(abs_x - abs_text_origin_x);
+            local_x_offsets.push_back(abs_x - abs_text_origin_x);
+        }
+
+        std::vector<float> local_y_offsets;
+        local_y_offsets.reserve(line_abs_y_list.size());
+        for (float abs_y : line_abs_y_list) {
+            local_y_offsets.push_back(abs_y - abs_text_origin_y);
         }
 
         auto* text_obj = static_cast<RenderText*>(render_obj);
-        if (!local_offsets.empty() && local_offsets.size() == lines.size()) {
-            text_obj->SetWrappedLinesWithOffsets(lines, local_offsets);
+        if (!local_x_offsets.empty() && local_x_offsets.size() == lines.size() &&
+            !local_y_offsets.empty() && local_y_offsets.size() == lines.size()) {
+            text_obj->SetWrappedLinesWithOffsets(lines, local_x_offsets, local_y_offsets);
+        } else if (!local_x_offsets.empty() && local_x_offsets.size() == lines.size()) {
+            text_obj->SetWrappedLinesWithOffsets(lines, local_x_offsets);
         } else {
             text_obj->SetWrappedLines(lines);
         }

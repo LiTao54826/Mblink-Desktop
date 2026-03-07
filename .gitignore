@@ -96,3 +96,4 @@ test_*.bat
 参考/
 .hypothesis/
 .devtools_state.json
+reports/

@@ -59,10 +59,25 @@ BoxVerticalMetrics VerticalAligner::GetBoxMetrics(const InlineBox& box) {
         metrics.descent = box.margin_bottom;
         metrics.baseline = box.margin_top + box.height;
     } else {
-        // 其他（inline-start, inline-end）
-        // 使用父元素的度量
-        metrics.ascent = box.height * 0.8f;
-        metrics.descent = box.height * 0.2f;
+        // INLINE_START 或 INLINE_END：
+        // [Bug4 Fix] 优先使用 Bug1 修复后由 CreateInlineStart 填充的 skia_ascent/skia_descent，
+        // 这样 inline 元素（如 <span>）能作为 strut 参与行高计算。
+        // 若字段有效（非零），则直接使用；否则退回到 box.height 的 80/20 估算。
+        if (box.skia_ascent > 0.0f || box.skia_descent > 0.0f) {
+            float content_h = box.skia_ascent + box.skia_descent;
+            if (box.height > content_h) {
+                float half_leading = (box.height - content_h) / 2.0f;
+                metrics.ascent  = box.skia_ascent + half_leading;
+                metrics.descent = box.skia_descent + half_leading;
+            } else {
+                metrics.ascent  = box.skia_ascent;
+                metrics.descent = box.skia_descent;
+            }
+        } else {
+            metrics.ascent  = box.height * 0.8f;
+            metrics.descent = box.height * 0.2f;
+        }
+        metrics.height   = box.height;
         metrics.baseline = metrics.ascent;
     }
 

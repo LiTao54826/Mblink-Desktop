@@ -292,6 +292,11 @@ void RenderText::Paint(SkCanvas* canvas) {
             line_x = wrapped_line_x_offsets_[i];
         }
 
+        float line_y = current_y;
+        if (i < wrapped_line_y_offsets_.size()) {
+            line_y = wrapped_line_y_offsets_[i] + baseline_y;
+        }
+
         if (!line.empty()) {
             std::string text_to_render = line;
 
@@ -337,11 +342,11 @@ void RenderText::Paint(SkCanvas* canvas) {
 
             if (!style.text_shadow.empty()) {
                 ShadowRenderer::RenderTextWithShadow(canvas, text_to_render, font,
-                                                     line_x, current_y, text_color, style.text_shadow, text_renderer);
+                                                     line_x, line_y, text_color, style.text_shadow, text_renderer);
             } else {
                 lightui::Paint text_paint;
                 text_paint.SetColor(text_color);
-                text_renderer.DrawTextWithEmoji(text_to_render, line_x, current_y, font, text_paint);
+                text_renderer.DrawTextWithEmoji(text_to_render, line_x, line_y, font, text_paint);
             }
         }
         current_y += line_height;

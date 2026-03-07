@@ -1441,6 +1441,7 @@ public:
     void SetWrappedLines(const std::vector<std::string>& lines) {
         wrapped_lines_ = lines;
         wrapped_line_x_offsets_.clear();
+        wrapped_line_y_offsets_.clear();
     }
 
     // Set wrapped lines with per-line x offsets (from IFC line fragments)
@@ -1448,6 +1449,16 @@ public:
                                     const std::vector<float>& x_offsets) {
         wrapped_lines_ = lines;
         wrapped_line_x_offsets_ = x_offsets;
+        wrapped_line_y_offsets_.clear();
+    }
+
+    // Set wrapped lines with per-line x/y offsets (from IFC line fragments)
+    void SetWrappedLinesWithOffsets(const std::vector<std::string>& lines,
+                                    const std::vector<float>& x_offsets,
+                                    const std::vector<float>& y_offsets) {
+        wrapped_lines_ = lines;
+        wrapped_line_x_offsets_ = x_offsets;
+        wrapped_line_y_offsets_ = y_offsets;
     }
 
     // Get/Set actual measured text width (for text-align calculation)
@@ -1461,6 +1472,7 @@ private:
     std::string text_;
     std::vector<std::string> wrapped_lines_;  // Cached wrapped lines for rendering
     std::vector<float> wrapped_line_x_offsets_;  // Per-line x offset in local coordinates
+    std::vector<float> wrapped_line_y_offsets_;  // Per-line y offset in local coordinates
     float actual_text_width_ = 0.0f;  // Actual measured text width (for text-align)
 };
 
