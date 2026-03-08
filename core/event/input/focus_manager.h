@@ -44,6 +44,14 @@ public:
     void SetWindow(Window* window) { window_ = window; }
 
     /**
+     * @brief 刷新当前焦点元素的 IME 文本输入区域
+     *
+     * 将可编辑控件的可见输入区域与插入点位置同步给 SDL，
+     * 使平台输入法候选窗能够贴近当前光标显示。
+     */
+    void UpdateTextInputArea();
+
+    /**
      * @brief 设置焦点到指定元素
      * @param element 要获得焦点的元素
      * @param focus_visible 是否显示焦点指示器（键盘导航时为true）

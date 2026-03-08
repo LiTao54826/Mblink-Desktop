@@ -97,3 +97,5 @@ test_*.bat
 .hypothesis/
 .devtools_state.json
 reports/
+.gitnexus
+.claude/

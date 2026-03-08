@@ -102,6 +102,13 @@ private:
                          std::shared_ptr<Element> focus_element,
                          std::shared_ptr<Document> document);
 
+    /**
+     * @brief 处理 IME 预编辑事件
+     */
+    void HandleTextEditing(const SDL_Event& event,
+                           std::shared_ptr<Element> focus_element,
+                           std::shared_ptr<Document> document);
+
 private:
     // 依赖的管理器（不拥有所有权）
     FocusManager* focus_manager_ = nullptr;

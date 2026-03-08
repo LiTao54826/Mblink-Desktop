@@ -612,6 +612,9 @@ void Window::InitSDL() {
         // 允许点击穿透：当窗口失去焦点后，点击窗口时同时激活窗口并生成点击事件
         // 解决"窗口失去焦点后直接点击按钮需要点击两次才能响应"的问题
         SDL_SetHint(SDL_HINT_MOUSE_FOCUS_CLICKTHROUGH, "1");
+        // 由应用自行绘制 composition 文本，避免 Windows 原生 composition UI 字号/样式
+        // 与页面字体不同步；候选窗仍可继续使用系统原生 UI。
+        SDL_SetHint(SDL_HINT_IME_IMPLEMENTED_UI, "composition");
 
         if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS)) {
             throw std::runtime_error(std::string("Failed to initialize SDL: ") + SDL_GetError());

@@ -26,8 +26,9 @@ bool InputHandler::HandleSDLEvent(const SDL_Event& event) {
         case SDL_EVENT_KEY_DOWN:
         case SDL_EVENT_KEY_UP:
         case SDL_EVENT_TEXT_INPUT:
+        case SDL_EVENT_TEXT_EDITING:
             return HandleKeyboardEvent(event);
-            
+
         default:
             return false;
     }

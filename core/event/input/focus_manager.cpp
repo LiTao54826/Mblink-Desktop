@@ -11,12 +11,128 @@
 #include "core/dom/elements/html_input_element.h"
 #include "core/dom/elements/html_textarea_element.h"
 #include "core/window/window.h"
+#include "core/render/input/input_paint_model.h"
+#include "core/render/input/text_edit_metrics.h"
 #include "core/render/objects/render_object.h"
 #include "core/render/pipeline/render_pipeline.h"
+#include "core/render/text/font_manager.h"
+#include "core/utils/utf8_utils.h"
+#include "include/core/SkFontMetrics.h"
 #include <SDL3/SDL.h>
+#include <algorithm>
+#include <cmath>
 #include <iostream>
 
 namespace lightui {
+
+namespace {
+
+float GetBrowserNormalLineHeight(float font_size, const std::string& font_family) {
+    const bool is_monospace = (font_family == "Courier New" || font_family == "Consolas" ||
+                               font_family == "monospace" || font_family == "Courier" ||
+                               font_family == "Monaco" || font_family == "Menlo");
+    const int font_size_int = static_cast<int>(font_size + 0.5f);
+
+    if (is_monospace) {
+        switch (font_size_int) {
+            case 13: return 15.0f;
+            case 16: return 18.5f;
+            default: {
+                const float line_height = font_size * 1.156f;
+                return std::round(line_height * 2.0f) / 2.0f;
+            }
+        }
+    }
+
+    switch (font_size_int) {
+        case 10: return 11.5f;
+        case 11: return 13.0f;
+        case 12: return 14.0f;
+        case 13: return 15.0f;
+        case 14: return 16.0f;
+        case 15: return 17.5f;
+        case 16: return 18.5f;
+        case 17: return 19.5f;
+        case 18: return 21.0f;
+        case 19: return 22.0f;
+        case 20: return 23.0f;
+        case 22: return 25.5f;
+        case 24: return 28.0f;
+        case 32: return 37.0f;
+        default: {
+            const float line_height = font_size * 1.156f;
+            return std::round(line_height * 2.0f) / 2.0f;
+        }
+    }
+}
+
+float ResolveCssLineHeight(const ComputedStyle& style) {
+    if (std::abs(style.line_height - 1.2f) < 0.001f) {
+        return GetBrowserNormalLineHeight(style.font_size, style.font_family);
+    }
+    return std::max(1.0f, style.line_height * style.font_size);
+}
+
+bool IsTextInputTarget(const std::shared_ptr<Element>& element) {
+    if (!element) {
+        return false;
+    }
+
+    const std::string tag_name = element->GetTagName();
+    return tag_name == "input" || tag_name == "textarea" || tag_name == "terminal" || element->IsContentEditable();
+}
+
+SkFont BuildElementFont(const RenderObject* render_object) {
+    FontDescriptor desc;
+    if (render_object) {
+        const auto& style = render_object->GetComputedStyle();
+        desc.family = style.font_family.empty() ? "Arial" : style.font_family;
+        desc.size = style.font_size > 0.0f ? style.font_size : 16.0f;
+    }
+    return FontManager::GetInstance().LoadFont(desc);
+}
+
+bool IsImeDebugEnabled() {
+    static const bool enabled = std::getenv("LIGHTUI_DEBUG_IME_AREA") != nullptr;
+    return enabled;
+}
+
+void LogImeAreaDebug(const std::string& tag,
+                     const std::shared_ptr<Element>& element,
+                     const ComputedStyle& style,
+                     const SDL_Rect& area,
+                     int cursor,
+                     float display_scale,
+                     float glyph_height,
+                     float css_line_height,
+                     float content_x,
+                     float content_y,
+                     float content_width,
+                     float content_height,
+                     float area_x,
+                     float area_y,
+                     float area_width,
+                     float area_height) {
+    if (!IsImeDebugEnabled()) {
+        return;
+    }
+
+    const std::string tag_name = element ? element->GetTagName() : "<null>";
+    std::cout << "[IME_AREA] tag=" << tag
+              << " element=" << tag_name
+              << " font_size=" << style.font_size
+              << " line_height_mul=" << style.line_height
+              << " css_line_height=" << css_line_height
+              << " glyph_height=" << glyph_height
+              << " content=(" << content_x << "," << content_y << "," << content_width << "," << content_height << ")"
+              << " area_logical=(" << area_x << "," << area_y << "," << area_width << "," << area_height << ")"
+              << " area_pixels=(" << area.x << "," << area.y << "," << area.w << "," << area.h << ")"
+              << " cursor=" << cursor
+              << " scale=" << display_scale
+              << std::endl;
+}
+
+} // namespace
 
 FocusManager::FocusManager() {
 }
@@ -68,6 +184,7 @@ bool FocusManager::SetFocus(std::shared_ptr<Element> element, bool focus_visible
 
     // 如果已经是焦点元素，不需要重复设置
     if (old_focus == element) {
+        UpdateTextInputArea();
         return true;
     }
 
@@ -91,12 +208,9 @@ bool FocusManager::SetFocus(std::shared_ptr<Element> element, bool focus_visible
         doc->SetActiveElement(element);
     }
 
-    // 如果是输入元素、contentEditable 元素或终端元素，启用SDL文本输入
-    std::string tag_name = element->GetTagName();
-    if (tag_name == "input" || tag_name == "textarea" || tag_name == "terminal" || element->IsContentEditable()) {
-        if (window_) {
-            SDL_StartTextInput(window_->GetSDLWindow());
-        }
+    if (IsTextInputTarget(element) && window_) {
+        SDL_StartTextInput(window_->GetSDLWindow());
+        UpdateTextInputArea();
     }
 
     // 关键修复：标记新旧焦点元素的 RenderObject 需要重绘
@@ -163,6 +277,154 @@ void FocusManager::Blur(std::shared_ptr<Element> element) {
             }
         }
     }
+}
+
+void FocusManager::UpdateTextInputArea() {
+    auto element = focus_element_.lock();
+    if (!window_ || !element || !IsTextInputTarget(element)) {
+        return;
+    }
+
+    SDL_Window* sdl_window = window_->GetSDLWindow();
+    auto render_object = element->GetRenderObject();
+    if (!sdl_window || !render_object) {
+        return;
+    }
+
+    if (!SDL_TextInputActive(sdl_window)) {
+        SDL_StartTextInput(sdl_window);
+    }
+
+    const auto& viewport_bounds = render_object->GetViewportBounds().valid
+        ? render_object->GetViewportBounds()
+        : (render_object->UpdateViewportBounds(), render_object->GetViewportBounds());
+    if (!viewport_bounds.valid) {
+        return;
+    }
+
+    const auto& style = render_object->GetComputedStyle();
+
+    SkFont font = BuildElementFont(render_object.get());
+    SkFontMetrics metrics;
+    font.getMetrics(&metrics);
+    const float glyph_height = std::max(1.0f, -metrics.fAscent + metrics.fDescent);
+    const float css_line_height = ResolveCssLineHeight(style);
+
+    const float layout_width = render_object->GetLayoutInfo().width;
+    const float layout_height = render_object->GetLayoutInfo().height;
+    const float padding_left = style.padding.left.ToPx(layout_width, style.font_size);
+    const float padding_top = style.padding.top.ToPx(layout_height, style.font_size);
+    const float padding_right = style.padding.right.ToPx(layout_width, style.font_size);
+    const float padding_bottom = style.padding.bottom.ToPx(layout_height, style.font_size);
+
+    float border_left = style.border_left_width;
+    float border_right = style.border_right_width;
+    float border_top = style.border_top_width;
+    float border_bottom = style.border_bottom_width;
+    if (border_left == 0.0f && border_right == 0.0f && border_top == 0.0f && border_bottom == 0.0f) {
+        const float border_width = style.border.width.ToPx(layout_width, style.font_size);
+        border_left = border_right = border_top = border_bottom = border_width;
+    }
+
+    const float content_x = viewport_bounds.x + border_left + padding_left;
+    const float content_y = viewport_bounds.y + border_top + padding_top;
+    const float content_width = std::max(1.0f, viewport_bounds.width - border_left - border_right - padding_left - padding_right);
+    const float content_height = std::max(1.0f, viewport_bounds.height - border_top - border_bottom - padding_top - padding_bottom);
+    const float text_height = glyph_height;
+    const float ime_font_height = std::max(1.0f, std::max(style.font_size, glyph_height));
+
+    float area_x = content_x;
+    float area_y = content_y;
+    float area_width = content_width;
+    float area_height = ime_font_height;
+    float caret_x = content_x;
+
+    if (auto input = std::dynamic_pointer_cast<HTMLInputElement>(element)) {
+        InputPaintModel paint_model = InputPaintModel::FromInputElement(input.get());
+        const float text_box_top = content_y + (content_height - text_height) / 2.0f;
+        const int anchor_position = paint_model.HasComposition()
+            ? paint_model.composition_start
+            : paint_model.VisibleCaretPosition();
+        area_y = text_box_top + (text_height - ime_font_height) * 0.5f;
+        area_height = std::min(ime_font_height, content_height);
+        caret_x += text_edit_metrics::MeasurePrefixWidth(paint_model.visual_text,
+                                                         anchor_position,
+                                                         font,
+                                                         paint_model.is_password && !paint_model.is_placeholder);
+    } else if (auto textarea = std::dynamic_pointer_cast<HTMLTextAreaElement>(element)) {
+        const std::string value = textarea->GetValue();
+        auto edit_state = textarea->GetEditState();
+        std::string visual_value = value;
+        int anchor_position = textarea->GetSelectionEnd();
+        if (edit_state && edit_state->HasActiveComposition()) {
+            const auto& composition = edit_state->composition_state;
+            size_t start_byte = utf8::CharPosToBytePos(value, composition.start);
+            size_t end_byte = utf8::CharPosToBytePos(value, composition.end);
+            visual_value = value.substr(0, start_byte) + composition.text + value.substr(end_byte);
+            anchor_position = composition.start;
+        }
+
+        float visible_width = content_width;
+        float visible_height = content_height;
+        float max_line_width = textarea->GetMaxLineWidth(font);
+        float textarea_content_height = textarea->GetContentHeight(css_line_height);
+        const float scrollbar_width = HTMLTextAreaElement::SCROLLBAR_WIDTH;
+        if (textarea_content_height > visible_height) {
+            visible_width = std::max(1.0f, visible_width - scrollbar_width);
+        }
+        if (max_line_width > visible_width) {
+            visible_height = std::max(1.0f, visible_height - scrollbar_width);
+        }
+
+        size_t anchor_byte_pos = utf8::CharPosToBytePos(visual_value, anchor_position);
+        std::string text_before_anchor = visual_value.substr(0, anchor_byte_pos);
+        int anchor_line = 0;
+        for (char ch : text_before_anchor) {
+            if (ch == '\n') {
+                ++anchor_line;
+            }
+        }
+        size_t last_newline = text_before_anchor.rfind('\n');
+        std::string current_line_before_anchor = last_newline != std::string::npos
+            ? text_before_anchor.substr(last_newline + 1)
+            : text_before_anchor;
+
+        caret_x = content_x + text_edit_metrics::MeasureTextWidth(current_line_before_anchor, font, false) - textarea->GetScrollLeft();
+        const float baseline_y = content_y - metrics.fAscent - textarea->GetScrollTop() + anchor_line * css_line_height;
+        area_y = baseline_y + metrics.fAscent + (glyph_height - ime_font_height) * 0.5f;
+        area_width = visible_width;
+        area_height = ime_font_height;
+    }
+
+    const float display_scale = std::max(1.0f, window_->GetDisplayScale());
+
+    SDL_Rect area;
+    area.x = static_cast<int>(std::floor(area_x * display_scale));
+    area.y = static_cast<int>(std::floor(area_y * display_scale));
+    area.w = std::max(1, static_cast<int>(std::ceil(area_width * display_scale)));
+    area.h = std::max(1, static_cast<int>(std::ceil(area_height * display_scale)));
+
+    int cursor = static_cast<int>(std::round((caret_x - area_x) * display_scale));
+    cursor = std::max(0, std::min(area.w, cursor));
+
+    LogImeAreaDebug("UpdateTextInputArea",
+                    element,
+                    style,
+                    area,
+                    cursor,
+                    display_scale,
+                    glyph_height,
+                    css_line_height,
+                    content_x,
+                    content_y,
+                    content_width,
+                    content_height,
+                    area_x,
+                    area_y,
+                    area_width,
+                    area_height);
+
+    SDL_SetTextInputArea(sdl_window, &area, cursor);
 }
 
 std::shared_ptr<Element> FocusManager::GetFocusElement() const {

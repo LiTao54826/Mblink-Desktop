@@ -7,9 +7,10 @@
 #include "core/render/text/font_manager.h"
 #include "core/render/painters/box_renderer.h"
 #include "core/render/text/text_renderer.h"
+#include "core/render/input/input_paint_model.h"
+#include "core/render/input/text_edit_metrics.h"
 #include "core/render/utils/gradient_renderer.h"
 #include "core/render/utils/color.h"
-#include "core/render/text/font_manager.h"
 #include "core/dom/node.h"
 #include "core/dom/element.h"
 #include "core/dom/text.h"
@@ -998,15 +999,12 @@ void RenderInlineBlock::PaintInputElement(SkCanvas* canvas, HTMLInputElement* in
     if (!input) return;
 
     InputType type = input->GetInputType();
-    std::string value = input->GetValue();
 
-    // 处理文本类型的输入框
     if (type == InputType::Text || type == InputType::Password ||
         type == InputType::Email || type == InputType::Tel ||
         type == InputType::Url || type == InputType::Search ||
         type == InputType::Number) {
 
-        // 创建字体（光标绘制也需要）
         FontDescriptor desc;
         desc.family = computed_style_.font_family;
         desc.size = computed_style_.font_size;
@@ -1014,31 +1012,23 @@ void RenderInlineBlock::PaintInputElement(SkCanvas* canvas, HTMLInputElement* in
         desc.style = FontStyle::NORMAL;
         SkFont font = FontManager::GetInstance().LoadFont(desc);
 
-        // input[number] 的 spinner 宽度
         const float spinner_width = (type == InputType::Number) ? 16.0f : 0.0f;
 
-        // 计算文本位置
-        // 注意：box.content_x/y 已经包含了 border + padding 的偏移
-        // box.content_width/height 是 content 区域的尺寸（不包括 padding）
         SkFontMetrics font_metrics;
         font.getMetrics(&font_metrics);
         float text_height = -font_metrics.fAscent + font_metrics.fDescent;
         float text_box_top = box.content_y + (box.content_height - text_height) / 2.0f;
         float text_y = text_box_top - font_metrics.fAscent;
         float text_x = box.content_x;
-
-        // 文本可用宽度（减去 spinner 宽度）
         float text_available_width = box.content_width - spinner_width;
 
-        // 如果value为空，显示placeholder
-        std::string original_value = value;  // 保存原始值用于光标计算
-        bool is_placeholder = false;
-        if (value.empty()) {
-            value = input->GetPlaceholder();
-            is_placeholder = true;
-        }
+        InputPaintModel paint_model = InputPaintModel::FromInputElement(input);
+        const bool is_placeholder = paint_model.is_placeholder;
+        const bool mask_as_password = paint_model.is_password && !is_placeholder;
+        const std::string& display_text = paint_model.display_text;
+        const std::string& actual_value = paint_model.value;
+        const std::string& visual_text = paint_model.visual_text;
 
-        // 裁剪文本区域（防止文本溢出）
         canvas->save();
         SkRect text_clip_rect = SkRect::MakeXYWH(
             text_x,
@@ -1048,114 +1038,86 @@ void RenderInlineBlock::PaintInputElement(SkCanvas* canvas, HTMLInputElement* in
         );
         canvas->clipRect(text_clip_rect);
 
-        // 绘制文本（如果有内容）
-        if (!value.empty()) {
-            // 创建文本渲染器
+        if (!display_text.empty()) {
             TextRenderer text_renderer(canvas);
-
-            // 设置文本颜色
             lightui::Paint text_paint;
             if (is_placeholder) {
-                // placeholder使用灰色
                 text_paint.SetColor(SkColorSetRGB(150, 150, 150));
             } else if (!computed_style_.color.empty()) {
                 text_paint.SetColor(lightui::Color::Parse(computed_style_.color));
             } else {
                 text_paint.SetColor(SK_ColorBLACK);
             }
-
-            // 如果是密码类型，显示星号
-            std::string display_text = value;
-            if (type == InputType::Password && !is_placeholder) {
-                display_text = std::string(value.length(), '*');
-            }
-
-            // 绘制文本（使用支持CJK的方法，解决中文placeholder乱码问题）
             text_renderer.DrawTextWithEmoji(display_text, text_x, text_y, font, text_paint);
+
+            if (paint_model.HasComposition() && !mask_as_password) {
+                static const bool ime_render_debug = std::getenv("LIGHTUI_DEBUG_IME_RENDER") != nullptr ||
+                                                     std::getenv("LIGHTUI_DEBUG_IME_AREA") != nullptr;
+                if (ime_render_debug) {
+                    std::cout << "[IME_RENDER] element=input"
+                              << " font_size=" << computed_style_.font_size
+                              << " glyph_height=" << text_height
+                              << " content_height=" << box.content_height
+                              << " text_box_top=" << text_box_top
+                              << " text_y=" << text_y
+                              << " display_text=" << display_text
+                              << " actual_value=" << actual_value
+                              << " visual_text=" << visual_text
+                              << " comp_range=[" << paint_model.composition_start << "," << paint_model.composition_end << "]"
+                              << std::endl;
+                }
+
+                float comp_start_x = text_x + text_edit_metrics::MeasurePrefixWidth(visual_text, paint_model.composition_start, font, false);
+                float comp_end_x = text_x + text_edit_metrics::MeasurePrefixWidth(visual_text, paint_model.composition_end, font, false);
+
+                SkPaint comp_underline_paint;
+                comp_underline_paint.setColor(SkColorSetRGB(66, 133, 244));
+                comp_underline_paint.setStyle(SkPaint::kStroke_Style);
+                comp_underline_paint.setStrokeWidth(std::max(1.0f, font_metrics.fUnderlineThickness));
+                comp_underline_paint.setAntiAlias(true);
+                const SkScalar dash_intervals[] = {3.0f, 2.0f};
+                comp_underline_paint.setPathEffect(SkDashPathEffect::Make(dash_intervals, 2, 0));
+                float underline_y = std::min(box.content_y + box.content_height - 1.0f, text_y + font_metrics.fDescent + 1.0f);
+                canvas->drawLine(comp_start_x, underline_y, comp_end_x, underline_y, comp_underline_paint);
+            }
         }
 
-        // 如果有焦点，绘制选中高亮和光标
         auto element = std::static_pointer_cast<Element>(GetNode());
         bool has_focus = element && element->HasPseudoClass("focus");
-
         if (has_focus) {
-            int sel_start = input->GetSelectionStart();
-            int sel_end = input->GetSelectionEnd();
+            int sel_start = paint_model.VisibleSelectionStart();
+            int sel_end = paint_model.VisibleSelectionEnd();
+            int start_char = std::min(sel_start, sel_end);
+            int end_char = std::max(sel_start, sel_end);
 
-            // 绘制选中区域高亮
-            if (sel_start != sel_end && !original_value.empty()) {
-                int start_char = std::min(sel_start, sel_end);
-                int end_char = std::max(sel_start, sel_end);
+            if (start_char != end_char && !visual_text.empty()) {
+                float sel_start_x = text_x + text_edit_metrics::MeasurePrefixWidth(visual_text, start_char, font, mask_as_password);
+                float sel_width = text_edit_metrics::MeasurePrefixWidth(visual_text, end_char, font, mask_as_password) -
+                                  text_edit_metrics::MeasurePrefixWidth(visual_text, start_char, font, mask_as_password);
 
-                // 使用 UTF-8 工具计算字节位置
-                size_t start_byte = utf8::CharPosToBytePos(original_value, start_char);
-                size_t end_byte = utf8::CharPosToBytePos(original_value, end_char);
-
-                std::string text_before_sel = original_value.substr(0, start_byte);
-                std::string selected_text = original_value.substr(start_byte, end_byte - start_byte);
-
-                // 如果是密码类型，使用星号
-                if (type == InputType::Password) {
-                    text_before_sel = std::string(start_char, '*');
-                    selected_text = std::string(end_char - start_char, '*');
-                }
-
-                float sel_start_x = text_x;
-                TextRenderer temp_renderer(canvas);
-                if (start_char > 0) {
-                    sel_start_x += temp_renderer.MeasureTextWidthWithEmoji(text_before_sel, font);
-                }
-                float sel_width = temp_renderer.MeasureTextWidthWithEmoji(selected_text, font);
-
-                // 绘制选中背景
                 SkPaint sel_paint;
-                sel_paint.setColor(SkColorSetARGB(128, 51, 153, 255));  // 半透明蓝色
+                sel_paint.setColor(SkColorSetARGB(128, 51, 153, 255));
                 sel_paint.setStyle(SkPaint::kFill_Style);
-
-                // box.content_y 和 box.content_height 已经是 content 区域
-                float sel_y_top = box.content_y;
-                float sel_height = box.content_height;
-                canvas->drawRect(SkRect::MakeXYWH(sel_start_x, sel_y_top, sel_width, sel_height), sel_paint);
+                canvas->drawRect(SkRect::MakeXYWH(sel_start_x, box.content_y, sel_width, box.content_height), sel_paint);
             }
 
-            // 使用 RenderObject 的全局光标状态，避免重复的系统时间调用
-            // 光标闪烁由 EventLoop 统一管理
-            bool cursor_visible = RenderObject::IsCursorVisible();
-
-            if (cursor_visible) {
-                // 计算光标位置 - 使用 UTF-8 字符位置
-                int cursor_pos = sel_end;
-                size_t cursor_byte_pos = utf8::CharPosToBytePos(original_value, cursor_pos);
-                std::string text_before_cursor = original_value.substr(0, cursor_byte_pos);
-
-                // 如果是密码类型，使用星号计算宽度
-                if (type == InputType::Password) {
-                    text_before_cursor = std::string(cursor_pos, '*');
-                }
-
-                // 测量光标前的文本宽度
-                float cursor_x = text_x;
-                if (!text_before_cursor.empty()) {
-                    TextRenderer temp_renderer(canvas);
-                    cursor_x += temp_renderer.MeasureTextWidthWithEmoji(text_before_cursor, font);
-                }
-
-                // 计算光标的Y坐标（基于字体度量，垂直居中）
+            if (RenderObject::IsCursorVisible()) {
+                float cursor_x = text_x + text_edit_metrics::MeasurePrefixWidth(visual_text,
+                                                                                paint_model.VisibleCaretPosition(),
+                                                                                font,
+                                                                                mask_as_password);
                 float font_height = font_metrics.fDescent - font_metrics.fAscent;
                 float cursor_y_top = box.content_y + (box.content_height - font_height) / 2;
                 float cursor_y_bottom = cursor_y_top + font_height;
 
-                // 绘制光标
                 SkPaint cursor_paint;
                 cursor_paint.setColor(SK_ColorBLACK);
                 cursor_paint.setStrokeWidth(1.5f);
                 cursor_paint.setAntiAlias(true);
-
                 canvas->drawLine(cursor_x, cursor_y_top, cursor_x, cursor_y_bottom, cursor_paint);
             }
         }
 
-        // 恢复裁剪
         canvas->restore();
 
         // 绘制 input[number] 的 spinner 箭头
@@ -1360,11 +1322,23 @@ void RenderInlineBlock::PaintTextAreaElement(SkCanvas* canvas, HTMLTextAreaEleme
     if (!textarea) return;
 
     std::string value = textarea->GetValue();
+    auto edit_state = textarea->GetEditState();
+    std::string visual_value = value;
     bool is_placeholder = false;
 
-    if (value.empty()) {
+    if (edit_state && edit_state->HasActiveComposition()) {
+        const auto& composition = edit_state->composition_state;
+        int start = std::max(0, composition.start);
+        int end = std::max(start, composition.end);
+        size_t start_byte = utf8::CharPosToBytePos(value, start);
+        size_t end_byte = utf8::CharPosToBytePos(value, end);
+        visual_value = value.substr(0, start_byte) + composition.text + value.substr(end_byte);
+    }
+
+    if (value.empty() && (!edit_state || !edit_state->HasActiveComposition())) {
         // 显示placeholder
         value = textarea->GetPlaceholder();
+        visual_value = value;
         is_placeholder = true;
     }
 
@@ -1444,7 +1418,7 @@ void RenderInlineBlock::PaintTextAreaElement(SkCanvas* canvas, HTMLTextAreaEleme
     );
     canvas->clipRect(text_clip_rect);
 
-    if (!value.empty()) {
+    if (!visual_value.empty()) {
         // 创建文本渲染器
         TextRenderer text_renderer(canvas);
 
@@ -1459,12 +1433,113 @@ void RenderInlineBlock::PaintTextAreaElement(SkCanvas* canvas, HTMLTextAreaEleme
         }
 
         // 绘制多行文本 - textarea 只按换行符分割，不自动换行（长行可横向滚动）
-        std::istringstream stream(value);
+        std::istringstream stream(visual_value);
         std::string line;
         float current_y = text_y;
         while (std::getline(stream, line)) {
             text_renderer.DrawTextWithEmoji(line, text_x, current_y, font, text_paint);
             current_y += line_height;
+        }
+
+        if (edit_state && edit_state->HasActiveComposition() && !is_placeholder) {
+            static const bool ime_render_debug = std::getenv("LIGHTUI_DEBUG_IME_RENDER") != nullptr ||
+                                                 std::getenv("LIGHTUI_DEBUG_IME_AREA") != nullptr;
+            if (ime_render_debug) {
+                std::cout << "[IME_RENDER] element=textarea"
+                          << " font_size=" << computed_style_.font_size
+                          << " line_height=" << line_height
+                          << " content_height=" << box.content_height
+                          << " text_y=" << text_y
+                          << " scroll_top=" << scroll_top
+                          << " visual_value_length=" << utf8::CharCount(visual_value)
+                          << " composition_text=" << edit_state->composition_state.text
+                          << " comp_range=[" << edit_state->composition_state.start << ","
+                          << edit_state->composition_state.end << "]"
+                          << std::endl;
+            }
+
+            int comp_start = std::max(0, edit_state->composition_state.start);
+            int comp_end = comp_start + static_cast<int>(utf8::CharCount(edit_state->composition_state.text));
+
+            int comp_line = 0;
+            int comp_col = 0;
+            int comp_end_line = 0;
+            int comp_end_col = 0;
+            {
+                int current_line = 0;
+                int line_start = 0;
+                int current_pos = 0;
+                for (size_t i = 0; i < visual_value.size(); ) {
+                    if (current_pos == comp_start) {
+                        comp_line = current_line;
+                        comp_col = current_pos - line_start;
+                    }
+                    if (current_pos == comp_end) {
+                        comp_end_line = current_line;
+                        comp_end_col = current_pos - line_start;
+                        break;
+                    }
+
+                    unsigned char c = static_cast<unsigned char>(visual_value[i]);
+                    size_t char_bytes = 1;
+                    if ((c & 0x80) == 0) {
+                        char_bytes = 1;
+                    } else if ((c & 0xE0) == 0xC0) {
+                        char_bytes = 2;
+                    } else if ((c & 0xF0) == 0xE0) {
+                        char_bytes = 3;
+                    } else if ((c & 0xF8) == 0xF0) {
+                        char_bytes = 4;
+                    }
+
+                    if (c == '\n') {
+                        current_line++;
+                        line_start = current_pos + 1;
+                    }
+
+                    i += char_bytes;
+                    current_pos++;
+                }
+
+                if (comp_start >= current_pos) {
+                    comp_line = current_line;
+                    comp_col = comp_start - line_start;
+                }
+                if (comp_end >= current_pos) {
+                    comp_end_line = current_line;
+                    comp_end_col = comp_end - line_start;
+                }
+            }
+
+            SkPaint comp_underline_paint;
+            comp_underline_paint.setColor(SkColorSetRGB(66, 133, 244));
+            comp_underline_paint.setStyle(SkPaint::kStroke_Style);
+            comp_underline_paint.setStrokeWidth(std::max(1.0f, font_metrics.fUnderlineThickness));
+            comp_underline_paint.setAntiAlias(true);
+            const SkScalar dash_intervals[] = {3.0f, 2.0f};
+            comp_underline_paint.setPathEffect(SkDashPathEffect::Make(dash_intervals, 2, 0));
+
+            std::istringstream visual_stream(visual_value);
+            std::vector<std::string> visual_lines;
+            while (std::getline(visual_stream, line)) {
+                visual_lines.push_back(line);
+            }
+            if (visual_value.empty() || visual_value.back() == '\n') {
+                visual_lines.push_back("");
+            }
+
+            for (int line_index = comp_line; line_index <= comp_end_line && line_index < static_cast<int>(visual_lines.size()); ++line_index) {
+                const std::string& current_line = visual_lines[line_index];
+                int line_char_count = static_cast<int>(utf8::CharCount(current_line));
+                int start_col = (line_index == comp_line) ? comp_col : 0;
+                int end_col = (line_index == comp_end_line) ? comp_end_col : line_char_count;
+                float rect_x = text_x + text_edit_metrics::MeasurePrefixWidth(current_line, start_col, font, false);
+                float rect_end_x = text_x + text_edit_metrics::MeasurePrefixWidth(current_line, end_col, font, false);
+                float rect_y = text_y + line_index * line_height + font_metrics.fAscent;
+                float rect_h = -font_metrics.fAscent + font_metrics.fDescent;
+                float underline_y = rect_y + rect_h + std::max(1.0f, font_metrics.fUnderlinePosition + font_metrics.fUnderlineThickness);
+                canvas->drawLine(rect_x, underline_y, rect_end_x, underline_y, comp_underline_paint);
+            }
         }
     }
 
@@ -1482,28 +1557,30 @@ void RenderInlineBlock::PaintTextAreaElement(SkCanvas* canvas, HTMLTextAreaEleme
             text_y = box.content_y - font_metrics.fAscent - scroll_top;
         }
 
-        std::string actual_value = textarea->GetValue();
+        const std::string& visible_value_ref = visual_value;
         int sel_start = textarea->GetSelectionStart();
         int sel_end = textarea->GetSelectionEnd();
+        if (edit_state && edit_state->HasActiveComposition()) {
+            sel_start = edit_state->composition_state.start;
+            sel_end = edit_state->composition_state.start + static_cast<int>(utf8::CharCount(edit_state->composition_state.text));
+        }
 
         // 绘制选中高亮
         if (sel_start != sel_end) {
             int start = std::min(sel_start, sel_end);
             int end = std::max(sel_start, sel_end);
 
-            // 选中高亮颜色
             SkPaint selection_paint;
-            selection_paint.setColor(SkColorSetARGB(128, 66, 133, 244));  // 半透明蓝色
+            selection_paint.setColor(SkColorSetARGB(128, 66, 133, 244));
             selection_paint.setStyle(SkPaint::kFill_Style);
 
-            // 将文本分割成行来绘制选中区域
             std::vector<std::string> lines;
-            std::istringstream stream(actual_value);
+            std::istringstream stream(visible_value_ref);
             std::string line;
             while (std::getline(stream, line)) {
                 lines.push_back(line);
             }
-            if (actual_value.empty() || (!actual_value.empty() && actual_value.back() == '\n')) {
+            if (visible_value_ref.empty() || visible_value_ref.back() == '\n') {
                 lines.push_back("");
             }
 
@@ -1516,81 +1593,47 @@ void RenderInlineBlock::PaintTextAreaElement(SkCanvas* canvas, HTMLTextAreaEleme
                 int line_start = char_offset;
                 int line_end = char_offset + line_char_count;
 
-                // 检查选中区域是否与此行重叠
                 if (end > line_start && start < line_end + 1) {
                     int sel_start_in_line = std::max(0, start - line_start);
                     int sel_end_in_line = std::min(line_char_count, end - line_start);
 
-                    // 计算选中区域的 x 坐标 - 使用支持 CJK/Emoji 的测量方法
-                    TextRenderer temp_renderer(canvas);
-                    float sel_x_start = text_x;
-                    float sel_x_end = text_x;
+                    float sel_x_start = text_x + text_edit_metrics::MeasurePrefixWidth(current_line, sel_start_in_line, font, false);
+                    float sel_x_end = text_x + text_edit_metrics::MeasurePrefixWidth(current_line, sel_end_in_line, font, false);
 
-                    if (sel_start_in_line > 0) {
-                        std::string before_sel = utf8::SubstrByChar(current_line, 0, sel_start_in_line);
-                        sel_x_start += temp_renderer.MeasureTextWidthWithEmoji(before_sel, font);
-                    }
-
-                    if (sel_end_in_line > 0) {
-                        std::string to_sel_end = utf8::SubstrByChar(current_line, 0, sel_end_in_line);
-                        sel_x_end += temp_renderer.MeasureTextWidthWithEmoji(to_sel_end, font);
-                    }
-
-                    // 如果选中包含换行符，只高亮到行尾实际字符位置，不扩展到整行宽度
-                    if (end > line_end && sel_end_in_line == line_char_count) {
-                        // 选中区域已经到行尾，不再额外扩展
-                        // sel_x_end 保持为实际文本宽度
-                    }
-
-                    // 绘制选中矩形
                     SkRect sel_rect = SkRect::MakeXYWH(
                         sel_x_start,
                         current_y + font_metrics.fAscent,
-                        sel_x_end - sel_x_start,
+                        std::max(1.0f, sel_x_end - sel_x_start),
                         -font_metrics.fAscent + font_metrics.fDescent
                     );
                     canvas->drawRect(sel_rect, selection_paint);
                 }
 
-                char_offset = line_end + 1;  // +1 for newline
+                char_offset = line_end + 1;
                 current_y += line_height;
             }
         }
 
-        // 使用 RenderObject 的全局光标状态，避免重复的系统时间调用
-        // 光标闪烁由 EventLoop 统一管理
         bool cursor_visible = RenderObject::IsCursorVisible();
-
         if (cursor_visible) {
-            // 计算光标位置 - 使用 sel_end 作为光标位置
             int cursor_pos = sel_end;
-            size_t cursor_byte_pos = utf8::CharPosToBytePos(actual_value, cursor_pos);
-            std::string text_before_cursor = actual_value.substr(0, cursor_byte_pos);
+            size_t cursor_byte_pos = utf8::CharPosToBytePos(visible_value_ref, cursor_pos);
+            std::string text_before_cursor = visible_value_ref.substr(0, cursor_byte_pos);
 
-            // 找到最后一个换行符的位置
             size_t last_newline = text_before_cursor.rfind('\n');
             std::string current_line_before_cursor;
             float cursor_y = text_y;
 
             if (last_newline != std::string::npos) {
-                // 光标在某一行中
                 current_line_before_cursor = text_before_cursor.substr(last_newline + 1);
-                // 计算光标所在行（每个\n增加一行）
                 int line_count = std::count(text_before_cursor.begin(), text_before_cursor.end(), '\n');
                 cursor_y += line_count * line_height;
             } else {
-                // 光标在第一行
                 current_line_before_cursor = text_before_cursor;
             }
 
-            // 测量光标前的文本宽度 - 使用支持 CJK/Emoji 的测量方法
-            float cursor_x = text_x;
-            if (!current_line_before_cursor.empty()) {
-                TextRenderer temp_renderer(canvas);
-                cursor_x += temp_renderer.MeasureTextWidthWithEmoji(current_line_before_cursor, font);
-            }
+            float cursor_x = text_x + text_edit_metrics::MeasureTextWidth(current_line_before_cursor, font, false);
 
-            // 绘制光标
             SkPaint cursor_paint;
             cursor_paint.setColor(SK_ColorBLACK);
             cursor_paint.setStrokeWidth(1);

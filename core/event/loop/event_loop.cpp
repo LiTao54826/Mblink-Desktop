@@ -516,7 +516,8 @@ bool EventLoop::ProcessEvents() {
         // 处理键盘事件并分发到 DOM
         if (event.type == SDL_EVENT_KEY_DOWN ||
             event.type == SDL_EVENT_KEY_UP ||
-            event.type == SDL_EVENT_TEXT_INPUT) {
+            event.type == SDL_EVENT_TEXT_INPUT ||
+            event.type == SDL_EVENT_TEXT_EDITING) {
             try {
                 HandleKeyboardEventForDOM(event);
             } catch (const std::exception& e) {
@@ -1086,6 +1087,8 @@ void EventLoop::HandleKeyboardEventForDOM(const SDL_Event& event) {
         window_id = event.key.windowID;
     } else if (event.type == SDL_EVENT_TEXT_INPUT) {
         window_id = event.text.windowID;
+    } else if (event.type == SDL_EVENT_TEXT_EDITING) {
+        window_id = event.edit.windowID;
     }
 
     // 查找对应的窗口

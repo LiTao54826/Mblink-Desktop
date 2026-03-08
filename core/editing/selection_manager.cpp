@@ -10,8 +10,10 @@
 #include "core/dom/selection/range.h"
 #include "core/dom/selection/selection.h"
 #include "core/dom/text.h"
+#include "core/render/input/text_edit_metrics.h"
 
 #include "include/core/SkCanvas.h"
+#include "include/core/SkFont.h"
 #include "include/core/SkPaint.h"
 #include "include/core/SkRect.h"
 
@@ -251,7 +253,10 @@ void SelectionManager::HandleArrowKey(std::shared_ptr<Document> document, const 
 
 // ========== 光标位置计算 ==========
 
-CaretPosition SelectionManager::HitTestToCaretPosition(std::shared_ptr<Element> element, int x, int y) {
+CaretPosition SelectionManager::HitTestToCaretPosition(std::shared_ptr<Element> element,
+                                                       int x,
+                                                       int y,
+                                                       const SkFont* font) {
     CaretPosition result;
 
     if (!element) {
@@ -259,7 +264,7 @@ CaretPosition SelectionManager::HitTestToCaretPosition(std::shared_ptr<Element> 
     }
 
     // 简化实现：查找包含坐标的文本节点
-    result = FindTextNodeAtPosition(element, x, y);
+    result = FindTextNodeAtPosition(element, x, y, font);
 
     return result;
 }
@@ -358,7 +363,10 @@ std::string SelectionManager::GetSelectedText(std::shared_ptr<Document> document
 
 // ========== 私有辅助方法 ==========
 
-CaretPosition SelectionManager::FindTextNodeAtPosition(std::shared_ptr<Element> element, int x, int y) {
+CaretPosition SelectionManager::FindTextNodeAtPosition(std::shared_ptr<Element> element,
+                                                       int x,
+                                                       int y,
+                                                       const SkFont* font) {
     CaretPosition result;
 
     if (!element) {
@@ -371,7 +379,7 @@ CaretPosition SelectionManager::FindTextNodeAtPosition(std::shared_ptr<Element> 
             // 简化实现：返回第一个文本节点
             // TODO: 实现真正的 hit testing
             result.node = child;
-            result.offset = CalculateTextOffset(child, x);
+            result.offset = CalculateTextOffset(child, x, font);
             result.x = static_cast<float>(x);
             result.y = static_cast<float>(y);
             result.height = 16.0f; // 默认高度
@@ -379,7 +387,7 @@ CaretPosition SelectionManager::FindTextNodeAtPosition(std::shared_ptr<Element> 
         } else if (child->GetNodeType() == NodeType::ELEMENT_NODE) {
             auto child_element = std::dynamic_pointer_cast<Element>(child);
             if (child_element) {
-                result = FindTextNodeAtPosition(child_element, x, y);
+                result = FindTextNodeAtPosition(child_element, x, y, font);
                 if (result.IsValid()) {
                     return result;
                 }
@@ -390,7 +398,9 @@ CaretPosition SelectionManager::FindTextNodeAtPosition(std::shared_ptr<Element> 
     return result;
 }
 
-int SelectionManager::CalculateTextOffset(std::shared_ptr<Node> text_node, int x) {
+int SelectionManager::CalculateTextOffset(std::shared_ptr<Node> text_node,
+                                          int x,
+                                          const SkFont* font) {
     if (!text_node || text_node->GetNodeType() != NodeType::TEXT_NODE) {
         return 0;
     }
@@ -400,12 +410,23 @@ int SelectionManager::CalculateTextOffset(std::shared_ptr<Node> text_node, int x
         return 0;
     }
 
-    // 简化实现：假设每个字符宽度为 8 像素
-    // TODO: 使用实际的字体度量
-    const int char_width = 8;
     std::string content = text->GetData();
-    int offset = x / char_width;
-    return std::min(offset, static_cast<int>(content.length()));
+    if (content.empty()) {
+        return 0;
+    }
+
+    if (!font) {
+        const int char_width = 8;
+        int offset = x / char_width;
+        return std::clamp(offset, 0, static_cast<int>(content.length()));
+    }
+
+    return std::clamp(text_edit_metrics::HitTestTextPosition(content,
+                                                             static_cast<float>(x),
+                                                             *font,
+                                                             false),
+                      0,
+                      static_cast<int>(content.length()));
 }
 
 CaretPosition SelectionManager::MoveCaretByCharacter(std::shared_ptr<Document> document, bool forward) {

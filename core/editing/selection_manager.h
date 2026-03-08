@@ -15,8 +15,8 @@
 #include <map>
 #include <string>
 
-// 前向声明 Skia 类型
 class SkCanvas;
+class SkFont;
 
 namespace lightui {
 
@@ -155,7 +155,10 @@ public:
      * @param y 屏幕 Y 坐标
      * @return 光标位置信息
      */
-    CaretPosition HitTestToCaretPosition(std::shared_ptr<Element> element, int x, int y);
+    CaretPosition HitTestToCaretPosition(std::shared_ptr<Element> element,
+                                         int x,
+                                         int y,
+                                         const SkFont* font = nullptr);
 
     /**
      * @brief 获取当前光标位置
@@ -222,7 +225,10 @@ private:
      * @param y Y 坐标
      * @return 光标位置
      */
-    CaretPosition FindTextNodeAtPosition(std::shared_ptr<Element> element, int x, int y);
+    CaretPosition FindTextNodeAtPosition(std::shared_ptr<Element> element,
+                                         int x,
+                                         int y,
+                                         const SkFont* font = nullptr);
 
     /**
      * @brief 计算文本节点内的偏移量
@@ -230,7 +236,9 @@ private:
      * @param x X 坐标
      * @return 字符偏移量
      */
-    int CalculateTextOffset(std::shared_ptr<Node> text_node, int x);
+    int CalculateTextOffset(std::shared_ptr<Node> text_node,
+                            int x,
+                            const SkFont* font = nullptr);
 
     /**
      * @brief 移动光标到下一个/上一个字符位置

@@ -26,6 +26,7 @@ set(RENDER_SOURCES
     
     # Render input models
     input/input_paint_model.cpp
+    input/text_edit_metrics.cpp
 
     # Basic rendering primitives (utils subdirectory)
     utils/color.cpp
