@@ -23,6 +23,7 @@
 #include "core/editing/drag_manager.h"
 #include "core/editing/selection_manager.h"
 #include "core/editing/contenteditable_handler.h"
+#include "core/editing/contenteditable_controller.h"
 #include "core/event/input/focus_manager.h"
 #include "core/event/input/hit_test_controller.h"
 #include "core/event/types/mouse_event.h"
@@ -58,10 +59,12 @@ MouseEventDispatcher::~MouseEventDispatcher() = default;
 void MouseEventDispatcher::SetManagers(DragManager* drag_manager,
                                         SelectionManager* selection_manager,
                                         ContentEditableHandler* contenteditable_handler,
+                                        ContentEditableController* contenteditable_controller,
                                         FocusManager* focus_manager) {
     drag_manager_ = drag_manager;
     selection_manager_ = selection_manager;
     contenteditable_handler_ = contenteditable_handler;
+    contenteditable_controller_ = contenteditable_controller;
     focus_manager_ = focus_manager;
 }
 
@@ -923,6 +926,14 @@ void MouseEventDispatcher::HandleNoHitMouseUp(std::shared_ptr<Window> window,
                 HandleInputMouseInteraction(input_element, 0, event.type, 14.0f, "");
             }
         }
+    } else if (last_mousedown->IsContentEditable()) {
+        if (contenteditable_dragging_ && contenteditable_controller_) {
+            contenteditable_controller_->HandleMouseUp(last_mousedown, logical_x, logical_y);
+        }
+        contenteditable_dragging_ = false;
+        contenteditable_drag_start_node_.reset();
+        contenteditable_drag_start_offset_ = 0;
+        window->SetNeedsRepaint();
     }
 }
 
@@ -1037,6 +1048,13 @@ void MouseEventDispatcher::HandleNoHitMouseMotion(std::shared_ptr<Window> window
                 }
             }
         }
+    } else if (last_mousedown->IsContentEditable()) {
+        HandleContentEditableDragSelection(window,
+                                           std::dynamic_pointer_cast<Document>(last_mousedown->GetOwnerDocument()),
+                                           logical_x,
+                                           logical_y,
+                                           window->GetCachedRenderTree(),
+                                           event.type);
     }
     // 处理 terminal 的滚动条拖动
     else if (tag_name == "terminal") {
@@ -1126,7 +1144,12 @@ void MouseEventDispatcher::HandleNoHitMouseMotion(std::shared_ptr<Window> window
     }
     // 处理 contentEditable 的拖动选择
     else if (contenteditable_dragging_ && last_mousedown->IsContentEditable()) {
-        HandleContentEditableDragSelection(window, logical_x, logical_y, event.type);
+        HandleContentEditableDragSelection(window,
+                                           std::dynamic_pointer_cast<Document>(last_mousedown->GetOwnerDocument()),
+                                           logical_x,
+                                           logical_y,
+                                           window->GetCachedRenderTree(),
+                                           event.type);
     }
 }
 
@@ -1187,8 +1210,23 @@ void MouseEventDispatcher::HandleMouseDown(std::shared_ptr<Window> window,
 
     // 浏览器行为：mousedown 时自动更新 Selection 到点击位置
     // 这对于 CodeMirror 等库正确处理点击定位至关重要
-    if (button == 1 && selection_manager_ && document) {  // 左键点击
-        UpdateSelectionFromClick(document, hit_result, logical_x, logical_y);
+    bool handled_contenteditable_mousedown = false;
+    if (button == 1 && document) {  // 左键点击
+        if (hit_result.element->IsContentEditable() && contenteditable_controller_) {
+            SDL_Keymod mod_state = SDL_GetModState();
+            bool shift_key = (mod_state & SDL_KMOD_SHIFT) != 0;
+            handled_contenteditable_mousedown = contenteditable_controller_->HandleMouseDown(
+                hit_result.element,
+                logical_x,
+                logical_y,
+                shift_key,
+                hit_result.render_object,
+                root_render);
+        }
+
+        if (!handled_contenteditable_mousedown && selection_manager_) {
+            UpdateSelectionFromClick(document, hit_result, logical_x, logical_y);
+        }
     }
 
     // 创建并分发 mousedown 事件
@@ -1378,20 +1416,11 @@ void MouseEventDispatcher::HandleMouseDown(std::shared_ptr<Window> window,
         if (focus_manager_) {
             focus_manager_->SetWindow(window.get());
             focus_manager_->SetFocus(hit_result.element, false);
+            focus_manager_->UpdateTextInputArea();
         }
 
-        // 初始化拖动选择状态
-        if (selection_manager_) {
-            auto selection = selection_manager_->GetSelection(document);
-            if (selection && hit_result.render_object) {
-                // 记录拖动开始位置
-                contenteditable_dragging_ = true;
-
-                // 注意：Selection 已经在 UpdateSelectionFromClick 中正确设置
-                // 这里只需要记录拖动起始位置，不需要重置 Selection
-                contenteditable_drag_start_node_ = selection->GetAnchorNode();
-                contenteditable_drag_start_offset_ = selection->GetAnchorOffset();
-            }
+        if (handled_contenteditable_mousedown) {
+            contenteditable_dragging_ = true;
         }
     }
     // 参考 Blink/Chrome 的行为：
@@ -1481,6 +1510,9 @@ void MouseEventDispatcher::HandleMouseUp(std::shared_ptr<Window> window,
         // 结束 contentEditable 拖动选择
         was_contenteditable_dragging = contenteditable_dragging_;
         if (contenteditable_dragging_) {
+            if (contenteditable_controller_) {
+                contenteditable_controller_->HandleMouseUp(last_mousedown, logical_x, logical_y);
+            }
             contenteditable_dragging_ = false;
             contenteditable_drag_start_node_.reset();
             contenteditable_drag_start_offset_ = 0;
@@ -1637,7 +1669,7 @@ void MouseEventDispatcher::HandleMouseMove(std::shared_ptr<Window> window,
         }
         // 处理 contentEditable 拖动选择
         else if (contenteditable_dragging_ && last_mousedown->IsContentEditable()) {
-            HandleContentEditableDragSelection(window, logical_x, logical_y, SDL_EVENT_MOUSE_MOTION);
+            HandleContentEditableDragSelection(window, document, logical_x, logical_y, root_render, SDL_EVENT_MOUSE_MOTION);
         }
     }
 
@@ -1648,33 +1680,25 @@ void MouseEventDispatcher::HandleMouseMove(std::shared_ptr<Window> window,
 }
 
 void MouseEventDispatcher::HandleContentEditableDragSelection(std::shared_ptr<Window> window,
-                                                               float /*logical_x*/,
-                                                               float /*logical_y*/,
+                                                               std::shared_ptr<Document> document,
+                                                               float logical_x,
+                                                               float logical_y,
+                                                               std::shared_ptr<RenderObject> root_render,
                                                                Uint32 event_type) {
     (void)event_type;
 
     auto last_mousedown = last_mousedown_element_.lock();
-    if (!last_mousedown || !selection_manager_) {
+    if (!window || !document || !last_mousedown || !last_mousedown->IsContentEditable()) {
         return;
     }
 
-    auto doc = std::dynamic_pointer_cast<Document>(last_mousedown->GetOwnerDocument());
-    if (!doc) {
+    if (!contenteditable_controller_) {
         return;
     }
 
-    auto selection = selection_manager_->GetSelection(doc);
-    auto drag_start_node = contenteditable_drag_start_node_.lock();
-    if (!selection || !drag_start_node) {
-        return;
+    if (contenteditable_controller_->HandleMouseMove(document, logical_x, logical_y, root_render, window.get())) {
+        window->SetNeedsRepaint();
     }
-
-    // 简化的 contentEditable 拖动选择处理
-    // 完整实现需要遍历渲染树找到文本节点，这里保持基本功能
-    // 实际的文本节点定位逻辑在 EventLoop 中已经很复杂
-    // 迁移时保持功能等价，但简化实现
-
-    window->SetNeedsRepaint();
 }
 
 void MouseEventDispatcher::UpdateSelectionFromClick(

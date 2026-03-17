@@ -296,7 +296,14 @@ void KeyboardEventDispatcher::HandleTextInput(const SDL_Event& event,
         auto element = std::dynamic_pointer_cast<Element>(focus_element);
         if (element && element->IsContentEditable()) {
             if (contenteditable_handler_ && document) {
-                contenteditable_handler_->InsertText(document, text);
+                if (contenteditable_handler_->HasActiveComposition(document)) {
+                    contenteditable_handler_->CommitComposition(document, text);
+                } else {
+                    contenteditable_handler_->InsertText(document, text);
+                }
+                if (focus_manager_) {
+                    focus_manager_->UpdateTextInputArea();
+                }
             }
         }
     }
@@ -305,9 +312,9 @@ void KeyboardEventDispatcher::HandleTextInput(const SDL_Event& event,
 void KeyboardEventDispatcher::HandleTextEditing(const SDL_Event& event,
                                                 std::shared_ptr<Element> focus_element,
                                                 std::shared_ptr<Document> document) {
-    (void)document;
     auto input_element = std::dynamic_pointer_cast<HTMLInputElement>(focus_element);
     auto textarea_element = std::dynamic_pointer_cast<HTMLTextAreaElement>(focus_element);
+    auto contenteditable_element = std::dynamic_pointer_cast<Element>(focus_element);
 
     std::string text = event.edit.text ? event.edit.text : "";
 
@@ -342,38 +349,62 @@ void KeyboardEventDispatcher::HandleTextEditing(const SDL_Event& event,
         return;
     }
 
-    if (!textarea_element) {
-        return;
-    }
+    if (textarea_element) {
+        auto edit_state = textarea_element->GetEditState();
+        if (!edit_state) {
+            return;
+        }
 
-    auto edit_state = textarea_element->GetEditState();
-    if (!edit_state) {
-        return;
-    }
+        TextAreaEditingController controller(textarea_element.get(), edit_state);
+        if (text.empty()) {
+            controller.CancelComposition();
+            if (focus_manager_) {
+                focus_manager_->UpdateTextInputArea();
+            }
+            return;
+        }
 
-    TextAreaEditingController controller(textarea_element.get(), edit_state);
-    if (text.empty()) {
-        controller.CancelComposition();
+        CompositionCommandData composition_data;
+        composition_data.text = text;
+        composition_data.start = edit_state->HasActiveComposition()
+            ? edit_state->composition_state.start
+            : edit_state->GetSelectionStart();
+        composition_data.end = edit_state->HasActiveComposition()
+            ? edit_state->composition_state.end
+            : edit_state->GetSelectionEnd();
+
+        if (edit_state->HasActiveComposition()) {
+            controller.UpdateComposition(composition_data);
+        } else {
+            controller.StartComposition(composition_data);
+        }
         if (focus_manager_) {
             focus_manager_->UpdateTextInputArea();
         }
         return;
     }
 
-    CompositionCommandData composition_data;
-    composition_data.text = text;
-    composition_data.start = edit_state->HasActiveComposition()
-        ? edit_state->composition_state.start
-        : edit_state->GetSelectionStart();
-    composition_data.end = edit_state->HasActiveComposition()
-        ? edit_state->composition_state.end
-        : edit_state->GetSelectionEnd();
-
-    if (edit_state->HasActiveComposition()) {
-        controller.UpdateComposition(composition_data);
-    } else {
-        controller.StartComposition(composition_data);
+    if (!contenteditable_element || !contenteditable_element->IsContentEditable() || !contenteditable_handler_ || !document) {
+        return;
     }
+
+    auto selection = document->GetSelection();
+    int start = selection ? selection->GetFocusOffset() : 0;
+    int end = start;
+    if (contenteditable_handler_->HasActiveComposition(document)) {
+        const auto composition = contenteditable_handler_->GetCompositionState(document);
+        start = composition.start;
+        end = composition.end;
+    }
+
+    if (text.empty()) {
+        contenteditable_handler_->CancelComposition(document);
+    } else if (contenteditable_handler_->HasActiveComposition(document)) {
+        contenteditable_handler_->UpdateComposition(document, text, start, end);
+    } else {
+        contenteditable_handler_->StartComposition(document, text, start, end);
+    }
+
     if (focus_manager_) {
         focus_manager_->UpdateTextInputArea();
     }

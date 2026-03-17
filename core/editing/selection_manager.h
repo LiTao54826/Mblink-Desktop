@@ -14,6 +14,7 @@
 #include <memory>
 #include <map>
 #include <string>
+#include <vector>
 
 class SkCanvas;
 class SkFont;
@@ -37,6 +38,13 @@ struct CaretPosition {
     float height = 0.0f;             ///< 光标高度
 
     bool IsValid() const { return node != nullptr; }
+};
+
+struct SelectionRect {
+    float x = 0.0f;
+    float y = 0.0f;
+    float width = 0.0f;
+    float height = 0.0f;
 };
 
 /**
@@ -175,6 +183,13 @@ public:
      * @param document 目标文档
      */
     void RenderCaret(SkCanvas* canvas, std::shared_ptr<Document> document);
+
+    /**
+     * @brief 获取当前选择高亮矩形
+     * @param document 目标文档
+     * @return 选择区域矩形列表
+     */
+    std::vector<SelectionRect> GetSelectionRects(std::shared_ptr<Document> document);
 
     /**
      * @brief 渲染选择高亮

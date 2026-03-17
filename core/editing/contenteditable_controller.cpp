@@ -7,6 +7,7 @@
 #include "core/render/text/font_manager.h"
 #include "core/editing/selection_manager.h"
 #include "core/editing/contenteditable_handler.h"
+#include "core/editing/contenteditable_geometry.h"
 #include "core/dom/document.h"
 #include "core/dom/element.h"
 #include "core/dom/text.h"
@@ -14,12 +15,113 @@
 #include "core/render/objects/render_object.h"
 #include "core/render/text/text_renderer.h"
 #include "core/window/window.h"
+#include "core/utils/utf8_utils.h"
+#include <algorithm>
+#include <cmath>
 #include <iostream>
 #include <functional>
 #include <vector>
 #include <limits>
 
 namespace lightui {
+
+namespace {
+
+struct TextFragmentInfo {
+    std::shared_ptr<Text> node;
+    float x = 0.0f;
+    float y = 0.0f;
+    float width = 0.0f;
+    float height = 0.0f;
+    float center_y = 0.0f;
+    float letter_spacing = 0.0f;
+    float word_spacing = 0.0f;
+    std::string text;
+    SkFont font;
+    int char_count = 0;
+};
+
+SkFont BuildFontFromStyle(const ComputedStyle& text_style) {
+    FontDescriptor desc;
+    desc.family = !text_style.font_family.empty() ? text_style.font_family : "Arial";
+    desc.size = text_style.font_size > 0 ? text_style.font_size : 16.0f;
+    desc.weight = ParseCSSFontWeight(text_style.font_weight);
+    desc.style = (text_style.font_style == "italic")
+                     ? FontStyle::ITALIC
+                     : FontStyle::NORMAL;
+    return FontManager::GetInstance().LoadFont(desc);
+}
+
+float MeasureTextWidthWithEmoji(const std::string& text, const SkFont& font) {
+    TextRenderer renderer(nullptr);
+    return renderer.MeasureTextWidthWithEmoji(text, font);
+}
+
+float MeasureFragmentCharAdvance(const TextFragmentInfo& fragment, int char_index) {
+    if (char_index < 0 || char_index >= fragment.char_count) {
+        return 0.0f;
+    }
+
+    std::string char_str = utf8::SubstrByChar(fragment.text, char_index, char_index + 1);
+    float char_width = MeasureTextWidthWithEmoji(char_str, fragment.font);
+    if (char_str == " ") {
+        char_width += fragment.word_spacing;
+    }
+    if (char_index + 1 < fragment.char_count) {
+        char_width += fragment.letter_spacing;
+    }
+    return char_width;
+}
+
+float MeasureFragmentPrefixWidth(const TextFragmentInfo& fragment, int char_offset) {
+    const int clamped_offset = std::max(0, std::min(char_offset, fragment.char_count));
+    if (clamped_offset <= 0) {
+        return 0.0f;
+    }
+
+    std::string prefix = utf8::SubstrByChar(fragment.text, 0, clamped_offset);
+    float prefix_width = MeasureTextWidthWithEmoji(prefix, fragment.font);
+
+    for (int i = 0; i + 1 < clamped_offset; ++i) {
+        prefix_width += fragment.letter_spacing;
+        std::string char_str = utf8::SubstrByChar(fragment.text, i, i + 1);
+        if (char_str == " ") {
+            prefix_width += fragment.word_spacing;
+        }
+    }
+
+    return prefix_width;
+}
+
+int HitTestFragmentOffset(const TextFragmentInfo& fragment, float local_x) {
+    if (fragment.char_count <= 0 || local_x <= 0.0f) {
+        return 0;
+    }
+
+    float best_distance = std::numeric_limits<float>::max();
+    int best_offset = 0;
+
+    for (int offset = 0; offset <= fragment.char_count; ++offset) {
+        const float boundary_x = MeasureFragmentPrefixWidth(fragment, offset);
+        const float distance = std::abs(local_x - boundary_x);
+        if (distance < best_distance) {
+            best_distance = distance;
+            best_offset = offset;
+        }
+    }
+
+    return best_offset;
+}
+
+float DistanceToFragmentBoxSquared(const TextFragmentInfo& fragment, float x, float y) {
+    const float dx = (x < fragment.x) ? (fragment.x - x)
+        : (x > fragment.x + fragment.width ? x - (fragment.x + fragment.width) : 0.0f);
+    const float dy = (y < fragment.y) ? (fragment.y - y)
+        : (y > fragment.y + fragment.height ? y - (fragment.y + fragment.height) : 0.0f);
+    return dx * dx + dy * dy;
+}
+
+} // namespace
 
 // ========== 构造函数/析构函数 ==========
 
@@ -35,32 +137,21 @@ ContentEditableController::~ContentEditableController() = default;
 // ========== 静态辅助方法 ==========
 
 std::shared_ptr<Element> ContentEditableController::GetContentEditableRoot(std::shared_ptr<Node> node) {
-    if (!node) {
-        return nullptr;
+    return GetContentEditableEditingHost(node);
+}
+
+ContentEditableResolvedPosition ContentEditableController::ResolveFallbackCaretPosition(
+    const std::shared_ptr<Element>& contenteditable_root,
+    const std::shared_ptr<Node>& fallback_node,
+    float click_x,
+    float host_width) {
+    if (!contenteditable_root) {
+        return {};
     }
 
-    // 向上遍历查找最外层的可编辑元素（设置了 contenteditable="true" 属性的元素）
-    auto current = node;
-    std::shared_ptr<Element> editable_root = nullptr;
-    
-    while (current) {
-        if (current->GetNodeType() == NodeType::ELEMENT_NODE) {
-            auto element = std::dynamic_pointer_cast<Element>(current);
-            if (element) {
-                // 检查是否显式设置了 contenteditable="true" 属性
-                if (element->HasAttribute("contenteditable")) {
-                    std::string attr = element->GetAttribute("contenteditable");
-                    if (attr == "true" || attr == "") {
-                        editable_root = element;
-                        // 继续向上查找，以找到最外层的 contentEditable 元素
-                    }
-                }
-            }
-        }
-        current = current->GetParentNode();
-    }
-
-    return editable_root;
+    std::shared_ptr<Node> base_node = fallback_node ? fallback_node : contenteditable_root;
+    const bool prefer_after = click_x >= std::max(0.0f, host_width * 0.5f);
+    return ResolveContentEditableCaretPosition(contenteditable_root, base_node, 0, prefer_after);
 }
 
 // ========== 鼠标事件处理 ==========
@@ -100,7 +191,7 @@ bool ContentEditableController::HandleMouseDown(
     // 找到根元素的渲染对象
     float abs_x = 0, abs_y = 0;
     auto contenteditable_render = FindContentEditableRenderObject(root_render, contenteditable_root, abs_x, abs_y);
-    
+
     if (!contenteditable_render) {
         // 回退到 render_object
         contenteditable_render = render_object;
@@ -109,39 +200,57 @@ bool ContentEditableController::HandleMouseDown(
         abs_y = y;
     }
 
-    // 计算相对于 contentEditable 根元素的点击坐标
     const auto& style = contenteditable_render->GetComputedStyle();
-    float padding_left = style.padding.left.ToPx();
-    float padding_top = style.padding.top.ToPx();
-    float border_left = style.border_left_width;
-    float border_top = style.border_top_width;
-    
+    const auto& layout = contenteditable_render->GetLayoutInfo();
+    const float padding_left = style.padding.left.ToPx();
+    const float padding_top = style.padding.top.ToPx();
+    const float padding_right = style.padding.right.ToPx();
+    const float padding_bottom = style.padding.bottom.ToPx();
+    const float border_left = style.border_left_width;
+    const float border_top = style.border_top_width;
+    const float border_right = style.border_right_width;
+    const float border_bottom = style.border_bottom_width;
+    const float content_width = std::max(0.0f,
+        layout.width - padding_left - padding_right - border_left - border_right);
+    const float content_height = std::max(0.0f,
+        layout.height - padding_top - padding_bottom - border_top - border_bottom);
+
     float click_x = x - abs_x - padding_left - border_left;
     float click_y = y - abs_y - padding_top - border_top;
+    click_x = std::clamp(click_x, 0.0f, content_width);
+    click_y = std::clamp(click_y, 0.0f, content_height);
+
+    const float hit_test_x = click_x + padding_left + border_left;
+    const float hit_test_y = click_y + padding_top + border_top;
 
     // 查找文本节点
     std::shared_ptr<Node> target_text_node = nullptr;
     int target_offset = 0;
-    
-    FindTextNodeAtPosition(contenteditable_render, click_x, click_y, target_text_node, target_offset);
 
+    FindTextNodeAtPosition(contenteditable_render, hit_test_x, hit_test_y, target_text_node, target_offset);
+
+    ContentEditableResolvedPosition resolved_position;
     if (target_text_node) {
+        resolved_position.valid = true;
+        resolved_position.node = target_text_node;
+        resolved_position.offset = target_offset;
+    } else {
+        resolved_position = ResolveFallbackCaretPosition(
+            contenteditable_root, target, click_x, content_width);
+    }
+
+    if (resolved_position.valid && resolved_position.node) {
         if (shift_key) {
-            // Shift+点击：扩展选择
-            selection->Extend(target_text_node, target_offset);
+            selection->Extend(resolved_position.node, resolved_position.offset);
         } else {
-            // 普通点击：设置光标位置
-            selection->Collapse(target_text_node, target_offset);
+            selection->Collapse(resolved_position.node, resolved_position.offset);
         }
-        
-        // 开始拖拽选择
+
         drag_state_.is_active = true;
         drag_state_.editable_root = contenteditable_root;
         drag_state_.start_node = selection->GetAnchorNode();
         drag_state_.start_offset = selection->GetAnchorOffset();
-        
     } else {
-        // 没找到文本节点，折叠到元素
         selection->Collapse(target, 0);
         drag_state_.is_active = true;
         drag_state_.editable_root = contenteditable_root;
@@ -171,43 +280,75 @@ bool ContentEditableController::HandleMouseMove(
         return false;
     }
 
+    if (!IsNodeInsideEditingHost(drag_state_.start_node, drag_state_.editable_root.get())) {
+        drag_state_.Reset();
+        return false;
+    }
 
-    // 找到 contentEditable 根元素的渲染对象
-    float abs_x = 0, abs_y = 0;
+    float abs_x = 0.0f;
+    float abs_y = 0.0f;
     auto contenteditable_render = FindContentEditableRenderObject(
         root_render, drag_state_.editable_root, abs_x, abs_y);
-    
     if (!contenteditable_render) {
         return false;
     }
 
-    // 计算相对坐标
     const auto& style = contenteditable_render->GetComputedStyle();
-    float padding_left = style.padding.left.ToPx();
-    float padding_top = style.padding.top.ToPx();
-    float border_left = style.border_left_width;
-    float border_top = style.border_top_width;
-    
+    const auto& layout = contenteditable_render->GetLayoutInfo();
+    const float padding_left = style.padding.left.ToPx();
+    const float padding_top = style.padding.top.ToPx();
+    const float padding_right = style.padding.right.ToPx();
+    const float padding_bottom = style.padding.bottom.ToPx();
+    const float border_left = style.border_left_width;
+    const float border_top = style.border_top_width;
+    const float border_right = style.border_right_width;
+    const float border_bottom = style.border_bottom_width;
+    const float content_width = std::max(0.0f,
+        layout.width - padding_left - padding_right - border_left - border_right);
+    const float content_height = std::max(0.0f,
+        layout.height - padding_top - padding_bottom - border_top - border_bottom);
+
     float click_x = x - abs_x - padding_left - border_left;
     float click_y = y - abs_y - padding_top - border_top;
+    click_x = std::clamp(click_x, 0.0f, content_width);
+    click_y = std::clamp(click_y, 0.0f, content_height);
 
-    // 查找文本节点
+    const float hit_test_x = click_x + padding_left + border_left;
+    const float hit_test_y = click_y + padding_top + border_top;
+
     std::shared_ptr<Node> target_text_node = nullptr;
     int target_offset = 0;
-    
-    FindTextNodeAtPosition(contenteditable_render, click_x, click_y, target_text_node, target_offset);
+    FindTextNodeAtPosition(contenteditable_render, hit_test_x, hit_test_y, target_text_node, target_offset);
 
+    ContentEditableResolvedPosition resolved_position;
     if (target_text_node) {
-        // 更新选择
-        selection->UpdateFromUserAction(
-            drag_state_.start_node, drag_state_.start_offset,
-            target_text_node, target_offset
-        );
-        
-        if (window) {
-            window->SetNeedsRepaint();
+        resolved_position.valid = true;
+        resolved_position.node = target_text_node;
+        resolved_position.offset = target_offset;
+    } else {
+        resolved_position = ResolveFallbackCaretPosition(
+            drag_state_.editable_root, drag_state_.start_node, click_x, content_width);
+    }
+
+    if (!resolved_position.valid || !resolved_position.node) {
+        return false;
+    }
+
+    if (!IsNodeInsideEditingHost(resolved_position.node, drag_state_.editable_root.get())) {
+        resolved_position = ResolveFallbackCaretPosition(
+            drag_state_.editable_root, drag_state_.editable_root, click_x, content_width);
+        if (!resolved_position.valid || !resolved_position.node) {
+            return false;
         }
-        
+    }
+
+    selection->UpdateFromUserAction(
+        drag_state_.start_node, drag_state_.start_offset,
+        resolved_position.node, resolved_position.offset
+    );
+
+    if (window) {
+        window->SetNeedsRepaint();
     }
 
     return true;
@@ -218,11 +359,11 @@ bool ContentEditableController::HandleMouseUp(
     float /*x*/, float /*y*/) {
 
     bool was_dragging = drag_state_.is_active;
-    
+
     // 结束拖拽选择
     drag_state_.Reset();
-    
-    
+
+
     return was_dragging;
 }
 
@@ -274,26 +415,26 @@ std::shared_ptr<RenderObject> ContentEditableController::FindContentEditableRend
     std::function<FindResult(std::shared_ptr<RenderObject>, float, float)> findRenderObj;
     findRenderObj = [&](std::shared_ptr<RenderObject> obj, float offset_x, float offset_y) -> FindResult {
         if (!obj) return {};
-        
+
         const auto& layout = obj->GetLayoutInfo();
         float current_x = offset_x + layout.x;
         float current_y = offset_y + layout.y;
-        
+
         auto node = obj->GetNode();
         if (node && node == contenteditable_root) {
             return {obj, current_x, current_y};
         }
-        
+
         float child_offset_x = current_x - obj->GetScrollX();
         float child_offset_y = current_y - obj->GetScrollY();
-        
+
         for (auto& child : obj->GetChildren()) {
             auto result = findRenderObj(child, child_offset_x, child_offset_y);
             if (result.render_obj) {
                 return result;
             }
         }
-        
+
         return {};
     };
 
@@ -318,155 +459,132 @@ bool ContentEditableController::FindTextNodeAtPosition(
     }
 
     const auto& root_layout = render_obj->GetLayoutInfo();
-    
-    // 精确查找
-    std::function<bool(RenderObject*, float, float, float, float)> findTextAtPosition;
-    findTextAtPosition = [&](RenderObject* obj, float acc_x, float acc_y, float target_x, float target_y) -> bool {
+
+    std::vector<TextFragmentInfo> fragments;
+    std::function<void(RenderObject*, float, float)> collectFragments;
+    collectFragments = [&](RenderObject* obj, float acc_x, float acc_y) {
+        if (!obj) {
+            return;
+        }
+
         const auto& layout = obj->GetLayoutInfo();
-        float new_x = acc_x + layout.x;
-        float new_y = acc_y + layout.y;
-        
+        const float new_x = acc_x + layout.x;
+        const float new_y = acc_y + layout.y;
+        const float child_acc_x = new_x - obj->GetScrollX();
+        const float child_acc_y = new_y - obj->GetScrollY();
+
         auto node = obj->GetNode();
         if (node && node->GetNodeType() == NodeType::TEXT_NODE) {
             auto text_node = std::dynamic_pointer_cast<Text>(node);
-            
-            bool in_x = target_x >= new_x && target_x < new_x + layout.width;
-            bool in_y = target_y >= new_y && target_y < new_y + layout.height;
-            
-            if (in_x && in_y && text_node) {
+            if (text_node) {
                 std::string text = text_node->GetTextContent();
-                const auto& text_style = obj->GetComputedStyle();
-                
-                FontDescriptor desc;
-                desc.family = !text_style.font_family.empty() ? text_style.font_family : "Arial";
-                desc.size = text_style.font_size > 0 ? text_style.font_size : 16.0f;
-                desc.weight = ParseCSSFontWeight(text_style.font_weight);
-                desc.style = (text_style.font_style == "italic") 
-                             ? FontStyle::ITALIC : FontStyle::NORMAL;
-                SkFont font = FontManager::GetInstance().LoadFont(desc);
-                
-                float letter_spacing = text_style.letter_spacing.ToPx(0, text_style.font_size);
-                float word_spacing = text_style.word_spacing.ToPx(0, text_style.font_size);
-                
-                float text_x = target_x - new_x;
-                int offset = 0;
-                float accumulated_width = 0;
-                
-                for (size_t i = 0; i < text.length(); ) {
-                    size_t char_len = 1;
-                    unsigned char c = text[i];
-                    if ((c & 0x80) == 0) char_len = 1;
-                    else if ((c & 0xE0) == 0xC0) char_len = 2;
-                    else if ((c & 0xF0) == 0xE0) char_len = 3;
-                    else if ((c & 0xF8) == 0xF0) char_len = 4;
-                    
-                    std::string char_str = text.substr(i, char_len);
-                    float char_width = TextRenderer::MeasureMixedTextWidth(char_str, font);
-                    if (char_str == " ") char_width += word_spacing;
-                    float total_char_width = char_width;
-                    if (i + char_len < text.length()) total_char_width += letter_spacing;
-                    
-                    if (accumulated_width + char_width / 2 > text_x) break;
-                    accumulated_width += total_char_width;
-                    offset += static_cast<int>(char_len);
-                    i += char_len;
+                const int char_count = static_cast<int>(utf8::CharCount(text));
+                if (char_count > 0 && layout.width >= 0.0f && layout.height > 0.0f) {
+                    const auto& text_style = obj->GetComputedStyle();
+                    TextFragmentInfo fragment;
+                    fragment.node = text_node;
+                    fragment.x = new_x;
+                    fragment.y = new_y;
+                    fragment.width = layout.width;
+                    fragment.height = layout.height;
+                    fragment.center_y = new_y + layout.height * 0.5f;
+                    fragment.letter_spacing = text_style.letter_spacing.ToPx(0, text_style.font_size);
+                    fragment.word_spacing = text_style.word_spacing.ToPx(0, text_style.font_size);
+                    fragment.text = std::move(text);
+                    fragment.font = BuildFontFromStyle(text_style);
+                    fragment.char_count = char_count;
+                    fragments.push_back(std::move(fragment));
                 }
-                
-                out_node = text_node;
-                out_offset = offset;
-                return true;
             }
         }
-        
+
         for (auto& child : obj->GetChildren()) {
-            if (findTextAtPosition(child.get(), new_x, new_y, target_x, target_y)) {
-                return true;
-            }
+            collectFragments(child.get(), child_acc_x, child_acc_y);
         }
-        return false;
     };
 
-    if (findTextAtPosition(render_obj.get(), -root_layout.x, -root_layout.y, click_x, click_y)) {
-        return true;
-    }
-
-    // 如果没找到精确的文本节点，找最近的
-    struct TextNodeInfo {
-        std::shared_ptr<Text> node;
-        float x, y, width, height;
-    };
-    std::vector<TextNodeInfo> text_nodes;
-    
-    std::function<void(RenderObject*, float, float)> collectTextNodes;
-    collectTextNodes = [&](RenderObject* obj, float acc_x, float acc_y) {
-        const auto& layout = obj->GetLayoutInfo();
-        float new_x = acc_x + layout.x;
-        float new_y = acc_y + layout.y;
-        
-        auto node = obj->GetNode();
-        if (node && node->GetNodeType() == NodeType::TEXT_NODE) {
-            auto text_node = std::dynamic_pointer_cast<Text>(node);
-            if (text_node && !text_node->GetTextContent().empty()) {
-                text_nodes.push_back({text_node, new_x, new_y, layout.width, layout.height});
-            }
-        }
-        
-        for (auto& child : obj->GetChildren()) {
-            collectTextNodes(child.get(), new_x, new_y);
-        }
-    };
-    collectTextNodes(render_obj.get(), -root_layout.x, -root_layout.y);
-    
-    if (text_nodes.empty()) {
+    collectFragments(render_obj.get(), -root_layout.x, -root_layout.y);
+    if (fragments.empty()) {
         return false;
     }
 
-    // 找同一行的节点
-    std::vector<TextNodeInfo*> same_line_nodes;
-    for (auto& info : text_nodes) {
-        if (click_y >= info.y && click_y < info.y + info.height) {
-            same_line_nodes.push_back(&info);
+    std::vector<TextFragmentInfo*> same_line_fragments;
+    TextFragmentInfo* nearest_line_fragment = nullptr;
+    float nearest_line_distance = std::numeric_limits<float>::max();
+
+    for (auto& fragment : fragments) {
+        const bool in_line_band = click_y >= fragment.y && click_y < fragment.y + fragment.height;
+        const float line_distance = in_line_band
+            ? 0.0f
+            : std::abs(click_y - fragment.center_y);
+
+        if (line_distance < nearest_line_distance) {
+            nearest_line_distance = line_distance;
+            nearest_line_fragment = &fragment;
+        }
+
+        if (in_line_band) {
+            same_line_fragments.push_back(&fragment);
         }
     }
-    
-    if (!same_line_nodes.empty()) {
-        TextNodeInfo* closest = nullptr;
-        float min_distance = std::numeric_limits<float>::max();
-        
-        for (auto* info : same_line_nodes) {
-            float distance;
-            if (click_x < info->x) {
-                distance = info->x - click_x;
-            } else if (click_x > info->x + info->width) {
-                distance = click_x - (info->x + info->width);
-            } else {
-                distance = 0;
-            }
-            
-            if (distance < min_distance) {
-                min_distance = distance;
-                closest = info;
+
+    std::vector<TextFragmentInfo*> candidate_fragments;
+    if (!same_line_fragments.empty()) {
+        candidate_fragments = same_line_fragments;
+    } else if (nearest_line_fragment) {
+        for (auto& fragment : fragments) {
+            const float tolerance = std::max(fragment.height * 0.5f, 2.0f);
+            if (std::abs(fragment.center_y - nearest_line_fragment->center_y) <= tolerance) {
+                candidate_fragments.push_back(&fragment);
             }
         }
-        
-        if (closest) {
-            out_node = closest->node;
-            if (click_x >= closest->x + closest->width) {
-                out_offset = static_cast<int>(closest->node->GetTextContent().length());
-            } else {
-                out_offset = 0;
-            }
-            return true;
+    }
+
+    if (candidate_fragments.empty()) {
+        candidate_fragments.push_back(&fragments.front());
+    }
+
+    std::sort(candidate_fragments.begin(), candidate_fragments.end(), [](const TextFragmentInfo* a, const TextFragmentInfo* b) {
+        if (std::abs(a->center_y - b->center_y) > 1.0f) {
+            return a->center_y < b->center_y;
         }
-    } else if (!text_nodes.empty()) {
-        // 没有同一行的，使用最后一个
-        auto& last = text_nodes.back();
-        out_node = last.node;
-        out_offset = static_cast<int>(last.node->GetTextContent().length());
+        if (std::abs(a->x - b->x) > 0.5f) {
+            return a->x < b->x;
+        }
+        return a->width < b->width;
+    });
+
+    TextFragmentInfo* best_fragment = nullptr;
+    float best_distance = std::numeric_limits<float>::max();
+    for (auto* fragment : candidate_fragments) {
+        const float distance = DistanceToFragmentBoxSquared(*fragment, click_x, click_y);
+        if (distance < best_distance) {
+            best_distance = distance;
+            best_fragment = fragment;
+        }
+    }
+
+    if (!best_fragment) {
+        return false;
+    }
+
+    out_node = best_fragment->node;
+
+    if (click_x <= best_fragment->x) {
+        out_offset = 0;
         return true;
     }
 
-    return false;
+    if (click_x >= best_fragment->x + best_fragment->width) {
+        out_offset = best_fragment->char_count;
+        return true;
+    }
+
+    const float local_x = click_x - best_fragment->x;
+    const int resolved_offset = HitTestFragmentOffset(*best_fragment, local_x);
+
+    out_offset = std::max(0, std::min(resolved_offset, best_fragment->char_count));
+    return true;
 }
 
 } // namespace lightui

@@ -554,6 +554,38 @@ std::pair<float, float> RenderInlineBlock::MeasureIntrinsicSize(float available_
         }
     }
 
+    // Apply min/max constraints consistently for all inline-block intrinsic sizing.
+    // This keeps form controls like textarea/input/select aligned with the rest of
+    // the layout engine and avoids special-case fixes per element type.
+    float min_height = style.min_height.ToPx(0, style.font_size);
+    float max_height = style.max_height.ToPx(0, style.font_size);
+    float min_width = style.min_width.ToPx(available_width, style.font_size);
+    float max_width = style.max_width.ToPx(available_width, style.font_size);
+
+    float vertical_non_content = padding_top + padding_bottom + border_top + border_bottom;
+    float horizontal_non_content = padding_left + padding_right + border_left + border_right;
+
+    if (style.box_sizing != "border-box") {
+        if (min_height > 0) min_height += vertical_non_content;
+        if (max_height > 0) max_height += vertical_non_content;
+        if (min_width > 0) min_width += horizontal_non_content;
+        if (max_width > 0) max_width += horizontal_non_content;
+    }
+
+    // CSS spec: when min > max, min wins, so apply max first then min.
+    if (max_height > 0) {
+        height = std::min(height, max_height);
+    }
+    if (min_height > 0) {
+        height = std::max(height, min_height);
+    }
+    if (max_width > 0) {
+        width = std::min(width, max_width);
+    }
+    if (min_width > 0) {
+        width = std::max(width, min_width);
+    }
+
     if (debug) {
     }
 

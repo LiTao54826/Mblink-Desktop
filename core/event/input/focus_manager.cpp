@@ -16,6 +16,8 @@
 #include "core/render/objects/render_object.h"
 #include "core/render/pipeline/render_pipeline.h"
 #include "core/render/text/font_manager.h"
+#include "core/editing/contenteditable_geometry.h"
+#include "core/editing/contenteditable_handler.h"
 #include "core/utils/utf8_utils.h"
 #include "include/core/SkFontMetrics.h"
 #include <SDL3/SDL.h>
@@ -394,6 +396,28 @@ void FocusManager::UpdateTextInputArea() {
         area_y = baseline_y + metrics.fAscent + (glyph_height - ime_font_height) * 0.5f;
         area_width = visible_width;
         area_height = ime_font_height;
+    } else if (element->IsContentEditable()) {
+        auto document = std::dynamic_pointer_cast<Document>(element->GetOwnerDocument());
+        std::shared_ptr<Selection> selection = document ? document->GetSelection() : nullptr;
+        if (!selection && document) {
+            selection = document->GetSelection();
+        }
+        auto anchor_node = selection ? selection->GetFocusNode() : nullptr;
+        int anchor_offset = selection ? selection->GetFocusOffset() : 0;
+
+        if (contenteditable_handler_ && document && contenteditable_handler_->HasActiveComposition(document)) {
+            const auto composition = contenteditable_handler_->GetCompositionState(document);
+            anchor_offset = composition.start;
+        }
+
+        auto caret_rect = ComputeContentEditableCaretRect(element, anchor_node, anchor_offset);
+        if (caret_rect.valid) {
+            area_x = std::max(content_x, caret_rect.x);
+            area_y = caret_rect.y;
+            area_width = std::max(1.0f, content_width - std::max(0.0f, area_x - content_x));
+            area_height = std::max(1.0f, caret_rect.height);
+            caret_x = caret_rect.x;
+        }
     }
 
     const float display_scale = std::max(1.0f, window_->GetDisplayScale());

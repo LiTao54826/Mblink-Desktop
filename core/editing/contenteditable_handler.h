@@ -20,6 +20,9 @@
 #include <functional>
 #include <vector>
 #include <deque>
+#include <unordered_map>
+
+#include "core/editing/input_edit_state.h"
 
 namespace lightui {
 
@@ -136,6 +139,21 @@ public:
      */
     bool InsertLineBreak(std::shared_ptr<Document> document);
 
+    // ========== IME Composition ==========
+
+    bool StartComposition(std::shared_ptr<Document> document,
+                          const std::string& text,
+                          int start,
+                          int end);
+    bool UpdateComposition(std::shared_ptr<Document> document,
+                           const std::string& text,
+                           int start,
+                           int end);
+    bool CommitComposition(std::shared_ptr<Document> document, const std::string& text);
+    bool CancelComposition(std::shared_ptr<Document> document);
+    bool HasActiveComposition(std::shared_ptr<Document> document) const;
+    CompositionState GetCompositionState(std::shared_ptr<Document> document) const;
+
     // ========== execCommand 支持 ==========
 
     /**
@@ -224,7 +242,7 @@ private:
      * @param tag_name 标签名
      * @return true 如果成功
      */
-    bool ApplyFormattingToRange(std::shared_ptr<Document> document, 
+    bool ApplyFormattingToRange(std::shared_ptr<Document> document,
                                 std::shared_ptr<Range> range,
                                 const std::string& tag_name);
 
@@ -263,7 +281,7 @@ private:
      * @param node 节点
      * @return 可编辑元素，如果没有返回 nullptr
      */
-    std::shared_ptr<Element> FindEditableElement(std::shared_ptr<Node> node);
+    std::shared_ptr<Element> FindEditableElement(std::shared_ptr<Node> node) const;
 
     /**
      * @brief 合并到前一个节点（处理跨节点删除）
@@ -347,6 +365,8 @@ private:
      */
     bool MoveCursorToNextWord(std::shared_ptr<Document> document, bool extend_selection);
 
+    std::shared_ptr<Element> GetActiveEditableRoot(std::shared_ptr<Document> document) const;
+
     /**
      * @brief 查找前一个文本节点
      * @param current_node 当前节点
@@ -402,7 +422,7 @@ private:
 
 private:
     SelectionManager* selection_manager_;
-    
+
     // 撤销/重做栈
     std::deque<UndoState> undo_stack_;
     std::deque<UndoState> redo_stack_;
@@ -411,6 +431,8 @@ private:
     // 撤销组状态
     bool in_undo_group_ = false;
     UndoState undo_group_start_state_;
+
+    std::unordered_map<Document*, CompositionState> composition_states_;
 };
 
 } // namespace lightui

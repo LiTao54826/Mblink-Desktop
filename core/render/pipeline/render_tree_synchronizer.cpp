@@ -32,17 +32,17 @@ void RenderTreeSynchronizer::SetRenderTreeBuilder(std::shared_ptr<RenderTreeBuil
     render_tree_builder_ = builder;
 }
 
-bool RenderTreeSynchronizer::Synchronize(DirtyNodeTracker& tracker, 
+bool RenderTreeSynchronizer::Synchronize(DirtyNodeTracker& tracker,
                                           std::shared_ptr<RenderObject> render_tree) {
     if (!tracker.HasPendingChanges()) {
         return false;
     }
-    
+
     render_tree_ = render_tree;
-    
+
     // 优化变化列表（合并冗余操作）
     tracker.Optimize();
-    
+
     // 判断是否需要子树重建
     if (NeedsSubtreeRebuild(tracker)) {
         // 收集受影响的根节点
@@ -62,28 +62,28 @@ bool RenderTreeSynchronizer::Synchronize(DirtyNodeTracker& tracker,
         // 增量更新
         ProcessStructuralChanges(tracker);
     }
-    
+
     // 处理样式和文本变化
     ProcessStyleChanges(tracker);
     ProcessTextChanges(tracker);
-    
+
     // 清除追踪器
     tracker.Clear();
-    
+
     render_tree_ = nullptr;
-    
+
     return true;
 }
 
 bool RenderTreeSynchronizer::NeedsSubtreeRebuild(const DirtyNodeTracker& tracker) const {
     const auto& changes = tracker.GetStructuralChanges();
-    
+
     // 规则 1：计算变化区域的总面积
     // 如果变化区域超过视口面积的 50%，使用全量重建更高效
     float total_change_area = 0.0f;
     float viewport_width = 800.0f;  // 默认值
     float viewport_height = 600.0f;
-    
+
     // 尝试从第一个有 RenderObject 的节点获取视口大小
     for (const auto& change : changes) {
         if (auto node = change.node.lock()) {
@@ -94,9 +94,9 @@ bool RenderTreeSynchronizer::NeedsSubtreeRebuild(const DirtyNodeTracker& tracker
             }
         }
     }
-    
+
     float viewport_area = viewport_width * viewport_height;
-    
+
     for (const auto& change : changes) {
         // 尝试获取变化节点的渲染对象来计算面积
         if (auto node = change.node.lock()) {
@@ -116,12 +116,12 @@ bool RenderTreeSynchronizer::NeedsSubtreeRebuild(const DirtyNodeTracker& tracker
             }
         }
     }
-    
+
     // 如果变化区域超过视口的 50%，使用全量重建
     if (viewport_area > 0 && total_change_area > viewport_area * 0.5f) {
         return true;
     }
-    
+
     // 规则 2：有 Replaced 操作且涉及复杂子树
     for (const auto& change : changes) {
         if (change.type == DirtyNodeTracker::StructuralChangeType::Replaced) {
@@ -132,7 +132,7 @@ bool RenderTreeSynchronizer::NeedsSubtreeRebuild(const DirtyNodeTracker& tracker
             }
         }
     }
-    
+
     // 规则 3：同一父节点下有多个变化
     std::unordered_map<Node*, size_t> parent_change_count;
     for (const auto& change : changes) {
@@ -142,7 +142,7 @@ bool RenderTreeSynchronizer::NeedsSubtreeRebuild(const DirtyNodeTracker& tracker
             }
         }
     }
-    
+
     return false;
 }
 
@@ -157,7 +157,7 @@ void RenderTreeSynchronizer::ProcessStructuralChanges(DirtyNodeTracker& tracker)
                 }
                 break;
             }
-            
+
             case DirtyNodeTracker::StructuralChangeType::Removed: {
                 auto node = change.node.lock();
                 if (node) {
@@ -165,7 +165,7 @@ void RenderTreeSynchronizer::ProcessStructuralChanges(DirtyNodeTracker& tracker)
                 }
                 break;
             }
-            
+
             case DirtyNodeTracker::StructuralChangeType::Replaced: {
                 auto old_node = change.old_node.lock();
                 auto new_node = change.new_node.lock();
@@ -175,14 +175,14 @@ void RenderTreeSynchronizer::ProcessStructuralChanges(DirtyNodeTracker& tracker)
                 }
                 break;
             }
-            
+
             case DirtyNodeTracker::StructuralChangeType::Moved: {
                 auto node = change.node.lock();
                 auto old_parent = change.old_parent.lock();
                 auto new_parent = change.parent.lock();
                 if (node && new_parent) {
                     // 移动渲染对象（不清除关联）
-                    MoveRenderObject(node.get(), old_parent ? old_parent.get() : nullptr, 
+                    MoveRenderObject(node.get(), old_parent ? old_parent.get() : nullptr,
                                     new_parent.get(), change.index);
                 }
                 break;
@@ -194,30 +194,38 @@ void RenderTreeSynchronizer::ProcessStructuralChanges(DirtyNodeTracker& tracker)
 void RenderTreeSynchronizer::ProcessStyleChanges(DirtyNodeTracker& tracker) {
     auto doc = document_.lock();
     if (!doc) return;
-    
+
     StyleResolver resolver;
     if (doc->GetStyleManager()) {
         resolver.SetStyleManager(doc->GetStyleManager());
     }
-    
+
     for (const auto& change : tracker.GetStyleChanges()) {
         auto element = change.element.lock();
         if (!element) continue;
-        
+
         auto render_obj = element->GetRenderObject();
         if (!render_obj) continue;
-        
+
         // 获取父元素样式用于继承
         const ComputedStyle* parent_style = nullptr;
+        ComputedStyle root_parent_style;
         if (auto parent_node = element->GetParentNode()) {
             if (parent_node->GetNodeType() == NodeType::ELEMENT_NODE) {
                 auto parent_elem = std::static_pointer_cast<Element>(parent_node);
                 if (auto parent_render = parent_elem->GetRenderObject()) {
                     parent_style = &parent_render->GetComputedStyle();
                 }
+            } else if (parent_node->GetNodeType() == NodeType::DOCUMENT_NODE &&
+                       element->GetTagName() == "body") {
+                auto document_element = doc->GetDocumentElement();
+                if (document_element) {
+                    root_parent_style = resolver.ResolveStyle(document_element, nullptr);
+                    parent_style = &root_parent_style;
+                }
             }
         }
-        
+
         // 重新解析样式
         ComputedStyle new_style = resolver.ResolveStyle(element, parent_style);
         render_obj->SetComputedStyle(new_style);
@@ -244,18 +252,77 @@ void RenderTreeSynchronizer::ProcessStyleChanges(DirtyNodeTracker& tracker) {
         InvalidateAncestorLayout(render_obj.get());
         render_obj->MarkNeedsPaint();
         render_obj->InvalidatePaintCache();
+
+        // style/class/id 变化可能影响整棵后代子树的变量继承与选择器匹配
+        if (change.property == "style" || change.property == "class" || change.property == "id") {
+            for (const auto& child : element->GetChildNodes()) {
+                if (child && child->GetNodeType() == NodeType::ELEMENT_NODE) {
+                    RefreshElementSubtreeStyles(resolver, std::static_pointer_cast<Element>(child));
+                }
+            }
+        }
     }
 }
+
+void RenderTreeSynchronizer::RefreshElementSubtreeStyles(StyleResolver& resolver,
+                                                        std::shared_ptr<Element> element) {
+    if (!element) {
+        return;
+    }
+
+    auto render_obj = element->GetRenderObject();
+    if (render_obj) {
+        const ComputedStyle* parent_style = nullptr;
+        ComputedStyle root_parent_style;
+        if (auto parent_node = element->GetParentNode()) {
+            if (parent_node->GetNodeType() == NodeType::ELEMENT_NODE) {
+                auto parent_elem = std::static_pointer_cast<Element>(parent_node);
+                if (auto parent_render = parent_elem->GetRenderObject()) {
+                    parent_style = &parent_render->GetComputedStyle();
+                }
+            } else if (parent_node->GetNodeType() == NodeType::DOCUMENT_NODE &&
+                       element->GetTagName() == "body") {
+                if (auto doc = document_.lock()) {
+                    auto document_element = doc->GetDocumentElement();
+                    if (document_element) {
+                        root_parent_style = resolver.ResolveStyle(document_element, nullptr);
+                        parent_style = &root_parent_style;
+                    }
+                }
+            }
+        }
+
+        ComputedStyle new_style = resolver.ResolveStyle(element, parent_style);
+        render_obj->SetComputedStyle(new_style);
+
+        if (auto engine = layout_engine_.lock()) {
+            if (engine->HasElement(render_obj.get())) {
+                engine->UpdateStyle(render_obj.get(), new_style);
+            }
+        }
+
+        InvalidateAncestorLayout(render_obj.get());
+        render_obj->MarkNeedsPaint();
+        render_obj->InvalidatePaintCache();
+    }
+
+    for (const auto& child : element->GetChildNodes()) {
+        if (child && child->GetNodeType() == NodeType::ELEMENT_NODE) {
+            RefreshElementSubtreeStyles(resolver, std::static_pointer_cast<Element>(child));
+        }
+    }
+}
+
 
 void RenderTreeSynchronizer::ProcessTextChanges(DirtyNodeTracker& tracker) {
     for (const auto& change : tracker.GetTextChanges()) {
         auto node = change.node.lock();
         if (!node) continue;
-        
+
         // 使用增量更新系统的脏标记
         node->SetNeedsStyleRecalc(StyleChangeType::kLocalStyleChange);
         node->SetNeedsLayout();
-        
+
         auto render_obj = node->GetRenderObject();
         if (!render_obj) {
             // 文本节点无渲染对象时，回退到父布局对象，确保增量布局链路完整
@@ -290,7 +357,7 @@ void RenderTreeSynchronizer::ProcessTextChanges(DirtyNodeTracker& tracker) {
 // 参考 Blink 的 LayoutTreeBuilderTraversal::LayoutParent()
 static Node* FindLayoutParent(Node* node) {
     if (!node) return nullptr;
-    
+
     Node* parent = node->GetParentNode().get();
     while (parent) {
         // 如果父节点有渲染对象，它就是布局父级
@@ -305,9 +372,9 @@ static Node* FindLayoutParent(Node* node) {
 
 void RenderTreeSynchronizer::RebuildSubtree(Node* root) {
     if (!root) return;
-    
+
     auto render_obj = root->GetRenderObject();
-    
+
     // 关键修复：如果 root 没有渲染对象（可能是 display: contents 元素），
     // 向上查找布局父级，然后重建布局父级的子树
     if (!render_obj) {
@@ -317,15 +384,15 @@ void RenderTreeSynchronizer::RebuildSubtree(Node* root) {
         }
         return;
     }
-    
+
     // 移除所有子渲染对象
     render_obj->RemoveAllChildren();
-    
+
     // 重新创建子树
     for (const auto& child : root->GetChildNodes()) {
         CreateRenderSubtree(child.get(), render_obj.get());
     }
-    
+
     // 标记需要重新布局，并向上传播到所有祖先
     // 这确保滚动容器等祖先节点的 content_height_ 缓存被清除
     InvalidateAncestorLayout(render_obj.get());
@@ -333,7 +400,7 @@ void RenderTreeSynchronizer::RebuildSubtree(Node* root) {
 
 void RenderTreeSynchronizer::UpdateNode(Node* node) {
     if (!node) return;
-    
+
     auto render_obj = node->GetRenderObject();
     if (render_obj) {
         render_obj->MarkNeedsLayout();
@@ -354,7 +421,7 @@ static bool HasDisplayContentsStyle(Node* node) {
 // 参考 Blink 的 LastChild 逻辑
 static RenderObject* GetLastLayoutDescendant(Node* node) {
     if (!node) return nullptr;
-    
+
     const auto& children = node->GetChildNodes();
     // 从后向前遍历子节点
     for (auto it = children.rbegin(); it != children.rend(); ++it) {
@@ -420,16 +487,16 @@ static RenderObject* FindPreviousLayoutSiblingRenderObject(Node* node) {
 // 辅助函数：根据前一个布局兄弟节点计算插入位置
 static size_t CalculateInsertPositionByPreviousSibling(
     RenderObject* prev_sibling_ro, RenderObject* layout_parent_ro) {
-    
+
     if (!layout_parent_ro) return 0;
-    
+
     const auto& children = layout_parent_ro->GetChildren();
-    
+
     if (!prev_sibling_ro) {
         // 没有前一个兄弟节点，插入到开头
         return 0;
     }
-    
+
     // 找到前一个兄弟节点在父渲染对象中的位置
     for (size_t i = 0; i < children.size(); ++i) {
         if (children[i].get() == prev_sibling_ro) {
@@ -437,7 +504,7 @@ static size_t CalculateInsertPositionByPreviousSibling(
             return i + 1;
         }
     }
-    
+
     // 如果没找到（不应该发生），插入到末尾
     return children.size();
 }
@@ -451,7 +518,7 @@ std::shared_ptr<RenderObject> RenderTreeSynchronizer::InsertRenderObject(
     if (node->GetRenderObject()) {
         return node->GetRenderObject();
     }
-    
+
     // 查找布局父级（跳过 display: contents 元素）
     auto parent_ro = parent->GetRenderObject();
     Node* layout_parent = parent;
@@ -462,7 +529,7 @@ std::shared_ptr<RenderObject> RenderTreeSynchronizer::InsertRenderObject(
         parent_ro = layout_parent->GetRenderObject();
         if (!parent_ro) return nullptr;
     }
-    
+
     // 创建渲染对象
     auto render_obj = CreateRenderObjectForNode(node);
     if (!render_obj) {
@@ -474,7 +541,7 @@ std::shared_ptr<RenderObject> RenderTreeSynchronizer::InsertRenderObject(
         }
         return nullptr;
     }
-    
+
     // 计算插入位置
     // 关键修复：当父元素是 display: contents 时，使用原始的 parent 节点来计算插入位置
     // 因为 display: contents 元素的子元素在 DOM 中的顺序应该被保留
@@ -496,16 +563,16 @@ std::shared_ptr<RenderObject> RenderTreeSynchronizer::InsertRenderObject(
     for (const auto& child : node->GetChildNodes()) {
         CreateRenderSubtree(child.get(), render_obj.get());
     }
-    
+
     // 使祖先布局失效
     InvalidateAncestorLayout(render_obj.get());
-    
+
     return render_obj;
 }
 
 void RenderTreeSynchronizer::RemoveRenderObject(Node* node) {
     if (!node) return;
-    
+
     auto render_obj = node->GetRenderObject();
     if (render_obj) {
         // 节点有渲染对象，正常移除
@@ -513,7 +580,7 @@ void RenderTreeSynchronizer::RemoveRenderObject(Node* node) {
         if (parent_ro) {
             // 使祖先布局失效（在移除前）
             InvalidateAncestorLayout(render_obj.get());
-            
+
             // 关键修复：通过 LayoutEngine 标记布局脏
             // RenderObject::MarkNeedsLayout 只设置 RenderObject 的标志
             // 但 ComputeIncrementalLayout 检查的是 LayoutNode 的标志
@@ -522,15 +589,15 @@ void RenderTreeSynchronizer::RemoveRenderObject(Node* node) {
             if (layout_engine) {
                 layout_engine->MarkNeedsLayout(parent_ro.get());
             }
-            
+
             // 标记父节点需要重绘，确保移除后的区域被正确清理
             parent_ro->MarkNeedsPaint();
             parent_ro->InvalidatePaintCache();
-            
+
             // 从父节点移除
             parent_ro->RemoveChild(render_obj);
         }
-        
+
         // 清除 DOM 节点与渲染对象的关联
         node->SetRenderObject(nullptr);
     } else {
@@ -558,7 +625,7 @@ void RenderTreeSynchronizer::ReplaceRenderObject(
         parent_ro = layout_parent->GetRenderObject();
         if (!parent_ro) return;
     }
-    
+
     auto old_ro = old_node->GetRenderObject();
 
     // 创建新的渲染对象
@@ -568,7 +635,7 @@ void RenderTreeSynchronizer::ReplaceRenderObject(
         // 找到旧渲染对象在父节点中的位置
         auto& children = parent_ro->GetChildrenMutable();
         auto it = std::find(children.begin(), children.end(), old_ro);
-        
+
         if (it != children.end()) {
             if (new_ro) {
                 // 原子替换：直接替换，不经过中间状态
@@ -585,7 +652,7 @@ void RenderTreeSynchronizer::ReplaceRenderObject(
                 }
             }
         }
-        
+
         // 清除旧节点的关联
         old_node->SetRenderObject(nullptr);
     } else if (new_ro) {
@@ -606,14 +673,14 @@ void RenderTreeSynchronizer::ReplaceRenderObject(
             }
         }
     }
-    
+
     // 递归创建新节点的子树
     if (new_ro) {
         for (const auto& child : new_node->GetChildNodes()) {
             CreateRenderSubtree(child.get(), new_ro.get());
         }
     }
-    
+
     // 使祖先布局失效
     if (new_ro) {
         InvalidateAncestorLayout(new_ro.get());
@@ -622,10 +689,10 @@ void RenderTreeSynchronizer::ReplaceRenderObject(
     }
 }
 
-void RenderTreeSynchronizer::MoveRenderObject(Node* node, Node* old_parent, 
+void RenderTreeSynchronizer::MoveRenderObject(Node* node, Node* old_parent,
                                                Node* new_parent, size_t index) {
     if (!node || !new_parent) return;
-    
+
     auto render_obj = node->GetRenderObject();
     if (!render_obj) {
         // 节点没有渲染对象，可能是 display: contents
@@ -640,7 +707,7 @@ void RenderTreeSynchronizer::MoveRenderObject(Node* node, Node* old_parent,
                 new_parent_ro = layout_parent->GetRenderObject();
                 if (!new_parent_ro) return;
             }
-            
+
             // 递归移动子元素
             for (const auto& child : node->GetChildNodes()) {
                 MoveRenderObject(child.get(), node, new_parent, index);
@@ -648,11 +715,11 @@ void RenderTreeSynchronizer::MoveRenderObject(Node* node, Node* old_parent,
         }
         return;
     }
-    
+
     // 获取旧的父渲染对象
     auto old_parent_ro = render_obj->GetParent();
     if (!old_parent_ro) return;
-    
+
     // 获取新的父渲染对象
     auto new_parent_ro = new_parent->GetRenderObject();
     Node* layout_parent = new_parent;
@@ -662,7 +729,7 @@ void RenderTreeSynchronizer::MoveRenderObject(Node* node, Node* old_parent,
         new_parent_ro = layout_parent->GetRenderObject();
         if (!new_parent_ro) return;
     }
-    
+
     // 如果父节点没变，只需要调整位置
     if (old_parent_ro.get() == new_parent_ro.get()) {
         // 从旧位置移除
@@ -671,11 +738,11 @@ void RenderTreeSynchronizer::MoveRenderObject(Node* node, Node* old_parent,
         if (it != children.end()) {
             children.erase(it);
         }
-        
+
         // 计算新的插入位置
         RenderObject* prev_sibling_ro = FindPreviousLayoutSiblingRenderObject(node);
         size_t insert_pos = CalculateInsertPositionByPreviousSibling(prev_sibling_ro, new_parent_ro.get());
-        
+
         // 插入到新位置
         if (insert_pos >= children.size()) {
             children.push_back(render_obj);
@@ -690,11 +757,11 @@ void RenderTreeSynchronizer::MoveRenderObject(Node* node, Node* old_parent,
         if (it != old_children.end()) {
             old_children.erase(it);
         }
-        
+
         // 计算新的插入位置
         RenderObject* prev_sibling_ro = FindPreviousLayoutSiblingRenderObject(node);
         size_t insert_pos = CalculateInsertPositionByPreviousSibling(prev_sibling_ro, new_parent_ro.get());
-        
+
         // 添加到新父节点
         auto& new_children = new_parent_ro->GetChildrenMutable();
         if (insert_pos >= new_children.size()) {
@@ -703,23 +770,23 @@ void RenderTreeSynchronizer::MoveRenderObject(Node* node, Node* old_parent,
             new_children.insert(new_children.begin() + insert_pos, render_obj);
             render_obj->SetParent(new_parent_ro);
         }
-        
+
         // 使旧父节点布局失效
         InvalidateAncestorLayout(old_parent_ro.get());
     }
-    
+
     // 使新位置的祖先布局失效
     InvalidateAncestorLayout(render_obj.get());
 }
 
 std::shared_ptr<RenderObject> RenderTreeSynchronizer::CreateRenderObjectForNode(Node* node) {
     if (!node) return nullptr;
-    
+
     auto builder = render_tree_builder_.lock();
     if (!builder) return nullptr;
-    
+
     std::shared_ptr<RenderObject> render_obj;
-    
+
     // 根据节点类型使用不同的创建方法
     if (node->GetNodeType() == NodeType::ELEMENT_NODE) {
         auto element = std::dynamic_pointer_cast<Element>(node->shared_from_this());
@@ -732,19 +799,19 @@ std::shared_ptr<RenderObject> RenderTreeSynchronizer::CreateRenderObjectForNode(
             render_obj = builder->CreateRenderObjectForText(text.get());
         }
     }
-    
+
     if (render_obj) {
         // 建立双向关联
         node->SetRenderObject(render_obj);
         render_obj->SetNode(node->shared_from_this());
     }
-    
+
     return render_obj;
 }
 
 void RenderTreeSynchronizer::CreateRenderSubtree(Node* node, RenderObject* parent_ro) {
     if (!node || !parent_ro) return;
-    
+
     // 关键修复：如果节点已经有渲染对象，不要重复创建
     // 这可能发生在 BuildRenderTree 之后 Synchronize 被调用的情况
     if (node->GetRenderObject()) {
@@ -755,9 +822,9 @@ void RenderTreeSynchronizer::CreateRenderSubtree(Node* node, RenderObject* paren
         }
         return;
     }
-    
+
     auto render_obj = CreateRenderObjectForNode(node);
-    
+
     // 处理 display: contents - 不创建渲染对象，但递归处理子元素
     if (!render_obj) {
         // 检查是否是 display: contents 元素（而不是 display: none）
@@ -772,9 +839,9 @@ void RenderTreeSynchronizer::CreateRenderSubtree(Node* node, RenderObject* paren
         }
         return;
     }
-    
+
     parent_ro->AppendChild(render_obj);
-    
+
     // 递归处理子节点
     for (const auto& child : node->GetChildNodes()) {
         CreateRenderSubtree(child.get(), render_obj.get());

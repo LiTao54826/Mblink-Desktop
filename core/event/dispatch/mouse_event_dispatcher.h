@@ -31,6 +31,7 @@ class RenderObject;
 class DragManager;
 class SelectionManager;
 class ContentEditableHandler;
+class ContentEditableController;
 class FocusManager;
 class HTMLInputElement;
 class HTMLTextAreaElement;
@@ -71,6 +72,7 @@ public:
     void SetManagers(DragManager* drag_manager,
                      SelectionManager* selection_manager,
                      ContentEditableHandler* contenteditable_handler,
+                     ContentEditableController* contenteditable_controller,
                      FocusManager* focus_manager);
 
     /**
@@ -238,8 +240,10 @@ private:
      * @param event_type 事件类型
      */
     void HandleContentEditableDragSelection(std::shared_ptr<Window> window,
+                                            std::shared_ptr<Document> document,
                                             float logical_x,
                                             float logical_y,
+                                            std::shared_ptr<RenderObject> root_render,
                                             Uint32 event_type);
 
     /**
@@ -319,6 +323,7 @@ private:
     DragManager* drag_manager_ = nullptr;
     SelectionManager* selection_manager_ = nullptr;
     ContentEditableHandler* contenteditable_handler_ = nullptr;
+    ContentEditableController* contenteditable_controller_ = nullptr;
     FocusManager* focus_manager_ = nullptr;
 
     // 光标更新回调

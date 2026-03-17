@@ -20,6 +20,7 @@ namespace lightui {
 class Document;
 class Element;
 class Node;
+struct ContentEditableResolvedPosition;
 class SelectionManager;
 class ContentEditableHandler;
 class RenderObject;
@@ -175,6 +176,12 @@ public:
      * @return contentEditable 根元素，如果没有返回 nullptr
      */
     static std::shared_ptr<Element> GetContentEditableRoot(std::shared_ptr<Node> node);
+
+    static ContentEditableResolvedPosition ResolveFallbackCaretPosition(
+        const std::shared_ptr<Element>& contenteditable_root,
+        const std::shared_ptr<Node>& fallback_node,
+        float click_x,
+        float host_width);
 
 private:
     /**

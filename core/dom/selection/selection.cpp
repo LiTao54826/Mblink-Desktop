@@ -13,6 +13,7 @@
 #include "core/dom/node.h"
 #include "core/dom/text.h"
 #include "core/event/loop/task_scheduler.h"
+#include "core/utils/utf8_utils.h"
 #include <algorithm>
 #include <iostream>
 
@@ -575,7 +576,7 @@ int Selection::GetNodeLength(std::shared_ptr<Node> node) const {
     if (node->GetNodeType() == NodeType::TEXT_NODE) {
         auto text_node = std::dynamic_pointer_cast<Text>(node);
         if (text_node) {
-            return static_cast<int>(text_node->GetData().length());
+            return static_cast<int>(utf8::CharCount(text_node->GetData()));
         }
         return 0;
     }
@@ -661,7 +662,7 @@ std::pair<std::shared_ptr<Node>, int> Selection::ResolveElementPosition(
         auto last_child = children.back();
         auto text_node = findLastText(last_child);
         if (text_node) {
-            int text_len = static_cast<int>(text_node->GetData().length());
+            int text_len = static_cast<int>(utf8::CharCount(text_node->GetData()));
             return {text_node, text_len};
         }
         return {node, offset};
@@ -670,12 +671,12 @@ std::pair<std::shared_ptr<Node>, int> Selection::ResolveElementPosition(
     // offset 在有效范围内 (0 < offset < children.size())
     // DOM 规范：offset 表示"在第 offset 个子节点之前"的位置
     // 即光标在 children[offset-1] 之后，children[offset] 之前
-    // 
+    //
     // 我们需要找到 children[offset-1] 的最后一个文本节点的末尾位置
     auto prev_child = children[offset - 1];
     auto text_node = findLastText(prev_child);
     if (text_node) {
-        int text_len = static_cast<int>(text_node->GetData().length());
+        int text_len = static_cast<int>(utf8::CharCount(text_node->GetData()));
         return {text_node, text_len};
     }
 

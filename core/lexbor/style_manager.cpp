@@ -71,25 +71,25 @@ bool StyleManager::ParseStyleElement(Element* style_element) {
     if (!style_element || style_element->GetTagName() != "style") {
         return false;
     }
-    
+
     // 获取<style>标签的文本内容
     std::string css_text = style_element->GetTextContent();
     if (css_text.empty()) {
         return false;
     }
-    
+
     // 首先提取并注册 @keyframes 规则
     ExtractAndRegisterKeyframes(css_text);
-    
+
     // 创建新的样式表并解析
     auto sheet = std::make_shared<LexborStyleSheet>();
     if (!sheet->ParseCSS(css_text)) {
         return false;
     }
-    
+
     // 添加到样式表列表（<style>标签优先级为100）
     AddStyleSheet(sheet, 100, "style-element");
-    
+
     return true;
 }
 
@@ -169,24 +169,24 @@ std::map<std::string, std::string> StyleManager::ComputeStyle(Element* element) 
     if (!element) {
         return {};
     }
-    
+
     std::map<std::string, std::string> computed_style;
-    
+
     // 1. 获取匹配的规则
     auto matching_rules = GetMatchingRules(element);
-    
+
     // 2. 按优先级应用规则
     for (const auto* rule : matching_rules) {
         computed_style = MergeStyles(computed_style, rule->declarations);
     }
-    
+
     // 3. 应用内联样式（优先级最高）
     std::string inline_style = element->GetAttribute("style");
     if (!inline_style.empty()) {
         auto inline_declarations = ParseInlineStyle(inline_style);
         computed_style = MergeStyles(computed_style, inline_declarations);
     }
-    
+
     return computed_style;
 }
 
@@ -361,16 +361,23 @@ bool StyleManager::MatchesSimpleSelector(const std::string& selector, Element* e
     if (pseudo_pos != std::string::npos) {
         base_selector = selector.substr(0, pseudo_pos);
         pseudo_class = selector.substr(pseudo_pos + 1);
-        
+
         // 移除伪类中可能的额外部分（如 :hover::after）
         size_t double_colon = pseudo_class.find(':');
         if (double_colon != std::string::npos) {
             pseudo_class = pseudo_class.substr(0, double_colon);
         }
-        
-        // 检查元素是否有该伪类状态
-        if (!pseudo_class.empty() && !element->HasPseudoClass(pseudo_class)) {
-            return false;
+
+        if (!pseudo_class.empty()) {
+            if (pseudo_class == "root") {
+                auto parent = element->GetParentNode();
+                if (!parent || parent->GetNodeType() != NodeType::DOCUMENT_NODE) {
+                    return false;
+                }
+            } else if (!element->HasPseudoClass(pseudo_class)) {
+                // 其他伪类仍按动态状态伪类处理
+                return false;
+            }
         }
     }
     

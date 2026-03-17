@@ -95,6 +95,7 @@ EventLoop::EventLoop()
         drag_manager_.get(),
         selection_manager_.get(),
         contenteditable_handler_.get(),
+        contenteditable_controller_.get(),
         focus_manager_.get()
     );
     mouse_event_dispatcher_->SetCursorCallback([this](SDL_SystemCursor cursor) {
@@ -102,6 +103,7 @@ EventLoop::EventLoop()
     });
 
     // 设置 KeyboardEventDispatcher 的依赖
+    focus_manager_->SetContentEditableHandler(contenteditable_handler_.get());
     keyboard_event_dispatcher_->SetManagers(
         focus_manager_.get(),
         contenteditable_handler_.get(),
@@ -147,6 +149,7 @@ EventLoop::EventLoop(std::shared_ptr<TaskScheduler> task_scheduler)
         drag_manager_.get(),
         selection_manager_.get(),
         contenteditable_handler_.get(),
+        contenteditable_controller_.get(),
         focus_manager_.get()
     );
     mouse_event_dispatcher_->SetCursorCallback([this](SDL_SystemCursor cursor) {
@@ -154,6 +157,7 @@ EventLoop::EventLoop(std::shared_ptr<TaskScheduler> task_scheduler)
     });
 
     // 设置 KeyboardEventDispatcher 的依赖
+    focus_manager_->SetContentEditableHandler(contenteditable_handler_.get());
     keyboard_event_dispatcher_->SetManagers(
         focus_manager_.get(),
         contenteditable_handler_.get(),

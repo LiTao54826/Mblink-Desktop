@@ -10,6 +10,7 @@
 #include "core/dom/selection/range.h"
 #include "core/dom/selection/selection.h"
 #include "core/dom/text.h"
+#include "core/editing/contenteditable_geometry.h"
 #include "core/render/input/text_edit_metrics.h"
 
 #include "include/core/SkCanvas.h"
@@ -18,6 +19,15 @@
 #include "include/core/SkRect.h"
 
 #include <algorithm>
+
+namespace {
+
+std::shared_ptr<lightui::Element> FindContentEditableRootFromNode(
+    const std::shared_ptr<lightui::Node>& node) {
+    return lightui::GetContentEditableEditingHost(node);
+}
+
+} // namespace
 
 namespace lightui {
 
@@ -41,10 +51,10 @@ std::shared_ptr<Selection> SelectionManager::GetSelection(std::shared_ptr<Docume
     // 创建新的 Selection 对象
     auto selection = std::make_shared<Selection>(document);
     selections_[doc_ptr] = selection;
-    
+
     // 设置到 Document 中，以便渲染时可以访问
     document->SetSelection(selection);
-    
+
     return selection;
 }
 
@@ -283,9 +293,28 @@ CaretPosition SelectionManager::GetCaretPosition(std::shared_ptr<Document> docum
 
     result.node = selection->GetFocusNode();
     result.offset = selection->GetFocusOffset();
+    if (!result.node) {
+        return result;
+    }
 
-    // TODO: 计算屏幕坐标
-    // 这需要访问布局信息
+    auto editable = FindContentEditableRootFromNode(result.node);
+    if (editable && editable->IsContentEditable()) {
+        auto rect = ComputeContentEditableCaretRect(editable, result.node, result.offset);
+        if (rect.valid) {
+            result.x = rect.x;
+            result.y = rect.y;
+            result.height = rect.height;
+            return result;
+        }
+    }
+
+    auto range = selection->GetRangeAt(0);
+    if (range) {
+        auto rect = range->GetBoundingClientRect();
+        result.x = rect.x;
+        result.y = rect.y;
+        result.height = rect.height;
+    }
 
     return result;
 }
@@ -307,7 +336,6 @@ void SelectionManager::RenderCaret(SkCanvas* canvas, std::shared_ptr<Document> d
         return;
     }
 
-    // 绘制光标
     SkPaint paint;
     paint.setColor(SK_ColorBLACK);
     paint.setStrokeWidth(1.0f);
@@ -317,18 +345,57 @@ void SelectionManager::RenderCaret(SkCanvas* canvas, std::shared_ptr<Document> d
     canvas->drawLine(pos.x, pos.y, pos.x, pos.y + caret_height, paint);
 }
 
+std::vector<SelectionRect> SelectionManager::GetSelectionRects(std::shared_ptr<Document> document) {
+    if (!document) {
+        return {};
+    }
+
+    auto selection = GetSelection(document);
+    if (!selection || selection->IsCollapsed()) {
+        return {};
+    }
+
+    auto editable = FindContentEditableRootFromNode(selection->GetComputedAnchorNode());
+    std::vector<SelectionRect> result;
+    auto append_rect = [&](const ContentEditableSelectionRect& rect) {
+        result.push_back({rect.x, rect.y, rect.width, rect.height});
+    };
+
+    if (editable && editable->IsContentEditable()) {
+        for (const auto& rect : ComputeContentEditableSelectionRects(editable, selection)) {
+            append_rect(rect);
+        }
+        if (!result.empty()) {
+            return result;
+        }
+    }
+
+    auto range = selection->GetRangeAt(0);
+    if (!range) {
+        return result;
+    }
+
+    for (const auto& rect : range->GetClientRects()) {
+        if (rect.width <= 0.0f || rect.height <= 0.0f) {
+            continue;
+        }
+        result.push_back({rect.x, rect.y, rect.width, rect.height});
+    }
+    return result;
+}
+
 void SelectionManager::RenderSelectionHighlight(SkCanvas* canvas, std::shared_ptr<Document> document) {
     if (!canvas || !document) {
         return;
     }
 
-    auto selection = GetSelection(document);
-    if (!selection || selection->IsCollapsed()) {
-        return;
-    }
+    SkPaint highlight_paint;
+    highlight_paint.setColor(SkColorSetARGB(100, 51, 153, 255));
+    highlight_paint.setStyle(SkPaint::kFill_Style);
 
-    // TODO: 实现选择高亮渲染
-    // 这需要计算选择区域的矩形并绘制半透明背景
+    for (const auto& rect : GetSelectionRects(document)) {
+        canvas->drawRect(SkRect::MakeXYWH(rect.x, rect.y, rect.width, rect.height), highlight_paint);
+    }
 }
 
 // ========== 光标闪烁控制 ==========

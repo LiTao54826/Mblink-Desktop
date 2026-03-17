@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>ContentEditable IME Demo</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 24px; background: #f6f8fb; color: #1f2937; }
+        h1 { margin-bottom: 8px; }
+        .hint { color: #4b5563; margin-bottom: 16px; }
+        .editor {
+            min-height: 140px; padding: 12px; border: 2px solid #60a5fa; border-radius: 10px;
+            background: white; line-height: 1.7; font-size: 18px; outline: none;
+        }
+        .editor:focus { border-color: #2563eb; box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12); }
+        .row { display: flex; gap: 16px; margin-top: 16px; }
+        .panel {
+            flex: 1; background: white; border: 1px solid #dbe3ef; border-radius: 10px;
+            padding: 12px; min-height: 160px;
+        }
+        .log { font-family: Consolas, monospace; white-space: pre-wrap; font-size: 13px; }
+        button { padding: 8px 12px; border: 0; border-radius: 8px; background: #2563eb; color: white; cursor: pointer; }
+        code { background: #eef2ff; padding: 2px 6px; border-radius: 6px; }
+    </style>
+</head>
+<body>
+    <h1>ContentEditable IME / Geometry Demo</h1>
+    <div class="hint">
+        请点击下方编辑区，尝试输入中文、触发 IME 候选窗、拖选文字，并观察 caret / selection / composition 日志。
+    </div>
+
+    <div>
+        <button onclick="clearLog()">清空日志</button>
+    </div>
+
+    <div id="editor" class="editor" contenteditable="true">
+        这里是 <b>contenteditable</b> 测试区域。
+        <div>请尝试：中文输入、候选词选择、拖动选区、多段文字编辑。</div>
+        <div>IME 锚点应尽量贴近当前 caret 或 composition 起始位置。</div>
+    </div>
+
+    <div class="row">
+        <div class="panel">
+            <strong>当前 Selection</strong>
+            <div id="selectionInfo" class="log"></div>
+        </div>
+        <div class="panel">
+            <strong>事件日志</strong>
+            <div id="log" class="log"></div>
+        </div>
+    </div>
+
+    <script>
+        const editor = document.getElementById('editor');
+        const logEl = document.getElementById('log');
+        const selectionInfoEl = document.getElementById('selectionInfo');
+
+        function appendLog(msg) {
+            const now = new Date().toLocaleTimeString();
+            logEl.textContent = `[${now}] ${msg}\n` + logEl.textContent;
+        }
+
+        function clearLog() {
+            logEl.textContent = '';
+        }
+
+        function describeNode(node) {
+            if (!node) return 'null';
+            if (node.nodeType === 3) return `Text("${(node.textContent || '').slice(0, 16)}")`;
+            return `<${(node.tagName || 'unknown').toLowerCase()}>`;
+        }
+
+        function updateSelectionInfo() {
+            const sel = window.getSelection();
+            if (!sel) {
+                selectionInfoEl.textContent = 'selection unavailable';
+                return;
+            }
+            selectionInfoEl.textContent = [
+                `anchor: ${describeNode(sel.anchorNode)} @ ${sel.anchorOffset}`,
+                `focus : ${describeNode(sel.focusNode)} @ ${sel.focusOffset}`,
+                `rangeCount: ${sel.rangeCount}`,
+                `text: ${JSON.stringify(sel.toString())}`
+            ].join('\n');
+        }
+
+        ['focus', 'blur', 'beforeinput', 'input', 'compositionstart', 'compositionupdate', 'compositionend', 'keydown', 'keyup'].forEach(type => {
+            editor.addEventListener(type, (e) => {
+                const data = e.data !== undefined ? ` data=${JSON.stringify(e.data)}` : '';
+                appendLog(`${type}${data}`);
+                updateSelectionInfo();
+            });
+        });
+
+        document.addEventListener('selectionchange', () => {
+            updateSelectionInfo();
+        });
+
+        editor.focus();
+        updateSelectionInfo();
+        appendLog('demo ready');
+    </script>
+</body>
+</html>
+
