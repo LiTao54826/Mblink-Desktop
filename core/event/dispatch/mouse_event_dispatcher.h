@@ -30,7 +30,6 @@ class Window;
 class RenderObject;
 class DragManager;
 class SelectionManager;
-class ContentEditableHandler;
 class ContentEditableController;
 class FocusManager;
 class HTMLInputElement;
@@ -66,12 +65,10 @@ public:
      * @brief 设置依赖的管理器
      * @param drag_manager 拖拽管理器
      * @param selection_manager 选择管理器
-     * @param contenteditable_handler 可编辑内容处理器
      * @param focus_manager 焦点管理器
      */
     void SetManagers(DragManager* drag_manager,
                      SelectionManager* selection_manager,
-                     ContentEditableHandler* contenteditable_handler,
                      ContentEditableController* contenteditable_controller,
                      FocusManager* focus_manager);
 
@@ -265,6 +262,14 @@ private:
                                 float logical_y);
 
     /**
+     * @brief 更新 Selection 到点击位置（普通元素 fallback）
+     */
+    void UpdateSelectionFromClick(std::shared_ptr<Document> document,
+                                  const HitTestResult& hit_result,
+                                  float logical_x,
+                                  float logical_y);
+
+    /**
      * @brief 处理 Range 滑块拖动
      */
     void HandleRangeDrag(std::shared_ptr<Window> window,
@@ -306,23 +311,10 @@ private:
                          float logical_y,
                          std::shared_ptr<RenderObject> root_render);
 
-    /**
-     * @brief 更新 Selection 到点击位置（模拟浏览器原生行为）
-     * @param document 文档
-     * @param hit_result Hit Testing 结果
-     * @param logical_x 逻辑 X 坐标
-     * @param logical_y 逻辑 Y 坐标
-     */
-    void UpdateSelectionFromClick(std::shared_ptr<Document> document,
-                                  const HitTestResult& hit_result,
-                                  float logical_x,
-                                  float logical_y);
-
 private:
     // 依赖的管理器（不拥有所有权）
     DragManager* drag_manager_ = nullptr;
     SelectionManager* selection_manager_ = nullptr;
-    ContentEditableHandler* contenteditable_handler_ = nullptr;
     ContentEditableController* contenteditable_controller_ = nullptr;
     FocusManager* focus_manager_ = nullptr;
 
@@ -346,11 +338,6 @@ private:
     // 滚动条拖动状态
     std::weak_ptr<RenderObject> scrollbar_dragging_element_;
     Uint32 scrollbar_dragging_window_id_ = 0;
-
-    // contentEditable 拖动选择状态
-    bool contenteditable_dragging_ = false;
-    std::weak_ptr<Node> contenteditable_drag_start_node_;
-    int contenteditable_drag_start_offset_ = 0;
 
     // 鼠标按钮状态跟踪（用于 mousemove 事件的 buttons 属性）
     int mouse_buttons_state_ = 0;  // W3C buttons 位掩码: 1=左键, 2=右键, 4=中键

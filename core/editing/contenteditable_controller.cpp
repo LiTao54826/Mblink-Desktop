@@ -385,13 +385,47 @@ bool ContentEditableController::HandleKeyDown(
 
 bool ContentEditableController::HandleTextInput(
     std::shared_ptr<Element> target,
+    std::shared_ptr<Document> document,
     const std::string& text) {
 
-    if (!editable_handler_) {
+    if (!target || !target->IsContentEditable() || !editable_handler_ || !document) {
         return false;
     }
 
+    if (editable_handler_->HasActiveComposition(document)) {
+        return editable_handler_->CommitComposition(document, text);
+    }
+
     return editable_handler_->HandleTextInput(target, text);
+}
+
+bool ContentEditableController::HandleTextEditing(
+    std::shared_ptr<Element> target,
+    std::shared_ptr<Document> document,
+    const std::string& text) {
+
+    if (!target || !target->IsContentEditable() || !editable_handler_ || !document) {
+        return false;
+    }
+
+    auto selection = document->GetSelection();
+    int start = selection ? selection->GetFocusOffset() : 0;
+    int end = start;
+    if (editable_handler_->HasActiveComposition(document)) {
+        const auto composition = editable_handler_->GetCompositionState(document);
+        start = composition.start;
+        end = composition.end;
+    }
+
+    if (text.empty()) {
+        return editable_handler_->CancelComposition(document);
+    }
+
+    if (editable_handler_->HasActiveComposition(document)) {
+        return editable_handler_->UpdateComposition(document, text, start, end);
+    }
+
+    return editable_handler_->StartComposition(document, text, start, end);
 }
 
 // ========== 私有辅助方法 ==========

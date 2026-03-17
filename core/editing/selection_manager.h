@@ -73,71 +73,6 @@ public:
      */
     void ClearSelection(std::shared_ptr<Document> document);
 
-    // ========== 鼠标选择处理 ==========
-
-    /**
-     * @brief 处理鼠标按下事件
-     * @param target 目标元素
-     * @param x 鼠标 X 坐标
-     * @param y 鼠标 Y 坐标
-     */
-    void HandleMouseDown(std::shared_ptr<Element> target, int x, int y);
-
-    /**
-     * @brief 处理鼠标移动事件（拖动选择）
-     * @param target 目标元素
-     * @param x 鼠标 X 坐标
-     * @param y 鼠标 Y 坐标
-     * @param is_dragging 是否正在拖动
-     */
-    void HandleMouseMove(std::shared_ptr<Element> target, int x, int y, bool is_dragging);
-
-    /**
-     * @brief 处理鼠标释放事件
-     * @param target 目标元素
-     * @param x 鼠标 X 坐标
-     * @param y 鼠标 Y 坐标
-     */
-    void HandleMouseUp(std::shared_ptr<Element> target, int x, int y);
-
-    // ========== 拖拽选择支持 ==========
-
-    /**
-     * @brief 开始拖拽选择
-     * @param document 文档
-     * @param start_node 起始节点
-     * @param start_offset 起始偏移量
-     */
-    void StartDragSelection(
-        std::shared_ptr<Document> document,
-        std::shared_ptr<Node> start_node,
-        int start_offset
-    );
-
-    /**
-     * @brief 更新拖拽选择
-     * @param document 文档
-     * @param end_node 结束节点
-     * @param end_offset 结束偏移量
-     */
-    void UpdateDragSelection(
-        std::shared_ptr<Document> document,
-        std::shared_ptr<Node> end_node,
-        int end_offset
-    );
-
-    /**
-     * @brief 结束拖拽选择
-     * @param document 文档
-     */
-    void EndDragSelection(std::shared_ptr<Document> document);
-
-    /**
-     * @brief 检查是否正在拖拽选择
-     * @return true 如果正在拖拽选择
-     */
-    bool IsDragSelecting() const { return is_drag_selecting_; }
-
     // ========== 键盘选择处理 ==========
 
     /**
@@ -217,14 +152,6 @@ public:
      */
     bool IsCaretVisible() const { return caret_visible_; }
 
-    // ========== 选择状态查询 ==========
-
-    /**
-     * @brief 检查是否正在进行选择操作
-     * @return true 如果正在选择
-     */
-    bool IsSelecting() const { return is_selecting_; }
-
     /**
      * @brief 获取选择的文本
      * @param document 目标文档
@@ -266,21 +193,6 @@ private:
 private:
     /// 每个文档的 Selection 对象
     std::map<Document*, std::shared_ptr<Selection>> selections_;
-
-    /// 是否正在进行选择操作
-    bool is_selecting_ = false;
-
-    /// 是否正在拖拽选择
-    bool is_drag_selecting_ = false;
-
-    /// 拖拽选择起始节点
-    std::shared_ptr<Node> drag_start_node_;
-
-    /// 拖拽选择起始偏移量
-    int drag_start_offset_ = 0;
-
-    /// 选择开始位置
-    CaretPosition selection_start_;
 
     /// 光标闪烁相关
     bool caret_visible_ = true;

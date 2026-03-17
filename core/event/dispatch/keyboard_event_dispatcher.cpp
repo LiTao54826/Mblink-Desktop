@@ -17,7 +17,6 @@
 #include "core/dom/elements/terminal/html_terminal_element.h"
 #include "core/editing/clipboard_manager.h"
 #include "core/editing/contenteditable_controller.h"
-#include "core/editing/contenteditable_handler.h"
 #include "core/editing/input_edit_command.h"
 #include "core/editing/input_edit_state.h"
 #include "core/editing/textarea_editing_controller.h"
@@ -37,11 +36,9 @@ KeyboardEventDispatcher::KeyboardEventDispatcher() = default;
 KeyboardEventDispatcher::~KeyboardEventDispatcher() = default;
 
 void KeyboardEventDispatcher::SetManagers(FocusManager* focus_manager,
-                                           ContentEditableHandler* contenteditable_handler,
                                            ContentEditableController* contenteditable_controller,
                                            ClipboardManager* clipboard_manager) {
     focus_manager_ = focus_manager;
-    contenteditable_handler_ = contenteditable_handler;
     contenteditable_controller_ = contenteditable_controller;
     clipboard_manager_ = clipboard_manager;
 }
@@ -106,7 +103,7 @@ bool KeyboardEventDispatcher::HandleKeyboardEvent(const SDL_Event& event,
 
 void KeyboardEventDispatcher::HandleKeyDown(const SDL_Event& event,
                                              std::shared_ptr<Element> focus_element,
-                                             std::shared_ptr<Document> /*document*/,
+                                             std::shared_ptr<Document> document,
                                              std::shared_ptr<Window> window,
                                              bool ctrl_key, bool shift_key,
                                              bool alt_key, bool meta_key) {
@@ -129,8 +126,7 @@ void KeyboardEventDispatcher::HandleKeyDown(const SDL_Event& event,
 
     focus_element->DispatchEvent(keydown_event);
 
-    // 处理剪贴板快捷键 (Ctrl+C/X/V) - 分发 copy/cut/paste 事件
-    // 浏览器会在 Ctrl+C/X/V 时自动触发 copy/cut/paste 事件
+    // 处理剪贴板快捷键 (Ctrl+C/X/V) - 先分发事件，再执行默认行为
     if (ctrl_key && !alt_key && !shift_key) {
         std::string clipboard_event_type;
         if (key_code == 67) {  // 'C' - Copy
@@ -142,10 +138,21 @@ void KeyboardEventDispatcher::HandleKeyDown(const SDL_Event& event,
         }
 
         if (!clipboard_event_type.empty()) {
-            // 创建并分发剪贴板事件；只有事件显式阻止默认行为时才停止后续默认编辑命令
+            bool is_contenteditable_target = false;
+            if (auto element = std::dynamic_pointer_cast<Element>(focus_element)) {
+                is_contenteditable_target = element->IsContentEditable();
+            }
+
             auto clipboard_event = std::make_shared<ClipboardEvent>(clipboard_event_type, "");
             focus_element->DispatchEvent(clipboard_event);
             if (clipboard_event->IsDefaultPrevented() || keydown_event->IsDefaultPrevented()) {
+                return;
+            }
+
+            if (is_contenteditable_target && clipboard_manager_ && clipboard_manager_->HandleKeyboardShortcut(document, key_code, ctrl_key, meta_key)) {
+                if (focus_manager_) {
+                    focus_manager_->UpdateTextInputArea();
+                }
                 return;
             }
         }
@@ -157,6 +164,7 @@ void KeyboardEventDispatcher::HandleKeyDown(const SDL_Event& event,
         auto input_element = std::dynamic_pointer_cast<HTMLInputElement>(focus_element);
         auto textarea_element = std::dynamic_pointer_cast<HTMLTextAreaElement>(focus_element);
         auto terminal_element = std::dynamic_pointer_cast<HTMLTerminalElement>(focus_element);
+        auto contenteditable_element = std::dynamic_pointer_cast<Element>(focus_element);
 
         if (input_element) {
             bool handled = false;
@@ -219,10 +227,9 @@ void KeyboardEventDispatcher::HandleKeyDown(const SDL_Event& event,
                 }
             } else {
                 // 检查是否是 contentEditable 元素或其子元素
-                auto element = std::dynamic_pointer_cast<Element>(focus_element);
-                if (element && element->IsContentEditable()) {
+                if (contenteditable_element && contenteditable_element->IsContentEditable()) {
                     if (contenteditable_controller_) {
-                        contenteditable_controller_->HandleKeyDown(element, key_code, ctrl_key, shift_key, alt_key);
+                        contenteditable_controller_->HandleKeyDown(contenteditable_element, key_code, ctrl_key, shift_key, alt_key);
                     }
                 }
             }
@@ -295,12 +302,8 @@ void KeyboardEventDispatcher::HandleTextInput(const SDL_Event& event,
     } else {
         auto element = std::dynamic_pointer_cast<Element>(focus_element);
         if (element && element->IsContentEditable()) {
-            if (contenteditable_handler_ && document) {
-                if (contenteditable_handler_->HasActiveComposition(document)) {
-                    contenteditable_handler_->CommitComposition(document, text);
-                } else {
-                    contenteditable_handler_->InsertText(document, text);
-                }
+            if (contenteditable_controller_ && document) {
+                contenteditable_controller_->HandleTextInput(element, document, text);
                 if (focus_manager_) {
                     focus_manager_->UpdateTextInputArea();
                 }
@@ -384,26 +387,11 @@ void KeyboardEventDispatcher::HandleTextEditing(const SDL_Event& event,
         return;
     }
 
-    if (!contenteditable_element || !contenteditable_element->IsContentEditable() || !contenteditable_handler_ || !document) {
+    if (!contenteditable_element || !contenteditable_element->IsContentEditable() || !contenteditable_controller_ || !document) {
         return;
     }
 
-    auto selection = document->GetSelection();
-    int start = selection ? selection->GetFocusOffset() : 0;
-    int end = start;
-    if (contenteditable_handler_->HasActiveComposition(document)) {
-        const auto composition = contenteditable_handler_->GetCompositionState(document);
-        start = composition.start;
-        end = composition.end;
-    }
-
-    if (text.empty()) {
-        contenteditable_handler_->CancelComposition(document);
-    } else if (contenteditable_handler_->HasActiveComposition(document)) {
-        contenteditable_handler_->UpdateComposition(document, text, start, end);
-    } else {
-        contenteditable_handler_->StartComposition(document, text, start, end);
-    }
+    contenteditable_controller_->HandleTextEditing(contenteditable_element, document, text);
 
     if (focus_manager_) {
         focus_manager_->UpdateTextInputArea();

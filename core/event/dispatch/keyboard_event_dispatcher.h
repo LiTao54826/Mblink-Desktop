@@ -24,7 +24,6 @@ class Element;
 class Document;
 class Window;
 class FocusManager;
-class ContentEditableHandler;
 class ContentEditableController;
 class ClipboardManager;
 
@@ -52,12 +51,10 @@ public:
     /**
      * @brief 设置依赖的管理器
      * @param focus_manager 焦点管理器
-     * @param contenteditable_handler 可编辑内容处理器
      * @param contenteditable_controller 可编辑内容控制器
      * @param clipboard_manager 剪贴板管理器
      */
     void SetManagers(FocusManager* focus_manager,
-                     ContentEditableHandler* contenteditable_handler,
                      ContentEditableController* contenteditable_controller,
                      ClipboardManager* clipboard_manager);
 
@@ -112,7 +109,6 @@ private:
 private:
     // 依赖的管理器（不拥有所有权）
     FocusManager* focus_manager_ = nullptr;
-    ContentEditableHandler* contenteditable_handler_ = nullptr;
     ContentEditableController* contenteditable_controller_ = nullptr;
     ClipboardManager* clipboard_manager_ = nullptr;
 };

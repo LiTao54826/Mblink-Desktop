@@ -139,6 +139,13 @@ public:
      */
     bool HandleTextInput(
         std::shared_ptr<Element> target,
+        std::shared_ptr<Document> document,
+        const std::string& text
+    );
+
+    bool HandleTextEditing(
+        std::shared_ptr<Element> target,
+        std::shared_ptr<Document> document,
         const std::string& text
     );
 

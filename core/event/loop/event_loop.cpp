@@ -94,7 +94,6 @@ EventLoop::EventLoop()
     mouse_event_dispatcher_->SetManagers(
         drag_manager_.get(),
         selection_manager_.get(),
-        contenteditable_handler_.get(),
         contenteditable_controller_.get(),
         focus_manager_.get()
     );
@@ -106,7 +105,6 @@ EventLoop::EventLoop()
     focus_manager_->SetContentEditableHandler(contenteditable_handler_.get());
     keyboard_event_dispatcher_->SetManagers(
         focus_manager_.get(),
-        contenteditable_handler_.get(),
         contenteditable_controller_.get(),
         clipboard_manager_.get()
     );
@@ -148,7 +146,6 @@ EventLoop::EventLoop(std::shared_ptr<TaskScheduler> task_scheduler)
     mouse_event_dispatcher_->SetManagers(
         drag_manager_.get(),
         selection_manager_.get(),
-        contenteditable_handler_.get(),
         contenteditable_controller_.get(),
         focus_manager_.get()
     );
@@ -160,7 +157,6 @@ EventLoop::EventLoop(std::shared_ptr<TaskScheduler> task_scheduler)
     focus_manager_->SetContentEditableHandler(contenteditable_handler_.get());
     keyboard_event_dispatcher_->SetManagers(
         focus_manager_.get(),
-        contenteditable_handler_.get(),
         contenteditable_controller_.get(),
         clipboard_manager_.get()
     );
