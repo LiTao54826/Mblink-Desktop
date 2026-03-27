@@ -6,6 +6,8 @@
 #include "rasterizer.h"
 #include "compositor_layer.h"
 #include "animation/animation_bounds_calculator.h"
+#include "core/dom/element.h"
+#include "core/dom/node.h"
 #include "core/render/objects/render_object.h"
 #include "include/core/SkCanvas.h"
 #include "include/core/SkPaint.h"
@@ -16,8 +18,140 @@
 #include <cstring>
 #include <iostream>
 
+#ifdef _WIN32
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#include <DbgHelp.h>
+#pragma comment(lib, "Dbghelp.lib")
+#endif
+
 
 namespace lightui {
+
+namespace {
+
+struct TrackedRasterOffsetState {
+    float base_layout_x = 0.0f;
+    float base_layout_y = 0.0f;
+    float fixed_offset_x = 0.0f;
+    float fixed_offset_y = 0.0f;
+    float anim_offset_x = 0.0f;
+    float anim_offset_y = 0.0f;
+    float transform_offset_x = 0.0f;
+    float transform_offset_y = 0.0f;
+    float bounds_left = 0.0f;
+    float bounds_top = 0.0f;
+    LayerPromotionReason reason = LayerPromotionReason::None;
+
+    bool operator==(const TrackedRasterOffsetState& other) const {
+        return base_layout_x == other.base_layout_x
+            && base_layout_y == other.base_layout_y
+            && fixed_offset_x == other.fixed_offset_x
+            && fixed_offset_y == other.fixed_offset_y
+            && anim_offset_x == other.anim_offset_x
+            && anim_offset_y == other.anim_offset_y
+            && transform_offset_x == other.transform_offset_x
+            && transform_offset_y == other.transform_offset_y
+            && bounds_left == other.bounds_left
+            && bounds_top == other.bounds_top
+            && reason == other.reason;
+    }
+};
+
+bool IsTrackedGutterDigit(const std::string& text) {
+    return text.size() == 1 && text[0] >= '1' && text[0] <= '4';
+}
+
+bool HasTrackedGutterClassChain(const std::shared_ptr<Node>& node) {
+    auto current = node;
+    while (current) {
+        if (current->GetNodeType() == NodeType::ELEMENT_NODE) {
+            auto element = std::dynamic_pointer_cast<Element>(current);
+            if (element && (element->HasClass("cm-gutterElement")
+                || element->HasClass("cm-activeLineGutter")
+                || element->HasClass("cm-lineNumbers"))) {
+                return true;
+            }
+        }
+        current = current->GetParentNode();
+    }
+    return false;
+}
+
+const RenderText* FindTrackedGutterDigitText(const RenderObject* obj) {
+    if (!obj) return nullptr;
+
+    if (obj->GetType() == RenderObjectType::TEXT) {
+        auto text_obj = static_cast<const RenderText*>(obj);
+        auto node = text_obj->GetNode();
+        if (node && IsTrackedGutterDigit(text_obj->GetText()) && HasTrackedGutterClassChain(node)) {
+            return text_obj;
+        }
+    }
+
+    for (const auto& child : obj->GetChildren()) {
+        if (const RenderText* found = FindTrackedGutterDigitText(child.get())) {
+            return found;
+        }
+    }
+    return nullptr;
+}
+
+#ifdef _WIN32
+void PrintRasterizerDebugCallStack() {
+    void* stack[32] = {0};
+    USHORT frames = CaptureStackBackTrace(0, 32, stack, nullptr);
+    HANDLE process = GetCurrentProcess();
+    SymInitialize(process, nullptr, TRUE);
+
+    SYMBOL_INFO* symbol = static_cast<SYMBOL_INFO*>(calloc(sizeof(SYMBOL_INFO) + 256, 1));
+    if (!symbol) return;
+    symbol->MaxNameLen = 255;
+    symbol->SizeOfStruct = sizeof(SYMBOL_INFO);
+
+    for (USHORT i = 0; i < frames; ++i) {
+        DWORD64 address = reinterpret_cast<DWORD64>(stack[i]);
+        if (SymFromAddr(process, address, 0, symbol)) {
+            std::cout << "    [" << i << "] " << symbol->Name << "\n";
+        }
+    }
+    free(symbol);
+}
+#else
+void PrintRasterizerDebugCallStack() {}
+#endif
+
+void LogTrackedRasterOffset(RenderObject* render_obj,
+                            CompositorLayer* layer,
+                            const TrackedRasterOffsetState& state) {
+    const RenderText* tracked_text = FindTrackedGutterDigitText(render_obj);
+    if (!tracked_text) {
+        return;
+    }
+
+    std::cout << "[TRACE_RASTER_OFFSET]"
+              << " render_obj=" << render_obj
+              << " layer=" << layer
+              << " text=" << tracked_text->GetText()
+              << " reason=" << CompositorLayer::PromotionReasonToString(state.reason)
+              << " layout_x=" << state.base_layout_x
+              << " layout_y=" << state.base_layout_y
+              << " bounds_left=" << state.bounds_left
+              << " bounds_top=" << state.bounds_top
+              << " fixed_offset_x=" << state.fixed_offset_x
+              << " fixed_offset_y=" << state.fixed_offset_y
+              << " anim_offset_x=" << state.anim_offset_x
+              << " anim_offset_y=" << state.anim_offset_y
+              << " transform_offset_x=" << state.transform_offset_x
+              << " transform_offset_y=" << state.transform_offset_y
+              << " final_canvas_tx=" << -(state.base_layout_x + state.fixed_offset_x + state.anim_offset_x + state.transform_offset_x)
+              << " final_canvas_ty=" << -(state.base_layout_y + state.fixed_offset_y + state.anim_offset_y + state.transform_offset_y)
+              << "\n";
+}
+
+}  // namespace
 
 Rasterizer::Rasterizer() = default;
 Rasterizer::~Rasterizer() = default;
@@ -81,7 +215,7 @@ bool Rasterizer::RasterizeLayer(CompositorLayer* layer) {
     // 关键修复：光栅化阶段不应用滚动偏移
     // 滚动偏移应该在合成阶段应用，这样滚动时只需要更新合成参数，
     // 不需要重新光栅化，性能更好。
-    // 
+    //
     // 旧代码（已移除）：
     // const SkPoint& scroll = layer->GetScrollOffset();
     // if (scroll.fX != 0 || scroll.fY != 0) {
@@ -101,6 +235,11 @@ bool Rasterizer::RasterizeLayer(CompositorLayer* layer) {
 
     // 恢复 Canvas 状态
     canvas->restore();
+
+    // 记录本次成功绘制后的边界，供下次增量脏区计算使用
+    render_obj->UpdatePreviousPaintBounds(render_obj->GetBoundingRect(),
+                                          render_obj->GetViewportBoundingRect());
+
 
     // 清除脏区域
     layer->ClearDirtyRegions();
@@ -308,6 +447,11 @@ bool Rasterizer::RasterizeRegion(CompositorLayer* layer, const SkIRect& region) 
 
     // 恢复 Canvas 状态
     canvas->restore();
+
+
+    // 记录本次成功绘制后的边界，供下次增量脏区计算使用
+    render_obj->UpdatePreviousPaintBounds(render_obj->GetBoundingRect(),
+                                          render_obj->GetViewportBoundingRect());
 
     return true;
 }
@@ -535,6 +679,13 @@ void Rasterizer::ApplyLayerCanvasOffset(SkCanvas* canvas, CompositorLayer* layer
     // 但子层应该从 (0,0) 开始绘制，位置由合成器在合成时应用
     canvas->translate(-layout.x, -layout.y);
 
+    TrackedRasterOffsetState trace_state;
+    trace_state.base_layout_x = layout.x;
+    trace_state.base_layout_y = layout.y;
+    trace_state.reason = layer->GetPromotionReason();
+    trace_state.bounds_left = layer->GetBounds().left();
+    trace_state.bounds_top = layer->GetBounds().top();
+
     // 2. 根据层类型应用不同的偏移补偿
     bool is_fixed = (layer->GetPromotionReason() == LayerPromotionReason::PositionFixed);
 
@@ -545,6 +696,8 @@ void Rasterizer::ApplyLayerCanvasOffset(SkCanvas* canvas, CompositorLayer* layer
             const SkRect& bounds = layer->GetBounds();
             float offset_x = bounds.left() - layout.x;
             float offset_y = bounds.top() - layout.y;
+            trace_state.fixed_offset_x = offset_x;
+            trace_state.fixed_offset_y = offset_y;
             canvas->translate(-offset_x, -offset_y);
         }
     } else {
@@ -553,6 +706,8 @@ void Rasterizer::ApplyLayerCanvasOffset(SkCanvas* canvas, CompositorLayer* layer
         if (anim_bounds && anim_bounds->needs_expansion) {
             // 动画边界偏移通常为负值（边界向左上扩展）
             // 需要将内容向右下移动以补偿
+            trace_state.anim_offset_x = anim_bounds->offset.fX;
+            trace_state.anim_offset_y = anim_bounds->offset.fY;
             canvas->translate(-anim_bounds->offset.fX, -anim_bounds->offset.fY);
         } else {
             // 没有动画边界，检查是否有静态变换偏移
@@ -609,12 +764,16 @@ void Rasterizer::ApplyLayerCanvasOffset(SkCanvas* canvas, CompositorLayer* layer
             // 计算并补偿变换偏移
             float transform_offset_x = bounds.left() - orig_rel_x;
             float transform_offset_y = bounds.top() - orig_rel_y;
+            trace_state.transform_offset_x = transform_offset_x;
+            trace_state.transform_offset_y = transform_offset_y;
 
             if (transform_offset_x != 0 || transform_offset_y != 0) {
                 canvas->translate(-transform_offset_x, -transform_offset_y);
             }
         }
     }
+
+    LogTrackedRasterOffset(render_obj, layer, trace_state);
 }
 
 } // namespace lightui

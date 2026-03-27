@@ -691,9 +691,33 @@ void RenderPipeline::CollectDirtyRectsForLayer(RenderObject* obj, CompositorLaye
     // 🐛 hover bug 调试日志
     static bool debug_hover = std::getenv("LIGHTUI_DEBUG_HOVER_BUG") != nullptr;
 
-    // 如果当前节点需要重绘，标记其边界为脏
-    if (obj->NeedsPaint()) {
+    auto rect_differs = [](const SkRect& a, const SkRect& b) {
+        const float eps = 0.01f;
+        return std::abs(a.left() - b.left()) > eps ||
+               std::abs(a.top() - b.top()) > eps ||
+               std::abs(a.right() - b.right()) > eps ||
+               std::abs(a.bottom() - b.bottom()) > eps;
+    };
+
+    // 如果当前节点需要重绘，或位置/尺寸相对上次绘制发生变化，也要标记其边界为脏
+    bool force_dirty_by_bounds_change = false;
+    if (obj->HasPreviousPaintBounds()) {
+        if (layer->GetPromotionReason() == LayerPromotionReason::RootLayer) {
+            force_dirty_by_bounds_change = rect_differs(obj->GetViewportBoundingRect(),
+                                                       obj->GetPreviousViewportPaintBounds());
+        } else {
+            RenderObject* layer_render_obj = layer->GetRenderObject();
+            if (layer_render_obj) {
+                force_dirty_by_bounds_change = rect_differs(obj->GetBoundingRectRelativeTo(layer_render_obj),
+                                                           obj->GetPreviousPaintBounds());
+            }
+        }
+    }
+
+    if (obj->NeedsPaint() || force_dirty_by_bounds_change) {
         SkRect bounds;
+        SkRect previous_bounds;
+        bool has_previous_bounds = false;
 
         // 获取元素信息用于调试
         std::string tag_name = "unknown";
@@ -711,6 +735,10 @@ void RenderPipeline::CollectDirtyRectsForLayer(RenderObject* obj, CompositorLaye
         // 对于根层，使用视口坐标系的边界（已经考虑了所有祖先的滚动偏移）
         if (layer->GetPromotionReason() == LayerPromotionReason::RootLayer) {
             bounds = obj->GetViewportBoundingRect();
+            if (obj->HasPreviousPaintBounds()) {
+                previous_bounds = obj->GetPreviousViewportPaintBounds();
+                has_previous_bounds = !previous_bounds.isEmpty();
+            }
 
             // 🐛 hover bug 调试日志
             if (debug_hover) {
@@ -746,13 +774,26 @@ void RenderPipeline::CollectDirtyRectsForLayer(RenderObject* obj, CompositorLaye
                 bounds = SkRect::MakeWH(layer_bounds.width(), layer_bounds.height());
             } else {
                 bounds = obj->GetBoundingRectRelativeTo(layer_render_obj);
+                if (obj->HasPreviousPaintBounds()) {
+                    previous_bounds = obj->GetPreviousPaintBounds();
+                    if (!previous_bounds.isEmpty()) {
+                        previous_bounds.offset(-layer_render_obj->GetBoundingRect().x(),
+                                               -layer_render_obj->GetBoundingRect().y());
+                        has_previous_bounds = true;
+                    }
+                }
             }
+        }
+
+        if (has_previous_bounds) {
+            bounds.join(previous_bounds);
         }
 
         // 扩展边界以包含阴影、outline 等
         bounds.outset(50, 50);
 
         layer->MarkDirty(bounds);
+        obj->ClearPreviousPaintBounds();
     }
 
     // 优化：如果子节点不需要重绘，跳过整个子树

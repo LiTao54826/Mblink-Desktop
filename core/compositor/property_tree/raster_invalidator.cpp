@@ -129,11 +129,26 @@ void RasterInvalidator::HandleContentChangedChunk(
     const PaintChunk& new_chunk,
     const PropertyTreeState& layer_state,
     InvalidationResult& result) {
-    
-    // 内容变化的块，失效变化区域
-    // 使用块自带的光栅化失效区域
+    PropertyTreeStateDifference diff =
+        old_chunk.GetState().ComputeDifference(new_chunk.GetState());
+    const bool has_state_change_beyond_transform =
+        diff.clip_changed || diff.effect_changed || diff.scroll_changed;
+    const bool has_chunk_identity_change =
+        old_chunk.GetCompositingReasons() != new_chunk.GetCompositingReasons() ||
+        old_chunk.GetRenderObject() != new_chunk.GetRenderObject();
+
+    // 对于状态树/合成归属/关联对象切换，直接同时失效旧块和新块。
+    // 这类变化可能不会反映在 bounds/item_count 上，但会改变实际绘制结果，
+    // 增量光栅化如果只刷新新区域，容易保留旧像素造成重影。
+    if (has_state_change_beyond_transform || has_chunk_identity_change) {
+        result.AddRect(MapChunkBoundsToLayerSpace(old_chunk, layer_state));
+        result.AddRect(MapChunkBoundsToLayerSpace(new_chunk, layer_state));
+        return;
+    }
+
+    // 内容变化的块，优先使用块自带的光栅化失效区域。
     const auto& invalidation_rects = new_chunk.GetRasterInvalidationRects();
-    
+
     if (invalidation_rects.empty()) {
         // 如果没有精确的失效区域，失效整个块
         SkRect bounds = MapChunkBoundsToLayerSpace(new_chunk, layer_state);
@@ -175,22 +190,38 @@ bool RasterInvalidator::ChunkHasMoved(
 bool RasterInvalidator::ChunkContentChanged(
     const PaintChunk& old_chunk,
     const PaintChunk& new_chunk) const {
-    
     // 检查是否有光栅化失效区域
     if (new_chunk.HasRasterInvalidation()) {
         return true;
     }
-    
+
     // 检查边界是否变化
     if (old_chunk.GetBounds() != new_chunk.GetBounds()) {
         return true;
     }
-    
+
     // 检查绘制指令数量是否变化
     if (old_chunk.GetItemCount() != new_chunk.GetItemCount()) {
         return true;
     }
-    
+
+    // 检查属性树状态中的非 transform 变化。
+    // transform 变化由 ChunkHasMoved 处理，这里只兜住 clip/effect/scroll。
+    PropertyTreeStateDifference diff =
+        old_chunk.GetState().ComputeDifference(new_chunk.GetState());
+    if (diff.clip_changed || diff.effect_changed || diff.scroll_changed) {
+        return true;
+    }
+
+    // 检查块是否在相同 bounds 下切换了合成归属或关联对象。
+    // 这种情况下视觉内容可能已经变化，但旧逻辑会漏判。
+    if (old_chunk.GetCompositingReasons() != new_chunk.GetCompositingReasons()) {
+        return true;
+    }
+    if (old_chunk.GetRenderObject() != new_chunk.GetRenderObject()) {
+        return true;
+    }
+
     return false;
 }
 
