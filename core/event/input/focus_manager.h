@@ -19,7 +19,7 @@ class Element;
 class Document;
 class Window;
 class Node;
-class ContentEditableHandler;
+class EditorInputSession;
 
 /**
  * @brief 焦点管理器
@@ -43,7 +43,7 @@ public:
      * @param window 窗口指针
      */
 
-    void SetContentEditableHandler(ContentEditableHandler* handler) { contenteditable_handler_ = handler; }
+    void SetEditorInputSession(EditorInputSession* session) { editor_input_session_ = session; }
     void SetWindow(Window* window) { window_ = window; }
 
     /**
@@ -165,7 +165,7 @@ private:
     // 窗口指针（用于SDL文本输入）
     Window* window_ = nullptr;
 
-    ContentEditableHandler* contenteditable_handler_ = nullptr;
+    EditorInputSession* editor_input_session_ = nullptr;
 
     // 当前注册的文档（用于自动注销）
     std::weak_ptr<Document> registered_document_;

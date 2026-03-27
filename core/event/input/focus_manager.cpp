@@ -10,14 +10,13 @@
 #include "core/dom/node.h"
 #include "core/dom/elements/html_input_element.h"
 #include "core/dom/elements/html_textarea_element.h"
+#include "core/editing/editor_input_session.h"
 #include "core/window/window.h"
 #include "core/render/input/input_paint_model.h"
 #include "core/render/input/text_edit_metrics.h"
 #include "core/render/objects/render_object.h"
 #include "core/render/pipeline/render_pipeline.h"
 #include "core/render/text/font_manager.h"
-#include "core/editing/contenteditable_geometry.h"
-#include "core/editing/contenteditable_handler.h"
 #include "core/utils/utf8_utils.h"
 #include "include/core/SkFontMetrics.h"
 #include <SDL3/SDL.h>
@@ -75,14 +74,7 @@ float ResolveCssLineHeight(const ComputedStyle& style) {
     return std::max(1.0f, style.line_height * style.font_size);
 }
 
-bool IsTextInputTarget(const std::shared_ptr<Element>& element) {
-    if (!element) {
-        return false;
-    }
-
-    const std::string tag_name = element->GetTagName();
-    return tag_name == "input" || tag_name == "textarea" || tag_name == "terminal" || element->IsContentEditable();
-}
+bool IsTextInputTarget(const std::shared_ptr<Element>& element, EditorInputSession* session) { return session && session->IsEditorTarget(element); }
 
 SkFont BuildElementFont(const RenderObject* render_object) {
     FontDescriptor desc;
@@ -210,9 +202,8 @@ bool FocusManager::SetFocus(std::shared_ptr<Element> element, bool focus_visible
         doc->SetActiveElement(element);
     }
 
-    if (IsTextInputTarget(element) && window_) {
-        SDL_StartTextInput(window_->GetSDLWindow());
-        UpdateTextInputArea();
+    if (IsTextInputTarget(element, editor_input_session_) && window_) {
+        editor_input_session_->SyncTextInputState(window_, element);
     }
 
     // 关键修复：标记新旧焦点元素的 RenderObject 需要重绘
@@ -246,11 +237,7 @@ void FocusManager::Blur(std::shared_ptr<Element> element) {
     if (current_focus == element) {
         // 如果是输入元素或 contentEditable 元素，停止SDL文本输入
         std::string tag_name = element->GetTagName();
-        if (tag_name == "input" || tag_name == "textarea" || element->IsContentEditable()) {
-            if (window_) {
-                SDL_StopTextInput(window_->GetSDLWindow());
-            }
-        }
+        if (window_ && editor_input_session_) editor_input_session_->SyncTextInputState(window_, nullptr);
 
         // 发送blur事件
         SendFocusEvents(current_focus, nullptr, false);
@@ -283,172 +270,7 @@ void FocusManager::Blur(std::shared_ptr<Element> element) {
 
 void FocusManager::UpdateTextInputArea() {
     auto element = focus_element_.lock();
-    if (!window_ || !element || !IsTextInputTarget(element)) {
-        return;
-    }
-
-    SDL_Window* sdl_window = window_->GetSDLWindow();
-    auto render_object = element->GetRenderObject();
-    if (!sdl_window || !render_object) {
-        return;
-    }
-
-    if (!SDL_TextInputActive(sdl_window)) {
-        SDL_StartTextInput(sdl_window);
-    }
-
-    const auto& viewport_bounds = render_object->GetViewportBounds().valid
-        ? render_object->GetViewportBounds()
-        : (render_object->UpdateViewportBounds(), render_object->GetViewportBounds());
-    if (!viewport_bounds.valid) {
-        return;
-    }
-
-    const auto& style = render_object->GetComputedStyle();
-
-    SkFont font = BuildElementFont(render_object.get());
-    SkFontMetrics metrics;
-    font.getMetrics(&metrics);
-    const float glyph_height = std::max(1.0f, -metrics.fAscent + metrics.fDescent);
-    const float css_line_height = ResolveCssLineHeight(style);
-
-    const float layout_width = render_object->GetLayoutInfo().width;
-    const float layout_height = render_object->GetLayoutInfo().height;
-    const float padding_left = style.padding.left.ToPx(layout_width, style.font_size);
-    const float padding_top = style.padding.top.ToPx(layout_height, style.font_size);
-    const float padding_right = style.padding.right.ToPx(layout_width, style.font_size);
-    const float padding_bottom = style.padding.bottom.ToPx(layout_height, style.font_size);
-
-    float border_left = style.border_left_width;
-    float border_right = style.border_right_width;
-    float border_top = style.border_top_width;
-    float border_bottom = style.border_bottom_width;
-    if (border_left == 0.0f && border_right == 0.0f && border_top == 0.0f && border_bottom == 0.0f) {
-        const float border_width = style.border.width.ToPx(layout_width, style.font_size);
-        border_left = border_right = border_top = border_bottom = border_width;
-    }
-
-    const float content_x = viewport_bounds.x + border_left + padding_left;
-    const float content_y = viewport_bounds.y + border_top + padding_top;
-    const float content_width = std::max(1.0f, viewport_bounds.width - border_left - border_right - padding_left - padding_right);
-    const float content_height = std::max(1.0f, viewport_bounds.height - border_top - border_bottom - padding_top - padding_bottom);
-    const float text_height = glyph_height;
-    const float ime_font_height = std::max(1.0f, std::max(style.font_size, glyph_height));
-
-    float area_x = content_x;
-    float area_y = content_y;
-    float area_width = content_width;
-    float area_height = ime_font_height;
-    float caret_x = content_x;
-
-    if (auto input = std::dynamic_pointer_cast<HTMLInputElement>(element)) {
-        InputPaintModel paint_model = InputPaintModel::FromInputElement(input.get());
-        const float text_box_top = content_y + (content_height - text_height) / 2.0f;
-        const int anchor_position = paint_model.HasComposition()
-            ? paint_model.composition_start
-            : paint_model.VisibleCaretPosition();
-        area_y = text_box_top + (text_height - ime_font_height) * 0.5f;
-        area_height = std::min(ime_font_height, content_height);
-        caret_x += text_edit_metrics::MeasurePrefixWidth(paint_model.visual_text,
-                                                         anchor_position,
-                                                         font,
-                                                         paint_model.is_password && !paint_model.is_placeholder);
-    } else if (auto textarea = std::dynamic_pointer_cast<HTMLTextAreaElement>(element)) {
-        const std::string value = textarea->GetValue();
-        auto edit_state = textarea->GetEditState();
-        std::string visual_value = value;
-        int anchor_position = textarea->GetSelectionEnd();
-        if (edit_state && edit_state->HasActiveComposition()) {
-            const auto& composition = edit_state->composition_state;
-            size_t start_byte = utf8::CharPosToBytePos(value, composition.start);
-            size_t end_byte = utf8::CharPosToBytePos(value, composition.end);
-            visual_value = value.substr(0, start_byte) + composition.text + value.substr(end_byte);
-            anchor_position = composition.start;
-        }
-
-        float visible_width = content_width;
-        float visible_height = content_height;
-        float max_line_width = textarea->GetMaxLineWidth(font);
-        float textarea_content_height = textarea->GetContentHeight(css_line_height);
-        const float scrollbar_width = HTMLTextAreaElement::SCROLLBAR_WIDTH;
-        if (textarea_content_height > visible_height) {
-            visible_width = std::max(1.0f, visible_width - scrollbar_width);
-        }
-        if (max_line_width > visible_width) {
-            visible_height = std::max(1.0f, visible_height - scrollbar_width);
-        }
-
-        size_t anchor_byte_pos = utf8::CharPosToBytePos(visual_value, anchor_position);
-        std::string text_before_anchor = visual_value.substr(0, anchor_byte_pos);
-        int anchor_line = 0;
-        for (char ch : text_before_anchor) {
-            if (ch == '\n') {
-                ++anchor_line;
-            }
-        }
-        size_t last_newline = text_before_anchor.rfind('\n');
-        std::string current_line_before_anchor = last_newline != std::string::npos
-            ? text_before_anchor.substr(last_newline + 1)
-            : text_before_anchor;
-
-        caret_x = content_x + text_edit_metrics::MeasureTextWidth(current_line_before_anchor, font, false) - textarea->GetScrollLeft();
-        const float baseline_y = content_y - metrics.fAscent - textarea->GetScrollTop() + anchor_line * css_line_height;
-        area_y = baseline_y + metrics.fAscent + (glyph_height - ime_font_height) * 0.5f;
-        area_width = visible_width;
-        area_height = ime_font_height;
-    } else if (element->IsContentEditable()) {
-        auto document = std::dynamic_pointer_cast<Document>(element->GetOwnerDocument());
-        std::shared_ptr<Selection> selection = document ? document->GetSelection() : nullptr;
-        if (!selection && document) {
-            selection = document->GetSelection();
-        }
-        auto anchor_node = selection ? selection->GetFocusNode() : nullptr;
-        int anchor_offset = selection ? selection->GetFocusOffset() : 0;
-
-        if (contenteditable_handler_ && document && contenteditable_handler_->HasActiveComposition(document)) {
-            const auto composition = contenteditable_handler_->GetCompositionState(document);
-            anchor_offset = composition.start;
-        }
-
-        auto caret_rect = ComputeContentEditableCaretRect(element, anchor_node, anchor_offset);
-        if (caret_rect.valid) {
-            area_x = std::max(content_x, caret_rect.x);
-            area_y = caret_rect.y;
-            area_width = std::max(1.0f, content_width - std::max(0.0f, area_x - content_x));
-            area_height = std::max(1.0f, caret_rect.height);
-            caret_x = caret_rect.x;
-        }
-    }
-
-    const float display_scale = std::max(1.0f, window_->GetDisplayScale());
-
-    SDL_Rect area;
-    area.x = static_cast<int>(std::floor(area_x * display_scale));
-    area.y = static_cast<int>(std::floor(area_y * display_scale));
-    area.w = std::max(1, static_cast<int>(std::ceil(area_width * display_scale)));
-    area.h = std::max(1, static_cast<int>(std::ceil(area_height * display_scale)));
-
-    int cursor = static_cast<int>(std::round((caret_x - area_x) * display_scale));
-    cursor = std::max(0, std::min(area.w, cursor));
-
-    LogImeAreaDebug("UpdateTextInputArea",
-                    element,
-                    style,
-                    area,
-                    cursor,
-                    display_scale,
-                    glyph_height,
-                    css_line_height,
-                    content_x,
-                    content_y,
-                    content_width,
-                    content_height,
-                    area_x,
-                    area_y,
-                    area_width,
-                    area_height);
-
-    SDL_SetTextInputArea(sdl_window, &area, cursor);
+    if (window_ && editor_input_session_) editor_input_session_->UpdateTextInputArea(window_, element);
 }
 
 std::shared_ptr<Element> FocusManager::GetFocusElement() const {
@@ -535,11 +357,7 @@ void FocusManager::ClearFocus() {
     if (current_focus) {
         // 如果是输入元素或 contentEditable 元素，停止SDL文本输入
         std::string tag_name = current_focus->GetTagName();
-        if (tag_name == "input" || tag_name == "textarea" || current_focus->IsContentEditable()) {
-            if (window_) {
-                SDL_StopTextInput(window_->GetSDLWindow());
-            }
-        }
+        if (window_ && editor_input_session_) editor_input_session_->SyncTextInputState(window_, nullptr);
 
         SendFocusEvents(current_focus, nullptr, false);
 

@@ -24,8 +24,9 @@ class Element;
 class Document;
 class Window;
 class FocusManager;
-class ContentEditableController;
 class ClipboardManager;
+class ContentEditableController;
+class EditorInputSession;
 
 /**
  * @brief 键盘事件分发器
@@ -55,8 +56,9 @@ public:
      * @param clipboard_manager 剪贴板管理器
      */
     void SetManagers(FocusManager* focus_manager,
+                     ClipboardManager* clipboard_manager,
                      ContentEditableController* contenteditable_controller,
-                     ClipboardManager* clipboard_manager);
+                     EditorInputSession* editor_input_session);
 
     /**
      * @brief 处理键盘事件（keydown/keyup/textinput）
@@ -109,8 +111,9 @@ private:
 private:
     // 依赖的管理器（不拥有所有权）
     FocusManager* focus_manager_ = nullptr;
-    ContentEditableController* contenteditable_controller_ = nullptr;
     ClipboardManager* clipboard_manager_ = nullptr;
+    ContentEditableController* contenteditable_controller_ = nullptr;
+    EditorInputSession* editor_input_session_ = nullptr;
 };
 
 } // namespace lightui

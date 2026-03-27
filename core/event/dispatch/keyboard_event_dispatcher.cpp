@@ -17,6 +17,7 @@
 #include "core/dom/elements/terminal/html_terminal_element.h"
 #include "core/editing/clipboard_manager.h"
 #include "core/editing/contenteditable_controller.h"
+#include "core/editing/editor_input_session.h"
 #include "core/editing/input_edit_command.h"
 #include "core/editing/input_edit_state.h"
 #include "core/editing/textarea_editing_controller.h"
@@ -36,11 +37,13 @@ KeyboardEventDispatcher::KeyboardEventDispatcher() = default;
 KeyboardEventDispatcher::~KeyboardEventDispatcher() = default;
 
 void KeyboardEventDispatcher::SetManagers(FocusManager* focus_manager,
+                                           ClipboardManager* clipboard_manager,
                                            ContentEditableController* contenteditable_controller,
-                                           ClipboardManager* clipboard_manager) {
+                                           EditorInputSession* editor_input_session) {
     focus_manager_ = focus_manager;
-    contenteditable_controller_ = contenteditable_controller;
     clipboard_manager_ = clipboard_manager;
+    contenteditable_controller_ = contenteditable_controller;
+    editor_input_session_ = editor_input_session;
 }
 
 bool KeyboardEventDispatcher::HandleKeyboardEvent(const SDL_Event& event,
@@ -158,60 +161,18 @@ void KeyboardEventDispatcher::HandleKeyDown(const SDL_Event& event,
         }
     }
 
+    if (editor_input_session_ && editor_input_session_->HandleKeyDown(event, focus_element, document, window, clipboard_manager_, contenteditable_controller_, ctrl_key, shift_key, alt_key, meta_key, keydown_event->IsDefaultPrevented())) {
+        if (focus_manager_) {
+            focus_manager_->UpdateTextInputArea();
+        }
+        return;
+    }
+
     // 如果事件未被阻止，处理表单元素的键盘输入
     if (!keydown_event->IsDefaultPrevented()) {
         // 检查是否是表单元素
-        auto input_element = std::dynamic_pointer_cast<HTMLInputElement>(focus_element);
-        auto textarea_element = std::dynamic_pointer_cast<HTMLTextAreaElement>(focus_element);
         auto terminal_element = std::dynamic_pointer_cast<HTMLTerminalElement>(focus_element);
-        auto contenteditable_element = std::dynamic_pointer_cast<Element>(focus_element);
-
-        if (input_element) {
-            bool handled = false;
-            if (shift_key && key == "ArrowLeft") {
-                handled = input_element->ExecuteEditCommand(InputEditCommand::ExtendSelectionLeft());
-            } else if (shift_key && key == "ArrowRight") {
-                handled = input_element->ExecuteEditCommand(InputEditCommand::ExtendSelectionRight());
-            } else if (shift_key && key == "Home") {
-                handled = input_element->ExecuteEditCommand(InputEditCommand::ExtendSelectionToStart());
-            } else if (shift_key && key == "End") {
-                handled = input_element->ExecuteEditCommand(InputEditCommand::ExtendSelectionToEnd());
-            } else if (key == "Backspace") {
-                handled = input_element->ExecuteEditCommand(MakeCommand(InputEditCommandType::DeleteBackward));
-            } else if (key == "Delete") {
-                handled = input_element->ExecuteEditCommand(MakeCommand(InputEditCommandType::DeleteForward));
-            } else if (key == "ArrowLeft") {
-                handled = input_element->ExecuteEditCommand(MakeCommand(InputEditCommandType::MoveCaretLeft));
-            } else if (key == "ArrowRight") {
-                handled = input_element->ExecuteEditCommand(MakeCommand(InputEditCommandType::MoveCaretRight));
-            } else if (key == "Home") {
-                handled = input_element->ExecuteEditCommand(MakeCommand(InputEditCommandType::MoveCaretToStart));
-            } else if (key == "End") {
-                handled = input_element->ExecuteEditCommand(MakeCommand(InputEditCommandType::MoveCaretToEnd));
-            } else if (ctrl_key && (key == "a" || key == "A")) {
-                handled = input_element->ExecuteEditCommand(MakeCommand(InputEditCommandType::SelectAll));
-            } else if (ctrl_key && (key == "x" || key == "X")) {
-                handled = input_element->ExecuteEditCommand(MakeCommand(InputEditCommandType::CutSelection));
-            } else if (ctrl_key && (key == "v" || key == "V")) {
-                char* clipboard_text = SDL_GetClipboardText();
-                if (clipboard_text && clipboard_text[0] != '\0') {
-                    handled = input_element->ExecuteEditCommand(InputEditCommand::PasteText(clipboard_text));
-                }
-                SDL_free(clipboard_text);
-            }
-
-            if (!handled) {
-                input_element->HandleKeyPress(key, ctrl_key);
-            }
-            if (focus_manager_) {
-                focus_manager_->UpdateTextInputArea();
-            }
-        } else if (textarea_element) {
-            textarea_element->HandleKeyPress(key, ctrl_key, shift_key);
-            if (focus_manager_) {
-                focus_manager_->UpdateTextInputArea();
-            }
-        } else if (terminal_element) {
+        if (terminal_element) {
             // Terminal 元素：将按键转换为终端序列并发送
             int modifiers = (ctrl_key ? 1 : 0) | (shift_key ? 2 : 0) | (alt_key ? 4 : 0);
             terminal_element->HandleKeyInput(key, modifiers);
@@ -224,13 +185,6 @@ void KeyboardEventDispatcher::HandleKeyDown(const SDL_Event& event,
                 window->SetNeedsRepaint();
                 if (auto pipeline = window->GetRenderPipeline()) {
                     pipeline->ForceRasterize();
-                }
-            } else {
-                // 检查是否是 contentEditable 元素或其子元素
-                if (contenteditable_element && contenteditable_element->IsContentEditable()) {
-                    if (contenteditable_controller_) {
-                        contenteditable_controller_->HandleKeyDown(contenteditable_element, key_code, ctrl_key, shift_key, alt_key);
-                    }
                 }
             }
         }
@@ -265,136 +219,24 @@ void KeyboardEventDispatcher::HandleTextInput(const SDL_Event& event,
                                                std::shared_ptr<Document> document) {
     std::string text = event.text.text;
 
-    auto input_element = std::dynamic_pointer_cast<HTMLInputElement>(focus_element);
-    auto textarea_element = std::dynamic_pointer_cast<HTMLTextAreaElement>(focus_element);
     auto terminal_element = std::dynamic_pointer_cast<HTMLTerminalElement>(focus_element);
-    CompositionCommandData composition_data;
-
-    if (input_element) {
-        auto edit_state = input_element->GetEditState();
-        if (edit_state && edit_state->HasActiveComposition()) {
-            input_element->ExecuteEditCommand(
-                InputEditCommand::CommitComposition(text,
-                                                    edit_state->composition_state.start,
-                                                    edit_state->composition_state.end));
-        } else {
-            input_element->ExecuteEditCommand(InputEditCommand::InsertText(text));
-        }
-        if (focus_manager_) {
-            focus_manager_->UpdateTextInputArea();
-        }
-    } else if (textarea_element) {
-        auto edit_state = textarea_element->GetEditState();
-        if (edit_state && edit_state->HasActiveComposition()) {
-            composition_data.text = text;
-            composition_data.start = edit_state->composition_state.start;
-            composition_data.end = edit_state->composition_state.end;
-            TextAreaEditingController controller(textarea_element.get(), edit_state);
-            controller.CommitComposition(composition_data);
-        } else {
-            textarea_element->HandleTextInput(text);
-        }
+    if (editor_input_session_ && editor_input_session_->HandleTextInput(event, focus_element, document, contenteditable_controller_)) {
         if (focus_manager_) {
             focus_manager_->UpdateTextInputArea();
         }
     } else if (terminal_element) {
         terminal_element->SendInput(text);
-    } else {
-        auto element = std::dynamic_pointer_cast<Element>(focus_element);
-        if (element && element->IsContentEditable()) {
-            if (contenteditable_controller_ && document) {
-                contenteditable_controller_->HandleTextInput(element, document, text);
-                if (focus_manager_) {
-                    focus_manager_->UpdateTextInputArea();
-                }
-            }
-        }
     }
 }
 
 void KeyboardEventDispatcher::HandleTextEditing(const SDL_Event& event,
                                                 std::shared_ptr<Element> focus_element,
                                                 std::shared_ptr<Document> document) {
-    auto input_element = std::dynamic_pointer_cast<HTMLInputElement>(focus_element);
-    auto textarea_element = std::dynamic_pointer_cast<HTMLTextAreaElement>(focus_element);
-    auto contenteditable_element = std::dynamic_pointer_cast<Element>(focus_element);
-
-    std::string text = event.edit.text ? event.edit.text : "";
-
-    if (input_element) {
-        auto edit_state = input_element->GetEditState();
-        if (!edit_state) {
-            return;
-        }
-
-        if (text.empty()) {
-            if (edit_state->HasActiveComposition()) {
-                input_element->ExecuteEditCommand(InputEditCommand::CancelComposition());
-            }
-            if (focus_manager_) {
-                focus_manager_->UpdateTextInputArea();
-            }
-            return;
-        }
-
-        int start = edit_state->GetSelectionStart();
-        int end = edit_state->GetSelectionEnd();
-        if (edit_state->HasActiveComposition()) {
-            start = edit_state->composition_state.start;
-            end = edit_state->composition_state.end;
-            input_element->ExecuteEditCommand(InputEditCommand::UpdateComposition(text, start, end));
-        } else {
-            input_element->ExecuteEditCommand(InputEditCommand::StartComposition(text, start, end));
-        }
+    if (editor_input_session_ && editor_input_session_->HandleTextEditing(event, focus_element, document, contenteditable_controller_)) {
         if (focus_manager_) {
             focus_manager_->UpdateTextInputArea();
         }
         return;
-    }
-
-    if (textarea_element) {
-        auto edit_state = textarea_element->GetEditState();
-        if (!edit_state) {
-            return;
-        }
-
-        TextAreaEditingController controller(textarea_element.get(), edit_state);
-        if (text.empty()) {
-            controller.CancelComposition();
-            if (focus_manager_) {
-                focus_manager_->UpdateTextInputArea();
-            }
-            return;
-        }
-
-        CompositionCommandData composition_data;
-        composition_data.text = text;
-        composition_data.start = edit_state->HasActiveComposition()
-            ? edit_state->composition_state.start
-            : edit_state->GetSelectionStart();
-        composition_data.end = edit_state->HasActiveComposition()
-            ? edit_state->composition_state.end
-            : edit_state->GetSelectionEnd();
-
-        if (edit_state->HasActiveComposition()) {
-            controller.UpdateComposition(composition_data);
-        } else {
-            controller.StartComposition(composition_data);
-        }
-        if (focus_manager_) {
-            focus_manager_->UpdateTextInputArea();
-        }
-        return;
-    }
-
-    if (!contenteditable_element || !contenteditable_element->IsContentEditable() || !contenteditable_controller_ || !document) {
-        return;
-    }
-
-    contenteditable_controller_->HandleTextEditing(contenteditable_element, document, text);
-
-    if (focus_manager_) {
-        focus_manager_->UpdateTextInputArea();
     }
 }
 

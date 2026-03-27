@@ -51,6 +51,18 @@
 
 namespace lightui {
 
+namespace {
+
+bool IsPrimaryEditorElement(const std::shared_ptr<Element>& element) {
+    if (!element) {
+        return false;
+    }
+    const std::string tag_name = element->GetTagName();
+    return tag_name == "input" || tag_name == "textarea" || tag_name == "terminal" || tag_name == "logview";
+}
+
+} // namespace
+
 MouseEventDispatcher::MouseEventDispatcher() = default;
 
 MouseEventDispatcher::~MouseEventDispatcher() = default;
@@ -1217,7 +1229,7 @@ void MouseEventDispatcher::HandleMouseDown(std::shared_ptr<Window> window,
                 shift_key,
                 hit_result.render_object,
                 root_render);
-        } else if (selection_manager_) {
+        } else if (selection_manager_ && !IsPrimaryEditorElement(hit_result.element)) {
             UpdateSelectionFromClick(document, hit_result, logical_x, logical_y);
         }
     }
@@ -1279,7 +1291,6 @@ void MouseEventDispatcher::HandleMouseDown(std::shared_ptr<Window> window,
             if (focus_manager_) {
                 focus_manager_->SetWindow(window.get());
                 focus_manager_->SetFocus(hit_result.element, false);
-                focus_manager_->UpdateTextInputArea();
             }
         }
     }
@@ -1327,7 +1338,6 @@ void MouseEventDispatcher::HandleMouseDown(std::shared_ptr<Window> window,
             if (focus_manager_) {
                 focus_manager_->SetWindow(window.get());
                 focus_manager_->SetFocus(hit_result.element, false);
-                focus_manager_->UpdateTextInputArea();
             }
         }
     }
@@ -1409,9 +1419,7 @@ void MouseEventDispatcher::HandleMouseDown(std::shared_ptr<Window> window,
         if (focus_manager_) {
             focus_manager_->SetWindow(window.get());
             focus_manager_->SetFocus(hit_result.element, false);
-            focus_manager_->UpdateTextInputArea();
         }
-
     }
     // 参考 Blink/Chrome 的行为：
     // 点击非可聚焦元素时，不应该清除焦点

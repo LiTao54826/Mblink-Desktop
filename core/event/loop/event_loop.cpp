@@ -31,6 +31,7 @@
 #include "../input/focus_manager.h"
 #include "core/editing/drag_manager.h"
 #include "core/editing/selection_manager.h"
+#include "core/editing/editor_input_session.h"
 #include "core/editing/contenteditable_handler.h"
 #include "core/editing/contenteditable_controller.h"
 #include "core/editing/clipboard_manager.h"
@@ -89,6 +90,8 @@ EventLoop::EventLoop()
     contenteditable_handler_ = std::make_unique<ContentEditableHandler>(selection_manager_.get());
     contenteditable_controller_ = std::make_unique<ContentEditableController>(selection_manager_.get(), contenteditable_handler_.get());
     clipboard_manager_ = std::make_unique<ClipboardManager>(selection_manager_.get(), contenteditable_handler_.get());
+    editor_input_session_ = std::make_unique<EditorInputSession>();
+    editor_input_session_->SetContentEditableHandler(contenteditable_handler_.get());
 
     // 设置 MouseEventDispatcher 的依赖
     mouse_event_dispatcher_->SetManagers(
@@ -102,11 +105,12 @@ EventLoop::EventLoop()
     });
 
     // 设置 KeyboardEventDispatcher 的依赖
-    focus_manager_->SetContentEditableHandler(contenteditable_handler_.get());
+    focus_manager_->SetEditorInputSession(editor_input_session_.get());
     keyboard_event_dispatcher_->SetManagers(
         focus_manager_.get(),
+        clipboard_manager_.get(),
         contenteditable_controller_.get(),
-        clipboard_manager_.get()
+        editor_input_session_.get()
     );
 
     // 延迟初始化光标（在第一次使用时初始化，避免 SDL 未初始化的问题）
@@ -141,6 +145,8 @@ EventLoop::EventLoop(std::shared_ptr<TaskScheduler> task_scheduler)
     contenteditable_handler_ = std::make_unique<ContentEditableHandler>(selection_manager_.get());
     contenteditable_controller_ = std::make_unique<ContentEditableController>(selection_manager_.get(), contenteditable_handler_.get());
     clipboard_manager_ = std::make_unique<ClipboardManager>(selection_manager_.get(), contenteditable_handler_.get());
+    editor_input_session_ = std::make_unique<EditorInputSession>();
+    editor_input_session_->SetContentEditableHandler(contenteditable_handler_.get());
 
     // 设置 MouseEventDispatcher 的依赖
     mouse_event_dispatcher_->SetManagers(
@@ -154,11 +160,12 @@ EventLoop::EventLoop(std::shared_ptr<TaskScheduler> task_scheduler)
     });
 
     // 设置 KeyboardEventDispatcher 的依赖
-    focus_manager_->SetContentEditableHandler(contenteditable_handler_.get());
+    focus_manager_->SetEditorInputSession(editor_input_session_.get());
     keyboard_event_dispatcher_->SetManagers(
         focus_manager_.get(),
+        clipboard_manager_.get(),
         contenteditable_controller_.get(),
-        clipboard_manager_.get()
+        editor_input_session_.get()
     );
 
     // 延迟初始化光标（在第一次使用时初始化，避免 SDL 未初始化的问题）
@@ -288,32 +295,36 @@ void EventLoop::RunOnce() {
         std::cerr << "[EventLoop::RunOnce] UNKNOWN EXCEPTION in ProcessMicrotasks (post-anim)" << std::endl;
     }
 
-    // 4.5 处理光标闪烁（如果有聚焦的输入框或 contentEditable 元素）
+    // 4.5 处理光标闪烁（仅限原生 input/textarea）
+    // CodeMirror/contenteditable 自己维护 caret/focus 绘制。
+    // 如果这里再对 contenteditable 跑一套全局 blink + repaint，
+    // 会把编辑器整块周期性拖入增量重绘链，容易与 gutter/chunk invalidation 打架，
+    // 表现为获取焦点后随 caret blink 周期出现闪烁。
     static Uint64 last_cursor_blink_time = SDL_GetTicks();
     static bool cursor_visible = true;
     auto focus_element = focus_manager_->GetFocusElement();
     if (focus_element) {
         std::string tag_name = focus_element->GetTagName();
-        bool is_editable = (tag_name == "input" || tag_name == "textarea" || focus_element->IsContentEditable());
-        
-        if (is_editable) {
+        bool uses_native_caret_blink = (tag_name == "input" || tag_name == "textarea");
+
+        if (uses_native_caret_blink) {
             // 每500毫秒切换光标显示状态
             Uint64 now = SDL_GetTicks();
             if (now - last_cursor_blink_time >= 500) {
                 cursor_visible = !cursor_visible;
                 cursor_visible_ = cursor_visible;  // 保存到成员变量供渲染使用
                 last_cursor_blink_time = now;
-                
+
                 // 设置全局光标可见状态（供 RenderObject 使用）
                 RenderObject::SetCursorVisible(cursor_visible);
-                
+
                 // 关键修复：标记元素的 RenderObject 需要重绘
                 // 这样增量渲染系统才会重绘光标区域
                 if (auto render_obj = focus_element->GetRenderObject()) {
                     render_obj->MarkNeedsPaint();
                     render_obj->InvalidatePaintCache();
                 }
-                
+
                 // 触发重绘以更新光标
                 auto& wm = WindowManager::Instance();
                 for (auto& window : wm.GetAllWindows()) {
@@ -325,6 +336,13 @@ void EventLoop::RunOnce() {
                     }
                 }
             }
+        } else {
+            // 非原生输入控件（如 CodeMirror/contenteditable）不使用引擎侧 blink 定时器。
+            // 保持可见，避免全局 cursor_visible 状态干扰其自绘 caret/focus。
+            cursor_visible = true;
+            cursor_visible_ = true;
+            RenderObject::SetCursorVisible(true);
+            last_cursor_blink_time = SDL_GetTicks();
         }
     } else {
         // 没有聚焦的可编辑元素时，重置光标状态
