@@ -10,12 +10,24 @@
 #include "core/dom/selection/range.h"
 #include "core/dom/selection/selection.h"
 #include "core/dom/text.h"
+#include "core/editing/contenteditable_geometry.h"
+#include "core/render/input/text_edit_metrics.h"
 
 #include "include/core/SkCanvas.h"
+#include "include/core/SkFont.h"
 #include "include/core/SkPaint.h"
 #include "include/core/SkRect.h"
 
 #include <algorithm>
+
+namespace {
+
+std::shared_ptr<lightui::Element> FindContentEditableRootFromNode(
+    const std::shared_ptr<lightui::Node>& node) {
+    return lightui::GetContentEditableEditingHost(node);
+}
+
+} // namespace
 
 namespace lightui {
 
@@ -39,10 +51,10 @@ std::shared_ptr<Selection> SelectionManager::GetSelection(std::shared_ptr<Docume
     // 创建新的 Selection 对象
     auto selection = std::make_shared<Selection>(document);
     selections_[doc_ptr] = selection;
-    
+
     // 设置到 Document 中，以便渲染时可以访问
     document->SetSelection(selection);
-    
+
     return selection;
 }
 
@@ -55,117 +67,6 @@ void SelectionManager::ClearSelection(std::shared_ptr<Document> document) {
     if (selection) {
         selection->RemoveAllRanges();
     }
-}
-
-// ========== 鼠标选择处理 ==========
-
-void SelectionManager::HandleMouseDown(std::shared_ptr<Element> target, int x, int y) {
-    if (!target) {
-        return;
-    }
-
-    auto doc = target->GetOwnerDocument();
-    if (!doc) {
-        return;
-    }
-
-    // 计算光标位置
-    CaretPosition pos = HitTestToCaretPosition(target, x, y);
-    if (!pos.IsValid()) {
-        return;
-    }
-
-    // 开始选择
-    is_selecting_ = true;
-    selection_start_ = pos;
-
-    // 设置光标位置（折叠选择）
-    auto selection = GetSelection(doc);
-    if (selection) {
-        selection->Collapse(pos.node, pos.offset);
-    }
-
-    // 重置光标闪烁
-    ResetCaretBlink();
-}
-
-void SelectionManager::HandleMouseMove(std::shared_ptr<Element> target, int x, int y, bool is_dragging) {
-    if (!is_selecting_ || !is_dragging || !target) {
-        return;
-    }
-
-    auto doc = target->GetOwnerDocument();
-    if (!doc) {
-        return;
-    }
-
-    // 计算当前光标位置
-    CaretPosition pos = HitTestToCaretPosition(target, x, y);
-    if (!pos.IsValid()) {
-        return;
-    }
-
-    // 扩展选择
-    auto selection = GetSelection(doc);
-    if (selection && selection_start_.IsValid()) {
-        selection->UpdateFromUserAction(
-            selection_start_.node, selection_start_.offset,
-            pos.node, pos.offset);
-    }
-}
-
-void SelectionManager::HandleMouseUp(std::shared_ptr<Element> /*target*/, int /*x*/, int /*y*/) {
-    is_selecting_ = false;
-    is_drag_selecting_ = false;
-}
-
-// ========== 拖拽选择支持 ==========
-
-void SelectionManager::StartDragSelection(
-    std::shared_ptr<Document> document,
-    std::shared_ptr<Node> start_node,
-    int start_offset) {
-
-    if (!document || !start_node) {
-        return;
-    }
-
-    is_drag_selecting_ = true;
-    drag_start_node_ = start_node;
-    drag_start_offset_ = start_offset;
-
-    // 设置选择起始位置
-    auto selection = GetSelection(document);
-    if (selection) {
-        selection->Collapse(start_node, start_offset);
-    }
-
-    // 重置光标闪烁
-    ResetCaretBlink();
-}
-
-void SelectionManager::UpdateDragSelection(
-    std::shared_ptr<Document> document,
-    std::shared_ptr<Node> end_node,
-    int end_offset) {
-
-    if (!is_drag_selecting_ || !document || !end_node || !drag_start_node_) {
-        return;
-    }
-
-    auto selection = GetSelection(document);
-    if (selection) {
-        selection->UpdateFromUserAction(
-            drag_start_node_, drag_start_offset_,
-            end_node, end_offset
-        );
-    }
-}
-
-void SelectionManager::EndDragSelection(std::shared_ptr<Document> /*document*/) {
-    is_drag_selecting_ = false;
-    drag_start_node_ = nullptr;
-    drag_start_offset_ = 0;
 }
 
 // ========== 键盘选择处理 ==========
@@ -251,7 +152,10 @@ void SelectionManager::HandleArrowKey(std::shared_ptr<Document> document, const 
 
 // ========== 光标位置计算 ==========
 
-CaretPosition SelectionManager::HitTestToCaretPosition(std::shared_ptr<Element> element, int x, int y) {
+CaretPosition SelectionManager::HitTestToCaretPosition(std::shared_ptr<Element> element,
+                                                       int x,
+                                                       int y,
+                                                       const SkFont* font) {
     CaretPosition result;
 
     if (!element) {
@@ -259,7 +163,7 @@ CaretPosition SelectionManager::HitTestToCaretPosition(std::shared_ptr<Element> 
     }
 
     // 简化实现：查找包含坐标的文本节点
-    result = FindTextNodeAtPosition(element, x, y);
+    result = FindTextNodeAtPosition(element, x, y, font);
 
     return result;
 }
@@ -278,9 +182,28 @@ CaretPosition SelectionManager::GetCaretPosition(std::shared_ptr<Document> docum
 
     result.node = selection->GetFocusNode();
     result.offset = selection->GetFocusOffset();
+    if (!result.node) {
+        return result;
+    }
 
-    // TODO: 计算屏幕坐标
-    // 这需要访问布局信息
+    auto editable = FindContentEditableRootFromNode(result.node);
+    if (editable && editable->IsContentEditable()) {
+        auto rect = ComputeContentEditableCaretRect(editable, result.node, result.offset);
+        if (rect.valid) {
+            result.x = rect.x;
+            result.y = rect.y;
+            result.height = rect.height;
+            return result;
+        }
+    }
+
+    auto range = selection->GetRangeAt(0);
+    if (range) {
+        auto rect = range->GetBoundingClientRect();
+        result.x = rect.x;
+        result.y = rect.y;
+        result.height = rect.height;
+    }
 
     return result;
 }
@@ -302,7 +225,6 @@ void SelectionManager::RenderCaret(SkCanvas* canvas, std::shared_ptr<Document> d
         return;
     }
 
-    // 绘制光标
     SkPaint paint;
     paint.setColor(SK_ColorBLACK);
     paint.setStrokeWidth(1.0f);
@@ -312,18 +234,57 @@ void SelectionManager::RenderCaret(SkCanvas* canvas, std::shared_ptr<Document> d
     canvas->drawLine(pos.x, pos.y, pos.x, pos.y + caret_height, paint);
 }
 
+std::vector<SelectionRect> SelectionManager::GetSelectionRects(std::shared_ptr<Document> document) {
+    if (!document) {
+        return {};
+    }
+
+    auto selection = GetSelection(document);
+    if (!selection || selection->IsCollapsed()) {
+        return {};
+    }
+
+    auto editable = FindContentEditableRootFromNode(selection->GetComputedAnchorNode());
+    std::vector<SelectionRect> result;
+    auto append_rect = [&](const ContentEditableSelectionRect& rect) {
+        result.push_back({rect.x, rect.y, rect.width, rect.height});
+    };
+
+    if (editable && editable->IsContentEditable()) {
+        for (const auto& rect : ComputeContentEditableSelectionRects(editable, selection)) {
+            append_rect(rect);
+        }
+        if (!result.empty()) {
+            return result;
+        }
+    }
+
+    auto range = selection->GetRangeAt(0);
+    if (!range) {
+        return result;
+    }
+
+    for (const auto& rect : range->GetClientRects()) {
+        if (rect.width <= 0.0f || rect.height <= 0.0f) {
+            continue;
+        }
+        result.push_back({rect.x, rect.y, rect.width, rect.height});
+    }
+    return result;
+}
+
 void SelectionManager::RenderSelectionHighlight(SkCanvas* canvas, std::shared_ptr<Document> document) {
     if (!canvas || !document) {
         return;
     }
 
-    auto selection = GetSelection(document);
-    if (!selection || selection->IsCollapsed()) {
-        return;
-    }
+    SkPaint highlight_paint;
+    highlight_paint.setColor(SkColorSetARGB(100, 51, 153, 255));
+    highlight_paint.setStyle(SkPaint::kFill_Style);
 
-    // TODO: 实现选择高亮渲染
-    // 这需要计算选择区域的矩形并绘制半透明背景
+    for (const auto& rect : GetSelectionRects(document)) {
+        canvas->drawRect(SkRect::MakeXYWH(rect.x, rect.y, rect.width, rect.height), highlight_paint);
+    }
 }
 
 // ========== 光标闪烁控制 ==========
@@ -358,7 +319,10 @@ std::string SelectionManager::GetSelectedText(std::shared_ptr<Document> document
 
 // ========== 私有辅助方法 ==========
 
-CaretPosition SelectionManager::FindTextNodeAtPosition(std::shared_ptr<Element> element, int x, int y) {
+CaretPosition SelectionManager::FindTextNodeAtPosition(std::shared_ptr<Element> element,
+                                                       int x,
+                                                       int y,
+                                                       const SkFont* font) {
     CaretPosition result;
 
     if (!element) {
@@ -371,7 +335,7 @@ CaretPosition SelectionManager::FindTextNodeAtPosition(std::shared_ptr<Element> 
             // 简化实现：返回第一个文本节点
             // TODO: 实现真正的 hit testing
             result.node = child;
-            result.offset = CalculateTextOffset(child, x);
+            result.offset = CalculateTextOffset(child, x, font);
             result.x = static_cast<float>(x);
             result.y = static_cast<float>(y);
             result.height = 16.0f; // 默认高度
@@ -379,7 +343,7 @@ CaretPosition SelectionManager::FindTextNodeAtPosition(std::shared_ptr<Element> 
         } else if (child->GetNodeType() == NodeType::ELEMENT_NODE) {
             auto child_element = std::dynamic_pointer_cast<Element>(child);
             if (child_element) {
-                result = FindTextNodeAtPosition(child_element, x, y);
+                result = FindTextNodeAtPosition(child_element, x, y, font);
                 if (result.IsValid()) {
                     return result;
                 }
@@ -390,7 +354,9 @@ CaretPosition SelectionManager::FindTextNodeAtPosition(std::shared_ptr<Element> 
     return result;
 }
 
-int SelectionManager::CalculateTextOffset(std::shared_ptr<Node> text_node, int x) {
+int SelectionManager::CalculateTextOffset(std::shared_ptr<Node> text_node,
+                                          int x,
+                                          const SkFont* font) {
     if (!text_node || text_node->GetNodeType() != NodeType::TEXT_NODE) {
         return 0;
     }
@@ -400,12 +366,23 @@ int SelectionManager::CalculateTextOffset(std::shared_ptr<Node> text_node, int x
         return 0;
     }
 
-    // 简化实现：假设每个字符宽度为 8 像素
-    // TODO: 使用实际的字体度量
-    const int char_width = 8;
     std::string content = text->GetData();
-    int offset = x / char_width;
-    return std::min(offset, static_cast<int>(content.length()));
+    if (content.empty()) {
+        return 0;
+    }
+
+    if (!font) {
+        const int char_width = 8;
+        int offset = x / char_width;
+        return std::clamp(offset, 0, static_cast<int>(content.length()));
+    }
+
+    return std::clamp(text_edit_metrics::HitTestTextPosition(content,
+                                                             static_cast<float>(x),
+                                                             *font,
+                                                             false),
+                      0,
+                      static_cast<int>(content.length()));
 }
 
 CaretPosition SelectionManager::MoveCaretByCharacter(std::shared_ptr<Document> document, bool forward) {

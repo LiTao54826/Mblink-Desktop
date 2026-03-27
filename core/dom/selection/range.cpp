@@ -10,6 +10,7 @@
 #include "core/dom/text.h"
 #include "core/render/objects/render_object.h"
 #include "core/render/text/font_manager.h"
+#include "core/utils/utf8_utils.h"
 #include "include/core/SkFont.h"
 #include "include/core/SkTextBlob.h"
 #include <algorithm>
@@ -227,10 +228,11 @@ std::string Range::ToString() const {
         auto text_node = std::dynamic_pointer_cast<Text>(start_node);
         if (text_node) {
             std::string content = text_node->GetData();
+            int text_len = static_cast<int>(utf8::CharCount(content));
             int start = std::max(0, start_offset_);
-            int end = std::min(static_cast<int>(content.length()), end_offset_);
+            int end = std::min(text_len, end_offset_);
             if (start < end) {
-                return content.substr(start, end - start);
+                return utf8::SubstrByChar(content, static_cast<size_t>(start), static_cast<size_t>(end));
             }
         }
         return "";
@@ -260,107 +262,116 @@ Range::DOMRect Range::ComputeTextRect(
     std::shared_ptr<Text> text_node,
     int start_offset,
     int end_offset) const {
-    
+
     DOMRect rect;
     if (!text_node) {
         return rect;
     }
-    
-    // 获取父元素
+
     auto parent = text_node->GetParentNode();
     if (!parent) {
         return rect;
     }
-    
+
     auto element = std::dynamic_pointer_cast<Element>(parent);
     if (!element) {
         return rect;
     }
-    
-    // 获取元素的边界矩形
+
     auto elem_rect = element->GetBoundingClientRect();
-    
-    // 获取字体信息
+    auto parent_render_obj = element->GetRenderObject();
+    auto text_render_obj = text_node->GetRenderObject();
+
     float font_size = 14.0f;
     float line_height = font_size * 1.4f;
     std::string font_family = "monospace";
+    FontWeight font_weight = FontWeight::NORMAL;
+    FontStyle font_style = FontStyle::NORMAL;
     float padding_left = 0.0f;
     float padding_top = 0.0f;
-    
-    auto parent_render_obj = element->GetRenderObject();
+
     if (parent_render_obj) {
         const auto& computed = parent_render_obj->GetComputedStyle();
         font_size = computed.font_size;
-        line_height = font_size * 1.4f;
+        line_height = computed.line_height * computed.font_size;
         if (!computed.font_family.empty()) {
             font_family = computed.font_family;
         }
         padding_left = computed.padding_left.ToPx();
         padding_top = computed.padding_top.ToPx();
     }
-    
-    // 使用 FontManager 测量文本
+
+    if (text_render_obj) {
+        const auto& computed = text_render_obj->GetComputedStyle();
+        if (computed.font_size > 0.0f) {
+            font_size = computed.font_size;
+        }
+        if (computed.line_height > 0.0f) {
+            line_height = computed.line_height * font_size;
+        }
+        if (!computed.font_family.empty()) {
+            font_family = computed.font_family;
+        }
+        font_weight = ParseCSSFontWeight(computed.font_weight);
+        font_style = (computed.font_style == "italic") ? FontStyle::ITALIC : FontStyle::NORMAL;
+    }
+
     FontDescriptor desc;
     desc.family = font_family;
     desc.size = font_size;
-    desc.weight = FontWeight::NORMAL;
-    desc.style = FontStyle::NORMAL;
-    
+    desc.weight = font_weight;
+    desc.style = font_style;
     SkFont font = FontManager::GetInstance().LoadFont(desc);
-    
-    // 获取文本内容
+
     std::string full_text = text_node->GetData();
-    int text_len = static_cast<int>(full_text.length());
-    
-    // 限制偏移范围
+    int text_len = static_cast<int>(utf8::CharCount(full_text));
     start_offset = std::max(0, std::min(start_offset, text_len));
     end_offset = std::max(start_offset, std::min(end_offset, text_len));
-    
-    // 计算起始偏移的 x 位置
-    // 关键修复：对于 flex/grid 容器中的文本节点，使用文本节点自己的渲染对象位置
-    // 而不是简单地使用父元素的 padding_left
+
     float start_x = elem_rect.x + padding_left;
     float start_y = elem_rect.y + padding_top;
-    
-    // 检查文本节点是否有自己的渲染对象（在 flex/grid 容器中）
-    auto text_render_obj = text_node->GetRenderObject();
-    if (text_render_obj && parent_render_obj) {
-        const auto& parent_style = parent_render_obj->GetComputedStyle();
-        // 如果父元素是 flex 或 grid 容器，使用文本节点的布局位置
-        if (parent_style.display == RenderObjectType::FLEX ||
-            parent_style.display == RenderObjectType::GRID) {
+
+    if (text_render_obj) {
+        const auto& text_bounds = text_render_obj->GetViewportBounds().valid
+            ? text_render_obj->GetViewportBounds()
+            : (text_render_obj->UpdateViewportBounds(), text_render_obj->GetViewportBounds());
+        if (text_bounds.valid) {
+            start_x = text_bounds.x;
+            start_y = text_bounds.y;
+        } else if (parent_render_obj) {
             const auto& text_layout = text_render_obj->GetLayoutInfo();
-            // 文本节点的位置是相对于父元素的，需要加上父元素的绝对位置
             start_x = elem_rect.x + text_layout.x;
             start_y = elem_rect.y + text_layout.y;
         }
     }
-    
+
     if (start_offset > 0) {
-        std::string prefix = full_text.substr(0, start_offset);
+        std::string prefix = utf8::SubstrByChar(full_text, 0, static_cast<size_t>(start_offset));
         float prefix_width = font.measureText(
             prefix.c_str(), prefix.size(), SkTextEncoding::kUTF8, nullptr);
         start_x += prefix_width;
     }
-    
-    // 计算范围的宽度
-    float width = 0;
+
+    float width = 0.0f;
     int char_count = end_offset - start_offset;
     if (char_count > 0) {
-        std::string range_text = full_text.substr(start_offset, char_count);
+        std::string range_text = utf8::SubstrByChar(
+            full_text,
+            static_cast<size_t>(start_offset),
+            static_cast<size_t>(end_offset));
         width = font.measureText(
             range_text.c_str(), range_text.size(), SkTextEncoding::kUTF8, nullptr);
     }
-    
+
     rect.x = start_x;
     rect.left = start_x;
     rect.y = start_y;
     rect.top = start_y;
     rect.width = width;
-    rect.height = line_height;
+    rect.height = std::max(1.0f, line_height);
     rect.right = start_x + width;
-    rect.bottom = start_y + line_height;
-    
+    rect.bottom = start_y + rect.height;
+
     return rect;
 }
 
@@ -415,15 +426,15 @@ void Range::CollectRects(
         if (node->GetNodeType() == NodeType::TEXT_NODE) {
             auto text_node = std::dynamic_pointer_cast<Text>(node);
             if (text_node) {
-                int text_len = static_cast<int>(text_node->GetData().length());
+                int text_len = static_cast<int>(utf8::CharCount(text_node->GetData()));
                 int start_off = start_offset_;
                 int end_off = (start_node == end_node) ? end_offset_ : text_len;
-                
+
                 auto rect = ComputeTextRect(text_node, start_off, end_off);
                 if (rect.width > 0 || rect.height > 0) {
                     rects.push_back(rect);
                 }
-                
+
                 if (start_node == end_node) {
                     done = true;
                     return;
@@ -443,7 +454,7 @@ void Range::CollectRects(
                 if (child->GetNodeType() == NodeType::TEXT_NODE) {
                     auto text_node = std::dynamic_pointer_cast<Text>(child);
                     if (text_node) {
-                        int text_len = static_cast<int>(text_node->GetData().length());
+                        int text_len = static_cast<int>(utf8::CharCount(text_node->GetData()));
                         auto rect = ComputeTextRect(text_node, 0, text_len);
                         if (rect.width > 0 || rect.height > 0) {
                             rects.push_back(rect);
@@ -467,14 +478,14 @@ void Range::CollectRects(
     else if (in_range && node->GetNodeType() == NodeType::TEXT_NODE) {
         auto text_node = std::dynamic_pointer_cast<Text>(node);
         if (text_node) {
-            int text_len = static_cast<int>(text_node->GetData().length());
+            int text_len = static_cast<int>(utf8::CharCount(text_node->GetData()));
             auto rect = ComputeTextRect(text_node, 0, text_len);
             if (rect.width > 0 || rect.height > 0) {
                 rects.push_back(rect);
             }
         }
     }
-    
+
     // 递归处理子节点
     for (const auto& child : node->GetChildNodes()) {
         if (done) {
@@ -622,7 +633,7 @@ int Range::GetNodeLength(std::shared_ptr<Node> node) const {
     if (node->GetNodeType() == NodeType::TEXT_NODE) {
         auto text_node = std::dynamic_pointer_cast<Text>(node);
         if (text_node) {
-            return static_cast<int>(text_node->GetData().length());
+            return static_cast<int>(utf8::CharCount(text_node->GetData()));
         }
         return 0;
     }
@@ -646,19 +657,20 @@ void Range::CollectText(std::shared_ptr<Node> node, std::string& result, bool& i
             auto text_node = std::dynamic_pointer_cast<Text>(node);
             if (text_node) {
                 std::string content = text_node->GetData();
+                int text_len = static_cast<int>(utf8::CharCount(content));
                 if (start_node == end_node) {
                     // 起始和结束在同一节点
                     int start = std::max(0, start_offset_);
-                    int end = std::min(static_cast<int>(content.length()), end_offset_);
+                    int end = std::min(text_len, end_offset_);
                     if (start < end) {
-                        result += content.substr(start, end - start);
+                        result += utf8::SubstrByChar(content, static_cast<size_t>(start), static_cast<size_t>(end));
                     }
                     in_range = false;
                 } else {
                     // 只取起始偏移之后的部分
                     int start = std::max(0, start_offset_);
-                    if (start < static_cast<int>(content.length())) {
-                        result += content.substr(start);
+                    if (start < text_len) {
+                        result += utf8::SubstrByChar(content, static_cast<size_t>(start), static_cast<size_t>(text_len));
                     }
                 }
             }
@@ -668,9 +680,10 @@ void Range::CollectText(std::shared_ptr<Node> node, std::string& result, bool& i
             auto text_node = std::dynamic_pointer_cast<Text>(node);
             if (text_node) {
                 std::string content = text_node->GetData();
-                int end = std::min(static_cast<int>(content.length()), end_offset_);
+                int text_len = static_cast<int>(utf8::CharCount(content));
+                int end = std::min(text_len, end_offset_);
                 if (end > 0) {
-                    result += content.substr(0, end);
+                    result += utf8::SubstrByChar(content, 0, static_cast<size_t>(end));
                 }
             }
         }
@@ -688,7 +701,7 @@ void Range::CollectText(std::shared_ptr<Node> node, std::string& result, bool& i
         if (!in_range && child == end_node) {
             break;
         }
-        
+
         // 在块级元素之间添加换行符（除了第一个子元素）
         if (in_range && !first_child && child->GetNodeType() == NodeType::ELEMENT_NODE) {
             auto elem = std::dynamic_pointer_cast<Element>(child);
@@ -699,17 +712,17 @@ void Range::CollectText(std::shared_ptr<Node> node, std::string& result, bool& i
                     c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
                 }
                 // 块级元素：div, p, br 等
-                if (tag == "div" || tag == "p" || tag == "br" || tag == "li" || 
-                    tag == "h1" || tag == "h2" || tag == "h3" || tag == "h4" || 
+                if (tag == "div" || tag == "p" || tag == "br" || tag == "li" ||
+                    tag == "h1" || tag == "h2" || tag == "h3" || tag == "h4" ||
                     tag == "h5" || tag == "h6" || tag == "pre") {
                     result += "\n";
                 }
             }
         }
-        
+
         CollectText(child, result, in_range);
         first_child = false;
-        
+
         if (!in_range) {
             break;
         }

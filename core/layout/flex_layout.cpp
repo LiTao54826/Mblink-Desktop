@@ -275,7 +275,7 @@ static float GetGapForAlignment(
     AlignContent alignment
 ) {
     if (num_items <= 1) return 0.0f;
-    
+
     switch (alignment) {
         case AlignContent::SpaceBetween:
             return free_space / static_cast<float>(num_items - 1);
@@ -298,7 +298,7 @@ LayoutOutput ComputeFlexboxLayout(
     const LayoutInput& inputs
 ) {
     const auto& style = tree.GetContainerStyle(node);
-    
+
     // Pull these out earlier to avoid borrowing issues
     auto aspect_ratio = style.aspect_ratio;
     auto padding = ResolveOrZero(style.padding, inputs.parent_size.width);
@@ -309,15 +309,15 @@ LayoutOutput ComputeFlexboxLayout(
     };
     Size<float> box_sizing_adjustment =
         (style.box_sizing == BoxSizing::ContentBox) ? padding_border_sum : Size<float>::Zero();
-    
+
     auto min_size = MaybeResolve(style.min_size, inputs.parent_size);
     min_size = MaybeApplyAspectRatio(min_size, aspect_ratio);
     min_size = MaybeAdd(min_size, box_sizing_adjustment);
-    
+
     auto max_size = MaybeResolve(style.max_size, inputs.parent_size);
     max_size = MaybeApplyAspectRatio(max_size, aspect_ratio);
     max_size = MaybeAdd(max_size, box_sizing_adjustment);
-    
+
     Size<std::optional<float>> clamped_style_size;
     if (inputs.sizing_mode == SizingMode::InherentSize) {
         clamped_style_size = MaybeResolve(style.size, inputs.parent_size);
@@ -327,22 +327,22 @@ LayoutOutput ComputeFlexboxLayout(
     } else {
         clamped_style_size = {std::nullopt, std::nullopt};
     }
-    
+
     // If both min and max in a given axis are set and max <= min then this determines the size
     Size<std::optional<float>> min_max_definite_size = {
-        (min_size.width.has_value() && max_size.width.has_value() && 
+        (min_size.width.has_value() && max_size.width.has_value() &&
          *max_size.width <= *min_size.width) ? min_size.width : std::nullopt,
-        (min_size.height.has_value() && max_size.height.has_value() && 
+        (min_size.height.has_value() && max_size.height.has_value() &&
          *max_size.height <= *min_size.height) ? min_size.height : std::nullopt
     };
-    
+
     // The size of the container should be floored by the padding and border
     auto styled_based_known_dimensions = inputs.known_dimensions;
     if (!styled_based_known_dimensions.width.has_value()) {
         if (min_max_definite_size.width.has_value()) {
             styled_based_known_dimensions.width = min_max_definite_size.width;
         } else if (clamped_style_size.width.has_value()) {
-            styled_based_known_dimensions.width = 
+            styled_based_known_dimensions.width =
                 std::optional<float>(f32_max(*clamped_style_size.width, padding_border_sum.width));
         }
     }
@@ -350,14 +350,14 @@ LayoutOutput ComputeFlexboxLayout(
         if (min_max_definite_size.height.has_value()) {
             styled_based_known_dimensions.height = min_max_definite_size.height;
         } else if (clamped_style_size.height.has_value()) {
-            styled_based_known_dimensions.height = 
+            styled_based_known_dimensions.height =
                 std::optional<float>(f32_max(*clamped_style_size.height, padding_border_sum.height));
         }
     }
-    
+
     // Short-circuit layout if the container's size is fully determined
     if (inputs.run_mode == RunMode::ComputeSize) {
-        if (styled_based_known_dimensions.width.has_value() && 
+        if (styled_based_known_dimensions.width.has_value() &&
             styled_based_known_dimensions.height.has_value()) {
             return LayoutOutput::FromOuterSize(Size<float>{
                 *styled_based_known_dimensions.width,
@@ -365,11 +365,11 @@ LayoutOutput ComputeFlexboxLayout(
             });
         }
     }
-    
+
     // Compute preliminary layout
     LayoutInput modified_inputs = inputs;
     modified_inputs.known_dimensions = styled_based_known_dimensions;
-    
+
     return ComputePreliminary(tree, node, modified_inputs);
 }
 
@@ -383,27 +383,27 @@ static LayoutOutput ComputePreliminary(
     const LayoutInput& inputs
 ) {
     const auto& style = tree.GetContainerStyle(node);
-    
+
     // Define some general constants we will need for the remainder of the algorithm
     auto constants = ComputeConstants(tree, style, inputs.known_dimensions, inputs.parent_size);
-    
+
     // 9.1. Initial Setup
     // 1. Generate anonymous flex items
     auto flex_items = GenerateAnonymousFlexItems(tree, node, constants);
-    
+
     // 9.2. Line Length Determination
     // 2. Determine the available main and cross space for the flex items
     auto available_space = DetermineAvailableSpace(inputs.known_dimensions, inputs.available_space, constants);
-    
+
     // 3. Determine the flex base size and hypothetical main size of each item
     DetermineFlexBaseSize(tree, constants, available_space, flex_items);
-    
+
     // 4. Determine the main size of the flex container (already done in compute_constants)
 
     // 9.3. Main Size Determination
     // 5. Collect flex items into flex lines
     auto flex_lines = CollectFlexLines(constants, available_space, flex_items, inputs.parent_size);
-    
+
     // If container size is undefined, determine the container's main size
     auto main_inner = constants.node_inner_size.Main(constants.dir);
     if (main_inner.has_value()) {
@@ -412,65 +412,65 @@ static LayoutOutput ComputePreliminary(
         constants.container_size.SetMain(constants.dir, outer_main_size);
     } else {
         DetermineContainerMainSize(tree, available_space, flex_lines, flex_items, constants);
-        constants.node_inner_size.SetMain(constants.dir, 
+        constants.node_inner_size.SetMain(constants.dir,
             std::optional<float>(constants.inner_container_size.Main(constants.dir)));
-        constants.node_outer_size.SetMain(constants.dir, 
+        constants.node_outer_size.SetMain(constants.dir,
             std::optional<float>(constants.container_size.Main(constants.dir)));
-        
+
         // Re-resolve percentage gaps
         float inner_container_size = constants.inner_container_size.Main(constants.dir);
         auto new_gap = MaybeResolve(style.gap.Main(constants.dir), std::optional<float>(inner_container_size));
         constants.gap.SetMain(constants.dir, new_gap.value_or(0.0f));
     }
-    
+
     // 6. Resolve the flexible lengths of all the flex items
     for (auto& line : flex_lines) {
         ResolveFlexibleLengths(line, flex_items, constants);
     }
-    
+
     // 9.4. Cross Size Determination
     // 7. Determine the hypothetical cross size of each item
     for (auto& line : flex_lines) {
         DetermineHypotheticalCrossSize(tree, line, flex_items, constants, available_space);
     }
-    
+
     // Calculate child baselines
     CalculateChildrenBaseLines(tree, inputs.known_dimensions, available_space, flex_lines, flex_items, constants);
-    
+
     // 8. Calculate the cross size of each flex line
     CalculateCrossSize(flex_lines, flex_items, inputs.known_dimensions, constants);
-    
+
     // 9. Handle 'align-content: stretch'
     HandleAlignContentStretch(flex_lines, inputs.known_dimensions, constants);
-    
+
     // 11. Determine the used cross size of each flex item
     DetermineUsedCrossSize(tree, flex_lines, flex_items, constants);
-    
+
     // 9.5. Main-Axis Alignment
     // 12. Distribute any remaining free space
     DistributeRemainingFreeSpace(flex_lines, flex_items, constants);
-    
+
     // 9.6. Cross-Axis Alignment
     // 13. Resolve cross-axis auto margins
     ResolveCrossAxisAutoMargins(flex_lines, flex_items, constants);
-    
+
     // 15. Determine the flex container's used cross size
     float total_line_cross_size = DetermineContainerCrossSize(flex_lines, inputs.known_dimensions, constants);
-    
+
     // If our caller does not care about performing layout we are done now
     if (inputs.run_mode == RunMode::ComputeSize) {
         return LayoutOutput::FromOuterSize(constants.container_size);
     }
-    
+
     // 16. Align all flex lines per align-content
     AlignFlexLinesPerAlignContent(flex_lines, constants, total_line_cross_size);
-    
+
     // Do a final layout pass and gather the resulting layouts
     auto inflow_content_size = FinalLayoutPass(tree, flex_lines, flex_items, constants);
-    
+
     // Perform absolute layout on all absolutely positioned children
     auto absolute_content_size = PerformAbsoluteLayoutOnAbsoluteChildren(tree, node, constants);
-    
+
     // Handle display:none children
     size_t len = tree.ChildCount(node);
     for (size_t order = 0; order < len; ++order) {
@@ -489,7 +489,7 @@ static LayoutOutput ComputePreliminary(
             );
         }
     }
-    
+
     // Calculate first baseline
     std::optional<float> first_vertical_baseline = std::nullopt;
     if (!flex_lines.empty()) {
@@ -501,13 +501,13 @@ static LayoutOutput ComputePreliminary(
             }
         }
     }
-    
+
     // Compute content size
     Size<float> content_size = {
         f32_max(inflow_content_size.width, absolute_content_size.width),
         f32_max(inflow_content_size.height, absolute_content_size.height)
     };
-    
+
     LayoutOutput output;
     output.size = constants.container_size;
     output.content_size = content_size;
@@ -629,7 +629,7 @@ static std::vector<FlexItem> GenerateAnonymousFlexItems(
 
         // Skip absolutely positioned items - they don't participate in flex layout
         // They are laid out separately in PerformAbsoluteLayoutOnAbsoluteChildren
-        if (child_style.position == Position::Absolute || 
+        if (child_style.position == Position::Absolute ||
             child_style.position == Position::Fixed) {
             continue;
         }
@@ -1288,6 +1288,17 @@ static void CalculateChildrenBaseLines(
             }
 
             // Perform layout to get baseline
+            // NOTE:
+            // 这里是这次问题的上游触发点之一：flex baseline 计算会调用 PerformChildLayout()。
+            // 对普通块级子项这通常没问题，但对 IFC 容器来说，若下游把这次中间布局当成“最终布局”回写，
+            // 就会把临时尺寸（known_dimensions / available_space）写进真实文本节点。
+            // 本次 gutter 闪烁就是这样产生的。
+            //
+            // 后续如果这里附近再出现“测量阶段导致真实位置抖动”的问题：
+            // 1. 优先检查下游 ComputeIFCLayout / ComputeAnonymousBlockIFCLayout 是否在 ContentSize 时仍 apply_results；
+            // 2. 不要直接在这里改成 MeasureChildSize()，因为 baseline 计算有时仍需要真实 layout output；
+            // 3. 正确做法是：允许布局计算，但禁止中间测量污染最终 render tree。
+
             Size<std::optional<float>> child_known = item.size;
             child_known.SetMain(constants.dir, std::optional<float>(item.target_size.Main(constants.dir)));
             child_known.SetCross(constants.dir, std::optional<float>(item.hypothetical_inner_size.Cross(constants.dir)));
@@ -1432,7 +1443,7 @@ static void DistributeRemainingFreeSpace(
 ) {
     // 调试日志
     static bool debug_select = std::getenv("LIGHTUI_DEBUG_SELECT") != nullptr;
-    
+
     bool layout_reverse = IsReverse(constants.dir);
 
     for (auto& line : flex_lines) {
@@ -1452,7 +1463,7 @@ static void DistributeRemainingFreeSpace(
         }
 
         float free_space = constants.inner_container_size.Main(constants.dir) - used_space;
-        
+
         // 调试日志：输出 justify-content 计算
         if (debug_select) {
         }
@@ -1488,7 +1499,7 @@ static void DistributeRemainingFreeSpace(
                 size_t i = line.end_index - 1 - idx;
                 auto& item = flex_items[i];
                 item.offset_main = ComputeAlignmentOffset(free_space, num_items, gap, justify, layout_reverse, idx == 0);
-                
+
                 // 调试日志：输出每个子项的 offset_main
                 if (debug_select) {
                 }
@@ -1499,7 +1510,7 @@ static void DistributeRemainingFreeSpace(
                 size_t i = line.start_index + idx;
                 auto& item = flex_items[i];
                 item.offset_main = ComputeAlignmentOffset(free_space, num_items, gap, justify, layout_reverse, idx == 0);
-                
+
                 // 调试日志：输出每个子项的 offset_main
                 if (debug_select) {
                 }
@@ -1716,7 +1727,7 @@ static void CalculateFlexItem(
 ) {
     // 调试日志
     static bool debug_flex = std::getenv("DEBUG_FLEX") != nullptr;
-    
+
     // Perform final layout
     Size<std::optional<float>> known_dimensions = {
         std::optional<float>(item.target_size.width),
@@ -1879,7 +1890,7 @@ static Size<float> PerformAbsoluteLayoutOnAbsoluteChildren(
         // For position: fixed, use viewport size instead of parent container size
         // CSS spec: fixed positioned elements are positioned relative to the viewport
         bool is_fixed = (child_style.position == Position::Fixed);
-        Size<float> containing_block_size = is_fixed 
+        Size<float> containing_block_size = is_fixed
             ? Size<float>{ViewportSize::GetWidth(), ViewportSize::GetHeight()}
             : constants.inner_container_size;
         Size<std::optional<float>> containing_block_size_opt = {

@@ -32,6 +32,7 @@ class SelectionManager;
 class ContentEditableHandler;
 class ContentEditableController;
 class ClipboardManager;
+class EditorInputSession;
 class MouseEventDispatcher;
 class KeyboardEventDispatcher;
 class WheelEventDispatcher;
@@ -383,6 +384,7 @@ private:
     std::unique_ptr<ContentEditableHandler> contenteditable_handler_;
     std::unique_ptr<ContentEditableController> contenteditable_controller_;
     std::unique_ptr<ClipboardManager> clipboard_manager_;
+    std::unique_ptr<EditorInputSession> editor_input_session_;
 
     // 光标闪烁状态
     bool cursor_visible_ = true;  // 光标是否可见（用于闪烁效果）

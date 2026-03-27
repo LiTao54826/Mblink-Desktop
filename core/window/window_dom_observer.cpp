@@ -24,6 +24,29 @@
 
 namespace lightui {
 
+namespace {
+
+
+void AddDirtyRectForRenderObject(Window* window, Element* owner, RenderObject* render_obj) {
+    if (!window || !render_obj) {
+        return;
+    }
+
+    SkRect bounds = render_obj->GetViewportBoundingRect();
+    if (bounds.isEmpty()) {
+        bounds = render_obj->GetBoundingRect();
+    }
+    if (!bounds.isEmpty()) {
+        if (owner) {
+            owner->SetDirtyRect(bounds);
+        }
+        window->AddDirtyRect(bounds);
+    }
+}
+
+
+}  // namespace
+
 WindowDOMObserver::WindowDOMObserver(Window* window) : window_(window) {}
 
 void WindowDOMObserver::OnNodeAdded(Node* node, Node* parent) {
@@ -47,18 +70,18 @@ void WindowDOMObserver::OnNodeAdded(Node* node, Node* parent) {
             return;  // <style> 元素本身不需要渲染
         }
     }
-    
+
     if (window_ && !IsInBatch(node)) {
         // =========================================================================
         // 增量布局边界优化
         // =========================================================================
-        
+
         // 检查是否为元素节点
         if (node->GetNodeType() == NodeType::ELEMENT_NODE) {
             auto elem = std::dynamic_pointer_cast<Element>(node->shared_from_this());
             if (elem && elem->GetRenderObject()) {
                 const auto& style = elem->GetRenderObject()->GetComputedStyle();
-                
+
                 // 1. 检查是否为脱离文档流的元素 (position: fixed/absolute)
                 if (LayoutBoundaryDetector::IsOutOfFlow(style)) {
                     // 关键修复：禁止在 DOMObserver 增量路径里直接改挂接 RenderObject。
@@ -72,14 +95,14 @@ void WindowDOMObserver::OnNodeAdded(Node* node, Node* parent) {
                     window_->SetNeedsRepaint();
                     return;
                 }
-                
+
                 // 2. 查找最近的布局边界祖先
                 Element* boundary = LayoutBoundaryDetector::FindNearestLayoutBoundary(parent);
                 if (boundary) {
                     // 有布局边界：只标记边界需要重新布局
                     if (auto* manager = window_->GetIncrementalLayoutManager()) {
                         manager->MarkBoundaryNeedsLayout(boundary);
-                        
+
                         // 如果是滚动容器，更新滚动尺寸
                         if (auto boundary_ro = boundary->GetRenderObject()) {
                             if (LayoutBoundaryDetector::IsScrollContainer(boundary_ro->GetComputedStyle())) {
@@ -87,27 +110,27 @@ void WindowDOMObserver::OnNodeAdded(Node* node, Node* parent) {
                             }
                         }
                     }
-                    
+
                     // 标记节点需要样式重算和布局
                     node->SetNeedsStyleRecalc(StyleChangeType::kSubtreeStyleChange);
                     node->SetNeedsLayout();
-                    
+
                     window_->SetNeedsRepaint();
                     return;
                 }
             }
         }
-        
+
         // =========================================================================
         // 回退到原有逻辑（无布局边界时）
         // =========================================================================
-        
+
         // 1. 标记节点需要样式重算
         node->SetNeedsStyleRecalc(StyleChangeType::kSubtreeStyleChange);
-        
+
         // 2. 标记节点需要布局
         node->SetNeedsLayout();
-        
+
         // 3. 标记父节点需要布局（子节点变化影响父节点布局）
         // 同时标记父节点的 RenderObject，清除 content_height_ 缓存
         if (parent) {
@@ -118,7 +141,7 @@ void WindowDOMObserver::OnNodeAdded(Node* node, Node* parent) {
                 parent_ro->MarkNeedsLayout(true);
             }
         }
-        
+
         // 4. 增量更新：标记需要重绘
         // DirtyNodeTracker 已经在 Node::AppendChild 中记录了变化
         // RenderTreeSynchronizer 会在渲染时根据变化区域大小决定是增量更新还是全量重建
@@ -131,13 +154,13 @@ void WindowDOMObserver::OnNodeRemoved(Node* node, Node* parent) {
         // =========================================================================
         // 增量布局边界优化
         // =========================================================================
-        
+
         // 检查是否为元素节点
         if (node->GetNodeType() == NodeType::ELEMENT_NODE) {
             auto elem = std::dynamic_pointer_cast<Element>(node->shared_from_this());
             if (elem && elem->GetRenderObject()) {
                 const auto& style = elem->GetRenderObject()->GetComputedStyle();
-                
+
                 // 1. 检查是否为脱离文档流的元素 (position: fixed/absolute)
                 if (LayoutBoundaryDetector::IsOutOfFlow(style)) {
                     // 关键修复：禁止在 DOMObserver 增量路径里直接移除 out-of-flow RenderObject。
@@ -147,14 +170,14 @@ void WindowDOMObserver::OnNodeRemoved(Node* node, Node* parent) {
                     window_->SetNeedsRepaint();
                     return;
                 }
-                
+
                 // 2. 查找最近的布局边界祖先
                 Element* boundary = LayoutBoundaryDetector::FindNearestLayoutBoundary(parent);
                 if (boundary) {
                     // 有布局边界：只标记边界需要重新布局
                     if (auto* manager = window_->GetIncrementalLayoutManager()) {
                         manager->MarkBoundaryNeedsLayout(boundary);
-                        
+
                         // 如果是滚动容器，更新滚动尺寸
                         if (auto boundary_ro = boundary->GetRenderObject()) {
                             if (LayoutBoundaryDetector::IsScrollContainer(boundary_ro->GetComputedStyle())) {
@@ -162,19 +185,19 @@ void WindowDOMObserver::OnNodeRemoved(Node* node, Node* parent) {
                             }
                         }
                     }
-                    
+
                     // 标记父节点需要布局
                     if (parent) {
                         parent->SetNeedsStyleRecalc(StyleChangeType::kLocalStyleChange);
                         parent->SetNeedsLayout();
                     }
-                    
+
                     window_->SetNeedsRepaint();
                     return;
                 }
             }
         }
-        
+
         // =========================================================================
         // 回退到原有逻辑（无布局边界时）
         // =========================================================================
@@ -222,20 +245,19 @@ void WindowDOMObserver::OnAttributeChanged(Element* element,
         if (auto render_obj = element->GetRenderObject()) {
             render_obj->MarkNeedsPaint();
             // 记录脏矩形（旧位置）
-            SkRect bounds = render_obj->GetBoundingRect();
-            if (!bounds.isEmpty()) {
-                element->SetDirtyRect(bounds);
-                window_->AddDirtyRect(bounds);
-            }
-            
+            AddDirtyRectForRenderObject(window_, element, render_obj.get());
+
             // 关键修复：当 style 或 class 属性变化时，需要重新解析样式
             // style: 确保 transform 等属性的动态更新能正确生效
             // class: 确保 CSS 类选择器匹配的样式能正确应用（如 .cm-activeLine）
             if (name == "style" || name == "class") {
+                // 通用路径：class/style 变化只作用于当前元素，布局传播由样式解析结果和布局引擎决定。
+                // 避免为具体组件写死额外的祖先/后代 dirty 扩散逻辑。
+
                 // 保存旧的 display 值，用于检测可见性变化
                 const auto& old_style = render_obj->GetComputedStyle();
                 RenderObjectType old_display = old_style.display;
-                
+
                 StyleResolver resolver;
                 if (window_->GetDocument() && window_->GetDocument()->GetStyleManager()) {
                     resolver.SetStyleManager(window_->GetDocument()->GetStyleManager());
@@ -252,7 +274,7 @@ void WindowDOMObserver::OnAttributeChanged(Element* element,
                     }
                 }
                 auto new_style = resolver.ResolveStyle(elem_ptr, parent_style);
-                
+
                 // 关键修复：检测 display 属性变化（修复 CSS 类切换不触发渲染树更新的 Bug）
                 // 当 class 属性变化导致 display 从 none 变为其他值（或反之）时，需要重建渲染树
                 bool was_none = (old_display == RenderObjectType::NONE);
@@ -263,10 +285,10 @@ void WindowDOMObserver::OnAttributeChanged(Element* element,
                     window_->SetNeedsRepaint();
                     return;
                 }
-                
+
                 render_obj->SetComputedStyle(new_style);
                 render_obj->InvalidatePaintCache();
-                
+
                 // 关键修复：同步更新布局引擎中的样式
                 // UpdateStyle 内部会检查布局相关属性是否变化
                 // 只有布局属性变化时才会标记 needs_layout
@@ -504,12 +526,15 @@ void WindowDOMObserver::OnPseudoClassChanged(std::shared_ptr<Element> element,
                 // 没有 hover 规则，不需要重新解析样式
                 return;
             }
-            
+
             if (auto render_obj = element->GetRenderObject()) {
-                // 重新解析样式以获取 :hover 伪类的样式（包括动画）
+                AddDirtyRectForRenderObject(window_, element.get(), render_obj.get());
+
                 StyleResolver resolver;
                 resolver.SetStyleManager(style_manager);
-                
+
+                const auto& old_style = render_obj->GetComputedStyle();
+
                 // 获取父元素样式用于继承
                 const ComputedStyle* parent_style = nullptr;
                 if (auto parent_node = element->GetParentNode()) {
@@ -520,24 +545,82 @@ void WindowDOMObserver::OnPseudoClassChanged(std::shared_ptr<Element> element,
                         }
                     }
                 }
-                
-                auto new_style = resolver.ResolveStyle(element, parent_style);
-                
-                render_obj->SetComputedStyle(new_style);
-                render_obj->MarkNeedsPaint();
-                render_obj->InvalidatePaintCache();
 
-                // 记录脏矩形
-                SkRect bounds = render_obj->GetViewportBoundingRect();
-                if (!bounds.isEmpty()) {
-                    element->SetDirtyRect(bounds);
-                    window_->AddDirtyRect(bounds);
+                auto new_style = resolver.ResolveStyle(element, parent_style);
+                render_obj->SetComputedStyle(new_style);
+
+                bool needs_layout_sync =
+                    old_style.display != new_style.display ||
+                    old_style.width != new_style.width ||
+                    old_style.height != new_style.height ||
+                    old_style.min_width != new_style.min_width ||
+                    old_style.min_height != new_style.min_height ||
+                    old_style.max_width != new_style.max_width ||
+                    old_style.max_height != new_style.max_height ||
+                    old_style.margin_left != new_style.margin_left ||
+                    old_style.margin_right != new_style.margin_right ||
+                    old_style.margin_top != new_style.margin_top ||
+                    old_style.margin_bottom != new_style.margin_bottom ||
+                    old_style.padding_left != new_style.padding_left ||
+                    old_style.padding_right != new_style.padding_right ||
+                    old_style.padding_top != new_style.padding_top ||
+                    old_style.padding_bottom != new_style.padding_bottom ||
+                    old_style.border_left_width != new_style.border_left_width ||
+                    old_style.border_right_width != new_style.border_right_width ||
+                    old_style.border_top_width != new_style.border_top_width ||
+                    old_style.border_bottom_width != new_style.border_bottom_width ||
+                    old_style.text_align != new_style.text_align ||
+                    old_style.justify_content != new_style.justify_content ||
+                    old_style.align_items != new_style.align_items ||
+                    old_style.align_self != new_style.align_self ||
+                    old_style.flex_direction != new_style.flex_direction ||
+                    old_style.flex_wrap != new_style.flex_wrap ||
+                    old_style.flex_grow != new_style.flex_grow ||
+                    old_style.flex_shrink != new_style.flex_shrink ||
+                    old_style.flex_basis != new_style.flex_basis ||
+                    old_style.position != new_style.position ||
+                    old_style.left != new_style.left ||
+                    old_style.right != new_style.right ||
+                    old_style.top != new_style.top ||
+                    old_style.bottom != new_style.bottom ||
+                    old_style.overflow_x != new_style.overflow_x ||
+                    old_style.overflow_y != new_style.overflow_y ||
+                    old_style.white_space != new_style.white_space ||
+                    old_style.font_size != new_style.font_size ||
+                    old_style.font_weight != new_style.font_weight ||
+                    old_style.font_family != new_style.font_family ||
+                    old_style.line_height != new_style.line_height;
+
+                if (needs_layout_sync) {
+                    render_obj->MarkNeedsLayout();
+                    render_obj->MarkNeedsPaint();
+
+                    if (window_->GetLayoutEngine()) {
+                        auto* layout_engine = window_->GetLayoutEngine();
+                        if (layout_engine->HasElement(render_obj.get())) {
+                            layout_engine->UpdateStyle(render_obj.get(), new_style);
+                        } else {
+                            auto ancestor = render_obj->GetParent();
+                            while (ancestor) {
+                                if (layout_engine->HasElement(ancestor.get())) {
+                                    layout_engine->MarkNeedsLayout(ancestor.get());
+                                    break;
+                                }
+                                ancestor = ancestor->GetParent();
+                            }
+                        }
+                    }
+                } else {
+                    render_obj->MarkNeedsPaint();
                 }
+
+                render_obj->InvalidatePaintCache();
+                AddDirtyRectForRenderObject(window_, element.get(), render_obj.get());
             }
             window_->SetNeedsRepaint();
             return;
         }
-        
+
         // 其他伪类的处理
         bool needs_repaint = false;
         if (pseudo_class == "active" || pseudo_class == "focus" ||
@@ -551,13 +634,7 @@ void WindowDOMObserver::OnPseudoClassChanged(std::shared_ptr<Element> element,
             // 伪类变化只影响绘制，不影响渲染树结构
             if (auto render_obj = element->GetRenderObject()) {
                 render_obj->MarkNeedsPaint();
-
-                // 记录脏矩形
-                SkRect bounds = render_obj->GetBoundingRect();
-                if (!bounds.isEmpty()) {
-                    element->SetDirtyRect(bounds);
-                    window_->AddDirtyRect(bounds);
-                }
+                AddDirtyRectForRenderObject(window_, element.get(), render_obj.get());
             }
             window_->SetNeedsRepaint();
         }

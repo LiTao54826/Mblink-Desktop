@@ -1,7 +1,7 @@
 /**
  * @file contenteditable_handler.cpp
  * @brief ContentEditable 输入处理器实现
- * 
+ *
  * @note 大文件说明 (2505 行)
  * 本文件包含 contentEditable 功能的完整实现。
  * 文件较大的原因：
@@ -19,6 +19,7 @@
 
 #include "contenteditable_handler.h"
 #include "core/editing/selection_manager.h"
+#include "core/editing/contenteditable_geometry.h"
 #include "core/dom/document.h"
 #include "core/dom/element.h"
 #include "core/dom/text.h"
@@ -51,6 +52,18 @@ bool ContentEditableHandler::IsContentEditable(std::shared_ptr<Element> element)
     }
     return element->IsContentEditable();
 }
+
+std::shared_ptr<Element> ContentEditableHandler::GetActiveEditableRoot(std::shared_ptr<Document> document) const {
+    if (!document || !selection_manager_) {
+        return nullptr;
+    }
+    auto selection = selection_manager_->GetSelection(document);
+    if (!selection) {
+        return nullptr;
+    }
+    return FindEditableElement(selection->GetComputedAnchorNode());
+}
+
 
 // ========== 输入处理 ==========
 
@@ -158,7 +171,6 @@ bool ContentEditableHandler::HandleKeyDown(
             return MoveCursorToLineEnd(document, shift_key);
 
         default:
-            // 处理 Ctrl 组合键
             if (ctrl_key) {
                 switch (key_code) {
                     case 66:  // Ctrl+B (Bold)
@@ -168,14 +180,8 @@ bool ContentEditableHandler::HandleKeyDown(
                     case 85:  // Ctrl+U (Underline)
                         return ExecCommand(document, "underline");
                     case 65:  // Ctrl+A (Select All)
-                        // 不拦截 Ctrl+A，让应用层（如 CodeMirror）处理
-                        // 因为 DOM Selection 基于 textContent，不包含换行符，
-                        // 会导致选择范围不正确
-                        return false;
                     case 67:  // Ctrl+C (Copy) - 由系统处理
-                        return false;
                     case 86:  // Ctrl+V (Paste) - 由系统处理
-                        return false;
                     case 88:  // Ctrl+X (Cut) - 由系统处理
                         return false;
                     case 90:  // Ctrl+Z (Undo)
@@ -188,6 +194,76 @@ bool ContentEditableHandler::HandleKeyDown(
     }
 
     return false;
+}
+
+bool ContentEditableHandler::StartComposition(std::shared_ptr<Document> document,
+                                              const std::string& text,
+                                              int start,
+                                              int end) {
+    if (!document) {
+        return false;
+    }
+    auto editable = GetActiveEditableRoot(document);
+    if (!editable || !editable->IsContentEditable()) {
+        return false;
+    }
+    auto& state = composition_states_[document.get()];
+    state.active = true;
+    state.start = std::max(0, start);
+    state.end = std::max(state.start, end);
+    state.text = text;
+    return true;
+}
+
+bool ContentEditableHandler::UpdateComposition(std::shared_ptr<Document> document,
+                                               const std::string& text,
+                                               int start,
+                                               int end) {
+    if (!document) {
+        return false;
+    }
+    auto it = composition_states_.find(document.get());
+    if (it == composition_states_.end() || !it->second.active) {
+        return StartComposition(document, text, start, end);
+    }
+    it->second.start = std::max(0, start);
+    it->second.end = std::max(it->second.start, end);
+    it->second.text = text;
+    return true;
+}
+
+bool ContentEditableHandler::CommitComposition(std::shared_ptr<Document> document, const std::string& text) {
+    if (!document) {
+        return false;
+    }
+    composition_states_.erase(document.get());
+    return InsertText(document, text);
+}
+
+bool ContentEditableHandler::CancelComposition(std::shared_ptr<Document> document) {
+    if (!document) {
+        return false;
+    }
+    return composition_states_.erase(document.get()) > 0;
+}
+
+bool ContentEditableHandler::HasActiveComposition(std::shared_ptr<Document> document) const {
+    if (!document) {
+        return false;
+    }
+    auto it = composition_states_.find(document.get());
+    return it != composition_states_.end() && it->second.active;
+}
+
+CompositionState ContentEditableHandler::GetCompositionState(std::shared_ptr<Document> document) const {
+    if (!document) {
+        return {};
+    }
+    auto it = composition_states_.find(document.get());
+    if (it == composition_states_.end()) {
+        return {};
+    }
+    return it->second;
 }
 
 // ========== 编辑操作 ==========
@@ -468,7 +544,7 @@ bool ContentEditableHandler::DeleteCharacter(
                 // 已在末尾，尝试合并下一个节点
                 return MergeToNextNode(document, anchor_node);
             }
-            
+
             // 计算要删除的字符长度（处理 UTF-8 多字节字符）
             size_t char_len = 1;
             if (anchor_offset < static_cast<int>(content.length())) {
@@ -478,7 +554,7 @@ bool ContentEditableHandler::DeleteCharacter(
                 else if ((c & 0xF0) == 0xE0) char_len = 3;
                 else if ((c & 0xF8) == 0xF0) char_len = 4;
             }
-            
+
             content.erase(anchor_offset, char_len);
             text_node->SetTextContent(content);
             // 光标位置不变
@@ -488,23 +564,23 @@ bool ContentEditableHandler::DeleteCharacter(
                 // 已在开头，尝试合并到前一个节点或删除空元素
                 return MergeToPreviousNode(document, anchor_node);
             }
-            
+
             // 计算要删除的字符的起始位置和长度（处理 UTF-8 多字节字符）
             // 需要找到 anchor_offset 前一个字符的起始位置
             size_t delete_start = anchor_offset - 1;
             size_t char_len = 1;
-            
+
             // 向前查找 UTF-8 字符的起始位置
             while (delete_start > 0 && (static_cast<unsigned char>(content[delete_start]) & 0xC0) == 0x80) {
                 delete_start--;
             }
             char_len = anchor_offset - delete_start;
-            
+
             content.erase(delete_start, char_len);
             text_node->SetTextContent(content);
             // 光标前移
             selection->Collapse(anchor_node, static_cast<int>(delete_start));
-            
+
             // 如果删除后文本节点变空，立即触发合并到上一行
             if (content.empty()) {
                 return MergeToPreviousNode(document, anchor_node);
@@ -745,19 +821,19 @@ bool ContentEditableHandler::RemoveFormatting(
                 for (auto& c : current_tag) {
                     c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
                 }
-                
+
                 std::string target_tag = tag_name;
                 for (auto& c : target_tag) {
                     c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
                 }
-                
+
                 // 检查是否匹配（考虑别名：b/strong, i/em）
                 bool matches = (current_tag == target_tag) ||
                                (target_tag == "strong" && current_tag == "b") ||
                                (target_tag == "b" && current_tag == "strong") ||
                                (target_tag == "em" && current_tag == "i") ||
                                (target_tag == "i" && current_tag == "em");
-                
+
                 if (matches) {
                     // 找到格式化元素，将其内容提升到父元素
                     auto parent = element->GetParentNode();
@@ -797,7 +873,7 @@ bool ContentEditableHandler::ToggleFormatting(
     for (auto& c : lower_tag) {
         c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
     }
-    
+
     if (lower_tag == "strong" || lower_tag == "b") {
         command = "bold";
     } else if (lower_tag == "em" || lower_tag == "i") {
@@ -931,38 +1007,38 @@ bool ContentEditableHandler::ApplyFormattingToRange(
     for (int i = start_idx; i <= end_idx; i++) {
         auto text_node = all_text_nodes[i];
         std::string content = text_node->GetTextContent();
-        
+
         int node_start = (i == start_idx) ? start_offset : 0;
         int node_end = (i == end_idx) ? end_offset : static_cast<int>(content.length());
-        
+
         if (node_start >= node_end) continue;
-        
+
         std::string before = content.substr(0, node_start);
         std::string selected = content.substr(node_start, node_end - node_start);
         std::string after = content.substr(node_end);
-        
+
         auto parent = text_node->GetParentNode();
         if (!parent || parent->GetNodeType() != NodeType::ELEMENT_NODE) continue;
-        
+
         auto parent_element = std::dynamic_pointer_cast<Element>(parent);
         if (!parent_element) continue;
-        
+
         // 创建新结构
         if (!before.empty()) {
             auto before_text = std::make_shared<Text>(before);
             parent_element->InsertBefore(before_text, text_node);
         }
-        
+
         auto format_element = document->CreateElement(tag_name);
         auto selected_text = std::make_shared<Text>(selected);
         format_element->AppendChild(selected_text);
         parent_element->InsertBefore(format_element, text_node);
-        
+
         if (!after.empty()) {
             auto after_text = std::make_shared<Text>(after);
             parent_element->InsertBefore(after_text, text_node);
         }
-        
+
         parent_element->RemoveChild(text_node);
     }
 
@@ -994,36 +1070,8 @@ std::shared_ptr<Selection> ContentEditableHandler::GetSelection(
 }
 
 std::shared_ptr<Element> ContentEditableHandler::FindEditableElement(
-    std::shared_ptr<Node> node) {
-
-    if (!node) {
-        return nullptr;
-    }
-
-    // 向上遍历查找最外层的可编辑元素（设置了 contenteditable="true" 属性的元素）
-    auto current = node;
-    std::shared_ptr<Element> editable_root = nullptr;
-    
-    while (current) {
-        if (current->GetNodeType() == NodeType::ELEMENT_NODE) {
-            auto element = std::dynamic_pointer_cast<Element>(current);
-            if (element) {
-                // 检查是否显式设置了 contenteditable="true" 属性
-                std::string attr = element->GetAttribute("contenteditable");
-                if (attr == "true" || attr == "") {
-                    // 如果属性为 "true" 或空字符串（表示 contenteditable 属性存在但无值）
-                    // 需要进一步检查是否真的设置了该属性
-                    if (element->HasAttribute("contenteditable")) {
-                        editable_root = element;
-                        // 继续向上查找，以找到最外层的 contentEditable 元素
-                    }
-                }
-            }
-        }
-        current = current->GetParentNode();
-    }
-
-    return editable_root;
+    std::shared_ptr<Node> node) const {
+    return GetContentEditableEditingHost(node);
 }
 
 bool ContentEditableHandler::MergeToPreviousNode(
@@ -1043,11 +1091,11 @@ bool ContentEditableHandler::MergeToPreviousNode(
     std::function<std::shared_ptr<Text>(std::shared_ptr<Node>)> findLastTextNode;
     findLastTextNode = [&](std::shared_ptr<Node> node) -> std::shared_ptr<Text> {
         if (!node) return nullptr;
-        
+
         if (node->GetNodeType() == NodeType::TEXT_NODE) {
             return std::dynamic_pointer_cast<Text>(node);
         }
-        
+
         if (node->GetNodeType() == NodeType::ELEMENT_NODE) {
             auto elem = std::dynamic_pointer_cast<Element>(node);
             if (elem) {
@@ -1064,14 +1112,14 @@ bool ContentEditableHandler::MergeToPreviousNode(
     // 辅助函数：将光标移动到节点末尾（确保光标在文本节点上）
     auto moveCursorToEndOfNode = [&](std::shared_ptr<Node> node) -> bool {
         if (!node) return false;
-        
+
         // 先尝试找到最后一个文本节点
         auto last_text = findLastTextNode(node);
         if (last_text) {
             selection->Collapse(last_text, static_cast<int>(last_text->GetTextContent().length()));
             return true;
         }
-        
+
         // 如果没有文本节点，在元素中创建一个空文本节点
         if (node->GetNodeType() == NodeType::ELEMENT_NODE) {
             auto elem = std::dynamic_pointer_cast<Element>(node);
@@ -1082,7 +1130,7 @@ bool ContentEditableHandler::MergeToPreviousNode(
                 return true;
             }
         }
-        
+
         return false;
     };
 
@@ -1090,12 +1138,12 @@ bool ContentEditableHandler::MergeToPreviousNode(
     std::function<bool(std::shared_ptr<Node>)> isNodeEmpty;
     isNodeEmpty = [&](std::shared_ptr<Node> node) -> bool {
         if (!node) return true;
-        
+
         if (node->GetNodeType() == NodeType::TEXT_NODE) {
             auto text = std::dynamic_pointer_cast<Text>(node);
             return !text || text->GetTextContent().empty();
         }
-        
+
         if (node->GetNodeType() == NodeType::ELEMENT_NODE) {
             auto elem = std::dynamic_pointer_cast<Element>(node);
             if (elem) {
@@ -1109,15 +1157,15 @@ bool ContentEditableHandler::MergeToPreviousNode(
 
     // 辅助函数：检查是否是块级元素
     auto isBlockElement = [](const std::string& tag) -> bool {
-        return tag == "p" || tag == "div" || tag == "h1" || tag == "h2" || 
+        return tag == "p" || tag == "div" || tag == "h1" || tag == "h2" ||
                tag == "h3" || tag == "h4" || tag == "h5" || tag == "h6" ||
                tag == "li" || tag == "blockquote" || tag == "pre";
     };
 
     // 辅助函数：检查是否是格式化元素
     auto isFormattingElement = [](const std::string& tag) -> bool {
-        return tag == "em" || tag == "strong" || tag == "b" || 
-               tag == "i" || tag == "u" || tag == "s" || 
+        return tag == "em" || tag == "strong" || tag == "b" ||
+               tag == "i" || tag == "u" || tag == "s" ||
                tag == "span" || tag == "a" || tag == "code";
     };
 
@@ -1129,7 +1177,7 @@ bool ContentEditableHandler::MergeToPreviousNode(
 
     // 查找前一个兄弟节点
     auto prev_sibling = current_node->GetPreviousSibling();
-    
+
     // 如果当前文本节点为空，检查是否应该删除父元素
     if (current_node->GetNodeType() == NodeType::TEXT_NODE) {
         auto text_node = std::dynamic_pointer_cast<Text>(current_node);
@@ -1143,22 +1191,22 @@ bool ContentEditableHandler::MergeToPreviousNode(
                     for (auto& c : tag) {
                         c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
                     }
-                    
+
                     // 检查父元素是否为空
                     bool parent_is_empty = isNodeEmpty(parent_elem);
-                    
+
                     // 情况1：空的格式化元素（em, strong 等）
                     if (isFormattingElement(tag) && parent_is_empty) {
-                        
+
                         auto format_prev = parent_elem->GetPreviousSibling();
                         auto grandparent = parent_elem->GetParentNode();
-                        
+
                         if (grandparent) {
                             auto grandparent_elem = std::dynamic_pointer_cast<Element>(grandparent);
                             if (grandparent_elem) {
                                 // 删除空的格式化元素
                                 grandparent_elem->RemoveChild(parent_elem);
-                                
+
                                 // 将光标移动到前一个节点的末尾
                                 if (format_prev) {
                                     auto last_text = findLastTextNode(format_prev);
@@ -1171,13 +1219,13 @@ bool ContentEditableHandler::MergeToPreviousNode(
                                         return true;
                                     }
                                 }
-                                
+
                                 // 没有前一个兄弟，检查祖父元素是否为空
                                 if (isNodeEmpty(grandparent_elem)) {
                                     // 祖父元素为空，递归处理
                                     return MergeToPreviousNode(document, grandparent_elem);
                                 }
-                                
+
                                 // 祖父元素不为空，但当前格式化元素没有前一个兄弟
                                 // 尝试在祖父元素中找到其他文本节点
                                 auto last_text_in_grandparent = findLastTextNode(grandparent_elem);
@@ -1185,7 +1233,7 @@ bool ContentEditableHandler::MergeToPreviousNode(
                                     selection->Collapse(last_text_in_grandparent, static_cast<int>(last_text_in_grandparent->GetTextContent().length()));
                                     return true;
                                 }
-                                
+
                                 // 使用辅助函数确保光标在文本节点上
                                 if (moveCursorToEndOfNode(grandparent)) {
                                     return true;
@@ -1194,19 +1242,19 @@ bool ContentEditableHandler::MergeToPreviousNode(
                             }
                         }
                     }
-                    
+
                     // 情况2：空的块级元素（p, div 等）- 删除整行并移动到上一行
                     if (isBlockElement(tag) && parent_is_empty) {
-                        
+
                         auto block_prev = parent_elem->GetPreviousSibling();
                         auto grandparent = parent_elem->GetParentNode();
-                        
+
                         if (grandparent) {
                             auto grandparent_elem = std::dynamic_pointer_cast<Element>(grandparent);
                             if (grandparent_elem) {
                                 // 删除空的块级元素
                                 grandparent_elem->RemoveChild(parent_elem);
-                                
+
                                 // 将光标移动到前一个块级元素的末尾
                                 if (block_prev) {
                                     auto last_text = findLastTextNode(block_prev);
@@ -1214,14 +1262,14 @@ bool ContentEditableHandler::MergeToPreviousNode(
                                         selection->Collapse(last_text, static_cast<int>(last_text->GetTextContent().length()));
                                         return true;
                                     }
-                                    
+
                                     // 如果前一个块级元素没有文本，使用辅助函数确保光标在文本节点上
                                     if (moveCursorToEndOfNode(block_prev)) {
                                         return true;
                                     }
                                     return false;
                                 }
-                                
+
                                 // 没有前一个兄弟，使用辅助函数确保光标在文本节点上
                                 if (moveCursorToEndOfNode(grandparent)) {
                                     return true;
@@ -1234,7 +1282,7 @@ bool ContentEditableHandler::MergeToPreviousNode(
             }
         }
     }
-    
+
     // 情况3：当前节点是元素节点且为空（可能是递归调用）
     if (current_node->GetNodeType() == NodeType::ELEMENT_NODE) {
         auto elem = std::dynamic_pointer_cast<Element>(current_node);
@@ -1251,21 +1299,21 @@ bool ContentEditableHandler::MergeToPreviousNode(
                     return false;
                 }
             }
-            
+
             std::string tag = elem->GetTagName();
             for (auto& c : tag) {
                 c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
             }
-            
+
             if (isBlockElement(tag) || isFormattingElement(tag)) {
                 auto elem_prev = elem->GetPreviousSibling();
                 auto elem_parent = elem->GetParentNode();
-                
+
                 if (elem_parent) {
                     auto parent_elem = std::dynamic_pointer_cast<Element>(elem_parent);
                     if (parent_elem) {
                         parent_elem->RemoveChild(elem);
-                        
+
                         if (elem_prev) {
                             auto last_text = findLastTextNode(elem_prev);
                             if (last_text) {
@@ -1278,7 +1326,7 @@ bool ContentEditableHandler::MergeToPreviousNode(
                                 return true;
                             }
                         }
-                        
+
                         // 检查父元素是否也为空了
                         if (isNodeEmpty(parent_elem)) {
                             std::string parent_tag = parent_elem->GetTagName();
@@ -1289,7 +1337,7 @@ bool ContentEditableHandler::MergeToPreviousNode(
                                 return MergeToPreviousNode(document, parent_elem);
                             }
                         }
-                        
+
                         // 使用辅助函数确保光标在文本节点上
                         if (moveCursorToEndOfNode(elem_parent)) {
                             return true;
@@ -1312,7 +1360,7 @@ bool ContentEditableHandler::MergeToPreviousNode(
                 while (delete_start > 0 && (static_cast<unsigned char>(content[delete_start]) & 0xC0) == 0x80) {
                     delete_start--;
                 }
-                
+
                 content.erase(delete_start);
                 prev_text->SetTextContent(content);
                 selection->Collapse(prev_text, static_cast<int>(content.length()));
@@ -1323,7 +1371,7 @@ bool ContentEditableHandler::MergeToPreviousNode(
             }
         }
     }
-    
+
     // 情况5：没有前一个兄弟，检查父元素是否需要处理
     if (!prev_sibling && parent->GetNodeType() == NodeType::ELEMENT_NODE) {
         auto parent_elem = std::dynamic_pointer_cast<Element>(parent);
@@ -1332,7 +1380,7 @@ bool ContentEditableHandler::MergeToPreviousNode(
             for (auto& c : tag) {
                 c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
             }
-            
+
             // 如果父元素是格式化或块级元素，且当前节点是第一个子节点
             if (isFormattingElement(tag) || isBlockElement(tag)) {
                 // 检查父元素的前一个兄弟
@@ -1378,11 +1426,11 @@ bool ContentEditableHandler::MergeToNextNode(
     std::function<std::shared_ptr<Text>(std::shared_ptr<Node>)> findFirstTextNode;
     findFirstTextNode = [&](std::shared_ptr<Node> node) -> std::shared_ptr<Text> {
         if (!node) return nullptr;
-        
+
         if (node->GetNodeType() == NodeType::TEXT_NODE) {
             return std::dynamic_pointer_cast<Text>(node);
         }
-        
+
         if (node->GetNodeType() == NodeType::ELEMENT_NODE) {
             auto elem = std::dynamic_pointer_cast<Element>(node);
             if (elem) {
@@ -1399,12 +1447,12 @@ bool ContentEditableHandler::MergeToNextNode(
     std::function<bool(std::shared_ptr<Node>)> isNodeEmpty;
     isNodeEmpty = [&](std::shared_ptr<Node> node) -> bool {
         if (!node) return true;
-        
+
         if (node->GetNodeType() == NodeType::TEXT_NODE) {
             auto text = std::dynamic_pointer_cast<Text>(node);
             return !text || text->GetTextContent().empty();
         }
-        
+
         if (node->GetNodeType() == NodeType::ELEMENT_NODE) {
             auto elem = std::dynamic_pointer_cast<Element>(node);
             if (elem) {
@@ -1418,15 +1466,15 @@ bool ContentEditableHandler::MergeToNextNode(
 
     // 辅助函数：检查是否是块级元素
     auto isBlockElement = [](const std::string& tag) -> bool {
-        return tag == "p" || tag == "div" || tag == "h1" || tag == "h2" || 
+        return tag == "p" || tag == "div" || tag == "h1" || tag == "h2" ||
                tag == "h3" || tag == "h4" || tag == "h5" || tag == "h6" ||
                tag == "li" || tag == "blockquote" || tag == "pre";
     };
 
     // 辅助函数：检查是否是格式化元素
     auto isFormattingElement = [](const std::string& tag) -> bool {
-        return tag == "em" || tag == "strong" || tag == "b" || 
-               tag == "i" || tag == "u" || tag == "s" || 
+        return tag == "em" || tag == "strong" || tag == "b" ||
+               tag == "i" || tag == "u" || tag == "s" ||
                tag == "span" || tag == "a" || tag == "code";
     };
 
@@ -1438,7 +1486,7 @@ bool ContentEditableHandler::MergeToNextNode(
 
     // 查找下一个兄弟节点
     auto next_sibling = current_node->GetNextSibling();
-    
+
     // 情况1：有下一个兄弟节点，删除其第一个字符
     if (next_sibling) {
         auto next_text = findFirstTextNode(next_sibling);
@@ -1452,10 +1500,10 @@ bool ContentEditableHandler::MergeToNextNode(
                 else if ((first_char & 0xE0) == 0xC0) char_len = 2;
                 else if ((first_char & 0xF0) == 0xE0) char_len = 3;
                 else if ((first_char & 0xF8) == 0xF0) char_len = 4;
-                
+
                 content.erase(0, char_len);
                 next_text->SetTextContent(content);
-                
+
                 // 如果删除后文本为空，检查是否需要删除父元素
                 if (content.empty()) {
                     auto next_parent = next_text->GetParentNode();
@@ -1479,7 +1527,7 @@ bool ContentEditableHandler::MergeToNextNode(
                         }
                     }
                 }
-                
+
                 // 光标位置不变
                 return true;
             } else {
@@ -1488,7 +1536,7 @@ bool ContentEditableHandler::MergeToNextNode(
             }
         }
     }
-    
+
     // 情况2：当前节点是文本节点且在块级元素末尾，合并下一个块级元素
     if (current_node->GetNodeType() == NodeType::TEXT_NODE) {
         auto text_node = std::dynamic_pointer_cast<Text>(current_node);
@@ -1527,14 +1575,14 @@ bool ContentEditableHandler::MergeToNextNode(
                                                     else if ((c & 0xE0) == 0xC0) char_len = 2;
                                                     else if ((c & 0xF0) == 0xE0) char_len = 3;
                                                     else if ((c & 0xF8) == 0xF0) char_len = 4;
-                                                    
+
                                                     next_content.erase(0, char_len);
                                                     first_text->SetTextContent(next_content);
-                                                    
+
                                                     return true;
                                                 }
                                             }
-                                            
+
                                             // 下一个块为空，删除它
                                             if (isNodeEmpty(next_elem)) {
                                                 auto block_parent = next_elem->GetParentNode();
@@ -1706,7 +1754,7 @@ bool ContentEditableHandler::MoveCursorUp(
     // 查找当前节点所在的块级元素
     auto current = anchor_node;
     std::shared_ptr<Element> current_block = nullptr;
-    
+
     while (current) {
         if (current->GetNodeType() == NodeType::ELEMENT_NODE) {
             auto elem = std::dynamic_pointer_cast<Element>(current);
@@ -1801,7 +1849,7 @@ bool ContentEditableHandler::MoveCursorDown(
     // 查找当前节点所在的块级元素
     auto current = anchor_node;
     std::shared_ptr<Element> current_block = nullptr;
-    
+
     while (current) {
         if (current->GetNodeType() == NodeType::ELEMENT_NODE) {
             auto elem = std::dynamic_pointer_cast<Element>(current);
@@ -2192,20 +2240,20 @@ std::shared_ptr<Node> ContentEditableHandler::FindPreviousTextNode(
         if (!node || node == editable_root) {
             return nullptr;
         }
-        
+
         // 检查前一个兄弟
         auto prev_sibling = node->GetPreviousSibling();
         if (prev_sibling) {
             auto result = findLastTextNode(prev_sibling);
             if (result) return result;
         }
-        
+
         // 没有前一个兄弟，向上到父节点继续查找
         auto parent = node->GetParentNode();
         if (parent && parent != editable_root) {
             return findPrevious(parent);
         }
-        
+
         return nullptr;
     };
 
@@ -2244,20 +2292,20 @@ std::shared_ptr<Node> ContentEditableHandler::FindNextTextNode(
     std::function<std::shared_ptr<Node>(std::shared_ptr<Node>)> findNext;
     findNext = [&](std::shared_ptr<Node> node) -> std::shared_ptr<Node> {
         if (!node || node == editable_root) return nullptr;
-        
+
         // 检查下一个兄弟
         auto next_sibling = node->GetNextSibling();
         if (next_sibling) {
             auto result = findFirstTextNode(next_sibling);
             if (result) return result;
         }
-        
+
         // 没有下一个兄弟，向上到父节点继续查找
         auto parent = node->GetParentNode();
         if (parent && parent != editable_root) {
             return findNext(parent);
         }
-        
+
         return nullptr;
     };
 
@@ -2318,7 +2366,7 @@ bool ContentEditableHandler::Undo(std::shared_ptr<Document> document) {
     // 从撤销栈获取要恢复的状态
     UndoState prev_state = undo_stack_.back();
     undo_stack_.pop_back();
-    
+
     auto target_element = prev_state.element.lock();
     if (!target_element) {
         return false;
@@ -2328,7 +2376,7 @@ bool ContentEditableHandler::Undo(std::shared_ptr<Document> document) {
     UndoState current_state;
     current_state.innerHTML = target_element->GetInnerHTML();
     current_state.element = target_element;
-    
+
     // 保存当前光标位置
     if (selection_manager_) {
         auto selection = selection_manager_->GetSelection(document);
@@ -2348,7 +2396,7 @@ bool ContentEditableHandler::Undo(std::shared_ptr<Document> document) {
 
     // 恢复状态
     target_element->SetInnerHTML(prev_state.innerHTML);
-    
+
     // 尝试恢复光标位置
     // 注意：由于 innerHTML 被替换，原来的节点引用已失效
     // 我们需要根据偏移量在新的 DOM 中找到对应位置
@@ -2373,11 +2421,11 @@ bool ContentEditableHandler::Undo(std::shared_ptr<Document> document) {
                 }
                 return nullptr;
             };
-            
+
             auto first_text = findFirstTextNode(target_element);
             if (first_text) {
                 // 尝试恢复到保存的偏移量位置
-                int offset = std::min(prev_state.anchor_offset, 
+                int offset = std::min(prev_state.anchor_offset,
                                      static_cast<int>(first_text->GetTextContent().length()));
                 selection->Collapse(first_text, offset);
             }
@@ -2395,7 +2443,7 @@ bool ContentEditableHandler::Redo(std::shared_ptr<Document> document) {
     // 从重做栈获取要恢复的状态
     UndoState redo_state = redo_stack_.back();
     redo_stack_.pop_back();
-    
+
     auto target_element = redo_state.element.lock();
     if (!target_element) {
         return false;
@@ -2405,7 +2453,7 @@ bool ContentEditableHandler::Redo(std::shared_ptr<Document> document) {
     UndoState current_state;
     current_state.innerHTML = target_element->GetInnerHTML();
     current_state.element = target_element;
-    
+
     // 保存当前光标位置
     if (selection_manager_) {
         auto selection = selection_manager_->GetSelection(document);
@@ -2448,10 +2496,10 @@ bool ContentEditableHandler::Redo(std::shared_ptr<Document> document) {
                 }
                 return nullptr;
             };
-            
+
             auto first_text = findFirstTextNode(target_element);
             if (first_text) {
-                int offset = std::min(redo_state.anchor_offset, 
+                int offset = std::min(redo_state.anchor_offset,
                                      static_cast<int>(first_text->GetTextContent().length()));
                 selection->Collapse(first_text, offset);
             }
@@ -2467,7 +2515,7 @@ void ContentEditableHandler::BeginUndoGroup(std::shared_ptr<Element> element) {
     }
 
     in_undo_group_ = true;
-    
+
     // 保存组开始时的状态
     undo_group_start_state_.innerHTML = element->GetInnerHTML();
     undo_group_start_state_.element = element;

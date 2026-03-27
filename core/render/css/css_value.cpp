@@ -170,7 +170,7 @@ CSSLength CSSValue::ParseLength(const std::string& str) {
 
 CSSLength CSSValue::ParseCalc(const std::string& str) {
     // 解析 calc() 表达式
-    // 支持格式: calc(100% - 40px), calc(50% + 20px), calc(100% - 2em)
+    // 支持格式: calc(100% - 40px), calc(50% + 20px), calc(100% - 2em), calc(var(--gap) * 2)
 
     // 提取括号内的内容
     size_t start = str.find('(');
@@ -181,25 +181,33 @@ CSSLength CSSValue::ParseCalc(const std::string& str) {
 
     std::string expr = Trim(str.substr(start + 1, end - start - 1));
 
-    // 查找运算符 (+ 或 -)
-    float percent_value = 0.0f;
-    float px_value = 0.0f;
+    auto is_scalar = [](const std::string& token, float& out) -> bool {
+        std::string trimmed = CSSValue::Trim(token);
+        if (trimmed.empty()) {
+            return false;
+        }
+        for (char c : trimmed) {
+            if (std::isalpha(static_cast<unsigned char>(c)) || c == '%') {
+                return false;
+            }
+        }
+        char* parse_end = nullptr;
+        out = std::strtof(trimmed.c_str(), &parse_end);
+        return parse_end != trimmed.c_str() && parse_end && *parse_end == '\0';
+    };
 
-    // 简单解析: 查找 + 或 - 运算符
+    // 查找运算符 (+, -, *, /)
     size_t op_pos = std::string::npos;
     char op = '+';
 
-    // 跳过开头的负号
     size_t search_start = 0;
     if (!expr.empty() && expr[0] == '-') {
         search_start = 1;
     }
 
-    // 查找运算符
     for (size_t i = search_start; i < expr.length(); ++i) {
-        if (expr[i] == '+' || expr[i] == '-') {
-            // 确保不是数字的一部分 (如 1e-5)
-            if (i > 0 && (expr[i-1] == 'e' || expr[i-1] == 'E')) {
+        if (expr[i] == '+' || expr[i] == '-' || expr[i] == '*' || expr[i] == '/') {
+            if ((expr[i] == '+' || expr[i] == '-') && i > 0 && (expr[i-1] == 'e' || expr[i-1] == 'E')) {
                 continue;
             }
             op_pos = i;
@@ -209,49 +217,64 @@ CSSLength CSSValue::ParseCalc(const std::string& str) {
     }
 
     if (op_pos == std::string::npos) {
-        // 没有运算符，只有一个值
         CSSLength single = ParseLength(expr);
         if (single.unit == CSSUnit::PERCENT) {
-            // 转换百分比为 0-1 范围
-            return CSSLength::Calc(single.value / 100.0f, 0.0f);
-        } else {
-            return CSSLength::Calc(0.0f, single.ToPx());
+            return CSSLength::Calc(single.value, 0.0f);
         }
+        return CSSLength::Calc(0.0f, single.ToPx());
     }
 
-    // 解析两个操作数
     std::string left = Trim(expr.substr(0, op_pos));
     std::string right = Trim(expr.substr(op_pos + 1));
 
     CSSLength left_len = ParseLength(left);
     CSSLength right_len = ParseLength(right);
 
-    // 根据单位类型分配到 percent 或 px
-    // 注意：百分比值需要转换为 0-1 范围（100% = 1.0）
-    if (left_len.unit == CSSUnit::PERCENT) {
-        percent_value = left_len.value / 100.0f;
-    } else {
-        px_value = left_len.ToPx();
+    auto to_calc_components = [](const CSSLength& len, float& percent, float& px) {
+        if (len.is_calc) {
+            percent = len.calc_percent;
+            px = len.calc_px;
+        } else if (len.unit == CSSUnit::PERCENT) {
+            percent = len.value;
+            px = 0.0f;
+        } else {
+            percent = 0.0f;
+            px = len.ToPx();
+        }
+    };
+
+    if (op == '+' || op == '-') {
+        float left_percent = 0.0f, left_px = 0.0f;
+        float right_percent = 0.0f, right_px = 0.0f;
+        to_calc_components(left_len, left_percent, left_px);
+        to_calc_components(right_len, right_percent, right_px);
+
+        if (op == '+') {
+            return CSSLength::Calc(left_percent + right_percent, left_px + right_px);
+        }
+        return CSSLength::Calc(left_percent - right_percent, left_px - right_px);
     }
 
-    float right_px = 0.0f;
-    if (right_len.unit == CSSUnit::PERCENT) {
-        float right_percent = right_len.value / 100.0f;
-        if (op == '+') {
-            percent_value += right_percent;
-        } else {
-            percent_value -= right_percent;
+    float scalar = 0.0f;
+    if (is_scalar(right, scalar)) {
+        float left_percent = 0.0f, left_px = 0.0f;
+        to_calc_components(left_len, left_percent, left_px);
+        if (op == '*') {
+            return CSSLength::Calc(left_percent * scalar, left_px * scalar);
         }
-    } else {
-        right_px = right_len.ToPx();
-        if (op == '+') {
-            px_value += right_px;
-        } else {
-            px_value -= right_px;
+        if (scalar != 0.0f) {
+            return CSSLength::Calc(left_percent / scalar, left_px / scalar);
         }
+        return CSSLength(0.0f, CSSUnit::PX);
     }
 
-    return CSSLength::Calc(percent_value, px_value);
+    if (op == '*' && is_scalar(left, scalar)) {
+        float right_percent = 0.0f, right_px = 0.0f;
+        to_calc_components(right_len, right_percent, right_px);
+        return CSSLength::Calc(right_percent * scalar, right_px * scalar);
+    }
+
+    return CSSLength(0.0f, CSSUnit::PX);
 }
 
 SkColor CSSValue::ParseColor(const std::string& str) {

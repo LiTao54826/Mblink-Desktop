@@ -1167,6 +1167,8 @@ void StyleResolver::ApplyInlineStyle(ComputedStyle& style, std::shared_ptr<Eleme
         return;
     }
 
+    std::vector<std::pair<std::string, std::string>> declarations;
+
     // 解析内联样式（格式：property: value; property: value;）
     std::istringstream iss(style_attr);
     std::string declaration;
@@ -1204,8 +1206,20 @@ void StyleResolver::ApplyInlineStyle(ComputedStyle& style, std::shared_ptr<Eleme
             value = value.substr(start, end - start + 1);
         }
 
-        // 应用样式属性
         if (!property.empty() && !value.empty()) {
+            declarations.emplace_back(property, value);
+        }
+    }
+
+    // 先处理自定义属性，确保同一个 style 属性中后定义/先定义的变量都能被后续普通属性引用
+    for (const auto& [property, value] : declarations) {
+        if (IsCustomProperty(property)) {
+            ParseStyleProperty(style, property, value);
+        }
+    }
+
+    for (const auto& [property, value] : declarations) {
+        if (!IsCustomProperty(property)) {
             ParseStyleProperty(style, property, value);
         }
     }
@@ -2449,7 +2463,7 @@ void StyleResolver::ParseStyleProperty(ComputedStyle& style,
     if (ParseBorderProperty(style, property, resolved_value)) return;
     if (ParseAnimationProperty(style, property, resolved_value)) return;
     if (ParseBackgroundProperty(style, property, resolved_value)) return;
-    
+
     // Unknown property - silently ignored (CSS behavior)
 }
 
@@ -2461,9 +2475,30 @@ void StyleResolver::ApplyCSSRules(ComputedStyle& style, std::shared_ptr<Element>
     // 从 StyleManager 获取匹配的 CSS 规则
     auto css_properties = style_manager_->ComputeStyle(element.get());
 
-    // 应用每个 CSS 属性
+    // bool debug_target = element->GetTagName() == "html" || element->GetTagName() == "body";
+    // if (debug_target) {
+    //     std::cerr << "[CSS DEBUG] ApplyCSSRules tag=" << element->GetTagName()
+    //               << " properties=" << css_properties.size() << std::endl;
+    //     for (const auto& [property, value] : css_properties) {
+    //         if (property == "--bg" || property == "--text" || property == "--accent" ||
+    //             property == "background" || property == "background-color" || property == "color") {
+    //             std::cerr << "  [CSS DEBUG] property " << property << "=" << value << std::endl;
+    //         }
+    //     }
+    // }
+
+    // 先注入自定义属性，再解析普通属性，确保 var() 能读取到同一轮规则中声明的变量
     for (const auto& [property, value] : css_properties) {
-        ParseStyleProperty(style, property, value);
+        if (IsCustomProperty(property)) {
+            ParseStyleProperty(style, property, value);
+        }
+    }
+
+    // 应用普通 CSS 属性
+    for (const auto& [property, value] : css_properties) {
+        if (!IsCustomProperty(property)) {
+            ParseStyleProperty(style, property, value);
+        }
     }
 }
 
@@ -2573,10 +2608,12 @@ void StyleResolver::ApplyPseudoClassStyles(ComputedStyle& style, std::shared_ptr
         }
 
         if (needs_outline) {
+            // Chrome 的焦点 ring 不是一条固定死黑线，而更接近系统 accent color 的半透明 focus ring。
+            // 这里用接近 Chromium 的蓝色半透明描边来模拟更自然的视觉效果。
             style.outline_width = CSSLength(2, CSSUnit::PX);
             style.outline_style = "solid";
-            style.outline_color = SkColorSetRGB(0, 0, 0);  // 黑色轮廓
-            style.outline_offset = CSSLength(0, CSSUnit::PX);  // 紧贴边框外边缘
+            style.outline_color = SkColorSetARGB(168, 26, 115, 232);
+            style.outline_offset = CSSLength(0, CSSUnit::PX);
         }
         // button, select, a, range, checkbox, radio 等元素鼠标点击时不显示 outline
     }
@@ -2597,11 +2634,11 @@ void StyleResolver::ApplyPseudoClassStyles(ComputedStyle& style, std::shared_ptr
         }
 
         if (needs_outline) {
-            // 键盘导航焦点：使用 outline 显示（不影响布局）
+            // 键盘焦点同样使用接近 Chromium 的蓝色 focus ring，保证与鼠标 focus 视觉一致。
             style.outline_width = CSSLength(2, CSSUnit::PX);
             style.outline_style = "solid";
-            style.outline_color = SkColorSetRGB(0, 0, 0);  // 黑色轮廓
-            style.outline_offset = CSSLength(0, CSSUnit::PX);  // 紧贴边框外边缘
+            style.outline_color = SkColorSetARGB(168, 26, 115, 232);
+            style.outline_offset = CSSLength(0, CSSUnit::PX);
         }
     }
 
@@ -2886,9 +2923,12 @@ void RenderTreeBuilder::BuildChildRenderObjects(
                 continue;
             }
         }
-        
+
         // 正常构建子元素的渲染对象
-        auto child_render_obj = BuildRenderTree(child, parent_style);
+        // 关键：对子树继续构建时，必须把“当前父元素”的计算样式传下去，
+        // 而不是继续沿用更上一层的 parent_style，否则 html 上的继承值（如 :root 变量）
+        // 无法传递给 body 及后代。
+        auto child_render_obj = BuildRenderTree(child, parent_render_obj ? &parent_render_obj->GetComputedStyle() : parent_style);
         if (child_render_obj) {
             parent_render_obj->AppendChild(child_render_obj);
         }

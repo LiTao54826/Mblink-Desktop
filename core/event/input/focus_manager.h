@@ -19,6 +19,7 @@ class Element;
 class Document;
 class Window;
 class Node;
+class EditorInputSession;
 
 /**
  * @brief 焦点管理器
@@ -41,7 +42,17 @@ public:
      * @brief 设置窗口（用于SDL文本输入）
      * @param window 窗口指针
      */
+
+    void SetEditorInputSession(EditorInputSession* session) { editor_input_session_ = session; }
     void SetWindow(Window* window) { window_ = window; }
+
+    /**
+     * @brief 刷新当前焦点元素的 IME 文本输入区域
+     *
+     * 将可编辑控件的可见输入区域与插入点位置同步给 SDL，
+     * 使平台输入法候选窗能够贴近当前光标显示。
+     */
+    void UpdateTextInputArea();
 
     /**
      * @brief 设置焦点到指定元素
@@ -153,6 +164,8 @@ private:
 
     // 窗口指针（用于SDL文本输入）
     Window* window_ = nullptr;
+
+    EditorInputSession* editor_input_session_ = nullptr;
 
     // 当前注册的文档（用于自动注销）
     std::weak_ptr<Document> registered_document_;

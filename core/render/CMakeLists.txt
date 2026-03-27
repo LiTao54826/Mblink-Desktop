@@ -24,6 +24,10 @@ set(RENDER_SOURCES
     objects/list_marker.cpp
     objects/select_dropdown.cpp
     
+    # Render input models
+    input/input_paint_model.cpp
+    input/text_edit_metrics.cpp
+
     # Basic rendering primitives (utils subdirectory)
     utils/color.cpp
     utils/paint.cpp
@@ -113,6 +117,9 @@ set(RENDER_HEADERS
     objects/list_marker.h
     objects/select_dropdown.h
     
+    # Render input models
+    input/input_paint_model.h
+
     # Basic rendering primitives (utils subdirectory)
     utils/color.h
     utils/paint.h

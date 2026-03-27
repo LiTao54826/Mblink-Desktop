@@ -22,7 +22,7 @@
 #include "core/dom/elements/logview/html_logview_element.h"
 #include "core/editing/drag_manager.h"
 #include "core/editing/selection_manager.h"
-#include "core/editing/contenteditable_handler.h"
+#include "core/editing/contenteditable_controller.h"
 #include "core/event/input/focus_manager.h"
 #include "core/event/input/hit_test_controller.h"
 #include "core/event/types/mouse_event.h"
@@ -31,8 +31,12 @@
 #include "core/render/pipeline/render_pipeline.h"
 #include "core/render/objects/select_dropdown.h"
 #include "core/render/text/font_manager.h"
-#include "core/render/text/text_renderer.h"
+#include "core/render/input/text_edit_metrics.h"
 #include "core/utils/utf8_utils.h"
+#include <include/core/SkFont.h>
+#include <include/core/SkFontMetrics.h>
+
+
 #include "core/window/window.h"
 
 #include <cmath>
@@ -47,17 +51,29 @@
 
 namespace lightui {
 
+namespace {
+
+bool IsPrimaryEditorElement(const std::shared_ptr<Element>& element) {
+    if (!element) {
+        return false;
+    }
+    const std::string tag_name = element->GetTagName();
+    return tag_name == "input" || tag_name == "textarea" || tag_name == "terminal" || tag_name == "logview";
+}
+
+} // namespace
+
 MouseEventDispatcher::MouseEventDispatcher() = default;
 
 MouseEventDispatcher::~MouseEventDispatcher() = default;
 
 void MouseEventDispatcher::SetManagers(DragManager* drag_manager,
                                         SelectionManager* selection_manager,
-                                        ContentEditableHandler* contenteditable_handler,
+                                        ContentEditableController* contenteditable_controller,
                                         FocusManager* focus_manager) {
     drag_manager_ = drag_manager;
     selection_manager_ = selection_manager;
-    contenteditable_handler_ = contenteditable_handler;
+    contenteditable_controller_ = contenteditable_controller;
     focus_manager_ = focus_manager;
 }
 
@@ -76,7 +92,7 @@ bool MouseEventDispatcher::HandleMouseEvent(const SDL_Event& event,
     // 获取窗口 ID
     Uint32 window_id = 0;
     float mouse_x = 0, mouse_y = 0;
-    
+
     if (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN || event.type == SDL_EVENT_MOUSE_BUTTON_UP) {
         window_id = event.button.windowID;
         mouse_x = event.button.x;
@@ -264,7 +280,7 @@ bool MouseEventDispatcher::HandleMouseEvent(const SDL_Event& event,
     // 如果没有命中任何元素
     if (!hit_result.IsValid()) {
         auto last_mousedown = last_mousedown_element_.lock();
-        
+
         if (event.type == SDL_EVENT_MOUSE_BUTTON_UP && last_mousedown) {
             HandleNoHitMouseUp(window, last_mousedown, event, logical_x, logical_y);
             last_mousedown->SetPseudoClass("active", false);
@@ -531,7 +547,7 @@ void MouseEventDispatcher::HandleInputMouseInteraction(
     Uint32 event_type,
     float font_size,
     const std::string& font_family) {
-    
+
     if (!input_element) {
         return;
     }
@@ -539,7 +555,6 @@ void MouseEventDispatcher::HandleInputMouseInteraction(
     std::string value = input_element->GetValue();
     InputType type = input_element->GetInputType();
 
-    // 只有文本类型的输入框支持鼠标选择
     if (type != InputType::Text && type != InputType::Password &&
         type != InputType::Email && type != InputType::Tel &&
         type != InputType::Url && type != InputType::Search &&
@@ -547,7 +562,6 @@ void MouseEventDispatcher::HandleInputMouseInteraction(
         return;
     }
 
-    // 获取字体
     FontDescriptor desc;
     desc.family = font_family.empty() ? "sans-serif" : font_family;
     desc.size = font_size > 0 ? font_size : 14.0f;
@@ -555,47 +569,9 @@ void MouseEventDispatcher::HandleInputMouseInteraction(
     desc.style = FontStyle::NORMAL;
     SkFont font = FontManager::GetInstance().LoadFont(desc);
 
-    // 密码类型使用星号显示
-    std::string display_text = value;
-    if (type == InputType::Password) {
-        size_t char_count = utf8::CharCount(value);
-        display_text = std::string(char_count, '*');
-    }
+    const bool mask_as_password = type == InputType::Password;
+    int char_pos = text_edit_metrics::HitTestTextPosition(value, local_x, font, mask_as_password);
 
-    // 根据 local_x 计算字符位置
-    int char_pos = 0;
-    size_t total_chars = utf8::CharCount(value);
-
-    if (local_x <= 0 || total_chars == 0) {
-        char_pos = 0;
-    } else {
-        float accumulated_width = 0.0f;
-        size_t byte_pos = 0;
-
-        for (size_t i = 0; i < total_chars; ++i) {
-            size_t next_byte_pos = utf8::CharPosToBytePos(value, i + 1);
-            std::string char_str;
-
-            if (type == InputType::Password) {
-                char_str = "*";
-            } else {
-                char_str = value.substr(byte_pos, next_byte_pos - byte_pos);
-            }
-
-            float char_width = font.measureText(char_str.c_str(), char_str.size(), SkTextEncoding::kUTF8);
-
-            if (local_x < accumulated_width + char_width / 2) {
-                char_pos = static_cast<int>(i);
-                break;
-            }
-
-            accumulated_width += char_width;
-            byte_pos = next_byte_pos;
-            char_pos = static_cast<int>(i + 1);
-        }
-    }
-
-    // 根据事件类型处理
     if (event_type == SDL_EVENT_MOUSE_BUTTON_DOWN) {
         input_element->SetCursorPosition(char_pos);
         input_element->SetDragStartPos(char_pos);
@@ -634,12 +610,11 @@ void MouseEventDispatcher::HandleTextAreaMouseInteraction(
     bool shift_key,
     float visible_width,
     float visible_height) {
-    
+
     if (!textarea_element) {
         return;
     }
 
-    // 获取字体
     FontDescriptor desc;
     desc.family = font_family.empty() ? "sans-serif" : font_family;
     desc.size = font_size > 0 ? font_size : 14.0f;
@@ -656,107 +631,63 @@ void MouseEventDispatcher::HandleTextAreaMouseInteraction(
         line_height += font_size * 0.2f;
     }
 
-    // 拖动选择时自动滚动
     if (event_type == SDL_EVENT_MOUSE_MOTION && textarea_element->IsDraggingSelection() &&
         visible_width > 0 && visible_height > 0) {
         float scroll_speed = line_height;
         float scroll_top = textarea_element->GetScrollTop();
         float scroll_left = textarea_element->GetScrollLeft();
-
-        int line_count = textarea_element->GetLineCount();
-        float content_height = line_count * line_height;
+        float content_height = textarea_element->GetContentHeight(line_height);
         float max_scroll_y = std::max(0.0f, content_height - visible_height);
-
-        TextRenderer text_renderer(nullptr);
-        float max_line_width = 0.0f;
-        std::string value = textarea_element->GetValue();
-        std::istringstream stream(value);
-        std::string line;
-        while (std::getline(stream, line)) {
-            float w = text_renderer.MeasureTextWidthWithEmoji(line, font);
-            if (w > max_line_width) max_line_width = w;
-        }
-        float max_scroll_x = std::max(0.0f, max_line_width - visible_width);
+        float max_scroll_x = std::max(0.0f, textarea_element->GetMaxLineWidth(font) - visible_width);
 
         if (local_y < 0) {
-            float new_scroll = std::max(0.0f, scroll_top - scroll_speed);
-            textarea_element->SetScrollTop(new_scroll);
+            textarea_element->SetScrollTop(std::max(0.0f, scroll_top - scroll_speed));
         } else if (local_y > visible_height) {
-            float new_scroll = std::min(max_scroll_y, scroll_top + scroll_speed);
-            textarea_element->SetScrollTop(new_scroll);
+            textarea_element->SetScrollTop(std::min(max_scroll_y, scroll_top + scroll_speed));
         }
 
         if (local_x < 0) {
-            float new_scroll = std::max(0.0f, scroll_left - scroll_speed);
-            textarea_element->SetScrollLeft(new_scroll);
+            textarea_element->SetScrollLeft(std::max(0.0f, scroll_left - scroll_speed));
         } else if (local_x > visible_width) {
-            float new_scroll = std::min(max_scroll_x, scroll_left + scroll_speed);
-            textarea_element->SetScrollLeft(new_scroll);
+            textarea_element->SetScrollLeft(std::min(max_scroll_x, scroll_left + scroll_speed));
         }
     }
 
     float scroll_top = textarea_element->GetScrollTop();
     float scroll_left = textarea_element->GetScrollLeft();
 
-    float clamped_local_x = local_x;
-    float clamped_local_y = local_y;
-    if (clamped_local_x < 0) clamped_local_x = 0;
-    if (clamped_local_y < 0) clamped_local_y = 0;
-    if (visible_width > 0 && clamped_local_x > visible_width) clamped_local_x = visible_width;
-    if (visible_height > 0 && clamped_local_y > visible_height) clamped_local_y = visible_height;
+    float clamped_local_x = std::max(0.0f, local_x);
+    float clamped_local_y = std::max(0.0f, local_y);
+    if (visible_width > 0) clamped_local_x = std::min(clamped_local_x, visible_width);
+    if (visible_height > 0) clamped_local_y = std::min(clamped_local_y, visible_height);
 
     float actual_x = clamped_local_x + scroll_left;
     float actual_y = clamped_local_y + scroll_top;
-
-    int clicked_line = static_cast<int>(actual_y / line_height);
-    if (clicked_line < 0) clicked_line = 0;
+    int clicked_line = std::max(0, static_cast<int>(actual_y / line_height));
 
     std::string value = textarea_element->GetValue();
-
     std::vector<std::string> lines;
-    std::istringstream stream2(value);
+    std::istringstream stream(value);
     std::string line;
-    while (std::getline(stream2, line)) {
+    while (std::getline(stream, line)) {
         lines.push_back(line);
     }
     if (value.empty() || (!value.empty() && value.back() == '\n')) {
         lines.push_back("");
     }
-
-    if (clicked_line >= static_cast<int>(lines.size())) {
-        clicked_line = static_cast<int>(lines.size()) - 1;
+    if (lines.empty()) {
+        lines.push_back("");
     }
-    if (clicked_line < 0) clicked_line = 0;
+
+    clicked_line = std::min(clicked_line, static_cast<int>(lines.size()) - 1);
 
     int char_offset = 0;
-    for (int i = 0; i < clicked_line && i < static_cast<int>(lines.size()); i++) {
+    for (int i = 0; i < clicked_line; ++i) {
         char_offset += static_cast<int>(utf8::CharCount(lines[i])) + 1;
     }
 
-    const std::string& current_line = clicked_line < static_cast<int>(lines.size()) 
-                                      ? lines[clicked_line] : "";
-    int char_pos_in_line = 0;
-
-    if (!current_line.empty()) {
-        float accumulated_width = 0;
-        size_t char_count = utf8::CharCount(current_line);
-        TextRenderer text_renderer(nullptr);
-
-        for (size_t i = 0; i < char_count; i++) {
-            size_t byte_start = utf8::CharPosToBytePos(current_line, static_cast<int>(i));
-            size_t byte_end = utf8::CharPosToBytePos(current_line, static_cast<int>(i + 1));
-            std::string char_str = current_line.substr(byte_start, byte_end - byte_start);
-
-            float char_width = text_renderer.MeasureTextWidthWithEmoji(char_str, font);
-
-            if (actual_x < accumulated_width + char_width / 2) {
-                break;
-            }
-            accumulated_width += char_width;
-            char_pos_in_line++;
-        }
-    }
-
+    const std::string& current_line = lines[clicked_line];
+    int char_pos_in_line = text_edit_metrics::HitTestTextPosition(current_line, actual_x, font, false);
     int char_pos = char_offset + char_pos_in_line;
 
     if (event_type == SDL_EVENT_MOUSE_BUTTON_DOWN) {
@@ -966,7 +897,7 @@ void MouseEventDispatcher::HandleNoHitMouseUp(std::shared_ptr<Window> window,
         0  // buttons: 按钮已释放
     );
     last_mousedown->DispatchEvent(mouseup_event);
-    
+
     std::string tag_name = last_mousedown->GetTagName();
     if (tag_name == "textarea") {
         auto textarea_element = std::dynamic_pointer_cast<HTMLTextAreaElement>(last_mousedown);
@@ -1004,6 +935,11 @@ void MouseEventDispatcher::HandleNoHitMouseUp(std::shared_ptr<Window> window,
                 HandleInputMouseInteraction(input_element, 0, event.type, 14.0f, "");
             }
         }
+    } else if (last_mousedown->IsContentEditable()) {
+        if (contenteditable_controller_ && contenteditable_controller_->IsDragging()) {
+            contenteditable_controller_->HandleMouseUp(last_mousedown, logical_x, logical_y);
+        }
+        window->SetNeedsRepaint();
     }
 }
 
@@ -1118,6 +1054,13 @@ void MouseEventDispatcher::HandleNoHitMouseMotion(std::shared_ptr<Window> window
                 }
             }
         }
+    } else if (last_mousedown->IsContentEditable()) {
+        HandleContentEditableDragSelection(window,
+                                           std::dynamic_pointer_cast<Document>(last_mousedown->GetOwnerDocument()),
+                                           logical_x,
+                                           logical_y,
+                                           window->GetCachedRenderTree(),
+                                           event.type);
     }
     // 处理 terminal 的滚动条拖动
     else if (tag_name == "terminal") {
@@ -1206,8 +1149,15 @@ void MouseEventDispatcher::HandleNoHitMouseMotion(std::shared_ptr<Window> window
         }
     }
     // 处理 contentEditable 的拖动选择
-    else if (contenteditable_dragging_ && last_mousedown->IsContentEditable()) {
-        HandleContentEditableDragSelection(window, logical_x, logical_y, event.type);
+    else if (last_mousedown->IsContentEditable() &&
+             contenteditable_controller_ &&
+             contenteditable_controller_->IsDragging()) {
+        HandleContentEditableDragSelection(window,
+                                           std::dynamic_pointer_cast<Document>(last_mousedown->GetOwnerDocument()),
+                                           logical_x,
+                                           logical_y,
+                                           window->GetCachedRenderTree(),
+                                           event.type);
     }
 }
 
@@ -1216,7 +1166,7 @@ void MouseEventDispatcher::HandleRangeDrag(std::shared_ptr<Window> window,
                                             float logical_x,
                                             std::shared_ptr<RenderObject> root_render) {
     if (!root_render) return;
-    
+
     struct FindResult {
         std::shared_ptr<RenderObject> render_obj;
         float abs_x = 0;
@@ -1260,25 +1210,37 @@ void MouseEventDispatcher::HandleMouseDown(std::shared_ptr<Window> window,
                                             int button,
                                             std::shared_ptr<RenderObject> root_render) {
     (void)root_render;
-    
+
     // 更新鼠标按钮状态（用于 mousemove 事件的 buttons 属性）
     if (button == 1) mouse_buttons_state_ |= 1;       // 左键
     else if (button == 3) mouse_buttons_state_ |= 2;  // 右键
     else if (button == 2) mouse_buttons_state_ |= 4;  // 中键
-    
+
     // 浏览器行为：mousedown 时自动更新 Selection 到点击位置
     // 这对于 CodeMirror 等库正确处理点击定位至关重要
-    if (button == 1 && selection_manager_ && document) {  // 左键点击
-        UpdateSelectionFromClick(document, hit_result, logical_x, logical_y);
+    if (button == 1 && document) {  // 左键点击
+        if (hit_result.element->IsContentEditable() && contenteditable_controller_) {
+            SDL_Keymod mod_state = SDL_GetModState();
+            bool shift_key = (mod_state & SDL_KMOD_SHIFT) != 0;
+            contenteditable_controller_->HandleMouseDown(
+                hit_result.element,
+                logical_x,
+                logical_y,
+                shift_key,
+                hit_result.render_object,
+                root_render);
+        } else if (selection_manager_ && !IsPrimaryEditorElement(hit_result.element)) {
+            UpdateSelectionFromClick(document, hit_result, logical_x, logical_y);
+        }
     }
-    
+
     // 创建并分发 mousedown 事件
     // buttons: 1=左键, 2=右键, 4=中键
     int buttons = 0;
     if (button == 1) buttons = 1;       // 左键
     else if (button == 3) buttons = 2;  // 右键
     else if (button == 2) buttons = 4;  // 中键
-    
+
     auto mousedown_event = std::make_shared<MouseEvent>(
         "mousedown",
         static_cast<int>(logical_x),
@@ -1388,27 +1350,27 @@ void MouseEventDispatcher::HandleMouseDown(std::shared_ptr<Window> window,
             float dx = logical_x - last_click_x_;
             float dy = logical_y - last_click_y_;
             float distance = std::sqrt(dx * dx + dy * dy);
-            
-            if ((now - last_click_time_) < DOUBLE_CLICK_TIME_MS && 
+
+            if ((now - last_click_time_) < DOUBLE_CLICK_TIME_MS &&
                 distance < CLICK_DISTANCE_THRESHOLD) {
                 click_count_++;
                 if (click_count_ > 3) click_count_ = 3;  // 最多三击
             } else {
                 click_count_ = 1;
             }
-            
+
             last_click_time_ = now;
             last_click_x_ = logical_x;
             last_click_y_ = logical_y;
-            
+
             terminal_element->HandleMouseDown(hit_result.local_x, hit_result.local_y, 0, click_count_);
-            
+
             // 设置焦点
             if (focus_manager_) {
                 focus_manager_->SetWindow(window.get());
                 focus_manager_->SetFocus(hit_result.element, false);
             }
-            
+
             // 标记需要重绘
             window->SetNeedsRepaint();
             if (auto pipeline = window->GetRenderPipeline()) {
@@ -1425,27 +1387,27 @@ void MouseEventDispatcher::HandleMouseDown(std::shared_ptr<Window> window,
             float dx = logical_x - last_click_x_;
             float dy = logical_y - last_click_y_;
             float distance = std::sqrt(dx * dx + dy * dy);
-            
-            if ((now - last_click_time_) < DOUBLE_CLICK_TIME_MS && 
+
+            if ((now - last_click_time_) < DOUBLE_CLICK_TIME_MS &&
                 distance < CLICK_DISTANCE_THRESHOLD) {
                 click_count_++;
                 if (click_count_ > 3) click_count_ = 3;
             } else {
                 click_count_ = 1;
             }
-            
+
             last_click_time_ = now;
             last_click_x_ = logical_x;
             last_click_y_ = logical_y;
-            
+
             logview_element->OnMouseDown(hit_result.local_x, hit_result.local_y, 0, click_count_);
-            
+
             // 设置焦点
             if (focus_manager_) {
                 focus_manager_->SetWindow(window.get());
                 focus_manager_->SetFocus(hit_result.element, false);
             }
-            
+
             window->SetNeedsRepaint();
             if (auto pipeline = window->GetRenderPipeline()) {
                 pipeline->ForceRasterize();
@@ -1458,20 +1420,6 @@ void MouseEventDispatcher::HandleMouseDown(std::shared_ptr<Window> window,
             focus_manager_->SetWindow(window.get());
             focus_manager_->SetFocus(hit_result.element, false);
         }
-
-        // 初始化拖动选择状态
-        if (selection_manager_) {
-            auto selection = selection_manager_->GetSelection(document);
-            if (selection && hit_result.render_object) {
-                // 记录拖动开始位置
-                contenteditable_dragging_ = true;
-                
-                // 注意：Selection 已经在 UpdateSelectionFromClick 中正确设置
-                // 这里只需要记录拖动起始位置，不需要重置 Selection
-                contenteditable_drag_start_node_ = selection->GetAnchorNode();
-                contenteditable_drag_start_offset_ = selection->GetAnchorOffset();
-            }
-        }
     }
     // 参考 Blink/Chrome 的行为：
     // 点击非可聚焦元素时，不应该清除焦点
@@ -1480,7 +1428,7 @@ void MouseEventDispatcher::HandleMouseDown(std::shared_ptr<Window> window,
     // 1. 点击了另一个可聚焦元素（焦点转移到新元素）
     // 2. 调用了 element.focus() 或 element.blur()
     // 3. 按 Tab 键导航
-    // 
+    //
     // 注意：之前这里有 ClearFocus() 调用，这是错误的行为
     // 它会导致 Fluent Input 等组件无法正常工作（外层 div 点击后调用 input.focus()）
 
@@ -1499,21 +1447,20 @@ void MouseEventDispatcher::HandleMouseUp(std::shared_ptr<Window> window,
                                           int button,
                                           std::shared_ptr<RenderObject> root_render) {
     (void)root_render;
-    
+
     // 清除鼠标按钮状态
     if (button == 1) mouse_buttons_state_ &= ~1;       // 左键
     else if (button == 3) mouse_buttons_state_ &= ~2;  // 右键
     else if (button == 2) mouse_buttons_state_ &= ~4;  // 中键
-    
+
     auto last_mousedown = last_mousedown_element_.lock();
-    
+
     // 移除 :active 伪类
     if (last_mousedown) {
         last_mousedown->SetPseudoClass("active", false);
     }
 
     // 处理输入框的鼠标释放
-    bool was_contenteditable_dragging = false;
     if (last_mousedown && event.button.button == SDL_BUTTON_LEFT) {
         std::string tag_name = last_mousedown->GetTagName();
         if (tag_name == "input") {
@@ -1558,11 +1505,10 @@ void MouseEventDispatcher::HandleMouseUp(std::shared_ptr<Window> window,
         }
 
         // 结束 contentEditable 拖动选择
-        was_contenteditable_dragging = contenteditable_dragging_;
-        if (contenteditable_dragging_) {
-            contenteditable_dragging_ = false;
-            contenteditable_drag_start_node_.reset();
-            contenteditable_drag_start_offset_ = 0;
+        if (last_mousedown->IsContentEditable() && contenteditable_controller_ && contenteditable_controller_->IsDragging()) {
+            if (contenteditable_controller_) {
+                contenteditable_controller_->HandleMouseUp(last_mousedown, logical_x, logical_y);
+            }
         }
     }
 
@@ -1595,7 +1541,7 @@ void MouseEventDispatcher::HandleMouseUp(std::shared_ptr<Window> window,
         // click 事件分发后，不应该再尝试设置焦点或清除焦点
         // 因为 JavaScript 的 click 处理器可能已经调用了 element.focus()
         // 如果我们在这里清除焦点，会覆盖 JavaScript 设置的焦点状态
-        // 
+        //
         // 焦点管理应该完全由以下方式控制：
         // 1. mousedown 时点击可聚焦元素 → 焦点转移
         // 2. JavaScript 调用 element.focus() / element.blur()
@@ -1636,7 +1582,7 @@ void MouseEventDispatcher::HandleMouseMove(std::shared_ptr<Window> window,
                                             std::shared_ptr<RenderObject> root_render) {
     // 使用跟踪的鼠标按钮状态（而不是 SDL_GetMouseState，因为它在某些情况下返回 0）
     int buttons = mouse_buttons_state_;
-    
+
     // 创建并分发 mousemove 事件
     auto mousemove_event = std::make_shared<MouseEvent>(
         "mousemove",
@@ -1649,7 +1595,7 @@ void MouseEventDispatcher::HandleMouseMove(std::shared_ptr<Window> window,
     hit_result.element->DispatchEvent(mousemove_event);
 
     auto last_mousedown = last_mousedown_element_.lock();
-    
+
     // 处理输入框的拖动选择
     if (last_mousedown) {
         std::string tag_name = last_mousedown->GetTagName();
@@ -1715,8 +1661,8 @@ void MouseEventDispatcher::HandleMouseMove(std::shared_ptr<Window> window,
             }
         }
         // 处理 contentEditable 拖动选择
-        else if (contenteditable_dragging_ && last_mousedown->IsContentEditable()) {
-            HandleContentEditableDragSelection(window, logical_x, logical_y, SDL_EVENT_MOUSE_MOTION);
+        else if (last_mousedown->IsContentEditable() && contenteditable_controller_ && contenteditable_controller_->IsDragging()) {
+            HandleContentEditableDragSelection(window, document, logical_x, logical_y, root_render, SDL_EVENT_MOUSE_MOTION);
         }
     }
 
@@ -1727,33 +1673,25 @@ void MouseEventDispatcher::HandleMouseMove(std::shared_ptr<Window> window,
 }
 
 void MouseEventDispatcher::HandleContentEditableDragSelection(std::shared_ptr<Window> window,
-                                                               float /*logical_x*/,
-                                                               float /*logical_y*/,
+                                                               std::shared_ptr<Document> document,
+                                                               float logical_x,
+                                                               float logical_y,
+                                                               std::shared_ptr<RenderObject> root_render,
                                                                Uint32 event_type) {
     (void)event_type;
-    
+
     auto last_mousedown = last_mousedown_element_.lock();
-    if (!last_mousedown || !selection_manager_) {
+    if (!window || !document || !last_mousedown || !last_mousedown->IsContentEditable()) {
         return;
     }
 
-    auto doc = std::dynamic_pointer_cast<Document>(last_mousedown->GetOwnerDocument());
-    if (!doc) {
+    if (!contenteditable_controller_) {
         return;
     }
 
-    auto selection = selection_manager_->GetSelection(doc);
-    auto drag_start_node = contenteditable_drag_start_node_.lock();
-    if (!selection || !drag_start_node) {
-        return;
+    if (contenteditable_controller_->HandleMouseMove(document, logical_x, logical_y, root_render, window.get())) {
+        window->SetNeedsRepaint();
     }
-
-    // 简化的 contentEditable 拖动选择处理
-    // 完整实现需要遍历渲染树找到文本节点，这里保持基本功能
-    // 实际的文本节点定位逻辑在 EventLoop 中已经很复杂
-    // 迁移时保持功能等价，但简化实现
-    
-    window->SetNeedsRepaint();
 }
 
 void MouseEventDispatcher::UpdateSelectionFromClick(
@@ -1761,10 +1699,9 @@ void MouseEventDispatcher::UpdateSelectionFromClick(
     const HitTestResult& hit_result,
     float logical_x,
     float logical_y) {
-    
-    (void)logical_x;
+
     (void)logical_y;
-    
+
     if (!document || !hit_result.IsValid() || !selection_manager_) {
         return;
     }
@@ -1777,7 +1714,7 @@ void MouseEventDispatcher::UpdateSelectionFromClick(
     // 查找点击位置的文本节点
     std::shared_ptr<Text> text_node = nullptr;
     std::shared_ptr<RenderObject> text_render = nullptr;
-    
+
     if (hit_result.render_object) {
         auto node = hit_result.render_object->GetNode();
         if (node && node->GetNodeType() == NodeType::TEXT_NODE) {
@@ -1822,7 +1759,7 @@ void MouseEventDispatcher::UpdateSelectionFromClick(
     // 获取文本渲染的样式信息
     float font_size = 16.0f;
     std::string font_family = "sans-serif";
-    
+
     if (text_render) {
         const auto& style = text_render->GetComputedStyle();
         font_size = style.font_size;
@@ -1841,39 +1778,23 @@ void MouseEventDispatcher::UpdateSelectionFromClick(
     desc.style = FontStyle::NORMAL;
     SkFont font = FontManager::GetInstance().LoadFont(desc);
 
-    // 计算 local_x（相对于文本起始位置）
-    float local_x = hit_result.local_x;
-    
-    // 如果有 padding，需要减去
-    if (hit_result.render_object) {
-        const auto& style = hit_result.render_object->GetComputedStyle();
-        local_x -= style.padding.left.ToPx();
+    float local_x = logical_x;
+    if (text_render) {
+        local_x -= text_render->GetLayoutInfo().x;
+    } else if (hit_result.render_object) {
+        local_x = hit_result.local_x - hit_result.render_object->GetComputedStyle().padding.left.ToPx();
     }
 
-    // 遍历字符计算偏移量
-    TextRenderer text_renderer(nullptr);
-    size_t char_count = utf8::CharCount(text);
-    int char_offset = 0;
-    float accumulated_width = 0.0f;
-
-    for (size_t i = 0; i < char_count; ++i) {
-        size_t byte_start = utf8::CharPosToBytePos(text, static_cast<int>(i));
-        size_t byte_end = utf8::CharPosToBytePos(text, static_cast<int>(i + 1));
-        std::string char_str = text.substr(byte_start, byte_end - byte_start);
-        
-        float char_width = text_renderer.MeasureTextWidthWithEmoji(char_str, font);
-        
-        // 如果点击位置在字符中间偏左，选择当前字符；偏右则选择下一个
-        if (local_x < accumulated_width + char_width / 2) {
-            break;
-        }
-        
-        accumulated_width += char_width;
-        char_offset = static_cast<int>(i + 1);
+    CaretPosition caret_pos = selection_manager_->HitTestToCaretPosition(hit_result.element,
+                                                                         static_cast<int>(std::round(local_x)),
+                                                                         static_cast<int>(std::round(logical_y)),
+                                                                         &font);
+    if (!caret_pos.IsValid()) {
+        selection->Collapse(text_node, 0);
+        return;
     }
 
-    // 更新 Selection 到点击位置
-    selection->Collapse(text_node, char_offset);
+    selection->Collapse(caret_pos.node, caret_pos.offset);
 }
 
 } // namespace lightui

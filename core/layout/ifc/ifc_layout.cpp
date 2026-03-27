@@ -10,6 +10,7 @@
 #include <limits>
 #include <unordered_map>
 #include <iostream>
+#include <sstream>
 
 // Skia 字体测量
 #include "core/render/text/font_manager.h"
@@ -26,9 +27,6 @@
 #define IFC_DEBUG 0
 
 namespace lightui {
-
-// ========== 静态辅助方法 ==========
-
 bool IFCLayout::HasInlineContent(RenderObject* container) {
     if (!container) return false;
 

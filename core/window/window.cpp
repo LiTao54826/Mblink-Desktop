@@ -612,6 +612,9 @@ void Window::InitSDL() {
         // 允许点击穿透：当窗口失去焦点后，点击窗口时同时激活窗口并生成点击事件
         // 解决"窗口失去焦点后直接点击按钮需要点击两次才能响应"的问题
         SDL_SetHint(SDL_HINT_MOUSE_FOCUS_CLICKTHROUGH, "1");
+        // 由应用自行绘制 composition 文本，避免 Windows 原生 composition UI 字号/样式
+        // 与页面字体不同步；候选窗仍可继续使用系统原生 UI。
+        SDL_SetHint(SDL_HINT_IME_IMPLEMENTED_UI, "composition");
 
         if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS)) {
             throw std::runtime_error(std::string("Failed to initialize SDL: ") + SDL_GetError());
@@ -1499,9 +1502,23 @@ void Window::MarkRenderObjectsDirty(Node* dom_node, RenderObject* render_obj) {
 
     // 获取父样式（用于继承）
     const ComputedStyle* parent_style = nullptr;
+    ComputedStyle root_parent_style;
     auto parent = render_obj->GetParent();
     if (parent) {
         parent_style = &parent->GetComputedStyle();
+    } else if (document_ && dom_node->GetNodeType() == NodeType::ELEMENT_NODE) {
+        auto element = std::static_pointer_cast<Element>(dom_node->shared_from_this());
+        if (element->GetTagName() == "body") {
+            auto document_element = document_->GetDocumentElement();
+            if (document_element) {
+                StyleResolver root_resolver;
+                if (document_->GetStyleManager()) {
+                    root_resolver.SetStyleManager(document_->GetStyleManager());
+                }
+                root_parent_style = root_resolver.ResolveStyle(document_element, nullptr);
+                parent_style = &root_parent_style;
+            }
+        }
     }
 
     // 检查DOM节点是否有绘制脏标记或样式脏标记（包括伪类变化如:focus）
@@ -1990,7 +2007,23 @@ void Window::EnsureRenderTree() {
         render_tree_builder_ = std::make_shared<RenderTreeBuilder>();
     }
     render_tree_builder_->SetDocument(document_.get());
-    cached_render_tree_ = render_tree_builder_->BuildRenderTree(body, nullptr);
+
+    auto& resolver = render_tree_builder_->GetStyleResolver();
+    if (document_->GetStyleManager()) {
+        resolver.SetStyleManager(document_->GetStyleManager());
+    }
+
+    // 关键：body 作为渲染树入口时，仍然必须继承 html 根元素的计算样式。
+    // 否则 :root/html 上定义的 CSS 变量、color、font 等可继承值不会进入 body，
+    // 看起来就会像 style 标签整体失效，而 inline var/fallback 仍然正常。
+    const ComputedStyle* body_parent_style = nullptr;
+    ComputedStyle html_style;
+    if (auto document_element = document_->GetDocumentElement()) {
+        html_style = resolver.ResolveStyle(document_element, nullptr);
+        body_parent_style = &html_style;
+    }
+
+    cached_render_tree_ = render_tree_builder_->BuildRenderTree(body, body_parent_style);
 
     if (!cached_render_tree_) {
         return;

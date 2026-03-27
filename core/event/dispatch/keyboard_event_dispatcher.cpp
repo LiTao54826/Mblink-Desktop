@@ -17,7 +17,10 @@
 #include "core/dom/elements/terminal/html_terminal_element.h"
 #include "core/editing/clipboard_manager.h"
 #include "core/editing/contenteditable_controller.h"
-#include "core/editing/contenteditable_handler.h"
+#include "core/editing/editor_input_session.h"
+#include "core/editing/input_edit_command.h"
+#include "core/editing/input_edit_state.h"
+#include "core/editing/textarea_editing_controller.h"
 #include "core/event/input/focus_manager.h"
 #include "core/event/input/keyboard_utils.h"
 #include "core/render/pipeline/render_pipeline.h"
@@ -34,13 +37,13 @@ KeyboardEventDispatcher::KeyboardEventDispatcher() = default;
 KeyboardEventDispatcher::~KeyboardEventDispatcher() = default;
 
 void KeyboardEventDispatcher::SetManagers(FocusManager* focus_manager,
-                                           ContentEditableHandler* contenteditable_handler,
+                                           ClipboardManager* clipboard_manager,
                                            ContentEditableController* contenteditable_controller,
-                                           ClipboardManager* clipboard_manager) {
+                                           EditorInputSession* editor_input_session) {
     focus_manager_ = focus_manager;
-    contenteditable_handler_ = contenteditable_handler;
-    contenteditable_controller_ = contenteditable_controller;
     clipboard_manager_ = clipboard_manager;
+    contenteditable_controller_ = contenteditable_controller;
+    editor_input_session_ = editor_input_session;
 }
 
 bool KeyboardEventDispatcher::HandleKeyboardEvent(const SDL_Event& event,
@@ -93,6 +96,9 @@ bool KeyboardEventDispatcher::HandleKeyboardEvent(const SDL_Event& event,
     } else if (event.type == SDL_EVENT_TEXT_INPUT) {
         HandleTextInput(event, focus_element, document);
         return true;
+    } else if (event.type == SDL_EVENT_TEXT_EDITING) {
+        HandleTextEditing(event, focus_element, document);
+        return true;
     }
 
     return false;
@@ -100,7 +106,7 @@ bool KeyboardEventDispatcher::HandleKeyboardEvent(const SDL_Event& event,
 
 void KeyboardEventDispatcher::HandleKeyDown(const SDL_Event& event,
                                              std::shared_ptr<Element> focus_element,
-                                             std::shared_ptr<Document> /*document*/,
+                                             std::shared_ptr<Document> document,
                                              std::shared_ptr<Window> window,
                                              bool ctrl_key, bool shift_key,
                                              bool alt_key, bool meta_key) {
@@ -123,8 +129,7 @@ void KeyboardEventDispatcher::HandleKeyDown(const SDL_Event& event,
 
     focus_element->DispatchEvent(keydown_event);
 
-    // 处理剪贴板快捷键 (Ctrl+C/X/V) - 分发 copy/cut/paste 事件
-    // 浏览器会在 Ctrl+C/X/V 时自动触发 copy/cut/paste 事件
+    // 处理剪贴板快捷键 (Ctrl+C/X/V) - 先分发事件，再执行默认行为
     if (ctrl_key && !alt_key && !shift_key) {
         std::string clipboard_event_type;
         if (key_code == 67) {  // 'C' - Copy
@@ -134,27 +139,40 @@ void KeyboardEventDispatcher::HandleKeyDown(const SDL_Event& event,
         } else if (key_code == 86) {  // 'V' - Paste
             clipboard_event_type = "paste";
         }
-        
+
         if (!clipboard_event_type.empty()) {
-            // 创建并分发剪贴板事件
+            bool is_contenteditable_target = false;
+            if (auto element = std::dynamic_pointer_cast<Element>(focus_element)) {
+                is_contenteditable_target = element->IsContentEditable();
+            }
+
             auto clipboard_event = std::make_shared<ClipboardEvent>(clipboard_event_type, "");
             focus_element->DispatchEvent(clipboard_event);
-            return;
+            if (clipboard_event->IsDefaultPrevented() || keydown_event->IsDefaultPrevented()) {
+                return;
+            }
+
+            if (is_contenteditable_target && clipboard_manager_ && clipboard_manager_->HandleKeyboardShortcut(document, key_code, ctrl_key, meta_key)) {
+                if (focus_manager_) {
+                    focus_manager_->UpdateTextInputArea();
+                }
+                return;
+            }
         }
+    }
+
+    if (editor_input_session_ && editor_input_session_->HandleKeyDown(event, focus_element, document, window, clipboard_manager_, contenteditable_controller_, ctrl_key, shift_key, alt_key, meta_key, keydown_event->IsDefaultPrevented())) {
+        if (focus_manager_) {
+            focus_manager_->UpdateTextInputArea();
+        }
+        return;
     }
 
     // 如果事件未被阻止，处理表单元素的键盘输入
     if (!keydown_event->IsDefaultPrevented()) {
         // 检查是否是表单元素
-        auto input_element = std::dynamic_pointer_cast<HTMLInputElement>(focus_element);
-        auto textarea_element = std::dynamic_pointer_cast<HTMLTextAreaElement>(focus_element);
         auto terminal_element = std::dynamic_pointer_cast<HTMLTerminalElement>(focus_element);
-
-        if (input_element) {
-            input_element->HandleKeyPress(key, ctrl_key);
-        } else if (textarea_element) {
-            textarea_element->HandleKeyPress(key, ctrl_key, shift_key);
-        } else if (terminal_element) {
+        if (terminal_element) {
             // Terminal 元素：将按键转换为终端序列并发送
             int modifiers = (ctrl_key ? 1 : 0) | (shift_key ? 2 : 0) | (alt_key ? 4 : 0);
             terminal_element->HandleKeyInput(key, modifiers);
@@ -167,14 +185,6 @@ void KeyboardEventDispatcher::HandleKeyDown(const SDL_Event& event,
                 window->SetNeedsRepaint();
                 if (auto pipeline = window->GetRenderPipeline()) {
                     pipeline->ForceRasterize();
-                }
-            } else {
-                // 检查是否是 contentEditable 元素或其子元素
-                auto element = std::dynamic_pointer_cast<Element>(focus_element);
-                if (element && element->IsContentEditable()) {
-                    if (contenteditable_controller_) {
-                        contenteditable_controller_->HandleKeyDown(element, key_code, ctrl_key, shift_key, alt_key);
-                    }
                 }
             }
         }
@@ -209,26 +219,24 @@ void KeyboardEventDispatcher::HandleTextInput(const SDL_Event& event,
                                                std::shared_ptr<Document> document) {
     std::string text = event.text.text;
 
-    // 检查是否是表单元素
-    auto input_element = std::dynamic_pointer_cast<HTMLInputElement>(focus_element);
-    auto textarea_element = std::dynamic_pointer_cast<HTMLTextAreaElement>(focus_element);
     auto terminal_element = std::dynamic_pointer_cast<HTMLTerminalElement>(focus_element);
-
-    if (input_element) {
-        input_element->HandleTextInput(text);
-    } else if (textarea_element) {
-        textarea_element->HandleTextInput(text);
-    } else if (terminal_element) {
-        // Terminal 元素：直接发送文本输入
-        terminal_element->SendInput(text);
-    } else {
-        // 检查是否是 contentEditable 元素
-        auto element = std::dynamic_pointer_cast<Element>(focus_element);
-        if (element && element->IsContentEditable()) {
-            if (contenteditable_handler_ && document) {
-                contenteditable_handler_->InsertText(document, text);
-            }
+    if (editor_input_session_ && editor_input_session_->HandleTextInput(event, focus_element, document, contenteditable_controller_)) {
+        if (focus_manager_) {
+            focus_manager_->UpdateTextInputArea();
         }
+    } else if (terminal_element) {
+        terminal_element->SendInput(text);
+    }
+}
+
+void KeyboardEventDispatcher::HandleTextEditing(const SDL_Event& event,
+                                                std::shared_ptr<Element> focus_element,
+                                                std::shared_ptr<Document> document) {
+    if (editor_input_session_ && editor_input_session_->HandleTextEditing(event, focus_element, document, contenteditable_controller_)) {
+        if (focus_manager_) {
+            focus_manager_->UpdateTextInputArea();
+        }
+        return;
     }
 }
 

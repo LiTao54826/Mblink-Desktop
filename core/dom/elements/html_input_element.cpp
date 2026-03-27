@@ -7,8 +7,12 @@
 #include "../event.h"
 #include "../document.h"
 #include "../utils/utf8_utils.h"
+#include "core/editing/input_edit_state.h"
+#include "core/editing/input_editing_controller.h"
+#include "core/render/pipeline/render_pipeline.h"
 #include "core/window/window.h"
 #include "core/window/window_manager.h"
+#include "include/core/SkRect.h"
 #include <algorithm>
 #include <cmath>
 #include <iostream>
@@ -19,10 +23,8 @@ namespace lightui {
 HTMLInputElement::HTMLInputElement()
     : Element("input")
     , input_type_(InputType::Text)
-    , value_("")
-    , checked_(false)
-    , selection_start_(0)
-    , selection_end_(0) {
+    , edit_state_(CreateInputEditState())
+    , checked_(false) {
 }
 
 void HTMLInputElement::SetAttribute(const std::string& name, const std::string& value) {
@@ -41,7 +43,11 @@ void HTMLInputElement::SetAttribute(const std::string& name, const std::string& 
     }
     // 如果是value属性，同步更新value_（这是默认值）
     else if (name == "value") {
-        value_ = value;
+        if (edit_state_) {
+            edit_state_->SetText(value);
+            edit_state_->SetCaretPosition(static_cast<int>(utf8::CharCount(value)));
+            edit_state_->ClearDirtyFlags();
+        }
     }
 }
 
@@ -60,51 +66,82 @@ void HTMLInputElement::RemoveAttribute(const std::string& name) {
 void HTMLInputElement::SetInputType(InputType type) {
     input_type_ = type;
     SetAttribute("type", InputTypeToString(type));
-    
-    // 某些类型切换时需要重置value
+
     if (type == InputType::Checkbox || type == InputType::Radio) {
-        // checkbox和radio不使用value作为显示值
         checked_ = false;
     }
 }
 
-void HTMLInputElement::SetValue(const std::string& value, bool trigger_events) {
-    // 检查maxlength限制
-    int max_length = GetMaxLength();
-    std::string new_value = value;
-    if (max_length > 0 && static_cast<int>(value.length()) > max_length) {
-        new_value = value.substr(0, max_length);
+bool HTMLInputElement::SupportsTextEditing() const {
+    return input_type_ == InputType::Text ||
+           input_type_ == InputType::Password ||
+           input_type_ == InputType::Search ||
+           input_type_ == InputType::Email ||
+           input_type_ == InputType::Tel ||
+           input_type_ == InputType::Url ||
+           input_type_ == InputType::Number;
+}
+
+void HTMLInputElement::RequestInputRepaint() {
+    MarkDirty(DirtyType::PAINT);
+
+    auto doc = GetOwnerDocument();
+    if (!doc) {
+        return;
     }
 
-    std::string old_value = value_;
-    value_ = new_value;
-
-    // 调整选择范围，确保不越界
-    int new_length = static_cast<int>(new_value.length());
-    if (selection_start_ > new_length) {
-        selection_start_ = new_length;
-    }
-    if (selection_end_ > new_length) {
-        selection_end_ = new_length;
+    Window* window = doc->GetWindow();
+    if (!window) {
+        return;
     }
 
-    // 注意：不更新value属性，value属性保持为默认值
-    // 这符合HTML标准：value属性是默认值，value_是当前值
+    auto rect = GetBoundingClientRect();
+    if (rect.width > 0.0f && rect.height > 0.0f) {
+        SkRect dirty_rect = SkRect::MakeXYWH(rect.x, rect.y, rect.width, rect.height);
+        window->AddDirtyRect(dirty_rect);
 
-    // 值变化时标记脏并通知重绘（与 trigger_events 独立）
-    if (old_value != new_value) {
-        MarkDirty(DirtyType::PAINT);
-
-        auto doc = GetOwnerDocument();
-        if (doc) {
-            Window* window = doc->GetWindow();
-            if (window) {
-                window->SetNeedsRepaint();
-            }
+        if (auto* pipeline = window->GetRenderPipeline()) {
+            pipeline->MarkDirtyRegion(dirty_rect);
+            pipeline->MarkNeedsPaint();
         }
     }
 
-    // 触发事件
+    window->SetNeedsRepaint();
+}
+
+
+bool HTMLInputElement::ApplyEditCommand(const InputEditCommand& command) {
+    if (!edit_state_) {
+        return false;
+    }
+
+    InputEditingController controller(this, edit_state_);
+    return controller.ApplyCommand(command);
+}
+
+void HTMLInputElement::SetValue(const std::string& value, bool trigger_events) {
+    if (!edit_state_) {
+        return;
+    }
+
+    int max_length = GetMaxLength();
+    std::string new_value = value;
+    if (max_length > 0 && static_cast<int>(utf8::CharCount(new_value)) > max_length) {
+        new_value = utf8::SubstrByChar(new_value, 0, max_length);
+    }
+
+    std::string old_value = edit_state_->text;
+    edit_state_->SetText(new_value);
+
+    int new_length = static_cast<int>(utf8::CharCount(new_value));
+    int anchor = std::min(edit_state_->selection_anchor, new_length);
+    int focus = std::min(edit_state_->selection_focus, new_length);
+    edit_state_->SetSelection(anchor, focus);
+
+    if (old_value != new_value) {
+        RequestInputRepaint();
+    }
+
     if (trigger_events && old_value != new_value) {
         TriggerInputEvent();
         TriggerChangeEvent();
@@ -131,16 +168,7 @@ void HTMLInputElement::SetChecked(bool checked, bool trigger_events) {
 
     // 标记需要重绘（checkbox 视觉状态改变）
     if (old_checked != checked) {
-        MarkDirty(DirtyType::PAINT);
-
-        // 增量重绘：通知窗口只重绘该元素区域
-        auto doc = GetOwnerDocument();
-        if (doc) {
-            Window* window = doc->GetWindow();
-            if (window) {
-                window->SetNeedsRepaint();
-            }
-        }
+        RequestInputRepaint();
     }
 
     // 触发change事件
@@ -154,7 +182,7 @@ int HTMLInputElement::GetMaxLength() const {
     if (max_length_str.empty()) {
         return -1;  // 无限制
     }
-    
+
     try {
         return std::stoi(max_length_str);
     } catch (...) {
@@ -204,40 +232,38 @@ bool HTMLInputElement::CheckValidity() const {
                 return false;
             }
         } else {
-            if (value_.empty()) {
+            if (edit_state_ && edit_state_->text.empty()) {
                 return false;
             }
         }
     }
-    
+
     // 检查maxlength
     int max_length = GetMaxLength();
-    if (max_length > 0 && static_cast<int>(value_.length()) > max_length) {
+    if (max_length > 0 && edit_state_ && static_cast<int>(utf8::CharCount(edit_state_->text)) > max_length) {
         return false;
     }
-    
+
     // 检查pattern（如果有）
     std::string pattern = GetAttribute("pattern");
-    if (!pattern.empty() && !value_.empty()) {
+    const std::string value = GetValue();
+    if (!pattern.empty() && !value.empty()) {
         // TODO: 实现正则表达式验证
         // 需要引入regex库
     }
-    
-    // 检查type特定的验证
+
     if (input_type_ == InputType::Email) {
-        // 简单的邮箱验证
-        if (!value_.empty() && value_.find('@') == std::string::npos) {
+        if (!value.empty() && value.find('@') == std::string::npos) {
             return false;
         }
     } else if (input_type_ == InputType::Url) {
-        // 简单的URL验证
-        if (!value_.empty() && 
-            value_.find("http://") != 0 && 
-            value_.find("https://") != 0) {
+        if (!value.empty() &&
+            value.find("http://") != 0 &&
+            value.find("https://") != 0) {
             return false;
         }
     }
-    
+
     return true;
 }
 
@@ -245,234 +271,164 @@ std::string HTMLInputElement::GetValidationMessage() const {
     if (CheckValidity()) {
         return "";
     }
-    
-    if (IsRequired() && value_.empty()) {
+
+    const std::string value = GetValue();
+    if (IsRequired() && value.empty()) {
         return "Please fill out this field.";
     }
-    
+
     int max_length = GetMaxLength();
-    if (max_length > 0 && static_cast<int>(value_.length()) > max_length) {
+    if (max_length > 0 && static_cast<int>(utf8::CharCount(value)) > max_length) {
         return "Please use no more than " + std::to_string(max_length) + " characters.";
     }
-    
-    if (input_type_ == InputType::Email && value_.find('@') == std::string::npos) {
+
+    if (input_type_ == InputType::Email && value.find('@') == std::string::npos) {
         return "Please include an '@' in the email address.";
     }
-    
+
     if (input_type_ == InputType::Url) {
         return "Please enter a URL.";
     }
-    
+
     return "Invalid value.";
 }
 
 void HTMLInputElement::Select() {
-    if (input_type_ != InputType::Text && 
-        input_type_ != InputType::Password &&
-        input_type_ != InputType::Search &&
-        input_type_ != InputType::Email &&
-        input_type_ != InputType::Tel &&
-        input_type_ != InputType::Url) {
-        return;  // 只有文本类型支持选择
-    }
-
-    selection_start_ = 0;
-    selection_end_ = static_cast<int>(utf8::CharCount(value_));
-}
-
-void HTMLInputElement::SetSelectionRange(int start, int end) {
-    int len = static_cast<int>(utf8::CharCount(value_));
-    selection_start_ = std::max(0, std::min(start, len));
-    selection_end_ = std::max(selection_start_, std::min(end, len));
-}
-
-void HTMLInputElement::HandleTextInput(const std::string& text) {
-    // 检查是否可编辑
-    if (IsDisabled() || IsReadOnly()) {
-        return;
-    }
-
-    // 只有文本类型支持文本输入
     if (input_type_ != InputType::Text &&
         input_type_ != InputType::Password &&
         input_type_ != InputType::Search &&
         input_type_ != InputType::Email &&
         input_type_ != InputType::Tel &&
-        input_type_ != InputType::Url &&
-        input_type_ != InputType::Number) {
+        input_type_ != InputType::Url) {
         return;
     }
 
-    // 使用 UTF-8 工具处理文本插入
-    std::string new_value = value_;
-    size_t text_char_count = utf8::CharCount(text);
-
-    if (selection_start_ != selection_end_) {
-        // 有选中文本，替换选中部分
-        // 先删除选中区域
-        size_t start_byte = utf8::CharPosToBytePos(value_, selection_start_);
-        size_t end_byte = utf8::CharPosToBytePos(value_, selection_end_);
-        new_value = value_.substr(0, start_byte) + text + value_.substr(end_byte);
-        selection_end_ = selection_start_;  // 重置选择
-    } else {
-        // 无选中文本，在光标位置插入
-        size_t byte_pos = utf8::CharPosToBytePos(value_, selection_start_);
-        new_value = value_.substr(0, byte_pos) + text + value_.substr(byte_pos);
+    if (!edit_state_) {
+        return;
     }
 
-    // 检查maxlength（按字符数检查，不是字节数）
-    int max_length = GetMaxLength();
-    if (max_length > 0 && static_cast<int>(utf8::CharCount(new_value)) > max_length) {
-        return;  // 超过最大长度，忽略输入
-    }
-
-    value_ = new_value;
-    selection_start_ += static_cast<int>(text_char_count);
-    selection_end_ = selection_start_;
-
-    // 注意：不调用 SetAttribute("value", value_)
-    // 因为这会触发 DOM 观察者，导致 Preact 等框架重新渲染整个组件
-    // value 属性保持为默认值，value_ 是当前输入值（符合 HTML 标准）
-
-    // 触发input事件
-    TriggerInputEvent();
+    edit_state_->SetSelection(0, static_cast<int>(utf8::CharCount(edit_state_->text)));
 }
 
+void HTMLInputElement::SetSelectionRange(int start, int end) {
+    if (!edit_state_) {
+        return;
+    }
+
+    int len = static_cast<int>(utf8::CharCount(edit_state_->text));
+    start = std::max(0, std::min(start, len));
+    end = std::max(0, std::min(end, len));
+    edit_state_->SetSelection(start, end);
+}
+
+void HTMLInputElement::HandleTextInput(const std::string& text) {
+    if (IsDisabled() || IsReadOnly() || !edit_state_ || !SupportsTextEditing()) {
+        return;
+    }
+
+    int max_length = GetMaxLength();
+    if (max_length > 0) {
+        std::string candidate = edit_state_->text;
+        int start = edit_state_->GetSelectionStart();
+        int end = edit_state_->GetSelectionEnd();
+        size_t start_byte = utf8::CharPosToBytePos(candidate, start);
+        size_t end_byte = utf8::CharPosToBytePos(candidate, end);
+        candidate = candidate.substr(0, start_byte) + text + candidate.substr(end_byte);
+        if (static_cast<int>(utf8::CharCount(candidate)) > max_length) {
+            return;
+        }
+    }
+
+    ApplyEditCommand(InputEditCommand::InsertText(text));
+}
+
+bool HTMLInputElement::ExecuteEditCommand(const InputEditCommand& command) {
+    if (IsDisabled()) {
+        return false;
+    }
+
+    bool is_read_only_command = command.type == InputEditCommandType::MoveCaretLeft ||
+                                command.type == InputEditCommandType::MoveCaretRight ||
+                                command.type == InputEditCommandType::MoveCaretToStart ||
+                                command.type == InputEditCommandType::MoveCaretToEnd ||
+                                command.type == InputEditCommandType::ExtendSelectionLeft ||
+                                command.type == InputEditCommandType::ExtendSelectionRight ||
+                                command.type == InputEditCommandType::ExtendSelectionToStart ||
+                                command.type == InputEditCommandType::ExtendSelectionToEnd ||
+                                command.type == InputEditCommandType::SelectAll ||
+                                command.type == InputEditCommandType::SetSelection ||
+                                command.type == InputEditCommandType::SetCaret;
+
+    if (!is_read_only_command && IsReadOnly()) {
+        return false;
+    }
+
+    if ((command.type == InputEditCommandType::InsertText ||
+         command.type == InputEditCommandType::PasteText) && edit_state_) {
+        int max_length = GetMaxLength();
+        if (max_length > 0) {
+            std::string text = std::get<InsertTextCommandData>(command.payload).text;
+            std::string candidate = edit_state_->text;
+            int start = edit_state_->GetSelectionStart();
+            int end = edit_state_->GetSelectionEnd();
+            size_t start_byte = utf8::CharPosToBytePos(candidate, start);
+            size_t end_byte = utf8::CharPosToBytePos(candidate, end);
+            candidate = candidate.substr(0, start_byte) + text + candidate.substr(end_byte);
+            if (static_cast<int>(utf8::CharCount(candidate)) > max_length) {
+                return false;
+            }
+        }
+    }
+
+    return ApplyEditCommand(command);
+}
+
+
 void HTMLInputElement::HandleKeyPress(const std::string& key, bool ctrl_key) {
-    // 检查是否可编辑（箭头键等导航键不需要可编辑）
     bool is_navigation_key = (key == "ArrowLeft" || key == "ArrowRight" ||
                               key == "Home" || key == "End");
-    bool is_clipboard_read = ctrl_key && (key == "c" || key == "C");  // 复制不需要可编辑
+    bool is_clipboard_read = ctrl_key && (key == "c" || key == "C");
 
     if (!is_navigation_key && !is_clipboard_read && (IsDisabled() || IsReadOnly())) {
         return;
     }
 
-    size_t char_count = utf8::CharCount(value_);
+    if (!edit_state_ || !SupportsTextEditing()) {
+        return;
+    }
 
-    // 处理特殊按键
     if (key == "Backspace") {
-        if (selection_start_ != selection_end_) {
-            // 删除选中文本（使用 UTF-8 字符位置）
-            size_t start_byte = utf8::CharPosToBytePos(value_, selection_start_);
-            size_t end_byte = utf8::CharPosToBytePos(value_, selection_end_);
-            value_ = value_.substr(0, start_byte) + value_.substr(end_byte);
-            selection_end_ = selection_start_;
-        } else if (selection_start_ > 0) {
-            // 删除光标前一个字符（正确处理多字节UTF-8字符）
-            size_t prev_byte = utf8::CharPosToBytePos(value_, selection_start_ - 1);
-            size_t curr_byte = utf8::CharPosToBytePos(value_, selection_start_);
-            value_ = value_.substr(0, prev_byte) + value_.substr(curr_byte);
-            selection_start_--;
-            selection_end_ = selection_start_;
-        }
-        TriggerInputEvent();
-
+        ApplyEditCommand(MakeCommand(InputEditCommandType::DeleteBackward));
     } else if (key == "Delete") {
-        if (selection_start_ != selection_end_) {
-            // 删除选中文本
-            size_t start_byte = utf8::CharPosToBytePos(value_, selection_start_);
-            size_t end_byte = utf8::CharPosToBytePos(value_, selection_end_);
-            value_ = value_.substr(0, start_byte) + value_.substr(end_byte);
-            selection_end_ = selection_start_;
-        } else if (selection_start_ < static_cast<int>(char_count)) {
-            // 删除光标后一个字符（正确处理多字节UTF-8字符）
-            size_t curr_byte = utf8::CharPosToBytePos(value_, selection_start_);
-            size_t next_byte = utf8::CharPosToBytePos(value_, selection_start_ + 1);
-            value_ = value_.substr(0, curr_byte) + value_.substr(next_byte);
-        }
-        TriggerInputEvent();
-
+        ApplyEditCommand(MakeCommand(InputEditCommandType::DeleteForward));
     } else if (key == "ArrowLeft") {
-        // 左箭头：光标左移一个字符
-        if (selection_start_ > 0) {
-            selection_start_--;
-            selection_end_ = selection_start_;
-        }
-        // 触发重绘以更新光标位置
-        auto& window_manager = WindowManager::Instance();
-        for (auto& window : window_manager.GetAllWindows()) {
-            window->SetNeedsRepaint();
-        }
-
+        ApplyEditCommand(MakeCommand(InputEditCommandType::MoveCaretLeft));
     } else if (key == "ArrowRight") {
-        // 右箭头：光标右移一个字符
-        if (selection_start_ < static_cast<int>(char_count)) {
-            selection_start_++;
-            selection_end_ = selection_start_;
-        }
-        // 触发重绘以更新光标位置
-        auto& window_manager = WindowManager::Instance();
-        for (auto& window : window_manager.GetAllWindows()) {
-            window->SetNeedsRepaint();
-        }
-
+        ApplyEditCommand(MakeCommand(InputEditCommandType::MoveCaretRight));
     } else if (key == "Home") {
-        // Home：光标移到开头
-        selection_start_ = 0;
-        selection_end_ = 0;
-        // 触发重绘以更新光标位置
-        auto& window_manager = WindowManager::Instance();
-        for (auto& window : window_manager.GetAllWindows()) {
-            window->SetNeedsRepaint();
-        }
-
+        ApplyEditCommand(MakeCommand(InputEditCommandType::MoveCaretToStart));
     } else if (key == "End") {
-        // End：光标移到末尾
-        selection_start_ = static_cast<int>(char_count);
-        selection_end_ = selection_start_;
-        // 触发重绘以更新光标位置
-        auto& window_manager = WindowManager::Instance();
-        for (auto& window : window_manager.GetAllWindows()) {
-            window->SetNeedsRepaint();
-        }
-
+        ApplyEditCommand(MakeCommand(InputEditCommandType::MoveCaretToEnd));
     } else if (key == "Enter") {
-        // Enter键触发change事件
         TriggerChangeEvent();
-
     } else if (ctrl_key && (key == "a" || key == "A")) {
-        // Ctrl+A 全选
-        Select();
-        // 触发重绘以显示选中状态
-        auto& window_manager = WindowManager::Instance();
-        for (auto& window : window_manager.GetAllWindows()) {
-            window->SetNeedsRepaint();
-        }
-
+        ApplyEditCommand(MakeCommand(InputEditCommandType::SelectAll));
     } else if (ctrl_key && (key == "c" || key == "C")) {
-        // Ctrl+C 复制
-        if (selection_start_ != selection_end_) {
-            int start = std::min(selection_start_, selection_end_);
-            int end = std::max(selection_start_, selection_end_);
-            std::string selected_text = utf8::SubstrByChar(value_, start, end);
+        if (edit_state_->HasSelection()) {
+            std::string selected_text = utf8::SubstrByChar(edit_state_->text,
+                                                           edit_state_->GetSelectionStart(),
+                                                           edit_state_->GetSelectionEnd());
             SDL_SetClipboardText(selected_text.c_str());
         }
-
     } else if (ctrl_key && (key == "x" || key == "X")) {
-        // Ctrl+X 剪切
-        if (selection_start_ != selection_end_ && !IsReadOnly()) {
-            int start = std::min(selection_start_, selection_end_);
-            int end = std::max(selection_start_, selection_end_);
-            std::string selected_text = utf8::SubstrByChar(value_, start, end);
-            SDL_SetClipboardText(selected_text.c_str());
-
-            // 删除选中文本
-            size_t start_byte = utf8::CharPosToBytePos(value_, start);
-            size_t end_byte = utf8::CharPosToBytePos(value_, end);
-            value_ = value_.substr(0, start_byte) + value_.substr(end_byte);
-            selection_start_ = start;
-            selection_end_ = start;
-            TriggerInputEvent();
+        if (!IsReadOnly()) {
+            ApplyEditCommand(MakeCommand(InputEditCommandType::CutSelection));
         }
-
     } else if (ctrl_key && (key == "v" || key == "V")) {
-        // Ctrl+V 粘贴
         if (!IsReadOnly()) {
             char* clipboard_text = SDL_GetClipboardText();
             if (clipboard_text && clipboard_text[0] != '\0') {
-                // 使用 HandleTextInput 来插入文本（它会处理选中区域的替换）
-                HandleTextInput(clipboard_text);
+                ApplyEditCommand(InputEditCommand::PasteText(clipboard_text));
             }
             SDL_free(clipboard_text);
         }
@@ -566,46 +522,38 @@ void HTMLInputElement::HandleMouseUp() {
 }
 
 void HTMLInputElement::SetCursorPosition(int char_pos) {
-    // 确保位置在有效范围内
-    size_t char_count = utf8::CharCount(value_);
+    if (!edit_state_) {
+        return;
+    }
+
+    size_t char_count = utf8::CharCount(edit_state_->text);
     if (char_pos < 0) {
         char_pos = 0;
     } else if (char_pos > static_cast<int>(char_count)) {
         char_pos = static_cast<int>(char_count);
     }
 
-    selection_start_ = char_pos;
-    selection_end_ = char_pos;
-
-    // 触发重绘
-    auto& window_manager = WindowManager::Instance();
-    for (auto& window : window_manager.GetAllWindows()) {
-        window->SetNeedsRepaint();
-    }
+    edit_state_->SetCaretPosition(char_pos);
+    RequestInputRepaint();
 }
 
 void HTMLInputElement::SetSelection(int start, int end) {
-    size_t char_count = utf8::CharCount(value_);
+    if (!edit_state_) {
+        return;
+    }
 
-    // 确保start <= end
+    size_t char_count = utf8::CharCount(edit_state_->text);
     if (start > end) {
         std::swap(start, end);
     }
 
-    // 确保范围在有效范围内
     if (start < 0) start = 0;
     if (end < 0) end = 0;
     if (start > static_cast<int>(char_count)) start = static_cast<int>(char_count);
     if (end > static_cast<int>(char_count)) end = static_cast<int>(char_count);
 
-    selection_start_ = start;
-    selection_end_ = end;
-
-    // 触发重绘
-    auto& window_manager = WindowManager::Instance();
-    for (auto& window : window_manager.GetAllWindows()) {
-        window->SetNeedsRepaint();
-    }
+    edit_state_->SetSelection(start, end);
+    RequestInputRepaint();
 }
 
 void HTMLInputElement::StepUp() {
@@ -616,8 +564,9 @@ void HTMLInputElement::StepUp() {
     // 获取当前值
     double current_value = 0.0;
     try {
-        if (!value_.empty()) {
-            current_value = std::stod(value_);
+        const std::string value = GetValue();
+        if (!value.empty()) {
+            current_value = std::stod(value);
         }
     } catch (...) {
         current_value = 0.0;
@@ -665,8 +614,9 @@ void HTMLInputElement::StepDown() {
     // 获取当前值
     double current_value = 0.0;
     try {
-        if (!value_.empty()) {
-            current_value = std::stod(value_);
+        const std::string value = GetValue();
+        if (!value.empty()) {
+            current_value = std::stod(value);
         }
     } catch (...) {
         current_value = 0.0;
@@ -735,15 +685,15 @@ double HTMLInputElement::GetMax() const {
 }
 
 double HTMLInputElement::GetValueAsNumber() const {
-    if (value_.empty()) {
-        // range 类型默认值为 (min + max) / 2
+    const std::string value = GetValue();
+    if (value.empty()) {
         if (input_type_ == InputType::Range) {
             return (GetMin() + GetMax()) / 2.0;
         }
         return 0.0;
     }
     try {
-        return std::stod(value_);
+        return std::stod(value);
     } catch (...) {
         if (input_type_ == InputType::Range) {
             return (GetMin() + GetMax()) / 2.0;

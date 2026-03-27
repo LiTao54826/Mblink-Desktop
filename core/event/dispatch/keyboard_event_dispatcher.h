@@ -24,9 +24,9 @@ class Element;
 class Document;
 class Window;
 class FocusManager;
-class ContentEditableHandler;
-class ContentEditableController;
 class ClipboardManager;
+class ContentEditableController;
+class EditorInputSession;
 
 /**
  * @brief 键盘事件分发器
@@ -52,14 +52,13 @@ public:
     /**
      * @brief 设置依赖的管理器
      * @param focus_manager 焦点管理器
-     * @param contenteditable_handler 可编辑内容处理器
      * @param contenteditable_controller 可编辑内容控制器
      * @param clipboard_manager 剪贴板管理器
      */
     void SetManagers(FocusManager* focus_manager,
-                     ContentEditableHandler* contenteditable_handler,
+                     ClipboardManager* clipboard_manager,
                      ContentEditableController* contenteditable_controller,
-                     ClipboardManager* clipboard_manager);
+                     EditorInputSession* editor_input_session);
 
     /**
      * @brief 处理键盘事件（keydown/keyup/textinput）
@@ -102,12 +101,19 @@ private:
                          std::shared_ptr<Element> focus_element,
                          std::shared_ptr<Document> document);
 
+    /**
+     * @brief 处理 IME 预编辑事件
+     */
+    void HandleTextEditing(const SDL_Event& event,
+                           std::shared_ptr<Element> focus_element,
+                           std::shared_ptr<Document> document);
+
 private:
     // 依赖的管理器（不拥有所有权）
     FocusManager* focus_manager_ = nullptr;
-    ContentEditableHandler* contenteditable_handler_ = nullptr;
-    ContentEditableController* contenteditable_controller_ = nullptr;
     ClipboardManager* clipboard_manager_ = nullptr;
+    ContentEditableController* contenteditable_controller_ = nullptr;
+    EditorInputSession* editor_input_session_ = nullptr;
 };
 
 } // namespace lightui

@@ -149,7 +149,7 @@ export function ShowcasePage({ addToast, enabledSections }) {
     var checked = checkState[0];
     var setChecked = checkState[1];
 
-    var textState = useState('');
+    var textState = useState('默认内容预览：中英 Mixed 输入');
     var textVal = textState[0];
     var setTextVal = textState[1];
 
@@ -258,13 +258,13 @@ export function ShowcasePage({ addToast, enabledSections }) {
                         style: { fontSize: fonts.sizes.sm, color: colors.textSec, marginBottom: spacing.xs }
                     }, 'Text Input (click to see :focus outline)'),
                     h('input', {
-                        type: 'text', placeholder: 'Type something here...',
+                        type: 'text', placeholder: '请输入内容，试试更大的字体...',
                         value: textVal,
                         onInput: function (e) { setTextVal(e.target.value); },
                         style: {
-                            width: '320px', padding: spacing.md, fontSize: fonts.sizes.md,
-                            backgroundColor: colors.bgInput, color: colors.text,
-                            border: '1px solid ' + colors.border, borderRadius: radius.sm,
+                            width: '320px', padding: '12px 16px', fontSize: fonts.sizes.md,
+                            lineHeight: '1.25', backgroundColor: colors.bgInput, color: colors.text,
+                            border: '1px solid ' + colors.borderLt, borderRadius: radius.sm,
                             outline: 'none'
                         }
                     })

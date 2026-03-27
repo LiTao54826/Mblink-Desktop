@@ -1,7 +1,7 @@
 /**
  * @file html_input_element.h
  * @brief HTML Input元素类
- * 
+ *
  * 参考：
  * - W3C HTML5 - HTMLInputElement
  * - MDN Web Docs - HTMLInputElement
@@ -11,10 +11,14 @@
 #pragma once
 
 #include "../element.h"
-#include <string>
+#include "core/editing/input_edit_command.h"
+#include "core/editing/input_edit_state.h"
 #include <memory>
+#include <string>
 
 namespace lightui {
+
+class InputEditingController;
 
 /**
  * @brief Input类型枚举
@@ -42,7 +46,7 @@ enum class InputType {
 
 /**
  * @brief HTML Input元素类
- * 
+ *
  * 实现W3C HTMLInputElement接口的子集
  * 参考：https://html.spec.whatwg.org/multipage/input.html
  */
@@ -52,7 +56,7 @@ public:
      * @brief 构造函数
      */
     HTMLInputElement();
-    
+
     /**
      * @brief 析构函数
      */
@@ -69,126 +73,126 @@ public:
     void RemoveAttribute(const std::string& name) override;
 
     // ========== Input特有属性 ==========
-    
+
     /**
      * @brief 获取input类型
      * @return Input类型
      */
     InputType GetInputType() const { return input_type_; }
-    
+
     /**
      * @brief 设置input类型
      * @param type Input类型
      */
     void SetInputType(InputType type);
-    
+
     /**
      * @brief 获取value值
      * @return 当前值
      */
-    std::string GetValue() const { return value_; }
-    
+    std::string GetValue() const { return edit_state_ ? edit_state_->text : std::string(); }
+
     /**
      * @brief 设置value值
      * @param value 新值
      * @param trigger_events 是否触发change/input事件
      */
     void SetValue(const std::string& value, bool trigger_events = false);
-    
+
     /**
      * @brief 获取checked状态（用于checkbox和radio）
      * @return true表示选中
      */
     bool GetChecked() const;
-    
+
     /**
      * @brief 设置checked状态
      * @param checked 是否选中
      * @param trigger_events 是否触发change事件
      */
     void SetChecked(bool checked, bool trigger_events = false);
-    
+
     /**
      * @brief 获取placeholder文本
      * @return placeholder文本
      */
     std::string GetPlaceholder() const { return GetAttribute("placeholder"); }
-    
+
     /**
      * @brief 设置placeholder文本
      * @param placeholder placeholder文本
      */
     void SetPlaceholder(const std::string& placeholder) { SetAttribute("placeholder", placeholder); }
-    
+
     /**
      * @brief 获取maxlength限制
      * @return 最大长度，-1表示无限制
      */
     int GetMaxLength() const;
-    
+
     /**
      * @brief 设置maxlength限制
      * @param max_length 最大长度
      */
     void SetMaxLength(int max_length);
-    
+
     /**
      * @brief 检查是否disabled
      * @return true表示禁用
      */
     bool IsDisabled() const { return HasAttribute("disabled"); }
-    
+
     /**
      * @brief 设置disabled状态
      * @param disabled 是否禁用
      */
     void SetDisabled(bool disabled);
-    
+
     /**
      * @brief 检查是否readonly
      * @return true表示只读
      */
     bool IsReadOnly() const { return HasAttribute("readonly"); }
-    
+
     /**
      * @brief 设置readonly状态
      * @param readonly 是否只读
      */
     void SetReadOnly(bool readonly);
-    
+
     /**
      * @brief 检查是否required
      * @return true表示必填
      */
     bool IsRequired() const { return HasAttribute("required"); }
-    
+
     /**
      * @brief 设置required状态
      * @param required 是否必填
      */
     void SetRequired(bool required);
-    
+
     // ========== 表单验证 ==========
-    
+
     /**
      * @brief 检查输入是否有效
      * @return true表示有效
      */
     bool CheckValidity() const;
-    
+
     /**
      * @brief 获取验证错误消息
      * @return 错误消息，如果有效则返回空字符串
      */
     std::string GetValidationMessage() const;
-    
+
     // ========== 焦点和选择 ==========
-    
+
     /**
      * @brief 选中所有文本（用于text类型）
      */
     void Select();
-    
+
     /**
      * @brief 设置选择范围
      * @param start 起始位置
@@ -200,13 +204,13 @@ public:
      * @brief 获取选择起始位置
      * @return 选择起始位置
      */
-    int GetSelectionStart() const { return selection_start_; }
+    int GetSelectionStart() const { return edit_state_ ? edit_state_->GetSelectionStart() : 0; }
 
     /**
      * @brief 获取选择结束位置
      * @return 选择结束位置
      */
-    int GetSelectionEnd() const { return selection_end_; }
+    int GetSelectionEnd() const { return edit_state_ ? edit_state_->GetSelectionEnd() : 0; }
 
     // ========== 内部方法 ==========
 
@@ -222,6 +226,8 @@ public:
      * @param ctrl_key Ctrl键是否按下
      */
     void HandleKeyPress(const std::string& key, bool ctrl_key);
+
+    bool ExecuteEditCommand(const InputEditCommand& command);
 
     /**
      * @brief 处理鼠标按下事件（由EventLoop调用）
@@ -326,24 +332,32 @@ public:
      */
     void EndRangeDrag();
 
+    friend class InputEditingController;
+
+    std::shared_ptr<InputEditState> GetEditState() const { return edit_state_; }
+    bool SupportsTextEditing() const;
+    void RequestInputRepaint();
+
 protected:
+    bool ApplyEditCommand(const InputEditCommand& command);
+
     /**
      * @brief 触发change事件
      */
     void TriggerChangeEvent();
-    
+
     /**
      * @brief 触发input事件
      */
     void TriggerInputEvent();
-    
+
     /**
      * @brief 将InputType转换为字符串
      * @param type Input类型
      * @return 类型字符串
      */
     static std::string InputTypeToString(InputType type);
-    
+
     /**
      * @brief 将字符串转换为InputType
      * @param type_str 类型字符串
@@ -353,10 +367,8 @@ protected:
 
 private:
     InputType input_type_;      // Input类型
-    std::string value_;         // 当前值
+    std::shared_ptr<InputEditState> edit_state_;  // 单行 input 编辑状态
     bool checked_;              // 选中状态（checkbox/radio）
-    int selection_start_;       // 选择起始位置
-    int selection_end_;         // 选择结束位置
     bool is_dragging_selection_ = false;  // 是否正在拖动选择
     int drag_start_pos_ = 0;    // 拖动选择的起始字符位置
 

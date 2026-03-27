@@ -9998,6 +9998,14 @@ var observeOptions = {
   characterDataOldValue: true
 };
 var useCharData = browser.ie && browser.ie_version <= 11;
+function cm6DebugEnabled() {
+  return typeof window != "undefined" && !!window.__CM6_DEBUG__;
+}
+function cm6DebugLog(tag, message) {
+  if (!cm6DebugEnabled())
+    return;
+  console.log(`[cm6-debug:${tag}] ${message}`);
+}
 var DOMObserver = class {
   constructor(view) {
     this.view = view;
@@ -10120,6 +10128,7 @@ var DOMObserver = class {
     if (!this.readSelectionRange() || this.delayedAndroidKey)
       return;
     let { view } = this, sel = this.selectionRange;
+    cm6DebugLog("selectionchange", `local=${hasSelection(this.dom, sel) ? 1 : 0} focus=${view.hasFocus ? 1 : 0} anchor=${sel.anchorOffset} head=${sel.focusOffset}`);
     if (view.state.facet(editable) ? view.root.activeElement != this.dom : !hasSelection(this.dom, sel))
       return;
     let context = sel.anchorNode && view.docView.tile.nearest(sel.anchorNode);
@@ -10934,6 +10943,7 @@ var EditorView = class _EditorView {
   measure(flush = true) {
     if (this.destroyed)
       return;
+    cm6DebugLog("measure", `start flush=${flush ? 1 : 0} scheduled=${this.measureScheduled} requests=${this.measureRequests.length}`);
     if (this.measureScheduled > -1)
       this.win.cancelAnimationFrame(this.measureScheduled);
     if (this.observer.delayedAndroidKey) {
@@ -11008,6 +11018,7 @@ var EditorView = class _EditorView {
           }
         if (redrawn)
           this.docView.updateSelection(true);
+        cm6DebugLog("measure", `iter=${i} changed=${changed} redrawn=${redrawn ? 1 : 0} viewportChanged=${update.viewportChanged ? 1 : 0} requests=${this.measureRequests.length}`);
         if (!update.viewportChanged && this.measureRequests.length == 0) {
           if (this.viewState.editorHeight) {
             if (this.viewState.scrollTarget) {
@@ -11103,6 +11114,7 @@ var EditorView = class _EditorView {
   unnecessary DOM layout computations.
   */
   requestMeasure(request) {
+    cm6DebugLog("requestMeasure", `scheduled=${this.measureScheduled} hasReq=${request ? 1 : 0} key=${request && request.key != null ? request.key : "none"}`);
     if (this.measureScheduled < 0)
       this.measureScheduled = this.win.requestAnimationFrame(() => this.measure());
     if (request) {
@@ -11846,7 +11858,7 @@ var RectangleMarker = class _RectangleMarker {
   */
   static forRange(view, className, range) {
     // DEBUG
-    console.log(`[RectangleMarker.forRange] range.from=${range.from}, range.to=${range.to}, empty=${range.empty}`);
+    // console.log(`[RectangleMarker.forRange] range.from=${range.from}, range.to=${range.to}, empty=${range.empty}`);
     if (range.empty) {
       let pos = view.coordsAtPos(range.head, range.assoc || 1);
       if (!pos)
@@ -11880,9 +11892,9 @@ function rectanglesForRange(view, className, range) {
     return [];
   let from = Math.max(range.from, view.viewport.from), to = Math.min(range.to, view.viewport.to);
   // DEBUG
-  console.log(`[rectanglesForRange DEBUG] range.from=${range.from}, range.to=${range.to}`);
-  console.log(`  viewport: from=${view.viewport.from}, to=${view.viewport.to}`);
-  console.log(`  adjusted: from=${from}, to=${to}`);
+  // console.log(`[rectanglesForRange DEBUG] range.from=${range.from}, range.to=${range.to}`);
+  // console.log(`  viewport: from=${view.viewport.from}, to=${view.viewport.to}`);
+  // console.log(`  adjusted: from=${from}, to=${to}`);
   let ltr = view.textDirection == Direction.LTR;
   let content2 = view.contentDOM, contentRect = content2.getBoundingClientRect(), base2 = getBase(view);
   let lineElt = content2.querySelector(".cm-line"), lineStyle = lineElt && window.getComputedStyle(lineElt);
@@ -12105,7 +12117,10 @@ var cursorLayer = /* @__PURE__ */ layer({
     let confChange = configChanged(update);
     if (confChange)
       setBlinkRate(update.state, dom);
-    return update.docChanged || update.selectionSet || confChange;
+    let shouldUpdate = update.docChanged || update.selectionSet || confChange;
+    if (shouldUpdate)
+      cm6DebugLog("cursorLayer", `doc=${update.docChanged ? 1 : 0} selection=${update.selectionSet ? 1 : 0} conf=${confChange ? 1 : 0}`);
+    return shouldUpdate;
   },
   mount(dom, view) {
     setBlinkRate(view.state, dom);
@@ -12119,11 +12134,15 @@ var selectionLayer = /* @__PURE__ */ layer({
   above: false,
   markers(view) {
     // DEBUG
-    console.log('[selectionLayer.markers] ranges:', view.state.selection.ranges.map(r => `${r.from}-${r.to}`).join(', '));
+    // console.log('[selectionLayer.markers] ranges:', view.state.selection.ranges.map(r => `${r.from}-${r.to}`).join(', '));
     return view.state.selection.ranges.map((r) => r.empty ? [] : RectangleMarker.forRange(view, "cm-selectionBackground", r)).reduce((a, b) => a.concat(b));
   },
   update(update, dom) {
-    return update.docChanged || update.selectionSet || update.viewportChanged || configChanged(update);
+    let confChange = configChanged(update);
+    let shouldUpdate = update.docChanged || update.selectionSet || update.viewportChanged || confChange;
+    if (shouldUpdate)
+      cm6DebugLog("selectionLayer", `doc=${update.docChanged ? 1 : 0} selection=${update.selectionSet ? 1 : 0} viewport=${update.viewportChanged ? 1 : 0} conf=${confChange ? 1 : 0}`);
+    return shouldUpdate;
   },
   class: "cm-selectionLayer"
 });

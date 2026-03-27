@@ -12,6 +12,7 @@
 #include "grid.h"
 #include "../util/math.h"
 #include "../util/resolve.h"
+#include <cstdlib>
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
@@ -392,7 +393,16 @@ LayoutOutput ComputeGridLayout(
         num_rows++;
     }
 
-    // Update row_count to include implicit rows needed for auto-placement
+    // Update implicit track counts needed for auto-placement.
+    // When no explicit grid-template-columns is provided, we still need at least
+    // one implicit column track so auto-placed children have a real cell width.
+    uint16_t implicit_cols_needed = 0;
+    if (col_count == 0 && grid_item_count > 0) {
+        implicit_cols_needed = static_cast<uint16_t>(num_cols);
+    } else if (num_cols > col_count) {
+        implicit_cols_needed = static_cast<uint16_t>(num_cols - col_count);
+    }
+
     uint16_t implicit_rows_needed = 0;
     if (row_count == 0 && grid_item_count > 0) {
         // No explicit rows, all rows are implicit
@@ -403,7 +413,7 @@ LayoutOutput ComputeGridLayout(
     }
 
     // 4. Estimate track counts
-    TrackCounts col_counts{0, col_count, 0};
+    TrackCounts col_counts{0, col_count, implicit_cols_needed};
     // For rows: if no explicit rows, put all needed rows as positive_implicit
     TrackCounts row_counts{0, row_count, implicit_rows_needed};
 
@@ -448,6 +458,48 @@ LayoutOutput ComputeGridLayout(
     if (max_size.width.has_value()) container_width = f32_min(container_width, *max_size.width);
     if (min_size.height.has_value()) container_height = f32_max(container_height, *min_size.height);
     if (max_size.height.has_value()) container_height = f32_min(container_height, *max_size.height);
+
+    // If the container has a definite inline size that is larger than the sum of track base sizes,
+    // auto tracks should expand to fill the remaining space instead of staying at 0.
+    // This is critical for single-column grids like `.form-grid { display:grid }` where no
+    // explicit `grid-template-columns` is provided: the implicit auto column must fill the grid.
+    float inner_width = container_width - padding_border_size.width;
+    if (inner_width > col_sum) {
+        float extra_space = inner_width - col_sum;
+        float total_flex = 0.0f;
+        for (const auto& column : columns) {
+            if (column.kind == GridTrackKind::Track && column.IsFlexible()) {
+                total_flex += column.FlexFactor();
+            }
+        }
+
+        if (total_flex > 0.0f) {
+            for (auto& column : columns) {
+                if (column.kind == GridTrackKind::Track && column.IsFlexible()) {
+                    float share = (column.FlexFactor() / total_flex) * extra_space;
+                    column.base_size += share;
+                }
+            }
+            col_sum = inner_width;
+        } else {
+            size_t growable_columns = 0;
+            for (const auto& column : columns) {
+                if (column.kind == GridTrackKind::Track) {
+                    growable_columns++;
+                }
+            }
+
+            if (growable_columns > 0) {
+                float extra_per_column = extra_space / static_cast<float>(growable_columns);
+                for (auto& column : columns) {
+                    if (column.kind == GridTrackKind::Track) {
+                        column.base_size += extra_per_column;
+                    }
+                }
+                col_sum = inner_width;
+            }
+        }
+    }
 
     Size<float> container_size{container_width, container_height};
 
@@ -682,16 +734,40 @@ LayoutOutput ComputeGridLayout(
             }
         }
 
-        // Measure child to get its intrinsic height
+        // Measure child to get its intrinsic size.
+        // When an auto column has not been sized yet, cell_width may still be 0.
+        // In that case, preserve the container's current inline sizing mode instead
+        // of forcing MaxContent: a MinContent sizing pass must stay MinContent,
+        // otherwise intrinsic measurement can explode to ~infinite width.
+        AvailableSpace child_width_space;
+        std::optional<float> child_parent_width = std::nullopt;
+        if (cell_width > 0.0f) {
+            child_width_space = AvailableSpace::Definite(cell_width);
+            child_parent_width = std::optional<float>(cell_width);
+        } else if (inner_node_size.width.has_value()) {
+            float fallback_width = *inner_node_size.width / static_cast<float>(std::max<size_t>(1, col_span));
+            child_width_space = AvailableSpace::Definite(fallback_width);
+            child_parent_width = std::optional<float>(fallback_width);
+        } else if (available_space.width.IsDefinite()) {
+            float fallback_width = f32_max(available_space.width.value - padding_border_size.width, 0.0f)
+                / static_cast<float>(std::max<size_t>(1, col_span));
+            child_width_space = AvailableSpace::Definite(fallback_width);
+            child_parent_width = std::optional<float>(fallback_width);
+        } else if (available_space.width.IsMinContent()) {
+            child_width_space = AvailableSpace::MinContent();
+        } else {
+            child_width_space = AvailableSpace::MaxContent();
+        }
+
         Size<AvailableSpace> measure_space{
-            AvailableSpace::Definite(cell_width),
+            child_width_space,
             AvailableSpace::MaxContent()
         };
 
         auto child_output = tree.PerformChildLayout(
             child_id,
             Size<std::optional<float>>{std::nullopt, std::nullopt},
-            Size<std::optional<float>>{cell_width, std::nullopt},
+            Size<std::optional<float>>{child_parent_width, std::nullopt},
             measure_space,
             SizingMode::InherentSize,
             Line<bool>{false, false}
@@ -758,6 +834,22 @@ LayoutOutput ComputeGridLayout(
         }
     }
 
+    // Update column widths based on measured children (for auto-sized columns)
+    for (const auto& placement : placements) {
+        // Update all column tracks that this item spans
+        for (size_t c = 0; c < placement.col_span; c++) {
+            size_t col_track_idx = (placement.col_idx + c) * 2;
+            if (col_track_idx < columns.size() && columns[col_track_idx].kind == GridTrackKind::Track) {
+                bool is_auto_col = columns[col_track_idx].min_track_sizing_function.type == MinTrackSizingFunctionType::Auto ||
+                                   columns[col_track_idx].max_track_sizing_function.type == MaxTrackSizingFunctionType::Auto;
+                if (is_auto_col) {
+                    float width_per_col = placement.measured_width / static_cast<float>(placement.col_span);
+                    columns[col_track_idx].base_size = std::max(columns[col_track_idx].base_size, width_per_col);
+                }
+            }
+        }
+    }
+
     // Update row heights based on measured children (for auto-sized rows)
     for (const auto& placement : placements) {
         // Update all row tracks that this item spans
@@ -776,8 +868,58 @@ LayoutOutput ComputeGridLayout(
         }
     }
 
-    // Recalculate row sum and offsets
+    // Recalculate sums and offsets after intrinsic track growth
+    col_sum = SumTrackBaseSizes(columns);
     row_sum = SumTrackBaseSizes(rows);
+
+    // Update container width after intrinsic column growth.
+    // This is critical for implicit/auto columns: their measured intrinsic width
+    // must be reflected in the final container width before second-pass layout.
+    container_width = outer_node_size.width.value_or(col_sum + padding_border_size.width);
+    if (min_size.width.has_value()) container_width = f32_max(container_width, *min_size.width);
+    if (max_size.width.has_value()) container_width = f32_min(container_width, *max_size.width);
+    container_size.width = container_width;
+
+    // If container has explicit width larger than intrinsic column sizes,
+    // distribute the remaining inline space to flexible tracks first, otherwise
+    // to all track columns equally.
+    inner_width = container_width - padding_border_size.width;
+    if (inner_width > col_sum) {
+        float extra_space = inner_width - col_sum;
+        float total_flex = 0.0f;
+        for (const auto& column : columns) {
+            if (column.kind == GridTrackKind::Track && column.IsFlexible()) {
+                total_flex += column.FlexFactor();
+            }
+        }
+
+        if (total_flex > 0.0f) {
+            for (auto& column : columns) {
+                if (column.kind == GridTrackKind::Track && column.IsFlexible()) {
+                    float share = (column.FlexFactor() / total_flex) * extra_space;
+                    column.base_size += share;
+                }
+            }
+            col_sum = inner_width;
+        } else {
+            size_t growable_columns = 0;
+            for (const auto& column : columns) {
+                if (column.kind == GridTrackKind::Track) {
+                    growable_columns++;
+                }
+            }
+
+            if (growable_columns > 0) {
+                float extra_per_column = extra_space / static_cast<float>(growable_columns);
+                for (auto& column : columns) {
+                    if (column.kind == GridTrackKind::Track) {
+                        column.base_size += extra_per_column;
+                    }
+                }
+                col_sum = inner_width;
+            }
+        }
+    }
 
     // Update container height
     container_height = outer_node_size.height.value_or(row_sum + padding_border_size.height);
@@ -823,6 +965,7 @@ LayoutOutput ComputeGridLayout(
         }
     }
 
+    CalculateTrackOffsets(columns, padding_border.left);
     CalculateTrackOffsets(rows, padding_border.top);
 
     // If only size requested, return early after measuring children

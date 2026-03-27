@@ -1,7 +1,7 @@
 /**
  * @file render_object.cpp
  * @brief 渲染对象实现
- * 
+ *
  * @note 大文件说明 (4197 行)
  * 本文件包含 RenderObject 类的完整实现，是渲染系统的核心组件。
  * 文件较大的原因：
@@ -9,10 +9,10 @@
  * 2. 包含复杂的 CSS 属性处理逻辑（边框、背景、阴影、变换等）
  * 3. 包含滚动条渲染和交互逻辑
  * 4. 包含增量更新和缓存管理逻辑
- * 
+ *
  * 已完成重构：
  * - RenderTable 系列实现已迁移到 render_table.cpp
- * 
+ *
  * 计划重构：
  * - 提取 RenderBlock 到 render_block.cpp
  * - 提取 RenderInline 到 render_inline.cpp
@@ -48,6 +48,16 @@
 #include <sstream>
 #include <chrono>
 #include <atomic>
+#include <unordered_map>
+#include <string>
+#ifdef _WIN32
+#include <windows.h>
+#include <dbghelp.h>
+#pragma comment(lib, "dbghelp.lib")
+#undef min
+#undef max
+#undef ERROR
+#endif
 #include "include/core/SkPathEffect.h"
 #include "include/core/SkSurface.h"
 #include "include/effects/SkDashPathEffect.h"
@@ -56,6 +66,27 @@ namespace lightui {
 
 // 静态成员初始化
 float RenderObject::viewport_width_ = 0.0f;
+
+void RenderObject::SetComputedStyle(const ComputedStyle& style) {
+    computed_style_ = style;
+    paint_cache_.valid = false;
+    boundary_cache_valid_ = false;
+}
+
+void RenderObject::MarkNeedsLayout(bool propagate_to_parent) {
+    needs_layout_ = true;
+    content_width_ = 0.0f;
+    content_height_ = 0.0f;
+    if (propagate_to_parent) {
+        auto parent = parent_.lock();
+        if (parent) {
+            parent->MarkNeedsLayout(true);
+        }
+        MarkAncestorsWithChildNeedsLayout();
+    }
+}
+
+
 float RenderObject::viewport_height_ = 0.0f;
 bool RenderObject::cursor_visible_ = true;
 
@@ -506,13 +537,13 @@ void RenderObject::UpdatePaintCache() {
     }
 
     // 预解析边框颜色
-    paint_cache_.border_top_color = style.border_top_style != CSSBorderStyle::NONE ? 
+    paint_cache_.border_top_color = style.border_top_style != CSSBorderStyle::NONE ?
         style.border_top_color : style.border.color;
-    paint_cache_.border_right_color = style.border_right_style != CSSBorderStyle::NONE ? 
+    paint_cache_.border_right_color = style.border_right_style != CSSBorderStyle::NONE ?
         style.border_right_color : style.border.color;
-    paint_cache_.border_bottom_color = style.border_bottom_style != CSSBorderStyle::NONE ? 
+    paint_cache_.border_bottom_color = style.border_bottom_style != CSSBorderStyle::NONE ?
         style.border_bottom_color : style.border.color;
-    paint_cache_.border_left_color = style.border_left_style != CSSBorderStyle::NONE ? 
+    paint_cache_.border_left_color = style.border_left_style != CSSBorderStyle::NONE ?
         style.border_left_color : style.border.color;
 
     // 预计算圆角
@@ -534,7 +565,7 @@ void RenderObject::UpdatePaintCache() {
                                      paint_cache_.border_radius_br > 0;
 
     paint_cache_.has_box_shadow = !style.box_shadow.empty();
-    paint_cache_.has_gradient = style.background_linear_gradient.has_value() || 
+    paint_cache_.has_gradient = style.background_linear_gradient.has_value() ||
                                 style.background_radial_gradient.has_value();
 
     // 标记缓存有效
@@ -548,18 +579,18 @@ void RenderObject::Paint(SkCanvas* canvas) {
 
 void RenderObject::PaintOutline(SkCanvas* canvas) {
     if (!canvas) return;
-    
+
     const auto& style = computed_style_;
     const auto& layout = layout_info_;
-    
+
     // Skip if outline is not visible
     if (style.outline_style == "none" || style.outline_width.IsZero()) {
         return;
     }
-    
+
     float outline_width = style.outline_width.ToPx();
     float outline_offset = style.outline_offset.ToPx();
-    
+
     // Use stroke drawing: line is centered on the rectangle edge
     // To make outline inner edge touch border-box outer edge, offset by half_width
     // So stroke center is at (outline_offset + half_width), inner edge at outline_offset
@@ -570,13 +601,13 @@ void RenderObject::PaintOutline(SkCanvas* canvas) {
         layout.width + 2 * (outline_offset + half_width),
         layout.height + 2 * (outline_offset + half_width)
     );
-    
+
     SkPaint outline_paint;
     outline_paint.setColor(style.outline_color);
     outline_paint.setStyle(SkPaint::kStroke_Style);
     outline_paint.setStrokeWidth(outline_width);
     outline_paint.setAntiAlias(true);
-    
+
     // Set line style based on outline_style
     if (style.outline_style == "dashed") {
         const SkScalar intervals[] = {6.0f, 3.0f};
@@ -586,7 +617,7 @@ void RenderObject::PaintOutline(SkCanvas* canvas) {
         outline_paint.setPathEffect(SkDashPathEffect::Make(intervals, 2, 0));
     }
     // solid doesn't need special handling
-    
+
     // If element has border-radius, outline should also have rounded corners
     if (style.border_radius.top_left.value > 0 || style.border_radius.top_right.value > 0 ||
         style.border_radius.bottom_left.value > 0 || style.border_radius.bottom_right.value > 0) {
@@ -594,12 +625,12 @@ void RenderObject::PaintOutline(SkCanvas* canvas) {
         float box_width = outline_rect.width();
         float box_height = outline_rect.height();
         float base_size = std::min(box_width, box_height);
-        
+
         float tl = style.border_radius.top_left.ToPx(base_size) + outline_offset + half_width;
         float tr = style.border_radius.top_right.ToPx(base_size) + outline_offset + half_width;
         float br = style.border_radius.bottom_right.ToPx(base_size) + outline_offset + half_width;
         float bl = style.border_radius.bottom_left.ToPx(base_size) + outline_offset + half_width;
-        
+
         SkRRect outline_rrect;
         SkVector radii[4] = {{tl, tl}, {tr, tr}, {br, br}, {bl, bl}};
         outline_rrect.setRectRadii(outline_rect, radii);
@@ -635,17 +666,17 @@ SkRect RenderObject::GetBoundingRect() const {
     }
 
     SkRect base_rect = SkRect::MakeXYWH(abs_x, abs_y, layout.width, layout.height);
-    
+
     // 关键修复：如果元素有 transform，需要计算变换后的边界框
     // 这确保脏区域能正确覆盖变换后的渲染区域
     const auto& style = computed_style_;
     if (style.transform.has_value() && !style.transform->IsEmpty()) {
         // 创建以元素中心为原点的局部矩形
         SkRect local_rect = SkRect::MakeWH(layout.width, layout.height);
-        
+
         // 获取变换矩阵
         SkMatrix transform_matrix = style.transform->ToSkMatrix(local_rect, style.transform_origin);
-        
+
         // 变换四个角点，计算包围盒
         SkPoint corners[4] = {
             {0, 0},
@@ -654,7 +685,7 @@ SkRect RenderObject::GetBoundingRect() const {
             {0, layout.height}
         };
         transform_matrix.mapPoints(corners, 4);
-        
+
         // 计算变换后的边界框
         float min_x = corners[0].x(), max_x = corners[0].x();
         float min_y = corners[0].y(), max_y = corners[0].y();
@@ -664,7 +695,7 @@ SkRect RenderObject::GetBoundingRect() const {
             min_y = std::min(min_y, corners[i].y());
             max_y = std::max(max_y, corners[i].y());
         }
-        
+
         // 转换回文档坐标
         return SkRect::MakeLTRB(
             abs_x + min_x,
@@ -673,7 +704,7 @@ SkRect RenderObject::GetBoundingRect() const {
             abs_y + max_y
         );
     }
-    
+
     return base_rect;
 }
 
@@ -781,10 +812,10 @@ SkRect RenderObject::GetViewportBoundingRect() const {
     if (style.transform.has_value() && !style.transform->IsEmpty()) {
         // 创建以元素中心为原点的局部矩形
         SkRect local_rect = SkRect::MakeWH(layout.width, layout.height);
-        
+
         // 获取变换矩阵
         SkMatrix transform_matrix = style.transform->ToSkMatrix(local_rect, style.transform_origin);
-        
+
         // 变换四个角点，计算包围盒
         SkPoint corners[4] = {
             {0, 0},
@@ -793,7 +824,7 @@ SkRect RenderObject::GetViewportBoundingRect() const {
             {0, layout.height}
         };
         transform_matrix.mapPoints(corners, 4);
-        
+
         // 计算变换后的边界框
         float min_x = corners[0].x(), max_x = corners[0].x();
         float min_y = corners[0].y(), max_y = corners[0].y();
@@ -803,7 +834,7 @@ SkRect RenderObject::GetViewportBoundingRect() const {
             min_y = std::min(min_y, corners[i].y());
             max_y = std::max(max_y, corners[i].y());
         }
-        
+
         // 转换回视口坐标
         return SkRect::MakeLTRB(
             abs_x + min_x,
@@ -812,7 +843,7 @@ SkRect RenderObject::GetViewportBoundingRect() const {
             abs_y + max_y
         );
     }
-    
+
     return base_rect;
 }
 
@@ -1029,22 +1060,22 @@ float RenderObject::GetScrollWidth() const {
     // **Feature: unified-scrollbar-system**
     // **Validates: Requirements 4.1**
     // 返回内容总宽度，包括溢出部分
-    
+
     // 使用缓存的内容尺寸（在 Paint 中已计算并缓存）
     // 如果缓存无效（首次调用或布局后），则动态计算
     float content_width = content_width_ > 0 ? content_width_ : CalculateContentWidth();
-    
+
     // scrollWidth 至少等于元素的可见宽度
     float visible_width = GetEffectiveVisibleWidth();
-    
+
     // 计算 border 宽度
     const auto& style = computed_style_;
     float border_left = style.border_left_width > 0 ? style.border_left_width : style.border.width.ToPx();
     float border_right = style.border_right_width > 0 ? style.border_right_width : style.border.width.ToPx();
-    
+
     // 可见内容区域宽度（不包括 border）
     float client_width = visible_width - border_left - border_right;
-    
+
     return std::max(content_width, client_width);
 }
 
@@ -1052,22 +1083,22 @@ float RenderObject::GetScrollHeight() const {
     // **Feature: unified-scrollbar-system**
     // **Validates: Requirements 4.2**
     // 返回内容总高度，包括溢出部分
-    
+
     // 使用缓存的内容尺寸（在 Paint 中已计算并缓存）
     // 如果缓存无效（首次调用或布局后），则动态计算
     float content_height = content_height_ > 0 ? content_height_ : CalculateContentHeight();
-    
+
     // scrollHeight 至少等于元素的可见高度
     float visible_height = GetEffectiveVisibleHeight();
-    
+
     // 计算 border 宽度
     const auto& style = computed_style_;
     float border_top = style.border_top_width > 0 ? style.border_top_width : style.border.width.ToPx();
     float border_bottom = style.border_bottom_width > 0 ? style.border_bottom_width : style.border.width.ToPx();
-    
+
     // 可见内容区域高度（不包括 border）
     float client_height = visible_height - border_top - border_bottom;
-    
+
     return std::max(content_height, client_height);
 }
 
@@ -1179,7 +1210,7 @@ void RenderObject::UpdateScrollbarDrag(float mouse_x, float mouse_y) {
 
     float new_scroll_x = scroll_x_;
     float new_scroll_y = scroll_y_;
-    
+
     if (scrollbar_controller_.UpdateDrag(mouse_x, mouse_y, params, new_scroll_x, new_scroll_y)) {
         // 关键修复：使用 ScrollTo 而不是直接设置 scroll_x_/scroll_y_
         // ScrollTo 会调用 InvalidateDescendantViewportBounds()，
@@ -1200,7 +1231,7 @@ float RenderObject::CalculateContentHeight() const {
         std::string oy = !s.overflow_y.empty() ? s.overflow_y : s.overflow;
         return oy == "scroll" || oy == "auto" || oy == "hidden";
     };
-    
+
     // 辅助函数：检查是否是 out-of-flow 定位（fixed 或 absolute）
     // 这些元素脱离文档流，不应该参与父元素的 content_size 计算
     auto isOutOfFlow = [](const ComputedStyle& s) {
@@ -1212,10 +1243,10 @@ float RenderObject::CalculateContentHeight() const {
         const RenderObject* obj;
         float offset_y;  // 从根到此节点的累计Y偏移
     };
-    
+
     std::vector<StackItem> stack;
     float global_max_height = 0.0f;
-    
+
     // 初始化：将所有直接子元素加入栈（跳过 out-of-flow 元素）
     for (const auto& child : children_) {
         const auto& child_style = child->GetComputedStyle();
@@ -1223,23 +1254,23 @@ float RenderObject::CalculateContentHeight() const {
             stack.push_back({child.get(), 0.0f});
         }
     }
-    
+
     while (!stack.empty()) {
         StackItem item = stack.back();
         stack.pop_back();
-        
+
         const RenderObject* obj = item.obj;
         if (!obj) continue;
-        
+
         const auto& obj_layout = obj->GetLayoutInfo();
         const auto& obj_style = obj->GetComputedStyle();
-        
+
         float obj_y = item.offset_y + obj_layout.y;
         float obj_height = obj_layout.height;
-        
+
         // 更新全局最大高度
         global_max_height = std::max(global_max_height, obj_y + obj_height);
-        
+
         // 如果没有 overflow clip，继续遍历子元素
         if (!hasOverflowClip(obj_style)) {
             const auto& obj_children = obj->GetChildren();
@@ -1253,7 +1284,7 @@ float RenderObject::CalculateContentHeight() const {
             }
         }
     }
-    
+
     // 处理最后一个子元素的 margin-bottom
     if (!children_.empty()) {
         const auto& last_child = children_.back();
@@ -1281,7 +1312,7 @@ float RenderObject::CalculateContentWidth() const {
         std::string ox = !s.overflow_x.empty() ? s.overflow_x : s.overflow;
         return ox == "scroll" || ox == "auto" || ox == "hidden";
     };
-    
+
     // 辅助函数：检查是否是 out-of-flow 定位（fixed 或 absolute）
     // 这些元素脱离文档流，不应该参与父元素的 content_size 计算
     auto isOutOfFlow = [](const ComputedStyle& s) {
@@ -1293,10 +1324,10 @@ float RenderObject::CalculateContentWidth() const {
         const RenderObject* obj;
         float offset_x;  // 从根到此节点的累计X偏移
     };
-    
+
     std::vector<StackItem> stack;
     float global_max_width = 0.0f;
-    
+
     // 初始化：将所有直接子元素加入栈（跳过 out-of-flow 元素）
     for (const auto& child : children_) {
         const auto& child_style = child->GetComputedStyle();
@@ -1304,23 +1335,23 @@ float RenderObject::CalculateContentWidth() const {
             stack.push_back({child.get(), 0.0f});
         }
     }
-    
+
     while (!stack.empty()) {
         StackItem item = stack.back();
         stack.pop_back();
-        
+
         const RenderObject* obj = item.obj;
         if (!obj) continue;
-        
+
         const auto& obj_layout = obj->GetLayoutInfo();
         const auto& obj_style = obj->GetComputedStyle();
-        
+
         float obj_x = item.offset_x + obj_layout.x;
         float obj_width = obj_layout.width;
-        
+
         // 更新全局最大宽度
         global_max_width = std::max(global_max_width, obj_x + obj_width);
-        
+
         // 如果没有 overflow clip，继续遍历子元素
         if (!hasOverflowClip(obj_style)) {
             const auto& obj_children = obj->GetChildren();
@@ -1701,41 +1732,41 @@ PaintLayer* RenderObject::EnsurePaintLayer() {
 
 bool RenderObject::NeedsPaintLayer() const {
     const auto& style = computed_style_;
-    
+
     // 根元素总是需要 PaintLayer
     if (!parent_.lock()) {
         return true;
     }
-    
+
     // position: absolute/relative/fixed/sticky 且 z-index != 0
-    bool has_position = (style.position == "absolute" || 
-                         style.position == "relative" || 
+    bool has_position = (style.position == "absolute" ||
+                         style.position == "relative" ||
                          style.position == "fixed" ||
                          style.position == "sticky");
     if (has_position && style.z_index != 0) {
         return true;
     }
-    
+
     // position: fixed 总是需要 PaintLayer
     if (style.position == "fixed") {
         return true;
     }
-    
+
     // opacity < 1
     if (style.opacity < 1.0f) {
         return true;
     }
-    
+
     // transform != none
     if (style.transform.has_value()) {
         return true;
     }
-    
+
     // filter != none
     if (style.filter.has_value()) {
         return true;
     }
-    
+
     // will-change: transform/opacity
     if (!style.will_change.empty()) {
         if (style.will_change.find("transform") != std::string::npos ||
@@ -1743,13 +1774,13 @@ bool RenderObject::NeedsPaintLayer() const {
             return true;
         }
     }
-    
+
     // 可滚动容器
     std::string overflow_y = !style.overflow_y.empty() ? style.overflow_y : style.overflow;
     if (overflow_y == "scroll" || overflow_y == "auto") {
         return true;
     }
-    
+
     return false;
 }
 
@@ -1759,25 +1790,25 @@ bool RenderObject::NeedsPaintLayer() const {
 
 bool RenderObject::NeedsTransformNode() const {
     const auto& style = computed_style_;
-    
+
     // 有 transform 属性
     if (style.transform.has_value()) {
         return true;
     }
-    
+
     // 有定位偏移
-    if (style.position == "relative" || style.position == "absolute" || 
+    if (style.position == "relative" || style.position == "absolute" ||
         style.position == "fixed") {
         if (layout_info_.x != 0 || layout_info_.y != 0) {
             return true;
         }
     }
-    
+
     // 有 will-change: transform
     if (style.will_change.find("transform") != std::string::npos) {
         return true;
     }
-    
+
     // 有活动的 transform 动画
     for (const auto& anim : style.animations) {
         if (anim.name.find("transform") != std::string::npos ||
@@ -1788,64 +1819,64 @@ bool RenderObject::NeedsTransformNode() const {
             return true;
         }
     }
-    
+
     for (const auto& trans : style.transitions) {
         if (trans.property == "transform" || trans.property == "all") {
             return true;
         }
     }
-    
+
     return false;
 }
 
 bool RenderObject::NeedsClipNode() const {
     const auto& style = computed_style_;
-    
+
     // overflow: hidden/scroll/auto
-    if (style.overflow == "hidden" || style.overflow == "scroll" || 
+    if (style.overflow == "hidden" || style.overflow == "scroll" ||
         style.overflow == "auto") {
         return true;
     }
-    if (style.overflow_x == "hidden" || style.overflow_x == "scroll" || 
+    if (style.overflow_x == "hidden" || style.overflow_x == "scroll" ||
         style.overflow_x == "auto") {
         return true;
     }
-    if (style.overflow_y == "hidden" || style.overflow_y == "scroll" || 
+    if (style.overflow_y == "hidden" || style.overflow_y == "scroll" ||
         style.overflow_y == "auto") {
         return true;
     }
-    
+
     // 有 clip-path
     if (style.clip_path.has_value()) {
         return true;
     }
-    
+
     return false;
 }
 
 bool RenderObject::NeedsEffectNode() const {
     const auto& style = computed_style_;
-    
+
     // opacity < 1
     if (style.opacity < 1.0f) {
         return true;
     }
-    
+
     // 有 filter
     if (style.filter.has_value()) {
         return true;
     }
-    
+
     // 有 backdrop-filter
     if (style.backdrop_filter.has_value()) {
         return true;
     }
-    
+
     // 有 will-change: opacity
     if (style.will_change.find("opacity") != std::string::npos) {
         return true;
     }
-    
+
     // 有活动的 opacity 动画
     for (const auto& anim : style.animations) {
         if (anim.name.find("opacity") != std::string::npos ||
@@ -1853,19 +1884,19 @@ bool RenderObject::NeedsEffectNode() const {
             return true;
         }
     }
-    
+
     for (const auto& trans : style.transitions) {
         if (trans.property == "opacity" || trans.property == "all") {
             return true;
         }
     }
-    
+
     return false;
 }
 
 bool RenderObject::NeedsScrollNode() const {
     const auto& style = computed_style_;
-    
+
     // overflow: scroll/auto
     if (style.overflow == "scroll" || style.overflow == "auto") {
         return true;
@@ -1876,7 +1907,7 @@ bool RenderObject::NeedsScrollNode() const {
     if (style.overflow_y == "scroll" || style.overflow_y == "auto") {
         return true;
     }
-    
+
     return false;
 }
 
@@ -1885,12 +1916,12 @@ bool RenderObject::CanDirectlyUpdateTransform() const {
     if (HasOwnCompositorLayer()) {
         return true;
     }
-    
+
     // 如果有 will-change: transform，可以直接更新
     if (computed_style_.will_change.find("transform") != std::string::npos) {
         return true;
     }
-    
+
     return false;
 }
 
@@ -1899,12 +1930,12 @@ bool RenderObject::CanDirectlyUpdateOpacity() const {
     if (HasOwnCompositorLayer()) {
         return true;
     }
-    
+
     // 如果有 will-change: opacity，可以直接更新
     if (computed_style_.will_change.find("opacity") != std::string::npos) {
         return true;
     }
-    
+
     return false;
 }
 
@@ -1928,56 +1959,56 @@ int RenderObject::GetLayoutBoundaryType() const {
 
 void RenderObject::UpdateLayoutBoundaryCache() {
     const auto& style = computed_style_;
-    
+
     // 1. 脱离文档流 - 最强的布局边界
     if (style.position == "fixed" || style.position == "absolute") {
         cached_boundary_type_ = 1;  // OutOfFlow
         boundary_cache_valid_ = true;
         return;
     }
-    
+
     // 2. CSS Containment
     if (style.HasLayoutContainment()) {
         cached_boundary_type_ = 4;  // CSSContainment
         boundary_cache_valid_ = true;
         return;
     }
-    
+
     // 检查是否有固定尺寸
     bool width_fixed = (style.width.unit == CSSUnit::PX ||
                         style.width.unit == CSSUnit::VW ||
                         style.width.unit == CSSUnit::VH ||
                         style.width.unit == CSSUnit::VMIN ||
                         style.width.unit == CSSUnit::VMAX);
-    
+
     bool height_fixed = (style.height.unit == CSSUnit::PX ||
                          style.height.unit == CSSUnit::VW ||
                          style.height.unit == CSSUnit::VH ||
                          style.height.unit == CSSUnit::VMIN ||
                          style.height.unit == CSSUnit::VMAX);
-    
+
     bool has_fixed_size = width_fixed && height_fixed;
-    
+
     // 3. 滚动容器 + 固定尺寸
     bool is_scroll_container = (style.overflow_x == "scroll" || style.overflow_x == "auto" ||
                                 style.overflow_y == "scroll" || style.overflow_y == "auto" ||
                                 style.overflow == "scroll" || style.overflow == "auto");
-    
+
     if (is_scroll_container && has_fixed_size) {
         cached_boundary_type_ = 2;  // ScrollContainer
         boundary_cache_valid_ = true;
         return;
     }
-    
+
     // 4. 固定尺寸容器
     if (has_fixed_size) {
         cached_boundary_type_ = 3;  // FixedSize
         boundary_cache_valid_ = true;
         return;
     }
-    
+
     // 5. Flex 固定项
-    if (style.flex_grow == 0.0f && style.flex_shrink == 0.0f && 
+    if (style.flex_grow == 0.0f && style.flex_shrink == 0.0f &&
         style.flex_basis.unit != CSSUnit::AUTO) {
         auto parent = parent_.lock();
         if (parent && parent->GetComputedStyle().display == RenderObjectType::FLEX) {
@@ -1986,7 +2017,7 @@ void RenderObject::UpdateLayoutBoundaryCache() {
             return;
         }
     }
-    
+
     cached_boundary_type_ = 0;  // None
     boundary_cache_valid_ = true;
 }

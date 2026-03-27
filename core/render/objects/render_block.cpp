@@ -1,11 +1,11 @@
 /**
  * @file render_block.cpp
  * @brief RenderBlock 类实现
- * 
+ *
  * 从 render_object.cpp 提取的块级元素渲染对象实现。
  * 包含 RenderBlock::Layout, Paint, PaintContentEditableCaret 方法。
  * 表单元素绘制委托给 FormElementPainter。
- * 
+ *
  * @note 大文件说明 (约1900行)
  * 本文件包含 RenderBlock 的完整实现，是块级元素渲染的核心。
  * 文件较大的原因：
@@ -38,11 +38,13 @@
 #include "core/dom/elements/terminal/html_terminal_element.h"
 #include "core/dom/elements/logview/html_logview_element.h"
 #include "core/render/canvas/canvas_rendering_context_2d.h"
+#include "core/editing/contenteditable_geometry.h"
 #include "core/utils/utf8_utils.h"
 #include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <iostream>
+#include <sstream>
 #include "include/core/SkSurface.h"
 
 #ifdef _WIN32
@@ -60,6 +62,11 @@
 #endif
 
 namespace lightui {
+
+#ifdef _WIN32
+static void PrintCallStack();
+#endif
+
 
 // 🐛 调试辅助函数：打印调用栈
 #ifdef _WIN32
@@ -113,7 +120,7 @@ void RenderBlock::Layout(float parent_width, float parent_height) {
     if (!style.width.IsAuto()) {
         width = style.width.ToPx(parent_width, style.font_size);
     }
-    
+
     // 应用 min-width 和 max-width
     if (!style.min_width.IsZero()) {
         float min_w = style.min_width.ToPx(parent_width, style.font_size);
@@ -123,22 +130,22 @@ void RenderBlock::Layout(float parent_width, float parent_height) {
         float max_w = style.max_width.ToPx(parent_width, style.font_size);
         width = std::min(width, max_w);
     }
-    
+
     // 计算 padding
     float padding_left = style.padding.left.ToPx(width, style.font_size);
     float padding_right = style.padding.right.ToPx(width, style.font_size);
     float padding_top = style.padding.top.ToPx(width, style.font_size);
     float padding_bottom = style.padding.bottom.ToPx(width, style.font_size);
-    
+
     // 计算 border
     float border_left = style.border_left_width > 0 ? style.border_left_width : style.border.width.ToPx();
     float border_right = style.border_right_width > 0 ? style.border_right_width : style.border.width.ToPx();
     float border_top = style.border_top_width > 0 ? style.border_top_width : style.border.width.ToPx();
     float border_bottom = style.border_bottom_width > 0 ? style.border_bottom_width : style.border.width.ToPx();
-    
+
     // 计算内容区域宽度
     float content_width = width - padding_left - padding_right - border_left - border_right;
-    
+
     // 布局子元素 - 第一遍：计算尺寸
     for (auto& child : children_) {
         auto& child_style = child->GetComputedStyle();
@@ -224,7 +231,8 @@ void RenderBlock::Layout(float parent_width, float parent_height) {
                 current_x = padding_left + border_left;
                 line_height = 0;
             }
-            child_layout.x = current_x + child_margin_left;
+            float new_x = current_x + child_margin_left;
+            child_layout.x = new_x;
             child_layout.y = current_y + padding_top + border_top + child_margin_top;
             current_x += child_width;
             line_height = std::max(line_height, child_layout.height);
@@ -273,7 +281,7 @@ void RenderBlock::Layout(float parent_width, float parent_height) {
     } else {
         height = current_y + padding_top + padding_bottom + border_top + border_bottom;
     }
-    
+
     if (!style.min_height.IsZero()) {
         float min_h = style.min_height.ToPx(parent_height, style.font_size);
         height = std::max(height, min_h);
@@ -282,7 +290,7 @@ void RenderBlock::Layout(float parent_width, float parent_height) {
         float max_h = style.max_height.ToPx(parent_height, style.font_size);
         height = std::min(height, max_h);
     }
-    
+
     layout_info_.width = width;
     layout_info_.height = height;
 
@@ -654,7 +662,7 @@ void RenderBlock::Paint(SkCanvas* canvas) {
     // The canvas CTM is currently set to the parent's generic coordinate space.
     // So paint_rect matches the CTM directly.
     SkRect paint_rect = SkRect::MakeXYWH(layout_info_.x, layout_info_.y, layout_info_.width, layout_info_.height);
-    
+
     // 对于高度为0但有绝对定位子元素的容器（如 CodeMirror 的 cm-selectionLayer），
     // 不能跳过渲染，因为其绝对定位子元素可能需要渲染
     bool has_absolute_children_need_paint = false;
@@ -667,7 +675,7 @@ void RenderBlock::Paint(SkCanvas* canvas) {
             }
         }
     }
-    
+
     // Aggressive culling: Skip if completely outside the clip.
     // 但如果有绝对定位子元素且尺寸为0，不跳过
     if (!has_absolute_children_need_paint && canvas->quickReject(paint_rect.makeOutset(50, 50))) {
@@ -728,7 +736,7 @@ void RenderBlock::Paint(SkCanvas* canvas) {
         // layout.width可能是shrink-to-fit的结果，不代表元素的实际渲染尺寸
         float width = layout.width;
         float height = layout.height;
-        
+
         // 优先使用CSS明确指定的宽高
         if (style.width.unit == CSSUnit::PX && style.width.value > 0) {
             width = style.width.value;
@@ -736,13 +744,13 @@ void RenderBlock::Paint(SkCanvas* canvas) {
         if (style.height.unit == CSSUnit::PX && style.height.value > 0) {
             height = style.height.value;
         }
-        
+
         // 如果有transform动画，需要扩展bounds以容纳transform后的内容
         // 使用保守的边距以确保不会裁剪（未来可以基于实际动画边界动态计算）
         const float kOpacityLayerMargin = 100.0f;
-        SkRect bounds = SkRect::MakeLTRB(-kOpacityLayerMargin, -kOpacityLayerMargin, 
+        SkRect bounds = SkRect::MakeLTRB(-kOpacityLayerMargin, -kOpacityLayerMargin,
                                          width + kOpacityLayerMargin, height + kOpacityLayerMargin);
-        
+
         int alpha = static_cast<int>(style.opacity * 255);
         canvas->saveLayerAlpha(&bounds, alpha);
     }
@@ -817,7 +825,7 @@ void RenderBlock::Paint(SkCanvas* canvas) {
             canvas->restore(); // 恢复 canvas 状态
             return; // 不绘制其他内容
         }
-        
+
         // 检查是否是 <canvas> 元素
         if (element->GetTagName() == "canvas") {
             auto canvas_element = std::dynamic_pointer_cast<HTMLCanvasElement>(element);
@@ -875,7 +883,7 @@ void RenderBlock::Paint(SkCanvas* canvas) {
         shadow_hash ^= std::hash<int>{}(static_cast<int>(style.border_radius.bottom_right.unit)) + 0x9e3779b9;
         shadow_hash ^= std::hash<float>{}(style.border_radius.bottom_left.value) + 0x9e3779b9;
         shadow_hash ^= std::hash<int>{}(static_cast<int>(style.border_radius.bottom_left.unit)) + 0x9e3779b9;
-        
+
         // 检查缓存是否有效
         if (shadow_cache_.IsValid(layout.width, layout.height, shadow_hash)) {
             // 使用缓存的阴影图像
@@ -897,14 +905,14 @@ void RenderBlock::Paint(SkCanvas* canvas) {
                     max_offset_y = std::max(max_offset_y, s.offset_y);
                 }
             }
-            
+
             // 阴影图像的边距（模糊半径 * 2 + spread + offset）
             float margin = max_blur * 2 + max_spread;
             float left_margin = margin - min_offset_x;
             float top_margin = margin - min_offset_y;
             float right_margin = margin + max_offset_x;
             float bottom_margin = margin + max_offset_y;
-            
+
             int img_width = static_cast<int>(layout.width + left_margin + right_margin + 1);
             int img_height = static_cast<int>(layout.height + top_margin + bottom_margin + 1);
 
@@ -924,17 +932,17 @@ void RenderBlock::Paint(SkCanvas* canvas) {
 
                 BoxRenderer shadow_renderer(shadow_canvas);
                 shadow_renderer.RenderBoxShadow(box, style.box_shadow, &style.border_radius);
-                
+
                 // 缓存结果
                 shadow_cache_.image = surface->makeImageSnapshot();
                 shadow_cache_.cached_width = layout.width;
                 shadow_cache_.cached_height = layout.height;
                 shadow_cache_.shadow_hash = shadow_hash;
                 shadow_cache_.draw_offset = SkPoint::Make(-left_margin, -top_margin);
-                
+
                 // 绘制到主 canvas
-                canvas->drawImage(shadow_cache_.image, 
-                                  shadow_cache_.draw_offset.x(), 
+                canvas->drawImage(shadow_cache_.image,
+                                  shadow_cache_.draw_offset.x(),
                                   shadow_cache_.draw_offset.y());
             } else {
                 // 回退：直接绘制（无缓存）
@@ -949,7 +957,7 @@ void RenderBlock::Paint(SkCanvas* canvas) {
     // 渲染背景（优先渐变，然后纯色）
     auto bg_start = std::chrono::high_resolution_clock::now();
     SkRect padding_box = box.GetPaddingBox();
-    
+
     // 对于 body 元素，扩展背景绘制区域以覆盖整个 viewport
     // 这解决了浮点精度问题导致的边缘白线
     Box bg_box = box;
@@ -1007,7 +1015,7 @@ void RenderBlock::Paint(SkCanvas* canvas) {
 
         if (has_border_radius) {
             // 有圆角：使用 RenderRoundedBorderAdvanced（支持每边独立属性）
-            
+
             // 准备四边宽度数组 [top, right, bottom, left]
             float border_widths[4] = {
                 box.border_top_width,
@@ -1015,7 +1023,7 @@ void RenderBlock::Paint(SkCanvas* canvas) {
                 box.border_bottom_width,
                 box.border_left_width
             };
-            
+
             // 准备四边样式数组
             CSSBorderStyle border_styles[4] = {
                 style.border_top_style != CSSBorderStyle::NONE ? style.border_top_style : style.border.style,
@@ -1023,7 +1031,7 @@ void RenderBlock::Paint(SkCanvas* canvas) {
                 style.border_bottom_style != CSSBorderStyle::NONE ? style.border_bottom_style : style.border.style,
                 style.border_left_style != CSSBorderStyle::NONE ? style.border_left_style : style.border.style
             };
-            
+
             // 准备四边颜色数组
             SkColor border_colors[4] = {
                 style.border_top_style != CSSBorderStyle::NONE ? style.border_top_color : style.border.color,
@@ -1031,12 +1039,12 @@ void RenderBlock::Paint(SkCanvas* canvas) {
                 style.border_bottom_style != CSSBorderStyle::NONE ? style.border_bottom_color : style.border.color,
                 style.border_left_style != CSSBorderStyle::NONE ? style.border_left_color : style.border.color
             };
-            
+
             renderer.RenderRoundedBorderAdvanced(box, border_widths, border_styles, border_colors, style.border_radius);
-            
+
         } else {
             // 无圆角：使用原有的独立边框渲染逻辑
-            
+
             // 边框绘制时需要向内偏移半个边框宽度
             // 因为 Skia 的线条是以指定坐标为中心绘制的
             float half_left = box.border_left_width / 2.0f;
@@ -1349,8 +1357,8 @@ void RenderBlock::Paint(SkCanvas* canvas) {
         // 使用容差值来避免浮点误差导致的滚动条误显示
         // 当内容高度和可见高度差异小于 1px 时，认为不需要滚动条
         const float kScrollTolerance = 1.0f;
-        
-        bool needs_v_scroll = allow_v_scroll && 
+
+        bool needs_v_scroll = allow_v_scroll &&
             ((content_height > visible_height + kScrollTolerance) || overflow_y == "scroll");
 
         float content_area_width = visible_width;
@@ -1358,17 +1366,17 @@ void RenderBlock::Paint(SkCanvas* canvas) {
             content_area_width -= scrollbar_width;
         }
 
-        bool needs_h_scroll = allow_h_scroll && 
+        bool needs_h_scroll = allow_h_scroll &&
             ((content_width > content_area_width + kScrollTolerance) || overflow_x == "scroll");
 
         float content_area_height = visible_height;
         if (needs_h_scroll) {
             content_area_height -= scrollbar_width;
-            if (allow_v_scroll && !needs_v_scroll && 
+            if (allow_v_scroll && !needs_v_scroll &&
                 content_height > content_area_height + kScrollTolerance) {
                 needs_v_scroll = true;
                 content_area_width = visible_width - scrollbar_width;
-                needs_h_scroll = allow_h_scroll && 
+                needs_h_scroll = allow_h_scroll &&
                     content_width > content_area_width + kScrollTolerance;
             }
         }
@@ -1382,7 +1390,7 @@ void RenderBlock::Paint(SkCanvas* canvas) {
         // 注意：这里直接使用已计算的 content_width/height，避免再次调用 GetMaxScroll
         float max_scroll_x = std::max(0.0f, content_width - content_area_width);
         float max_scroll_y = std::max(0.0f, content_height - content_area_height);
-        
+
         // 只在超出范围时调整（避免不必要的重绘标记）
         if (scroll_x_ > max_scroll_x || scroll_y_ > max_scroll_y) {
             scroll_x_ = std::max(0.0f, std::min(scroll_x_, max_scroll_x));
@@ -1483,12 +1491,12 @@ void RenderBlock::Paint(SkCanvas* canvas) {
     if (is_fieldset_element && has_border_radius) {
         canvas->save();
         SkRect clip_rect = box.GetPaddingBox();
-        
+
         // 修复：计算 border-radius 百分比的基准尺寸
         float box_width = clip_rect.width();
         float box_height = clip_rect.height();
         float base_size = std::min(box_width, box_height);
-        
+
         SkRRect rrect;
         float tl = style.border_radius.top_left.ToPx(base_size);
         float tr = style.border_radius.top_right.ToPx(base_size);
@@ -1522,7 +1530,7 @@ void RenderBlock::Paint(SkCanvas* canvas) {
             SkRect local_clip = canvas->getLocalClipBounds();
         }
     }
-    
+
     for (auto& child : sorted_children) {
         // 跳过已经绘制的 legend
         if (is_fieldset_element && child.get() == legend_child) {
@@ -1554,20 +1562,20 @@ void RenderBlock::Paint(SkCanvas* canvas) {
             fixed_children.push_back(child);
             continue;
         }
-        
+
         // 增量绘制优化：提前检查子节点是否与当前裁剪区域相交
         // 注意：对于 position: absolute 且高 z-index 的元素，不能使用 quickReject
         if (!is_fixed_or_absolute || child_style.z_index < 100) {
             const auto& child_layout = child->GetLayoutInfo();
             SkRect child_rect = SkRect::MakeXYWH(
-                child_layout.x, child_layout.y, 
+                child_layout.x, child_layout.y,
                 child_layout.width, child_layout.height
             );
             if (canvas->quickReject(child_rect.makeOutset(50, 50))) {
                 continue;
             }
         }
-        
+
         // 绘制非 fixed 子元素
         if (debug_hover_bug) {
             std::string child_tag = "unknown";
@@ -1608,7 +1616,7 @@ void RenderBlock::Paint(SkCanvas* canvas) {
             // Translate back by body's position to draw scrollbar relative to viewport
             canvas->translate(-layout_info_.x, -layout_info_.y);
         }
-        
+
         // 对于 body 元素使用视口尺寸
         float effective_width = GetEffectiveVisibleWidth();
         float effective_height = GetEffectiveVisibleHeight();
@@ -1722,7 +1730,7 @@ void RenderBlock::Paint(SkCanvas* canvas) {
             SkRect corner_rect = SkRect::MakeXYWH(corner_x, corner_y, scrollbar_width, scrollbar_width);
             canvas->drawRect(corner_rect, track_paint);
         }
-        
+
         // Restore transform for body element
         if (is_body) {
             canvas->restore();
@@ -2106,456 +2114,53 @@ void RenderBlock::PaintTextAreaElement(SkCanvas* canvas, HTMLTextAreaElement* te
 // ========== contentEditable 光标渲染 ==========
 
 void RenderBlock::PaintContentEditableCaret(SkCanvas* canvas, Element* element, const Box& box) {
+    (void)box;
     if (!canvas || !element) return;
 
-    // 只在最外层的 contentEditable 元素上绘制光标
-    auto parent = element->GetParentNode();
-    while (parent) {
-        if (parent->GetNodeType() == NodeType::ELEMENT_NODE) {
-            auto parent_elem = std::dynamic_pointer_cast<Element>(parent);
-            if (parent_elem && parent_elem->IsContentEditable()) {
-                return;  // 父元素也是 contentEditable，跳过
-            }
-        }
-        parent = parent->GetParentNode();
-    }
-
-    // 获取文档的 Selection
-    auto doc = element->GetOwnerDocument();
-    if (!doc) {
+    auto editable_root = std::static_pointer_cast<Element>(element->shared_from_this());
+    if (GetContentEditableEditingHost(editable_root) != editable_root) {
         return;
     }
 
-    auto document = std::dynamic_pointer_cast<Document>(doc);
+    auto document = std::dynamic_pointer_cast<Document>(element->GetOwnerDocument());
     if (!document) {
         return;
     }
 
     auto selection = document->GetSelection();
-    if (!selection) {
+    if (!selection || !selection->IsCollapsed()) {
         return;
     }
 
-    // 获取锚点和焦点 - 使用 Computed 方法获取解析后的位置
-    // 参考 Blink：原始位置可能是 Element 节点，需要解析为 Text 节点用于渲染
-    auto anchor_node = selection->GetComputedAnchorNode();
-    auto focus_node = selection->GetComputedFocusNode();
-    int anchor_offset = selection->GetComputedAnchorOffset();
-    int focus_offset = selection->GetComputedFocusOffset();
-    
-    if (!anchor_node) {
-        return;
-    }
-
-    // 检查锚点是否在当前 contentEditable 元素内
-    bool is_inside = false;
-    auto current = anchor_node;
-    while (current) {
-        if (current.get() == element) {
-            is_inside = true;
-            break;
-        }
-        current = current->GetParentNode();
-    }
-    if (!is_inside) {
-        return;
-    }
-
-    // 如果有选择范围（不是折叠状态），绘制选择高亮
-    bool is_collapsed = selection->IsCollapsed();
-    if (!is_collapsed && focus_node) {
-        // 绘制选择高亮
-        SkPaint highlight_paint;
-        highlight_paint.setColor(SkColorSetARGB(100, 51, 153, 255));  // 半透明蓝色
-        highlight_paint.setStyle(SkPaint::kFill_Style);
-        
-        // 简化实现：如果锚点和焦点在同一个文本节点
-        if (anchor_node == focus_node && anchor_node->GetNodeType() == NodeType::TEXT_NODE) {
-            auto text_node = std::dynamic_pointer_cast<Text>(anchor_node);
-            if (text_node) {
-                std::string text = text_node->GetTextContent();
-                
-                // 获取字体
-                float font_size = 16.0f;
-                std::string font_family = "Arial";
-                auto anchor_parent = anchor_node->GetParentNode();
-                if (anchor_parent && anchor_parent->GetNodeType() == NodeType::ELEMENT_NODE) {
-                    auto parent_elem = std::dynamic_pointer_cast<Element>(anchor_parent);
-                    if (parent_elem) {
-                        auto parent_render = parent_elem->GetRenderObject();
-                        if (parent_render) {
-                            const auto& parent_style = parent_render->GetComputedStyle();
-                            font_size = parent_style.font_size > 0 ? parent_style.font_size : 16.0f;
-                            font_family = !parent_style.font_family.empty() ? parent_style.font_family : "Arial";
-                        }
-                    }
-                }
-                
-                FontDescriptor desc;
-                desc.family = font_family;
-                desc.size = font_size;
-                SkFont font = FontManager::GetInstance().LoadFont(desc);
-                SkFontMetrics font_metrics;
-                font.getMetrics(&font_metrics);
-                float line_height = font_metrics.fDescent - font_metrics.fAscent;
-                
-                // 查找文本节点位置
-                std::function<bool(RenderObject*, Node*, float, float, float&, float&)> findTextPosition;
-                findTextPosition = [&](RenderObject* obj, Node* target, float acc_x, float acc_y, float& out_x, float& out_y) -> bool {
-                    const auto& layout = obj->GetLayoutInfo();
-                    float new_x = acc_x + layout.x;
-                    float new_y = acc_y + layout.y;
-                    
-                    auto obj_node = obj->GetNode();
-                    if (obj_node.get() == target) {
-                        out_x = new_x;
-                        out_y = new_y;
-                        return true;
-                    }
-                    for (auto& child : obj->GetChildren()) {
-                        if (findTextPosition(child.get(), target, new_x, new_y, out_x, out_y)) {
-                            return true;
-                        }
-                    }
-                    return false;
-                };
-                
-                float text_x = 0, text_y = 0;
-                if (findTextPosition(const_cast<RenderBlock*>(this), text_node.get(), -layout_info_.x, -layout_info_.y, text_x, text_y)) {
-                    int start_offset = std::min(anchor_offset, focus_offset);
-                    int end_offset = std::max(anchor_offset, focus_offset);
-                    
-                    // 测量选择开始位置
-                    float start_x = text_x;
-                    for (int i = 0; i < start_offset && i < static_cast<int>(text.length()); ) {
-                        size_t char_len = 1;
-                        unsigned char c = text[i];
-                        if ((c & 0x80) == 0) char_len = 1;
-                        else if ((c & 0xE0) == 0xC0) char_len = 2;
-                        else if ((c & 0xF0) == 0xE0) char_len = 3;
-                        else if ((c & 0xF8) == 0xF0) char_len = 4;
-                        
-                        std::string char_str = text.substr(i, char_len);
-                        start_x += TextRenderer::MeasureMixedTextWidth(char_str, font);
-                        i += char_len;
-                    }
-                    
-                    // 测量选择结束位置
-                    float end_x = text_x;
-                    for (int i = 0; i < end_offset && i < static_cast<int>(text.length()); ) {
-                        size_t char_len = 1;
-                        unsigned char c = text[i];
-                        if ((c & 0x80) == 0) char_len = 1;
-                        else if ((c & 0xE0) == 0xC0) char_len = 2;
-                        else if ((c & 0xF0) == 0xE0) char_len = 3;
-                        else if ((c & 0xF8) == 0xF0) char_len = 4;
-                        
-                        std::string char_str = text.substr(i, char_len);
-                        end_x += TextRenderer::MeasureMixedTextWidth(char_str, font);
-                        i += char_len;
-                    }
-                    
-                    // 绘制高亮矩形
-                    SkRect highlight_rect = SkRect::MakeLTRB(start_x, text_y, end_x, text_y + line_height);
-                    canvas->drawRect(highlight_rect, highlight_paint);
-                }
-            }
-        } else {
-            // 跨节点选择 - 简化实现：只高亮锚点和焦点所在的文本节点
-            // TODO: 完整实现需要遍历所有中间节点
-            
-            // 获取字体
-            float font_size = 16.0f;
-            std::string font_family = "Arial";
-            auto anchor_parent = anchor_node->GetParentNode();
-            if (anchor_parent && anchor_parent->GetNodeType() == NodeType::ELEMENT_NODE) {
-                auto parent_elem = std::dynamic_pointer_cast<Element>(anchor_parent);
-                if (parent_elem) {
-                    auto parent_render = parent_elem->GetRenderObject();
-                    if (parent_render) {
-                        const auto& parent_style = parent_render->GetComputedStyle();
-                        font_size = parent_style.font_size > 0 ? parent_style.font_size : 16.0f;
-                        font_family = !parent_style.font_family.empty() ? parent_style.font_family : "Arial";
-                    }
-                }
-            }
-            
-            FontDescriptor desc;
-            desc.family = font_family;
-            desc.size = font_size;
-            SkFont font = FontManager::GetInstance().LoadFont(desc);
-            SkFontMetrics font_metrics;
-            font.getMetrics(&font_metrics);
-            float line_height = font_metrics.fDescent - font_metrics.fAscent;
-            
-            // 查找文本节点位置的辅助函数
-            std::function<bool(RenderObject*, Node*, float, float, float&, float&)> findTextPosition;
-            findTextPosition = [&](RenderObject* obj, Node* target, float acc_x, float acc_y, float& out_x, float& out_y) -> bool {
-                const auto& layout = obj->GetLayoutInfo();
-                float new_x = acc_x + layout.x;
-                float new_y = acc_y + layout.y;
-                
-                auto obj_node = obj->GetNode();
-                if (obj_node.get() == target) {
-                    out_x = new_x;
-                    out_y = new_y;
-                    return true;
-                }
-                for (auto& child : obj->GetChildren()) {
-                    if (findTextPosition(child.get(), target, new_x, new_y, out_x, out_y)) {
-                        return true;
-                    }
-                }
-                return false;
-            };
-            
-            // 收集所有文本节点及其位置
-            struct TextNodeInfo {
-                std::shared_ptr<Text> node;
-                float x, y, width, height;
-            };
-            std::vector<TextNodeInfo> text_nodes;
-            
-            std::function<void(RenderObject*, float, float)> collectTextNodes;
-            collectTextNodes = [&](RenderObject* obj, float acc_x, float acc_y) {
-                const auto& layout = obj->GetLayoutInfo();
-                float new_x = acc_x + layout.x;
-                float new_y = acc_y + layout.y;
-                
-                auto node = obj->GetNode();
-                if (node && node->GetNodeType() == NodeType::TEXT_NODE) {
-                    auto text_node = std::dynamic_pointer_cast<Text>(node);
-                    if (text_node && !text_node->GetTextContent().empty()) {
-                        text_nodes.push_back({text_node, new_x, new_y, layout.width, layout.height});
-                    }
-                }
-                
-                for (auto& child : obj->GetChildren()) {
-                    collectTextNodes(child.get(), new_x, new_y);
-                }
-            };
-            collectTextNodes(const_cast<RenderBlock*>(this), -layout_info_.x, -layout_info_.y);
-            
-            // 找到锚点和焦点在文本节点列表中的索引
-            int anchor_idx = -1, focus_idx = -1;
-            for (size_t i = 0; i < text_nodes.size(); i++) {
-                if (text_nodes[i].node == anchor_node) anchor_idx = static_cast<int>(i);
-                if (text_nodes[i].node == focus_node) focus_idx = static_cast<int>(i);
-            }
-            
-            if (anchor_idx >= 0 && focus_idx >= 0) {
-                int start_idx = std::min(anchor_idx, focus_idx);
-                int end_idx = std::max(anchor_idx, focus_idx);
-                int start_off = (anchor_idx < focus_idx) ? anchor_offset : focus_offset;
-                int end_off = (anchor_idx < focus_idx) ? focus_offset : anchor_offset;
-                
-                for (int i = start_idx; i <= end_idx; i++) {
-                    auto& info = text_nodes[i];
-                    std::string text = info.node->GetTextContent();
-                    
-                    float highlight_start_x = info.x;
-                    float highlight_end_x = info.x + info.width;
-                    
-                    if (i == start_idx) {
-                        // 第一个节点：从 start_off 开始
-                        for (int j = 0; j < start_off && j < static_cast<int>(text.length()); ) {
-                            size_t char_len = 1;
-                            unsigned char c = text[j];
-                            if ((c & 0x80) == 0) char_len = 1;
-                            else if ((c & 0xE0) == 0xC0) char_len = 2;
-                            else if ((c & 0xF0) == 0xE0) char_len = 3;
-                            else if ((c & 0xF8) == 0xF0) char_len = 4;
-                            
-                            std::string char_str = text.substr(j, char_len);
-                            highlight_start_x += TextRenderer::MeasureMixedTextWidth(char_str, font);
-                            j += char_len;
-                        }
-                    }
-                    
-                    if (i == end_idx) {
-                        // 最后一个节点：到 end_off 结束
-                        highlight_end_x = info.x;
-                        for (int j = 0; j < end_off && j < static_cast<int>(text.length()); ) {
-                            size_t char_len = 1;
-                            unsigned char c = text[j];
-                            if ((c & 0x80) == 0) char_len = 1;
-                            else if ((c & 0xE0) == 0xC0) char_len = 2;
-                            else if ((c & 0xF0) == 0xE0) char_len = 3;
-                            else if ((c & 0xF8) == 0xF0) char_len = 4;
-                            
-                            std::string char_str = text.substr(j, char_len);
-                            highlight_end_x += TextRenderer::MeasureMixedTextWidth(char_str, font);
-                            j += char_len;
-                        }
-                    }
-                    
-                    // 绘制高亮矩形
-                    if (highlight_end_x > highlight_start_x) {
-                        SkRect highlight_rect = SkRect::MakeLTRB(highlight_start_x, info.y, highlight_end_x, info.y + line_height);
-                        canvas->drawRect(highlight_rect, highlight_paint);
-                    }
-                }
-            }
-        }
-        
-        return;  // 有选择时不绘制光标
-    }
-    
-    // 使用全局光标可见状态（由 EventLoop 控制闪烁）
     if (!RenderObject::IsCursorVisible()) {
         return;
     }
 
-    // 获取字体信息 - 从 anchor_node 的父元素获取样式
-    float font_size = 16.0f;
-    std::string font_family = "Arial";
-    FontWeight font_weight = FontWeight::NORMAL;
-    FontStyle font_style = FontStyle::NORMAL;
-
-    // 查找 anchor_node 对应的 RenderObject 或其父元素的 RenderObject 来获取正确的字体样式
-    auto anchor_parent = anchor_node->GetParentNode();
-    if (anchor_parent && anchor_parent->GetNodeType() == NodeType::ELEMENT_NODE) {
-        auto parent_elem = std::dynamic_pointer_cast<Element>(anchor_parent);
-        if (parent_elem) {
-            auto parent_render = parent_elem->GetRenderObject();
-            if (parent_render) {
-                const auto& parent_style = parent_render->GetComputedStyle();
-                font_size = parent_style.font_size > 0 ? parent_style.font_size : 16.0f;
-                font_family = !parent_style.font_family.empty() ? parent_style.font_family : "Arial";
-                // font_weight 是 string 类型: "normal", "bold", "100"-"900"
-                font_weight = ParseCSSFontWeight(parent_style.font_weight);
-                if (parent_style.font_style == "italic") {
-                    font_style = FontStyle::ITALIC;
-                }
-            }
-        }
+    auto focus_node = selection->GetComputedFocusNode();
+    int focus_offset = selection->GetComputedFocusOffset();
+    if (!IsNodeInsideEditingHost(focus_node, editable_root.get())) {
+        return;
     }
 
-    FontDescriptor desc;
-    desc.family = font_family;
-    desc.size = font_size;
-    desc.weight = font_weight;
-    desc.style = font_style;
-
-    SkFont font = FontManager::GetInstance().LoadFont(desc);
-    SkFontMetrics font_metrics;
-    font.getMetrics(&font_metrics);
-    float cursor_height = font_metrics.fDescent - font_metrics.fAscent;
-
-    // 计算光标位置
-    // 注意：canvas 已经被 translate 到当前元素的位置，所以坐标是相对于当前元素的
-    float cursor_x = box.content_x;
-    float cursor_y = box.content_y;
-
-    if (anchor_node->GetNodeType() == NodeType::TEXT_NODE) {
-        auto text_node = std::dynamic_pointer_cast<Text>(anchor_node);
-        if (text_node) {
-            std::string text = text_node->GetTextContent();
-            std::string text_before_cursor = text.substr(0, std::min(static_cast<size_t>(anchor_offset), text.length()));
-
-            // 查找文本节点对应的 RenderObject，累加从当前元素到文本节点的所有偏移
-            std::function<bool(RenderObject*, Node*, float, float, float&, float&)> findTextPosition;
-            findTextPosition = [&](RenderObject* obj, Node* target, float acc_x, float acc_y, float& out_x, float& out_y) -> bool {
-                const auto& layout = obj->GetLayoutInfo();
-                float new_x = acc_x + layout.x;
-                float new_y = acc_y + layout.y;
-                
-                auto obj_node = obj->GetNode();
-                
-                if (obj_node.get() == target) {
-                    out_x = new_x;
-                    out_y = new_y;
-                    return true;
-                }
-                for (auto& child : obj->GetChildren()) {
-                    if (findTextPosition(child.get(), target, new_x, new_y, out_x, out_y)) {
-                        return true;
-                    }
-                }
-                return false;
-            };
-
-            float text_x = 0, text_y = 0;
-            // 从当前元素开始搜索，初始偏移为 0（因为 canvas 已经 translate 到当前元素）
-            // 但是当前元素自己的 layout.x/y 不应该被加进去，所以从 -layout_info_.x, -layout_info_.y 开始
-            if (findTextPosition(const_cast<RenderBlock*>(this), text_node.get(), -layout_info_.x, -layout_info_.y, text_x, text_y)) {
-                cursor_x = text_x;
-                cursor_y = text_y;
-
-                // 测量光标前的文本宽度，考虑 word-spacing 和 letter-spacing
-                if (!text_before_cursor.empty()) {
-                    // 获取文本节点的样式 - 需要向上遍历祖先元素查找 word-spacing 和 letter-spacing
-                    float letter_spacing = 0.0f;
-                    float word_spacing = 0.0f;
-                    
-                    // 从文本节点的父元素开始向上查找
-                    auto current_node = text_node->GetParentNode();
-                    while (current_node) {
-                        if (current_node->GetNodeType() == NodeType::ELEMENT_NODE) {
-                            auto elem = std::dynamic_pointer_cast<Element>(current_node);
-                            if (elem) {
-                                auto render = elem->GetRenderObject();
-                                if (render) {
-                                    const auto& style = render->GetComputedStyle();
-                                    if (word_spacing == 0.0f) {
-                                        word_spacing = style.word_spacing.ToPx(0, style.font_size);
-                                    }
-                                    if (letter_spacing == 0.0f) {
-                                        letter_spacing = style.letter_spacing.ToPx(0, style.font_size);
-                                    }
-                                    // 如果都找到了，停止搜索
-                                    if (word_spacing != 0.0f && letter_spacing != 0.0f) break;
-                                }
-                            }
-                        }
-                        current_node = current_node->GetParentNode();
-                    }
-                    
-                    // 逐字符测量宽度
-                    float text_width = 0;
-                    int char_count = 0;
-                    for (size_t i = 0; i < text_before_cursor.length(); ) {
-                        size_t char_len = 1;
-                        unsigned char c = text_before_cursor[i];
-                        if ((c & 0x80) == 0) char_len = 1;
-                        else if ((c & 0xE0) == 0xC0) char_len = 2;
-                        else if ((c & 0xF0) == 0xE0) char_len = 3;
-                        else if ((c & 0xF8) == 0xF0) char_len = 4;
-                        
-                        std::string char_str = text_before_cursor.substr(i, char_len);
-                        // 使用 TextRenderer::MeasureMixedTextWidth 来测量字符宽度
-                        // 这样可以确保与 IFC 布局使用相同的测量方法（正确处理 CJK 字符）
-                        float char_width = TextRenderer::MeasureMixedTextWidth(char_str, font);
-                        
-                        // 添加 word-spacing
-                        if (char_str == " ") {
-                            char_width += word_spacing;
-                        }
-                        
-                        text_width += char_width;
-                        
-                        // 添加 letter-spacing（最后一个字符后不加）
-                        if (i + char_len < text_before_cursor.length()) {
-                            text_width += letter_spacing;
-                        }
-                        
-                        i += char_len;
-                        char_count++;
-                    }
-                    
-                    cursor_x += text_width;
-                }
-            }
-        }
+    auto element_rect = element->GetBoundingClientRect();
+    auto caret_rect = ComputeContentEditableCaretRect(editable_root, focus_node, focus_offset);
+    if (!caret_rect.valid) {
+        return;
     }
 
-    // 绘制光标
     SkPaint cursor_paint;
     cursor_paint.setColor(SK_ColorBLACK);
-    cursor_paint.setStrokeWidth(2.0f);  // 加粗一点更容易看到
+    cursor_paint.setStrokeWidth(2.0f);
     cursor_paint.setAntiAlias(true);
-
-    canvas->drawLine(cursor_x, cursor_y, cursor_x, cursor_y + cursor_height, cursor_paint);
+    const float local_x = caret_rect.x - element_rect.x;
+    const float local_y = caret_rect.y - element_rect.y;
+    canvas->drawLine(local_x,
+                     local_y,
+                     local_x,
+                     local_y + caret_rect.height,
+                     cursor_paint);
+    return;
 }
+
 
 }  // namespace lightui
