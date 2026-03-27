@@ -23,6 +23,7 @@
 #include "ifc/line_breaker.h"
 #include "ifc/vertical_aligner.h"
 #include "core/dom/element.h"
+#include "core/dom/text.h"
 #include "core/render/objects/render_object.h"
 #include "core/render/objects/render_inline_block.h"
 #include "core/render/objects/render_inline_flex.h"
@@ -38,9 +39,17 @@
 #include <iostream>
 #include <algorithm>
 #include <limits>
+#include <sstream>
+#ifdef _WIN32
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#include <DbgHelp.h>
+#pragma comment(lib, "Dbghelp.lib")
+#endif
 
 namespace lightui {
-
 //------------------------------------------------------------------------------
 // Helper Functions (must be before CreateNode)
 //------------------------------------------------------------------------------
@@ -2936,9 +2945,39 @@ LayoutOutput NativeLayoutEngine::ComputeIFCLayout(NodeId node_id, const LayoutIn
     float total_height = 0.0f;
     IFCLayoutResult result;
 
-    // Only apply layout results (update render object positions) in PerformLayout mode
-    // In ComputeSize mode, we only need to measure the size, not update positions
-    bool apply_results = (inputs.run_mode == RunMode::PerformLayout);
+    // =============================================================================
+    // CRITICAL NOTE - IFC 临时测量绝不能回写真实布局
+    // -----------------------------------------------------------------------------
+    // 这个坑非常隐蔽，已实际导致 CodeMirror gutter 行号闪烁 / 重影：
+    //
+    // 调用链：
+    //   flex_layout.cpp -> CalculateChildrenBaseLines()
+    //                   -> PerformChildLayout()
+    //                   -> ComputeIFCLayout()
+    //
+    // 在这条链路里，run_mode 虽然是 PerformLayout，但 sizing_mode=ContentSize，
+    // 本质上仍然只是“中间测量 / 基线探测”，传入的 known_dimensions / available_space
+    // 往往是临时值（例如 gutter 被压成 known_width=20, content_width=12）。
+    //
+    // 如果这里继续 apply_results=true：
+    //   1. IFCLayout::ApplyLayoutResults() 会把临时 x/y 回写到 RenderText/RenderObject；
+    //   2. 后续真正最终布局再写一次，就会出现同一文本节点在两个 x 之间来回跳；
+    //   3. 典型现象就是 text-align:right 的单字符 gutter 数字在 8.20312 / 13.7969 之间抖动。
+    //
+    // 规则：
+    //   - 只有“最终布局”才能回写；
+    //   - 任何 ContentSize / baseline / shrink-to-fit / intrinsic measurement 路径都只能测量，
+    //     不能污染 render tree 的最终坐标。
+    //
+    // 附近类似风险点：
+    //   - ComputeAnonymousBlockIFCLayout()：匿名块 IFC 也会在中间测量里拿到临时宽度；
+    //   - 任何通过 PerformChildLayout() 进入、但 sizing_mode=ContentSize 的路径；
+    //   - 未来若新增 intrinsic measurement / baseline probing，必须复用同一规则。
+    // =============================================================================
+    bool apply_results = (inputs.run_mode == RunMode::PerformLayout) &&
+                         (inputs.sizing_mode != SizingMode::ContentSize);
+
+
 
     if (is_min_content) {
         // For MinContent, calculate the minimum width needed to display the content
@@ -3259,8 +3298,20 @@ LayoutOutput NativeLayoutEngine::ComputeAnonymousBlockIFCLayout(NodeId node_id, 
         font_family = parent_style.font_family;
     }
 
-    // Only apply layout results in PerformLayout mode
-    bool apply_results = (inputs.run_mode == RunMode::PerformLayout);
+    // =============================================================================
+    // NOTE - AnonymousBlock IFC 也必须遵守“ContentSize 只测量、不回写”的规则
+    // -----------------------------------------------------------------------------
+    // 这里和主 ComputeIFCLayout() 是同类风险点：
+    // - 调用方可能只是为了 baseline / intrinsic-size / shrink-to-fit 做中间测量；
+    // - 这时 known_dimensions / parent_size / available_space 可能都是临时参考值；
+    // - 如果 apply_results=true，就会把匿名块 line box 的临时结果写回真实 RenderText，
+    //   继而在最终布局阶段与正式坐标互相覆盖，形成抖动。
+    //
+    // 因此这里也统一约束：
+    //   只有最终 PerformLayout 且 sizing_mode 不是 ContentSize 时，才能回写真实布局。
+    // =============================================================================
+    bool apply_results = (inputs.run_mode == RunMode::PerformLayout) &&
+                         (inputs.sizing_mode != SizingMode::ContentSize);
     static bool debug_fab_inline = std::getenv("DEBUG_FAB_INLINE") != nullptr;
 
     // Resolve container width
@@ -3271,7 +3322,11 @@ LayoutOutput NativeLayoutEngine::ComputeAnonymousBlockIFCLayout(NodeId node_id, 
     float container_width = 0.0f;
     const char* container_width_source = "none";
 
-    if (inputs.parent_size.width.has_value() && *inputs.parent_size.width > 0.0f) {
+    // Anonymous block inline formatting context must align against the current pass's
+    // parent content-box width. Using parent render object's cached content_rect first
+    // can pick up stale width from a previous state (e.g. old active gutter width),
+    // which makes text-align:right oscillate between two reference widths.
+    if (apply_results && inputs.parent_size.width.has_value() && *inputs.parent_size.width > 0.0f) {
         container_width = *inputs.parent_size.width;
         container_width_source = "inputs.parent_size";
     }
@@ -3280,6 +3335,20 @@ LayoutOutput NativeLayoutEngine::ComputeAnonymousBlockIFCLayout(NodeId node_id, 
         *inputs.known_dimensions.width > 0.0f) {
         container_width = *inputs.known_dimensions.width;
         container_width_source = "inputs.known_dimensions";
+    }
+
+    if (container_width <= 0.0f && parent && parent->render_obj) {
+        const LayoutInfo& parent_layout_info = parent->render_obj->GetLayoutInfo();
+        const float parent_content_width = parent_layout_info.content_rect.width();
+        if (parent_content_width > 0.0f) {
+            container_width = parent_content_width;
+            container_width_source = "parent.render_obj.content_rect";
+        }
+    }
+
+    if (container_width <= 0.0f && !apply_results && inputs.parent_size.width.has_value() && *inputs.parent_size.width > 0.0f) {
+        container_width = *inputs.parent_size.width;
+        container_width_source = "inputs.parent_size";
     }
 
     if (container_width <= 0.0f && apply_results && parent) {
@@ -3334,6 +3403,8 @@ LayoutOutput NativeLayoutEngine::ComputeAnonymousBlockIFCLayout(NodeId node_id, 
                   << " in_avail_w=" << inputs.available_space.width.value
                   << std::endl;
     }
+
+
 
     // Anonymous blocks have no padding/border/margin
     float content_width = container_width;
@@ -3608,26 +3679,27 @@ LayoutOutput NativeLayoutEngine::ComputeAnonymousBlockIFCLayout(NodeId node_id, 
     // This prevents measure-pass coordinates (e.g. container_w=388/400) from
     // polluting final ApplyAnonymousBlockLayoutResults() in ReadLayoutResults().
     if (apply_results) {
-        // Store inline boxes first (line_boxes contains pointers to all_inline_boxes)
+        // line_boxes stores pointers into all_inline_boxes.
+        // Preserve exact box identity across move; matching only by render_object/type
+        // is ambiguous when the same RenderText is split into multiple InlineBox fragments.
+        std::unordered_map<const InlineBox*, size_t> old_box_index_map;
+        old_box_index_map.reserve(all_inline_boxes.size());
+        for (size_t i = 0; i < all_inline_boxes.size(); ++i) {
+            old_box_index_map.emplace(&all_inline_boxes[i], i);
+        }
+
         node->ifc_inline_boxes = std::move(all_inline_boxes);
 
-        // Now update line_boxes to point to the new location of inline boxes
-        // and store them
         for (auto& line : line_boxes) {
             for (size_t i = 0; i < line.boxes.size(); ++i) {
-                // Find the corresponding box in node->ifc_inline_boxes
-                // The boxes are in the same order, so we can use index mapping
-                // But since line.boxes contains pointers, we need to find by render_object
                 InlineBox* old_ptr = line.boxes[i];
-                if (old_ptr) {
-                    for (auto& new_box : node->ifc_inline_boxes) {
-                        if (new_box.render_object == old_ptr->render_object &&
-                            new_box.type == old_ptr->type) {
-                            line.boxes[i] = &new_box;
-                            break;
-                        }
-                    }
-                }
+                if (!old_ptr) continue;
+
+                auto it = old_box_index_map.find(old_ptr);
+                if (it == old_box_index_map.end()) continue;
+                if (it->second >= node->ifc_inline_boxes.size()) continue;
+
+                line.boxes[i] = &node->ifc_inline_boxes[it->second];
             }
         }
         node->ifc_line_boxes = std::move(line_boxes);
@@ -3727,6 +3799,18 @@ void NativeLayoutEngine::CollectInlineBoxesRecursive(
 // Apply layout results from anonymous block to render objects
 void NativeLayoutEngine::ApplyAnonymousBlockLayoutResults(LayoutNode* node) {
     if (!node || !node->is_anonymous_block) return;
+
+    auto accumulate_inline_ancestor_offset = [](RenderObject* render_obj) {
+        std::pair<float, float> offset{0.0f, 0.0f};
+        auto ancestor = render_obj ? render_obj->GetParent() : nullptr;
+        while (ancestor && ancestor->GetType() == RenderObjectType::INLINE) {
+            const LayoutInfo& ancestor_layout = ancestor->GetLayoutInfo();
+            offset.first += ancestor_layout.x;
+            offset.second += ancestor_layout.y;
+            ancestor = ancestor->GetParent();
+        }
+        return offset;
+    };
 
     float offset_x = node->layout.location.x;
     float offset_y = node->layout.location.y;
@@ -3898,12 +3982,14 @@ void NativeLayoutEngine::ApplyAnonymousBlockLayoutResults(LayoutNode* node) {
         LayoutInfo& layout = render_obj->GetLayoutInfo();
 
         auto parent = render_obj->GetParent();
+        auto inline_ancestor_offset = accumulate_inline_ancestor_offset(render_obj);
         if (parent && parent->GetType() == RenderObjectType::INLINE) {
-            const LayoutInfo& parent_layout = parent->GetLayoutInfo();
-            layout.x = (b.has_first ? b.first_x : b.min_x) - parent_layout.x;
-            layout.y = (b.has_first ? b.first_y : b.min_y) - parent_layout.y;
+            float new_x = (b.has_first ? b.first_x : b.min_x) - inline_ancestor_offset.first;
+            layout.x = new_x;
+            layout.y = (b.has_first ? b.first_y : b.min_y) - inline_ancestor_offset.second;
         } else {
-            layout.x = b.has_first ? b.first_x : b.min_x;
+            float new_x = b.has_first ? b.first_x : b.min_x;
+            layout.x = new_x;
             layout.y = b.has_first ? b.first_y : b.min_y;
         }
 
@@ -3925,11 +4011,9 @@ void NativeLayoutEngine::ApplyAnonymousBlockLayoutResults(LayoutNode* node) {
         const LayoutInfo& text_layout = render_obj->GetLayoutInfo();
         float abs_text_origin_x = text_layout.x;
         float abs_text_origin_y = text_layout.y;
-        auto parent = render_obj->GetParent();
-        if (parent && parent->GetType() == RenderObjectType::INLINE) {
-            abs_text_origin_x += parent->GetLayoutInfo().x;
-            abs_text_origin_y += parent->GetLayoutInfo().y;
-        }
+        auto inline_ancestor_offset = accumulate_inline_ancestor_offset(render_obj);
+        abs_text_origin_x += inline_ancestor_offset.first;
+        abs_text_origin_y += inline_ancestor_offset.second;
 
         std::vector<float> local_x_offsets;
         local_x_offsets.reserve(line_abs_x_list.size());
@@ -4230,11 +4314,23 @@ void NativeLayoutEngine::ReadLayoutResults(RenderObject* render_obj) {
                               type == RenderObjectType::TABLE_CELL ||
                               type == RenderObjectType::TABLE_CAPTION);
 
+    LayoutNode* parent_node = (node->parent != 0) ? GetNode(node->parent) : nullptr;
+    bool is_text_under_anonymous_block = (type == RenderObjectType::TEXT &&
+                                          info.is_laid_out &&
+                                          node &&
+                                          node->is_anonymous_block);
+
     if (info.is_laid_out) {
         // TABLE 内部盒由 RenderTable::Layout 完整管理，这里不覆盖。
         if (is_table_internal) {
             return;
         }
+    }
+
+    if (is_text_under_anonymous_block) {
+        info.is_laid_out = true;
+        render_obj->ClearNeedsLayout();
+        return;
     }
 
     // Update render object with layout info
@@ -4272,10 +4368,11 @@ void NativeLayoutEngine::ReadLayoutResults(RenderObject* render_obj) {
     // 这对于 Paint 中的内容尺寸缓存优化很重要
     render_obj->ClearNeedsLayout();
 
-    // For inline elements (like span), we need to position their children.
-    // MeasureIntrinsicSize() only calculates dimensions, not child positions.
-    // Flex layout positions the span element, but not its text children.
-    if (type == RenderObjectType::INLINE) {
+    // For inline elements (like span), we only reposition children when this render object
+    // owns a real inline LayoutNode. Inline descendants managed by anonymous block IFC have
+    // already received final fragment positions from ApplyAnonymousBlockLayoutResults();
+    // calling PositionChildrenOnly() again would re-run inline text-align and overwrite them.
+    if (type == RenderObjectType::INLINE && node->render_obj == render_obj) {
         auto* inline_obj = static_cast<RenderInline*>(render_obj);
         // Position children without recalculating size
         inline_obj->PositionChildrenOnly();

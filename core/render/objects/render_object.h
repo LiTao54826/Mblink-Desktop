@@ -158,7 +158,7 @@ struct ComputedStyle {
     CSSEdges padding;
     CSSBorder border;
     CSSBorderRadius border_radius;
-    
+
     // 背景
     std::string background_color;
     std::string background_image;
@@ -325,7 +325,7 @@ struct ComputedStyle {
     struct AspectRatio {
         bool is_auto = true;
         float ratio = 0.0f;  // width / height, 0 means no ratio
-        
+
         bool HasRatio() const { return ratio > 0.0f; }
     };
     AspectRatio aspect_ratio;
@@ -367,8 +367,8 @@ struct ComputedStyle {
      * @return 如果 contain 包含 layout 则返回 true
      */
     bool HasLayoutContainment() const {
-        return contain == "layout" || 
-               contain == "content" || 
+        return contain == "layout" ||
+               contain == "content" ||
                contain == "strict" ||
                contain.find("layout") != std::string::npos;
     }
@@ -378,7 +378,7 @@ struct ComputedStyle {
      * @return 如果 contain 包含 size 则返回 true
      */
     bool HasSizeContainment() const {
-        return contain == "size" || 
+        return contain == "size" ||
                contain == "strict" ||
                contain.find("size") != std::string::npos;
     }
@@ -419,59 +419,59 @@ struct LayoutInfo {
     float y = 0.0f;
     float width = 0.0f;
     float height = 0.0f;
-    
+
     // 内容区域（不包括 padding 和 border）
     SkRect content_rect;
-    
+
     // Padding 区域（包括 padding）
     SkRect padding_rect;
-    
+
     // Border 区域（包括 border）
     SkRect border_rect;
-    
+
     // Margin 区域（包括 margin）
     SkRect margin_rect;
-    
+
     bool is_laid_out = false;
 };
 
 /**
  * @brief 绘制缓存 - P1优化：样式预计算缓存
- * 
+ *
  * 缓存从 ComputedStyle 计算得到的绘制相关值，避免每帧重复计算。
  * 当样式变化时调用 InvalidatePaintCache() 使缓存失效。
  */
 struct PaintCache {
     bool valid = false;
-    
+
     // 预计算的盒模型值（像素）
     float padding_left = 0.0f;
     float padding_right = 0.0f;
     float padding_top = 0.0f;
     float padding_bottom = 0.0f;
-    
+
     float border_left_width = 0.0f;
     float border_right_width = 0.0f;
     float border_top_width = 0.0f;
     float border_bottom_width = 0.0f;
-    
+
     // 预解析的颜色
     SkColor background_color = SK_ColorTRANSPARENT;
     SkColor border_top_color = SK_ColorBLACK;
     SkColor border_right_color = SK_ColorBLACK;
     SkColor border_bottom_color = SK_ColorBLACK;
     SkColor border_left_color = SK_ColorBLACK;
-    
+
     // 预计算的圆角（像素）
     float border_radius_tl = 0.0f;
     float border_radius_tr = 0.0f;
     float border_radius_bl = 0.0f;
     float border_radius_br = 0.0f;
-    
+
     // 内容区域偏移（border + padding）
     float content_x = 0.0f;
     float content_y = 0.0f;
-    
+
     // 是否有边框
     bool has_border = false;
     // 是否有圆角
@@ -492,12 +492,12 @@ public:
      * @param type 渲染对象类型
      */
     explicit RenderObject(RenderObjectType type);
-    
+
     /**
      * @brief 虚析构函数
      */
     virtual ~RenderObject() = default;
-    
+
     /**
      * @brief 获取渲染对象类型
      */
@@ -513,22 +513,22 @@ public:
      * @brief 获取关联的 DOM 节点
      */
     std::shared_ptr<Node> GetNode() const { return node_.lock(); }
-    
+
     /**
      * @brief 设置关联的 DOM 节点
      */
     void SetNode(std::shared_ptr<Node> node) { node_ = node; }
-    
+
     /**
      * @brief 获取父渲染对象
      */
     std::shared_ptr<RenderObject> GetParent() const { return parent_.lock(); }
-    
+
     /**
      * @brief 设置父渲染对象
      */
     void SetParent(std::shared_ptr<RenderObject> parent) { parent_ = parent; }
-    
+
     /**
      * @brief 获取子渲染对象列表
      */
@@ -543,38 +543,53 @@ public:
      * @brief 添加子渲染对象
      */
     void AppendChild(std::shared_ptr<RenderObject> child);
-    
+
     /**
      * @brief 移除子渲染对象
      */
     void RemoveChild(std::shared_ptr<RenderObject> child);
-    
+
     /**
      * @brief 移除所有子渲染对象
      */
     void RemoveAllChildren();
-    
+
     /**
      * @brief 获取计算后的样式
      */
     ComputedStyle& GetComputedStyle() { return computed_style_; }
     const ComputedStyle& GetComputedStyle() const { return computed_style_; }
-    
+
     /**
      * @brief 设置计算后的样式
      * 自动使绘制缓存和布局边界缓存失效
      */
-    void SetComputedStyle(const ComputedStyle& style) {
-        computed_style_ = style;
-        paint_cache_.valid = false;  // P1优化：样式变化时使缓存失效
-        boundary_cache_valid_ = false;  // 布局边界缓存失效
-    }
-    
+    void SetComputedStyle(const ComputedStyle& style);
+
+
     /**
      * @brief 获取布局信息
      */
     LayoutInfo& GetLayoutInfo() { return layout_info_; }
     const LayoutInfo& GetLayoutInfo() const { return layout_info_; }
+
+    /**
+     * @brief 获取上次标记重绘时的边界框
+     */
+    const SkRect& GetPreviousPaintBounds() const { return previous_paint_bounds_; }
+    const SkRect& GetPreviousViewportPaintBounds() const { return previous_viewport_paint_bounds_; }
+    bool HasPreviousPaintBounds() const { return has_previous_paint_bounds_; }
+    void ClearPreviousPaintBounds() {
+        previous_paint_bounds_ = SkRect::MakeEmpty();
+        previous_viewport_paint_bounds_ = SkRect::MakeEmpty();
+        has_previous_paint_bounds_ = false;
+    }
+    void UpdatePreviousPaintBounds(const SkRect& document_bounds, const SkRect& viewport_bounds) {
+        previous_paint_bounds_ = document_bounds;
+        previous_viewport_paint_bounds_ = viewport_bounds;
+        has_previous_paint_bounds_ = !document_bounds.isEmpty() || !viewport_bounds.isEmpty();
+    }
+
 
     /**
      * @brief 设置 flex container 分配的目标主轴尺寸
@@ -587,80 +602,65 @@ public:
      * @brief 标记需要重新布局
      * @param propagate_to_parent 是否向上传播到父节点（默认true）
      */
-    void MarkNeedsLayout(bool propagate_to_parent = true) {
-        needs_layout_ = true;
-        // 清除内容尺寸缓存，因为布局改变后需要重新计算
-        content_width_ = 0.0f;
-        content_height_ = 0.0f;
-        // 向上传播到父节点，因为父节点的大小可能依赖于子节点
-        if (propagate_to_parent) {
-            auto parent = parent_.lock();
-            if (parent) {
-                parent->MarkNeedsLayout(true);
-            }
-            // 向上传播 ChildNeedsLayout 标志
-            // 只有当需要向上传播时才调用，避免访问可能无效的 parent_
-            MarkAncestorsWithChildNeedsLayout();
-        }
-    }
-    
+    void MarkNeedsLayout(bool propagate_to_parent = true);
+
     /**
      * @brief 检查是否需要重新布局
      */
     bool NeedsLayout() const { return needs_layout_; }
-    
+
     /**
      * @brief 检查子节点是否需要布局
      */
     bool ChildNeedsLayout() const { return child_needs_layout_; }
-    
+
     /**
      * @brief 检查是否需要布局（自身或子节点）
      */
     bool IsDirtyForLayout() const { return needs_layout_ || child_needs_layout_; }
-    
+
     /**
      * @brief 清除布局标记
      */
     void ClearNeedsLayout() { needs_layout_ = false; child_needs_layout_ = false; }
-    
+
     /**
      * @brief 标记祖先节点的 ChildNeedsLayout 标志
      */
     void MarkAncestorsWithChildNeedsLayout();
-    
+
     /**
      * @brief 标记需要重新绘制
      * 同时向上传播 ChildNeedsPaint 标志到祖先节点
      */
     void MarkNeedsPaint();
-    
+
     /**
      * @brief 检查是否需要重新绘制
      */
     bool NeedsPaint() const { return needs_paint_; }
-    
+
     /**
      * @brief 检查子节点是否需要重绘
      */
     bool ChildNeedsPaint() const { return child_needs_paint_; }
-    
+
     /**
      * @brief 检查是否需要绘制（自身或子节点）
      * 用于增量绘制优化：如果都不需要，可以跳过整个子树
      */
     bool IsDirtyForPaint() const { return needs_paint_ || child_needs_paint_; }
-    
+
     /**
      * @brief 清除绘制标记
      */
     void ClearNeedsPaint() { needs_paint_ = false; }
-    
+
     /**
      * @brief 清除子节点需要绘制标记
      */
     void ClearChildNeedsPaint() { child_needs_paint_ = false; }
-    
+
     /**
      * @brief 标记祖先节点的 ChildNeedsPaint 标志
      * 只设置祖先的 child_needs_paint_，不修改祖先的 needs_paint_
@@ -796,8 +796,8 @@ public:
      * @brief 设置属性树状态
      * @param state 属性树状态
      */
-    void SetPropertyTreeState(std::unique_ptr<PropertyTreeState> state) { 
-        property_tree_state_ = std::move(state); 
+    void SetPropertyTreeState(std::unique_ptr<PropertyTreeState> state) {
+        property_tree_state_ = std::move(state);
     }
 
     /**
@@ -992,10 +992,10 @@ public:
 
     /**
      * @brief 绘制 outline（焦点指示器）
-     * 
+     *
      * Outline 不占用布局空间，紧贴边框外边缘绘制（符合浏览器行为）。
      * 支持 solid、dashed、dotted 样式，以及圆角。
-     * 
+     *
      * @param canvas Skia 画布
      * @note 应在边框绘制之后调用
      */
@@ -1062,7 +1062,7 @@ public:
      * 当为 true 时，Paint 不应用滚动偏移，滚动偏移在合成阶段应用
      */
     void SetUseCompositorScroll(bool use) { use_compositor_scroll_ = use; }
-    
+
     /**
      * @brief 检查是否使用合成器滚动
      */
@@ -1248,6 +1248,9 @@ protected:
     LayerInfo layer_info_;    // 合成层关联信息
     std::unique_ptr<PropertyTreeState> property_tree_state_;  // 属性树状态
     std::unique_ptr<PaintLayer> paint_layer_;  // 统一绘制层
+    SkRect previous_paint_bounds_ = SkRect::MakeEmpty();
+    SkRect previous_viewport_paint_bounds_ = SkRect::MakeEmpty();
+    bool has_previous_paint_bounds_ = false;
 
     bool needs_layout_ = true;
     bool needs_paint_ = true;
@@ -1269,7 +1272,7 @@ protected:
     // 当 flex container 分配了空间给 flex item 时设置此值
     // -1 表示未设置（使用正常的 auto 计算）
     float flex_target_main_size_ = -1.0f;
-    
+
     // 滚动内容层标志：当为 true 时，Paint 不应用滚动偏移
     // 滚动偏移将在合成阶段由 ScrollLayerManager 的 content_layer 应用
     // 这是性能优化的关键：滚动时只需要 GPU 合成，不需要 CPU 光栅化
@@ -1285,11 +1288,11 @@ protected:
         float cached_height = 0.0f;       // 缓存时的元素高度
         size_t shadow_hash = 0;           // shadow 参数的哈希值
         SkPoint draw_offset;              // 绘制时的偏移量
-        
+
         bool IsValid(float w, float h, size_t hash) const {
             return image && cached_width == w && cached_height == h && shadow_hash == hash;
         }
-        
+
         void Invalidate() {
             image.reset();
             cached_width = 0;
@@ -1438,28 +1441,16 @@ public:
     const std::vector<std::string>& GetWrappedLines() const { return wrapped_lines_; }
 
     // Set wrapped lines (called by measure function)
-    void SetWrappedLines(const std::vector<std::string>& lines) {
-        wrapped_lines_ = lines;
-        wrapped_line_x_offsets_.clear();
-        wrapped_line_y_offsets_.clear();
-    }
+    void SetWrappedLines(const std::vector<std::string>& lines);
 
     // Set wrapped lines with per-line x offsets (from IFC line fragments)
     void SetWrappedLinesWithOffsets(const std::vector<std::string>& lines,
-                                    const std::vector<float>& x_offsets) {
-        wrapped_lines_ = lines;
-        wrapped_line_x_offsets_ = x_offsets;
-        wrapped_line_y_offsets_.clear();
-    }
+                                    const std::vector<float>& x_offsets);
 
     // Set wrapped lines with per-line x/y offsets (from IFC line fragments)
     void SetWrappedLinesWithOffsets(const std::vector<std::string>& lines,
                                     const std::vector<float>& x_offsets,
-                                    const std::vector<float>& y_offsets) {
-        wrapped_lines_ = lines;
-        wrapped_line_x_offsets_ = x_offsets;
-        wrapped_line_y_offsets_ = y_offsets;
-    }
+                                    const std::vector<float>& y_offsets);
 
     // Get/Set actual measured text width (for text-align calculation)
     float GetActualTextWidth() const { return actual_text_width_; }

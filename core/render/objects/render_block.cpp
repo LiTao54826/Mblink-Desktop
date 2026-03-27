@@ -44,6 +44,7 @@
 #include <atomic>
 #include <chrono>
 #include <iostream>
+#include <sstream>
 #include "include/core/SkSurface.h"
 
 #ifdef _WIN32
@@ -61,6 +62,11 @@
 #endif
 
 namespace lightui {
+
+#ifdef _WIN32
+static void PrintCallStack();
+#endif
+
 
 // 🐛 调试辅助函数：打印调用栈
 #ifdef _WIN32
@@ -225,7 +231,8 @@ void RenderBlock::Layout(float parent_width, float parent_height) {
                 current_x = padding_left + border_left;
                 line_height = 0;
             }
-            child_layout.x = current_x + child_margin_left;
+            float new_x = current_x + child_margin_left;
+            child_layout.x = new_x;
             child_layout.y = current_y + padding_top + border_top + child_margin_top;
             current_x += child_width;
             line_height = std::max(line_height, child_layout.height);

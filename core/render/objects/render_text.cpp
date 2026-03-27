@@ -1,7 +1,7 @@
 /**
  * @file render_text.cpp
  * @brief RenderText 类实现
- * 
+ *
  * 从 render_object.cpp 提取的文本渲染对象实现。
  * 包含 RenderText::Layout 和 RenderText::Paint 方法。
  */
@@ -14,11 +14,24 @@
 #include "core/render/utils/color.h"
 #include "core/dom/element.h"
 #include <algorithm>
+#include <cmath>
 #include <iostream>
 #include <sstream>
 #include <cstdio>
+#include <unordered_map>
+#include <string>
 #include "include/core/SkPathEffect.h"
 #include "include/effects/SkDashPathEffect.h"
+
+#ifdef _WIN32
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#include <DbgHelp.h>
+#pragma comment(lib, "Dbghelp.lib")
+#endif
+
 
 namespace lightui {
 
@@ -41,15 +54,34 @@ static float GetBrowserNormalLineHeight(float font_size) {
         case 22: return 25.5f;
         case 24: return 28.0f;
         case 32: return 37.0f;
-        default:
+        default: {
             float line_height = font_size * 1.156f;
             return std::round(line_height * 2.0f) / 2.0f;
+        }
     }
 }
 
 
-// ========== RenderText 实现 ==========
+void RenderText::SetWrappedLines(const std::vector<std::string>& lines) {
+    wrapped_lines_ = lines;
+    wrapped_line_x_offsets_.clear();
+    wrapped_line_y_offsets_.clear();
+}
 
+void RenderText::SetWrappedLinesWithOffsets(const std::vector<std::string>& lines,
+                                            const std::vector<float>& x_offsets) {
+    wrapped_lines_ = lines;
+    wrapped_line_x_offsets_ = x_offsets;
+    wrapped_line_y_offsets_.clear();
+}
+
+void RenderText::SetWrappedLinesWithOffsets(const std::vector<std::string>& lines,
+                                            const std::vector<float>& x_offsets,
+                                            const std::vector<float>& y_offsets) {
+    wrapped_lines_ = lines;
+    wrapped_line_x_offsets_ = x_offsets;
+    wrapped_line_y_offsets_ = y_offsets;
+}
 
 void RenderText::Layout(float parent_width, float parent_height) {
     const auto& style = computed_style_;
@@ -173,7 +205,7 @@ void RenderText::Paint(SkCanvas* canvas) {
     font.getMetrics(&font_metrics);
 
     float skia_text_height = -font_metrics.fAscent + font_metrics.fDescent;
-    
+
     // 计算 css_line_height - 必须与 Layout 中的计算保持一致！
     // 如果 style.line_height 是默认值 1.2，使用浏览器风格的 line-height: normal
     float css_line_height;
@@ -185,7 +217,7 @@ void RenderText::Paint(SkCanvas* canvas) {
 
     // 计算 baseline_y - 用于垂直居中文本
     // 必须与 vertical_aligner.cpp 中的 GetBoxMetrics 保持一致的逻辑
-    // 
+    //
     // GetBoxMetrics 的逻辑：
     // - 当 box.height > content_height 时，添加 half-leading
     // - 当 box.height < content_height 时，按比例缩放 ascent/descent
@@ -195,7 +227,7 @@ void RenderText::Paint(SkCanvas* canvas) {
     float baseline_y;
     float raw_ascent = -font_metrics.fAscent;
     float raw_descent = font_metrics.fDescent;
-    
+
     if (css_line_height > skia_text_height) {
         // 有额外空间，添加 half-leading
         float half_leading = (css_line_height - skia_text_height) / 2.0f;
@@ -339,6 +371,7 @@ void RenderText::Paint(SkCanvas* canvas) {
                     }
                 }
             }
+
 
             if (!style.text_shadow.empty()) {
                 ShadowRenderer::RenderTextWithShadow(canvas, text_to_render, font,

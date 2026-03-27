@@ -1,7 +1,7 @@
 /**
  * @file render_inline.cpp
  * @brief RenderInline 类实现
- * 
+ *
  * 从 render_object.cpp 提取的内联元素渲染对象实现。
  * 包含 RenderInline::Layout, PositionChildrenOnly, MeasureIntrinsicSize, Paint 方法。
  * 表单元素绘制委托给 FormElementPainter。
@@ -13,10 +13,13 @@
 #include "core/dom/element.h"
 #include "core/dom/elements/html_input_element.h"
 #include "core/dom/elements/html_textarea_element.h"
+#include "core/dom/text.h"
 #include <algorithm>
 #include <iostream>
+#include <sstream>
 
 namespace lightui {
+
 
 // ========== RenderInline 实现 ==========
 
@@ -117,11 +120,11 @@ void RenderInline::Layout(float parent_width, float parent_height) {
 
 void RenderInline::PositionChildrenOnly() {
     const auto& style = computed_style_;
-    
+
     float padding_left = style.padding.left.ToPx(layout_info_.width, style.font_size);
     float padding_top = style.padding.top.ToPx(layout_info_.width, style.font_size);
     float padding_bottom = style.padding.bottom.ToPx(layout_info_.width, style.font_size);
-    
+
     float max_height = 0;
     for (auto& child : children_) {
         auto& child_layout = child->GetLayoutInfo();
@@ -130,21 +133,22 @@ void RenderInline::PositionChildrenOnly() {
         }
         max_height = std::max(max_height, child_layout.height);
     }
-    
+
     float content_height = layout_info_.height - padding_top - padding_bottom;
-    
+
     // DEBUG: 输出 inline 元素子元素定位信息
     static bool debug_inline = std::getenv("DEBUG_INLINE_POS") != nullptr;
-    
+
     float current_x = padding_left;
     for (auto& child : children_) {
         auto& child_layout = child->GetLayoutInfo();
         float child_y = padding_top + (content_height - child_layout.height) / 2.0f;
-        
+
         if (debug_inline) {
         }
-        
-        child_layout.x = current_x;
+
+        float new_x = current_x;
+        child_layout.x = new_x;
         child_layout.y = child_y;
         current_x += child_layout.width;
     }
@@ -228,7 +232,7 @@ void RenderInline::Paint(SkCanvas* canvas) {
     }
 
     // Viewport Culling
-    SkRect paint_rect = SkRect::MakeXYWH(layout_info_.x, layout_info_.y, 
+    SkRect paint_rect = SkRect::MakeXYWH(layout_info_.x, layout_info_.y,
                                           layout_info_.width, layout_info_.height);
     if (canvas->quickReject(paint_rect.makeOutset(10, 10))) {
         needs_paint_ = false;
@@ -298,7 +302,7 @@ void RenderInline::Paint(SkCanvas* canvas) {
     auto node = GetNode();
     if (node && node->GetNodeType() == NodeType::ELEMENT_NODE) {
         auto element = std::static_pointer_cast<Element>(node);
-        
+
         auto input_element = std::dynamic_pointer_cast<HTMLInputElement>(node);
         if (input_element) {
             Box form_box;
@@ -306,13 +310,13 @@ void RenderInline::Paint(SkCanvas* canvas) {
             form_box.content_y = 0;
             form_box.content_width = layout.width;
             form_box.content_height = layout.height;
-            
+
             FormElementPaintParams params;
             params.font_family = style.font_family;
             params.font_size = style.font_size;
             params.text_color = style.color;
             params.has_focus = element->HasPseudoClass("focus");
-            
+
             FormElementPainter painter(canvas);
             painter.PaintInputElement(input_element.get(), form_box, params);
         }
@@ -324,13 +328,13 @@ void RenderInline::Paint(SkCanvas* canvas) {
             form_box.content_y = 0;
             form_box.content_width = layout.width;
             form_box.content_height = layout.height;
-            
+
             FormElementPaintParams params;
             params.font_family = style.font_family;
             params.font_size = style.font_size;
             params.text_color = style.color;
             params.has_focus = element->HasPseudoClass("focus");
-            
+
             FormElementPainter painter(canvas);
             painter.PaintTextAreaElement(textarea_element.get(), form_box, params);
         }

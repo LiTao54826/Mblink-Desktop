@@ -14,10 +14,10 @@ namespace lightui {
 
 uint32_t LineBreaker::DecodeUTF8(const std::string& str, size_t& pos) {
     if (pos >= str.size()) return 0;
-    
+
     unsigned char c = static_cast<unsigned char>(str[pos]);
     uint32_t cp = 0;
-    
+
     if ((c & 0x80) == 0) {
         // ASCII (0xxxxxxx)
         cp = c;
@@ -56,7 +56,7 @@ uint32_t LineBreaker::DecodeUTF8(const std::string& str, size_t& pos) {
         // 无效 UTF-8
         pos += 1;
     }
-    
+
     return cp;
 }
 
@@ -74,20 +74,20 @@ bool LineBreaker::IsCJK(uint32_t ch) {
     if (ch >= 0x20000 && ch <= 0x2A6DF) return true; // 扩展B
     if (ch >= 0x2A700 && ch <= 0x2B73F) return true; // 扩展C
     if (ch >= 0x2B740 && ch <= 0x2B81F) return true; // 扩展D
-    
+
     // CJK 符号和标点
     if (ch >= 0x3000 && ch <= 0x303F) return true;
-    
+
     // 全角 ASCII
     if (ch >= 0xFF00 && ch <= 0xFFEF) return true;
-    
+
     // 日文假名
     if (ch >= 0x3040 && ch <= 0x309F) return true;  // 平假名
     if (ch >= 0x30A0 && ch <= 0x30FF) return true;  // 片假名
-    
+
     // 韩文
     if (ch >= 0xAC00 && ch <= 0xD7AF) return true;
-    
+
     return false;
 }
 
@@ -99,11 +99,11 @@ bool LineBreaker::IsLineStartProhibited(uint32_t ch) {
     if (ch == 0xFF01 || ch == 0xFF1F) return true; // ！？
     if (ch == 0x3009 || ch == 0x300B || ch == 0x300D || ch == 0x300F) return true; // 〉》】」
     if (ch == 0xFF09 || ch == 0xFF3D) return true; // ）］
-    
+
     // ASCII 标点
     if (ch == ')' || ch == ']' || ch == '}') return true;
     if (ch == '.' || ch == ',' || ch == '!' || ch == '?' || ch == ':' || ch == ';') return true;
-    
+
     return false;
 }
 
@@ -112,10 +112,10 @@ bool LineBreaker::IsLineEndProhibited(uint32_t ch) {
     // 左括号类
     if (ch == 0x3008 || ch == 0x300A || ch == 0x300C || ch == 0x300E) return true; // 〈《「『
     if (ch == 0xFF08 || ch == 0xFF3B) return true; // （［
-    
+
     // ASCII
     if (ch == '(' || ch == '[' || ch == '{') return true;
-    
+
     return false;
 }
 
@@ -169,19 +169,19 @@ bool LineBreaker::CanBreakBetween(uint32_t prev_char, uint32_t next_char) {
 
 std::string LineBreaker::ProcessWhitespace(const std::string& text) {
     if (text.empty()) return text;
-    
+
     switch (white_space_) {
         case WhiteSpaceMode::PRE:
         case WhiteSpaceMode::PRE_WRAP:
             // 保留所有空白
             return text;
-            
+
         case WhiteSpaceMode::PRE_LINE: {
             // 合并空格和制表符，保留换行符
             std::string result;
             result.reserve(text.size());
             bool in_space = false;
-            
+
             for (char c : text) {
                 if (c == '\n') {
                     result += c;
@@ -198,7 +198,7 @@ std::string LineBreaker::ProcessWhitespace(const std::string& text) {
             }
             return result;
         }
-        
+
         case WhiteSpaceMode::NORMAL:
         case WhiteSpaceMode::NOWRAP:
         default: {
@@ -206,7 +206,7 @@ std::string LineBreaker::ProcessWhitespace(const std::string& text) {
             std::string result;
             result.reserve(text.size());
             bool in_space = false;
-            
+
             for (char c : text) {
                 if (c == ' ' || c == '\t' || c == '\n' || c == '\r') {
                     if (!in_space) {
@@ -231,10 +231,10 @@ std::vector<BreakOpportunity> LineBreaker::FindBreakOpportunities(
 ) {
     std::vector<BreakOpportunity> opportunities;
     float current_width = 0.0f;
-    
+
     for (size_t i = 0; i < boxes.size(); ++i) {
         const InlineBox& box = boxes[i];
-        
+
         // 盒子边界是断行机会
         if (i > 0 && box.IsText()) {
             BreakOpportunity op;
@@ -244,7 +244,7 @@ std::vector<BreakOpportunity> LineBreaker::FindBreakOpportunities(
             op.type = BreakType::NORMAL;
             opportunities.push_back(op);
         }
-        
+
         // 文本内部的断行机会
         if (box.IsText()) {
             for (const auto& run : box.text_runs) {
@@ -257,19 +257,19 @@ std::vector<BreakOpportunity> LineBreaker::FindBreakOpportunities(
                     op.type = BreakType::FORCED;
                     opportunities.push_back(op);
                 }
-                
+
                 // 查找文本内的断行点
-                if (!run.text.empty() && white_space_ != WhiteSpaceMode::NOWRAP 
+                if (!run.text.empty() && white_space_ != WhiteSpaceMode::NOWRAP
                     && white_space_ != WhiteSpaceMode::PRE) {
                     size_t pos = 0;
                     uint32_t prev_char = 0;
                     float char_width = run.width / std::max(1.0f, static_cast<float>(run.CharacterCount()));
                     float text_width = 0;
-                    
+
                     while (pos < run.text.size()) {
                         size_t start_pos = pos;
                         uint32_t ch = DecodeUTF8(run.text, pos);
-                        
+
                         if (prev_char != 0 && CanBreakBetween(prev_char, ch)) {
                             BreakOpportunity op;
                             op.box_index = i;
@@ -278,17 +278,17 @@ std::vector<BreakOpportunity> LineBreaker::FindBreakOpportunities(
                             op.type = BreakType::NORMAL;
                             opportunities.push_back(op);
                         }
-                        
+
                         text_width += char_width;
                         prev_char = ch;
                     }
                 }
             }
         }
-        
+
         current_width += box.GetTotalWidth();
     }
-    
+
     return opportunities;
 }
 
@@ -311,6 +311,19 @@ static bool IsWhitespaceOnlyTextBox(const InlineBox& box, WhiteSpaceMode mode) {
         }
     }
     return true;
+}
+
+static bool HasForcedBreakTextRun(const InlineBox& box) {
+    if (!box.IsText()) {
+        return false;
+    }
+
+    for (const auto& run : box.text_runs) {
+        if (run.is_forced_break) {
+            return true;
+        }
+    }
+    return false;
 }
 
 static bool LineHasVisibleContent(const LineBox& line, WhiteSpaceMode mode) {
@@ -447,10 +460,15 @@ std::vector<LineBox> LineBreaker::BreakIntoLines(
             if (box.IsText() && box.text_runs.empty()) {
                 continue;
             }
-            if (box.IsText() && !box.text_runs.empty() && box.text_runs[0].text.empty()) {
+            // 修复原因：CodeMirror 等编辑器会用 <br>/forced break 表示空行。
+            // 这里不能把 text.empty() 的 forced break 盒子当成可折叠空白直接丢掉，
+            // 否则正文行盒数量会少于 gutter 行号数量，表现为空行不显示、
+            // 两位数行号阶段的错位闪烁/重影更明显。
+            if (box.IsText() && !box.text_runs.empty() && box.text_runs[0].text.empty() && !HasForcedBreakTextRun(box)) {
                 continue;
             }
         }
+
 
         bool box_was_split = false;
 
@@ -644,9 +662,13 @@ std::vector<LineBox> LineBreaker::BreakIntoLines(
         TrimTrailingCollapsibleWhitespace(&lines.back(), current_width, white_space_);
     }
 
-    while (!lines.empty() && lines.back().IsEmpty()) {
+    // 修复原因：显式换行（如 CodeMirror 空行对应的 <br>）会在 forced break 后
+    // 追加一个新的空 LineBox，用于承接后续内容。这里只裁掉“最后追加出来、
+    // 且没有任何盒子”的尾随空行，保留前面真正承载 forced break 语义的空行盒。
+    while (lines.size() >= 2 && lines.back().IsEmpty()) {
         lines.pop_back();
     }
+
 
     return lines;
 }

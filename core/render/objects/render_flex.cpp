@@ -394,6 +394,12 @@ void RenderFlex::LayoutAsFlex(float parent_width, float parent_height) {
         if (align == "auto" || align.empty()) {
             align = style.align_items;
         }
+        // CSS flex 的默认交叉轴行为应接近 stretch。
+        // 当前样式默认值是 normal，若不映射为 stretch，子项会按内容宽度收缩，
+        // 导致如 CodeMirror gutter 这类 column flex 容器中的行号元素宽度抖动。
+        if (align.empty() || align == "normal") {
+            align = "stretch";
+        }
 
         if (align == "flex-start" || align == "start") {
             cross_offset = 0;
@@ -403,6 +409,13 @@ void RenderFlex::LayoutAsFlex(float parent_width, float parent_height) {
             cross_offset = cross_free_space / 2.0f;
         } else if (align == "stretch") {
             cross_offset = 0;
+            if (cross_free_space > 0) {
+                if (is_row) {
+                    child_layout.height += cross_free_space;
+                } else {
+                    child_layout.width += cross_free_space;
+                }
+            }
         } else {
             cross_offset = 0;
         }

@@ -9,11 +9,27 @@
 
 #include "line_box.h"
 #include "core/render/objects/render_object.h"
+#include "core/dom/text.h"
 #include <algorithm>
 #include <cmath>
+#include <cctype>
 #include <iostream>
 
 namespace lightui {
+
+static bool ShouldTraceTrackedLineBox(const std::vector<InlineBox*>& boxes) {
+    for (auto* box : boxes) {
+        if (!box || !box->render_object) continue;
+        auto node = box->render_object->GetNode();
+        if (!node || node->GetNodeType() != NodeType::TEXT_NODE) continue;
+        auto text_node = std::static_pointer_cast<Text>(node);
+        if (!text_node) continue;
+        if (text_node->GetData() == "1") {
+            return true;
+        }
+    }
+    return false;
+}
 
 // Helper function to parse vertical-align style string to enum
 static VerticalAlign ParseVerticalAlignStyle(const std::string& value) {
@@ -179,7 +195,58 @@ void LineBox::ApplyTextAlign(const std::string& align) {
         return;
     }
 
+    static bool debug_gutter_align = std::getenv("LIGHTUI_DEBUG_GUTTER_ALIGN") != nullptr;
+
     if (align == "right" || align == "end") {
+        if (debug_gutter_align) {
+            bool should_log = false;
+            for (auto* box : boxes) {
+                if (!box || !box->render_object) continue;
+                auto node = box->render_object->GetNode();
+                if (!node || node->GetNodeType() != NodeType::TEXT_NODE) continue;
+                auto text = std::static_pointer_cast<Text>(node)->GetData();
+                if (!text.empty() && std::all_of(text.begin(), text.end(), [](unsigned char ch) {
+                        return std::isdigit(ch) || ch == ' ' || ch == '\n' || ch == '\t';
+                    })) {
+                    should_log = true;
+                    break;
+                }
+            }
+            if (should_log) {
+                std::cout << "[GUTTER_ALIGN]"
+                          << " align=" << align
+                          << " line_x=" << x
+                          << " available=" << available_width
+                          << " content=" << content_width
+                          << " extra=" << extra_space
+                          << " boxes=" << boxes.size()
+                          << "\n";
+            }
+        }
+
+        if (ShouldTraceTrackedLineBox(boxes) && false) {
+            std::cout << "[TRACE_LINE_ALIGN_RIGHT]"
+                      << " line_x=" << x
+                      << " available=" << available_width
+                      << " content=" << content_width
+                      << " extra=" << extra_space
+                      << " box_count=" << boxes.size()
+                      << "\n";
+            for (auto* box : boxes) {
+                if (!box || !box->render_object) continue;
+                auto node = box->render_object->GetNode();
+                if (!node || node->GetNodeType() != NodeType::TEXT_NODE) continue;
+                auto text = std::static_pointer_cast<Text>(node)->GetData();
+                std::cout << "    [TRACE_LINE_ALIGN_BOX]"
+                          << " render_obj=" << box->render_object
+                          << " text=" << text
+                          << " x=" << box->x
+                          << " w=" << box->width
+                          << " total_w=" << box->GetTotalWidth()
+                          << "\n";
+            }
+        }
+
         // 右对齐：所有盒子右移
         for (auto* box : boxes) {
             if (box) box->x += extra_space;

@@ -31,10 +31,12 @@
 #include <unordered_map>
 #include <chrono>
 #include <sstream>
+#include <sstream>
 #include "include/core/SkPathEffect.h"
 #include "include/effects/SkDashPathEffect.h"
 
 namespace lightui {
+
 
 
 void RenderInlineBlock::Layout(float parent_width, float parent_height) {
@@ -212,7 +214,8 @@ void RenderInlineBlock::Layout(float parent_width, float parent_height) {
         // 🎯 修复：inline-block 不是 flex 容器，应该保留空白文本节点
         // 只有 flex/inline-flex/grid/inline-grid 容器才应该跳过纯空白文本节点
         auto& child_layout = child->GetLayoutInfo();
-        child_layout.x = current_x;
+        float new_x = current_x;
+        child_layout.x = new_x;
         // 垂直居中：如果内容高度小于内容区域高度，则居中
         // 这对于按钮等元素的文字垂直居中很重要
         if (child_layout.height < content_area_height) {
