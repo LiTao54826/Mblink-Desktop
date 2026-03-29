@@ -5,6 +5,7 @@ out/
 .venv/
 mingw64/
 ReferenceProject/
+.kiro/
 
 # IDE
 .vscode/
@@ -31,6 +32,10 @@ __pycache__/
 dist/
 .eggs/
 *.egg
+bindings/python/build/
+bindings/python/dist/
+bindings/python/lightui.egg-info/
+bindings/python/lightui/bin/
 
 # Rust
 target/
@@ -58,6 +63,14 @@ build_log.txt
 # Test output
 test_output/
 *.png
+*.toc
+*.pkg
+*.pyz
+
+# PyInstaller / packaging outputs
+warn-*.txt
+xref-*.html
+base_library.zip
 
 # Third party libraries (downloaded/compiled)
 third_party/quickjs/

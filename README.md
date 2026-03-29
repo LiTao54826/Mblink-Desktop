@@ -1,375 +1,88 @@
 # MBink
 
-**轻量高效的企业级桌面应用框架**
+MBink 是一个基于 C++ 的桌面 UI / 应用框架仓库，当前代码中可确认接入了 QuickJS、SDL3、Skia、Lexbor，以及一套自有的 DOM、事件、布局、渲染、合成与工具链模块。
 
-基于 QuickJS + Skia + SDL3 + NativeLayoutEngine，使用 JavaScript/Preact 开发高性能桌面应用
+> 当前仓库仍处于开源整理阶段。以下说明以源码、CMake、示例和测试结构为准，不沿用旧阶段文档中的完成度口径。
 
-> 🎯 **定位**: 轻量核心 + 可选企业级扩展（混合策略）
+## 当前可以确认的内容
 
-[![Build Status](https://img.shields.io/badge/build-passing-brightgreen.svg)]()
-[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-0.92.0-orange.svg)]()
-[![Phase](https://img.shields.io/badge/phase-Production%20Ready-green)]()
-[![Progress](https://img.shields.io/badge/progress-95%25-blue)]()
-[![Tests](https://img.shields.io/badge/tests-待重建-yellow)]()
-[![Strategy](https://img.shields.io/badge/strategy-Hybrid-purple)]()
+- 使用 `CMake` 作为主构建系统
+- `core/` 下已接入 window、dom、event、layout、render、quickjs、network、devtools、compositor 等模块
+- 存在统一 C ABI：`core/api/lightui.h`
+- 顶层当前只接入 `bindings/python`
+- 存在真实工具目标：`app_bundler`、`esm_loader`
+- `app_loader` 当前未接入顶层构建
+- 存在分层测试工程：unit / render / integration / property / performance
+- 仓库内有较多示例与实验性 demo
 
----
+## 当前不能直接承诺的内容
 
-## 📊 项目状态
+- Rust / Go / Node.js 绑定可用（当前仅能确认这些目录为预留空目录）
+- 所有测试稳定通过
+- 所有平台均已验证
+- 项目命名已经完全从 `LightUI` 迁移到 `MBink`
 
-**当前版本**: v0.92.0
-**当前阶段**: 生产就绪，完整功能集 🚀
-**进度**: 95% (核心功能 + 高级特性完成)
-**最后更新**: 2026-02-13
-**构建状态**: ✅ 核心模块编译成功
-**测试状态**: ⚠️ 测试待重建（历史清单见 docs/LEGACY_TEST_LIST.md）
-**Preact 生态**: ✅ 100% 完成 (完整 Virtual DOM + Hooks)
-**Fluent UI**: ✅ 完整组件库 (15+ 组件)
-**DevTools**: ✅ 完整开发者工具 (F12 调试面板)
-**战略定位**: 轻量核心 + 可选企业级扩展
-**下一步**: 测试重建 / 跨平台验证 / v1.0 发布
+## 仓库现状说明
 
-### 🚀 快速开始
+当前代码和构建系统中仍大量使用 `LightUI` / `lightui` 命名，例如：
+- CMake 项目名
+- target 名称
+- C API 命名
+- Python 包名
 
-- **项目状态**: [docs/PROJECT_STATUS.md](docs/PROJECT_STATUS.md) - 完整的项目状态报告
-- **快速上手**: [docs/QUICK_START_GUIDE.md](docs/QUICK_START_GUIDE.md) - 快速恢复工作指南
-- **开发路线图**: [docs/ROADMAP.md](docs/ROADMAP.md) - 详细开发计划
+这表示仓库仍处于品牌和对外接口整理阶段。
 
-### 最新成就 🎉
+## 目录概览
 
-**Phase 11 - 生产就绪特性** (完成 ✅):
-- ✅ **Compositor 子系统** - 完整图层合成系统（参考 Chromium Blink）
-  - Property Tree 属性树系统
-  - 增量更新支持
-  - 滚动层管理
-  - 动画图层桥接
-- ✅ **DevTools 开发者工具** - 完整的 F12 调试面板
-  - 元素检查器（DOM 树导航）
-  - 样式面板（查看/编辑样式）
-  - Box Model 可视化
-  - 元素拾取器
-- ✅ **Network 网络模块** - 完整的网络请求支持
-  - HTTP 客户端（GET/POST/PUT/DELETE）
-  - Fetch API JavaScript 绑定
-  - Promise 异步处理
-- ✅ **Fluent Design 组件库** - 基于 Microsoft Fluent UI
-  - 15+ 组件（Button, Input, Card, Avatar 等）
-  - 完整主题系统
-  - 轻量级纯 JS 实现
-
-**Phase 10 - 原生布局引擎** (完成 ✅):
-- ✅ **Native Layout Engine** - 完全原生的 C++ 布局引擎
-- ✅ **Block 布局** - 标准块级元素布局
-- ✅ **IFC 布局** - 行内格式化上下文 (Inline Formatting Context)
-- ✅ **text-align** - left/center/right/justify 文本对齐
-- ✅ **vertical-align** - 行内元素垂直对齐
-- ✅ **inline-block** - 行内块级元素支持
-- ✅ **换行算法** - 支持 CJK 字符、连字符断行
-- ✅ **布局测试** - 312 个布局比较测试 100% 通过
-
-**Phase 9 - Preact 生态集成** (完成 ✅):
-- ✅ **Preact 核心库** - 纯 JS 实现 `js/preact/preact.js`
-- ✅ **Hooks 支持** - useState, useEffect, useRef 等完整 Hooks
-- ✅ **示例应用** - preact_counter, preact_todo_app, fluent_demo 等
-
-**Phase 8 - 原生布局引擎** (完成 ✅):
-- ✅ **Flexbox/Grid** - 通过 NativeLayoutEngine 实现完整布局支持
-- ✅ **D3D11 DisplayBackend** - 无闪烁 CPU 渲染
-
-**Phase 3-7 - CSS 高级特性与 HTML 支持** (100% 完成 ✅):
-- ✅ **CSS Shadows/Gradients** - 阴影、渐变
-- ✅ **CSS Transform/Transition/Animation** - 变换、过渡、动画
-- ✅ **CSS Variables/Filters** - 变量、滤镜
-- ✅ **HTML5 完整解析** - 错误处理、表单元素
-
-**Phase 2 - 核心功能** (100% 完成 ✅):
-- ✅ **JavaScript 运行时** - QuickJS 封装、Console API
-- ✅ **DOM API** - W3C 标准、事件系统
-- ✅ **渲染/窗口系统** - Skia + SDL3
-
-📝 [项目状态](docs/PROJECT_STATUS.md) | 📊 [开发路线图](docs/ROADMAP.md) | 🏗️ [架构设计](docs/ARCHITECTURE.md)
-
----
-
-## ✨ 特性
-
-### 核心优势
-- 🪶 **轻量高效** - 启动 ~100ms，内存 ~50MB（比 Electron 显著优秀）
-- ⚡ **原生性能** - Skia 硬件加速，QuickJS 轻量引擎
-- 🎨 **Preact 生态** - 完整 Virtual DOM，支持所有 React Hooks
-- 🌍 **跨平台** - Windows、macOS、Linux 一次编写
-- 📦 **独立部署** - 单文件运行，无需额外运行时
-- 🎯 **Fluent Design** - 完整的 Microsoft Fluent UI 组件库
-- 🔧 **开发者工具** - 内置 F12 调试面板，元素检查、样式编辑
-- 🌐 **网络支持** - 完整的 Fetch API，Promise 异步处理
-
-### 高级特性
-- 🎬 **图层合成** - Chromium Blink 级别的 Compositor 系统
-- 🔍 **DevTools** - 元素检查器、样式面板、Box Model 可视化
-- 📡 **Fetch API** - 标准 Web API，支持 GET/POST/PUT/DELETE
-- 🎨 **CSS 完整支持** - 动画、变换、滤镜、阴影、渐变
-- 📐 **原生布局** - Block + IFC + Flexbox + Grid 完整实现
-
-### 混合策略（企业级能力）
-- 🔧 **轻量核心** - 20个基础组件 (~50KB)，满足 80% 场景
-- 🔌 **可选扩展** - 按需加载高级组件和第三方库
-- 🏢 **企业支持** - 完整组件库、可视化设计器（规划中）
-
-## 🆚 与竞品对比
-
-| 特性 | **MBink** | **Electron** | **Tauri** | **RmlUi** |
-|------|-----------|-------------|-----------|-----------|
-| **体积** | ~50MB | ~150MB | ~10MB | ~5MB |
-| **JS引擎** | QuickJS | V8 | JavaScriptCore | ❌ |
-| **渲染** | Skia | Chromium | WebView | 用户提供 |
-| **React支持** | ✅ | ✅ | ✅ | ❌ |
-| **启动速度** | 快 (~200ms) | 慢 (~1s) | 快 (~100ms) | 极快 (~50ms) |
-| **目标场景** | 桌面应用 | 桌面应用 | 桌面应用 | 游戏UI |
-| **内存占用** | 中 (~100MB) | 高 (~300MB) | 低 (~50MB) | 极低 (~20MB) |
-
----
-
-## 🚀 快速开始
-
-### Python示例
-
-```python
-import lightui
-
-# 创建窗口
-app = lightui.Window("Todo App", 600, 800)
-
-# 绑定Python函数
-@app.bind("getTodos")
-def get_todos():
-    return [
-        {"id": 1, "text": "Learn LightUI", "done": False},
-        {"id": 2, "text": "Build an app", "done": False}
-    ]
-
-# 加载UI（使用Preact + Ant Design）
-app.load_ui("""
-import { render } from 'preact';
-import { useState, useEffect } from 'preact/hooks';
-
-function TodoApp() {
-    const [todos, setTodos] = useState([]);
-    
-    useEffect(() => {
-        setTodos(window.getTodos());
-    }, []);
-    
-    return (
-        <ul>
-            {todos.map(todo => <li key={todo.id}>{todo.text}</li>)}
-        </ul>
-    );
-}
-
-render(<TodoApp />, document.body);
-""")
-
-# 运行
-app.run()
+```text
+core/        核心模块
+bindings/    语言绑定（当前仅 Python 可确认有实现）
+examples/    示例与实验 demo
+tests/       测试工程
+tools/       工具链目标
+scripts/     下载、测试、辅助脚本
+docs/        开源整理后的文档
 ```
 
----
+## 构建
 
-## 🔨 构建指南
-
-### Windows (推荐使用 Visual Studio 2022)
+基础构建：
 
 ```bash
-# 1. 克隆仓库
-git clone https://github.com/yourusername/LightUI.git
-cd LightUI
-
-# 2. 下载 Skia 预编译库
-.\scripts\download_deps.bat
-
-# 3. 配置项目
-mkdir build
-cd build
-cmake -G "Visual Studio 17 2022" -A x64 ..
-
-# 4. 构建（Debug 模式）
-cmake --build . --config Debug -j 8
-
-# 5. 运行测试
-cd bin\Debug
-.\test_hello.exe
-.\test_dom_node.exe
-.\test_css_rendering.exe
+cmake -B build
+cmake --build build --config Release
 ```
 
-### Linux/macOS
+启用测试：
 
 ```bash
-# 1. 克隆仓库
-git clone https://github.com/yourusername/LightUI.git
-cd LightUI
-
-# 2. 下载依赖
-./scripts/download_deps.sh
-
-# 3. 配置和构建
-mkdir build && cd build
-cmake ..
-cmake --build . -j 8
-
-# 4. 运行测试
-./bin/test_hello
-./bin/test_dom_node
+cmake -B build -DLIGHTUI_BUILD_TESTS=ON
+cmake --build build --config Release
+ctest --test-dir build --output-on-failure
 ```
 
----
+更多说明见：
+- [docs/BUILD.md](docs/BUILD.md)
+- [docs/TESTING.md](docs/TESTING.md)
 
-## 🧪 测试
+## 绑定状态
 
-⚠️ **测试待重建** - 历史测试已清理，需要根据当前代码状态重新编写。
+- Python：已接入构建，存在真实源码与包结构
+- Go：目录预留，当前为空
+- Rust：目录预留，当前为空
+- Node.js：目录预留，当前为空
 
-历史测试清单见 [docs/LEGACY_TEST_LIST.md](docs/LEGACY_TEST_LIST.md)。
+更多说明见：[docs/BINDINGS.md](docs/BINDINGS.md)
 
-### 测试状态
+## 架构与限制
 
-⚠️ **测试待重建** - 由于项目重构，历史测试已清理。
+- 架构概览见：[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
+- 当前限制见：[docs/KNOWN_LIMITATIONS.md](docs/KNOWN_LIMITATIONS.md)
+- 贡献方式见：[docs/CONTRIBUTING.md](docs/CONTRIBUTING.md)
 
-完整的历史测试清单见 [docs/LEGACY_TEST_LIST.md](docs/LEGACY_TEST_LIST.md)，包含：
-- 54 个单元测试
-- 11 个渲染测试
-- 10 个集成测试
-- 性能测试、基准测试等
+## 开源整理原则
 
----
-
-## 📚 文档
-
-### 核心文档
-- **[项目状态](docs/PROJECT_STATUS.md)** - 完整的项目状态报告
-- **[项目规范](docs/PROJECT_STANDARDS.md)** - 强制执行的开发规范
-- **[开发路线图](docs/ROADMAP.md)** - 详细开发计划
-- **[架构设计](docs/ARCHITECTURE.md)** - 技术架构和模块设计
-
-### 开发文档
-- **[DOM API 文档](docs/DOM_API.md)** - DOM 操作接口
-- **[API 设计](docs/API_DESIGN.md)** - C API 设计
-- **[代码规范](docs/CODING_STANDARDS.md)** - 代码风格指南
-- **[贡献指南](docs/CONTRIBUTING.md)** - 如何贡献代码
-- **[历史测试清单](docs/LEGACY_TEST_LIST.md)** - 待重建的测试列表
-
----
-
-## 🎯 开发状态
-
-当前版本：**v0.92.0**
-总体进度：**95%**
-
-### ✅ 已完成阶段
-
-#### Phase 1: 基础架构 (100%) ✅
-- ✅ CMake构建系统
-- ✅ SDL3集成 (6.5 MB)
-- ✅ Skia集成 (36.5 MB)
-- ✅ QuickJS集成 (1.1 MB)
-- ✅ NativeLayoutEngine (Block + IFC + Flexbox + Grid)
-- ✅ Lexbor集成 (2.6.0)
-
-#### Phase 2-6: 核心功能 (100%) ✅
-- ✅ JavaScript运行时 (QuickJS封装、Console API、定时器)
-- ✅ DOM API (Node、Element、Document、事件系统)
-- ✅ 布局引擎 (NativeLayoutEngine Flexbox + CSS Grid)
-- ✅ 渲染引擎 (Skia渲染、CSS样式、文本渲染)
-- ✅ 窗口系统 (SDL3窗口、D3D11 后端)
-- ✅ 事件系统 (鼠标、键盘、焦点、拖拽)
-- ✅ CSS 高级特性 (阴影、渐变、变换、动画、滤镜)
-
-#### Phase 7: HTML/CSS 完整支持 (100%) ✅
-- ✅ HTML5 完整解析 (DOCTYPE、实体、错误恢复)
-- ✅ CSS3 选择器 (所有类型)
-- ✅ 表单元素 (所有 HTML5 input 类型)
-
-#### Phase 8-9: 原生布局引擎 (100%) ✅
-- ✅ CSS Flexbox 完整支持 (NativeLayoutEngine)
-- ✅ CSS Grid 布局支持
-- ✅ Position/Overflow 支持
-- ✅ Native Layout Engine (Block + IFC)
-- ✅ IFC 行内格式化上下文
-- ✅ text-align / vertical-align
-- ✅ 312 个布局测试 100% 通过
-
-#### Phase 10: Preact 生态系统 (100%) ✅
-- ✅ Preact 完整集成
-- ✅ 完整 Hooks 支持
-- ✅ 多个示例应用 (preact_demo, fluent_demo, component_demo)
-
-#### Phase 11: 生产就绪特性 (100%) ✅
-- ✅ Compositor 图层合成系统
-- ✅ DevTools 开发者工具
-- ✅ Network 网络模块 (Fetch API)
-- ✅ Fluent Design 组件库 (15+ 组件)
-
-### 🔄 进行中阶段
-
-#### Phase 12: 多语言绑定 (60%)
-- ✅ C API 基础框架
-- ✅ Python绑定完善 (LightUIApp 高级 API)
-- ⏳ Rust绑定
-- ⏳ Go绑定
-- ⏳ Node.js绑定
-
-### 📋 计划中阶段
-
-#### Phase 13: 测试和发布 (20%)
-- ⏳ 测试重建 (单元测试、集成测试、渲染测试)
-- ⏳ 跨平台测试 (macOS, Linux)
-- ⏳ 性能优化和基准测试
-- ⏳ v1.0 发布准备
-
-查看完整进度：[项目状态](docs/PROJECT_STATUS.md) | [开发路线图](docs/ROADMAP.md)
-
----
-
-## 🤝 贡献
-
-我们欢迎各种形式的贡献！详细信息请查看 [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md)
-
----
-
-## 📄 许可证
-
-本项目采用 [MIT许可证](LICENSE)
-
----
-
-## 🙏 致谢
-
-MBink基于以下优秀的开源项目：
-
-- **[QuickJS](https://bellard.org/quickjs/)** - 轻量级JavaScript引擎 (600KB)
-- **[Skia](https://skia.org/)** - 2D图形库 (Chrome同源)
-- **[SDL3](https://www.libsdl.org/)** - 跨平台窗口库
-- **NativeLayoutEngine** - 原生 C++ 布局引擎 (Block + IFC + Flexbox + Grid)
-- **[Lexbor](https://github.com/lexbor/lexbor)** - HTML5/CSS3解析库
-- **[Preact](https://preactjs.com/)** - 轻量级React替代品
-- **[Fluent UI](https://fluent2.microsoft.design/)** - Microsoft Fluent Design 设计规范
-- **[RmlUi](https://github.com/mikke89/RmlUi)** - 参考项目（事件系统、CSS动画）
-- **[Chromium Blink](https://www.chromium.org/blink/)** - Compositor 架构参考
-
-## 📖 参考资料
-
-- [RmlUi Documentation](https://mikke89.github.io/RmlUiDoc/) - 事件系统和CSS动画参考
-- [React Documentation](https://react.dev/) - React生态
-- [Electron Documentation](https://www.electronjs.org/) - 竞品参考
-- [Tauri Documentation](https://tauri.app/) - 竞品参考
-
----
-
-<div align="center">
-
-**如果这个项目对你有帮助，请给我们一个⭐️！**
-
-Made with ❤️ by the MBink Team
-
-</div>
-
+当前文档遵循以下原则：
+- 只写代码、构建脚本、示例、测试能证明的事实
+- 不再使用旧文档中的阶段进度、完成率和宣传性口径
+- 逐步清理历史计划稿、总结稿和构建产物
