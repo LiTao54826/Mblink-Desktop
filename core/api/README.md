@@ -1,23 +1,33 @@
-# API 模块
+# API Module | API 模块
 
-`core/api/` 提供当前仓库中的统一 C ABI 入口。
+## Overview | 概览
 
-## 目录内容
+`core/api/` provides the unified C ABI entry visible in the current repository.
+`core/api/` 提供当前仓库中可见的统一 C ABI 入口。
 
-- `mbink.h`：公开头文件
-- `mbink.cpp`：实现文件
-- `CMakeLists.txt`：构建接入
+## Files | 文件
 
-## 作用
+- `mbink.h` — public header / 公开头文件
+- `mbink.cpp` — implementation / 实现文件
+- `CMakeLists.txt` — build integration / 构建接入
 
-这一层的职责是：
-- 将内部 C++ 模块能力整理为 C 风格入口
-- 为 Python 等语言绑定提供统一调用面
-- 作为外部工具和宿主接入核心运行时的边界层
+## Role | 作用
 
-## 当前可确认的导出接口
+This layer is responsible for:
+这一层负责：
 
-从 `core/api/mbink.cpp` 可直接确认至少存在以下导出函数：
+- exposing core capabilities through a C-style entry surface
+  通过 C 风格入口暴露核心能力
+- serving as a stable boundary for bindings and hosts
+  作为绑定层和宿主环境的边界
+- reducing direct coupling to internal C++ types
+  降低外部对内部 C++ 类型的直接耦合
+
+## Repository-Visible Exports | 从仓库可见的导出
+
+From `core/api/mbink.cpp`, at least these exports are visible:
+从 `core/api/mbink.cpp` 至少可见这些导出函数：
+
 - `mbink_init()`
 - `mbink_cleanup()`
 - `mbink_version()`
@@ -28,13 +38,16 @@
 - `mbink_run()`
 - `mbink_stop()`
 
-## 当前限制
+## Limitations | 限制
 
-- 具体 API 形态仍以 `mbink.h` 与 `mbink.cpp` 的实际声明和实现为准
-- 文档不应假设 Rust / Go / Node.js 绑定已可用
-- 命名仍处于 `MBink` / `MBink` 混合状态
+- exact API shape must follow `mbink.h` and `mbink.cpp`
+  具体 API 形态应以 `mbink.h` 与 `mbink.cpp` 为准
+- this document should not imply verified Rust / Go / Node.js support
+  本文档不应暗示 Rust / Go / Node.js 已验证可用
+- naming is not yet fully unified
+  命名尚未完全统一
 
-## 相关文档
+## Related Docs | 相关文档
 
 - `docs/ARCHITECTURE.md`
 - `docs/BINDINGS.md`

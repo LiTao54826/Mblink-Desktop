@@ -1,10 +1,15 @@
-# 测试目录说明
+# Tests | 测试目录
 
-本文档只描述当前仓库中可以从目录结构和 CMake 配置确认的测试状态。
+## Overview | 概览
 
-## 当前结构
+This directory documents test materials that can be confirmed from the current repository structure and `tests/CMakeLists.txt`.
+本文档只描述当前仓库结构和 `tests/CMakeLists.txt` 中可确认的测试信息。
 
-测试目录当前包括：
+## Layout | 目录结构
+
+Current test-related directories include:
+当前测试相关目录包括：
+
 - `unit/`
 - `render/`
 - `integration/`
@@ -15,30 +20,39 @@
 - `regression/`
 - `test_utils/`
 
-## 已接入的 CMake 测试目标
+## CMake Test Targets | CMake 测试目标
 
-从 `tests/CMakeLists.txt` 可确认：
+The following targets can be confirmed from `tests/CMakeLists.txt`:
+从 `tests/CMakeLists.txt` 可确认以下目标：
+
 - `mbink_unit_tests`
 - `mbink_render_tests`
 - `mbink_integration_tests`
 - `mbink_property_tests`
-- `mbink_performance_tests`（可选）
+- `mbink_performance_tests` (optional / 可选)
 
-## 当前可以确认的事实
+## Confirmed Facts | 当前可确认事实
 
-- 仓库中存在较完整的测试分层
-- C++ 测试工程已接入主构建系统
-- 还存在一批 JS、HTML、style 和 regression 测试辅助文件
+- the repository contains a relatively complete test hierarchy
+  仓库中存在较完整的测试分层
+- C++ test targets are wired into the main build system
+  C++ 测试目标已接入主构建系统
+- additional JS, HTML, style, and regression assets are also present
+  还存在 JS、HTML、style 与 regression 测试材料
 
-## 当前不能直接承诺的内容
+## Non-Claims | 不应直接承诺的内容
 
-- 所有测试在当前版本下均可通过
-- 所有测试已完成维护
-- 所有平台都已验证
+The current repository state does not justify claims that:
+当前仓库状态不足以直接宣称：
 
-## 建议使用方式
+- all tests pass in the current revision / 当前版本所有测试均通过
+- all tests are fully maintained / 所有测试都在持续维护
+- all platforms have been validated / 所有平台都已完成验证
 
-如果需要验证当前仓库状态，优先从以下流程开始：
+## Recommended Usage | 建议使用方式
+
+If you need to validate the current repository state, start with:
+如果你要验证当前仓库状态，建议先执行：
 
 ```bash
 cmake -B build -DMBINK_BUILD_TESTS=ON
@@ -46,5 +60,6 @@ cmake --build build --config Release
 ctest --test-dir build --output-on-failure
 ```
 
-更详细说明见：
+See also | 另见：
+
 - `docs/TESTING.md`

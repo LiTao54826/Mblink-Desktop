@@ -1,24 +1,21 @@
-# 构建说明
+# Build | 构建
 
-本文档只描述当前仓库中可从代码和构建脚本确认的构建方式。
+## Build System | 构建系统
 
-## 构建系统
+- Primary build system: `CMake`
+  主构建系统：`CMake`
+- Top-level modules currently wired into the build:
+  当前已接入顶层构建的模块：
+  - `core/`
+  - `bindings/python/`
+  - `tools/app_bundler/`
+  - `tools/esm_loader/`
+  - `tests/` (disabled by default / 默认关闭)
+- Not enabled in the default top-level build:
+  默认未接入顶层构建：
+  - `tools/app_loader/`
 
-项目使用 CMake 作为主构建系统。
-
-顶层当前可确认接入：
-- `core/` 核心模块
-- `bindings/python/` Python 绑定
-- `tools/app_bundler/`
-- `tools/esm_loader/`
-- `tests/`（默认关闭）
-
-从顶层 `CMakeLists.txt` 可见：
-- `bindings/python` 由 `MBINK_BUILD_PYTHON_BINDING` 控制（兼容旧 `MBINK_BUILD_PYTHON_BINDING`）
-- `tests` 由 `MBINK_BUILD_TESTS` 控制（兼容旧 `MBINK_BUILD_TESTS`）
-- `tools/app_loader` 当前处于注释状态，不参与默认构建
-
-## 主要 CMake 选项
+## CMake Options | CMake 选项
 
 - `MBINK_BUILD_PYTHON_BINDING=ON`
 - `MBINK_BUILD_RUST_BINDING=OFF`
@@ -27,14 +24,14 @@
 - `MBINK_BUILD_TESTS=OFF`
 - `MBINK_ENABLE_LTO=OFF`
 
-## 基本构建
+## Configure and Build | 配置与构建
 
 ```bash
 cmake -B build
 cmake --build build --config Release
 ```
 
-## 构建测试
+## Build with Tests | 构建并运行测试
 
 ```bash
 cmake -B build -DMBINK_BUILD_TESTS=ON
@@ -42,37 +39,38 @@ cmake --build build --config Release
 ctest --test-dir build --output-on-failure
 ```
 
-## 构建 Python 绑定
+## Python Binding Build | Python 绑定构建
 
-默认情况下 Python binding 会被接入顶层构建。
+Dependencies | 依赖：
 
-它依赖：
 - Python 3
 - pybind11
 
-单独关注的输出位置：
-- `bindings/python/mbink/bin/`（兼容保留 `bindings/python/mbink/bin/`）
+Current build behavior | 当前构建行为：
 
-从当前构建脚本还可以确认：
-- `mbink_api` 会作为共享库构建
-- 构建完成后会复制到 `bindings/python/mbink/bin/`
-- Python 绑定会链接多组核心静态库，而不只是一个单独的入口目标
+- `mbink_api` is built as a shared library
+  `mbink_api` 以共享库形式构建
+- build outputs are copied to `bindings/python/mbink/bin/`
+  构建产物会复制到 `bindings/python/mbink/bin/`
+- Python binding links against multiple core static libraries
+  Python binding 会链接多个核心静态库
 
-## 依赖说明
+## Third-Party Dependencies | 第三方依赖
 
-从代码可见，项目依赖或接入了以下关键组件：
 - QuickJS
 - SDL3
 - Skia
 - Lexbor
 - nlohmann/json
-- GoogleTest（测试）
+- GoogleTest
 
-其中部分第三方内容可能通过仓库内第三方目录或额外下载脚本提供。
+## Limitations | 限制
 
-## 当前限制
+- Windows has the most complete build evidence in the repository
+  仓库中 Windows 构建痕迹最完整
+- Other platforms still require verification
+  其他平台仍需验证
+- Presence of a directory does not imply supported platform or binding status
+  目录存在不代表平台或绑定已受支持
 
-- 仓库当前对 Windows 的构建痕迹最明显
-- 其他平台状态需要额外验证
-- 第三方依赖整理尚未完成，开源收口中
 

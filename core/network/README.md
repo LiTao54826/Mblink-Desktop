@@ -1,27 +1,32 @@
-# Network Subsystem
+# Network Subsystem | 网络子系统
 
-网络子系统，提供 HTTP 请求和 Fetch API 支持。
+## Overview | 概览
 
-## 模块列表
+Provides HTTP request handling and Fetch API integration visible in the current repository.
+提供当前仓库中可见的 HTTP 请求处理和 Fetch API 集成。
 
-| 文件 | 描述 |
-|------|------|
-| `http_client.h/cpp` | HTTP 客户端，处理网络请求 |
-| `fetch_bindings.h/cpp` | Fetch API JavaScript 绑定 |
+## Main Files | 主要文件
 
-## 依赖关系
+- `http_client.h/cpp` — HTTP client / HTTP 客户端
+- `fetch_bindings.h/cpp` — JavaScript Fetch bindings / JavaScript Fetch 绑定
 
-### 依赖的模块
-- `core/event` - 任务调度（异步请求）
-- `core/quickjs` - JavaScript 绑定
-- `nlohmann/json` - JSON 解析
+## Dependencies | 依赖关系
 
-### 被依赖的模块
-- `core/quickjs` - JavaScript 运行时
+Depends on | 依赖：
 
-## 功能说明
+- `core/event`
+- `core/quickjs`
+- `nlohmann/json`
 
-实现 Web 标准的 Fetch API：
-- GET/POST/PUT/DELETE 请求
-- JSON 响应解析
-- Promise 异步处理
+Used by | 被依赖：
+
+- `core/quickjs`
+
+## Features | 功能
+
+- GET / POST / PUT / DELETE requests
+  GET / POST / PUT / DELETE 请求
+- JSON response parsing
+  JSON 响应解析
+- promise-based async handling
+  Promise 异步处理

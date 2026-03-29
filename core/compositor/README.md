@@ -1,128 +1,54 @@
-# Compositor Subsystem
+# Compositor Subsystem | 合成器子系统
 
-合成器子系统，负责图层合成和渲染优化。
+## Overview | 概览
 
-## 模块列表
+The compositor is responsible for layer composition and render-side optimization.
+合成器负责图层合成以及渲染阶段的优化。
 
-| 文件 | 描述 |
-|------|------|
-| `compositor.h/cpp` | 主合成器，管理图层合成 |
-| `compositor_layer.h/cpp` | 合成器图层 |
-| `layer_tree_builder.h/cpp` | 图层树构建器，负责从渲染树构建层树 |
-| `layer_tree_manager.h/cpp` | 图层树管理器，协调增量更新和状态管理 |
-| `layer_tree_types.h` | 层树公共类型定义（LayerUpdateType, PendingLayerUpdate 等） |
-| `rasterizer.h/cpp` | 光栅化器 |
-| `scroll_layer_manager.h/cpp` | 滚动图层管理器 |
+## Main Files | 主要文件
 
-### animation/ 子目录
-动画与合成层系统的桥接模块。
+- `compositor.h/cpp` — compositor entry / 合成器入口
+- `compositor_layer.h/cpp` — compositor layers / 合成层
+- `layer_tree_builder.h/cpp` — builds layer trees from render objects / 从渲染对象构建层树
+- `layer_tree_manager.h/cpp` — coordinates incremental updates / 协调增量更新
+- `layer_tree_types.h` — shared layer-tree types / 层树公共类型
+- `rasterizer.h/cpp` — rasterization / 光栅化
+- `scroll_layer_manager.h/cpp` — scroll layer handling / 滚动图层管理
 
-| 文件 | 描述 |
-|------|------|
-| `animation_bounds_calculator.h/cpp` | 动画边界计算器 |
-| `animation_layer_bridge.h/cpp` | 动画图层桥接 |
+## Subdirectories | 子目录
 
-### property_tree/ 子目录
-属性树系统，用于高效管理变换、裁剪、效果等属性。
+- `animation/` — animation / layer bridge logic
+  动画与合成层桥接逻辑
+- `property_tree/` — transform, clip, and effect property trees
+  变换、裁剪、效果等属性树
 
-## 依赖关系
+## Dependencies | 依赖关系
 
-### 依赖的模块
-- `core/render` - 渲染对象
-- `core/dom` - DOM 元素
-- `Skia` - 图形渲染
+Depends on | 依赖：
 
-### 被依赖的模块
-- `core/window` - 窗口渲染
-- `core/render` - 渲染管线
+- `core/render`
+- `core/dom`
+- `Skia`
 
-## 架构说明
+Used by | 被依赖：
 
-合成器采用分层架构：
+- `core/window`
+- `core/render`
 
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                            RenderPipeline                                    │
-│  ┌────────────────────────────────────────────────────────────────────────┐ │
-│  │                    LayerTreeManager (核心协调器)                        │ │
-│  │  ┌──────────────────┐  ┌──────────────────┐  ┌──────────────────────┐ │ │
-│  │  │ IncrementalUpdate│  │ ScrollStateStore │  │ CoordinateSystem     │ │ │
-│  │  │ Controller       │  │ (SSOT)           │  │ Manager              │ │ │
-│  │  │ - 增量更新队列    │  │ - 滚动状态存储    │  │ - 坐标转换           │ │ │
-│  │  │ - 批量操作       │  │ - 变化通知        │  │ - 边界计算           │ │ │
-│  │  └──────────────────┘  └──────────────────┘  └──────────────────────┘ │ │
-│  └────────────────────────────────────────────────────────────────────────┘ │
-│                                    │                                         │
-│  ┌─────────────────────────────────┼─────────────────────────────────────┐  │
-│  │                                 ▼                                     │  │
-│  │  ┌─────────────────────────────────────────────────────────────────┐ │  │
-│  │  │              LayerTreeBuilder                                    │ │  │
-│  │  │  - Build() 完整构建                                              │ │  │
-│  │  │  - IncrementalBuild() 增量构建                                   │ │  │
-│  │  │  - AddLayerForObject() / RemoveLayerForObject() 单层操作         │ │  │
-│  │  └─────────────────────────────────────────────────────────────────┘ │  │
-│  │                                 │                                     │  │
-│  │  ┌──────────────────────────────┼──────────────────────────────────┐ │  │
-│  │  │                              ▼                                  │ │  │
-│  │  │  ┌──────────────────┐  ┌──────────────────┐                    │ │  │
-│  │  │  │ Rasterizer       │  │ Compositor       │                    │ │  │
-│  │  │  │ - 增量光栅化      │  │ - GPU/CPU 合成   │                    │ │  │
-│  │  │  └──────────────────┘  └──────────────────┘                    │ │  │
-│  │  └────────────────────────────────────────────────────────────────┘ │  │
-│  └─────────────────────────────────────────────────────────────────────┘  │
-└─────────────────────────────────────────────────────────────────────────────┘
-```
+## Pipeline Role | 流程中的作用
 
-### 渲染流程
+Typical flow | 典型流程：
 
-1. **构建图层树** (LayerTreeBuilder)
-   - 遍历渲染树，决定哪些元素需要独立层
-   - 支持增量更新，只添加/删除变化的层
+1. build layer trees / 构建层树
+2. manage incremental state / 管理增量状态
+3. compute property trees / 计算属性树
+4. rasterize layers / 光栅化图层
+5. composite final output / 合成最终输出
 
-2. **管理层树状态** (LayerTreeManager)
-   - 协调增量更新
-   - 维护滚动状态的单一数据源（SSOT）
-   - 提供统一的坐标转换
+## Notes | 说明
 
-3. **计算属性树** (PropertyTrees)
-   - 高效管理变换、裁剪、效果等属性
+- independent layers may be created for scrollable, animated, transformed, or fixed-position content
+  可滚动、动画、变换或 fixed 元素可能被提升为独立层
+- exact behavior should follow the implementation in source files
+  具体行为应以源码实现为准
 
-4. **光栅化图层** (Rasterizer)
-   - 将渲染对象绘制到合成层的 CPU 位图
-   - 支持增量光栅化
-
-5. **合成输出** (Compositor)
-   - 将多个层合成到屏幕
-   - 支持 GPU 和 CPU 合成
-
-### 层提升条件
-
-元素在以下情况会被提升为独立合成层：
-- `will-change: transform/opacity`
-- `position: fixed`
-- CSS transform/opacity 动画
-- 可滚动容器
-
-### 增量更新
-
-启用 `enable_incremental_layer_tree` 配置后：
-- 添加/删除元素只影响对应的层
-- 滚动偏移从单一数据源读取
-- Fixed 元素直接挂在根层下
-- 动画状态在层更新时保持
-
-## 使用示例
-
-```cpp
-// 启用增量层树更新
-UnifiedPipelineConfig config;
-config.enable_incremental_layer_tree = true;
-
-RenderPipeline pipeline;
-pipeline.Initialize(width, height, config);
-
-// 获取 LayerTreeManager 进行调试
-auto* manager = pipeline.GetLayerTreeManager();
-manager->SetDebugLogging(true);
-manager->DumpLayerTree();
-```

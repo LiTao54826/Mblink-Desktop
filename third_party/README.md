@@ -1,136 +1,65 @@
-# MBink 第三方库
+# Third-Party Dependencies | 第三方依赖
 
-本目录包含MBink所需的所有第三方库。
+## Overview | 概览
 
----
+This directory contains third-party source trees and dependency-related tooling visible in the current repository.
+本目录包含当前仓库中可见的第三方源码目录和依赖相关工具。
 
-## 📦 依赖库列表
+## Directories Present | 当前目录
 
-| 库名 | 版本 | 大小 | 用途 | 许可证 |
-|------|------|------|------|--------|
-| **QuickJS** | 2024-01-13 | ~600KB | JavaScript引擎 | MIT |
-| **Skia** | latest | ~5-8MB | 2D图形渲染 | BSD |
-| **SDL3** | latest | ~1-2MB | 窗口和输入 | Zlib |
-| **Yoga** | latest | ~1-2MB | Flexbox布局 | MIT |
+The following directories can be confirmed under `third_party/`:
+当前 `third_party/` 下可确认存在：
 
----
+- `SDL3/`
+- `depot_tools/`
+- `lexbor/`
+- `nlohmann/`
+- `quickjs/`
+- `skia/`
+- `stb/`
+- `vcpkg/`
 
-## 🔧 安装方法
+## Repository-Visible Usage | 从仓库可见的用途
 
-### 方式1: 自动下载（推荐）
+From the source tree and build files, the repository shows integration traces for:
+从源码树和构建文件可见，仓库对以下依赖存在接入痕迹：
 
-```bash
-# Linux/macOS
-./download_deps.sh
+- QuickJS
+- SDL3
+- Skia
+- Lexbor
+- nlohmann/json
+- GoogleTest
 
-# Windows
-.\download_deps.bat
-```
+Additional helper or dependency-management directories are also present.
+此外还存在辅助工具或依赖管理目录。
 
-### 方式2: 手动下载
+## Important Notes | 重要说明
 
-#### QuickJS
+- the presence of a directory does not by itself prove active or complete integration
+  目录存在本身不代表该依赖已完整接入或当前启用
+- exact versions should be verified against the actual dependency source and build scripts
+  精确版本应以实际依赖源码和构建脚本为准
+- platform-specific dependency setup may still require additional validation
+  平台相关依赖配置仍可能需要额外验证
 
-```bash
-cd third_party/
-wget https://bellard.org/quickjs/quickjs-2024-01-13.tar.xz
-tar xf quickjs-2024-01-13.tar.xz
-mv quickjs-2024-01-13 quickjs
-cd quickjs
-make
-```
+## Dependency Setup | 依赖准备
 
-#### SDL3
+Check these locations first when preparing dependencies:
+准备依赖时建议优先查看：
 
-```bash
-cd third_party/
-git clone https://github.com/libsdl-org/SDL SDL3
-cd SDL3
-mkdir build && cd build
-cmake .. -DCMAKE_BUILD_TYPE=Release
-cmake --build .
-```
+- `scripts/download_deps.bat`
+- `scripts/download_deps.ps1`
+- `scripts/download_deps.sh`
+- `scripts/download_skia_prebuilt.ps1`
+- `docs/BUILD.md`
 
-#### Skia
+## Non-Claims | 不应直接承诺的内容
 
-```bash
-cd third_party/
-git clone https://github.com/google/skia.git
-cd skia
-python3 tools/git-sync-deps
-bin/gn gen out/Release --args='is_official_build=true'
-ninja -C out/Release
-```
+This document should not be used to claim that:
+本文档不应被用来宣称：
 
-#### Yoga
-
-```bash
-cd third_party/
-git clone https://github.com/facebook/yoga.git
-cd yoga
-mkdir build && cd build
-cmake .. -DCMAKE_BUILD_TYPE=Release
-cmake --build .
-```
-
----
-
-## 📋 构建状态
-
-- [ ] QuickJS - 待下载
-- [ ] SDL3 - 待下载
-- [ ] Skia - 待下载
-- [ ] Yoga - 待下载
-
----
-
-## 🔍 版本信息
-
-更新此文件以跟踪实际使用的版本：
-
-```
-QuickJS: 2024-01-13
-SDL3: commit xxxxxxx
-Skia: commit xxxxxxx
-Yoga: v2.0.1
-```
-
----
-
-## 📝 注意事项
-
-1. **Skia编译时间较长**（30分钟-2小时），建议使用预编译版本
-2. **Windows用户**需要安装Visual Studio 2019+
-3. **macOS用户**需要安装Xcode Command Line Tools
-4. **Linux用户**需要安装基础开发工具：
-   ```bash
-   sudo apt-get install build-essential cmake git python3
-   ```
-
----
-
-## 🚀 快速开始（最小依赖）
-
-如果只想快速测试，可以先只安装SDL3：
-
-```bash
-cd third_party/
-git clone https://github.com/libsdl-org/SDL SDL3
-cd SDL3
-mkdir build && cd build
-cmake ..
-cmake --build .
-```
-
-然后修改根目录的CMakeLists.txt，暂时注释掉其他依赖。
-
----
-
-## 📞 获取帮助
-
-如果遇到编译问题，请查看：
-- [SDL3文档](https://wiki.libsdl.org/SDL3)
-- [Skia编译指南](https://skia.org/docs/user/build/)
-- [QuickJS文档](https://bellard.org/quickjs/)
-- [Yoga文档](https://yogalayout.com/)
+- all third-party dependencies are pinned and unified / 所有第三方依赖都已统一锁版本
+- all dependency setup paths are validated on every platform / 所有平台的依赖准备流程都已验证
+- every directory here is required for every build configuration / 此处每个目录都对所有构建配置必需
 

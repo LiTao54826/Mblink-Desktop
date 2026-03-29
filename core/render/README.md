@@ -1,79 +1,51 @@
-# MBink 渲染引擎
+# Render Module | 渲染模块
 
-基于 Skia 的高性能 2D 图形渲染系统。
+## Overview | 概览
 
-## 目录结构
+Skia-based 2D rendering infrastructure for the current MBink source tree.
+当前 MBink 源码树中的基于 Skia 的 2D 渲染基础设施。
 
-```
-core/render/
-├── CMakeLists.txt
-├── README.md
-├── animation/      # 动画系统 (18 文件)
-├── canvas/         # Canvas 2D API (10 文件)
-├── css/            # CSS 相关 (8 文件)
-├── image/          # 图片处理 (8 文件)
-├── layer/          # 图层系统 (6 文件)
-├── objects/        # 渲染对象 (18 文件)
-├── painters/       # 绘制器 (8 文件)
-├── pipeline/       # 渲染管线 (12 文件)
-├── text/           # 文本渲染 (6 文件)
-└── utils/          # 工具类 (24 文件)
-```
+## Directory Layout | 目录结构
 
-## 子目录说明
+- `animation/` — animation system / 动画系统
+- `canvas/` — Canvas 2D API / Canvas 2D API
+- `css/` — CSS-related rendering data / CSS 相关渲染数据
+- `image/` — image loading and rendering / 图像加载与渲染
+- `layer/` — layers and composition / 图层与合成
+- `objects/` — render object types / 渲染对象类型
+- `painters/` — paint helpers / 绘制组件
+- `pipeline/` — render pipeline / 渲染管线
+- `text/` — text rendering / 文本渲染
+- `utils/` — helper types / 工具类型
 
-| 目录 | 描述 | 主要文件 |
-|------|------|----------|
-| animation/ | CSS 动画和过渡 | animation.h, keyframes.h, transition.h |
-| canvas/ | HTML Canvas 2D API | canvas_rendering_context_2d.h |
-| css/ | CSS 值解析和样式 | css_value.h, style_resolver.h |
-| image/ | 图片加载和渲染 | image_loader.h, image_renderer.h |
-| layer/ | 图层和合成 | layer.h, layer_manager.h |
-| objects/ | 渲染对象类型 | render_object.h, render_block.cpp |
-| painters/ | 绘制器组件 | box_renderer.h, background_painter.h |
-| pipeline/ | 渲染管线控制 | render_pipeline.h, renderer.h |
-| text/ | 文本和字体 | text_renderer.h, font_manager.h |
-| utils/ | 工具和辅助类 | color.h, paint.h, shapes.h |
+## Core Areas | 核心区域
 
-## 核心类
+- `RenderObject` hierarchy / `RenderObject` 层级
+- render pipeline coordination / 渲染管线协调
+- color / paint / geometry utilities / 颜色、画笔与几何工具
 
-### 渲染对象 (objects/)
-- `RenderObject` - 渲染对象基类
-- `RenderBlock` - 块级元素
-- `RenderInline` - 行内元素
-- `RenderText` - 文本渲染
-
-### 渲染管线 (pipeline/)
-- `RenderPipeline` - 渲染管线协调
-- `Renderer` - 主渲染器
-- `RenderTreeSynchronizer` - DOM/渲染树同步
-
-### 工具类 (utils/)
-- `Color` - 颜色解析和转换
-- `Paint` - 画笔封装
-- `Shapes` - 基础图形绘制
-- `DirtyRegion` - 脏区域管理
-
-## 使用示例
+## Example | 示例
 
 ```cpp
 #include "core/render/utils/color.h"
 #include "core/render/utils/paint.h"
-#include "core/render/objects/render_object.h"
 
-// 颜色
 SkColor red = Color::FromHex("#FF0000");
-SkColor blue = Color::FromName("blue");
-
-// 画笔
 Paint paint;
 paint.SetColor(red);
 paint.SetStyle(PaintStyle::FILL);
 ```
 
-## 编译
+## Build | 构建
 
 ```bash
 cmake -B build
 cmake --build build --target mbink_render
 ```
+
+## Notes | 说明
+
+- exact module coverage should be verified against source files
+  具体模块覆盖范围应以源码为准
+- this page should not be used to imply all render paths are production-complete
+  本页不应被用来暗示所有渲染路径都已达到生产级

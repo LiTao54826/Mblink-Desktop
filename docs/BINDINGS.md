@@ -1,51 +1,51 @@
-# 绑定状态
+# Bindings | 绑定
 
-本文档只记录当前仓库中能从目录、源码和构建脚本确认的绑定状态。
+## Status | 状态
 
-## 当前状态总览
+| Language | Status | Evidence | 说明 |
+|---|---|---|---|
+| Python | Integrated | `bindings/python/CMakeLists.txt`, `setup.py`, `src/bindings.cpp`, Python package files | 已接入构建 |
+| Go | Placeholder | Directory exists, no verified implementation | 占位目录 |
+| Rust | Placeholder | Directory exists, no verified implementation | 占位目录 |
+| Node.js | Placeholder | Directory exists, no verified implementation | 占位目录 |
 
-| 语言 | 状态 | 依据 |
-|---|---|---|
-| Python | 已接入构建 | 存在 `bindings/python/CMakeLists.txt`、`setup.py`、`src/bindings.cpp`、Python 包目录 |
-| Go | 未实现 / 占位 | 目录存在，当前扫描结果为空目录 |
-| Rust | 未实现 / 占位 | 目录存在，当前扫描结果为空目录 |
-| Node.js | 未实现 / 占位 | 目录存在，当前扫描结果为空目录 |
+## Python Binding | Python 绑定
 
-## Python 绑定
+Current verified facts | 当前可确认事实：
 
-Python 绑定当前是唯一可以确认有真实实现的绑定层。
+- built with `pybind11`
+  使用 `pybind11` 构建
+- implementation file: `bindings/python/src/bindings.cpp`
+  实现文件：`bindings/python/src/bindings.cpp`
+- Python package layer exists
+  存在 Python 包装层
+- enabled in the top-level CMake build
+  已接入顶层 CMake 构建
 
-可确认内容：
-- 使用 `pybind11` 构建扩展模块
-- 存在 `bindings/python/src/bindings.cpp`
-- 存在 Python 包包装层：
-  - `mbink/__init__.py`
-  - `mbink/app.py`
-  - `mbink/shared.py`
-  - `mbink/_ffi.py`
-- 顶层 CMake 默认启用 Python binding
+Python binding currently consists of | 当前形态包括：
 
-当前绑定形态应理解为：
-- 以 `pybind11` 扩展模块为主
-- 同时保留部分 Python 层封装与 FFI 辅助代码
+- a `pybind11` extension module
+  一个 `pybind11` 扩展模块
+- Python wrapper and FFI helper code
+  Python 包装层与 FFI 辅助代码
 
-## Python 绑定的当前问题
+## Other Bindings | 其他绑定
 
-- 命名仍以 `MBink` / `mbink` 为主
-- 与仓库名 `MBink` 还未完全统一
-- 版本信息和仓库品牌信息仍需统一整理
+Current repository state for Go, Rust, and Node.js | 当前仓库状态：
 
-## Go / Rust / Node.js
+- placeholder directories exist
+  存在占位目录
+- no verified implementation should be claimed
+  不应宣称已有可验证实现
+- no supported status should be documented
+  不应写成已支持状态
 
-当前不应在 README 或对外文档中描述为“已支持”。
+## Notes | 说明
 
-更准确的表述是：
-- 目录已预留
-- 尚未形成可确认的实现与构建接入
+- naming still contains `MBink` / `mbink` compatibility layers
+  命名仍保留 `MBink` / `mbink` 兼容层
+- binding naming and versioning still need cleanup
+  绑定命名和版本信息仍需整理
 
-## 后续整理原则
 
-开源文档中只保留以下表述：
-- Python：已有实现，仍需收口和验证
-- Go / Rust / Node.js：预留目录，暂未提供可用绑定
 

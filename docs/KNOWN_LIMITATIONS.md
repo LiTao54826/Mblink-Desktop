@@ -1,48 +1,48 @@
-# 当前限制与说明
+# Known Limitations | 已知限制
 
-本文档用于管理开源预期，只保留当前能确认的限制项。
+## Current Constraints | 当前限制
 
-## 命名尚未完全统一
+### Naming | 命名
 
-当前仓库名为 `MBink`，但代码和构建系统中仍大量使用 `MBink` / `mbink` 命名。
+`MBink` / `mbink` naming still appears in multiple places.
+`MBink` / `mbink` 命名仍出现在多个位置：
 
-可见位置包括：
-- CMake 项目名
-- 共享库与 target 名称
-- Python 包名
-- 头文件与 API 命名
+- CMake project names / CMake 项目名
+- library and target names / 库与 target 名称
+- Python package names / Python 包名
+- public headers and API identifiers / 公开头文件与 API 标识符
 
-## 绑定层状态不一致
+### Bindings | 绑定
 
-当前只有 Python 绑定可以确认具备真实实现。
+Only Python binding has verified implementation status.
+当前只有 Python 绑定具备可验证实现。
 
-以下目录目前不应视为可用绑定：
+The following should not be described as supported bindings:
+以下目录当前不应描述为已支持绑定：
+
 - `bindings/go/`
 - `bindings/rust/`
 - `bindings/nodejs/`
 
-## 平台状态仍需验证
+### Platform Validation | 平台验证
 
-从当前仓库脚本、路径和构建痕迹看，Windows 支持证据最多。
+- Windows has the strongest build evidence in the repository
+  Windows 在仓库中有最完整的构建痕迹
+- other platforms still require verification
+  其他平台仍需验证
 
-其他平台是否稳定可用，需要额外验证。
+### Testing | 测试
 
-## 测试状态仍需收口
+Current repository state does not justify claims that:
+当前仓库状态不足以直接宣称：
 
-仓库中存在较完整测试结构，但当前文档不应宣称：
-- 全量测试稳定通过
-- 覆盖率完整
-- 各平台测试完成
+- the full test suite passes consistently / 全量测试稳定通过
+- coverage is complete / 覆盖率完整
+- all platforms have validated test results / 所有平台都有已验证测试结果
 
-## 第三方依赖仍在整理
+### Third-Party Dependencies | 第三方依赖
 
-仓库中包含第三方依赖和相关下载/构建痕迹，开源收口过程中仍需继续精简。
+Third-party dependencies and related fetch/build traces still need cleanup for open-source packaging.
+第三方依赖及相关抓取/构建痕迹仍需继续清理以适配开源发布。
 
-## 文档状态
-
-旧文档中包含大量历史计划、阶段总结和状态描述。
-
-当前整理策略是：
-- 旧文档不再作为事实来源
-- 新文档只依据代码、构建脚本、示例和测试结构编写
 

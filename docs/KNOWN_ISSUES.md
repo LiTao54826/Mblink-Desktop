@@ -1,33 +1,29 @@
-# 已知问题
+# Known Issues | 已知问题
 
-本文档只保留当前仍值得跟踪的已知问题，不再保留历史修复总结和过长分析稿。
+## Open Issues | 待跟踪问题
 
-## 使用原则
+### Wheel scrolling near bottom edge may be inconsistent | 滚轮滚动到底部附近可能不一致
 
-- 只记录仍未确认解决的问题
-- 已修复问题应进入 commit / PR / 变更记录，而不是长期留在此文档中
-- 问题描述保持简洁，避免把设计稿和修复计划写进这里
+Related source locations | 相关源码位置：
 
-## 当前仍建议跟踪的问题
-
-### 1. 滚轮滚动到底部行为可能异常
-
-从现有文档残留和代码定位信息可见，滚动容器到底部的行为曾出现过计算不一致问题。
-
-相关位置：
 - `core/render/objects/render_object.cpp`
 - `core/compositor/scroll_layer_manager.cpp`
 - `core/event/dispatch/wheel_event_dispatcher.cpp`
 
-当前状态：
-- 仓库中仍保留该问题记录
-- 是否已在当前代码中完全修复，仍需重新验证
+Current status | 当前状态：
 
-## 后续维护规则
+- issue record still exists in repository materials
+  仓库材料中仍保留该问题记录
+- current codebase still needs re-verification for a confirmed fix
+  当前代码库仍需重新验证是否已完全修复
 
-新增 issue 时建议包含：
-- 现象
-- 最小复现方式
-- 影响范围
-- 相关代码位置
-- 当前是否已验证
+## Issue Entry Guidelines | 问题记录规范
+
+Each issue entry should include:
+每条 issue 建议包含：
+
+- observed behavior / 现象
+- minimal reproduction / 最小复现
+- impact scope / 影响范围
+- related source locations / 相关源码位置
+- verification status / 验证状态

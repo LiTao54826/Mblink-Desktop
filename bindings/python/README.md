@@ -1,43 +1,46 @@
-# Python 绑定
+# Python Binding | Python 绑定
 
-本文档只描述当前仓库中可以从代码和构建脚本确认的 Python 绑定状态。
+## Overview | 概览
 
-## 当前状态
+This page describes the Python binding state that can be confirmed from the current repository and build scripts.
+本文档只描述当前仓库和构建脚本中可确认的 Python 绑定状态。
 
-Python 是当前唯一可以确认已接入构建系统的语言绑定。
+## Current Status | 当前状态
 
-可确认依据：
-- 存在 `bindings/python/CMakeLists.txt`
-- 存在 `bindings/python/src/bindings.cpp`
-- 绑定实现使用 `pybind11`
-- 存在 Python 包目录 `bindings/python/mbink/`，并兼容保留 `bindings/python/mbink/`
-- 顶层 CMake 默认启用 `MBINK_BUILD_PYTHON_BINDING`
+Python is the only binding with repository-visible implementation and top-level build integration.
+Python 是当前唯一同时具备可见实现和顶层构建接入的绑定。
 
-## 当前目录组成
+Evidence | 可确认依据：
 
-- `src/`：绑定实现源码
-- `mbink/`：Python 包主入口
-- `mbink/`：兼容包装层
-- `setup.py`：打包与安装入口
+- `bindings/python/CMakeLists.txt`
+- `bindings/python/src/bindings.cpp`
+- `pybind11` integration
+- Python package directory under `bindings/python/`
+- top-level CMake enables `MBINK_BUILD_PYTHON_BINDING`
 
-## 当前不应过度承诺的内容
+## Directory Layout | 目录结构
 
-目前不应直接宣称：
-- 全平台稳定可用
-- API 已完全定型
-- 与仓库名 `MBink` 已完全统一
+- `src/` — binding implementation / 绑定实现
+- `mbink/` — Python package entry / Python 包入口
+- `setup.py` — packaging entry / 打包入口
 
-当前底层仍保留部分 `MBink` / `mbink` 命名作为兼容层。
+## Non-Claims | 不应直接承诺的内容
 
-## 基本使用
+The current repository state does not justify claims that:
+当前仓库状态不足以直接宣称：
 
-如需构建 Python 绑定，可先从项目根目录执行：
+- all platforms are fully validated / 所有平台都已完整验证
+- the API is fully stabilized / API 已完全稳定
+- naming is fully unified with repository branding / 命名已和仓库品牌完全统一
+
+## Build | 构建
 
 ```bash
 cmake -B build
 cmake --build build --config Release
 ```
 
-更详细的绑定状态说明见：
+See also | 另见：
+
 - `docs/BINDINGS.md`
 - `docs/BUILD.md`

@@ -1,40 +1,36 @@
-# DevTools Subsystem
+# DevTools Subsystem | 开发者工具子系统
 
-开发者工具子系统，提供元素检查、样式编辑等调试功能。
+## Overview | 概览
 
-## 模块列表
+Developer tooling for inspection and debugging in the current source tree.
+当前源码树中的检查与调试工具模块。
 
-| 文件 | 描述 |
-|------|------|
-| `devtools_manager.h/cpp` | DevTools 管理器，协调各组件 |
-| `devtools_panel.h/cpp` | DevTools 面板渲染 |
-| `devtools_state.h/cpp` | DevTools 状态管理 |
+## Main Files | 主要文件
 
-### 子目录
+- `devtools_manager.h/cpp` — manager / 管理器
+- `devtools_panel.h/cpp` — panel rendering / 面板渲染
+- `devtools_state.h/cpp` — shared state / 状态管理
 
-| 目录 | 描述 |
-|------|------|
-| `editor/` | 样式编辑器 |
-| `inspector/` | 元素检查器 |
-| `search/` | 搜索功能 |
-| `serializer/` | DOM 序列化 |
-| `styles/` | 样式面板 |
+## Subdirectories | 子目录
 
-## 依赖关系
+- `editor/` — style editing / 样式编辑
+- `inspector/` — element inspection / 元素检查
+- `search/` — search / 搜索
+- `serializer/` — DOM serialization / DOM 序列化
+- `styles/` — style panels / 样式面板
 
-### 依赖的模块
-- `core/dom` - DOM 树访问
-- `core/render` - 渲染对象检查
-- `core/window` - 窗口集成
-- `Skia` - UI 渲染
+## Dependencies | 依赖关系
 
-### 被依赖的模块
-- `core/event` - 事件处理集成
+Depends on | 依赖：
 
-## 功能说明
+- `core/dom`
+- `core/render`
+- `core/window`
+- `Skia`
 
-DevTools 提供类似浏览器开发者工具的功能：
-- 元素检查和选择
-- 样式查看和编辑
-- Box Model 可视化
-- DOM 树导航
+## Features | 功能
+
+- element inspection / 元素检查
+- style viewing and editing / 样式查看与编辑
+- box model visualization / Box Model 可视化
+- DOM tree navigation / DOM 树导航

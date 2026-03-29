@@ -1,10 +1,8 @@
-# 架构概览
+# Architecture | 架构
 
-本文档只描述当前能从源码结构和 CMake 接入关系确认的架构事实。
+## Core Modules | 核心模块
 
-## 总体结构
-
-顶层 `core/CMakeLists.txt` 当前接入的模块包括：
+Modules currently included from `core/CMakeLists.txt` | 当前 `core/CMakeLists.txt` 已接入模块：
 
 - `window`
 - `quickjs`
@@ -21,84 +19,82 @@
 - `devtools`
 - `compositor`
 
-这些模块通过 `mbink` 接口库统一聚合。
+## Build-Level Structure | 构建层结构
 
-从当前 CMake 目标还可以确认：
-- `mbink_api` 以共享库形式构建
-- `mbink_window`、`mbink_render`、`mbink_devtools`、`mbink_network` 等以静态库形式参与聚合
-- 构建后的 `mbink_api` 会复制到 Python 包输出目录，供绑定层使用
+| Area | Current structure | 说明 |
+|---|---|---|
+| Public C API | `core/api/mbink.h` | 对外 C API 入口 |
+| C API implementation | `core/api/mbink.cpp` | C API 实现 |
+| Shared library | `mbink_api` | 共享库 |
+| Static libraries | `mbink_window`, `mbink_render`, `mbink_devtools`, `mbink_network`, etc. | 静态库聚合 |
+| Python integration | `mbink_api` copied into Python package output | 会复制到 Python 输出目录 |
 
-## 分层理解
+## Layering | 分层
 
-### 1. 对外接口层
+### API Layer | API 层
 
 - `core/api/`
-  - 提供统一 C ABI
-  - 头文件入口：`core/api/mbink.h`
-  - 实现文件：`core/api/mbink.cpp`
+- unified C ABI for external consumers
+  对外提供统一 C ABI
+- entry header: `core/api/mbink.h`
+  入口头文件：`core/api/mbink.h`
 
-这层是跨语言接入的统一入口，面向 Python、Go、Rust、Node.js 等绑定场景。
-
-### 2. 绑定与桥接层
+### Bridge and Binding Layer | 桥接与绑定层
 
 - `core/bridge/`
 - `bindings/python/`
+- Python is the only binding with verified implementation status
+  Python 是当前唯一可确认已实现的绑定
 
-其中 Python 绑定当前是唯一能从代码中确认已经落地的绑定实现。
-
-### 3. 运行时与文档模型层
+### Runtime and Document Model | 运行时与文档模型层
 
 - `core/quickjs/`
 - `core/dom/`
 - `core/event/`
 - `core/editing/`
 
-这一层负责 JavaScript 执行、DOM 数据模型、事件调度以及编辑相关能力。
-
-### 4. 布局与渲染层
+### Layout and Rendering | 布局与渲染层
 
 - `core/layout/`
 - `core/render/`
 - `core/compositor/`
 
-这一层负责布局计算、绘制和图层合成。
-
-### 5. 平台与窗口层
+### Platform and Windowing | 平台与窗口层
 
 - `core/window/`
+- current build links platform/windowing related dependencies through this area
+  当前平台与窗口相关依赖通过该层接入
 
-从 CMake 可见，该模块会链接布局、合成、SDL3、Skia 以及 OpenGL / Windows 图形相关依赖。
-
-### 6. 辅助与扩展层
+### Supporting Modules | 辅助模块
 
 - `core/network/`
 - `core/devtools/`
 - `core/utils/`
 - `core/lexbor/`
 
-## 工具链
+## Tooling | 工具链
 
-顶层当前还接入了两个工具目录与目标：
+Top-level tooling targets currently included | 顶层当前工具目标：
 
 - `tools/app_bundler/`
 - `tools/esm_loader/`
 
-说明仓库不仅包含运行时核心，也包含应用打包和资源/模块加载相关工具。
+## Confirmed Architectural Properties | 当前可确认的架构特征
 
-## 当前可以确认的架构特点
+- modular structure exists under `core/`
+  `core/` 下存在明确模块结构
+- unified C API entry exists
+  存在统一 C API 出口
+- binding integration path exists
+  存在绑定层接入路径
+- test and tool targets are present in the repository
+  仓库中存在测试与工具目标
 
-- 有明确的模块边界
-- 有统一 C API 出口
-- 有绑定层接入路径
-- 有测试与工具链配套结构
+## Non-Claims | 不应直接声称的内容
 
-## 当前仍需谨慎表述的部分
+Current repository state does not justify claims that:
+当前仓库状态不足以直接宣称：
 
-以下内容虽然在代码中存在大量实现痕迹，但对外文档中仍不应做过度承诺：
-
-- 全平台成熟状态
-- 所有子系统已稳定完成
-- 所有示例与测试可直接运行
-- 命名和接口已完全收口
-
-更准确的做法是：按模块存在性、构建接入情况和实际可运行性逐步补充文档。
+- all subsystems are production-complete / 所有子系统已生产级完成
+- all examples are runnable on all platforms / 所有示例在所有平台可运行
+- all interfaces and naming are fully unified / 所有接口和命名都已完全统一

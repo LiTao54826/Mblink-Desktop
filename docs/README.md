@@ -1,24 +1,45 @@
-# 文档导航
+# Documentation | 文档
 
-当前 docs 只保留**核心事实文档**，用于描述当前仓库中能从源码、CMake、示例和测试结构确认的状态。
+## Index | 索引
 
-## 核心事实文档
+- [Project README | 项目首页](../README.md)
+- [Architecture | 架构](ARCHITECTURE.md)
+- [Build | 构建](BUILD.md)
+- [Testing | 测试](TESTING.md)
+- [Bindings | 绑定](BINDINGS.md)
+- [Known Limitations | 已知限制](KNOWN_LIMITATIONS.md)
+- [Known Issues | 已知问题](KNOWN_ISSUES.md)
+- [Contributing | 贡献](CONTRIBUTING.md)
+- [Changelog | 变更记录](../CHANGELOG.md)
+- [Roadmap | 路线图](../ROADMAP.md)
+- [Security Policy | 安全策略](../SECURITY.md)
+- [Support | 支持](../SUPPORT.md)
+- [Code of Conduct | 行为准则](../CODE_OF_CONDUCT.md)
 
-优先阅读：
-- [`../README.md`](../README.md)
-- [`ARCHITECTURE.md`](ARCHITECTURE.md)
-- [`BUILD.md`](BUILD.md)
-- [`BINDINGS.md`](BINDINGS.md)
-- [`TESTING.md`](TESTING.md)
-- [`KNOWN_LIMITATIONS.md`](KNOWN_LIMITATIONS.md)
-- [`KNOWN_ISSUES.md`](KNOWN_ISSUES.md)
-- [`CONTRIBUTING.md`](CONTRIBUTING.md)
+## Recommended Reading Order | 推荐阅读顺序
 
-## 使用原则
+1. [Project README | 项目首页](../README.md)
+2. [Build | 构建](BUILD.md)
+3. [Architecture | 架构](ARCHITECTURE.md)
+4. [Testing | 测试](TESTING.md)
+5. [Bindings | 绑定](BINDINGS.md)
+6. [Known Limitations | 已知限制](KNOWN_LIMITATIONS.md)
+7. [Known Issues | 已知问题](KNOWN_ISSUES.md)
+8. [Contributing | 贡献](CONTRIBUTING.md)
+9. [Changelog | 变更记录](../CHANGELOG.md)
+10. [Roadmap | 路线图](../ROADMAP.md)
 
-- 如果文档内容与代码冲突，以代码和构建脚本为准
-- 不根据历史设计稿、计划稿、总结稿推断当前能力
-- 对外说明优先引用上述核心事实文档
+## Documentation Rules | 文档规则
+
+- Source code and build scripts take precedence over documentation
+  如果文档与代码冲突，以代码和构建脚本为准
+- Unverified capabilities must be marked clearly
+  未验证能力必须明确标注
+- Placeholder directories must not be described as supported features
+  占位目录不能描述为已支持功能
+- Historical plans and summary notes are not treated as current project state
+  历史计划和总结不应当作当前项目状态
+
 
 
 
