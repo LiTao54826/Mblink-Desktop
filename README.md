@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="./assets/logo.svg" alt="MBink Logo" width="140" />
+</p>
+
 # MBink
 
 MBink 是一个基于 C++ 的桌面 UI / 应用框架仓库，当前代码中可确认接入了 QuickJS、SDL3、Skia、Lexbor，以及一套自有的 DOM、事件、布局、渲染、合成与工具链模块。
@@ -12,6 +16,10 @@ MBink 是一个基于 C++ 的桌面 UI / 应用框架仓库，当前代码中可
 - 顶层当前只接入 `bindings/python`
 - 存在真实工具目标：`app_bundler`、`esm_loader`
 - `app_loader` 当前未接入顶层构建
+- `app_bundler` 可用于打包应用
+- 编译后的 DLL 体积约 13MB，配合 `UPX` 可压到约 3MB
+- UI 启动速度快，可做到秒开体验
+- `modern_desktop_demo` 可作为当前演示示例
 - 存在分层测试工程：unit / render / integration / property / performance
 - 仓库内有较多示例与实验性 demo
 
@@ -64,6 +72,61 @@ ctest --test-dir build --output-on-failure
 更多说明见：
 - [docs/BUILD.md](docs/BUILD.md)
 - [docs/TESTING.md](docs/TESTING.md)
+
+## 演示展示
+
+> 这里预留给项目展示图和演示视频，你后续可直接替换为自己的素材。
+
+### 截图占位
+
+```md
+![MBink Screenshot 1](./assets/your-screenshot-1.png)
+![MBink Screenshot 2](./assets/your-screenshot-2.png)
+```
+
+### 视频占位
+
+```md
+[观看演示视频](./assets/your-demo-video.mp4)
+```
+
+或直接放外链：
+
+```md
+[观看演示视频](https://your-video-url)
+```
+
+## 演示与打包
+
+当前建议优先参考：
+- `examples/modern_desktop_demo/`
+
+该示例可作为仓库当前效果演示入口。
+
+### 截图展示
+
+> 这里预留项目截图位置，你可以后续直接替换为实际图片。
+
+```md
+![Modern Desktop Demo Screenshot 1](./assets/demo-screenshot-1.png)
+![Modern Desktop Demo Screenshot 2](./assets/demo-screenshot-2.png)
+```
+
+### 视频展示
+
+> 这里预留演示视频位置，你可以后续直接放视频链接、Bilibili 链接、YouTube 链接或 GIF。
+
+```md
+[演示视频：Modern Desktop Demo](https://your-video-link)
+```
+
+关于当前工具链，可明确说明：
+- `esm_loader` 可用于加载和运行示例应用
+- `app_bundler` 可用于应用打包
+- 当前 DLL 编译产物体积约 13MB，配合 `UPX` 可压缩到约 3MB
+- UI 启动速度快，可作为桌面应用快速启动方案
+
+如果后续补充演示素材，可优先放在这一节。
 
 ## 绑定状态
 
