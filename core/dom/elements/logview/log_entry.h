@@ -12,7 +12,7 @@
 #include <string>
 #include <string_view>
 
-namespace lightui {
+namespace mbink {
 
 /**
  * @brief 日志级别枚举
@@ -112,6 +112,6 @@ private:
     const uint8_t* data_;
 };
 
-}  // namespace lightui
+}  // namespace mbink
 
 #endif  // MBINK_DOM_ELEMENTS_LOGVIEW_LOG_ENTRY_H_

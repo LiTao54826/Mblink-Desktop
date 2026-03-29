@@ -18,7 +18,7 @@
 #include <sstream>
 #include <cctype>
 
-namespace lightui {
+namespace mbink {
 
 namespace {
 
@@ -280,4 +280,4 @@ ObjectFitResult CalculateObjectFit(
     return result;
 }
 
-} // namespace lightui
+} // namespace mbink

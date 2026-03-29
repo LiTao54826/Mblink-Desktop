@@ -24,7 +24,7 @@
 #include <vector>
 #include <chrono>
 
-namespace lightui {
+namespace mbink {
 namespace test {
 
 /**
@@ -583,4 +583,4 @@ TEST_F(IncrementalLayoutIntegrationTest, ResizeThenIncrementalUpdate) {
 }
 
 } // namespace test
-} // namespace lightui
+} // namespace mbink

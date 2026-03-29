@@ -20,7 +20,7 @@
 #include <string>
 #include "core/event/types/data_transfer.h"  // 需要 DragEffect 枚举
 
-namespace lightui {
+namespace mbink {
 
 // 前向声明
 class Element;
@@ -286,5 +286,5 @@ private:
     bool drop_allowed_;
 };
 
-} // namespace lightui
+} // namespace mbink
 

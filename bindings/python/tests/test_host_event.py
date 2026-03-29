@@ -1,5 +1,5 @@
 """
-LightUI Host Event System Python 测试
+MBink Host Event System Python 测试
 
 测试 bridge.emit() / app.emit() API。
 使用低级 API 测试，不创建 Window。
@@ -9,9 +9,9 @@ import sys
 import os
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'lightui', 'bin'))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
-import lightui_core as lui
+import mbink_core as lui
 
 
 print("[TEST_START] Host Event System Python Tests")

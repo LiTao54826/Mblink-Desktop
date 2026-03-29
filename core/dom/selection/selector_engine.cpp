@@ -17,7 +17,7 @@
 #include <lexbor/css/css.h>
 #include <lexbor/selectors/selectors.h>
 
-namespace lightui {
+namespace mbink {
 
 // ========== Lexbor上下文管理 ==========
 
@@ -302,7 +302,7 @@ std::shared_ptr<Element> SelectorEngine::QuerySelector(
 
     lxb_css_selector_list_destroy_memory(list);
 
-    // 4. 映射回LightUI Element
+    // 4. 映射回MBink Element
     std::shared_ptr<Element> result = nullptr;
     if (result_elem) {
         auto it = element_map.find(result_elem);
@@ -375,7 +375,7 @@ std::vector<std::shared_ptr<Element>> SelectorEngine::QuerySelectorAll(
 
     lxb_css_selector_list_destroy_memory(list);
 
-    // 4. 映射回LightUI Element
+    // 4. 映射回MBink Element
     for (auto* lexbor_elem : lexbor_results) {
         auto it = element_map.find(lexbor_elem);
         if (it != element_map.end()) {
@@ -464,5 +464,5 @@ std::shared_ptr<Element> SelectorEngine::Closest(
     return nullptr;
 }
 
-} // namespace lightui
+} // namespace mbink
 

@@ -21,7 +21,7 @@
 #include "include/core/SkImage.h"
 #include "include/core/SkData.h"
 
-namespace lightui {
+namespace mbink {
 
 /**
  * @brief 图片加载结果
@@ -240,5 +240,5 @@ private:
     static std::vector<uint8_t> DecodeBase64(const std::string& encoded);
 };
 
-} // namespace lightui
+} // namespace mbink
 

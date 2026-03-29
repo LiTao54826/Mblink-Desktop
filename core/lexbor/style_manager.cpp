@@ -14,7 +14,7 @@
 #include <fstream>
 #include <iostream>
 
-namespace lightui {
+namespace mbink {
 
 // ========== 构造函数和析构函数 ==========
 
@@ -623,5 +623,5 @@ bool StyleManager::HasHoverRules(Element* element) const {
     return false;
 }
 
-} // namespace lightui
+} // namespace mbink
 

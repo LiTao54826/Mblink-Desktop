@@ -1,5 +1,5 @@
 /**
- * LightUI Card 组件
+ * MBink Card 组件
  *
  * Props:
  * - title: string | VNode

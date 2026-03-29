@@ -20,17 +20,17 @@
 
 namespace {
 inline bool IsAnimFinalDebugEnabled() {
-    static const bool enabled = (std::getenv("LIGHTUI_DEBUG_ANIM_FINAL") != nullptr);
+    static const bool enabled = (std::getenv("MBINK_DEBUG_ANIM_FINAL") != nullptr);
     return enabled;
 }
 
 inline bool IsLayerReuseDebugEnabled() {
-    static const bool enabled = (std::getenv("LIGHTUI_DEBUG_LAYER_REUSE") != nullptr);
+    static const bool enabled = (std::getenv("MBINK_DEBUG_LAYER_REUSE") != nullptr);
     return enabled;
 }
 
 inline bool IsAnimMapDebugEnabled() {
-    static const bool enabled = (std::getenv("LIGHTUI_DEBUG_ANIM_MAP") != nullptr);
+    static const bool enabled = (std::getenv("MBINK_DEBUG_ANIM_MAP") != nullptr);
     return enabled;
 }
 
@@ -85,7 +85,7 @@ inline bool ShouldLogSetOpacityChanged(int layer_id, float opacity) {
 }
 }
 
-namespace lightui {
+namespace mbink {
 
 PaintArtifactCompositor::PaintArtifactCompositor() = default;
 
@@ -976,4 +976,4 @@ void PaintArtifactCompositor::RasterizeLayerChunks(CompositorLayer* layer) {
     }
 }
 
-} // namespace lightui
+} // namespace mbink

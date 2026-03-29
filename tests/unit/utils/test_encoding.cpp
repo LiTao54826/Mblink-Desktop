@@ -7,7 +7,7 @@
 #include "utils/encoding_utils.h"
 // #include "utils/utf8_utils.h"  // TODO: UTF8 utils not implemented yet
 
-namespace lightui {
+namespace mbink {
 namespace test {
 
 class EncodingTest : public ::testing::Test {};
@@ -169,4 +169,4 @@ TEST_F(EncodingTest, Trim) {
 */
 
 } // namespace test
-} // namespace lightui
+} // namespace mbink

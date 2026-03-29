@@ -7,7 +7,7 @@
 #include <algorithm>
 #include <cmath>
 
-namespace lightui {
+namespace mbink {
 
 void DirtyRegion::AddRect(const SkRect& rect) {
     if (rect.isEmpty()) {
@@ -178,5 +178,5 @@ SkRect DirtyRegion::Merge(const SkRect& a, const SkRect& b) const {
     return result;
 }
 
-} // namespace lightui
+} // namespace mbink
 

@@ -19,7 +19,7 @@
 #include <vector>
 #include <optional>
 
-namespace lightui {
+namespace mbink {
 
 //------------------------------------------------------------------------------
 // Grid Container Style
@@ -302,5 +302,5 @@ LayoutOutput ComputeGridLayout(
     const LayoutInput& inputs
 );
 
-} // namespace lightui
+} // namespace mbink
 

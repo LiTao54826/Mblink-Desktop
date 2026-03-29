@@ -8,7 +8,7 @@
 #include "dom/style/css_style_declaration.h"
 #include "dom/element.h"
 
-namespace lightui {
+namespace mbink {
 namespace test {
 
 class CSSStyleDeclarationTest : public DOMTestBase {
@@ -175,4 +175,4 @@ TEST_F(CSSStyleDeclarationTest, ParseComplexCssText) {
 }
 
 } // namespace test
-} // namespace lightui
+} // namespace mbink

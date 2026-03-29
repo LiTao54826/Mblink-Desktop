@@ -21,7 +21,7 @@
 typedef unsigned int GLuint;
 typedef unsigned int GLenum;
 
-namespace lightui {
+namespace mbink {
 
 /**
  * @brief Manages FBO lifecycle and operations for GPU incremental rendering
@@ -160,4 +160,4 @@ private:
     GrDirectContext* gr_context_ = nullptr; ///< Skia GPU context (not owned)
 };
 
-} // namespace lightui
+} // namespace mbink

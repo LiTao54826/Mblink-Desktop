@@ -7,7 +7,7 @@
 #include "payload.h"
 #include <algorithm>
 
-namespace lightui {
+namespace mbink {
 
 AssetManager& AssetManager::Instance() {
     static AssetManager instance;
@@ -165,5 +165,5 @@ std::vector<std::string> AssetManager::GetAssetPaths() const {
     return paths;
 }
 
-}  // namespace lightui
+}  // namespace mbink
 

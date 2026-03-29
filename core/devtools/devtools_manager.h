@@ -21,7 +21,7 @@
 // 前向声明
 class SkCanvas;
 
-namespace lightui {
+namespace mbink {
 
 // 前向声明
 class Window;
@@ -343,4 +343,4 @@ public:
     bool UpdatePanelBorderDrag(float x, float y, float window_width, float window_height);
 };
 
-} // namespace lightui
+} // namespace mbink

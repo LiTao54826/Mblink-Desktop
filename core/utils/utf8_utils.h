@@ -13,7 +13,7 @@
 #include <string>
 #include <cstdint>
 
-namespace lightui {
+namespace mbink {
 namespace utf8 {
 
 /**
@@ -206,5 +206,5 @@ inline std::string SubstrByChar(const std::string& str, size_t start_char, size_
 }
 
 } // namespace utf8
-} // namespace lightui
+} // namespace mbink
 

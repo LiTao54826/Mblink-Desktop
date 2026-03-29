@@ -5,7 +5,7 @@
 
 #include "html_olist_element.h"
 
-namespace lightui {
+namespace mbink {
 
 HTMLOListElement::HTMLOListElement()
     : Element("ol") {
@@ -57,5 +57,5 @@ void HTMLOListElement::SetType(const std::string& type) {
     SetAttribute("type", type);
 }
 
-} // namespace lightui
+} // namespace mbink
 

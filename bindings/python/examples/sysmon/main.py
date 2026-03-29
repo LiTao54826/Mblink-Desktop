@@ -1,5 +1,5 @@
 """
-LightUI 系统监视器示例
+MBink 系统监视器示例
 
 功能：
   - 无边框深色主题窗口（borderless + resizable）
@@ -30,7 +30,7 @@ except ImportError:
     print("[ERROR] 请先安装 psutil：pip install psutil")
     sys.exit(1)
 
-from lightui import App
+from mbink import App
 
 # ── 配置 ─────────────────────────────────────────────────────────────────────
 HISTORY_LEN  = 60    # 保留 60 个采样点（60 秒历史）

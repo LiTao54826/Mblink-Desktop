@@ -1,5 +1,5 @@
 """
-LightUI Python绑定安装脚本
+MBink Python绑定安装脚本
 
 功能：
 - 安装Python包
@@ -19,7 +19,7 @@ import sys
 # 项目根目录
 ROOT_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-# 版本信息（与 lightui/__init__.py 及 lightui_core 保持一致）
+# 版本信息（与 mbink/__init__.py / mbink/__init__.py 保持一致）
 VERSION = "0.5.0"
 
 # 本目录的 README（Python 绑定专用文档）
@@ -29,20 +29,20 @@ _long_desc = open(_readme_path, encoding='utf-8').read() if os.path.exists(_read
 
 
 setup(
-    name='lightui',
+    name='mbink',
     version=VERSION,
-    description='Lightweight Python desktop UI framework (ctypes + C ABI)',
+    description='MBink Python desktop UI framework (ctypes + C ABI)',
     long_description=_long_desc,
     long_description_content_type='text/markdown',
-    author='LightUI Team',
-    author_email='team@lightui.dev',
-    url='https://github.com/lightui/lightui',
+    author='MBink Team',
+    author_email='team@mbink.dev',
+    url='https://github.com/mbink/mbink',
     license='MIT',
 
-    packages=['lightui'],
-    package_dir={'lightui': 'lightui'},
+    packages=['mbink'],
+    package_dir={'mbink': 'mbink'},
     # 包含预编译扩展和 DLL（Windows: .pyd + .dll，Linux/macOS: .so）
-    package_data={'lightui': ['bin/*.pyd', 'bin/*.so', 'bin/*.dll']},
+    package_data={'mbink': ['bin/*.pyd', 'bin/*.so', 'bin/*.dll']},
     
     install_requires=[
         # 运行时依赖

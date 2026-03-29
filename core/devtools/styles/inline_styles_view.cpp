@@ -19,7 +19,7 @@
 #include <sstream>
 #include <functional>
 
-namespace lightui {
+namespace mbink {
 
 namespace {
     const float ROW_HEIGHT = 20.0f;
@@ -398,4 +398,4 @@ void InlineStylesView::RenderStyleList(SkCanvas* canvas, float x, float y, float
     content_height_ = current_y - start_y + ROW_HEIGHT + PADDING;
 }
 
-} // namespace lightui
+} // namespace mbink

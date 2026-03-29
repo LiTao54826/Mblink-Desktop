@@ -11,7 +11,7 @@
 #include <cstdio>
 #include <regex>
 
-namespace lightui {
+namespace mbink {
 
 // ============================================================================
 // CalculateRotationBounds 实现
@@ -498,4 +498,4 @@ AnimationBounds AnimationBoundsCalculator::Calculate(
     return result;
 }
 
-} // namespace lightui
+} // namespace mbink

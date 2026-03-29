@@ -19,7 +19,7 @@
 #include <string>
 #include <memory>
 
-namespace lightui {
+namespace mbink {
 
 // 前向声明
 class Node;
@@ -473,5 +473,5 @@ private:
     std::string clipboard_data_;    ///< 剪贴板数据
 };
 
-} // namespace lightui
+} // namespace mbink
 

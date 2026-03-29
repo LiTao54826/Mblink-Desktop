@@ -8,7 +8,7 @@
 #include "include/core/SkFont.h"
 #include <algorithm>
 
-namespace lightui {
+namespace mbink {
 
 // ========== RenderCache 实现 ==========
 
@@ -304,5 +304,5 @@ void BatchRenderer::Optimize() {
     commands_ = std::move(optimized);
 }
 
-} // namespace lightui
+} // namespace mbink
 

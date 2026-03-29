@@ -17,7 +17,7 @@
 #include <random>
 #include <cmath>
 
-using namespace lightui;
+using namespace mbink;
 
 /**
  * @brief Random number generator for property tests

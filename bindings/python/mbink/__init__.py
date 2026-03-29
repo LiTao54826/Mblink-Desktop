@@ -1,8 +1,8 @@
 """
-LightUI — 用 Python 构建桌面应用
+MBink Python 包入口
 
 快速开始：
-    from lightui import App
+    from mbink import App
 
     app = App("Counter", 400, 300)
     data = app.shared("data")
@@ -18,7 +18,7 @@ LightUI — 用 Python 构建桌面应用
 """
 
 __version__ = "0.5.0"
-__author__ = "LightUI Team"
+__author__ = "MBink Team"
 
 from .app import App
 from .shared import SharedState

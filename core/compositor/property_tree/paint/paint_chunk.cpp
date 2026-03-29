@@ -5,7 +5,7 @@
 
 #include "core/compositor/property_tree/paint/paint_chunk.h"
 
-namespace lightui {
+namespace mbink {
 
 // 静态成员初始化
 uint64_t PaintChunk::next_id_ = 1;
@@ -63,4 +63,4 @@ void PaintChunk::MergeWith(const PaintChunk& other) {
     }
 }
 
-} // namespace lightui
+} // namespace mbink

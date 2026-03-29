@@ -5,8 +5,8 @@
 
 #include "json.h"
 
-namespace lightui {
+namespace mbink {
 
 // TODO: 实现函数
 
-} // namespace lightui
+} // namespace mbink

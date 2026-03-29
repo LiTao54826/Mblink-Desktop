@@ -21,7 +21,7 @@
 #include <unordered_map>
 #include <vector>
 
-namespace lightui {
+namespace mbink {
 
 // 前向声明
 class RenderObject;
@@ -270,4 +270,4 @@ private:
     uint64_t tree_version_ = 0;
 };
 
-} // namespace lightui
+} // namespace mbink

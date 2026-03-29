@@ -16,7 +16,7 @@
 #include <unistd.h>
 #endif
 
-namespace lightui {
+namespace mbink {
 
 CommandExecutor::CommandExecutor() = default;
 
@@ -291,4 +291,4 @@ void CommandExecutor::Cleanup() {
 #endif
 }
 
-}  // namespace lightui
+}  // namespace mbink

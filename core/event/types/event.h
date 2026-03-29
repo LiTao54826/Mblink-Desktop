@@ -8,7 +8,7 @@
 #include <string>
 #include <memory>
 
-namespace lightui {
+namespace mbink {
 
 class Element;
 
@@ -100,4 +100,4 @@ private:
     bool propagation_stopped_;
 };
 
-} // namespace lightui
+} // namespace mbink

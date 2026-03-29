@@ -13,7 +13,7 @@
 #define M_PI 3.14159265358979323846
 #endif
 
-namespace lightui {
+namespace mbink {
 
 // ========== TransformOrigin 实现 ==========
 
@@ -252,4 +252,4 @@ std::optional<TransformOrigin> ParseTransformOrigin(const std::string& str) {
     return origin;
 }
 
-} // namespace lightui
+} // namespace mbink

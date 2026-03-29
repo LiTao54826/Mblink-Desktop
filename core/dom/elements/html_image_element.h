@@ -17,7 +17,7 @@
 #include <functional>
 #include "include/core/SkImage.h"
 
-namespace lightui {
+namespace mbink {
 
 /**
  * @brief 图片加载状态
@@ -260,5 +260,5 @@ private:
     std::string error_message_;     ///< 错误信息
 };
 
-} // namespace lightui
+} // namespace mbink
 

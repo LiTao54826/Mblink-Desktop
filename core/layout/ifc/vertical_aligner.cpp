@@ -12,7 +12,7 @@
 // 调试开关
 #define VA_DEBUG 0
 
-namespace lightui {
+namespace mbink {
 
 // ========== 盒子度量 ==========
 
@@ -428,5 +428,5 @@ VerticalAlignInfo VerticalAligner::ParseVerticalAlign(
     return info;
 }
 
-} // namespace lightui
+} // namespace mbink
 

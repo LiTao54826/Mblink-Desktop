@@ -7,7 +7,7 @@
 #include "../document.h"
 #include "core/lexbor/style_manager.h"
 
-namespace lightui {
+namespace mbink {
 
 HTMLStyleElement::HTMLStyleElement()
     : Element("style") {
@@ -82,4 +82,4 @@ void HTMLStyleElement::NotifyStyleUpdate() {
     }
 }
 
-} // namespace lightui
+} // namespace mbink

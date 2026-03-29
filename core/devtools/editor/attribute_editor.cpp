@@ -7,7 +7,7 @@
 #include <algorithm>
 #include <cctype>
 
-namespace lightui {
+namespace mbink {
 
 AttributeEditor::AttributeEditor() = default;
 
@@ -79,4 +79,4 @@ bool AttributeEditor::ValidateAttributeName(const std::string& name) {
     return true;
 }
 
-} // namespace lightui
+} // namespace mbink

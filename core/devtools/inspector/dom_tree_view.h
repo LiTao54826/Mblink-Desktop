@@ -15,7 +15,7 @@
 
 class SkCanvas;
 
-namespace lightui {
+namespace mbink {
 
 class Event;
 
@@ -136,4 +136,4 @@ private:
     std::string GetCSSSelector(std::shared_ptr<Node> node);
 };
 
-} // namespace lightui
+} // namespace mbink

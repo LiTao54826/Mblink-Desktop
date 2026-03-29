@@ -4,13 +4,13 @@
 a = Analysis(
     ['examples\\borderless_demo.py'],
     pathex=['.'],
-    binaries=[('lightui\\bin\\lightui_core.pyd', 'lightui\\bin')],
+    binaries=[('mbink\\bin\\mbink_core.pyd', 'mbink\\bin')],
     datas=[
-        ('lightui\\__init__.py', 'lightui'),
-        ('lightui\\app.py', 'lightui'),
-        ('lightui\\core.py', 'lightui'),
+        ('mbink\\__init__.py', 'mbink'),
+        ('mbink\\app.py', 'mbink'),
+        ('mbink\\core.py', 'mbink'),
     ],
-    hiddenimports=['lightui', 'lightui.app', 'lightui.core', 'lightui_core'],
+    hiddenimports=['mbink', 'mbink.app', 'mbink.core', 'mbink_core'],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],

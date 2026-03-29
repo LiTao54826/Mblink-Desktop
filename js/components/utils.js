@@ -1,5 +1,5 @@
 /**
- * LightUI 工具函数
+ * MBink 工具函数
  */
 
 /**
@@ -38,7 +38,7 @@ export function toKebabCase(str) {
  * 生成唯一 ID
  */
 let idCounter = 0;
-export function uniqueId(prefix = 'lightui') {
+export function uniqueId(prefix = 'mbink') {
   return `${prefix}-${++idCounter}`;
 }
 

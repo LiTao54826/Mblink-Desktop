@@ -14,7 +14,7 @@
 #include <algorithm>
 #include <iostream>
 
-namespace lightui {
+namespace mbink {
 
 void RenderFlex::Layout(float parent_width, float parent_height) {
     // 🔍 DEBUG: 输出 Layout 调用
@@ -665,4 +665,4 @@ void RenderFlex::Paint(SkCanvas* canvas) {
     needs_paint_ = false;
 }
 
-} // namespace lightui
+} // namespace mbink

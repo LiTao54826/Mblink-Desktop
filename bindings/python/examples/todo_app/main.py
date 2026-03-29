@@ -1,5 +1,5 @@
 """
-Todo App 示例 — 展示 LightUI Python 绑定的核心功能
+Todo App 示例 - 展示 MBink Python 绑定的核心功能
 
 功能演示：
   - 多个 SharedState 字段（列表 + 字符串 + 数字）
@@ -9,7 +9,7 @@ Todo App 示例 — 展示 LightUI Python 绑定的核心功能
   - 动态修改窗口标题
 """
 
-from lightui import App
+from mbink import App
 
 app = App("Todo App", 480, 600)
 

@@ -10,8 +10,8 @@
 
 #pragma once
 
-namespace lightui {
+namespace mbink {
 
 // TODO: 添加类定义和函数声明
 
-} // namespace lightui
+} // namespace mbink

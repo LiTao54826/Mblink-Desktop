@@ -8,7 +8,7 @@
 #include <algorithm>
 #include <cctype>
 
-namespace lightui {
+namespace mbink {
 
 // ========== UTF-8 解码 ==========
 
@@ -673,5 +673,5 @@ std::vector<LineBox> LineBreaker::BreakIntoLines(
     return lines;
 }
 
-} // namespace lightui
+} // namespace mbink
 

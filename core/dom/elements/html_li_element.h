@@ -13,7 +13,7 @@
 #include <string>
 #include <memory>
 
-namespace lightui {
+namespace mbink {
 
 /**
  * @brief HTML LI元素类
@@ -55,5 +55,5 @@ public:
     void SetValue(int value);
 };
 
-} // namespace lightui
+} // namespace mbink
 

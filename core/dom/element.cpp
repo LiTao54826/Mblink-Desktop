@@ -47,7 +47,7 @@
 #undef GetClassName
 #endif
 
-namespace lightui {
+namespace mbink {
 
 void Element::MarkLexborDirty() {
     lexbor_dirty_ = true;
@@ -1526,4 +1526,4 @@ void Element::Blur() {
     }
 }
 
-} // namespace lightui
+} // namespace mbink

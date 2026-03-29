@@ -16,7 +16,7 @@
 #include <memory>
 #include <string>
 
-namespace lightui {
+namespace mbink {
 
 // 前向声明
 class PtyBackend;
@@ -250,4 +250,4 @@ private:
     void ScreenToCell(float x, float y, int& row, int& col) const;
 };
 
-}  // namespace lightui
+}  // namespace mbink

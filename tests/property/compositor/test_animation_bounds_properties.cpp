@@ -17,7 +17,7 @@
 #include "core/compositor/animation/animation_bounds_calculator.h"
 #include "include/core/SkMatrix.h"
 
-namespace lightui {
+namespace mbink {
 namespace testing {
 
 // =========================================================================
@@ -576,4 +576,4 @@ TEST_F(CombinedTransformBoundsPropertyTest, IdentityTransformsNoExpansion) {
 }
 
 } // namespace testing
-} // namespace lightui
+} // namespace mbink

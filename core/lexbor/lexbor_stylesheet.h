@@ -12,7 +12,7 @@
 #include <functional>
 #include <lexbor/css/css.h>
 
-namespace lightui {
+namespace mbink {
 
 /**
  * @brief 资源提供者回调 - 用于从嵌入资源加载
@@ -171,5 +171,5 @@ private:
     static CSSAssetProvider asset_provider_;
 };
 
-} // namespace lightui
+} // namespace mbink
 

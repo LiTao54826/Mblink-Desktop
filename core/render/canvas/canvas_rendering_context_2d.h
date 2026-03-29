@@ -22,7 +22,7 @@
 #include <vector>
 #include <memory>
 
-namespace lightui {
+namespace mbink {
 
 // 前向声明
 class CanvasGradient;
@@ -342,4 +342,4 @@ private:
     DrawingState current_state_;               ///< 当前状态
 };
 
-} // namespace lightui
+} // namespace mbink

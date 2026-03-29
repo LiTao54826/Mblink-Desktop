@@ -10,7 +10,7 @@
 #include "../text.h"
 #include <algorithm>
 
-namespace lightui {
+namespace mbink {
 
 // ========== 构造函数 ==========
 
@@ -212,5 +212,5 @@ std::shared_ptr<HTMLSelectElement> HTMLOptionElement::FindSelectElement() const 
     return nullptr;
 }
 
-} // namespace lightui
+} // namespace mbink
 

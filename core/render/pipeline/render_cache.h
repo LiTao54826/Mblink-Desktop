@@ -20,7 +20,7 @@
 #include <string>
 #include <chrono>
 
-namespace lightui {
+namespace mbink {
 
 /**
  * @brief 缓存条目
@@ -298,5 +298,5 @@ private:
     std::vector<RenderCommand> commands_; // 命令列表
 };
 
-} // namespace lightui
+} // namespace mbink
 

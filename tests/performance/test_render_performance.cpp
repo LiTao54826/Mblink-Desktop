@@ -8,7 +8,7 @@
 #include <chrono>
 #include <iostream>
 
-namespace lightui {
+namespace mbink {
 namespace test {
 
 class RenderPerformanceTest : public DOMTestBase {
@@ -315,4 +315,4 @@ TEST_F(RenderPerformanceTest, AnimationUpdate) {
 }
 
 } // namespace test
-} // namespace lightui
+} // namespace mbink

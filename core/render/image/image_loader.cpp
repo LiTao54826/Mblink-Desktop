@@ -29,7 +29,7 @@
 #endif
 #endif
 
-namespace lightui {
+namespace mbink {
 
 // ========== 静态成员 ==========
 
@@ -529,5 +529,5 @@ std::string ImageLoader::DetectFormatFromData(const void* data, size_t size) {
     return "unknown";
 }
 
-} // namespace lightui
+} // namespace mbink
 

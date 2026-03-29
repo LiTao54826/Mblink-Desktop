@@ -6,7 +6,7 @@
 #include "html_script_element.h"
 #include "../document.h"
 
-namespace lightui {
+namespace mbink {
 
 HTMLScriptElement::HTMLScriptElement()
     : Element("script") {
@@ -81,4 +81,4 @@ bool HTMLScriptElement::IsModule() const {
     return type == "module";
 }
 
-} // namespace lightui
+} // namespace mbink

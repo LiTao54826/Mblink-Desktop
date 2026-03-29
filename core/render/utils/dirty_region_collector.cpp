@@ -7,7 +7,7 @@
 #include "core/dom/element.h"
 #include "core/render/objects/render_object.h"
 
-namespace lightui {
+namespace mbink {
 
 bool DirtyRegionCollector::CollectFromDOM(Node* root, DirtyRegion& dirty_region) {
     if (!root) {
@@ -152,5 +152,5 @@ void DirtyRegionCollector::SetViewportSize(float width, float height) {
     viewport_height_ = height;
 }
 
-} // namespace lightui
+} // namespace mbink
 

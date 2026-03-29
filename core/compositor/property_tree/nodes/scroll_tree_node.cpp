@@ -7,7 +7,7 @@
 #include "core/compositor/property_tree/nodes/transform_tree_node.h"
 #include <algorithm>
 
-namespace lightui {
+namespace mbink {
 
 ScrollTreeNode::ScrollTreeNode() {
     // 默认可以在合成器线程滚动
@@ -108,4 +108,4 @@ SkPoint ScrollTreeNode::ClampScrollOffset(const SkPoint& offset) const {
     return SkPoint::Make(x, y);
 }
 
-} // namespace lightui
+} // namespace mbink

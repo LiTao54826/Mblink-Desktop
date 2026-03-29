@@ -11,7 +11,7 @@
 #include <cstdint>
 #include "payload.h"
 
-namespace lightui {
+namespace mbink {
 
 /**
  * @brief 资源管理器（单例）
@@ -83,5 +83,5 @@ private:
     std::unordered_map<std::string, AssetEntry> index_;
 };
 
-}  // namespace lightui
+}  // namespace mbink
 

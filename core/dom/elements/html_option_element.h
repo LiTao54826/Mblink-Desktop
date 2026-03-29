@@ -12,7 +12,7 @@
 #include <string>
 #include <memory>
 
-namespace lightui {
+namespace mbink {
 
 // 前向声明
 class HTMLSelectElement;
@@ -164,5 +164,5 @@ private:
     std::shared_ptr<HTMLSelectElement> FindSelectElement() const;
 };
 
-} // namespace lightui
+} // namespace mbink
 

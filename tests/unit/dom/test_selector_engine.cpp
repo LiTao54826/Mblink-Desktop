@@ -15,7 +15,7 @@
 #include "dom/element.h"
 #include "dom/document.h"
 
-namespace lightui {
+namespace mbink {
 namespace test {
 
 class SelectorEngineTest : public DOMTestBase {
@@ -250,4 +250,4 @@ TEST_F(SelectorEngineTest, MultipleSelectors) {
 }
 
 } // namespace test
-} // namespace lightui
+} // namespace mbink

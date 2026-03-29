@@ -7,7 +7,7 @@
 
 #include <string>
 
-namespace lightui {
+namespace mbink {
 namespace utils {
 
 /**
@@ -28,4 +28,4 @@ std::string LocalToUTF8(const std::string& local_str);
 std::string UTF8ToLocal(const std::string& utf8_str);
 
 }  // namespace utils
-}  // namespace lightui
+}  // namespace mbink

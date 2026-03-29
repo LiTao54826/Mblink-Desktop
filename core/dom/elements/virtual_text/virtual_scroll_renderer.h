@@ -11,7 +11,7 @@
 #include "include/core/SkRect.h"
 #include "include/core/SkTypeface.h"
 
-namespace lightui {
+namespace mbink {
 
 /**
  * @brief 虚拟滚动渲染基类
@@ -181,4 +181,4 @@ protected:
     void ClampScrollOffset();
 };
 
-}  // namespace lightui
+}  // namespace mbink

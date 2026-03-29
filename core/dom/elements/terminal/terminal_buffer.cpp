@@ -8,7 +8,7 @@
 #include <algorithm>
 #include <iostream>
 
-namespace lightui {
+namespace mbink {
 
 const Cell TerminalBuffer::kDefaultCell = Cell(' ', TextStyle{});
 
@@ -277,4 +277,4 @@ int TerminalBuffer::GetBufferRow(int screen_row) const {
     return scroll_top_ + screen_row;
 }
 
-}  // namespace lightui
+}  // namespace mbink

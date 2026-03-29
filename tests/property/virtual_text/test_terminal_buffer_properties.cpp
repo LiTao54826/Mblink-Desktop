@@ -16,7 +16,7 @@
 #include <string>
 #include <algorithm>
 
-namespace lightui {
+namespace mbink {
 namespace {
 
 class RandomGenerator {
@@ -350,4 +350,4 @@ TEST_F(CursorOperationsPropertyTest, MoveCursorRelative) {
 }
 
 }  // namespace
-}  // namespace lightui
+}  // namespace mbink

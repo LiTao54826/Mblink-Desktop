@@ -37,7 +37,7 @@
 #define GL_UNPACK_SKIP_ROWS 0x0CF3
 #endif
 
-namespace lightui {
+namespace mbink {
 
 // 静态 ID 生成器
 uint32_t CompositorLayer::next_id_ = 1;
@@ -611,4 +611,4 @@ std::shared_ptr<CompositorLayer> CreateCompositorLayer() {
     return std::make_shared<CompositorLayer>(0);  // 0 表示自动分配 ID
 }
 
-} // namespace lightui
+} // namespace mbink

@@ -14,7 +14,7 @@
 #include "quickjs.h"
 #include "core/dom/selection/range.h"
 
-namespace lightui {
+namespace mbink {
 
 namespace bindings {
 
@@ -47,4 +47,4 @@ JSValue WrapRange(JSContext* ctx, std::shared_ptr<Range> range);
 std::shared_ptr<Range> UnwrapRange(JSContext* ctx, JSValue value);
 
 } // namespace bindings
-} // namespace lightui
+} // namespace mbink

@@ -25,7 +25,7 @@
 class SkCanvas;
 class SkSurface;
 
-namespace lightui {
+namespace mbink {
 
 /**
  * @brief 合成统计信息
@@ -316,4 +316,4 @@ private:
     double frame_start_time_ = 0.0;
 };
 
-} // namespace lightui
+} // namespace mbink

@@ -17,7 +17,7 @@
 #include <iostream>
 #include <algorithm>
 
-namespace lightui {
+namespace mbink {
 
 DevToolsPanel::DevToolsPanel(Document* document)
     : document_(document) {
@@ -363,4 +363,4 @@ void DevToolsPanel::RenderToolbar(SkCanvas* canvas, float x, float y, float widt
     }
 }
 
-} // namespace lightui
+} // namespace mbink

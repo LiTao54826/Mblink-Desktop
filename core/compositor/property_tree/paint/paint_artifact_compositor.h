@@ -26,7 +26,7 @@
 #include "include/core/SkCanvas.h"
 #include "include/core/SkRect.h"
 
-namespace lightui {
+namespace mbink {
 
 // 前向声明
 class CompositorLayer;
@@ -340,4 +340,4 @@ private:
     mutable Statistics statistics_;
 };
 
-} // namespace lightui
+} // namespace mbink

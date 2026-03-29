@@ -40,7 +40,7 @@ cmake --build build --config Release
 如果修改了测试相关内容：
 
 ```bash
-cmake -B build -DLIGHTUI_BUILD_TESTS=ON
+cmake -B build -DMBINK_BUILD_TESTS=ON
 cmake --build build --config Release
 ctest --test-dir build --output-on-failure
 ```
@@ -69,4 +69,4 @@ PR 描述建议包含：
 - Python binding 稳定性验证
 - 示例可运行性筛选
 - 测试通过率收口
-- 命名统一（MBink / LightUI）方案整理
+- 命名统一（MBink / MBink）方案整理

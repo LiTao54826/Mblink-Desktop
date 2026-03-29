@@ -10,7 +10,7 @@
 #include <iostream>
 #include <vector>
 
-namespace lightui {
+namespace mbink {
 namespace bindings {
 
 // ========== Opaque 数据结构 ==========
@@ -433,4 +433,4 @@ std::shared_ptr<MutationObserver> UnwrapMutationObserver(JSContext* ctx, JSValue
 }
 
 } // namespace bindings
-} // namespace lightui
+} // namespace mbink

@@ -8,7 +8,7 @@
 #include "core/dom/node.h"
 #include <algorithm>
 
-namespace lightui {
+namespace mbink {
 
 // ========== 构造函数和析构函数 ==========
 
@@ -180,5 +180,5 @@ void StyleCache::EvictIfNeeded() {
     }
 }
 
-} // namespace lightui
+} // namespace mbink
 

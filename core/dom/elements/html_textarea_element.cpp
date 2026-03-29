@@ -19,7 +19,7 @@
 #include <include/core/SkFont.h>
 #include <include/core/SkTextBlob.h>
 
-namespace lightui {
+namespace mbink {
 
 HTMLTextAreaElement::HTMLTextAreaElement()
     : Element("textarea")
@@ -716,5 +716,5 @@ void HTMLTextAreaElement::EndScrollbarDrag() {
     scrollbar_drag_type_ = ScrollbarType::NONE;
 }
 
-} // namespace lightui
+} // namespace mbink
 

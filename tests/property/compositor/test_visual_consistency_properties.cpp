@@ -22,7 +22,7 @@
 #include <memory>
 #include <cmath>
 
-using namespace lightui;
+using namespace mbink;
 
 // =========================================================================
 // 测试辅助类

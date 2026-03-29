@@ -8,7 +8,7 @@
 #include "layout/types/style.h"
 #include "layout/types/geometry.h"
 
-namespace lightui {
+namespace mbink {
 namespace test {
 
 class FlexLayoutTest : public ::testing::Test {
@@ -196,4 +196,4 @@ TEST_F(FlexLayoutTest, DefaultFlexBasis) {
 }
 
 } // namespace test
-} // namespace lightui
+} // namespace mbink

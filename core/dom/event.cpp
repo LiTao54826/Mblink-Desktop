@@ -7,7 +7,7 @@
 #include "node.h"
 #include <chrono>
 
-namespace lightui {
+namespace mbink {
 
 // ========== Event 类实现 ==========
 
@@ -144,5 +144,5 @@ ClipboardEvent::ClipboardEvent(const std::string& type,
     , clipboard_data_(clipboard_data) {
 }
 
-} // namespace lightui
+} // namespace mbink
 

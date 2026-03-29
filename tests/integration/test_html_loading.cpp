@@ -8,7 +8,7 @@
 #include "dom/document.h"
 #include "dom/element.h"
 
-namespace lightui {
+namespace mbink {
 namespace test {
 
 class HTMLLoadingTest : public DOMTestBase {};
@@ -365,4 +365,4 @@ TEST_F(HTMLLoadingTest, SaveHTML) {
 }
 
 } // namespace test
-} // namespace lightui
+} // namespace mbink

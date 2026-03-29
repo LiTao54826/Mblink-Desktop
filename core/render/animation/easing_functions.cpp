@@ -2,7 +2,7 @@
 #include <algorithm>
 #include <cmath>
 
-namespace lightui {
+namespace mbink {
 
 float EasingFunctions::Linear(float t) {
     return t;
@@ -126,5 +126,5 @@ float EasingFunctions::Apply(float t, TimingFunction timing, const CubicBezier& 
     }
 }
 
-} // namespace lightui
+} // namespace mbink
 

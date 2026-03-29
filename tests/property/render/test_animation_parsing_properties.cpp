@@ -27,8 +27,8 @@
 #include <sstream>
 #include <cmath>
 
-using namespace lightui;
-using namespace lightui::test;
+using namespace mbink;
+using namespace mbink::test;
 
 // Random number generator for property tests
 class AnimationParsingTestRng {

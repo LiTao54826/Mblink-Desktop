@@ -7,7 +7,7 @@
 #include <algorithm>
 #include <iostream>
 
-namespace lightui {
+namespace mbink {
 
 WindowManager& WindowManager::Instance() {
     static WindowManager instance;
@@ -135,5 +135,5 @@ void WindowManager::CleanupDestroyedWindows() {
     }
 }
 
-} // namespace lightui
+} // namespace mbink
 

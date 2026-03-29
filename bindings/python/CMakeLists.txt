@@ -1,7 +1,7 @@
-# LightUI Python Binding CMakeLists.txt
+# MBink Python Binding CMakeLists.txt
 #
 # 使用 pybind11 构建 Python 扩展模块
-# 输出: lightui_core.pyd (Windows) / lightui_core.so (Linux/macOS)
+# 输出: mbink_core.pyd (Windows) / mbink_core.so (Linux/macOS)
 
 cmake_minimum_required(VERSION 3.15)
 
@@ -39,57 +39,57 @@ message(STATUS "Python version: ${Python3_VERSION}")
 message(STATUS "pybind11 version: ${pybind11_VERSION}")
 
 # 创建 Python 模块
-pybind11_add_module(lightui_core
+pybind11_add_module(mbink_core
     src/bindings.cpp
 )
 
 # 包含目录
-target_include_directories(lightui_core PRIVATE
+target_include_directories(mbink_core PRIVATE
     ${CMAKE_SOURCE_DIR}
     ${CMAKE_SOURCE_DIR}/core
     ${CMAKE_SOURCE_DIR}/third_party
 )
 
-# 链接 lightui 核心库
+# 链接 mbink 核心库
 # Phase 1: 仅 bridge（状态管理）
 # Phase 2: 完整库（Window, EventLoop, Document 等）
-target_link_libraries(lightui_core PRIVATE
-    lightui_bridge
-    lightui_window
-    lightui_event
-    lightui_dom
-    lightui_quickjs
-    lightui_devtools
-    lightui_network
+target_link_libraries(mbink_core PRIVATE
+    mbink_bridge
+    mbink_window
+    mbink_event
+    mbink_dom
+    mbink_quickjs
+    mbink_devtools
+    mbink_network
 )
 
-# 设置输出目录 - 输出到 lightui/bin 目录，方便分发
-# 使用 _<CONFIG> 后缀确保所有配置都输出到同一目录
-set_target_properties(lightui_core PROPERTIES
-    LIBRARY_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/bindings/python/lightui/bin
-    LIBRARY_OUTPUT_DIRECTORY_DEBUG ${CMAKE_SOURCE_DIR}/bindings/python/lightui/bin
-    LIBRARY_OUTPUT_DIRECTORY_RELEASE ${CMAKE_SOURCE_DIR}/bindings/python/lightui/bin
-    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/bindings/python/lightui/bin
-    RUNTIME_OUTPUT_DIRECTORY_DEBUG ${CMAKE_SOURCE_DIR}/bindings/python/lightui/bin
-    RUNTIME_OUTPUT_DIRECTORY_RELEASE ${CMAKE_SOURCE_DIR}/bindings/python/lightui/bin
+# 设置输出目录 - 直接输出到 bindings/python，便于 import mbink_core
+# 运行时 DLL 仍由 core/api 复制到 mbink/bin
+set_target_properties(mbink_core PROPERTIES
+    LIBRARY_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/bindings/python
+    LIBRARY_OUTPUT_DIRECTORY_DEBUG ${CMAKE_SOURCE_DIR}/bindings/python
+    LIBRARY_OUTPUT_DIRECTORY_RELEASE ${CMAKE_SOURCE_DIR}/bindings/python
+    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/bindings/python
+    RUNTIME_OUTPUT_DIRECTORY_DEBUG ${CMAKE_SOURCE_DIR}/bindings/python
+    RUNTIME_OUTPUT_DIRECTORY_RELEASE ${CMAKE_SOURCE_DIR}/bindings/python
 )
 
 # Windows 特定设置
 if(WIN32)
     # 确保输出为 .pyd
-    set_target_properties(lightui_core PROPERTIES
+    set_target_properties(mbink_core PROPERTIES
         SUFFIX ".pyd"
     )
     
     # 优化体积：启用 LTCG 和去除调试信息
     if(MSVC)
-        target_compile_options(lightui_core PRIVATE
+        target_compile_options(mbink_core PRIVATE
             /O2           # 最大优化
             /GL           # 全程序优化
             /Gy           # 函数级链接
             /GS-          # 禁用安全检查（减小体积）
         )
-        target_link_options(lightui_core PRIVATE
+        target_link_options(mbink_core PRIVATE
             /LTCG         # 链接时代码生成
             /OPT:REF      # 移除未引用函数
             /OPT:ICF      # 相同 COMDAT 折叠
@@ -98,20 +98,20 @@ if(WIN32)
     endif()
 else()
     # Linux/macOS 优化
-    target_compile_options(lightui_core PRIVATE
+    target_compile_options(mbink_core PRIVATE
         -O3                    # 最大优化
         -fvisibility=hidden    # 隐藏符号
         -ffunction-sections    # 函数分段
         -fdata-sections        # 数据分段
     )
-    target_link_options(lightui_core PRIVATE
+    target_link_options(mbink_core PRIVATE
         -Wl,--gc-sections      # 移除未使用段
         -s                     # 去除符号表
     )
 endif()
 
 # 安装规则
-install(TARGETS lightui_core
+install(TARGETS mbink_core
     LIBRARY DESTINATION python
     RUNTIME DESTINATION python
 )

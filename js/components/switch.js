@@ -1,5 +1,5 @@
 /**
- * LightUI Switch 组件
+ * MBink Switch 组件
  *
  * Props:
  * - checked: boolean

@@ -18,7 +18,7 @@
 #include <vector>
 #include <optional>
 
-namespace lightui {
+namespace mbink {
 
 //------------------------------------------------------------------------------
 // Flexbox Layout Tree Interface
@@ -117,7 +117,7 @@ struct FlexItem {
     
     /// Returns true if the item is a scroll container
     bool IsScrollContainer() const {
-        return lightui::IsScrollContainer(overflow.x) || lightui::IsScrollContainer(overflow.y);
+        return mbink::IsScrollContainer(overflow.x) || mbink::IsScrollContainer(overflow.y);
     }
 };
 
@@ -188,5 +188,5 @@ LayoutOutput ComputeFlexboxLayout(
     const LayoutInput& inputs
 );
 
-} // namespace lightui
+} // namespace mbink
 

@@ -7,7 +7,7 @@
 #include "document.h"
 #include <iostream>
 
-namespace lightui {
+namespace mbink {
 
 Text::Text(const std::string& data)
     : Node(NodeType::TEXT_NODE)
@@ -43,4 +43,4 @@ void Text::SetTextContent(const std::string& content) {
     SetData(content);
 }
 
-} // namespace lightui
+} // namespace mbink

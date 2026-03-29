@@ -1,4 +1,4 @@
-# LightUI 无边框 Preact 应用开发经验总结
+# MBink 无边框 Preact 应用开发经验总结
 
 > 基于 `sysmon` 示例的踩坑记录，适用于所有使用 `load_preact()` + `borderless=True` 的应用。
 
@@ -145,7 +145,7 @@ function Sparkline({ data, color, h: height = 44 }) {
 
 **`main.py`**：
 ```python
-from lightui import App
+from mbink import App
 
 app = App("My App", 900, 600, borderless=True, resizable=True)
 data = app.shared("data")
@@ -192,7 +192,7 @@ function App() {
   return h('div', { style: { width: '100%', height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' } },
     h(TitleBar),
     h('div', { style: { flex: 1, overflow: 'hidden', minHeight: 0 } },
-      h('p', null, 'Hello, LightUI!')
+      h('p', null, 'Hello, MBink!')
     )
   );
 }

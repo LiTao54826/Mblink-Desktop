@@ -12,7 +12,7 @@
 #include <optional>
 #include <memory>
 
-namespace lightui {
+namespace mbink {
 
 /**
  * @brief CSS 滤镜类型
@@ -267,5 +267,5 @@ private:
                                                         sk_sp<SkImageFilter> input);
 };
 
-} // namespace lightui
+} // namespace mbink
 

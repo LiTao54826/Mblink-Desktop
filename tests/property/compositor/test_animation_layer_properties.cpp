@@ -15,7 +15,7 @@
 #include "include/core/SkMatrix.h"
 #include <memory>
 
-namespace lightui {
+namespace mbink {
 namespace testing {
 
 // =========================================================================
@@ -344,4 +344,4 @@ TEST_F(AnimationClearTest, ClearResetsAllState) {
 }
 
 } // namespace testing
-} // namespace lightui
+} // namespace mbink

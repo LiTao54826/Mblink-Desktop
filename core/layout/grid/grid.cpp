@@ -17,7 +17,7 @@
 #include <cmath>
 #include <cstdio>
 
-namespace lightui {
+namespace mbink {
 
 //------------------------------------------------------------------------------
 // Helper Functions
@@ -1131,5 +1131,5 @@ LayoutOutput ComputeGridLayout(
     return output;
 }
 
-} // namespace lightui
+} // namespace mbink
 

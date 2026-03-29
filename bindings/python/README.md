@@ -10,13 +10,14 @@ Python 是当前唯一可以确认已接入构建系统的语言绑定。
 - 存在 `bindings/python/CMakeLists.txt`
 - 存在 `bindings/python/src/bindings.cpp`
 - 绑定实现使用 `pybind11`
-- 存在 Python 包目录 `bindings/python/lightui/`
-- 顶层 CMake 默认启用 `LIGHTUI_BUILD_PYTHON_BINDING`
+- 存在 Python 包目录 `bindings/python/mbink/`，并兼容保留 `bindings/python/mbink/`
+- 顶层 CMake 默认启用 `MBINK_BUILD_PYTHON_BINDING`
 
 ## 当前目录组成
 
 - `src/`：绑定实现源码
-- `lightui/`：Python 包包装层
+- `mbink/`：Python 包主入口
+- `mbink/`：兼容包装层
 - `setup.py`：打包与安装入口
 
 ## 当前不应过度承诺的内容
@@ -26,7 +27,7 @@ Python 是当前唯一可以确认已接入构建系统的语言绑定。
 - API 已完全定型
 - 与仓库名 `MBink` 已完全统一
 
-当前代码中仍大量使用 `LightUI` / `lightui` 命名。
+当前底层仍保留部分 `MBink` / `mbink` 命名作为兼容层。
 
 ## 基本使用
 

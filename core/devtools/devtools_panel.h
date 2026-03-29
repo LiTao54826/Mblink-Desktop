@@ -12,7 +12,7 @@
 
 class SkCanvas;
 
-namespace lightui {
+namespace mbink {
 
 class DOMTreeView;
 class StylesPanel;
@@ -175,4 +175,4 @@ private:
     bool IsOnSplitter(int x) const;
 };
 
-} // namespace lightui
+} // namespace mbink

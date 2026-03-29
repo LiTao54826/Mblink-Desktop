@@ -14,7 +14,7 @@
 #include <iomanip>
 #include <map>
 
-namespace lightui {
+namespace mbink {
 
 // ========== 构造函数 ==========
 
@@ -400,5 +400,5 @@ std::string HTMLFormElement::GetFormDataJSON() const {
     return result.str();
 }
 
-} // namespace lightui
+} // namespace mbink
 

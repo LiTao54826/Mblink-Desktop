@@ -17,7 +17,7 @@
 #include <memory>
 #include <string>
 
-namespace lightui {
+namespace mbink {
 
 // 前向声明
 class Document;
@@ -154,4 +154,4 @@ private:
     std::string clipboard_text_;
 };
 
-} // namespace lightui
+} // namespace mbink

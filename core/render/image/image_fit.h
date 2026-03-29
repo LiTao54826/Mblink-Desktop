@@ -17,7 +17,7 @@
 #include "include/core/SkRect.h"
 #include "include/core/SkSize.h"
 
-namespace lightui {
+namespace mbink {
 
 /**
  * @brief Result of object-fit calculation
@@ -89,4 +89,4 @@ ObjectPositionOffset ParseObjectPosition(
     float available_height
 );
 
-} // namespace lightui
+} // namespace mbink

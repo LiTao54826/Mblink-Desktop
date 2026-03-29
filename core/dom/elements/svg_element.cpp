@@ -7,7 +7,7 @@
 #include <sstream>
 #include <cstdlib>
 
-namespace lightui {
+namespace mbink {
 
 // ========== SVGElement 基类实现 ==========
 
@@ -437,5 +437,5 @@ float SVGTextElement::GetFontSize() const {
     try { return std::stof(value); } catch (...) { return 16.0f; }
 }
 
-} // namespace lightui
+} // namespace mbink
 

@@ -14,7 +14,7 @@
 #include <string>
 #include <memory>
 
-namespace lightui {
+namespace mbink {
 
 /**
  * @brief HTML Span元素类
@@ -43,5 +43,5 @@ public:
     ~HTMLSpanElement() override = default;
 };
 
-} // namespace lightui
+} // namespace mbink
 

@@ -13,7 +13,7 @@
 #include "node.h"
 #include <string>
 
-namespace lightui {
+namespace mbink {
 
 /**
  * @brief 文本节点类
@@ -66,4 +66,4 @@ private:
     std::string data_;
 };
 
-} // namespace lightui
+} // namespace mbink

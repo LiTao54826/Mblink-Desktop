@@ -14,7 +14,7 @@
 #include <optional>
 #include <functional>
 
-namespace lightui {
+namespace mbink {
 
 //------------------------------------------------------------------------------
 // MaybeResolve - Resolve optional values
@@ -316,5 +316,5 @@ inline Rect<float> RectAdd(const Rect<float>& a, const Rect<float>& b) {
     };
 }
 
-} // namespace lightui
+} // namespace mbink
 

@@ -14,7 +14,7 @@
 #include <algorithm>
 #include <iostream>
 
-namespace lightui {
+namespace mbink {
 
 TerminalRenderer::TerminalRenderer() {
     palette_ = ColorPalette::Default();
@@ -344,4 +344,4 @@ void TerminalRenderer::RenderScrollbar(SkCanvas* canvas, const SkRect& bounds) {
     canvas->drawRoundRect(thumb_rect, 4.0f, 4.0f, thumb_paint);
 }
 
-}  // namespace lightui
+}  // namespace mbink

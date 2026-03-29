@@ -6,7 +6,7 @@
 #include "clip_optimizer.h"
 #include "core/render/objects/render_object.h"
 
-namespace lightui {
+namespace mbink {
 
 // ========== ClipOptimizer 实现 ==========
 
@@ -140,5 +140,5 @@ void ClipOptimizer::ApplyClip(SkCanvas* canvas) const {
     }
 }
 
-} // namespace lightui
+} // namespace mbink
 

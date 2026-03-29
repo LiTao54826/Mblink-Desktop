@@ -14,7 +14,7 @@
 #include <string>
 #include <vector>
 
-namespace lightui {
+namespace mbink {
 
 // 前向声明
 class Node;
@@ -172,5 +172,5 @@ private:
     std::vector<DOMObserver*> observers_;
 };
 
-} // namespace lightui
+} // namespace mbink
 

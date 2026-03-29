@@ -15,7 +15,7 @@
 #include <queue>
 #include <mutex>
 
-namespace lightui {
+namespace mbink {
 
 /**
  * @brief 待处理的 fetch 响应
@@ -122,5 +122,5 @@ private:
     std::queue<PendingFetchResponse> pending_responses_;
 };
 
-} // namespace lightui
+} // namespace mbink
 

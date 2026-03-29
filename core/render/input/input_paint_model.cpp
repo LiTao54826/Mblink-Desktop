@@ -5,7 +5,7 @@
 
 #include <algorithm>
 
-namespace lightui {
+namespace mbink {
 
 InputPaintModel InputPaintModel::FromInputElement(const HTMLInputElement* input) {
     InputPaintModel model;
@@ -53,4 +53,4 @@ InputPaintModel InputPaintModel::FromInputElement(const HTMLInputElement* input)
     return model;
 }
 
-}  // namespace lightui
+}  // namespace mbink

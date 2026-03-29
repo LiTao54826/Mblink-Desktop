@@ -7,7 +7,7 @@
 #include "render/utils/gradient_renderer.h"
 #include "render/css/css_value.h"
 
-namespace lightui {
+namespace mbink {
 namespace test {
 
 class GradientRendererTest : public ::testing::Test {};
@@ -153,4 +153,4 @@ TEST_F(GradientRendererTest, RadialGradientConstruction) {
 }
 
 } // namespace test
-} // namespace lightui
+} // namespace mbink

@@ -12,7 +12,7 @@
 #include <algorithm>
 #include <cmath>
 
-namespace lightui {
+namespace mbink {
 
 //------------------------------------------------------------------------------
 // Axis Types
@@ -389,5 +389,5 @@ struct MinMax {
     Max max;
 };
 
-} // namespace lightui
+} // namespace mbink
 

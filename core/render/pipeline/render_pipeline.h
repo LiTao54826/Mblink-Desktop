@@ -35,7 +35,7 @@
 class SkCanvas;
 struct SkRect;
 
-namespace lightui {
+namespace mbink {
 
 // 前向声明
 class Document;
@@ -377,4 +377,4 @@ private:
     double frame_start_time_ = 0.0;
 };
 
-} // namespace lightui
+} // namespace mbink

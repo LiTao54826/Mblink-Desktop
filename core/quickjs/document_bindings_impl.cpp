@@ -23,7 +23,7 @@
 #include "core/window/window.h"
 #include <iostream>
 
-namespace lightui {
+namespace mbink {
 
 // ========== 辅助函数：将 ComputedStyle 转换为 CSS 属性值字符串 ==========
 
@@ -71,7 +71,7 @@ static JSValue JS_Document_getElementById(JSContext* ctx, JSValueConst this_val,
 
     // 从全局对象获取 window
     JSValue global = JS_GetGlobalObject(ctx);
-    JSValue window_val = JS_GetPropertyStr(ctx, global, "__lightui_window_ptr");
+    JSValue window_val = JS_GetPropertyStr(ctx, global, "__mbink_window_ptr");
     JS_FreeValue(ctx, global);
 
     if (JS_IsUndefined(window_val)) {
@@ -119,7 +119,7 @@ static JSValue JS_Document_createElement(JSContext* ctx, JSValueConst this_val, 
 
     // 从全局对象获取 window
     JSValue global = JS_GetGlobalObject(ctx);
-    JSValue window_val = JS_GetPropertyStr(ctx, global, "__lightui_window_ptr");
+    JSValue window_val = JS_GetPropertyStr(ctx, global, "__mbink_window_ptr");
     JS_FreeValue(ctx, global);
 
     if (JS_IsUndefined(window_val)) {
@@ -169,7 +169,7 @@ static JSValue JS_Document_createElementNS(JSContext* ctx, JSValueConst this_val
 
     // 从全局对象获取 window
     JSValue global = JS_GetGlobalObject(ctx);
-    JSValue window_val = JS_GetPropertyStr(ctx, global, "__lightui_window_ptr");
+    JSValue window_val = JS_GetPropertyStr(ctx, global, "__mbink_window_ptr");
     JS_FreeValue(ctx, global);
 
     if (JS_IsUndefined(window_val)) {
@@ -218,7 +218,7 @@ static JSValue JS_Document_createTextNode(JSContext* ctx, JSValueConst this_val,
 
     // 从全局对象获取 window
     JSValue global = JS_GetGlobalObject(ctx);
-    JSValue window_val = JS_GetPropertyStr(ctx, global, "__lightui_window_ptr");
+    JSValue window_val = JS_GetPropertyStr(ctx, global, "__mbink_window_ptr");
     JS_FreeValue(ctx, global);
 
     if (JS_IsUndefined(window_val)) {
@@ -257,7 +257,7 @@ static JSValue JS_Document_createTextNode(JSContext* ctx, JSValueConst this_val,
 static JSValue JS_Document_createDocumentFragment(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) {
     // 从全局对象获取 window
     JSValue global = JS_GetGlobalObject(ctx);
-    JSValue window_val = JS_GetPropertyStr(ctx, global, "__lightui_window_ptr");
+    JSValue window_val = JS_GetPropertyStr(ctx, global, "__mbink_window_ptr");
     JS_FreeValue(ctx, global);
 
     if (JS_IsUndefined(window_val)) {
@@ -292,7 +292,7 @@ static JSValue JS_Document_createDocumentFragment(JSContext* ctx, JSValueConst t
 static JSValue JS_Document_get_body(JSContext* ctx, JSValueConst this_val, int magic) {
     // 从全局对象获取 window
     JSValue global = JS_GetGlobalObject(ctx);
-    JSValue window_val = JS_GetPropertyStr(ctx, global, "__lightui_window_ptr");
+    JSValue window_val = JS_GetPropertyStr(ctx, global, "__mbink_window_ptr");
     JS_FreeValue(ctx, global);
 
     if (JS_IsUndefined(window_val)) {
@@ -326,7 +326,7 @@ static JSValue JS_Document_get_body(JSContext* ctx, JSValueConst this_val, int m
 static JSValue JS_Document_get_head(JSContext* ctx, JSValueConst this_val, int magic) {
     // 从全局对象获取 window
     JSValue global = JS_GetGlobalObject(ctx);
-    JSValue window_val = JS_GetPropertyStr(ctx, global, "__lightui_window_ptr");
+    JSValue window_val = JS_GetPropertyStr(ctx, global, "__mbink_window_ptr");
     JS_FreeValue(ctx, global);
 
     if (JS_IsUndefined(window_val)) {
@@ -360,7 +360,7 @@ static JSValue JS_Document_get_head(JSContext* ctx, JSValueConst this_val, int m
 static JSValue JS_Document_get_documentElement(JSContext* ctx, JSValueConst this_val, int magic) {
     // 从全局对象获取 window
     JSValue global = JS_GetGlobalObject(ctx);
-    JSValue window_val = JS_GetPropertyStr(ctx, global, "__lightui_window_ptr");
+    JSValue window_val = JS_GetPropertyStr(ctx, global, "__mbink_window_ptr");
     JS_FreeValue(ctx, global);
 
     if (JS_IsUndefined(window_val)) {
@@ -394,7 +394,7 @@ static JSValue JS_Document_get_documentElement(JSContext* ctx, JSValueConst this
 static JSValue JS_Document_get_activeElement(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) {
     // 从全局对象获取 window
     JSValue global = JS_GetGlobalObject(ctx);
-    JSValue window_val = JS_GetPropertyStr(ctx, global, "__lightui_window_ptr");
+    JSValue window_val = JS_GetPropertyStr(ctx, global, "__mbink_window_ptr");
     JS_FreeValue(ctx, global);
 
     if (JS_IsUndefined(window_val)) {
@@ -433,7 +433,7 @@ static JSValue JS_Document_get_activeElement(JSContext* ctx, JSValueConst this_v
 static JSValue JS_Window_getSelection(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) {
     // 从全局对象获取 window
     JSValue global = JS_GetGlobalObject(ctx);
-    JSValue window_val = JS_GetPropertyStr(ctx, global, "__lightui_window_ptr");
+    JSValue window_val = JS_GetPropertyStr(ctx, global, "__mbink_window_ptr");
     JS_FreeValue(ctx, global);
 
     if (JS_IsUndefined(window_val)) {
@@ -478,7 +478,7 @@ static JSValue JS_Window_getSelection(JSContext* ctx, JSValueConst this_val, int
 static JSValue JS_Document_createRange(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) {
     // 从全局对象获取 window
     JSValue global = JS_GetGlobalObject(ctx);
-    JSValue window_val = JS_GetPropertyStr(ctx, global, "__lightui_window_ptr");
+    JSValue window_val = JS_GetPropertyStr(ctx, global, "__mbink_window_ptr");
     JS_FreeValue(ctx, global);
 
     if (JS_IsUndefined(window_val)) {
@@ -521,7 +521,7 @@ static JSValue JS_Document_querySelector(JSContext* ctx, JSValueConst this_val, 
 
     // 从全局对象获取 window
     JSValue global = JS_GetGlobalObject(ctx);
-    JSValue window_val = JS_GetPropertyStr(ctx, global, "__lightui_window_ptr");
+    JSValue window_val = JS_GetPropertyStr(ctx, global, "__mbink_window_ptr");
     JS_FreeValue(ctx, global);
 
     if (JS_IsUndefined(window_val)) {
@@ -576,7 +576,7 @@ static JSValue JS_Document_querySelectorAll(JSContext* ctx, JSValueConst this_va
 
     // 从全局对象获取 window
     JSValue global = JS_GetGlobalObject(ctx);
-    JSValue window_val = JS_GetPropertyStr(ctx, global, "__lightui_window_ptr");
+    JSValue window_val = JS_GetPropertyStr(ctx, global, "__mbink_window_ptr");
     JS_FreeValue(ctx, global);
 
     if (JS_IsUndefined(window_val)) {
@@ -646,7 +646,7 @@ static JSValue JS_Document_execCommand(JSContext* ctx, JSValueConst this_val, in
 
     // 从全局对象获取 window
     JSValue global = JS_GetGlobalObject(ctx);
-    JSValue window_val = JS_GetPropertyStr(ctx, global, "__lightui_window_ptr");
+    JSValue window_val = JS_GetPropertyStr(ctx, global, "__mbink_window_ptr");
     JS_FreeValue(ctx, global);
 
     if (JS_IsUndefined(window_val)) {
@@ -699,7 +699,7 @@ static JSValue JS_Document_queryCommandState(JSContext* ctx, JSValueConst this_v
 
     // 从全局对象获取 window
     JSValue global = JS_GetGlobalObject(ctx);
-    JSValue window_val = JS_GetPropertyStr(ctx, global, "__lightui_window_ptr");
+    JSValue window_val = JS_GetPropertyStr(ctx, global, "__mbink_window_ptr");
     JS_FreeValue(ctx, global);
 
     if (JS_IsUndefined(window_val)) {
@@ -752,7 +752,7 @@ static JSValue JS_Document_queryCommandEnabled(JSContext* ctx, JSValueConst this
 
     // 从全局对象获取 window
     JSValue global = JS_GetGlobalObject(ctx);
-    JSValue window_val = JS_GetPropertyStr(ctx, global, "__lightui_window_ptr");
+    JSValue window_val = JS_GetPropertyStr(ctx, global, "__mbink_window_ptr");
     JS_FreeValue(ctx, global);
 
     if (JS_IsUndefined(window_val)) {
@@ -844,7 +844,7 @@ static JSValue JS_Window_getComputedStyle(JSContext* ctx, JSValueConst this_val,
 
     // 获取 Window 指针
     JSValue global = JS_GetGlobalObject(ctx);
-    JSValue window_val = JS_GetPropertyStr(ctx, global, "__lightui_window_ptr");
+    JSValue window_val = JS_GetPropertyStr(ctx, global, "__mbink_window_ptr");
     JS_FreeValue(ctx, global);
 
     Window* window = nullptr;
@@ -1162,7 +1162,7 @@ static JSValue JS_Document_caretRangeFromPoint(JSContext* ctx, JSValueConst this
 
     // 获取 Window 指针
     JSValue global = JS_GetGlobalObject(ctx);
-    JSValue window_val = JS_GetPropertyStr(ctx, global, "__lightui_window_ptr");
+    JSValue window_val = JS_GetPropertyStr(ctx, global, "__mbink_window_ptr");
     JS_FreeValue(ctx, global);
 
     if (JS_IsUndefined(window_val)) {
@@ -1332,7 +1332,7 @@ static JSValue JS_Document_elementFromPoint(JSContext* ctx, JSValueConst this_va
 
     // 获取 Window 指针
     JSValue global = JS_GetGlobalObject(ctx);
-    JSValue window_val = JS_GetPropertyStr(ctx, global, "__lightui_window_ptr");
+    JSValue window_val = JS_GetPropertyStr(ctx, global, "__mbink_window_ptr");
     JS_FreeValue(ctx, global);
 
     if (JS_IsUndefined(window_val)) {
@@ -1383,7 +1383,7 @@ void BindDocumentAPIs(JSContext* ctx, Window* window) {
     // 保存 window 指针到全局对象（用于回调中访问）
     JSValue global = JS_GetGlobalObject(ctx);
     JSValue window_ptr = JS_NewInt64(ctx, (int64_t)window);
-    JS_SetPropertyStr(ctx, global, "__lightui_window_ptr", window_ptr);
+    JS_SetPropertyStr(ctx, global, "__mbink_window_ptr", window_ptr);
 
     // 注册 document 对象
     JSValue document = JS_NewObject(ctx);
@@ -1551,4 +1551,4 @@ void BindDocumentAPIs(JSContext* ctx, Window* window) {
     JS_FreeValue(ctx, global);
 }
 
-} // namespace lightui
+} // namespace mbink

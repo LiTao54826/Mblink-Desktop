@@ -20,7 +20,7 @@
 #include "core/render/utils/paint.h"
 #include "text/font_manager.h"
 
-namespace lightui {
+namespace mbink {
 
 /**
  * @brief 文本对齐方式
@@ -214,4 +214,4 @@ private:
     SkCanvas* canvas_;  ///< Skia 画布指针
 };
 
-} // namespace lightui
+} // namespace mbink

@@ -1,5 +1,5 @@
 #!/bin/bash
-# LightUI 第三方库下载脚本
+# MBink 第三方库下载脚本
 # 用途: 自动下载和配置所有依赖库
 
 set -e  # 遇到错误立即退出
@@ -9,7 +9,7 @@ PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 THIRD_PARTY_DIR="$PROJECT_ROOT/third_party"
 
 echo "=========================================="
-echo "  LightUI 依赖库下载脚本"
+echo "  MBink 依赖库下载脚本"
 echo "=========================================="
 echo ""
 

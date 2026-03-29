@@ -21,7 +21,7 @@
 #include <memory>
 #include "include/core/SkRect.h"
 
-namespace lightui {
+namespace mbink {
 
 // 前向声明
 class Element;
@@ -477,5 +477,5 @@ protected:
     friend class Document;
 };
 
-} // namespace lightui
+} // namespace mbink
 

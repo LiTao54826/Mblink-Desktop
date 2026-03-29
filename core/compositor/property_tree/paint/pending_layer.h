@@ -19,7 +19,7 @@
 #include "include/core/SkRect.h"
 #include <vector>
 
-namespace lightui {
+namespace mbink {
 
 /**
  * @brief 合成类型
@@ -210,4 +210,4 @@ private:
     CompositingReasons compositing_reasons_ = CompositingReasons::kNone;
 };
 
-} // namespace lightui
+} // namespace mbink

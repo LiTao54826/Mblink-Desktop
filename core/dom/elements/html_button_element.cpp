@@ -8,7 +8,7 @@
 #include "../event.h"
 #include <algorithm>
 
-namespace lightui {
+namespace mbink {
 
 // ========== 构造函数 ==========
 
@@ -173,5 +173,5 @@ std::shared_ptr<HTMLFormElement> HTMLButtonElement::FindForm() const {
     return nullptr;
 }
 
-} // namespace lightui
+} // namespace mbink
 

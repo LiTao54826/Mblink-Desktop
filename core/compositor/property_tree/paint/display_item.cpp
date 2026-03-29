@@ -5,7 +5,7 @@
 
 #include "core/compositor/property_tree/paint/display_item.h"
 
-namespace lightui {
+namespace mbink {
 
 // =========================================================================
 // 构造函数
@@ -16,4 +16,4 @@ DisplayItem::DisplayItem(DisplayItemType type, RenderObject* client)
     , client_(client) {
 }
 
-} // namespace lightui
+} // namespace mbink

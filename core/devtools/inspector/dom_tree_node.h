@@ -10,7 +10,7 @@
 #include "core/dom/node.h"
 #include "core/dom/element.h"
 
-namespace lightui {
+namespace mbink {
 
 /**
  * @brief DOM 树节点格式化工具
@@ -48,4 +48,4 @@ public:
     static bool IsSelfClosingTag(const std::string& tag_name);
 };
 
-} // namespace lightui
+} // namespace mbink

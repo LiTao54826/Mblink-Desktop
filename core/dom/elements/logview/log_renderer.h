@@ -15,7 +15,7 @@
 
 #include "include/core/SkColor.h"
 
-namespace lightui {
+namespace mbink {
 
 /**
  * @brief 日志视图配置
@@ -170,6 +170,6 @@ private:
     void RenderScrollbar(SkCanvas* canvas, const SkRect& bounds);
 };
 
-}  // namespace lightui
+}  // namespace mbink
 
 #endif  // MBINK_DOM_ELEMENTS_LOGVIEW_LOG_RENDERER_H_

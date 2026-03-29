@@ -19,7 +19,7 @@
 #include <random>
 #include <vector>
 
-namespace lightui {
+namespace mbink {
 namespace testing {
 
 // =========================================================================
@@ -467,4 +467,4 @@ TEST_F(RasterizeStatsTest, StatsResetCorrectly) {
 }
 
 } // namespace testing
-} // namespace lightui
+} // namespace mbink

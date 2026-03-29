@@ -26,7 +26,7 @@
 #include <vector>
 #include <cmath>
 
-namespace lightui {
+namespace mbink {
 namespace test {
 
 class PropertyTreePerformanceTest : public DOMTestBase {
@@ -471,4 +471,4 @@ TEST_F(PropertyTreePerformanceTest, CacheEfficiency) {
 }
 
 } // namespace test
-} // namespace lightui
+} // namespace mbink

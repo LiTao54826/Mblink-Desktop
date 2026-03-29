@@ -96,9 +96,9 @@ set(DOM_SOURCES
     ${DOM_ELEMENTS_SOURCES}
 )
 
-add_library(lightui_dom STATIC ${DOM_SOURCES})
+add_library(mbink_dom STATIC ${DOM_SOURCES})
 
-target_include_directories(lightui_dom PUBLIC
+target_include_directories(mbink_dom PUBLIC
     ${CMAKE_SOURCE_DIR}
     ${CMAKE_SOURCE_DIR}/core
     ${CMAKE_SOURCE_DIR}/third_party/lexbor/source
@@ -106,11 +106,11 @@ target_include_directories(lightui_dom PUBLIC
     ${CMAKE_SOURCE_DIR}/third_party/SDL/include
 )
 
-target_link_libraries(lightui_dom PUBLIC
-    lightui_utils
-    lightui_event
-    lightui_lexbor
-    lightui_render
+target_link_libraries(mbink_dom PUBLIC
+    mbink_utils
+    mbink_event
+    mbink_lexbor
+    mbink_render
     lexbor_static
     virtual_text
     terminal_element
@@ -119,16 +119,16 @@ target_link_libraries(lightui_dom PUBLIC
 
 # 链接Skia（如果启用）- 需要SkRect.h
 if(TARGET skia)
-    target_link_libraries(lightui_dom PUBLIC skia)
+    target_link_libraries(mbink_dom PUBLIC skia)
 endif()
 
 # 匹配 Skia 的运行时库设置
 if(MSVC)
-    target_compile_options(lightui_dom PUBLIC
+    target_compile_options(mbink_dom PUBLIC
         $<$<CONFIG:Debug>:/MT>
         $<$<CONFIG:Release>:/MT>
     )
-    target_compile_definitions(lightui_dom PUBLIC
+    target_compile_definitions(mbink_dom PUBLIC
         $<$<CONFIG:Debug>:_ITERATOR_DEBUG_LEVEL=0>
     )
 endif()

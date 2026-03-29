@@ -17,7 +17,7 @@
 #include "core/event/loop/task_scheduler.h"
 #include <memory>
 
-namespace lightui {
+namespace mbink {
 
 /**
  * @brief Window 对象的 JavaScript 绑定
@@ -129,5 +129,5 @@ private:
  */
 void BindDocumentAPIs(JSContext* ctx, Window* window);
 
-} // namespace lightui
+} // namespace mbink
 

@@ -10,7 +10,7 @@
 #include <algorithm>
 #include <stdexcept>
 
-namespace lightui {
+namespace mbink {
 
 // ========== MutationObserver 实现 ==========
 
@@ -327,4 +327,4 @@ void MutationObserverRegistry::NotifyTextChanged(
     }
 }
 
-} // namespace lightui
+} // namespace mbink

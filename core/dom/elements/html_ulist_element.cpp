@@ -5,7 +5,7 @@
 
 #include "html_ulist_element.h"
 
-namespace lightui {
+namespace mbink {
 
 HTMLUListElement::HTMLUListElement()
     : Element("ul") {
@@ -17,5 +17,5 @@ HTMLUListElement::HTMLUListElement()
     // 这里不设置样式，由CSS引擎处理默认样式
 }
 
-} // namespace lightui
+} // namespace mbink
 

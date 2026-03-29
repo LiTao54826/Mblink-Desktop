@@ -20,7 +20,7 @@
 #include "include/core/SkRect.h"
 #include "include/core/SkRRect.h"
 
-namespace lightui {
+namespace mbink {
 
 /**
  * @brief 裁剪形状类型
@@ -190,4 +190,4 @@ ClipEllipse ParseClipEllipse(const std::string& params);
  */
 ClipPolygon ParseClipPolygon(const std::string& params);
 
-} // namespace lightui
+} // namespace mbink

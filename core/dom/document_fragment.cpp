@@ -5,7 +5,7 @@
 
 #include "document_fragment.h"
 
-namespace lightui {
+namespace mbink {
 
 DocumentFragment::DocumentFragment() 
     : Node(NodeType::DOCUMENT_FRAGMENT_NODE) {
@@ -27,4 +27,4 @@ std::shared_ptr<Node> DocumentFragment::CloneNode(bool deep) {
     return clone;
 }
 
-} // namespace lightui
+} // namespace mbink

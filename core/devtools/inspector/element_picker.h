@@ -11,7 +11,7 @@
 
 class SkCanvas;
 
-namespace lightui {
+namespace mbink {
 
 class Event;
 class RenderObject;
@@ -101,4 +101,4 @@ private:
     std::shared_ptr<Element> HitTest(int x, int y);
 };
 
-} // namespace lightui
+} // namespace mbink

@@ -18,7 +18,7 @@
 #include <iostream>
 #include <SDL3/SDL.h>
 
-namespace lightui {
+namespace mbink {
 
 HTMLInputElement::HTMLInputElement()
     : Element("input")
@@ -761,5 +761,5 @@ void HTMLInputElement::EndRangeDrag() {
     }
 }
 
-} // namespace lightui
+} // namespace mbink
 

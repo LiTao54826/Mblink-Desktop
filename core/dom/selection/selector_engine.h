@@ -25,15 +25,15 @@ struct lxb_dom_node;
 struct lxb_css_parser;
 struct lxb_selectors;
 
-namespace lightui {
+namespace mbink {
 
 /**
  * @brief CSS 选择器引擎（使用 Lexbor）
  *
  * 实现策略：
- * 1. 将LightUI Element树转换为Lexbor DOM树
+ * 1. 将MBink Element树转换为Lexbor DOM树
  * 2. 使用Lexbor的CSS选择器引擎进行查询
- * 3. 将Lexbor节点映射回LightUI Element
+ * 3. 将Lexbor节点映射回MBink Element
  */
 class SelectorEngine {
 public:
@@ -100,8 +100,8 @@ private:
     static LexborContext& GetContext();
 
     /**
-     * @brief 将LightUI Element树转换为Lexbor DOM树
-     * @param element LightUI元素
+     * @brief 将MBink Element树转换为Lexbor DOM树
+     * @param element MBink元素
      * @param lexbor_parent Lexbor父节点
      * @param element_map Element到Lexbor节点的映射
      * @return Lexbor DOM节点
@@ -137,5 +137,5 @@ private:
         std::vector<std::shared_ptr<Element>>& results);
 };
 
-} // namespace lightui
+} // namespace mbink
 

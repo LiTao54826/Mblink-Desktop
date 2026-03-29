@@ -1,5 +1,5 @@
 /**
- * LightUI Input 组件
+ * MBink Input 组件
  *
  * Props:
  * - type: 'text' | 'password' | 'number' | 'email' | 'tel' | 'url'

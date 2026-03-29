@@ -12,7 +12,7 @@ MBink 是一个基于 C++ 的桌面 UI / 应用框架仓库，当前代码中可
 
 - 使用 `CMake` 作为主构建系统
 - `core/` 下已接入 window、dom、event、layout、render、quickjs、network、devtools、compositor 等模块
-- 存在统一 C ABI：`core/api/lightui.h`
+- 存在统一 C ABI：`core/api/mbink.h`（兼容头），底层实现仍为 `core/api/mbink.h`
 - 顶层当前只接入 `bindings/python`
 - 存在真实工具目标：`app_bundler`、`esm_loader`
 - `app_loader` 当前未接入顶层构建
@@ -28,11 +28,11 @@ MBink 是一个基于 C++ 的桌面 UI / 应用框架仓库，当前代码中可
 - Rust / Go / Node.js 绑定可用（当前仅能确认这些目录为预留空目录）
 - 所有测试稳定通过
 - 所有平台均已验证
-- 项目命名已经完全从 `LightUI` 迁移到 `MBink`
+- 项目对外命名已迁移到 `MBink`，并保留 `MBink / mbink` 兼容层
 
 ## 仓库现状说明
 
-当前代码和构建系统中仍大量使用 `LightUI` / `lightui` 命名，例如：
+当前仓库内部仍保留部分 `MBink` / `mbink` 命名作为兼容层，例如：
 - CMake 项目名
 - target 名称
 - C API 命名
@@ -64,7 +64,7 @@ cmake --build build --config Release
 启用测试：
 
 ```bash
-cmake -B build -DLIGHTUI_BUILD_TESTS=ON
+cmake -B build -DMBINK_BUILD_TESTS=ON
 cmake --build build --config Release
 ctest --test-dir build --output-on-failure
 ```

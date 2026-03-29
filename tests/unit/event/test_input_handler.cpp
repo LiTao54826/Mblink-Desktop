@@ -6,7 +6,7 @@
 #include <gtest/gtest.h>
 #include "event/input/input_handler.h"
 
-namespace lightui {
+namespace mbink {
 namespace test {
 
 class InputHandlerTest : public ::testing::Test {
@@ -142,4 +142,4 @@ TEST_F(InputHandlerTest, KeyboardCallback) {
 }
 
 } // namespace test
-} // namespace lightui
+} // namespace mbink

@@ -1,13 +1,13 @@
 /**
- * @file lightui.cpp
- * @brief LightUI C API v2 实现
+ * @file mbink.cpp
+ * @brief MBink C API v2 实现
  *
  * 一个 create() 调用完成全部初始化：
  * Window → Document → TaskScheduler → QuickJSRuntime → DOMBindings →
  * WindowBindings → EventLoop → FetchBindings → StateManager → HostBridge
  */
 
-#include "lightui.h"
+#include "mbink.h"
 #include "core/bridge/state_manager.h"
 #include "core/bridge/host_bridge.h"
 #include "core/window/window.h"
@@ -98,33 +98,33 @@ struct SharedObjectData {
 
 struct WindowContext {
     // 核心组件（完整初始化链）
-    std::shared_ptr<lightui::Window> window;
-    std::shared_ptr<lightui::Document> document;
-    std::shared_ptr<lightui::TaskScheduler> taskScheduler;
-    std::unique_ptr<lightui::QuickJSRuntime> runtime;
-    std::unique_ptr<lightui::WindowBindings> windowBindings;
-    std::unique_ptr<lightui::EventLoop> eventLoop;
-    std::unique_ptr<lightui::HostBridge> hostBridge;
-    std::unique_ptr<lightui::FetchBindings> fetchBindings;
-    std::unique_ptr<lightui::StateManager> stateManager;
+    std::shared_ptr<mbink::Window> window;
+    std::shared_ptr<mbink::Document> document;
+    std::shared_ptr<mbink::TaskScheduler> taskScheduler;
+    std::unique_ptr<mbink::QuickJSRuntime> runtime;
+    std::unique_ptr<mbink::WindowBindings> windowBindings;
+    std::unique_ptr<mbink::EventLoop> eventLoop;
+    std::unique_ptr<mbink::HostBridge> hostBridge;
+    std::unique_ptr<mbink::FetchBindings> fetchBindings;
+    std::unique_ptr<mbink::StateManager> stateManager;
 
     // 共享对象存储
     std::unordered_map<std::string, SharedObjectData*> sharedObjects;
 
     // 回调存储
-    std::unordered_map<int, std::pair<LightUIStateCallback, void*>> watchCallbacks;
-    std::unordered_map<std::string, std::pair<LightUICallback, void*>> boundFunctions;
+    std::unordered_map<int, std::pair<MBinkStateCallback, void*>> watchCallbacks;
+    std::unordered_map<std::string, std::pair<MBinkCallback, void*>> boundFunctions;
 
     // 事件回调
-    LightUIResizeCallback onResizeCallback = nullptr;
+    MBinkResizeCallback onResizeCallback = nullptr;
     void* onResizeUserData = nullptr;
-    LightUIVoidCallback onCloseCallback = nullptr;
+    MBinkVoidCallback onCloseCallback = nullptr;
     void* onCloseUserData = nullptr;
-    LightUIVoidCallback onFocusCallback = nullptr;
+    MBinkVoidCallback onFocusCallback = nullptr;
     void* onFocusUserData = nullptr;
-    LightUIVoidCallback onBlurCallback = nullptr;
+    MBinkVoidCallback onBlurCallback = nullptr;
     void* onBlurUserData = nullptr;
-    LightUIUpdateCallback onUpdateCallback = nullptr;
+    MBinkUpdateCallback onUpdateCallback = nullptr;
     void* onUpdateUserData = nullptr;
 
     bool running = false;
@@ -139,19 +139,19 @@ void setLastError(const std::string& error) {
 
 void reportNativeError(const std::string& error) {
     setLastError(error);
-    std::fprintf(stderr, "[LightUI Native Error] %s\n", error.c_str());
+    std::fprintf(stderr, "[MBink Native Error] %s\n", error.c_str());
 #ifdef _WIN32
-    std::string out = "[LightUI Native Error] " + error + "\n";
+    std::string out = "[MBink Native Error] " + error + "\n";
     ::OutputDebugStringA(out.c_str());
 #endif
-    std::ofstream log("lightui_native_error.log", std::ios::app);
+    std::ofstream log("mbink_native_error.log", std::ios::app);
     if (log.is_open()) {
         log << error << std::endl;
     }
 }
 
 #ifdef _WIN32
-LONG WINAPI lightuiUnhandledExceptionFilter(EXCEPTION_POINTERS* exceptionInfo) {
+LONG WINAPI mbinkUnhandledExceptionFilter(EXCEPTION_POINTERS* exceptionInfo) {
     unsigned int code = exceptionInfo ? exceptionInfo->ExceptionRecord->ExceptionCode : 0;
     void* address = (exceptionInfo && exceptionInfo->ExceptionRecord)
                         ? exceptionInfo->ExceptionRecord->ExceptionAddress
@@ -164,34 +164,34 @@ LONG WINAPI lightuiUnhandledExceptionFilter(EXCEPTION_POINTERS* exceptionInfo) {
 #endif
 
 
-int toErrorCode(lightui::LightUIError err) {
+int toErrorCode(mbink::MBinkError err) {
     switch (err) {
-        case lightui::LightUIError::Ok: return LIGHTUI_OK;
-        case lightui::LightUIError::InvalidHandle: return LIGHTUI_ERROR_INVALID_HANDLE;
-        case lightui::LightUIError::NotFound: return LIGHTUI_ERROR_NOT_FOUND;
-        case lightui::LightUIError::TypeMismatch: return LIGHTUI_ERROR_TYPE_MISMATCH;
-        case lightui::LightUIError::IndexOutOfRange: return LIGHTUI_ERROR_OUT_OF_RANGE;
-        case lightui::LightUIError::InvalidJson: return LIGHTUI_ERROR_INVALID_PARAM;
-        case lightui::LightUIError::AlreadyExists: return LIGHTUI_ERROR_INVALID_PARAM;
-        case lightui::LightUIError::InvalidName: return LIGHTUI_ERROR_INVALID_PARAM;
-        default: return LIGHTUI_ERROR_UNKNOWN;
+        case mbink::MBinkError::Ok: return MBINK_OK;
+        case mbink::MBinkError::InvalidHandle: return MBINK_ERROR_INVALID_HANDLE;
+        case mbink::MBinkError::NotFound: return MBINK_ERROR_NOT_FOUND;
+        case mbink::MBinkError::TypeMismatch: return MBINK_ERROR_TYPE_MISMATCH;
+        case mbink::MBinkError::IndexOutOfRange: return MBINK_ERROR_OUT_OF_RANGE;
+        case mbink::MBinkError::InvalidJson: return MBINK_ERROR_INVALID_PARAM;
+        case mbink::MBinkError::AlreadyExists: return MBINK_ERROR_INVALID_PARAM;
+        case mbink::MBinkError::InvalidName: return MBINK_ERROR_INVALID_PARAM;
+        default: return MBINK_ERROR_UNKNOWN;
     }
 }
 
-LightUIType toLightUIType(lightui::LightUIType type) {
+MBinkType toMBinkType(mbink::MBinkType type) {
     switch (type) {
-        case lightui::LightUIType::Null: return LIGHTUI_TYPE_NULL;
-        case lightui::LightUIType::Bool: return LIGHTUI_TYPE_BOOL;
-        case lightui::LightUIType::Int: return LIGHTUI_TYPE_INT;
-        case lightui::LightUIType::Double: return LIGHTUI_TYPE_DOUBLE;
-        case lightui::LightUIType::String: return LIGHTUI_TYPE_STRING;
-        case lightui::LightUIType::Array: return LIGHTUI_TYPE_ARRAY;
-        case lightui::LightUIType::Object: return LIGHTUI_TYPE_OBJECT;
-        default: return LIGHTUI_TYPE_NULL;
+        case mbink::MBinkType::Null: return MBINK_TYPE_NULL;
+        case mbink::MBinkType::Bool: return MBINK_TYPE_BOOL;
+        case mbink::MBinkType::Int: return MBINK_TYPE_INT;
+        case mbink::MBinkType::Double: return MBINK_TYPE_DOUBLE;
+        case mbink::MBinkType::String: return MBINK_TYPE_STRING;
+        case mbink::MBinkType::Array: return MBINK_TYPE_ARRAY;
+        case mbink::MBinkType::Object: return MBINK_TYPE_OBJECT;
+        default: return MBINK_TYPE_NULL;
     }
 }
 
-WindowContext* getContext(LightUIHandle handle) {
+WindowContext* getContext(MBinkHandle handle) {
     return reinterpret_cast<WindowContext*>(handle);
 }
 
@@ -214,7 +214,7 @@ char* duplicateString(const char* str) {
 }
 
 #ifdef _WIN32
-char* invokeCallbackWithSEH(LightUICallback cb, const char* args, void* user_data, unsigned int* sehCode) {
+char* invokeCallbackWithSEH(MBinkCallback cb, const char* args, void* user_data, unsigned int* sehCode) {
     if (sehCode) {
         *sehCode = 0;
     }
@@ -244,10 +244,10 @@ std::string readFileContents(const char* filepath) {
     return ss.str();
 }
 
-// 从 LightUIConfig 构建 WindowConfig
-lightui::WindowConfig buildWindowConfig(const LightUIConfig* config) {
-    lightui::WindowConfig wc;
-    wc.title = config->title ? config->title : "LightUI";
+// 从 MBinkConfig 构建 WindowConfig
+mbink::WindowConfig buildWindowConfig(const MBinkConfig* config) {
+    mbink::WindowConfig wc;
+    wc.title = config->title ? config->title : "MBink";
     wc.width = config->width > 0 ? config->width : 800;
     wc.height = config->height > 0 ? config->height : 600;
     wc.headless = config->headless;
@@ -266,54 +266,54 @@ lightui::WindowConfig buildWindowConfig(const LightUIConfig* config) {
 }
 
 // 完整初始化 WindowContext
-WindowContext* createWindowContext(const lightui::WindowConfig& wc) {
+WindowContext* createWindowContext(const mbink::WindowConfig& wc) {
     auto ctx = new WindowContext();
 
     // 1. 创建 Window
-    ctx->window = std::make_shared<lightui::Window>(wc);
+    ctx->window = std::make_shared<mbink::Window>(wc);
 
     // 2. 创建 Document → 设置到 Window
-    ctx->document = std::make_shared<lightui::Document>();
+    ctx->document = std::make_shared<mbink::Document>();
     ctx->window->SetDocument(ctx->document);
 
     // 3. 创建 TaskScheduler
-    ctx->taskScheduler = std::make_shared<lightui::TaskScheduler>();
+    ctx->taskScheduler = std::make_shared<mbink::TaskScheduler>();
 
     // 4. 注册到 WindowManager
-    lightui::WindowManager::Instance().RegisterWindow(ctx->window);
+    mbink::WindowManager::Instance().RegisterWindow(ctx->window);
 
     // 5. 创建 QuickJS Runtime
-    ctx->runtime = std::make_unique<lightui::QuickJSRuntime>();
+    ctx->runtime = std::make_unique<mbink::QuickJSRuntime>();
 
     // 6. 设置 JS Runtime 到 Document
     ctx->document->SetJSRuntime(ctx->runtime.get());
 
     // 7. 初始化 DOM 绑定
     auto jsCtx = ctx->runtime->GetContext();
-    lightui::DOMBindings::Init(jsCtx);
-    lightui::DOMBindings::SetGlobalDocument(jsCtx, ctx->document);
+    mbink::DOMBindings::Init(jsCtx);
+    mbink::DOMBindings::SetGlobalDocument(jsCtx, ctx->document);
 
     // 8. 创建 WindowBindings + 初始化（setTimeout/setInterval/RAF/DOM/Canvas...）
-    ctx->windowBindings = std::make_unique<lightui::WindowBindings>(
+    ctx->windowBindings = std::make_unique<mbink::WindowBindings>(
         ctx->runtime.get(), ctx->window, ctx->taskScheduler);
     ctx->windowBindings->InitBindings();
 
     // 9. 创建 EventLoop（使用同一 TaskScheduler）
-    ctx->eventLoop = std::make_unique<lightui::EventLoop>(ctx->taskScheduler);
+    ctx->eventLoop = std::make_unique<mbink::EventLoop>(ctx->taskScheduler);
     ctx->eventLoop->SetQuickJSRuntime(ctx->runtime.get());
-    lightui::DOMBindings::SetGlobalEventLoop(jsCtx, ctx->eventLoop.get());
+    mbink::DOMBindings::SetGlobalEventLoop(jsCtx, ctx->eventLoop.get());
 
     // 10. 创建 FetchBindings
-    ctx->fetchBindings = std::make_unique<lightui::FetchBindings>(jsCtx, ctx->taskScheduler);
+    ctx->fetchBindings = std::make_unique<mbink::FetchBindings>(jsCtx, ctx->taskScheduler);
     ctx->fetchBindings->InitBindings();
 
     // 11. 创建 StateManager + HostBridge
 #ifdef _WIN32
-    SetUnhandledExceptionFilter(lightuiUnhandledExceptionFilter);
+    SetUnhandledExceptionFilter(mbinkUnhandledExceptionFilter);
 #endif
 
-    ctx->stateManager = std::make_unique<lightui::StateManager>();
-    ctx->hostBridge = std::make_unique<lightui::HostBridge>(jsCtx, ctx->stateManager.get());
+    ctx->stateManager = std::make_unique<mbink::StateManager>();
+    ctx->hostBridge = std::make_unique<mbink::HostBridge>(jsCtx, ctx->stateManager.get());
     ctx->hostBridge->registerGlobal();
 
     return ctx;
@@ -323,44 +323,44 @@ WindowContext* createWindowContext(const lightui::WindowConfig& wc) {
 
 // ========== 生命周期 ==========
 
-int lightui_init(void) {
-    if (g_initialized) return LIGHTUI_OK;
+int mbink_init(void) {
+    if (g_initialized) return MBINK_OK;
     g_initialized = true;
-    return LIGHTUI_OK;
+    return MBINK_OK;
 }
 
-void lightui_cleanup(void) {
+void mbink_cleanup(void) {
     g_initialized = false;
 }
 
-const char* lightui_version(void) {
+const char* mbink_version(void) {
     return "0.1.0";
 }
 
 // ========== 窗口管理 ==========
 
-LightUIHandle lightui_create(const char* title, int width, int height) {
+MBinkHandle mbink_create(const char* title, int width, int height) {
     if (!g_initialized) {
-        setLastError("LightUI not initialized");
+        setLastError("MBink not initialized");
         return nullptr;
     }
 
     try {
-        lightui::WindowConfig wc;
-        wc.title = title ? title : "LightUI";
+        mbink::WindowConfig wc;
+        wc.title = title ? title : "MBink";
         wc.width = width > 0 ? width : 800;
         wc.height = height > 0 ? height : 600;
         auto ctx = createWindowContext(wc);
-        return reinterpret_cast<LightUIHandle>(ctx);
+        return reinterpret_cast<MBinkHandle>(ctx);
     } catch (const std::exception& e) {
         setLastError(e.what());
         return nullptr;
     }
 }
 
-LightUIHandle lightui_create_ex(const LightUIConfig* config) {
+MBinkHandle mbink_create_ex(const MBinkConfig* config) {
     if (!g_initialized) {
-        setLastError("LightUI not initialized");
+        setLastError("MBink not initialized");
         return nullptr;
     }
     if (!config) {
@@ -371,16 +371,16 @@ LightUIHandle lightui_create_ex(const LightUIConfig* config) {
     try {
         auto wc = buildWindowConfig(config);
         auto ctx = createWindowContext(wc);
-        return reinterpret_cast<LightUIHandle>(ctx);
+        return reinterpret_cast<MBinkHandle>(ctx);
     } catch (const std::exception& e) {
         setLastError(e.what());
         return nullptr;
     }
 }
 
-LightUIConfig lightui_default_config(void) {
-    LightUIConfig config = {};
-    config.title = "LightUI";
+MBinkConfig mbink_default_config(void) {
+    MBinkConfig config = {};
+    config.title = "MBink";
     config.width = 800;
     config.height = 600;
     config.headless = false;
@@ -398,7 +398,7 @@ LightUIConfig lightui_default_config(void) {
     return config;
 }
 
-void lightui_destroy(LightUIHandle handle) {
+void mbink_destroy(MBinkHandle handle) {
     if (!handle) return;
     auto ctx = getContext(handle);
 
@@ -433,14 +433,14 @@ void lightui_destroy(LightUIHandle handle) {
 
     // 3. 清理 DOM 绑定
     if (ctx->runtime) {
-        lightui::DOMBindings::Cleanup(ctx->runtime->GetContext());
+        mbink::DOMBindings::Cleanup(ctx->runtime->GetContext());
     }
 
     // 4. 释放 document
     ctx->document.reset();
 
     // 5. 清理 DOMBindingMap（Node* -> JSValue 映射）
-    lightui::DOMBindingMap::GetInstance().Clear();
+    mbink::DOMBindingMap::GetInstance().Clear();
 
     // 6. 释放 HostBridge 和 StateManager
     if (ctx->stateManager) {
@@ -468,7 +468,7 @@ void lightui_destroy(LightUIHandle handle) {
 
     // 11. 从 WindowManager 注销（不调用 window.reset()，避免 Window::~Window 卡在 SDL/Skia 清理）
     if (ctx->window) {
-        lightui::WindowManager::Instance().UnregisterWindow(ctx->window);
+        mbink::WindowManager::Instance().UnregisterWindow(ctx->window);
     }
 
     ctx->sharedObjects.clear();
@@ -483,7 +483,7 @@ void lightui_destroy(LightUIHandle handle) {
 #endif
 }
 
-void lightui_run(LightUIHandle handle) {
+void mbink_run(MBinkHandle handle) {
     if (!handle) return;
     auto ctx = getContext(handle);
     if (!ctx->eventLoop) return;
@@ -517,7 +517,7 @@ void lightui_run(LightUIHandle handle) {
     ctx->running = false;
 }
 
-void lightui_stop(LightUIHandle handle) {
+void mbink_stop(MBinkHandle handle) {
     if (!handle) return;
     auto ctx = getContext(handle);
     if (ctx->eventLoop) {
@@ -525,7 +525,7 @@ void lightui_stop(LightUIHandle handle) {
     }
 }
 
-bool lightui_poll_events(LightUIHandle handle) {
+bool mbink_poll_events(MBinkHandle handle) {
     if (!handle) return false;
     auto ctx = getContext(handle);
     if (!ctx->eventLoop) return false;
@@ -549,26 +549,26 @@ bool lightui_poll_events(LightUIHandle handle) {
 
 // ========== 窗口属性 ==========
 
-int lightui_set_title(LightUIHandle handle, const char* title) {
-    if (!handle) return LIGHTUI_ERROR_INVALID_HANDLE;
+int mbink_set_title(MBinkHandle handle, const char* title) {
+    if (!handle) return MBINK_ERROR_INVALID_HANDLE;
     auto ctx = getContext(handle);
     if (title && ctx->window) {
         ctx->window->SetTitle(title);
     }
-    return LIGHTUI_OK;
+    return MBINK_OK;
 }
 
-int lightui_set_size(LightUIHandle handle, int width, int height) {
-    if (!handle) return LIGHTUI_ERROR_INVALID_HANDLE;
+int mbink_set_size(MBinkHandle handle, int width, int height) {
+    if (!handle) return MBINK_ERROR_INVALID_HANDLE;
     auto ctx = getContext(handle);
     if (ctx->window) {
         ctx->window->SetSize(width, height);
     }
-    return LIGHTUI_OK;
+    return MBINK_OK;
 }
 
-int lightui_get_size(LightUIHandle handle, int* width, int* height) {
-    if (!handle) return LIGHTUI_ERROR_INVALID_HANDLE;
+int mbink_get_size(MBinkHandle handle, int* width, int* height) {
+    if (!handle) return MBINK_ERROR_INVALID_HANDLE;
     auto ctx = getContext(handle);
     if (ctx->window) {
         int w = 0, h = 0;
@@ -576,20 +576,20 @@ int lightui_get_size(LightUIHandle handle, int* width, int* height) {
         if (width) *width = w;
         if (height) *height = h;
     }
-    return LIGHTUI_OK;
+    return MBINK_OK;
 }
 
-int lightui_set_position(LightUIHandle handle, int x, int y) {
-    if (!handle) return LIGHTUI_ERROR_INVALID_HANDLE;
+int mbink_set_position(MBinkHandle handle, int x, int y) {
+    if (!handle) return MBINK_ERROR_INVALID_HANDLE;
     auto ctx = getContext(handle);
     if (ctx->window) {
         ctx->window->SetPosition(x, y);
     }
-    return LIGHTUI_OK;
+    return MBINK_OK;
 }
 
-int lightui_get_position(LightUIHandle handle, int* x, int* y) {
-    if (!handle) return LIGHTUI_ERROR_INVALID_HANDLE;
+int mbink_get_position(MBinkHandle handle, int* x, int* y) {
+    if (!handle) return MBINK_ERROR_INVALID_HANDLE;
     auto ctx = getContext(handle);
     if (ctx->window) {
         int px = 0, py = 0;
@@ -597,107 +597,107 @@ int lightui_get_position(LightUIHandle handle, int* x, int* y) {
         if (x) *x = px;
         if (y) *y = py;
     }
-    return LIGHTUI_OK;
+    return MBINK_OK;
 }
 
-int lightui_set_min_size(LightUIHandle handle, int width, int height) {
-    if (!handle) return LIGHTUI_ERROR_INVALID_HANDLE;
+int mbink_set_min_size(MBinkHandle handle, int width, int height) {
+    if (!handle) return MBINK_ERROR_INVALID_HANDLE;
     auto ctx = getContext(handle);
     if (ctx->window) {
         ctx->window->SetMinSize(width, height);
     }
-    return LIGHTUI_OK;
+    return MBINK_OK;
 }
 
-int lightui_set_max_size(LightUIHandle handle, int width, int height) {
-    if (!handle) return LIGHTUI_ERROR_INVALID_HANDLE;
+int mbink_set_max_size(MBinkHandle handle, int width, int height) {
+    if (!handle) return MBINK_ERROR_INVALID_HANDLE;
     auto ctx = getContext(handle);
     if (ctx->window) {
         ctx->window->SetMaxSize(width, height);
     }
-    return LIGHTUI_OK;
+    return MBINK_OK;
 }
 
-int lightui_minimize(LightUIHandle handle) {
-    if (!handle) return LIGHTUI_ERROR_INVALID_HANDLE;
+int mbink_minimize(MBinkHandle handle) {
+    if (!handle) return MBINK_ERROR_INVALID_HANDLE;
     auto ctx = getContext(handle);
     if (ctx->window) ctx->window->Minimize();
-    return LIGHTUI_OK;
+    return MBINK_OK;
 }
 
-int lightui_maximize(LightUIHandle handle) {
-    if (!handle) return LIGHTUI_ERROR_INVALID_HANDLE;
+int mbink_maximize(MBinkHandle handle) {
+    if (!handle) return MBINK_ERROR_INVALID_HANDLE;
     auto ctx = getContext(handle);
     if (ctx->window) ctx->window->Maximize();
-    return LIGHTUI_OK;
+    return MBINK_OK;
 }
 
-int lightui_restore(LightUIHandle handle) {
-    if (!handle) return LIGHTUI_ERROR_INVALID_HANDLE;
+int mbink_restore(MBinkHandle handle) {
+    if (!handle) return MBINK_ERROR_INVALID_HANDLE;
     auto ctx = getContext(handle);
     if (ctx->window) ctx->window->Restore();
-    return LIGHTUI_OK;
+    return MBINK_OK;
 }
 
-int lightui_show(LightUIHandle handle) {
-    if (!handle) return LIGHTUI_ERROR_INVALID_HANDLE;
+int mbink_show(MBinkHandle handle) {
+    if (!handle) return MBINK_ERROR_INVALID_HANDLE;
     auto ctx = getContext(handle);
     if (ctx->window) ctx->window->Show();
-    return LIGHTUI_OK;
+    return MBINK_OK;
 }
 
-int lightui_hide(LightUIHandle handle) {
-    if (!handle) return LIGHTUI_ERROR_INVALID_HANDLE;
+int mbink_hide(MBinkHandle handle) {
+    if (!handle) return MBINK_ERROR_INVALID_HANDLE;
     auto ctx = getContext(handle);
     if (ctx->window) ctx->window->Hide();
-    return LIGHTUI_OK;
+    return MBINK_OK;
 }
 
-int lightui_set_fullscreen(LightUIHandle handle, bool fullscreen) {
-    if (!handle) return LIGHTUI_ERROR_INVALID_HANDLE;
+int mbink_set_fullscreen(MBinkHandle handle, bool fullscreen) {
+    if (!handle) return MBINK_ERROR_INVALID_HANDLE;
     auto ctx = getContext(handle);
     if (ctx->window) ctx->window->SetFullscreen(fullscreen);
-    return LIGHTUI_OK;
+    return MBINK_OK;
 }
 
-int lightui_set_resizable(LightUIHandle handle, bool resizable) {
-    if (!handle) return LIGHTUI_ERROR_INVALID_HANDLE;
+int mbink_set_resizable(MBinkHandle handle, bool resizable) {
+    if (!handle) return MBINK_ERROR_INVALID_HANDLE;
     auto ctx = getContext(handle);
     if (ctx->window) ctx->window->SetResizable(resizable);
-    return LIGHTUI_OK;
+    return MBINK_OK;
 }
 
-int lightui_set_borderless(LightUIHandle handle, bool borderless) {
-    if (!handle) return LIGHTUI_ERROR_INVALID_HANDLE;
+int mbink_set_borderless(MBinkHandle handle, bool borderless) {
+    if (!handle) return MBINK_ERROR_INVALID_HANDLE;
     auto ctx = getContext(handle);
     if (ctx->window) ctx->window->SetBorderless(borderless);
-    return LIGHTUI_OK;
+    return MBINK_OK;
 }
 
-int lightui_set_always_on_top(LightUIHandle handle, bool on_top) {
-    if (!handle) return LIGHTUI_ERROR_INVALID_HANDLE;
+int mbink_set_always_on_top(MBinkHandle handle, bool on_top) {
+    if (!handle) return MBINK_ERROR_INVALID_HANDLE;
     auto ctx = getContext(handle);
     if (ctx->window) ctx->window->SetAlwaysOnTop(on_top);
-    return LIGHTUI_OK;
+    return MBINK_OK;
 }
 
 // ========== UI 加载 ==========
 
-int lightui_load_html(LightUIHandle handle, const char* html) {
-    if (!handle) return LIGHTUI_ERROR_INVALID_HANDLE;
-    if (!html) return LIGHTUI_ERROR_INVALID_PARAM;
+int mbink_load_html(MBinkHandle handle, const char* html) {
+    if (!handle) return MBINK_ERROR_INVALID_HANDLE;
+    if (!html) return MBINK_ERROR_INVALID_PARAM;
     auto ctx = getContext(handle);
     if (ctx->document) {
         ctx->document->LoadHTML(html);
         // 执行 HTML 中嵌入的 <script> 标签
         ctx->document->ExecuteScripts();
     }
-    return LIGHTUI_OK;
+    return MBINK_OK;
 }
 
-int lightui_load_html_file(LightUIHandle handle, const char* filepath) {
-    if (!handle) return LIGHTUI_ERROR_INVALID_HANDLE;
-    if (!filepath) return LIGHTUI_ERROR_INVALID_PARAM;
+int mbink_load_html_file(MBinkHandle handle, const char* filepath) {
+    if (!handle) return MBINK_ERROR_INVALID_HANDLE;
+    if (!filepath) return MBINK_ERROR_INVALID_PARAM;
     try {
         std::string content = readFileContents(filepath);
         auto ctx = getContext(handle);
@@ -706,33 +706,33 @@ int lightui_load_html_file(LightUIHandle handle, const char* filepath) {
             // 执行 HTML 中嵌入的 <script> 标签
             ctx->document->ExecuteScripts();
         }
-        return LIGHTUI_OK;
+        return MBINK_OK;
     } catch (const std::exception& e) {
         setLastError(e.what());
-        return LIGHTUI_ERROR_INVALID_PARAM;
+        return MBINK_ERROR_INVALID_PARAM;
     }
 }
 
-int lightui_eval_js(LightUIHandle handle, const char* js_code) {
-    if (!handle) return LIGHTUI_ERROR_INVALID_HANDLE;
-    if (!js_code) return LIGHTUI_ERROR_INVALID_PARAM;
+int mbink_eval_js(MBinkHandle handle, const char* js_code) {
+    if (!handle) return MBINK_ERROR_INVALID_HANDLE;
+    if (!js_code) return MBINK_ERROR_INVALID_PARAM;
     auto ctx = getContext(handle);
-    if (!ctx->runtime) return LIGHTUI_ERROR_INVALID_HANDLE;
+    if (!ctx->runtime) return MBINK_ERROR_INVALID_HANDLE;
 
     try {
         ctx->runtime->Eval(js_code);
-        return LIGHTUI_OK;
+        return MBINK_OK;
     } catch (const std::exception& e) {
         setLastError(e.what());
-        return LIGHTUI_ERROR_JS_ERROR;
+        return MBINK_ERROR_JS_ERROR;
     }
 }
 
-int lightui_eval_module(LightUIHandle handle, const char* code, const char* filename) {
-    if (!handle) return LIGHTUI_ERROR_INVALID_HANDLE;
-    if (!code) return LIGHTUI_ERROR_INVALID_PARAM;
+int mbink_eval_module(MBinkHandle handle, const char* code, const char* filename) {
+    if (!handle) return MBINK_ERROR_INVALID_HANDLE;
+    if (!code) return MBINK_ERROR_INVALID_PARAM;
     auto ctx = getContext(handle);
-    if (!ctx->runtime) return LIGHTUI_ERROR_INVALID_HANDLE;
+    if (!ctx->runtime) return MBINK_ERROR_INVALID_HANDLE;
 
     try {
         auto jsCtx = ctx->runtime->GetContext();
@@ -747,40 +747,40 @@ int lightui_eval_module(LightUIHandle handle, const char* code, const char* file
             }
             JS_FreeValue(jsCtx, exc);
             JS_FreeValue(jsCtx, result);
-            return LIGHTUI_ERROR_JS_ERROR;
+            return MBINK_ERROR_JS_ERROR;
         }
         JS_FreeValue(jsCtx, result);
-        return LIGHTUI_OK;
+        return MBINK_OK;
     } catch (const std::exception& e) {
         setLastError(e.what());
-        return LIGHTUI_ERROR_JS_ERROR;
+        return MBINK_ERROR_JS_ERROR;
     }
 }
 
-int lightui_load_js_file(LightUIHandle handle, const char* filepath) {
-    if (!handle) return LIGHTUI_ERROR_INVALID_HANDLE;
-    if (!filepath) return LIGHTUI_ERROR_INVALID_PARAM;
+int mbink_load_js_file(MBinkHandle handle, const char* filepath) {
+    if (!handle) return MBINK_ERROR_INVALID_HANDLE;
+    if (!filepath) return MBINK_ERROR_INVALID_PARAM;
     try {
         std::string code = readFileContents(filepath);
-        return lightui_eval_js(handle, code.c_str());
+        return mbink_eval_js(handle, code.c_str());
     } catch (const std::exception& e) {
         setLastError(e.what());
-        return LIGHTUI_ERROR_INVALID_PARAM;
+        return MBINK_ERROR_INVALID_PARAM;
     }
 }
 
-int lightui_load_bytecode(LightUIHandle handle, const void* data, size_t size) {
-    if (!handle) return LIGHTUI_ERROR_INVALID_HANDLE;
-    if (!data || size == 0) return LIGHTUI_ERROR_INVALID_PARAM;
+int mbink_load_bytecode(MBinkHandle handle, const void* data, size_t size) {
+    if (!handle) return MBINK_ERROR_INVALID_HANDLE;
+    if (!data || size == 0) return MBINK_ERROR_INVALID_PARAM;
     auto ctx = getContext(handle);
-    if (!ctx->runtime) return LIGHTUI_ERROR_INVALID_HANDLE;
+    if (!ctx->runtime) return MBINK_ERROR_INVALID_HANDLE;
 
     try {
         auto jsCtx = ctx->runtime->GetContext();
         JSValue obj = JS_ReadObject(jsCtx, static_cast<const uint8_t*>(data), size, JS_READ_OBJ_BYTECODE);
         if (JS_IsException(obj)) {
             setLastError("Failed to read bytecode");
-            return LIGHTUI_ERROR_JS_ERROR;
+            return MBINK_ERROR_JS_ERROR;
         }
         JSValue result = JS_EvalFunction(jsCtx, obj);
         if (JS_IsException(result)) {
@@ -792,29 +792,29 @@ int lightui_load_bytecode(LightUIHandle handle, const void* data, size_t size) {
             }
             JS_FreeValue(jsCtx, exc);
             JS_FreeValue(jsCtx, result);
-            return LIGHTUI_ERROR_JS_ERROR;
+            return MBINK_ERROR_JS_ERROR;
         }
         JS_FreeValue(jsCtx, result);
-        return LIGHTUI_OK;
+        return MBINK_OK;
     } catch (const std::exception& e) {
         setLastError(e.what());
-        return LIGHTUI_ERROR_JS_ERROR;
+        return MBINK_ERROR_JS_ERROR;
     }
 }
 
 // ========== 函数绑定 ==========
 
-int lightui_bind(LightUIHandle handle, const char* name,
-                 LightUICallback callback, void* user_data) {
-    if (!handle) return LIGHTUI_ERROR_INVALID_HANDLE;
-    if (!name || !callback) return LIGHTUI_ERROR_INVALID_PARAM;
+int mbink_bind(MBinkHandle handle, const char* name,
+                 MBinkCallback callback, void* user_data) {
+    if (!handle) return MBINK_ERROR_INVALID_HANDLE;
+    if (!name || !callback) return MBINK_ERROR_INVALID_PARAM;
 
     auto ctx = getContext(handle);
     ctx->boundFunctions[name] = {callback, user_data};
 
     // 通过 HostBridge 注册，这样 JS 端可以通过 py.name() 调用
     if (ctx->hostBridge) {
-        LightUICallback cb = callback;
+        MBinkCallback cb = callback;
         void* ud = user_data;
         std::string funcName = name;
         ctx->hostBridge->bind(name, [cb, ud, funcName](const std::string& args) -> std::string {
@@ -846,14 +846,14 @@ int lightui_bind(LightUIHandle handle, const char* name,
             }
 
             std::string ret(result);
-            lightui_free(result);
+            mbink_free(result);
             return ret;
         });
     }
-    return LIGHTUI_OK;
+    return MBINK_OK;
 }
 
-void lightui_unbind(LightUIHandle handle, const char* name) {
+void mbink_unbind(MBinkHandle handle, const char* name) {
     if (!handle || !name) return;
     auto ctx = getContext(handle);
     ctx->boundFunctions.erase(name);
@@ -864,8 +864,8 @@ void lightui_unbind(LightUIHandle handle, const char* name) {
 
 // ========== 事件回调 ==========
 
-int lightui_on_resize(LightUIHandle handle, LightUIResizeCallback callback, void* user_data) {
-    if (!handle) return LIGHTUI_ERROR_INVALID_HANDLE;
+int mbink_on_resize(MBinkHandle handle, MBinkResizeCallback callback, void* user_data) {
+    if (!handle) return MBINK_ERROR_INVALID_HANDLE;
     auto ctx = getContext(handle);
     ctx->onResizeCallback = callback;
     ctx->onResizeUserData = user_data;
@@ -876,11 +876,11 @@ int lightui_on_resize(LightUIHandle handle, LightUIResizeCallback callback, void
             if (cb) cb(w, h, ud);
         });
     }
-    return LIGHTUI_OK;
+    return MBINK_OK;
 }
 
-int lightui_on_close(LightUIHandle handle, LightUIVoidCallback callback, void* user_data) {
-    if (!handle) return LIGHTUI_ERROR_INVALID_HANDLE;
+int mbink_on_close(MBinkHandle handle, MBinkVoidCallback callback, void* user_data) {
+    if (!handle) return MBINK_ERROR_INVALID_HANDLE;
     auto ctx = getContext(handle);
     ctx->onCloseCallback = callback;
     ctx->onCloseUserData = user_data;
@@ -891,11 +891,11 @@ int lightui_on_close(LightUIHandle handle, LightUIVoidCallback callback, void* u
             if (cb) cb(ud);
         });
     }
-    return LIGHTUI_OK;
+    return MBINK_OK;
 }
 
-int lightui_on_focus(LightUIHandle handle, LightUIVoidCallback callback, void* user_data) {
-    if (!handle) return LIGHTUI_ERROR_INVALID_HANDLE;
+int mbink_on_focus(MBinkHandle handle, MBinkVoidCallback callback, void* user_data) {
+    if (!handle) return MBINK_ERROR_INVALID_HANDLE;
     auto ctx = getContext(handle);
     ctx->onFocusCallback = callback;
     ctx->onFocusUserData = user_data;
@@ -906,11 +906,11 @@ int lightui_on_focus(LightUIHandle handle, LightUIVoidCallback callback, void* u
             if (cb) cb(ud);
         });
     }
-    return LIGHTUI_OK;
+    return MBINK_OK;
 }
 
-int lightui_on_blur(LightUIHandle handle, LightUIVoidCallback callback, void* user_data) {
-    if (!handle) return LIGHTUI_ERROR_INVALID_HANDLE;
+int mbink_on_blur(MBinkHandle handle, MBinkVoidCallback callback, void* user_data) {
+    if (!handle) return MBINK_ERROR_INVALID_HANDLE;
     auto ctx = getContext(handle);
     ctx->onBlurCallback = callback;
     ctx->onBlurUserData = user_data;
@@ -921,130 +921,130 @@ int lightui_on_blur(LightUIHandle handle, LightUIVoidCallback callback, void* us
             if (cb) cb(ud);
         });
     }
-    return LIGHTUI_OK;
+    return MBINK_OK;
 }
 
-int lightui_on_update(LightUIHandle handle, LightUIUpdateCallback callback, void* user_data) {
-    if (!handle) return LIGHTUI_ERROR_INVALID_HANDLE;
+int mbink_on_update(MBinkHandle handle, MBinkUpdateCallback callback, void* user_data) {
+    if (!handle) return MBINK_ERROR_INVALID_HANDLE;
     auto ctx = getContext(handle);
     ctx->onUpdateCallback = callback;
     ctx->onUpdateUserData = user_data;
-    return LIGHTUI_OK;
+    return MBINK_OK;
 }
 
 // ========== 事件发送 ==========
 
-int lightui_emit(LightUIHandle handle, const char* event_name, const char* data_json) {
-    if (!handle) return LIGHTUI_ERROR_INVALID_HANDLE;
-    if (!event_name) return LIGHTUI_ERROR_INVALID_PARAM;
+int mbink_emit(MBinkHandle handle, const char* event_name, const char* data_json) {
+    if (!handle) return MBINK_ERROR_INVALID_HANDLE;
+    if (!event_name) return MBINK_ERROR_INVALID_PARAM;
     auto ctx = getContext(handle);
     if (ctx->hostBridge) {
         ctx->hostBridge->emit(event_name, data_json ? data_json : "null");
     }
-    return LIGHTUI_OK;
+    return MBINK_OK;
 }
 
 // ========== DevTools ==========
 
-int lightui_devtools_open(LightUIHandle handle) {
-    if (!handle) return LIGHTUI_ERROR_INVALID_HANDLE;
+int mbink_devtools_open(MBinkHandle handle) {
+    if (!handle) return MBINK_ERROR_INVALID_HANDLE;
     // DevTools 功能暂不实现，预留接口
-    return LIGHTUI_OK;
+    return MBINK_OK;
 }
 
-int lightui_devtools_close(LightUIHandle handle) {
-    if (!handle) return LIGHTUI_ERROR_INVALID_HANDLE;
+int mbink_devtools_close(MBinkHandle handle) {
+    if (!handle) return MBINK_ERROR_INVALID_HANDLE;
     // DevTools 功能暂不实现，预留接口
-    return LIGHTUI_OK;
+    return MBINK_OK;
 }
 
 // ========== 状态创建 ==========
 
-int lightui_state_create_null(LightUIHandle handle, const char* name) {
-    if (!handle) return LIGHTUI_ERROR_INVALID_HANDLE;
-    if (!name) return LIGHTUI_ERROR_INVALID_PARAM;
+int mbink_state_create_null(MBinkHandle handle, const char* name) {
+    if (!handle) return MBINK_ERROR_INVALID_HANDLE;
+    if (!name) return MBINK_ERROR_INVALID_PARAM;
 
     auto ctx = getContext(handle);
     return toErrorCode(ctx->stateManager->createNull(name));
 }
 
-int lightui_state_create_bool(LightUIHandle handle, const char* name, bool value) {
-    if (!handle) return LIGHTUI_ERROR_INVALID_HANDLE;
-    if (!name) return LIGHTUI_ERROR_INVALID_PARAM;
+int mbink_state_create_bool(MBinkHandle handle, const char* name, bool value) {
+    if (!handle) return MBINK_ERROR_INVALID_HANDLE;
+    if (!name) return MBINK_ERROR_INVALID_PARAM;
 
     auto ctx = getContext(handle);
     return toErrorCode(ctx->stateManager->createBool(name, value));
 }
 
-int lightui_state_create_int(LightUIHandle handle, const char* name, int64_t value) {
-    if (!handle) return LIGHTUI_ERROR_INVALID_HANDLE;
-    if (!name) return LIGHTUI_ERROR_INVALID_PARAM;
+int mbink_state_create_int(MBinkHandle handle, const char* name, int64_t value) {
+    if (!handle) return MBINK_ERROR_INVALID_HANDLE;
+    if (!name) return MBINK_ERROR_INVALID_PARAM;
 
     auto ctx = getContext(handle);
     return toErrorCode(ctx->stateManager->createInt(name, value));
 }
 
-int lightui_state_create_double(LightUIHandle handle, const char* name, double value) {
-    if (!handle) return LIGHTUI_ERROR_INVALID_HANDLE;
-    if (!name) return LIGHTUI_ERROR_INVALID_PARAM;
+int mbink_state_create_double(MBinkHandle handle, const char* name, double value) {
+    if (!handle) return MBINK_ERROR_INVALID_HANDLE;
+    if (!name) return MBINK_ERROR_INVALID_PARAM;
 
     auto ctx = getContext(handle);
     return toErrorCode(ctx->stateManager->createDouble(name, value));
 }
 
-int lightui_state_create_string(LightUIHandle handle, const char* name, const char* value) {
-    if (!handle) return LIGHTUI_ERROR_INVALID_HANDLE;
-    if (!name) return LIGHTUI_ERROR_INVALID_PARAM;
+int mbink_state_create_string(MBinkHandle handle, const char* name, const char* value) {
+    if (!handle) return MBINK_ERROR_INVALID_HANDLE;
+    if (!name) return MBINK_ERROR_INVALID_PARAM;
 
     auto ctx = getContext(handle);
     return toErrorCode(ctx->stateManager->createString(name, value ? value : ""));
 }
 
-int lightui_state_create_array(LightUIHandle handle, const char* name) {
-    if (!handle) return LIGHTUI_ERROR_INVALID_HANDLE;
-    if (!name) return LIGHTUI_ERROR_INVALID_PARAM;
+int mbink_state_create_array(MBinkHandle handle, const char* name) {
+    if (!handle) return MBINK_ERROR_INVALID_HANDLE;
+    if (!name) return MBINK_ERROR_INVALID_PARAM;
 
     auto ctx = getContext(handle);
     return toErrorCode(ctx->stateManager->createArray(name));
 }
 
-int lightui_state_create_object(LightUIHandle handle, const char* name) {
-    if (!handle) return LIGHTUI_ERROR_INVALID_HANDLE;
-    if (!name) return LIGHTUI_ERROR_INVALID_PARAM;
+int mbink_state_create_object(MBinkHandle handle, const char* name) {
+    if (!handle) return MBINK_ERROR_INVALID_HANDLE;
+    if (!name) return MBINK_ERROR_INVALID_PARAM;
 
     auto ctx = getContext(handle);
     return toErrorCode(ctx->stateManager->createObject(name));
 }
 
-int lightui_state_create_json(LightUIHandle handle, const char* name, const char* json_str) {
-    if (!handle) return LIGHTUI_ERROR_INVALID_HANDLE;
-    if (!name || !json_str) return LIGHTUI_ERROR_INVALID_PARAM;
+int mbink_state_create_json(MBinkHandle handle, const char* name, const char* json_str) {
+    if (!handle) return MBINK_ERROR_INVALID_HANDLE;
+    if (!name || !json_str) return MBINK_ERROR_INVALID_PARAM;
 
     auto ctx = getContext(handle);
     try {
-        auto j = lightui::json::parse(json_str);
+        auto j = mbink::json::parse(json_str);
         return toErrorCode(ctx->stateManager->createJson(name, j));
     } catch (...) {
-        return LIGHTUI_ERROR_INVALID_PARAM;
+        return MBINK_ERROR_INVALID_PARAM;
     }
 }
 
 
 // ========== 状态查询 ==========
 
-bool lightui_state_exists(LightUIHandle handle, const char* name) {
+bool mbink_state_exists(MBinkHandle handle, const char* name) {
     if (!handle || !name) return false;
     auto ctx = getContext(handle);
     return ctx->stateManager->exists(name);
 }
 
-LightUIType lightui_state_type(LightUIHandle handle, const char* name) {
-    if (!handle || !name) return LIGHTUI_TYPE_NULL;
+MBinkType mbink_state_type(MBinkHandle handle, const char* name) {
+    if (!handle || !name) return MBINK_TYPE_NULL;
     auto ctx = getContext(handle);
-    return toLightUIType(ctx->stateManager->type(name));
+    return toMBinkType(ctx->stateManager->type(name));
 }
 
-void lightui_state_delete(LightUIHandle handle, const char* name) {
+void mbink_state_delete(MBinkHandle handle, const char* name) {
     if (!handle || !name) return;
     auto ctx = getContext(handle);
     ctx->stateManager->remove(name);
@@ -1053,31 +1053,31 @@ void lightui_state_delete(LightUIHandle handle, const char* name) {
 
 // ========== 状态读取（直接类型） ==========
 
-bool lightui_state_get_bool(LightUIHandle handle, const char* name) {
+bool mbink_state_get_bool(MBinkHandle handle, const char* name) {
     if (!handle || !name) return false;
     auto ctx = getContext(handle);
     return ctx->stateManager->getBool(name);
 }
 
-int64_t lightui_state_get_int(LightUIHandle handle, const char* name) {
+int64_t mbink_state_get_int(MBinkHandle handle, const char* name) {
     if (!handle || !name) return 0;
     auto ctx = getContext(handle);
     return ctx->stateManager->getInt(name);
 }
 
-double lightui_state_get_double(LightUIHandle handle, const char* name) {
+double mbink_state_get_double(MBinkHandle handle, const char* name) {
     if (!handle || !name) return 0.0;
     auto ctx = getContext(handle);
     return ctx->stateManager->getDouble(name);
 }
 
-const char* lightui_state_get_string(LightUIHandle handle, const char* name) {
+const char* mbink_state_get_string(MBinkHandle handle, const char* name) {
     if (!handle || !name) return "";
     auto ctx = getContext(handle);
     return ctx->stateManager->getString(name).c_str();
 }
 
-int lightui_state_get_length(LightUIHandle handle, const char* name) {
+int mbink_state_get_length(MBinkHandle handle, const char* name) {
     if (!handle || !name) return 0;
     auto ctx = getContext(handle);
     return static_cast<int>(ctx->stateManager->getLength(name));
@@ -1085,21 +1085,21 @@ int lightui_state_get_length(LightUIHandle handle, const char* name) {
 
 // ========== 状态读取（JSON） ==========
 
-char* lightui_state_get_json(LightUIHandle handle, const char* name) {
+char* mbink_state_get_json(MBinkHandle handle, const char* name) {
     if (!handle || !name) return nullptr;
     auto ctx = getContext(handle);
     auto j = ctx->stateManager->getJson(name);
     return duplicateString(j.dump());
 }
 
-char* lightui_state_get_at(LightUIHandle handle, const char* name, int index) {
+char* mbink_state_get_at(MBinkHandle handle, const char* name, int index) {
     if (!handle || !name) return nullptr;
     auto ctx = getContext(handle);
     auto j = ctx->stateManager->getAt(name, index);
     return duplicateString(j.dump());
 }
 
-char* lightui_state_get_key(LightUIHandle handle, const char* name, const char* key) {
+char* mbink_state_get_key(MBinkHandle handle, const char* name, const char* key) {
     if (!handle || !name || !key) return nullptr;
     auto ctx = getContext(handle);
     auto j = ctx->stateManager->getKey(name, key);
@@ -1108,165 +1108,165 @@ char* lightui_state_get_key(LightUIHandle handle, const char* name, const char* 
 
 // ========== 状态写入 ==========
 
-int lightui_state_set_null(LightUIHandle handle, const char* name) {
-    if (!handle) return LIGHTUI_ERROR_INVALID_HANDLE;
-    if (!name) return LIGHTUI_ERROR_INVALID_PARAM;
+int mbink_state_set_null(MBinkHandle handle, const char* name) {
+    if (!handle) return MBINK_ERROR_INVALID_HANDLE;
+    if (!name) return MBINK_ERROR_INVALID_PARAM;
     auto ctx = getContext(handle);
     return toErrorCode(ctx->stateManager->setNull(name));
 }
 
-int lightui_state_set_bool(LightUIHandle handle, const char* name, bool value) {
-    if (!handle) return LIGHTUI_ERROR_INVALID_HANDLE;
-    if (!name) return LIGHTUI_ERROR_INVALID_PARAM;
+int mbink_state_set_bool(MBinkHandle handle, const char* name, bool value) {
+    if (!handle) return MBINK_ERROR_INVALID_HANDLE;
+    if (!name) return MBINK_ERROR_INVALID_PARAM;
     auto ctx = getContext(handle);
     return toErrorCode(ctx->stateManager->setBool(name, value));
 }
 
-int lightui_state_set_int(LightUIHandle handle, const char* name, int64_t value) {
-    if (!handle) return LIGHTUI_ERROR_INVALID_HANDLE;
-    if (!name) return LIGHTUI_ERROR_INVALID_PARAM;
+int mbink_state_set_int(MBinkHandle handle, const char* name, int64_t value) {
+    if (!handle) return MBINK_ERROR_INVALID_HANDLE;
+    if (!name) return MBINK_ERROR_INVALID_PARAM;
     auto ctx = getContext(handle);
     return toErrorCode(ctx->stateManager->setInt(name, value));
 }
 
-int lightui_state_set_double(LightUIHandle handle, const char* name, double value) {
-    if (!handle) return LIGHTUI_ERROR_INVALID_HANDLE;
-    if (!name) return LIGHTUI_ERROR_INVALID_PARAM;
+int mbink_state_set_double(MBinkHandle handle, const char* name, double value) {
+    if (!handle) return MBINK_ERROR_INVALID_HANDLE;
+    if (!name) return MBINK_ERROR_INVALID_PARAM;
     auto ctx = getContext(handle);
     return toErrorCode(ctx->stateManager->setDouble(name, value));
 }
 
-int lightui_state_set_string(LightUIHandle handle, const char* name, const char* value) {
-    if (!handle) return LIGHTUI_ERROR_INVALID_HANDLE;
-    if (!name) return LIGHTUI_ERROR_INVALID_PARAM;
+int mbink_state_set_string(MBinkHandle handle, const char* name, const char* value) {
+    if (!handle) return MBINK_ERROR_INVALID_HANDLE;
+    if (!name) return MBINK_ERROR_INVALID_PARAM;
     auto ctx = getContext(handle);
     return toErrorCode(ctx->stateManager->setString(name, value ? value : ""));
 }
 
-int lightui_state_set_json(LightUIHandle handle, const char* name, const char* json_str) {
-    if (!handle) return LIGHTUI_ERROR_INVALID_HANDLE;
-    if (!name || !json_str) return LIGHTUI_ERROR_INVALID_PARAM;
+int mbink_state_set_json(MBinkHandle handle, const char* name, const char* json_str) {
+    if (!handle) return MBINK_ERROR_INVALID_HANDLE;
+    if (!name || !json_str) return MBINK_ERROR_INVALID_PARAM;
     auto ctx = getContext(handle);
     try {
-        auto j = lightui::json::parse(json_str);
+        auto j = mbink::json::parse(json_str);
         return toErrorCode(ctx->stateManager->setJson(name, j));
     } catch (...) {
-        return LIGHTUI_ERROR_INVALID_PARAM;
+        return MBINK_ERROR_INVALID_PARAM;
     }
 }
 
 
 // ========== 数组操作 ==========
 
-int lightui_state_array_push(LightUIHandle handle, const char* name, const char* item_json) {
-    if (!handle) return LIGHTUI_ERROR_INVALID_HANDLE;
-    if (!name || !item_json) return LIGHTUI_ERROR_INVALID_PARAM;
+int mbink_state_array_push(MBinkHandle handle, const char* name, const char* item_json) {
+    if (!handle) return MBINK_ERROR_INVALID_HANDLE;
+    if (!name || !item_json) return MBINK_ERROR_INVALID_PARAM;
     auto ctx = getContext(handle);
     try {
-        auto j = lightui::json::parse(item_json);
+        auto j = mbink::json::parse(item_json);
         return toErrorCode(ctx->stateManager->arrayPush(name, j));
     } catch (...) {
-        return LIGHTUI_ERROR_INVALID_PARAM;
+        return MBINK_ERROR_INVALID_PARAM;
     }
 }
 
-int lightui_state_array_push_int(LightUIHandle handle, const char* name, int64_t value) {
-    if (!handle) return LIGHTUI_ERROR_INVALID_HANDLE;
-    if (!name) return LIGHTUI_ERROR_INVALID_PARAM;
+int mbink_state_array_push_int(MBinkHandle handle, const char* name, int64_t value) {
+    if (!handle) return MBINK_ERROR_INVALID_HANDLE;
+    if (!name) return MBINK_ERROR_INVALID_PARAM;
     auto ctx = getContext(handle);
     return toErrorCode(ctx->stateManager->arrayPush(name, value));
 }
 
-int lightui_state_array_push_double(LightUIHandle handle, const char* name, double value) {
-    if (!handle) return LIGHTUI_ERROR_INVALID_HANDLE;
-    if (!name) return LIGHTUI_ERROR_INVALID_PARAM;
+int mbink_state_array_push_double(MBinkHandle handle, const char* name, double value) {
+    if (!handle) return MBINK_ERROR_INVALID_HANDLE;
+    if (!name) return MBINK_ERROR_INVALID_PARAM;
     auto ctx = getContext(handle);
     return toErrorCode(ctx->stateManager->arrayPush(name, value));
 }
 
-int lightui_state_array_push_string(LightUIHandle handle, const char* name, const char* value) {
-    if (!handle) return LIGHTUI_ERROR_INVALID_HANDLE;
-    if (!name) return LIGHTUI_ERROR_INVALID_PARAM;
+int mbink_state_array_push_string(MBinkHandle handle, const char* name, const char* value) {
+    if (!handle) return MBINK_ERROR_INVALID_HANDLE;
+    if (!name) return MBINK_ERROR_INVALID_PARAM;
     auto ctx = getContext(handle);
     return toErrorCode(ctx->stateManager->arrayPush(name, value ? value : ""));
 }
 
-int lightui_state_array_push_bool(LightUIHandle handle, const char* name, bool value) {
-    if (!handle) return LIGHTUI_ERROR_INVALID_HANDLE;
-    if (!name) return LIGHTUI_ERROR_INVALID_PARAM;
+int mbink_state_array_push_bool(MBinkHandle handle, const char* name, bool value) {
+    if (!handle) return MBINK_ERROR_INVALID_HANDLE;
+    if (!name) return MBINK_ERROR_INVALID_PARAM;
     auto ctx = getContext(handle);
     return toErrorCode(ctx->stateManager->arrayPush(name, value));
 }
 
-int lightui_state_array_pop(LightUIHandle handle, const char* name) {
-    if (!handle) return LIGHTUI_ERROR_INVALID_HANDLE;
-    if (!name) return LIGHTUI_ERROR_INVALID_PARAM;
+int mbink_state_array_pop(MBinkHandle handle, const char* name) {
+    if (!handle) return MBINK_ERROR_INVALID_HANDLE;
+    if (!name) return MBINK_ERROR_INVALID_PARAM;
     auto ctx = getContext(handle);
     return toErrorCode(ctx->stateManager->arrayPop(name));
 }
 
-int lightui_state_array_shift(LightUIHandle handle, const char* name) {
-    if (!handle) return LIGHTUI_ERROR_INVALID_HANDLE;
-    if (!name) return LIGHTUI_ERROR_INVALID_PARAM;
+int mbink_state_array_shift(MBinkHandle handle, const char* name) {
+    if (!handle) return MBINK_ERROR_INVALID_HANDLE;
+    if (!name) return MBINK_ERROR_INVALID_PARAM;
     auto ctx = getContext(handle);
     return toErrorCode(ctx->stateManager->arrayShift(name));
 }
 
-int lightui_state_array_unshift(LightUIHandle handle, const char* name, const char* item_json) {
-    if (!handle) return LIGHTUI_ERROR_INVALID_HANDLE;
-    if (!name || !item_json) return LIGHTUI_ERROR_INVALID_PARAM;
+int mbink_state_array_unshift(MBinkHandle handle, const char* name, const char* item_json) {
+    if (!handle) return MBINK_ERROR_INVALID_HANDLE;
+    if (!name || !item_json) return MBINK_ERROR_INVALID_PARAM;
     auto ctx = getContext(handle);
     try {
-        auto j = lightui::json::parse(item_json);
+        auto j = mbink::json::parse(item_json);
         return toErrorCode(ctx->stateManager->arrayUnshift(name, j));
     } catch (...) {
-        return LIGHTUI_ERROR_INVALID_PARAM;
+        return MBINK_ERROR_INVALID_PARAM;
     }
 }
 
-int lightui_state_array_remove(LightUIHandle handle, const char* name, int index) {
-    if (!handle) return LIGHTUI_ERROR_INVALID_HANDLE;
-    if (!name) return LIGHTUI_ERROR_INVALID_PARAM;
+int mbink_state_array_remove(MBinkHandle handle, const char* name, int index) {
+    if (!handle) return MBINK_ERROR_INVALID_HANDLE;
+    if (!name) return MBINK_ERROR_INVALID_PARAM;
     auto ctx = getContext(handle);
     return toErrorCode(ctx->stateManager->arrayRemove(name, index));
 }
 
-int lightui_state_array_clear(LightUIHandle handle, const char* name) {
-    if (!handle) return LIGHTUI_ERROR_INVALID_HANDLE;
-    if (!name) return LIGHTUI_ERROR_INVALID_PARAM;
+int mbink_state_array_clear(MBinkHandle handle, const char* name) {
+    if (!handle) return MBINK_ERROR_INVALID_HANDLE;
+    if (!name) return MBINK_ERROR_INVALID_PARAM;
     auto ctx = getContext(handle);
     return toErrorCode(ctx->stateManager->arrayClear(name));
 }
 
-int lightui_state_array_set(LightUIHandle handle, const char* name, int index, const char* item_json) {
-    if (!handle) return LIGHTUI_ERROR_INVALID_HANDLE;
-    if (!name || !item_json) return LIGHTUI_ERROR_INVALID_PARAM;
+int mbink_state_array_set(MBinkHandle handle, const char* name, int index, const char* item_json) {
+    if (!handle) return MBINK_ERROR_INVALID_HANDLE;
+    if (!name || !item_json) return MBINK_ERROR_INVALID_PARAM;
     auto ctx = getContext(handle);
     try {
-        auto j = lightui::json::parse(item_json);
+        auto j = mbink::json::parse(item_json);
         return toErrorCode(ctx->stateManager->arraySet(name, index, j));
     } catch (...) {
-        return LIGHTUI_ERROR_INVALID_PARAM;
+        return MBINK_ERROR_INVALID_PARAM;
     }
 }
 
-int lightui_state_array_set_int(LightUIHandle handle, const char* name, int index, int64_t value) {
-    if (!handle) return LIGHTUI_ERROR_INVALID_HANDLE;
-    if (!name) return LIGHTUI_ERROR_INVALID_PARAM;
+int mbink_state_array_set_int(MBinkHandle handle, const char* name, int index, int64_t value) {
+    if (!handle) return MBINK_ERROR_INVALID_HANDLE;
+    if (!name) return MBINK_ERROR_INVALID_PARAM;
     auto ctx = getContext(handle);
     return toErrorCode(ctx->stateManager->arraySet(name, index, value));
 }
 
-int lightui_state_array_set_double(LightUIHandle handle, const char* name, int index, double value) {
-    if (!handle) return LIGHTUI_ERROR_INVALID_HANDLE;
-    if (!name) return LIGHTUI_ERROR_INVALID_PARAM;
+int mbink_state_array_set_double(MBinkHandle handle, const char* name, int index, double value) {
+    if (!handle) return MBINK_ERROR_INVALID_HANDLE;
+    if (!name) return MBINK_ERROR_INVALID_PARAM;
     auto ctx = getContext(handle);
     return toErrorCode(ctx->stateManager->arraySet(name, index, value));
 }
 
-int lightui_state_array_set_string(LightUIHandle handle, const char* name, int index, const char* value) {
-    if (!handle) return LIGHTUI_ERROR_INVALID_HANDLE;
-    if (!name) return LIGHTUI_ERROR_INVALID_PARAM;
+int mbink_state_array_set_string(MBinkHandle handle, const char* name, int index, const char* value) {
+    if (!handle) return MBINK_ERROR_INVALID_HANDLE;
+    if (!name) return MBINK_ERROR_INVALID_PARAM;
     auto ctx = getContext(handle);
     return toErrorCode(ctx->stateManager->arraySet(name, index, value ? value : ""));
 }
@@ -1274,102 +1274,102 @@ int lightui_state_array_set_string(LightUIHandle handle, const char* name, int i
 
 // ========== 对象操作 ==========
 
-int lightui_state_object_set(LightUIHandle handle, const char* name, const char* key, const char* value_json) {
-    if (!handle) return LIGHTUI_ERROR_INVALID_HANDLE;
-    if (!name || !key || !value_json) return LIGHTUI_ERROR_INVALID_PARAM;
+int mbink_state_object_set(MBinkHandle handle, const char* name, const char* key, const char* value_json) {
+    if (!handle) return MBINK_ERROR_INVALID_HANDLE;
+    if (!name || !key || !value_json) return MBINK_ERROR_INVALID_PARAM;
     auto ctx = getContext(handle);
     try {
-        auto j = lightui::json::parse(value_json);
+        auto j = mbink::json::parse(value_json);
         return toErrorCode(ctx->stateManager->objectSet(name, key, j));
     } catch (...) {
-        return LIGHTUI_ERROR_INVALID_PARAM;
+        return MBINK_ERROR_INVALID_PARAM;
     }
 }
 
-int lightui_state_object_set_int(LightUIHandle handle, const char* name, const char* key, int64_t value) {
-    if (!handle) return LIGHTUI_ERROR_INVALID_HANDLE;
-    if (!name || !key) return LIGHTUI_ERROR_INVALID_PARAM;
+int mbink_state_object_set_int(MBinkHandle handle, const char* name, const char* key, int64_t value) {
+    if (!handle) return MBINK_ERROR_INVALID_HANDLE;
+    if (!name || !key) return MBINK_ERROR_INVALID_PARAM;
     auto ctx = getContext(handle);
     return toErrorCode(ctx->stateManager->objectSet(name, key, value));
 }
 
-int lightui_state_object_set_double(LightUIHandle handle, const char* name, const char* key, double value) {
-    if (!handle) return LIGHTUI_ERROR_INVALID_HANDLE;
-    if (!name || !key) return LIGHTUI_ERROR_INVALID_PARAM;
+int mbink_state_object_set_double(MBinkHandle handle, const char* name, const char* key, double value) {
+    if (!handle) return MBINK_ERROR_INVALID_HANDLE;
+    if (!name || !key) return MBINK_ERROR_INVALID_PARAM;
     auto ctx = getContext(handle);
     return toErrorCode(ctx->stateManager->objectSet(name, key, value));
 }
 
-int lightui_state_object_set_string(LightUIHandle handle, const char* name, const char* key, const char* value) {
-    if (!handle) return LIGHTUI_ERROR_INVALID_HANDLE;
-    if (!name || !key) return LIGHTUI_ERROR_INVALID_PARAM;
+int mbink_state_object_set_string(MBinkHandle handle, const char* name, const char* key, const char* value) {
+    if (!handle) return MBINK_ERROR_INVALID_HANDLE;
+    if (!name || !key) return MBINK_ERROR_INVALID_PARAM;
     auto ctx = getContext(handle);
     return toErrorCode(ctx->stateManager->objectSet(name, key, value ? value : ""));
 }
 
-int lightui_state_object_set_bool(LightUIHandle handle, const char* name, const char* key, bool value) {
-    if (!handle) return LIGHTUI_ERROR_INVALID_HANDLE;
-    if (!name || !key) return LIGHTUI_ERROR_INVALID_PARAM;
+int mbink_state_object_set_bool(MBinkHandle handle, const char* name, const char* key, bool value) {
+    if (!handle) return MBINK_ERROR_INVALID_HANDLE;
+    if (!name || !key) return MBINK_ERROR_INVALID_PARAM;
     auto ctx = getContext(handle);
     return toErrorCode(ctx->stateManager->objectSet(name, key, value));
 }
 
-int lightui_state_object_remove(LightUIHandle handle, const char* name, const char* key) {
-    if (!handle) return LIGHTUI_ERROR_INVALID_HANDLE;
-    if (!name || !key) return LIGHTUI_ERROR_INVALID_PARAM;
+int mbink_state_object_remove(MBinkHandle handle, const char* name, const char* key) {
+    if (!handle) return MBINK_ERROR_INVALID_HANDLE;
+    if (!name || !key) return MBINK_ERROR_INVALID_PARAM;
     auto ctx = getContext(handle);
     return toErrorCode(ctx->stateManager->objectRemove(name, key));
 }
 
-int lightui_state_object_clear(LightUIHandle handle, const char* name) {
-    if (!handle) return LIGHTUI_ERROR_INVALID_HANDLE;
-    if (!name) return LIGHTUI_ERROR_INVALID_PARAM;
+int mbink_state_object_clear(MBinkHandle handle, const char* name) {
+    if (!handle) return MBINK_ERROR_INVALID_HANDLE;
+    if (!name) return MBINK_ERROR_INVALID_PARAM;
     auto ctx = getContext(handle);
     return toErrorCode(ctx->stateManager->objectClear(name));
 }
 
 // ========== 数值操作 ==========
 
-int lightui_state_increment(LightUIHandle handle, const char* name, double delta) {
-    if (!handle) return LIGHTUI_ERROR_INVALID_HANDLE;
-    if (!name) return LIGHTUI_ERROR_INVALID_PARAM;
+int mbink_state_increment(MBinkHandle handle, const char* name, double delta) {
+    if (!handle) return MBINK_ERROR_INVALID_HANDLE;
+    if (!name) return MBINK_ERROR_INVALID_PARAM;
     auto ctx = getContext(handle);
     return toErrorCode(ctx->stateManager->increment(name, delta));
 }
 
-int lightui_state_multiply(LightUIHandle handle, const char* name, double factor) {
-    if (!handle) return LIGHTUI_ERROR_INVALID_HANDLE;
-    if (!name) return LIGHTUI_ERROR_INVALID_PARAM;
+int mbink_state_multiply(MBinkHandle handle, const char* name, double factor) {
+    if (!handle) return MBINK_ERROR_INVALID_HANDLE;
+    if (!name) return MBINK_ERROR_INVALID_PARAM;
     auto ctx = getContext(handle);
     return toErrorCode(ctx->stateManager->multiply(name, factor));
 }
 
 // ========== 字符串操作 ==========
 
-int lightui_state_string_append(LightUIHandle handle, const char* name, const char* suffix) {
-    if (!handle) return LIGHTUI_ERROR_INVALID_HANDLE;
-    if (!name || !suffix) return LIGHTUI_ERROR_INVALID_PARAM;
+int mbink_state_string_append(MBinkHandle handle, const char* name, const char* suffix) {
+    if (!handle) return MBINK_ERROR_INVALID_HANDLE;
+    if (!name || !suffix) return MBINK_ERROR_INVALID_PARAM;
     auto ctx = getContext(handle);
     return toErrorCode(ctx->stateManager->stringAppend(name, suffix));
 }
 
-int lightui_state_string_prepend(LightUIHandle handle, const char* name, const char* prefix) {
-    if (!handle) return LIGHTUI_ERROR_INVALID_HANDLE;
-    if (!name || !prefix) return LIGHTUI_ERROR_INVALID_PARAM;
+int mbink_state_string_prepend(MBinkHandle handle, const char* name, const char* prefix) {
+    if (!handle) return MBINK_ERROR_INVALID_HANDLE;
+    if (!name || !prefix) return MBINK_ERROR_INVALID_PARAM;
     auto ctx = getContext(handle);
     return toErrorCode(ctx->stateManager->stringPrepend(name, prefix));
 }
 
 // ========== 监听 ==========
 
-int lightui_state_watch(LightUIHandle handle, const char* name,
-                        LightUIStateCallback callback, void* user_data) {
+int mbink_state_watch(MBinkHandle handle, const char* name,
+                        MBinkStateCallback callback, void* user_data) {
     if (!handle) return -1;
     if (!name || !callback) return -1;
 
     auto ctx = getContext(handle);
     int watchId = ctx->stateManager->watch(name,
-        [callback, user_data](const std::string& n, const lightui::json& v) {
+        [callback, user_data](const std::string& n, const mbink::json& v) {
             std::string jsonStr = v.dump();
             callback(n.c_str(), jsonStr.c_str(), user_data);
         });
@@ -1378,7 +1378,7 @@ int lightui_state_watch(LightUIHandle handle, const char* name,
     return watchId;
 }
 
-void lightui_state_unwatch(LightUIHandle handle, int watch_id) {
+void mbink_state_unwatch(MBinkHandle handle, int watch_id) {
     if (!handle) return;
     auto ctx = getContext(handle);
     ctx->stateManager->unwatch(watch_id);
@@ -1387,13 +1387,13 @@ void lightui_state_unwatch(LightUIHandle handle, int watch_id) {
 
 // ========== 批量操作 ==========
 
-void lightui_state_batch_begin(LightUIHandle handle) {
+void mbink_state_batch_begin(MBinkHandle handle) {
     if (!handle) return;
     auto ctx = getContext(handle);
     ctx->stateManager->batchBegin();
 }
 
-void lightui_state_batch_end(LightUIHandle handle) {
+void mbink_state_batch_end(MBinkHandle handle) {
     if (!handle) return;
     auto ctx = getContext(handle);
     ctx->stateManager->batchEnd();
@@ -1401,20 +1401,20 @@ void lightui_state_batch_end(LightUIHandle handle) {
 
 // ========== 队列控制 ==========
 
-void lightui_state_set_merge_mode(LightUIHandle handle, bool enable) {
+void mbink_state_set_merge_mode(MBinkHandle handle, bool enable) {
     if (!handle) return;
     auto ctx = getContext(handle);
     ctx->stateManager->setMergeMode(enable);
 }
 
-int lightui_process_queue(LightUIHandle handle) {
-    if (!handle) return LIGHTUI_ERROR_INVALID_HANDLE;
+int mbink_process_queue(MBinkHandle handle) {
+    if (!handle) return MBINK_ERROR_INVALID_HANDLE;
     auto ctx = getContext(handle);
     ctx->stateManager->processQueue();
-    return LIGHTUI_OK;
+    return MBINK_OK;
 }
 
-int lightui_queue_size(LightUIHandle handle) {
+int mbink_queue_size(MBinkHandle handle) {
     if (!handle) return 0;
     auto ctx = getContext(handle);
     return static_cast<int>(ctx->stateManager->queueSize());
@@ -1422,7 +1422,7 @@ int lightui_queue_size(LightUIHandle handle) {
 
 // ========== 共享 C 对象 (SharedObject) ==========
 
-LightUISharedHandle lightui_shared_create(LightUIHandle handle, const char* name) {
+MBinkSharedHandle mbink_shared_create(MBinkHandle handle, const char* name) {
     if (!handle || !name) return nullptr;
     auto ctx = getContext(handle);
     if (!ctx->runtime) return nullptr;
@@ -1447,10 +1447,10 @@ LightUISharedHandle lightui_shared_create(LightUIHandle handle, const char* name
     // 存储到 WindowContext
     ctx->sharedObjects[name] = shared;
 
-    return reinterpret_cast<LightUISharedHandle>(shared);
+    return reinterpret_cast<MBinkSharedHandle>(shared);
 }
 
-void lightui_shared_destroy(LightUISharedHandle shared_handle) {
+void mbink_shared_destroy(MBinkSharedHandle shared_handle) {
     if (!shared_handle) return;
     auto* shared = reinterpret_cast<SharedObjectData*>(shared_handle);
 
@@ -1473,9 +1473,9 @@ void lightui_shared_destroy(LightUISharedHandle shared_handle) {
 
 // ---- Setter 实现 ----
 
-int lightui_shared_set_int(LightUISharedHandle shared_handle,
+int mbink_shared_set_int(MBinkSharedHandle shared_handle,
                             const char* key, int64_t value) {
-    if (!shared_handle || !key) return LIGHTUI_ERROR_INVALID_PARAM;
+    if (!shared_handle || !key) return MBINK_ERROR_INVALID_PARAM;
     auto* shared = reinterpret_cast<SharedObjectData*>(shared_handle);
 
     JS_SetPropertyStr(shared->ctx, shared->js_obj, key, JS_NewInt64(shared->ctx, value));
@@ -1486,12 +1486,12 @@ int lightui_shared_set_int(LightUISharedHandle shared_handle,
         JS_FreeValue(shared->ctx, global);
     }
     shared->notifyUpdate(key);
-    return LIGHTUI_OK;
+    return MBINK_OK;
 }
 
-int lightui_shared_set_double(LightUISharedHandle shared_handle,
+int mbink_shared_set_double(MBinkSharedHandle shared_handle,
                                const char* key, double value) {
-    if (!shared_handle || !key) return LIGHTUI_ERROR_INVALID_PARAM;
+    if (!shared_handle || !key) return MBINK_ERROR_INVALID_PARAM;
     auto* shared = reinterpret_cast<SharedObjectData*>(shared_handle);
 
     JS_SetPropertyStr(shared->ctx, shared->js_obj, key, JS_NewFloat64(shared->ctx, value));
@@ -1501,12 +1501,12 @@ int lightui_shared_set_double(LightUISharedHandle shared_handle,
         JS_FreeValue(shared->ctx, global);
     }
     shared->notifyUpdate(key);
-    return LIGHTUI_OK;
+    return MBINK_OK;
 }
 
-int lightui_shared_set_string(LightUISharedHandle shared_handle,
+int mbink_shared_set_string(MBinkSharedHandle shared_handle,
                                const char* key, const char* value) {
-    if (!shared_handle || !key) return LIGHTUI_ERROR_INVALID_PARAM;
+    if (!shared_handle || !key) return MBINK_ERROR_INVALID_PARAM;
     auto* shared = reinterpret_cast<SharedObjectData*>(shared_handle);
 
     JS_SetPropertyStr(shared->ctx, shared->js_obj, key,
@@ -1517,12 +1517,12 @@ int lightui_shared_set_string(LightUISharedHandle shared_handle,
         JS_FreeValue(shared->ctx, global);
     }
     shared->notifyUpdate(key);
-    return LIGHTUI_OK;
+    return MBINK_OK;
 }
 
-int lightui_shared_set_bool(LightUISharedHandle shared_handle,
+int mbink_shared_set_bool(MBinkSharedHandle shared_handle,
                              const char* key, bool value) {
-    if (!shared_handle || !key) return LIGHTUI_ERROR_INVALID_PARAM;
+    if (!shared_handle || !key) return MBINK_ERROR_INVALID_PARAM;
     auto* shared = reinterpret_cast<SharedObjectData*>(shared_handle);
 
     JS_SetPropertyStr(shared->ctx, shared->js_obj, key, JS_NewBool(shared->ctx, value));
@@ -1532,11 +1532,11 @@ int lightui_shared_set_bool(LightUISharedHandle shared_handle,
         JS_FreeValue(shared->ctx, global);
     }
     shared->notifyUpdate(key);
-    return LIGHTUI_OK;
+    return MBINK_OK;
 }
 
-int lightui_shared_set_null(LightUISharedHandle shared_handle, const char* key) {
-    if (!shared_handle || !key) return LIGHTUI_ERROR_INVALID_PARAM;
+int mbink_shared_set_null(MBinkSharedHandle shared_handle, const char* key) {
+    if (!shared_handle || !key) return MBINK_ERROR_INVALID_PARAM;
     auto* shared = reinterpret_cast<SharedObjectData*>(shared_handle);
     JS_SetPropertyStr(shared->ctx, shared->js_obj, key, JS_NULL);
     if (JS_IsUndefined(shared->updater_func)) {
@@ -1545,19 +1545,19 @@ int lightui_shared_set_null(LightUISharedHandle shared_handle, const char* key) 
         JS_FreeValue(shared->ctx, global);
     }
     shared->notifyUpdate(key);
-    return LIGHTUI_OK;
+    return MBINK_OK;
 }
 
-int lightui_shared_set_json(LightUISharedHandle shared_handle,
+int mbink_shared_set_json(MBinkSharedHandle shared_handle,
                              const char* key, const char* json_str) {
-    if (!shared_handle || !key || !json_str) return LIGHTUI_ERROR_INVALID_PARAM;
+    if (!shared_handle || !key || !json_str) return MBINK_ERROR_INVALID_PARAM;
     auto* shared = reinterpret_cast<SharedObjectData*>(shared_handle);
 
     JSValue val = JS_ParseJSON(shared->ctx, json_str, strlen(json_str), "<json>");
     if (JS_IsException(val)) {
         JSValue exc = JS_GetException(shared->ctx);
         JS_FreeValue(shared->ctx, exc);
-        return LIGHTUI_ERROR_INVALID_PARAM;
+        return MBINK_ERROR_INVALID_PARAM;
     }
     JS_SetPropertyStr(shared->ctx, shared->js_obj, key, val);
     if (JS_IsUndefined(shared->updater_func)) {
@@ -1566,12 +1566,12 @@ int lightui_shared_set_json(LightUISharedHandle shared_handle,
         JS_FreeValue(shared->ctx, global);
     }
     shared->notifyUpdate(key);
-    return LIGHTUI_OK;
+    return MBINK_OK;
 }
 
 // ---- Getter 实现 ----
 
-int64_t lightui_shared_get_int(LightUISharedHandle shared_handle, const char* key) {
+int64_t mbink_shared_get_int(MBinkSharedHandle shared_handle, const char* key) {
     if (!shared_handle || !key) return 0;
     auto* shared = reinterpret_cast<SharedObjectData*>(shared_handle);
     JSValue val = JS_GetPropertyStr(shared->ctx, shared->js_obj, key);
@@ -1581,7 +1581,7 @@ int64_t lightui_shared_get_int(LightUISharedHandle shared_handle, const char* ke
     return result;
 }
 
-double lightui_shared_get_double(LightUISharedHandle shared_handle, const char* key) {
+double mbink_shared_get_double(MBinkSharedHandle shared_handle, const char* key) {
     if (!shared_handle || !key) return 0.0;
     auto* shared = reinterpret_cast<SharedObjectData*>(shared_handle);
     JSValue val = JS_GetPropertyStr(shared->ctx, shared->js_obj, key);
@@ -1591,7 +1591,7 @@ double lightui_shared_get_double(LightUISharedHandle shared_handle, const char* 
     return result;
 }
 
-const char* lightui_shared_get_string(LightUISharedHandle shared_handle, const char* key) {
+const char* mbink_shared_get_string(MBinkSharedHandle shared_handle, const char* key) {
     if (!shared_handle || !key) return nullptr;
     auto* shared = reinterpret_cast<SharedObjectData*>(shared_handle);
     JSValue val = JS_GetPropertyStr(shared->ctx, shared->js_obj, key);
@@ -1603,7 +1603,7 @@ const char* lightui_shared_get_string(LightUISharedHandle shared_handle, const c
     return result;
 }
 
-bool lightui_shared_get_bool(LightUISharedHandle shared_handle, const char* key) {
+bool mbink_shared_get_bool(MBinkSharedHandle shared_handle, const char* key) {
     if (!shared_handle || !key) return false;
     auto* shared = reinterpret_cast<SharedObjectData*>(shared_handle);
     JSValue val = JS_GetPropertyStr(shared->ctx, shared->js_obj, key);
@@ -1612,7 +1612,7 @@ bool lightui_shared_get_bool(LightUISharedHandle shared_handle, const char* key)
     return result != 0;
 }
 
-const char* lightui_shared_get_json(LightUISharedHandle shared_handle, const char* key) {
+const char* mbink_shared_get_json(MBinkSharedHandle shared_handle, const char* key) {
     if (!shared_handle || !key) return nullptr;
     auto* shared = reinterpret_cast<SharedObjectData*>(shared_handle);
     JSValue val = JS_GetPropertyStr(shared->ctx, shared->js_obj, key);
@@ -1633,35 +1633,35 @@ const char* lightui_shared_get_json(LightUISharedHandle shared_handle, const cha
 
 // ---- 属性查询 ----
 
-int lightui_shared_get_type(LightUISharedHandle shared_handle, const char* key) {
-    if (!shared_handle || !key) return LIGHTUI_TYPE_NULL;
+int mbink_shared_get_type(MBinkSharedHandle shared_handle, const char* key) {
+    if (!shared_handle || !key) return MBINK_TYPE_NULL;
     auto* shared = reinterpret_cast<SharedObjectData*>(shared_handle);
     JSValue val = JS_GetPropertyStr(shared->ctx, shared->js_obj, key);
     int tag = JS_VALUE_GET_TAG(val);
     int result;
-    if (JS_IsNull(val) || JS_IsUndefined(val)) result = LIGHTUI_TYPE_NULL;
-    else if (JS_IsBool(val)) result = LIGHTUI_TYPE_BOOL;
-    else if (tag == JS_TAG_INT) result = LIGHTUI_TYPE_INT;
-    else if (JS_TAG_IS_FLOAT64(tag)) result = LIGHTUI_TYPE_DOUBLE;
-    else if (JS_IsString(val)) result = LIGHTUI_TYPE_STRING;
-    else if (JS_IsArray(val)) result = LIGHTUI_TYPE_ARRAY;
-    else if (JS_IsObject(val)) result = LIGHTUI_TYPE_OBJECT;
-    else result = LIGHTUI_TYPE_NULL;
+    if (JS_IsNull(val) || JS_IsUndefined(val)) result = MBINK_TYPE_NULL;
+    else if (JS_IsBool(val)) result = MBINK_TYPE_BOOL;
+    else if (tag == JS_TAG_INT) result = MBINK_TYPE_INT;
+    else if (JS_TAG_IS_FLOAT64(tag)) result = MBINK_TYPE_DOUBLE;
+    else if (JS_IsString(val)) result = MBINK_TYPE_STRING;
+    else if (JS_IsArray(val)) result = MBINK_TYPE_ARRAY;
+    else if (JS_IsObject(val)) result = MBINK_TYPE_OBJECT;
+    else result = MBINK_TYPE_NULL;
     JS_FreeValue(shared->ctx, val);
     return result;
 }
 
-int lightui_shared_delete(LightUISharedHandle shared_handle, const char* key) {
-    if (!shared_handle || !key) return LIGHTUI_ERROR_INVALID_PARAM;
+int mbink_shared_delete(MBinkSharedHandle shared_handle, const char* key) {
+    if (!shared_handle || !key) return MBINK_ERROR_INVALID_PARAM;
     auto* shared = reinterpret_cast<SharedObjectData*>(shared_handle);
     JSAtom atom = JS_NewAtom(shared->ctx, key);
     JS_DeleteProperty(shared->ctx, shared->js_obj, atom, 0);
     JS_FreeAtom(shared->ctx, atom);
     shared->notifyUpdate(key);
-    return LIGHTUI_OK;
+    return MBINK_OK;
 }
 
-bool lightui_shared_has(LightUISharedHandle shared_handle, const char* key) {
+bool mbink_shared_has(MBinkSharedHandle shared_handle, const char* key) {
     if (!shared_handle || !key) return false;
     auto* shared = reinterpret_cast<SharedObjectData*>(shared_handle);
     JSAtom atom = JS_NewAtom(shared->ctx, key);
@@ -1672,14 +1672,14 @@ bool lightui_shared_has(LightUISharedHandle shared_handle, const char* key) {
 
 // ---- 批量更新 ----
 
-void lightui_shared_batch_begin(LightUISharedHandle shared_handle) {
+void mbink_shared_batch_begin(MBinkSharedHandle shared_handle) {
     if (!shared_handle) return;
     auto* shared = reinterpret_cast<SharedObjectData*>(shared_handle);
     shared->batch_mode = true;
     shared->pending_updates = 0;
 }
 
-void lightui_shared_batch_end(LightUISharedHandle shared_handle) {
+void mbink_shared_batch_end(MBinkSharedHandle shared_handle) {
     if (!shared_handle) return;
     auto* shared = reinterpret_cast<SharedObjectData*>(shared_handle);
     shared->batch_mode = false;
@@ -1688,15 +1688,15 @@ void lightui_shared_batch_end(LightUISharedHandle shared_handle) {
 
 // ========== 工具函数 ==========
 
-void lightui_free(void* ptr) {
+void mbink_free(void* ptr) {
     free(ptr);
 }
 
-char* lightui_copy_string(const char* str) {
+char* mbink_copy_string(const char* str) {
     return duplicateString(str);
 }
 
-const char* lightui_last_error(void) {
+const char* mbink_last_error(void) {
     std::lock_guard<std::mutex> lock(g_errorMutex);
     return g_lastError.c_str();
 }

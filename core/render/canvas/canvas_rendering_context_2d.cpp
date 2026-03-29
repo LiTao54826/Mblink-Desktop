@@ -27,7 +27,7 @@
 #include <stdexcept>
 #include <iostream>
 
-namespace lightui {
+namespace mbink {
 
 // Base64 编码表
 static const char kBase64Chars[] = 
@@ -891,4 +891,4 @@ void CanvasRenderingContext2D::ApplyGlobalAlpha(SkPaint& paint) {
     }
 }
 
-} // namespace lightui
+} // namespace mbink

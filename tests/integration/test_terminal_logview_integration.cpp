@@ -15,7 +15,7 @@
 
 #include <gtest/gtest.h>
 
-namespace lightui {
+namespace mbink {
 namespace test {
 
 class TerminalLogViewIntegrationTest : public DOMTestBase {
@@ -390,4 +390,4 @@ TEST_F(TerminalLogViewIntegrationTest, LogViewWithClassAttribute) {
 }
 
 }  // namespace test
-}  // namespace lightui
+}  // namespace mbink

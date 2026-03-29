@@ -17,7 +17,7 @@
 #include <vector>
 #include <string>
 
-namespace lightui {
+namespace mbink {
 
 //------------------------------------------------------------------------------
 // IFC Measurement Structures (for Taffy integration)
@@ -216,5 +216,5 @@ public:
     virtual const Style& GetFlexItemStyle(NodeId node) const = 0;
 };
 
-} // namespace lightui
+} // namespace mbink
 

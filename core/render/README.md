@@ -1,4 +1,4 @@
-# LightUI 渲染引擎
+# MBink 渲染引擎
 
 基于 Skia 的高性能 2D 图形渲染系统。
 
@@ -75,5 +75,5 @@ paint.SetStyle(PaintStyle::FILL);
 
 ```bash
 cmake -B build
-cmake --build build --target lightui_render
+cmake --build build --target mbink_render
 ```

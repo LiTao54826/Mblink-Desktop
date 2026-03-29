@@ -6,7 +6,7 @@
 #include <gtest/gtest.h>
 #include "lexbor/style_manager.h"
 
-namespace lightui {
+namespace mbink {
 namespace test {
 
 class StyleManagerTest : public ::testing::Test {
@@ -103,4 +103,4 @@ TEST_F(StyleManagerTest, ClearStyleSheets) {
 }
 
 } // namespace test
-} // namespace lightui
+} // namespace mbink

@@ -1,5 +1,5 @@
 /**
- * LightUI 布局组件
+ * MBink 布局组件
  */
 
 import { h } from 'preact';

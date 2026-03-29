@@ -8,7 +8,7 @@
 
 #include "layout/content_version.h"
 
-namespace lightui {
+namespace mbink {
 
 ContentVersionManager::ContentVersionManager() = default;
 
@@ -30,4 +30,4 @@ void ContentVersionManager::Reset() {
     version_counter_.store(0, std::memory_order_release);
 }
 
-} // namespace lightui
+} // namespace mbink

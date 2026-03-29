@@ -17,7 +17,7 @@
 #include <random>
 #include <vector>
 
-using namespace lightui;
+using namespace mbink;
 
 // Random number generator for property tests
 class CacheVersionPropertyTestRng {

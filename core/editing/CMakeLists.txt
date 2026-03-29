@@ -31,37 +31,37 @@ set(EDITING_HEADERS
     drag_manager.h
 )
 
-add_library(lightui_editing STATIC ${EDITING_SOURCES})
+add_library(mbink_editing STATIC ${EDITING_SOURCES})
 
-target_include_directories(lightui_editing PUBLIC
+target_include_directories(mbink_editing PUBLIC
     ${CMAKE_SOURCE_DIR}
     ${CMAKE_SOURCE_DIR}/core
 )
 
 # 链接 SDL3
 if(TARGET SDL3::SDL3)
-    target_link_libraries(lightui_editing PUBLIC SDL3::SDL3)
+    target_link_libraries(mbink_editing PUBLIC SDL3::SDL3)
 elseif(TARGET SDL3-static)
-    target_link_libraries(lightui_editing PUBLIC SDL3-static)
+    target_link_libraries(mbink_editing PUBLIC SDL3-static)
 endif()
 
 # 链接依赖模块
-target_link_libraries(lightui_editing PUBLIC lightui_dom)
+target_link_libraries(mbink_editing PUBLIC mbink_dom)
 
 # MSVC 特定设置
 if(MSVC)
-    target_compile_options(lightui_editing PUBLIC
+    target_compile_options(mbink_editing PUBLIC
         $<$<CONFIG:Debug>:/MT>
         $<$<CONFIG:Release>:/MT>
     )
-    target_compile_definitions(lightui_editing PUBLIC
+    target_compile_definitions(mbink_editing PUBLIC
         $<$<CONFIG:Debug>:_ITERATOR_DEBUG_LEVEL=0>
     )
 endif()
 
 # 设置编译选项
 if(MSVC)
-    target_compile_options(lightui_editing PRIVATE /W4)
+    target_compile_options(mbink_editing PRIVATE /W4)
 else()
-    target_compile_options(lightui_editing PRIVATE -Wall -Wextra)
+    target_compile_options(mbink_editing PRIVATE -Wall -Wextra)
 endif()

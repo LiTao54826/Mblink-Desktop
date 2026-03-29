@@ -163,7 +163,7 @@ LONG WINAPI CrashHandler(EXCEPTION_POINTERS* pExceptionInfo) {
 }
 #endif
 
-using namespace lightui;
+using namespace mbink;
 namespace fs = std::filesystem;
 
 std::string ReadFile(const std::string& path) {
@@ -225,7 +225,7 @@ void PrintUsage(const char* program_name) {
 
 // 加载嵌入的 JS 库
 bool LoadEmbeddedLibraries(QuickJSRuntime* runtime) {
-    using namespace lightui::embedded;
+    using namespace mbink::embedded;
 
     if (!HasEmbeddedJS()) {
         return false;
@@ -307,7 +307,7 @@ static JSValue js_loadAsset(JSContext* ctx, JSValueConst this_val, int argc, JSV
     const char* path = JS_ToCString(ctx, argv[0]);
     if (!path) return JS_ThrowTypeError(ctx, "loadAsset path must be a string");
     std::vector<uint8_t> data;
-    bool found = lightui::AssetManager::Instance().GetAsset(path, data);
+    bool found = mbink::AssetManager::Instance().GetAsset(path, data);
     JS_FreeCString(ctx, path);
     if (!found) return JS_NULL;
     return JS_NewArrayBufferCopy(ctx, data.data(), data.size());
@@ -318,7 +318,7 @@ static JSValue js_getAssetUrl(JSContext* ctx, JSValueConst this_val, int argc, J
     if (argc < 1) return JS_ThrowTypeError(ctx, "getAssetUrl requires a path argument");
     const char* path = JS_ToCString(ctx, argv[0]);
     if (!path) return JS_ThrowTypeError(ctx, "getAssetUrl path must be a string");
-    std::string url = lightui::AssetManager::Instance().GetAssetDataUrl(path);
+    std::string url = mbink::AssetManager::Instance().GetAssetDataUrl(path);
     JS_FreeCString(ctx, path);
     if (url.empty()) return JS_NULL;
     return JS_NewString(ctx, url.c_str());
@@ -329,14 +329,14 @@ static JSValue js_hasAsset(JSContext* ctx, JSValueConst this_val, int argc, JSVa
     if (argc < 1) return JS_FALSE;
     const char* path = JS_ToCString(ctx, argv[0]);
     if (!path) return JS_FALSE;
-    bool exists = lightui::AssetManager::Instance().HasAsset(path);
+    bool exists = mbink::AssetManager::Instance().HasAsset(path);
     JS_FreeCString(ctx, path);
     return exists ? JS_TRUE : JS_FALSE;
 }
 
 // JS API: listAssets() - 列出所有资源
 static JSValue js_listAssets(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) {
-    auto paths = lightui::AssetManager::Instance().GetAssetPaths();
+    auto paths = mbink::AssetManager::Instance().GetAssetPaths();
     JSValue array = JS_NewArray(ctx);
     for (size_t i = 0; i < paths.size(); i++) {
         JS_SetPropertyUint32(ctx, array, i, JS_NewString(ctx, paths[i].c_str()));
@@ -658,7 +658,7 @@ int main(int argc, char** argv) {
         LOG("  ✓ Event loop created");
 
         // 加载嵌入的库（Preact 等）
-        if (lightui::embedded::HasEmbeddedJS()) {
+        if (mbink::embedded::HasEmbeddedJS()) {
             LoadEmbeddedLibraries(runtime.get());
             RegisterPreactModules(runtime.get());
         } else {
@@ -671,24 +671,24 @@ int main(int argc, char** argv) {
         if (is_embedded) {
             // ===== 嵌入模式：初始化资源管理器 + 执行字节码 =====
             if (!embedded_payload.assets_index.empty()) {
-                lightui::AssetManager::Instance().Initialize(
+                mbink::AssetManager::Instance().Initialize(
                     embedded_payload.assets_data,
                     embedded_payload.assets_index
                 );
 
                 // 注册 ImageLoader 的资源提供者
                 ImageLoader::SetAssetProvider([](const std::string& path, std::vector<uint8_t>& data) {
-                    return lightui::AssetManager::Instance().GetAsset(path, data);
+                    return mbink::AssetManager::Instance().GetAsset(path, data);
                 });
 
                 // 注册 CSS 的资源提供者
                 LexborStyleSheet::SetAssetProvider([](const std::string& path, std::vector<uint8_t>& data) {
-                    return lightui::AssetManager::Instance().GetAsset(path, data);
+                    return mbink::AssetManager::Instance().GetAsset(path, data);
                 });
 
                 // 注册 Document 的资源提供者（用于 link 元素加载 CSS）
                 Document::SetAssetProvider([](const std::string& path, std::vector<uint8_t>& data) {
-                    return lightui::AssetManager::Instance().GetAsset(path, data);
+                    return mbink::AssetManager::Instance().GetAsset(path, data);
                 });
 
                 LOG("  ✓ Loaded " << embedded_payload.assets_index.size() << " embedded assets");
@@ -799,7 +799,7 @@ int main(int argc, char** argv) {
         // 4. 先清理 Preact/Hooks 在全局对象上的闭包引用（事件处理函数、调度器状态等）
         // 必须在 DOMBindings::Cleanup() 之前，因为 Cleanup 会把 global.document 设为 undefined，
         // 而 __preactCleanup 内部需要调用 element.removeEventListener。
-        lightui::bindings::DumpElementListenerStats();
+        mbink::bindings::DumpElementListenerStats();
         try {
             runtime->Eval(R"(
                 (function() {
@@ -820,26 +820,26 @@ int main(int argc, char** argv) {
         } catch (...) {
             // 忽略清理脚本异常，继续执行原生清理流程
         }
-        lightui::bindings::DumpElementListenerStats();
+        mbink::bindings::DumpElementListenerStats();
 
         // 5. 清理 DOM 绑定缓存 + JS 全局变量
         DOMBindings::Cleanup(runtime->GetContext());
-        lightui::bindings::DumpElementListenerStats();
+        mbink::bindings::DumpElementListenerStats();
 
         // 6. 释放 document（持有 DOM 树和事件监听器，这些可能包含 JSValue）
         document.reset();
-        lightui::bindings::DumpElementListenerStats();
+        mbink::bindings::DumpElementListenerStats();
 
         // 7. 清理 DOM 绑定映射（释放所有 Node* -> JSValue 的映射）
         // 必须在 QuickJS 运行时销毁之前调用
         DOMBindingMap::GetInstance().Clear();
-        lightui::bindings::DumpElementListenerStats();
+        mbink::bindings::DumpElementListenerStats();
 
         // 8. 清理 HostBridge/StateManager 的监听器，释放 watch 回调里的 JSValue 引用
         if (state_manager) {
             state_manager->clearWatchers();
         }
-        lightui::bindings::DumpElementListenerStats();
+        mbink::bindings::DumpElementListenerStats();
 
         // 9. 在 runtime 销毁前显式释放桥接对象，避免 quick_exit 跳过析构导致残留
         host_bridge.reset();
@@ -847,7 +847,7 @@ int main(int argc, char** argv) {
 
         // 10. document 销毁 + 全局闭包清理后触发一次 GC
         runtime->RunGC();
-        lightui::bindings::DumpElementListenerStats();
+        mbink::bindings::DumpElementListenerStats();
 
         // 11. 最后释放 QuickJS 运行时（此时所有 JSValue 应该已被释放）
         runtime.reset();

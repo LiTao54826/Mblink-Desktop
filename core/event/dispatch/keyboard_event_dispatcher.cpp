@@ -30,7 +30,7 @@
 
 #include <iostream>
 
-namespace lightui {
+namespace mbink {
 
 KeyboardEventDispatcher::KeyboardEventDispatcher() = default;
 
@@ -247,4 +247,4 @@ std::shared_ptr<Element> KeyboardEventDispatcher::GetFocusElement() const {
     return nullptr;
 }
 
-} // namespace lightui
+} // namespace mbink

@@ -1,5 +1,5 @@
 /**
- * LightUI Checkbox 组件
+ * MBink Checkbox 组件
  *
  * Props:
  * - checked: boolean

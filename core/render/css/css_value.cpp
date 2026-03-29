@@ -10,7 +10,7 @@
 #include <cctype>
 #include <cstdlib>
 
-namespace lightui {
+namespace mbink {
 
 // ========== ViewportSize 静态成员初始化 ==========
 // Default fallback values (800x600) used when viewport size is not set
@@ -937,5 +937,5 @@ std::vector<CSSBackgroundSize> CSSValue::ParseMultipleBackgroundSizes(const std:
     return sizes;
 }
 
-} // namespace lightui
+} // namespace mbink
 

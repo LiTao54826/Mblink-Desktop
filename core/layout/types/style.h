@@ -13,7 +13,7 @@
 #include <cstdint>
 #include <cmath>
 
-namespace lightui {
+namespace mbink {
 
 //------------------------------------------------------------------------------
 // Dimension Types
@@ -386,5 +386,5 @@ inline Rect<LengthPercentage> RectLPZero() {
     };
 }
 
-} // namespace lightui
+} // namespace mbink
 

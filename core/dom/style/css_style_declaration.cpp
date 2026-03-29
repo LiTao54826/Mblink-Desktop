@@ -15,7 +15,7 @@
 #include <cctype>
 #include <iostream>
 
-namespace lightui {
+namespace mbink {
 
 CSSStyleDeclaration::CSSStyleDeclaration(std::weak_ptr<Element> element)
     : element_(element)
@@ -393,5 +393,5 @@ void CSSStyleDeclaration::UpdateStyleAttribute(bool needs_layout) {
     elem->SetAttribute("style", css_text);
 }
 
-} // namespace lightui
+} // namespace mbink
 

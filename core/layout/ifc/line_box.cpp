@@ -15,7 +15,7 @@
 #include <cctype>
 #include <iostream>
 
-namespace lightui {
+namespace mbink {
 
 static bool ShouldTraceTrackedLineBox(const std::vector<InlineBox*>& boxes) {
     for (auto* box : boxes) {
@@ -195,7 +195,7 @@ void LineBox::ApplyTextAlign(const std::string& align) {
         return;
     }
 
-    static bool debug_gutter_align = std::getenv("LIGHTUI_DEBUG_GUTTER_ALIGN") != nullptr;
+    static bool debug_gutter_align = std::getenv("MBINK_DEBUG_GUTTER_ALIGN") != nullptr;
 
     if (align == "right" || align == "end") {
         if (debug_gutter_align) {
@@ -328,5 +328,5 @@ void LineBox::DistributeSpace(float extra_space) {
     }
 }
 
-} // namespace lightui
+} // namespace mbink
 

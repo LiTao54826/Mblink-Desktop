@@ -5,7 +5,7 @@
 
 #include "core/compositor/property_tree/property_trees.h"
 
-namespace lightui {
+namespace mbink {
 
 PropertyTrees::PropertyTrees() {
     // 四棵树在构造时会自动创建根节点
@@ -44,4 +44,4 @@ void PropertyTrees::Clear() {
     ++version_;
 }
 
-} // namespace lightui
+} // namespace mbink

@@ -19,7 +19,7 @@
 #include <unordered_map>
 #include <memory>
 
-namespace lightui {
+namespace mbink {
 
 // 前向声明
 class Element;
@@ -141,5 +141,5 @@ private:
     std::weak_ptr<Element> element_;  // 关联的元素（弱引用避免循环引用）
 };
 
-} // namespace lightui
+} // namespace mbink
 

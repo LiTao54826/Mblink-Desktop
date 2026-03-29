@@ -16,7 +16,7 @@
 #include <memory>
 #include <string>
 
-namespace lightui {
+namespace mbink {
 
 class InputEditingController;
 
@@ -376,5 +376,5 @@ private:
     bool is_dragging_range_ = false;  // 是否正在拖动 range 滑块
 };
 
-} // namespace lightui
+} // namespace mbink
 

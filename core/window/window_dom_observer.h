@@ -6,14 +6,14 @@
  * 监听 DOM 变化并触发窗口重绘。
  */
 
-#ifndef LIGHTUI_WINDOW_DOM_OBSERVER_H
-#define LIGHTUI_WINDOW_DOM_OBSERVER_H
+#ifndef MBINK_WINDOW_DOM_OBSERVER_H
+#define MBINK_WINDOW_DOM_OBSERVER_H
 
 #include "core/dom/observers/dom_observer.h"
 #include <memory>
 #include <string>
 
-namespace lightui {
+namespace mbink {
 
 class Window;
 class Node;
@@ -55,6 +55,6 @@ private:
     Window* window_;
 };
 
-}  // namespace lightui
+}  // namespace mbink
 
-#endif  // LIGHTUI_WINDOW_DOM_OBSERVER_H
+#endif  // MBINK_WINDOW_DOM_OBSERVER_H

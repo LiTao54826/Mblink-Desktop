@@ -62,7 +62,7 @@
 #include "include/core/SkSurface.h"
 #include "include/effects/SkDashPathEffect.h"
 
-namespace lightui {
+namespace mbink {
 
 // 静态成员初始化
 float RenderObject::viewport_width_ = 0.0f;
@@ -849,7 +849,7 @@ SkRect RenderObject::GetViewportBoundingRect() const {
 
 void RenderObject::MarkNeedsPaint() {
     // 🐛 hover bug 调试日志
-    static bool debug_hover = std::getenv("LIGHTUI_DEBUG_HOVER_BUG") != nullptr;
+    static bool debug_hover = std::getenv("MBINK_DEBUG_HOVER_BUG") != nullptr;
     if (debug_hover) {
         std::string tag = "unknown";
         std::string id = "";
@@ -2022,5 +2022,5 @@ void RenderObject::UpdateLayoutBoundaryCache() {
     boundary_cache_valid_ = true;
 }
 
-} // namespace lightui
+} // namespace mbink
 

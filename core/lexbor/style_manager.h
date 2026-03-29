@@ -12,7 +12,7 @@
 #include "lexbor_stylesheet.h"
 #include "core/render/animation/animation_controller.h"
 
-namespace lightui {
+namespace mbink {
 
 // 前向声明
 class Element;
@@ -215,5 +215,5 @@ private:
     AnimationController animation_controller_;    // 动画控制器
 };
 
-} // namespace lightui
+} // namespace mbink
 

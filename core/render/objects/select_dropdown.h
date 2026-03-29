@@ -11,7 +11,7 @@
 #include "include/core/SkRect.h"
 #include <memory>
 
-namespace lightui {
+namespace mbink {
 
 /**
  * @brief Select 下拉菜单信息
@@ -119,5 +119,5 @@ private:
     static constexpr float DROPDOWN_SHADOW_BLUR = 4.0f;
 };
 
-} // namespace lightui
+} // namespace mbink
 

@@ -18,7 +18,7 @@
 #include <memory>
 #include <vector>
 
-namespace lightui {
+namespace mbink {
 
 /**
  * @brief HTML Form元素类
@@ -155,5 +155,5 @@ private:
     static std::string URLEncode(const std::string& str);
 };
 
-} // namespace lightui
+} // namespace mbink
 

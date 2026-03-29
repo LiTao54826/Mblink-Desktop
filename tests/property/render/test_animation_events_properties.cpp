@@ -24,8 +24,8 @@
 #include <vector>
 #include <string>
 
-using namespace lightui;
-using namespace lightui::test;
+using namespace mbink;
+using namespace mbink::test;
 
 class AnimationEventsPropertyTest : public DOMTestBase {
 protected:

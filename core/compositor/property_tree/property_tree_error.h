@@ -16,7 +16,7 @@
 #include <vector>
 #include <memory>
 
-namespace lightui {
+namespace mbink {
 
 /**
  * @brief 属性树错误码
@@ -376,4 +376,4 @@ private:
         } \
     } while (0)
 
-} // namespace lightui
+} // namespace mbink

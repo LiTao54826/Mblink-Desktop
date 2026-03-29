@@ -4,7 +4,7 @@
 #include <memory>
 #include <string>
 
-namespace lightui {
+namespace mbink {
 
 struct InputEditState;
 
@@ -53,5 +53,5 @@ struct InputEditState {
 
 std::shared_ptr<InputEditState> CreateInputEditState();
 
-}  // namespace lightui
+}  // namespace mbink
 

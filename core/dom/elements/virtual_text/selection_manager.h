@@ -10,7 +10,7 @@
 #include <functional>
 #include <string>
 
-namespace lightui {
+namespace mbink {
 namespace virtual_text {
 
 /**
@@ -197,4 +197,4 @@ private:
 };
 
 }  // namespace virtual_text
-}  // namespace lightui
+}  // namespace mbink

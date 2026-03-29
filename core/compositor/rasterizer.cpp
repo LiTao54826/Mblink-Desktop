@@ -28,7 +28,7 @@
 #endif
 
 
-namespace lightui {
+namespace mbink {
 
 namespace {
 
@@ -776,4 +776,4 @@ void Rasterizer::ApplyLayerCanvasOffset(SkCanvas* canvas, CompositorLayer* layer
     LogTrackedRasterOffset(render_obj, layer, trace_state);
 }
 
-} // namespace lightui
+} // namespace mbink

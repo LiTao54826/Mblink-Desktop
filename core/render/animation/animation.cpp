@@ -10,7 +10,7 @@
 #include <cctype>
 #include <sstream>
 
-namespace lightui {
+namespace mbink {
 
 // ============================================================================
 // 辅助函数
@@ -402,5 +402,5 @@ std::vector<CSSAnimation> CSSAnimation::Parse(const std::string& str) {
     return animations;
 }
 
-} // namespace lightui
+} // namespace mbink
 

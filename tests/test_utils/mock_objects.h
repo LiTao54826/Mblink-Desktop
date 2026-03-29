@@ -14,7 +14,7 @@
 #include "core/dom/event.h"
 #include "core/dom/observers/dom_observer.h"
 
-namespace lightui {
+namespace mbink {
 namespace test {
 
 /**
@@ -93,4 +93,4 @@ private:
 };
 
 } // namespace test
-} // namespace lightui
+} // namespace mbink

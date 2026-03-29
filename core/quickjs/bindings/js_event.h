@@ -14,7 +14,7 @@
 #include "quickjs.h"
 #include "core/dom/event.h"
 
-namespace lightui {
+namespace mbink {
 namespace bindings {
 
 /**
@@ -40,4 +40,4 @@ JSValue WrapEvent(JSContext* ctx, std::shared_ptr<Event> event);
 std::shared_ptr<Event> UnwrapEvent(JSContext* ctx, JSValue value);
 
 } // namespace bindings
-} // namespace lightui
+} // namespace mbink

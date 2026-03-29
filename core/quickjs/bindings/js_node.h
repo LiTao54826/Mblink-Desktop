@@ -14,7 +14,7 @@
 #include "quickjs.h"
 #include "core/dom/node.h"
 
-namespace lightui {
+namespace mbink {
 
 namespace bindings {
 
@@ -47,4 +47,4 @@ JSValue WrapNode(JSContext* ctx, std::shared_ptr<Node> node);
 std::shared_ptr<Node> UnwrapNode(JSContext* ctx, JSValue value);
 
 } // namespace bindings
-} // namespace lightui
+} // namespace mbink

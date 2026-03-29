@@ -22,14 +22,14 @@
 
 namespace {
 
-std::shared_ptr<lightui::Element> FindContentEditableRootFromNode(
-    const std::shared_ptr<lightui::Node>& node) {
-    return lightui::GetContentEditableEditingHost(node);
+std::shared_ptr<mbink::Element> FindContentEditableRootFromNode(
+    const std::shared_ptr<mbink::Node>& node) {
+    return mbink::GetContentEditableEditingHost(node);
 }
 
 } // namespace
 
-namespace lightui {
+namespace mbink {
 
 SelectionManager::SelectionManager() = default;
 
@@ -425,4 +425,4 @@ CaretPosition SelectionManager::MoveCaretByCharacter(std::shared_ptr<Document> d
     return result;
 }
 
-} // namespace lightui
+} // namespace mbink

@@ -18,7 +18,7 @@ import ctypes
 import json as _json
 from contextlib import contextmanager
 
-# LightUIType 枚举值
+# MBinkType 枚举值
 _TYPE_NULL = 0
 _TYPE_BOOL = 1
 _TYPE_INT = 2
@@ -48,18 +48,18 @@ class SharedState:
         k = key.encode('utf-8')
 
         if value is None:
-            lib.lightui_shared_set_null(sh, k)
+            lib.mbink_shared_set_null(sh, k)
         elif isinstance(value, bool):
-            lib.lightui_shared_set_bool(sh, k, value)
+            lib.mbink_shared_set_bool(sh, k, value)
         elif isinstance(value, int):
-            lib.lightui_shared_set_int(sh, k, value)
+            lib.mbink_shared_set_int(sh, k, value)
         elif isinstance(value, float):
-            lib.lightui_shared_set_double(sh, k, value)
+            lib.mbink_shared_set_double(sh, k, value)
         elif isinstance(value, str):
-            lib.lightui_shared_set_string(sh, k, value.encode('utf-8'))
+            lib.mbink_shared_set_string(sh, k, value.encode('utf-8'))
         else:
             # list, dict 等复杂类型 → JSON
-            lib.lightui_shared_set_json(sh, k,
+            lib.mbink_shared_set_json(sh, k,
                                         _json.dumps(value, ensure_ascii=False).encode('utf-8'))
 
     def __getattr__(self, key):
@@ -70,54 +70,54 @@ class SharedState:
         sh = object.__getattribute__(self, '_shared')
         k = key.encode('utf-8')
 
-        t = lib.lightui_shared_get_type(sh, k)
+        t = lib.mbink_shared_get_type(sh, k)
 
         if t == _TYPE_NULL:
             return None
         elif t == _TYPE_BOOL:
-            return lib.lightui_shared_get_bool(sh, k)
+            return lib.mbink_shared_get_bool(sh, k)
         elif t == _TYPE_INT:
-            return lib.lightui_shared_get_int(sh, k)
+            return lib.mbink_shared_get_int(sh, k)
         elif t == _TYPE_DOUBLE:
-            return lib.lightui_shared_get_double(sh, k)
+            return lib.mbink_shared_get_double(sh, k)
         elif t == _TYPE_STRING:
-            raw = lib.lightui_shared_get_string(sh, k)
+            raw = lib.mbink_shared_get_string(sh, k)
             if raw:
                 try:
                     return ctypes.string_at(raw).decode('utf-8')
                 finally:
-                    lib.lightui_free(raw)
+                    lib.mbink_free(raw)
             return None
         else:
             # ARRAY / OBJECT → JSON 反序列化
-            raw = lib.lightui_shared_get_json(sh, k)
+            raw = lib.mbink_shared_get_json(sh, k)
             if raw:
                 try:
                     return _json.loads(ctypes.string_at(raw).decode('utf-8'))
                 finally:
-                    lib.lightui_free(raw)
+                    lib.mbink_free(raw)
             return None
 
     def __delattr__(self, key):
         lib = object.__getattribute__(self, '_lib')
         sh = object.__getattribute__(self, '_shared')
-        lib.lightui_shared_delete(sh, key.encode('utf-8'))
+        lib.mbink_shared_delete(sh, key.encode('utf-8'))
 
     def __contains__(self, key):
         lib = object.__getattribute__(self, '_lib')
         sh = object.__getattribute__(self, '_shared')
-        return lib.lightui_shared_has(sh, key.encode('utf-8'))
+        return lib.mbink_shared_has(sh, key.encode('utf-8'))
 
     @contextmanager
     def batch(self):
         """批量更新上下文管理器 — 抑制中间 __onSharedUpdate 调用"""
         lib = object.__getattribute__(self, '_lib')
         sh = object.__getattribute__(self, '_shared')
-        lib.lightui_shared_batch_begin(sh)
+        lib.mbink_shared_batch_begin(sh)
         try:
             yield self
         finally:
-            lib.lightui_shared_batch_end(sh)
+            lib.mbink_shared_batch_end(sh)
 
     def __repr__(self):
         name = object.__getattribute__(self, '_name')

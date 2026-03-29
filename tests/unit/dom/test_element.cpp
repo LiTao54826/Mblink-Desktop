@@ -20,7 +20,7 @@
 #include "dom/utils/dom_token_list.h"
 #include "dom/style/css_style_declaration.h"
 
-namespace lightui {
+namespace mbink {
 namespace test {
 
 class ElementTest : public DOMTestBase {};
@@ -465,4 +465,4 @@ TEST_F(ElementTest, CloneNodeDeep) {
 }
 
 } // namespace test
-} // namespace lightui
+} // namespace mbink

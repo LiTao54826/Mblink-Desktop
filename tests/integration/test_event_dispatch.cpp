@@ -9,7 +9,7 @@
 #include "dom/element.h"
 #include "dom/event.h"
 
-namespace lightui {
+namespace mbink {
 namespace test {
 
 class EventDispatchTest : public DOMTestBase {};
@@ -211,4 +211,4 @@ TEST_F(EventDispatchTest, CustomEvent) {
 }
 
 } // namespace test
-} // namespace lightui
+} // namespace mbink

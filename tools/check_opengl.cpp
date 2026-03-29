@@ -124,7 +124,7 @@ int main(int argc, char* argv[]) {
     
     std::cout << "=== 检测完成 ===" << std::endl;
     std::cout << "✅ 你的环境支持 OpenGL！" << std::endl;
-    std::cout << "✅ LightUI 应用可以在此环境中运行！" << std::endl;
+    std::cout << "✅ MBink 应用可以在此环境中运行！" << std::endl;
     
     return 0;
 }

@@ -2,7 +2,7 @@
  * @file state_manager.h
  * @brief 跨语言状态管理器
  * 
- * StateManager 是 LightUI 跨语言绑定的核心组件，提供：
+ * StateManager 是 MBink 跨语言绑定的核心组件，提供：
  * - 线程安全的状态存储
  * - 操作队列机制（写操作入队，主线程处理）
  * - 状态变化监听
@@ -23,14 +23,14 @@
 
 #include "nlohmann/json.hpp"
 
-namespace lightui {
+namespace mbink {
 
 using json = nlohmann::json;
 
 /**
  * @brief 状态值类型枚举
  */
-enum class LightUIType {
+enum class MBinkType {
     Null = 0,
     Bool,
     Int,
@@ -43,7 +43,7 @@ enum class LightUIType {
 /**
  * @brief 错误码枚举
  */
-enum class LightUIError {
+enum class MBinkError {
     Ok = 0,
     InvalidHandle = -1,
     NotFound = -2,
@@ -134,42 +134,42 @@ public:
      * @param name 状态名称
      * @return 错误码
      */
-    LightUIError createNull(const std::string& name);
+    MBinkError createNull(const std::string& name);
     
     /**
      * @brief 创建 bool 类型状态
      */
-    LightUIError createBool(const std::string& name, bool value);
+    MBinkError createBool(const std::string& name, bool value);
     
     /**
      * @brief 创建 int64 类型状态
      */
-    LightUIError createInt(const std::string& name, int64_t value);
+    MBinkError createInt(const std::string& name, int64_t value);
     
     /**
      * @brief 创建 double 类型状态
      */
-    LightUIError createDouble(const std::string& name, double value);
+    MBinkError createDouble(const std::string& name, double value);
     
     /**
      * @brief 创建 string 类型状态
      */
-    LightUIError createString(const std::string& name, const std::string& value);
+    MBinkError createString(const std::string& name, const std::string& value);
     
     /**
      * @brief 创建空数组状态
      */
-    LightUIError createArray(const std::string& name);
+    MBinkError createArray(const std::string& name);
     
     /**
      * @brief 创建空对象状态
      */
-    LightUIError createObject(const std::string& name);
+    MBinkError createObject(const std::string& name);
     
     /**
      * @brief 从 JSON 创建状态
      */
-    LightUIError createJson(const std::string& name, const json& value);
+    MBinkError createJson(const std::string& name, const json& value);
     
     // ========== 读取（线程安全） ==========
     
@@ -182,7 +182,7 @@ public:
      * @brief 获取状态类型
      * @return 状态类型，不存在返回 Null
      */
-    LightUIType type(const std::string& name) const;
+    MBinkType type(const std::string& name) const;
     
     /**
      * @brief 获取 bool 值
@@ -234,39 +234,39 @@ public:
     
     // ========== 写入（入队） ==========
     
-    LightUIError setNull(const std::string& name);
-    LightUIError setBool(const std::string& name, bool value);
-    LightUIError setInt(const std::string& name, int64_t value);
-    LightUIError setDouble(const std::string& name, double value);
-    LightUIError setString(const std::string& name, const std::string& value);
-    LightUIError setJson(const std::string& name, const json& value);
-    LightUIError remove(const std::string& name);
+    MBinkError setNull(const std::string& name);
+    MBinkError setBool(const std::string& name, bool value);
+    MBinkError setInt(const std::string& name, int64_t value);
+    MBinkError setDouble(const std::string& name, double value);
+    MBinkError setString(const std::string& name, const std::string& value);
+    MBinkError setJson(const std::string& name, const json& value);
+    MBinkError remove(const std::string& name);
     
     // ========== 数组操作（入队） ==========
     
-    LightUIError arrayPush(const std::string& name, const json& item);
-    LightUIError arrayPop(const std::string& name);
-    LightUIError arrayShift(const std::string& name);
-    LightUIError arrayUnshift(const std::string& name, const json& item);
-    LightUIError arrayRemove(const std::string& name, int index);
-    LightUIError arrayClear(const std::string& name);
-    LightUIError arraySet(const std::string& name, int index, const json& item);
+    MBinkError arrayPush(const std::string& name, const json& item);
+    MBinkError arrayPop(const std::string& name);
+    MBinkError arrayShift(const std::string& name);
+    MBinkError arrayUnshift(const std::string& name, const json& item);
+    MBinkError arrayRemove(const std::string& name, int index);
+    MBinkError arrayClear(const std::string& name);
+    MBinkError arraySet(const std::string& name, int index, const json& item);
     
     // ========== 对象操作（入队） ==========
     
-    LightUIError objectSet(const std::string& name, const std::string& key, const json& value);
-    LightUIError objectRemove(const std::string& name, const std::string& key);
-    LightUIError objectClear(const std::string& name);
+    MBinkError objectSet(const std::string& name, const std::string& key, const json& value);
+    MBinkError objectRemove(const std::string& name, const std::string& key);
+    MBinkError objectClear(const std::string& name);
     
     // ========== 数值操作（入队） ==========
     
-    LightUIError increment(const std::string& name, double delta);
-    LightUIError multiply(const std::string& name, double factor);
+    MBinkError increment(const std::string& name, double delta);
+    MBinkError multiply(const std::string& name, double factor);
     
     // ========== 字符串操作（入队） ==========
     
-    LightUIError stringAppend(const std::string& name, const std::string& suffix);
-    LightUIError stringPrepend(const std::string& name, const std::string& prefix);
+    MBinkError stringAppend(const std::string& name, const std::string& suffix);
+    MBinkError stringPrepend(const std::string& name, const std::string& prefix);
     
     // ========== 监听 ==========
     
@@ -327,8 +327,8 @@ private:
     // 通知监听器
     void notify(const std::string& name);
     
-    // 从 json 类型转换为 LightUIType
-    static LightUIType jsonTypeToLightUIType(const json& j);
+    // 从 json 类型转换为 MBinkType
+    static MBinkType jsonTypeToMBinkType(const json& j);
     
     // 状态存储
     std::unordered_map<std::string, json> states_;
@@ -353,4 +353,4 @@ private:
     std::set<std::string> batchChanges_;
 };
 
-} // namespace lightui
+} // namespace mbink

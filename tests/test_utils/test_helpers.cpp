@@ -6,7 +6,7 @@
 #include "test_helpers.h"
 #include <sstream>
 
-namespace lightui {
+namespace mbink {
 namespace test {
 
 // ========== DOMTestBase ==========
@@ -152,4 +152,4 @@ std::vector<std::shared_ptr<Element>> FindAllElementsByTagName(
 }
 
 } // namespace test
-} // namespace lightui
+} // namespace mbink

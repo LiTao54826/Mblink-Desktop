@@ -87,16 +87,16 @@ target_include_directories(esm_loader PRIVATE
 )
 
 target_link_libraries(esm_loader PRIVATE
-    lightui_window
-    lightui_dom
-    lightui_quickjs
-    lightui_event
-    lightui_devtools
-    lightui_render
-    lightui_layout
-    lightui_lexbor
-    lightui_network
-    lightui_bridge
+    mbink_window
+    mbink_dom
+    mbink_quickjs
+    mbink_event
+    mbink_devtools
+    mbink_render
+    mbink_layout
+    mbink_lexbor
+    mbink_network
+    mbink_bridge
     SDL3::SDL3-static
     skia
 )

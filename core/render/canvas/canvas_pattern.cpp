@@ -9,7 +9,7 @@
 #include "include/core/SkSamplingOptions.h"
 #include <stdexcept>
 
-namespace lightui {
+namespace mbink {
 
 CanvasPattern::CanvasPattern(sk_sp<SkImage> image, PatternRepetition repetition)
     : image_(image)
@@ -72,4 +72,4 @@ PatternRepetition CanvasPattern::ParseRepetition(const std::string& repetition) 
     }
 }
 
-} // namespace lightui
+} // namespace mbink

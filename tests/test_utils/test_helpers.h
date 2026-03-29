@@ -18,7 +18,7 @@
 #include "dom/text.h"
 #include "dom/node.h"
 
-namespace lightui {
+namespace mbink {
 namespace test {
 
 /**
@@ -104,17 +104,17 @@ std::vector<std::shared_ptr<Element>> FindAllElementsByTagName(
     const std::string& tag_name);
 
 } // namespace test
-} // namespace lightui
+} // namespace mbink
 
 // 便捷宏
 #define EXPECT_DOM_EQ(node, expected) \
-    lightui::test::AssertDOMStructure(node, expected)
+    mbink::test::AssertDOMStructure(node, expected)
 
 #define EXPECT_ATTR_EQ(elem, attr, value) \
-    lightui::test::AssertElementAttribute(elem, attr, value)
+    mbink::test::AssertElementAttribute(elem, attr, value)
 
 #define EXPECT_HAS_CLASS(elem, cls) \
-    lightui::test::AssertElementHasClass(elem, cls)
+    mbink::test::AssertElementHasClass(elem, cls)
 
 #define EXPECT_NOT_HAS_CLASS(elem, cls) \
-    lightui::test::AssertElementNotHasClass(elem, cls)
+    mbink::test::AssertElementNotHasClass(elem, cls)

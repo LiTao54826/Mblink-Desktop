@@ -16,7 +16,7 @@
 #include <string>
 #include <cstdint>
 
-namespace lightui {
+namespace mbink {
 
 /**
  * @brief Transform text according to CSS text-transform property value
@@ -63,4 +63,4 @@ std::string ToLowerCase(const std::string& text);
  */
 std::string Capitalize(const std::string& text);
 
-} // namespace lightui
+} // namespace mbink

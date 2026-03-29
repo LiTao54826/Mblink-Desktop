@@ -13,7 +13,7 @@
 #include <random>
 #include <cmath>
 
-namespace lightui {
+namespace mbink {
 namespace {
 
 // 用于测试的具体渲染器实现
@@ -233,4 +233,4 @@ TEST_F(HitTestAccuracyPropertyTest, HitTestAtLineBoundaries) {
 }
 
 }  // namespace
-}  // namespace lightui
+}  // namespace mbink

@@ -3,7 +3,7 @@
 #include <memory>
 #include <vector>
 
-namespace lightui {
+namespace mbink {
 
 class Element;
 class Node;
@@ -59,5 +59,5 @@ std::vector<ContentEditableSelectionRect> ConvertRangeClientRects(
     const std::shared_ptr<Element>& contenteditable_root,
     const std::shared_ptr<Range>& range);
 
-} // namespace lightui
+} // namespace mbink
 

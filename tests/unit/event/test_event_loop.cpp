@@ -7,7 +7,7 @@
 #include "event/loop/event_loop.h"
 #include "event/loop/task_scheduler.h"
 
-namespace lightui {
+namespace mbink {
 namespace test {
 
 class EventLoopTest : public ::testing::Test {
@@ -102,4 +102,4 @@ TEST_F(EventLoopTest, CursorVisibility) {
 }
 
 } // namespace test
-} // namespace lightui
+} // namespace mbink

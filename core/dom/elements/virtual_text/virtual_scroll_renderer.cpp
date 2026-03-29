@@ -12,7 +12,7 @@
 
 #include <algorithm>
 
-namespace lightui {
+namespace mbink {
 
 VirtualScrollRenderer::VirtualScrollRenderer() {
     // 使用空字体作为默认值，实际使用时应通过 SetFont 设置
@@ -134,4 +134,4 @@ void VirtualScrollRenderer::ClampScrollOffset() {
     if (scroll_offset_ > max_offset) scroll_offset_ = max_offset;
 }
 
-}  // namespace lightui
+}  // namespace mbink

@@ -12,7 +12,7 @@ Preact-First Counter 示例
   python main.py
 """
 
-from lightui import App
+from mbink import App
 
 app = App("Preact Counter", 400, 350)
 

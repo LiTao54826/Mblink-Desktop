@@ -3,7 +3,7 @@
 #include "include/encode/SkPngEncoder.h"
 #include <sstream>
 
-namespace lightui {
+namespace mbink {
 
 // ==================== 构造函数 ====================
 
@@ -270,5 +270,5 @@ void UnifiedRenderer::EnsureImageRenderer() {
     }
 }
 
-} // namespace lightui
+} // namespace mbink
 

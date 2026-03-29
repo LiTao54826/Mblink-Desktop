@@ -24,7 +24,7 @@
 
 #include "core/editing/input_edit_state.h"
 
-namespace lightui {
+namespace mbink {
 
 // 前向声明
 class Document;
@@ -435,4 +435,4 @@ private:
     std::unordered_map<Document*, CompositionState> composition_states_;
 };
 
-} // namespace lightui
+} // namespace mbink

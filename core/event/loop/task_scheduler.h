@@ -12,7 +12,7 @@
 #include <vector>
 #include <queue>
 
-namespace lightui {
+namespace mbink {
 
 /**
  * @brief 任务类型
@@ -199,5 +199,5 @@ private:
     std::vector<std::function<void()>> microtasks_;
 };
 
-} // namespace lightui
+} // namespace mbink
 

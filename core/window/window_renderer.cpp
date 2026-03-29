@@ -32,7 +32,7 @@
 #include <vector>
 #include <cstdlib>
 
-namespace lightui {
+namespace mbink {
 
 WindowRenderer::WindowRenderer(Window* window)
     : window_(window) {
@@ -136,8 +136,8 @@ void WindowRenderer::UpdateAnimations(double current_time) {
         return;
     }
 
-    // 调试开关：LIGHTUI_DEBUG_ANIM_LOOP=1
-    static const bool debug_anim_loop = (std::getenv("LIGHTUI_DEBUG_ANIM_LOOP") != nullptr);
+    // 调试开关：MBINK_DEBUG_ANIM_LOOP=1
+    static const bool debug_anim_loop = (std::getenv("MBINK_DEBUG_ANIM_LOOP") != nullptr);
     static uint64_t debug_frame = 0;
     ++debug_frame;
 
@@ -411,4 +411,4 @@ void WindowRenderer::RestoreScrollPositions(RenderObject* render_obj,
     }
 }
 
-} // namespace lightui
+} // namespace mbink

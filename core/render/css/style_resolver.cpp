@@ -35,7 +35,7 @@
 #include <iostream>
 #include <cstdio>
 
-namespace lightui {
+namespace mbink {
 
 // ========== StyleResolver 实现 ==========
 
@@ -3306,5 +3306,5 @@ std::shared_ptr<RenderObject> RenderTreeBuilder::CreateRenderObjectForText(Text*
     return CreateRenderObjectForText(text_shared, parent_style);
 }
 
-} // namespace lightui
+} // namespace mbink
 

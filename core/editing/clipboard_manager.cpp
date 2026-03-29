@@ -17,7 +17,7 @@
 #include <SDL3/SDL.h>
 #endif
 
-namespace lightui {
+namespace mbink {
 
 // ========== 构造函数/析构函数 ==========
 
@@ -278,4 +278,4 @@ std::shared_ptr<Element> ClipboardManager::FindEditableElement(std::shared_ptr<N
     return nullptr;
 }
 
-} // namespace lightui
+} // namespace mbink

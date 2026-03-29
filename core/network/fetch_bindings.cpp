@@ -7,7 +7,7 @@
 #include <iostream>
 #include <cstring>
 
-namespace lightui {
+namespace mbink {
 
 // 静态实例指针
 FetchBindings* FetchBindings::instance_ = nullptr;
@@ -417,5 +417,5 @@ void FetchBindings::EvalJS(const std::string& code, const std::string& filename)
     JS_FreeValue(ctx_, result);
 }
 
-} // namespace lightui
+} // namespace mbink
 

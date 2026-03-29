@@ -16,7 +16,7 @@
 #include "dom/document.h"
 #include "dom/element.h"
 
-namespace lightui {
+namespace mbink {
 namespace test {
 
 class NativeLayoutEngineTest : public DOMTestBase {
@@ -334,4 +334,4 @@ TEST_F(NativeLayoutEngineTest, NestedFlexbox) {
 }
 
 } // namespace test
-} // namespace lightui
+} // namespace mbink

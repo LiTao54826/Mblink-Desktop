@@ -1,4 +1,4 @@
-# LightUI 第三方库 CMake配置
+# MBink 第三方库 CMake配置
 #
 # 功能：
 # - 管理第三方依赖库
@@ -92,8 +92,8 @@ endif()
 # ============================================
 # Skia (可选)
 # ============================================
-message(STATUS "  Checking Skia: LIGHTUI_USE_SKIA=${LIGHTUI_USE_SKIA}")
-if(LIGHTUI_USE_SKIA)
+message(STATUS "  Checking Skia: MBINK_USE_SKIA=${MBINK_USE_SKIA}")
+if(MBINK_USE_SKIA)
     if(EXISTS "${THIRD_PARTY_DIR}/skia")
         message(STATUS "  Found Skia")
 
@@ -189,7 +189,7 @@ if(LIGHTUI_USE_SKIA)
         set(SKIA_FOUND FALSE PARENT_SCOPE)
     endif()
 else()
-    message(STATUS "  Skia disabled (LIGHTUI_USE_SKIA=OFF)")
+    message(STATUS "  Skia disabled (MBINK_USE_SKIA=OFF)")
     set(SKIA_FOUND FALSE PARENT_SCOPE)
 endif()
 

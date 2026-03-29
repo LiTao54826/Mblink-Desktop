@@ -23,7 +23,7 @@
 #include <iostream>
 #include <cstdio>
 
-namespace lightui {
+namespace mbink {
 
 BoxModelView::BoxModelView() = default;
 
@@ -372,4 +372,4 @@ bool BoxModelView::HandleMouseMove(int x, int y) {
     return false;
 }
 
-} // namespace lightui
+} // namespace mbink

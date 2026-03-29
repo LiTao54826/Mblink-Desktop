@@ -74,7 +74,7 @@ add_executable(app_bundler
 add_dependencies(app_bundler generate_embedded_upx)
 
 target_link_libraries(app_bundler
-    lightui_quickjs
+    mbink_quickjs
 )
 
 # 添加包含目录

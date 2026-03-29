@@ -5,7 +5,7 @@
 
 #include "dom_binding_map.h"
 
-namespace lightui {
+namespace mbink {
 
 DOMBindingMap& DOMBindingMap::GetInstance() {
     static DOMBindingMap instance;
@@ -57,4 +57,4 @@ DOMBindingMap::~DOMBindingMap() {
     Clear();
 }
 
-} // namespace lightui
+} // namespace mbink

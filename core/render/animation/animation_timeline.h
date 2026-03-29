@@ -10,7 +10,7 @@
 #include <optional>
 #include <memory>
 
-namespace lightui {
+namespace mbink {
 
 // 前向声明
 class RenderObject;
@@ -245,5 +245,5 @@ private:
                                             float progress);
 };
 
-} // namespace lightui
+} // namespace mbink
 

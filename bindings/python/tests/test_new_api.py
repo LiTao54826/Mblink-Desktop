@@ -1,8 +1,8 @@
 """
-LightUI 新 API 测试
+MBink 新 API 测试
 
 测试 HostBridge.bind 参数解包、模块导入结构等。
-使用低级 API（lightui_core）直接测试，不创建 Window。
+使用低级 API（mbink_core）直接测试，不创建 Window。
 """
 
 import sys
@@ -12,7 +12,7 @@ import json
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
-import lightui_core as lui
+import mbink_core as lui
 
 
 def _bind_with_wrapper(bridge, func):
@@ -242,24 +242,24 @@ def test_bindable_vs_bind():
 
 # ========== 模块导入结构测试 ==========
 
-def test_import_lightui():
-    """测试 import lightui 导出结构"""
+def test_import_mbink():
+    """测试 import mbink 导出结构"""
     try:
-        import lightui as ui
-        assert hasattr(ui, 'App'),       "lightui.App 未导出"
-        assert hasattr(ui, 'version'),   "lightui.version 未导出"
-        assert hasattr(ui, 'SharedState'), "lightui.SharedState 未导出"
-        assert callable(ui.App),         "lightui.App 不可调用"
-        assert callable(ui.version),     "lightui.version 不可调用"
-        print("[TEST_PASS] import_lightui")
+        import mbink as ui
+        assert hasattr(ui, 'App'),       "mbink.App 未导出"
+        assert hasattr(ui, 'version'),   "mbink.version 未导出"
+        assert hasattr(ui, 'SharedState'), "mbink.SharedState 未导出"
+        assert callable(ui.App),         "mbink.App 不可调用"
+        assert callable(ui.version),     "mbink.version 不可调用"
+        print("[TEST_PASS] import_mbink")
     except Exception as e:
-        print(f"[TEST_FAIL] import_lightui: {e}")
+        print(f"[TEST_FAIL] import_mbink: {e}")
 
 
 def test_import_core():
-    """测试 import lightui_core 低级 API"""
+    """测试 import mbink_core 低级 API"""
     try:
-        import lightui_core as core
+        import mbink_core as core
         # 状态管理
         assert hasattr(core, 'App'),        "core.App 未导出"
         assert hasattr(core, 'State'),      "core.State 未导出"
@@ -281,10 +281,10 @@ def test_import_core():
 
 
 def test_backward_compat():
-    """测试高级封装 lightui.App 可正常导入"""
+    """测试兼容层 mbink.App 仍可正常导入"""
     try:
-        from lightui import App
-        assert callable(App), "lightui.App 不可调用"
+        from mbink import App
+        assert callable(App), "mbink.App 不可调用"
         print("[TEST_PASS] backward_compat")
     except Exception as e:
         print(f"[TEST_FAIL] backward_compat: {e}")
@@ -311,7 +311,7 @@ def test_int_state_decrement_via_increment():
 
 
 def main():
-    print("[TEST_START] LightUI 新 API 测试")
+    print("[TEST_START] MBink 新 API 测试")
     test_bindable_no_args()
     test_bindable_single_arg()
     test_bindable_multi_args_dict()
@@ -320,7 +320,7 @@ def main():
     test_bindable_fallback()
     test_bindable_return_types()
     test_bindable_vs_bind()
-    test_import_lightui()
+    test_import_mbink()
     test_import_core()
     test_backward_compat()
     test_int_state_decrement_via_increment()

@@ -12,9 +12,9 @@ set(UTILS_HEADERS
     encoding_utils.h
 )
 
-add_library(lightui_utils STATIC ${UTILS_SOURCES})
+add_library(mbink_utils STATIC ${UTILS_SOURCES})
 
-target_include_directories(lightui_utils PUBLIC
+target_include_directories(mbink_utils PUBLIC
     ${CMAKE_SOURCE_DIR}
     ${CMAKE_SOURCE_DIR}/core
 )

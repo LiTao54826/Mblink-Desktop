@@ -13,7 +13,7 @@
 #include <stdexcept>
 #include <iostream>
 
-namespace lightui {
+namespace mbink {
 
 // ========== 构造函数和析构函数 ==========
 
@@ -514,4 +514,4 @@ std::shared_ptr<RenderObject> Node::GetRenderObject() const {
     return render_object_.lock();
 }
 
-} // namespace lightui
+} // namespace mbink

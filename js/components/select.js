@@ -1,5 +1,5 @@
 /**
- * LightUI Select 组件
+ * MBink Select 组件
  *
  * Props:
  * - value: any

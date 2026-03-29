@@ -12,7 +12,7 @@
 #include <iostream>
 #include <sstream>
 
-namespace lightui {
+namespace mbink {
 
 // =========================================================================
 // 构造和析构
@@ -731,4 +731,4 @@ void PaintLayer::DumpTree(int indent) const {
     }
 }
 
-} // namespace lightui
+} // namespace mbink

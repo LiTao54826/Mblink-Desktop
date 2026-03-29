@@ -17,7 +17,7 @@
 #include <algorithm>
 #include <iostream>
 
-namespace lightui {
+namespace mbink {
 
 Selection::Selection(std::shared_ptr<Document> document)
     : document_(document)
@@ -732,4 +732,4 @@ void Selection::DispatchSelectionChangeEvent() {
     });
 }
 
-} // namespace lightui
+} // namespace mbink

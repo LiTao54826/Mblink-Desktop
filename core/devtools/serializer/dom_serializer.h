@@ -11,7 +11,7 @@
 #include "core/dom/node.h"
 #include "core/dom/element.h"
 
-namespace lightui {
+namespace mbink {
 
 /**
  * @brief 序列化选项
@@ -57,4 +57,4 @@ private:
     static bool IsSelfClosingTag(const std::string& tag_name);
 };
 
-} // namespace lightui
+} // namespace mbink

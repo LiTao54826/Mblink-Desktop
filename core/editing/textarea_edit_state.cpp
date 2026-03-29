@@ -2,7 +2,7 @@
 
 #include <algorithm>
 
-namespace lightui {
+namespace mbink {
 
 int TextAreaEditState::GetSelectionStart() const {
     return std::min(selection_anchor, selection_focus);
@@ -75,5 +75,5 @@ std::shared_ptr<TextAreaEditState> CreateTextAreaEditState() {
     return std::make_shared<TextAreaEditState>();
 }
 
-}  // namespace lightui
+}  // namespace mbink
 

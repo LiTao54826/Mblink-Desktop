@@ -3,7 +3,7 @@
 #include <string>
 #include <variant>
 
-namespace lightui {
+namespace mbink {
 
 enum class InputEditCommandType {
     InsertText,
@@ -80,4 +80,4 @@ struct InputEditCommand {
 
 InputEditCommand MakeCommand(InputEditCommandType type);
 
-}  // namespace lightui
+}  // namespace mbink

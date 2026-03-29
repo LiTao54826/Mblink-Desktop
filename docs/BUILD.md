@@ -14,18 +14,18 @@
 - `tests/`（默认关闭）
 
 从顶层 `CMakeLists.txt` 可见：
-- `bindings/python` 由 `LIGHTUI_BUILD_PYTHON_BINDING` 控制
-- `tests` 由 `LIGHTUI_BUILD_TESTS` 控制
+- `bindings/python` 由 `MBINK_BUILD_PYTHON_BINDING` 控制（兼容旧 `MBINK_BUILD_PYTHON_BINDING`）
+- `tests` 由 `MBINK_BUILD_TESTS` 控制（兼容旧 `MBINK_BUILD_TESTS`）
 - `tools/app_loader` 当前处于注释状态，不参与默认构建
 
 ## 主要 CMake 选项
 
-- `LIGHTUI_BUILD_PYTHON_BINDING=ON`
-- `LIGHTUI_BUILD_RUST_BINDING=OFF`
-- `LIGHTUI_BUILD_GO_BINDING=OFF`
-- `LIGHTUI_USE_SKIA=ON`
-- `LIGHTUI_BUILD_TESTS=OFF`
-- `LIGHTUI_ENABLE_LTO=OFF`
+- `MBINK_BUILD_PYTHON_BINDING=ON`
+- `MBINK_BUILD_RUST_BINDING=OFF`
+- `MBINK_BUILD_GO_BINDING=OFF`
+- `MBINK_USE_SKIA=ON`
+- `MBINK_BUILD_TESTS=OFF`
+- `MBINK_ENABLE_LTO=OFF`
 
 ## 基本构建
 
@@ -37,7 +37,7 @@ cmake --build build --config Release
 ## 构建测试
 
 ```bash
-cmake -B build -DLIGHTUI_BUILD_TESTS=ON
+cmake -B build -DMBINK_BUILD_TESTS=ON
 cmake --build build --config Release
 ctest --test-dir build --output-on-failure
 ```
@@ -51,11 +51,11 @@ ctest --test-dir build --output-on-failure
 - pybind11
 
 单独关注的输出位置：
-- `bindings/python/lightui/bin/`
+- `bindings/python/mbink/bin/`（兼容保留 `bindings/python/mbink/bin/`）
 
 从当前构建脚本还可以确认：
-- `lightui_api` 会作为共享库构建
-- 构建完成后会复制到 `bindings/python/lightui/bin/`
+- `mbink_api` 会作为共享库构建
+- 构建完成后会复制到 `bindings/python/mbink/bin/`
 - Python 绑定会链接多组核心静态库，而不只是一个单独的入口目标
 
 ## 依赖说明

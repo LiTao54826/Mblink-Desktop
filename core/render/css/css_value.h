@@ -16,7 +16,7 @@
 #include <vector>
 #include "include/core/SkColor.h"
 
-namespace lightui {
+namespace mbink {
 
 /**
  * @brief CSS 单位类型
@@ -413,5 +413,5 @@ public:
 private:
 };
 
-} // namespace lightui
+} // namespace mbink
 

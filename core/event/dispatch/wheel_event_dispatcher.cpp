@@ -25,7 +25,7 @@
 #include <algorithm>
 #include <vector>
 
-namespace lightui {
+namespace mbink {
 
 WheelEventDispatcher::WheelEventDispatcher() = default;
 
@@ -377,4 +377,4 @@ bool WheelEventDispatcher::HandleScrollableElementWheel(
     return true;
 }
 
-} // namespace lightui
+} // namespace mbink

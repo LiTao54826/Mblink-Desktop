@@ -16,7 +16,7 @@
 #include "util/resolve.h"
 #include <vector>
 
-namespace lightui {
+namespace mbink {
 
 //------------------------------------------------------------------------------
 // Block Item
@@ -119,5 +119,5 @@ Size<float> PerformAbsoluteLayoutOnAbsoluteChildren(
     Point<float> area_offset
 );
 
-} // namespace lightui
+} // namespace mbink
 

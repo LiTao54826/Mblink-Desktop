@@ -22,7 +22,7 @@ extern "C" {
 #include "quickjs/quickjs.h"
 }
 
-namespace lightui {
+namespace mbink {
 
 class StateManager;
 
@@ -194,4 +194,4 @@ private:
     static JSValue jsonToJsValue(JSContext* ctx, const std::string& json);
 };
 
-} // namespace lightui
+} // namespace mbink

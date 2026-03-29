@@ -13,12 +13,12 @@
 #include "text_run.h"
 
 // Forward declarations
-namespace lightui {
+namespace mbink {
 class RenderObject;
 struct ComputedStyle;
 }
 
-namespace lightui {
+namespace mbink {
 
 /**
  * @brief 内联盒类型
@@ -192,5 +192,5 @@ struct InlineBox {
     }
 };
 
-} // namespace lightui
+} // namespace mbink
 

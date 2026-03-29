@@ -17,7 +17,7 @@
 #include <sstream>
 #include <iomanip>
 
-namespace lightui {
+namespace mbink {
 
 namespace {
     const float ROW_HEIGHT = 18.0f;
@@ -499,4 +499,4 @@ bool ComputedStylesView::IsDefaultValue(const std::string& property_name, const 
     return value == it->second;
 }
 
-} // namespace lightui
+} // namespace mbink

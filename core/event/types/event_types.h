@@ -15,7 +15,7 @@
 #include <string>
 #include <unordered_map>
 
-namespace lightui {
+namespace mbink {
 
 /**
  * @brief 事件ID枚举
@@ -221,5 +221,5 @@ inline bool IsEventCancelable(EventId id) {
     return spec ? spec->cancelable : true;
 }
 
-} // namespace lightui
+} // namespace mbink
 

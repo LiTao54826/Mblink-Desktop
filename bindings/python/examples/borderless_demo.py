@@ -1,5 +1,5 @@
 """
-LightUI 无边框窗口示例
+MBink 无边框窗口示例
 
 演示功能：
 - borderless=True 无边框窗口
@@ -16,7 +16,7 @@ import sys
 import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
-import lightui as ui
+import mbink as ui
 
 app = ui.App("无边框窗口", 800, 600, borderless=True, resizable=True, gpu=False)
 
@@ -137,7 +137,7 @@ app.load_html("""
         <div class="feature-item"><span class="feature-check">✓</span> 圆角窗口样式</div>
       </div>
     </div>
-    <div class="footer">LightUI Python Borderless Window</div>
+    <div class="footer">MBink Python Borderless Window</div>
   </div>
 </body>
 </html>
@@ -147,4 +147,4 @@ app.run()
 
 # cd D:\code\C\MBink\bindings\python
 # pip install -e .
-# pyinstaller -F examples\borderless_demo.py --hidden-import=lightui_core --add-binary="lightui\bin\lightui_core.pyd;lightui\bin"
+# pyinstaller -F examples\borderless_demo.py --hidden-import=mbink_core --add-binary="mbink\bin\mbink.dll;mbink\bin"

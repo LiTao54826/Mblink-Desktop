@@ -15,7 +15,7 @@
 #include <string_view>
 #include <vector>
 
-namespace lightui {
+namespace mbink {
 
 /**
  * @brief 日志专用缓冲区
@@ -162,6 +162,6 @@ private:
     static std::string FormatTimestamp(uint32_t timestamp);
 };
 
-}  // namespace lightui
+}  // namespace mbink
 
 #endif  // MBINK_DOM_ELEMENTS_LOGVIEW_LOG_BUFFER_H_

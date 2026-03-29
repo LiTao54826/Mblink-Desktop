@@ -13,16 +13,16 @@ set(BRIDGE_HEADERS
     host_bridge.h
 )
 
-add_library(lightui_bridge STATIC ${BRIDGE_SOURCES})
+add_library(mbink_bridge STATIC ${BRIDGE_SOURCES})
 
-target_include_directories(lightui_bridge PUBLIC
+target_include_directories(mbink_bridge PUBLIC
     ${CMAKE_SOURCE_DIR}
     ${CMAKE_SOURCE_DIR}/core
     ${CMAKE_SOURCE_DIR}/third_party
 )
 
-target_link_libraries(lightui_bridge PUBLIC
-    lightui_utils
-    lightui_quickjs
+target_link_libraries(mbink_bridge PUBLIC
+    mbink_utils
+    mbink_quickjs
     nlohmann_json
 )

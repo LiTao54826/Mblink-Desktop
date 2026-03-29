@@ -29,7 +29,7 @@
 struct lxb_dom_node;
 typedef struct lxb_dom_node lxb_dom_node_t;
 
-namespace lightui {
+namespace mbink {
 
 // 前向声明
 class Event;
@@ -535,5 +535,5 @@ private:
     std::unordered_map<std::string, uint64_t> inline_event_handlers_;
 };
 
-} // namespace lightui
+} // namespace mbink
 

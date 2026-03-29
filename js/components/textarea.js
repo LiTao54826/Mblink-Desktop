@@ -1,5 +1,5 @@
 /**
- * LightUI Textarea 组件
+ * MBink Textarea 组件
  *
  * Props:
  * - value: string

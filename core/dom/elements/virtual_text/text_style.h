@@ -12,7 +12,7 @@
 #include <array>
 #include <cstdint>
 
-namespace lightui {
+namespace mbink {
 
 /**
  * @brief 文本样式
@@ -218,4 +218,4 @@ inline ColorPalette ColorPalette::Monokai() {
     return palette;
 }
 
-}  // namespace lightui
+}  // namespace mbink

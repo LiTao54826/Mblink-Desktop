@@ -5,7 +5,7 @@
 #include <algorithm>
 #include <cmath>
 
-namespace lightui {
+namespace mbink {
 
 // ============================================================================
 // RunningTransition Implementation
@@ -378,4 +378,4 @@ CSSTransform AnimationTimeline::InterpolateTransform(const CSSTransform& start,
     return result;
 }
 
-} // namespace lightui
+} // namespace mbink

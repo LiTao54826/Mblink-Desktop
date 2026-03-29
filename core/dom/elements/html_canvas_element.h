@@ -15,7 +15,7 @@
 #include <string>
 #include <memory>
 
-namespace lightui {
+namespace mbink {
 
 class CanvasRenderingContext2D;
 
@@ -131,4 +131,4 @@ private:
     std::unique_ptr<CanvasRenderingContext2D> context_2d_;
 };
 
-} // namespace lightui
+} // namespace mbink

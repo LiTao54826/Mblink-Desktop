@@ -1,5 +1,5 @@
 /**
- * LightUI Modal 弹窗组件测试 - ES Module 版本
+ * MBink Modal 弹窗组件测试 - ES Module 版本
  */
 
 import { h, render } from 'preact';

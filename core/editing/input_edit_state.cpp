@@ -2,7 +2,7 @@
 
 #include <algorithm>
 
-namespace lightui {
+namespace mbink {
 
 namespace {
 constexpr uint32_t ToBits(EditDirtyFlags flags) {
@@ -91,5 +91,5 @@ std::shared_ptr<InputEditState> CreateInputEditState() {
 }
 
 
-}  // namespace lightui
+}  // namespace mbink
 

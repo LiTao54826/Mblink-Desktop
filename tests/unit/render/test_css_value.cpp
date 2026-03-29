@@ -6,7 +6,7 @@
 #include <gtest/gtest.h>
 #include "render/css/css_value.h"
 
-namespace lightui {
+namespace mbink {
 namespace test {
 
 class CSSValueTest : public ::testing::Test {};
@@ -165,4 +165,4 @@ TEST_F(CSSValueTest, ParseWithWhitespace) {
 }
 
 } // namespace test
-} // namespace lightui
+} // namespace mbink

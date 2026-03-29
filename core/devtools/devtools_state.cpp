@@ -7,7 +7,7 @@
 #include <sstream>
 #include <fstream>
 
-namespace lightui {
+namespace mbink {
 
 std::string DevToolsState::ToJSON() const {
     std::ostringstream oss;
@@ -136,4 +136,4 @@ DevToolsState DevToolsState::FromJSON(const std::string& json) {
     return state;
 }
 
-} // namespace lightui
+} // namespace mbink

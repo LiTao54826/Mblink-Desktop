@@ -14,7 +14,7 @@ extern "C" {
 #include <algorithm>
 #include <cstdio>
 
-namespace lightui {
+namespace mbink {
 
 HostBridge::HostBridge(JSContext* ctx, StateManager* stateManager)
     : ctx_(ctx), stateManager_(stateManager) {
@@ -394,17 +394,17 @@ JSValue HostBridge::jsStateType(JSContext* ctx, JSValueConst thisVal,
     const char* name = JS_ToCString(ctx, argv[0]);
     if (!name) return JS_NewString(ctx, "null");
     
-    LightUIType type = bridge->stateManager_->type(name);
+    MBinkType type = bridge->stateManager_->type(name);
     JS_FreeCString(ctx, name);
     
     const char* typeStr = "null";
     switch (type) {
-        case LightUIType::Bool: typeStr = "boolean"; break;
-        case LightUIType::Int:
-        case LightUIType::Double: typeStr = "number"; break;
-        case LightUIType::String: typeStr = "string"; break;
-        case LightUIType::Array: typeStr = "array"; break;
-        case LightUIType::Object: typeStr = "object"; break;
+        case MBinkType::Bool: typeStr = "boolean"; break;
+        case MBinkType::Int:
+        case MBinkType::Double: typeStr = "number"; break;
+        case MBinkType::String: typeStr = "string"; break;
+        case MBinkType::Array: typeStr = "array"; break;
+        case MBinkType::Object: typeStr = "object"; break;
         default: break;
     }
     
@@ -576,4 +576,4 @@ JSValue HostBridge::jsonToJsValue(JSContext* ctx, const std::string& jsonStr) {
     return JS_ParseJSON(ctx, jsonStr.c_str(), jsonStr.size(), "<json>");
 }
 
-} // namespace lightui
+} // namespace mbink

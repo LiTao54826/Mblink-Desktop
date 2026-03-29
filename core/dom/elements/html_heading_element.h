@@ -14,7 +14,7 @@
 #include <string>
 #include <memory>
 
-namespace lightui {
+namespace mbink {
 
 /**
  * @brief HTML Heading元素类
@@ -57,5 +57,5 @@ private:
     int level_;  ///< 标题级别（1-6）
 };
 
-} // namespace lightui
+} // namespace mbink
 

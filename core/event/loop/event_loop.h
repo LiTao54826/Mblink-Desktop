@@ -13,7 +13,7 @@
 #include <unordered_set>
 #include <string>
 
-namespace lightui {
+namespace mbink {
 
 // 前向声明
 class WindowManager;
@@ -431,5 +431,5 @@ private:
     void UpdateMouseCursor(const HitTestResult& hit_result, Uint32 window_id);
 };
 
-} // namespace lightui
+} // namespace mbink
 

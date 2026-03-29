@@ -1,6 +1,6 @@
 # Layer 子系统
 
-本目录包含 LightUI 的统一层系统实现。
+本目录包含 MBink 的统一层系统实现。
 
 ## 文件说明
 
@@ -11,7 +11,7 @@
 
 ## PaintLayer 架构
 
-PaintLayer 是 LightUI 统一层系统的核心类，参考 Blink 的 PaintLayer 设计，整合了：
+PaintLayer 是 MBink 统一层系统的核心类，参考 Blink 的 PaintLayer 设计，整合了：
 
 - **Stacking Context 管理**：判断元素是否创建 stacking context
 - **Z-index 排序**：维护正负 z-index 子层列表

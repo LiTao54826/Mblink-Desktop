@@ -17,7 +17,7 @@
 #include <memory>
 #include "include/core/SkImage.h"
 
-namespace lightui {
+namespace mbink {
 
 /**
  * @brief 图片缓存项
@@ -127,5 +127,5 @@ private:
     size_t current_cache_size_;     ///< 当前缓存大小（字节）
 };
 
-} // namespace lightui
+} // namespace mbink
 

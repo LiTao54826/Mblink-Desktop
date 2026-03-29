@@ -20,7 +20,7 @@
 #include <string>
 #include <unordered_map>
 
-namespace lightui {
+namespace mbink {
 
 // 前向声明
 class Element;
@@ -223,5 +223,5 @@ private:
     Shapes shapes_;
 };
 
-} // namespace lightui
+} // namespace mbink
 

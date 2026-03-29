@@ -6,7 +6,7 @@
 #include "core/compositor/property_tree/nodes/effect_tree_node.h"
 #include <algorithm>
 
-namespace lightui {
+namespace mbink {
 
 EffectTreeNode::EffectTreeNode() {
     flags_ = EffectFlags::kNone;
@@ -134,4 +134,4 @@ void EffectTreeNode::UpdateFlags() {
     }
 }
 
-} // namespace lightui
+} // namespace mbink

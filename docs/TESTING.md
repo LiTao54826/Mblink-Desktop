@@ -20,16 +20,16 @@
 ## CMake 中已接入的测试目标
 
 可确认的目标：
-- `lightui_unit_tests`
-- `lightui_render_tests`
-- `lightui_integration_tests`
-- `lightui_property_tests`
-- `lightui_performance_tests`（需额外开启）
+- `mbink_unit_tests`
+- `mbink_render_tests`
+- `mbink_integration_tests`
+- `mbink_property_tests`
+- `mbink_performance_tests`（需额外开启）
 
 ## 启用方式
 
 ```bash
-cmake -B build -DLIGHTUI_BUILD_TESTS=ON
+cmake -B build -DMBINK_BUILD_TESTS=ON
 cmake --build build --config Release
 ctest --test-dir build --output-on-failure
 ```
@@ -37,7 +37,7 @@ ctest --test-dir build --output-on-failure
 性能测试需要额外选项：
 
 ```bash
-cmake -B build -DLIGHTUI_BUILD_TESTS=ON -DLIGHTUI_BUILD_PERF_TESTS=ON
+cmake -B build -DMBINK_BUILD_TESTS=ON -DMBINK_BUILD_PERF_TESTS=ON
 cmake --build build --config Release
 ```
 

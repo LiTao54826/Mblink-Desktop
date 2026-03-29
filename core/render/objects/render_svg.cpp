@@ -14,7 +14,7 @@
 #include <cmath>
 #include <iostream>
 
-namespace lightui {
+namespace mbink {
 
 // ========== RenderSVG 基类实现 ==========
 
@@ -766,5 +766,5 @@ void RenderSVGText::Layout(float parent_width, float parent_height) {
     layout.height = metrics.fDescent - metrics.fAscent;
 }
 
-} // namespace lightui
+} // namespace mbink
 

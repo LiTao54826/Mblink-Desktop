@@ -12,7 +12,7 @@
 #include <string>
 #include <memory>
 
-namespace lightui {
+namespace mbink {
 
 /**
  * @brief HTML Anchor元素类
@@ -172,5 +172,5 @@ private:
     bool visited_;           ///< 是否已访问
 };
 
-} // namespace lightui
+} // namespace mbink
 

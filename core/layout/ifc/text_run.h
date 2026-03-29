@@ -12,12 +12,12 @@
 #include <cstddef>
 
 // Forward declarations
-namespace lightui {
+namespace mbink {
 class RenderText;
 struct ComputedStyle;
 }
 
-namespace lightui {
+namespace mbink {
 
 /**
  * @brief 文本片段结构
@@ -132,5 +132,5 @@ struct TextRun {
     bool CanBreakAt(size_t byte_offset) const;
 };
 
-} // namespace lightui
+} // namespace mbink
 

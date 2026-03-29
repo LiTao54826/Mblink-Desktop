@@ -19,7 +19,7 @@
 #include "include/effects/SkGradientShader.h"
 #include "css/css_value.h"
 
-namespace lightui {
+namespace mbink {
 
 /**
  * @brief 渐变渲染器
@@ -110,5 +110,5 @@ private:
                                          std::vector<SkScalar>& positions);
 };
 
-} // namespace lightui
+} // namespace mbink
 

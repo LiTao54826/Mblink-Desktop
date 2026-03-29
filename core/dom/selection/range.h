@@ -17,7 +17,7 @@
 #include <string>
 #include <vector>
 
-namespace lightui {
+namespace mbink {
 
 // 前向声明
 class Node;
@@ -275,4 +275,4 @@ private:
     int end_offset_ = 0;
 };
 
-} // namespace lightui
+} // namespace mbink

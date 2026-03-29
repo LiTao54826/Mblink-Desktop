@@ -25,7 +25,7 @@
 class SkCanvas;
 class SkRegion;
 
-namespace lightui {
+namespace mbink {
 
 /**
  * @brief 光栅化统计信息
@@ -233,4 +233,4 @@ private:
     std::unordered_map<uint32_t, SkPoint> last_scroll_offsets_;
 };
 
-} // namespace lightui
+} // namespace mbink

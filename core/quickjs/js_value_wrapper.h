@@ -36,7 +36,7 @@
 #include "quickjs.h"
 #include <utility>
 
-namespace lightui {
+namespace mbink {
 
 /**
  * @brief RAII 包装器，自动管理 JSValue 生命周期
@@ -235,5 +235,5 @@ inline std::shared_ptr<JSValueWrapper> MakeJSValueWrapper(JSContext* ctx, JSValu
     return std::make_shared<JSValueWrapper>(ctx, value);
 }
 
-} // namespace lightui
+} // namespace mbink
 

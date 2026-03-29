@@ -26,7 +26,7 @@
 #include <numeric>
 #include <algorithm>
 
-namespace lightui {
+namespace mbink {
 namespace test {
 
 /**
@@ -494,4 +494,4 @@ TEST_F(IncrementalLayoutPerformanceTest, WideTreeStructure) {
 }
 
 } // namespace test
-} // namespace lightui
+} // namespace mbink

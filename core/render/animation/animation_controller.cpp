@@ -14,7 +14,7 @@
 #include <algorithm>
 #include <cmath>
 
-namespace lightui {
+namespace mbink {
 
 // ============================================================================
 // RunningAnimation 实现
@@ -59,8 +59,8 @@ void AnimationController::RegisterKeyframes(const KeyframesRule& rule) {
 
 void AnimationController::StartAnimation(std::shared_ptr<Element> element, const CSSAnimation& animation) {
     static bool debug_animation =
-        std::getenv("LIGHTUI_DEBUG_ANIMATION") != nullptr ||
-        std::getenv("LIGHTUI_DEBUG_ANIM") != nullptr;
+        std::getenv("MBINK_DEBUG_ANIMATION") != nullptr ||
+        std::getenv("MBINK_DEBUG_ANIM") != nullptr;
 
     if (!element || !animation.IsValid()) {
         if (debug_animation) {
@@ -703,4 +703,4 @@ void AnimationController::FireAnimationEvent(const RunningAnimation& anim,
     element->DispatchEvent(event);
 }
 
-} // namespace lightui
+} // namespace mbink

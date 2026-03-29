@@ -11,7 +11,7 @@
 #include <algorithm>
 #include <functional>
 
-namespace lightui {
+namespace mbink {
 
 // ============================================================================
 // 构造和析构
@@ -710,4 +710,4 @@ std::vector<LayerTreeManager::LayerInspectionInfo> LayerTreeManager::InspectAllL
 void LayerTreeManager::DumpLayerTree() const {
 }
 
-} // namespace lightui
+} // namespace mbink

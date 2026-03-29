@@ -8,7 +8,7 @@
 #include "../event.h"
 #include <algorithm>
 
-namespace lightui {
+namespace mbink {
 
 // ========== 构造函数 ==========
 
@@ -398,5 +398,5 @@ void HTMLSelectElement::SelectPreviousOption() {
     SetSelectedIndex(prev);
 }
 
-} // namespace lightui
+} // namespace mbink
 

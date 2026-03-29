@@ -1,8 +1,8 @@
 /**
  * @file bindings.cpp
- * @brief LightUI Python 绑定 (pybind11)
+ * @brief MBink Python 绑定 (pybind11)
  *
- * 使用 pybind11 将 LightUI C++ API 暴露给 Python。
+ * 使用 pybind11 将 MBink C++ API 暴露给 Python。
  * 编译成 .pyd (Windows) 或 .so (Linux/macOS) 扩展模块。
  *
  * Phase 1: 状态管理功能（已完成）
@@ -42,7 +42,7 @@
 #include <filesystem>
 
 namespace py = pybind11;
-using namespace lightui;
+using namespace mbink;
 using json = nlohmann::json;
 namespace fs = std::filesystem;
 
@@ -265,7 +265,7 @@ public:
 
 class PyApp {
 public:
-    PyApp(const std::string& title = "LightUI App", int width = 800, int height = 600)
+    PyApp(const std::string& title = "MBink App", int width = 800, int height = 600)
         : title_(title), width_(width), height_(height) {
         sm_ = std::make_unique<StateManager>();
     }
@@ -570,7 +570,7 @@ private:
  */
 class PyWindow {
 public:
-    PyWindow(const std::string& title = "LightUI Window",
+    PyWindow(const std::string& title = "MBink Window",
              int width = 800, int height = 600,
              bool headless = false,
              bool borderless = false,
@@ -1248,8 +1248,8 @@ private:
 
 // ========== pybind11 模块定义 ==========
 
-PYBIND11_MODULE(lightui_core, m) {
-    m.doc() = "LightUI Python bindings - State management and Window";
+PYBIND11_MODULE(mbink_core, m) {
+    m.doc() = "MBink Python bindings - State management and Window";
     
     // ===== Phase 1: State 类 =====
     py::class_<PyState, std::shared_ptr<PyState>>(m, "State")
@@ -1294,7 +1294,7 @@ PYBIND11_MODULE(lightui_core, m) {
     
     py::class_<PyApp>(m, "App")
         .def(py::init<const std::string&, int, int>(),
-             py::arg("title") = "LightUI App",
+             py::arg("title") = "MBink App",
              py::arg("width") = 800,
              py::arg("height") = 600)
         .def("state", &PyApp::state, py::arg("name"), py::arg("initial") = py::none())
@@ -1357,7 +1357,7 @@ PYBIND11_MODULE(lightui_core, m) {
     
     py::class_<PyWindow, std::shared_ptr<PyWindow>>(m, "Window")
         .def(py::init<const std::string&, int, int, bool, bool, bool, bool, bool, int, bool>(),
-             py::arg("title") = "LightUI Window",
+             py::arg("title") = "MBink Window",
              py::arg("width") = 800,
              py::arg("height") = 600,
              py::arg("headless") = false,

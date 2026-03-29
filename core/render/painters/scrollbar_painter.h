@@ -19,7 +19,7 @@
 #include "include/core/SkColor.h"
 #include "include/core/SkPaint.h"
 
-namespace lightui {
+namespace mbink {
 
 // 前向声明
 class RenderObject;
@@ -185,4 +185,4 @@ private:
     SkColor thumb_color_ = SkColorSetRGB(193, 193, 193);  // 深灰色滑块
 };
 
-} // namespace lightui
+} // namespace mbink

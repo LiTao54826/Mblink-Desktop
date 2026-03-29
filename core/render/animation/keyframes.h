@@ -5,15 +5,15 @@
  * @date 2025-11-14
  */
 
-#ifndef LIGHTUI_CORE_RENDER_KEYFRAMES_H_
-#define LIGHTUI_CORE_RENDER_KEYFRAMES_H_
+#ifndef MBINK_CORE_RENDER_KEYFRAMES_H_
+#define MBINK_CORE_RENDER_KEYFRAMES_H_
 
 #include <map>
 #include <string>
 #include <tuple>
 #include <vector>
 
-namespace lightui {
+namespace mbink {
 
 /**
  * @brief 关键帧
@@ -232,7 +232,7 @@ private:
     std::map<std::string, KeyframesRule> rules_;
 };
 
-} // namespace lightui
+} // namespace mbink
 
-#endif // LIGHTUI_CORE_RENDER_KEYFRAMES_H_
+#endif // MBINK_CORE_RENDER_KEYFRAMES_H_
 

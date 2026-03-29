@@ -1,16 +1,16 @@
-#ifndef LIGHTUI_LAYOUT_ENGINE_H
-#define LIGHTUI_LAYOUT_ENGINE_H
+#ifndef MBINK_LAYOUT_ENGINE_H
+#define MBINK_LAYOUT_ENGINE_H
 
 #include <memory>
 #include "native_layout_engine.h"
 
 // Forward declarations
-namespace lightui {
+namespace mbink {
 class RenderObject;
 struct ComputedStyle;
 }
 
-namespace lightui {
+namespace mbink {
 
 /**
  * @brief Layout engine using native C++ implementation
@@ -96,6 +96,6 @@ private:
     NativeLayoutEngine native_engine_;
 };
 
-} // namespace lightui
+} // namespace mbink
 
-#endif // LIGHTUI_LAYOUT_ENGINE_H
+#endif // MBINK_LAYOUT_ENGINE_H

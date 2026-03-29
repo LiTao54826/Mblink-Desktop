@@ -10,7 +10,7 @@
 #include <iomanip>
 #include <sstream>
 
-namespace lightui {
+namespace mbink {
 
 LogBuffer::LogBuffer(size_t max_entries)
     : max_entries_(max_entries),
@@ -216,4 +216,4 @@ std::string LogBuffer::FormatTimestamp(uint32_t timestamp) {
     return oss.str();
 }
 
-}  // namespace lightui
+}  // namespace mbink

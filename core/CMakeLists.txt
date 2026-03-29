@@ -1,4 +1,4 @@
-# LightUI 核心库 CMake配置
+# MBink 核心库 CMake配置
 
 message(STATUS "Configuring core library...")
 
@@ -19,27 +19,27 @@ add_subdirectory(devtools)
 add_subdirectory(compositor)
 
 # 创建主库 (使用INTERFACE库，因为所有实现都在子模块中)
-add_library(lightui INTERFACE)
+add_library(mbink INTERFACE)
 
 # 链接所有子模块
-target_link_libraries(lightui INTERFACE
-    lightui_window
-    lightui_quickjs
-    lightui_dom
-    lightui_editing
-    lightui_event
-    lightui_layout
-    lightui_render
-    lightui_bridge
-    lightui_api
-    lightui_utils
-    lightui_network
-    lightui_devtools
-    lightui_compositor
+target_link_libraries(mbink INTERFACE
+    mbink_window
+    mbink_quickjs
+    mbink_dom
+    mbink_editing
+    mbink_event
+    mbink_layout
+    mbink_render
+    mbink_bridge
+    mbink_api
+    mbink_utils
+    mbink_network
+    mbink_devtools
+    mbink_compositor
 )
 
 # 包含目录
-target_include_directories(lightui INTERFACE
+target_include_directories(mbink INTERFACE
     ${CMAKE_SOURCE_DIR}
     ${CMAKE_SOURCE_DIR}/core
 )

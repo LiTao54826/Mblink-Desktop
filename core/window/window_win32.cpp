@@ -24,7 +24,7 @@
 #undef SubclassWindow  // windowsx.h 定义了 SubclassWindow 宏，与我们的函数名冲突
 #pragma comment(lib, "dwmapi.lib")
 
-namespace lightui {
+namespace mbink {
 namespace win32 {
 
 // Windows 子类化窗口过程，用于拦截可能导致闪烁的消息
@@ -397,6 +397,6 @@ void EnableBorderlessShadow(HWND hwnd) {
 }
 
 }  // namespace win32
-}  // namespace lightui
+}  // namespace mbink
 
 #endif  // _WIN32

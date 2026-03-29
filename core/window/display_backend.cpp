@@ -41,7 +41,7 @@
 #include <GL/gl.h>
 #endif
 
-namespace lightui {
+namespace mbink {
 
 // ============================================================================
 // DisplayBackend 静态方法
@@ -1367,5 +1367,5 @@ void GDIDisplayBackend::Shutdown() {
 
 #endif // _WIN32
 
-} // namespace lightui
+} // namespace mbink
 

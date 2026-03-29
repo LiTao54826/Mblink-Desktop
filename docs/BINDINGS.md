@@ -19,10 +19,10 @@ Python 绑定当前是唯一可以确认有真实实现的绑定层。
 - 使用 `pybind11` 构建扩展模块
 - 存在 `bindings/python/src/bindings.cpp`
 - 存在 Python 包包装层：
-  - `lightui/__init__.py`
-  - `lightui/app.py`
-  - `lightui/shared.py`
-  - `lightui/_ffi.py`
+  - `mbink/__init__.py`
+  - `mbink/app.py`
+  - `mbink/shared.py`
+  - `mbink/_ffi.py`
 - 顶层 CMake 默认启用 Python binding
 
 当前绑定形态应理解为：
@@ -31,7 +31,7 @@ Python 绑定当前是唯一可以确认有真实实现的绑定层。
 
 ## Python 绑定的当前问题
 
-- 命名仍以 `LightUI` / `lightui` 为主
+- 命名仍以 `MBink` / `mbink` 为主
 - 与仓库名 `MBink` 还未完全统一
 - 版本信息和仓库品牌信息仍需统一整理
 

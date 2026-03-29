@@ -18,7 +18,7 @@
 #include <memory>
 #include "quickjs.h"
 
-namespace lightui {
+namespace mbink {
 
 // 前向声明
 class DataTransfer;
@@ -54,4 +54,4 @@ std::shared_ptr<DataTransfer> UnwrapDataTransfer(JSContext* ctx, JSValue value);
 JSClassID GetDataTransferClassID();
 
 } // namespace bindings
-} // namespace lightui
+} // namespace mbink

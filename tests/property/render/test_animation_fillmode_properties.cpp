@@ -20,8 +20,8 @@
 #include <random>
 #include <cmath>
 
-using namespace lightui;
-using namespace lightui::test;
+using namespace mbink;
+using namespace mbink::test;
 
 class AnimationFillModePropertyTest : public DOMTestBase {
 protected:

@@ -11,7 +11,7 @@
 #include <string>
 #include <string_view>
 
-namespace lightui {
+namespace mbink {
 namespace embedded {
 
 /**
@@ -35,5 +35,5 @@ std::string_view GetDomPolyfillsJS();
 bool HasEmbeddedJS();
 
 }  // namespace embedded
-}  // namespace lightui
+}  // namespace mbink
 

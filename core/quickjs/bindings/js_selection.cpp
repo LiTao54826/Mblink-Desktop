@@ -11,7 +11,7 @@
 #include "core/dom/document.h"
 #include <iostream>
 
-namespace lightui {
+namespace mbink {
 namespace bindings {
 
 // ========== Opaque 数据结构 ==========
@@ -526,4 +526,4 @@ std::shared_ptr<Selection> UnwrapSelection(JSContext* ctx, JSValue value) {
 }
 
 } // namespace bindings
-} // namespace lightui
+} // namespace mbink

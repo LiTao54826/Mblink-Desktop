@@ -37,7 +37,7 @@
 #include <algorithm>
 #include <cctype>
 
-namespace lightui {
+namespace mbink {
 
 // 前向声明
 void InitImageConstructor(JSContext* ctx);
@@ -3152,4 +3152,4 @@ void InitImageConstructor(JSContext* ctx) {
     JS_FreeValue(ctx, global);
 }
 
-} // namespace lightui
+} // namespace mbink

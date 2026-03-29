@@ -17,7 +17,7 @@
 #include "dom/text.h"
 #include "dom/document.h"
 
-namespace lightui {
+namespace mbink {
 namespace test {
 
 class NodeTest : public DOMTestBase {};
@@ -282,4 +282,4 @@ TEST_F(NodeTest, AppendedChildGetsOwnerDocument) {
 }
 
 } // namespace test
-} // namespace lightui
+} // namespace mbink

@@ -15,7 +15,7 @@
 #include <string>
 #include <vector>
 
-namespace lightui {
+namespace mbink {
 namespace {
 
 class RandomGenerator {
@@ -422,4 +422,4 @@ TEST_F(Utf8BoundaryPropertyTest, ConsecutiveMultibyteCharacters) {
 }
 
 }  // namespace
-}  // namespace lightui
+}  // namespace mbink

@@ -11,7 +11,7 @@
 #include <functional>
 #include <string>
 
-namespace lightui {
+namespace mbink {
 
 /**
  * @brief 鼠标事件类型
@@ -184,5 +184,5 @@ private:
     const bool* keyboard_state_ = nullptr;
 };
 
-} // namespace lightui
+} // namespace mbink
 

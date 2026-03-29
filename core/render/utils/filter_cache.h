@@ -20,7 +20,7 @@
 #include <chrono>
 #include <optional>
 
-namespace lightui {
+namespace mbink {
 
 /**
  * @brief 滤镜缓存条目
@@ -258,5 +258,5 @@ private:
     TransformMatrixCache transform_cache_;    ///< 变换矩阵缓存
 };
 
-} // namespace lightui
+} // namespace mbink
 

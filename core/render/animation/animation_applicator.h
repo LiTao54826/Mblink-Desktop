@@ -11,8 +11,8 @@
  * - 支持属性树系统的直接属性更新（不触发光栅化）
  */
 
-#ifndef LIGHTUI_CORE_RENDER_ANIMATION_APPLICATOR_H_
-#define LIGHTUI_CORE_RENDER_ANIMATION_APPLICATOR_H_
+#ifndef MBINK_CORE_RENDER_ANIMATION_APPLICATOR_H_
+#define MBINK_CORE_RENDER_ANIMATION_APPLICATOR_H_
 
 #include "animation_controller.h"
 #include "core/render/objects/render_object.h"
@@ -21,7 +21,7 @@
 #include <map>
 #include <memory>
 
-namespace lightui {
+namespace mbink {
 
 // 前向声明
 class PaintArtifactCompositor;
@@ -269,6 +269,6 @@ private:
     SkColor ParseColor(const std::string& str) const;
 };
 
-} // namespace lightui
+} // namespace mbink
 
-#endif // LIGHTUI_CORE_RENDER_ANIMATION_APPLICATOR_H_
+#endif // MBINK_CORE_RENDER_ANIMATION_APPLICATOR_H_

@@ -1,6 +1,6 @@
 """
 Finance Tracker — 个人财务记账本
-展示 LightUI Python 绑定的高级特性：
+展示 MBink Python 绑定的高级特性：
 
   - 多字段 SharedState（records / summary / filter / months）
   - Python 端数据计算（月度汇总、分类统计）
@@ -12,7 +12,7 @@ import json
 import os
 from datetime import date, datetime
 
-from lightui import App
+from mbink import App
 
 # ── 路径 ────────────────────────────────────────────────────
 _DIR = os.path.dirname(os.path.abspath(__file__))

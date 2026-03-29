@@ -12,7 +12,7 @@
 #include <deque>
 #include <stdexcept>
 
-namespace lightui {
+namespace mbink {
 
 /**
  * @brief 泛型环形缓冲区
@@ -189,4 +189,4 @@ private:
     }
 };
 
-}  // namespace lightui
+}  // namespace mbink

@@ -12,7 +12,7 @@
 
 class SkCanvas;
 
-namespace lightui {
+namespace mbink {
 
 /**
  * @brief 属性信息
@@ -56,4 +56,4 @@ private:
                              const std::vector<AttributeInfo>& attributes);
 };
 
-} // namespace lightui
+} // namespace mbink

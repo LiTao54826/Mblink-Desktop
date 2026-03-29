@@ -111,7 +111,7 @@ static bool LoadGLExtensions() { return true; }
 #include "include/gpu/ganesh/GrBackendSurface.h"
 #include "include/core/SkColorSpace.h"
 
-namespace lightui {
+namespace mbink {
 
 FBOManager::FBOManager() = default;
 
@@ -378,4 +378,4 @@ bool FBOManager::CheckGLError(const char* operation) {
     return true;
 }
 
-} // namespace lightui
+} // namespace mbink

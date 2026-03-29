@@ -12,13 +12,13 @@
  * **Validates: Requirements 1.1, 1.2, 1.3**
  */
 
-#ifndef LIGHTUI_CONTENT_VERSION_H
-#define LIGHTUI_CONTENT_VERSION_H
+#ifndef MBINK_CONTENT_VERSION_H
+#define MBINK_CONTENT_VERSION_H
 
 #include <atomic>
 #include <cstdint>
 
-namespace lightui {
+namespace mbink {
 
 /**
  * @brief Content version manager for tracking layout-affecting changes
@@ -86,6 +86,6 @@ private:
     std::atomic<uint64_t> version_counter_{0};
 };
 
-} // namespace lightui
+} // namespace mbink
 
-#endif // LIGHTUI_CONTENT_VERSION_H
+#endif // MBINK_CONTENT_VERSION_H

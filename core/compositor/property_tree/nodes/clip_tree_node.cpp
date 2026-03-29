@@ -6,7 +6,7 @@
 #include "core/compositor/property_tree/nodes/clip_tree_node.h"
 #include "core/compositor/property_tree/nodes/transform_tree_node.h"
 
-namespace lightui {
+namespace mbink {
 
 ClipTreeNode::ClipTreeNode() {
     type_ = ClipType::kNone;
@@ -187,4 +187,4 @@ void ClipTreeNode::InvalidateAccumulatedClipCache() {
     }
 }
 
-} // namespace lightui
+} // namespace mbink

@@ -16,7 +16,7 @@
 #include <string>
 #include "inline_box.h"
 
-namespace lightui {
+namespace mbink {
 
 /**
  * @brief 垂直对齐方式
@@ -159,5 +159,5 @@ private:
     void DistributeSpace(float extra_space);
 };
 
-} // namespace lightui
+} // namespace mbink
 

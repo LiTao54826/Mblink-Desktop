@@ -6,7 +6,7 @@
 #include <gtest/gtest.h>
 #include "render/text/text_renderer.h"
 
-namespace lightui {
+namespace mbink {
 namespace test {
 
 class TextRendererTest : public ::testing::Test {
@@ -129,4 +129,4 @@ TEST_F(TextRendererTest, MeasureMixedTextWidthMixed) {
 }
 
 } // namespace test
-} // namespace lightui
+} // namespace mbink

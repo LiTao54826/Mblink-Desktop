@@ -6,7 +6,7 @@
 #include "drag_event.h"
 #include "core/event/types/data_transfer.h"
 
-namespace lightui {
+namespace mbink {
 
 // 事件类型常量定义
 const std::string DragEvent::DRAG_START = "dragstart";
@@ -41,4 +41,4 @@ void DragEvent::SetScreenPosition(int x, int y) {
     screen_y_ = y;
 }
 
-} // namespace lightui
+} // namespace mbink

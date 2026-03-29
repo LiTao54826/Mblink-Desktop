@@ -12,7 +12,7 @@
 #include <vector>
 #include "core/dom/observers/dom_observer.h"
 
-namespace lightui {
+namespace mbink {
 
 // 前向声明
 class Element;
@@ -171,5 +171,5 @@ private:
     std::weak_ptr<Document> registered_document_;
 };
 
-} // namespace lightui
+} // namespace mbink
 

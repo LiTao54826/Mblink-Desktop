@@ -15,7 +15,7 @@
 
 #include <memory>
 
-namespace lightui {
+namespace mbink {
 
 // 前向声明
 class Document;
@@ -126,4 +126,4 @@ private:
     Document* current_document_ = nullptr;
 };
 
-} // namespace lightui
+} // namespace mbink

@@ -20,7 +20,7 @@
 #include <cstring>
 #include <thread>
 
-namespace lightui {
+namespace mbink {
 
 /**
  * @brief Unix PTY 后端
@@ -162,6 +162,6 @@ std::unique_ptr<PtyBackend> PtyBackend::Create() {
     return std::make_unique<UnixPtyBackend>();
 }
 
-}  // namespace lightui
+}  // namespace mbink
 
 #endif  // !_WIN32

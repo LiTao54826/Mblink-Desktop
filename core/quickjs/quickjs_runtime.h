@@ -34,7 +34,7 @@
 #include "nlohmann/json.hpp"
 #include "quickjs/js_value_wrapper.h"
 
-namespace lightui {
+namespace mbink {
 
 using json = nlohmann::json;
 
@@ -358,5 +358,5 @@ private:
     int next_task_id_ = 1;
 };
 
-} // namespace lightui
+} // namespace mbink
 

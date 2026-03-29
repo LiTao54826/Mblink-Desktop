@@ -17,7 +17,7 @@
 #include "include/core/SkCanvas.h"
 #include "include/core/SkRect.h"
 
-namespace lightui {
+namespace mbink {
 
 // 前向声明
 class Window;
@@ -241,4 +241,4 @@ private:
     float last_body_scroll_y_ = 0.0f;
 };
 
-} // namespace lightui
+} // namespace mbink

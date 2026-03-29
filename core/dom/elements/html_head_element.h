@@ -7,7 +7,7 @@
 
 #include "../element.h"
 
-namespace lightui {
+namespace mbink {
 
 /**
  * @brief HTMLHeadElement 类
@@ -27,4 +27,4 @@ public:
     ~HTMLHeadElement() override = default;
 };
 
-} // namespace lightui
+} // namespace mbink

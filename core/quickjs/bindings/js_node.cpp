@@ -11,7 +11,7 @@
 #include <iostream>
 #include <cctype>
 
-namespace lightui {
+namespace mbink {
 namespace bindings {
 
 // ========== Opaque 数据结构 ==========
@@ -494,4 +494,4 @@ std::shared_ptr<Node> UnwrapNode(JSContext* ctx, JSValue value) {
 }
 
 } // namespace bindings
-} // namespace lightui
+} // namespace mbink

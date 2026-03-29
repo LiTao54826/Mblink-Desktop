@@ -21,7 +21,7 @@
 #include "image_loader.h"
 #include "image_cache.h"
 
-namespace lightui {
+namespace mbink {
 
 /**
  * @brief 图片渲染器类
@@ -153,5 +153,5 @@ private:
     bool cache_enabled_;        ///< 是否启用缓存
 };
 
-} // namespace lightui
+} // namespace mbink
 

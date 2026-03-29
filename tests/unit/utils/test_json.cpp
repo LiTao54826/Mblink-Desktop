@@ -6,7 +6,7 @@
 #include <gtest/gtest.h>
 // #include "utils/json.h"  // TODO: JSON implementation not ready yet
 
-namespace lightui {
+namespace mbink {
 namespace test {
 
 class JsonTest : public ::testing::Test {};
@@ -56,4 +56,4 @@ TEST_F(JsonTest, PlaceholderTest) {
 }
 
 } // namespace test
-} // namespace lightui
+} // namespace mbink

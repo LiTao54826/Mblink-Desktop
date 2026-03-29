@@ -17,7 +17,7 @@
 #include <unordered_map>
 #include <memory>
 
-namespace lightui {
+namespace mbink {
 
 // 前向声明
 class RenderObject;
@@ -216,4 +216,4 @@ private:
     std::unordered_map<RenderObject*, PropertyTreeState> render_object_states_;
 };
 
-} // namespace lightui
+} // namespace mbink

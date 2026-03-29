@@ -12,7 +12,7 @@
 #include <string>
 #include <vector>
 
-namespace lightui {
+namespace mbink {
 
 // 前向声明
 class Node;
@@ -212,4 +212,4 @@ private:
     std::vector<std::shared_ptr<Range>> ranges_;
 };
 
-} // namespace lightui
+} // namespace mbink

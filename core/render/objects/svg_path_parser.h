@@ -16,7 +16,7 @@
 #include "include/core/SkPath.h"
 #include "include/core/SkMatrix.h"
 
-namespace lightui {
+namespace mbink {
 
 /**
  * @brief SVG路径命令类型
@@ -181,5 +181,5 @@ public:
     static SkPath ToPolygonPath(const std::string& points);
 };
 
-} // namespace lightui
+} // namespace mbink
 

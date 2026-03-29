@@ -5,7 +5,7 @@
 #include <optional>
 #include "include/core/SkColor.h"
 
-namespace lightui {
+namespace mbink {
 
 /**
  * @brief 属性插值器
@@ -146,5 +146,5 @@ private:
     static SkColor InterpolateColorValue(SkColor from, SkColor to, float factor);
 };
 
-} // namespace lightui
+} // namespace mbink
 

@@ -13,7 +13,7 @@
 #include <vector>
 #include <utility>
 
-namespace lightui {
+namespace mbink {
 
 // 前向声明
 class Window;
@@ -117,4 +117,4 @@ private:
     std::unordered_set<RenderObject*> dirty_render_boundaries_;
 };
 
-}  // namespace lightui
+}  // namespace mbink

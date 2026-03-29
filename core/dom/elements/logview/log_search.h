@@ -14,7 +14,7 @@
 #include <string>
 #include <vector>
 
-namespace lightui {
+namespace mbink {
 
 /**
  * @brief 搜索匹配结果
@@ -152,6 +152,6 @@ private:
                             const std::regex& re);
 };
 
-}  // namespace lightui
+}  // namespace mbink
 
 #endif  // MBINK_DOM_ELEMENTS_LOGVIEW_LOG_SEARCH_H_

@@ -7,7 +7,7 @@
 #include <chrono>
 #include <iostream>
 
-namespace lightui {
+namespace mbink {
 
 // ============================================================================
 // PropertyTreeErrorHandler 实现
@@ -239,4 +239,4 @@ bool GPUContextLossHandler::TryRestoreContext() {
     return true;
 }
 
-} // namespace lightui
+} // namespace mbink

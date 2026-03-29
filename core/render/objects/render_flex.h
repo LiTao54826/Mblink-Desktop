@@ -13,7 +13,7 @@
 
 #include "render_object.h"
 
-namespace lightui {
+namespace mbink {
 
 // Forward declaration
 class RenderFlex;
@@ -49,5 +49,5 @@ private:
     void LayoutAsFlex(float parent_width, float parent_height);
 };
 
-} // namespace lightui
+} // namespace mbink
 

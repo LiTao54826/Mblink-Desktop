@@ -8,7 +8,7 @@
 #include "layout/types/style.h"
 #include "layout/types/geometry.h"
 
-namespace lightui {
+namespace mbink {
 namespace test {
 
 class BlockLayoutTest : public ::testing::Test {
@@ -193,4 +193,4 @@ TEST_F(BlockLayoutTest, MinMaxWidthConstraint) {
 }
 
 } // namespace test
-} // namespace lightui
+} // namespace mbink

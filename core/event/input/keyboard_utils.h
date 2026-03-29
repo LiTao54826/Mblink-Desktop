@@ -13,7 +13,7 @@
 #include <SDL3/SDL.h>
 #include <string>
 
-namespace lightui {
+namespace mbink {
 
 /**
  * @brief 将SDL按键码转换为W3C key值
@@ -41,5 +41,5 @@ std::string SDLScancodeToCode(SDL_Scancode scancode);
  */
 int SDLKeycodeToKeyCode(SDL_Keycode keycode);
 
-} // namespace lightui
+} // namespace mbink
 

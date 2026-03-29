@@ -5,7 +5,7 @@
 
 #include "textarea_edit_state.h"
 
-namespace lightui {
+namespace mbink {
 
 class HTMLTextAreaElement;
 struct CompositionCommandData;
@@ -36,5 +36,5 @@ private:
     std::shared_ptr<TextAreaEditState> edit_state_;
 };
 
-}  // namespace lightui
+}  // namespace mbink
 

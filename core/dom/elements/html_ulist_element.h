@@ -13,7 +13,7 @@
 #include <string>
 #include <memory>
 
-namespace lightui {
+namespace mbink {
 
 /**
  * @brief HTML UList元素类
@@ -46,5 +46,5 @@ public:
     ~HTMLUListElement() override = default;
 };
 
-} // namespace lightui
+} // namespace mbink
 

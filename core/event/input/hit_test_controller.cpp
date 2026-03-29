@@ -12,9 +12,9 @@
 #include <iostream>
 
 // 调试开关
-static bool g_debug_hit_test = std::getenv("LIGHTUI_DEBUG_HIT_TEST") != nullptr;
+static bool g_debug_hit_test = std::getenv("MBINK_DEBUG_HIT_TEST") != nullptr;
 
-namespace lightui {
+namespace mbink {
 
 HitTestResultEx HitTestController::HitTest(
     std::shared_ptr<RenderObject> root_render,
@@ -386,5 +386,5 @@ bool HitTestController::HitTestCompositorLayers(
     return false;
 }
 
-}  // namespace lightui
+}  // namespace mbink
 

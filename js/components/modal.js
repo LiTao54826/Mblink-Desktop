@@ -1,5 +1,5 @@
 /**
- * LightUI Modal 组件
+ * MBink Modal 组件
  *
  * Props:
  * - visible: boolean

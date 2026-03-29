@@ -49,7 +49,7 @@
 #include <map>
 #include <sstream>
 
-namespace lightui {
+namespace mbink {
 
 namespace {
 
@@ -1797,4 +1797,4 @@ void MouseEventDispatcher::UpdateSelectionFromClick(
     selection->Collapse(caret_pos.node, caret_pos.offset);
 }
 
-} // namespace lightui
+} // namespace mbink

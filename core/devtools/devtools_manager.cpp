@@ -12,7 +12,7 @@
 #include <fstream>
 #include <sstream>
 
-namespace lightui {
+namespace mbink {
 
 DevToolsManager& DevToolsManager::GetInstance() {
     static DevToolsManager instance;
@@ -517,4 +517,4 @@ void DevToolsManager::OnTextChanged(Node* node,
     panel_->RefreshDOMTree();
 }
 
-} // namespace lightui
+} // namespace mbink

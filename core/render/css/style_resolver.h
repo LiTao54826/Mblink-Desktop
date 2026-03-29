@@ -19,7 +19,7 @@
 #include <unordered_map>
 #include <unordered_set>
 
-namespace lightui {
+namespace mbink {
 
 // 前向声明
 class StyleManager;
@@ -343,5 +343,5 @@ private:
     Document* document_ = nullptr;
 };
 
-} // namespace lightui
+} // namespace mbink
 

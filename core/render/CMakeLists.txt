@@ -190,9 +190,9 @@ set(RENDER_HEADERS
     painters/form_element_painter.h
 )
 
-add_library(lightui_render STATIC ${RENDER_SOURCES})
+add_library(mbink_render STATIC ${RENDER_SOURCES})
 
-target_include_directories(lightui_render PUBLIC
+target_include_directories(mbink_render PUBLIC
     ${CMAKE_SOURCE_DIR}
     ${CMAKE_SOURCE_DIR}/core
     ${CMAKE_SOURCE_DIR}/core/render
@@ -200,15 +200,15 @@ target_include_directories(lightui_render PUBLIC
     $<$<NOT:$<CONFIG:Debug>>:${CMAKE_SOURCE_DIR}/third_party/skia/Release>
 )
 
-target_link_libraries(lightui_render PUBLIC
-    lightui_utils
-    lightui_dom
-    lightui_quickjs
+target_link_libraries(mbink_render PUBLIC
+    mbink_utils
+    mbink_dom
+    mbink_quickjs
 )
 
 # Link Yoga (if available)
 if(TARGET yogacore)
-    target_link_libraries(lightui_render PUBLIC yogacore)
+    target_link_libraries(mbink_render PUBLIC yogacore)
     message(STATUS "Render module: Linking Yoga")
 else()
     message(WARNING "Render module: Yoga target not found")
@@ -216,19 +216,19 @@ endif()
 
 # Link Skia (if enabled)
 if(TARGET skia)
-    target_link_libraries(lightui_render PUBLIC skia)
+    target_link_libraries(mbink_render PUBLIC skia)
     message(STATUS "Render module: Linking Skia")
 
     # Skia prebuilt library uses static Release runtime (MT)
     # We need to match this setting
     if(MSVC)
         # Use static Release runtime to match Skia
-        target_compile_options(lightui_render PUBLIC
+        target_compile_options(mbink_render PUBLIC
             $<$<CONFIG:Debug>:/MT>
             $<$<CONFIG:Release>:/MT>
         )
         # Disable iterator debugging to match Skia
-        target_compile_definitions(lightui_render PUBLIC
+        target_compile_definitions(mbink_render PUBLIC
             $<$<CONFIG:Debug>:_ITERATOR_DEBUG_LEVEL=0>
         )
     endif()

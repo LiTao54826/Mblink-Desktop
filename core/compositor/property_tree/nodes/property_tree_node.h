@@ -18,7 +18,7 @@
 #include <vector>
 #include <algorithm>
 
-namespace lightui {
+namespace mbink {
 
 // 属性树节点 ID 类型
 using PropertyTreeNodeId = uint32_t;
@@ -280,4 +280,4 @@ protected:
     uint64_t version_ = 0;
 };
 
-} // namespace lightui
+} // namespace mbink

@@ -14,7 +14,7 @@
 #include <functional>
 #include <iostream>
 
-namespace lightui {
+namespace mbink {
 
 ElementHighlighter::ElementHighlighter() = default;
 
@@ -416,4 +416,4 @@ void ElementHighlighter::RenderInfoTooltip(SkCanvas* canvas, std::shared_ptr<Ele
     canvas->drawString(text.c_str(), tooltip_x + 6, tooltip_y + 14, font, text_paint);
 }
 
-} // namespace lightui
+} // namespace mbink

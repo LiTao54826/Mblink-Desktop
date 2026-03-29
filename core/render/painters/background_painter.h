@@ -23,7 +23,7 @@
 #include <unordered_map>
 #include <optional>
 
-namespace lightui {
+namespace mbink {
 
 // 前向声明
 class RenderObject;
@@ -142,4 +142,4 @@ private:
     SkCanvas* canvas_;
 };
 
-} // namespace lightui
+} // namespace mbink

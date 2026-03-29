@@ -8,7 +8,7 @@
 #include <sstream>
 #include <algorithm>
 
-namespace lightui {
+namespace mbink {
 
 // ============================================================================
 // FilterCache 实现
@@ -238,5 +238,5 @@ void RenderOptimizer::Clear() {
     transform_cache_.Clear();
 }
 
-} // namespace lightui
+} // namespace mbink
 

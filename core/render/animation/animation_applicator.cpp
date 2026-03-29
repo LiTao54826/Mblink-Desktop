@@ -21,12 +21,12 @@
 
 namespace {
 inline bool IsAnimForceStyleEnabled() {
-    static const bool enabled = (std::getenv("LIGHTUI_DEBUG_ANIM_FORCE_STYLE") != nullptr);
+    static const bool enabled = (std::getenv("MBINK_DEBUG_ANIM_FORCE_STYLE") != nullptr);
     return enabled;
 }
 }
 
-namespace lightui {
+namespace mbink {
 
 // ============================================================================
 // 构造/析构
@@ -60,7 +60,7 @@ void AnimationApplicator::StartAnimationsForObject(RenderObject* object) {
     const auto& style = object->GetComputedStyle();
     auto& started = started_animations_[element];  // 使用 Element* 作为键
 
-    // 调试日志（兼容 LIGHTUI_DEBUG_ANIMATION / LIGHTUI_DEBUG_ANIM）
+    // 调试日志（兼容 MBINK_DEBUG_ANIMATION / MBINK_DEBUG_ANIM）
     const bool debug_anim = IsDebugAnimationEnabled();
 
     // 遍历 ComputedStyle 中定义的所有动画
@@ -307,8 +307,8 @@ void AnimationApplicator::Clear() {
 
 bool AnimationApplicator::IsDebugAnimationEnabled() const {
     static const bool debug_enabled =
-        (std::getenv("LIGHTUI_DEBUG_ANIMATION") != nullptr) ||
-        (std::getenv("LIGHTUI_DEBUG_ANIM") != nullptr);
+        (std::getenv("MBINK_DEBUG_ANIMATION") != nullptr) ||
+        (std::getenv("MBINK_DEBUG_ANIM") != nullptr);
     return debug_enabled;
 }
 
@@ -781,4 +781,4 @@ SkColor AnimationApplicator::ParseColor(const std::string& str) const {
     return Color::Parse(str);
 }
 
-} // namespace lightui
+} // namespace mbink

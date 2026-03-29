@@ -61,7 +61,7 @@
 #undef ERROR  // 防止与 LogLevel::ERROR 冲突
 #endif
 
-namespace lightui {
+namespace mbink {
 
 #ifdef _WIN32
 static void PrintCallStack();
@@ -615,7 +615,7 @@ void RenderBlock::Paint(SkCanvas* canvas) {
     }
 
     // 🐛 hover bug 调试日志
-    static bool debug_hover_bug = std::getenv("LIGHTUI_DEBUG_HOVER_BUG") != nullptr;
+    static bool debug_hover_bug = std::getenv("MBINK_DEBUG_HOVER_BUG") != nullptr;
     if (debug_hover_bug) {
         std::string tag = "unknown";
         std::string id = "";
@@ -697,7 +697,7 @@ void RenderBlock::Paint(SkCanvas* canvas) {
     bool is_hidden = (style.visibility == "hidden");
 
     // 🐛 调试：追踪 clip 变化
-    static bool debug_clip = std::getenv("LIGHTUI_DEBUG_SHADOW") != nullptr;
+    static bool debug_clip = std::getenv("MBINK_DEBUG_SHADOW") != nullptr;
     if (debug_clip && style.position == "fixed") {
         SkRect local_clip = canvas->getLocalClipBounds();
         SkIRect device_clip = canvas->getDeviceClipBounds();
@@ -1852,12 +1852,12 @@ void RenderBlock::PaintInputElement(SkCanvas* canvas, HTMLInputElement* input, c
             TextRenderer text_renderer(canvas);
 
             // 设置文本颜色
-            lightui::Paint text_paint;
+            mbink::Paint text_paint;
             if (value.empty()) {
                 // placeholder使用灰色
                 text_paint.SetColor(SkColorSetRGB(150, 150, 150));
             } else if (!computed_style_.color.empty()) {
-                text_paint.SetColor(lightui::Color::Parse(computed_style_.color));
+                text_paint.SetColor(mbink::Color::Parse(computed_style_.color));
             } else {
                 text_paint.SetColor(SK_ColorBLACK);
             }
@@ -2048,12 +2048,12 @@ void RenderBlock::PaintTextAreaElement(SkCanvas* canvas, HTMLTextAreaElement* te
         TextRenderer text_renderer(canvas);
 
         // 设置文本颜色
-        lightui::Paint text_paint;
+        mbink::Paint text_paint;
         if (textarea->GetValue().empty()) {
             // placeholder使用灰色
             text_paint.SetColor(SkColorSetRGB(150, 150, 150));
         } else if (!computed_style_.color.empty()) {
-            text_paint.SetColor(lightui::Color::Parse(computed_style_.color));
+            text_paint.SetColor(mbink::Color::Parse(computed_style_.color));
         } else {
             text_paint.SetColor(SK_ColorBLACK);
         }
@@ -2163,4 +2163,4 @@ void RenderBlock::PaintContentEditableCaret(SkCanvas* canvas, Element* element, 
 }
 
 
-}  // namespace lightui
+}  // namespace mbink

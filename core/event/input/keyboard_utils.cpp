@@ -11,7 +11,7 @@
 #include "keyboard_utils.h"
 #include <cctype>
 
-namespace lightui {
+namespace mbink {
 
 std::string SDLKeycodeToKey(SDL_Keycode keycode, bool shift) {
     // 参考：W3C UI Events - KeyboardEvent.key
@@ -290,5 +290,5 @@ int SDLKeycodeToKeyCode(SDL_Keycode keycode) {
     }
 }
 
-} // namespace lightui
+} // namespace mbink
 

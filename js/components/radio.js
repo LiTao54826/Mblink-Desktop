@@ -1,5 +1,5 @@
 /**
- * LightUI Radio 组件
+ * MBink Radio 组件
  *
  * Props:
  * - checked: boolean

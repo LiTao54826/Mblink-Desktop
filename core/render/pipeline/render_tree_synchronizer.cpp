@@ -15,7 +15,7 @@
 #include <algorithm>
 #include <iostream>
 
-namespace lightui {
+namespace mbink {
 
 RenderTreeSynchronizer::RenderTreeSynchronizer() = default;
 RenderTreeSynchronizer::~RenderTreeSynchronizer() = default;
@@ -875,4 +875,4 @@ void RenderTreeSynchronizer::InvalidateAncestorLayout(RenderObject* obj) {
     }
 }
 
-} // namespace lightui
+} // namespace mbink

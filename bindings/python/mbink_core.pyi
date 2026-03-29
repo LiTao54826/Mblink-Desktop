@@ -1,8 +1,8 @@
 """
-lightui_core — LightUI 低级 Python 绑定（pybind11）
+mbink_core — MBink 低级 Python 绑定（pybind11）
 
 本模块通过 pybind11 直接暴露 C++ 对象，适合需要精细控制的高级用法。
-普通开发者请使用高级封装：``from lightui import App``
+普通开发者请使用高级封装：``from mbink import App``
 
 模块结构
 --------
@@ -18,7 +18,7 @@ lightui_core — LightUI 低级 Python 绑定（pybind11）
 --------------------
 ::
 
-    import lightui_core as lui
+    import mbink_core as lui
 
     app     = lui.App("title", 800, 600)       # 仅状态管理器，无窗口
     runtime = lui.Runtime()
@@ -75,7 +75,7 @@ IdleCallback = Callable[[], None]
 # ---------------------------------------------------------------------------
 
 def version() -> str:
-    """返回 LightUI 版本字符串，例如 ``"0.5.0"``。"""
+    """返回 MBink 版本字符串，例如 ``"0.5.0"``。"""
     ...
 
 def cleanup_dom_bindings(runtime: "Runtime") -> None:
@@ -264,14 +264,14 @@ class DictState(State):
 # ---------------------------------------------------------------------------
 
 class App:
-    """LightUI 低级状态管理器。
+    """MBink 低级状态管理器。
 
     .. note::
         这里的 ``App`` 仅负责状态（StateManager）和函数绑定注册表。
         **不**创建窗口、**不**运行事件循环。
         ``load_file``、``load_js``、``run`` 会直接抛出 ``RuntimeError``。
 
-        需要完整窗口应用请使用高级封装：``from lightui import App``
+        需要完整窗口应用请使用高级封装：``from mbink import App``
 
     典型用法
     --------
@@ -284,7 +284,7 @@ class App:
 
     def __init__(
         self,
-        title: str = "LightUI App",
+        title: str = "MBink App",
         width: int = 800,
         height: int = 600,
     ) -> None: ...
@@ -379,7 +379,7 @@ class TaskScheduler:
 # ---------------------------------------------------------------------------
 
 class Element:
-    """DOM 元素包装，对应 C++ ``lightui::Element``。
+    """DOM 元素包装，对应 C++ ``mbink::Element``。
 
     通过 ``Document.query_selector()`` / ``get_element_by_id()`` 等方法获取。
     """
@@ -441,7 +441,7 @@ class Element:
 
 
 class Document:
-    """DOM 文档包装，对应 C++ ``lightui::Document``。
+    """DOM 文档包装，对应 C++ ``mbink::Document``。
 
     通过 ``Window.document`` 属性获取。加载 HTML 后会自动执行 ``<script>`` 标签。
     """
@@ -530,7 +530,7 @@ class Window:
 
     def __init__(
         self,
-        title: str = "LightUI Window",
+        title: str = "MBink Window",
         width: int = 800,
         height: int = 600,
         headless: bool = False,

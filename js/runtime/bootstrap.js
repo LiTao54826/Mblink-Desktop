@@ -105,7 +105,7 @@
     // TODO: 从C++创建document对象
     // global.document = __native_create_document();
     
-    console.log('LightUI JavaScript runtime initialized');
+    console.log('MBink JavaScript runtime initialized');
     
 })(this);
 

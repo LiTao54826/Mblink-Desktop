@@ -12,7 +12,7 @@
 
 #include <iostream>
 
-namespace lightui {
+namespace mbink {
 
 IncrementalLayoutManager::IncrementalLayoutManager(Window* window)
     : window_(window) {
@@ -154,4 +154,4 @@ void IncrementalLayoutManager::ClearPendingUpdates() {
     dirty_render_boundaries_.clear();
 }
 
-}  // namespace lightui
+}  // namespace mbink

@@ -5,7 +5,7 @@
 
 #include "log_filter.h"
 
-namespace lightui {
+namespace mbink {
 
 LogFilter::LogFilter()
     : level_mask_(0xFF),  // 默认显示所有级别
@@ -93,4 +93,4 @@ bool LogFilter::HasFilter() const {
     return level_mask_ != 0xFF || filter_by_source_;
 }
 
-}  // namespace lightui
+}  // namespace mbink

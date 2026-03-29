@@ -10,7 +10,7 @@
 
 #include "node.h"
 
-namespace lightui {
+namespace mbink {
 
 /**
  * @brief DocumentFragment 类
@@ -35,4 +35,4 @@ public:
     std::shared_ptr<Node> CloneNode(bool deep) override;
 };
 
-} // namespace lightui
+} // namespace mbink

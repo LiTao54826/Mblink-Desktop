@@ -9,7 +9,7 @@
 #include "include/core/SkImage.h"
 #include <string>
 
-namespace lightui {
+namespace mbink {
 
 /**
  * @brief Canvas图案重复模式
@@ -64,4 +64,4 @@ private:
     sk_sp<SkShader> shader_;         ///< Skia Shader
 };
 
-} // namespace lightui
+} // namespace mbink

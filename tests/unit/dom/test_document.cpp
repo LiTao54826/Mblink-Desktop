@@ -18,7 +18,7 @@
 #include "dom/element.h"
 #include "dom/text.h"
 
-namespace lightui {
+namespace mbink {
 namespace test {
 
 class DocumentTest : public DOMTestBase {};
@@ -356,4 +356,4 @@ TEST_F(DocumentTest, ResolvePath) {
 }
 
 } // namespace test
-} // namespace lightui
+} // namespace mbink

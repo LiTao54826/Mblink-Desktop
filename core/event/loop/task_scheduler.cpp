@@ -6,7 +6,7 @@
 #include "task_scheduler.h"
 #include <algorithm>
 
-namespace lightui {
+namespace mbink {
 
 TaskScheduler& TaskScheduler::Instance() {
     static TaskScheduler instance;
@@ -208,5 +208,5 @@ void TaskScheduler::ProcessMicrotasks() {
     }
 }
 
-} // namespace lightui
+} // namespace mbink
 

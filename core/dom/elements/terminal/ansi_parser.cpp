@@ -8,7 +8,7 @@
 #include <algorithm>
 #include <cctype>
 
-namespace lightui {
+namespace mbink {
 
 AnsiParser::AnsiParser() {
     current_style_.Reset();
@@ -511,4 +511,4 @@ char32_t AnsiParser::DecodeUtf8() {
     return cp;
 }
 
-}  // namespace lightui
+}  // namespace mbink

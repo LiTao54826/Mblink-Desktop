@@ -8,7 +8,7 @@
 #include "core/dom/elements/terminal/html_terminal_element.h"
 #include "core/dom/elements/logview/html_logview_element.h"
 
-namespace lightui {
+namespace mbink {
 
 // 静态成员初始化
 JSClassID TerminalBindings::terminal_class_id = 0;
@@ -470,24 +470,24 @@ void TerminalBindings::InitLogViewClass(JSContext* ctx) {
     JS_SetClassProto(ctx, logview_class_id, proto);
 }
 
-JSValue TerminalBindings::WrapTerminal(JSContext* ctx, lightui::HTMLTerminalElement* terminal) {
+JSValue TerminalBindings::WrapTerminal(JSContext* ctx, mbink::HTMLTerminalElement* terminal) {
     JSValue obj = JS_NewObjectClass(ctx, terminal_class_id);
     JS_SetOpaque(obj, terminal);
     return obj;
 }
 
-lightui::HTMLTerminalElement* TerminalBindings::UnwrapTerminal(JSContext* ctx, JSValue obj) {
-    return static_cast<lightui::HTMLTerminalElement*>(JS_GetOpaque(obj, terminal_class_id));
+mbink::HTMLTerminalElement* TerminalBindings::UnwrapTerminal(JSContext* ctx, JSValue obj) {
+    return static_cast<mbink::HTMLTerminalElement*>(JS_GetOpaque(obj, terminal_class_id));
 }
 
-JSValue TerminalBindings::WrapLogView(JSContext* ctx, lightui::HTMLLogViewElement* logview) {
+JSValue TerminalBindings::WrapLogView(JSContext* ctx, mbink::HTMLLogViewElement* logview) {
     JSValue obj = JS_NewObjectClass(ctx, logview_class_id);
     JS_SetOpaque(obj, logview);
     return obj;
 }
 
-lightui::HTMLLogViewElement* TerminalBindings::UnwrapLogView(JSContext* ctx, JSValue obj) {
-    return static_cast<lightui::HTMLLogViewElement*>(JS_GetOpaque(obj, logview_class_id));
+mbink::HTMLLogViewElement* TerminalBindings::UnwrapLogView(JSContext* ctx, JSValue obj) {
+    return static_cast<mbink::HTMLLogViewElement*>(JS_GetOpaque(obj, logview_class_id));
 }
 
-}  // namespace lightui
+}  // namespace mbink

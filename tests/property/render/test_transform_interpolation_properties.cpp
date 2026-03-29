@@ -20,8 +20,8 @@
 #include <sstream>
 #include <iomanip>
 
-using namespace lightui;
-using namespace lightui::test;
+using namespace mbink;
+using namespace mbink::test;
 
 class TransformInterpolationPropertyTest : public ::testing::Test {
 protected:

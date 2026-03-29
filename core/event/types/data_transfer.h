@@ -21,7 +21,7 @@
 #include <memory>
 #include <vector>
 
-namespace lightui {
+namespace mbink {
 
 /**
  * @brief 拖拽效果类型
@@ -165,5 +165,5 @@ private:
     DragEffect drop_effect_;
 };
 
-} // namespace lightui
+} // namespace mbink
 

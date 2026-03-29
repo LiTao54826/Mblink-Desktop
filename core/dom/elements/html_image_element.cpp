@@ -11,7 +11,7 @@
 #include <cctype>
 #include <iostream>
 
-namespace lightui {
+namespace mbink {
 
 HTMLImageElement::HTMLImageElement()
     : Element("img")
@@ -299,5 +299,5 @@ unsigned long HTMLImageElement::ParseDimension(const std::string& value) const {
     }
 }
 
-} // namespace lightui
+} // namespace mbink
 

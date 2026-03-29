@@ -12,7 +12,7 @@
 #include <string>
 #include <memory>
 
-namespace lightui {
+namespace mbink {
 
 /**
  * @brief 窗口事件类型枚举
@@ -111,13 +111,13 @@ private:
     int data2_;
 };
 
-} // namespace lightui
+} // namespace mbink
 
 // Hash function for WindowEventType to use in unordered_map
 namespace std {
     template<>
-    struct hash<lightui::WindowEventType> {
-        size_t operator()(const lightui::WindowEventType& type) const {
+    struct hash<mbink::WindowEventType> {
+        size_t operator()(const mbink::WindowEventType& type) const {
             return static_cast<size_t>(type);
         }
     };

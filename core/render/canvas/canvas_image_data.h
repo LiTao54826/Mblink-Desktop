@@ -8,7 +8,7 @@
 #include <vector>
 #include <cstdint>
 
-namespace lightui {
+namespace mbink {
 
 /**
  * @brief Canvas ImageData类
@@ -79,4 +79,4 @@ private:
     std::vector<uint8_t> data_;  // RGBA格式，每像素4字节
 };
 
-} // namespace lightui
+} // namespace mbink

@@ -15,7 +15,7 @@
 
 class SkTypeface;
 
-namespace lightui {
+namespace mbink {
 
 /**
  * @brief 终端渲染器
@@ -172,4 +172,4 @@ private:
     bool IsSelected(int row, int col) const;
 };
 
-}  // namespace lightui
+}  // namespace mbink

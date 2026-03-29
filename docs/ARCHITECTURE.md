@@ -21,12 +21,12 @@
 - `devtools`
 - `compositor`
 
-这些模块通过 `lightui` 接口库统一聚合。
+这些模块通过 `mbink` 接口库统一聚合。
 
 从当前 CMake 目标还可以确认：
-- `lightui_api` 以共享库形式构建
-- `lightui_window`、`lightui_render`、`lightui_devtools`、`lightui_network` 等以静态库形式参与聚合
-- 构建后的 `lightui_api` 会复制到 Python 包输出目录，供绑定层使用
+- `mbink_api` 以共享库形式构建
+- `mbink_window`、`mbink_render`、`mbink_devtools`、`mbink_network` 等以静态库形式参与聚合
+- 构建后的 `mbink_api` 会复制到 Python 包输出目录，供绑定层使用
 
 ## 分层理解
 
@@ -34,8 +34,8 @@
 
 - `core/api/`
   - 提供统一 C ABI
-  - 头文件入口：`core/api/lightui.h`
-  - 实现文件：`core/api/lightui.cpp`
+  - 头文件入口：`core/api/mbink.h`
+  - 实现文件：`core/api/mbink.cpp`
 
 这层是跨语言接入的统一入口，面向 Python、Go、Rust、Node.js 等绑定场景。
 

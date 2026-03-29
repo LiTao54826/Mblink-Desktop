@@ -6,7 +6,7 @@
 #include <gtest/gtest.h>
 #include "render/utils/color.h"
 
-namespace lightui {
+namespace mbink {
 namespace test {
 
 class ColorTest : public ::testing::Test {};
@@ -155,4 +155,4 @@ TEST_F(ColorTest, InvalidName) {
 }
 
 } // namespace test
-} // namespace lightui
+} // namespace mbink

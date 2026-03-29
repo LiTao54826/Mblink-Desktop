@@ -47,7 +47,7 @@
 // 前向声明 Skia 类
 class SkCanvas;
 
-namespace lightui {
+namespace mbink {
 
 // 前向声明
 class Node;
@@ -1092,7 +1092,7 @@ public:
      * @brief 滚动条区域类型（使用 ScrollbarController 中定义的枚举）
      * @note 为了向后兼容，保留此类型别名
      */
-    using ScrollbarHitArea = lightui::ScrollbarHitArea;
+    using ScrollbarHitArea = mbink::ScrollbarHitArea;
 
     /**
      * @brief 检测点是否在滚动条区域内
@@ -1605,5 +1605,5 @@ public:
     void Paint(SkCanvas* canvas) override;
 };
 
-} // namespace lightui
+} // namespace mbink
 

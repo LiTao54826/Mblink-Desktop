@@ -1,4 +1,4 @@
-# LightUI - Download Skia Prebuilt Binaries
+# MBink - Download Skia Prebuilt Binaries
 # This script downloads precompiled Skia binaries from skia-python project
 
 param(
@@ -114,7 +114,7 @@ Write-Host ""
 Write-Host "Next steps:" -ForegroundColor Cyan
 Write-Host "  1. Configure CMake with Skia support:" -ForegroundColor White
 Write-Host "     cd build" -ForegroundColor Gray
-Write-Host "     cmake .. -DLIGHTUI_USE_SKIA=ON" -ForegroundColor Gray
+Write-Host "     cmake .. -DMBINK_USE_SKIA=ON" -ForegroundColor Gray
 Write-Host ""
 Write-Host "  2. Build project:" -ForegroundColor White
 Write-Host "     cmake --build . --config Release" -ForegroundColor Gray

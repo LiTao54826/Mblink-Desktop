@@ -35,7 +35,7 @@
 #include "include/core/SkPathEffect.h"
 #include "include/effects/SkDashPathEffect.h"
 
-namespace lightui {
+namespace mbink {
 
 
 
@@ -69,7 +69,7 @@ void RenderInlineBlock::Layout(float parent_width, float parent_height) {
     }
 
     // ✅ DEBUG: 添加调试日志
-    static bool debug = std::getenv("LIGHTUI_DEBUG_INLINE_BLOCK") != nullptr;
+    static bool debug = std::getenv("MBINK_DEBUG_INLINE_BLOCK") != nullptr;
 
     // 1. 计算宽度 (only if not externally set)
     if (!dimensions_externally_set) {
@@ -240,7 +240,7 @@ float RenderInlineBlock::CalculateShrinkToFitWidth(float available_width) {
     // 2. 如果 available_width < preferred_width，使用 max(preferred_min, available_width)
 
     // ✅ DEBUG: 添加调试日志
-    static bool debug = std::getenv("LIGHTUI_DEBUG_INLINE_BLOCK") != nullptr;
+    static bool debug = std::getenv("MBINK_DEBUG_INLINE_BLOCK") != nullptr;
 
     float preferred = CalculatePreferredWidth();
 
@@ -267,7 +267,7 @@ float RenderInlineBlock::CalculatePreferredMinimumWidth() {
     const auto& style = computed_style_;
 
     // ✅ DEBUG: 添加调试日志
-    static bool debug = std::getenv("LIGHTUI_DEBUG_INLINE_BLOCK") != nullptr;
+    static bool debug = std::getenv("MBINK_DEBUG_INLINE_BLOCK") != nullptr;
 
     float padding_left = style.padding.left.ToPx();
     float padding_right = style.padding.right.ToPx();
@@ -460,7 +460,7 @@ std::pair<float, float> RenderInlineBlock::MeasureIntrinsicSize(float available_
     const auto& style = computed_style_;
 
     // ✅ DEBUG: 添加调试日志
-    static bool debug = std::getenv("LIGHTUI_DEBUG_INLINE_BLOCK") != nullptr;
+    static bool debug = std::getenv("MBINK_DEBUG_INLINE_BLOCK") != nullptr;
 
     if (debug) {
     }
@@ -1075,19 +1075,19 @@ void RenderInlineBlock::PaintInputElement(SkCanvas* canvas, HTMLInputElement* in
 
         if (!display_text.empty()) {
             TextRenderer text_renderer(canvas);
-            lightui::Paint text_paint;
+            mbink::Paint text_paint;
             if (is_placeholder) {
                 text_paint.SetColor(SkColorSetRGB(150, 150, 150));
             } else if (!computed_style_.color.empty()) {
-                text_paint.SetColor(lightui::Color::Parse(computed_style_.color));
+                text_paint.SetColor(mbink::Color::Parse(computed_style_.color));
             } else {
                 text_paint.SetColor(SK_ColorBLACK);
             }
             text_renderer.DrawTextWithEmoji(display_text, text_x, text_y, font, text_paint);
 
             if (paint_model.HasComposition() && !mask_as_password) {
-                static const bool ime_render_debug = std::getenv("LIGHTUI_DEBUG_IME_RENDER") != nullptr ||
-                                                     std::getenv("LIGHTUI_DEBUG_IME_AREA") != nullptr;
+                static const bool ime_render_debug = std::getenv("MBINK_DEBUG_IME_RENDER") != nullptr ||
+                                                     std::getenv("MBINK_DEBUG_IME_AREA") != nullptr;
                 if (ime_render_debug) {
                     std::cout << "[IME_RENDER] element=input"
                               << " font_size=" << computed_style_.font_size
@@ -1458,11 +1458,11 @@ void RenderInlineBlock::PaintTextAreaElement(SkCanvas* canvas, HTMLTextAreaEleme
         TextRenderer text_renderer(canvas);
 
         // 设置文本颜色
-        lightui::Paint text_paint;
+        mbink::Paint text_paint;
         if (is_placeholder) {
             text_paint.SetColor(SkColorSetRGB(150, 150, 150));
         } else if (!computed_style_.color.empty()) {
-            text_paint.SetColor(lightui::Color::Parse(computed_style_.color));
+            text_paint.SetColor(mbink::Color::Parse(computed_style_.color));
         } else {
             text_paint.SetColor(SK_ColorBLACK);
         }
@@ -1477,8 +1477,8 @@ void RenderInlineBlock::PaintTextAreaElement(SkCanvas* canvas, HTMLTextAreaEleme
         }
 
         if (edit_state && edit_state->HasActiveComposition() && !is_placeholder) {
-            static const bool ime_render_debug = std::getenv("LIGHTUI_DEBUG_IME_RENDER") != nullptr ||
-                                                 std::getenv("LIGHTUI_DEBUG_IME_AREA") != nullptr;
+            static const bool ime_render_debug = std::getenv("MBINK_DEBUG_IME_RENDER") != nullptr ||
+                                                 std::getenv("MBINK_DEBUG_IME_AREA") != nullptr;
             if (ime_render_debug) {
                 std::cout << "[IME_RENDER] element=textarea"
                           << " font_size=" << computed_style_.font_size
@@ -1829,7 +1829,7 @@ void RenderInlineBlock::PaintSelectElement(SkCanvas* canvas, Element* select, co
         canvas->clipRect(text_clip_rect);
 
         TextRenderer text_renderer(canvas);
-        lightui::Paint text_paint;
+        mbink::Paint text_paint;
         text_paint.SetColor(SK_ColorBLACK);
         text_renderer.DrawTextWithEmoji(selected_text, text_x, text_y, font, text_paint);
 
@@ -1989,5 +1989,5 @@ void RenderInlineBlock::PaintMeterElement(SkCanvas* canvas, HTMLMeterElement* me
     }
 }
 
-} // namespace lightui
+} // namespace mbink
 

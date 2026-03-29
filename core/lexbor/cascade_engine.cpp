@@ -10,7 +10,7 @@
 #include <sstream>
 #include <set>
 
-namespace lightui {
+namespace mbink {
 
 // 可继承属性列表
 static const std::set<std::string> INHERITABLE_PROPERTIES = {
@@ -321,5 +321,5 @@ std::string CascadeEngine::GetInitialValue(const std::string& property) const {
     return "";
 }
 
-} // namespace lightui
+} // namespace mbink
 

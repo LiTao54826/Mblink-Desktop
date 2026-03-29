@@ -14,7 +14,7 @@
 #include "quickjs.h"
 #include "core/dom/style/css_style_declaration.h"
 
-namespace lightui {
+namespace mbink {
 namespace bindings {
 
 /**
@@ -40,4 +40,4 @@ JSValue WrapStyleDeclaration(JSContext* ctx, std::shared_ptr<CSSStyleDeclaration
 std::shared_ptr<CSSStyleDeclaration> UnwrapStyleDeclaration(JSContext* ctx, JSValue value);
 
 } // namespace bindings
-} // namespace lightui
+} // namespace mbink

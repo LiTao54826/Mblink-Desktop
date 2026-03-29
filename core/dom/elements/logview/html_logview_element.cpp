@@ -17,7 +17,7 @@
 #undef GetMessage  // Windows 宏冲突
 #endif
 
-namespace lightui {
+namespace mbink {
 
 HTMLLogViewElement::HTMLLogViewElement()
     : Element("logview"),
@@ -506,4 +506,4 @@ std::pair<int, int> HTMLLogViewElement::ScreenToLineCol(float x, float y) const 
     return {line, col};
 }
 
-}  // namespace lightui
+}  // namespace mbink

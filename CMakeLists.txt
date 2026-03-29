@@ -1,4 +1,4 @@
-# LightUI CMake Configuration
+# MBink CMake Configuration
 #
 # A lightweight, high-performance UI rendering engine
 # Features:
@@ -9,7 +9,7 @@
 # - CSS styling support
 
 cmake_minimum_required(VERSION 3.15)
-project(LightUI VERSION 0.1.0 LANGUAGES CXX C)
+project(MBink VERSION 0.1.0 LANGUAGES CXX C)
 
 # Default to Release build type if not specified
 if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
@@ -23,16 +23,16 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
 # Build Options
-option(LIGHTUI_BUILD_PYTHON_BINDING "Build Python binding" ON)
-option(LIGHTUI_BUILD_RUST_BINDING "Build Rust binding" OFF)
-option(LIGHTUI_BUILD_GO_BINDING "Build Go binding" OFF)
-option(LIGHTUI_USE_SKIA "Use Skia for rendering (requires Skia)" ON)
-option(LIGHTUI_BUILD_TESTS "Build tests" OFF)
-option(LIGHTUI_ENABLE_LTO "Enable Link Time Optimization (slower build, smaller binary)" OFF)
+option(MBINK_BUILD_PYTHON_BINDING "Build Python binding" ON)
+option(MBINK_BUILD_RUST_BINDING "Build Rust binding" OFF)
+option(MBINK_BUILD_GO_BINDING "Build Go binding" OFF)
+option(MBINK_USE_SKIA "Use Skia for rendering (requires Skia)" ON)
+option(MBINK_BUILD_TESTS "Build tests" OFF)
+option(MBINK_ENABLE_LTO "Enable Link Time Optimization (slower build, smaller binary)" OFF)
 
 # Link Time Optimization (LTO)
 # LTO allows the compiler to optimize across translation units, removing unused code
-if(LIGHTUI_ENABLE_LTO)
+if(MBINK_ENABLE_LTO)
     include(CheckIPOSupported)
     check_ipo_supported(RESULT LTO_SUPPORTED OUTPUT LTO_ERROR)
     if(LTO_SUPPORTED)
@@ -98,7 +98,7 @@ add_subdirectory(third_party)
 add_subdirectory(core)
 
 # Language Bindings
-if(LIGHTUI_BUILD_PYTHON_BINDING)
+if(MBINK_BUILD_PYTHON_BINDING)
     add_subdirectory(bindings/python)
 endif()
 
@@ -109,27 +109,27 @@ add_subdirectory(tools/app_bundler)
 add_subdirectory(tools/esm_loader)
 
 # Installation
-install(TARGETS lightui
+install(TARGETS mbink
     LIBRARY DESTINATION lib
     ARCHIVE DESTINATION lib
     RUNTIME DESTINATION bin
 )
-install(DIRECTORY core/ DESTINATION include/lightui
+install(DIRECTORY core/ DESTINATION include/mbink
     FILES_MATCHING PATTERN "*.h"
 )
 
 # Tests
-if(LIGHTUI_BUILD_TESTS)
+if(MBINK_BUILD_TESTS)
     add_subdirectory(tests)
 endif()
 
 # Configuration Summary
 message(STATUS "========================================")
-message(STATUS "  LightUI Configuration")
+message(STATUS "  MBink Configuration")
 message(STATUS "========================================")
 message(STATUS "  Version: ${PROJECT_VERSION}")
 message(STATUS "  Build type: ${CMAKE_BUILD_TYPE}")
 message(STATUS "  C++ standard: ${CMAKE_CXX_STANDARD}")
-message(STATUS "  Use Skia: ${LIGHTUI_USE_SKIA}")
-message(STATUS "  Build tests: ${LIGHTUI_BUILD_TESTS}")
+message(STATUS "  Use Skia: ${MBINK_USE_SKIA}")
+message(STATUS "  Build tests: ${MBINK_BUILD_TESTS}")
 message(STATUS "========================================")

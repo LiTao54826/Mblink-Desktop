@@ -4,7 +4,7 @@
 
 class SkFont;
 
-namespace lightui::text_edit_metrics {
+namespace mbink::text_edit_metrics {
 
 float MeasureTextWidth(const std::string& text,
                        const SkFont& font,
@@ -20,5 +20,5 @@ int HitTestTextPosition(const std::string& text,
                         const SkFont& font,
                         bool mask_as_password = false);
 
-}  // namespace lightui::text_edit_metrics
+}  // namespace mbink::text_edit_metrics
 

@@ -4,7 +4,7 @@
 
 #include "input_edit_command.h"
 
-namespace lightui {
+namespace mbink {
 
 class HTMLInputElement;
 struct InputEditState;
@@ -51,5 +51,5 @@ private:
     std::shared_ptr<InputEditState> edit_state_;
 };
 
-}  // namespace lightui
+}  // namespace mbink
 

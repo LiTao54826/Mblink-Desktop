@@ -11,7 +11,7 @@
 #include <SDL3/SDL.h>
 #include <memory>
 
-namespace lightui {
+namespace mbink {
 
 // 前向声明
 class Document;
@@ -89,4 +89,4 @@ private:
                                       bool shift_pressed);
 };
 
-} // namespace lightui
+} // namespace mbink

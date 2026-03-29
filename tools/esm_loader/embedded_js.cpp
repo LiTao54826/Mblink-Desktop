@@ -12,7 +12,7 @@
 #include "generated/hooks_js.inc"
 #include "generated/dom_polyfills_js.inc"
 
-namespace lightui {
+namespace mbink {
 namespace embedded {
 
 std::string_view GetPreactJS() {
@@ -32,5 +32,5 @@ bool HasEmbeddedJS() {
 }
 
 }  // namespace embedded
-}  // namespace lightui
+}  // namespace mbink
 

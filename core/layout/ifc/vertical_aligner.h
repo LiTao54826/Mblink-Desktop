@@ -12,7 +12,7 @@
 #include <cstdint>
 #include "inline_box.h"
 
-namespace lightui {
+namespace mbink {
 
 /**
  * @brief 垂直对齐方式（现代模式）
@@ -223,5 +223,5 @@ private:
     );
 };
 
-} // namespace lightui
+} // namespace mbink
 

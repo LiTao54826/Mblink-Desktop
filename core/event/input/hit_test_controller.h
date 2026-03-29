@@ -17,7 +17,7 @@
 #include <string>
 #include <vector>
 
-namespace lightui {
+namespace mbink {
 
 // 前向声明
 class Element;
@@ -153,5 +153,5 @@ private:
         PaintLayer* layer);
 };
 
-}  // namespace lightui
+}  // namespace mbink
 

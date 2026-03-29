@@ -19,7 +19,7 @@
 class SkPath;
 class SkMatrix;
 
-namespace lightui {
+namespace mbink {
 
 /**
  * @brief SVG元素基类
@@ -356,5 +356,5 @@ public:
     float GetFontSize() const;
 };
 
-} // namespace lightui
+} // namespace mbink
 

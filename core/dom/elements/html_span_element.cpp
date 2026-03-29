@@ -5,7 +5,7 @@
 
 #include "html_span_element.h"
 
-namespace lightui {
+namespace mbink {
 
 HTMLSpanElement::HTMLSpanElement()
     : Element("span") {
@@ -13,5 +13,5 @@ HTMLSpanElement::HTMLSpanElement()
     // 这里不设置样式，由CSS引擎处理默认样式
 }
 
-} // namespace lightui
+} // namespace mbink
 

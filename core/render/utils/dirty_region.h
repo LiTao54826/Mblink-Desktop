@@ -15,7 +15,7 @@
 #include <vector>
 #include <optional>
 
-namespace lightui {
+namespace mbink {
 
 /**
  * @brief 脏区域管理器
@@ -190,5 +190,5 @@ public:
     virtual bool NeedsPaint() const = 0;
 };
 
-} // namespace lightui
+} // namespace mbink
 

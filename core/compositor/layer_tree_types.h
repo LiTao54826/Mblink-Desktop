@@ -12,7 +12,7 @@
 #include <functional>
 #include <string>
 
-namespace lightui {
+namespace mbink {
 
 // 前向声明
 class RenderObject;
@@ -84,4 +84,4 @@ inline const char* LayerUpdateTypeToString(LayerUpdateType type) {
     }
 }
 
-} // namespace lightui
+} // namespace mbink

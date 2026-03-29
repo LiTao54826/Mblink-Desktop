@@ -7,7 +7,7 @@
 #include "render/utils/shadow_renderer.h"
 #include "render/css/css_value.h"
 
-namespace lightui {
+namespace mbink {
 namespace test {
 
 class ShadowRendererTest : public ::testing::Test {};
@@ -157,4 +157,4 @@ TEST_F(ShadowRendererTest, LargeBlurShadow) {
 }
 
 } // namespace test
-} // namespace lightui
+} // namespace mbink

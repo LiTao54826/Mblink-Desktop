@@ -1,4 +1,4 @@
-# LightUI Third-Party Dependencies Download Script (PowerShell)
+# MBink Third-Party Dependencies Download Script (PowerShell)
 # Purpose: Automatically download and configure all dependencies
 # PowerShell version with better UTF-8 support and error handling
 
@@ -7,7 +7,7 @@
 $OutputEncoding = [System.Text.Encoding]::UTF8
 
 Write-Host "==========================================" -ForegroundColor Cyan
-Write-Host "  LightUI Dependencies Download (PowerShell)" -ForegroundColor Cyan
+Write-Host "  MBink Dependencies Download (PowerShell)" -ForegroundColor Cyan
 Write-Host "==========================================" -ForegroundColor Cyan
 Write-Host ""
 

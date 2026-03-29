@@ -15,7 +15,7 @@
 #include "quickjs.h"
 #include "core/dom/element.h"
 
-namespace lightui {
+namespace mbink {
 namespace bindings {
 
 /**
@@ -48,4 +48,4 @@ std::shared_ptr<Element> UnwrapElement(JSContext* ctx, JSValue value);
 JSClassID GetElementClassID();
 
 } // namespace bindings
-} // namespace lightui
+} // namespace mbink

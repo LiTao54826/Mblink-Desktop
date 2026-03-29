@@ -5,8 +5,8 @@
  * 提供 <logview> 标签的完整实现。
  */
 
-#ifndef LIGHTUI_DOM_ELEMENTS_LOGVIEW_HTML_LOGVIEW_ELEMENT_H_
-#define LIGHTUI_DOM_ELEMENTS_LOGVIEW_HTML_LOGVIEW_ELEMENT_H_
+#ifndef MBINK_DOM_ELEMENTS_LOGVIEW_HTML_LOGVIEW_ELEMENT_H_
+#define MBINK_DOM_ELEMENTS_LOGVIEW_HTML_LOGVIEW_ELEMENT_H_
 
 #include "log_buffer.h"
 #include "log_filter.h"
@@ -23,7 +23,7 @@
 // 前向声明
 class SkCanvas;
 
-namespace lightui {
+namespace mbink {
 
 /**
  * @brief 日志视图元素
@@ -276,6 +276,6 @@ private:
     std::pair<int, int> ScreenToLineCol(float x, float y) const;
 };
 
-}  // namespace lightui
+}  // namespace mbink
 
-#endif  // LIGHTUI_DOM_ELEMENTS_LOGVIEW_HTML_LOGVIEW_ELEMENT_H_
+#endif  // MBINK_DOM_ELEMENTS_LOGVIEW_HTML_LOGVIEW_ELEMENT_H_

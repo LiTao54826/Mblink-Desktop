@@ -15,7 +15,7 @@
 #include "core/utils/utf8_utils.h"
 #include <algorithm>
 
-namespace lightui {
+namespace mbink {
 
 FormElementPainter::FormElementPainter(SkCanvas* canvas)
     : canvas_(canvas) {
@@ -71,7 +71,7 @@ void FormElementPainter::PaintTextAreaElement(HTMLTextAreaElement* textarea,
         TextRenderer text_renderer(canvas_);
 
         // 设置文本颜色
-        lightui::Paint text_paint;
+        mbink::Paint text_paint;
         text_paint.SetColor(GetTextColor(params, is_placeholder));
 
         // 绘制多行文本
@@ -198,7 +198,7 @@ void FormElementPainter::PaintInputTextLayer(const InputPaintModel& model,
                                              const FormElementPaintParams& params) {
     TextRenderer text_renderer(canvas_);
 
-    lightui::Paint text_paint;
+    mbink::Paint text_paint;
     text_paint.SetColor(GetTextColor(params, model.is_placeholder));
 
     text_renderer.DrawTextWithEmoji(model.display_text, text_x, text_y, font, text_paint);
@@ -367,10 +367,10 @@ SkColor FormElementPainter::GetTextColor(const FormElementPaintParams& params, b
     }
     
     if (!params.text_color.empty()) {
-        return lightui::Color::Parse(params.text_color);
+        return mbink::Color::Parse(params.text_color);
     }
     
     return SK_ColorBLACK;
 }
 
-} // namespace lightui
+} // namespace mbink

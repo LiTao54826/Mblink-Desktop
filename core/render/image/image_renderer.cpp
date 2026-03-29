@@ -5,7 +5,7 @@
 
 #include "image_renderer.h"
 
-namespace lightui {
+namespace mbink {
 
 // ========== 构造函数 ==========
 
@@ -130,5 +130,5 @@ sk_sp<SkImage> ImageRenderer::LoadImageWithCache(const std::string& path) {
     }
 }
 
-} // namespace lightui
+} // namespace mbink
 

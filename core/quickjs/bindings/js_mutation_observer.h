@@ -14,7 +14,7 @@
 #include "quickjs.h"
 #include "core/dom/observers/mutation_observer.h"
 
-namespace lightui {
+namespace mbink {
 
 namespace bindings {
 
@@ -61,4 +61,4 @@ std::shared_ptr<MutationObserver> UnwrapMutationObserver(JSContext* ctx, JSValue
 JSValue MutationRecordToJS(JSContext* ctx, const MutationRecord& record);
 
 } // namespace bindings
-} // namespace lightui
+} // namespace mbink

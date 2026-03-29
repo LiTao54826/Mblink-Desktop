@@ -6,7 +6,7 @@
 #include "core/compositor/property_tree/nodes/transform_tree_node.h"
 #include <cmath>
 
-namespace lightui {
+namespace mbink {
 
 TransformTreeNode::TransformTreeNode() {
     // Default to identity transform
@@ -227,4 +227,4 @@ void TransformTreeNode::UpdateTransformType() {
     }
 }
 
-} // namespace lightui
+} // namespace mbink

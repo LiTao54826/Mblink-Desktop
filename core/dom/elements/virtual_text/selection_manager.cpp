@@ -8,7 +8,7 @@
 #include <algorithm>
 #include <cctype>
 
-namespace lightui {
+namespace mbink {
 namespace virtual_text {
 
 // === SelectionRange 实现 ===
@@ -155,4 +155,4 @@ bool SelectionManager::IsWordChar(char c) {
 }
 
 }  // namespace virtual_text
-}  // namespace lightui
+}  // namespace mbink

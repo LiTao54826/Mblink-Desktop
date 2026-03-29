@@ -11,7 +11,7 @@
 #include <chrono>
 #include <iostream>
 
-namespace lightui {
+namespace mbink {
 namespace test {
 
 class LayoutPerformanceTest : public DOMTestBase {
@@ -301,4 +301,4 @@ TEST_F(LayoutPerformanceTest, TableLayout) {
 }
 
 } // namespace test
-} // namespace lightui
+} // namespace mbink

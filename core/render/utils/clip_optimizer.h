@@ -16,7 +16,7 @@
 #include <memory>
 #include <vector>
 
-namespace lightui {
+namespace mbink {
 
 // 前向声明
 class RenderObject;
@@ -252,5 +252,5 @@ private:
     ClipOptimizer& optimizer_;
 };
 
-} // namespace lightui
+} // namespace mbink
 

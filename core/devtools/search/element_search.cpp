@@ -6,7 +6,7 @@
 #include "element_search.h"
 #include <algorithm>
 
-namespace lightui {
+namespace mbink {
 
 ElementSearch::ElementSearch(Document* document)
     : document_(document) {
@@ -148,4 +148,4 @@ std::vector<std::shared_ptr<Element>> ElementSearch::SearchByText(const std::str
     return results;
 }
 
-} // namespace lightui
+} // namespace mbink

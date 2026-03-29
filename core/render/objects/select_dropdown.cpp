@@ -15,7 +15,7 @@
 #include "include/core/SkMaskFilter.h"
 #include "include/effects/SkBlurMaskFilter.h"
 
-namespace lightui {
+namespace mbink {
 
 SelectDropdownManager& SelectDropdownManager::Instance() {
     static SelectDropdownManager instance;
@@ -239,7 +239,7 @@ void SelectDropdownManager::Paint(SkCanvas* canvas) {
             std::string label = elem->GetAttribute("label");
             if (!label.empty()) {
                 // optgroup 文本 - 加粗黑色
-                lightui::Paint text_paint;
+                mbink::Paint text_paint;
                 text_paint.SetColor(SK_ColorBLACK);
                 float text_y = y + (ITEM_HEIGHT - (-font_metrics.fAscent + font_metrics.fDescent)) / 2 - font_metrics.fAscent;
                 text_renderer.DrawText(label, rect.left() + ITEM_PADDING_X, text_y, bold_font, text_paint);
@@ -280,7 +280,7 @@ void SelectDropdownManager::Paint(SkCanvas* canvas) {
                 std::string option_text = getOptionText(opt_elem);
                 bool is_disabled = opt_elem->HasAttribute("disabled");
                 
-                lightui::Paint text_paint;
+                mbink::Paint text_paint;
                 if (item_index == hovered_index) {
                     text_paint.SetColor(SK_ColorWHITE);
                 } else if (is_disabled) {
@@ -318,7 +318,7 @@ void SelectDropdownManager::Paint(SkCanvas* canvas) {
             std::string option_text = getOptionText(elem);
             bool is_disabled = elem->HasAttribute("disabled");
             
-            lightui::Paint text_paint;
+            mbink::Paint text_paint;
             if (item_index == hovered_index) {
                 text_paint.SetColor(SK_ColorWHITE);
             } else if (is_disabled) {
@@ -431,5 +431,5 @@ bool SelectDropdownManager::HitTest(float x, float y) const {
     return current_dropdown_.dropdown_rect.contains(x, y);
 }
 
-} // namespace lightui
+} // namespace mbink
 

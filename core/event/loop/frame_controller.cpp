@@ -7,7 +7,7 @@
 #include <algorithm>
 #include <numeric>
 
-namespace lightui {
+namespace mbink {
 
 FrameController::FrameController(int target_fps)
     : target_fps_(target_fps)
@@ -134,5 +134,5 @@ void FrameController::UpdateFPSStats(float frame_time) {
     }
 }
 
-} // namespace lightui
+} // namespace mbink
 

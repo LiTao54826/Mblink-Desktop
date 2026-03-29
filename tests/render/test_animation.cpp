@@ -7,7 +7,7 @@
 #include "render/animation/animation.h"
 #include "render/animation/easing_functions.h"
 
-namespace lightui {
+namespace mbink {
 namespace test {
 
 class AnimationTest : public ::testing::Test {};
@@ -141,4 +141,4 @@ TEST_F(AnimationTest, AnimationIsValid) {
 }
 
 } // namespace test
-} // namespace lightui
+} // namespace mbink

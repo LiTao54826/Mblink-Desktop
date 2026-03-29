@@ -1,4 +1,4 @@
-# LightUI C++代码格式配置
+# MBink C++代码格式配置
 # 基于Google C++风格指南，略有修改
 
 BasedOnStyle: Google

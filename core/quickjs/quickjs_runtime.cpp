@@ -19,7 +19,7 @@
 #include <chrono>
 #include <filesystem>
 
-namespace lightui {
+namespace mbink {
 
 QuickJSRuntime::QuickJSRuntime() {
     InitRuntime();
@@ -1148,5 +1148,5 @@ JSValue QuickJSRuntime::NativeFunctionWrapper(JSContext* ctx, JSValueConst this_
     }
 }
 
-} // namespace lightui
+} // namespace mbink
 

@@ -8,7 +8,7 @@
 #include <stdexcept>
 #include <sstream>
 
-namespace lightui {
+namespace mbink {
 
 // ========== 构造函数 ==========
 
@@ -117,4 +117,4 @@ void HTMLCanvasElement::ResizeCanvas() {
     }
 }
 
-} // namespace lightui
+} // namespace mbink

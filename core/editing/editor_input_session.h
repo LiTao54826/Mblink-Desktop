@@ -4,7 +4,7 @@
 #include <memory>
 #include <string>
 
-namespace lightui {
+namespace mbink {
 
 class Document;
 class Element;
@@ -50,4 +50,4 @@ private:
     ContentEditableHandler* contenteditable_handler_ = nullptr;
 };
 
-}  // namespace lightui
+}  // namespace mbink

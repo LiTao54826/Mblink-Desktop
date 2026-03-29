@@ -8,7 +8,7 @@
 #include "dom/document.h"
 #include "dom/bindings/dom_bindings.h"
 
-namespace lightui {
+namespace mbink {
 namespace test {
 
 class DOMBindingsTest : public ::testing::Test {
@@ -356,4 +356,4 @@ TEST_F(DOMBindingsTest, PreviousSibling) {
 }
 
 } // namespace test
-} // namespace lightui
+} // namespace mbink

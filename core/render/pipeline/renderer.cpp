@@ -5,7 +5,7 @@
 
 #include "renderer.h"
 
-namespace lightui {
+namespace mbink {
 
 // ========== 构造函数 ==========
 
@@ -106,4 +106,4 @@ void Renderer::ClipPath(const SkPath& path, bool doAntiAlias) {
     }
 }
 
-} // namespace lightui
+} // namespace mbink

@@ -18,7 +18,7 @@
 #include <stdexcept>
 #include <vector>
 
-namespace lightui {
+namespace mbink {
 
 Range::Range(std::shared_ptr<Document> owner_document)
     : owner_document_(owner_document)
@@ -729,4 +729,4 @@ void Range::CollectText(std::shared_ptr<Node> node, std::string& result, bool& i
     }
 }
 
-} // namespace lightui
+} // namespace mbink

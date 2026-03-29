@@ -44,7 +44,7 @@
 
 namespace fs = std::filesystem;
 
-namespace lightui {
+namespace mbink {
 
 // 静态成员初始化
 Document::FileAssetProvider Document::asset_provider_ = nullptr;
@@ -767,4 +767,4 @@ void Document::LoadExternalStylesheets() {
     }
 }
 
-} // namespace lightui
+} // namespace mbink

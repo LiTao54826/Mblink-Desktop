@@ -6,7 +6,7 @@
 #include "paint.h"
 #include <algorithm>
 
-namespace lightui {
+namespace mbink {
 
 // ========== 构造函数 ==========
 
@@ -164,4 +164,4 @@ void Paint::Reset() {
     paint_.setStyle(SkPaint::kFill_Style);
 }
 
-} // namespace lightui
+} // namespace mbink

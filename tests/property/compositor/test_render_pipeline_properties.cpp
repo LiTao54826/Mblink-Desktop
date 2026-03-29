@@ -18,7 +18,7 @@
 #include "include/core/SkCanvas.h"
 #include <memory>
 
-using namespace lightui;
+using namespace mbink;
 
 // =========================================================================
 // 测试辅助类

@@ -4,7 +4,7 @@
 #include <vector>
 #include <optional>
 
-namespace lightui {
+namespace mbink {
 
 /**
  * @brief CSS transition-timing-function 类型
@@ -128,5 +128,5 @@ private:
     static std::pair<TimingFunction, CubicBezier> ParseSingleTimingFunction(const std::string& str);
 };
 
-} // namespace lightui
+} // namespace mbink
 

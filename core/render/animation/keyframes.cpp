@@ -11,7 +11,7 @@
 #include <regex>
 #include <sstream>
 
-namespace lightui {
+namespace mbink {
 
 // ============================================================================
 // KeyframesRule 实现
@@ -236,5 +236,5 @@ std::vector<std::string> KeyframesManager::GetAllNames() const {
     return names;
 }
 
-} // namespace lightui
+} // namespace mbink
 

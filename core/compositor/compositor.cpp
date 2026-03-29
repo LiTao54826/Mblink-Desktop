@@ -81,10 +81,10 @@ typedef void (APIENTRY *PFNGLACTIVETEXTUREPROC)(GLenum);
 #define GL_TEXTURE0 0x84C0
 #endif
 
-namespace lightui {
+namespace mbink {
 
 inline bool IsAnimFinalDebugEnabled() {
-    static const bool enabled = (std::getenv("LIGHTUI_DEBUG_ANIM_FINAL") != nullptr);
+    static const bool enabled = (std::getenv("MBINK_DEBUG_ANIM_FINAL") != nullptr);
     return enabled;
 }
 
@@ -163,7 +163,7 @@ inline void LogAnimFinalConsume(const char* path, CompositorLayer* layer, const 
 }
 
 inline bool IsAnimDrawDebugEnabled() {
-    static const bool enabled = (std::getenv("LIGHTUI_DEBUG_ANIM_DRAW") != nullptr) || IsAnimFinalDebugEnabled();
+    static const bool enabled = (std::getenv("MBINK_DEBUG_ANIM_DRAW") != nullptr) || IsAnimFinalDebugEnabled();
     return enabled;
 }
 
@@ -954,4 +954,4 @@ int Compositor::CountLayers(CompositorLayer* root) const {
     return count;
 }
 
-} // namespace lightui
+} // namespace mbink

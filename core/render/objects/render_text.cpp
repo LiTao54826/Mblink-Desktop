@@ -33,7 +33,7 @@
 #endif
 
 
-namespace lightui {
+namespace mbink {
 
 // 辅助函数：计算浏览器风格的 line-height: normal
 // 与 IFCLayout::MeasureTextStatic 中的查找表保持一致
@@ -260,7 +260,7 @@ void RenderText::Paint(SkCanvas* canvas) {
 
     SkColor text_color;
     if (!style.color.empty()) {
-        text_color = lightui::Color::Parse(style.color);
+        text_color = mbink::Color::Parse(style.color);
     } else {
         text_color = SK_ColorBLACK;
     }
@@ -377,7 +377,7 @@ void RenderText::Paint(SkCanvas* canvas) {
                 ShadowRenderer::RenderTextWithShadow(canvas, text_to_render, font,
                                                      line_x, line_y, text_color, style.text_shadow, text_renderer);
             } else {
-                lightui::Paint text_paint;
+                mbink::Paint text_paint;
                 text_paint.SetColor(text_color);
                 text_renderer.DrawTextWithEmoji(text_to_render, line_x, line_y, font, text_paint);
             }
@@ -443,4 +443,4 @@ void RenderText::Paint(SkCanvas* canvas) {
     needs_paint_ = false;
 }
 
-} // namespace lightui
+} // namespace mbink

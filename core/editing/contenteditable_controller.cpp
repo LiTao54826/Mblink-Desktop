@@ -23,7 +23,7 @@
 #include <vector>
 #include <limits>
 
-namespace lightui {
+namespace mbink {
 
 namespace {
 
@@ -621,4 +621,4 @@ bool ContentEditableController::FindTextNodeAtPosition(
     return true;
 }
 
-} // namespace lightui
+} // namespace mbink

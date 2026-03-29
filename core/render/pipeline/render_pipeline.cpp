@@ -24,7 +24,7 @@
 // 全局变量：用于控制调试日志输出（放在全局命名空间，方便其他编译单元访问）
 int g_debug_frames_remaining = 0;
 
-namespace lightui {
+namespace mbink {
 
 // =========================================================================
 // 辅助函数（复制自 V2）
@@ -38,12 +38,12 @@ namespace {
     }
 
     bool IsAnimFrameDebugEnabled() {
-        static const bool enabled = (std::getenv("LIGHTUI_DEBUG_ANIM_FRAME") != nullptr);
+        static const bool enabled = (std::getenv("MBINK_DEBUG_ANIM_FRAME") != nullptr);
         return enabled;
     }
 
     bool IsLayerRebuildDebugEnabled() {
-        static const bool enabled = (std::getenv("LIGHTUI_DEBUG_LAYER_REBUILD") != nullptr);
+        static const bool enabled = (std::getenv("MBINK_DEBUG_LAYER_REBUILD") != nullptr);
         return enabled;
     }
 }
@@ -526,7 +526,7 @@ void RenderPipeline::DoLayerTreeBuild() {
                   << "\n";
     }
 
-    static bool debug_layer_build = std::getenv("LIGHTUI_DEBUG_LAYER_BUILD") != nullptr;
+    static bool debug_layer_build = std::getenv("MBINK_DEBUG_LAYER_BUILD") != nullptr;
 
     // 递减调试帧计数器
     if (g_debug_frames_remaining > 0) {
@@ -689,7 +689,7 @@ void RenderPipeline::CollectDirtyRectsForLayer(RenderObject* obj, CompositorLaye
     }
 
     // 🐛 hover bug 调试日志
-    static bool debug_hover = std::getenv("LIGHTUI_DEBUG_HOVER_BUG") != nullptr;
+    static bool debug_hover = std::getenv("MBINK_DEBUG_HOVER_BUG") != nullptr;
 
     auto rect_differs = [](const SkRect& a, const SkRect& b) {
         const float eps = 0.01f;
@@ -763,7 +763,7 @@ void RenderPipeline::CollectDirtyRectsForLayer(RenderObject* obj, CompositorLaye
 
             // 小尺寸层阈值（可通过环境变量配置）
             static float small_layer_threshold = []() {
-                const char* env = std::getenv("LIGHTUI_SMALL_LAYER_THRESHOLD");
+                const char* env = std::getenv("MBINK_SMALL_LAYER_THRESHOLD");
                 return env ? std::atof(env) : 200.0f;
             }();
 
@@ -889,8 +889,8 @@ void RenderPipeline::DetectAndCreateNewLayersRecursive(RenderObject* obj) {
 
             // 只对 position: fixed 元素输出详细日志（默认关闭）
             bool is_fixed = (reason == LayerPromotionReason::PositionFixed);
-            static bool debug_layers = std::getenv("LIGHTUI_DEBUG_LAYERS") != nullptr ||
-                                       std::getenv("LIGHTUI_DEBUG_DIRTY") != nullptr;
+            static bool debug_layers = std::getenv("MBINK_DEBUG_LAYERS") != nullptr ||
+                                       std::getenv("MBINK_DEBUG_DIRTY") != nullptr;
             if (is_fixed && debug_layers) {
                 if (!element_id.empty()) {
                 }
@@ -942,7 +942,7 @@ void RenderPipeline::RemoveOrphanedLayers(CompositorLayer* layer) {
     collect(render_tree_.get());
 
     // 调试：输出收集到的对象数量
-    static bool debug_orphan = std::getenv("LIGHTUI_DEBUG_ORPHAN") != nullptr;
+    static bool debug_orphan = std::getenv("MBINK_DEBUG_ORPHAN") != nullptr;
     if (debug_orphan) {
     }
 
@@ -1164,4 +1164,4 @@ void RenderPipeline::OnAnimationEnd(RenderObject* object, const std::string& ani
     }
 }
 
-} // namespace lightui
+} // namespace mbink

@@ -1,5 +1,5 @@
-#ifndef LIGHTUI_UNIFIED_RENDERER_H
-#define LIGHTUI_UNIFIED_RENDERER_H
+#ifndef MBINK_UNIFIED_RENDERER_H
+#define MBINK_UNIFIED_RENDERER_H
 
 #include "core/render/utils/color.h"
 #include "core/render/utils/paint.h"
@@ -17,7 +17,7 @@
 #include <memory>
 #include <string>
 
-namespace lightui {
+namespace mbink {
 
 /**
  * @brief 统一渲染器 - 提供简化的高层渲染 API
@@ -317,7 +317,7 @@ private:
     void EnsureImageRenderer();   ///< 确保 ImageRenderer 已创建
 };
 
-} // namespace lightui
+} // namespace mbink
 
-#endif // LIGHTUI_UNIFIED_RENDERER_H
+#endif // MBINK_UNIFIED_RENDERER_H
 

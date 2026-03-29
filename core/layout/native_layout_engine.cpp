@@ -49,7 +49,7 @@
 #pragma comment(lib, "Dbghelp.lib")
 #endif
 
-namespace lightui {
+namespace mbink {
 //------------------------------------------------------------------------------
 // Helper Functions (must be before CreateNode)
 //------------------------------------------------------------------------------
@@ -2616,7 +2616,7 @@ LayoutOutput NativeLayoutEngine::ComputeNodeLayout(NodeId node_id, const LayoutI
 
 LayoutOutput NativeLayoutEngine::ComputeBlockLayout(NodeId node_id, const LayoutInput& inputs) {
     // Use Taffy's block layout algorithm
-    return lightui::ComputeBlockLayout(*this, node_id, inputs);
+    return mbink::ComputeBlockLayout(*this, node_id, inputs);
 }
 
 
@@ -2789,7 +2789,7 @@ LayoutOutput NativeLayoutEngine::ComputeFlexLayout(NodeId node_id, const LayoutI
 LayoutOutput NativeLayoutEngine::ComputeGridLayout(NodeId node_id, const LayoutInput& inputs) {
     // Create adapter and call translated Taffy algorithm
     GridAdapter adapter(*this);
-    return lightui::ComputeGridLayout(adapter, node_id, inputs);
+    return mbink::ComputeGridLayout(adapter, node_id, inputs);
 }
 
 LayoutOutput NativeLayoutEngine::ComputeTableLayout(NodeId node_id, const LayoutInput& inputs) {
@@ -4697,5 +4697,5 @@ const GridItemStyle& NativeLayoutEngine::GetGridItemStyle(NodeId node) const {
     return it->second.grid_item_style;
 }
 
-} // namespace lightui
+} // namespace mbink
 

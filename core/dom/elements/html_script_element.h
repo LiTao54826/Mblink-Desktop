@@ -7,7 +7,7 @@
 
 #include "../element.h"
 
-namespace lightui {
+namespace mbink {
 
 /**
  * @brief HTMLScriptElement 类
@@ -130,4 +130,4 @@ private:
     bool executed_ = false;  // 是否已执行
 };
 
-} // namespace lightui
+} // namespace mbink

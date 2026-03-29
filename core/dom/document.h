@@ -25,14 +25,14 @@
 #include <unordered_map>
 
 // 前向声明
-namespace lightui {
+namespace mbink {
     class LexborDocument;
     class StyleManager;
     class QuickJSRuntime;
     class Window;
 }
 
-namespace lightui {
+namespace mbink {
 
 /**
  * @brief Document 类
@@ -532,4 +532,4 @@ public:
     void ClearDirtyRects() { dirty_rects_.clear(); }
 };
 
-} // namespace lightui
+} // namespace mbink

@@ -6,8 +6,8 @@
  * 用于拦截可能导致闪烁的消息。
  */
 
-#ifndef LIGHTUI_WINDOW_WIN32_H
-#define LIGHTUI_WINDOW_WIN32_H
+#ifndef MBINK_WINDOW_WIN32_H
+#define MBINK_WINDOW_WIN32_H
 
 #ifdef _WIN32
 
@@ -21,7 +21,7 @@
 #endif
 #include <windows.h>
 
-namespace lightui {
+namespace mbink {
 
 class Window;
 
@@ -66,8 +66,8 @@ void IncrementPresentCount();
 void PrintStats();
 
 }  // namespace win32
-}  // namespace lightui
+}  // namespace mbink
 
 #endif  // _WIN32
 
-#endif  // LIGHTUI_WINDOW_WIN32_H
+#endif  // MBINK_WINDOW_WIN32_H

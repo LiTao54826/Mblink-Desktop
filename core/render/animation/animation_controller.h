@@ -5,8 +5,8 @@
  * @date 2025-11-14
  */
 
-#ifndef LIGHTUI_CORE_RENDER_ANIMATION_CONTROLLER_H_
-#define LIGHTUI_CORE_RENDER_ANIMATION_CONTROLLER_H_
+#ifndef MBINK_CORE_RENDER_ANIMATION_CONTROLLER_H_
+#define MBINK_CORE_RENDER_ANIMATION_CONTROLLER_H_
 
 #include "animation.h"
 #include "keyframes.h"
@@ -17,7 +17,7 @@
 #include <optional>
 #include <string>
 
-namespace lightui {
+namespace mbink {
 
 // 前向声明
 class RenderObject;
@@ -447,7 +447,7 @@ private:
     void UpdateSingleAnimation(std::shared_ptr<Element> element, const std::string& name, double current_time);
 };
 
-} // namespace lightui
+} // namespace mbink
 
-#endif // LIGHTUI_CORE_RENDER_ANIMATION_CONTROLLER_H_
+#endif // MBINK_CORE_RENDER_ANIMATION_CONTROLLER_H_
 

@@ -11,7 +11,7 @@
 #include "core/quickjs/bindings/js_element.h"
 #include <iostream>
 
-namespace lightui {
+namespace mbink {
 
 // 静态成员初始化
 JSClassID CanvasBindings::context_2d_class_id = 0;
@@ -1450,5 +1450,5 @@ CanvasRenderingContext2D* CanvasBindings::UnwrapContext2D(JSContext* ctx, JSValu
     return static_cast<CanvasRenderingContext2D*>(JS_GetOpaque(obj, context_2d_class_id));
 }
 
-} // namespace lightui
+} // namespace mbink
 

@@ -10,7 +10,7 @@
 #include <fstream>
 #include <functional>
 
-namespace lightui {
+namespace mbink {
 
 // ========== LexborDocument 实现 ==========
 
@@ -1006,5 +1006,5 @@ std::vector<LexborElement*> LexborElement::QuerySelectorAll(const std::string& s
     return results;
 }
 
-} // namespace lightui
+} // namespace mbink
 

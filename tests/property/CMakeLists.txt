@@ -69,7 +69,7 @@ set(VIRTUAL_TEXT_PROPERTY_TEST_SOURCES
 )
 
 # Create property tests executable
-add_executable(lightui_property_tests
+add_executable(mbink_property_tests
     main.cpp
     ${RENDER_PROPERTY_TEST_SOURCES}
     ${LAYOUT_PROPERTY_TEST_SOURCES}
@@ -79,7 +79,7 @@ add_executable(lightui_property_tests
 )
 
 # Add include directories
-target_include_directories(lightui_property_tests
+target_include_directories(mbink_property_tests
     PRIVATE
     ${CMAKE_SOURCE_DIR}
     ${CMAKE_SOURCE_DIR}/core
@@ -87,19 +87,19 @@ target_include_directories(lightui_property_tests
     ${CMAKE_SOURCE_DIR}/tools/app_bundler
 )
 
-target_link_libraries(lightui_property_tests
+target_link_libraries(mbink_property_tests
     PRIVATE
-    lightui
+    mbink
     test_utils
     GTest::gtest
 )
 
 # Optionally link RapidCheck if available
-if(LIGHTUI_USE_RAPIDCHECK)
-    target_link_libraries(lightui_property_tests PRIVATE rapidcheck rapidcheck_gtest)
-    target_compile_definitions(lightui_property_tests PRIVATE USE_RAPIDCHECK)
+if(MBINK_USE_RAPIDCHECK)
+    target_link_libraries(mbink_property_tests PRIVATE rapidcheck rapidcheck_gtest)
+    target_compile_definitions(mbink_property_tests PRIVATE USE_RAPIDCHECK)
 endif()
 
 # Add to CTest
 include(GoogleTest)
-gtest_discover_tests(lightui_property_tests)
+gtest_discover_tests(mbink_property_tests)

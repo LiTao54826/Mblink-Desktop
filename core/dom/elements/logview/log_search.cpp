@@ -8,7 +8,7 @@
 #include <algorithm>
 #include <cctype>
 
-namespace lightui {
+namespace mbink {
 
 LogSearch::LogSearch()
     : use_regex_(false),
@@ -175,4 +175,4 @@ void LogSearch::SearchRegex(const LogBuffer& buffer,
     }
 }
 
-}  // namespace lightui
+}  // namespace mbink

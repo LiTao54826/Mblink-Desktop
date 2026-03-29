@@ -11,7 +11,7 @@
 #include <algorithm>
 #include <cctype>
 
-namespace lightui {
+namespace mbink {
 
 // ========== FontDescriptor 实现 ==========
 
@@ -730,5 +730,5 @@ bool FontManager::TypefaceContainsChar(const sk_sp<SkTypeface>& typeface, uint32
     return glyph != 0;
 }
 
-} // namespace lightui
+} // namespace mbink
 

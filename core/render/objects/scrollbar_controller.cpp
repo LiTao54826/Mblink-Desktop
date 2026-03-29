@@ -10,7 +10,7 @@
 #include <algorithm>
 #include <cmath>
 
-namespace lightui {
+namespace mbink {
 
 ScrollbarHitArea ScrollbarController::HitTestScrollbar(
     float local_x, float local_y,
@@ -182,4 +182,4 @@ void ScrollbarController::CalculateThumbMetrics(float track_size, float content_
     out_track_length = track_size - out_thumb_size;
 }
 
-} // namespace lightui
+} // namespace mbink

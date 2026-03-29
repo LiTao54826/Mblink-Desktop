@@ -32,7 +32,7 @@
 #include <vector>
 #include <utility>
 
-namespace lightui {
+namespace mbink {
 namespace bindings {
 
 // ========== Opaque 数据结构 ==========
@@ -2070,4 +2070,4 @@ JSClassID GetElementClassID() {
 }
 
 } // namespace bindings
-} // namespace lightui
+} // namespace mbink

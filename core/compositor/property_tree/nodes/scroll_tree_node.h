@@ -17,7 +17,7 @@
 #include "include/core/SkSize.h"
 #include "include/core/SkPoint.h"
 
-namespace lightui {
+namespace mbink {
 
 // 前向声明
 class RenderObject;
@@ -262,4 +262,4 @@ private:
     RenderObject* render_object_ = nullptr;
 };
 
-} // namespace lightui
+} // namespace mbink

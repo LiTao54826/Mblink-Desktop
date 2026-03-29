@@ -7,7 +7,7 @@
 #include <algorithm>
 #include <unordered_set>
 
-namespace lightui {
+namespace mbink {
 
 namespace {
     // 有效的 CSS 属性列表（部分）
@@ -108,4 +108,4 @@ bool StyleEditor::ValidateStyleValue(const std::string& property, const std::str
     return true;
 }
 
-} // namespace lightui
+} // namespace mbink

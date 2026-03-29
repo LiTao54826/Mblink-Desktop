@@ -7,8 +7,8 @@
  * layout engine with native code.
  */
 
-#ifndef LIGHTUI_NATIVE_LAYOUT_ENGINE_H
-#define LIGHTUI_NATIVE_LAYOUT_ENGINE_H
+#ifndef MBINK_NATIVE_LAYOUT_ENGINE_H
+#define MBINK_NATIVE_LAYOUT_ENGINE_H
 
 #include <unordered_map>
 #include <unordered_set>
@@ -28,14 +28,14 @@
 #include "ifc/ifc_layout.h"
 
 // Forward declarations
-namespace lightui {
+namespace mbink {
 class Element;
 class RenderObject;
 struct ComputedStyle;
 struct LayoutInfo;
 }
 
-namespace lightui {
+namespace mbink {
 
 // Forward declarations for interfaces
 class LayoutFlexboxContainer;
@@ -581,7 +581,7 @@ private:
     void ClearWidthDependentCachesRecursive(NodeId node_id);
 };
 
-} // namespace lightui
+} // namespace mbink
 
-#endif // LIGHTUI_NATIVE_LAYOUT_ENGINE_H
+#endif // MBINK_NATIVE_LAYOUT_ENGINE_H
 

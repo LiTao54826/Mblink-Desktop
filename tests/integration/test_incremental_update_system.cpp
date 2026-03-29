@@ -17,7 +17,7 @@
 #include "core/render/pipeline/render_tree_synchronizer.h"
 #include "core/render/objects/render_object.h"
 
-namespace lightui {
+namespace mbink {
 namespace test {
 
 class IncrementalUpdateSystemTest : public DOMTestBase {
@@ -249,4 +249,4 @@ TEST_F(IncrementalUpdateSystemTest, SynchronizerRebuildThreshold) {
 }
 
 } // namespace test
-} // namespace lightui
+} // namespace mbink

@@ -17,7 +17,7 @@
 // 前向声明
 struct SDL_Window;
 
-namespace lightui {
+namespace mbink {
 
 /**
  * @brief 显示后端类型
@@ -351,5 +351,5 @@ private:
     void* sdl_surface_ = nullptr;  // SDL_Surface*
 };
 
-} // namespace lightui
+} // namespace mbink
 

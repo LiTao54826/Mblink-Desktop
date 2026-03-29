@@ -26,7 +26,7 @@
 #include <memory>
 #include <unordered_map>
 
-namespace lightui {
+namespace mbink {
 
 // 前向声明
 class EventLoop;
@@ -189,4 +189,4 @@ private:
 // 初始化 Image 构造函数（注册到全局对象）
 void InitImageConstructor(JSContext* ctx);
 
-} // namespace lightui
+} // namespace mbink

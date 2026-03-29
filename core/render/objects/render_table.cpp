@@ -17,7 +17,7 @@
 #include <algorithm>
 #include <limits>
 
-namespace lightui {
+namespace mbink {
 
 // ========== RenderTable 实现 ==========
 
@@ -1020,4 +1020,4 @@ void RenderTableCaption::Paint(SkCanvas* canvas) {
     needs_paint_ = false;
 }
 
-} // namespace lightui
+} // namespace mbink

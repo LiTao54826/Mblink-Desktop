@@ -15,7 +15,7 @@
 #include <windows.h>
 #endif
 
-namespace lightui {
+namespace mbink {
 
 // 全局原子标志，用于通知主线程终端需要重绘
 // 这是线程安全的方式，因为 PTY 回调在后台线程中执行
@@ -529,4 +529,4 @@ void HTMLTerminalElement::ScreenToCell(float x, float y, int& row, int& col) con
     col = renderer_->HitTestColumn(x);
 }
 
-}  // namespace lightui
+}  // namespace mbink

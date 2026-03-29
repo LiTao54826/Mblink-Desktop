@@ -8,7 +8,7 @@
 #include <cstdint>
 #include <iostream>
 
-namespace lightui {
+namespace mbink {
 
 // UTF-8解码辅助函数
 // 返回码点和消耗的字节数
@@ -728,4 +728,4 @@ float TextRenderer::MeasureMinContentWidth(const std::string& text, const SkFont
     return max_word_width;
 }
 
-} // namespace lightui
+} // namespace mbink

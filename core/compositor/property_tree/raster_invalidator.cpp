@@ -6,7 +6,7 @@
 #include "core/compositor/property_tree/raster_invalidator.h"
 #include <unordered_map>
 
-namespace lightui {
+namespace mbink {
 
 // =========================================================================
 // 构造函数
@@ -225,4 +225,4 @@ bool RasterInvalidator::ChunkContentChanged(
     return false;
 }
 
-} // namespace lightui
+} // namespace mbink

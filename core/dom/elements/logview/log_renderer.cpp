@@ -15,7 +15,7 @@
 #include <iostream>
 #include <sstream>
 
-namespace lightui {
+namespace mbink {
 
 LogRenderer::LogRenderer() {
     // 使用 FontManager 加载等宽字体
@@ -360,4 +360,4 @@ void LogRenderer::RenderScrollbar(SkCanvas* canvas, const SkRect& bounds) {
     canvas->drawRoundRect(thumb_rect, 4.0f, 4.0f, thumb_paint);
 }
 
-}  // namespace lightui
+}  // namespace mbink

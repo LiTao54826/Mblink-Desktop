@@ -8,8 +8,8 @@
 
 #include "mouse_event.h"
 
-namespace lightui {
+namespace mbink {
 
 // MouseEvent 实现在 core/dom/event.cpp 中
 
-} // namespace lightui
+} // namespace mbink

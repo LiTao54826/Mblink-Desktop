@@ -14,7 +14,7 @@
 #include <cmath>
 #include <iostream>
 
-namespace lightui {
+namespace mbink {
 
 //------------------------------------------------------------------------------
 // Forward Declarations
@@ -163,7 +163,7 @@ static AlignContent ApplyAlignmentFallback(
 
     // 1. If there is only a single item being aligned and alignment is a distributed alignment keyword
     //    https://www.w3.org/TR/css-align-3/#distribution-values
-    // 2. 在 LightUI 的 flex 实现中，为避免负剩余空间下出现“向前轴负偏移”导致的可视重叠，
+    // 2. 在 MBink 的 flex 实现中，为避免负剩余空间下出现“向前轴负偏移”导致的可视重叠，
     //    对 Center 在 free_space<=0 时也回退到 Start（safe-start 行为）。
     if (num_items <= 1 || free_space <= 0.0f) {
         switch (alignment_mode) {
@@ -894,7 +894,7 @@ static std::vector<FlexLine> CollectFlexLines(
     std::vector<FlexLine> lines;
 
     // Debug logging for flex-wrap
-    static bool debug_flex_wrap = std::getenv("LIGHTUI_DEBUG_FLEX_WRAP") != nullptr;
+    static bool debug_flex_wrap = std::getenv("MBINK_DEBUG_FLEX_WRAP") != nullptr;
 
     if (flex_items.empty()) {
         return lines;
@@ -1442,7 +1442,7 @@ static void DistributeRemainingFreeSpace(
     const FlexAlgoConstants& constants
 ) {
     // 调试日志
-    static bool debug_select = std::getenv("LIGHTUI_DEBUG_SELECT") != nullptr;
+    static bool debug_select = std::getenv("MBINK_DEBUG_SELECT") != nullptr;
 
     bool layout_reverse = IsReverse(constants.dir);
 
@@ -1642,7 +1642,7 @@ static void AlignFlexLinesPerAlignContent(
     const FlexAlgoConstants& constants,
     float total_line_cross_size
 ) {
-    static bool debug_flex_wrap = std::getenv("LIGHTUI_DEBUG_FLEX_WRAP") != nullptr;
+    static bool debug_flex_wrap = std::getenv("MBINK_DEBUG_FLEX_WRAP") != nullptr;
 
     float inner_cross = constants.inner_container_size.Cross(constants.dir);
     float free_space = inner_cross - total_line_cross_size;
@@ -1858,8 +1858,8 @@ static Size<float> FinalLayoutPass(
 //------------------------------------------------------------------------------
 
 // Debug flag for absolute positioning - set to true to enable debug logging
-#ifndef LIGHTUI_DEBUG_ABSOLUTE_POSITIONING
-#define LIGHTUI_DEBUG_ABSOLUTE_POSITIONING 0
+#ifndef MBINK_DEBUG_ABSOLUTE_POSITIONING
+#define MBINK_DEBUG_ABSOLUTE_POSITIONING 0
 #endif
 
 static Size<float> PerformAbsoluteLayoutOnAbsoluteChildren(
@@ -1867,7 +1867,7 @@ static Size<float> PerformAbsoluteLayoutOnAbsoluteChildren(
     NodeId node,
     const FlexAlgoConstants& constants
 ) {
-#if LIGHTUI_DEBUG_ABSOLUTE_POSITIONING
+#if MBINK_DEBUG_ABSOLUTE_POSITIONING
 #endif
 
     Size<float> content_size = Size<float>::Zero();
@@ -1898,7 +1898,7 @@ static Size<float> PerformAbsoluteLayoutOnAbsoluteChildren(
             std::optional<float>(containing_block_size.height)
         };
 
-#if LIGHTUI_DEBUG_ABSOLUTE_POSITIONING
+#if MBINK_DEBUG_ABSOLUTE_POSITIONING
         if (is_fixed) {
         }
 #endif
@@ -1917,7 +1917,7 @@ static Size<float> PerformAbsoluteLayoutOnAbsoluteChildren(
         // Resolve inset - use containing block size for percentage resolution
         auto inset = MaybeResolve(child_style.inset, containing_block_size_opt.width);
 
-#if LIGHTUI_DEBUG_ABSOLUTE_POSITIONING
+#if MBINK_DEBUG_ABSOLUTE_POSITIONING
 #endif
 
         // Resolve margin - use containing block size for percentage resolution
@@ -2005,7 +2005,7 @@ static Size<float> PerformAbsoluteLayoutOnAbsoluteChildren(
             location.y = content_box_top + margin.top;
         }
 
-#if LIGHTUI_DEBUG_ABSOLUTE_POSITIONING
+#if MBINK_DEBUG_ABSOLUTE_POSITIONING
         if (inset.left.has_value()) {
         } else if (inset.right.has_value()) {
         } else {
@@ -2037,5 +2037,5 @@ static Size<float> PerformAbsoluteLayoutOnAbsoluteChildren(
 }
 
 
-} // namespace lightui
+} // namespace mbink
 

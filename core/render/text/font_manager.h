@@ -18,7 +18,7 @@
 #include "include/core/SkFont.h"
 #include "include/core/SkFontMgr.h"
 
-namespace lightui {
+namespace mbink {
 
 /**
  * @brief 字体样式
@@ -232,5 +232,5 @@ private:
     bool initialized_;                                              ///< 是否已初始化
 };
 
-} // namespace lightui
+} // namespace mbink
 

@@ -17,7 +17,7 @@
 #include "include/core/SkRect.h"
 #include <vector>
 
-namespace lightui {
+namespace mbink {
 
 /**
  * @brief 失效结果
@@ -187,4 +187,4 @@ private:
     const GeometryMapper& mapper_;
 };
 
-} // namespace lightui
+} // namespace mbink

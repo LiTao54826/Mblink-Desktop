@@ -7,7 +7,7 @@
 #include <algorithm>
 #include <cctype>
 
-namespace lightui {
+namespace mbink {
 
 // 静态成员初始化
 const std::string StateManager::emptyString_;
@@ -24,105 +24,105 @@ bool StateManager::isValidName(const std::string& name) const {
         [](unsigned char c) { return !std::isspace(c); });
 }
 
-LightUIType StateManager::jsonTypeToLightUIType(const json& j) {
-    if (j.is_null()) return LightUIType::Null;
-    if (j.is_boolean()) return LightUIType::Bool;
-    if (j.is_number_integer()) return LightUIType::Int;
-    if (j.is_number_float()) return LightUIType::Double;
-    if (j.is_string()) return LightUIType::String;
-    if (j.is_array()) return LightUIType::Array;
-    if (j.is_object()) return LightUIType::Object;
-    return LightUIType::Null;
+MBinkType StateManager::jsonTypeToMBinkType(const json& j) {
+    if (j.is_null()) return MBinkType::Null;
+    if (j.is_boolean()) return MBinkType::Bool;
+    if (j.is_number_integer()) return MBinkType::Int;
+    if (j.is_number_float()) return MBinkType::Double;
+    if (j.is_string()) return MBinkType::String;
+    if (j.is_array()) return MBinkType::Array;
+    if (j.is_object()) return MBinkType::Object;
+    return MBinkType::Null;
 }
 
 // ========== 创建 ==========
 
-LightUIError StateManager::createNull(const std::string& name) {
-    if (!isValidName(name)) return LightUIError::InvalidName;
+MBinkError StateManager::createNull(const std::string& name) {
+    if (!isValidName(name)) return MBinkError::InvalidName;
 
     std::unique_lock lock(statesMutex_);
     if (states_.find(name) != states_.end()) {
-        return LightUIError::AlreadyExists;
+        return MBinkError::AlreadyExists;
     }
     states_[name] = nullptr;
-    return LightUIError::Ok;
+    return MBinkError::Ok;
 }
 
-LightUIError StateManager::createBool(const std::string& name, bool value) {
-    if (!isValidName(name)) return LightUIError::InvalidName;
+MBinkError StateManager::createBool(const std::string& name, bool value) {
+    if (!isValidName(name)) return MBinkError::InvalidName;
 
     std::unique_lock lock(statesMutex_);
     if (states_.find(name) != states_.end()) {
-        return LightUIError::AlreadyExists;
+        return MBinkError::AlreadyExists;
     }
     states_[name] = value;
-    return LightUIError::Ok;
+    return MBinkError::Ok;
 }
 
-LightUIError StateManager::createInt(const std::string& name, int64_t value) {
-    if (!isValidName(name)) return LightUIError::InvalidName;
+MBinkError StateManager::createInt(const std::string& name, int64_t value) {
+    if (!isValidName(name)) return MBinkError::InvalidName;
 
     std::unique_lock lock(statesMutex_);
     if (states_.find(name) != states_.end()) {
-        return LightUIError::AlreadyExists;
+        return MBinkError::AlreadyExists;
     }
     states_[name] = value;
-    return LightUIError::Ok;
+    return MBinkError::Ok;
 }
 
-LightUIError StateManager::createDouble(const std::string& name, double value) {
-    if (!isValidName(name)) return LightUIError::InvalidName;
+MBinkError StateManager::createDouble(const std::string& name, double value) {
+    if (!isValidName(name)) return MBinkError::InvalidName;
 
     std::unique_lock lock(statesMutex_);
     if (states_.find(name) != states_.end()) {
-        return LightUIError::AlreadyExists;
+        return MBinkError::AlreadyExists;
     }
     states_[name] = value;
-    return LightUIError::Ok;
+    return MBinkError::Ok;
 }
 
-LightUIError StateManager::createString(const std::string& name, const std::string& value) {
-    if (!isValidName(name)) return LightUIError::InvalidName;
+MBinkError StateManager::createString(const std::string& name, const std::string& value) {
+    if (!isValidName(name)) return MBinkError::InvalidName;
 
     std::unique_lock lock(statesMutex_);
     if (states_.find(name) != states_.end()) {
-        return LightUIError::AlreadyExists;
+        return MBinkError::AlreadyExists;
     }
     states_[name] = value;
-    return LightUIError::Ok;
+    return MBinkError::Ok;
 }
 
-LightUIError StateManager::createArray(const std::string& name) {
-    if (!isValidName(name)) return LightUIError::InvalidName;
+MBinkError StateManager::createArray(const std::string& name) {
+    if (!isValidName(name)) return MBinkError::InvalidName;
 
     std::unique_lock lock(statesMutex_);
     if (states_.find(name) != states_.end()) {
-        return LightUIError::AlreadyExists;
+        return MBinkError::AlreadyExists;
     }
     states_[name] = json::array();
-    return LightUIError::Ok;
+    return MBinkError::Ok;
 }
 
-LightUIError StateManager::createObject(const std::string& name) {
-    if (!isValidName(name)) return LightUIError::InvalidName;
+MBinkError StateManager::createObject(const std::string& name) {
+    if (!isValidName(name)) return MBinkError::InvalidName;
 
     std::unique_lock lock(statesMutex_);
     if (states_.find(name) != states_.end()) {
-        return LightUIError::AlreadyExists;
+        return MBinkError::AlreadyExists;
     }
     states_[name] = json::object();
-    return LightUIError::Ok;
+    return MBinkError::Ok;
 }
 
-LightUIError StateManager::createJson(const std::string& name, const json& value) {
-    if (!isValidName(name)) return LightUIError::InvalidName;
+MBinkError StateManager::createJson(const std::string& name, const json& value) {
+    if (!isValidName(name)) return MBinkError::InvalidName;
 
     std::unique_lock lock(statesMutex_);
     if (states_.find(name) != states_.end()) {
-        return LightUIError::AlreadyExists;
+        return MBinkError::AlreadyExists;
     }
     states_[name] = value;
-    return LightUIError::Ok;
+    return MBinkError::Ok;
 }
 
 
@@ -133,13 +133,13 @@ bool StateManager::exists(const std::string& name) const {
     return states_.find(name) != states_.end();
 }
 
-LightUIType StateManager::type(const std::string& name) const {
+MBinkType StateManager::type(const std::string& name) const {
     std::shared_lock lock(statesMutex_);
     auto it = states_.find(name);
     if (it == states_.end()) {
-        return LightUIType::Null;
+        return MBinkType::Null;
     }
-    return jsonTypeToLightUIType(it->second);
+    return jsonTypeToMBinkType(it->second);
 }
 
 bool StateManager::getBool(const std::string& name) const {
@@ -241,138 +241,138 @@ size_t StateManager::getLength(const std::string& name) const {
 
 // ========== 写入（入队） ==========
 
-LightUIError StateManager::setNull(const std::string& name) {
-    if (!isValidName(name)) return LightUIError::InvalidName;
+MBinkError StateManager::setNull(const std::string& name) {
+    if (!isValidName(name)) return MBinkError::InvalidName;
     enqueue({StateOp::Set, name, nullptr, "", -1});
-    return LightUIError::Ok;
+    return MBinkError::Ok;
 }
 
-LightUIError StateManager::setBool(const std::string& name, bool value) {
-    if (!isValidName(name)) return LightUIError::InvalidName;
+MBinkError StateManager::setBool(const std::string& name, bool value) {
+    if (!isValidName(name)) return MBinkError::InvalidName;
     enqueue({StateOp::Set, name, value, "", -1});
-    return LightUIError::Ok;
+    return MBinkError::Ok;
 }
 
-LightUIError StateManager::setInt(const std::string& name, int64_t value) {
-    if (!isValidName(name)) return LightUIError::InvalidName;
+MBinkError StateManager::setInt(const std::string& name, int64_t value) {
+    if (!isValidName(name)) return MBinkError::InvalidName;
     enqueue({StateOp::Set, name, value, "", -1});
-    return LightUIError::Ok;
+    return MBinkError::Ok;
 }
 
-LightUIError StateManager::setDouble(const std::string& name, double value) {
-    if (!isValidName(name)) return LightUIError::InvalidName;
+MBinkError StateManager::setDouble(const std::string& name, double value) {
+    if (!isValidName(name)) return MBinkError::InvalidName;
     enqueue({StateOp::Set, name, value, "", -1});
-    return LightUIError::Ok;
+    return MBinkError::Ok;
 }
 
-LightUIError StateManager::setString(const std::string& name, const std::string& value) {
-    if (!isValidName(name)) return LightUIError::InvalidName;
+MBinkError StateManager::setString(const std::string& name, const std::string& value) {
+    if (!isValidName(name)) return MBinkError::InvalidName;
     enqueue({StateOp::Set, name, value, "", -1});
-    return LightUIError::Ok;
+    return MBinkError::Ok;
 }
 
-LightUIError StateManager::setJson(const std::string& name, const json& value) {
-    if (!isValidName(name)) return LightUIError::InvalidName;
+MBinkError StateManager::setJson(const std::string& name, const json& value) {
+    if (!isValidName(name)) return MBinkError::InvalidName;
     enqueue({StateOp::Set, name, value, "", -1});
-    return LightUIError::Ok;
+    return MBinkError::Ok;
 }
 
-LightUIError StateManager::remove(const std::string& name) {
-    if (!isValidName(name)) return LightUIError::InvalidName;
+MBinkError StateManager::remove(const std::string& name) {
+    if (!isValidName(name)) return MBinkError::InvalidName;
     enqueue({StateOp::Delete, name, nullptr, "", -1});
-    return LightUIError::Ok;
+    return MBinkError::Ok;
 }
 
 // ========== 数组操作 ==========
 
-LightUIError StateManager::arrayPush(const std::string& name, const json& item) {
-    if (!isValidName(name)) return LightUIError::InvalidName;
+MBinkError StateManager::arrayPush(const std::string& name, const json& item) {
+    if (!isValidName(name)) return MBinkError::InvalidName;
     enqueue({StateOp::ArrayPush, name, item, "", -1});
-    return LightUIError::Ok;
+    return MBinkError::Ok;
 }
 
-LightUIError StateManager::arrayPop(const std::string& name) {
-    if (!isValidName(name)) return LightUIError::InvalidName;
+MBinkError StateManager::arrayPop(const std::string& name) {
+    if (!isValidName(name)) return MBinkError::InvalidName;
     enqueue({StateOp::ArrayPop, name, nullptr, "", -1});
-    return LightUIError::Ok;
+    return MBinkError::Ok;
 }
 
-LightUIError StateManager::arrayShift(const std::string& name) {
-    if (!isValidName(name)) return LightUIError::InvalidName;
+MBinkError StateManager::arrayShift(const std::string& name) {
+    if (!isValidName(name)) return MBinkError::InvalidName;
     enqueue({StateOp::ArrayShift, name, nullptr, "", -1});
-    return LightUIError::Ok;
+    return MBinkError::Ok;
 }
 
-LightUIError StateManager::arrayUnshift(const std::string& name, const json& item) {
-    if (!isValidName(name)) return LightUIError::InvalidName;
+MBinkError StateManager::arrayUnshift(const std::string& name, const json& item) {
+    if (!isValidName(name)) return MBinkError::InvalidName;
     enqueue({StateOp::ArrayUnshift, name, item, "", -1});
-    return LightUIError::Ok;
+    return MBinkError::Ok;
 }
 
-LightUIError StateManager::arrayRemove(const std::string& name, int index) {
-    if (!isValidName(name)) return LightUIError::InvalidName;
+MBinkError StateManager::arrayRemove(const std::string& name, int index) {
+    if (!isValidName(name)) return MBinkError::InvalidName;
     enqueue({StateOp::ArrayRemove, name, nullptr, "", index});
-    return LightUIError::Ok;
+    return MBinkError::Ok;
 }
 
-LightUIError StateManager::arrayClear(const std::string& name) {
-    if (!isValidName(name)) return LightUIError::InvalidName;
+MBinkError StateManager::arrayClear(const std::string& name) {
+    if (!isValidName(name)) return MBinkError::InvalidName;
     enqueue({StateOp::ArrayClear, name, nullptr, "", -1});
-    return LightUIError::Ok;
+    return MBinkError::Ok;
 }
 
-LightUIError StateManager::arraySet(const std::string& name, int index, const json& item) {
-    if (!isValidName(name)) return LightUIError::InvalidName;
+MBinkError StateManager::arraySet(const std::string& name, int index, const json& item) {
+    if (!isValidName(name)) return MBinkError::InvalidName;
     enqueue({StateOp::ArraySet, name, item, "", index});
-    return LightUIError::Ok;
+    return MBinkError::Ok;
 }
 
 // ========== 对象操作 ==========
 
-LightUIError StateManager::objectSet(const std::string& name, const std::string& key, const json& value) {
-    if (!isValidName(name)) return LightUIError::InvalidName;
+MBinkError StateManager::objectSet(const std::string& name, const std::string& key, const json& value) {
+    if (!isValidName(name)) return MBinkError::InvalidName;
     enqueue({StateOp::ObjectSet, name, value, key, -1});
-    return LightUIError::Ok;
+    return MBinkError::Ok;
 }
 
-LightUIError StateManager::objectRemove(const std::string& name, const std::string& key) {
-    if (!isValidName(name)) return LightUIError::InvalidName;
+MBinkError StateManager::objectRemove(const std::string& name, const std::string& key) {
+    if (!isValidName(name)) return MBinkError::InvalidName;
     enqueue({StateOp::ObjectRemove, name, nullptr, key, -1});
-    return LightUIError::Ok;
+    return MBinkError::Ok;
 }
 
-LightUIError StateManager::objectClear(const std::string& name) {
-    if (!isValidName(name)) return LightUIError::InvalidName;
+MBinkError StateManager::objectClear(const std::string& name) {
+    if (!isValidName(name)) return MBinkError::InvalidName;
     enqueue({StateOp::ObjectClear, name, nullptr, "", -1});
-    return LightUIError::Ok;
+    return MBinkError::Ok;
 }
 
 // ========== 数值操作 ==========
 
-LightUIError StateManager::increment(const std::string& name, double delta) {
-    if (!isValidName(name)) return LightUIError::InvalidName;
+MBinkError StateManager::increment(const std::string& name, double delta) {
+    if (!isValidName(name)) return MBinkError::InvalidName;
     enqueue({StateOp::Increment, name, delta, "", -1});
-    return LightUIError::Ok;
+    return MBinkError::Ok;
 }
 
-LightUIError StateManager::multiply(const std::string& name, double factor) {
-    if (!isValidName(name)) return LightUIError::InvalidName;
+MBinkError StateManager::multiply(const std::string& name, double factor) {
+    if (!isValidName(name)) return MBinkError::InvalidName;
     enqueue({StateOp::Multiply, name, factor, "", -1});
-    return LightUIError::Ok;
+    return MBinkError::Ok;
 }
 
 // ========== 字符串操作 ==========
 
-LightUIError StateManager::stringAppend(const std::string& name, const std::string& suffix) {
-    if (!isValidName(name)) return LightUIError::InvalidName;
+MBinkError StateManager::stringAppend(const std::string& name, const std::string& suffix) {
+    if (!isValidName(name)) return MBinkError::InvalidName;
     enqueue({StateOp::StringAppend, name, suffix, "", -1});
-    return LightUIError::Ok;
+    return MBinkError::Ok;
 }
 
-LightUIError StateManager::stringPrepend(const std::string& name, const std::string& prefix) {
-    if (!isValidName(name)) return LightUIError::InvalidName;
+MBinkError StateManager::stringPrepend(const std::string& name, const std::string& prefix) {
+    if (!isValidName(name)) return MBinkError::InvalidName;
     enqueue({StateOp::StringPrepend, name, prefix, "", -1});
-    return LightUIError::Ok;
+    return MBinkError::Ok;
 }
 
 
@@ -584,4 +584,4 @@ void StateManager::notify(const std::string& name) {
     }
 }
 
-} // namespace lightui
+} // namespace mbink

@@ -5,7 +5,7 @@
 
 #include "html_div_element.h"
 
-namespace lightui {
+namespace mbink {
 
 HTMLDivElement::HTMLDivElement()
     : Element("div") {
@@ -13,5 +13,5 @@ HTMLDivElement::HTMLDivElement()
     // 这里不设置样式，由CSS引擎处理默认样式
 }
 
-} // namespace lightui
+} // namespace mbink
 

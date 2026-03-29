@@ -19,7 +19,7 @@
 #include <unordered_set>
 #include <unordered_map>
 
-namespace lightui {
+namespace mbink {
 
 // 前向声明
 class Node;
@@ -239,4 +239,4 @@ private:
     size_t parent_changes_threshold_ = 3;
 };
 
-} // namespace lightui
+} // namespace mbink

@@ -5,14 +5,14 @@
  * @date 2025-11-14
  */
 
-#ifndef LIGHTUI_CORE_RENDER_ANIMATION_H_
-#define LIGHTUI_CORE_RENDER_ANIMATION_H_
+#ifndef MBINK_CORE_RENDER_ANIMATION_H_
+#define MBINK_CORE_RENDER_ANIMATION_H_
 
 #include "transition.h"  // 复用 TimingFunction 和 CubicBezier
 #include <string>
 #include <vector>
 
-namespace lightui {
+namespace mbink {
 
 /**
  * @brief 动画播放方向
@@ -205,7 +205,7 @@ private:
     static AnimationFillMode ParseSingleFillMode(const std::string& str);
 };
 
-} // namespace lightui
+} // namespace mbink
 
-#endif // LIGHTUI_CORE_RENDER_ANIMATION_H_
+#endif // MBINK_CORE_RENDER_ANIMATION_H_
 

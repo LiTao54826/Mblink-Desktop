@@ -18,11 +18,11 @@
 ## 已接入的 CMake 测试目标
 
 从 `tests/CMakeLists.txt` 可确认：
-- `lightui_unit_tests`
-- `lightui_render_tests`
-- `lightui_integration_tests`
-- `lightui_property_tests`
-- `lightui_performance_tests`（可选）
+- `mbink_unit_tests`
+- `mbink_render_tests`
+- `mbink_integration_tests`
+- `mbink_property_tests`
+- `mbink_performance_tests`（可选）
 
 ## 当前可以确认的事实
 
@@ -41,7 +41,7 @@
 如果需要验证当前仓库状态，优先从以下流程开始：
 
 ```bash
-cmake -B build -DLIGHTUI_BUILD_TESTS=ON
+cmake -B build -DMBINK_BUILD_TESTS=ON
 cmake --build build --config Release
 ctest --test-dir build --output-on-failure
 ```

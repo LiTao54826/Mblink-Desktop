@@ -15,7 +15,7 @@
 #pragma comment(lib, "winhttp.lib")
 #endif
 
-namespace lightui {
+namespace mbink {
 
 HttpClient::HttpClient() {
 }
@@ -259,5 +259,5 @@ HttpResponse HttpClient::DoRequest(const std::string& url, const HttpRequestOpti
 }
 #endif
 
-} // namespace lightui
+} // namespace mbink
 

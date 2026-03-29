@@ -19,7 +19,7 @@
 #include "../types/traits.h"
 #include "core/render/objects/render_object.h"
 
-namespace lightui {
+namespace mbink {
 
 /**
  * @brief IFC 布局结果
@@ -222,5 +222,5 @@ private:
     void ApplyLayoutResults(RenderObject* container, float container_width);
 };
 
-} // namespace lightui
+} // namespace mbink
 

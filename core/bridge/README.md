@@ -74,7 +74,7 @@ return handle;
 
 ```cpp
 // C API 实现中
-void lightui_destroy_window(LightUIWindow* window) {
+void mbink_destroy_window(MBinkWindow* window) {
     try {
         auto win = Bridge::FromCHandle<Window>(window);
         // 使用 C++ 对象
@@ -88,7 +88,7 @@ void lightui_destroy_window(LightUIWindow* window) {
 ### 异常处理
 
 ```cpp
-int lightui_load_html(LightUIWindow* window, const char* html) {
+int mbink_load_html(MBinkWindow* window, const char* html) {
     return Bridge::CatchException([&]() {
         auto win = Bridge::FromCHandle<Window>(window);
         win->LoadHTML(html);
@@ -103,7 +103,7 @@ Bridge 模块在架构中的位置：
 ```
 ┌─────────────────────────────────────────┐
 │  C API Layer (core/api)                 │
-│  lightui.h, lightui.cpp                 │
+│  mbink.h, mbink.cpp                 │
 └─────────────────────────────────────────┘
                     ↓
 ┌─────────────────────────────────────────┐

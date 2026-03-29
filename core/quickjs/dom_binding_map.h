@@ -15,7 +15,7 @@
 #include "quickjs.h"
 #include "core/dom/node.h"
 
-namespace lightui {
+namespace mbink {
 
 /**
  * @brief DOM 绑定映射表（单例）
@@ -81,4 +81,4 @@ private:
     std::unordered_map<Node*, JSValueEntry> node_to_js_map_;
 };
 
-} // namespace lightui
+} // namespace mbink

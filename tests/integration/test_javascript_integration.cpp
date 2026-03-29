@@ -11,7 +11,7 @@
 #include "dom/document.h"
 #include "dom/element.h"
 
-namespace lightui {
+namespace mbink {
 namespace test {
 
 class JavaScriptIntegrationTest : public DOMTestBase {
@@ -253,4 +253,4 @@ TEST_F(JavaScriptIntegrationTest, TodoAppSimulation) {
 }
 
 } // namespace test
-} // namespace lightui
+} // namespace mbink

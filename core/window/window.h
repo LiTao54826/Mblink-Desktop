@@ -47,7 +47,7 @@
 #include "window_event.h"
 #include "display_backend.h"
 
-namespace lightui {
+namespace mbink {
 
 // 前向声明
 class Document;
@@ -81,7 +81,7 @@ enum class RenderBackend {
  * @brief 窗口配置
  */
 struct WindowConfig {
-    std::string title = "LightUI Window";
+    std::string title = "MBink Window";
     int width = 800;
     int height = 600;
     int x = -1;  // -1表示居中
@@ -753,5 +753,5 @@ public:
     FocusManager* GetFocusManager() const { return focus_manager_; }
 };
 
-} // namespace lightui
+} // namespace mbink
 

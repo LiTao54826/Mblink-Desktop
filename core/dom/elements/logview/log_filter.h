@@ -13,7 +13,7 @@
 #include <set>
 #include <vector>
 
-namespace lightui {
+namespace mbink {
 
 /**
  * @brief 日志过滤器
@@ -101,6 +101,6 @@ private:
     bool filter_by_source_;               ///< 是否启用源名过滤
 };
 
-}  // namespace lightui
+}  // namespace mbink
 
 #endif  // MBINK_DOM_ELEMENTS_LOGVIEW_LOG_FILTER_H_

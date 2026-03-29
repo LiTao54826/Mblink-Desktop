@@ -8,7 +8,7 @@
 #include <cctype>
 #include <sstream>
 
-namespace lightui {
+namespace mbink {
 
 // ========== CSSVariables 实现 ==========
 
@@ -242,5 +242,5 @@ std::string NormalizeCustomPropertyName(const std::string& name) {
     return result;
 }
 
-} // namespace lightui
+} // namespace mbink
 

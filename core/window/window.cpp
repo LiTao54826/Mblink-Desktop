@@ -25,10 +25,10 @@
  * - 窗口事件处理
  */
 
-// 性能优化：默认关闭调试日志（可以通过定义LIGHTUI_DEBUG_RENDERING启用）
-// #define LIGHTUI_DEBUG_RENDERING
+// 性能优化：默认关闭调试日志（可以通过定义MBINK_DEBUG_RENDERING启用）
+// #define MBINK_DEBUG_RENDERING
 
-#ifdef LIGHTUI_DEBUG_RENDERING
+#ifdef MBINK_DEBUG_RENDERING
     #define DEBUG_LOG_FLUSH() ((void)0)
 #else
     #define DEBUG_LOG(msg) ((void)0)
@@ -90,7 +90,7 @@
 #include "core/render/image/image_cache.h"
 #include "core/event/input/hit_test_controller.h"
 
-namespace lightui {
+namespace mbink {
 
 // 从 render_object.cpp 导入的绘制统计变量
 extern std::atomic<int> g_paint_total_calls;
@@ -114,7 +114,7 @@ static constexpr size_t kImageCacheBurstShrinkBytes = 24 * 1024 * 1024; // 24MB
 
 namespace {
 inline bool IsAnimFrameDebugEnabled() {
-    static const bool enabled = (std::getenv("LIGHTUI_DEBUG_ANIM_FRAME") != nullptr);
+    static const bool enabled = (std::getenv("MBINK_DEBUG_ANIM_FRAME") != nullptr);
     return enabled;
 }
 }
@@ -142,7 +142,7 @@ Window::Window(const WindowConfig& config) : config_(config) {
 
 #ifdef _WIN32
     // 检查调试环境变量
-    if (getenv("LIGHTUI_DEBUG_MESSAGES")) {
+    if (getenv("MBINK_DEBUG_MESSAGES")) {
         win32::SetDebugMessages(true);
     }
 
@@ -2196,6 +2196,6 @@ std::string Window::HitTestWindowControl(int screen_x, int screen_y) const {
     return "";
 }
 
-} // namespace lightui
+} // namespace mbink
 
 

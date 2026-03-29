@@ -12,7 +12,7 @@
 #include <cmath>
 #include <optional>
 
-namespace lightui {
+namespace mbink {
 
 //------------------------------------------------------------------------------
 // Float utilities
@@ -170,5 +170,5 @@ inline std::optional<float> ApplyAspectRatioHeight(
     return std::nullopt;
 }
 
-} // namespace lightui
+} // namespace mbink
 

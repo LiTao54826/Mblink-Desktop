@@ -7,7 +7,7 @@
 #include "core/render/objects/render_object.h"
 #include <cmath>
 
-namespace lightui {
+namespace mbink {
 
 InlineBox InlineBox::CreateTextBox(RenderObject* render_obj) {
     InlineBox box(InlineBoxType::TEXT);
@@ -99,5 +99,5 @@ InlineBox InlineBox::CreateInlineEnd(RenderObject* render_obj) {
     return box;
 }
 
-} // namespace lightui
+} // namespace mbink
 

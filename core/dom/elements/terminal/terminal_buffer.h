@@ -13,7 +13,7 @@
 #include <string>
 #include <vector>
 
-namespace lightui {
+namespace mbink {
 
 /**
  * @brief 终端缓冲区
@@ -189,4 +189,4 @@ private:
     void ClampCursor();
 };
 
-}  // namespace lightui
+}  // namespace mbink

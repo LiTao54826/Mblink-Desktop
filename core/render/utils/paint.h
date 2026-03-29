@@ -14,7 +14,7 @@
 #include "include/core/SkPaint.h"
 #include "include/core/SkColor.h"
 
-namespace lightui {
+namespace mbink {
 
 /**
  * @brief 画笔样式
@@ -199,4 +199,4 @@ private:
     SkPaint paint_;  ///< Skia 画笔对象
 };
 
-} // namespace lightui
+} // namespace mbink

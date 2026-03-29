@@ -1,5 +1,5 @@
 /**
- * LightUI 组件库演示
+ * MBink 组件库演示
  */
 
 const { h, render } = preact;
@@ -60,7 +60,7 @@ function App() {
 
   return h(Column, { gap: 32, style: { padding: '24px', maxWidth: '800px', margin: '0 auto' } }, [
     // Title
-    h(Text.Title, { key: 'title' }, 'LightUI Component Demo'),
+    h(Text.Title, { key: 'title' }, 'MBink Component Demo'),
 
     // Buttons Section
     h(Card, { key: 'buttons', title: 'Buttons' }, [

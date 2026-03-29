@@ -5,7 +5,7 @@
 
 #include <algorithm>
 
-namespace lightui::text_edit_metrics {
+namespace mbink::text_edit_metrics {
 
 float MeasureTextWidth(const std::string& text,
                        const SkFont& font,
@@ -61,5 +61,5 @@ int HitTestTextPosition(const std::string& text,
     return total_chars;
 }
 
-}  // namespace lightui::text_edit_metrics
+}  // namespace mbink::text_edit_metrics
 

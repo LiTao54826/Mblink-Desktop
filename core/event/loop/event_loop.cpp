@@ -70,7 +70,7 @@
 #include <limits>
 #include <map>
 
-namespace lightui {
+namespace mbink {
 
 EventLoop::EventLoop()
     : running_(false)
@@ -1309,4 +1309,4 @@ void EventLoop::UpdateMouseCursor(const HitTestResult& hit_result, Uint32 /*wind
     SetSystemCursor(target_cursor);
 }
 
-} // namespace lightui
+} // namespace mbink

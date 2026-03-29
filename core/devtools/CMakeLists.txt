@@ -38,35 +38,35 @@ set(DEVTOOLS_HEADERS
     serializer/dom_serializer.h
 )
 
-add_library(lightui_devtools STATIC ${DEVTOOLS_SOURCES})
+add_library(mbink_devtools STATIC ${DEVTOOLS_SOURCES})
 
-target_include_directories(lightui_devtools PUBLIC
+target_include_directories(mbink_devtools PUBLIC
     ${CMAKE_SOURCE_DIR}
     ${CMAKE_SOURCE_DIR}/core
     ${CMAKE_SOURCE_DIR}/third_party/quickjs
     ${CMAKE_SOURCE_DIR}/third_party/SDL/include
 )
 
-target_link_libraries(lightui_devtools PUBLIC
-    lightui_dom
-    lightui_render
-    lightui_event
-    lightui_utils
-    lightui_lexbor
+target_link_libraries(mbink_devtools PUBLIC
+    mbink_dom
+    mbink_render
+    mbink_event
+    mbink_utils
+    mbink_lexbor
 )
 
 # 链接Skia
 if(TARGET skia)
-    target_link_libraries(lightui_devtools PUBLIC skia)
+    target_link_libraries(mbink_devtools PUBLIC skia)
 endif()
 
 # 匹配 Skia 的运行时库设置
 if(MSVC)
-    target_compile_options(lightui_devtools PUBLIC
+    target_compile_options(mbink_devtools PUBLIC
         $<$<CONFIG:Debug>:/MT>
         $<$<CONFIG:Release>:/MT>
     )
-    target_compile_definitions(lightui_devtools PUBLIC
+    target_compile_definitions(mbink_devtools PUBLIC
         $<$<CONFIG:Debug>:_ITERATOR_DEBUG_LEVEL=0>
     )
 endif()

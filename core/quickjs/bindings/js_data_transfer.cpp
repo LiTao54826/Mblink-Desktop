@@ -15,7 +15,7 @@
 #include "core/event/types/data_transfer.h"
 #include <iostream>
 
-namespace lightui {
+namespace mbink {
 namespace bindings {
 
 // ========== Opaque 数据结构 ==========
@@ -267,4 +267,4 @@ JSClassID GetDataTransferClassID() {
 }
 
 } // namespace bindings
-} // namespace lightui
+} // namespace mbink

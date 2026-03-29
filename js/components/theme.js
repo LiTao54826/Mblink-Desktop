@@ -1,5 +1,5 @@
 /**
- * LightUI 主题系统
+ * MBink 主题系统
  */
 
 export const colors = {

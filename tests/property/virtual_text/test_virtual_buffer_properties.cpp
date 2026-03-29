@@ -14,7 +14,7 @@
 #include <string>
 #include <vector>
 
-namespace lightui {
+namespace mbink {
 namespace {
 
 // 随机数生成器
@@ -234,4 +234,4 @@ TEST_F(VirtualBufferClearPropertyTest, MultipleClearsAreIdempotent) {
 }
 
 }  // namespace
-}  // namespace lightui
+}  // namespace mbink

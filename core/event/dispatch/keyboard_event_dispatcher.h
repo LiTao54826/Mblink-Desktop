@@ -17,7 +17,7 @@
 #include <string>
 #include <functional>
 
-namespace lightui {
+namespace mbink {
 
 // 前向声明
 class Element;
@@ -116,4 +116,4 @@ private:
     EditorInputSession* editor_input_session_ = nullptr;
 };
 
-} // namespace lightui
+} // namespace mbink

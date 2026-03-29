@@ -14,7 +14,7 @@
 #include <memory>
 #include <string>
 
-namespace lightui {
+namespace mbink {
 
 // 前向声明
 class Document;
@@ -233,4 +233,4 @@ private:
     std::shared_ptr<Element> last_mousedown_element_;
 };
 
-} // namespace lightui
+} // namespace mbink

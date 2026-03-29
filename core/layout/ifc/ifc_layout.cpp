@@ -26,7 +26,7 @@
 // 调试开关
 #define IFC_DEBUG 0
 
-namespace lightui {
+namespace mbink {
 bool IFCLayout::HasInlineContent(RenderObject* container) {
     if (!container) return false;
 
@@ -1334,5 +1334,5 @@ void IFCLayout::ApplyLayoutResults(RenderObject* container, float container_widt
     }
 }
 
-} // namespace lightui
+} // namespace mbink
 

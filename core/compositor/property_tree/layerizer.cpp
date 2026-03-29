@@ -5,7 +5,7 @@
 
 #include "core/compositor/property_tree/layerizer.h"
 
-namespace lightui {
+namespace mbink {
 
 // =========================================================================
 // 构造函数
@@ -241,4 +241,4 @@ int Layerizer::FindMergeableLayer(
     return -1;
 }
 
-} // namespace lightui
+} // namespace mbink

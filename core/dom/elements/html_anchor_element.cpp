@@ -9,7 +9,7 @@
 #include "../event.h"
 #include <algorithm>
 
-namespace lightui {
+namespace mbink {
 
 HTMLAnchorElement::HTMLAnchorElement()
     : Element("a")
@@ -203,5 +203,5 @@ void HTMLAnchorElement::Download() {
     // 3. 保存到本地文件系统
 }
 
-} // namespace lightui
+} // namespace mbink
 

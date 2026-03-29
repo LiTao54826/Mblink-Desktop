@@ -21,7 +21,7 @@
 #include <set>
 #include <sstream>
 
-namespace lightui {
+namespace mbink {
 
 namespace {
     const float ROW_HEIGHT = 20.0f;
@@ -779,4 +779,4 @@ std::string DOMTreeView::GetCSSSelector(std::shared_ptr<Node> node) {
     return selector;
 }
 
-} // namespace lightui
+} // namespace mbink

@@ -14,7 +14,7 @@
 #include <vector>
 #include <memory>
 
-namespace lightui {
+namespace mbink {
 
 // 前向声明
 class HTMLFormElement;
@@ -282,5 +282,5 @@ private:
     void TriggerChangeEvent();
 };
 
-} // namespace lightui
+} // namespace mbink
 

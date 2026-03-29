@@ -14,7 +14,7 @@
 #include "inline_box.h"
 #include "line_box.h"
 
-namespace lightui {
+namespace mbink {
 
 /**
  * @brief 断行类型
@@ -224,5 +224,5 @@ private:
     uint32_t DecodeUTF8(const std::string& str, size_t& pos);
 };
 
-} // namespace lightui
+} // namespace mbink
 

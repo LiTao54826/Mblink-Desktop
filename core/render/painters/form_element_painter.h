@@ -28,7 +28,7 @@
 #include <string>
 #include <memory>
 
-namespace lightui {
+namespace mbink {
 
 // 前向声明
 class HTMLInputElement;
@@ -242,4 +242,4 @@ private:
     SkCanvas* canvas_;
 };
 
-} // namespace lightui
+} // namespace mbink

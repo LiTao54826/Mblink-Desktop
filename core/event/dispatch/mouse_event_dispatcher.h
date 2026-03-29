@@ -19,7 +19,7 @@
 #include <string>
 #include <vector>
 
-namespace lightui {
+namespace mbink {
 
 // 前向声明
 class Element;
@@ -343,4 +343,4 @@ private:
     int mouse_buttons_state_ = 0;  // W3C buttons 位掩码: 1=左键, 2=右键, 4=中键
 };
 
-} // namespace lightui
+} // namespace mbink

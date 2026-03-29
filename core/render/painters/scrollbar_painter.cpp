@@ -10,7 +10,7 @@
 #include "include/core/SkRRect.h"
 #include <algorithm>
 
-namespace lightui {
+namespace mbink {
 
 ScrollbarPainter::ScrollbarPainter(SkCanvas* canvas)
     : canvas_(canvas) {
@@ -220,4 +220,4 @@ ScrollbarPaintParams ScrollbarPainter::CreateParams(
     return params;
 }
 
-} // namespace lightui
+} // namespace mbink

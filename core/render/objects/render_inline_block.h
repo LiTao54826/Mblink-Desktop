@@ -13,7 +13,7 @@
 
 #include "render_object.h"
 
-namespace lightui {
+namespace mbink {
 
 /**
  * @brief Inline-Block渲染对象
@@ -85,5 +85,5 @@ private:
     void PaintMeterElement(SkCanvas* canvas, class HTMLMeterElement* meter, const Box& box);
 };
 
-} // namespace lightui
+} // namespace mbink
 

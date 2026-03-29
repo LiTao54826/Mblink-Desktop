@@ -7,7 +7,7 @@
 #include "core/render/utils/color.h"
 #include <algorithm>
 
-namespace lightui {
+namespace mbink {
 
 CanvasGradient::CanvasGradient(CanvasGradientType type)
     : type_(type)
@@ -109,4 +109,4 @@ sk_sp<SkShader> CanvasGradient::GetShader() const {
     }
 }
 
-} // namespace lightui
+} // namespace mbink

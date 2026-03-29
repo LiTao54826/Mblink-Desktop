@@ -5,7 +5,7 @@
 
 #include "core/compositor/property_tree/property_tree_state.h"
 
-namespace lightui {
+namespace mbink {
 
 PropertyTreeState::PropertyTreeState(TransformTreeNode* transform,
                                      ClipTreeNode* clip,
@@ -75,4 +75,4 @@ PropertyTreeState PropertyTreeState::Root() {
     return PropertyTreeState();
 }
 
-} // namespace lightui
+} // namespace mbink

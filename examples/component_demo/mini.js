@@ -1,5 +1,5 @@
 /**
- * LightUI 组件库演示 - ES Module 版本
+ * MBink 组件库演示 - ES Module 版本
  */
 
 import { h, render } from 'preact';
@@ -61,7 +61,7 @@ function App() {
       h(Row, { gap: 8 }, [
           h(Button, { loading: true }, 'Loading'),
       ]),
-      h(h(Text, { size: '2xl', weight: 'bold', key: 'title', height:"300px" }, 'LightUI Components')),
+      h(h(Text, { size: '2xl', weight: 'bold', key: 'title', height:"300px" }, 'MBink Components')),
       h(Row, { gap: 12 }, [
         h(Select, {
           options: selectOptions,

@@ -8,7 +8,7 @@
 #include <thread>
 #include <chrono>
 
-namespace lightui {
+namespace mbink {
 namespace test {
 
 class TaskSchedulerTest : public ::testing::Test {
@@ -178,4 +178,4 @@ TEST_F(TaskSchedulerTest, ScheduleRepeatingTask) {
 }
 
 } // namespace test
-} // namespace lightui
+} // namespace mbink

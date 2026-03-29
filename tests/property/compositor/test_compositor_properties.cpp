@@ -15,7 +15,7 @@
 #include "include/core/SkBitmap.h"
 #include <memory>
 
-namespace lightui {
+namespace mbink {
 namespace testing {
 
 // =========================================================================
@@ -499,4 +499,4 @@ TEST_F(CompositorDebugTest, ShowLayerBorders) {
 }
 
 } // namespace testing
-} // namespace lightui
+} // namespace mbink

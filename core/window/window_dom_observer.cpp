@@ -22,7 +22,7 @@
 #include "core/compositor/layer_tree_manager.h"
 #include <vector>
 
-namespace lightui {
+namespace mbink {
 
 namespace {
 
@@ -653,4 +653,4 @@ bool WindowDOMObserver::IsInBatch(Node* node) const {
     return document->IsInBatch();
 }
 
-}  // namespace lightui
+}  // namespace mbink

@@ -5,7 +5,7 @@
 
 #include "shapes.h"
 
-namespace lightui {
+namespace mbink {
 
 Shapes::Shapes(SkCanvas* canvas) : canvas_(canvas) {}
 
@@ -176,4 +176,4 @@ void PathBuilder::Reset() {
     path_.reset();
 }
 
-} // namespace lightui
+} // namespace mbink

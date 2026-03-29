@@ -15,7 +15,7 @@
 #include <unordered_map>
 #include "include/core/SkColor.h"
 
-namespace lightui {
+namespace mbink {
 
 /**
  * @brief 颜色工具类
@@ -126,4 +126,4 @@ private:
     static bool named_colors_initialized_;
 };
 
-} // namespace lightui
+} // namespace mbink

@@ -12,7 +12,7 @@
 #include <future>
 #include <vector>
 
-namespace lightui {
+namespace mbink {
 
 /**
  * @brief HTTP 响应结构
@@ -147,5 +147,5 @@ private:
     HttpResponse DoRequest(const std::string& url, const HttpRequestOptions& options);
 };
 
-} // namespace lightui
+} // namespace mbink
 

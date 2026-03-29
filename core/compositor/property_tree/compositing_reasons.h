@@ -17,7 +17,7 @@
 #include <string>
 #include <vector>
 
-namespace lightui {
+namespace mbink {
 
 /**
  * @brief 合成原因位标志
@@ -265,4 +265,4 @@ inline std::string GetCompositingReasonsSummary(CompositingReasons reasons) {
     return result;
 }
 
-} // namespace lightui
+} // namespace mbink

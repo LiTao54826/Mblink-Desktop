@@ -11,7 +11,7 @@
 #include "geometry.h"
 #include <cstdint>
 
-namespace lightui {
+namespace mbink {
 
 //------------------------------------------------------------------------------
 // Run Mode
@@ -302,5 +302,5 @@ struct CollectedFlexItem {
     std::optional<float> baseline;
 };
 
-} // namespace lightui
+} // namespace mbink
 

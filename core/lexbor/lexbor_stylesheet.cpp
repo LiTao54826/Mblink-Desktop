@@ -11,7 +11,7 @@
 #include <lexbor/css/rule.h>
 #include <lexbor/css/selectors/selectors.h>
 
-namespace lightui {
+namespace mbink {
 
 // ========== 静态成员 ==========
 
@@ -333,5 +333,5 @@ int LexborStyleSheet::CalculateSpecificity(const std::string& selector) {
     return specificity;
 }
 
-} // namespace lightui
+} // namespace mbink
 

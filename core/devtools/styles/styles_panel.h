@@ -11,7 +11,7 @@
 
 class SkCanvas;
 
-namespace lightui {
+namespace mbink {
 
 class InlineStylesView;
 class BoxModelView;
@@ -127,4 +127,4 @@ public:
     bool HandleMouseWheel(float delta_y);
 };
 
-} // namespace lightui
+} // namespace mbink

@@ -8,7 +8,7 @@
 #include "dom/document.h"
 #include "dom/element.h"
 
-namespace lightui {
+namespace mbink {
 namespace test {
 
 class RenderPipelineTest : public DOMTestBase {
@@ -177,4 +177,4 @@ TEST_F(RenderPipelineTest, ClassChange) {
 }
 
 } // namespace test
-} // namespace lightui
+} // namespace mbink

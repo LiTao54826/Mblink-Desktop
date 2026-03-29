@@ -17,7 +17,7 @@
 #include <iostream>
 #include <SDL3/SDL.h>
 
-namespace lightui {
+namespace mbink {
 
 // ========== WindowBindings 实现 ==========
 
@@ -348,5 +348,5 @@ void DocumentBindings::BindProperties() {
     // 已在 WindowBindings::BindDocumentObject 中实现
 }
 
-} // namespace lightui
+} // namespace mbink
 

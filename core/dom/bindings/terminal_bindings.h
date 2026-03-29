@@ -8,19 +8,19 @@
  * - 提供 JavaScript 可访问的 Terminal/LogView API
  */
 
-#ifndef LIGHTUI_DOM_BINDINGS_TERMINAL_BINDINGS_H_
-#define LIGHTUI_DOM_BINDINGS_TERMINAL_BINDINGS_H_
+#ifndef MBINK_DOM_BINDINGS_TERMINAL_BINDINGS_H_
+#define MBINK_DOM_BINDINGS_TERMINAL_BINDINGS_H_
 
 #include "quickjs/quickjs.h"
 
 #include <memory>
 
-namespace lightui {
+namespace mbink {
 class HTMLTerminalElement;
 class HTMLLogViewElement;
 }
 
-namespace lightui {
+namespace mbink {
 
 /**
  * @brief Terminal 和 LogView 绑定类
@@ -74,6 +74,6 @@ private:
     static void InitLogViewClass(JSContext* ctx);
 };
 
-}  // namespace lightui
+}  // namespace mbink
 
-#endif  // LIGHTUI_DOM_BINDINGS_TERMINAL_BINDINGS_H_
+#endif  // MBINK_DOM_BINDINGS_TERMINAL_BINDINGS_H_
