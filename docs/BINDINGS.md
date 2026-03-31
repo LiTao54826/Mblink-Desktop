@@ -4,7 +4,7 @@
 
 | Language | Status | Evidence | 说明 |
 |---|---|---|---|
-| Python | Integrated | `bindings/python/CMakeLists.txt`, `setup.py`, `src/bindings.cpp`, Python package files | 已接入构建 |
+| Python | Integrated | `bindings/python/CMakeLists.txt`, `setup.py`, `mbink/_ffi.py`, Python package files | 已接入构建 |
 | Go | Placeholder | Directory exists, no verified implementation | 占位目录 |
 | Rust | Placeholder | Directory exists, no verified implementation | 占位目录 |
 | Node.js | Placeholder | Directory exists, no verified implementation | 占位目录 |
@@ -13,10 +13,10 @@
 
 Current verified facts | 当前可确认事实：
 
-- built with `pybind11`
-  使用 `pybind11` 构建
-- implementation file: `bindings/python/src/bindings.cpp`
-  实现文件：`bindings/python/src/bindings.cpp`
+- built on `ctypes + C ABI`
+  基于 `ctypes + C ABI`
+- runtime library target: `core/api/mbink_api`
+  运行时目标：`core/api/mbink_api`
 - Python package layer exists
   存在 Python 包装层
 - enabled in the top-level CMake build
@@ -24,8 +24,8 @@ Current verified facts | 当前可确认事实：
 
 Python binding currently consists of | 当前形态包括：
 
-- a `pybind11` extension module
-  一个 `pybind11` 扩展模块
+- a shared runtime library loaded through `ctypes`
+  一个通过 `ctypes` 加载的共享运行时库
 - Python wrapper and FFI helper code
   Python 包装层与 FFI 辅助代码
 

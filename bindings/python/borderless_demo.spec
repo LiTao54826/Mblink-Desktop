@@ -4,13 +4,13 @@
 a = Analysis(
     ['examples\\borderless_demo.py'],
     pathex=['.'],
-    binaries=[('mbink\\bin\\mbink_core.pyd', 'mbink\\bin')],
+    binaries=[('mbink\\bin\\mbink.dll', 'mbink\\bin')],
     datas=[
         ('mbink\\__init__.py', 'mbink'),
         ('mbink\\app.py', 'mbink'),
         ('mbink\\core.py', 'mbink'),
     ],
-    hiddenimports=['mbink', 'mbink.app', 'mbink.core', 'mbink_core'],
+    hiddenimports=['mbink', 'mbink.app', 'mbink.core'],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],

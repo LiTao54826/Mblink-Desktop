@@ -20,6 +20,7 @@
 #include "core/event/loop/task_scheduler.h"
 #include "core/network/fetch_bindings.h"
 #include "core/quickjs/dom_binding_map.h"
+#include "tools/esm_loader/embedded_js.h"
 
 #include <cstdlib>
 #include <cstring>
@@ -148,6 +149,25 @@ void reportNativeError(const std::string& error) {
     if (log.is_open()) {
         log << error << std::endl;
     }
+}
+
+bool loadEmbeddedRuntimeScripts(mbink::QuickJSRuntime* runtime) {
+    if (!runtime || !mbink::embedded::HasEmbeddedJS()) {
+        return true;
+    }
+
+    auto evalScript = [&](std::string_view code, const char* filename) {
+        if (code.empty()) {
+            return;
+        }
+        runtime->Eval(std::string(code), filename ? filename : "<embedded>");
+    };
+
+    evalScript(mbink::embedded::GetDomPolyfillsJS(), "dom.js");
+    evalScript(mbink::embedded::GetBootstrapJS(), "bootstrap.js");
+    evalScript(mbink::embedded::GetPreactJS(), "preact.js");
+    evalScript(mbink::embedded::GetHooksJS(), "hooks.js");
+    return true;
 }
 
 #ifdef _WIN32
@@ -315,6 +335,8 @@ WindowContext* createWindowContext(const mbink::WindowConfig& wc) {
     ctx->stateManager = std::make_unique<mbink::StateManager>();
     ctx->hostBridge = std::make_unique<mbink::HostBridge>(jsCtx, ctx->stateManager.get());
     ctx->hostBridge->registerGlobal();
+
+    loadEmbeddedRuntimeScripts(ctx->runtime.get());
 
     return ctx;
 }

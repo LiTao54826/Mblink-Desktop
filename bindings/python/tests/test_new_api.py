@@ -256,28 +256,15 @@ def test_import_mbink():
         print(f"[TEST_FAIL] import_mbink: {e}")
 
 
-def test_import_core():
-    """测试 import mbink_core 低级 API"""
+def test_no_pybind11_core_module():
+    """确认不再暴露历史 pybind11 模块 mbink_core"""
+    import importlib
+
     try:
-        import mbink_core as core
-        # 状态管理
-        assert hasattr(core, 'App'),        "core.App 未导出"
-        assert hasattr(core, 'State'),      "core.State 未导出"
-        assert hasattr(core, 'IntState'),   "core.IntState 未导出"
-        assert hasattr(core, 'StringState'),"core.StringState 未导出"
-        assert hasattr(core, 'ListState'),  "core.ListState 未导出"
-        assert hasattr(core, 'DictState'),  "core.DictState 未导出"
-        assert hasattr(core, 'BatchContext'),"core.BatchContext 未导出"
-        # 窗口 & 运行时
-        assert hasattr(core, 'Window'),     "core.Window 未导出"
-        assert hasattr(core, 'Runtime'),    "core.Runtime 未导出"
-        assert hasattr(core, 'HostBridge'), "core.HostBridge 未导出"
-        assert hasattr(core, 'EventLoop'),  "core.EventLoop 未导出"
-        # 全局函数
-        assert callable(core.version),      "core.version 不可调用"
-        print("[TEST_PASS] import_core")
-    except Exception as e:
-        print(f"[TEST_FAIL] import_core: {e}")
+        importlib.import_module('mbink_core')
+        print("[TEST_FAIL] mbink_core_should_not_exist")
+    except ModuleNotFoundError:
+        print("[TEST_PASS] mbink_core_removed")
 
 
 def test_backward_compat():
@@ -321,7 +308,7 @@ def main():
     test_bindable_return_types()
     test_bindable_vs_bind()
     test_import_mbink()
-    test_import_core()
+    test_no_pybind11_core_module()
     test_backward_compat()
     test_int_state_decrement_via_increment()
     print("[TEST_END]")

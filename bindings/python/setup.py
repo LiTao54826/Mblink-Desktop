@@ -4,7 +4,7 @@ MBink Python绑定安装脚本
 功能：
 - 安装Python包
 - 配置依赖
-- 包含预编译扩展（.pyd/.so）
+- 包含运行时动态库（.dll/.so/.dylib）
 
 使用方法：
     pip install .
@@ -41,8 +41,8 @@ setup(
 
     packages=['mbink'],
     package_dir={'mbink': 'mbink'},
-    # 包含预编译扩展和 DLL（Windows: .pyd + .dll，Linux/macOS: .so）
-    package_data={'mbink': ['bin/*.pyd', 'bin/*.so', 'bin/*.dll']},
+    # 包含运行时动态库（Windows: .dll，Linux: .so，macOS: .dylib）
+    package_data={'mbink': ['bin/*.dll', 'bin/*.so', 'bin/*.dylib']},
     
     install_requires=[
         # 运行时依赖

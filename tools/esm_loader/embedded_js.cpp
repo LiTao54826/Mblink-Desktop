@@ -11,6 +11,7 @@
 #include "generated/preact_js.inc"
 #include "generated/hooks_js.inc"
 #include "generated/dom_polyfills_js.inc"
+#include "generated/bootstrap_js.inc"
 
 namespace mbink {
 namespace embedded {
@@ -25,6 +26,10 @@ std::string_view GetHooksJS() {
 
 std::string_view GetDomPolyfillsJS() {
     return std::string_view(reinterpret_cast<const char*>(dom_polyfills_js_data), dom_polyfills_js_size);
+}
+
+std::string_view GetBootstrapJS() {
+    return std::string_view(reinterpret_cast<const char*>(bootstrap_js_data), bootstrap_js_size);
 }
 
 bool HasEmbeddedJS() {

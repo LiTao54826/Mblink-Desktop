@@ -30,6 +30,11 @@ std::string_view GetHooksJS();
 std::string_view GetDomPolyfillsJS();
 
 /**
+ * @brief 获取嵌入的 runtime bootstrap 代码
+ */
+std::string_view GetBootstrapJS();
+
+/**
  * @brief 检查是否有嵌入的 JS 资源
  */
 bool HasEmbeddedJS();

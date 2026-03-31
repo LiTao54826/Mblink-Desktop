@@ -188,7 +188,9 @@ class App:
         return self
 
     def _load_preact_libs(self):
-        """从项目目录加载 preact.js 和 hooks.js"""
+        """优先使用 DLL 内嵌资源，缺失时再从项目目录加载 preact.js 和 hooks.js"""
+        self._preact_loaded = True
+
         import os
         pkg_dir = os.path.dirname(os.path.abspath(__file__))
         proj_root = os.path.normpath(os.path.join(pkg_dir, "..", "..", ".."))
@@ -209,16 +211,11 @@ class App:
             with open(preact_js, 'r', encoding='utf-8') as f:
                 self.eval_js(f.read())
         else:
-            raise FileNotFoundError(
-                f"找不到 preact.js: {preact_js}\n"
-                f"请设置 MBINK_ROOT 环境变量指向项目根目录"
-            )
+            return
 
         if os.path.exists(hooks_js):
             with open(hooks_js, 'r', encoding='utf-8') as f:
                 self.eval_js(f.read())
-
-        self._preact_loaded = True
 
     # ========== 函数绑定 ==========
 

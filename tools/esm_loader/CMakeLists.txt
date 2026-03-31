@@ -11,11 +11,13 @@ set(JS_DIR "${CMAKE_SOURCE_DIR}/js")
 set(PREACT_JS "${JS_DIR}/preact/preact.js")
 set(HOOKS_JS "${JS_DIR}/preact/hooks.js")
 set(DOM_POLYFILLS_JS "${JS_DIR}/polyfills/dom.js")
+set(BOOTSTRAP_JS "${JS_DIR}/runtime/bootstrap.js")
 
 # 生成的 .inc 文件路径
 set(PREACT_JS_INC "${GENERATED_DIR}/preact_js.inc")
 set(HOOKS_JS_INC "${GENERATED_DIR}/hooks_js.inc")
 set(DOM_POLYFILLS_JS_INC "${GENERATED_DIR}/dom_polyfills_js.inc")
+set(BOOTSTRAP_JS_INC "${GENERATED_DIR}/bootstrap_js.inc")
 
 # CMake 脚本路径
 set(GENERATE_SCRIPT "${CMAKE_CURRENT_SOURCE_DIR}/generate_embedded_js.cmake")
@@ -53,11 +55,23 @@ add_custom_command(
     COMMENT "Embedding dom.js polyfills"
 )
 
+add_custom_command(
+    OUTPUT ${BOOTSTRAP_JS_INC}
+    COMMAND ${CMAKE_COMMAND}
+        -DINPUT_FILE=${BOOTSTRAP_JS}
+        -DOUTPUT_FILE=${BOOTSTRAP_JS_INC}
+        -DVAR_NAME=bootstrap_js
+        -P ${GENERATE_SCRIPT}
+    DEPENDS ${BOOTSTRAP_JS} ${GENERATE_SCRIPT}
+    COMMENT "Embedding runtime/bootstrap.js"
+)
+
 add_custom_target(generate_embedded_js
     DEPENDS
         ${PREACT_JS_INC}
         ${HOOKS_JS_INC}
         ${DOM_POLYFILLS_JS_INC}
+        ${BOOTSTRAP_JS_INC}
 )
 
 # ============================================================

@@ -13,15 +13,14 @@ Python 是当前唯一同时具备可见实现和顶层构建接入的绑定。
 Evidence | 可确认依据：
 
 - `bindings/python/CMakeLists.txt`
-- `bindings/python/src/bindings.cpp`
-- `pybind11` integration
+- `bindings/python/mbink/_ffi.py`
+- `bindings/python/mbink/app.py`
 - Python package directory under `bindings/python/`
 - top-level CMake enables `MBINK_BUILD_PYTHON_BINDING`
 
 ## Directory Layout | 目录结构
 
-- `src/` — binding implementation / 绑定实现
-- `mbink/` — Python package entry / Python 包入口
+- `mbink/` — ctypes package entry / Python 包入口
 - `setup.py` — packaging entry / 打包入口
 
 ## Non-Claims | 不应直接承诺的内容

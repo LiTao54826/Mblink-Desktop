@@ -44,7 +44,6 @@ ctest --test-dir build --output-on-failure
 Dependencies | 依赖：
 
 - Python 3
-- pybind11
 
 Current build behavior | 当前构建行为：
 
@@ -52,8 +51,8 @@ Current build behavior | 当前构建行为：
   `mbink_api` 以共享库形式构建
 - build outputs are copied to `bindings/python/mbink/bin/`
   构建产物会复制到 `bindings/python/mbink/bin/`
-- Python binding links against multiple core static libraries
-  Python binding 会链接多个核心静态库
+- Python package loads the runtime through `ctypes`
+  Python 包通过 `ctypes` 加载运行时库
 
 ## Third-Party Dependencies | 第三方依赖
 

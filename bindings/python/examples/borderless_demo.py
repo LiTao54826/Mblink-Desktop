@@ -147,4 +147,4 @@ app.run()
 
 # cd D:\code\C\MBink\bindings\python
 # pip install -e .
-# pyinstaller -F examples\borderless_demo.py --hidden-import=mbink_core --add-binary="mbink\bin\mbink.dll;mbink\bin"
+# pyinstaller -F examples\borderless_demo.py --add-binary="mbink\bin\mbink.dll;mbink\bin"
