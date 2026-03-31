@@ -29,8 +29,19 @@ C++ 桌面 UI / 应用框架。
 | Public C API | `core/api/mbink.h` | 对外 C 接口 |
 | Python binding | Integrated | 已接入构建 |
 | Go / Rust / Node.js bindings | Placeholder directories | 当前仅占位目录 |
+| Browser compatibility | Partial, Chrome/Blink-oriented runtime layer | 当前为偏 Chrome/Blink 风格的基础兼容层，不能宣称完整浏览器兼容 |
 | Test targets | Available with `MBINK_BUILD_TESTS=ON` | 通过选项启用 |
 | Platform validation | Windows evidence is strongest | Windows 痕迹最完整 |
+
+## Browser Compatibility | 浏览器兼容性
+
+Current code shows a basic browser runtime compatibility layer with `window`, `navigator`, DOM query APIs, limited DOM polyfills, form / anchor base behavior, layout, and networking primitives.
+当前代码体现的是一套基础浏览器运行时兼容层，包含 `window`、`navigator`、DOM 查询 API、有限 DOM polyfills、表单 / 锚点基础行为、布局与网络基础能力。
+
+It should not be described as fully compatible with Chrome / Firefox / Safari / Edge, nor as full Web platform parity.
+当前不应描述为已完整兼容 Chrome / Firefox / Safari / Edge，也不应宣称已达到完整 Web 平台一致性。
+
+See | 详见：[docs/BROWSER_COMPATIBILITY.md](docs/BROWSER_COMPATIBILITY.md)
 
 ## Repository Layout | 仓库结构
 
@@ -91,6 +102,7 @@ See | 详见：[docs/BINDINGS.md](docs/BINDINGS.md)
 - [docs/BUILD.md](docs/BUILD.md)
 - [docs/TESTING.md](docs/TESTING.md)
 - [docs/BINDINGS.md](docs/BINDINGS.md)
+- [docs/BROWSER_COMPATIBILITY.md](docs/BROWSER_COMPATIBILITY.md)
 - [docs/KNOWN_LIMITATIONS.md](docs/KNOWN_LIMITATIONS.md)
 - [docs/KNOWN_ISSUES.md](docs/KNOWN_ISSUES.md)
 - [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md)

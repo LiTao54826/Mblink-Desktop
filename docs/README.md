@@ -7,6 +7,7 @@
 - [Build | 构建](BUILD.md)
 - [Testing | 测试](TESTING.md)
 - [Bindings | 绑定](BINDINGS.md)
+- [Browser Compatibility | 浏览器兼容性](BROWSER_COMPATIBILITY.md)
 - [Known Limitations | 已知限制](KNOWN_LIMITATIONS.md)
 - [Known Issues | 已知问题](KNOWN_ISSUES.md)
 - [Contributing | 贡献](CONTRIBUTING.md)
@@ -23,11 +24,12 @@
 3. [Architecture | 架构](ARCHITECTURE.md)
 4. [Testing | 测试](TESTING.md)
 5. [Bindings | 绑定](BINDINGS.md)
-6. [Known Limitations | 已知限制](KNOWN_LIMITATIONS.md)
-7. [Known Issues | 已知问题](KNOWN_ISSUES.md)
-8. [Contributing | 贡献](CONTRIBUTING.md)
-9. [Changelog | 变更记录](../CHANGELOG.md)
-10. [Roadmap | 路线图](../ROADMAP.md)
+6. [Browser Compatibility | 浏览器兼容性](BROWSER_COMPATIBILITY.md)
+7. [Known Limitations | 已知限制](KNOWN_LIMITATIONS.md)
+8. [Known Issues | 已知问题](KNOWN_ISSUES.md)
+9. [Contributing | 贡献](CONTRIBUTING.md)
+10. [Changelog | 变更记录](../CHANGELOG.md)
+11. [Roadmap | 路线图](../ROADMAP.md)
 
 ## Documentation Rules | 文档规则
 
