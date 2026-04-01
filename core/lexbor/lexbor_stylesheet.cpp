@@ -2,18 +2,17 @@
  * @file lexbor_stylesheet.cpp
  * @brief Lexbor CSS StyleSheet 包装类实现
  */
-
 #include "lexbor_stylesheet.h"
+
 #include <fstream>
 #include <sstream>
-#include <lexbor/css/stylesheet.h>
+
 #include <lexbor/css/parser.h>
 #include <lexbor/css/rule.h>
 #include <lexbor/css/selectors/selectors.h>
+#include <lexbor/css/stylesheet.h>
 
 namespace mbink {
-
-// ========== 静态成员 ==========
 
 CSSAssetProvider LexborStyleSheet::asset_provider_ = nullptr;
 
