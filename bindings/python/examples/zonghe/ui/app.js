@@ -161,10 +161,10 @@ function App() {
             row('最近心跳', s.heartbeat_at),
           ]), { flex: 1 }),
           panel('指令控制', h('div', { style: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' } }, [
-            btn('启动', 'primary', function() { return py.start_listen(); }),
-            btn('重试', null, function() { return py.retry_task(); }),
-            btn('停止', 'danger', function() { return py.stop_task(); }),
-            btn('设置', null, function() {  return py.reset_state(); })
+            btn('启动', 'primary', function() { return backend.start_listen(); }),
+            btn('重试', null, function() { return backend.retry_task(); }),
+            btn('停止', 'danger', function() { return backend.stop_task(); }),
+            btn('设置', null, function() {  return backend.reset_state(); })
           ]))
         ]),
         panel('运行日志', h('logview', {

@@ -17,6 +17,7 @@
 #include <vector>
 #include <mutex>
 #include <memory>
+#include <atomic>
 
 extern "C" {
 #include "quickjs/quickjs.h"
@@ -32,12 +33,18 @@ class StateManager;
  * @return JSON 格式的返回值
  */
 using HostCallback = std::function<std::string(const std::string& args)>;
+using HostAsyncCallback = std::function<std::string(const std::string& args)>;
 
 /**
  * @brief 宿主函数信息
  */
 struct HostFunction {
     HostCallback callback;
+    void* userData = nullptr;
+};
+
+struct HostAsyncFunction {
+    HostAsyncCallback callback;
     void* userData = nullptr;
 };
 
@@ -94,6 +101,7 @@ public:
      * @param userData 用户数据
      */
     void bind(const std::string& name, HostCallback callback, void* userData = nullptr);
+    void bindAsync(const std::string& name, HostAsyncCallback callback, void* userData = nullptr);
     
     /**
      * @brief 解绑宿主函数
@@ -108,6 +116,7 @@ public:
      * @return JSON 返回值
      */
     std::string call(const std::string& name, const std::string& args);
+    bool hasAsyncFunction(const std::string& name) const;
     
     /**
      * @brief 获取状态管理器
@@ -146,11 +155,33 @@ public:
      * @brief 刷新事件队列，执行 JS 回调（主线程调用）
      */
     void flushEvents();
+    void flushAsyncResults();
+    void cancelPendingPromises(const std::string& reason);
 
 private:
+    struct PendingPromise {
+        uint64_t id;
+        JSValue promise;
+        JSValue resolve;
+        JSValue reject;
+    };
+
+    struct AsyncCompletion {
+        uint64_t promiseId;
+        bool success;
+        std::string payloadJson;
+    };
+
+    struct AsyncQueueState {
+        std::vector<AsyncCompletion> completions;
+        std::mutex mutex;
+        std::atomic<bool> alive{true};
+    };
+
     JSContext* ctx_;
     StateManager* stateManager_;
     std::unordered_map<std::string, HostFunction> functions_;
+    std::unordered_map<std::string, HostAsyncFunction> asyncFunctions_;
     
     // 事件监听器
     std::vector<HostEventListener> listeners_;
@@ -159,6 +190,11 @@ private:
     // 事件队列（线程安全）
     std::vector<PendingEvent> eventQueue_;
     std::mutex eventQueueMutex_;
+
+    std::unordered_map<uint64_t, PendingPromise> pendingPromises_;
+    std::mutex pendingPromisesMutex_;
+    std::shared_ptr<AsyncQueueState> asyncQueueState_;
+    std::atomic<uint64_t> nextPromiseId_{1};
 
     // 状态自动事件的 watcher 管理
     struct AutoWatcher {
@@ -170,8 +206,8 @@ private:
     // JS 回调实现
     static JSValue jsCall(JSContext* ctx, JSValueConst thisVal, 
                           int argc, JSValueConst* argv, int magic, JSValue* func_data);
-    static JSValue jsPyCall(JSContext* ctx, JSValueConst thisVal,
-                            int argc, JSValueConst* argv, int magic, JSValue* func_data);
+    static JSValue jsBackendCall(JSContext* ctx, JSValueConst thisVal,
+                                 int argc, JSValueConst* argv, int magic, JSValue* func_data);
     static JSValue jsStateGet(JSContext* ctx, JSValueConst thisVal,
                               int argc, JSValueConst* argv, int magic, JSValue* func_data);
     static JSValue jsStateSet(JSContext* ctx, JSValueConst thisVal,
@@ -188,6 +224,11 @@ private:
                             int argc, JSValueConst* argv, int magic, JSValue* func_data);
     static JSValue jsHostOff(JSContext* ctx, JSValueConst thisVal,
                              int argc, JSValueConst* argv, int magic, JSValue* func_data);
+    JSValue createBackendFunction(const std::string& name);
+    void installBoundFunction(const std::string& name);
+    void removeBoundFunction(const std::string& name);
+    static bool shouldRejectPayload(const std::string& payloadJson);
+    static JSValue buildErrorValue(JSContext* ctx, const std::string& payloadJson);
     
     // 辅助函数
     static std::string jsValueToJson(JSContext* ctx, JSValueConst val);

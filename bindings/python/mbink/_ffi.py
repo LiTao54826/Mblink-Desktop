@@ -24,6 +24,7 @@ POINTER = ctypes.POINTER
 # char* (*MBinkCallback)(const char* args_json, void* user_data)
 # 注意：回调返回值必须来自 mbink_copy_string()，由 MBink 在 C 侧释放
 MBinkCallback = ctypes.CFUNCTYPE(c_void_p, c_char_p, c_void_p)
+MBinkAsyncCallback = ctypes.CFUNCTYPE(c_void_p, c_char_p, c_void_p)
 # void (*MBinkStateCallback)(const char* name, const char* value_json, void* user_data)
 MBinkStateCallback = ctypes.CFUNCTYPE(None, c_char_p, c_char_p, c_void_p)
 # void (*MBinkResizeCallback)(int width, int height, void* user_data)
@@ -138,6 +139,14 @@ def _bind_functions(lib):
     lib.mbink_stop.argtypes = [H]
     lib.mbink_poll_events.restype = c_bool
     lib.mbink_poll_events.argtypes = [H]
+
+    # 函数绑定
+    lib.mbink_bind.restype = c_int
+    lib.mbink_bind.argtypes = [H, c_char_p, MBinkCallback, c_void_p]
+    lib.mbink_bind_async.restype = c_int
+    lib.mbink_bind_async.argtypes = [H, c_char_p, MBinkAsyncCallback, c_void_p]
+    lib.mbink_unbind.restype = None
+    lib.mbink_unbind.argtypes = [H, c_char_p]
 
     # 窗口属性
     lib.mbink_set_title.restype = c_int

@@ -79,10 +79,11 @@ typedef struct {
 
 // ========== 回调类型 ==========
 
-// 函数绑定回调: JS 调用 py.xxx() 时触发，返回 JSON 字符串。
+// 函数绑定回调: JS 调用 backend.xxx() 时触发，返回 JSON 字符串。
 // 返回值必须由 MBink 运行时通过 mbink_free() 释放。
 // 建议绑定层使用 mbink_copy_string() 分配返回字符串，确保分配/释放在同一运行时。
 typedef char* (*MBinkCallback)(const char* args_json, void* user_data);
+typedef char* (*MBinkAsyncCallback)(const char* args_json, void* user_data);
 
 // 状态变更回调
 typedef void (*MBinkStateCallback)(const char* name, const char* value_json,
@@ -163,9 +164,12 @@ MBINK_API int mbink_load_bytecode(MBinkHandle handle, const void* data,
 
 // ========== 函数绑定 ==========
 
-/** 绑定宿主函数，JS 中通过 py.name(args) 调用 */
+/** 绑定宿主函数，JS 中通过 backend.name(args) 调用 */
 MBINK_API int mbink_bind(MBinkHandle handle, const char* name,
                              MBinkCallback callback, void* user_data);
+/** 绑定异步宿主函数，JS 中通过 await backend.name(args) 调用 */
+MBINK_API int mbink_bind_async(MBinkHandle handle, const char* name,
+                               MBinkAsyncCallback callback, void* user_data);
 MBINK_API void mbink_unbind(MBinkHandle handle, const char* name);
 
 // ========== 事件回调 ==========

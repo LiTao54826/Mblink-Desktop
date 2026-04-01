@@ -9,9 +9,10 @@ import atexit
 import os
 import inspect
 import warnings
+import asyncio
 from .controls import LogView, Terminal
 from ._ffi import (
-    load_dll, MBinkConfig, MBinkCallback, MBinkResizeCallback,
+    load_dll, MBinkConfig, MBinkCallback, MBinkAsyncCallback, MBinkResizeCallback,
     MBinkVoidCallback, MBinkUpdateCallback, c_int, c_char_p, c_void_p,
     POINTER,
 )
@@ -236,6 +237,12 @@ class App:
 
     # ========== 函数绑定 ==========
 
+    def _wrap_result_json(self, result):
+        return self._lib.mbink_copy_string(json.dumps(result, ensure_ascii=False).encode("utf-8"))
+
+    def _wrap_error_json(self, exc: Exception):
+        return self._lib.mbink_copy_string(json.dumps({"error": str(exc)}, ensure_ascii=False).encode("utf-8"))
+
     def bind(self, name_or_func=None):
         """
         注册 Python 函数供 JS 调用。可作为装饰器使用：
@@ -257,11 +264,9 @@ class App:
                     args_str = args_json.decode("utf-8") if args_json else "null"
                     args = json.loads(args_str)
                     result = func(args)
-                    ret = json.dumps(result, ensure_ascii=False)
-                    return self._lib.mbink_copy_string(ret.encode("utf-8"))
+                    return self._wrap_result_json(result)
                 except Exception as e:
-                    err = json.dumps({"error": str(e)})
-                    return self._lib.mbink_copy_string(err.encode("utf-8"))
+                    return self._wrap_error_json(e)
 
             self._callbacks.append(_callback)  # prevent GC
             self._lib.mbink_bind(
@@ -270,6 +275,37 @@ class App:
             return func
 
         # @app.bind 或 @app.bind("name")
+        if callable(name_or_func):
+            return _decorator(name_or_func)
+        else:
+            def _wrapper(func):
+                return _decorator(func, name_or_func)
+            return _wrapper
+
+    def bind_async(self, name_or_func=None):
+        self._ensure_alive()
+
+        def _decorator(func, fname=None):
+            fn_name = fname or func.__name__
+
+            @MBinkAsyncCallback
+            def _callback(args_json, _user_data):
+                try:
+                    args_str = args_json.decode("utf-8") if args_json else "null"
+                    args = json.loads(args_str)
+                    result = func(args)
+                    if inspect.isawaitable(result):
+                        result = asyncio.run(result)
+                    return self._wrap_result_json(result)
+                except Exception as e:
+                    return self._wrap_error_json(e)
+
+            self._callbacks.append(_callback)
+            self._lib.mbink_bind_async(
+                self._handle, fn_name.encode("utf-8"), _callback, None
+            )
+            return func
+
         if callable(name_or_func):
             return _decorator(name_or_func)
         else:

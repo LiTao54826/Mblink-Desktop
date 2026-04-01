@@ -155,6 +155,7 @@ struct WindowContext {
     // 回调存储
     std::unordered_map<int, std::pair<MBinkStateCallback, void*>> watchCallbacks;
     std::unordered_map<std::string, std::pair<MBinkCallback, void*>> boundFunctions;
+    std::unordered_map<std::string, std::pair<MBinkAsyncCallback, void*>> boundAsyncFunctions;
 
     // 事件回调
     MBinkResizeCallback onResizeCallback = nullptr;
@@ -209,6 +210,65 @@ void reportNativeError(const std::string& error) {
     if (log.is_open()) {
         log << error << std::endl;
     }
+}
+
+#ifdef _WIN32
+char* invokeCallbackWithSEH(MBinkCallback cb, const char* args, void* user_data, unsigned int* sehCode);
+#endif
+
+std::string invokeBoundJsonCallback(WindowContext* ctx,
+                                    const std::string& funcName,
+                                    const std::string& args,
+                                    MBinkCallback cb,
+                                    void* ud) {
+    auto finishSharedBatch = [ctx]() {
+        for (auto& kv : ctx->sharedObjects) {
+            if (kv.second) {
+                kv.second->endBatch();
+            }
+        }
+    };
+
+    for (auto& kv : ctx->sharedObjects) {
+        if (kv.second) {
+            kv.second->beginBatch();
+        }
+    }
+
+    char* result = nullptr;
+
+#ifdef _WIN32
+    unsigned int sehCode = 0;
+    result = invokeCallbackWithSEH(cb, args.c_str(), ud, &sehCode);
+    finishSharedBatch();
+    if (!result && sehCode != 0) {
+        reportNativeError("SEH exception in bound callback '" + funcName +
+                          "', code=0x" + std::to_string(sehCode));
+        return R"({"error":"Native SEH exception in callback"})";
+    }
+#else
+    try {
+        result = cb(args.c_str(), ud);
+    } catch (const std::exception& e) {
+        finishSharedBatch();
+        reportNativeError("C++ exception in bound callback '" + funcName +
+                          "': " + e.what());
+        return std::string("{\"error\":\"Native callback exception: ") + e.what() + "\"}";
+    } catch (...) {
+        finishSharedBatch();
+        reportNativeError("Unknown C++ exception in bound callback '" + funcName + "'");
+        return R"({"error":"Native callback unknown exception"})";
+    }
+    finishSharedBatch();
+#endif
+
+    if (!result) {
+        return "null";
+    }
+
+    std::string ret(result);
+    mbink_free(result);
+    return ret;
 }
 
 bool loadEmbeddedRuntimeScripts(mbink::QuickJSRuntime* runtime) {
@@ -547,6 +607,10 @@ void mbink_destroy(MBinkHandle handle) {
     }
 
     // 2. JS 清理：unmount Preact + 清空全局引用（必须在 DOMBindings::Cleanup 之前）
+    if (ctx->hostBridge) {
+        ctx->hostBridge->cancelPendingPromises("Window destroyed");
+    }
+
     if (ctx->runtime) {
         auto jsCtx = ctx->runtime->GetContext();
         const char* cleanupScript =
@@ -555,7 +619,7 @@ void mbink_destroy(MBinkHandle handle) {
             "  if(typeof __preactHooksCleanup==='function'){try{__preactHooksCleanup();}catch(e){}}"
             "  var keys=['Preact','PreactHooks','preact','preactHooks',"
             "            '__preactCleanup','__preactHooksCleanup',"
-            "            '__onSharedUpdate','data','py'];"
+            "            '__onSharedUpdate','data','backend','py'];"
             "  for(var i=0;i<keys.length;i++){"
             "    try{globalThis[keys[i]]=undefined;}catch(e){}"
             "  }"
@@ -612,6 +676,7 @@ void mbink_destroy(MBinkHandle handle) {
     ctx->sharedObjects.clear();
     ctx->watchCallbacks.clear();
     ctx->boundFunctions.clear();
+    ctx->boundAsyncFunctions.clear();
 
     // SDL 有后台线程无法正常退出，参考 esm_loader 使用强制退出
 #ifdef _WIN32
@@ -638,6 +703,7 @@ void mbink_run(MBinkHandle handle) {
         // 刷新 HostBridge 事件队列到 JS 端
         if (ctx->hostBridge) {
             ctx->hostBridge->flushEvents();
+            ctx->hostBridge->flushAsyncResults();
         }
         // 刷新所有 SharedObject 的延迟通知（由 notifyUpdate/flushBatch 标记的 pending_notify_）
         // 在事件循环帧中调用，此时 JS 调用栈已清空，调用 JS_Call 是安全的
@@ -674,6 +740,7 @@ bool mbink_poll_events(MBinkHandle handle) {
     }
     if (ctx->hostBridge) {
         ctx->hostBridge->flushEvents();
+        ctx->hostBridge->flushAsyncResults();
     }
     // 刷新 SharedObject 的延迟通知
     for (auto& kv : ctx->sharedObjects) {
@@ -949,60 +1016,32 @@ int mbink_bind(MBinkHandle handle, const char* name,
     auto ctx = getContext(handle);
     ctx->boundFunctions[name] = {callback, user_data};
 
-    // 通过 HostBridge 注册，这样 JS 端可以通过 py.name() 调用
+    // 通过 HostBridge 注册，这样 JS 端可以通过 backend.name() 调用
     if (ctx->hostBridge) {
         MBinkCallback cb = callback;
         void* ud = user_data;
         std::string funcName = name;
         ctx->hostBridge->bind(name, [ctx, cb, ud, funcName](const std::string& args) -> std::string {
-            auto finishSharedBatch = [ctx]() {
-                for (auto& kv : ctx->sharedObjects) {
-                    if (kv.second) {
-                        kv.second->endBatch();
-                    }
-                }
-            };
+            return invokeBoundJsonCallback(ctx, funcName, args, cb, ud);
+        });
+    }
+    return MBINK_OK;
+}
 
-            for (auto& kv : ctx->sharedObjects) {
-                if (kv.second) {
-                    kv.second->beginBatch();
-                }
-            }
+int mbink_bind_async(MBinkHandle handle, const char* name,
+                     MBinkAsyncCallback callback, void* user_data) {
+    if (!handle) return MBINK_ERROR_INVALID_HANDLE;
+    if (!name || !callback) return MBINK_ERROR_INVALID_PARAM;
 
-            char* result = nullptr;
+    auto ctx = getContext(handle);
+    ctx->boundAsyncFunctions[name] = {callback, user_data};
 
-#ifdef _WIN32
-            unsigned int sehCode = 0;
-            result = invokeCallbackWithSEH(cb, args.c_str(), ud, &sehCode);
-            finishSharedBatch();
-            if (!result && sehCode != 0) {
-                reportNativeError("SEH exception in bound callback '" + funcName +
-                                  "', code=0x" + std::to_string(sehCode));
-                return R"({"error":"Native SEH exception in callback"})";
-            }
-#else
-            try {
-                result = cb(args.c_str(), ud);
-            } catch (const std::exception& e) {
-                finishSharedBatch();
-                reportNativeError("C++ exception in bound callback '" + funcName +
-                                  "': " + e.what());
-                return std::string("{\"error\":\"Native callback exception: ") + e.what() + "\"}";
-            } catch (...) {
-                finishSharedBatch();
-                reportNativeError("Unknown C++ exception in bound callback '" + funcName + "'");
-                return R"({"error":"Native callback unknown exception"})";
-            }
-            finishSharedBatch();
-#endif
-
-            if (!result) {
-                return "null";
-            }
-
-            std::string ret(result);
-            mbink_free(result);
-            return ret;
+    if (ctx->hostBridge) {
+        MBinkAsyncCallback cb = callback;
+        void* ud = user_data;
+        std::string funcName = name;
+        ctx->hostBridge->bindAsync(name, [ctx, cb, ud, funcName](const std::string& args) -> std::string {
+            return invokeBoundJsonCallback(ctx, funcName, args, cb, ud);
         });
     }
     return MBINK_OK;
@@ -1012,6 +1051,7 @@ void mbink_unbind(MBinkHandle handle, const char* name) {
     if (!handle || !name) return;
     auto ctx = getContext(handle);
     ctx->boundFunctions.erase(name);
+    ctx->boundAsyncFunctions.erase(name);
     if (ctx->hostBridge) {
         ctx->hostBridge->unbind(name);
     }

@@ -13,14 +13,21 @@ extern "C" {
 
 #include <algorithm>
 #include <cstdio>
+#include <thread>
 
 namespace mbink {
 
 HostBridge::HostBridge(JSContext* ctx, StateManager* stateManager)
-    : ctx_(ctx), stateManager_(stateManager) {
+    : ctx_(ctx), stateManager_(stateManager), asyncQueueState_(std::make_shared<AsyncQueueState>()) {
 }
 
 HostBridge::~HostBridge() {
+    if (asyncQueueState_) {
+        asyncQueueState_->alive = false;
+    }
+
+    cancelPendingPromises("Host bridge destroyed");
+
     // 释放所有 Listener 的 JS 回调引用
     for (auto& listener : listeners_) {
         JS_FreeValue(ctx_, listener.callback);
@@ -88,57 +95,32 @@ void HostBridge::registerGlobal() {
     
     JS_SetPropertyStr(ctx_, global, "host", host);
     
-    // 创建 py 命名空间对象（用于直接调用 Python 函数）
-    // py.funcName(args) 等价于 host.call('funcName', args)
-    JSValue py = JS_NewObject(ctx_);
-    JS_SetPropertyStr(ctx_, global, "py", py);
-    
+    JSValue backend = JS_NewObject(ctx_);
+    JS_SetPropertyStr(ctx_, global, "backend", JS_DupValue(ctx_, backend));
+
+    // 临时兼容旧入口
+    JS_SetPropertyStr(ctx_, global, "py", JS_DupValue(ctx_, backend));
+
+    JS_FreeValue(ctx_, backend);
+
     JS_FreeValue(ctx_, bridgePtr);
     JS_FreeValue(ctx_, global);
 }
 
 void HostBridge::bind(const std::string& name, HostCallback callback, void* userData) {
     functions_[name] = {std::move(callback), userData};
-    
-    // 同时注册到 py 命名空间，支持 py.funcName(args) 调用
-    if (ctx_) {
-        JSValue global = JS_GetGlobalObject(ctx_);
-        JSValue py = JS_GetPropertyStr(ctx_, global, "py");
-        
-        if (!JS_IsUndefined(py)) {
-            // 创建包含函数名和 bridge 指针的数据
-            JSValue funcData[2];
-            funcData[0] = JS_NewInt64(ctx_, reinterpret_cast<int64_t>(this));
-            funcData[1] = JS_NewString(ctx_, name.c_str());
-            
-            // 创建 JS 函数
-            JSValue func = JS_NewCFunctionData(ctx_, jsPyCall, 1, 0, 2, funcData);
-            JS_SetPropertyStr(ctx_, py, name.c_str(), func);
-            
-            JS_FreeValue(ctx_, funcData[0]);
-            JS_FreeValue(ctx_, funcData[1]);
-        }
-        
-        JS_FreeValue(ctx_, py);
-        JS_FreeValue(ctx_, global);
-    }
+    installBoundFunction(name);
+}
+
+void HostBridge::bindAsync(const std::string& name, HostAsyncCallback callback, void* userData) {
+    asyncFunctions_[name] = {std::move(callback), userData};
+    installBoundFunction(name);
 }
 
 void HostBridge::unbind(const std::string& name) {
     functions_.erase(name);
-    
-    // 从 py 命名空间移除
-    if (ctx_) {
-        JSValue global = JS_GetGlobalObject(ctx_);
-        JSValue py = JS_GetPropertyStr(ctx_, global, "py");
-        
-        if (!JS_IsUndefined(py)) {
-            JS_DeleteProperty(ctx_, py, JS_NewAtom(ctx_, name.c_str()), 0);
-        }
-        
-        JS_FreeValue(ctx_, py);
-        JS_FreeValue(ctx_, global);
-    }
+    asyncFunctions_.erase(name);
+    removeBoundFunction(name);
 }
 
 std::string HostBridge::call(const std::string& name, const std::string& args) {
@@ -147,6 +129,46 @@ std::string HostBridge::call(const std::string& name, const std::string& args) {
         return R"({"error": "Function not found"})";
     }
     return it->second.callback(args);
+}
+
+bool HostBridge::hasAsyncFunction(const std::string& name) const {
+    return asyncFunctions_.find(name) != asyncFunctions_.end();
+}
+
+JSValue HostBridge::createBackendFunction(const std::string& name) {
+    JSValue funcData[2];
+    funcData[0] = JS_NewInt64(ctx_, reinterpret_cast<int64_t>(this));
+    funcData[1] = JS_NewString(ctx_, name.c_str());
+    JSValue func = JS_NewCFunctionData(ctx_, jsBackendCall, 1, 0, 2, funcData);
+    JS_FreeValue(ctx_, funcData[0]);
+    JS_FreeValue(ctx_, funcData[1]);
+    return func;
+}
+
+void HostBridge::installBoundFunction(const std::string& name) {
+    if (!ctx_) return;
+
+    JSValue global = JS_GetGlobalObject(ctx_);
+    JSValue backend = JS_GetPropertyStr(ctx_, global, "backend");
+    if (!JS_IsUndefined(backend) && !JS_IsNull(backend)) {
+        JS_SetPropertyStr(ctx_, backend, name.c_str(), createBackendFunction(name));
+    }
+    JS_FreeValue(ctx_, backend);
+    JS_FreeValue(ctx_, global);
+}
+
+void HostBridge::removeBoundFunction(const std::string& name) {
+    if (!ctx_) return;
+
+    JSValue global = JS_GetGlobalObject(ctx_);
+    JSValue backend = JS_GetPropertyStr(ctx_, global, "backend");
+    if (!JS_IsUndefined(backend) && !JS_IsNull(backend)) {
+        JSAtom atom = JS_NewAtom(ctx_, name.c_str());
+        JS_DeleteProperty(ctx_, backend, atom, 0);
+        JS_FreeAtom(ctx_, atom);
+    }
+    JS_FreeValue(ctx_, backend);
+    JS_FreeValue(ctx_, global);
 }
 
 // ========== JS 回调实现 ==========
@@ -194,8 +216,8 @@ JSValue HostBridge::jsCall(JSContext* ctx, JSValueConst thisVal,
     return jsonToJsValue(ctx, result);
 }
 
-JSValue HostBridge::jsPyCall(JSContext* ctx, JSValueConst thisVal,
-                             int argc, JSValueConst* argv, int magic, JSValue* func_data) {
+JSValue HostBridge::jsBackendCall(JSContext* ctx, JSValueConst thisVal,
+                                  int argc, JSValueConst* argv, int magic, JSValue* func_data) {
     (void)thisVal;
     (void)magic;
 
@@ -216,21 +238,78 @@ JSValue HostBridge::jsPyCall(JSContext* ctx, JSValueConst thisVal,
         args = jsValueToJson(ctx, argv[0]);
     }
 
+    if (bridge->hasAsyncFunction(name)) {
+        JSValue resolvingFuncs[2] = {JS_UNDEFINED, JS_UNDEFINED};
+        JSValue promise = JS_NewPromiseCapability(ctx, resolvingFuncs);
+        if (JS_IsException(promise)) {
+            JS_FreeCString(ctx, name);
+            if (!JS_IsUndefined(resolvingFuncs[0])) JS_FreeValue(ctx, resolvingFuncs[0]);
+            if (!JS_IsUndefined(resolvingFuncs[1])) JS_FreeValue(ctx, resolvingFuncs[1]);
+            return promise;
+        }
+
+        uint64_t promiseId = bridge->nextPromiseId_.fetch_add(1);
+        {
+            std::lock_guard<std::mutex> lock(bridge->pendingPromisesMutex_);
+            bridge->pendingPromises_.emplace(promiseId, PendingPromise{
+                promiseId,
+                JS_DupValue(ctx, promise),
+                JS_DupValue(ctx, resolvingFuncs[0]),
+                JS_DupValue(ctx, resolvingFuncs[1])
+            });
+        }
+
+        JS_FreeValue(ctx, resolvingFuncs[0]);
+        JS_FreeValue(ctx, resolvingFuncs[1]);
+
+        auto asyncIt = bridge->asyncFunctions_.find(name);
+        HostAsyncCallback callback = asyncIt->second.callback;
+        std::string funcName(name);
+        std::string argsCopy(args);
+        auto queueState = bridge->asyncQueueState_;
+
+        std::thread([queueState, callback, promiseId, funcName, argsCopy]() {
+            AsyncCompletion completion{promiseId, true, "null"};
+            try {
+                completion.payloadJson = callback(argsCopy);
+                completion.success = !HostBridge::shouldRejectPayload(completion.payloadJson);
+            } catch (const std::exception& e) {
+                completion.success = false;
+                completion.payloadJson = std::string("{\"error\":\"") + e.what() + "\"}";
+                std::fprintf(stderr, "[HostBridge::jsBackendCall] async exception in host callback '%s': %s\n",
+                             funcName.c_str(), e.what());
+            } catch (...) {
+                completion.success = false;
+                completion.payloadJson = R"({"error":"Host callback unknown exception"})";
+                std::fprintf(stderr, "[HostBridge::jsBackendCall] unknown async exception in host callback '%s'\n",
+                             funcName.c_str());
+            }
+
+            if (!queueState || !queueState->alive.load()) return;
+            std::lock_guard<std::mutex> lock(queueState->mutex);
+            if (!queueState->alive.load()) return;
+            queueState->completions.push_back(std::move(completion));
+        }).detach();
+
+        JS_FreeCString(ctx, name);
+        return promise;
+    }
+
     std::string result;
     try {
         // 调用宿主函数
         result = bridge->call(name, args);
     } catch (const std::exception& e) {
-        std::fprintf(stderr, "[HostBridge::jsPyCall] exception in host callback '%s': %s\n", name, e.what());
+        std::fprintf(stderr, "[HostBridge::jsBackendCall] exception in host callback '%s': %s\n", name, e.what());
         result = std::string("{\"error\":\"Host callback exception: ") + e.what() + "\"}";
     } catch (...) {
-        std::fprintf(stderr, "[HostBridge::jsPyCall] unknown exception in host callback '%s'\n", name);
+        std::fprintf(stderr, "[HostBridge::jsBackendCall] unknown exception in host callback '%s'\n", name);
         result = R"({"error":"Host callback unknown exception"})";
     }
     JS_FreeCString(ctx, name);
 
     // 注意：不在这里调用 processQueue() / flushEvents()！
-    // 原因：jsPyCall 本身是在 QuickJS JS 调用栈中执行的（由 JS onClick 事件触发），
+    // 原因：宿主调用本身是在 QuickJS JS 调用栈中执行的（由 JS 事件触发），
     // 在 JS 执行栈中再次调用 JS 回调（processQueue/flushEvents 可能触发 JS watcher/listener 回调）
     // 会造成 QuickJS 重入，可能导致迭代器失效和 use-after-free 崩溃。
     // processQueue() 和 flushEvents() 已由 EventLoop 的 update 回调定期处理，此处无需手动调用。
@@ -501,6 +580,87 @@ void HostBridge::flushEvents() {
     }
 }
 
+void HostBridge::flushAsyncResults() {
+    std::vector<AsyncCompletion> completions;
+    if (!asyncQueueState_) return;
+
+    {
+        std::lock_guard<std::mutex> lock(asyncQueueState_->mutex);
+        std::swap(completions, asyncQueueState_->completions);
+    }
+
+    if (completions.empty() || !ctx_) return;
+
+    for (auto& completion : completions) {
+        PendingPromise pending{};
+        bool found = false;
+        {
+            std::lock_guard<std::mutex> lock(pendingPromisesMutex_);
+            auto it = pendingPromises_.find(completion.promiseId);
+            if (it != pendingPromises_.end()) {
+                pending = it->second;
+                pendingPromises_.erase(it);
+                found = true;
+            }
+        }
+
+        if (!found) {
+            continue;
+        }
+
+        JSValue settledValue = completion.success
+            ? jsonToJsValue(ctx_, completion.payloadJson)
+            : buildErrorValue(ctx_, completion.payloadJson);
+        JSValue target = completion.success ? pending.resolve : pending.reject;
+        JSValue result = JS_Call(ctx_, target, JS_UNDEFINED, 1, &settledValue);
+
+        if (JS_IsException(result)) {
+            JSValue exception = JS_GetException(ctx_);
+            const char* msg = JS_ToCString(ctx_, exception);
+            if (msg) {
+                std::fprintf(stderr, "[HostBridge] Promise settle error: %s\n", msg);
+                JS_FreeCString(ctx_, msg);
+            }
+            JS_FreeValue(ctx_, exception);
+        }
+
+        JS_FreeValue(ctx_, result);
+        JS_FreeValue(ctx_, settledValue);
+        JS_FreeValue(ctx_, pending.promise);
+        JS_FreeValue(ctx_, pending.resolve);
+        JS_FreeValue(ctx_, pending.reject);
+    }
+}
+
+void HostBridge::cancelPendingPromises(const std::string& reason) {
+    std::vector<PendingPromise> pending;
+    {
+        std::lock_guard<std::mutex> lock(pendingPromisesMutex_);
+        for (auto& item : pendingPromises_) {
+            pending.push_back(item.second);
+        }
+        pendingPromises_.clear();
+    }
+
+    if (asyncQueueState_) {
+        std::lock_guard<std::mutex> lock(asyncQueueState_->mutex);
+        asyncQueueState_->completions.clear();
+    }
+
+    if (!ctx_) return;
+
+    for (auto& item : pending) {
+        JSValue error = JS_NewError(ctx_);
+        JS_SetPropertyStr(ctx_, error, "message", JS_NewString(ctx_, reason.c_str()));
+        JSValue result = JS_Call(ctx_, item.reject, JS_UNDEFINED, 1, &error);
+        JS_FreeValue(ctx_, result);
+        JS_FreeValue(ctx_, error);
+        JS_FreeValue(ctx_, item.promise);
+        JS_FreeValue(ctx_, item.resolve);
+        JS_FreeValue(ctx_, item.reject);
+    }
+}
+
 JSValue HostBridge::jsHostOn(JSContext* ctx, JSValueConst thisVal,
                              int argc, JSValueConst* argv, int magic, JSValue* func_data) {
     (void)thisVal;
@@ -555,6 +715,38 @@ JSValue HostBridge::jsHostOff(JSContext* ctx, JSValueConst thisVal,
     return JS_UNDEFINED;
 }
 
+bool HostBridge::shouldRejectPayload(const std::string& payloadJson) {
+    if (payloadJson.empty()) {
+        return false;
+    }
+
+    try {
+        json value = json::parse(payloadJson);
+        return value.is_object() && value.contains("error") && !value["error"].is_null();
+    } catch (...) {
+        return false;
+    }
+}
+
+JSValue HostBridge::buildErrorValue(JSContext* ctx, const std::string& payloadJson) {
+    std::string message = payloadJson;
+    try {
+        json value = json::parse(payloadJson);
+        if (value.is_object() && value.contains("error")) {
+            if (value["error"].is_string()) {
+                message = value["error"].get<std::string>();
+            } else {
+                message = value["error"].dump();
+            }
+        }
+    } catch (...) {
+    }
+
+    JSValue error = JS_NewError(ctx);
+    JS_SetPropertyStr(ctx, error, "message", JS_NewString(ctx, message.c_str()));
+    return error;
+}
+
 // ========== 辅助函数 ==========
 
 std::string HostBridge::jsValueToJson(JSContext* ctx, JSValueConst val) {
@@ -573,7 +765,12 @@ std::string HostBridge::jsValueToJson(JSContext* ctx, JSValueConst val) {
 }
 
 JSValue HostBridge::jsonToJsValue(JSContext* ctx, const std::string& jsonStr) {
-    return JS_ParseJSON(ctx, jsonStr.c_str(), jsonStr.size(), "<json>");
+    JSValue value = JS_ParseJSON(ctx, jsonStr.c_str(), jsonStr.size(), "<json>");
+    if (JS_IsException(value)) {
+        JS_FreeValue(ctx, JS_GetException(ctx));
+        return JS_UNDEFINED;
+    }
+    return value;
 }
 
 } // namespace mbink
