@@ -141,12 +141,7 @@ function TitleBar(s) {
 
 function App() {
   var s = globalThis.sys || {};
-  var logs = [
-    { level: 'INFO', text: 'Work Client 初始化完成', time: new Date().toLocaleTimeString() },
-    { level: 'INFO', text: '环境检查: ' + (s.robot_name || '正常'), time: new Date().toLocaleTimeString() },
-    { level: s.last_log_level || 'INFO', text: s.last_log_text || '系统就绪，等待任务...', time: s.timestamp || '--' }
-  ];
-  
+
   return h('div', { style: { width: '100vw', height: '100vh', display: 'flex', flexDirection: 'column' } }, [
     TitleBar(s),
     h('div', { style: { flex: 1, padding: '16px', display: 'flex', flexDirection: 'column', gap: '16px', maxWidth: '1200px', margin: '0 auto', width: '100%', boxSizing: 'border-box', overflow: 'hidden' } }, [
@@ -172,20 +167,20 @@ function App() {
             btn('设置', null, function() {  return py.reset_state(); })
           ]))
         ]),
-        panel(null, h('div', {
+        panel('运行日志', h('logview', {
+          id: 'work-log',
           style: {
-            flex: 1, background: C.logBg, borderRadius: '8px', padding: '12px',
-            overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '6px',
-            fontFamily: 'Consolas, monospace', fontSize: '11px', border: '1px solid ' + C.logBorder
+            flex: 1,
+            width: '100%',
+            height: '100%',
+            display: 'block',
+            minHeight: '0',
+            background: C.logBg,
+            borderRadius: '8px',
+            overflow: 'hidden',
+            border: '1px solid ' + C.logBorder
           }
-        }, logs.map((item, idx) => {
-          let c = item.level === 'ERROR' ? C.danger : item.level === 'WARN' ? C.warning : '#a1a1aa';
-          return h('div', { key: idx, style: { display: 'flex', gap: '10px', color: '#e4e4e7', lineHeight: 1.5 } }, [
-            h('span', { style: { color: '#52525b' } }, item.time),
-            h('span', { style: { color: c, fontWeight: 700 } }, '[' + item.level + ']'),
-            h('span', { style: { flex: 1, wordBreak: 'break-all' } }, item.text)
-          ]);
-        })), { padding: '8px' })
+        }), { padding: '8px' })
       ])
     ])
   ]);

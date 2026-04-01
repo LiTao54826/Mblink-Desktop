@@ -18,7 +18,7 @@
 #include "include/core/SkFontMetrics.h"
 #include "include/core/SkTextBlob.h"
 #include "core/render/utils/paint.h"
-#include "text/font_manager.h"
+#include "core/render/text/font_manager.h"
 
 namespace mbink {
 

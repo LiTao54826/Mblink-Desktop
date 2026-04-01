@@ -30,6 +30,7 @@ app = App(
 )
 
 sys_state = app.shared("sys")
+work_log = None
 
 
 _boot_time = time.monotonic()
@@ -84,6 +85,8 @@ def _set_log(level: str, text: str):
     sys_state.last_log_level = level
     sys_state.last_log_text = text
     sys_state.timestamp = datetime.now().strftime("%H:%M:%S")
+    if work_log is not None:
+        work_log.append(level, "runtime", text)
 
 
 def _init_state():
@@ -103,9 +106,9 @@ def _init_state():
     sys_state.heartbeat_at = "--:--:--"
     sys_state.today_success = 12
     sys_state.today_failed = 1
-    sys_state.last_log_level = "INFO"
-    sys_state.last_log_text = "执行端已启动，等待任务下发"
-    sys_state.timestamp = ""
+    if work_log is not None:
+        work_log.clear()
+    _set_log("INFO", "执行端已启动，等待任务下发")
 
 
 def _sample():
@@ -116,7 +119,6 @@ def _sample():
     now = time.monotonic()
     elapsed = int(now - _boot_time)
     phase = _mock_runtime(now)
-    timestamp = datetime.now().strftime("%H:%M:%S")
 
     sys_state.runtime_status = phase["runtime_status"]
     sys_state.current_task_id = phase["current_task_id"]
@@ -125,10 +127,8 @@ def _sample():
     sys_state.current_account = phase["current_account"]
     sys_state.current_action = phase["current_action"]
     sys_state.task_elapsed = elapsed
-    sys_state.heartbeat_at = timestamp
-    sys_state.last_log_level = phase["log_level"]
-    sys_state.last_log_text = phase["log_text"]
-    sys_state.timestamp = timestamp
+    sys_state.heartbeat_at = datetime.now().strftime("%H:%M:%S")
+    _set_log(phase["log_level"], phase["log_text"])
 
 
 @app.bind("start_listen")
@@ -230,9 +230,9 @@ app.load_html("""<!DOCTYPE html>
 <body><div id="root"></div></body>
 </html>""")
 
-_init_state()
-
 app.load_preact("ui/app.js")
+work_log = app.logview("work-log")
+_init_state()
 app.run()
 
 

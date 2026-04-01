@@ -21,9 +21,10 @@ __version__ = "0.5.0"
 __author__ = "MBink Team"
 
 from .app import App
+from .controls import LogView, Terminal
 from .shared import SharedState
 
 def version():
     return __version__
 
-__all__ = ["App", "SharedState", "version"]
+__all__ = ["App", "SharedState", "LogView", "Terminal", "version"]

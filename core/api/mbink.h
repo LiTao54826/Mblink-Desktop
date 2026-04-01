@@ -357,6 +357,8 @@ MBINK_API int mbink_queue_size(MBinkHandle handle);
 
 // 不透明句柄
 typedef struct MBinkSharedObject* MBinkSharedHandle;
+typedef struct MBinkLogViewObject* MBinkLogViewHandle;
+typedef struct MBinkTerminalObject* MBinkTerminalHandle;
 
 // 创建共享对象，注册为 JS globalThis.<name>
 MBINK_API MBinkSharedHandle mbink_shared_create(MBinkHandle handle,
@@ -408,6 +410,35 @@ MBINK_API bool mbink_shared_has(MBinkSharedHandle shared,
 
 MBINK_API void mbink_shared_batch_begin(MBinkSharedHandle shared);
 MBINK_API void mbink_shared_batch_end(MBinkSharedHandle shared);
+
+// ========== 原生 UI 对象句柄（LogView / Terminal） ==========
+
+MBINK_API MBinkLogViewHandle mbink_logview_get(MBinkHandle handle,
+                                                    const char* element_id);
+MBINK_API void mbink_logview_destroy(MBinkLogViewHandle logview);
+MBINK_API int mbink_logview_append(MBinkLogViewHandle logview,
+                                        const char* level,
+                                        const char* source,
+                                        const char* message);
+MBINK_API void mbink_logview_clear(MBinkLogViewHandle logview);
+MBINK_API const char* mbink_logview_export(MBinkLogViewHandle logview,
+                                                const char* format);
+
+MBINK_API MBinkTerminalHandle mbink_terminal_get(MBinkHandle handle,
+                                                      const char* element_id);
+MBINK_API void mbink_terminal_destroy(MBinkTerminalHandle terminal);
+MBINK_API int mbink_terminal_write(MBinkTerminalHandle terminal,
+                                        const char* data);
+MBINK_API void mbink_terminal_clear(MBinkTerminalHandle terminal);
+MBINK_API int mbink_terminal_execute(MBinkTerminalHandle terminal,
+                                          const char* command);
+MBINK_API int mbink_terminal_start_shell(MBinkTerminalHandle terminal,
+                                              const char* shell);
+MBINK_API int mbink_terminal_send_input(MBinkTerminalHandle terminal,
+                                             const char* input);
+MBINK_API void mbink_terminal_resize(MBinkTerminalHandle terminal,
+                                          int rows, int cols);
+MBINK_API const char* mbink_terminal_serialize(MBinkTerminalHandle terminal);
 
 // ========== 工具函数 ==========
 

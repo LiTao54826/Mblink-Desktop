@@ -6,6 +6,7 @@
 #include "log_renderer.h"
 
 #include "core/render/text/font_manager.h"
+#include "core/render/text/text_renderer.h"
 
 #include "include/core/SkCanvas.h"
 #include "include/core/SkFont.h"
@@ -186,13 +187,14 @@ float LogRenderer::RenderTimestamp(SkCanvas* canvas, uint32_t timestamp,
     std::string ts = FormatTimestamp(timestamp);
 
     SkFont font(typeface_, font_size_);
-    SkPaint paint;
-    paint.setColor(config_.timestamp_color);
-    paint.setAntiAlias(true);
+    Paint paint;
+    paint.SetColor(config_.timestamp_color);
+    paint.SetAntiAlias(true);
 
-    canvas->drawString(ts.c_str(), x, y, font, paint);
+    TextRenderer text_renderer(canvas);
+    text_renderer.DrawTextWithEmoji(ts, x, y, font, paint);
 
-    return x + ts.length() * cell_width_;
+    return x + TextRenderer::MeasureMixedTextWidth(ts, font);
 }
 
 float LogRenderer::RenderLevel(SkCanvas* canvas, LogLevel level,
@@ -202,28 +204,29 @@ float LogRenderer::RenderLevel(SkCanvas* canvas, LogLevel level,
     if (level_idx < 0 || level_idx > 4) level_idx = 1;
 
     SkFont font(typeface_, font_size_);
-    SkPaint paint;
-    paint.setColor(config_.level_colors[level_idx]);
-    paint.setAntiAlias(true);
+    Paint paint;
+    paint.SetColor(config_.level_colors[level_idx]);
+    paint.SetAntiAlias(true);
 
-    // 绘制带括号的级别
     std::string text = std::string("[") + level_str + "]";
-    canvas->drawString(text.c_str(), x, y, font, paint);
+    TextRenderer text_renderer(canvas);
+    text_renderer.DrawTextWithEmoji(text, x, y, font, paint);
 
-    return x + text.length() * cell_width_;
+    return x + TextRenderer::MeasureMixedTextWidth(text, font);
 }
 
 float LogRenderer::RenderSource(SkCanvas* canvas, const std::string& source,
                                 float x, float y) {
     SkFont font(typeface_, font_size_);
-    SkPaint paint;
-    paint.setColor(config_.source_color);
-    paint.setAntiAlias(true);
+    Paint paint;
+    paint.SetColor(config_.source_color);
+    paint.SetAntiAlias(true);
 
     std::string text = "[" + source + "]";
-    canvas->drawString(text.c_str(), x, y, font, paint);
+    TextRenderer text_renderer(canvas);
+    text_renderer.DrawTextWithEmoji(text, x, y, font, paint);
 
-    return x + text.length() * cell_width_;
+    return x + TextRenderer::MeasureMixedTextWidth(text, font);
 }
 
 void LogRenderer::RenderMessage(SkCanvas* canvas, size_t log_index,
@@ -235,39 +238,34 @@ void LogRenderer::RenderMessage(SkCanvas* canvas, size_t log_index,
     if (level_idx < 0 || level_idx > 4) level_idx = 1;
     SkColor text_color = config_.level_colors[level_idx];
 
-    // 获取该条目的搜索匹配
     std::vector<SearchMatch> matches;
     if (search_ && search_->HasSearch()) {
         matches = search_->GetMatchesForEntry(log_index);
     }
 
-    if (matches.empty()) {
-        // 无匹配，直接绘制
-        SkPaint paint;
-        paint.setColor(text_color);
-        paint.setAntiAlias(true);
+    TextRenderer text_renderer(canvas);
 
-        std::string msg(message);
-        canvas->drawString(msg.c_str(), x, y, font, paint);
+    if (matches.empty()) {
+        Paint paint;
+        paint.SetColor(text_color);
+        paint.SetAntiAlias(true);
+        text_renderer.DrawTextWithEmoji(std::string(message), x, y, font, paint);
     } else {
-        // 有匹配，分段绘制
         size_t pos = 0;
         float current_x = x;
 
         for (const auto& match : matches) {
-            // 绘制匹配前的文本
             if (match.start_pos > pos) {
                 std::string before(message.substr(pos, match.start_pos - pos));
-                SkPaint paint;
-                paint.setColor(text_color);
-                paint.setAntiAlias(true);
-                canvas->drawString(before.c_str(), current_x, y, font, paint);
-                current_x += before.length() * cell_width_;
+                Paint paint;
+                paint.SetColor(text_color);
+                paint.SetAntiAlias(true);
+                text_renderer.DrawTextWithEmoji(before, current_x, y, font, paint);
+                current_x += TextRenderer::MeasureMixedTextWidth(before, font);
             }
 
-            // 绘制匹配高亮背景
             std::string match_text(message.substr(match.start_pos, match.length));
-            float match_width = match_text.length() * cell_width_;
+            float match_width = TextRenderer::MeasureMixedTextWidth(match_text, font);
 
             bool is_current = search_->IsCurrentMatch(log_index, match.start_pos);
             SkPaint bg_paint;
@@ -279,23 +277,21 @@ void LogRenderer::RenderMessage(SkCanvas* canvas, size_t log_index,
                 match_width, line_height_);
             canvas->drawRect(match_rect, bg_paint);
 
-            // 绘制匹配文本
-            SkPaint paint;
-            paint.setColor(text_color);
-            paint.setAntiAlias(true);
-            canvas->drawString(match_text.c_str(), current_x, y, font, paint);
+            Paint paint;
+            paint.SetColor(text_color);
+            paint.SetAntiAlias(true);
+            text_renderer.DrawTextWithEmoji(match_text, current_x, y, font, paint);
             current_x += match_width;
 
             pos = match.start_pos + match.length;
         }
 
-        // 绘制剩余文本
         if (pos < message.length()) {
             std::string after(message.substr(pos));
-            SkPaint paint;
-            paint.setColor(text_color);
-            paint.setAntiAlias(true);
-            canvas->drawString(after.c_str(), current_x, y, font, paint);
+            Paint paint;
+            paint.SetColor(text_color);
+            paint.SetAntiAlias(true);
+            text_renderer.DrawTextWithEmoji(after, current_x, y, font, paint);
         }
     }
 }

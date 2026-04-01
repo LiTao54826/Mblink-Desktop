@@ -404,3 +404,37 @@ def _bind_functions(lib):
     lib.mbink_shared_batch_begin.argtypes = [SH]
     lib.mbink_shared_batch_end.restype = None
     lib.mbink_shared_batch_end.argtypes = [SH]
+
+    # 原生 UI 对象句柄
+    LV = c_void_p
+    TM = c_void_p
+
+    lib.mbink_logview_get.restype = LV
+    lib.mbink_logview_get.argtypes = [H, c_char_p]
+    lib.mbink_logview_destroy.restype = None
+    lib.mbink_logview_destroy.argtypes = [LV]
+    lib.mbink_logview_append.restype = c_int
+    lib.mbink_logview_append.argtypes = [LV, c_char_p, c_char_p, c_char_p]
+    lib.mbink_logview_clear.restype = None
+    lib.mbink_logview_clear.argtypes = [LV]
+    lib.mbink_logview_export.restype = c_void_p
+    lib.mbink_logview_export.argtypes = [LV, c_char_p]
+
+    lib.mbink_terminal_get.restype = TM
+    lib.mbink_terminal_get.argtypes = [H, c_char_p]
+    lib.mbink_terminal_destroy.restype = None
+    lib.mbink_terminal_destroy.argtypes = [TM]
+    lib.mbink_terminal_write.restype = c_int
+    lib.mbink_terminal_write.argtypes = [TM, c_char_p]
+    lib.mbink_terminal_clear.restype = None
+    lib.mbink_terminal_clear.argtypes = [TM]
+    lib.mbink_terminal_execute.restype = c_int
+    lib.mbink_terminal_execute.argtypes = [TM, c_char_p]
+    lib.mbink_terminal_start_shell.restype = c_int
+    lib.mbink_terminal_start_shell.argtypes = [TM, c_char_p]
+    lib.mbink_terminal_send_input.restype = c_int
+    lib.mbink_terminal_send_input.argtypes = [TM, c_char_p]
+    lib.mbink_terminal_resize.restype = None
+    lib.mbink_terminal_resize.argtypes = [TM, c_int, c_int]
+    lib.mbink_terminal_serialize.restype = c_void_p
+    lib.mbink_terminal_serialize.argtypes = [TM]

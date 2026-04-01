@@ -14,6 +14,8 @@
 #include "core/window/window_manager.h"
 #include "core/dom/document.h"
 #include "core/dom/bindings/dom_bindings.h"
+#include "core/dom/elements/logview/html_logview_element.h"
+#include "core/dom/elements/terminal/html_terminal_element.h"
 #include "core/quickjs/quickjs_runtime.h"
 #include "core/quickjs/window_bindings.h"
 #include "core/event/loop/event_loop.h"
@@ -169,11 +171,31 @@ struct WindowContext {
     bool running = false;
 };
 
+struct LogViewHandleData {
+    std::shared_ptr<mbink::HTMLLogViewElement> element;
+};
+
+struct TerminalHandleData {
+    std::shared_ptr<mbink::HTMLTerminalElement> element;
+};
+
 // ========== 辅助函数 ==========
 
 void setLastError(const std::string& error) {
     std::lock_guard<std::mutex> lock(g_errorMutex);
     g_lastError = error;
+}
+
+template <typename T>
+std::shared_ptr<T> getElementByIdAs(WindowContext* ctx, const char* element_id) {
+    if (!ctx || !ctx->document || !element_id || !*element_id) {
+        return nullptr;
+    }
+    auto element = ctx->document->GetElementById(element_id);
+    if (!element) {
+        return nullptr;
+    }
+    return std::dynamic_pointer_cast<T>(element);
 }
 
 void reportNativeError(const std::string& error) {
@@ -1815,6 +1837,115 @@ void mbink_shared_batch_end(MBinkSharedHandle shared_handle) {
     if (!shared_handle) return;
     auto* shared = reinterpret_cast<SharedObjectData*>(shared_handle);
     shared->endBatch();
+}
+
+MBinkLogViewHandle mbink_logview_get(MBinkHandle handle, const char* element_id) {
+    if (!handle || !element_id) return nullptr;
+    auto ctx = getContext(handle);
+    auto element = getElementByIdAs<mbink::HTMLLogViewElement>(ctx, element_id);
+    if (!element) {
+        setLastError(std::string("logview element not found: ") + element_id);
+        return nullptr;
+    }
+    auto* data = new LogViewHandleData();
+    data->element = std::move(element);
+    return reinterpret_cast<MBinkLogViewHandle>(data);
+}
+
+void mbink_logview_destroy(MBinkLogViewHandle logview_handle) {
+    if (!logview_handle) return;
+    delete reinterpret_cast<LogViewHandleData*>(logview_handle);
+}
+
+int mbink_logview_append(MBinkLogViewHandle logview_handle,
+                         const char* level,
+                         const char* source,
+                         const char* message) {
+    if (!logview_handle || !level || !source || !message) {
+        return MBINK_ERROR_INVALID_PARAM;
+    }
+    auto* data = reinterpret_cast<LogViewHandleData*>(logview_handle);
+    data->element->Append(level, source, message);
+    return MBINK_OK;
+}
+
+void mbink_logview_clear(MBinkLogViewHandle logview_handle) {
+    if (!logview_handle) return;
+    auto* data = reinterpret_cast<LogViewHandleData*>(logview_handle);
+    data->element->Clear();
+}
+
+const char* mbink_logview_export(MBinkLogViewHandle logview_handle,
+                                 const char* format) {
+    if (!logview_handle) return nullptr;
+    auto* data = reinterpret_cast<LogViewHandleData*>(logview_handle);
+    auto content = data->element->Export(format ? format : "text");
+    return duplicateString(content.c_str());
+}
+
+MBinkTerminalHandle mbink_terminal_get(MBinkHandle handle, const char* element_id) {
+    if (!handle || !element_id) return nullptr;
+    auto ctx = getContext(handle);
+    auto element = getElementByIdAs<mbink::HTMLTerminalElement>(ctx, element_id);
+    if (!element) {
+        setLastError(std::string("terminal element not found: ") + element_id);
+        return nullptr;
+    }
+    auto* data = new TerminalHandleData();
+    data->element = std::move(element);
+    return reinterpret_cast<MBinkTerminalHandle>(data);
+}
+
+void mbink_terminal_destroy(MBinkTerminalHandle terminal_handle) {
+    if (!terminal_handle) return;
+    delete reinterpret_cast<TerminalHandleData*>(terminal_handle);
+}
+
+int mbink_terminal_write(MBinkTerminalHandle terminal_handle, const char* data_str) {
+    if (!terminal_handle || !data_str) return MBINK_ERROR_INVALID_PARAM;
+    auto* data = reinterpret_cast<TerminalHandleData*>(terminal_handle);
+    data->element->Write(data_str);
+    return MBINK_OK;
+}
+
+void mbink_terminal_clear(MBinkTerminalHandle terminal_handle) {
+    if (!terminal_handle) return;
+    auto* data = reinterpret_cast<TerminalHandleData*>(terminal_handle);
+    data->element->Clear();
+}
+
+int mbink_terminal_execute(MBinkTerminalHandle terminal_handle, const char* command) {
+    if (!terminal_handle || !command) return MBINK_ERROR_INVALID_PARAM;
+    auto* data = reinterpret_cast<TerminalHandleData*>(terminal_handle);
+    data->element->Execute(command);
+    return MBINK_OK;
+}
+
+int mbink_terminal_start_shell(MBinkTerminalHandle terminal_handle, const char* shell) {
+    if (!terminal_handle) return MBINK_ERROR_INVALID_PARAM;
+    auto* data = reinterpret_cast<TerminalHandleData*>(terminal_handle);
+    data->element->StartShell(shell ? shell : "");
+    return MBINK_OK;
+}
+
+int mbink_terminal_send_input(MBinkTerminalHandle terminal_handle, const char* input) {
+    if (!terminal_handle || !input) return MBINK_ERROR_INVALID_PARAM;
+    auto* data = reinterpret_cast<TerminalHandleData*>(terminal_handle);
+    data->element->SendInput(input);
+    return MBINK_OK;
+}
+
+void mbink_terminal_resize(MBinkTerminalHandle terminal_handle, int rows, int cols) {
+    if (!terminal_handle) return;
+    auto* data = reinterpret_cast<TerminalHandleData*>(terminal_handle);
+    data->element->Resize(rows, cols);
+}
+
+const char* mbink_terminal_serialize(MBinkTerminalHandle terminal_handle) {
+    if (!terminal_handle) return nullptr;
+    auto* data = reinterpret_cast<TerminalHandleData*>(terminal_handle);
+    auto content = data->element->Serialize();
+    return duplicateString(content.c_str());
 }
 
 // ========== 工具函数 ==========

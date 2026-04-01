@@ -9,6 +9,7 @@ import atexit
 import os
 import inspect
 import warnings
+from .controls import LogView, Terminal
 from ._ffi import (
     load_dll, MBinkConfig, MBinkCallback, MBinkResizeCallback,
     MBinkVoidCallback, MBinkUpdateCallback, c_int, c_char_p, c_void_p,
@@ -51,6 +52,7 @@ class App:
         self._callbacks = []  # prevent GC
         self._shared_objects = {}   # name -> SharedState proxy
         self._shared_handles = {}   # name -> c_void_p handle
+        self._control_handles = []  # native control handles
         self._title_bytes = cfg.title  # keep alive
 
         atexit.register(self._cleanup)
@@ -93,6 +95,12 @@ class App:
         if self._destroyed:
             return
         if self._handle:
+            for kind, control_handle in reversed(self._control_handles):
+                if kind == "logview":
+                    self._lib.mbink_logview_destroy(control_handle)
+                elif kind == "terminal":
+                    self._lib.mbink_terminal_destroy(control_handle)
+            self._control_handles.clear()
             # destroy shared objects first (releases JS refs)
             for _name, sh in list(self._shared_handles.items()):
                 self._lib.mbink_shared_destroy(sh)
@@ -180,6 +188,26 @@ class App:
         self._shared_objects[name] = proxy
         self._shared_handles[name] = sh
         return proxy
+
+    def logview(self, element_id: str):
+        self._ensure_alive()
+        handle = self._lib.mbink_logview_get(self._handle, element_id.encode("utf-8"))
+        if not handle:
+            err = self._lib.mbink_last_error()
+            msg = err.decode("utf-8") if err else f"logview '{element_id}' not found"
+            raise RuntimeError(msg)
+        self._control_handles.append(("logview", handle))
+        return LogView(self._lib, handle, element_id)
+
+    def terminal(self, element_id: str):
+        self._ensure_alive()
+        handle = self._lib.mbink_terminal_get(self._handle, element_id.encode("utf-8"))
+        if not handle:
+            err = self._lib.mbink_last_error()
+            msg = err.decode("utf-8") if err else f"terminal '{element_id}' not found"
+            raise RuntimeError(msg)
+        self._control_handles.append(("terminal", handle))
+        return Terminal(self._lib, handle, element_id)
 
     def load_preact(self, js_file: str):
         """加载 Preact 应用（.js 入口文件）
