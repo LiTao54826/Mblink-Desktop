@@ -6,6 +6,8 @@ MBink Python App 类
 import json
 import ctypes
 import atexit
+import os
+import inspect
 import warnings
 from ._ffi import (
     load_dll, MBinkConfig, MBinkCallback, MBinkResizeCallback,
@@ -59,6 +61,12 @@ class App:
         if self._destroyed or not self._handle:
             raise RuntimeError("MBink App 已销毁，不能继续调用此操作")
 
+    def _resolve_user_path(self, path: str):
+        if os.path.isabs(path):
+            return path
+        caller_dir = os.path.dirname(os.path.abspath(inspect.stack()[2].filename))
+        return os.path.join(caller_dir, path)
+
     def run(self):
         """启动事件循环（阻塞）"""
         self._ensure_alive()
@@ -98,12 +106,21 @@ class App:
 
     def load_html(self, html: str):
         self._ensure_alive()
-        self._lib.mbink_load_html(self._handle, html.encode("utf-8"))
+        ret = self._lib.mbink_load_html(self._handle, html.encode("utf-8"))
+        if ret != 0:
+            err = self._lib.mbink_last_error()
+            msg = err.decode("utf-8") if err else "unknown JS error"
+            print(f"[JS Error] {msg}", flush=True)
         return self
 
     def load_html_file(self, filepath: str):
         self._ensure_alive()
-        self._lib.mbink_load_html_file(self._handle, filepath.encode("utf-8"))
+        filepath = self._resolve_user_path(filepath)
+        ret = self._lib.mbink_load_html_file(self._handle, filepath.encode("utf-8"))
+        if ret != 0:
+            err = self._lib.mbink_last_error()
+            msg = err.decode("utf-8") if err else "unknown JS error"
+            print(f"[JS Error] {msg}", flush=True)
         return self
 
     def eval_js(self, code: str):
@@ -117,14 +134,23 @@ class App:
 
     def eval_module(self, code: str, filename: str = "<module>"):
         self._ensure_alive()
-        self._lib.mbink_eval_module(
+        ret = self._lib.mbink_eval_module(
             self._handle, code.encode("utf-8"), filename.encode("utf-8")
         )
+        if ret != 0:
+            err = self._lib.mbink_last_error()
+            msg = err.decode("utf-8") if err else "unknown JS error"
+            print(f"[JS Error] {msg}", flush=True)
         return self
 
     def load_js_file(self, filepath: str):
         self._ensure_alive()
-        self._lib.mbink_load_js_file(self._handle, filepath.encode("utf-8"))
+        filepath = self._resolve_user_path(filepath)
+        ret = self._lib.mbink_load_js_file(self._handle, filepath.encode("utf-8"))
+        if ret != 0:
+            err = self._lib.mbink_last_error()
+            msg = err.decode("utf-8") if err else "unknown JS error"
+            print(f"[JS Error] {msg}", flush=True)
         return self
 
     # ========== 共享 C 对象 ==========
@@ -165,57 +191,20 @@ class App:
         用法：
             app.load_preact("ui/app.js")
         """
-        import os
-
         # ① 自动查找并加载 Preact 库（设置 globalThis.Preact / globalThis.PreactHooks）
         if not getattr(self, '_preact_loaded', False):
             self._load_preact_libs()
 
         # ② 解析用户 JS 文件路径
-        if not os.path.isabs(js_file):
-            import inspect
-            caller_dir = os.path.dirname(
-                os.path.abspath(inspect.stack()[1].filename)
-            )
-            js_file = os.path.join(caller_dir, js_file)
+        js_file = self._resolve_user_path(js_file)
 
-        with open(js_file, 'r', encoding='utf-8') as f:
-            code = f.read()
-
-        # ③ 以普通脚本模式 eval（同步执行，避免 module 异步问题）
-        # 如果用户需要 import/export，可直接调用 app.eval_module()
-        self.eval_js(code)
+        # ③ 走原生 ES module 文件加载链路，与 esm_loader 保持一致
+        self.load_js_file(js_file)
         return self
 
     def _load_preact_libs(self):
-        """优先使用 DLL 内嵌资源，缺失时再从项目目录加载 preact.js 和 hooks.js"""
+        """运行时已内嵌加载 preact / hooks，这里只做一次标记。"""
         self._preact_loaded = True
-
-        import os
-        pkg_dir = os.path.dirname(os.path.abspath(__file__))
-        proj_root = os.path.normpath(os.path.join(pkg_dir, "..", "..", ".."))
-
-        preact_js = os.path.join(proj_root, "js", "preact", "preact.js")
-        hooks_js = os.path.join(proj_root, "js", "preact", "hooks.js")
-
-        # 尝试从环境变量获取路径
-        env_root = os.environ.get("MBINK_ROOT", "")
-        if env_root:
-            alt_preact = os.path.join(env_root, "js", "preact", "preact.js")
-            alt_hooks = os.path.join(env_root, "js", "preact", "hooks.js")
-            if os.path.exists(alt_preact):
-                preact_js = alt_preact
-                hooks_js = alt_hooks
-
-        if os.path.exists(preact_js):
-            with open(preact_js, 'r', encoding='utf-8') as f:
-                self.eval_js(f.read())
-        else:
-            return
-
-        if os.path.exists(hooks_js):
-            with open(hooks_js, 'r', encoding='utf-8') as f:
-                self.eval_js(f.read())
 
     # ========== 函数绑定 ==========
 

@@ -31,6 +31,7 @@
 #include "core/render/image/image_loader.h"
 #include "core/bridge/host_bridge.h"
 #include "core/bridge/state_manager.h"
+#include "core/utils/encoding_utils.h"
 #include "core/quickjs/bindings/js_element.h"
 #include "core/lexbor/lexbor_stylesheet.h"
 #include "embedded_js.h"
@@ -166,8 +167,30 @@ LONG WINAPI CrashHandler(EXCEPTION_POINTERS* pExceptionInfo) {
 using namespace mbink;
 namespace fs = std::filesystem;
 
+fs::path Utf8PathToFsPath(const std::string& path) {
+#ifdef _WIN32
+    return fs::path(utils::UTF8ToWide(path));
+#else
+    return fs::path(path);
+#endif
+}
+
+std::string FsPathToUtf8String(const fs::path& path) {
+#ifdef _WIN32
+    return utils::WideToUTF8(path.wstring());
+#else
+    return path.string();
+#endif
+}
+
+std::string NormalizeFsPath(const fs::path& path) {
+    std::string result = FsPathToUtf8String(path.lexically_normal());
+    std::replace(result.begin(), result.end(), '\\', '/');
+    return result;
+}
+
 std::string ReadFile(const std::string& path) {
-    std::ifstream file(path);
+    std::ifstream file(Utf8PathToFsPath(path), std::ios::binary);
     if (!file.is_open()) return "";
     std::stringstream buffer;
     buffer << file.rdbuf();
@@ -176,8 +199,8 @@ std::string ReadFile(const std::string& path) {
 
 // 判断入口文件是否为 HTML 文件
 bool IsHTMLFile(const std::string& path) {
-    fs::path p(path);
-    auto ext = p.extension().string();
+    fs::path p = Utf8PathToFsPath(path);
+    auto ext = FsPathToUtf8String(p.extension());
     std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
     return ext == ".html" || ext == ".htm";
 }
@@ -519,7 +542,7 @@ int main(int argc, char** argv) {
             PrintUsage(argv[0]);
             return 1;
         }
-        if (!fs::exists(entry_path)) {
+        if (!fs::exists(Utf8PathToFsPath(entry_path))) {
             std::cerr << "错误: 文件不存在: " << entry_path << std::endl;
             return 1;
         }
@@ -582,8 +605,8 @@ int main(int argc, char** argv) {
             document->Initialize();
         } else if (is_html) {
             // ===== HTML 模式：解析 HTML 文件 =====
-            fs::path html_dir = fs::absolute(entry_path).parent_path();
-            std::string base_path = html_dir.string();
+            fs::path html_dir = fs::absolute(Utf8PathToFsPath(entry_path)).parent_path();
+            std::string base_path = NormalizeFsPath(html_dir);
             document->SetBasePath(base_path);
             ImageLoader::SetBasePath(base_path);
             LOG("  ✓ Base path: " << base_path);
@@ -714,8 +737,9 @@ int main(int argc, char** argv) {
             }
         } else {
             // ===== JS/ESM 模式：加载 ES 模块 =====
-            fs::path abs_path = fs::absolute(entry_path);
-            runtime->SetBaseModulePath(abs_path.string());
+            fs::path abs_path = fs::absolute(Utf8PathToFsPath(entry_path));
+            std::string normalized_abs_path = NormalizeFsPath(abs_path);
+            runtime->SetBaseModulePath(normalized_abs_path);
 
             std::string entry_code = ReadFile(entry_path);
             if (entry_code.empty()) {
@@ -724,7 +748,7 @@ int main(int argc, char** argv) {
             }
 
             try {
-                runtime->EvalModule(entry_code, abs_path.string());
+                runtime->EvalModule(entry_code, normalized_abs_path);
                 LOG("  ✓ Entry module loaded");
             } catch (const std::exception& e) {
                 std::cerr << "  ✗ Module error: " << e.what() << std::endl;

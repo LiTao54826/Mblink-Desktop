@@ -34,6 +34,7 @@
 #include "core/lexbor/lexbor_document.h"
 #include "core/lexbor/style_manager.h"
 #include "core/quickjs/quickjs_runtime.h"
+#include "core/utils/encoding_utils.h"
 #include <algorithm>
 #include <iostream>
 #include <fstream>
@@ -45,6 +46,32 @@
 namespace fs = std::filesystem;
 
 namespace mbink {
+
+namespace {
+
+fs::path Utf8PathToFsPath(const std::string& path) {
+#ifdef _WIN32
+    return fs::path(utils::UTF8ToWide(path));
+#else
+    return fs::path(path);
+#endif
+}
+
+std::string FsPathToUtf8String(const fs::path& path) {
+#ifdef _WIN32
+    return utils::WideToUTF8(path.wstring());
+#else
+    return path.string();
+#endif
+}
+
+std::string NormalizeFsPath(const fs::path& path) {
+    std::string result = FsPathToUtf8String(path.lexically_normal());
+    std::replace(result.begin(), result.end(), '\\', '/');
+    return result;
+}
+
+}
 
 // 静态成员初始化
 Document::FileAssetProvider Document::asset_provider_ = nullptr;
@@ -630,6 +657,7 @@ void Document::ExecuteScripts(QuickJSRuntime* runtime) {
         // 处理外部脚本
         if (script->IsExternal()) {
             std::string src = script->GetSrc();
+            std::string resolved_src = ResolvePath(src);
             code = ReadExternalFile(src);
 
             if (code.empty()) {
@@ -637,7 +665,7 @@ void Document::ExecuteScripts(QuickJSRuntime* runtime) {
                 continue;
             }
 
-            script_name = src;
+            script_name = resolved_src.empty() ? src : NormalizeFsPath(Utf8PathToFsPath(resolved_src));
         } else {
             // 内联脚本
             code = script->GetScriptText();
@@ -655,6 +683,9 @@ void Document::ExecuteScripts(QuickJSRuntime* runtime) {
 
             if (type == "module") {
                 // ES6 模块
+                if (script->IsExternal() && !script_name.empty()) {
+                    runtime->SetBaseModulePath(script_name);
+                }
                 runtime->EvalModule(code, script_name);
             } else {
                 // 普通脚本（text/javascript 或空）
@@ -676,16 +707,16 @@ std::string Document::ResolvePath(const std::string& path) const {
     }
 
     // 如果是绝对路径，直接返回
-    fs::path p(path);
+    fs::path p = Utf8PathToFsPath(path);
     if (p.is_absolute()) {
-        return path;
+        return NormalizeFsPath(p);
     }
 
     // 如果有基础路径，拼接
     if (!base_path_.empty()) {
-        fs::path base(base_path_);
+        fs::path base = Utf8PathToFsPath(base_path_);
         fs::path resolved = base / p;
-        return resolved.string();
+        return NormalizeFsPath(resolved);
     }
 
     // 否则返回原路径
@@ -709,12 +740,13 @@ std::string Document::ReadExternalFile(const std::string& path) const {
     }
 
     // 检查文件是否存在
-    if (!fs::exists(resolved_path)) {
+    fs::path resolved_fs_path = Utf8PathToFsPath(resolved_path);
+    if (!fs::exists(resolved_fs_path)) {
         return "";
     }
 
     // 读取文件内容
-    std::ifstream file(resolved_path, std::ios::binary);
+    std::ifstream file(resolved_fs_path, std::ios::binary);
     if (!file.is_open()) {
         return "";
     }

@@ -48,6 +48,48 @@ std::string LocalToUTF8(const std::string& local_str) {
 #endif
 }
 
+#ifdef _WIN32
+std::wstring UTF8ToWide(const std::string& utf8_str) {
+    if (utf8_str.empty()) {
+        return L"";
+    }
+
+    int wlen = MultiByteToWideChar(CP_UTF8, 0, utf8_str.c_str(), -1, nullptr, 0);
+    if (wlen == 0) {
+        return L"";
+    }
+
+    std::wstring wide_str(wlen, 0);
+    MultiByteToWideChar(CP_UTF8, 0, utf8_str.c_str(), -1, &wide_str[0], wlen);
+
+    if (!wide_str.empty() && wide_str.back() == L'\0') {
+        wide_str.pop_back();
+    }
+
+    return wide_str;
+}
+
+std::string WideToUTF8(const std::wstring& wide_str) {
+    if (wide_str.empty()) {
+        return "";
+    }
+
+    int utf8len = WideCharToMultiByte(CP_UTF8, 0, wide_str.c_str(), -1, nullptr, 0, nullptr, nullptr);
+    if (utf8len == 0) {
+        return "";
+    }
+
+    std::string utf8_str(utf8len, 0);
+    WideCharToMultiByte(CP_UTF8, 0, wide_str.c_str(), -1, &utf8_str[0], utf8len, nullptr, nullptr);
+
+    if (!utf8_str.empty() && utf8_str.back() == '\0') {
+        utf8_str.pop_back();
+    }
+
+    return utf8_str;
+}
+#endif
+
 std::string UTF8ToLocal(const std::string& utf8_str) {
 #ifdef _WIN32
     if (utf8_str.empty()) {

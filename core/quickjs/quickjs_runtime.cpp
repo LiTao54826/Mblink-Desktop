@@ -11,6 +11,7 @@
 
 #include "quickjs_runtime.h"
 #include "quickjs-libc.h"
+#include "core/utils/encoding_utils.h"
 #include <fstream>
 #include <sstream>
 #include <stdexcept>
@@ -20,6 +21,40 @@
 #include <filesystem>
 
 namespace mbink {
+
+namespace {
+
+std::filesystem::path Utf8PathToFsPath(const std::string& path) {
+#ifdef _WIN32
+    return std::filesystem::path(utils::UTF8ToWide(path));
+#else
+    return std::filesystem::path(path);
+#endif
+}
+
+std::string FsPathToUtf8String(const std::filesystem::path& path) {
+#ifdef _WIN32
+    return utils::WideToUTF8(path.wstring());
+#else
+    return path.string();
+#endif
+}
+
+std::ifstream OpenUtf8FileForRead(const std::string& path) {
+#ifdef _WIN32
+    return std::ifstream(Utf8PathToFsPath(path), std::ios::binary);
+#else
+    return std::ifstream(path, std::ios::binary);
+#endif
+}
+
+std::string NormalizeFsPath(const std::filesystem::path& path) {
+    std::string result = FsPathToUtf8String(path.lexically_normal());
+    std::replace(result.begin(), result.end(), '\\', '/');
+    return result;
+}
+
+}  // namespace
 
 QuickJSRuntime::QuickJSRuntime() {
     InitRuntime();
@@ -464,7 +499,7 @@ JSModuleDef* QuickJSRuntime::ModuleLoader(JSContext* ctx, const char* module_nam
     }
 
     // 4. 从文件系统读取
-    std::ifstream file(resolved_path);
+    std::ifstream file = OpenUtf8FileForRead(resolved_path);
     if (!file.is_open()) {
         JS_ThrowReferenceError(ctx, "Module file not found: %s", resolved_path.c_str());
         return nullptr;
@@ -522,13 +557,12 @@ char* QuickJSRuntime::ModuleNormalize(JSContext* ctx, const char* module_base,
             base = runtime->base_module_path_;
         }
         
-        std::filesystem::path base_path(base);
-        std::filesystem::path relative_path(name);
+        std::filesystem::path base_path = Utf8PathToFsPath(base);
+        std::filesystem::path relative_path = Utf8PathToFsPath(name);
         std::filesystem::path resolved = (base_path.parent_path() / relative_path).lexically_normal();
         
         // 转换为字符串并标准化为正斜杠
-        std::string resolved_str = resolved.string();
-        std::replace(resolved_str.begin(), resolved_str.end(), '\\', '/');
+        std::string resolved_str = NormalizeFsPath(resolved);
         
         // 检查是否是文件夹，如果是则尝试解析 package.json 或 index.js
         resolved_path = ResolveFolderOrFile(resolved_str);
@@ -552,50 +586,51 @@ char* QuickJSRuntime::ModuleNormalize(JSContext* ctx, const char* module_base,
 
 std::string QuickJSRuntime::ResolveFolderOrFile(const std::string& path) {
     namespace fs = std::filesystem;
+    fs::path fs_path = Utf8PathToFsPath(path);
     
     // 1. 如果路径已经是文件，直接返回
-    if (fs::is_regular_file(path)) {
-        return path;
+    if (fs::is_regular_file(fs_path)) {
+        return NormalizeFsPath(fs_path);
     }
     
     // 2. 尝试添加 .js 扩展名（扩展名省略支持）
     if (!path.empty() && path.find('.') == std::string::npos) {
-        std::string with_js = path + ".js";
+        fs::path with_js = fs_path;
+        with_js += ".js";
         if (fs::is_regular_file(with_js)) {
-            return with_js;
+            return NormalizeFsPath(with_js);
         }
     }
     
     // 3. 如果路径不存在，尝试作为文件或目录处理
-    if (!fs::exists(path)) {
+    if (!fs::exists(fs_path)) {
         return path;  // 返回原路径，稍后会报错
     }
     
     // 4. 如果是目录，尝试解析 package
-    if (fs::is_directory(path)) {
-        return ResolvePackageDirectory(path);
+    if (fs::is_directory(fs_path)) {
+        return ResolvePackageDirectory(NormalizeFsPath(fs_path));
     }
     
-    return path;
+    return NormalizeFsPath(fs_path);
 }
 
 std::string QuickJSRuntime::ResolvePackageDirectory(const std::string& dir_path) {
     namespace fs = std::filesystem;
+    fs::path dir_fs_path = Utf8PathToFsPath(dir_path);
     
-    fs::path package_json = fs::path(dir_path) / "package.json";
+    fs::path package_json = dir_fs_path / "package.json";
     if (!fs::exists(package_json)) {
         // 没有 package.json，尝试 index.js
-        fs::path index_js = fs::path(dir_path) / "index.js";
+        fs::path index_js = dir_fs_path / "index.js";
         if (fs::exists(index_js)) {
-            std::string result = index_js.string();
-            std::replace(result.begin(), result.end(), '\\', '/');
-            return result;
+            return NormalizeFsPath(index_js);
         }
-        return dir_path;
+        return NormalizeFsPath(dir_fs_path);
     }
     
     // 读取并解析 package.json
-    std::ifstream file(package_json);
+    std::ifstream file(Utf8PathToFsPath(FsPathToUtf8String(package_json)), std::ios::binary);
     if (!file.is_open()) {
         return dir_path;
     }
@@ -614,24 +649,20 @@ std::string QuickJSRuntime::ResolvePackageDirectory(const std::string& dir_path)
         // 回退到 main 字段
         if (pkg.contains("main") && pkg["main"].is_string()) {
             std::string main_file = pkg["main"].get<std::string>();
-            fs::path main_path = fs::path(dir_path) / main_file;
-            std::string result = main_path.lexically_normal().string();
-            std::replace(result.begin(), result.end(), '\\', '/');
-            return result;
+            fs::path main_path = dir_fs_path / Utf8PathToFsPath(main_file);
+            return NormalizeFsPath(main_path);
         }
     } catch (...) {
         // JSON 解析失败
     }
     
     // 最后尝试 index.js
-    fs::path index_js = fs::path(dir_path) / "index.js";
+    fs::path index_js = dir_fs_path / "index.js";
     if (fs::exists(index_js)) {
-        std::string result = index_js.string();
-        std::replace(result.begin(), result.end(), '\\', '/');
-        return result;
+        return NormalizeFsPath(index_js);
     }
     
-    return dir_path;
+    return NormalizeFsPath(dir_fs_path);
 }
 
 std::string QuickJSRuntime::ResolvePackageExports(const json& exports, 
@@ -646,10 +677,8 @@ std::string QuickJSRuntime::ResolvePackageExports(const json& exports,
         if (export_path.rfind("./", 0) == 0) {
             export_path = export_path.substr(2);  // 去掉 "./"
         }
-        fs::path full_path = fs::path(package_dir) / export_path;
-        std::string result = full_path.lexically_normal().string();
-        std::replace(result.begin(), result.end(), '\\', '/');
-        return result;
+        fs::path full_path = Utf8PathToFsPath(package_dir) / Utf8PathToFsPath(export_path);
+        return NormalizeFsPath(full_path);
     }
     
     if (exports.is_object()) {
@@ -661,10 +690,8 @@ std::string QuickJSRuntime::ResolvePackageExports(const json& exports,
                 if (export_path.rfind("./", 0) == 0) {
                     export_path = export_path.substr(2);
                 }
-                fs::path full_path = fs::path(package_dir) / export_path;
-                std::string result = full_path.lexically_normal().string();
-                std::replace(result.begin(), result.end(), '\\', '/');
-                return result;
+                fs::path full_path = Utf8PathToFsPath(package_dir) / Utf8PathToFsPath(export_path);
+                return NormalizeFsPath(full_path);
             }
         }
         
@@ -675,10 +702,8 @@ std::string QuickJSRuntime::ResolvePackageExports(const json& exports,
             if (export_path.rfind("./", 0) == 0) {
                 export_path = export_path.substr(2);
             }
-            fs::path full_path = fs::path(package_dir) / export_path;
-            std::string result = full_path.lexically_normal().string();
-            std::replace(result.begin(), result.end(), '\\', '/');
-            return result;
+            fs::path full_path = Utf8PathToFsPath(package_dir) / Utf8PathToFsPath(export_path);
+            return NormalizeFsPath(full_path);
         }
     }
     
@@ -690,7 +715,7 @@ std::string QuickJSRuntime::ResolveNodeModules(const std::string& module_name,
     namespace fs = std::filesystem;
     
     // 从 start_path 开始向上遍历，查找 node_modules
-    fs::path current_dir = fs::path(start_path).parent_path();
+    fs::path current_dir = Utf8PathToFsPath(start_path).parent_path();
     
     while (!current_dir.empty() && current_dir.has_parent_path()) {
         // 检查当前目录的 node_modules
@@ -699,23 +724,18 @@ std::string QuickJSRuntime::ResolveNodeModules(const std::string& module_name,
         if (fs::exists(node_modules)) {
             if (fs::is_directory(node_modules)) {
                 // 如果是目录，尝试解析为 package
-                std::string resolved = ResolvePackageDirectory(node_modules.string());
-                std::replace(resolved.begin(), resolved.end(), '\\', '/');
+                std::string resolved = ResolvePackageDirectory(FsPathToUtf8String(node_modules));
                 return resolved;
             } else if (fs::is_regular_file(node_modules)) {
                 // 如果是文件，直接返回
-                std::string result = node_modules.string();
-                std::replace(result.begin(), result.end(), '\\', '/');
-                return result;
+                return NormalizeFsPath(node_modules);
             }
         }
         
         // 尝试添加 .js 扩展名
         fs::path node_modules_js = current_dir / "node_modules" / (module_name + ".js");
         if (fs::is_regular_file(node_modules_js)) {
-            std::string result = node_modules_js.string();
-            std::replace(result.begin(), result.end(), '\\', '/');
-            return result;
+            return NormalizeFsPath(node_modules_js);
         }
         
         // 向上一级目录
@@ -768,7 +788,7 @@ json QuickJSRuntime::LoadModule(const std::string& module_name) {
 
 json QuickJSRuntime::LoadModuleFile(const std::string& filepath) {
     // Read file content
-    std::ifstream file(filepath);
+    std::ifstream file = OpenUtf8FileForRead(filepath);
     if (!file.is_open()) {
         throw std::runtime_error("Failed to open module file: " + filepath);
     }
@@ -778,12 +798,13 @@ json QuickJSRuntime::LoadModuleFile(const std::string& filepath) {
     std::string module_code = buffer.str();
 
     // 设置基础路径为当前文件的绝对路径
-    std::filesystem::path abs_path = std::filesystem::absolute(filepath);
-    SetBaseModulePath(abs_path.string());
+    std::filesystem::path abs_path = std::filesystem::absolute(Utf8PathToFsPath(filepath));
+    std::string normalized_abs_path = NormalizeFsPath(abs_path);
+    SetBaseModulePath(normalized_abs_path);
 
     // Register and load the module
-    RegisterModule(abs_path.string(), module_code);
-    return LoadModule(abs_path.string());
+    RegisterModule(normalized_abs_path, module_code);
+    return LoadModule(normalized_abs_path);
 }
 
 void QuickJSRuntime::SetBaseModulePath(const std::string& path) {
@@ -806,14 +827,12 @@ bool QuickJSRuntime::ResolveModulePath(const char* module_name, std::string& res
             return false;
         }
         
-        std::filesystem::path base(base_module_path_);
-        std::filesystem::path relative(name);
+        std::filesystem::path base(Utf8PathToFsPath(base_module_path_));
+        std::filesystem::path relative(Utf8PathToFsPath(name));
         std::filesystem::path resolved = (base.parent_path() / relative).lexically_normal();
-        
+
         // 转换路径为字符串并确保使用正斜杠（跨平台兼容）
-        resolved_path = resolved.string();
-        // Windows 上 std::filesystem 可能返回反斜杠，统一转换为正斜杠
-        std::replace(resolved_path.begin(), resolved_path.end(), '\\', '/');
+        resolved_path = NormalizeFsPath(resolved);
         return true;
     }
     

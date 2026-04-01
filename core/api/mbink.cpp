@@ -21,6 +21,7 @@
 #include "core/network/fetch_bindings.h"
 #include "core/quickjs/dom_binding_map.h"
 #include "tools/esm_loader/embedded_js.h"
+#include "core/utils/encoding_utils.h"
 
 #include <cstdlib>
 #include <cstring>
@@ -37,8 +38,11 @@
 #include <sstream>
 #include <iostream>
 #include <exception>
+#include <filesystem>
 
 namespace {
+
+namespace fs = std::filesystem;
 
 // ========== 全局状态 ==========
 
@@ -168,6 +172,61 @@ bool loadEmbeddedRuntimeScripts(mbink::QuickJSRuntime* runtime) {
     evalScript(mbink::embedded::GetPreactJS(), "preact.js");
     evalScript(mbink::embedded::GetHooksJS(), "hooks.js");
     return true;
+}
+
+fs::path Utf8PathToFsPath(const std::string& path) {
+#ifdef _WIN32
+    return fs::path(mbink::utils::UTF8ToWide(path));
+#else
+    return fs::path(path);
+#endif
+}
+
+std::string FsPathToUtf8String(const fs::path& path) {
+#ifdef _WIN32
+    return mbink::utils::WideToUTF8(path.wstring());
+#else
+    return path.string();
+#endif
+}
+
+std::string NormalizeFsPath(const fs::path& path) {
+    std::string result = FsPathToUtf8String(path.lexically_normal());
+    std::replace(result.begin(), result.end(), '\\', '/');
+    return result;
+}
+
+void registerPreactModules(mbink::QuickJSRuntime* runtime) {
+    if (!runtime) {
+        return;
+    }
+
+    runtime->RegisterModule("preact", R"(
+        export const h = globalThis.Preact.h;
+        export const render = globalThis.Preact.render;
+        export const Component = globalThis.Preact.Component;
+        export const Fragment = globalThis.Preact.Fragment;
+        export const createRef = globalThis.Preact.createRef;
+        export const createElement = globalThis.Preact.createElement;
+        export const createContext = globalThis.Preact.createContext;
+        export const cloneElement = globalThis.Preact.cloneElement;
+        export const isValidElement = globalThis.Preact.isValidElement;
+        export default globalThis.Preact;
+    )");
+
+    runtime->RegisterModule("preact/hooks", R"(
+        export const useState = globalThis.PreactHooks.useState;
+        export const useEffect = globalThis.PreactHooks.useEffect;
+        export const useRef = globalThis.PreactHooks.useRef;
+        export const useMemo = globalThis.PreactHooks.useMemo;
+        export const useCallback = globalThis.PreactHooks.useCallback;
+        export const useContext = globalThis.PreactHooks.useContext;
+        export const useReducer = globalThis.PreactHooks.useReducer;
+        export const useLayoutEffect = globalThis.PreactHooks.useLayoutEffect;
+        export const useImperativeHandle = globalThis.PreactHooks.useImperativeHandle;
+        export const useDebugValue = globalThis.PreactHooks.useDebugValue;
+        export default globalThis.PreactHooks;
+    )");
 }
 
 #ifdef _WIN32
@@ -337,6 +396,7 @@ WindowContext* createWindowContext(const mbink::WindowConfig& wc) {
     ctx->hostBridge->registerGlobal();
 
     loadEmbeddedRuntimeScripts(ctx->runtime.get());
+    registerPreactModules(ctx->runtime.get());
 
     return ctx;
 }
@@ -710,8 +770,11 @@ int mbink_load_html(MBinkHandle handle, const char* html) {
     if (!html) return MBINK_ERROR_INVALID_PARAM;
     auto ctx = getContext(handle);
     if (ctx->document) {
-        ctx->document->LoadHTML(html);
-        // 执行 HTML 中嵌入的 <script> 标签
+        if (!ctx->document->LoadHTML(html)) {
+            setLastError("Failed to parse HTML");
+            return MBINK_ERROR_INVALID_PARAM;
+        }
+        ctx->document->LoadExternalStylesheets();
         ctx->document->ExecuteScripts();
     }
     return MBINK_OK;
@@ -724,8 +787,14 @@ int mbink_load_html_file(MBinkHandle handle, const char* filepath) {
         std::string content = readFileContents(filepath);
         auto ctx = getContext(handle);
         if (ctx->document) {
-            ctx->document->LoadHTML(content);
-            // 执行 HTML 中嵌入的 <script> 标签
+            fs::path html_dir = fs::absolute(Utf8PathToFsPath(filepath)).parent_path();
+            std::string base_path = NormalizeFsPath(html_dir);
+            ctx->document->SetBasePath(base_path);
+            if (!ctx->document->LoadHTML(content)) {
+                setLastError("Failed to parse HTML");
+                return MBINK_ERROR_INVALID_PARAM;
+            }
+            ctx->document->LoadExternalStylesheets();
             ctx->document->ExecuteScripts();
         }
         return MBINK_OK;
@@ -757,21 +826,8 @@ int mbink_eval_module(MBinkHandle handle, const char* code, const char* filename
     if (!ctx->runtime) return MBINK_ERROR_INVALID_HANDLE;
 
     try {
-        auto jsCtx = ctx->runtime->GetContext();
         const char* fname = filename ? filename : "<module>";
-        JSValue result = JS_Eval(jsCtx, code, strlen(code), fname, JS_EVAL_TYPE_MODULE);
-        if (JS_IsException(result)) {
-            JSValue exc = JS_GetException(jsCtx);
-            const char* err = JS_ToCString(jsCtx, exc);
-            if (err) {
-                setLastError(err);
-                JS_FreeCString(jsCtx, err);
-            }
-            JS_FreeValue(jsCtx, exc);
-            JS_FreeValue(jsCtx, result);
-            return MBINK_ERROR_JS_ERROR;
-        }
-        JS_FreeValue(jsCtx, result);
+        ctx->runtime->EvalModule(code, fname);
         return MBINK_OK;
     } catch (const std::exception& e) {
         setLastError(e.what());
@@ -782,12 +838,15 @@ int mbink_eval_module(MBinkHandle handle, const char* code, const char* filename
 int mbink_load_js_file(MBinkHandle handle, const char* filepath) {
     if (!handle) return MBINK_ERROR_INVALID_HANDLE;
     if (!filepath) return MBINK_ERROR_INVALID_PARAM;
+    auto ctx = getContext(handle);
+    if (!ctx->runtime) return MBINK_ERROR_INVALID_HANDLE;
+
     try {
-        std::string code = readFileContents(filepath);
-        return mbink_eval_js(handle, code.c_str());
+        ctx->runtime->LoadModuleFile(filepath);
+        return MBINK_OK;
     } catch (const std::exception& e) {
         setLastError(e.what());
-        return MBINK_ERROR_INVALID_PARAM;
+        return MBINK_ERROR_JS_ERROR;
     }
 }
 

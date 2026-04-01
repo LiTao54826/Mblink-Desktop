@@ -208,9 +208,9 @@ public:
     static bool IsDataUrl(const std::string& url);
 
     /**
-     * @brief 检查是否是 exe 图标特殊路径 (./exe.ico 或 exe.ico)
+     * @brief 检查是否是宿主应用图标特殊路径 (app://res.ico)
      * @param url URL字符串
-     * @return true 如果是 exe 图标路径
+     * @return true 如果是宿主应用图标路径
      */
     static bool IsExeIconUrl(const std::string& url);
 

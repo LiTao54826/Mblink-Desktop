@@ -63,7 +63,26 @@ bool ImageLoader::IsDataUrl(const std::string& url) {
 }
 
 bool ImageLoader::IsExeIconUrl(const std::string& url) {
-    return url == "./exe.ico" || url == "exe.ico";
+    if (url.empty()) {
+        return false;
+    }
+
+    std::string normalized = url;
+    std::replace(normalized.begin(), normalized.end(), '\\', '/');
+
+    size_t query_pos = normalized.find_first_of("?#");
+    if (query_pos != std::string::npos) {
+        normalized = normalized.substr(0, query_pos);
+    }
+
+    while (normalized.size() > 1 && normalized.back() == '/') {
+        normalized.pop_back();
+    }
+
+    std::transform(normalized.begin(), normalized.end(), normalized.begin(),
+                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+
+    return normalized == "app://res.ico";
 }
 
 // ========== EXE 图标加载 ==========
@@ -281,12 +300,29 @@ sk_sp<SkImage> ImageLoader::LoadFromUrl(const std::string& url) {
 
 ImageLoadResult ImageLoader::LoadFromUrlWithResult(const std::string& url) {
     ImageLoadResult result;
-    
+
     if (url.empty()) {
         result.error = "Empty URL";
         return result;
     }
-    
+
+    auto load_app_icon = [&]() {
+        result.image = LoadCurrentExeIcon();
+        if (result.image) {
+            result.natural_width = result.image->width();
+            result.natural_height = result.image->height();
+            result.success = true;
+            ImageCache::GetInstance().Put("app://res.ico", result.image);
+        } else {
+            result.error = "Failed to extract host app icon";
+        }
+        return result;
+    };
+
+    if (IsExeIconUrl(url)) {
+        return load_app_icon();
+    }
+
     // 解析相对路径
     std::string resolved_url = url;
     if (!IsNetworkUrl(url) && !IsDataUrl(url) && !base_path_.empty()) {
@@ -314,7 +350,11 @@ ImageLoadResult ImageLoader::LoadFromUrlWithResult(const std::string& url) {
             resolved_url = base + url;
         }
     }
-    
+
+    if (IsExeIconUrl(resolved_url)) {
+        return load_app_icon();
+    }
+
     // 检查缓存
     sk_sp<SkImage> cached = ImageCache::GetInstance().Get(resolved_url);
     if (cached) {
@@ -322,21 +362,6 @@ ImageLoadResult ImageLoader::LoadFromUrlWithResult(const std::string& url) {
         result.natural_width = cached->width();
         result.natural_height = cached->height();
         result.success = true;
-        return result;
-    }
-
-    // 处理 exe 图标特殊路径: ./exe.ico
-    if (IsExeIconUrl(url)) {
-        result.image = LoadCurrentExeIcon();
-        if (result.image) {
-            result.natural_width = result.image->width();
-            result.natural_height = result.image->height();
-            result.success = true;
-            // 缓存结果，避免重复提取
-            ImageCache::GetInstance().Put(url, result.image);
-        } else {
-            result.error = "Failed to extract exe icon";
-        }
         return result;
     }
 
@@ -353,7 +378,7 @@ ImageLoadResult ImageLoader::LoadFromUrlWithResult(const std::string& url) {
         }
         return result;
     }
-    
+
     // 处理网络 URL
     if (IsNetworkUrl(url)) {
         std::vector<uint8_t> data;
@@ -373,7 +398,7 @@ ImageLoadResult ImageLoader::LoadFromUrlWithResult(const std::string& url) {
         }
         return result;
     }
-    
+
     // 处理本地文件（使用解析后的路径）
     result.image = LoadFromFile(resolved_url);
     if (result.image) {
@@ -385,7 +410,7 @@ ImageLoadResult ImageLoader::LoadFromUrlWithResult(const std::string& url) {
     } else {
         result.error = "Failed to load image from file: " + resolved_url;
     }
-    
+
     return result;
 }
 

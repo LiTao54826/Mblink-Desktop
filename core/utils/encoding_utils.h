@@ -21,6 +21,22 @@ namespace utils {
 std::string LocalToUTF8(const std::string& local_str);
 
 /**
+ * @brief 将 UTF-8 字符串转换为 Windows 宽字符路径
+ * @param utf8_str UTF-8 编码字符串
+ * @return 宽字符字符串
+ */
+#ifdef _WIN32
+std::wstring UTF8ToWide(const std::string& utf8_str);
+
+/**
+ * @brief 将 Windows 宽字符路径转换为 UTF-8 字符串
+ * @param wide_str 宽字符字符串
+ * @return UTF-8 编码字符串
+ */
+std::string WideToUTF8(const std::wstring& wide_str);
+#endif
+
+/**
  * @brief 将UTF-8编码字符串转换为系统本地编码
  * @param utf8_str UTF-8编码的字符串
  * @return 本地编码的字符串（Windows下为GBK）

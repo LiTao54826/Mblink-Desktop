@@ -1,0 +1,28 @@
+body {
+  margin: 0;
+  font-family: Arial, sans-serif;
+  background: #0f1117;
+  color: #e5e7eb;
+}
+
+#app {
+  padding: 24px;
+}
+
+.card {
+  background: #1a1f2b;
+  border: 1px solid #2a3142;
+  border-radius: 12px;
+  padding: 16px 18px;
+  margin-bottom: 16px;
+}
+
+.ok {
+  color: #34d399;
+  font-weight: 700;
+}
+
+code {
+  color: #93c5fd;
+}
+

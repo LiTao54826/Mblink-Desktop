@@ -152,6 +152,162 @@ static JSValue js_element_set_class_name(JSContext* ctx, JSValueConst this_val, 
     return JS_UNDEFINED;
 }
 
+// HTMLImageElement.src getter
+static JSValue js_element_get_img_src(JSContext* ctx, JSValueConst this_val, int magic) {
+    auto element = DOMBindings::UnwrapElement(ctx, this_val);
+    if (!element) {
+        return JS_EXCEPTION;
+    }
+
+    auto img = std::dynamic_pointer_cast<HTMLImageElement>(element);
+    if (!img) {
+        return JS_UNDEFINED;
+    }
+
+    return JS_NewString(ctx, img->GetSrc().c_str());
+}
+
+// HTMLImageElement.src setter
+static JSValue js_element_set_img_src(JSContext* ctx, JSValueConst this_val, JSValueConst val, int magic) {
+    auto element = DOMBindings::UnwrapElement(ctx, this_val);
+    if (!element) {
+        return JS_EXCEPTION;
+    }
+
+    auto img = std::dynamic_pointer_cast<HTMLImageElement>(element);
+    if (!img) {
+        return JS_UNDEFINED;
+    }
+
+    const char* src = JS_ToCString(ctx, val);
+    if (!src) {
+        return JS_EXCEPTION;
+    }
+
+    img->SetSrc(src);
+    JS_FreeCString(ctx, src);
+    return JS_UNDEFINED;
+}
+
+// HTMLImageElement.alt getter
+static JSValue js_element_get_img_alt(JSContext* ctx, JSValueConst this_val, int magic) {
+    auto element = DOMBindings::UnwrapElement(ctx, this_val);
+    if (!element) {
+        return JS_EXCEPTION;
+    }
+
+    auto img = std::dynamic_pointer_cast<HTMLImageElement>(element);
+    if (!img) {
+        return JS_UNDEFINED;
+    }
+
+    return JS_NewString(ctx, img->GetAlt().c_str());
+}
+
+// HTMLImageElement.alt setter
+static JSValue js_element_set_img_alt(JSContext* ctx, JSValueConst this_val, JSValueConst val, int magic) {
+    auto element = DOMBindings::UnwrapElement(ctx, this_val);
+    if (!element) {
+        return JS_EXCEPTION;
+    }
+
+    auto img = std::dynamic_pointer_cast<HTMLImageElement>(element);
+    if (!img) {
+        return JS_UNDEFINED;
+    }
+
+    const char* alt = JS_ToCString(ctx, val);
+    if (!alt) {
+        return JS_EXCEPTION;
+    }
+
+    img->SetAlt(alt);
+    JS_FreeCString(ctx, alt);
+    return JS_UNDEFINED;
+}
+
+// HTMLImageElement.naturalWidth getter
+static JSValue js_element_get_img_natural_width(JSContext* ctx, JSValueConst this_val, int magic) {
+    auto element = DOMBindings::UnwrapElement(ctx, this_val);
+    if (!element) {
+        return JS_EXCEPTION;
+    }
+
+    auto img = std::dynamic_pointer_cast<HTMLImageElement>(element);
+    if (!img) {
+        return JS_NewInt32(ctx, 0);
+    }
+
+    return JS_NewInt32(ctx, static_cast<int>(img->GetNaturalWidth()));
+}
+
+// HTMLImageElement.naturalHeight getter
+static JSValue js_element_get_img_natural_height(JSContext* ctx, JSValueConst this_val, int magic) {
+    auto element = DOMBindings::UnwrapElement(ctx, this_val);
+    if (!element) {
+        return JS_EXCEPTION;
+    }
+
+    auto img = std::dynamic_pointer_cast<HTMLImageElement>(element);
+    if (!img) {
+        return JS_NewInt32(ctx, 0);
+    }
+
+    return JS_NewInt32(ctx, static_cast<int>(img->GetNaturalHeight()));
+}
+
+// HTMLImageElement.complete getter
+static JSValue js_element_get_img_complete(JSContext* ctx, JSValueConst this_val, int magic) {
+    auto element = DOMBindings::UnwrapElement(ctx, this_val);
+    if (!element) {
+        return JS_EXCEPTION;
+    }
+
+    auto img = std::dynamic_pointer_cast<HTMLImageElement>(element);
+    if (!img) {
+        return JS_NewBool(ctx, false);
+    }
+
+    return JS_NewBool(ctx, img->GetComplete());
+}
+
+// HTMLImageElement.crossOrigin getter
+static JSValue js_element_get_img_cross_origin(JSContext* ctx, JSValueConst this_val, int magic) {
+    auto element = DOMBindings::UnwrapElement(ctx, this_val);
+    if (!element) {
+        return JS_EXCEPTION;
+    }
+
+    auto img = std::dynamic_pointer_cast<HTMLImageElement>(element);
+    if (!img) {
+        return JS_UNDEFINED;
+    }
+
+    return JS_NewString(ctx, img->GetCrossOrigin().c_str());
+}
+
+// HTMLImageElement.crossOrigin setter
+static JSValue js_element_set_img_cross_origin(JSContext* ctx, JSValueConst this_val, JSValueConst val, int magic) {
+    auto element = DOMBindings::UnwrapElement(ctx, this_val);
+    if (!element) {
+        return JS_EXCEPTION;
+    }
+
+    auto img = std::dynamic_pointer_cast<HTMLImageElement>(element);
+    if (!img) {
+        return JS_UNDEFINED;
+    }
+
+    const char* cross_origin = JS_ToCString(ctx, val);
+    if (!cross_origin) {
+        return JS_EXCEPTION;
+    }
+
+    img->SetCrossOrigin(cross_origin);
+    JS_FreeCString(ctx, cross_origin);
+    return JS_UNDEFINED;
+}
+
 // Element.classList getter (阶段3)
 static JSValue js_element_get_class_list(JSContext* ctx, JSValueConst this_val, int magic) {
     auto element = DOMBindings::UnwrapElement(ctx, this_val);
@@ -1323,6 +1479,14 @@ static const JSCFunctionListEntry js_element_proto_funcs[] = {
     // HTMLCanvasElement 属性
     JS_CGETSET_MAGIC_DEF("width", js_element_get_canvas_width, js_element_set_canvas_width, 0),
     JS_CGETSET_MAGIC_DEF("height", js_element_get_canvas_height, js_element_set_canvas_height, 0),
+
+    // HTMLImageElement 属性
+    JS_CGETSET_MAGIC_DEF("src", js_element_get_img_src, js_element_set_img_src, 0),
+    JS_CGETSET_MAGIC_DEF("alt", js_element_get_img_alt, js_element_set_img_alt, 0),
+    JS_CGETSET_MAGIC_DEF("naturalWidth", js_element_get_img_natural_width, nullptr, 0),
+    JS_CGETSET_MAGIC_DEF("naturalHeight", js_element_get_img_natural_height, nullptr, 0),
+    JS_CGETSET_MAGIC_DEF("complete", js_element_get_img_complete, nullptr, 0),
+    JS_CGETSET_MAGIC_DEF("crossOrigin", js_element_get_img_cross_origin, js_element_set_img_cross_origin, 0),
 
     // 基础方法
     JS_CFUNC_DEF("getAttribute", 1, js_element_get_attribute),
@@ -2763,6 +2927,110 @@ static JSValue js_css_style_declaration_get_length(JSContext* ctx, JSValueConst 
     return JS_NewInt32(ctx, (*style)->Length());
 }
 
+static std::string camel_to_kebab(const std::string& camel) {
+    std::string result;
+    result.reserve(camel.size() + 4);
+    for (size_t i = 0; i < camel.size(); ++i) {
+        unsigned char c = static_cast<unsigned char>(camel[i]);
+        if (std::isupper(c)) {
+            if (i > 0) {
+                result += '-';
+            }
+            result += static_cast<char>(std::tolower(c));
+        } else {
+            result += static_cast<char>(c);
+        }
+    }
+    return result;
+}
+
+static int js_css_style_declaration_get_own_property(JSContext* ctx, JSPropertyDescriptor* desc,
+                                                     JSValueConst obj, JSAtom prop) {
+    auto style = static_cast<std::shared_ptr<CSSStyleDeclaration>*>(
+        JS_GetOpaque(obj, DOMBindings::css_style_declaration_class_id));
+    if (!style || !*style) {
+        return 0;
+    }
+
+    const char* prop_name = JS_AtomToCString(ctx, prop);
+    if (!prop_name) {
+        return -1;
+    }
+
+    std::string prop_str(prop_name);
+    JS_FreeCString(ctx, prop_name);
+
+    if (prop_str == "cssText" || prop_str == "length" ||
+        prop_str == "setProperty" || prop_str == "getPropertyValue" ||
+        prop_str == "removeProperty") {
+        return 0;
+    }
+
+    std::string css_property = camel_to_kebab(prop_str);
+    std::string value = (*style)->GetPropertyValue(css_property);
+
+    if (desc) {
+        desc->flags = JS_PROP_CONFIGURABLE | JS_PROP_ENUMERABLE | JS_PROP_WRITABLE;
+        desc->value = JS_NewString(ctx, value.c_str());
+        desc->getter = JS_UNDEFINED;
+        desc->setter = JS_UNDEFINED;
+    }
+
+    return 1;
+}
+
+static int js_css_style_declaration_set_property_value(JSContext* ctx, JSValueConst obj,
+                                                       JSAtom prop, JSValueConst value,
+                                                       JSValueConst receiver, int flags) {
+    auto style = static_cast<std::shared_ptr<CSSStyleDeclaration>*>(
+        JS_GetOpaque(obj, DOMBindings::css_style_declaration_class_id));
+    if (!style || !*style) {
+        return -1;
+    }
+
+    const char* prop_name = JS_AtomToCString(ctx, prop);
+    if (!prop_name) {
+        return -1;
+    }
+
+    std::string prop_str(prop_name);
+    JS_FreeCString(ctx, prop_name);
+
+    if (prop_str == "length") {
+        return 0;
+    }
+
+    if (prop_str == "cssText") {
+        const char* css_text = JS_ToCString(ctx, value);
+        if (!css_text) {
+            return -1;
+        }
+        (*style)->SetCssText(css_text);
+        JS_FreeCString(ctx, css_text);
+        return 1;
+    }
+
+    std::string css_property = camel_to_kebab(prop_str);
+    const char* value_str = JS_ToCString(ctx, value);
+    if (!value_str) {
+        return -1;
+    }
+
+    (*style)->SetProperty(css_property, value_str, "");
+    JS_FreeCString(ctx, value_str);
+    return 1;
+}
+
+static JSClassExoticMethods js_css_style_declaration_exotic = {
+    /* get_own_property */ js_css_style_declaration_get_own_property,
+    /* get_own_property_names */ nullptr,
+    /* delete_property */ nullptr,
+    /* define_own_property */ nullptr,
+    /* has_property */ nullptr,
+    /* get_property */ nullptr,
+    /* set_property */ js_css_style_declaration_set_property_value,
+};
+
 // CSSStyleDeclaration 类定义
 static const JSCFunctionListEntry js_css_style_declaration_proto_funcs[] = {
     JS_CGETSET_MAGIC_DEF("cssText", js_css_style_declaration_get_css_text, js_css_style_declaration_set_css_text, 0),
@@ -2778,7 +3046,7 @@ void DOMBindings::InitCSSStyleDeclarationClass(JSContext* ctx) {
         /* finalizer */ js_css_style_declaration_finalizer,
         /* gc_mark */ nullptr,
         /* call */ nullptr,
-        /* exotic */ nullptr,
+        /* exotic */ &js_css_style_declaration_exotic,
     };
 
     JS_NewClassID(JS_GetRuntime(ctx), &css_style_declaration_class_id);
