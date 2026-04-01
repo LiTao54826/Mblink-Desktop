@@ -59,15 +59,48 @@ struct SharedObjectData {
     JSValue js_obj = JS_UNDEFINED;     // 实际的 JS 对象（globalThis.<name>）
     JSValue updater_func = JS_UNDEFINED; // __onSharedUpdate 函数缓存
     std::string name;                   // globalThis 上的名字
-    bool batch_mode = false;            // 批量模式（抑制中间通知）
+    int batch_depth = 0;                // 批量层级（支持嵌套）
     int pending_updates = 0;            // 批量模式中的待处理更新数
     bool pending_notify_ = false;       // 是否有待处理的非批量通知（延迟刷新用）
+
+    void refreshUpdater() {
+        if (!ctx) return;
+        JSValue global = JS_GetGlobalObject(ctx);
+        JSValue updater = JS_GetPropertyStr(ctx, global, "__onSharedUpdate");
+        JS_FreeValue(ctx, global);
+
+        if (!JS_IsUndefined(updater_func)) {
+            JS_FreeValue(ctx, updater_func);
+        }
+
+        if (JS_IsFunction(ctx, updater)) {
+            updater_func = updater;
+        } else {
+            JS_FreeValue(ctx, updater);
+            updater_func = JS_UNDEFINED;
+        }
+    }
+
+    void beginBatch() {
+        batch_depth++;
+        if (batch_depth == 1) {
+            pending_updates = 0;
+        }
+    }
+
+    void endBatch() {
+        if (batch_depth <= 0) return;
+        batch_depth--;
+        if (batch_depth == 0) {
+            flushBatch();
+        }
+    }
 
     // notifyUpdate：记录待通知，不立即调用 JS。
     // 真正的通知由 flushPendingNotify() 在事件循环帧中统一触发，
     // 避免在 Python 回调的 C 调用链中嵌套执行 QuickJS JS 代码（QuickJS 重入）。
     void notifyUpdate(const char* /*key*/) {
-        if (batch_mode) {
+        if (batch_depth > 0) {
             pending_updates++;
             return;
         }
@@ -80,6 +113,7 @@ struct SharedObjectData {
     void flushPendingNotify() {
         if (!pending_notify_) return;
         pending_notify_ = false;
+        refreshUpdater();
         if (!JS_IsUndefined(updater_func) && !JS_IsNull(updater_func)) {
             JSValue arg = JS_NewString(ctx, "*");
             JSValue ret = JS_Call(ctx, updater_func, JS_UNDEFINED, 1, &arg);
@@ -898,12 +932,27 @@ int mbink_bind(MBinkHandle handle, const char* name,
         MBinkCallback cb = callback;
         void* ud = user_data;
         std::string funcName = name;
-        ctx->hostBridge->bind(name, [cb, ud, funcName](const std::string& args) -> std::string {
+        ctx->hostBridge->bind(name, [ctx, cb, ud, funcName](const std::string& args) -> std::string {
+            auto finishSharedBatch = [ctx]() {
+                for (auto& kv : ctx->sharedObjects) {
+                    if (kv.second) {
+                        kv.second->endBatch();
+                    }
+                }
+            };
+
+            for (auto& kv : ctx->sharedObjects) {
+                if (kv.second) {
+                    kv.second->beginBatch();
+                }
+            }
+
             char* result = nullptr;
 
 #ifdef _WIN32
             unsigned int sehCode = 0;
             result = invokeCallbackWithSEH(cb, args.c_str(), ud, &sehCode);
+            finishSharedBatch();
             if (!result && sehCode != 0) {
                 reportNativeError("SEH exception in bound callback '" + funcName +
                                   "', code=0x" + std::to_string(sehCode));
@@ -913,13 +962,16 @@ int mbink_bind(MBinkHandle handle, const char* name,
             try {
                 result = cb(args.c_str(), ud);
             } catch (const std::exception& e) {
+                finishSharedBatch();
                 reportNativeError("C++ exception in bound callback '" + funcName +
                                   "': " + e.what());
                 return std::string("{\"error\":\"Native callback exception: ") + e.what() + "\"}";
             } catch (...) {
+                finishSharedBatch();
                 reportNativeError("Unknown C++ exception in bound callback '" + funcName + "'");
                 return R"({"error":"Native callback unknown exception"})";
             }
+            finishSharedBatch();
 #endif
 
             if (!result) {
@@ -1521,8 +1573,8 @@ MBinkSharedHandle mbink_shared_create(MBinkHandle handle, const char* name) {
     JS_DupValue(jsCtx, shared->js_obj);
     JS_SetPropertyStr(jsCtx, global, name, shared->js_obj);
 
-    // 缓存 __onSharedUpdate 函数引用
-    shared->updater_func = JS_GetPropertyStr(jsCtx, global, "__onSharedUpdate");
+    // 预取 __onSharedUpdate，后续 flush 时会再次刷新，兼容延后注入/用户覆盖
+    shared->refreshUpdater();
     JS_FreeValue(jsCtx, global);
 
     // 存储到 WindowContext
@@ -1756,15 +1808,13 @@ bool mbink_shared_has(MBinkSharedHandle shared_handle, const char* key) {
 void mbink_shared_batch_begin(MBinkSharedHandle shared_handle) {
     if (!shared_handle) return;
     auto* shared = reinterpret_cast<SharedObjectData*>(shared_handle);
-    shared->batch_mode = true;
-    shared->pending_updates = 0;
+    shared->beginBatch();
 }
 
 void mbink_shared_batch_end(MBinkSharedHandle shared_handle) {
     if (!shared_handle) return;
     auto* shared = reinterpret_cast<SharedObjectData*>(shared_handle);
-    shared->batch_mode = false;
-    shared->flushBatch();
+    shared->endBatch();
 }
 
 // ========== 工具函数 ==========

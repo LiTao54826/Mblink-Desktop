@@ -113,6 +113,10 @@ function Fragment(props) {
  * @param {Element} container - DOM container element
  */
 function render(vnode, container) {
+    if (typeof globalThis !== 'undefined' && typeof globalThis.__mbinkRegisterPreactRoot === 'function') {
+        globalThis.__mbinkRegisterPreactRoot(vnode, container, render);
+    }
+
     // Use C++ implementation if available
     if (typeof __preact_internal !== 'undefined' && __preact_internal.render) {
         return __preact_internal.render(vnode, container);
