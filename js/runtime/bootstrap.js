@@ -71,7 +71,25 @@
         found.renderImpl = renderImpl;
     };
 
+    runtime.cleanup = function() {
+        runtime.pending = false;
+        for (var i = 0; i < runtime.roots.length; i++) {
+            var item = runtime.roots[i];
+            if (!item) continue;
+            if (item.container) {
+                try { item.container.__preactRoot = null; } catch (_) {}
+            }
+            item.vnode = null;
+            item.renderImpl = null;
+            item.container = null;
+        }
+        runtime.roots = [];
+        runtime.userHook = null;
+        runtime.currentDispatcher = null;
+    };
+
     runtime.flush = function() {
+        if (!runtime.currentDispatcher) return;
         runtime.pending = false;
         var roots = runtime.roots.slice();
         for (var i = 0; i < roots.length; i++) {
@@ -86,7 +104,7 @@
     };
 
     runtime.schedule = function() {
-        if (runtime.pending) return;
+        if (!runtime.currentDispatcher || runtime.pending) return;
         runtime.pending = true;
         var defer = typeof global.setTimeout === 'function'
             ? global.setTimeout
@@ -111,6 +129,12 @@
 
     global.__mbinkRegisterPreactRoot = function(vnode, container, renderImpl) {
         runtime.registerRoot(vnode, container, renderImpl);
+    };
+
+    global.__mbinkRuntimeCleanup = function() {
+        try {
+            runtime.cleanup();
+        } catch (_) {}
     };
 
     console.log('MBink JavaScript runtime initialized');

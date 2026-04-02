@@ -761,6 +761,11 @@ void mbink_destroy(MBinkHandle handle) {
     if (!handle) return;
     auto ctx = getContext(handle);
 
+    // 0. 先隐藏窗口，避免后续重清理阶段造成用户可见卡顿
+    if (ctx->window) {
+        ctx->window->Hide();
+    }
+
     // 1. 停止事件循环
     if (ctx->eventLoop && ctx->running) {
         ctx->eventLoop->Stop();
@@ -807,11 +812,15 @@ void mbink_destroy(MBinkHandle handle) {
             "(function(){"
             "  if(typeof __preactCleanup==='function'){try{__preactCleanup();}catch(e){}}"
             "  if(typeof __preactHooksCleanup==='function'){try{__preactHooksCleanup();}catch(e){}}"
+            "  if(typeof __mbinkRuntimeCleanup==='function'){try{__mbinkRuntimeCleanup();}catch(e){}}"
+            "  if(typeof __fetchCleanup==='function'){try{__fetchCleanup();}catch(e){}}"
             "  var keys=['Preact','PreactHooks','preact','preactHooks',"
             "            '__preactCleanup','__preactHooksCleanup',"
+            "            '__preactSetCurrentComponent','__mbinkRegisterPreactRoot',"
+            "            '__mbinkRuntimeCleanup','__fetchCleanup',"
             "            '__onSharedUpdate','data','backend','py'];"
             "  for(var i=0;i<keys.length;i++){"
-            "    try{globalThis[keys[i]]=undefined;}catch(e){}"
+            "    try{delete globalThis[keys[i]];}catch(e){try{globalThis[keys[i]]=undefined;}catch(_){}}"
             "  }"
             "})();";
         JSValue res = JS_Eval(jsCtx, cleanupScript, strlen(cleanupScript),

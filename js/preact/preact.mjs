@@ -9,6 +9,37 @@
 const VNODE_TYPE_ELEMENT = 1;
 const VNODE_TYPE_TEXT = 2;
 const VNODE_TYPE_COMPONENT = 3;
+const mountedContainers = new Set();
+const mountedComponents = new Set();
+
+function getSetCurrentComponent() {
+    if (typeof globalThis !== 'undefined' && typeof globalThis.__preactSetCurrentComponent === 'function') {
+        return globalThis.__preactSetCurrentComponent;
+    }
+    return null;
+}
+
+function clearVNode(vnode) {
+    if (!vnode || typeof vnode !== 'object') return;
+    if (Array.isArray(vnode)) {
+        for (const child of vnode) {
+            clearVNode(child);
+        }
+        return;
+    }
+    if (vnode.__component) {
+        vnode.__component.__dom = null;
+        vnode.__component.__rerender = null;
+        vnode.__component.__renderedVNode = null;
+        vnode.__component.__vnode = null;
+    }
+    if (vnode.children) {
+        for (const child of vnode.children) {
+            clearVNode(child);
+        }
+    }
+    vnode.__component = null;
+}
 
 /**
  * Create a Virtual DOM node (VNode)
@@ -50,6 +81,8 @@ export function Fragment(props) {
  * Render a VNode tree into a DOM container
  */
 export function render(vnode, container) {
+    if (!container) return;
+    mountedContainers.add(container);
     if (container.__preactRoot) {
         diff(container.__preactRoot, vnode, container);
     } else {
@@ -60,6 +93,9 @@ export function render(vnode, container) {
         }
         container.__preactRoot = vnode;
     }
+    if (typeof globalThis !== 'undefined' && typeof globalThis.__mbinkRegisterPreactRoot === 'function') {
+        globalThis.__mbinkRegisterPreactRoot(vnode, container, render);
+    }
 }
 
 /**
@@ -69,11 +105,11 @@ function createDOMElement(vnode) {
     if (vnode == null || vnode === false || vnode === true) {
         return null;
     }
-    
+
     if (typeof vnode === 'string' || typeof vnode === 'number') {
         return document.createTextNode(String(vnode));
     }
-    
+
     // Handle component functions
     if (typeof vnode.type === 'function') {
         if (!vnode.__component) {
@@ -86,13 +122,15 @@ function createDOMElement(vnode) {
         }
 
         const component = vnode.__component;
+        const setCurrentComponent = getSetCurrentComponent();
+        mountedComponents.add(component);
 
         component.__rerender = function() {
-            if (typeof setCurrentComponent !== 'undefined') {
+            if (setCurrentComponent) {
                 setCurrentComponent(component);
             }
             const newVNode = vnode.type(vnode.props);
-            if (typeof setCurrentComponent !== 'undefined') {
+            if (setCurrentComponent) {
                 setCurrentComponent(null);
             }
 
@@ -104,17 +142,18 @@ function createDOMElement(vnode) {
 
             if (newDOM) {
                 parent.replaceChild(newDOM, oldDOM);
+                clearVNode(component.__renderedVNode);
                 component.__dom = newDOM;
                 component.__renderedVNode = newVNode;
                 newDOM.__componentVNode = vnode;
             }
         };
 
-        if (typeof setCurrentComponent !== 'undefined') {
+        if (setCurrentComponent) {
             setCurrentComponent(component);
         }
         const componentVNode = vnode.type(vnode.props);
-        if (typeof setCurrentComponent !== 'undefined') {
+        if (setCurrentComponent) {
             setCurrentComponent(null);
         }
 
@@ -126,7 +165,7 @@ function createDOMElement(vnode) {
         }
         return dom;
     }
-    
+
     // Handle Fragment
     if (vnode.type === Fragment) {
         const fragment = document.createDocumentFragment();
@@ -197,6 +236,7 @@ function createDOMElement(vnode) {
  * Diff and update DOM
  */
 function diff(oldVNode, newVNode, container) {
+    clearVNode(oldVNode);
     container.innerHTML = '';
     const dom = createDOMElement(newVNode);
     if (dom) {
@@ -317,6 +357,42 @@ export function createContext(defaultValue) {
     return context;
 }
 
+export function __mbinkPreactCleanup() {
+    mountedContainers.forEach((container) => {
+        if (!container) return;
+        clearVNode(container.__preactRoot);
+        try {
+            container.__preactRoot = null;
+            container.innerHTML = '';
+        } catch (_) {}
+    });
+    mountedContainers.clear();
+    mountedComponents.forEach((component) => {
+        if (!component) return;
+        component.__dom = null;
+        component.__rerender = null;
+        component.__renderedVNode = null;
+        component.__vnode = null;
+        component.__hooks = [];
+    });
+    mountedComponents.clear();
+}
+
+if (typeof globalThis !== 'undefined') {
+    globalThis.__preactCleanup = __mbinkPreactCleanup;
+}
+
 // Default export
-export default { h, createElement, render, Fragment, Component, createRef, cloneElement, isValidElement, createContext };
+export default {
+    h,
+    createElement,
+    render,
+    Fragment,
+    Component,
+    createRef,
+    cloneElement,
+    isValidElement,
+    createContext,
+    __mbinkPreactCleanup
+};
 

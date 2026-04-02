@@ -48,7 +48,9 @@ class App:
 
         self._handle = self._lib.mbink_create_ex(ctypes.byref(cfg))
         if not self._handle:
-            raise RuntimeError("mbink_create_ex 返回 NULL，创建窗口失败")
+            err = self._lib.mbink_last_error()
+            msg = err.decode("utf-8", "ignore") if err else "unknown create error"
+            raise RuntimeError(f"mbink_create_ex 返回 NULL，创建窗口失败: {msg}")
 
         self._callbacks = []  # prevent GC
         self._shared_objects = {}   # name -> SharedState proxy

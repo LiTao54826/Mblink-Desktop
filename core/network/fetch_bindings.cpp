@@ -105,7 +105,17 @@ void FetchBindings::RegisterJSPolyfill() {
     
     // 存储 pending promises
     const pendingFetches = new Map();
-    
+    let fetchPolling = false;
+    let fetchCleanupRequested = false;
+
+    function schedulePendingResponseCheck() {
+        if (fetchCleanupRequested || fetchPolling || pendingFetches.size === 0) {
+            return;
+        }
+        fetchPolling = true;
+        setTimeout(checkPendingResponses, 10);
+    }
+
     // Response 类
     class Response {
         constructor(data) {
@@ -205,37 +215,49 @@ void FetchBindings::RegisterJSPolyfill() {
     // fetch 函数
     function fetch(url, options) {
         options = options || {};
-        
+
         return new Promise((resolve, reject) => {
+            if (fetchCleanupRequested) {
+                reject(new Error('Fetch subsystem is cleaning up'));
+                return;
+            }
+
             // 准备请求选项
             const fetchOptions = {
                 method: options.method || 'GET',
                 headers: options.headers || {},
                 body: options.body || ''
             };
-            
+
             // 发起请求
             const requestId = __fetch_request(url, fetchOptions);
-            
+
             if (typeof requestId !== 'number' || requestId < 0) {
                 reject(new Error('Failed to initiate fetch request'));
                 return;
             }
-            
+
             // 存储 promise 的 resolve/reject
             pendingFetches.set(requestId, { resolve, reject });
+            schedulePendingResponseCheck();
         });
     }
-    
+
     // 轮询检查响应的函数
     function checkPendingResponses() {
+        fetchPolling = false;
+
+        if (fetchCleanupRequested) {
+            return;
+        }
+
         const result = __fetch_check_response();
-        
+
         if (result && result.id) {
             const pending = pendingFetches.get(result.id);
             if (pending) {
                 pendingFetches.delete(result.id);
-                
+
                 if (result.response.error) {
                     pending.reject(new Error(result.response.error));
                 } else {
@@ -243,28 +265,34 @@ void FetchBindings::RegisterJSPolyfill() {
                 }
             }
         }
-        
+
         // 如果还有 pending 请求，继续轮询
         if (pendingFetches.size > 0) {
-            setTimeout(checkPendingResponses, 10);
+            schedulePendingResponseCheck();
         }
     }
-    
+
     // 包装 fetch 以启动轮询
     const originalFetch = fetch;
     global.fetch = function(url, options) {
-        const promise = originalFetch(url, options);
-        
-        // 启动轮询（如果尚未运行）
-        setTimeout(checkPendingResponses, 10);
-        
-        return promise;
+        return originalFetch(url, options);
     };
-    
+
+    global.__fetchCleanup = function() {
+        fetchCleanupRequested = true;
+        fetchPolling = false;
+        pendingFetches.forEach(({ reject }) => {
+            if (typeof reject === 'function') {
+                reject(new Error('Fetch subsystem cleaned up'));
+            }
+        });
+        pendingFetches.clear();
+    };
+
     // 导出到全局
     global.Response = Response;
     global.Headers = Headers;
-    
+
 })(globalThis);
 )";
 

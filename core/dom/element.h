@@ -276,16 +276,22 @@ public:
      * @return true表示成功移除，false表示未找到
      */
     bool RemoveEventListener(const std::string& type, uint64_t listener_id);
-    
+
     /**
      * @brief 分发事件
      * @param event 事件对象
-     * @return true表示事件未被取消
+     * @return true 表示事件未被 preventDefault
      */
     bool DispatchEvent(std::shared_ptr<Event> event);
-    
+
+    /**
+     * @brief 清空当前元素上的全部事件监听器
+     * @details 包括 addEventListener 注册的监听器，以及内联事件处理器索引
+     */
+    void ClearAllEventListeners();
+
     // ========== 查询选择器 ==========
-    
+
     /**
      * @brief 查询第一个匹配的元素
      * @param selector CSS选择器

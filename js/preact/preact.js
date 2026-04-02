@@ -14,7 +14,7 @@
     // VNode type constants
     var VNODE_TYPE_ELEMENT = 1;
     var VNODE_TYPE_TEXT = 2;
-    var VNODE_TYPE_COMPONENT = 3;
+    var __mountedContainers = [];
 
 /**
  * Create a Virtual DOM node (VNode)
@@ -107,12 +107,74 @@ function Fragment(props) {
     return props.children;
 }
 
+function clearVNode(vnode) {
+    if (!vnode || typeof vnode !== 'object') {
+        return;
+    }
+    if (Array.isArray(vnode)) {
+        for (var i = 0; i < vnode.length; i++) {
+            clearVNode(vnode[i]);
+            vnode[i] = null;
+        }
+        return;
+    }
+
+    var component = vnode.__component;
+    if (component) {
+        if (component.__renderedVNode && component.__renderedVNode !== vnode) {
+            clearVNode(component.__renderedVNode);
+        }
+        component.__dom = null;
+        component.__rerender = null;
+        component.__renderedVNode = null;
+        component.__vnode = null;
+        component.__hooks = [];
+    }
+
+    if (vnode.props) {
+        var props = vnode.props;
+        if (props.children) {
+            clearVNode(props.children);
+        }
+        if (props.ref) {
+            if (typeof props.ref === 'function') {
+                try { props.ref(null); } catch (_) {}
+            } else if (typeof props.ref === 'object') {
+                props.ref.current = null;
+            }
+        }
+        for (var key in props) {
+            props[key] = null;
+        }
+        vnode.props = null;
+    }
+
+    if (vnode.children) {
+        for (var j = 0; j < vnode.children.length; j++) {
+            clearVNode(vnode.children[j]);
+            vnode.children[j] = null;
+        }
+        vnode.children = null;
+    }
+
+    vnode.__dom = null;
+    vnode.__component = null;
+    vnode.key = null;
+    vnode.ref = null;
+    vnode.type = null;
+}
+
+
 /**
  * Render a VNode tree into a DOM container
  * @param {object} vnode - Virtual DOM node
  * @param {Element} container - DOM container element
  */
 function render(vnode, container) {
+    if (__mountedContainers.indexOf(container) === -1) {
+        __mountedContainers.push(container);
+    }
+
     if (typeof globalThis !== 'undefined' && typeof globalThis.__mbinkRegisterPreactRoot === 'function') {
         globalThis.__mbinkRegisterPreactRoot(vnode, container, render);
     }
@@ -988,6 +1050,19 @@ function isValidElement(value) {
     // 暴露清理函数，供 C++ 关闭时调用以释放 IIFE 内部的函数引用
     // __elementDataStore 是 IIFE 局部变量，外部无法直接访问
     global.__preactCleanup = function() {
+        for (var i = 0; i < __mountedContainers.length; i++) {
+            var container = __mountedContainers[i];
+            if (!container) continue;
+            try {
+                if (container.__preactVNode) {
+                    clearVNode(container.__preactVNode);
+                }
+                container.__preactVNode = null;
+                container.__preactDOM = null;
+            } catch (_) {}
+        }
+        __mountedContainers.length = 0;
+
         for (var id in __elementDataStore) {
             var data = __elementDataStore[id];
             if (data) {
@@ -1025,6 +1100,7 @@ function isValidElement(value) {
                     data.element = null;
                 }
                 if (data.vnode) {
+                    clearVNode(data.vnode);
                     data.vnode = null;
                 }
             }

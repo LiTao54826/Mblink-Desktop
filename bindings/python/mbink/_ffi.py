@@ -123,6 +123,8 @@ def _bind_functions(lib):
     lib.mbink_cleanup.argtypes = []
     lib.mbink_version.restype = c_char_p
     lib.mbink_version.argtypes = []
+    lib.mbink_last_error.restype = c_char_p
+    lib.mbink_last_error.argtypes = []
 
     # 窗口管理
     lib.mbink_create.restype = H

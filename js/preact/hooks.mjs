@@ -7,6 +7,21 @@
 // Current component being rendered (set by render)
 let currentComponent = null;
 let currentHookIndex = 0;
+const mountedComponents = new Set();
+
+function cleanupComponentHooks(component) {
+    if (!component || !component.__hooks) return;
+    for (let i = 0; i < component.__hooks.length; i++) {
+        const hookState = component.__hooks[i];
+        if (hookState && typeof hookState.cleanup === 'function') {
+            try {
+                hookState.cleanup();
+            } catch (_) {}
+            hookState.cleanup = null;
+        }
+    }
+    component.__hooks = [];
+}
 
 /**
  * Set the current component (called by render)
@@ -14,6 +29,9 @@ let currentHookIndex = 0;
 export function setCurrentComponent(component) {
     currentComponent = component;
     currentHookIndex = 0;
+    if (component) {
+        mountedComponents.add(component);
+    }
 }
 
 /**
@@ -186,6 +204,20 @@ export function useReducer(reducer, initialState, init) {
     return [hookState.state, dispatch];
 }
 
+export function __mbinkHooksCleanup() {
+    mountedComponents.forEach((component) => {
+        cleanupComponentHooks(component);
+    });
+    mountedComponents.clear();
+    currentComponent = null;
+    currentHookIndex = 0;
+}
+
+if (typeof globalThis !== 'undefined') {
+    globalThis.__preactSetCurrentComponent = setCurrentComponent;
+    globalThis.__preactHooksCleanup = __mbinkHooksCleanup;
+}
+
 // Default export
 export default {
     useState,
@@ -197,6 +229,7 @@ export default {
     useContext,
     useReducer,
     createContext,
-    setCurrentComponent
+    setCurrentComponent,
+    __mbinkHooksCleanup
 };
 

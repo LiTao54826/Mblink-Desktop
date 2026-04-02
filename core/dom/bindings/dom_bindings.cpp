@@ -2358,128 +2358,7 @@ void DOMBindings::Cleanup(JSContext* ctx) {
         g_task_scheduler->ClearAllTasks();
     }
 
-    // ========== 阶段1：清理 JS 全局变量中的函数引用 ==========
-    // 必须在 C++ DOM 树销毁之前执行，否则 JS Function 对象仍被全局变量引用，
-    // 导致 JS_FreeRuntime 时 gc_obj_list 不为空，触发断言失败。
-    if (ctx) {
-        // 清理 Preact __elementDataStore（事件回调函数的主要泄漏源）
-        // 以及 __event_* 全局属性（window.addEventListener 注册的回调）
-        // 和 Preact/hooks 全局对象
-        const char* cleanup_script = R"(
-            // 1. 调用 Preact IIFE 内部的清理函数，释放 __elementDataStore 中的事件回调
-            if (typeof __preactCleanup === 'function') {
-                console.log('[Cleanup] calling __preactCleanup');
-                try { __preactCleanup(); } catch(e) { console.log('[Cleanup] __preactCleanup error:', e.message); }
-            } else {
-                console.log('[Cleanup] __preactCleanup not found, type=' + typeof __preactCleanup);
-            }
-
-            // 2. 调用 PreactHooks IIFE 内部的清理函数
-            if (typeof __preactHooksCleanup === 'function') {
-                console.log('[Cleanup] calling __preactHooksCleanup');
-                try { __preactHooksCleanup(); } catch(e) { console.log('[Cleanup] __preactHooksCleanup error:', e.message); }
-            }
-
-            // 3. 清理 window.addEventListener / bridge 注册的全局回调
-            (function() {
-                var keys = Object.getOwnPropertyNames(globalThis);
-                var eventCount = 0;
-                var callbackCount = 0;
-                for (var i = 0; i < keys.length; i++) {
-                    if (keys[i].indexOf('__event_') === 0) {
-                        delete globalThis[keys[i]];
-                        eventCount++;
-                    }
-                    if (keys[i].indexOf('__callback_') === 0) {
-                        delete globalThis[keys[i]];
-                        callbackCount++;
-                    }
-                }
-                console.log('[Cleanup] deleted ' + eventCount + ' __event_* globals');
-                console.log('[Cleanup] deleted ' + callbackCount + ' __callback_* globals');
-            })();
-
-            // 4. 主动清理元素上的 on* 事件属性，触发对应 setter 释放隐藏函数引用
-            (function() {
-                if (typeof document === 'undefined' || !document) {
-                    console.log('[Cleanup] document not found');
-                    return;
-                }
-                var root = document.documentElement || document.body || null;
-                if (!root) {
-                    console.log('[Cleanup] document root not found');
-                    return;
-                }
-                var props = [
-                    'onclick', 'ondblclick', 'onmousedown', 'onmouseup', 'onmousemove',
-                    'onmouseenter', 'onmouseleave', 'oninput', 'onchange', 'onkeydown',
-                    'onkeyup', 'onfocus', 'onblur', 'onsubmit', 'onload', 'onerror'
-                ];
-                var stack = [root];
-                var cleared = 0;
-                while (stack.length > 0) {
-                    var node = stack.pop();
-                    if (!node) continue;
-                    for (var p = 0; p < props.length; p++) {
-                        try {
-                            if (typeof node[props[p]] !== 'undefined') {
-                                node[props[p]] = undefined;
-                                cleared++;
-                            }
-                        } catch (e) {}
-                    }
-                    try {
-                        var children = node.children || [];
-                        for (var j = 0; j < children.length; j++) {
-                            stack.push(children[j]);
-                        }
-                    } catch (e) {}
-                }
-                console.log('[Cleanup] cleared ' + cleared + ' element on* handlers');
-            })();
-
-            // 5. 清理 Preact/hooks 全局对象及清理函数本身
-            if (typeof Preact !== 'undefined') { Preact = undefined; }
-            if (typeof preact !== 'undefined') { preact = undefined; }
-            if (typeof PreactHooks !== 'undefined') { PreactHooks = undefined; }
-            if (typeof preactHooks !== 'undefined') { preactHooks = undefined; }
-            if (typeof __preactCleanup !== 'undefined') { __preactCleanup = undefined; }
-            if (typeof __preactHooksCleanup !== 'undefined') { __preactHooksCleanup = undefined; }
-            console.log('[Cleanup] JS cleanup script completed');
-        )";
-
-        JSValue result = JS_Eval(ctx, cleanup_script, strlen(cleanup_script),
-                                 "<cleanup>", JS_EVAL_TYPE_GLOBAL);
-        if (JS_IsException(result)) {
-            JSValue ex = JS_GetException(ctx);
-            const char* msg = JS_ToCString(ctx, ex);
-            if (msg) {
-                std::cerr << "[DOMBindings::Cleanup] cleanup script error: " << msg << std::endl;
-                JS_FreeCString(ctx, msg);
-            }
-            JS_FreeValue(ctx, ex);
-        }
-        JS_FreeValue(ctx, result);
-
-        // 清理后运行 GC，使不可达的函数对象被回收
-        JS_RunGC(JS_GetRuntime(ctx));
-    }
-
-    // ========== 阶段2：清除全局 document 对象 ==========
-    if (ctx) {
-        JSValue global = JS_GetGlobalObject(ctx);
-        JS_SetPropertyStr(ctx, global, "document", JS_UNDEFINED);
-        JS_FreeValue(ctx, global);
-    }
-
-    // ========== 阶段3：清理 C++ 侧资源 ==========
-    // 清理调度器中的任务，避免 JS 回调闭包残留
-    if (g_task_scheduler) {
-        g_task_scheduler->ClearAllTasks();
-    }
-    g_task_scheduler.reset();
-    g_event_loop = nullptr;
-
+    // ========== 阶段1：清理 C++ 侧 DOM 事件引用 ==========
     if (ctx) {
         auto& dom_binding_map = DOMBindingMap::GetInstance();
         dom_binding_map.ForEach([](Node* node, JSContext* entry_ctx, JSValueConst value) {
@@ -2489,6 +2368,10 @@ void DOMBindings::Cleanup(JSContext* ctx) {
 
             if (JS_GetOpaque(value, bindings::GetElementClassID())) {
                 bindings::ClearElementEventProperties(entry_ctx, value);
+
+                if (auto* element = dynamic_cast<Element*>(node)) {
+                    element->ClearAllEventListeners();
+                }
             }
         });
 
@@ -2499,8 +2382,25 @@ void DOMBindings::Cleanup(JSContext* ctx) {
         }
 
         JS_RunGC(JS_GetRuntime(ctx));
+    }
 
-        dom_binding_map.Clear();
+    // ========== 阶段2：清除全局 document 对象 ==========
+    if (ctx) {
+        JSValue global = JS_GetGlobalObject(ctx);
+        JS_SetPropertyStr(ctx, global, "document", JS_UNDEFINED);
+        JS_FreeValue(ctx, global);
+    }
+
+    // ========== 阶段3：清理调度器和 DOMBindingMap ==========
+    if (g_task_scheduler) {
+        g_task_scheduler->ClearAllTasks();
+    }
+    g_task_scheduler.reset();
+    g_event_loop = nullptr;
+
+    if (ctx) {
+        JS_RunGC(JS_GetRuntime(ctx));
+        DOMBindingMap::GetInstance().Clear();
     }
 
     // 清理所有缓存
