@@ -767,11 +767,38 @@ void mbink_destroy(MBinkHandle handle) {
         ctx->running = false;
     }
 
+    // 1.5 先让调度器进入关闭态，拒绝新 timer / raf / microtask，再清空已有任务
+    if (ctx->taskScheduler) {
+        ctx->taskScheduler->Shutdown();
+    }
+
     ctx->mainThreadQueue.flush();
 
-    // 2. JS 清理：unmount Preact + 清空全局引用（必须在 DOMBindings::Cleanup 之前）
+    // 2. 先解绑 backend/py 上已注册的宿主函数，避免函数对象在关闭时仍被全局对象持有
+    if (ctx->hostBridge) {
+        std::vector<std::string> boundNames;
+        boundNames.reserve(ctx->boundFunctions.size() + ctx->boundAsyncFunctions.size());
+        for (const auto& [name, _] : ctx->boundFunctions) {
+            boundNames.push_back(name);
+        }
+        for (const auto& [name, _] : ctx->boundAsyncFunctions) {
+            if (std::find(boundNames.begin(), boundNames.end(), name) == boundNames.end()) {
+                boundNames.push_back(name);
+            }
+        }
+        for (const auto& name : boundNames) {
+            ctx->hostBridge->unbind(name);
+        }
+    }
+    ctx->boundFunctions.clear();
+    ctx->boundAsyncFunctions.clear();
+
+    // 3. JS 清理：unmount Preact + 清空全局引用（必须在 DOMBindings::Cleanup 之前）
     if (ctx->hostBridge) {
         ctx->hostBridge->cancelPendingPromises("Window destroyed");
+    }
+    if (ctx->runtime) {
+        ctx->runtime->ProcessMicrotasks();
     }
 
     if (ctx->runtime) {
@@ -794,6 +821,12 @@ void mbink_destroy(MBinkHandle handle) {
             JS_FreeValue(jsCtx, exc);
         }
         JS_FreeValue(jsCtx, res);
+
+        // 清理脚本执行过程中可能再次产生微任务，这里再清一次调度器和微任务
+        if (ctx->taskScheduler) {
+            ctx->taskScheduler->ClearAllTasks();
+        }
+        ctx->runtime->ProcessMicrotasks();
     }
 
     for (const auto& name : collectSharedObjectNames(ctx)) {
@@ -874,12 +907,18 @@ void mbink_run(MBinkHandle handle) {
             ctx->hostBridge->flushEvents();
             ctx->hostBridge->flushAsyncResults();
         }
+        if (ctx->runtime) {
+            ctx->runtime->ProcessMicrotasks();
+        }
         // 刷新主线程任务队列，确保所有跨线程 JS/DOM 操作都在主线程执行
         ctx->mainThreadQueue.flush();
         // 刷新所有 SharedObject 的延迟通知（由 notifyUpdate/flushBatch 标记的 pending_notify_）
         forEachSharedObjectSnapshot(ctx, [](SharedObjectData* shared) {
             shared->flushPendingNotify();
         });
+        if (ctx->runtime) {
+            ctx->runtime->ProcessMicrotasks();
+        }
         // 调用用户的 update 回调
         if (ctx->onUpdateCallback) {
             ctx->onUpdateCallback(dt, ctx->onUpdateUserData);
@@ -911,10 +950,16 @@ bool mbink_poll_events(MBinkHandle handle) {
         ctx->hostBridge->flushEvents();
         ctx->hostBridge->flushAsyncResults();
     }
+    if (ctx->runtime) {
+        ctx->runtime->ProcessMicrotasks();
+    }
     ctx->mainThreadQueue.flush();
     forEachSharedObjectSnapshot(ctx, [](SharedObjectData* shared) {
         shared->flushPendingNotify();
     });
+    if (ctx->runtime) {
+        ctx->runtime->ProcessMicrotasks();
+    }
 
     ctx->eventLoop->RunOnce();
     return !ctx->eventLoop->ShouldQuit();

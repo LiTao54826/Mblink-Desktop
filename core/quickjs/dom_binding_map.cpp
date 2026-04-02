@@ -21,10 +21,19 @@ JSValue DOMBindingMap::GetJSValue(Node* node) const {
 }
 
 void DOMBindingMap::SetJSValue(Node* node, JSValue value, JSContext* ctx) {
-    // 如果已经存在，先释放旧值
+    JSValueEntry old_entry{};
+    bool has_old_entry = false;
+
+    // 如果已经存在，先从映射表移除旧值，避免 JS_FreeValue 触发 finalizer 时误删新映射
     auto it = node_to_js_map_.find(node);
     if (it != node_to_js_map_.end()) {
-        JS_FreeValue(it->second.ctx, it->second.value);
+        old_entry = it->second;
+        node_to_js_map_.erase(it);
+        has_old_entry = true;
+    }
+
+    if (has_old_entry) {
+        JS_FreeValue(old_entry.ctx, old_entry.value);
     }
 
     // 保存新值（增加引用计数）
@@ -37,8 +46,9 @@ void DOMBindingMap::SetJSValue(Node* node, JSValue value, JSContext* ctx) {
 void DOMBindingMap::Remove(Node* node) {
     auto it = node_to_js_map_.find(node);
     if (it != node_to_js_map_.end()) {
-        JS_FreeValue(it->second.ctx, it->second.value);
+        JSValueEntry entry = it->second;
         node_to_js_map_.erase(it);
+        JS_FreeValue(entry.ctx, entry.value);
     }
 }
 
@@ -47,10 +57,22 @@ bool DOMBindingMap::Has(Node* node) const {
 }
 
 void DOMBindingMap::Clear() {
-    for (auto& pair : node_to_js_map_) {
+    auto entries = std::move(node_to_js_map_);
+    node_to_js_map_.clear();
+
+    for (auto& pair : entries) {
         JS_FreeValue(pair.second.ctx, pair.second.value);
     }
-    node_to_js_map_.clear();
+}
+
+void DOMBindingMap::ForEach(const std::function<void(Node*, JSContext*, JSValueConst)>& visitor) const {
+    if (!visitor) {
+        return;
+    }
+
+    for (const auto& [node, entry] : node_to_js_map_) {
+        visitor(node, entry.ctx, entry.value);
+    }
 }
 
 DOMBindingMap::~DOMBindingMap() {

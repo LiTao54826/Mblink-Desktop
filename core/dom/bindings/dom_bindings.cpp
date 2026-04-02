@@ -24,6 +24,7 @@
 #include "core/dom/elements/terminal/html_terminal_element.h"
 #include "core/dom/elements/logview/html_logview_element.h"
 #include "core/dom/selection/range.h"
+#include "quickjs/dom_binding_map.h"
 #include "quickjs/quickjs-libc.h"
 #include "quickjs/js_value_wrapper.h"
 #include "quickjs/bindings/js_element.h"
@@ -1875,6 +1876,21 @@ static JSValue js_document_get_body(JSContext* ctx, JSValueConst this_val, int m
     return DOMBindings::WrapElement(ctx, body);
 }
 
+// Document.documentElement getter
+static JSValue js_document_get_document_element(JSContext* ctx, JSValueConst this_val, int magic) {
+    auto document = DOMBindings::UnwrapDocument(ctx, this_val);
+    if (!document) {
+        return JS_EXCEPTION;
+    }
+
+    auto document_element = document->GetDocumentElement();
+    if (!document_element) {
+        return JS_NULL;
+    }
+
+    return DOMBindings::WrapElement(ctx, document_element);
+}
+
 // Document.head getter
 static JSValue js_document_get_head(JSContext* ctx, JSValueConst this_val, int magic) {
     auto document = DOMBindings::UnwrapDocument(ctx, this_val);
@@ -2058,6 +2074,7 @@ static JSValue js_document_query_command_enabled(JSContext* ctx, JSValueConst th
 
 // Document 类定义
 static const JSCFunctionListEntry js_document_proto_funcs[] = {
+    JS_CGETSET_MAGIC_DEF("documentElement", js_document_get_document_element, nullptr, 0),
     JS_CGETSET_MAGIC_DEF("body", js_document_get_body, nullptr, 0),
     JS_CGETSET_MAGIC_DEF("head", js_document_get_head, nullptr, 0),
     JS_CGETSET_MAGIC_DEF("activeElement", js_document_get_active_element, nullptr, 0),
@@ -2336,6 +2353,11 @@ void DOMBindings::SetGlobalDocument(JSContext* ctx, std::shared_ptr<Document> do
 }
 
 void DOMBindings::Cleanup(JSContext* ctx) {
+    // ========== 阶段0：先停掉所有 timer / raf / microtask ==========
+    if (g_task_scheduler) {
+        g_task_scheduler->ClearAllTasks();
+    }
+
     // ========== 阶段1：清理 JS 全局变量中的函数引用 ==========
     // 必须在 C++ DOM 树销毁之前执行，否则 JS Function 对象仍被全局变量引用，
     // 导致 JS_FreeRuntime 时 gc_obj_list 不为空，触发断言失败。
@@ -2358,20 +2380,65 @@ void DOMBindings::Cleanup(JSContext* ctx) {
                 try { __preactHooksCleanup(); } catch(e) { console.log('[Cleanup] __preactHooksCleanup error:', e.message); }
             }
 
-            // 3. 清理 window.addEventListener 注册的 __event_* 全局回调
+            // 3. 清理 window.addEventListener / bridge 注册的全局回调
             (function() {
                 var keys = Object.getOwnPropertyNames(globalThis);
-                var count = 0;
+                var eventCount = 0;
+                var callbackCount = 0;
                 for (var i = 0; i < keys.length; i++) {
                     if (keys[i].indexOf('__event_') === 0) {
                         delete globalThis[keys[i]];
-                        count++;
+                        eventCount++;
+                    }
+                    if (keys[i].indexOf('__callback_') === 0) {
+                        delete globalThis[keys[i]];
+                        callbackCount++;
                     }
                 }
-                console.log('[Cleanup] deleted ' + count + ' __event_* globals');
+                console.log('[Cleanup] deleted ' + eventCount + ' __event_* globals');
+                console.log('[Cleanup] deleted ' + callbackCount + ' __callback_* globals');
             })();
 
-            // 4. 清理 Preact/hooks 全局对象及清理函数本身
+            // 4. 主动清理元素上的 on* 事件属性，触发对应 setter 释放隐藏函数引用
+            (function() {
+                if (typeof document === 'undefined' || !document) {
+                    console.log('[Cleanup] document not found');
+                    return;
+                }
+                var root = document.documentElement || document.body || null;
+                if (!root) {
+                    console.log('[Cleanup] document root not found');
+                    return;
+                }
+                var props = [
+                    'onclick', 'ondblclick', 'onmousedown', 'onmouseup', 'onmousemove',
+                    'onmouseenter', 'onmouseleave', 'oninput', 'onchange', 'onkeydown',
+                    'onkeyup', 'onfocus', 'onblur', 'onsubmit', 'onload', 'onerror'
+                ];
+                var stack = [root];
+                var cleared = 0;
+                while (stack.length > 0) {
+                    var node = stack.pop();
+                    if (!node) continue;
+                    for (var p = 0; p < props.length; p++) {
+                        try {
+                            if (typeof node[props[p]] !== 'undefined') {
+                                node[props[p]] = undefined;
+                                cleared++;
+                            }
+                        } catch (e) {}
+                    }
+                    try {
+                        var children = node.children || [];
+                        for (var j = 0; j < children.length; j++) {
+                            stack.push(children[j]);
+                        }
+                    } catch (e) {}
+                }
+                console.log('[Cleanup] cleared ' + cleared + ' element on* handlers');
+            })();
+
+            // 5. 清理 Preact/hooks 全局对象及清理函数本身
             if (typeof Preact !== 'undefined') { Preact = undefined; }
             if (typeof preact !== 'undefined') { preact = undefined; }
             if (typeof PreactHooks !== 'undefined') { PreactHooks = undefined; }
@@ -2412,6 +2479,29 @@ void DOMBindings::Cleanup(JSContext* ctx) {
     }
     g_task_scheduler.reset();
     g_event_loop = nullptr;
+
+    if (ctx) {
+        auto& dom_binding_map = DOMBindingMap::GetInstance();
+        dom_binding_map.ForEach([](Node* node, JSContext* entry_ctx, JSValueConst value) {
+            if (!node || !entry_ctx || JS_IsUndefined(value) || JS_IsNull(value)) {
+                return;
+            }
+
+            if (JS_GetOpaque(value, bindings::GetElementClassID())) {
+                bindings::ClearElementEventProperties(entry_ctx, value);
+            }
+        });
+
+        for (auto& [_, entry] : element_cache_) {
+            if (!JS_IsUndefined(entry.second) && !JS_IsNull(entry.second)) {
+                bindings::ClearElementEventProperties(ctx, entry.second);
+            }
+        }
+
+        JS_RunGC(JS_GetRuntime(ctx));
+
+        dom_binding_map.Clear();
+    }
 
     // 清理所有缓存
     // 注意：缓存使用弱引用（不调用 JS_DupValue），所以不需要调用 JS_FreeValue

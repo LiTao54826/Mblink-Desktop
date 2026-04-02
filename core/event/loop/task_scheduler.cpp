@@ -19,7 +19,16 @@ TaskScheduler::TaskScheduler()
 {
 }
 
+void TaskScheduler::Shutdown() {
+    shutting_down_ = true;
+    ClearAllTasks();
+}
+
 int TaskScheduler::SetTimeout(std::function<void()> callback, int delay_ms) {
+    if (shutting_down_) {
+        return -1;
+    }
+
     Task task;
     task.id = next_task_id_++;
     task.type = TaskType::TIMEOUT;
@@ -34,6 +43,10 @@ int TaskScheduler::SetTimeout(std::function<void()> callback, int delay_ms) {
 }
 
 int TaskScheduler::SetInterval(std::function<void()> callback, int interval_ms) {
+    if (shutting_down_) {
+        return -1;
+    }
+
     Task task;
     task.id = next_task_id_++;
     task.type = TaskType::INTERVAL;
@@ -48,6 +61,10 @@ int TaskScheduler::SetInterval(std::function<void()> callback, int interval_ms) 
 }
 
 int TaskScheduler::RequestAnimationFrame(std::function<void(double)> callback) {
+    if (shutting_down_) {
+        return -1;
+    }
+
     Task task;
     task.id = next_task_id_++;
     task.type = TaskType::ANIMATION_FRAME;
@@ -93,6 +110,11 @@ void TaskScheduler::ClearTask(int task_id) {
 }
 
 void TaskScheduler::ProcessTasks() {
+    if (shutting_down_) {
+        ClearAllTasks();
+        return;
+    }
+
     Uint64 current_time = GetCurrentTime();
     std::vector<Task> requeue_tasks;  // 需要重新入队的 interval 任务
 
@@ -119,19 +141,26 @@ void TaskScheduler::ProcessTasks() {
         }
 
         // 如果是 interval 任务，重新入队
-        if (current_task.type == TaskType::INTERVAL && current_task.interval > 0) {
+        if (!shutting_down_ && current_task.type == TaskType::INTERVAL && current_task.interval > 0) {
             current_task.execute_time = current_time + MillisecondsToTicks(current_task.interval);
             requeue_tasks.push_back(current_task);
         }
     }
 
     // 重新入队 interval 任务
-    for (const auto& task : requeue_tasks) {
-        tasks_.push(task);
+    if (!shutting_down_) {
+        for (const auto& task : requeue_tasks) {
+            tasks_.push(task);
+        }
     }
 }
 
 void TaskScheduler::ProcessAnimationFrames(double timestamp) {
+    if (shutting_down_) {
+        animation_frame_tasks_.clear();
+        return;
+    }
+
     // 复制当前的任务列表，然后清空原列表
     // 这样在执行回调时，新的 requestAnimationFrame 调用会添加到空列表中
     std::vector<Task> tasks_to_execute = std::move(animation_frame_tasks_);
@@ -186,12 +215,21 @@ Uint64 TaskScheduler::MillisecondsToTicks(int ms) const {
 }
 
 void TaskScheduler::PostMicrotask(std::function<void()> callback) {
+    if (shutting_down_) {
+        return;
+    }
+
     if (callback) {
         microtasks_.push_back(std::move(callback));
     }
 }
 
 void TaskScheduler::ProcessMicrotasks() {
+    if (shutting_down_) {
+        microtasks_.clear();
+        return;
+    }
+
     // 处理所有微任务，注意微任务可能会添加新的微任务
     // 所以需要循环处理直到队列为空
     while (!microtasks_.empty()) {
@@ -204,6 +242,11 @@ void TaskScheduler::ProcessMicrotasks() {
             if (task) {
                 task();
             }
+        }
+
+        if (shutting_down_) {
+            microtasks_.clear();
+            return;
         }
     }
 }

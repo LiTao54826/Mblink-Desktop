@@ -130,6 +130,21 @@ static void JSElementFinalizer(JSRuntime* rt, JSValue val) {
     }
 }
 
+void ClearElementEventProperties(JSContext* ctx, JSValueConst element_obj) {
+    if (!ctx) {
+        return;
+    }
+
+    auto* data = static_cast<JSElementData*>(JS_GetOpaque(element_obj, js_element_class_id));
+    if (!data || !data->element) {
+        return;
+    }
+
+    for (int magic = 0; magic < static_cast<int>(sizeof(kJSElementEventProperties) / sizeof(kJSElementEventProperties[0])); ++magic) {
+        JSElement_set_event_property(ctx, element_obj, JS_UNDEFINED, magic);
+    }
+}
+
 // ========== 属性访问器 ==========
 
 // tagName

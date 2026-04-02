@@ -39,7 +39,7 @@ public:
      * @brief 构造函数
      */
     TaskScheduler();
-    
+
     /**
      * @brief 析构函数
      */
@@ -47,20 +47,30 @@ public:
 
     /**
      * @brief 获取全局单例实例
-     * 
+     *
      * @return TaskScheduler& 全局实例引用
      */
     static TaskScheduler& Instance();
 
     /**
+     * @brief 进入关闭态，拒绝新任务并停止后续调度
+     */
+    void Shutdown();
+
+    /**
+     * @brief 是否已进入关闭态
+     */
+    bool IsShuttingDown() const { return shutting_down_; }
+
+    /**
      * @brief setTimeout - 延迟执行
-     * 
+     *
      * @param callback 回调函数
      * @param delay_ms 延迟时间（毫秒）
      * @return int 任务 ID
      */
     int SetTimeout(std::function<void()> callback, int delay_ms);
-    
+
     /**
      * @brief setInterval - 定期执行
      * 
@@ -188,10 +198,11 @@ private:
 private:
     int next_task_id_;                      // 下一个任务 ID
     Uint64 performance_frequency_;          // 性能计数器频率
-    
+    bool shutting_down_ = false;            // 关闭态：拒绝新任务并停止调度
+
     // 使用优先队列管理定时任务（按执行时间排序）
     std::priority_queue<Task, std::vector<Task>, std::greater<Task>> tasks_;
-    
+
     // 动画帧任务（每帧执行一次）
     std::vector<Task> animation_frame_tasks_;
 

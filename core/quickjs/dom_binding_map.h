@@ -10,6 +10,7 @@
 
 #pragma once
 
+#include <functional>
 #include <unordered_map>
 #include <memory>
 #include "quickjs.h"
@@ -64,6 +65,12 @@ public:
      * @brief 清空所有映射
      */
     void Clear();
+
+    /**
+     * @brief 遍历所有映射项
+     * @param visitor 访问回调，参数为 Node* / JSContext* / JSValue
+     */
+    void ForEach(const std::function<void(Node*, JSContext*, JSValueConst)>& visitor) const;
 
 private:
     DOMBindingMap() = default;
