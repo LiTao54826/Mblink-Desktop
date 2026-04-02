@@ -93,15 +93,6 @@ function rerender() {
 }
 // 脏标记 + setTimeout(0)：把 rerender 推迟到下一个事件循环迭代
 var _renderScheduled = false;
-globalThis.__onSharedUpdate = function() {
-  if (!_renderScheduled) {
-    _renderScheduled = true;
-    setTimeout(function() {
-      _renderScheduled = false;
-      rerender();
-    }, 0);
-  }
-};
 
 // ── 时钟：纯 JS setInterval，不走 Python on_update ──────────
 function _pad(n) { return (n < 10 ? '0' : '') + n; }

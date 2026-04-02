@@ -25,6 +25,8 @@ with state.batch():
     state.last_worker = "-"
     state.last_value = 0
     state.last_log = "ready"
+    state.last_test = "not started"
+    state.last_test_mode = "-"
 
 
 def worker_loop(name: str):
@@ -38,7 +40,6 @@ def worker_loop(name: str):
             state.last_worker = name
             state.last_value = value
             state.last_log = f"{name} -> value={value}"
-        print(local_tick)
         logs.append("INFO", name, f"push value={value} tick={local_tick}")
         term.write(f"[{datetime.now():%H:%M:%S}] {name}: value={value}\r\n")
         time.sleep(0.5 + random.random() * 0.7)
@@ -78,6 +79,21 @@ def stop_workers():
     return True
 
 
+def blocking_test(mode: str, seconds: float = 3.0):
+    logs.append("INFO", "test", f"{mode} begin: sleep {seconds:.1f}s")
+    term.write(f"[{datetime.now():%H:%M:%S}] test: {mode} begin sleep {seconds:.1f}s\r\n")
+    with state.batch():
+        state.last_test_mode = mode
+        state.last_test = f"running {mode}..."
+    time.sleep(seconds)
+    done = f"done {mode} at {datetime.now():%H:%M:%S}"
+    with state.batch():
+        state.last_test = done
+    logs.append("INFO", "test", done)
+    term.write(f"[{datetime.now():%H:%M:%S}] test: {done}\r\n")
+    return {"ok": True, "mode": mode, "slept": seconds, "done": done}
+
+
 @app.bind("start_workers")
 def _start(_args):
     started = start_workers()
@@ -88,6 +104,18 @@ def _start(_args):
 def _stop(_args):
     stopped = stop_workers()
     return {"ok": True, "stopped": stopped}
+
+
+@app.bind("block_sync")
+def _block_sync(args):
+    seconds = float((args or {}).get("seconds", 3))
+    return blocking_test("bind(sync)", seconds)
+
+
+@app.bind_async("block_async")
+def _block_async(args):
+    seconds = float((args or {}).get("seconds", 3))
+    return blocking_test("bind_async", seconds)
 
 
 @app.on_close

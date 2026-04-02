@@ -89,15 +89,26 @@
         }
 
         .status {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
             flex: 1;
-            white-space: pre-wrap;
-            font: 12px Consolas, monospace;
-            line-height: 1.6;
             padding: 12px;
             border: 1px solid #223047;
             background: #0b1220;
             border-radius: 8px;
             overflow: auto;
+        }
+
+        .status-clock {
+            color: #93c5fd;
+            font: 12px Consolas, monospace;
+        }
+
+        .status-body {
+            white-space: pre-wrap;
+            font: 12px Consolas, monospace;
+            line-height: 1.6;
         }
 
         .right {
@@ -156,13 +167,18 @@
         <div class='panel'>
             <div class='title'>
                 <h3>多线程调用示例</h3>
-                <p>后台线程会并发更新 SharedState、LogView、Terminal。</p>
+                <p>用实时时钟和 sleep 测试对比 bind / bind_async 是否阻塞 UI。</p>
             </div>
             <div class='actions'>
                 <button id='start'>启动线程</button>
                 <button id='stop' class='danger'>停止线程</button>
+                <button id='test-sync'>测试 bind 阻塞</button>
+                <button id='test-async'>测试 bind_async 非阻塞</button>
             </div>
-            <div id='status' class='status'></div>
+            <div id='status' class='status'>
+                <div id='clock' class='status-clock'></div>
+                <div id='status-body' class='status-body'></div>
+            </div>
         </div>
         <div class='right'>
             <section class='pane'>
@@ -180,18 +196,65 @@
         </div>
     </div>
     <script>
-        const box = document.getElementById('status');
-        function render() {
-            box.textContent = `running: ${demo.running}
+        const clock = document.getElementById('clock');
+        const statusBody = document.getElementById('status-body');
+        const startBtn = document.getElementById('start');
+        const stopBtn = document.getElementById('stop');
+        const testSyncBtn = document.getElementById('test-sync');
+        const testAsyncBtn = document.getElementById('test-async');
+
+        let uiTick = 0;
+        let lastStatusText = '';
+
+        setInterval(() => {
+            uiTick += 1;
+            clock.textContent = `ui_clock: ${new Date().toLocaleTimeString()} #${uiTick}`;
+            renderStatus();
+        }, 100);
+
+        function renderStatus(prefix = '') {
+            const text = `${prefix ? `${prefix}\n` : ''}last_test_mode: ${demo.last_test_mode}
+last_test: ${demo.last_test}
+running: ${demo.running}
 workers: ${demo.worker_count}
 ticks: ${demo.tick}
 last_worker: ${demo.last_worker}
 last_value: ${demo.last_value}
 last_log: ${demo.last_log}`;
+            if (text !== lastStatusText) {
+                statusBody.textContent = text;
+                lastStatusText = text;
+            }
         }
 
-        document.getElementById('start').onclick = () => backend.start_workers();
-        document.getElementById('stop').onclick = () => backend.stop_workers();
+        startBtn.onclick = function () {
+            backend.start_workers();
+        };
+
+        stopBtn.onclick = function () {
+            backend.stop_workers();
+        };
+
+        testSyncBtn.onclick = function () {
+            renderStatus('正在测试 bind(sync) 阻塞 3 秒...');
+            const result = backend.block_sync({ seconds: 3 });
+            console.log('block_sync result:', result);
+            renderStatus();
+        };
+
+        testAsyncBtn.onclick = function () {
+            renderStatus('正在测试 bind_async 3 秒，观察 ui_clock 是否继续跳动...');
+            backend.block_async({ seconds: 3 }).then((result) => {
+                console.log('block_async result:', result);
+                renderStatus();
+            }).catch((error) => {
+                console.error('block_async error:', error);
+                renderStatus(`block_async error: ${error?.message || error}`);
+            });
+        };
+
+        clock.textContent = `ui_clock: ${new Date().toLocaleTimeString()} #${uiTick}`;
+        renderStatus();
     </script>
 </body>
 
