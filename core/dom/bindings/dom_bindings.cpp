@@ -2375,9 +2375,33 @@ void DOMBindings::Cleanup(JSContext* ctx) {
             }
         });
 
+        std::vector<std::pair<JSContext*, JSValue>> cachedValues;
+        cachedValues.reserve(element_cache_.size() + text_cache_.size() + document_cache_.size());
+
         for (auto& [_, entry] : element_cache_) {
             if (!JS_IsUndefined(entry.second) && !JS_IsNull(entry.second)) {
-                bindings::ClearElementEventProperties(ctx, entry.second);
+                bindings::ClearElementEventProperties(entry.first ? entry.first : ctx, entry.second);
+                cachedValues.push_back(entry);
+            }
+        }
+        for (auto& [_, entry] : text_cache_) {
+            if (!JS_IsUndefined(entry.second) && !JS_IsNull(entry.second)) {
+                cachedValues.push_back(entry);
+            }
+        }
+        for (auto& [_, entry] : document_cache_) {
+            if (!JS_IsUndefined(entry.second) && !JS_IsNull(entry.second)) {
+                cachedValues.push_back(entry);
+            }
+        }
+
+        element_cache_.clear();
+        text_cache_.clear();
+        document_cache_.clear();
+
+        for (auto& entry : cachedValues) {
+            if (entry.first) {
+                JS_FreeValue(entry.first, entry.second);
             }
         }
 
@@ -2402,13 +2426,6 @@ void DOMBindings::Cleanup(JSContext* ctx) {
         JS_RunGC(JS_GetRuntime(ctx));
         DOMBindingMap::GetInstance().Clear();
     }
-
-    // 清理所有缓存
-    // 注意：缓存使用弱引用（不调用 JS_DupValue），所以不需要调用 JS_FreeValue
-    // 直接清空缓存即可
-    element_cache_.clear();
-    text_cache_.clear();
-    document_cache_.clear();
 
     // QuickJS 会自动清理类
     initialized = false;

@@ -127,14 +127,35 @@
         }
     });
 
-    global.__mbinkRegisterPreactRoot = function(vnode, container, renderImpl) {
-        runtime.registerRoot(vnode, container, renderImpl);
-    };
-
     global.__mbinkRuntimeCleanup = function() {
         try {
             runtime.cleanup();
         } catch (_) {}
+    };
+
+    global.__mbinkShutdown = function() {
+        var safe = function(fn) {
+            if (typeof fn === 'function') {
+                try { fn(); } catch (_) {}
+            }
+        };
+
+        safe(globalThis.__fetchCleanup);
+        safe(globalThis.__preactHooksCleanup);
+        safe(globalThis.__preactCleanup);
+        safe(globalThis.__mbinkRuntimeCleanup);
+
+        var keys = ['__fetchCleanup', '__preactHooksCleanup', '__preactCleanup',
+                    '__mbinkRuntimeCleanup', '__mbinkShutdown',
+                    'Preact', 'PreactHooks', 'preact', 'preactHooks',
+                    '__mbinkRegisterPreactRoot', '__preactSetCurrentComponent',
+                    '__onSharedUpdate', '__mbinkSharedRuntime',
+                    'data', 'backend', 'py'];
+        for (var i = 0; i < keys.length; i++) {
+            try { delete globalThis[keys[i]]; } catch (_) {
+                try { globalThis[keys[i]] = undefined; } catch (_2) {}
+            }
+        }
     };
 
     console.log('MBink JavaScript runtime initialized');

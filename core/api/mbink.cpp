@@ -33,6 +33,7 @@
 #include <windows.h>
 #endif
 
+#include <algorithm>
 #include <string>
 #include <memory>
 #include <mutex>
@@ -49,7 +50,18 @@ namespace {
 
 namespace fs = std::filesystem;
 
-// ========== 全局状态 ==========
+#define SAFE_CLEANUP(label, ...) \
+    do { \
+        try { \
+            __VA_ARGS__; \
+        } catch (const std::exception& e) { \
+            (void)(label); \
+            (void)e; \
+        } catch (...) { \
+            (void)(label); \
+        } \
+    } while (0)
+
 
 bool g_initialized = false;
 std::string g_lastError;
@@ -762,25 +774,16 @@ void mbink_destroy(MBinkHandle handle) {
     auto ctx = getContext(handle);
 
     // 0. 先隐藏窗口，避免后续重清理阶段造成用户可见卡顿
-    if (ctx->window) {
-        ctx->window->Hide();
-    }
+    SAFE_CLEANUP("hide_window", if (ctx->window) { ctx->window->Hide(); });
 
     // 1. 停止事件循环
-    if (ctx->eventLoop && ctx->running) {
+    SAFE_CLEANUP("stop_event_loop", if (ctx->eventLoop && ctx->running) {
         ctx->eventLoop->Stop();
         ctx->running = false;
-    }
-
-    // 1.5 先让调度器进入关闭态，拒绝新 timer / raf / microtask，再清空已有任务
-    if (ctx->taskScheduler) {
-        ctx->taskScheduler->Shutdown();
-    }
-
-    ctx->mainThreadQueue.flush();
+    });
 
     // 2. 先解绑 backend/py 上已注册的宿主函数，避免函数对象在关闭时仍被全局对象持有
-    if (ctx->hostBridge) {
+    SAFE_CLEANUP("unbind_host_functions", if (ctx->hostBridge) {
         std::vector<std::string> boundNames;
         boundNames.reserve(ctx->boundFunctions.size() + ctx->boundAsyncFunctions.size());
         for (const auto& [name, _] : ctx->boundFunctions) {
@@ -794,107 +797,87 @@ void mbink_destroy(MBinkHandle handle) {
         for (const auto& name : boundNames) {
             ctx->hostBridge->unbind(name);
         }
-    }
+    });
     ctx->boundFunctions.clear();
     ctx->boundAsyncFunctions.clear();
 
-    // 3. JS 清理：unmount Preact + 清空全局引用（必须在 DOMBindings::Cleanup 之前）
-    if (ctx->hostBridge) {
+    // 3. JS framework cleanup：必须在 scheduler 仍存活时执行
+    SAFE_CLEANUP("cancel_pending_promises", if (ctx->hostBridge) {
         ctx->hostBridge->cancelPendingPromises("Window destroyed");
-    }
-    if (ctx->runtime) {
+    });
+    SAFE_CLEANUP("pre_shutdown_microtasks", if (ctx->runtime) {
         ctx->runtime->ProcessMicrotasks();
-    }
-
-    if (ctx->runtime) {
+    });
+    SAFE_CLEANUP("js_shutdown", if (ctx->runtime) {
         auto jsCtx = ctx->runtime->GetContext();
-        const char* cleanupScript =
-            "(function(){"
-            "  if(typeof __preactCleanup==='function'){try{__preactCleanup();}catch(e){}}"
-            "  if(typeof __preactHooksCleanup==='function'){try{__preactHooksCleanup();}catch(e){}}"
-            "  if(typeof __mbinkRuntimeCleanup==='function'){try{__mbinkRuntimeCleanup();}catch(e){}}"
-            "  if(typeof __fetchCleanup==='function'){try{__fetchCleanup();}catch(e){}}"
-            "  var keys=['Preact','PreactHooks','preact','preactHooks',"
-            "            '__preactCleanup','__preactHooksCleanup',"
-            "            '__preactSetCurrentComponent','__mbinkRegisterPreactRoot',"
-            "            '__mbinkRuntimeCleanup','__fetchCleanup',"
-            "            '__onSharedUpdate','data','backend','py'];"
-            "  for(var i=0;i<keys.length;i++){"
-            "    try{delete globalThis[keys[i]];}catch(e){try{globalThis[keys[i]]=undefined;}catch(_){}}"
-            "  }"
-            "})();";
-        JSValue res = JS_Eval(jsCtx, cleanupScript, strlen(cleanupScript),
-                              "<cleanup>", JS_EVAL_TYPE_GLOBAL);
+        const char* shutdownScript =
+            "(function(){if(typeof __mbinkShutdown==='function'){__mbinkShutdown();}})();";
+        JSValue res = JS_Eval(jsCtx, shutdownScript, strlen(shutdownScript),
+                              "<shutdown>", JS_EVAL_TYPE_GLOBAL);
         if (JS_IsException(res)) {
             JSValue exc = JS_GetException(jsCtx);
             JS_FreeValue(jsCtx, exc);
         }
         JS_FreeValue(jsCtx, res);
-
-        // 清理脚本执行过程中可能再次产生微任务，这里再清一次调度器和微任务
-        if (ctx->taskScheduler) {
-            ctx->taskScheduler->ClearAllTasks();
-        }
+    });
+    SAFE_CLEANUP("post_shutdown_microtasks", if (ctx->runtime) {
         ctx->runtime->ProcessMicrotasks();
-    }
+    });
+    SAFE_CLEANUP("flush_main_thread_queue", ctx->mainThreadQueue.flush());
 
+    // 4. 停止任务源
+    SAFE_CLEANUP("shutdown_task_scheduler", if (ctx->taskScheduler) {
+        ctx->taskScheduler->Shutdown();
+        ctx->taskScheduler->ClearAllTasks();
+    });
+    SAFE_CLEANUP("flush_main_thread_queue_after_shutdown", ctx->mainThreadQueue.flush());
+    SAFE_CLEANUP("final_microtasks", if (ctx->runtime) {
+        ctx->runtime->ProcessMicrotasks();
+    });
+
+    // 5. 释放 SharedObject
     for (const auto& name : collectSharedObjectNames(ctx)) {
         auto it = ctx->sharedObjects.find(name);
         if (it != ctx->sharedObjects.end() && it->second) {
-            destroySharedObjectInternal(it->second, true);
+            SAFE_CLEANUP("destroy_shared_object", destroySharedObjectInternal(it->second, true));
         }
     }
 
-    // 3. 清理 DOM 绑定
-    if (ctx->runtime) {
+    // 6. 清理 DOM 绑定
+    SAFE_CLEANUP("dom_bindings_cleanup", if (ctx->runtime) {
         mbink::DOMBindings::Cleanup(ctx->runtime->GetContext());
-    }
-
-    // 4. 释放 document
+    });
     ctx->document.reset();
-
-    // 5. 清理 DOMBindingMap（Node* -> JSValue 映射）
     mbink::DOMBindingMap::GetInstance().Clear();
 
-    // 6. 释放 HostBridge 和 StateManager
-    if (ctx->stateManager) {
+    // 7. 释放 HostBridge 和 StateManager
+    SAFE_CLEANUP("clear_watchers", if (ctx->stateManager) {
         ctx->stateManager->clearWatchers();
-    }
+    });
     ctx->hostBridge.reset();
     ctx->stateManager.reset();
 
-    // 7. GC
-    if (ctx->runtime) {
+    // 8. GC + Runtime
+    SAFE_CLEANUP("run_gc", if (ctx->runtime) {
         ctx->runtime->RunGC();
-    }
-
-    // 8. 释放 runtime
+    });
     ctx->runtime.reset();
 
-    // 9. 释放 eventLoop（SDL_DestroyCursor 必须在 SDL_Quit 之前）
+    // 9. 释放 native 资源
     ctx->eventLoop.reset();
-
-    // 10. 释放 windowBindings/fetchBindings/taskScheduler
-    //     windowBindings 持有 shared_ptr<Window>，必须在 window 析构之前 reset
     ctx->windowBindings.reset();
     ctx->fetchBindings.reset();
     ctx->taskScheduler.reset();
 
-    // 11. 从 WindowManager 注销（不调用 window.reset()，避免 Window::~Window 卡在 SDL/Skia 清理）
-    if (ctx->window) {
+    SAFE_CLEANUP("unregister_window", if (ctx->window) {
         mbink::WindowManager::Instance().UnregisterWindow(ctx->window);
-    }
+    });
 
     ctx->watchCallbacks.clear();
     ctx->boundFunctions.clear();
     ctx->boundAsyncFunctions.clear();
 
-    // SDL 有后台线程无法正常退出，参考 esm_loader 使用强制退出
-#ifdef _WIN32
-    ::TerminateProcess(::GetCurrentProcess(), 0);
-#else
-    std::quick_exit(0);
-#endif
+    std::exit(0);
 }
 
 void mbink_run(MBinkHandle handle) {

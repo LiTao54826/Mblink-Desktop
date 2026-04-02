@@ -1,39 +1,62 @@
 /**
  * @file embedded_js.cpp
  * @brief 嵌入式 JavaScript 资源实现
- * 
+ *
  * 此文件包含构建时生成的 JS 代码数据
  */
 
 #include "embedded_js.h"
 
-// 包含构建时生成的 JS 数据文件
-#include "generated/preact_js.inc"
-#include "generated/hooks_js.inc"
-#include "generated/dom_polyfills_js.inc"
-#include "generated/bootstrap_js.inc"
-
 namespace mbink {
 namespace embedded {
+namespace {
+
+struct EmbeddedJSEntry {
+    const char* path;
+    const unsigned char* data;
+    size_t size;
+};
+
+#include "generated/embedded_js_registry.inc"
+
+}  // namespace
+
+std::string_view GetEmbeddedJS(std::string_view path) {
+    for (const auto& entry : kEmbeddedJSEntries) {
+        if (path == entry.path) {
+            return std::string_view(reinterpret_cast<const char*>(entry.data), entry.size);
+        }
+    }
+    return {};
+}
+
+std::vector<std::string_view> ListEmbeddedJSPaths() {
+    std::vector<std::string_view> paths;
+    paths.reserve(sizeof(kEmbeddedJSEntries) / sizeof(kEmbeddedJSEntries[0]));
+    for (const auto& entry : kEmbeddedJSEntries) {
+        paths.emplace_back(entry.path);
+    }
+    return paths;
+}
 
 std::string_view GetPreactJS() {
-    return std::string_view(reinterpret_cast<const char*>(preact_js_data), preact_js_size);
+    return GetEmbeddedJS("preact/preact.js");
 }
 
 std::string_view GetHooksJS() {
-    return std::string_view(reinterpret_cast<const char*>(hooks_js_data), hooks_js_size);
+    return GetEmbeddedJS("preact/hooks.js");
 }
 
 std::string_view GetDomPolyfillsJS() {
-    return std::string_view(reinterpret_cast<const char*>(dom_polyfills_js_data), dom_polyfills_js_size);
+    return GetEmbeddedJS("polyfills/dom.js");
 }
 
 std::string_view GetBootstrapJS() {
-    return std::string_view(reinterpret_cast<const char*>(bootstrap_js_data), bootstrap_js_size);
+    return GetEmbeddedJS("runtime/bootstrap.js");
 }
 
 bool HasEmbeddedJS() {
-    return true;
+    return sizeof(kEmbeddedJSEntries) / sizeof(kEmbeddedJSEntries[0]) > 0;
 }
 
 }  // namespace embedded
