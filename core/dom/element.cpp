@@ -558,6 +558,11 @@ bool Element::RemoveEventListener(const std::string& type, uint64_t listener_id)
     return false;
 }
 
+void Element::ClearAllEventListeners() {
+    event_listeners_.clear();
+    inline_event_handlers_.clear();
+}
+
 bool Element::DispatchEvent(std::shared_ptr<Event> event) {
     if (!event) {
         return false;

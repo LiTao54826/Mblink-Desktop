@@ -1,77 +1,59 @@
 # ESM Loader - ES 模块加载器（支持嵌入 payload 模式，可作为 app_bundler 基座）
 
 # ============================================================
-# 生成嵌入的 JS 文件（从 app_loader 剥离，自包含）
+# 生成嵌入的 JS 文件（自动发现 js/ 下所有 .js）
 # ============================================================
 set(GENERATED_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated")
 file(MAKE_DIRECTORY ${GENERATED_DIR})
 
-# JS 源文件路径
 set(JS_DIR "${CMAKE_SOURCE_DIR}/js")
-set(PREACT_JS "${JS_DIR}/preact/preact.js")
-set(HOOKS_JS "${JS_DIR}/preact/hooks.js")
-set(DOM_POLYFILLS_JS "${JS_DIR}/polyfills/dom.js")
-set(BOOTSTRAP_JS "${JS_DIR}/runtime/bootstrap.js")
+file(GLOB_RECURSE EMBEDDED_JS_FILES CONFIGURE_DEPENDS
+    RELATIVE "${JS_DIR}"
+    "${JS_DIR}/*.js"
+)
 
-# 生成的 .inc 文件路径
-set(PREACT_JS_INC "${GENERATED_DIR}/preact_js.inc")
-set(HOOKS_JS_INC "${GENERATED_DIR}/hooks_js.inc")
-set(DOM_POLYFILLS_JS_INC "${GENERATED_DIR}/dom_polyfills_js.inc")
-set(BOOTSTRAP_JS_INC "${GENERATED_DIR}/bootstrap_js.inc")
-
-# CMake 脚本路径
 set(GENERATE_SCRIPT "${CMAKE_CURRENT_SOURCE_DIR}/generate_embedded_js.cmake")
+set(GENERATE_REGISTRY_SCRIPT "${CMAKE_CURRENT_SOURCE_DIR}/generate_embedded_js_registry.cmake")
+set(GENERATED_JS_INCS "")
 
-add_custom_command(
-    OUTPUT ${PREACT_JS_INC}
-    COMMAND ${CMAKE_COMMAND}
-        -DINPUT_FILE=${PREACT_JS}
-        -DOUTPUT_FILE=${PREACT_JS_INC}
-        -DVAR_NAME=preact_js
-        -P ${GENERATE_SCRIPT}
-    DEPENDS ${PREACT_JS} ${GENERATE_SCRIPT}
-    COMMENT "Embedding preact.js"
-)
+foreach(JS_REL_PATH IN LISTS EMBEDDED_JS_FILES)
+    string(REGEX REPLACE "[^A-Za-z0-9_]" "_" JS_VAR_NAME "${JS_REL_PATH}")
+    set(JS_INPUT_FILE "${JS_DIR}/${JS_REL_PATH}")
+    set(JS_OUTPUT_FILE "${GENERATED_DIR}/${JS_VAR_NAME}.inc")
 
-add_custom_command(
-    OUTPUT ${HOOKS_JS_INC}
-    COMMAND ${CMAKE_COMMAND}
-        -DINPUT_FILE=${HOOKS_JS}
-        -DOUTPUT_FILE=${HOOKS_JS_INC}
-        -DVAR_NAME=hooks_js
-        -P ${GENERATE_SCRIPT}
-    DEPENDS ${HOOKS_JS} ${GENERATE_SCRIPT}
-    COMMENT "Embedding hooks.js"
-)
+    add_custom_command(
+        OUTPUT ${JS_OUTPUT_FILE}
+        COMMAND ${CMAKE_COMMAND}
+            -DINPUT_FILE=${JS_INPUT_FILE}
+            -DOUTPUT_FILE=${JS_OUTPUT_FILE}
+            -DVAR_NAME=${JS_VAR_NAME}
+            -P ${GENERATE_SCRIPT}
+        DEPENDS ${JS_INPUT_FILE} ${GENERATE_SCRIPT}
+        COMMENT "Embedding ${JS_REL_PATH}"
+    )
 
-add_custom_command(
-    OUTPUT ${DOM_POLYFILLS_JS_INC}
-    COMMAND ${CMAKE_COMMAND}
-        -DINPUT_FILE=${DOM_POLYFILLS_JS}
-        -DOUTPUT_FILE=${DOM_POLYFILLS_JS_INC}
-        -DVAR_NAME=dom_polyfills_js
-        -P ${GENERATE_SCRIPT}
-    DEPENDS ${DOM_POLYFILLS_JS} ${GENERATE_SCRIPT}
-    COMMENT "Embedding dom.js polyfills"
-)
+    list(APPEND GENERATED_JS_INCS ${JS_OUTPUT_FILE})
+endforeach()
 
+set(EMBEDDED_JS_LIST_FILE "${GENERATED_DIR}/embedded_js_files.txt")
+string(REPLACE ";" "\n" EMBEDDED_JS_FILES_CONTENT "${EMBEDDED_JS_FILES}")
+file(WRITE "${EMBEDDED_JS_LIST_FILE}" "${EMBEDDED_JS_FILES_CONTENT}\n")
+
+set(EMBEDDED_JS_REGISTRY_INC "${GENERATED_DIR}/embedded_js_registry.inc")
 add_custom_command(
-    OUTPUT ${BOOTSTRAP_JS_INC}
+    OUTPUT ${EMBEDDED_JS_REGISTRY_INC}
     COMMAND ${CMAKE_COMMAND}
-        -DINPUT_FILE=${BOOTSTRAP_JS}
-        -DOUTPUT_FILE=${BOOTSTRAP_JS_INC}
-        -DVAR_NAME=bootstrap_js
-        -P ${GENERATE_SCRIPT}
-    DEPENDS ${BOOTSTRAP_JS} ${GENERATE_SCRIPT}
-    COMMENT "Embedding runtime/bootstrap.js"
+        -DOUTPUT_FILE=${EMBEDDED_JS_REGISTRY_INC}
+        -DINPUT_LIST_FILE=${EMBEDDED_JS_LIST_FILE}
+        -P ${GENERATE_REGISTRY_SCRIPT}
+    DEPENDS ${EMBEDDED_JS_LIST_FILE} ${GENERATED_JS_INCS} ${GENERATE_REGISTRY_SCRIPT}
+    COMMENT "Generating embedded JS registry"
 )
 
 add_custom_target(generate_embedded_js
     DEPENDS
-        ${PREACT_JS_INC}
-        ${HOOKS_JS_INC}
-        ${DOM_POLYFILLS_JS_INC}
-        ${BOOTSTRAP_JS_INC}
+        ${GENERATED_JS_INCS}
+        ${EMBEDDED_JS_REGISTRY_INC}
 )
 
 # ============================================================

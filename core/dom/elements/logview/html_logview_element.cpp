@@ -119,13 +119,18 @@ void HTMLLogViewElement::ScrollTo(int line) {
 }
 
 void HTMLLogViewElement::ScrollToBottom() {
-    int total = renderer_->GetDisplayLineCount();
-    int visible = renderer_->visible_lines();
-    if (total > visible) {
-        renderer_->ScrollTo(total - visible);
-    } else {
-        renderer_->ScrollTo(0);
+    UpdateFilteredIndices();
+
+    if (!renderer_) {
+        return;
     }
+
+    if (view_height_ > 0) {
+        renderer_->UpdateMetrics(view_height_);
+    }
+
+    renderer_->SetTotalLines(renderer_->GetDisplayLineCount());
+    renderer_->ScrollTo(renderer_->max_scroll_offset());
 }
 
 void HTMLLogViewElement::ScrollToTop() {
@@ -489,12 +494,19 @@ void HTMLLogViewElement::UpdateFilteredIndices() {
     filter_dirty_ = false;
 }
 
-bool HTMLLogViewElement::IsAtBottom() const {
-    int total = renderer_->GetDisplayLineCount();
-    int visible = renderer_->visible_lines();
-    int offset = renderer_->scroll_offset();
+bool HTMLLogViewElement::IsAtBottom() {
+    UpdateFilteredIndices();
 
-    return (total <= visible) || (offset >= total - visible - 1);
+    if (!renderer_) {
+        return true;
+    }
+
+    if (view_height_ > 0) {
+        renderer_->UpdateMetrics(view_height_);
+    }
+
+    renderer_->SetTotalLines(renderer_->GetDisplayLineCount());
+    return renderer_->scroll_offset() >= renderer_->max_scroll_offset();
 }
 
 std::pair<int, int> HTMLLogViewElement::ScreenToLineCol(float x, float y) const {

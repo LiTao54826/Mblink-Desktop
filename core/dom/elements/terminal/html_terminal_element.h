@@ -245,6 +245,16 @@ private:
     void UpdateSelectionHighlight();
 
     /**
+     * @brief 滚动到底部
+     */
+    void ScrollToBottom();
+
+    /**
+     * @brief 检查是否在底部
+     */
+    bool IsAtBottom();
+
+    /**
      * @brief 将屏幕坐标转换为行列
      */
     void ScreenToCell(float x, float y, int& row, int& col) const;

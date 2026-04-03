@@ -18,12 +18,15 @@
 namespace mbink {
 namespace bindings {
 
-/**
- * @brief 初始化 Element 类的 JavaScript 绑定
- * @param ctx QuickJS 上下文
- */
 void InitElementBinding(JSContext* ctx);
 void DumpElementListenerStats();
+
+/**
+ * @brief 强制清理 Element wrapper 上的 on* 事件属性与监听器
+ * @param ctx QuickJS 上下文
+ * @param element_obj Element 对应的 JS 对象
+ */
+void ClearElementEventProperties(JSContext* ctx, JSValueConst element_obj);
 
 /**
  * @brief 将 C++ Element 包装为 JSValue

@@ -2,79 +2,68 @@
 
 set(API_SOURCES
     mbink.cpp
+    resource_package.cpp
     ${CMAKE_SOURCE_DIR}/tools/esm_loader/embedded_js.cpp
+    ${CMAKE_SOURCE_DIR}/tools/app_bundler/bytecode_compiler.cpp
+    ${CMAKE_SOURCE_DIR}/tools/app_bundler/module_resolver.cpp
 )
 
 set(API_HEADERS
     mbink.h
+    resource_package.h
 )
 
 set(MBINK_API_GENERATED_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated")
 file(MAKE_DIRECTORY ${MBINK_API_GENERATED_DIR})
 
 set(MBINK_API_JS_DIR "${CMAKE_SOURCE_DIR}/js")
-set(MBINK_API_PREACT_JS "${MBINK_API_JS_DIR}/preact/preact.js")
-set(MBINK_API_HOOKS_JS "${MBINK_API_JS_DIR}/preact/hooks.js")
-set(MBINK_API_DOM_POLYFILLS_JS "${MBINK_API_JS_DIR}/polyfills/dom.js")
-set(MBINK_API_BOOTSTRAP_JS "${MBINK_API_JS_DIR}/runtime/bootstrap.js")
-
-set(MBINK_API_PREACT_JS_INC "${MBINK_API_GENERATED_DIR}/preact_js.inc")
-set(MBINK_API_HOOKS_JS_INC "${MBINK_API_GENERATED_DIR}/hooks_js.inc")
-set(MBINK_API_DOM_POLYFILLS_JS_INC "${MBINK_API_GENERATED_DIR}/dom_polyfills_js.inc")
-set(MBINK_API_BOOTSTRAP_JS_INC "${MBINK_API_GENERATED_DIR}/bootstrap_js.inc")
+file(GLOB_RECURSE MBINK_API_JS_FILES CONFIGURE_DEPENDS
+    RELATIVE "${MBINK_API_JS_DIR}"
+    "${MBINK_API_JS_DIR}/*.js"
+)
 
 set(MBINK_API_GENERATE_SCRIPT "${CMAKE_SOURCE_DIR}/tools/esm_loader/generate_embedded_js.cmake")
+set(MBINK_API_GENERATE_REGISTRY_SCRIPT "${CMAKE_SOURCE_DIR}/tools/esm_loader/generate_embedded_js_registry.cmake")
+set(MBINK_API_GENERATED_JS_INCS "")
 
-add_custom_command(
-    OUTPUT ${MBINK_API_PREACT_JS_INC}
-    COMMAND ${CMAKE_COMMAND}
-        -DINPUT_FILE=${MBINK_API_PREACT_JS}
-        -DOUTPUT_FILE=${MBINK_API_PREACT_JS_INC}
-        -DVAR_NAME=preact_js
-        -P ${MBINK_API_GENERATE_SCRIPT}
-    DEPENDS ${MBINK_API_PREACT_JS} ${MBINK_API_GENERATE_SCRIPT}
-    COMMENT "Embedding preact.js for mbink_api"
-)
+foreach(JS_REL_PATH IN LISTS MBINK_API_JS_FILES)
+    string(REGEX REPLACE "[^A-Za-z0-9_]" "_" JS_VAR_NAME "${JS_REL_PATH}")
+    set(JS_INPUT_FILE "${MBINK_API_JS_DIR}/${JS_REL_PATH}")
+    set(JS_OUTPUT_FILE "${MBINK_API_GENERATED_DIR}/${JS_VAR_NAME}.inc")
 
-add_custom_command(
-    OUTPUT ${MBINK_API_HOOKS_JS_INC}
-    COMMAND ${CMAKE_COMMAND}
-        -DINPUT_FILE=${MBINK_API_HOOKS_JS}
-        -DOUTPUT_FILE=${MBINK_API_HOOKS_JS_INC}
-        -DVAR_NAME=hooks_js
-        -P ${MBINK_API_GENERATE_SCRIPT}
-    DEPENDS ${MBINK_API_HOOKS_JS} ${MBINK_API_GENERATE_SCRIPT}
-    COMMENT "Embedding hooks.js for mbink_api"
-)
+    add_custom_command(
+        OUTPUT ${JS_OUTPUT_FILE}
+        COMMAND ${CMAKE_COMMAND}
+            -DINPUT_FILE=${JS_INPUT_FILE}
+            -DOUTPUT_FILE=${JS_OUTPUT_FILE}
+            -DVAR_NAME=${JS_VAR_NAME}
+            -P ${MBINK_API_GENERATE_SCRIPT}
+        DEPENDS ${JS_INPUT_FILE} ${MBINK_API_GENERATE_SCRIPT}
+        COMMENT "Embedding ${JS_REL_PATH} for mbink_api"
+    )
 
-add_custom_command(
-    OUTPUT ${MBINK_API_DOM_POLYFILLS_JS_INC}
-    COMMAND ${CMAKE_COMMAND}
-        -DINPUT_FILE=${MBINK_API_DOM_POLYFILLS_JS}
-        -DOUTPUT_FILE=${MBINK_API_DOM_POLYFILLS_JS_INC}
-        -DVAR_NAME=dom_polyfills_js
-        -P ${MBINK_API_GENERATE_SCRIPT}
-    DEPENDS ${MBINK_API_DOM_POLYFILLS_JS} ${MBINK_API_GENERATE_SCRIPT}
-    COMMENT "Embedding dom.js polyfills for mbink_api"
-)
+    list(APPEND MBINK_API_GENERATED_JS_INCS ${JS_OUTPUT_FILE})
+endforeach()
 
+set(MBINK_API_EMBEDDED_JS_LIST_FILE "${MBINK_API_GENERATED_DIR}/embedded_js_files.txt")
+string(REPLACE ";" "\n" MBINK_API_JS_FILES_CONTENT "${MBINK_API_JS_FILES}")
+file(WRITE "${MBINK_API_EMBEDDED_JS_LIST_FILE}" "${MBINK_API_JS_FILES_CONTENT}\n")
+
+set(MBINK_API_EMBEDDED_JS_REGISTRY_INC "${MBINK_API_GENERATED_DIR}/embedded_js_registry.inc")
 add_custom_command(
-    OUTPUT ${MBINK_API_BOOTSTRAP_JS_INC}
+    OUTPUT ${MBINK_API_EMBEDDED_JS_REGISTRY_INC}
     COMMAND ${CMAKE_COMMAND}
-        -DINPUT_FILE=${MBINK_API_BOOTSTRAP_JS}
-        -DOUTPUT_FILE=${MBINK_API_BOOTSTRAP_JS_INC}
-        -DVAR_NAME=bootstrap_js
-        -P ${MBINK_API_GENERATE_SCRIPT}
-    DEPENDS ${MBINK_API_BOOTSTRAP_JS} ${MBINK_API_GENERATE_SCRIPT}
-    COMMENT "Embedding runtime/bootstrap.js for mbink_api"
+        -DOUTPUT_FILE=${MBINK_API_EMBEDDED_JS_REGISTRY_INC}
+        -DINPUT_LIST_FILE=${MBINK_API_EMBEDDED_JS_LIST_FILE}
+        -P ${MBINK_API_GENERATE_REGISTRY_SCRIPT}
+    DEPENDS ${MBINK_API_EMBEDDED_JS_LIST_FILE} ${MBINK_API_GENERATED_JS_INCS} ${MBINK_API_GENERATE_REGISTRY_SCRIPT}
+    COMMENT "Generating embedded JS registry for mbink_api"
 )
 
 add_custom_target(mbink_api_generate_embedded_js
     DEPENDS
-        ${MBINK_API_PREACT_JS_INC}
-        ${MBINK_API_HOOKS_JS_INC}
-        ${MBINK_API_DOM_POLYFILLS_JS_INC}
-        ${MBINK_API_BOOTSTRAP_JS_INC}
+        ${MBINK_API_GENERATED_JS_INCS}
+        ${MBINK_API_EMBEDDED_JS_REGISTRY_INC}
 )
 
 # 构建为 SHARED 库 (DLL/SO)，供 Python ctypes / Go cgo / Rust FFI 调用

@@ -203,13 +203,5 @@ function App() {
 var _root = document.getElementById('root');
 function rerender() { render(h(App), _root); }
 
-var _pending = false;
-globalThis.__onSharedUpdate = function() {
-  if (!_pending) {
-    _pending = true;
-    setTimeout(function() { _pending = false; rerender(); }, 0);
-  }
-};
-
 rerender();
 

@@ -14,6 +14,8 @@
 #include <memory>
 #include <queue>
 #include <mutex>
+#include <vector>
+#include <functional>
 
 namespace mbink {
 
@@ -40,6 +42,8 @@ class FetchBindings {
     friend JSValue js_fetch_check_response(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv);
 
 public:
+    using AssetProvider = std::function<bool(const std::string&, std::vector<uint8_t>&)>;
+
     /**
      * @brief 构造函数
      * @param ctx QuickJS 上下文
@@ -67,6 +71,11 @@ public:
      * @brief 检查是否有待处理的响应
      */
     bool HasPendingResponses() const;
+
+    static void SetAssetProvider(AssetProvider provider);
+    static AssetProvider GetAssetProvider();
+    static void SetBasePath(const std::string& path);
+    static const std::string& GetBasePath();
 
     // 静态实例指针（供静态回调使用）
     static FetchBindings* instance_;
@@ -120,6 +129,9 @@ private:
     // 待处理的响应队列（线程安全）
     mutable std::mutex pending_mutex_;
     std::queue<PendingFetchResponse> pending_responses_;
+
+    static AssetProvider asset_provider_;
+    static std::string base_path_;
 };
 
 } // namespace mbink

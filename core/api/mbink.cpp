@@ -8,17 +8,23 @@
  */
 
 #include "mbink.h"
+#include "resource_package.h"
 #include "core/bridge/state_manager.h"
 #include "core/bridge/host_bridge.h"
+#include "core/bridge/main_thread_queue.h"
 #include "core/window/window.h"
 #include "core/window/window_manager.h"
 #include "core/dom/document.h"
 #include "core/dom/bindings/dom_bindings.h"
+#include "core/dom/elements/logview/html_logview_element.h"
+#include "core/dom/elements/terminal/html_terminal_element.h"
 #include "core/quickjs/quickjs_runtime.h"
 #include "core/quickjs/window_bindings.h"
 #include "core/event/loop/event_loop.h"
 #include "core/event/loop/task_scheduler.h"
 #include "core/network/fetch_bindings.h"
+#include "core/render/image/image_loader.h"
+#include "core/lexbor/lexbor_stylesheet.h"
 #include "core/quickjs/dom_binding_map.h"
 #include "tools/esm_loader/embedded_js.h"
 #include "core/utils/encoding_utils.h"
@@ -30,10 +36,13 @@
 #include <windows.h>
 #endif
 
+#include <algorithm>
 #include <string>
 #include <memory>
 #include <mutex>
+#include <shared_mutex>
 #include <unordered_map>
+#include <vector>
 #include <fstream>
 #include <sstream>
 #include <iostream>
@@ -44,7 +53,18 @@ namespace {
 
 namespace fs = std::filesystem;
 
-// ========== 全局状态 ==========
+#define SAFE_CLEANUP(label, ...) \
+    do { \
+        try { \
+            __VA_ARGS__; \
+        } catch (const std::exception& e) { \
+            (void)(label); \
+            (void)e; \
+        } catch (...) { \
+            (void)(label); \
+        } \
+    } while (0)
+
 
 bool g_initialized = false;
 std::string g_lastError;
@@ -52,34 +72,80 @@ std::mutex g_errorMutex;
 
 // ========== WindowContext ==========
 
+struct WindowContext;
+
 // ========== SharedObject 结构体 ==========
 // Python/JS 共享的 C 对象，内含 QuickJS JSValue
 struct SharedObjectData {
     JSContext* ctx = nullptr;
-    JSValue js_obj = JS_UNDEFINED;     // 实际的 JS 对象（globalThis.<name>）
+    JSValue js_obj = JS_UNDEFINED;       // 实际的 JS 对象（globalThis.<name>）
     JSValue updater_func = JS_UNDEFINED; // __onSharedUpdate 函数缓存
-    std::string name;                   // globalThis 上的名字
-    bool batch_mode = false;            // 批量模式（抑制中间通知）
-    int pending_updates = 0;            // 批量模式中的待处理更新数
-    bool pending_notify_ = false;       // 是否有待处理的非批量通知（延迟刷新用）
+    std::string name;                    // globalThis 上的名字
+    int batch_depth = 0;                 // 批量层级（支持嵌套）
+    int pending_updates = 0;             // 批量模式中的待处理更新数
+    bool pending_notify_ = false;        // 是否有待处理的非批量通知（延迟刷新用）
+
+    // ===== 线程安全数据存储 =====
+    mutable std::shared_mutex dataMutex_;
+    nlohmann::json data_ = nlohmann::json::object();
+    mbink::MainThreadQueue* mainQueue_ = nullptr;
+    std::shared_ptr<std::atomic<bool>> alive_ = std::make_shared<std::atomic<bool>>(true);
+    WindowContext* owner_ = nullptr;
+
+    void refreshUpdater() {
+        if (!ctx) return;
+        JSValue global = JS_GetGlobalObject(ctx);
+        JSValue updater = JS_GetPropertyStr(ctx, global, "__onSharedUpdate");
+        JS_FreeValue(ctx, global);
+
+        if (!JS_IsUndefined(updater_func)) {
+            JS_FreeValue(ctx, updater_func);
+        }
+
+        if (JS_IsFunction(ctx, updater)) {
+            updater_func = updater;
+        } else {
+            JS_FreeValue(ctx, updater);
+            updater_func = JS_UNDEFINED;
+        }
+    }
+
+    void lazyRefreshUpdater() {
+        if (JS_IsUndefined(updater_func)) {
+            refreshUpdater();
+        }
+    }
+
+    void beginBatch() {
+        batch_depth++;
+        if (batch_depth == 1) {
+            pending_updates = 0;
+        }
+    }
+
+    void endBatch() {
+        if (batch_depth <= 0) return;
+        batch_depth--;
+        if (batch_depth == 0) {
+            flushBatch();
+        }
+    }
 
     // notifyUpdate：记录待通知，不立即调用 JS。
     // 真正的通知由 flushPendingNotify() 在事件循环帧中统一触发，
     // 避免在 Python 回调的 C 调用链中嵌套执行 QuickJS JS 代码（QuickJS 重入）。
     void notifyUpdate(const char* /*key*/) {
-        if (batch_mode) {
+        if (batch_depth > 0) {
             pending_updates++;
             return;
         }
-        // 只设置标志，不立即调用 JS_Call
         pending_notify_ = true;
     }
 
-    // flushPendingNotify：由事件循环在安全时机调用，真正触发 JS 通知。
-    // 此时 JS 调用栈已清空，调用 JS_Call 是安全的。
     void flushPendingNotify() {
         if (!pending_notify_) return;
         pending_notify_ = false;
+        refreshUpdater();
         if (!JS_IsUndefined(updater_func) && !JS_IsNull(updater_func)) {
             JSValue arg = JS_NewString(ctx, "*");
             JSValue ret = JS_Call(ctx, updater_func, JS_UNDEFINED, 1, &arg);
@@ -95,9 +161,110 @@ struct SharedObjectData {
     void flushBatch() {
         if (pending_updates > 0) {
             pending_updates = 0;
-            // 批量结束时同样延迟通知，保持一致性
             pending_notify_ = true;
         }
+    }
+
+    void applyPropertyToJS(const char* key, const nlohmann::json& value) {
+        if (value.is_null()) {
+            JS_SetPropertyStr(ctx, js_obj, key, JS_NULL);
+        } else if (value.is_boolean()) {
+            JS_SetPropertyStr(ctx, js_obj, key, JS_NewBool(ctx, value.get<bool>()));
+        } else if (value.is_number_integer()) {
+            JS_SetPropertyStr(ctx, js_obj, key, JS_NewInt64(ctx, value.get<int64_t>()));
+        } else if (value.is_number_unsigned()) {
+            JS_SetPropertyStr(ctx, js_obj, key, JS_NewInt64(ctx, static_cast<int64_t>(value.get<uint64_t>())));
+        } else if (value.is_number_float()) {
+            JS_SetPropertyStr(ctx, js_obj, key, JS_NewFloat64(ctx, value.get<double>()));
+        } else if (value.is_string()) {
+            JS_SetPropertyStr(ctx, js_obj, key, JS_NewString(ctx, value.get_ref<const std::string&>().c_str()));
+        } else {
+            const std::string jsonStr = value.dump();
+            JSValue parsed = JS_ParseJSON(ctx, jsonStr.c_str(), jsonStr.size(), "<shared_json>");
+            if (!JS_IsException(parsed)) {
+                JS_SetPropertyStr(ctx, js_obj, key, parsed);
+            } else {
+                JSValue exc = JS_GetException(ctx);
+                JS_FreeValue(ctx, exc);
+            }
+        }
+    }
+
+    void safeSetProperty(const char* key, const nlohmann::json& value) {
+        {
+            std::unique_lock<std::shared_mutex> lock(dataMutex_);
+            data_[key] = value;
+        }
+
+        if (mainQueue_ && mainQueue_->isMainThread()) {
+            applyPropertyToJS(key, value);
+            lazyRefreshUpdater();
+            notifyUpdate(key);
+        } else if (mainQueue_) {
+            std::string keyCopy(key);
+            nlohmann::json valueCopy = value;
+            auto queueAlive = mainQueue_->aliveFlag();
+            auto objAlive = alive_;
+            SharedObjectData* self = this;
+            mainQueue_->post([self, keyCopy, valueCopy, queueAlive, objAlive]() {
+                if (!queueAlive->load() || !objAlive->load()) return;
+                self->applyPropertyToJS(keyCopy.c_str(), valueCopy);
+                self->lazyRefreshUpdater();
+                self->notifyUpdate(keyCopy.c_str());
+            });
+        }
+    }
+
+    void safeDeleteProperty(const char* key) {
+        {
+            std::unique_lock<std::shared_mutex> lock(dataMutex_);
+            data_.erase(key);
+        }
+
+        if (mainQueue_ && mainQueue_->isMainThread()) {
+            JSAtom atom = JS_NewAtom(ctx, key);
+            JS_DeleteProperty(ctx, js_obj, atom, 0);
+            JS_FreeAtom(ctx, atom);
+            notifyUpdate(key);
+        } else if (mainQueue_) {
+            std::string keyCopy(key);
+            auto queueAlive = mainQueue_->aliveFlag();
+            auto objAlive = alive_;
+            SharedObjectData* self = this;
+            mainQueue_->post([self, keyCopy, queueAlive, objAlive]() {
+                if (!queueAlive->load() || !objAlive->load()) return;
+                JSAtom atom = JS_NewAtom(self->ctx, keyCopy.c_str());
+                JS_DeleteProperty(self->ctx, self->js_obj, atom, 0);
+                JS_FreeAtom(self->ctx, atom);
+                self->notifyUpdate(keyCopy.c_str());
+            });
+        }
+    }
+
+    nlohmann::json safeGetProperty(const char* key) const {
+        std::shared_lock<std::shared_mutex> lock(dataMutex_);
+        auto it = data_.find(key);
+        if (it == data_.end()) {
+            return nullptr;
+        }
+        return *it;
+    }
+
+    bool safeHasProperty(const char* key) const {
+        std::shared_lock<std::shared_mutex> lock(dataMutex_);
+        return data_.contains(key);
+    }
+
+    int safeGetType(const char* key) const {
+        auto val = safeGetProperty(key);
+        if (val.is_null() || val.is_discarded()) return MBINK_TYPE_NULL;
+        if (val.is_boolean()) return MBINK_TYPE_BOOL;
+        if (val.is_number_integer() || val.is_number_unsigned()) return MBINK_TYPE_INT;
+        if (val.is_number_float()) return MBINK_TYPE_DOUBLE;
+        if (val.is_string()) return MBINK_TYPE_STRING;
+        if (val.is_array()) return MBINK_TYPE_ARRAY;
+        if (val.is_object()) return MBINK_TYPE_OBJECT;
+        return MBINK_TYPE_NULL;
     }
 };
 
@@ -112,6 +279,10 @@ struct WindowContext {
     std::unique_ptr<mbink::HostBridge> hostBridge;
     std::unique_ptr<mbink::FetchBindings> fetchBindings;
     std::unique_ptr<mbink::StateManager> stateManager;
+    mbink::MainThreadQueue mainThreadQueue;
+    std::string mountedResourcePackage;
+    std::string mountedResourceKey;
+    std::string mountedResourceMountPoint = "/";
 
     // 共享对象存储
     std::unordered_map<std::string, SharedObjectData*> sharedObjects;
@@ -119,6 +290,7 @@ struct WindowContext {
     // 回调存储
     std::unordered_map<int, std::pair<MBinkStateCallback, void*>> watchCallbacks;
     std::unordered_map<std::string, std::pair<MBinkCallback, void*>> boundFunctions;
+    std::unordered_map<std::string, std::pair<MBinkAsyncCallback, void*>> boundAsyncFunctions;
 
     // 事件回调
     MBinkResizeCallback onResizeCallback = nullptr;
@@ -135,12 +307,80 @@ struct WindowContext {
     bool running = false;
 };
 
+struct LogViewHandleData {
+    std::shared_ptr<mbink::HTMLLogViewElement> element;
+    mbink::MainThreadQueue* mainQueue = nullptr;
+};
+
+struct TerminalHandleData {
+    std::shared_ptr<mbink::HTMLTerminalElement> element;
+    mbink::MainThreadQueue* mainQueue = nullptr;
+};
+
 // ========== 辅助函数 ==========
 
 void setLastError(const std::string& error) {
     std::lock_guard<std::mutex> lock(g_errorMutex);
     g_lastError = error;
 }
+
+template <typename T>
+std::shared_ptr<T> getElementByIdAs(WindowContext* ctx, const char* element_id) {
+    if (!ctx || !ctx->document || !element_id || !*element_id) {
+        return nullptr;
+    }
+    auto element = ctx->document->GetElementById(element_id);
+    if (!element) {
+        return nullptr;
+    }
+    return std::dynamic_pointer_cast<T>(element);
+}
+
+std::vector<std::string> collectSharedObjectNames(WindowContext* ctx) {
+    std::vector<std::string> names;
+    if (!ctx) return names;
+    names.reserve(ctx->sharedObjects.size());
+    for (const auto& kv : ctx->sharedObjects) {
+        names.push_back(kv.first);
+    }
+    return names;
+}
+
+template <typename Fn>
+void forEachSharedObjectSnapshot(WindowContext* ctx, Fn&& fn) {
+    for (const auto& name : collectSharedObjectNames(ctx)) {
+        auto it = ctx->sharedObjects.find(name);
+        if (it != ctx->sharedObjects.end() && it->second) {
+            fn(it->second);
+        }
+    }
+}
+
+void destroySharedObjectInternal(SharedObjectData* shared, bool removeFromOwner) {
+    if (!shared) return;
+
+    *(shared->alive_) = false;
+
+    if (removeFromOwner && shared->owner_) {
+        shared->owner_->sharedObjects.erase(shared->name);
+    }
+
+    if (shared->ctx) {
+        JSValue global = JS_GetGlobalObject(shared->ctx);
+        JSAtom atom = JS_NewAtom(shared->ctx, shared->name.c_str());
+        JS_DeleteProperty(shared->ctx, global, atom, 0);
+        JS_FreeAtom(shared->ctx, atom);
+        JS_FreeValue(shared->ctx, global);
+
+        JS_FreeValue(shared->ctx, shared->js_obj);
+        if (!JS_IsUndefined(shared->updater_func)) {
+            JS_FreeValue(shared->ctx, shared->updater_func);
+        }
+    }
+
+    delete shared;
+}
+
 
 void reportNativeError(const std::string& error) {
     setLastError(error);
@@ -153,6 +393,61 @@ void reportNativeError(const std::string& error) {
     if (log.is_open()) {
         log << error << std::endl;
     }
+}
+
+#ifdef _WIN32
+char* invokeCallbackWithSEH(MBinkCallback cb, const char* args, void* user_data, unsigned int* sehCode);
+#endif
+
+std::string invokeBoundJsonCallback(WindowContext* ctx,
+                                    const std::string& funcName,
+                                    const std::string& args,
+                                    MBinkCallback cb,
+                                    void* ud) {
+    auto finishSharedBatch = [ctx]() {
+        forEachSharedObjectSnapshot(ctx, [](SharedObjectData* shared) {
+            shared->endBatch();
+        });
+    };
+
+    forEachSharedObjectSnapshot(ctx, [](SharedObjectData* shared) {
+        shared->beginBatch();
+    });
+
+    char* result = nullptr;
+
+#ifdef _WIN32
+    unsigned int sehCode = 0;
+    result = invokeCallbackWithSEH(cb, args.c_str(), ud, &sehCode);
+    finishSharedBatch();
+    if (!result && sehCode != 0) {
+        reportNativeError("SEH exception in bound callback '" + funcName +
+                          "', code=0x" + std::to_string(sehCode));
+        return R"({"error":"Native SEH exception in callback"})";
+    }
+#else
+    try {
+        result = cb(args.c_str(), ud);
+    } catch (const std::exception& e) {
+        finishSharedBatch();
+        reportNativeError("C++ exception in bound callback '" + funcName +
+                          "': " + e.what());
+        return std::string("{\"error\":\"Native callback exception: ") + e.what() + "\"}";
+    } catch (...) {
+        finishSharedBatch();
+        reportNativeError("Unknown C++ exception in bound callback '" + funcName + "'");
+        return R"({"error":"Native callback unknown exception"})";
+    }
+    finishSharedBatch();
+#endif
+
+    if (!result) {
+        return "null";
+    }
+
+    std::string ret(result);
+    mbink_free(result);
+    return ret;
 }
 
 bool loadEmbeddedRuntimeScripts(mbink::QuickJSRuntime* runtime) {
@@ -194,6 +489,66 @@ std::string NormalizeFsPath(const fs::path& path) {
     std::string result = FsPathToUtf8String(path.lexically_normal());
     std::replace(result.begin(), result.end(), '\\', '/');
     return result;
+}
+
+std::string NormalizeResourcePath(std::string path) {
+    std::replace(path.begin(), path.end(), '\\', '/');
+    if (path.empty()) return "/";
+    const bool is_relative =
+        path.rfind("./", 0) == 0 ||
+        path.rfind("../", 0) == 0 ||
+        (!path.empty() && path.front() != '/');
+
+    fs::path normalized_fs = Utf8PathToFsPath(path).lexically_normal();
+    path = FsPathToUtf8String(normalized_fs);
+    std::replace(path.begin(), path.end(), '\\', '/');
+
+    if (path == ".") {
+        path = "/";
+    } else if (is_relative && (path.empty() || path.front() != '/')) {
+        path.insert(path.begin(), '/');
+    }
+    if (path.front() != '/') path.insert(path.begin(), '/');
+    while (path.size() > 1 && path.back() == '/') path.pop_back();
+    return path;
+}
+
+std::string JoinMountedResourcePath(const std::string& mountPoint, const std::string& requestPath) {
+    std::string normalizedMount = NormalizeResourcePath(mountPoint.empty() ? "/" : mountPoint);
+    std::string normalizedRequest = NormalizeResourcePath(requestPath);
+    if (normalizedMount != "/") {
+        if (normalizedRequest == normalizedMount) return "";
+        if (normalizedRequest.rfind(normalizedMount + "/", 0) != 0) return "";
+        normalizedRequest.erase(0, normalizedMount.size());
+    }
+    while (!normalizedRequest.empty() && normalizedRequest.front() == '/') {
+        normalizedRequest.erase(normalizedRequest.begin());
+    }
+    return normalizedRequest;
+}
+
+bool LoadMountedResourceAsset(const WindowContext* ctx,
+                              const std::string& requestPath,
+                              std::vector<uint8_t>& out) {
+    if (!ctx || ctx->mountedResourcePackage.empty()) {
+        return false;
+    }
+
+    const std::string resourcePath = JoinMountedResourcePath(
+        ctx->mountedResourceMountPoint.empty() ? "/" : ctx->mountedResourceMountPoint,
+        requestPath);
+    if (resourcePath.empty()) {
+        return false;
+    }
+
+    std::string error;
+    return mbink::resourcepkg::LoadResourceFile(
+        ctx->mountedResourcePackage.c_str(),
+        resourcePath.c_str(),
+        ctx->mountedResourceKey.c_str(),
+        out,
+        nullptr,
+        error);
 }
 
 void registerPreactModules(mbink::QuickJSRuntime* runtime) {
@@ -366,6 +721,29 @@ WindowContext* createWindowContext(const mbink::WindowConfig& wc) {
 
     // 6. 设置 JS Runtime 到 Document
     ctx->document->SetJSRuntime(ctx->runtime.get());
+    ctx->document->SetBasePath("");
+    mbink::FetchBindings::SetBasePath("");
+    mbink::ImageLoader::SetBasePath("");
+
+    auto mountedAssetProvider = [ctx](const std::string& path, std::vector<uint8_t>& out) {
+        return LoadMountedResourceAsset(ctx, path, out);
+    };
+    ctx->runtime->SetFileLoader([ctx](const std::string& path, std::string& out, std::string* error) {
+        std::vector<uint8_t> data;
+        if (!LoadMountedResourceAsset(ctx, path, data)) {
+            if (error) *error = ctx->mountedResourcePackage.empty()
+                                   ? "resource package not mounted"
+                                   : "resource path outside mount point or not found";
+            return false;
+        }
+
+        out.assign(reinterpret_cast<const char*>(data.data()), data.size());
+        return true;
+    });
+    mbink::Document::SetAssetProvider(mountedAssetProvider);
+    mbink::FetchBindings::SetAssetProvider(mountedAssetProvider);
+    mbink::ImageLoader::SetAssetProvider(mountedAssetProvider);
+    mbink::LexborStyleSheet::SetAssetProvider(mountedAssetProvider);
 
     // 7. 初始化 DOM 绑定
     auto jsCtx = ctx->runtime->GetContext();
@@ -484,85 +862,111 @@ void mbink_destroy(MBinkHandle handle) {
     if (!handle) return;
     auto ctx = getContext(handle);
 
+    // 0. 先隐藏窗口，避免后续重清理阶段造成用户可见卡顿
+    SAFE_CLEANUP("hide_window", if (ctx->window) { ctx->window->Hide(); });
+
     // 1. 停止事件循环
-    if (ctx->eventLoop && ctx->running) {
+    SAFE_CLEANUP("stop_event_loop", if (ctx->eventLoop && ctx->running) {
         ctx->eventLoop->Stop();
         ctx->running = false;
-    }
+    });
 
-    // 2. JS 清理：unmount Preact + 清空全局引用（必须在 DOMBindings::Cleanup 之前）
-    if (ctx->runtime) {
+    // 2. 先解绑 backend/py 上已注册的宿主函数，避免函数对象在关闭时仍被全局对象持有
+    SAFE_CLEANUP("unbind_host_functions", if (ctx->hostBridge) {
+        std::vector<std::string> boundNames;
+        boundNames.reserve(ctx->boundFunctions.size() + ctx->boundAsyncFunctions.size());
+        for (const auto& [name, _] : ctx->boundFunctions) {
+            boundNames.push_back(name);
+        }
+        for (const auto& [name, _] : ctx->boundAsyncFunctions) {
+            if (std::find(boundNames.begin(), boundNames.end(), name) == boundNames.end()) {
+                boundNames.push_back(name);
+            }
+        }
+        for (const auto& name : boundNames) {
+            ctx->hostBridge->unbind(name);
+        }
+    });
+    ctx->boundFunctions.clear();
+    ctx->boundAsyncFunctions.clear();
+
+    // 3. JS framework cleanup：必须在 scheduler 仍存活时执行
+    SAFE_CLEANUP("cancel_pending_promises", if (ctx->hostBridge) {
+        ctx->hostBridge->cancelPendingPromises("Window destroyed");
+    });
+    SAFE_CLEANUP("pre_shutdown_microtasks", if (ctx->runtime) {
+        ctx->runtime->ProcessMicrotasks();
+    });
+    SAFE_CLEANUP("js_shutdown", if (ctx->runtime) {
         auto jsCtx = ctx->runtime->GetContext();
-        const char* cleanupScript =
-            "(function(){"
-            "  if(typeof __preactCleanup==='function'){try{__preactCleanup();}catch(e){}}"
-            "  if(typeof __preactHooksCleanup==='function'){try{__preactHooksCleanup();}catch(e){}}"
-            "  var keys=['Preact','PreactHooks','preact','preactHooks',"
-            "            '__preactCleanup','__preactHooksCleanup',"
-            "            '__onSharedUpdate','data','py'];"
-            "  for(var i=0;i<keys.length;i++){"
-            "    try{globalThis[keys[i]]=undefined;}catch(e){}"
-            "  }"
-            "})();";
-        JSValue res = JS_Eval(jsCtx, cleanupScript, strlen(cleanupScript),
-                              "<cleanup>", JS_EVAL_TYPE_GLOBAL);
+        const char* shutdownScript =
+            "(function(){if(typeof __mbinkShutdown==='function'){__mbinkShutdown();}})();";
+        JSValue res = JS_Eval(jsCtx, shutdownScript, strlen(shutdownScript),
+                              "<shutdown>", JS_EVAL_TYPE_GLOBAL);
         if (JS_IsException(res)) {
             JSValue exc = JS_GetException(jsCtx);
             JS_FreeValue(jsCtx, exc);
         }
         JS_FreeValue(jsCtx, res);
+    });
+    SAFE_CLEANUP("post_shutdown_microtasks", if (ctx->runtime) {
+        ctx->runtime->ProcessMicrotasks();
+    });
+    SAFE_CLEANUP("flush_main_thread_queue", ctx->mainThreadQueue.flush());
+
+    // 4. 停止任务源
+    SAFE_CLEANUP("shutdown_task_scheduler", if (ctx->taskScheduler) {
+        ctx->taskScheduler->Shutdown();
+        ctx->taskScheduler->ClearAllTasks();
+    });
+    SAFE_CLEANUP("flush_main_thread_queue_after_shutdown", ctx->mainThreadQueue.flush());
+    SAFE_CLEANUP("final_microtasks", if (ctx->runtime) {
+        ctx->runtime->ProcessMicrotasks();
+    });
+
+    // 5. 释放 SharedObject
+    for (const auto& name : collectSharedObjectNames(ctx)) {
+        auto it = ctx->sharedObjects.find(name);
+        if (it != ctx->sharedObjects.end() && it->second) {
+            SAFE_CLEANUP("destroy_shared_object", destroySharedObjectInternal(it->second, true));
+        }
     }
 
-    // 3. 清理 DOM 绑定
-    if (ctx->runtime) {
+    // 6. 清理 DOM 绑定
+    SAFE_CLEANUP("dom_bindings_cleanup", if (ctx->runtime) {
         mbink::DOMBindings::Cleanup(ctx->runtime->GetContext());
-    }
-
-    // 4. 释放 document
+    });
     ctx->document.reset();
-
-    // 5. 清理 DOMBindingMap（Node* -> JSValue 映射）
     mbink::DOMBindingMap::GetInstance().Clear();
 
-    // 6. 释放 HostBridge 和 StateManager
-    if (ctx->stateManager) {
+    // 7. 释放 HostBridge 和 StateManager
+    SAFE_CLEANUP("clear_watchers", if (ctx->stateManager) {
         ctx->stateManager->clearWatchers();
-    }
+    });
     ctx->hostBridge.reset();
     ctx->stateManager.reset();
 
-    // 7. GC
-    if (ctx->runtime) {
+    // 8. GC + Runtime
+    SAFE_CLEANUP("run_gc", if (ctx->runtime) {
         ctx->runtime->RunGC();
-    }
-
-    // 8. 释放 runtime
+    });
     ctx->runtime.reset();
 
-    // 9. 释放 eventLoop（SDL_DestroyCursor 必须在 SDL_Quit 之前）
+    // 9. 释放 native 资源
     ctx->eventLoop.reset();
-
-    // 10. 释放 windowBindings/fetchBindings/taskScheduler
-    //     windowBindings 持有 shared_ptr<Window>，必须在 window 析构之前 reset
     ctx->windowBindings.reset();
     ctx->fetchBindings.reset();
     ctx->taskScheduler.reset();
 
-    // 11. 从 WindowManager 注销（不调用 window.reset()，避免 Window::~Window 卡在 SDL/Skia 清理）
-    if (ctx->window) {
+    SAFE_CLEANUP("unregister_window", if (ctx->window) {
         mbink::WindowManager::Instance().UnregisterWindow(ctx->window);
-    }
+    });
 
-    ctx->sharedObjects.clear();
     ctx->watchCallbacks.clear();
     ctx->boundFunctions.clear();
+    ctx->boundAsyncFunctions.clear();
 
-    // SDL 有后台线程无法正常退出，参考 esm_loader 使用强制退出
-#ifdef _WIN32
-    ::TerminateProcess(::GetCurrentProcess(), 0);
-#else
-    std::quick_exit(0);
-#endif
+    std::exit(0);
 }
 
 void mbink_run(MBinkHandle handle) {
@@ -573,7 +977,7 @@ void mbink_run(MBinkHandle handle) {
 
     ctx->running = true;
 
-    // 设置 update callback：处理 StateManager 队列 + HostBridge 事件 + SharedObject 延迟通知 + 用户回调
+    // 设置 update callback：处理 StateManager 队列 + HostBridge 事件 + MainThreadQueue + SharedObject 延迟通知 + 用户回调
     ctx->eventLoop->SetUpdateCallback([ctx](float dt) {
         // 处理状态变更队列
         if (ctx->stateManager) {
@@ -582,11 +986,19 @@ void mbink_run(MBinkHandle handle) {
         // 刷新 HostBridge 事件队列到 JS 端
         if (ctx->hostBridge) {
             ctx->hostBridge->flushEvents();
+            ctx->hostBridge->flushAsyncResults();
         }
+        if (ctx->runtime) {
+            ctx->runtime->ProcessMicrotasks();
+        }
+        // 刷新主线程任务队列，确保所有跨线程 JS/DOM 操作都在主线程执行
+        ctx->mainThreadQueue.flush();
         // 刷新所有 SharedObject 的延迟通知（由 notifyUpdate/flushBatch 标记的 pending_notify_）
-        // 在事件循环帧中调用，此时 JS 调用栈已清空，调用 JS_Call 是安全的
-        for (auto& kv : ctx->sharedObjects) {
-            kv.second->flushPendingNotify();
+        forEachSharedObjectSnapshot(ctx, [](SharedObjectData* shared) {
+            shared->flushPendingNotify();
+        });
+        if (ctx->runtime) {
+            ctx->runtime->ProcessMicrotasks();
         }
         // 调用用户的 update 回调
         if (ctx->onUpdateCallback) {
@@ -612,19 +1024,24 @@ bool mbink_poll_events(MBinkHandle handle) {
     auto ctx = getContext(handle);
     if (!ctx->eventLoop) return false;
 
-    // 处理状态队列
     if (ctx->stateManager) {
         ctx->stateManager->processQueue();
     }
     if (ctx->hostBridge) {
         ctx->hostBridge->flushEvents();
+        ctx->hostBridge->flushAsyncResults();
     }
-    // 刷新 SharedObject 的延迟通知
-    for (auto& kv : ctx->sharedObjects) {
-        kv.second->flushPendingNotify();
+    if (ctx->runtime) {
+        ctx->runtime->ProcessMicrotasks();
+    }
+    ctx->mainThreadQueue.flush();
+    forEachSharedObjectSnapshot(ctx, [](SharedObjectData* shared) {
+        shared->flushPendingNotify();
+    });
+    if (ctx->runtime) {
+        ctx->runtime->ProcessMicrotasks();
     }
 
-    // 单次事件循环迭代
     ctx->eventLoop->RunOnce();
     return !ctx->eventLoop->ShouldQuit();
 }
@@ -770,6 +1187,9 @@ int mbink_load_html(MBinkHandle handle, const char* html) {
     if (!html) return MBINK_ERROR_INVALID_PARAM;
     auto ctx = getContext(handle);
     if (ctx->document) {
+        ctx->document->SetBasePath("");
+        mbink::FetchBindings::SetBasePath("");
+        mbink::ImageLoader::SetBasePath("");
         if (!ctx->document->LoadHTML(html)) {
             setLastError("Failed to parse HTML");
             return MBINK_ERROR_INVALID_PARAM;
@@ -784,12 +1204,40 @@ int mbink_load_html_file(MBinkHandle handle, const char* filepath) {
     if (!handle) return MBINK_ERROR_INVALID_HANDLE;
     if (!filepath) return MBINK_ERROR_INVALID_PARAM;
     try {
-        std::string content = readFileContents(filepath);
         auto ctx = getContext(handle);
         if (ctx->document) {
-            fs::path html_dir = fs::absolute(Utf8PathToFsPath(filepath)).parent_path();
-            std::string base_path = NormalizeFsPath(html_dir);
+            std::string content;
+            std::string base_path;
+
+            const std::string resourcePath = JoinMountedResourcePath(
+                ctx->mountedResourceMountPoint.empty() ? "/" : ctx->mountedResourceMountPoint,
+                filepath);
+
+            if (!ctx->mountedResourcePackage.empty() && !resourcePath.empty()) {
+                std::vector<uint8_t> data;
+                std::string error;
+                if (mbink::resourcepkg::LoadResourceFile(
+                        ctx->mountedResourcePackage.c_str(),
+                        resourcePath.c_str(),
+                        ctx->mountedResourceKey.c_str(),
+                        data,
+                        nullptr,
+                        error)) {
+                    content.assign(reinterpret_cast<const char*>(data.data()), data.size());
+                    fs::path html_dir = fs::path(NormalizeResourcePath(filepath)).parent_path();
+                    base_path = NormalizeResourcePath(FsPathToUtf8String(html_dir));
+                }
+            }
+
+            if (content.empty()) {
+                content = readFileContents(filepath);
+                fs::path html_dir = fs::absolute(Utf8PathToFsPath(filepath)).parent_path();
+                base_path = NormalizeFsPath(html_dir);
+            }
+
             ctx->document->SetBasePath(base_path);
+            mbink::FetchBindings::SetBasePath(base_path);
+            mbink::ImageLoader::SetBasePath(base_path);
             if (!ctx->document->LoadHTML(content)) {
                 setLastError("Failed to parse HTML");
                 return MBINK_ERROR_INVALID_PARAM;
@@ -842,7 +1290,35 @@ int mbink_load_js_file(MBinkHandle handle, const char* filepath) {
     if (!ctx->runtime) return MBINK_ERROR_INVALID_HANDLE;
 
     try {
-        ctx->runtime->LoadModuleFile(filepath);
+        std::string path = filepath;
+        if (!ctx->mountedResourcePackage.empty()) {
+            const std::string resourcePath = JoinMountedResourcePath(
+                ctx->mountedResourceMountPoint.empty() ? "/" : ctx->mountedResourceMountPoint,
+                filepath);
+            if (!resourcePath.empty()) {
+                std::vector<uint8_t> data;
+                uint32_t flags = 0;
+                std::string error;
+                if (mbink::resourcepkg::LoadResourceFile(
+                        ctx->mountedResourcePackage.c_str(),
+                        resourcePath.c_str(),
+                        ctx->mountedResourceKey.c_str(),
+                        data,
+                        &flags,
+                        error)) {
+                    if ((flags & mbink::resourcepkg::kResourceFlagBytecode) != 0) {
+                        auto jsCtx = ctx->runtime->GetContext();
+                        if (!mbink::resourcepkg::EvalMaybeMergedBytecode(jsCtx, data.data(), data.size(), error)) {
+                            setLastError(error.empty() ? "Failed to eval resource bytecode" : error);
+                            return MBINK_ERROR_JS_ERROR;
+                        }
+                        return MBINK_OK;
+                    }
+                    path = NormalizeResourcePath(filepath);
+                }
+            }
+        }
+        ctx->runtime->LoadModuleFile(path);
         return MBINK_OK;
     } catch (const std::exception& e) {
         setLastError(e.what());
@@ -858,24 +1334,11 @@ int mbink_load_bytecode(MBinkHandle handle, const void* data, size_t size) {
 
     try {
         auto jsCtx = ctx->runtime->GetContext();
-        JSValue obj = JS_ReadObject(jsCtx, static_cast<const uint8_t*>(data), size, JS_READ_OBJ_BYTECODE);
-        if (JS_IsException(obj)) {
-            setLastError("Failed to read bytecode");
+        std::string error;
+        if (!mbink::resourcepkg::EvalMaybeMergedBytecode(jsCtx, data, size, error)) {
+            setLastError(error.empty() ? "Failed to eval bytecode" : error);
             return MBINK_ERROR_JS_ERROR;
         }
-        JSValue result = JS_EvalFunction(jsCtx, obj);
-        if (JS_IsException(result)) {
-            JSValue exc = JS_GetException(jsCtx);
-            const char* err = JS_ToCString(jsCtx, exc);
-            if (err) {
-                setLastError(err);
-                JS_FreeCString(jsCtx, err);
-            }
-            JS_FreeValue(jsCtx, exc);
-            JS_FreeValue(jsCtx, result);
-            return MBINK_ERROR_JS_ERROR;
-        }
-        JS_FreeValue(jsCtx, result);
         return MBINK_OK;
     } catch (const std::exception& e) {
         setLastError(e.what());
@@ -893,42 +1356,32 @@ int mbink_bind(MBinkHandle handle, const char* name,
     auto ctx = getContext(handle);
     ctx->boundFunctions[name] = {callback, user_data};
 
-    // 通过 HostBridge 注册，这样 JS 端可以通过 py.name() 调用
+    // 通过 HostBridge 注册，这样 JS 端可以通过 backend.name() 调用
     if (ctx->hostBridge) {
         MBinkCallback cb = callback;
         void* ud = user_data;
         std::string funcName = name;
-        ctx->hostBridge->bind(name, [cb, ud, funcName](const std::string& args) -> std::string {
-            char* result = nullptr;
+        ctx->hostBridge->bind(name, [ctx, cb, ud, funcName](const std::string& args) -> std::string {
+            return invokeBoundJsonCallback(ctx, funcName, args, cb, ud);
+        });
+    }
+    return MBINK_OK;
+}
 
-#ifdef _WIN32
-            unsigned int sehCode = 0;
-            result = invokeCallbackWithSEH(cb, args.c_str(), ud, &sehCode);
-            if (!result && sehCode != 0) {
-                reportNativeError("SEH exception in bound callback '" + funcName +
-                                  "', code=0x" + std::to_string(sehCode));
-                return R"({"error":"Native SEH exception in callback"})";
-            }
-#else
-            try {
-                result = cb(args.c_str(), ud);
-            } catch (const std::exception& e) {
-                reportNativeError("C++ exception in bound callback '" + funcName +
-                                  "': " + e.what());
-                return std::string("{\"error\":\"Native callback exception: ") + e.what() + "\"}";
-            } catch (...) {
-                reportNativeError("Unknown C++ exception in bound callback '" + funcName + "'");
-                return R"({"error":"Native callback unknown exception"})";
-            }
-#endif
+int mbink_bind_async(MBinkHandle handle, const char* name,
+                     MBinkAsyncCallback callback, void* user_data) {
+    if (!handle) return MBINK_ERROR_INVALID_HANDLE;
+    if (!name || !callback) return MBINK_ERROR_INVALID_PARAM;
 
-            if (!result) {
-                return "null";
-            }
+    auto ctx = getContext(handle);
+    ctx->boundAsyncFunctions[name] = {callback, user_data};
 
-            std::string ret(result);
-            mbink_free(result);
-            return ret;
+    if (ctx->hostBridge) {
+        MBinkAsyncCallback cb = callback;
+        void* ud = user_data;
+        std::string funcName = name;
+        ctx->hostBridge->bindAsync(name, [ctx, cb, ud, funcName](const std::string& args) -> std::string {
+            return invokeBoundJsonCallback(ctx, funcName, args, cb, ud);
         });
     }
     return MBINK_OK;
@@ -938,6 +1391,7 @@ void mbink_unbind(MBinkHandle handle, const char* name) {
     if (!handle || !name) return;
     auto ctx = getContext(handle);
     ctx->boundFunctions.erase(name);
+    ctx->boundAsyncFunctions.erase(name);
     if (ctx->hostBridge) {
         ctx->hostBridge->unbind(name);
     }
@@ -1510,22 +1964,20 @@ MBinkSharedHandle mbink_shared_create(MBinkHandle handle, const char* name) {
 
     auto jsCtx = ctx->runtime->GetContext();
 
-    // 创建 SharedObjectData
     auto* shared = new SharedObjectData();
     shared->ctx = jsCtx;
     shared->name = name;
     shared->js_obj = JS_NewObject(jsCtx);
+    shared->mainQueue_ = &ctx->mainThreadQueue;
+    shared->owner_ = ctx;
 
-    // 注册为 globalThis.<name>
     JSValue global = JS_GetGlobalObject(jsCtx);
     JS_DupValue(jsCtx, shared->js_obj);
     JS_SetPropertyStr(jsCtx, global, name, shared->js_obj);
 
-    // 缓存 __onSharedUpdate 函数引用
-    shared->updater_func = JS_GetPropertyStr(jsCtx, global, "__onSharedUpdate");
+    shared->refreshUpdater();
     JS_FreeValue(jsCtx, global);
 
-    // 存储到 WindowContext
     ctx->sharedObjects[name] = shared;
 
     return reinterpret_cast<MBinkSharedHandle>(shared);
@@ -1534,22 +1986,7 @@ MBinkSharedHandle mbink_shared_create(MBinkHandle handle, const char* name) {
 void mbink_shared_destroy(MBinkSharedHandle shared_handle) {
     if (!shared_handle) return;
     auto* shared = reinterpret_cast<SharedObjectData*>(shared_handle);
-
-    if (shared->ctx) {
-        // 从 globalThis 移除（必须先 FreeAtom 避免 atom leak）
-        JSValue global = JS_GetGlobalObject(shared->ctx);
-        JSAtom atom = JS_NewAtom(shared->ctx, shared->name.c_str());
-        JS_DeleteProperty(shared->ctx, global, atom, 0);
-        JS_FreeAtom(shared->ctx, atom);
-        JS_FreeValue(shared->ctx, global);
-
-        // 释放 JS 值
-        JS_FreeValue(shared->ctx, shared->js_obj);
-        if (!JS_IsUndefined(shared->updater_func)) {
-            JS_FreeValue(shared->ctx, shared->updater_func);
-        }
-    }
-    delete shared;
+    destroySharedObjectInternal(shared, true);
 }
 
 // ---- Setter 实现 ----
@@ -1558,15 +1995,7 @@ int mbink_shared_set_int(MBinkSharedHandle shared_handle,
                             const char* key, int64_t value) {
     if (!shared_handle || !key) return MBINK_ERROR_INVALID_PARAM;
     auto* shared = reinterpret_cast<SharedObjectData*>(shared_handle);
-
-    JS_SetPropertyStr(shared->ctx, shared->js_obj, key, JS_NewInt64(shared->ctx, value));
-    // 每次 set 后刷新 updater_func 缓存（用户可能在 set 之后才定义 __onSharedUpdate）
-    if (JS_IsUndefined(shared->updater_func)) {
-        JSValue global = JS_GetGlobalObject(shared->ctx);
-        shared->updater_func = JS_GetPropertyStr(shared->ctx, global, "__onSharedUpdate");
-        JS_FreeValue(shared->ctx, global);
-    }
-    shared->notifyUpdate(key);
+    shared->safeSetProperty(key, nlohmann::json(value));
     return MBINK_OK;
 }
 
@@ -1574,14 +2003,7 @@ int mbink_shared_set_double(MBinkSharedHandle shared_handle,
                                const char* key, double value) {
     if (!shared_handle || !key) return MBINK_ERROR_INVALID_PARAM;
     auto* shared = reinterpret_cast<SharedObjectData*>(shared_handle);
-
-    JS_SetPropertyStr(shared->ctx, shared->js_obj, key, JS_NewFloat64(shared->ctx, value));
-    if (JS_IsUndefined(shared->updater_func)) {
-        JSValue global = JS_GetGlobalObject(shared->ctx);
-        shared->updater_func = JS_GetPropertyStr(shared->ctx, global, "__onSharedUpdate");
-        JS_FreeValue(shared->ctx, global);
-    }
-    shared->notifyUpdate(key);
+    shared->safeSetProperty(key, nlohmann::json(value));
     return MBINK_OK;
 }
 
@@ -1589,15 +2011,11 @@ int mbink_shared_set_string(MBinkSharedHandle shared_handle,
                                const char* key, const char* value) {
     if (!shared_handle || !key) return MBINK_ERROR_INVALID_PARAM;
     auto* shared = reinterpret_cast<SharedObjectData*>(shared_handle);
-
-    JS_SetPropertyStr(shared->ctx, shared->js_obj, key,
-        value ? JS_NewString(shared->ctx, value) : JS_NULL);
-    if (JS_IsUndefined(shared->updater_func)) {
-        JSValue global = JS_GetGlobalObject(shared->ctx);
-        shared->updater_func = JS_GetPropertyStr(shared->ctx, global, "__onSharedUpdate");
-        JS_FreeValue(shared->ctx, global);
+    if (value) {
+        shared->safeSetProperty(key, nlohmann::json(std::string(value)));
+    } else {
+        shared->safeSetProperty(key, nlohmann::json(nullptr));
     }
-    shared->notifyUpdate(key);
     return MBINK_OK;
 }
 
@@ -1605,27 +2023,14 @@ int mbink_shared_set_bool(MBinkSharedHandle shared_handle,
                              const char* key, bool value) {
     if (!shared_handle || !key) return MBINK_ERROR_INVALID_PARAM;
     auto* shared = reinterpret_cast<SharedObjectData*>(shared_handle);
-
-    JS_SetPropertyStr(shared->ctx, shared->js_obj, key, JS_NewBool(shared->ctx, value));
-    if (JS_IsUndefined(shared->updater_func)) {
-        JSValue global = JS_GetGlobalObject(shared->ctx);
-        shared->updater_func = JS_GetPropertyStr(shared->ctx, global, "__onSharedUpdate");
-        JS_FreeValue(shared->ctx, global);
-    }
-    shared->notifyUpdate(key);
+    shared->safeSetProperty(key, nlohmann::json(value));
     return MBINK_OK;
 }
 
 int mbink_shared_set_null(MBinkSharedHandle shared_handle, const char* key) {
     if (!shared_handle || !key) return MBINK_ERROR_INVALID_PARAM;
     auto* shared = reinterpret_cast<SharedObjectData*>(shared_handle);
-    JS_SetPropertyStr(shared->ctx, shared->js_obj, key, JS_NULL);
-    if (JS_IsUndefined(shared->updater_func)) {
-        JSValue global = JS_GetGlobalObject(shared->ctx);
-        shared->updater_func = JS_GetPropertyStr(shared->ctx, global, "__onSharedUpdate");
-        JS_FreeValue(shared->ctx, global);
-    }
-    shared->notifyUpdate(key);
+    shared->safeSetProperty(key, nlohmann::json(nullptr));
     return MBINK_OK;
 }
 
@@ -1633,20 +2038,11 @@ int mbink_shared_set_json(MBinkSharedHandle shared_handle,
                              const char* key, const char* json_str) {
     if (!shared_handle || !key || !json_str) return MBINK_ERROR_INVALID_PARAM;
     auto* shared = reinterpret_cast<SharedObjectData*>(shared_handle);
-
-    JSValue val = JS_ParseJSON(shared->ctx, json_str, strlen(json_str), "<json>");
-    if (JS_IsException(val)) {
-        JSValue exc = JS_GetException(shared->ctx);
-        JS_FreeValue(shared->ctx, exc);
+    auto parsed = nlohmann::json::parse(json_str, nullptr, false);
+    if (parsed.is_discarded()) {
         return MBINK_ERROR_INVALID_PARAM;
     }
-    JS_SetPropertyStr(shared->ctx, shared->js_obj, key, val);
-    if (JS_IsUndefined(shared->updater_func)) {
-        JSValue global = JS_GetGlobalObject(shared->ctx);
-        shared->updater_func = JS_GetPropertyStr(shared->ctx, global, "__onSharedUpdate");
-        JS_FreeValue(shared->ctx, global);
-    }
-    shared->notifyUpdate(key);
+    shared->safeSetProperty(key, parsed);
     return MBINK_OK;
 }
 
@@ -1655,61 +2051,46 @@ int mbink_shared_set_json(MBinkSharedHandle shared_handle,
 int64_t mbink_shared_get_int(MBinkSharedHandle shared_handle, const char* key) {
     if (!shared_handle || !key) return 0;
     auto* shared = reinterpret_cast<SharedObjectData*>(shared_handle);
-    JSValue val = JS_GetPropertyStr(shared->ctx, shared->js_obj, key);
-    int64_t result = 0;
-    JS_ToInt64(shared->ctx, &result, val);
-    JS_FreeValue(shared->ctx, val);
-    return result;
+    auto val = shared->safeGetProperty(key);
+    if (val.is_number_integer()) return val.get<int64_t>();
+    if (val.is_number_unsigned()) return static_cast<int64_t>(val.get<uint64_t>());
+    if (val.is_number_float()) return static_cast<int64_t>(val.get<double>());
+    return 0;
 }
 
 double mbink_shared_get_double(MBinkSharedHandle shared_handle, const char* key) {
     if (!shared_handle || !key) return 0.0;
     auto* shared = reinterpret_cast<SharedObjectData*>(shared_handle);
-    JSValue val = JS_GetPropertyStr(shared->ctx, shared->js_obj, key);
-    double result = 0.0;
-    JS_ToFloat64(shared->ctx, &result, val);
-    JS_FreeValue(shared->ctx, val);
-    return result;
+    auto val = shared->safeGetProperty(key);
+    if (val.is_number()) return val.get<double>();
+    return 0.0;
 }
 
 const char* mbink_shared_get_string(MBinkSharedHandle shared_handle, const char* key) {
     if (!shared_handle || !key) return nullptr;
     auto* shared = reinterpret_cast<SharedObjectData*>(shared_handle);
-    JSValue val = JS_GetPropertyStr(shared->ctx, shared->js_obj, key);
-    const char* str = JS_ToCString(shared->ctx, val);
-    JS_FreeValue(shared->ctx, val);
-    if (!str) return nullptr;
-    char* result = duplicateString(str);
-    JS_FreeCString(shared->ctx, str);
-    return result;
+    auto val = shared->safeGetProperty(key);
+    if (val.is_string()) {
+        return duplicateString(val.get<std::string>().c_str());
+    }
+    return nullptr;
 }
 
 bool mbink_shared_get_bool(MBinkSharedHandle shared_handle, const char* key) {
     if (!shared_handle || !key) return false;
     auto* shared = reinterpret_cast<SharedObjectData*>(shared_handle);
-    JSValue val = JS_GetPropertyStr(shared->ctx, shared->js_obj, key);
-    int result = JS_ToBool(shared->ctx, val);
-    JS_FreeValue(shared->ctx, val);
-    return result != 0;
+    auto val = shared->safeGetProperty(key);
+    if (val.is_boolean()) return val.get<bool>();
+    return false;
 }
 
 const char* mbink_shared_get_json(MBinkSharedHandle shared_handle, const char* key) {
     if (!shared_handle || !key) return nullptr;
     auto* shared = reinterpret_cast<SharedObjectData*>(shared_handle);
-    JSValue val = JS_GetPropertyStr(shared->ctx, shared->js_obj, key);
-    JSValue json_val = JS_JSONStringify(shared->ctx, val, JS_UNDEFINED, JS_UNDEFINED);
-    JS_FreeValue(shared->ctx, val);
-    if (JS_IsException(json_val)) {
-        JSValue exc = JS_GetException(shared->ctx);
-        JS_FreeValue(shared->ctx, exc);
-        return nullptr;
-    }
-    const char* str = JS_ToCString(shared->ctx, json_val);
-    JS_FreeValue(shared->ctx, json_val);
-    if (!str) return nullptr;
-    char* result = duplicateString(str);
-    JS_FreeCString(shared->ctx, str);
-    return result;
+    auto val = shared->safeGetProperty(key);
+    if (val.is_null()) return nullptr;
+    auto s = val.dump();
+    return duplicateString(s.c_str());
 }
 
 // ---- 属性查询 ----
@@ -1717,38 +2098,20 @@ const char* mbink_shared_get_json(MBinkSharedHandle shared_handle, const char* k
 int mbink_shared_get_type(MBinkSharedHandle shared_handle, const char* key) {
     if (!shared_handle || !key) return MBINK_TYPE_NULL;
     auto* shared = reinterpret_cast<SharedObjectData*>(shared_handle);
-    JSValue val = JS_GetPropertyStr(shared->ctx, shared->js_obj, key);
-    int tag = JS_VALUE_GET_TAG(val);
-    int result;
-    if (JS_IsNull(val) || JS_IsUndefined(val)) result = MBINK_TYPE_NULL;
-    else if (JS_IsBool(val)) result = MBINK_TYPE_BOOL;
-    else if (tag == JS_TAG_INT) result = MBINK_TYPE_INT;
-    else if (JS_TAG_IS_FLOAT64(tag)) result = MBINK_TYPE_DOUBLE;
-    else if (JS_IsString(val)) result = MBINK_TYPE_STRING;
-    else if (JS_IsArray(val)) result = MBINK_TYPE_ARRAY;
-    else if (JS_IsObject(val)) result = MBINK_TYPE_OBJECT;
-    else result = MBINK_TYPE_NULL;
-    JS_FreeValue(shared->ctx, val);
-    return result;
+    return shared->safeGetType(key);
 }
 
 int mbink_shared_delete(MBinkSharedHandle shared_handle, const char* key) {
     if (!shared_handle || !key) return MBINK_ERROR_INVALID_PARAM;
     auto* shared = reinterpret_cast<SharedObjectData*>(shared_handle);
-    JSAtom atom = JS_NewAtom(shared->ctx, key);
-    JS_DeleteProperty(shared->ctx, shared->js_obj, atom, 0);
-    JS_FreeAtom(shared->ctx, atom);
-    shared->notifyUpdate(key);
+    shared->safeDeleteProperty(key);
     return MBINK_OK;
 }
 
 bool mbink_shared_has(MBinkSharedHandle shared_handle, const char* key) {
     if (!shared_handle || !key) return false;
     auto* shared = reinterpret_cast<SharedObjectData*>(shared_handle);
-    JSAtom atom = JS_NewAtom(shared->ctx, key);
-    int has = JS_HasProperty(shared->ctx, shared->js_obj, atom);
-    JS_FreeAtom(shared->ctx, atom);
-    return has > 0;
+    return shared->safeHasProperty(key);
 }
 
 // ---- 批量更新 ----
@@ -1756,16 +2119,310 @@ bool mbink_shared_has(MBinkSharedHandle shared_handle, const char* key) {
 void mbink_shared_batch_begin(MBinkSharedHandle shared_handle) {
     if (!shared_handle) return;
     auto* shared = reinterpret_cast<SharedObjectData*>(shared_handle);
-    shared->batch_mode = true;
-    shared->pending_updates = 0;
+    if (shared->mainQueue_ && shared->mainQueue_->isMainThread()) {
+        shared->beginBatch();
+    } else if (shared->mainQueue_) {
+        auto queueAlive = shared->mainQueue_->aliveFlag();
+        auto objAlive = shared->alive_;
+        SharedObjectData* self = shared;
+        shared->mainQueue_->post([self, queueAlive, objAlive]() {
+            if (!queueAlive->load() || !objAlive->load()) return;
+            self->beginBatch();
+        });
+    }
 }
 
 void mbink_shared_batch_end(MBinkSharedHandle shared_handle) {
     if (!shared_handle) return;
     auto* shared = reinterpret_cast<SharedObjectData*>(shared_handle);
-    shared->batch_mode = false;
-    shared->flushBatch();
+    if (shared->mainQueue_ && shared->mainQueue_->isMainThread()) {
+        shared->endBatch();
+    } else if (shared->mainQueue_) {
+        auto queueAlive = shared->mainQueue_->aliveFlag();
+        auto objAlive = shared->alive_;
+        SharedObjectData* self = shared;
+        shared->mainQueue_->post([self, queueAlive, objAlive]() {
+            if (!queueAlive->load() || !objAlive->load()) return;
+            self->endBatch();
+        });
+    }
 }
+
+MBinkLogViewHandle mbink_logview_get(MBinkHandle handle, const char* element_id) {
+    if (!handle || !element_id) return nullptr;
+    auto ctx = getContext(handle);
+    auto element = getElementByIdAs<mbink::HTMLLogViewElement>(ctx, element_id);
+    if (!element) {
+        setLastError(std::string("logview element not found: ") + element_id);
+        return nullptr;
+    }
+    auto* data = new LogViewHandleData();
+    data->element = std::move(element);
+    data->mainQueue = &ctx->mainThreadQueue;
+    return reinterpret_cast<MBinkLogViewHandle>(data);
+}
+
+void mbink_logview_destroy(MBinkLogViewHandle logview_handle) {
+    if (!logview_handle) return;
+    delete reinterpret_cast<LogViewHandleData*>(logview_handle);
+}
+
+int mbink_logview_append(MBinkLogViewHandle logview_handle,
+                         const char* level,
+                         const char* source,
+                         const char* message) {
+    if (!logview_handle || !level || !source || !message) {
+        return MBINK_ERROR_INVALID_PARAM;
+    }
+    auto* data = reinterpret_cast<LogViewHandleData*>(logview_handle);
+    if (data->mainQueue && data->mainQueue->isMainThread()) {
+        data->element->Append(level, source, message);
+    } else if (data->mainQueue) {
+        std::string l(level), s(source), m(message);
+        auto elem = data->element;
+        auto alive = data->mainQueue->aliveFlag();
+        data->mainQueue->post([elem, l, s, m, alive]() {
+            if (!alive->load()) return;
+            elem->Append(l.c_str(), s.c_str(), m.c_str());
+        });
+    }
+    return MBINK_OK;
+}
+
+void mbink_logview_clear(MBinkLogViewHandle logview_handle) {
+    if (!logview_handle) return;
+    auto* data = reinterpret_cast<LogViewHandleData*>(logview_handle);
+    if (data->mainQueue && data->mainQueue->isMainThread()) {
+        data->element->Clear();
+    } else if (data->mainQueue) {
+        auto elem = data->element;
+        auto alive = data->mainQueue->aliveFlag();
+        data->mainQueue->post([elem, alive]() {
+            if (!alive->load()) return;
+            elem->Clear();
+        });
+    }
+}
+
+const char* mbink_logview_export(MBinkLogViewHandle logview_handle,
+                                 const char* format) {
+    if (!logview_handle) return nullptr;
+    auto* data = reinterpret_cast<LogViewHandleData*>(logview_handle);
+    if (data->mainQueue && !data->mainQueue->isMainThread()) {
+        setLastError("mbink_logview_export must be called on main thread");
+        return nullptr;
+    }
+    auto content = data->element->Export(format ? format : "text");
+    return duplicateString(content.c_str());
+}
+
+MBinkTerminalHandle mbink_terminal_get(MBinkHandle handle, const char* element_id) {
+    if (!handle || !element_id) return nullptr;
+    auto ctx = getContext(handle);
+    auto element = getElementByIdAs<mbink::HTMLTerminalElement>(ctx, element_id);
+    if (!element) {
+        setLastError(std::string("terminal element not found: ") + element_id);
+        return nullptr;
+    }
+    auto* data = new TerminalHandleData();
+    data->element = std::move(element);
+    data->mainQueue = &ctx->mainThreadQueue;
+    return reinterpret_cast<MBinkTerminalHandle>(data);
+}
+
+void mbink_terminal_destroy(MBinkTerminalHandle terminal_handle) {
+    if (!terminal_handle) return;
+    delete reinterpret_cast<TerminalHandleData*>(terminal_handle);
+}
+
+int mbink_terminal_write(MBinkTerminalHandle terminal_handle, const char* data_str) {
+    if (!terminal_handle || !data_str) return MBINK_ERROR_INVALID_PARAM;
+    auto* data = reinterpret_cast<TerminalHandleData*>(terminal_handle);
+    if (data->mainQueue && data->mainQueue->isMainThread()) {
+        data->element->Write(data_str);
+    } else if (data->mainQueue) {
+        std::string text(data_str);
+        auto elem = data->element;
+        auto alive = data->mainQueue->aliveFlag();
+        data->mainQueue->post([elem, text, alive]() {
+            if (!alive->load()) return;
+            elem->Write(text.c_str());
+        });
+    }
+    return MBINK_OK;
+}
+
+void mbink_terminal_clear(MBinkTerminalHandle terminal_handle) {
+    if (!terminal_handle) return;
+    auto* data = reinterpret_cast<TerminalHandleData*>(terminal_handle);
+    if (data->mainQueue && data->mainQueue->isMainThread()) {
+        data->element->Clear();
+    } else if (data->mainQueue) {
+        auto elem = data->element;
+        auto alive = data->mainQueue->aliveFlag();
+        data->mainQueue->post([elem, alive]() {
+            if (!alive->load()) return;
+            elem->Clear();
+        });
+    }
+}
+
+int mbink_terminal_execute(MBinkTerminalHandle terminal_handle, const char* command) {
+    if (!terminal_handle || !command) return MBINK_ERROR_INVALID_PARAM;
+    auto* data = reinterpret_cast<TerminalHandleData*>(terminal_handle);
+    if (data->mainQueue && data->mainQueue->isMainThread()) {
+        data->element->Execute(command);
+    } else if (data->mainQueue) {
+        std::string cmd(command);
+        auto elem = data->element;
+        auto alive = data->mainQueue->aliveFlag();
+        data->mainQueue->post([elem, cmd, alive]() {
+            if (!alive->load()) return;
+            elem->Execute(cmd.c_str());
+        });
+    }
+    return MBINK_OK;
+}
+
+int mbink_terminal_start_shell(MBinkTerminalHandle terminal_handle, const char* shell) {
+    if (!terminal_handle) return MBINK_ERROR_INVALID_PARAM;
+    auto* data = reinterpret_cast<TerminalHandleData*>(terminal_handle);
+    if (data->mainQueue && data->mainQueue->isMainThread()) {
+        data->element->StartShell(shell ? shell : "");
+    } else if (data->mainQueue) {
+        std::string shellCopy = shell ? shell : "";
+        auto elem = data->element;
+        auto alive = data->mainQueue->aliveFlag();
+        data->mainQueue->post([elem, shellCopy, alive]() {
+            if (!alive->load()) return;
+            elem->StartShell(shellCopy.c_str());
+        });
+    }
+    return MBINK_OK;
+}
+
+int mbink_terminal_send_input(MBinkTerminalHandle terminal_handle, const char* input) {
+    if (!terminal_handle || !input) return MBINK_ERROR_INVALID_PARAM;
+    auto* data = reinterpret_cast<TerminalHandleData*>(terminal_handle);
+    if (data->mainQueue && data->mainQueue->isMainThread()) {
+        data->element->SendInput(input);
+    } else if (data->mainQueue) {
+        std::string text(input);
+        auto elem = data->element;
+        auto alive = data->mainQueue->aliveFlag();
+        data->mainQueue->post([elem, text, alive]() {
+            if (!alive->load()) return;
+            elem->SendInput(text.c_str());
+        });
+    }
+    return MBINK_OK;
+}
+
+void mbink_terminal_resize(MBinkTerminalHandle terminal_handle, int rows, int cols) {
+    if (!terminal_handle) return;
+    auto* data = reinterpret_cast<TerminalHandleData*>(terminal_handle);
+    if (data->mainQueue && data->mainQueue->isMainThread()) {
+        data->element->Resize(rows, cols);
+    } else if (data->mainQueue) {
+        auto elem = data->element;
+        auto alive = data->mainQueue->aliveFlag();
+        data->mainQueue->post([elem, rows, cols, alive]() {
+            if (!alive->load()) return;
+            elem->Resize(rows, cols);
+        });
+    }
+}
+
+const char* mbink_terminal_serialize(MBinkTerminalHandle terminal_handle) {
+    if (!terminal_handle) return nullptr;
+    auto* data = reinterpret_cast<TerminalHandleData*>(terminal_handle);
+    if (data->mainQueue && !data->mainQueue->isMainThread()) {
+        setLastError("mbink_terminal_serialize must be called on main thread");
+        return nullptr;
+    }
+    auto content = data->element->Serialize();
+    return duplicateString(content.c_str());
+}
+
+int mbink_compile_resources(const char* input_path,
+                            const char* output_file,
+                            const char* encryption_key) {
+    try {
+        std::string error;
+        if (!mbink::resourcepkg::CompileResources(input_path, output_file, encryption_key, error)) {
+            setLastError(error.empty() ? "Failed to compile resources" : error);
+            return MBINK_ERROR_UNKNOWN;
+        }
+        return MBINK_OK;
+    } catch (const std::exception& e) {
+        setLastError(e.what());
+        return MBINK_ERROR_UNKNOWN;
+    }
+}
+
+int mbink_load_resource_file(const char* package_file,
+                             const char* resource_path,
+                             const char* encryption_key,
+                             void** out_data,
+                             size_t* out_size,
+                             uint32_t* out_flags) {
+    if (!out_data || !out_size) return MBINK_ERROR_INVALID_PARAM;
+    *out_data = nullptr;
+    *out_size = 0;
+    if (out_flags) *out_flags = 0;
+
+    try {
+        std::vector<uint8_t> data;
+        std::string error;
+        if (!mbink::resourcepkg::LoadResourceFile(package_file,
+                                                  resource_path,
+                                                  encryption_key,
+                                                  data,
+                                                  out_flags,
+                                                  error)) {
+            setLastError(error.empty() ? "Failed to load resource file" : error);
+            return error == "resource not found" ? MBINK_ERROR_NOT_FOUND : MBINK_ERROR_UNKNOWN;
+        }
+
+        void* buffer = std::malloc(data.empty() ? 1 : data.size());
+        if (!buffer) {
+            setLastError("Out of memory");
+            return MBINK_ERROR_UNKNOWN;
+        }
+        if (!data.empty()) std::memcpy(buffer, data.data(), data.size());
+
+        *out_data = buffer;
+        *out_size = data.size();
+        return MBINK_OK;
+    } catch (const std::exception& e) {
+        setLastError(e.what());
+        return MBINK_ERROR_UNKNOWN;
+    }
+}
+
+int mbink_mount_resource_package(MBinkHandle handle,
+                                 const char* package_file,
+                                 const char* encryption_key,
+                                 const char* mount_point) {
+    if (!handle) return MBINK_ERROR_INVALID_HANDLE;
+    if (!package_file) return MBINK_ERROR_INVALID_PARAM;
+
+    auto ctx = getContext(handle);
+    if (!ctx || !ctx->runtime || !ctx->document) return MBINK_ERROR_INVALID_HANDLE;
+
+    const char* normalizedKey = encryption_key ? encryption_key : "";
+    const std::string normalizedMount = NormalizeResourcePath(mount_point ? mount_point : "/");
+
+    ctx->mountedResourcePackage = package_file;
+    ctx->mountedResourceKey = normalizedKey;
+    ctx->mountedResourceMountPoint = normalizedMount;
+    ctx->document->SetBasePath(normalizedMount);
+    mbink::FetchBindings::SetBasePath(normalizedMount);
+    mbink::ImageLoader::SetBasePath(normalizedMount);
+    ctx->runtime->SetBaseModulePath(normalizedMount == "/" ? "/index.js" : normalizedMount + "/index.js");
+    return MBINK_OK;
+}
+
 
 // ========== 工具函数 ==========
 

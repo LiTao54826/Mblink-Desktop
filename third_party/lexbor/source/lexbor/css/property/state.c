@@ -3098,41 +3098,72 @@ lxb_css_property_state_font_family(lxb_css_parser_t *parser,
             return lxb_css_parser_memory_fail(parser);
         }
 
-        if (token->type == LXB_CSS_SYNTAX_TOKEN_IDENT) {
-            data = lxb_css_syntax_token_ident(token)->data;
-            length = lxb_css_syntax_token_ident(token)->length;
+        name->next = NULL;
+        name->prev = ff->last;
 
-            type = lxb_css_value_by_name(data, length);
-            if (type != LXB_CSS_VALUE__UNDEF) {
-                name->generic = true;
-                name->u.type = type;
-
-                goto next;
-            }
-        }
-        else if (token->type == LXB_CSS_SYNTAX_TOKEN_STRING) {
+        if (token->type == LXB_CSS_SYNTAX_TOKEN_STRING) {
             data = lxb_css_syntax_token_string(token)->data;
             length = lxb_css_syntax_token_string(token)->length;
+
+            name->generic = false;
+            str = &name->u.str;
+            if (lexbor_str_init_append(str, mraw, data, length) == NULL) {
+                return lxb_css_parser_memory_fail(parser);
+            }
+
+            lxb_css_syntax_parser_consume(parser);
+            token = lxb_css_syntax_parser_token_wo_ws(parser);
+            lxb_css_property_state_check_token(parser, token);
+        }
+        else if (token->type == LXB_CSS_SYNTAX_TOKEN_IDENT) {
+            const lxb_char_t *first_data = lxb_css_syntax_token_ident(token)->data;
+            size_t first_length = lxb_css_syntax_token_ident(token)->length;
+
+            lxb_css_syntax_parser_consume(parser);
+            token = lxb_css_syntax_parser_token_wo_ws(parser);
+            lxb_css_property_state_check_token(parser, token);
+
+            if (token != NULL && token->type == LXB_CSS_SYNTAX_TOKEN_IDENT) {
+                name->generic = false;
+                str = &name->u.str;
+                if (lexbor_str_init_append(str, mraw, first_data, first_length) == NULL) {
+                    return lxb_css_parser_memory_fail(parser);
+                }
+
+                while (token != NULL && token->type == LXB_CSS_SYNTAX_TOKEN_IDENT) {
+                    data = lxb_css_syntax_token_ident(token)->data;
+                    length = lxb_css_syntax_token_ident(token)->length;
+
+                    if (lexbor_str_append_one(str, mraw, 0x20) == NULL) {
+                        return lxb_css_parser_memory_fail(parser);
+                    }
+                    if (lexbor_str_append(str, mraw, data, length) == NULL) {
+                        return lxb_css_parser_memory_fail(parser);
+                    }
+
+                    lxb_css_syntax_parser_consume(parser);
+                    token = lxb_css_syntax_parser_token_wo_ws(parser);
+                    lxb_css_property_state_check_token(parser, token);
+                }
+            }
+            else {
+                type = lxb_css_value_by_name(first_data, first_length);
+                if (type != LXB_CSS_VALUE__UNDEF) {
+                    name->generic = true;
+                    name->u.type = type;
+                }
+                else {
+                    name->generic = false;
+                    str = &name->u.str;
+                    if (lexbor_str_init_append(str, mraw, first_data, first_length) == NULL) {
+                        return lxb_css_parser_memory_fail(parser);
+                    }
+                }
+            }
         }
         else {
             return lxb_css_parser_failed(parser);
         }
-
-        name->generic = false;
-
-        str = &name->u.str;
-
-        (void) lexbor_str_init(str, mraw, length);
-        if (name->u.str.data == NULL) {
-            return lxb_css_parser_memory_fail(parser);
-        }
-
-        memcpy(str->data, data, length);
-
-        str->data[length] = '\0';
-        str->length = length;
-
-    next:
 
         if (ff->first == NULL) {
             ff->first = name;
@@ -3141,20 +3172,14 @@ lxb_css_property_state_font_family(lxb_css_parser_t *parser,
             ff->last->next = name;
         }
 
-        name->next = NULL;
-        name->prev = ff->last;
         ff->last = name;
-
-        lxb_css_syntax_parser_consume(parser);
-        token = lxb_css_syntax_parser_token_wo_ws(parser);
-        lxb_css_property_state_check_token(parser, token);
 
         if (token->type != LXB_CSS_SYNTAX_TOKEN_COMMA) {
             if (token->type == LXB_CSS_SYNTAX_TOKEN__END) {
                 return lxb_css_parser_success(parser);
             }
 
-            return lxb_css_parser_memory_fail(parser);
+            return lxb_css_parser_failed(parser);
         }
 
         lxb_css_syntax_parser_consume(parser);

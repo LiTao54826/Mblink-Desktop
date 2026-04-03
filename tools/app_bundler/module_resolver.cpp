@@ -4,6 +4,7 @@
  */
 
 #include "module_resolver.h"
+#include "core/utils/encoding_utils.h"
 #include <fstream>
 #include <sstream>
 #include <regex>
@@ -14,6 +15,32 @@
 #include <functional>
 
 namespace fs = std::filesystem;
+
+namespace {
+
+fs::path Utf8PathToFsPath(const std::string& path) {
+#ifdef _WIN32
+    return fs::path(mbink::utils::UTF8ToWide(path));
+#else
+    return fs::path(path);
+#endif
+}
+
+std::string FsPathToUtf8String(const fs::path& path) {
+#ifdef _WIN32
+    return mbink::utils::WideToUTF8(path.wstring());
+#else
+    return path.string();
+#endif
+}
+
+std::string NormalizeFsPath(const fs::path& path) {
+    std::string result = FsPathToUtf8String(path.lexically_normal());
+    std::replace(result.begin(), result.end(), '\\', '/');
+    return result;
+}
+
+}  // namespace
 
 namespace mbink {
 
@@ -71,38 +98,38 @@ std::string ModuleResolver::ResolvePath(const std::string& import_path,
                                          const std::string& from_file) {
     // 如果是相对路径
     if (import_path.starts_with("./") || import_path.starts_with("../")) {
-        fs::path base_dir = fs::path(from_file).parent_path();
-        fs::path resolved = base_dir / import_path;
-        
+        fs::path base_dir = Utf8PathToFsPath(from_file).parent_path();
+        fs::path resolved = (base_dir / Utf8PathToFsPath(import_path)).lexically_normal();
+
         // 尝试添加 .js 扩展名
         if (!fs::exists(resolved) && !resolved.has_extension()) {
             fs::path with_js = resolved;
             with_js.replace_extension(".js");
             if (fs::exists(with_js)) {
-                return fs::weakly_canonical(with_js).string();
+                return NormalizeFsPath(fs::weakly_canonical(with_js));
             }
             // 尝试 index.js
             fs::path index_js = resolved / "index.js";
             if (fs::exists(index_js)) {
-                return fs::weakly_canonical(index_js).string();
+                return NormalizeFsPath(fs::weakly_canonical(index_js));
             }
         }
-        
+
         if (fs::exists(resolved)) {
-            return fs::weakly_canonical(resolved).string();
+            return NormalizeFsPath(fs::weakly_canonical(resolved));
         }
-        
+
         // 返回规范化路径（即使不存在，让调用者处理错误）
-        return fs::weakly_canonical(resolved).string();
+        return NormalizeFsPath(resolved);
     }
-    
+
     // 裸模块名（如 'preact', 'preact/hooks'）
     // 返回原样，由调用者检查是否为内置模块
     return import_path;
 }
 
 std::optional<std::string> ModuleResolver::ReadFile(const std::string& path) {
-    std::ifstream file(path);
+    std::ifstream file(Utf8PathToFsPath(path));
     if (!file.is_open()) {
         return std::nullopt;
     }
@@ -113,9 +140,9 @@ std::optional<std::string> ModuleResolver::ReadFile(const std::string& path) {
 
 std::string ModuleResolver::NormalizePath(const std::string& path) {
     try {
-        return fs::weakly_canonical(path).string();
+        return NormalizeFsPath(fs::weakly_canonical(Utf8PathToFsPath(path)));
     } catch (...) {
-        return path;
+        return NormalizeFsPath(Utf8PathToFsPath(path));
     }
 }
 
@@ -253,10 +280,7 @@ std::vector<ResolvedModule> ModuleResolver::TopologicalSort() {
 std::string ModuleResolver::ToRelativeId(const std::string& abs_path) const {
     if (entry_dir_.empty()) return abs_path;
     try {
-        std::string rel = fs::relative(fs::path(abs_path), fs::path(entry_dir_)).string();
-        // 统一使用正斜杠
-        std::replace(rel.begin(), rel.end(), '\\', '/');
-        return rel;
+        return NormalizeFsPath(fs::relative(Utf8PathToFsPath(abs_path), Utf8PathToFsPath(entry_dir_)));
     } catch (...) {
         return abs_path;
     }
@@ -270,9 +294,9 @@ std::vector<ResolvedModule> ModuleResolver::Resolve(const std::string& entry_fil
     std::string entry_id = NormalizePath(entry_file);
 
     // 记录入口文件所在目录（用于后续计算相对路径）
-    entry_dir_ = fs::path(entry_id).parent_path().string();
+    entry_dir_ = NormalizeFsPath(Utf8PathToFsPath(entry_id).parent_path());
 
-    if (!fs::exists(entry_file)) {
+    if (!fs::exists(Utf8PathToFsPath(entry_file))) {
         AddError("Entry file not found: " + entry_file);
         return {};
     }

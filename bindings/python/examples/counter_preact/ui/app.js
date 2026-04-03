@@ -104,18 +104,6 @@ function rerender() {
     render(h(App), _root);
 }
 
-// 脏标记 + setTimeout(0)：通用批处理，不阻塞输入
-var _renderScheduled = false;
-globalThis.__onSharedUpdate = function() {
-    if (!_renderScheduled) {
-        _renderScheduled = true;
-        setTimeout(function() {
-            _renderScheduled = false;
-            rerender();
-        }, 0);
-    }
-};
-
 // 首次渲染
 rerender();
 

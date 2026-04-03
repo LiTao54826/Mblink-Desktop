@@ -18,12 +18,14 @@ c_char_p = ctypes.c_char_p
 c_void_p = ctypes.c_void_p
 c_float = ctypes.c_float
 c_size_t = ctypes.c_size_t
+c_uint32 = ctypes.c_uint32
 POINTER = ctypes.POINTER
 
 # ========== 回调类型 ==========
 # char* (*MBinkCallback)(const char* args_json, void* user_data)
 # 注意：回调返回值必须来自 mbink_copy_string()，由 MBink 在 C 侧释放
 MBinkCallback = ctypes.CFUNCTYPE(c_void_p, c_char_p, c_void_p)
+MBinkAsyncCallback = ctypes.CFUNCTYPE(c_void_p, c_char_p, c_void_p)
 # void (*MBinkStateCallback)(const char* name, const char* value_json, void* user_data)
 MBinkStateCallback = ctypes.CFUNCTYPE(None, c_char_p, c_char_p, c_void_p)
 # void (*MBinkResizeCallback)(int width, int height, void* user_data)
@@ -122,6 +124,8 @@ def _bind_functions(lib):
     lib.mbink_cleanup.argtypes = []
     lib.mbink_version.restype = c_char_p
     lib.mbink_version.argtypes = []
+    lib.mbink_last_error.restype = c_char_p
+    lib.mbink_last_error.argtypes = []
 
     # 窗口管理
     lib.mbink_create.restype = H
@@ -138,6 +142,14 @@ def _bind_functions(lib):
     lib.mbink_stop.argtypes = [H]
     lib.mbink_poll_events.restype = c_bool
     lib.mbink_poll_events.argtypes = [H]
+
+    # 函数绑定
+    lib.mbink_bind.restype = c_int
+    lib.mbink_bind.argtypes = [H, c_char_p, MBinkCallback, c_void_p]
+    lib.mbink_bind_async.restype = c_int
+    lib.mbink_bind_async.argtypes = [H, c_char_p, MBinkAsyncCallback, c_void_p]
+    lib.mbink_unbind.restype = None
+    lib.mbink_unbind.argtypes = [H, c_char_p]
 
     # 窗口属性
     lib.mbink_set_title.restype = c_int
@@ -186,6 +198,15 @@ def _bind_functions(lib):
     lib.mbink_load_js_file.argtypes = [H, c_char_p]
     lib.mbink_load_bytecode.restype = c_int
     lib.mbink_load_bytecode.argtypes = [H, c_void_p, c_size_t]
+    lib.mbink_compile_resources.restype = c_int
+    lib.mbink_compile_resources.argtypes = [c_char_p, c_char_p, c_char_p]
+    lib.mbink_load_resource_file.restype = c_int
+    lib.mbink_load_resource_file.argtypes = [
+        c_char_p, c_char_p, c_char_p,
+        POINTER(c_void_p), POINTER(c_size_t), POINTER(c_uint32)
+    ]
+    lib.mbink_mount_resource_package.restype = c_int
+    lib.mbink_mount_resource_package.argtypes = [H, c_char_p, c_char_p, c_char_p]
 
     # 函数绑定
     lib.mbink_bind.restype = c_int
@@ -404,3 +425,37 @@ def _bind_functions(lib):
     lib.mbink_shared_batch_begin.argtypes = [SH]
     lib.mbink_shared_batch_end.restype = None
     lib.mbink_shared_batch_end.argtypes = [SH]
+
+    # 原生 UI 对象句柄
+    LV = c_void_p
+    TM = c_void_p
+
+    lib.mbink_logview_get.restype = LV
+    lib.mbink_logview_get.argtypes = [H, c_char_p]
+    lib.mbink_logview_destroy.restype = None
+    lib.mbink_logview_destroy.argtypes = [LV]
+    lib.mbink_logview_append.restype = c_int
+    lib.mbink_logview_append.argtypes = [LV, c_char_p, c_char_p, c_char_p]
+    lib.mbink_logview_clear.restype = None
+    lib.mbink_logview_clear.argtypes = [LV]
+    lib.mbink_logview_export.restype = c_void_p
+    lib.mbink_logview_export.argtypes = [LV, c_char_p]
+
+    lib.mbink_terminal_get.restype = TM
+    lib.mbink_terminal_get.argtypes = [H, c_char_p]
+    lib.mbink_terminal_destroy.restype = None
+    lib.mbink_terminal_destroy.argtypes = [TM]
+    lib.mbink_terminal_write.restype = c_int
+    lib.mbink_terminal_write.argtypes = [TM, c_char_p]
+    lib.mbink_terminal_clear.restype = None
+    lib.mbink_terminal_clear.argtypes = [TM]
+    lib.mbink_terminal_execute.restype = c_int
+    lib.mbink_terminal_execute.argtypes = [TM, c_char_p]
+    lib.mbink_terminal_start_shell.restype = c_int
+    lib.mbink_terminal_start_shell.argtypes = [TM, c_char_p]
+    lib.mbink_terminal_send_input.restype = c_int
+    lib.mbink_terminal_send_input.argtypes = [TM, c_char_p]
+    lib.mbink_terminal_resize.restype = None
+    lib.mbink_terminal_resize.argtypes = [TM, c_int, c_int]
+    lib.mbink_terminal_serialize.restype = c_void_p
+    lib.mbink_terminal_serialize.argtypes = [TM]

@@ -15,10 +15,48 @@
     var currentHookIndex = 0;
     // Track components that ever used hooks so shutdown can run all effect cleanups
     var mountedComponents = new Set();
+    var pendingEffects = [];
+    var effectsScheduled = false;
 
 // Phase 4: Preact 调度器 - 批量更新支持
 var pendingUpdates = new Set();
 var updateScheduled = false;
+
+function flushPendingEffects() {
+    effectsScheduled = false;
+    var toRun = pendingEffects.slice();
+    pendingEffects = [];
+
+    for (var i = 0; i < toRun.length; i++) {
+        var hookState = toRun[i];
+        if (!hookState) {
+            continue;
+        }
+
+        hookState.effectQueued = false;
+
+        if (typeof hookState.cleanup === 'function') {
+            try { hookState.cleanup(); } catch (_) {}
+        }
+        if (typeof hookState.pendingEffect === 'function') {
+            hookState.cleanup = hookState.pendingEffect();
+            hookState.pendingEffect = null;
+        }
+    }
+}
+
+function schedulePendingEffects() {
+    if (effectsScheduled) {
+        return;
+    }
+    effectsScheduled = true;
+
+    if (typeof setTimeout !== 'undefined') {
+        setTimeout(flushPendingEffects, 0);
+    } else {
+        flushPendingEffects();
+    }
+}
 
 // 获取 requestAnimationFrame，支持回退
 function getRAF() {
@@ -158,22 +196,14 @@ function getHookState(index) {
 
         if (hasChanged) {
             hookState.deps = deps;
+            hookState.pendingEffect = effect;
 
-            // Schedule effect to run after render
-            if (typeof setTimeout !== 'undefined') {
-                setTimeout(function() {
-                    if (hookState.cleanup) {
-                        hookState.cleanup();
-                    }
-                    hookState.cleanup = effect();
-                }, 0);
-            } else {
-                // Fallback: run immediately
-                if (hookState.cleanup) {
-                    hookState.cleanup();
-                }
-                hookState.cleanup = effect();
+            if (!hookState.effectQueued) {
+                hookState.effectQueued = true;
+                pendingEffects.push(hookState);
             }
+
+            schedulePendingEffects();
         }
     }
 
@@ -338,12 +368,17 @@ function createContext(defaultValue) {
 
     // 暴露清理函数，供 C++ 关闭时调用以释放 IIFE 内部的闭包引用
     global.__preactHooksCleanup = function() {
+        flushPendingEffects();
+
         // 1) 先执行所有组件 hooks 的 cleanup，解除 document/window 级监听器等副作用
         mountedComponents.forEach(function(component) {
             if (!component || !component.__hooks) return;
             for (var i = 0; i < component.__hooks.length; i++) {
                 var hookState = component.__hooks[i];
-                if (hookState && typeof hookState.cleanup === 'function') {
+                if (!hookState) continue;
+                hookState.pendingEffect = null;
+                hookState.effectQueued = false;
+                if (typeof hookState.cleanup === 'function') {
                     try { hookState.cleanup(); } catch (_) {}
                     hookState.cleanup = null;
                 }
@@ -353,6 +388,8 @@ function createContext(defaultValue) {
         mountedComponents.clear();
 
         // 2) 清空调度器状态，避免残留闭包引用
+        pendingEffects = [];
+        effectsScheduled = false;
         pendingUpdates.clear();
         updateScheduled = false;
         currentComponent = null;

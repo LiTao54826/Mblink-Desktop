@@ -79,10 +79,11 @@ typedef struct {
 
 // ========== 回调类型 ==========
 
-// 函数绑定回调: JS 调用 py.xxx() 时触发，返回 JSON 字符串。
+// 函数绑定回调: JS 调用 backend.xxx() 时触发，返回 JSON 字符串。
 // 返回值必须由 MBink 运行时通过 mbink_free() 释放。
 // 建议绑定层使用 mbink_copy_string() 分配返回字符串，确保分配/释放在同一运行时。
 typedef char* (*MBinkCallback)(const char* args_json, void* user_data);
+typedef char* (*MBinkAsyncCallback)(const char* args_json, void* user_data);
 
 // 状态变更回调
 typedef void (*MBinkStateCallback)(const char* name, const char* value_json,
@@ -161,11 +162,33 @@ MBINK_API int mbink_load_js_file(MBinkHandle handle, const char* filepath);
 MBINK_API int mbink_load_bytecode(MBinkHandle handle, const void* data,
                                       size_t size);
 
+/** 编译资源文件/目录为加密资源包；.js/.mjs 会编译为 QuickJS bytecode */
+MBINK_API int mbink_compile_resources(const char* input_path,
+                                      const char* output_file,
+                                      const char* encryption_key);
+
+/** 从资源包按路径加载文件；返回数据需用 mbink_free 释放 */
+MBINK_API int mbink_load_resource_file(const char* package_file,
+                                       const char* resource_path,
+                                       const char* encryption_key,
+                                       void** out_data,
+                                       size_t* out_size,
+                                       uint32_t* out_flags);
+
+/** 挂载资源包；挂载后 load_html_file/load_js_file/import 优先从资源包解析 */
+MBINK_API int mbink_mount_resource_package(MBinkHandle handle,
+                                           const char* package_file,
+                                           const char* encryption_key,
+                                           const char* mount_point);
+
 // ========== 函数绑定 ==========
 
-/** 绑定宿主函数，JS 中通过 py.name(args) 调用 */
+/** 绑定宿主函数，JS 中通过 backend.name(args) 调用 */
 MBINK_API int mbink_bind(MBinkHandle handle, const char* name,
                              MBinkCallback callback, void* user_data);
+/** 绑定异步宿主函数，JS 中通过 await backend.name(args) 调用 */
+MBINK_API int mbink_bind_async(MBinkHandle handle, const char* name,
+                               MBinkAsyncCallback callback, void* user_data);
 MBINK_API void mbink_unbind(MBinkHandle handle, const char* name);
 
 // ========== 事件回调 ==========
@@ -357,6 +380,8 @@ MBINK_API int mbink_queue_size(MBinkHandle handle);
 
 // 不透明句柄
 typedef struct MBinkSharedObject* MBinkSharedHandle;
+typedef struct MBinkLogViewObject* MBinkLogViewHandle;
+typedef struct MBinkTerminalObject* MBinkTerminalHandle;
 
 // 创建共享对象，注册为 JS globalThis.<name>
 MBINK_API MBinkSharedHandle mbink_shared_create(MBinkHandle handle,
@@ -408,6 +433,35 @@ MBINK_API bool mbink_shared_has(MBinkSharedHandle shared,
 
 MBINK_API void mbink_shared_batch_begin(MBinkSharedHandle shared);
 MBINK_API void mbink_shared_batch_end(MBinkSharedHandle shared);
+
+// ========== 原生 UI 对象句柄（LogView / Terminal） ==========
+
+MBINK_API MBinkLogViewHandle mbink_logview_get(MBinkHandle handle,
+                                                    const char* element_id);
+MBINK_API void mbink_logview_destroy(MBinkLogViewHandle logview);
+MBINK_API int mbink_logview_append(MBinkLogViewHandle logview,
+                                        const char* level,
+                                        const char* source,
+                                        const char* message);
+MBINK_API void mbink_logview_clear(MBinkLogViewHandle logview);
+MBINK_API const char* mbink_logview_export(MBinkLogViewHandle logview,
+                                                const char* format);
+
+MBINK_API MBinkTerminalHandle mbink_terminal_get(MBinkHandle handle,
+                                                      const char* element_id);
+MBINK_API void mbink_terminal_destroy(MBinkTerminalHandle terminal);
+MBINK_API int mbink_terminal_write(MBinkTerminalHandle terminal,
+                                        const char* data);
+MBINK_API void mbink_terminal_clear(MBinkTerminalHandle terminal);
+MBINK_API int mbink_terminal_execute(MBinkTerminalHandle terminal,
+                                          const char* command);
+MBINK_API int mbink_terminal_start_shell(MBinkTerminalHandle terminal,
+                                              const char* shell);
+MBINK_API int mbink_terminal_send_input(MBinkTerminalHandle terminal,
+                                             const char* input);
+MBINK_API void mbink_terminal_resize(MBinkTerminalHandle terminal,
+                                          int rows, int cols);
+MBINK_API const char* mbink_terminal_serialize(MBinkTerminalHandle terminal);
 
 // ========== 工具函数 ==========
 

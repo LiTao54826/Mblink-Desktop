@@ -111,14 +111,14 @@ void HTMLTerminalElement::set_scrollback(int value) {
 
 void HTMLTerminalElement::Write(const std::string& data) {
     if (parser_) {
+        bool was_at_bottom = IsAtBottom();
         parser_->Parse(data);
-        
+
         // 自动滚动到底部显示最新内容
-        if (renderer_ && buffer_) {
-            renderer_->SetTotalLines(buffer_->total_lines());
-            renderer_->ScrollTo(renderer_->max_scroll_offset());
+        if (renderer_ && buffer_ && was_at_bottom) {
+            ScrollToBottom();
         }
-        
+
         // 设置全局标志，通知主线程需要重绘
         g_terminal_needs_repaint.store(true);
     }
@@ -139,6 +139,33 @@ void HTMLTerminalElement::ScrollTo(int line) {
     }
 }
 
+void HTMLTerminalElement::ScrollToBottom() {
+    if (!renderer_ || !buffer_) {
+        return;
+    }
+
+    if (last_bounds_.height() > 0) {
+        renderer_->UpdateMetrics(last_bounds_.height());
+    }
+
+    renderer_->SetTotalLines(buffer_->total_lines());
+    renderer_->ScrollTo(renderer_->max_scroll_offset());
+}
+
+bool HTMLTerminalElement::IsAtBottom() {
+    if (!renderer_ || !buffer_) {
+        return true;
+    }
+
+    if (last_bounds_.height() > 0) {
+        renderer_->UpdateMetrics(last_bounds_.height());
+    }
+
+    renderer_->SetTotalLines(buffer_->total_lines());
+    return renderer_->scroll_offset() >= renderer_->max_scroll_offset();
+}
+
+
 std::string HTMLTerminalElement::Serialize() const {
     if (buffer_) {
         return buffer_->Serialize();
@@ -154,7 +181,7 @@ void HTMLTerminalElement::Focus() {
 void HTMLTerminalElement::Execute(const std::string& command) {
     if (!executor_) {
         executor_ = std::make_unique<CommandExecutor>();
-        
+
         executor_->SetOutputCallback([this](const std::string& data, bool is_stderr) {
             // stderr 可以用不同颜色显示
             if (is_stderr) {
@@ -178,7 +205,7 @@ void HTMLTerminalElement::Execute(const std::string& command) {
 void HTMLTerminalElement::StartShell(const std::string& shell) {
     if (!pty_) {
         pty_ = PtyBackend::Create();
-        
+
         pty_->SetDataCallback([this](const char* data, size_t len) {
             Write(std::string(data, len));
         });
@@ -217,24 +244,24 @@ void HTMLTerminalElement::CopySelection() {
     if (text.empty()) {
         return;
     }
-    
+
 #ifdef _WIN32
     // Windows 剪贴板操作
     if (!OpenClipboard(nullptr)) {
         return;
     }
-    
+
     EmptyClipboard();
-    
+
     // 转换为宽字符（UTF-16）
-    int wide_len = MultiByteToWideChar(CP_UTF8, 0, text.c_str(), 
+    int wide_len = MultiByteToWideChar(CP_UTF8, 0, text.c_str(),
                                         static_cast<int>(text.size()), nullptr, 0);
     if (wide_len > 0) {
         HGLOBAL hMem = GlobalAlloc(GMEM_MOVEABLE, (wide_len + 1) * sizeof(wchar_t));
         if (hMem) {
             wchar_t* pMem = static_cast<wchar_t*>(GlobalLock(hMem));
             if (pMem) {
-                MultiByteToWideChar(CP_UTF8, 0, text.c_str(), 
+                MultiByteToWideChar(CP_UTF8, 0, text.c_str(),
                                    static_cast<int>(text.size()), pMem, wide_len);
                 pMem[wide_len] = 0;
                 GlobalUnlock(hMem);
@@ -242,7 +269,7 @@ void HTMLTerminalElement::CopySelection() {
             }
         }
     }
-    
+
     CloseClipboard();
 #else
     // TODO: 其他平台的剪贴板实现
@@ -254,19 +281,19 @@ void HTMLTerminalElement::Paste() {
     if (!OpenClipboard(nullptr)) {
         return;
     }
-    
+
     HANDLE hData = GetClipboardData(CF_UNICODETEXT);
     if (hData) {
         wchar_t* pData = static_cast<wchar_t*>(GlobalLock(hData));
         if (pData) {
             // 转换为 UTF-8
-            int utf8_len = WideCharToMultiByte(CP_UTF8, 0, pData, -1, 
+            int utf8_len = WideCharToMultiByte(CP_UTF8, 0, pData, -1,
                                                nullptr, 0, nullptr, nullptr);
             if (utf8_len > 0) {
                 std::string utf8_text(utf8_len - 1, '\0');
-                WideCharToMultiByte(CP_UTF8, 0, pData, -1, 
+                WideCharToMultiByte(CP_UTF8, 0, pData, -1,
                                    &utf8_text[0], utf8_len, nullptr, nullptr);
-                
+
                 // 发送到 PTY
                 if (pty_ && pty_->IsRunning()) {
                     SendInput(utf8_text);
@@ -275,7 +302,7 @@ void HTMLTerminalElement::Paste() {
             GlobalUnlock(hData);
         }
     }
-    
+
     CloseClipboard();
 #else
     // TODO: 其他平台的剪贴板实现
@@ -302,10 +329,10 @@ void HTMLTerminalElement::Render(SkCanvas* canvas, float x, float y, float width
 void HTMLTerminalElement::HandleKeyInput(const std::string& key, int modifiers) {
     // 注意：焦点状态由 FocusManager 管理，这里不再检查 is_focused_
     // KeyboardEventDispatcher 只会在元素有焦点时调用此方法
-    
+
     bool ctrl_key = (modifiers & 1) != 0;
     bool shift_key = (modifiers & 2) != 0;
-    
+
     // 处理复制粘贴快捷键
     if (ctrl_key && !shift_key) {
         if (key == "c" || key == "C") {
@@ -321,27 +348,27 @@ void HTMLTerminalElement::HandleKeyInput(const std::string& key, int modifiers) 
             return;
         }
     }
-    
+
     // Ctrl+Shift+C: 强制复制（即使没有选择也不发送中断）
     if (ctrl_key && shift_key && (key == "c" || key == "C")) {
         CopySelection();
         return;
     }
-    
+
     // Ctrl+Shift+V: 强制粘贴
     if (ctrl_key && shift_key && (key == "v" || key == "V")) {
         Paste();
         return;
     }
-    
+
     // 如果没有 PTY 或 PTY 未运行，直接返回
     if (!pty_ || !pty_->IsRunning()) {
         return;
     }
-    
+
     // 将特殊按键转换为终端序列
     std::string sequence;
-    
+
     if (key == "Enter") {
         sequence = "\r";
     } else if (key == "Backspace") {
@@ -405,7 +432,7 @@ void HTMLTerminalElement::HandleKeyInput(const std::string& key, int modifiers) 
     }
     // 对于普通字符，不在这里处理，由 TEXT_INPUT 事件处理
     // 这样可以正确处理 IME 输入和组合键
-    
+
     if (!sequence.empty()) {
         SendInput(sequence);
     }
@@ -420,7 +447,7 @@ void HTMLTerminalElement::HandleMouseDown(float x, float y, int button, int clic
     if (renderer_ && renderer_->total_lines() > renderer_->visible_lines()) {
         const float scrollbar_width = 8.0f;
         float scrollbar_x = last_bounds_.right() - scrollbar_width - 2.0f;
-        
+
         if (x >= scrollbar_x && x <= last_bounds_.right()) {
             // 点击在滚动条区域，开始拖动
             is_dragging_scrollbar_ = true;
@@ -456,13 +483,13 @@ void HTMLTerminalElement::HandleMouseMove(float x, float y) {
     if (is_dragging_scrollbar_ && renderer_) {
         float padding = 4.0f;
         float track_height = last_bounds_.height() - 2 * padding;
-        
+
         // 计算滑块高度
         float content_ratio = static_cast<float>(renderer_->visible_lines()) / renderer_->total_lines();
         float thumb_height = track_height * content_ratio;
         const float min_thumb_height = 20.0f;
         if (thumb_height < min_thumb_height) thumb_height = min_thumb_height;
-        
+
         // 计算可用轨道高度
         float available_track = track_height - thumb_height;
         if (available_track > 0) {
@@ -470,7 +497,7 @@ void HTMLTerminalElement::HandleMouseMove(float x, float y) {
             float delta_y = y - drag_start_y_;
             int max_scroll = renderer_->max_scroll_offset();
             int delta_offset = static_cast<int>((delta_y / available_track) * max_scroll);
-            
+
             renderer_->ScrollTo(drag_start_offset_ + delta_offset);
         }
         return;

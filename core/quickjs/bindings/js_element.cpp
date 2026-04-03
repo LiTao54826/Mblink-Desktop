@@ -38,6 +38,7 @@ namespace bindings {
 // ========== Opaque 数据结构 ==========
 
 struct JSElementListenerBinding {
+    std::string property_name;
     std::string event_type;
     uint64_t listener_id = 0;
     bool use_capture = false;
@@ -47,10 +48,31 @@ struct JSElementListenerBinding {
 struct JSElementData {
     std::shared_ptr<Element> element;
     std::vector<JSElementListenerBinding> listeners;
-    bool has_onload_listener = false;
-    uint64_t onload_listener_id = 0;
-    bool has_onerror_listener = false;
-    uint64_t onerror_listener_id = 0;
+};
+
+struct JSElementEventPropertyDescriptor {
+    const char* property_name;
+    const char* hidden_name;
+    const char* event_type;
+};
+
+static const JSElementEventPropertyDescriptor kJSElementEventProperties[] = {
+    {"onclick", "__onclick__", "click"},
+    {"ondblclick", "__ondblclick__", "dblclick"},
+    {"onmousedown", "__onmousedown__", "mousedown"},
+    {"onmouseup", "__onmouseup__", "mouseup"},
+    {"onmousemove", "__onmousemove__", "mousemove"},
+    {"onmouseenter", "__onmouseenter__", "mouseenter"},
+    {"onmouseleave", "__onmouseleave__", "mouseleave"},
+    {"oninput", "__oninput__", "input"},
+    {"onchange", "__onchange__", "change"},
+    {"onkeydown", "__onkeydown__", "keydown"},
+    {"onkeyup", "__onkeyup__", "keyup"},
+    {"onfocus", "__onfocus__", "focus"},
+    {"onblur", "__onblur__", "blur"},
+    {"onsubmit", "__onsubmit__", "submit"},
+    {"onload", "__onload__", "load"},
+    {"onerror", "__onerror__", "error"},
 };
 
 static size_t g_js_element_listener_add_count = 0;
@@ -75,8 +97,10 @@ void DumpElementListenerStats() {
 static JSClassID js_element_class_id = 0;
 
 // ========== 前置声明 ==========
-static JSValue JSElement_set_onload(JSContext* ctx, JSValueConst this_val, JSValue val, int magic);
-static JSValue JSElement_set_onerror(JSContext* ctx, JSValueConst this_val, JSValue val, int magic);
+static const JSElementEventPropertyDescriptor* GetEventPropertyDescriptorByMagic(int magic);
+static const JSElementEventPropertyDescriptor* FindEventPropertyDescriptorByName(const char* name);
+static JSValue JSElement_get_event_property(JSContext* ctx, JSValueConst this_val, int magic);
+static JSValue JSElement_set_event_property(JSContext* ctx, JSValueConst this_val, JSValue val, int magic);
 
 
 // ========== 析构函数 ==========
@@ -103,6 +127,21 @@ static void JSElementFinalizer(JSRuntime* rt, JSValue val) {
             DOMBindingMap::GetInstance().Remove(data->element.get());
         }
         delete data;
+    }
+}
+
+void ClearElementEventProperties(JSContext* ctx, JSValueConst element_obj) {
+    if (!ctx) {
+        return;
+    }
+
+    auto* data = static_cast<JSElementData*>(JS_GetOpaque(element_obj, js_element_class_id));
+    if (!data || !data->element) {
+        return;
+    }
+
+    for (int magic = 0; magic < static_cast<int>(sizeof(kJSElementEventProperties) / sizeof(kJSElementEventProperties[0])); ++magic) {
+        JSElement_set_event_property(ctx, element_obj, JS_UNDEFINED, magic);
     }
 }
 
@@ -626,10 +665,12 @@ static JSValue JSElement_removeAttribute(JSContext* ctx, JSValueConst this_val, 
 
     data->element->RemoveAttribute(name);
 
-    if (strcmp(name, "onload") == 0) {
-        JSElement_set_onload(ctx, this_val, JS_UNDEFINED, 0);
-    } else if (strcmp(name, "onerror") == 0) {
-        JSElement_set_onerror(ctx, this_val, JS_UNDEFINED, 0);
+    if (const auto* desc = FindEventPropertyDescriptorByName(name)) {
+        size_t count = sizeof(kJSElementEventProperties) / sizeof(kJSElementEventProperties[0]);
+        int magic = static_cast<int>(desc - kJSElementEventProperties);
+        if (magic >= 0 && static_cast<size_t>(magic) < count) {
+            JSElement_set_event_property(ctx, this_val, JS_UNDEFINED, magic);
+        }
     }
 
     JS_FreeCString(ctx, name);
@@ -1098,44 +1139,61 @@ static JSValue JSElement_set_img_crossOrigin(JSContext* ctx, JSValueConst this_v
     return JS_UNDEFINED;
 }
 
-// onload getter - 存储在 JS 对象的隐藏属性中
-static JSValue JSElement_get_onload(JSContext* ctx, JSValueConst this_val, int magic) {
-    return JS_GetPropertyStr(ctx, this_val, "__onload__");
+static const JSElementEventPropertyDescriptor* GetEventPropertyDescriptorByMagic(int magic) {
+    size_t count = sizeof(kJSElementEventProperties) / sizeof(kJSElementEventProperties[0]);
+    if (magic < 0 || static_cast<size_t>(magic) >= count) {
+        return nullptr;
+    }
+    return &kJSElementEventProperties[magic];
 }
 
-// onload setter - 设置 load 事件监听器
-static JSValue JSElement_set_onload(JSContext* ctx, JSValueConst this_val, JSValue val, int magic) {
-    auto* data = static_cast<JSElementData*>(JS_GetOpaque(this_val, js_element_class_id));
-    if (!data || !data->element) return JS_UNDEFINED;
-
-    if (data->has_onload_listener) {
-        bool removed_old = data->element->RemoveEventListener("load", data->onload_listener_id);
-        for (auto it = data->listeners.begin(); it != data->listeners.end(); ++it) {
-            if (it->event_type == "load" && it->listener_id == data->onload_listener_id) {
-                if (!JS_IsUndefined(it->js_listener)) {
-                    JS_FreeValue(ctx, it->js_listener);
-                    it->js_listener = JS_UNDEFINED;
-                }
-                data->listeners.erase(it);
-                break;
-            }
+static const JSElementEventPropertyDescriptor* FindEventPropertyDescriptorByName(const char* name) {
+    if (!name) return nullptr;
+    for (const auto& desc : kJSElementEventProperties) {
+        if (strcmp(desc.property_name, name) == 0) {
+            return &desc;
         }
+    }
+    return nullptr;
+}
+
+static JSValue JSElement_get_event_property(JSContext* ctx, JSValueConst this_val, int magic) {
+    auto* desc = GetEventPropertyDescriptorByMagic(magic);
+    if (!desc) return JS_UNDEFINED;
+    return JS_GetPropertyStr(ctx, this_val, desc->hidden_name);
+}
+
+static JSValue JSElement_set_event_property(JSContext* ctx, JSValueConst this_val, JSValue val, int magic) {
+    auto* data = static_cast<JSElementData*>(JS_GetOpaque(this_val, js_element_class_id));
+    auto* desc = GetEventPropertyDescriptorByMagic(magic);
+    if (!data || !data->element || !desc) return JS_UNDEFINED;
+
+    for (auto it = data->listeners.begin(); it != data->listeners.end(); ++it) {
+        if (it->property_name != desc->property_name) {
+            continue;
+        }
+
+        bool removed_old = data->element->RemoveEventListener(it->event_type, it->listener_id);
+        if (!JS_IsUndefined(it->js_listener)) {
+            JS_FreeValue(ctx, it->js_listener);
+            it->js_listener = JS_UNDEFINED;
+        }
+        data->listeners.erase(it);
+
         if (removed_old) {
             g_js_element_listener_remove_count++;
             if (g_js_element_listener_live_bindings > 0) {
                 g_js_element_listener_live_bindings--;
             }
         }
-        data->has_onload_listener = false;
-        data->onload_listener_id = 0;
+        break;
     }
 
-    JS_SetPropertyStr(ctx, this_val, "__onload__", JS_DupValue(ctx, val));
+    JS_SetPropertyStr(ctx, this_val, desc->hidden_name, JS_DupValue(ctx, val));
 
     if (JS_IsFunction(ctx, val)) {
         auto listener_wrapper = std::make_shared<JSValueWrapper>(ctx, val);
-
-        uint64_t listener_id = data->element->AddEventListener("load",
+        uint64_t listener_id = data->element->AddEventListener(desc->event_type,
             [ctx, listener_wrapper](std::shared_ptr<Event> event) {
                 JSValue event_val = WrapEvent(ctx, event);
                 JSValue result = listener_wrapper->Call(JS_UNDEFINED, 1, &event_val);
@@ -1153,82 +1211,9 @@ static JSValue JSElement_set_onload(JSContext* ctx, JSValueConst this_val, JSVal
             false, false
         );
 
-        data->has_onload_listener = true;
-        data->onload_listener_id = listener_id;
-
         JSElementListenerBinding binding;
-        binding.event_type = "load";
-        binding.listener_id = listener_id;
-        binding.use_capture = false;
-        binding.js_listener = JS_DupValue(ctx, val);
-        data->listeners.emplace_back(std::move(binding));
-        g_js_element_listener_add_count++;
-        g_js_element_listener_live_bindings++;
-    }
-
-    return JS_UNDEFINED;
-}
-
-// onerror getter
-static JSValue JSElement_get_onerror(JSContext* ctx, JSValueConst this_val, int magic) {
-    return JS_GetPropertyStr(ctx, this_val, "__onerror__");
-}
-
-// onerror setter - 设置 error 事件监听器
-static JSValue JSElement_set_onerror(JSContext* ctx, JSValueConst this_val, JSValue val, int magic) {
-    auto* data = static_cast<JSElementData*>(JS_GetOpaque(this_val, js_element_class_id));
-    if (!data || !data->element) return JS_UNDEFINED;
-
-    if (data->has_onerror_listener) {
-        bool removed_old = data->element->RemoveEventListener("error", data->onerror_listener_id);
-        for (auto it = data->listeners.begin(); it != data->listeners.end(); ++it) {
-            if (it->event_type == "error" && it->listener_id == data->onerror_listener_id) {
-                if (!JS_IsUndefined(it->js_listener)) {
-                    JS_FreeValue(ctx, it->js_listener);
-                    it->js_listener = JS_UNDEFINED;
-                }
-                data->listeners.erase(it);
-                break;
-            }
-        }
-        if (removed_old) {
-            g_js_element_listener_remove_count++;
-            if (g_js_element_listener_live_bindings > 0) {
-                g_js_element_listener_live_bindings--;
-            }
-        }
-        data->has_onerror_listener = false;
-        data->onerror_listener_id = 0;
-    }
-
-    JS_SetPropertyStr(ctx, this_val, "__onerror__", JS_DupValue(ctx, val));
-
-    if (JS_IsFunction(ctx, val)) {
-        auto listener_wrapper = std::make_shared<JSValueWrapper>(ctx, val);
-
-        uint64_t listener_id = data->element->AddEventListener("error",
-            [ctx, listener_wrapper](std::shared_ptr<Event> event) {
-                JSValue event_val = WrapEvent(ctx, event);
-                JSValue result = listener_wrapper->Call(JS_UNDEFINED, 1, &event_val);
-                if (JS_IsException(result)) {
-                    JSValue exception = JS_GetException(ctx);
-                    const char* err = JS_ToCString(ctx, exception);
-                    if (err) {
-                        JS_FreeCString(ctx, err);
-                    }
-                    JS_FreeValue(ctx, exception);
-                }
-                JS_FreeValue(ctx, result);
-                JS_FreeValue(ctx, event_val);
-            },
-            false, false
-        );
-
-        data->has_onerror_listener = true;
-        data->onerror_listener_id = listener_id;
-
-        JSElementListenerBinding binding;
-        binding.event_type = "error";
+        binding.property_name = desc->property_name;
+        binding.event_type = desc->event_type;
         binding.listener_id = listener_id;
         binding.use_capture = false;
         binding.js_listener = JS_DupValue(ctx, val);
@@ -1682,8 +1667,22 @@ static const JSCFunctionListEntry js_element_proto_funcs[] = {
     JS_CGETSET_MAGIC_DEF("complete", JSElement_get_img_complete, nullptr, 0),
     JS_CGETSET_MAGIC_DEF("crossOrigin", JSElement_get_img_crossOrigin, JSElement_set_img_crossOrigin, 0),
     // 事件处理属性
-    JS_CGETSET_MAGIC_DEF("onload", JSElement_get_onload, JSElement_set_onload, 0),
-    JS_CGETSET_MAGIC_DEF("onerror", JSElement_get_onerror, JSElement_set_onerror, 0),
+    JS_CGETSET_MAGIC_DEF("onclick", JSElement_get_event_property, JSElement_set_event_property, 0),
+    JS_CGETSET_MAGIC_DEF("ondblclick", JSElement_get_event_property, JSElement_set_event_property, 1),
+    JS_CGETSET_MAGIC_DEF("onmousedown", JSElement_get_event_property, JSElement_set_event_property, 2),
+    JS_CGETSET_MAGIC_DEF("onmouseup", JSElement_get_event_property, JSElement_set_event_property, 3),
+    JS_CGETSET_MAGIC_DEF("onmousemove", JSElement_get_event_property, JSElement_set_event_property, 4),
+    JS_CGETSET_MAGIC_DEF("onmouseenter", JSElement_get_event_property, JSElement_set_event_property, 5),
+    JS_CGETSET_MAGIC_DEF("onmouseleave", JSElement_get_event_property, JSElement_set_event_property, 6),
+    JS_CGETSET_MAGIC_DEF("oninput", JSElement_get_event_property, JSElement_set_event_property, 7),
+    JS_CGETSET_MAGIC_DEF("onchange", JSElement_get_event_property, JSElement_set_event_property, 8),
+    JS_CGETSET_MAGIC_DEF("onkeydown", JSElement_get_event_property, JSElement_set_event_property, 9),
+    JS_CGETSET_MAGIC_DEF("onkeyup", JSElement_get_event_property, JSElement_set_event_property, 10),
+    JS_CGETSET_MAGIC_DEF("onfocus", JSElement_get_event_property, JSElement_set_event_property, 11),
+    JS_CGETSET_MAGIC_DEF("onblur", JSElement_get_event_property, JSElement_set_event_property, 12),
+    JS_CGETSET_MAGIC_DEF("onsubmit", JSElement_get_event_property, JSElement_set_event_property, 13),
+    JS_CGETSET_MAGIC_DEF("onload", JSElement_get_event_property, JSElement_set_event_property, 14),
+    JS_CGETSET_MAGIC_DEF("onerror", JSElement_get_event_property, JSElement_set_event_property, 15),
     JS_PROP_STRING_DEF("[Symbol.toStringTag]", "Element", JS_PROP_CONFIGURABLE),
     JS_CFUNC_DEF("setAttribute", 2, JSElement_setAttribute),
     JS_CFUNC_DEF("getAttribute", 1, JSElement_getAttribute),

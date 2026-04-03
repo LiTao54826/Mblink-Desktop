@@ -10,9 +10,13 @@
 
 #include <string>
 #include <string_view>
+#include <vector>
 
 namespace mbink {
 namespace embedded {
+
+std::string_view GetEmbeddedJS(std::string_view path);
+std::vector<std::string_view> ListEmbeddedJSPaths();
 
 /**
  * @brief 获取嵌入的 Preact 库代码

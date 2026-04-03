@@ -4,13 +4,173 @@
  */
 
 #include "fetch_bindings.h"
-#include <iostream>
+#include <algorithm>
+#include <cctype>
 #include <cstring>
+#include <filesystem>
+#include <fstream>
+#include <iostream>
+#include <sstream>
+#include <thread>
+
+namespace fs = std::filesystem;
 
 namespace mbink {
+namespace {
 
-// 静态实例指针
+std::string NormalizePathString(std::string path, bool force_leading_slash = true) {
+    std::replace(path.begin(), path.end(), '\\', '/');
+    if (path.empty()) {
+        return force_leading_slash ? "/" : "";
+    }
+
+    fs::path normalized_fs = fs::path(path).lexically_normal();
+    path = normalized_fs.generic_string();
+    if (path == ".") {
+        return force_leading_slash ? "/" : "";
+    }
+
+    if (force_leading_slash && !path.empty() && path.front() != '/') {
+        path.insert(path.begin(), '/');
+    }
+    while (path.size() > 1 && path.back() == '/') {
+        path.pop_back();
+    }
+    return path;
+}
+
+bool IsAbsoluteFsPath(const std::string& path) {
+    if (path.empty()) {
+        return false;
+    }
+    fs::path fs_path(path);
+    if (fs_path.is_absolute()) {
+        return true;
+    }
+#ifdef _WIN32
+    return path.size() >= 2 && std::isalpha(static_cast<unsigned char>(path[0])) && path[1] == ':';
+#else
+    return false;
+#endif
+}
+
+bool IsNetworkUrl(const std::string& url) {
+    return url.rfind("http://", 0) == 0 || url.rfind("https://", 0) == 0;
+}
+
+bool IsDataUrl(const std::string& url) {
+    return url.rfind("data:", 0) == 0;
+}
+
+std::string ResolvePathAgainstBase(const std::string& path, const std::string& base_path) {
+    if (path.empty()) {
+        return "";
+    }
+    if (IsNetworkUrl(path) || IsDataUrl(path)) {
+        return path;
+    }
+    if (IsAbsoluteFsPath(path) || path.front() == '/') {
+        return NormalizePathString(path, true);
+    }
+    if (base_path.empty()) {
+        return NormalizePathString(path, false);
+    }
+    return NormalizePathString((fs::path(base_path) / fs::path(path)).generic_string(), true);
+}
+
+std::string EncodeBase64(const std::string& input) {
+    static constexpr char kAlphabet[] =
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    std::string output;
+    output.reserve(((input.size() + 2) / 3) * 4);
+
+    size_t i = 0;
+    while (i + 3 <= input.size()) {
+        const unsigned int a = static_cast<unsigned char>(input[i++]);
+        const unsigned int b = static_cast<unsigned char>(input[i++]);
+        const unsigned int c = static_cast<unsigned char>(input[i++]);
+        output.push_back(kAlphabet[(a >> 2) & 0x3F]);
+        output.push_back(kAlphabet[((a & 0x03) << 4) | ((b >> 4) & 0x0F)]);
+        output.push_back(kAlphabet[((b & 0x0F) << 2) | ((c >> 6) & 0x03)]);
+        output.push_back(kAlphabet[c & 0x3F]);
+    }
+
+    const size_t remaining = input.size() - i;
+    if (remaining == 1) {
+        const unsigned int a = static_cast<unsigned char>(input[i]);
+        output.push_back(kAlphabet[(a >> 2) & 0x3F]);
+        output.push_back(kAlphabet[(a & 0x03) << 4]);
+        output.push_back('=');
+        output.push_back('=');
+    } else if (remaining == 2) {
+        const unsigned int a = static_cast<unsigned char>(input[i++]);
+        const unsigned int b = static_cast<unsigned char>(input[i]);
+        output.push_back(kAlphabet[(a >> 2) & 0x3F]);
+        output.push_back(kAlphabet[((a & 0x03) << 4) | ((b >> 4) & 0x0F)]);
+        output.push_back(kAlphabet[(b & 0x0F) << 2]);
+        output.push_back('=');
+    }
+    return output;
+}
+
+HttpResponse LoadLocalResponse(const std::string& resolved_path,
+                               const FetchBindings::AssetProvider& asset_provider) {
+    HttpResponse response;
+    response.status_code = 404;
+    response.status_text = "Not Found";
+
+    if (resolved_path.empty()) {
+        response.error = "Invalid local resource path";
+        return response;
+    }
+
+    if (asset_provider) {
+        std::vector<uint8_t> data;
+        if (asset_provider(resolved_path, data)) {
+            response.status_code = 200;
+            response.status_text = "OK";
+            response.ok = true;
+            response.body.assign(reinterpret_cast<const char*>(data.data()), data.size());
+            return response;
+        }
+    }
+
+    std::ifstream file(fs::path(resolved_path), std::ios::binary);
+    if (!file.is_open()) {
+        response.error = "Local resource not found: " + resolved_path;
+        return response;
+    }
+
+    std::ostringstream buffer;
+    buffer << file.rdbuf();
+    response.status_code = 200;
+    response.status_text = "OK";
+    response.ok = true;
+    response.body = buffer.str();
+    return response;
+}
+
+} // namespace
+
 FetchBindings* FetchBindings::instance_ = nullptr;
+FetchBindings::AssetProvider FetchBindings::asset_provider_ = nullptr;
+std::string FetchBindings::base_path_;
+
+void FetchBindings::SetAssetProvider(AssetProvider provider) {
+    asset_provider_ = std::move(provider);
+}
+
+FetchBindings::AssetProvider FetchBindings::GetAssetProvider() {
+    return asset_provider_;
+}
+
+void FetchBindings::SetBasePath(const std::string& path) {
+    base_path_ = path;
+}
+
+const std::string& FetchBindings::GetBasePath() {
+    return base_path_;
+}
 
 FetchBindings::FetchBindings(JSContext* ctx,
                              std::shared_ptr<TaskScheduler> task_scheduler)
@@ -105,7 +265,41 @@ void FetchBindings::RegisterJSPolyfill() {
     
     // 存储 pending promises
     const pendingFetches = new Map();
-    
+    let fetchPolling = false;
+    let fetchCleanupRequested = false;
+
+    function schedulePendingResponseCheck() {
+        if (fetchCleanupRequested || fetchPolling || pendingFetches.size === 0) {
+            return;
+        }
+        fetchPolling = true;
+        setTimeout(checkPendingResponses, 10);
+    }
+
+    function decodeBase64ToUint8Array(base64) {
+        if (!base64) {
+            return new Uint8Array(0);
+        }
+        const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+        const cleaned = String(base64).replace(/=+$/, '');
+        const bytes = [];
+        let buffer = 0;
+        let bits = 0;
+        for (let i = 0; i < cleaned.length; i++) {
+            const value = chars.indexOf(cleaned[i]);
+            if (value < 0) {
+                continue;
+            }
+            buffer = (buffer << 6) | value;
+            bits += 6;
+            if (bits >= 8) {
+                bits -= 8;
+                bytes.push((buffer >> bits) & 0xFF);
+            }
+        }
+        return new Uint8Array(bytes);
+    }
+
     // Response 类
     class Response {
         constructor(data) {
@@ -115,37 +309,56 @@ void FetchBindings::RegisterJSPolyfill() {
             this.statusText = data.statusText || '';
             this.headers = new Headers(data.headers || {});
             this._body = data.body || '';
+            this._bodyBase64 = data.bodyBase64 || '';
             this._bodyUsed = false;
         }
-        
+
         get bodyUsed() {
             return this._bodyUsed;
         }
-        
+
         async text() {
             if (this._bodyUsed) {
                 throw new TypeError('Body has already been consumed');
             }
             this._bodyUsed = true;
-            return this._body;
+            if (this._bodyBase64) {
+                const bytes = decodeBase64ToUint8Array(this._bodyBase64);
+                if (typeof TextDecoder !== 'undefined') {
+                    return new TextDecoder().decode(bytes);
+                }
+                let result = '';
+                for (const byte of bytes) {
+                    result += String.fromCharCode(byte);
+                }
+                return result;
+            }
+            return this._body || '';
         }
-        
+
         async json() {
             const text = await this.text();
             return JSON.parse(text);
         }
-        
+
         async blob() {
-            const text = await this.text();
-            return new Blob([text]);
+            if (this._bodyUsed) {
+                throw new TypeError('Body has already been consumed');
+            }
+            this._bodyUsed = true;
+            const bytes = this._bodyBase64 ? decodeBase64ToUint8Array(this._bodyBase64) : new TextEncoder().encode(this._body);
+            return new Blob([bytes]);
         }
-        
+
         async arrayBuffer() {
-            const text = await this.text();
-            const encoder = new TextEncoder();
-            return encoder.encode(text).buffer;
+            if (this._bodyUsed) {
+                throw new TypeError('Body has already been consumed');
+            }
+            this._bodyUsed = true;
+            const bytes = this._bodyBase64 ? decodeBase64ToUint8Array(this._bodyBase64) : new TextEncoder().encode(this._body);
+            return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
         }
-        
+
         clone() {
             if (this._bodyUsed) {
                 throw new TypeError('Body has already been consumed');
@@ -153,7 +366,7 @@ void FetchBindings::RegisterJSPolyfill() {
             return new Response({...this._data});
         }
     }
-    
+
     // Headers 类
     class Headers {
         constructor(init) {
@@ -205,37 +418,49 @@ void FetchBindings::RegisterJSPolyfill() {
     // fetch 函数
     function fetch(url, options) {
         options = options || {};
-        
+
         return new Promise((resolve, reject) => {
+            if (fetchCleanupRequested) {
+                reject(new Error('Fetch subsystem is cleaning up'));
+                return;
+            }
+
             // 准备请求选项
             const fetchOptions = {
                 method: options.method || 'GET',
                 headers: options.headers || {},
                 body: options.body || ''
             };
-            
+
             // 发起请求
             const requestId = __fetch_request(url, fetchOptions);
-            
+
             if (typeof requestId !== 'number' || requestId < 0) {
                 reject(new Error('Failed to initiate fetch request'));
                 return;
             }
-            
+
             // 存储 promise 的 resolve/reject
             pendingFetches.set(requestId, { resolve, reject });
+            schedulePendingResponseCheck();
         });
     }
-    
+
     // 轮询检查响应的函数
     function checkPendingResponses() {
+        fetchPolling = false;
+
+        if (fetchCleanupRequested) {
+            return;
+        }
+
         const result = __fetch_check_response();
-        
+
         if (result && result.id) {
             const pending = pendingFetches.get(result.id);
             if (pending) {
                 pendingFetches.delete(result.id);
-                
+
                 if (result.response.error) {
                     pending.reject(new Error(result.response.error));
                 } else {
@@ -243,28 +468,34 @@ void FetchBindings::RegisterJSPolyfill() {
                 }
             }
         }
-        
+
         // 如果还有 pending 请求，继续轮询
         if (pendingFetches.size > 0) {
-            setTimeout(checkPendingResponses, 10);
+            schedulePendingResponseCheck();
         }
     }
-    
+
     // 包装 fetch 以启动轮询
     const originalFetch = fetch;
     global.fetch = function(url, options) {
-        const promise = originalFetch(url, options);
-        
-        // 启动轮询（如果尚未运行）
-        setTimeout(checkPendingResponses, 10);
-        
-        return promise;
+        return originalFetch(url, options);
     };
-    
+
+    global.__fetchCleanup = function() {
+        fetchCleanupRequested = true;
+        fetchPolling = false;
+        pendingFetches.forEach(({ reject }) => {
+            if (typeof reject === 'function') {
+                reject(new Error('Fetch subsystem cleaned up'));
+            }
+        });
+        pendingFetches.clear();
+    };
+
     // 导出到全局
     global.Response = Response;
     global.Headers = Headers;
-    
+
 })(globalThis);
 )";
 
@@ -273,32 +504,54 @@ void FetchBindings::RegisterJSPolyfill() {
 
 int FetchBindings::DoFetch(const std::string& url, const nlohmann::json& options) {
     int request_id = next_request_id_++;
-    
-    // 准备请求选项
+
     HttpRequestOptions http_options;
-    
     if (options.contains("method")) {
         http_options.method = options["method"].get<std::string>();
+        std::transform(http_options.method.begin(), http_options.method.end(), http_options.method.begin(),
+                       [](unsigned char c) { return static_cast<char>(std::toupper(c)); });
     }
-    
+
     if (options.contains("headers") && options["headers"].is_object()) {
         for (auto& [key, value] : options["headers"].items()) {
             http_options.headers[key] = value.get<std::string>();
         }
     }
-    
-    if (options.contains("body")) {
+
+    if (options.contains("body") && options["body"].is_string()) {
         http_options.body = options["body"].get<std::string>();
     }
-    
-    // 异步执行请求
-    http_client_->RequestAsync(url, http_options, 
+
+    if (!IsNetworkUrl(url) && !IsDataUrl(url)) {
+        const std::string resolved_path = ResolvePathAgainstBase(url, base_path_);
+        const AssetProvider provider = asset_provider_;
+
+        std::thread([this, request_id, resolved_path, provider, method = http_options.method]() {
+            HttpResponse response;
+            if (method != "GET" && method != "HEAD") {
+                response.status_code = 405;
+                response.status_text = "Method Not Allowed";
+                response.error = "Local/resource fetch only supports GET and HEAD";
+            } else {
+                response = LoadLocalResponse(resolved_path, provider);
+                if (method == "HEAD") {
+                    response.body.clear();
+                }
+            }
+
+            std::lock_guard<std::mutex> lock(pending_mutex_);
+            pending_responses_.push({request_id, response});
+        }).detach();
+
+        return request_id;
+    }
+
+    http_client_->RequestAsync(url, http_options,
         [this, request_id](const HttpResponse& response) {
-            // 将响应添加到待处理队列
             std::lock_guard<std::mutex> lock(pending_mutex_);
             pending_responses_.push({request_id, response});
         });
-    
+
     return request_id;
 }
 
@@ -309,11 +562,12 @@ nlohmann::json FetchBindings::ResponseToJson(const HttpResponse& response) {
     result["statusText"] = response.status_text;
     result["headers"] = response.headers;
     result["body"] = response.body;
-    
+    result["bodyBase64"] = EncodeBase64(response.body);
+
     if (!response.error.empty()) {
         result["error"] = response.error;
     }
-    
+
     return result;
 }
 
