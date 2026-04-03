@@ -669,9 +669,10 @@ char* invokeCallbackWithSEH(MBinkCallback cb, const char* args, void* user_data,
 
 
 std::string readFileContents(const char* filepath) {
-    std::ifstream file(filepath);
+    const fs::path fsPath = Utf8PathToFsPath(filepath ? filepath : "");
+    std::ifstream file(fsPath, std::ios::binary);
     if (!file.is_open()) {
-        throw std::runtime_error(std::string("Cannot open file: ") + filepath);
+        throw std::runtime_error(std::string("Cannot open file: ") + (filepath ? filepath : ""));
     }
     std::stringstream ss;
     ss << file.rdbuf();

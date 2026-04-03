@@ -70,8 +70,21 @@ class App:
     def _resolve_user_path(self, path: str):
         if os.path.isabs(path):
             return path
-        caller_dir = os.path.dirname(os.path.abspath(inspect.stack()[2].filename))
-        return os.path.join(caller_dir, path)
+
+        current_file = os.path.normcase(os.path.abspath(__file__))
+        frame = inspect.currentframe()
+        try:
+            frame = frame.f_back if frame else None
+            while frame:
+                filename = frame.f_code.co_filename
+                if filename and os.path.normcase(os.path.abspath(filename)) != current_file:
+                    caller_dir = os.path.dirname(os.path.abspath(filename))
+                    return os.path.normpath(os.path.join(caller_dir, path))
+                frame = frame.f_back
+        finally:
+            del frame
+
+        return os.path.normpath(os.path.abspath(path))
 
     def _call_file_loader(self, loader, filepath: str):
         raw_path = filepath
