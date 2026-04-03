@@ -12,6 +12,7 @@
 #include "quickjs_runtime.h"
 #include "quickjs-libc.h"
 #include "core/utils/encoding_utils.h"
+#include "tools/app_bundler/bytecode_compiler.h"
 #include <fstream>
 #include <sstream>
 #include <stdexcept>
@@ -94,6 +95,131 @@ QuickJSRuntime::~QuickJSRuntime() {
         JS_FreeRuntime(rt_);
         rt_ = nullptr;
     }
+}
+
+namespace {
+
+constexpr uint32_t kMergedBytecodeMagic = 0x4342424d;  // MBBC
+
+uint32_t ReadLe32(const std::string& data) {
+    if (data.size() < 4) return 0;
+    return static_cast<uint32_t>(static_cast<unsigned char>(data[0])) |
+           (static_cast<uint32_t>(static_cast<unsigned char>(data[1])) << 8) |
+           (static_cast<uint32_t>(static_cast<unsigned char>(data[2])) << 16) |
+           (static_cast<uint32_t>(static_cast<unsigned char>(data[3])) << 24);
+}
+
+JSModuleDef* LoadMergedBytecodeModule(JSContext* ctx,
+                                      const std::string& resolved_path,
+                                      const std::string& module_data) {
+    if (ReadLe32(module_data) != kMergedBytecodeMagic) {
+        return nullptr;
+    }
+
+    std::vector<uint8_t> merged(module_data.begin() + 4, module_data.end());
+    auto modules = mbink::BytecodeCompiler::ParseMergedBytecode(merged);
+    if (modules.empty()) {
+        JS_ThrowInternalError(ctx, "Empty merged bytecode: %s", resolved_path.c_str());
+        return nullptr;
+    }
+
+    const mbink::CompiledModule* selected = nullptr;
+    for (const auto& module : modules) {
+        if (module.is_entry) {
+            selected = &module;
+            break;
+        }
+    }
+    if (!selected) {
+        selected = &modules.front();
+    }
+
+    JSValue obj = JS_ReadObject(ctx,
+                                selected->bytecode.data(),
+                                selected->bytecode.size(),
+                                JS_READ_OBJ_BYTECODE);
+    if (JS_IsException(obj)) {
+        return nullptr;
+    }
+    if (JS_VALUE_GET_TAG(obj) != JS_TAG_MODULE) {
+        JS_FreeValue(ctx, obj);
+        JS_ThrowInternalError(ctx, "Bytecode is not a module: %s", resolved_path.c_str());
+        return nullptr;
+    }
+    if (JS_ResolveModule(ctx, obj) < 0) {
+        JS_FreeValue(ctx, obj);
+        return nullptr;
+    }
+
+    JSModuleDef* module_def = reinterpret_cast<JSModuleDef*>(JS_VALUE_GET_PTR(obj));
+    JS_FreeValue(ctx, obj);
+    return module_def;
+}
+
+bool EvalMergedOrSingleBytecode(JSContext* ctx,
+                                const std::string& resolved_path,
+                                const std::string& module_data,
+                                std::string& error) {
+    if (ReadLe32(module_data) == kMergedBytecodeMagic) {
+        std::vector<uint8_t> merged(module_data.begin() + 4, module_data.end());
+        auto modules = mbink::BytecodeCompiler::ParseMergedBytecode(merged);
+        if (modules.empty()) {
+            error = "Empty merged bytecode: " + resolved_path;
+            return false;
+        }
+        for (auto& module : modules) {
+            JSValue obj = JS_ReadObject(ctx,
+                                        module.bytecode.data(),
+                                        module.bytecode.size(),
+                                        JS_READ_OBJ_BYTECODE);
+            if (JS_IsException(obj)) {
+                error = "Failed to read merged bytecode: " + resolved_path;
+                return false;
+            }
+            JSValue result = JS_EvalFunction(ctx, obj);
+            if (JS_IsException(result)) {
+                JSValue exc = JS_GetException(ctx);
+                const char* err = JS_ToCString(ctx, exc);
+                if (err) {
+                    error = err;
+                    JS_FreeCString(ctx, err);
+                } else {
+                    error = "Failed to eval merged bytecode: " + resolved_path;
+                }
+                JS_FreeValue(ctx, exc);
+                JS_FreeValue(ctx, result);
+                return false;
+            }
+            JS_FreeValue(ctx, result);
+        }
+        return true;
+    }
+
+    JSValue obj = JS_ReadObject(ctx,
+                                reinterpret_cast<const uint8_t*>(module_data.data()),
+                                module_data.size(),
+                                JS_READ_OBJ_BYTECODE);
+    if (JS_IsException(obj)) {
+        error = "Failed to read bytecode: " + resolved_path;
+        return false;
+    }
+    JSValue result = JS_EvalFunction(ctx, obj);
+    if (JS_IsException(result)) {
+        JSValue exc = JS_GetException(ctx);
+        const char* err = JS_ToCString(ctx, exc);
+        if (err) {
+            error = err;
+            JS_FreeCString(ctx, err);
+        } else {
+            error = "Failed to eval bytecode: " + resolved_path;
+        }
+        JS_FreeValue(ctx, exc);
+        JS_FreeValue(ctx, result);
+        return false;
+    }
+    JS_FreeValue(ctx, result);
+    return true;
+}
 }
 
 json QuickJSRuntime::Eval(const std::string& code, const std::string& filename) {
@@ -498,15 +624,34 @@ JSModuleDef* QuickJSRuntime::ModuleLoader(JSContext* ctx, const char* module_nam
         return m;
     }
 
-    // 4. 从文件系统读取
-    std::ifstream file = OpenUtf8FileForRead(resolved_path);
-    if (!file.is_open()) {
-        JS_ThrowReferenceError(ctx, "Module file not found: %s", resolved_path.c_str());
-        return nullptr;
+    // 4. 优先通过 file loader 读取，其次回退文件系统
+    std::string module_code;
+    if (runtime->file_loader_) {
+        std::string loader_error;
+        if (!runtime->file_loader_(resolved_path, module_code, &loader_error)) {
+            std::ifstream file = OpenUtf8FileForRead(resolved_path);
+            if (!file.is_open()) {
+                JS_ThrowReferenceError(ctx, "Module file not found: %s", resolved_path.c_str());
+                return nullptr;
+            }
+            std::stringstream buffer;
+            buffer << file.rdbuf();
+            module_code = buffer.str();
+        }
+    } else {
+        std::ifstream file = OpenUtf8FileForRead(resolved_path);
+        if (!file.is_open()) {
+            JS_ThrowReferenceError(ctx, "Module file not found: %s", resolved_path.c_str());
+            return nullptr;
+        }
+        std::stringstream buffer;
+        buffer << file.rdbuf();
+        module_code = buffer.str();
     }
-    std::stringstream buffer;
-    buffer << file.rdbuf();
-    std::string module_code = buffer.str();
+
+    if (JSModuleDef* bytecode_module = LoadMergedBytecodeModule(ctx, resolved_path, module_code)) {
+        return bytecode_module;
+    }
 
     // 5. 注册并编译
     runtime->module_registry_[resolved_path] = module_code;
@@ -543,7 +688,7 @@ char* QuickJSRuntime::ModuleNormalize(JSContext* ctx, const char* module_base,
     
     // 如果是绝对路径，解析为文件夹或文件
     if ((name.length() > 1 && name[1] == ':') || (name.length() > 0 && name[0] == '/')) {
-        resolved_path = ResolveFolderOrFile(name);
+        resolved_path = runtime->ResolveFolderOrFileWithLoader(name);
         return js_strdup(ctx, resolved_path.c_str());
     }
     
@@ -565,7 +710,7 @@ char* QuickJSRuntime::ModuleNormalize(JSContext* ctx, const char* module_base,
         std::string resolved_str = NormalizeFsPath(resolved);
         
         // 检查是否是文件夹，如果是则尝试解析 package.json 或 index.js
-        resolved_path = ResolveFolderOrFile(resolved_str);
+        resolved_path = runtime->ResolveFolderOrFileWithLoader(resolved_str);
         return js_strdup(ctx, resolved_path.c_str());
     }
     
@@ -613,6 +758,23 @@ std::string QuickJSRuntime::ResolveFolderOrFile(const std::string& path) {
     }
     
     return NormalizeFsPath(fs_path);
+}
+
+std::string QuickJSRuntime::ResolveFolderOrFileWithLoader(const std::string& path) const {
+    if (file_loader_) {
+        std::string data;
+        if (file_loader_(path, data, nullptr)) {
+            return path;
+        }
+        if (!path.empty() && path.find('.') == std::string::npos) {
+            const std::string with_js = path + ".js";
+            if (file_loader_(with_js, data, nullptr)) {
+                return with_js;
+            }
+        }
+        return ResolvePackageDirectoryWithLoader(path);
+    }
+    return ResolveFolderOrFile(path);
 }
 
 std::string QuickJSRuntime::ResolvePackageDirectory(const std::string& dir_path) {
@@ -663,6 +825,45 @@ std::string QuickJSRuntime::ResolvePackageDirectory(const std::string& dir_path)
     }
     
     return NormalizeFsPath(dir_fs_path);
+}
+
+std::string QuickJSRuntime::ResolvePackageDirectoryWithLoader(const std::string& dir_path) const {
+    if (!file_loader_) {
+        return ResolvePackageDirectory(dir_path);
+    }
+
+    std::string data;
+    std::string normalized = dir_path;
+    if (!normalized.empty() && normalized.back() == '/') {
+        normalized.pop_back();
+    }
+
+    const std::string package_json = normalized + "/package.json";
+    if (file_loader_(package_json, data, nullptr)) {
+        try {
+            json pkg = json::parse(data);
+            if (pkg.contains("exports")) {
+                std::string exports_result = ResolvePackageExports(pkg["exports"], normalized, ".");
+                if (!exports_result.empty()) {
+                    return exports_result;
+                }
+            }
+            if (pkg.contains("main") && pkg["main"].is_string()) {
+                std::string main_file = pkg["main"].get<std::string>();
+                if (main_file.rfind("./", 0) == 0) {
+                    main_file = main_file.substr(2);
+                }
+                return normalized + "/" + main_file;
+            }
+        } catch (...) {
+        }
+    }
+
+    const std::string index_js = normalized + "/index.js";
+    if (file_loader_(index_js, data, nullptr)) {
+        return index_js;
+    }
+    return dir_path;
 }
 
 std::string QuickJSRuntime::ResolvePackageExports(const json& exports, 
@@ -787,20 +988,30 @@ json QuickJSRuntime::LoadModule(const std::string& module_name) {
 }
 
 json QuickJSRuntime::LoadModuleFile(const std::string& filepath) {
-    // Read file content
-    std::ifstream file = OpenUtf8FileForRead(filepath);
-    if (!file.is_open()) {
-        throw std::runtime_error("Failed to open module file: " + filepath);
+    std::string normalized_abs_path = ResolveFolderOrFileWithLoader(filepath);
+    std::string module_code;
+    if (file_loader_ && file_loader_(normalized_abs_path, module_code, nullptr)) {
+    } else {
+        std::ifstream file = OpenUtf8FileForRead(normalized_abs_path);
+        if (!file.is_open()) {
+            throw std::runtime_error("Failed to open module file: " + filepath);
+        }
+        std::stringstream buffer;
+        buffer << file.rdbuf();
+        module_code = buffer.str();
+        std::filesystem::path abs_path = std::filesystem::absolute(Utf8PathToFsPath(normalized_abs_path));
+        normalized_abs_path = NormalizeFsPath(abs_path);
     }
 
-    std::stringstream buffer;
-    buffer << file.rdbuf();
-    std::string module_code = buffer.str();
-
-    // 设置基础路径为当前文件的绝对路径
-    std::filesystem::path abs_path = std::filesystem::absolute(Utf8PathToFsPath(filepath));
-    std::string normalized_abs_path = NormalizeFsPath(abs_path);
     SetBaseModulePath(normalized_abs_path);
+
+    if (ReadLe32(module_code) == kMergedBytecodeMagic) {
+        std::string error;
+        if (!EvalMergedOrSingleBytecode(ctx_, normalized_abs_path, module_code, error)) {
+            throw std::runtime_error(error.empty() ? ("Failed to eval bytecode module: " + normalized_abs_path) : error);
+        }
+        return json();
+    }
 
     // Register and load the module
     RegisterModule(normalized_abs_path, module_code);
@@ -811,12 +1022,16 @@ void QuickJSRuntime::SetBaseModulePath(const std::string& path) {
     base_module_path_ = path;
 }
 
+void QuickJSRuntime::SetFileLoader(FileLoader loader) {
+    file_loader_ = std::move(loader);
+}
+
 bool QuickJSRuntime::ResolveModulePath(const char* module_name, std::string& resolved_path) {
     std::string name(module_name);
     
     // 已是绝对路径（Windows: C:/... 或 Linux: /...）
     if ((name.length() > 1 && name[1] == ':') || (name.length() > 0 && name[0] == '/')) {
-        resolved_path = name;
+        resolved_path = ResolveFolderOrFileWithLoader(name);
         return true;
     }
     
@@ -832,7 +1047,7 @@ bool QuickJSRuntime::ResolveModulePath(const char* module_name, std::string& res
         std::filesystem::path resolved = (base.parent_path() / relative).lexically_normal();
 
         // 转换路径为字符串并确保使用正斜杠（跨平台兼容）
-        resolved_path = NormalizeFsPath(resolved);
+        resolved_path = ResolveFolderOrFileWithLoader(NormalizeFsPath(resolved));
         return true;
     }
     

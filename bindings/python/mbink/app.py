@@ -11,6 +11,7 @@ import inspect
 import warnings
 import asyncio
 from .controls import LogView, Terminal
+from .resources import RESOURCE_FLAG_BYTECODE, load_resource_file
 from ._ffi import (
     load_dll, MBinkConfig, MBinkCallback, MBinkAsyncCallback, MBinkResizeCallback,
     MBinkVoidCallback, MBinkUpdateCallback, c_int, c_char_p, c_void_p,
@@ -72,6 +73,17 @@ class App:
         caller_dir = os.path.dirname(os.path.abspath(inspect.stack()[2].filename))
         return os.path.join(caller_dir, path)
 
+    def _call_file_loader(self, loader, filepath: str):
+        raw_path = filepath
+        ret = loader(self._handle, raw_path.encode("utf-8"))
+        if ret == 0:
+            return 0
+
+        resolved_path = self._resolve_user_path(filepath)
+        if resolved_path != raw_path:
+            ret = loader(self._handle, resolved_path.encode("utf-8"))
+        return ret
+
     def run(self):
         """启动事件循环（阻塞）"""
         self._ensure_alive()
@@ -126,8 +138,7 @@ class App:
 
     def load_html_file(self, filepath: str):
         self._ensure_alive()
-        filepath = self._resolve_user_path(filepath)
-        ret = self._lib.mbink_load_html_file(self._handle, filepath.encode("utf-8"))
+        ret = self._call_file_loader(self._lib.mbink_load_html_file, filepath)
         if ret != 0:
             err = self._lib.mbink_last_error()
             msg = err.decode("utf-8") if err else "unknown JS error"
@@ -156,13 +167,50 @@ class App:
 
     def load_js_file(self, filepath: str):
         self._ensure_alive()
-        filepath = self._resolve_user_path(filepath)
-        ret = self._lib.mbink_load_js_file(self._handle, filepath.encode("utf-8"))
+        ret = self._call_file_loader(self._lib.mbink_load_js_file, filepath)
         if ret != 0:
             err = self._lib.mbink_last_error()
             msg = err.decode("utf-8") if err else "unknown JS error"
             print(f"[JS Error] {msg}", flush=True)
         return self
+
+    def load_bytecode(self, data: bytes):
+        self._ensure_alive()
+        buf = ctypes.create_string_buffer(data)
+        ret = self._lib.mbink_load_bytecode(self._handle, buf, len(data))
+        if ret != 0:
+            err = self._lib.mbink_last_error()
+            msg = err.decode("utf-8") if err else "unknown JS error"
+            raise RuntimeError(msg)
+        return self
+
+    def load_resource_bytecode(self, package_file: str, resource_path: str, encryption_key: str = ""):
+        package_file = self._resolve_user_path(package_file)
+        data, flags = load_resource_file(package_file, resource_path, encryption_key)
+        if not (flags & RESOURCE_FLAG_BYTECODE):
+            raise ValueError(f"resource '{resource_path}' 不是 QuickJS bytecode")
+        return self.load_bytecode(data)
+
+    def load_resource_text(self, package_file: str, resource_path: str, encryption_key: str = ""):
+        package_file = self._resolve_user_path(package_file)
+        data, _ = load_resource_file(package_file, resource_path, encryption_key)
+        return data.decode("utf-8")
+
+    def mount_resource_package(self, package_file: str, encryption_key: str = "", mount_point: str = "/"):
+        self._ensure_alive()
+        package_file = self._resolve_user_path(package_file)
+        ret = self._lib.mbink_mount_resource_package(
+            self._handle,
+            package_file.encode("utf-8"),
+            encryption_key.encode("utf-8"),
+            mount_point.encode("utf-8"),
+        )
+        if ret != 0:
+            err = self._lib.mbink_last_error()
+            msg = err.decode("utf-8") if err else "unknown resource package error"
+            raise RuntimeError(msg)
+        return self
+
 
     # ========== 共享 C 对象 ==========
 

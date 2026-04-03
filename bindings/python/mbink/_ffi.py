@@ -18,6 +18,7 @@ c_char_p = ctypes.c_char_p
 c_void_p = ctypes.c_void_p
 c_float = ctypes.c_float
 c_size_t = ctypes.c_size_t
+c_uint32 = ctypes.c_uint32
 POINTER = ctypes.POINTER
 
 # ========== 回调类型 ==========
@@ -197,6 +198,15 @@ def _bind_functions(lib):
     lib.mbink_load_js_file.argtypes = [H, c_char_p]
     lib.mbink_load_bytecode.restype = c_int
     lib.mbink_load_bytecode.argtypes = [H, c_void_p, c_size_t]
+    lib.mbink_compile_resources.restype = c_int
+    lib.mbink_compile_resources.argtypes = [c_char_p, c_char_p, c_char_p]
+    lib.mbink_load_resource_file.restype = c_int
+    lib.mbink_load_resource_file.argtypes = [
+        c_char_p, c_char_p, c_char_p,
+        POINTER(c_void_p), POINTER(c_size_t), POINTER(c_uint32)
+    ]
+    lib.mbink_mount_resource_package.restype = c_int
+    lib.mbink_mount_resource_package.argtypes = [H, c_char_p, c_char_p, c_char_p]
 
     # 函数绑定
     lib.mbink_bind.restype = c_int

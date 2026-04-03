@@ -22,9 +22,15 @@ __author__ = "MBink Team"
 
 from .app import App
 from .controls import LogView, Terminal
+from .resources import RESOURCE_FLAG_BYTECODE, compile_resources, load_resource_file, mount_resource_package
 from .shared import SharedState
+
 
 def version():
     return __version__
 
-__all__ = ["App", "SharedState", "LogView", "Terminal", "version"]
+
+__all__ = [
+    "App", "SharedState", "LogView", "Terminal", "version",
+    "compile_resources", "load_resource_file", "mount_resource_package", "RESOURCE_FLAG_BYTECODE",
+]

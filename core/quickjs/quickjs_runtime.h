@@ -170,6 +170,10 @@ public:
      */
     void SetBaseModulePath(const std::string& path);
 
+    using FileLoader = std::function<bool(const std::string&, std::string&, std::string*)>;
+
+    void SetFileLoader(FileLoader loader);
+
     /**
      * @brief 运行事件循环
      * @param max_iterations 最大迭代次数，-1表示无限循环直到没有任务
@@ -321,11 +325,13 @@ private:
      * @brief 解析文件夹或文件（支持 package.json 和 index.js）
      */
     static std::string ResolveFolderOrFile(const std::string& path);
+    std::string ResolveFolderOrFileWithLoader(const std::string& path) const;
 
     /**
      * @brief 解析 package 目录（支持 exports 和 main 字段）
      */
     static std::string ResolvePackageDirectory(const std::string& dir_path);
+    std::string ResolvePackageDirectoryWithLoader(const std::string& dir_path) const;
 
     /**
      * @brief 解析 package.json 的 exports 字段
@@ -346,6 +352,7 @@ private:
     std::unordered_map<std::string, NativeFunction> native_functions_;
     std::unordered_map<std::string, std::string> module_registry_;
     std::string base_module_path_;  // 当前模块的基础路径
+    FileLoader file_loader_;
 
     // 异步任务队列
     std::queue<Task> task_queue_;

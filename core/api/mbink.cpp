@@ -8,6 +8,7 @@
  */
 
 #include "mbink.h"
+#include "resource_package.h"
 #include "core/bridge/state_manager.h"
 #include "core/bridge/host_bridge.h"
 #include "core/bridge/main_thread_queue.h"
@@ -277,6 +278,9 @@ struct WindowContext {
     std::unique_ptr<mbink::FetchBindings> fetchBindings;
     std::unique_ptr<mbink::StateManager> stateManager;
     mbink::MainThreadQueue mainThreadQueue;
+    std::string mountedResourcePackage;
+    std::string mountedResourceKey;
+    std::string mountedResourceMountPoint = "/";
 
     // 共享对象存储
     std::unordered_map<std::string, SharedObjectData*> sharedObjects;
@@ -485,6 +489,42 @@ std::string NormalizeFsPath(const fs::path& path) {
     return result;
 }
 
+std::string NormalizeResourcePath(std::string path) {
+    std::replace(path.begin(), path.end(), '\\', '/');
+    if (path.empty()) return "/";
+    const bool is_relative =
+        path.rfind("./", 0) == 0 ||
+        path.rfind("../", 0) == 0 ||
+        (!path.empty() && path.front() != '/');
+
+    fs::path normalized_fs = Utf8PathToFsPath(path).lexically_normal();
+    path = FsPathToUtf8String(normalized_fs);
+    std::replace(path.begin(), path.end(), '\\', '/');
+
+    if (path == ".") {
+        path = "/";
+    } else if (is_relative && (path.empty() || path.front() != '/')) {
+        path.insert(path.begin(), '/');
+    }
+    if (path.front() != '/') path.insert(path.begin(), '/');
+    while (path.size() > 1 && path.back() == '/') path.pop_back();
+    return path;
+}
+
+std::string JoinMountedResourcePath(const std::string& mountPoint, const std::string& requestPath) {
+    std::string normalizedMount = NormalizeResourcePath(mountPoint.empty() ? "/" : mountPoint);
+    std::string normalizedRequest = NormalizeResourcePath(requestPath);
+    if (normalizedMount != "/") {
+        if (normalizedRequest == normalizedMount) return "";
+        if (normalizedRequest.rfind(normalizedMount + "/", 0) != 0) return "";
+        normalizedRequest.erase(0, normalizedMount.size());
+    }
+    while (!normalizedRequest.empty() && normalizedRequest.front() == '/') {
+        normalizedRequest.erase(normalizedRequest.begin());
+    }
+    return normalizedRequest;
+}
+
 void registerPreactModules(mbink::QuickJSRuntime* runtime) {
     if (!runtime) {
         return;
@@ -655,6 +695,36 @@ WindowContext* createWindowContext(const mbink::WindowConfig& wc) {
 
     // 6. 设置 JS Runtime 到 Document
     ctx->document->SetJSRuntime(ctx->runtime.get());
+    ctx->runtime->SetFileLoader([ctx](const std::string& path, std::string& out, std::string* error) {
+        if (ctx->mountedResourcePackage.empty()) {
+            if (error) *error = "resource package not mounted";
+            return false;
+        }
+
+        const std::string resourcePath = JoinMountedResourcePath(
+            ctx->mountedResourceMountPoint.empty() ? "/" : ctx->mountedResourceMountPoint,
+            path);
+        if (resourcePath.empty()) {
+            if (error) *error = "resource path outside mount point";
+            return false;
+        }
+
+        std::vector<uint8_t> data;
+        std::string loadError;
+        if (!mbink::resourcepkg::LoadResourceFile(
+                ctx->mountedResourcePackage.c_str(),
+                resourcePath.c_str(),
+                ctx->mountedResourceKey.c_str(),
+                data,
+                nullptr,
+                loadError)) {
+            if (error) *error = loadError;
+            return false;
+        }
+
+        out.assign(reinterpret_cast<const char*>(data.data()), data.size());
+        return true;
+    });
 
     // 7. 初始化 DOM 绑定
     auto jsCtx = ctx->runtime->GetContext();
@@ -1112,11 +1182,37 @@ int mbink_load_html_file(MBinkHandle handle, const char* filepath) {
     if (!handle) return MBINK_ERROR_INVALID_HANDLE;
     if (!filepath) return MBINK_ERROR_INVALID_PARAM;
     try {
-        std::string content = readFileContents(filepath);
         auto ctx = getContext(handle);
         if (ctx->document) {
-            fs::path html_dir = fs::absolute(Utf8PathToFsPath(filepath)).parent_path();
-            std::string base_path = NormalizeFsPath(html_dir);
+            std::string content;
+            std::string base_path;
+
+            const std::string resourcePath = JoinMountedResourcePath(
+                ctx->mountedResourceMountPoint.empty() ? "/" : ctx->mountedResourceMountPoint,
+                filepath);
+
+            if (!ctx->mountedResourcePackage.empty() && !resourcePath.empty()) {
+                std::vector<uint8_t> data;
+                std::string error;
+                if (mbink::resourcepkg::LoadResourceFile(
+                        ctx->mountedResourcePackage.c_str(),
+                        resourcePath.c_str(),
+                        ctx->mountedResourceKey.c_str(),
+                        data,
+                        nullptr,
+                        error)) {
+                    content.assign(reinterpret_cast<const char*>(data.data()), data.size());
+                    fs::path html_dir = fs::path(NormalizeResourcePath(filepath)).parent_path();
+                    base_path = NormalizeResourcePath(FsPathToUtf8String(html_dir));
+                }
+            }
+
+            if (content.empty()) {
+                content = readFileContents(filepath);
+                fs::path html_dir = fs::absolute(Utf8PathToFsPath(filepath)).parent_path();
+                base_path = NormalizeFsPath(html_dir);
+            }
+
             ctx->document->SetBasePath(base_path);
             if (!ctx->document->LoadHTML(content)) {
                 setLastError("Failed to parse HTML");
@@ -1170,7 +1266,35 @@ int mbink_load_js_file(MBinkHandle handle, const char* filepath) {
     if (!ctx->runtime) return MBINK_ERROR_INVALID_HANDLE;
 
     try {
-        ctx->runtime->LoadModuleFile(filepath);
+        std::string path = filepath;
+        if (!ctx->mountedResourcePackage.empty()) {
+            const std::string resourcePath = JoinMountedResourcePath(
+                ctx->mountedResourceMountPoint.empty() ? "/" : ctx->mountedResourceMountPoint,
+                filepath);
+            if (!resourcePath.empty()) {
+                std::vector<uint8_t> data;
+                uint32_t flags = 0;
+                std::string error;
+                if (mbink::resourcepkg::LoadResourceFile(
+                        ctx->mountedResourcePackage.c_str(),
+                        resourcePath.c_str(),
+                        ctx->mountedResourceKey.c_str(),
+                        data,
+                        &flags,
+                        error)) {
+                    if ((flags & mbink::resourcepkg::kResourceFlagBytecode) != 0) {
+                        auto jsCtx = ctx->runtime->GetContext();
+                        if (!mbink::resourcepkg::EvalMaybeMergedBytecode(jsCtx, data.data(), data.size(), error)) {
+                            setLastError(error.empty() ? "Failed to eval resource bytecode" : error);
+                            return MBINK_ERROR_JS_ERROR;
+                        }
+                        return MBINK_OK;
+                    }
+                    path = NormalizeResourcePath(filepath);
+                }
+            }
+        }
+        ctx->runtime->LoadModuleFile(path);
         return MBINK_OK;
     } catch (const std::exception& e) {
         setLastError(e.what());
@@ -1186,24 +1310,11 @@ int mbink_load_bytecode(MBinkHandle handle, const void* data, size_t size) {
 
     try {
         auto jsCtx = ctx->runtime->GetContext();
-        JSValue obj = JS_ReadObject(jsCtx, static_cast<const uint8_t*>(data), size, JS_READ_OBJ_BYTECODE);
-        if (JS_IsException(obj)) {
-            setLastError("Failed to read bytecode");
+        std::string error;
+        if (!mbink::resourcepkg::EvalMaybeMergedBytecode(jsCtx, data, size, error)) {
+            setLastError(error.empty() ? "Failed to eval bytecode" : error);
             return MBINK_ERROR_JS_ERROR;
         }
-        JSValue result = JS_EvalFunction(jsCtx, obj);
-        if (JS_IsException(result)) {
-            JSValue exc = JS_GetException(jsCtx);
-            const char* err = JS_ToCString(jsCtx, exc);
-            if (err) {
-                setLastError(err);
-                JS_FreeCString(jsCtx, err);
-            }
-            JS_FreeValue(jsCtx, exc);
-            JS_FreeValue(jsCtx, result);
-            return MBINK_ERROR_JS_ERROR;
-        }
-        JS_FreeValue(jsCtx, result);
         return MBINK_OK;
     } catch (const std::exception& e) {
         setLastError(e.what());
@@ -2208,6 +2319,84 @@ const char* mbink_terminal_serialize(MBinkTerminalHandle terminal_handle) {
     auto content = data->element->Serialize();
     return duplicateString(content.c_str());
 }
+
+int mbink_compile_resources(const char* input_path,
+                            const char* output_file,
+                            const char* encryption_key) {
+    try {
+        std::string error;
+        if (!mbink::resourcepkg::CompileResources(input_path, output_file, encryption_key, error)) {
+            setLastError(error.empty() ? "Failed to compile resources" : error);
+            return MBINK_ERROR_UNKNOWN;
+        }
+        return MBINK_OK;
+    } catch (const std::exception& e) {
+        setLastError(e.what());
+        return MBINK_ERROR_UNKNOWN;
+    }
+}
+
+int mbink_load_resource_file(const char* package_file,
+                             const char* resource_path,
+                             const char* encryption_key,
+                             void** out_data,
+                             size_t* out_size,
+                             uint32_t* out_flags) {
+    if (!out_data || !out_size) return MBINK_ERROR_INVALID_PARAM;
+    *out_data = nullptr;
+    *out_size = 0;
+    if (out_flags) *out_flags = 0;
+
+    try {
+        std::vector<uint8_t> data;
+        std::string error;
+        if (!mbink::resourcepkg::LoadResourceFile(package_file,
+                                                  resource_path,
+                                                  encryption_key,
+                                                  data,
+                                                  out_flags,
+                                                  error)) {
+            setLastError(error.empty() ? "Failed to load resource file" : error);
+            return error == "resource not found" ? MBINK_ERROR_NOT_FOUND : MBINK_ERROR_UNKNOWN;
+        }
+
+        void* buffer = std::malloc(data.empty() ? 1 : data.size());
+        if (!buffer) {
+            setLastError("Out of memory");
+            return MBINK_ERROR_UNKNOWN;
+        }
+        if (!data.empty()) std::memcpy(buffer, data.data(), data.size());
+
+        *out_data = buffer;
+        *out_size = data.size();
+        return MBINK_OK;
+    } catch (const std::exception& e) {
+        setLastError(e.what());
+        return MBINK_ERROR_UNKNOWN;
+    }
+}
+
+int mbink_mount_resource_package(MBinkHandle handle,
+                                 const char* package_file,
+                                 const char* encryption_key,
+                                 const char* mount_point) {
+    if (!handle) return MBINK_ERROR_INVALID_HANDLE;
+    if (!package_file) return MBINK_ERROR_INVALID_PARAM;
+
+    auto ctx = getContext(handle);
+    if (!ctx || !ctx->runtime || !ctx->document) return MBINK_ERROR_INVALID_HANDLE;
+
+    const char* normalizedKey = encryption_key ? encryption_key : "";
+    const std::string normalizedMount = NormalizeResourcePath(mount_point ? mount_point : "/");
+
+    ctx->mountedResourcePackage = package_file;
+    ctx->mountedResourceKey = normalizedKey;
+    ctx->mountedResourceMountPoint = normalizedMount;
+    ctx->document->SetBasePath(normalizedMount);
+    ctx->runtime->SetBaseModulePath(normalizedMount == "/" ? "/index.js" : normalizedMount + "/index.js");
+    return MBINK_OK;
+}
+
 
 // ========== 工具函数 ==========
 

@@ -162,6 +162,25 @@ MBINK_API int mbink_load_js_file(MBinkHandle handle, const char* filepath);
 MBINK_API int mbink_load_bytecode(MBinkHandle handle, const void* data,
                                       size_t size);
 
+/** 编译资源文件/目录为加密资源包；.js/.mjs 会编译为 QuickJS bytecode */
+MBINK_API int mbink_compile_resources(const char* input_path,
+                                      const char* output_file,
+                                      const char* encryption_key);
+
+/** 从资源包按路径加载文件；返回数据需用 mbink_free 释放 */
+MBINK_API int mbink_load_resource_file(const char* package_file,
+                                       const char* resource_path,
+                                       const char* encryption_key,
+                                       void** out_data,
+                                       size_t* out_size,
+                                       uint32_t* out_flags);
+
+/** 挂载资源包；挂载后 load_html_file/load_js_file/import 优先从资源包解析 */
+MBINK_API int mbink_mount_resource_package(MBinkHandle handle,
+                                           const char* package_file,
+                                           const char* encryption_key,
+                                           const char* mount_point);
+
 // ========== 函数绑定 ==========
 
 /** 绑定宿主函数，JS 中通过 backend.name(args) 调用 */

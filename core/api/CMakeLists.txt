@@ -2,11 +2,15 @@
 
 set(API_SOURCES
     mbink.cpp
+    resource_package.cpp
     ${CMAKE_SOURCE_DIR}/tools/esm_loader/embedded_js.cpp
+    ${CMAKE_SOURCE_DIR}/tools/app_bundler/bytecode_compiler.cpp
+    ${CMAKE_SOURCE_DIR}/tools/app_bundler/module_resolver.cpp
 )
 
 set(API_HEADERS
     mbink.h
+    resource_package.h
 )
 
 set(MBINK_API_GENERATED_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated")
