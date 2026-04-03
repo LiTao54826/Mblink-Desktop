@@ -371,7 +371,7 @@ MBINK_API int mbink_queue_size(MBinkHandle handle);
 // 核心思想：Python/JS 共享同一个 QuickJS JSValue 对象。
 // - Python 通过 ctypes 调用 set/get 操作同一个 C 对象
 // - JS 通过 globalThis.<name> 直接读写同一个对象
-// - Python 写入后自动触发 JS 内部 shared update 调度 → UI 刷新
+// - Python 写入后自动触发 JS __onSharedUpdate() → Preact re-render
 //
 // 用法：
 //   Python: data = app.shared("data"); data.count = 0
@@ -390,7 +390,7 @@ MBINK_API MBinkSharedHandle mbink_shared_create(MBinkHandle handle,
 // 销毁共享对象
 MBINK_API void mbink_shared_destroy(MBinkSharedHandle shared);
 
-// ---- 类型化 setter（自动触发内部 shared update 调度） ----
+// ---- 类型化 setter（自动触发 JS __onSharedUpdate） ----
 
 MBINK_API int mbink_shared_set_int(MBinkSharedHandle shared,
                                         const char* key, int64_t value);
@@ -429,7 +429,7 @@ MBINK_API int mbink_shared_delete(MBinkSharedHandle shared,
 MBINK_API bool mbink_shared_has(MBinkSharedHandle shared,
                                      const char* key);
 
-// ---- 批量更新（抑制中间 shared update 调用） ----
+// ---- 批量更新（抑制中间 __onSharedUpdate 调用） ----
 
 MBINK_API void mbink_shared_batch_begin(MBinkSharedHandle shared);
 MBINK_API void mbink_shared_batch_end(MBinkSharedHandle shared);

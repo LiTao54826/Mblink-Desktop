@@ -26,7 +26,6 @@
 #include "core/render/image/image_loader.h"
 #include "core/lexbor/lexbor_stylesheet.h"
 #include "core/quickjs/dom_binding_map.h"
-#include "core/quickjs/bindings/js_element.h"
 #include "tools/esm_loader/embedded_js.h"
 #include "core/utils/encoding_utils.h"
 
@@ -43,14 +42,12 @@
 #include <mutex>
 #include <shared_mutex>
 #include <unordered_map>
-#include <unordered_set>
 #include <vector>
 #include <fstream>
 #include <sstream>
 #include <iostream>
 #include <exception>
 #include <filesystem>
-#include <chrono>
 
 namespace {
 
@@ -76,19 +73,17 @@ std::mutex g_errorMutex;
 // ========== WindowContext ==========
 
 struct WindowContext;
-bool isSharedDiagEnabled(WindowContext* ctx);
-nlohmann::json getSharedDiagMemoryStats(WindowContext* ctx, bool gc);
 
 // ========== SharedObject 结构体 ==========
 // Python/JS 共享的 C 对象，内含 QuickJS JSValue
 struct SharedObjectData {
     JSContext* ctx = nullptr;
     JSValue js_obj = JS_UNDEFINED;       // 实际的 JS 对象（globalThis.<name>）
-    JSValue updater_func = JS_UNDEFINED; // 内部 shared update dispatcher 缓存
+    JSValue updater_func = JS_UNDEFINED; // __onSharedUpdate 函数缓存
     std::string name;                    // globalThis 上的名字
     int batch_depth = 0;                 // 批量层级（支持嵌套）
+    int pending_updates = 0;             // 批量模式中的待处理更新数
     bool pending_notify_ = false;        // 是否有待处理的非批量通知（延迟刷新用）
-    std::unordered_set<std::string> pending_keys_; // 待通知的顶层 key 集合
 
     // ===== 线程安全数据存储 =====
     mutable std::shared_mutex dataMutex_;
@@ -100,7 +95,7 @@ struct SharedObjectData {
     void refreshUpdater() {
         if (!ctx) return;
         JSValue global = JS_GetGlobalObject(ctx);
-        JSValue updater = JS_GetPropertyStr(ctx, global, "__mbinkSharedUpdateDispatcher");
+        JSValue updater = JS_GetPropertyStr(ctx, global, "__onSharedUpdate");
         JS_FreeValue(ctx, global);
 
         if (!JS_IsUndefined(updater_func)) {
@@ -123,6 +118,9 @@ struct SharedObjectData {
 
     void beginBatch() {
         batch_depth++;
+        if (batch_depth == 1) {
+            pending_updates = 0;
+        }
     }
 
     void endBatch() {
@@ -136,9 +134,10 @@ struct SharedObjectData {
     // notifyUpdate：记录待通知，不立即调用 JS。
     // 真正的通知由 flushPendingNotify() 在事件循环帧中统一触发，
     // 避免在 Python 回调的 C 调用链中嵌套执行 QuickJS JS 代码（QuickJS 重入）。
-    void notifyUpdate(const char* key) {
-        if (key && *key) {
-            pending_keys_.insert(std::string(key));
+    void notifyUpdate(const char* /*key*/) {
+        if (batch_depth > 0) {
+            pending_updates++;
+            return;
         }
         pending_notify_ = true;
     }
@@ -146,22 +145,9 @@ struct SharedObjectData {
     void flushPendingNotify() {
         if (!pending_notify_) return;
         pending_notify_ = false;
-        if (pending_keys_.empty()) return;
-
-        std::vector<std::string> changedKeys;
-        changedKeys.reserve(pending_keys_.size());
-        for (const auto& key : pending_keys_) {
-            changedKeys.push_back(key);
-        }
-        pending_keys_.clear();
-
         refreshUpdater();
         if (!JS_IsUndefined(updater_func) && !JS_IsNull(updater_func)) {
-            JSValue arg = JS_NewArray(ctx);
-            for (uint32_t i = 0; i < changedKeys.size(); ++i) {
-                JS_SetPropertyUint32(ctx, arg, i,
-                    JS_NewString(ctx, changedKeys[i].c_str()));
-            }
+            JSValue arg = JS_NewString(ctx, "*");
             JSValue ret = JS_Call(ctx, updater_func, JS_UNDEFINED, 1, &arg);
             JS_FreeValue(ctx, arg);
             if (JS_IsException(ret)) {
@@ -173,7 +159,8 @@ struct SharedObjectData {
     }
 
     void flushBatch() {
-        if (!pending_keys_.empty()) {
+        if (pending_updates > 0) {
+            pending_updates = 0;
             pending_notify_ = true;
         }
     }
@@ -203,80 +190,55 @@ struct SharedObjectData {
         }
     }
 
-    bool safeSetProperty(const char* key, const nlohmann::json& value) {
-        bool changed = false;
+    void safeSetProperty(const char* key, const nlohmann::json& value) {
         {
             std::unique_lock<std::shared_mutex> lock(dataMutex_);
-            auto it = data_.find(key);
-            if (it != data_.end() && it.value() == value) {
-                return false;
-            }
             data_[key] = value;
-            changed = true;
         }
-
-        if (!changed) {
-            return false;
-        }
-
-        const std::string depId = name + ":" + key;
 
         if (mainQueue_ && mainQueue_->isMainThread()) {
             applyPropertyToJS(key, value);
             lazyRefreshUpdater();
-            notifyUpdate(depId.c_str());
+            notifyUpdate(key);
         } else if (mainQueue_) {
             std::string keyCopy(key);
-            std::string depIdCopy(depId);
             nlohmann::json valueCopy = value;
             auto queueAlive = mainQueue_->aliveFlag();
             auto objAlive = alive_;
             SharedObjectData* self = this;
-            mainQueue_->post([self, keyCopy, depIdCopy, valueCopy, queueAlive, objAlive]() {
+            mainQueue_->post([self, keyCopy, valueCopy, queueAlive, objAlive]() {
                 if (!queueAlive->load() || !objAlive->load()) return;
                 self->applyPropertyToJS(keyCopy.c_str(), valueCopy);
                 self->lazyRefreshUpdater();
-                self->notifyUpdate(depIdCopy.c_str());
+                self->notifyUpdate(keyCopy.c_str());
             });
         }
-
-        return true;
     }
 
-    bool safeDeleteProperty(const char* key) {
-        bool existed = false;
+    void safeDeleteProperty(const char* key) {
         {
             std::unique_lock<std::shared_mutex> lock(dataMutex_);
-            existed = data_.erase(key) > 0;
+            data_.erase(key);
         }
-
-        if (!existed) {
-            return false;
-        }
-
-        const std::string depId = name + ":" + key;
 
         if (mainQueue_ && mainQueue_->isMainThread()) {
             JSAtom atom = JS_NewAtom(ctx, key);
             JS_DeleteProperty(ctx, js_obj, atom, 0);
             JS_FreeAtom(ctx, atom);
-            notifyUpdate(depId.c_str());
+            notifyUpdate(key);
         } else if (mainQueue_) {
             std::string keyCopy(key);
-            std::string depIdCopy(depId);
             auto queueAlive = mainQueue_->aliveFlag();
             auto objAlive = alive_;
             SharedObjectData* self = this;
-            mainQueue_->post([self, keyCopy, depIdCopy, queueAlive, objAlive]() {
+            mainQueue_->post([self, keyCopy, queueAlive, objAlive]() {
                 if (!queueAlive->load() || !objAlive->load()) return;
                 JSAtom atom = JS_NewAtom(self->ctx, keyCopy.c_str());
                 JS_DeleteProperty(self->ctx, self->js_obj, atom, 0);
                 JS_FreeAtom(self->ctx, atom);
-                self->notifyUpdate(depIdCopy.c_str());
+                self->notifyUpdate(keyCopy.c_str());
             });
         }
-
-        return true;
     }
 
     nlohmann::json safeGetProperty(const char* key) const {
@@ -1082,7 +1044,6 @@ bool mbink_poll_events(MBinkHandle handle) {
     }
 
     ctx->eventLoop->RunOnce();
-
     return !ctx->eventLoop->ShouldQuit();
 }
 
@@ -2012,25 +1973,8 @@ MBinkSharedHandle mbink_shared_create(MBinkHandle handle, const char* name) {
     shared->owner_ = ctx;
 
     JSValue global = JS_GetGlobalObject(jsCtx);
-    JSValue exposed = JS_DupValue(jsCtx, shared->js_obj);
-    JSValue wrapFn = JS_GetPropertyStr(jsCtx, global, "__mbinkWrapSharedObject");
-    if (JS_IsFunction(jsCtx, wrapFn)) {
-        JSValue args[2] = {
-            JS_NewString(jsCtx, name),
-            JS_DupValue(jsCtx, shared->js_obj)
-        };
-        JSValue wrapped = JS_Call(jsCtx, wrapFn, JS_UNDEFINED, 2, args);
-        JS_FreeValue(jsCtx, args[0]);
-        JS_FreeValue(jsCtx, args[1]);
-        if (!JS_IsException(wrapped) && !JS_IsUndefined(wrapped) && !JS_IsNull(wrapped)) {
-            JS_FreeValue(jsCtx, exposed);
-            exposed = wrapped;
-        } else {
-            JS_FreeValue(jsCtx, wrapped);
-        }
-    }
-    JS_FreeValue(jsCtx, wrapFn);
-    JS_SetPropertyStr(jsCtx, global, name, exposed);
+    JS_DupValue(jsCtx, shared->js_obj);
+    JS_SetPropertyStr(jsCtx, global, name, shared->js_obj);
 
     shared->refreshUpdater();
     JS_FreeValue(jsCtx, global);

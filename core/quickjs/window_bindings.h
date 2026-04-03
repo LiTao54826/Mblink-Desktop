@@ -16,7 +16,6 @@
 #include "core/dom/document.h"
 #include "core/event/loop/task_scheduler.h"
 #include <memory>
-#include <unordered_map>
 
 namespace mbink {
 
@@ -76,14 +75,9 @@ public:
     std::shared_ptr<TaskScheduler> GetTaskScheduler() { return task_scheduler_; }
 
 private:
-    void TrackTimerCallback(int task_id, const std::string& callback_name);
-    void ReleaseTimerCallback(int task_id);
-    void ReleaseTimerCallbackByName(const std::string& callback_name);
-
     QuickJSRuntime* runtime_;
     std::shared_ptr<Window> window_;
     std::shared_ptr<TaskScheduler> task_scheduler_;
-    std::unordered_map<int, std::string> timer_callbacks_;
 };
 
 /**

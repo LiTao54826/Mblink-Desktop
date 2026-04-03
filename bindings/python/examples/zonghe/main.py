@@ -23,31 +23,45 @@ SAMPLE_RATE = 1.0
 WINDOW_W = 900 * 2
 WINDOW_H = 600 * 2
 
-BUILD_DLL = os.path.normpath(
-    os.path.join(os.path.dirname(__file__), '..', '..', '..', '..', 'build', 'bin', 'Release', 'mbink.dll')
-)
-print(f"[MBinkPythonDiag] dll_path={BUILD_DLL} exists={os.path.exists(BUILD_DLL)}")
-
 app = App(
     "票据机器人 Work Client", WINDOW_W, WINDOW_H,
-    # dll_path=BUILD_DLL,
     borderless=True, resizable=True, gpu=False,
     min_size=(WINDOW_W, WINDOW_H),
 )
-sys_state = app.shared("sys")
+
 # ── 窗口关闭回调 ──────────────────────────────────────────────────────────────
 @app.on_close
 def _():
     print("[WorkClient] 窗口关闭")
 
-
-@app.on_update
-def _(a):
-    sys_state.heartbeat_at = datetime.now().strftime("%H:%M:%S")
-
 # ── 加载 UI ───────────────────────────────────────────────────────────────────
-app.load_html_file('./index.html')
-app.load_js_file("./ui/app.js")
+app.load_html("""<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; background: #eef4ff; }
+    body { font-family: "Segoe UI", Arial, sans-serif; }
+    #root { width: 100vw; height: 100vh; overflow: hidden; }
+    .drag { -webkit-app-region: drag; }
+    .no-drag { -webkit-app-region: no-drag; }
+    .window-control {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      display: inline-block;
+      flex-shrink: 0;
+    }
+    .wc-minimize { background: #64748b; -webkit-window-control: minimize; }
+    .wc-maximize { background: #34d399; -webkit-window-control: maximize; }
+    .wc-close { background: #f87171; -webkit-window-control: close; }
+  </style>
+</head>
+<body><div id="root"></div></body>
+</html>""")
+
+app.load_preact("ui/app.js")
 app.run()
 
 

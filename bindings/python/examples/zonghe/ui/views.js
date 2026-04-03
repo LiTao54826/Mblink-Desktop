@@ -24,13 +24,6 @@ function textInput(value, placeholder, password, onInput) {
   });
 }
 
-function checkboxInput(checked, label, onChange) {
-  return h('label', { style: { display: 'flex', alignItems: 'center', gap: '8px', color: C.text, fontSize: '12px', cursor: 'pointer' } }, [
-    h('input', { type: 'checkbox', checked: !!checked, onChange: function(e) { return onChange(!!e.target.checked); } }),
-    label
-  ]);
-}
-
 export function TitleBar(props) {
   const s = props || {};
   const showStatus = !!s.showStatus;
@@ -70,10 +63,9 @@ export function LoginView(props) {
   const s = props.s || {};
   const draft = props.draft || {};
   const py = props.py || {};
-  const versionText = s.app_version ? ('当前版本 v' + s.app_version) : '当前版本 --';
   async function handleLogin() {
     try {
-      await (backend.login_runtime && backend.login_runtime(draft));
+      await (py.login_runtime && py.login_runtime(draft));
     } catch (err) {
       console.error(err);
     }
@@ -82,11 +74,10 @@ export function LoginView(props) {
     h(TitleBar, { ...s, showStatus: false }),
     h('div', { style: { flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '24px' } }, [
       panel('登录', h('div', { style: { width: '380px', display: 'flex', flexDirection: 'column', gap: '12px' } }, [
+        formRow('接口地址', textInput(draft.base_url, '请输入 BASE_URL', false, function(v) { return props.setDraft('base_url', v); })),
         formRow('用户名', textInput(draft.username, '请输入用户名', false, function(v) { return props.setDraft('username', v); })),
         formRow('密码', textInput(draft.password, '请输入密码', true, function(v) { return props.setDraft('password', v); })),
-        checkboxInput(draft.remember_credentials, '记住用户名密码', function(v) { return props.setDraft('remember_credentials', v); }),
         h('div', { style: { color: C.muted, fontSize: '11px', lineHeight: 1.5, minHeight: '16px' } }, s.current_action || '请输入账号信息后登录'),
-        h('div', { style: { color: C.muted, fontSize: '11px', lineHeight: 1.5 } }, versionText),
         h('div', { style: { display: 'flex', justifyContent: 'flex-end', marginTop: '4px' } }, [
           btn('登录', 'primary', handleLogin)
         ])
@@ -98,20 +89,14 @@ export function LoginView(props) {
 export function WorkspaceView(props) {
   const s = props.s || {};
   const py = props.py || {};
-  const versionText = s.app_version ? ('v' + s.app_version) : '--';
-  const isRunning = s.worker_running === true;
-  const runtimeAction = isRunning
-    ? btn('停止', 'danger', function() { return backend.stop_runtime && backend.stop_runtime(); })
-    : btn('启动', 'primary', function() { return backend.start_runtime && backend.start_runtime(); });
   return h('div', { style: { width: '100vw', height: '100vh', display: 'flex', flexDirection: 'column' } }, [
     h(TitleBar, { ...s, showStatus: true }),
     h('div', { style: { flex: 1, padding: '16px', display: 'flex', flexDirection: 'column', gap: '16px', maxWidth: '1200px', margin: '0 auto', width: '100%', boxSizing: 'border-box', overflow: 'hidden' } }, [
-      h('div', { style: { display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '16px' } }, [
+      h('div', { style: { display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '16px' } }, [
         statCard('核心状态', s.runtime_status || '空闲', '引擎运行中', statusTone(s.runtime_status)),
         statCard('今日成功', s.today_success || '0', '累计处理量', C.success),
         statCard('最近耗时', s.task_elapsed || '0s', '上次任务用时', C.primary),
         statCard('当前用户', s.current_user || '--', '登录凭证', C.muted),
-        statCard('当前版本', versionText, '打包自动递增', C.primary),
       ]),
       h('div', { style: { flex: 1, display: 'grid', gridTemplateColumns: '260px 1fr', gap: '16px', minHeight: 0 } }, [
         h('div', { style: { display: 'flex', flexDirection: 'column', gap: '16px' } }, [
@@ -123,8 +108,9 @@ export function WorkspaceView(props) {
             row('最近心跳', s.heartbeat_at),
           ]), { flex: 1 }),
           panel('指令控制', h('div', { style: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' } }, [
-            runtimeAction,
+            btn('启动', 'primary', function() { return backend.start_runtime && backend.start_runtime(); }),
             btn('重试', null, function() { return backend.retry_task && backend.retry_task(); }),
+            btn('停止', 'danger', function() { return backend.stop_runtime && backend.stop_runtime(); }),
             btn('设置', null, function() { return backend.toggle_settings && backend.toggle_settings({ visible: true }); })
           ]))
         ]),
@@ -136,11 +122,15 @@ export function WorkspaceView(props) {
 }
 
 export function SettingsDialog(props) {
+  const s = props.s || {};
   const form = props.settingsDraft || {};
   const py = props.py || {};
   return h('div', { style: { position: 'fixed', left: 0, top: 0, right: 0, bottom: 0, background: 'rgba(15, 23, 42, 0.28)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 99999 } }, [
     h('div', { class: 'no-drag', style: { background: C.panel, border: '1px solid ' + C.border, borderRadius: '12px', boxShadow: C.shadow, padding: '20px', width: '520px', display: 'flex', flexDirection: 'column', gap: '12px', transform: 'translate(0, -10vh)' } }, [
       h('div', { style: { color: C.muted, fontSize: '12px', fontWeight: 600, marginBottom: '8px', letterSpacing: '0.04em', display: 'flex', alignItems: 'center', gap: '6px' } }, ['系统设置']),
+      formRow('AES_KEY', textInput(form.aes_key, '请输入 AES_KEY', false, function(v) { return props.setSettingsDraft('aes_key', v); })),
+      formRow('AES_IV', textInput(form.aes_iv, '请输入 AES_IV', false, function(v) { return props.setSettingsDraft('aes_iv', v); })),
+      formRow('UKEY_PASSWORD', textInput(form.ukey_password, '请输入 UKey 密码', true, function(v) { return props.setSettingsDraft('ukey_password', v); })),
       formRow('轮询间隔', textInput(String(form.poll_interval || ''), '秒', false, function(v) { return props.setSettingsDraft('poll_interval', v); })),
       formRow('Debug Port', textInput(String(form.debug_port || ''), '请输入端口', false, function(v) { return props.setSettingsDraft('debug_port', v); })),
       h('label', { style: { display: 'flex', alignItems: 'center', gap: '8px', color: C.text, fontSize: '12px' } }, [

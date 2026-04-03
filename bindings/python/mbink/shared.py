@@ -4,10 +4,10 @@ SharedState — Python/JS 共享 C 对象代理类
 用法：
     data = app.shared("data")
     data.count = 0        # → C: JS_SetPropertyStr → JS: data.count = 0
-    data.count += 1       # → C: get + set → JS: 自动触发内部 shared update 调度
+    data.count += 1       # → C: get + set → JS: 自动触发 __onSharedUpdate
     print(data.count)     # → C: JS_GetPropertyStr → 1
 
-    # 批量更新（只触发一次内部 shared update 调度）
+    # 批量更新（只触发一次 __onSharedUpdate）
     with data.batch():
         data.x = 1
         data.y = 2
@@ -30,8 +30,6 @@ _TYPE_OBJECT = 6
 
 class SharedState:
     """Python 代理类，通过 __setattr__/__getattr__ 映射到 C 共享对象"""
-
-    __slots__ = ('_lib', '_handle', '_shared', '_name')
 
     def __init__(self, lib, handle, shared_handle, name):
         # 使用 object.__setattr__ 避免触发自定义 __setattr__
@@ -112,7 +110,7 @@ class SharedState:
 
     @contextmanager
     def batch(self):
-        """批量更新上下文管理器 — 抑制中间 shared update 调用"""
+        """批量更新上下文管理器 — 抑制中间 __onSharedUpdate 调用"""
         lib = object.__getattribute__(self, '_lib')
         sh = object.__getattribute__(self, '_shared')
         lib.mbink_shared_batch_begin(sh)

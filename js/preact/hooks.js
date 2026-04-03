@@ -22,65 +22,6 @@
 var pendingUpdates = new Set();
 var updateScheduled = false;
 
-function cleanupComponent(component) {
-    if (!component) {
-        return;
-    }
-
-    if (currentComponent === component) {
-        currentComponent = null;
-        currentHookIndex = 0;
-    }
-
-    mountedComponents.delete(component);
-    pendingUpdates.delete(component);
-
-    var hooks = component.__hooks;
-    if (hooks && hooks.length) {
-        if (pendingEffects.length) {
-            var nextPendingEffects = [];
-            for (var j = 0; j < pendingEffects.length; j++) {
-                var pendingHook = pendingEffects[j];
-                if (!pendingHook) {
-                    continue;
-                }
-                if (hooks.indexOf(pendingHook) !== -1) {
-                    pendingHook.pendingEffect = null;
-                    pendingHook.effectQueued = false;
-                    continue;
-                }
-                nextPendingEffects.push(pendingHook);
-            }
-            pendingEffects = nextPendingEffects;
-        }
-
-        for (var i = 0; i < hooks.length; i++) {
-            var hookState = hooks[i];
-            if (!hookState) {
-                continue;
-            }
-
-            hookState.pendingEffect = null;
-            hookState.effectQueued = false;
-
-            if (typeof hookState.cleanup === 'function') {
-                try { hookState.cleanup(); } catch (_) {}
-                hookState.cleanup = null;
-            }
-
-            hookState.deps = null;
-            hookState.value = null;
-            hookState.reducer = null;
-            hookState.dispatch = null;
-            if (hookState.ref && typeof hookState.ref === 'object') {
-                hookState.ref.current = null;
-            }
-            hookState.ref = null;
-        }
-        hooks.length = 0;
-    }
-}
-
 function flushPendingEffects() {
     effectsScheduled = false;
     var toRun = pendingEffects.slice();
@@ -215,26 +156,24 @@ function getHookState(index) {
             hookState.value = typeof initialValue === 'function' ? initialValue() : initialValue;
         }
 
-        if (!hookState.setState) {
-            hookState.component = currentComponent;
-            hookState.setState = function(newValue) {
-                var nextValue = typeof newValue === 'function'
-                    ? newValue(hookState.value)
-                    : newValue;
+        // Capture the component reference when creating setState
+        var component = currentComponent;
 
-                if (hookState.value !== nextValue) {
-                    hookState.value = nextValue;
-                    if (hookState.component) {
-                        scheduleUpdate(hookState.component);
-                    }
+        var setState = function(newValue) {
+            var nextValue = typeof newValue === 'function'
+                ? newValue(hookState.value)
+                : newValue;
+
+            if (hookState.value !== nextValue) {
+                hookState.value = nextValue;
+                // Phase 4: 使用调度器批量更新，而非立即渲染
+                if (component) {
+                    scheduleUpdate(component);
                 }
-            };
-            hookState.result = [hookState.value, hookState.setState];
-        }
+            }
+        };
 
-        hookState.component = currentComponent;
-        hookState.result[0] = hookState.value;
-        return hookState.result;
+        return [hookState.value, setState];
     }
 
     /**
@@ -359,31 +298,28 @@ function useContext(context) {
  * @returns {[any, Function]} [state, dispatch]
  */
 function useReducer(reducer, initialState, init) {
-    var hookState = getHookState(currentHookIndex++);
+    const hookState = getHookState(currentHookIndex++);
 
     if (!('value' in hookState)) {
         hookState.value = init ? init(initialState) : initialState;
     }
 
-    if (!hookState.dispatch) {
-        hookState.component = currentComponent;
-        hookState.dispatch = function(action) {
-            var nextState = hookState.reducer(hookState.value, action);
+    // Capture the component reference when creating dispatch
+    const component = currentComponent;
 
-            if (hookState.value !== nextState) {
-                hookState.value = nextState;
-                if (hookState.component) {
-                    scheduleUpdate(hookState.component);
-                }
+    const dispatch = (action) => {
+        const nextState = reducer(hookState.value, action);
+
+        if (hookState.value !== nextState) {
+            hookState.value = nextState;
+            // Trigger re-render using captured component reference
+            if (component && component.__rerender) {
+                component.__rerender();
             }
-        };
-        hookState.result = [hookState.value, hookState.dispatch];
-    }
+        }
+    };
 
-    hookState.reducer = reducer;
-    hookState.component = currentComponent;
-    hookState.result[0] = hookState.value;
-    return hookState.result;
+    return [hookState.value, dispatch];
 }
 
 /**
@@ -418,7 +354,6 @@ function createContext(defaultValue) {
         useReducer: useReducer,
         createContext: createContext,
         setCurrentComponent: setCurrentComponent,
-        cleanupComponent: cleanupComponent,
         // Phase 4: 调度器 API
         scheduleUpdate: scheduleUpdate,
         flushUpdates: flushUpdates

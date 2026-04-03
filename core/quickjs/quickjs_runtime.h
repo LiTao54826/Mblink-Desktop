@@ -191,13 +191,6 @@ public:
     void RunGC();
 
     /**
-     * @brief 获取 QuickJS 内存统计
-     * @param run_gc_first 是否先执行一次 GC
-     * @return 内存统计（JSON）
-     */
-    json GetMemoryUsageStats(bool run_gc_first = false);
-
-    /**
      * @brief 获取QuickJS上下文
      * @return QuickJS上下文指针
      */
