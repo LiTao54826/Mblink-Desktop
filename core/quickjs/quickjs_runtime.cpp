@@ -55,6 +55,30 @@ std::string NormalizeFsPath(const std::filesystem::path& path) {
     return result;
 }
 
+bool IsNativeModulePath(const std::string& path) {
+    std::filesystem::path fs_path = Utf8PathToFsPath(path);
+    std::string ext = FsPathToUtf8String(fs_path.extension());
+    std::transform(ext.begin(), ext.end(), ext.begin(),
+                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+#ifdef _WIN32
+    return ext == ".dll";
+#elif defined(__APPLE__)
+    return ext == ".dylib" || ext == ".so";
+#else
+    return ext == ".so";
+#endif
+}
+
+std::vector<std::string> GetNativeModuleExtensions() {
+#ifdef _WIN32
+    return {".dll"};
+#elif defined(__APPLE__)
+    return {".dylib", ".so"};
+#else
+    return {".so"};
+#endif
+}
+
 }  // namespace
 
 QuickJSRuntime::QuickJSRuntime() {
@@ -83,10 +107,6 @@ QuickJSRuntime::~QuickJSRuntime() {
     }
 
     if (rt_) {
-        // 打开泄漏诊断输出，便于定位 gc_obj_list 断言问题
-        uint64_t dump_flags = JS_GetDumpFlags(rt_);
-        JS_SetDumpFlags(rt_, dump_flags | JS_DUMP_LEAKS | JS_DUMP_ATOM_LEAKS);
-
         // 多次 GC 尝试清理循环引用/延迟可回收对象
         for (int i = 0; i < 8; i++) {
             JS_RunGC(rt_);
@@ -624,7 +644,12 @@ JSModuleDef* QuickJSRuntime::ModuleLoader(JSContext* ctx, const char* module_nam
         return m;
     }
 
-    // 4. 优先通过 file loader 读取，其次回退文件系统
+    // 4. native module 走 quickjs-ng 官方 loader，其余保持现有 JS 模块逻辑
+    if (IsNativeModulePath(resolved_path)) {
+        return js_module_loader(ctx, resolved_path.c_str(), nullptr);
+    }
+
+    // 5. 优先通过 file loader 读取，其次回退文件系统
     std::string module_code;
     if (runtime->file_loader_) {
         std::string loader_error;
@@ -732,31 +757,38 @@ char* QuickJSRuntime::ModuleNormalize(JSContext* ctx, const char* module_base,
 std::string QuickJSRuntime::ResolveFolderOrFile(const std::string& path) {
     namespace fs = std::filesystem;
     fs::path fs_path = Utf8PathToFsPath(path);
-    
+
     // 1. 如果路径已经是文件，直接返回
     if (fs::is_regular_file(fs_path)) {
         return NormalizeFsPath(fs_path);
     }
-    
-    // 2. 尝试添加 .js 扩展名（扩展名省略支持）
+
+    // 2. 尝试补常见扩展名
     if (!path.empty() && path.find('.') == std::string::npos) {
         fs::path with_js = fs_path;
         with_js += ".js";
         if (fs::is_regular_file(with_js)) {
             return NormalizeFsPath(with_js);
         }
+        for (const auto& ext : GetNativeModuleExtensions()) {
+            fs::path with_native = fs_path;
+            with_native += ext;
+            if (fs::is_regular_file(with_native)) {
+                return NormalizeFsPath(with_native);
+            }
+        }
     }
-    
+
     // 3. 如果路径不存在，尝试作为文件或目录处理
     if (!fs::exists(fs_path)) {
         return path;  // 返回原路径，稍后会报错
     }
-    
+
     // 4. 如果是目录，尝试解析 package
     if (fs::is_directory(fs_path)) {
         return ResolvePackageDirectory(NormalizeFsPath(fs_path));
     }
-    
+
     return NormalizeFsPath(fs_path);
 }
 
@@ -771,6 +803,12 @@ std::string QuickJSRuntime::ResolveFolderOrFileWithLoader(const std::string& pat
             if (file_loader_(with_js, data, nullptr)) {
                 return with_js;
             }
+            for (const auto& ext : GetNativeModuleExtensions()) {
+                const std::string with_native = path + ext;
+                if (file_loader_(with_native, data, nullptr)) {
+                    return with_native;
+                }
+            }
         }
         return ResolvePackageDirectoryWithLoader(path);
     }
@@ -780,50 +818,62 @@ std::string QuickJSRuntime::ResolveFolderOrFileWithLoader(const std::string& pat
 std::string QuickJSRuntime::ResolvePackageDirectory(const std::string& dir_path) {
     namespace fs = std::filesystem;
     fs::path dir_fs_path = Utf8PathToFsPath(dir_path);
-    
+
     fs::path package_json = dir_fs_path / "package.json";
     if (!fs::exists(package_json)) {
-        // 没有 package.json，尝试 index.js
+        // 没有 package.json，尝试默认入口
         fs::path index_js = dir_fs_path / "index.js";
         if (fs::exists(index_js)) {
             return NormalizeFsPath(index_js);
         }
+        for (const auto& ext : GetNativeModuleExtensions()) {
+            fs::path index_native = dir_fs_path / ("index" + ext);
+            if (fs::exists(index_native)) {
+                return NormalizeFsPath(index_native);
+            }
+        }
         return NormalizeFsPath(dir_fs_path);
     }
-    
+
     // 读取并解析 package.json
     std::ifstream file(Utf8PathToFsPath(FsPathToUtf8String(package_json)), std::ios::binary);
     if (!file.is_open()) {
         return dir_path;
     }
-    
+
     try {
         json pkg = json::parse(file);
-        
+
         // 优先使用 exports 字段（新标准）
         if (pkg.contains("exports")) {
             std::string exports_result = ResolvePackageExports(pkg["exports"], dir_path, ".");
             if (!exports_result.empty()) {
-                return exports_result;
+                return ResolveFolderOrFile(exports_result);
             }
         }
-        
+
         // 回退到 main 字段
         if (pkg.contains("main") && pkg["main"].is_string()) {
             std::string main_file = pkg["main"].get<std::string>();
             fs::path main_path = dir_fs_path / Utf8PathToFsPath(main_file);
-            return NormalizeFsPath(main_path);
+            return ResolveFolderOrFile(NormalizeFsPath(main_path));
         }
     } catch (...) {
         // JSON 解析失败
     }
-    
-    // 最后尝试 index.js
+
+    // 最后尝试默认入口
     fs::path index_js = dir_fs_path / "index.js";
     if (fs::exists(index_js)) {
         return NormalizeFsPath(index_js);
     }
-    
+    for (const auto& ext : GetNativeModuleExtensions()) {
+        fs::path index_native = dir_fs_path / ("index" + ext);
+        if (fs::exists(index_native)) {
+            return NormalizeFsPath(index_native);
+        }
+    }
+
     return NormalizeFsPath(dir_fs_path);
 }
 
@@ -845,7 +895,7 @@ std::string QuickJSRuntime::ResolvePackageDirectoryWithLoader(const std::string&
             if (pkg.contains("exports")) {
                 std::string exports_result = ResolvePackageExports(pkg["exports"], normalized, ".");
                 if (!exports_result.empty()) {
-                    return exports_result;
+                    return ResolveFolderOrFileWithLoader(exports_result);
                 }
             }
             if (pkg.contains("main") && pkg["main"].is_string()) {
@@ -853,7 +903,7 @@ std::string QuickJSRuntime::ResolvePackageDirectoryWithLoader(const std::string&
                 if (main_file.rfind("./", 0) == 0) {
                     main_file = main_file.substr(2);
                 }
-                return normalized + "/" + main_file;
+                return ResolveFolderOrFileWithLoader(normalized + "/" + main_file);
             }
         } catch (...) {
         }
@@ -862,6 +912,12 @@ std::string QuickJSRuntime::ResolvePackageDirectoryWithLoader(const std::string&
     const std::string index_js = normalized + "/index.js";
     if (file_loader_(index_js, data, nullptr)) {
         return index_js;
+    }
+    for (const auto& ext : GetNativeModuleExtensions()) {
+        const std::string index_native = normalized + "/index" + ext;
+        if (file_loader_(index_native, data, nullptr)) {
+            return index_native;
+        }
     }
     return dir_path;
 }
@@ -914,14 +970,14 @@ std::string QuickJSRuntime::ResolvePackageExports(const json& exports,
 std::string QuickJSRuntime::ResolveNodeModules(const std::string& module_name,
                                                 const std::string& start_path) {
     namespace fs = std::filesystem;
-    
+
     // 从 start_path 开始向上遍历，查找 node_modules
     fs::path current_dir = Utf8PathToFsPath(start_path).parent_path();
-    
+
     while (!current_dir.empty() && current_dir.has_parent_path()) {
         // 检查当前目录的 node_modules
         fs::path node_modules = current_dir / "node_modules" / module_name;
-        
+
         if (fs::exists(node_modules)) {
             if (fs::is_directory(node_modules)) {
                 // 如果是目录，尝试解析为 package
@@ -932,13 +988,19 @@ std::string QuickJSRuntime::ResolveNodeModules(const std::string& module_name,
                 return NormalizeFsPath(node_modules);
             }
         }
-        
-        // 尝试添加 .js 扩展名
+
+        // 尝试添加常见扩展名
         fs::path node_modules_js = current_dir / "node_modules" / (module_name + ".js");
         if (fs::is_regular_file(node_modules_js)) {
             return NormalizeFsPath(node_modules_js);
         }
-        
+        for (const auto& ext : GetNativeModuleExtensions()) {
+            fs::path node_modules_native = current_dir / "node_modules" / (module_name + ext);
+            if (fs::is_regular_file(node_modules_native)) {
+                return NormalizeFsPath(node_modules_native);
+            }
+        }
+
         // 向上一级目录
         fs::path parent = current_dir.parent_path();
         if (parent == current_dir) {
@@ -946,7 +1008,7 @@ std::string QuickJSRuntime::ResolveNodeModules(const std::string& module_name,
         }
         current_dir = parent;
     }
-    
+
     return "";  // 未找到
 }
 
@@ -1256,6 +1318,45 @@ void QuickJSRuntime::ProcessMicrotasks() {
 
 void QuickJSRuntime::RunGC() {
     JS_RunGC(rt_);
+}
+
+json QuickJSRuntime::GetMemoryUsageStats(bool run_gc_first) {
+    if (!rt_) {
+        return json::object();
+    }
+
+    if (run_gc_first) {
+        JS_RunGC(rt_);
+    }
+
+    JSMemoryUsage usage{};
+    JS_ComputeMemoryUsage(rt_, &usage);
+
+    return json{
+        {"malloc_size", usage.malloc_size},
+        {"memory_used_size", usage.memory_used_size},
+        {"malloc_count", usage.malloc_count},
+        {"memory_used_count", usage.memory_used_count},
+        {"atom_count", usage.atom_count},
+        {"atom_size", usage.atom_size},
+        {"str_count", usage.str_count},
+        {"str_size", usage.str_size},
+        {"obj_count", usage.obj_count},
+        {"obj_size", usage.obj_size},
+        {"prop_count", usage.prop_count},
+        {"prop_size", usage.prop_size},
+        {"shape_count", usage.shape_count},
+        {"shape_size", usage.shape_size},
+        {"js_func_count", usage.js_func_count},
+        {"js_func_size", usage.js_func_size},
+        {"js_func_code_size", usage.js_func_code_size},
+        {"c_func_count", usage.c_func_count},
+        {"array_count", usage.array_count},
+        {"fast_array_count", usage.fast_array_count},
+        {"fast_array_elements", usage.fast_array_elements},
+        {"binary_object_count", usage.binary_object_count},
+        {"binary_object_size", usage.binary_object_size}
+    };
 }
 
 bool QuickJSRuntime::HasPendingJobs() {

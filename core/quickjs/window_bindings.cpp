@@ -21,6 +21,43 @@ namespace mbink {
 
 // ========== WindowBindings 实现 ==========
 
+void WindowBindings::TrackTimerCallback(int task_id, const std::string& callback_name) {
+    if (task_id >= 0) {
+        timer_callbacks_[task_id] = callback_name;
+    }
+}
+
+void WindowBindings::ReleaseTimerCallback(int task_id) {
+    auto it = timer_callbacks_.find(task_id);
+    if (it == timer_callbacks_.end()) {
+        return;
+    }
+
+    ReleaseTimerCallbackByName(it->second);
+    timer_callbacks_.erase(it);
+}
+
+void WindowBindings::ReleaseTimerCallbackByName(const std::string& callback_name) {
+    JSContext* ctx = runtime_ ? runtime_->GetContext() : nullptr;
+    if (!ctx || callback_name.empty()) {
+        return;
+    }
+
+    for (auto it = timer_callbacks_.begin(); it != timer_callbacks_.end(); ) {
+        if (it->second == callback_name) {
+            it = timer_callbacks_.erase(it);
+        } else {
+            ++it;
+        }
+    }
+
+    JSValue global = JS_GetGlobalObject(ctx);
+    JSAtom callback_atom = JS_NewAtom(ctx, callback_name.c_str());
+    JS_DeleteProperty(ctx, global, callback_atom, 0);
+    JS_FreeAtom(ctx, callback_atom);
+    JS_FreeValue(ctx, global);
+}
+
 WindowBindings::WindowBindings(QuickJSRuntime* runtime, 
                                std::shared_ptr<Window> window,
                                std::shared_ptr<TaskScheduler> task_scheduler)
@@ -194,7 +231,11 @@ void WindowBindings::BindTimers() {
                 runtime_->CallFunction(callback_name, json::array());
             } catch (const std::exception& e) {
             }
+
+            ReleaseTimerCallbackByName(callback_name);
         }, delay_ms);
+
+        TrackTimerCallback(task_id, callback_name);
 
         return task_id;
     });
@@ -214,6 +255,8 @@ void WindowBindings::BindTimers() {
             } catch (const std::exception& e) {
             }
         }, interval_ms);
+
+        TrackTimerCallback(task_id, callback_name);
         
         return task_id;
     });
@@ -227,6 +270,7 @@ void WindowBindings::BindTimers() {
 
         int task_id = args[0].get<int>();
         task_scheduler_->ClearTimeout(task_id);
+        ReleaseTimerCallback(task_id);
         return true;
     });
 
@@ -239,6 +283,7 @@ void WindowBindings::BindTimers() {
 
         int task_id = args[0].get<int>();
         task_scheduler_->ClearInterval(task_id);
+        ReleaseTimerCallback(task_id);
         return true;
     });
     
@@ -258,9 +303,24 @@ void WindowBindings::BindTimers() {
                 runtime_->CallFunction(callback_name, callback_args);
             } catch (const std::exception& e) {
             }
+
+            ReleaseTimerCallbackByName(callback_name);
         });
 
+        TrackTimerCallback(task_id, callback_name);
+
         return task_id;
+    });
+
+    runtime_->RegisterFunction("__cancelAnimationFrame", [this](const json& args) -> json {
+        if (!args.is_array() || args.empty() || !args[0].is_number_integer()) {
+            return false;
+        }
+
+        int task_id = args[0].get<int>();
+        task_scheduler_->CancelAnimationFrame(task_id);
+        ReleaseTimerCallback(task_id);
+        return true;
     });
     
     // 创建定时器函数
@@ -291,6 +351,10 @@ void WindowBindings::BindTimers() {
             globalThis[callbackName] = callback;
             return __requestAnimationFrame(callbackName);
         };
+
+        globalThis.cancelAnimationFrame = function(id) {
+            return __cancelAnimationFrame(id);
+        };
     )";
     
     runtime_->Eval(timer_code, "<timer_bindings>");
@@ -299,24 +363,38 @@ void WindowBindings::BindTimers() {
 void WindowBindings::BindEventListeners() {
     // 绑定 window.addEventListener
     runtime_->RegisterFunction("__windowAddEventListener", [this](const json& args) -> json {
-        if (!args.is_array() || args.size() < 2) {
+        if (!args.is_array() || args.empty() || !args[0].is_string()) {
             return false;
         }
-        
-        std::string event_type = args[0].get<std::string>();
-        std::string callback_name = args[1].get<std::string>();
-        
+
         // TODO: 实现事件监听器注册
-        
+
+        return true;
+    });
+
+    runtime_->RegisterFunction("__windowRemoveEventListener", [this](const json& args) -> json {
+        if (!args.is_array() || args.empty() || !args[0].is_string()) {
+            return false;
+        }
+
+        // TODO: 实现事件监听器移除
         return true;
     });
     
     // 创建事件监听器函数
     std::string event_code = R"(
         globalThis.window.addEventListener = function(type, listener) {
-            const callbackName = '__event_' + Math.random().toString(36).substr(2, 9);
-            globalThis[callbackName] = listener;
-            return __windowAddEventListener([type, callbackName]);
+            if (typeof listener !== 'function') {
+                return false;
+            }
+            return __windowAddEventListener([type]);
+        };
+
+        globalThis.window.removeEventListener = function(type, listener) {
+            if (typeof listener !== 'function') {
+                return false;
+            }
+            return __windowRemoveEventListener([type]);
         };
     )";
     
