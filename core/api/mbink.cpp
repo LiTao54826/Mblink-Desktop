@@ -23,6 +23,8 @@
 #include "core/event/loop/event_loop.h"
 #include "core/event/loop/task_scheduler.h"
 #include "core/network/fetch_bindings.h"
+#include "core/render/image/image_loader.h"
+#include "core/lexbor/lexbor_stylesheet.h"
 #include "core/quickjs/dom_binding_map.h"
 #include "tools/esm_loader/embedded_js.h"
 #include "core/utils/encoding_utils.h"
@@ -525,6 +527,30 @@ std::string JoinMountedResourcePath(const std::string& mountPoint, const std::st
     return normalizedRequest;
 }
 
+bool LoadMountedResourceAsset(const WindowContext* ctx,
+                              const std::string& requestPath,
+                              std::vector<uint8_t>& out) {
+    if (!ctx || ctx->mountedResourcePackage.empty()) {
+        return false;
+    }
+
+    const std::string resourcePath = JoinMountedResourcePath(
+        ctx->mountedResourceMountPoint.empty() ? "/" : ctx->mountedResourceMountPoint,
+        requestPath);
+    if (resourcePath.empty()) {
+        return false;
+    }
+
+    std::string error;
+    return mbink::resourcepkg::LoadResourceFile(
+        ctx->mountedResourcePackage.c_str(),
+        resourcePath.c_str(),
+        ctx->mountedResourceKey.c_str(),
+        out,
+        nullptr,
+        error);
+}
+
 void registerPreactModules(mbink::QuickJSRuntime* runtime) {
     if (!runtime) {
         return;
@@ -695,36 +721,29 @@ WindowContext* createWindowContext(const mbink::WindowConfig& wc) {
 
     // 6. 设置 JS Runtime 到 Document
     ctx->document->SetJSRuntime(ctx->runtime.get());
+    ctx->document->SetBasePath("");
+    mbink::FetchBindings::SetBasePath("");
+    mbink::ImageLoader::SetBasePath("");
+
+    auto mountedAssetProvider = [ctx](const std::string& path, std::vector<uint8_t>& out) {
+        return LoadMountedResourceAsset(ctx, path, out);
+    };
     ctx->runtime->SetFileLoader([ctx](const std::string& path, std::string& out, std::string* error) {
-        if (ctx->mountedResourcePackage.empty()) {
-            if (error) *error = "resource package not mounted";
-            return false;
-        }
-
-        const std::string resourcePath = JoinMountedResourcePath(
-            ctx->mountedResourceMountPoint.empty() ? "/" : ctx->mountedResourceMountPoint,
-            path);
-        if (resourcePath.empty()) {
-            if (error) *error = "resource path outside mount point";
-            return false;
-        }
-
         std::vector<uint8_t> data;
-        std::string loadError;
-        if (!mbink::resourcepkg::LoadResourceFile(
-                ctx->mountedResourcePackage.c_str(),
-                resourcePath.c_str(),
-                ctx->mountedResourceKey.c_str(),
-                data,
-                nullptr,
-                loadError)) {
-            if (error) *error = loadError;
+        if (!LoadMountedResourceAsset(ctx, path, data)) {
+            if (error) *error = ctx->mountedResourcePackage.empty()
+                                   ? "resource package not mounted"
+                                   : "resource path outside mount point or not found";
             return false;
         }
 
         out.assign(reinterpret_cast<const char*>(data.data()), data.size());
         return true;
     });
+    mbink::Document::SetAssetProvider(mountedAssetProvider);
+    mbink::FetchBindings::SetAssetProvider(mountedAssetProvider);
+    mbink::ImageLoader::SetAssetProvider(mountedAssetProvider);
+    mbink::LexborStyleSheet::SetAssetProvider(mountedAssetProvider);
 
     // 7. 初始化 DOM 绑定
     auto jsCtx = ctx->runtime->GetContext();
@@ -1168,6 +1187,9 @@ int mbink_load_html(MBinkHandle handle, const char* html) {
     if (!html) return MBINK_ERROR_INVALID_PARAM;
     auto ctx = getContext(handle);
     if (ctx->document) {
+        ctx->document->SetBasePath("");
+        mbink::FetchBindings::SetBasePath("");
+        mbink::ImageLoader::SetBasePath("");
         if (!ctx->document->LoadHTML(html)) {
             setLastError("Failed to parse HTML");
             return MBINK_ERROR_INVALID_PARAM;
@@ -1214,6 +1236,8 @@ int mbink_load_html_file(MBinkHandle handle, const char* filepath) {
             }
 
             ctx->document->SetBasePath(base_path);
+            mbink::FetchBindings::SetBasePath(base_path);
+            mbink::ImageLoader::SetBasePath(base_path);
             if (!ctx->document->LoadHTML(content)) {
                 setLastError("Failed to parse HTML");
                 return MBINK_ERROR_INVALID_PARAM;
@@ -2393,6 +2417,8 @@ int mbink_mount_resource_package(MBinkHandle handle,
     ctx->mountedResourceKey = normalizedKey;
     ctx->mountedResourceMountPoint = normalizedMount;
     ctx->document->SetBasePath(normalizedMount);
+    mbink::FetchBindings::SetBasePath(normalizedMount);
+    mbink::ImageLoader::SetBasePath(normalizedMount);
     ctx->runtime->SetBaseModulePath(normalizedMount == "/" ? "/index.js" : normalizedMount + "/index.js");
     return MBINK_OK;
 }

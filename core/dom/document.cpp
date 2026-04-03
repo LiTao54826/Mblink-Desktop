@@ -71,6 +71,87 @@ std::string NormalizeFsPath(const fs::path& path) {
     return result;
 }
 
+bool IsSpecialResourcePath(const std::string& path) {
+    return path.rfind("http://", 0) == 0 ||
+           path.rfind("https://", 0) == 0 ||
+           path.rfind("data:", 0) == 0 ||
+           path.rfind("#", 0) == 0;
+}
+
+std::string ResolveResourcePath(const std::string& path, const std::string& base_path) {
+    if (path.empty() || IsSpecialResourcePath(path)) {
+        return path;
+    }
+
+    fs::path p = Utf8PathToFsPath(path);
+    if (p.is_absolute() || (!path.empty() && path.front() == '/')) {
+        return NormalizeFsPath(p);
+    }
+
+    if (!base_path.empty()) {
+        return NormalizeFsPath(Utf8PathToFsPath(base_path) / p);
+    }
+
+    return NormalizeFsPath(p);
+}
+
+std::string RewriteCssUrls(const std::string& css, const std::string& css_base_path) {
+    if (css.empty() || css_base_path.empty()) {
+        return css;
+    }
+
+    std::string rewritten;
+    rewritten.reserve(css.size() + 32);
+
+    size_t pos = 0;
+    while (pos < css.size()) {
+        size_t url_pos = css.find("url(", pos);
+        if (url_pos == std::string::npos) {
+            rewritten.append(css, pos, std::string::npos);
+            break;
+        }
+
+        rewritten.append(css, pos, url_pos - pos);
+        size_t value_begin = url_pos + 4;
+        size_t value_end = css.find(')', value_begin);
+        if (value_end == std::string::npos) {
+            rewritten.append(css, url_pos, std::string::npos);
+            break;
+        }
+
+        std::string inner = css.substr(value_begin, value_end - value_begin);
+        size_t first = inner.find_first_not_of(" \t\r\n");
+        size_t last = inner.find_last_not_of(" \t\r\n");
+        if (first == std::string::npos || last == std::string::npos) {
+            rewritten.append(css, url_pos, value_end - url_pos + 1);
+            pos = value_end + 1;
+            continue;
+        }
+
+        std::string value = inner.substr(first, last - first + 1);
+        char quote = 0;
+        if (!value.empty() && (value.front() == '\'' || value.front() == '"')) {
+            quote = value.front();
+            if (value.size() >= 2 && value.back() == quote) {
+                value = value.substr(1, value.size() - 2);
+            }
+        }
+
+        std::string resolved = IsSpecialResourcePath(value)
+            ? value
+            : ResolveResourcePath(value, css_base_path);
+
+        rewritten += "url(";
+        if (quote) rewritten.push_back(quote);
+        rewritten += resolved;
+        if (quote) rewritten.push_back(quote);
+        rewritten.push_back(')');
+        pos = value_end + 1;
+    }
+
+    return rewritten;
+}
+
 }
 
 // 静态成员初始化
@@ -702,50 +783,29 @@ void Document::ExecuteScripts(QuickJSRuntime* runtime) {
 // ========== 资源加载 ==========
 
 std::string Document::ResolvePath(const std::string& path) const {
-    if (path.empty()) {
-        return "";
-    }
-
-    // 如果是绝对路径，直接返回
-    fs::path p = Utf8PathToFsPath(path);
-    if (p.is_absolute()) {
-        return NormalizeFsPath(p);
-    }
-
-    // 如果有基础路径，拼接
-    if (!base_path_.empty()) {
-        fs::path base = Utf8PathToFsPath(base_path_);
-        fs::path resolved = base / p;
-        return NormalizeFsPath(resolved);
-    }
-
-    // 否则返回原路径
-    return path;
+    return ResolveResourcePath(path, base_path_);
 }
 
 std::string Document::ReadExternalFile(const std::string& path) const {
-    // 1. 优先从嵌入资源加载
+    const std::string resolved_path = ResolvePath(path);
+
     if (asset_provider_) {
         std::vector<uint8_t> data;
-        if (asset_provider_(path, data)) {
+        if (asset_provider_(path, data) ||
+            (!resolved_path.empty() && resolved_path != path && asset_provider_(resolved_path, data))) {
             return std::string(data.begin(), data.end());
         }
     }
 
-    // 2. 回退到文件系统
-    std::string resolved_path = ResolvePath(path);
-
-    if (resolved_path.empty()) {
+    if (resolved_path.empty() || IsSpecialResourcePath(resolved_path)) {
         return "";
     }
 
-    // 检查文件是否存在
     fs::path resolved_fs_path = Utf8PathToFsPath(resolved_path);
     if (!fs::exists(resolved_fs_path)) {
         return "";
     }
 
-    // 读取文件内容
     std::ifstream file(resolved_fs_path, std::ios::binary);
     if (!file.is_open()) {
         return "";
@@ -757,22 +817,11 @@ std::string Document::ReadExternalFile(const std::string& path) const {
 }
 
 void Document::LoadExternalStylesheets() {
-    // 获取所有 link 元素
     auto links = GetElementsByTagName("link");
 
     for (auto& link_elem : links) {
         auto link = std::dynamic_pointer_cast<HTMLLinkElement>(link_elem);
-        if (!link) {
-            continue;
-        }
-
-        // 只处理样式表
-        if (link->GetRel() != "stylesheet") {
-            continue;
-        }
-
-        // 跳过已加载的
-        if (link->IsLoaded()) {
+        if (!link || link->GetRel() != "stylesheet" || link->IsLoaded()) {
             continue;
         }
 
@@ -782,17 +831,20 @@ void Document::LoadExternalStylesheets() {
             continue;
         }
 
-        // 读取外部 CSS 文件
+        const std::string resolved_href = ResolvePath(href);
         std::string css = ReadExternalFile(href);
-
         if (css.empty()) {
             link->MarkLoaded();
             continue;
         }
 
-        // 解析 CSS 并添加到样式管理器
+        const std::string css_base_path = resolved_href.empty()
+            ? ""
+            : NormalizeFsPath(Utf8PathToFsPath(resolved_href).parent_path());
+        css = RewriteCssUrls(css, css_base_path);
+
         if (style_manager_) {
-            style_manager_->ParseCSSString(css, 50, "external-link");
+            style_manager_->ParseCSSString(css, 50, resolved_href.empty() ? "external-link" : resolved_href);
         }
 
         link->MarkLoaded();
