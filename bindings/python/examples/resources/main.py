@@ -26,10 +26,11 @@ WINDOW_H = 600 * 2
 BUILD_DLL = os.path.normpath(
     os.path.join(os.path.dirname(__file__), '..', '..', '..', '..', 'build', 'bin', 'Release', 'mbink.dll')
 )
+print(f"[MBinkPythonDiag] dll_path={BUILD_DLL} exists={os.path.exists(BUILD_DLL)}")
 
 app = App(
     "票据机器人 Work Client", WINDOW_W, WINDOW_H,
-    dll_path=BUILD_DLL,
+    # dll_path=BUILD_DLL,
     borderless=True, resizable=True, gpu=False,
     min_size=(WINDOW_W, WINDOW_H),
 )
