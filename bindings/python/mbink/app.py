@@ -260,31 +260,6 @@ class App:
         self._control_handles.append(("terminal", handle))
         return Terminal(self._lib, handle, element_id)
 
-    def load_preact(self, js_file: str):
-        """加载 Preact 应用（.js 入口文件）
-
-        自动完成：
-        1. 加载 Preact + Hooks 到 globalThis
-        2. 以 module 模式加载入口 JS 文件
-
-        用法：
-            app.load_preact("ui/app.js")
-        """
-        # ① 自动查找并加载 Preact 库（设置 globalThis.Preact / globalThis.PreactHooks）
-        if not getattr(self, '_preact_loaded', False):
-            self._load_preact_libs()
-
-        # ② 解析用户 JS 文件路径
-        js_file = self._resolve_user_path(js_file)
-
-        # ③ 走原生 ES module 文件加载链路，与 esm_loader 保持一致
-        self.load_js_file(js_file)
-        return self
-
-    def _load_preact_libs(self):
-        """运行时已内嵌加载 preact / hooks，这里只做一次标记。"""
-        self._preact_loaded = True
-
     # ========== 函数绑定 ==========
 
     def _wrap_result_json(self, result):

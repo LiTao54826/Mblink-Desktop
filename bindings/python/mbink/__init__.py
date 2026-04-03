@@ -13,7 +13,7 @@ MBink Python 包入口
         data.count += 1
 
     app.load_html('<html><body><div id="root"></div></body></html>')
-    app.load_preact("ui/app.js")
+    app.load_js_file("ui/app.js")
     app.run()
 """
 
