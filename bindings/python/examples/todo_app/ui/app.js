@@ -44,7 +44,7 @@ function App() {
     if (!inp) return;
     var text = inp.value.trim();
     if (!text) return;
-    py.addTodo({ text: text });
+    backend.addTodo({ text: text });
     inp.value = '';
   }
   function handleKey(e) { if (e.key === 'Enter') handleAdd(); }
@@ -59,9 +59,9 @@ function App() {
       h('button', { style: S.addBtn, onClick: handleAdd }, '+ add')
     ),
     h('div', { style: S.filterRow },
-      h('button', { style: filterBtn(filter === 'all'),    onClick: function() { py.setFilter({ value: 'all' }); }    }, 'All'),
-      h('button', { style: filterBtn(filter === 'active'), onClick: function() { py.setFilter({ value: 'active' }); } }, 'Active'),
-      h('button', { style: filterBtn(filter === 'done'),   onClick: function() { py.setFilter({ value: 'done' }); }   }, 'Done')
+      h('button', { style: filterBtn(filter === 'all'),    onClick: function() { backend.setFilter({ value: 'all' }); }    }, 'All'),
+      h('button', { style: filterBtn(filter === 'active'), onClick: function() { backend.setFilter({ value: 'active' }); } }, 'Active'),
+      h('button', { style: filterBtn(filter === 'done'),   onClick: function() { backend.setFilter({ value: 'done' }); }   }, 'Done')
     ),
     h('div', { style: S.list },
       visible.length === 0
@@ -69,15 +69,15 @@ function App() {
         : visible.map(function(t) {
             return h('div', { key: t.id, style: itemStyle(t.done) },
               h('input', { type: 'checkbox', style: S.check, checked: t.done,
-                onChange: function() { py.toggleTodo({ id: t.id }); } }),
+                onChange: function() { backend.toggleTodo({ id: t.id }); } }),
               h('span', { style: itemTextStyle(t.done) }, t.text),
-              h('button', { style: delBtnStyle, onClick: function() { py.deleteTodo({ id: t.id }); } }, 'x')
+              h('button', { style: delBtnStyle, onClick: function() { backend.deleteTodo({ id: t.id }); } }, 'x')
             );
           })
     ),
     h('div', { style: S.footer },
       h('span', null, activeCount + ' active / ' + doneCount + ' done'),
-      doneCount > 0 ? h('button', { style: S.clearBtn, onClick: function() { py.clearDone({}); } }, 'Clear done') : null
+      doneCount > 0 ? h('button', { style: S.clearBtn, onClick: function() { backend.clearDone({}); } }, 'Clear done') : null
     )
   );
 }

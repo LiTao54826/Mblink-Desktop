@@ -30,6 +30,27 @@ app = App(
     min_size=(WINDOW_W, WINDOW_H),
 )
 sys_state = app.shared("sys")
+
+tray_menu = [
+    {"id": "show", "label": "显示主界面"},
+    {"id": "hide", "label": "隐藏窗口"},
+    {"id": "sync", "label": "后台同步(耗时示例)"},
+    {"type": "separator"},
+    {"id": "quit", "label": "退出应用"},
+]
+
+app.create_tray(tooltip="MBink Tray Simple Demo", menu=tray_menu)
+
+@app.on_tray_click
+def _tray_click():
+    app.show_main_window()
+
+@app.on_close_request
+def _close_request():
+    print("1111111")
+    app.hide_to_tray()
+    return True
+
 # ── 窗口关闭回调 ──────────────────────────────────────────────────────────────
 @app.on_close
 def _():

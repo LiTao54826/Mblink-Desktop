@@ -92,6 +92,7 @@ typedef void (*MBinkStateCallback)(const char* name, const char* value_json,
 // 事件回调
 typedef void (*MBinkResizeCallback)(int width, int height, void* user_data);
 typedef void (*MBinkVoidCallback)(void* user_data);
+typedef bool (*MBinkBoolCallback)(void* user_data);
 typedef void (*MBinkUpdateCallback)(float delta_time, void* user_data);
 
 // ========== 生命周期 ==========
@@ -124,6 +125,16 @@ MBINK_API bool mbink_poll_events(MBinkHandle handle);
 // ========== 窗口属性 ==========
 
 MBINK_API int mbink_set_title(MBinkHandle handle, const char* title);
+MBINK_API int mbink_tray_create(MBinkHandle handle, const char* tooltip);
+MBINK_API int mbink_tray_destroy(MBinkHandle handle);
+MBINK_API int mbink_tray_set_tooltip(MBinkHandle handle, const char* tooltip);
+MBINK_API int mbink_tray_set_menu(MBinkHandle handle, const char* menu_json);
+MBINK_API int mbink_tray_set_left_click_callback(MBinkHandle handle,
+                                                 MBinkVoidCallback callback,
+                                                 void* user_data);
+MBINK_API int mbink_tray_set_menu_callback(MBinkHandle handle,
+                                           MBinkCallback callback,
+                                           void* user_data);
 MBINK_API int mbink_set_size(MBinkHandle handle, int width, int height);
 MBINK_API int mbink_get_size(MBinkHandle handle, int* width, int* height);
 MBINK_API int mbink_set_position(MBinkHandle handle, int x, int y);
@@ -194,6 +205,7 @@ MBINK_API void mbink_unbind(MBinkHandle handle, const char* name);
 // ========== 事件回调 ==========
 
 MBINK_API int mbink_on_resize(MBinkHandle handle, MBinkResizeCallback callback, void* user_data);
+MBINK_API int mbink_on_close_request(MBinkHandle handle, MBinkBoolCallback callback, void* user_data);
 MBINK_API int mbink_on_close(MBinkHandle handle, MBinkVoidCallback callback, void* user_data);
 MBINK_API int mbink_on_focus(MBinkHandle handle, MBinkVoidCallback callback, void* user_data);
 MBINK_API int mbink_on_blur(MBinkHandle handle, MBinkVoidCallback callback, void* user_data);

@@ -501,7 +501,22 @@ bool EventLoop::ProcessEvents() {
 
         // 处理退出事件
         if (event.type == SDL_EVENT_QUIT) {
-            should_quit_ = true;
+            auto& window_manager = WindowManager::Instance();
+            bool has_windows = false;
+            bool all_should_close = true;
+            for (const auto& window : window_manager.GetAllWindows()) {
+                if (!window) {
+                    continue;
+                }
+                has_windows = true;
+                if (!window->ShouldClose()) {
+                    all_should_close = false;
+                    break;
+                }
+            }
+            if (!has_windows || all_should_close) {
+                should_quit_ = true;
+            }
             continue;
         }
 

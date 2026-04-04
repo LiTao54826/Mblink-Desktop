@@ -32,6 +32,8 @@ MBinkStateCallback = ctypes.CFUNCTYPE(None, c_char_p, c_char_p, c_void_p)
 MBinkResizeCallback = ctypes.CFUNCTYPE(None, c_int, c_int, c_void_p)
 # void (*MBinkVoidCallback)(void* user_data)
 MBinkVoidCallback = ctypes.CFUNCTYPE(None, c_void_p)
+# bool (*MBinkBoolCallback)(void* user_data)
+MBinkBoolCallback = ctypes.CFUNCTYPE(c_bool, c_void_p)
 # void (*MBinkUpdateCallback)(float delta_time, void* user_data)
 MBinkUpdateCallback = ctypes.CFUNCTYPE(None, c_float, c_void_p)
 
@@ -154,6 +156,18 @@ def _bind_functions(lib):
     # 窗口属性
     lib.mbink_set_title.restype = c_int
     lib.mbink_set_title.argtypes = [H, c_char_p]
+    lib.mbink_tray_create.restype = c_int
+    lib.mbink_tray_create.argtypes = [H, c_char_p]
+    lib.mbink_tray_destroy.restype = c_int
+    lib.mbink_tray_destroy.argtypes = [H]
+    lib.mbink_tray_set_tooltip.restype = c_int
+    lib.mbink_tray_set_tooltip.argtypes = [H, c_char_p]
+    lib.mbink_tray_set_menu.restype = c_int
+    lib.mbink_tray_set_menu.argtypes = [H, c_char_p]
+    lib.mbink_tray_set_left_click_callback.restype = c_int
+    lib.mbink_tray_set_left_click_callback.argtypes = [H, MBinkVoidCallback, c_void_p]
+    lib.mbink_tray_set_menu_callback.restype = c_int
+    lib.mbink_tray_set_menu_callback.argtypes = [H, MBinkCallback, c_void_p]
     lib.mbink_set_size.restype = c_int
     lib.mbink_set_size.argtypes = [H, c_int, c_int]
     lib.mbink_get_size.restype = c_int
@@ -217,6 +231,8 @@ def _bind_functions(lib):
     # 事件回调
     lib.mbink_on_resize.restype = c_int
     lib.mbink_on_resize.argtypes = [H, MBinkResizeCallback, c_void_p]
+    lib.mbink_on_close_request.restype = c_int
+    lib.mbink_on_close_request.argtypes = [H, MBinkBoolCallback, c_void_p]
     lib.mbink_on_close.restype = c_int
     lib.mbink_on_close.argtypes = [H, MBinkVoidCallback, c_void_p]
     lib.mbink_on_focus.restype = c_int

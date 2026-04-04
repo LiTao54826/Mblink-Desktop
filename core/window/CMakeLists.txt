@@ -6,11 +6,12 @@ set(WINDOW_SOURCES
     window_renderer.cpp
     window_dom_observer.cpp
     display_backend.cpp
+    app_tray.cpp
 )
 
 # Windows 平台特定源文件
 if(WIN32)
-    list(APPEND WINDOW_SOURCES window_win32.cpp)
+    list(APPEND WINDOW_SOURCES window_win32.cpp app_tray_win32.cpp)
 endif()
 
 set(WINDOW_HEADERS
@@ -20,6 +21,7 @@ set(WINDOW_HEADERS
     window_renderer.h
     window_dom_observer.h
     display_backend.h
+    app_tray.h
 )
 
 # Windows 平台特定头文件

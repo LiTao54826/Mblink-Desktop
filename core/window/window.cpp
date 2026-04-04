@@ -296,7 +296,20 @@ Window::~Window() {
 void Window::Show() {
     if (sdl_window_) {
         SDL_ShowWindow(sdl_window_);
+        SetForceFullRepaint(true);
+        SetNeedsRepaint();
     }
+}
+
+void Window::ShowAndFocus() {
+    if (!sdl_window_) {
+        return;
+    }
+    SDL_RestoreWindow(sdl_window_);
+    SDL_ShowWindow(sdl_window_);
+    SDL_RaiseWindow(sdl_window_);
+    SetForceFullRepaint(true);
+    SetNeedsRepaint();
 }
 
 void Window::Hide() {
@@ -943,11 +956,20 @@ bool Window::HandleSDLEvent(const SDL_Event& event) {
             }
 
             case SDL_EVENT_WINDOW_CLOSE_REQUESTED: {
-                should_close_ = true;
+                bool handled = false;
+                if (on_close_request_handler_) {
+                    handled = on_close_request_handler_();
+                }
+                if (handled) {
+                    suppress_next_native_close_ = true;
+                    should_close_ = false;
+                    return true;
+                }
                 if (on_close_callback_) {
                     on_close_callback_();
                 }
                 DispatchWindowEvent(WindowEvent(WindowEventType::CLOSE));
+                should_close_ = true;
                 return true;
             }
 
