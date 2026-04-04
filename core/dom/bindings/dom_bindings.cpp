@@ -34,7 +34,6 @@
 #include "core/editing/contenteditable_handler.h"
 #include "core/editing/clipboard_manager.h"
 #include <cstring>
-#include <iostream>
 #include <algorithm>
 #include <cctype>
 

@@ -12,10 +12,35 @@
 #include "core/dom/text.h"
 #include "core/dom/document.h"
 #include "core/layout/layout_engine.h"
+#include "core/quickjs/dom_binding_map.h"
 #include <algorithm>
-#include <iostream>
 
 namespace mbink {
+namespace {
+
+bool IsNodeAttachedToDocument(Node* node) {
+    while (node) {
+        if (node->GetNodeType() == NodeType::DOCUMENT_NODE) {
+            return true;
+        }
+        auto parent = node->GetParentNode();
+        node = parent.get();
+    }
+    return false;
+}
+
+void RemoveBindingsForSubtree(const std::shared_ptr<Node>& node) {
+    if (!node) {
+        return;
+    }
+
+    DOMBindingMap::GetInstance().Remove(node.get());
+    for (const auto& child : node->GetChildNodes()) {
+        RemoveBindingsForSubtree(child);
+    }
+}
+
+} // namespace
 
 RenderTreeSynchronizer::RenderTreeSynchronizer() = default;
 RenderTreeSynchronizer::~RenderTreeSynchronizer() = default;
@@ -42,6 +67,7 @@ bool RenderTreeSynchronizer::Synchronize(DirtyNodeTracker& tracker,
 
     // 优化变化列表（合并冗余操作）
     tracker.Optimize();
+    CleanupDetachedDOMBindings(tracker);
 
     // 判断是否需要子树重建
     if (NeedsSubtreeRebuild(tracker)) {
@@ -73,6 +99,32 @@ bool RenderTreeSynchronizer::Synchronize(DirtyNodeTracker& tracker,
     render_tree_ = nullptr;
 
     return true;
+}
+
+
+void RenderTreeSynchronizer::CleanupDetachedDOMBindings(const DirtyNodeTracker& tracker) {
+    for (const auto& change : tracker.GetStructuralChanges()) {
+        std::shared_ptr<Node> root;
+
+        switch (change.type) {
+            case DirtyNodeTracker::StructuralChangeType::Removed: {
+                root = change.node.lock();
+                break;
+            }
+            case DirtyNodeTracker::StructuralChangeType::Replaced: {
+                root = change.old_node.lock();
+                break;
+            }
+            default:
+                break;
+        }
+
+        if (!root || IsNodeAttachedToDocument(root.get())) {
+            continue;
+        }
+
+        RemoveBindingsForSubtree(root);
+    }
 }
 
 bool RenderTreeSynchronizer::NeedsSubtreeRebuild(const DirtyNodeTracker& tracker) const {

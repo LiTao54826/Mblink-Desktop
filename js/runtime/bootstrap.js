@@ -55,6 +55,21 @@
         proxyTargets: {}
     });
 
+    function probeEnabled() {
+        return !!global.__MBINK_LEAK_PROBE;
+    }
+
+    function probeLog(tag, payload) {
+        if (!probeEnabled()) return;
+        try {
+            console.log('[LEAK_PROBE][' + tag + ']', JSON.stringify(payload || {}));
+        } catch (_) {
+            console.log('[LEAK_PROBE][' + tag + ']', payload || {});
+        }
+    }
+
+    runtime.__probeLog = probeLog;
+
     runtime.trackDependency = function(depId) {
         var root = runtime.currentTrackingRoot;
         if (!root || !depId) return;
@@ -89,6 +104,7 @@
         if (!name || !target || typeof Proxy !== 'function') return target;
         var cached = runtime.proxyCache[name];
         if (cached && runtime.proxyTargets[name] === target) {
+            probeLog('wrapSharedObject.cache-hit', { name: name });
             return cached;
         }
 
@@ -121,6 +137,11 @@
 
         runtime.proxyTargets[name] = target;
         runtime.proxyCache[name] = proxy;
+        probeLog('wrapSharedObject.create', {
+            name: name,
+            proxyKeyCount: Object.keys(runtime.proxyCache).length,
+            targetKeyCount: Object.keys(runtime.proxyTargets).length
+        });
         return proxy;
     };
 
@@ -137,10 +158,15 @@
         if (!found) {
             found = { container: container, vnode: vnode, renderImpl: renderImpl, deps: null };
             roots.push(found);
+            probeLog('registerRoot.create', { rootCount: roots.length });
         }
         found.vnode = vnode;
         found.renderImpl = renderImpl;
         try { container.__preactRoot = found; } catch (_) {}
+        probeLog('registerRoot.bind', {
+            rootCount: roots.length,
+            depCount: found.deps ? Object.keys(found.deps).length : 0
+        });
     };
 
     global.__mbinkRegisterPreactRoot = runtime.registerRoot;
@@ -168,6 +194,11 @@
     runtime.flush = function(changedKeys) {
         if (!runtime.currentDispatcher) return;
         runtime.pending = false;
+        probeLog('flush.begin', {
+            changedKeys: changedKeys || [],
+            rootCount: runtime.roots.length,
+            pendingKeys: runtime.pendingKeys ? Object.keys(runtime.pendingKeys).length : 0
+        });
 
         var roots = runtime.roots.slice();
         for (var i = 0; i < roots.length; i++) {
@@ -185,6 +216,10 @@
                 runtime.endTracking(item);
             }
         }
+        probeLog('flush.end', {
+            changedKeys: changedKeys || [],
+            rootCount: runtime.roots.length
+        });
     }
 
     runtime.schedule = function(changedKeys) {

@@ -99,7 +99,7 @@ public:
      * @brief 虚析构函数
      */
     virtual ~Node() = default;
-    
+
     /**
      * @brief 获取节点类型
      * @return 节点类型

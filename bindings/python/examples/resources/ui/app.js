@@ -1,3 +1,4 @@
+globalThis.__MBINK_LEAK_PROBE = true;
 import { ToastLayer } from './components.js';
 import { LoginView, WorkspaceView } from './views.js';
 
@@ -36,6 +37,15 @@ function createPyBridge() {
     },
     save_config(payload) {
       return wrapCall(raw.save_config, payload);
+    },
+    open_browser(payload) {
+      return wrapCall(raw.open_browser, payload);
+    },
+    remove_browser(payload) {
+      return wrapCall(raw.remove_browser, payload);
+    },
+    refresh_state() {
+      return wrapCall(raw.refresh_state);
     }
   };
 }
@@ -46,6 +56,7 @@ function App() {
   const py = useMemo(createPyBridge, []);
   const [loginDraft, setLoginDraftState] = useState(s.login_form || {});
   const [settingsDraft, setSettingsDraftState] = useState(s.settings_form || {});
+  const [browserManagerVisible, setBrowserManagerVisible] = useState(false);
   const [toasts, setToasts] = useState([]);
 
   useEffect(function() {
@@ -62,7 +73,7 @@ function App() {
   useEffect(function() {
     setLoginDraftState(s.login_form || {});
     setSettingsDraftState(s.settings_form || {});
-  }, [s.is_logged_in, s.settings_visible, s.current_user, s.runtime_status]);
+  }, [s.is_logged_in, s.settings_visible, s.current_user, s.runtime_status, JSON.stringify(s.settings_form || {})]);
 
   function setLoginDraft(key, value) {
     setLoginDraftState(function(prev) {
@@ -73,6 +84,28 @@ function App() {
   function setSettingsDraft(key, value) {
     setSettingsDraftState(function(prev) {
       return Object.assign({}, prev, { [key]: value });
+    });
+  }
+
+  function setBrowserProfiles(profiles) {
+    setSettingsDraftState(function(prev) {
+      return Object.assign({}, prev, { browser_profiles: profiles });
+    });
+  }
+
+  function appendBrowserProfile() {
+    setSettingsDraftState(function(prev) {
+      const profiles = (prev.browser_profiles || []).slice();
+      profiles.push({ name: '', port: '', browser_path: '', task_node: '' });
+      return Object.assign({}, prev, { browser_profiles: profiles });
+    });
+  }
+
+  function updateBrowserProfile(index, key, value) {
+    setSettingsDraftState(function(prev) {
+      const profiles = (prev.browser_profiles || []).map(function(item) { return Object.assign({}, item); });
+      profiles[index] = Object.assign({}, profiles[index] || {}, { [key]: value });
+      return Object.assign({}, prev, { browser_profiles: profiles });
     });
   }
 
@@ -102,6 +135,12 @@ function App() {
       notify,
       settingsDraft,
       setSettingsDraft,
+      setBrowserProfiles,
+      appendBrowserProfile,
+      updateBrowserProfile,
+      browserManagerVisible,
+      openBrowserManager: function() { setBrowserManagerVisible(true); },
+      closeBrowserManager: function() { setBrowserManagerVisible(false); },
     }),
     h(ToastLayer, toasts)
   ]);

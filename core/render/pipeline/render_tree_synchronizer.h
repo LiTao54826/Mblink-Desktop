@@ -82,6 +82,14 @@ public:
     bool Synchronize(DirtyNodeTracker& tracker,
                      std::shared_ptr<RenderObject> render_tree);
 
+    /**
+     * @brief 清理最终已脱离文档的 DOM binding
+     *
+     * 仅用于 removed/replaced 后最终仍 detached 的子树，
+     * 避免 DOMBindingMap 持有 JSValue 导致 Node/Element 无法析构。
+     */
+    static void CleanupDetachedDOMBindings(const DirtyNodeTracker& tracker);
+
     // ========== 策略配置 ==========
 
     /**

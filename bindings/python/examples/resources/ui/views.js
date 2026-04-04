@@ -66,6 +66,14 @@ function dotStyle(bg, border) {
   };
 }
 
+function browserStatusMap(list) {
+  var map = {};
+  (list || []).forEach(function(item) {
+    map[item.id] = item;
+  });
+  return map;
+}
+
 export function LoginView(props) {
   const s = props.s || {};
   const draft = props.draft || {};
@@ -73,7 +81,7 @@ export function LoginView(props) {
   const versionText = s.app_version ? ('当前版本 v' + s.app_version) : '当前版本 --';
   async function handleLogin() {
     try {
-      await (backend.login_runtime && backend.login_runtime(draft));
+      await backend.login_runtime(draft);
     } catch (err) {
       console.error(err);
     }
@@ -87,9 +95,7 @@ export function LoginView(props) {
         checkboxInput(draft.remember_credentials, '记住用户名密码', function(v) { return props.setDraft('remember_credentials', v); }),
         h('div', { style: { color: C.muted, fontSize: '11px', lineHeight: 1.5, minHeight: '16px' } }, s.current_action || '请输入账号信息后登录'),
         h('div', { style: { color: C.muted, fontSize: '11px', lineHeight: 1.5 } }, versionText),
-        h('div', { style: { display: 'flex', justifyContent: 'flex-end', marginTop: '4px' } }, [
-          btn('登录', 'primary', handleLogin)
-        ])
+        h('div', { style: { display: 'flex', justifyContent: 'flex-end', marginTop: '4px' } }, [btn('登录', 'primary', handleLogin)])
       ]), { width: '420px', padding: '20px' })
     ])
   ]);
@@ -97,12 +103,10 @@ export function LoginView(props) {
 
 export function WorkspaceView(props) {
   const s = props.s || {};
-  const py = props.py || {};
   const versionText = s.app_version ? ('v' + s.app_version) : '--';
   const isRunning = s.worker_running === true;
-  const runtimeAction = isRunning
-    ? btn('停止', 'danger', function() { return backend.stop_runtime && backend.stop_runtime(); })
-    : btn('启动', 'primary', function() { return backend.start_runtime && backend.start_runtime(); });
+  const runtimeAction = isRunning ? btn('停止', 'danger', function() { return backend.stop_runtime(); }) : btn('启动', 'primary', function() { return backend.start_runtime(); });
+
   return h('div', { style: { width: '100vw', height: '100vh', display: 'flex', flexDirection: 'column' } }, [
     h(TitleBar, { ...s, showStatus: true }),
     h('div', { style: { flex: 1, padding: '16px', display: 'flex', flexDirection: 'column', gap: '16px', maxWidth: '1200px', margin: '0 auto', width: '100%', boxSizing: 'border-box', overflow: 'hidden' } }, [
@@ -124,20 +128,23 @@ export function WorkspaceView(props) {
           ]), { flex: 1 }),
           panel('指令控制', h('div', { style: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' } }, [
             runtimeAction,
-            btn('重试', null, function() { return backend.retry_task && backend.retry_task(); }),
-            btn('设置', null, function() { return backend.toggle_settings && backend.toggle_settings({ visible: true }); })
+            btn('重试', null, function() { return backend.retry_task(); }),
+            btn('设置', null, function() { return backend.toggle_settings({ visible: true }); }),
+            btn('浏览器管理', null, function() { return props.openBrowserManager(); })
           ]))
         ]),
         panel('运行日志', h('logview', { id: 'work-log', style: { flex: 1, width: '100%', height: '100%', display: 'block', minHeight: '0', background: C.logBg, borderRadius: '8px', overflow: 'hidden', border: '1px solid ' + C.logBorder } }), { padding: '8px' })
       ]),
-      s.settings_visible ? h(SettingsDialog, props) : null
+      s.settings_visible ? h(SettingsDialog, props) : null,
+      props.browserManagerVisible ? h('div', { style: { position: 'fixed', left: 0, top: 0, right: 0, bottom: 0, zIndex: 99998 } }, [
+        h(BrowserManagerView, props)
+      ]) : null
     ])
   ]);
 }
 
 export function SettingsDialog(props) {
   const form = props.settingsDraft || {};
-  const py = props.py || {};
   return h('div', { style: { position: 'fixed', left: 0, top: 0, right: 0, bottom: 0, background: 'rgba(15, 23, 42, 0.28)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 99999 } }, [
     h('div', { class: 'no-drag', style: { background: C.panel, border: '1px solid ' + C.border, borderRadius: '12px', boxShadow: C.shadow, padding: '20px', width: '520px', display: 'flex', flexDirection: 'column', gap: '12px', transform: 'translate(0, -10vh)' } }, [
       h('div', { style: { color: C.muted, fontSize: '12px', fontWeight: 600, marginBottom: '8px', letterSpacing: '0.04em', display: 'flex', alignItems: 'center', gap: '6px' } }, ['系统设置']),
@@ -148,10 +155,77 @@ export function SettingsDialog(props) {
         '启动后自动监听'
       ]),
       h('div', { style: { display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '4px' } }, [
-        btn('关闭', null, function() { return backend.toggle_settings && backend.toggle_settings({ visible: false }); }),
-        btn('保存', 'primary', function() { return backend.save_config && backend.save_config(form); })
+        btn('关闭', null, function() { return backend.toggle_settings({ visible: false }); }),
+        btn('保存', 'primary', function() { return backend.save_config(form); })
       ])
     ])
   ]);
 }
 
+export function BrowserManagerView(props) {
+  const s = props.s || {};
+  const profiles = (props.settingsDraft && props.settingsDraft.browser_profiles) || [];
+  const nodeOptions = (props.settingsDraft && props.settingsDraft.task_node_options) || s.task_node_options || [];
+  const statusMap = browserStatusMap(s.browser_statuses || []);
+
+  function removeProfile(index, profile) {
+    const next = profiles.filter(function(_item, i) { return i !== index; });
+    if (profile && profile.id) {
+      backend.remove_browser({ id: profile.id }).catch(function(err) {
+        console.error(err);
+      });
+    }
+    props.setBrowserProfiles(next);
+  }
+
+  function openProfile(profile, index) {
+    backend.open_browser({
+      id: profile.id,
+      profile_index: index,
+      task_node: profile.task_node,
+      browser_profiles: profiles,
+    }).catch(function(err) {
+      console.error(err);
+    });
+  }
+
+  function saveAll() {
+    return backend.save_config(props.settingsDraft);
+  }
+
+  return h('div', { style: { width: '100vw', height: '100vh', display: 'flex', flexDirection: 'column', background: C.bg } }, [
+    h(TitleBar, { ...s, showStatus: true }),
+    h('div', { style: { flex: 1, padding: '16px', display: 'flex', flexDirection: 'column', gap: '16px', maxWidth: '1280px', margin: '0 auto', width: '100%', boxSizing: 'border-box', overflow: 'hidden' } }, [
+      panel('浏览器管理', h('div', { style: { display: 'flex', flexDirection: 'column', gap: '10px', minHeight: 0, flex: 1, overflow: 'auto' } }, [
+        h('div', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center' } }, [
+          h('div', { style: { color: C.muted, fontSize: '12px' } }, '管理不同任务节点对应的浏览器实例'),
+          btn('新增浏览器', null, function() { return props.appendBrowserProfile(); })
+        ]),
+        h('div', { style: { display: 'grid', gridTemplateColumns: '1.1fr 0.8fr 1.8fr 1fr 0.8fr 1fr', gap: '8px', color: C.muted, fontSize: '11px', fontWeight: 600, padding: '0 4px' } }, ['名称', '端口', '浏览器路径', '任务节点', '状态', '操作']),
+        profiles.length ? profiles.map(function(profile, index) {
+          const status = statusMap[profile.id] || {};
+          return h('div', { key: profile.id || ('new-' + index), style: { display: 'grid', gridTemplateColumns: '1.1fr 0.8fr 1.8fr 1fr 0.8fr 1fr', gap: '8px', alignItems: 'center' } }, [
+            textInput(profile.name, '浏览器名称', false, function(v) { return props.updateBrowserProfile(index, 'name', v); }),
+            textInput(String(profile.port || ''), '端口', false, function(v) { return props.updateBrowserProfile(index, 'port', v); }),
+            textInput(profile.browser_path, '留空使用默认浏览器', false, function(v) { return props.updateBrowserProfile(index, 'browser_path', v); }),
+            h('select', {
+              class: 'no-drag',
+              value: profile.task_node || '',
+              onChange: function(e) { return props.updateBrowserProfile(index, 'task_node', e.target.value); },
+              style: { width: '100%', height: '36px', padding: '0 10px', borderRadius: '8px', border: '1px solid ' + C.border, background: '#fff', color: C.text, fontSize: '12px', outline: 'none' }
+            }, [h('option', { value: '' }, '未绑定')].concat(nodeOptions.map(function(item) { return h('option', { value: item }, item); }))),
+            badge(status.status || '未打开', (status.status || '未打开') === '已打开' ? C.success : C.muted),
+            h('div', { style: { display: 'flex', gap: '6px', flexWrap: 'wrap' } }, [
+              btn('打开', 'primary', function() { return openProfile(profile, index); }),
+              btn('删除', 'danger', function() { return removeProfile(index, profile); })
+            ])
+          ]);
+        }) : h('div', { style: { padding: '24px 0', color: C.muted, textAlign: 'center', fontSize: '12px' } }, '还没有浏览器配置，点击右上角“新增浏览器”')
+      ]), { flex: 1 }),
+      h('div', { style: { display: 'flex', justifyContent: 'flex-end', gap: '8px' } }, [
+        btn('返回工作台', null, function() { return props.closeBrowserManager(); }),
+        btn('保存配置', 'primary', saveAll)
+      ])
+    ])
+  ]);
+}

@@ -11,7 +11,6 @@
 #include "core/render/objects/render_object.h"
 #include <algorithm>
 #include <stdexcept>
-#include <iostream>
 
 namespace mbink {
 
@@ -159,24 +158,41 @@ std::shared_ptr<Node> Node::InsertBefore(std::shared_ptr<Node> new_child,
         return AppendChild(new_child);
     }
 
-    // 查找ref_child的位置
-    auto it = std::find(child_nodes_.begin(), child_nodes_.end(), ref_child);
-    if (it == child_nodes_.end()) {
+    // DOM 语义：insertBefore(node, node) 等同于 no-op
+    if (new_child == ref_child) {
+        return new_child;
+    }
+
+    // 先计算目标插入索引；如果 new_child 已经在当前父节点中且位于 ref_child 之前，
+    // RemoveChild 会让后续索引左移一位，需提前修正。
+    auto ref_it = std::find(child_nodes_.begin(), child_nodes_.end(), ref_child);
+    if (ref_it == child_nodes_.end()) {
         throw std::invalid_argument("Reference child not found");
     }
 
-    // 计算插入索引
-    size_t index = std::distance(child_nodes_.begin(), it);
+    size_t index = std::distance(child_nodes_.begin(), ref_it);
 
-    // 如果new_child已有父节点，先从原父节点移除
     if (auto parent = new_child->GetParentNode()) {
+        if (parent.get() == this) {
+            auto existing_it = std::find(child_nodes_.begin(), child_nodes_.end(), new_child);
+            if (existing_it != child_nodes_.end()) {
+                size_t existing_index = std::distance(child_nodes_.begin(), existing_it);
+                if (existing_index < index) {
+                    --index;
+                }
+            }
+        }
         parent->RemoveChild(new_child);
     }
 
-    // 在ref_child前插入
-    child_nodes_.insert(it, new_child);
+    if (index > child_nodes_.size()) {
+        index = child_nodes_.size();
+    }
+
+    // 在 ref_child 前插入（重新按索引定位，避免 RemoveChild 后旧迭代器失效）
+    child_nodes_.insert(child_nodes_.begin() + static_cast<std::ptrdiff_t>(index), new_child);
     new_child->SetParentNode(shared_from_this());
-    
+
     // 传播 owner_document_ 给子节点（如果子节点没有的话）
     auto doc = GetOwnerDocument();
     if (doc && !new_child->owner_document_.lock()) {
@@ -190,7 +206,7 @@ std::shared_ptr<Node> Node::InsertBefore(std::shared_ptr<Node> new_child,
     if (doc) {
         // 记录到 DirtyNodeTracker（延迟处理）
         doc->GetDirtyTracker().RecordNodeAdded(new_child, shared_from_this(), index);
-        
+
         // 通知观察者（立即处理，用于兼容旧代码）
         doc->GetObserverManager().NotifyNodeAdded(new_child.get(), this);
         // 标记 Lexbor DOM 需要同步
@@ -251,18 +267,35 @@ std::shared_ptr<Node> Node::ReplaceChild(std::shared_ptr<Node> new_child,
         throw std::invalid_argument("Cannot replace with/from null child");
     }
 
-    // 查找old_child的位置
-    auto it = std::find(child_nodes_.begin(), child_nodes_.end(), old_child);
-    if (it == child_nodes_.end()) {
+    // DOM 语义：replaceChild(node, node) 等同于 no-op
+    if (new_child == old_child) {
+        return old_child;
+    }
+
+    // 先计算 old_child 的位置；如果 new_child 已经在当前父节点并位于 old_child 之前，
+    // RemoveChild(new_child) 后 old_child 的索引会左移一位，需提前修正。
+    auto old_it = std::find(child_nodes_.begin(), child_nodes_.end(), old_child);
+    if (old_it == child_nodes_.end()) {
         throw std::invalid_argument("Old child not found");
     }
 
-    // 计算替换索引
-    size_t index = std::distance(child_nodes_.begin(), it);
+    size_t index = std::distance(child_nodes_.begin(), old_it);
 
-    // 如果new_child已有父节点，先从原父节点移除
     if (auto parent = new_child->GetParentNode()) {
+        if (parent.get() == this) {
+            auto existing_it = std::find(child_nodes_.begin(), child_nodes_.end(), new_child);
+            if (existing_it != child_nodes_.end()) {
+                size_t existing_index = std::distance(child_nodes_.begin(), existing_it);
+                if (existing_index < index) {
+                    --index;
+                }
+            }
+        }
         parent->RemoveChild(new_child);
+    }
+
+    if (index >= child_nodes_.size()) {
+        throw std::invalid_argument("Old child not found after reordering");
     }
 
     // 通知观察者和记录变化
@@ -271,13 +304,13 @@ std::shared_ptr<Node> Node::ReplaceChild(std::shared_ptr<Node> new_child,
         // 记录为原子替换操作到 DirtyNodeTracker（延迟处理）
         // 这解决了 ReplaceChild 的时序问题
         doc->GetDirtyTracker().RecordNodeReplaced(old_child, new_child, shared_from_this(), index);
-        
+
         // 通知观察者：旧节点被移除（立即处理，用于兼容旧代码）
         doc->GetObserverManager().NotifyNodeRemoved(old_child.get(), this);
     }
 
-    // 替换节点
-    *it = new_child;
+    // 替换节点（按索引重新定位，避免 RemoveChild 后旧迭代器失效）
+    child_nodes_[index] = new_child;
     old_child->SetParentNode(nullptr);
     new_child->SetParentNode(shared_from_this());
 

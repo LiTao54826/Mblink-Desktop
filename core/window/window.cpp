@@ -1212,8 +1212,9 @@ void Window::Render() {
         return;
     }
 
-    // 关键修复：全量重建后丢弃 DirtyTracker 的结构增量，避免“全量后再增量”造成重复实例
+    // 关键修复：全量重建前先清理已脱离文档的 DOM binding，避免 Clear() 吃掉 removed/replaced 记录
     if (render_tree_rebuild_required && document_) {
+        RenderTreeSynchronizer::CleanupDetachedDOMBindings(document_->GetDirtyTracker());
         document_->GetDirtyTracker().Clear();
     }
 
@@ -1921,8 +1922,9 @@ void Window::ForceLayoutSync() {
         return;
     }
 
-    // 关键修复：ForceLayoutSync 也需要避免“全量后再增量”重复同步
+    // 关键修复：ForceLayoutSync 全量重建前也要先清理 detached binding，避免 Clear() 直接丢失卸载记录
     if (render_tree_rebuild_required) {
+        RenderTreeSynchronizer::CleanupDetachedDOMBindings(document_->GetDirtyTracker());
         document_->GetDirtyTracker().Clear();
     }
 

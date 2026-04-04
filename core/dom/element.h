@@ -60,12 +60,12 @@ public:
      * @param tag_name 标签名（如"div", "span"）
      */
     explicit Element(const std::string& tag_name);
-    
+
     /**
      * @brief 析构函数
      */
     ~Element() override = default;
-    
+
     /**
      * @brief 获取标签名
      * @return 标签名
