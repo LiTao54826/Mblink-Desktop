@@ -30,15 +30,46 @@ app = App(
     min_size=(WINDOW_W, WINDOW_H),
 )
 sys_state = app.shared("sys")
+
+tray_menu = [
+    {"id": "show", "label": "显示"},
+    {
+        "type": "submenu",
+        "label": "更多",
+        "children": [
+            {"id": "sync", "label": "同步", "enabled": True},
+            {"id": "debug", "label": "调试模式", "checked": True},
+        ],
+    },
+    {"id": "quit", "label": "退出"},
+]
+
+app.create_tray(tooltip="MBink Tray Simple Demo", menu=tray_menu)
+
+@app.on_tray_click
+def _tray_click():
+    app.show_main_window()
+
+@app.on_close_request
+def _close_request():
+    print("1111111")
+    app.hide_to_tray()
+    return False
+
 # ── 窗口关闭回调 ──────────────────────────────────────────────────────────────
 @app.on_close
 def _():
     print("[WorkClient] 窗口关闭")
 
+@app.bind_async("login_runtime")
+def _(payload=None):
+    return {"ok": True, "message": "登录成功"}
 
-@app.on_update
-def _(a):
-    sys_state.heartbeat_at = datetime.now().strftime("%H:%M:%S")
+
+# @app.on_update
+# def _(a):
+#     sys_state.heartbeat_at = datetime.now().strftime("%H:%M:%S")
+#     # print(1)
 
 # ── 加载 UI ───────────────────────────────────────────────────────────────────
 app.load_html_file('./index.html')

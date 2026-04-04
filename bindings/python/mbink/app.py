@@ -10,11 +10,12 @@ import os
 import inspect
 import warnings
 import asyncio
+import threading
 from .controls import LogView, Terminal
 from .resources import RESOURCE_FLAG_BYTECODE, load_resource_file
 from ._ffi import (
     load_dll, MBinkConfig, MBinkCallback, MBinkAsyncCallback, MBinkResizeCallback,
-    MBinkVoidCallback, MBinkUpdateCallback, c_int, c_char_p, c_void_p,
+    MBinkVoidCallback, MBinkBoolCallback, MBinkUpdateCallback, c_int, c_char_p, c_void_p,
     POINTER,
 )
 
@@ -54,6 +55,9 @@ class App:
             raise RuntimeError(f"mbink_create_ex 返回 NULL，创建窗口失败: {msg}")
 
         self._callbacks = []  # prevent GC
+        self._tray_callbacks = []
+        self._tray_action_handlers = {}
+        self._tray_action_dispatch_enabled = False
         self._shared_objects = {}   # name -> SharedState proxy
         self._shared_handles = {}   # name -> c_void_p handle
         self._control_handles = []  # native control handles
@@ -427,6 +431,132 @@ class App:
         self._ensure_alive()
         self._lib.mbink_hide(self._handle)
 
+    def show_main_window(self):
+        """显示并激活主窗口；适用于托盘恢复场景。"""
+        self.show()
+        self.restore()
+
+    def hide_to_tray(self):
+        """隐藏主窗口；通常与用户态创建的系统托盘配合使用。"""
+        self.hide()
+
+    def create_tray(self, tooltip=None, menu=None):
+        self._ensure_alive()
+        tip = (tooltip or self.title).encode("utf-8")
+        rc = self._lib.mbink_tray_create(self._handle, tip)
+        if rc != 0:
+            raise RuntimeError(f"创建 tray 失败: {rc}")
+        if menu is not None:
+            self.set_tray_menu(menu)
+
+    def destroy_tray(self):
+        self._ensure_alive()
+        self._lib.mbink_tray_destroy(self._handle)
+
+    def set_tray_tooltip(self, tooltip: str):
+        self._ensure_alive()
+        self._lib.mbink_tray_set_tooltip(self._handle, tooltip.encode("utf-8"))
+
+    def set_tray_menu(self, items):
+        self._ensure_alive()
+        payload = json.dumps(items, ensure_ascii=False).encode("utf-8")
+        rc = self._lib.mbink_tray_set_menu(self._handle, payload)
+        if rc != 0:
+            raise RuntimeError(f"设置 tray menu 失败: {rc}")
+
+    def on_tray_click(self, callback):
+        self._ensure_alive()
+
+        @MBinkVoidCallback
+        def _cb(_ud):
+            try:
+                callback()
+            except Exception:
+                import traceback; traceback.print_exc()
+
+        self._tray_callbacks.append(_cb)
+        self._lib.mbink_tray_set_left_click_callback(self._handle, _cb, None)
+        return callback
+
+    def on_tray_menu(self, callback):
+        self._ensure_alive()
+
+        @MBinkCallback
+        def _cb(args_json, _ud):
+            try:
+                args_str = args_json.decode("utf-8") if args_json else "{}"
+                args = json.loads(args_str)
+                result = callback(args.get("id"))
+                return self._wrap_result_json(result)
+            except Exception as e:
+                return self._wrap_error_json(e)
+
+        self._tray_callbacks.append(_cb)
+        self._lib.mbink_tray_set_menu_callback(self._handle, _cb, None)
+        return callback
+
+    def tray_action(self, item_id=None, *, background=False):
+        """按 tray 菜单 id 注册处理函数。
+
+        用法：
+            @app.tray_action("show")
+            def handle_show():
+                ...
+
+            @app.tray_action("work", background=True)
+            def handle_work():
+                ...
+        """
+        self._ensure_alive()
+
+        if not self._tray_action_dispatch_enabled:
+            self.enable_tray_action_dispatch()
+
+        def _decorator(func):
+            action_id = item_id or func.__name__
+            self._tray_action_handlers[action_id] = {
+                "func": func,
+                "background": background,
+            }
+            return func
+
+        return _decorator
+
+    def enable_tray_action_dispatch(self):
+        """启用基于 tray_action 注册表的统一分发。"""
+        self._ensure_alive()
+
+        if self._tray_action_dispatch_enabled:
+            return None
+
+        self._tray_action_dispatch_enabled = True
+
+        @self.on_tray_menu
+        def _dispatch(item_id):
+            handler = self._tray_action_handlers.get(item_id)
+            if not handler:
+                return {"ok": False, "error": f"unhandled tray action: {item_id}", "id": item_id}
+
+            func = handler["func"]
+            if handler["background"]:
+                def _runner():
+                    try:
+                        func()
+                    except Exception:
+                        import traceback; traceback.print_exc()
+
+                thread = threading.Thread(target=_runner, daemon=True, name=f"mbink-tray-{item_id}")
+                thread.start()
+                return {"ok": True, "id": item_id, "background": True}
+
+            result = func()
+            if inspect.isawaitable(result):
+                result = asyncio.run(result)
+            return {"ok": True, "id": item_id, "result": result}
+
+        return _dispatch
+
+
     def set_fullscreen(self, fullscreen: bool):
         self._ensure_alive()
         self._lib.mbink_set_fullscreen(self._handle, fullscreen)
@@ -471,6 +601,22 @@ class App:
                 import traceback; traceback.print_exc()
         self._callbacks.append(_cb)
         self._lib.mbink_on_close(self._handle, _cb, None)
+        return callback
+
+    def on_close_request(self, callback):
+        """callback() -> bool。返回 True 表示拦截关闭。"""
+        self._ensure_alive()
+
+        @MBinkBoolCallback
+        def _cb(_ud):
+            try:
+                return bool(callback())
+            except Exception:
+                import traceback; traceback.print_exc()
+                return False
+
+        self._callbacks.append(_cb)
+        self._lib.mbink_on_close_request(self._handle, _cb, None)
         return callback
 
     def on_focus(self, callback):

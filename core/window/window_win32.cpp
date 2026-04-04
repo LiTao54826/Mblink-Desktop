@@ -102,6 +102,14 @@ static LRESULT CALLBACK SubclassWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPAR
     Window* window = (window_it != g_hwnd_to_window.end()) ? window_it->second : nullptr;
 
     switch (msg) {
+        case WM_CLOSE: {
+            if (window && window->ConsumePendingNativeCloseSuppress()) {
+                ShowWindow(hwnd, SW_HIDE);
+                return 0;
+            }
+            break;
+        }
+
         case WM_GETMINMAXINFO: {
             // 窗口最小/最大尺寸限制
             if (window) {

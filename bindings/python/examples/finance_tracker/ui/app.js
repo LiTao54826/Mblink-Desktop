@@ -108,7 +108,7 @@ function today() {
    function handleSubmit() {
      var amt = parseFloat(_form.amount);
      if (!amt || amt <= 0) return;
-     py.addRecord({ type:_form.type, amount:amt, category:_form.category, date:_form.date, note:_form.note });
+     backend.addRecord({ type:_form.type, amount:amt, category:_form.category, date:_form.date, note:_form.note });
      _form.amount = ''; _form.note = '';
      props.onClose();
    }
@@ -159,7 +159,7 @@ function today() {
          h('span', {style:{flex:1,color:C.muted,fontSize:'13px',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}, r.note||'—'),
          h('span', {style:{fontWeight:700,color:inc?C.green:C.red,minWidth:'95px',textAlign:'right',flexShrink:0}}, (inc?'+':'-')+'¥'+fmt(r.amount)),
          h('button', {style:{background:'none',border:'none',color:C.muted,cursor:'pointer',fontSize:'18px',padding:'0 6px',lineHeight:1,flexShrink:0},
-                      onClick:function(){py.deleteRecord({id:r.id});}}, '×')
+                      onClick:function(){backend.deleteRecord({id:r.id});}}, '×')
        );
      })
    );
@@ -177,12 +177,12 @@ function today() {
        h('div', {style:{display:'flex',alignItems:'center',gap:'6px'}},
          h('button', {
            style: Object.assign({}, navBtnS(), {opacity: canPrev ? 1 : 0.35}),
-           onClick:function(){ if(canPrev){ var idx=months.indexOf(curMonth); py.setFilter({month:months[idx+1]}); } }
+           onClick:function(){ if(canPrev){ var idx=months.indexOf(curMonth); backend.setFilter({month:months[idx+1]}); } }
          }, '◀'),
          h('span', {style:{fontWeight:600,fontSize:'14px',minWidth:'80px',textAlign:'center',letterSpacing:'0.5px'}}, curMonth),
          h('button', {
            style: Object.assign({}, navBtnS(), {opacity: canNext ? 1 : 0.35}),
-           onClick:function(){ if(canNext){ var idx=months.indexOf(curMonth); py.setFilter({month:months[idx-1]}); } }
+           onClick:function(){ if(canNext){ var idx=months.indexOf(curMonth); backend.setFilter({month:months[idx-1]}); } }
          }, '▶')
        )
      ),
@@ -190,9 +190,9 @@ function today() {
        h(SummaryCards),
        h(CategoryChart),
        h('div', {style:Object.assign({},S.card,S.toolbar)},
-         h('button',{style:filterBtnS(curType==='all'),    onClick:function(){py.setFilter({type:'all'});}},'全部'),
-         h('button',{style:filterBtnS(curType==='income'), onClick:function(){py.setFilter({type:'income'});}},'💰 收入'),
-         h('button',{style:filterBtnS(curType==='expense'),onClick:function(){py.setFilter({type:'expense'});}},'💸 支出'),
+         h('button',{style:filterBtnS(curType==='all'),    onClick:function(){backend.setFilter({type:'all'});}},'全部'),
+         h('button',{style:filterBtnS(curType==='income'), onClick:function(){backend.setFilter({type:'income'});}},'💰 收入'),
+         h('button',{style:filterBtnS(curType==='expense'),onClick:function(){backend.setFilter({type:'expense'});}},'💸 支出'),
          h('span',{style:{flex:1}}),
          h('button',{style:Object.assign({},S.btn,{background:C.accent,color:'#fff',boxShadow:'0 2px 8px rgba(79,110,247,.3)'}),
                      onClick:function(){_showForm=!_showForm;rerender();}}, _showForm?'− 收起':'✚ 添加记录')

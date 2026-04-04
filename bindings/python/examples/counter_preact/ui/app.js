@@ -5,9 +5,9 @@
  *   - Preact          → { h, render, Component, Fragment, ... }
  *   - PreactHooks     → { useState, useEffect, ... }
  *   - data            → 共享 C 对象（Python 侧 app.shared("data") 创建）
- *   - py.increment()  → 调用 Python @app.bind("increment")
- *   - py.decrement()  → 调用 Python @app.bind("decrement")
- *   - py.reset()      → 调用 Python @app.bind("reset")
+ *   - backend.increment()  → 调用 Python @app.bind("increment")
+ *   - backend.decrement()  → 调用 Python @app.bind("decrement")
+ *   - backend.reset()      → 调用 Python @app.bind("reset")
  */
 
 const { h, render } = Preact;
@@ -81,16 +81,16 @@ function App() {
         h('div', { style: styles.buttonGroup },
             h('button', {
                 style: { ...styles.button, ...styles.btnMinus },
-                onClick: () => py.decrement(),
+                onClick: () => backend.decrement(),
             }, '− 1'),
             h('button', {
                 style: { ...styles.button, ...styles.btnPlus },
-                onClick: () => py.increment(),
+                onClick: () => backend.increment(),
             }, '+ 1'),
         ),
         h('button', {
             style: { ...styles.button, ...styles.btnReset },
-            onClick: () => py.reset(),
+            onClick: () => backend.reset(),
         }, 'Reset'),
         h('div', { style: styles.footer },
             'Python ↔ C SharedObject ↔ Preact VDOM'

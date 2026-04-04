@@ -136,7 +136,12 @@ public:
      * @brief 显示窗口
      */
     void Show();
-    
+
+    /**
+     * @brief 显示窗口并激活到前台
+     */
+    void ShowAndFocus();
+
     /**
      * @brief 隐藏窗口
      */
@@ -365,6 +370,26 @@ public:
      */
     void SetOnCloseCallback(std::function<void()> callback) {
         on_close_callback_ = callback;
+    }
+
+    /**
+     * @brief 设置窗口关闭请求拦截器
+     * @param handler 返回 true 表示已处理，不执行默认关闭
+     */
+    void SetOnCloseRequestHandler(std::function<bool()> handler) {
+        on_close_request_handler_ = handler;
+    }
+
+    /**
+     * @brief 消费一次待抑制的原生关闭消息
+     * @return true 表示本次原生关闭应被吞掉
+     */
+    bool ConsumePendingNativeCloseSuppress() {
+        if (!suppress_next_native_close_) {
+            return false;
+        }
+        suppress_next_native_close_ = false;
+        return true;
     }
 
     /**
@@ -662,8 +687,10 @@ private:
     std::function<void(int, int)> on_resize_callback_;
     std::function<void(int, int)> on_move_callback_;
     std::function<void()> on_close_callback_;
+    std::function<bool()> on_close_request_handler_;
     std::function<void()> on_focus_callback_;
     std::function<void()> on_blur_callback_;
+    bool suppress_next_native_close_ = false;
 
     // 事件监听器（支持多个监听器）
     std::unordered_map<WindowEventType, std::vector<std::function<void(const WindowEvent&)>>> event_listeners_;

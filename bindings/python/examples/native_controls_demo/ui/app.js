@@ -26,20 +26,20 @@ async function callAndShow(name) {
 function App() {
   return h('div', { style: styles.wrap }, [
     h('div', { style: styles.row }, [
-      btn('追加 INFO', () => py.append_info()),
-      btn('追加 ERROR', () => py.append_error(), styles.warn)
+      btn('追加 INFO', () => backend.append_info()),
+      btn('追加 ERROR', () => backend.append_error(), styles.warn)
     ]),
     h('div', { style: styles.row }, [
-      btn('写入终端', () => py.write_terminal()),
-      btn('执行命令', () => py.run_command(), styles.secondary)
+      btn('写入终端', () => backend.write_terminal()),
+      btn('执行命令', () => backend.run_command(), styles.secondary)
     ]),
     h('div', { style: styles.row }, [
       btn('导出日志', () => callAndShow('export_logs'), styles.secondary),
       btn('终端快照', () => callAndShow('snapshot_terminal'), styles.secondary)
     ]),
     h('div', { style: styles.row }, [
-      btn('清空日志', () => py.clear_logs(), styles.danger),
-      btn('清空终端', () => py.clear_terminal(), styles.danger)
+      btn('清空日志', () => backend.clear_logs(), styles.danger),
+      btn('清空终端', () => backend.clear_terminal(), styles.danger)
     ]),
     h('div', { style: styles.card }, [
       h('div', { style: styles.label }, 'shared state'),

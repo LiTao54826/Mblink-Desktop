@@ -14,6 +14,7 @@
 #include "core/bridge/main_thread_queue.h"
 #include "core/window/window.h"
 #include "core/window/window_manager.h"
+#include "core/window/app_tray.h"
 #include "core/dom/document.h"
 #include "core/dom/bindings/dom_bindings.h"
 #include "core/dom/elements/logview/html_logview_element.h"
@@ -331,6 +332,8 @@ struct WindowContext {
     // 事件回调
     MBinkResizeCallback onResizeCallback = nullptr;
     void* onResizeUserData = nullptr;
+    MBinkBoolCallback onCloseRequestCallback = nullptr;
+    void* onCloseRequestUserData = nullptr;
     MBinkVoidCallback onCloseCallback = nullptr;
     void* onCloseUserData = nullptr;
     MBinkVoidCallback onFocusCallback = nullptr;
@@ -339,8 +342,15 @@ struct WindowContext {
     void* onBlurUserData = nullptr;
     MBinkUpdateCallback onUpdateCallback = nullptr;
     void* onUpdateUserData = nullptr;
+    MBinkVoidCallback onTrayLeftClickCallback = nullptr;
+    void* onTrayLeftClickUserData = nullptr;
+    MBinkCallback onTrayMenuCallback = nullptr;
+    void* onTrayMenuUserData = nullptr;
 
     bool running = false;
+    std::unique_ptr<mbink::AppTray> tray;
+    std::string trayTooltip;
+    std::vector<mbink::AppTrayMenuItem> trayMenuItems;
 };
 
 struct LogViewHandleData {
@@ -685,6 +695,68 @@ char* duplicateString(const char* str) {
 }
 
 #ifdef _WIN32
+HWND getOwnerHwnd(WindowContext* ctx) {
+    if (!ctx || !ctx->window) return nullptr;
+    auto* sdl_window = ctx->window->GetSDLWindow();
+    if (!sdl_window) return nullptr;
+    return static_cast<HWND>(SDL_GetPointerProperty(
+        SDL_GetWindowProperties(sdl_window),
+        SDL_PROP_WINDOW_WIN32_HWND_POINTER,
+        nullptr));
+}
+#endif
+
+mbink::AppTrayMenuItem parseTrayMenuItem(const nlohmann::json& item) {
+    mbink::AppTrayMenuItem menuItem;
+    const std::string type = item.value("type", "action");
+    if (type == "separator") {
+        menuItem.type = mbink::AppTrayMenuItemType::Separator;
+    } else if (type == "submenu") {
+        menuItem.type = mbink::AppTrayMenuItemType::Submenu;
+    } else {
+        menuItem.type = mbink::AppTrayMenuItemType::Action;
+    }
+
+    menuItem.id = item.value("id", "");
+    menuItem.label = item.value("label", "");
+    menuItem.enabled = item.value("enabled", true);
+    menuItem.checked = item.value("checked", false);
+
+    if (item.contains("children") && item["children"].is_array()) {
+        for (const auto& child : item["children"]) {
+            menuItem.children.push_back(parseTrayMenuItem(child));
+        }
+    }
+    return menuItem;
+}
+
+void wireTrayCallbacks(WindowContext* ctx) {
+    if (!ctx || !ctx->tray) return;
+
+    ctx->tray->SetLeftClickHandler([ctx]() {
+        if (ctx->onTrayLeftClickCallback) {
+            ctx->onTrayLeftClickCallback(ctx->onTrayLeftClickUserData);
+        }
+    });
+
+    ctx->tray->SetMenuItemHandler([ctx](const std::string& id) {
+        if (!ctx->onTrayMenuCallback) return;
+        const auto payload = nlohmann::json{{"id", id}}.dump();
+        char* result = ctx->onTrayMenuCallback(payload.c_str(), ctx->onTrayMenuUserData);
+        if (result) {
+            mbink_free(result);
+        }
+    });
+}
+
+void syncTrayState(WindowContext* ctx) {
+    if (!ctx || !ctx->tray) return;
+    ctx->tray->SetTooltip(ctx->trayTooltip);
+    ctx->tray->SetMenuItems(ctx->trayMenuItems);
+    wireTrayCallbacks(ctx);
+}
+
+#ifdef _WIN32
 char* invokeCallbackWithSEH(MBinkCallback cb, const char* args, void* user_data, unsigned int* sehCode) {
     if (sehCode) {
         *sehCode = 0;
@@ -753,6 +825,8 @@ WindowContext* createWindowContext(const mbink::WindowConfig& wc) {
 
     // 4. 注册到 WindowManager
     mbink::WindowManager::Instance().RegisterWindow(ctx->window);
+
+    ctx->trayTooltip = wc.title;
 
     // 5. 创建 QuickJS Runtime
     ctx->runtime = std::make_unique<mbink::QuickJSRuntime>();
@@ -900,10 +974,13 @@ void mbink_destroy(MBinkHandle handle) {
     if (!handle) return;
     auto ctx = getContext(handle);
 
-    // 0. 先隐藏窗口，避免后续重清理阶段造成用户可见卡顿
+    // 0. 先销毁 tray，避免后续窗口销毁时残留托盘图标
+    SAFE_CLEANUP("destroy_tray", if (ctx->tray) { ctx->tray->Destroy(); ctx->tray.reset(); });
+
+    // 1. 先隐藏窗口，避免后续重清理阶段造成用户可见卡顿
     SAFE_CLEANUP("hide_window", if (ctx->window) { ctx->window->Hide(); });
 
-    // 1. 停止事件循环
+    // 2. 停止事件循环
     SAFE_CLEANUP("stop_event_loop", if (ctx->eventLoop && ctx->running) {
         ctx->eventLoop->Stop();
         ctx->running = false;
@@ -1092,6 +1169,112 @@ int mbink_set_title(MBinkHandle handle, const char* title) {
     auto ctx = getContext(handle);
     if (title && ctx->window) {
         ctx->window->SetTitle(title);
+    }
+    return MBINK_OK;
+}
+
+int mbink_tray_create(MBinkHandle handle, const char* tooltip) {
+    if (!handle) return MBINK_ERROR_INVALID_HANDLE;
+    auto ctx = getContext(handle);
+    if (!ctx->window) return MBINK_ERROR_INVALID_HANDLE;
+
+#ifndef _WIN32
+    (void)tooltip;
+    return MBINK_ERROR_NOT_FOUND;
+#else
+    if (tooltip) {
+        ctx->trayTooltip = tooltip;
+    }
+
+    mbink::AppTrayConfig trayConfig;
+    trayConfig.tooltip = ctx->trayTooltip;
+    trayConfig.owner_native_window = getOwnerHwnd(ctx);
+
+    if (!ctx->tray) {
+        ctx->tray = mbink::AppTray::CreateForPlatform(trayConfig);
+        if (!ctx->tray) {
+            return MBINK_ERROR_NOT_FOUND;
+        }
+    }
+
+    syncTrayState(ctx);
+    return ctx->tray->Create() ? MBINK_OK : MBINK_ERROR_UNKNOWN;
+#endif
+}
+
+int mbink_tray_destroy(MBinkHandle handle) {
+    if (!handle) return MBINK_ERROR_INVALID_HANDLE;
+    auto ctx = getContext(handle);
+    if (ctx->tray) {
+        ctx->tray->Destroy();
+        ctx->tray.reset();
+    }
+    return MBINK_OK;
+}
+
+int mbink_tray_set_tooltip(MBinkHandle handle, const char* tooltip) {
+    if (!handle) return MBINK_ERROR_INVALID_HANDLE;
+    if (!tooltip) return MBINK_ERROR_INVALID_PARAM;
+    auto ctx = getContext(handle);
+    ctx->trayTooltip = tooltip;
+    if (ctx->tray) {
+        ctx->tray->SetTooltip(ctx->trayTooltip);
+    }
+    return MBINK_OK;
+}
+
+int mbink_tray_set_menu(MBinkHandle handle, const char* menu_json) {
+    if (!handle) return MBINK_ERROR_INVALID_HANDLE;
+    if (!menu_json) return MBINK_ERROR_INVALID_PARAM;
+    auto ctx = getContext(handle);
+
+    try {
+        auto json = nlohmann::json::parse(menu_json);
+        if (!json.is_array()) {
+            return MBINK_ERROR_INVALID_PARAM;
+        }
+
+        std::vector<mbink::AppTrayMenuItem> items;
+        items.reserve(json.size());
+        for (const auto& item : json) {
+            if (!item.is_object()) {
+                return MBINK_ERROR_INVALID_PARAM;
+            }
+            items.push_back(parseTrayMenuItem(item));
+        }
+
+        ctx->trayMenuItems = std::move(items);
+        if (ctx->tray) {
+            ctx->tray->SetMenuItems(ctx->trayMenuItems);
+        }
+        return MBINK_OK;
+    } catch (...) {
+        return MBINK_ERROR_INVALID_PARAM;
+    }
+}
+
+int mbink_tray_set_left_click_callback(MBinkHandle handle,
+                                       MBinkVoidCallback callback,
+                                       void* user_data) {
+    if (!handle) return MBINK_ERROR_INVALID_HANDLE;
+    auto ctx = getContext(handle);
+    ctx->onTrayLeftClickCallback = callback;
+    ctx->onTrayLeftClickUserData = user_data;
+    if (ctx->tray) {
+        wireTrayCallbacks(ctx);
+    }
+    return MBINK_OK;
+}
+
+int mbink_tray_set_menu_callback(MBinkHandle handle,
+                                 MBinkCallback callback,
+                                 void* user_data) {
+    if (!handle) return MBINK_ERROR_INVALID_HANDLE;
+    auto ctx = getContext(handle);
+    ctx->onTrayMenuCallback = callback;
+    ctx->onTrayMenuUserData = user_data;
+    if (ctx->tray) {
+        wireTrayCallbacks(ctx);
     }
     return MBINK_OK;
 }
@@ -1463,6 +1646,21 @@ int mbink_on_close(MBinkHandle handle, MBinkVoidCallback callback, void* user_da
         auto ud = user_data;
         ctx->window->SetOnCloseCallback([cb, ud]() {
             if (cb) cb(ud);
+        });
+    }
+    return MBINK_OK;
+}
+
+int mbink_on_close_request(MBinkHandle handle, MBinkBoolCallback callback, void* user_data) {
+    if (!handle) return MBINK_ERROR_INVALID_HANDLE;
+    auto ctx = getContext(handle);
+    ctx->onCloseRequestCallback = callback;
+    ctx->onCloseRequestUserData = user_data;
+    if (ctx->window) {
+        auto cb = callback;
+        auto ud = user_data;
+        ctx->window->SetOnCloseRequestHandler([cb, ud]() -> bool {
+            return cb ? cb(ud) : false;
         });
     }
     return MBINK_OK;
