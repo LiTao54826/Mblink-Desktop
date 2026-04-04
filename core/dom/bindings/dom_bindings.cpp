@@ -64,6 +64,15 @@ std::unordered_map<Document*, std::pair<JSContext*, JSValue>> DOMBindings::docum
 namespace {
 std::shared_ptr<TaskScheduler> g_task_scheduler = nullptr;
 EventLoop* g_event_loop = nullptr;
+
+static JSMemoryUsage GetRuntimeUsage(JSContext* ctx) {
+    JSMemoryUsage usage{};
+    JSRuntime* rt = ctx ? JS_GetRuntime(ctx) : nullptr;
+    if (rt) {
+        JS_ComputeMemoryUsage(rt, &usage);
+    }
+    return usage;
+}
 }
 
 // ========== 辅助函数 ==========

@@ -121,6 +121,9 @@ function clearVNode(vnode) {
 
     var component = vnode.__component;
     if (component) {
+        if (typeof PreactHooks !== 'undefined' && PreactHooks.cleanupComponent) {
+            PreactHooks.cleanupComponent(component);
+        }
         if (component.__renderedVNode && component.__renderedVNode !== vnode) {
             clearVNode(component.__renderedVNode);
         }
@@ -157,8 +160,45 @@ function clearVNode(vnode) {
         vnode.children = null;
     }
 
+    if (vnode.__dom) {
+        releaseElementData(vnode.__dom);
+    }
+
     vnode.__dom = null;
     vnode.__component = null;
+    vnode.key = null;
+    vnode.ref = null;
+    vnode.type = null;
+}
+
+function detachVNodeGraph(vnode, preserveComponent) {
+    if (!vnode || typeof vnode !== 'object') {
+        return;
+    }
+
+    if (Array.isArray(vnode)) {
+        for (var i = 0; i < vnode.length; i++) {
+            detachVNodeGraph(vnode[i], preserveComponent);
+            vnode[i] = null;
+        }
+        return;
+    }
+
+    var component = vnode.__component;
+
+    if (vnode.children) {
+        for (var j = 0; j < vnode.children.length; j++) {
+            detachVNodeGraph(vnode.children[j], false);
+            vnode.children[j] = null;
+        }
+        vnode.children = null;
+    }
+
+    vnode.props = null;
+    vnode.__dom = null;
+    if (!preserveComponent || !component || component.__vnode !== vnode) {
+        vnode.__component = null;
+    }
     vnode.key = null;
     vnode.ref = null;
     vnode.type = null;
@@ -179,31 +219,47 @@ function render(vnode, container) {
         globalThis.__mbinkRegisterPreactRoot(vnode, container, render);
     }
 
-    // Use C++ implementation if available
-    if (typeof __preact_internal !== 'undefined' && __preact_internal.render) {
-        return __preact_internal.render(vnode, container);
-    }
+    var trackedRoot = container && container.__preactRoot ? container.__preactRoot : null;
 
-    // 开始批量更新，避免每次 DOM 操作都触发重绘
-    if (typeof document !== 'undefined' && typeof document.__beginBatch === 'function') {
-        document.__beginBatch();
+    if (trackedRoot && typeof globalThis !== 'undefined' && typeof globalThis.__mbinkBeginRootTracking === 'function') {
+        globalThis.__mbinkBeginRootTracking(trackedRoot);
     }
 
     try {
-        // Get old vnode from container
-        var oldVNode = container.__preactVNode;
-        var oldDOM = container.__preactDOM;
+        // Use C++ implementation if available
+        if (typeof __preact_internal !== 'undefined' && __preact_internal.render) {
+            return __preact_internal.render(vnode, container);
+        }
 
-        // Diff and patch
-        var newDOM = diffNode(oldVNode, vnode, container, oldDOM);
+        // 开始批量更新，避免每次 DOM 操作都触发重绘
+        if (typeof document !== 'undefined' && typeof document.__beginBatch === 'function') {
+            document.__beginBatch();
+        }
 
-        // Store references
-        container.__preactVNode = vnode;
-        container.__preactDOM = newDOM;
+        try {
+            // Get old vnode from container
+            var oldVNode = container.__preactVNode;
+            var oldDOM = container.__preactDOM;
+
+            // Diff and patch
+            var newDOM = diffNode(oldVNode, vnode, container, oldDOM);
+
+            // Store references
+            container.__preactVNode = vnode;
+            container.__preactDOM = newDOM;
+
+            if (oldVNode && oldVNode !== vnode) {
+                detachVNodeGraph(oldVNode, false);
+            }
+        } finally {
+            // 结束批量更新，触发一次性重绘
+            if (typeof document !== 'undefined' && typeof document.__endBatch === 'function') {
+                document.__endBatch();
+            }
+        }
     } finally {
-        // 结束批量更新，触发一次性重绘
-        if (typeof document !== 'undefined' && typeof document.__endBatch === 'function') {
-            document.__endBatch();
+        if (trackedRoot && typeof globalThis !== 'undefined' && typeof globalThis.__mbinkEndRootTracking === 'function') {
+            globalThis.__mbinkEndRootTracking(trackedRoot);
         }
     }
 }
@@ -301,51 +357,47 @@ function createComponentDOM(vnode) {
             __hooks: [],
             __vnode: vnode,
             __dom: null,
-            __renderedVNode: null
+            __renderedVNode: null,
+            __rerender: null
         };
     }
 
     var component = vnode.__component;
+    component.__vnode = vnode;
 
     // Set up rerender function using Virtual DOM diffing
-    component.__rerender = function () {
-        try {
-            // Set current component for hooks
-            if (typeof PreactHooks !== 'undefined' && PreactHooks.setCurrentComponent) {
-                PreactHooks.setCurrentComponent(component);
-            }
+    if (!component.__rerender) {
+        component.__rerender = function () {
+            try {
+                if (typeof PreactHooks !== 'undefined' && PreactHooks.setCurrentComponent) {
+                    PreactHooks.setCurrentComponent(component);
+                }
 
-            // IMPORTANT: Use component.__vnode.props to get the latest props
-            var currentVNode = component.__vnode;
-            var newRenderedVNode = currentVNode.type(currentVNode.props);
+                var currentVNode = component.__vnode;
+                var newRenderedVNode = currentVNode.type(currentVNode.props);
 
-            // Clear current component
-            if (typeof PreactHooks !== 'undefined' && PreactHooks.setCurrentComponent) {
-                PreactHooks.setCurrentComponent(null);
-            }
+                if (typeof PreactHooks !== 'undefined' && PreactHooks.setCurrentComponent) {
+                    PreactHooks.setCurrentComponent(null);
+                }
 
-            // Get old DOM and parent
-            var oldDOM = component.__dom;
-            if (!oldDOM || !oldDOM.parentNode) {
-                return;
-            }
+                var oldDOM = component.__dom;
+                if (!oldDOM || !oldDOM.parentNode) {
+                    return;
+                }
 
-            var parent = oldDOM.parentNode;
-            var oldRenderedVNode = component.__renderedVNode;
+                var parent = oldDOM.parentNode;
+                var oldRenderedVNode = component.__renderedVNode;
+                var newDOM = diffNode(oldRenderedVNode, newRenderedVNode, parent, oldDOM);
 
-            // Use Virtual DOM diffing to update in place
-            var newDOM = diffNode(oldRenderedVNode, newRenderedVNode, parent, oldDOM);
+                component.__dom = newDOM;
+                component.__renderedVNode = newRenderedVNode;
 
-            // Update component state
-            component.__dom = newDOM;
-            component.__renderedVNode = newRenderedVNode;
-            if (newDOM) {
-                newDOM.__componentVNode = vnode;
-            }
-        } catch (e) {
-            // Silently handle errors
-        }
-    };
+                if (oldRenderedVNode && oldRenderedVNode !== newRenderedVNode) {
+                    detachVNodeGraph(oldRenderedVNode, false);
+                }
+            } catch (e) {}
+        };
+    }
 
     // Set current component for hooks
     if (typeof PreactHooks !== 'undefined' && PreactHooks.setCurrentComponent) {
@@ -367,11 +419,6 @@ function createComponentDOM(vnode) {
     component.__dom = dom;
     component.__renderedVNode = renderedVNode;
 
-    // Store reference to the component VNode on the DOM
-    if (dom) {
-        dom.__componentVNode = vnode;
-    }
-
     return dom;
 }
 
@@ -381,6 +428,62 @@ function createComponentDOM(vnode) {
  */
 var __elementDataStore = {};
 var __elementIdCounter = 1;
+
+function releaseElementData(element) {
+    if (!element || typeof element.getAttribute !== 'function') {
+        return;
+    }
+
+    var id = element.getAttribute('data-preact-id');
+    if (!id) {
+        return;
+    }
+
+    var data = __elementDataStore[id];
+    if (!data) {
+        try { element.removeAttribute('data-preact-id'); } catch (_) {}
+        return;
+    }
+
+    if (data.listeners) {
+        for (var k in data.listeners) {
+            var stable = data.listeners[k];
+            if (typeof stable !== 'function') continue;
+
+            var eventName = null;
+            if (k.length > 6 && k.substring(k.length - 6) === '_input') {
+                eventName = 'input';
+            } else if (k.length > 2 && k.substring(0, 2) === 'on') {
+                eventName = k.substring(2).toLowerCase();
+            }
+
+            if (eventName) {
+                try { element.removeEventListener(eventName, stable); } catch (_) {}
+            }
+
+            delete data.listeners[k];
+        }
+    }
+
+    if (data.handlers) {
+        for (var hk in data.handlers) {
+            delete data.handlers[hk];
+        }
+    }
+
+    if (data.vnode) {
+        data.vnode = null;
+    }
+
+    if (data.element) {
+        try { data.element.removeAttribute('data-preact-id'); } catch (_) {}
+        data.element = null;
+    } else {
+        try { element.removeAttribute('data-preact-id'); } catch (_) {}
+    }
+
+    delete __elementDataStore[id];
+}
 
 function getElementId(element) {
     // Use a data attribute to store element ID (safer than custom JS property)
@@ -405,14 +508,10 @@ function getElementData(element) {
 
 function setElementVNode(element, vnode) {
     var data = getElementData(element);
-    data.vnode = vnode;
+    data.vnode = null;
 }
 
 function getElementVNode(element) {
-    var id = element.getAttribute('data-preact-id');
-    if (id && __elementDataStore[id]) {
-        return __elementDataStore[id].vnode;
-    }
     return null;
 }
 
@@ -570,6 +669,9 @@ function diffNode(oldVNode, newVNode, parentDOM, oldDOM) {
     try {
         // New node is null - remove old
         if (newVNode == null || newVNode === false || newVNode === true) {
+            if (oldVNode) {
+                clearVNode(oldVNode);
+            }
             if (oldDOM && parentDOM && oldDOM.parentNode === parentDOM) {
                 try {
                     parentDOM.removeChild(oldDOM);
@@ -600,6 +702,7 @@ function diffNode(oldVNode, newVNode, parentDOM, oldDOM) {
 
         // Type changed - replace entirely
         if (!isSameVNodeType(oldVNode, newVNode)) {
+            clearVNode(oldVNode);
             var replacementDOM = createDOMElement(newVNode);
             if (parentDOM && oldDOM && oldDOM.parentNode === parentDOM) {
                 try {
@@ -685,31 +788,13 @@ function diffComponent(oldVNode, newVNode, parentDOM, oldDOM) {
     component.__dom = newDOM;
     component.__renderedVNode = newRenderedVNode;
 
-    // Update rerender function - use component.__vnode to get latest props
-    component.__rerender = function () {
-        // console.log('[Preact __rerender] Starting rerender');
-        if (typeof PreactHooks !== 'undefined' && PreactHooks.setCurrentComponent) {
-            PreactHooks.setCurrentComponent(component);
-        }
+    if (oldRenderedVNode && oldRenderedVNode !== newRenderedVNode) {
+        detachVNodeGraph(oldRenderedVNode, false);
+    }
 
-        // IMPORTANT: Use component.__vnode.props instead of captured newVNode.props
-        // This ensures we use the latest props from parent component
-        var currentVNode = component.__vnode;
-        var updatedVNode = currentVNode.type(currentVNode.props);
-
-        if (typeof PreactHooks !== 'undefined' && PreactHooks.setCurrentComponent) {
-            PreactHooks.setCurrentComponent(null);
-        }
-
-        var currentDOM = component.__dom;
-        if (!currentDOM || !currentDOM.parentNode) {
-            return;
-        }
-
-        var resultDOM = diffNode(component.__renderedVNode, updatedVNode, currentDOM.parentNode, currentDOM);
-        component.__dom = resultDOM;
-        component.__renderedVNode = updatedVNode;
-    };
+    if (oldVNode && oldVNode !== newVNode) {
+        detachVNodeGraph(oldVNode, false);
+    }
 
     return newDOM;
 }
@@ -867,6 +952,10 @@ function diffChildren(oldChildren, newChildren, parentDOM) {
     // Remove unused old DOM nodes (iterate backwards to avoid index shifting)
     for (var m = mapLen - 1; m >= 0; m--) {
         if (!usedOldDOMs[m]) {
+            var oldChildVNode = oldChildren[m];
+            if (oldChildVNode) {
+                clearVNode(oldChildVNode);
+            }
             var domToRemove = childNodesArray[m];
             try {
                 if (domToRemove && domToRemove.parentNode === parentDOM) {
@@ -1046,7 +1135,6 @@ function isValidElement(value) {
     // 暴露到全局作用域
     global.Preact = Preact;
     global.preact = preact;
-
     // 暴露清理函数，供 C++ 关闭时调用以释放 IIFE 内部的函数引用
     // __elementDataStore 是 IIFE 局部变量，外部无法直接访问
     global.__preactCleanup = function() {
