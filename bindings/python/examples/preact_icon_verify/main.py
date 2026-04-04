@@ -32,6 +32,6 @@ html = f"""<!DOCTYPE html>
 
 app = App('Preact app://res.ico Verify', 720, 320, resizable=True, gpu=True)
 app.load_html(html)
-app.load_preact(os.path.join(ui_dir, 'app.js'))
+app.load_js_file(os.path.join(ui_dir, 'app.js'))
 app.run()
 

@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="utf-8">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        html,
+        body {
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background: #eef4ff;
+        }
+
+        body {
+            font-family: "Segoe UI", Arial, sans-serif;
+        }
+
+        #root {
+            width: 100vw;
+            height: 100vh;
+        }
+
+        .drag {
+            -webkit-app-region: drag;
+        }
+
+        .no-drag {
+            -webkit-app-region: no-drag;
+        }
+
+        input,
+        button {
+            -webkit-app-region: no-drag;
+        }
+
+        .window-control {
+            width: 24px;
+            height: 24px;
+            border-radius: 50%;
+            display: inline-block;
+            flex-shrink: 0;
+        }
+
+        .wc-minimize {
+            -webkit-window-control: minimize;
+        }
+
+        .wc-maximize {
+            -webkit-window-control: maximize;
+        }
+
+        .wc-close {
+            -webkit-window-control: close;
+        }
+    </style>
+</head>
+
+<body>
+    <div id="root"></div>
+</body>
+
+</html>

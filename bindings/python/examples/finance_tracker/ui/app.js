@@ -208,11 +208,4 @@ var _root = document.getElementById('root');
 function rerender() {
   try { render(h(App), _root); } catch(e) { console.error('[rerender]', e&&e.message); }
 }
-var _scheduled = false;
-globalThis.__onSharedUpdate = function() {
-  if (!_scheduled) {
-    _scheduled = true;
-    setTimeout(function(){ _scheduled=false; rerender(); }, 0);
-  }
-};
 rerender();
