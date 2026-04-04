@@ -20,6 +20,38 @@
 namespace {
 constexpr UINT kTrayCallbackMessage = WM_APP + 0x3A1;
 constexpr UINT kTrayMenuBaseId = 40000;
+
+bool AppendMenuItemsRecursive(HMENU menu,
+                              const std::vector<mbink::AppTrayMenuItem>& items,
+                              std::unordered_map<UINT, std::string>& command_map,
+                              UINT& next_id) {
+    for (const auto& item : items) {
+        if (item.type == mbink::AppTrayMenuItemType::Separator) {
+            if (!AppendMenuW(menu, MF_SEPARATOR, 0, nullptr)) return false;
+            continue;
+        }
+
+        auto label = mbink::utils::UTF8ToWide(item.label);
+        UINT state_flags = (item.enabled ? MF_ENABLED : MF_GRAYED) | (item.checked ? MF_CHECKED : 0);
+
+        if (item.type == mbink::AppTrayMenuItemType::Submenu) {
+            HMENU submenu = CreatePopupMenu();
+            if (!submenu) return false;
+            if (!AppendMenuItemsRecursive(submenu, item.children, command_map, next_id)) {
+                DestroyMenu(submenu);
+                return false;
+            }
+            if (!AppendMenuW(menu, MF_POPUP | MF_STRING | state_flags, reinterpret_cast<UINT_PTR>(submenu), label.c_str())) {
+                DestroyMenu(submenu);
+                return false;
+            }
+            continue;
+        }
+        if (!AppendMenuW(menu, MF_STRING | state_flags, next_id, label.c_str())) return false;
+        command_map[next_id++] = item.id;
+    }
+    return true;
+}
 }
 
 namespace mbink {
@@ -100,15 +132,44 @@ void Win32AppTray::HandleCommand(UINT command_id) {
 }
 
 void Win32AppTray::ShowContextMenu() {
-    HMENU menu = CreatePopupMenu(); if (!menu) return; command_map_.clear(); UINT next_id = kTrayMenuBaseId;
-    for (const auto& item : menu_items_) {
-        if (item.type == AppTrayMenuItemType::Separator) { AppendMenuW(menu, MF_SEPARATOR, 0, nullptr); continue; }
-        UINT flags = MF_STRING | (item.enabled ? MF_ENABLED : MF_GRAYED) | (item.checked ? MF_CHECKED : 0);
-        auto label = utils::UTF8ToWide(item.label); AppendMenuW(menu, flags, next_id, label.c_str()); command_map_[next_id++] = item.id;
+    HMENU menu = CreatePopupMenu();
+    if (!menu) return;
+
+    command_map_.clear();
+    UINT next_id = kTrayMenuBaseId;
+    if (!AppendMenuItemsRecursive(menu, menu_items_, command_map_, next_id)) {
+        DestroyMenu(menu);
+        return;
     }
-    POINT pt{}; GetCursorPos(&pt); SetForegroundWindow(hwnd_);
-    UINT cmd = TrackPopupMenu(menu, TPM_RETURNCMD | TPM_RIGHTBUTTON, pt.x, pt.y, 0, hwnd_, nullptr);
-    if (cmd != 0) HandleCommand(cmd); DestroyMenu(menu);
+
+    HWND menu_owner = config_.owner_native_window ? static_cast<HWND>(config_.owner_native_window) : hwnd_;
+
+    POINT pt{};
+    NOTIFYICONIDENTIFIER nii{};
+    nii.cbSize = sizeof(nii);
+    nii.hWnd = nid_.hWnd;
+    nii.uID = nid_.uID;
+
+    RECT icon_rect{};
+    if (Shell_NotifyIconGetRect(&nii, &icon_rect) == S_OK) {
+        pt.x = icon_rect.left;
+        pt.y = icon_rect.top;
+    } else {
+        GetCursorPos(&pt);
+    }
+
+    SetForegroundWindow(menu_owner);
+    UINT cmd = TrackPopupMenu(menu,
+                              TPM_RETURNCMD | TPM_RIGHTBUTTON | TPM_BOTTOMALIGN | TPM_LEFTALIGN,
+                              pt.x,
+                              pt.y,
+                              0,
+                              menu_owner,
+                              nullptr);
+    PostMessageW(menu_owner, WM_NULL, 0, 0);
+
+    if (cmd != 0) HandleCommand(cmd);
+    DestroyMenu(menu);
 }
 
 LRESULT CALLBACK Win32AppTray::WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {

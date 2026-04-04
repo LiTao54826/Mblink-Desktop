@@ -1,11 +1,12 @@
 import sys
+import os
 import time
 from pathlib import Path
 
 # 允许直接从 bindings/python/examples 运行：python bindings/python/examples/python_tray_simple.py
 # 本示例演示由用户态显式创建 tray、设置菜单，并通过装饰器按 id 分发处理函数。
-ROOT = Path(__file__).resolve().parents[3]
-sys.path.insert(0, str(ROOT / "bindings" / "python"))
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 from mbink import App
 
@@ -59,16 +60,20 @@ def main():
     app = App("MBink Tray Simple Demo", 520, 260)
 
     tray_menu = [
-        {"id": "show", "label": "显示主界面"},
-        {"id": "hide", "label": "隐藏窗口"},
-        {"id": "sync", "label": "后台同步(耗时示例)"},
-        {"type": "separator"},
-        {"id": "quit", "label": "退出应用"},
+        {"id": "show", "label": "显示"},
+        {
+            "type": "submenu",
+            "label": "更多",
+            "children": [
+                {"id": "sync", "label": "同步", "enabled": True},
+                {"id": "debug", "label": "调试模式", "checked": True},
+            ],
+        },
+        {"id": "quit", "label": "退出"},
     ]
 
     app.create_tray(tooltip="MBink Tray Simple Demo", menu=tray_menu)
     app.load_html(HTML)
-
 
     @app.on_tray_click
     def _tray_click():

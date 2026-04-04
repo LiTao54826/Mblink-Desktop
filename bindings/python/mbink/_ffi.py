@@ -109,7 +109,6 @@ def load_dll(path=None):
             "找不到 MBink 动态库。请设置 MBINK_DLL_PATH 环境变量，"
             "或将 mbink.dll 放在当前目录下。"
         )
-
     lib = ctypes.CDLL(path)
     _bind_functions(lib)
     return lib
