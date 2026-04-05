@@ -344,11 +344,17 @@ function getHookState(index) {
  * @param {Array} deps - Dependency array
  */
 function useLayoutEffect(effect, deps) {
-    const hookState = getHookState(currentHookIndex++);
+    var hookState = getHookState(currentHookIndex++);
 
-    const hasChanged = !hookState.deps ||
-        !deps ||
-        deps.some((dep, i) => dep !== hookState.deps[i]);
+    var hasChanged = !hookState.deps || !deps;
+    if (!hasChanged && deps) {
+        for (var i = 0; i < deps.length; i++) {
+            if (deps[i] !== hookState.deps[i]) {
+                hasChanged = true;
+                break;
+            }
+        }
+    }
 
     if (hasChanged) {
         hookState.deps = deps;
@@ -367,7 +373,7 @@ function useLayoutEffect(effect, deps) {
  * @returns {object} Ref object with .current property
  */
 function useRef(initialValue) {
-    const hookState = getHookState(currentHookIndex++);
+    var hookState = getHookState(currentHookIndex++);
 
     if (!('ref' in hookState)) {
         hookState.ref = { current: initialValue };
@@ -383,11 +389,17 @@ function useRef(initialValue) {
  * @returns {any} Memoized value
  */
 function useMemo(factory, deps) {
-    const hookState = getHookState(currentHookIndex++);
+    var hookState = getHookState(currentHookIndex++);
 
-    const hasChanged = !hookState.deps ||
-        !deps ||
-        deps.some((dep, i) => dep !== hookState.deps[i]);
+    var hasChanged = !hookState.deps || !deps;
+    if (!hasChanged && deps) {
+        for (var i = 0; i < deps.length; i++) {
+            if (deps[i] !== hookState.deps[i]) {
+                hasChanged = true;
+                break;
+            }
+        }
+    }
 
     if (hasChanged) {
         hookState.deps = deps;
@@ -404,7 +416,7 @@ function useMemo(factory, deps) {
  * @returns {Function} Memoized callback
  */
 function useCallback(callback, deps) {
-    return useMemo(() => callback, deps);
+    return useMemo(function() { return callback; }, deps);
 }
 
 /**
@@ -418,7 +430,7 @@ function useContext(context) {
     }
 
     // Simple context implementation
-    return context._currentValue;
+    return context._currentValue || context.__currentValue;
 }
 
 /**
@@ -457,12 +469,95 @@ function useReducer(reducer, initialState, init) {
 }
 
 /**
+ * useImperativeHandle Hook - Customize ref exposure
+ * @param {object|Function} ref - Ref object or callback ref
+ * @param {Function} createHandle - Function that returns the handle
+ * @param {Array} deps - Dependency array
+ */
+function useImperativeHandle(ref, createHandle, deps) {
+    useLayoutEffect(function() {
+        if (typeof ref === 'function') {
+            var result = ref(createHandle());
+            return function() {
+                ref(null);
+                if (result && typeof result === 'function') {
+                    result();
+                }
+            };
+        } else if (ref) {
+            ref.current = createHandle();
+            return function() {
+                ref.current = null;
+            };
+        }
+    }, deps == null ? deps : deps.concat(ref));
+}
+
+/**
+ * useDebugValue Hook - Display custom label in devtools
+ * @param {any} value - Value to display
+ * @param {Function} formatter - Optional formatter function
+ */
+function useDebugValue(value, formatter) {
+    // Access Preact options if available
+    var opts = typeof Preact !== 'undefined' ? Preact.options : null;
+    if (opts && opts.useDebugValue) {
+        opts.useDebugValue(formatter ? formatter(value) : value);
+    }
+}
+
+/**
+ * useErrorBoundary Hook - Error boundary hook
+ * @param {Function} cb - Error callback
+ * @returns {[any, Function]} [error, resetError]
+ */
+function useErrorBoundary(cb) {
+    var hookState = getHookState(currentHookIndex++);
+    var errState = useState();
+
+    hookState.value = cb;
+
+    if (!currentComponent.componentDidCatch) {
+        currentComponent.componentDidCatch = function(err, errorInfo) {
+            if (hookState.value) {
+                hookState.value(err, errorInfo);
+            }
+            errState[1](err);
+        };
+    }
+
+    return [
+        errState[0],
+        function() {
+            errState[1](undefined);
+        }
+    ];
+}
+
+/**
+ * useId Hook - Generate unique IDs for accessibility
+ * @returns {string} Unique ID
+ */
+function useId() {
+    var hookState = getHookState(currentHookIndex++);
+
+    if (!hookState.value) {
+        // Generate unique ID based on component and hook index
+        var componentId = ensureComponentId(currentComponent);
+        var hookId = ensureHookId(hookState);
+        hookState.value = 'id-' + componentId + '-' + hookId;
+    }
+
+    return hookState.value;
+}
+
+/**
  * Create a context object
  * @param {any} defaultValue - Default context value
  * @returns {object} Context object
  */
 function createContext(defaultValue) {
-    const context = {
+    var context = {
         _currentValue: defaultValue,
         Provider: function Provider(props) {
             context._currentValue = props.value;
@@ -486,6 +581,10 @@ function createContext(defaultValue) {
         useCallback: useCallback,
         useContext: useContext,
         useReducer: useReducer,
+        useImperativeHandle: useImperativeHandle,
+        useDebugValue: useDebugValue,
+        useErrorBoundary: useErrorBoundary,
+        useId: useId,
         createContext: createContext,
         setCurrentComponent: setCurrentComponent,
         cleanupComponent: cleanupComponent,

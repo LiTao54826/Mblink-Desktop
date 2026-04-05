@@ -28,6 +28,8 @@
 #include "core/lexbor/lexbor_stylesheet.h"
 #include "core/quickjs/dom_binding_map.h"
 #include "tools/esm_loader/embedded_js.h"
+#include "core/devtools/devtools_manager.h"
+
 #include "core/utils/encoding_utils.h"
 
 #include <cstdlib>
@@ -826,6 +828,11 @@ WindowContext* createWindowContext(const mbink::WindowConfig& wc) {
     // 4. 注册到 WindowManager
     mbink::WindowManager::Instance().RegisterWindow(ctx->window);
 
+    // 初始化 DevTools：Python/C API 路径也需要绑定 document/window，
+    // 否则 F12 只能切换面板状态，实际内容为空白。
+    auto& devtools = mbink::DevToolsManager::GetInstance();
+    devtools.Initialize(ctx->document.get(), ctx->window.get());
+
     ctx->trayTooltip = wc.title;
 
     // 5. 创建 QuickJS Runtime
@@ -973,6 +980,14 @@ MBinkConfig mbink_default_config(void) {
 void mbink_destroy(MBinkHandle handle) {
     if (!handle) return;
     auto ctx = getContext(handle);
+
+    SAFE_CLEANUP("shutdown_devtools", {
+        auto& devtools = mbink::DevToolsManager::GetInstance();
+        if (ctx->window && ctx->document) {
+            devtools.Close();
+            devtools.Shutdown();
+        }
+    });
 
     // 0. 先销毁 tray，避免后续窗口销毁时残留托盘图标
     SAFE_CLEANUP("destroy_tray", if (ctx->tray) { ctx->tray->Destroy(); ctx->tray.reset(); });
@@ -1720,13 +1735,26 @@ int mbink_emit(MBinkHandle handle, const char* event_name, const char* data_json
 
 int mbink_devtools_open(MBinkHandle handle) {
     if (!handle) return MBINK_ERROR_INVALID_HANDLE;
-    // DevTools 功能暂不实现，预留接口
+    auto ctx = getContext(handle);
+    auto& devtools = mbink::DevToolsManager::GetInstance();
+    if (ctx && ctx->document && ctx->window) {
+        devtools.Initialize(ctx->document.get(), ctx->window.get());
+        devtools.Open();
+        if (ctx->window) {
+            ctx->window->SetNeedsRepaint();
+        }
+    }
     return MBINK_OK;
 }
 
 int mbink_devtools_close(MBinkHandle handle) {
     if (!handle) return MBINK_ERROR_INVALID_HANDLE;
-    // DevTools 功能暂不实现，预留接口
+    auto ctx = getContext(handle);
+    auto& devtools = mbink::DevToolsManager::GetInstance();
+    devtools.Close();
+    if (ctx && ctx->window) {
+        ctx->window->SetNeedsRepaint();
+    }
     return MBINK_OK;
 }
 

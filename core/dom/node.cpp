@@ -114,15 +114,29 @@ std::shared_ptr<Node> Node::AppendChild(std::shared_ptr<Node> child) {
         throw std::invalid_argument("Cannot append null child");
     }
 
-    // 如果child已有父节点，先从原父节点移除
-    if (auto parent = child->GetParentNode()) {
-        parent->RemoveChild(child);
+    auto old_parent = child->GetParentNode();
+    const bool is_move = static_cast<bool>(old_parent);
+
+    // DOM move：不要走 RemoveChild()，否则会误报 removed。
+    if (old_parent) {
+        auto& old_siblings = old_parent->child_nodes_;
+        auto old_it = std::find(old_siblings.begin(), old_siblings.end(), child);
+        if (old_it == old_siblings.end()) {
+            throw std::invalid_argument("Child not found in old parent");
+        }
+        old_siblings.erase(old_it);
+        old_parent->MarkDirty();
+        child->SetParentNode(nullptr);
+
+        if (auto old_doc = old_parent->GetOwnerDocument()) {
+            old_doc->MarkLexborDirty();
+        }
     }
 
     // 添加到子节点列表
     child_nodes_.push_back(child);
     child->SetParentNode(shared_from_this());
-    
+
     // 传播 owner_document_ 给子节点（如果子节点没有的话）
     // 这确保通过 SetTextContent 等方法创建的节点也能正确获取 owner_document_
     auto doc = GetOwnerDocument();
@@ -135,10 +149,15 @@ std::shared_ptr<Node> Node::AppendChild(std::shared_ptr<Node> child) {
 
     // 通知观察者和记录变化
     if (doc) {
-        // 记录到 DirtyNodeTracker（延迟处理）
-        doc->GetDirtyTracker().RecordNodeAdded(child, shared_from_this(), child_nodes_.size() - 1);
-        
-        // 通知观察者（立即处理，用于兼容旧代码）
+        if (is_move) {
+            doc->GetDirtyTracker().RecordNodeMoved(
+                child, old_parent, shared_from_this(), child_nodes_.size() - 1);
+        } else {
+            doc->GetDirtyTracker().RecordNodeAdded(
+                child, shared_from_this(), child_nodes_.size() - 1);
+        }
+
+        // move 场景仍需触发 added 路径，以便窗口进入重绘/布局流程
         doc->GetObserverManager().NotifyNodeAdded(child.get(), this);
         // 标记 Lexbor DOM 需要同步
         doc->MarkLexborDirty();
@@ -163,33 +182,46 @@ std::shared_ptr<Node> Node::InsertBefore(std::shared_ptr<Node> new_child,
         return new_child;
     }
 
-    // 先计算目标插入索引；如果 new_child 已经在当前父节点中且位于 ref_child 之前，
-    // RemoveChild 会让后续索引左移一位，需提前修正。
     auto ref_it = std::find(child_nodes_.begin(), child_nodes_.end(), ref_child);
     if (ref_it == child_nodes_.end()) {
         throw std::invalid_argument("Reference child not found");
     }
 
     size_t index = std::distance(child_nodes_.begin(), ref_it);
+    auto old_parent = new_child->GetParentNode();
+    const bool is_move = static_cast<bool>(old_parent);
 
-    if (auto parent = new_child->GetParentNode()) {
-        if (parent.get() == this) {
-            auto existing_it = std::find(child_nodes_.begin(), child_nodes_.end(), new_child);
-            if (existing_it != child_nodes_.end()) {
-                size_t existing_index = std::distance(child_nodes_.begin(), existing_it);
-                if (existing_index < index) {
-                    --index;
-                }
+    if (old_parent && old_parent.get() == this) {
+        auto existing_it = std::find(child_nodes_.begin(), child_nodes_.end(), new_child);
+        if (existing_it != child_nodes_.end()) {
+            size_t existing_index = std::distance(child_nodes_.begin(), existing_it);
+            if (existing_index < index) {
+                --index;
             }
         }
-        parent->RemoveChild(new_child);
+    }
+
+    // DOM move：不要走 RemoveChild()，否则会误报 removed。
+    if (old_parent) {
+        auto& old_siblings = old_parent->child_nodes_;
+        auto old_it = std::find(old_siblings.begin(), old_siblings.end(), new_child);
+        if (old_it == old_siblings.end()) {
+            throw std::invalid_argument("Child not found in old parent");
+        }
+        old_siblings.erase(old_it);
+        old_parent->MarkDirty();
+        new_child->SetParentNode(nullptr);
+
+        if (auto old_doc = old_parent->GetOwnerDocument()) {
+            old_doc->MarkLexborDirty();
+        }
     }
 
     if (index > child_nodes_.size()) {
         index = child_nodes_.size();
     }
 
-    // 在 ref_child 前插入（重新按索引定位，避免 RemoveChild 后旧迭代器失效）
+    // 在 ref_child 前插入（重新按索引定位，避免移动后旧迭代器失效）
     child_nodes_.insert(child_nodes_.begin() + static_cast<std::ptrdiff_t>(index), new_child);
     new_child->SetParentNode(shared_from_this());
 
@@ -204,10 +236,12 @@ std::shared_ptr<Node> Node::InsertBefore(std::shared_ptr<Node> new_child,
 
     // 通知观察者和记录变化
     if (doc) {
-        // 记录到 DirtyNodeTracker（延迟处理）
-        doc->GetDirtyTracker().RecordNodeAdded(new_child, shared_from_this(), index);
+        if (is_move) {
+            doc->GetDirtyTracker().RecordNodeMoved(new_child, old_parent, shared_from_this(), index);
+        } else {
+            doc->GetDirtyTracker().RecordNodeAdded(new_child, shared_from_this(), index);
+        }
 
-        // 通知观察者（立即处理，用于兼容旧代码）
         doc->GetObserverManager().NotifyNodeAdded(new_child.get(), this);
         // 标记 Lexbor DOM 需要同步
         doc->MarkLexborDirty();
@@ -273,25 +307,39 @@ std::shared_ptr<Node> Node::ReplaceChild(std::shared_ptr<Node> new_child,
     }
 
     // 先计算 old_child 的位置；如果 new_child 已经在当前父节点并位于 old_child 之前，
-    // RemoveChild(new_child) 后 old_child 的索引会左移一位，需提前修正。
+    // 静默挪走 new_child 后 old_child 的索引会左移一位，需提前修正。
     auto old_it = std::find(child_nodes_.begin(), child_nodes_.end(), old_child);
     if (old_it == child_nodes_.end()) {
         throw std::invalid_argument("Old child not found");
     }
 
     size_t index = std::distance(child_nodes_.begin(), old_it);
+    auto old_parent_of_new_child = new_child->GetParentNode();
 
-    if (auto parent = new_child->GetParentNode()) {
-        if (parent.get() == this) {
-            auto existing_it = std::find(child_nodes_.begin(), child_nodes_.end(), new_child);
-            if (existing_it != child_nodes_.end()) {
-                size_t existing_index = std::distance(child_nodes_.begin(), existing_it);
-                if (existing_index < index) {
-                    --index;
-                }
+    if (old_parent_of_new_child && old_parent_of_new_child.get() == this) {
+        auto existing_it = std::find(child_nodes_.begin(), child_nodes_.end(), new_child);
+        if (existing_it != child_nodes_.end()) {
+            size_t existing_index = std::distance(child_nodes_.begin(), existing_it);
+            if (existing_index < index) {
+                --index;
             }
         }
-        parent->RemoveChild(new_child);
+    }
+
+    // DOM move：不要让 new_child 先走 RemoveChild()，否则会误报 removed。
+    if (old_parent_of_new_child) {
+        auto& old_siblings = old_parent_of_new_child->child_nodes_;
+        auto old_new_child_it = std::find(old_siblings.begin(), old_siblings.end(), new_child);
+        if (old_new_child_it == old_siblings.end()) {
+            throw std::invalid_argument("New child not found in old parent");
+        }
+        old_siblings.erase(old_new_child_it);
+        old_parent_of_new_child->MarkDirty();
+        new_child->SetParentNode(nullptr);
+
+        if (auto old_doc = old_parent_of_new_child->GetOwnerDocument()) {
+            old_doc->MarkLexborDirty();
+        }
     }
 
     if (index >= child_nodes_.size()) {
@@ -309,7 +357,7 @@ std::shared_ptr<Node> Node::ReplaceChild(std::shared_ptr<Node> new_child,
         doc->GetObserverManager().NotifyNodeRemoved(old_child.get(), this);
     }
 
-    // 替换节点（按索引重新定位，避免 RemoveChild 后旧迭代器失效）
+    // 替换节点（按索引重新定位，避免移动后旧迭代器失效）
     child_nodes_[index] = new_child;
     old_child->SetParentNode(nullptr);
     new_child->SetParentNode(shared_from_this());
