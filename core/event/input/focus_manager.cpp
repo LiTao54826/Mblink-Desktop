@@ -297,8 +297,8 @@ bool FocusManager::TabToNextFocusableElement(std::shared_ptr<Document> current_d
         return false;
     }
 
-    // 按tabindex排序
-    std::sort(focusable_elements.begin(), focusable_elements.end(),
+    // 按tabindex排序，保持相同tabindex元素的DOM顺序
+    std::stable_sort(focusable_elements.begin(), focusable_elements.end(),
         [this](const std::shared_ptr<Element>& a, const std::shared_ptr<Element>& b) {
             int tab_a = GetTabIndex(a);
             int tab_b = GetTabIndex(b);

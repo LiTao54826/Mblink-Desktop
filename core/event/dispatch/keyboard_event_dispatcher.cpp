@@ -53,16 +53,20 @@ bool KeyboardEventDispatcher::HandleKeyboardEvent(const SDL_Event& event,
         return false;
     }
 
+    if (focus_manager_) {
+        focus_manager_->SetWindow(window.get());
+    }
+
     // 首先检查 DevTools 快捷键
     if (event.type == SDL_EVENT_KEY_DOWN) {
         SDL_Keymod mod = SDL_GetModState();
         bool ctrl_key = (mod & SDL_KMOD_CTRL) != 0;
         bool shift_key = (mod & SDL_KMOD_SHIFT) != 0;
         bool alt_key = (mod & SDL_KMOD_ALT) != 0;
-        
+
         // 将 SDL 键码转换为 DOM keyCode
         int key_code = SDLKeycodeToKeyCode(event.key.key);
-        
+
         auto& devtools = DevToolsManager::GetInstance();
         if (devtools.HandleKeyboardShortcut(key_code, ctrl_key, shift_key, alt_key)) {
             // DevTools 消费了这个快捷键
@@ -71,14 +75,6 @@ bool KeyboardEventDispatcher::HandleKeyboardEvent(const SDL_Event& event,
         }
     }
 
-    // 获取焦点元素
-    auto focus_element = focus_manager_ ? focus_manager_->GetFocusElement() : nullptr;
-    if (!focus_element) {
-        // 没有焦点元素，不分发键盘事件
-        return false;
-    }
-    
-
     // 获取修饰键状态
     SDL_Keymod mod = SDL_GetModState();
     bool ctrl_key = (mod & SDL_KMOD_CTRL) != 0;
@@ -86,17 +82,33 @@ bool KeyboardEventDispatcher::HandleKeyboardEvent(const SDL_Event& event,
     bool alt_key = (mod & SDL_KMOD_ALT) != 0;
     bool meta_key = (mod & SDL_KMOD_GUI) != 0;
 
+    // 获取焦点元素
+    auto focus_element = focus_manager_ ? focus_manager_->GetFocusElement() : nullptr;
+
     // 处理不同类型的键盘事件
     if (event.type == SDL_EVENT_KEY_DOWN) {
+        const bool is_plain_tab = event.key.key == SDLK_TAB && !ctrl_key && !alt_key && !meta_key;
+        if (!focus_element && !is_plain_tab) {
+            return false;
+        }
         HandleKeyDown(event, focus_element, document, window, ctrl_key, shift_key, alt_key, meta_key);
         return true;
     } else if (event.type == SDL_EVENT_KEY_UP) {
+        if (!focus_element) {
+            return false;
+        }
         HandleKeyUp(event, focus_element, ctrl_key, shift_key, alt_key, meta_key);
         return true;
     } else if (event.type == SDL_EVENT_TEXT_INPUT) {
+        if (!focus_element) {
+            return false;
+        }
         HandleTextInput(event, focus_element, document);
         return true;
     } else if (event.type == SDL_EVENT_TEXT_EDITING) {
+        if (!focus_element) {
+            return false;
+        }
         HandleTextEditing(event, focus_element, document);
         return true;
     }
@@ -115,19 +127,36 @@ void KeyboardEventDispatcher::HandleKeyDown(const SDL_Event& event,
     int key_code = SDLKeycodeToKeyCode(event.key.key);
     bool repeat = event.key.repeat;
 
-    auto keydown_event = std::make_shared<KeyboardEvent>(
-        "keydown",
-        key,
-        code,
-        key_code,
-        ctrl_key,
-        shift_key,
-        alt_key,
-        meta_key,
-        repeat
-    );
+    std::shared_ptr<KeyboardEvent> keydown_event;
+    bool default_prevented = false;
 
-    focus_element->DispatchEvent(keydown_event);
+    if (focus_element) {
+        keydown_event = std::make_shared<KeyboardEvent>(
+            "keydown",
+            key,
+            code,
+            key_code,
+            ctrl_key,
+            shift_key,
+            alt_key,
+            meta_key,
+            repeat
+        );
+
+        focus_element->DispatchEvent(keydown_event);
+        default_prevented = keydown_event->IsDefaultPrevented();
+    }
+
+    if (event.key.key == SDLK_TAB && !ctrl_key && !alt_key && !meta_key) {
+        if (!default_prevented && focus_manager_) {
+            focus_manager_->TabToNextFocusableElement(document, shift_key);
+        }
+        return;
+    }
+
+    if (!focus_element) {
+        return;
+    }
 
     // 处理剪贴板快捷键 (Ctrl+C/X/V) - 先分发事件，再执行默认行为
     if (ctrl_key && !alt_key && !shift_key) {
@@ -148,7 +177,7 @@ void KeyboardEventDispatcher::HandleKeyDown(const SDL_Event& event,
 
             auto clipboard_event = std::make_shared<ClipboardEvent>(clipboard_event_type, "");
             focus_element->DispatchEvent(clipboard_event);
-            if (clipboard_event->IsDefaultPrevented() || keydown_event->IsDefaultPrevented()) {
+            if (clipboard_event->IsDefaultPrevented() || default_prevented) {
                 return;
             }
 
@@ -161,7 +190,7 @@ void KeyboardEventDispatcher::HandleKeyDown(const SDL_Event& event,
         }
     }
 
-    if (editor_input_session_ && editor_input_session_->HandleKeyDown(event, focus_element, document, window, clipboard_manager_, contenteditable_controller_, ctrl_key, shift_key, alt_key, meta_key, keydown_event->IsDefaultPrevented())) {
+    if (editor_input_session_ && editor_input_session_->HandleKeyDown(event, focus_element, document, window, clipboard_manager_, contenteditable_controller_, ctrl_key, shift_key, alt_key, meta_key, default_prevented)) {
         if (focus_manager_) {
             focus_manager_->UpdateTextInputArea();
         }
@@ -169,7 +198,7 @@ void KeyboardEventDispatcher::HandleKeyDown(const SDL_Event& event,
     }
 
     // 如果事件未被阻止，处理表单元素的键盘输入
-    if (!keydown_event->IsDefaultPrevented()) {
+    if (!default_prevented) {
         // 检查是否是表单元素
         auto terminal_element = std::dynamic_pointer_cast<HTMLTerminalElement>(focus_element);
         if (terminal_element) {

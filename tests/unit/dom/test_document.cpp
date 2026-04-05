@@ -17,6 +17,8 @@
 #include "dom/document.h"
 #include "dom/element.h"
 #include "dom/text.h"
+#include "event/input/focus_manager.h"
+
 
 namespace mbink {
 namespace test {
@@ -274,6 +276,41 @@ TEST_F(DocumentTest, ClearActiveElement) {
     auto active = doc_->GetActiveElement();
     EXPECT_TRUE(active == doc_->GetBody() || active == nullptr);
 }
+
+TEST_F(DocumentTest, FocusManagerTabNavigationFollowsTabIndexAndDirection) {
+    FocusManager focus_manager;
+
+    auto input = doc_->CreateElement("input");
+    auto tab2 = doc_->CreateElement("div");
+    auto button = doc_->CreateElement("button");
+    auto tab1 = doc_->CreateElement("div");
+
+    tab2->SetAttribute("tabindex", "2");
+    tab1->SetAttribute("tabindex", "1");
+
+    doc_->GetBody()->AppendChild(input);
+    doc_->GetBody()->AppendChild(tab2);
+    doc_->GetBody()->AppendChild(button);
+    doc_->GetBody()->AppendChild(tab1);
+
+    EXPECT_TRUE(focus_manager.TabToNextFocusableElement(doc_, false));
+    EXPECT_EQ(focus_manager.GetFocusElement(), tab1);
+    EXPECT_EQ(doc_->GetActiveElement(), tab1);
+    EXPECT_TRUE(tab1->HasPseudoClass("focus"));
+
+    EXPECT_TRUE(focus_manager.TabToNextFocusableElement(doc_, false));
+    EXPECT_EQ(focus_manager.GetFocusElement(), tab2);
+
+    EXPECT_TRUE(focus_manager.TabToNextFocusableElement(doc_, false));
+    EXPECT_EQ(focus_manager.GetFocusElement(), input);
+
+    EXPECT_TRUE(focus_manager.TabToNextFocusableElement(doc_, false));
+    EXPECT_EQ(focus_manager.GetFocusElement(), button);
+
+    EXPECT_TRUE(focus_manager.TabToNextFocusableElement(doc_, true));
+    EXPECT_EQ(focus_manager.GetFocusElement(), input);
+}
+
 
 // ========== DOM 观察者测试 ==========
 

@@ -2,6 +2,7 @@
 
 set(QUICKJS_RUNTIME_SOURCES
     quickjs_runtime.cpp
+    ${CMAKE_SOURCE_DIR}/tools/app_bundler/bytecode_compiler.cpp
     window_bindings.cpp
     document_bindings_impl.cpp
     dom_binding_map.cpp
