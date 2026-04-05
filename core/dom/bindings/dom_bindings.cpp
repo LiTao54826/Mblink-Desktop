@@ -21,6 +21,8 @@
 #include "terminal_bindings.h"
 #include "core/dom/elements/html_canvas_element.h"
 #include "core/dom/elements/html_image_element.h"
+#include "core/dom/elements/html_input_element.h"
+#include "core/dom/elements/html_textarea_element.h"
 #include "core/dom/elements/terminal/html_terminal_element.h"
 #include "core/dom/elements/logview/html_logview_element.h"
 #include "core/dom/selection/range.h"
@@ -1110,6 +1112,18 @@ static JSValue js_element_set_outer_html(JSContext* ctx, JSValueConst this_val, 
 
 // ========== HTMLInputElement 特殊属性 ==========
 
+static std::shared_ptr<HTMLInputElement> get_text_selectable_input_element(const std::shared_ptr<Element>& element) {
+    auto input = std::dynamic_pointer_cast<HTMLInputElement>(element);
+    if (!input || !input->SupportsTextEditing()) {
+        return nullptr;
+    }
+    return input;
+}
+
+static std::shared_ptr<HTMLTextAreaElement> get_text_selectable_textarea_element(const std::shared_ptr<Element>& element) {
+    return std::dynamic_pointer_cast<HTMLTextAreaElement>(element);
+}
+
 // Element.value getter (for input/textarea elements)
 static JSValue js_element_get_value(JSContext* ctx, JSValueConst this_val, int magic) {
     auto element = DOMBindings::UnwrapElement(ctx, this_val);
@@ -1163,6 +1177,153 @@ static JSValue js_element_set_value(JSContext* ctx, JSValueConst this_val, JSVal
     }
 
     JS_FreeCString(ctx, value);
+    return JS_UNDEFINED;
+}
+
+static JSValue js_element_get_selection_start(JSContext* ctx, JSValueConst this_val, int magic) {
+    auto element = DOMBindings::UnwrapElement(ctx, this_val);
+    if (!element) {
+        return JS_EXCEPTION;
+    }
+
+    if (auto input = get_text_selectable_input_element(element)) {
+        return JS_NewInt32(ctx, input->GetSelectionStart());
+    }
+    if (auto textarea = get_text_selectable_textarea_element(element)) {
+        return JS_NewInt32(ctx, textarea->GetSelectionStart());
+    }
+
+    return JS_UNDEFINED;
+}
+
+static JSValue js_element_set_selection_start(JSContext* ctx, JSValueConst this_val, JSValueConst val, int magic) {
+    auto element = DOMBindings::UnwrapElement(ctx, this_val);
+    if (!element) {
+        return JS_EXCEPTION;
+    }
+
+    int start = 0;
+    if (JS_ToInt32(ctx, &start, val) != 0) {
+        return JS_EXCEPTION;
+    }
+
+    if (auto input = get_text_selectable_input_element(element)) {
+        int end = input->GetSelectionEnd();
+        input->SetSelectionRange(start, std::max(start, end));
+        return JS_UNDEFINED;
+    }
+    if (auto textarea = get_text_selectable_textarea_element(element)) {
+        int end = textarea->GetSelectionEnd();
+        textarea->SetSelectionRange(start, std::max(start, end));
+        return JS_UNDEFINED;
+    }
+
+    return JS_UNDEFINED;
+}
+
+static JSValue js_element_get_selection_end(JSContext* ctx, JSValueConst this_val, int magic) {
+    auto element = DOMBindings::UnwrapElement(ctx, this_val);
+    if (!element) {
+        return JS_EXCEPTION;
+    }
+
+    if (auto input = get_text_selectable_input_element(element)) {
+        return JS_NewInt32(ctx, input->GetSelectionEnd());
+    }
+    if (auto textarea = get_text_selectable_textarea_element(element)) {
+        return JS_NewInt32(ctx, textarea->GetSelectionEnd());
+    }
+
+    return JS_UNDEFINED;
+}
+
+static JSValue js_element_set_selection_end(JSContext* ctx, JSValueConst this_val, JSValueConst val, int magic) {
+    auto element = DOMBindings::UnwrapElement(ctx, this_val);
+    if (!element) {
+        return JS_EXCEPTION;
+    }
+
+    int end = 0;
+    if (JS_ToInt32(ctx, &end, val) != 0) {
+        return JS_EXCEPTION;
+    }
+
+    if (auto input = get_text_selectable_input_element(element)) {
+        int start = input->GetSelectionStart();
+        input->SetSelectionRange(std::min(start, end), end);
+        return JS_UNDEFINED;
+    }
+    if (auto textarea = get_text_selectable_textarea_element(element)) {
+        int start = textarea->GetSelectionStart();
+        textarea->SetSelectionRange(std::min(start, end), end);
+        return JS_UNDEFINED;
+    }
+
+    return JS_UNDEFINED;
+}
+
+static JSValue js_element_set_selection_range(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) {
+    auto element = DOMBindings::UnwrapElement(ctx, this_val);
+    if (!element) {
+        return JS_EXCEPTION;
+    }
+    if (argc < 2) {
+        return JS_ThrowTypeError(ctx, "setSelectionRange requires 2 arguments");
+    }
+
+    int start = 0;
+    int end = 0;
+    if (JS_ToInt32(ctx, &start, argv[0]) != 0 || JS_ToInt32(ctx, &end, argv[1]) != 0) {
+        return JS_EXCEPTION;
+    }
+
+    if (auto input = get_text_selectable_input_element(element)) {
+        input->SetSelectionRange(start, end);
+        return JS_UNDEFINED;
+    }
+    if (auto textarea = get_text_selectable_textarea_element(element)) {
+        textarea->SetSelectionRange(start, end);
+        return JS_UNDEFINED;
+    }
+
+    return JS_UNDEFINED;
+}
+
+static JSValue js_element_select(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) {
+    auto element = DOMBindings::UnwrapElement(ctx, this_val);
+    if (!element) {
+        return JS_EXCEPTION;
+    }
+
+    if (auto input = get_text_selectable_input_element(element)) {
+        input->Select();
+        return JS_UNDEFINED;
+    }
+    if (auto textarea = get_text_selectable_textarea_element(element)) {
+        textarea->Select();
+        return JS_UNDEFINED;
+    }
+
+    return JS_UNDEFINED;
+}
+
+static JSValue js_element_focus(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) {
+    auto element = DOMBindings::UnwrapElement(ctx, this_val);
+    if (!element) {
+        return JS_EXCEPTION;
+    }
+
+    element->Focus();
+    return JS_UNDEFINED;
+}
+
+static JSValue js_element_blur(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) {
+    auto element = DOMBindings::UnwrapElement(ctx, this_val);
+    if (!element) {
+        return JS_EXCEPTION;
+    }
+
+    element->Blur();
     return JS_UNDEFINED;
 }
 
@@ -1484,6 +1645,8 @@ static const JSCFunctionListEntry js_element_proto_funcs[] = {
     // HTMLInputElement / HTMLTextAreaElement 特殊属性
     JS_CGETSET_MAGIC_DEF("value", js_element_get_value, js_element_set_value, 0),
     JS_CGETSET_MAGIC_DEF("checked", js_element_get_checked, js_element_set_checked, 0),
+    JS_CGETSET_MAGIC_DEF("selectionStart", js_element_get_selection_start, js_element_set_selection_start, 0),
+    JS_CGETSET_MAGIC_DEF("selectionEnd", js_element_get_selection_end, js_element_set_selection_end, 0),
 
     // HTMLCanvasElement 属性
     JS_CGETSET_MAGIC_DEF("width", js_element_get_canvas_width, js_element_set_canvas_width, 0),
@@ -1529,6 +1692,10 @@ static const JSCFunctionListEntry js_element_proto_funcs[] = {
     // 几何信息
     JS_CFUNC_DEF("getBoundingClientRect", 0, js_element_get_bounding_client_rect),
     JS_CFUNC_DEF("scrollIntoView", 1, js_element_scroll_into_view),
+    JS_CFUNC_DEF("setSelectionRange", 2, js_element_set_selection_range),
+    JS_CFUNC_DEF("select", 0, js_element_select),
+    JS_CFUNC_DEF("focus", 0, js_element_focus),
+    JS_CFUNC_DEF("blur", 0, js_element_blur),
 
     // ContentEditable
     JS_CGETSET_MAGIC_DEF("isContentEditable", js_element_get_is_content_editable, nullptr, 0),

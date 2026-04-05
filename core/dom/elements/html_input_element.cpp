@@ -294,24 +294,16 @@ std::string HTMLInputElement::GetValidationMessage() const {
 }
 
 void HTMLInputElement::Select() {
-    if (input_type_ != InputType::Text &&
-        input_type_ != InputType::Password &&
-        input_type_ != InputType::Search &&
-        input_type_ != InputType::Email &&
-        input_type_ != InputType::Tel &&
-        input_type_ != InputType::Url) {
-        return;
-    }
-
-    if (!edit_state_) {
+    if (!SupportsTextEditing() || !edit_state_) {
         return;
     }
 
     edit_state_->SetSelection(0, static_cast<int>(utf8::CharCount(edit_state_->text)));
+    RequestInputRepaint();
 }
 
 void HTMLInputElement::SetSelectionRange(int start, int end) {
-    if (!edit_state_) {
+    if (!SupportsTextEditing() || !edit_state_) {
         return;
     }
 
@@ -319,6 +311,7 @@ void HTMLInputElement::SetSelectionRange(int start, int end) {
     start = std::max(0, std::min(start, len));
     end = std::max(0, std::min(end, len));
     edit_state_->SetSelection(start, end);
+    RequestInputRepaint();
 }
 
 void HTMLInputElement::HandleTextInput(const std::string& text) {

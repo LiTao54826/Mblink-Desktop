@@ -200,6 +200,7 @@ void HTMLTextAreaElement::Select() {
         return;
     }
     edit_state_->SetSelection(0, static_cast<int>(utf8::CharCount(GetValue())));
+    RequestTextAreaRepaint();
 }
 
 void HTMLTextAreaElement::SetSelectionRange(int start, int end) {
@@ -209,6 +210,7 @@ void HTMLTextAreaElement::SetSelectionRange(int start, int end) {
     int len = static_cast<int>(utf8::CharCount(GetValue()));
     edit_state_->SetSelection(std::max(0, std::min(start, len)),
                               std::max(0, std::min(end, len)));
+    RequestTextAreaRepaint();
 }
 
 int HTMLTextAreaElement::GetSelectionStart() const {

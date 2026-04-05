@@ -76,7 +76,7 @@ function h(type, props) {
 
     // Ensure props object exists
     var finalProps = props || {};
-    
+
     // Add children to props for component access (standard Preact/React behavior)
     // This allows components to access children via props.children
     if (flatChildren.length > 0) {
@@ -93,7 +93,12 @@ function h(type, props) {
         children: flatChildren,
         key: props ? props.key : undefined,
         ref: props ? props.ref : undefined,
-        __v: VNODE_TYPE_ELEMENT
+        __v: VNODE_TYPE_ELEMENT,
+        __dom: null,
+        __component: null,
+        __parentVNode: null,
+        __index: 0,
+        __root: null
     };
 
     ensureVNodeId(vnode);
@@ -108,10 +113,10 @@ function h(type, props) {
 /**
  * Get the key for a VNode (for keyed diffing)
  */
-function getKey(vnode, index) {
+function getKey(vnode) {
     if (vnode == null) return null;
     if (typeof vnode === 'string' || typeof vnode === 'number') return null;
-    return vnode.key != null ? vnode.key : index;
+    return vnode.key != null ? vnode.key : null;
 }
 
 /**
@@ -138,6 +143,101 @@ function isSameVNodeType(oldVNode, newVNode) {
      * Create a VNode (alias for h)
      */
     var createElement = h;
+
+    /**
+     * Global options/hooks system for plugins and debugging
+     * Based on official Preact options system
+     */
+    var options = {
+        // Lifecycle hooks
+        _diff: null,        // Called before diff
+        _render: null,      // Called before render
+        diffed: null,       // Called after diff
+        _commit: null,      // Called after commit
+        unmount: null,      // Called before unmount
+        _root: null,        // Called on root render
+        _catchError: null,  // Error handler
+        _hook: null,        // Hook state access
+        useDebugValue: null, // Debug value formatter
+        requestAnimationFrame: null, // Custom RAF
+        _skipEffects: false  // Skip effects flag
+    };
+
+/**
+ * Bind vnode parent/root metadata used by incremental updates
+ */
+function setVNodeParent(vnode, parentVNode, index, root) {
+    if (vnode == null || vnode === false || vnode === true) {
+        return;
+    }
+
+    if (Array.isArray(vnode)) {
+        for (var i = 0; i < vnode.length; i++) {
+            setVNodeParent(vnode[i], parentVNode, i, root);
+        }
+        return;
+    }
+
+    if (typeof vnode !== 'object') {
+        return;
+    }
+
+    vnode.__parentVNode = parentVNode || null;
+    vnode.__index = index || 0;
+    vnode.__root = root || null;
+}
+
+function bindChildVNodes(parentVNode, children, root) {
+    if (!children) {
+        return;
+    }
+
+    if (!Array.isArray(children)) {
+        setVNodeParent(children, parentVNode, 0, root);
+        return;
+    }
+
+    for (var i = 0; i < children.length; i++) {
+        setVNodeParent(children[i], parentVNode, i, root);
+    }
+}
+
+/**
+ * Update parent DOM pointers after DOM changes
+ * Based on official Preact updateParentDomPointers logic
+ * Only updates component vnodes, clears and re-finds first DOM
+ */
+function updateParentDOMPointers(vnode) {
+    var parentVNode = vnode && vnode.__parentVNode;
+
+    while (parentVNode && typeof parentVNode === 'object') {
+        // Only update component vnodes
+        if (!parentVNode.__component) {
+            parentVNode = parentVNode.__parentVNode;
+            continue;
+        }
+
+        // Clear and re-find first DOM
+        parentVNode.__dom = null;
+
+        var children = parentVNode.children || [];
+        for (var i = 0; i < children.length; i++) {
+            var child = children[i];
+            if (child != null && child !== false && child !== true) {
+                var childDOM = getVNodeDOM(child);
+                if (childDOM) {
+                    parentVNode.__dom = childDOM;
+                    if (parentVNode.__component) {
+                        parentVNode.__component.__dom = childDOM;
+                    }
+                    break;
+                }
+            }
+        }
+
+        parentVNode = parentVNode.__parentVNode;
+    }
+}
 
 /**
  * Fragment component - renders children without wrapper
@@ -176,6 +276,7 @@ function clearVNode(vnode) {
         component.__rerender = null;
         component.__renderedVNode = null;
         component.__vnode = null;
+        component.__root = null;
         component.__hooks = [];
     }
 
@@ -211,6 +312,9 @@ function clearVNode(vnode) {
 
     vnode.__dom = null;
     vnode.__component = null;
+    vnode.__parentVNode = null;
+    vnode.__index = 0;
+    vnode.__root = null;
     vnode.key = null;
     vnode.ref = null;
     vnode.type = null;
@@ -278,6 +382,197 @@ function detachVNodeGraph(vnode, preserveComponent) {
 
 
 /**
+ * Render 焦点恢复辅助
+ */
+function isNodeInsideContainer(node, container) {
+    if (!node || !container) {
+        return false;
+    }
+    if (node === container) {
+        return true;
+    }
+    if (typeof container.contains === 'function') {
+        try {
+            return !!container.contains(node);
+        } catch (e) {}
+    }
+    var current = node;
+    while (current) {
+        if (current === container) {
+            return true;
+        }
+        current = current.parentNode;
+    }
+    return false;
+}
+
+function getElementAttrSafe(element, name) {
+    if (!element || typeof element.getAttribute !== 'function') {
+        return null;
+    }
+    try {
+        return element.getAttribute(name);
+    } catch (e) {
+        return null;
+    }
+}
+
+function getChildNodeIndex(parent, child) {
+    if (!parent || !parent.childNodes) {
+        return -1;
+    }
+    for (var i = 0; i < parent.childNodes.length; i++) {
+        if (parent.childNodes[i] === child) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+function buildFocusPath(container, element) {
+    var path = [];
+    var current = element;
+    while (current && current !== container) {
+        var parent = current.parentNode;
+        if (!parent) {
+            return null;
+        }
+        var index = getChildNodeIndex(parent, current);
+        if (index < 0) {
+            return null;
+        }
+        path.push(index);
+        current = parent;
+    }
+    if (current !== container) {
+        return null;
+    }
+    path.reverse();
+    return path;
+}
+
+function getNodeByPath(container, path) {
+    var current = container;
+    if (!current || !path) {
+        return null;
+    }
+    for (var i = 0; i < path.length; i++) {
+        if (!current.childNodes || path[i] >= current.childNodes.length) {
+            return null;
+        }
+        current = current.childNodes[path[i]];
+        if (!current) {
+            return null;
+        }
+    }
+    return current;
+}
+
+function isCompatibleFocusTarget(element, snapshot) {
+    if (!element || !element.tagName || !snapshot) {
+        return false;
+    }
+    if (element.tagName !== snapshot.tagName) {
+        return false;
+    }
+    if (snapshot.type && element.type !== snapshot.type) {
+        return false;
+    }
+    if (snapshot.name && getElementAttrSafe(element, 'name') !== snapshot.name) {
+        return false;
+    }
+    if (snapshot.placeholder && getElementAttrSafe(element, 'placeholder') !== snapshot.placeholder) {
+        return false;
+    }
+    return true;
+}
+
+function findFocusTargetByHints(container, snapshot) {
+    if (!container || !snapshot || !container.childNodes) {
+        return null;
+    }
+    var queue = [];
+    for (var i = 0; i < container.childNodes.length; i++) {
+        queue.push(container.childNodes[i]);
+    }
+    while (queue.length) {
+        var node = queue.shift();
+        if (isCompatibleFocusTarget(node, snapshot)) {
+            return node;
+        }
+        if (node && node.childNodes) {
+            for (var j = 0; j < node.childNodes.length; j++) {
+                queue.push(node.childNodes[j]);
+            }
+        }
+    }
+    return null;
+}
+
+function captureFocusSnapshot(container) {
+    if (typeof document === 'undefined' || !container) {
+        return null;
+    }
+    var active = document.activeElement;
+    if (!active || !active.tagName || !isNodeInsideContainer(active, container)) {
+        return null;
+    }
+    var selectionStart = null;
+    var selectionEnd = null;
+    if (typeof active.selectionStart === 'number' && typeof active.selectionEnd === 'number') {
+        selectionStart = active.selectionStart;
+        selectionEnd = active.selectionEnd;
+    }
+    return {
+        element: active,
+        tagName: active.tagName,
+        type: active.type || null,
+        name: getElementAttrSafe(active, 'name'),
+        placeholder: getElementAttrSafe(active, 'placeholder'),
+        path: buildFocusPath(container, active),
+        selectionStart: selectionStart,
+        selectionEnd: selectionEnd
+    };
+}
+
+function restoreFocusSnapshot(container, snapshot) {
+    if (typeof document === 'undefined' || !container || !snapshot) {
+        return;
+    }
+    var currentActive = document.activeElement;
+    if (currentActive && currentActive !== snapshot.element && isNodeInsideContainer(currentActive, container)) {
+        return;
+    }
+    var target = null;
+    if (snapshot.element && isNodeInsideContainer(snapshot.element, container)) {
+        target = snapshot.element;
+    }
+    if (!target && snapshot.path) {
+        var pathTarget = getNodeByPath(container, snapshot.path);
+        if (isCompatibleFocusTarget(pathTarget, snapshot)) {
+            target = pathTarget;
+        }
+    }
+    if (!target) {
+        target = findFocusTargetByHints(container, snapshot);
+    }
+    if (!target || typeof target.focus !== 'function') {
+        return;
+    }
+    if (document.activeElement !== target) {
+        try {
+            target.focus();
+        } catch (e) {}
+    }
+    if (typeof snapshot.selectionStart === 'number' && typeof snapshot.selectionEnd === 'number' &&
+        typeof target.setSelectionRange === 'function') {
+        try {
+            target.setSelectionRange(snapshot.selectionStart, snapshot.selectionEnd);
+        } catch (e) {}
+    }
+}
+
+/**
  * Render a VNode tree into a DOM container
  * @param {object} vnode - Virtual DOM node
  * @param {Element} container - DOM container element
@@ -292,24 +587,28 @@ function render(vnode, container) {
     }
 
     var trackedRoot = container && container.__preactRoot ? container.__preactRoot : null;
+    setVNodeParent(vnode, null, 0, trackedRoot);
+
+    if (options._root) {
+        options._root(vnode, container);
+    }
 
     if (trackedRoot && typeof globalThis !== 'undefined' && typeof globalThis.__mbinkBeginRootTracking === 'function') {
         globalThis.__mbinkBeginRootTracking(trackedRoot);
     }
 
+    var focusSnapshot = captureFocusSnapshot(container);
+
     try {
-        // Use C++ implementation if available
         if (typeof __preact_internal !== 'undefined' && __preact_internal.render) {
             return __preact_internal.render(vnode, container);
         }
 
-        // 开始批量更新，避免每次 DOM 操作都触发重绘
         if (typeof document !== 'undefined' && typeof document.__beginBatch === 'function') {
             document.__beginBatch();
         }
 
         try {
-            // Get old vnode from container
             var oldVNode = container.__preactVNode;
             var oldDOM = container.__preactDOM;
             probeLog('preact.render', {
@@ -318,27 +617,37 @@ function render(vnode, container) {
                 mountedContainers: __mountedContainers.length
             });
 
-            // Diff and patch
             var newDOM = diffNode(oldVNode, vnode, container, oldDOM);
 
-            // Store references
             container.__preactVNode = vnode;
             container.__preactDOM = newDOM;
-
-            if (oldVNode && oldVNode !== vnode) {
-                detachVNodeGraph(oldVNode, false);
+            if (trackedRoot) {
+                trackedRoot.vnode = vnode;
             }
         } finally {
-            // 结束批量更新，触发一次性重绘
             if (typeof document !== 'undefined' && typeof document.__endBatch === 'function') {
                 document.__endBatch();
             }
+            restoreFocusSnapshot(container, focusSnapshot);
         }
     } finally {
         if (trackedRoot && typeof globalThis !== 'undefined' && typeof globalThis.__mbinkEndRootTracking === 'function') {
             globalThis.__mbinkEndRootTracking(trackedRoot);
         }
     }
+}
+
+/**
+ * Hydrate a VNode tree into a DOM container (for SSR)
+ * @param {object} vnode - Virtual DOM node
+ * @param {Element} container - DOM container element with existing HTML
+ */
+function hydrate(vnode, container) {
+    // Mark as hydrating
+    if (vnode && typeof vnode === 'object') {
+        vnode.__hydrating = true;
+    }
+    render(vnode, container);
 }
 
 /**
@@ -428,6 +737,9 @@ function createDOMElement(vnode) {
  * Create DOM for a component VNode
  */
 function createComponentDOM(vnode) {
+    var componentRoot = vnode.__root;
+    setVNodeParent(vnode, vnode.__parentVNode, vnode.__index, componentRoot);
+
     // Create component instance for hooks
     if (!vnode.__component) {
         vnode.__component = {
@@ -435,7 +747,8 @@ function createComponentDOM(vnode) {
             __vnode: vnode,
             __dom: null,
             __renderedVNode: null,
-            __rerender: null
+            __rerender: null,
+            __root: componentRoot
         };
         probeLog('preact.createComponent', {
             vnodeId: ensureVNodeId(vnode)
@@ -445,6 +758,7 @@ function createComponentDOM(vnode) {
     var component = vnode.__component;
     ensureComponentId(component);
     component.__vnode = vnode;
+    component.__root = componentRoot;
     probeLog('preact.bindComponent', {
         componentId: component.__debugId,
         vnodeId: ensureVNodeId(vnode)
@@ -453,13 +767,21 @@ function createComponentDOM(vnode) {
     // Set up rerender function using Virtual DOM diffing
     if (!component.__rerender) {
         component.__rerender = function () {
+            var currentVNode = component.__vnode;
+            var currentRoot = component.__root || (currentVNode && currentVNode.__root) || null;
+            var shouldTrackRoot = !!(currentRoot && currentVNode && !currentVNode.__parentVNode);
+
+            if (shouldTrackRoot && typeof globalThis !== 'undefined' && typeof globalThis.__mbinkBeginRootTracking === 'function') {
+                globalThis.__mbinkBeginRootTracking(currentRoot);
+            }
+
             try {
                 if (typeof PreactHooks !== 'undefined' && PreactHooks.setCurrentComponent) {
                     PreactHooks.setCurrentComponent(component);
                 }
 
-                var currentVNode = component.__vnode;
                 var newRenderedVNode = currentVNode.type(currentVNode.props);
+                setVNodeParent(newRenderedVNode, currentVNode, 0, currentRoot);
 
                 if (typeof PreactHooks !== 'undefined' && PreactHooks.setCurrentComponent) {
                     PreactHooks.setCurrentComponent(null);
@@ -481,11 +803,25 @@ function createComponentDOM(vnode) {
 
                 component.__dom = newDOM;
                 component.__renderedVNode = newRenderedVNode;
+                currentVNode.__dom = newDOM;
 
-                if (oldRenderedVNode && oldRenderedVNode !== newRenderedVNode) {
-                    detachVNodeGraph(oldRenderedVNode, false);
+                // Update parent's children slot to point to current vnode (not old one)
+                // This prevents parent from holding stale vnode references
+                var parentVNode = currentVNode.__parentVNode;
+                if (parentVNode && parentVNode.children && typeof currentVNode.__index === 'number') {
+                    parentVNode.children[currentVNode.__index] = currentVNode;
                 }
-            } catch (e) {}
+
+                updateParentDOMPointers(currentVNode);
+
+                // 更新时 oldRenderedVNode 里的组件/子树可能已复用到新图，
+                // 这里不能再 detach，避免把仍在使用的 hooks / __vnode / __renderedVNode 清空。
+            } catch (e) {
+            } finally {
+                if (shouldTrackRoot && typeof globalThis !== 'undefined' && typeof globalThis.__mbinkEndRootTracking === 'function') {
+                    globalThis.__mbinkEndRootTracking(currentRoot);
+                }
+            }
         };
     }
 
@@ -496,6 +832,7 @@ function createComponentDOM(vnode) {
 
     // Call component function
     var renderedVNode = vnode.type(vnode.props);
+    setVNodeParent(renderedVNode, vnode, 0, componentRoot);
 
     // Clear current component
     if (typeof PreactHooks !== 'undefined' && PreactHooks.setCurrentComponent) {
@@ -508,8 +845,42 @@ function createComponentDOM(vnode) {
     // Store DOM reference and rendered VNode
     component.__dom = dom;
     component.__renderedVNode = renderedVNode;
+    vnode.__dom = dom;
+    updateParentDOMPointers(vnode);
 
     return dom;
+}
+
+/**
+ * Get the next DOM sibling for insertion anchor
+ * Based on official Preact getDomSibling logic
+ * @param {object} vnode - Parent vnode
+ * @param {number} childIndex - Start searching from this child index (null means resume from parent)
+ * @returns {Element|null} Next DOM sibling or null
+ */
+function getDomSibling(vnode, childIndex) {
+    if (childIndex == null) {
+        // Resume search from parent's next sibling
+        return vnode.__parentVNode
+            ? getDomSibling(vnode.__parentVNode, vnode.__index + 1)
+            : null;
+    }
+
+    var sibling;
+    var children = vnode.children || [];
+    for (; childIndex < children.length; childIndex++) {
+        sibling = children[childIndex];
+
+        if (sibling != null && sibling !== false && sibling !== true) {
+            var siblingDOM = getVNodeDOM(sibling);
+            if (siblingDOM) {
+                return siblingDOM;
+            }
+        }
+    }
+
+    // No DOM found in children, climb up if this is a function component
+    return typeof vnode.type === 'function' ? getDomSibling(vnode, null) : null;
 }
 
 function getVNodeDOM(vnode) {
@@ -537,10 +908,12 @@ function getVNodeDOM(vnode) {
 
     if (vnode.__component) {
         if (vnode.__component.__dom) {
-            return vnode.__component.__dom;
+            vnode.__dom = vnode.__component.__dom;
+            return vnode.__dom;
         }
         if (vnode.__component.__renderedVNode) {
-            return getVNodeDOM(vnode.__component.__renderedVNode);
+            vnode.__dom = getVNodeDOM(vnode.__component.__renderedVNode);
+            return vnode.__dom;
         }
     }
 
@@ -548,13 +921,15 @@ function getVNodeDOM(vnode) {
         for (var j = 0; j < vnode.children.length; j++) {
             var childDOM = getVNodeDOM(vnode.children[j]);
             if (childDOM) {
+                vnode.__dom = childDOM;
                 return childDOM;
             }
         }
     }
 
     if (vnode.props && vnode.props.children) {
-        return getVNodeDOM(vnode.props.children);
+        vnode.__dom = getVNodeDOM(vnode.props.children);
+        return vnode.__dom;
     }
 
     return null;
@@ -715,46 +1090,36 @@ function setDOMProps(element, oldProps, newProps, isSVG) {
         if (prop.substring(0, 2) === 'on' && typeof newValue === 'function') {
             var evtName = prop.substring(2).toLowerCase();
 
-            // Always update the handler reference (so latest closure is called)
             handlers[prop] = newValue;
             if (evtName === 'change') {
                 handlers[prop + '_input'] = newValue;
             }
 
-            // Only add listener if not already added
             if (!listeners[prop]) {
-                // Create stable wrapper and add listener
                 var stableHandler = createStableHandler(elementId, prop);
                 element.addEventListener(evtName, stableHandler);
-                listeners[prop] = stableHandler;  // Store the wrapper function itself
+                listeners[prop] = stableHandler;
 
                 if (evtName === 'change') {
                     var stableInputHandler = createStableHandler(elementId, prop + '_input');
                     element.addEventListener('input', stableInputHandler);
-                    listeners[prop + '_input'] = stableInputHandler;  // Store the wrapper function itself
+                    listeners[prop + '_input'] = stableInputHandler;
                 }
             }
         } else if (prop === 'value' && (element.tagName === 'INPUT' || element.tagName === 'TEXTAREA')) {
-            // For controlled inputs, always check against current DOM value
-            // Don't skip based on oldValue because DOM value can be changed by user input
-            console.log('[setDOMProps] Setting value on', element.tagName, 'from', element.value, 'to', newValue);
             if (element.value !== String(newValue)) {
                 element.value = newValue;
-                console.log('[setDOMProps] After set, element.value =', element.value);
             }
         } else if (newValue === oldValue) {
-            // Skip unchanged non-event props
             continue;
         } else if (prop === 'className') {
             element.className = newValue || '';
         } else if (prop === 'style') {
             if (typeof newValue === 'string') {
-                // 优化：只在字符串值真正变化时才设置
                 if (element.style.cssText !== newValue) {
                     element.style.cssText = newValue;
                 }
             } else if (typeof newValue === 'object') {
-                // Clear old styles first if old value was also object
                 if (typeof oldValue === 'object' && oldValue) {
                     for (var oldStyle in oldValue) {
                         if (!(oldStyle in newValue)) {
@@ -762,8 +1127,6 @@ function setDOMProps(element, oldProps, newProps, isSVG) {
                         }
                     }
                 }
-                // 优化：只在属性值真正变化时才设置
-                // 这避免了不必要的 DOM 更新和重绘
                 for (var styleProp in newValue) {
                     var newStyleValue = newValue[styleProp];
                     var oldStyleValue = oldValue && oldValue[styleProp];
@@ -773,7 +1136,6 @@ function setDOMProps(element, oldProps, newProps, isSVG) {
                 }
             }
         } else if (prop === 'contentEditable') {
-            // contentEditable 需要设置为字符串 "true" 或 "false"
             element.setAttribute('contenteditable', newValue === true ? 'true' : String(newValue));
         } else if (typeof newValue === 'boolean') {
             if (newValue) {
@@ -782,15 +1144,12 @@ function setDOMProps(element, oldProps, newProps, isSVG) {
                 element.removeAttribute(prop);
             }
         } else if (prop === 'dangerouslySetInnerHTML') {
-            // Handle React/Preact's dangerouslySetInnerHTML
             if (newValue && newValue.__html != null) {
                 element.innerHTML = newValue.__html;
             }
         } else if (prop === 'innerHTML') {
-            // innerHTML 是 DOM 属性，不是 HTML 属性
             element.innerHTML = newValue || '';
         } else if (prop === 'textContent') {
-            // textContent 也是 DOM 属性
             element.textContent = newValue || '';
         } else if (newValue != null) {
             element.setAttribute(prop, String(newValue));
@@ -806,6 +1165,14 @@ function setDOMProps(element, oldProps, newProps, isSVG) {
  */
 function diffNode(oldVNode, newVNode, parentDOM, oldDOM) {
     try {
+        if (newVNode && typeof newVNode === 'object') {
+            if (!newVNode.__parentVNode && oldVNode && typeof oldVNode === 'object') {
+                newVNode.__parentVNode = oldVNode.__parentVNode || null;
+                newVNode.__index = oldVNode.__index || 0;
+                newVNode.__root = oldVNode.__root || null;
+            }
+        }
+
         // New node is null - remove old
         if (newVNode == null || newVNode === false || newVNode === true) {
             probeLog('preact.diffNode.remove', {
@@ -823,6 +1190,9 @@ function diffNode(oldVNode, newVNode, parentDOM, oldDOM) {
                     // Ignore removal errors
                 }
             }
+            if (oldVNode && typeof oldVNode === 'object') {
+                updateParentDOMPointers(oldVNode);
+            }
             return null;
         }
 
@@ -831,6 +1201,10 @@ function diffNode(oldVNode, newVNode, parentDOM, oldDOM) {
             var newDOM = createDOMElement(newVNode);
             if (newDOM && parentDOM) {
                 parentDOM.appendChild(newDOM);
+            }
+            if (newVNode && typeof newVNode === 'object') {
+                newVNode.__dom = newDOM;
+                updateParentDOMPointers(newVNode);
             }
             return newDOM;
         }
@@ -865,6 +1239,10 @@ function diffNode(oldVNode, newVNode, parentDOM, oldDOM) {
             } else if (parentDOM && replacementDOM) {
                 parentDOM.appendChild(replacementDOM);
             }
+            if (newVNode && typeof newVNode === 'object') {
+                newVNode.__dom = replacementDOM;
+                updateParentDOMPointers(newVNode);
+            }
             return replacementDOM;
         }
 
@@ -881,6 +1259,10 @@ function diffNode(oldVNode, newVNode, parentDOM, oldDOM) {
             var recreatedDOM = createDOMElement(newVNode);
             if (recreatedDOM && parentDOM) {
                 parentDOM.appendChild(recreatedDOM);
+            }
+            if (newVNode && typeof newVNode === 'object') {
+                newVNode.__dom = recreatedDOM;
+                updateParentDOMPointers(newVNode);
             }
             return recreatedDOM;
         }
@@ -906,32 +1288,31 @@ function diffNode(oldVNode, newVNode, parentDOM, oldDOM) {
  */
 function diffComponent(oldVNode, newVNode, parentDOM, oldDOM) {
     var componentName = newVNode.type.name || 'Anonymous';
-    // console.log('[diffComponent] Component: ' + componentName);
 
     // Reuse the component instance
     var component = oldVNode.__component;
     if (!component) {
         // No old component, create new
-        // console.log('[diffComponent] No old component, creating new');
         return createDOMElement(newVNode);
     }
 
     // Transfer component to new vnode
     newVNode.__component = component;
+    newVNode.__parentVNode = oldVNode.__parentVNode;
+    newVNode.__index = oldVNode.__index;
+    newVNode.__root = oldVNode.__root;
     ensureComponentId(component);
     component.__vnode = newVNode;
+    component.__root = newVNode.__root;
 
     // Set current component for hooks
     if (typeof PreactHooks !== 'undefined' && PreactHooks.setCurrentComponent) {
         PreactHooks.setCurrentComponent(component);
     }
 
-    // Log props comparison
-    // console.log('[diffComponent] ' + componentName + ' old props keys: ' + Object.keys(oldVNode.props || {}).join(','));
-    // console.log('[diffComponent] ' + componentName + ' new props keys: ' + Object.keys(newVNode.props || {}).join(','));
-
     // Get new rendered VNode
     var newRenderedVNode = newVNode.type(newVNode.props);
+    setVNodeParent(newRenderedVNode, newVNode, 0, newVNode.__root);
 
     // Clear current component
     if (typeof PreactHooks !== 'undefined' && PreactHooks.setCurrentComponent) {
@@ -939,7 +1320,6 @@ function diffComponent(oldVNode, newVNode, parentDOM, oldDOM) {
     }
 
     var oldRenderedVNode = component.__renderedVNode;
-    // console.log('[diffComponent] ' + componentName + ' calling diffNode on rendered output');
 
     // Diff the rendered output
     var newDOM = diffNode(oldRenderedVNode, newRenderedVNode, parentDOM, oldDOM);
@@ -955,14 +1335,12 @@ function diffComponent(oldVNode, newVNode, parentDOM, oldDOM) {
     // Update component
     component.__dom = newDOM;
     component.__renderedVNode = newRenderedVNode;
+    newVNode.__dom = newDOM;
+    updateParentDOMPointers(newVNode);
 
-    if (oldRenderedVNode && oldRenderedVNode !== newRenderedVNode) {
-        detachVNodeGraph(oldRenderedVNode, false);
-    }
-
-    if (oldVNode && oldVNode !== newVNode) {
-        detachVNodeGraph(oldVNode, false);
-    }
+    // 更新路径里 old vnode 可能仍承载被复用的 component 实例，
+    // 这里如果 detach 会把新图正在使用的 hooks / __vnode 一起清掉，
+    // 复杂页面下会直接表现为 SharedState 变了但 UI 不再刷新。
 
     return newDOM;
 }
@@ -972,7 +1350,10 @@ function diffComponent(oldVNode, newVNode, parentDOM, oldDOM) {
  */
 function diffElement(oldVNode, newVNode, dom) {
     var tagName = dom && dom.tagName ? dom.tagName.toLowerCase() : 'unknown';
-    // console.log('[diffElement] Updating ' + tagName + ' element');
+
+    if (!newVNode.__root) {
+        newVNode.__root = oldVNode.__root;
+    }
 
     // Check if this is an SVG element
     var SVG_TAGS = ['svg', 'circle', 'ellipse', 'line', 'path', 'polygon', 'polyline', 'rect', 'g', 'text', 'tspan', 'defs', 'use', 'symbol', 'clipPath', 'mask', 'pattern', 'image', 'foreignObject', 'linearGradient', 'radialGradient', 'stop'];
@@ -982,10 +1363,9 @@ function diffElement(oldVNode, newVNode, dom) {
     setDOMProps(dom, oldVNode.props || {}, newVNode.props || {}, isSVG);
 
     // Diff children
-    var oldChildCount = oldVNode.children ? oldVNode.children.length : 0;
-    var newChildCount = newVNode.children ? newVNode.children.length : 0;
-    // console.log('[diffElement] ' + tagName + ' has ' + oldChildCount + ' old children, ' + newChildCount + ' new children');
-    diffChildren(oldVNode.children || [], newVNode.children || [], dom);
+    bindChildVNodes(oldVNode, oldVNode.children || [], oldVNode.__root);
+    bindChildVNodes(newVNode, newVNode.children || [], newVNode.__root);
+    diffChildren(oldVNode, newVNode, dom);
 
     // Update vnode reference (using global storage)
     setElementVNode(dom, newVNode);
@@ -1000,52 +1380,48 @@ function diffElement(oldVNode, newVNode, dom) {
         }
     }
 
-    // console.log('[diffElement] Done updating ' + tagName);
     return dom;
 }
 
 /**
  * Diff children arrays using key-based algorithm
  */
-function diffChildren(oldChildren, newChildren, parentDOM) {
+function diffChildren(oldParentVNode, newParentVNode, parentDOM) {
     if (!parentDOM) {
         return;
     }
 
-    oldChildren = oldChildren || [];
-    newChildren = newChildren || [];
+    var oldChildren = oldParentVNode && oldParentVNode.children ? oldParentVNode.children : [];
+    var newChildren = newParentVNode && newParentVNode.children ? newParentVNode.children : [];
+    var parentRoot = newParentVNode ? newParentVNode.__root : null;
+    bindChildVNodes(newParentVNode, newChildren, parentRoot);
 
     var oldLen = oldChildren.length;
     var newLen = newChildren.length;
 
-    // Safety check: if parentDOM has no childNodes property, skip
     if (!parentDOM.childNodes) {
         for (var n = 0; n < newLen; n++) {
+            setVNodeParent(newChildren[n], newParentVNode, n, parentRoot);
             var dom = createDOMElement(newChildren[n]);
             if (dom) {
                 parentDOM.appendChild(dom);
             }
         }
+        newParentVNode.__dom = getVNodeDOM(newParentVNode);
         return;
     }
 
-    // Build a map of old children by key
-    var oldKeyedMap = {};
-    var oldUnkeyed = [];
     var oldEntries = [];
-
-    // Get current DOM children as static array (snapshot)
+    var usedOld = {};
     var childNodesArray = [];
     var childNodes = parentDOM.childNodes;
     var childNodesLen = childNodes.length;
+    var domCursor = 0;
+
     for (var k = 0; k < childNodesLen; k++) {
         childNodesArray.push(childNodes[k]);
     }
 
-    var domCursor = 0;
-
-    // Map old children using vnode-owned DOM first, then fallback to DOM snapshot cursor.
-    // This keeps null-rendering components in the old children list so they can still be reused.
     for (var i = 0; i < oldLen; i++) {
         var oldChild = oldChildren[i];
         var oldDOM = getVNodeDOM(oldChild);
@@ -1062,98 +1438,102 @@ function diffChildren(oldChildren, newChildren, parentDOM) {
             domCursor++;
         }
 
-        oldEntries[i] = { vnode: oldChild, dom: oldDOM, index: i };
-        var key = getKey(oldChild, null);
-
-        if (key != null) {
-            oldKeyedMap[key] = oldEntries[i];
-        } else {
-            oldUnkeyed.push(oldEntries[i]);
-        }
+        oldEntries[i] = {
+            vnode: oldChild,
+            dom: oldDOM,
+            index: i,
+            key: getKey(oldChild)
+        };
     }
 
-    var unkeyedIndex = 0;
-    var usedOldDOMs = {};
+    function canReuseEntry(entry, newChild) {
+        return !!(entry && !usedOld[entry.index] && isSameVNodeType(entry.vnode, newChild));
+    }
 
-    // Process new children
-    for (var j = 0; j < newLen; j++) {
-        var newChild = newChildren[j];
-        var newKey = getKey(newChild, null);
-        var oldEntry = null;
-        var matchedOldDOM = null;
+    function findMatchingEntry(newChild, startIndex) {
+        var newKey = getKey(newChild);
+        var candidate = null;
+        var x;
 
-        if (newKey != null && oldKeyedMap[newKey]) {
-            oldEntry = oldKeyedMap[newKey];
-            matchedOldDOM = oldEntry.dom;
-            usedOldDOMs[oldEntry.index] = true;
-        } else if (newKey == null && unkeyedIndex < oldUnkeyed.length) {
-            oldEntry = oldUnkeyed[unkeyedIndex++];
-            matchedOldDOM = oldEntry.dom;
-            usedOldDOMs[oldEntry.index] = true;
+        if (startIndex >= 0 && startIndex < oldEntries.length) {
+            candidate = oldEntries[startIndex];
+            if (canReuseEntry(candidate, newChild) && candidate.key === newKey) {
+                return candidate;
+            }
         }
 
-        var currentDOMAtPosition = parentDOM.childNodes[j];
+        for (x = startIndex - 1; x >= 0; x--) {
+            candidate = oldEntries[x];
+            if (canReuseEntry(candidate, newChild) && candidate.key === newKey) {
+                return candidate;
+            }
+        }
+
+        for (x = startIndex + 1; x < oldEntries.length; x++) {
+            candidate = oldEntries[x];
+            if (canReuseEntry(candidate, newChild) && candidate.key === newKey) {
+                return candidate;
+            }
+        }
+
+        return null;
+    }
+
+    for (var j = 0; j < newLen; j++) {
+        var newChild = newChildren[j];
+        setVNodeParent(newChild, newParentVNode, j, parentRoot);
+        var oldEntry = findMatchingEntry(newChild, j);
+        var matchedOldDOM = oldEntry ? oldEntry.dom : null;
+        var currentDOMAtPosition = parentDOM.childNodes[j] || null;
+        var domToPlace = null;
 
         if (oldEntry) {
-            // Diff with matched old vnode - even function components without direct DOM must be reused.
-            var updatedDOM = null;
-            try {
-                updatedDOM = diffNode(oldEntry.vnode, newChild, parentDOM, matchedOldDOM);
-            } catch (e) {
-                // If diff fails, create new element
-                var recoveryDOM = createDOMElement(newChild);
-                if (recoveryDOM) {
-                    if (matchedOldDOM && matchedOldDOM.parentNode === parentDOM) {
-                        parentDOM.replaceChild(recoveryDOM, matchedOldDOM);
-                    } else if (currentDOMAtPosition) {
-                        parentDOM.insertBefore(recoveryDOM, currentDOMAtPosition);
-                    } else {
-                        parentDOM.appendChild(recoveryDOM);
-                    }
+            usedOld[oldEntry.index] = true;
+            domToPlace = diffNode(oldEntry.vnode, newChild, parentDOM, matchedOldDOM) || matchedOldDOM;
+        } else {
+            domToPlace = createDOMElement(newChild);
+        }
+
+        if (domToPlace) {
+            if (domToPlace.parentNode !== parentDOM) {
+                if (currentDOMAtPosition) {
+                    parentDOM.insertBefore(domToPlace, currentDOMAtPosition);
+                } else {
+                    parentDOM.appendChild(domToPlace);
                 }
-                continue;
-            }
-
-            var domToPlace = updatedDOM || matchedOldDOM;
-
-            // Move DOM to correct position if needed
-            if (domToPlace && domToPlace !== currentDOMAtPosition && domToPlace.parentNode === parentDOM) {
+            } else if (domToPlace !== currentDOMAtPosition) {
                 if (currentDOMAtPosition) {
                     parentDOM.insertBefore(domToPlace, currentDOMAtPosition);
                 } else {
                     parentDOM.appendChild(domToPlace);
                 }
             }
-        } else {
-            // No matching old vnode, create new
-            var newDOM = createDOMElement(newChild);
-            if (newDOM) {
-                if (currentDOMAtPosition) {
-                    parentDOM.insertBefore(newDOM, currentDOMAtPosition);
-                } else {
-                    parentDOM.appendChild(newDOM);
+        }
+    }
+
+    for (var m = oldLen - 1; m >= 0; m--) {
+        if (!usedOld[m]) {
+            var oldEntryToRemove = oldEntries[m];
+            var oldChildVNode = oldEntryToRemove ? oldEntryToRemove.vnode : oldChildren[m];
+            var domToRemove = oldEntryToRemove ? oldEntryToRemove.dom : null;
+
+            if (oldChildVNode) {
+                clearVNode(oldChildVNode);
+            }
+
+            if (domToRemove && domToRemove.parentNode === parentDOM) {
+                try {
+                    parentDOM.removeChild(domToRemove);
+                } catch (e) {
+                    // Ignore removal errors
                 }
             }
         }
     }
 
-    // Remove unused old DOM nodes (iterate backwards to avoid index shifting)
-    for (var m = oldLen - 1; m >= 0; m--) {
-        if (!usedOldDOMs[m]) {
-            var oldEntryToRemove = oldEntries[m];
-            var oldChildVNode = oldEntryToRemove ? oldEntryToRemove.vnode : oldChildren[m];
-            if (oldChildVNode) {
-                clearVNode(oldChildVNode);
-            }
-            var domToRemove = oldEntryToRemove ? oldEntryToRemove.dom : null;
-            try {
-                if (domToRemove && domToRemove.parentNode === parentDOM) {
-                    parentDOM.removeChild(domToRemove);
-                }
-            } catch (e) {
-                // Ignore removal errors
-            }
-        }
+    if (newParentVNode) {
+        newParentVNode.__dom = getVNodeDOM(newParentVNode);
+        updateParentDOMPointers(newParentVNode);
     }
 }
 
@@ -1305,17 +1685,43 @@ function isValidElement(value) {
         return context;
     }
 
+    /**
+     * Flatten and loop through the children of a virtual node
+     * Based on official Preact toChildArray
+     * @param {any} children - The unflattened children
+     * @param {Array} out - Output array
+     * @returns {Array} Flattened children array
+     */
+    function toChildArray(children, out) {
+        out = out || [];
+        if (children == null || typeof children === 'boolean') {
+            // Skip null, undefined, true, false
+        } else if (Array.isArray(children)) {
+            // Flatten arrays recursively
+            for (var i = 0; i < children.length; i++) {
+                toChildArray(children[i], out);
+            }
+        } else {
+            // Add primitives and vnodes
+            out.push(children);
+        }
+        return out;
+    }
+
     // Export all APIs as global object (for script loading)
     var Preact = {
         h: h,
         createElement: createElement,
         render: render,
+        hydrate: hydrate,
         Fragment: Fragment,
         Component: Component,
         createRef: createRef,
         cloneElement: cloneElement,
         isValidElement: isValidElement,
-        createContext: createContext
+        createContext: createContext,
+        toChildArray: toChildArray,
+        options: options
     };
 
     // 添加小写别名以提高兼容性

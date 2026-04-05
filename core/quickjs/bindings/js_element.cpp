@@ -25,6 +25,7 @@
 #include "js_style_declaration.h"
 #include "js_event.h"
 #include "core/quickjs/js_value_wrapper.h"
+#include <algorithm>
 #include <memory>
 #include <string>
 #include <iostream>
@@ -485,7 +486,21 @@ static JSValue JSElement_get_style(JSContext* ctx, JSValueConst this_val, int ma
     return WrapStyleDeclaration(ctx, style);
 }
 
-// value getter (for HTMLInputElement, HTMLTextAreaElement, HTMLSelectElement)
+// ========== HTMLInputElement 特殊属性 ==========
+
+static std::shared_ptr<HTMLInputElement> get_text_selectable_input_element(const std::shared_ptr<Element>& element) {
+    auto input = std::dynamic_pointer_cast<HTMLInputElement>(element);
+    if (!input || !input->SupportsTextEditing()) {
+        return nullptr;
+    }
+    return input;
+}
+
+static std::shared_ptr<HTMLTextAreaElement> get_text_selectable_textarea_element(const std::shared_ptr<Element>& element) {
+    return std::dynamic_pointer_cast<HTMLTextAreaElement>(element);
+}
+
+// Element.value getter (for HTMLInputElement, HTMLTextAreaElement, HTMLSelectElement)
 static JSValue JSElement_get_value(JSContext* ctx, JSValueConst this_val, int magic) {
     auto* data = static_cast<JSElementData*>(JS_GetOpaque(this_val, js_element_class_id));
     if (!data || !data->element) {
@@ -555,6 +570,115 @@ static JSValue JSElement_set_value(JSContext* ctx, JSValueConst this_val, JSValu
     }
 
     JS_FreeCString(ctx, str);
+    return JS_UNDEFINED;
+}
+
+static JSValue JSElement_get_selectionStart(JSContext* ctx, JSValueConst this_val, int magic) {
+    auto* data = static_cast<JSElementData*>(JS_GetOpaque(this_val, js_element_class_id));
+    if (!data || !data->element) {
+        return JS_UNDEFINED;
+    }
+
+    if (auto input_element = get_text_selectable_input_element(data->element)) {
+        return JS_NewInt32(ctx, input_element->GetSelectionStart());
+    }
+    if (auto textarea_element = get_text_selectable_textarea_element(data->element)) {
+        return JS_NewInt32(ctx, textarea_element->GetSelectionStart());
+    }
+
+    return JS_UNDEFINED;
+}
+
+static JSValue JSElement_set_selectionStart(JSContext* ctx, JSValueConst this_val, JSValue val, int magic) {
+    auto* data = static_cast<JSElementData*>(JS_GetOpaque(this_val, js_element_class_id));
+    if (!data || !data->element) {
+        return JS_UNDEFINED;
+    }
+
+    int start = 0;
+    if (JS_ToInt32(ctx, &start, val) != 0) {
+        return JS_EXCEPTION;
+    }
+
+    if (auto input_element = get_text_selectable_input_element(data->element)) {
+        int end = input_element->GetSelectionEnd();
+        input_element->SetSelectionRange(start, std::max(start, end));
+        return JS_UNDEFINED;
+    }
+    if (auto textarea_element = get_text_selectable_textarea_element(data->element)) {
+        int end = textarea_element->GetSelectionEnd();
+        textarea_element->SetSelectionRange(start, std::max(start, end));
+        return JS_UNDEFINED;
+    }
+
+    return JS_UNDEFINED;
+}
+
+static JSValue JSElement_get_selectionEnd(JSContext* ctx, JSValueConst this_val, int magic) {
+    auto* data = static_cast<JSElementData*>(JS_GetOpaque(this_val, js_element_class_id));
+    if (!data || !data->element) {
+        return JS_UNDEFINED;
+    }
+
+    if (auto input_element = get_text_selectable_input_element(data->element)) {
+        return JS_NewInt32(ctx, input_element->GetSelectionEnd());
+    }
+    if (auto textarea_element = get_text_selectable_textarea_element(data->element)) {
+        return JS_NewInt32(ctx, textarea_element->GetSelectionEnd());
+    }
+
+    return JS_UNDEFINED;
+}
+
+static JSValue JSElement_set_selectionEnd(JSContext* ctx, JSValueConst this_val, JSValue val, int magic) {
+    auto* data = static_cast<JSElementData*>(JS_GetOpaque(this_val, js_element_class_id));
+    if (!data || !data->element) {
+        return JS_UNDEFINED;
+    }
+
+    int end = 0;
+    if (JS_ToInt32(ctx, &end, val) != 0) {
+        return JS_EXCEPTION;
+    }
+
+    if (auto input_element = get_text_selectable_input_element(data->element)) {
+        int start = input_element->GetSelectionStart();
+        input_element->SetSelectionRange(std::min(start, end), end);
+        return JS_UNDEFINED;
+    }
+    if (auto textarea_element = get_text_selectable_textarea_element(data->element)) {
+        int start = textarea_element->GetSelectionStart();
+        textarea_element->SetSelectionRange(std::min(start, end), end);
+        return JS_UNDEFINED;
+    }
+
+    return JS_UNDEFINED;
+}
+
+static JSValue JSElement_setSelectionRange(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) {
+    auto* data = static_cast<JSElementData*>(JS_GetOpaque(this_val, js_element_class_id));
+    if (!data || !data->element) {
+        return JS_UNDEFINED;
+    }
+    if (argc < 2) {
+        return JS_ThrowTypeError(ctx, "setSelectionRange requires 2 arguments");
+    }
+
+    int start = 0;
+    int end = 0;
+    if (JS_ToInt32(ctx, &start, argv[0]) != 0 || JS_ToInt32(ctx, &end, argv[1]) != 0) {
+        return JS_EXCEPTION;
+    }
+
+    if (auto input_element = get_text_selectable_input_element(data->element)) {
+        input_element->SetSelectionRange(start, end);
+        return JS_UNDEFINED;
+    }
+    if (auto textarea_element = get_text_selectable_textarea_element(data->element)) {
+        textarea_element->SetSelectionRange(start, end);
+        return JS_UNDEFINED;
+    }
+
     return JS_UNDEFINED;
 }
 
@@ -1472,12 +1596,14 @@ static JSValue JSElement_select(JSContext* ctx, JSValueConst this_val, int argc,
     auto* data = static_cast<JSElementData*>(JS_GetOpaque(this_val, js_element_class_id));
     if (!data || !data->element) return JS_UNDEFINED;
 
-    // 获取 value 属性的长度
-    std::string value = data->element->GetAttribute("value");
-
-    // 设置 selectionStart 和 selectionEnd
-    data->element->SetAttribute("selectionStart", "0");
-    data->element->SetAttribute("selectionEnd", std::to_string(value.length()));
+    if (auto input_element = get_text_selectable_input_element(data->element)) {
+        input_element->Select();
+        return JS_UNDEFINED;
+    }
+    if (auto textarea_element = get_text_selectable_textarea_element(data->element)) {
+        textarea_element->Select();
+        return JS_UNDEFINED;
+    }
 
     return JS_UNDEFINED;
 }
@@ -1641,6 +1767,8 @@ static const JSCFunctionListEntry js_element_proto_funcs[] = {
     JS_CGETSET_MAGIC_DEF("style", JSElement_get_style, nullptr, 0),
     JS_CGETSET_MAGIC_DEF("value", JSElement_get_value, JSElement_set_value, 0),
     JS_CGETSET_MAGIC_DEF("checked", JSElement_get_checked, JSElement_set_checked, 0),
+    JS_CGETSET_MAGIC_DEF("selectionStart", JSElement_get_selectionStart, JSElement_set_selectionStart, 0),
+    JS_CGETSET_MAGIC_DEF("selectionEnd", JSElement_get_selectionEnd, JSElement_set_selectionEnd, 0),
     // DOM 树导航
     JS_CGETSET_MAGIC_DEF("ownerDocument", JSElement_get_ownerDocument, nullptr, 0),
     JS_CGETSET_MAGIC_DEF("parentNode", JSElement_get_parentNode, nullptr, 0),
@@ -1695,6 +1823,7 @@ static const JSCFunctionListEntry js_element_proto_funcs[] = {
     JS_CFUNC_DEF("getBoundingClientRect", 0, JSElement_getBoundingClientRect),
     JS_CFUNC_DEF("getClientRects", 0, JSElement_getClientRects),
     JS_CFUNC_DEF("scrollIntoView", 1, JSElement_scrollIntoView),
+    JS_CFUNC_DEF("setSelectionRange", 2, JSElement_setSelectionRange),
     JS_CFUNC_DEF("select", 0, JSElement_select),
     JS_CFUNC_DEF("focus", 0, JSElement_focus),
     JS_CFUNC_DEF("blur", 0, JSElement_blur),
