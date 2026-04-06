@@ -299,24 +299,12 @@ void SelectDropdownManager::UpdatePositionFromRenderTree(std::shared_ptr<RenderO
     auto select_render = findSelectRenderObject(root_render);
     if (!select_render) return;
 
-    float abs_x = 0, abs_y = 0;
-    auto current = select_render;
-    while (current) {
-        const auto& layout = current->GetLayoutInfo();
-        abs_x += layout.x;
-        abs_y += layout.y;
-
-        auto parent = current->GetParent();
-        if (parent) {
-            abs_x -= parent->GetScrollX();
-            abs_y -= parent->GetScrollY();
-        }
-
-        current = parent;
+    auto rect = select->GetBoundingClientRect();
+    if (rect.width <= 0.0f || rect.height <= 0.0f) {
+        return;
     }
 
-    const auto& layout = select_render->GetLayoutInfo();
-    SkRect new_trigger_rect = SkRect::MakeXYWH(abs_x, abs_y, layout.width, layout.height);
+    SkRect new_trigger_rect = SkRect::MakeXYWH(rect.x, rect.y, rect.width, rect.height);
     UpdatePosition(new_trigger_rect);
 }
 

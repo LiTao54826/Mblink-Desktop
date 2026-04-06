@@ -967,29 +967,10 @@ void EventLoop::ProcessFormElementDefaultAction(std::shared_ptr<Element> element
                 dropdown_manager.CloseDropdown();
             } else {
                 // 打开下拉菜单
-                // 使用 hit_result 中的渲染对象获取位置
-                auto render_obj = hit_result.render_object;
-                if (render_obj) {
-                    // 计算绝对位置（需要从当前元素向上累加，同时考虑滚动偏移）
-                    float abs_x = 0, abs_y = 0;
-                    auto current = render_obj;
-                    while (current) {
-                        const auto& layout = current->GetLayoutInfo();
-                        abs_x += layout.x;
-                        abs_y += layout.y;
-
-                        // 减去父元素的滚动偏移
-                        auto parent = current->GetParent();
-                        if (parent) {
-                            abs_x -= parent->GetScrollX();
-                            abs_y -= parent->GetScrollY();
-                        }
-
-                        current = parent;
-                    }
-
-                    const auto& layout = render_obj->GetLayoutInfo();
-                    SkRect trigger_rect = SkRect::MakeXYWH(abs_x, abs_y, layout.width, layout.height);
+                // 统一使用元素的视口矩形，避免复杂布局/滚动/sticky 场景下手动累加坐标出现偏移
+                auto rect = select_element->GetBoundingClientRect();
+                if (rect.width > 0.0f && rect.height > 0.0f) {
+                    SkRect trigger_rect = SkRect::MakeXYWH(rect.x, rect.y, rect.width, rect.height);
 
                     select_element->SetDropdownOpen(true);
                     dropdown_manager.OpenDropdown(select_element, trigger_rect);
