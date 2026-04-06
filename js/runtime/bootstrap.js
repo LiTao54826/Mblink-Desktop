@@ -42,9 +42,15 @@
         };
     }
 
-    global.window = global;
-    global.self = global;
-    global.globalThis = global;
+    if (typeof global.globalThis === 'undefined') {
+        global.globalThis = global;
+    }
+    if (typeof global.window === 'undefined') {
+        global.window = global.globalThis;
+    }
+    if (typeof global.self === 'undefined') {
+        global.self = global.window;
+    }
 
     var runtime = global.__mbinkSharedRuntime || (global.__mbinkSharedRuntime = {
         roots: [],

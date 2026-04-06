@@ -818,8 +818,9 @@ WindowContext* createWindowContext(const mbink::WindowConfig& wc) {
     // 1. 创建 Window
     ctx->window = std::make_shared<mbink::Window>(wc);
 
-    // 2. 创建 Document → 设置到 Window
+    // 2. 创建 Document → 初始化基础 DOM 结构 → 设置到 Window
     ctx->document = std::make_shared<mbink::Document>();
+    ctx->document->Initialize();
     ctx->window->SetDocument(ctx->document);
 
     // 3. 创建 TaskScheduler

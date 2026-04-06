@@ -289,7 +289,7 @@ static JSValue JS_Document_createDocumentFragment(JSContext* ctx, JSValueConst t
 
 // ========== document.body getter 实现 ==========
 
-static JSValue JS_Document_get_body(JSContext* ctx, JSValueConst this_val, int magic) {
+static JSValue JS_Document_get_body(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) {
     // 从全局对象获取 window
     JSValue global = JS_GetGlobalObject(ctx);
     JSValue window_val = JS_GetPropertyStr(ctx, global, "__mbink_window_ptr");
@@ -323,7 +323,7 @@ static JSValue JS_Document_get_body(JSContext* ctx, JSValueConst this_val, int m
 
 // ========== document.head getter 实现 ==========
 
-static JSValue JS_Document_get_head(JSContext* ctx, JSValueConst this_val, int magic) {
+static JSValue JS_Document_get_head(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) {
     // 从全局对象获取 window
     JSValue global = JS_GetGlobalObject(ctx);
     JSValue window_val = JS_GetPropertyStr(ctx, global, "__mbink_window_ptr");
@@ -357,7 +357,7 @@ static JSValue JS_Document_get_head(JSContext* ctx, JSValueConst this_val, int m
 
 // ========== document.documentElement getter 实现 ==========
 
-static JSValue JS_Document_get_documentElement(JSContext* ctx, JSValueConst this_val, int magic) {
+static JSValue JS_Document_get_documentElement(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) {
     // 从全局对象获取 window
     JSValue global = JS_GetGlobalObject(ctx);
     JSValue window_val = JS_GetPropertyStr(ctx, global, "__mbink_window_ptr");
@@ -1388,29 +1388,8 @@ void BindDocumentAPIs(JSContext* ctx, Window* window) {
     // 注册 document 对象
     JSValue document = JS_NewObject(ctx);
 
-    // 设置 body 属性（直接获取并包装）
-    auto doc = window->GetDocument();
-    if (doc) {
-        auto body = doc->GetBody();
-        if (body) {
-            JSValue body_val = bindings::WrapElement(ctx, body);
-            JS_SetPropertyStr(ctx, document, "body", body_val);
-        }
-        
-        // 设置 head 属性
-        auto head = doc->GetHead();
-        if (head) {
-            JSValue head_val = bindings::WrapElement(ctx, head);
-            JS_SetPropertyStr(ctx, document, "head", head_val);
-        }
+    // 通过动态 getter 访问当前 DOM，避免 load_html/load_html_file 后 body/head/documentElement 变成旧引用
 
-        // 设置 documentElement 属性（根元素，通常是 <html>）
-        auto document_element = doc->GetDocumentElement();
-        if (document_element) {
-            JSValue doc_elem_val = bindings::WrapElement(ctx, document_element);
-            JS_SetPropertyStr(ctx, document, "documentElement", doc_elem_val);
-        }
-    }
 
     // 设置 getElementById 方法
     JS_SetPropertyStr(ctx, document, "getElementById",
@@ -1492,6 +1471,28 @@ void BindDocumentAPIs(JSContext* ctx, Window* window) {
         // 如果 window 不存在，设置为 global 对象本身
         JS_SetPropertyStr(ctx, document, "defaultView", JS_DupValue(ctx, global));
     }
+
+    // 设置 body/head/documentElement getter（动态获取当前 DOM，保证 load_html 后仍然一致）
+    JSAtom body_atom = JS_NewAtom(ctx, "body");
+    JS_DefinePropertyGetSet(ctx, document, body_atom,
+        JS_NewCFunction(ctx, JS_Document_get_body, "get body", 0),
+        JS_UNDEFINED,
+        JS_PROP_ENUMERABLE);
+    JS_FreeAtom(ctx, body_atom);
+
+    JSAtom head_atom = JS_NewAtom(ctx, "head");
+    JS_DefinePropertyGetSet(ctx, document, head_atom,
+        JS_NewCFunction(ctx, JS_Document_get_head, "get head", 0),
+        JS_UNDEFINED,
+        JS_PROP_ENUMERABLE);
+    JS_FreeAtom(ctx, head_atom);
+
+    JSAtom documentElement_atom = JS_NewAtom(ctx, "documentElement");
+    JS_DefinePropertyGetSet(ctx, document, documentElement_atom,
+        JS_NewCFunction(ctx, JS_Document_get_documentElement, "get documentElement", 0),
+        JS_UNDEFINED,
+        JS_PROP_ENUMERABLE);
+    JS_FreeAtom(ctx, documentElement_atom);
 
     // 设置 activeElement getter（动态获取当前活动元素）
     JSAtom activeElement_atom = JS_NewAtom(ctx, "activeElement");
