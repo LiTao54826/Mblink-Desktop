@@ -14,6 +14,7 @@
 #include "core/dom/elements/terminal/html_terminal_element.h"
 #include "core/dom/elements/logview/html_logview_element.h"
 #include "core/event/input/hit_test_controller.h"
+#include "core/render/objects/select_dropdown.h"
 #include "core/render/objects/render_object.h"
 #include "core/render/pipeline/render_pipeline.h"
 #include "core/render/text/font_manager.h"
@@ -78,6 +79,19 @@ bool WheelEventDispatcher::HandleWheelEvent(const SDL_Event& event,
                 return true;  // 事件被 DevTools 消费
             }
         }
+    }
+
+    // ===== 优先处理 Select 下拉菜单滚轮 =====
+    auto& dropdown_manager = SelectDropdownManager::Instance();
+    if (dropdown_manager.IsDropdownOpen() && dropdown_manager.HitTest(logical_x, logical_y)) {
+        if (dropdown_manager.HandleWheel(wheel_y)) {
+            window->SetNeedsRepaint();
+            if (auto pipeline = window->GetRenderPipeline()) {
+                pipeline->ForceRasterize();
+            }
+            return true;
+        }
+        return true;
     }
 
     // 检查是否按住 Shift 键

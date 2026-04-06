@@ -74,6 +74,36 @@ bool g_initialized = false;
 std::string g_lastError;
 std::mutex g_errorMutex;
 
+void ClearElementListenersRecursive(const std::shared_ptr<mbink::Node>& node) {
+    if (!node) {
+        return;
+    }
+
+    if (auto element = std::dynamic_pointer_cast<mbink::Element>(node)) {
+        element->ClearAllEventListeners();
+    }
+
+    for (const auto& child : node->GetChildNodes()) {
+        ClearElementListenersRecursive(child);
+    }
+}
+
+void ClearDocumentElementListeners(const std::shared_ptr<mbink::Document>& document) {
+    if (!document) {
+        return;
+    }
+
+    if (auto document_element = document->GetDocumentElement()) {
+        ClearElementListenersRecursive(document_element);
+        return;
+    }
+
+    if (auto body = document->GetBody()) {
+        ClearElementListenersRecursive(body);
+    }
+}
+
+
 // ========== WindowContext ==========
 
 struct WindowContext;
@@ -1043,14 +1073,16 @@ void mbink_destroy(MBinkHandle handle) {
     SAFE_CLEANUP("post_shutdown_microtasks", if (ctx->runtime) {
         ctx->runtime->ProcessMicrotasks();
     });
-    SAFE_CLEANUP("flush_main_thread_queue", ctx->mainThreadQueue.flush());
+
+    // 不要在销毁路径手动 flush mainThreadQueue。
+    // 队列中的残留任务会在 WindowContext 析构后因 alive flag 失效，
+    // 避免 shutdown 过程中再执行额外的 JS/DOM 操作导致 QuickJS 残留对象。
 
     // 4. 停止任务源
     SAFE_CLEANUP("shutdown_task_scheduler", if (ctx->taskScheduler) {
         ctx->taskScheduler->Shutdown();
         ctx->taskScheduler->ClearAllTasks();
     });
-    SAFE_CLEANUP("flush_main_thread_queue_after_shutdown", ctx->mainThreadQueue.flush());
     SAFE_CLEANUP("final_microtasks", if (ctx->runtime) {
         ctx->runtime->ProcessMicrotasks();
     });
@@ -1064,8 +1096,14 @@ void mbink_destroy(MBinkHandle handle) {
     }
 
     // 6. 清理 DOM 绑定
+    SAFE_CLEANUP("clear_document_element_listeners", if (ctx->document) {
+        ClearDocumentElementListeners(ctx->document);
+    });
     SAFE_CLEANUP("dom_bindings_cleanup", if (ctx->runtime) {
         mbink::DOMBindings::Cleanup(ctx->runtime->GetContext());
+    });
+    SAFE_CLEANUP("detach_window_document", if (ctx->window) {
+        ctx->window->SetDocument(nullptr);
     });
     ctx->document.reset();
     mbink::DOMBindingMap::GetInstance().Clear();
@@ -1096,8 +1134,9 @@ void mbink_destroy(MBinkHandle handle) {
     ctx->watchCallbacks.clear();
     ctx->boundFunctions.clear();
     ctx->boundAsyncFunctions.clear();
+    ctx->window.reset();
 
-    std::exit(0);
+    delete ctx;
 }
 
 void mbink_run(MBinkHandle handle) {

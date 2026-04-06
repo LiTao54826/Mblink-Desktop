@@ -22,7 +22,18 @@ void InitElementBinding(JSContext* ctx);
 void DumpElementListenerStats();
 
 /**
- * @brief 强制清理 Element wrapper 上的 on* 事件属性与监听器
+ * @brief 强制清理 Element wrapper 上登记的全部 JS 监听器引用
+ * @param ctx QuickJS 上下文
+ * @param element_obj Element 对应的 JS 对象
+ *
+ * 会同时清理：
+ * - addEventListener 注册到 JSElementData::listeners 的监听器
+ * - on* 事件属性对应的 hidden property 引用
+ */
+void ClearElementListenerBindings(JSContext* ctx, JSValueConst element_obj);
+
+/**
+ * @brief 强制清理 Element wrapper 上的 on* 事件属性
  * @param ctx QuickJS 上下文
  * @param element_obj Element 对应的 JS 对象
  */

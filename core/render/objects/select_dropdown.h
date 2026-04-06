@@ -20,12 +20,16 @@ struct SelectDropdownInfo {
     std::weak_ptr<HTMLSelectElement> select_element;  // 关联的 select 元素
     SkRect trigger_rect;                              // 触发器区域（select 元素的位置）
     SkRect dropdown_rect;                             // 下拉菜单区域
+    SkRect viewport_rect;                             // 视口区域
+    float content_height = 0.0f;                      // 下拉内容总高度
+    float scroll_offset = 0.0f;                       // 当前滚动偏移
+    bool open_above = false;                          // 是否向上展开
     bool is_open = false;                             // 是否打开
 };
 
 /**
  * @brief Select 下拉菜单管理器（单例）
- * 
+ *
  * 管理所有 select 元素的下拉菜单状态和绘制
  */
 class SelectDropdownManager {
@@ -80,6 +84,13 @@ public:
     bool HandleClick(float x, float y);
 
     /**
+     * @brief 处理滚轮滚动
+     * @param delta_y 滚轮 Y 增量
+     * @return 是否消费事件
+     */
+    bool HandleWheel(float delta_y);
+
+    /**
      * @brief 检查点是否在下拉菜单区域内
      * @param x X 坐标
      * @param y Y 坐标
@@ -110,13 +121,15 @@ private:
     SelectDropdownManager& operator=(const SelectDropdownManager&) = delete;
 
     SelectDropdownInfo current_dropdown_;
-    
+
     // 下拉菜单样式常量 (Chrome 风格)
-    static constexpr float ITEM_HEIGHT = 24.0f;        // 每项高度
-    static constexpr float ITEM_PADDING_X = 8.0f;      // 左右内边距
-    static constexpr float OPTGROUP_INDENT = 8.0f;     // optgroup 内选项缩进
-    static constexpr float DROPDOWN_MAX_HEIGHT = 300.0f;
-    static constexpr float DROPDOWN_SHADOW_BLUR = 4.0f;
+    static constexpr float ITEM_HEIGHT = 20.0f;
+    static constexpr float ITEM_PADDING_X = 12.0f;
+    static constexpr float OPTGROUP_INDENT = 16.0f;
+    static constexpr float DROPDOWN_MAX_HEIGHT = 320.0f;
+    static constexpr float DROPDOWN_SHADOW_BLUR = 12.0f;
+    static constexpr float SCROLLBAR_WIDTH = 8.0f;
+    static constexpr float VIEWPORT_MARGIN = 4.0f;
 };
 
 } // namespace mbink

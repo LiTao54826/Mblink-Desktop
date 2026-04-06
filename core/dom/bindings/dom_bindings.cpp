@@ -90,6 +90,11 @@ static std::shared_ptr<T>* GetOpaquePtr(void* opaque) {
 static void js_element_finalizer(JSRuntime* rt, JSValue val) {
     auto ptr = static_cast<std::shared_ptr<Element>*>(JS_GetOpaque(val, DOMBindings::element_class_id));
     if (ptr) {
+        if (*ptr) {
+            (*ptr)->ClearAllEventListeners();
+            DOMBindingMap::GetInstance().Remove(ptr->get());
+        }
+
         // 从缓存中移除
         DOMBindings::RemoveFromElementCache(ptr->get());
         delete ptr;
@@ -2535,27 +2540,32 @@ void DOMBindings::Cleanup(JSContext* ctx) {
 
     // ========== 阶段1：清理 C++ 侧 DOM 事件引用 ==========
     if (ctx) {
-        auto& dom_binding_map = DOMBindingMap::GetInstance();
-        dom_binding_map.ForEach([](Node* node, JSContext* entry_ctx, JSValueConst value) {
-            if (!node || !entry_ctx || JS_IsUndefined(value) || JS_IsNull(value)) {
+        auto clear_element_bindings = [ctx](Element* element, JSContext* entry_ctx, JSValueConst value) {
+            if (!element) {
                 return;
             }
 
-            if (JS_GetOpaque(value, bindings::GetElementClassID())) {
-                bindings::ClearElementEventProperties(entry_ctx, value);
+            if (entry_ctx && !JS_IsUndefined(value) && !JS_IsNull(value) &&
+                JS_GetOpaque(value, bindings::GetElementClassID())) {
+                bindings::ClearElementListenerBindings(entry_ctx, value);
+            }
 
-                if (auto* element = dynamic_cast<Element*>(node)) {
-                    element->ClearAllEventListeners();
-                }
+            element->ClearAllEventListeners();
+        };
+
+        auto& dom_binding_map = DOMBindingMap::GetInstance();
+        dom_binding_map.ForEach([&clear_element_bindings](Node* node, JSContext* entry_ctx, JSValueConst value) {
+            if (auto* element = dynamic_cast<Element*>(node)) {
+                clear_element_bindings(element, entry_ctx, value);
             }
         });
 
         std::vector<std::pair<JSContext*, JSValue>> cachedValues;
         cachedValues.reserve(element_cache_.size() + text_cache_.size() + document_cache_.size());
 
-        for (auto& [_, entry] : element_cache_) {
+        for (auto& [element, entry] : element_cache_) {
             if (!JS_IsUndefined(entry.second) && !JS_IsNull(entry.second)) {
-                bindings::ClearElementEventProperties(entry.first ? entry.first : ctx, entry.second);
+                clear_element_bindings(element, entry.first ? entry.first : ctx, entry.second);
                 cachedValues.push_back(entry);
             }
         }
@@ -2613,10 +2623,15 @@ JSValue DOMBindings::WrapElement(JSContext* ctx, std::shared_ptr<Element> elemen
         return JS_NULL;
     }
 
+    auto& dom_binding_map = DOMBindingMap::GetInstance();
+
     // 检查缓存，避免重复包装
     Element* raw_ptr = element.get();
     auto it = element_cache_.find(raw_ptr);
     if (it != element_cache_.end()) {
+        if (!dom_binding_map.Has(raw_ptr)) {
+            dom_binding_map.SetJSValue(raw_ptr, it->second.second, it->second.first ? it->second.first : ctx);
+        }
         // 缓存命中，返回已有的JSValue（需要DupValue增加引用计数）
         return JS_DupValue(ctx, it->second.second);
     }
@@ -2634,6 +2649,7 @@ JSValue DOMBindings::WrapElement(JSContext* ctx, std::shared_ptr<Element> elemen
     // 缓存只是一个查找表，不影响GC
     // finalizer 会在对象被GC时清理缓存
     element_cache_[raw_ptr] = std::make_pair(ctx, obj);
+    dom_binding_map.SetJSValue(raw_ptr, obj, ctx);
 
     return obj;
 }

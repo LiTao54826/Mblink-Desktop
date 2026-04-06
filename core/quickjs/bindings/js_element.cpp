@@ -106,6 +106,50 @@ static JSValue JSElement_set_event_property(JSContext* ctx, JSValueConst this_va
 
 // ========== 析构函数 ==========
 
+static void ClearJSElementListenerBindings(JSContext* ctx, JSValueConst element_obj, bool clear_hidden_properties) {
+    if (!ctx) {
+        return;
+    }
+
+    auto* data = static_cast<JSElementData*>(JS_GetOpaque(element_obj, js_element_class_id));
+    if (!data || !data->element) {
+        return;
+    }
+
+    for (auto& binding : data->listeners) {
+        data->element->RemoveEventListener(binding.event_type, binding.listener_id);
+        g_js_element_listener_remove_count++;
+        if (g_js_element_listener_live_bindings > 0) {
+            g_js_element_listener_live_bindings--;
+        }
+
+        if (!JS_IsUndefined(binding.js_listener)) {
+            JS_FreeValue(ctx, binding.js_listener);
+            binding.js_listener = JS_UNDEFINED;
+        }
+    }
+    data->listeners.clear();
+
+    if (clear_hidden_properties) {
+        for (const auto& desc : kJSElementEventProperties) {
+            JS_SetPropertyStr(ctx, element_obj, desc.hidden_name, JS_UNDEFINED);
+        }
+    }
+}
+
+static void JSElementGCMark(JSRuntime* rt, JSValueConst val, JS_MarkFunc* mark_func) {
+    auto* data = static_cast<JSElementData*>(JS_GetOpaque(val, js_element_class_id));
+    if (!data) {
+        return;
+    }
+
+    for (const auto& binding : data->listeners) {
+        if (!JS_IsUndefined(binding.js_listener) && !JS_IsNull(binding.js_listener)) {
+            JS_MarkValue(rt, binding.js_listener, mark_func);
+        }
+    }
+}
+
 static void JSElementFinalizer(JSRuntime* rt, JSValue val) {
     auto* data = static_cast<JSElementData*>(JS_GetOpaque(val, js_element_class_id));
     if (data) {
@@ -129,6 +173,10 @@ static void JSElementFinalizer(JSRuntime* rt, JSValue val) {
         }
         delete data;
     }
+}
+
+void ClearElementListenerBindings(JSContext* ctx, JSValueConst element_obj) {
+    ClearJSElementListenerBindings(ctx, element_obj, true);
 }
 
 void ClearElementEventProperties(JSContext* ctx, JSValueConst element_obj) {
@@ -1837,7 +1885,7 @@ static const JSCFunctionListEntry js_element_proto_funcs[] = {
 static JSClassDef js_element_class = {
     /* class_name */ "Element",
     /* finalizer */ JSElementFinalizer,
-    /* gc_mark */ nullptr,
+    /* gc_mark */ JSElementGCMark,
     /* call */ nullptr,
     /* exotic */ nullptr,
 };
