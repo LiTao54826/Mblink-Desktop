@@ -67,20 +67,32 @@ HTML = r"""
           <select id="long"></select>
 
           <label for="grouped">optgroup / disabled</label>
-          <select id="grouped">
+          <select id="grouped" value="vue">
             <optgroup label="Frontend">
-              <option>React</option>
-              <option selected>Preact</option>
-              <option disabled>Vue (disabled)</option>
+              <option value="react">React</option>
+              <option value="preact">Preact</option>
+              <option value="vue" disabled>Vue (disabled)</option>
             </optgroup>
             <optgroup label="Backend">
-              <option>Python</option>
-              <option>Go</option>
-              <option>Rust</option>
+              <option value="python">Python</option>
+              <option value="go">Go</option>
+              <option value="rust">Rust</option>
             </optgroup>
           </select>
           <div class="note">打开 long，观察滚轮与细滚动条；打开 grouped，观察 label/disabled 样式与命中。</div>
         </div>
+      </div>
+
+      <div class="panel" style="margin-top:16px;">
+        <h2>value 同步验证</h2>
+        <label for="prop-sync">先设 select.value，再补 option</label>
+        <select id="prop-sync"></select>
+        <label for="attr-sync">setAttribute('value') 与 option.value 后变更</label>
+        <select id="attr-sync">
+          <option value="alpha">Alpha</option>
+          <option value="beta">Beta</option>
+        </select>
+        <div class="note">日志会打印初始化后的值；用于观察 property path 与 C++ attribute fallback 是否都能命中。</div>
       </div>
 
       <div class="spacer">向下滚动后，在窗口底部附近打开 select，验证是否会优先向上展开。</div>

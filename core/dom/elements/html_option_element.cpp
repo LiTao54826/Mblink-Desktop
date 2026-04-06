@@ -97,6 +97,11 @@ std::string HTMLOptionElement::GetValue() const {
 void HTMLOptionElement::SetValue(const std::string& value) {
     value_ = value;
     Element::SetAttribute("value", value);
+
+    auto select = FindSelectElement();
+    if (select) {
+        select->OnOptionsChanged();
+    }
 }
 
 std::string HTMLOptionElement::GetText() const {
@@ -155,7 +160,7 @@ std::shared_ptr<HTMLFormElement> HTMLOptionElement::GetForm() const {
 void HTMLOptionElement::SetAttribute(const std::string& name, const std::string& value) {
     // 调用基类方法
     Element::SetAttribute(name, value);
-    
+
     // 处理特殊属性
     if (name == "disabled") {
         disabled_ = true;
@@ -168,13 +173,17 @@ void HTMLOptionElement::SetAttribute(const std::string& name, const std::string&
         }
     } else if (name == "value") {
         value_ = value;
+        auto select = FindSelectElement();
+        if (select) {
+            select->OnOptionsChanged();
+        }
     }
 }
 
 void HTMLOptionElement::RemoveAttribute(const std::string& name) {
     // 调用基类方法
     Element::RemoveAttribute(name);
-    
+
     // 处理特殊属性
     if (name == "disabled") {
         disabled_ = false;
@@ -183,6 +192,10 @@ void HTMLOptionElement::RemoveAttribute(const std::string& name) {
         default_selected_ = false;
     } else if (name == "value") {
         value_.clear();
+        auto select = FindSelectElement();
+        if (select) {
+            select->OnOptionsChanged();
+        }
     }
 }
 

@@ -150,19 +150,35 @@ long HTMLSelectElement::GetSelectedIndex() const {
     return -1;
 }
 
-void HTMLSelectElement::SetSelectedIndex(long index) {
+void HTMLSelectElement::SetSelectedIndex(long index, bool trigger_events) {
     auto options = GetOptions();
-    
+    long previous_index = GetSelectedIndex();
+    bool previous_suppress = suppress_change_event_;
+    suppress_change_event_ = true;
+
+    if (index < 0 || index >= static_cast<long>(options.size())) {
+        has_pending_value_ = false;
+        pending_value_.clear();
+    }
+
     // 如果是单选，先取消所有选中
     if (!multiple_) {
         for (auto& option : options) {
             option->SetSelected(false);
         }
     }
-    
+
     // 选中指定索引
     if (index >= 0 && index < static_cast<long>(options.size())) {
         options[index]->SetSelected(true);
+        has_pending_value_ = false;
+        pending_value_.clear();
+    }
+
+    suppress_change_event_ = previous_suppress;
+
+    if (trigger_events && !previous_suppress && previous_index != GetSelectedIndex()) {
+        TriggerChangeEvent();
     }
 }
 
@@ -174,24 +190,37 @@ std::string HTMLSelectElement::GetValue() const {
     return "";
 }
 
-void HTMLSelectElement::SetValue(const std::string& value) {
+void HTMLSelectElement::SetValue(const std::string& value, bool trigger_events) {
     auto options = GetOptions();
-    
+    long previous_index = GetSelectedIndex();
+    bool previous_suppress = suppress_change_event_;
+    suppress_change_event_ = true;
+    bool matched = false;
+
     // 如果是单选，先取消所有选中
     if (!multiple_) {
         for (auto& option : options) {
             option->SetSelected(false);
         }
     }
-    
+
     // 选中匹配value的第一个option
     for (auto& option : options) {
         if (option->GetValue() == value) {
             option->SetSelected(true);
+            matched = true;
             if (!multiple_) {
                 break;  // 单选只选中第一个
             }
         }
+    }
+
+    has_pending_value_ = !matched;
+    pending_value_ = matched ? std::string() : value;
+    suppress_change_event_ = previous_suppress;
+
+    if (trigger_events && !previous_suppress && previous_index != GetSelectedIndex()) {
+        TriggerChangeEvent();
     }
 }
 
@@ -232,7 +261,7 @@ bool HTMLSelectElement::ReportValidity() const {
 void HTMLSelectElement::SetAttribute(const std::string& name, const std::string& value) {
     // 调用基类方法
     Element::SetAttribute(name, value);
-    
+
     // 处理特殊属性
     if (name == "disabled") {
         disabled_ = true;
@@ -249,13 +278,15 @@ void HTMLSelectElement::SetAttribute(const std::string& name, const std::string&
         } catch (...) {
             size_ = 0;
         }
+    } else if (name == "value") {
+        SetValue(value, false);
     }
 }
 
 void HTMLSelectElement::RemoveAttribute(const std::string& name) {
     // 调用基类方法
     Element::RemoveAttribute(name);
-    
+
     // 处理特殊属性
     if (name == "disabled") {
         disabled_ = false;
@@ -268,6 +299,9 @@ void HTMLSelectElement::RemoveAttribute(const std::string& name) {
         name_.clear();
     } else if (name == "size") {
         size_ = 0;
+    } else if (name == "value") {
+        has_pending_value_ = false;
+        pending_value_.clear();
     }
 }
 
@@ -282,10 +316,20 @@ void HTMLSelectElement::OnOptionSelectionChanged(std::shared_ptr<HTMLOptionEleme
                 opt->SetSelected(false);
             }
         }
+        has_pending_value_ = false;
+        pending_value_.clear();
     }
-    
+
     // 触发change事件
-    TriggerChangeEvent();
+    if (!suppress_change_event_) {
+        TriggerChangeEvent();
+    }
+}
+
+void HTMLSelectElement::OnOptionsChanged() {
+    if (has_pending_value_) {
+        SetValue(pending_value_, false);
+    }
 }
 
 // ========== 辅助方法 ==========
@@ -337,7 +381,7 @@ void HTMLSelectElement::SelectHoveredOption() {
         auto options = GetOptions();
         if (hovered_index_ < static_cast<long>(options.size())) {
             if (!options[hovered_index_]->GetDisabled()) {
-                SetSelectedIndex(hovered_index_);
+                SetSelectedIndex(hovered_index_, true);
             }
         }
     }
@@ -367,7 +411,7 @@ void HTMLSelectElement::SelectNextOption() {
         }
     }
 
-    SetSelectedIndex(next);
+    SetSelectedIndex(next, true);
 }
 
 void HTMLSelectElement::SelectPreviousOption() {
@@ -395,7 +439,7 @@ void HTMLSelectElement::SelectPreviousOption() {
         }
     }
 
-    SetSelectedIndex(prev);
+    SetSelectedIndex(prev, true);
 }
 
 } // namespace mbink

@@ -1106,9 +1106,14 @@ function setDOMProps(element, oldProps, newProps, isSVG) {
                     listeners[prop + '_input'] = stableInputHandler;
                 }
             }
-        } else if (prop === 'value' && (element.tagName === 'INPUT' || element.tagName === 'TEXTAREA')) {
-            if (element.value !== String(newValue)) {
-                element.value = newValue;
+        } else if (prop === 'value' && (
+            element.tagName === 'INPUT' ||
+            element.tagName === 'TEXTAREA' ||
+            element.tagName === 'SELECT'
+        )) {
+            var normalizedValue = newValue == null ? '' : String(newValue);
+            if (element.value !== normalizedValue) {
+                element.value = normalizedValue;
             }
         } else if (newValue === oldValue) {
             continue;

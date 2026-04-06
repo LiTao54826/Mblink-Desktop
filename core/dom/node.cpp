@@ -7,12 +7,66 @@
 #include "text.h"
 #include "document.h"
 #include "element.h"
+#include "elements/html_select_element.h"
+#include "elements/html_option_element.h"
 #include "observers/dom_observer.h"
 #include "core/render/objects/render_object.h"
 #include <algorithm>
 #include <stdexcept>
 
 namespace mbink {
+
+namespace {
+
+void NotifySelectOptionsChanged(const std::shared_ptr<Node>& parent,
+                                const std::shared_ptr<Node>& child) {
+    if (!parent || !child || child->GetNodeType() != NodeType::ELEMENT_NODE) {
+        return;
+    }
+
+    auto parent_element = std::dynamic_pointer_cast<Element>(parent);
+    if (!parent_element) {
+        return;
+    }
+
+    auto tag_name = parent_element->GetTagName();
+    bool affects_select = false;
+
+    if (tag_name == "select") {
+        affects_select = true;
+    } else if (tag_name == "optgroup") {
+        affects_select = true;
+    }
+
+    if (!affects_select) {
+        return;
+    }
+
+    auto child_element = std::dynamic_pointer_cast<Element>(child);
+    if (!child_element) {
+        return;
+    }
+
+    auto child_tag_name = child_element->GetTagName();
+    if (child_tag_name != "option" && child_tag_name != "optgroup") {
+        return;
+    }
+
+    if (tag_name == "select") {
+        if (auto select = std::dynamic_pointer_cast<HTMLSelectElement>(parent_element)) {
+            select->OnOptionsChanged();
+        }
+        return;
+    }
+
+    auto select_parent = parent_element->GetParentNode();
+    auto select = std::dynamic_pointer_cast<HTMLSelectElement>(select_parent);
+    if (select) {
+        select->OnOptionsChanged();
+    }
+}
+
+} // namespace
 
 // ========== 构造函数和析构函数 ==========
 
@@ -131,6 +185,8 @@ std::shared_ptr<Node> Node::AppendChild(std::shared_ptr<Node> child) {
         if (auto old_doc = old_parent->GetOwnerDocument()) {
             old_doc->MarkLexborDirty();
         }
+
+        NotifySelectOptionsChanged(old_parent, child);
     }
 
     // 添加到子节点列表
@@ -163,6 +219,7 @@ std::shared_ptr<Node> Node::AppendChild(std::shared_ptr<Node> child) {
         doc->MarkLexborDirty();
     }
 
+    NotifySelectOptionsChanged(shared_from_this(), child);
     return child;
 }
 
@@ -215,6 +272,8 @@ std::shared_ptr<Node> Node::InsertBefore(std::shared_ptr<Node> new_child,
         if (auto old_doc = old_parent->GetOwnerDocument()) {
             old_doc->MarkLexborDirty();
         }
+
+        NotifySelectOptionsChanged(old_parent, new_child);
     }
 
     if (index > child_nodes_.size()) {
@@ -247,6 +306,7 @@ std::shared_ptr<Node> Node::InsertBefore(std::shared_ptr<Node> new_child,
         doc->MarkLexborDirty();
     }
 
+    NotifySelectOptionsChanged(shared_from_this(), new_child);
     return new_child;
 }
 
@@ -269,10 +329,10 @@ std::shared_ptr<Node> Node::RemoveChild(std::shared_ptr<Node> child) {
     if (doc) {
         // 记录到 DirtyNodeTracker（延迟处理）
         doc->GetDirtyTracker().RecordNodeRemoved(child, shared_from_this(), index);
-        
+
         // 通知观察者（立即处理，用于兼容旧代码）
         doc->GetObserverManager().NotifyNodeRemoved(child.get(), this);
-        
+
         // 如果被移除的是元素，清理其 ID 缓存（包括所有后代）
         if (child->GetNodeType() == NodeType::ELEMENT_NODE) {
             auto element = std::static_pointer_cast<Element>(child);
@@ -292,6 +352,7 @@ std::shared_ptr<Node> Node::RemoveChild(std::shared_ptr<Node> child) {
         doc->MarkLexborDirty();
     }
 
+    NotifySelectOptionsChanged(shared_from_this(), child);
     return child;
 }
 
@@ -340,6 +401,8 @@ std::shared_ptr<Node> Node::ReplaceChild(std::shared_ptr<Node> new_child,
         if (auto old_doc = old_parent_of_new_child->GetOwnerDocument()) {
             old_doc->MarkLexborDirty();
         }
+
+        NotifySelectOptionsChanged(old_parent_of_new_child, new_child);
     }
 
     if (index >= child_nodes_.size()) {
@@ -375,6 +438,8 @@ std::shared_ptr<Node> Node::ReplaceChild(std::shared_ptr<Node> new_child,
         doc->MarkLexborDirty();
     }
 
+    NotifySelectOptionsChanged(shared_from_this(), old_child);
+    NotifySelectOptionsChanged(shared_from_this(), new_child);
     return old_child;
 }
 

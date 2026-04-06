@@ -154,21 +154,23 @@ public:
     /**
      * @brief 设置selectedIndex
      * @param index 要选中的索引
+     * @param trigger_events 是否触发change事件
      */
-    void SetSelectedIndex(long index);
-    
+    void SetSelectedIndex(long index, bool trigger_events = false);
+
     /**
      * @brief 获取value
      * @return 第一个选中option的value
      */
     std::string GetValue() const;
-    
+
     /**
      * @brief 设置value
      * @param value 要设置的值
+     * @param trigger_events 是否触发change事件
      */
-    void SetValue(const std::string& value);
-    
+    void SetValue(const std::string& value, bool trigger_events = false);
+
     // ========== 验证方法 ==========
     
     /**
@@ -210,6 +212,11 @@ public:
      * @param option 改变的option
      */
     void OnOptionSelectionChanged(std::shared_ptr<HTMLOptionElement> option);
+
+    /**
+     * @brief 当option集合或其value发生变化时重新协调选择状态
+     */
+    void OnOptionsChanged();
 
     /**
      * @brief 处理点击事件（切换下拉菜单或选择下一个选项）
@@ -262,7 +269,10 @@ private:
     std::string custom_validity_;     // 自定义验证消息
     bool is_dropdown_open_ = false;   // 下拉菜单是否打开
     long hovered_index_ = -1;         // 当前悬停的选项索引
-    
+    bool suppress_change_event_ = false;  // 抑制程序化赋值产生的change事件
+    bool has_pending_value_ = false;      // 是否存在待应用的value
+    std::string pending_value_;           // 待应用的value
+
     // ========== 辅助方法 ==========
     
     /**
