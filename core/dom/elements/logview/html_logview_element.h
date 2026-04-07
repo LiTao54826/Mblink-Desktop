@@ -224,7 +224,7 @@ public:
     /**
      * @brief 处理滚轮
      */
-    void OnWheel(float delta_y);
+    void OnWheel(float delta_y, bool horizontal = false);
 
     /**
      * @brief 处理键盘事件
@@ -257,6 +257,10 @@ private:
     float view_y_ = 0;
     float view_width_ = 0;
     float view_height_ = 0;
+    bool is_dragging_horizontal_scrollbar_ = false;
+    float drag_start_x_ = 0.0f;
+    int drag_start_horizontal_offset_ = 0;
+    int last_drag_horizontal_offset_ = -1;
 
     SelectionCallback selection_callback_;
 

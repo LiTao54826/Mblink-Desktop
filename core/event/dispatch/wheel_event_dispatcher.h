@@ -58,7 +58,8 @@ private:
      */
     bool HandleTerminalWheel(std::shared_ptr<Window> window,
                              std::shared_ptr<Element> element,
-                             float wheel_y);
+                             float wheel_x, float wheel_y,
+                             bool shift_pressed);
 
     /**
      * @brief 处理 logview 元素的滚轮事件
@@ -66,7 +67,8 @@ private:
      */
     bool HandleLogViewWheel(std::shared_ptr<Window> window,
                             std::shared_ptr<Element> element,
-                            float wheel_y);
+                            float wheel_x, float wheel_y,
+                            bool shift_pressed);
 
     /**
      * @brief 处理 textarea 元素的滚轮事件

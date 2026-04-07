@@ -126,7 +126,13 @@ void HTMLLogViewElement::ScrollToBottom() {
     }
 
     if (view_height_ > 0) {
-        renderer_->UpdateMetrics(view_height_);
+        const float scrollbar_thickness = 8.0f;
+        const float scrollbar_gap = 2.0f;
+        float content_height = view_height_;
+        if (renderer_->max_horizontal_scroll_offset() > 0) {
+            content_height -= scrollbar_thickness + scrollbar_gap;
+        }
+        renderer_->UpdateMetrics(content_height);
     }
 
     renderer_->SetTotalLines(renderer_->GetDisplayLineCount());
@@ -401,6 +407,40 @@ void HTMLLogViewElement::OnMouseDown(float x, float y, int button,
                                      int click_count) {
     if (button != 0) return;  // 只处理左键
 
+    if (renderer_ && renderer_->max_horizontal_scroll_offset() > 0) {
+        const float scrollbar_height = 8.0f;
+        const float scrollbar_gap = 2.0f;
+        const float content_padding = 4.0f;
+        float content_height = view_height_ - (scrollbar_height + scrollbar_gap);
+        float track_x = view_x_ + content_padding;
+        float track_y = view_y_ + content_height + scrollbar_gap;
+        float track_width = view_width_ - 2 * content_padding;
+        if (track_width > 0 && y >= track_y && y <= track_y + scrollbar_height) {
+            float cell_width = renderer_->cell_width() > 1.0f ? renderer_->cell_width() : 1.0f;
+            float visible_columns = track_width / cell_width;
+            if (visible_columns < 1.0f) visible_columns = 1.0f;
+            float total_columns = static_cast<float>(renderer_->max_horizontal_scroll_offset()) +
+                                  visible_columns;
+            float thumb_width = track_width * (visible_columns / total_columns);
+            if (thumb_width < 20.0f) thumb_width = 20.0f;
+            if (thumb_width > track_width) thumb_width = track_width;
+            float available_track = track_width - thumb_width;
+            if (available_track < 0.0f) available_track = 0.0f;
+            float scroll_ratio = renderer_->max_horizontal_scroll_offset() > 0
+                                     ? static_cast<float>(renderer_->horizontal_scroll_offset()) /
+                                           renderer_->max_horizontal_scroll_offset()
+                                     : 0.0f;
+            float thumb_x = track_x + scroll_ratio * available_track;
+            if (x >= thumb_x && x <= thumb_x + thumb_width) {
+                is_dragging_horizontal_scrollbar_ = true;
+                drag_start_x_ = x;
+                drag_start_horizontal_offset_ = renderer_->horizontal_scroll_offset();
+                last_drag_horizontal_offset_ = drag_start_horizontal_offset_;
+                return;
+            }
+        }
+    }
+
     auto [line, col] = ScreenToLineCol(x, y);
 
     if (click_count == 1) {
@@ -423,6 +463,31 @@ void HTMLLogViewElement::OnMouseDown(float x, float y, int button,
 }
 
 void HTMLLogViewElement::OnMouseMove(float x, float y) {
+    if (is_dragging_horizontal_scrollbar_ && renderer_) {
+        const float content_padding = 4.0f;
+        float track_width = view_width_ - 2 * content_padding;
+        float cell_width = renderer_->cell_width() > 1.0f ? renderer_->cell_width() : 1.0f;
+        float visible_columns = track_width / cell_width;
+        if (visible_columns < 1.0f) visible_columns = 1.0f;
+        float total_columns = static_cast<float>(renderer_->max_horizontal_scroll_offset()) +
+                              visible_columns;
+        float thumb_width = track_width * (visible_columns / total_columns);
+        if (thumb_width < 20.0f) thumb_width = 20.0f;
+        if (thumb_width > track_width) thumb_width = track_width;
+        float available_track = track_width - thumb_width;
+        if (available_track > 0) {
+            float delta_x = x - drag_start_x_;
+            int max_scroll = renderer_->max_horizontal_scroll_offset();
+            int delta_offset = static_cast<int>((delta_x / available_track) * max_scroll);
+            int new_offset = drag_start_horizontal_offset_ + delta_offset;
+            if (new_offset != last_drag_horizontal_offset_) {
+                renderer_->SetHorizontalScrollOffset(new_offset);
+                last_drag_horizontal_offset_ = renderer_->horizontal_scroll_offset();
+            }
+        }
+        return;
+    }
+
     if (selection_.IsSelecting()) {
         auto [line, col] = ScreenToLineCol(x, y);
         selection_.UpdateSelection(line, col);
@@ -433,12 +498,21 @@ void HTMLLogViewElement::OnMouseUp(float x, float y, int button) {
     (void)x;
     (void)y;
     if (button != 0) return;
+    if (is_dragging_horizontal_scrollbar_) {
+        is_dragging_horizontal_scrollbar_ = false;
+        last_drag_horizontal_offset_ = -1;
+        return;
+    }
     selection_.EndSelection();
 }
 
-void HTMLLogViewElement::OnWheel(float delta_y) {
-    int delta = static_cast<int>(delta_y / 40.0f);  // 约 3 行
-    renderer_->ScrollBy(delta);
+void HTMLLogViewElement::OnWheel(float delta_y, bool horizontal) {
+    int delta = static_cast<int>(delta_y / 40.0f);
+    if (horizontal) {
+        renderer_->ScrollHorizontallyBy(delta);
+    } else {
+        renderer_->ScrollBy(delta);
+    }
 }
 
 void HTMLLogViewElement::OnKeyDown(const std::string& key, bool ctrl, bool shift) {
@@ -502,7 +576,13 @@ bool HTMLLogViewElement::IsAtBottom() {
     }
 
     if (view_height_ > 0) {
-        renderer_->UpdateMetrics(view_height_);
+        const float scrollbar_thickness = 8.0f;
+        const float scrollbar_gap = 2.0f;
+        float content_height = view_height_;
+        if (renderer_->max_horizontal_scroll_offset() > 0) {
+            content_height -= scrollbar_thickness + scrollbar_gap;
+        }
+        renderer_->UpdateMetrics(content_height);
     }
 
     renderer_->SetTotalLines(renderer_->GetDisplayLineCount());

@@ -151,9 +151,20 @@ private:
     /**
      * @brief 渲染滚动条
      * @param canvas 画布
-     * @param bounds 渲染区域
+     * @param content_bounds 实际内容区域
+     * @param has_horizontal_scrollbar 是否存在横向滚动条
      */
-    void RenderScrollbar(SkCanvas* canvas, const SkRect& bounds);
+    void RenderScrollbar(SkCanvas* canvas, const SkRect& content_bounds,
+                         bool has_horizontal_scrollbar);
+
+    /**
+     * @brief 渲染横向滚动条
+     * @param canvas 画布
+     * @param content_bounds 实际内容区域
+     * @param has_vertical_scrollbar 是否存在纵向滚动条
+     */
+    void RenderHorizontalScrollbar(SkCanvas* canvas, const SkRect& content_bounds,
+                                   bool has_vertical_scrollbar);
 
     /**
      * @brief 解析颜色

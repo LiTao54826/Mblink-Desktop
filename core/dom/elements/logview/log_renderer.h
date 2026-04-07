@@ -127,6 +127,8 @@ private:
     const LogSearch* search_ = nullptr;
     const virtual_text::SelectionManager* selection_ = nullptr;
     LogViewConfig config_;
+    mutable float cached_max_content_width_ = 0.0f;
+    mutable bool max_content_width_dirty_ = true;
 
     /**
      * @brief 渲染单行日志
@@ -160,14 +162,42 @@ private:
                        float x, float y, float max_width);
 
     /**
+     * @brief 计算单条日志的渲染宽度
+     */
+    float ComputeEntryWidth(size_t log_index) const;
+
+    /**
+     * @brief 计算内容的最大渲染宽度
+     */
+    float ComputeMaxContentWidth() const;
+
+    /**
+     * @brief 标记最大内容宽度缓存失效
+     */
+    void InvalidateWidthCache();
+
+    /**
      * @brief 格式化时间戳
      */
     std::string FormatTimestamp(uint32_t timestamp) const;
 
     /**
      * @brief 渲染滚动条
+     * @param canvas 画布
+     * @param content_bounds 实际内容区域
+     * @param has_horizontal_scrollbar 是否存在横向滚动条
      */
-    void RenderScrollbar(SkCanvas* canvas, const SkRect& bounds);
+    void RenderScrollbar(SkCanvas* canvas, const SkRect& content_bounds,
+                         bool has_horizontal_scrollbar);
+
+    /**
+     * @brief 渲染横向滚动条
+     * @param canvas 画布
+     * @param content_bounds 实际内容区域
+     * @param has_vertical_scrollbar 是否存在纵向滚动条
+     */
+    void RenderHorizontalScrollbar(SkCanvas* canvas, const SkRect& content_bounds,
+                                   bool has_vertical_scrollbar);
 };
 
 }  // namespace mbink

@@ -121,12 +121,12 @@ function App() {
     }, 2600);
   }
 
-  if (!s.is_logged_in) {
-    return h('div', null, [
-      h(LoginView, { s, draft: loginDraft, setDraft: setLoginDraft, py, notify }),
-      h(ToastLayer, toasts)
-    ]);
-  }
+  // if (!s.is_logged_in) {
+  //   return h('div', null, [
+  //     h(LoginView, { s, draft: loginDraft, setDraft: setLoginDraft, py, notify }),
+  //     h(ToastLayer, toasts)
+  //   ]);
+  // }
 
   return h('div', null, [
     h(WorkspaceView, {

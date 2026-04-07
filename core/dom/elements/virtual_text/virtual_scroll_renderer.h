@@ -79,6 +79,24 @@ public:
     void ScrollBy(int delta);
 
     /**
+     * @brief 设置横向滚动偏移（列）
+     * @param column_offset 第一个可见列的索引
+     */
+    void SetHorizontalScrollOffset(int column_offset);
+
+    /**
+     * @brief 获取横向滚动偏移
+     * @return 第一个可见列的索引
+     */
+    int horizontal_scroll_offset() const { return horizontal_scroll_offset_; }
+
+    /**
+     * @brief 横向相对滚动
+     * @param delta 滚动列数（正数向右，负数向左）
+     */
+    void ScrollHorizontallyBy(int delta);
+
+    /**
      * @brief 设置总行数
      * @param total 总行数
      */
@@ -106,6 +124,18 @@ public:
         if (total_lines_ <= visible_lines_) return 0;
         return total_lines_ - visible_lines_;
     }
+
+    /**
+     * @brief 获取最大横向滚动偏移
+     * @return 最大横向滚动偏移值
+     */
+    int max_horizontal_scroll_offset() const { return max_horizontal_scroll_offset_; }
+
+    /**
+     * @brief 设置最大横向滚动偏移
+     * @param total 最大横向滚动列数
+     */
+    void SetMaxHorizontalScrollOffset(int total);
 
     /**
      * @brief 获取行高
@@ -157,8 +187,10 @@ protected:
     float cell_width_ = 0;
     float padding_ = 4.0f;
     int scroll_offset_ = 0;
+    int horizontal_scroll_offset_ = 0;
     int visible_lines_ = 0;
     int total_lines_ = 0;
+    int max_horizontal_scroll_offset_ = 0;
 
     /**
      * @brief 更新字符度量

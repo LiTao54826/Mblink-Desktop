@@ -207,7 +207,7 @@ public:
      * @brief 处理滚轮
      * @param delta 滚动量
      */
-    void HandleWheel(float delta);
+    void HandleWheel(float delta, bool horizontal = false);
 
 private:
     int rows_ = 24;
@@ -225,8 +225,11 @@ private:
     
     // 滚动条拖动状态
     bool is_dragging_scrollbar_ = false;
+    bool is_dragging_horizontal_scrollbar_ = false;
     float drag_start_y_ = 0.0f;
+    float drag_start_x_ = 0.0f;
     int drag_start_offset_ = 0;
+    int last_drag_horizontal_offset_ = -1;
     SkRect last_bounds_;  // 缓存渲染区域用于命中测试
 
     /**

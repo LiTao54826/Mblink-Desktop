@@ -123,14 +123,16 @@ bool WheelEventDispatcher::HandleWheelEvent(const SDL_Event& event,
         
         // 处理 terminal 元素的滚轮事件
         if (tag_name == "terminal") {
-            if (HandleTerminalWheel(window, hit_result.element, wheel_y)) {
+            if (HandleTerminalWheel(window, hit_result.element, wheel_x, wheel_y,
+                                    shift_pressed)) {
                 return true;
             }
         }
         
         // 处理 logview 元素的滚轮事件
         if (tag_name == "logview") {
-            if (HandleLogViewWheel(window, hit_result.element, wheel_y)) {
+            if (HandleLogViewWheel(window, hit_result.element, wheel_x, wheel_y,
+                                   shift_pressed)) {
                 return true;
             }
         }
@@ -161,7 +163,8 @@ bool WheelEventDispatcher::HandleWheelEvent(const SDL_Event& event,
 
 bool WheelEventDispatcher::HandleTerminalWheel(std::shared_ptr<Window> window,
                                                 std::shared_ptr<Element> element,
-                                                float wheel_y) {
+                                                float wheel_x, float wheel_y,
+                                                bool shift_pressed) {
     if (!element) {
         return false;
     }
@@ -171,9 +174,9 @@ bool WheelEventDispatcher::HandleTerminalWheel(std::shared_ptr<Window> window,
         return false;
     }
 
-    // 将滚轮增量转换为像素（每行约 40 像素）
-    float delta = -wheel_y * 40.0f;
-    terminal_element->HandleWheel(delta);
+    bool horizontal = (wheel_x != 0.0f) || shift_pressed;
+    float delta = horizontal && wheel_x != 0.0f ? -wheel_x * 40.0f : -wheel_y * 40.0f;
+    terminal_element->HandleWheel(delta, horizontal);
 
     // 标记窗口需要重绘
     window->SetNeedsRepaint();
@@ -186,7 +189,8 @@ bool WheelEventDispatcher::HandleTerminalWheel(std::shared_ptr<Window> window,
 
 bool WheelEventDispatcher::HandleLogViewWheel(std::shared_ptr<Window> window,
                                                std::shared_ptr<Element> element,
-                                               float wheel_y) {
+                                               float wheel_x, float wheel_y,
+                                               bool shift_pressed) {
     if (!element) {
         return false;
     }
@@ -196,9 +200,9 @@ bool WheelEventDispatcher::HandleLogViewWheel(std::shared_ptr<Window> window,
         return false;
     }
 
-    // 将滚轮增量转换为像素（每行约 40 像素）
-    float delta = -wheel_y * 40.0f;
-    logview_element->OnWheel(delta);
+    bool horizontal = (wheel_x != 0.0f) || shift_pressed;
+    float delta = horizontal && wheel_x != 0.0f ? -wheel_x * 40.0f : -wheel_y * 40.0f;
+    logview_element->OnWheel(delta, horizontal);
 
     // 标记窗口需要重绘
     window->SetNeedsRepaint();

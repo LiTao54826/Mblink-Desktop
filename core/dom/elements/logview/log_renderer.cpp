@@ -22,18 +22,18 @@ LogRenderer::LogRenderer() {
     // 使用 FontManager 加载等宽字体
     auto& font_manager = FontManager::GetInstance();
     font_manager.Initialize();
-    
+
     // 使用 Consolas 作为基础等宽字体
     FontDescriptor desc;
     desc.family = "Consolas";
     desc.size = 14.0f;
     desc.weight = FontWeight::NORMAL;
     desc.style = FontStyle::NORMAL;
-    
+
     SkFont font = font_manager.LoadFont(desc);
     typeface_ = font.refTypeface();
     font_size_ = 14.0f;
-    
+
     UpdateCellMetrics();
 }
 
@@ -43,10 +43,12 @@ void LogRenderer::SetConfig(const LogViewConfig& config) {
 
 void LogRenderer::SetBuffer(LogBuffer* buffer) {
     buffer_ = buffer;
+    InvalidateWidthCache();
 }
 
 void LogRenderer::SetFilteredIndices(const std::vector<size_t>* indices) {
     filtered_indices_ = indices;
+    InvalidateWidthCache();
 }
 
 void LogRenderer::SetSearch(const LogSearch* search) {
@@ -57,16 +59,72 @@ void LogRenderer::SetSelection(const virtual_text::SelectionManager* selection) 
     selection_ = selection;
 }
 
+void LogRenderer::InvalidateWidthCache() {
+    max_content_width_dirty_ = true;
+}
 void LogRenderer::Render(SkCanvas* canvas, const SkRect& bounds) {
     if (!buffer_ || !canvas) {
         return;
     }
 
-    // 更新度量
-    UpdateMetrics(bounds.height());
     total_lines_ = GetDisplayLineCount();
+    float content_width = ComputeMaxContentWidth();
 
-    // 绘制背景
+    const float scrollbar_thickness = 8.0f;
+    const float scrollbar_gap = 2.0f;
+
+    float inner_width = std::max(0.0f, bounds.width() - 2 * padding_);
+    float inner_height = std::max(0.0f, bounds.height() - 2 * padding_);
+
+    bool need_vertical_scrollbar = false;
+    bool need_horizontal_scrollbar = false;
+
+    while (true) {
+        float viewport_width = std::max(
+            0.0f, inner_width - (need_vertical_scrollbar
+                                     ? (scrollbar_thickness + scrollbar_gap)
+                                     : 0.0f));
+        float viewport_height = std::max(
+            0.0f, inner_height - (need_horizontal_scrollbar
+                                      ? (scrollbar_thickness + scrollbar_gap)
+                                      : 0.0f));
+
+        int visible_lines = 0;
+        if (line_height_ > 0) {
+            visible_lines = static_cast<int>(viewport_height / line_height_);
+            if (visible_lines < 1) visible_lines = 1;
+        }
+
+        bool new_need_vertical = total_lines_ > visible_lines;
+        int horizontal_max = static_cast<int>(std::ceil(
+            std::max(0.0f, content_width - viewport_width) /
+            std::max(cell_width_, 1.0f)));
+        bool new_need_horizontal = horizontal_max > 0;
+
+        if (new_need_vertical == need_vertical_scrollbar &&
+            new_need_horizontal == need_horizontal_scrollbar) {
+            break;
+        }
+
+        need_vertical_scrollbar = new_need_vertical;
+        need_horizontal_scrollbar = new_need_horizontal;
+    }
+
+    SkRect content_bounds = bounds;
+    if (need_vertical_scrollbar) {
+        content_bounds.fRight -= scrollbar_thickness + scrollbar_gap;
+    }
+    if (need_horizontal_scrollbar) {
+        content_bounds.fBottom -= scrollbar_thickness + scrollbar_gap;
+    }
+
+    UpdateMetrics(content_bounds.height());
+    total_lines_ = GetDisplayLineCount();
+    float viewport_width = std::max(0.0f, content_bounds.width() - 2 * padding_);
+    SetMaxHorizontalScrollOffset(
+        static_cast<int>(std::ceil(std::max(0.0f, content_width - viewport_width) /
+                                   std::max(cell_width_, 1.0f))));
+
     SkPaint bg_paint;
     bg_paint.setColor(config_.background_color);
     canvas->drawRect(bounds, bg_paint);
@@ -75,16 +133,16 @@ void LogRenderer::Render(SkCanvas* canvas, const SkRect& bounds) {
         return;
     }
 
-    // 计算可见范围
+    canvas->save();
+    canvas->clipRect(content_bounds);
+
     int start_line = scroll_offset_;
     int end_line = std::min(start_line + visible_lines_ + 1, total_lines_);
 
-    // 渲染可见行
     for (int i = start_line; i < end_line; ++i) {
         size_t log_index = DisplayIndexToLogIndex(i);
-        SkRect line_rect = GetLineRect(i - start_line, bounds);
+        SkRect line_rect = GetLineRect(i - start_line, content_bounds);
 
-        // 检查是否是当前搜索匹配
         bool is_current = false;
         if (search_ && search_->current_match() >= 0) {
             int match_idx = search_->current_match();
@@ -96,9 +154,15 @@ void LogRenderer::Render(SkCanvas* canvas, const SkRect& bounds) {
         RenderLine(canvas, log_index, line_rect, is_current);
     }
 
-    // 渲染滚动条
-    RenderScrollbar(canvas, bounds);
+    canvas->restore();
+
+    RenderScrollbar(canvas, content_bounds, need_horizontal_scrollbar);
+    RenderHorizontalScrollbar(canvas, content_bounds,
+                              need_vertical_scrollbar);
 }
+
+
+
 
 int LogRenderer::GetDisplayLineCount() const {
     if (!buffer_) {
@@ -153,7 +217,8 @@ void LogRenderer::RenderLine(SkCanvas* canvas, size_t log_index,
         canvas->drawRect(line_rect, match_bg);
     }
 
-    float x = line_rect.left() + padding_;
+    float x = line_rect.left() + padding_ -
+              horizontal_scroll_offset_ * cell_width_;
     float y = line_rect.top() + line_height_ - padding_;
 
     // 渲染时间戳
@@ -312,47 +377,150 @@ std::string LogRenderer::FormatTimestamp(uint32_t timestamp) const {
     return oss.str();
 }
 
-void LogRenderer::RenderScrollbar(SkCanvas* canvas, const SkRect& bounds) {
-    // 只有当实际内容超出可见区域时才显示滚动条
+float LogRenderer::ComputeEntryWidth(size_t log_index) const {
+    if (!buffer_ || log_index >= buffer_->size()) {
+        return 0.0f;
+    }
+
+    auto entry = buffer_->GetEntry(log_index);
+    SkFont font(typeface_, font_size_);
+    float width = 0.0f;
+
+    if (config_.show_timestamp) {
+        width += TextRenderer::MeasureMixedTextWidth(FormatTimestamp(entry.timestamp()),
+                                                     font) + cell_width_;
+    }
+
+    if (config_.show_level) {
+        std::string text = std::string("[") + LogLevelToString(entry.level()) + "]";
+        width += TextRenderer::MeasureMixedTextWidth(text, font) + cell_width_;
+    }
+
+    if (config_.show_source) {
+        const std::string& source = buffer_->GetSourceName(entry.source_id());
+        if (!source.empty()) {
+            width += TextRenderer::MeasureMixedTextWidth("[" + source + "]", font) +
+                     cell_width_;
+        }
+    }
+
+    width += TextRenderer::MeasureMixedTextWidth(std::string(entry.message()), font);
+    return width;
+}
+
+float LogRenderer::ComputeMaxContentWidth() const {
+    if (!buffer_) {
+        return 0.0f;
+    }
+
+    if (!max_content_width_dirty_) {
+        return cached_max_content_width_;
+    }
+
+    float max_width = 0.0f;
+    int display_count = GetDisplayLineCount();
+    for (int i = 0; i < display_count; ++i) {
+        max_width = std::max(max_width, ComputeEntryWidth(DisplayIndexToLogIndex(i)));
+    }
+
+    cached_max_content_width_ = max_width;
+    max_content_width_dirty_ = false;
+    return cached_max_content_width_;
+}
+
+void LogRenderer::RenderScrollbar(SkCanvas* canvas, const SkRect& content_bounds,
+                                  bool has_horizontal_scrollbar) {
     if (total_lines_ <= visible_lines_) {
         return;
     }
-    
+
     const float scrollbar_width = 8.0f;
     const float min_thumb_height = 20.0f;
-    
-    // 滚动条轨道区域
-    float track_x = bounds.right() - scrollbar_width - 2.0f;
-    float track_y = bounds.top() + padding_;
-    float track_height = bounds.height() - 2 * padding_;
-    
-    // 绘制滚动条轨道背景
+    const float scrollbar_margin = 2.0f;
+
+    float track_x = content_bounds.right() + scrollbar_margin;
+    float track_y = content_bounds.top() + padding_;
+    float track_height = content_bounds.height() - 2 * padding_;
+    if (has_horizontal_scrollbar) {
+        track_height = std::max(0.0f, track_height);
+    }
+    if (track_height <= 0) {
+        return;
+    }
+
     SkPaint track_paint;
     track_paint.setColor(SkColorSetARGB(60, 255, 255, 255));
     track_paint.setAntiAlias(true);
-    SkRect track_rect = SkRect::MakeXYWH(track_x, track_y, scrollbar_width, track_height);
+    SkRect track_rect =
+        SkRect::MakeXYWH(track_x, track_y, scrollbar_width, track_height);
     canvas->drawRoundRect(track_rect, 4.0f, 4.0f, track_paint);
-    
-    // 计算滚动条滑块大小和位置
+
     float content_ratio = static_cast<float>(visible_lines_) / total_lines_;
     float thumb_height = track_height * content_ratio;
     if (thumb_height < min_thumb_height) thumb_height = min_thumb_height;
-    
-    // 计算滑块位置
+    if (thumb_height > track_height) thumb_height = track_height;
+
     int max_scroll = max_scroll_offset();
     if (max_scroll < 1) max_scroll = 1;
     float scroll_ratio = static_cast<float>(scroll_offset_) / max_scroll;
     if (scroll_ratio > 1.0f) scroll_ratio = 1.0f;
-    
-    // 计算滑块位置，确保不超出轨道
+
     float available_track = track_height - thumb_height;
     float thumb_y = track_y + scroll_ratio * available_track;
-    
-    // 绘制滚动条滑块
+
     SkPaint thumb_paint;
     thumb_paint.setColor(SkColorSetARGB(150, 200, 200, 200));
     thumb_paint.setAntiAlias(true);
-    SkRect thumb_rect = SkRect::MakeXYWH(track_x, thumb_y, scrollbar_width, thumb_height);
+    SkRect thumb_rect =
+        SkRect::MakeXYWH(track_x, thumb_y, scrollbar_width, thumb_height);
+    canvas->drawRoundRect(thumb_rect, 4.0f, 4.0f, thumb_paint);
+}
+
+void LogRenderer::RenderHorizontalScrollbar(SkCanvas* canvas,
+                                            const SkRect& content_bounds,
+                                            bool has_vertical_scrollbar) {
+    if (max_horizontal_scroll_offset() <= 0) {
+        return;
+    }
+
+    const float scrollbar_height = 8.0f;
+    const float min_thumb_width = 20.0f;
+    const float scrollbar_margin = 2.0f;
+    float track_x = content_bounds.left() + padding_;
+    float track_y = content_bounds.bottom() + scrollbar_margin;
+    float track_width = content_bounds.width() - 2 * padding_;
+    if (track_width <= 0) {
+        return;
+    }
+
+    SkPaint track_paint;
+    track_paint.setColor(SkColorSetARGB(60, 255, 255, 255));
+    track_paint.setAntiAlias(true);
+    SkRect track_rect =
+        SkRect::MakeXYWH(track_x, track_y, track_width, scrollbar_height);
+    canvas->drawRoundRect(track_rect, 4.0f, 4.0f, track_paint);
+
+    float total_columns = static_cast<float>(max_horizontal_scroll_offset()) +
+                          std::max(1.0f, track_width / std::max(cell_width_, 1.0f));
+    float visible_columns =
+        std::max(1.0f, track_width / std::max(cell_width_, 1.0f));
+    float thumb_width = track_width * (visible_columns / total_columns);
+    thumb_width = std::max(thumb_width, min_thumb_width);
+    if (thumb_width > track_width) thumb_width = track_width;
+
+    float available_track = track_width - thumb_width;
+    float scroll_ratio = max_horizontal_scroll_offset() > 0
+                             ? static_cast<float>(horizontal_scroll_offset()) /
+                                   max_horizontal_scroll_offset()
+                             : 0.0f;
+    scroll_ratio = std::clamp(scroll_ratio, 0.0f, 1.0f);
+    float thumb_x = track_x + scroll_ratio * available_track;
+
+    SkPaint thumb_paint;
+    thumb_paint.setColor(SkColorSetARGB(150, 200, 200, 200));
+    thumb_paint.setAntiAlias(true);
+    SkRect thumb_rect =
+        SkRect::MakeXYWH(thumb_x, track_y, thumb_width, scrollbar_height);
     canvas->drawRoundRect(thumb_rect, 4.0f, 4.0f, thumb_paint);
 }
 

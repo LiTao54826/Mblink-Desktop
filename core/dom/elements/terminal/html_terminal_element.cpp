@@ -145,7 +145,13 @@ void HTMLTerminalElement::ScrollToBottom() {
     }
 
     if (last_bounds_.height() > 0) {
-        renderer_->UpdateMetrics(last_bounds_.height());
+        const float scrollbar_thickness = 8.0f;
+        const float scrollbar_gap = 2.0f;
+        float content_height = last_bounds_.height();
+        if (renderer_->max_horizontal_scroll_offset() > 0) {
+            content_height -= scrollbar_thickness + scrollbar_gap;
+        }
+        renderer_->UpdateMetrics(content_height);
     }
 
     renderer_->SetTotalLines(buffer_->total_lines());
@@ -158,7 +164,13 @@ bool HTMLTerminalElement::IsAtBottom() {
     }
 
     if (last_bounds_.height() > 0) {
-        renderer_->UpdateMetrics(last_bounds_.height());
+        const float scrollbar_thickness = 8.0f;
+        const float scrollbar_gap = 2.0f;
+        float content_height = last_bounds_.height();
+        if (renderer_->max_horizontal_scroll_offset() > 0) {
+            content_height -= scrollbar_thickness + scrollbar_gap;
+        }
+        renderer_->UpdateMetrics(content_height);
     }
 
     renderer_->SetTotalLines(buffer_->total_lines());
@@ -443,13 +455,49 @@ void HTMLTerminalElement::HandleMouseDown(float x, float y, int button, int clic
         return;
     }
 
-    // 检查是否点击了滚动条区域
+    if (renderer_ && renderer_->max_horizontal_scroll_offset() > 0) {
+        const float scrollbar_height = 8.0f;
+        const float scrollbar_gap = 2.0f;
+        const float content_padding = 4.0f;
+        float content_height = last_bounds_.height() - (scrollbar_height + scrollbar_gap);
+        float track_x = last_bounds_.left() + content_padding;
+        float track_y = last_bounds_.top() + content_height + scrollbar_gap;
+        float track_width = last_bounds_.width() - 2 * content_padding;
+        if (track_width > 0 && y >= track_y && y <= track_y + scrollbar_height) {
+            float cell_width = renderer_->cell_width() > 1.0f ? renderer_->cell_width() : 1.0f;
+            float visible_columns = track_width / cell_width;
+            if (visible_columns < 1.0f) visible_columns = 1.0f;
+            float total_columns = static_cast<float>(buffer_ ? buffer_->cols() : 0);
+            if (total_columns < visible_columns) total_columns = visible_columns;
+            float thumb_width = track_width * (visible_columns / total_columns);
+            if (thumb_width < 20.0f) thumb_width = 20.0f;
+            if (thumb_width > track_width) thumb_width = track_width;
+            float available_track = track_width - thumb_width;
+            if (available_track < 0.0f) available_track = 0.0f;
+            float scroll_ratio = renderer_->max_horizontal_scroll_offset() > 0
+                                     ? static_cast<float>(renderer_->horizontal_scroll_offset()) /
+                                           renderer_->max_horizontal_scroll_offset()
+                                     : 0.0f;
+            float thumb_x = track_x + scroll_ratio * available_track;
+            if (x >= thumb_x && x <= thumb_x + thumb_width) {
+                is_dragging_horizontal_scrollbar_ = true;
+                drag_start_x_ = x;
+                drag_start_offset_ = renderer_->horizontal_scroll_offset();
+                last_drag_horizontal_offset_ = drag_start_offset_;
+                return;
+            }
+        }
+    }
+
     if (renderer_ && renderer_->total_lines() > renderer_->visible_lines()) {
         const float scrollbar_width = 8.0f;
-        float scrollbar_x = last_bounds_.right() - scrollbar_width - 2.0f;
+        const float scrollbar_gap = 2.0f;
+        float scrollbar_x = last_bounds_.right() - scrollbar_width;
+        if (renderer_->max_horizontal_scroll_offset() > 0) {
+            scrollbar_x -= scrollbar_gap;
+        }
 
-        if (x >= scrollbar_x && x <= last_bounds_.right()) {
-            // 点击在滚动条区域，开始拖动
+        if (x >= scrollbar_x && x <= scrollbar_x + scrollbar_width) {
             is_dragging_scrollbar_ = true;
             drag_start_y_ = y;
             drag_start_offset_ = renderer_->scroll_offset();
@@ -479,10 +527,37 @@ void HTMLTerminalElement::HandleMouseDown(float x, float y, int button, int clic
 }
 
 void HTMLTerminalElement::HandleMouseMove(float x, float y) {
-    // 处理滚动条拖动
+    if (is_dragging_horizontal_scrollbar_ && renderer_) {
+        const float content_padding = 4.0f;
+        float track_width = last_bounds_.width() - 2 * content_padding;
+        float cell_width = renderer_->cell_width() > 1.0f ? renderer_->cell_width() : 1.0f;
+        float visible_columns = track_width / cell_width;
+        if (visible_columns < 1.0f) visible_columns = 1.0f;
+        float total_columns = static_cast<float>(buffer_ ? buffer_->cols() : 0);
+        if (total_columns < visible_columns) total_columns = visible_columns;
+        float thumb_width = track_width * (visible_columns / total_columns);
+        if (thumb_width < 20.0f) thumb_width = 20.0f;
+        if (thumb_width > track_width) thumb_width = track_width;
+        float available_track = track_width - thumb_width;
+        if (available_track > 0) {
+            float delta_x = x - drag_start_x_;
+            int max_scroll = renderer_->max_horizontal_scroll_offset();
+            int delta_offset = static_cast<int>((delta_x / available_track) * max_scroll);
+            int new_offset = drag_start_offset_ + delta_offset;
+            if (new_offset != last_drag_horizontal_offset_) {
+                renderer_->SetHorizontalScrollOffset(new_offset);
+                last_drag_horizontal_offset_ = renderer_->horizontal_scroll_offset();
+            }
+        }
+        return;
+    }
+
     if (is_dragging_scrollbar_ && renderer_) {
         float padding = 4.0f;
         float track_height = last_bounds_.height() - 2 * padding;
+        if (renderer_->max_horizontal_scroll_offset() > 0) {
+            track_height -= 10.0f;
+        }
 
         // 计算滑块高度
         float content_ratio = static_cast<float>(renderer_->visible_lines()) / renderer_->total_lines();
@@ -514,7 +589,10 @@ void HTMLTerminalElement::HandleMouseMove(float x, float y) {
 
 void HTMLTerminalElement::HandleMouseUp(float x, float y, int button) {
     if (button == 0) {
-        if (is_dragging_scrollbar_) {
+        if (is_dragging_horizontal_scrollbar_) {
+            is_dragging_horizontal_scrollbar_ = false;
+            last_drag_horizontal_offset_ = -1;
+        } else if (is_dragging_scrollbar_) {
             is_dragging_scrollbar_ = false;
         } else {
             selection_.EndSelection();
@@ -522,12 +600,16 @@ void HTMLTerminalElement::HandleMouseUp(float x, float y, int button) {
     }
 }
 
-void HTMLTerminalElement::HandleWheel(float delta) {
+void HTMLTerminalElement::HandleWheel(float delta, bool horizontal) {
     if (renderer_) {
-        // delta > 0 表示向下滚动（查看最新内容，scroll_offset 增加）
-        // delta < 0 表示向上滚动（查看历史内容，scroll_offset 减少）
-        int lines = static_cast<int>(delta / 40);  // 约 40 像素一行
-        renderer_->ScrollBy(lines);
+        int lines = static_cast<int>(delta / 40);
+        if (horizontal) {
+            renderer_->ScrollHorizontallyBy(lines);
+        } else {
+            // delta > 0 表示向下滚动（查看最新内容，scroll_offset 增加）
+            // delta < 0 表示向上滚动（查看历史内容，scroll_offset 减少）
+            renderer_->ScrollBy(lines);
+        }
     }
 }
 

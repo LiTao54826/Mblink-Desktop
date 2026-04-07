@@ -49,8 +49,23 @@ void VirtualScrollRenderer::ScrollBy(int delta) {
     ClampScrollOffset();
 }
 
+void VirtualScrollRenderer::SetHorizontalScrollOffset(int column_offset) {
+    horizontal_scroll_offset_ = column_offset;
+    ClampScrollOffset();
+}
+
+void VirtualScrollRenderer::ScrollHorizontallyBy(int delta) {
+    horizontal_scroll_offset_ += delta;
+    ClampScrollOffset();
+}
+
 void VirtualScrollRenderer::SetTotalLines(int total) {
     total_lines_ = total;
+    ClampScrollOffset();
+}
+
+void VirtualScrollRenderer::SetMaxHorizontalScrollOffset(int total) {
+    max_horizontal_scroll_offset_ = std::max(0, total);
     ClampScrollOffset();
 }
 
@@ -77,7 +92,8 @@ int VirtualScrollRenderer::HitTestColumn(float x) const {
     if (cell_width_ <= 0) {
         return 0;
     }
-    return static_cast<int>((x - padding_) / cell_width_);
+    return horizontal_scroll_offset_ +
+           static_cast<int>((x - padding_) / cell_width_);
 }
 
 void VirtualScrollRenderer::UpdateCellMetrics() {
@@ -128,10 +144,15 @@ SkRect VirtualScrollRenderer::GetLineRect(int line_index, const SkRect& bounds) 
 void VirtualScrollRenderer::ClampScrollOffset() {
     // 确保滚动偏移不小于 0
     if (scroll_offset_ < 0) scroll_offset_ = 0;
+    if (horizontal_scroll_offset_ < 0) horizontal_scroll_offset_ = 0;
     
     // 确保滚动偏移不超过最大值
     int max_offset = max_scroll_offset();
     if (scroll_offset_ > max_offset) scroll_offset_ = max_offset;
+
+    if (horizontal_scroll_offset_ > max_horizontal_scroll_offset_) {
+        horizontal_scroll_offset_ = max_horizontal_scroll_offset_;
+    }
 }
 
 }  // namespace mbink
