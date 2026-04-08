@@ -73,6 +73,14 @@ cargo run -p mbink --example events
 
 This demonstrates `on_resize`, `on_focus`, `on_blur`, `on_close`, and `on_close_request`.
 
+## Tray example
+
+```bash
+cargo run -p mbink --example tray
+```
+
+This demonstrates a borderless window, tray creation, click-to-restore, hide-to-tray on close, and quit from the tray menu.
+
 ## Window controls example
 
 ```bash

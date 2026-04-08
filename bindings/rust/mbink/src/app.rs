@@ -18,6 +18,47 @@ use crate::{Error, Result};
 
 static INIT: Once = Once::new();
 
+#[derive(Debug, Clone, Copy)]
+pub struct AppHandle {
+    handle: mbink_sys::MBinkHandle,
+}
+
+impl AppHandle {
+    pub fn stop(self) {
+        unsafe { mbink_sys::mbink_stop(self.handle) };
+    }
+
+    pub fn show(self) -> Result<()> {
+        check_rc_raw(unsafe { mbink_sys::mbink_show(self.handle) })
+    }
+
+    pub fn hide(self) -> Result<()> {
+        check_rc_raw(unsafe { mbink_sys::mbink_hide(self.handle) })
+    }
+
+    pub fn restore(self) -> Result<()> {
+        check_rc_raw(unsafe { mbink_sys::mbink_restore(self.handle) })
+    }
+
+    pub fn set_title(self, title: &str) -> Result<()> {
+        let title = to_cstring(title)?;
+        check_rc_raw(unsafe { mbink_sys::mbink_set_title(self.handle, title.as_ptr()) })
+    }
+
+    pub fn set_always_on_top(self, on_top: bool) -> Result<()> {
+        check_rc_raw(unsafe { mbink_sys::mbink_set_always_on_top(self.handle, on_top) })
+    }
+
+    pub fn show_main_window(self) -> Result<()> {
+        self.show()?;
+        self.restore()
+    }
+
+    pub fn hide_to_tray(self) -> Result<()> {
+        self.hide()
+    }
+}
+
 pub struct App {
     handle: mbink_sys::MBinkHandle,
     shared_handles: Vec<mbink_sys::MBinkSharedHandle>,
@@ -58,6 +99,10 @@ impl App {
         };
         app.install_default_on_close_stop()?;
         Ok(app)
+    }
+
+    pub fn handle(&self) -> AppHandle {
+        AppHandle { handle: self.handle }
     }
 
     pub fn run(&mut self) {
@@ -318,6 +363,17 @@ impl App {
 
     pub fn set_always_on_top(&self, on_top: bool) -> Result<&Self> {
         self.check_rc(unsafe { mbink_sys::mbink_set_always_on_top(self.handle, on_top) })?;
+        Ok(self)
+    }
+
+    pub fn show_main_window(&self) -> Result<&Self> {
+        self.show()?;
+        self.restore()?;
+        Ok(self)
+    }
+
+    pub fn hide_to_tray(&self) -> Result<&Self> {
+        self.hide()?;
         Ok(self)
     }
 

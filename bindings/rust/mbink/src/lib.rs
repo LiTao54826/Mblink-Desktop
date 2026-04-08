@@ -8,7 +8,7 @@ mod shared;
 mod state;
 mod util;
 
-pub use app::App;
+pub use app::{App, AppHandle};
 pub use config::AppBuilder;
 pub use controls::{LogView, Terminal};
 pub use error::{Error, Result};
