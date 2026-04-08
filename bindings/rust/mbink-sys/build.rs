@@ -8,15 +8,11 @@ fn main() {
     println!("cargo:rustc-check-cfg=cfg(mbink_runtime_load)");
 
     let manifest_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap());
-    let default_lib_dir = manifest_dir
-        .parent()
-        .and_then(|p| p.parent())
-        .map(|p| p.join("python").join("mbink").join("bin"));
+    let default_lib_dir = manifest_dir.join("runtime");
 
     let lib_dir = env::var_os("MBINK_LIB_DIR")
         .map(PathBuf::from)
-        .or(default_lib_dir)
-        .expect("unable to determine MBINK_LIB_DIR");
+        .unwrap_or(default_lib_dir);
 
     let lib_name = env::var("MBINK_LIB_NAME").unwrap_or_else(|_| "mbink".to_string());
 
@@ -30,7 +26,7 @@ fn main() {
             println!("cargo:rustc-cfg=mbink_runtime_load");
         } else {
             panic!(
-                "unable to find either {0}.lib or {0}.dll in MBINK_LIB_DIR: {1}",
+                "unable to find either {0}.lib or {0}.dll in MBINK_LIB_DIR or default runtime dir: {1}",
                 lib_name,
                 lib_dir.display()
             );

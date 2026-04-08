@@ -22,12 +22,19 @@ Supported environment variables:
 
 - `MBINK_LIB_DIR`: directory containing the native MBink library
 - `MBINK_LIB_NAME`: library name, defaults to `mbink`
+- `MBINK_DLL_PATH`: explicit DLL path used by runtime dynamic loading on Windows
 
 If `MBINK_LIB_DIR` is not set, the build script falls back to:
 
 ```text
-bindings/python/mbink/bin
+bindings/rust/mbink-sys/runtime
 ```
+
+On Windows runtime dynamic loading looks for the DLL in this order:
+
+1. `MBINK_DLL_PATH`
+2. `bindings/rust/mbink-sys/runtime/mbink.dll`
+3. `mbink.dll` from the process working directory / system search path
 
 ## Build
 
