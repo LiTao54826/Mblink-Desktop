@@ -286,14 +286,19 @@ fn dll_path() -> PathBuf {
     }
 
     let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let candidate = manifest_dir
+    let runtime_candidate = manifest_dir.join("runtime").join("mbink.dll");
+    if runtime_candidate.exists() {
+        return runtime_candidate;
+    }
+
+    let python_candidate = manifest_dir
         .parent()
         .and_then(|p| p.parent())
         .map(|p| p.join("python").join("mbink").join("bin").join("mbink.dll"))
         .expect("unable to determine default MBink DLL path");
 
-    if candidate.exists() {
-        return candidate;
+    if python_candidate.exists() {
+        return python_candidate;
     }
 
     PathBuf::from("mbink.dll")

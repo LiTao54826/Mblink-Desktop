@@ -102,10 +102,12 @@ set_target_properties(mbink_api PROPERTIES
     LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/lib"
 )
 
-# 编译后自动复制运行时库到 Python binding 目录
 set(PYTHON_MBINK_BIN_DIR "${CMAKE_SOURCE_DIR}/bindings/python/mbink/bin")
+set(RUST_MBINK_RUNTIME_DIR "${CMAKE_SOURCE_DIR}/bindings/rust/mbink-sys/runtime")
 add_custom_command(TARGET mbink_api POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E make_directory "${PYTHON_MBINK_BIN_DIR}"
     COMMAND ${CMAKE_COMMAND} -E copy_if_different "$<TARGET_FILE:mbink_api>" "${PYTHON_MBINK_BIN_DIR}/$<TARGET_FILE_NAME:mbink_api>"
-    COMMENT "Copying MBink runtime to Python package bin directories"
+    COMMAND ${CMAKE_COMMAND} -E make_directory "${RUST_MBINK_RUNTIME_DIR}"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different "$<TARGET_FILE:mbink_api>" "${RUST_MBINK_RUNTIME_DIR}/$<TARGET_FILE_NAME:mbink_api>"
+    COMMENT "Copying MBink runtime to binding runtime directories"
 )

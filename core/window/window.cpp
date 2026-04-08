@@ -242,6 +242,18 @@ Window::~Window() {
         SDL_GL_MakeCurrent(sdl_window_, gl_context_);
     }
 
+    on_resize_callback_ = {};
+    on_move_callback_ = {};
+    on_close_callback_ = {};
+    on_close_request_handler_ = {};
+    on_focus_callback_ = {};
+    on_blur_callback_ = {};
+    event_listeners_.clear();
+
+    document_.reset();
+
+    renderer_.reset();
+
     // 释放统一渲染管线（在释放其他资源之前）
     if (render_pipeline_) {
         render_pipeline_->Shutdown();
@@ -259,6 +271,7 @@ Window::~Window() {
 
     // 释放Skia资源
     surface_.reset();
+
     gr_context_.reset();
 
     // 注意：sdl_surface_ 不需要手动销毁，它由 SDL_DestroyWindow 自动处理
@@ -291,6 +304,24 @@ Window::~Window() {
     if (sdl_init_count == 0) {
         SDL_Quit();
     }
+
+    dom_observer_.reset();
+
+    cached_render_tree_.reset();
+    render_tree_builder_.reset();
+    render_tree_synchronizer_.reset();
+
+    animation_timeline_.reset();
+    animation_controller_.reset();
+    animation_applicator_.reset();
+    layout_engine_.reset();
+    incremental_layout_manager_.reset();
+
+    window_renderer_.reset();
+
+    dirty_rects_.clear();
+    saved_scroll_positions_.clear();
+    focus_manager_ = nullptr;
 }
 
 void Window::Show() {

@@ -46,7 +46,7 @@ public:
     /**
      * @brief 析构函数
      */
-    ~Renderer() = default;
+    ~Renderer();
 
     // 禁止拷贝
     Renderer(const Renderer&) = delete;

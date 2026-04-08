@@ -44,20 +44,79 @@ impl App {
             return Err(Error::NullHandle);
         }
 
-        Ok(Self {
+        let mut app = Self {
             handle,
             shared_handles: Vec::new(),
             bind_callbacks: Vec::new(),
             event_callbacks: EventRegistry::default(),
-        })
+        };
+        app.install_default_on_close_stop()?;
+        Ok(app)
     }
 
     pub fn run(&mut self) {
+        if self.handle.is_null() {
+            return;
+        }
         unsafe { mbink_sys::mbink_run(self.handle) };
+        self.cleanup_native();
     }
 
     pub fn stop(&self) {
         unsafe { mbink_sys::mbink_stop(self.handle) };
+    }
+
+    fn install_default_on_close_stop(&mut self) -> Result<()> {
+        let handle = self.handle;
+        let holder = Box::new(VoidHolder {
+            callback: Box::new(move || unsafe {
+                mbink_sys::mbink_stop(handle);
+            }),
+        });
+        let user_data = Box::into_raw(holder);
+        let rc = unsafe {
+            mbink_sys::mbink_on_close(self.handle, Some(void_trampoline), user_data.cast())
+        };
+        if rc != 0 {
+            unsafe { drop(Box::from_raw(user_data)) };
+            return self.check_rc(rc);
+        }
+        self.event_callbacks.on_close = Some(user_data);
+        Ok(())
+    }
+
+    fn cleanup_native(&mut self) {
+        if self.handle.is_null() {
+            return;
+        }
+
+        for shared in self.shared_handles.drain(..).rev() {
+            unsafe { mbink_sys::mbink_shared_destroy(shared) };
+        }
+        unsafe { mbink_sys::mbink_destroy(self.handle) };
+        self.handle = std::ptr::null_mut();
+
+        for reg in self.bind_callbacks.drain(..) {
+            unsafe { drop(Box::from_raw(reg.user_data)) };
+        }
+        if let Some(ptr) = self.event_callbacks.on_resize.take() {
+            unsafe { drop(Box::from_raw(ptr)) };
+        }
+        if let Some(ptr) = self.event_callbacks.on_close.take() {
+            unsafe { drop(Box::from_raw(ptr)) };
+        }
+        if let Some(ptr) = self.event_callbacks.on_close_request.take() {
+            unsafe { drop(Box::from_raw(ptr)) };
+        }
+        if let Some(ptr) = self.event_callbacks.on_focus.take() {
+            unsafe { drop(Box::from_raw(ptr)) };
+        }
+        if let Some(ptr) = self.event_callbacks.on_blur.take() {
+            unsafe { drop(Box::from_raw(ptr)) };
+        }
+        if let Some(ptr) = self.event_callbacks.on_update.take() {
+            unsafe { drop(Box::from_raw(ptr)) };
+        }
     }
 
     pub fn poll(&self) -> Result<bool> {
@@ -225,8 +284,12 @@ impl App {
         if let Some(ptr) = self.event_callbacks.on_close.take() {
             unsafe { drop(Box::from_raw(ptr)) };
         }
+        let handle = self.handle;
         let holder = Box::new(VoidHolder {
-            callback: Box::new(callback),
+            callback: Box::new(move || {
+                callback();
+                unsafe { mbink_sys::mbink_stop(handle) };
+            }),
         });
         let user_data = Box::into_raw(holder);
         let rc = unsafe {
@@ -358,34 +421,7 @@ impl App {
 
 impl Drop for App {
     fn drop(&mut self) {
-        for reg in self.bind_callbacks.drain(..) {
-            unsafe { drop(Box::from_raw(reg.user_data)) };
-        }
-        if let Some(ptr) = self.event_callbacks.on_resize.take() {
-            unsafe { drop(Box::from_raw(ptr)) };
-        }
-        if let Some(ptr) = self.event_callbacks.on_close.take() {
-            unsafe { drop(Box::from_raw(ptr)) };
-        }
-        if let Some(ptr) = self.event_callbacks.on_close_request.take() {
-            unsafe { drop(Box::from_raw(ptr)) };
-        }
-        if let Some(ptr) = self.event_callbacks.on_focus.take() {
-            unsafe { drop(Box::from_raw(ptr)) };
-        }
-        if let Some(ptr) = self.event_callbacks.on_blur.take() {
-            unsafe { drop(Box::from_raw(ptr)) };
-        }
-        if let Some(ptr) = self.event_callbacks.on_update.take() {
-            unsafe { drop(Box::from_raw(ptr)) };
-        }
-        for shared in self.shared_handles.drain(..).rev() {
-            unsafe { mbink_sys::mbink_shared_destroy(shared) };
-        }
-        if !self.handle.is_null() {
-            unsafe { mbink_sys::mbink_destroy(self.handle) };
-            self.handle = std::ptr::null_mut();
-        }
+        self.cleanup_native();
     }
 }
 

@@ -426,6 +426,20 @@ void EventLoop::RunOnce() {
     auto& window_manager = WindowManager::Instance();
     if (!window_manager.HasWindows()) {
         should_quit_ = true;
+    } else {
+        bool all_should_close = true;
+        for (const auto& window : window_manager.GetAllWindows()) {
+            if (!window) {
+                continue;
+            }
+            if (!window->ShouldClose()) {
+                all_should_close = false;
+                break;
+            }
+        }
+        if (all_should_close) {
+            should_quit_ = true;
+        }
     }
 
     // 7. 空闲处理

@@ -4,6 +4,7 @@
  */
 
 #include "renderer.h"
+#include <iostream>
 
 namespace mbink {
 
@@ -28,6 +29,11 @@ Renderer::Renderer(sk_sp<SkSurface> surface)
     if (!canvas_) {
         throw std::runtime_error("Failed to get canvas from surface");
     }
+}
+
+Renderer::~Renderer() {
+    canvas_ = nullptr;
+    surface_.reset();
 }
 
 // ========== 基础操作 ==========

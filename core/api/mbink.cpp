@@ -1032,6 +1032,7 @@ void mbink_destroy(MBinkHandle handle) {
         ctx->running = false;
     });
 
+
     // 2. 先解绑 backend/py 上已注册的宿主函数，避免函数对象在关闭时仍被全局对象持有
     SAFE_CLEANUP("unbind_host_functions", if (ctx->hostBridge) {
         std::vector<std::string> boundNames;
@@ -1055,9 +1056,11 @@ void mbink_destroy(MBinkHandle handle) {
     SAFE_CLEANUP("cancel_pending_promises", if (ctx->hostBridge) {
         ctx->hostBridge->cancelPendingPromises("Window destroyed");
     });
+
     SAFE_CLEANUP("pre_shutdown_microtasks", if (ctx->runtime) {
         ctx->runtime->ProcessMicrotasks();
     });
+
     SAFE_CLEANUP("js_shutdown", if (ctx->runtime) {
         auto jsCtx = ctx->runtime->GetContext();
         const char* shutdownScript =
@@ -1070,9 +1073,11 @@ void mbink_destroy(MBinkHandle handle) {
         }
         JS_FreeValue(jsCtx, res);
     });
+
     SAFE_CLEANUP("post_shutdown_microtasks", if (ctx->runtime) {
         ctx->runtime->ProcessMicrotasks();
     });
+
 
     // 不要在销毁路径手动 flush mainThreadQueue。
     // 队列中的残留任务会在 WindowContext 析构后因 alive flag 失效，
@@ -1083,6 +1088,7 @@ void mbink_destroy(MBinkHandle handle) {
         ctx->taskScheduler->Shutdown();
         ctx->taskScheduler->ClearAllTasks();
     });
+
     SAFE_CLEANUP("final_microtasks", if (ctx->runtime) {
         ctx->runtime->ProcessMicrotasks();
     });
@@ -1099,9 +1105,11 @@ void mbink_destroy(MBinkHandle handle) {
     SAFE_CLEANUP("clear_document_element_listeners", if (ctx->document) {
         ClearDocumentElementListeners(ctx->document);
     });
+
     SAFE_CLEANUP("dom_bindings_cleanup", if (ctx->runtime) {
         mbink::DOMBindings::Cleanup(ctx->runtime->GetContext());
     });
+
     SAFE_CLEANUP("detach_window_document", if (ctx->window) {
         ctx->window->SetDocument(nullptr);
     });
@@ -1112,13 +1120,16 @@ void mbink_destroy(MBinkHandle handle) {
     SAFE_CLEANUP("clear_watchers", if (ctx->stateManager) {
         ctx->stateManager->clearWatchers();
     });
+
     ctx->hostBridge.reset();
     ctx->stateManager.reset();
+
 
     // 8. GC + Runtime
     SAFE_CLEANUP("run_gc", if (ctx->runtime) {
         ctx->runtime->RunGC();
     });
+
     ctx->runtime.reset();
 
     // 9. 释放 native 资源
@@ -1134,6 +1145,7 @@ void mbink_destroy(MBinkHandle handle) {
     ctx->watchCallbacks.clear();
     ctx->boundFunctions.clear();
     ctx->boundAsyncFunctions.clear();
+
     ctx->window.reset();
 
     delete ctx;
