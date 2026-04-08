@@ -19,9 +19,9 @@ fn main() -> mbink::Result<()> {
                 body { font-family: "Segoe UI", sans-serif; }
                 .layout { display: grid; grid-template-columns: 340px minmax(0, 1fr); gap: 12px; width: 100vw; height: 100vh; min-height: 0; padding: 12px; }
                 .panel { background: #111827; border: 1px solid #334155; border-radius: 12px; padding: 14px; min-height: 0; }
-                .control-host { min-height: 0; padding: 0; overflow: hidden; display: flex; }
+                .control-host { min-height: 0; padding: 0; overflow: hidden; }
                 .right { display: grid; grid-template-rows: minmax(0, 1fr) minmax(0, 1fr); gap: 12px; min-height: 0; }
-                logview, terminal { flex: 1 1 auto; width: 100%; min-height: 0; display: block; background: #020617; border: 1px solid #334155; border-radius: 12px; overflow: hidden; }
+                logview, terminal { width: 100%; height: 100%; min-height: 0; display: block; background: #020617; border: 1px solid #334155; border-radius: 12px; overflow: hidden; }
             </style>
         </head>
         <body>

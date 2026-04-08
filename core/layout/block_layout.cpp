@@ -266,7 +266,7 @@ LayoutOutput ComputeBlockLayoutInner(
     
     auto [inflow_content_size, intrinsic_outer_height, first_margin_set, last_margin_set] =
         PerformFinalLayoutOnInFlowChildren(
-            tree, items, container_outer_width,
+            tree, items, container_outer_width, inputs.known_dimensions.height,
             content_box_inset, resolved_content_box_inset,
             text_align, own_margins_collapse_with_children
         );
@@ -476,6 +476,7 @@ PerformFinalLayoutOnInFlowChildren(
     LayoutBlockContainer& tree,
     std::vector<BlockItem>& items,
     float container_outer_width,
+    std::optional<float> container_outer_height,
     Rect<float> content_box_inset,
     Rect<float> resolved_content_box_inset,
     BlockTextAlign text_align,
@@ -483,11 +484,21 @@ PerformFinalLayoutOnInFlowChildren(
 ) {
     float container_inner_width = container_outer_width -
         content_box_inset.left - content_box_inset.right;
+    std::optional<float> container_inner_height = std::nullopt;
+    if (container_outer_height.has_value()) {
+        container_inner_height = f32_max(
+            *container_outer_height - content_box_inset.top - content_box_inset.bottom,
+            0.0f
+        );
+    }
+
     Size<std::optional<float>> parent_size = {
         // ✅ 根因修复：in-flow 子元素的百分比宽度应基于父 content-box 宽度解析，
         // 不能使用父 outer(border-box) 宽度，否则 width:100% 会把 padding/border 重复算入，导致横向溢出。
         std::optional<float>(container_inner_width),
-        std::nullopt
+        // ✅ 对称修复：当父 block 高度已 definite 时，也要把 content-box 高度传给 in-flow 子元素，
+        // 否则子元素 height:100% 无法按 containing block 高度解析。
+        container_inner_height
     };
     Size<AvailableSpace> available_space = {
         AvailableSpace::Definite(container_inner_width),

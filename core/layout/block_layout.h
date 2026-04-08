@@ -105,6 +105,7 @@ PerformFinalLayoutOnInFlowChildren(
     LayoutBlockContainer& tree,
     std::vector<BlockItem>& items,
     float container_outer_width,
+    std::optional<float> container_outer_height,
     Rect<float> content_box_inset,
     Rect<float> resolved_content_box_inset,
     BlockTextAlign text_align,
