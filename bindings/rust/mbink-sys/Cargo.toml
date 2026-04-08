@@ -1,0 +1,13 @@
+[package]
+name = "mbink-sys"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+description = "Raw FFI bindings for MBink"
+links = "mbink"
+
+[lib]
+name = "mbink_sys"
+path = "src/lib.rs"
+
+[build-dependencies]

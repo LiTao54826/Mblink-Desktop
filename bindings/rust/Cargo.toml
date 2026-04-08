@@ -1,0 +1,3 @@
+[workspace]
+members = ["mbink-sys", "mbink"]
+resolver = "2"
