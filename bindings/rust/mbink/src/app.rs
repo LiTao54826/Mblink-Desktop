@@ -5,10 +5,12 @@ use serde_json::Value;
 
 use crate::callback::{
     bind_async_trampoline, bind_trampoline, bool_trampoline, resize_trampoline,
-    update_trampoline, void_trampoline, AsyncBindHolder, BindHolder, BindKind,
-    BindRegistration, BoolHolder, EventRegistry, ResizeHolder, UpdateHolder, VoidHolder,
+    state_watch_trampoline, update_trampoline, void_trampoline, AsyncBindHolder, BindHolder,
+    BindKind, BindRegistration, BoolHolder, EventRegistry, ResizeHolder,
+    StateWatchHolder, StateWatchRegistration, UpdateHolder, VoidHolder,
 };
 use crate::config::AppBuilder;
+use crate::controls::{logview_from_handle, terminal_from_handle, ControlHandle, LogView, Terminal};
 use crate::shared::Shared;
 use crate::state::State;
 use crate::util::{string_from_const_ptr, to_cstring};
@@ -19,7 +21,9 @@ static INIT: Once = Once::new();
 pub struct App {
     handle: mbink_sys::MBinkHandle,
     shared_handles: Vec<mbink_sys::MBinkSharedHandle>,
+    control_handles: Vec<ControlHandle>,
     bind_callbacks: Vec<BindRegistration>,
+    state_watchers: Vec<StateWatchRegistration>,
     event_callbacks: EventRegistry,
 }
 
@@ -47,7 +51,9 @@ impl App {
         let mut app = Self {
             handle,
             shared_handles: Vec::new(),
+            control_handles: Vec::new(),
             bind_callbacks: Vec::new(),
+            state_watchers: Vec::new(),
             event_callbacks: EventRegistry::default(),
         };
         app.install_default_on_close_stop()?;
@@ -90,8 +96,22 @@ impl App {
             return;
         }
 
+        for control in self.control_handles.drain(..).rev() {
+            unsafe {
+                match control {
+                    ControlHandle::LogView(handle) => mbink_sys::mbink_logview_destroy(handle),
+                    ControlHandle::Terminal(handle) => mbink_sys::mbink_terminal_destroy(handle),
+                }
+            }
+        }
         for shared in self.shared_handles.drain(..).rev() {
             unsafe { mbink_sys::mbink_shared_destroy(shared) };
+        }
+        for watcher in self.state_watchers.drain(..).rev() {
+            unsafe {
+                mbink_sys::mbink_state_unwatch(self.handle, watcher.watch_id);
+                drop(Box::from_raw(watcher.user_data));
+            }
         }
         unsafe { mbink_sys::mbink_destroy(self.handle) };
         self.handle = std::ptr::null_mut();
@@ -575,6 +595,68 @@ impl App {
         }
         self.shared_handles.push(handle);
         Ok(Shared { handle, _marker: std::marker::PhantomData })
+    }
+
+    pub fn logview(&mut self, element_id: &str) -> Result<LogView<'_>> {
+        let element_id = to_cstring(element_id)?;
+        let handle = unsafe { mbink_sys::mbink_logview_get(self.handle, element_id.as_ptr()) };
+        let logview = logview_from_handle(handle)?;
+        self.control_handles.push(ControlHandle::LogView(handle));
+        Ok(logview)
+    }
+
+    pub fn terminal(&mut self, element_id: &str) -> Result<Terminal<'_>> {
+        let element_id = to_cstring(element_id)?;
+        let handle = unsafe { mbink_sys::mbink_terminal_get(self.handle, element_id.as_ptr()) };
+        let terminal = terminal_from_handle(handle)?;
+        self.control_handles.push(ControlHandle::Terminal(handle));
+        Ok(terminal)
+    }
+
+    pub fn watch_state<F>(&mut self, name: &str, callback: F) -> Result<i32>
+    where
+        F: Fn(&str, Value) + 'static,
+    {
+        self.register_state_watch(name, callback)
+    }
+
+    pub fn unwatch_state(&mut self, watch_id: i32) {
+        self.unregister_state_watch(watch_id);
+    }
+
+    pub(crate) fn register_state_watch<F>(&mut self, name: &str, callback: F) -> Result<i32>
+    where
+        F: Fn(&str, Value) + 'static,
+    {
+        let name = to_cstring(name)?;
+        let holder = Box::new(StateWatchHolder {
+            callback: Box::new(callback),
+        });
+        let user_data = Box::into_raw(holder);
+        let watch_id = unsafe {
+            mbink_sys::mbink_state_watch(
+                self.handle,
+                name.as_ptr(),
+                Some(state_watch_trampoline),
+                user_data.cast(),
+            )
+        };
+        if watch_id < 0 {
+            unsafe { drop(Box::from_raw(user_data)) };
+            self.check_rc(watch_id)?;
+        }
+        self.state_watchers.push(StateWatchRegistration { watch_id, user_data });
+        Ok(watch_id)
+    }
+
+    pub(crate) fn unregister_state_watch(&mut self, watch_id: i32) {
+        if let Some(index) = self.state_watchers.iter().position(|entry| entry.watch_id == watch_id) {
+            let watcher = self.state_watchers.swap_remove(index);
+            unsafe {
+                mbink_sys::mbink_state_unwatch(self.handle, watch_id);
+                drop(Box::from_raw(watcher.user_data));
+            }
+        }
     }
 
     pub fn version() -> Result<String> {

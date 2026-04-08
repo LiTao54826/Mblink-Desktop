@@ -7,6 +7,7 @@ use crate::util::string_from_const_ptr;
 
 pub type BindFn = dyn Fn(Value) -> crate::Result<Value> + 'static;
 pub type AsyncBindFn = dyn Fn(Value) -> crate::Result<Value> + 'static;
+pub type StateWatchFn = dyn Fn(&str, Value) + 'static;
 pub type VoidFn = dyn Fn() + 'static;
 pub type BoolFn = dyn Fn() -> bool + 'static;
 pub type ResizeFn = dyn Fn(i32, i32) + 'static;
@@ -18,6 +19,10 @@ pub struct BindHolder {
 
 pub struct AsyncBindHolder {
     pub callback: Box<AsyncBindFn>,
+}
+
+pub struct StateWatchHolder {
+    pub callback: Box<StateWatchFn>,
 }
 
 pub struct VoidHolder {
@@ -60,6 +65,11 @@ pub struct EventRegistry {
     pub on_tray_menu: Option<*mut BindHolder>,
 }
 
+pub struct StateWatchRegistration {
+    pub watch_id: i32,
+    pub user_data: *mut StateWatchHolder,
+}
+
 pub unsafe extern "C" fn bind_trampoline(
     args_json: *const c_char,
     user_data: *mut c_void,
@@ -98,6 +108,19 @@ pub unsafe extern "C" fn bind_async_trampoline(
     let c_text = CString::new(text)
         .unwrap_or_else(|_| CString::new("{\"error\":\"interior nul\"}").unwrap());
     mbink_sys::mbink_copy_string(c_text.as_ptr())
+}
+
+pub unsafe extern "C" fn state_watch_trampoline(
+    name: *const c_char,
+    value_json: *const c_char,
+    user_data: *mut c_void,
+) {
+    let holder = &*(user_data as *mut StateWatchHolder);
+    let _ = catch_unwind(AssertUnwindSafe(|| {
+        let name = string_from_const_ptr(name).unwrap_or_default();
+        let value = parse_json_arg(value_json);
+        (holder.callback)(&name, value);
+    }));
 }
 
 pub unsafe extern "C" fn resize_trampoline(width: i32, height: i32, user_data: *mut c_void) {

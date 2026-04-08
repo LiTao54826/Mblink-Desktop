@@ -1,6 +1,7 @@
 mod app;
 mod callback;
 mod config;
+mod controls;
 mod error;
 mod resources;
 mod shared;
@@ -9,6 +10,7 @@ mod util;
 
 pub use app::App;
 pub use config::AppBuilder;
+pub use controls::{LogView, Terminal};
 pub use error::{Error, Result};
 pub use resources::{compile_resources, load_resource_file, ResourceFile, RESOURCE_FLAG_BYTECODE};
 pub use shared::{Shared, SharedBatch};

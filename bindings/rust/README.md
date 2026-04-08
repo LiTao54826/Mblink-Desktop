@@ -177,7 +177,20 @@ Use `RESOURCE_FLAG_BYTECODE` or `ResourceFile::is_bytecode()` to detect whether 
   - `App::mount_resource_package`
   - `load_resource_file`
 - state read/write helpers
+  - `create_*` helpers
+  - `get_length` / `get_at` / `get_key`
+  - `array_*` helpers
+  - `object_*` helpers
+  - `increment` / `multiply`
+  - `string_append` / `string_prepend`
+  - `set_merge_mode` / `process_queue` / `queue_size`
+- state watch helpers:
+  - `App::watch_state`
+  - `App::unwatch_state`
 - shared object read/write helpers
+- control helpers:
+  - `App::logview` with `LogView::{append, clear, export}`
+  - `App::terminal` with `Terminal::{write, clear, execute, start_shell, send_input, resize, serialize}`
 - `bind` / `bind_async` / `unbind`
 - DevTools helpers:
   - `devtools_open`

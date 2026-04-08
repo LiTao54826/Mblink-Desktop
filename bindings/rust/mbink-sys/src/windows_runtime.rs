@@ -8,8 +8,8 @@ use std::sync::OnceLock;
 
 use super::{
     MBinkAsyncCallback, MBinkBoolCallback, MBinkCallback, MBinkConfig, MBinkHandle,
-    MBinkResizeCallback, MBinkSharedHandle, MBinkType, MBinkUpdateCallback,
-    MBinkVoidCallback,
+    MBinkLogViewHandle, MBinkResizeCallback, MBinkSharedHandle, MBinkStateCallback,
+    MBinkTerminalHandle, MBinkType, MBinkUpdateCallback, MBinkVoidCallback,
 };
 
 type MBinkLoadResourceFileFn = unsafe extern "C" fn(
@@ -68,6 +68,14 @@ struct Api {
     mbink_emit: unsafe extern "C" fn(MBinkHandle, *const c_char, *const c_char) -> c_int,
     mbink_devtools_open: unsafe extern "C" fn(MBinkHandle) -> c_int,
     mbink_devtools_close: unsafe extern "C" fn(MBinkHandle) -> c_int,
+    mbink_state_create_null: unsafe extern "C" fn(MBinkHandle, *const c_char) -> c_int,
+    mbink_state_create_bool: unsafe extern "C" fn(MBinkHandle, *const c_char, bool) -> c_int,
+    mbink_state_create_int: unsafe extern "C" fn(MBinkHandle, *const c_char, i64) -> c_int,
+    mbink_state_create_double: unsafe extern "C" fn(MBinkHandle, *const c_char, f64) -> c_int,
+    mbink_state_create_string: unsafe extern "C" fn(MBinkHandle, *const c_char, *const c_char) -> c_int,
+    mbink_state_create_array: unsafe extern "C" fn(MBinkHandle, *const c_char) -> c_int,
+    mbink_state_create_object: unsafe extern "C" fn(MBinkHandle, *const c_char) -> c_int,
+    mbink_state_create_json: unsafe extern "C" fn(MBinkHandle, *const c_char, *const c_char) -> c_int,
     mbink_bind: unsafe extern "C" fn(MBinkHandle, *const c_char, MBinkCallback, *mut c_void) -> c_int,
     mbink_bind_async: unsafe extern "C" fn(MBinkHandle, *const c_char, MBinkAsyncCallback, *mut c_void) -> c_int,
     mbink_unbind: unsafe extern "C" fn(MBinkHandle, *const c_char),
@@ -84,15 +92,48 @@ struct Api {
     mbink_state_get_int: unsafe extern "C" fn(MBinkHandle, *const c_char) -> i64,
     mbink_state_get_double: unsafe extern "C" fn(MBinkHandle, *const c_char) -> f64,
     mbink_state_get_string: unsafe extern "C" fn(MBinkHandle, *const c_char) -> *const c_char,
+    mbink_state_get_length: unsafe extern "C" fn(MBinkHandle, *const c_char) -> c_int,
     mbink_state_get_json: unsafe extern "C" fn(MBinkHandle, *const c_char) -> *mut c_char,
+    mbink_state_get_at: unsafe extern "C" fn(MBinkHandle, *const c_char, c_int) -> *mut c_char,
+    mbink_state_get_key: unsafe extern "C" fn(MBinkHandle, *const c_char, *const c_char) -> *mut c_char,
     mbink_state_set_null: unsafe extern "C" fn(MBinkHandle, *const c_char) -> c_int,
     mbink_state_set_bool: unsafe extern "C" fn(MBinkHandle, *const c_char, bool) -> c_int,
     mbink_state_set_int: unsafe extern "C" fn(MBinkHandle, *const c_char, i64) -> c_int,
     mbink_state_set_double: unsafe extern "C" fn(MBinkHandle, *const c_char, f64) -> c_int,
     mbink_state_set_string: unsafe extern "C" fn(MBinkHandle, *const c_char, *const c_char) -> c_int,
     mbink_state_set_json: unsafe extern "C" fn(MBinkHandle, *const c_char, *const c_char) -> c_int,
+    mbink_state_array_push: unsafe extern "C" fn(MBinkHandle, *const c_char, *const c_char) -> c_int,
+    mbink_state_array_push_int: unsafe extern "C" fn(MBinkHandle, *const c_char, i64) -> c_int,
+    mbink_state_array_push_double: unsafe extern "C" fn(MBinkHandle, *const c_char, f64) -> c_int,
+    mbink_state_array_push_string: unsafe extern "C" fn(MBinkHandle, *const c_char, *const c_char) -> c_int,
+    mbink_state_array_push_bool: unsafe extern "C" fn(MBinkHandle, *const c_char, bool) -> c_int,
+    mbink_state_array_pop: unsafe extern "C" fn(MBinkHandle, *const c_char) -> c_int,
+    mbink_state_array_shift: unsafe extern "C" fn(MBinkHandle, *const c_char) -> c_int,
+    mbink_state_array_unshift: unsafe extern "C" fn(MBinkHandle, *const c_char, *const c_char) -> c_int,
+    mbink_state_array_remove: unsafe extern "C" fn(MBinkHandle, *const c_char, c_int) -> c_int,
+    mbink_state_array_clear: unsafe extern "C" fn(MBinkHandle, *const c_char) -> c_int,
+    mbink_state_array_set: unsafe extern "C" fn(MBinkHandle, *const c_char, c_int, *const c_char) -> c_int,
+    mbink_state_array_set_int: unsafe extern "C" fn(MBinkHandle, *const c_char, c_int, i64) -> c_int,
+    mbink_state_array_set_double: unsafe extern "C" fn(MBinkHandle, *const c_char, c_int, f64) -> c_int,
+    mbink_state_array_set_string: unsafe extern "C" fn(MBinkHandle, *const c_char, c_int, *const c_char) -> c_int,
+    mbink_state_object_set: unsafe extern "C" fn(MBinkHandle, *const c_char, *const c_char, *const c_char) -> c_int,
+    mbink_state_object_set_int: unsafe extern "C" fn(MBinkHandle, *const c_char, *const c_char, i64) -> c_int,
+    mbink_state_object_set_double: unsafe extern "C" fn(MBinkHandle, *const c_char, *const c_char, f64) -> c_int,
+    mbink_state_object_set_string: unsafe extern "C" fn(MBinkHandle, *const c_char, *const c_char, *const c_char) -> c_int,
+    mbink_state_object_set_bool: unsafe extern "C" fn(MBinkHandle, *const c_char, *const c_char, bool) -> c_int,
+    mbink_state_object_remove: unsafe extern "C" fn(MBinkHandle, *const c_char, *const c_char) -> c_int,
+    mbink_state_object_clear: unsafe extern "C" fn(MBinkHandle, *const c_char) -> c_int,
+    mbink_state_increment: unsafe extern "C" fn(MBinkHandle, *const c_char, f64) -> c_int,
+    mbink_state_multiply: unsafe extern "C" fn(MBinkHandle, *const c_char, f64) -> c_int,
+    mbink_state_string_append: unsafe extern "C" fn(MBinkHandle, *const c_char, *const c_char) -> c_int,
+    mbink_state_string_prepend: unsafe extern "C" fn(MBinkHandle, *const c_char, *const c_char) -> c_int,
+    mbink_state_watch: unsafe extern "C" fn(MBinkHandle, *const c_char, MBinkStateCallback, *mut c_void) -> c_int,
+    mbink_state_unwatch: unsafe extern "C" fn(MBinkHandle, c_int),
     mbink_state_batch_begin: unsafe extern "C" fn(MBinkHandle),
     mbink_state_batch_end: unsafe extern "C" fn(MBinkHandle),
+    mbink_state_set_merge_mode: unsafe extern "C" fn(MBinkHandle, bool),
+    mbink_process_queue: unsafe extern "C" fn(MBinkHandle) -> c_int,
+    mbink_queue_size: unsafe extern "C" fn(MBinkHandle) -> c_int,
     mbink_shared_create: unsafe extern "C" fn(MBinkHandle, *const c_char) -> MBinkSharedHandle,
     mbink_shared_destroy: unsafe extern "C" fn(MBinkSharedHandle),
     mbink_shared_set_int: unsafe extern "C" fn(MBinkSharedHandle, *const c_char, i64) -> c_int,
@@ -111,6 +152,20 @@ struct Api {
     mbink_shared_has: unsafe extern "C" fn(MBinkSharedHandle, *const c_char) -> bool,
     mbink_shared_batch_begin: unsafe extern "C" fn(MBinkSharedHandle),
     mbink_shared_batch_end: unsafe extern "C" fn(MBinkSharedHandle),
+    mbink_logview_get: unsafe extern "C" fn(MBinkHandle, *const c_char) -> MBinkLogViewHandle,
+    mbink_logview_destroy: unsafe extern "C" fn(MBinkLogViewHandle),
+    mbink_logview_append: unsafe extern "C" fn(MBinkLogViewHandle, *const c_char, *const c_char, *const c_char) -> c_int,
+    mbink_logview_clear: unsafe extern "C" fn(MBinkLogViewHandle),
+    mbink_logview_export: unsafe extern "C" fn(MBinkLogViewHandle, *const c_char) -> *mut c_char,
+    mbink_terminal_get: unsafe extern "C" fn(MBinkHandle, *const c_char) -> MBinkTerminalHandle,
+    mbink_terminal_destroy: unsafe extern "C" fn(MBinkTerminalHandle),
+    mbink_terminal_write: unsafe extern "C" fn(MBinkTerminalHandle, *const c_char) -> c_int,
+    mbink_terminal_clear: unsafe extern "C" fn(MBinkTerminalHandle),
+    mbink_terminal_execute: unsafe extern "C" fn(MBinkTerminalHandle, *const c_char) -> c_int,
+    mbink_terminal_start_shell: unsafe extern "C" fn(MBinkTerminalHandle, *const c_char) -> c_int,
+    mbink_terminal_send_input: unsafe extern "C" fn(MBinkTerminalHandle, *const c_char) -> c_int,
+    mbink_terminal_resize: unsafe extern "C" fn(MBinkTerminalHandle, c_int, c_int),
+    mbink_terminal_serialize: unsafe extern "C" fn(MBinkTerminalHandle) -> *mut c_char,
     mbink_copy_string: unsafe extern "C" fn(*const c_char) -> *mut c_char,
     mbink_free: unsafe extern "C" fn(*mut c_void),
 }
@@ -184,6 +239,14 @@ unsafe fn load_api() -> Api {
     let mbink_emit = load!(b"mbink_emit\0", unsafe extern "C" fn(MBinkHandle, *const c_char, *const c_char) -> c_int);
     let mbink_devtools_open = load!(b"mbink_devtools_open\0", unsafe extern "C" fn(MBinkHandle) -> c_int);
     let mbink_devtools_close = load!(b"mbink_devtools_close\0", unsafe extern "C" fn(MBinkHandle) -> c_int);
+    let mbink_state_create_null = load!(b"mbink_state_create_null\0", unsafe extern "C" fn(MBinkHandle, *const c_char) -> c_int);
+    let mbink_state_create_bool = load!(b"mbink_state_create_bool\0", unsafe extern "C" fn(MBinkHandle, *const c_char, bool) -> c_int);
+    let mbink_state_create_int = load!(b"mbink_state_create_int\0", unsafe extern "C" fn(MBinkHandle, *const c_char, i64) -> c_int);
+    let mbink_state_create_double = load!(b"mbink_state_create_double\0", unsafe extern "C" fn(MBinkHandle, *const c_char, f64) -> c_int);
+    let mbink_state_create_string = load!(b"mbink_state_create_string\0", unsafe extern "C" fn(MBinkHandle, *const c_char, *const c_char) -> c_int);
+    let mbink_state_create_array = load!(b"mbink_state_create_array\0", unsafe extern "C" fn(MBinkHandle, *const c_char) -> c_int);
+    let mbink_state_create_object = load!(b"mbink_state_create_object\0", unsafe extern "C" fn(MBinkHandle, *const c_char) -> c_int);
+    let mbink_state_create_json = load!(b"mbink_state_create_json\0", unsafe extern "C" fn(MBinkHandle, *const c_char, *const c_char) -> c_int);
     let mbink_bind = load!(b"mbink_bind\0", unsafe extern "C" fn(MBinkHandle, *const c_char, MBinkCallback, *mut c_void) -> c_int);
     let mbink_bind_async = load!(b"mbink_bind_async\0", unsafe extern "C" fn(MBinkHandle, *const c_char, MBinkAsyncCallback, *mut c_void) -> c_int);
     let mbink_unbind = load!(b"mbink_unbind\0", unsafe extern "C" fn(MBinkHandle, *const c_char));
@@ -200,15 +263,48 @@ unsafe fn load_api() -> Api {
     let mbink_state_get_int = load!(b"mbink_state_get_int\0", unsafe extern "C" fn(MBinkHandle, *const c_char) -> i64);
     let mbink_state_get_double = load!(b"mbink_state_get_double\0", unsafe extern "C" fn(MBinkHandle, *const c_char) -> f64);
     let mbink_state_get_string = load!(b"mbink_state_get_string\0", unsafe extern "C" fn(MBinkHandle, *const c_char) -> *const c_char);
+    let mbink_state_get_length = load!(b"mbink_state_get_length\0", unsafe extern "C" fn(MBinkHandle, *const c_char) -> c_int);
     let mbink_state_get_json = load!(b"mbink_state_get_json\0", unsafe extern "C" fn(MBinkHandle, *const c_char) -> *mut c_char);
+    let mbink_state_get_at = load!(b"mbink_state_get_at\0", unsafe extern "C" fn(MBinkHandle, *const c_char, c_int) -> *mut c_char);
+    let mbink_state_get_key = load!(b"mbink_state_get_key\0", unsafe extern "C" fn(MBinkHandle, *const c_char, *const c_char) -> *mut c_char);
     let mbink_state_set_null = load!(b"mbink_state_set_null\0", unsafe extern "C" fn(MBinkHandle, *const c_char) -> c_int);
     let mbink_state_set_bool = load!(b"mbink_state_set_bool\0", unsafe extern "C" fn(MBinkHandle, *const c_char, bool) -> c_int);
     let mbink_state_set_int = load!(b"mbink_state_set_int\0", unsafe extern "C" fn(MBinkHandle, *const c_char, i64) -> c_int);
     let mbink_state_set_double = load!(b"mbink_state_set_double\0", unsafe extern "C" fn(MBinkHandle, *const c_char, f64) -> c_int);
     let mbink_state_set_string = load!(b"mbink_state_set_string\0", unsafe extern "C" fn(MBinkHandle, *const c_char, *const c_char) -> c_int);
     let mbink_state_set_json = load!(b"mbink_state_set_json\0", unsafe extern "C" fn(MBinkHandle, *const c_char, *const c_char) -> c_int);
+    let mbink_state_array_push = load!(b"mbink_state_array_push\0", unsafe extern "C" fn(MBinkHandle, *const c_char, *const c_char) -> c_int);
+    let mbink_state_array_push_int = load!(b"mbink_state_array_push_int\0", unsafe extern "C" fn(MBinkHandle, *const c_char, i64) -> c_int);
+    let mbink_state_array_push_double = load!(b"mbink_state_array_push_double\0", unsafe extern "C" fn(MBinkHandle, *const c_char, f64) -> c_int);
+    let mbink_state_array_push_string = load!(b"mbink_state_array_push_string\0", unsafe extern "C" fn(MBinkHandle, *const c_char, *const c_char) -> c_int);
+    let mbink_state_array_push_bool = load!(b"mbink_state_array_push_bool\0", unsafe extern "C" fn(MBinkHandle, *const c_char, bool) -> c_int);
+    let mbink_state_array_pop = load!(b"mbink_state_array_pop\0", unsafe extern "C" fn(MBinkHandle, *const c_char) -> c_int);
+    let mbink_state_array_shift = load!(b"mbink_state_array_shift\0", unsafe extern "C" fn(MBinkHandle, *const c_char) -> c_int);
+    let mbink_state_array_unshift = load!(b"mbink_state_array_unshift\0", unsafe extern "C" fn(MBinkHandle, *const c_char, *const c_char) -> c_int);
+    let mbink_state_array_remove = load!(b"mbink_state_array_remove\0", unsafe extern "C" fn(MBinkHandle, *const c_char, c_int) -> c_int);
+    let mbink_state_array_clear = load!(b"mbink_state_array_clear\0", unsafe extern "C" fn(MBinkHandle, *const c_char) -> c_int);
+    let mbink_state_array_set = load!(b"mbink_state_array_set\0", unsafe extern "C" fn(MBinkHandle, *const c_char, c_int, *const c_char) -> c_int);
+    let mbink_state_array_set_int = load!(b"mbink_state_array_set_int\0", unsafe extern "C" fn(MBinkHandle, *const c_char, c_int, i64) -> c_int);
+    let mbink_state_array_set_double = load!(b"mbink_state_array_set_double\0", unsafe extern "C" fn(MBinkHandle, *const c_char, c_int, f64) -> c_int);
+    let mbink_state_array_set_string = load!(b"mbink_state_array_set_string\0", unsafe extern "C" fn(MBinkHandle, *const c_char, c_int, *const c_char) -> c_int);
+    let mbink_state_object_set = load!(b"mbink_state_object_set\0", unsafe extern "C" fn(MBinkHandle, *const c_char, *const c_char, *const c_char) -> c_int);
+    let mbink_state_object_set_int = load!(b"mbink_state_object_set_int\0", unsafe extern "C" fn(MBinkHandle, *const c_char, *const c_char, i64) -> c_int);
+    let mbink_state_object_set_double = load!(b"mbink_state_object_set_double\0", unsafe extern "C" fn(MBinkHandle, *const c_char, *const c_char, f64) -> c_int);
+    let mbink_state_object_set_string = load!(b"mbink_state_object_set_string\0", unsafe extern "C" fn(MBinkHandle, *const c_char, *const c_char, *const c_char) -> c_int);
+    let mbink_state_object_set_bool = load!(b"mbink_state_object_set_bool\0", unsafe extern "C" fn(MBinkHandle, *const c_char, *const c_char, bool) -> c_int);
+    let mbink_state_object_remove = load!(b"mbink_state_object_remove\0", unsafe extern "C" fn(MBinkHandle, *const c_char, *const c_char) -> c_int);
+    let mbink_state_object_clear = load!(b"mbink_state_object_clear\0", unsafe extern "C" fn(MBinkHandle, *const c_char) -> c_int);
+    let mbink_state_increment = load!(b"mbink_state_increment\0", unsafe extern "C" fn(MBinkHandle, *const c_char, f64) -> c_int);
+    let mbink_state_multiply = load!(b"mbink_state_multiply\0", unsafe extern "C" fn(MBinkHandle, *const c_char, f64) -> c_int);
+    let mbink_state_string_append = load!(b"mbink_state_string_append\0", unsafe extern "C" fn(MBinkHandle, *const c_char, *const c_char) -> c_int);
+    let mbink_state_string_prepend = load!(b"mbink_state_string_prepend\0", unsafe extern "C" fn(MBinkHandle, *const c_char, *const c_char) -> c_int);
+    let mbink_state_watch = load!(b"mbink_state_watch\0", unsafe extern "C" fn(MBinkHandle, *const c_char, MBinkStateCallback, *mut c_void) -> c_int);
+    let mbink_state_unwatch = load!(b"mbink_state_unwatch\0", unsafe extern "C" fn(MBinkHandle, c_int));
     let mbink_state_batch_begin = load!(b"mbink_state_batch_begin\0", unsafe extern "C" fn(MBinkHandle));
     let mbink_state_batch_end = load!(b"mbink_state_batch_end\0", unsafe extern "C" fn(MBinkHandle));
+    let mbink_state_set_merge_mode = load!(b"mbink_state_set_merge_mode\0", unsafe extern "C" fn(MBinkHandle, bool));
+    let mbink_process_queue = load!(b"mbink_process_queue\0", unsafe extern "C" fn(MBinkHandle) -> c_int);
+    let mbink_queue_size = load!(b"mbink_queue_size\0", unsafe extern "C" fn(MBinkHandle) -> c_int);
     let mbink_shared_create = load!(b"mbink_shared_create\0", unsafe extern "C" fn(MBinkHandle, *const c_char) -> MBinkSharedHandle);
     let mbink_shared_destroy = load!(b"mbink_shared_destroy\0", unsafe extern "C" fn(MBinkSharedHandle));
     let mbink_shared_set_int = load!(b"mbink_shared_set_int\0", unsafe extern "C" fn(MBinkSharedHandle, *const c_char, i64) -> c_int);
@@ -227,6 +323,20 @@ unsafe fn load_api() -> Api {
     let mbink_shared_has = load!(b"mbink_shared_has\0", unsafe extern "C" fn(MBinkSharedHandle, *const c_char) -> bool);
     let mbink_shared_batch_begin = load!(b"mbink_shared_batch_begin\0", unsafe extern "C" fn(MBinkSharedHandle));
     let mbink_shared_batch_end = load!(b"mbink_shared_batch_end\0", unsafe extern "C" fn(MBinkSharedHandle));
+    let mbink_logview_get = load!(b"mbink_logview_get\0", unsafe extern "C" fn(MBinkHandle, *const c_char) -> MBinkLogViewHandle);
+    let mbink_logview_destroy = load!(b"mbink_logview_destroy\0", unsafe extern "C" fn(MBinkLogViewHandle));
+    let mbink_logview_append = load!(b"mbink_logview_append\0", unsafe extern "C" fn(MBinkLogViewHandle, *const c_char, *const c_char, *const c_char) -> c_int);
+    let mbink_logview_clear = load!(b"mbink_logview_clear\0", unsafe extern "C" fn(MBinkLogViewHandle));
+    let mbink_logview_export = load!(b"mbink_logview_export\0", unsafe extern "C" fn(MBinkLogViewHandle, *const c_char) -> *mut c_char);
+    let mbink_terminal_get = load!(b"mbink_terminal_get\0", unsafe extern "C" fn(MBinkHandle, *const c_char) -> MBinkTerminalHandle);
+    let mbink_terminal_destroy = load!(b"mbink_terminal_destroy\0", unsafe extern "C" fn(MBinkTerminalHandle));
+    let mbink_terminal_write = load!(b"mbink_terminal_write\0", unsafe extern "C" fn(MBinkTerminalHandle, *const c_char) -> c_int);
+    let mbink_terminal_clear = load!(b"mbink_terminal_clear\0", unsafe extern "C" fn(MBinkTerminalHandle));
+    let mbink_terminal_execute = load!(b"mbink_terminal_execute\0", unsafe extern "C" fn(MBinkTerminalHandle, *const c_char) -> c_int);
+    let mbink_terminal_start_shell = load!(b"mbink_terminal_start_shell\0", unsafe extern "C" fn(MBinkTerminalHandle, *const c_char) -> c_int);
+    let mbink_terminal_send_input = load!(b"mbink_terminal_send_input\0", unsafe extern "C" fn(MBinkTerminalHandle, *const c_char) -> c_int);
+    let mbink_terminal_resize = load!(b"mbink_terminal_resize\0", unsafe extern "C" fn(MBinkTerminalHandle, c_int, c_int));
+    let mbink_terminal_serialize = load!(b"mbink_terminal_serialize\0", unsafe extern "C" fn(MBinkTerminalHandle) -> *mut c_char);
     let mbink_copy_string = load!(b"mbink_copy_string\0", unsafe extern "C" fn(*const c_char) -> *mut c_char);
     let mbink_free = load!(b"mbink_free\0", unsafe extern "C" fn(*mut c_void));
 
@@ -277,6 +387,14 @@ unsafe fn load_api() -> Api {
         mbink_emit,
         mbink_devtools_open,
         mbink_devtools_close,
+        mbink_state_create_null,
+        mbink_state_create_bool,
+        mbink_state_create_int,
+        mbink_state_create_double,
+        mbink_state_create_string,
+        mbink_state_create_array,
+        mbink_state_create_object,
+        mbink_state_create_json,
         mbink_bind,
         mbink_bind_async,
         mbink_unbind,
@@ -293,15 +411,48 @@ unsafe fn load_api() -> Api {
         mbink_state_get_int,
         mbink_state_get_double,
         mbink_state_get_string,
+        mbink_state_get_length,
         mbink_state_get_json,
+        mbink_state_get_at,
+        mbink_state_get_key,
         mbink_state_set_null,
         mbink_state_set_bool,
         mbink_state_set_int,
         mbink_state_set_double,
         mbink_state_set_string,
         mbink_state_set_json,
+        mbink_state_array_push,
+        mbink_state_array_push_int,
+        mbink_state_array_push_double,
+        mbink_state_array_push_string,
+        mbink_state_array_push_bool,
+        mbink_state_array_pop,
+        mbink_state_array_shift,
+        mbink_state_array_unshift,
+        mbink_state_array_remove,
+        mbink_state_array_clear,
+        mbink_state_array_set,
+        mbink_state_array_set_int,
+        mbink_state_array_set_double,
+        mbink_state_array_set_string,
+        mbink_state_object_set,
+        mbink_state_object_set_int,
+        mbink_state_object_set_double,
+        mbink_state_object_set_string,
+        mbink_state_object_set_bool,
+        mbink_state_object_remove,
+        mbink_state_object_clear,
+        mbink_state_increment,
+        mbink_state_multiply,
+        mbink_state_string_append,
+        mbink_state_string_prepend,
+        mbink_state_watch,
+        mbink_state_unwatch,
         mbink_state_batch_begin,
         mbink_state_batch_end,
+        mbink_state_set_merge_mode,
+        mbink_process_queue,
+        mbink_queue_size,
         mbink_shared_create,
         mbink_shared_destroy,
         mbink_shared_set_int,
@@ -320,6 +471,20 @@ unsafe fn load_api() -> Api {
         mbink_shared_has,
         mbink_shared_batch_begin,
         mbink_shared_batch_end,
+        mbink_logview_get,
+        mbink_logview_destroy,
+        mbink_logview_append,
+        mbink_logview_clear,
+        mbink_logview_export,
+        mbink_terminal_get,
+        mbink_terminal_destroy,
+        mbink_terminal_write,
+        mbink_terminal_clear,
+        mbink_terminal_execute,
+        mbink_terminal_start_shell,
+        mbink_terminal_send_input,
+        mbink_terminal_resize,
+        mbink_terminal_serialize,
         mbink_copy_string,
         mbink_free,
     }
@@ -395,6 +560,14 @@ pub unsafe fn mbink_mount_resource_package(handle: MBinkHandle, package_file: *c
 pub unsafe fn mbink_emit(handle: MBinkHandle, event_name: *const c_char, data_json: *const c_char) -> c_int { (api().mbink_emit)(handle, event_name, data_json) }
 pub unsafe fn mbink_devtools_open(handle: MBinkHandle) -> c_int { (api().mbink_devtools_open)(handle) }
 pub unsafe fn mbink_devtools_close(handle: MBinkHandle) -> c_int { (api().mbink_devtools_close)(handle) }
+pub unsafe fn mbink_state_create_null(handle: MBinkHandle, name: *const c_char) -> c_int { (api().mbink_state_create_null)(handle, name) }
+pub unsafe fn mbink_state_create_bool(handle: MBinkHandle, name: *const c_char, value: bool) -> c_int { (api().mbink_state_create_bool)(handle, name, value) }
+pub unsafe fn mbink_state_create_int(handle: MBinkHandle, name: *const c_char, value: i64) -> c_int { (api().mbink_state_create_int)(handle, name, value) }
+pub unsafe fn mbink_state_create_double(handle: MBinkHandle, name: *const c_char, value: f64) -> c_int { (api().mbink_state_create_double)(handle, name, value) }
+pub unsafe fn mbink_state_create_string(handle: MBinkHandle, name: *const c_char, value: *const c_char) -> c_int { (api().mbink_state_create_string)(handle, name, value) }
+pub unsafe fn mbink_state_create_array(handle: MBinkHandle, name: *const c_char) -> c_int { (api().mbink_state_create_array)(handle, name) }
+pub unsafe fn mbink_state_create_object(handle: MBinkHandle, name: *const c_char) -> c_int { (api().mbink_state_create_object)(handle, name) }
+pub unsafe fn mbink_state_create_json(handle: MBinkHandle, name: *const c_char, json: *const c_char) -> c_int { (api().mbink_state_create_json)(handle, name, json) }
 pub unsafe fn mbink_bind(handle: MBinkHandle, name: *const c_char, callback: MBinkCallback, user_data: *mut c_void) -> c_int { (api().mbink_bind)(handle, name, callback, user_data) }
 pub unsafe fn mbink_bind_async(handle: MBinkHandle, name: *const c_char, callback: MBinkAsyncCallback, user_data: *mut c_void) -> c_int { (api().mbink_bind_async)(handle, name, callback, user_data) }
 pub unsafe fn mbink_unbind(handle: MBinkHandle, name: *const c_char) { (api().mbink_unbind)(handle, name) }
@@ -411,15 +584,48 @@ pub unsafe fn mbink_state_get_bool(handle: MBinkHandle, name: *const c_char) -> 
 pub unsafe fn mbink_state_get_int(handle: MBinkHandle, name: *const c_char) -> i64 { (api().mbink_state_get_int)(handle, name) }
 pub unsafe fn mbink_state_get_double(handle: MBinkHandle, name: *const c_char) -> f64 { (api().mbink_state_get_double)(handle, name) }
 pub unsafe fn mbink_state_get_string(handle: MBinkHandle, name: *const c_char) -> *const c_char { (api().mbink_state_get_string)(handle, name) }
+pub unsafe fn mbink_state_get_length(handle: MBinkHandle, name: *const c_char) -> c_int { (api().mbink_state_get_length)(handle, name) }
 pub unsafe fn mbink_state_get_json(handle: MBinkHandle, name: *const c_char) -> *mut c_char { (api().mbink_state_get_json)(handle, name) }
+pub unsafe fn mbink_state_get_at(handle: MBinkHandle, name: *const c_char, index: c_int) -> *mut c_char { (api().mbink_state_get_at)(handle, name, index) }
+pub unsafe fn mbink_state_get_key(handle: MBinkHandle, name: *const c_char, key: *const c_char) -> *mut c_char { (api().mbink_state_get_key)(handle, name, key) }
 pub unsafe fn mbink_state_set_null(handle: MBinkHandle, name: *const c_char) -> c_int { (api().mbink_state_set_null)(handle, name) }
 pub unsafe fn mbink_state_set_bool(handle: MBinkHandle, name: *const c_char, value: bool) -> c_int { (api().mbink_state_set_bool)(handle, name, value) }
 pub unsafe fn mbink_state_set_int(handle: MBinkHandle, name: *const c_char, value: i64) -> c_int { (api().mbink_state_set_int)(handle, name, value) }
 pub unsafe fn mbink_state_set_double(handle: MBinkHandle, name: *const c_char, value: f64) -> c_int { (api().mbink_state_set_double)(handle, name, value) }
 pub unsafe fn mbink_state_set_string(handle: MBinkHandle, name: *const c_char, value: *const c_char) -> c_int { (api().mbink_state_set_string)(handle, name, value) }
 pub unsafe fn mbink_state_set_json(handle: MBinkHandle, name: *const c_char, json: *const c_char) -> c_int { (api().mbink_state_set_json)(handle, name, json) }
+pub unsafe fn mbink_state_array_push(handle: MBinkHandle, name: *const c_char, item_json: *const c_char) -> c_int { (api().mbink_state_array_push)(handle, name, item_json) }
+pub unsafe fn mbink_state_array_push_int(handle: MBinkHandle, name: *const c_char, value: i64) -> c_int { (api().mbink_state_array_push_int)(handle, name, value) }
+pub unsafe fn mbink_state_array_push_double(handle: MBinkHandle, name: *const c_char, value: f64) -> c_int { (api().mbink_state_array_push_double)(handle, name, value) }
+pub unsafe fn mbink_state_array_push_string(handle: MBinkHandle, name: *const c_char, value: *const c_char) -> c_int { (api().mbink_state_array_push_string)(handle, name, value) }
+pub unsafe fn mbink_state_array_push_bool(handle: MBinkHandle, name: *const c_char, value: bool) -> c_int { (api().mbink_state_array_push_bool)(handle, name, value) }
+pub unsafe fn mbink_state_array_pop(handle: MBinkHandle, name: *const c_char) -> c_int { (api().mbink_state_array_pop)(handle, name) }
+pub unsafe fn mbink_state_array_shift(handle: MBinkHandle, name: *const c_char) -> c_int { (api().mbink_state_array_shift)(handle, name) }
+pub unsafe fn mbink_state_array_unshift(handle: MBinkHandle, name: *const c_char, item_json: *const c_char) -> c_int { (api().mbink_state_array_unshift)(handle, name, item_json) }
+pub unsafe fn mbink_state_array_remove(handle: MBinkHandle, name: *const c_char, index: c_int) -> c_int { (api().mbink_state_array_remove)(handle, name, index) }
+pub unsafe fn mbink_state_array_clear(handle: MBinkHandle, name: *const c_char) -> c_int { (api().mbink_state_array_clear)(handle, name) }
+pub unsafe fn mbink_state_array_set(handle: MBinkHandle, name: *const c_char, index: c_int, item_json: *const c_char) -> c_int { (api().mbink_state_array_set)(handle, name, index, item_json) }
+pub unsafe fn mbink_state_array_set_int(handle: MBinkHandle, name: *const c_char, index: c_int, value: i64) -> c_int { (api().mbink_state_array_set_int)(handle, name, index, value) }
+pub unsafe fn mbink_state_array_set_double(handle: MBinkHandle, name: *const c_char, index: c_int, value: f64) -> c_int { (api().mbink_state_array_set_double)(handle, name, index, value) }
+pub unsafe fn mbink_state_array_set_string(handle: MBinkHandle, name: *const c_char, index: c_int, value: *const c_char) -> c_int { (api().mbink_state_array_set_string)(handle, name, index, value) }
+pub unsafe fn mbink_state_object_set(handle: MBinkHandle, name: *const c_char, key: *const c_char, value_json: *const c_char) -> c_int { (api().mbink_state_object_set)(handle, name, key, value_json) }
+pub unsafe fn mbink_state_object_set_int(handle: MBinkHandle, name: *const c_char, key: *const c_char, value: i64) -> c_int { (api().mbink_state_object_set_int)(handle, name, key, value) }
+pub unsafe fn mbink_state_object_set_double(handle: MBinkHandle, name: *const c_char, key: *const c_char, value: f64) -> c_int { (api().mbink_state_object_set_double)(handle, name, key, value) }
+pub unsafe fn mbink_state_object_set_string(handle: MBinkHandle, name: *const c_char, key: *const c_char, value: *const c_char) -> c_int { (api().mbink_state_object_set_string)(handle, name, key, value) }
+pub unsafe fn mbink_state_object_set_bool(handle: MBinkHandle, name: *const c_char, key: *const c_char, value: bool) -> c_int { (api().mbink_state_object_set_bool)(handle, name, key, value) }
+pub unsafe fn mbink_state_object_remove(handle: MBinkHandle, name: *const c_char, key: *const c_char) -> c_int { (api().mbink_state_object_remove)(handle, name, key) }
+pub unsafe fn mbink_state_object_clear(handle: MBinkHandle, name: *const c_char) -> c_int { (api().mbink_state_object_clear)(handle, name) }
+pub unsafe fn mbink_state_increment(handle: MBinkHandle, name: *const c_char, delta: f64) -> c_int { (api().mbink_state_increment)(handle, name, delta) }
+pub unsafe fn mbink_state_multiply(handle: MBinkHandle, name: *const c_char, factor: f64) -> c_int { (api().mbink_state_multiply)(handle, name, factor) }
+pub unsafe fn mbink_state_string_append(handle: MBinkHandle, name: *const c_char, suffix: *const c_char) -> c_int { (api().mbink_state_string_append)(handle, name, suffix) }
+pub unsafe fn mbink_state_string_prepend(handle: MBinkHandle, name: *const c_char, prefix: *const c_char) -> c_int { (api().mbink_state_string_prepend)(handle, name, prefix) }
+pub unsafe fn mbink_state_watch(handle: MBinkHandle, name: *const c_char, callback: MBinkStateCallback, user_data: *mut c_void) -> c_int { (api().mbink_state_watch)(handle, name, callback, user_data) }
+pub unsafe fn mbink_state_unwatch(handle: MBinkHandle, watch_id: c_int) { (api().mbink_state_unwatch)(handle, watch_id) }
 pub unsafe fn mbink_state_batch_begin(handle: MBinkHandle) { (api().mbink_state_batch_begin)(handle) }
 pub unsafe fn mbink_state_batch_end(handle: MBinkHandle) { (api().mbink_state_batch_end)(handle) }
+pub unsafe fn mbink_state_set_merge_mode(handle: MBinkHandle, enable: bool) { (api().mbink_state_set_merge_mode)(handle, enable) }
+pub unsafe fn mbink_process_queue(handle: MBinkHandle) -> c_int { (api().mbink_process_queue)(handle) }
+pub unsafe fn mbink_queue_size(handle: MBinkHandle) -> c_int { (api().mbink_queue_size)(handle) }
 pub unsafe fn mbink_shared_create(handle: MBinkHandle, name: *const c_char) -> MBinkSharedHandle { (api().mbink_shared_create)(handle, name) }
 pub unsafe fn mbink_shared_destroy(shared: MBinkSharedHandle) { (api().mbink_shared_destroy)(shared) }
 pub unsafe fn mbink_shared_set_int(shared: MBinkSharedHandle, key: *const c_char, value: i64) -> c_int { (api().mbink_shared_set_int)(shared, key, value) }
@@ -438,5 +644,19 @@ pub unsafe fn mbink_shared_delete(shared: MBinkSharedHandle, key: *const c_char)
 pub unsafe fn mbink_shared_has(shared: MBinkSharedHandle, key: *const c_char) -> bool { (api().mbink_shared_has)(shared, key) }
 pub unsafe fn mbink_shared_batch_begin(shared: MBinkSharedHandle) { (api().mbink_shared_batch_begin)(shared) }
 pub unsafe fn mbink_shared_batch_end(shared: MBinkSharedHandle) { (api().mbink_shared_batch_end)(shared) }
+pub unsafe fn mbink_logview_get(handle: MBinkHandle, element_id: *const c_char) -> MBinkLogViewHandle { (api().mbink_logview_get)(handle, element_id) }
+pub unsafe fn mbink_logview_destroy(logview: MBinkLogViewHandle) { (api().mbink_logview_destroy)(logview) }
+pub unsafe fn mbink_logview_append(logview: MBinkLogViewHandle, level: *const c_char, source: *const c_char, message: *const c_char) -> c_int { (api().mbink_logview_append)(logview, level, source, message) }
+pub unsafe fn mbink_logview_clear(logview: MBinkLogViewHandle) { (api().mbink_logview_clear)(logview) }
+pub unsafe fn mbink_logview_export(logview: MBinkLogViewHandle, format: *const c_char) -> *mut c_char { (api().mbink_logview_export)(logview, format) }
+pub unsafe fn mbink_terminal_get(handle: MBinkHandle, element_id: *const c_char) -> MBinkTerminalHandle { (api().mbink_terminal_get)(handle, element_id) }
+pub unsafe fn mbink_terminal_destroy(terminal: MBinkTerminalHandle) { (api().mbink_terminal_destroy)(terminal) }
+pub unsafe fn mbink_terminal_write(terminal: MBinkTerminalHandle, data: *const c_char) -> c_int { (api().mbink_terminal_write)(terminal, data) }
+pub unsafe fn mbink_terminal_clear(terminal: MBinkTerminalHandle) { (api().mbink_terminal_clear)(terminal) }
+pub unsafe fn mbink_terminal_execute(terminal: MBinkTerminalHandle, command: *const c_char) -> c_int { (api().mbink_terminal_execute)(terminal, command) }
+pub unsafe fn mbink_terminal_start_shell(terminal: MBinkTerminalHandle, shell: *const c_char) -> c_int { (api().mbink_terminal_start_shell)(terminal, shell) }
+pub unsafe fn mbink_terminal_send_input(terminal: MBinkTerminalHandle, input: *const c_char) -> c_int { (api().mbink_terminal_send_input)(terminal, input) }
+pub unsafe fn mbink_terminal_resize(terminal: MBinkTerminalHandle, rows: c_int, cols: c_int) { (api().mbink_terminal_resize)(terminal, rows, cols) }
+pub unsafe fn mbink_terminal_serialize(terminal: MBinkTerminalHandle) -> *mut c_char { (api().mbink_terminal_serialize)(terminal) }
 pub unsafe fn mbink_copy_string(str_: *const c_char) -> *mut c_char { (api().mbink_copy_string)(str_) }
 pub unsafe fn mbink_free(ptr: *mut c_void) { (api().mbink_free)(ptr) }
