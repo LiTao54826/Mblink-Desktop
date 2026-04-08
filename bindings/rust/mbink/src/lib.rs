@@ -2,6 +2,7 @@ mod app;
 mod callback;
 mod config;
 mod error;
+mod resources;
 mod shared;
 mod state;
 mod util;
@@ -9,6 +10,7 @@ mod util;
 pub use app::App;
 pub use config::AppBuilder;
 pub use error::{Error, Result};
+pub use resources::{compile_resources, load_resource_file, ResourceFile, RESOURCE_FLAG_BYTECODE};
 pub use shared::{Shared, SharedBatch};
 pub use state::{State, StateBatch};
 

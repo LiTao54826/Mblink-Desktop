@@ -29,3 +29,13 @@ pub unsafe fn string_from_owned_ptr(ptr: *mut c_char) -> Result<String> {
     mbink_sys::mbink_free(ptr.cast::<c_void>());
     result
 }
+
+pub fn check_rc_raw(rc: i32) -> Result<()> {
+    if rc == 0 {
+        return Ok(());
+    }
+
+    let message = unsafe { string_from_const_ptr(mbink_sys::mbink_last_error()) }
+        .unwrap_or_else(|_| "unknown MBink error".to_string());
+    Err(Error::Mbink { code: rc, message })
+}

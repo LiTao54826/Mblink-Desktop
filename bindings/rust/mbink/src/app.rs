@@ -104,6 +104,26 @@ impl App {
         Ok(self)
     }
 
+    pub fn mount_resource_package(
+        &self,
+        package_file: &str,
+        encryption_key: &str,
+        mount_point: &str,
+    ) -> Result<&Self> {
+        let package_file = to_cstring(package_file)?;
+        let encryption_key = to_cstring(encryption_key)?;
+        let mount_point = to_cstring(mount_point)?;
+        self.check_rc(unsafe {
+            mbink_sys::mbink_mount_resource_package(
+                self.handle,
+                package_file.as_ptr(),
+                encryption_key.as_ptr(),
+                mount_point.as_ptr(),
+            )
+        })?;
+        Ok(self)
+    }
+
     pub fn set_title(&self, title: &str) -> Result<&Self> {
         let title = to_cstring(title)?;
         self.check_rc(unsafe { mbink_sys::mbink_set_title(self.handle, title.as_ptr()) })?;

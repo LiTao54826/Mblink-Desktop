@@ -4,6 +4,12 @@
 
 use std::ffi::{c_char, c_int, c_void};
 
+#[cfg(all(target_os = "windows", mbink_runtime_load))]
+mod windows_runtime;
+
+#[cfg(all(target_os = "windows", mbink_runtime_load))]
+pub use windows_runtime::*;
+
 pub enum MBinkWindow {}
 pub type MBinkHandle = *mut MBinkWindow;
 
@@ -62,6 +68,7 @@ pub type MBinkVoidCallback = Option<unsafe extern "C" fn(*mut c_void)>;
 pub type MBinkBoolCallback = Option<unsafe extern "C" fn(*mut c_void) -> bool>;
 pub type MBinkUpdateCallback = Option<unsafe extern "C" fn(f32, *mut c_void)>;
 
+#[cfg(not(all(target_os = "windows", mbink_runtime_load)))]
 extern "C" {
     pub fn mbink_init() -> c_int;
     pub fn mbink_cleanup();
@@ -93,6 +100,8 @@ extern "C" {
     pub fn mbink_eval_module(handle: MBinkHandle, code: *const c_char, filename: *const c_char) -> c_int;
     pub fn mbink_load_js_file(handle: MBinkHandle, filepath: *const c_char) -> c_int;
     pub fn mbink_load_bytecode(handle: MBinkHandle, data: *const c_void, size: usize) -> c_int;
+    pub fn mbink_compile_resources(input_path: *const c_char, output_file: *const c_char, encryption_key: *const c_char) -> c_int;
+    pub fn mbink_load_resource_file(package_file: *const c_char, resource_path: *const c_char, encryption_key: *const c_char, out_data: *mut *mut c_void, out_size: *mut usize, out_flags: *mut u32) -> c_int;
     pub fn mbink_mount_resource_package(handle: MBinkHandle, package_file: *const c_char, encryption_key: *const c_char, mount_point: *const c_char) -> c_int;
     pub fn mbink_emit(handle: MBinkHandle, event_name: *const c_char, data_json: *const c_char) -> c_int;
 
