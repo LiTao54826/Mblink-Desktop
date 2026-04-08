@@ -84,15 +84,27 @@ extern "C" {
     pub fn mbink_poll_events(handle: MBinkHandle) -> bool;
 
     pub fn mbink_set_title(handle: MBinkHandle, title: *const c_char) -> c_int;
+    pub fn mbink_tray_create(handle: MBinkHandle, tooltip: *const c_char) -> c_int;
+    pub fn mbink_tray_destroy(handle: MBinkHandle) -> c_int;
+    pub fn mbink_tray_set_tooltip(handle: MBinkHandle, tooltip: *const c_char) -> c_int;
+    pub fn mbink_tray_set_menu(handle: MBinkHandle, menu_json: *const c_char) -> c_int;
+    pub fn mbink_tray_set_left_click_callback(handle: MBinkHandle, callback: MBinkVoidCallback, user_data: *mut c_void) -> c_int;
+    pub fn mbink_tray_set_menu_callback(handle: MBinkHandle, callback: MBinkCallback, user_data: *mut c_void) -> c_int;
     pub fn mbink_set_size(handle: MBinkHandle, width: c_int, height: c_int) -> c_int;
     pub fn mbink_get_size(handle: MBinkHandle, width: *mut c_int, height: *mut c_int) -> c_int;
     pub fn mbink_set_position(handle: MBinkHandle, x: c_int, y: c_int) -> c_int;
     pub fn mbink_get_position(handle: MBinkHandle, x: *mut c_int, y: *mut c_int) -> c_int;
+    pub fn mbink_set_min_size(handle: MBinkHandle, width: c_int, height: c_int) -> c_int;
+    pub fn mbink_set_max_size(handle: MBinkHandle, width: c_int, height: c_int) -> c_int;
     pub fn mbink_show(handle: MBinkHandle) -> c_int;
     pub fn mbink_hide(handle: MBinkHandle) -> c_int;
     pub fn mbink_minimize(handle: MBinkHandle) -> c_int;
     pub fn mbink_maximize(handle: MBinkHandle) -> c_int;
     pub fn mbink_restore(handle: MBinkHandle) -> c_int;
+    pub fn mbink_set_fullscreen(handle: MBinkHandle, fullscreen: bool) -> c_int;
+    pub fn mbink_set_resizable(handle: MBinkHandle, resizable: bool) -> c_int;
+    pub fn mbink_set_borderless(handle: MBinkHandle, borderless: bool) -> c_int;
+    pub fn mbink_set_always_on_top(handle: MBinkHandle, on_top: bool) -> c_int;
 
     pub fn mbink_load_html(handle: MBinkHandle, html: *const c_char) -> c_int;
     pub fn mbink_load_html_file(handle: MBinkHandle, filepath: *const c_char) -> c_int;
@@ -104,8 +116,11 @@ extern "C" {
     pub fn mbink_load_resource_file(package_file: *const c_char, resource_path: *const c_char, encryption_key: *const c_char, out_data: *mut *mut c_void, out_size: *mut usize, out_flags: *mut u32) -> c_int;
     pub fn mbink_mount_resource_package(handle: MBinkHandle, package_file: *const c_char, encryption_key: *const c_char, mount_point: *const c_char) -> c_int;
     pub fn mbink_emit(handle: MBinkHandle, event_name: *const c_char, data_json: *const c_char) -> c_int;
+    pub fn mbink_devtools_open(handle: MBinkHandle) -> c_int;
+    pub fn mbink_devtools_close(handle: MBinkHandle) -> c_int;
 
     pub fn mbink_bind(handle: MBinkHandle, name: *const c_char, callback: MBinkCallback, user_data: *mut c_void) -> c_int;
+    pub fn mbink_bind_async(handle: MBinkHandle, name: *const c_char, callback: MBinkAsyncCallback, user_data: *mut c_void) -> c_int;
     pub fn mbink_unbind(handle: MBinkHandle, name: *const c_char);
     pub fn mbink_on_resize(handle: MBinkHandle, callback: MBinkResizeCallback, user_data: *mut c_void) -> c_int;
     pub fn mbink_on_close(handle: MBinkHandle, callback: MBinkVoidCallback, user_data: *mut c_void) -> c_int;

@@ -66,6 +66,14 @@ cargo run -p mbink --example events
 
 This demonstrates `on_resize`, `on_focus`, `on_blur`, `on_close`, and `on_close_request`.
 
+## Window controls example
+
+```bash
+cargo run -p mbink --example window
+```
+
+This demonstrates window positioning, min/max size, and DevTools helpers.
+
 ## Shared example
 
 ```bash
@@ -148,14 +156,32 @@ Use `RESOURCE_FLAG_BYTECODE` or `ResourceFile::is_bytecode()` to detect whether 
 ## Current safe wrapper coverage
 
 - App creation and window lifecycle
+- window helpers:
+  - `set_position` / `position`
+  - `set_min_size` / `set_max_size`
+  - `minimize` / `maximize` / `restore`
+  - `set_fullscreen`
+  - `set_resizable`
+  - `set_borderless`
+  - `set_always_on_top`
 - HTML / JS loading and evaluation
+- tray helpers:
+  - `create_tray`
+  - `destroy_tray`
+  - `set_tray_tooltip`
+  - `set_tray_menu` / `set_tray_menu_json`
+  - `on_tray_click`
+  - `on_tray_menu`
 - resource package helpers:
   - `compile_resources`
   - `App::mount_resource_package`
   - `load_resource_file`
 - state read/write helpers
 - shared object read/write helpers
-- `bind` / `unbind`
+- `bind` / `bind_async` / `unbind`
+- DevTools helpers:
+  - `devtools_open`
+  - `devtools_close`
 - basic event callbacks:
   - `on_resize`
   - `on_close`

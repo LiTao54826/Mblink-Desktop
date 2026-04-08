@@ -6,6 +6,7 @@ use serde_json::{Value, json};
 use crate::util::string_from_const_ptr;
 
 pub type BindFn = dyn Fn(Value) -> crate::Result<Value> + 'static;
+pub type AsyncBindFn = dyn Fn(Value) -> crate::Result<Value> + 'static;
 pub type VoidFn = dyn Fn() + 'static;
 pub type BoolFn = dyn Fn() -> bool + 'static;
 pub type ResizeFn = dyn Fn(i32, i32) + 'static;
@@ -13,6 +14,10 @@ pub type UpdateFn = dyn Fn(f32) + 'static;
 
 pub struct BindHolder {
     pub callback: Box<BindFn>,
+}
+
+pub struct AsyncBindHolder {
+    pub callback: Box<AsyncBindFn>,
 }
 
 pub struct VoidHolder {
@@ -33,7 +38,14 @@ pub struct UpdateHolder {
 
 pub struct BindRegistration {
     pub name: String,
-    pub user_data: *mut BindHolder,
+    pub kind: BindKind,
+    pub user_data: *mut c_void,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BindKind {
+    Sync,
+    Async,
 }
 
 #[derive(Default)]
@@ -44,6 +56,8 @@ pub struct EventRegistry {
     pub on_focus: Option<*mut VoidHolder>,
     pub on_blur: Option<*mut VoidHolder>,
     pub on_update: Option<*mut UpdateHolder>,
+    pub on_tray_click: Option<*mut VoidHolder>,
+    pub on_tray_menu: Option<*mut BindHolder>,
 }
 
 pub unsafe extern "C" fn bind_trampoline(
@@ -57,6 +71,26 @@ pub unsafe extern "C" fn bind_trampoline(
         Ok(Ok(value)) => value,
         Ok(Err(err)) => json!({ "error": err.to_string() }),
         Err(_) => json!({ "error": "panic in Rust bind callback" }),
+    };
+
+    let text = serde_json::to_string(&value)
+        .unwrap_or_else(|_| "{\"error\":\"serialize failure\"}".to_string());
+    let c_text = CString::new(text)
+        .unwrap_or_else(|_| CString::new("{\"error\":\"interior nul\"}").unwrap());
+    mbink_sys::mbink_copy_string(c_text.as_ptr())
+}
+
+pub unsafe extern "C" fn bind_async_trampoline(
+    args_json: *const c_char,
+    user_data: *mut c_void,
+) -> *mut c_char {
+    let holder = &*(user_data as *mut AsyncBindHolder);
+    let args = parse_json_arg(args_json);
+
+    let value = match catch_unwind(AssertUnwindSafe(|| (holder.callback)(args))) {
+        Ok(Ok(value)) => value,
+        Ok(Err(err)) => json!({ "error": err.to_string() }),
+        Err(_) => json!({ "error": "panic in Rust async bind callback" }),
     };
 
     let text = serde_json::to_string(&value)

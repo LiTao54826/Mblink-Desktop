@@ -7,8 +7,9 @@ use std::path::PathBuf;
 use std::sync::OnceLock;
 
 use super::{
-    MBinkBoolCallback, MBinkCallback, MBinkConfig, MBinkHandle, MBinkResizeCallback,
-    MBinkSharedHandle, MBinkType, MBinkUpdateCallback, MBinkVoidCallback,
+    MBinkAsyncCallback, MBinkBoolCallback, MBinkCallback, MBinkConfig, MBinkHandle,
+    MBinkResizeCallback, MBinkSharedHandle, MBinkType, MBinkUpdateCallback,
+    MBinkVoidCallback,
 };
 
 type MBinkLoadResourceFileFn = unsafe extern "C" fn(
@@ -34,15 +35,27 @@ struct Api {
     mbink_stop: unsafe extern "C" fn(MBinkHandle),
     mbink_poll_events: unsafe extern "C" fn(MBinkHandle) -> bool,
     mbink_set_title: unsafe extern "C" fn(MBinkHandle, *const c_char) -> c_int,
+    mbink_tray_create: unsafe extern "C" fn(MBinkHandle, *const c_char) -> c_int,
+    mbink_tray_destroy: unsafe extern "C" fn(MBinkHandle) -> c_int,
+    mbink_tray_set_tooltip: unsafe extern "C" fn(MBinkHandle, *const c_char) -> c_int,
+    mbink_tray_set_menu: unsafe extern "C" fn(MBinkHandle, *const c_char) -> c_int,
+    mbink_tray_set_left_click_callback: unsafe extern "C" fn(MBinkHandle, MBinkVoidCallback, *mut c_void) -> c_int,
+    mbink_tray_set_menu_callback: unsafe extern "C" fn(MBinkHandle, MBinkCallback, *mut c_void) -> c_int,
     mbink_set_size: unsafe extern "C" fn(MBinkHandle, c_int, c_int) -> c_int,
     mbink_get_size: unsafe extern "C" fn(MBinkHandle, *mut c_int, *mut c_int) -> c_int,
     mbink_set_position: unsafe extern "C" fn(MBinkHandle, c_int, c_int) -> c_int,
     mbink_get_position: unsafe extern "C" fn(MBinkHandle, *mut c_int, *mut c_int) -> c_int,
+    mbink_set_min_size: unsafe extern "C" fn(MBinkHandle, c_int, c_int) -> c_int,
+    mbink_set_max_size: unsafe extern "C" fn(MBinkHandle, c_int, c_int) -> c_int,
     mbink_show: unsafe extern "C" fn(MBinkHandle) -> c_int,
     mbink_hide: unsafe extern "C" fn(MBinkHandle) -> c_int,
     mbink_minimize: unsafe extern "C" fn(MBinkHandle) -> c_int,
     mbink_maximize: unsafe extern "C" fn(MBinkHandle) -> c_int,
     mbink_restore: unsafe extern "C" fn(MBinkHandle) -> c_int,
+    mbink_set_fullscreen: unsafe extern "C" fn(MBinkHandle, bool) -> c_int,
+    mbink_set_resizable: unsafe extern "C" fn(MBinkHandle, bool) -> c_int,
+    mbink_set_borderless: unsafe extern "C" fn(MBinkHandle, bool) -> c_int,
+    mbink_set_always_on_top: unsafe extern "C" fn(MBinkHandle, bool) -> c_int,
     mbink_load_html: unsafe extern "C" fn(MBinkHandle, *const c_char) -> c_int,
     mbink_load_html_file: unsafe extern "C" fn(MBinkHandle, *const c_char) -> c_int,
     mbink_eval_js: unsafe extern "C" fn(MBinkHandle, *const c_char) -> c_int,
@@ -53,7 +66,10 @@ struct Api {
     mbink_load_resource_file: MBinkLoadResourceFileFn,
     mbink_mount_resource_package: unsafe extern "C" fn(MBinkHandle, *const c_char, *const c_char, *const c_char) -> c_int,
     mbink_emit: unsafe extern "C" fn(MBinkHandle, *const c_char, *const c_char) -> c_int,
+    mbink_devtools_open: unsafe extern "C" fn(MBinkHandle) -> c_int,
+    mbink_devtools_close: unsafe extern "C" fn(MBinkHandle) -> c_int,
     mbink_bind: unsafe extern "C" fn(MBinkHandle, *const c_char, MBinkCallback, *mut c_void) -> c_int,
+    mbink_bind_async: unsafe extern "C" fn(MBinkHandle, *const c_char, MBinkAsyncCallback, *mut c_void) -> c_int,
     mbink_unbind: unsafe extern "C" fn(MBinkHandle, *const c_char),
     mbink_on_resize: unsafe extern "C" fn(MBinkHandle, MBinkResizeCallback, *mut c_void) -> c_int,
     mbink_on_close: unsafe extern "C" fn(MBinkHandle, MBinkVoidCallback, *mut c_void) -> c_int,
@@ -135,15 +151,27 @@ unsafe fn load_api() -> Api {
     let mbink_stop = load!(b"mbink_stop\0", unsafe extern "C" fn(MBinkHandle));
     let mbink_poll_events = load!(b"mbink_poll_events\0", unsafe extern "C" fn(MBinkHandle) -> bool);
     let mbink_set_title = load!(b"mbink_set_title\0", unsafe extern "C" fn(MBinkHandle, *const c_char) -> c_int);
+    let mbink_tray_create = load!(b"mbink_tray_create\0", unsafe extern "C" fn(MBinkHandle, *const c_char) -> c_int);
+    let mbink_tray_destroy = load!(b"mbink_tray_destroy\0", unsafe extern "C" fn(MBinkHandle) -> c_int);
+    let mbink_tray_set_tooltip = load!(b"mbink_tray_set_tooltip\0", unsafe extern "C" fn(MBinkHandle, *const c_char) -> c_int);
+    let mbink_tray_set_menu = load!(b"mbink_tray_set_menu\0", unsafe extern "C" fn(MBinkHandle, *const c_char) -> c_int);
+    let mbink_tray_set_left_click_callback = load!(b"mbink_tray_set_left_click_callback\0", unsafe extern "C" fn(MBinkHandle, MBinkVoidCallback, *mut c_void) -> c_int);
+    let mbink_tray_set_menu_callback = load!(b"mbink_tray_set_menu_callback\0", unsafe extern "C" fn(MBinkHandle, MBinkCallback, *mut c_void) -> c_int);
     let mbink_set_size = load!(b"mbink_set_size\0", unsafe extern "C" fn(MBinkHandle, c_int, c_int) -> c_int);
     let mbink_get_size = load!(b"mbink_get_size\0", unsafe extern "C" fn(MBinkHandle, *mut c_int, *mut c_int) -> c_int);
     let mbink_set_position = load!(b"mbink_set_position\0", unsafe extern "C" fn(MBinkHandle, c_int, c_int) -> c_int);
     let mbink_get_position = load!(b"mbink_get_position\0", unsafe extern "C" fn(MBinkHandle, *mut c_int, *mut c_int) -> c_int);
+    let mbink_set_min_size = load!(b"mbink_set_min_size\0", unsafe extern "C" fn(MBinkHandle, c_int, c_int) -> c_int);
+    let mbink_set_max_size = load!(b"mbink_set_max_size\0", unsafe extern "C" fn(MBinkHandle, c_int, c_int) -> c_int);
     let mbink_show = load!(b"mbink_show\0", unsafe extern "C" fn(MBinkHandle) -> c_int);
     let mbink_hide = load!(b"mbink_hide\0", unsafe extern "C" fn(MBinkHandle) -> c_int);
     let mbink_minimize = load!(b"mbink_minimize\0", unsafe extern "C" fn(MBinkHandle) -> c_int);
     let mbink_maximize = load!(b"mbink_maximize\0", unsafe extern "C" fn(MBinkHandle) -> c_int);
     let mbink_restore = load!(b"mbink_restore\0", unsafe extern "C" fn(MBinkHandle) -> c_int);
+    let mbink_set_fullscreen = load!(b"mbink_set_fullscreen\0", unsafe extern "C" fn(MBinkHandle, bool) -> c_int);
+    let mbink_set_resizable = load!(b"mbink_set_resizable\0", unsafe extern "C" fn(MBinkHandle, bool) -> c_int);
+    let mbink_set_borderless = load!(b"mbink_set_borderless\0", unsafe extern "C" fn(MBinkHandle, bool) -> c_int);
+    let mbink_set_always_on_top = load!(b"mbink_set_always_on_top\0", unsafe extern "C" fn(MBinkHandle, bool) -> c_int);
     let mbink_load_html = load!(b"mbink_load_html\0", unsafe extern "C" fn(MBinkHandle, *const c_char) -> c_int);
     let mbink_load_html_file = load!(b"mbink_load_html_file\0", unsafe extern "C" fn(MBinkHandle, *const c_char) -> c_int);
     let mbink_eval_js = load!(b"mbink_eval_js\0", unsafe extern "C" fn(MBinkHandle, *const c_char) -> c_int);
@@ -154,7 +182,10 @@ unsafe fn load_api() -> Api {
     let mbink_load_resource_file = load!(b"mbink_load_resource_file\0", MBinkLoadResourceFileFn);
     let mbink_mount_resource_package = load!(b"mbink_mount_resource_package\0", unsafe extern "C" fn(MBinkHandle, *const c_char, *const c_char, *const c_char) -> c_int);
     let mbink_emit = load!(b"mbink_emit\0", unsafe extern "C" fn(MBinkHandle, *const c_char, *const c_char) -> c_int);
+    let mbink_devtools_open = load!(b"mbink_devtools_open\0", unsafe extern "C" fn(MBinkHandle) -> c_int);
+    let mbink_devtools_close = load!(b"mbink_devtools_close\0", unsafe extern "C" fn(MBinkHandle) -> c_int);
     let mbink_bind = load!(b"mbink_bind\0", unsafe extern "C" fn(MBinkHandle, *const c_char, MBinkCallback, *mut c_void) -> c_int);
+    let mbink_bind_async = load!(b"mbink_bind_async\0", unsafe extern "C" fn(MBinkHandle, *const c_char, MBinkAsyncCallback, *mut c_void) -> c_int);
     let mbink_unbind = load!(b"mbink_unbind\0", unsafe extern "C" fn(MBinkHandle, *const c_char));
     let mbink_on_resize = load!(b"mbink_on_resize\0", unsafe extern "C" fn(MBinkHandle, MBinkResizeCallback, *mut c_void) -> c_int);
     let mbink_on_close = load!(b"mbink_on_close\0", unsafe extern "C" fn(MBinkHandle, MBinkVoidCallback, *mut c_void) -> c_int);
@@ -213,15 +244,27 @@ unsafe fn load_api() -> Api {
         mbink_stop,
         mbink_poll_events,
         mbink_set_title,
+        mbink_tray_create,
+        mbink_tray_destroy,
+        mbink_tray_set_tooltip,
+        mbink_tray_set_menu,
+        mbink_tray_set_left_click_callback,
+        mbink_tray_set_menu_callback,
         mbink_set_size,
         mbink_get_size,
         mbink_set_position,
         mbink_get_position,
+        mbink_set_min_size,
+        mbink_set_max_size,
         mbink_show,
         mbink_hide,
         mbink_minimize,
         mbink_maximize,
         mbink_restore,
+        mbink_set_fullscreen,
+        mbink_set_resizable,
+        mbink_set_borderless,
+        mbink_set_always_on_top,
         mbink_load_html,
         mbink_load_html_file,
         mbink_eval_js,
@@ -232,7 +275,10 @@ unsafe fn load_api() -> Api {
         mbink_load_resource_file,
         mbink_mount_resource_package,
         mbink_emit,
+        mbink_devtools_open,
+        mbink_devtools_close,
         mbink_bind,
+        mbink_bind_async,
         mbink_unbind,
         mbink_on_resize,
         mbink_on_close,
@@ -316,15 +362,27 @@ pub unsafe fn mbink_run(handle: MBinkHandle) { (api().mbink_run)(handle) }
 pub unsafe fn mbink_stop(handle: MBinkHandle) { (api().mbink_stop)(handle) }
 pub unsafe fn mbink_poll_events(handle: MBinkHandle) -> bool { (api().mbink_poll_events)(handle) }
 pub unsafe fn mbink_set_title(handle: MBinkHandle, title: *const c_char) -> c_int { (api().mbink_set_title)(handle, title) }
+pub unsafe fn mbink_tray_create(handle: MBinkHandle, tooltip: *const c_char) -> c_int { (api().mbink_tray_create)(handle, tooltip) }
+pub unsafe fn mbink_tray_destroy(handle: MBinkHandle) -> c_int { (api().mbink_tray_destroy)(handle) }
+pub unsafe fn mbink_tray_set_tooltip(handle: MBinkHandle, tooltip: *const c_char) -> c_int { (api().mbink_tray_set_tooltip)(handle, tooltip) }
+pub unsafe fn mbink_tray_set_menu(handle: MBinkHandle, menu_json: *const c_char) -> c_int { (api().mbink_tray_set_menu)(handle, menu_json) }
+pub unsafe fn mbink_tray_set_left_click_callback(handle: MBinkHandle, callback: MBinkVoidCallback, user_data: *mut c_void) -> c_int { (api().mbink_tray_set_left_click_callback)(handle, callback, user_data) }
+pub unsafe fn mbink_tray_set_menu_callback(handle: MBinkHandle, callback: MBinkCallback, user_data: *mut c_void) -> c_int { (api().mbink_tray_set_menu_callback)(handle, callback, user_data) }
 pub unsafe fn mbink_set_size(handle: MBinkHandle, width: c_int, height: c_int) -> c_int { (api().mbink_set_size)(handle, width, height) }
 pub unsafe fn mbink_get_size(handle: MBinkHandle, width: *mut c_int, height: *mut c_int) -> c_int { (api().mbink_get_size)(handle, width, height) }
 pub unsafe fn mbink_set_position(handle: MBinkHandle, x: c_int, y: c_int) -> c_int { (api().mbink_set_position)(handle, x, y) }
 pub unsafe fn mbink_get_position(handle: MBinkHandle, x: *mut c_int, y: *mut c_int) -> c_int { (api().mbink_get_position)(handle, x, y) }
+pub unsafe fn mbink_set_min_size(handle: MBinkHandle, width: c_int, height: c_int) -> c_int { (api().mbink_set_min_size)(handle, width, height) }
+pub unsafe fn mbink_set_max_size(handle: MBinkHandle, width: c_int, height: c_int) -> c_int { (api().mbink_set_max_size)(handle, width, height) }
 pub unsafe fn mbink_show(handle: MBinkHandle) -> c_int { (api().mbink_show)(handle) }
 pub unsafe fn mbink_hide(handle: MBinkHandle) -> c_int { (api().mbink_hide)(handle) }
 pub unsafe fn mbink_minimize(handle: MBinkHandle) -> c_int { (api().mbink_minimize)(handle) }
 pub unsafe fn mbink_maximize(handle: MBinkHandle) -> c_int { (api().mbink_maximize)(handle) }
 pub unsafe fn mbink_restore(handle: MBinkHandle) -> c_int { (api().mbink_restore)(handle) }
+pub unsafe fn mbink_set_fullscreen(handle: MBinkHandle, fullscreen: bool) -> c_int { (api().mbink_set_fullscreen)(handle, fullscreen) }
+pub unsafe fn mbink_set_resizable(handle: MBinkHandle, resizable: bool) -> c_int { (api().mbink_set_resizable)(handle, resizable) }
+pub unsafe fn mbink_set_borderless(handle: MBinkHandle, borderless: bool) -> c_int { (api().mbink_set_borderless)(handle, borderless) }
+pub unsafe fn mbink_set_always_on_top(handle: MBinkHandle, on_top: bool) -> c_int { (api().mbink_set_always_on_top)(handle, on_top) }
 pub unsafe fn mbink_load_html(handle: MBinkHandle, html: *const c_char) -> c_int { (api().mbink_load_html)(handle, html) }
 pub unsafe fn mbink_load_html_file(handle: MBinkHandle, filepath: *const c_char) -> c_int { (api().mbink_load_html_file)(handle, filepath) }
 pub unsafe fn mbink_eval_js(handle: MBinkHandle, code: *const c_char) -> c_int { (api().mbink_eval_js)(handle, code) }
@@ -335,7 +393,10 @@ pub unsafe fn mbink_compile_resources(input_path: *const c_char, output_file: *c
 pub unsafe fn mbink_load_resource_file(package_file: *const c_char, resource_path: *const c_char, encryption_key: *const c_char, out_data: *mut *mut c_void, out_size: *mut usize, out_flags: *mut u32) -> c_int { (api().mbink_load_resource_file)(package_file, resource_path, encryption_key, out_data, out_size, out_flags) }
 pub unsafe fn mbink_mount_resource_package(handle: MBinkHandle, package_file: *const c_char, encryption_key: *const c_char, mount_point: *const c_char) -> c_int { (api().mbink_mount_resource_package)(handle, package_file, encryption_key, mount_point) }
 pub unsafe fn mbink_emit(handle: MBinkHandle, event_name: *const c_char, data_json: *const c_char) -> c_int { (api().mbink_emit)(handle, event_name, data_json) }
+pub unsafe fn mbink_devtools_open(handle: MBinkHandle) -> c_int { (api().mbink_devtools_open)(handle) }
+pub unsafe fn mbink_devtools_close(handle: MBinkHandle) -> c_int { (api().mbink_devtools_close)(handle) }
 pub unsafe fn mbink_bind(handle: MBinkHandle, name: *const c_char, callback: MBinkCallback, user_data: *mut c_void) -> c_int { (api().mbink_bind)(handle, name, callback, user_data) }
+pub unsafe fn mbink_bind_async(handle: MBinkHandle, name: *const c_char, callback: MBinkAsyncCallback, user_data: *mut c_void) -> c_int { (api().mbink_bind_async)(handle, name, callback, user_data) }
 pub unsafe fn mbink_unbind(handle: MBinkHandle, name: *const c_char) { (api().mbink_unbind)(handle, name) }
 pub unsafe fn mbink_on_resize(handle: MBinkHandle, callback: MBinkResizeCallback, user_data: *mut c_void) -> c_int { (api().mbink_on_resize)(handle, callback, user_data) }
 pub unsafe fn mbink_on_close(handle: MBinkHandle, callback: MBinkVoidCallback, user_data: *mut c_void) -> c_int { (api().mbink_on_close)(handle, callback, user_data) }

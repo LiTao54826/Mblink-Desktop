@@ -4,9 +4,9 @@ use std::sync::Once;
 use serde_json::Value;
 
 use crate::callback::{
-    bind_trampoline, bool_trampoline, resize_trampoline, update_trampoline, void_trampoline,
-    BindHolder, BindRegistration, BoolHolder, EventRegistry, ResizeHolder, UpdateHolder,
-    VoidHolder,
+    bind_async_trampoline, bind_trampoline, bool_trampoline, resize_trampoline,
+    update_trampoline, void_trampoline, AsyncBindHolder, BindHolder, BindKind,
+    BindRegistration, BoolHolder, EventRegistry, ResizeHolder, UpdateHolder, VoidHolder,
 };
 use crate::config::AppBuilder;
 use crate::shared::Shared;
@@ -97,7 +97,7 @@ impl App {
         self.handle = std::ptr::null_mut();
 
         for reg in self.bind_callbacks.drain(..) {
-            unsafe { drop(Box::from_raw(reg.user_data)) };
+            unsafe { Self::drop_bind_registration(reg) };
         }
         if let Some(ptr) = self.event_callbacks.on_resize.take() {
             unsafe { drop(Box::from_raw(ptr)) };
@@ -115,6 +115,12 @@ impl App {
             unsafe { drop(Box::from_raw(ptr)) };
         }
         if let Some(ptr) = self.event_callbacks.on_update.take() {
+            unsafe { drop(Box::from_raw(ptr)) };
+        }
+        if let Some(ptr) = self.event_callbacks.on_tray_click.take() {
+            unsafe { drop(Box::from_raw(ptr)) };
+        }
+        if let Some(ptr) = self.event_callbacks.on_tray_menu.take() {
             unsafe { drop(Box::from_raw(ptr)) };
         }
     }
@@ -189,6 +195,33 @@ impl App {
         Ok(self)
     }
 
+    pub fn create_tray(&self, tooltip: &str) -> Result<&Self> {
+        let tooltip = to_cstring(tooltip)?;
+        self.check_rc(unsafe { mbink_sys::mbink_tray_create(self.handle, tooltip.as_ptr()) })?;
+        Ok(self)
+    }
+
+    pub fn destroy_tray(&self) -> Result<&Self> {
+        self.check_rc(unsafe { mbink_sys::mbink_tray_destroy(self.handle) })?;
+        Ok(self)
+    }
+
+    pub fn set_tray_tooltip(&self, tooltip: &str) -> Result<&Self> {
+        let tooltip = to_cstring(tooltip)?;
+        self.check_rc(unsafe { mbink_sys::mbink_tray_set_tooltip(self.handle, tooltip.as_ptr()) })?;
+        Ok(self)
+    }
+
+    pub fn set_tray_menu_json(&self, menu_json: &str) -> Result<&Self> {
+        let menu_json = to_cstring(menu_json)?;
+        self.check_rc(unsafe { mbink_sys::mbink_tray_set_menu(self.handle, menu_json.as_ptr()) })?;
+        Ok(self)
+    }
+
+    pub fn set_tray_menu<T: serde::Serialize>(&self, menu: &T) -> Result<&Self> {
+        self.set_tray_menu_json(&serde_json::to_string(menu)?)
+    }
+
     pub fn set_size(&self, width: i32, height: i32) -> Result<&Self> {
         self.check_rc(unsafe { mbink_sys::mbink_set_size(self.handle, width, height) })?;
         Ok(self)
@@ -201,6 +234,28 @@ impl App {
         Ok((width, height))
     }
 
+    pub fn set_position(&self, x: i32, y: i32) -> Result<&Self> {
+        self.check_rc(unsafe { mbink_sys::mbink_set_position(self.handle, x, y) })?;
+        Ok(self)
+    }
+
+    pub fn position(&self) -> Result<(i32, i32)> {
+        let mut x = 0;
+        let mut y = 0;
+        self.check_rc(unsafe { mbink_sys::mbink_get_position(self.handle, &mut x, &mut y) })?;
+        Ok((x, y))
+    }
+
+    pub fn set_min_size(&self, width: i32, height: i32) -> Result<&Self> {
+        self.check_rc(unsafe { mbink_sys::mbink_set_min_size(self.handle, width, height) })?;
+        Ok(self)
+    }
+
+    pub fn set_max_size(&self, width: i32, height: i32) -> Result<&Self> {
+        self.check_rc(unsafe { mbink_sys::mbink_set_max_size(self.handle, width, height) })?;
+        Ok(self)
+    }
+
     pub fn show(&self) -> Result<&Self> {
         self.check_rc(unsafe { mbink_sys::mbink_show(self.handle) })?;
         Ok(self)
@@ -208,6 +263,41 @@ impl App {
 
     pub fn hide(&self) -> Result<&Self> {
         self.check_rc(unsafe { mbink_sys::mbink_hide(self.handle) })?;
+        Ok(self)
+    }
+
+    pub fn minimize(&self) -> Result<&Self> {
+        self.check_rc(unsafe { mbink_sys::mbink_minimize(self.handle) })?;
+        Ok(self)
+    }
+
+    pub fn maximize(&self) -> Result<&Self> {
+        self.check_rc(unsafe { mbink_sys::mbink_maximize(self.handle) })?;
+        Ok(self)
+    }
+
+    pub fn restore(&self) -> Result<&Self> {
+        self.check_rc(unsafe { mbink_sys::mbink_restore(self.handle) })?;
+        Ok(self)
+    }
+
+    pub fn set_fullscreen(&self, fullscreen: bool) -> Result<&Self> {
+        self.check_rc(unsafe { mbink_sys::mbink_set_fullscreen(self.handle, fullscreen) })?;
+        Ok(self)
+    }
+
+    pub fn set_resizable(&self, resizable: bool) -> Result<&Self> {
+        self.check_rc(unsafe { mbink_sys::mbink_set_resizable(self.handle, resizable) })?;
+        Ok(self)
+    }
+
+    pub fn set_borderless(&self, borderless: bool) -> Result<&Self> {
+        self.check_rc(unsafe { mbink_sys::mbink_set_borderless(self.handle, borderless) })?;
+        Ok(self)
+    }
+
+    pub fn set_always_on_top(&self, on_top: bool) -> Result<&Self> {
+        self.check_rc(unsafe { mbink_sys::mbink_set_always_on_top(self.handle, on_top) })?;
         Ok(self)
     }
 
@@ -230,16 +320,46 @@ impl App {
         let holder = Box::new(BindHolder {
             callback: Box::new(callback),
         });
-        let user_data = Box::into_raw(holder);
+        let user_data = Box::into_raw(holder).cast();
         let rc = unsafe {
-            mbink_sys::mbink_bind(self.handle, name_c.as_ptr(), Some(bind_trampoline), user_data.cast())
+            mbink_sys::mbink_bind(self.handle, name_c.as_ptr(), Some(bind_trampoline), user_data)
         };
         if rc != 0 {
-            unsafe { drop(Box::from_raw(user_data)) };
+            unsafe { self.drop_bind_user_data(BindKind::Sync, user_data) };
             return self.check_rc(rc);
         }
         self.bind_callbacks.push(BindRegistration {
             name: name.to_string(),
+            kind: BindKind::Sync,
+            user_data,
+        });
+        Ok(())
+    }
+
+    pub fn bind_async<F>(&mut self, name: &str, callback: F) -> Result<()>
+    where
+        F: Fn(Value) -> Result<Value> + 'static,
+    {
+        let name_c = to_cstring(name)?;
+        let holder = Box::new(AsyncBindHolder {
+            callback: Box::new(callback),
+        });
+        let user_data = Box::into_raw(holder).cast();
+        let rc = unsafe {
+            mbink_sys::mbink_bind_async(
+                self.handle,
+                name_c.as_ptr(),
+                Some(bind_async_trampoline),
+                user_data,
+            )
+        };
+        if rc != 0 {
+            unsafe { self.drop_bind_user_data(BindKind::Async, user_data) };
+            return self.check_rc(rc);
+        }
+        self.bind_callbacks.push(BindRegistration {
+            name: name.to_string(),
+            kind: BindKind::Async,
             user_data,
         });
         Ok(())
@@ -250,8 +370,60 @@ impl App {
         unsafe { mbink_sys::mbink_unbind(self.handle, name_c.as_ptr()) };
         if let Some(index) = self.bind_callbacks.iter().position(|it| it.name == name) {
             let reg = self.bind_callbacks.swap_remove(index);
-            unsafe { drop(Box::from_raw(reg.user_data)) };
+            unsafe { Self::drop_bind_registration(reg) };
         }
+        Ok(())
+    }
+
+    pub fn on_tray_click<F>(&mut self, callback: F) -> Result<()>
+    where
+        F: Fn() + 'static,
+    {
+        if let Some(ptr) = self.event_callbacks.on_tray_click.take() {
+            unsafe { drop(Box::from_raw(ptr)) };
+        }
+        let holder = Box::new(VoidHolder {
+            callback: Box::new(callback),
+        });
+        let user_data = Box::into_raw(holder);
+        let rc = unsafe {
+            mbink_sys::mbink_tray_set_left_click_callback(
+                self.handle,
+                Some(void_trampoline),
+                user_data.cast(),
+            )
+        };
+        if rc != 0 {
+            unsafe { drop(Box::from_raw(user_data)) };
+            return self.check_rc(rc);
+        }
+        self.event_callbacks.on_tray_click = Some(user_data);
+        Ok(())
+    }
+
+    pub fn on_tray_menu<F>(&mut self, callback: F) -> Result<()>
+    where
+        F: Fn(Value) -> Result<Value> + 'static,
+    {
+        if let Some(ptr) = self.event_callbacks.on_tray_menu.take() {
+            unsafe { drop(Box::from_raw(ptr)) };
+        }
+        let holder = Box::new(BindHolder {
+            callback: Box::new(callback),
+        });
+        let user_data = Box::into_raw(holder);
+        let rc = unsafe {
+            mbink_sys::mbink_tray_set_menu_callback(
+                self.handle,
+                Some(bind_trampoline),
+                user_data.cast(),
+            )
+        };
+        if rc != 0 {
+            unsafe { drop(Box::from_raw(user_data)) };
+            return self.check_rc(rc);
+        }
+        self.event_callbacks.on_tray_menu = Some(user_data);
         Ok(())
     }
 
@@ -410,12 +582,36 @@ impl App {
         unsafe { string_from_const_ptr(mbink_sys::mbink_version()) }
     }
 
+    pub fn devtools_open(&self) -> Result<&Self> {
+        self.check_rc(unsafe { mbink_sys::mbink_devtools_open(self.handle) })?;
+        Ok(self)
+    }
+
+    pub fn devtools_close(&self) -> Result<&Self> {
+        self.check_rc(unsafe { mbink_sys::mbink_devtools_close(self.handle) })?;
+        Ok(self)
+    }
+
     pub(crate) fn raw_handle(&self) -> mbink_sys::MBinkHandle {
         self.handle
     }
 
     pub(crate) fn check_rc(&self, rc: i32) -> Result<()> {
         check_rc_raw(rc)
+    }
+
+    unsafe fn drop_bind_registration(reg: BindRegistration) {
+        match reg.kind {
+            BindKind::Sync => drop(Box::from_raw(reg.user_data as *mut BindHolder)),
+            BindKind::Async => drop(Box::from_raw(reg.user_data as *mut AsyncBindHolder)),
+        }
+    }
+
+    unsafe fn drop_bind_user_data(&self, kind: BindKind, user_data: *mut std::ffi::c_void) {
+        match kind {
+            BindKind::Sync => drop(Box::from_raw(user_data as *mut BindHolder)),
+            BindKind::Async => drop(Box::from_raw(user_data as *mut AsyncBindHolder)),
+        }
     }
 }
 
