@@ -1337,17 +1337,24 @@ Element::DOMRect Element::GetBoundingClientRect() const {
         // 对于 position: fixed 元素，layout.x/y 已经是视口绝对坐标
         // 不需要累加祖先位置
         if (!is_fixed) {
-            // 累加所有祖先的位置，同时考虑滚动偏移
+            // 累加所有祖先的位置，同时考虑滚动偏移。
+            // 但一旦遇到 position: fixed 祖先，就必须停止继续向上累加：
+            // fixed 祖先本身已经处于视口坐标系，再叠加其上层普通流坐标会产生额外偏移。
             auto parent = render_object->GetParent();
             while (parent) {
                 const auto& parent_layout = parent->GetLayoutInfo();
                 abs_x += parent_layout.x;
                 abs_y += parent_layout.y;
-                
-                // 减去父元素的滚动偏移（视口坐标需要考虑滚动）
+
+                // 减去父元素自身的滚动偏移（元素相对视口坐标需要考虑其滚动容器）
                 abs_x -= parent->GetScrollX();
                 abs_y -= parent->GetScrollY();
-                
+
+                const auto& parent_style = parent->GetComputedStyle();
+                if (parent_style.position == "fixed") {
+                    break;
+                }
+
                 parent = parent->GetParent();
             }
         }

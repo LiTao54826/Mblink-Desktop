@@ -116,9 +116,10 @@ SkRect GetWindowViewportRect(const std::shared_ptr<HTMLSelectElement>& select, c
     int width = 0;
     int height = 0;
     owner_window->GetSize(&width, &height);
-    float scale = owner_window->GetDisplayScale();
-    if (scale <= 0.0f) scale = 1.0f;
-    return SkRect::MakeXYWH(0.0f, 0.0f, static_cast<float>(width) / scale, static_cast<float>(height) / scale);
+
+    // GetSize() 返回的已经是 CSS 逻辑尺寸；下拉框布局/绘制也使用 CSS 坐标，
+    // 这里不能再按 DPI 缩放重复换算，否则高 DPI 下可视区域会被错误缩小。
+    return SkRect::MakeXYWH(0.0f, 0.0f, static_cast<float>(width), static_cast<float>(height));
 }
 
 float GetMaxScroll(const SelectDropdownInfo& info) {
