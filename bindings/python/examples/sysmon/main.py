@@ -169,6 +169,6 @@ app.load_html("""<!DOCTYPE html>
 
 _init_state()
 
-app.load_preact("ui/app.js")
+app.load_js_file("ui/app.js")
 app.run()
 

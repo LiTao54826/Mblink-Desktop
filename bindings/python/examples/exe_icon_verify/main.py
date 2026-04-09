@@ -85,11 +85,14 @@ html = f"""
     如果三个框都空白，说明宿主应用图标提取链路有问题；
     如果都能显示，说明 <code>app://res.ico</code> 在 HTML 和 JS 动态创建两条链路都生效。
   </p>
+  <p>Preact app://res.ico Verify</p>
+  <div id="app" style="margin-top:16px;"></div>
 </body>
 </html>
 """
 
 app = App("Host EXE Icon Verify", 760, 360, resizable=True, gpu=True)
 app.load_html(html)
+app.load_js_file("ui/app.js")
 app.run()
 

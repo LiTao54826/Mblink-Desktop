@@ -127,6 +127,6 @@ def _snapshot_terminal(_args):
     return {"ok": True, "preview": preview}
 
 
-app.load_preact("ui/app.js")
+app.load_js_file("ui/app.js")
 app.run()
 

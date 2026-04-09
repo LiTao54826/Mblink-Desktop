@@ -199,9 +199,7 @@ function App() {
   );
 }
 
-// ── 渲染 + SharedState 更新钩子 ───────────────────────────────────────────────
-var _root = document.getElementById('root');
-function rerender() { render(h(App), _root); }
 
-rerender();
+render(h(App), document.getElementById('root'));
 
+// console.log("加载完成")

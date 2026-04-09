@@ -83,14 +83,8 @@ function App() {
 }
 // ── 渲染 + 更新钩子 ───────────────────────────────────────
 var _root = document.getElementById('root');
-function rerender() {
-  try {
-    render(h(App), _root);
-    _updateClock(); // rerender 后补写时钟，防止 Preact diff 清空
-  } catch(e) {
-    console.error('[rerender error]', e && e.message, e && e.stack);
-  }
-}
+render(h(App), _root);
+
 // 脏标记 + setTimeout(0)：把 rerender 推迟到下一个事件循环迭代
 var _renderScheduled = false;
 

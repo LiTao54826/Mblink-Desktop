@@ -10,6 +10,10 @@ Finance Tracker — 个人财务记账本
 
 import json
 import os
+import sys
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
+
 from datetime import date, datetime
 
 from mbink import App
@@ -169,6 +173,6 @@ app.load_html("""<!DOCTYPE html>
 _load_data()
 _push_all()
 
-app.load_preact("ui/app.js")
+app.load_js_file("ui/app.js")
 app.run()
 

@@ -96,7 +96,7 @@ def main():
     @app.tray_action("quit")
     def _tray_quit():
         app.stop()
-
+    
     @app.on_close_request
     def _close_request():
         print("on_close_request")

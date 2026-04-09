@@ -8,10 +8,13 @@ Todo App 示例 - 展示 MBink Python 绑定的核心功能
   - on_update 定时器（每秒更新时钟）
   - 动态修改窗口标题
 """
+import os
+import sys
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
 
 from mbink import App
 
-app = App("Todo App", 480, 600)
+app = App("Todo App", 700, 600)
 
 # ── 共享状态（初始值在 load_html 之后设置）──────────────────
 state = app.shared("state")
@@ -71,6 +74,6 @@ app.load_html("""<!DOCTYPE html>
 state.todos = []
 state.filter = "all"
 
-app.load_preact("ui/app.js")
+app.load_js_file("ui/app.js")
 app.run()
 
