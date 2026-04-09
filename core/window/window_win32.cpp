@@ -119,12 +119,12 @@ static LRESULT CALLBACK SubclassWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPAR
                 window->GetMaxSize(&max_w, &max_h);
 
                 if (min_w > 0 || min_h > 0) {
-                    if (min_w > 0) mmi->ptMinTrackSize.x = min_w;
-                    if (min_h > 0) mmi->ptMinTrackSize.y = min_h;
+                    if (min_w > 0) mmi->ptMinTrackSize.x = window->LogicalToPhysicalPixels(min_w);
+                    if (min_h > 0) mmi->ptMinTrackSize.y = window->LogicalToPhysicalPixels(min_h);
                 }
                 if (max_w > 0 || max_h > 0) {
-                    if (max_w > 0) mmi->ptMaxTrackSize.x = max_w;
-                    if (max_h > 0) mmi->ptMaxTrackSize.y = max_h;
+                    if (max_w > 0) mmi->ptMaxTrackSize.x = window->LogicalToPhysicalPixels(max_w);
+                    if (max_h > 0) mmi->ptMaxTrackSize.y = window->LogicalToPhysicalPixels(max_h);
                 }
             }
             // 继续传递给原始窗口过程，让系统也处理
