@@ -117,6 +117,54 @@ inline bool IsAnimFrameDebugEnabled() {
     static const bool enabled = (std::getenv("MBINK_DEBUG_ANIM_FRAME") != nullptr);
     return enabled;
 }
+
+inline float NormalizeScale(float scale) {
+    return scale > 0.0f ? scale : 1.0f;
+}
+
+inline int ScaleCssToWindowUnits(int value, float content_scale) {
+    if (value <= 0) {
+        return value;
+    }
+    return std::max(static_cast<int>(std::lround(static_cast<float>(value) * NormalizeScale(content_scale))), 1);
+}
+
+inline int ScaleWindowUnitsToCss(int value, float content_scale) {
+    if (value <= 0) {
+        return value;
+    }
+    return std::max(static_cast<int>(std::lround(static_cast<float>(value) / NormalizeScale(content_scale))), 1);
+}
+
+inline float GetDisplayContentScaleSafe(SDL_DisplayID display_id) {
+    if (display_id == 0) {
+        return 1.0f;
+    }
+
+    const float scale = SDL_GetDisplayContentScale(display_id);
+    return NormalizeScale(scale);
+}
+
+inline SDL_DisplayID GetTargetDisplayForConfig(const WindowConfig& config) {
+    if (config.x >= 0 && config.y >= 0) {
+        SDL_Point point{config.x, config.y};
+        const SDL_DisplayID display_id = SDL_GetDisplayForPoint(&point);
+        if (display_id != 0) {
+            return display_id;
+        }
+    }
+
+    return SDL_GetPrimaryDisplay();
+}
+
+inline float GetWindowContentScale(SDL_Window* window) {
+    if (!window) {
+        return 1.0f;
+    }
+
+    const SDL_DisplayID display_id = SDL_GetDisplayForWindow(window);
+    return GetDisplayContentScaleSafe(display_id);
+}
 }
 
 // SDL 事件过滤器：过滤掉可能导致闪烁的事件
@@ -371,14 +419,21 @@ void Window::SetSize(int width, int height) {
     config_.width = width;
     config_.height = height;
     if (sdl_window_) {
-        SDL_SetWindowSize(sdl_window_, width, height);
+        const float content_scale = GetWindowContentScale(sdl_window_);
+        SDL_SetWindowSize(sdl_window_,
+            ScaleCssToWindowUnits(width, content_scale),
+            ScaleCssToWindowUnits(height, content_scale));
         OnResize();
     }
 }
 
 void Window::GetSize(int* width, int* height) const {
     if (sdl_window_) {
-        SDL_GetWindowSize(sdl_window_, width, height);
+        int window_width = 0, window_height = 0;
+        SDL_GetWindowSize(sdl_window_, &window_width, &window_height);
+        const float content_scale = GetWindowContentScale(sdl_window_);
+        if (width) *width = ScaleWindowUnitsToCss(window_width, content_scale);
+        if (height) *height = ScaleWindowUnitsToCss(window_height, content_scale);
     } else {
         if (width) *width = config_.width;
         if (height) *height = config_.height;
@@ -389,9 +444,10 @@ void Window::SetMinSize(int width, int height) {
     config_.min_width = width;
     config_.min_height = height;
     if (sdl_window_) {
+        const float content_scale = GetWindowContentScale(sdl_window_);
         SDL_SetWindowMinimumSize(sdl_window_,
-            width > 0 ? width : 0,
-            height > 0 ? height : 0);
+            width > 0 ? ScaleCssToWindowUnits(width, content_scale) : 0,
+            height > 0 ? ScaleCssToWindowUnits(height, content_scale) : 0);
     }
 }
 
@@ -399,9 +455,10 @@ void Window::SetMaxSize(int width, int height) {
     config_.max_width = width;
     config_.max_height = height;
     if (sdl_window_) {
+        const float content_scale = GetWindowContentScale(sdl_window_);
         SDL_SetWindowMaximumSize(sdl_window_,
-            width > 0 ? width : 0,
-            height > 0 ? height : 0);
+            width > 0 ? ScaleCssToWindowUnits(width, content_scale) : 0,
+            height > 0 ? ScaleCssToWindowUnits(height, content_scale) : 0);
     }
 }
 
@@ -587,11 +644,12 @@ void Window::OnResize() {
     int width, height;
     SDL_GetWindowSizeInPixels(sdl_window_, &width, &height);
 
-    // 同时更新config中的窗口大小（逻辑大小）
-    int logical_width, logical_height;
-    SDL_GetWindowSize(sdl_window_, &logical_width, &logical_height);
-    config_.width = logical_width;
-    config_.height = logical_height;
+    // 对外统一维护为 CSS 逻辑尺寸，SDL 内部窗口尺寸则按 display content scale 放大
+    int window_width = 0, window_height = 0;
+    SDL_GetWindowSize(sdl_window_, &window_width, &window_height);
+    const float content_scale = GetWindowContentScale(sdl_window_);
+    config_.width = ScaleWindowUnitsToCss(window_width, content_scale);
+    config_.height = ScaleWindowUnitsToCss(window_height, content_scale);
 
     // 重新创建Skia渲染表面（使用客户区像素大小）
     if (actual_backend_ == RenderBackend::OPENGL) {
@@ -639,9 +697,9 @@ void Window::OnResize() {
         }
     }
 
-    // 触发resize回调（使用逻辑大小）
+    // 触发resize回调（使用 CSS 逻辑大小）
     if (on_resize_callback_) {
-        on_resize_callback_(logical_width, logical_height);
+        on_resize_callback_(config_.width, config_.height);
     }
 }
 
@@ -693,12 +751,17 @@ void Window::CreateSDLWindow() {
     if (config_.always_on_top) flags |= SDL_WINDOW_ALWAYS_ON_TOP;
     if (config_.high_dpi) flags |= SDL_WINDOW_HIGH_PIXEL_DENSITY;
 
+    const SDL_DisplayID target_display = GetTargetDisplayForConfig(config_);
+    const float content_scale = GetDisplayContentScaleSafe(target_display);
+    const int initial_width = ScaleCssToWindowUnits(config_.width, content_scale);
+    const int initial_height = ScaleCssToWindowUnits(config_.height, content_scale);
+
     // 创建窗口
     // config_.title 应该已经是 UTF-8 编码，SDL 需要 UTF-8
     sdl_window_ = SDL_CreateWindow(
         config_.title.c_str(),
-        config_.width,
-        config_.height,
+        initial_width,
+        initial_height,
         flags
     );
 
@@ -709,13 +772,13 @@ void Window::CreateSDLWindow() {
     // 设置窗口最小/最大尺寸限制
     if (config_.min_width > 0 || config_.min_height > 0) {
         SDL_SetWindowMinimumSize(sdl_window_,
-            config_.min_width > 0 ? config_.min_width : 0,
-            config_.min_height > 0 ? config_.min_height : 0);
+            config_.min_width > 0 ? ScaleCssToWindowUnits(config_.min_width, content_scale) : 0,
+            config_.min_height > 0 ? ScaleCssToWindowUnits(config_.min_height, content_scale) : 0);
     }
     if (config_.max_width > 0 || config_.max_height > 0) {
         SDL_SetWindowMaximumSize(sdl_window_,
-            config_.max_width > 0 ? config_.max_width : 0,
-            config_.max_height > 0 ? config_.max_height : 0);
+            config_.max_width > 0 ? ScaleCssToWindowUnits(config_.max_width, content_scale) : 0,
+            config_.max_height > 0 ? ScaleCssToWindowUnits(config_.max_height, content_scale) : 0);
     }
 
     // 设置窗口位置（如果指定）
@@ -920,7 +983,7 @@ bool Window::HandleSDLEvent(const SDL_Event& event) {
                 InvalidateRenderTree();  // 窗口大小改变，需要用新尺寸重建渲染树和布局
                 SetForceFullRepaint(true);  // 关键修复：强制全量重绘，避免新区域显示垃圾数据
                 SetNeedsRepaint();
-                DispatchWindowEvent(WindowEvent(WindowEventType::RESIZE, new_width, new_height));
+                DispatchWindowEvent(WindowEvent(WindowEventType::RESIZE, config_.width, config_.height));
                 return true;
             }
 
@@ -1125,7 +1188,7 @@ void Window::Render() {
         InvalidateRenderTree();
         SetForceFullRepaint(true);
         SetNeedsRepaint();
-        DispatchWindowEvent(WindowEvent(WindowEventType::RESIZE, pending_resize_width_, pending_resize_height_));
+        DispatchWindowEvent(WindowEvent(WindowEventType::RESIZE, config_.width, config_.height));
     }
 
     if (!document_ || !surface_) {

@@ -227,6 +227,11 @@ public:
     void SetAlwaysOnTop(bool on_top);
 
     /**
+     * @brief 获取是否可调整大小
+     */
+    bool IsResizable() const { return config_.resizable; }
+
+    /**
      * @brief 获取是否无边框模式
      */
     bool IsBorderless() const { return config_.borderless; }

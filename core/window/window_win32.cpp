@@ -111,8 +111,10 @@ static LRESULT CALLBACK SubclassWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPAR
         }
 
         case WM_GETMINMAXINFO: {
-            // 窗口最小/最大尺寸限制
-            if (window) {
+            // WM_GETMINMAXINFO 使用的是窗口跟踪尺寸（屏幕物理像素）。
+            // 普通有边框窗口交给 SDL/系统处理，避免把“客户区逻辑尺寸”错误地当成整窗跟踪尺寸。
+            // 只有无边框窗口时，客户区≈窗口本体，这里才需要自行按当前 DPI 转换。
+            if (window && window->IsBorderless()) {
                 MINMAXINFO* mmi = (MINMAXINFO*)lParam;
                 int min_w = 0, min_h = 0, max_w = 0, max_h = 0;
                 window->GetMinSize(&min_w, &min_h);
@@ -141,13 +143,16 @@ static LRESULT CALLBACK SubclassWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPAR
                 RECT rc;
                 GetClientRect(hwnd, &rc);
 
-                const int BORDER_WIDTH = window->GetResizeBorderWidth();
+                const bool resizable = window->IsResizable();
+                const int border_width = resizable
+                    ? window->LogicalToPhysicalPixels(window->GetResizeBorderWidth())
+                    : 0;
 
                 // 检查是否在调整大小边缘区域
-                bool at_left   = pt.x < BORDER_WIDTH;
-                bool at_right  = pt.x >= rc.right - BORDER_WIDTH;
-                bool at_top    = pt.y < BORDER_WIDTH;
-                bool at_bottom = pt.y >= rc.bottom - BORDER_WIDTH;
+                bool at_left   = border_width > 0 && pt.x < border_width;
+                bool at_right  = border_width > 0 && pt.x >= rc.right - border_width;
+                bool at_top    = border_width > 0 && pt.y < border_width;
+                bool at_bottom = border_width > 0 && pt.y >= rc.bottom - border_width;
 
                 // 四个角优先（角的区域更大，更容易抓取）
                 if (at_top && at_left)     return HTTOPLEFT;
