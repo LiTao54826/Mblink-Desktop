@@ -35,9 +35,12 @@
 #include "core/dom/elements/html_input_element.h"
 #include "core/dom/elements/html_textarea_element.h"
 #include "core/dom/elements/html_canvas_element.h"
+#include "core/dom/elements/html_image_element.h"
 #include "core/dom/elements/terminal/html_terminal_element.h"
 #include "core/dom/elements/logview/html_logview_element.h"
 #include "core/render/canvas/canvas_rendering_context_2d.h"
+#include "core/render/image/image_fit.h"
+#include "core/render/image/image_loader.h"
 #include "core/editing/contenteditable_geometry.h"
 #include "core/utils/utf8_utils.h"
 #include <algorithm>
@@ -1273,6 +1276,47 @@ void RenderBlock::Paint(SkCanvas* canvas) {
         auto textarea_element = std::dynamic_pointer_cast<HTMLTextAreaElement>(node);
         if (textarea_element) {
             PaintTextAreaElement(canvas, textarea_element.get(), box);
+        }
+
+        // 渲染图片元素 - 保持与 RenderInlineBlock 一致的 object-fit/object-position 行为
+        auto image_element = std::dynamic_pointer_cast<HTMLImageElement>(node);
+        if (image_element) {
+            sk_sp<SkImage> image = image_element->GetSkImage();
+            if (!image) {
+                std::string src = image_element->GetSrc();
+                if (!src.empty()) {
+                    image = ImageLoader::LoadFromUrl(src);
+                    if (image) {
+                        image_element->SetSkImage(image);
+                    }
+                }
+            }
+
+            if (image) {
+                float image_width = static_cast<float>(image->width());
+                float image_height = static_cast<float>(image->height());
+
+                SkRect container_rect = SkRect::MakeXYWH(
+                    box.content_x,
+                    box.content_y,
+                    box.content_width,
+                    box.content_height
+                );
+
+                ObjectFitResult fit_result = CalculateObjectFit(
+                    image_width,
+                    image_height,
+                    container_rect,
+                    style.object_fit,
+                    style.object_position
+                );
+
+                if (!fit_result.src_rect.isEmpty() && !fit_result.dst_rect.isEmpty()) {
+                    SkSamplingOptions sampling(SkFilterMode::kLinear, SkMipmapMode::kNone);
+                    canvas->drawImageRect(image, fit_result.src_rect, fit_result.dst_rect,
+                                         sampling, nullptr, SkCanvas::kStrict_SrcRectConstraint);
+                }
+            }
         }
 
         // 渲染 terminal 元素
