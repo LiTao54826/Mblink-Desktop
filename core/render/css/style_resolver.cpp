@@ -3130,30 +3130,68 @@ std::shared_ptr<RenderObject> RenderTreeBuilder::CreateRenderObjectForText(
         preserve_newlines = (ws == "pre" || ws == "pre-wrap" || ws == "pre-line");
     }
 
+    auto is_inline_level_display = [](RenderObjectType display) {
+        return display == RenderObjectType::INLINE ||
+               display == RenderObjectType::INLINE_BLOCK ||
+               display == RenderObjectType::INLINE_FLEX ||
+               display == RenderObjectType::INLINE_GRID;
+    };
+
+    auto sibling_preserves_inter_word_space = [&](const std::shared_ptr<Node>& sibling) {
+        if (!sibling) {
+            return false;
+        }
+
+        if (sibling->GetNodeType() == NodeType::TEXT_NODE) {
+            auto sibling_text = std::dynamic_pointer_cast<Text>(sibling);
+            if (!sibling_text) {
+                return false;
+            }
+            const std::string& sibling_data = sibling_text->GetData();
+            return sibling_data.find_first_not_of(" \t\n\r") != std::string::npos;
+        }
+
+        if (sibling->GetNodeType() != NodeType::ELEMENT_NODE) {
+            return false;
+        }
+
+        auto sibling_element = std::dynamic_pointer_cast<Element>(sibling);
+        if (!sibling_element) {
+            return false;
+        }
+
+        auto sibling_style = style_resolver_.ResolveStyle(sibling_element, parent_style);
+        return is_inline_level_display(sibling_style.display);
+    };
+
     // 检查是否是纯空白文本节点
     bool is_whitespace_only = (text_data.find_first_not_of(" \t\n\r") == std::string::npos);
 
     // 对于纯空白文本节点：
     // - 如果 white-space: pre，保留
-    // - 如果父元素可以包含 inline 内容（不是纯块级容器），折叠为单个空格并保留
-    // - 只有在特定情况下才跳过（如空文本）
+    // - 如果它只位于块级内容边界/块级兄弟之间，则不创建 RenderText
+    // - 只有在确实承担 inline 间距时，才折叠为单个空格保留
     if (!preserve_newlines && is_whitespace_only) {
         // 空文本直接跳过
         if (text_data.empty()) {
             return nullptr;
         }
 
-        // CSS Flexbox 规范 (W3C CSS Flexible Box Layout Module Level 1, Section 4):
-        // "if the entire text sequences contains only document white space characters
-        //  it is instead not rendered (just as if its text nodes were display:none)"
-        //
-        // 当父元素是 flex 或 inline-flex 容器时，纯空白文本节点不应该被渲染
-        // 这是 Chrome/Firefox/Safari 等主流浏览器的标准行为
+        // CSS Flex/Grid 规范：纯空白文本节点不渲染
         if (parent_style && (parent_style->display == RenderObjectType::FLEX ||
                              parent_style->display == RenderObjectType::INLINE_FLEX ||
                              parent_style->display == RenderObjectType::GRID ||
                              parent_style->display == RenderObjectType::INLINE_GRID)) {
             return nullptr;
+        }
+
+        // 对块级容器，如果空白并没有夹在 inline 内容之间，就不应生成可见文本行。
+        if (parent_style && !is_inline_level_display(parent_style->display)) {
+            bool prev_preserves = sibling_preserves_inter_word_space(text->GetPreviousSibling());
+            bool next_preserves = sibling_preserves_inter_word_space(text->GetNextSibling());
+            if (!(prev_preserves && next_preserves)) {
+                return nullptr;
+            }
         }
 
         // 纯空白文本节点折叠为单个空格，用于 inline 元素之间的间距

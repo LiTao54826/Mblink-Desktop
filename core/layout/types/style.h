@@ -266,6 +266,7 @@ struct CoreStyle {
     // Overflow
     Point<Overflow> overflow = {Overflow::Visible, Overflow::Visible};
     float scrollbar_width = 0.0f;
+    float scrollbar_height = 0.0f;
 
     // Position
     Position position = Position::Relative;

@@ -20,15 +20,9 @@ namespace mbink {
 namespace {
 
 /// Compute scrollbar gutter from overflow style
-/// Note: For overflow: auto, scrollbar_width is set dynamically when content exceeds container
-/// So we use scrollbar_width directly instead of checking overflow type
-Rect<float> ComputeScrollbarGutter(Point<Overflow> overflow, float scrollbar_width) {
-    // Scrollbars take space in the opposite axis
-    // For overflow: scroll, scrollbar_width is set in style parsing
-    // For overflow: auto, scrollbar_width is set dynamically in ComputeNodeLayout
-    float right = (overflow.y == Overflow::Scroll || scrollbar_width > 0.0f) ? scrollbar_width : 0.0f;
-    float bottom = (overflow.x == Overflow::Scroll) ? scrollbar_width : 0.0f;
-    return Rect<float>{0.0f, right, 0.0f, bottom};
+/// Note: For overflow: auto, scrollbar size is set dynamically when content exceeds container
+Rect<float> ComputeScrollbarGutter(float vertical_scrollbar_width, float horizontal_scrollbar_height) {
+    return Rect<float>{0.0f, vertical_scrollbar_width, 0.0f, horizontal_scrollbar_height};
 }
 
 } // anonymous namespace
@@ -138,7 +132,7 @@ LayoutOutput ComputeBlockLayoutInner(
     // Resolve padding, border, margin
     auto padding = ResolveOrZero(style.padding, inputs.parent_size.width);
     auto border = ResolveOrZero(style.border, inputs.parent_size.width);
-    auto scrollbar_gutter = ComputeScrollbarGutter(style.overflow, style.scrollbar_width);
+    auto scrollbar_gutter = ComputeScrollbarGutter(style.scrollbar_width, style.scrollbar_height);
 
 
     

@@ -1850,10 +1850,13 @@ Style NativeLayoutEngine::ConvertStyle(const ComputedStyle& computed) {
     style.overflow.x = parseOverflow(overflow_x);
     style.overflow.y = parseOverflow(overflow_y);
 
-    // Set scrollbar width when overflow is scroll
+    // Set scrollbar size when overflow is scroll
     // For overflow: auto, we don't reserve space in layout (scrollbar appears only when needed)
-    if (style.overflow.x == Overflow::Scroll || style.overflow.y == Overflow::Scroll) {
+    if (style.overflow.y == Overflow::Scroll) {
         style.scrollbar_width = RenderObject::GetScrollbarWidth();
+    }
+    if (style.overflow.x == Overflow::Scroll) {
+        style.scrollbar_height = RenderObject::GetScrollbarWidth();
     }
 
     return style;
@@ -1909,6 +1912,8 @@ static const char* DebugRenderObjectTypeName(RenderObjectType type) {
         default: return "OTHER";
     }
 }
+
+
 
 // Helper function to check if a render object is inline-level
 // Inline formatting context 的文本语义必须完整保留，
@@ -2366,6 +2371,7 @@ LayoutOutput NativeLayoutEngine::ComputeNodeLayout(NodeId node_id, const LayoutI
     // IFC/匿名块在 PerformLayout 阶段除了产出 size，还会回写 RenderObject 坐标与 wrapped-lines。
     // 仅返回缓存的 LayoutOutput 会丢失这些 side effects，导致“高度是两行但绘制仍单行”等时序问题。
     // 因此在 PerformLayout + IFC 路径下禁用该层缓存读取。
+
     bool disable_cache_read = (inputs.run_mode == RunMode::PerformLayout) &&
                               (node->is_ifc_container || node->is_anonymous_block);
 
@@ -2490,11 +2496,19 @@ LayoutOutput NativeLayoutEngine::ComputeNodeLayout(NodeId node_id, const LayoutI
                 bool needs_relayout = false;
                 float scrollbar_width = RenderObject::GetScrollbarWidth();
 
-                // Reset scrollbar_width for overflow: auto (it's dynamically determined)
-                // Note: Don't reset if overflow is scroll (it's set in style parsing)
-                float old_scrollbar_width = node->style.scrollbar_width;
-                if (computed.overflow_y != "scroll" && computed.overflow_x != "scroll") {
+                bool had_vertical_scrollbar = node->style.scrollbar_width > 0.0f;
+                bool had_horizontal_scrollbar = node->style.scrollbar_height > 0.0f;
+                float checked_content_width = -1.0f;
+                float checked_effective_width = -1.0f;
+                float checked_content_height = -1.0f;
+                float checked_effective_height = -1.0f;
+
+                // Reset auto scrollbar state before recomputing it
+                if (computed.overflow_y != "scroll") {
                     node->style.scrollbar_width = 0.0f;
+                }
+                if (computed.overflow_x != "scroll") {
+                    node->style.scrollbar_height = 0.0f;
                 }
 
                 // For overflow-y: auto, check if content height exceeds container height
@@ -2506,7 +2520,11 @@ LayoutOutput NativeLayoutEngine::ComputeNodeLayout(NodeId node_id, const LayoutI
                 float container_height = inputs.known_dimensions.height.value_or(fallback_height);
                 if (overflow_y == "auto" && container_height > 0) {
                     float actual_content_height = output.content_size.height;
-                    if (actual_content_height > container_height) {
+                    float effective_container_height = container_height - node->style.scrollbar_height;
+                    checked_content_height = actual_content_height;
+                    checked_effective_height = effective_container_height;
+                    if (effective_container_height < 0) effective_container_height = 0;
+                    if (actual_content_height > effective_container_height) {
                         // Need vertical scrollbar - update style and relayout
                         node->style.scrollbar_width = scrollbar_width;
                         needs_relayout = true;
@@ -2518,19 +2536,34 @@ LayoutOutput NativeLayoutEngine::ComputeNodeLayout(NodeId node_id, const LayoutI
                 if (overflow_x == "auto" && container_width > 0) {
                     float actual_content_width = output.content_size.width;
                     // 考虑垂直滚动条占用的宽度
-                    float effective_container_width = container_width;
-                    if (node->style.scrollbar_width > 0) {
-                        effective_container_width -= node->style.scrollbar_width;
-                    }
+                    float effective_container_width = container_width - node->style.scrollbar_width;
+                    checked_content_width = actual_content_width;
+                    checked_effective_width = effective_container_width;
+                    if (effective_container_width < 0) effective_container_width = 0;
                     if (actual_content_width > effective_container_width) {
                         // Need horizontal scrollbar - update style and relayout
+                        node->style.scrollbar_height = scrollbar_width;
+                        needs_relayout = true;
+                    }
+                }
+
+                // Horizontal scrollbar may reduce available height and trigger vertical overflow
+                if (overflow_y == "auto" && container_height > 0 && node->style.scrollbar_height > 0.0f) {
+                    float actual_content_height = output.content_size.height;
+                    float effective_container_height = container_height - node->style.scrollbar_height;
+                    checked_content_height = actual_content_height;
+                    checked_effective_height = effective_container_height;
+                    if (effective_container_height < 0) effective_container_height = 0;
+                    if (actual_content_height > effective_container_height) {
                         node->style.scrollbar_width = scrollbar_width;
                         needs_relayout = true;
                     }
                 }
 
-                // Only relayout if scrollbar_width changed
-                if (needs_relayout && node->style.scrollbar_width != old_scrollbar_width) {
+                bool scrollbar_changed =
+                    (had_vertical_scrollbar != (node->style.scrollbar_width > 0.0f)) ||
+                    (had_horizontal_scrollbar != (node->style.scrollbar_height > 0.0f));
+                if (needs_relayout && scrollbar_changed) {
                     // Clear cache and relayout with scrollbar space
                     node->cache.Clear();
 
@@ -2566,17 +2599,32 @@ LayoutOutput NativeLayoutEngine::ComputeNodeLayout(NodeId node_id, const LayoutI
                 bool needs_relayout = false;
                 float scrollbar_width = RenderObject::GetScrollbarWidth();
 
-                // Reset scrollbar_width for overflow: auto (it's dynamically determined)
-                float old_scrollbar_width = node->style.scrollbar_width;
-                if (computed.overflow_y != "scroll" && computed.overflow_x != "scroll") {
+                bool had_vertical_scrollbar = node->style.scrollbar_width > 0.0f;
+                bool had_horizontal_scrollbar = node->style.scrollbar_height > 0.0f;
+                float checked_content_width = -1.0f;
+                float checked_effective_width = -1.0f;
+                float checked_content_height = -1.0f;
+                float checked_effective_height = -1.0f;
+
+                // Reset auto scrollbar state before recomputing it
+                if (computed.overflow_y != "scroll") {
                     node->style.scrollbar_width = 0.0f;
+                }
+                if (computed.overflow_x != "scroll") {
+                    node->style.scrollbar_height = 0.0f;
                 }
 
                 // For overflow-y: auto, check if content height exceeds container height
-                float container_height = inputs.known_dimensions.height.value_or(output.size.height);
+                float fallback_height = inputs.available_space.height.IsDefinite() ?
+                    inputs.available_space.height.value : output.size.height;
+                float container_height = inputs.known_dimensions.height.value_or(fallback_height);
                 if (overflow_y == "auto" && container_height > 0) {
                     float actual_content_height = output.content_size.height;
-                    if (actual_content_height > container_height) {
+                    float effective_container_height = container_height - node->style.scrollbar_height;
+                    checked_content_height = actual_content_height;
+                    checked_effective_height = effective_container_height;
+                    if (effective_container_height < 0) effective_container_height = 0;
+                    if (actual_content_height > effective_container_height) {
                         // Need vertical scrollbar - update style and relayout
                         node->style.scrollbar_width = scrollbar_width;
                         needs_relayout = true;
@@ -2587,15 +2635,33 @@ LayoutOutput NativeLayoutEngine::ComputeNodeLayout(NodeId node_id, const LayoutI
                 float container_width = inputs.known_dimensions.width.value_or(output.size.width);
                 if (overflow_x == "auto" && container_width > 0) {
                     float actual_content_width = output.content_size.width;
-                    if (actual_content_width > container_width) {
+                    float effective_container_width = container_width - node->style.scrollbar_width;
+                    checked_content_width = actual_content_width;
+                    checked_effective_width = effective_container_width;
+                    if (effective_container_width < 0) effective_container_width = 0;
+                    if (actual_content_width > effective_container_width) {
                         // Need horizontal scrollbar - update style and relayout
+                        node->style.scrollbar_height = scrollbar_width;
+                        needs_relayout = true;
+                    }
+                }
+
+                if (overflow_y == "auto" && container_height > 0 && node->style.scrollbar_height > 0.0f) {
+                    float actual_content_height = output.content_size.height;
+                    float effective_container_height = container_height - node->style.scrollbar_height;
+                    checked_content_height = actual_content_height;
+                    checked_effective_height = effective_container_height;
+                    if (effective_container_height < 0) effective_container_height = 0;
+                    if (actual_content_height > effective_container_height) {
                         node->style.scrollbar_width = scrollbar_width;
                         needs_relayout = true;
                     }
                 }
 
-                // Only relayout if scrollbar_width changed
-                if (needs_relayout && node->style.scrollbar_width != old_scrollbar_width) {
+                bool scrollbar_changed =
+                    (had_vertical_scrollbar != (node->style.scrollbar_width > 0.0f)) ||
+                    (had_horizontal_scrollbar != (node->style.scrollbar_height > 0.0f));
+                if (needs_relayout && scrollbar_changed) {
                     // Clear cache and relayout with scrollbar space
                     node->cache.Clear();
                     output = ComputeFlexLayout(node_id, inputs);
@@ -4374,6 +4440,10 @@ void NativeLayoutEngine::ReadLayoutResults(RenderObject* render_obj) {
     // For TABLE internal elements, their layout is fully managed by RenderTable::Layout
     // We only mark them as laid out, but preserve their positions and dimensions
     info.is_laid_out = true;
+
+    // 同步 layout 侧 content_size，避免 render 回退遍历 render tree 时
+    // 将 block 容器下不应影响布局的空白文本节点再次算入滚动尺寸。
+    render_obj->SetContentSize(node->output.content_size.width, node->output.content_size.height);
 
     // 清除 RenderObject 的 needs_layout_ 标志
     // 这对于 Paint 中的内容尺寸缓存优化很重要

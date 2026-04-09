@@ -987,9 +987,10 @@ bool RenderObject::IsScrollable() const {
     // 检查内容是否超出可见区域（对于 body 元素使用视口尺寸）
     float visible_width = GetEffectiveVisibleWidth();
     float visible_height = GetEffectiveVisibleHeight();
+    bool scrollable = (allow_h_scroll && content_width_ > visible_width) ||
+                      (allow_v_scroll && content_height_ > visible_height);
 
-    return (allow_h_scroll && content_width_ > visible_width) ||
-           (allow_v_scroll && content_height_ > visible_height);
+    return scrollable;
 }
 
 float RenderObject::GetMaxScrollX() const {
@@ -1018,7 +1019,9 @@ float RenderObject::GetMaxScrollX() const {
 
     // 可用内容宽度需要减去垂直滚动条宽度
     float available_width = visible_width - (needs_v_scroll ? scrollbar_width : 0);
-    return std::max(0.0f, content_width - available_width);
+    float max_scroll = std::max(0.0f, content_width - available_width);
+
+    return max_scroll;
 }
 
 float RenderObject::GetMaxScrollY() const {
@@ -1250,7 +1253,8 @@ float RenderObject::CalculateContentHeight() const {
     // 初始化：将所有直接子元素加入栈（跳过 out-of-flow 元素）
     for (const auto& child : children_) {
         const auto& child_style = child->GetComputedStyle();
-        if (!isOutOfFlow(child_style)) {
+        bool child_out_of_flow = isOutOfFlow(child_style);
+        if (!child_out_of_flow) {
             stack.push_back({child.get(), 0.0f});
         }
     }
@@ -1267,17 +1271,18 @@ float RenderObject::CalculateContentHeight() const {
 
         float obj_y = item.offset_y + obj_layout.y;
         float obj_height = obj_layout.height;
+        bool clip = hasOverflowClip(obj_style);
 
         // 更新全局最大高度
         global_max_height = std::max(global_max_height, obj_y + obj_height);
 
         // 如果没有 overflow clip，继续遍历子元素
-        if (!hasOverflowClip(obj_style)) {
+        if (!clip) {
             const auto& obj_children = obj->GetChildren();
             for (const auto& grandchild : obj_children) {
                 const auto& grandchild_style = grandchild->GetComputedStyle();
-                // 跳过 out-of-flow 元素
-                if (!isOutOfFlow(grandchild_style)) {
+                bool grandchild_out_of_flow = isOutOfFlow(grandchild_style);
+                if (!grandchild_out_of_flow) {
                     // 子元素的偏移 = 当前元素的绝对Y位置
                     stack.push_back({grandchild.get(), obj_y});
                 }
@@ -1286,16 +1291,18 @@ float RenderObject::CalculateContentHeight() const {
     }
 
     // 处理最后一个子元素的 margin-bottom
+    float last_margin_bottom = 0.0f;
     if (!children_.empty()) {
         const auto& last_child = children_.back();
         const auto& last_child_style = last_child->GetComputedStyle();
-        float last_margin_bottom = last_child_style.margin.bottom.ToPx(layout_info_.width, last_child_style.font_size);
+        last_margin_bottom = last_child_style.margin.bottom.ToPx(layout_info_.width, last_child_style.font_size);
         global_max_height += last_margin_bottom;
     }
 
     // For body element, add body's own margin-bottom
+    float body_margin_bottom = 0.0f;
     if (IsBodyElement()) {
-        float body_margin_bottom = computed_style_.margin.bottom.ToPx(viewport_height_, computed_style_.font_size);
+        body_margin_bottom = computed_style_.margin.bottom.ToPx(viewport_height_, computed_style_.font_size);
         global_max_height += body_margin_bottom;
     }
 
@@ -1331,7 +1338,8 @@ float RenderObject::CalculateContentWidth() const {
     // 初始化：将所有直接子元素加入栈（跳过 out-of-flow 元素）
     for (const auto& child : children_) {
         const auto& child_style = child->GetComputedStyle();
-        if (!isOutOfFlow(child_style)) {
+        bool child_out_of_flow = isOutOfFlow(child_style);
+        if (!child_out_of_flow) {
             stack.push_back({child.get(), 0.0f});
         }
     }
@@ -1348,17 +1356,18 @@ float RenderObject::CalculateContentWidth() const {
 
         float obj_x = item.offset_x + obj_layout.x;
         float obj_width = obj_layout.width;
+        bool clip = hasOverflowClip(obj_style);
 
         // 更新全局最大宽度
         global_max_width = std::max(global_max_width, obj_x + obj_width);
 
         // 如果没有 overflow clip，继续遍历子元素
-        if (!hasOverflowClip(obj_style)) {
+        if (!clip) {
             const auto& obj_children = obj->GetChildren();
             for (const auto& grandchild : obj_children) {
                 const auto& grandchild_style = grandchild->GetComputedStyle();
-                // 跳过 out-of-flow 元素
-                if (!isOutOfFlow(grandchild_style)) {
+                bool grandchild_out_of_flow = isOutOfFlow(grandchild_style);
+                if (!grandchild_out_of_flow) {
                     // 子元素的偏移 = 当前元素的绝对X位置
                     stack.push_back({grandchild.get(), obj_x});
                 }
