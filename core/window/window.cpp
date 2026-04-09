@@ -371,7 +371,7 @@ void Window::SetSize(int width, int height) {
     config_.width = width;
     config_.height = height;
     if (sdl_window_) {
-        SDL_SetWindowSize(sdl_window_, width, height);
+        SDL_SetWindowSize(sdl_window_, LogicalToPhysicalPixels(width), LogicalToPhysicalPixels(height));
         OnResize();
     }
 }
@@ -390,8 +390,8 @@ void Window::SetMinSize(int width, int height) {
     config_.min_height = height;
     if (sdl_window_) {
         SDL_SetWindowMinimumSize(sdl_window_,
-            width > 0 ? width : 1,
-            height > 0 ? height : 1);
+            width > 0 ? LogicalToPhysicalPixels(width) : 1,
+            height > 0 ? LogicalToPhysicalPixels(height) : 1);
     }
 }
 
@@ -400,8 +400,8 @@ void Window::SetMaxSize(int width, int height) {
     config_.max_height = height;
     if (sdl_window_) {
         SDL_SetWindowMaximumSize(sdl_window_,
-            width > 0 ? width : 16384,
-            height > 0 ? height : 16384);
+            width > 0 ? LogicalToPhysicalPixels(width) : 16384,
+            height > 0 ? LogicalToPhysicalPixels(height) : 16384);
     }
 }
 
@@ -693,12 +693,15 @@ void Window::CreateSDLWindow() {
     if (config_.always_on_top) flags |= SDL_WINDOW_ALWAYS_ON_TOP;
     if (config_.high_dpi) flags |= SDL_WINDOW_HIGH_PIXEL_DENSITY;
 
+    const int physical_width = LogicalToPhysicalPixels(config_.width);
+    const int physical_height = LogicalToPhysicalPixels(config_.height);
+
     // 创建窗口
     // config_.title 应该已经是 UTF-8 编码，SDL 需要 UTF-8
     sdl_window_ = SDL_CreateWindow(
         config_.title.c_str(),
-        config_.width,
-        config_.height,
+        physical_width,
+        physical_height,
         flags
     );
 
@@ -709,13 +712,13 @@ void Window::CreateSDLWindow() {
     // 设置窗口最小/最大尺寸限制
     if (config_.min_width > 0 || config_.min_height > 0) {
         SDL_SetWindowMinimumSize(sdl_window_,
-            config_.min_width > 0 ? config_.min_width : 1,
-            config_.min_height > 0 ? config_.min_height : 1);
+            config_.min_width > 0 ? LogicalToPhysicalPixels(config_.min_width) : 1,
+            config_.min_height > 0 ? LogicalToPhysicalPixels(config_.min_height) : 1);
     }
     if (config_.max_width > 0 || config_.max_height > 0) {
         SDL_SetWindowMaximumSize(sdl_window_,
-            config_.max_width > 0 ? config_.max_width : 16384,
-            config_.max_height > 0 ? config_.max_height : 16384);
+            config_.max_width > 0 ? LogicalToPhysicalPixels(config_.max_width) : 16384,
+            config_.max_height > 0 ? LogicalToPhysicalPixels(config_.max_height) : 16384);
     }
 
     // 设置窗口位置（如果指定）
@@ -1935,6 +1938,16 @@ float Window::GetDisplayScale() const {
     }
 
     return 1.0f;
+}
+
+int Window::LogicalToPhysicalPixels(int value) const {
+    if (value <= 0) {
+        return value;
+    }
+
+    const float scale = GetDisplayScale();
+    const int physical = static_cast<int>(std::lround(static_cast<float>(value) * scale));
+    return std::max(physical, 1);
 }
 
 void Window::ForceLayoutSync() {
