@@ -133,15 +133,46 @@ TEST_F(CSSValueTest, ParseFloat) {
 TEST_F(CSSValueTest, ParseCalcExpression) {
     auto value = CSSValue::ParseCalc("calc(100% - 40px)");
     EXPECT_TRUE(value.is_calc);
-    EXPECT_FLOAT_EQ(value.calc_percent, 1.0f);  // 100%
+    EXPECT_FLOAT_EQ(value.calc_percent, 100.0f);
     EXPECT_FLOAT_EQ(value.calc_px, -40.0f);
+    EXPECT_FLOAT_EQ(value.ToPx(800.0f), 760.0f);
 }
 
 TEST_F(CSSValueTest, ParseCalcAddition) {
     auto value = CSSValue::ParseCalc("calc(50% + 20px)");
     EXPECT_TRUE(value.is_calc);
-    EXPECT_FLOAT_EQ(value.calc_percent, 0.5f);  // 50%
+    EXPECT_FLOAT_EQ(value.calc_percent, 50.0f);
     EXPECT_FLOAT_EQ(value.calc_px, 20.0f);
+    EXPECT_FLOAT_EQ(value.ToPx(400.0f), 220.0f);
+}
+
+TEST_F(CSSValueTest, ParseMinFunction) {
+    auto value = CSSValue::ParseLength("min(100%, 720px)");
+    EXPECT_EQ(value.function_type, CSSLength::FunctionType::MIN);
+    EXPECT_FLOAT_EQ(value.ToPx(600.0f), 600.0f);
+    EXPECT_FLOAT_EQ(value.ToPx(1000.0f), 720.0f);
+}
+
+TEST_F(CSSValueTest, ParseMaxFunction) {
+    auto value = CSSValue::ParseLength("max(50%, 320px)");
+    EXPECT_EQ(value.function_type, CSSLength::FunctionType::MAX);
+    EXPECT_FLOAT_EQ(value.ToPx(400.0f), 320.0f);
+    EXPECT_FLOAT_EQ(value.ToPx(1000.0f), 500.0f);
+}
+
+TEST_F(CSSValueTest, ParseClampFunction) {
+    auto value = CSSValue::ParseLength("clamp(200px, 50%, 720px)");
+    EXPECT_EQ(value.function_type, CSSLength::FunctionType::CLAMP);
+    EXPECT_FLOAT_EQ(value.ToPx(300.0f), 200.0f);
+    EXPECT_FLOAT_EQ(value.ToPx(800.0f), 400.0f);
+    EXPECT_FLOAT_EQ(value.ToPx(2000.0f), 720.0f);
+}
+
+TEST_F(CSSValueTest, ParseNestedMinWithCalc) {
+    auto value = CSSValue::ParseLength("min(calc(100% - 40px), 720px)");
+    EXPECT_EQ(value.function_type, CSSLength::FunctionType::MIN);
+    EXPECT_FLOAT_EQ(value.ToPx(600.0f), 560.0f);
+    EXPECT_FLOAT_EQ(value.ToPx(1000.0f), 720.0f);
 }
 
 // ========== 边界情况测试 ==========

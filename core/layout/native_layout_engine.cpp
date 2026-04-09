@@ -101,6 +101,19 @@ static float GetBrowserNormalLineHeight(float font_size, const std::string& font
 
 // Helper to convert CSSLength to LengthPercentage
 static LengthPercentage ConvertLength(const CSSLength& css_length) {
+    if (css_length.is_calc) {
+        return LengthPercentage::Calc(css_length.calc_percent / 100.0f, css_length.calc_px);
+    }
+    switch (css_length.function_type) {
+        case CSSLength::FunctionType::MIN:
+            return LengthPercentage::Min(ConvertLength(*css_length.func_a), ConvertLength(*css_length.func_b));
+        case CSSLength::FunctionType::MAX:
+            return LengthPercentage::Max(ConvertLength(*css_length.func_a), ConvertLength(*css_length.func_b));
+        case CSSLength::FunctionType::CLAMP:
+            return LengthPercentage::Clamp(ConvertLength(*css_length.func_a), ConvertLength(*css_length.func_b), ConvertLength(*css_length.func_c));
+        case CSSLength::FunctionType::NONE:
+            break;
+    }
     switch (css_length.unit) {
         case CSSUnit::PX:
             return LengthPercentage::Length(css_length.value);
@@ -111,28 +124,22 @@ static LengthPercentage ConvertLength(const CSSLength& css_length) {
         case CSSUnit::REM:
             return LengthPercentage::Length(css_length.value * 16.0f);
         case CSSUnit::VW: {
-            // 视口宽度单位
             float vw = ViewportSize::GetWidth();
             return LengthPercentage::Length(css_length.value * vw / 100.0f);
         }
         case CSSUnit::VH: {
-            // 视口高度单位
             float vh = ViewportSize::GetHeight();
             return LengthPercentage::Length(css_length.value * vh / 100.0f);
         }
         case CSSUnit::VMIN: {
-            // 视口最小尺寸单位
             float vw = ViewportSize::GetWidth();
             float vh = ViewportSize::GetHeight();
-            float vmin = std::min(vw, vh);
-            return LengthPercentage::Length(css_length.value * vmin / 100.0f);
+            return LengthPercentage::Length(css_length.value * std::min(vw, vh) / 100.0f);
         }
         case CSSUnit::VMAX: {
-            // 视口最大尺寸单位
             float vw = ViewportSize::GetWidth();
             float vh = ViewportSize::GetHeight();
-            float vmax = std::max(vw, vh);
-            return LengthPercentage::Length(css_length.value * vmax / 100.0f);
+            return LengthPercentage::Length(css_length.value * std::max(vw, vh) / 100.0f);
         }
         case CSSUnit::AUTO:
         case CSSUnit::NONE:
@@ -1538,11 +1545,19 @@ namespace {
 
 // Helper to convert CSSLength to Dimension
 Dimension ConvertDimension(const CSSLength& css_length) {
-    // Handle calc() expressions
     if (css_length.is_calc) {
         return Dimension::Calc(css_length.calc_percent / 100.0f, css_length.calc_px);
     }
-
+    switch (css_length.function_type) {
+        case CSSLength::FunctionType::MIN:
+            return Dimension::Min(ConvertDimension(*css_length.func_a), ConvertDimension(*css_length.func_b));
+        case CSSLength::FunctionType::MAX:
+            return Dimension::Max(ConvertDimension(*css_length.func_a), ConvertDimension(*css_length.func_b));
+        case CSSLength::FunctionType::CLAMP:
+            return Dimension::Clamp(ConvertDimension(*css_length.func_a), ConvertDimension(*css_length.func_b), ConvertDimension(*css_length.func_c));
+        case CSSLength::FunctionType::NONE:
+            break;
+    }
     switch (css_length.unit) {
         case CSSUnit::AUTO:
         case CSSUnit::NONE:
@@ -1556,28 +1571,22 @@ Dimension ConvertDimension(const CSSLength& css_length) {
         case CSSUnit::REM:
             return Dimension::Length(css_length.value * 16.0f);
         case CSSUnit::VW: {
-            // 视口宽度单位
             float vw = ViewportSize::GetWidth();
             return Dimension::Length(css_length.value * vw / 100.0f);
         }
         case CSSUnit::VH: {
-            // 视口高度单位
             float vh = ViewportSize::GetHeight();
             return Dimension::Length(css_length.value * vh / 100.0f);
         }
         case CSSUnit::VMIN: {
-            // 视口最小尺寸单位
             float vw = ViewportSize::GetWidth();
             float vh = ViewportSize::GetHeight();
-            float vmin = std::min(vw, vh);
-            return Dimension::Length(css_length.value * vmin / 100.0f);
+            return Dimension::Length(css_length.value * std::min(vw, vh) / 100.0f);
         }
         case CSSUnit::VMAX: {
-            // 视口最大尺寸单位
             float vw = ViewportSize::GetWidth();
             float vh = ViewportSize::GetHeight();
-            float vmax = std::max(vw, vh);
-            return Dimension::Length(css_length.value * vmax / 100.0f);
+            return Dimension::Length(css_length.value * std::max(vw, vh) / 100.0f);
         }
         default:
             return Dimension::Auto();
@@ -1586,11 +1595,19 @@ Dimension ConvertDimension(const CSSLength& css_length) {
 
 // Helper to convert CSSLength to LengthPercentageAuto
 LengthPercentageAuto ConvertLengthAuto(const CSSLength& css_length) {
-    // Handle calc() expressions
     if (css_length.is_calc) {
         return LengthPercentageAuto::Calc(css_length.calc_percent / 100.0f, css_length.calc_px);
     }
-
+    switch (css_length.function_type) {
+        case CSSLength::FunctionType::MIN:
+            return LengthPercentageAuto::Min(ConvertLengthAuto(*css_length.func_a), ConvertLengthAuto(*css_length.func_b));
+        case CSSLength::FunctionType::MAX:
+            return LengthPercentageAuto::Max(ConvertLengthAuto(*css_length.func_a), ConvertLengthAuto(*css_length.func_b));
+        case CSSLength::FunctionType::CLAMP:
+            return LengthPercentageAuto::Clamp(ConvertLengthAuto(*css_length.func_a), ConvertLengthAuto(*css_length.func_b), ConvertLengthAuto(*css_length.func_c));
+        case CSSLength::FunctionType::NONE:
+            break;
+    }
     switch (css_length.unit) {
         case CSSUnit::AUTO:
         case CSSUnit::NONE:
@@ -1604,28 +1621,22 @@ LengthPercentageAuto ConvertLengthAuto(const CSSLength& css_length) {
         case CSSUnit::REM:
             return LengthPercentageAuto::Length(css_length.value * 16.0f);
         case CSSUnit::VW: {
-            // 视口宽度单位
             float vw = ViewportSize::GetWidth();
             return LengthPercentageAuto::Length(css_length.value * vw / 100.0f);
         }
         case CSSUnit::VH: {
-            // 视口高度单位
             float vh = ViewportSize::GetHeight();
             return LengthPercentageAuto::Length(css_length.value * vh / 100.0f);
         }
         case CSSUnit::VMIN: {
-            // 视口最小尺寸单位
             float vw = ViewportSize::GetWidth();
             float vh = ViewportSize::GetHeight();
-            float vmin = std::min(vw, vh);
-            return LengthPercentageAuto::Length(css_length.value * vmin / 100.0f);
+            return LengthPercentageAuto::Length(css_length.value * std::min(vw, vh) / 100.0f);
         }
         case CSSUnit::VMAX: {
-            // 视口最大尺寸单位
             float vw = ViewportSize::GetWidth();
             float vh = ViewportSize::GetHeight();
-            float vmax = std::max(vw, vh);
-            return LengthPercentageAuto::Length(css_length.value * vmax / 100.0f);
+            return LengthPercentageAuto::Length(css_length.value * std::max(vw, vh) / 100.0f);
         }
         default:
             return LengthPercentageAuto::Auto();

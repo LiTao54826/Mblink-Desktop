@@ -7,6 +7,7 @@
 #include "layout/block_layout.h"
 #include "layout/types/style.h"
 #include "layout/types/geometry.h"
+#include "layout/util/resolve.h"
 
 namespace mbink {
 namespace test {
@@ -162,6 +163,68 @@ TEST_F(BlockLayoutTest, AutoMarginCentering) {
 }
 
 // ========== Min/Max 尺寸测试 ==========
+
+TEST_F(BlockLayoutTest, ResolveMinFunction) {
+    LengthPercentage len = LengthPercentage::Min(
+        LengthPercentage::Percent(1.0f),
+        LengthPercentage::Length(720.0f));
+
+    auto resolved_large = len.ResolveToOption(1200.0f);
+    auto resolved_small = len.ResolveToOption(600.0f);
+
+    ASSERT_TRUE(resolved_large.has_value());
+    ASSERT_TRUE(resolved_small.has_value());
+    EXPECT_FLOAT_EQ(*resolved_large, 720.0f);
+    EXPECT_FLOAT_EQ(*resolved_small, 600.0f);
+}
+
+TEST_F(BlockLayoutTest, ResolveMaxFunction) {
+    LengthPercentage len = LengthPercentage::Max(
+        LengthPercentage::Percent(0.5f),
+        LengthPercentage::Length(320.0f));
+
+    auto resolved_large = len.ResolveToOption(1000.0f);
+    auto resolved_small = len.ResolveToOption(400.0f);
+
+    ASSERT_TRUE(resolved_large.has_value());
+    ASSERT_TRUE(resolved_small.has_value());
+    EXPECT_FLOAT_EQ(*resolved_large, 500.0f);
+    EXPECT_FLOAT_EQ(*resolved_small, 320.0f);
+}
+
+TEST_F(BlockLayoutTest, ResolveClampFunction) {
+    LengthPercentageAuto len = LengthPercentageAuto::Clamp(
+        LengthPercentageAuto::Length(200.0f),
+        LengthPercentageAuto::Percent(0.5f),
+        LengthPercentageAuto::Length(720.0f));
+
+    auto resolved_small = len.ResolveToOption(300.0f);
+    auto resolved_mid = len.ResolveToOption(800.0f);
+    auto resolved_large = len.ResolveToOption(2000.0f);
+
+    ASSERT_TRUE(resolved_small.has_value());
+    ASSERT_TRUE(resolved_mid.has_value());
+    ASSERT_TRUE(resolved_large.has_value());
+    EXPECT_FLOAT_EQ(*resolved_small, 200.0f);
+    EXPECT_FLOAT_EQ(*resolved_mid, 400.0f);
+    EXPECT_FLOAT_EQ(*resolved_large, 720.0f);
+}
+
+TEST_F(BlockLayoutTest, MaybeResolveLengthWithoutContext) {
+    auto resolved = MaybeResolve(LengthPercentageAuto::Length(14.0f), std::nullopt);
+    ASSERT_TRUE(resolved.has_value());
+    EXPECT_FLOAT_EQ(*resolved, 14.0f);
+}
+
+TEST_F(BlockLayoutTest, MaybeResolveMinWithoutContextWhenAbsolute) {
+    auto resolved = MaybeResolve(
+        LengthPercentageAuto::Min(
+            LengthPercentageAuto::Length(14.0f),
+            LengthPercentageAuto::Length(20.0f)),
+        std::nullopt);
+    ASSERT_TRUE(resolved.has_value());
+    EXPECT_FLOAT_EQ(*resolved, 14.0f);
+}
 
 TEST_F(BlockLayoutTest, MinWidthConstraint) {
     float computed_width = 50.0f;

@@ -11,8 +11,9 @@
 
 #pragma once
 
-#include <string>
+#include <memory>
 #include <optional>
+#include <string>
 #include <vector>
 #include "include/core/SkColor.h"
 
@@ -41,10 +42,23 @@ struct CSSLength {
     float value;
     CSSUnit unit;
 
+    enum class FunctionType {
+        NONE,
+        MIN,
+        MAX,
+        CLAMP
+    };
+
     // calc() 表达式支持
     bool is_calc = false;
     float calc_percent = 0.0f;  // 百分比部分 (如 100%)
     float calc_px = 0.0f;       // 像素部分 (如 -40px)
+
+    // min()/max()/clamp() 表达式支持
+    FunctionType function_type = FunctionType::NONE;
+    std::shared_ptr<CSSLength> func_a;
+    std::shared_ptr<CSSLength> func_b;
+    std::shared_ptr<CSSLength> func_c;
 
     CSSLength() : value(0.0f), unit(CSSUnit::PX) {}
     CSSLength(float v, CSSUnit u) : value(v), unit(u) {}
@@ -60,6 +74,33 @@ struct CSSLength {
         len.calc_percent = percent;
         len.calc_px = px;
         len.unit = CSSUnit::PX;  // calc 结果是像素
+        return len;
+    }
+
+    static CSSLength Min(const CSSLength& a, const CSSLength& b) {
+        CSSLength len;
+        len.function_type = FunctionType::MIN;
+        len.func_a = std::make_shared<CSSLength>(a);
+        len.func_b = std::make_shared<CSSLength>(b);
+        return len;
+    }
+
+    static CSSLength Max(const CSSLength& a, const CSSLength& b) {
+        CSSLength len;
+        len.function_type = FunctionType::MAX;
+        len.func_a = std::make_shared<CSSLength>(a);
+        len.func_b = std::make_shared<CSSLength>(b);
+        return len;
+    }
+
+    static CSSLength Clamp(const CSSLength& min_value,
+                           const CSSLength& preferred_value,
+                           const CSSLength& max_value) {
+        CSSLength len;
+        len.function_type = FunctionType::CLAMP;
+        len.func_a = std::make_shared<CSSLength>(min_value);
+        len.func_b = std::make_shared<CSSLength>(preferred_value);
+        len.func_c = std::make_shared<CSSLength>(max_value);
         return len;
     }
 
@@ -81,7 +122,9 @@ struct CSSLength {
     /**
      * @brief 是否为零值
      */
-    bool IsZero() const { return value == 0.0f && unit != CSSUnit::AUTO && !is_calc; }
+    bool IsZero() const {
+        return value == 0.0f && unit != CSSUnit::AUTO && !is_calc && function_type == FunctionType::NONE;
+    }
 
     /**
      * @brief 比较运算符
@@ -90,6 +133,19 @@ struct CSSLength {
         if (is_calc != other.is_calc) return false;
         if (is_calc) {
             return calc_percent == other.calc_percent && calc_px == other.calc_px;
+        }
+        if (function_type != other.function_type) return false;
+        if (function_type != FunctionType::NONE) {
+            auto ptr_equal = [](const std::shared_ptr<CSSLength>& lhs,
+                                const std::shared_ptr<CSSLength>& rhs) {
+                if (!lhs || !rhs) {
+                    return lhs == rhs;
+                }
+                return *lhs == *rhs;
+            };
+            return ptr_equal(func_a, other.func_a) &&
+                   ptr_equal(func_b, other.func_b) &&
+                   ptr_equal(func_c, other.func_c);
         }
         return value == other.value && unit == other.unit;
     }
@@ -399,6 +455,8 @@ public:
      * 示例: "8px 8px, cover, 100% 50%"
      */
     static std::vector<CSSBackgroundSize> ParseMultipleBackgroundSizes(const std::string& str);
+
+    static std::vector<std::string> SplitTopLevel(const std::string& str, char delimiter);
 
     /**
      * @brief 去除字符串首尾空格

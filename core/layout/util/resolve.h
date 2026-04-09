@@ -25,17 +25,28 @@ inline std::optional<float> MaybeResolve(
     const LengthPercentage& value,
     std::optional<float> context
 ) {
+    if (context.has_value()) {
+        return value.ResolveToOption(*context);
+    }
     switch (value.tag) {
         case LengthTag::Length:
             return value.value;
-        case LengthTag::Percent:
-            return context.has_value()
-                ? std::optional<float>(*context * value.value)
-                : std::nullopt;
-        case LengthTag::Calc:
-            return context.has_value()
-                ? std::optional<float>(*context * value.value + value.calc_px)
-                : std::nullopt;
+        case LengthTag::Min: {
+            auto a = value.func_a ? MaybeResolve(*value.func_a, std::nullopt) : std::nullopt;
+            auto b = value.func_b ? MaybeResolve(*value.func_b, std::nullopt) : std::nullopt;
+            return (a && b) ? std::optional<float>(std::min(*a, *b)) : std::nullopt;
+        }
+        case LengthTag::Max: {
+            auto a = value.func_a ? MaybeResolve(*value.func_a, std::nullopt) : std::nullopt;
+            auto b = value.func_b ? MaybeResolve(*value.func_b, std::nullopt) : std::nullopt;
+            return (a && b) ? std::optional<float>(std::max(*a, *b)) : std::nullopt;
+        }
+        case LengthTag::Clamp: {
+            auto a = value.func_a ? MaybeResolve(*value.func_a, std::nullopt) : std::nullopt;
+            auto b = value.func_b ? MaybeResolve(*value.func_b, std::nullopt) : std::nullopt;
+            auto c = value.func_c ? MaybeResolve(*value.func_c, std::nullopt) : std::nullopt;
+            return (a && b && c) ? std::optional<float>(std::max(*a, std::min(*b, *c))) : std::nullopt;
+        }
         default:
             return std::nullopt;
     }
@@ -46,18 +57,31 @@ inline std::optional<float> MaybeResolve(
     const LengthPercentageAuto& value,
     std::optional<float> context
 ) {
+    if (value.tag == LengthTag::Auto) {
+        return std::nullopt;
+    }
+    if (context.has_value()) {
+        return value.ResolveToOption(*context);
+    }
     switch (value.tag) {
         case LengthTag::Length:
             return value.value;
-        case LengthTag::Percent:
-            return context.has_value()
-                ? std::optional<float>(*context * value.value)
-                : std::nullopt;
-        case LengthTag::Calc:
-            return context.has_value()
-                ? std::optional<float>(*context * value.value + value.calc_px)
-                : std::nullopt;
-        case LengthTag::Auto:
+        case LengthTag::Min: {
+            auto a = value.func_a ? MaybeResolve(*value.func_a, std::nullopt) : std::nullopt;
+            auto b = value.func_b ? MaybeResolve(*value.func_b, std::nullopt) : std::nullopt;
+            return (a && b) ? std::optional<float>(std::min(*a, *b)) : std::nullopt;
+        }
+        case LengthTag::Max: {
+            auto a = value.func_a ? MaybeResolve(*value.func_a, std::nullopt) : std::nullopt;
+            auto b = value.func_b ? MaybeResolve(*value.func_b, std::nullopt) : std::nullopt;
+            return (a && b) ? std::optional<float>(std::max(*a, *b)) : std::nullopt;
+        }
+        case LengthTag::Clamp: {
+            auto a = value.func_a ? MaybeResolve(*value.func_a, std::nullopt) : std::nullopt;
+            auto b = value.func_b ? MaybeResolve(*value.func_b, std::nullopt) : std::nullopt;
+            auto c = value.func_c ? MaybeResolve(*value.func_c, std::nullopt) : std::nullopt;
+            return (a && b && c) ? std::optional<float>(std::max(*a, std::min(*b, *c))) : std::nullopt;
+        }
         default:
             return std::nullopt;
     }

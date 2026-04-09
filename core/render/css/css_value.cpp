@@ -33,6 +33,25 @@ float CSSLength::ToPx(float base_value, float font_size, float root_font_size) c
         return percent_value + calc_px;
     }
 
+    if (function_type != CSSLength::FunctionType::NONE) {
+        auto eval = [&](const std::shared_ptr<CSSLength>& expr) -> float {
+            return expr ? expr->ToPx(base_value, font_size, root_font_size) : 0.0f;
+        };
+
+        if (function_type == CSSLength::FunctionType::MIN) {
+            return std::min(eval(func_a), eval(func_b));
+        }
+        if (function_type == CSSLength::FunctionType::MAX) {
+            return std::max(eval(func_a), eval(func_b));
+        }
+        if (function_type == CSSLength::FunctionType::CLAMP) {
+            float min_value = eval(func_a);
+            float preferred_value = eval(func_b);
+            float max_value = eval(func_c);
+            return std::max(min_value, std::min(preferred_value, max_value));
+        }
+    }
+
     switch (unit) {
         case CSSUnit::PX:
             return value;
@@ -104,6 +123,39 @@ std::vector<std::string> CSSValue::Split(const std::string& str, char delimiter)
     return tokens;
 }
 
+std::vector<std::string> CSSValue::SplitTopLevel(const std::string& str, char delimiter) {
+    std::vector<std::string> tokens;
+    std::string current;
+    int paren_depth = 0;
+
+    for (char c : str) {
+        if (c == '(') {
+            paren_depth++;
+            current += c;
+        } else if (c == ')') {
+            if (paren_depth > 0) {
+                paren_depth--;
+            }
+            current += c;
+        } else if (c == delimiter && paren_depth == 0) {
+            std::string trimmed = Trim(current);
+            if (!trimmed.empty()) {
+                tokens.push_back(trimmed);
+            }
+            current.clear();
+        } else {
+            current += c;
+        }
+    }
+
+    std::string trimmed = Trim(current);
+    if (!trimmed.empty()) {
+        tokens.push_back(trimmed);
+    }
+
+    return tokens;
+}
+
 CSSLength CSSValue::ParseLength(const std::string& str) {
     std::string trimmed = Trim(str);
 
@@ -121,6 +173,43 @@ CSSLength CSSValue::ParseLength(const std::string& str) {
     // 检查是否为 calc() 表达式
     if (lower.find("calc(") == 0 && lower.back() == ')') {
         return ParseCalc(trimmed);
+    }
+
+    auto parse_binary_function = [&](const std::string& prefix, bool is_min) -> std::optional<CSSLength> {
+        if (lower.find(prefix) != 0 || lower.back() != ')') {
+            return std::nullopt;
+        }
+        size_t start = trimmed.find('(');
+        size_t end = trimmed.rfind(')');
+        if (start == std::string::npos || end == std::string::npos || end <= start) {
+            return CSSLength(0.0f, CSSUnit::PX);
+        }
+        auto args = SplitTopLevel(trimmed.substr(start + 1, end - start - 1), ',');
+        if (args.size() != 2) {
+            return CSSLength(0.0f, CSSUnit::PX);
+        }
+        CSSLength first = ParseLength(args[0]);
+        CSSLength second = ParseLength(args[1]);
+        return is_min ? CSSLength::Min(first, second) : CSSLength::Max(first, second);
+    };
+
+    if (auto min_value = parse_binary_function("min(", true)) {
+        return *min_value;
+    }
+    if (auto max_value = parse_binary_function("max(", false)) {
+        return *max_value;
+    }
+    if (lower.find("clamp(") == 0 && lower.back() == ')') {
+        size_t start = trimmed.find('(');
+        size_t end = trimmed.rfind(')');
+        if (start == std::string::npos || end == std::string::npos || end <= start) {
+            return CSSLength(0.0f, CSSUnit::PX);
+        }
+        auto args = SplitTopLevel(trimmed.substr(start + 1, end - start - 1), ',');
+        if (args.size() != 3) {
+            return CSSLength(0.0f, CSSUnit::PX);
+        }
+        return CSSLength::Clamp(ParseLength(args[0]), ParseLength(args[1]), ParseLength(args[2]));
     }
 
     // 查找单位

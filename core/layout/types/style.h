@@ -1,7 +1,7 @@
 /**
  * @file style.h
  * @brief CSS style types for layout computation
- * 
+ *
  * Translated from Taffy (https://github.com/DioxusLabs/taffy)
  * Original: src/style/mod.rs, dimension.rs, alignment.rs, flex.rs
  */
@@ -9,9 +9,11 @@
 #pragma once
 
 #include "geometry.h"
-#include <optional>
+#include <algorithm>
 #include <cstdint>
 #include <cmath>
+#include <memory>
+#include <optional>
 
 namespace mbink {
 
@@ -19,39 +21,47 @@ namespace mbink {
 // Dimension Types
 //------------------------------------------------------------------------------
 
-/// Tag values for compact length representation
 enum class LengthTag : uint8_t {
     Length = 0,
     Percent = 1,
     Auto = 2,
-    Calc = 3,  // calc() expression: percent + px
+    Calc = 3,
+    Min = 4,
+    Max = 5,
+    Clamp = 6,
 };
 
-/// A unit of linear measurement - Length, Percent, Auto, or Calc
 struct LengthPercentageAuto {
-    LengthTag tag;
-    float value;
-    float calc_px = 0.0f;  // For calc: the px offset (value stores percent)
+    LengthTag tag = LengthTag::Auto;
+    float value = 0.0f;
+    float calc_px = 0.0f;
+    std::shared_ptr<LengthPercentageAuto> func_a;
+    std::shared_ptr<LengthPercentageAuto> func_b;
+    std::shared_ptr<LengthPercentageAuto> func_c;
 
-    static LengthPercentageAuto Length(float val) {
-        return LengthPercentageAuto{LengthTag::Length, val, 0.0f};
+    static LengthPercentageAuto Length(float val) { return {LengthTag::Length, val, 0.0f}; }
+    static LengthPercentageAuto Percent(float val) { return {LengthTag::Percent, val, 0.0f}; }
+    static LengthPercentageAuto Auto() { return {LengthTag::Auto, 0.0f, 0.0f}; }
+    static LengthPercentageAuto Zero() { return Length(0.0f); }
+    static LengthPercentageAuto Calc(float percent, float px) { return {LengthTag::Calc, percent, px}; }
+    static LengthPercentageAuto Min(const LengthPercentageAuto& a, const LengthPercentageAuto& b) {
+        LengthPercentageAuto out{LengthTag::Min, 0.0f, 0.0f};
+        out.func_a = std::make_shared<LengthPercentageAuto>(a);
+        out.func_b = std::make_shared<LengthPercentageAuto>(b);
+        return out;
     }
-
-    static LengthPercentageAuto Percent(float val) {
-        return LengthPercentageAuto{LengthTag::Percent, val, 0.0f};
+    static LengthPercentageAuto Max(const LengthPercentageAuto& a, const LengthPercentageAuto& b) {
+        LengthPercentageAuto out{LengthTag::Max, 0.0f, 0.0f};
+        out.func_a = std::make_shared<LengthPercentageAuto>(a);
+        out.func_b = std::make_shared<LengthPercentageAuto>(b);
+        return out;
     }
-
-    static LengthPercentageAuto Auto() {
-        return LengthPercentageAuto{LengthTag::Auto, 0.0f, 0.0f};
-    }
-
-    static LengthPercentageAuto Zero() {
-        return Length(0.0f);
-    }
-
-    /// Create a calc expression: percent% + px
-    static LengthPercentageAuto Calc(float percent, float px) {
-        return LengthPercentageAuto{LengthTag::Calc, percent, px};
+    static LengthPercentageAuto Clamp(const LengthPercentageAuto& a, const LengthPercentageAuto& b, const LengthPercentageAuto& c) {
+        LengthPercentageAuto out{LengthTag::Clamp, 0.0f, 0.0f};
+        out.func_a = std::make_shared<LengthPercentageAuto>(a);
+        out.func_b = std::make_shared<LengthPercentageAuto>(b);
+        out.func_c = std::make_shared<LengthPercentageAuto>(c);
+        return out;
     }
 
     bool IsAuto() const { return tag == LengthTag::Auto; }
@@ -59,74 +69,79 @@ struct LengthPercentageAuto {
     bool IsPercent() const { return tag == LengthTag::Percent; }
     bool IsCalc() const { return tag == LengthTag::Calc; }
 
-    /// Resolve to option: Length returns value, Percent resolves, Auto returns nullopt
     std::optional<float> ResolveToOption(float context) const {
+        auto eval = [&](const std::shared_ptr<LengthPercentageAuto>& expr) -> std::optional<float> {
+            return expr ? expr->ResolveToOption(context) : std::nullopt;
+        };
         switch (tag) {
             case LengthTag::Length: return value;
             case LengthTag::Percent: return context * value;
             case LengthTag::Calc: return context * value + calc_px;
+            case LengthTag::Min: { auto a = eval(func_a); auto b = eval(func_b); return (a && b) ? std::optional<float>(std::min(*a, *b)) : std::nullopt; }
+            case LengthTag::Max: { auto a = eval(func_a); auto b = eval(func_b); return (a && b) ? std::optional<float>(std::max(*a, *b)) : std::nullopt; }
+            case LengthTag::Clamp: { auto a = eval(func_a); auto b = eval(func_b); auto c = eval(func_c); return (a && b && c) ? std::optional<float>(std::max(*a, std::min(*b, *c))) : std::nullopt; }
             case LengthTag::Auto: return std::nullopt;
         }
         return std::nullopt;
     }
 
     bool operator==(const LengthPercentageAuto& other) const {
-        if (tag != other.tag) return false;
-        if (tag == LengthTag::Auto) return true;
-        if (tag == LengthTag::Calc) return value == other.value && calc_px == other.calc_px;
-        return value == other.value;
+        if (tag != other.tag || value != other.value || calc_px != other.calc_px) return false;
+        auto same = [](const std::shared_ptr<LengthPercentageAuto>& a, const std::shared_ptr<LengthPercentageAuto>& b) {
+            return (!a && !b) || (a && b && *a == *b);
+        };
+        return same(func_a, other.func_a) && same(func_b, other.func_b) && same(func_c, other.func_c);
     }
 };
 
-/// A unit of linear measurement - Length, Percent, or Calc (no Auto)
 struct LengthPercentage {
-    LengthTag tag;
-    float value;
-    float calc_px = 0.0f;  // For calc: the px offset
+    LengthTag tag = LengthTag::Length;
+    float value = 0.0f;
+    float calc_px = 0.0f;
+    std::shared_ptr<LengthPercentage> func_a;
+    std::shared_ptr<LengthPercentage> func_b;
+    std::shared_ptr<LengthPercentage> func_c;
 
-    static LengthPercentage Length(float val) {
-        return LengthPercentage{LengthTag::Length, val, 0.0f};
-    }
-
-    static LengthPercentage Percent(float val) {
-        return LengthPercentage{LengthTag::Percent, val, 0.0f};
-    }
-
-    static LengthPercentage Zero() {
-        return Length(0.0f);
-    }
-
-    static LengthPercentage Calc(float percent, float px) {
-        return LengthPercentage{LengthTag::Calc, percent, px};
-    }
-
+    static LengthPercentage Length(float val) { return {LengthTag::Length, val, 0.0f}; }
+    static LengthPercentage Percent(float val) { return {LengthTag::Percent, val, 0.0f}; }
+    static LengthPercentage Zero() { return Length(0.0f); }
+    static LengthPercentage Calc(float percent, float px) { return {LengthTag::Calc, percent, px}; }
+    static LengthPercentage Min(const LengthPercentage& a, const LengthPercentage& b) { LengthPercentage out{LengthTag::Min, 0.0f, 0.0f}; out.func_a = std::make_shared<LengthPercentage>(a); out.func_b = std::make_shared<LengthPercentage>(b); return out; }
+    static LengthPercentage Max(const LengthPercentage& a, const LengthPercentage& b) { LengthPercentage out{LengthTag::Max, 0.0f, 0.0f}; out.func_a = std::make_shared<LengthPercentage>(a); out.func_b = std::make_shared<LengthPercentage>(b); return out; }
+    static LengthPercentage Clamp(const LengthPercentage& a, const LengthPercentage& b, const LengthPercentage& c) { LengthPercentage out{LengthTag::Clamp, 0.0f, 0.0f}; out.func_a = std::make_shared<LengthPercentage>(a); out.func_b = std::make_shared<LengthPercentage>(b); out.func_c = std::make_shared<LengthPercentage>(c); return out; }
     bool IsLength() const { return tag == LengthTag::Length; }
     bool IsPercent() const { return tag == LengthTag::Percent; }
     bool IsCalc() const { return tag == LengthTag::Calc; }
-
-    /// Resolve value against context
-    float Resolve(float context) const {
+    float Resolve(float context) const { return ResolveToOption(context).value_or(0.0f); }
+    std::optional<float> ResolveToOption(float context) const {
+        auto eval = [&](const std::shared_ptr<LengthPercentage>& expr) -> std::optional<float> { return expr ? expr->ResolveToOption(context) : std::nullopt; };
         switch (tag) {
             case LengthTag::Length: return value;
             case LengthTag::Percent: return context * value;
             case LengthTag::Calc: return context * value + calc_px;
-            default: return 0.0f;
+            case LengthTag::Min: { auto a = eval(func_a); auto b = eval(func_b); return (a && b) ? std::optional<float>(std::min(*a, *b)) : std::nullopt; }
+            case LengthTag::Max: { auto a = eval(func_a); auto b = eval(func_b); return (a && b) ? std::optional<float>(std::max(*a, *b)) : std::nullopt; }
+            case LengthTag::Clamp: { auto a = eval(func_a); auto b = eval(func_b); auto c = eval(func_c); return (a && b && c) ? std::optional<float>(std::max(*a, std::min(*b, *c))) : std::nullopt; }
+            default: return std::nullopt;
         }
     }
-
     operator LengthPercentageAuto() const {
-        return LengthPercentageAuto{tag, value, calc_px};
+        LengthPercentageAuto out{tag, value, calc_px};
+        if (func_a) out.func_a = std::make_shared<LengthPercentageAuto>(static_cast<LengthPercentageAuto>(*func_a));
+        if (func_b) out.func_b = std::make_shared<LengthPercentageAuto>(static_cast<LengthPercentageAuto>(*func_b));
+        if (func_c) out.func_c = std::make_shared<LengthPercentageAuto>(static_cast<LengthPercentageAuto>(*func_c));
+        return out;
     }
-
     bool operator==(const LengthPercentage& other) const {
-        if (tag != other.tag) return false;
-        if (tag == LengthTag::Calc) return value == other.value && calc_px == other.calc_px;
-        return value == other.value;
+        if (tag != other.tag || value != other.value || calc_px != other.calc_px) return false;
+        auto same = [](const std::shared_ptr<LengthPercentage>& a, const std::shared_ptr<LengthPercentage>& b) { return (!a && !b) || (a && b && *a == *b); };
+        return same(func_a, other.func_a) && same(func_b, other.func_b) && same(func_c, other.func_c);
     }
 };
 
-/// A dimension value: Length, Percent, or Auto
 using Dimension = LengthPercentageAuto;
+
+
 
 //------------------------------------------------------------------------------
 // Alignment Types
@@ -271,7 +286,7 @@ struct CoreStyle {
     Rect<LengthPercentageAuto> margin = Rect<LengthPercentageAuto>::Zero();
     Rect<LengthPercentage> padding = Rect<LengthPercentage>::Zero();
     Rect<LengthPercentage> border = Rect<LengthPercentage>::Zero();
-    
+
     // Margin collapsing behavior
     // CSS spec: margins do NOT collapse for inline-block, floats, absolutely positioned,
     // flex/grid items, and elements that establish new block formatting contexts
