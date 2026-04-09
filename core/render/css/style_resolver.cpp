@@ -34,8 +34,23 @@
 #include <sstream>
 #include <iostream>
 #include <cstdio>
+#include <vector>
 
 namespace mbink {
+
+namespace {
+
+std::vector<std::string> SplitWhitespaceTokens(const std::string& value) {
+    std::vector<std::string> tokens;
+    std::istringstream stream(value);
+    std::string token;
+    while (stream >> token) {
+        tokens.push_back(token);
+    }
+    return tokens;
+}
+
+}  // namespace
 
 // ========== StyleResolver 实现 ==========
 
@@ -1467,12 +1482,20 @@ bool StyleResolver::ParseLayoutProperty(ComputedStyle& style,
         style.align_items = resolved_value;
         return true;
     }
+    if (property == "justify-items") {
+        style.justify_items = resolved_value;
+        return true;
+    }
     if (property == "align-content") {
         style.align_content = resolved_value;
         return true;
     }
     if (property == "align-self") {
         style.align_self = resolved_value;
+        return true;
+    }
+    if (property == "justify-self") {
+        style.justify_self = resolved_value;
         return true;
     }
     if (property == "gap") {
@@ -2458,7 +2481,30 @@ void StyleResolver::ParseStyleProperty(ComputedStyle& style,
         resolved_value = CSSVarResolver::ResolveVar(value, style.css_variables);
     }
 
-    // 3. Delegate to category-specific parsers to reduce nesting depth
+    // 3. Expand common alignment shorthands before longhand parsing
+    if (property == "place-items" || property == "place-self" || property == "place-content") {
+        auto tokens = SplitWhitespaceTokens(resolved_value);
+        if (!tokens.empty() && tokens.size() <= 2) {
+            const std::string& first_value = tokens[0];
+            const std::string& second_value = tokens.size() >= 2 ? tokens[1] : tokens[0];
+
+            if (property == "place-items") {
+                ParseLayoutProperty(style, "align-items", first_value);
+                ParseLayoutProperty(style, "justify-items", second_value);
+                return;
+            }
+            if (property == "place-self") {
+                ParseLayoutProperty(style, "align-self", first_value);
+                ParseLayoutProperty(style, "justify-self", second_value);
+                return;
+            }
+            ParseLayoutProperty(style, "align-content", first_value);
+            ParseLayoutProperty(style, "justify-content", second_value);
+            return;
+        }
+    }
+
+    // 4. Delegate to category-specific parsers to reduce nesting depth
     if (ParseLayoutProperty(style, property, resolved_value)) return;
     if (ParseBorderProperty(style, property, resolved_value)) return;
     if (ParseAnimationProperty(style, property, resolved_value)) return;

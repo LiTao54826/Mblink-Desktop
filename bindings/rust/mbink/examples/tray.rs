@@ -157,7 +157,8 @@ const HTML: &str = r#"
 fn main() -> mbink::Result<()> {
     let mut app = App::builder()
         .title("MBink Rust Tray Demo")
-        .size(720, 480)
+        .size(1200, 800)
+        .min_size(1200, 800)
         .borderless(true)
         .build()?;
     let handle = app.handle();
