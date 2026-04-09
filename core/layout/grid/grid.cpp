@@ -344,8 +344,10 @@ LayoutOutput ComputeGridLayout(
         std::optional<float>(padding_border_size.height)
     });
 
-    // For grid containers with width: auto, use available space width
-    // This is similar to block layout behavior
+    // For grid containers with auto width, use definite available inline space.
+    // Height is intentionally not inferred from available_space here: in normal
+    // flow an auto-height grid must stay content-sized, otherwise it can wrongly
+    // expand to fill an ancestor's available block size.
     if (!outer_node_size.width.has_value() && available_space.width.IsDefinite()) {
         outer_node_size.width = std::optional<float>(available_space.width.value);
     }
@@ -722,7 +724,11 @@ LayoutOutput ComputeGridLayout(
         }
         if (col_idx + col_span > num_cols) col_span = num_cols - col_idx;
 
-        // Calculate available width for this cell
+        // Calculate available size for this cell.
+        // We try to pass a definite block size during the measurement pass when
+        // the row tracks are already known, so nested grid/flex containers can
+        // resolve percentage heights and flexible tracks instead of collapsing
+        // to intrinsic height 0.
         size_t col_track_start = col_idx * 2;
         size_t col_track_end = (col_idx + col_span - 1) * 2;
         float cell_width = 0.0f;
@@ -731,6 +737,17 @@ LayoutOutput ComputeGridLayout(
                 cell_width += columns[t].base_size;
             } else if (t > col_track_start && t < col_track_end) {
                 cell_width += columns[t].base_size;
+            }
+        }
+
+        size_t row_track_start = row_idx * 2;
+        size_t row_track_end = (row_idx + row_span - 1) * 2;
+        float cell_height = 0.0f;
+        for (size_t t = row_track_start; t <= row_track_end && t < rows.size(); t++) {
+            if (rows[t].kind != GridTrackKind::Gutter) {
+                cell_height += rows[t].base_size;
+            } else if (t > row_track_start && t < row_track_end) {
+                cell_height += rows[t].base_size;
             }
         }
 
@@ -759,15 +776,30 @@ LayoutOutput ComputeGridLayout(
             child_width_space = AvailableSpace::MaxContent();
         }
 
+        AvailableSpace child_height_space;
+        std::optional<float> child_parent_height = std::nullopt;
+        if (cell_height > 0.0f) {
+            child_height_space = AvailableSpace::Definite(cell_height);
+            child_parent_height = std::optional<float>(cell_height);
+        } else if (inner_node_size.height.has_value()) {
+            float fallback_height = *inner_node_size.height / static_cast<float>(std::max<size_t>(1, row_span));
+            child_height_space = AvailableSpace::Definite(fallback_height);
+            child_parent_height = std::optional<float>(fallback_height);
+        } else if (available_space.height.IsMinContent()) {
+            child_height_space = AvailableSpace::MinContent();
+        } else {
+            child_height_space = AvailableSpace::MaxContent();
+        }
+
         Size<AvailableSpace> measure_space{
             child_width_space,
-            AvailableSpace::MaxContent()
+            child_height_space
         };
 
         auto child_output = tree.PerformChildLayout(
             child_id,
             Size<std::optional<float>>{std::nullopt, std::nullopt},
-            Size<std::optional<float>>{child_parent_width, std::nullopt},
+            Size<std::optional<float>>{child_parent_width, child_parent_height},
             measure_space,
             SizingMode::InherentSize,
             Line<bool>{false, false}
