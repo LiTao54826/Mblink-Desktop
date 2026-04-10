@@ -1,0 +1,88 @@
+//go:build windows
+
+package mbink
+
+/*
+#cgo CFLAGS: -I../../../core/api
+#cgo LDFLAGS: -L.. -L../../../build/lib/Release -lmbink
+#include <stdlib.h>
+#include <stdint.h>
+#include "mbink.h"
+
+extern char* go_mbink_bind_trampoline(const char* args_json, void* user_data);
+extern char* go_mbink_bind_async_trampoline(const char* args_json, void* user_data);
+extern void go_mbink_state_watch_trampoline(const char* name, const char* value_json, void* user_data);
+extern void go_mbink_resize_trampoline(int width, int height, void* user_data);
+extern void go_mbink_void_trampoline(void* user_data);
+extern bool go_mbink_bool_trampoline(void* user_data);
+extern void go_mbink_update_trampoline(float delta_time, void* user_data);
+*/
+import "C"
+
+import (
+	"encoding/json"
+	"errors"
+	"fmt"
+	"sync"
+)
+
+var initOnce sync.Once
+
+func ensureInit() {
+	initOnce.Do(func() {
+		C.mbink_init()
+	})
+}
+
+func lastErrorMessage() string {
+	ptr := C.mbink_last_error()
+	if ptr == nil {
+		return "unknown MBink error"
+	}
+	return C.GoString(ptr)
+}
+
+func checkRC(rc C.int) error {
+	if rc == 0 {
+		return nil
+	}
+	return newError(int(rc), lastErrorMessage())
+}
+
+func mustJSON(value any) string {
+	if value == nil {
+		return "null"
+	}
+	data, err := json.Marshal(value)
+	if err != nil {
+		fallback, _ := json.Marshal(map[string]string{"error": err.Error()})
+		return string(fallback)
+	}
+	return string(data)
+}
+
+func boolToC(value bool) C.bool {
+	if value {
+		return C.bool(true)
+	}
+	return C.bool(false)
+}
+
+func unsupported() error {
+	return errors.New("mbink Go bindings currently support Windows only")
+}
+
+func parseJSONText(text string) any {
+	var out any
+	if err := json.Unmarshal([]byte(text), &out); err != nil {
+		return nil
+	}
+	return out
+}
+
+func decodeJSONText(text string, out any) error {
+	if err := json.Unmarshal([]byte(text), out); err != nil {
+		return fmt.Errorf("decode json: %w", err)
+	}
+	return nil
+}

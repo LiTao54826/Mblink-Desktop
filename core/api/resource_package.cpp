@@ -164,7 +164,7 @@ std::vector<uint8_t> CompileJsFile(const fs::path& path,
 bool BuildPayload(const fs::path& input, std::vector<uint8_t>& payload, std::string& error) {
     std::vector<fs::path> files;
     const bool is_dir = fs::is_directory(input);
-    const fs::path base = is_dir ? input.parent_path() : input.parent_path();
+	    const fs::path base = is_dir ? input : input.parent_path();
 
     if (is_dir) {
         for (const auto& entry : fs::recursive_directory_iterator(input)) {

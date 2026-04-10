@@ -28,7 +28,8 @@ C++ 桌面 UI / 应用框架。
 | Core source tree | `core/` | 核心源码目录 |
 | Public C API | `core/api/mbink.h` | 对外 C 接口 |
 | Python binding | Integrated | 已接入构建 |
-| Go / Rust / Node.js bindings | Placeholder directories | 当前仅占位目录 |
+| Go / Rust bindings | Implemented packages | 已有绑定包实现 |
+| Node.js binding | Placeholder directory | 当前仅占位目录 |
 | Browser compatibility | Partial, Chrome/Blink-oriented runtime layer | 当前为偏 Chrome/Blink 风格的基础兼容层，不能宣称完整浏览器兼容 |
 | Test targets | Available with `MBINK_BUILD_TESTS=ON` | 通过选项启用 |
 | Platform validation | Windows evidence is strongest | Windows 痕迹最完整 |
@@ -89,11 +90,11 @@ See also | 参考：
 | Language | Status | 说明 |
 |---|---|---|
 | Python | Implemented | 已实现 |
-| Go | Placeholder | 占位 |
-| Rust | Placeholder | 占位 |
+| Go | Implemented | 已实现，位于 `bindings/go/mbink` |
+| Rust | Implemented | 已实现，位于 `bindings/rust/mbink` |
 | Node.js | Placeholder | 占位 |
 
-See | 详见：[docs/BINDINGS.md](docs/BINDINGS.md)
+See | 详见：[docs/BINDINGS.md](docs/BINDINGS.md) · [bindings/go/README.md](bindings/go/README.md) · [bindings/rust/README.md](bindings/rust/README.md)
 
 ## Documentation | 文档
 

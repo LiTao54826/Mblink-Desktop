@@ -5,8 +5,8 @@
 | Language | Status | Evidence | 说明 |
 |---|---|---|---|
 | Python | Integrated | `bindings/python/CMakeLists.txt`, `setup.py`, `mbink/_ffi.py`, Python package files | 已接入构建 |
-| Go | Placeholder | Directory exists, no verified implementation | 占位目录 |
-| Rust | Placeholder | Directory exists, no verified implementation | 占位目录 |
+| Go | Implemented | `bindings/go/go.mod`, `bindings/go/mbink/*.go`, `go test ./...` | 已实现 Go 绑定 |
+| Rust | Implemented | `bindings/rust/README.md`, `bindings/rust/mbink`, `bindings/rust/mbink-sys` | 已实现 Rust 绑定 |
 | Node.js | Placeholder | Directory exists, no verified implementation | 占位目录 |
 
 ## Python Binding | Python 绑定
@@ -29,11 +29,41 @@ Python binding currently consists of | 当前形态包括：
 - Python wrapper and FFI helper code
   Python 包装层与 FFI 辅助代码
 
+## Go Binding | Go 绑定
+
+Current verified facts | 当前可确认事实：
+
+- Go package exists at `bindings/go/mbink`
+  Go 包位于 `bindings/go/mbink`
+- implemented with `cgo + core/api/mbink.h + bindings/go/mbink.lib`
+  基于 `cgo + core/api/mbink.h + bindings/go/mbink.lib` 实现
+- current implementation is Windows-oriented
+  当前实现面向 Windows
+- package exposes `App`, `State`, `Shared`, `LogView`, `Terminal`, resource helpers, and callback/event bindings
+  提供 `App`、`State`、`Shared`、`LogView`、`Terminal`、资源辅助与回调/事件绑定
+- verified by `go test ./...`
+  已通过 `go test ./...` 验证
+- examples available under `bindings/go/examples`
+  示例位于 `bindings/go/examples`
+- usage and run instructions documented in `bindings/go/README.md`
+  使用与运行方式见 `bindings/go/README.md`
+
+## Rust Binding | Rust 绑定
+
+Current verified facts | 当前可确认事实：
+
+- Rust binding package exists at `bindings/rust/mbink`
+  Rust 绑定包位于 `bindings/rust/mbink`
+- raw FFI layer exists at `bindings/rust/mbink-sys`
+  原始 FFI 层位于 `bindings/rust/mbink-sys`
+- repository contains README and runnable examples for Rust bindings
+  仓库中包含 Rust 绑定 README 与可运行示例
+
 ## Other Bindings | 其他绑定
 
-Current repository state for Go, Rust, and Node.js | 当前仓库状态：
+Current repository state for Node.js | 当前 Node.js 仓库状态：
 
-- placeholder directories exist
+- placeholder directory exists
   存在占位目录
 - no verified implementation should be claimed
   不应宣称已有可验证实现
