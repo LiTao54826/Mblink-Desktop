@@ -823,7 +823,6 @@ int main(int argc, char** argv) {
         // 4. 先清理 Preact/Hooks 在全局对象上的闭包引用（事件处理函数、调度器状态等）
         // 必须在 DOMBindings::Cleanup() 之前，因为 Cleanup 会把 global.document 设为 undefined，
         // 而 __preactCleanup 内部需要调用 element.removeEventListener。
-        mbink::bindings::DumpElementListenerStats();
         try {
             runtime->Eval(R"(
                 (function() {
@@ -844,26 +843,21 @@ int main(int argc, char** argv) {
         } catch (...) {
             // 忽略清理脚本异常，继续执行原生清理流程
         }
-        mbink::bindings::DumpElementListenerStats();
 
         // 5. 清理 DOM 绑定缓存 + JS 全局变量
         DOMBindings::Cleanup(runtime->GetContext());
-        mbink::bindings::DumpElementListenerStats();
 
         // 6. 释放 document（持有 DOM 树和事件监听器，这些可能包含 JSValue）
         document.reset();
-        mbink::bindings::DumpElementListenerStats();
 
         // 7. 清理 DOM 绑定映射（释放所有 Node* -> JSValue 的映射）
         // 必须在 QuickJS 运行时销毁之前调用
         DOMBindingMap::GetInstance().Clear();
-        mbink::bindings::DumpElementListenerStats();
 
         // 8. 清理 HostBridge/StateManager 的监听器，释放 watch 回调里的 JSValue 引用
         if (state_manager) {
             state_manager->clearWatchers();
         }
-        mbink::bindings::DumpElementListenerStats();
 
         // 9. 在 runtime 销毁前显式释放桥接对象，避免 quick_exit 跳过析构导致残留
         host_bridge.reset();
@@ -871,7 +865,6 @@ int main(int argc, char** argv) {
 
         // 10. document 销毁 + 全局闭包清理后触发一次 GC
         runtime->RunGC();
-        mbink::bindings::DumpElementListenerStats();
 
         // 11. 最后释放 QuickJS 运行时（此时所有 JSValue 应该已被释放）
         runtime.reset();

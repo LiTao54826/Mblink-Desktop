@@ -40,6 +40,7 @@
 #include <algorithm>
 #include <limits>
 #include <sstream>
+#include <atomic>
 #ifdef _WIN32
 #ifndef NOMINMAX
 #define NOMINMAX
@@ -50,6 +51,11 @@
 #endif
 
 namespace mbink {
+
+namespace {
+std::atomic<size_t> g_layout_node_live_count{0};
+std::atomic<size_t> g_layout_engine_live_count{0};
+}
 //------------------------------------------------------------------------------
 // Helper Functions (must be before CreateNode)
 //------------------------------------------------------------------------------
@@ -162,6 +168,49 @@ static NonRepeatedTrackSizingFunction ParseGridTrackValue(const std::string& val
     trimmed = trimmed.substr(start, end - start + 1);
 
     if (trimmed == "auto") {
+        return NonRepeatedTrackSizingFunction::Auto();
+    }
+    if (trimmed == "min-content") {
+        return NonRepeatedTrackSizingFunction{
+            MinTrackSizingFunction::MinContent(),
+            MaxTrackSizingFunction::MinContent()
+        };
+    }
+    if (trimmed == "max-content") {
+        return NonRepeatedTrackSizingFunction{
+            MinTrackSizingFunction::MaxContent(),
+            MaxTrackSizingFunction::MaxContent()
+        };
+    }
+    if (trimmed.size() > 12 && trimmed.substr(0, 12) == "fit-content" && trimmed[12] == '(' && trimmed.back() == ')') {
+        std::string inner = trimmed.substr(13, trimmed.size() - 14);
+        size_t inner_start = inner.find_first_not_of(" \t");
+        size_t inner_end = inner.find_last_not_of(" \t");
+        if (inner_start != std::string::npos) {
+            inner = inner.substr(inner_start, inner_end - inner_start + 1);
+            try {
+                if (!inner.empty() && inner.back() == '%') {
+                    float pct = std::stof(inner.substr(0, inner.size() - 1));
+                    return NonRepeatedTrackSizingFunction{
+                        MinTrackSizingFunction::Auto(),
+                        MaxTrackSizingFunction::FitContentPercent(pct / 100.0f)
+                    };
+                }
+
+                float px = 0.0f;
+                if (inner.size() > 2 && inner.substr(inner.size() - 2) == "px") {
+                    px = std::stof(inner.substr(0, inner.size() - 2));
+                } else {
+                    px = std::stof(inner);
+                }
+                return NonRepeatedTrackSizingFunction{
+                    MinTrackSizingFunction::Auto(),
+                    MaxTrackSizingFunction::FitContentPx(px)
+                };
+            } catch (...) {
+                return NonRepeatedTrackSizingFunction::Auto();
+            }
+        }
         return NonRepeatedTrackSizingFunction::Auto();
     }
 
@@ -385,10 +434,20 @@ static std::pair<GridPlacement, GridPlacement> ParseGridLine(const std::string& 
 //------------------------------------------------------------------------------
 
 NativeLayoutEngine::NativeLayoutEngine() {
+    g_layout_engine_live_count.fetch_add(1, std::memory_order_relaxed);
 }
 
 NativeLayoutEngine::~NativeLayoutEngine() {
     Clear();
+    g_layout_engine_live_count.fetch_sub(1, std::memory_order_relaxed);
+}
+
+size_t NativeLayoutEngine::GetLiveNodeCount() {
+    return g_layout_node_live_count.load(std::memory_order_relaxed);
+}
+
+size_t NativeLayoutEngine::GetLiveEngineCount() {
+    return g_layout_engine_live_count.load(std::memory_order_relaxed);
 }
 
 //------------------------------------------------------------------------------
@@ -1395,7 +1454,9 @@ void NativeLayoutEngine::RemoveElement(RenderObject* render_obj) {
                 }
             }
         }
-        nodes_.erase(id);
+        if (nodes_.erase(id) > 0) {
+            g_layout_node_live_count.fetch_sub(1, std::memory_order_relaxed);
+        }
 
         if (id == root_node_) {
             root_node_ = 0;
@@ -1404,6 +1465,10 @@ void NativeLayoutEngine::RemoveElement(RenderObject* render_obj) {
 }
 
 void NativeLayoutEngine::Clear() {
+    const size_t cleared_count = nodes_.size();
+    if (cleared_count > 0) {
+        g_layout_node_live_count.fetch_sub(cleared_count, std::memory_order_relaxed);
+    }
     nodes_.clear();
     render_to_node_.clear();
     root_node_ = 0;
@@ -1471,6 +1536,7 @@ NodeId NativeLayoutEngine::CreateNode(RenderObject* render_obj) {
 
     nodes_[id] = std::move(node);
     render_to_node_[render_obj] = id;
+    g_layout_node_live_count.fetch_add(1, std::memory_order_relaxed);
 
     return id;
 }
@@ -1838,8 +1904,7 @@ Style NativeLayoutEngine::ConvertStyle(const ComputedStyle& computed) {
         if (val == "hidden") return Overflow::Hidden;
         if (val == "scroll") return Overflow::Scroll;
         if (val == "clip") return Overflow::Clip;
-        // Note: "auto" is not directly supported in Taffy's Overflow enum,
-        // treat it as Visible for layout purposes (scrollbar only appears when needed)
+        if (val == "auto") return Overflow::Auto;
         return Overflow::Visible;
     };
 

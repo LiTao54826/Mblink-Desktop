@@ -192,56 +192,92 @@ static void InitializeGridTracks(
 }
 
 /// Resolve track base sizes
+static float ResolveMinTrackBaseSize(
+    const GridTrack& track,
+    std::optional<float> available_space
+) {
+    if (track.kind == GridTrackKind::Gutter) {
+        return track.min_track_sizing_function.value;
+    }
+
+    switch (track.min_track_sizing_function.type) {
+        case MinTrackSizingFunctionType::Fixed:
+            if (track.min_track_sizing_function.is_percent && available_space.has_value()) {
+                return track.min_track_sizing_function.value * *available_space;
+            }
+            if (!track.min_track_sizing_function.is_percent) {
+                return track.min_track_sizing_function.value;
+            }
+            return 0.0f;
+        case MinTrackSizingFunctionType::MinContent:
+        case MinTrackSizingFunctionType::MaxContent:
+        case MinTrackSizingFunctionType::Auto:
+            return 0.0f;
+    }
+
+    return 0.0f;
+}
+
+static float ResolveMaxTrackGrowthLimit(
+    const GridTrack& track,
+    std::optional<float> available_space
+) {
+    if (track.kind == GridTrackKind::Gutter) {
+        return track.min_track_sizing_function.value;
+    }
+
+    switch (track.max_track_sizing_function.type) {
+        case MaxTrackSizingFunctionType::Fixed:
+            if (track.max_track_sizing_function.is_percent && available_space.has_value()) {
+                return track.max_track_sizing_function.value * *available_space;
+            }
+            if (!track.max_track_sizing_function.is_percent) {
+                return track.max_track_sizing_function.value;
+            }
+            return INFINITY;
+        case MaxTrackSizingFunctionType::FitContent:
+            if (track.max_track_sizing_function.is_percent && available_space.has_value()) {
+                return track.max_track_sizing_function.value * *available_space;
+            }
+            if (!track.max_track_sizing_function.is_percent) {
+                return track.max_track_sizing_function.value;
+            }
+            return INFINITY;
+        case MaxTrackSizingFunctionType::MinContent:
+        case MaxTrackSizingFunctionType::MaxContent:
+        case MaxTrackSizingFunctionType::Auto:
+        case MaxTrackSizingFunctionType::Fraction:
+            return INFINITY;
+    }
+
+    return INFINITY;
+}
+
+static bool TrackUsesIntrinsicMinSizing(const GridTrack& track) {
+    return track.kind == GridTrackKind::Track && (
+        track.min_track_sizing_function.type == MinTrackSizingFunctionType::Auto ||
+        track.min_track_sizing_function.type == MinTrackSizingFunctionType::MinContent ||
+        track.min_track_sizing_function.type == MinTrackSizingFunctionType::MaxContent
+    );
+}
+
+static bool TrackUsesIntrinsicMaxSizing(const GridTrack& track) {
+    return track.kind == GridTrackKind::Track && (
+        track.max_track_sizing_function.type == MaxTrackSizingFunctionType::Auto ||
+        track.max_track_sizing_function.type == MaxTrackSizingFunctionType::MinContent ||
+        track.max_track_sizing_function.type == MaxTrackSizingFunctionType::MaxContent ||
+        track.max_track_sizing_function.type == MaxTrackSizingFunctionType::FitContent
+    );
+}
+
+/// Resolve track base sizes
 static void ResolveTrackBaseSizes(
     std::vector<GridTrack>& tracks,
     std::optional<float> available_space
 ) {
     for (auto& track : tracks) {
-        if (track.kind == GridTrackKind::Gutter) {
-            // Gutters have fixed size
-            track.base_size = track.min_track_sizing_function.value;
-            track.growth_limit = track.base_size;
-            continue;
-        }
-        
-        // Resolve min track sizing function
-        float min_size = 0.0f;
-        switch (track.min_track_sizing_function.type) {
-            case MinTrackSizingFunctionType::Fixed:
-                if (track.min_track_sizing_function.is_percent && available_space.has_value()) {
-                    min_size = track.min_track_sizing_function.value * *available_space;
-                } else if (!track.min_track_sizing_function.is_percent) {
-                    min_size = track.min_track_sizing_function.value;
-                }
-                break;
-            case MinTrackSizingFunctionType::MinContent:
-            case MinTrackSizingFunctionType::MaxContent:
-            case MinTrackSizingFunctionType::Auto:
-                min_size = 0.0f;  // Will be resolved during track sizing
-                break;
-        }
-        
-        // Resolve max track sizing function
-        float max_size = INFINITY;
-        switch (track.max_track_sizing_function.type) {
-            case MaxTrackSizingFunctionType::Fixed:
-                if (track.max_track_sizing_function.is_percent && available_space.has_value()) {
-                    max_size = track.max_track_sizing_function.value * *available_space;
-                } else if (!track.max_track_sizing_function.is_percent) {
-                    max_size = track.max_track_sizing_function.value;
-                }
-                break;
-            case MaxTrackSizingFunctionType::MinContent:
-            case MaxTrackSizingFunctionType::MaxContent:
-            case MaxTrackSizingFunctionType::FitContent:
-            case MaxTrackSizingFunctionType::Auto:
-                max_size = INFINITY;
-                break;
-            case MaxTrackSizingFunctionType::Fraction:
-                max_size = INFINITY;  // Fr tracks are sized later
-                break;
-        }
-        
+        float min_size = ResolveMinTrackBaseSize(track, available_space);
+        float max_size = ResolveMaxTrackGrowthLimit(track, available_space);
         track.base_size = min_size;
         track.growth_limit = std::max(min_size, max_size);
     }
@@ -254,7 +290,6 @@ static void DistributeFreeSpaceToFlexTracks(
 ) {
     if (free_space <= 0.0f) return;
 
-    // Calculate total flex factor
     float total_flex = 0.0f;
     for (const auto& track : tracks) {
         if (track.kind == GridTrackKind::Track && track.IsFlexible()) {
@@ -264,15 +299,11 @@ static void DistributeFreeSpaceToFlexTracks(
 
     if (total_flex <= 0.0f) return;
 
-    // Distribute space proportionally
-    // For minmax(min, fr) tracks, the base_size is already set to min
-    // We need to add the fr share to the base_size
     for (auto& track : tracks) {
         if (track.kind == GridTrackKind::Track && track.IsFlexible()) {
             float share = (track.FlexFactor() / total_flex) * free_space;
-            // Add the share to the base_size (which may already have a min value)
             track.base_size += share;
-            track.growth_limit = track.base_size;
+            track.growth_limit = std::max(track.growth_limit, track.base_size);
         }
     }
 }
@@ -294,6 +325,77 @@ static float SumTrackBaseSizes(const std::vector<GridTrack>& tracks) {
     }
     return sum;
 }
+
+
+/// Stretch tracks to fill a definite available size.
+/// Non-flex tracks keep their intrinsic/fixed size; flex tracks are reset to their minimum
+/// contribution first, then receive the remaining free space.
+static void StretchTracksToAvailableSpace(
+    std::vector<GridTrack>& tracks,
+    float available_space
+) {
+    if (available_space <= 0.0f) return;
+
+    for (auto& track : tracks) {
+        if (track.kind == GridTrackKind::Track && track.IsFlexible()) {
+            float min_size = ResolveMinTrackBaseSize(track, available_space);
+            float max_size = ResolveMaxTrackGrowthLimit(track, available_space);
+            track.base_size = min_size;
+            track.growth_limit = std::max(min_size, max_size);
+        }
+    }
+
+    float used_space = SumTrackBaseSizes(tracks);
+    if (used_space >= available_space) return;
+
+    float extra_space = available_space - used_space;
+    float total_flex = 0.0f;
+    for (const auto& track : tracks) {
+        if (track.kind == GridTrackKind::Track && track.IsFlexible()) {
+            total_flex += track.FlexFactor();
+        }
+    }
+
+    if (total_flex > 0.0f) {
+        DistributeFreeSpaceToFlexTracks(tracks, extra_space);
+        return;
+    }
+
+    bool grew = true;
+    while (extra_space > 0.0f && grew) {
+        grew = false;
+        size_t growable_tracks = 0;
+        for (const auto& track : tracks) {
+            if (track.kind != GridTrackKind::Track || track.IsFlexible()) continue;
+            if (!std::isfinite(track.growth_limit) || track.base_size < track.growth_limit - 0.001f) {
+                growable_tracks++;
+            }
+        }
+
+        if (growable_tracks == 0) return;
+
+        float extra_per_track = extra_space / static_cast<float>(growable_tracks);
+        float consumed = 0.0f;
+        for (auto& track : tracks) {
+            if (track.kind != GridTrackKind::Track || track.IsFlexible()) continue;
+
+            float target = track.base_size + extra_per_track;
+            float capped = std::isfinite(track.growth_limit)
+                ? f32_min(target, track.growth_limit)
+                : target;
+            if (capped > track.base_size) {
+                consumed += capped - track.base_size;
+                track.base_size = capped;
+                grew = true;
+            }
+        }
+
+        if (!grew || consumed <= 0.0f) return;
+        extra_space -= consumed;
+    }
+}
+
+
 
 //------------------------------------------------------------------------------
 // Main Grid Layout Function
@@ -440,14 +542,12 @@ LayoutOutput ComputeGridLayout(
     float row_sum = SumTrackBaseSizes(rows);
 
     if (inner_node_size.width.has_value()) {
-        float free_space = *inner_node_size.width - col_sum;
-        DistributeFreeSpaceToFlexTracks(columns, free_space);
+        StretchTracksToAvailableSpace(columns, *inner_node_size.width);
         col_sum = SumTrackBaseSizes(columns);
     }
 
     if (inner_node_size.height.has_value()) {
-        float free_space = *inner_node_size.height - row_sum;
-        DistributeFreeSpaceToFlexTracks(rows, free_space);
+        StretchTracksToAvailableSpace(rows, *inner_node_size.height);
         row_sum = SumTrackBaseSizes(rows);
     }
 
@@ -461,46 +561,10 @@ LayoutOutput ComputeGridLayout(
     if (min_size.height.has_value()) container_height = f32_max(container_height, *min_size.height);
     if (max_size.height.has_value()) container_height = f32_min(container_height, *max_size.height);
 
-    // If the container has a definite inline size that is larger than the sum of track base sizes,
-    // auto tracks should expand to fill the remaining space instead of staying at 0.
-    // This is critical for single-column grids like `.form-grid { display:grid }` where no
-    // explicit `grid-template-columns` is provided: the implicit auto column must fill the grid.
     float inner_width = container_width - padding_border_size.width;
-    if (inner_width > col_sum) {
-        float extra_space = inner_width - col_sum;
-        float total_flex = 0.0f;
-        for (const auto& column : columns) {
-            if (column.kind == GridTrackKind::Track && column.IsFlexible()) {
-                total_flex += column.FlexFactor();
-            }
-        }
-
-        if (total_flex > 0.0f) {
-            for (auto& column : columns) {
-                if (column.kind == GridTrackKind::Track && column.IsFlexible()) {
-                    float share = (column.FlexFactor() / total_flex) * extra_space;
-                    column.base_size += share;
-                }
-            }
-            col_sum = inner_width;
-        } else {
-            size_t growable_columns = 0;
-            for (const auto& column : columns) {
-                if (column.kind == GridTrackKind::Track) {
-                    growable_columns++;
-                }
-            }
-
-            if (growable_columns > 0) {
-                float extra_per_column = extra_space / static_cast<float>(growable_columns);
-                for (auto& column : columns) {
-                    if (column.kind == GridTrackKind::Track) {
-                        column.base_size += extra_per_column;
-                    }
-                }
-                col_sum = inner_width;
-            }
-        }
+    if (inner_width > 0.0f) {
+        StretchTracksToAvailableSpace(columns, inner_width);
+        col_sum = SumTrackBaseSizes(columns);
     }
 
     Size<float> container_size{container_width, container_height};
@@ -567,6 +631,10 @@ LayoutOutput ComputeGridLayout(
         size_t row_span;
         float measured_width;
         float measured_height;
+        float min_content_width;
+        float max_content_width;
+        float min_content_height;
+        float max_content_height;
     };
     std::vector<ChildPlacement> placements;
     placements.reserve(grid_item_count);
@@ -805,6 +873,42 @@ LayoutOutput ComputeGridLayout(
             Line<bool>{false, false}
         );
 
+        auto min_content_width_output = tree.PerformChildLayout(
+            child_id,
+            Size<std::optional<float>>{std::nullopt, std::nullopt},
+            Size<std::optional<float>>{child_parent_width, child_parent_height},
+            Size<AvailableSpace>{AvailableSpace::MinContent(), child_height_space},
+            SizingMode::InherentSize,
+            Line<bool>{false, false}
+        );
+
+        auto max_content_width_output = tree.PerformChildLayout(
+            child_id,
+            Size<std::optional<float>>{std::nullopt, std::nullopt},
+            Size<std::optional<float>>{child_parent_width, child_parent_height},
+            Size<AvailableSpace>{AvailableSpace::MaxContent(), child_height_space},
+            SizingMode::InherentSize,
+            Line<bool>{false, false}
+        );
+
+        auto min_content_height_output = tree.PerformChildLayout(
+            child_id,
+            Size<std::optional<float>>{std::nullopt, std::nullopt},
+            Size<std::optional<float>>{child_parent_width, child_parent_height},
+            Size<AvailableSpace>{child_width_space, AvailableSpace::MinContent()},
+            SizingMode::InherentSize,
+            Line<bool>{false, false}
+        );
+
+        auto max_content_height_output = tree.PerformChildLayout(
+            child_id,
+            Size<std::optional<float>>{std::nullopt, std::nullopt},
+            Size<std::optional<float>>{child_parent_width, child_parent_height},
+            Size<AvailableSpace>{child_width_space, AvailableSpace::MaxContent()},
+            SizingMode::InherentSize,
+            Line<bool>{false, false}
+        );
+
         placements.push_back({
             child_id,
             col_idx,
@@ -812,7 +916,11 @@ LayoutOutput ComputeGridLayout(
             col_span,
             row_span,
             child_output.size.width,
-            child_output.size.height
+            child_output.size.height,
+            min_content_width_output.size.width,
+            max_content_width_output.size.width,
+            min_content_height_output.size.height,
+            max_content_height_output.size.height
         });
 
         // Mark cells as occupied
@@ -866,37 +974,117 @@ LayoutOutput ComputeGridLayout(
         }
     }
 
-    // Update column widths based on measured children (for auto-sized columns)
+    // Update column widths based on measured children and intrinsic track sizing
     for (const auto& placement : placements) {
-        // Update all column tracks that this item spans
         for (size_t c = 0; c < placement.col_span; c++) {
             size_t col_track_idx = (placement.col_idx + c) * 2;
-            if (col_track_idx < columns.size() && columns[col_track_idx].kind == GridTrackKind::Track) {
-                bool is_auto_col = columns[col_track_idx].min_track_sizing_function.type == MinTrackSizingFunctionType::Auto ||
-                                   columns[col_track_idx].max_track_sizing_function.type == MaxTrackSizingFunctionType::Auto;
-                if (is_auto_col) {
-                    float width_per_col = placement.measured_width / static_cast<float>(placement.col_span);
-                    columns[col_track_idx].base_size = std::max(columns[col_track_idx].base_size, width_per_col);
-                }
+            if (col_track_idx >= columns.size() || columns[col_track_idx].kind != GridTrackKind::Track) {
+                continue;
             }
+
+            auto& track = columns[col_track_idx];
+            if (!TrackUsesIntrinsicMinSizing(track) && !TrackUsesIntrinsicMaxSizing(track)) {
+                continue;
+            }
+
+            float width_per_col = placement.measured_width / static_cast<float>(placement.col_span);
+            float min_content_per_col = placement.min_content_width / static_cast<float>(placement.col_span);
+            float max_content_per_col = placement.max_content_width / static_cast<float>(placement.col_span);
+            float candidate = track.base_size;
+
+            switch (track.min_track_sizing_function.type) {
+                case MinTrackSizingFunctionType::Auto:
+                    candidate = std::max(candidate, width_per_col);
+                    break;
+                case MinTrackSizingFunctionType::MinContent:
+                    candidate = std::max(candidate, min_content_per_col);
+                    break;
+                case MinTrackSizingFunctionType::MaxContent:
+                    candidate = std::max(candidate, max_content_per_col);
+                    break;
+                case MinTrackSizingFunctionType::Fixed:
+                    break;
+            }
+
+            switch (track.max_track_sizing_function.type) {
+                case MaxTrackSizingFunctionType::Auto:
+                    candidate = std::max(candidate, width_per_col);
+                    break;
+                case MaxTrackSizingFunctionType::MinContent:
+                    candidate = std::max(candidate, min_content_per_col);
+                    break;
+                case MaxTrackSizingFunctionType::MaxContent:
+                    candidate = std::max(candidate, max_content_per_col);
+                    break;
+                case MaxTrackSizingFunctionType::FitContent:
+                    candidate = std::max(candidate, f32_min(max_content_per_col, track.growth_limit));
+                    break;
+                case MaxTrackSizingFunctionType::Fixed:
+                case MaxTrackSizingFunctionType::Fraction:
+                    break;
+            }
+
+            if (std::isfinite(track.growth_limit)) {
+                candidate = f32_min(candidate, track.growth_limit);
+            }
+            track.base_size = std::max(track.base_size, candidate);
         }
     }
 
-    // Update row heights based on measured children (for auto-sized rows)
+    // Update row heights based on measured children and intrinsic track sizing
     for (const auto& placement : placements) {
-        // Update all row tracks that this item spans
         for (size_t r = 0; r < placement.row_span; r++) {
             size_t row_track_idx = (placement.row_idx + r) * 2;
-            if (row_track_idx < rows.size() && rows[row_track_idx].kind == GridTrackKind::Track) {
-                // For auto-sized rows, update base_size to fit content
-                bool is_auto_row = rows[row_track_idx].min_track_sizing_function.type == MinTrackSizingFunctionType::Auto ||
-                                   rows[row_track_idx].max_track_sizing_function.type == MaxTrackSizingFunctionType::Auto;
-                if (is_auto_row) {
-                    // For non-spanning items, use full height; for spanning items, divide by span
-                    float height_per_row = placement.measured_height / static_cast<float>(placement.row_span);
-                    rows[row_track_idx].base_size = std::max(rows[row_track_idx].base_size, height_per_row);
-                }
+            if (row_track_idx >= rows.size() || rows[row_track_idx].kind != GridTrackKind::Track) {
+                continue;
             }
+
+            auto& track = rows[row_track_idx];
+            if (!TrackUsesIntrinsicMinSizing(track) && !TrackUsesIntrinsicMaxSizing(track)) {
+                continue;
+            }
+
+            float height_per_row = placement.measured_height / static_cast<float>(placement.row_span);
+            float min_content_per_row = placement.min_content_height / static_cast<float>(placement.row_span);
+            float max_content_per_row = placement.max_content_height / static_cast<float>(placement.row_span);
+            float candidate = track.base_size;
+
+            switch (track.min_track_sizing_function.type) {
+                case MinTrackSizingFunctionType::Auto:
+                    candidate = std::max(candidate, height_per_row);
+                    break;
+                case MinTrackSizingFunctionType::MinContent:
+                    candidate = std::max(candidate, min_content_per_row);
+                    break;
+                case MinTrackSizingFunctionType::MaxContent:
+                    candidate = std::max(candidate, max_content_per_row);
+                    break;
+                case MinTrackSizingFunctionType::Fixed:
+                    break;
+            }
+
+            switch (track.max_track_sizing_function.type) {
+                case MaxTrackSizingFunctionType::Auto:
+                    candidate = std::max(candidate, height_per_row);
+                    break;
+                case MaxTrackSizingFunctionType::MinContent:
+                    candidate = std::max(candidate, min_content_per_row);
+                    break;
+                case MaxTrackSizingFunctionType::MaxContent:
+                    candidate = std::max(candidate, max_content_per_row);
+                    break;
+                case MaxTrackSizingFunctionType::FitContent:
+                    candidate = std::max(candidate, f32_min(max_content_per_row, track.growth_limit));
+                    break;
+                case MaxTrackSizingFunctionType::Fixed:
+                case MaxTrackSizingFunctionType::Fraction:
+                    break;
+            }
+
+            if (std::isfinite(track.growth_limit)) {
+                candidate = f32_min(candidate, track.growth_limit);
+            }
+            track.base_size = std::max(track.base_size, candidate);
         }
     }
 
@@ -912,45 +1100,10 @@ LayoutOutput ComputeGridLayout(
     if (max_size.width.has_value()) container_width = f32_min(container_width, *max_size.width);
     container_size.width = container_width;
 
-    // If container has explicit width larger than intrinsic column sizes,
-    // distribute the remaining inline space to flexible tracks first, otherwise
-    // to all track columns equally.
     inner_width = container_width - padding_border_size.width;
-    if (inner_width > col_sum) {
-        float extra_space = inner_width - col_sum;
-        float total_flex = 0.0f;
-        for (const auto& column : columns) {
-            if (column.kind == GridTrackKind::Track && column.IsFlexible()) {
-                total_flex += column.FlexFactor();
-            }
-        }
-
-        if (total_flex > 0.0f) {
-            for (auto& column : columns) {
-                if (column.kind == GridTrackKind::Track && column.IsFlexible()) {
-                    float share = (column.FlexFactor() / total_flex) * extra_space;
-                    column.base_size += share;
-                }
-            }
-            col_sum = inner_width;
-        } else {
-            size_t growable_columns = 0;
-            for (const auto& column : columns) {
-                if (column.kind == GridTrackKind::Track) {
-                    growable_columns++;
-                }
-            }
-
-            if (growable_columns > 0) {
-                float extra_per_column = extra_space / static_cast<float>(growable_columns);
-                for (auto& column : columns) {
-                    if (column.kind == GridTrackKind::Track) {
-                        column.base_size += extra_per_column;
-                    }
-                }
-                col_sum = inner_width;
-            }
-        }
+    if (inner_width > 0.0f) {
+        StretchTracksToAvailableSpace(columns, inner_width);
+        col_sum = SumTrackBaseSizes(columns);
     }
 
     // Update container height
@@ -959,42 +1112,10 @@ LayoutOutput ComputeGridLayout(
     if (max_size.height.has_value()) container_height = f32_min(container_height, *max_size.height);
     container_size.height = container_height;
 
-    // If container has explicit height larger than content, distribute extra space to fr rows
     float inner_height = container_height - padding_border_size.height;
-    if (inner_height > row_sum) {
-        float extra_space = inner_height - row_sum;
-        // First, try to distribute to fr (flexible) rows
-        float total_flex = 0.0f;
-        for (const auto& row : rows) {
-            if (row.kind == GridTrackKind::Track && row.IsFlexible()) {
-                total_flex += row.FlexFactor();
-            }
-        }
-        if (total_flex > 0.0f) {
-            // Distribute to fr rows proportionally
-            for (auto& row : rows) {
-                if (row.kind == GridTrackKind::Track && row.IsFlexible()) {
-                    float share = (row.FlexFactor() / total_flex) * extra_space;
-                    row.base_size += share;
-                }
-            }
-            row_sum = inner_height;
-        } else {
-            // No fr rows, distribute to all track rows equally
-            size_t growable_rows = 0;
-            for (const auto& row : rows) {
-                if (row.kind == GridTrackKind::Track) growable_rows++;
-            }
-            if (growable_rows > 0) {
-                float extra_per_row = extra_space / static_cast<float>(growable_rows);
-                for (auto& row : rows) {
-                    if (row.kind == GridTrackKind::Track) {
-                        row.base_size += extra_per_row;
-                    }
-                }
-                row_sum = inner_height;
-            }
-        }
+    if (inner_height > 0.0f) {
+        StretchTracksToAvailableSpace(rows, inner_height);
+        row_sum = SumTrackBaseSizes(rows);
     }
 
     CalculateTrackOffsets(columns, padding_border.left);

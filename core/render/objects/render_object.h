@@ -496,7 +496,9 @@ public:
     /**
      * @brief 虚析构函数
      */
-    virtual ~RenderObject() = default;
+    virtual ~RenderObject();
+
+    static size_t GetLiveObjectCount();
 
     /**
      * @brief 获取渲染对象类型

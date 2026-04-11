@@ -19,7 +19,6 @@ namespace mbink {
 namespace bindings {
 
 void InitElementBinding(JSContext* ctx);
-void DumpElementListenerStats();
 
 /**
  * @brief 强制清理 Element wrapper 上登记的全部 JS 监听器引用

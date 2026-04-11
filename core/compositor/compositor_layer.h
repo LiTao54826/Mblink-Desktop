@@ -76,6 +76,12 @@ public:
      */
     ~CompositorLayer();
 
+    static size_t GetLiveLayerCount();
+    static size_t GetLiveBitmapCount();
+    static size_t GetLiveBitmapBytes();
+    static size_t GetLiveTextureCount();
+    static size_t GetLiveTextureBytes();
+
     // 禁止拷贝
     CompositorLayer(const CompositorLayer&) = delete;
     CompositorLayer& operator=(const CompositorLayer&) = delete;

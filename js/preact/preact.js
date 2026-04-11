@@ -18,18 +18,6 @@
     var __debugVNodeId = 1;
     var __debugComponentId = 1;
 
-    function probeEnabled() {
-        return !!global.__MBINK_LEAK_PROBE;
-    }
-
-    function probeLog(tag, payload) {
-        if (!probeEnabled()) return;
-        try {
-            console.log('[LEAK_PROBE][' + tag + ']', JSON.stringify(payload || {}));
-        } catch (_) {
-            console.log('[LEAK_PROBE][' + tag + ']', payload || {});
-        }
-    }
 
     function ensureVNodeId(vnode) {
         if (!vnode || typeof vnode !== 'object') return null;
@@ -55,59 +43,59 @@
  * @returns {object} VNode
  */
 function h(type, props) {
-    // Get children from arguments (ES5 compatible)
-    var children = [];
-    for (var i = 2; i < arguments.length; i++) {
-        children.push(arguments[i]);
-    }
+    try {
+        // Get children from arguments (ES5 compatible)
+        var children = [];
+        for (var i = 2; i < arguments.length; i++) {
+            children.push(arguments[i]);
+        }
 
-    // Flatten children array
-    var flatChildren = [];
-    for (var j = 0; j < children.length; j++) {
-        var child = children[j];
-        if (Array.isArray(child)) {
-            for (var k = 0; k < child.length; k++) {
-                flatChildren.push(child[k]);
+        // Flatten children array
+        var flatChildren = [];
+        for (var j = 0; j < children.length; j++) {
+            var child = children[j];
+            if (Array.isArray(child)) {
+                for (var k = 0; k < child.length; k++) {
+                    flatChildren.push(child[k]);
+                }
+            } else if (child != null && child !== false && child !== true) {
+                flatChildren.push(child);
             }
-        } else if (child != null && child !== false && child !== true) {
-            flatChildren.push(child);
         }
-    }
 
-    // Ensure props object exists
-    var finalProps = props || {};
+        // Ensure props object exists
+        var finalProps = props || {};
 
-    // Add children to props for component access (standard Preact/React behavior)
-    // This allows components to access children via props.children
-    if (flatChildren.length > 0) {
-        finalProps = {};
-        for (var p in (props || {})) {
-            finalProps[p] = props[p];
+        // Add children to props for component access (standard Preact/React behavior)
+        // This allows components to access children via props.children
+        if (flatChildren.length > 0) {
+            finalProps = {};
+            for (var p in (props || {})) {
+                finalProps[p] = props[p];
+            }
+            finalProps.children = flatChildren.length === 1 ? flatChildren[0] : flatChildren;
         }
-        finalProps.children = flatChildren.length === 1 ? flatChildren[0] : flatChildren;
+
+        var vnode = {
+            type: type,
+            props: finalProps,
+            children: flatChildren,
+            key: props ? props.key : undefined,
+            ref: props ? props.ref : undefined,
+            __v: VNODE_TYPE_ELEMENT,
+            __dom: null,
+            __component: null,
+            __parentVNode: null,
+            __index: 0,
+            __root: null
+        };
+
+        ensureVNodeId(vnode);
+        return vnode;
+    } catch (e) {
+        reportPreactError(e, 'h', typeof type === 'function' ? (type.name || 'Anonymous') : String(type));
+        throw e;
     }
-
-    var vnode = {
-        type: type,
-        props: finalProps,
-        children: flatChildren,
-        key: props ? props.key : undefined,
-        ref: props ? props.ref : undefined,
-        __v: VNODE_TYPE_ELEMENT,
-        __dom: null,
-        __component: null,
-        __parentVNode: null,
-        __index: 0,
-        __root: null
-    };
-
-    ensureVNodeId(vnode);
-    probeLog('preact.h', {
-        vnodeId: vnode.__debugId,
-        type: typeof type === 'function' ? (type.name || 'Anonymous') : String(type),
-        childCount: flatChildren.length
-    });
-    return vnode;
 }
 
 /**
@@ -162,6 +150,44 @@ function isSameVNodeType(oldVNode, newVNode) {
         requestAnimationFrame: null, // Custom RAF
         _skipEffects: false  // Skip effects flag
     };
+
+    function reportPreactError(error, phase, details) {
+        var message = '[MBink Preact Error][' + phase + ']';
+        if (details) {
+            message += ' ' + details;
+        }
+        if (error && error.message) {
+            message += ' - ' + error.message;
+        } else if (error != null) {
+            message += ' - ' + String(error);
+        }
+
+        try {
+            if (typeof options._catchError === 'function') {
+                options._catchError(error, { phase: phase, details: details });
+            }
+        } catch (_) {}
+
+        try {
+            if (typeof globalThis !== 'undefined') {
+                globalThis.__mbinkLastRenderError = message;
+                if (error && error.stack) {
+                    globalThis.__mbinkLastRenderError += '\n' + error.stack;
+                }
+            }
+        } catch (_) {}
+
+        try {
+            if (typeof console !== 'undefined' && console && typeof console.error === 'function') {
+                if (error && error.stack) {
+                    console.error(message + '\n' + error.stack);
+                } else {
+                    console.error(message, error);
+                }
+            }
+        } catch (_) {}
+    }
+
 
 /**
  * Bind vnode parent/root metadata used by incremental updates
@@ -250,12 +276,6 @@ function clearVNode(vnode) {
     if (!vnode || typeof vnode !== 'object') {
         return;
     }
-    probeLog('preact.clearVNode', {
-        vnodeId: ensureVNodeId(vnode),
-        type: vnode.type ? (typeof vnode.type === 'function' ? (vnode.type.name || 'Anonymous') : String(vnode.type)) : null,
-        hasDom: !!vnode.__dom,
-        hasComponent: !!vnode.__component
-    });
     if (Array.isArray(vnode)) {
         for (var i = 0; i < vnode.length; i++) {
             clearVNode(vnode[i]);
@@ -324,12 +344,6 @@ function detachVNodeGraph(vnode, preserveComponent) {
     if (!vnode || typeof vnode !== 'object') {
         return;
     }
-
-    probeLog('preact.detachVNodeGraph', {
-        vnodeId: ensureVNodeId(vnode),
-        preserveComponent: !!preserveComponent,
-        hasComponent: !!vnode.__component
-    });
 
     if (Array.isArray(vnode)) {
         for (var i = 0; i < vnode.length; i++) {
@@ -611,11 +625,6 @@ function render(vnode, container) {
         try {
             var oldVNode = container.__preactVNode;
             var oldDOM = container.__preactDOM;
-            probeLog('preact.render', {
-                oldVNodeId: ensureVNodeId(oldVNode),
-                newVNodeId: ensureVNodeId(vnode),
-                mountedContainers: __mountedContainers.length
-            });
 
             var newDOM = diffNode(oldVNode, vnode, container, oldDOM);
 
@@ -750,19 +759,12 @@ function createComponentDOM(vnode) {
             __rerender: null,
             __root: componentRoot
         };
-        probeLog('preact.createComponent', {
-            vnodeId: ensureVNodeId(vnode)
-        });
     }
 
     var component = vnode.__component;
     ensureComponentId(component);
     component.__vnode = vnode;
     component.__root = componentRoot;
-    probeLog('preact.bindComponent', {
-        componentId: component.__debugId,
-        vnodeId: ensureVNodeId(vnode)
-    });
 
     // Set up rerender function using Virtual DOM diffing
     if (!component.__rerender) {
@@ -795,11 +797,6 @@ function createComponentDOM(vnode) {
                 var parent = oldDOM.parentNode;
                 var oldRenderedVNode = component.__renderedVNode;
                 var newDOM = diffNode(oldRenderedVNode, newRenderedVNode, parent, oldDOM);
-                probeLog('preact.componentRerender', {
-                    componentId: component.__debugId,
-                    oldRenderedVNodeId: ensureVNodeId(oldRenderedVNode),
-                    newRenderedVNodeId: ensureVNodeId(newRenderedVNode)
-                });
 
                 component.__dom = newDOM;
                 component.__renderedVNode = newRenderedVNode;
@@ -817,6 +814,12 @@ function createComponentDOM(vnode) {
                 // 更新时 oldRenderedVNode 里的组件/子树可能已复用到新图，
                 // 这里不能再 detach，避免把仍在使用的 hooks / __vnode / __renderedVNode 清空。
             } catch (e) {
+                if (typeof PreactHooks !== 'undefined' && PreactHooks.setCurrentComponent) {
+                    PreactHooks.setCurrentComponent(null);
+                }
+                reportPreactError(e, 'component-rerender', currentVNode && currentVNode.type && currentVNode.type.name
+                    ? currentVNode.type.name
+                    : 'Anonymous');
             } finally {
                 if (shouldTrackRoot && typeof globalThis !== 'undefined' && typeof globalThis.__mbinkEndRootTracking === 'function') {
                     globalThis.__mbinkEndRootTracking(currentRoot);
@@ -1180,11 +1183,6 @@ function diffNode(oldVNode, newVNode, parentDOM, oldDOM) {
 
         // New node is null - remove old
         if (newVNode == null || newVNode === false || newVNode === true) {
-            probeLog('preact.diffNode.remove', {
-                oldVNodeId: ensureVNodeId(oldVNode),
-                hasOldDOM: !!oldDOM,
-                parentTag: parentDOM && parentDOM.tagName ? parentDOM.tagName : null
-            });
             if (oldVNode) {
                 clearVNode(oldVNode);
             }
@@ -1275,6 +1273,11 @@ function diffNode(oldVNode, newVNode, parentDOM, oldDOM) {
         // Both are elements of the same type - update in place
         return diffElement(oldVNode, newVNode, oldDOM);
     } catch (e) {
+        reportPreactError(e, 'diff-node', newVNode && newVNode.type
+            ? (typeof newVNode.type === 'function'
+                ? (newVNode.type.name || 'Anonymous')
+                : String(newVNode.type))
+            : typeof newVNode);
         // On error, try to create new element as fallback
         try {
             var fallbackDOM = createDOMElement(newVNode);
@@ -1283,6 +1286,11 @@ function diffNode(oldVNode, newVNode, parentDOM, oldDOM) {
             }
             return fallbackDOM;
         } catch (e2) {
+            reportPreactError(e2, 'diff-node-fallback', newVNode && newVNode.type
+                ? (typeof newVNode.type === 'function'
+                    ? (newVNode.type.name || 'Anonymous')
+                    : String(newVNode.type))
+                : typeof newVNode);
             return oldDOM;
         }
     }
@@ -1328,14 +1336,6 @@ function diffComponent(oldVNode, newVNode, parentDOM, oldDOM) {
 
     // Diff the rendered output
     var newDOM = diffNode(oldRenderedVNode, newRenderedVNode, parentDOM, oldDOM);
-    probeLog('preact.diffComponent', {
-        componentName: componentName,
-        componentId: component.__debugId,
-        oldVNodeId: ensureVNodeId(oldVNode),
-        newVNodeId: ensureVNodeId(newVNode),
-        oldRenderedVNodeId: ensureVNodeId(oldRenderedVNode),
-        newRenderedVNodeId: ensureVNodeId(newRenderedVNode)
-    });
 
     // Update component
     component.__dom = newDOM;

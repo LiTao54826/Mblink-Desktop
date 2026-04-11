@@ -92,11 +92,10 @@ TEST_F(BlockLayoutTest, OverflowScroll) {
     EXPECT_TRUE(o == Overflow::Scroll);
 }
 
-// Note: Overflow::Auto is not defined in the current implementation
-// TEST_F(BlockLayoutTest, OverflowAuto) {
-//     Overflow o = Overflow::Auto;
-//     EXPECT_TRUE(o == Overflow::Auto);
-// }
+TEST_F(BlockLayoutTest, OverflowAuto) {
+    Overflow o = Overflow::Auto;
+    EXPECT_TRUE(o == Overflow::Auto);
+}
 
 // ========== 尺寸计算测试 ==========
 

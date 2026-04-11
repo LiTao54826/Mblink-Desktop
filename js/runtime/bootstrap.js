@@ -52,56 +52,87 @@
         global.self = global.window;
     }
 
+    var createMap = Object.create
+        ? function() { return Object.create(null); }
+        : function() { return {}; };
+
     var runtime = global.__mbinkSharedRuntime || (global.__mbinkSharedRuntime = {
         roots: [],
         pending: false,
         currentDispatcher: null,
         currentTrackingRoot: null,
-        proxyCache: {},
-        proxyTargets: {}
+        proxyCache: createMap(),
+        proxyTargets: createMap(),
+        depKeyCache: createMap(),
+        pendingKeys: createMap()
     });
 
-    function probeEnabled() {
-        return !!global.__MBINK_LEAK_PROBE;
-    }
+    runtime.proxyCache = runtime.proxyCache || createMap();
+    runtime.proxyTargets = runtime.proxyTargets || createMap();
+    runtime.depKeyCache = runtime.depKeyCache || createMap();
+    runtime.pendingKeys = runtime.pendingKeys || createMap();
 
-    function probeLog(tag, payload) {
-        if (!probeEnabled()) return;
-        try {
-            console.log('[LEAK_PROBE][' + tag + ']', JSON.stringify(payload || {}));
-        } catch (_) {
-            console.log('[LEAK_PROBE][' + tag + ']', payload || {});
+    runtime.getDependencyKey = runtime.getDependencyKey || function(name, prop) {
+        var cache = runtime.depKeyCache[name];
+        if (!cache) {
+            cache = runtime.depKeyCache[name] = createMap();
         }
-    }
+        var key = cache[prop];
+        if (!key) {
+            key = name + ':' + prop;
+            cache[prop] = key;
+        }
+        return key;
+    };
 
-    runtime.__probeLog = probeLog;
-
-    runtime.trackDependency = function(depId) {
+    runtime.trackDependency = runtime.trackDependency || function(key) {
         var root = runtime.currentTrackingRoot;
-        if (!root || !depId) return;
-        if (!root.deps) root.deps = {};
-        if (!root.deps[depId]) {
-            root.deps[depId] = true;
+        if (!root || !key) return;
+        if (!root.deps) {
+            root.deps = createMap();
         }
+        root.deps[key] = true;
     };
 
-    runtime.beginTracking = function(root) {
+    runtime.trackObjectDependency = runtime.trackObjectDependency || function(name) {
+        var root = runtime.currentTrackingRoot;
+        if (!root || !name) return;
+        if (!root.objectDeps) {
+            root.objectDeps = createMap();
+        }
+        root.objectDeps[name] = true;
+    };
+
+    runtime.beginTracking = runtime.beginTracking || function(root) {
+        runtime.currentTrackingRoot = root || null;
         if (!root) return;
-        root.deps = {};
-        runtime.currentTrackingRoot = root;
+        root.deps = createMap();
+        root.objectDeps = createMap();
     };
 
-    runtime.endTracking = function(root) {
-        if (runtime.currentTrackingRoot === root) {
+    runtime.endTracking = runtime.endTracking || function(root) {
+        if (runtime.currentTrackingRoot === root || !root) {
             runtime.currentTrackingRoot = null;
         }
     };
 
-    runtime.shouldFlushRoot = function(root, changedKeys) {
-        if (!root || !changedKeys || !changedKeys.length) return false;
-        if (!root.deps) return true;
+    runtime.shouldFlushRoot = runtime.shouldFlushRoot || function(root, changedKeys) {
+        if (!root || !changedKeys || !changedKeys.length) return true;
+        var deps = root.deps;
+        var objectDeps = root.objectDeps;
+        if (!deps && !objectDeps) return true;
         for (var i = 0; i < changedKeys.length; i++) {
-            if (root.deps[changedKeys[i]]) return true;
+            var key = changedKeys[i];
+            if (deps && deps[key]) {
+                return true;
+            }
+            if (objectDeps) {
+                var sep = key.indexOf(':');
+                var objectName = sep >= 0 ? key.slice(0, sep) : key;
+                if (objectDeps[objectName]) {
+                    return true;
+                }
+            }
         }
         return false;
     };
@@ -110,14 +141,13 @@
         if (!name || !target || typeof Proxy !== 'function') return target;
         var cached = runtime.proxyCache[name];
         if (cached && runtime.proxyTargets[name] === target) {
-            probeLog('wrapSharedObject.cache-hit', { name: name });
             return cached;
         }
 
         var proxy = new Proxy(target, {
             get: function(obj, prop, receiver) {
                 if (typeof prop === 'string') {
-                    runtime.trackDependency(name + ':' + prop);
+                    runtime.trackDependency(runtime.getDependencyKey(name, prop));
                 }
                 return Reflect.get(obj, prop, receiver);
             },
@@ -128,26 +158,19 @@
                 return Reflect.deleteProperty(obj, prop);
             },
             ownKeys: function(obj) {
-                var keys = Reflect.ownKeys(obj);
-                for (var i = 0; i < keys.length; i++) {
-                    if (typeof keys[i] === 'string') {
-                        runtime.trackDependency(name + ':' + keys[i]);
-                    }
-                }
-                return keys;
+                runtime.trackObjectDependency(name);
+                return Reflect.ownKeys(obj);
             },
             getOwnPropertyDescriptor: function(obj, prop) {
+                if (typeof prop === 'string') {
+                    runtime.trackDependency(runtime.getDependencyKey(name, prop));
+                }
                 return Object.getOwnPropertyDescriptor(obj, prop);
             }
         });
 
         runtime.proxyTargets[name] = target;
         runtime.proxyCache[name] = proxy;
-        probeLog('wrapSharedObject.create', {
-            name: name,
-            proxyKeyCount: Object.keys(runtime.proxyCache).length,
-            targetKeyCount: Object.keys(runtime.proxyTargets).length
-        });
         return proxy;
     };
 
@@ -162,17 +185,12 @@
             }
         }
         if (!found) {
-            found = { container: container, vnode: vnode, renderImpl: renderImpl, deps: null };
+            found = { container: container, vnode: vnode, renderImpl: renderImpl, deps: null, objectDeps: null };
             roots.push(found);
-            probeLog('registerRoot.create', { rootCount: roots.length });
         }
         found.vnode = vnode;
         found.renderImpl = renderImpl;
         try { container.__preactRoot = found; } catch (_) {}
-        probeLog('registerRoot.bind', {
-            rootCount: roots.length,
-            depCount: found.deps ? Object.keys(found.deps).length : 0
-        });
     };
 
     global.__mbinkRegisterPreactRoot = runtime.registerRoot;
@@ -180,8 +198,10 @@
     runtime.cleanup = function() {
         runtime.pending = false;
         runtime.currentTrackingRoot = null;
-        runtime.proxyCache = {};
-        runtime.proxyTargets = {};
+        runtime.proxyCache = createMap();
+        runtime.proxyTargets = createMap();
+        runtime.depKeyCache = createMap();
+        runtime.pendingKeys = createMap();
         for (var i = 0; i < runtime.roots.length; i++) {
             var item = runtime.roots[i];
             if (!item) continue;
@@ -192,6 +212,7 @@
             item.renderImpl = null;
             item.container = null;
             item.deps = null;
+            item.objectDeps = null;
         }
         runtime.roots = [];
         runtime.currentDispatcher = null;
@@ -200,11 +221,6 @@
     runtime.flush = function(changedKeys) {
         if (!runtime.currentDispatcher) return;
         runtime.pending = false;
-        probeLog('flush.begin', {
-            changedKeys: changedKeys || [],
-            rootCount: runtime.roots.length,
-            pendingKeys: runtime.pendingKeys ? Object.keys(runtime.pendingKeys).length : 0
-        });
 
         var roots = runtime.roots.slice();
         for (var i = 0; i < roots.length; i++) {
@@ -222,15 +238,11 @@
                 runtime.endTracking(item);
             }
         }
-        probeLog('flush.end', {
-            changedKeys: changedKeys || [],
-            rootCount: runtime.roots.length
-        });
-    }
+    };
 
     runtime.schedule = function(changedKeys) {
         if (!runtime.currentDispatcher) return;
-        if (!runtime.pendingKeys) runtime.pendingKeys = {};
+        if (!runtime.pendingKeys) runtime.pendingKeys = createMap();
         if (changedKeys && changedKeys.length) {
             for (var i = 0; i < changedKeys.length; i++) {
                 runtime.pendingKeys[changedKeys[i]] = true;
@@ -241,13 +253,15 @@
 
         runtime.pending = true;
 
-        var defer = typeof global.setTimeout === 'function'
-            ? global.setTimeout
-            : function(fn) { fn(); return 0; };
+        var defer = typeof global.queueMicrotask === 'function'
+            ? function(fn) { global.queueMicrotask(fn); return 0; }
+            : (typeof global.setTimeout === 'function'
+                ? global.setTimeout
+                : function(fn) { fn(); return 0; });
         defer(function() {
             var merged = [];
-            var map = runtime.pendingKeys || {};
-            runtime.pendingKeys = {};
+            var map = runtime.pendingKeys || createMap();
+            runtime.pendingKeys = createMap();
             for (var key in map) {
                 if (Object.prototype.hasOwnProperty.call(map, key)) {
                     merged.push(key);
@@ -265,7 +279,6 @@
     global.__mbinkWrapSharedObject = runtime.wrapSharedObject;
     global.__mbinkBeginRootTracking = runtime.beginTracking;
     global.__mbinkEndRootTracking = runtime.endTracking;
-
     global.__mbinkRuntimeCleanup = function() {
         try {
             runtime.cleanup();
@@ -285,7 +298,7 @@
         safe(globalThis.__mbinkRuntimeCleanup);
 
         var keys = ['__fetchCleanup', '__preactHooksCleanup', '__preactCleanup',
-                    '__mbinkRuntimeCleanup', '__mbinkShutdown',
+                    '__mbinkRuntimeCleanup', '__mbinkShutdown', '__mbinkDumpNativeLeakStats',
                     'Preact', 'PreactHooks', 'preact', 'preactHooks',
                     '__mbinkRegisterPreactRoot', '__preactSetCurrentComponent',
                     '__mbinkSharedUpdateDispatcher', '__mbinkWrapSharedObject',

@@ -82,17 +82,6 @@ static size_t g_js_element_listener_finalizer_remove_count = 0;
 static size_t g_js_element_listener_finalize_free_js_count = 0;
 static size_t g_js_element_listener_live_bindings = 0;
 
-void DumpElementListenerStats() {
-    std::cout << "[JSElementStats] add=" << g_js_element_listener_add_count
-              << " remove=" << g_js_element_listener_remove_count
-              << " finalizer_remove=" << g_js_element_listener_finalizer_remove_count
-              << " finalizer_free_js=" << g_js_element_listener_finalize_free_js_count
-              << " live_bindings=" << g_js_element_listener_live_bindings
-              << std::endl;
-}
-
-
-
 // ========== ClassID ==========
 
 static JSClassID js_element_class_id = 0;

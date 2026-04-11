@@ -56,6 +56,8 @@ public:
      */
     ~PaintLayer();
 
+    static size_t GetLiveLayerCount();
+
     // 禁止拷贝
     PaintLayer(const PaintLayer&) = delete;
     PaintLayer& operator=(const PaintLayer&) = delete;

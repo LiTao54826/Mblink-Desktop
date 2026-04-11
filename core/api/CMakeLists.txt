@@ -95,6 +95,10 @@ target_link_libraries(mbink_api PUBLIC
     mbink_compositor
 )
 
+if(WIN32)
+    target_link_libraries(mbink_api PRIVATE dbghelp)
+endif()
+
 # 设置输出名称为 mbink
 set_target_properties(mbink_api PROPERTIES
     OUTPUT_NAME "mbink"

@@ -24,15 +24,6 @@
         cleanupCount: 0
     });
 
-    function probeLog(tag, payload) {
-        if (!global.__MBINK_LEAK_PROBE) return;
-        try {
-            console.log('[LEAK_PROBE][' + tag + ']', JSON.stringify(payload || {}));
-        } catch (_) {
-            console.log('[LEAK_PROBE][' + tag + ']', payload || {});
-        }
-    }
-
     function ensureComponentId(component) {
         if (!component) return null;
         if (!component.__debugId) {
@@ -49,23 +40,8 @@
         return hookState.__debugId;
     }
 
-    function probeStats(tag, extra) {
-        if (!global.__MBINK_LEAK_PROBE) return;
-        var payload = {
-            mountedComponents: mountedComponents.size,
-            pendingEffects: pendingEffects.length,
-            pendingUpdates: pendingUpdates.size,
-            cleanupCount: hookDebug.cleanupCount
-        };
-        if (extra) {
-            for (var key in extra) payload[key] = extra[key];
-        }
-        probeLog(tag, payload);
-    }
-
-// Phase 4: Preact 调度器 - 批量更新支持
-var pendingUpdates = new Set();
-var updateScheduled = false;
+    var pendingUpdates = new Set();
+    var updateScheduled = false;
 
 function cleanupComponent(component) {
     if (!component) {
@@ -130,7 +106,6 @@ function cleanupComponent(component) {
     }
 
     hookDebug.cleanupCount++;
-    probeStats('hooks.cleanupComponent', { componentId: componentId });
 }
 
 function flushPendingEffects() {
@@ -155,7 +130,6 @@ function flushPendingEffects() {
         }
     }
 
-    probeStats('hooks.flushPendingEffects');
 }
 
 function schedulePendingEffects() {
@@ -188,7 +162,6 @@ function scheduleUpdate(component) {
     }
 
     pendingUpdates.add(component);
-    probeStats('hooks.scheduleUpdate', { componentId: ensureComponentId(component) });
 
     if (!updateScheduled) {
         updateScheduled = true;
@@ -254,12 +227,6 @@ function getHookState(index) {
 
     if (!currentComponent.__hooks[index]) {
         currentComponent.__hooks[index] = {};
-        ensureHookId(currentComponent.__hooks[index]);
-        probeStats('hooks.createHookState', {
-            componentId: ensureComponentId(currentComponent),
-            hookId: currentComponent.__hooks[index].__debugId,
-            hookIndex: index
-        });
     }
 
     return currentComponent.__hooks[index];
@@ -292,10 +259,6 @@ function getHookState(index) {
                 }
             };
             hookState.result = [hookState.value, hookState.setState];
-            probeStats('hooks.createSetState', {
-                componentId: ensureComponentId(currentComponent),
-                hookId: ensureHookId(hookState)
-            });
         }
 
         hookState.component = currentComponent;
@@ -331,10 +294,6 @@ function getHookState(index) {
             }
 
             schedulePendingEffects();
-            probeStats('hooks.useEffect.queue', {
-                componentId: ensureComponentId(currentComponent),
-                hookId: ensureHookId(hookState)
-            });
         }
     }
 

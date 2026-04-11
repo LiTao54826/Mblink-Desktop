@@ -11,8 +11,13 @@
 #include <algorithm>
 #include <iostream>
 #include <sstream>
+#include <atomic>
 
 namespace mbink {
+
+namespace {
+std::atomic<size_t> g_paint_layer_live_count{0};
+}
 
 // =========================================================================
 // 构造和析构
@@ -21,15 +26,21 @@ namespace mbink {
 PaintLayer::PaintLayer(RenderObject* render_object)
     : render_object_(render_object)
     , promotion_reason_(LayerPromotionReason::None) {
+    g_paint_layer_live_count.fetch_add(1, std::memory_order_relaxed);
 }
 
 PaintLayer::~PaintLayer() {
+    g_paint_layer_live_count.fetch_sub(1, std::memory_order_relaxed);
     // 从父层移除自己
     if (parent_) {
         parent_->RemoveChild(this);
     }
     // 清理子层
     RemoveAllChildren();
+}
+
+size_t PaintLayer::GetLiveLayerCount() {
+    return g_paint_layer_live_count.load(std::memory_order_relaxed);
 }
 
 // =========================================================================

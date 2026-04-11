@@ -14,10 +14,85 @@
 #include "bindings/js_mutation_observer.h"
 #include "core/dom/bindings/dom_bindings.h"
 #include "core/dom/bindings/canvas_bindings.h"
+#include "core/compositor/compositor_layer.h"
+#include "core/render/image/image_cache.h"
 #include <iostream>
 #include <SDL3/SDL.h>
+#ifdef _WIN32
+#include <psapi.h>
+#pragma comment(lib, "Psapi.lib")
+#endif
 
 namespace mbink {
+
+namespace {
+json CollectProcessMemoryStats() {
+    json result = json::object();
+#ifdef _WIN32
+    PROCESS_MEMORY_COUNTERS_EX counters{};
+    if (GetProcessMemoryInfo(GetCurrentProcess(), reinterpret_cast<PROCESS_MEMORY_COUNTERS*>(&counters), sizeof(counters))) {
+        result["WorkingSetSize"] = static_cast<uint64_t>(counters.WorkingSetSize);
+        result["PrivateUsage"] = static_cast<uint64_t>(counters.PrivateUsage);
+        result["PagefileUsage"] = static_cast<uint64_t>(counters.PagefileUsage);
+        result["PeakWorkingSetSize"] = static_cast<uint64_t>(counters.PeakWorkingSetSize);
+    }
+#endif
+    return result;
+}
+
+int64_t JsonPathInt64(const json& value, std::initializer_list<const char*> path) {
+    const json* current = &value;
+    for (const char* key : path) {
+        if (!current->is_object()) {
+            return 0;
+        }
+        auto it = current->find(key);
+        if (it == current->end()) {
+            return 0;
+        }
+        current = &(*it);
+    }
+    if (current->is_number_unsigned()) {
+        return static_cast<int64_t>(current->get<uint64_t>());
+    }
+    if (current->is_number_integer()) {
+        return current->get<int64_t>();
+    }
+    if (current->is_number_float()) {
+        return static_cast<int64_t>(current->get<double>());
+    }
+    return 0;
+}
+
+json BuildNativeLeakDelta(const json& current, const json& previous) {
+    if (!previous.is_object()) {
+        return json::object();
+    }
+
+    return {
+        {"CompositorLayer.bitmap_count", JsonPathInt64(current, {"CompositorLayer.bitmap_count"}) - JsonPathInt64(previous, {"CompositorLayer.bitmap_count"})},
+        {"CompositorLayer.bitmap_bytes", JsonPathInt64(current, {"CompositorLayer.bitmap_bytes"}) - JsonPathInt64(previous, {"CompositorLayer.bitmap_bytes"})},
+        {"CompositorLayer.texture_count", JsonPathInt64(current, {"CompositorLayer.texture_count"}) - JsonPathInt64(previous, {"CompositorLayer.texture_count"})},
+        {"CompositorLayer.texture_bytes", JsonPathInt64(current, {"CompositorLayer.texture_bytes"}) - JsonPathInt64(previous, {"CompositorLayer.texture_bytes"})},
+        {"ImageCache.count", JsonPathInt64(current, {"ImageCache.count"}) - JsonPathInt64(previous, {"ImageCache.count"})},
+        {"ImageCache.bytes", JsonPathInt64(current, {"ImageCache.bytes"}) - JsonPathInt64(previous, {"ImageCache.bytes"})},
+        {"Window.surface_estimated_bytes", JsonPathInt64(current, {"Window.surface_estimated_bytes"}) - JsonPathInt64(previous, {"Window.surface_estimated_bytes"})},
+        {"Window.fbo_estimated_texture_bytes", JsonPathInt64(current, {"Window.fbo_estimated_texture_bytes"}) - JsonPathInt64(previous, {"Window.fbo_estimated_texture_bytes"})},
+        {"Window.fbo_estimated_depth_stencil_bytes", JsonPathInt64(current, {"Window.fbo_estimated_depth_stencil_bytes"}) - JsonPathInt64(previous, {"Window.fbo_estimated_depth_stencil_bytes"})},
+        {"Window.fbo_estimated_total_bytes", JsonPathInt64(current, {"Window.fbo_estimated_total_bytes"}) - JsonPathInt64(previous, {"Window.fbo_estimated_total_bytes"})},
+        {"Skia.resource_cache_count", JsonPathInt64(current, {"Skia.resource_cache_count"}) - JsonPathInt64(previous, {"Skia.resource_cache_count"})},
+        {"Skia.resource_cache_bytes", JsonPathInt64(current, {"Skia.resource_cache_bytes"}) - JsonPathInt64(previous, {"Skia.resource_cache_bytes"})},
+        {"Skia.resource_cache_limit", JsonPathInt64(current, {"Skia.resource_cache_limit"}) - JsonPathInt64(previous, {"Skia.resource_cache_limit"})},
+        {"ProcessMemory.WorkingSetSize", JsonPathInt64(current, {"ProcessMemory", "WorkingSetSize"}) - JsonPathInt64(previous, {"ProcessMemory", "WorkingSetSize"})},
+        {"ProcessMemory.PrivateUsage", JsonPathInt64(current, {"ProcessMemory", "PrivateUsage"}) - JsonPathInt64(previous, {"ProcessMemory", "PrivateUsage"})},
+        {"ProcessMemory.PagefileUsage", JsonPathInt64(current, {"ProcessMemory", "PagefileUsage"}) - JsonPathInt64(previous, {"ProcessMemory", "PagefileUsage"})}
+    };
+}
+
+json g_last_native_leak_payload;
+std::string g_last_native_leak_tag;
+}
+
 
 // ========== WindowBindings 实现 ==========
 
@@ -58,7 +133,7 @@ void WindowBindings::ReleaseTimerCallbackByName(const std::string& callback_name
     JS_FreeValue(ctx, global);
 }
 
-WindowBindings::WindowBindings(QuickJSRuntime* runtime, 
+WindowBindings::WindowBindings(QuickJSRuntime* runtime,
                                std::shared_ptr<Window> window,
                                std::shared_ptr<TaskScheduler> task_scheduler)
     : runtime_(runtime)
@@ -76,23 +151,23 @@ void WindowBindings::InitBindings() {
     bindings::InitRangeBinding(runtime_->GetContext());  // 支持 Range API
     bindings::InitSelectionBinding(runtime_->GetContext());  // 支持 Selection API
     bindings::InitMutationObserverBinding(runtime_->GetContext());  // 支持 MutationObserver API
-    
+
     // 初始化 Canvas 绑定（独立模块）
     CanvasBindings::Init(runtime_->GetContext());
-    
+
     // 初始化 Image 构造函数（支持 new Image()）
     InitImageConstructor(runtime_->GetContext());
-    
+
     // 设置全局 TaskScheduler（定时器需要）
     if (task_scheduler_) {
         DOMBindings::SetGlobalTaskScheduler(runtime_->GetContext(), task_scheduler_);
     }
-    
+
     // 先绑定 window 对象（创建空的 window 对象）
     BindWindowObject();
     BindTimers();
     BindEventListeners();
-    
+
     // 然后绑定 Document API（会创建完整的 document 对象）
     BindDocumentAPIs(runtime_->GetContext(), window_.get());
 }
@@ -159,6 +234,94 @@ void WindowBindings::BindWindowObject() {
         return true;
     });
 
+    runtime_->RegisterFunction("__mbinkDumpNativeLeakStats", [this](const json& args) -> json {
+        std::string tag = "native";
+        bool run_gc_first = true;
+        bool should_purge_skia = false;
+        if (args.is_array() && !args.empty()) {
+            if (args[0].is_string()) {
+                tag = args[0].get<std::string>();
+            }
+            if (args.size() > 1 && args[1].is_boolean()) {
+                run_gc_first = args[1].get<bool>();
+            }
+            if (args.size() > 2 && args[2].is_boolean()) {
+                should_purge_skia = args[2].get<bool>();
+            } else if (tag.find(".settled") != std::string::npos) {
+                should_purge_skia = true;
+            }
+        } else if (tag.find(".settled") != std::string::npos) {
+            should_purge_skia = true;
+        }
+
+        (void)run_gc_first;
+
+        auto& image_cache = ImageCache::GetInstance();
+        int logical_width = 0;
+        int logical_height = 0;
+        int physical_width = 0;
+        int physical_height = 0;
+        if (window_) {
+            window_->GetSize(&logical_width, &logical_height);
+            window_->GetPhysicalSize(&physical_width, &physical_height);
+        }
+
+        const auto backend = window_ ? window_->GetActualBackend() : RenderBackend::AUTO;
+        const char* backend_name = "AUTO";
+        switch (backend) {
+            case RenderBackend::OPENGL: backend_name = "OPENGL"; break;
+            case RenderBackend::CPU: backend_name = "CPU"; break;
+            case RenderBackend::SOFTWARE: backend_name = "SOFTWARE"; break;
+            case RenderBackend::AUTO:
+            default: backend_name = "AUTO"; break;
+        }
+
+        json payload = {
+            {"tag", tag},
+            {"CompositorLayer.bitmap_count", CompositorLayer::GetLiveBitmapCount()},
+            {"CompositorLayer.bitmap_bytes", CompositorLayer::GetLiveBitmapBytes()},
+            {"CompositorLayer.texture_count", CompositorLayer::GetLiveTextureCount()},
+            {"CompositorLayer.texture_bytes", CompositorLayer::GetLiveTextureBytes()},
+            {"ImageCache.count", image_cache.GetCacheCount()},
+            {"ImageCache.bytes", image_cache.GetCurrentCacheSize()},
+            {"Window.backend", backend_name},
+            {"Window.surface_present", window_ ? window_->HasSurface() : false},
+            {"Window.gr_context_present", window_ ? window_->HasGrContext() : false},
+            {"Window.fbo_present", window_ ? window_->HasFBOManager() : false},
+            {"Window.logical_width", logical_width},
+            {"Window.logical_height", logical_height},
+            {"Window.physical_width", physical_width},
+            {"Window.physical_height", physical_height},
+            {"Window.dpi_scale", window_ ? window_->GetDisplayScale() : 1.0f},
+            {"Window.surface_estimated_bytes", window_ ? window_->GetEstimatedSurfaceBytes() : 0},
+            {"Window.fbo_estimated_texture_bytes", window_ ? window_->GetEstimatedFBOTextureBytes() : 0},
+            {"Window.fbo_estimated_depth_stencil_bytes", window_ ? window_->GetEstimatedFBODepthStencilBytes() : 0},
+            {"Window.fbo_estimated_total_bytes", window_ ? window_->GetEstimatedFBOTotalBytes() : 0},
+            {"Skia.resource_cache_count", window_ ? window_->GetSkiaResourceCacheCount() : 0},
+            {"Skia.resource_cache_bytes", window_ ? window_->GetSkiaResourceCacheBytes() : 0},
+            {"Skia.resource_cache_limit", window_ ? window_->GetSkiaResourceCacheLimit() : 0},
+            {"Skia.purge_executed", false},
+            {"ProcessMemory", CollectProcessMemoryStats()}
+        };
+
+        if (window_ && should_purge_skia) {
+            window_->PurgeSkiaResourceCache();
+            payload["Skia.purge_executed"] = true;
+            payload["Skia.resource_cache_count_after_purge"] = window_->GetSkiaResourceCacheCount();
+            payload["Skia.resource_cache_bytes_after_purge"] = window_->GetSkiaResourceCacheBytes();
+            payload["ProcessMemoryAfterPurge"] = CollectProcessMemoryStats();
+        }
+
+        payload["prev_tag"] = g_last_native_leak_tag;
+        payload["delta_from_prev"] = BuildNativeLeakDelta(payload, g_last_native_leak_payload);
+        g_last_native_leak_tag = tag;
+        g_last_native_leak_payload = payload;
+
+        std::cout << "[NativeLeakStats][" << tag << "] " << payload.dump() << std::endl;
+        return payload;
+    });
+
+
     // 创建 window 对象（如果不存在则创建，否则扩展现有对象）
     std::string window_code = R"(
         if (!globalThis.window) {
@@ -205,7 +368,7 @@ void WindowBindings::BindWindowObject() {
         // 也设置到 window 上
         globalThis.window.navigator = globalThis.navigator;
     )";
-    
+
     runtime_->Eval(window_code, "<window_bindings>");
 }
 
@@ -213,7 +376,7 @@ void WindowBindings::BindTimers() {
     if (!task_scheduler_) {
         return;
     }
-    
+
     // 绑定 setTimeout
     runtime_->RegisterFunction("__setTimeout", [this](const json& args) -> json {
         if (!args.is_array() || args.size() < 2) {
@@ -239,16 +402,16 @@ void WindowBindings::BindTimers() {
 
         return task_id;
     });
-    
+
     // 绑定 setInterval
     runtime_->RegisterFunction("__setInterval", [this](const json& args) -> json {
         if (!args.is_array() || args.size() < 2) {
             return -1;
         }
-        
+
         std::string callback_name = args[0].get<std::string>();
         int interval_ms = args[1].get<int>();
-        
+
         auto task_id = task_scheduler_->SetInterval([this, callback_name]() {
             try {
                 runtime_->CallFunction(callback_name, json::array());
@@ -257,10 +420,10 @@ void WindowBindings::BindTimers() {
         }, interval_ms);
 
         TrackTimerCallback(task_id, callback_name);
-        
+
         return task_id;
     });
-    
+
     // 绑定 clearTimeout
     runtime_->RegisterFunction("__clearTimeout", [this](const json& args) -> json {
         // args 是数组，第一个元素是 task_id
@@ -286,7 +449,7 @@ void WindowBindings::BindTimers() {
         ReleaseTimerCallback(task_id);
         return true;
     });
-    
+
     // 绑定 requestAnimationFrame
     runtime_->RegisterFunction("__requestAnimationFrame", [this](const json& args) -> json {
         // args 是数组，第一个元素是回调函数名
@@ -322,7 +485,7 @@ void WindowBindings::BindTimers() {
         ReleaseTimerCallback(task_id);
         return true;
     });
-    
+
     // 创建定时器函数
     std::string timer_code = R"(
         globalThis.setTimeout = function(callback, delay) {
@@ -356,7 +519,7 @@ void WindowBindings::BindTimers() {
             return __cancelAnimationFrame(id);
         };
     )";
-    
+
     runtime_->Eval(timer_code, "<timer_bindings>");
 }
 
@@ -380,7 +543,7 @@ void WindowBindings::BindEventListeners() {
         // TODO: 实现事件监听器移除
         return true;
     });
-    
+
     // 创建事件监听器函数
     std::string event_code = R"(
         globalThis.window.addEventListener = function(type, listener) {
@@ -397,7 +560,7 @@ void WindowBindings::BindEventListeners() {
             return __windowRemoveEventListener([type]);
         };
     )";
-    
+
     runtime_->Eval(event_code, "<event_bindings>");
 }
 

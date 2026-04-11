@@ -1333,8 +1333,8 @@ void Window::Render() {
     // =========================================================================
     // 当 style 属性变化时，DOM 节点会被标记为 IsStyleDirty()
     // 需要遍历 DOM 树，将脏标记同步到 RenderObject 并重新计算样式
-    // 关键修复：只有当渲染树有效时才处理增量更新，否则等待 EnsureRenderTree 重建
-    if (document_ && cached_render_tree_ && render_tree_valid_) {
+    // 关键修复：结构变更帧跳过这轮递归，避免用旧 layout/render 映射继续更新新树
+    if (!needs_layout_update && document_ && cached_render_tree_ && render_tree_valid_) {
         auto body = document_->GetBody();
         if (body && cached_render_tree_) {
             // 检查是否有样式脏标记需要处理
@@ -1717,6 +1717,15 @@ void Window::MarkRenderObjectsDirty(Node* dom_node, RenderObject* render_obj) {
 
     // 遍历渲染子节点并查找对应的DOM节点（O(n)）
     for (const auto& render_child : render_children) {
+        if (!render_child || render_child.get() == render_obj) {
+            continue;
+        }
+
+        auto render_child_parent = render_child->GetParent();
+        if (!render_child_parent || render_child_parent.get() != render_obj) {
+            continue;
+        }
+
         auto render_child_node = render_child->GetNode();
         if (!render_child_node) {
             continue;
@@ -2008,6 +2017,95 @@ int Window::LogicalToPhysicalPixels(int value) const {
     const float scale = GetDisplayScale();
     const int physical = static_cast<int>(std::lround(static_cast<float>(value) * scale));
     return std::max(physical, 1);
+}
+
+void Window::GetPhysicalSize(int* width, int* height) const {
+    if (sdl_window_) {
+        int physical_width = 0;
+        int physical_height = 0;
+        SDL_GetWindowSizeInPixels(sdl_window_, &physical_width, &physical_height);
+        if (width) *width = physical_width;
+        if (height) *height = physical_height;
+        return;
+    }
+
+    if (width) *width = LogicalToPhysicalPixels(config_.width);
+    if (height) *height = LogicalToPhysicalPixels(config_.height);
+}
+
+RenderBackend Window::GetActualBackend() const {
+    return actual_backend_;
+}
+
+bool Window::HasSurface() const {
+    return surface_ != nullptr;
+}
+
+bool Window::HasGrContext() const {
+    return gr_context_ != nullptr;
+}
+
+bool Window::HasFBOManager() const {
+    return fbo_manager_ != nullptr;
+}
+
+size_t Window::GetEstimatedSurfaceBytes() const {
+    int width = 0;
+    int height = 0;
+    GetPhysicalSize(&width, &height);
+    if (width <= 0 || height <= 0 || !surface_) {
+        return 0;
+    }
+    return static_cast<size_t>(width) * static_cast<size_t>(height) * 4;
+}
+
+size_t Window::GetEstimatedFBOTextureBytes() const {
+    return fbo_manager_ ? fbo_manager_->GetEstimatedTextureBytes() : 0;
+}
+
+size_t Window::GetEstimatedFBODepthStencilBytes() const {
+    return fbo_manager_ ? fbo_manager_->GetEstimatedDepthStencilBytes() : 0;
+}
+
+size_t Window::GetEstimatedFBOTotalBytes() const {
+    return fbo_manager_ ? fbo_manager_->GetEstimatedTotalBytes() : 0;
+}
+
+size_t Window::GetSkiaResourceCacheBytes() const {
+    if (!gr_context_) {
+        return 0;
+    }
+
+    int resource_count = 0;
+    size_t resource_bytes = 0;
+    gr_context_->getResourceCacheUsage(&resource_count, &resource_bytes);
+    return resource_bytes;
+}
+
+int Window::GetSkiaResourceCacheCount() const {
+    if (!gr_context_) {
+        return 0;
+    }
+
+    int resource_count = 0;
+    size_t resource_bytes = 0;
+    gr_context_->getResourceCacheUsage(&resource_count, &resource_bytes);
+    return resource_count;
+}
+
+size_t Window::GetSkiaResourceCacheLimit() const {
+    return gr_context_ ? gr_context_->getResourceCacheLimit() : 0;
+}
+
+void Window::PurgeSkiaResourceCache() {
+    if (!gr_context_) {
+        return;
+    }
+
+    gr_context_->performDeferredCleanup(std::chrono::milliseconds(0));
+    gr_context_->purgeUnlockedResources(GrPurgeResourceOptions::kAllResources);
+    gr_context_->flush();
+    gr_context_->freeGpuResources();
 }
 
 void Window::ForceLayoutSync() {

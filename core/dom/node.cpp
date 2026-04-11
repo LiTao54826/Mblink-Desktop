@@ -626,21 +626,32 @@ void Node::SetParentNode(std::shared_ptr<Node> parent) {
 }
 
 void Node::RemoveAllChildren() {
-    // 通知观察者和记录变化（在移除之前）
+    if (child_nodes_.empty()) {
+        return;
+    }
+
+    auto self = shared_from_this();
+    auto removed_children = child_nodes_;
     auto doc = GetOwnerDocument();
+
+    // 通知观察者和记录变化（在移除之前）
     if (doc) {
-        for (size_t i = 0; i < child_nodes_.size(); ++i) {
-            auto& child = child_nodes_[i];
-            // 记录到 DirtyNodeTracker（延迟处理）
-            doc->GetDirtyTracker().RecordNodeRemoved(child, shared_from_this(), i);
-            // 通知观察者（即时处理）
+        for (size_t i = 0; i < removed_children.size(); ++i) {
+            auto& child = removed_children[i];
+            doc->GetDirtyTracker().RecordNodeRemoved(child, self, i);
             doc->GetObserverManager().NotifyNodeRemoved(child.get(), this);
+
+            if (child->GetNodeType() == NodeType::ELEMENT_NODE) {
+                auto element = std::static_pointer_cast<Element>(child);
+                doc->UnregisterElementAndDescendantIds(element);
+            }
         }
     }
 
     // 清除所有子节点的父节点引用
-    for (auto& child : child_nodes_) {
+    for (auto& child : removed_children) {
         child->SetParentNode(nullptr);
+        NotifySelectOptionsChanged(self, child);
     }
 
     // 清空子节点列表
@@ -648,6 +659,11 @@ void Node::RemoveAllChildren() {
 
     // 标记为脏
     MarkDirty();
+
+    // 标记 Lexbor DOM 需要同步
+    if (doc) {
+        doc->MarkLexborDirty();
+    }
 }
 
 // ========== RenderObject 双向绑定 ==========

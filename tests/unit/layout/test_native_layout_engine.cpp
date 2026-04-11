@@ -8,13 +8,16 @@
  * - Flexbox 布局
  * - 增量布局
  */
-
 #include <gtest/gtest.h>
 #include "test_utils/test_helpers.h"
 #include "layout/native_layout_engine.h"
+#include "render/css/style_resolver.h"
 #include "render/objects/render_object.h"
 #include "dom/document.h"
 #include "dom/element.h"
+#include <fstream>
+#include <sstream>
+
 
 namespace mbink {
 namespace test {
@@ -27,13 +30,39 @@ protected:
     }
 
     void TearDown() override {
+        render_root_.reset();
         layout_engine_.reset();
         DOMTestBase::TearDown();
     }
 
+    void BuildAndLayoutFrom(std::shared_ptr<Node> root, float width, float height) {
+        RenderTreeBuilder builder;
+        builder.SetDocument(doc_.get());
+        render_root_ = builder.BuildRenderTree(root);
+        layout_engine_->BuildLayoutTree(render_root_);
+        layout_engine_->ComputeLayout(width, height);
+        layout_engine_->GetLayoutInfo(render_root_);
+    }
+
+    void BuildAndLayout(float width, float height) {
+        BuildAndLayoutFrom(doc_->GetBody(), width, height);
+    }
+
 protected:
+
+static std::string ReadTextFile(const std::string& path) {
+    std::ifstream file(path, std::ios::in | std::ios::binary);
+    EXPECT_TRUE(file.is_open()) << "Failed to open file: " << path;
+    std::ostringstream ss;
+    ss << file.rdbuf();
+    return ss.str();
+}
+
     std::unique_ptr<NativeLayoutEngine> layout_engine_;
+    std::shared_ptr<RenderObject> render_root_;
 };
+
+
 
 // ========== 基本功能测试 ==========
 
@@ -331,6 +360,169 @@ TEST_F(NativeLayoutEngineTest, NestedFlexbox) {
     inner->AppendChild(item2);
     outer->AppendChild(inner);
     body->AppendChild(outer);
+}
+
+TEST_F(NativeLayoutEngineTest, ColumnFlexAutoMarginScrollChildFillsRemainingHeight) {
+    auto body = doc_->GetBody();
+    auto shell = doc_->CreateElement("div");
+    auto aside = doc_->CreateElement("aside");
+    auto menu = doc_->CreateElement("div");
+    auto footer = doc_->CreateElement("div");
+    auto main = doc_->CreateElement("main");
+
+    shell->SetStyle("display", "flex");
+    shell->SetStyle("width", "800px");
+    shell->SetStyle("height", "600px");
+
+    aside->SetStyle("display", "flex");
+    aside->SetStyle("flex-direction", "column");
+    aside->SetStyle("width", "240px");
+
+    auto header = doc_->CreateElement("div");
+    header->SetStyle("height", "100px");
+    header->SetStyle("flex-shrink", "0");
+
+    menu->SetStyle("display", "flex");
+    menu->SetStyle("flex-direction", "column");
+    menu->SetStyle("flex-grow", "1");
+    menu->SetStyle("flex-shrink", "1");
+    menu->SetStyle("flex-basis", "0px");
+    menu->SetStyle("overflow-y", "auto");
+
+    footer->SetStyle("height", "80px");
+    footer->SetStyle("margin-top", "auto");
+    footer->SetStyle("flex-shrink", "0");
+
+    main->SetStyle("flex-grow", "1");
+
+    aside->AppendChild(header);
+    aside->AppendChild(menu);
+    aside->AppendChild(footer);
+    shell->AppendChild(aside);
+    shell->AppendChild(main);
+    body->AppendChild(shell);
+
+    BuildAndLayout(800.0f, 600.0f);
+
+    ASSERT_NE(aside->GetRenderObject(), nullptr);
+    ASSERT_NE(menu->GetRenderObject(), nullptr);
+    ASSERT_NE(footer->GetRenderObject(), nullptr);
+
+    const auto& aside_info = aside->GetRenderObject()->GetLayoutInfo();
+    const auto& menu_info = menu->GetRenderObject()->GetLayoutInfo();
+    const auto& footer_info = footer->GetRenderObject()->GetLayoutInfo();
+
+    EXPECT_FLOAT_EQ(aside_info.height, 600.0f);
+    EXPECT_FLOAT_EQ(menu_info.y, 100.0f);
+    EXPECT_FLOAT_EQ(menu_info.height, 420.0f);
+    EXPECT_FLOAT_EQ(footer_info.y, 520.0f);
+    EXPECT_FLOAT_EQ(footer_info.y + footer_info.height, aside_info.height);
+    EXPECT_FLOAT_EQ(menu_info.y + menu_info.height, footer_info.y);
+}
+
+TEST_F(NativeLayoutEngineTest, RealPageLikeColumnFlexAutoMarginScrollChildFillsRemainingHeight) {
+    auto body = doc_->GetBody();
+    auto root = doc_->CreateElement("div");
+    auto shell = doc_->CreateElement("div");
+    auto aside = doc_->CreateElement("aside");
+    auto header = doc_->CreateElement("div");
+    auto menu = doc_->CreateElement("div");
+    auto footer = doc_->CreateElement("div");
+    auto footerTitle = doc_->CreateElement("div");
+    auto main = doc_->CreateElement("main");
+
+    body->SetStyle("height", "100%");
+    body->SetStyle("margin", "0");
+
+    root->SetAttribute("id", "root");
+    root->SetStyle("height", "100%");
+    root->SetStyle("width", "100%");
+
+    shell->SetStyle("display", "flex");
+    shell->SetStyle("height", "100%");
+    shell->SetStyle("width", "100%");
+    shell->SetStyle("overflow", "hidden");
+
+    aside->SetStyle("display", "flex");
+    aside->SetStyle("flex-direction", "column");
+    aside->SetStyle("width", "240px");
+    aside->SetStyle("gap", "8px");
+    aside->SetStyle("padding", "24px 16px");
+
+    header->SetStyle("padding", "0 8px 24px 8px");
+    header->SetStyle("flex-shrink", "0");
+    auto logo = doc_->CreateElement("div");
+    logo->SetStyle("height", "32px");
+    header->AppendChild(logo);
+
+    menu->SetStyle("display", "flex");
+    menu->SetStyle("flex-direction", "column");
+    menu->SetStyle("gap", "4px");
+    menu->SetStyle("flex", "1");
+    menu->SetStyle("overflow-y", "auto");
+    for (int i = 0; i < 4; ++i) {
+        auto item = doc_->CreateElement("button");
+        item->SetStyle("display", "flex");
+        item->SetStyle("padding", "10px 16px");
+        item->SetStyle("height", "40px");
+        menu->AppendChild(item);
+    }
+
+    footer->SetStyle("display", "flex");
+    footer->SetStyle("flex-direction", "column");
+    footer->SetStyle("gap", "8px");
+    footer->SetStyle("margin-top", "auto");
+    footer->SetStyle("padding-top", "16px");
+    footer->SetStyle("border-top", "1px solid rgba(9,30,66,0.08)");
+    footer->SetStyle("flex-shrink", "0");
+    footerTitle->SetStyle("height", "24px");
+    footer->AppendChild(footerTitle);
+    for (int i = 0; i < 6; ++i) {
+        auto action = doc_->CreateElement("button");
+        action->SetStyle("height", "32px");
+        footer->AppendChild(action);
+    }
+
+    main->SetStyle("display", "flex");
+    main->SetStyle("flex-direction", "column");
+    main->SetStyle("flex", "1");
+    main->SetStyle("gap", "20px");
+    main->SetStyle("min-width", "0");
+    main->SetStyle("padding", "24px 32px");
+    main->SetStyle("overflow-y", "auto");
+    main->SetStyle("margin", "12px 12px 12px 0");
+    auto panel = doc_->CreateElement("div");
+    panel->SetStyle("height", "720px");
+    main->AppendChild(panel);
+
+    aside->AppendChild(header);
+    aside->AppendChild(menu);
+    aside->AppendChild(footer);
+    shell->AppendChild(aside);
+    shell->AppendChild(main);
+    root->AppendChild(shell);
+    body->AppendChild(root);
+
+    BuildAndLayoutFrom(body, 1280.0f, 800.0f);
+
+    ASSERT_NE(root->GetRenderObject(), nullptr);
+    ASSERT_NE(shell->GetRenderObject(), nullptr);
+    ASSERT_NE(aside->GetRenderObject(), nullptr);
+    ASSERT_NE(menu->GetRenderObject(), nullptr);
+    ASSERT_NE(footer->GetRenderObject(), nullptr);
+
+    const auto& root_info = root->GetRenderObject()->GetLayoutInfo();
+    const auto& shell_info = shell->GetRenderObject()->GetLayoutInfo();
+    const auto& aside_info = aside->GetRenderObject()->GetLayoutInfo();
+    const auto& menu_info = menu->GetRenderObject()->GetLayoutInfo();
+    const auto& footer_info = footer->GetRenderObject()->GetLayoutInfo();
+
+    EXPECT_FLOAT_EQ(root_info.height, 800.0f);
+    EXPECT_FLOAT_EQ(shell_info.height, 800.0f);
+    EXPECT_FLOAT_EQ(aside_info.height, 800.0f);
+    EXPECT_FLOAT_EQ(footer_info.y + footer_info.height, aside_info.height - 24.0f);
+    EXPECT_FLOAT_EQ(menu_info.y + menu_info.height, footer_info.y);
+    EXPECT_GT(menu_info.height, 0.0f);
 }
 
 } // namespace test

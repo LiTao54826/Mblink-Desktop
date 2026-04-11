@@ -118,6 +118,21 @@ public:
     int GetHeight() const { return height_; }
 
     /**
+     * @brief Estimate color texture memory usage in bytes
+     */
+    size_t GetEstimatedTextureBytes() const;
+
+    /**
+     * @brief Estimate depth/stencil memory usage in bytes
+     */
+    size_t GetEstimatedDepthStencilBytes() const;
+
+    /**
+     * @brief Estimate total FBO memory usage in bytes
+     */
+    size_t GetEstimatedTotalBytes() const;
+
+    /**
      * @brief Flush any pending Skia operations to the FBO
      */
     void Flush();

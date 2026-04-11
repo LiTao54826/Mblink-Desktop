@@ -21,22 +21,13 @@ JSValue DOMBindingMap::GetJSValue(Node* node) const {
 }
 
 void DOMBindingMap::SetJSValue(Node* node, JSValue value, JSContext* ctx) {
-    JSValueEntry old_entry{};
-    bool has_old_entry = false;
-
-    // 如果已经存在，先从映射表移除旧值，避免 JS_FreeValue 触发 finalizer 时误删新映射
     auto it = node_to_js_map_.find(node);
     if (it != node_to_js_map_.end()) {
-        old_entry = it->second;
+        JSValueEntry old_entry = it->second;
         node_to_js_map_.erase(it);
-        has_old_entry = true;
-    }
-
-    if (has_old_entry) {
         JS_FreeValue(old_entry.ctx, old_entry.value);
     }
 
-    // 保存新值（增加引用计数）
     JSValueEntry entry;
     entry.value = JS_DupValue(ctx, value);
     entry.ctx = ctx;
@@ -63,6 +54,10 @@ void DOMBindingMap::Clear() {
     for (auto& pair : entries) {
         JS_FreeValue(pair.second.ctx, pair.second.value);
     }
+}
+
+size_t DOMBindingMap::Size() const {
+    return node_to_js_map_.size();
 }
 
 void DOMBindingMap::ForEach(const std::function<void(Node*, JSContext*, JSValueConst)>& visitor) const {

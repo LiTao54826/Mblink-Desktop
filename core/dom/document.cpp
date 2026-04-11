@@ -718,66 +718,96 @@ void Document::ExecuteScripts(QuickJSRuntime* runtime) {
         return;
     }
 
-    // 获取所有 script 元素
     auto scripts = GetElementsByTagName("script");
-
     for (auto& script_elem : scripts) {
         auto script = std::dynamic_pointer_cast<HTMLScriptElement>(script_elem);
-        if (!script) {
+        if (!script || script->IsExecuted()) {
             continue;
         }
 
-        // 跳过已执行的脚本
-        if (script->IsExecuted()) {
-            continue;
-        }
+        try {
+            std::string code;
+            std::string script_name;
+            std::string display_name;
 
-        std::string code;
-        std::string script_name;
+            if (script->IsExternal()) {
+                std::string src = script->GetSrc();
+                std::string resolved_src = ResolvePath(src);
+                code = ReadExternalFile(src);
+                script_name = resolved_src.empty() ? src : NormalizeFsPath(Utf8PathToFsPath(resolved_src));
+                display_name = script_name.empty() ? src : script_name;
 
-        // 处理外部脚本
-        if (script->IsExternal()) {
-            std::string src = script->GetSrc();
-            std::string resolved_src = ResolvePath(src);
-            code = ReadExternalFile(src);
+                if (code.empty()) {
+                    AppendLoadError("Failed to load script: " + display_name);
+                    script->MarkExecuted();
+                    continue;
+                }
+            } else {
+                code = script->GetScriptText();
+                script_name = "<inline-script>";
+                display_name = script_name;
+            }
 
             if (code.empty()) {
                 script->MarkExecuted();
                 continue;
             }
 
-            script_name = resolved_src.empty() ? src : NormalizeFsPath(Utf8PathToFsPath(resolved_src));
-        } else {
-            // 内联脚本
-            code = script->GetScriptText();
-            script_name = "<inline-script>";
-        }
-
-        if (code.empty()) {
-            script->MarkExecuted();
-            continue;
-        }
-
-        // 执行脚本
-        try {
             std::string type = script->GetType();
-
             if (type == "module") {
-                // ES6 模块
                 if (script->IsExternal() && !script_name.empty()) {
                     runtime->SetBaseModulePath(script_name);
                 }
                 runtime->EvalModule(code, script_name);
             } else {
-                // 普通脚本（text/javascript 或空）
                 runtime->Eval(code, script_name);
             }
 
             script->MarkExecuted();
         } catch (const std::exception& e) {
-            script->MarkExecuted();  // 标记为已执行，避免重复执行失败的脚本
+            const bool is_module = script->GetType() == "module";
+            const std::string target = script->IsExternal()
+                ? (script->GetSrc().empty() ? std::string("<external-script>") : script->GetSrc())
+                : std::string("<inline-script>");
+            AppendLoadError(std::string("Failed to execute ") +
+                            (is_module ? "module: " : "script: ") +
+                            target + " - " + e.what());
+            script->MarkExecuted();
+        } catch (...) {
+            const bool is_module = script->GetType() == "module";
+            const std::string target = script->IsExternal()
+                ? (script->GetSrc().empty() ? std::string("<external-script>") : script->GetSrc())
+                : std::string("<inline-script>");
+            AppendLoadError(std::string("Failed to execute ") +
+                            (is_module ? "module: " : "script: ") +
+                            target + " - unknown error");
+            script->MarkExecuted();
         }
     }
+}
+
+std::string Document::ConsumeLoadErrors() {
+    if (load_errors_.empty()) {
+        return "";
+    }
+
+    std::string merged;
+    for (size_t i = 0; i < load_errors_.size(); ++i) {
+        if (i > 0) {
+            merged += '\n';
+        }
+        merged += load_errors_[i];
+    }
+    load_errors_.clear();
+    return merged;
+}
+
+void Document::AppendLoadError(const std::string& error) {
+    if (error.empty()) {
+        return;
+    }
+    load_errors_.push_back(error);
+    std::cerr << "[MBink Document Error] " << error << std::endl;
 }
 
 // ========== 资源加载 ==========
@@ -832,19 +862,27 @@ void Document::LoadExternalStylesheets() {
         }
 
         const std::string resolved_href = ResolvePath(href);
+        const std::string display_name = resolved_href.empty() ? href : resolved_href;
         std::string css = ReadExternalFile(href);
         if (css.empty()) {
+            AppendLoadError("Failed to load stylesheet: " + display_name);
             link->MarkLoaded();
             continue;
         }
 
-        const std::string css_base_path = resolved_href.empty()
-            ? ""
-            : NormalizeFsPath(Utf8PathToFsPath(resolved_href).parent_path());
-        css = RewriteCssUrls(css, css_base_path);
+        try {
+            const std::string css_base_path = resolved_href.empty()
+                ? ""
+                : NormalizeFsPath(Utf8PathToFsPath(resolved_href).parent_path());
+            css = RewriteCssUrls(css, css_base_path);
 
-        if (style_manager_) {
-            style_manager_->ParseCSSString(css, 50, resolved_href.empty() ? "external-link" : resolved_href);
+            if (style_manager_) {
+                style_manager_->ParseCSSString(css, 50, resolved_href.empty() ? "external-link" : resolved_href);
+            }
+        } catch (const std::exception& e) {
+            AppendLoadError("Failed to parse stylesheet: " + display_name + " - " + e.what());
+        } catch (...) {
+            AppendLoadError("Failed to parse stylesheet: " + display_name + " - unknown error");
         }
 
         link->MarkLoaded();

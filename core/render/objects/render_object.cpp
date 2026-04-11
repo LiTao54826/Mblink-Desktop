@@ -64,6 +64,10 @@
 
 namespace mbink {
 
+namespace {
+std::atomic<size_t> g_render_object_live_count{0};
+}
+
 // 静态成员初始化
 float RenderObject::viewport_width_ = 0.0f;
 
@@ -202,6 +206,15 @@ RenderObject::RenderObject(RenderObjectType type)
     , layout_info_()
     , needs_layout_(true)
     , needs_paint_(true) {
+    g_render_object_live_count.fetch_add(1, std::memory_order_relaxed);
+}
+
+RenderObject::~RenderObject() {
+    g_render_object_live_count.fetch_sub(1, std::memory_order_relaxed);
+}
+
+size_t RenderObject::GetLiveObjectCount() {
+    return g_render_object_live_count.load(std::memory_order_relaxed);
 }
 
 void RenderObject::AppendChild(std::shared_ptr<RenderObject> child) {

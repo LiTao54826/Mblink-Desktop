@@ -14,6 +14,7 @@
 #include "core/layout/layout_engine.h"
 #include "core/quickjs/dom_binding_map.h"
 #include <algorithm>
+#include <iostream>
 
 namespace mbink {
 namespace {
@@ -29,15 +30,21 @@ bool IsNodeAttachedToDocument(Node* node) {
     return false;
 }
 
-void RemoveBindingsForSubtree(const std::shared_ptr<Node>& node) {
+size_t RemoveBindingsForSubtree(const std::shared_ptr<Node>& node) {
     if (!node) {
-        return;
+        return 0;
     }
 
-    DOMBindingMap::GetInstance().Remove(node.get());
-    for (const auto& child : node->GetChildNodes()) {
-        RemoveBindingsForSubtree(child);
+    auto& binding_map = DOMBindingMap::GetInstance();
+    size_t removed = 0;
+    if (binding_map.Has(node.get())) {
+        removed = 1;
     }
+    binding_map.Remove(node.get());
+    for (const auto& child : node->GetChildNodes()) {
+        removed += RemoveBindingsForSubtree(child);
+    }
+    return removed;
 }
 
 } // namespace

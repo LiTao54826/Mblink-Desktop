@@ -1363,6 +1363,12 @@ json QuickJSRuntime::GetMemoryUsageStats(bool run_gc_first) {
     };
 }
 
+json QuickJSRuntime::DumpMemoryUsageStats(const std::string& tag, bool run_gc_first) {
+    json stats = GetMemoryUsageStats(run_gc_first);
+    std::cout << "[" << tag << "] " << stats.dump() << std::endl;
+    return stats;
+}
+
 bool QuickJSRuntime::HasPendingJobs() {
     return JS_IsJobPending(rt_);
 }

@@ -625,6 +625,19 @@ public:
      * @brief 将逻辑像素转换为物理像素
      */
     int LogicalToPhysicalPixels(int value) const;
+    void GetPhysicalSize(int* width, int* height) const;
+    RenderBackend GetActualBackend() const;
+    bool HasSurface() const;
+    bool HasGrContext() const;
+    bool HasFBOManager() const;
+    size_t GetEstimatedSurfaceBytes() const;
+    size_t GetEstimatedFBOTextureBytes() const;
+    size_t GetEstimatedFBODepthStencilBytes() const;
+    size_t GetEstimatedFBOTotalBytes() const;
+    size_t GetSkiaResourceCacheBytes() const;
+    int GetSkiaResourceCacheCount() const;
+    size_t GetSkiaResourceCacheLimit() const;
+    void PurgeSkiaResourceCache();
 
 private:
     /**

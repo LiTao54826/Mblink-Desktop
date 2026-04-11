@@ -67,6 +67,11 @@ public:
     void Clear();
 
     /**
+     * @brief 当前映射数量
+     */
+    size_t Size() const;
+
+    /**
      * @brief 遍历所有映射项
      * @param visitor 访问回调，参数为 Node* / JSContext* / JSValue
      */

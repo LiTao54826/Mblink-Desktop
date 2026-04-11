@@ -213,6 +213,79 @@ TEST_F(IncrementalLayoutIntegrationTest, NestedGridPanelPassesDefiniteHeightToPe
     EXPECT_FLOAT_EQ(host_bottom->GetLayoutInfo().height, fill_bottom->GetLayoutInfo().height);
 }
 
+TEST_F(IncrementalLayoutIntegrationTest, ColumnFlexMenuFillsRemainingHeightBeforeAutoMarginFooter) {
+    auto root = createFixedBlock(800.0f, 600.0f);
+    auto root_style = root->GetComputedStyle();
+    root_style.display = RenderObjectType::FLEX;
+    root_style.flex_direction = "row";
+    root->SetComputedStyle(root_style);
+
+    auto aside = createAutoBlock();
+    auto aside_style = aside->GetComputedStyle();
+    aside_style.display = RenderObjectType::FLEX;
+    aside_style.flex_direction = "column";
+    aside_style.width = CSSLength(240.0f, CSSUnit::PX);
+    aside_style.padding = CSSEdges(
+        CSSLength(24.0f, CSSUnit::PX),
+        CSSLength(16.0f, CSSUnit::PX),
+        CSSLength(24.0f, CSSUnit::PX),
+        CSSLength(16.0f, CSSUnit::PX)
+    );
+    aside->SetComputedStyle(aside_style);
+
+    auto content = createAutoBlock();
+    auto content_style = content->GetComputedStyle();
+    content_style.flex_grow = 1.0f;
+    content_style.flex_shrink = 1.0f;
+    content_style.flex_basis = CSSLength(0.0f, CSSUnit::PERCENT);
+    content->SetComputedStyle(content_style);
+
+    auto header = createFixedBlock(208.0f, 80.0f);
+
+    auto menu = createAutoBlock();
+    auto menu_style = menu->GetComputedStyle();
+    menu_style.display = RenderObjectType::FLEX;
+    menu_style.flex_direction = "column";
+    menu_style.flex_grow = 1.0f;
+    menu_style.flex_shrink = 1.0f;
+    menu_style.flex_basis = CSSLength(0.0f, CSSUnit::PERCENT);
+    menu->SetComputedStyle(menu_style);
+
+    auto menu_item = createFixedBlock(208.0f, 40.0f);
+
+    auto footer = createFixedBlock(208.0f, 60.0f);
+    auto footer_style = footer->GetComputedStyle();
+    footer_style.margin = CSSEdges(
+        CSSLength(0.0f, CSSUnit::AUTO),
+        CSSLength(0.0f, CSSUnit::PX),
+        CSSLength(0.0f, CSSUnit::PX),
+        CSSLength(0.0f, CSSUnit::PX)
+    );
+    footer_style.flex_shrink = 0.0f;
+    footer->SetComputedStyle(footer_style);
+
+    root->AppendChild(aside);
+    root->AppendChild(content);
+    aside->AppendChild(header);
+    aside->AppendChild(menu);
+    aside->AppendChild(footer);
+    menu->AppendChild(menu_item);
+
+    layout_engine_->BuildLayoutTree(root);
+    layout_engine_->ComputeLayout(800.0f, 600.0f);
+    layout_engine_->GetLayoutInfo(root);
+
+    LayoutInfo aside_layout = aside->GetLayoutInfo();
+    LayoutInfo menu_layout = menu->GetLayoutInfo();
+    LayoutInfo footer_layout = footer->GetLayoutInfo();
+
+    EXPECT_FLOAT_EQ(aside_layout.height, 600.0f);
+    EXPECT_FLOAT_EQ(menu_layout.height, 412.0f);
+    EXPECT_NEAR(menu_layout.y + menu_layout.height, footer_layout.y, 1.0f);
+    EXPECT_NEAR(footer_layout.y + footer_layout.height, aside_layout.y + aside_layout.height - 24.0f, 1.0f);
+}
+
+
 
 
 

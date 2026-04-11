@@ -37,6 +37,7 @@
 
 #ifdef _WIN32
 #include <windows.h>
+#include <dbghelp.h>
 #endif
 
 #include <algorithm>
@@ -52,6 +53,7 @@
 #include <iostream>
 #include <exception>
 #include <filesystem>
+#include <iomanip>
 
 namespace {
 
@@ -73,6 +75,9 @@ namespace fs = std::filesystem;
 bool g_initialized = false;
 std::string g_lastError;
 std::mutex g_errorMutex;
+#ifdef _WIN32
+std::mutex g_dbghelpMutex;
+#endif
 
 void ClearElementListenersRecursive(const std::shared_ptr<mbink::Node>& node) {
     if (!node) {
@@ -473,9 +478,125 @@ void reportNativeError(const std::string& error) {
     }
 }
 
-
 #ifdef _WIN32
-char* invokeCallbackWithSEH(MBinkCallback cb, const char* args, void* user_data, unsigned int* sehCode);
+std::string formatHexValue(uint64_t value, size_t width = 0) {
+    std::ostringstream oss;
+    oss << std::hex << std::uppercase << std::setfill('0');
+    if (width > 0) {
+        oss << std::setw(static_cast<int>(width));
+    }
+    oss << value;
+    return oss.str();
+}
+
+std::string formatPointer(const void* ptr) {
+    return "0x" + formatHexValue(static_cast<uint64_t>(reinterpret_cast<uintptr_t>(ptr)), sizeof(uintptr_t) * 2);
+}
+
+void ensureDbgHelpInitialized() {
+    static std::once_flag once;
+    std::call_once(once, []() {
+        HANDLE process = GetCurrentProcess();
+        SymSetOptions(SYMOPT_LOAD_LINES | SYMOPT_UNDNAME | SYMOPT_DEFERRED_LOADS);
+        SymInitialize(process, nullptr, TRUE);
+    });
+}
+
+std::string captureCurrentStackTrace(USHORT framesToSkip) {
+    ensureDbgHelpInitialized();
+
+    void* frames[62] = {};
+    const USHORT captured = CaptureStackBackTrace(static_cast<DWORD>(framesToSkip + 1), 62, frames, nullptr);
+    if (captured == 0) {
+        return "  <no stack trace>\n";
+    }
+
+    HANDLE process = GetCurrentProcess();
+    std::lock_guard<std::mutex> lock(g_dbghelpMutex);
+    std::ostringstream oss;
+
+    for (USHORT i = 0; i < captured; ++i) {
+        const DWORD64 address = reinterpret_cast<DWORD64>(frames[i]);
+        char symbolBuffer[sizeof(SYMBOL_INFO) + MAX_SYM_NAME] = {};
+        auto* symbol = reinterpret_cast<SYMBOL_INFO*>(symbolBuffer);
+        symbol->SizeOfStruct = sizeof(SYMBOL_INFO);
+        symbol->MaxNameLen = MAX_SYM_NAME;
+
+        DWORD64 displacement = 0;
+        IMAGEHLP_LINE64 line = {};
+        line.SizeOfStruct = sizeof(IMAGEHLP_LINE64);
+        DWORD lineDisplacement = 0;
+
+        const bool hasSymbol = SymFromAddr(process, address, &displacement, symbol) == TRUE;
+        const bool hasLine = SymGetLineFromAddr64(process, address, &lineDisplacement, &line) == TRUE;
+
+        oss << "  #" << i << " ";
+        if (hasSymbol) {
+            oss << symbol->Name;
+            if (displacement > 0) {
+                oss << " +0x" << formatHexValue(displacement);
+            }
+        } else {
+            oss << "<unknown>";
+        }
+        if (hasLine && line.FileName) {
+            oss << " (" << line.FileName << ":" << line.LineNumber << ")";
+        }
+        oss << " [" << formatPointer(reinterpret_cast<void*>(address)) << "]\n";
+    }
+
+    return oss.str();
+}
+
+std::string formatSehException(const char* scope, EXCEPTION_POINTERS* exceptionInfo, USHORT framesToSkip = 0) {
+    const auto* record = exceptionInfo ? exceptionInfo->ExceptionRecord : nullptr;
+    const unsigned int code = record ? static_cast<unsigned int>(record->ExceptionCode) : 0;
+    const void* address = record ? record->ExceptionAddress : nullptr;
+
+    std::ostringstream oss;
+    oss << "SEH exception";
+    if (scope && *scope) {
+        oss << " in " << scope;
+    }
+    oss << ", code=0x" << formatHexValue(code, 8)
+        << ", address=" << formatPointer(address)
+        << ", thread=" << GetCurrentThreadId();
+
+    if (record && code == EXCEPTION_ACCESS_VIOLATION && record->NumberParameters >= 2) {
+        const auto action = static_cast<unsigned long long>(record->ExceptionInformation[0]);
+        const void* target = reinterpret_cast<void*>(record->ExceptionInformation[1]);
+        const char* op = action == 0 ? "read" : (action == 1 ? "write" : (action == 8 ? "execute" : "access"));
+        oss << ", access=" << op << " " << formatPointer(target);
+    }
+
+    oss << "\nStack trace:\n" << captureCurrentStackTrace(static_cast<USHORT>(framesToSkip + 1));
+    return oss.str();
+}
+
+int captureSehException(const char* scope,
+                        unsigned int* sehCode,
+                        std::string* sehMessage,
+                        EXCEPTION_POINTERS* exceptionInfo,
+                        bool continueSearch = false) {
+    if (sehCode) {
+        *sehCode = exceptionInfo && exceptionInfo->ExceptionRecord
+            ? static_cast<unsigned int>(exceptionInfo->ExceptionRecord->ExceptionCode)
+            : 0;
+    }
+    if (sehMessage) {
+        *sehMessage = formatSehException(scope, exceptionInfo, 2);
+    }
+    return continueSearch ? EXCEPTION_CONTINUE_SEARCH : EXCEPTION_EXECUTE_HANDLER;
+}
+
+char* invokeCallbackWithSEH(MBinkCallback cb,
+                            const char* args,
+                            void* user_data,
+                            unsigned int* sehCode,
+                            std::string* sehMessage);
+bool runEventLoopWithSEH(mbink::EventLoop* eventLoop,
+                         unsigned int* sehCode,
+                         std::string* sehMessage);
 #endif
 
 std::string invokeBoundJsonCallback(WindowContext* ctx,
@@ -497,11 +618,13 @@ std::string invokeBoundJsonCallback(WindowContext* ctx,
 
 #ifdef _WIN32
     unsigned int sehCode = 0;
-    result = invokeCallbackWithSEH(cb, args.c_str(), ud, &sehCode);
+    std::string sehMessage;
+    result = invokeCallbackWithSEH(cb, args.c_str(), ud, &sehCode, &sehMessage);
     finishSharedBatch();
     if (!result && sehCode != 0) {
-        reportNativeError("SEH exception in bound callback '" + funcName +
-                          "', code=0x" + std::to_string(sehCode));
+        reportNativeError(sehMessage.empty()
+            ? ("SEH exception in bound callback '" + funcName + "', code=0x" + formatHexValue(sehCode, 8))
+            : sehMessage);
         return R"({"error":"Native SEH exception in callback"})";
     }
 #else
@@ -665,13 +788,7 @@ void registerPreactModules(mbink::QuickJSRuntime* runtime) {
 
 #ifdef _WIN32
 LONG WINAPI mbinkUnhandledExceptionFilter(EXCEPTION_POINTERS* exceptionInfo) {
-    unsigned int code = exceptionInfo ? exceptionInfo->ExceptionRecord->ExceptionCode : 0;
-    void* address = (exceptionInfo && exceptionInfo->ExceptionRecord)
-                        ? exceptionInfo->ExceptionRecord->ExceptionAddress
-                        : nullptr;
-    std::string error = "Unhandled SEH exception, code=0x" + std::to_string(code) +
-                        ", address=" + std::to_string(reinterpret_cast<uintptr_t>(address));
-    reportNativeError(error);
+    reportNativeError(formatSehException("unhandled exception filter", exceptionInfo, 1));
     return EXCEPTION_CONTINUE_SEARCH;
 }
 #endif
@@ -789,21 +906,46 @@ void syncTrayState(WindowContext* ctx) {
 }
 
 #ifdef _WIN32
-char* invokeCallbackWithSEH(MBinkCallback cb, const char* args, void* user_data, unsigned int* sehCode) {
+char* invokeCallbackWithSEH(MBinkCallback cb,
+                            const char* args,
+                            void* user_data,
+                            unsigned int* sehCode,
+                            std::string* sehMessage) {
     if (sehCode) {
         *sehCode = 0;
+    }
+    if (sehMessage) {
+        sehMessage->clear();
     }
 
     char* result = nullptr;
     __try {
         result = cb(args, user_data);
-    } __except (EXCEPTION_EXECUTE_HANDLER) {
-        if (sehCode) {
-            *sehCode = static_cast<unsigned int>(GetExceptionCode());
-        }
+    } __except (captureSehException("bound callback", sehCode, sehMessage, GetExceptionInformation())) {
         result = nullptr;
     }
     return result;
+}
+
+bool runEventLoopWithSEH(mbink::EventLoop* eventLoop,
+                         unsigned int* sehCode,
+                         std::string* sehMessage) {
+    if (sehCode) {
+        *sehCode = 0;
+    }
+    if (sehMessage) {
+        sehMessage->clear();
+    }
+    if (!eventLoop) {
+        return false;
+    }
+
+    __try {
+        eventLoop->Run();
+        return true;
+    } __except (captureSehException("mbink_run", sehCode, sehMessage, GetExceptionInformation())) {
+        return false;
+    }
 }
 #endif
 
@@ -1189,7 +1331,17 @@ void mbink_run(MBinkHandle handle) {
     });
 
     // 阻塞运行事件循环
+#ifdef _WIN32
+    unsigned int sehCode = 0;
+    std::string sehMessage;
+    if (!runEventLoopWithSEH(ctx->eventLoop.get(), &sehCode, &sehMessage) && sehCode != 0) {
+        reportNativeError(sehMessage.empty()
+            ? ("SEH exception in mbink_run, code=0x" + formatHexValue(sehCode, 8))
+            : sehMessage);
+    }
+#else
     ctx->eventLoop->Run();
+#endif
     ctx->running = false;
 }
 
@@ -1474,19 +1626,43 @@ int mbink_set_always_on_top(MBinkHandle handle, bool on_top) {
 int mbink_load_html(MBinkHandle handle, const char* html) {
     if (!handle) return MBINK_ERROR_INVALID_HANDLE;
     if (!html) return MBINK_ERROR_INVALID_PARAM;
-    auto ctx = getContext(handle);
-    if (ctx->document) {
-        ctx->document->SetBasePath("");
-        mbink::FetchBindings::SetBasePath("");
-        mbink::ImageLoader::SetBasePath("");
-        if (!ctx->document->LoadHTML(html)) {
-            setLastError("Failed to parse HTML");
-            return MBINK_ERROR_INVALID_PARAM;
+
+    try {
+        auto ctx = getContext(handle);
+        if (ctx->document) {
+            ctx->document->SetBasePath("");
+            mbink::FetchBindings::SetBasePath("");
+            mbink::ImageLoader::SetBasePath("");
+            if (!ctx->document->LoadHTML(html)) {
+                setLastError("Failed to parse HTML");
+                return MBINK_ERROR_INVALID_PARAM;
+            }
+
+            ctx->document->ConsumeLoadErrors();
+            std::string phase_error;
+            try {
+                ctx->document->LoadExternalStylesheets();
+                ctx->document->ExecuteScripts();
+            } catch (const std::exception& e) {
+                phase_error = std::string("HTML parsed but resource execution failed: ") + e.what();
+            } catch (...) {
+                phase_error = "HTML parsed but resource execution failed: unknown error";
+            }
+
+            std::string load_errors = ctx->document->ConsumeLoadErrors();
+            if (!phase_error.empty() && !load_errors.empty()) {
+                setLastError(phase_error + "\n" + load_errors);
+            } else if (!phase_error.empty()) {
+                setLastError(phase_error);
+            } else if (!load_errors.empty()) {
+                setLastError(load_errors);
+            }
         }
-        ctx->document->LoadExternalStylesheets();
-        ctx->document->ExecuteScripts();
+        return MBINK_OK;
+    } catch (const std::exception& e) {
+        setLastError(e.what());
+        return MBINK_ERROR_INVALID_PARAM;
     }
-    return MBINK_OK;
 }
 
 int mbink_load_html_file(MBinkHandle handle, const char* filepath) {
@@ -1531,8 +1707,26 @@ int mbink_load_html_file(MBinkHandle handle, const char* filepath) {
                 setLastError("Failed to parse HTML");
                 return MBINK_ERROR_INVALID_PARAM;
             }
-            ctx->document->LoadExternalStylesheets();
-            ctx->document->ExecuteScripts();
+
+            ctx->document->ConsumeLoadErrors();
+            std::string phase_error;
+            try {
+                ctx->document->LoadExternalStylesheets();
+                ctx->document->ExecuteScripts();
+            } catch (const std::exception& e) {
+                phase_error = std::string("HTML parsed but resource execution failed: ") + e.what();
+            } catch (...) {
+                phase_error = "HTML parsed but resource execution failed: unknown error";
+            }
+
+            std::string load_errors = ctx->document->ConsumeLoadErrors();
+            if (!phase_error.empty() && !load_errors.empty()) {
+                setLastError(phase_error + "\n" + load_errors);
+            } else if (!phase_error.empty()) {
+                setLastError(phase_error);
+            } else if (!load_errors.empty()) {
+                setLastError(load_errors);
+            }
         }
         return MBINK_OK;
     } catch (const std::exception& e) {

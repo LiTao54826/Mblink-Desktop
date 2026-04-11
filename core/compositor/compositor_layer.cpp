@@ -9,6 +9,7 @@
 #include "include/core/SkImageInfo.h"
 #include <algorithm>
 #include <cstring>
+#include <atomic>
 
 // OpenGL headers
 #ifdef _WIN32
@@ -39,6 +40,28 @@
 
 namespace mbink {
 
+namespace {
+std::atomic<size_t> g_compositor_layer_live_count{0};
+std::atomic<size_t> g_compositor_layer_live_bitmap_count{0};
+std::atomic<size_t> g_compositor_layer_live_bitmap_bytes{0};
+std::atomic<size_t> g_compositor_layer_live_texture_count{0};
+std::atomic<size_t> g_compositor_layer_live_texture_bytes{0};
+
+size_t EstimateBitmapBytes(const SkBitmap& bitmap) {
+    if (bitmap.width() <= 0 || bitmap.height() <= 0 || bitmap.rowBytes() == 0) {
+        return 0;
+    }
+    return bitmap.rowBytes() * static_cast<size_t>(bitmap.height());
+}
+
+size_t EstimateTextureBytes(int width, int height) {
+    if (width <= 0 || height <= 0) {
+        return 0;
+    }
+    return static_cast<size_t>(width) * static_cast<size_t>(height) * 4;
+}
+}
+
 // 静态 ID 生成器
 uint32_t CompositorLayer::next_id_ = 1;
 uint64_t CompositorLayer::next_layer_identity_ = 1;
@@ -46,11 +69,33 @@ uint64_t CompositorLayer::next_layer_identity_ = 1;
 CompositorLayer::CompositorLayer(uint32_t id)
     : id_(id == 0 ? next_id_++ : id)
     , layer_identity_(next_layer_identity_++) {
+    g_compositor_layer_live_count.fetch_add(1, std::memory_order_relaxed);
 }
 
 CompositorLayer::~CompositorLayer() {
+    g_compositor_layer_live_count.fetch_sub(1, std::memory_order_relaxed);
     DestroyTexture();
     ReleaseBitmap();
+}
+
+size_t CompositorLayer::GetLiveLayerCount() {
+    return g_compositor_layer_live_count.load(std::memory_order_relaxed);
+}
+
+size_t CompositorLayer::GetLiveBitmapCount() {
+    return g_compositor_layer_live_bitmap_count.load(std::memory_order_relaxed);
+}
+
+size_t CompositorLayer::GetLiveBitmapBytes() {
+    return g_compositor_layer_live_bitmap_bytes.load(std::memory_order_relaxed);
+}
+
+size_t CompositorLayer::GetLiveTextureCount() {
+    return g_compositor_layer_live_texture_count.load(std::memory_order_relaxed);
+}
+
+size_t CompositorLayer::GetLiveTextureBytes() {
+    return g_compositor_layer_live_texture_bytes.load(std::memory_order_relaxed);
 }
 
 // =========================================================================
@@ -111,20 +156,33 @@ bool CompositorLayer::EnsureBitmap() {
         return false;
     }
 
-    // 检查是否需要重新分配
     if (bitmap_valid_ && bitmap_.width() == width && bitmap_.height() == height) {
         return true;
     }
 
-    // 分配新位图（物理像素大小）
+    SkBitmap new_bitmap;
     SkImageInfo info = SkImageInfo::MakeN32Premul(width, height);
-    if (!bitmap_.tryAllocPixels(info)) {
+    if (!new_bitmap.tryAllocPixels(info)) {
         bitmap_valid_ = false;
         return false;
     }
 
-    // 清除为透明
-    bitmap_.eraseColor(SK_ColorTRANSPARENT);
+    new_bitmap.eraseColor(SK_ColorTRANSPARENT);
+
+    size_t old_bitmap_bytes = EstimateBitmapBytes(bitmap_);
+    if (old_bitmap_bytes > 0) {
+        g_compositor_layer_live_bitmap_bytes.fetch_sub(old_bitmap_bytes, std::memory_order_relaxed);
+        g_compositor_layer_live_bitmap_count.fetch_sub(1, std::memory_order_relaxed);
+    }
+
+    canvas_.reset();
+    bitmap_ = new_bitmap;
+
+    size_t new_bitmap_bytes = EstimateBitmapBytes(bitmap_);
+    if (new_bitmap_bytes > 0) {
+        g_compositor_layer_live_bitmap_bytes.fetch_add(new_bitmap_bytes, std::memory_order_relaxed);
+        g_compositor_layer_live_bitmap_count.fetch_add(1, std::memory_order_relaxed);
+    }
 
     // 创建 Canvas 并应用 DPI 缩放，使绘制使用逻辑坐标
     canvas_ = std::make_unique<SkCanvas>(bitmap_);
@@ -139,11 +197,15 @@ bool CompositorLayer::EnsureBitmap() {
     }
 
     bitmap_valid_ = true;
-
     return true;
 }
 
 void CompositorLayer::ReleaseBitmap() {
+    size_t bitmap_bytes = EstimateBitmapBytes(bitmap_);
+    if (bitmap_bytes > 0) {
+        g_compositor_layer_live_bitmap_bytes.fetch_sub(bitmap_bytes, std::memory_order_relaxed);
+        g_compositor_layer_live_bitmap_count.fetch_sub(1, std::memory_order_relaxed);
+    }
     canvas_.reset();
     bitmap_.reset();
     bitmap_valid_ = false;
@@ -374,12 +436,22 @@ bool CompositorLayer::CreateTexture() {
 
     texture_width_ = width;
     texture_height_ = height;
+    g_compositor_layer_live_texture_count.fetch_add(1, std::memory_order_relaxed);
+    g_compositor_layer_live_texture_bytes.fetch_add(
+        EstimateTextureBytes(texture_width_, texture_height_),
+        std::memory_order_relaxed
+    );
 
     return true;
 }
 
 void CompositorLayer::DestroyTexture() {
     if (texture_id_ != 0) {
+        g_compositor_layer_live_texture_bytes.fetch_sub(
+            EstimateTextureBytes(texture_width_, texture_height_),
+            std::memory_order_relaxed
+        );
+        g_compositor_layer_live_texture_count.fetch_sub(1, std::memory_order_relaxed);
         glDeleteTextures(1, &texture_id_);
         texture_id_ = 0;
         texture_width_ = 0;

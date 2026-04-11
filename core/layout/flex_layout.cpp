@@ -344,6 +344,20 @@ LayoutOutput ComputeFlexboxLayout(
         } else if (clamped_style_size.width.has_value()) {
             styled_based_known_dimensions.width =
                 std::optional<float>(f32_max(*clamped_style_size.width, padding_border_sum.width));
+        } else if (inputs.available_space.width.IsDefinite() &&
+                   inputs.sizing_mode == SizingMode::InherentSize &&
+                   !style.size.width.IsPercent() && !style.size.width.IsLength()) {
+            // Block-level flex container with width:auto should fill available width,
+            // rather than shrink-to-fit to its children.
+            float available_outer_width = inputs.available_space.width.value;
+            available_outer_width = f32_max(available_outer_width, padding_border_sum.width);
+            if (min_size.width.has_value()) {
+                available_outer_width = f32_max(available_outer_width, *min_size.width);
+            }
+            if (max_size.width.has_value()) {
+                available_outer_width = f32_min(available_outer_width, *max_size.width);
+            }
+            styled_based_known_dimensions.width = std::optional<float>(available_outer_width);
         }
     }
     if (!styled_based_known_dimensions.height.has_value()) {
@@ -1734,10 +1748,18 @@ static void CalculateFlexItem(
         std::optional<float>(item.target_size.height)
     };
 
+    // 使用容器最终确定的 inner size 作为子项的 parent_size。
+    // 不能继续使用 constants.node_inner_size，因为它可能仍是初始/未最终收敛的值，
+    // 会导致子项内部的百分比高度、overflow:auto 判定拿不到正确的包含块高度。
+    Size<std::optional<float>> parent_inner_size = {
+        std::optional<float>(constants.inner_container_size.width),
+        std::optional<float>(constants.inner_container_size.height)
+    };
+
     auto layout_output = tree.PerformChildLayout(
         item.node,
         known_dimensions,
-        constants.node_inner_size,
+        parent_inner_size,
         Size<AvailableSpace>{
             AvailableSpace::Definite(item.target_size.width),
             AvailableSpace::Definite(item.target_size.height)

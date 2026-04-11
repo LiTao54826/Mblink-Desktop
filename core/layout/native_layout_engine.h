@@ -56,6 +56,9 @@ public:
     NativeLayoutEngine();
     ~NativeLayoutEngine();
 
+    static size_t GetLiveNodeCount();
+    static size_t GetLiveEngineCount();
+
     // Prevent copying
     NativeLayoutEngine(const NativeLayoutEngine&) = delete;
     NativeLayoutEngine& operator=(const NativeLayoutEngine&) = delete;

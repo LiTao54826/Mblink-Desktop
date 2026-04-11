@@ -198,6 +198,13 @@ public:
     json GetMemoryUsageStats(bool run_gc_first = false);
 
     /**
+     * @brief 打印 QuickJS 内存统计
+     * @param tag 日志标签
+     * @param run_gc_first 是否先执行一次 GC
+     */
+    json DumpMemoryUsageStats(const std::string& tag = "QuickJSMemoryStats", bool run_gc_first = false);
+
+    /**
      * @brief 获取QuickJS上下文
      * @return QuickJS上下文指针
      */

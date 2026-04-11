@@ -23,6 +23,7 @@
 #include <string>
 #include <memory>
 #include <unordered_map>
+#include <vector>
 
 // 前向声明
 namespace mbink {
@@ -310,6 +311,11 @@ public:
      */
     void ExecuteScripts(QuickJSRuntime* runtime);
 
+    /**
+     * @brief 取出并清空页面加载阶段累计的脚本/样式错误
+     */
+    std::string ConsumeLoadErrors();
+
     // ========== 资源加载 ==========
 
     /**
@@ -460,6 +466,11 @@ private:
      */
     void RebuildIdMap(std::shared_ptr<Element> root);
 
+    /**
+     * @brief 记录页面加载阶段的资源错误
+     */
+    void AppendLoadError(const std::string& error);
+
 private:
     std::shared_ptr<Element> document_element_;
     std::shared_ptr<Element> head_;
@@ -498,6 +509,9 @@ private:
 
     // 资源加载基础路径
     std::string base_path_;
+
+    // 页面加载阶段累计的资源错误
+    std::vector<std::string> load_errors_;
 
     // 静态资源提供者
     static FileAssetProvider asset_provider_;

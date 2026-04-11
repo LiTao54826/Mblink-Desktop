@@ -218,12 +218,15 @@ enum class Overflow {
     Visible,
     Clip,
     Hidden,
-    Scroll
+    Scroll,
+    Auto
 };
 
 /// Check if overflow creates a scroll container
 inline bool IsScrollContainer(Overflow overflow) {
-    return overflow == Overflow::Scroll || overflow == Overflow::Hidden;
+    return overflow == Overflow::Scroll ||
+           overflow == Overflow::Hidden ||
+           overflow == Overflow::Auto;
 }
 
 //------------------------------------------------------------------------------

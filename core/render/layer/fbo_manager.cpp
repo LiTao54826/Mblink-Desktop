@@ -75,7 +75,7 @@ static bool g_gl_extensions_loaded = false;
 
 static bool LoadGLExtensions() {
     if (g_gl_extensions_loaded) return true;
-    
+
     glGenFramebuffers = (PFNGLGENFRAMEBUFFERSPROC)SDL_GL_GetProcAddress("glGenFramebuffers");
     glDeleteFramebuffers = (PFNGLDELETEFRAMEBUFFERSPROC)SDL_GL_GetProcAddress("glDeleteFramebuffers");
     glBindFramebuffer = (PFNGLBINDFRAMEBUFFERPROC)SDL_GL_GetProcAddress("glBindFramebuffer");
@@ -87,14 +87,14 @@ static bool LoadGLExtensions() {
     glRenderbufferStorage = (PFNGLRENDERBUFFERSTORAGEPROC)SDL_GL_GetProcAddress("glRenderbufferStorage");
     glFramebufferRenderbuffer = (PFNGLFRAMEBUFFERRENDERBUFFERPROC)SDL_GL_GetProcAddress("glFramebufferRenderbuffer");
     glBlitFramebuffer = (PFNGLBLITFRAMEBUFFERPROC)SDL_GL_GetProcAddress("glBlitFramebuffer");
-    
+
     if (!glGenFramebuffers || !glDeleteFramebuffers || !glBindFramebuffer ||
         !glCheckFramebufferStatus || !glFramebufferTexture2D ||
         !glGenRenderbuffers || !glDeleteRenderbuffers || !glBindRenderbuffer ||
         !glRenderbufferStorage || !glFramebufferRenderbuffer || !glBlitFramebuffer) {
         return false;
     }
-    
+
     g_gl_extensions_loaded = true;
     return true;
 }
@@ -302,6 +302,25 @@ bool FBOManager::Resize(int width, int height) {
     return Initialize(width, height, ctx);
 }
 
+size_t FBOManager::GetEstimatedTextureBytes() const {
+    if (!valid_ || width_ <= 0 || height_ <= 0) {
+        return 0;
+    }
+    return static_cast<size_t>(width_) * static_cast<size_t>(height_) * 4;
+}
+
+size_t FBOManager::GetEstimatedDepthStencilBytes() const {
+    if (!valid_ || width_ <= 0 || height_ <= 0) {
+        return 0;
+    }
+    return static_cast<size_t>(width_) * static_cast<size_t>(height_) * 4;
+}
+
+size_t FBOManager::GetEstimatedTotalBytes() const {
+    return GetEstimatedTextureBytes() + GetEstimatedDepthStencilBytes();
+}
+
+
 void FBOManager::Bind() {
     if (fbo_id_ != 0) {
         glBindFramebuffer(GL_FRAMEBUFFER, fbo_id_);
@@ -319,7 +338,7 @@ void FBOManager::BlitToScreen(int screen_width, int screen_height) {
 
     // Bind FBO as read framebuffer
     glBindFramebuffer(GL_READ_FRAMEBUFFER, fbo_id_);
-    
+
     // Bind default framebuffer (screen) as draw framebuffer
     glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
 

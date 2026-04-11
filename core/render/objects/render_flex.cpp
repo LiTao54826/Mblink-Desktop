@@ -7,6 +7,7 @@
 #include "core/render/painters/box_renderer.h"
 #include "core/render/painters/background_painter.h"
 #include "core/render/painters/border_painter.h"
+#include "core/render/painters/scrollbar_painter.h"
 #include "core/render/utils/gradient_renderer.h"
 #include "core/render/utils/shadow_renderer.h"
 #include "core/dom/node.h"
@@ -640,6 +641,14 @@ void RenderFlex::Paint(SkCanvas* canvas) {
         );
         canvas->save();
         canvas->clipRect(clip_rect, SkClipOp::kIntersect, true);
+
+        // 关键修复：flex 容器的普通子元素是在当前层位图里直接绘制的，
+        // 如果 overflow 可滚动但这里不应用滚动偏移，就会出现：
+        // 1. RenderObject.scroll_y 已更新
+        // 2. hit test 命中坐标已偏移
+        // 3. 但视觉内容仍停留在原位置
+        // RenderBlock::Paint 已有对应逻辑，这里保持一致。
+        canvas->translate(-scroll_x_, -scroll_y_);
     }
 
     // 绘制子元素
@@ -654,6 +663,15 @@ void RenderFlex::Paint(SkCanvas* canvas) {
     // 恢复 overflow 裁剪状态
     if (needs_clip) {
         canvas->restore();
+    }
+
+    // 绘制滚动条
+    // 关键修复：RenderFlex 之前缺少滚动条绘制逻辑，导致 overflow:auto
+    // 即使已经可滚动，也不会出现可视滚动条。
+    {
+        ScrollbarPainter scrollbar_painter(canvas);
+        ScrollbarPaintParams scrollbar_params = ScrollbarPainter::CreateParams(*this, box, style);
+        scrollbar_painter.Paint(scrollbar_params);
     }
 
     // 恢复画布状态
