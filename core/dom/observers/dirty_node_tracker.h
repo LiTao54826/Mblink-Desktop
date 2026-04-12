@@ -49,16 +49,16 @@ public:
      */
     struct StructuralChange {
         StructuralChangeType type;          ///< 变化类型
-        std::weak_ptr<Node> node;           ///< 变化的节点（Added/Removed/Moved 时使用）
-        std::weak_ptr<Node> parent;         ///< 父节点
-        std::weak_ptr<Node> old_parent;     ///< 旧父节点（Moved 时使用）
-        std::weak_ptr<Node> new_node;       ///< 新节点（Replaced 时使用）
-        std::weak_ptr<Node> old_node;       ///< 旧节点（Replaced 时使用）
+        std::shared_ptr<Node> node;         ///< 变化的节点（Added/Removed/Moved 时使用）
+        std::shared_ptr<Node> parent;       ///< 父节点
+        std::shared_ptr<Node> old_parent;   ///< 旧父节点（Moved 时使用）
+        std::shared_ptr<Node> new_node;     ///< 新节点（Replaced 时使用）
+        std::shared_ptr<Node> old_node;     ///< 旧节点（Replaced 时使用）
         size_t index;                       ///< 在父节点中的索引
-        
+
         StructuralChange() : type(StructuralChangeType::Added), index(0) {}
     };
-    
+
     /**
      * @brief 样式变化记录
      */

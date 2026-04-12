@@ -1319,7 +1319,8 @@ void Window::Render() {
     bool needs_layout_update = false;
     if (!render_tree_rebuild_required && document_ && render_tree_synchronizer_ && cached_render_tree_ && render_tree_valid_) {
         auto& tracker = document_->GetDirtyTracker();
-        if (tracker.HasPendingChanges()) {
+        const bool has_pending_changes = tracker.HasPendingChanges();
+        if (has_pending_changes) {
             // 调用 RenderTreeSynchronizer 来同步变化
             bool synced = render_tree_synchronizer_->Synchronize(tracker, cached_render_tree_);
             if (synced) {

@@ -8,17 +8,13 @@
 #include "core/render/css/style_resolver.h"  // RenderTreeBuilder 在这里定义
 #include "core/dom/observers/dirty_node_tracker.h"
 #include "core/dom/node.h"
-#include "core/dom/element.h"
-#include "core/dom/text.h"
 #include "core/dom/document.h"
 #include "core/layout/layout_engine.h"
 #include "core/quickjs/dom_binding_map.h"
 #include <algorithm>
-#include <iostream>
 
 namespace mbink {
 namespace {
-
 bool IsNodeAttachedToDocument(Node* node) {
     while (node) {
         if (node->GetNodeType() == NodeType::DOCUMENT_NODE) {
@@ -76,13 +72,15 @@ bool RenderTreeSynchronizer::Synchronize(DirtyNodeTracker& tracker,
     tracker.Optimize();
     CleanupDetachedDOMBindings(tracker);
 
+    const bool needs_subtree_rebuild = NeedsSubtreeRebuild(tracker);
+
     // 判断是否需要子树重建
-    if (NeedsSubtreeRebuild(tracker)) {
+    if (needs_subtree_rebuild) {
         // 收集受影响的根节点
         std::unordered_set<Node*> affected_roots;
 
         for (const auto& change : tracker.GetStructuralChanges()) {
-            if (auto parent = change.parent.lock()) {
+            if (auto parent = change.parent) {
                 affected_roots.insert(parent.get());
             }
         }
@@ -115,11 +113,11 @@ void RenderTreeSynchronizer::CleanupDetachedDOMBindings(const DirtyNodeTracker& 
 
         switch (change.type) {
             case DirtyNodeTracker::StructuralChangeType::Removed: {
-                root = change.node.lock();
+                root = change.node;
                 break;
             }
             case DirtyNodeTracker::StructuralChangeType::Replaced: {
-                root = change.old_node.lock();
+                root = change.old_node;
                 break;
             }
             default:
@@ -145,7 +143,7 @@ bool RenderTreeSynchronizer::NeedsSubtreeRebuild(const DirtyNodeTracker& tracker
 
     // 尝试从第一个有 RenderObject 的节点获取视口大小
     for (const auto& change : changes) {
-        if (auto node = change.node.lock()) {
+        if (auto node = change.node) {
             if (auto render_obj = node->GetRenderObject()) {
                 viewport_width = render_obj->GetViewportWidth();
                 viewport_height = render_obj->GetViewportHeight();
@@ -158,7 +156,7 @@ bool RenderTreeSynchronizer::NeedsSubtreeRebuild(const DirtyNodeTracker& tracker
 
     for (const auto& change : changes) {
         // 尝试获取变化节点的渲染对象来计算面积
-        if (auto node = change.node.lock()) {
+        if (auto node = change.node) {
             if (auto render_obj = node->GetRenderObject()) {
                 const auto& layout = render_obj->GetLayoutInfo();
                 total_change_area += layout.width * layout.height;
@@ -168,7 +166,7 @@ bool RenderTreeSynchronizer::NeedsSubtreeRebuild(const DirtyNodeTracker& tracker
             }
         }
         // 对于被移除的旧节点
-        if (auto old_node = change.old_node.lock()) {
+        if (auto old_node = change.old_node) {
             if (auto render_obj = old_node->GetRenderObject()) {
                 const auto& layout = render_obj->GetLayoutInfo();
                 total_change_area += layout.width * layout.height;
@@ -184,7 +182,7 @@ bool RenderTreeSynchronizer::NeedsSubtreeRebuild(const DirtyNodeTracker& tracker
     // 规则 2：有 Replaced 操作且涉及复杂子树
     for (const auto& change : changes) {
         if (change.type == DirtyNodeTracker::StructuralChangeType::Replaced) {
-            if (auto old_node = change.old_node.lock()) {
+            if (auto old_node = change.old_node) {
                 if (old_node->GetChildNodes().size() > replaced_children_threshold_) {
                     return true;
                 }
@@ -195,7 +193,7 @@ bool RenderTreeSynchronizer::NeedsSubtreeRebuild(const DirtyNodeTracker& tracker
     // 规则 3：同一父节点下有多个变化
     std::unordered_map<Node*, size_t> parent_change_count;
     for (const auto& change : changes) {
-        if (auto parent = change.parent.lock()) {
+        if (auto parent = change.parent) {
             if (++parent_change_count[parent.get()] > parent_changes_threshold_) {
                 return true;
             }
@@ -206,11 +204,13 @@ bool RenderTreeSynchronizer::NeedsSubtreeRebuild(const DirtyNodeTracker& tracker
 }
 
 void RenderTreeSynchronizer::ProcessStructuralChanges(DirtyNodeTracker& tracker) {
-    for (const auto& change : tracker.GetStructuralChanges()) {
+    const auto& changes = tracker.GetStructuralChanges();
+    for (size_t i = 0; i < changes.size(); ++i) {
+        const auto& change = changes[i];
         switch (change.type) {
             case DirtyNodeTracker::StructuralChangeType::Added: {
-                auto node = change.node.lock();
-                auto parent = change.parent.lock();
+                auto node = change.node;
+                auto parent = change.parent;
                 if (node && parent) {
                     InsertRenderObject(node.get(), parent.get(), change.index);
                 }
@@ -218,7 +218,7 @@ void RenderTreeSynchronizer::ProcessStructuralChanges(DirtyNodeTracker& tracker)
             }
 
             case DirtyNodeTracker::StructuralChangeType::Removed: {
-                auto node = change.node.lock();
+                auto node = change.node;
                 if (node) {
                     RemoveRenderObject(node.get());
                 }
@@ -226,9 +226,9 @@ void RenderTreeSynchronizer::ProcessStructuralChanges(DirtyNodeTracker& tracker)
             }
 
             case DirtyNodeTracker::StructuralChangeType::Replaced: {
-                auto old_node = change.old_node.lock();
-                auto new_node = change.new_node.lock();
-                auto parent = change.parent.lock();
+                auto old_node = change.old_node;
+                auto new_node = change.new_node;
+                auto parent = change.parent;
                 if (old_node && new_node && parent) {
                     ReplaceRenderObject(old_node.get(), new_node.get(), parent.get(), change.index);
                 }
@@ -236,11 +236,10 @@ void RenderTreeSynchronizer::ProcessStructuralChanges(DirtyNodeTracker& tracker)
             }
 
             case DirtyNodeTracker::StructuralChangeType::Moved: {
-                auto node = change.node.lock();
-                auto old_parent = change.old_parent.lock();
-                auto new_parent = change.parent.lock();
+                auto node = change.node;
+                auto old_parent = change.old_parent;
+                auto new_parent = change.parent;
                 if (node && new_parent) {
-                    // 移动渲染对象（不清除关联）
                     MoveRenderObject(node.get(), old_parent ? old_parent.get() : nullptr,
                                     new_parent.get(), change.index);
                 }

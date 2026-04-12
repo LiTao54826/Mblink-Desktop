@@ -93,7 +93,6 @@ function h(type, props) {
         ensureVNodeId(vnode);
         return vnode;
     } catch (e) {
-        reportPreactError(e, 'h', typeof type === 'function' ? (type.name || 'Anonymous') : String(type));
         throw e;
     }
 }
@@ -151,42 +150,10 @@ function isSameVNodeType(oldVNode, newVNode) {
         _skipEffects: false  // Skip effects flag
     };
 
-    function reportPreactError(error, phase, details) {
-        var message = '[MBink Preact Error][' + phase + ']';
-        if (details) {
-            message += ' ' + details;
-        }
-        if (error && error.message) {
-            message += ' - ' + error.message;
-        } else if (error != null) {
-            message += ' - ' + String(error);
-        }
 
-        try {
-            if (typeof options._catchError === 'function') {
-                options._catchError(error, { phase: phase, details: details });
-            }
-        } catch (_) {}
 
-        try {
-            if (typeof globalThis !== 'undefined') {
-                globalThis.__mbinkLastRenderError = message;
-                if (error && error.stack) {
-                    globalThis.__mbinkLastRenderError += '\n' + error.stack;
-                }
-            }
-        } catch (_) {}
 
-        try {
-            if (typeof console !== 'undefined' && console && typeof console.error === 'function') {
-                if (error && error.stack) {
-                    console.error(message + '\n' + error.stack);
-                } else {
-                    console.error(message, error);
-                }
-            }
-        } catch (_) {}
-    }
+
 
 
 /**
@@ -265,9 +232,16 @@ function updateParentDOMPointers(vnode) {
     }
 }
 
-/**
- * Fragment component - renders children without wrapper
- */
+function getDirectChildDOM(parentDOM, vnode, fallbackDOM) {
+    var dom = fallbackDOM || getVNodeDOM(vnode);
+
+    while (dom && dom.parentNode && dom.parentNode !== parentDOM) {
+        dom = dom.parentNode;
+    }
+
+    return dom && dom.parentNode === parentDOM ? dom : null;
+}
+
 function Fragment(props) {
     return props.children;
 }
@@ -817,9 +791,6 @@ function createComponentDOM(vnode) {
                 if (typeof PreactHooks !== 'undefined' && PreactHooks.setCurrentComponent) {
                     PreactHooks.setCurrentComponent(null);
                 }
-                reportPreactError(e, 'component-rerender', currentVNode && currentVNode.type && currentVNode.type.name
-                    ? currentVNode.type.name
-                    : 'Anonymous');
             } finally {
                 if (shouldTrackRoot && typeof globalThis !== 'undefined' && typeof globalThis.__mbinkEndRootTracking === 'function') {
                     globalThis.__mbinkEndRootTracking(currentRoot);
@@ -1181,17 +1152,18 @@ function diffNode(oldVNode, newVNode, parentDOM, oldDOM) {
             }
         }
 
-        // New node is null - remove old
+        if (parentDOM && oldDOM && oldDOM.parentNode !== parentDOM) {
+            oldDOM = getDirectChildDOM(parentDOM, oldVNode, oldDOM);
+        }
+
         if (newVNode == null || newVNode === false || newVNode === true) {
-            if (oldVNode) {
-                clearVNode(oldVNode);
-            }
             if (oldDOM && parentDOM && oldDOM.parentNode === parentDOM) {
                 try {
                     parentDOM.removeChild(oldDOM);
-                } catch (e) {
-                    // Ignore removal errors
-                }
+                } catch (e) {}
+            }
+            if (oldVNode) {
+                clearVNode(oldVNode);
             }
             if (oldVNode && typeof oldVNode === 'object') {
                 updateParentDOMPointers(oldVNode);
@@ -1199,7 +1171,6 @@ function diffNode(oldVNode, newVNode, parentDOM, oldDOM) {
             return null;
         }
 
-        // Old node is null - create new
         if (oldVNode == null || oldVNode === false || oldVNode === true) {
             var newDOM = createDOMElement(newVNode);
             if (newDOM && parentDOM) {
@@ -1212,7 +1183,6 @@ function diffNode(oldVNode, newVNode, parentDOM, oldDOM) {
             return newDOM;
         }
 
-        // Both are text nodes
         if ((typeof oldVNode === 'string' || typeof oldVNode === 'number') &&
             (typeof newVNode === 'string' || typeof newVNode === 'number')) {
             if (!oldDOM) {
@@ -1228,20 +1198,20 @@ function diffNode(oldVNode, newVNode, parentDOM, oldDOM) {
             return oldDOM;
         }
 
-        // Type changed - replace entirely
         if (!isSameVNodeType(oldVNode, newVNode)) {
-            clearVNode(oldVNode);
             var replacementDOM = createDOMElement(newVNode);
-            if (parentDOM && oldDOM && oldDOM.parentNode === parentDOM) {
+            var domToReplace = parentDOM ? getDirectChildDOM(parentDOM, oldVNode, oldDOM) : oldDOM;
+
+            if (parentDOM && domToReplace && domToReplace.parentNode === parentDOM) {
                 try {
-                    parentDOM.replaceChild(replacementDOM, oldDOM);
+                    parentDOM.replaceChild(replacementDOM, domToReplace);
                 } catch (e) {
-                    // If replace fails, try append
                     parentDOM.appendChild(replacementDOM);
                 }
             } else if (parentDOM && replacementDOM) {
                 parentDOM.appendChild(replacementDOM);
             }
+            clearVNode(oldVNode);
             if (newVNode && typeof newVNode === 'object') {
                 newVNode.__dom = replacementDOM;
                 updateParentDOMPointers(newVNode);
@@ -1249,9 +1219,7 @@ function diffNode(oldVNode, newVNode, parentDOM, oldDOM) {
             return replacementDOM;
         }
 
-        // Both are components of the same type
         if (typeof newVNode.type === 'function') {
-            // Transfer component reference from old to new VNode
             if (oldVNode.__component && !newVNode.__component) {
                 newVNode.__component = oldVNode.__component;
             }
@@ -1270,29 +1238,14 @@ function diffNode(oldVNode, newVNode, parentDOM, oldDOM) {
             return recreatedDOM;
         }
 
-        // Both are elements of the same type - update in place
         return diffElement(oldVNode, newVNode, oldDOM);
     } catch (e) {
-        reportPreactError(e, 'diff-node', newVNode && newVNode.type
-            ? (typeof newVNode.type === 'function'
-                ? (newVNode.type.name || 'Anonymous')
-                : String(newVNode.type))
-            : typeof newVNode);
-        // On error, try to create new element as fallback
         try {
-            var fallbackDOM = createDOMElement(newVNode);
-            if (fallbackDOM && parentDOM) {
-                parentDOM.appendChild(fallbackDOM);
+            if (oldDOM && parentDOM && oldDOM.parentNode !== parentDOM) {
+                oldDOM = getDirectChildDOM(parentDOM, oldVNode, oldDOM);
             }
-            return fallbackDOM;
-        } catch (e2) {
-            reportPreactError(e2, 'diff-node-fallback', newVNode && newVNode.type
-                ? (typeof newVNode.type === 'function'
-                    ? (newVNode.type.name || 'Anonymous')
-                    : String(newVNode.type))
-                : typeof newVNode);
-            return oldDOM;
-        }
+        } catch (_) {}
+        return oldDOM || null;
     }
 }
 
@@ -1431,6 +1384,10 @@ function diffChildren(oldParentVNode, newParentVNode, parentDOM) {
         var oldChild = oldChildren[i];
         var oldDOM = getVNodeDOM(oldChild);
 
+        if (oldDOM && oldDOM.parentNode !== parentDOM) {
+            oldDOM = getDirectChildDOM(parentDOM, oldChild, oldDOM);
+        }
+
         if (!oldDOM) {
             var isPrimitiveChild = typeof oldChild === 'string' || typeof oldChild === 'number';
             var isElementVNode = oldChild && typeof oldChild === 'object' && typeof oldChild.type === 'string';
@@ -1486,10 +1443,18 @@ function diffChildren(oldParentVNode, newParentVNode, parentDOM) {
 
     for (var j = 0; j < newLen; j++) {
         var newChild = newChildren[j];
+        var newChildKey = getKey(newChild);
         setVNodeParent(newChild, newParentVNode, j, parentRoot);
         var oldEntry = findMatchingEntry(newChild, j);
-        var matchedOldDOM = oldEntry ? oldEntry.dom : null;
-        var currentDOMAtPosition = parentDOM.childNodes[j] || null;
+
+        if (!oldEntry && newChildKey == null && j < oldEntries.length) {
+            var sameIndexEntry = oldEntries[j];
+            if (sameIndexEntry && !usedOld[sameIndexEntry.index] && sameIndexEntry.key == null) {
+                oldEntry = sameIndexEntry;
+            }
+        }
+
+        var matchedOldDOM = oldEntry ? getDirectChildDOM(parentDOM, oldEntry.vnode, oldEntry.dom) : null;
         var domToPlace = null;
 
         if (oldEntry) {
@@ -1500,18 +1465,19 @@ function diffChildren(oldParentVNode, newParentVNode, parentDOM) {
         }
 
         if (domToPlace) {
+            var referenceDOM = parentDOM.childNodes[j] || null;
+            if (referenceDOM && referenceDOM.parentNode !== parentDOM) {
+                referenceDOM = null;
+            }
+
             if (domToPlace.parentNode !== parentDOM) {
-                if (currentDOMAtPosition) {
-                    parentDOM.insertBefore(domToPlace, currentDOMAtPosition);
+                if (referenceDOM && referenceDOM !== domToPlace) {
+                    parentDOM.insertBefore(domToPlace, referenceDOM);
                 } else {
                     parentDOM.appendChild(domToPlace);
                 }
-            } else if (domToPlace !== currentDOMAtPosition) {
-                if (currentDOMAtPosition) {
-                    parentDOM.insertBefore(domToPlace, currentDOMAtPosition);
-                } else {
-                    parentDOM.appendChild(domToPlace);
-                }
+            } else if (referenceDOM && domToPlace !== referenceDOM) {
+                parentDOM.insertBefore(domToPlace, referenceDOM);
             }
         }
     }
@@ -1520,18 +1486,16 @@ function diffChildren(oldParentVNode, newParentVNode, parentDOM) {
         if (!usedOld[m]) {
             var oldEntryToRemove = oldEntries[m];
             var oldChildVNode = oldEntryToRemove ? oldEntryToRemove.vnode : oldChildren[m];
-            var domToRemove = oldEntryToRemove ? oldEntryToRemove.dom : null;
-
-            if (oldChildVNode) {
-                clearVNode(oldChildVNode);
-            }
+            var domToRemove = oldEntryToRemove ? getDirectChildDOM(parentDOM, oldChildVNode, oldEntryToRemove.dom) : null;
 
             if (domToRemove && domToRemove.parentNode === parentDOM) {
                 try {
                     parentDOM.removeChild(domToRemove);
-                } catch (e) {
-                    // Ignore removal errors
-                }
+                } catch (e) {}
+            }
+
+            if (oldChildVNode) {
+                clearVNode(oldChildVNode);
             }
         }
     }

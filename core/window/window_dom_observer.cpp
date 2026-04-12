@@ -478,7 +478,7 @@ void WindowDOMObserver::OnSubtreeModified(Node* root) {
                 float viewport_area = static_cast<float>(width * height);
 
                 for (const auto& change : tracker.GetStructuralChanges()) {
-                    auto parent = change.parent.lock();
+                    auto parent = change.parent;
                     if (parent) {
                         if (auto render_obj = parent->GetRenderObject()) {
                             const auto& layout = render_obj->GetLayoutInfo();
@@ -494,7 +494,7 @@ void WindowDOMObserver::OnSubtreeModified(Node* root) {
                 if (viewport_area > 0 && total_change_area < viewport_area * 0.5f) {
                     // 标记受影响的节点需要重新布局
                     for (const auto& change : tracker.GetStructuralChanges()) {
-                        auto parent = change.parent.lock();
+                        auto parent = change.parent;
                         if (parent) {
                             if (auto parent_ro = parent->GetRenderObject()) {
                                 parent_ro->MarkNeedsLayout(true);

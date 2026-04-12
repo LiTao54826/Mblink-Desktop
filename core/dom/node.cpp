@@ -362,13 +362,10 @@ std::shared_ptr<Node> Node::ReplaceChild(std::shared_ptr<Node> new_child,
         throw std::invalid_argument("Cannot replace with/from null child");
     }
 
-    // DOM 语义：replaceChild(node, node) 等同于 no-op
     if (new_child == old_child) {
         return old_child;
     }
 
-    // 先计算 old_child 的位置；如果 new_child 已经在当前父节点并位于 old_child 之前，
-    // 静默挪走 new_child 后 old_child 的索引会左移一位，需提前修正。
     auto old_it = std::find(child_nodes_.begin(), child_nodes_.end(), old_child);
     if (old_it == child_nodes_.end()) {
         throw std::invalid_argument("Old child not found");
@@ -387,7 +384,6 @@ std::shared_ptr<Node> Node::ReplaceChild(std::shared_ptr<Node> new_child,
         }
     }
 
-    // DOM move：不要让 new_child 先走 RemoveChild()，否则会误报 removed。
     if (old_parent_of_new_child) {
         auto& old_siblings = old_parent_of_new_child->child_nodes_;
         auto old_new_child_it = std::find(old_siblings.begin(), old_siblings.end(), new_child);
@@ -409,31 +405,22 @@ std::shared_ptr<Node> Node::ReplaceChild(std::shared_ptr<Node> new_child,
         throw std::invalid_argument("Old child not found after reordering");
     }
 
-    // 通知观察者和记录变化
     auto doc = GetOwnerDocument();
     if (doc) {
-        // 记录为原子替换操作到 DirtyNodeTracker（延迟处理）
-        // 这解决了 ReplaceChild 的时序问题
         doc->GetDirtyTracker().RecordNodeReplaced(old_child, new_child, shared_from_this(), index);
-
-        // 通知观察者：旧节点被移除（立即处理，用于兼容旧代码）
         doc->GetObserverManager().NotifyNodeRemoved(old_child.get(), this);
     }
 
-    // 替换节点（按索引重新定位，避免移动后旧迭代器失效）
     child_nodes_[index] = new_child;
     old_child->SetParentNode(nullptr);
     new_child->SetParentNode(shared_from_this());
 
-    // 通知观察者：新节点被添加
     if (doc) {
         doc->GetObserverManager().NotifyNodeAdded(new_child.get(), this);
     }
 
-    // 标记为脏
     MarkDirty();
 
-    // 标记 Lexbor DOM 需要同步
     if (doc) {
         doc->MarkLexborDirty();
     }
@@ -477,7 +464,7 @@ void Node::SetTextContent(const std::string& content) {
     // 优化：如果只有一个 Text 子节点且内容非空，直接更新其内容
     // 这会触发 OnTextChanged，走增量更新路径，而不是删除重建
     // 参考 Blink 的增量更新机制
-    if (child_nodes_.size() == 1 && 
+    if (child_nodes_.size() == 1 &&
         child_nodes_[0]->GetNodeType() == NodeType::TEXT_NODE &&
         !content.empty()) {
         auto text_node = std::static_pointer_cast<Text>(child_nodes_[0]);
@@ -487,10 +474,10 @@ void Node::SetTextContent(const std::string& content) {
         }
         return;
     }
-    
+
     // 如果内容为空且只有一个 Text 子节点，需要移除它
     // 如果有多个子节点或子节点不是 Text，需要重建
-    
+
     // 移除所有子节点
     RemoveAllChildren();
 
@@ -556,10 +543,10 @@ void Node::MarkAncestorsWithChildNeedsStyleRecalc() {
         if (parent->ChildNeedsStyleRecalc()) {
             break;
         }
-        
+
         // 只设置 ChildNeedsStyleRecalc 标志
         parent->SetChildNeedsStyleRecalc();
-        
+
         // 继续向上遍历
         parent = parent->GetParentNode();
     }
@@ -570,17 +557,17 @@ void Node::SetNeedsStyleRecalc(StyleChangeType change_type) {
     if (change_type == StyleChangeType::kNoStyleChange) {
         return;
     }
-    
+
     // 如果当前的 StyleChangeType 已经是更高级别的变化，不需要降级
     // kSubtreeStyleChange > kLocalStyleChange > kNoStyleChange
     StyleChangeType current_type = GetStyleChangeType();
     if (static_cast<uint32_t>(current_type) >= static_cast<uint32_t>(change_type)) {
         return;
     }
-    
+
     // 设置节点的 StyleChangeType
     SetStyleChange(change_type);
-    
+
     // 标记祖先链
     MarkAncestorsWithChildNeedsStyleRecalc();
 }
@@ -597,10 +584,10 @@ void Node::MarkAncestorsWithChildNeedsLayout() {
         if (parent->ChildNeedsLayout()) {
             break;
         }
-        
+
         // 只设置 ChildNeedsLayout 标志
         parent->SetChildNeedsLayout();
-        
+
         // 继续向上遍历
         parent = parent->GetParentNode();
     }
@@ -611,10 +598,10 @@ void Node::SetNeedsLayout() {
     if (NeedsLayoutFlag()) {
         return;
     }
-    
+
     // 设置节点的 NeedsLayout 标志
     SetNeedsLayoutFlag();
-    
+
     // 标记祖先链
     MarkAncestorsWithChildNeedsLayout();
 }
