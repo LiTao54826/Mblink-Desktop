@@ -35,6 +35,8 @@
         return component.__debugId;
     }
 
+
+
 /**
  * Create a Virtual DOM node (VNode)
  * @param {string|Function} type - Element tag name or component function
@@ -52,16 +54,7 @@ function h(type, props) {
 
         // Flatten children array
         var flatChildren = [];
-        for (var j = 0; j < children.length; j++) {
-            var child = children[j];
-            if (Array.isArray(child)) {
-                for (var k = 0; k < child.length; k++) {
-                    flatChildren.push(child[k]);
-                }
-            } else if (child != null && child !== false && child !== true) {
-                flatChildren.push(child);
-            }
-        }
+        toChildArray(children, flatChildren);
 
         // Ensure props object exists
         var finalProps = props || {};
@@ -1444,6 +1437,7 @@ function diffChildren(oldParentVNode, newParentVNode, parentDOM) {
     for (var j = 0; j < newLen; j++) {
         var newChild = newChildren[j];
         var newChildKey = getKey(newChild);
+        var isEmptyNewChild = newChild == null || newChild === false || newChild === true;
         setVNodeParent(newChild, newParentVNode, j, parentRoot);
         var oldEntry = findMatchingEntry(newChild, j);
 
@@ -1459,8 +1453,9 @@ function diffChildren(oldParentVNode, newParentVNode, parentDOM) {
 
         if (oldEntry) {
             usedOld[oldEntry.index] = true;
-            domToPlace = diffNode(oldEntry.vnode, newChild, parentDOM, matchedOldDOM) || matchedOldDOM;
-        } else {
+            var diffedDOM = diffNode(oldEntry.vnode, newChild, parentDOM, matchedOldDOM);
+            domToPlace = isEmptyNewChild ? null : (diffedDOM || matchedOldDOM);
+        } else if (!isEmptyNewChild) {
             domToPlace = createDOMElement(newChild);
         }
 

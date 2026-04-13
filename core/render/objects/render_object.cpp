@@ -1136,10 +1136,10 @@ RenderObject::ScrollbarHitArea RenderObject::HitTestScrollbar(float local_x, flo
     const float scrollbar_width = GetScrollbarWidth();
 
     // 计算 border 宽度（与 Paint 保持一致）
-    float border_left = style.border.width.ToPx();
-    float border_right = style.border.width.ToPx();
-    float border_top = style.border.width.ToPx();
-    float border_bottom = style.border.width.ToPx();
+    float border_left = style.border_left_width > 0 ? style.border_left_width : style.border.width.ToPx();
+    float border_right = style.border_right_width > 0 ? style.border_right_width : style.border.width.ToPx();
+    float border_top = style.border_top_width > 0 ? style.border_top_width : style.border.width.ToPx();
+    float border_bottom = style.border_bottom_width > 0 ? style.border_bottom_width : style.border.width.ToPx();
 
     // 计算可见区域（对于 body 元素使用视口尺寸）- 减去 border
     float effective_width = GetEffectiveVisibleWidth();
@@ -1196,18 +1196,14 @@ void RenderObject::UpdateScrollbarDrag(float mouse_x, float mouse_y) {
     }
 
     // 计算 border 宽度
-    float border_left = computed_style_.border.width.ToPx();
-    float border_right = computed_style_.border.width.ToPx();
-    float border_top = computed_style_.border.width.ToPx();
-    float border_bottom = computed_style_.border.width.ToPx();
+    float border_left = computed_style_.border_left_width > 0 ? computed_style_.border_left_width : computed_style_.border.width.ToPx();
+    float border_right = computed_style_.border_right_width > 0 ? computed_style_.border_right_width : computed_style_.border.width.ToPx();
+    float border_top = computed_style_.border_top_width > 0 ? computed_style_.border_top_width : computed_style_.border.width.ToPx();
+    float border_bottom = computed_style_.border_bottom_width > 0 ? computed_style_.border_bottom_width : computed_style_.border.width.ToPx();
 
     // 对于 body 元素使用视口尺寸
     float effective_width = GetEffectiveVisibleWidth();
     float effective_height = GetEffectiveVisibleHeight();
-
-    // 可见区域减去 border
-    float visible_width = effective_width - border_left - border_right;
-    float visible_height = effective_height - border_top - border_bottom;
 
     // 如果 content_width_/height_ 还没初始化，动态计算
     float content_width = content_width_ > 0 ? content_width_ : CalculateContentWidth();
@@ -1215,8 +1211,8 @@ void RenderObject::UpdateScrollbarDrag(float mouse_x, float mouse_y) {
 
     // 构建拖动参数
     ScrollbarDragParams params;
-    params.visible_width = visible_width;
-    params.visible_height = visible_height;
+    params.visible_width = effective_width;
+    params.visible_height = effective_height;
     params.content_width = content_width;
     params.content_height = content_height;
     params.border_left = border_left;

@@ -21,11 +21,13 @@
 #include "core/lexbor/style_manager.h"
 #include "core/compositor/layer_tree_manager.h"
 #include <vector>
+#include <cstdlib>
+#include <sstream>
+#include <iostream>
 
 namespace mbink {
 
 namespace {
-
 
 void AddDirtyRectForRenderObject(Window* window, Element* owner, RenderObject* render_obj) {
     if (!window || !render_obj) {

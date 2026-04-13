@@ -48,6 +48,7 @@
 #include <chrono>
 #include <algorithm>
 #include <unordered_map>
+#include <cstdlib>
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_opengl.h>
 
@@ -95,6 +96,8 @@ namespace mbink {
 // 从 render_object.cpp 导入的绘制统计变量
 extern std::atomic<int> g_paint_total_calls;
 extern std::atomic<int> g_paint_culled_calls;
+
+
 
 // 静态成员：SDL初始化计数器
 static int sdl_init_count = 0;

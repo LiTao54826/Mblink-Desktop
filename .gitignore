@@ -115,3 +115,4 @@ reports/
 .claude/
 *.mbrp
 .augment/
+bindings/python/examples/xxxx/

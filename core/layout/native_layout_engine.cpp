@@ -4309,16 +4309,24 @@ LayoutOutput NativeLayoutEngine::MeasureLeafNode(NodeId node_id, const LayoutInp
 
     // Handle inline-block elements
     if (type == RenderObjectType::INLINE_BLOCK) {
-        // ✅ FIX: Respect known_dimensions from flex layout
-        // If flex layout has calculated a target size, use it instead of intrinsic size
+        // ✅ FIX: Respect known_dimensions from flex/grid layout
+        // If external layout has calculated a target size, seed layout_info_ first
+        // so RenderInlineBlock::Layout() preserves that assigned size instead of
+        // recalculating shrink-to-fit dimensions.
         if (inputs.known_dimensions.width.has_value() && inputs.known_dimensions.height.has_value()) {
             auto* inline_block = static_cast<RenderInlineBlock*>(render_obj);
 
-            // Call Layout to update internal state (similar to IFC layout)
+            LayoutInfo& layout = inline_block->GetLayoutInfo();
+            layout.width = *inputs.known_dimensions.width;
+            layout.height = *inputs.known_dimensions.height;
+            layout.is_laid_out = true;
+
+            // Call Layout to update internal child layout/positioning while preserving
+            // the externally assigned dimensions.
             inline_block->Layout(*inputs.known_dimensions.width, *inputs.known_dimensions.height);
 
             LayoutOutput output;
-            output.size = Size<float>{*inputs.known_dimensions.width, *inputs.known_dimensions.height};
+            output.size = Size<float>{layout.width, layout.height};
             output.content_size = output.size;
             output.margins_can_collapse_through = false;
 

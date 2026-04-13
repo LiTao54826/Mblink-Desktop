@@ -285,6 +285,147 @@ TEST_F(IncrementalLayoutIntegrationTest, ColumnFlexMenuFillsRemainingHeightBefor
     EXPECT_NEAR(footer_layout.y + footer_layout.height, aside_layout.y + aside_layout.height - 24.0f, 1.0f);
 }
 
+TEST_F(IncrementalLayoutIntegrationTest, GridItemNestedColumnFlexPassesRemainingHeightToFlexOneScrollChild) {
+    auto root = createFixedBlock(1000.0f, 700.0f);
+    auto root_style = root->GetComputedStyle();
+    root_style.display = RenderObjectType::FLEX;
+    root_style.flex_direction = "row";
+    root->SetComputedStyle(root_style);
+
+    auto aside = createFixedBlock(240.0f, 700.0f);
+
+    auto main = createAutoBlock();
+    auto main_style = main->GetComputedStyle();
+    main_style.display = RenderObjectType::FLEX;
+    main_style.flex_direction = "column";
+    main_style.flex_grow = 1.0f;
+    main_style.flex_shrink = 1.0f;
+    main_style.flex_basis = CSSLength(0.0f, CSSUnit::PERCENT);
+    main->SetComputedStyle(main_style);
+
+    auto grid = createAutoBlock();
+    auto grid_style = grid->GetComputedStyle();
+    grid_style.display = RenderObjectType::GRID;
+    grid_style.flex_grow = 1.0f;
+    grid_style.flex_shrink = 1.0f;
+    grid_style.flex_basis = CSSLength(0.0f, CSSUnit::PERCENT);
+    grid_style.grid_template_columns = "1fr";
+    grid->SetComputedStyle(grid_style);
+
+    auto item = createAutoBlock();
+    auto item_style = item->GetComputedStyle();
+    item_style.display = RenderObjectType::FLEX;
+    item_style.flex_direction = "column";
+    item->SetComputedStyle(item_style);
+
+    auto header = createFixedBlock(0.0f, 120.0f);
+
+    auto body = createAutoBlock();
+    auto body_style = body->GetComputedStyle();
+    body_style.display = RenderObjectType::FLEX;
+    body_style.flex_direction = "column";
+    body_style.flex_grow = 1.0f;
+    body_style.flex_shrink = 1.0f;
+    body_style.flex_basis = CSSLength(0.0f, CSSUnit::PERCENT);
+    body_style.overflow_y = "auto";
+    body->SetComputedStyle(body_style);
+
+    root->AppendChild(aside);
+    root->AppendChild(main);
+    main->AppendChild(grid);
+    grid->AppendChild(item);
+    item->AppendChild(header);
+    item->AppendChild(body);
+
+    layout_engine_->BuildLayoutTree(root);
+    layout_engine_->ComputeLayout(1000.0f, 700.0f);
+    layout_engine_->GetLayoutInfo(root);
+
+    LayoutInfo grid_layout = grid->GetLayoutInfo();
+    LayoutInfo item_layout = item->GetLayoutInfo();
+    LayoutInfo header_layout = header->GetLayoutInfo();
+    LayoutInfo body_layout = body->GetLayoutInfo();
+
+    EXPECT_FLOAT_EQ(grid_layout.height, 700.0f);
+    EXPECT_FLOAT_EQ(item_layout.height, 700.0f);
+    EXPECT_FLOAT_EQ(header_layout.height, 120.0f);
+    EXPECT_FLOAT_EQ(body_layout.height, 580.0f);
+}
+
+TEST_F(IncrementalLayoutIntegrationTest, GridItemFlexWrapperAndNestedColumnFlexPassRemainingHeightToScrollBody) {
+    auto root = createFixedBlock(1000.0f, 700.0f);
+    auto root_style = root->GetComputedStyle();
+    root_style.display = RenderObjectType::FLEX;
+    root_style.flex_direction = "row";
+    root->SetComputedStyle(root_style);
+
+    auto aside = createFixedBlock(240.0f, 700.0f);
+
+    auto main = createAutoBlock();
+    auto main_style = main->GetComputedStyle();
+    main_style.display = RenderObjectType::FLEX;
+    main_style.flex_direction = "column";
+    main_style.flex_grow = 1.0f;
+    main_style.flex_shrink = 1.0f;
+    main_style.flex_basis = CSSLength(0.0f, CSSUnit::PERCENT);
+    main->SetComputedStyle(main_style);
+
+    auto grid = createAutoBlock();
+    auto grid_style = grid->GetComputedStyle();
+    grid_style.display = RenderObjectType::GRID;
+    grid_style.flex_grow = 1.0f;
+    grid_style.flex_shrink = 1.0f;
+    grid_style.flex_basis = CSSLength(0.0f, CSSUnit::PERCENT);
+    grid_style.grid_template_columns = "1fr";
+    grid->SetComputedStyle(grid_style);
+
+    auto wrapper = createAutoBlock();
+    auto wrapper_style = wrapper->GetComputedStyle();
+    wrapper_style.display = RenderObjectType::FLEX;
+    wrapper->SetComputedStyle(wrapper_style);
+
+    auto card = createAutoBlock();
+    auto card_style = card->GetComputedStyle();
+    card_style.display = RenderObjectType::FLEX;
+    card_style.flex_direction = "column";
+    card_style.flex_grow = 1.0f;
+    card_style.flex_shrink = 1.0f;
+    card_style.flex_basis = CSSLength(0.0f, CSSUnit::PERCENT);
+    card->SetComputedStyle(card_style);
+
+    auto header = createFixedBlock(0.0f, 120.0f);
+
+    auto body = createAutoBlock();
+    auto body_style = body->GetComputedStyle();
+    body_style.display = RenderObjectType::FLEX;
+    body_style.flex_direction = "column";
+    body_style.flex_grow = 1.0f;
+    body_style.flex_shrink = 1.0f;
+    body_style.flex_basis = CSSLength(0.0f, CSSUnit::PERCENT);
+    body_style.overflow_y = "auto";
+    body->SetComputedStyle(body_style);
+
+    root->AppendChild(aside);
+    root->AppendChild(main);
+    main->AppendChild(grid);
+    grid->AppendChild(wrapper);
+    wrapper->AppendChild(card);
+    card->AppendChild(header);
+    card->AppendChild(body);
+
+    layout_engine_->BuildLayoutTree(root);
+    layout_engine_->ComputeLayout(1000.0f, 700.0f);
+    layout_engine_->GetLayoutInfo(root);
+
+    EXPECT_FLOAT_EQ(grid->GetLayoutInfo().height, 700.0f);
+    EXPECT_FLOAT_EQ(wrapper->GetLayoutInfo().height, 700.0f);
+    EXPECT_FLOAT_EQ(card->GetLayoutInfo().height, 700.0f);
+    EXPECT_FLOAT_EQ(header->GetLayoutInfo().height, 120.0f);
+    EXPECT_FLOAT_EQ(body->GetLayoutInfo().height, 580.0f);
+}
+
+
+
 
 
 

@@ -5,14 +5,13 @@
 
 #include "hit_test_controller.h"
 #include "core/dom/element.h"
+#include "core/dom/node.h"
 #include "core/render/objects/render_object.h"
 #include "core/render/layer/paint_layer.h"
 #include "core/compositor/compositor_layer.h"
 #include <sstream>
 #include <iostream>
-
-// 调试开关
-static bool g_debug_hit_test = std::getenv("MBINK_DEBUG_HIT_TEST") != nullptr;
+#include <cstdlib>
 
 namespace mbink {
 
@@ -21,7 +20,7 @@ HitTestResultEx HitTestController::HitTest(
     float viewport_x,
     float viewport_y,
     const HitTestRequest& request) {
-    
+
     HitTestResultEx result;
     result.viewport_x = viewport_x;
     result.viewport_y = viewport_y;
@@ -34,7 +33,7 @@ HitTestResultEx HitTestController::HitTest(
     // 确保视口坐标缓存是最新的
     // 注意：实际使用中，缓存应该在布局后统一更新
     // 这里作为后备方案
-    
+
     // 1. 先测试 PaintLayer（如果有）
     PaintLayer* paint_layer = root_render->GetPaintLayer();
     if (paint_layer) {
@@ -103,13 +102,8 @@ bool HitTestController::HitTestRenderObject(
 
     const auto& style = render_obj->GetComputedStyle();
 
-    // 调试日志
     auto node = render_obj->GetNode();
     auto element = std::dynamic_pointer_cast<Element>(node);
-    std::string tag_name = element ? element->GetTagName() : "unknown";
-
-    if (g_debug_hit_test && style.position == "absolute") {
-    }
 
     // 检查 visibility
     if (request.test_visibility && style.visibility == "hidden") {
@@ -127,21 +121,6 @@ bool HitTestController::HitTestRenderObject(
     // 如果缓存无效，尝试更新
     if (!bounds.valid) {
         render_obj->UpdateViewportBounds();
-    }
-
-    if (g_debug_hit_test && style.position == "absolute") {
-        const auto& b = render_obj->GetViewportBounds();
-
-        // 打印父元素链
-        auto parent = render_obj->GetParent();
-        int depth = 0;
-        while (parent && depth < 5) {
-            const auto& p_layout = parent->GetLayoutInfo();
-            const auto& p_style = parent->GetComputedStyle();
-            parent = parent->GetParent();
-            depth++;
-        }
-
     }
 
     // 关键修复：先递归测试所有后代中的 absolute/fixed 元素

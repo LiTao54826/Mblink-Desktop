@@ -42,6 +42,11 @@ TEST_F(CSSValueTest, ParseAuto) {
     EXPECT_TRUE(value.IsAuto());
 }
 
+TEST_F(CSSValueTest, ParseNone) {
+    auto value = CSSValue::ParseLength("none");
+    EXPECT_EQ(value.unit, CSSUnit::NONE);
+}
+
 TEST_F(CSSValueTest, ParseZero) {
     auto value = CSSValue::ParseLength("0");
     EXPECT_TRUE(value.IsZero());

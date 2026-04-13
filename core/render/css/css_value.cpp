@@ -163,11 +163,14 @@ CSSLength CSSValue::ParseLength(const std::string& str) {
         return CSSLength(0.0f, CSSUnit::PX);
     }
 
-    // 检查是否为 auto
+    // 检查是否为 auto / none
     std::string lower = trimmed;
     std::transform(lower.begin(), lower.end(), lower.begin(), ::tolower);
     if (lower == "auto") {
         return CSSLength(0.0f, CSSUnit::AUTO);
+    }
+    if (lower == "none") {
+        return CSSLength(0.0f, CSSUnit::NONE);
     }
 
     // 检查是否为 calc() 表达式

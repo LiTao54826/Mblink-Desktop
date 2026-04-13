@@ -619,12 +619,27 @@ void RenderPipeline::DoRasterize() {
         return;
     }
 
+    const RasterizeStats stats_before = rasterizer_->GetStats();
+
     // 复制自 V2 的 RasterizeDirtyLayers
     int rasterized = rasterizer_->RasterizeDirtyLayers(root_layer_.get());
     current_frame_stats_.layers_rasterized = rasterized;
 
     const auto& stats = rasterizer_->GetStats();
-    current_frame_stats_.dirty_regions_count = stats.incremental_rasterizations;
+    const int frame_full_rasterizations = stats.full_rasterizations - stats_before.full_rasterizations;
+    const int frame_incremental_rasterizations =
+        stats.incremental_rasterizations - stats_before.incremental_rasterizations;
+
+    current_frame_stats_.dirty_regions_count = frame_incremental_rasterizations;
+
+    if (frame_full_rasterizations > 0 || frame_incremental_rasterizations > 0) {
+        const char* render_mode = frame_full_rasterizations > 0 ? "full" : "incremental";
+        std::cout << "[RENDER_MODE] mode=" << render_mode
+                  << " full=" << frame_full_rasterizations
+                  << " incremental=" << frame_incremental_rasterizations
+                  << " layers=" << rasterized
+                  << "\n";
+    }
 }
 
 void RenderPipeline::DoComposite(SkCanvas* canvas) {

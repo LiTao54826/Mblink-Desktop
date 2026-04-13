@@ -546,11 +546,6 @@ LayoutOutput ComputeGridLayout(
         col_sum = SumTrackBaseSizes(columns);
     }
 
-    if (inner_node_size.height.has_value()) {
-        StretchTracksToAvailableSpace(rows, *inner_node_size.height);
-        row_sum = SumTrackBaseSizes(rows);
-    }
-
     // 7. Compute container size
     float container_width = outer_node_size.width.value_or(col_sum + padding_border_size.width);
     float container_height = outer_node_size.height.value_or(row_sum + padding_border_size.height);
@@ -844,15 +839,22 @@ LayoutOutput ComputeGridLayout(
             child_width_space = AvailableSpace::MaxContent();
         }
 
+        bool row_span_uses_intrinsic_sizing = false;
+        for (size_t t = row_track_start; t <= row_track_end && t < rows.size(); t++) {
+            if (rows[t].kind == GridTrackKind::Gutter) {
+                continue;
+            }
+            if (TrackUsesIntrinsicMinSizing(rows[t]) || TrackUsesIntrinsicMaxSizing(rows[t])) {
+                row_span_uses_intrinsic_sizing = true;
+                break;
+            }
+        }
+
         AvailableSpace child_height_space;
         std::optional<float> child_parent_height = std::nullopt;
-        if (cell_height > 0.0f) {
+        if (cell_height > 0.0f && !row_span_uses_intrinsic_sizing) {
             child_height_space = AvailableSpace::Definite(cell_height);
             child_parent_height = std::optional<float>(cell_height);
-        } else if (inner_node_size.height.has_value()) {
-            float fallback_height = *inner_node_size.height / static_cast<float>(std::max<size_t>(1, row_span));
-            child_height_space = AvailableSpace::Definite(fallback_height);
-            child_parent_height = std::optional<float>(fallback_height);
         } else if (available_space.height.IsMinContent()) {
             child_height_space = AvailableSpace::MinContent();
         } else {

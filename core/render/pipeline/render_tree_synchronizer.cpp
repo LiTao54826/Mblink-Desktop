@@ -12,6 +12,10 @@
 #include "core/layout/layout_engine.h"
 #include "core/quickjs/dom_binding_map.h"
 #include <algorithm>
+#include <cstdlib>
+#include <iostream>
+#include <sstream>
+#include <vector>
 
 namespace mbink {
 namespace {
@@ -76,17 +80,74 @@ bool RenderTreeSynchronizer::Synchronize(DirtyNodeTracker& tracker,
 
     // 判断是否需要子树重建
     if (needs_subtree_rebuild) {
-        // 收集受影响的根节点
-        std::unordered_set<Node*> affected_roots;
+        std::vector<Node*> candidate_roots;
+        candidate_roots.reserve(tracker.GetStructuralChanges().size());
+
+        auto normalize_root = [](Node* node) -> Node* {
+            Node* current = node;
+            while (current && !current->GetRenderObject()) {
+                current = current->GetParentNode().get();
+            }
+            return current;
+        };
+
+        auto has_ancestor_in = [](Node* node, const std::unordered_set<Node*>& roots) {
+            if (!node) {
+                return false;
+            }
+            Node* current = node->GetParentNode().get();
+            while (current) {
+                if (roots.find(current) != roots.end()) {
+                    return true;
+                }
+                current = current->GetParentNode().get();
+            }
+            return false;
+        };
 
         for (const auto& change : tracker.GetStructuralChanges()) {
-            if (auto parent = change.parent) {
-                affected_roots.insert(parent.get());
+            Node* root = nullptr;
+
+            if (change.parent) {
+                root = normalize_root(change.parent.get());
             }
+            if (!root && change.old_parent) {
+                root = normalize_root(change.old_parent.get());
+            }
+            if (!root && change.node) {
+                root = normalize_root(change.node.get());
+            }
+            if (!root && change.old_node) {
+                root = normalize_root(change.old_node.get());
+            }
+            if (!root && change.new_node) {
+                root = normalize_root(change.new_node.get());
+            }
+
+            if (!root) {
+                continue;
+            }
+
+            candidate_roots.push_back(root);
         }
 
-        // 重建受影响的子树
-        for (Node* root : affected_roots) {
+        std::unordered_set<Node*> all_roots(candidate_roots.begin(), candidate_roots.end());
+        std::unordered_set<Node*> emitted_roots;
+        std::vector<Node*> pruned_roots;
+        pruned_roots.reserve(all_roots.size());
+
+        for (Node* root : candidate_roots) {
+            if (!root || emitted_roots.find(root) != emitted_roots.end()) {
+                continue;
+            }
+            if (has_ancestor_in(root, all_roots)) {
+                continue;
+            }
+            pruned_roots.push_back(root);
+            emitted_roots.insert(root);
+        }
+
+        for (Node* root : pruned_roots) {
             RebuildSubtree(root);
         }
     } else {
