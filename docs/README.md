@@ -11,6 +11,8 @@
 - [Known Limitations | 已知限制](KNOWN_LIMITATIONS.md)
 - [Known Issues | 已知问题](KNOWN_ISSUES.md)
 - [Contributing | 贡献](CONTRIBUTING.md)
+- [MBink UI Dev Tool Design | MBink UI 开发工具设计](MBINK_UI_DEV_TOOL_DESIGN.md)
+
 - [Changelog | 变更记录](../CHANGELOG.md)
 - [Roadmap | 路线图](../ROADMAP.md)
 - [Security Policy | 安全策略](../SECURITY.md)
