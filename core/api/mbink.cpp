@@ -279,6 +279,16 @@ struct SharedObjectData {
         return true;
     }
 
+    bool safeSetPropertyFromJS(const char* key, const nlohmann::json& value) {
+        std::unique_lock<std::shared_mutex> lock(dataMutex_);
+        auto it = data_.find(key);
+        if (it != data_.end() && it.value() == value) {
+            return false;
+        }
+        data_[key] = value;
+        return true;
+    }
+
     bool safeDeleteProperty(const char* key) {
         bool existed = false;
         {
@@ -313,6 +323,11 @@ struct SharedObjectData {
         }
 
         return true;
+    }
+
+    bool safeDeletePropertyFromJS(const char* key) {
+        std::unique_lock<std::shared_mutex> lock(dataMutex_);
+        return data_.erase(key) > 0;
     }
 
     nlohmann::json safeGetProperty(const char* key) const {
@@ -1064,6 +1079,33 @@ WindowContext* createWindowContext(const mbink::WindowConfig& wc) {
     ctx->stateManager = std::make_unique<mbink::StateManager>();
     ctx->hostBridge = std::make_unique<mbink::HostBridge>(jsCtx, ctx->stateManager.get());
     ctx->hostBridge->registerGlobal();
+
+    ctx->runtime->RegisterFunction("__mbinkSharedNativeSet", [ctx](const nlohmann::json& args) -> nlohmann::json {
+        if (!args.is_array() || args.size() < 3 || !args[0].is_string() || !args[1].is_string()) {
+            return false;
+        }
+
+        auto it = ctx->sharedObjects.find(args[0].get<std::string>());
+        if (it == ctx->sharedObjects.end() || !it->second) {
+            return false;
+        }
+
+        return it->second->safeSetPropertyFromJS(args[1].get<std::string>().c_str(), args[2]);
+    });
+
+    ctx->runtime->RegisterFunction("__mbinkSharedNativeDelete", [ctx](const nlohmann::json& args) -> nlohmann::json {
+        if (!args.is_array() || args.size() < 2 || !args[0].is_string() || !args[1].is_string()) {
+            return false;
+        }
+
+        auto it = ctx->sharedObjects.find(args[0].get<std::string>());
+        if (it == ctx->sharedObjects.end() || !it->second) {
+            return false;
+        }
+
+        return it->second->safeDeletePropertyFromJS(args[1].get<std::string>().c_str());
+    });
+
 
     loadEmbeddedRuntimeScripts(ctx->runtime.get());
     registerPreactModules(ctx->runtime.get());

@@ -64,13 +64,15 @@
         proxyCache: createMap(),
         proxyTargets: createMap(),
         depKeyCache: createMap(),
-        pendingKeys: createMap()
+        pendingKeys: createMap(),
+        deepProxyCache: typeof WeakMap === 'function' ? new WeakMap() : null
     });
 
     runtime.proxyCache = runtime.proxyCache || createMap();
     runtime.proxyTargets = runtime.proxyTargets || createMap();
     runtime.depKeyCache = runtime.depKeyCache || createMap();
     runtime.pendingKeys = runtime.pendingKeys || createMap();
+    runtime.deepProxyCache = runtime.deepProxyCache || (typeof WeakMap === 'function' ? new WeakMap() : null);
 
     runtime.getDependencyKey = runtime.getDependencyKey || function(name, prop) {
         var cache = runtime.depKeyCache[name];
@@ -144,18 +146,115 @@
             return cached;
         }
 
+        var syncSet = function(prop, value) {
+            var changed = true;
+            if (typeof global.__mbinkSharedNativeSet === 'function') {
+                try { changed = global.__mbinkSharedNativeSet(name, prop, value) !== false; } catch (_) {}
+            }
+            if (changed) {
+                runtime.schedule([runtime.getDependencyKey(name, prop)]);
+            }
+            return changed;
+        };
+
+        var syncDelete = function(prop) {
+            var changed = true;
+            if (typeof global.__mbinkSharedNativeDelete === 'function') {
+                try { changed = global.__mbinkSharedNativeDelete(name, prop) !== false; } catch (_) {}
+            }
+            if (changed) {
+                runtime.schedule([runtime.getDependencyKey(name, prop)]);
+            }
+            return changed;
+        };
+
+        var wrapNested = function(rootKey, value, getRootValue) {
+            if (!value || (typeof value !== 'object' && typeof value !== 'function') || typeof Proxy !== 'function') {
+                return value;
+            }
+
+            var depKey = runtime.getDependencyKey(name, rootKey);
+
+            var bucket = null;
+            if (runtime.deepProxyCache && typeof runtime.deepProxyCache.get === 'function') {
+                try {
+                    bucket = runtime.deepProxyCache.get(value);
+                    if (!bucket) {
+                        bucket = createMap();
+                        runtime.deepProxyCache.set(value, bucket);
+                    }
+                    if (bucket[depKey]) {
+                        return bucket[depKey];
+                    }
+                } catch (_) {
+                    bucket = null;
+                }
+            }
+
+            var proxy = new Proxy(value, {
+                get: function(obj, prop, receiver) {
+                    if (typeof prop === 'string') {
+                        runtime.trackDependency(depKey);
+                    }
+                    var v = Reflect.get(obj, prop, receiver);
+                    return wrapNested(rootKey, v, getRootValue);
+                },
+                set: function(obj, prop, v, receiver) {
+                    var ok = Reflect.set(obj, prop, v, receiver);
+                    if (ok) {
+                        syncSet(rootKey, getRootValue());
+                    }
+                    return ok;
+                },
+                deleteProperty: function(obj, prop) {
+                    var ok = Reflect.deleteProperty(obj, prop);
+                    if (ok) {
+                        syncSet(rootKey, getRootValue());
+                    }
+                    return ok;
+                },
+                ownKeys: function(obj) {
+                    runtime.trackDependency(depKey);
+                    return Reflect.ownKeys(obj);
+                },
+                getOwnPropertyDescriptor: function(obj, prop) {
+                    if (typeof prop === 'string') {
+                        runtime.trackDependency(depKey);
+                    }
+                    return Object.getOwnPropertyDescriptor(obj, prop);
+                }
+            });
+
+            if (bucket) {
+                bucket[depKey] = proxy;
+            }
+            return proxy;
+        };
+
         var proxy = new Proxy(target, {
             get: function(obj, prop, receiver) {
                 if (typeof prop === 'string') {
                     runtime.trackDependency(runtime.getDependencyKey(name, prop));
                 }
-                return Reflect.get(obj, prop, receiver);
+                var v = Reflect.get(obj, prop, receiver);
+                if (typeof prop === 'string') {
+                    return wrapNested(prop, v, function() { return obj[prop]; });
+                }
+                return v;
             },
             set: function(obj, prop, value, receiver) {
-                return Reflect.set(obj, prop, value, receiver);
+                var ok = Reflect.set(obj, prop, value, receiver);
+                if (ok && typeof prop === 'string') {
+                    syncSet(prop, obj[prop]);
+                }
+                return ok;
             },
             deleteProperty: function(obj, prop) {
-                return Reflect.deleteProperty(obj, prop);
+                var ok = Reflect.deleteProperty(obj, prop);
+                if (ok && typeof prop === 'string') {
+                    syncDelete(prop);
+                }
+                return ok;
             },
             ownKeys: function(obj) {
                 runtime.trackObjectDependency(name);
@@ -202,6 +301,7 @@
         runtime.proxyTargets = createMap();
         runtime.depKeyCache = createMap();
         runtime.pendingKeys = createMap();
+        runtime.deepProxyCache = typeof WeakMap === 'function' ? new WeakMap() : null;
         for (var i = 0; i < runtime.roots.length; i++) {
             var item = runtime.roots[i];
             if (!item) continue;
@@ -303,6 +403,7 @@
                     '__mbinkRegisterPreactRoot', '__preactSetCurrentComponent',
                     '__mbinkSharedUpdateDispatcher', '__mbinkWrapSharedObject',
                     '__mbinkBeginRootTracking', '__mbinkEndRootTracking', '__mbinkSharedRuntime',
+                    '__mbinkSharedNativeSet', '__mbinkSharedNativeDelete',
                     'data', 'backend', 'py'];
         for (var i = 0; i < keys.length; i++) {
             try { delete globalThis[keys[i]]; } catch (_) {
