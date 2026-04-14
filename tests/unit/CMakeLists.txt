@@ -19,6 +19,7 @@ set(EVENT_TEST_SOURCES
     event/test_event_loop.cpp
     event/test_task_scheduler.cpp
     event/test_input_handler.cpp
+    event/test_hit_test_controller.cpp
 )
 
 # 布局测试

@@ -19,6 +19,45 @@ namespace {
 std::atomic<size_t> g_paint_layer_live_count{0};
 }
 
+namespace {
+
+bool IsOutOfFlowForHitTest(const RenderObject* render_object) {
+    if (!render_object) {
+        return false;
+    }
+
+    const auto& style = render_object->GetComputedStyle();
+    return style.position == "fixed" || style.position == "absolute";
+}
+
+void CollectOutOfFlowDescendantsInDomOrder(RenderObject* root,
+                                           std::vector<RenderObject*>& out_of_flow_descendants) {
+    if (!root) {
+        return;
+    }
+
+    for (const auto& child : root->GetChildren()) {
+        if (!child) {
+            continue;
+        }
+
+        if (IsOutOfFlowForHitTest(child.get())) {
+            out_of_flow_descendants.push_back(child.get());
+        }
+
+        CollectOutOfFlowDescendantsInDomOrder(child.get(), out_of_flow_descendants);
+    }
+}
+
+void SortByZIndexAndDomOrder(std::vector<RenderObject*>& render_objects) {
+    std::stable_sort(render_objects.begin(), render_objects.end(), [](RenderObject* a, RenderObject* b) {
+        return a->GetComputedStyle().z_index < b->GetComputedStyle().z_index;
+    });
+}
+
+}  // namespace
+
+
 // =========================================================================
 // 构造和析构
 // =========================================================================
@@ -49,18 +88,18 @@ size_t PaintLayer::GetLiveLayerCount() {
 
 void PaintLayer::AddChild(PaintLayer* child) {
     if (!child || child == this) return;
-    
+
     // 如果已经有父层，先从原父层移除
     if (child->parent_) {
         child->parent_->RemoveChild(child);
     }
-    
+
     child->parent_ = this;
     children_.push_back(child);
-    
+
     // 标记 z-order 列表需要更新
     DirtyZOrderLists();
-    
+
     // 向上传播到 stacking context
     PaintLayer* sc = StackingContext();
     if (sc) {
@@ -70,15 +109,15 @@ void PaintLayer::AddChild(PaintLayer* child) {
 
 void PaintLayer::RemoveChild(PaintLayer* child) {
     if (!child) return;
-    
+
     auto it = std::find(children_.begin(), children_.end(), child);
     if (it != children_.end()) {
         (*it)->parent_ = nullptr;
         children_.erase(it);
-        
+
         // 标记 z-order 列表需要更新
         DirtyZOrderLists();
-        
+
         // 向上传播到 stacking context
         PaintLayer* sc = StackingContext();
         if (sc) {
@@ -89,14 +128,14 @@ void PaintLayer::RemoveChild(PaintLayer* child) {
 
 void PaintLayer::InsertBefore(PaintLayer* child, PaintLayer* before) {
     if (!child || child == this) return;
-    
+
     // 如果已经有父层，先从原父层移除
     if (child->parent_) {
         child->parent_->RemoveChild(child);
     }
-    
+
     child->parent_ = this;
-    
+
     if (before) {
         auto it = std::find(children_.begin(), children_.end(), before);
         if (it != children_.end()) {
@@ -107,10 +146,10 @@ void PaintLayer::InsertBefore(PaintLayer* child, PaintLayer* before) {
     } else {
         children_.push_back(child);
     }
-    
+
     // 标记 z-order 列表需要更新
     DirtyZOrderLists();
-    
+
     // 向上传播到 stacking context
     PaintLayer* sc = StackingContext();
     if (sc) {
@@ -123,7 +162,7 @@ void PaintLayer::RemoveAllChildren() {
         child->parent_ = nullptr;
     }
     children_.clear();
-    
+
     // 标记 z-order 列表需要更新
     DirtyZOrderLists();
 }
@@ -134,38 +173,38 @@ void PaintLayer::RemoveAllChildren() {
 
 bool PaintLayer::IsStackingContext() const {
     if (!render_object_) return false;
-    
+
     const auto& style = render_object_->GetComputedStyle();
-    
+
     // 根元素总是 stacking context
     if (!parent_) return true;
-    
+
     // position: absolute/relative/fixed/sticky 且 z-index != auto
     // 注意：z-index 默认值是 0，但 auto 和 0 是不同的
     // 这里简化处理：如果有定位且 z-index != 0，则创建 stacking context
-    bool has_position = (style.position == "absolute" || 
-                         style.position == "relative" || 
+    bool has_position = (style.position == "absolute" ||
+                         style.position == "relative" ||
                          style.position == "fixed" ||
                          style.position == "sticky");
     if (has_position && style.z_index != 0) {
         return true;
     }
-    
+
     // opacity < 1
     if (style.opacity < 1.0f) {
         return true;
     }
-    
+
     // transform != none
     if (style.transform.has_value()) {
         return true;
     }
-    
+
     // filter != none
     if (style.filter.has_value()) {
         return true;
     }
-    
+
     // will-change: transform/opacity
     if (!style.will_change.empty()) {
         if (style.will_change.find("transform") != std::string::npos ||
@@ -173,12 +212,12 @@ bool PaintLayer::IsStackingContext() const {
             return true;
         }
     }
-    
+
     // position: fixed 总是创建 stacking context
     if (style.position == "fixed") {
         return true;
     }
-    
+
     return false;
 }
 
@@ -187,7 +226,7 @@ PaintLayer* PaintLayer::StackingContext() const {
     if (!stacking_context_dirty_ && cached_stacking_context_) {
         return cached_stacking_context_;
     }
-    
+
     // 向上查找最近的 stacking context 祖先
     PaintLayer* current = parent_;
     while (current) {
@@ -198,7 +237,7 @@ PaintLayer* PaintLayer::StackingContext() const {
         }
         current = current->parent_;
     }
-    
+
     cached_stacking_context_ = nullptr;
     stacking_context_dirty_ = false;
     return nullptr;
@@ -215,23 +254,23 @@ int PaintLayer::ZIndex() const {
 
 void PaintLayer::UpdateZOrderLists() {
     if (!z_order_dirty_) return;
-    
+
     // 清空列表
     pos_z_order_list_.clear();
     neg_z_order_list_.clear();
-    
+
     // 只有 stacking context 需要维护 z-order 列表
     if (!IsStackingContext()) {
         z_order_dirty_ = false;
         return;
     }
-    
+
     // 收集子层
     CollectZOrderLayers();
-    
+
     // 排序
     SortZOrderLists();
-    
+
     z_order_dirty_ = false;
 }
 
@@ -239,9 +278,9 @@ void PaintLayer::CollectZOrderLayers() {
     // 递归收集所有需要参与排序的子层
     for (auto* child : children_) {
         if (!child) continue;
-        
+
         int z = child->ZIndex();
-        
+
         // 如果子层是 stacking context，它有自己的排序
         // 但仍然需要参与父 stacking context 的排序
         if (z >= 0) {
@@ -249,7 +288,7 @@ void PaintLayer::CollectZOrderLayers() {
         } else {
             neg_z_order_list_.push_back(child);
         }
-        
+
         // 如果子层不是 stacking context，递归收集其子层
         if (!child->IsStackingContext()) {
             // 子层的子层参与当前 stacking context 的排序
@@ -272,7 +311,7 @@ void PaintLayer::SortZOrderLists() {
     auto compare = [](PaintLayer* a, PaintLayer* b) {
         return a->ZIndex() < b->ZIndex();
     };
-    
+
     std::stable_sort(pos_z_order_list_.begin(), pos_z_order_list_.end(), compare);
     std::stable_sort(neg_z_order_list_.begin(), neg_z_order_list_.end(), compare);
 }
@@ -283,9 +322,9 @@ void PaintLayer::SortZOrderLists() {
 
 bool PaintLayer::NeedsCompositing() const {
     if (!render_object_) return false;
-    
+
     const auto& style = render_object_->GetComputedStyle();
-    
+
     // will-change: transform/opacity
     if (!style.will_change.empty()) {
         if (style.will_change.find("transform") != std::string::npos) {
@@ -297,16 +336,16 @@ bool PaintLayer::NeedsCompositing() const {
             return true;
         }
     }
-    
+
     // position: fixed
     if (style.position == "fixed") {
         promotion_reason_ = LayerPromotionReason::PositionFixed;
         return true;
     }
-    
+
     // 活动的 transform/opacity 动画
     // TODO: 检查动画状态
-    
+
     // 可滚动容器
     std::string overflow_y = !style.overflow_y.empty() ? style.overflow_y : style.overflow;
     if (overflow_y == "scroll" || overflow_y == "auto") {
@@ -316,7 +355,7 @@ bool PaintLayer::NeedsCompositing() const {
             return true;
         }
     }
-    
+
     promotion_reason_ = LayerPromotionReason::None;
     return false;
 }
@@ -329,7 +368,7 @@ LayerPromotionReason PaintLayer::GetPromotionReason() const {
 
 void PaintLayer::EnsureCompositorLayer() {
     if (compositor_layer_) return;
-    
+
     if (NeedsCompositing()) {
         compositor_layer_ = CreateCompositorLayer();
         if (compositor_layer_) {
@@ -349,26 +388,26 @@ CompositorLayer* PaintLayer::GetCompositedLayer() const {
 
 void PaintLayer::Paint(SkCanvas* canvas) {
     if (!canvas || !render_object_) return;
-    
+
     // 更新 z-order 列表
     if (IsStackingContext()) {
         UpdateZOrderLists();
     }
-    
+
     // 按 CSS stacking context 规则绘制
     // 1. 绘制负 z-index 子层
     PaintNegativeZOrderChildren(canvas);
-    
+
     // 2. 绘制自身内容
     PaintContents(canvas);
-    
+
     // 3. 绘制正 z-index 子层
     PaintPositiveZOrderChildren(canvas);
 }
 
 void PaintLayer::PaintContents(SkCanvas* canvas) {
     if (!canvas || !render_object_) return;
-    
+
     // 如果有 CompositorLayer，内容已经在 GPU 纹理中
     // 这里只需要绘制到 CompositorLayer 的 canvas
     if (compositor_layer_) {
@@ -404,47 +443,45 @@ void PaintLayer::PaintPositiveZOrderChildren(SkCanvas* canvas) {
 
 bool PaintLayer::HitTest(float x, float y, HitTestResult& result) {
     if (!render_object_) return false;
-    
+
     // 更新 z-order 列表
     if (IsStackingContext()) {
         UpdateZOrderLists();
     }
-    
+
     // 按 z-order 逆序测试（从高到低）
-    
+
     // 1. 先测试正 z-index 子层（从高到低）
     for (auto it = pos_z_order_list_.rbegin(); it != pos_z_order_list_.rend(); ++it) {
         if (*it && (*it)->HitTest(x, y, result)) {
             return true;
         }
     }
-    
-    // 2. 在测试自身边界之前，先测试 fixed 子元素
-    // fixed 元素使用视口坐标，不受父元素边界和滚动的限制
-    const auto& children = render_object_->GetChildren();
-    for (auto it = children.rbegin(); it != children.rend(); ++it) {
-        const auto& child_style = (*it)->GetComputedStyle();
-        if (child_style.position == "fixed") {
-            // fixed 元素使用原始视口坐标进行测试
-            if (HitTestRenderObject(it->get(), x, y, 0, 0, result, false)) {
-                return true;
-            }
+
+    // 2. 在测试自身边界之前，先测试整棵子树中的 out-of-flow 后代
+    // 这些元素可能渲染在父元素边界之外，命中顺序需要优先按 z-index 处理
+    std::vector<RenderObject*> out_of_flow_descendants;
+    CollectOutOfFlowDescendantsInDomOrder(render_object_, out_of_flow_descendants);
+    SortByZIndexAndDomOrder(out_of_flow_descendants);
+    for (auto it = out_of_flow_descendants.rbegin(); it != out_of_flow_descendants.rend(); ++it) {
+        if (HitTestRenderObject(*it, x, y, 0, 0, result, false)) {
+            return true;
         }
     }
-    
+
     // 3. 测试自身
     float abs_x, abs_y;
     GetAbsolutePosition(abs_x, abs_y);
-    
+
     const auto& layout = render_object_->GetLayoutInfo();
     if (x >= abs_x && x < abs_x + layout.width &&
         y >= abs_y && y < abs_y + layout.height) {
-        
+
         // 递归测试子元素（非 fixed）
         if (HitTestChildren(x, y, result)) {
             return true;
         }
-        
+
         // 检查 pointer-events
         const auto& style = render_object_->GetComputedStyle();
         if (style.pointer_events != "none") {
@@ -459,55 +496,54 @@ bool PaintLayer::HitTest(float x, float y, HitTestResult& result) {
             }
         }
     }
-    
+
     // 4. 最后测试负 z-index 子层（从高到低）
     for (auto it = neg_z_order_list_.rbegin(); it != neg_z_order_list_.rend(); ++it) {
         if (*it && (*it)->HitTest(x, y, result)) {
             return true;
         }
     }
-    
+
     return false;
 }
 
 bool PaintLayer::HitTestChildren(float x, float y, HitTestResult& result) {
     if (!render_object_) return false;
-    
+
     // 获取当前元素的绝对位置
     float abs_x, abs_y;
     GetAbsolutePosition(abs_x, abs_y);
-    
+
     // 处理滚动偏移
     float scroll_x = render_object_->GetScrollX();
     float scroll_y = render_object_->GetScrollY();
     float child_test_x = x + scroll_x;
     float child_test_y = y + scroll_y;
-    
+
     // 从后向前遍历子元素（后绘制的在上面）
-    // 先测试 fixed 元素（它们不受滚动影响，使用原始坐标）
-    // 再测试普通元素（使用滚动调整后的坐标）
+    // 先测试整棵子树中的 out-of-flow 后代（按 z-index + DOM 顺序）
+    // 再测试普通流元素（使用滚动调整后的坐标）
     const auto& children = render_object_->GetChildren();
-    
-    // 第一遍：测试 fixed 元素（使用原始视口坐标）
-    for (auto it = children.rbegin(); it != children.rend(); ++it) {
-        const auto& child_style = (*it)->GetComputedStyle();
-        if (child_style.position == "fixed") {
-            if (HitTestRenderObject(it->get(), x, y, abs_x, abs_y, result, false)) {
-                return true;
-            }
+
+    std::vector<RenderObject*> out_of_flow_descendants;
+    CollectOutOfFlowDescendantsInDomOrder(render_object_, out_of_flow_descendants);
+    SortByZIndexAndDomOrder(out_of_flow_descendants);
+    for (auto it = out_of_flow_descendants.rbegin(); it != out_of_flow_descendants.rend(); ++it) {
+        if (HitTestRenderObject(*it, x, y, abs_x, abs_y, result, false)) {
+            return true;
         }
     }
-    
-    // 第二遍：测试非 fixed 元素（使用滚动调整后的坐标）
+
+    // 第二遍：测试普通流元素（使用滚动调整后的坐标）
     for (auto it = children.rbegin(); it != children.rend(); ++it) {
         const auto& child_style = (*it)->GetComputedStyle();
-        if (child_style.position != "fixed") {
+        if (child_style.position != "fixed" && child_style.position != "absolute") {
             if (HitTestRenderObject(it->get(), child_test_x, child_test_y, abs_x, abs_y, result, false)) {
                 return true;
             }
         }
     }
-    
+
     return false;
 }
 
@@ -517,15 +553,15 @@ bool PaintLayer::HitTestRenderObject(
     float offset_x, float offset_y,
     HitTestResult& result,
     bool is_root) {
-    
+
     if (!render_obj) return false;
-    
+
     const auto& layout = render_obj->GetLayoutInfo();
     if (!layout.is_laid_out) return false;
-    
+
     const auto& style = render_obj->GetComputedStyle();
     bool is_fixed = (style.position == "fixed");
-    
+
     // 计算当前元素的绝对位置
     float current_x, current_y;
     if (is_root) {
@@ -538,27 +574,27 @@ bool PaintLayer::HitTestRenderObject(
         current_x = offset_x + layout.x;
         current_y = offset_y + layout.y;
     }
-    
+
     // 边界检查
     if (x < current_x || x >= current_x + layout.width ||
         y < current_y || y >= current_y + layout.height) {
         return false;
     }
-    
+
     // 检查 pointer-events
     bool pointer_events_none = (style.pointer_events == "none");
-    
+
     // 处理滚动偏移
     float scroll_x = render_obj->GetScrollX();
     float scroll_y = render_obj->GetScrollY();
     float child_test_x = x + scroll_x;
     float child_test_y = y + scroll_y;
-    
+
     // 从后向前遍历子元素
     // 先测试 fixed 元素（使用原始视口坐标）
     // 再测试非 fixed 元素（使用滚动调整后的坐标）
     const auto& children = render_obj->GetChildren();
-    
+
     // 第一遍：测试 fixed 元素
     for (auto it = children.rbegin(); it != children.rend(); ++it) {
         const auto& child_style = (*it)->GetComputedStyle();
@@ -568,7 +604,7 @@ bool PaintLayer::HitTestRenderObject(
             }
         }
     }
-    
+
     // 第二遍：测试非 fixed 元素
     for (auto it = children.rbegin(); it != children.rend(); ++it) {
         const auto& child_style = (*it)->GetComputedStyle();
@@ -578,12 +614,12 @@ bool PaintLayer::HitTestRenderObject(
             }
         }
     }
-    
+
     // 如果 pointer-events: none，不命中当前元素
     if (pointer_events_none) {
         return false;
     }
-    
+
     // 当前元素命中
     auto hit_node = render_obj->GetNode();
     auto element = std::dynamic_pointer_cast<Element>(hit_node);
@@ -594,7 +630,7 @@ bool PaintLayer::HitTestRenderObject(
         result.local_y = y - current_y;
         return true;
     }
-    
+
     // 如果是文本节点，向上查找 Element
     auto parent_ro = render_obj->GetParent();
     while (parent_ro) {
@@ -613,7 +649,7 @@ bool PaintLayer::HitTestRenderObject(
         }
         parent_ro = parent_ro->GetParent();
     }
-    
+
     return false;
 }
 
@@ -623,24 +659,24 @@ bool PaintLayer::HitTestRenderObject(
 
 bool PaintLayer::HandleWheel(float x, float y, float delta_x, float delta_y) {
     if (!render_object_) return false;
-    
+
     // 获取绝对位置
     float abs_x, abs_y;
     GetAbsolutePosition(abs_x, abs_y);
-    
+
     const auto& layout = render_object_->GetLayoutInfo();
-    
+
     // 边界检查
     if (x < abs_x || x >= abs_x + layout.width ||
         y < abs_y || y >= abs_y + layout.height) {
         return false;
     }
-    
+
     // 检查元素是否可滚动
     const auto& style = render_object_->GetComputedStyle();
     std::string overflow_y = !style.overflow_y.empty() ? style.overflow_y : style.overflow;
     bool allow_scroll = (overflow_y == "scroll" || overflow_y == "auto");
-    
+
     if (allow_scroll) {
         float max_scroll_y = render_object_->GetMaxScrollY();
         if (max_scroll_y > 0) {
@@ -648,14 +684,14 @@ bool PaintLayer::HandleWheel(float x, float y, float delta_x, float delta_y) {
             return true;
         }
     }
-    
+
     // 递归测试子层
     for (auto* child : children_) {
         if (child && child->HandleWheel(x, y, delta_x, delta_y)) {
             return true;
         }
     }
-    
+
     return false;
 }
 
@@ -674,10 +710,10 @@ void PaintLayer::GetAbsolutePosition(float& abs_x, float& abs_y) const {
         abs_y = 0;
         return;
     }
-    
+
     const auto& layout = render_object_->GetLayoutInfo();
     const auto& style = render_object_->GetComputedStyle();
-    
+
     if (style.position == "fixed") {
         // position: fixed 元素：layout.x/y 已经是视口绝对坐标
         abs_x = layout.x;
@@ -701,9 +737,9 @@ void PaintLayer::GetAbsolutePosition(float& abs_x, float& abs_y) const {
 
 std::string PaintLayer::ToDebugString() const {
     std::ostringstream oss;
-    
+
     oss << "PaintLayer{";
-    
+
     if (render_object_) {
         auto node = render_object_->GetNode();
         if (node) {
@@ -717,24 +753,24 @@ std::string PaintLayer::ToDebugString() const {
             }
         }
     }
-    
+
     oss << ", z=" << ZIndex();
     oss << ", sc=" << (IsStackingContext() ? "yes" : "no");
     oss << ", comp=" << (HasCompositedLayer() ? "yes" : "no");
-    
+
     if (HasCompositedLayer()) {
         oss << ", reason=" << CompositorLayer::PromotionReasonToString(promotion_reason_);
     }
-    
+
     oss << ", children=" << children_.size();
     oss << "}";
-    
+
     return oss.str();
 }
 
 void PaintLayer::DumpTree(int indent) const {
     std::string prefix(indent * 2, ' ');
-    
+
     for (auto* child : children_) {
         if (child) {
             child->DumpTree(indent + 1);

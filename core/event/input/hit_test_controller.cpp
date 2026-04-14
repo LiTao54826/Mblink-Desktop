@@ -9,9 +9,51 @@
 #include "core/render/objects/render_object.h"
 #include "core/render/layer/paint_layer.h"
 #include "core/compositor/compositor_layer.h"
+#include <algorithm>
 #include <sstream>
 #include <iostream>
 #include <cstdlib>
+
+
+namespace {
+
+bool IsOutOfFlowForHitTest(const mbink::RenderObject* render_object) {
+    if (!render_object) {
+        return false;
+    }
+
+    const auto& style = render_object->GetComputedStyle();
+    return style.position == "fixed" || style.position == "absolute";
+}
+
+void CollectOutOfFlowDescendantsInDomOrder(
+    mbink::RenderObject* root,
+    std::vector<mbink::RenderObject*>& out_of_flow_descendants) {
+    if (!root) {
+        return;
+    }
+
+    for (const auto& child : root->GetChildren()) {
+        if (!child) {
+            continue;
+        }
+
+        if (IsOutOfFlowForHitTest(child.get())) {
+            out_of_flow_descendants.push_back(child.get());
+        }
+
+        CollectOutOfFlowDescendantsInDomOrder(child.get(), out_of_flow_descendants);
+    }
+}
+
+void SortByZIndexAndDomOrder(std::vector<mbink::RenderObject*>& render_objects) {
+    std::stable_sort(render_objects.begin(), render_objects.end(),
+                     [](mbink::RenderObject* a, mbink::RenderObject* b) {
+                         return a->GetComputedStyle().z_index < b->GetComputedStyle().z_index;
+                     });
+}
+
+}  // namespace
 
 namespace mbink {
 
@@ -123,37 +165,17 @@ bool HitTestController::HitTestRenderObject(
         render_obj->UpdateViewportBounds();
     }
 
-    // 关键修复：先递归测试所有后代中的 absolute/fixed 元素
-    // 这些元素可以渲染在父元素边界之外，不受普通流边界限制
-    const auto& children = render_obj->GetChildren();
-
-    // 递归测试所有子元素中的 fixed/absolute 元素（包括嵌套的）
-    std::function<bool(const std::vector<std::shared_ptr<RenderObject>>&)> testOutOfFlowDescendants;
-    testOutOfFlowDescendants = [&](const std::vector<std::shared_ptr<RenderObject>>& nodes) -> bool {
-        for (auto it = nodes.rbegin(); it != nodes.rend(); ++it) {
-            const auto& child = *it;
-            const auto& child_style = child->GetComputedStyle();
-
-            // 测试 fixed/absolute 元素
-            if (child_style.position == "fixed" || child_style.position == "absolute") {
-                if (HitTestRenderObject(child.get(), viewport_x, viewport_y, request, result)) {
-                    return true;
-                }
-            }
-
-            // 无条件递归测试所有子元素的后代
-            // absolute/fixed 元素可以出现在任意深度，不受中间元素边界限制
-            if (testOutOfFlowDescendants(child->GetChildren())) {
-                return true;
-            }
+    // 按 z-index + DOM 顺序测试所有后代中的 out-of-flow 元素
+    std::vector<RenderObject*> out_of_flow_descendants;
+    CollectOutOfFlowDescendantsInDomOrder(render_obj, out_of_flow_descendants);
+    SortByZIndexAndDomOrder(out_of_flow_descendants);
+    for (auto it = out_of_flow_descendants.rbegin(); it != out_of_flow_descendants.rend(); ++it) {
+        if (HitTestRenderObject(*it, viewport_x, viewport_y, request, result)) {
+            return true;
         }
-        return false;
-    };
-
-    // 先测试所有后代中的 out-of-flow 元素
-    if (testOutOfFlowDescendants(children)) {
-        return true;
     }
+
+    const auto& children = render_obj->GetChildren();
 
     // 边界检查（仅对当前元素和普通流子元素）
     bool in_bounds = render_obj->ContainsViewportPoint(viewport_x, viewport_y);
@@ -285,12 +307,12 @@ void HitTestController::FillDevToolsInfo(
     HitTestResultEx& result,
     RenderObject* render_obj,
     PaintLayer* layer) {
-    
+
     if (!render_obj) return;
 
     const auto& style = render_obj->GetComputedStyle();
     result.z_index = style.z_index;
-    
+
     // 检查是否在层叠上下文中
     if (layer) {
         result.in_stacking_context = layer->IsStackingContext();
@@ -301,7 +323,7 @@ std::string HitTestController::ExplainMiss(
     std::shared_ptr<RenderObject> render_object,
     float viewport_x,
     float viewport_y) {
-    
+
     if (!render_object) {
         return "Render object is null";
     }
@@ -347,7 +369,7 @@ bool HitTestController::HitTestCompositorLayers(
     float viewport_y,
     const HitTestRequest& request,
     HitTestResultEx& result) {
-    
+
     // 从后向前测试（后添加的层在上面）
     for (auto it = layers.rbegin(); it != layers.rend(); ++it) {
         auto& layer = *it;
