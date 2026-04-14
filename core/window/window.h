@@ -386,18 +386,6 @@ public:
     }
 
     /**
-     * @brief 消费一次待抑制的原生关闭消息
-     * @return true 表示本次原生关闭应被吞掉
-     */
-    bool ConsumePendingNativeCloseSuppress() {
-        if (!suppress_next_native_close_) {
-            return false;
-        }
-        suppress_next_native_close_ = false;
-        return true;
-    }
-
-    /**
      * @brief 设置窗口获得焦点回调
      * @param callback 回调函数
      */
@@ -713,7 +701,6 @@ private:
     std::function<bool()> on_close_request_handler_;
     std::function<void()> on_focus_callback_;
     std::function<void()> on_blur_callback_;
-    bool suppress_next_native_close_ = false;
 
     // 事件监听器（支持多个监听器）
     std::unordered_map<WindowEventType, std::vector<std::function<void(const WindowEvent&)>>> event_listeners_;

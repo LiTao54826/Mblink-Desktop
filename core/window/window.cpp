@@ -1069,7 +1069,6 @@ bool Window::HandleSDLEvent(const SDL_Event& event) {
                     handled = on_close_request_handler_();
                 }
                 if (handled) {
-                    suppress_next_native_close_ = true;
                     should_close_ = false;
                     return true;
                 }

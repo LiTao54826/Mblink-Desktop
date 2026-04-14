@@ -103,10 +103,6 @@ static LRESULT CALLBACK SubclassWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPAR
 
     switch (msg) {
         case WM_CLOSE: {
-            if (window && window->ConsumePendingNativeCloseSuppress()) {
-                ShowWindow(hwnd, SW_HIDE);
-                return 0;
-            }
             break;
         }
 
