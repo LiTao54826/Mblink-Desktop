@@ -168,6 +168,16 @@ inline float GetWindowContentScale(SDL_Window* window) {
     const SDL_DisplayID display_id = SDL_GetDisplayForWindow(window);
     return GetDisplayContentScaleSafe(display_id);
 }
+
+inline bool ShouldCreateOpenGLWindow(const WindowConfig& config) {
+    if (config.transparent || !config.gpu) {
+        return false;
+    }
+
+    return config.backend != RenderBackend::CPU &&
+           config.backend != RenderBackend::SOFTWARE;
+}
+
 }
 
 // SDL 事件过滤器：过滤掉可能导致闪烁的事件
@@ -220,7 +230,6 @@ Window::Window(const WindowConfig& config) : config_(config) {
         // GPU加速已关闭：强制使用 CPU 渲染，适用于小挂件等轻量应用减少内存占用
         InitCPURendering();
         actual_backend_ = RenderBackend::CPU;
-        std::cout << "[Window] GPU acceleration disabled, using CPU rendering backend" << std::endl;
     } else if (config_.backend == RenderBackend::AUTO) {
         // 自动模式：先尝试 GPU，失败则降级到 CPU
         try {
@@ -244,6 +253,7 @@ Window::Window(const WindowConfig& config) : config_(config) {
         InitCPURendering();
         actual_backend_ = RenderBackend::CPU;
     }
+
 
     // 初始化动画时间轴
     animation_timeline_ = std::make_unique<AnimationTimeline>();
@@ -734,13 +744,13 @@ void Window::InitSDL() {
 void Window::CreateSDLWindow() {
     // 构建窗口标志
     SDL_WindowFlags flags = 0;
+    const bool request_opengl_window = ShouldCreateOpenGLWindow(config_);
 
     // 透明窗口（不规则窗体）使用 LayeredWindow 后端，不能用 OpenGL
     // 因为 WS_EX_LAYERED + UpdateLayeredWindow 与 OpenGL 渲染管线不兼容
     // GPU加速关闭时也不创建 OpenGL 窗口，避免不必要的 GPU 资源占用
-    if (!config_.transparent && config_.gpu) {
-        // 非透明 + GPU模式：所有模式都使用 OpenGL 窗口
-        // CPU 模式也通过 OpenGL 纹理显示，利用 VSync 避免闪烁
+    // 显式 CPU/SOFTWARE 模式也不应申请 OpenGL 窗口，避免在 VM/无 3D 驱动环境里提前触发 OpenGL 路径
+    if (request_opengl_window) {
         flags |= SDL_WINDOW_OPENGL;
     }
 
@@ -753,6 +763,7 @@ void Window::CreateSDLWindow() {
     if (config_.hidden) flags |= SDL_WINDOW_HIDDEN;
     if (config_.always_on_top) flags |= SDL_WINDOW_ALWAYS_ON_TOP;
     if (config_.high_dpi) flags |= SDL_WINDOW_HIGH_PIXEL_DENSITY;
+
 
     const SDL_DisplayID target_display = GetTargetDisplayForConfig(config_);
     const float content_scale = GetDisplayContentScaleSafe(target_display);
