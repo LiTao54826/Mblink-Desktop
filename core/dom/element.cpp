@@ -302,32 +302,32 @@ std::shared_ptr<DOMTokenList> Element::GetClassList() {
 
 void Element::SetStyle(const std::string& property, const std::string& value) {
     std::string old_value = GetStyle(property);
-    
+
     // 移动元素双区域标记优化：位置属性变化时记录旧位置
     // 这些属性会导致元素位置变化，需要同时重绘新旧两个位置
     static const std::unordered_set<std::string> position_properties = {
         "left", "top", "right", "bottom", "transform"
     };
-    
+
     SkRect old_bounds = SkRect::MakeEmpty();
     bool is_position_change = position_properties.count(property) > 0;
-    
+
     if (is_position_change) {
         // 记录变化前的边界框
         if (auto render_obj = GetRenderObject()) {
             old_bounds = render_obj->GetBoundingRect();
         }
     }
-    
+
     styles_[property] = value;
-    
+
     // 关键修复：同步更新 style attribute
     // StyleResolver 从 style attribute 读取内联样式，而不是从 styles_ map
     UpdateStyleAttribute();
-    
+
     // 性能优化：根据CSS属性类型决定脏标记类型
     // 只有影响布局的属性才需要重新布局，其他属性只需要重绘
-    
+
     // 关键优化：定位元素的 left/top/right/bottom 通常不触发布局！
     // - absolute/fixed: 脱离文档流，不影响其他元素
     // - relative: 只是视觉偏移，不改变占据的空间，不影响其他元素
@@ -335,10 +335,10 @@ void Element::SetStyle(const std::string& property, const std::string& value) {
     static const std::unordered_set<std::string> position_offset_properties = {
         "left", "top", "right", "bottom"
     };
-    
+
     bool is_position_offset = position_offset_properties.count(property) > 0;
     bool skip_layout = false;
-    
+
     if (is_position_offset) {
         // 检查元素的 position 属性
         std::string position = GetStyle("position");
@@ -352,7 +352,7 @@ void Element::SetStyle(const std::string& property, const std::string& value) {
             skip_layout = true;   // relative/static 不需要布局
         }
     }
-    
+
     // 总是触发布局的属性（无论定位方式）
     static const std::unordered_set<std::string> always_layout_properties = {
         // 尺寸属性
@@ -362,7 +362,7 @@ void Element::SetStyle(const std::string& property, const std::string& value) {
         // 外边距
         "margin", "margin-left", "margin-right", "margin-top", "margin-bottom",
         // 边框
-        "border", "border-width", "border-left-width", "border-right-width", 
+        "border", "border-width", "border-left-width", "border-right-width",
         "border-top-width", "border-bottom-width",
         // 定位方式改变
         "position",
@@ -376,7 +376,7 @@ void Element::SetStyle(const std::string& property, const std::string& value) {
         // 其他
         "float", "clear", "vertical-align"
     };
-    
+
     if (is_position_offset && skip_layout) {
         // 位置偏移属性（left/top/right/bottom）：只需要重绘！
         // 适用于 relative/static，不影响其他元素的布局
@@ -460,7 +460,7 @@ void Element::UpdateStyleAttribute() {
         }
         return;
     }
-    
+
     std::string css_text;
     for (const auto& [property, value] : styles_) {
         if (!css_text.empty()) {
@@ -468,7 +468,7 @@ void Element::UpdateStyleAttribute() {
         }
         css_text += property + ": " + value + ";";
     }
-    
+
     // 直接设置 attribute，避免递归调用 SetStyle
     attributes_["style"] = css_text;
 }
@@ -561,6 +561,15 @@ bool Element::RemoveEventListener(const std::string& type, uint64_t listener_id)
 void Element::ClearAllEventListeners() {
     event_listeners_.clear();
     inline_event_handlers_.clear();
+}
+
+
+bool Element::HasAnyEventListeners() const {
+    if (!inline_event_handlers_.empty()) return true;
+    for (const auto& kv : event_listeners_) {
+        if (!kv.second.empty()) return true;
+    }
+    return false;
 }
 
 bool Element::DispatchEvent(std::shared_ptr<Event> event) {
@@ -1326,14 +1335,14 @@ Element::DOMRect Element::GetBoundingClientRect() const {
     if (render_object) {
         const auto& layout = render_object->GetLayoutInfo();
         const auto& style = render_object->GetComputedStyle();
-        
+
         // 检查是否是 position: fixed 元素
         bool is_fixed = (style.position == "fixed");
-        
+
         // 获取绝对位置（相对于视口）
         float abs_x = layout.x;
         float abs_y = layout.y;
-        
+
         // 对于 position: fixed 元素，layout.x/y 已经是视口绝对坐标
         // 不需要累加祖先位置
         if (!is_fixed) {
@@ -1432,7 +1441,7 @@ void Element::Focus() {
     if (!doc) {
         return;
     }
-    
+
     // 获取 Window 和 FocusManager
     Window* window = doc->GetWindow();
     if (!window) {
@@ -1444,7 +1453,7 @@ void Element::Focus() {
         DispatchEvent(event);
         return;
     }
-    
+
     // 关键修复：使用 FocusManager 来设置焦点
     // 这样光标闪烁和键盘输入才能正常工作
     FocusManager* focus_manager = window->GetFocusManager();
@@ -1465,27 +1474,27 @@ void Element::Focus() {
             auto blur_event = std::make_shared<Event>("blur", false, false);
             old_active->DispatchEvent(blur_event);
         }
-        
+
         SetPseudoClass("focus", true);
         auto self = std::static_pointer_cast<Element>(shared_from_this());
         doc->SetActiveElement(self);
-        
+
         if (auto render_obj = GetRenderObject()) {
             render_obj->MarkNeedsPaint();
             render_obj->InvalidatePaintCache();
         }
-        
+
         if (tag_name_ == "input" || tag_name_ == "textarea" || tag_name_ == "terminal" || IsContentEditable()) {
             if (window->GetSDLWindow()) {
                 SDL_StartTextInput(window->GetSDLWindow());
             }
         }
-        
+
         window->SetNeedsRepaint();
         if (auto pipeline = window->GetRenderPipeline()) {
             pipeline->MarkNeedsPaint();
         }
-        
+
         auto event = std::make_shared<Event>("focus", false, false);
         DispatchEvent(event);
     }
@@ -1494,11 +1503,11 @@ void Element::Focus() {
 void Element::Blur() {
     // 获取所属文档
     auto doc = GetOwnerDocument();
-    
+
     // 获取 Window 和 FocusManager
     Window* window = doc ? doc->GetWindow() : nullptr;
     FocusManager* focus_manager = window ? window->GetFocusManager() : nullptr;
-    
+
     if (focus_manager) {
         // 使用 FocusManager 来处理 blur
         auto self = std::static_pointer_cast<Element>(shared_from_this());
@@ -1507,32 +1516,32 @@ void Element::Blur() {
         // 回退到原来的实现
         SetPseudoClass("focus", false);
         SetPseudoClass("focus-visible", false);
-        
+
         if (doc) {
             auto active = doc->GetActiveElement();
             if (active.get() == this) {
                 doc->SetActiveElement(nullptr);
             }
         }
-        
+
         if (auto render_obj = GetRenderObject()) {
             render_obj->MarkNeedsPaint();
             render_obj->InvalidatePaintCache();
         }
-        
+
         if (tag_name_ == "input" || tag_name_ == "textarea" || tag_name_ == "terminal" || IsContentEditable()) {
             if (window && window->GetSDLWindow()) {
                 SDL_StopTextInput(window->GetSDLWindow());
             }
         }
-        
+
         if (window) {
             window->SetNeedsRepaint();
             if (auto pipeline = window->GetRenderPipeline()) {
                 pipeline->MarkNeedsPaint();
             }
         }
-        
+
         auto event = std::make_shared<Event>("blur", false, false);
         DispatchEvent(event);
     }

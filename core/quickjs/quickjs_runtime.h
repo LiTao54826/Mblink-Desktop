@@ -216,6 +216,15 @@ public:
      */
     JSRuntime* GetRuntime() const { return rt_; }
 
+    // ----------------------------
+    // UI Dev: 可选日志/异常捕获回调
+    // ----------------------------
+    using ConsoleCallback = std::function<void(const json& entry)>;
+    using ErrorCallback = std::function<void(const json& entry)>;
+
+    void SetConsoleCallback(ConsoleCallback cb) { console_callback_ = std::move(cb); }
+    void SetErrorCallback(ErrorCallback cb) { error_callback_ = std::move(cb); }
+
 public:
     /**
      * @brief 将JSValue转换为JSON
@@ -262,6 +271,8 @@ private:
      * @return 错误信息
      */
     std::string GetJSError();
+
+    void ReportJSError(const std::string& where, const std::string& message);
 
     /**
      * @brief 获取当前时间（毫秒）
@@ -377,6 +388,9 @@ private:
     // 用于快速查找和删除特定的timer
     std::unordered_map<int, std::multimap<int64_t, Task>::iterator> active_timers_;
     int next_task_id_ = 1;
+
+    ConsoleCallback console_callback_;
+    ErrorCallback error_callback_;
 };
 
 } // namespace mbink

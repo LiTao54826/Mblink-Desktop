@@ -1,6 +1,7 @@
 # MBink UI Dev Tool 设计文档
 
-> 版本：v1.0 | 状态：设计阶段
+> 版本：v1.0 | 状态：P1 进行中（P0 已完成，info/read/write/build/build-status 已落地）
+
 
 ---
 
@@ -221,7 +222,16 @@ AI Agent  ──stdin──►  mbink-ui-dev  ──stdout──►  AI Agent
   "root": "/abs/path",
   "config": { /* mbink.config.json */ },
   "runtime_status": "running",
-  "build_status": "success",
+  "build_status": {
+    "ok": true,
+    "status": "success",
+    "builder": "esbuild",
+    "duration_ms": 145,
+    "outputs": [".dist/App.js"],
+    "build_log": "/abs/path/.dist/build.log",
+    "errors": [],
+    "warnings": []
+  },
   "file_tree": [
     { "path": "src/App.jsx", "type": "file", "size": 1234 },
     { "path": "src/components", "type": "dir", "children": [...] }
@@ -233,26 +243,17 @@ AI Agent  ──stdin──►  mbink-ui-dev  ──stdout──►  AI Agent
 
 #### 4.2.2 构建类
 
-**`build`** — 触发构建（JSX/TSX → JS）
+**`build`** — 触发单次构建（当前为最小可用实现）
+
+> P1 当前实现：CLI 对应 `mbink-ui-dev build`，无参数；daemon 调用外部 `esbuild` 完成单次 build，固定输出 `.dist/App.js`，并将最近一次结果落盘到 `.dist/build.log`。`watch` / 增量构建仍是后续阶段。
 
 ```json
 {
   "name": "build",
-  "description": "用 esbuild 构建项目（JSX/TSX → JS），输出到 .dist/。返回构建结果和错误列表。",
+  "description": "执行一次 esbuild 构建，返回最近一次真实构建结果。P1 当前不接收 incremental/watch 参数。",
   "inputSchema": {
     "type": "object",
-    "properties": {
-      "incremental": {
-        "type": "boolean",
-        "default": true,
-        "description": "是否增量构建（仅重建已变更文件）"
-      },
-      "watch": {
-        "type": "boolean",
-        "default": false,
-        "description": "是否启动文件监听（变更自动构建+重载）"
-      }
-    }
+    "properties": {}
   }
 }
 ```
@@ -261,12 +262,18 @@ AI Agent  ──stdin──►  mbink-ui-dev  ──stdout──►  AI Agent
 ```json
 {
   "ok": true,
+  "status": "success",
+  "builder": "esbuild",
+  "started_at": "2025-04-14T10:23:45Z",
+  "finished_at": "2025-04-14T10:23:46Z",
   "duration_ms": 145,
-  "outputs": [".dist/App.js", ".dist/index.js"],
+  "entry_point": "app.js",
+  "out_dir": ".dist",
+  "outputs": [".dist/App.js"],
+  "build_log": "/abs/path/.dist/build.log",
   "errors": [],
-  "warnings": [
-    { "file": "src/App.jsx", "line": 12, "message": "unused variable 'x'" }
-  ]
+  "warnings": [],
+  "raw_output": [".dist\\App.js  19.2kb", "Done in 4ms"]
 }
 ```
 
@@ -274,26 +281,26 @@ AI Agent  ──stdin──►  mbink-ui-dev  ──stdout──►  AI Agent
 ```json
 {
   "ok": false,
-  "errors": [
-    {
-      "file": "src/App.jsx",
-      "line": 8,
-      "column": 5,
-      "message": "Unexpected token",
-      "severity": "error"
-    }
-  ]
+  "status": "failed",
+  "builder": "esbuild",
+  "entry_point": "app.js",
+  "out_dir": ".dist",
+  "outputs": [".dist/App.js"],
+  "build_log": "/abs/path/.dist/build.log",
+  "errors": [],
+  "warnings": [],
+  "raw_output": ["error text..."]
 }
 ```
 
 ---
 
-**`get_build_status`** — 查询当前构建状态
+**`get_build_status`** — 查询最近一次构建状态
 
 ```json
 {
   "name": "get_build_status",
-  "description": "返回最近一次构建的状态和结果，无需触发新构建。",
+  "description": "返回 daemon 缓存的最近一次构建结果；若尚未构建则返回 status=not_built。",
   "inputSchema": { "type": "object", "properties": {} }
 }
 ```
@@ -301,12 +308,24 @@ AI Agent  ──stdin──►  mbink-ui-dev  ──stdout──►  AI Agent
 返回：
 ```json
 {
+  "ok": true,
   "status": "success",
-  "last_build_at": "2025-04-14T10:23:45Z",
+  "builder": "esbuild",
+  "started_at": "2025-04-14T10:23:45Z",
+  "finished_at": "2025-04-14T10:23:46Z",
   "duration_ms": 145,
+  "entry_point": "app.js",
+  "out_dir": ".dist",
+  "outputs": [".dist/App.js"],
+  "build_log": "/abs/path/.dist/build.log",
   "errors": [],
   "warnings": []
 }
+```
+
+未构建时：
+```json
+{ "ok": true, "status": "not_built" }
 ```
 
 ---
@@ -315,30 +334,27 @@ AI Agent  ──stdin──►  mbink-ui-dev  ──stdout──►  AI Agent
 
 **`reload`** — 重载 UI
 
+> P0 当前实现：仅支持无参数 `reload`，语义等价于重启当前 runtime。
+
 ```json
 {
   "name": "reload",
-  "description": "重载 Dev Runtime 中的 UI。根据 mode 选择重载深度。",
+  "description": "重载当前 Dev Runtime。P0 阶段固定执行 restart_runtime 语义，不接收 mode 参数。",
   "inputSchema": {
     "type": "object",
-    "properties": {
-      "mode": {
-        "type": "string",
-        "enum": ["css", "remount", "restart"],
-        "default": "remount",
-        "description": "css: 仅刷新样式；remount: 重新执行入口脚本并挂载组件（保留窗口）；restart: 完全销毁重建 QuickJS runtime"
-      }
-    }
+    "properties": {}
   }
 }
 ```
 
 返回：
 ```json
-{ "ok": true, "mode": "remount", "duration_ms": 87 }
+{ "ok": true, "mode": "restart_runtime" }
 ```
 
-**Reload 语义说明：**
+> `css` / `remount` / `restart` 多模式仍保留为后续阶段扩展方向，当前文档以下方语义说明作为设计预留。
+
+**Reload 语义说明（后续扩展）**：
 
 | mode | 触发场景 | 技术实现 | 状态保留 |
 |------|----------|----------|----------|
@@ -367,8 +383,11 @@ AI Agent  ──stdin──►  mbink-ui-dev  ──stdout──►  AI Agent
 
 返回：
 ```json
-{ "ok": true, "result": "any", "logs": ["console.log 输出..."] }
+{ "ok": true, "result": "any" }
 ```
+
+说明：`eval_js` 的 `console.*` 输出与未捕获错误不会内联在响应中，而是分别通过 `get_console_logs` / `get_js_errors` 查询。
+
 
 ---
 
@@ -467,17 +486,15 @@ AI Agent  ──stdin──►  mbink-ui-dev  ──stdout──►  AI Agent
 
 **`get_console_logs`** — 获取运行时 console 输出
 
+> P0 当前实现：CLI 对应 `mbink-ui-dev logs`，无筛选参数；daemon 优先读取 runtime 写出的结构化 JSON 缓冲，stdout 文件 tail 作为 fallback。
+
 ```json
 {
   "name": "get_console_logs",
-  "description": "返回 Dev Runtime 中 JS console 输出（含 log/warn/error/info）。",
+  "description": "返回 Dev Runtime 中 JS console 输出（含 log/warn/error/info）。P0 阶段不接收 level/since/limit 参数。",
   "inputSchema": {
     "type": "object",
-    "properties": {
-      "level": { "type": "string", "enum": ["all", "log", "warn", "error"], "default": "all" },
-      "since": { "type": "string", "description": "ISO 时间戳，仅返回此时间之后的日志" },
-      "limit": { "type": "integer", "default": 100 }
-    }
+    "properties": {}
   }
 }
 ```
@@ -485,9 +502,18 @@ AI Agent  ──stdin──►  mbink-ui-dev  ──stdout──►  AI Agent
 返回：
 ```json
 {
+  "ok": true,
+  "source": "d:/.../mbink-ui-dev.runtime.console.json",
+  "count": 2,
   "entries": [
-    { "level": "log", "time": "2025-04-14T10:23:45.123Z", "message": "App mounted", "args": ["App mounted"] },
-    { "level": "error", "time": "2025-04-14T10:23:45.456Z", "message": "TypeError: Cannot read property 'x' of undefined", "stack": "..." }
+    {
+      "line": 1,
+      "timestamp": "2025-04-14T10:23:45.123Z",
+      "level": "log",
+      "stream": "stdout",
+      "message": "App mounted",
+      "args": ["App mounted"]
+    }
   ]
 }
 ```
@@ -496,15 +522,15 @@ AI Agent  ──stdin──►  mbink-ui-dev  ──stdout──►  AI Agent
 
 **`get_js_errors`** — 获取未捕获的 JS 运行时错误
 
+> P0 当前实现：CLI 对应 `mbink-ui-dev errors`，无 `clear` 参数；返回自当前 runtime 生命周期内捕获的结构化 JS error，stderr 文件 tail 作为 fallback。
+
 ```json
 {
   "name": "get_js_errors",
-  "description": "返回自上次 reload 以来所有未捕获的 JS 异常。",
+  "description": "返回当前 runtime 生命周期内捕获的未处理 JS 异常与 console.error 上报。P0 阶段不接收 clear 参数。",
   "inputSchema": {
     "type": "object",
-    "properties": {
-      "clear": { "type": "boolean", "default": false, "description": "获取后清空错误列表" }
-    }
+    "properties": {}
   }
 }
 ```
@@ -512,12 +538,17 @@ AI Agent  ──stdin──►  mbink-ui-dev  ──stdout──►  AI Agent
 返回：
 ```json
 {
+  "ok": true,
+  "source": "d:/.../mbink-ui-dev.runtime.errors.json",
+  "count": 1,
   "errors": [
     {
-      "message": "TypeError: Cannot read property 'map' of undefined",
-      "file": "src/List.jsx",
-      "line": 23,
-      "stack": "at List (src/List.jsx:23:15)\n  at App (src/App.jsx:12:5)"
+      "line": 1,
+      "timestamp": "2025-04-14T10:23:45.456Z",
+      "level": "error",
+      "stream": "stderr",
+      "where": "console.error",
+      "message": "boom from eval"
     }
   ]
 }
@@ -1089,45 +1120,42 @@ mbink-ui-dev build <project-path> [--watch]
 mbink-ui-dev inspect <project-path>
 ```
 
-### 10.1 CLI 命令完整列表（AI 可调用）
+### 10.1 CLI 命令完整列表（P1 当前已落地部分）
 
-所有命令通过 `--daemon-socket <path>` 指定 socket（默认自动寻找当前项目的 daemon）。所有命令 stdout 输出 JSON，stderr 输出人类可读日志，`exit code 0` 表示成功。
+当前命令集合以真实已落地实现为准。所有命令 stdout 输出 JSON，stderr 输出人类可读日志，`exit code 0` 表示成功。
 
 ```
-# 项目管理
-mbink-ui-dev open <project-path>      → 打开项目，启动窗口（JSON 输出项目状态）
-mbink-ui-dev info                     → 获取当前项目信息和文件树（JSON）
+# Daemon 管理
+mbink-ui-dev daemon start [--project <path>]   → 启动 daemon，并返回状态 JSON
+mbink-ui-dev daemon run                        → 前台运行 daemon
+mbink-ui-dev daemon stop                       → 停止 daemon + runtime，并清理临时文件
+mbink-ui-dev daemon status                     → 查询 daemon 状态（JSON）
 
-# 构建
-mbink-ui-dev build [--incremental] [--watch]
-mbink-ui-dev build-status             → 查询最近构建状态（JSON）
-
-# 运行时控制
-mbink-ui-dev reload [--mode css|remount|restart]
-mbink-ui-dev eval "<js code>"         → 在 QuickJS 中执行 JS，返回结果（JSON）
-
-# UI 观测
-mbink-ui-dev snapshot [--no-screenshot] [--depth N] [--root <selector>]
-mbink-ui-dev query <selector>         → 查询匹配元素列表（JSON）
-mbink-ui-dev inspect <selector>       → 深度检查单个元素（JSON）
-mbink-ui-dev logs [--level all|log|warn|error] [--since <iso>] [--limit N]
-mbink-ui-dev errors [--clear]         → 获取未捕获 JS 异常（JSON）
-
-# 交互操作
-mbink-ui-dev click <selector> [--right] [--double]
-mbink-ui-dev input <selector> <value> [--submit]
-mbink-ui-dev scroll <selector> --x N --y N
+# 项目/运行时
+mbink-ui-dev open <project-path>               → 打开项目，必要时自动启动 daemon 与 runtime
+mbink-ui-dev info                              → 查询当前项目配置、文件树与最近构建状态
+mbink-ui-dev reload                            → 重启当前 runtime（当前固定语义）
+mbink-ui-dev eval "<js code>"                  → 在 QuickJS 中执行 JS，返回结果（JSON）
 
 # 文件操作
-mbink-ui-dev read <path>              → 读取项目文件（stdout 输出内容）
-mbink-ui-dev write <path> -           → 从 stdin 读取内容写入文件（触发 watch）
-mbink-ui-dev write <path> --content "<str>"
-mbink-ui-dev write <path> --from <tmpfile>
+mbink-ui-dev read <path> [--encoding utf8|base64]
+mbink-ui-dev write <path> [--content <text> | --from <file>]
+# 或：stdin 输入
+mbink-ui-dev write <path>
+
+# 构建/观测
+mbink-ui-dev build                             → 触发单次 build，返回真实构建结果
+mbink-ui-dev build-status                      → 查询最近一次 build 结果
+mbink-ui-dev snapshot                          → 获取当前真实 UI snapshot（JSON）
+mbink-ui-dev logs                              → 获取结构化 console 输出（JSON）
+mbink-ui-dev errors                            → 获取结构化 JS error 输出（JSON）
 ```
 
-### 10.2 write 命令说明（write_file 的关键设计）
+以下命令仍属于后续阶段规划，不应视为当前已实现能力：`build --watch`、`query`、`inspect`、`click`、`input`、`scroll`、`serve`、`dev`、`init`。
 
-`write` 是 AI 最高频操作，CLI 的字符串转义风险必须消除：
+### 10.2 write 命令说明（P1 当前已实现）
+
+`write` 已支持 stdin、`--from`、`--content` 三种输入方式。考虑到 shell 转义风险，以下仍是推荐调用约定：
 
 ```bash
 # ✅ 推荐：AI 通过 heredoc 或 stdin pipe 传内容，完全避免转义
@@ -1140,7 +1168,7 @@ EOF
 # ✅ 也可以：AI 先用文件写工具写到临时文件，再用 write 导入
 mbink-ui-dev write src/App.jsx --from /tmp/ai_generated.jsx
 
-# ❌ 不推荐：直接拼字符串（有转义风险）
+# ⚠️ 可用但不推荐：直接拼字符串（有转义风险）
 mbink-ui-dev write src/App.jsx --content "..."
 ```
 
@@ -1161,49 +1189,47 @@ MCP 适配层是 CLI 之上的薄封装，§4 中定义的所有 tool schema 不
 }
 ```
 
-### 10.4 Skills 系统提示模板
+### 10.4 Skills 系统提示模板（P1 当前已落地部分）
 
-Skills 是一段系统提示词，教会任意有 shell tool 的 AI Agent 如何操作 `mbink-ui-dev`。将以下内容加入 AI 的 system prompt 即可接入：
+Skills 是一段系统提示词，教会任意有 shell tool 的 AI Agent 如何操作 `mbink-ui-dev`。下面模板已经对齐当前真实实现：
 
 ```markdown
 ## MBink UI Dev Tool — Skills
 
 你可以通过 shell 命令控制 MBink UI 开发环境。所有命令输出 JSON，exit code 0 表示成功。
 
-### 工作流程
-
-**开始前（每个会话只需一次）：**
-```
-mbink-ui-dev daemon start --project /path/to/project
+### 会话启动
 mbink-ui-dev open /path/to/project
-```
 
-**标准开发循环：**
-1. 写文件（用 heredoc 避免转义问题）：
-   ```
-   mbink-ui-dev write src/App.jsx - << 'EOF'
-   <你的代码内容>
-   EOF
-   ```
-2. 构建：`mbink-ui-dev build`
-3. 重载：`mbink-ui-dev reload`
-4. 观测：`mbink-ui-dev snapshot --depth 5`
-5. 根据 snapshot 的 JSON 判断是否达到预期，不达预期则继续循环
+### 当前可用命令
+- `mbink-ui-dev info`
+- `mbink-ui-dev read <path>`
+- `mbink-ui-dev write <path>`
+- `mbink-ui-dev build`
+- `mbink-ui-dev build-status`
+- `mbink-ui-dev snapshot`
+- `mbink-ui-dev logs`
+- `mbink-ui-dev errors`
+- `mbink-ui-dev eval "1+1"`
+- `mbink-ui-dev reload`
+- `mbink-ui-dev daemon stop`
 
-**查看错误：**
-- 构建错误：`mbink-ui-dev build-status`（JSON 中 `errors` 字段）
-- 运行时错误：`mbink-ui-dev errors`
-- 控制台日志：`mbink-ui-dev logs --level warn`
-
-**定位元素问题：**
-- `mbink-ui-dev query ".sidebar"` → 匹配元素列表
-- `mbink-ui-dev inspect ".sidebar"` → 深度信息（rect、style、state）
+### 当前推荐工作流
+1. `mbink-ui-dev open /path/to/project`
+2. `mbink-ui-dev info`
+3. `mbink-ui-dev snapshot`
+4. `mbink-ui-dev read <path>` / `mbink-ui-dev write <path>` 修改代码
+5. `mbink-ui-dev build`
+6. `mbink-ui-dev reload`
+7. 再次执行 `mbink-ui-dev snapshot` 验证效果
+8. 如需补充定位，执行 `mbink-ui-dev logs` / `mbink-ui-dev errors`
 
 ### 关键原则
-- **先 snapshot 再操作**：每次修改后必须通过 snapshot 验证效果
-- **用 --depth 控制输出大小**：大型 UI 用 `--depth 3`，小型用 `--depth 10`
-- **构建失败时不要 reload**：先 `build-status` 读错误，修复后再 build
-- **文件写入用 heredoc**：绝不用 `--content` 拼接含引号或特殊字符的代码
+- **先 open，再 snapshot/info**：未打开项目时不要直接假设 runtime 已可用
+- **snapshot 是主要观测入口**：logs/errors 用于补充运行时信息
+- **优先走 read/write/build/reload 主链路**：`eval` 只用于少量临时验证
+- **reload 当前是 restart_runtime 语义**：暂不支持 `--mode`
+- **build 当前是单次构建**：`watch` 仍未实现，不要假设自动重建
 ```
 
 ---
@@ -1227,16 +1253,25 @@ mbink-ui-dev open /path/to/project
 **目标**：Daemon 启动，CLI 可用，AI Agent 通过 shell tool 连接运行中的 MBink 窗口，读取 UI 状态，触发简单操作。
 
 **交付物**：
-- [ ] Daemon 进程框架（Unix socket / Named pipe IPC + 请求路由）
-- [ ] `daemon start/stop/status` 命令
-- [ ] `open` 命令（读配置 + 启动 Dev Runtime，JSON 输出）
-- [ ] `snapshot` 命令（DOM 遍历 + 截图，JSON 输出）
-- [ ] `logs` / `errors` 命令
-- [ ] `eval` 命令
-- [ ] `reload` 命令（remount 模式）
-- [ ] Skills 系统提示文档（§10.4，教 AI 如何用 CLI 操作 mbink-ui-dev）
+- [x] Daemon 进程框架（Windows Named Pipe IPC + 请求路由）
+- [x] `daemon start/stop/status` 命令
+- [x] `open` 命令（读配置 + 启动 Dev Runtime，JSON 输出）
+- [x] `snapshot` 命令（真实 DOM snapshot + JSON 输出）
+- [x] `logs` / `errors` 命令（优先读取 runtime 结构化 JSON，stdout/stderr tail 为 fallback）
+- [x] `eval` 命令
+- [x] `reload` 命令（P0 当前固定为 `restart_runtime` 语义）
+- [x] Skills 系统提示文档（§10.4，已对齐当前 P0 CLI）
 
-**验收标准**：AI 通过 shell tool 执行 `mbink-ui-dev open` 打开项目，执行 `mbink-ui-dev snapshot` 获取含 DOM 树和截图的 JSON，执行 `mbink-ui-dev eval "document.title"` 得到结果。
+**验收标准**：至少完成以下回归并得到可机读 JSON 结果：
+1. `mbink-ui-dev open <project>`
+2. `mbink-ui-dev snapshot`
+3. `mbink-ui-dev eval "console.log('hi from eval'); console.error('boom from eval'); 1+1"`
+4. `mbink-ui-dev logs`
+5. `mbink-ui-dev errors`
+6. `mbink-ui-dev reload`
+7. `mbink-ui-dev daemon stop`
+
+其中：`snapshot` 需返回真实 UI 树；`eval` 需返回结果；`logs/errors` 需可读到结构化运行时输出；`reload` 需返回成功 JSON。
 
 ---
 
@@ -1245,12 +1280,14 @@ mbink-ui-dev open /path/to/project
 **目标**：完整的 AI 开发循环可以运行。
 
 **交付物**：
-- [ ] `build` 命令（esbuild 子进程 + 结果解析，JSON 输出）
-- [ ] `build-status` 命令
-- [ ] `write` 命令（stdin pipe 模式 + `--from` 模式）
-- [ ] `read` 命令
-- [ ] `info` 命令（项目信息 + 文件树）
+- [x] `build` 命令（已落地单次 esbuild build，输出 `.dist/App.js` 与 `.dist/build.log`）
+- [x] `build-status` 命令
+- [x] `write` 命令（stdin pipe 模式 + `--from` 模式 + `--content` 模式）
+- [x] `read` 命令
+- [x] `info` 命令（项目信息 + 文件树 + 最近构建状态）
 - [ ] `build --watch` 文件监听模式
+
+**当前说明**：P1 主链路里 `info/read/write/build/build-status` 已完成并通过构建与 smoke；下一步是补齐 `watch`，再做 write → build → reload → snapshot 闭环验收。
 
 **验收标准**：AI 能完整执行「write → build → reload → snapshot → 判断」循环，整个循环 < 10 秒。
 

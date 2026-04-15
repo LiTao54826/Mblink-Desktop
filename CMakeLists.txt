@@ -107,6 +107,7 @@ endif()
 add_subdirectory(tools/app_bundler)
 # add_subdirectory(tools/html_loader)
 add_subdirectory(tools/esm_loader)
+add_subdirectory(tools/mbink_ui_dev)
 
 # Installation
 install(TARGETS mbink

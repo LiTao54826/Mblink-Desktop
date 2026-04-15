@@ -65,6 +65,12 @@ add_executable(esm_loader
     embedded_js.h
     asset_manager.cpp
     asset_manager.h
+    ui_dev_snapshot.cpp
+    ui_dev_snapshot.h
+    ui_dev_control.cpp
+    ui_dev_control.h
+    ui_dev_runtime_support.cpp
+    ui_dev_runtime_support.h
     ${CMAKE_SOURCE_DIR}/tools/app_bundler/payload.cpp
     ${CMAKE_SOURCE_DIR}/tools/app_bundler/payload.h
     ${CMAKE_SOURCE_DIR}/tools/app_bundler/bytecode_compiler.cpp

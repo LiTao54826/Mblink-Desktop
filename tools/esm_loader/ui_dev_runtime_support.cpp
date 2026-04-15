@@ -1,0 +1,150 @@
+#include "ui_dev_runtime_support.h"
+
+#include <chrono>
+#include <cstdio>
+#include <deque>
+#include <filesystem>
+#include <fstream>
+#include <iostream>
+#include <mutex>
+
+#include <nlohmann/json.hpp>
+
+#include "core/dom/document.h"
+#include "core/event/loop/event_loop.h"
+#include "core/quickjs/quickjs_runtime.h"
+#include "core/utils/encoding_utils.h"
+#include "core/window/window.h"
+#include "ui_dev_control.h"
+#include "ui_dev_snapshot.h"
+
+namespace mbink::ui_dev {
+namespace {
+namespace fs = std::filesystem;
+
+fs::path BufferFilePathFromUtf8(const std::string& path) {
+#ifdef _WIN32
+    return fs::path(utils::UTF8ToWide(path));
+#else
+    return fs::path(path);
+#endif
+}
+
+std::string CurrentTimestampIso8601() {
+    using namespace std::chrono;
+    const auto now = system_clock::now();
+    const auto t = system_clock::to_time_t(now);
+    std::tm tm{};
+#ifdef _WIN32
+    gmtime_s(&tm, &t);
+#else
+    gmtime_r(&t, &tm);
+#endif
+    char buf[64] = {0};
+    std::snprintf(buf, sizeof(buf), "%04d-%02d-%02dT%02d:%02d:%02dZ",
+                  tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday,
+                  tm.tm_hour, tm.tm_min, tm.tm_sec);
+    return std::string(buf);
+}
+
+class StructuredJsonBuffer {
+public:
+    StructuredJsonBuffer(std::string field_name, size_t max_entries, std::string file_path)
+        : field_name_(std::move(field_name)), max_entries_(max_entries), file_path_(std::move(file_path)) {}
+
+    void Push(nlohmann::json entry) {
+        if (file_path_.empty()) return;
+        std::lock_guard<std::mutex> lock(mutex_);
+        entry["timestamp"] = CurrentTimestampIso8601();
+        entry["line"] = ++next_line_;
+        entries_.push_back(std::move(entry));
+        while (entries_.size() > max_entries_) entries_.pop_front();
+        FlushLocked();
+    }
+
+private:
+    void FlushLocked() const {
+        nlohmann::json payload;
+        payload[field_name_] = nlohmann::json::array();
+        for (const auto& entry : entries_) payload[field_name_].push_back(entry);
+        std::ofstream ofs(BufferFilePathFromUtf8(file_path_), std::ios::binary | std::ios::trunc);
+        if (ofs) ofs << payload.dump(2);
+    }
+
+    std::string field_name_;
+    size_t max_entries_ = 0;
+    std::string file_path_;
+    mutable std::mutex mutex_;
+    std::deque<nlohmann::json> entries_;
+    int next_line_ = 0;
+};
+
+}  // namespace
+
+void AttachStructuredRuntimeBuffers(QuickJSRuntime* runtime,
+                                    const RuntimeSupportOptions& options) {
+    if (!runtime) return;
+    auto console_buffer = std::make_shared<StructuredJsonBuffer>("entries", 500, options.console_file);
+    auto error_buffer = std::make_shared<StructuredJsonBuffer>("errors", 200, options.errors_file);
+    runtime->SetConsoleCallback([console_buffer](const nlohmann::json& entry) {
+        console_buffer->Push(entry);
+    });
+    runtime->SetErrorCallback([error_buffer](const nlohmann::json& entry) {
+        error_buffer->Push(entry);
+    });
+}
+
+void ConfigureRuntimeControl(EventLoop* event_loop,
+                             QuickJSRuntime* runtime,
+                             const std::shared_ptr<Window>& window,
+                             const std::shared_ptr<Document>& document,
+                             const RuntimeSupportOptions& options) {
+    if (!event_loop || !runtime || !window || !document) return;
+
+    auto snapshot_written = std::make_shared<bool>(false);
+    event_loop->SetRenderCallback([window, document, snapshot_file = options.snapshot_file, snapshot_written]() {
+        if (!window->NeedsRepaint()) return;
+        window->Render();
+        window->SwapBuffers();
+        if (!snapshot_file.empty() && !*snapshot_written) {
+            std::string err;
+            ExportUiDevSnapshot(window, document, snapshot_file, &err);
+            *snapshot_written = true;
+        }
+    });
+
+    auto last_command_id = std::make_shared<std::string>();
+    event_loop->SetUpdateCallback([runtime,
+                                   command_file = options.command_file,
+                                   response_file = options.response_file,
+                                   last_command_id,
+                                   snapshot_written,
+                                   event_loop,
+                                   quit_after_seconds = options.quit_after_seconds](float delta_time) {
+        if (!command_file.empty() && !response_file.empty()) {
+            bool handled = false;
+            std::string err;
+            if (TryHandleUiDevCommand(runtime,
+                                      command_file,
+                                      response_file,
+                                      last_command_id.get(),
+                                      &handled,
+                                      &err) && handled) {
+                *snapshot_written = false;
+            }
+        }
+
+        if (quit_after_seconds <= 0) return;
+        static float elapsed_time = 0.0f;
+        static int frame_count = 0;
+        frame_count++;
+        elapsed_time += delta_time;
+        if (elapsed_time >= quit_after_seconds) {
+            std::cout << "[Auto-quit] Completed " << elapsed_time << " seconds (" << frame_count
+                      << " frames), exiting..." << std::endl;
+            event_loop->Stop();
+        }
+    });
+}
+
+}  // namespace mbink::ui_dev
