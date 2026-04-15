@@ -10,7 +10,6 @@
 #include "bindings/js_range.h"
 #include "core/dom/document.h"
 #include "core/dom/text.h"
-#include "core/dom/bindings/dom_bindings.h"
 #include "core/event/input/hit_test_controller.h"
 #include "core/event/loop/event_loop.h"
 #include "core/editing/selection_manager.h"
@@ -103,6 +102,102 @@ static JSValue JS_Document_getElementById(JSContext* ctx, JSValueConst this_val,
     }
 
     return bindings::WrapElement(ctx, element);
+}
+
+// ========== document.getElementsByTagName 实现 ==========
+
+static JSValue JS_Document_getElementsByTagName(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) {
+    if (argc < 1) {
+        return JS_ThrowTypeError(ctx, "getElementsByTagName requires 1 argument");
+    }
+
+    const char* tag_name = JS_ToCString(ctx, argv[0]);
+    if (!tag_name) {
+        return JS_EXCEPTION;
+    }
+
+    JSValue global = JS_GetGlobalObject(ctx);
+    JSValue window_val = JS_GetPropertyStr(ctx, global, "__mbink_window_ptr");
+    JS_FreeValue(ctx, global);
+
+    if (JS_IsUndefined(window_val)) {
+        JS_FreeCString(ctx, tag_name);
+        return JS_NewArray(ctx);
+    }
+
+    void* ptr = nullptr;
+    JS_ToInt64Ext(ctx, (int64_t*)&ptr, window_val);
+    JS_FreeValue(ctx, window_val);
+
+    if (!ptr) {
+        JS_FreeCString(ctx, tag_name);
+        return JS_NewArray(ctx);
+    }
+
+    auto* window = static_cast<Window*>(ptr);
+    auto doc = window->GetDocument();
+    if (!doc) {
+        JS_FreeCString(ctx, tag_name);
+        return JS_NewArray(ctx);
+    }
+
+    auto results = doc->GetElementsByTagName(tag_name);
+    JS_FreeCString(ctx, tag_name);
+
+    JSValue arr = JS_NewArray(ctx);
+    for (size_t i = 0; i < results.size(); ++i) {
+        JS_SetPropertyUint32(ctx, arr, static_cast<uint32_t>(i), bindings::WrapElement(ctx, results[i]));
+    }
+
+    return arr;
+}
+
+// ========== document.getElementsByClassName 实现 ==========
+
+static JSValue JS_Document_getElementsByClassName(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) {
+    if (argc < 1) {
+        return JS_ThrowTypeError(ctx, "getElementsByClassName requires 1 argument");
+    }
+
+    const char* class_name = JS_ToCString(ctx, argv[0]);
+    if (!class_name) {
+        return JS_EXCEPTION;
+    }
+
+    JSValue global = JS_GetGlobalObject(ctx);
+    JSValue window_val = JS_GetPropertyStr(ctx, global, "__mbink_window_ptr");
+    JS_FreeValue(ctx, global);
+
+    if (JS_IsUndefined(window_val)) {
+        JS_FreeCString(ctx, class_name);
+        return JS_NewArray(ctx);
+    }
+
+    void* ptr = nullptr;
+    JS_ToInt64Ext(ctx, (int64_t*)&ptr, window_val);
+    JS_FreeValue(ctx, window_val);
+
+    if (!ptr) {
+        JS_FreeCString(ctx, class_name);
+        return JS_NewArray(ctx);
+    }
+
+    auto* window = static_cast<Window*>(ptr);
+    auto doc = window->GetDocument();
+    if (!doc) {
+        JS_FreeCString(ctx, class_name);
+        return JS_NewArray(ctx);
+    }
+
+    auto results = doc->GetElementsByClassName(class_name);
+    JS_FreeCString(ctx, class_name);
+
+    JSValue arr = JS_NewArray(ctx);
+    for (size_t i = 0; i < results.size(); ++i) {
+        JS_SetPropertyUint32(ctx, arr, static_cast<uint32_t>(i), bindings::WrapElement(ctx, results[i]));
+    }
+
+    return arr;
 }
 
 // ========== document.createElement 实现 ==========
@@ -455,7 +550,7 @@ static JSValue JS_Window_getSelection(JSContext* ctx, JSValueConst this_val, int
     }
 
     // 获取 EventLoop 中的 SelectionManager
-    auto event_loop = DOMBindings::GetGlobalEventLoop();
+    auto event_loop = WindowBindings::GetActiveEventLoop();
     if (!event_loop) {
         return JS_NULL;
     }
@@ -668,7 +763,7 @@ static JSValue JS_Document_execCommand(JSContext* ctx, JSValueConst this_val, in
     }
 
     // 获取 EventLoop 中的 ContentEditableHandler
-    auto event_loop = DOMBindings::GetGlobalEventLoop();
+    auto event_loop = WindowBindings::GetActiveEventLoop();
     if (!event_loop) {
         return JS_NewBool(ctx, false);
     }
@@ -721,7 +816,7 @@ static JSValue JS_Document_queryCommandState(JSContext* ctx, JSValueConst this_v
     }
 
     // 获取 EventLoop 中的 ContentEditableHandler
-    auto event_loop = DOMBindings::GetGlobalEventLoop();
+    auto event_loop = WindowBindings::GetActiveEventLoop();
     if (!event_loop) {
         return JS_NewBool(ctx, false);
     }
@@ -774,7 +869,7 @@ static JSValue JS_Document_queryCommandEnabled(JSContext* ctx, JSValueConst this
     }
 
     // 获取 EventLoop 中的 ContentEditableHandler
-    auto event_loop = DOMBindings::GetGlobalEventLoop();
+    auto event_loop = WindowBindings::GetActiveEventLoop();
     if (!event_loop) {
         return JS_NewBool(ctx, false);
     }
@@ -1394,6 +1489,12 @@ void BindDocumentAPIs(JSContext* ctx, Window* window) {
     // 设置 getElementById 方法
     JS_SetPropertyStr(ctx, document, "getElementById",
         JS_NewCFunction(ctx, JS_Document_getElementById, "getElementById", 1));
+
+    // 设置 getElementsByTagName / getElementsByClassName 方法
+    JS_SetPropertyStr(ctx, document, "getElementsByTagName",
+        JS_NewCFunction(ctx, JS_Document_getElementsByTagName, "getElementsByTagName", 1));
+    JS_SetPropertyStr(ctx, document, "getElementsByClassName",
+        JS_NewCFunction(ctx, JS_Document_getElementsByClassName, "getElementsByClassName", 1));
 
     // 设置 createElement 方法
     JS_SetPropertyStr(ctx, document, "createElement",

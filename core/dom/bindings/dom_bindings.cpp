@@ -53,7 +53,6 @@ JSClassID DOMBindings::event_class_id = 0;
 JSClassID DOMBindings::dom_token_list_class_id = 0;
 JSClassID DOMBindings::css_style_declaration_class_id = 0;
 JSClassID DOMBindings::dom_string_map_class_id = 0;
-bool DOMBindings::initialized = false;
 
 // 对象缓存
 std::unordered_map<Element*, std::pair<JSContext*, JSValue>> DOMBindings::element_cache_;
@@ -61,10 +60,11 @@ std::unordered_map<Text*, std::pair<JSContext*, JSValue>> DOMBindings::text_cach
 std::unordered_map<Document*, std::pair<JSContext*, JSValue>> DOMBindings::document_cache_;
 
 
-// 全局 TaskScheduler / EventLoop 实例（供定时器与 RAF 绑定使用）
+// 全局 EventLoop 实例（供 legacy 编辑命令桥接使用）
 namespace {
-std::shared_ptr<TaskScheduler> g_task_scheduler = nullptr;
 EventLoop* g_event_loop = nullptr;
+
+using LegacyCachedValue = std::pair<JSContext*, JSValue>;
 
 static JSMemoryUsage GetRuntimeUsage(JSContext* ctx) {
     JSMemoryUsage usage{};
@@ -74,7 +74,28 @@ static JSMemoryUsage GetRuntimeUsage(JSContext* ctx) {
     }
     return usage;
 }
+
+static void CollectLegacyCachedValues(
+    const std::unordered_map<Text*, LegacyCachedValue>& cache,
+    std::vector<LegacyCachedValue>& cached_values) {
+    for (const auto& [_, entry] : cache) {
+        if (!JS_IsUndefined(entry.second) && !JS_IsNull(entry.second)) {
+            cached_values.push_back(entry);
+        }
+    }
 }
+
+static void CollectLegacyCachedValues(
+    const std::unordered_map<Document*, LegacyCachedValue>& cache,
+    std::vector<LegacyCachedValue>& cached_values) {
+    for (const auto& [_, entry] : cache) {
+        if (!JS_IsUndefined(entry.second) && !JS_IsNull(entry.second)) {
+            cached_values.push_back(entry);
+        }
+    }
+}
+}
+
 
 // ========== 辅助函数 ==========
 
@@ -2170,7 +2191,7 @@ static JSValue js_document_exec_command(JSContext* ctx, JSValueConst this_val, i
     }
 
     // 获取 EventLoop 中的 ContentEditableHandler
-    auto event_loop = DOMBindings::GetGlobalEventLoop();
+    auto event_loop = g_event_loop;
     if (!event_loop) {
         return JS_NewBool(ctx, false);
     }
@@ -2204,7 +2225,7 @@ static JSValue js_document_query_command_state(JSContext* ctx, JSValueConst this
     JS_FreeCString(ctx, command);
 
     // 获取 EventLoop 中的 ContentEditableHandler
-    auto event_loop = DOMBindings::GetGlobalEventLoop();
+    auto event_loop = g_event_loop;
     if (!event_loop) {
         return JS_NewBool(ctx, false);
     }
@@ -2238,7 +2259,7 @@ static JSValue js_document_query_command_enabled(JSContext* ctx, JSValueConst th
     JS_FreeCString(ctx, command);
 
     // 获取 EventLoop 中的 ContentEditableHandler
-    auto event_loop = DOMBindings::GetGlobalEventLoop();
+    auto event_loop = g_event_loop;
     if (!event_loop) {
         return JS_NewBool(ctx, false);
     }
@@ -2492,128 +2513,70 @@ void DOMBindings::InitEventClass(JSContext* ctx) {
 
 // ========== 初始化和清理 ==========
 
-void DOMBindings::Init(JSContext* ctx) {
-    if (initialized) {
+void DOMBindings::ClearLegacyElementBindings(Element* element, JSContext* fallback_ctx,
+                                             JSContext* entry_ctx, JSValueConst value) {
+    if (!element) {
         return;
     }
 
-    InitElementClass(ctx);
-    InitTextClass(ctx);
-    InitDocumentClass(ctx);
-    InitEventClass(ctx);
-    InitDOMTokenListClass(ctx);
-    InitCSSStyleDeclarationClass(ctx);
-    InitDOMStringMapClass(ctx);
+    JSContext* resolved_ctx = entry_ctx ? entry_ctx : fallback_ctx;
+    if (resolved_ctx && !JS_IsUndefined(value) && !JS_IsNull(value) &&
+        JS_GetOpaque(value, bindings::GetElementClassID())) {
+        bindings::ClearElementListenerBindings(resolved_ctx, value);
+    }
 
-    // 初始化 Canvas 绑定
-    CanvasBindings::Init(ctx);
-
-    // 初始化 Terminal 和 LogView 绑定
-    TerminalBindings::Init(ctx);
-
-    // 初始化 Image 构造函数
-    InitImageConstructor(ctx);
-
-    initialized = true;
+    element->ClearAllEventListeners();
 }
 
-void DOMBindings::SetGlobalDocument(JSContext* ctx, std::shared_ptr<Document> document) {
-    if (!document) {
-        return;
+void DOMBindings::ClearLegacyCaches(JSContext* ctx) {
+    std::vector<LegacyCachedValue> cached_values;
+    cached_values.reserve(element_cache_.size() + text_cache_.size() + document_cache_.size());
+
+    for (const auto& [element, entry] : element_cache_) {
+        if (!JS_IsUndefined(entry.second) && !JS_IsNull(entry.second)) {
+            ClearLegacyElementBindings(element, ctx, entry.first, entry.second);
+            cached_values.push_back(entry);
+        }
     }
 
-    // 包装 Document 对象
-    JSValue doc_obj = WrapDocument(ctx, document);
+    CollectLegacyCachedValues(text_cache_, cached_values);
+    CollectLegacyCachedValues(document_cache_, cached_values);
 
-    // 设置为全局对象
-    // 注意：JS_SetPropertyStr 会接管 doc_obj 的所有权，不需要手动 FreeValue
-    JSValue global = JS_GetGlobalObject(ctx);
-    JS_SetPropertyStr(ctx, global, "document", doc_obj);
-    JS_FreeValue(ctx, global);
+    element_cache_.clear();
+    text_cache_.clear();
+    document_cache_.clear();
+
+    for (auto& entry : cached_values) {
+        if (entry.first) {
+            JS_FreeValue(entry.first, entry.second);
+        }
+    }
 }
 
 void DOMBindings::Cleanup(JSContext* ctx) {
-    // ========== 阶段0：先停掉所有 timer / raf / microtask ==========
-    if (g_task_scheduler) {
-        g_task_scheduler->ClearAllTasks();
+    // 传 nullptr 时，只保留 legacy EventLoop 状态兜底，
+    // quickjs 主线路径的 listener / global document / DOMBindingMap 清理由 WindowBindings::Cleanup() 负责。
+    if (!ctx) {
+        g_event_loop = nullptr;
+        return;
     }
 
-    // ========== 阶段1：清理 C++ 侧 DOM 事件引用 ==========
-    if (ctx) {
-        auto clear_element_bindings = [ctx](Element* element, JSContext* entry_ctx, JSValueConst value) {
-            if (!element) {
-                return;
-            }
-
-            if (entry_ctx && !JS_IsUndefined(value) && !JS_IsNull(value) &&
-                JS_GetOpaque(value, bindings::GetElementClassID())) {
-                bindings::ClearElementListenerBindings(entry_ctx, value);
-            }
-
-            element->ClearAllEventListeners();
-        };
-
-        auto& dom_binding_map = DOMBindingMap::GetInstance();
-        dom_binding_map.ForEach([&clear_element_bindings](Node* node, JSContext* entry_ctx, JSValueConst value) {
-            if (auto* element = dynamic_cast<Element*>(node)) {
-                clear_element_bindings(element, entry_ctx, value);
-            }
-        });
-
-        std::vector<std::pair<JSContext*, JSValue>> cachedValues;
-        cachedValues.reserve(element_cache_.size() + text_cache_.size() + document_cache_.size());
-
-        for (auto& [element, entry] : element_cache_) {
-            if (!JS_IsUndefined(entry.second) && !JS_IsNull(entry.second)) {
-                clear_element_bindings(element, entry.first ? entry.first : ctx, entry.second);
-                cachedValues.push_back(entry);
-            }
+    // ========== 阶段1：清理 legacy wrapper 持有的 C++ 事件引用与 legacy cache ==========
+    auto& dom_binding_map = DOMBindingMap::GetInstance();
+    dom_binding_map.ForEach([ctx](Node* node, JSContext* entry_ctx, JSValueConst value) {
+        if (auto* element = dynamic_cast<Element*>(node)) {
+            ClearLegacyElementBindings(element, ctx, entry_ctx, value);
         }
-        for (auto& [_, entry] : text_cache_) {
-            if (!JS_IsUndefined(entry.second) && !JS_IsNull(entry.second)) {
-                cachedValues.push_back(entry);
-            }
-        }
-        for (auto& [_, entry] : document_cache_) {
-            if (!JS_IsUndefined(entry.second) && !JS_IsNull(entry.second)) {
-                cachedValues.push_back(entry);
-            }
-        }
+    });
 
-        element_cache_.clear();
-        text_cache_.clear();
-        document_cache_.clear();
+    ClearLegacyCaches(ctx);
 
-        for (auto& entry : cachedValues) {
-            if (entry.first) {
-                JS_FreeValue(entry.first, entry.second);
-            }
-        }
-
-        JS_RunGC(JS_GetRuntime(ctx));
-    }
-
-    // ========== 阶段2：清除全局 document 对象 ==========
-    if (ctx) {
-        JSValue global = JS_GetGlobalObject(ctx);
-        JS_SetPropertyStr(ctx, global, "document", JS_UNDEFINED);
-        JS_FreeValue(ctx, global);
-    }
-
-    // ========== 阶段3：清理调度器和 DOMBindingMap ==========
-    if (g_task_scheduler) {
-        g_task_scheduler->ClearAllTasks();
-    }
-    g_task_scheduler.reset();
+    // ========== 阶段2：重置 legacy bridge 状态 ==========
     g_event_loop = nullptr;
 
-    if (ctx) {
-        JS_RunGC(JS_GetRuntime(ctx));
-        DOMBindingMap::GetInstance().Clear();
-    }
+    JS_RunGC(JS_GetRuntime(ctx));
 
     // QuickJS 会自动清理类
-    initialized = false;
 }
 
 // ========== 包装函数 ==========
@@ -3393,186 +3356,6 @@ void DOMBindings::InitDOMStringMapClass(JSContext* ctx) {
     JS_SetClassProto(ctx, dom_string_map_class_id, proto);
 }
 
-// ========== TaskScheduler 绑定 ==========
-
-void DOMBindings::SetGlobalEventLoop(JSContext* ctx, EventLoop* event_loop) {
-    g_event_loop = event_loop;
-}
-
-EventLoop* DOMBindings::GetGlobalEventLoop() {
-    return g_event_loop;
-}
-
-// setTimeout(callback, delay)
-static JSValue js_set_timeout(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) {
-    if (!g_task_scheduler) {
-        return JS_ThrowInternalError(ctx, "TaskScheduler not initialized");
-    }
-
-    if (argc < 2) {
-        return JS_ThrowTypeError(ctx, "setTimeout requires 2 arguments");
-    }
-
-    if (!JS_IsFunction(ctx, argv[0])) {
-        return JS_ThrowTypeError(ctx, "setTimeout requires a function as first argument");
-    }
-
-    int delay = 0;
-    if (JS_ToInt32(ctx, &delay, argv[1]) != 0) {
-        return JS_ThrowTypeError(ctx, "setTimeout requires a number as second argument");
-    }
-
-    // 使用 JSValueWrapper 管理回调函数的生命周期
-    auto callback_wrapper = std::make_shared<JSValueWrapper>(ctx, argv[0]);
-
-    int timer_id = g_task_scheduler->SetTimeout([ctx, callback_wrapper]() {
-        JSValue ret = JS_Call(ctx, callback_wrapper->Get(), JS_UNDEFINED, 0, nullptr);
-        if (JS_IsException(ret)) {
-            js_std_dump_error(ctx);
-        }
-        JS_FreeValue(ctx, ret);
-    }, delay);
-
-    return JS_NewInt32(ctx, timer_id);
-}
-
-// clearTimeout(timerId)
-static JSValue js_clear_timeout(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) {
-    if (!g_task_scheduler) {
-        return JS_ThrowInternalError(ctx, "TaskScheduler not initialized");
-    }
-
-    if (argc < 1) {
-        return JS_ThrowTypeError(ctx, "clearTimeout requires 1 argument");
-    }
-
-    int timer_id = 0;
-    if (JS_ToInt32(ctx, &timer_id, argv[0]) != 0) {
-        return JS_ThrowTypeError(ctx, "clearTimeout requires a number as argument");
-    }
-
-    g_task_scheduler->ClearTimeout(timer_id);
-    return JS_UNDEFINED;
-}
-
-// setInterval(callback, interval)
-static JSValue js_set_interval(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) {
-
-    if (!g_task_scheduler) {
-        return JS_ThrowInternalError(ctx, "TaskScheduler not initialized");
-    }
-
-    if (argc < 2) {
-        return JS_ThrowTypeError(ctx, "setInterval requires 2 arguments");
-    }
-
-    if (!JS_IsFunction(ctx, argv[0])) {
-        return JS_ThrowTypeError(ctx, "setInterval requires a function as first argument");
-    }
-
-    int interval = 0;
-    if (JS_ToInt32(ctx, &interval, argv[1]) != 0) {
-        return JS_ThrowTypeError(ctx, "setInterval requires a number as second argument");
-    }
-
-
-    // 使用 JSValueWrapper 管理回调函数的生命周期
-    auto callback_wrapper = std::make_shared<JSValueWrapper>(ctx, argv[0]);
-
-    int timer_id = g_task_scheduler->SetInterval([ctx, callback_wrapper]() {
-        JSValue ret = JS_Call(ctx, callback_wrapper->Get(), JS_UNDEFINED, 0, nullptr);
-        if (JS_IsException(ret)) {
-            js_std_dump_error(ctx);
-        }
-        JS_FreeValue(ctx, ret);
-    }, interval);
-
-    return JS_NewInt32(ctx, timer_id);
-}
-
-// clearInterval(timerId)
-static JSValue js_clear_interval(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) {
-    if (!g_task_scheduler) {
-        return JS_ThrowInternalError(ctx, "TaskScheduler not initialized");
-    }
-
-    if (argc < 1) {
-        return JS_ThrowTypeError(ctx, "clearInterval requires 1 argument");
-    }
-
-    int timer_id = 0;
-    if (JS_ToInt32(ctx, &timer_id, argv[0]) != 0) {
-        return JS_ThrowTypeError(ctx, "clearInterval requires a number as argument");
-    }
-
-    g_task_scheduler->ClearInterval(timer_id);
-    return JS_UNDEFINED;
-}
-
-// requestAnimationFrame(callback)
-static JSValue js_request_animation_frame(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) {
-    if (!g_task_scheduler) {
-        return JS_ThrowInternalError(ctx, "TaskScheduler not initialized");
-    }
-
-    if (argc < 1) {
-        return JS_ThrowTypeError(ctx, "requestAnimationFrame requires 1 argument");
-    }
-
-    if (!JS_IsFunction(ctx, argv[0])) {
-        return JS_ThrowTypeError(ctx, "requestAnimationFrame requires a function as argument");
-    }
-
-    // 使用 JSValueWrapper 管理回调函数的生命周期
-    auto callback_wrapper = std::make_shared<JSValueWrapper>(ctx, argv[0]);
-
-    int frame_id = g_task_scheduler->RequestAnimationFrame([ctx, callback_wrapper](double timestamp) {
-        JSValue timestamp_val = JS_NewFloat64(ctx, timestamp);
-        JSValue ret = JS_Call(ctx, callback_wrapper->Get(), JS_UNDEFINED, 1, &timestamp_val);
-        JS_FreeValue(ctx, timestamp_val);
-        if (JS_IsException(ret)) {
-            js_std_dump_error(ctx);
-        }
-        JS_FreeValue(ctx, ret);
-    });
-
-    return JS_NewInt32(ctx, frame_id);
-}
-
-// cancelAnimationFrame(frameId)
-static JSValue js_cancel_animation_frame(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) {
-    if (!g_task_scheduler) {
-        return JS_ThrowInternalError(ctx, "TaskScheduler not initialized");
-    }
-
-    if (argc < 1) {
-        return JS_ThrowTypeError(ctx, "cancelAnimationFrame requires 1 argument");
-    }
-
-    int frame_id = 0;
-    if (JS_ToInt32(ctx, &frame_id, argv[0]) != 0) {
-        return JS_ThrowTypeError(ctx, "cancelAnimationFrame requires a number as argument");
-    }
-
-    g_task_scheduler->CancelAnimationFrame(frame_id);
-    return JS_UNDEFINED;
-}
-
-void DOMBindings::SetGlobalTaskScheduler(JSContext* ctx, std::shared_ptr<TaskScheduler> scheduler) {
-    g_task_scheduler = scheduler;
-
-    // 注册全局函数
-    JSValue global = JS_GetGlobalObject(ctx);
-
-    JS_SetPropertyStr(ctx, global, "setTimeout", JS_NewCFunction(ctx, js_set_timeout, "setTimeout", 2));
-    JS_SetPropertyStr(ctx, global, "clearTimeout", JS_NewCFunction(ctx, js_clear_timeout, "clearTimeout", 1));
-    JS_SetPropertyStr(ctx, global, "setInterval", JS_NewCFunction(ctx, js_set_interval, "setInterval", 2));
-    JS_SetPropertyStr(ctx, global, "clearInterval", JS_NewCFunction(ctx, js_clear_interval, "clearInterval", 1));
-    JS_SetPropertyStr(ctx, global, "requestAnimationFrame", JS_NewCFunction(ctx, js_request_animation_frame, "requestAnimationFrame", 1));
-    JS_SetPropertyStr(ctx, global, "cancelAnimationFrame", JS_NewCFunction(ctx, js_cancel_animation_frame, "cancelAnimationFrame", 1));
-
-    JS_FreeValue(ctx, global);
-}
 
 // ========== Image 构造函数 ==========
 

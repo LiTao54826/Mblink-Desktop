@@ -454,6 +454,16 @@ static JSValue JSEvent_get_defaultPrevented(JSContext* ctx, JSValueConst this_va
     return JS_NewBool(ctx, data->event->IsDefaultPrevented());
 }
 
+// timeStamp
+static JSValue JSEvent_get_timeStamp(JSContext* ctx, JSValueConst this_val, int magic) {
+    auto* data = static_cast<JSEventData*>(JS_GetOpaque(this_val, js_event_class_id));
+    if (!data || !data->event) {
+        return JS_NewFloat64(ctx, 0);
+    }
+
+    return JS_NewFloat64(ctx, data->event->GetTimeStamp());
+}
+
 // ========== ClipboardEvent 属性访问器 ==========
 
 // clipboardData (返回一个包含 getData/setData 方法的对象)
@@ -590,6 +600,17 @@ static JSValue JSEvent_stopPropagation(JSContext* ctx, JSValueConst this_val, in
     return JS_UNDEFINED;
 }
 
+// stopImmediatePropagation()
+static JSValue JSEvent_stopImmediatePropagation(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) {
+    auto* data = static_cast<JSEventData*>(JS_GetOpaque(this_val, js_event_class_id));
+    if (!data || !data->event) {
+        return JS_EXCEPTION;
+    }
+
+    data->event->StopImmediatePropagation();
+    return JS_UNDEFINED;
+}
+
 // preventDefault()
 static JSValue JSEvent_preventDefault(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) {
     auto* data = static_cast<JSEventData*>(JS_GetOpaque(this_val, js_event_class_id));
@@ -610,6 +631,7 @@ static const JSCFunctionListEntry js_event_proto_funcs[] = {
     JS_CGETSET_MAGIC_DEF("bubbles", JSEvent_get_bubbles, nullptr, 0),
     JS_CGETSET_MAGIC_DEF("cancelable", JSEvent_get_cancelable, nullptr, 0),
     JS_CGETSET_MAGIC_DEF("defaultPrevented", JSEvent_get_defaultPrevented, nullptr, 0),
+    JS_CGETSET_MAGIC_DEF("timeStamp", JSEvent_get_timeStamp, nullptr, 0),
     // MouseEvent 属性
     JS_CGETSET_MAGIC_DEF("clientX", JSEvent_get_clientX, nullptr, 0),
     JS_CGETSET_MAGIC_DEF("clientY", JSEvent_get_clientY, nullptr, 0),
@@ -639,6 +661,7 @@ static const JSCFunctionListEntry js_event_proto_funcs[] = {
     JS_CGETSET_MAGIC_DEF("clipboardData", JSEvent_get_clipboardData, nullptr, 0),
     // 方法
     JS_CFUNC_DEF("stopPropagation", 0, JSEvent_stopPropagation),
+    JS_CFUNC_DEF("stopImmediatePropagation", 0, JSEvent_stopImmediatePropagation),
     JS_CFUNC_DEF("preventDefault", 0, JSEvent_preventDefault),
 };
 

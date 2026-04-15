@@ -32,46 +32,15 @@ namespace mbink {
 class EventLoop;
 
 /**
- * @brief DOM 绑定类
+ * @brief Legacy DOM 绑定类
+ * @note 当前仅保留为兼容/清理过渡层。
+ *       新增 DOM API 不应继续添加到此类，主线绑定统一放在 core/quickjs/*。
  */
 class DOMBindings {
 public:
     /**
-     * @brief 初始化 DOM 绑定
-     * @param ctx QuickJS 上下文
-     */
-    static void Init(JSContext* ctx);
-
-    /**
-     * @brief 设置全局 document 对象
-     * @param ctx QuickJS 上下文
-     * @param document Document 对象
-     */
-    static void SetGlobalDocument(JSContext* ctx, std::shared_ptr<Document> document);
-
-    /**
-     * @brief 设置全局 TaskScheduler
-     * @param ctx QuickJS 上下文
-     * @param scheduler TaskScheduler 对象
-     */
-    static void SetGlobalTaskScheduler(JSContext* ctx, std::shared_ptr<TaskScheduler> scheduler);
-
-    /**
-     * @brief 设置全局 EventLoop
-     * @param ctx QuickJS 上下文
-     * @param event_loop EventLoop 指针
-     */
-    static void SetGlobalEventLoop(JSContext* ctx, EventLoop* event_loop);
-
-    /**
-     * @brief 获取全局 EventLoop
-     * @return EventLoop 指针
-     */
-    static EventLoop* GetGlobalEventLoop();
-
-    /**
      * @brief 清理 DOM 绑定
-     * @param ctx QuickJS 上下文
+     * @param ctx QuickJS 上下文；传 nullptr 时仅重置 legacy 调度器/EventLoop 状态
      */
     static void Cleanup(JSContext* ctx);
 
@@ -166,9 +135,6 @@ public:
     static void RemoveFromDocumentCache(Document* ptr);
 
 private:
-    // 初始化标志
-    static bool initialized;
-
     // 初始化各个类
     static void InitElementClass(JSContext* ctx);
     static void InitTextClass(JSContext* ctx);
@@ -178,9 +144,13 @@ private:
     static void InitCSSStyleDeclarationClass(JSContext* ctx);
     static void InitDOMStringMapClass(JSContext* ctx);
 
-    // 对象缓存：Element* → (JSContext*, JSValue)
-    // 用于防止同一个C++对象被包装多次
-    // 存储JSContext*以便在清理时调用JS_FreeValue
+    static void ClearLegacyElementBindings(Element* element, JSContext* fallback_ctx,
+                                           JSContext* entry_ctx, JSValueConst value);
+    static void ClearLegacyCaches(JSContext* ctx);
+
+    // legacy 对象缓存：Element* → (JSContext*, JSValue)
+    // 用于防止同一个 C++ 对象被旧 wrapper 重复包装
+    // 存储 JSContext* 以便 legacy 清理路径调用 JS_FreeValue
     static std::unordered_map<Element*, std::pair<JSContext*, JSValue>> element_cache_;
     static std::unordered_map<Text*, std::pair<JSContext*, JSValue>> text_cache_;
     static std::unordered_map<Document*, std::pair<JSContext*, JSValue>> document_cache_;

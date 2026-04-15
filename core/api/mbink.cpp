@@ -1052,12 +1052,10 @@ WindowContext* createWindowContext(const mbink::WindowConfig& wc) {
     mbink::ImageLoader::SetAssetProvider(mountedAssetProvider);
     mbink::LexborStyleSheet::SetAssetProvider(mountedAssetProvider);
 
-    // 7. 初始化 DOM 绑定
+    // 7. 创建 WindowBindings + 初始化（setTimeout/setInterval/RAF/DOM/Canvas...）
+    // DOM 主路径初始化统一由 WindowBindings::InitBindings() 负责，
+    // 其中 BindDocumentAPIs() 会注入全局 document/window.document。
     auto jsCtx = ctx->runtime->GetContext();
-    mbink::DOMBindings::Init(jsCtx);
-    mbink::DOMBindings::SetGlobalDocument(jsCtx, ctx->document);
-
-    // 8. 创建 WindowBindings + 初始化（setTimeout/setInterval/RAF/DOM/Canvas...）
     ctx->windowBindings = std::make_unique<mbink::WindowBindings>(
         ctx->runtime.get(), ctx->window, ctx->taskScheduler);
     ctx->windowBindings->InitBindings();
@@ -1065,7 +1063,7 @@ WindowContext* createWindowContext(const mbink::WindowConfig& wc) {
     // 9. 创建 EventLoop（使用同一 TaskScheduler）
     ctx->eventLoop = std::make_unique<mbink::EventLoop>(ctx->taskScheduler);
     ctx->eventLoop->SetQuickJSRuntime(ctx->runtime.get());
-    mbink::DOMBindings::SetGlobalEventLoop(jsCtx, ctx->eventLoop.get());
+    mbink::WindowBindings::SetActiveEventLoop(ctx->eventLoop.get());
 
     // 10. 创建 FetchBindings
     ctx->fetchBindings = std::make_unique<mbink::FetchBindings>(jsCtx, ctx->taskScheduler);
@@ -1290,15 +1288,18 @@ void mbink_destroy(MBinkHandle handle) {
         ClearDocumentElementListeners(ctx->document);
     });
 
-    SAFE_CLEANUP("dom_bindings_cleanup", if (ctx->runtime) {
-        mbink::DOMBindings::Cleanup(ctx->runtime->GetContext());
+    SAFE_CLEANUP("window_bindings_cleanup", if (ctx->windowBindings) {
+        ctx->windowBindings->Cleanup();
+    });
+
+    SAFE_CLEANUP("dom_bindings_legacy_cleanup", {
+        mbink::DOMBindings::Cleanup(nullptr);
     });
 
     SAFE_CLEANUP("detach_window_document", if (ctx->window) {
         ctx->window->SetDocument(nullptr);
     });
     ctx->document.reset();
-    mbink::DOMBindingMap::GetInstance().Clear();
 
     // 7. 释放 HostBridge 和 StateManager
     SAFE_CLEANUP("clear_watchers", if (ctx->stateManager) {

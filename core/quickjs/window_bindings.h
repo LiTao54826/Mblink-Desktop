@@ -1,14 +1,3 @@
-/**
- * @file window_bindings.h
- * @brief Window 对象的 JavaScript 绑定
- *
- * 功能：
- * - 将 Window 对象暴露给 JavaScript
- * - 绑定 window 全局对象
- * - 绑定 document 对象
- * - 绑定定时器函数 (setTimeout, setInterval, requestAnimationFrame)
- */
-
 #pragma once
 
 #include "quickjs_runtime.h"
@@ -19,6 +8,8 @@
 #include <unordered_map>
 
 namespace mbink {
+
+class EventLoop;
 
 /**
  * @brief Window 对象的 JavaScript 绑定
@@ -31,35 +22,40 @@ public:
      * @param window 窗口对象
      * @param task_scheduler 任务调度器
      */
-    WindowBindings(QuickJSRuntime* runtime, 
+    WindowBindings(QuickJSRuntime* runtime,
                    std::shared_ptr<Window> window,
                    std::shared_ptr<TaskScheduler> task_scheduler);
-    
+
     /**
      * @brief 析构函数
      */
     ~WindowBindings() = default;
-    
+
     /**
      * @brief 初始化所有绑定
      */
     void InitBindings();
-    
+
+    /**
+     * @brief 清理 quickjs 主线路径创建的 DOM/全局绑定
+     */
+    void Cleanup();
+
     /**
      * @brief 绑定 window 全局对象
      */
     void BindWindowObject();
-    
+
     /**
      * @brief 绑定 document 对象
      */
     void BindDocumentObject();
-    
+
     /**
      * @brief 绑定定时器函数
      */
     void BindTimers();
-    
+
     /**
      * @brief 绑定事件监听器
      */
@@ -74,6 +70,16 @@ public:
      * @brief 获取任务调度器
      */
     std::shared_ptr<TaskScheduler> GetTaskScheduler() { return task_scheduler_; }
+
+    /**
+     * @brief 设置 quickjs 主线路径共享的 EventLoop
+     */
+    static void SetActiveEventLoop(EventLoop* event_loop);
+
+    /**
+     * @brief 获取 quickjs 主线路径共享的 EventLoop
+     */
+    static EventLoop* GetActiveEventLoop();
 
 private:
     void TrackTimerCallback(int task_id, const std::string& callback_name);
@@ -97,27 +103,27 @@ public:
      * @param document 文档对象
      */
     DocumentBindings(QuickJSRuntime* runtime, std::shared_ptr<Document> document);
-    
+
     /**
      * @brief 析构函数
      */
     ~DocumentBindings() = default;
-    
+
     /**
      * @brief 初始化所有绑定
      */
     void InitBindings();
-    
+
     /**
      * @brief 绑定 DOM 查询方法
      */
     void BindQueryMethods();
-    
+
     /**
      * @brief 绑定 DOM 创建方法
      */
     void BindCreateMethods();
-    
+
     /**
      * @brief 绑定 DOM 属性
      */
@@ -136,4 +142,3 @@ private:
 void BindDocumentAPIs(JSContext* ctx, Window* window);
 
 } // namespace mbink
-

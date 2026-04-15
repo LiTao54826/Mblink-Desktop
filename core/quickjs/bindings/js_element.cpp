@@ -18,6 +18,7 @@
 #include "core/dom/elements/logview/html_logview_element.h"
 #include "core/dom/bindings/canvas_bindings.h"
 #include "core/dom/bindings/terminal_bindings.h"
+#include "core/event/types/mouse_event.h"
 #include "core/dom/selection/selector_engine.h"
 #include "core/quickjs/dom_binding_map.h"
 #include "core/render/objects/render_object.h"
@@ -1745,6 +1746,16 @@ static JSValue JSElement_remove(JSContext* ctx, JSValueConst this_val, int argc,
     return JS_UNDEFINED;
 }
 
+// click - 触发元素 click 事件
+static JSValue JSElement_click(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) {
+    auto* data = static_cast<JSElementData*>(JS_GetOpaque(this_val, js_element_class_id));
+    if (!data || !data->element) return JS_UNDEFINED;
+
+    auto click_event = std::make_shared<MouseEvent>("click", 0, 0, 0, 1, 0);
+    data->element->DispatchEvent(click_event);
+    return JS_UNDEFINED;
+}
+
 // ownerDocument getter - 获取元素所属的文档
 static JSValue JSElement_get_ownerDocument(JSContext* ctx, JSValueConst this_val, int magic) {
     auto* data = static_cast<JSElementData*>(JS_GetOpaque(this_val, js_element_class_id));
@@ -1868,6 +1879,7 @@ static const JSCFunctionListEntry js_element_proto_funcs[] = {
     JS_CFUNC_DEF("matches", 1, JSElement_matches),
     JS_CFUNC_DEF("closest", 1, JSElement_closest),
     JS_CFUNC_DEF("cloneNode", 1, JSElement_cloneNode),
+    JS_CFUNC_DEF("click", 0, JSElement_click),
     JS_CFUNC_DEF("remove", 0, JSElement_remove),
 };
 

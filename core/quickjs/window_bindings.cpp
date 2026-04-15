@@ -14,9 +14,12 @@
 #include "bindings/js_mutation_observer.h"
 #include "core/dom/bindings/dom_bindings.h"
 #include "core/dom/bindings/canvas_bindings.h"
+#include "core/quickjs/dom_binding_map.h"
 #include "core/compositor/compositor_layer.h"
 #include "core/render/image/image_cache.h"
+#include "core/event/loop/event_loop.h"
 #include <iostream>
+#include <vector>
 #include <SDL3/SDL.h>
 #ifdef _WIN32
 #include <psapi.h>
@@ -26,6 +29,8 @@
 namespace mbink {
 
 namespace {
+EventLoop* g_active_event_loop = nullptr;
+
 json CollectProcessMemoryStats() {
     json result = json::object();
 #ifdef _WIN32
@@ -141,6 +146,14 @@ WindowBindings::WindowBindings(QuickJSRuntime* runtime,
     , task_scheduler_(task_scheduler) {
 }
 
+void WindowBindings::SetActiveEventLoop(EventLoop* event_loop) {
+    g_active_event_loop = event_loop;
+}
+
+EventLoop* WindowBindings::GetActiveEventLoop() {
+    return g_active_event_loop;
+}
+
 void WindowBindings::InitBindings() {
     // 初始化新的模块化 DOM 绑定系统（有 exotic 支持）
     bindings::InitNodeBinding(runtime_->GetContext());
@@ -158,11 +171,6 @@ void WindowBindings::InitBindings() {
     // 初始化 Image 构造函数（支持 new Image()）
     InitImageConstructor(runtime_->GetContext());
 
-    // 设置全局 TaskScheduler（定时器需要）
-    if (task_scheduler_) {
-        DOMBindings::SetGlobalTaskScheduler(runtime_->GetContext(), task_scheduler_);
-    }
-
     // 先绑定 window 对象（创建空的 window 对象）
     BindWindowObject();
     BindTimers();
@@ -170,6 +178,62 @@ void WindowBindings::InitBindings() {
 
     // 然后绑定 Document API（会创建完整的 document 对象）
     BindDocumentAPIs(runtime_->GetContext(), window_.get());
+}
+
+void WindowBindings::Cleanup() {
+    JSContext* ctx = runtime_ ? runtime_->GetContext() : nullptr;
+
+    if (task_scheduler_) {
+        task_scheduler_->ClearAllTasks();
+    }
+
+    if (!ctx) {
+        if (g_active_event_loop) {
+            g_active_event_loop = nullptr;
+        }
+        return;
+    }
+
+    std::vector<std::string> callback_names;
+    callback_names.reserve(timer_callbacks_.size());
+    for (const auto& [_, callback_name] : timer_callbacks_) {
+        callback_names.push_back(callback_name);
+    }
+    for (const auto& callback_name : callback_names) {
+        ReleaseTimerCallbackByName(callback_name);
+    }
+    timer_callbacks_.clear();
+
+    auto& dom_binding_map = DOMBindingMap::GetInstance();
+    dom_binding_map.ForEach([ctx](Node* node, JSContext* entry_ctx, JSValueConst value) {
+        auto* element = dynamic_cast<Element*>(node);
+        if (!element) {
+            return;
+        }
+
+        if (entry_ctx && !JS_IsUndefined(value) && !JS_IsNull(value) &&
+            JS_GetOpaque(value, bindings::GetElementClassID())) {
+            bindings::ClearElementListenerBindings(entry_ctx, value);
+        }
+
+        element->ClearAllEventListeners();
+    });
+
+    JSValue global = JS_GetGlobalObject(ctx);
+    JS_SetPropertyStr(ctx, global, "document", JS_UNDEFINED);
+    JS_SetPropertyStr(ctx, global, "__mbink_window_ptr", JS_UNDEFINED);
+
+    JSValue window_obj = JS_GetPropertyStr(ctx, global, "window");
+    if (!JS_IsUndefined(window_obj) && !JS_IsNull(window_obj)) {
+        JS_SetPropertyStr(ctx, window_obj, "document", JS_UNDEFINED);
+        JS_FreeValue(ctx, window_obj);
+    }
+
+    JS_FreeValue(ctx, global);
+
+    dom_binding_map.Clear();
+    g_active_event_loop = nullptr;
+    JS_RunGC(JS_GetRuntime(ctx));
 }
 
 void WindowBindings::BindWindowObject() {

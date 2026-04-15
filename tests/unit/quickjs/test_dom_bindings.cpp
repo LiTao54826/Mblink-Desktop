@@ -5,8 +5,9 @@
 
 #include <gtest/gtest.h>
 #include "quickjs/quickjs_runtime.h"
+#include "quickjs/window_bindings.h"
 #include "dom/document.h"
-#include "dom/bindings/dom_bindings.h"
+#include "window/window.h"
 
 namespace mbink {
 namespace test {
@@ -18,15 +19,23 @@ protected:
         doc_ = std::make_shared<Document>();
         doc_->Initialize();
 
-        // 初始化 DOM 绑定系统
-        DOMBindings::Init(runtime_->GetContext());
-        
-        // 设置全局 document 对象
-        DOMBindings::SetGlobalDocument(runtime_->GetContext(), doc_);
+        WindowConfig config;
+        config.hidden = true;
+        config.headless = true;
+        config.backend = RenderBackend::CPU;
+        window_ = std::make_shared<Window>(config);
+        window_->SetDocument(doc_);
+
+        window_bindings_ = std::make_unique<WindowBindings>(runtime_.get(), window_, nullptr);
+        window_bindings_->InitBindings();
     }
 
     void TearDown() override {
-        DOMBindings::Cleanup(runtime_->GetContext());
+        if (window_bindings_) {
+            window_bindings_->Cleanup();
+        }
+        window_bindings_.reset();
+        window_.reset();
         doc_.reset();
         runtime_.reset();
     }
@@ -34,6 +43,8 @@ protected:
 protected:
     std::unique_ptr<QuickJSRuntime> runtime_;
     std::shared_ptr<Document> doc_;
+    std::shared_ptr<Window> window_;
+    std::unique_ptr<WindowBindings> window_bindings_;
 };
 
 // ========== document 对象测试 ==========

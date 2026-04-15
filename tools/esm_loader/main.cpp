@@ -714,7 +714,7 @@ int main(int argc, char** argv) {
         // 创建事件循环（需要在加载模块之前，以便 getSelection 等 API 可用）
         EventLoop event_loop(task_scheduler);
         event_loop.SetQuickJSRuntime(runtime.get());
-        DOMBindings::SetGlobalEventLoop(runtime->GetContext(), &event_loop);
+        WindowBindings::SetActiveEventLoop(&event_loop);
         LOG("  ✓ Event loop created");
 
         // 加载嵌入的库（Preact 等）
@@ -836,7 +836,7 @@ int main(int argc, char** argv) {
         }
 
         // 4. 先清理 Preact/Hooks 在全局对象上的闭包引用（事件处理函数、调度器状态等）
-        // 必须在 DOMBindings::Cleanup() 之前，因为 Cleanup 会把 global.document 设为 undefined，
+        // 必须在 WindowBindings::Cleanup() 之前，因为 Cleanup 会把 global.document 设为 undefined，
         // 而 __preactCleanup 内部需要调用 element.removeEventListener。
         try {
             runtime->Eval(R"(
@@ -859,15 +859,14 @@ int main(int argc, char** argv) {
             // 忽略清理脚本异常，继续执行原生清理流程
         }
 
-        // 5. 清理 DOM 绑定缓存 + JS 全局变量
-        DOMBindings::Cleanup(runtime->GetContext());
+        // 5. 清理 quickjs 主线路径的 DOM 绑定缓存 + JS 全局变量
+        window_bindings.Cleanup();
 
-        // 6. 释放 document（持有 DOM 树和事件监听器，这些可能包含 JSValue）
+        // 6. 清理 legacy DOMBindings 持有的全局调度器状态
+        DOMBindings::Cleanup(nullptr);
+
+        // 7. 释放 document（持有 DOM 树和事件监听器，这些可能包含 JSValue）
         document.reset();
-
-        // 7. 清理 DOM 绑定映射（释放所有 Node* -> JSValue 的映射）
-        // 必须在 QuickJS 运行时销毁之前调用
-        DOMBindingMap::GetInstance().Clear();
 
         // 8. 清理 HostBridge/StateManager 的监听器，释放 watch 回调里的 JSValue 引用
         if (state_manager) {
