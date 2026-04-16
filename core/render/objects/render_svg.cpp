@@ -11,10 +11,46 @@
 #include "include/core/SkFont.h"
 #include "include/core/SkFontMetrics.h"
 #include "include/core/SkTypeface.h"
+#include <algorithm>
 #include <cmath>
+#include <cctype>
 #include <iostream>
 
 namespace mbink {
+namespace {
+
+float ParseSVGLengthAttribute(const std::string& value, float reference) {
+    if (value.empty()) {
+        return 0.0f;
+    }
+
+    if (!value.empty() && value.back() == '%') {
+        try {
+            return reference * (std::stof(value.substr(0, value.length() - 1)) / 100.0f);
+        } catch (...) {
+            return 0.0f;
+        }
+    }
+
+    try {
+        return std::stof(value);
+    } catch (...) {
+        return 0.0f;
+    }
+}
+
+bool IsPreserveAspectRatioNone(const SVGSVGElement& element) {
+    std::string value = element.GetAttribute("preserveAspectRatio");
+    value.erase(std::remove_if(value.begin(), value.end(), [](unsigned char ch) {
+        return std::isspace(ch) != 0;
+    }), value.end());
+    std::transform(value.begin(), value.end(), value.begin(), [](unsigned char ch) {
+        return static_cast<char>(std::tolower(ch));
+    });
+    return value == "none";
+}
+
+} // namespace
 
 // ========== RenderSVG 基类实现 ==========
 
@@ -132,16 +168,23 @@ void RenderSVGRoot::Paint(SkCanvas* canvas) {
 
     // 应用viewBox变换（如果有）
     float view_min_x, view_min_y, view_width, view_height;
-    if (element->ParseViewBox(view_min_x, view_min_y, view_width, view_height)) {
+    if (element->ParseViewBox(view_min_x, view_min_y, view_width, view_height) &&
+        view_width > 0.0f && view_height > 0.0f) {
         float scale_x = layout.width / view_width;
         float scale_y = layout.height / view_height;
-        float scale = std::min(scale_x, scale_y);  // preserveAspectRatio: xMidYMid meet
 
-        float translate_x = (layout.width - view_width * scale) / 2 - view_min_x * scale;
-        float translate_y = (layout.height - view_height * scale) / 2 - view_min_y * scale;
-
-        canvas->translate(translate_x, translate_y);
-        canvas->scale(scale, scale);
+        if (IsPreserveAspectRatioNone(*element)) {
+            float translate_x = -view_min_x * scale_x;
+            float translate_y = -view_min_y * scale_y;
+            canvas->translate(translate_x, translate_y);
+            canvas->scale(scale_x, scale_y);
+        } else {
+            float scale = std::min(scale_x, scale_y);  // preserveAspectRatio: xMidYMid meet
+            float translate_x = (layout.width - view_width * scale) / 2 - view_min_x * scale;
+            float translate_y = (layout.height - view_height * scale) / 2 - view_min_y * scale;
+            canvas->translate(translate_x, translate_y);
+            canvas->scale(scale, scale);
+        }
     }
 
     // 绘制子元素
@@ -160,39 +203,31 @@ void RenderSVGRoot::Layout(float parent_width, float parent_height) {
     }
 
     auto& layout = GetLayoutInfo();
+    layout.width = 0.0f;
+    layout.height = 0.0f;
 
     // 解析width和height属性
     std::string width_str = element->GetWidth();
     std::string height_str = element->GetHeight();
 
-    // 解析宽度
     if (!width_str.empty()) {
-        try {
-            layout.width = std::stof(width_str);
-        } catch (...) {
-            layout.width = 0;
-        }
+        layout.width = ParseSVGLengthAttribute(width_str, parent_width);
     }
 
-    // 解析高度
     if (!height_str.empty()) {
-        try {
-            layout.height = std::stof(height_str);
-        } catch (...) {
-            layout.height = 0;
-        }
+        layout.height = ParseSVGLengthAttribute(height_str, parent_height);
     }
 
     // 如果没有指定宽高，使用viewBox
     float view_min_x, view_min_y, view_width, view_height;
     if (element->ParseViewBox(view_min_x, view_min_y, view_width, view_height)) {
-        if (layout.width == 0) layout.width = view_width;
-        if (layout.height == 0) layout.height = view_height;
+        if (layout.width == 0.0f) layout.width = view_width;
+        if (layout.height == 0.0f) layout.height = view_height;
     }
 
     // 如果仍然没有宽高，使用默认值
-    if (layout.width == 0) layout.width = 300;  // SVG默认宽度
-    if (layout.height == 0) layout.height = 150; // SVG默认高度
+    if (layout.width == 0.0f) layout.width = 300.0f;   // SVG默认宽度
+    if (layout.height == 0.0f) layout.height = 150.0f; // SVG默认高度
 
     // 对子元素进行布局
     for (auto& child : GetChildren()) {
@@ -200,46 +235,37 @@ void RenderSVGRoot::Layout(float parent_width, float parent_height) {
     }
 }
 
-std::pair<float, float> RenderSVGRoot::MeasureIntrinsicSize(float /*available_width*/) {
+std::pair<float, float> RenderSVGRoot::MeasureIntrinsicSize(float available_width) {
     auto element = svg_svg_element_.lock();
     if (!element) {
         return {0.0f, 0.0f};
     }
 
-    float width = 0, height = 0;
+    float width = 0.0f;
+    float height = 0.0f;
 
     // 解析width和height属性
     std::string width_str = element->GetWidth();
     std::string height_str = element->GetHeight();
 
-    // 解析宽度
     if (!width_str.empty()) {
-        try {
-            width = std::stof(width_str);
-        } catch (...) {
-            width = 0;
-        }
+        width = ParseSVGLengthAttribute(width_str, available_width);
     }
 
-    // 解析高度
-    if (!height_str.empty()) {
-        try {
-            height = std::stof(height_str);
-        } catch (...) {
-            height = 0;
-        }
+    if (!height_str.empty() && height_str.back() != '%') {
+        height = ParseSVGLengthAttribute(height_str, 0.0f);
     }
 
     // 如果没有指定宽高，使用viewBox
     float view_min_x, view_min_y, view_width, view_height;
     if (element->ParseViewBox(view_min_x, view_min_y, view_width, view_height)) {
-        if (width == 0) width = view_width;
-        if (height == 0) height = view_height;
+        if (width == 0.0f) width = view_width;
+        if (height == 0.0f) height = view_height;
     }
 
     // 如果仍然没有宽高，使用默认值
-    if (width == 0) width = 300;  // SVG默认宽度
-    if (height == 0) height = 150; // SVG默认高度
+    if (width == 0.0f) width = 300.0f;   // SVG默认宽度
+    if (height == 0.0f) height = 150.0f; // SVG默认高度
 
     return {width, height};
 }
