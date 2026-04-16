@@ -18,6 +18,7 @@ struct RuntimeSupportOptions {
     std::string response_file;
     std::string console_file;
     std::string errors_file;
+    std::string lifecycle_file;
     float quit_after_seconds = 0.0f;
 };
 

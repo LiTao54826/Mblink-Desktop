@@ -244,11 +244,12 @@ void PrintUsage(const char* program_name) {
     std::cout << "  --max-height <高度> 窗口最大高度" << std::endl;
     std::cout << "  --no-scripts        不执行脚本 (仅 HTML 模式)" << std::endl;
     std::cout << "  --devtools          启动时打开开发者工具" << std::endl;
-    std::cout << "  --ui-dev-snapshot-file <路径>  导出 UI Dev snapshot JSON" << std::endl;
-    std::cout << "  --ui-dev-command-file <路径>   读取 UI Dev command JSON" << std::endl;
-    std::cout << "  --ui-dev-response-file <路径>  写入 UI Dev response JSON" << std::endl;
-    std::cout << "  --ui-dev-console-file <路径>   写入结构化 console JSON" << std::endl;
-    std::cout << "  --ui-dev-errors-file <路径>    写入结构化 JS error JSON" << std::endl;
+    std::cout << "  --ui-dev-snapshot-file <路径>   导出 UI Dev snapshot JSON" << std::endl;
+    std::cout << "  --ui-dev-command-file <路径>    读取 UI Dev command JSON" << std::endl;
+    std::cout << "  --ui-dev-response-file <路径>   写入 UI Dev response JSON" << std::endl;
+    std::cout << "  --ui-dev-console-file <路径>    写入结构化 console JSON" << std::endl;
+    std::cout << "  --ui-dev-errors-file <路径>     写入结构化 JS error JSON" << std::endl;
+    std::cout << "  --ui-dev-lifecycle-file <路径>  写入 runtime 生命周期 JSON" << std::endl;
     std::cout << "  -q, --quit <秒>     自动退出时间（秒）" << std::endl;
     std::cout << "  --help              显示此帮助信息" << std::endl;
     std::cout << std::endl;
@@ -499,6 +500,7 @@ int main(int argc, char** argv) {
     std::string ui_dev_response_file;
     std::string ui_dev_console_file;
     std::string ui_dev_errors_file;
+    std::string ui_dev_lifecycle_file;
     bool execute_scripts = true;
     bool verbose = !has_embedded;  // 嵌入模式默认静默
     float quit_after_seconds = 0;
@@ -535,6 +537,8 @@ int main(int argc, char** argv) {
             ui_dev_console_file = argv[++i];
         } else if (arg == "--ui-dev-errors-file" && i + 1 < argc) {
             ui_dev_errors_file = argv[++i];
+        } else if (arg == "--ui-dev-lifecycle-file" && i + 1 < argc) {
+            ui_dev_lifecycle_file = argv[++i];
         } else if (arg == "--no-scripts") {
             execute_scripts = false;
         } else if (arg == "--borderless") {
@@ -688,6 +692,7 @@ int main(int argc, char** argv) {
             ui_dev_response_file,
             ui_dev_console_file,
             ui_dev_errors_file,
+            ui_dev_lifecycle_file,
             quit_after_seconds,
         };
         mbink::ui_dev::AttachStructuredRuntimeBuffers(runtime.get(), ui_dev_options);

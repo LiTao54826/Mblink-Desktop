@@ -22,12 +22,33 @@ namespace mbink::ui_dev {
 namespace {
 namespace fs = std::filesystem;
 
+std::string CurrentTimestampIso8601();
+
 fs::path BufferFilePathFromUtf8(const std::string& path) {
 #ifdef _WIN32
     return fs::path(utils::UTF8ToWide(path));
 #else
     return fs::path(path);
 #endif
+}
+
+bool WriteJsonFile(const std::string& path, const nlohmann::json& value) {
+    if (path.empty()) return false;
+    std::ofstream ofs(BufferFilePathFromUtf8(path), std::ios::binary | std::ios::trunc);
+    if (!ofs) return false;
+    ofs << value.dump(2);
+    return ofs.good();
+}
+
+void WriteLifecycleState(const std::string& path,
+                         const std::string& status,
+                         const std::string& reason) {
+    if (path.empty()) return;
+    WriteJsonFile(path,
+                  nlohmann::json{{"ok", true},
+                                 {"status", status},
+                                 {"reason", reason},
+                                 {"timestamp", CurrentTimestampIso8601()}});
 }
 
 std::string CurrentTimestampIso8601() {
@@ -102,6 +123,20 @@ void ConfigureRuntimeControl(EventLoop* event_loop,
     if (!event_loop || !runtime || !window || !document) return;
 
     auto snapshot_written = std::make_shared<bool>(false);
+    auto lifecycle_file = std::make_shared<std::string>(options.lifecycle_file);
+    auto stopped_reason = std::make_shared<std::string>();
+    auto quit_elapsed = std::make_shared<float>(0.0f);
+    auto quit_frames = std::make_shared<int>(0);
+
+    WriteLifecycleState(*lifecycle_file, "running", "started");
+    window->SetOnCloseCallback([event_loop, lifecycle_file, stopped_reason]() {
+        if (stopped_reason->empty()) {
+            *stopped_reason = "user_closed";
+            WriteLifecycleState(*lifecycle_file, "stopped", *stopped_reason);
+        }
+        event_loop->Stop();
+    });
+
     event_loop->SetRenderCallback([window, document, snapshot_file = options.snapshot_file, snapshot_written]() {
         if (!window->NeedsRepaint()) return;
         window->Render();
@@ -115,33 +150,49 @@ void ConfigureRuntimeControl(EventLoop* event_loop,
 
     auto last_command_id = std::make_shared<std::string>();
     event_loop->SetUpdateCallback([runtime,
+                                   window,
+                                   document,
                                    command_file = options.command_file,
                                    response_file = options.response_file,
+                                   snapshot_file = options.snapshot_file,
                                    last_command_id,
                                    snapshot_written,
                                    event_loop,
+                                   lifecycle_file,
+                                   stopped_reason,
+                                   quit_elapsed,
+                                   quit_frames,
                                    quit_after_seconds = options.quit_after_seconds](float delta_time) {
         if (!command_file.empty() && !response_file.empty()) {
             bool handled = false;
             std::string err;
             if (TryHandleUiDevCommand(runtime,
+                                      window.get(),
+                                      document.get(),
                                       command_file,
                                       response_file,
                                       last_command_id.get(),
                                       &handled,
                                       &err) && handled) {
                 *snapshot_written = false;
+                if (!snapshot_file.empty()) {
+                    std::string snapshot_err;
+                    ExportUiDevSnapshot(window, document, snapshot_file, &snapshot_err);
+                    *snapshot_written = true;
+                }
             }
         }
 
         if (quit_after_seconds <= 0) return;
-        static float elapsed_time = 0.0f;
-        static int frame_count = 0;
-        frame_count++;
-        elapsed_time += delta_time;
-        if (elapsed_time >= quit_after_seconds) {
-            std::cout << "[Auto-quit] Completed " << elapsed_time << " seconds (" << frame_count
+        ++(*quit_frames);
+        *quit_elapsed += delta_time;
+        if (*quit_elapsed >= quit_after_seconds) {
+            std::cout << "[Auto-quit] Completed " << *quit_elapsed << " seconds (" << *quit_frames
                       << " frames), exiting..." << std::endl;
+            if (stopped_reason->empty()) {
+                *stopped_reason = "auto_quit";
+                WriteLifecycleState(*lifecycle_file, "stopped", *stopped_reason);
+            }
             event_loop->Stop();
         }
     });

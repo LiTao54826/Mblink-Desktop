@@ -1,6 +1,6 @@
 # MBink UI Dev Tool 设计文档
 
-> 版本：v1.0 | 状态：P1 进行中（P0 已完成，info/read/write/build/build-status 已落地）
+> 版本：v1.1 | 状态：P2 已完成（P0/P1 已完成；init/serve 已落地；MCP tools/resources 最小完整集已落地；多项目并行管理、`.devui` 项目标识、自动项目定位、per-project daemon/runtime 隔离已落地；Claude Desktop / Cursor 配置接入方式已补齐，真实桌面端联调需在外部客户端环境继续验证）
 
 
 ---
@@ -94,11 +94,18 @@
 ```
 
 **进程模型**：
-- `mbink-ui-dev daemon`：长驻后台进程，持有窗口、构建缓存、日志缓冲、文件监听器
-- CLI 客户端：每次命令调用连接 daemon socket，发送请求，读取 JSON 结果后退出
-- MCP 适配层：`mbink-ui-dev serve` 启动，持续监听 stdin，将 MCP tool call 转发给 daemon
+- `mbink-ui-dev daemon`：按项目启动的长驻后台进程；每个项目一个 daemon，持有该项目独立的窗口、构建缓存、日志缓冲、文件监听器
+- CLI 客户端：每次命令调用按项目解析目标，连接对应 daemon pipe，发送请求，读取 JSON 结果后退出
+- MCP 适配层：`mbink-ui-dev serve` 启动，持续监听 stdin；会话内维护 `active_project`，并将 tool/resource 调用转发给对应项目 daemon
 - Dev Runtime：daemon 内部子进程，运行 MBink 窗口（QuickJS + Skia + SDL3）
 - Build Driver：daemon 按需启动的 esbuild 子进程
+
+**多项目隔离（当前已实现）**：
+- 每个项目根目录写入独立 `.devui`，记录 `project_id` / `runtime_id`
+- daemon state、Named pipe、runtime snapshot/command/response/console/errors/stdout/stderr/lifecycle 全部按 `project_id` 隔离
+- Windows pipe 命名规则为 `\\.\\pipe\\mbink-ui-dev-<sanitized_project_id>`
+- CLI / MCP 项目解析顺序为：`--project` → 位置参数中的项目路径 → 当前目录/父目录 `.devui` → 当前目录/父目录 `mbink.config.json`（必要时自动创建 `.devui`）→ 仅存在一个 managed project 时自动回退
+- 若同时存在多个 managed project 且无法唯一定位，则返回错误，要求显式传 `--project <path>`
 
 ---
 
@@ -132,18 +139,21 @@ AI Agent  ──stdin──►  mbink-ui-dev  ──stdout──►  AI Agent
 ```json
 {
   "name": "open_project",
-  "description": "打开 MBink 项目目录，读取配置并启动 Dev Runtime 窗口。必须在其他工具前调用。",
+  "description": "打开 MBink 项目目录，读取配置并启动 Dev Runtime 窗口。path / project_root 可省略；省略时按当前目录自动解析项目。成功后会把该项目设为当前 MCP 会话的 active_project。",
   "inputSchema": {
     "type": "object",
-    "required": ["path"],
     "properties": {
       "path": {
         "type": "string",
-        "description": "项目根目录的绝对路径"
+        "description": "项目根目录的绝对路径（可选）"
+      },
+      "project_root": {
+        "type": "string",
+        "description": "项目根目录的绝对路径（`path` 的兼容别名，可选）"
       },
       "window": {
         "type": "object",
-        "description": "覆盖 mbink.config.json 中的窗口配置（可选）",
+        "description": "覆盖 mbink.config.json 中的窗口配置（当前实现暂未消费，仅保留兼容位）",
         "properties": {
           "width":  { "type": "integer" },
           "height": { "type": "integer" },
@@ -166,6 +176,11 @@ AI Agent  ──stdin──►  mbink-ui-dev  ──stdout──►  AI Agent
     "template": "preact-jsx",
     "entry": "src/App.jsx",
     "window": { "width": 1280, "height": 800 }
+  },
+  "daemon": {
+    "project_id": "project-abc123",
+    "runtime_id": "project-abc123",
+    "running": true
   }
 }
 ```
@@ -199,7 +214,7 @@ AI Agent  ──stdin──►  mbink-ui-dev  ──stdout──►  AI Agent
 {
   "ok": true,
   "files_created": ["src/App.jsx", "src/index.html", "mbink.config.json", "mock/host.js", "package.json"],
-  "next_step": "调用 open_project 打开此目录开始开发"
+  "next_step": "调用 open_project 或 CLI `open` 打开此目录开始开发"
 }
 ```
 
@@ -210,7 +225,7 @@ AI Agent  ──stdin──►  mbink-ui-dev  ──stdout──►  AI Agent
 ```json
 {
   "name": "get_project_info",
-  "description": "返回当前已打开项目的配置、文件树和运行状态。",
+  "description": "返回当前 MCP active_project 或按 CLI 规则解析到的当前项目配置、文件树和运行状态。",
   "inputSchema": { "type": "object", "properties": {} }
 }
 ```
@@ -243,17 +258,22 @@ AI Agent  ──stdin──►  mbink-ui-dev  ──stdout──►  AI Agent
 
 #### 4.2.2 构建类
 
-**`build`** — 触发单次构建（当前为最小可用实现）
+**`build`** — 触发构建（支持单次 / watch）
 
-> P1 当前实现：CLI 对应 `mbink-ui-dev build`，无参数；daemon 调用外部 `esbuild` 完成单次 build，固定输出 `.dist/App.js`，并将最近一次结果落盘到 `.dist/build.log`。`watch` / 增量构建仍是后续阶段。
+> P1 当前实现：CLI 对应 `mbink-ui-dev build` 与 `mbink-ui-dev build --watch`；daemon 调用外部 `esbuild` 完成构建，固定输出 `.dist/App.js`，并将最近一次结果落盘到 `.dist/build.log`。当 `watch=true` 时，watcher 由 daemon 持有，后台线程轮询项目文件快照并以 100ms debounce 合并变更；文件变更后自动 rebuild，成功后自动执行 `restart_runtime`，同时将 watch 状态写入 `DaemonState.watch` / state json / `build-status`。
 
 ```json
 {
   "name": "build",
-  "description": "执行一次 esbuild 构建，返回最近一次真实构建结果。P1 当前不接收 incremental/watch 参数。",
+  "description": "执行一次 esbuild 构建；当 watch=true 时进入 daemon 持有的持续监听模式，并返回最近一次真实构建结果。",
   "inputSchema": {
     "type": "object",
-    "properties": {}
+    "properties": {
+      "watch": {
+        "type": "boolean",
+        "description": "是否启用 daemon 持有的 watch 模式"
+      }
+    }
   }
 }
 ```
@@ -684,11 +704,13 @@ AI Agent  ──stdin──►  mbink-ui-dev  ──stdout──►  AI Agent
 
 Resources 是 AI 可以随时读取的状态数据，不触发副作用。
 
+当前资源读取会优先使用 MCP 会话内的 `active_project`；若当前会话尚未显式打开项目，则按 CLI 相同规则自动解析项目。多项目场景下若无法唯一定位，会返回错误，要求显式指定项目或先调用 `open_project`。
+
 | URI | MIME Type | 说明 |
 |-----|-----------|------|
-| `ui://snapshot` | `application/json` | 最新 UI 快照（等同于调用 snapshot_ui） |
-| `ui://console_logs` | `application/json` | 最新 console 输出（最近 500 条） |
-| `ui://build_status` | `application/json` | 最近构建状态和错误列表 |
+| `ui://snapshot` | `application/json` | 最新 UI 快照（按当前项目读取） |
+| `ui://console_logs` | `application/json` | 最新 console 输出（按当前项目读取） |
+| `ui://build_status` | `application/json` | 最近构建状态和错误列表（按当前项目读取） |
 | `project://file_tree` | `application/json` | 项目文件树（2 层深度） |
 | `project://config` | `application/json` | mbink.config.json 内容 |
 | `project://file/{path}` | `text/plain` | 读取指定文件（路径 URL 编码） |
@@ -932,19 +954,23 @@ Build Driver 通过外部进程调用 `esbuild` CLI，不嵌入 Node.js：
 
 ### 8.3 文件监听与自动重建
 
-在 `build { watch: true }` 模式下：
+在 `mbink-ui-dev build --watch` 模式下：
 
 ```
-文件变更事件
+CLI 透传 --watch
     ↓
-变更类型判断
-  ├── .css → reload { mode: "css" }
-  ├── .jsx/.js/.tsx/.ts → build (incremental) → reload { mode: "remount" }
-  ├── mbink.config.json → reload { mode: "restart" }
-  └── mock/*.js → reload { mode: "restart" }
+daemon 持有 watcher
+    ↓
+后台线程轮询项目文件快照
+    ↓
+100ms debounce 合并变更
+    ↓
+触发一次普通 build
+    ↓
+构建成功后自动 restart_runtime
 ```
 
-**防抖策略**：同一文件 100ms 内的多次变更合并为一次构建请求。构建进行中的新变更进入队列，构建完成后立即处理。
+**当前实现特征**：watcher 不挂在 CLI 进程上，而是挂在 daemon 内部；最近一次变更路径会写入 `DaemonState.watch.changed_paths`，watch 状态会同步到 state json 与 `build-status` 返回值，便于外部轮询观察。
 
 ---
 
@@ -1102,56 +1128,60 @@ if (typeof __mbink_mock_host__ !== 'undefined') {
 # 初始化新项目
 mbink-ui-dev init <path> --template <preact-jsx|preact-ts|vanilla-js|python-host|rust-host>
 
-# 启动 Daemon（AI 使用前必须先调用，或由 open 命令自动触发）
-mbink-ui-dev daemon start [--project <path>]  → 启动长驻 Daemon，输出 socket 路径
-mbink-ui-dev daemon stop                      → 停止 Daemon
-mbink-ui-dev daemon status                    → 查询 Daemon 运行状态（JSON）
+# 启动 Daemon（按项目启动；project 可自动解析）
+mbink-ui-dev daemon start [--project <path>]
+mbink-ui-dev daemon stop [--project <path>]
+mbink-ui-dev daemon status [--project <path>]
 
 # 启动 MCP 适配层（供 Claude Desktop / Cursor 等 MCP 原生工具接入）
-mbink-ui-dev serve [--project <path>]         → 启动 stdio MCP Server（自动确保 Daemon 运行）
+mbink-ui-dev serve [--project <path>]         → 启动 stdio MCP Server；启动时会尝试自动解析当前项目，但未唯一定位时仍可先启动服务
 
-# 开发（人工调试用，自动启动 Daemon + 打开窗口 + 监听）
-mbink-ui-dev dev <project-path>
+# 打开项目（自动确保该项目 daemon/runtime 就绪）
+mbink-ui-dev open [<project-path>]
 
-# 单次构建
-mbink-ui-dev build <project-path> [--watch]
-
-# 检查项目配置
-mbink-ui-dev inspect <project-path>
+# 单次构建 / watch
+mbink-ui-dev build [--watch] [--project <path>]
 ```
 
-### 10.1 CLI 命令完整列表（P1 当前已落地部分）
+### 10.1 CLI 命令完整列表（P2 当前已落地部分）
 
 当前命令集合以真实已落地实现为准。所有命令 stdout 输出 JSON，stderr 输出人类可读日志，`exit code 0` 表示成功。
 
 ```
-# Daemon 管理
-mbink-ui-dev daemon start [--project <path>]   → 启动 daemon，并返回状态 JSON
-mbink-ui-dev daemon run                        → 前台运行 daemon
-mbink-ui-dev daemon stop                       → 停止 daemon + runtime，并清理临时文件
-mbink-ui-dev daemon status                     → 查询 daemon 状态（JSON）
+# Daemon 管理（按项目路由；project 可自动解析）
+mbink-ui-dev daemon start [--project <path>]   → 启动对应项目 daemon，并返回状态 JSON
+mbink-ui-dev daemon run [--project <path>]     → 前台运行对应项目 daemon
+mbink-ui-dev daemon stop [--project <path>]    → 停止对应项目 daemon + runtime，并清理该项目临时状态
+mbink-ui-dev daemon status [--project <path>]  → 查询对应项目 daemon 状态（JSON）
+mbink-ui-dev stop [--project <path>]           → 顶层停止命令；幂等停止当前/指定项目 daemon + runtime
+
+# 项目初始化 / MCP
+mbink-ui-dev init <path> [--template <preact-jsx|preact-ts|vanilla-js|python-host|rust-host>]
+mbink-ui-dev serve [--project <path>]          → 启动 stdio MCP Server（支持 initialize/tools/list/tools/call/resources/list/resources/read；会话内维护 active_project）
 
 # 项目/运行时
-mbink-ui-dev open <project-path>               → 打开项目，必要时自动启动 daemon 与 runtime
-mbink-ui-dev info                              → 查询当前项目配置、文件树与最近构建状态
-mbink-ui-dev reload                            → 重启当前 runtime（当前固定语义）
-mbink-ui-dev eval "<js code>"                  → 在 QuickJS 中执行 JS，返回结果（JSON）
+mbink-ui-dev open [<project-path>]             → 打开项目，必要时自动启动该项目 daemon 与 runtime
+mbink-ui-dev info [--project <path>]           → 查询当前/指定项目配置、文件树与最近构建状态
+mbink-ui-dev reload [--project <path>]         → 重启当前/指定项目 runtime（当前固定语义）
+mbink-ui-dev eval "<js code>" [--project <path>] → 在 QuickJS 中执行 JS，返回结果（JSON）
 
 # 文件操作
-mbink-ui-dev read <path> [--encoding utf8|base64]
-mbink-ui-dev write <path> [--content <text> | --from <file>]
+mbink-ui-dev read <path> [--encoding utf8|base64] [--project <path>]
+mbink-ui-dev write <path> [--content <text> | --from <file>] [--project <path>]
 # 或：stdin 输入
-mbink-ui-dev write <path>
+mbink-ui-dev write <path> [--project <path>]
 
 # 构建/观测
-mbink-ui-dev build                             → 触发单次 build，返回真实构建结果
-mbink-ui-dev build-status                      → 查询最近一次 build 结果
-mbink-ui-dev snapshot                          → 获取当前真实 UI snapshot（JSON）
-mbink-ui-dev logs                              → 获取结构化 console 输出（JSON）
-mbink-ui-dev errors                            → 获取结构化 JS error 输出（JSON）
+mbink-ui-dev build [--watch] [--project <path>] → 单次 build 或进入 daemon 持有的 watch 模式
+mbink-ui-dev build-status [--project <path>]    → 查询最近一次 build 结果与 watch 状态
+mbink-ui-dev snapshot [--project <path>]        → 获取当前/指定项目真实 UI snapshot（JSON）
+mbink-ui-dev logs [--project <path>]            → 获取结构化 console 输出（JSON）
+mbink-ui-dev errors [--project <path>]          → 获取结构化 JS error 输出（JSON）
 ```
 
-以下命令仍属于后续阶段规划，不应视为当前已实现能力：`build --watch`、`query`、`inspect`、`click`、`input`、`scroll`、`serve`、`dev`、`init`。
+项目解析顺序为：`--project` → 位置参数项目路径 → 当前目录/父目录 `.devui` → 当前目录/父目录 `mbink.config.json`（必要时自动创建 `.devui`）→ 仅存在一个 managed project 时自动回退。若同时存在多个 managed project 且无法唯一定位，则返回错误，要求显式传 `--project <path>`。
+
+以下命令仍属于后续阶段规划，不应视为当前已实现能力：`query`、`inspect`、`click`、`input`、`scroll`、`dev`。
 
 ### 10.2 write 命令说明（P1 当前已实现）
 
@@ -1172,11 +1202,29 @@ mbink-ui-dev write src/App.jsx --from /tmp/ai_generated.jsx
 mbink-ui-dev write src/App.jsx --content "..."
 ```
 
-### 10.3 MCP 适配层配置（P2 后可用）
+### 10.3 MCP 适配层配置（P2 当前可用）
 
-MCP 适配层是 CLI 之上的薄封装，§4 中定义的所有 tool schema 不变，底层转发给 Daemon：
+MCP 适配层是 CLI 之上的薄封装，§4 中定义的所有 tool schema 不变，底层按项目转发给对应 Daemon。
+
+推荐配置方式：
+- **单项目固定接入**：直接把 `serve --project <path>` 写进 MCP 配置
+- **在项目目录内启动**：只配 `serve`，由当前工作目录 / `.devui` / `mbink.config.json` 自动解析项目
+- **多项目会话**：先启动 `serve`，再通过 `open_project` 显式切换 `active_project`
 
 在 Claude Desktop / Cursor 中配置：
+```json
+{
+  "mcpServers": {
+    "mbink-ui-dev": {
+      "command": "mbink-ui-dev",
+      "args": ["serve"],
+      "env": {}
+    }
+  }
+}
+```
+
+若希望固定绑定到单个项目，也可以：
 ```json
 {
   "mcpServers": {
@@ -1189,7 +1237,7 @@ MCP 适配层是 CLI 之上的薄封装，§4 中定义的所有 tool schema 不
 }
 ```
 
-### 10.4 Skills 系统提示模板（P1 当前已落地部分）
+### 10.4 Skills 系统提示模板（P1/P2 当前已落地部分）
 
 Skills 是一段系统提示词，教会任意有 shell tool 的 AI Agent 如何操作 `mbink-ui-dev`。下面模板已经对齐当前真实实现：
 
@@ -1199,37 +1247,47 @@ Skills 是一段系统提示词，教会任意有 shell tool 的 AI Agent 如何
 你可以通过 shell 命令控制 MBink UI 开发环境。所有命令输出 JSON，exit code 0 表示成功。
 
 ### 会话启动
-mbink-ui-dev open /path/to/project
+- 优先在项目目录内执行：`mbink-ui-dev open`
+- 若当前目录无法唯一定位项目：`mbink-ui-dev open --project /path/to/project`
+- 多项目场景下，后续命令也可显式补 `--project /path/to/project`
 
 ### 当前可用命令
-- `mbink-ui-dev info`
-- `mbink-ui-dev read <path>`
-- `mbink-ui-dev write <path>`
-- `mbink-ui-dev build`
-- `mbink-ui-dev build-status`
-- `mbink-ui-dev snapshot`
-- `mbink-ui-dev logs`
-- `mbink-ui-dev errors`
-- `mbink-ui-dev eval "1+1"`
-- `mbink-ui-dev reload`
-- `mbink-ui-dev daemon stop`
+- `mbink-ui-dev info [--project <path>]`
+- `mbink-ui-dev read <path> [--project <path>]`
+- `mbink-ui-dev write <path> [--project <path>]`
+- `mbink-ui-dev build [--watch] [--project <path>]`
+- `mbink-ui-dev build-status [--project <path>]`
+- `mbink-ui-dev snapshot [--project <path>]`
+- `mbink-ui-dev logs [--project <path>]`
+- `mbink-ui-dev errors [--project <path>]`
+- `mbink-ui-dev eval "1+1" [--project <path>]`
+- `mbink-ui-dev reload [--project <path>]`
+- `mbink-ui-dev stop [--project <path>]`
 
 ### 当前推荐工作流
-1. `mbink-ui-dev open /path/to/project`
+1. 在项目目录内执行 `mbink-ui-dev open`；若失败再改用 `--project`
 2. `mbink-ui-dev info`
 3. `mbink-ui-dev snapshot`
 4. `mbink-ui-dev read <path>` / `mbink-ui-dev write <path>` 修改代码
-5. `mbink-ui-dev build`
-6. `mbink-ui-dev reload`
+5. 开启持续迭代时执行 `mbink-ui-dev build --watch`；仅需单次构建时执行 `mbink-ui-dev build`
+6. 通过 `mbink-ui-dev build-status` 观察最近一次 build / watch 状态
 7. 再次执行 `mbink-ui-dev snapshot` 验证效果
 8. 如需补充定位，执行 `mbink-ui-dev logs` / `mbink-ui-dev errors`
+9. 结束会话时执行 `mbink-ui-dev stop`
+
+### MCP 使用时
+- 启动服务：`mbink-ui-dev serve`（可选 `--project /path/to/project`）
+- `open_project` 的 `path / project_root` 可以省略；省略时自动解析当前项目
+- MCP 会话会维护 `active_project`；`resources/read` / `tools/call` 会优先作用于当前 active_project
+- 多项目无法唯一定位时，应显式调用 `open_project({"path":"/path/to/project"})`
 
 ### 关键原则
 - **先 open，再 snapshot/info**：未打开项目时不要直接假设 runtime 已可用
 - **snapshot 是主要观测入口**：logs/errors 用于补充运行时信息
 - **优先走 read/write/build/reload 主链路**：`eval` 只用于少量临时验证
 - **reload 当前是 restart_runtime 语义**：暂不支持 `--mode`
-- **build 当前是单次构建**：`watch` 仍未实现，不要假设自动重建
+- **build 已支持 daemon 持有的 watch**：需要持续迭代时优先用 `build --watch`
+- **用户手动关闭窗口视为 stop**：出现 `user_closed` 后，watch/reload/fallback 不会自动重新拉起 runtime
 ```
 
 ---
@@ -1260,6 +1318,7 @@ mbink-ui-dev open /path/to/project
 - [x] `logs` / `errors` 命令（优先读取 runtime 结构化 JSON，stdout/stderr tail 为 fallback）
 - [x] `eval` 命令
 - [x] `reload` 命令（P0 当前固定为 `restart_runtime` 语义）
+- [x] 顶层 `stop` 命令（幂等停止 daemon + runtime）
 - [x] Skills 系统提示文档（§10.4，已对齐当前 P0 CLI）
 
 **验收标准**：至少完成以下回归并得到可机读 JSON 结果：
@@ -1269,7 +1328,7 @@ mbink-ui-dev open /path/to/project
 4. `mbink-ui-dev logs`
 5. `mbink-ui-dev errors`
 6. `mbink-ui-dev reload`
-7. `mbink-ui-dev daemon stop`
+7. `mbink-ui-dev stop`
 
 其中：`snapshot` 需返回真实 UI 树；`eval` 需返回结果；`logs/errors` 需可读到结构化运行时输出；`reload` 需返回成功 JSON。
 
@@ -1285,26 +1344,32 @@ mbink-ui-dev open /path/to/project
 - [x] `write` 命令（stdin pipe 模式 + `--from` 模式 + `--content` 模式）
 - [x] `read` 命令
 - [x] `info` 命令（项目信息 + 文件树 + 最近构建状态）
-- [ ] `build --watch` 文件监听模式
+- [x] `build --watch` 文件监听模式（daemon 持有 watcher，构建成功后自动 `restart_runtime`）
+- [x] `open` / `snapshot` / `logs` / `errors` / `eval` / `reload` 配套能力闭环可用
 
-**当前说明**：P1 主链路里 `info/read/write/build/build-status` 已完成并通过构建与 smoke；下一步是补齐 `watch`，再做 write → build → reload → snapshot 闭环验收。
+**当前说明**：P1 已完成；真实 smoke 已覆盖 `open → build --watch → write → 自动 rebuild → restart_runtime → snapshot`，`build-status` 可返回 `trigger/watch/changed_paths/reload` 等状态，顶层 `stop` 也已完成回收闭环验证。
 
-**验收标准**：AI 能完整执行「write → build → reload → snapshot → 判断」循环，整个循环 < 10 秒。
+**验收标准**：AI 能完整执行「write → build 或 build --watch → reload / 自动 restart_runtime → snapshot → 判断」循环，整个循环 < 10 秒。
 
 ---
 
 ### P2 — Scaffolding + MCP 适配层
 
-**目标**：AI 能从零初始化新项目；Claude Desktop / Cursor 用户可通过 MCP 原生接入。
+**目标**：AI 能从零初始化新项目；Claude Desktop / Cursor 用户可通过 MCP 原生接入；同一台机器上可并行管理多个 MBink 项目。
 
 **交付物**：
-- [ ] `init` 命令（模板文件写入）
-- [ ] `preact-jsx` / `vanilla-js` / `python-host` / `rust-host` 模板完整内容
-- [ ] `mbink.config.json` 解析和验证
-- [ ] MCP 适配层（`serve` 命令，将 §4 定义的 tool schema 转发给 Daemon）
+- [x] `init` 命令（模板文件写入）
+- [x] `preact-jsx` / `preact-ts` / `vanilla-js` / `python-host` / `rust-host` 模板完整内容
+- [x] `mbink.config.json` 解析和验证
+- [x] MCP 适配层（`serve` 命令；当前支持 `initialize` / `tools/list` / `tools/call` / `resources/list` / `resources/read`，并复用现有 CLI / daemon 能力）
+- [x] 多项目并行管理：`.devui`、`project_id/runtime_id`、per-project daemon pipe/state/runtime 产物隔离
+- [x] CLI / MCP 自动项目定位与 MCP 会话 `active_project`
+- [x] 手动关闭 runtime 窗口视为该项目 stopped，`watch/reload/fallback` 不自动拉起 `user_closed` runtime
 - [ ] Claude Desktop / Cursor 集成验证
 
-**验收标准**：① CLI 路径：AI 执行 `init` + `open` + `build` + `reload`，从空目录到运行 UI < 30 秒；② MCP 路径：Claude Desktop 通过 MCP 完成同等操作。
+**当前说明**：P2 代码与文档定义的最小完整闭环已落地。CLI 路径已覆盖 `init → open → build → snapshot → stop`，并支持多项目自动定位/显式切换；MCP 路径已支持 tools 与 resources 的最小完整读写/转发闭环，`open_project` 可省略路径并绑定会话 `active_project`。桌面客户端真实联调仍需在外部 Claude Desktop / Cursor 环境继续验证。
+
+**验收标准**：① CLI 路径：AI 执行 `init` + `open` + `build` + `reload`，从空目录到运行 UI < 30 秒，且在多项目同时存在时能正确隔离并在歧义时返回显式错误；② MCP 路径：`serve` + `open_project` + `resources/read` / `tools/call` 可按当前项目正确路由；③ 用户手动关闭窗口后，该项目状态变为 stopped，不会被 watch/reload/fallback 自动拉起。
 
 ---
 
@@ -1328,7 +1393,7 @@ mbink-ui-dev open /path/to/project
 
 **交付物**：
 - [ ] HTTP + SSE 传输层（支持 IDE 插件集成）
-- [ ] `preact-ts` 模板（TypeScript 支持）
+- [ ] 更多模板生态完善（如官方示例扩展、宿主集成增强）
 - [ ] MCP Notification：构建状态、文件变更事件推送给 AI
 - [ ] snapshot 性能优化（懒加载子树 + max_depth 控制）
 - [ ] VS Code 插件：在侧边栏显示 MBink UI 预览
