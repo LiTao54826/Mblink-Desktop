@@ -110,117 +110,82 @@
 
 ### Phase 1: Audit usage | 盘点旧系统剩余依赖
 
-已确认的当前清单如下。
+当前真实状态：
 
-#### 仍在运行时主路径使用
+#### 运行时仍保留的 legacy 入口
 
 - `core/api/mbink.cpp`
   - 销毁时仅调用 `DOMBindings::Cleanup(nullptr)`
-  - 只保留 legacy EventLoop 状态兜底
+  - 只保留 legacy 兼容/兜底语义
 - `tools/esm_loader/main.cpp`
   - 退出流程中仅调用 `DOMBindings::Cleanup(nullptr)`
-  - quickjs 主线清理由 `WindowBindings::Cleanup()` 负责
+  - quickjs 主线路径清理由 `WindowBindings::Cleanup()` 负责
+
+#### 主线路径已收口到 quickjs
+
 - `core/quickjs/window_bindings.h/.cpp`
   - quickjs 主线已接管 `EventLoop` bridge
-  - 运行时与工具路径统一通过 `WindowBindings::SetActiveEventLoop()/GetActiveEventLoop()` 访问
+  - 统一通过 `WindowBindings::SetActiveEventLoop()/GetActiveEventLoop()` 访问
+- `core/quickjs/document_bindings_impl.cpp`
+  - `document` 查询与注入走 quickjs 主线
+- `tests/unit/quickjs/test_dom_bindings.cpp`
+  - 回归已迁移到 `WindowBindings` / quickjs 绑定
 
-#### 已从 legacy public surface 移除
+#### 已删除的 legacy public surface / retired 实现
 
 - `DOMBindings::Init`
-  - 运行时主路径已移除
-  - public 声明与实现已删除
 - `DOMBindings::SetGlobalDocument`
-  - 运行时主路径已移除
-  - quickjs 单测主路径已迁移到 `WindowBindings`
-  - public 声明与实现已删除
-- `DOMBindings::SetGlobalEventLoop / GetGlobalEventLoop`
-  - quickjs 主线路径已迁移到 `WindowBindings::SetActiveEventLoop()/GetActiveEventLoop()`
-  - public 声明与实现已删除
 - `DOMBindings::SetGlobalTaskScheduler`
-  - legacy timer bridge 已无外部调用
-  - public 声明与实现已删除
-- `DOMBindings::Cleanup(ctx)`
-  - 当前仍保留给 legacy wrapper 场景
-
-#### 只剩旧系统内部自调用
-
-- `WrapElement / WrapDocument / WrapNode / UnwrapElement / UnwrapDocument`
-  - 当前检索结果主要集中在 `core/dom/bindings/dom_bindings.cpp` 内部实现相互调用
-  - 暂未发现示例主路径直接依赖这些旧 wrapper 返回值
-- `element_cache_ / text_cache_ / document_cache_`
-  - 当前审计结果显示为 pure legacy cache
-  - quickjs 主线使用 `DOMBindingMap`，未直接依赖这 3 个 cache
+- `DOMBindings::SetGlobalEventLoop`
+- `DOMBindings::GetGlobalEventLoop`
+- 旧 `Document / Element / Event` JSClass 注册
+- 旧 `Wrap* / Unwrap*` 实现
+- legacy cache / finalizer：`element_cache_ / text_cache_ / document_cache_`
+- legacy `g_event_loop`
+- legacy timer bridge dead code
 
 #### 当前分类结论
 
-- `Init / SetGlobal*`
-  - 已不再承担运行时主路径职责
-  - 当前已从 legacy public surface 删除
-- `Cleanup`
-  - 主路径仅保留 `Cleanup(nullptr)` 状态兜底
-  - `Cleanup(ctx)` 当前只为旧测试 / legacy wrapper 清理路径保留
-- `Wrap* / Unwrap*`
-  - 暂未发现运行时主路径外部调用证据，当前更像旧绑定体系内部实现细节
-
-输出结果应区分：
-
-- 运行时仍在使用
-- 只剩兼容/清理用途
-- 已无实际调用价值
+- `core/quickjs/*` 已是唯一 DOM 绑定主线
+- `WindowBindings::Cleanup()` 负责 quickjs 主线 cleanup
+- `DOMBindings::Cleanup(nullptr)` 仅保留兼容/兜底语义
 
 ### Phase 2: Single source of truth | 收口单一 document 路径
 
 - [x] 主路径已移除 `DOMBindings::SetGlobalDocument()`
-- [x] 全局 `document` 主路径统一由 `BindDocumentAPIs()` 注入
-- [ ] 继续验证 `window.document === document` 与相关回归
+- [x] 全局 `document` 主路径统一由 quickjs 绑定注入
+- [x] 已验证 `window.document === document`
 
 ### Phase 3: API parity | 补齐 API 一致性
 
-以 quickjs 主线为标准，补齐并验证：
+当前已补齐并验证：
 
-- `Element` 常用方法与属性
-- `Document` 常用查询与创建 API
-- `Event` / `Range` / `Selection` / `MutationObserver`
-- 特殊元素能力：`terminal` / `logview`
-
-当前进展：
-
-- [x] 已补 `Element.prototype.click()` 到 `core/quickjs/bindings/js_element.cpp`
-- [x] 已补 `document.getElementsByTagName()` 到 `core/quickjs/document_bindings_impl.cpp`
-- [x] 已补 `document.getElementsByClassName()` 到 `core/quickjs/document_bindings_impl.cpp`
-- [x] 已补 `Event.timeStamp` 到 `core/quickjs/bindings/js_event.cpp`
-- [x] 已补 `Event.stopImmediatePropagation()` 到 `core/quickjs/bindings/js_event.cpp`
+- [x] `Element.prototype.click()`
+- [x] `Element.prototype.hasAttribute()`
+- [x] `Element.prototype.dispatchEvent()`
+- [x] `document.getElementsByTagName()`
+- [x] `document.getElementsByClassName()`
+- [x] 全局 `Event` constructor
+- [x] `Event.timeStamp`
+- [x] `Event.stopImmediatePropagation()`
 - [x] `diagnostics` 通过
-- [x] `cmake --build build --config Debug --target mbink_api` 通过
-- [ ] 继续盘点其余 API parity（含 `Event` / `Range` / `Selection` / `MutationObserver`）
+- [x] `DOMBindingsTest.*` 37/37 通过
 
 ### Phase 4: Cleanup migration | 迁移清理逻辑
 
-把 `DOMBindings::Cleanup()` 中仍有价值的逻辑迁到 quickjs 主线，包括：
-
-- listener cleanup
-- cache release
-- `DOMBindingMap` 清理
-- 全局对象解绑
-
-当前进展：
-
-- [x] 已给 `core/quickjs/window_bindings.h/.cpp` 新增 `WindowBindings::Cleanup()`
+- [x] 已给 `WindowBindings` 新增并启用 `Cleanup()`
 - [x] quickjs 主线路径退出时已优先调用 `WindowBindings::Cleanup()`
-- [x] `core/api/mbink.cpp` / `tools/esm_loader/main.cpp` 已改为只把 `DOMBindings::Cleanup(nullptr)` 作为 legacy EventLoop 状态兜底
-- [x] quickjs 主线路径已接管 `EventLoop` bridge，不再通过 `DOMBindings::SetGlobalEventLoop()` / `GetGlobalEventLoop()` 访问
-- [x] quickjs 单测 `tests/unit/quickjs/test_dom_bindings.cpp` 已迁移到 `WindowBindings`
-- [x] `DOMBindings::Cleanup()` 已显式收窄：`nullptr` 路径不再参与 quickjs listener / global document / `DOMBindingMap` 清理
-- [x] 已把 legacy cache 清理抽成独立 helper，`element_cache_ / text_cache_ / document_cache_` 边界更明确
-- [x] `Cleanup(ctx)` 已继续收窄，不再清理 quickjs 主线注入的 `document` 或 `DOMBindingMap`
+- [x] `DOMBindings::Cleanup()` 已收窄为兼容层
+- [x] `Cleanup(nullptr)` 不再参与 quickjs 主线路径清理
+- [x] 已验证 `WindowBindings::Cleanup()` 与 `DOMBindings::Cleanup(nullptr)` 路径
 
 ### Phase 5: Remove legacy wrappers | 删除旧 wrapper
 
-在确认无真实运行时依赖后，删除：
-
-- 旧 `Document` / `Element` / `Event` JSClass 注册
-- 旧 `Wrap* / Unwrap*` 实现
-- 已无外部调用的 legacy timer bridge / cache / finalizer
+- [x] 已删除旧 `Document / Element / Event` JSClass 注册
+- [x] 已删除旧 `Wrap* / Unwrap*` 实现
+- [x] 已删除 legacy cache / finalizer 残留
+- [x] 已删除 legacy `g_event_loop` 残留
+- [x] `core/dom/bindings/dom_bindings.cpp` 仅保留兼容 cleanup 与 `Image` constructor
 
 ## 7. Risks | 风险
 
@@ -255,10 +220,10 @@
 
 ## 10. Short Conclusion | 简短结论
 
-当前示例实际使用的是 `core/quickjs/*` 模块化绑定。
+当前 DOM 绑定迁移已完成主线路径收口。
 
 因此：
 
-- `core/quickjs/*` 应保留并作为唯一主线
-- `core/dom/bindings/dom_bindings.cpp` 应逐步退役
-- 迁移重点不是“再维护两套”，而是“尽快收口为一套”
+- `core/quickjs/*` 是唯一 DOM 绑定主线
+- `core/dom/bindings/dom_bindings.cpp` 只保留兼容 cleanup 与 `Image` constructor
+- 不再维护双套 `Element / Document / Event` 绑定实现

@@ -329,6 +329,11 @@ std::shared_ptr<Element> Document::CreateElement(const std::string& tag_name) {
         element = std::make_shared<SVGPolygonElement>();
     } else if (tag_name == "text") {
         element = std::make_shared<SVGTextElement>();
+    } else if (tag_name == "defs" || tag_name == "linearGradient" || tag_name == "radialGradient" ||
+               tag_name == "stop" || tag_name == "clipPath" || tag_name == "mask" ||
+               tag_name == "pattern" || tag_name == "symbol" || tag_name == "use" ||
+               tag_name == "image" || tag_name == "foreignObject" || tag_name == "tspan") {
+        element = std::make_shared<SVGElement>(tag_name);
     }
     // ========== 文档结构标签 ==========
     else if (tag_name == "head") {

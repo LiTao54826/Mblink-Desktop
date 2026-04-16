@@ -622,6 +622,39 @@ static JSValue JSEvent_preventDefault(JSContext* ctx, JSValueConst this_val, int
     return JS_UNDEFINED;
 }
 
+// new Event(type, { bubbles, cancelable })
+static JSValue JSEvent_constructor(JSContext* ctx, JSValueConst new_target, int argc, JSValueConst* argv) {
+    if (argc < 1) {
+        return JS_ThrowTypeError(ctx, "Event constructor requires 1 argument");
+    }
+
+    const char* type = JS_ToCString(ctx, argv[0]);
+    if (!type) {
+        return JS_EXCEPTION;
+    }
+
+    bool bubbles = true;
+    bool cancelable = true;
+    if (argc >= 2 && JS_IsObject(argv[1])) {
+        JSValue bubbles_value = JS_GetPropertyStr(ctx, argv[1], "bubbles");
+        JSValue cancelable_value = JS_GetPropertyStr(ctx, argv[1], "cancelable");
+
+        if (!JS_IsUndefined(bubbles_value) && !JS_IsNull(bubbles_value)) {
+            bubbles = JS_ToBool(ctx, bubbles_value);
+        }
+        if (!JS_IsUndefined(cancelable_value) && !JS_IsNull(cancelable_value)) {
+            cancelable = JS_ToBool(ctx, cancelable_value);
+        }
+
+        JS_FreeValue(ctx, bubbles_value);
+        JS_FreeValue(ctx, cancelable_value);
+    }
+
+    auto event = std::make_shared<Event>(type, bubbles, cancelable);
+    JS_FreeCString(ctx, type);
+    return WrapEvent(ctx, event);
+}
+
 // ========== 类定义 ==========
 
 static const JSCFunctionListEntry js_event_proto_funcs[] = {
@@ -684,11 +717,18 @@ void InitEventBinding(JSContext* ctx) {
 
     // 创建原型对象
     JSValue proto = JS_NewObject(ctx);
-    JS_SetPropertyFunctionList(ctx, proto, js_event_proto_funcs, 
+    JS_SetPropertyFunctionList(ctx, proto, js_event_proto_funcs,
                                sizeof(js_event_proto_funcs) / sizeof(js_event_proto_funcs[0]));
 
     // 设置类的原型
     JS_SetClassProto(ctx, js_event_class_id, proto);
+
+    // 注册全局 Event 构造函数
+    JSValue global = JS_GetGlobalObject(ctx);
+    JSValue event_ctor = JS_NewCFunction2(ctx, JSEvent_constructor, "Event", 1, JS_CFUNC_constructor, 0);
+    JS_SetConstructor(ctx, event_ctor, proto);
+    JS_SetPropertyStr(ctx, global, "Event", event_ctor);
+    JS_FreeValue(ctx, global);
 }
 
 JSValue WrapEvent(JSContext* ctx, std::shared_ptr<Event> event) {

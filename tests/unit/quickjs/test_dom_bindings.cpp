@@ -6,6 +6,7 @@
 #include <gtest/gtest.h>
 #include "quickjs/quickjs_runtime.h"
 #include "quickjs/window_bindings.h"
+#include "dom/bindings/dom_bindings.h"
 #include "dom/document.h"
 #include "window/window.h"
 
@@ -33,6 +34,7 @@ protected:
     void TearDown() override {
         if (window_bindings_) {
             window_bindings_->Cleanup();
+            DOMBindings::Cleanup(nullptr);
         }
         window_bindings_.reset();
         window_.reset();
@@ -52,6 +54,11 @@ protected:
 TEST_F(DOMBindingsTest, DocumentExists) {
     auto result = runtime_->Eval("typeof document");
     EXPECT_EQ(result, "object");
+}
+
+TEST_F(DOMBindingsTest, WindowDocumentAlias) {
+    auto result = runtime_->Eval("window.document === document");
+    EXPECT_EQ(result, true);
 }
 
 TEST_F(DOMBindingsTest, DocumentBody) {
@@ -249,6 +256,74 @@ TEST_F(DOMBindingsTest, GetElementById) {
     EXPECT_EQ(result, true);
 }
 
+TEST_F(DOMBindingsTest, GetElementsByTagName) {
+    auto result = runtime_->Eval(R"(
+        document.body.innerHTML = '';
+        document.body.appendChild(document.createElement('span'));
+        document.body.appendChild(document.createElement('div'));
+        document.body.appendChild(document.createElement('span'));
+        document.getElementsByTagName('span').length;
+    )");
+    EXPECT_EQ(result, 2);
+}
+
+TEST_F(DOMBindingsTest, GetElementsByClassName) {
+    auto result = runtime_->Eval(R"(
+        document.body.innerHTML = '';
+        var a = document.createElement('div');
+        var b = document.createElement('span');
+        var c = document.createElement('p');
+        a.className = 'item';
+        b.className = 'item active';
+        c.className = 'other';
+        document.body.appendChild(a);
+        document.body.appendChild(b);
+        document.body.appendChild(c);
+        document.getElementsByClassName('item').length;
+    )");
+    EXPECT_EQ(result, 2);
+}
+
+TEST_F(DOMBindingsTest, CreateElementNSAndSVGAttributeAliases) {
+    auto result = runtime_->Eval(R"(
+        var svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+        var defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
+        var gradient = document.createElementNS('http://www.w3.org/2000/svg', 'linearGradient');
+        var stop = document.createElementNS('http://www.w3.org/2000/svg', 'stop');
+        var polyline = document.createElementNS('http://www.w3.org/2000/svg', 'polyline');
+
+        svg.setAttributeNS(null, 'viewBox', '0 0 300 44');
+        svg.setAttributeNS(null, 'preserveAspectRatio', 'none');
+        gradient.setAttribute('id', 'g_cpu');
+        stop.setAttributeNS(null, 'stopColor', '#7dd3fc');
+        stop.setAttributeNS(null, 'stopOpacity', '0.35');
+        polyline.setAttributeNS(null, 'strokeWidth', '1.5');
+        polyline.setAttributeNS(null, 'strokeLinejoin', 'round');
+
+        gradient.appendChild(stop);
+        defs.appendChild(gradient);
+        svg.appendChild(defs);
+        svg.appendChild(polyline);
+
+        [
+            svg.tagName === 'svg',
+            defs.tagName === 'defs',
+            gradient.tagName === 'linearGradient',
+            stop.tagName === 'stop',
+            polyline.tagName === 'polyline',
+            svg.getAttribute('viewBox') === '0 0 300 44',
+            svg.getAttributeNS(null, 'preserveAspectRatio') === 'none',
+            stop.getAttribute('stop-color') === '#7dd3fc',
+            stop.getAttributeNS(null, 'stopColor') === '#7dd3fc',
+            polyline.getAttribute('stroke-width') === '1.5',
+            polyline.getAttributeNS(null, 'strokeLinejoin') === 'round'
+        ].every(Boolean);
+    )");
+    EXPECT_EQ(result, true);
+}
+
+
+
 // ========== 事件监听器测试 ==========
 
 TEST_F(DOMBindingsTest, AddEventListener) {
@@ -278,6 +353,39 @@ TEST_F(DOMBindingsTest, RemoveEventListener) {
     )");
     EXPECT_EQ(result, 0);
 }
+
+TEST_F(DOMBindingsTest, ElementClickDispatchesEvent) {
+    auto result = runtime_->Eval(R"(
+        var clicked = false;
+        var button = document.createElement('button');
+        button.addEventListener('click', function() {
+            clicked = true;
+        });
+        button.click();
+        clicked;
+    )");
+    EXPECT_EQ(result, true);
+}
+
+TEST_F(DOMBindingsTest, EventTimeStampAndStopImmediatePropagation) {
+    auto result = runtime_->Eval(R"(
+        var calls = 0;
+        var tsOk = false;
+        var div = document.createElement('div');
+        div.addEventListener('click', function(event) {
+            calls++;
+            tsOk = typeof event.timeStamp === 'number' && event.timeStamp >= 0;
+            event.stopImmediatePropagation();
+        });
+        div.addEventListener('click', function() {
+            calls++;
+        });
+        div.click();
+        tsOk && calls === 1;
+    )");
+    EXPECT_EQ(result, true);
+}
+
 
 // ========== innerHTML/textContent 测试 ==========
 
@@ -352,6 +460,13 @@ TEST_F(DOMBindingsTest, NextSibling) {
         span.nextSibling === p;
     )");
     EXPECT_EQ(result, true);
+}
+
+TEST_F(DOMBindingsTest, CleanupClearsDocumentAndLegacyCleanupIsNoop) {
+    window_bindings_->Cleanup();
+    EXPECT_EQ(runtime_->Eval("typeof document"), "undefined");
+    EXPECT_NO_THROW(DOMBindings::Cleanup(nullptr));
+    window_bindings_.reset();
 }
 
 TEST_F(DOMBindingsTest, PreviousSibling) {

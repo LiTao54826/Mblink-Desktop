@@ -915,14 +915,9 @@ static JSValue js_context_2d_draw_image(JSContext* ctx, JSValueConst this_val, i
     
     // 获取图片源
     sk_sp<SkImage> image = nullptr;
-    
-    // 首先尝试使用新绑定系统解包
+
     auto element = bindings::UnwrapElement(ctx, argv[0]);
-    if (!element) {
-        // 如果新绑定系统失败，尝试旧绑定系统
-        element = DOMBindings::UnwrapElement(ctx, argv[0]);
-    }
-    
+
     if (element) {
         auto img_element = std::dynamic_pointer_cast<HTMLImageElement>(element);
         if (img_element) {
