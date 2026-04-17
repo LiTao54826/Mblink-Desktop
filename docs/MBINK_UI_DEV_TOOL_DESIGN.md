@@ -175,7 +175,7 @@ AI Agent  ──stdin──►  mbink-ui-dev  ──stdout──►  AI Agent
     "config": { /* mbink.config.json 内容 */ },
     "template": "preact-jsx",
     "entry": "src/App.jsx",
-    "window": { "width": 1280, "height": 800 }
+    "window": { "width": 800, "height": 600 }
   },
   "daemon": {
     "project_id": "project-abc123",
@@ -1200,8 +1200,8 @@ if (typeof __mbink_mock_host__ !== 'undefined') {
   "mock_dir": "mock",
   "window": {
     "title": "My MBink App",
-    "width": 1280,
-    "height": 800,
+    "width": 800,
+    "height": 600,
     "resizable": true,
     "gpu": true
   },
@@ -1291,7 +1291,7 @@ mbink-ui-dev errors [--project <path>]          → 获取结构化 JS error 输
 
 项目解析顺序为：`--project` → 位置参数项目路径 → 当前目录/父目录 `.devui` → 当前目录/父目录 `mbink.config.json`（必要时自动创建 `.devui`）→ 仅存在一个 managed project 时自动回退。若同时存在多个 managed project 且无法唯一定位，则返回错误，要求显式传 `--project <path>`。
 
-以下命令仍属于后续阶段规划，不应视为当前已实现能力：`query`、`inspect`、`click`、`input`、`scroll`、`dev`。
+当前 CLI / MCP 已实现的 UI 精确控制能力包括：`query` / `query-element`、`inspect`、`click`、`input-text`、`scroll`、`highlight`。仍属于后续阶段的主要是生态与集成项，而不是这些基础 UI 控制命令。
 
 ### 10.2 write 命令说明（P1 当前已实现）
 
@@ -1488,12 +1488,16 @@ Skills 是一段系统提示词，教会任意有 shell tool 的 AI Agent 如何
 **目标**：AI 能精确定位、检查、操作任意 UI 元素。
 
 **交付物**：
-- [ ] `query_element` tool 实现（CSS 选择器匹配 + 元素属性）
-- [ ] `inspect` tool 实现（计算样式 + 布局 + 组件状态）
-- [ ] `click` / `input_text` / `scroll` tool 实现
-- [ ] `highlight` tool（在 UI 上高亮指定元素，辅助调试）
+- [x] `query_element` tool 实现（CSS 选择器匹配 + 元素属性）
+- [x] `inspect` tool 实现（计算样式 + 布局 + 组件状态）
+- [x] `click` / `input_text` / `scroll` tool 实现
+- [x] `highlight` tool（在 UI 上高亮指定元素，辅助调试）
+- [x] 交互后结果二次采样与 snapshot 时序修复（避免返回旧 DOM / 旧 snapshot）
+- [x] 冷启动首帧 snapshot 导出与 daemon 短轮询修复（避免首次返回 `stub-root`）
 
-**验收标准**：AI 能通过 CSS 选择器定位任意元素，读取其位置/样式，模拟点击并通过 snapshot 验证 UI 响应。
+**当前说明**：P3 最小闭环已落地，CLI / MCP → daemon → runtime 的元素级查询、检查、点击、输入、滚动、高亮链路已打通；真实联调已验证交互后返回结果与 snapshot 同步，`open` 后首次 `snapshot_ui` 也可直接返回真实 DOM。
+
+**验收标准**：AI 能通过 CSS 选择器定位任意元素，读取其位置/样式，模拟点击、输入、滚动并通过 query / snapshot 验证 UI 响应。
 
 ---
 

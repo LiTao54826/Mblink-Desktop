@@ -662,8 +662,8 @@ R"RS(fn main() {
         "  \"out_dir\": \".dist\",\n" +
         "  \"window\": {\n" +
         "    \"title\": \"" + project_name + "\",\n" +
-        "    \"width\": 1280,\n" +
-        "    \"height\": 800\n" +
+        "    \"width\": 800,\n" +
+        "    \"height\": 600\n" +
         "  },\n" +
         "  \"build\": {\n" +
         "    \"builder\": \"esbuild\",\n" +

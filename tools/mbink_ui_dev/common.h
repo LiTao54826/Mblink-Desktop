@@ -22,8 +22,8 @@ struct ProjectConfig {
     std::vector<std::string> build_external = {"preact", "preact/hooks"};
     bool build_sourcemap = true;
     bool build_minify = false;
-    int width = 1280;
-    int height = 800;
+    int width = 800;
+    int height = 600;
     std::string title = "MBink UI Dev";
 };
 
