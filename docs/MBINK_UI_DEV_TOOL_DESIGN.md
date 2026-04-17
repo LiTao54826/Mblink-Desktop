@@ -408,6 +408,8 @@ AI Agent  ──stdin──►  mbink-ui-dev  ──stdout──►  AI Agent
 
 说明：`eval_js` 的 `console.*` 输出与未捕获错误不会内联在响应中，而是分别通过 `get_console_logs` / `get_js_errors` 查询。
 
+> 当前限制：在 Windows `cmd.exe` 下直接传入复杂 JS 时，仍可能受到 shell quoting 影响；复杂表达式更建议通过 MCP tool 调用或 PowerShell 执行。
+
 
 ---
 
@@ -419,19 +421,21 @@ AI Agent  ──stdin──►  mbink-ui-dev  ──stdout──►  AI Agent
 ```json
 {
   "name": "snapshot_ui",
-  "description": "获取当前 UI 的完整状态快照，包含 DOM 树、元素位置、交互属性和截图。这是 AI 理解当前 UI 状态的主要方式。",
+  "description": "获取当前 UI 的完整状态快照，包含 DOM 树、元素位置、交互属性。这是 AI 理解当前 UI 状态的主要方式。",
   "inputSchema": {
     "type": "object",
     "properties": {
-      "include_screenshot": { "type": "boolean", "default": true, "description": "是否包含 base64 截图" },
-      "max_depth": { "type": "integer", "default": 20, "description": "DOM 树最大展开深度" },
-      "root_selector": { "type": "string", "description": "仅快照指定元素的子树（CSS 选择器，默认为 body）" }
+      "include_screenshot": { "type": "boolean", "default": false, "description": "预留字段，当前实现未返回截图" },
+      "max_depth": { "type": "integer", "default": 20, "description": "预留字段，当前实现未消费" },
+      "root_selector": { "type": "string", "description": "预留字段，当前实现固定导出 body/documentElement" }
     }
   }
 }
 ```
 
 返回（见第 5 节 snapshot 数据格式规范）。
+
+> 当前实现补充：runtime 启动后会主动生成首个 snapshot；daemon 在首次读取 snapshot 文件未就绪时会短轮询等待，因此 `open` 后第一次 `snapshot_ui` 不应再回落到 `stub-root`。
 
 ---
 
@@ -440,13 +444,12 @@ AI Agent  ──stdin──►  mbink-ui-dev  ──stdout──►  AI Agent
 ```json
 {
   "name": "query_element",
-  "description": "返回匹配 CSS 选择器或 mbink-id 的所有元素及其位置、属性。",
+  "description": "返回匹配 CSS selector 的所有元素摘要，包括位置、属性、可见性和滚动信息。",
   "inputSchema": {
     "type": "object",
     "required": ["selector"],
     "properties": {
-      "selector": { "type": "string", "description": "CSS 选择器 或 #node-id" },
-      "include_children": { "type": "boolean", "default": false }
+      "selector": { "type": "string", "description": "CSS selector；`body` / `html` 支持直接查询" }
     }
   }
 }
@@ -456,19 +459,24 @@ AI Agent  ──stdin──►  mbink-ui-dev  ──stdout──►  AI Agent
 ```json
 {
   "ok": true,
-  "count": 2,
-  "elements": [
-    {
-      "node_id": "el-42",
-      "tag": "button",
-      "text": "Submit",
-      "rect": { "x": 120, "y": 340, "w": 80, "h": 32 },
-      "attrs": { "class": "btn btn-primary", "disabled": false },
-      "computed_style": { "color": "#ffffff", "background": "#1a73e8" },
-      "interactive": true,
-      "visible": true
-    }
-  ]
+  "result": {
+    "selector": "span",
+    "count": 2,
+    "matches": [
+      {
+        "tag": "span",
+        "id": "",
+        "class_name": "",
+        "text": "1 active / 0 done",
+        "attrs": { "data-preact-id": "10" },
+        "rect": { "x": 20, "y": 140, "w": 110, "h": 24, "top": 140, "right": 130, "bottom": 164, "left": 20 },
+        "interactive": false,
+        "visible": true,
+        "value": null,
+        "scroll": { "x": 0, "y": 0, "max_x": 0, "max_y": 0 }
+      }
+    ]
+  }
 }
 ```
 
@@ -479,7 +487,7 @@ AI Agent  ──stdin──►  mbink-ui-dev  ──stdout──►  AI Agent
 ```json
 {
   "name": "inspect",
-  "description": "深度检查单个元素，返回完整样式计算值、布局信息和组件状态（如果是 Preact 组件）。",
+  "description": "检查单个元素，返回元素摘要、部分 computed style 和 outerHTML。",
   "inputSchema": {
     "type": "object",
     "required": ["selector"],
@@ -493,14 +501,40 @@ AI Agent  ──stdin──►  mbink-ui-dev  ──stdout──►  AI Agent
 返回：
 ```json
 {
-  "node_id": "el-42",
-  "tag": "div",
-  "rect": { "x": 0, "y": 0, "w": 240, "h": 600 },
-  "layout": { "display": "flex", "flex_direction": "column", "padding": [16,16,16,16] },
-  "computed_style": { "width": "240px", "height": "600px", "overflow": "hidden" },
-  "component": { "name": "Sidebar", "props": { "collapsed": false }, "state": { "activeItem": 0 } }
+  "ok": true,
+  "result": {
+    "selector": "#todo-input",
+    "found": true,
+    "element": {
+      "tag": "input",
+      "id": "todo-input",
+      "class_name": "",
+      "text": "",
+      "attrs": { "id": "todo-input", "placeholder": "add task" },
+      "rect": { "x": 20, "y": 71, "w": 1156.4, "h": 37.5, "top": 71, "right": 1176.4, "bottom": 108.5, "left": 20 },
+      "interactive": true,
+      "visible": true,
+      "value": "",
+      "scroll": { "x": 0, "y": 0, "max_x": 0, "max_y": 0 }
+    },
+    "computed_style": {
+      "display": "block",
+      "position": "static",
+      "width": "1156.4px",
+      "height": "37.5px",
+      "color": "rgb(34, 34, 34)",
+      "background_color": "rgb(255, 255, 255)",
+      "opacity": "1",
+      "overflow_x": "visible",
+      "overflow_y": "visible",
+      "z_index": "auto",
+      "flex": "1 1 0%"
+    },
+    "outer_html": "<input id=\"todo-input\" placeholder=\"add task\">"
+  }
 }
 ```
+
 
 ---
 
@@ -583,14 +617,12 @@ AI Agent  ──stdin──►  mbink-ui-dev  ──stdout──►  AI Agent
 ```json
 {
   "name": "click",
-  "description": "模拟点击指定元素（用于触发事件验证 UI 交互）。",
+  "description": "模拟点击指定元素，并在返回前推进 event loop / microtasks / render，保证结果与最新 UI 对齐。",
   "inputSchema": {
     "type": "object",
     "required": ["selector"],
     "properties": {
-      "selector": { "type": "string" },
-      "button": { "type": "string", "enum": ["left", "right", "middle"], "default": "left" },
-      "double": { "type": "boolean", "default": false }
+      "selector": { "type": "string", "description": "CSS selector；`body` / `html` 支持直接查询" }
     }
   }
 }
@@ -598,7 +630,21 @@ AI Agent  ──stdin──►  mbink-ui-dev  ──stdout──►  AI Agent
 
 返回：
 ```json
-{ "ok": true, "element": { "node_id": "el-42", "tag": "button", "text": "Submit" } }
+{
+  "ok": true,
+  "result": {
+    "selector": "button[type=\"submit\"]",
+    "clicked": true,
+    "element": {
+      "tag": "button",
+      "id": "",
+      "class_name": "",
+      "text": "+ add",
+      "interactive": true,
+      "visible": true
+    }
+  }
+}
 ```
 
 ---
@@ -608,14 +654,13 @@ AI Agent  ──stdin──►  mbink-ui-dev  ──stdout──►  AI Agent
 ```json
 {
   "name": "input_text",
-  "description": "向指定输入元素填入文本（会先清空原有内容）。",
+  "description": "向指定输入元素写入文本；当前参数名为 `text`，写入后会派发 input/change 事件。",
   "inputSchema": {
     "type": "object",
-    "required": ["selector", "value"],
+    "required": ["selector", "text"],
     "properties": {
       "selector": { "type": "string" },
-      "value": { "type": "string" },
-      "submit": { "type": "boolean", "default": false, "description": "填入后是否触发回车/提交" }
+      "text": { "type": "string" }
     }
   }
 }
@@ -623,7 +668,19 @@ AI Agent  ──stdin──►  mbink-ui-dev  ──stdout──►  AI Agent
 
 返回：
 ```json
-{ "ok": true, "node_id": "el-15", "value_set": "hello world" }
+{
+  "ok": true,
+  "result": {
+    "selector": "#todo-input",
+    "value": "hello world",
+    "element": {
+      "tag": "input",
+      "id": "todo-input",
+      "interactive": true,
+      "visible": true
+    }
+  }
+}
 ```
 
 ---
@@ -633,14 +690,66 @@ AI Agent  ──stdin──►  mbink-ui-dev  ──stdout──►  AI Agent
 ```json
 {
   "name": "scroll",
-  "description": "滚动指定容器到目标位置。",
+  "description": "滚动指定容器到目标位置；至少需要 `x` 或 `y` 之一。",
   "inputSchema": {
     "type": "object",
+    "required": ["selector"],
     "properties": {
-      "selector": { "type": "string", "description": "滚动容器选择器，默认为根滚动区域" },
-      "x": { "type": "integer", "default": 0 },
-      "y": { "type": "integer", "default": 0 },
-      "behavior": { "type": "string", "enum": ["instant", "smooth"], "default": "instant" }
+      "selector": { "type": "string", "description": "滚动容器 selector；`body` / `html` 支持直接滚动" },
+      "x": { "type": "number" },
+      "y": { "type": "number" }
+    }
+  }
+}
+```
+
+返回：
+```json
+{
+  "ok": true,
+  "result": {
+    "selector": "body",
+    "scroll": { "x": 0, "y": 400, "max_x": 0, "max_y": 1280 },
+    "element": {
+      "tag": "body",
+      "interactive": false,
+      "visible": true
+    }
+  }
+}
+```
+
+---
+
+**`highlight`** — 高亮元素
+
+```json
+{
+  "name": "highlight",
+  "description": "给目标元素设置 outline 高亮，便于调试定位。",
+  "inputSchema": {
+    "type": "object",
+    "required": ["selector"],
+    "properties": {
+      "selector": { "type": "string" },
+      "color": { "type": "string", "default": "#ff4d4f" }
+    }
+  }
+}
+```
+
+返回：
+```json
+{
+  "ok": true,
+  "result": {
+    "selector": "#todo-input",
+    "highlighted": true,
+    "color": "#ff4d4f",
+    "previous_outline": "",
+    "element": {
+      "tag": "input",
+      "id": "todo-input"
     }
   }
 }
@@ -835,11 +944,12 @@ Resources 是 AI 可以随时读取的状态数据，不触发副作用。
 
 ### 6.2 工具调用优先级原则
 
-1. **先 snapshot，再操作**：任何修改前先调用 snapshot_ui 了解当前状态
-2. **改代码优先于 eval_js**：通过写文件+构建+重载，而非注入补丁
-3. **用 query_element 定位，用 inspect 诊断**：不要靠猜 selector
+1. **先 snapshot，再操作**：任何修改前先调用 `snapshot_ui` 了解当前状态
+2. **优先专用 UI 控制命令**：定位/诊断/交互优先使用 `query_element` / `inspect` / `click` / `input_text` / `scroll` / `highlight`
+3. **改代码优先于 eval_js**：通过写文件+构建+重载，而非注入补丁
 4. **eval_js 是最后手段**：仅用于验证假设或执行一次性操作
-5. **build 失败立即停**：不要 reload 一个构建失败的版本
+5. **交互后优先重新 snapshot 或 query**：当前实现会在交互命令后推进渲染并二次采样，适合立刻做结果校验
+6. **build 失败立即停**：不要 reload 一个构建失败的版本
 
 ### 6.3 典型场景示例：修复侧边栏宽度异常
 

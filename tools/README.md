@@ -10,6 +10,14 @@ build\bin\Release\mbink-ui-dev.exe build
 build\bin\Release\mbink-ui-dev.exe reload
 build\bin\Release\mbink-ui-dev.exe stop
 
+# P3 元素精确控制
+build\bin\Release\mbink-ui-dev.exe query "#todo-input"
+build\bin\Release\mbink-ui-dev.exe inspect "button[type=\"submit\"]"
+build\bin\Release\mbink-ui-dev.exe click "button[type=\"submit\"]"
+build\bin\Release\mbink-ui-dev.exe input-text "#todo-input" "hello world"
+build\bin\Release\mbink-ui-dev.exe scroll body --y 400
+build\bin\Release\mbink-ui-dev.exe highlight "#todo-input" --color "#ff4d4f"
+
 # 自动项目定位
 # 下面这些命令会优先按以下顺序解析项目：
 # 1) --project <path>
@@ -31,8 +39,19 @@ build\bin\Release\mbink-ui-dev.exe serve
 # 示例：在 todo_app_js 目录内可直接省略项目路径
 cd examples\todo_app_js
 ..\..\build\bin\Release\mbink-ui-dev.exe open
-..\..\build\bin\Release\mbink-ui-dev.exe eval "document.querySelector('input').value=9999"
-..\..\build\bin\Release\mbink-ui-dev.exe eval "document.querySelector('button').click()"
+..\..\build\bin\Release\mbink-ui-dev.exe snapshot
+..\..\build\bin\Release\mbink-ui-dev.exe query "#todo-input"
+..\..\build\bin\Release\mbink-ui-dev.exe input-text "#todo-input" "task from cli"
+..\..\build\bin\Release\mbink-ui-dev.exe click "button[type=\"submit\"]"
+..\..\build\bin\Release\mbink-ui-dev.exe query span
+
+# 已实现行为说明
+# snapshot 现在会在 runtime 首帧主动生成，open 后第一次 snapshot 不再返回 stub-root
+# click / input-text / scroll / highlight 会在执行后推进 event loop + render，再返回最新结果
+# body / html 选择器已做特殊处理，可直接用于 query / inspect / scroll
+
+# 已知限制
+# eval 在 Windows cmd.exe 下仍可能受到 shell quoting 影响；复杂 JS 更建议通过 MCP 调用或 PowerShell 执行
 
 # 手动关闭 runtime 窗口后，该项目会被视为 stopped
 # watch / reload / fallback 不会自动重新拉起被手动关闭的 runtime
