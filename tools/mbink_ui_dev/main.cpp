@@ -61,6 +61,19 @@ std::string GetOptionValue(const std::vector<std::string>& args, const std::stri
     return "";
 }
 
+bool TryParseNumber(const std::string& value, double* out) {
+    if (!out || value.empty()) return false;
+    try {
+        size_t parsed = 0;
+        const double number = std::stod(value, &parsed);
+        if (parsed != value.size()) return false;
+        *out = number;
+        return true;
+    } catch (...) {
+        return false;
+    }
+}
+
 bool ReadFileBytes(const std::filesystem::path& path, std::string* content) {
     std::ifstream ifs(path, std::ios::binary);
     if (!ifs) return false;
@@ -289,6 +302,12 @@ nlohmann::json BuildMcpTools() {
         {{"name", "get_build_status"}, {"description", "获取最近一次构建状态"}, {"inputSchema", {{"type", "object"}, {"properties", nlohmann::json::object()}}}},
         {{"name", "reload"}, {"description", "重启当前 runtime"}, {"inputSchema", {{"type", "object"}, {"properties", nlohmann::json::object()}}}},
         {{"name", "eval_js"}, {"description", "在运行时执行 JS 代码"}, {"inputSchema", {{"type", "object"}, {"properties", {{"code", {{"type", "string"}}}}}, {"required", nlohmann::json::array({"code"})}}}},
+        {{"name", "query_element"}, {"description", "按 selector 查询元素列表"}, {"inputSchema", {{"type", "object"}, {"properties", {{"selector", {{"type", "string"}}}}}, {"required", nlohmann::json::array({"selector"})}}}},
+        {{"name", "inspect"}, {"description", "检查单个元素详情"}, {"inputSchema", {{"type", "object"}, {"properties", {{"selector", {{"type", "string"}}}}}, {"required", nlohmann::json::array({"selector"})}}}},
+        {{"name", "click"}, {"description", "点击目标元素"}, {"inputSchema", {{"type", "object"}, {"properties", {{"selector", {{"type", "string"}}}}}, {"required", nlohmann::json::array({"selector"})}}}},
+        {{"name", "input_text"}, {"description", "向目标元素输入文本"}, {"inputSchema", {{"type", "object"}, {"properties", {{"selector", {{"type", "string"}}}, {"text", {{"type", "string"}}}}}, {"required", nlohmann::json::array({"selector", "text"})}}}},
+        {{"name", "scroll"}, {"description", "滚动目标元素"}, {"inputSchema", {{"type", "object"}, {"properties", {{"selector", {{"type", "string"}}}, {"x", {{"type", "number"}}}, {"y", {{"type", "number"}}}}}, {"required", nlohmann::json::array({"selector"})}}}},
+        {{"name", "highlight"}, {"description", "高亮目标元素"}, {"inputSchema", {{"type", "object"}, {"properties", {{"selector", {{"type", "string"}}}, {"color", {{"type", "string"}}}}}, {"required", nlohmann::json::array({"selector"})}}}},
         {{"name", "snapshot_ui"}, {"description", "获取运行时快照"}, {"inputSchema", {{"type", "object"}, {"properties", nlohmann::json::object()}}}},
         {{"name", "get_console_logs"}, {"description", "获取运行时日志"}, {"inputSchema", {{"type", "object"}, {"properties", nlohmann::json::object()}}}},
         {{"name", "get_js_errors"}, {"description", "获取运行时错误"}, {"inputSchema", {{"type", "object"}, {"properties", nlohmann::json::object()}}}},
@@ -404,6 +423,42 @@ nlohmann::json CallMcpTool(const std::string& tool_name,
         const auto project = ResolveMcpProject(active_project ? *active_project : std::optional<ProjectIdentity>{}, &err);
         if (!project.has_value()) return ErrorResponse("project_not_resolved", err);
         tool_result = CallDaemon(*project, nlohmann::json{{"cmd", "build_status"}});
+    } else if (tool_name == "query_element" || tool_name == "inspect" || tool_name == "click") {
+        std::string err;
+        const auto project = ResolveMcpProject(active_project ? *active_project : std::optional<ProjectIdentity>{}, &err);
+        if (!project.has_value()) return ErrorResponse("project_not_resolved", err);
+        const auto selector = arguments.value("selector", std::string{});
+        if (selector.empty()) return ErrorResponse("invalid_args", "selector 不能为空");
+        tool_result = CallDaemon(*project, nlohmann::json{{"cmd", tool_name}, {"selector", selector}});
+    } else if (tool_name == "input_text") {
+        std::string err;
+        const auto project = ResolveMcpProject(active_project ? *active_project : std::optional<ProjectIdentity>{}, &err);
+        if (!project.has_value()) return ErrorResponse("project_not_resolved", err);
+        const auto selector = arguments.value("selector", std::string{});
+        const auto text = arguments.value("text", std::string{});
+        if (selector.empty()) return ErrorResponse("invalid_args", "selector 不能为空");
+        tool_result = CallDaemon(*project, nlohmann::json{{"cmd", "input_text"}, {"selector", selector}, {"text", text}});
+    } else if (tool_name == "scroll") {
+        std::string err;
+        const auto project = ResolveMcpProject(active_project ? *active_project : std::optional<ProjectIdentity>{}, &err);
+        if (!project.has_value()) return ErrorResponse("project_not_resolved", err);
+        const auto selector = arguments.value("selector", std::string{});
+        if (selector.empty()) return ErrorResponse("invalid_args", "selector 不能为空");
+        nlohmann::json req{{"cmd", "scroll"}, {"selector", selector}};
+        if (arguments.contains("x")) req["x"] = arguments["x"];
+        if (arguments.contains("y")) req["y"] = arguments["y"];
+        if (!req.contains("x") && !req.contains("y")) return ErrorResponse("invalid_args", "scroll 至少需要 x 或 y");
+        tool_result = CallDaemon(*project, req);
+    } else if (tool_name == "highlight") {
+        std::string err;
+        const auto project = ResolveMcpProject(active_project ? *active_project : std::optional<ProjectIdentity>{}, &err);
+        if (!project.has_value()) return ErrorResponse("project_not_resolved", err);
+        const auto selector = arguments.value("selector", std::string{});
+        if (selector.empty()) return ErrorResponse("invalid_args", "selector 不能为空");
+        nlohmann::json req{{"cmd", "highlight"}, {"selector", selector}};
+        const auto color = arguments.value("color", std::string{});
+        if (!color.empty()) req["color"] = color;
+        tool_result = CallDaemon(*project, req);
     } else if (tool_name == "snapshot_ui" || tool_name == "snapshot") {
         std::string err;
         const auto project = ResolveMcpProject(active_project ? *active_project : std::optional<ProjectIdentity>{}, &err);
@@ -456,7 +511,7 @@ int main(int argc, char** argv) {
     for (int i = 1; i < argc; ++i) args.emplace_back(argv[i]);
 
     if (args.empty()) {
-        PrintJson(ErrorResponse("invalid_args", "用法: mbink-ui-dev <daemon|stop|init|open|info|read|write|build|build-status|snapshot|logs|errors|eval <code>|reload|serve> ..."));
+        PrintJson(ErrorResponse("invalid_args", "用法: mbink-ui-dev <daemon|stop|init|open|info|read|write|build|build-status|snapshot|logs|errors|eval <code>|query <selector>|inspect <selector>|click <selector>|input-text <selector> <text>|scroll <selector> [--x <num>] [--y <num>]|highlight <selector> [--color <css-color>]|reload|serve> ..."));
         return 1;
     }
 
@@ -701,6 +756,78 @@ int main(int argc, char** argv) {
     else if (cmd == "build-status") PrintJson(CallDaemon(*identity, nlohmann::json{{"cmd", "build_status"}}));
     else if (cmd == "logs") PrintJson(CallDaemon(*identity, nlohmann::json{{"cmd", "logs"}}));
     else if (cmd == "errors") PrintJson(CallDaemon(*identity, nlohmann::json{{"cmd", "errors"}}));
+    else if (cmd == "query" || cmd == "query-element") {
+        if (args.size() < 2) {
+            PrintJson(ErrorResponse("invalid_args", "用法: mbink-ui-dev query <selector>"));
+            return 1;
+        }
+        PrintJson(CallDaemon(*identity, nlohmann::json{{"cmd", "query_element"}, {"selector", args[1]}}));
+    }
+    else if (cmd == "inspect") {
+        if (args.size() < 2) {
+            PrintJson(ErrorResponse("invalid_args", "用法: mbink-ui-dev inspect <selector>"));
+            return 1;
+        }
+        PrintJson(CallDaemon(*identity, nlohmann::json{{"cmd", "inspect"}, {"selector", args[1]}}));
+    }
+    else if (cmd == "click") {
+        if (args.size() < 2) {
+            PrintJson(ErrorResponse("invalid_args", "用法: mbink-ui-dev click <selector>"));
+            return 1;
+        }
+        PrintJson(CallDaemon(*identity, nlohmann::json{{"cmd", "click"}, {"selector", args[1]}}));
+    }
+    else if (cmd == "input-text") {
+        if (args.size() < 3) {
+            PrintJson(ErrorResponse("invalid_args", "用法: mbink-ui-dev input-text <selector> <text>"));
+            return 1;
+        }
+        std::string text = args[2];
+        for (size_t i = 3; i < args.size(); ++i) {
+            if (args[i].rfind("--", 0) == 0) break;
+            text += " " + args[i];
+        }
+        PrintJson(CallDaemon(*identity, nlohmann::json{{"cmd", "input_text"}, {"selector", args[1]}, {"text", text}}));
+    }
+    else if (cmd == "scroll") {
+        if (args.size() < 2) {
+            PrintJson(ErrorResponse("invalid_args", "用法: mbink-ui-dev scroll <selector> [--x <num>] [--y <num>]"));
+            return 1;
+        }
+        nlohmann::json req{{"cmd", "scroll"}, {"selector", args[1]}};
+        const auto x = GetOptionValue(args, "--x");
+        const auto y = GetOptionValue(args, "--y");
+        double number = 0.0;
+        if (!x.empty()) {
+            if (!TryParseNumber(x, &number)) {
+                PrintJson(ErrorResponse("invalid_args", "--x 必须是数字"));
+                return 1;
+            }
+            req["x"] = number;
+        }
+        if (!y.empty()) {
+            if (!TryParseNumber(y, &number)) {
+                PrintJson(ErrorResponse("invalid_args", "--y 必须是数字"));
+                return 1;
+            }
+            req["y"] = number;
+        }
+        if (!req.contains("x") && !req.contains("y")) {
+            PrintJson(ErrorResponse("invalid_args", "scroll 至少需要 --x 或 --y"));
+            return 1;
+        }
+        PrintJson(CallDaemon(*identity, req));
+    }
+    else if (cmd == "highlight") {
+        if (args.size() < 2) {
+            PrintJson(ErrorResponse("invalid_args", "用法: mbink-ui-dev highlight <selector> [--color <css-color>]"));
+            return 1;
+        }
+        nlohmann::json req{{"cmd", "highlight"}, {"selector", args[1]}};
+        const auto color = GetOptionValue(args, "--color");
+        if (!color.empty()) req["color"] = color;
+        PrintJson(CallDaemon(*identity, req));
+    }
     else if (cmd == "eval") {
         if (args.size() < 2) {
             PrintJson(ErrorResponse("invalid_args", "用法: mbink-ui-dev eval <code>"));

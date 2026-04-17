@@ -3,6 +3,7 @@
 #include <chrono>
 #include <filesystem>
 #include <fstream>
+#include <sstream>
 
 #include <nlohmann/json.hpp>
 
@@ -24,23 +25,80 @@ fs::path Utf8PathToFsPathLocal(const std::string& path) {
 #endif
 }
 
-std::string NormalizeFsPathLocal(const fs::path& path) {
-    return path.lexically_normal().generic_string();
-}
+std::string NormalizeFsPathLocal(const fs::path& path) { return path.lexically_normal().generic_string(); }
 
 void ClearBody(Document* document) {
     if (!document) return;
     auto body = document->GetBody();
     if (!body) return;
-    while (body->GetFirstChild()) {
-        body->RemoveChild(body->GetFirstChild());
-    }
+    while (body->GetFirstChild()) body->RemoveChild(body->GetFirstChild());
 }
 
 std::string BuildReloadFilename(const std::string& bundle_path) {
-    const auto tick = std::chrono::duration_cast<std::chrono::milliseconds>(
-        std::chrono::steady_clock::now().time_since_epoch()).count();
+    const auto tick = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
     return bundle_path + "#reload-" + std::to_string(tick);
+}
+
+std::string JsonLiteral(const nlohmann::json& value) { return value.dump(); }
+
+void ForceWindowFrame(QuickJSRuntime* runtime, Window* window, int passes = 2) {
+    if (!window) return;
+    if (passes < 1) passes = 1;
+    for (int i = 0; i < passes; ++i) {
+        if (runtime) {
+            runtime->RunEventLoop(1);
+            runtime->ProcessMicrotasks();
+        }
+        if (auto* pipeline = window->GetRenderPipeline()) {
+            pipeline->ForceFullUpdate();
+            pipeline->ForceRasterize();
+        }
+        window->InvalidateRenderTree();
+        window->SetNeedsRepaint();
+        window->Render();
+        window->SwapBuffers();
+        if (runtime) {
+            runtime->RunEventLoop(1);
+            runtime->ProcessMicrotasks();
+        }
+    }
+}
+
+std::string BuildUiDevDomScript(const std::string& type, const nlohmann::json& cmd, bool perform_action = true) {
+    const std::string selector = JsonLiteral(cmd.value("selector", std::string{}));
+    std::ostringstream js;
+    js << R"JS((() => {
+const selector = )JS" << selector << R"JS(;
+const performAction = )JS" << (perform_action ? "true" : "false") << R"JS(;
+const q = () => {
+  if (selector === 'body') return document.body || document.querySelector('body');
+  if (selector === 'html') return document.documentElement || document.querySelector('html');
+  return document.querySelector(selector);
+};
+const attrsOf = (el) => { const out = {}; const attrs = el && el.attributes ? el.attributes : []; const len = attrs.length || 0; for (let i = 0; i < len; ++i) { const a = attrs[i]; if (a && a.name) out[a.name] = a.value === undefined ? '' : String(a.value); } return out; };
+const rectOf = (el) => { const r = el.getBoundingClientRect(); return { x: r.x, y: r.y, w: r.width, h: r.height, top: r.top, right: r.right, bottom: r.bottom, left: r.left }; };
+const scrollOf = (el) => { const sw = Number(el.scrollWidth || 0); const sh = Number(el.scrollHeight || 0); const cw = Number(el.clientWidth || 0); const ch = Number(el.clientHeight || 0); return { x: Number(el.scrollLeft || 0), y: Number(el.scrollTop || 0), max_x: cw > 0 ? Math.max(0, sw - cw) : 0, max_y: ch > 0 ? Math.max(0, sh - ch) : 0 }; };
+const visibleOf = (el) => { const s = getComputedStyle(el); const r = el.getBoundingClientRect(); return s.display !== 'none' && s.visibility !== 'hidden' && Number(s.opacity || 1) !== 0 && r.width >= 0 && r.height >= 0; };
+const interactiveOf = (el) => { const t = ((el.tagName || '') + '').toLowerCase(); return !!(el.onclick || t === 'button' || t === 'input' || t === 'select' || t === 'textarea' || t === 'option' || t === 'a'); };
+const summaryOf = (el) => ({ tag: ((el.tagName || '') + '').toLowerCase(), id: el.id || '', class_name: el.className || '', text: el.textContent == null ? null : String(el.textContent), attrs: attrsOf(el), rect: rectOf(el), interactive: interactiveOf(el), visible: visibleOf(el), value: el.value === undefined ? null : el.value, scroll: scrollOf(el) });
+const pickStyle = (el) => { const s = getComputedStyle(el); return { display: s.display || '', position: s.position || '', width: s.width || '', height: s.height || '', color: s.color || '', background_color: s.backgroundColor || '', opacity: s.opacity || '', overflow_x: s.overflowX || '', overflow_y: s.overflowY || '', z_index: s.zIndex || '', flex: s.flex || '' }; };
+)JS";
+    if (type == "query_element") {
+        js << "const nodes = selector === 'body' && document.body ? [document.body] : selector === 'html' && document.documentElement ? [document.documentElement] : document.querySelectorAll(selector); const matches = []; for (let i = 0; i < nodes.length; ++i) matches.push(summaryOf(nodes[i])); return { selector, count: nodes.length, matches };";
+    } else if (type == "inspect") {
+        js << "const el = q(); if (!el) throw new Error('未找到元素: ' + selector); return { selector, found: true, element: summaryOf(el), computed_style: pickStyle(el), outer_html: el.outerHTML === undefined ? null : String(el.outerHTML) };";
+    } else if (type == "click") {
+        js << "const el = q(); if (!el) throw new Error('未找到元素: ' + selector); if (performAction) el.click(); return { selector, clicked: true, element: summaryOf(el) };";
+    } else if (type == "input_text") {
+        js << "const el = q(); if (!el) throw new Error('未找到元素: ' + selector); if (el.value === undefined) throw new Error('目标元素不支持 value: ' + selector); if (performAction) { const nextValue = " << JsonLiteral(cmd.value("text", std::string{})) << "; if (el.focus) el.focus(); el.value = nextValue; if (typeof Event === 'function') { try { el.dispatchEvent(new Event('input')); } catch (_) {} try { el.dispatchEvent(new Event('change')); } catch (_) {} } } return { selector, value: el.value === undefined ? null : el.value, element: summaryOf(el) };";
+    } else if (type == "scroll") {
+        js << "const el = q(); if (!el) throw new Error('未找到元素: ' + selector); const x = " << (cmd.contains("x") ? JsonLiteral(cmd["x"]) : std::string("null")) << "; const y = " << (cmd.contains("y") ? JsonLiteral(cmd["y"]) : std::string("null")) << "; if (performAction) { if (x !== null) el.scrollLeft = x; if (y !== null) el.scrollTop = y; } return { selector, scroll: scrollOf(el), element: summaryOf(el) };";
+    } else if (type == "highlight") {
+        js << "const el = q(); if (!el) throw new Error('未找到元素: ' + selector); const color = " << JsonLiteral(cmd.value("color", std::string("#ff4d4f"))) << "; const previous = el.style && el.style.outline ? String(el.style.outline) : ''; if (performAction && el.style) el.style.outline = '2px solid ' + color; return performAction ? { selector, highlighted: true, color, previous_outline: previous, element: summaryOf(el) } : { selector, highlighted: true, color, element: summaryOf(el) };";
+    }
+    js << R"JS(
+})())JS";
+    return js.str();
 }
 
 }  // namespace
@@ -55,89 +113,61 @@ bool TryHandleUiDevCommand(QuickJSRuntime* runtime,
                            std::string* error) {
     if (handled) *handled = false;
     if (!runtime || !window || !document || command_path.empty() || response_path.empty() || !last_command_id) return false;
-
     fs::path cmdp(command_path);
     if (!fs::exists(cmdp)) return false;
 
     nlohmann::json cmd;
-    try {
-        std::ifstream ifs(cmdp, std::ios::binary);
-        if (!ifs) return false;
-        cmd = nlohmann::json::parse(ifs);
-    } catch (...) {
-        std::error_code ec;
-        fs::remove(cmdp, ec);
-        if (error) *error = "ui-dev command 解析失败";
-        return false;
-    }
+    try { std::ifstream ifs(cmdp, std::ios::binary); if (!ifs) return false; cmd = nlohmann::json::parse(ifs); }
+    catch (...) { std::error_code ec; fs::remove(cmdp, ec); if (error) *error = "ui-dev command 解析失败"; return false; }
 
     const std::string id = cmd.value("id", "");
     if (id.empty() || id == *last_command_id) return false;
 
-    nlohmann::json resp;
-    resp["ok"] = true;
-    resp["id"] = id;
-    resp["type"] = cmd.value("type", "");
-
+    nlohmann::json resp{{"ok", true}, {"id", id}, {"type", cmd.value("type", "")}};
+    const std::string type = resp.value("type", "");
     try {
-        const std::string type = cmd.value("type", "");
         if (type == "eval") {
-            const std::string code = cmd.value("code", "");
-            resp["result"] = runtime->Eval(code, "<mbink-ui-dev eval>");
+            resp["result"] = runtime->Eval(cmd.value("code", ""), "<mbink-ui-dev eval>");
         } else if (type == "reload_bundle") {
             const std::string bundle_path = cmd.value("bundle_path", "");
-            if (bundle_path.empty()) {
-                throw std::runtime_error("reload_bundle 缺少 bundle_path");
-            }
+            if (bundle_path.empty()) throw std::runtime_error("reload_bundle 缺少 bundle_path");
             fs::path abs_path = fs::absolute(Utf8PathToFsPathLocal(bundle_path));
-            std::ifstream ifs(abs_path, std::ios::binary);
-            if (!ifs) {
-                throw std::runtime_error("无法打开 bundle: " + NormalizeFsPathLocal(abs_path));
-            }
-            std::stringstream buffer;
-            buffer << ifs.rdbuf();
+            std::ifstream ifs(abs_path, std::ios::binary); if (!ifs) throw std::runtime_error("无法打开 bundle: " + NormalizeFsPathLocal(abs_path));
+            std::stringstream buffer; buffer << ifs.rdbuf();
             const std::string bundle_code = buffer.str();
             const std::string normalized_path = NormalizeFsPathLocal(abs_path);
-            ClearBody(document);
-            runtime->SetBaseModulePath(normalized_path);
+            ClearBody(document); runtime->SetBaseModulePath(normalized_path);
             resp["result"] = runtime->EvalModule(bundle_code, BuildReloadFilename(normalized_path));
-            if (auto* pipeline = window->GetRenderPipeline()) {
-                pipeline->ForceFullUpdate();
-                pipeline->ForceRasterize();
+            ForceWindowFrame(runtime, window); resp["bundle_path"] = normalized_path; resp["mode"] = "reload_bundle";
+        } else if (type == "query_element" || type == "inspect" || type == "click" || type == "input_text" || type == "scroll" || type == "highlight") {
+            const auto selector = cmd.value("selector", std::string{});
+            if (selector.empty()) throw std::runtime_error(type + " 缺少 selector");
+            resp["result"] = runtime->Eval(BuildUiDevDomScript(type, cmd), "<mbink-ui-dev dom>");
+            if (type == "click" || type == "input_text" || type == "scroll" || type == "highlight") {
+                ForceWindowFrame(runtime, window);
+                auto latest = runtime->Eval(BuildUiDevDomScript(type, cmd, false), "<mbink-ui-dev dom result>");
+                if (resp["result"].is_object() && latest.is_object()) {
+                    for (auto it = latest.begin(); it != latest.end(); ++it) resp["result"][it.key()] = it.value();
+                } else {
+                    resp["result"] = latest;
+                }
             }
-            window->InvalidateRenderTree();
-            window->SetNeedsRepaint();
-            window->Render();
-            window->SwapBuffers();
-            resp["bundle_path"] = normalized_path;
-            resp["mode"] = "reload_bundle";
         } else {
             resp["ok"] = false;
             resp["error"] = nlohmann::json{{"code", "unknown_command"}, {"message", "未知 ui-dev 命令"}};
         }
     } catch (const std::exception& e) {
         resp["ok"] = false;
-        resp["error"] = nlohmann::json{{"code", resp.value("type", "") == "reload_bundle" ? "reload_bundle_failed" : "eval_failed"},
-                                         {"message", e.what()}};
+        resp["error"] = nlohmann::json{{"code", type.empty() ? "ui_dev_command_failed" : type + "_failed"}, {"message", e.what()}};
     } catch (...) {
         resp["ok"] = false;
-        resp["error"] = nlohmann::json{{"code", resp.value("type", "") == "reload_bundle" ? "reload_bundle_failed" : "eval_failed"},
-                                         {"message", "unknown exception"}};
+        resp["error"] = nlohmann::json{{"code", type.empty() ? "ui_dev_command_failed" : type + "_failed"}, {"message", "unknown exception"}};
     }
 
-    try {
-        std::ofstream ofs(fs::path(response_path), std::ios::binary | std::ios::trunc);
-        ofs << resp.dump(2);
-    } catch (...) {
-        if (error) *error = "写入 ui-dev response 失败";
-        return false;
-    }
+    try { std::ofstream ofs(fs::path(response_path), std::ios::binary | std::ios::trunc); ofs << resp.dump(2); }
+    catch (...) { if (error) *error = "写入 ui-dev response 失败"; return false; }
 
-    {
-        std::error_code ec;
-        fs::remove(cmdp, ec);
-    }
-
+    { std::error_code ec; fs::remove(cmdp, ec); }
     *last_command_id = id;
     if (handled) *handled = true;
     return true;

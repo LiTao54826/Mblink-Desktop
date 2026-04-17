@@ -552,6 +552,14 @@ bool RequestRuntimeReloadBundle(const DaemonState& state,
                                  error);
 }
 
+bool RequestRuntimeUiCommand(const DaemonState& state,
+                             int runtime_pid,
+                             nlohmann::json command,
+                             nlohmann::json* response,
+                             std::string* error) {
+    return RequestRuntimeCommand(state, runtime_pid, std::move(command), response, error);
+}
+
 std::string ExtractRuntimeCommandMessage(const nlohmann::json& response, const std::string& fallback) {
     if (response.is_object()) {
         if (response.contains("error") && response["error"].is_object()) {
@@ -1305,6 +1313,15 @@ nlohmann::json DispatchDaemonRequest(const nlohmann::json& request, DaemonState*
         if (state->project_root.empty()) return ErrorResponse("project_not_open", "请先执行 open");
         auto snapshot_path = GetRuntimeSnapshotPath(*state);
         auto snapshot = ReadJsonFile(snapshot_path);
+        if ((!snapshot.is_object() || !snapshot.value("ok", false)) &&
+            state->runtime_pid > 0 && IsProcessRunning(state->runtime_pid)) {
+            const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(500);
+            while (std::chrono::steady_clock::now() < deadline) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(25));
+                snapshot = ReadJsonFile(snapshot_path);
+                if (snapshot.is_object() && snapshot.value("ok", false)) break;
+            }
+        }
         if (snapshot.is_object() && snapshot.value("ok", false)) {
             snapshot["timestamp"] = CurrentTimestampIso8601();
             snapshot["source"] = snapshot_path.string();
@@ -1322,6 +1339,37 @@ nlohmann::json DispatchDaemonRequest(const nlohmann::json& request, DaemonState*
         std::string error;
         nlohmann::json resp;
         if (!RequestRuntimeEval(*state, state->runtime_pid, code, &resp, &error)) return ErrorResponse("eval_failed", error);
+        resp["source"] = GetRuntimeResponsePath(*state).string();
+        return resp;
+    }
+    if (cmd == "query_element" || cmd == "inspect" || cmd == "click" || cmd == "input_text" || cmd == "scroll" || cmd == "highlight") {
+        if (state->project_root.empty()) return ErrorResponse("project_not_open", "请先执行 open");
+        if (state->runtime_pid <= 0 || !IsProcessRunning(state->runtime_pid)) return ErrorResponse("runtime_not_running", "runtime 未运行");
+        const auto selector = request.value("selector", std::string{});
+        if (selector.empty()) return ErrorResponse("invalid_args", cmd + " 缺少 selector");
+        nlohmann::json runtime_cmd{{"type", cmd}, {"selector", selector}};
+        if (cmd == "input_text") {
+            if (!request.contains("text") || !request["text"].is_string()) return ErrorResponse("invalid_args", "input_text 缺少 text");
+            runtime_cmd["text"] = request["text"];
+        } else if (cmd == "scroll") {
+            bool has_axis = false;
+            if (request.contains("x")) {
+                runtime_cmd["x"] = request["x"];
+                has_axis = true;
+            }
+            if (request.contains("y")) {
+                runtime_cmd["y"] = request["y"];
+                has_axis = true;
+            }
+            if (!has_axis) return ErrorResponse("invalid_args", "scroll 至少需要 x 或 y");
+        } else if (cmd == "highlight") {
+            if (request.contains("color")) runtime_cmd["color"] = request["color"];
+        }
+        std::string error;
+        nlohmann::json resp;
+        if (!RequestRuntimeUiCommand(*state, state->runtime_pid, std::move(runtime_cmd), &resp, &error)) {
+            return ErrorResponse(cmd + "_failed", error);
+        }
         resp["source"] = GetRuntimeResponsePath(*state).string();
         return resp;
     }

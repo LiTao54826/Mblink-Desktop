@@ -121,14 +121,15 @@ void ConfigureRuntimeControl(EventLoop* event_loop,
                              const std::shared_ptr<Document>& document,
                              const RuntimeSupportOptions& options) {
     if (!event_loop || !runtime || !window || !document) return;
-
     auto snapshot_written = std::make_shared<bool>(false);
+    auto snapshot_pending = std::make_shared<bool>(!options.snapshot_file.empty());
     auto lifecycle_file = std::make_shared<std::string>(options.lifecycle_file);
     auto stopped_reason = std::make_shared<std::string>();
     auto quit_elapsed = std::make_shared<float>(0.0f);
     auto quit_frames = std::make_shared<int>(0);
 
     WriteLifecycleState(*lifecycle_file, "running", "started");
+    if (*snapshot_pending) window->SetNeedsRepaint();
     window->SetOnCloseCallback([event_loop, lifecycle_file, stopped_reason]() {
         if (stopped_reason->empty()) {
             *stopped_reason = "user_closed";
@@ -137,14 +138,18 @@ void ConfigureRuntimeControl(EventLoop* event_loop,
         event_loop->Stop();
     });
 
-    event_loop->SetRenderCallback([window, document, snapshot_file = options.snapshot_file, snapshot_written]() {
-        if (!window->NeedsRepaint()) return;
-        window->Render();
-        window->SwapBuffers();
-        if (!snapshot_file.empty() && !*snapshot_written) {
+    event_loop->SetRenderCallback([window, document, snapshot_file = options.snapshot_file, snapshot_written, snapshot_pending]() {
+        const bool needs_snapshot = !snapshot_file.empty() && *snapshot_pending;
+        if (!window->NeedsRepaint() && !needs_snapshot) return;
+        if (window->NeedsRepaint()) {
+            window->Render();
+            window->SwapBuffers();
+        }
+        if (needs_snapshot) {
             std::string err;
             ExportUiDevSnapshot(window, document, snapshot_file, &err);
             *snapshot_written = true;
+            *snapshot_pending = false;
         }
     });
 
@@ -157,6 +162,7 @@ void ConfigureRuntimeControl(EventLoop* event_loop,
                                    snapshot_file = options.snapshot_file,
                                    last_command_id,
                                    snapshot_written,
+                                   snapshot_pending,
                                    event_loop,
                                    lifecycle_file,
                                    stopped_reason,
@@ -175,11 +181,8 @@ void ConfigureRuntimeControl(EventLoop* event_loop,
                                       &handled,
                                       &err) && handled) {
                 *snapshot_written = false;
-                if (!snapshot_file.empty()) {
-                    std::string snapshot_err;
-                    ExportUiDevSnapshot(window, document, snapshot_file, &snapshot_err);
-                    *snapshot_written = true;
-                }
+                *snapshot_pending = !snapshot_file.empty();
+                if (*snapshot_pending) window->SetNeedsRepaint();
             }
         }
 
