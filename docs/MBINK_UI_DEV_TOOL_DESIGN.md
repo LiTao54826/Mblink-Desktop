@@ -200,8 +200,8 @@ AI Agent  ──stdin──►  mbink-ui-dev  ──stdout──►  AI Agent
       "path": { "type": "string", "description": "目标目录（必须为空或不存在）" },
       "template": {
         "type": "string",
-        "enum": ["preact-jsx", "preact-ts", "vanilla-js", "python-host", "rust-host"],
-        "description": "项目模板类型"
+        "enum": ["preact-jsx", "preact-ts", "vanilla-js", "python", "go", "rust"],
+        "description": "项目模板类型（兼容别名：python-host → python，rust-host → rust）"
       },
       "name": { "type": "string", "description": "项目名（默认取目录名）" }
     }
@@ -213,7 +213,7 @@ AI Agent  ──stdin──►  mbink-ui-dev  ──stdout──►  AI Agent
 ```json
 {
   "ok": true,
-  "files_created": ["src/App.jsx", "src/index.html", "mbink.config.json", "mock/host.js", "package.json"],
+  "files_created": ["src/app.js", "src/components/AppShell.js", "src/components/InfoCard.js", "src/components/ActionList.js", "mbink.config.json", "host/main.py"],
   "next_step": "调用 open_project 或 CLI `open` 打开此目录开始开发"
 }
 ```
@@ -1093,8 +1093,29 @@ daemon 持有 watcher
 | `preact-jsx` | JSX + Preact，使用全局 Preact 对象，无需 npm | 无宿主（纯 JS） |
 | `preact-ts` | TypeScript + JSX + Preact，需要 esbuild 转译 | 无宿主（纯 JS） |
 | `vanilla-js` | 纯 JS，无框架依赖，适合简单工具窗口 | 无宿主（纯 JS） |
-| `python-host` | preact-jsx + Python 宿主集成模板 | Python |
-| `rust-host` | preact-jsx + Rust 宿主集成模板 | Rust |
+| `python` | 多文件前端 + Python 宿主起步模板 | Python |
+| `go` | 多文件前端 + Go 宿主起步模板 | Go |
+| `rust` | 多文件前端 + Rust 宿主起步模板 | Rust |
+
+说明：兼容旧别名 `python-host` → `python`、`rust-host` → `rust`。
+
+### 9.1.1 宿主模板目录结构（`python` / `go` / `rust`）
+
+```
+my-host-app/
+  ├── mbink.config.json
+  ├── src/
+  │   ├── app.js
+  │   └── components/
+  │       ├── AppShell.js
+  │       ├── InfoCard.js
+  │       └── ActionList.js
+  ├── host/main.py           ← Python 宿主入口
+  ├── host/main.go           ← Go 宿主入口
+  └── rust_host/src/main.rs  ← Rust 宿主入口
+```
+
+当前实现中，宿主模板前端入口为 `src/app.js`，并通过真实 `import ... from ...` 组织多个组件文件；默认窗口尺寸为 `800x600`。
 
 ### 9.2 `preact-jsx` 模板目录结构
 
@@ -1236,7 +1257,7 @@ if (typeof __mbink_mock_host__ !== 'undefined') {
 
 ```
 # 初始化新项目
-mbink-ui-dev init <path> --template <preact-jsx|preact-ts|vanilla-js|python-host|rust-host>
+mbink-ui-dev init <path> --template <preact-jsx|preact-ts|vanilla-js|python|go|rust>
 
 # 启动 Daemon（按项目启动；project 可自动解析）
 mbink-ui-dev daemon start [--project <path>]
@@ -1266,7 +1287,7 @@ mbink-ui-dev daemon status [--project <path>]  → 查询对应项目 daemon 状
 mbink-ui-dev stop [--project <path>]           → 顶层停止命令；幂等停止当前/指定项目 daemon + runtime
 
 # 项目初始化 / MCP
-mbink-ui-dev init <path> [--template <preact-jsx|preact-ts|vanilla-js|python-host|rust-host>]
+mbink-ui-dev init <path> [--template <preact-jsx|preact-ts|vanilla-js|python|go|rust>]
 mbink-ui-dev serve [--project <path>]          → 启动 stdio MCP Server（支持 initialize/tools/list/tools/call/resources/list/resources/read；会话内维护 active_project）
 
 # 项目/运行时
@@ -1410,7 +1431,7 @@ Skills 是一段系统提示词，教会任意有 shell tool 的 AI Agent 如何
 | `tools/app_bundler` | **生产打包独立工具** | 不被 mbink-ui-dev 替代；`build` tool 开发用，app_bundler 生产用 |
 | `core/devtools/` | **Snapshot 引擎的能力基础** | DevToolsManager 的 DOM 访问能力被 Snapshot 引擎复用 |
 | `js/runtime/bootstrap.js` | **直接复用** | 不修改；bootstrap.js 的 `__mbink_register_root__` 是脚手架模板的依赖 |
-| `bindings/python` 等 | **集成目标（非依赖）** | `python-host` / `rust-host` 模板提供与各语言绑定集成的起点 |
+| `bindings/python` 等 | **集成目标（非依赖）** | `python` / `go` / `rust` 模板提供与各语言绑定集成的起点；兼容旧别名 `python-host` / `rust-host` |
 
 ---
 
@@ -1469,7 +1490,7 @@ Skills 是一段系统提示词，教会任意有 shell tool 的 AI Agent 如何
 
 **交付物**：
 - [x] `init` 命令（模板文件写入）
-- [x] `preact-jsx` / `preact-ts` / `vanilla-js` / `python-host` / `rust-host` 模板完整内容
+- [x] `preact-jsx` / `preact-ts` / `vanilla-js` / `python` / `go` / `rust` 模板完整内容
 - [x] `mbink.config.json` 解析和验证
 - [x] MCP 适配层（`serve` 命令；当前支持 `initialize` / `tools/list` / `tools/call` / `resources/list` / `resources/read`，并复用现有 CLI / daemon 能力）
 - [x] 多项目并行管理：`.devui`、`project_id/runtime_id`、per-project daemon pipe/state/runtime 产物隔离

@@ -13,7 +13,7 @@ Read this file when exact command names, MCP mappings, templates, routing rules,
 
 ```bash
 # Project initialization
-mbink-ui-dev init <path> [--template <preact-jsx|preact-ts|vanilla-js|python-host|rust-host>]
+mbink-ui-dev init <path> [--template <preact-jsx|preact-ts|vanilla-js|python|go|rust>]
 
 # Daemon management
 mbink-ui-dev daemon start [--project <path>]
@@ -64,8 +64,8 @@ mbink-ui-dev info
 mbink-ui-dev snapshot
 mbink-ui-dev query ...
 mbink-ui-dev inspect ...
-mbink-ui-dev read src/App.jsx
-mbink-ui-dev write src/App.jsx --from /tmp/new-app.jsx
+mbink-ui-dev read src/app.js
+mbink-ui-dev write src/app.js --from /tmp/new-app.js
 mbink-ui-dev build --watch
 mbink-ui-dev build-status
 mbink-ui-dev click ...
@@ -81,6 +81,9 @@ mbink-ui-dev stop
 
 ```bash
 mbink-ui-dev init /abs/path/my-app --template preact-jsx
+mbink-ui-dev init /abs/path/my-py-app --template python
+mbink-ui-dev init /abs/path/my-go-app --template go
+mbink-ui-dev init /abs/path/my-rust-app --template rust
 mbink-ui-dev open /abs/path/my-app
 mbink-ui-dev build
 mbink-ui-dev snapshot
@@ -232,8 +235,11 @@ Build and runtime errors follow a common structure with fields such as:
 | `preact-jsx` | JSX plus Preact with globally injected `Preact` and `PreactHooks` | None |
 | `preact-ts` | TypeScript plus JSX plus Preact | None |
 | `vanilla-js` | Simple UI without framework dependency | None |
-| `python-host` | Need a Python host integration starter | Python |
-| `rust-host` | Need a Rust host integration starter | Rust |
+| `python` | Need a Python host integration starter with a multi-file frontend scaffold | Python |
+| `go` | Need a Go host integration starter with a multi-file frontend scaffold | Go |
+| `rust` | Need a Rust host integration starter with a multi-file frontend scaffold | Rust |
+
+Aliases kept for compatibility: `python-host` → `python`, `rust-host` → `rust`.
 
 `preact-jsx` scaffold shape:
 
@@ -249,6 +255,24 @@ my-app/
     state.js
   .dist/
 ```
+
+Host starter scaffold shape (`python` / `go` / `rust`):
+
+```text
+my-host-app/
+  mbink.config.json
+  src/
+    app.js
+    components/
+      AppShell.js
+      InfoCard.js
+      ActionList.js
+  host/main.py          # python
+  host/main.go          # go
+  rust_host/src/main.rs # rust
+```
+
+The host starters use real `import ... from` composition in `src/app.js` and keep the default window size at `800x600`.
 
 In `preact-jsx`, the generated entry uses global `Preact` and `PreactHooks` and registers the root through `__mbink_register_root__`.
 

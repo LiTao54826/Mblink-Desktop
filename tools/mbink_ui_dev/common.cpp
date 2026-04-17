@@ -473,11 +473,44 @@ bool InitProject(const std::filesystem::path& target_dir,
     }
 
     const std::string project_name = root.filename().string().empty() ? "mbink-app" : root.filename().string();
-    const bool is_preact_jsx = template_name == "preact-jsx";
-    const bool is_preact_ts = template_name == "preact-ts";
-    const bool is_vanilla_js = template_name == "vanilla-js";
-    const bool is_python_host = template_name == "python-host";
-    const bool is_rust_host = template_name == "rust-host";
+    const std::string normalized_template_name = template_name == "python-host"
+        ? "python"
+        : template_name == "rust-host"
+        ? "rust"
+        : template_name;
+    const bool is_preact_jsx = normalized_template_name == "preact-jsx";
+    const bool is_preact_ts = normalized_template_name == "preact-ts";
+    const bool is_vanilla_js = normalized_template_name == "vanilla-js";
+    const bool is_python_host = normalized_template_name == "python";
+    const bool is_go_host = normalized_template_name == "go";
+    const bool is_rust_host = normalized_template_name == "rust";
+
+    const std::string host_title = is_python_host
+        ? "MBink Python Starter"
+        : is_go_host
+        ? "MBink Go Starter"
+        : "MBink Rust Starter";
+    const std::string host_subtitle = is_python_host
+        ? "多文件 UI 结构 + Python 宿主入口，适合继续接 bindings/python。"
+        : is_go_host
+        ? "多文件 UI 结构 + Go 宿主入口，适合继续扩展桥接逻辑。"
+        : "多文件 UI 结构 + Rust 宿主入口，适合继续扩展 bindings/bridge。";
+    const std::string host_entry = is_python_host
+        ? "host/main.py"
+        : is_go_host
+        ? "host/main.go"
+        : "rust_host/src/main.rs";
+    const std::string host_description = is_python_host
+        ? "宿主逻辑示例在 host/main.py，可继续接入 bindings/python 或业务逻辑。"
+        : is_go_host
+        ? "宿主逻辑示例在 host/main.go，可继续接入你的 Go IPC / bridge 代码。"
+        : "宿主逻辑示例在 rust_host/src/main.rs，可继续接入 Rust bindings 或桥接代码。";
+    const std::string host_accent = is_python_host
+        ? "#2563eb"
+        : is_go_host
+        ? "#16a34a"
+        : "#7c3aed";
+
 
     const std::string app_js = is_preact_jsx
         ? std::string(
@@ -530,50 +563,48 @@ function App() {
 
 render(h(App), document.body);
 )JS")
-        : is_python_host
-        ? std::string(
-R"JS(const { h, render } = Preact;
-
-function App() {
-  return h('div', {
-    style: {
-      fontFamily: 'Segoe UI, sans-serif',
-      minHeight: '100vh',
-      padding: '24px',
-      background: '#111827',
-      color: '#e5e7eb'
-    }
-  },
-    h('h1', null, 'MBink Python Host Starter'),
-    h('p', null, 'Python 侧逻辑示例在 host/main.py；前端入口仍然可直接 open/build。'),
-    h('button', {
-      onClick: () => console.log('hello from python-host template'),
-      style: { padding: '10px 14px', borderRadius: '8px', border: '1px solid #374151', cursor: 'pointer' }
-    }, 'Ping Python Host Template')
-  );
-}
-
-render(h(App), document.body);
-)JS")
         : std::string(
-R"JS(const { h, render } = Preact;
+R"JS(import { AppShell } from './components/AppShell.js';
+import { InfoCard } from './components/InfoCard.js';
+import { ActionList } from './components/ActionList.js';
+
+const { h, render } = Preact;
+
+const project = {
+  title: ')JS" + host_title + R"JS(',
+  subtitle: ')JS" + host_subtitle + R"JS(',
+  entry: ')JS" + host_entry + R"JS(',
+  description: ')JS" + host_description + R"JS(',
+  accent: ')JS" + host_accent + R"JS('
+};
+
+const structure = [
+  'src/app.js',
+  'src/components/AppShell.js',
+  'src/components/InfoCard.js',
+  'src/components/ActionList.js',
+  project.entry
+];
+
+const actions = [
+  { label: '打开项目', detail: 'mbink-ui-dev open .' },
+  { label: '构建前端', detail: 'mbink-ui-dev build' },
+  { label: '扩展宿主桥接', detail: project.description }
+];
 
 function App() {
-  return h('div', {
-    style: {
-      fontFamily: 'Segoe UI, sans-serif',
-      minHeight: '100vh',
-      padding: '24px',
-      background: '#0f172a',
-      color: '#e2e8f0'
-    }
-  },
-    h('h1', null, 'MBink Rust Host Starter'),
-    h('p', null, 'Rust 侧逻辑示例在 rust_host/src/main.rs；前端入口仍然可直接 open/build。'),
-    h('button', {
-      onClick: () => console.log('hello from rust-host template'),
-      style: { padding: '10px 14px', borderRadius: '8px', border: '1px solid #475569', cursor: 'pointer' }
-    }, 'Ping Rust Host Template')
+  return h(AppShell, { project },
+    h('div', { style: { display: 'grid', gap: '16px' } },
+      h(InfoCard, {
+        title: '工程结构',
+        tone: 'accent',
+        lines: structure
+      }),
+      h(ActionList, {
+        title: '建议下一步',
+        items: actions
+      })
+    )
   );
 }
 
@@ -629,7 +660,7 @@ render(<App />, document.body);
 )TSX");
     const std::string python_main = std::string(
 R"PY(def main():
-    print("MBink python-host template")
+    print("MBink python template")
     print("在这里接入 bindings/python 或你的业务逻辑。")
 
 
@@ -640,6 +671,21 @@ if __name__ == "__main__":
 R"REQ(# 可在此处声明你的 Python 依赖
 # mbink-python-binding
 )REQ");
+    const std::string go_mod = std::string(
+R"MOD(module mbink-go-host
+
+go 1.22
+)MOD");
+    const std::string go_main = std::string(
+R"GO(package main
+
+import "fmt"
+
+func main() {
+    fmt.Println("MBink go template")
+    fmt.Println("在这里接入 Go 宿主逻辑。")
+}
+)GO");
     const std::string rust_cargo_toml = std::string(
 R"TOML([package]
 name = "mbink-rust-host"
@@ -650,13 +696,113 @@ edition = "2021"
 )TOML");
     const std::string rust_main = std::string(
 R"RS(fn main() {
-    println!("MBink rust-host template");
+    println!("MBink rust template");
     println!("在这里接入 Rust bindings 或宿主逻辑。");
 }
 )RS");
+    const std::string app_shell_js = std::string(
+R"JS(export function AppShell(props) {
+  const { h } = Preact;
+  const project = props.project || {};
+  const children = props.children || [];
+
+  return h('div', {
+    style: {
+      fontFamily: 'Segoe UI, sans-serif',
+      minHeight: '100vh',
+      padding: '24px',
+      background: '#0f172a',
+      color: '#e2e8f0'
+    }
+  },
+    h('div', {
+      style: {
+        maxWidth: '880px',
+        margin: '0 auto',
+        display: 'grid',
+        gap: '16px'
+      }
+    },
+      h('div', {
+        style: {
+          padding: '20px',
+          borderRadius: '16px',
+          border: '1px solid #334155',
+          background: 'linear-gradient(135deg, ' + (project.accent || '#2563eb') + '22, #0f172a 55%)'
+        }
+      },
+        h('div', { style: { fontSize: '30px', fontWeight: '700', marginBottom: '8px' } }, project.title || 'MBink Host Starter'),
+        h('div', { style: { color: '#cbd5e1', marginBottom: '10px' } }, project.subtitle || ''),
+        h('div', { style: { color: '#94a3b8', fontFamily: 'Consolas, monospace', fontSize: '13px' } }, 'entry: ' + (project.entry || 'host/main'))
+      ),
+      children
+    )
+  );
+}
+)JS");
+    const std::string info_card_js = std::string(
+R"JS(export function InfoCard(props) {
+  const { h } = Preact;
+  const lines = Array.isArray(props.lines) ? props.lines : [];
+  const tone = props.tone === 'accent' ? '#e0f2fe' : '#e5e7eb';
+
+  return h('div', {
+    style: {
+      padding: '16px',
+      borderRadius: '14px',
+      border: '1px solid #334155',
+      background: '#111827'
+    }
+  },
+    h('div', { style: { fontSize: '18px', fontWeight: '600', color: tone, marginBottom: '10px' } }, props.title || 'Info'),
+    h('div', { style: { display: 'grid', gap: '8px' } },
+      lines.map((line) => h('div', {
+        style: {
+          padding: '10px 12px',
+          borderRadius: '10px',
+          background: '#0b1220',
+          color: '#cbd5e1',
+          fontFamily: 'Consolas, monospace',
+          fontSize: '13px'
+        }
+      }, line))
+    )
+  );
+}
+)JS");
+    const std::string action_list_js = std::string(
+R"JS(export function ActionList(props) {
+  const { h } = Preact;
+  const items = Array.isArray(props.items) ? props.items : [];
+
+  return h('div', {
+    style: {
+      padding: '16px',
+      borderRadius: '14px',
+      border: '1px solid #334155',
+      background: '#111827'
+    }
+  },
+    h('div', { style: { fontSize: '18px', fontWeight: '600', marginBottom: '10px' } }, props.title || 'Actions'),
+    h('div', { style: { display: 'grid', gap: '10px' } },
+      items.map((item) => h('div', {
+        style: {
+          padding: '12px',
+          borderRadius: '10px',
+          border: '1px solid #1e293b',
+          background: '#0b1220'
+        }
+      },
+        h('div', { style: { fontWeight: '600', color: '#f8fafc', marginBottom: '4px' } }, item.label || ''),
+        h('div', { style: { color: '#94a3b8', fontSize: '14px' } }, item.detail || '')
+      ))
+    )
+  );
+}
+)JS");
     const std::string config = std::string("{\n") +
         "  \"name\": \"" + project_name + "\",\n" +
-        "  \"template\": \"" + template_name + "\",\n" +
+        "  \"template\": \"" + normalized_template_name + "\",\n" +
         "  \"entry\": \"src/app.js\",\n" +
         "  \"src_dir\": \"src\",\n" +
         "  \"out_dir\": \".dist\",\n" +
@@ -687,9 +833,18 @@ R"RS(fn main() {
         {root / "mbink.config.json", config},
         {root / "src" / "app.js", app_js},
     };
+    if (is_python_host || is_go_host || is_rust_host) {
+        files.push_back({root / "src" / "components" / "AppShell.js", app_shell_js});
+        files.push_back({root / "src" / "components" / "InfoCard.js", info_card_js});
+        files.push_back({root / "src" / "components" / "ActionList.js", action_list_js});
+    }
     if (is_python_host) {
         files.push_back({root / "host" / "main.py", python_main});
         files.push_back({root / "requirements.txt", python_requirements});
+    }
+    if (is_go_host) {
+        files.push_back({root / "host" / "main.go", go_main});
+        files.push_back({root / "go.mod", go_mod});
     }
     if (is_rust_host) {
         files.push_back({root / "rust_host" / "Cargo.toml", rust_cargo_toml});
@@ -732,13 +887,22 @@ R"RS(fn main() {
     if (result) {
         result->project_root = root;
         result->project_name = project_name;
-        result->template_name = template_name;
+        result->template_name = normalized_template_name;
         result->files_created = {"mbink.config.json", "src/app.js"};
         if (is_preact_jsx) result->files_created.push_back("src/App.jsx");
         if (is_preact_ts) result->files_created.push_back("src/App.tsx");
+        if (is_python_host || is_go_host || is_rust_host) {
+            result->files_created.push_back("src/components/AppShell.js");
+            result->files_created.push_back("src/components/InfoCard.js");
+            result->files_created.push_back("src/components/ActionList.js");
+        }
         if (is_python_host) {
             result->files_created.push_back("host/main.py");
             result->files_created.push_back("requirements.txt");
+        }
+        if (is_go_host) {
+            result->files_created.push_back("host/main.go");
+            result->files_created.push_back("go.mod");
         }
         if (is_rust_host) {
             result->files_created.push_back("rust_host/Cargo.toml");
@@ -750,7 +914,7 @@ R"RS(fn main() {
 }
 
 std::vector<std::string> ListSupportedInitTemplates() {
-    return {"preact-jsx", "preact-ts", "vanilla-js", "python-host", "rust-host"};
+    return {"preact-jsx", "preact-ts", "vanilla-js", "python", "go", "rust", "python-host", "rust-host"};
 }
 nlohmann::json OkResponse() {
     return nlohmann::json{{"ok", true}};

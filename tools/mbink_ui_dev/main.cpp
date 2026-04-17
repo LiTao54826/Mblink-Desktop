@@ -629,7 +629,7 @@ int main(int argc, char** argv) {
     const auto& cmd = args[0];
     if (cmd == "init") {
         if (args.size() < 2) {
-            PrintJson(ErrorResponse("invalid_args", "用法: mbink-ui-dev init <target-dir> [--template preact-jsx|preact-ts|vanilla-js|python-host|rust-host]"));
+            PrintJson(ErrorResponse("invalid_args", "用法: mbink-ui-dev init <target-dir> [--template preact-jsx|preact-ts|vanilla-js|python|go|rust]"));
             return 1;
         }
         const std::string template_name = [&args]() {
