@@ -9,6 +9,9 @@
 #include <sstream>
 #include <string>
 #include <vector>
+#include <thread>
+#include <chrono>
+
 
 #ifdef _WIN32
 #include <windows.h>
@@ -38,6 +41,8 @@ namespace {
 constexpr int kDaemonStartupTimeoutMs = 10000;
 constexpr int kDaemonRequestTimeoutMs = 10000;
 constexpr int kBuildRequestTimeoutMs = 45000;
+constexpr int kDaemonOpenRetryCount = 3;
+constexpr int kDaemonOpenRetryDelayMs = 250;
 
 void ConfigureConsoleForUtf8() {
 #ifdef _WIN32
@@ -100,6 +105,42 @@ std::string Base64Encode(const std::string& input) {
     }
     return output;
 }
+
+bool Base64Decode(const std::string& input, std::string* output, std::string* error) {
+    if (error) error->clear();
+    if (!output) {
+        if (error) *error = "Base64Decode output 不能为空";
+        return false;
+    }
+    output->clear();
+    auto decode = [](char ch) -> int {
+        if (ch >= 'A' && ch <= 'Z') return ch - 'A';
+        if (ch >= 'a' && ch <= 'z') return ch - 'a' + 26;
+        if (ch >= '0' && ch <= '9') return ch - '0' + 52;
+        if (ch == '+') return 62;
+        if (ch == '/') return 63;
+        return -1;
+    };
+    int value = 0;
+    int bits = -8;
+    for (char ch : input) {
+        if (ch == ' ' || ch == '\t' || ch == '\r' || ch == '\n') continue;
+        if (ch == '=') break;
+        const int decoded = decode(ch);
+        if (decoded < 0) {
+            if (error) *error = "--code-base64 不是有效 Base64";
+            return false;
+        }
+        value = (value << 6) | decoded;
+        bits += 6;
+        if (bits >= 0) {
+            output->push_back(static_cast<char>((value >> bits) & 0xFF));
+            bits -= 8;
+        }
+    }
+    return true;
+}
+
 
 std::filesystem::path GetExecutablePath() {
 #ifdef _WIN32
@@ -196,13 +237,15 @@ bool HasRunningDaemon(const ProjectIdentity& identity, bool cleanup_stale_state)
     return false;
 }
 
-bool EnsureDaemonRunning(const ProjectIdentity& identity, std::string* error) {
+bool EnsureDaemonRunning(const ProjectIdentity& identity, std::string* error, bool* started_now = nullptr) {
+    if (started_now) *started_now = false;
     if (HasRunningDaemon(identity, true)) return true;
 
     int pid = 0;
     if (!StartDetachedDaemon(GetExecutablePath(), identity.project_root.string(), identity.project_id, &pid, error)) {
         return false;
     }
+    if (started_now) *started_now = true;
     return WaitForDaemonReady(GetDaemonPipeName(identity.project_id), kDaemonStartupTimeoutMs, error);
 }
 
@@ -226,12 +269,79 @@ nlohmann::json CallDaemonWithTimeout(const ProjectIdentity& identity,
     return resp;
 }
 
+nlohmann::json OpenProjectViaDaemon(const ProjectIdentity& identity, bool started_now) {
+    const auto request = nlohmann::json{{"cmd", "open"}, {"project_root", identity.project_root.string()}};
+    auto response = CallDaemon(identity, request);
+    if (!started_now) return response;
+    for (int attempt = 1; attempt < kDaemonOpenRetryCount; ++attempt) {
+        if (response.value("ok", false)) return response;
+        if (!response.contains("error") || response["error"].value("code", std::string{}) != "ipc_failed") return response;
+        std::this_thread::sleep_for(std::chrono::milliseconds(kDaemonOpenRetryDelayMs));
+        response = CallDaemon(identity, request);
+    }
+    return response;
+}
+
+bool ResolveEvalCode(const std::vector<std::string>& args, std::string* code, std::string* error) {
+    if (error) error->clear();
+    if (!code) {
+        if (error) *error = "code 不能为空";
+        return false;
+    }
+    const auto code_base64 = GetOptionValue(args, "--code-base64");
+    const auto from = GetOptionValue(args, "--from");
+    if (!code_base64.empty()) return Base64Decode(code_base64, code, error);
+    if (!from.empty()) {
+        if (from == "-") {
+            *code = ReadStdinBytes();
+            return true;
+        }
+        if (!ReadFileBytes(std::filesystem::absolute(from), code)) {
+            if (error) *error = "读取 --from 文件失败";
+            return false;
+        }
+        return true;
+    }
+    code->clear();
+    for (size_t i = 1; i < args.size(); ++i) {
+        if (args[i] == "--project" || args[i] == "--code-base64" || args[i] == "--from") {
+            ++i;
+            continue;
+        }
+        if (args[i].rfind("--", 0) == 0) continue;
+        if (!code->empty()) *code += " ";
+        *code += args[i];
+    }
+    if (!code->empty()) return true;
+    if (error) *error = "用法: mbink-ui-dev eval <code> | --code-base64 <base64> | --from <file|->";
+    return false;
+}
+
+bool OptionConsumesNextValue(const std::string& arg) {
+    return arg == "--project" || arg == "--encoding" || arg == "--content" || arg == "--from" ||
+           arg == "--x" || arg == "--y" || arg == "--color" || arg == "--code-base64";
+}
+
+std::vector<std::string> CollectPositionalArgs(const std::vector<std::string>& args) {
+    std::vector<std::string> positional;
+    for (size_t i = 1; i < args.size(); ++i) {
+        if (args[i].rfind("--", 0) == 0) {
+            if (OptionConsumesNextValue(args[i])) ++i;
+            continue;
+        }
+        positional.push_back(args[i]);
+    }
+    return positional;
+}
+
 std::string GetProjectHint(const std::vector<std::string>& args, size_t positional_index) {
     const auto explicit_project = GetOptionValue(args, "--project");
     if (!explicit_project.empty()) return explicit_project;
-    if (positional_index < args.size() && args[positional_index].rfind("--", 0) != 0) return args[positional_index];
+    const auto positional = CollectPositionalArgs(args);
+    if (positional_index > 0 && positional_index - 1 < positional.size()) return positional[positional_index - 1];
     return "";
 }
+
 
 std::optional<ProjectIdentity> ResolveCommandProject(const std::vector<std::string>& args,
                                                     size_t positional_index,
@@ -380,10 +490,11 @@ nlohmann::json CallMcpTool(const std::string& tool_name,
     } else if (tool_name == "open_project") {
         const auto root = arguments.value("path", arguments.value("project_root", std::string{}));
         std::string err;
+        bool started_now = false;
         auto identity = ResolveProjectIdentity(root, true, &err);
         if (!identity.has_value()) return ErrorResponse("project_not_found", err);
-        if (!EnsureDaemonRunning(*identity, &err)) return ErrorResponse("daemon_start_failed", err);
-        tool_result = CallDaemon(*identity, nlohmann::json{{"cmd", "open"}, {"project_root", identity->project_root.string()}});
+        if (!EnsureDaemonRunning(*identity, &err, &started_now)) return ErrorResponse("daemon_start_failed", err);
+        tool_result = OpenProjectViaDaemon(*identity, started_now);
         if (tool_result.value("ok", false) && active_project) *active_project = *identity;
     } else if (tool_name == "read_file") {
         std::string err;
@@ -618,16 +729,17 @@ int main(int argc, char** argv) {
 
     if (cmd == "open") {
         std::string err;
+        bool started_now = false;
         const auto identity = ResolveCommandProject(args, 1, true, &err);
         if (!identity.has_value()) {
             PrintJson(ErrorResponse("project_not_found", err));
             return 1;
         }
-        if (!EnsureDaemonRunning(*identity, &err)) {
+        if (!EnsureDaemonRunning(*identity, &err, &started_now)) {
             PrintJson(ErrorResponse("daemon_start_failed", err));
             return 1;
         }
-        PrintJson(CallDaemon(*identity, nlohmann::json{{"cmd", "open"}, {"project_root", identity->project_root.string()}}));
+        PrintJson(OpenProjectViaDaemon(*identity, started_now));
         return 0;
     }
 
@@ -707,21 +819,22 @@ int main(int argc, char** argv) {
         PrintJson(ErrorResponse("daemon_not_running", command_error));
         return 1;
     }
+    const auto positional = CollectPositionalArgs(args);
 
     if (cmd == "snapshot") PrintJson(CallDaemon(*identity, nlohmann::json{{"cmd", "snapshot"}}));
     else if (cmd == "info") PrintJson(CallDaemon(*identity, nlohmann::json{{"cmd", "info"}}));
     else if (cmd == "read") {
-        if (args.size() < 2) {
+        if (positional.empty()) {
             PrintJson(ErrorResponse("invalid_args", "用法: mbink-ui-dev read <path> [--encoding utf8|base64]"));
             return 1;
         }
         const auto encoding = GetOptionValue(args, "--encoding");
-        nlohmann::json req{{"cmd", "read"}, {"path", args[1]}};
+        nlohmann::json req{{"cmd", "read"}, {"path", positional[0]}};
         if (!encoding.empty()) req["encoding"] = encoding;
         PrintJson(CallDaemon(*identity, req));
     }
     else if (cmd == "write") {
-        if (args.size() < 2) {
+        if (positional.empty()) {
             PrintJson(ErrorResponse("invalid_args", "用法: mbink-ui-dev write <path> [--content <text> | --from <file>] [--encoding utf8|base64]"));
             return 1;
         }
@@ -744,7 +857,7 @@ int main(int argc, char** argv) {
             content = ReadStdinBytes();
         }
         const std::string resolved_encoding = encoding.empty() ? "utf8" : encoding;
-        nlohmann::json req{{"cmd", "write"}, {"path", args[1]}, {"encoding", resolved_encoding}};
+        nlohmann::json req{{"cmd", "write"}, {"path", positional[0]}, {"encoding", resolved_encoding}};
         req["content"] = resolved_encoding == "base64" ? Base64Encode(content) : content;
         PrintJson(CallDaemon(*identity, req));
     }
@@ -757,44 +870,41 @@ int main(int argc, char** argv) {
     else if (cmd == "logs") PrintJson(CallDaemon(*identity, nlohmann::json{{"cmd", "logs"}}));
     else if (cmd == "errors") PrintJson(CallDaemon(*identity, nlohmann::json{{"cmd", "errors"}}));
     else if (cmd == "query" || cmd == "query-element") {
-        if (args.size() < 2) {
+        if (positional.empty()) {
             PrintJson(ErrorResponse("invalid_args", "用法: mbink-ui-dev query <selector>"));
             return 1;
         }
-        PrintJson(CallDaemon(*identity, nlohmann::json{{"cmd", "query_element"}, {"selector", args[1]}}));
+        PrintJson(CallDaemon(*identity, nlohmann::json{{"cmd", "query_element"}, {"selector", positional[0]}}));
     }
     else if (cmd == "inspect") {
-        if (args.size() < 2) {
+        if (positional.empty()) {
             PrintJson(ErrorResponse("invalid_args", "用法: mbink-ui-dev inspect <selector>"));
             return 1;
         }
-        PrintJson(CallDaemon(*identity, nlohmann::json{{"cmd", "inspect"}, {"selector", args[1]}}));
+        PrintJson(CallDaemon(*identity, nlohmann::json{{"cmd", "inspect"}, {"selector", positional[0]}}));
     }
     else if (cmd == "click") {
-        if (args.size() < 2) {
+        if (positional.empty()) {
             PrintJson(ErrorResponse("invalid_args", "用法: mbink-ui-dev click <selector>"));
             return 1;
         }
-        PrintJson(CallDaemon(*identity, nlohmann::json{{"cmd", "click"}, {"selector", args[1]}}));
+        PrintJson(CallDaemon(*identity, nlohmann::json{{"cmd", "click"}, {"selector", positional[0]}}));
     }
     else if (cmd == "input-text") {
-        if (args.size() < 3) {
+        if (positional.size() < 2) {
             PrintJson(ErrorResponse("invalid_args", "用法: mbink-ui-dev input-text <selector> <text>"));
             return 1;
         }
-        std::string text = args[2];
-        for (size_t i = 3; i < args.size(); ++i) {
-            if (args[i].rfind("--", 0) == 0) break;
-            text += " " + args[i];
-        }
-        PrintJson(CallDaemon(*identity, nlohmann::json{{"cmd", "input_text"}, {"selector", args[1]}, {"text", text}}));
+        std::string text = positional[1];
+        for (size_t i = 2; i < positional.size(); ++i) text += " " + positional[i];
+        PrintJson(CallDaemon(*identity, nlohmann::json{{"cmd", "input_text"}, {"selector", positional[0]}, {"text", text}}));
     }
     else if (cmd == "scroll") {
-        if (args.size() < 2) {
+        if (positional.empty()) {
             PrintJson(ErrorResponse("invalid_args", "用法: mbink-ui-dev scroll <selector> [--x <num>] [--y <num>]"));
             return 1;
         }
-        nlohmann::json req{{"cmd", "scroll"}, {"selector", args[1]}};
+        nlohmann::json req{{"cmd", "scroll"}, {"selector", positional[0]}};
         const auto x = GetOptionValue(args, "--x");
         const auto y = GetOptionValue(args, "--y");
         double number = 0.0;
@@ -819,22 +929,22 @@ int main(int argc, char** argv) {
         PrintJson(CallDaemon(*identity, req));
     }
     else if (cmd == "highlight") {
-        if (args.size() < 2) {
+        if (positional.empty()) {
             PrintJson(ErrorResponse("invalid_args", "用法: mbink-ui-dev highlight <selector> [--color <css-color>]"));
             return 1;
         }
-        nlohmann::json req{{"cmd", "highlight"}, {"selector", args[1]}};
+        nlohmann::json req{{"cmd", "highlight"}, {"selector", positional[0]}};
         const auto color = GetOptionValue(args, "--color");
         if (!color.empty()) req["color"] = color;
         PrintJson(CallDaemon(*identity, req));
     }
     else if (cmd == "eval") {
-        if (args.size() < 2) {
-            PrintJson(ErrorResponse("invalid_args", "用法: mbink-ui-dev eval <code>"));
+        std::string code;
+        std::string error;
+        if (!ResolveEvalCode(args, &code, &error)) {
+            PrintJson(ErrorResponse("invalid_args", error));
             return 1;
         }
-        std::string code = args[1];
-        for (size_t i = 2; i < args.size(); ++i) code += " " + args[i];
         PrintJson(CallDaemon(*identity, nlohmann::json{{"cmd", "eval"}, {"code", code}}));
     }
     else if (cmd == "reload") PrintJson(CallDaemon(*identity, nlohmann::json{{"cmd", "reload"}}));
