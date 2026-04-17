@@ -632,14 +632,14 @@ void RenderPipeline::DoRasterize() {
 
     current_frame_stats_.dirty_regions_count = frame_incremental_rasterizations;
 
-    if (frame_full_rasterizations > 0 || frame_incremental_rasterizations > 0) {
-        const char* render_mode = frame_full_rasterizations > 0 ? "full" : "incremental";
-        std::cout << "[RENDER_MODE] mode=" << render_mode
-                  << " full=" << frame_full_rasterizations
-                  << " incremental=" << frame_incremental_rasterizations
-                  << " layers=" << rasterized
-                  << "\n";
-    }
+    // if (frame_full_rasterizations > 0 || frame_incremental_rasterizations > 0) {
+    //     const char* render_mode = frame_full_rasterizations > 0 ? "full" : "incremental";
+    //     std::cout << "[RENDER_MODE] mode=" << render_mode
+    //               << " full=" << frame_full_rasterizations
+    //               << " incremental=" << frame_incremental_rasterizations
+    //               << " layers=" << rasterized
+    //               << "\n";
+    // }
 }
 
 void RenderPipeline::DoComposite(SkCanvas* canvas) {
