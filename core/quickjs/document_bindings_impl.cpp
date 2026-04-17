@@ -10,7 +10,6 @@
 #include "bindings/js_range.h"
 #include "core/dom/document.h"
 #include "core/dom/text.h"
-#include "core/dom/bindings/dom_bindings.h"
 #include "core/event/input/hit_test_controller.h"
 #include "core/event/loop/event_loop.h"
 #include "core/editing/selection_manager.h"
@@ -24,6 +23,14 @@
 #include <iostream>
 
 namespace mbink {
+
+static JSValue ThrowDocumentCreateError(JSContext* ctx, const char* method, const char* tag_name, const char* reason) {
+    const char* safe_tag = tag_name ? tag_name : "<null>";
+    const char* safe_reason = reason ? reason : "unknown error";
+    std::cerr << "[quickjs][document] " << method << " failed for tag '" << safe_tag << "': " << safe_reason << std::endl;
+    return JS_ThrowInternalError(ctx, "%s failed for tag '%s': %s", method, safe_tag, safe_reason);
+}
+
 
 // ========== 辅助函数：将 ComputedStyle 转换为 CSS 属性值字符串 ==========
 
@@ -105,6 +112,102 @@ static JSValue JS_Document_getElementById(JSContext* ctx, JSValueConst this_val,
     return bindings::WrapElement(ctx, element);
 }
 
+// ========== document.getElementsByTagName 实现 ==========
+
+static JSValue JS_Document_getElementsByTagName(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) {
+    if (argc < 1) {
+        return JS_ThrowTypeError(ctx, "getElementsByTagName requires 1 argument");
+    }
+
+    const char* tag_name = JS_ToCString(ctx, argv[0]);
+    if (!tag_name) {
+        return JS_EXCEPTION;
+    }
+
+    JSValue global = JS_GetGlobalObject(ctx);
+    JSValue window_val = JS_GetPropertyStr(ctx, global, "__mbink_window_ptr");
+    JS_FreeValue(ctx, global);
+
+    if (JS_IsUndefined(window_val)) {
+        JS_FreeCString(ctx, tag_name);
+        return JS_NewArray(ctx);
+    }
+
+    void* ptr = nullptr;
+    JS_ToInt64Ext(ctx, (int64_t*)&ptr, window_val);
+    JS_FreeValue(ctx, window_val);
+
+    if (!ptr) {
+        JS_FreeCString(ctx, tag_name);
+        return JS_NewArray(ctx);
+    }
+
+    auto* window = static_cast<Window*>(ptr);
+    auto doc = window->GetDocument();
+    if (!doc) {
+        JS_FreeCString(ctx, tag_name);
+        return JS_NewArray(ctx);
+    }
+
+    auto results = doc->GetElementsByTagName(tag_name);
+    JS_FreeCString(ctx, tag_name);
+
+    JSValue arr = JS_NewArray(ctx);
+    for (size_t i = 0; i < results.size(); ++i) {
+        JS_SetPropertyUint32(ctx, arr, static_cast<uint32_t>(i), bindings::WrapElement(ctx, results[i]));
+    }
+
+    return arr;
+}
+
+// ========== document.getElementsByClassName 实现 ==========
+
+static JSValue JS_Document_getElementsByClassName(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) {
+    if (argc < 1) {
+        return JS_ThrowTypeError(ctx, "getElementsByClassName requires 1 argument");
+    }
+
+    const char* class_name = JS_ToCString(ctx, argv[0]);
+    if (!class_name) {
+        return JS_EXCEPTION;
+    }
+
+    JSValue global = JS_GetGlobalObject(ctx);
+    JSValue window_val = JS_GetPropertyStr(ctx, global, "__mbink_window_ptr");
+    JS_FreeValue(ctx, global);
+
+    if (JS_IsUndefined(window_val)) {
+        JS_FreeCString(ctx, class_name);
+        return JS_NewArray(ctx);
+    }
+
+    void* ptr = nullptr;
+    JS_ToInt64Ext(ctx, (int64_t*)&ptr, window_val);
+    JS_FreeValue(ctx, window_val);
+
+    if (!ptr) {
+        JS_FreeCString(ctx, class_name);
+        return JS_NewArray(ctx);
+    }
+
+    auto* window = static_cast<Window*>(ptr);
+    auto doc = window->GetDocument();
+    if (!doc) {
+        JS_FreeCString(ctx, class_name);
+        return JS_NewArray(ctx);
+    }
+
+    auto results = doc->GetElementsByClassName(class_name);
+    JS_FreeCString(ctx, class_name);
+
+    JSValue arr = JS_NewArray(ctx);
+    for (size_t i = 0; i < results.size(); ++i) {
+        JS_SetPropertyUint32(ctx, arr, static_cast<uint32_t>(i), bindings::WrapElement(ctx, results[i]));
+    }
+
+    return arr;
+}
+
 // ========== document.createElement 实现 ==========
 
 static JSValue JS_Document_createElement(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) {
@@ -116,15 +219,15 @@ static JSValue JS_Document_createElement(JSContext* ctx, JSValueConst this_val, 
     if (!tag_name) {
         return JS_EXCEPTION;
     }
+    std::string tag_name_str(tag_name);
 
-    // 从全局对象获取 window
     JSValue global = JS_GetGlobalObject(ctx);
     JSValue window_val = JS_GetPropertyStr(ctx, global, "__mbink_window_ptr");
     JS_FreeValue(ctx, global);
 
     if (JS_IsUndefined(window_val)) {
         JS_FreeCString(ctx, tag_name);
-        return JS_NULL;
+        return ThrowDocumentCreateError(ctx, "document.createElement", tag_name_str.c_str(), "window binding is undefined");
     }
 
     void* ptr = nullptr;
@@ -133,21 +236,21 @@ static JSValue JS_Document_createElement(JSContext* ctx, JSValueConst this_val, 
 
     if (!ptr) {
         JS_FreeCString(ctx, tag_name);
-        return JS_NULL;
+        return ThrowDocumentCreateError(ctx, "document.createElement", tag_name_str.c_str(), "window pointer is null");
     }
 
     auto* window = static_cast<Window*>(ptr);
     auto doc = window->GetDocument();
     if (!doc) {
         JS_FreeCString(ctx, tag_name);
-        return JS_NULL;
+        return ThrowDocumentCreateError(ctx, "document.createElement", tag_name_str.c_str(), "document is null");
     }
 
     auto element = doc->CreateElement(tag_name);
     JS_FreeCString(ctx, tag_name);
 
     if (!element) {
-        return JS_NULL;
+        return ThrowDocumentCreateError(ctx, "document.createElement", tag_name_str.c_str(), "CreateElement returned null");
     }
 
     return bindings::WrapElement(ctx, element);
@@ -160,21 +263,19 @@ static JSValue JS_Document_createElementNS(JSContext* ctx, JSValueConst this_val
         return JS_ThrowTypeError(ctx, "createElementNS requires 2 arguments");
     }
 
-    // 第一个参数是命名空间 URI（我们忽略它）
-    // 第二个参数是标签名
     const char* qualified_name = JS_ToCString(ctx, argv[1]);
     if (!qualified_name) {
         return JS_EXCEPTION;
     }
+    std::string qualified_name_str(qualified_name);
 
-    // 从全局对象获取 window
     JSValue global = JS_GetGlobalObject(ctx);
     JSValue window_val = JS_GetPropertyStr(ctx, global, "__mbink_window_ptr");
     JS_FreeValue(ctx, global);
 
     if (JS_IsUndefined(window_val)) {
         JS_FreeCString(ctx, qualified_name);
-        return JS_NULL;
+        return ThrowDocumentCreateError(ctx, "document.createElementNS", qualified_name_str.c_str(), "window binding is undefined");
     }
 
     void* ptr = nullptr;
@@ -183,22 +284,21 @@ static JSValue JS_Document_createElementNS(JSContext* ctx, JSValueConst this_val
 
     if (!ptr) {
         JS_FreeCString(ctx, qualified_name);
-        return JS_NULL;
+        return ThrowDocumentCreateError(ctx, "document.createElementNS", qualified_name_str.c_str(), "window pointer is null");
     }
 
     auto* window = static_cast<Window*>(ptr);
     auto doc = window->GetDocument();
     if (!doc) {
         JS_FreeCString(ctx, qualified_name);
-        return JS_NULL;
+        return ThrowDocumentCreateError(ctx, "document.createElementNS", qualified_name_str.c_str(), "document is null");
     }
 
-    // 使用 CreateElement 创建元素（它会根据标签名自动处理 SVG 元素）
     auto element = doc->CreateElement(qualified_name);
     JS_FreeCString(ctx, qualified_name);
 
     if (!element) {
-        return JS_NULL;
+        return ThrowDocumentCreateError(ctx, "document.createElementNS", qualified_name_str.c_str(), "CreateElement returned null");
     }
 
     return bindings::WrapElement(ctx, element);
@@ -455,7 +555,7 @@ static JSValue JS_Window_getSelection(JSContext* ctx, JSValueConst this_val, int
     }
 
     // 获取 EventLoop 中的 SelectionManager
-    auto event_loop = DOMBindings::GetGlobalEventLoop();
+    auto event_loop = WindowBindings::GetActiveEventLoop();
     if (!event_loop) {
         return JS_NULL;
     }
@@ -668,7 +768,7 @@ static JSValue JS_Document_execCommand(JSContext* ctx, JSValueConst this_val, in
     }
 
     // 获取 EventLoop 中的 ContentEditableHandler
-    auto event_loop = DOMBindings::GetGlobalEventLoop();
+    auto event_loop = WindowBindings::GetActiveEventLoop();
     if (!event_loop) {
         return JS_NewBool(ctx, false);
     }
@@ -721,7 +821,7 @@ static JSValue JS_Document_queryCommandState(JSContext* ctx, JSValueConst this_v
     }
 
     // 获取 EventLoop 中的 ContentEditableHandler
-    auto event_loop = DOMBindings::GetGlobalEventLoop();
+    auto event_loop = WindowBindings::GetActiveEventLoop();
     if (!event_loop) {
         return JS_NewBool(ctx, false);
     }
@@ -774,7 +874,7 @@ static JSValue JS_Document_queryCommandEnabled(JSContext* ctx, JSValueConst this
     }
 
     // 获取 EventLoop 中的 ContentEditableHandler
-    auto event_loop = DOMBindings::GetGlobalEventLoop();
+    auto event_loop = WindowBindings::GetActiveEventLoop();
     if (!event_loop) {
         return JS_NewBool(ctx, false);
     }
@@ -793,7 +893,7 @@ static JSValue JS_Document_queryCommandEnabled(JSContext* ctx, JSValueConst this
 static JSValue JS_Window_scrollBy(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) {
     // scrollBy(x, y) 或 scrollBy({left, top})
     double x = 0, y = 0;
-    
+
     if (argc >= 1) {
         if (JS_IsObject(argv[0])) {
             // scrollBy({left, top}) 形式
@@ -815,7 +915,7 @@ static JSValue JS_Window_scrollBy(JSContext* ctx, JSValueConst this_val, int arg
             }
         }
     }
-    
+
     // 目前 window 级别的滚动暂不实现，返回 undefined
     // 大多数情况下，滚动是在具体的可滚动元素上进行的
     return JS_UNDEFINED;
@@ -870,7 +970,7 @@ static JSValue JS_Window_getComputedStyle(JSContext* ctx, JSValueConst this_val,
         if (window && window->GetDocument() && window->GetDocument()->GetStyleManager()) {
             resolver.SetStyleManager(window->GetDocument()->GetStyleManager());
         }
-        
+
         // 获取父元素样式用于继承
         const ComputedStyle* parent_style = nullptr;
         ComputedStyle parent_computed;
@@ -886,14 +986,14 @@ static JSValue JS_Window_getComputedStyle(JSContext* ctx, JSValueConst this_val,
                 }
             }
         }
-        
+
         style = resolver.ResolveStyle(element, parent_style);
         has_style = true;
     }
 
     // 创建返回的样式对象（模拟 CSSStyleDeclaration）
     JSValue style_obj = JS_NewObject(ctx);
-    
+
     if (!has_style) {
         // 返回空字符串的样式对象
         JS_SetPropertyStr(ctx, style_obj, "display", JS_NewString(ctx, ""));
@@ -1009,53 +1109,53 @@ static JSValue JS_Window_getComputedStyle(JSContext* ctx, JSValueConst this_val,
     JS_SetPropertyStr(ctx, style_obj, "textOverflow", JS_NewString(ctx, style.text_overflow.empty() ? "clip" : style.text_overflow.c_str()));
     JS_SetPropertyStr(ctx, style_obj, "verticalAlign", JS_NewString(ctx, style.vertical_align.empty() ? "baseline" : style.vertical_align.c_str()));
     JS_SetPropertyStr(ctx, style_obj, "cursor", JS_NewString(ctx, style.cursor.empty() ? "auto" : style.cursor.c_str()));
-    
+
     // 文本缩进（CodeMirror 需要）
     JS_SetPropertyStr(ctx, style_obj, "textIndent", JS_NewString(ctx, "0px"));
-    
+
     // 字母和单词间距
     JS_SetPropertyStr(ctx, style_obj, "letterSpacing", JS_NewString(ctx, "normal"));
     JS_SetPropertyStr(ctx, style_obj, "wordSpacing", JS_NewString(ctx, "normal"));
-    
+
     // 文本转换
     JS_SetPropertyStr(ctx, style_obj, "textTransform", JS_NewString(ctx, style.text_transform.empty() ? "none" : style.text_transform.c_str()));
-    
+
     // 方向
     JS_SetPropertyStr(ctx, style_obj, "direction", JS_NewString(ctx, "ltr"));
     JS_SetPropertyStr(ctx, style_obj, "unicodeBidi", JS_NewString(ctx, "normal"));
-    
+
     // 列表样式
     JS_SetPropertyStr(ctx, style_obj, "listStyle", JS_NewString(ctx, "none"));
     JS_SetPropertyStr(ctx, style_obj, "listStyleType", JS_NewString(ctx, "none"));
     JS_SetPropertyStr(ctx, style_obj, "listStylePosition", JS_NewString(ctx, "outside"));
-    
+
     // 表格相关
     JS_SetPropertyStr(ctx, style_obj, "borderCollapse", JS_NewString(ctx, "separate"));
     JS_SetPropertyStr(ctx, style_obj, "borderSpacing", JS_NewString(ctx, "0px"));
     JS_SetPropertyStr(ctx, style_obj, "tableLayout", JS_NewString(ctx, "auto"));
-    
+
     // 轮廓
     JS_SetPropertyStr(ctx, style_obj, "outline", JS_NewString(ctx, "none"));
     JS_SetPropertyStr(ctx, style_obj, "outlineWidth", JS_NewString(ctx, "0px"));
     JS_SetPropertyStr(ctx, style_obj, "outlineStyle", JS_NewString(ctx, "none"));
     JS_SetPropertyStr(ctx, style_obj, "outlineColor", JS_NewString(ctx, "currentcolor"));
-    
+
     // 浮动和清除
     JS_SetPropertyStr(ctx, style_obj, "float", JS_NewString(ctx, "none"));
     JS_SetPropertyStr(ctx, style_obj, "clear", JS_NewString(ctx, "none"));
-    
+
     // 内容
     JS_SetPropertyStr(ctx, style_obj, "content", JS_NewString(ctx, "normal"));
-    
+
     // 指针事件
     JS_SetPropertyStr(ctx, style_obj, "pointerEvents", JS_NewString(ctx, style.pointer_events.empty() ? "auto" : style.pointer_events.c_str()));
-    
+
     // 用户选择
     JS_SetPropertyStr(ctx, style_obj, "userSelect", JS_NewString(ctx, "auto"));
-    
+
     // 触摸操作
     JS_SetPropertyStr(ctx, style_obj, "touchAction", JS_NewString(ctx, "auto"));
-    
+
     // 滚动行为
     JS_SetPropertyStr(ctx, style_obj, "scrollBehavior", JS_NewString(ctx, "auto"));
 
@@ -1083,7 +1183,7 @@ static JSValue JS_Window_getComputedStyle(JSContext* ctx, JSValueConst this_val,
                 }
             }
             JS_FreeCString(ctx, prop);
-            
+
             JSValue val = JS_GetPropertyStr(ctx, this_val, camel_prop.c_str());
             if (JS_IsUndefined(val) || JS_IsNull(val)) {
                 JS_FreeValue(ctx, val);
@@ -1207,7 +1307,7 @@ static JSValue JS_Document_caretRangeFromPoint(JSContext* ctx, JSValueConst this
     // 查找元素中的文本节点
     std::shared_ptr<Text> text_node = nullptr;
     std::shared_ptr<RenderObject> text_render = nullptr;
-    
+
     // 首先检查命中的 RenderObject 是否是文本
     if (hit_result.render_object) {
         auto node = hit_result.render_object->GetNode();
@@ -1261,7 +1361,7 @@ static JSValue JS_Document_caretRangeFromPoint(JSContext* ctx, JSValueConst this
     // 获取文本渲染的样式信息
     float font_size = 16.0f;
     std::string font_family = "sans-serif";
-    
+
     if (text_render) {
         const auto& style = text_render->GetComputedStyle();
         font_size = style.font_size;
@@ -1282,7 +1382,7 @@ static JSValue JS_Document_caretRangeFromPoint(JSContext* ctx, JSValueConst this
 
     // 计算 local_x（相对于文本起始位置）
     float local_x = hit_result.local_x;
-    
+
     // 如果有 padding，需要减去
     if (hit_result.render_object) {
         const auto& style = hit_result.render_object->GetComputedStyle();
@@ -1299,14 +1399,14 @@ static JSValue JS_Document_caretRangeFromPoint(JSContext* ctx, JSValueConst this
         size_t byte_start = utf8::CharPosToBytePos(text, static_cast<int>(i));
         size_t byte_end = utf8::CharPosToBytePos(text, static_cast<int>(i + 1));
         std::string char_str = text.substr(byte_start, byte_end - byte_start);
-        
+
         float char_width = text_renderer.MeasureTextWidthWithEmoji(char_str, font);
-        
+
         // 如果点击位置在字符中间偏左，选择当前字符；偏右则选择下一个
         if (local_x < accumulated_width + char_width / 2) {
             break;
         }
-        
+
         accumulated_width += char_width;
         char_offset = static_cast<int>(i + 1);
     }
@@ -1394,6 +1494,12 @@ void BindDocumentAPIs(JSContext* ctx, Window* window) {
     // 设置 getElementById 方法
     JS_SetPropertyStr(ctx, document, "getElementById",
         JS_NewCFunction(ctx, JS_Document_getElementById, "getElementById", 1));
+
+    // 设置 getElementsByTagName / getElementsByClassName 方法
+    JS_SetPropertyStr(ctx, document, "getElementsByTagName",
+        JS_NewCFunction(ctx, JS_Document_getElementsByTagName, "getElementsByTagName", 1));
+    JS_SetPropertyStr(ctx, document, "getElementsByClassName",
+        JS_NewCFunction(ctx, JS_Document_getElementsByClassName, "getElementsByClassName", 1));
 
     // 设置 createElement 方法
     JS_SetPropertyStr(ctx, document, "createElement",
@@ -1510,14 +1616,14 @@ void BindDocumentAPIs(JSContext* ctx, Window* window) {
     if (!JS_IsUndefined(window_obj) && !JS_IsNull(window_obj)) {
         // 设置 window.document（重要：很多库通过 window.document 访问）
         JS_SetPropertyStr(ctx, window_obj, "document", JS_DupValue(ctx, document));
-        
+
         JS_SetPropertyStr(ctx, window_obj, "getSelection",
             JS_NewCFunction(ctx, JS_Window_getSelection, "getSelection", 0));
-        
+
         // 设置 window.getComputedStyle
         JS_SetPropertyStr(ctx, window_obj, "getComputedStyle",
             JS_NewCFunction(ctx, JS_Window_getComputedStyle, "getComputedStyle", 2));
-        
+
         // 设置 window.scrollBy 和 window.scrollTo
         JS_SetPropertyStr(ctx, window_obj, "scrollBy",
             JS_NewCFunction(ctx, JS_Window_scrollBy, "scrollBy", 2));
@@ -1525,26 +1631,26 @@ void BindDocumentAPIs(JSContext* ctx, Window* window) {
             JS_NewCFunction(ctx, JS_Window_scrollTo, "scrollTo", 2));
         JS_SetPropertyStr(ctx, window_obj, "scroll",
             JS_NewCFunction(ctx, JS_Window_scrollTo, "scroll", 2));
-        
+
         // 设置 window.requestAnimationFrame（从 globalThis 复制）
         JSValue raf = JS_GetPropertyStr(ctx, global, "requestAnimationFrame");
         if (!JS_IsUndefined(raf)) {
             JS_SetPropertyStr(ctx, window_obj, "requestAnimationFrame", raf);
         }
-        
+
         // 设置 window.cancelAnimationFrame（从 globalThis 复制）
         JSValue caf = JS_GetPropertyStr(ctx, global, "cancelAnimationFrame");
         if (!JS_IsUndefined(caf)) {
             JS_SetPropertyStr(ctx, window_obj, "cancelAnimationFrame", caf);
         }
-        
+
         JS_FreeValue(ctx, window_obj);
     }
 
     // 也设置到 globalThis 上（有些代码直接调用 getSelection()）
     JS_SetPropertyStr(ctx, global, "getSelection",
         JS_NewCFunction(ctx, JS_Window_getSelection, "getSelection", 0));
-    
+
     // 也设置 getComputedStyle 到 globalThis 上
     JS_SetPropertyStr(ctx, global, "getComputedStyle",
         JS_NewCFunction(ctx, JS_Window_getComputedStyle, "getComputedStyle", 2));

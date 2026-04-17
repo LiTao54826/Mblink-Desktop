@@ -17,6 +17,7 @@
 #include <sstream>
 #include <stdexcept>
 #include <iostream>
+#include <cstdio>
 #include <thread>
 #include <chrono>
 #include <filesystem>
@@ -24,6 +25,12 @@
 namespace mbink {
 
 namespace {
+
+std::string JsonValueToPrintableString(const json& value) {
+    if (value.is_string()) return value.get<std::string>();
+    if (value.is_null()) return "null";
+    return value.dump();
+}
 
 std::filesystem::path Utf8PathToFsPath(const std::string& path) {
 #ifdef _WIN32
@@ -251,6 +258,7 @@ json QuickJSRuntime::Eval(const std::string& code, const std::string& filename) 
                              filename.c_str(), JS_EVAL_TYPE_GLOBAL);
     if (JS_IsException(result)) {
         std::string error = GetJSError();
+        ReportJSError(filename, error);
         JS_FreeValue(ctx_, result);
         throw std::runtime_error("JavaScript error: " + error);
     }
@@ -264,6 +272,7 @@ json QuickJSRuntime::EvalModule(const std::string& code, const std::string& file
                              filename.c_str(), JS_EVAL_TYPE_MODULE);
     if (JS_IsException(result)) {
         std::string error = GetJSError();
+        ReportJSError(filename, error);
         JS_FreeValue(ctx_, result);
         throw std::runtime_error("JavaScript module error: " + error);
     }
@@ -331,6 +340,7 @@ json QuickJSRuntime::CallFunction(const std::string& func_name, const json& args
 
     if (JS_IsException(result)) {
         std::string error = GetJSError();
+        ReportJSError(func_name, error);
         JS_FreeValue(ctx_, result);
         throw std::runtime_error("Function call error: " + error);
     }
@@ -521,8 +531,23 @@ void QuickJSRuntime::InitStdLib() {
     // js_init_module_std(ctx_, "std");
     // js_init_module_os(ctx_, "os");
 
-    // Add console API
-    RegisterFunction("print", [](const json& args) -> json {
+    RegisterFunction("print", [this](const json& args) -> json {
+        std::string message;
+        json rendered_args = json::array();
+        if (args.is_array()) {
+            for (size_t i = 0; i < args.size(); ++i) {
+                const std::string text = JsonValueToPrintableString(args[i]);
+                if (!message.empty()) message += " ";
+                message += text;
+                rendered_args.push_back(text);
+            }
+        }
+        std::fputs(message.c_str(), stdout);
+        std::fputc('\n', stdout);
+        std::fflush(stdout);
+        if (console_callback_) {
+            console_callback_(json{{"level", "log"}, {"stream", "stdout"}, {"message", message}, {"args", rendered_args}});
+        }
         return nullptr;
     });
 }
@@ -556,6 +581,11 @@ std::string QuickJSRuntime::GetJSError() {
     return error_msg.empty() ? "Unknown error" : error_msg;
 }
 
+void QuickJSRuntime::ReportJSError(const std::string& where, const std::string& message) {
+    if (!error_callback_) return;
+    error_callback_(json{{"level", "error"}, {"stream", "stderr"}, {"where", where}, {"message", message}});
+}
+
 void QuickJSRuntime::InitConsole() {
     // Create console object
     JSValue global = JS_GetGlobalObject(ctx_);
@@ -586,17 +616,35 @@ JSValue QuickJSRuntime::ConsoleLog(JSContext* ctx, JSValueConst this_val,
                                    int argc, JSValueConst* argv, int magic) {
     // magic: 0=log, 1=error, 2=warn, 3=info
     FILE* out = (magic == 1) ? stderr : stdout;
+    const char* level = (magic == 1) ? "error" : (magic == 2) ? "warn" : (magic == 3) ? "info" : "log";
+    const char* stream = (magic == 1) ? "stderr" : "stdout";
+    QuickJSRuntime* runtime = static_cast<QuickJSRuntime*>(JS_GetContextOpaque(ctx));
+    json rendered_args = json::array();
+    std::string message;
 
     for (int i = 0; i < argc; i++) {
         if (i > 0) fputc(' ', out);
         const char* str = JS_ToCString(ctx, argv[i]);
         if (str) {
             fputs(str, out);
+            if (!message.empty()) message += " ";
+            message += str;
+            rendered_args.push_back(str);
             JS_FreeCString(ctx, str);
+        } else {
+            rendered_args.push_back(nullptr);
         }
     }
     fputc('\n', out);
     fflush(out);
+
+    if (runtime && runtime->console_callback_) {
+        runtime->console_callback_(json{{"level", level}, {"stream", stream}, {"message", message}, {"args", rendered_args}});
+    }
+
+    if (runtime && magic == 1 && !message.empty()) {
+        runtime->ReportJSError("console.error", message);
+    }
 
     return JS_UNDEFINED;
 }
@@ -1292,6 +1340,7 @@ void QuickJSRuntime::ProcessTasks() {
             if (JS_IsException(result)) {
                 // Log error but continue
                 std::string error = GetJSError();
+                ReportJSError("task_callback", error);
             }
 
             JS_FreeValue(ctx_, result);
@@ -1315,6 +1364,7 @@ void QuickJSRuntime::ProcessMicrotasks() {
         if (ret < 0) {
             // Error occurred
             std::string error = GetJSError();
+            ReportJSError("microtask", error);
             break;
         }
     }

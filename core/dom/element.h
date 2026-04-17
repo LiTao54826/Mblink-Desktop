@@ -290,6 +290,12 @@ public:
      */
     void ClearAllEventListeners();
 
+    /**
+     * @brief 是否存在任何事件监听器
+     * @details 包括 addEventListener 注册的监听器，以及内联事件处理器
+     */
+    bool HasAnyEventListeners() const;
+
     // ========== 查询选择器 ==========
 
     /**

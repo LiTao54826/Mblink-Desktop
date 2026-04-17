@@ -38,6 +38,9 @@
 #include "payload.h"
 #include "bytecode_compiler.h"
 #include "asset_manager.h"
+#include "ui_dev_snapshot.h"
+#include "ui_dev_control.h"
+#include "ui_dev_runtime_support.h"
 
 extern "C" {
 #include "quickjs/quickjs.h"
@@ -50,6 +53,11 @@ extern "C" {
 #include <string>
 #include <algorithm>
 #include <filesystem>
+#include <cstdio>
+#include <deque>
+#include <mutex>
+
+#include <nlohmann/json.hpp>
 
 #ifdef _WIN32
 #include <windows.h>
@@ -236,6 +244,12 @@ void PrintUsage(const char* program_name) {
     std::cout << "  --max-height <高度> 窗口最大高度" << std::endl;
     std::cout << "  --no-scripts        不执行脚本 (仅 HTML 模式)" << std::endl;
     std::cout << "  --devtools          启动时打开开发者工具" << std::endl;
+    std::cout << "  --ui-dev-snapshot-file <路径>   导出 UI Dev snapshot JSON" << std::endl;
+    std::cout << "  --ui-dev-command-file <路径>    读取 UI Dev command JSON" << std::endl;
+    std::cout << "  --ui-dev-response-file <路径>   写入 UI Dev response JSON" << std::endl;
+    std::cout << "  --ui-dev-console-file <路径>    写入结构化 console JSON" << std::endl;
+    std::cout << "  --ui-dev-errors-file <路径>     写入结构化 JS error JSON" << std::endl;
+    std::cout << "  --ui-dev-lifecycle-file <路径>  写入 runtime 生命周期 JSON" << std::endl;
     std::cout << "  -q, --quit <秒>     自动退出时间（秒）" << std::endl;
     std::cout << "  --help              显示此帮助信息" << std::endl;
     std::cout << std::endl;
@@ -481,6 +495,12 @@ int main(int argc, char** argv) {
     std::string title = has_embedded ? embedded_payload.config.title : "MBink App";
     bool title_from_user = false;
     bool open_devtools = false;
+    std::string ui_dev_snapshot_file;
+    std::string ui_dev_command_file;
+    std::string ui_dev_response_file;
+    std::string ui_dev_console_file;
+    std::string ui_dev_errors_file;
+    std::string ui_dev_lifecycle_file;
     bool execute_scripts = true;
     bool verbose = !has_embedded;  // 嵌入模式默认静默
     float quit_after_seconds = 0;
@@ -507,6 +527,18 @@ int main(int argc, char** argv) {
             title_from_user = true;
         } else if (arg == "--devtools") {
             open_devtools = true;
+        } else if (arg == "--ui-dev-snapshot-file" && i + 1 < argc) {
+            ui_dev_snapshot_file = argv[++i];
+        } else if (arg == "--ui-dev-command-file" && i + 1 < argc) {
+            ui_dev_command_file = argv[++i];
+        } else if (arg == "--ui-dev-response-file" && i + 1 < argc) {
+            ui_dev_response_file = argv[++i];
+        } else if (arg == "--ui-dev-console-file" && i + 1 < argc) {
+            ui_dev_console_file = argv[++i];
+        } else if (arg == "--ui-dev-errors-file" && i + 1 < argc) {
+            ui_dev_errors_file = argv[++i];
+        } else if (arg == "--ui-dev-lifecycle-file" && i + 1 < argc) {
+            ui_dev_lifecycle_file = argv[++i];
         } else if (arg == "--no-scripts") {
             execute_scripts = false;
         } else if (arg == "--borderless") {
@@ -654,6 +686,16 @@ int main(int argc, char** argv) {
         // 3. 创建 QuickJS 运行时
         LOG("[3/5] Creating QuickJS runtime...");
         auto runtime = std::make_unique<QuickJSRuntime>();
+        mbink::ui_dev::RuntimeSupportOptions ui_dev_options{
+            ui_dev_snapshot_file,
+            ui_dev_command_file,
+            ui_dev_response_file,
+            ui_dev_console_file,
+            ui_dev_errors_file,
+            ui_dev_lifecycle_file,
+            quit_after_seconds,
+        };
+        mbink::ui_dev::AttachStructuredRuntimeBuffers(runtime.get(), ui_dev_options);
         auto task_scheduler = std::make_shared<TaskScheduler>();
         LOG("  ✓ QuickJS runtime created");
 
@@ -677,7 +719,7 @@ int main(int argc, char** argv) {
         // 创建事件循环（需要在加载模块之前，以便 getSelection 等 API 可用）
         EventLoop event_loop(task_scheduler);
         event_loop.SetQuickJSRuntime(runtime.get());
-        DOMBindings::SetGlobalEventLoop(runtime->GetContext(), &event_loop);
+        WindowBindings::SetActiveEventLoop(&event_loop);
         LOG("  ✓ Event loop created");
 
         // 加载嵌入的库（Preact 等）
@@ -773,30 +815,8 @@ int main(int argc, char** argv) {
         LOG("  Press F12 to toggle DevTools");
         LOG("");
 
-        // 设置渲染回调
-        event_loop.SetRenderCallback([window]() {
-            if (window->NeedsRepaint()) {
-                window->Render();
-                window->SwapBuffers();
-            }
-        });
-        
-        // 如果设置了自动退出，使用更新回调计时
-        if (quit_after_seconds > 0) {
-            std::cout << "[Auto-quit] Will quit after " << quit_after_seconds << " seconds" << std::endl;
-            auto elapsed_time = std::make_shared<float>(0.0f);
-            auto frame_count = std::make_shared<int>(0);
-            event_loop.SetUpdateCallback([elapsed_time, frame_count, quit_after_seconds, &event_loop](float delta_time) {
-                (*frame_count)++;
-                *elapsed_time += delta_time;
-                // 每 60 帧输出一次调试信息
-                if (*elapsed_time >= quit_after_seconds) {
-                    std::cout << "[Auto-quit] Completed " << *elapsed_time << " seconds (" << *frame_count << " frames), exiting..." << std::endl;
-                    event_loop.Stop();
-                }
-            });
-        }
-        
+        mbink::ui_dev::ConfigureRuntimeControl(&event_loop, runtime.get(), window, document, ui_dev_options);
+
         event_loop.Run();
 
         // 清理 - 注意顺序：先释放持有 JSValue 的对象，最后释放 QuickJS 运行时
@@ -821,7 +841,7 @@ int main(int argc, char** argv) {
         }
 
         // 4. 先清理 Preact/Hooks 在全局对象上的闭包引用（事件处理函数、调度器状态等）
-        // 必须在 DOMBindings::Cleanup() 之前，因为 Cleanup 会把 global.document 设为 undefined，
+        // 必须在 WindowBindings::Cleanup() 之前，因为 Cleanup 会把 global.document 设为 undefined，
         // 而 __preactCleanup 内部需要调用 element.removeEventListener。
         try {
             runtime->Eval(R"(
@@ -844,15 +864,14 @@ int main(int argc, char** argv) {
             // 忽略清理脚本异常，继续执行原生清理流程
         }
 
-        // 5. 清理 DOM 绑定缓存 + JS 全局变量
-        DOMBindings::Cleanup(runtime->GetContext());
+        // 5. 清理 quickjs 主线路径的 DOM 绑定缓存 + JS 全局变量
+        window_bindings.Cleanup();
 
-        // 6. 释放 document（持有 DOM 树和事件监听器，这些可能包含 JSValue）
+        // 6. 清理 legacy DOMBindings 持有的全局调度器状态
+        DOMBindings::Cleanup(nullptr);
+
+        // 7. 释放 document（持有 DOM 树和事件监听器，这些可能包含 JSValue）
         document.reset();
-
-        // 7. 清理 DOM 绑定映射（释放所有 Node* -> JSValue 的映射）
-        // 必须在 QuickJS 运行时销毁之前调用
-        DOMBindingMap::GetInstance().Clear();
 
         // 8. 清理 HostBridge/StateManager 的监听器，释放 watch 回调里的 JSValue 引用
         if (state_manager) {

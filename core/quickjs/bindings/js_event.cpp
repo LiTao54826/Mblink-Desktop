@@ -454,6 +454,16 @@ static JSValue JSEvent_get_defaultPrevented(JSContext* ctx, JSValueConst this_va
     return JS_NewBool(ctx, data->event->IsDefaultPrevented());
 }
 
+// timeStamp
+static JSValue JSEvent_get_timeStamp(JSContext* ctx, JSValueConst this_val, int magic) {
+    auto* data = static_cast<JSEventData*>(JS_GetOpaque(this_val, js_event_class_id));
+    if (!data || !data->event) {
+        return JS_NewFloat64(ctx, 0);
+    }
+
+    return JS_NewFloat64(ctx, data->event->GetTimeStamp());
+}
+
 // ========== ClipboardEvent 属性访问器 ==========
 
 // clipboardData (返回一个包含 getData/setData 方法的对象)
@@ -590,6 +600,17 @@ static JSValue JSEvent_stopPropagation(JSContext* ctx, JSValueConst this_val, in
     return JS_UNDEFINED;
 }
 
+// stopImmediatePropagation()
+static JSValue JSEvent_stopImmediatePropagation(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) {
+    auto* data = static_cast<JSEventData*>(JS_GetOpaque(this_val, js_event_class_id));
+    if (!data || !data->event) {
+        return JS_EXCEPTION;
+    }
+
+    data->event->StopImmediatePropagation();
+    return JS_UNDEFINED;
+}
+
 // preventDefault()
 static JSValue JSEvent_preventDefault(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) {
     auto* data = static_cast<JSEventData*>(JS_GetOpaque(this_val, js_event_class_id));
@@ -601,6 +622,39 @@ static JSValue JSEvent_preventDefault(JSContext* ctx, JSValueConst this_val, int
     return JS_UNDEFINED;
 }
 
+// new Event(type, { bubbles, cancelable })
+static JSValue JSEvent_constructor(JSContext* ctx, JSValueConst new_target, int argc, JSValueConst* argv) {
+    if (argc < 1) {
+        return JS_ThrowTypeError(ctx, "Event constructor requires 1 argument");
+    }
+
+    const char* type = JS_ToCString(ctx, argv[0]);
+    if (!type) {
+        return JS_EXCEPTION;
+    }
+
+    bool bubbles = true;
+    bool cancelable = true;
+    if (argc >= 2 && JS_IsObject(argv[1])) {
+        JSValue bubbles_value = JS_GetPropertyStr(ctx, argv[1], "bubbles");
+        JSValue cancelable_value = JS_GetPropertyStr(ctx, argv[1], "cancelable");
+
+        if (!JS_IsUndefined(bubbles_value) && !JS_IsNull(bubbles_value)) {
+            bubbles = JS_ToBool(ctx, bubbles_value);
+        }
+        if (!JS_IsUndefined(cancelable_value) && !JS_IsNull(cancelable_value)) {
+            cancelable = JS_ToBool(ctx, cancelable_value);
+        }
+
+        JS_FreeValue(ctx, bubbles_value);
+        JS_FreeValue(ctx, cancelable_value);
+    }
+
+    auto event = std::make_shared<Event>(type, bubbles, cancelable);
+    JS_FreeCString(ctx, type);
+    return WrapEvent(ctx, event);
+}
+
 // ========== 类定义 ==========
 
 static const JSCFunctionListEntry js_event_proto_funcs[] = {
@@ -610,6 +664,7 @@ static const JSCFunctionListEntry js_event_proto_funcs[] = {
     JS_CGETSET_MAGIC_DEF("bubbles", JSEvent_get_bubbles, nullptr, 0),
     JS_CGETSET_MAGIC_DEF("cancelable", JSEvent_get_cancelable, nullptr, 0),
     JS_CGETSET_MAGIC_DEF("defaultPrevented", JSEvent_get_defaultPrevented, nullptr, 0),
+    JS_CGETSET_MAGIC_DEF("timeStamp", JSEvent_get_timeStamp, nullptr, 0),
     // MouseEvent 属性
     JS_CGETSET_MAGIC_DEF("clientX", JSEvent_get_clientX, nullptr, 0),
     JS_CGETSET_MAGIC_DEF("clientY", JSEvent_get_clientY, nullptr, 0),
@@ -639,6 +694,7 @@ static const JSCFunctionListEntry js_event_proto_funcs[] = {
     JS_CGETSET_MAGIC_DEF("clipboardData", JSEvent_get_clipboardData, nullptr, 0),
     // 方法
     JS_CFUNC_DEF("stopPropagation", 0, JSEvent_stopPropagation),
+    JS_CFUNC_DEF("stopImmediatePropagation", 0, JSEvent_stopImmediatePropagation),
     JS_CFUNC_DEF("preventDefault", 0, JSEvent_preventDefault),
 };
 
@@ -661,11 +717,18 @@ void InitEventBinding(JSContext* ctx) {
 
     // 创建原型对象
     JSValue proto = JS_NewObject(ctx);
-    JS_SetPropertyFunctionList(ctx, proto, js_event_proto_funcs, 
+    JS_SetPropertyFunctionList(ctx, proto, js_event_proto_funcs,
                                sizeof(js_event_proto_funcs) / sizeof(js_event_proto_funcs[0]));
 
     // 设置类的原型
     JS_SetClassProto(ctx, js_event_class_id, proto);
+
+    // 注册全局 Event 构造函数
+    JSValue global = JS_GetGlobalObject(ctx);
+    JSValue event_ctor = JS_NewCFunction2(ctx, JSEvent_constructor, "Event", 1, JS_CFUNC_constructor, 0);
+    JS_SetConstructor(ctx, event_ctor, proto);
+    JS_SetPropertyStr(ctx, global, "Event", event_ctor);
+    JS_FreeValue(ctx, global);
 }
 
 JSValue WrapEvent(JSContext* ctx, std::shared_ptr<Event> event) {

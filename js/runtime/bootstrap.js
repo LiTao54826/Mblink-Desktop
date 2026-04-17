@@ -169,7 +169,7 @@
         };
 
         var wrapNested = function(rootKey, value, getRootValue) {
-            if (!value || (typeof value !== 'object' && typeof value !== 'function') || typeof Proxy !== 'function') {
+            if (!value || typeof value !== 'object' || typeof Proxy !== 'function') {
                 return value;
             }
 
@@ -197,6 +197,9 @@
                         runtime.trackDependency(depKey);
                     }
                     var v = Reflect.get(obj, prop, receiver);
+                    if (typeof v === 'function') {
+                        return v;
+                    }
                     return wrapNested(rootKey, v, getRootValue);
                 },
                 set: function(obj, prop, v, receiver) {

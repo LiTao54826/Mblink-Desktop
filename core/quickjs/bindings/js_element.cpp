@@ -14,10 +14,12 @@
 #include "core/dom/elements/html_select_element.h"
 #include "core/dom/elements/html_canvas_element.h"
 #include "core/dom/elements/html_image_element.h"
+#include "core/dom/elements/svg_element.h"
 #include "core/dom/elements/terminal/html_terminal_element.h"
 #include "core/dom/elements/logview/html_logview_element.h"
 #include "core/dom/bindings/canvas_bindings.h"
 #include "core/dom/bindings/terminal_bindings.h"
+#include "core/event/types/mouse_event.h"
 #include "core/dom/selection/selector_engine.h"
 #include "core/quickjs/dom_binding_map.h"
 #include "core/render/objects/render_object.h"
@@ -91,6 +93,32 @@ static const JSElementEventPropertyDescriptor* GetEventPropertyDescriptorByMagic
 static const JSElementEventPropertyDescriptor* FindEventPropertyDescriptorByName(const char* name);
 static JSValue JSElement_get_event_property(JSContext* ctx, JSValueConst this_val, int magic);
 static JSValue JSElement_set_event_property(JSContext* ctx, JSValueConst this_val, JSValue val, int magic);
+namespace {
+
+bool IsSVGElementInstance(const std::shared_ptr<Element>& element) {
+    return static_cast<bool>(std::dynamic_pointer_cast<SVGElement>(element));
+}
+
+std::string NormalizeSVGAttributeName(const std::shared_ptr<Element>& element, const std::string& name) {
+    if (!IsSVGElementInstance(element)) {
+        return name;
+    }
+
+    if (name == "strokeWidth") return "stroke-width";
+    if (name == "strokeLinecap") return "stroke-linecap";
+    if (name == "strokeLinejoin") return "stroke-linejoin";
+    if (name == "strokeOpacity") return "stroke-opacity";
+    if (name == "fillOpacity") return "fill-opacity";
+    if (name == "stopColor") return "stop-color";
+    if (name == "stopOpacity") return "stop-opacity";
+    if (name == "clipPath") return "clip-path";
+
+    return name;
+}
+
+} // namespace
+
+
 
 
 // ========== 析构函数 ==========
@@ -777,12 +805,22 @@ static JSValue JSElement_setAttribute(JSContext* ctx, JSValueConst this_val, int
         return JS_EXCEPTION;
     }
 
-    data->element->SetAttribute(name, value);
+    std::string normalized_name = NormalizeSVGAttributeName(data->element, name);
+    data->element->SetAttribute(normalized_name, value);
 
     JS_FreeCString(ctx, name);
     JS_FreeCString(ctx, value);
 
     return JS_UNDEFINED;
+}
+
+// setAttributeNS(namespaceURI, qualifiedName, value)
+static JSValue JSElement_setAttributeNS(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) {
+    if (argc < 3) {
+        return JS_ThrowTypeError(ctx, "setAttributeNS requires 3 arguments");
+    }
+
+    return JSElement_setAttribute(ctx, this_val, 2, argv + 1);
 }
 
 // getAttribute(name)
@@ -801,11 +839,43 @@ static JSValue JSElement_getAttribute(JSContext* ctx, JSValueConst this_val, int
         return JS_EXCEPTION;
     }
 
-    std::string value = data->element->GetAttribute(name);
+    std::string normalized_name = NormalizeSVGAttributeName(data->element, name);
+    std::string value = data->element->GetAttribute(normalized_name);
     JS_FreeCString(ctx, name);
 
     // Web 标准：不存在的属性返回空字符串，而不是 null
     return JS_NewString(ctx, value.c_str());
+}
+
+// getAttributeNS(namespaceURI, localName)
+static JSValue JSElement_getAttributeNS(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) {
+    if (argc < 2) {
+        return JS_ThrowTypeError(ctx, "getAttributeNS requires 2 arguments");
+    }
+
+    return JSElement_getAttribute(ctx, this_val, 1, argv + 1);
+}
+
+// hasAttribute(name)
+static JSValue JSElement_hasAttribute(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) {
+    auto* data = static_cast<JSElementData*>(JS_GetOpaque(this_val, js_element_class_id));
+    if (!data || !data->element) {
+        return JS_EXCEPTION;
+    }
+
+    if (argc < 1) {
+        return JS_ThrowTypeError(ctx, "hasAttribute requires 1 argument");
+    }
+
+    const char* name = JS_ToCString(ctx, argv[0]);
+    if (!name) {
+        return JS_EXCEPTION;
+    }
+
+    std::string normalized_name = NormalizeSVGAttributeName(data->element, name);
+    bool has_attribute = data->element->HasAttribute(normalized_name);
+    JS_FreeCString(ctx, name);
+    return JS_NewBool(ctx, has_attribute);
 }
 
 // removeAttribute(name)
@@ -824,7 +894,8 @@ static JSValue JSElement_removeAttribute(JSContext* ctx, JSValueConst this_val, 
         return JS_EXCEPTION;
     }
 
-    data->element->RemoveAttribute(name);
+    std::string normalized_name = NormalizeSVGAttributeName(data->element, name);
+    data->element->RemoveAttribute(normalized_name);
 
     if (const auto* desc = FindEventPropertyDescriptorByName(name)) {
         size_t count = sizeof(kJSElementEventProperties) / sizeof(kJSElementEventProperties[0]);
@@ -837,6 +908,15 @@ static JSValue JSElement_removeAttribute(JSContext* ctx, JSValueConst this_val, 
     JS_FreeCString(ctx, name);
 
     return JS_UNDEFINED;
+}
+
+// removeAttributeNS(namespaceURI, localName)
+static JSValue JSElement_removeAttributeNS(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) {
+    if (argc < 2) {
+        return JS_ThrowTypeError(ctx, "removeAttributeNS requires 2 arguments");
+    }
+
+    return JSElement_removeAttribute(ctx, this_val, 1, argv + 1);
 }
 
 // querySelector(selector)
@@ -1745,6 +1825,35 @@ static JSValue JSElement_remove(JSContext* ctx, JSValueConst this_val, int argc,
     return JS_UNDEFINED;
 }
 
+// click - 触发元素 click 事件
+static JSValue JSElement_click(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) {
+    auto* data = static_cast<JSElementData*>(JS_GetOpaque(this_val, js_element_class_id));
+    if (!data || !data->element) return JS_UNDEFINED;
+
+    auto click_event = std::make_shared<MouseEvent>("click", 0, 0, 0, 1, 0);
+    data->element->DispatchEvent(click_event);
+    return JS_UNDEFINED;
+}
+
+// dispatchEvent(event)
+static JSValue JSElement_dispatchEvent(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) {
+    auto* data = static_cast<JSElementData*>(JS_GetOpaque(this_val, js_element_class_id));
+    if (!data || !data->element) {
+        return JS_EXCEPTION;
+    }
+
+    if (argc < 1) {
+        return JS_ThrowTypeError(ctx, "dispatchEvent requires 1 argument");
+    }
+
+    auto event = UnwrapEvent(ctx, argv[0]);
+    if (!event) {
+        return JS_ThrowTypeError(ctx, "dispatchEvent requires an Event object");
+    }
+
+    return JS_NewBool(ctx, data->element->DispatchEvent(event));
+}
+
 // ownerDocument getter - 获取元素所属的文档
 static JSValue JSElement_get_ownerDocument(JSContext* ctx, JSValueConst this_val, int magic) {
     auto* data = static_cast<JSElementData*>(JS_GetOpaque(this_val, js_element_class_id));
@@ -1850,8 +1959,12 @@ static const JSCFunctionListEntry js_element_proto_funcs[] = {
     JS_CGETSET_MAGIC_DEF("onerror", JSElement_get_event_property, JSElement_set_event_property, 15),
     JS_PROP_STRING_DEF("[Symbol.toStringTag]", "Element", JS_PROP_CONFIGURABLE),
     JS_CFUNC_DEF("setAttribute", 2, JSElement_setAttribute),
+    JS_CFUNC_DEF("setAttributeNS", 3, JSElement_setAttributeNS),
     JS_CFUNC_DEF("getAttribute", 1, JSElement_getAttribute),
+    JS_CFUNC_DEF("getAttributeNS", 2, JSElement_getAttributeNS),
+    JS_CFUNC_DEF("hasAttribute", 1, JSElement_hasAttribute),
     JS_CFUNC_DEF("removeAttribute", 1, JSElement_removeAttribute),
+    JS_CFUNC_DEF("removeAttributeNS", 2, JSElement_removeAttributeNS),
     JS_CFUNC_DEF("querySelector", 1, JSElement_querySelector),
     JS_CFUNC_DEF("querySelectorAll", 1, JSElement_querySelectorAll),
     JS_CFUNC_DEF("addEventListener", 3, JSElement_addEventListener),
@@ -1868,6 +1981,8 @@ static const JSCFunctionListEntry js_element_proto_funcs[] = {
     JS_CFUNC_DEF("matches", 1, JSElement_matches),
     JS_CFUNC_DEF("closest", 1, JSElement_closest),
     JS_CFUNC_DEF("cloneNode", 1, JSElement_cloneNode),
+    JS_CFUNC_DEF("click", 0, JSElement_click),
+    JS_CFUNC_DEF("dispatchEvent", 1, JSElement_dispatchEvent),
     JS_CFUNC_DEF("remove", 0, JSElement_remove),
 };
 

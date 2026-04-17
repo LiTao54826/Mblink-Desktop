@@ -12,6 +12,8 @@
 - [Known Issues | 已知问题](KNOWN_ISSUES.md)
 - [Contributing | 贡献](CONTRIBUTING.md)
 - [MBink UI Dev Tool Design | MBink UI 开发工具设计](MBINK_UI_DEV_TOOL_DESIGN.md)
+- [DOM Bindings Migration Plan | DOM 绑定迁移方案](DOM_BINDINGS_MIGRATION.md)
+
 
 - [Changelog | 变更记录](../CHANGELOG.md)
 - [Roadmap | 路线图](../ROADMAP.md)

@@ -18,7 +18,6 @@
     var __debugVNodeId = 1;
     var __debugComponentId = 1;
 
-
     function ensureVNodeId(vnode) {
         if (!vnode || typeof vnode !== 'object') return null;
         if (!vnode.__debugId) {
@@ -35,8 +34,47 @@
         return component.__debugId;
     }
 
+    function getVNodeTypeName(vnode) {
+        if (vnode == null) return 'null';
+        if (vnode === false) return 'false';
+        if (vnode === true) return 'true';
+        if (typeof vnode === 'string' || typeof vnode === 'number') return '#text';
+        if (typeof vnode.type === 'function') return vnode.type.name || 'Anonymous';
+        return vnode.type || 'unknown';
+    }
 
+    function describeVNode(vnode) {
+        if (vnode == null || vnode === false || vnode === true) {
+            return String(vnode);
+        }
+        if (typeof vnode === 'string' || typeof vnode === 'number') {
+            return '#text(' + String(vnode) + ')';
+        }
+        var vnodeId = ensureVNodeId(vnode) || 'unknown';
+        var propsKeys = [];
+        if (vnode.props) {
+            for (var key in vnode.props) {
+                propsKeys.push(key);
+            }
+        }
+        return getVNodeTypeName(vnode) + '[' + vnodeId + '] props=' + propsKeys.join(',');
+    }
 
+    function describeDOMNode(node) {
+        if (!node) return 'null';
+        return node.tagName || node.nodeName || 'unknown';
+    }
+
+    function logPreactError(message, error, details) {
+        try {
+            if (typeof console !== 'undefined' && console.error) {
+                console.error('[preact]', message, details || null, error || null);
+                if (error && error.stack) {
+                    console.error(error.stack);
+                }
+            }
+        } catch (_) {}
+    }
 /**
  * Create a Virtual DOM node (VNode)
  * @param {string|Function} type - Element tag name or component function
@@ -669,14 +707,42 @@ function createDOMElement(vnode) {
     }
 
     var element;
-    if (isSVG) {
-        element = document.createElementNS('http://www.w3.org/2000/svg', vnode.type);
-    } else {
-        element = document.createElement(vnode.type);
+    try {
+        if (isSVG) {
+            element = document.createElementNS('http://www.w3.org/2000/svg', vnode.type);
+        } else {
+            element = document.createElement(vnode.type);
+        }
+    } catch (e) {
+        logPreactError('createDOMElement: create failed', e, {
+            vnode: describeVNode(vnode),
+            tag: vnode && vnode.type,
+            isSVG: isSVG
+        });
+        throw e;
     }
 
-    // Set properties
-    setDOMProps(element, {}, vnode.props || {}, isSVG);
+    if (!element) {
+        var createError = new Error('createDOMElement returned null for tag ' + vnode.type);
+        logPreactError('createDOMElement: create returned null', createError, {
+            vnode: describeVNode(vnode),
+            tag: vnode && vnode.type,
+            isSVG: isSVG
+        });
+        throw createError;
+    }
+
+    try {
+        setDOMProps(element, {}, vnode.props || {}, isSVG);
+    } catch (e) {
+        logPreactError('createDOMElement: setDOMProps failed', e, {
+            vnode: describeVNode(vnode),
+            tag: vnode && vnode.type,
+            dom: describeDOMNode(element),
+            isSVG: isSVG
+        });
+        throw e;
+    }
 
     // Append children
     if (vnode.children) {
@@ -688,7 +754,17 @@ function createDOMElement(vnode) {
             }
             var childEl = createDOMElement(child);
             if (childEl) {
-                element.appendChild(childEl);
+                try {
+                    element.appendChild(childEl);
+                } catch (e) {
+                    logPreactError('createDOMElement: appendChild failed', e, {
+                        parentVNode: describeVNode(vnode),
+                        parentDOM: describeDOMNode(element),
+                        childVNode: describeVNode(child),
+                        childDOM: describeDOMNode(childEl)
+                    });
+                    throw e;
+                }
             }
         }
     }
@@ -784,6 +860,12 @@ function createComponentDOM(vnode) {
                 if (typeof PreactHooks !== 'undefined' && PreactHooks.setCurrentComponent) {
                     PreactHooks.setCurrentComponent(null);
                 }
+                logPreactError('component.__rerender failed', e, {
+                    component: ensureComponentId(component),
+                    vnode: describeVNode(currentVNode),
+                    renderedVNode: describeVNode(component.__renderedVNode)
+                });
+                throw e;
             } finally {
                 if (shouldTrackRoot && typeof globalThis !== 'undefined' && typeof globalThis.__mbinkEndRootTracking === 'function') {
                     globalThis.__mbinkEndRootTracking(currentRoot);
@@ -1014,19 +1096,28 @@ function createStableHandler(elementId, eventKey) {
  * Uses stable event handler wrappers to avoid add/remove listener on every render
  */
 function setDOMProps(element, oldProps, newProps, isSVG) {
+    if (!element) {
+        var missingElementError = new Error('setDOMProps received null element');
+        logPreactError('setDOMProps: missing element', missingElementError, {
+            oldProps: oldProps,
+            newProps: newProps,
+            isSVG: isSVG
+        });
+        throw missingElementError;
+    }
+
     var elementId = getElementId(element);
     var data = __elementDataStore[elementId];
     var listeners = data.listeners;
     var handlers = data.handlers;
 
-    // Remove old event listeners and attributes
     for (var key in oldProps) {
         if (key === 'key' || key === 'ref' || key === 'children') continue;
+        if (key in newProps) continue;
 
-        if (!(key in newProps)) {
+        try {
             if (key.substring(0, 2) === 'on' && typeof oldProps[key] === 'function') {
                 var eventName = key.substring(2).toLowerCase();
-                // Remove using stored listener ID
                 if (listeners[key]) {
                     element.removeEventListener(eventName, listeners[key]);
                     if (eventName === 'change' && listeners[key + '_input']) {
@@ -1044,89 +1135,106 @@ function setDOMProps(element, oldProps, newProps, isSVG) {
             } else {
                 element.removeAttribute(key);
             }
+        } catch (e) {
+            logPreactError('setDOMProps: remove failed', e, {
+                tag: describeDOMNode(element),
+                prop: key,
+                value: oldProps[key],
+                isSVG: isSVG
+            });
+            throw e;
         }
     }
 
-    // Set new properties
     for (var prop in newProps) {
         if (prop === 'key' || prop === 'ref' || prop === 'children') continue;
 
         var newValue = newProps[prop];
         var oldValue = oldProps[prop];
 
-        if (prop.substring(0, 2) === 'on' && typeof newValue === 'function') {
-            var evtName = prop.substring(2).toLowerCase();
+        try {
+            if (prop.substring(0, 2) === 'on' && typeof newValue === 'function') {
+                var evtName = prop.substring(2).toLowerCase();
 
-            handlers[prop] = newValue;
-            if (evtName === 'change') {
-                handlers[prop + '_input'] = newValue;
-            }
-
-            if (!listeners[prop]) {
-                var stableHandler = createStableHandler(elementId, prop);
-                element.addEventListener(evtName, stableHandler);
-                listeners[prop] = stableHandler;
-
+                handlers[prop] = newValue;
                 if (evtName === 'change') {
-                    var stableInputHandler = createStableHandler(elementId, prop + '_input');
-                    element.addEventListener('input', stableInputHandler);
-                    listeners[prop + '_input'] = stableInputHandler;
+                    handlers[prop + '_input'] = newValue;
                 }
-            }
-        } else if (prop === 'value' && (
-            element.tagName === 'INPUT' ||
-            element.tagName === 'TEXTAREA' ||
-            element.tagName === 'SELECT'
-        )) {
-            var normalizedValue = newValue == null ? '' : String(newValue);
-            if (element.value !== normalizedValue) {
-                element.value = normalizedValue;
-            }
-        } else if (newValue === oldValue) {
-            continue;
-        } else if (prop === 'className') {
-            element.className = newValue || '';
-        } else if (prop === 'style') {
-            if (typeof newValue === 'string') {
-                if (element.style.cssText !== newValue) {
-                    element.style.cssText = newValue;
+
+                if (!listeners[prop]) {
+                    var stableHandler = createStableHandler(elementId, prop);
+                    element.addEventListener(evtName, stableHandler);
+                    listeners[prop] = stableHandler;
+
+                    if (evtName === 'change') {
+                        var stableInputHandler = createStableHandler(elementId, prop + '_input');
+                        element.addEventListener('input', stableInputHandler);
+                        listeners[prop + '_input'] = stableInputHandler;
+                    }
                 }
-            } else if (typeof newValue === 'object') {
-                if (typeof oldValue === 'object' && oldValue) {
-                    for (var oldStyle in oldValue) {
-                        if (!(oldStyle in newValue)) {
-                            element.style[oldStyle] = '';
+            } else if (prop === 'value' && (
+                element.tagName === 'INPUT' ||
+                element.tagName === 'TEXTAREA' ||
+                element.tagName === 'SELECT'
+            )) {
+                var normalizedValue = newValue == null ? '' : String(newValue);
+                if (element.value !== normalizedValue) {
+                    element.value = normalizedValue;
+                }
+            } else if (newValue === oldValue) {
+                continue;
+            } else if (prop === 'className') {
+                element.className = newValue || '';
+            } else if (prop === 'style') {
+                if (typeof newValue === 'string') {
+                    if (element.style.cssText !== newValue) {
+                        element.style.cssText = newValue;
+                    }
+                } else if (typeof newValue === 'object') {
+                    if (typeof oldValue === 'object' && oldValue) {
+                        for (var oldStyle in oldValue) {
+                            if (!(oldStyle in newValue)) {
+                                element.style[oldStyle] = '';
+                            }
+                        }
+                    }
+                    for (var styleProp in newValue) {
+                        var newStyleValue = newValue[styleProp];
+                        var oldStyleValue = oldValue && oldValue[styleProp];
+                        if (newStyleValue !== oldStyleValue) {
+                            element.style[styleProp] = newStyleValue;
                         }
                     }
                 }
-                for (var styleProp in newValue) {
-                    var newStyleValue = newValue[styleProp];
-                    var oldStyleValue = oldValue && oldValue[styleProp];
-                    if (newStyleValue !== oldStyleValue) {
-                        element.style[styleProp] = newStyleValue;
-                    }
+            } else if (prop === 'contentEditable') {
+                element.setAttribute('contenteditable', newValue === true ? 'true' : String(newValue));
+            } else if (typeof newValue === 'boolean') {
+                if (newValue) {
+                    element.setAttribute(prop, '');
+                } else {
+                    element.removeAttribute(prop);
                 }
-            }
-        } else if (prop === 'contentEditable') {
-            element.setAttribute('contenteditable', newValue === true ? 'true' : String(newValue));
-        } else if (typeof newValue === 'boolean') {
-            if (newValue) {
-                element.setAttribute(prop, '');
+            } else if (prop === 'dangerouslySetInnerHTML') {
+                if (newValue && newValue.__html != null) {
+                    element.innerHTML = newValue.__html;
+                }
+            } else if (prop === 'innerHTML') {
+                element.innerHTML = newValue || '';
+            } else if (prop === 'textContent') {
+                element.textContent = newValue || '';
+            } else if (newValue != null) {
+                element.setAttribute(prop, String(newValue));
             } else {
                 element.removeAttribute(prop);
             }
-        } else if (prop === 'dangerouslySetInnerHTML') {
-            if (newValue && newValue.__html != null) {
-                element.innerHTML = newValue.__html;
-            }
-        } else if (prop === 'innerHTML') {
-            element.innerHTML = newValue || '';
-        } else if (prop === 'textContent') {
-            element.textContent = newValue || '';
-        } else if (newValue != null) {
-            element.setAttribute(prop, String(newValue));
-        } else {
-            element.removeAttribute(prop);
+        } catch (e) {
+            logPreactError('setDOMProps: apply failed', e, {
+                tag: describeDOMNode(element),
+                prop: prop,
+                value: newValue,
+                isSVG: isSVG
+            });
+            throw e;
         }
     }
 }
@@ -1233,12 +1341,13 @@ function diffNode(oldVNode, newVNode, parentDOM, oldDOM) {
 
         return diffElement(oldVNode, newVNode, oldDOM);
     } catch (e) {
-        try {
-            if (oldDOM && parentDOM && oldDOM.parentNode !== parentDOM) {
-                oldDOM = getDirectChildDOM(parentDOM, oldVNode, oldDOM);
-            }
-        } catch (_) {}
-        return oldDOM || null;
+        logPreactError('diffNode failed', e, {
+            oldVNode: describeVNode(oldVNode),
+            newVNode: describeVNode(newVNode),
+            parentDOM: describeDOMNode(parentDOM),
+            oldDOM: describeDOMNode(oldDOM)
+        });
+        throw e;
     }
 }
 
