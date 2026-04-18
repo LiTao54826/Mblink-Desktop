@@ -754,6 +754,54 @@ std::filesystem::path FindEsbuildExecutable(const std::filesystem::path& project
     return {};
 }
 
+bool SourceLooksLikeJsx(const std::filesystem::path& file_path) {
+    const auto lower_ext = ToLowerAscii(file_path.extension().string());
+    if (lower_ext == ".jsx" || lower_ext == ".tsx") return true;
+    if (lower_ext != ".js" && lower_ext != ".mjs" && lower_ext != ".ts") return false;
+
+    std::ifstream ifs(file_path, std::ios::binary);
+    if (!ifs) return false;
+    std::string source((std::istreambuf_iterator<char>(ifs)), std::istreambuf_iterator<char>());
+    if (source.find("</") != std::string::npos) return true;
+    for (size_t i = 0; i + 1 < source.size(); ++i) {
+        if (source[i] != '<') continue;
+        const char next = source[i + 1];
+        if ((next >= 'A' && next <= 'Z') || (next >= 'a' && next <= 'z') || next == '>') {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool ProjectRequiresJsxBuild(const std::filesystem::path& project_root, const ProjectConfig& config) {
+    if (config.template_name == "preact-jsx" || config.template_name == "preact-ts") return true;
+
+    const auto entry_path = std::filesystem::absolute(project_root / config.entry).lexically_normal();
+    if (SourceLooksLikeJsx(entry_path)) return true;
+
+    const auto scan_root = std::filesystem::absolute(project_root / config.src_dir).lexically_normal();
+    std::error_code ec;
+    if (!std::filesystem::exists(scan_root, ec) || !std::filesystem::is_directory(scan_root, ec)) return false;
+
+    size_t scanned = 0;
+    for (std::filesystem::recursive_directory_iterator it(scan_root, ec), end; !ec && it != end && scanned < 64; it.increment(ec)) {
+        if (!it->is_regular_file(ec)) continue;
+        const auto ext = ToLowerAscii(it->path().extension().string());
+        if (ext != ".js" && ext != ".mjs" && ext != ".jsx" && ext != ".ts" && ext != ".tsx") continue;
+        ++scanned;
+        if (SourceLooksLikeJsx(it->path())) return true;
+    }
+    return false;
+}
+
+bool ShouldBuildBeforeRun(const std::filesystem::path& project_root, const ProjectConfig& config) {
+    const auto entry_path = std::filesystem::absolute(project_root / config.entry).lexically_normal();
+    const auto ext = ToLowerAscii(entry_path.extension().string());
+    if (ext == ".jsx" || ext == ".tsx" || ext == ".ts") return true;
+    return ProjectRequiresJsxBuild(project_root, config);
+}
+
+
 std::filesystem::path DetectBuildEntryPoint(const std::filesystem::path& project_root, const ProjectConfig& config) {
     const std::vector<std::filesystem::path> preferred_candidates = {
         project_root / config.src_dir / "App.jsx",
@@ -839,6 +887,7 @@ nlohmann::json BuildEsbuildStatus(const std::filesystem::path& project_root, con
                                " --bundle --format=esm --outfile=" + QuoteForCmd(output_file.string()) +
                                " --jsx=transform --jsx-factory=" + QuoteForCmd(config.build_jsx_factory) +
                                " --jsx-fragment=" + QuoteForCmd(config.build_jsx_fragment) +
+                               " --loader:.js=jsx --loader:.mjs=jsx" +
                                (config.build_sourcemap ? " --sourcemap=inline" : " --sourcemap=false") +
                                (config.build_minify ? " --minify" : "") +
                                " --color=false --log-level=info --log-limit=0";
@@ -1016,13 +1065,13 @@ bool StartRuntime(const std::filesystem::path& root, DaemonState* state, std::st
         return false;
     }
     std::filesystem::path entry = std::filesystem::absolute(root / state->project.entry);
-    if (state->project.template_name == "preact-ts") {
+    if (ShouldBuildBeforeRun(root, state->project)) {
         std::string build_error;
         auto build_status = BuildEsbuildStatus(root, state->project, &build_error);
         if (!build_status.is_object()) {
             build_status = nlohmann::json{{"ok", false},
                                           {"status", "failed"},
-                                          {"errors", nlohmann::json::array({{{"message", build_error.empty() ? "preact-ts 运行前构建失败" : build_error}}})},
+                                          {"errors", nlohmann::json::array({{{"message", build_error.empty() ? "JSX/TS 运行前构建失败" : build_error}}})},
                                           {"warnings", nlohmann::json::array()},
                                           {"raw_output", nlohmann::json::array()}};
         }
@@ -1031,7 +1080,7 @@ bool StartRuntime(const std::filesystem::path& root, DaemonState* state, std::st
             state->runtime_pid = 0;
             state->runtime_status = "stopped";
             state->runtime_stop_reason = "build_failed";
-            if (error) *error = build_error.empty() ? "preact-ts 运行前构建失败" : build_error;
+            if (error) *error = build_error.empty() ? "JSX/TS 运行前构建失败" : build_error;
             return false;
         }
         entry = std::filesystem::absolute(root / state->project.out_dir / "App.js");

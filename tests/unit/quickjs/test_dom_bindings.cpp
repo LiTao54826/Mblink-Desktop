@@ -908,6 +908,44 @@ TEST_F(DOMBindingsTest, OfficialPreactHooksUseEffectDoesNotBreakRender) {
     EXPECT_EQ(runtime_->Eval("globalThis.__officialPreactUseEffectRenderOk"), true);
 }
 
+TEST_F(DOMBindingsTest, OfficialPreactDelegatedInputAndClickCanUpdateState) {
+    EXPECT_NO_THROW(runtime_->EvalModule(R"(
+        import { h, render } from 'preact';
+        import { useState } from 'preact/hooks';
+
+        function App() {
+            const [value, setValue] = useState('');
+            const [count, setCount] = useState(0);
+            return h('div', {}, [
+                h('input', { id: 'official-input', value, onInput: (event) => setValue(event.target.value) }),
+                h('button', { id: 'official-button', onClick: () => setCount((current) => current + 1) }, 'Count:' + count),
+                h('span', { id: 'official-state' }, value + '|' + count)
+            ]);
+        }
+
+        document.body.textContent = '';
+        render(h(App), document.body);
+
+        const input = document.getElementById('official-input');
+        const button = document.getElementById('official-button');
+        input.value = 'hello';
+        input.dispatchEvent(new Event('input', { bubbles: true, cancelable: true }));
+        button.click();
+    )", "<official-preact-delegated-events-test>"));
+
+    runtime_->RunEventLoop(4);
+    runtime_->ProcessMicrotasks();
+
+    EXPECT_EQ(runtime_->Eval(R"(
+        (() => {
+            const state = document.getElementById('official-state');
+            const button = document.getElementById('official-button');
+            return !!state && state.textContent === 'hello|1' && button && button.textContent === 'Count:1';
+        })()
+    )"), true);
+}
+
+
 TEST_F(DOMBindingsTest, OfficialPreactRenderCanMountMinimalSvgTree) {
     EXPECT_NO_THROW(runtime_->EvalModule(R"(
         import { render } from 'preact';
@@ -1509,6 +1547,19 @@ TEST_F(DOMBindingsTest, AddEventListener) {
         var event = new Event('click');
         div.dispatchEvent(event);
         clicked;
+    )");
+    EXPECT_EQ(result, true);
+}
+
+TEST_F(DOMBindingsTest, EventListenerThisMatchesCurrentTarget) {
+    auto result = runtime_->Eval(R"(
+        var observed = false;
+        var button = document.createElement('button');
+        button.addEventListener('click', function(event) {
+            observed = (this === button) && (event.currentTarget === button) && (event.target === button);
+        });
+        button.click();
+        observed;
     )");
     EXPECT_EQ(result, true);
 }

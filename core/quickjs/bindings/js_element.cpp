@@ -1177,24 +1177,21 @@ static JSValue JSElement_addEventListener(JSContext* ctx, JSValueConst this_val,
 
     // 包装 JS 函数为 C++ lambda
     auto listener_wrapper = std::make_shared<JSValueWrapper>(ctx, argv[1]);
+    auto this_wrapper = std::make_shared<JSValueWrapper>(ctx, this_val);
 
     uint64_t listener_id = data->element->AddEventListener(type,
-        [ctx, listener_wrapper](std::shared_ptr<Event> event) {
-            // 包装 Event 对象
+        [ctx, listener_wrapper, this_wrapper](std::shared_ptr<Event> event) {
             JSValue event_val = WrapEvent(ctx, event);
+            JSValue this_val = JS_DupValue(ctx, this_wrapper->Get());
 
-            // 调用 JS 监听器函数
-            JSValue result = listener_wrapper->Call(JS_UNDEFINED, 1, &event_val);
+            JSValue result = listener_wrapper->Call(this_val, 1, &event_val);
 
-            // 释放
             if (JS_IsException(result)) {
-                // 输出错误但不中断
                 JSValue exception = JS_GetException(ctx);
                 const char* err = JS_ToCString(ctx, exception);
                 if (err) {
                     JS_FreeCString(ctx, err);
                 }
-                // 尝试获取堆栈信息
                 JSValue stack = JS_GetPropertyStr(ctx, exception, "stack");
                 if (!JS_IsUndefined(stack)) {
                     const char* stack_str = JS_ToCString(ctx, stack);
@@ -1206,6 +1203,9 @@ static JSValue JSElement_addEventListener(JSContext* ctx, JSValueConst this_val,
                 JS_FreeValue(ctx, exception);
             }
             JS_FreeValue(ctx, result);
+            if (!JS_IsUndefined(this_val)) {
+                JS_FreeValue(ctx, this_val);
+            }
             JS_FreeValue(ctx, event_val);
         },
         use_capture,
@@ -1588,10 +1588,12 @@ static JSValue JSElement_set_event_property(JSContext* ctx, JSValueConst this_va
 
     if (JS_IsFunction(ctx, val)) {
         auto listener_wrapper = std::make_shared<JSValueWrapper>(ctx, val);
+        auto this_wrapper = std::make_shared<JSValueWrapper>(ctx, this_val);
         uint64_t listener_id = data->element->AddEventListener(desc->event_type,
-            [ctx, listener_wrapper](std::shared_ptr<Event> event) {
+            [ctx, listener_wrapper, this_wrapper](std::shared_ptr<Event> event) {
                 JSValue event_val = WrapEvent(ctx, event);
-                JSValue result = listener_wrapper->Call(JS_UNDEFINED, 1, &event_val);
+                JSValue this_val = JS_DupValue(ctx, this_wrapper->Get());
+                JSValue result = listener_wrapper->Call(this_val, 1, &event_val);
                 if (JS_IsException(result)) {
                     JSValue exception = JS_GetException(ctx);
                     const char* err = JS_ToCString(ctx, exception);
@@ -1601,6 +1603,9 @@ static JSValue JSElement_set_event_property(JSContext* ctx, JSValueConst this_va
                     JS_FreeValue(ctx, exception);
                 }
                 JS_FreeValue(ctx, result);
+                if (!JS_IsUndefined(this_val)) {
+                    JS_FreeValue(ctx, this_val);
+                }
                 JS_FreeValue(ctx, event_val);
             },
             false, false

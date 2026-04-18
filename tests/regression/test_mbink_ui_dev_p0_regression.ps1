@@ -5,6 +5,7 @@ $OutputEncoding = [System.Text.UTF8Encoding]::new($false)
 Set-Location (Join-Path $PSScriptRoot '..\..')
 $exe = Join-Path (Get-Location) 'build/bin/Release/mbink-ui-dev.exe'
 $todo = Join-Path (Get-Location) 'examples/todo_app_js'
+$jsxDev = Join-Path (Get-Location) 'examples/official_preact_jsx_dev'
 $projA = Join-Path (Get-Location) 'tmp/mbink_ui_dev_multi_verify_a'
 $projB = Join-Path (Get-Location) 'tmp/mbink_ui_dev_multi_verify_b'
 $tmpJs = Join-Path (Get-Location) 'tmp/mbink_ui_dev_eval_test.js'
@@ -87,6 +88,41 @@ Invoke-JsonCommand 'query updated result' @('query', '--project', $todo, 'span')
     $texts = @($j.result.matches | ForEach-Object { $_.text })
     Assert ($texts -contains 'task from regression') 'post-click query result is stale'
 }
+
+Invoke-JsonCommand 'open official preact jsx dev' @('open', '--project', $jsxDev) {
+    param($j)
+    Assert ($j.ok -eq $true) 'open official preact jsx dev not ok'
+}
+Invoke-JsonCommand 'snapshot official preact jsx dev' @('snapshot', '--project', $jsxDev) {
+    param($j)
+    Assert ($j.ok -eq $true) 'snapshot official preact jsx dev not ok'
+    Assert ($j.tree.tag -ne 'stub-root') 'official preact jsx dev snapshot returned stub-root'
+}
+Invoke-JsonCommand 'query official preact jsx button' @('query', '--project', $jsxDev, '#add-btn') {
+    param($j)
+    Assert ($j.ok -eq $true -and $j.result.count -eq 1) 'official preact jsx add button missing'
+}
+Invoke-JsonCommand 'input-text official preact jsx' @('input-text', '--project', $jsxDev, '#draft-input', 'task from jsx regression') {
+    param($j)
+    Assert ($j.ok -eq $true -and $j.result.value -eq 'task from jsx regression') 'official preact jsx input-text failed'
+}
+Invoke-JsonCommand 'inspect official preact jsx draft state' @('inspect', '--project', $jsxDev, '#state-text') {
+    param($j)
+    Assert ($j.ok -eq $true -and $j.result.outer_html -like '*task from jsx regression*') 'official preact jsx draft state did not update'
+}
+Invoke-JsonCommand 'click official preact jsx add button' @('click', '--project', $jsxDev, '#add-btn') {
+    param($j)
+    Assert ($j.ok -eq $true -and $j.result.clicked -eq $true) 'official preact jsx click failed'
+}
+Invoke-JsonCommand 'inspect official preact jsx summary' @('inspect', '--project', $jsxDev, '#summary') {
+    param($j)
+    Assert ($j.ok -eq $true -and $j.result.outer_html -like '*items:1*') 'official preact jsx summary did not rerender'
+}
+Invoke-JsonCommand 'inspect official preact jsx list' @('inspect', '--project', $jsxDev, '#items-list') {
+    param($j)
+    Assert ($j.ok -eq $true -and $j.result.outer_html -like '*task from jsx regression*') 'official preact jsx list item missing after click'
+}
+
 Invoke-JsonCommand 'highlight' @('highlight', '--project', $todo, '#todo-input', '--color', '#ff4d4f') {
     param($j)
     Assert ($j.ok -eq $true -and $j.result.highlighted -eq $true) 'highlight failed'

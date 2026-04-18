@@ -1,0 +1,19 @@
+{
+  "name": "official_preact_jsx_dev",
+  "entry": "app.js",
+  "src_dir": ".",
+  "out_dir": ".dist",
+  "window": {
+    "title": "official_preact_jsx_dev",
+    "width": 800,
+    "height": 600
+  },
+  "build": {
+    "builder": "esbuild",
+    "jsx_factory": "h",
+    "jsx_fragment": "Fragment",
+    "external": ["preact", "preact/hooks", "preact/jsx-runtime", "preact/jsx-dev-runtime"],
+    "sourcemap": true,
+    "minify": false
+  }
+}
