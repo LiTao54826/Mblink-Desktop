@@ -202,8 +202,8 @@
 ### E. 真实示例 / UI Dev 验收
 - [x] `examples/todo_app_js/app.js` 可通过 `--ui-dev-snapshot-file` 产出非空 snapshot，并稳定运行 30s+ 直到主动停止
 - [x] `examples/official_preact_jsx_dev/app.js`（`.js` 内直接写 JSX）可在 `open/build/reload/snapshot/query/inspect/input-text/click` 下走官方 `preact` / `preact/hooks` 链路并完成状态更新
+- [x] `examples/component_demo/app.js` 现已可稳定启动；此前崩溃根因是 `clearTimeout/cancelAnimationFrame` 清理路径里的定时器回调释放逻辑导致 iterator 失效并触发 native crash
 - [x] snapshot 可见真实 UI 节点（如 `Todo List (Pure JS)`、`#todo-input`、按钮）
-- [ ] `examples/component_demo/app.js` 仍需继续排查组件级崩溃，当前不能作为“最终闭环”依据
 
 ---
 

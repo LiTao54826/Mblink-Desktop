@@ -18,6 +18,7 @@
 #include "dom/bindings/dom_bindings.h"
 #include "dom/document.h"
 #include "window/window.h"
+#include "core/event/loop/task_scheduler.h"
 
 namespace mbink {
 namespace test {
@@ -168,7 +169,8 @@ protected:
         window_ = std::make_shared<Window>(config);
         window_->SetDocument(doc_);
 
-        window_bindings_ = std::make_unique<WindowBindings>(runtime_.get(), window_, nullptr);
+        task_scheduler_ = std::make_shared<TaskScheduler>();
+        window_bindings_ = std::make_unique<WindowBindings>(runtime_.get(), window_, task_scheduler_);
         window_bindings_->InitBindings();
 
         EvalJsFixture(runtime_.get(), repo_root_, "polyfills/dom.js", "dom.js");
@@ -192,6 +194,7 @@ protected:
     std::filesystem::path repo_root_;
     std::shared_ptr<Document> doc_;
     std::shared_ptr<Window> window_;
+    std::shared_ptr<TaskScheduler> task_scheduler_;
     std::unique_ptr<WindowBindings> window_bindings_;
     StateManager state_manager_;
     bool legacy_preact_requested_ = false;
@@ -943,6 +946,31 @@ TEST_F(DOMBindingsTest, OfficialPreactDelegatedInputAndClickCanUpdateState) {
             return !!state && state.textContent === 'hello|1' && button && button.textContent === 'Count:1';
         })()
     )"), true);
+}
+
+TEST_F(DOMBindingsTest, OfficialPreactUseEffectCanFlushAfterAnimationFrameAndTimeout) {
+    EXPECT_NO_THROW(runtime_->EvalModule(R"(
+        import { h, render } from 'preact';
+        import { useEffect } from 'preact/hooks';
+
+        function App() {
+            useEffect(() => {
+                globalThis.__officialUseEffectTick = 'effect-ran';
+            }, []);
+            return h('div', { id: 'effect-app' }, 'effect-app');
+        }
+
+        globalThis.__officialUseEffectTick = 'pending';
+        document.body.textContent = '';
+        render(h(App), document.body);
+    )", "<official-preact-useeffect-runtime-test>"));
+
+    ASSERT_TRUE(task_scheduler_ != nullptr);
+    task_scheduler_->ProcessAnimationFrames(16.0);
+    task_scheduler_->ProcessTasks();
+    runtime_->ProcessMicrotasks();
+
+    EXPECT_EQ(runtime_->Eval("globalThis.__officialUseEffectTick"), "effect-ran");
 }
 
 

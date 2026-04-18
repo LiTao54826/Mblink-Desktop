@@ -113,8 +113,8 @@ void WindowBindings::ReleaseTimerCallback(int task_id) {
         return;
     }
 
-    ReleaseTimerCallbackByName(it->second);
-    timer_callbacks_.erase(it);
+    const std::string callback_name = it->second;
+    ReleaseTimerCallbackByName(callback_name);
 }
 
 void WindowBindings::ReleaseTimerCallbackByName(const std::string& callback_name) {
