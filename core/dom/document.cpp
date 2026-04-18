@@ -4,6 +4,7 @@
  */
 
 #include "document.h"
+#include "bindings/native_data_binding.h"
 #include "selection/range.h"
 #include "elements/html_input_element.h"
 #include "elements/html_textarea_element.h"
@@ -28,6 +29,7 @@
 #include "elements/html_style_element.h"
 #include "elements/html_script_element.h"
 #include "elements/html_link_element.h"
+#include "elements/html_template_element.h"
 #include "elements/svg_element.h"
 #include "elements/terminal/html_terminal_element.h"
 #include "elements/logview/html_logview_element.h"
@@ -76,6 +78,37 @@ bool IsSpecialResourcePath(const std::string& path) {
            path.rfind("https://", 0) == 0 ||
            path.rfind("data:", 0) == 0 ||
            path.rfind("#", 0) == 0;
+}
+
+std::string ToAsciiLower(std::string value) {
+    std::transform(value.begin(), value.end(), value.begin(), [](unsigned char c) {
+        return static_cast<char>(std::tolower(c));
+    });
+    return value;
+}
+
+constexpr const char* kHtmlNamespaceUri = "http://www.w3.org/1999/xhtml";
+constexpr const char* kSvgNamespaceUri = "http://www.w3.org/2000/svg";
+constexpr const char* kMathMlNamespaceUri = "http://www.w3.org/1998/Math/MathML";
+
+std::string ResolveLocalName(const std::string& qualified_name) {
+    const auto colon = qualified_name.find(':');
+    return colon == std::string::npos ? qualified_name : qualified_name.substr(colon + 1);
+}
+
+std::string ResolveElementNamespace(const std::shared_ptr<Element>& element) {
+    if (std::dynamic_pointer_cast<SVGElement>(element)) {
+        return kSvgNamespaceUri;
+    }
+    return kHtmlNamespaceUri;
+}
+
+std::string ResolveElementLocalName(const std::shared_ptr<Element>& element) {
+    const auto& tag_name = element->GetTagName();
+    if (std::dynamic_pointer_cast<SVGElement>(element)) {
+        return tag_name;
+    }
+    return ToAsciiLower(tag_name);
 }
 
 std::string ResolveResourcePath(const std::string& path, const std::string& base_path) {
@@ -183,6 +216,16 @@ Document::~Document() = default;
 
 StyleManager* Document::GetStyleManager() const {
     return style_manager_.get();
+}
+
+NativeDataBindingRuntime* Document::GetNativeDataBindingRuntime() {
+    if (!state_manager_) {
+        return nullptr;
+    }
+    if (!native_data_binding_runtime_) {
+        native_data_binding_runtime_ = std::make_unique<NativeDataBindingRuntime>(*state_manager_);
+    }
+    return native_data_binding_runtime_.get();
 }
 
 void Document::Initialize() {
@@ -344,6 +387,8 @@ std::shared_ptr<Element> Document::CreateElement(const std::string& tag_name) {
         element = std::make_shared<HTMLScriptElement>();
     } else if (tag_name == "link") {
         element = std::make_shared<HTMLLinkElement>();
+    } else if (tag_name == "template") {
+        element = std::make_shared<HTMLTemplateElement>();
     }
     // ========== 虚拟文本组件 ==========
     else if (tag_name == "terminal") {
@@ -355,12 +400,19 @@ std::shared_ptr<Element> Document::CreateElement(const std::string& tag_name) {
         // 包括：语义化标签（header, footer, nav, section, article, aside, main, figure, figcaption）
         //       文本标签（strong, em, b, i, u, s, mark, code, kbd, pre, blockquote, etc.）
         //       列表标签（dl, dt, dd）
-        //       其他标签（title, meta, link, base, noscript, template 等）
+        //       其他标签（title, meta, link, base, noscript 等）
         element = std::make_shared<Element>(tag_name);
     }
 
     // 设置 owner_document（使用 friend 访问权限）
     element->owner_document_ = std::static_pointer_cast<Document>(shared_from_this());
+    if (auto template_element = std::dynamic_pointer_cast<HTMLTemplateElement>(element)) {
+        if (auto content = template_element->GetContent()) {
+            content->owner_document_ = std::static_pointer_cast<Document>(shared_from_this());
+        }
+    }
+    element->SetLocalName(ResolveElementLocalName(element));
+    element->SetNamespaceURI(ResolveElementNamespace(element));
 
     // 如果是 html 元素，设置为 documentElement
     if (tag_name == "html" && !document_element_) {
@@ -371,11 +423,44 @@ std::shared_ptr<Element> Document::CreateElement(const std::string& tag_name) {
     return element;
 }
 
+std::shared_ptr<Element> Document::CreateElementNS(const std::string& namespace_uri,
+                                                   const std::string& qualified_name) {
+    const std::string resolved_namespace = namespace_uri.empty() ? kHtmlNamespaceUri : namespace_uri;
+    const std::string local_name = ResolveLocalName(qualified_name);
+
+    std::shared_ptr<Element> element;
+    if (resolved_namespace == kHtmlNamespaceUri) {
+        element = CreateElement(local_name);
+    } else if (resolved_namespace == kSvgNamespaceUri) {
+        element = CreateElement(local_name);
+        if (element) {
+            element->SetNamespaceURI(kSvgNamespaceUri);
+            element->SetLocalName(local_name);
+        }
+    } else {
+        element = std::make_shared<Element>(local_name, local_name, resolved_namespace);
+        element->owner_document_ = std::static_pointer_cast<Document>(shared_from_this());
+    }
+
+    if (element) {
+        element->SetNamespaceURI(resolved_namespace);
+        element->SetLocalName(resolved_namespace == kHtmlNamespaceUri ? ToAsciiLower(local_name) : local_name);
+    }
+
+    return element;
+}
+
 std::shared_ptr<Text> Document::CreateTextNode(const std::string& data) {
     auto text = std::make_shared<Text>(data);
     // 设置 owner_document
     text->owner_document_ = std::static_pointer_cast<Document>(shared_from_this());
     return text;
+}
+
+std::shared_ptr<Comment> Document::CreateComment(const std::string& data) {
+    auto comment = std::make_shared<Comment>(data);
+    comment->owner_document_ = std::static_pointer_cast<Document>(shared_from_this());
+    return comment;
 }
 
 std::shared_ptr<DocumentFragment> Document::CreateDocumentFragment() {
@@ -414,6 +499,7 @@ bool Document::LoadHTML(const std::string& html) {
 
     // 从 Lexbor DOM 同步到 MBink DOM
     SyncFromLexbor();
+    AutoMountNativeDeclarativeBindings();
 
     // 解析所有 <style> 标签
     if (style_manager_) {
@@ -439,6 +525,7 @@ bool Document::LoadHTMLFile(const std::string& file_path) {
 
     // 从 Lexbor DOM 同步到 MBink DOM
     SyncFromLexbor();
+    AutoMountNativeDeclarativeBindings();
 
     // 解析所有 <style> 标签
     if (style_manager_) {
@@ -471,11 +558,15 @@ void Document::SyncFromLexbor() {
     if (!lexbor_doc_) {
         return;
     }
+    if (native_data_binding_runtime_) {
+        native_data_binding_runtime_->clear();
+    }
 
     // 清空当前 DOM 树
     child_nodes_.clear();
     document_element_ = nullptr;
     body_ = nullptr;
+    head_ = nullptr;
     id_map_.clear();
 
     // 获取 Lexbor 文档元素
@@ -511,6 +602,37 @@ void Document::SyncFromLexbor() {
             RebuildIdMap(html_elem);
         }
     }
+}
+
+void Document::AutoMountNativeDeclarativeBindings() {
+    AutoMountNativeDeclarativeBindings(body_ ? body_ : document_element_);
+}
+
+void Document::AutoMountNativeDeclarativeBindings(const std::shared_ptr<Element>& root) {
+    auto* runtime = GetNativeDataBindingRuntime();
+    if (!runtime) {
+        return;
+    }
+    if (!root) {
+        return;
+    }
+    runtime->mountDeclarative(root);
+}
+
+void Document::RefreshNativeDeclarativeBindings(const std::shared_ptr<Element>& root) {
+    auto* runtime = GetNativeDataBindingRuntime();
+    if (!runtime || !root) {
+        return;
+    }
+    runtime->refreshDeclarative(root);
+}
+
+void Document::UnmountNativeDeclarativeBindings(const std::shared_ptr<Element>& root) {
+    auto* runtime = GetNativeDataBindingRuntime();
+    if (!runtime || !root) {
+        return;
+    }
+    runtime->unmountDeclarative(root);
 }
 
 void Document::SyncToLexbor() {
@@ -789,6 +911,8 @@ void Document::ExecuteScripts(QuickJSRuntime* runtime) {
             script->MarkExecuted();
         }
     }
+
+    AutoMountNativeDeclarativeBindings();
 }
 
 std::string Document::ConsumeLoadErrors() {

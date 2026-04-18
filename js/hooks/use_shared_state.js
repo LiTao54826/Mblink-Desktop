@@ -8,7 +8,7 @@
  * - 状态变化触发重渲染
  */
 
-const { useState, useEffect, useCallback } = globalThis.PreactHooks;
+import { useState, useEffect, useCallback } from 'preact/hooks';
 
 /**
  * useSharedState Hook

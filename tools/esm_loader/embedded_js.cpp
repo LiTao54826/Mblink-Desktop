@@ -39,14 +39,6 @@ std::vector<std::string_view> ListEmbeddedJSPaths() {
     return paths;
 }
 
-std::string_view GetPreactJS() {
-    return GetEmbeddedJS("preact/preact.js");
-}
-
-std::string_view GetHooksJS() {
-    return GetEmbeddedJS("preact/hooks.js");
-}
-
 std::string_view GetDomPolyfillsJS() {
     return GetEmbeddedJS("polyfills/dom.js");
 }

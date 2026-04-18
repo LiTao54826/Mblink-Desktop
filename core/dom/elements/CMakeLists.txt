@@ -22,6 +22,7 @@ set(ELEMENTS_SOURCES
     html_span_element.cpp
     html_style_element.cpp
     html_table_element.cpp
+    html_template_element.cpp
     html_textarea_element.cpp
     html_ulist_element.cpp
     svg_element.cpp
@@ -49,6 +50,7 @@ set(ELEMENTS_HEADERS
     html_span_element.h
     html_style_element.h
     html_table_element.h
+    html_template_element.h
     html_textarea_element.h
     html_ulist_element.h
     svg_element.h

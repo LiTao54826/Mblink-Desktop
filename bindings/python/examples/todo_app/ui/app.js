@@ -1,4 +1,4 @@
-const { h, render } = Preact;
+import { h, render } from 'preact';
 
 // ── 样式 ─────────────────────────────────────────────────
 const S = {

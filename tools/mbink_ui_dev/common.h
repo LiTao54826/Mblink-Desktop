@@ -17,8 +17,8 @@ struct ProjectConfig {
     std::string out_dir = ".dist";
     std::string template_name = "unknown";
     std::string build_builder = "esbuild";
-    std::string build_jsx_factory = "Preact.h";
-    std::string build_jsx_fragment = "Preact.Fragment";
+    std::string build_jsx_factory = "h";
+    std::string build_jsx_fragment = "Fragment";
     std::vector<std::string> build_external = {"preact", "preact/hooks"};
     bool build_sourcemap = true;
     bool build_minify = false;

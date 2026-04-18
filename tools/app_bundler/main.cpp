@@ -36,6 +36,54 @@
 namespace fs = std::filesystem;
 using namespace mbink;
 
+namespace {
+
+std::string NormalizeFsPath(const fs::path& path) {
+    std::string result = fs::weakly_canonical(path).lexically_normal().string();
+    std::replace(result.begin(), result.end(), '\\', '/');
+    return result;
+}
+
+fs::path FindOfficialPreactRoot() {
+    static const fs::path kOfficialPreactRelativeRoot = fs::path("third_party") / fs::path("preact");
+    fs::path current = fs::absolute(fs::path(__FILE__)).parent_path();
+    while (!current.empty()) {
+        const fs::path candidate = current / kOfficialPreactRelativeRoot / "package.json";
+        if (fs::exists(candidate)) {
+            return current / kOfficialPreactRelativeRoot;
+        }
+        if (!current.has_parent_path() || current == current.parent_path()) {
+            break;
+        }
+        current = current.parent_path();
+    }
+    throw std::runtime_error("Unable to locate official Preact sources under third_party/preact");
+}
+
+std::string BuildOfficialPreactModule(const fs::path& entry_path) {
+    return "export * from '" + NormalizeFsPath(entry_path) + "';";
+}
+
+void RegisterOfficialPreactBuiltinModules(ModuleResolver& resolver, bool verbose) {
+    const fs::path preact_root = FindOfficialPreactRoot();
+    const std::vector<std::pair<std::string, fs::path>> modules = {
+        {"preact", preact_root / "src" / "index.js"},
+        {"preact/hooks", preact_root / "hooks" / "src" / "index.js"},
+        {"preact/jsx-runtime", preact_root / "jsx-runtime" / "src" / "index.js"},
+        {"preact/jsx-dev-runtime", preact_root / "jsx-runtime" / "src" / "index.js"},
+    };
+
+    for (const auto& [name, entry] : modules) {
+        const std::string source = BuildOfficialPreactModule(entry);
+        resolver.RegisterBuiltinModule(name, source);
+        if (verbose) {
+            std::cout << "  注册内置模块: " << name << " (" << source.size() << " bytes)\n";
+        }
+    }
+}
+
+}  // namespace
+
 // 打包选项
 struct BundlerOptions {
     std::string input_file;                    // 主 JS 文件
@@ -269,39 +317,6 @@ std::string ReadFile(const std::string& path) {
     return buffer.str();
 }
 
-// 获取 Preact 模块包装器源码（必须与 esm_loader 运行时的 RegisterPreactModules 一致）
-// 运行时 Preact 通过 globalThis.Preact/PreactHooks 暴露，这里提供编译时的 ES module 包装器
-std::string GetPreactSource(const std::string& /*bundler_path*/) {
-    return R"(
-        export const h = globalThis.Preact.h;
-        export const render = globalThis.Preact.render;
-        export const Component = globalThis.Preact.Component;
-        export const Fragment = globalThis.Preact.Fragment;
-        export const createRef = globalThis.Preact.createRef;
-        export const createElement = globalThis.Preact.createElement;
-        export const createContext = globalThis.Preact.createContext;
-        export const cloneElement = globalThis.Preact.cloneElement;
-        export const isValidElement = globalThis.Preact.isValidElement;
-        export default globalThis.Preact;
-    )";
-}
-
-std::string GetHooksSource(const std::string& /*bundler_path*/) {
-    return R"(
-        export const useState = globalThis.PreactHooks.useState;
-        export const useEffect = globalThis.PreactHooks.useEffect;
-        export const useRef = globalThis.PreactHooks.useRef;
-        export const useMemo = globalThis.PreactHooks.useMemo;
-        export const useCallback = globalThis.PreactHooks.useCallback;
-        export const useContext = globalThis.PreactHooks.useContext;
-        export const useReducer = globalThis.PreactHooks.useReducer;
-        export const useLayoutEffect = globalThis.PreactHooks.useLayoutEffect;
-        export const useImperativeHandle = globalThis.PreactHooks.useImperativeHandle;
-        export const useDebugValue = globalThis.PreactHooks.useDebugValue;
-        export default globalThis.PreactHooks;
-    )";
-}
-
 int main(int argc, char** argv) {
     // Windows: 设置控制台输出为 UTF-8
 #ifdef _WIN32
@@ -363,21 +378,7 @@ int main(int argc, char** argv) {
     ModuleResolver resolver;
     resolver.SetVerbose(options.verbose);
     
-    // 注册内置模块
-    std::string preact_src = GetPreactSource(argv[0]);
-    std::string hooks_src = GetHooksSource(argv[0]);
-    if (!preact_src.empty()) {
-        resolver.RegisterBuiltinModule("preact", preact_src);
-        if (options.verbose) {
-            std::cout << "  注册内置模块: preact (" << preact_src.size() << " bytes)\n";
-        }
-    }
-    if (!hooks_src.empty()) {
-        resolver.RegisterBuiltinModule("preact/hooks", hooks_src);
-        if (options.verbose) {
-            std::cout << "  注册内置模块: preact/hooks (" << hooks_src.size() << " bytes)\n";
-        }
-    }
+    RegisterOfficialPreactBuiltinModules(resolver, options.verbose);
     
     auto modules = resolver.Resolve(options.input_file);
     

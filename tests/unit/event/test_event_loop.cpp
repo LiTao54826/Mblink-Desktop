@@ -6,6 +6,9 @@
 #include <gtest/gtest.h>
 #include "event/loop/event_loop.h"
 #include "event/loop/task_scheduler.h"
+#include "dom/document.h"
+#include "window/window.h"
+#include "window/window_manager.h"
 
 namespace mbink {
 namespace test {
@@ -76,6 +79,35 @@ TEST_F(EventLoopTest, SetRenderCallback) {
 
     // 渲染回调应该被调用
     // EXPECT_TRUE(called);
+}
+
+TEST_F(EventLoopTest, RenderCallbackRunsAfterWindowRender) {
+    WindowConfig config;
+    config.hidden = true;
+    config.headless = true;
+    config.backend = RenderBackend::CPU;
+
+    auto document = std::make_shared<Document>();
+    document->Initialize();
+
+    auto window = std::make_shared<Window>(config);
+    window->SetDocument(document);
+    WindowManager::Instance().RegisterWindow(window);
+
+    bool callback_called = false;
+    bool callback_saw_pending_repaint = true;
+    event_loop_->SetRenderCallback([&]() {
+        callback_called = true;
+        callback_saw_pending_repaint = window->NeedsRepaint();
+    });
+
+    window->SetNeedsRepaint();
+    event_loop_->RunOnce();
+
+    WindowManager::Instance().UnregisterWindow(window);
+
+    EXPECT_TRUE(callback_called);
+    EXPECT_FALSE(callback_saw_pending_repaint);
 }
 
 TEST_F(EventLoopTest, GetTaskScheduler) {

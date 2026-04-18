@@ -3,12 +3,14 @@
 set(DOM_BINDINGS_SOURCES
     dom_bindings.cpp
     canvas_bindings.cpp
+    native_data_binding.cpp
     terminal_bindings.cpp
 )
 
 set(DOM_BINDINGS_HEADERS
     dom_bindings.h
     canvas_bindings.h
+    native_data_binding.h
     terminal_bindings.h
 )
 

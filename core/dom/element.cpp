@@ -5,6 +5,7 @@
 
 #include "element.h"
 #include "text.h"
+#include "comment.h"
 #include "event.h"
 #include "document.h"
 #include "observers/dom_observer.h"
@@ -49,6 +50,20 @@
 
 namespace mbink {
 
+namespace {
+
+bool IsDeclarativeBindingAttributeName(const std::string& name) {
+    return name == "mb-text" ||
+           name == "mb-visible" ||
+           name == "mb-model" ||
+           name.rfind("mb-attr:", 0) == 0 ||
+           name.rfind("mb-model:", 0) == 0 ||
+           name.rfind("mb-scope:", 0) == 0 ||
+           name.rfind("mb-scope-ro:", 0) == 0;
+}
+
+}  // namespace
+
 void Element::MarkLexborDirty() {
     lexbor_dirty_ = true;
 
@@ -64,8 +79,16 @@ uint64_t Element::next_listener_id_ = 1;
 // ========== 构造函数 ==========
 
 Element::Element(const std::string& tag_name)
+    : Element(tag_name, "", "http://www.w3.org/1999/xhtml") {
+}
+
+Element::Element(const std::string& tag_name,
+                 const std::string& local_name,
+                 const std::string& namespace_uri)
     : Node(NodeType::ELEMENT_NODE)
     , tag_name_(tag_name)
+    , local_name_(local_name.empty() ? tag_name : local_name)
+    , namespace_uri_(namespace_uri)
     , attributes_()
     , styles_()
     , event_listeners_() {
@@ -174,6 +197,10 @@ void Element::SetAttribute(const std::string& name, const std::string& value) {
 
     // 标记 Lexbor 需要同步
     MarkLexborDirty();
+
+    if (doc && IsConnected() && IsDeclarativeBindingAttributeName(name)) {
+        doc->RefreshNativeDeclarativeBindings(std::static_pointer_cast<Element>(shared_from_this()));
+    }
 }
 
 std::string Element::GetAttribute(const std::string& name) const {
@@ -209,6 +236,10 @@ void Element::RemoveAttribute(const std::string& name) {
             name, old_value, "");
 
         doc->GetObserverManager().NotifyAttributeChanged(this, name, old_value, "");
+    }
+
+    if (doc && IsConnected() && !old_value.empty() && IsDeclarativeBindingAttributeName(name)) {
+        doc->RefreshNativeDeclarativeBindings(std::static_pointer_cast<Element>(shared_from_this()));
     }
 }
 
@@ -479,7 +510,7 @@ std::shared_ptr<Node> Element::CloneNode(bool deep) {
     // 参考：RmlUi/Source/Core/Element.cpp - Clone
     // 参考：Lexbor lxb_dom_element_interface_copy
 
-    auto cloned = std::make_shared<Element>(tag_name_);
+    auto cloned = std::make_shared<Element>(tag_name_, local_name_, namespace_uri_);
 
     // 复制属性
     cloned->attributes_ = attributes_;
@@ -774,6 +805,9 @@ std::string Element::GetInnerHTML() const {
                 }
             }
             html << escaped;
+        } else if (child->GetNodeType() == NodeType::COMMENT_NODE) {
+            auto comment = std::static_pointer_cast<Comment>(child);
+            html << "<!--" << comment->GetData() << "-->";
         }
     }
 
@@ -1040,8 +1074,6 @@ std::shared_ptr<Node> Element::ConvertLexborNodeToNode(lxb_dom_node_t* lexbor_no
 
     } else if (lexbor_node->type == LXB_DOM_NODE_TYPE_TEXT) {
         // 文本节点
-        lxb_dom_text_t* lexbor_text = lxb_dom_interface_text(lexbor_node);
-
         size_t text_len;
         const lxb_char_t* text_data = lxb_dom_node_text_content(lexbor_node, &text_len);
         std::string text;
@@ -1053,6 +1085,15 @@ std::shared_ptr<Node> Element::ConvertLexborNodeToNode(lxb_dom_node_t* lexbor_no
         // 注意：owner_document会在AppendChild时自动设置
 
         return new_text;
+    } else if (lexbor_node->type == LXB_DOM_NODE_TYPE_COMMENT) {
+        size_t comment_len;
+        const lxb_char_t* comment_data = lxb_dom_node_text_content(lexbor_node, &comment_len);
+        std::string comment;
+        if (comment_data) {
+            comment = std::string(reinterpret_cast<const char*>(comment_data), comment_len);
+        }
+
+        return std::make_shared<Comment>(comment);
     }
 
     // 其他类型节点暂不支持

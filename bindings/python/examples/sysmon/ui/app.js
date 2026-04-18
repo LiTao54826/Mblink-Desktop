@@ -1,8 +1,8 @@
 /**
  * SysMon UI — Preact 系统监视器界面
  *
- * 全局变量（由 load_preact + SharedState 注入）：
- *   Preact / PreactHooks  — Preact 库
+ * 运行时变量：
+ *   通过 ESM import 使用官方 preact
  *   sys                   — Python 端 app.shared("sys") 创建的共享对象
  *     .cpu_total          float   总 CPU 使用率 %
  *     .cpu_cores          float[] 每核心使用率 %
@@ -18,7 +18,7 @@
  *     .timestamp          string  当前时间 HH:MM:SS
  */
 
-const { h, render } = Preact;
+import { h, render } from 'preact';
 
 // ── 主题色 ──────────────────────────────────────────────────────────────────
 const C = {

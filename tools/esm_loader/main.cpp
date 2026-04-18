@@ -269,7 +269,6 @@ bool LoadEmbeddedLibraries(QuickJSRuntime* runtime) {
     }
 
     try {
-        // 加载 DOM polyfills
         auto polyfills = GetDomPolyfillsJS();
         if (!polyfills.empty()) {
             std::string polyfills_str(polyfills);
@@ -277,20 +276,11 @@ bool LoadEmbeddedLibraries(QuickJSRuntime* runtime) {
             std::cout << "  ✓ DOM polyfills loaded" << std::endl;
         }
 
-        // 加载 Preact（作为全局对象）
-        auto preact = GetPreactJS();
-        if (!preact.empty()) {
-            std::string preact_str(preact);
-            runtime->Eval(preact_str, "preact.js");
-            std::cout << "  ✓ Preact loaded (global)" << std::endl;
-        }
-
-        // 加载 Hooks
-        auto hooks = GetHooksJS();
-        if (!hooks.empty()) {
-            std::string hooks_str(hooks);
-            runtime->Eval(hooks_str, "hooks.js");
-            std::cout << "  ✓ Hooks loaded (global)" << std::endl;
+        auto bootstrap = GetBootstrapJS();
+        if (!bootstrap.empty()) {
+            std::string bootstrap_str(bootstrap);
+            runtime->Eval(bootstrap_str, "bootstrap.js");
+            std::cout << "  ✓ Runtime bootstrap loaded" << std::endl;
         }
 
         return true;
@@ -300,38 +290,39 @@ bool LoadEmbeddedLibraries(QuickJSRuntime* runtime) {
     }
 }
 
-// 注册 Preact 为 ES 模块
+std::filesystem::path FindOfficialPreactRoot() {
+    static const auto kOfficialPreactRelativeRoot =
+        Utf8PathToFsPath("third_party") / Utf8PathToFsPath("preact");
+    auto current = std::filesystem::absolute(Utf8PathToFsPath(__FILE__)).parent_path();
+    while (!current.empty()) {
+        const auto candidate = current / kOfficialPreactRelativeRoot / "package.json";
+        if (std::filesystem::exists(candidate)) {
+            return current / kOfficialPreactRelativeRoot;
+        }
+        if (!current.has_parent_path() || current == current.parent_path()) {
+            break;
+        }
+        current = current.parent_path();
+    }
+    throw std::runtime_error("Unable to locate official Preact sources under third_party/preact");
+}
+
+std::string BuildOfficialPreactModule(const std::filesystem::path& entry_path) {
+    auto utf8 = std::filesystem::absolute(entry_path).lexically_normal().u8string();
+    std::string normalized(utf8.begin(), utf8.end());
+    std::replace(normalized.begin(), normalized.end(), '\\', '/');
+    return "export * from '" + normalized + "';";
+}
+
+// 注册官方 Preact ES 模块
 void RegisterPreactModules(QuickJSRuntime* runtime) {
-    // 注册 preact 模块（从全局对象导出）
-    runtime->RegisterModule("preact", R"(
-        export const h = globalThis.Preact.h;
-        export const render = globalThis.Preact.render;
-        export const Component = globalThis.Preact.Component;
-        export const Fragment = globalThis.Preact.Fragment;
-        export const createRef = globalThis.Preact.createRef;
-        export const createElement = globalThis.Preact.createElement;
-        export const createContext = globalThis.Preact.createContext;
-        export const cloneElement = globalThis.Preact.cloneElement;
-        export const isValidElement = globalThis.Preact.isValidElement;
-        export default globalThis.Preact;
-    )");
+    const auto preact_root = FindOfficialPreactRoot();
+    runtime->RegisterModule("preact", BuildOfficialPreactModule(preact_root / "src" / "index.js"));
+    runtime->RegisterModule("preact/hooks", BuildOfficialPreactModule(preact_root / "hooks" / "src" / "index.js"));
+    runtime->RegisterModule("preact/jsx-runtime", BuildOfficialPreactModule(preact_root / "jsx-runtime" / "src" / "index.js"));
+    runtime->RegisterModule("preact/jsx-dev-runtime", BuildOfficialPreactModule(preact_root / "jsx-runtime" / "src" / "index.js"));
 
-    // 注册 preact/hooks 模块
-    runtime->RegisterModule("preact/hooks", R"(
-        export const useState = globalThis.PreactHooks.useState;
-        export const useEffect = globalThis.PreactHooks.useEffect;
-        export const useRef = globalThis.PreactHooks.useRef;
-        export const useMemo = globalThis.PreactHooks.useMemo;
-        export const useCallback = globalThis.PreactHooks.useCallback;
-        export const useContext = globalThis.PreactHooks.useContext;
-        export const useReducer = globalThis.PreactHooks.useReducer;
-        export const useLayoutEffect = globalThis.PreactHooks.useLayoutEffect;
-        export const useImperativeHandle = globalThis.PreactHooks.useImperativeHandle;
-        export const useDebugValue = globalThis.PreactHooks.useDebugValue;
-        export default globalThis.PreactHooks;
-    )");
-
-    std::cout << "  ✓ Preact ES modules registered" << std::endl;
+    std::cout << "  ✓ Official Preact ES modules registered" << std::endl;
 }
 
 // ============================================================
@@ -801,6 +792,13 @@ int main(int argc, char** argv) {
         // 显示窗口
         window->Show();
 
+        // 主动绘制首帧，避免首个事件循环周期尚未触发 render callback 时出现空白窗口
+        // 某些示例会在首帧完成前看起来像“启动后空白几秒再退出”。
+        if (window->NeedsRepaint()) {
+            window->Render();
+            window->SwapBuffers();
+        }
+
         // 初始化 DevTools
         auto& devtools = DevToolsManager::GetInstance();
         devtools.Initialize(document.get(), window.get());
@@ -818,6 +816,9 @@ int main(int argc, char** argv) {
         mbink::ui_dev::ConfigureRuntimeControl(&event_loop, runtime.get(), window, document, ui_dev_options);
 
         event_loop.Run();
+        LOG("  Event loop exited: shouldQuit=" << (event_loop.ShouldQuit() ? 1 : 0)
+            << ", hasWindows=" << (window_manager.HasWindows() ? 1 : 0)
+            << ", windowShouldClose=" << (window->ShouldClose() ? 1 : 0));
 
         // 清理 - 注意顺序：先释放持有 JSValue 的对象，最后释放 QuickJS 运行时
         std::cout << std::endl;

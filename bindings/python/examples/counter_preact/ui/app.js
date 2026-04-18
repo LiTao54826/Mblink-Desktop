@@ -1,16 +1,15 @@
 /**
  * Preact Counter 示例 — UI 入口文件
  *
- * 全局可用变量：
- *   - Preact          → { h, render, Component, Fragment, ... }
- *   - PreactHooks     → { useState, useEffect, ... }
+ * 运行时可用变量：
+ *   - 通过 ESM import 使用官方 preact / preact-hooks
  *   - data            → 共享 C 对象（Python 侧 app.shared("data") 创建）
  *   - backend.increment()  → 调用 Python @app.bind("increment")
  *   - backend.decrement()  → 调用 Python @app.bind("decrement")
  *   - backend.reset()      → 调用 Python @app.bind("reset")
  */
 
-const { h, render } = Preact;
+import { h, render } from 'preact';
 
 // ====== 样式 ======
 const styles = {

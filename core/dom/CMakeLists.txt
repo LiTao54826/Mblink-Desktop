@@ -13,6 +13,7 @@ set(DOM_CORE_SOURCES
     node.cpp
     element.cpp
     text.cpp
+    comment.cpp
     document.cpp
     document_fragment.cpp
     event.cpp
@@ -23,6 +24,7 @@ set(DOM_CORE_HEADERS
     node.h
     element.h
     text.h
+    comment.h
     document.h
     event.h
     drag_event.h
@@ -32,6 +34,7 @@ set(DOM_CORE_HEADERS
 set(DOM_BINDINGS_SOURCES
     bindings/dom_bindings.cpp
     bindings/canvas_bindings.cpp
+    bindings/native_data_binding.cpp
     bindings/terminal_bindings.cpp
 )
 
@@ -83,6 +86,7 @@ set(DOM_ELEMENTS_SOURCES
     elements/html_style_element.cpp
     elements/html_script_element.cpp
     elements/html_link_element.cpp
+    elements/html_template_element.cpp
 )
 
 # 合并所有源文件

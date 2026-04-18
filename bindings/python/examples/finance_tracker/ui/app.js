@@ -1,4 +1,4 @@
-const { h, render } = Preact;
+import { h, render } from 'preact';
 
 // ── 工具函数 ──────────────────────────────────────────────────
 function fmt(n) {

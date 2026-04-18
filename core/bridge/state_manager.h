@@ -1,35 +1,25 @@
 /**
  * @file state_manager.h
- * @brief 跨语言状态管理器
- * 
- * StateManager 是 MBink 跨语言绑定的核心组件，提供：
- * - 线程安全的状态存储
- * - 操作队列机制（写操作入队，主线程处理）
- * - 状态变化监听
- * - 批量操作支持
+ * @brief 基于 path 的宿主状态管理器
  */
 
 #pragma once
 
-#include <string>
-#include <functional>
-#include <unordered_map>
-#include <deque>
-#include <mutex>
-#include <shared_mutex>
-#include <vector>
-#include <set>
 #include <cstdint>
+#include <functional>
+#include <memory>
+#include <mutex>
+#include <string>
+#include <unordered_map>
+#include <vector>
 
 #include "nlohmann/json.hpp"
+#include "native_state_graph.h"
 
 namespace mbink {
 
 using json = nlohmann::json;
 
-/**
- * @brief 状态值类型枚举
- */
 enum class MBinkType {
     Null = 0,
     Bool,
@@ -40,9 +30,6 @@ enum class MBinkType {
     Object
 };
 
-/**
- * @brief 错误码枚举
- */
 enum class MBinkError {
     Ok = 0,
     InvalidHandle = -1,
@@ -56,184 +43,39 @@ enum class MBinkError {
     Unknown = -99
 };
 
-/**
- * @brief 状态操作类型
- */
-enum class StateOp {
-    // 通用
-    Set,
-    Delete,
-    
-    // 数值
-    Increment,
-    Multiply,
-    
-    // 数组
-    ArrayPush,
-    ArrayPop,
-    ArrayShift,
-    ArrayUnshift,
-    ArrayRemove,
-    ArrayClear,
-    ArraySet,
-    
-    // 对象
-    ObjectSet,
-    ObjectRemove,
-    ObjectClear,
-    
-    // 字符串
-    StringAppend,
-    StringPrepend
-};
-
-
-/**
- * @brief 状态操作结构
- */
-struct StateOperation {
-    StateOp op;
-    std::string name;
-    json value;
-    std::string key;    // 用于对象操作
-    int index = -1;     // 用于数组操作
-};
-
-/**
- * @brief 状态变化回调类型
- */
 using StateCallback = std::function<void(const std::string& name, const json& value)>;
 
-/**
- * @brief 监听器结构
- */
 struct Watcher {
     int id;
     std::string name;
     StateCallback callback;
 };
 
-/**
- * @brief 线程安全的状态管理器
- * 
- * 设计原则：
- * - 读操作直接访问（共享锁）
- * - 写操作入队（互斥锁保护队列）
- * - 主线程调用 processQueue() 应用变更
- * - 变更后通知所有监听器
- */
 class StateManager {
 public:
     StateManager();
     ~StateManager();
-    
-    // ========== 创建 ==========
-    
-    /**
-     * @brief 创建 null 类型状态
-     * @param name 状态名称
-     * @return 错误码
-     */
+
     MBinkError createNull(const std::string& name);
-    
-    /**
-     * @brief 创建 bool 类型状态
-     */
     MBinkError createBool(const std::string& name, bool value);
-    
-    /**
-     * @brief 创建 int64 类型状态
-     */
     MBinkError createInt(const std::string& name, int64_t value);
-    
-    /**
-     * @brief 创建 double 类型状态
-     */
     MBinkError createDouble(const std::string& name, double value);
-    
-    /**
-     * @brief 创建 string 类型状态
-     */
     MBinkError createString(const std::string& name, const std::string& value);
-    
-    /**
-     * @brief 创建空数组状态
-     */
     MBinkError createArray(const std::string& name);
-    
-    /**
-     * @brief 创建空对象状态
-     */
     MBinkError createObject(const std::string& name);
-    
-    /**
-     * @brief 从 JSON 创建状态
-     */
     MBinkError createJson(const std::string& name, const json& value);
-    
-    // ========== 读取（线程安全） ==========
-    
-    /**
-     * @brief 检查状态是否存在
-     */
+
     bool exists(const std::string& name) const;
-    
-    /**
-     * @brief 获取状态类型
-     * @return 状态类型，不存在返回 Null
-     */
     MBinkType type(const std::string& name) const;
-    
-    /**
-     * @brief 获取 bool 值
-     * @return 类型不匹配返回 false
-     */
     bool getBool(const std::string& name) const;
-    
-    /**
-     * @brief 获取 int64 值
-     * @return 类型不匹配返回 0
-     */
     int64_t getInt(const std::string& name) const;
-    
-    /**
-     * @brief 获取 double 值
-     * @return 类型不匹配返回 0.0
-     */
     double getDouble(const std::string& name) const;
-    
-    /**
-     * @brief 获取 string 值（返回内部缓存引用）
-     * @return 类型不匹配返回空字符串
-     */
     const std::string& getString(const std::string& name) const;
-    
-    /**
-     * @brief 获取 JSON 值（深拷贝）
-     */
     json getJson(const std::string& name) const;
-    
-    /**
-     * @brief 获取数组元素
-     * @return 越界或类型不匹配返回 null
-     */
     json getAt(const std::string& name, int index) const;
-    
-    /**
-     * @brief 获取对象属性
-     * @return 不存在或类型不匹配返回 null
-     */
     json getKey(const std::string& name, const std::string& key) const;
-    
-    /**
-     * @brief 获取数组/字符串长度
-     * @return 类型不匹配返回 0
-     */
     size_t getLength(const std::string& name) const;
 
-    
-    // ========== 写入（入队） ==========
-    
     MBinkError setNull(const std::string& name);
     MBinkError setBool(const std::string& name, bool value);
     MBinkError setInt(const std::string& name, int64_t value);
@@ -241,9 +83,7 @@ public:
     MBinkError setString(const std::string& name, const std::string& value);
     MBinkError setJson(const std::string& name, const json& value);
     MBinkError remove(const std::string& name);
-    
-    // ========== 数组操作（入队） ==========
-    
+
     MBinkError arrayPush(const std::string& name, const json& item);
     MBinkError arrayPop(const std::string& name);
     MBinkError arrayShift(const std::string& name);
@@ -251,106 +91,54 @@ public:
     MBinkError arrayRemove(const std::string& name, int index);
     MBinkError arrayClear(const std::string& name);
     MBinkError arraySet(const std::string& name, int index, const json& item);
-    
-    // ========== 对象操作（入队） ==========
-    
+
     MBinkError objectSet(const std::string& name, const std::string& key, const json& value);
     MBinkError objectRemove(const std::string& name, const std::string& key);
     MBinkError objectClear(const std::string& name);
-    
-    // ========== 数值操作（入队） ==========
-    
+
     MBinkError increment(const std::string& name, double delta);
     MBinkError multiply(const std::string& name, double factor);
-    
-    // ========== 字符串操作（入队） ==========
-    
     MBinkError stringAppend(const std::string& name, const std::string& suffix);
     MBinkError stringPrepend(const std::string& name, const std::string& prefix);
-    
-    // ========== 监听 ==========
-    
-    /**
-     * @brief 监听状态变化
-     * @return 唯一的 watch_id
-     */
-    int watch(const std::string& name, StateCallback callback);
-    
-    /**
-     * @brief 取消监听
-     */
-    void unwatch(int watchId);
 
-    /**
-     * @brief 清理所有监听器（释放其捕获资源）
-     */
+    int watch(const std::string& name, StateCallback callback);
+    void unwatch(int watchId);
     void clearWatchers();
 
-    // ========== 批量/队列 ==========
-
-    /**
-     * @brief 进入批量模式
-     */
     void batchBegin();
-    
-    /**
-     * @brief 退出批量模式并触发通知
-     */
     void batchEnd();
-    
-    /**
-     * @brief 设置合并模式
-     * @param enable 启用后，同名 SET 操作只保留最后一次
-     */
     void setMergeMode(bool enable);
-    
-    /**
-     * @brief 处理操作队列（主线程调用）
-     */
     void processQueue();
-    
-    /**
-     * @brief 获取队列大小
-     */
     size_t queueSize() const;
 
+    json get(const std::string& path) const;
+    bool set(const std::string& path, const json& value);
+    bool deletePath(const std::string& path);
+    uint64_t subscribe(const std::string& path,
+                       SubscriptionMode mode,
+                       uint64_t bindingId,
+                       SubscriptionCallback callback);
+    bool unsubscribe(uint64_t subscriptionId);
+    uint32_t beginBatch();
+    uint32_t endBatch();
+    uint32_t flush();
+    uint64_t revisionOf(const std::string& path) const;
+
 private:
-    // 验证状态名称
     bool isValidName(const std::string& name) const;
-    
-    // 入队操作
-    void enqueue(StateOperation op);
-    
-    // 应用单个操作
-    void applyOp(const StateOperation& op);
-    
-    // 通知监听器
-    void notify(const std::string& name);
-    
-    // 从 json 类型转换为 MBinkType
-    static MBinkType jsonTypeToMBinkType(const json& j);
-    
-    // 状态存储
-    std::unordered_map<std::string, json> states_;
-    mutable std::shared_mutex statesMutex_;
-    
-    // 字符串缓存（用于 getString 返回引用）
+    MBinkType jsonTypeToMBinkType(const json& j) const;
+    MBinkError createValue(const std::string& name, const json& value);
+    MBinkError mutateTopLevel(const std::string& name, const std::function<bool(json&)>& mutator);
+    void notifyWatcher(const std::string& name);
+
+    std::unique_ptr<NativeStateGraph> graph_;
     mutable std::unordered_map<std::string, std::string> stringCache_;
-    static const std::string emptyString_;
-    
-    // 操作队列 → 改为待通知集合（写操作已同步执行）
-    std::set<std::string> pendingNotifications_;
-    mutable std::mutex notifyMutex_;
-    bool mergeMode_ = true;  // 保留兼容性，但不再影响行为
-    
-    // 监听器
+    mutable std::mutex stringCacheMutex_;
     std::vector<Watcher> watchers_;
     int nextWatcherId_ = 0;
-    std::mutex watchersMutex_;
-    
-    // 批量模式
-    bool batchMode_ = false;
-    std::set<std::string> batchChanges_;
+    mutable std::mutex watchersMutex_;
+    bool mergeMode_ = true;
+    static const std::string emptyString_;
 };
 
 } // namespace mbink

@@ -1,4 +1,4 @@
-const { h, render } = Preact;
+import { h, render } from 'preact';
 
 const styles = {
   wrap: { display: 'flex', flexDirection: 'column', gap: '10px' },

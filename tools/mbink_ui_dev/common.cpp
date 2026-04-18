@@ -514,7 +514,7 @@ bool InitProject(const std::filesystem::path& target_dir,
 
     const std::string app_js = is_preact_jsx
         ? std::string(
-R"JS(const { h, render } = Preact;
+R"JS(import { h, render } from 'preact';
 
 const styles = {
   app: { fontFamily: 'Segoe UI, sans-serif', padding: '24px', background: '#0f172a', color: '#e2e8f0', minHeight: '100vh' },
@@ -540,7 +540,7 @@ R"JS(import './App.tsx';
 )JS")
         : is_vanilla_js
         ? std::string(
-R"JS(const { h, render } = Preact;
+R"JS(import { h, render } from 'preact';
 
 function App() {
   return h('div', {
@@ -564,11 +564,10 @@ function App() {
 render(h(App), document.body);
 )JS")
         : std::string(
-R"JS(import { AppShell } from './components/AppShell.js';
+R"JS(import { h, render } from 'preact';
+import { AppShell } from './components/AppShell.js';
 import { InfoCard } from './components/InfoCard.js';
 import { ActionList } from './components/ActionList.js';
-
-const { h, render } = Preact;
 
 const project = {
   title: ')JS" + host_title + R"JS(',
@@ -611,8 +610,8 @@ function App() {
 render(h(App), document.body);
 )JS");
     const std::string app_jsx = std::string(
-R"JSX(const { h, render } = Preact;
-const { useState } = PreactHooks;
+R"JSX(import { Fragment, h, render } from 'preact';
+import { useState } from 'preact/hooks';
 
 function App() {
   const [count, setCount] = useState(0);
@@ -630,8 +629,8 @@ function App() {
 render(<App />, document.body);
 )JSX");
     const std::string app_tsx = std::string(
-R"TSX(const { h, render } = Preact;
-const { useMemo, useState } = PreactHooks;
+R"TSX(import { Fragment, h, render } from 'preact';
+import { useMemo, useState } from 'preact/hooks';
 
 function Card(props) {
   return (
@@ -701,8 +700,9 @@ R"RS(fn main() {
 }
 )RS");
     const std::string app_shell_js = std::string(
-R"JS(export function AppShell(props) {
-  const { h } = Preact;
+R"JS(import { h } from 'preact';
+
+export function AppShell(props) {
   const project = props.project || {};
   const children = props.children || [];
 
@@ -741,8 +741,9 @@ R"JS(export function AppShell(props) {
 }
 )JS");
     const std::string info_card_js = std::string(
-R"JS(export function InfoCard(props) {
-  const { h } = Preact;
+R"JS(import { h } from 'preact';
+
+export function InfoCard(props) {
   const lines = Array.isArray(props.lines) ? props.lines : [];
   const tone = props.tone === 'accent' ? '#e0f2fe' : '#e5e7eb';
 
@@ -771,8 +772,9 @@ R"JS(export function InfoCard(props) {
 }
 )JS");
     const std::string action_list_js = std::string(
-R"JS(export function ActionList(props) {
-  const { h } = Preact;
+R"JS(import { h } from 'preact';
+
+export function ActionList(props) {
   const items = Array.isArray(props.items) ? props.items : [];
 
   return h('div', {
@@ -813,8 +815,8 @@ R"JS(export function ActionList(props) {
         "  },\n" +
         "  \"build\": {\n" +
         "    \"builder\": \"esbuild\",\n" +
-        "    \"jsx_factory\": \"Preact.h\",\n" +
-        "    \"jsx_fragment\": \"Preact.Fragment\",\n" +
+        "    \"jsx_factory\": \"h\",\n" +
+        "    \"jsx_fragment\": \"Fragment\",\n" +
         "    \"external\": [\"preact\", \"preact/hooks\"],\n" +
         "    \"sourcemap\": true,\n" +
         "    \"minify\": false\n" +

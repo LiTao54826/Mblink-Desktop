@@ -46,7 +46,7 @@ Use `mbink-ui-dev` as the primary control surface for MBink UI development. Trea
 - Choose from `preact-jsx`, `preact-ts`, `vanilla-js`, `python`, `go`, or `rust`.
 - Open the new project immediately after init and verify the initial runtime with a snapshot.
 - Host starters generate a multi-file frontend scaffold under `src/app.js` and `src/components/*`, while keeping the host entry in `host/main.py`, `host/main.go`, or `rust_host/src/main.rs`.
-- Expect `preact-jsx` projects to rely on global `Preact` and `PreactHooks` and register the root through `__mbink_register_root__`.
+- Expect `preact-jsx` and `preact-ts` projects to import official `preact` / `preact/hooks` modules directly; do not assume global `Preact` or `PreactHooks` are injected.
 - Read [cli-mcp-reference.md](references/cli-mcp-reference.md) when template choice, config layout, or generated structure matters.
 
 ## Use File and Interaction Operations Intentionally

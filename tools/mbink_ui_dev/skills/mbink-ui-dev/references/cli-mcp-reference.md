@@ -232,7 +232,7 @@ Build and runtime errors follow a common structure with fields such as:
 
 | Template | Use when | Host |
 |---|---|---|
-| `preact-jsx` | JSX plus Preact with globally injected `Preact` and `PreactHooks` | None |
+| `preact-jsx` | JSX plus Preact with direct official `preact` / `preact/hooks` imports | None |
 | `preact-ts` | TypeScript plus JSX plus Preact | None |
 | `vanilla-js` | Simple UI without framework dependency | None |
 | `python` | Need a Python host integration starter with a multi-file frontend scaffold | Python |
@@ -274,7 +274,7 @@ my-host-app/
 
 The host starters use real `import ... from` composition in `src/app.js` and keep the default window size at `800x600`.
 
-In `preact-jsx`, the generated entry uses global `Preact` and `PreactHooks` and registers the root through `__mbink_register_root__`.
+In `preact-jsx` and `preact-ts`, the generated entries import official `preact` / `preact/hooks` modules directly instead of relying on global `Preact` / `PreactHooks` injection.
 
 ## `mbink.config.json` Notes
 

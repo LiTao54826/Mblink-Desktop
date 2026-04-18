@@ -23,6 +23,44 @@ struct JSEventData {
 
 static JSClassID js_event_class_id = 0;
 
+namespace {
+
+std::string JSValueToJSONString(JSContext* ctx, JSValueConst value) {
+    JSValue json_value = JS_JSONStringify(ctx, value, JS_UNDEFINED, JS_UNDEFINED);
+    if (JS_IsException(json_value)) {
+        JS_FreeValue(ctx, JS_GetException(ctx));
+        return "null";
+    }
+
+    if (JS_IsUndefined(json_value) || JS_IsNull(json_value)) {
+        JS_FreeValue(ctx, json_value);
+        return "null";
+    }
+
+    const char* json_cstr = JS_ToCString(ctx, json_value);
+    std::string result = json_cstr ? json_cstr : "null";
+    if (json_cstr) {
+        JS_FreeCString(ctx, json_cstr);
+    }
+    JS_FreeValue(ctx, json_value);
+    return result;
+}
+
+JSValue JSONStringToJSValue(JSContext* ctx, const std::string& json_string) {
+    if (json_string.empty()) {
+        return JS_NULL;
+    }
+
+    JSValue value = JS_ParseJSON(ctx, json_string.c_str(), json_string.size(), "<custom-event-detail>");
+    if (JS_IsException(value)) {
+        JS_FreeValue(ctx, JS_GetException(ctx));
+        return JS_NULL;
+    }
+    return value;
+}
+
+} // namespace
+
 // ========== 析构函数 ==========
 
 static void JSEventFinalizer(JSRuntime* rt, JSValue val) {
@@ -95,6 +133,16 @@ static JSValue JSEvent_get_cancelable(JSContext* ctx, JSValueConst this_val, int
     return JS_NewBool(ctx, data->event->GetCancelable());
 }
 
+// eventPhase
+static JSValue JSEvent_get_eventPhase(JSContext* ctx, JSValueConst this_val, int magic) {
+    auto* data = static_cast<JSEventData*>(JS_GetOpaque(this_val, js_event_class_id));
+    if (!data || !data->event) {
+        return JS_NewInt32(ctx, 0);
+    }
+
+    return JS_NewInt32(ctx, static_cast<int>(data->event->GetEventPhase()));
+}
+
 // ========== MouseEvent 属性访问器 ==========
 
 // clientX
@@ -162,6 +210,11 @@ static JSValue JSEvent_get_detail(JSContext* ctx, JSValueConst this_val, int mag
     auto* data = static_cast<JSEventData*>(JS_GetOpaque(this_val, js_event_class_id));
     if (!data || !data->event) {
         return JS_NewInt32(ctx, 0);
+    }
+
+    auto custom_event = std::dynamic_pointer_cast<CustomEvent>(data->event);
+    if (custom_event) {
+        return JSONStringToJSValue(ctx, custom_event->GetDetailJSON());
     }
 
     auto mouse_event = std::dynamic_pointer_cast<MouseEvent>(data->event);
@@ -622,6 +675,72 @@ static JSValue JSEvent_preventDefault(JSContext* ctx, JSValueConst this_val, int
     return JS_UNDEFINED;
 }
 
+// initEvent(type, bubbles, cancelable)
+static JSValue JSEvent_initEvent(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) {
+    auto* data = static_cast<JSEventData*>(JS_GetOpaque(this_val, js_event_class_id));
+    if (!data || !data->event) {
+        return JS_EXCEPTION;
+    }
+
+    if (argc < 1) {
+        return JS_ThrowTypeError(ctx, "initEvent requires at least 1 argument");
+    }
+
+    const char* type = JS_ToCString(ctx, argv[0]);
+    if (!type) {
+        return JS_EXCEPTION;
+    }
+
+    bool bubbles = false;
+    bool cancelable = false;
+    if (argc >= 2) {
+        bubbles = JS_ToBool(ctx, argv[1]);
+    }
+    if (argc >= 3) {
+        cancelable = JS_ToBool(ctx, argv[2]);
+    }
+
+    data->event->InitEvent(type, bubbles, cancelable);
+    JS_FreeCString(ctx, type);
+    return JS_UNDEFINED;
+}
+
+// initCustomEvent(type, bubbles, cancelable, detail)
+static JSValue JSEvent_initCustomEvent(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) {
+    auto* data = static_cast<JSEventData*>(JS_GetOpaque(this_val, js_event_class_id));
+    if (!data || !data->event) {
+        return JS_EXCEPTION;
+    }
+
+    auto custom_event = std::dynamic_pointer_cast<CustomEvent>(data->event);
+    if (!custom_event) {
+        return JS_ThrowTypeError(ctx, "initCustomEvent requires a CustomEvent object");
+    }
+
+    if (argc < 1) {
+        return JS_ThrowTypeError(ctx, "initCustomEvent requires at least 1 argument");
+    }
+
+    const char* type = JS_ToCString(ctx, argv[0]);
+    if (!type) {
+        return JS_EXCEPTION;
+    }
+
+    bool bubbles = false;
+    bool cancelable = false;
+    if (argc >= 2) {
+        bubbles = JS_ToBool(ctx, argv[1]);
+    }
+    if (argc >= 3) {
+        cancelable = JS_ToBool(ctx, argv[2]);
+    }
+
+    const std::string detail_json = argc >= 4 ? JSValueToJSONString(ctx, argv[3]) : "null";
+    custom_event->InitCustomEvent(type, bubbles, cancelable, detail_json);
+    JS_FreeCString(ctx, type);
+    return JS_UNDEFINED;
+}
+
 // new Event(type, { bubbles, cancelable })
 static JSValue JSEvent_constructor(JSContext* ctx, JSValueConst new_target, int argc, JSValueConst* argv) {
     if (argc < 1) {
@@ -655,6 +774,45 @@ static JSValue JSEvent_constructor(JSContext* ctx, JSValueConst new_target, int 
     return WrapEvent(ctx, event);
 }
 
+// new CustomEvent(type, { detail, bubbles, cancelable })
+static JSValue JSCustomEvent_constructor(JSContext* ctx, JSValueConst new_target, int argc, JSValueConst* argv) {
+    if (argc < 1) {
+        return JS_ThrowTypeError(ctx, "CustomEvent constructor requires 1 argument");
+    }
+
+    const char* type = JS_ToCString(ctx, argv[0]);
+    if (!type) {
+        return JS_EXCEPTION;
+    }
+
+    bool bubbles = false;
+    bool cancelable = false;
+    std::string detail_json = "null";
+    if (argc >= 2 && JS_IsObject(argv[1])) {
+        JSValue bubbles_value = JS_GetPropertyStr(ctx, argv[1], "bubbles");
+        JSValue cancelable_value = JS_GetPropertyStr(ctx, argv[1], "cancelable");
+        JSValue detail_value = JS_GetPropertyStr(ctx, argv[1], "detail");
+
+        if (!JS_IsUndefined(bubbles_value) && !JS_IsNull(bubbles_value)) {
+            bubbles = JS_ToBool(ctx, bubbles_value);
+        }
+        if (!JS_IsUndefined(cancelable_value) && !JS_IsNull(cancelable_value)) {
+            cancelable = JS_ToBool(ctx, cancelable_value);
+        }
+        if (!JS_IsUndefined(detail_value)) {
+            detail_json = JSValueToJSONString(ctx, detail_value);
+        }
+
+        JS_FreeValue(ctx, bubbles_value);
+        JS_FreeValue(ctx, cancelable_value);
+        JS_FreeValue(ctx, detail_value);
+    }
+
+    auto event = std::make_shared<CustomEvent>(type, bubbles, cancelable, detail_json);
+    JS_FreeCString(ctx, type);
+    return WrapEvent(ctx, event);
+}
+
 // ========== 类定义 ==========
 
 static const JSCFunctionListEntry js_event_proto_funcs[] = {
@@ -665,6 +823,7 @@ static const JSCFunctionListEntry js_event_proto_funcs[] = {
     JS_CGETSET_MAGIC_DEF("cancelable", JSEvent_get_cancelable, nullptr, 0),
     JS_CGETSET_MAGIC_DEF("defaultPrevented", JSEvent_get_defaultPrevented, nullptr, 0),
     JS_CGETSET_MAGIC_DEF("timeStamp", JSEvent_get_timeStamp, nullptr, 0),
+    JS_CGETSET_MAGIC_DEF("eventPhase", JSEvent_get_eventPhase, nullptr, 0),
     // MouseEvent 属性
     JS_CGETSET_MAGIC_DEF("clientX", JSEvent_get_clientX, nullptr, 0),
     JS_CGETSET_MAGIC_DEF("clientY", JSEvent_get_clientY, nullptr, 0),
@@ -696,6 +855,11 @@ static const JSCFunctionListEntry js_event_proto_funcs[] = {
     JS_CFUNC_DEF("stopPropagation", 0, JSEvent_stopPropagation),
     JS_CFUNC_DEF("stopImmediatePropagation", 0, JSEvent_stopImmediatePropagation),
     JS_CFUNC_DEF("preventDefault", 0, JSEvent_preventDefault),
+    JS_CFUNC_DEF("initEvent", 3, JSEvent_initEvent),
+};
+
+static const JSCFunctionListEntry js_custom_event_proto_funcs[] = {
+    JS_CFUNC_DEF("initCustomEvent", 4, JSEvent_initCustomEvent),
 };
 
 static JSClassDef js_event_class = {
@@ -720,14 +884,25 @@ void InitEventBinding(JSContext* ctx) {
     JS_SetPropertyFunctionList(ctx, proto, js_event_proto_funcs,
                                sizeof(js_event_proto_funcs) / sizeof(js_event_proto_funcs[0]));
 
+    JSValue custom_proto = JS_NewObject(ctx);
+    JS_SetPrototype(ctx, custom_proto, proto);
+    JS_SetPropertyFunctionList(ctx, custom_proto, js_custom_event_proto_funcs,
+                               sizeof(js_custom_event_proto_funcs) / sizeof(js_custom_event_proto_funcs[0]));
+
     // 设置类的原型
     JS_SetClassProto(ctx, js_event_class_id, proto);
 
-    // 注册全局 Event 构造函数
+    // 注册全局 Event / CustomEvent 构造函数
     JSValue global = JS_GetGlobalObject(ctx);
     JSValue event_ctor = JS_NewCFunction2(ctx, JSEvent_constructor, "Event", 1, JS_CFUNC_constructor, 0);
     JS_SetConstructor(ctx, event_ctor, proto);
     JS_SetPropertyStr(ctx, global, "Event", event_ctor);
+
+    JSValue custom_event_ctor = JS_NewCFunction2(ctx, JSCustomEvent_constructor, "CustomEvent", 1, JS_CFUNC_constructor, 0);
+    JS_SetConstructor(ctx, custom_event_ctor, custom_proto);
+    JS_SetPropertyStr(ctx, global, "CustomEvent", custom_event_ctor);
+
+    JS_FreeValue(ctx, custom_proto);
     JS_FreeValue(ctx, global);
 }
 
@@ -740,6 +915,20 @@ JSValue WrapEvent(JSContext* ctx, std::shared_ptr<Event> event) {
     JSValue obj = JS_NewObjectClass(ctx, js_event_class_id);
     if (JS_IsException(obj)) {
         return obj;
+    }
+
+    if (std::dynamic_pointer_cast<CustomEvent>(event)) {
+        JSValue global = JS_GetGlobalObject(ctx);
+        JSValue custom_event_ctor = JS_GetPropertyStr(ctx, global, "CustomEvent");
+        if (JS_IsObject(custom_event_ctor)) {
+            JSValue custom_proto = JS_GetPropertyStr(ctx, custom_event_ctor, "prototype");
+            if (JS_IsObject(custom_proto)) {
+                JS_SetPrototype(ctx, obj, custom_proto);
+            }
+            JS_FreeValue(ctx, custom_proto);
+        }
+        JS_FreeValue(ctx, custom_event_ctor);
+        JS_FreeValue(ctx, global);
     }
 
     // 设置 opaque 数据

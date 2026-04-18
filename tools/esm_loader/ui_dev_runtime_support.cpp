@@ -140,17 +140,12 @@ void ConfigureRuntimeControl(EventLoop* event_loop,
 
     event_loop->SetRenderCallback([window, document, snapshot_file = options.snapshot_file, snapshot_written, snapshot_pending]() {
         const bool needs_snapshot = !snapshot_file.empty() && *snapshot_pending;
-        if (!window->NeedsRepaint() && !needs_snapshot) return;
-        if (window->NeedsRepaint()) {
-            window->Render();
-            window->SwapBuffers();
-        }
-        if (needs_snapshot) {
-            std::string err;
-            ExportUiDevSnapshot(window, document, snapshot_file, &err);
-            *snapshot_written = true;
-            *snapshot_pending = false;
-        }
+        if (!needs_snapshot) return;
+
+        std::string err;
+        ExportUiDevSnapshot(window, document, snapshot_file, &err);
+        *snapshot_written = true;
+        *snapshot_pending = false;
     });
 
     auto last_command_id = std::make_shared<std::string>();

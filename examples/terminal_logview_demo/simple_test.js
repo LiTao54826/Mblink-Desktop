@@ -1,3 +1,6 @@
+import { h, render } from 'preact';
+import { useEffect, useRef, useState } from 'preact/hooks';
+
 /**
  * Terminal 和 LogView 简单测试
  * 
@@ -6,12 +9,6 @@
 
 (function() {
     'use strict';
-
-    var h = Preact.h;
-    var render = Preact.render;
-    var useState = PreactHooks.useState;
-    var useEffect = PreactHooks.useEffect;
-    var useRef = PreactHooks.useRef;
 
     console.log('=== Terminal & LogView 简单测试 ===');
 

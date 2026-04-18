@@ -434,6 +434,30 @@ void WindowBindings::BindWindowObject() {
     )";
 
     runtime_->Eval(window_code, "<window_bindings>");
+
+    runtime_->RegisterFunction("__performanceNow", [](const json& args) -> json {
+        return static_cast<double>(SDL_GetTicksNS()) / 1000000.0;
+    });
+
+    std::string perf_microtask_code = R"(
+        if (typeof globalThis.queueMicrotask !== 'function') {
+            globalThis.queueMicrotask = function(cb) {
+                return Promise.resolve().then(cb);
+            };
+        }
+
+        if (typeof globalThis.performance !== 'object' || globalThis.performance === null) {
+            globalThis.performance = {};
+        }
+
+        if (typeof globalThis.performance.now !== 'function') {
+            globalThis.performance.now = function() {
+                return __performanceNow();
+            };
+        }
+    )";
+
+    runtime_->Eval(perf_microtask_code, "<performance_microtask_bindings>");
 }
 
 void WindowBindings::BindTimers() {
@@ -588,40 +612,17 @@ void WindowBindings::BindTimers() {
 }
 
 void WindowBindings::BindEventListeners() {
-    // 绑定 window.addEventListener
-    runtime_->RegisterFunction("__windowAddEventListener", [this](const json& args) -> json {
-        if (!args.is_array() || args.empty() || !args[0].is_string()) {
-            return false;
-        }
-
-        // TODO: 实现事件监听器注册
-
-        return true;
-    });
-
-    runtime_->RegisterFunction("__windowRemoveEventListener", [this](const json& args) -> json {
-        if (!args.is_array() || args.empty() || !args[0].is_string()) {
-            return false;
-        }
-
-        // TODO: 实现事件监听器移除
-        return true;
-    });
-
-    // 创建事件监听器函数
     std::string event_code = R"(
-        globalThis.window.addEventListener = function(type, listener) {
-            if (typeof listener !== 'function') {
-                return false;
-            }
-            return __windowAddEventListener([type]);
+        globalThis.window.addEventListener = function(type, listener, options) {
+            return document.addEventListener(type, listener, options);
         };
 
-        globalThis.window.removeEventListener = function(type, listener) {
-            if (typeof listener !== 'function') {
-                return false;
-            }
-            return __windowRemoveEventListener([type]);
+        globalThis.window.removeEventListener = function(type, listener, options) {
+            return document.removeEventListener(type, listener, options);
+        };
+
+        globalThis.window.dispatchEvent = function(event) {
+            return document.dispatchEvent(event);
         };
     )";
 
