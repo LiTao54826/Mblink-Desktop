@@ -13,7 +13,7 @@ Read this file when exact command names, MCP mappings, templates, routing rules,
 
 ```bash
 # Project initialization
-mbink-ui-dev init <path> [--template <preact-jsx|preact-ts|vanilla-js|python|go|rust>]
+mbink-ui-dev init [path] [--template <preact-jsx|preact-ts|vanilla-js|python|go|rust>]
 
 # Daemon management
 mbink-ui-dev daemon start [--project <path>]
@@ -80,6 +80,10 @@ mbink-ui-dev stop
 ### New Project Bootstrap
 
 ```bash
+# initialize into the current directory
+mbink-ui-dev init --template preact-jsx
+
+# initialize into an explicit directory
 mbink-ui-dev init /abs/path/my-app --template preact-jsx
 mbink-ui-dev init /abs/path/my-py-app --template python
 mbink-ui-dev init /abs/path/my-go-app --template go
@@ -238,6 +242,8 @@ Build and runtime errors follow a common structure with fields such as:
 | `python` | Need a Python host integration starter with a multi-file frontend scaffold | Python |
 | `go` | Need a Go host integration starter with a multi-file frontend scaffold | Go |
 | `rust` | Need a Rust host integration starter with a multi-file frontend scaffold | Rust |
+
+Templates are embedded into the built `mbink-ui-dev.exe`, so init does not rely on shipping a separate external templates directory at distribution time.
 
 Aliases kept for compatibility: `python-host` → `python`, `rust-host` → `rust`.
 

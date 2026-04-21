@@ -43,9 +43,11 @@ Use `mbink-ui-dev` as the primary control surface for MBink UI development. Trea
 ## Bootstrap Projects and Templates Deliberately
 
 - Use `init` or `init_project` to scaffold new projects.
+- CLI `mbink-ui-dev init` now accepts an optional target directory. `mbink-ui-dev init` scaffolds into the current directory, while `mbink-ui-dev init my-app` scaffolds into `my-app`.
 - Choose from `preact-jsx`, `preact-ts`, `vanilla-js`, `python`, `go`, or `rust`.
 - Open the new project immediately after init and verify the initial runtime with a snapshot.
-- Host starters generate a multi-file frontend scaffold under `src/app.js` and `src/components/*`, while keeping the host entry in `host/main.py`, `host/main.go`, or `rust_host/src/main.rs`.
+- Templates are embedded into `mbink-ui-dev.exe` at build time, so distribution does not depend on shipping a separate `tools/mbink_ui_dev/templates` directory.
+- Host starters generate a multi-file frontend scaffold under `ui/app.js` plus host-specific source trees such as `src/*`, `cmd/*`, or `rust/src/*`, depending on the selected template.
 - Expect `preact-jsx` and `preact-ts` projects to import official `preact` / `preact/hooks` modules directly; do not assume global `Preact` or `PreactHooks` are injected.
 - Read [cli-mcp-reference.md](references/cli-mcp-reference.md) when template choice, config layout, or generated structure matters.
 

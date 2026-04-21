@@ -628,17 +628,32 @@ int main(int argc, char** argv) {
 
     const auto& cmd = args[0];
     if (cmd == "init") {
-        if (args.size() < 2) {
-            PrintJson(ErrorResponse("invalid_args", "用法: mbink-ui-dev init <target-dir> [--template preact-jsx|preact-ts|vanilla-js|python|go|rust]"));
-            return 1;
-        }
         const std::string template_name = [&args]() {
             const auto value = GetOptionValue(args, "--template");
             return value.empty() ? std::string("preact-jsx") : value;
         }();
+        std::vector<std::string> positional;
+        bool skip_next = false;
+        for (size_t i = 1; i < args.size(); ++i) {
+            if (skip_next) {
+                skip_next = false;
+                continue;
+            }
+            if (args[i] == "--template") {
+                skip_next = true;
+                continue;
+            }
+            if (args[i].rfind("--", 0) == 0) continue;
+            positional.push_back(args[i]);
+        }
+        if (positional.size() > 1) {
+            PrintJson(ErrorResponse("invalid_args", "用法: mbink-ui-dev init [target-dir] [--template preact-jsx|preact-ts|vanilla-js|python|go|rust]"));
+            return 1;
+        }
+        const auto target_dir = positional.empty() ? std::filesystem::current_path() : std::filesystem::path(positional.front());
         InitProjectResult result;
         std::string err;
-        if (!InitProject(std::filesystem::path(args[1]), template_name, &result, &err)) {
+        if (!InitProject(target_dir, template_name, &result, &err)) {
             PrintJson(ErrorResponse("init_failed", err));
             return 1;
         }

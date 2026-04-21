@@ -7,6 +7,8 @@
 #include <fstream>
 #include <random>
 #include <sstream>
+#include <cstddef>
+
 
 #ifdef _WIN32
 #include <windows.h>
@@ -87,6 +89,103 @@ void FromJson(const nlohmann::json& j, ProjectIdentity& identity) {
     identity.project_id = j.value("project_id", std::string{});
     identity.runtime_id = j.value("runtime_id", identity.project_id);
     identity.project_root = j.value("project_root", std::string{});
+}
+
+
+struct EmbeddedTemplateEntry {
+    const char* path;
+    const unsigned char* data;
+    size_t size;
+};
+
+#include "generated_templates/embedded_template_registry.inc"
+
+std::string EmbeddedTemplateText(const EmbeddedTemplateEntry& entry) {
+    return std::string(reinterpret_cast<const char*>(entry.data), entry.size);
+}
+
+bool IsHiddenEmbeddedTemplatePath(const std::string& rel_path) {
+    for (const auto& part : std::filesystem::path(rel_path)) {
+        const auto name = part.string();
+        if (!name.empty() && name[0] == '.') return true;
+    }
+    return false;
+}
+
+std::vector<const EmbeddedTemplateEntry*> FindEmbeddedTemplateEntries(const std::string& template_name) {
+    std::vector<const EmbeddedTemplateEntry*> entries;
+    const std::string prefix = template_name + "/";
+    for (const auto& entry : kEmbeddedTemplateEntries) {
+        const std::string full_path = entry.path ? entry.path : "";
+        if (full_path.rfind(prefix, 0) != 0) continue;
+        const std::string rel_path = full_path.substr(prefix.size());
+        if (rel_path.empty() || IsHiddenEmbeddedTemplatePath(rel_path)) continue;
+        entries.push_back(&entry);
+    }
+    std::sort(entries.begin(), entries.end(), [](const EmbeddedTemplateEntry* lhs, const EmbeddedTemplateEntry* rhs) {
+        return std::string(lhs->path ? lhs->path : "") < std::string(rhs->path ? rhs->path : "");
+    });
+    return entries;
+}
+
+bool TryInitProjectFromEmbeddedTemplates(const std::filesystem::path& root,
+                                         const std::string& project_name,
+                                         const std::string& template_name,
+                                         InitProjectResult* result,
+                                         std::string* error) {
+    if (error) error->clear();
+    const auto entries = FindEmbeddedTemplateEntries(template_name);
+    if (entries.empty()) return false;
+
+    std::vector<std::string> files_created;
+    const std::string prefix = template_name + "/";
+    std::error_code ec;
+    for (const auto* entry : entries) {
+        const std::string rel_path = std::string(entry->path).substr(prefix.size());
+        const auto output_path = root / std::filesystem::path(rel_path);
+        const auto parent = output_path.parent_path();
+        if (!parent.empty()) std::filesystem::create_directories(parent, ec);
+        if (ec) {
+            if (error) *error = "创建模板目录失败: " + parent.string();
+            return false;
+        }
+        std::ofstream ofs(output_path, std::ios::binary | std::ios::trunc);
+        if (!ofs) {
+            if (error) *error = "写入模板文件失败: " + output_path.string();
+            return false;
+        }
+        ofs.write(reinterpret_cast<const char*>(entry->data), static_cast<std::streamsize>(entry->size));
+        if (!ofs.good()) {
+            if (error) *error = "写入模板文件失败: " + output_path.string();
+            return false;
+        }
+        files_created.push_back(rel_path);
+    }
+
+    const auto config_path = root / "mbink.config.json";
+    if (std::filesystem::exists(config_path)) {
+        auto config_json = ReadJsonFile(config_path, error);
+        if (!config_json || !config_json->is_object()) {
+            if (error && error->empty()) *error = "模板 mbink.config.json 无效";
+            return false;
+        }
+        (*config_json)["name"] = project_name;
+        (*config_json)["template"] = template_name;
+        if (!config_json->contains("window") || !(*config_json)["window"].is_object()) {
+            (*config_json)["window"] = nlohmann::json::object();
+        }
+        (*config_json)["window"]["title"] = project_name;
+        if (!WriteJsonFile(config_path, *config_json, error)) return false;
+    }
+
+    if (result) {
+        result->project_root = root;
+        result->project_name = project_name;
+        result->template_name = template_name;
+        result->files_created = files_created;
+        result->next_step = "执行 mbink-ui-dev open \"" + root.string() + "\"";
+    }
+    return true;
 }
 
 }  // namespace
@@ -478,6 +577,13 @@ bool InitProject(const std::filesystem::path& target_dir,
         : template_name == "rust-host"
         ? "rust"
         : template_name;
+
+    InitProjectResult embedded_result;
+    if (TryInitProjectFromEmbeddedTemplates(root, project_name, normalized_template_name, &embedded_result, error)) {
+        if (result) *result = embedded_result;
+        return true;
+    }
+    if (error && !error->empty()) return false;
     const bool is_preact_jsx = normalized_template_name == "preact-jsx";
     const bool is_preact_ts = normalized_template_name == "preact-ts";
     const bool is_vanilla_js = normalized_template_name == "vanilla-js";
