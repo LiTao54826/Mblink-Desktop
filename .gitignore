@@ -118,4 +118,4 @@ reports/
 .augment/
 bindings/python/examples/xxxx/
 tmp/
-examples/todo_app_js/.devui
+.devui

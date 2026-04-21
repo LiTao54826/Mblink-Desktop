@@ -243,6 +243,7 @@ void PrintUsage(const char* program_name) {
     std::cout << "  --max-width <宽度>  窗口最大宽度" << std::endl;
     std::cout << "  --max-height <高度> 窗口最大高度" << std::endl;
     std::cout << "  --no-scripts        不执行脚本 (仅 HTML 模式)" << std::endl;
+    std::cout << "  --no-official-preact 禁用内置官方 Preact 模块注册（用于验证 node_modules/npm preact）" << std::endl;
     std::cout << "  --devtools          启动时打开开发者工具" << std::endl;
     std::cout << "  --ui-dev-snapshot-file <路径>   导出 UI Dev snapshot JSON" << std::endl;
     std::cout << "  --ui-dev-command-file <路径>    读取 UI Dev command JSON" << std::endl;
@@ -258,6 +259,7 @@ void PrintUsage(const char* program_name) {
     std::cout << "  " << program_name << " index.html" << std::endl;
     std::cout << "  " << program_name << " app.html --width 1024 --height 768" << std::endl;
     std::cout << "  " << program_name << " test.html -q 5  # 5秒后自动退出" << std::endl;
+    std::cout << "  " << program_name << " app.js --no-official-preact  # 强制只走 node_modules/npm preact" << std::endl;
 }
 
 // 加载嵌入的 JS 库
@@ -493,6 +495,7 @@ int main(int argc, char** argv) {
     std::string ui_dev_errors_file;
     std::string ui_dev_lifecycle_file;
     bool execute_scripts = true;
+    bool disable_official_preact = false;
     bool verbose = !has_embedded;  // 嵌入模式默认静默
     float quit_after_seconds = 0;
     bool borderless = has_embedded ? embedded_payload.config.borderless : false;
@@ -532,6 +535,8 @@ int main(int argc, char** argv) {
             ui_dev_lifecycle_file = argv[++i];
         } else if (arg == "--no-scripts") {
             execute_scripts = false;
+        } else if (arg == "--no-official-preact") {
+            disable_official_preact = true;
         } else if (arg == "--borderless") {
             borderless = true;
         } else if (arg == "--transparent") {
@@ -713,10 +718,84 @@ int main(int argc, char** argv) {
         WindowBindings::SetActiveEventLoop(&event_loop);
         LOG("  ✓ Event loop created");
 
+        auto& devtools = DevToolsManager::GetInstance();
+        bool cleanup_done = false;
+        auto shutdown_runtime = [&](int exit_code, bool use_quick_exit) -> int {
+            if (cleanup_done) {
+                if (use_quick_exit) {
+                    std::quick_exit(exit_code);
+                }
+                return exit_code;
+            }
+            cleanup_done = true;
+
+            std::cout << std::endl;
+            std::cout << "Shutting down..." << std::endl;
+
+            WindowBindings::SetActiveEventLoop(nullptr);
+            devtools.Shutdown();
+            FontManager::GetInstance().ClearCache();
+
+            if (runtime) {
+                try {
+                    runtime->Eval(R"(
+                        (function() {
+                            if (globalThis.__mbinkShutdown) {
+                                try { globalThis.__mbinkShutdown(); } catch (_) {}
+                            } else {
+                                if (globalThis.__preactCleanup) {
+                                    try { globalThis.__preactCleanup(); } catch (_) {}
+                                }
+                                if (globalThis.__preactHooksCleanup) {
+                                    try { globalThis.__preactHooksCleanup(); } catch (_) {}
+                                }
+                                if (globalThis.__mbinkRuntimeCleanup) {
+                                    try { globalThis.__mbinkRuntimeCleanup(); } catch (_) {}
+                                }
+                            }
+                        })();
+                    )", "<shutdown-cleanup>");
+                } catch (...) {
+                }
+            }
+
+            if (window) {
+                window_manager.UnregisterWindow(window);
+            }
+
+            if (runtime) {
+                window_bindings.Cleanup();
+            }
+            DOMBindings::Cleanup(nullptr);
+
+            document.reset();
+
+            if (state_manager) {
+                state_manager->clearWatchers();
+            }
+            host_bridge.reset();
+            state_manager.reset();
+
+            if (runtime) {
+                runtime->RunGC();
+            }
+            runtime.reset();
+            window.reset();
+
+            if (use_quick_exit) {
+                std::quick_exit(exit_code);
+            }
+            return exit_code;
+        };
+
         // 加载嵌入的库（Preact 等）
         if (mbink::embedded::HasEmbeddedJS()) {
             LoadEmbeddedLibraries(runtime.get());
-            RegisterPreactModules(runtime.get());
+            if (!disable_official_preact) {
+                RegisterPreactModules(runtime.get());
+            } else {
+                LOG("  ✓ Official Preact ES modules skipped (--no-official-preact)");
+            }
         } else {
             if (verbose) std::cerr << "  ⚠ No embedded JS libraries" << std::endl;
         }
@@ -756,7 +835,7 @@ int main(int argc, char** argv) {
             // 执行嵌入的字节码
             LOG("  Executing embedded bytecode...");
             if (!ExecuteEmbeddedBytecode(runtime.get(), embedded_payload, verbose)) {
-                return 1;
+                return shutdown_runtime(1, false);
             }
             LOG("  ✓ Bytecode executed");
         } else if (is_html) {
@@ -777,7 +856,7 @@ int main(int argc, char** argv) {
             std::string entry_code = ReadFile(entry_path);
             if (entry_code.empty()) {
                 std::cerr << "  ✗ Failed to read: " << entry_path << std::endl;
-                return 1;
+                return shutdown_runtime(1, false);
             }
 
             try {
@@ -785,7 +864,7 @@ int main(int argc, char** argv) {
                 LOG("  ✓ Entry module loaded");
             } catch (const std::exception& e) {
                 std::cerr << "  ✗ Module error: " << e.what() << std::endl;
-                return 1;
+                return shutdown_runtime(1, false);
             }
         }
 
@@ -800,7 +879,6 @@ int main(int argc, char** argv) {
         }
 
         // 初始化 DevTools
-        auto& devtools = DevToolsManager::GetInstance();
         devtools.Initialize(document.get(), window.get());
         if (open_devtools) {
             devtools.Open();
@@ -820,76 +898,7 @@ int main(int argc, char** argv) {
             << ", hasWindows=" << (window_manager.HasWindows() ? 1 : 0)
             << ", windowShouldClose=" << (window->ShouldClose() ? 1 : 0));
 
-        // 清理 - 注意顺序：先释放持有 JSValue 的对象，最后释放 QuickJS 运行时
-        std::cout << std::endl;
-        std::cout << "Shutting down..." << std::endl;
-
-        // 1. 关闭 DevTools（可能持有 DOM 引用）
-        devtools.Shutdown();
-
-        // 2. 清理字体缓存
-        FontManager::GetInstance().ClearCache();
-
-        // 3. 注销并释放窗口（可能持有事件回调）
-        window_manager.UnregisterWindow(window);
-        window.reset();
-
-        // HTML/嵌入模式：基础清理后直接退出
-        // 避免 Preact 专用清理流程触发 QuickJS GC 断言
-        if (is_html || is_embedded) {
-            LOG("  ✓ " << (is_embedded ? "Embedded" : "HTML") << " mode cleanup done");
-            std::quick_exit(0);
-        }
-
-        // 4. 先清理 Preact/Hooks 在全局对象上的闭包引用（事件处理函数、调度器状态等）
-        // 必须在 WindowBindings::Cleanup() 之前，因为 Cleanup 会把 global.document 设为 undefined，
-        // 而 __preactCleanup 内部需要调用 element.removeEventListener。
-        try {
-            runtime->Eval(R"(
-                (function() {
-                    if (globalThis.__preactCleanup) {
-                        try { globalThis.__preactCleanup(); } catch (_) {}
-                    }
-                    if (globalThis.__preactHooksCleanup) {
-                        try { globalThis.__preactHooksCleanup(); } catch (_) {}
-                    }
-                    globalThis.__preactCleanup = undefined;
-                    globalThis.__preactHooksCleanup = undefined;
-                    globalThis.Preact = undefined;
-                    globalThis.preact = undefined;
-                    globalThis.PreactHooks = undefined;
-                    globalThis.preactHooks = undefined;
-                })();
-            )", "<shutdown-cleanup>");
-        } catch (...) {
-            // 忽略清理脚本异常，继续执行原生清理流程
-        }
-
-        // 5. 清理 quickjs 主线路径的 DOM 绑定缓存 + JS 全局变量
-        window_bindings.Cleanup();
-
-        // 6. 清理 legacy DOMBindings 持有的全局调度器状态
-        DOMBindings::Cleanup(nullptr);
-
-        // 7. 释放 document（持有 DOM 树和事件监听器，这些可能包含 JSValue）
-        document.reset();
-
-        // 8. 清理 HostBridge/StateManager 的监听器，释放 watch 回调里的 JSValue 引用
-        if (state_manager) {
-            state_manager->clearWatchers();
-        }
-
-        // 9. 在 runtime 销毁前显式释放桥接对象，避免 quick_exit 跳过析构导致残留
-        host_bridge.reset();
-        state_manager.reset();
-
-        // 10. document 销毁 + 全局闭包清理后触发一次 GC
-        runtime->RunGC();
-
-        // 11. 最后释放 QuickJS 运行时（此时所有 JSValue 应该已被释放）
-        runtime.reset();
-
-        std::quick_exit(0);
+        return shutdown_runtime(0, true);
     } catch (const std::exception& e) {
         std::cerr << "Error: " << e.what() << std::endl;
         return 1;
