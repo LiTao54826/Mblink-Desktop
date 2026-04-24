@@ -51,6 +51,6 @@ function App() {
   ]);
 }
 
-var root = document.getElementById('root');
+var root = document.getElementById('root') || document.body;
 render(h(App), root);
 

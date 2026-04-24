@@ -204,7 +204,7 @@ function today() {
  }
 
 // ── 渲染引擎 ─────────────────────────────────────────────────
-var _root = document.getElementById('root');
+var _root = document.getElementById('root') || document.body;
 function rerender() {
   try { render(h(App), _root); } catch(e) { console.error('[rerender]', e&&e.message); }
 }

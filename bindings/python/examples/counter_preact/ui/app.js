@@ -98,7 +98,7 @@ function App() {
 }
 
 // ====== 渲染 + 更新钩子 ======
-var _root = document.getElementById('root');
+var _root = document.getElementById('root') || document.body;
 function rerender() {
     render(h(App), _root);
 }

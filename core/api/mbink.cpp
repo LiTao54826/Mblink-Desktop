@@ -1837,6 +1837,9 @@ int mbink_load_js_file(MBinkHandle handle, const char* filepath) {
                             setLastError(error.empty() ? "Failed to eval resource bytecode" : error);
                             return MBINK_ERROR_JS_ERROR;
                         }
+                        if (ctx->window) {
+                            ctx->window->SetNeedsRepaint();
+                        }
                         return MBINK_OK;
                     }
                     path = NormalizeResourcePath(filepath);
@@ -1844,6 +1847,9 @@ int mbink_load_js_file(MBinkHandle handle, const char* filepath) {
             }
         }
         ctx->runtime->LoadModuleFile(path);
+        if (ctx->window) {
+            ctx->window->SetNeedsRepaint();
+        }
         return MBINK_OK;
     } catch (const std::exception& e) {
         setLastError(e.what());

@@ -61,7 +61,7 @@ function App() {
     );
 }
 
-const root = document.getElementById('root');
+const root = document.getElementById('root') || document.body;
 function rerender() {
     render(h(App), root);
 }

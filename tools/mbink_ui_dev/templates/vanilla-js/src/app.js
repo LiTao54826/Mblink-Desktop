@@ -37,7 +37,7 @@ function App() {
       h(
         'section',
         { style: { padding: '24px', borderRadius: '20px', border: `1px solid ${palette.border}`, background: '#ffffff' } },
-        h('div', { style: { display: 'inline-flex', padding: '6px 10px', borderRadius: '999px', background: '#dbeafe', color: '#1d4ed8', fontSize: '12px', fontWeight: '700' } }, 'Vanilla JS Template'),
+        h('div', { style: { display: 'inline-flex', padding: '6px 10px', borderRadius: '999px', background: '#dbeafe', color: '#1d4ed8', fontSize: '12px', fontWeight: '700' } }, 'Preact without JSX Template'),
         h('h1', { style: { fontSize: '34px', margin: '14px 0 10px', fontWeight: '800' } }, 'MBink 工程化基础模板'),
         h('p', { style: { color: palette.muted, lineHeight: 1.7, margin: 0 } }, '不依赖 JSX，适合最小成本快速起步。'),
         h(

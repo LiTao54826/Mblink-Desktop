@@ -82,7 +82,7 @@ function App() {
   );
 }
 // ── 渲染 + 更新钩子 ───────────────────────────────────────
-var _root = document.getElementById('root');
+var _root = document.getElementById('root') || document.body;
 render(h(App), _root);
 
 // 脏标记 + setTimeout(0)：把 rerender 推迟到下一个事件循环迭代

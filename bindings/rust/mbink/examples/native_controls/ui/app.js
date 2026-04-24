@@ -32,4 +32,4 @@ function App() {
     );
 }
 
-render(h(App), document.getElementById('root'));
+render(h(App), document.getElementById('root') || document.body);

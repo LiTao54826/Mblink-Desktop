@@ -816,7 +816,7 @@ std::string QuickJSRuntime::ResolveFolderOrFile(const std::string& path) {
     }
 
     // 2. 尝试补常见扩展名
-    if (!path.empty() && path.find('.') == std::string::npos) {
+    if (!path.empty() && fs_path.extension().empty()) {
         fs::path with_js = fs_path;
         with_js += ".js";
         if (fs::is_regular_file(with_js)) {
@@ -850,17 +850,26 @@ std::string QuickJSRuntime::ResolveFolderOrFileWithLoader(const std::string& pat
         if (file_loader_(path, data, nullptr)) {
             return path;
         }
-        if (!path.empty() && path.find('.') == std::string::npos) {
+        if (!path.empty() && Utf8PathToFsPath(path).extension().empty()) {
             const std::string with_js = path + ".js";
             if (file_loader_(with_js, data, nullptr)) {
                 return with_js;
+            }
+            if (std::filesystem::is_regular_file(Utf8PathToFsPath(with_js))) {
+                return NormalizeFsPath(Utf8PathToFsPath(with_js));
             }
             for (const auto& ext : GetNativeModuleExtensions()) {
                 const std::string with_native = path + ext;
                 if (file_loader_(with_native, data, nullptr)) {
                     return with_native;
                 }
+                if (std::filesystem::is_regular_file(Utf8PathToFsPath(with_native))) {
+                    return NormalizeFsPath(Utf8PathToFsPath(with_native));
+                }
             }
+        }
+        if (std::filesystem::exists(Utf8PathToFsPath(path))) {
+            return ResolveFolderOrFile(path);
         }
         return ResolvePackageDirectoryWithLoader(path);
     }

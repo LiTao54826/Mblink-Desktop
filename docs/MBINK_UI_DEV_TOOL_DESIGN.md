@@ -1041,8 +1041,8 @@ Build Driver 通过外部进程调用 `esbuild` CLI，不嵌入 Node.js：
   "format": "esm",
   "outdir": ".dist",
   "jsx": "transform",
-  "jsxFactory": "Preact.h",
-  "jsxFragment": "Preact.Fragment",
+  "jsxFactory": "h",
+  "jsxFragment": "Fragment",
   "external": ["preact", "preact/hooks"],
   "sourcemap": "inline",
   "define": {
@@ -1051,7 +1051,7 @@ Build Driver 通过外部进程调用 `esbuild` CLI，不嵌入 Node.js：
 }
 ```
 
-**注意**：Preact 和 PreactHooks 通过 MBink 全局对象注入，必须设为 external 并在 `src/index.html` 中通过全局 `Preact`/`PreactHooks` 引用。
+**注意**：Preact 通过官方 ESM 内置模块解析，模板入口应使用 `import { h, render } from 'preact'` 与 `import { useState } from 'preact/hooks'`，不再依赖 `Preact` / `PreactHooks` 全局对象。
 
 ### 8.2 构建产物结构
 
@@ -1136,9 +1136,9 @@ my-app/
 **`src/App.jsx` 起始内容：**
 
 ```jsx
-// MBink App - 使用全局 Preact 对象（由框架注入，无需 import）
-const { h, render } = Preact;
-const { useState, useEffect } = PreactHooks;
+// MBink App - 使用官方 Preact ESM 内置模块
+import { h, render } from 'preact';
+import { useState, useEffect } from 'preact/hooks';
 
 function App() {
   const [count, setCount] = useState(0);
@@ -1228,8 +1228,8 @@ if (typeof __mbink_mock_host__ !== 'undefined') {
   },
   "build": {
     "builder": "esbuild",
-    "jsx_factory": "Preact.h",
-    "jsx_fragment": "Preact.Fragment",
+    "jsx_factory": "h",
+    "jsx_fragment": "Fragment",
     "external": ["preact", "preact/hooks"],
     "sourcemap": true,
     "minify": false
