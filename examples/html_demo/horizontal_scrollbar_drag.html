@@ -1,0 +1,213 @@
+<!doctype html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>Horizontal Scrollbar Drag Test</title>
+    <style>
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            min-height: 100vh;
+            font-family: "Segoe UI", Arial, sans-serif;
+            background: #f2f4f7;
+            color: #18202a;
+        }
+
+        main {
+            padding: 24px;
+        }
+
+        h1 {
+            margin: 0 0 18px;
+            font-size: 24px;
+            font-weight: 700;
+        }
+
+        .panel {
+            margin-bottom: 22px;
+            padding: 16px;
+            background: #ffffff;
+            border: 1px solid #d8dee8;
+            border-radius: 6px;
+        }
+
+        .panel-title {
+            margin-bottom: 10px;
+            font-size: 15px;
+            font-weight: 700;
+            color: #344256;
+        }
+
+        .scroll-box {
+            width: 520px;
+            max-width: 100%;
+            height: 142px;
+            overflow-x: scroll;
+            overflow-y: hidden;
+            border: 2px solid #476176;
+            background: #eef3f7;
+        }
+
+        .wide-row {
+            width: 1320px;
+            height: 100%;
+            padding: 18px;
+            white-space: nowrap;
+        }
+
+        .tile {
+            display: inline-block;
+            width: 150px;
+            height: 86px;
+            margin-right: 14px;
+            padding: 16px;
+            vertical-align: top;
+            border-radius: 4px;
+            background: #2c7a7b;
+            color: #ffffff;
+            font-weight: 700;
+        }
+
+        .tile:nth-child(2n) {
+            background: #7b4d2c;
+        }
+
+        .tile:nth-child(3n) {
+            background: #4d5f8f;
+        }
+
+        .table-wrap {
+            width: 620px;
+            max-width: 100%;
+            overflow-x: scroll;
+            border: 2px solid #476176;
+            background: #ffffff;
+        }
+
+        table {
+            width: 1280px;
+            border-collapse: collapse;
+        }
+
+        th,
+        td {
+            padding: 12px 14px;
+            border: 1px solid #cdd6e0;
+            text-align: left;
+            white-space: nowrap;
+        }
+
+        th {
+            background: #253447;
+            color: #ffffff;
+        }
+
+        .nested-outer {
+            width: 560px;
+            max-width: 100%;
+            padding: 12px;
+            overflow-x: scroll;
+            border: 2px solid #476176;
+            background: #f8fafc;
+        }
+
+        .nested-inner {
+            width: 1180px;
+            padding: 16px;
+            background: linear-gradient(90deg, #d9efe8, #f4e6d4);
+        }
+
+        .marker {
+            display: inline-block;
+            width: 170px;
+            height: 72px;
+            margin-right: 18px;
+            border: 1px solid #748294;
+            background: #ffffff;
+            line-height: 72px;
+            text-align: center;
+            font-weight: 700;
+        }
+    </style>
+</head>
+<body>
+    <main>
+        <h1>Horizontal Scrollbar Drag Test</h1>
+
+        <section class="panel">
+            <div class="panel-title">Ordinary div with overflow-x: scroll</div>
+            <div class="scroll-box">
+                <div class="wide-row">
+                    <div class="tile">A-01</div>
+                    <div class="tile">A-02</div>
+                    <div class="tile">A-03</div>
+                    <div class="tile">A-04</div>
+                    <div class="tile">A-05</div>
+                    <div class="tile">A-06</div>
+                    <div class="tile">A-07</div>
+                    <div class="tile">A-08</div>
+                </div>
+            </div>
+        </section>
+
+        <section class="panel">
+            <div class="panel-title">Wide table inside a normal scroll container</div>
+            <div class="table-wrap">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Column 01</th>
+                            <th>Column 02</th>
+                            <th>Column 03</th>
+                            <th>Column 04</th>
+                            <th>Column 05</th>
+                            <th>Column 06</th>
+                            <th>Column 07</th>
+                            <th>Column 08</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>Alpha</td>
+                            <td>Bravo</td>
+                            <td>Charlie</td>
+                            <td>Delta</td>
+                            <td>Echo</td>
+                            <td>Foxtrot</td>
+                            <td>Golf</td>
+                            <td>Hotel</td>
+                        </tr>
+                        <tr>
+                            <td>January</td>
+                            <td>February</td>
+                            <td>March</td>
+                            <td>April</td>
+                            <td>May</td>
+                            <td>June</td>
+                            <td>July</td>
+                            <td>August</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <section class="panel">
+            <div class="panel-title">Nested ordinary horizontal overflow</div>
+            <div class="nested-outer">
+                <div class="nested-inner">
+                    <span class="marker">Start</span>
+                    <span class="marker">Block 1</span>
+                    <span class="marker">Block 2</span>
+                    <span class="marker">Block 3</span>
+                    <span class="marker">Block 4</span>
+                    <span class="marker">End</span>
+                </div>
+            </div>
+        </section>
+    </main>
+</body>
+</html>

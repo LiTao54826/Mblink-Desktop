@@ -1120,6 +1120,11 @@ public:
     void UpdateScrollbarDrag(float mouse_x, float mouse_y);
 
     /**
+     * @brief Calculate the target scroll position for an active scrollbar drag without mutating this object.
+     */
+    bool UpdateScrollbarDrag(float mouse_x, float mouse_y, float& out_scroll_x, float& out_scroll_y);
+
+    /**
      * @brief 结束滚动条拖动
      */
     void EndScrollbarDrag();

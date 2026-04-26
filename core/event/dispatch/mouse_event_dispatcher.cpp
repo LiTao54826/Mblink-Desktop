@@ -116,18 +116,18 @@ bool MouseEventDispatcher::HandleMouseEvent(const SDL_Event& event,
         if (event.type == SDL_EVENT_MOUSE_MOTION) {
             float old_x = dragging_element->GetScrollX();
             float old_y = dragging_element->GetScrollY();
+            float target_x = old_x;
+            float target_y = old_y;
 
-            dragging_element->UpdateScrollbarDrag(logical_x, logical_y);
-
-            float new_x = dragging_element->GetScrollX();
-            float new_y = dragging_element->GetScrollY();
-
-            if (new_x != old_x || new_y != old_y) {
+            if (dragging_element->UpdateScrollbarDrag(logical_x, logical_y, target_x, target_y) &&
+                (target_x != old_x || target_y != old_y)) {
                 auto render_pipeline = window->GetRenderPipeline();
+                bool scrolled = false;
                 if (render_pipeline) {
-                    float delta_x = new_x - old_x;
-                    float delta_y = new_y - old_y;
-                    render_pipeline->HandleScroll(dragging_element.get(), delta_x, delta_y);
+                    scrolled = render_pipeline->ScrollTo(dragging_element.get(), target_x, target_y);
+                }
+                if (!scrolled) {
+                    dragging_element->ScrollTo(target_x, target_y);
                 }
             }
 

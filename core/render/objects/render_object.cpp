@@ -1190,9 +1190,9 @@ void RenderObject::StartScrollbarDrag(ScrollbarHitArea area, float mouse_x, floa
     scrollbar_controller_.StartDrag(area, mouse_x, mouse_y, scroll_x_, scroll_y_);
 }
 
-void RenderObject::UpdateScrollbarDrag(float mouse_x, float mouse_y) {
+bool RenderObject::UpdateScrollbarDrag(float mouse_x, float mouse_y, float& out_scroll_x, float& out_scroll_y) {
     if (!scrollbar_controller_.IsDragging()) {
-        return;
+        return false;
     }
 
     // 计算 border 宽度
@@ -1220,10 +1220,16 @@ void RenderObject::UpdateScrollbarDrag(float mouse_x, float mouse_y) {
     params.border_top = border_top;
     params.border_bottom = border_bottom;
 
+    out_scroll_x = scroll_x_;
+    out_scroll_y = scroll_y_;
+    return scrollbar_controller_.UpdateDrag(mouse_x, mouse_y, params, out_scroll_x, out_scroll_y);
+}
+
+void RenderObject::UpdateScrollbarDrag(float mouse_x, float mouse_y) {
     float new_scroll_x = scroll_x_;
     float new_scroll_y = scroll_y_;
 
-    if (scrollbar_controller_.UpdateDrag(mouse_x, mouse_y, params, new_scroll_x, new_scroll_y)) {
+    if (UpdateScrollbarDrag(mouse_x, mouse_y, new_scroll_x, new_scroll_y)) {
         // 关键修复：使用 ScrollTo 而不是直接设置 scroll_x_/scroll_y_
         // ScrollTo 会调用 InvalidateDescendantViewportBounds()，
         // 确保子元素的 ViewportBounds 缓存被正确失效，
