@@ -161,33 +161,32 @@ protected:
     void SetUp() override {
         manager_ = std::make_unique<ScrollLayerManager>();
         scrollable_ = std::make_shared<ScrollableRenderObject>();
+        clip_layer_ = CreateCompositorLayer();
+        scrollable_->SetCompositorLayer(clip_layer_);
         manager_->RegisterScrollContainer(scrollable_.get());
     }
 
     std::unique_ptr<ScrollLayerManager> manager_;
     std::shared_ptr<ScrollableRenderObject> scrollable_;
+    std::shared_ptr<CompositorLayer> clip_layer_;
 };
 
 /**
- * Property 5: 滚动更新层偏移而不是重新光栅化
+ * Property 5: scroll offset has a single compositor-layer owner.
  */
-TEST_F(ScrollHandlingTest, ScrollUpdatesLayerOffsetNotRasterize) {
+TEST_F(ScrollHandlingTest, ScrollOffsetOwnedByClipLayer) {
     auto* info = manager_->GetScrollContainerInfo(scrollable_.get());
     ASSERT_NE(info, nullptr);
     ASSERT_NE(info->content_layer, nullptr);
+    auto clip_layer = scrollable_->GetCompositorLayer();
+    ASSERT_NE(clip_layer, nullptr);
 
-    // 记录初始状态
-    auto initial_offset = info->content_layer->GetScrollOffset();
-    
-    // 执行滚动
     EXPECT_TRUE(manager_->HandleScroll(scrollable_.get(), 0, 100));
-    
-    // 验证层偏移已更新
-    auto new_offset = info->content_layer->GetScrollOffset();
-    EXPECT_FLOAT_EQ(new_offset.fY, -100);
-    
-    // 验证没有标记脏区域（不需要重新光栅化）
-    // 注意：初始创建时会标记脏，这里检查滚动后没有新增脏区域
+
+    auto clip_offset = clip_layer->GetScrollOffset();
+    auto content_offset = info->content_layer->GetScrollOffset();
+    EXPECT_FLOAT_EQ(clip_offset.fY, 100);
+    EXPECT_FLOAT_EQ(content_offset.fY, 0);
 }
 
 /**

@@ -225,9 +225,14 @@ TEST_F(PipelineScrollTest, HandleScrollSucceeds) {
  */
 TEST_F(PipelineScrollTest, ScrollToSetsAbsolutePosition) {
     pipeline_->HandleScroll(root_.get(), 0, 50);
+    auto surface = SkSurfaces::Raster(SkImageInfo::MakeN32Premul(800, 600));
+    pipeline_->ProcessFrame(surface->getCanvas());
+    ASSERT_FALSE(pipeline_->NeedsUpdate());
+
     EXPECT_TRUE(pipeline_->ScrollTo(root_.get(), 0, 200));
     
     EXPECT_FLOAT_EQ(root_->GetScrollY(), 200);
+    EXPECT_TRUE(pipeline_->NeedsUpdate());
 }
 
 /**

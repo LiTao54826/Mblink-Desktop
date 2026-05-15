@@ -1179,6 +1179,7 @@ bool RenderPipeline::ScrollTo(RenderObject* container, float scroll_x, float scr
 
     if (scrolled) {
         compositor_->MarkNeedsComposite();
+        needs_render_ = true;
     }
 
     return scrolled;
