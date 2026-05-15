@@ -1,4 +1,4 @@
-const { h, render } = Preact;
+import { h, render } from 'preact';
 
 const styles = {
   wrap: { display: 'flex', flexDirection: 'column', gap: '10px' },
@@ -51,6 +51,6 @@ function App() {
   ]);
 }
 
-var root = document.getElementById('root');
+var root = document.getElementById('root') || document.body;
 render(h(App), root);
 

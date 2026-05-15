@@ -105,6 +105,83 @@ std::shared_ptr<Document> Node::GetOwnerDocument() const {
     return nullptr;
 }
 
+bool Node::IsConnected() const {
+    const Node* current = this;
+    while (current) {
+        if (current->GetNodeType() == NodeType::DOCUMENT_NODE) {
+            return true;
+        }
+        auto parent = current->GetParentNode();
+        current = parent.get();
+    }
+    return false;
+}
+
+uint32_t Node::CompareDocumentPosition(std::shared_ptr<Node> other) const {
+    constexpr uint32_t kDisconnected = 0x01;
+    constexpr uint32_t kPreceding = 0x02;
+    constexpr uint32_t kFollowing = 0x04;
+    constexpr uint32_t kContains = 0x08;
+    constexpr uint32_t kContainedBy = 0x10;
+    constexpr uint32_t kImplementationSpecific = 0x20;
+    constexpr uint32_t kDisconnectedMask = kDisconnected | kImplementationSpecific | kPreceding;
+
+    if (!other) {
+        return kDisconnectedMask;
+    }
+
+    if (other.get() == this) {
+        return 0;
+    }
+
+    auto build_chain = [](const Node* node) {
+        std::vector<const Node*> chain;
+        const Node* current = node;
+        while (current) {
+            chain.push_back(current);
+            auto parent = current->GetParentNode();
+            current = parent.get();
+        }
+        std::reverse(chain.begin(), chain.end());
+        return chain;
+    };
+
+    auto this_chain = build_chain(this);
+    auto other_chain = build_chain(other.get());
+    if (this_chain.empty() || other_chain.empty() || this_chain.front() != other_chain.front()) {
+        return kDisconnectedMask;
+    }
+
+    size_t shared_depth = 0;
+    const size_t max_shared = std::min(this_chain.size(), other_chain.size());
+    while (shared_depth < max_shared && this_chain[shared_depth] == other_chain[shared_depth]) {
+        ++shared_depth;
+    }
+
+    if (shared_depth == this_chain.size()) {
+        return kContainedBy | kFollowing;
+    }
+
+    if (shared_depth == other_chain.size()) {
+        return kContains | kPreceding;
+    }
+
+    const Node* common_ancestor = this_chain[shared_depth - 1];
+    const Node* this_child = this_chain[shared_depth];
+    const Node* other_child = other_chain[shared_depth];
+
+    for (const auto& child : common_ancestor->GetChildNodes()) {
+        if (child.get() == other_child) {
+            return kPreceding;
+        }
+        if (child.get() == this_child) {
+            return kFollowing;
+        }
+    }
+
+    return kDisconnectedMask;
+}
+
 // ========== 子节点访问 ==========
 
 std::shared_ptr<Node> Node::GetFirstChild() const {
@@ -217,6 +294,9 @@ std::shared_ptr<Node> Node::AppendChild(std::shared_ptr<Node> child) {
         doc->GetObserverManager().NotifyNodeAdded(child.get(), this);
         // 标记 Lexbor DOM 需要同步
         doc->MarkLexborDirty();
+        if (auto childElement = std::dynamic_pointer_cast<Element>(child); childElement && childElement->IsConnected()) {
+            doc->AutoMountNativeDeclarativeBindings(childElement);
+        }
     }
 
     NotifySelectOptionsChanged(shared_from_this(), child);
@@ -304,6 +384,9 @@ std::shared_ptr<Node> Node::InsertBefore(std::shared_ptr<Node> new_child,
         doc->GetObserverManager().NotifyNodeAdded(new_child.get(), this);
         // 标记 Lexbor DOM 需要同步
         doc->MarkLexborDirty();
+        if (auto childElement = std::dynamic_pointer_cast<Element>(new_child); childElement && childElement->IsConnected()) {
+            doc->AutoMountNativeDeclarativeBindings(childElement);
+        }
     }
 
     NotifySelectOptionsChanged(shared_from_this(), new_child);
@@ -337,6 +420,7 @@ std::shared_ptr<Node> Node::RemoveChild(std::shared_ptr<Node> child) {
         if (child->GetNodeType() == NodeType::ELEMENT_NODE) {
             auto element = std::static_pointer_cast<Element>(child);
             doc->UnregisterElementAndDescendantIds(element);
+            doc->UnmountNativeDeclarativeBindings(element);
         }
     }
 
@@ -409,6 +493,11 @@ std::shared_ptr<Node> Node::ReplaceChild(std::shared_ptr<Node> new_child,
     if (doc) {
         doc->GetDirtyTracker().RecordNodeReplaced(old_child, new_child, shared_from_this(), index);
         doc->GetObserverManager().NotifyNodeRemoved(old_child.get(), this);
+        if (old_child->GetNodeType() == NodeType::ELEMENT_NODE) {
+            auto oldElement = std::static_pointer_cast<Element>(old_child);
+            doc->UnregisterElementAndDescendantIds(oldElement);
+            doc->UnmountNativeDeclarativeBindings(oldElement);
+        }
     }
 
     child_nodes_[index] = new_child;
@@ -423,6 +512,9 @@ std::shared_ptr<Node> Node::ReplaceChild(std::shared_ptr<Node> new_child,
 
     if (doc) {
         doc->MarkLexborDirty();
+        if (auto childElement = std::dynamic_pointer_cast<Element>(new_child); childElement && childElement->IsConnected()) {
+            doc->AutoMountNativeDeclarativeBindings(childElement);
+        }
     }
 
     NotifySelectOptionsChanged(shared_from_this(), old_child);
@@ -631,6 +723,7 @@ void Node::RemoveAllChildren() {
             if (child->GetNodeType() == NodeType::ELEMENT_NODE) {
                 auto element = std::static_pointer_cast<Element>(child);
                 doc->UnregisterElementAndDescendantIds(element);
+                doc->UnmountNativeDeclarativeBindings(element);
             }
         }
     }

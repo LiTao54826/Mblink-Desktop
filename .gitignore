@@ -32,6 +32,7 @@ __pycache__/
 *$py.class
 *.egg-info/
 dist/
+.dist/
 .eggs/
 *.egg
 bindings/python/build/
@@ -115,7 +116,8 @@ reports/
 .gitnexus
 .claude/
 *.mbrp
+!tools/mbink_ui_dev/templates/runtime/go/host/resources/app.mbrp
 .augment/
 bindings/python/examples/xxxx/
 tmp/
-examples/todo_app_js/.devui
+.devui

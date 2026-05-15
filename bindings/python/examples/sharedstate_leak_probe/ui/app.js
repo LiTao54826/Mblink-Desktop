@@ -1,7 +1,7 @@
-globalThis.__MBINK_LEAK_PROBE = true;
+import { h, render } from 'preact';
+import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 
-const { h, render } = Preact;
-const { useEffect, useMemo, useRef, useState } = PreactHooks;
+globalThis.__MBINK_LEAK_PROBE = true;
 
 const probeState = globalThis.__probeAppState || (globalThis.__probeAppState = {
   appRenderCount: 0,
@@ -130,4 +130,4 @@ function App() {
   ]));
 }
 
-render(h(App), document.getElementById('root'));
+render(h(App), document.getElementById('root') || document.body);

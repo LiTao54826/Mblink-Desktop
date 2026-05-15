@@ -113,8 +113,8 @@ void WindowBindings::ReleaseTimerCallback(int task_id) {
         return;
     }
 
-    ReleaseTimerCallbackByName(it->second);
-    timer_callbacks_.erase(it);
+    const std::string callback_name = it->second;
+    ReleaseTimerCallbackByName(callback_name);
 }
 
 void WindowBindings::ReleaseTimerCallbackByName(const std::string& callback_name) {
@@ -386,34 +386,309 @@ void WindowBindings::BindWindowObject() {
     });
 
 
-    // 创建 window 对象（如果不存在则创建，否则扩展现有对象）
+    // 创建 window 对象（与浏览器行为保持一致：window/self 指向 globalThis）
     std::string window_code = R"(
-        if (!globalThis.window) {
-            globalThis.window = {};
+        if (typeof globalThis.globalThis === 'undefined') {
+            globalThis.globalThis = globalThis;
         }
-        Object.defineProperty(globalThis.window, 'innerWidth', {
+        const __mbinkExistingWindow = globalThis.window;
+        if (!__mbinkExistingWindow || __mbinkExistingWindow !== globalThis) {
+            if (__mbinkExistingWindow && typeof __mbinkExistingWindow === 'object') {
+                try {
+                    Object.assign(globalThis, __mbinkExistingWindow);
+                } catch (_) {}
+            }
+            globalThis.window = globalThis;
+        }
+        if (typeof globalThis.self === 'undefined' || globalThis.self !== globalThis) {
+            globalThis.self = globalThis;
+        }
+
+        Object.defineProperty(globalThis, 'innerWidth', {
             get: function() { return __getInnerWidth(); },
             configurable: true
         });
-        Object.defineProperty(globalThis.window, 'innerHeight', {
+        Object.defineProperty(globalThis, 'innerHeight', {
             get: function() { return __getInnerHeight(); },
             configurable: true
         });
-        Object.defineProperty(globalThis.window, 'devicePixelRatio', {
+        Object.defineProperty(globalThis, 'devicePixelRatio', {
             get: function() { return __getDevicePixelRatio(); },
             configurable: true
         });
-        Object.defineProperty(globalThis.window, 'title', {
+        Object.defineProperty(globalThis, 'title', {
             get: function() { return __getTitle(); },
             set: function(value) { __setTitle(value); },
             configurable: true
         });
 
         // 窗口控制方法
-        globalThis.window.minimize = function() { return __windowMinimize(); };
-        globalThis.window.maximize = function() { return __windowMaximize(); };
-        globalThis.window.restore = function() { return __windowRestore(); };
-        globalThis.window.close = function() { return __windowClose(); };
+        globalThis.minimize = function() { return __windowMinimize(); };
+        globalThis.maximize = function() { return __windowMaximize(); };
+        globalThis.restore = function() { return __windowRestore(); };
+        globalThis.close = function() { return __windowClose(); };
+
+        (function(global) {
+            const DEFAULT_ORIGIN = 'http://mbink.local';
+
+            const navigationState = global.__mbinkNavigationState || {
+                stack: [],
+                index: 0
+            };
+            global.__mbinkNavigationState = navigationState;
+
+            function stringify(value) {
+                return value == null ? '' : String(value);
+            }
+
+            function normalizeHref(input) {
+                let href = stringify(input).trim();
+                if (!href) {
+                    return DEFAULT_ORIGIN + '/';
+                }
+
+                if (/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(href)) {
+                    return href;
+                }
+
+                const hasBase = Array.isArray(navigationState.stack) && navigationState.stack.length > 0;
+                const base = hasBase ? (navigationState.stack[navigationState.index] || navigationState.stack[0]) : {
+                    origin: DEFAULT_ORIGIN,
+                    pathname: '/',
+                    search: '',
+                    hash: ''
+                };
+
+                if (href.charAt(0) === '#') {
+                    return base.origin + base.pathname + base.search + href;
+                }
+                if (href.charAt(0) === '?') {
+                    return base.origin + base.pathname + href + base.hash;
+                }
+                if (href.charAt(0) === '/') {
+                    return DEFAULT_ORIGIN + href;
+                }
+
+                href = href.replace(/^\.\//, '');
+                if (!href.startsWith('/')) {
+                    href = '/' + href;
+                }
+                return DEFAULT_ORIGIN + href;
+            }
+
+            function parseHref(input) {
+                const normalized = normalizeHref(input);
+                const match = /^(?:([a-zA-Z][a-zA-Z0-9+.-]*):\/\/([^/?#]*))?([^?#]*)(\?[^#]*)?(#.*)?$/.exec(normalized) || [];
+                const protocol = match[1] ? match[1] + ':' : 'http:';
+                const host = match[2] || 'mbink.local';
+                let pathname = match[3] || '/';
+                if (!pathname.startsWith('/')) {
+                    pathname = '/' + pathname;
+                }
+                pathname = pathname.replace(/\/\/+/g, '/');
+                const search = match[4] || '';
+                const hash = match[5] || '';
+                const origin = protocol + '//' + host;
+                const hostname = host.indexOf(':') >= 0 ? host.slice(0, host.indexOf(':')) : host;
+                const port = host.indexOf(':') >= 0 ? host.slice(host.indexOf(':') + 1) : '';
+                return {
+                    href: origin + pathname + search + hash,
+                    origin,
+                    protocol,
+                    host,
+                    hostname,
+                    port,
+                    pathname,
+                    search,
+                    hash,
+                    state: null
+                };
+            }
+
+            function cloneState(state) {
+                return state === undefined ? null : state;
+            }
+
+            function createEntry(url, state) {
+                const parsed = parseHref(url);
+                parsed.state = cloneState(state);
+                return parsed;
+            }
+
+            if (!Array.isArray(navigationState.stack) || navigationState.stack.length === 0) {
+                navigationState.stack = [createEntry('/', null)];
+                navigationState.index = 0;
+            }
+
+            function currentEntry() {
+                return navigationState.stack[navigationState.index] || navigationState.stack[0];
+            }
+
+            const locationObject = typeof global.location === 'object' && global.location !== null ? global.location : {};
+            const historyObject = typeof global.history === 'object' && global.history !== null ? global.history : {};
+
+            function defineValue(target, key, getter, setter) {
+                Object.defineProperty(target, key, {
+                    get: getter,
+                    set: setter,
+                    enumerable: true,
+                    configurable: true
+                });
+            }
+
+            function updateObjects(entry) {
+                defineValue(locationObject, 'href', function() { return currentEntry().href; }, function(value) {
+                    navigate(value, { mode: 'push' });
+                });
+                defineValue(locationObject, 'origin', function() { return currentEntry().origin; });
+                defineValue(locationObject, 'protocol', function() { return currentEntry().protocol; });
+                defineValue(locationObject, 'host', function() { return currentEntry().host; });
+                defineValue(locationObject, 'hostname', function() { return currentEntry().hostname; });
+                defineValue(locationObject, 'port', function() { return currentEntry().port; });
+                defineValue(locationObject, 'pathname', function() { return currentEntry().pathname; }, function(value) {
+                    const next = currentEntry();
+                    let pathname = stringify(value) || '/';
+                    if (!pathname.startsWith('/')) pathname = '/' + pathname;
+                    navigate(pathname + next.search + next.hash, { mode: 'push' });
+                });
+                defineValue(locationObject, 'search', function() { return currentEntry().search; }, function(value) {
+                    let search = stringify(value);
+                    if (search && !search.startsWith('?')) search = '?' + search;
+                    const next = currentEntry();
+                    navigate(next.pathname + search + next.hash, { mode: 'push' });
+                });
+                defineValue(locationObject, 'hash', function() { return currentEntry().hash; }, function(value) {
+                    let hash = stringify(value);
+                    if (hash && !hash.startsWith('#')) hash = '#' + hash;
+                    const next = currentEntry();
+                    navigate(next.pathname + next.search + hash, { mode: 'push' });
+                });
+                defineValue(historyObject, 'length', function() { return navigationState.stack.length; });
+                defineValue(historyObject, 'state', function() { return currentEntry().state; });
+            }
+
+            function dispatchNavigationEvents(previous, next, options) {
+                const prevEntry = previous || next;
+                if (options && options.popstate) {
+                    const popstateEvent = new CustomEvent('popstate', {
+                        bubbles: false,
+                        cancelable: false,
+                        detail: next.state
+                    });
+                    try {
+                        Object.defineProperty(popstateEvent, 'state', {
+                            value: next.state,
+                            enumerable: true,
+                            configurable: true
+                        });
+                    } catch (_) {
+                        popstateEvent.state = next.state;
+                    }
+                    global.dispatchEvent(popstateEvent);
+                }
+
+                if (prevEntry.hash !== next.hash) {
+                    const hashchangeEvent = new CustomEvent('hashchange', {
+                        bubbles: false,
+                        cancelable: false,
+                        detail: {
+                            oldURL: prevEntry.href,
+                            newURL: next.href
+                        }
+                    });
+                    try {
+                        Object.defineProperty(hashchangeEvent, 'oldURL', {
+                            value: prevEntry.href,
+                            enumerable: true,
+                            configurable: true
+                        });
+                        Object.defineProperty(hashchangeEvent, 'newURL', {
+                            value: next.href,
+                            enumerable: true,
+                            configurable: true
+                        });
+                    } catch (_) {
+                        hashchangeEvent.oldURL = prevEntry.href;
+                        hashchangeEvent.newURL = next.href;
+                    }
+                    global.dispatchEvent(hashchangeEvent);
+                }
+            }
+
+            function navigate(url, options) {
+                options = options || {};
+                const previous = currentEntry();
+                const next = createEntry(url == null ? previous.href : url, options.state);
+
+                if (options.mode === 'replace') {
+                    navigationState.stack[navigationState.index] = next;
+                } else if (options.mode === 'pop') {
+                    navigationState.index = options.index;
+                } else {
+                    navigationState.stack = navigationState.stack.slice(0, navigationState.index + 1);
+                    navigationState.stack.push(next);
+                    navigationState.index = navigationState.stack.length - 1;
+                }
+
+                updateObjects(next);
+                dispatchNavigationEvents(previous, next, options);
+                return next.href;
+            }
+
+            locationObject.assign = function(url) {
+                navigate(url, { mode: 'push' });
+            };
+            locationObject.replace = function(url) {
+                navigate(url, { mode: 'replace' });
+            };
+            locationObject.reload = function() {};
+            locationObject.toString = function() {
+                return currentEntry().href;
+            };
+
+            historyObject.pushState = function(state, title, url) {
+                navigate(url == null ? currentEntry().href : url, {
+                    mode: 'push',
+                    state: state
+                });
+            };
+            historyObject.replaceState = function(state, title, url) {
+                navigate(url == null ? currentEntry().href : url, {
+                    mode: 'replace',
+                    state: state
+                });
+            };
+            historyObject.go = function(delta) {
+                const offset = Number(delta || 0);
+                if (!Number.isFinite(offset)) return;
+                const nextIndex = Math.max(0, Math.min(navigationState.stack.length - 1, navigationState.index + offset));
+                if (nextIndex === navigationState.index) return;
+                const previous = currentEntry();
+                navigationState.index = nextIndex;
+                const next = currentEntry();
+                updateObjects(next);
+                dispatchNavigationEvents(previous, next, { popstate: true });
+            };
+            historyObject.back = function() {
+                historyObject.go(-1);
+            };
+            historyObject.forward = function() {
+                historyObject.go(1);
+            };
+
+            updateObjects(currentEntry());
+            Object.defineProperty(global, 'location', {
+                get: function() { return locationObject; },
+                set: function(value) { navigate(value, { mode: 'push' }); },
+                enumerable: true,
+                configurable: true
+            });
+            Object.defineProperty(global, 'history', {
+                get: function() { return historyObject; },
+                enumerable: true,
+                configurable: true
+            });
+        })(globalThis);
 
         // 创建 navigator 对象（用于平台/浏览器检测）
         if (!globalThis.navigator) {
@@ -434,6 +709,30 @@ void WindowBindings::BindWindowObject() {
     )";
 
     runtime_->Eval(window_code, "<window_bindings>");
+
+    runtime_->RegisterFunction("__performanceNow", [](const json& args) -> json {
+        return static_cast<double>(SDL_GetTicksNS()) / 1000000.0;
+    });
+
+    std::string perf_microtask_code = R"(
+        if (typeof globalThis.queueMicrotask !== 'function') {
+            globalThis.queueMicrotask = function(cb) {
+                return Promise.resolve().then(cb);
+            };
+        }
+
+        if (typeof globalThis.performance !== 'object' || globalThis.performance === null) {
+            globalThis.performance = {};
+        }
+
+        if (typeof globalThis.performance.now !== 'function') {
+            globalThis.performance.now = function() {
+                return __performanceNow();
+            };
+        }
+    )";
+
+    runtime_->Eval(perf_microtask_code, "<performance_microtask_bindings>");
 }
 
 void WindowBindings::BindTimers() {
@@ -588,41 +887,22 @@ void WindowBindings::BindTimers() {
 }
 
 void WindowBindings::BindEventListeners() {
-    // 绑定 window.addEventListener
-    runtime_->RegisterFunction("__windowAddEventListener", [this](const json& args) -> json {
-        if (!args.is_array() || args.empty() || !args[0].is_string()) {
-            return false;
-        }
-
-        // TODO: 实现事件监听器注册
-
-        return true;
-    });
-
-    runtime_->RegisterFunction("__windowRemoveEventListener", [this](const json& args) -> json {
-        if (!args.is_array() || args.empty() || !args[0].is_string()) {
-            return false;
-        }
-
-        // TODO: 实现事件监听器移除
-        return true;
-    });
-
-    // 创建事件监听器函数
     std::string event_code = R"(
-        globalThis.window.addEventListener = function(type, listener) {
-            if (typeof listener !== 'function') {
-                return false;
-            }
-            return __windowAddEventListener([type]);
+        globalThis.window.addEventListener = function(type, listener, options) {
+            return document.addEventListener(type, listener, options);
         };
 
-        globalThis.window.removeEventListener = function(type, listener) {
-            if (typeof listener !== 'function') {
-                return false;
-            }
-            return __windowRemoveEventListener([type]);
+        globalThis.window.removeEventListener = function(type, listener, options) {
+            return document.removeEventListener(type, listener, options);
         };
+
+        globalThis.window.dispatchEvent = function(event) {
+            return document.dispatchEvent(event);
+        };
+
+        globalThis.addEventListener = globalThis.window.addEventListener;
+        globalThis.removeEventListener = globalThis.window.removeEventListener;
+        globalThis.dispatchEvent = globalThis.window.dispatchEvent;
     )";
 
     runtime_->Eval(event_code, "<event_bindings>");

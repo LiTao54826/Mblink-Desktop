@@ -1171,10 +1171,24 @@ LayoutOutput ComputeGridLayout(
         // Get child's unified Style for common properties (align-self, justify-self, size)
         const auto& child_style = tree.GetChildStyle(placement.child_id);
 
-        // Determine final size and position based on alignment
-        // Default is stretch (fill the cell)
-        float final_width = placement.measured_width;
-        float final_height = placement.measured_height;
+        const Size<std::optional<float>> cell_size{
+            std::optional<float>(cell_width),
+            std::optional<float>(cell_height)
+        };
+        const auto resolved_child_size = MaybeResolve(child_style.size, cell_size);
+        const auto resolved_child_min_size = MaybeResolve(child_style.min_size, cell_size);
+        const auto resolved_child_max_size = MaybeResolve(child_style.max_size, cell_size);
+        const auto clamped_child_size = MaybeClamp(
+            resolved_child_size,
+            resolved_child_min_size,
+            resolved_child_max_size
+        );
+
+        // Determine final size and position based on alignment. Explicit
+        // percentage sizes on grid items resolve against the final grid area,
+        // not the earlier intrinsic measurement pass.
+        float final_width = clamped_child_size.width.value_or(placement.measured_width);
+        float final_height = clamped_child_size.height.value_or(placement.measured_height);
         float offset_x = 0.0f;
         float offset_y = 0.0f;
 
@@ -1223,6 +1237,11 @@ LayoutOutput ComputeGridLayout(
                 }
             }
         }
+        final_width = Clamp(
+            Size<float>{final_width, final_height},
+            resolved_child_min_size,
+            resolved_child_max_size
+        ).width;
 
         // Resolve align-items (vertical alignment within cell)
         // Child's align-self overrides container's align-items
@@ -1257,6 +1276,11 @@ LayoutOutput ComputeGridLayout(
                 }
             }
         }
+        final_height = Clamp(
+            Size<float>{final_width, final_height},
+            resolved_child_min_size,
+            resolved_child_max_size
+        ).height;
 
         // Perform final layout with known dimensions so child containers
         // (like flex containers) can properly align their children

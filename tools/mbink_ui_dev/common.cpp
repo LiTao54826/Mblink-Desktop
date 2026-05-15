@@ -7,6 +7,9 @@
 #include <fstream>
 #include <random>
 #include <sstream>
+#include <cstddef>
+#include <utility>
+
 
 #ifdef _WIN32
 #include <windows.h>
@@ -89,6 +92,440 @@ void FromJson(const nlohmann::json& j, ProjectIdentity& identity) {
     identity.project_root = j.value("project_root", std::string{});
 }
 
+
+struct EmbeddedTemplateEntry {
+    const char* path;
+    const unsigned char* data;
+    size_t size;
+};
+
+#include "generated_templates/embedded_template_registry.inc"
+
+std::string EmbeddedTemplateText(const EmbeddedTemplateEntry& entry) {
+    return std::string(reinterpret_cast<const char*>(entry.data), entry.size);
+}
+
+bool LooksLikeMbinkRepoRoot(const std::filesystem::path& path) {
+    std::error_code ec;
+    return std::filesystem::exists(path / "bindings" / "python" / "mbink", ec) &&
+           std::filesystem::exists(path / "bindings" / "rust" / "mbink" / "Cargo.toml", ec) &&
+           std::filesystem::exists(path / "bindings" / "go" / "go.mod", ec);
+}
+
+std::optional<std::filesystem::path> FindMbinkRepoRootUpwards(std::filesystem::path start) {
+    std::error_code ec;
+    start = std::filesystem::absolute(start.empty() ? std::filesystem::current_path() : start, ec).lexically_normal();
+    if (ec) return std::nullopt;
+    if (std::filesystem::exists(start, ec) && !std::filesystem::is_directory(start, ec)) start = start.parent_path();
+    while (!start.empty()) {
+        if (LooksLikeMbinkRepoRoot(start)) return start;
+        const auto parent = start.parent_path();
+        if (parent == start) break;
+        start = parent;
+    }
+    return std::nullopt;
+}
+
+std::filesystem::path CurrentExecutablePath() {
+#ifdef _WIN32
+    char buf[MAX_PATH] = {0};
+    const DWORD n = GetModuleFileNameA(nullptr, buf, MAX_PATH);
+    return std::filesystem::path(std::string(buf, buf + n));
+#else
+    return std::filesystem::current_path();
+#endif
+}
+
+std::string RuntimeLibraryFileName() {
+#ifdef _WIN32
+    return "mbink.dll";
+#elif defined(__APPLE__)
+    return "libmbink.dylib";
+#else
+    return "libmbink.so";
+#endif
+}
+
+bool CopyRuntimeLibraryFromToolDirectory(const std::filesystem::path& output_path,
+                                         std::string* error) {
+    const auto source = CurrentExecutablePath().parent_path() / RuntimeLibraryFileName();
+    std::error_code ec;
+    if (!std::filesystem::exists(source, ec) || std::filesystem::is_directory(source, ec)) {
+        if (error) {
+            *error = "MBink runtime library not found next to mbink-ui-dev: " + source.string();
+        }
+        return false;
+    }
+
+    const auto parent = output_path.parent_path();
+    if (!parent.empty()) std::filesystem::create_directories(parent, ec);
+    if (ec) {
+        if (error) *error = "failed to create runtime library directory: " + parent.string();
+        return false;
+    }
+
+    std::filesystem::copy_file(source, output_path, std::filesystem::copy_options::overwrite_existing, ec);
+    if (ec) {
+        if (error) *error = "failed to copy MBink runtime library: " + ec.message();
+        return false;
+    }
+    return true;
+}
+
+std::vector<std::filesystem::path> RuntimeLibraryTargetsForProject(const std::filesystem::path& root,
+                                                                   const std::string& runtime) {
+    const auto file_name = RuntimeLibraryFileName();
+    if (runtime == "rust") {
+        return {root / "rust_host" / "vendor" / "mbink-sys" / "runtime" / file_name};
+    }
+    if (runtime == "go") {
+        return {root / ".mbink" / "mbink-go" / file_name};
+    }
+    if (runtime == "python") {
+        return {root / "vendor" / "mbink" / "bin" / file_name};
+    }
+    return {};
+}
+
+bool CopyRuntimeLibrariesForProject(const std::filesystem::path& root,
+                                    const std::string& runtime,
+                                    std::vector<std::string>* files_created,
+                                    std::string* error) {
+    for (const auto& target : RuntimeLibraryTargetsForProject(root, runtime)) {
+        if (!CopyRuntimeLibraryFromToolDirectory(target, error)) return false;
+        if (files_created) {
+            const auto rel_path = std::filesystem::relative(target, root).generic_string();
+            if (std::find(files_created->begin(), files_created->end(), rel_path) == files_created->end()) {
+                files_created->push_back(rel_path);
+            }
+        }
+    }
+    return true;
+}
+
+std::filesystem::path ResolveMbinkRepoRoot(const std::filesystem::path& project_root) {
+    std::vector<std::filesystem::path> candidates;
+    if (const char* env_root = std::getenv("MBINK_REPO_ROOT"); env_root && *env_root) {
+        candidates.emplace_back(env_root);
+    }
+    candidates.push_back(project_root);
+    candidates.push_back(std::filesystem::current_path());
+    candidates.push_back(CurrentExecutablePath().parent_path());
+    for (const auto& candidate : candidates) {
+        if (const auto found = FindMbinkRepoRootUpwards(candidate); found.has_value()) return *found;
+    }
+    return {};
+}
+
+void ReplaceAll(std::string& value, const std::string& from, const std::string& to) {
+    if (from.empty()) return;
+    size_t pos = 0;
+    while ((pos = value.find(from, pos)) != std::string::npos) {
+        value.replace(pos, from.size(), to);
+        pos += to.size();
+    }
+}
+
+std::string ApplyEmbeddedTemplateVariables(std::string content,
+                                           const std::filesystem::path& project_root,
+                                           const std::string& project_name) {
+    const auto repo_root = ResolveMbinkRepoRoot(project_root);
+    const auto repo_root_value = repo_root.empty() ? std::string{} : repo_root.generic_string();
+    ReplaceAll(content, "{{MBINK_REPO_ROOT}}", repo_root_value);
+    ReplaceAll(content, "{{PROJECT_NAME}}", project_name);
+    return content;
+}
+
+struct TemplateResolution {
+    std::string purpose = "minimal";
+    std::string runtime = "tool";
+    std::string canonical_key = "minimal/tool";
+    std::string requested_purpose;
+    std::string requested_runtime;
+    std::string legacy_template;
+    bool used_default = false;
+    std::vector<std::string> layers;
+    std::vector<std::string> warnings;
+};
+
+struct LegacyTemplateMapping {
+    const char* legacy;
+    const char* purpose;
+    const char* runtime;
+    const char* warning;
+};
+
+std::string CanonicalKey(const std::string& purpose, const std::string& runtime) {
+    return purpose + "/" + runtime;
+}
+
+std::vector<std::string> CanonicalLayers(const std::string& purpose, const std::string& runtime) {
+    std::vector<std::string> layers = {"base/common"};
+    if (runtime != "tool") layers.push_back("runtime/" + runtime);
+    layers.push_back("purpose/" + purpose + "/shared");
+    layers.push_back("purpose/" + purpose + "/runtime/" + runtime);
+    return layers;
+}
+
+bool IsSupportedPurpose(const std::string& purpose) {
+    return purpose == "minimal" || purpose == "showcase" || purpose == "desktop-app";
+}
+
+bool IsSupportedRuntime(const std::string& runtime) {
+    return runtime == "tool" || runtime == "python" || runtime == "rust" || runtime == "go";
+}
+
+const LegacyTemplateMapping* FindLegacyTemplateMapping(const std::string& legacy_template) {
+    static constexpr LegacyTemplateMapping kMappings[] = {
+        {"preact-jsx", "minimal", "tool", "legacy template 'preact-jsx' maps to canonical minimal/tool"},
+        {"preact-ts", "minimal", "tool", "legacy template 'preact-ts' maps to canonical minimal/tool; TypeScript flavor is no longer canonical"},
+        {"vanilla-js", "minimal", "tool", "legacy template 'vanilla-js' maps to canonical minimal/tool"},
+        {"python", "showcase", "python", "legacy template 'python' maps to canonical showcase/python"},
+        {"go", "showcase", "go", "legacy template 'go' maps to canonical showcase/go"},
+        {"rust", "showcase", "rust", "legacy template 'rust' maps to canonical showcase/rust"},
+        {"python-host", "showcase", "python", "legacy template 'python-host' maps to canonical showcase/python"},
+        {"rust-host", "showcase", "rust", "legacy template 'rust-host' maps to canonical showcase/rust"},
+    };
+    for (const auto& mapping : kMappings) {
+        if (legacy_template == mapping.legacy) return &mapping;
+    }
+    return nullptr;
+}
+
+std::vector<std::string> SupportedCanonicalKeys() {
+    std::vector<std::string> keys;
+    for (const auto& purpose : {"minimal", "showcase", "desktop-app"}) {
+        for (const auto& runtime : {"tool", "python", "rust", "go"}) {
+            keys.push_back(CanonicalKey(purpose, runtime));
+        }
+    }
+    return keys;
+}
+
+bool ResolveInitTemplate(const InitProjectOptions& options, TemplateResolution* resolution, std::string* error) {
+    if (resolution) *resolution = TemplateResolution{};
+    const bool has_purpose = !options.purpose.empty();
+    const bool has_runtime = !options.runtime.empty();
+    const bool has_legacy = !options.legacy_template.empty();
+
+    TemplateResolution resolved;
+    resolved.requested_purpose = options.purpose;
+    resolved.requested_runtime = options.runtime;
+    if (!has_purpose && !has_runtime && !has_legacy) {
+        resolved.used_default = true;
+    } else if (has_purpose != has_runtime) {
+        if (error) *error = "purpose and runtime must be provided together; bare init defaults to minimal/tool";
+        return false;
+    } else if (has_purpose) {
+        if (!IsSupportedPurpose(options.purpose)) {
+            if (error) *error = "unsupported purpose: " + options.purpose;
+            return false;
+        }
+        if (!IsSupportedRuntime(options.runtime)) {
+            if (error) *error = "unsupported runtime: " + options.runtime;
+            return false;
+        }
+        resolved.purpose = options.purpose;
+        resolved.runtime = options.runtime;
+    }
+
+    if (has_legacy) {
+        const auto* mapping = FindLegacyTemplateMapping(options.legacy_template);
+        if (!mapping) {
+            if (error) *error = "unsupported legacy template: " + options.legacy_template;
+            return false;
+        }
+        const std::string mapped_key = CanonicalKey(mapping->purpose, mapping->runtime);
+        if (has_purpose && mapped_key != CanonicalKey(resolved.purpose, resolved.runtime)) {
+            if (error) *error = "legacy template conflicts with purpose/runtime: " + options.legacy_template + " -> " + mapped_key;
+            return false;
+        }
+        resolved.purpose = mapping->purpose;
+        resolved.runtime = mapping->runtime;
+        resolved.legacy_template = options.legacy_template;
+        resolved.warnings.push_back(mapping->warning);
+    }
+
+    resolved.canonical_key = CanonicalKey(resolved.purpose, resolved.runtime);
+    resolved.layers = CanonicalLayers(resolved.purpose, resolved.runtime);
+    if (resolved.canonical_key == "showcase/tool") {
+        resolved.warnings.push_back("showcase/tool is supported with caveat: tray/native host behavior is documented in UI but unavailable without a host binding runtime");
+    }
+    if (resolution) *resolution = resolved;
+    return true;
+}
+
+bool IsHiddenEmbeddedTemplatePath(const std::string& rel_path) {
+    for (const auto& part : std::filesystem::path(rel_path)) {
+        const auto name = part.string();
+        if (name == ".mbink") continue;
+        if (!name.empty() && name[0] == '.') return true;
+    }
+    return false;
+}
+
+std::vector<const EmbeddedTemplateEntry*> FindEmbeddedTemplateEntries(const std::string& template_name) {
+    std::vector<const EmbeddedTemplateEntry*> entries;
+    const std::string prefix = template_name + "/";
+    for (const auto& entry : kEmbeddedTemplateEntries) {
+        const std::string full_path = entry.path ? entry.path : "";
+        if (full_path.rfind(prefix, 0) != 0) continue;
+        const std::string rel_path = full_path.substr(prefix.size());
+        if (rel_path.empty() || IsHiddenEmbeddedTemplatePath(rel_path)) continue;
+        entries.push_back(&entry);
+    }
+    std::sort(entries.begin(), entries.end(), [](const EmbeddedTemplateEntry* lhs, const EmbeddedTemplateEntry* rhs) {
+        return std::string(lhs->path ? lhs->path : "") < std::string(rhs->path ? rhs->path : "");
+    });
+    return entries;
+}
+
+bool TryInitProjectFromEmbeddedTemplates(const std::filesystem::path& root,
+                                         const std::string& project_name,
+                                         const std::string& template_name,
+                                         InitProjectResult* result,
+                                         std::string* error) {
+    if (error) error->clear();
+    const auto entries = FindEmbeddedTemplateEntries(template_name);
+    if (entries.empty()) return false;
+
+    std::vector<std::string> files_created;
+    const std::string prefix = template_name + "/";
+    std::error_code ec;
+    for (const auto* entry : entries) {
+        const std::string rel_path = std::string(entry->path).substr(prefix.size());
+        const auto output_path = root / std::filesystem::path(rel_path);
+        const auto parent = output_path.parent_path();
+        if (!parent.empty()) std::filesystem::create_directories(parent, ec);
+        if (ec) {
+            if (error) *error = "创建模板目录失败: " + parent.string();
+            return false;
+        }
+        std::ofstream ofs(output_path, std::ios::binary | std::ios::trunc);
+        if (!ofs) {
+            if (error) *error = "写入模板文件失败: " + output_path.string();
+            return false;
+        }
+        const auto content = ApplyEmbeddedTemplateVariables(EmbeddedTemplateText(*entry), root, project_name);
+        ofs.write(content.data(), static_cast<std::streamsize>(content.size()));
+        if (!ofs.good()) {
+            if (error) *error = "写入模板文件失败: " + output_path.string();
+            return false;
+        }
+        files_created.push_back(rel_path);
+    }
+
+    const auto config_path = root / "mbink.config.json";
+    if (std::filesystem::exists(config_path)) {
+        auto config_json = ReadJsonFile(config_path, error);
+        if (!config_json || !config_json->is_object()) {
+            if (error && error->empty()) *error = "模板 mbink.config.json 无效";
+            return false;
+        }
+        (*config_json)["name"] = project_name;
+        (*config_json)["template"] = template_name;
+        if (!config_json->contains("window") || !(*config_json)["window"].is_object()) {
+            (*config_json)["window"] = nlohmann::json::object();
+        }
+        (*config_json)["window"]["title"] = project_name;
+        if (!WriteJsonFile(config_path, *config_json, error)) return false;
+    }
+
+    if (result) {
+        result->project_root = root;
+        result->project_name = project_name;
+        result->template_name = template_name;
+        result->files_created = files_created;
+        result->next_step = "执行 mbink-ui-dev open \"" + root.string() + "\"";
+    }
+    return true;
+}
+
+bool TryInitProjectFromEmbeddedTemplateLayers(const std::filesystem::path& root,
+                                             const std::string& project_name,
+                                             const TemplateResolution& resolution,
+                                             InitProjectResult* result,
+                                             std::string* error) {
+    if (error) error->clear();
+    std::vector<std::string> files_created;
+    std::error_code ec;
+    bool copied_any = false;
+    for (const auto& layer : resolution.layers) {
+        const auto entries = FindEmbeddedTemplateEntries(layer);
+        if (entries.empty()) {
+            if (error) *error = "template layer missing: " + layer;
+            return false;
+        }
+        const std::string prefix = layer + "/";
+        for (const auto* entry : entries) {
+            const std::string rel_path = std::string(entry->path).substr(prefix.size());
+            const auto output_path = root / std::filesystem::path(rel_path);
+            const auto parent = output_path.parent_path();
+            if (!parent.empty()) std::filesystem::create_directories(parent, ec);
+            if (ec) {
+                if (error) *error = "failed to create template directory: " + parent.string();
+                return false;
+            }
+            std::ofstream ofs(output_path, std::ios::binary | std::ios::trunc);
+            if (!ofs) {
+                if (error) *error = "failed to write template file: " + output_path.string();
+                return false;
+            }
+            const auto content = ApplyEmbeddedTemplateVariables(EmbeddedTemplateText(*entry), root, project_name);
+            ofs.write(content.data(), static_cast<std::streamsize>(content.size()));
+            if (!ofs.good()) {
+                if (error) *error = "failed to write template file: " + output_path.string();
+                return false;
+            }
+            copied_any = true;
+            if (std::find(files_created.begin(), files_created.end(), rel_path) == files_created.end()) {
+                files_created.push_back(rel_path);
+            }
+        }
+    }
+    if (!copied_any) return false;
+
+    if (!CopyRuntimeLibrariesForProject(root, resolution.runtime, &files_created, error)) {
+        return false;
+    }
+
+    const auto config_path = root / "mbink.config.json";
+    if (std::filesystem::exists(config_path)) {
+        auto config_json = ReadJsonFile(config_path, error);
+        if (!config_json || !config_json->is_object()) {
+            if (error && error->empty()) *error = "template mbink.config.json is invalid";
+            return false;
+        }
+        (*config_json)["name"] = project_name;
+        (*config_json)["template"] = resolution.canonical_key;
+        (*config_json)["purpose"] = resolution.purpose;
+        (*config_json)["runtime"] = resolution.runtime;
+        if (!config_json->contains("window") || !(*config_json)["window"].is_object()) {
+            (*config_json)["window"] = nlohmann::json::object();
+        }
+        (*config_json)["window"]["title"] = project_name;
+        if (!WriteJsonFile(config_path, *config_json, error)) return false;
+    }
+
+    if (result) {
+        result->project_root = root;
+        result->project_name = project_name;
+        result->template_name = resolution.canonical_key;
+        result->purpose = resolution.purpose;
+        result->runtime = resolution.runtime;
+        result->canonical_key = resolution.canonical_key;
+        result->requested_purpose = resolution.requested_purpose;
+        result->requested_runtime = resolution.requested_runtime;
+        result->legacy_template = resolution.legacy_template;
+        result->used_default = resolution.used_default;
+        result->layers = resolution.layers;
+        result->warnings = resolution.warnings;
+        result->files_created = files_created;
+        result->next_step = "鎵ц mbink-ui-dev open \"" + root.string() + "\"";
+    }
+    return true;
+}
+
 }  // namespace
 
 std::filesystem::path GetUiDevFilePath(const std::filesystem::path& project_root) {
@@ -152,6 +589,8 @@ static void ToJson(nlohmann::json& j, const ProjectConfig& p) {
     j = nlohmann::json{
         {"name", p.name},
         {"template", p.template_name},
+        {"purpose", p.purpose},
+        {"runtime", p.runtime},
         {"entry", p.entry},
         {"src_dir", p.src_dir},
         {"out_dir", p.out_dir},
@@ -168,6 +607,8 @@ static void ToJson(nlohmann::json& j, const ProjectConfig& p) {
 static void FromJson(const nlohmann::json& j, ProjectConfig& p) {
     p.name = j.value("name", p.name);
     p.template_name = j.value("template", p.template_name);
+    p.purpose = j.value("purpose", p.purpose);
+    p.runtime = j.value("runtime", p.runtime);
     p.entry = j.value("entry", p.entry);
     p.src_dir = j.value("src_dir", p.src_dir);
     p.out_dir = j.value("out_dir", p.out_dir);
@@ -282,8 +723,10 @@ bool SaveState(const DaemonState& state, std::string* error) {
         j["project_id"] = state.project_id;
         j["runtime_id"] = state.runtime_id;
         j["project_root"] = state.project_root;
+        j["runtime_epoch"] = state.runtime_epoch;
         j["runtime_status"] = state.runtime_status.empty() ? "stopped" : state.runtime_status;
         j["runtime_stop_reason"] = state.runtime_stop_reason.empty() ? "not_started" : state.runtime_stop_reason;
+        j["stopping"] = state.stopping;
         ToJson(j["project"], state.project);
         j["last_build"] = state.last_build.is_null()
                               ? nlohmann::json{{"ok", true}, {"status", "not_built"}}
@@ -317,8 +760,10 @@ std::optional<DaemonState> LoadState(const std::string& project_id, std::string*
         state.project_id = j.value("project_id", project_id);
         state.runtime_id = j.value("runtime_id", state.project_id);
         state.project_root = j.value("project_root", std::string{});
+        state.runtime_epoch = j.value("runtime_epoch", std::string{});
         state.runtime_status = j.value("runtime_status", state.runtime_pid > 0 ? std::string("running") : std::string("stopped"));
         state.runtime_stop_reason = j.value("runtime_stop_reason", std::string("unknown"));
+        state.stopping = j.value("stopping", false);
         if (j.contains("project")) FromJson(j.at("project"), state.project);
         state.last_build = j.value("last_build", nlohmann::json{{"ok", true}, {"status", "not_built"}});
         state.watch = j.value("watch", nlohmann::json{{"enabled", false}, {"status", "idle"}});
@@ -387,6 +832,8 @@ ProjectConfig LoadProjectConfig(const std::filesystem::path& project_root, std::
 
         cfg.name = j.value("name", cfg.name);
         cfg.template_name = j.value("template", cfg.template_name);
+        cfg.purpose = j.value("purpose", cfg.purpose);
+        cfg.runtime = j.value("runtime", cfg.runtime);
         cfg.entry = normalize_rel(j.value("entry", cfg.entry));
         cfg.src_dir = normalize_rel(j.value("src_dir", cfg.src_dir));
         cfg.out_dir = normalize_rel(j.value("out_dir", cfg.out_dir));
@@ -444,12 +891,21 @@ bool InitProject(const std::filesystem::path& target_dir,
                  const std::string& template_name,
                  InitProjectResult* result,
                  std::string* error) {
+    InitProjectOptions options;
+    options.legacy_template = template_name;
+    return InitProject(target_dir, options, result, error);
+}
+
+bool InitProject(const std::filesystem::path& target_dir,
+                 const InitProjectOptions& options,
+                 InitProjectResult* result,
+                 std::string* error) {
     if (error) error->clear();
     if (result) *result = InitProjectResult{};
 
-    const auto supported = ListSupportedInitTemplates();
-    if (std::find(supported.begin(), supported.end(), template_name) == supported.end()) {
-        if (error) *error = "template 非法，请使用受支持的模板类型";
+    TemplateResolution resolution;
+    if (!ResolveInitTemplate(options, &resolution, error)) {
+        if (error && error->empty()) *error = "invalid template selection";
         return false;
     }
 
@@ -457,458 +913,25 @@ bool InitProject(const std::filesystem::path& target_dir,
     std::error_code ec;
     if (std::filesystem::exists(root, ec)) {
         if (!std::filesystem::is_directory(root, ec)) {
-            if (error) *error = "目标路径已存在且不是目录";
+            if (error) *error = "target path exists and is not a directory";
             return false;
         }
         if (std::filesystem::directory_iterator(root, ec) != std::filesystem::directory_iterator()) {
-            if (error) *error = "目标目录非空，请使用空目录或不存在的目录";
+            if (error) *error = "target directory is not empty; use an empty or non-existing directory";
             return false;
         }
     } else {
         std::filesystem::create_directories(root, ec);
         if (ec) {
-            if (error) *error = "创建目标目录失败";
+            if (error) *error = "failed to create target directory";
             return false;
         }
     }
 
     const std::string project_name = root.filename().string().empty() ? "mbink-app" : root.filename().string();
-    const std::string normalized_template_name = template_name == "python-host"
-        ? "python"
-        : template_name == "rust-host"
-        ? "rust"
-        : template_name;
-    const bool is_preact_jsx = normalized_template_name == "preact-jsx";
-    const bool is_preact_ts = normalized_template_name == "preact-ts";
-    const bool is_vanilla_js = normalized_template_name == "vanilla-js";
-    const bool is_python_host = normalized_template_name == "python";
-    const bool is_go_host = normalized_template_name == "go";
-    const bool is_rust_host = normalized_template_name == "rust";
-
-    const std::string host_title = is_python_host
-        ? "MBink Python Starter"
-        : is_go_host
-        ? "MBink Go Starter"
-        : "MBink Rust Starter";
-    const std::string host_subtitle = is_python_host
-        ? "多文件 UI 结构 + Python 宿主入口，适合继续接 bindings/python。"
-        : is_go_host
-        ? "多文件 UI 结构 + Go 宿主入口，适合继续扩展桥接逻辑。"
-        : "多文件 UI 结构 + Rust 宿主入口，适合继续扩展 bindings/bridge。";
-    const std::string host_entry = is_python_host
-        ? "host/main.py"
-        : is_go_host
-        ? "host/main.go"
-        : "rust_host/src/main.rs";
-    const std::string host_description = is_python_host
-        ? "宿主逻辑示例在 host/main.py，可继续接入 bindings/python 或业务逻辑。"
-        : is_go_host
-        ? "宿主逻辑示例在 host/main.go，可继续接入你的 Go IPC / bridge 代码。"
-        : "宿主逻辑示例在 rust_host/src/main.rs，可继续接入 Rust bindings 或桥接代码。";
-    const std::string host_accent = is_python_host
-        ? "#2563eb"
-        : is_go_host
-        ? "#16a34a"
-        : "#7c3aed";
-
-
-    const std::string app_js = is_preact_jsx
-        ? std::string(
-R"JS(const { h, render } = Preact;
-
-const styles = {
-  app: { fontFamily: 'Segoe UI, sans-serif', padding: '24px', background: '#0f172a', color: '#e2e8f0', minHeight: '100vh' },
-  card: { background: '#111827', borderRadius: '12px', padding: '20px', border: '1px solid #334155' },
-  title: { fontSize: '28px', fontWeight: '700', marginBottom: '8px' },
-  hint: { color: '#94a3b8' }
-};
-
-function App() {
-  return h('div', { style: styles.app },
-    h('div', { style: styles.card },
-      h('div', { style: styles.title }, 'MBink Preact JSX Starter'),
-      h('div', { style: styles.hint }, 'open 可直接运行；build 会将 src/App.jsx 编译到 .dist/App.js')
-    )
-  );
-}
-
-render(h(App), document.body);
-)JS")
-        : is_preact_ts
-        ? std::string(
-R"JS(import './App.tsx';
-)JS")
-        : is_vanilla_js
-        ? std::string(
-R"JS(const { h, render } = Preact;
-
-function App() {
-  return h('div', {
-    style: {
-      fontFamily: 'Segoe UI, sans-serif',
-      minHeight: '100vh',
-      padding: '24px',
-      background: '#f8fafc',
-      color: '#0f172a'
-    }
-  },
-    h('h1', null, 'MBink Vanilla JS Starter'),
-    h('p', null, '这个模板不依赖 JSX，open/build/snapshot 可直接闭环。'),
-    h('button', {
-      onClick: () => console.log('hello from vanilla-js'),
-      style: { padding: '10px 14px', borderRadius: '8px', border: '1px solid #cbd5e1', cursor: 'pointer' }
-    }, 'Click me')
-  );
-}
-
-render(h(App), document.body);
-)JS")
-        : std::string(
-R"JS(import { AppShell } from './components/AppShell.js';
-import { InfoCard } from './components/InfoCard.js';
-import { ActionList } from './components/ActionList.js';
-
-const { h, render } = Preact;
-
-const project = {
-  title: ')JS" + host_title + R"JS(',
-  subtitle: ')JS" + host_subtitle + R"JS(',
-  entry: ')JS" + host_entry + R"JS(',
-  description: ')JS" + host_description + R"JS(',
-  accent: ')JS" + host_accent + R"JS('
-};
-
-const structure = [
-  'src/app.js',
-  'src/components/AppShell.js',
-  'src/components/InfoCard.js',
-  'src/components/ActionList.js',
-  project.entry
-];
-
-const actions = [
-  { label: '打开项目', detail: 'mbink-ui-dev open .' },
-  { label: '构建前端', detail: 'mbink-ui-dev build' },
-  { label: '扩展宿主桥接', detail: project.description }
-];
-
-function App() {
-  return h(AppShell, { project },
-    h('div', { style: { display: 'grid', gap: '16px' } },
-      h(InfoCard, {
-        title: '工程结构',
-        tone: 'accent',
-        lines: structure
-      }),
-      h(ActionList, {
-        title: '建议下一步',
-        items: actions
-      })
-    )
-  );
-}
-
-render(h(App), document.body);
-)JS");
-    const std::string app_jsx = std::string(
-R"JSX(const { h, render } = Preact;
-const { useState } = PreactHooks;
-
-function App() {
-  const [count, setCount] = useState(0);
-  return (
-    <div style={{ fontFamily: 'Segoe UI, sans-serif', minHeight: '100vh', padding: 24, background: '#020617', color: '#e2e8f0' }}>
-      <h1>MBink Preact JSX Starter</h1>
-      <p>这是给 esbuild 的 JSX 入口，构建产物输出到 .dist/App.js。</p>
-      <button onClick={() => setCount(count + 1)} style={{ padding: '10px 14px', borderRadius: 8, border: '1px solid #475569', cursor: 'pointer' }}>
-        Count: {count}
-      </button>
-    </div>
-  );
-}
-
-render(<App />, document.body);
-)JSX");
-    const std::string app_tsx = std::string(
-R"TSX(const { h, render } = Preact;
-const { useMemo, useState } = PreactHooks;
-
-function Card(props) {
-  return (
-    <div style={{ border: '1px solid #334155', borderRadius: 12, padding: 16, background: '#111827' }}>
-      <div style={{ fontSize: 24, fontWeight: 700 }}>{props.title}</div>
-      <div style={{ color: '#94a3b8', marginTop: 8 }}>Current count: {props.count}</div>
-    </div>
-  );
-}
-
-function App() {
-  const [count, setCount] = useState(0);
-  const title = useMemo(() => 'MBink Preact TS Starter', []);
-
-  return (
-    <div style={{ fontFamily: 'Segoe UI, sans-serif', minHeight: '100vh', padding: 24, background: '#020617', color: '#e2e8f0' }}>
-      <Card title={title} count={count} />
-      <button onClick={() => setCount(count + 1)} style={{ marginTop: 16, padding: '10px 14px', borderRadius: 8, border: '1px solid #475569', cursor: 'pointer' }}>
-        Count: {count}
-      </button>
-    </div>
-  );
-}
-
-render(<App />, document.body);
-)TSX");
-    const std::string python_main = std::string(
-R"PY(def main():
-    print("MBink python template")
-    print("在这里接入 bindings/python 或你的业务逻辑。")
-
-
-if __name__ == "__main__":
-    main()
-)PY");
-    const std::string python_requirements = std::string(
-R"REQ(# 可在此处声明你的 Python 依赖
-# mbink-python-binding
-)REQ");
-    const std::string go_mod = std::string(
-R"MOD(module mbink-go-host
-
-go 1.22
-)MOD");
-    const std::string go_main = std::string(
-R"GO(package main
-
-import "fmt"
-
-func main() {
-    fmt.Println("MBink go template")
-    fmt.Println("在这里接入 Go 宿主逻辑。")
-}
-)GO");
-    const std::string rust_cargo_toml = std::string(
-R"TOML([package]
-name = "mbink-rust-host"
-version = "0.1.0"
-edition = "2021"
-
-[dependencies]
-)TOML");
-    const std::string rust_main = std::string(
-R"RS(fn main() {
-    println!("MBink rust template");
-    println!("在这里接入 Rust bindings 或宿主逻辑。");
-}
-)RS");
-    const std::string app_shell_js = std::string(
-R"JS(export function AppShell(props) {
-  const { h } = Preact;
-  const project = props.project || {};
-  const children = props.children || [];
-
-  return h('div', {
-    style: {
-      fontFamily: 'Segoe UI, sans-serif',
-      minHeight: '100vh',
-      padding: '24px',
-      background: '#0f172a',
-      color: '#e2e8f0'
-    }
-  },
-    h('div', {
-      style: {
-        maxWidth: '880px',
-        margin: '0 auto',
-        display: 'grid',
-        gap: '16px'
-      }
-    },
-      h('div', {
-        style: {
-          padding: '20px',
-          borderRadius: '16px',
-          border: '1px solid #334155',
-          background: 'linear-gradient(135deg, ' + (project.accent || '#2563eb') + '22, #0f172a 55%)'
-        }
-      },
-        h('div', { style: { fontSize: '30px', fontWeight: '700', marginBottom: '8px' } }, project.title || 'MBink Host Starter'),
-        h('div', { style: { color: '#cbd5e1', marginBottom: '10px' } }, project.subtitle || ''),
-        h('div', { style: { color: '#94a3b8', fontFamily: 'Consolas, monospace', fontSize: '13px' } }, 'entry: ' + (project.entry || 'host/main'))
-      ),
-      children
-    )
-  );
-}
-)JS");
-    const std::string info_card_js = std::string(
-R"JS(export function InfoCard(props) {
-  const { h } = Preact;
-  const lines = Array.isArray(props.lines) ? props.lines : [];
-  const tone = props.tone === 'accent' ? '#e0f2fe' : '#e5e7eb';
-
-  return h('div', {
-    style: {
-      padding: '16px',
-      borderRadius: '14px',
-      border: '1px solid #334155',
-      background: '#111827'
-    }
-  },
-    h('div', { style: { fontSize: '18px', fontWeight: '600', color: tone, marginBottom: '10px' } }, props.title || 'Info'),
-    h('div', { style: { display: 'grid', gap: '8px' } },
-      lines.map((line) => h('div', {
-        style: {
-          padding: '10px 12px',
-          borderRadius: '10px',
-          background: '#0b1220',
-          color: '#cbd5e1',
-          fontFamily: 'Consolas, monospace',
-          fontSize: '13px'
-        }
-      }, line))
-    )
-  );
-}
-)JS");
-    const std::string action_list_js = std::string(
-R"JS(export function ActionList(props) {
-  const { h } = Preact;
-  const items = Array.isArray(props.items) ? props.items : [];
-
-  return h('div', {
-    style: {
-      padding: '16px',
-      borderRadius: '14px',
-      border: '1px solid #334155',
-      background: '#111827'
-    }
-  },
-    h('div', { style: { fontSize: '18px', fontWeight: '600', marginBottom: '10px' } }, props.title || 'Actions'),
-    h('div', { style: { display: 'grid', gap: '10px' } },
-      items.map((item) => h('div', {
-        style: {
-          padding: '12px',
-          borderRadius: '10px',
-          border: '1px solid #1e293b',
-          background: '#0b1220'
-        }
-      },
-        h('div', { style: { fontWeight: '600', color: '#f8fafc', marginBottom: '4px' } }, item.label || ''),
-        h('div', { style: { color: '#94a3b8', fontSize: '14px' } }, item.detail || '')
-      ))
-    )
-  );
-}
-)JS");
-    const std::string config = std::string("{\n") +
-        "  \"name\": \"" + project_name + "\",\n" +
-        "  \"template\": \"" + normalized_template_name + "\",\n" +
-        "  \"entry\": \"src/app.js\",\n" +
-        "  \"src_dir\": \"src\",\n" +
-        "  \"out_dir\": \".dist\",\n" +
-        "  \"window\": {\n" +
-        "    \"title\": \"" + project_name + "\",\n" +
-        "    \"width\": 800,\n" +
-        "    \"height\": 600\n" +
-        "  },\n" +
-        "  \"build\": {\n" +
-        "    \"builder\": \"esbuild\",\n" +
-        "    \"jsx_factory\": \"Preact.h\",\n" +
-        "    \"jsx_fragment\": \"Preact.Fragment\",\n" +
-        "    \"external\": [\"preact\", \"preact/hooks\"],\n" +
-        "    \"sourcemap\": true,\n" +
-        "    \"minify\": false\n" +
-        "  }\n" +
-        "}\n";
-
-    if (!std::filesystem::exists(root / "src", ec)) {
-        std::filesystem::create_directories(root / "src", ec);
-        if (ec) {
-            if (error) *error = "创建 src 目录失败";
-            return false;
-        }
-    }
-
-    std::vector<std::pair<std::filesystem::path, std::string>> files = {
-        {root / "mbink.config.json", config},
-        {root / "src" / "app.js", app_js},
-    };
-    if (is_python_host || is_go_host || is_rust_host) {
-        files.push_back({root / "src" / "components" / "AppShell.js", app_shell_js});
-        files.push_back({root / "src" / "components" / "InfoCard.js", info_card_js});
-        files.push_back({root / "src" / "components" / "ActionList.js", action_list_js});
-    }
-    if (is_python_host) {
-        files.push_back({root / "host" / "main.py", python_main});
-        files.push_back({root / "requirements.txt", python_requirements});
-    }
-    if (is_go_host) {
-        files.push_back({root / "host" / "main.go", go_main});
-        files.push_back({root / "go.mod", go_mod});
-    }
-    if (is_rust_host) {
-        files.push_back({root / "rust_host" / "Cargo.toml", rust_cargo_toml});
-        files.push_back({root / "rust_host" / "src" / "main.rs", rust_main});
-    }
-    for (const auto& [path, content] : files) {
-        const auto parent = path.parent_path();
-        if (!parent.empty() && !std::filesystem::exists(parent, ec)) {
-            std::filesystem::create_directories(parent, ec);
-            if (ec) {
-                if (error) *error = "创建模板目录失败: " + parent.string();
-                return false;
-            }
-        }
-        std::ofstream ofs(path, std::ios::binary | std::ios::trunc);
-        if (!ofs) {
-            if (error) *error = "写入模板文件失败: " + path.string();
-            return false;
-        }
-        ofs << content;
-        if (!ofs.good()) {
-            if (error) *error = "写入模板文件失败: " + path.string();
-            return false;
-        }
-    }
-    if (is_preact_jsx || is_preact_ts) {
-        const auto component_path = is_preact_jsx ? (root / "src" / "App.jsx") : (root / "src" / "App.tsx");
-        std::ofstream ofs(component_path, std::ios::binary | std::ios::trunc);
-        if (!ofs) {
-            if (error) *error = "写入模板文件失败: " + component_path.lexically_relative(root).generic_string();
-            return false;
-        }
-        ofs << (is_preact_jsx ? app_jsx : app_tsx);
-        if (!ofs.good()) {
-            if (error) *error = "写入模板文件失败: " + component_path.lexically_relative(root).generic_string();
-            return false;
-        }
-    }
-
-    if (result) {
-        result->project_root = root;
-        result->project_name = project_name;
-        result->template_name = normalized_template_name;
-        result->files_created = {"mbink.config.json", "src/app.js"};
-        if (is_preact_jsx) result->files_created.push_back("src/App.jsx");
-        if (is_preact_ts) result->files_created.push_back("src/App.tsx");
-        if (is_python_host || is_go_host || is_rust_host) {
-            result->files_created.push_back("src/components/AppShell.js");
-            result->files_created.push_back("src/components/InfoCard.js");
-            result->files_created.push_back("src/components/ActionList.js");
-        }
-        if (is_python_host) {
-            result->files_created.push_back("host/main.py");
-            result->files_created.push_back("requirements.txt");
-        }
-        if (is_go_host) {
-            result->files_created.push_back("host/main.go");
-            result->files_created.push_back("go.mod");
-        }
-        if (is_rust_host) {
-            result->files_created.push_back("rust_host/Cargo.toml");
-            result->files_created.push_back("rust_host/src/main.rs");
-        }
-        result->next_step = "执行 mbink-ui-dev open \"" + root.string() + "\"";
+    if (!TryInitProjectFromEmbeddedTemplateLayers(root, project_name, resolution, result, error)) {
+        if (error && error->empty()) *error = "failed to initialize project from template layers";
+        return false;
     }
     return true;
 }
@@ -916,6 +939,11 @@ R"JS(export function ActionList(props) {
 std::vector<std::string> ListSupportedInitTemplates() {
     return {"preact-jsx", "preact-ts", "vanilla-js", "python", "go", "rust", "python-host", "rust-host"};
 }
+
+std::vector<std::string> ListSupportedInitCombinations() {
+    return SupportedCanonicalKeys();
+}
+
 nlohmann::json OkResponse() {
     return nlohmann::json{{"ok", true}};
 }
@@ -933,8 +961,10 @@ nlohmann::json StateToJson(const DaemonState& state) {
     j["project_id"] = state.project_id;
     j["runtime_id"] = state.runtime_id;
     j["project_root"] = state.project_root;
+    j["runtime_epoch"] = state.runtime_epoch;
     j["runtime_status"] = state.runtime_status.empty() ? "stopped" : state.runtime_status;
     j["runtime_stop_reason"] = state.runtime_stop_reason.empty() ? "not_started" : state.runtime_stop_reason;
+    j["stopping"] = state.stopping;
     ToJson(j["project"], state.project);
     j["last_build"] = state.last_build.is_null()
                           ? nlohmann::json{{"ok", true}, {"status", "not_built"}}
@@ -954,6 +984,8 @@ nlohmann::json ProjectToJson(const std::filesystem::path& root, const ProjectCon
     j["src_dir"] = config.src_dir;
     j["out_dir"] = config.out_dir;
     j["template"] = config.template_name;
+    j["purpose"] = config.purpose;
+    j["runtime"] = config.runtime;
     j["window"] = {{"width", config.width}, {"height", config.height}, {"title", config.title}};
     return j;
 }

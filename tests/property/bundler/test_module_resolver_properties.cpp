@@ -17,6 +17,30 @@
 namespace fs = std::filesystem;
 using namespace mbink;
 
+namespace {
+
+fs::path FindRepoRoot() {
+    auto current = fs::current_path();
+    while (!current.empty()) {
+        if (fs::exists(current / "third_party" / "preact" / "package.json")) {
+            return current;
+        }
+        if (!current.has_parent_path() || current == current.parent_path()) {
+            break;
+        }
+        current = current.parent_path();
+    }
+    throw std::runtime_error("Unable to locate repository root for Preact property tests");
+}
+
+std::string NormalizePath(const fs::path& path) {
+    std::string normalized = fs::weakly_canonical(path).lexically_normal().string();
+    std::replace(normalized.begin(), normalized.end(), '\\', '/');
+    return normalized;
+}
+
+}  // namespace
+
 class ModuleResolverPropertyTest : public ::testing::Test {
 protected:
     std::string test_dir_;
@@ -142,6 +166,31 @@ TEST_F(ModuleResolverPropertyTest, ResolvePathBareModule) {
     
     resolved = ModuleResolver::ResolvePath("preact/hooks", from_file);
     EXPECT_EQ(resolved, "preact/hooks");
+}
+
+TEST_F(ModuleResolverPropertyTest, ResolveOfficialPreactWrapperWithAbsolutePath) {
+    const auto repo_root = FindRepoRoot();
+    const auto preact_entry = NormalizePath(repo_root / "third_party" / "preact" / "src" / "index.js");
+
+    CreateFile("app.js", "import { h } from 'preact'; export const app = h;\n");
+
+    ModuleResolver resolver;
+    resolver.RegisterBuiltinModule("preact", "export * from '" + preact_entry + "';");
+
+    auto modules = resolver.Resolve(GetFullPath("app.js"));
+
+    ASSERT_FALSE(resolver.HasErrors()) << resolver.GetErrors().front().message;
+    ASSERT_GT(modules.size(), 2);
+
+    bool saw_builtin = false;
+    bool saw_official_entry = false;
+    for (const auto& module : modules) {
+        saw_builtin = saw_builtin || (module.is_builtin && module.id == "preact");
+        saw_official_entry = saw_official_entry || (!module.is_builtin && module.id == preact_entry);
+    }
+
+    EXPECT_TRUE(saw_builtin);
+    EXPECT_TRUE(saw_official_entry);
 }
 
 /**

@@ -3,22 +3,164 @@
  * @brief DOM JavaScript 绑定单元测试
  */
 
+#include <algorithm>
+#include <cctype>
+#include <filesystem>
+#include <fstream>
 #include <gtest/gtest.h>
+#include <optional>
+#include <sstream>
+#include <stdexcept>
+#include "bridge/state_manager.h"
+#include "core/utils/encoding_utils.h"
 #include "quickjs/quickjs_runtime.h"
 #include "quickjs/window_bindings.h"
 #include "dom/bindings/dom_bindings.h"
 #include "dom/document.h"
 #include "window/window.h"
+#include "core/event/loop/task_scheduler.h"
 
 namespace mbink {
 namespace test {
+
+namespace {
+
+std::filesystem::path Utf8PathToFsPath(const std::string& path) {
+#ifdef _WIN32
+    return std::filesystem::path(mbink::utils::UTF8ToWide(path));
+#else
+    return std::filesystem::path(path);
+#endif
+}
+
+std::string FsPathToUtf8String(const std::filesystem::path& path) {
+#ifdef _WIN32
+    return mbink::utils::WideToUTF8(path.wstring());
+#else
+    return path.string();
+#endif
+}
+
+std::filesystem::path FindRepoRoot() {
+    static const auto kOfficialPreactRelativeRoot =
+        Utf8PathToFsPath("third_party") / Utf8PathToFsPath("preact") / Utf8PathToFsPath("package.json");
+    auto current = std::filesystem::current_path();
+    while (!current.empty()) {
+        if (std::filesystem::exists(current / kOfficialPreactRelativeRoot)) {
+            return current;
+        }
+        if (!current.has_parent_path() || current == current.parent_path()) {
+            break;
+        }
+        current = current.parent_path();
+    }
+    throw std::runtime_error("Unable to locate repository root for official Preact fixtures");
+}
+
+std::string ReadTextFile(const std::filesystem::path& path) {
+    std::ifstream input(path, std::ios::in | std::ios::binary);
+    if (!input) {
+        throw std::runtime_error("Failed to open JS fixture: " + FsPathToUtf8String(path));
+    }
+
+    std::ostringstream buffer;
+    buffer << input.rdbuf();
+    return buffer.str();
+}
+
+std::string NormalizeModulePath(const std::filesystem::path& path) {
+    auto utf8 = std::filesystem::absolute(path).lexically_normal().u8string();
+    std::string normalized(utf8.begin(), utf8.end());
+    std::replace(normalized.begin(), normalized.end(), '\\', '/');
+    return normalized;
+}
+
+void EvalJsFixture(QuickJSRuntime* runtime,
+                   const std::filesystem::path& repo_root,
+                   const char* relative_path,
+                   const char* eval_name) {
+    runtime->Eval(ReadTextFile(repo_root / "js" / relative_path), eval_name);
+}
+
+std::optional<std::string> ReadModuleFileForTest(const std::filesystem::path& repo_root,
+                                                 const std::string& path) {
+    if (path.empty()) {
+        return std::nullopt;
+    }
+
+    std::filesystem::path candidate;
+    if ((path.size() > 1 && path[1] == ':') || path.front() == '/') {
+        candidate = Utf8PathToFsPath(path);
+    } else {
+        candidate = repo_root / Utf8PathToFsPath(path);
+    }
+
+    std::error_code ec;
+    if (!std::filesystem::exists(candidate, ec) || !std::filesystem::is_regular_file(candidate, ec)) {
+        return std::nullopt;
+    }
+
+    return ReadTextFile(candidate);
+}
+
+bool EndsWithCaseInsensitive(std::string value, const std::string& suffix) {
+    if (value.size() < suffix.size()) {
+        return false;
+    }
+
+    std::transform(value.begin(), value.end(), value.begin(),
+                   [](unsigned char ch) { return static_cast<char>(std::tolower(ch)); });
+    std::string normalized_suffix = suffix;
+    std::transform(normalized_suffix.begin(), normalized_suffix.end(), normalized_suffix.begin(),
+                   [](unsigned char ch) { return static_cast<char>(std::tolower(ch)); });
+    return value.compare(value.size() - normalized_suffix.size(), normalized_suffix.size(), normalized_suffix) == 0;
+}
+
+void RegisterOfficialPreactModules(QuickJSRuntime* runtime,
+                                   const std::filesystem::path& repo_root) {
+    static const auto kOfficialPreactRelativeRoot =
+        Utf8PathToFsPath("third_party") / Utf8PathToFsPath("preact");
+    const auto preact_root = repo_root / kOfficialPreactRelativeRoot;
+    const auto preact_entry = NormalizeModulePath(preact_root / "src" / "index.js");
+    const auto hooks_entry = NormalizeModulePath(preact_root / "hooks" / "src" / "index.js");
+    const auto jsx_runtime_entry = NormalizeModulePath(preact_root / "jsx-runtime" / "src" / "index.js");
+
+    runtime->RegisterModule("preact", "export * from '" + preact_entry + "';");
+    runtime->RegisterModule("preact/hooks", "export * from '" + hooks_entry + "';");
+    runtime->RegisterModule("preact/jsx-runtime", "export * from '" + jsx_runtime_entry + "';");
+    runtime->RegisterModule("preact/jsx-dev-runtime", "export * from '" + jsx_runtime_entry + "';");
+}
+
+}  // namespace
 
 class DOMBindingsTest : public ::testing::Test {
 protected:
     void SetUp() override {
         runtime_ = std::make_unique<QuickJSRuntime>();
+        repo_root_ = FindRepoRoot();
+        runtime_->SetFileLoader([this](const std::string& path, std::string& out, std::string* error) {
+            if (EndsWithCaseInsensitive(path, "/js/preact/preact.js")) {
+                legacy_preact_requested_ = true;
+            }
+            if (EndsWithCaseInsensitive(path, "/js/preact/hooks.js")) {
+                legacy_hooks_requested_ = true;
+            }
+
+            auto content = ReadModuleFileForTest(repo_root_, path);
+            if (!content.has_value()) {
+                if (error) {
+                    *error = "File not found: " + path;
+                }
+                return false;
+            }
+
+            out = std::move(*content);
+            return true;
+        });
+
         doc_ = std::make_shared<Document>();
         doc_->Initialize();
+        doc_->SetStateManager(&state_manager_);
 
         WindowConfig config;
         config.hidden = true;
@@ -27,8 +169,13 @@ protected:
         window_ = std::make_shared<Window>(config);
         window_->SetDocument(doc_);
 
-        window_bindings_ = std::make_unique<WindowBindings>(runtime_.get(), window_, nullptr);
+        task_scheduler_ = std::make_shared<TaskScheduler>();
+        window_bindings_ = std::make_unique<WindowBindings>(runtime_.get(), window_, task_scheduler_);
         window_bindings_->InitBindings();
+
+        EvalJsFixture(runtime_.get(), repo_root_, "polyfills/dom.js", "dom.js");
+        EvalJsFixture(runtime_.get(), repo_root_, "runtime/bootstrap.js", "bootstrap.js");
+        RegisterOfficialPreactModules(runtime_.get(), repo_root_);
     }
 
     void TearDown() override {
@@ -44,9 +191,14 @@ protected:
 
 protected:
     std::unique_ptr<QuickJSRuntime> runtime_;
+    std::filesystem::path repo_root_;
     std::shared_ptr<Document> doc_;
     std::shared_ptr<Window> window_;
+    std::shared_ptr<TaskScheduler> task_scheduler_;
     std::unique_ptr<WindowBindings> window_bindings_;
+    StateManager state_manager_;
+    bool legacy_preact_requested_ = false;
+    bool legacy_hooks_requested_ = false;
 };
 
 // ========== document 对象测试 ==========
@@ -92,6 +244,221 @@ TEST_F(DOMBindingsTest, CreateTextNode) {
         text.textContent;
     )");
     EXPECT_EQ(result, "Hello");
+}
+
+TEST_F(DOMBindingsTest, DocumentNativeBindingTextApi) {
+    ASSERT_EQ(state_manager_.createJson("profile", json{{"name", "Alice"}}), MBinkError::Ok);
+
+    auto result = runtime_->Eval(R"(
+        globalThis.__bindHost = document.createElement('span');
+        globalThis.__bindText = document.createTextNode('');
+        __bindHost.appendChild(__bindText);
+        document.body.appendChild(__bindHost);
+        document.nativeBinding.text(__bindHost, __bindText, 'profile.name');
+        document.nativeBinding.flush();
+        __bindText.textContent;
+    )");
+    EXPECT_EQ(result, "Alice");
+
+    ASSERT_TRUE(state_manager_.set("profile.name", "Bob"));
+    result = runtime_->Eval(R"(
+        document.nativeBinding.flush();
+        __bindText.textContent;
+    )");
+    EXPECT_EQ(result, "Bob");
+}
+
+TEST_F(DOMBindingsTest, DocumentNativeBindingModelValueApi) {
+    ASSERT_EQ(state_manager_.createJson("form", json{{"username", "Alice"}}), MBinkError::Ok);
+
+    auto result = runtime_->Eval(R"(
+        globalThis.__host = document.createElement('div');
+        globalThis.__input = document.createElement('input');
+        __host.appendChild(__input);
+        document.body.appendChild(__host);
+        document.nativeBinding.modelValue(__host, __input, 'form.username');
+        document.nativeBinding.flush();
+        __input.value;
+    )");
+    EXPECT_EQ(result, "Alice");
+
+    ASSERT_TRUE(state_manager_.set("form.username", "Bob"));
+    result = runtime_->Eval(R"(
+        document.nativeBinding.flush();
+        __input.value;
+    )");
+    EXPECT_EQ(result, "Bob");
+}
+
+TEST_F(DOMBindingsTest, DocumentNativeBindingMountDeclarativeApi) {
+    ASSERT_EQ(state_manager_.createJson("profile", json{{"name", "Alice"}}), MBinkError::Ok);
+    ASSERT_EQ(state_manager_.createJson("form", json{{"username", "tom"}}), MBinkError::Ok);
+
+    auto result = runtime_->Eval(R"(
+        globalThis.__declRoot = document.createElement('div');
+        globalThis.__declText = document.createElement('span');
+        globalThis.__declInput = document.createElement('input');
+        __declText.setAttribute('mb-text', 'profile.name');
+        __declInput.setAttribute('mb-model', 'form.username');
+        __declRoot.appendChild(__declText);
+        __declRoot.appendChild(__declInput);
+        document.body.appendChild(__declRoot);
+        document.nativeBinding.mountDeclarative(__declRoot);
+        document.nativeBinding.flush();
+        JSON.stringify({ text: __declText.textContent, value: __declInput.value });
+    )");
+    EXPECT_EQ(result, R"({"text":"Alice","value":"tom"})");
+
+    ASSERT_TRUE(state_manager_.set("profile.name", "Bob"));
+    ASSERT_TRUE(state_manager_.set("form.username", "rose"));
+    result = runtime_->Eval(R"(
+        document.nativeBinding.flush();
+        JSON.stringify({ text: __declText.textContent, value: __declInput.value });
+    )");
+    EXPECT_EQ(result, R"({"text":"Bob","value":"rose"})");
+}
+
+TEST_F(DOMBindingsTest, DocumentLoadHTMLAutoMountsDeclarativeBindings) {
+    ASSERT_EQ(state_manager_.createJson("page", json{{"form", json{{"user", json{{"name", "Alice"}}}}}}), MBinkError::Ok);
+
+    ASSERT_TRUE(doc_->LoadHTML("<html><body><div mb-scope:user='page.form.user'><span id='name' mb-text='user.name'></span></div></body></html>"));
+
+    auto result = runtime_->Eval(R"(
+        document.nativeBinding.flush();
+        document.getElementById('name').textContent;
+    )");
+    EXPECT_EQ(result, "Alice");
+
+    ASSERT_TRUE(state_manager_.set("page.form.user.name", "Bob"));
+    result = runtime_->Eval(R"(
+        document.nativeBinding.flush();
+        document.getElementById('name').textContent;
+    )");
+    EXPECT_EQ(result, "Bob");
+}
+
+TEST_F(DOMBindingsTest, DocumentExecuteScriptsTriggersSecondDeclarativeScan) {
+    ASSERT_EQ(state_manager_.createJson("profile", json{{"name", "Alice"}}), MBinkError::Ok);
+
+    ASSERT_TRUE(doc_->LoadHTML(R"(
+        <html><body>
+            <script>
+                var span = document.createElement('span');
+                span.id = 'dyn';
+                span.setAttribute('mb-text', 'profile.name');
+                document.body.appendChild(span);
+            </script>
+        </body></html>
+    )"));
+    doc_->ExecuteScripts(runtime_.get());
+
+    auto result = runtime_->Eval(R"(
+        document.nativeBinding.flush();
+        document.getElementById('dyn').textContent;
+    )");
+    EXPECT_EQ(result, "Alice");
+
+    ASSERT_TRUE(state_manager_.set("profile.name", "Bob"));
+    result = runtime_->Eval(R"(
+        document.nativeBinding.flush();
+        document.getElementById('dyn').textContent;
+    )");
+    EXPECT_EQ(result, "Bob");
+}
+
+TEST_F(DOMBindingsTest, DynamicSetAttributeAndAppendChildAutoMountDeclarativeBindings) {
+    ASSERT_EQ(state_manager_.createJson("profile", json{{"name", "Alice"}, {"title", "Admin"}}), MBinkError::Ok);
+
+    auto result = runtime_->Eval(R"(
+        var afterAppend = document.createElement('span');
+        afterAppend.id = 'after-append';
+        document.body.appendChild(afterAppend);
+        afterAppend.setAttribute('mb-text', 'profile.name');
+
+        var beforeAppend = document.createElement('div');
+        beforeAppend.id = 'before-append';
+        beforeAppend.setAttribute('mb-attr:title', 'profile.title');
+        document.body.appendChild(beforeAppend);
+
+        document.nativeBinding.flush();
+        JSON.stringify({
+            text: document.getElementById('after-append').textContent,
+            title: document.getElementById('before-append').getAttribute('title')
+        });
+    )");
+    EXPECT_EQ(result, R"({"text":"Alice","title":"Admin"})");
+
+    ASSERT_TRUE(state_manager_.set("profile.name", "Bob"));
+    ASSERT_TRUE(state_manager_.set("profile.title", "Owner"));
+    result = runtime_->Eval(R"(
+        document.nativeBinding.flush();
+        JSON.stringify({
+            text: document.getElementById('after-append').textContent,
+            title: document.getElementById('before-append').getAttribute('title')
+        });
+    )");
+    EXPECT_EQ(result, R"({"text":"Bob","title":"Owner"})");
+}
+
+TEST_F(DOMBindingsTest, RemoveAttributeUnmountsDeclarativeBindingsPrecisely) {
+    ASSERT_EQ(state_manager_.createJson("page", json{{"form", json{{"user", json{{"name", "Alice"}}}}}}), MBinkError::Ok);
+
+    auto result = runtime_->Eval(R"(
+        var host = document.createElement('div');
+        host.id = 'scope-host';
+        host.setAttribute('mb-scope:user', 'page.form.user');
+        var text = document.createElement('span');
+        text.id = 'scope-text';
+        text.setAttribute('mb-text', 'user.name');
+        host.appendChild(text);
+        document.body.appendChild(host);
+        document.nativeBinding.flush();
+        document.getElementById('scope-text').textContent;
+    )");
+    EXPECT_EQ(result, "Alice");
+
+    result = runtime_->Eval(R"(
+        document.getElementById('scope-host').removeAttribute('mb-scope:user');
+        document.nativeBinding.flush();
+        document.getElementById('scope-text').textContent;
+    )");
+    EXPECT_EQ(result, "");
+
+    ASSERT_TRUE(state_manager_.set("page.form.user.name", "Bob"));
+    result = runtime_->Eval(R"(
+        document.nativeBinding.flush();
+        document.getElementById('scope-text').textContent;
+    )");
+    EXPECT_EQ(result, "");
+}
+
+TEST_F(DOMBindingsTest, RemoveChildUnmountsDeclarativeSubtree) {
+    ASSERT_EQ(state_manager_.createJson("profile", json{{"name", "Alice"}}), MBinkError::Ok);
+
+    auto result = runtime_->Eval(R"(
+        globalThis.__host = document.createElement('div');
+        globalThis.__text = document.createElement('span');
+        __text.setAttribute('mb-text', 'profile.name');
+        __host.appendChild(__text);
+        document.body.appendChild(__host);
+        document.nativeBinding.flush();
+        __text.textContent;
+    )");
+    EXPECT_EQ(result, "Alice");
+
+    result = runtime_->Eval(R"(
+        document.body.removeChild(__host);
+        document.nativeBinding.flush();
+        __text.textContent;
+    )");
+    EXPECT_EQ(result, "Alice");
+
+    ASSERT_TRUE(state_manager_.set("profile.name", "Bob"));
+    result = runtime_->Eval(R"(
+        document.nativeBinding.flush();
+        __text.textContent;
+    )");
+    EXPECT_EQ(result, "Alice");
 }
 
 // ========== 元素属性测试 ==========
@@ -326,6 +693,877 @@ TEST_F(DOMBindingsTest, CreateElementNSAndSVGAttributeAliases) {
 
 // ========== 事件监听器测试 ==========
 
+
+TEST_F(DOMBindingsTest, OfficialPreactCoreModulesImportWork) {
+    EXPECT_NO_THROW(runtime_->EvalModule(R"(
+        import {
+            h,
+            render,
+            Fragment,
+            createElement,
+            createContext,
+            cloneElement,
+            createRef,
+            Component,
+            isValidElement,
+            options
+        } from 'preact';
+        import {
+            useState,
+            useEffect,
+            useRef,
+            useMemo,
+            useCallback,
+            useContext,
+            useReducer,
+            useLayoutEffect,
+            useImperativeHandle,
+            useDebugValue
+        } from 'preact/hooks';
+
+        globalThis.__officialPreactCoreOk =
+            typeof h === 'function' &&
+            typeof render === 'function' &&
+            typeof Fragment !== 'undefined' &&
+            typeof createElement === 'function' &&
+            typeof createContext === 'function' &&
+            typeof cloneElement === 'function' &&
+            typeof createRef === 'function' &&
+            typeof Component === 'function' &&
+            typeof isValidElement === 'function' &&
+            typeof options === 'object' &&
+            typeof useState === 'function' &&
+            typeof useEffect === 'function' &&
+            typeof useRef === 'function' &&
+            typeof useMemo === 'function' &&
+            typeof useCallback === 'function' &&
+            typeof useContext === 'function' &&
+            typeof useReducer === 'function' &&
+            typeof useLayoutEffect === 'function' &&
+            typeof useImperativeHandle === 'function' &&
+            typeof useDebugValue === 'function';
+    )", "<official-preact-core-import-test>"));
+
+    EXPECT_EQ(runtime_->Eval("globalThis.__officialPreactCoreOk"), true);
+}
+
+TEST_F(DOMBindingsTest, OfficialPreactJsxRuntimeModulesImportWork) {
+    EXPECT_NO_THROW(runtime_->EvalModule(R"(
+        import { jsx, jsxs, jsxDEV, Fragment, jsxTemplate, jsxAttr, jsxEscape } from 'preact/jsx-runtime';
+        import { jsxDEV as devJsxDEV, Fragment as devFragment } from 'preact/jsx-dev-runtime';
+
+        globalThis.__officialPreactJsxRuntimeOk =
+            typeof jsx === 'function' &&
+            typeof jsxs === 'function' &&
+            typeof jsxDEV === 'function' &&
+            typeof Fragment !== 'undefined' &&
+            typeof jsxTemplate === 'function' &&
+            typeof jsxAttr === 'function' &&
+            typeof jsxEscape === 'function' &&
+            typeof devJsxDEV === 'function' &&
+            typeof devFragment !== 'undefined';
+    )", "<official-preact-jsx-runtime-import-test>"));
+
+    EXPECT_EQ(runtime_->Eval("globalThis.__officialPreactJsxRuntimeOk"), true);
+}
+
+TEST_F(DOMBindingsTest, OfficialPreactImportsDoNotUseLegacyGlobalsOrLegacyFiles) {
+    EXPECT_NO_THROW(runtime_->Eval(R"(
+        globalThis.__officialPreactLegacyGlobalReads = 0;
+        Object.defineProperty(globalThis, 'Preact', {
+            configurable: true,
+            get() {
+                globalThis.__officialPreactLegacyGlobalReads++;
+                throw new Error('legacy Preact global should not be read');
+            }
+        });
+        Object.defineProperty(globalThis, 'preact', {
+            configurable: true,
+            get() {
+                globalThis.__officialPreactLegacyGlobalReads++;
+                throw new Error('legacy preact global should not be read');
+            }
+        });
+        Object.defineProperty(globalThis, 'PreactHooks', {
+            configurable: true,
+            get() {
+                globalThis.__officialPreactLegacyGlobalReads++;
+                throw new Error('legacy PreactHooks global should not be read');
+            }
+        });
+        Object.defineProperty(globalThis, 'preactHooks', {
+            configurable: true,
+            get() {
+                globalThis.__officialPreactLegacyGlobalReads++;
+                throw new Error('legacy preactHooks global should not be read');
+            }
+        });
+
+        globalThis.__officialPreactLegacyImportOk = false;
+
+        true;
+    )"));
+
+    EXPECT_NO_THROW(runtime_->EvalModule(R"(
+        import * as preactModule from 'preact';
+        import * as hooksModule from 'preact/hooks';
+        import * as jsxRuntimeModule from 'preact/jsx-runtime';
+        import * as jsxDevRuntimeModule from 'preact/jsx-dev-runtime';
+
+        globalThis.__officialPreactLegacyImportOk =
+            typeof preactModule.render === 'function' &&
+            typeof hooksModule.useState === 'function' &&
+            typeof jsxRuntimeModule.jsx === 'function' &&
+            typeof jsxDevRuntimeModule.jsxDEV === 'function' &&
+            globalThis.__officialPreactLegacyGlobalReads === 0;
+    )", "<official-preact-no-legacy-globals-test>"));
+
+    EXPECT_EQ(runtime_->Eval("globalThis.__officialPreactLegacyImportOk"), true);
+    EXPECT_FALSE(legacy_preact_requested_);
+    EXPECT_FALSE(legacy_hooks_requested_);
+}
+
+TEST_F(DOMBindingsTest, OfficialPreactAutomaticRuntimeCanCreateVNode) {
+    EXPECT_NO_THROW(runtime_->EvalModule(R"(
+        import { jsx } from 'preact/jsx-runtime';
+
+        const vnode = jsx('div', { children: 'hello' });
+        globalThis.__officialPreactAutomaticRuntimeVNodeOk =
+            !!vnode &&
+            vnode.type === 'div' &&
+            !!vnode.props &&
+            vnode.props.children === 'hello';
+    )", "<official-preact-automatic-runtime-vnode-test>"));
+
+    EXPECT_EQ(runtime_->Eval("globalThis.__officialPreactAutomaticRuntimeVNodeOk"), true);
+}
+
+TEST_F(DOMBindingsTest, OfficialPreactAutomaticRuntimeCanRenderSimpleDiv) {
+    EXPECT_NO_THROW(runtime_->EvalModule(R"(
+        import { render } from 'preact';
+        import { jsx } from 'preact/jsx-runtime';
+
+        document.body.textContent = '';
+        render(jsx('div', { children: 'hello' }), document.body);
+
+        const first = document.body.firstChild;
+        globalThis.__officialPreactAutomaticRuntimeRenderOk =
+            !!first &&
+            first.nodeType === 1 &&
+            first.tagName.toLowerCase() === 'div' &&
+            !!first.firstChild &&
+            first.firstChild.nodeType === 3 &&
+            first.firstChild.nodeValue === 'hello';
+    )", "<official-preact-automatic-runtime-render-test>"));
+
+    EXPECT_EQ(runtime_->Eval("globalThis.__officialPreactAutomaticRuntimeRenderOk"), true);
+}
+
+TEST_F(DOMBindingsTest, OfficialPreactRenderCanUpdateExistingTextNode) {
+    EXPECT_NO_THROW(runtime_->EvalModule(R"(
+        import { render } from 'preact';
+        import { jsx } from 'preact/jsx-runtime';
+
+        document.body.textContent = '';
+        render(jsx('div', { children: 'hello' }), document.body);
+        render(jsx('div', { children: 'world' }), document.body);
+
+        const first = document.body.firstChild;
+        globalThis.__officialPreactRenderTextUpdateOk =
+            document.body.childNodes.length === 1 &&
+            !!first &&
+            first.nodeType === 1 &&
+            first.tagName.toLowerCase() === 'div' &&
+            first.childNodes.length === 1 &&
+            !!first.firstChild &&
+            first.firstChild.nodeType === 3 &&
+            first.firstChild.nodeValue === 'world';
+    )", "<official-preact-render-text-update-test>"));
+
+    EXPECT_EQ(runtime_->Eval("globalThis.__officialPreactRenderTextUpdateOk"), true);
+}
+
+TEST_F(DOMBindingsTest, OfficialPreactHooksUseEffectDoesNotBreakRender) {
+    EXPECT_NO_THROW(runtime_->EvalModule(R"(
+        import { render } from 'preact';
+        import { useEffect } from 'preact/hooks';
+        import { jsx } from 'preact/jsx-runtime';
+
+        function App() {
+            useEffect(() => {
+                globalThis.__officialPreactUseEffectRan = true;
+            }, []);
+            return jsx('div', { children: 'effect-ok' });
+        }
+
+        document.body.textContent = '';
+        globalThis.__officialPreactUseEffectRan = false;
+        render(jsx(App, {}), document.body);
+
+        const first = document.body.firstChild;
+        globalThis.__officialPreactUseEffectRenderOk =
+            !!first &&
+            first.nodeType === 1 &&
+            first.tagName.toLowerCase() === 'div' &&
+            first.textContent === 'effect-ok';
+    )", "<official-preact-hooks-useeffect-render-test>"));
+
+    EXPECT_EQ(runtime_->Eval("globalThis.__officialPreactUseEffectRenderOk"), true);
+}
+
+TEST_F(DOMBindingsTest, OfficialPreactDelegatedInputAndClickCanUpdateState) {
+    EXPECT_NO_THROW(runtime_->EvalModule(R"(
+        import { h, render } from 'preact';
+        import { useState } from 'preact/hooks';
+
+        function App() {
+            const [value, setValue] = useState('');
+            const [count, setCount] = useState(0);
+            return h('div', {}, [
+                h('input', { id: 'official-input', value, onInput: (event) => setValue(event.target.value) }),
+                h('button', { id: 'official-button', onClick: () => setCount((current) => current + 1) }, 'Count:' + count),
+                h('span', { id: 'official-state' }, value + '|' + count)
+            ]);
+        }
+
+        document.body.textContent = '';
+        render(h(App), document.body);
+
+        const input = document.getElementById('official-input');
+        const button = document.getElementById('official-button');
+        input.value = 'hello';
+        input.dispatchEvent(new Event('input', { bubbles: true, cancelable: true }));
+        button.click();
+    )", "<official-preact-delegated-events-test>"));
+
+    runtime_->RunEventLoop(4);
+    runtime_->ProcessMicrotasks();
+
+    EXPECT_EQ(runtime_->Eval(R"(
+        (() => {
+            const state = document.getElementById('official-state');
+            const button = document.getElementById('official-button');
+            return !!state && state.textContent === 'hello|1' && button && button.textContent === 'Count:1';
+        })()
+    )"), true);
+}
+
+TEST_F(DOMBindingsTest, OfficialPreactUseEffectCanFlushAfterAnimationFrameAndTimeout) {
+    EXPECT_NO_THROW(runtime_->EvalModule(R"(
+        import { h, render } from 'preact';
+        import { useEffect } from 'preact/hooks';
+
+        function App() {
+            useEffect(() => {
+                globalThis.__officialUseEffectTick = 'effect-ran';
+            }, []);
+            return h('div', { id: 'effect-app' }, 'effect-app');
+        }
+
+        globalThis.__officialUseEffectTick = 'pending';
+        document.body.textContent = '';
+        render(h(App), document.body);
+    )", "<official-preact-useeffect-runtime-test>"));
+
+    ASSERT_TRUE(task_scheduler_ != nullptr);
+    task_scheduler_->ProcessAnimationFrames(16.0);
+    task_scheduler_->ProcessTasks();
+    runtime_->ProcessMicrotasks();
+
+    EXPECT_EQ(runtime_->Eval("globalThis.__officialUseEffectTick"), "effect-ran");
+}
+
+
+TEST_F(DOMBindingsTest, OfficialPreactRenderCanMountMinimalSvgTree) {
+    EXPECT_NO_THROW(runtime_->EvalModule(R"(
+        import { render } from 'preact';
+        import { jsx, jsxs } from 'preact/jsx-runtime';
+
+        document.body.textContent = '';
+        render(
+            jsx('svg', {
+                viewBox: '0 0 10 10',
+                children: jsxs('g', {
+                    children: [
+                        jsx('title', { children: 'chart' }),
+                        jsx('polyline', { strokeWidth: '2', points: '0,0 10,10' })
+                    ]
+                })
+            }),
+            document.body
+        );
+
+        const svg = document.body.firstChild;
+        const group = svg && svg.firstChild;
+        const title = group && group.firstChild;
+        const polyline = title && title.nextSibling;
+        globalThis.__officialPreactSvgRenderOk =
+            document.body.childNodes.length === 1 &&
+            !!svg &&
+            svg.namespaceURI === 'http://www.w3.org/2000/svg' &&
+            svg.localName === 'svg' &&
+            svg.getAttribute('viewBox') === '0 0 10 10' &&
+            !!group &&
+            group.namespaceURI === 'http://www.w3.org/2000/svg' &&
+            group.localName === 'g' &&
+            !!title &&
+            title.localName === 'title' &&
+            title.textContent === 'chart' &&
+            !!polyline &&
+            polyline.localName === 'polyline' &&
+            polyline.getAttribute('stroke-width') === '2' &&
+            polyline.getAttribute('points') === '0,0 10,10';
+    )", "<official-preact-svg-render-test>"));
+
+    EXPECT_EQ(runtime_->Eval("globalThis.__officialPreactSvgRenderOk"), true);
+}
+
+TEST_F(DOMBindingsTest, OfficialPreactRenderCanReorderKeyedChildren) {
+    EXPECT_NO_THROW(runtime_->EvalModule(R"(
+        import { render } from 'preact';
+        import { jsx, jsxs } from 'preact/jsx-runtime';
+
+        const view = items => jsxs('div', {
+            children: items.map(item => jsx('span', { children: item.label }, item.key))
+        });
+
+        document.body.textContent = '';
+        render(view([
+            { key: 'a', label: 'A' },
+            { key: 'b', label: 'B' }
+        ]), document.body);
+
+        render(view([
+            { key: 'b', label: 'B' },
+            { key: 'a', label: 'A' }
+        ]), document.body);
+
+        const root = document.body.firstChild;
+        const first = root && root.firstChild;
+        const second = first && first.nextSibling;
+        globalThis.__officialPreactKeyedReorderOk =
+            document.body.childNodes.length === 1 &&
+            !!root &&
+            root.childNodes.length === 2 &&
+            !!first &&
+            !!second &&
+            first.textContent === 'B' &&
+            second.textContent === 'A';
+    )", "<official-preact-keyed-reorder-test>"));
+
+    EXPECT_EQ(runtime_->Eval("globalThis.__officialPreactKeyedReorderOk"), true);
+}
+
+TEST_F(DOMBindingsTest, OfficialPreactRenderCanControlSelectValue) {
+    EXPECT_NO_THROW(runtime_->EvalModule(R"(
+        import { render } from 'preact';
+        import { jsx, jsxs } from 'preact/jsx-runtime';
+
+        const view = value => jsxs('select', {
+            value,
+            children: [
+                jsx('option', { value: 'a', children: 'Alpha' }),
+                jsx('option', { value: 'b', children: 'Beta' })
+            ]
+        });
+
+        document.body.textContent = '';
+        render(view('b'), document.body);
+    )", "<official-preact-select-value-test>"));
+
+    EXPECT_EQ(runtime_->Eval("document.body.childNodes.length"), 1);
+    EXPECT_EQ(runtime_->Eval("document.body.firstChild && document.body.firstChild.tagName.toLowerCase()"), "select");
+    EXPECT_EQ(runtime_->Eval("document.body.firstChild && document.body.firstChild.value"), "b");
+    EXPECT_EQ(runtime_->Eval("document.body.firstChild && document.body.firstChild.firstChild && document.body.firstChild.firstChild.getAttribute('value')"), "a");
+    EXPECT_EQ(runtime_->Eval("document.body.firstChild && document.body.firstChild.firstChild && document.body.firstChild.firstChild.nextSibling && document.body.firstChild.firstChild.nextSibling.getAttribute('value')"), "b");
+}
+
+TEST_F(DOMBindingsTest, OfficialPreactRenderCanControlCheckboxChecked) {
+    EXPECT_NO_THROW(runtime_->EvalModule(R"(
+        import { render } from 'preact';
+        import { jsx } from 'preact/jsx-runtime';
+
+        const view = checked => jsx('input', {
+            type: 'checkbox',
+            checked
+        });
+
+        document.body.textContent = '';
+        render(view(true), document.body);
+        render(view(false), document.body);
+    )", "<official-preact-checkbox-checked-test>"));
+
+    EXPECT_EQ(runtime_->Eval("document.body.childNodes.length"), 1);
+    EXPECT_EQ(runtime_->Eval("document.body.firstChild && document.body.firstChild.tagName.toLowerCase()"), "input");
+    EXPECT_EQ(runtime_->Eval("document.body.firstChild && document.body.firstChild.checked"), false);
+}
+
+TEST_F(DOMBindingsTest, OfficialPreactRenderCanUpdateStyleObject) {
+    EXPECT_NO_THROW(runtime_->EvalModule(R"(
+        import { render } from 'preact';
+        import { jsx } from 'preact/jsx-runtime';
+
+        const view = style => jsx('div', { style });
+
+        document.body.textContent = '';
+        render(view({ color: 'red', backgroundColor: 'blue' }), document.body);
+        render(view({ color: 'green' }), document.body);
+    )", "<official-preact-style-object-update-test>"));
+
+    EXPECT_EQ(runtime_->Eval("document.body.childNodes.length"), 1);
+    EXPECT_EQ(runtime_->Eval("document.body.firstChild && document.body.firstChild.style.color"), "green");
+    EXPECT_EQ(runtime_->Eval("document.body.firstChild && document.body.firstChild.style.backgroundColor"), "");
+}
+
+TEST_F(DOMBindingsTest, OfficialPreactRenderCanUpdateOptionSelected) {
+    EXPECT_NO_THROW(runtime_->EvalModule(R"(
+        import { render } from 'preact';
+        import { jsx, jsxs } from 'preact/jsx-runtime';
+
+        const view = selected => jsxs('select', {
+            children: [
+                jsx('option', { value: 'a', selected, children: 'Alpha' }),
+                jsx('option', { value: 'b', children: 'Beta' })
+            ]
+        });
+
+        document.body.textContent = '';
+        render(view(true), document.body);
+        render(view(false), document.body);
+    )", "<official-preact-option-selected-update-test>"));
+
+    EXPECT_EQ(runtime_->Eval("document.body.firstChild && document.body.firstChild.value"), "");
+}
+
+TEST_F(DOMBindingsTest, OfficialPreactRenderCanControlTextareaValueAfterTextChild) {
+    EXPECT_NO_THROW(runtime_->EvalModule(R"(
+        import { render } from 'preact';
+        import { jsx } from 'preact/jsx-runtime';
+
+        document.body.textContent = '';
+        render(jsx('textarea', { children: 'hello' }), document.body);
+        render(jsx('textarea', { value: 'world' }), document.body);
+    )", "<official-preact-textarea-value-after-children-test>"));
+
+    EXPECT_EQ(runtime_->Eval("document.body.childNodes.length"), 1);
+    EXPECT_EQ(runtime_->Eval("document.body.firstChild && document.body.firstChild.tagName.toLowerCase()"), "textarea");
+    EXPECT_EQ(runtime_->Eval("document.body.firstChild && document.body.firstChild.value"), "world");
+}
+
+TEST_F(DOMBindingsTest, OfficialPreactRenderCanApplyTextareaDefaultValue) {
+    EXPECT_NO_THROW(runtime_->EvalModule(R"(
+        import { render } from 'preact';
+        import { jsx } from 'preact/jsx-runtime';
+
+        document.body.textContent = '';
+        render(jsx('textarea', { defaultValue: 'seed' }), document.body);
+    )", "<official-preact-textarea-defaultvalue-test>"));
+
+    EXPECT_EQ(runtime_->Eval("document.body.childNodes.length"), 1);
+    EXPECT_EQ(runtime_->Eval("document.body.firstChild && document.body.firstChild.tagName.toLowerCase()"), "textarea");
+    EXPECT_EQ(runtime_->Eval("document.body.firstChild && document.body.firstChild.value"), "seed");
+}
+
+TEST_F(DOMBindingsTest, OfficialPreactRenderCanApplyInputDefaultChecked) {
+    EXPECT_NO_THROW(runtime_->EvalModule(R"(
+        import { render } from 'preact';
+        import { jsx } from 'preact/jsx-runtime';
+
+        document.body.textContent = '';
+        render(jsx('input', { type: 'checkbox', defaultChecked: true }), document.body);
+    )", "<official-preact-input-defaultchecked-test>"));
+
+    EXPECT_EQ(runtime_->Eval("document.body.childNodes.length"), 1);
+    EXPECT_EQ(runtime_->Eval("document.body.firstChild && document.body.firstChild.tagName.toLowerCase()"), "input");
+    EXPECT_EQ(runtime_->Eval("document.body.firstChild && document.body.firstChild.checked"), true);
+}
+
+TEST_F(DOMBindingsTest, OfficialPreactRenderCanApplyInputDefaultValue) {
+    EXPECT_NO_THROW(runtime_->EvalModule(R"(
+        import { render } from 'preact';
+        import { jsx } from 'preact/jsx-runtime';
+
+        document.body.textContent = '';
+        render(jsx('input', { defaultValue: 'seed' }), document.body);
+    )", "<official-preact-input-defaultvalue-test>"));
+
+    EXPECT_EQ(runtime_->Eval("document.body.childNodes.length"), 1);
+    EXPECT_EQ(runtime_->Eval("document.body.firstChild && document.body.firstChild.tagName.toLowerCase()"), "input");
+    EXPECT_EQ(runtime_->Eval("document.body.firstChild && document.body.firstChild.value"), "seed");
+}
+
+TEST_F(DOMBindingsTest, OfficialPreactRenderCanUpdateInputDefaultChecked) {
+    EXPECT_NO_THROW(runtime_->EvalModule(R"(
+        import { render } from 'preact';
+        import { jsx } from 'preact/jsx-runtime';
+
+        const view = checked => jsx('input', { type: 'checkbox', defaultChecked: checked });
+
+        document.body.textContent = '';
+        render(view(true), document.body);
+        render(view(false), document.body);
+    )", "<official-preact-input-defaultchecked-update-test>"));
+
+    EXPECT_EQ(runtime_->Eval("document.body.childNodes.length"), 1);
+    EXPECT_EQ(runtime_->Eval("document.body.firstChild && document.body.firstChild.checked"), false);
+}
+
+TEST_F(DOMBindingsTest, OfficialPreactRenderCanUpdateOptionDefaultSelected) {
+    EXPECT_NO_THROW(runtime_->EvalModule(R"(
+        import { render } from 'preact';
+        import { jsx, jsxs } from 'preact/jsx-runtime';
+
+        const view = selected => jsxs('select', {
+            children: [
+                jsx('option', { value: 'a', defaultSelected: selected, children: 'Alpha' }),
+                jsx('option', { value: 'b', children: 'Beta' })
+            ]
+        });
+
+        document.body.textContent = '';
+        render(view(true), document.body);
+        render(view(false), document.body);
+    )", "<official-preact-option-defaultselected-update-test>"));
+
+    EXPECT_EQ(runtime_->Eval("document.body.childNodes.length"), 1);
+    EXPECT_EQ(runtime_->Eval("document.body.firstChild && document.body.firstChild.value"), "");
+}
+
+TEST_F(DOMBindingsTest, OfficialPreactRenderCanClearStyleString) {
+    EXPECT_NO_THROW(runtime_->EvalModule(R"(
+        import { render } from 'preact';
+        import { jsx } from 'preact/jsx-runtime';
+
+        const view = style => jsx('div', { style });
+
+        document.body.textContent = '';
+        render(view('color: red; background-color: blue;'), document.body);
+        render(view(null), document.body);
+    )", "<official-preact-style-string-clear-test>"));
+
+    EXPECT_EQ(runtime_->Eval("document.body.childNodes.length"), 1);
+    EXPECT_EQ(runtime_->Eval("document.body.firstChild && document.body.firstChild.style.color"), "");
+    EXPECT_EQ(runtime_->Eval("document.body.firstChild && document.body.firstChild.style.backgroundColor"), "");
+}
+
+TEST_F(DOMBindingsTest, OfficialPreactRenderCanRemoveCheckedProp) {
+    EXPECT_NO_THROW(runtime_->EvalModule(R"(
+        import { render } from 'preact';
+        import { jsx } from 'preact/jsx-runtime';
+
+        document.body.textContent = '';
+        render(jsx('input', { type: 'checkbox', checked: true }), document.body);
+        render(jsx('input', { type: 'checkbox' }), document.body);
+    )", "<official-preact-remove-checked-prop-test>"));
+
+    EXPECT_EQ(runtime_->Eval("document.body.childNodes.length"), 1);
+    EXPECT_EQ(runtime_->Eval("document.body.firstChild && document.body.firstChild.checked"), false);
+}
+
+TEST_F(DOMBindingsTest, OfficialPreactRenderCanRemoveClassName) {
+    EXPECT_NO_THROW(runtime_->EvalModule(R"(
+        import { render } from 'preact';
+        import { jsx } from 'preact/jsx-runtime';
+
+        document.body.textContent = '';
+        render(jsx('div', { className: 'alpha beta' }), document.body);
+        render(jsx('div', {}), document.body);
+    )", "<official-preact-remove-classname-test>"));
+
+    EXPECT_EQ(runtime_->Eval("document.body.childNodes.length"), 1);
+    EXPECT_EQ(runtime_->Eval("document.body.firstChild && document.body.firstChild.className"), "");
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+TEST_F(DOMBindingsTest, OfficialPreactHydrateMinimalUseCaseWorks) {
+    EXPECT_NO_THROW(runtime_->EvalModule(R"(
+        import { hydrate } from 'preact';
+        import { jsx } from 'preact/jsx-runtime';
+
+        document.body.innerHTML = '<div id="app"><span>hello</span></div>';
+
+        hydrate(
+            jsx('div', { id: 'app', children: jsx('span', { children: 'hello' }) }),
+            document.body
+        );
+
+        const app = document.body.firstChild;
+        globalThis.__officialPreactHydrateOk =
+            !!app &&
+            app.nodeType === 1 &&
+            app.tagName.toLowerCase() === 'div' &&
+            app.id === 'app' &&
+            document.body.childNodes.length === 1 &&
+            app.childNodes.length === 1 &&
+            !!app.firstChild &&
+            app.firstChild.nodeType === 1 &&
+            app.firstChild.tagName.toLowerCase() === 'span' &&
+            app.firstChild.textContent === 'hello';
+    )", "<official-preact-hydrate-minimal-test>"));
+
+    EXPECT_EQ(runtime_->Eval("globalThis.__officialPreactHydrateOk"), true);
+}
+
+TEST_F(DOMBindingsTest, HydrateMarkersAreVisibleAndTraversableLikeOfficialPreactExpects) {
+    auto result = runtime_->Eval(R"(
+        document.body.textContent = '';
+        var root = document.createElement('div');
+        var open = document.createComment('$s');
+        var span = document.createElement('span');
+        var close = document.createComment('/$s');
+        var tail = document.createElement('p');
+        span.textContent = 'hello';
+        tail.textContent = 'tail';
+        root.appendChild(open);
+        root.appendChild(span);
+        root.appendChild(close);
+        root.appendChild(tail);
+        document.body.appendChild(root);
+
+        var excess = Array.prototype.slice.call(root.childNodes);
+        var markers = [];
+        var current = root.firstChild;
+        while (current) {
+            if (current.nodeType === 8) {
+                markers.push(current.data);
+            }
+            current = current.nextSibling;
+        }
+
+        open &&
+        open.nodeType === 8 &&
+        open.data === '$s' &&
+        span &&
+        span.nodeType === 1 &&
+        span.textContent === 'hello' &&
+        close &&
+        close.nodeType === 8 &&
+        close.data === '/$s' &&
+        tail &&
+        tail.nodeType === 1 &&
+        tail.tagName.toLowerCase() === 'p' &&
+        excess.length === 4 &&
+        excess[0] === open &&
+        excess[1] === span &&
+        excess[2] === close &&
+        excess[3] === tail &&
+        markers.length === 2 &&
+        markers[0] === '$s' &&
+        markers[1] === '/$s';
+    )");
+
+    EXPECT_EQ(result, true);
+}
+
+
+TEST_F(DOMBindingsTest, OfficialPreactJsxDevRuntimeCanCreateVNode) {
+    EXPECT_NO_THROW(runtime_->EvalModule(R"(
+        import { render } from 'preact';
+        import { jsxDEV } from 'preact/jsx-dev-runtime';
+
+        const vnode = jsxDEV('div', { children: 'hello-dev' }, undefined, false, undefined, undefined);
+        document.body.textContent = '';
+        render(vnode, document.body);
+
+        const first = document.body.firstChild;
+        globalThis.__officialPreactJsxDevRuntimeVNodeOk =
+            !!vnode &&
+            vnode.type === 'div' &&
+            !!vnode.props &&
+            vnode.props.children === 'hello-dev' &&
+            !!first &&
+            first.nodeType === 1 &&
+            first.tagName.toLowerCase() === 'div' &&
+            !!first.firstChild &&
+            first.firstChild.nodeType === 3 &&
+            first.firstChild.nodeValue === 'hello-dev';
+    )", "<official-preact-jsx-dev-runtime-vnode-test>"));
+
+    EXPECT_EQ(runtime_->Eval("globalThis.__officialPreactJsxDevRuntimeVNodeOk"), true);
+}
+
+TEST_F(DOMBindingsTest, HostNodesExposeCommentAndDataProperties) {
+    auto result = runtime_->Eval(R"(
+        var text = document.createTextNode('hello');
+        var comment = document.createComment('note');
+        var beforeText = text.data === 'hello' && text.nodeValue === 'hello';
+        var beforeComment =
+            comment.nodeType === 8 &&
+            comment.nodeName === '#comment' &&
+            comment.data === 'note' &&
+            comment.nodeValue === 'note';
+
+        text.data = 'world';
+        comment.data = 'changed';
+
+        beforeText &&
+        beforeComment &&
+        text.data === 'world' &&
+        text.nodeValue === 'world' &&
+        comment.data === 'changed' &&
+        comment.nodeValue === 'changed';
+    )");
+
+    EXPECT_EQ(result, true);
+}
+
+TEST_F(DOMBindingsTest, HostElementsExposeLocalNameAndNamespaceURI) {
+    auto result = runtime_->Eval(R"(
+        var div = document.createElement('div');
+        var svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+        var math = document.createElementNS('http://www.w3.org/1998/Math/MathML', 'math');
+
+        div.localName === 'div' &&
+        div.namespaceURI === 'http://www.w3.org/1999/xhtml' &&
+        svg.localName === 'svg' &&
+        svg.namespaceURI === 'http://www.w3.org/2000/svg' &&
+        math.localName === 'math' &&
+        math.namespaceURI === 'http://www.w3.org/1998/Math/MathML';
+    )");
+
+    EXPECT_EQ(result, true);
+}
+
+TEST_F(DOMBindingsTest, TemplateElementExposesContentFragment) {
+    auto result = runtime_->Eval(R"(
+        var template = document.createElement('template');
+        template.innerHTML = '<span>hello</span><!--x-->world';
+
+        template.childNodes.length === 0 &&
+        template.content &&
+        template.content.nodeType === 11 &&
+        template.content.childNodes.length === 3 &&
+        template.content.firstChild.tagName === 'span' &&
+        template.content.childNodes[1].nodeType === 8 &&
+        template.content.lastChild.data === 'world';
+    )");
+
+    EXPECT_EQ(result, true);
+}
+
+TEST_F(DOMBindingsTest, TemplateCloneNodeDeepClonesContent) {
+    auto result = runtime_->Eval(R"(
+        var template = document.createElement('template');
+        template.innerHTML = '<div>hello</div><!--ok-->';
+        var clone = template.cloneNode(true);
+
+        clone !== template &&
+        clone.tagName === 'template' &&
+        clone.content &&
+        clone.content !== template.content &&
+        clone.content.childNodes.length === 2 &&
+        clone.content.firstChild.tagName === 'div' &&
+        clone.content.firstChild.textContent === 'hello' &&
+        clone.content.childNodes[1].nodeType === 8 &&
+        clone.innerHTML === '<div>hello</div><!--ok-->';
+    )");
+
+    EXPECT_EQ(result, true);
+}
+
+TEST_F(DOMBindingsTest, TemplateContentCloneNodeDeepClonesFragmentChildren) {
+    auto result = runtime_->Eval(R"(
+        var template = document.createElement('template');
+        template.innerHTML = '<span>hello</span><!--ok-->tail';
+
+        var clone = template.content.cloneNode(true);
+
+        clone !== template.content &&
+        clone.nodeType === 11 &&
+        clone.childNodes.length === 3 &&
+        clone.firstChild !== template.content.firstChild &&
+        clone.firstChild.tagName === 'span' &&
+        clone.firstChild.textContent === 'hello' &&
+        clone.firstChild.nextSibling.nodeType === 8 &&
+        clone.firstChild.nextSibling.data === 'ok' &&
+        clone.childNodes[2].nodeType === 3 &&
+        clone.childNodes[2].data === 'tail';
+    )");
+
+    EXPECT_EQ(result, true);
+}
+
+
+TEST_F(DOMBindingsTest, IsConnectedReflectsTreeAttachment) {
+    auto result = runtime_->Eval(R"(
+        var parent = document.createElement('div');
+        var child = document.createElement('span');
+        var text = document.createTextNode('hello');
+        child.appendChild(text);
+        parent.appendChild(child);
+
+        var detachedOk =
+            parent.isConnected === false &&
+            child.isConnected === false &&
+            text.isConnected === false;
+
+        document.body.appendChild(parent);
+
+        var attachedOk =
+            parent.isConnected === true &&
+            child.isConnected === true &&
+            text.isConnected === true;
+
+        parent.remove();
+
+        detachedOk &&
+        attachedOk &&
+        parent.isConnected === false &&
+        child.isConnected === false &&
+        text.isConnected === false;
+    )");
+
+    EXPECT_EQ(result, true);
+}
+
+TEST_F(DOMBindingsTest, CompareDocumentPositionReflectsTreeRelationships) {
+    auto result = runtime_->Eval(R"(
+        var parent = document.createElement('div');
+        var first = document.createElement('span');
+        var second = document.createElement('span');
+        var detached = document.createElement('p');
+
+        parent.appendChild(first);
+        parent.appendChild(second);
+        document.body.appendChild(parent);
+
+        var sameNodeOk = parent.compareDocumentPosition(parent) === 0;
+        var parentChildOk = parent.compareDocumentPosition(first) === 20;
+        var childParentOk = first.compareDocumentPosition(parent) === 10;
+        var siblingOrderOk =
+            first.compareDocumentPosition(second) === 4 &&
+            second.compareDocumentPosition(first) === 2;
+        var disconnectedOk = parent.compareDocumentPosition(detached) === 35;
+
+        parent.remove();
+
+        sameNodeOk &&
+        parentChildOk &&
+        childParentOk &&
+        siblingOrderOk &&
+        disconnectedOk;
+    )");
+
+    EXPECT_EQ(result, true);
+}
+
+
 TEST_F(DOMBindingsTest, AddEventListener) {
     auto result = runtime_->Eval(R"(
         var clicked = false;
@@ -337,6 +1575,19 @@ TEST_F(DOMBindingsTest, AddEventListener) {
         var event = new Event('click');
         div.dispatchEvent(event);
         clicked;
+    )");
+    EXPECT_EQ(result, true);
+}
+
+TEST_F(DOMBindingsTest, EventListenerThisMatchesCurrentTarget) {
+    auto result = runtime_->Eval(R"(
+        var observed = false;
+        var button = document.createElement('button');
+        button.addEventListener('click', function(event) {
+            observed = (this === button) && (event.currentTarget === button) && (event.target === button);
+        });
+        button.click();
+        observed;
     )");
     EXPECT_EQ(result, true);
 }
@@ -385,6 +1636,157 @@ TEST_F(DOMBindingsTest, EventTimeStampAndStopImmediatePropagation) {
     )");
     EXPECT_EQ(result, true);
 }
+
+TEST_F(DOMBindingsTest, DocumentCreateEventInitEventAndDispatchWorks) {
+    auto result = runtime_->Eval(R"(
+        var observedType = '';
+        var observedPhase = 0;
+        var observedBubbles = false;
+        var observedCancelable = false;
+        document.body.addEventListener('phase5-doc-create', function(event) {
+            observedType = event.type;
+            observedPhase = event.eventPhase;
+            observedBubbles = event.bubbles;
+            observedCancelable = event.cancelable;
+        });
+        var event = document.createEvent('Event');
+        event.initEvent('phase5-doc-create', true, true);
+        document.dispatchEvent(event);
+        observedType === 'phase5-doc-create' && observedPhase === 2 && observedBubbles && observedCancelable;
+    )");
+    EXPECT_EQ(result, true);
+}
+
+TEST_F(DOMBindingsTest, EventCaptureTargetAndBubbleOrderWorks) {
+    auto result = runtime_->Eval(R"(
+        var parent = document.createElement('div');
+        var child = document.createElement('button');
+        parent.appendChild(child);
+        document.body.appendChild(parent);
+
+        var order = [];
+        parent.addEventListener('phase5-flow', function(event) {
+            order.push('parent-capture:' + event.eventPhase + ':' + (event.currentTarget === parent) + ':' + (event.target === child));
+        }, true);
+        child.addEventListener('phase5-flow', function(event) {
+            order.push('target-capture:' + event.eventPhase + ':' + (event.currentTarget === child) + ':' + (event.target === child));
+        }, true);
+        child.addEventListener('phase5-flow', function(event) {
+            order.push('target-bubble:' + event.eventPhase + ':' + (event.currentTarget === child) + ':' + (event.target === child));
+        });
+        parent.addEventListener('phase5-flow', function(event) {
+            order.push('parent-bubble:' + event.eventPhase + ':' + (event.currentTarget === parent) + ':' + (event.target === child));
+        });
+
+        var event = document.createEvent('Event');
+        event.initEvent('phase5-flow', true, true);
+        child.dispatchEvent(event);
+
+        order.length === 4 &&
+        order[0] === 'parent-capture:1:true:true' &&
+        order[1] === 'target-capture:2:true:true' &&
+        order[2] === 'target-bubble:2:true:true' &&
+        order[3] === 'parent-bubble:3:true:true';
+    )");
+
+    EXPECT_EQ(result, true);
+}
+
+TEST_F(DOMBindingsTest, DocumentDispatchEventDelegatesToBody) {
+    auto result = runtime_->Eval(R"(
+        var calls = 0;
+        document.body.addEventListener('phase5-doc-dispatch', function(event) {
+            calls++;
+        });
+        var event = document.createEvent('Event');
+        event.initEvent('phase5-doc-dispatch', false, false);
+        document.dispatchEvent(event);
+        calls === 1;
+    )");
+    EXPECT_EQ(result, true);
+}
+
+TEST_F(DOMBindingsTest, WindowEventListenerDelegatesToDocument) {
+    auto result = runtime_->Eval(R"(
+        var calls = 0;
+        window.addEventListener('phase5-window', function(event) {
+            calls++;
+        });
+        var event = document.createEvent('Event');
+        event.initEvent('phase5-window', false, false);
+        window.dispatchEvent(event);
+        calls === 1;
+    )");
+    EXPECT_EQ(result, true);
+}
+
+TEST_F(DOMBindingsTest, QueueMicrotaskRunsAfterProcessMicrotasks) {
+    runtime_->Eval(R"(
+        globalThis.__phase5MicrotaskFlag = false;
+        queueMicrotask(function() {
+            globalThis.__phase5MicrotaskFlag = true;
+        });
+    )");
+
+    EXPECT_EQ(runtime_->Eval("globalThis.__phase5MicrotaskFlag"), false);
+    runtime_->ProcessMicrotasks();
+    EXPECT_EQ(runtime_->Eval("globalThis.__phase5MicrotaskFlag"), true);
+}
+
+TEST_F(DOMBindingsTest, PerformanceNowIsNumberAndMonotonic) {
+    auto result = runtime_->Eval(R"(
+        var a = performance.now();
+        var b = performance.now();
+        typeof a === 'number' && typeof b === 'number' && b >= a;
+    )");
+    EXPECT_EQ(result, true);
+}
+
+TEST_F(DOMBindingsTest, CustomEventConstructorExposesDetail) {
+    auto result = runtime_->Eval(R"(
+        var event = new CustomEvent('phase5-custom-ctor', {
+            detail: { value: 42, label: 'ok' },
+            bubbles: true,
+            cancelable: true
+        });
+        event.type === 'phase5-custom-ctor'
+            && event.bubbles === true
+            && event.cancelable === true
+            && event.detail
+            && event.detail.value === 42
+            && event.detail.label === 'ok';
+    )");
+    EXPECT_EQ(result, true);
+}
+
+TEST_F(DOMBindingsTest, CustomEventInitCustomEventWorks) {
+    auto result = runtime_->Eval(R"(
+        var event = document.createEvent('CustomEvent');
+        event.initCustomEvent('phase5-custom-init', true, false, { nested: { count: 2 } });
+        event.type === 'phase5-custom-init'
+            && event.bubbles === true
+            && event.cancelable === false
+            && event.detail
+            && event.detail.nested
+            && event.detail.nested.count === 2;
+    )");
+    EXPECT_EQ(result, true);
+}
+
+TEST_F(DOMBindingsTest, DocumentCreateCustomEventAndDispatchWorks) {
+    auto result = runtime_->Eval(R"(
+        var observed = null;
+        document.body.addEventListener('phase5-custom-dispatch', function(event) {
+            observed = event.detail && event.detail.payload;
+        });
+        var event = document.createEvent('CustomEvent');
+        event.initCustomEvent('phase5-custom-dispatch', true, true, { payload: 'kept' });
+        document.dispatchEvent(event);
+        observed === 'kept';
+    )");
+    EXPECT_EQ(result, true);
+}
+
 
 
 // ========== innerHTML/textContent 测试 ==========
@@ -438,6 +1840,55 @@ TEST_F(DOMBindingsTest, FirstChild) {
     )");
     EXPECT_EQ(result, true);
 }
+
+TEST_F(DOMBindingsTest, FirstChildNextSiblingAndChildNodesStayInSameOrder) {
+    auto result = runtime_->Eval(R"(
+        var parent = document.createElement('div');
+        var comment = document.createComment('head');
+        var span = document.createElement('span');
+        var text = document.createTextNode('tail');
+
+        parent.appendChild(text);
+        parent.insertBefore(comment, text);
+        parent.insertBefore(span, text);
+
+        parent.firstChild === comment &&
+        comment.nextSibling === span &&
+        span.nextSibling === text &&
+        text.nextSibling === null &&
+        parent.childNodes.length === 3 &&
+        parent.childNodes[0] === comment &&
+        parent.childNodes[1] === span &&
+        parent.childNodes[2] === text;
+    )");
+    EXPECT_EQ(result, true);
+}
+
+TEST_F(DOMBindingsTest, CloneNodeDeepClonesOrdinaryNodesAndPreservesOrder) {
+    auto result = runtime_->Eval(R"(
+        var div = document.createElement('div');
+        var span = document.createElement('span');
+        span.textContent = 'hello';
+        div.appendChild(span);
+        div.appendChild(document.createComment('ok'));
+        div.appendChild(document.createTextNode('tail'));
+
+        var clone = div.cloneNode(true);
+
+        clone !== div &&
+        clone.tagName === 'div' &&
+        clone.childNodes.length === 3 &&
+        clone.firstChild !== span &&
+        clone.firstChild.tagName === 'span' &&
+        clone.firstChild.textContent === 'hello' &&
+        clone.firstChild.nextSibling.nodeType === 8 &&
+        clone.firstChild.nextSibling.data === 'ok' &&
+        clone.childNodes[2].nodeType === 3 &&
+        clone.childNodes[2].data === 'tail';
+    )");
+    EXPECT_EQ(result, true);
+}
+
 
 TEST_F(DOMBindingsTest, LastChild) {
     auto result = runtime_->Eval(R"(

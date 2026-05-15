@@ -40,6 +40,11 @@ std::string NormalizeFsPath(const fs::path& path) {
     return result;
 }
 
+bool IsAbsoluteImportPath(const std::string& import_path) {
+    return (!import_path.empty() && import_path[0] == '/') ||
+           (import_path.size() > 1 && import_path[1] == ':');
+}
+
 }  // namespace
 
 namespace mbink {
@@ -58,14 +63,16 @@ void ModuleResolver::RegisterBuiltinModule(const std::string& name,
 std::vector<ImportInfo> ModuleResolver::ParseImports(const std::string& source) {
     std::vector<ImportInfo> imports;
     
-    // 匹配各种 import 语句:
+    // 匹配各种 import/export-from 语句:
     // import xxx from 'module'
     // import { xxx } from 'module'
     // import * as xxx from 'module'
     // import 'module'
+    // export * from 'module'
+    // export { xxx } from 'module'
     // 支持单引号和双引号
     std::regex import_regex(
-        R"(import\s+(?:[^'"]*\s+from\s+)?['"]([^'"]+)['"])",
+        R"((?:import|export)\s+(?:[^'"]*\s+from\s+)?['"]([^'"]+)['"])",
         std::regex::ECMAScript
     );
     
@@ -96,6 +103,28 @@ std::vector<ImportInfo> ModuleResolver::ParseImports(const std::string& source) 
 
 std::string ModuleResolver::ResolvePath(const std::string& import_path,
                                          const std::string& from_file) {
+    if (IsAbsoluteImportPath(import_path)) {
+        fs::path resolved = Utf8PathToFsPath(import_path);
+
+        if (!fs::exists(resolved) && !resolved.has_extension()) {
+            fs::path with_js = resolved;
+            with_js.replace_extension(".js");
+            if (fs::exists(with_js)) {
+                return NormalizeFsPath(fs::weakly_canonical(with_js));
+            }
+            fs::path index_js = resolved / "index.js";
+            if (fs::exists(index_js)) {
+                return NormalizeFsPath(fs::weakly_canonical(index_js));
+            }
+        }
+
+        if (fs::exists(resolved)) {
+            return NormalizeFsPath(fs::weakly_canonical(resolved));
+        }
+
+        return NormalizeFsPath(resolved);
+    }
+
     // 如果是相对路径
     if (import_path.starts_with("./") || import_path.starts_with("../")) {
         fs::path base_dir = Utf8PathToFsPath(from_file).parent_path();
@@ -183,7 +212,7 @@ bool ModuleResolver::ResolveModule(const std::string& module_id,
     if (IsBuiltinModule(module_id)) {
         module.is_builtin = true;
         module.source = builtin_modules_[module_id];
-        module.path = "";
+        module.path = module_id;
         
         if (verbose_) {
             std::cout << "  Resolved builtin: " << module_id << std::endl;
@@ -217,6 +246,7 @@ bool ModuleResolver::ResolveModule(const std::string& module_id,
         // 如果是裸模块名且不是内置模块，报错
         if (!import.module_path.starts_with("./") && 
             !import.module_path.starts_with("../") &&
+            !IsAbsoluteImportPath(import.module_path) &&
             !IsBuiltinModule(import.module_path)) {
             AddError("Unknown module: " + import.module_path + 
                      " (not a builtin module)", 
@@ -280,7 +310,14 @@ std::vector<ResolvedModule> ModuleResolver::TopologicalSort() {
 std::string ModuleResolver::ToRelativeId(const std::string& abs_path) const {
     if (entry_dir_.empty()) return abs_path;
     try {
-        return NormalizeFsPath(fs::relative(Utf8PathToFsPath(abs_path), Utf8PathToFsPath(entry_dir_)));
+        std::string relative = NormalizeFsPath(fs::relative(Utf8PathToFsPath(abs_path), Utf8PathToFsPath(entry_dir_)));
+        if (relative == abs_path || relative.empty()) {
+            return abs_path;
+        }
+        if (relative == "." || relative.rfind("../", 0) == 0 || relative == "..") {
+            return abs_path;
+        }
+        return relative;
     } catch (...) {
         return abs_path;
     }

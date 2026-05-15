@@ -19,8 +19,8 @@
 #include <iostream>
 #include <fstream>
 #include <sstream>
-#include <string>
-#include <vector>
+#include <chrono>
+#include <cstdlib>
 #include <filesystem>
 
 #ifdef _WIN32
@@ -35,6 +35,139 @@
 
 namespace fs = std::filesystem;
 using namespace mbink;
+
+namespace {
+
+std::string NormalizeFsPath(const fs::path& path) {
+    std::string result = fs::weakly_canonical(path).lexically_normal().string();
+    std::replace(result.begin(), result.end(), '\\', '/');
+    return result;
+}
+
+fs::path FindOfficialPreactRoot() {
+    static const fs::path kOfficialPreactRelativeRoot = fs::path("third_party") / fs::path("preact");
+    fs::path current = fs::absolute(fs::path(__FILE__)).parent_path();
+    while (!current.empty()) {
+        const fs::path candidate = current / kOfficialPreactRelativeRoot / "package.json";
+        if (fs::exists(candidate)) {
+            return current / kOfficialPreactRelativeRoot;
+        }
+        if (!current.has_parent_path() || current == current.parent_path()) {
+            break;
+        }
+        current = current.parent_path();
+    }
+    throw std::runtime_error("Unable to locate official Preact sources under third_party/preact");
+}
+
+std::string BuildOfficialPreactModule(const fs::path& entry_path) {
+    return "export * from '" + NormalizeFsPath(entry_path) + "';";
+}
+
+void RegisterOfficialPreactBuiltinModules(ModuleResolver& resolver, bool verbose) {
+    const fs::path preact_root = FindOfficialPreactRoot();
+    const std::vector<std::pair<std::string, fs::path>> modules = {
+        {"preact", preact_root / "src" / "index.js"},
+        {"preact/hooks", preact_root / "hooks" / "src" / "index.js"},
+        {"preact/jsx-runtime", preact_root / "jsx-runtime" / "src" / "index.js"},
+        {"preact/jsx-dev-runtime", preact_root / "jsx-runtime" / "src" / "index.js"},
+    };
+
+    for (const auto& [name, entry] : modules) {
+        const std::string source = BuildOfficialPreactModule(entry);
+        resolver.RegisterBuiltinModule(name, source);
+        if (verbose) {
+            std::cout << "  注册内置模块: " << name << " (" << source.size() << " bytes)\n";
+        }
+    }
+}
+
+bool IsCmdScript(const fs::path& path) {
+    const auto ext = path.extension().string();
+    return ext == ".cmd" || ext == ".bat";
+}
+
+fs::path FindEsbuildExecutable(const fs::path& entry_path) {
+    const char* path_env = std::getenv("PATH");
+    std::vector<fs::path> candidates = {
+        entry_path.parent_path() / "node_modules/.bin/esbuild.cmd",
+        entry_path.parent_path() / "node_modules/.bin/esbuild",
+        entry_path.parent_path() / "node_modules/@esbuild/win32-x64/esbuild.exe",
+        "esbuild.cmd",
+        "esbuild.exe",
+        "esbuild"
+    };
+    if (path_env && *path_env) {
+        std::stringstream ss(path_env);
+        std::string segment;
+        while (std::getline(ss, segment, ';')) {
+            if (segment.empty()) continue;
+            candidates.push_back(fs::path(segment) / "esbuild.cmd");
+            candidates.push_back(fs::path(segment) / "esbuild.exe");
+            candidates.push_back(fs::path(segment) / "esbuild");
+        }
+    }
+    for (const auto& candidate : candidates) {
+        std::error_code ec;
+        if (fs::exists(candidate, ec) && !fs::is_directory(candidate, ec)) return candidate;
+    }
+    return {};
+}
+
+bool SourceLooksLikeJsx(const fs::path& file_path) {
+    const auto ext = file_path.extension().string();
+    if (ext == ".jsx" || ext == ".tsx") return true;
+    if (ext != ".js" && ext != ".mjs" && ext != ".ts") return false;
+    std::ifstream input(file_path, std::ios::binary);
+    if (!input) return false;
+    std::string source((std::istreambuf_iterator<char>(input)), std::istreambuf_iterator<char>());
+    if (source.find("</") != std::string::npos) return true;
+    for (size_t i = 0; i + 1 < source.size(); ++i) {
+        if (source[i] != '<') continue;
+        const char next = source[i + 1];
+        if ((next >= 'A' && next <= 'Z') || (next >= 'a' && next <= 'z') || next == '>') return true;
+    }
+    return false;
+}
+
+bool ShouldPrebundleWithEsbuild(const fs::path& input_file) {
+    const auto ext = input_file.extension().string();
+    if (ext == ".jsx" || ext == ".tsx" || ext == ".ts") return true;
+    return SourceLooksLikeJsx(input_file);
+}
+
+fs::path PrebundleInputWithEsbuild(const fs::path& input_file, bool verbose, std::string* error) {
+    const auto esbuild = FindEsbuildExecutable(input_file);
+    if (esbuild.empty()) {
+        if (error) *error = "未找到 esbuild，无法打包 JSX/TS 输入";
+        return {};
+    }
+    const auto stamp = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
+    const auto temp_dir = fs::temp_directory_path() / ("mbink-app-bundler-" + std::to_string(stamp));
+    std::error_code ec;
+    fs::create_directories(temp_dir, ec);
+    if (ec) {
+        if (error) *error = "创建 esbuild 临时目录失败";
+        return {};
+    }
+    const auto output_file = temp_dir / "App.js";
+    std::string args = "\"" + input_file.string() + "\" --bundle --format=esm --outfile=\"" + output_file.string() +
+                       "\" --jsx=transform --jsx-factory=\"h\" --jsx-fragment=\"Fragment\" --loader:.js=jsx --loader:.mjs=jsx" +
+                       " --external:preact --external:preact/hooks --external:preact/jsx-runtime --external:preact/jsx-dev-runtime --color=false --log-level=info --log-limit=0";
+    const std::string command = IsCmdScript(esbuild)
+        ? "cmd.exe /d /c call \"" + esbuild.string() + "\" " + args
+        : "\"" + esbuild.string() + "\" " + args;
+    if (verbose) std::cout << "  esbuild 预编译 JSX/TS 入口: " << input_file << "\n";
+    const int exit_code = std::system(command.c_str());
+    if (exit_code != 0 || !fs::exists(output_file)) {
+        if (error) *error = "esbuild 预编译失败: " + input_file.string();
+        return {};
+    }
+    return output_file;
+}
+
+
+}  // namespace
 
 // 打包选项
 struct BundlerOptions {
@@ -269,39 +402,6 @@ std::string ReadFile(const std::string& path) {
     return buffer.str();
 }
 
-// 获取 Preact 模块包装器源码（必须与 esm_loader 运行时的 RegisterPreactModules 一致）
-// 运行时 Preact 通过 globalThis.Preact/PreactHooks 暴露，这里提供编译时的 ES module 包装器
-std::string GetPreactSource(const std::string& /*bundler_path*/) {
-    return R"(
-        export const h = globalThis.Preact.h;
-        export const render = globalThis.Preact.render;
-        export const Component = globalThis.Preact.Component;
-        export const Fragment = globalThis.Preact.Fragment;
-        export const createRef = globalThis.Preact.createRef;
-        export const createElement = globalThis.Preact.createElement;
-        export const createContext = globalThis.Preact.createContext;
-        export const cloneElement = globalThis.Preact.cloneElement;
-        export const isValidElement = globalThis.Preact.isValidElement;
-        export default globalThis.Preact;
-    )";
-}
-
-std::string GetHooksSource(const std::string& /*bundler_path*/) {
-    return R"(
-        export const useState = globalThis.PreactHooks.useState;
-        export const useEffect = globalThis.PreactHooks.useEffect;
-        export const useRef = globalThis.PreactHooks.useRef;
-        export const useMemo = globalThis.PreactHooks.useMemo;
-        export const useCallback = globalThis.PreactHooks.useCallback;
-        export const useContext = globalThis.PreactHooks.useContext;
-        export const useReducer = globalThis.PreactHooks.useReducer;
-        export const useLayoutEffect = globalThis.PreactHooks.useLayoutEffect;
-        export const useImperativeHandle = globalThis.PreactHooks.useImperativeHandle;
-        export const useDebugValue = globalThis.PreactHooks.useDebugValue;
-        export default globalThis.PreactHooks;
-    )";
-}
-
 int main(int argc, char** argv) {
     // Windows: 设置控制台输出为 UTF-8
 #ifdef _WIN32
@@ -322,11 +422,25 @@ int main(int argc, char** argv) {
         return 1;
     }
 
+    fs::path resolved_input_file = fs::weakly_canonical(options.input_file);
+    if (ShouldPrebundleWithEsbuild(resolved_input_file)) {
+        std::string prebundle_error;
+        auto bundled = PrebundleInputWithEsbuild(resolved_input_file, options.verbose, &prebundle_error);
+        if (bundled.empty()) {
+            std::cerr << "错误: " << prebundle_error << "\n";
+            return 1;
+        }
+        resolved_input_file = fs::weakly_canonical(bundled);
+    }
+
     // 显示配置信息
     std::cout << "========================================\n";
     std::cout << "  MBink App Bundler\n";
     std::cout << "========================================\n";
     std::cout << "  输入: " << options.input_file << "\n";
+    if (resolved_input_file.string() != fs::weakly_canonical(options.input_file).string()) {
+        std::cout << "  预编译入口: " << resolved_input_file.string() << "\n";
+    }
     std::cout << "  输出: " << options.output_file << "\n";
     std::cout << "  窗口: " << options.width << "x" << options.height << "\n";
     std::cout << "  标题: " << options.title << "\n";
@@ -359,28 +473,14 @@ int main(int argc, char** argv) {
 
     // 2. 解析模块依赖
     std::cout << "[1/4] 解析模块依赖...\n";
-    
+
     ModuleResolver resolver;
     resolver.SetVerbose(options.verbose);
-    
-    // 注册内置模块
-    std::string preact_src = GetPreactSource(argv[0]);
-    std::string hooks_src = GetHooksSource(argv[0]);
-    if (!preact_src.empty()) {
-        resolver.RegisterBuiltinModule("preact", preact_src);
-        if (options.verbose) {
-            std::cout << "  注册内置模块: preact (" << preact_src.size() << " bytes)\n";
-        }
-    }
-    if (!hooks_src.empty()) {
-        resolver.RegisterBuiltinModule("preact/hooks", hooks_src);
-        if (options.verbose) {
-            std::cout << "  注册内置模块: preact/hooks (" << hooks_src.size() << " bytes)\n";
-        }
-    }
-    
-    auto modules = resolver.Resolve(options.input_file);
-    
+
+    RegisterOfficialPreactBuiltinModules(resolver, options.verbose);
+
+    auto modules = resolver.Resolve(resolved_input_file.string());
+
     if (resolver.HasErrors()) {
         std::cerr << "  ✗ 模块解析失败:\n";
         for (const auto& err : resolver.GetErrors()) {
@@ -394,12 +494,12 @@ int main(int argc, char** argv) {
         }
         return 1;
     }
-    
+
     std::cout << "  ✓ 解析到 " << modules.size() << " 个模块\n";
 
     // 3. 编译字节码
     std::cout << "[2/4] 编译字节码...\n";
-    
+
     BytecodeCompiler compiler;
     compiler.SetVerbose(options.verbose);
     compiler.SetStripSource(true);  // 去除源码信息减小体积
@@ -407,12 +507,12 @@ int main(int argc, char** argv) {
     // 设置入口文件目录，让 ModuleNormalize 能正确解析相对路径
     {
         namespace fs = std::filesystem;
-        std::string entry_dir = fs::path(fs::weakly_canonical(options.input_file)).parent_path().string();
+        std::string entry_dir = resolved_input_file.parent_path().string();
         compiler.SetEntryDir(entry_dir);
     }
 
     auto compiled = compiler.CompileModules(modules);
-    
+
     if (compiler.HasErrors()) {
         std::cerr << "  ✗ 编译失败:\n";
         for (const auto& err : compiler.GetErrors()) {
@@ -427,14 +527,14 @@ int main(int argc, char** argv) {
         }
         return 1;
     }
-    
+
     // 合并字节码
     auto merged_bytecode = BytecodeCompiler::MergeBytecode(compiled);
     std::cout << "  ✓ 编译完成 (" << merged_bytecode.size() << " bytes)\n";
 
     // 4. 构建 payload
     std::cout << "[3/4] 构建 payload...\n";
-    
+
     PayloadBuilder builder;
     builder.SetWidth(options.width);
     builder.SetHeight(options.height);
@@ -458,7 +558,7 @@ int main(int argc, char** argv) {
         cfg.max_height = options.max_height;
         builder.SetConfig(cfg);
     }
-    
+
     // 添加资源文件
     for (const auto& asset_file : options.asset_files) {
         fs::path p(asset_file);
@@ -471,13 +571,13 @@ int main(int argc, char** argv) {
             std::cout << "  添加资源: " << name << "\n";
         }
     }
-    
+
     // 添加资源目录
     for (const auto& asset_dir : options.asset_dirs) {
         // 使用目录名作为前缀，保持路径一致性
         fs::path dir_path(asset_dir);
         std::string prefix = dir_path.filename().string();
-        
+
         if (!builder.AddAssetsFromDirectory(asset_dir, prefix)) {
             std::cerr << "  ✗ 无法读取资源目录: " << asset_dir << "\n";
             return 1;
@@ -486,35 +586,35 @@ int main(int argc, char** argv) {
             std::cout << "  添加资源目录: " << asset_dir << " (前缀: " << prefix << ")\n";
         }
     }
-    
+
     if (builder.GetAssetCount() > 0) {
         std::cout << "  ✓ 添加了 " << builder.GetAssetCount() << " 个资源\n";
     }
-    
+
     auto payload = builder.Build();
     std::cout << "  ✓ Payload 构建完成 (" << payload.size() << " bytes)\n";
 
     // 5. 写入输出文件
     std::cout << "[4/4] 写入输出文件...\n";
-    
+
     ExeWriter writer;
     if (!writer.LoadTemplate(template_path)) {
         std::cerr << "  ✗ " << writer.GetError() << "\n";
         return 1;
     }
-    
+
     if (!writer.WriteOutput(options.output_file, payload, options.debug, options.icon_file)) {
         std::cerr << "  ✗ " << writer.GetError() << "\n";
         return 1;
     }
-    
+
     size_t total_size = writer.GetTemplateSize() + payload.size();
     std::cout << "  ✓ 写入完成 (" << total_size << " bytes)\n";
 
     // 6. 可选：UPX 压缩
     if (options.compress) {
         std::cout << "[5/5] UPX 压缩...\n";
-        
+
         UPXCompressor compressor;
         if (!compressor.IsAvailable()) {
             std::cerr << "  ⚠ UPX 不可用，跳过压缩\n";
@@ -523,7 +623,7 @@ int main(int argc, char** argv) {
                 size_t original = compressor.GetOriginalSize();
                 size_t compressed = compressor.GetCompressedSize();
                 int ratio = static_cast<int>((1.0 - static_cast<double>(compressed) / original) * 100);
-                std::cout << "  ✓ 压缩完成: " << (original / 1024) << " KB -> " 
+                std::cout << "  ✓ 压缩完成: " << (original / 1024) << " KB -> "
                           << (compressed / 1024) << " KB (" << ratio << "% 减少)\n";
                 total_size = compressed;
             } else {

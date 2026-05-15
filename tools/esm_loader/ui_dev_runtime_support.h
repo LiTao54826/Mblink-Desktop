@@ -19,6 +19,10 @@ struct RuntimeSupportOptions {
     std::string console_file;
     std::string errors_file;
     std::string lifecycle_file;
+    std::string runtime_epoch;
+    size_t snapshot_max_nodes = 2000;
+    int snapshot_max_depth = 64;
+    std::string snapshot_root_selector;
     float quit_after_seconds = 0.0f;
 };
 

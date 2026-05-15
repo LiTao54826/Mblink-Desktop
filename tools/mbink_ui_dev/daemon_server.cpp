@@ -1,13 +1,17 @@
 #include "daemon_server.h"
+#include "core/api/resource_package.h"
 
 #include <algorithm>
 #include <atomic>
 #include <cctype>
 #include <chrono>
+#include <cstdlib>
 #include <deque>
 #include <fstream>
+#include <iomanip>
 #include <map>
 #include <mutex>
+#include <random>
 #include <sstream>
 #include <thread>
 #include <vector>
@@ -74,6 +78,8 @@ std::filesystem::path GetProjectBuildLogPath(const std::filesystem::path& projec
     return std::filesystem::absolute(project_root / config.out_dir / "build.log");
 }
 
+constexpr uintmax_t kInlineSnapshotMaxBytes = 256 * 1024;
+
 void RemoveFileIfExists(const std::filesystem::path& path) {
     std::error_code ec;
     std::filesystem::remove(path, ec);
@@ -101,7 +107,18 @@ struct WatchContext {
 };
 
 std::mutex g_daemon_mutex;
+std::mutex g_runtime_command_mutex;
+std::atomic<bool> g_daemon_stopping{false};
 WatchContext g_watch;
+
+std::string GenerateRuntimeEpoch() {
+    const auto now = std::chrono::duration_cast<std::chrono::microseconds>(
+        std::chrono::steady_clock::now().time_since_epoch()).count();
+    static thread_local std::mt19937_64 rng(std::random_device{}());
+    std::ostringstream oss;
+    oss << "rt-" << std::hex << now << "-" << rng();
+    return oss.str();
+}
 
 nlohmann::json DefaultWatchState() {
     return nlohmann::json{{"enabled", false}, {"status", "idle"}, {"debounce_ms", 100}, {"changed_paths", nlohmann::json::array()}};
@@ -271,8 +288,10 @@ void RefreshRuntimeStateUnlocked(DaemonState* state) {
     if (lifecycle.is_object()) {
         const auto status = lifecycle.value("status", std::string{});
         const auto reason = lifecycle.value("reason", std::string{});
+        const auto runtime_epoch = lifecycle.value("runtime_epoch", std::string{});
         if (!status.empty()) state->runtime_status = status;
         if (!reason.empty()) state->runtime_stop_reason = reason;
+        if (!runtime_epoch.empty()) state->runtime_epoch = runtime_epoch;
     }
     if (process_running) {
         state->runtime_status = "running";
@@ -294,6 +313,33 @@ void RefreshRuntimeStateUnlocked(DaemonState* state) {
 
 bool RuntimeWasUserClosed(const DaemonState& state) {
     return state.runtime_status == "stopped" && state.runtime_stop_reason == "user_closed";
+}
+
+bool MaterialConfigEquals(const ProjectConfig& a, const ProjectConfig& b) {
+    return a.entry == b.entry &&
+           a.src_dir == b.src_dir &&
+           a.out_dir == b.out_dir &&
+           a.template_name == b.template_name &&
+           a.purpose == b.purpose &&
+           a.runtime == b.runtime &&
+           a.build_builder == b.build_builder &&
+           a.build_jsx_factory == b.build_jsx_factory &&
+           a.build_jsx_fragment == b.build_jsx_fragment &&
+           a.build_external == b.build_external &&
+           a.build_sourcemap == b.build_sourcemap &&
+           a.build_minify == b.build_minify &&
+           a.width == b.width &&
+           a.height == b.height &&
+           a.title == b.title;
+}
+
+void MergeRuntimeFields(DaemonState* state, const DaemonState& source) {
+    if (!state) return;
+    state->runtime_pid = source.runtime_pid;
+    state->runtime_epoch = source.runtime_epoch;
+    state->runtime_status = source.runtime_status;
+    state->runtime_stop_reason = source.runtime_stop_reason;
+    if (source.stopping) state->stopping = true;
 }
 
 bool IsPathInsideRoot(const std::filesystem::path& root, const std::filesystem::path& target) {
@@ -363,6 +409,314 @@ bool WriteFileBytes(const std::filesystem::path& path, const std::string& conten
         return false;
     }
     return true;
+}
+
+uintmax_t FileSizeOrZero(const std::filesystem::path& path) {
+    std::error_code ec;
+    const auto size = std::filesystem::file_size(path, ec);
+    return ec ? 0 : size;
+}
+
+bool SnapshotFileLooksComplete(const std::filesystem::path& path) {
+    std::error_code ec;
+    if (!std::filesystem::exists(path, ec) || std::filesystem::is_directory(path, ec)) return false;
+    const auto size = std::filesystem::file_size(path, ec);
+    if (ec || size == 0) return false;
+
+    std::ifstream ifs(path, std::ios::binary);
+    if (!ifs) return false;
+    const auto probe = static_cast<std::streamoff>(std::min<uintmax_t>(size, 4096));
+    ifs.seekg(-probe, std::ios::end);
+    std::string tail(static_cast<size_t>(probe), '\0');
+    ifs.read(tail.data(), probe);
+    if (!ifs.good() && !ifs.eof()) return false;
+    for (auto it = tail.rbegin(); it != tail.rend(); ++it) {
+        const unsigned char ch = static_cast<unsigned char>(*it);
+        if (ch == ' ' || ch == '\t' || ch == '\r' || ch == '\n') continue;
+        return ch == '}';
+    }
+    return false;
+}
+
+nlohmann::json SnapshotFileMetadata(const std::filesystem::path& snapshot_path, uintmax_t bytes) {
+    return nlohmann::json{{"path", snapshot_path.string()},
+                          {"encoding", "utf8"},
+                          {"mime_type", "application/json"},
+                          {"bytes", bytes}};
+}
+
+bool SnapshotMatchesRuntimeEpoch(const nlohmann::json& snapshot, const DaemonState& state) {
+    if (!snapshot.is_object() || !snapshot.value("ok", false)) return false;
+    const auto snapshot_epoch = snapshot.value("runtime_epoch", std::string{});
+    return !snapshot_epoch.empty() && !state.runtime_epoch.empty() && snapshot_epoch == state.runtime_epoch;
+}
+
+nlohmann::json BuildSnapshotFileResponse(const DaemonState& state,
+                                         const std::filesystem::path& snapshot_path,
+                                         uintmax_t bytes,
+                                         const std::string& note) {
+    return nlohmann::json{{"ok", true},
+                          {"timestamp", CurrentTimestampIso8601()},
+                          {"response_mode", "file"},
+                          {"viewport", {{"width", state.project.width}, {"height", state.project.height}, {"dpr", 1.0}}},
+                          {"screenshot_base64", ""},
+                          {"snapshot", SnapshotFileMetadata(snapshot_path, bytes)},
+                          {"runtime_epoch", state.runtime_epoch},
+                          {"source", snapshot_path.string()},
+                          {"inline_limit_bytes", kInlineSnapshotMaxBytes},
+                          {"note", note}};
+}
+
+nlohmann::json BuildSnapshotResponse(const DaemonState& state,
+                                     const std::filesystem::path& snapshot_path,
+                                     const nlohmann::json& snapshot,
+                                     uintmax_t snapshot_bytes,
+                                     const std::string& response_mode) {
+    if (response_mode == "file") {
+        return BuildSnapshotFileResponse(state,
+                                         snapshot_path,
+                                         snapshot_bytes,
+                                         "snapshot stored on disk; read snapshot.path to avoid large IPC/stdout payloads");
+    }
+    if (response_mode == "auto" && snapshot_bytes > kInlineSnapshotMaxBytes) {
+        return BuildSnapshotFileResponse(state,
+                                         snapshot_path,
+                                         snapshot_bytes,
+                                         "snapshot is large, so response was returned by file path");
+    }
+
+    auto inline_snapshot = snapshot;
+    inline_snapshot["timestamp"] = CurrentTimestampIso8601();
+    inline_snapshot["source"] = snapshot_path.string();
+    inline_snapshot["response_mode"] = "inline";
+    inline_snapshot["snapshot"] = SnapshotFileMetadata(snapshot_path, snapshot_bytes);
+    inline_snapshot["inline_limit_bytes"] = kInlineSnapshotMaxBytes;
+    return inline_snapshot;
+}
+
+bool SnapshotRequestHasCustomOptions(const nlohmann::json& request) {
+    return request.contains("max_nodes") ||
+           request.contains("max_depth") ||
+           request.contains("root_selector");
+}
+
+std::filesystem::path BuildRequestSnapshotPath(const DaemonState& state) {
+    auto path = GetRuntimeSnapshotPath(state);
+    path += "." + GenerateRuntimeEpoch() + ".request.json";
+    return path;
+}
+
+std::string ReadFileTextOrEmpty(const std::filesystem::path& path) {
+    std::string content;
+    std::string error;
+    return ReadFileBytes(path, &content, &error) ? content : std::string{};
+}
+
+std::vector<std::string> SplitProcessLines(const std::string& raw_output) {
+    std::vector<std::string> lines;
+    std::stringstream ss(raw_output);
+    std::string line;
+    while (std::getline(ss, line)) {
+        line = TrimAscii(line);
+        line = SanitizeJsonText(line);
+        if (!line.empty()) lines.push_back(line);
+    }
+    return lines;
+}
+
+struct ProcessRunResult {
+    DWORD exit_code = 1;
+    bool timed_out = false;
+    int duration_ms = 0;
+    std::string raw_output;
+};
+
+bool RunCapturedCommand(const std::string& command,
+                        const std::filesystem::path& cwd,
+                        int timeout_ms,
+                        const std::filesystem::path& capture_path,
+                        ProcessRunResult* result,
+                        std::string* error) {
+    if (result) *result = ProcessRunResult{};
+    std::error_code ec;
+    const auto parent = capture_path.parent_path();
+    if (!parent.empty()) std::filesystem::create_directories(parent, ec);
+    if (ec) {
+        if (error) *error = "failed to create build log directory";
+        return false;
+    }
+
+    SECURITY_ATTRIBUTES sa{sizeof(SECURITY_ATTRIBUTES), nullptr, TRUE};
+    HANDLE output_handle = CreateFileA(capture_path.string().c_str(),
+                                       GENERIC_WRITE,
+                                       FILE_SHARE_READ | FILE_SHARE_WRITE,
+                                       &sa,
+                                       CREATE_ALWAYS,
+                                       FILE_ATTRIBUTE_NORMAL,
+                                       nullptr);
+    if (output_handle == INVALID_HANDLE_VALUE) {
+        if (error) *error = "failed to create build log file";
+        return false;
+    }
+
+    HANDLE input_handle = CreateFileA("NUL",
+                                      GENERIC_READ,
+                                      FILE_SHARE_READ | FILE_SHARE_WRITE,
+                                      &sa,
+                                      OPEN_EXISTING,
+                                      FILE_ATTRIBUTE_NORMAL,
+                                      nullptr);
+    if (input_handle == INVALID_HANDLE_VALUE) {
+        CloseHandle(output_handle);
+        if (error) *error = "failed to open NUL input";
+        return false;
+    }
+
+    STARTUPINFOA si{};
+    PROCESS_INFORMATION pi{};
+    si.cb = sizeof(si);
+    si.dwFlags |= STARTF_USESTDHANDLES;
+    si.hStdInput = input_handle;
+    si.hStdOutput = output_handle;
+    si.hStdError = output_handle;
+
+    std::vector<char> mutable_cmd(command.begin(), command.end());
+    mutable_cmd.push_back('\0');
+
+    const auto started = std::chrono::steady_clock::now();
+    const BOOL created = CreateProcessA(nullptr,
+                                        mutable_cmd.data(),
+                                        nullptr,
+                                        nullptr,
+                                        TRUE,
+                                        CREATE_NO_WINDOW,
+                                        nullptr,
+                                        cwd.string().c_str(),
+                                        &si,
+                                        &pi);
+    CloseHandle(input_handle);
+    CloseHandle(output_handle);
+
+    if (!created) {
+        if (error) *error = "failed to start build command";
+        return false;
+    }
+
+    const DWORD wait_result = WaitForSingleObject(pi.hProcess, static_cast<DWORD>(timeout_ms));
+    DWORD exit_code = 1;
+    bool timed_out = false;
+    if (wait_result == WAIT_TIMEOUT) {
+        timed_out = true;
+        TerminateProcess(pi.hProcess, 1);
+        WaitForSingleObject(pi.hProcess, 5000);
+    }
+    GetExitCodeProcess(pi.hProcess, &exit_code);
+    CloseHandle(pi.hThread);
+    CloseHandle(pi.hProcess);
+
+    if (result) {
+        result->exit_code = timed_out ? 1 : exit_code;
+        result->timed_out = timed_out;
+        result->duration_ms = static_cast<int>(std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::steady_clock::now() - started).count());
+        result->raw_output = ReadFileTextOrEmpty(capture_path);
+        if (timed_out) {
+            result->raw_output += "\nbuild timed out after " + std::to_string(timeout_ms) + "ms";
+        }
+    }
+    return true;
+}
+
+std::string SanitizeArtifactStem(std::string value) {
+    value = TrimAscii(value);
+    for (char& ch : value) {
+        const unsigned char uch = static_cast<unsigned char>(ch);
+        if ((uch >= 'a' && uch <= 'z') || (uch >= 'A' && uch <= 'Z') || (uch >= '0' && uch <= '9') || ch == '-' || ch == '_') continue;
+        ch = '-';
+    }
+    while (!value.empty() && (value.front() == '-' || value.front() == '_')) value.erase(value.begin());
+    while (!value.empty() && (value.back() == '-' || value.back() == '_')) value.pop_back();
+    return value.empty() ? std::string{"mbink-app"} : value;
+}
+
+std::string DetectProjectRuntime(const ProjectConfig& config) {
+    const auto lower = ToLowerAscii(config.template_name);
+    if (lower == "rust" || lower.size() >= 5 && lower.rfind("/rust") == lower.size() - 5) return "rust";
+    if (lower == "go" || lower.size() >= 3 && lower.rfind("/go") == lower.size() - 3) return "go";
+    if (lower == "python" || lower.size() >= 7 && lower.rfind("/python") == lower.size() - 7) return "python";
+    if (!config.runtime.empty() && config.runtime != "unknown") return config.runtime;
+    return "tool";
+}
+
+std::filesystem::path ResourcePackagePath(const std::filesystem::path& project_root, const ProjectConfig& config) {
+    return std::filesystem::absolute(project_root / config.out_dir / "app.mbrp").lexically_normal();
+}
+
+std::filesystem::path ResourceInputDir(const std::filesystem::path& project_root, const ProjectConfig& config) {
+    return std::filesystem::absolute(project_root / config.out_dir / "resource-input").lexically_normal();
+}
+
+bool CopyFileOverwrite(const std::filesystem::path& from, const std::filesystem::path& to, std::string* error) {
+    std::error_code ec;
+    const auto parent = to.parent_path();
+    if (!parent.empty()) std::filesystem::create_directories(parent, ec);
+    if (ec) {
+        if (error) *error = "failed to create output directory";
+        return false;
+    }
+    std::filesystem::copy_file(from, to, std::filesystem::copy_options::overwrite_existing, ec);
+    if (ec) {
+        if (error) *error = "failed to copy " + from.string() + " to " + to.string();
+        return false;
+    }
+    return true;
+}
+
+nlohmann::json CompileResourcePackageStatus(const std::filesystem::path& project_root,
+                                            const ProjectConfig& config,
+                                            const std::filesystem::path& app_bundle,
+                                            std::string* error) {
+    const auto input_dir = ResourceInputDir(project_root, config);
+    const auto output_file = ResourcePackagePath(project_root, config);
+
+    std::error_code ec;
+    if (std::filesystem::exists(input_dir, ec)) {
+        const auto out_dir = std::filesystem::absolute(project_root / config.out_dir).lexically_normal();
+        if (IsPathInsideRoot(out_dir, input_dir)) {
+            std::filesystem::remove_all(input_dir, ec);
+        }
+    }
+    std::filesystem::create_directories(input_dir, ec);
+    if (ec) {
+        if (error) *error = "failed to create resource input directory";
+        return nlohmann::json{{"ok", false}, {"error", error ? *error : ""}};
+    }
+
+    if (!CopyFileOverwrite(app_bundle, input_dir / "app.js", error)) {
+        return nlohmann::json{{"ok", false}, {"error", error ? *error : ""}};
+    }
+    const auto config_path = project_root / "mbink.config.json";
+    if (std::filesystem::exists(config_path, ec)) {
+        std::string ignored;
+        CopyFileOverwrite(config_path, input_dir / "mbink.config.json", &ignored);
+    }
+
+    const auto input_dir_text = input_dir.generic_string();
+    const auto output_file_text = output_file.generic_string();
+    std::string compile_error;
+    if (!mbink::resourcepkg::CompileResources(input_dir_text.c_str(), output_file_text.c_str(), "", compile_error)) {
+        if (compile_error.empty()) compile_error = "resource package build failed";
+        if (error) *error = compile_error;
+        return nlohmann::json{{"ok", false},
+                              {"input_dir", std::filesystem::relative(input_dir, project_root).generic_string()},
+                              {"output", std::filesystem::relative(output_file, project_root).generic_string()},
+                              {"error", error ? *error : ""}};
+    }
+
+    return nlohmann::json{{"ok", true},
+                          {"format", "mbrp"},
+                          {"input_dir", std::filesystem::relative(input_dir, project_root).generic_string()},
+                          {"output", std::filesystem::relative(output_file, project_root).generic_string()}};
 }
 
 std::string Base64Encode(const std::string& input) {
@@ -492,6 +846,15 @@ bool RequestRuntimeCommand(const DaemonState& state,
                            nlohmann::json command,
                            nlohmann::json* response,
                            std::string* error) {
+    if (g_daemon_stopping.load()) {
+        if (error) *error = "shutdown_in_progress";
+        return false;
+    }
+    std::unique_lock<std::mutex> runtime_lock(g_runtime_command_mutex);
+    if (g_daemon_stopping.load()) {
+        if (error) *error = "shutdown_in_progress";
+        return false;
+    }
     const auto command_path = GetRuntimeCommandPath(state);
     const auto response_path = GetRuntimeResponsePath(state);
     const std::string type = command.value("type", "command");
@@ -500,6 +863,7 @@ bool RequestRuntimeCommand(const DaemonState& state,
             std::chrono::steady_clock::now().time_since_epoch()).count());
 
     command["id"] = request_id;
+    if (!state.runtime_epoch.empty()) command["runtime_epoch"] = state.runtime_epoch;
     RemoveFileIfExists(command_path);
     RemoveFileIfExists(response_path);
 
@@ -510,6 +874,10 @@ bool RequestRuntimeCommand(const DaemonState& state,
 
     const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(8);
     while (std::chrono::steady_clock::now() < deadline) {
+        if (g_daemon_stopping.load()) {
+            if (error) *error = "shutdown_in_progress";
+            return false;
+        }
         if (!IsProcessRunning(runtime_pid)) {
             if (error) *error = "runtime 已退出，请求中断";
             return false;
@@ -572,6 +940,17 @@ std::string ExtractRuntimeCommandMessage(const nlohmann::json& response, const s
     return fallback;
 }
 
+nlohmann::json RuntimeCommandErrorResponse(const std::string& fallback_code, const std::string& message) {
+    if (message == "runtime_command_timeout" || message.find("超时") != std::string::npos ||
+        message.find("timeout") != std::string::npos) {
+        return ErrorResponse("runtime_command_timeout", message.empty() ? "runtime command timed out" : message);
+    }
+    if (message == "shutdown_in_progress") {
+        return ErrorResponse("shutdown_in_progress", "runtime is shutting down");
+    }
+    return ErrorResponse(fallback_code, message);
+}
+
 std::filesystem::path ResolveReloadBundlePath(const std::filesystem::path& root, const ProjectConfig& project) {
     const auto built_bundle = std::filesystem::absolute(root / project.out_dir / "App.js").lexically_normal();
     std::error_code ec;
@@ -584,15 +963,19 @@ nlohmann::json ReloadRuntimeBundleOrRestart(const std::filesystem::path& root, D
     const auto bundle_path = ResolveReloadBundlePath(root, state->project);
     nlohmann::json runtime_response;
     std::string reload_error;
+    RemoveFileIfExists(GetRuntimeSnapshotPath(*state));
 
     if (state->runtime_pid > 0 && IsProcessRunning(state->runtime_pid)) {
         if (RequestRuntimeReloadBundle(*state, state->runtime_pid, bundle_path, &runtime_response, &reload_error) &&
             runtime_response.value("ok", false)) {
+            const auto next_epoch = runtime_response.value("runtime_epoch", std::string{});
+            if (!next_epoch.empty()) state->runtime_epoch = next_epoch;
             state->runtime_status = "running";
             state->runtime_stop_reason = "running";
             return nlohmann::json{{"ok", true},
                                   {"mode", "reload_bundle"},
                                   {"fallback", false},
+                                  {"runtime_epoch", state->runtime_epoch},
                                   {"bundle_path", bundle_path.string()},
                                   {"response", runtime_response}};
         }
@@ -616,6 +999,7 @@ nlohmann::json ReloadRuntimeBundleOrRestart(const std::filesystem::path& root, D
         return nlohmann::json{{"ok", true},
                               {"mode", "restart_runtime"},
                               {"fallback", true},
+                              {"runtime_epoch", state->runtime_epoch},
                               {"bundle_path", bundle_path.string()},
                               {"message", reload_error.empty() ? "in-place reload 失败，已回退 restart_runtime" : reload_error},
                               {"response", runtime_response}};
@@ -754,6 +1138,60 @@ std::filesystem::path FindEsbuildExecutable(const std::filesystem::path& project
     return {};
 }
 
+bool SourceLooksLikeJsx(const std::filesystem::path& file_path) {
+    const auto lower_ext = ToLowerAscii(file_path.extension().string());
+    if (lower_ext == ".jsx" || lower_ext == ".tsx") return true;
+    if (lower_ext != ".js" && lower_ext != ".mjs" && lower_ext != ".ts") return false;
+
+    std::ifstream ifs(file_path, std::ios::binary);
+    if (!ifs) return false;
+    std::string source((std::istreambuf_iterator<char>(ifs)), std::istreambuf_iterator<char>());
+    if (source.find("</") != std::string::npos) return true;
+    for (size_t i = 0; i + 1 < source.size(); ++i) {
+        if (source[i] != '<') continue;
+        const char next = source[i + 1];
+        if ((next >= 'A' && next <= 'Z') || (next >= 'a' && next <= 'z') || next == '>') {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool ProjectRequiresJsxBuild(const std::filesystem::path& project_root, const ProjectConfig& config) {
+    if (config.template_name == "preact-jsx" || config.template_name == "preact-ts") return true;
+    if (config.template_name == "minimal/tool" || config.template_name == "minimal/python" ||
+        config.template_name == "minimal/rust" || config.template_name == "minimal/go" ||
+        config.template_name == "showcase/tool" || config.template_name == "showcase/python" ||
+        config.template_name == "showcase/rust" || config.template_name == "showcase/go" ||
+        config.template_name == "desktop-app/tool" || config.template_name == "desktop-app/python" ||
+        config.template_name == "desktop-app/rust" || config.template_name == "desktop-app/go") return true;
+
+    const auto entry_path = std::filesystem::absolute(project_root / config.entry).lexically_normal();
+    if (SourceLooksLikeJsx(entry_path)) return true;
+
+    const auto scan_root = std::filesystem::absolute(project_root / config.src_dir).lexically_normal();
+    std::error_code ec;
+    if (!std::filesystem::exists(scan_root, ec) || !std::filesystem::is_directory(scan_root, ec)) return false;
+
+    size_t scanned = 0;
+    for (std::filesystem::recursive_directory_iterator it(scan_root, ec), end; !ec && it != end && scanned < 64; it.increment(ec)) {
+        if (!it->is_regular_file(ec)) continue;
+        const auto ext = ToLowerAscii(it->path().extension().string());
+        if (ext != ".js" && ext != ".mjs" && ext != ".jsx" && ext != ".ts" && ext != ".tsx") continue;
+        ++scanned;
+        if (SourceLooksLikeJsx(it->path())) return true;
+    }
+    return false;
+}
+
+bool ShouldBuildBeforeRun(const std::filesystem::path& project_root, const ProjectConfig& config) {
+    const auto entry_path = std::filesystem::absolute(project_root / config.entry).lexically_normal();
+    const auto ext = ToLowerAscii(entry_path.extension().string());
+    if (ext == ".jsx" || ext == ".tsx" || ext == ".ts") return true;
+    return ProjectRequiresJsxBuild(project_root, config);
+}
+
+
 std::filesystem::path DetectBuildEntryPoint(const std::filesystem::path& project_root, const ProjectConfig& config) {
     const std::vector<std::filesystem::path> preferred_candidates = {
         project_root / config.src_dir / "App.jsx",
@@ -764,7 +1202,13 @@ std::filesystem::path DetectBuildEntryPoint(const std::filesystem::path& project
         project_root / config.src_dir / "main.tsx",
         project_root / config.src_dir / "index.tsx"
     };
-    if (config.template_name == "preact-jsx" || config.template_name == "preact-ts") {
+    if (config.template_name == "preact-jsx" || config.template_name == "preact-ts" ||
+        config.template_name == "minimal/tool" || config.template_name == "minimal/python" ||
+        config.template_name == "minimal/rust" || config.template_name == "minimal/go" ||
+        config.template_name == "showcase/tool" || config.template_name == "showcase/python" ||
+        config.template_name == "showcase/rust" || config.template_name == "showcase/go" ||
+        config.template_name == "desktop-app/tool" || config.template_name == "desktop-app/python" ||
+        config.template_name == "desktop-app/rust" || config.template_name == "desktop-app/go") {
         for (const auto& candidate : preferred_candidates) {
             std::error_code ec;
             if (std::filesystem::exists(candidate, ec) && std::filesystem::is_regular_file(candidate, ec)) {
@@ -839,10 +1283,12 @@ nlohmann::json BuildEsbuildStatus(const std::filesystem::path& project_root, con
                                " --bundle --format=esm --outfile=" + QuoteForCmd(output_file.string()) +
                                " --jsx=transform --jsx-factory=" + QuoteForCmd(config.build_jsx_factory) +
                                " --jsx-fragment=" + QuoteForCmd(config.build_jsx_fragment) +
+                               " --loader:.js=jsx --loader:.mjs=jsx" +
                                (config.build_sourcemap ? " --sourcemap=inline" : " --sourcemap=false") +
                                (config.build_minify ? " --minify" : "") +
                                " --color=false --log-level=info --log-limit=0";
     for (const auto& ext : config.build_external) {
+        if (ext.empty()) continue;
         esbuild_args += " --external:" + QuoteForCmd(ext);
     }
     std::string command;
@@ -926,6 +1372,7 @@ nlohmann::json BuildEsbuildStatus(const std::filesystem::path& project_root, con
     nlohmann::json status{{"ok", exit_code == 0},
                           {"status", exit_code == 0 ? "success" : "failed"},
                           {"builder", "esbuild"},
+                          {"pipeline", "mbink-ui-dev"},
                           {"started_at", started_iso},
                           {"finished_at", finished_iso},
                           {"duration_ms", duration_ms},
@@ -936,8 +1383,325 @@ nlohmann::json BuildEsbuildStatus(const std::filesystem::path& project_root, con
                           {"errors", errors},
                           {"raw_output", lines},
                           {"build_log", build_log_path.string()}};
+    if (exit_code == 0) {
+        std::string package_error;
+        auto package_status = CompileResourcePackageStatus(project_root, config, output_file, &package_error);
+        status["resource_package"] = package_status;
+        if (package_status.value("ok", false)) {
+            const auto package_rel = package_status.value("output", std::string{});
+            if (!package_rel.empty()) status["outputs"].push_back(package_rel);
+        } else {
+            status["ok"] = false;
+            status["status"] = "failed";
+            status["errors"].push_back({{"message", package_error.empty() ? "resource package build failed" : package_error}});
+            if (error) *error = package_error.empty() ? "resource package build failed" : package_error;
+        }
+    }
     WriteJsonFile(build_log_path, status);
     return status;
+}
+
+std::filesystem::path FindExecutableOnPath(const std::vector<std::string>& names) {
+    std::vector<std::filesystem::path> candidates;
+    for (const auto& name : names) candidates.emplace_back(name);
+    const char* path_env = std::getenv("PATH");
+    if (path_env && *path_env) {
+        std::stringstream ss(path_env);
+        std::string segment;
+        while (std::getline(ss, segment, ';')) {
+            segment = TrimAscii(segment);
+            if (segment.empty()) continue;
+            for (const auto& name : names) candidates.emplace_back(std::filesystem::path(segment) / name);
+        }
+    }
+    for (const auto& candidate : candidates) {
+        std::error_code ec;
+        if (std::filesystem::exists(candidate, ec) && !std::filesystem::is_directory(candidate, ec)) {
+            return std::filesystem::absolute(candidate, ec).lexically_normal();
+        }
+    }
+    return {};
+}
+
+std::filesystem::path FindMbinkRuntimeLibrary(const std::filesystem::path& project_root) {
+    const auto exe_dir = GetCurrentExecutablePath().parent_path();
+    const std::vector<std::filesystem::path> candidates = {
+        exe_dir / "mbink.dll",
+        project_root / "rust_host" / "vendor" / "mbink-sys" / "runtime" / "mbink.dll",
+        project_root / ".mbink" / "mbink-go" / "mbink.dll",
+        project_root / "vendor" / "mbink-go" / "mbink.dll",
+        project_root / "vendor" / "mbink" / "bin" / "mbink.dll"
+    };
+    for (const auto& candidate : candidates) {
+        std::error_code ec;
+        if (std::filesystem::exists(candidate, ec) && !std::filesystem::is_directory(candidate, ec)) {
+            return std::filesystem::absolute(candidate, ec).lexically_normal();
+        }
+    }
+    return {};
+}
+
+nlohmann::json BuildStepFromProcess(const std::string& name,
+                                    const std::string& command,
+                                    const std::filesystem::path& cwd,
+                                    int timeout_ms,
+                                    const std::filesystem::path& log_path,
+                                    std::string* error) {
+    const auto started_iso = CurrentTimestampIso8601();
+    ProcessRunResult run;
+    std::string start_error;
+    if (!RunCapturedCommand(command, cwd, timeout_ms, log_path, &run, &start_error)) {
+        if (error) *error = start_error;
+        return nlohmann::json{{"ok", false},
+                              {"name", name},
+                              {"started_at", started_iso},
+                              {"finished_at", CurrentTimestampIso8601()},
+                              {"duration_ms", 0},
+                              {"exit_code", 1},
+                              {"errors", nlohmann::json::array({{{"message", start_error}}})},
+                              {"raw_output", nlohmann::json::array()},
+                              {"log", log_path.string()}};
+    }
+
+    auto lines = SplitProcessLines(run.raw_output);
+    nlohmann::json errors = nlohmann::json::array();
+    nlohmann::json warnings = nlohmann::json::array();
+    for (const auto& item : lines) {
+        const auto lower = ToLowerAscii(item);
+        if (lower.find("warning") != std::string::npos) warnings.push_back({{"message", item}});
+        if (lower.find("error") != std::string::npos || lower.find("failed") != std::string::npos) errors.push_back({{"message", item}});
+    }
+    if (run.exit_code != 0 && errors.empty()) {
+        errors.push_back({{"message", name + " failed with exit code " + std::to_string(run.exit_code)}});
+    }
+    if (run.timed_out) {
+        errors.push_back({{"message", name + " timed out"}});
+    }
+    if (run.exit_code != 0 && error) {
+        *error = errors.empty() ? name + " failed" : errors.front().value("message", name + " failed");
+    }
+    return nlohmann::json{{"ok", run.exit_code == 0},
+                          {"name", name},
+                          {"started_at", started_iso},
+                          {"finished_at", CurrentTimestampIso8601()},
+                          {"duration_ms", run.duration_ms},
+                          {"exit_code", run.exit_code},
+                          {"timed_out", run.timed_out},
+                          {"warnings", warnings},
+                          {"errors", errors},
+                          {"raw_output", lines},
+                          {"log", log_path.string()}};
+}
+
+bool CopyRuntimeDllToFinal(const std::filesystem::path& project_root,
+                           const std::filesystem::path& final_dir,
+                           nlohmann::json* outputs,
+                           std::string* error) {
+    const auto runtime = FindMbinkRuntimeLibrary(project_root);
+    if (runtime.empty()) {
+        if (error) *error = "mbink.dll not found for final artifact";
+        return false;
+    }
+    const auto target = final_dir / runtime.filename();
+    if (!CopyFileOverwrite(runtime, target, error)) return false;
+    if (outputs) outputs->push_back(std::filesystem::relative(target, project_root).generic_string());
+    return true;
+}
+
+bool PrepareEmbeddedResourceFile(const std::filesystem::path& resource_package,
+                                 const std::filesystem::path& project_root,
+                                 const std::filesystem::path& target,
+                                 nlohmann::json* outputs,
+                                 std::string* error) {
+    if (resource_package.empty() || !std::filesystem::exists(resource_package)) {
+        if (error) *error = "resource package is missing";
+        return false;
+    }
+    if (!CopyFileOverwrite(resource_package, target, error)) return false;
+    if (outputs) outputs->push_back(std::filesystem::relative(target, project_root).generic_string());
+    return true;
+}
+
+nlohmann::json BuildRustHostArtifact(const std::filesystem::path& project_root,
+                                     const ProjectConfig& config,
+                                     const std::filesystem::path& resource_package,
+                                     std::string* error) {
+    const auto manifest = project_root / "rust_host" / "Cargo.toml";
+    if (!std::filesystem::exists(manifest)) {
+        if (error) *error = "rust_host/Cargo.toml not found";
+        return nlohmann::json{{"ok", false}, {"runtime", "rust"}, {"error", error ? *error : ""}};
+    }
+    const auto cargo = FindExecutableOnPath({"cargo.exe", "cargo"});
+    if (cargo.empty()) {
+        if (error) *error = "cargo not found in PATH";
+        return nlohmann::json{{"ok", false}, {"runtime", "rust"}, {"error", error ? *error : ""}};
+    }
+
+    const auto out_dir = std::filesystem::absolute(project_root / config.out_dir).lexically_normal();
+    const auto final_dir = out_dir / "final";
+    nlohmann::json outputs = nlohmann::json::array();
+    if (!PrepareEmbeddedResourceFile(resource_package, project_root, project_root / "rust_host" / "resources" / "app.mbrp", &outputs, error)) {
+        return nlohmann::json{{"ok", false}, {"runtime", "rust"}, {"error", error ? *error : ""}};
+    }
+
+    const std::string command = QuoteForCmd(cargo.string()) + " build --release --manifest-path " + QuoteForCmd(manifest.string());
+    auto step = BuildStepFromProcess("cargo build --release", command, project_root, 180000, out_dir / "cargo-build.log", error);
+    nlohmann::json status{{"ok", step.value("ok", false)},
+                          {"runtime", "rust"},
+                          {"builder", "cargo"},
+                          {"embedded_resource", std::filesystem::relative(project_root / "rust_host" / "resources" / "app.mbrp", project_root).generic_string()},
+                          {"steps", nlohmann::json::array({step})},
+                          {"outputs", outputs}};
+    if (!step.value("ok", false)) return status;
+
+    const std::string stem = SanitizeArtifactStem(config.name);
+    const auto built_exe = project_root / "rust_host" / "target" / "release" / "mbink-template-rust.exe";
+    const auto final_exe = final_dir / (stem + ".exe");
+    if (!CopyFileOverwrite(built_exe, final_exe, error)) {
+        status["ok"] = false;
+        status["error"] = error ? *error : "failed to copy rust artifact";
+        return status;
+    }
+    status["outputs"].push_back(std::filesystem::relative(final_exe, project_root).generic_string());
+    if (!CopyRuntimeDllToFinal(project_root, final_dir, &status["outputs"], error)) {
+        status["ok"] = false;
+        status["error"] = error ? *error : "failed to copy mbink.dll";
+        return status;
+    }
+    status["host_artifact"] = std::filesystem::relative(final_exe, project_root).generic_string();
+    return status;
+}
+
+nlohmann::json BuildGoHostArtifact(const std::filesystem::path& project_root,
+                                   const ProjectConfig& config,
+                                   const std::filesystem::path& resource_package,
+                                   std::string* error) {
+    const auto main_go = project_root / "host" / "main.go";
+    if (!std::filesystem::exists(main_go)) {
+        if (error) *error = "host/main.go not found";
+        return nlohmann::json{{"ok", false}, {"runtime", "go"}, {"error", error ? *error : ""}};
+    }
+    const auto go = FindExecutableOnPath({"go.exe", "go"});
+    if (go.empty()) {
+        if (error) *error = "go not found in PATH";
+        return nlohmann::json{{"ok", false}, {"runtime", "go"}, {"error", error ? *error : ""}};
+    }
+
+    const auto out_dir = std::filesystem::absolute(project_root / config.out_dir).lexically_normal();
+    const auto final_dir = out_dir / "final";
+    const std::string stem = SanitizeArtifactStem(config.name);
+    const auto final_exe = final_dir / (stem + ".exe");
+    nlohmann::json outputs = nlohmann::json::array();
+    if (!PrepareEmbeddedResourceFile(resource_package, project_root, project_root / "host" / "resources" / "app.mbrp", &outputs, error)) {
+        return nlohmann::json{{"ok", false}, {"runtime", "go"}, {"error", error ? *error : ""}};
+    }
+
+    std::error_code ec;
+    std::filesystem::create_directories(final_dir, ec);
+    if (ec) {
+        if (error) *error = "failed to create final output directory";
+        return nlohmann::json{{"ok", false}, {"runtime", "go"}, {"error", error ? *error : ""}};
+    }
+
+    const std::string command = "cmd.exe /d /c set CGO_ENABLED=1&& " + QuoteForCmd(go.string()) +
+                                " build -mod=mod -o " + QuoteForCmd(final_exe.string()) + " ./host";
+    auto step = BuildStepFromProcess("go build", command, project_root, 180000, out_dir / "go-build.log", error);
+    nlohmann::json status{{"ok", step.value("ok", false)},
+                          {"runtime", "go"},
+                          {"builder", "go"},
+                          {"embedded_resource", std::filesystem::relative(project_root / "host" / "resources" / "app.mbrp", project_root).generic_string()},
+                          {"steps", nlohmann::json::array({step})},
+                          {"outputs", outputs}};
+    if (!step.value("ok", false)) return status;
+    status["outputs"].push_back(std::filesystem::relative(final_exe, project_root).generic_string());
+    if (!CopyRuntimeDllToFinal(project_root, final_dir, &status["outputs"], error)) {
+        status["ok"] = false;
+        status["error"] = error ? *error : "failed to copy mbink.dll";
+        return status;
+    }
+    status["host_artifact"] = std::filesystem::relative(final_exe, project_root).generic_string();
+    return status;
+}
+
+nlohmann::json BuildPythonHostArtifact(const std::filesystem::path& project_root,
+                                       const ProjectConfig& config,
+                                       const std::filesystem::path& resource_package,
+                                       std::string* error) {
+    const auto main_py = project_root / "host" / "main.py";
+    if (!std::filesystem::exists(main_py)) {
+        if (error) *error = "host/main.py not found";
+        return nlohmann::json{{"ok", false}, {"runtime", "python"}, {"error", error ? *error : ""}};
+    }
+    const auto python = FindExecutableOnPath({"python.exe", "py.exe", "python"});
+    if (python.empty()) {
+        if (error) *error = "python not found in PATH";
+        return nlohmann::json{{"ok", false}, {"runtime", "python"}, {"error", error ? *error : ""}};
+    }
+
+    const auto out_dir = std::filesystem::absolute(project_root / config.out_dir).lexically_normal();
+    const auto final_dir = out_dir / "final";
+    const auto resource_copy = project_root / "host" / "resources" / "app.mbrp";
+    nlohmann::json outputs = nlohmann::json::array();
+    if (!PrepareEmbeddedResourceFile(resource_package, project_root, resource_copy, &outputs, error)) {
+        return nlohmann::json{{"ok", false}, {"runtime", "python"}, {"error", error ? *error : ""}};
+    }
+
+    const auto dll_path = project_root / "vendor" / "mbink" / "bin" / "mbink.dll";
+    if (!std::filesystem::exists(dll_path)) {
+        if (error) *error = "vendor/mbink/bin/mbink.dll not found";
+        return nlohmann::json{{"ok", false}, {"runtime", "python"}, {"error", error ? *error : ""}};
+    }
+
+    const std::string stem = SanitizeArtifactStem(config.name);
+    const auto python_cmd = ToLowerAscii(python.filename().string()) == "py.exe"
+        ? QuoteForCmd(python.string()) + " -3"
+        : QuoteForCmd(python.string());
+    const std::string command =
+        python_cmd + " -m PyInstaller --noconfirm --clean --onefile --name " + QuoteForCmd(stem) +
+        " --distpath " + QuoteForCmd(final_dir.string()) +
+        " --workpath " + QuoteForCmd((out_dir / "pyinstaller-work").string()) +
+        " --specpath " + QuoteForCmd((out_dir / "pyinstaller-spec").string()) +
+        " --paths " + QuoteForCmd((project_root / "vendor").string()) +
+        " --add-data " + QuoteForCmd(resource_copy.string() + ";resources") +
+        " --add-binary " + QuoteForCmd(dll_path.string() + ";mbink/bin") +
+        " " + QuoteForCmd(main_py.string());
+
+    auto step = BuildStepFromProcess("python -m PyInstaller", command, project_root, 240000, out_dir / "pyinstaller.log", error);
+    const auto final_exe = final_dir / (stem + ".exe");
+    nlohmann::json status{{"ok", step.value("ok", false) && std::filesystem::exists(final_exe)},
+                          {"runtime", "python"},
+                          {"builder", "pyinstaller"},
+                          {"embedded_resource", std::filesystem::relative(resource_copy, project_root).generic_string()},
+                          {"steps", nlohmann::json::array({step})},
+                          {"outputs", outputs}};
+    if (!status.value("ok", false)) {
+        if (error && error->empty()) *error = "PyInstaller did not produce the expected exe";
+        status["error"] = error ? *error : "PyInstaller failed";
+        return status;
+    }
+    status["outputs"].push_back(std::filesystem::relative(final_exe, project_root).generic_string());
+    status["host_artifact"] = std::filesystem::relative(final_exe, project_root).generic_string();
+    return status;
+}
+
+nlohmann::json BuildHostArtifactStatus(const std::filesystem::path& project_root,
+                                       const ProjectConfig& config,
+                                       std::string* error) {
+    const auto runtime = DetectProjectRuntime(config);
+    if (runtime == "tool") {
+        return nlohmann::json{{"ok", true},
+                              {"runtime", runtime},
+                              {"status", "skipped"},
+                              {"message", "tool runtime only needs the compiled resource package"}};
+    }
+
+    const auto package = ResourcePackagePath(project_root, config);
+    if (runtime == "rust") return BuildRustHostArtifact(project_root, config, package, error);
+    if (runtime == "go") return BuildGoHostArtifact(project_root, config, package, error);
+    if (runtime == "python") return BuildPythonHostArtifact(project_root, config, package, error);
+
+    if (error) *error = "unsupported host runtime: " + runtime;
+    return nlohmann::json{{"ok", false}, {"runtime", runtime}, {"error", error ? *error : ""}};
 }
 
 bool StartDetachedProcess(const std::filesystem::path& exe, const std::string& args,
@@ -1016,13 +1780,13 @@ bool StartRuntime(const std::filesystem::path& root, DaemonState* state, std::st
         return false;
     }
     std::filesystem::path entry = std::filesystem::absolute(root / state->project.entry);
-    if (state->project.template_name == "preact-ts") {
+    if (ShouldBuildBeforeRun(root, state->project)) {
         std::string build_error;
         auto build_status = BuildEsbuildStatus(root, state->project, &build_error);
         if (!build_status.is_object()) {
             build_status = nlohmann::json{{"ok", false},
                                           {"status", "failed"},
-                                          {"errors", nlohmann::json::array({{{"message", build_error.empty() ? "preact-ts 运行前构建失败" : build_error}}})},
+                                          {"errors", nlohmann::json::array({{{"message", build_error.empty() ? "JSX/TS 运行前构建失败" : build_error}}})},
                                           {"warnings", nlohmann::json::array()},
                                           {"raw_output", nlohmann::json::array()}};
         }
@@ -1031,7 +1795,7 @@ bool StartRuntime(const std::filesystem::path& root, DaemonState* state, std::st
             state->runtime_pid = 0;
             state->runtime_status = "stopped";
             state->runtime_stop_reason = "build_failed";
-            if (error) *error = build_error.empty() ? "preact-ts 运行前构建失败" : build_error;
+            if (error) *error = build_error.empty() ? "JSX/TS 运行前构建失败" : build_error;
             return false;
         }
         entry = std::filesystem::absolute(root / state->project.out_dir / "App.js");
@@ -1053,6 +1817,8 @@ bool StartRuntime(const std::filesystem::path& root, DaemonState* state, std::st
     const auto lifecycle_path = GetRuntimeLifecyclePath(*state);
 
     RemoveRuntimeArtifacts(*state);
+    state->runtime_epoch = GenerateRuntimeEpoch();
+    state->stopping = false;
     state->runtime_status = "starting";
     state->runtime_stop_reason = "starting";
 
@@ -1064,7 +1830,10 @@ bool StartRuntime(const std::filesystem::path& root, DaemonState* state, std::st
                        " --ui-dev-response-file \"" + response_path.string() + "\"" +
                        " --ui-dev-console-file \"" + console_path.string() + "\"" +
                        " --ui-dev-errors-file \"" + errors_path.string() + "\"" +
-                       " --ui-dev-lifecycle-file \"" + lifecycle_path.string() + "\"";
+                       " --ui-dev-lifecycle-file \"" + lifecycle_path.string() + "\"" +
+                       " --ui-dev-runtime-epoch \"" + state->runtime_epoch + "\"" +
+                       " --ui-dev-snapshot-max-nodes 2000" +
+                       " --ui-dev-snapshot-max-depth 64";
     if (!StartDetachedProcess(runtime_exe, args, root, &stdout_path, &stderr_path, &state->runtime_pid, error)) {
         state->runtime_pid = 0;
         state->runtime_status = "stopped";
@@ -1080,6 +1849,7 @@ bool StartRuntime(const std::filesystem::path& root, DaemonState* state, std::st
     }
     state->runtime_status = "running";
     state->runtime_stop_reason = "running";
+    state->stopping = false;
     return true;
 }
 
@@ -1149,10 +1919,20 @@ void WatchLoop(DaemonState* state) {
             }
             build_status["trigger"] = "watch";
             build_status["changed_paths"] = changed_paths;
-            std::lock_guard<std::mutex> lock(g_daemon_mutex);
+            std::unique_lock<std::mutex> lock(g_daemon_mutex);
             RefreshRuntimeStateUnlocked(state);
             if (build_status.value("ok", false) && !RuntimeWasUserClosed(*state)) {
-                build_status["reload"] = ReloadRuntimeBundleOrRestart(root, state);
+                DaemonState command_state = *state;
+                lock.unlock();
+                auto reload = ReloadRuntimeBundleOrRestart(root, &command_state);
+                lock.lock();
+                if (state->project_id == command_state.project_id &&
+                    state->project_root == command_state.project_root) {
+                    MergeRuntimeFields(state, command_state);
+                    build_status["reload"] = std::move(reload);
+                } else {
+                    build_status["reload"] = ErrorResponse("state_changed", "daemon state changed while watch reload was running");
+                }
             } else if (RuntimeWasUserClosed(*state)) {
                 build_status["reload"] = nlohmann::json{{"ok", false}, {"mode", "user_closed"}, {"fallback", false}, {"message", "runtime 已被用户手动关闭，watch 不会自动拉起"}};
             }
@@ -1174,12 +1954,42 @@ void EnsureWatchThreadStarted(DaemonState* state) {
 void StopWatchThread() {
     g_watch.stop_requested = true;
     if (g_watch.worker.joinable()) g_watch.worker.join();
-    std::lock_guard<std::mutex> lock(g_daemon_mutex);
+    std::unique_lock<std::mutex> lock(g_daemon_mutex);
     ResetWatchUnlocked();
 }
 
 }  // namespace
 #endif
+
+nlohmann::json HandleConnectedPipeRequest(HANDLE pipe, DaemonState* state, std::atomic<bool>* should_exit) {
+    std::string raw_request;
+    std::string read_error;
+    nlohmann::json response = ErrorResponse("invalid_request", "request parse failed");
+    bool request_should_exit = false;
+    if (ReadPipeMessage(pipe, &raw_request, &read_error)) {
+        try {
+            response = DispatchDaemonRequest(nlohmann::json::parse(raw_request), state, &request_should_exit);
+        } catch (const std::exception& e) {
+            response = ErrorResponse("internal_error", e.what());
+        } catch (...) {
+            response = ErrorResponse("internal_error", "unknown internal exception");
+        }
+    } else if (!read_error.empty()) {
+        response = ErrorResponse("invalid_request", read_error);
+    }
+    if (request_should_exit && should_exit) should_exit->store(true);
+    return response;
+}
+
+void ServeConnectedPipe(HANDLE pipe, DaemonState* state, std::atomic<bool>* should_exit) {
+    const auto response = HandleConnectedPipeRequest(pipe, state, should_exit);
+    const auto payload = response.dump();
+    DWORD written = 0;
+    WriteFile(pipe, payload.data(), static_cast<DWORD>(payload.size()), &written, nullptr);
+    FlushFileBuffers(pipe);
+    DisconnectNamedPipe(pipe);
+    CloseHandle(pipe);
+}
 
 bool StartDetachedDaemon(const std::filesystem::path& executable_path,
                          const std::string& project_root,
@@ -1202,11 +2012,22 @@ nlohmann::json DispatchDaemonRequest(const nlohmann::json& request, DaemonState*
     const auto cmd = request.value("cmd", "");
     if (cmd == "ping") return OkResponse();
     if (cmd == "stop") {
+        g_daemon_stopping.store(true);
+        {
+            std::lock_guard<std::mutex> lock(g_daemon_mutex);
+            state->stopping = true;
+            state->running = false;
+            state->runtime_status = "stopping";
+            if (state->runtime_stop_reason.empty() || state->runtime_stop_reason == "running" || state->runtime_stop_reason == "starting") {
+                state->runtime_stop_reason = "daemon_stopping";
+            }
+            std::string save_error;
+            SaveState(*state, &save_error);
+        }
         StopWatchThread();
         std::lock_guard<std::mutex> lock(g_daemon_mutex);
         std::string error;
         *should_exit = true;
-        state->running = false;
 #ifdef _WIN32
         if (state->runtime_pid > 0 && IsProcessRunning(state->runtime_pid)) StopProcess(state->runtime_pid);
 #endif
@@ -1221,27 +2042,50 @@ nlohmann::json DispatchDaemonRequest(const nlohmann::json& request, DaemonState*
         return nlohmann::json{{"ok", true}, {"stopped", true}};
     }
 
-    std::lock_guard<std::mutex> lock(g_daemon_mutex);
+    std::unique_lock<std::mutex> lock(g_daemon_mutex);
     RefreshRuntimeStateUnlocked(state);
     if (cmd == "status") return nlohmann::json{{"ok", true}, {"daemon", StateToJson(*state)}};
     if (cmd == "open") {
         std::string error;
         const auto root = std::filesystem::absolute(request.value("project_root", state->project_root));
+        const bool force = request.value("force", false);
         if (!std::filesystem::exists(root)) return ErrorResponse("project_not_found", "项目目录不存在");
         ProjectIdentity identity;
         if (!EnsureProjectIdentity(root, &identity, &error)) return ErrorResponse("project_identity_failed", error);
+        const auto loaded_project = LoadProjectConfig(root, &error);
+        if (!error.empty()) return ErrorResponse("project_config_error", error);
+        const auto normalized_current_root = state->project_root.empty()
+            ? std::filesystem::path{}
+            : std::filesystem::absolute(std::filesystem::path(state->project_root)).lexically_normal();
+        const auto normalized_next_root = std::filesystem::absolute(root).lexically_normal();
+        const bool same_project = state->project_id == identity.project_id &&
+                                  normalized_current_root == normalized_next_root;
+        const bool runtime_alive = state->runtime_pid > 0 && IsProcessRunning(state->runtime_pid);
+        const bool same_config = MaterialConfigEquals(state->project, loaded_project);
+        if (!force && same_project && runtime_alive && same_config) {
+            state->running = true;
+            state->runtime_id = identity.runtime_id;
+            state->runtime_status = "running";
+            state->runtime_stop_reason = "running";
+            state->stopping = false;
+            if (!SaveState(*state, &error)) return ErrorResponse("state_write_failed", error);
+            return nlohmann::json{{"ok", true},
+                                  {"project", ProjectToJson(root, state->project)},
+                                  {"runtime_status", "runtime_reused"},
+                                  {"reused", true},
+                                  {"daemon", StateToJson(*state)}};
+        }
         state->running = true;
         state->project_id = identity.project_id;
         state->runtime_id = identity.runtime_id;
         state->project_root = root.string();
-        state->project = LoadProjectConfig(root, &error);
-        if (!error.empty()) return ErrorResponse("project_config_error", error);
+        state->project = loaded_project;
         state->last_build = nlohmann::json{{"ok", true}, {"status", "not_built"}};
         ConfigureWatchUnlocked(*state, false);
         state->watch = DefaultWatchState();
         if (!StartRuntime(root, state, &error)) return ErrorResponse("runtime_start_failed", error);
         if (!SaveState(*state, &error)) return ErrorResponse("state_write_failed", error);
-        return nlohmann::json{{"ok", true}, {"project", ProjectToJson(root, state->project)}, {"runtime_status", "runtime_started"}, {"daemon", StateToJson(*state)}};
+        return nlohmann::json{{"ok", true}, {"project", ProjectToJson(root, state->project)}, {"runtime_status", "runtime_started"}, {"reused", false}, {"daemon", StateToJson(*state)}};
     }
     if (cmd == "info") {
         if (state->project_root.empty()) return ErrorResponse("project_not_open", "请先执行 open");
@@ -1289,7 +2133,24 @@ nlohmann::json DispatchDaemonRequest(const nlohmann::json& request, DaemonState*
         if (!std::filesystem::exists(root)) return ErrorResponse("project_not_found", "项目目录不存在");
         std::string error;
         auto build_status = BuildEsbuildStatus(root, state->project, &error);
-        if (!error.empty()) return ErrorResponse("build_failed", error);
+        if (!error.empty()) {
+            state->last_build = build_status.is_object() ? build_status : nlohmann::json{{"ok", false}, {"status", "failed"}, {"error", error}};
+            return build_status.is_object() ? build_status : ErrorResponse("build_failed", error);
+        }
+        std::string host_error;
+        auto host_status = BuildHostArtifactStatus(root, state->project, &host_error);
+        build_status["host_build"] = host_status;
+        if (host_status.is_object() && host_status.contains("outputs") && host_status["outputs"].is_array()) {
+            for (const auto& output : host_status["outputs"]) {
+                if (output.is_string()) build_status["outputs"].push_back(output.get<std::string>());
+            }
+        }
+        if (!host_status.value("ok", false)) {
+            build_status["ok"] = false;
+            build_status["status"] = "failed";
+            build_status["errors"].push_back({{"message", host_error.empty() ? "host build failed" : host_error}});
+            error = host_error.empty() ? "host build failed" : host_error;
+        }
         state->last_build = build_status;
         if (request.value("watch", false)) {
             ConfigureWatchUnlocked(*state, true);
@@ -1311,43 +2172,92 @@ nlohmann::json DispatchDaemonRequest(const nlohmann::json& request, DaemonState*
     }
     if (cmd == "snapshot") {
         if (state->project_root.empty()) return ErrorResponse("project_not_open", "请先执行 open");
-        auto snapshot_path = GetRuntimeSnapshotPath(*state);
-        auto snapshot = ReadJsonFile(snapshot_path);
-        if ((!snapshot.is_object() || !snapshot.value("ok", false)) &&
-            state->runtime_pid > 0 && IsProcessRunning(state->runtime_pid)) {
-            const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(500);
-            while (std::chrono::steady_clock::now() < deadline) {
-                std::this_thread::sleep_for(std::chrono::milliseconds(25));
-                snapshot = ReadJsonFile(snapshot_path);
-                if (snapshot.is_object() && snapshot.value("ok", false)) break;
+        if (state->stopping) return ErrorResponse("shutdown_in_progress", "runtime is shutting down");
+        const auto response_mode = request.value("response_mode", request.value("mode", std::string{"auto"}));
+        if (response_mode != "auto" && response_mode != "inline" && response_mode != "file") {
+            return ErrorResponse("invalid_args", "snapshot response_mode must be auto, inline, or file");
+        }
+
+        const bool custom_snapshot = SnapshotRequestHasCustomOptions(request);
+        DaemonState snapshot_state = *state;
+        auto snapshot_path = custom_snapshot ? BuildRequestSnapshotPath(snapshot_state)
+                                             : GetRuntimeSnapshotPath(snapshot_state);
+        const int runtime_pid = snapshot_state.runtime_pid;
+        lock.unlock();
+
+        if (custom_snapshot) {
+            nlohmann::json runtime_cmd{{"type", "snapshot"}, {"snapshot_file", snapshot_path.string()}};
+            if (request.contains("max_nodes")) runtime_cmd["max_nodes"] = request["max_nodes"];
+            if (request.contains("max_depth")) runtime_cmd["max_depth"] = request["max_depth"];
+            if (request.contains("root_selector")) runtime_cmd["root_selector"] = request["root_selector"];
+            std::string error;
+            nlohmann::json resp;
+            if (!RequestRuntimeUiCommand(snapshot_state, runtime_pid, std::move(runtime_cmd), &resp, &error)) {
+                RemoveFileIfExists(snapshot_path);
+                return RuntimeCommandErrorResponse("snapshot_failed", error);
+            }
+            if (!resp.value("ok", false)) {
+                RemoveFileIfExists(snapshot_path);
+                return ErrorResponse("snapshot_failed", ExtractRuntimeCommandMessage(resp, "snapshot export failed"));
             }
         }
-        if (snapshot.is_object() && snapshot.value("ok", false)) {
-            snapshot["timestamp"] = CurrentTimestampIso8601();
-            snapshot["source"] = snapshot_path.string();
-            return snapshot;
+
+        auto snapshot = SnapshotFileLooksComplete(snapshot_path) ? ReadJsonFile(snapshot_path) : nlohmann::json();
+        bool snapshot_ready = SnapshotMatchesRuntimeEpoch(snapshot, snapshot_state);
+        bool stale_snapshot = snapshot.is_object() && snapshot.value("ok", false) && !snapshot_ready;
+        if (!snapshot_ready &&
+            !custom_snapshot &&
+            runtime_pid > 0 && IsProcessRunning(runtime_pid)) {
+            const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(2000);
+            while (std::chrono::steady_clock::now() < deadline) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(25));
+                snapshot = SnapshotFileLooksComplete(snapshot_path) ? ReadJsonFile(snapshot_path) : nlohmann::json();
+                snapshot_ready = SnapshotMatchesRuntimeEpoch(snapshot, snapshot_state);
+                stale_snapshot = snapshot.is_object() && snapshot.value("ok", false) && !snapshot_ready;
+                if (snapshot_ready) break;
+            }
         }
-        return nlohmann::json{{"ok", true}, {"timestamp", CurrentTimestampIso8601()}, {"viewport", {{"width", state->project.width}, {"height", state->project.height}, {"dpr", 1.0}}}, {"screenshot_base64", ""}, {"tree", {{"node_id", "stub-root"}, {"tag", "body"}, {"text", nullptr}, {"rect", {{"x", 0}, {"y", 0}, {"w", state->project.width}, {"h", state->project.height}}}, {"attrs", nlohmann::json::object()}, {"interactive", false}, {"visible", true}, {"scroll", {{"x", 0}, {"y", 0}, {"max_x", 0}, {"max_y", 0}}}, {"children", nlohmann::json::array()}}}, {"note", "P0 stub: snapshot 文件尚未就绪"}};
+        const auto snapshot_bytes = snapshot_ready ? FileSizeOrZero(snapshot_path) : uintmax_t{0};
+        if (snapshot_ready && snapshot.is_object() && snapshot.value("ok", false)) {
+            lock.lock();
+            const bool current_snapshot = !state->stopping &&
+                                          state->project_id == snapshot_state.project_id &&
+                                          state->project_root == snapshot_state.project_root &&
+                                          state->runtime_epoch == snapshot_state.runtime_epoch;
+            lock.unlock();
+            if (!current_snapshot) return ErrorResponse("snapshot_stale", "snapshot epoch does not match current runtime");
+            return BuildSnapshotResponse(snapshot_state, snapshot_path, snapshot, snapshot_bytes, response_mode);
+        }
+        if (stale_snapshot) {
+            return ErrorResponse("snapshot_stale", "snapshot epoch does not match current runtime");
+        }
+        return ErrorResponse("snapshot_not_ready", "fresh snapshot is not ready");
     }
     if (cmd == "logs") return std::filesystem::exists(GetRuntimeConsolePath(*state)) ? BuildStructuredRuntimeBufferResponse(GetRuntimeConsolePath(*state), "stdout", 200, "entries") : BuildStructuredLogTail(GetRuntimeStdoutLogPath(*state), "stdout", 200, "entries");
     if (cmd == "errors") return std::filesystem::exists(GetRuntimeErrorsPath(*state)) ? BuildStructuredRuntimeBufferResponse(GetRuntimeErrorsPath(*state), "stderr", 200, "errors") : BuildStructuredLogTail(GetRuntimeStderrLogPath(*state), "stderr", 200, "errors");
     if (cmd == "eval") {
         if (state->project_root.empty()) return ErrorResponse("project_not_open", "请先执行 open");
         if (state->runtime_pid <= 0 || !IsProcessRunning(state->runtime_pid)) return ErrorResponse("runtime_not_running", "runtime 未运行");
+        if (state->stopping) return ErrorResponse("shutdown_in_progress", "runtime is shutting down");
         const auto code = request.value("code", "");
         if (code.empty()) return ErrorResponse("invalid_args", "eval 缺少 code");
+        DaemonState command_state = *state;
+        const int runtime_pid = state->runtime_pid;
+        lock.unlock();
         std::string error;
         nlohmann::json resp;
-        if (!RequestRuntimeEval(*state, state->runtime_pid, code, &resp, &error)) return ErrorResponse("eval_failed", error);
-        resp["source"] = GetRuntimeResponsePath(*state).string();
+        if (!RequestRuntimeEval(command_state, runtime_pid, code, &resp, &error)) return RuntimeCommandErrorResponse("eval_failed", error);
+        resp["source"] = GetRuntimeResponsePath(command_state).string();
         return resp;
     }
     if (cmd == "query_element" || cmd == "inspect" || cmd == "click" || cmd == "input_text" || cmd == "scroll" || cmd == "highlight") {
         if (state->project_root.empty()) return ErrorResponse("project_not_open", "请先执行 open");
         if (state->runtime_pid <= 0 || !IsProcessRunning(state->runtime_pid)) return ErrorResponse("runtime_not_running", "runtime 未运行");
+        if (state->stopping) return ErrorResponse("shutdown_in_progress", "runtime is shutting down");
         const auto selector = request.value("selector", std::string{});
         if (selector.empty()) return ErrorResponse("invalid_args", cmd + " 缺少 selector");
         nlohmann::json runtime_cmd{{"type", cmd}, {"selector", selector}};
+        if (request.contains("limit")) runtime_cmd["limit"] = request["limit"];
         if (cmd == "input_text") {
             if (!request.contains("text") || !request["text"].is_string()) return ErrorResponse("invalid_args", "input_text 缺少 text");
             runtime_cmd["text"] = request["text"];
@@ -1365,19 +2275,31 @@ nlohmann::json DispatchDaemonRequest(const nlohmann::json& request, DaemonState*
         } else if (cmd == "highlight") {
             if (request.contains("color")) runtime_cmd["color"] = request["color"];
         }
+        DaemonState command_state = *state;
+        const int runtime_pid = state->runtime_pid;
+        lock.unlock();
         std::string error;
         nlohmann::json resp;
-        if (!RequestRuntimeUiCommand(*state, state->runtime_pid, std::move(runtime_cmd), &resp, &error)) {
-            return ErrorResponse(cmd + "_failed", error);
+        if (!RequestRuntimeUiCommand(command_state, runtime_pid, std::move(runtime_cmd), &resp, &error)) {
+            return RuntimeCommandErrorResponse(cmd + "_failed", error);
         }
-        resp["source"] = GetRuntimeResponsePath(*state).string();
+        resp["source"] = GetRuntimeResponsePath(command_state).string();
         return resp;
     }
     if (cmd == "reload") {
 #ifdef _WIN32
         std::string error;
         if (state->project_root.empty()) return ErrorResponse("project_not_open", "请先执行 open");
-        auto reload = ReloadRuntimeBundleOrRestart(std::filesystem::path(state->project_root), state);
+        const auto root = std::filesystem::path(state->project_root);
+        DaemonState command_state = *state;
+        lock.unlock();
+        auto reload = ReloadRuntimeBundleOrRestart(root, &command_state);
+        lock.lock();
+        if (state->project_id != command_state.project_id ||
+            state->project_root != command_state.project_root) {
+            return ErrorResponse("state_changed", "daemon state changed while reload was running");
+        }
+        MergeRuntimeFields(state, command_state);
         if (!reload.value("ok", false)) return ErrorResponse("runtime_reload_failed", reload.value("message", std::string("runtime reload 失败")));
         if (!SaveState(*state, &error)) return ErrorResponse("state_write_failed", error);
         reload["daemon"] = StateToJson(*state);
@@ -1393,6 +2315,7 @@ int RunDaemonServer(const std::vector<std::string>& args) {
 #ifdef _WIN32
     std::string error;
     DaemonState state;
+    g_daemon_stopping.store(false);
     state.running = true;
     state.pid = CurrentProcessId();
     state.started_at = CurrentTimestampIso8601();
@@ -1416,29 +2339,42 @@ int RunDaemonServer(const std::vector<std::string>& args) {
     if (!SaveState(state, &error)) return 1;
 
     const auto pipe_name = GetDaemonPipeName(state.project_id);
-    bool should_exit = false;
-    while (!should_exit) {
-        HANDLE pipe = CreateNamedPipeA(pipe_name.c_str(), PIPE_ACCESS_DUPLEX, PIPE_TYPE_MESSAGE | PIPE_READMODE_MESSAGE | PIPE_WAIT, 1, 65536, 65536, 0, nullptr);
+    std::atomic<bool> should_exit{false};
+    while (!should_exit.load()) {
+        HANDLE pipe = CreateNamedPipeA(pipe_name.c_str(),
+                                       PIPE_ACCESS_DUPLEX | FILE_FLAG_OVERLAPPED,
+                                       PIPE_TYPE_MESSAGE | PIPE_READMODE_MESSAGE | PIPE_WAIT,
+                                       PIPE_UNLIMITED_INSTANCES,
+                                       65536,
+                                       65536,
+                                       0,
+                                       nullptr);
         if (pipe == INVALID_HANDLE_VALUE) return 1;
-        if (!ConnectNamedPipe(pipe, nullptr) && GetLastError() != ERROR_PIPE_CONNECTED) { CloseHandle(pipe); continue; }
-        std::string raw_request;
-        std::string read_error;
-        nlohmann::json response = ErrorResponse("invalid_request", "请求解析失败");
-        if (ReadPipeMessage(pipe, &raw_request, &read_error)) {
-            try {
-                response = DispatchDaemonRequest(nlohmann::json::parse(raw_request), &state, &should_exit);
-            } catch (const std::exception& e) {
-                response = ErrorResponse("internal_error", e.what());
-            } catch (...) {
-                response = ErrorResponse("internal_error", "未知内部异常");
+        OVERLAPPED connect_overlapped{};
+        connect_overlapped.hEvent = CreateEventA(nullptr, TRUE, FALSE, nullptr);
+        if (!connect_overlapped.hEvent) { CloseHandle(pipe); return 1; }
+        BOOL connected = ConnectNamedPipe(pipe, &connect_overlapped);
+        DWORD connect_error = connected ? ERROR_SUCCESS : GetLastError();
+        if (!connected && connect_error == ERROR_IO_PENDING) {
+            while (!should_exit.load()) {
+                const DWORD wait_result = WaitForSingleObject(connect_overlapped.hEvent, 100);
+                if (wait_result == WAIT_OBJECT_0) break;
+                if (wait_result != WAIT_TIMEOUT) break;
             }
-        } else if (!read_error.empty()) {
-            response = ErrorResponse("invalid_request", read_error);
+            if (should_exit.load()) {
+                CancelIoEx(pipe, &connect_overlapped);
+                CloseHandle(connect_overlapped.hEvent);
+                CloseHandle(pipe);
+                break;
+            }
+            DWORD transferred = 0;
+            connected = GetOverlappedResult(pipe, &connect_overlapped, &transferred, FALSE);
+            connect_error = connected ? ERROR_SUCCESS : GetLastError();
         }
-        const auto payload = response.dump();
-        DWORD written = 0;
-        WriteFile(pipe, payload.data(), static_cast<DWORD>(payload.size()), &written, nullptr);
-        FlushFileBuffers(pipe); DisconnectNamedPipe(pipe); CloseHandle(pipe);
+        CloseHandle(connect_overlapped.hEvent);
+        if (!connected && connect_error != ERROR_PIPE_CONNECTED) { CloseHandle(pipe); continue; }
+        std::thread(ServeConnectedPipe, pipe, &state, &should_exit).detach();
+        continue;
     }
     StopWatchThread();
     return 0;

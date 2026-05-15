@@ -16,9 +16,11 @@ struct ProjectConfig {
     std::string src_dir = "src";
     std::string out_dir = ".dist";
     std::string template_name = "unknown";
+    std::string purpose = "minimal";
+    std::string runtime = "tool";
     std::string build_builder = "esbuild";
-    std::string build_jsx_factory = "Preact.h";
-    std::string build_jsx_fragment = "Preact.Fragment";
+    std::string build_jsx_factory = "h";
+    std::string build_jsx_fragment = "Fragment";
     std::vector<std::string> build_external = {"preact", "preact/hooks"};
     bool build_sourcemap = true;
     bool build_minify = false;
@@ -31,8 +33,23 @@ struct InitProjectResult {
     std::filesystem::path project_root;
     std::string project_name;
     std::string template_name;
+    std::string purpose = "minimal";
+    std::string runtime = "tool";
+    std::string canonical_key = "minimal/tool";
+    std::string requested_purpose;
+    std::string requested_runtime;
+    std::string legacy_template;
+    bool used_default = false;
+    std::vector<std::string> layers;
+    std::vector<std::string> warnings;
     std::vector<std::string> files_created;
     std::string next_step;
+};
+
+struct InitProjectOptions {
+    std::string purpose;
+    std::string runtime;
+    std::string legacy_template;
 };
 
 struct ProjectIdentity {
@@ -49,8 +66,10 @@ struct DaemonState {
     std::string project_id;
     std::string runtime_id;
     std::string project_root;
+    std::string runtime_epoch;
     std::string runtime_status = "stopped";
     std::string runtime_stop_reason = "not_started";
+    bool stopping = false;
     ProjectConfig project;
     nlohmann::json last_build;
     nlohmann::json watch;
@@ -85,7 +104,12 @@ bool InitProject(const std::filesystem::path& target_dir,
                  const std::string& template_name,
                  InitProjectResult* result,
                  std::string* error = nullptr);
+bool InitProject(const std::filesystem::path& target_dir,
+                 const InitProjectOptions& options,
+                 InitProjectResult* result,
+                 std::string* error = nullptr);
 std::vector<std::string> ListSupportedInitTemplates();
+std::vector<std::string> ListSupportedInitCombinations();
 
 nlohmann::json OkResponse();
 nlohmann::json ErrorResponse(const std::string& code, const std::string& message);

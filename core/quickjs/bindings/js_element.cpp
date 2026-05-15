@@ -12,8 +12,10 @@
 #include "core/dom/elements/html_input_element.h"
 #include "core/dom/elements/html_textarea_element.h"
 #include "core/dom/elements/html_select_element.h"
+#include "core/dom/elements/html_option_element.h"
 #include "core/dom/elements/html_canvas_element.h"
 #include "core/dom/elements/html_image_element.h"
+#include "core/dom/elements/html_template_element.h"
 #include "core/dom/elements/svg_element.h"
 #include "core/dom/elements/terminal/html_terminal_element.h"
 #include "core/dom/elements/logview/html_logview_element.h"
@@ -222,6 +224,26 @@ static JSValue JSElement_get_tagName(JSContext* ctx, JSValueConst this_val, int 
 
     std::string tag = data->element->GetTagName();
     return JS_NewString(ctx, tag.c_str());
+}
+
+// localName
+static JSValue JSElement_get_localName(JSContext* ctx, JSValueConst this_val, int magic) {
+    auto* data = static_cast<JSElementData*>(JS_GetOpaque(this_val, js_element_class_id));
+    if (!data || !data->element) {
+        return JS_NULL;
+    }
+
+    return JS_NewString(ctx, data->element->GetLocalName().c_str());
+}
+
+// namespaceURI
+static JSValue JSElement_get_namespaceURI(JSContext* ctx, JSValueConst this_val, int magic) {
+    auto* data = static_cast<JSElementData*>(JS_GetOpaque(this_val, js_element_class_id));
+    if (!data || !data->element) {
+        return JS_NULL;
+    }
+
+    return JS_NewString(ctx, data->element->GetNamespaceURI().c_str());
 }
 
 // id getter
@@ -565,11 +587,18 @@ static std::shared_ptr<HTMLTextAreaElement> get_text_selectable_textarea_element
     return std::dynamic_pointer_cast<HTMLTextAreaElement>(element);
 }
 
-// Element.value getter (for HTMLInputElement, HTMLTextAreaElement, HTMLSelectElement)
+// Element.value getter (for HTMLOptionElement, HTMLInputElement, HTMLTextAreaElement, HTMLSelectElement)
 static JSValue JSElement_get_value(JSContext* ctx, JSValueConst this_val, int magic) {
     auto* data = static_cast<JSElementData*>(JS_GetOpaque(this_val, js_element_class_id));
     if (!data || !data->element) {
         return JS_UNDEFINED;
+    }
+
+    // 尝试作为 HTMLOptionElement
+    auto option_element = std::dynamic_pointer_cast<HTMLOptionElement>(data->element);
+    if (option_element) {
+        std::string value = option_element->GetValue();
+        return JS_NewString(ctx, value.c_str());
     }
 
     // 尝试作为 HTMLInputElement
@@ -596,7 +625,7 @@ static JSValue JSElement_get_value(JSContext* ctx, JSValueConst this_val, int ma
     return JS_UNDEFINED;
 }
 
-// value setter (for HTMLInputElement, HTMLTextAreaElement, HTMLSelectElement)
+// value setter (for HTMLOptionElement, HTMLInputElement, HTMLTextAreaElement, HTMLSelectElement)
 static JSValue JSElement_set_value(JSContext* ctx, JSValueConst this_val, JSValue val, int magic) {
     auto* data = static_cast<JSElementData*>(JS_GetOpaque(this_val, js_element_class_id));
     if (!data || !data->element) {
@@ -605,6 +634,14 @@ static JSValue JSElement_set_value(JSContext* ctx, JSValueConst this_val, JSValu
 
     const char* str = JS_ToCString(ctx, val);
     if (!str) {
+        return JS_UNDEFINED;
+    }
+
+    // 尝试作为 HTMLOptionElement
+    auto option_element = std::dynamic_pointer_cast<HTMLOptionElement>(data->element);
+    if (option_element) {
+        option_element->SetValue(str);
+        JS_FreeCString(ctx, str);
         return JS_UNDEFINED;
     }
 
@@ -637,6 +674,91 @@ static JSValue JSElement_set_value(JSContext* ctx, JSValueConst this_val, JSValu
     JS_FreeCString(ctx, str);
     return JS_UNDEFINED;
 }
+
+// defaultValue getter (for HTMLInputElement, HTMLTextAreaElement)
+static JSValue JSElement_get_defaultValue(JSContext* ctx, JSValueConst this_val, int magic) {
+    auto* data = static_cast<JSElementData*>(JS_GetOpaque(this_val, js_element_class_id));
+    if (!data || !data->element) {
+        return JS_UNDEFINED;
+    }
+
+    auto input_element = std::dynamic_pointer_cast<HTMLInputElement>(data->element);
+    if (input_element) {
+        std::string value = input_element->GetValue();
+        return JS_NewString(ctx, value.c_str());
+    }
+
+    auto textarea_element = std::dynamic_pointer_cast<HTMLTextAreaElement>(data->element);
+    if (textarea_element) {
+        std::string value = textarea_element->GetValue();
+        return JS_NewString(ctx, value.c_str());
+    }
+
+    return JS_UNDEFINED;
+}
+
+// defaultValue setter (for HTMLInputElement, HTMLTextAreaElement)
+static JSValue JSElement_set_defaultValue(JSContext* ctx, JSValueConst this_val, JSValue val, int magic) {
+    auto* data = static_cast<JSElementData*>(JS_GetOpaque(this_val, js_element_class_id));
+    if (!data || !data->element) {
+        return JS_UNDEFINED;
+    }
+
+    const char* str = JS_ToCString(ctx, val);
+    if (!str) {
+        return JS_UNDEFINED;
+    }
+
+    auto input_element = std::dynamic_pointer_cast<HTMLInputElement>(data->element);
+    if (input_element) {
+        input_element->SetValue(str, false);
+        JS_FreeCString(ctx, str);
+        return JS_UNDEFINED;
+    }
+
+    auto textarea_element = std::dynamic_pointer_cast<HTMLTextAreaElement>(data->element);
+    if (textarea_element) {
+        textarea_element->SetValue(str, false);
+        JS_FreeCString(ctx, str);
+        return JS_UNDEFINED;
+    }
+
+    JS_FreeCString(ctx, str);
+    return JS_UNDEFINED;
+}
+
+// defaultChecked getter (for HTMLInputElement)
+static JSValue JSElement_get_defaultChecked(JSContext* ctx, JSValueConst this_val, int magic) {
+    auto* data = static_cast<JSElementData*>(JS_GetOpaque(this_val, js_element_class_id));
+    if (!data || !data->element) {
+        return JS_FALSE;
+    }
+
+    auto input_element = std::dynamic_pointer_cast<HTMLInputElement>(data->element);
+    if (!input_element) {
+        return JS_FALSE;
+    }
+
+    return JS_NewBool(ctx, input_element->GetChecked());
+}
+
+// defaultChecked setter (for HTMLInputElement)
+static JSValue JSElement_set_defaultChecked(JSContext* ctx, JSValueConst this_val, JSValue val, int magic) {
+    auto* data = static_cast<JSElementData*>(JS_GetOpaque(this_val, js_element_class_id));
+    if (!data || !data->element) {
+        return JS_UNDEFINED;
+    }
+
+    auto input_element = std::dynamic_pointer_cast<HTMLInputElement>(data->element);
+    if (!input_element) {
+        return JS_UNDEFINED;
+    }
+
+    input_element->SetChecked(JS_ToBool(ctx, val), false);
+    return JS_UNDEFINED;
+}
+
+
 
 static JSValue JSElement_get_selectionStart(JSContext* ctx, JSValueConst this_val, int magic) {
     auto* data = static_cast<JSElementData*>(JS_GetOpaque(this_val, js_element_class_id));
@@ -782,6 +904,38 @@ static JSValue JSElement_set_checked(JSContext* ctx, JSValueConst this_val, JSVa
 
     return JS_UNDEFINED;
 }
+
+// selected getter (for HTMLOptionElement)
+static JSValue JSElement_get_selected(JSContext* ctx, JSValueConst this_val, int magic) {
+    auto* data = static_cast<JSElementData*>(JS_GetOpaque(this_val, js_element_class_id));
+    if (!data || !data->element) {
+        return JS_FALSE;
+    }
+
+    auto option_element = std::dynamic_pointer_cast<HTMLOptionElement>(data->element);
+    if (!option_element) {
+        return JS_FALSE;
+    }
+
+    return JS_NewBool(ctx, option_element->GetSelected());
+}
+
+// selected setter (for HTMLOptionElement)
+static JSValue JSElement_set_selected(JSContext* ctx, JSValueConst this_val, JSValue val, int magic) {
+    auto* data = static_cast<JSElementData*>(JS_GetOpaque(this_val, js_element_class_id));
+    if (!data || !data->element) {
+        return JS_UNDEFINED;
+    }
+
+    auto option_element = std::dynamic_pointer_cast<HTMLOptionElement>(data->element);
+    if (!option_element) {
+        return JS_UNDEFINED;
+    }
+
+    option_element->SetSelected(JS_ToBool(ctx, val));
+    return JS_UNDEFINED;
+}
+
 
 // ========== 方法实现 ==========
 
@@ -1023,24 +1177,21 @@ static JSValue JSElement_addEventListener(JSContext* ctx, JSValueConst this_val,
 
     // 包装 JS 函数为 C++ lambda
     auto listener_wrapper = std::make_shared<JSValueWrapper>(ctx, argv[1]);
+    auto this_wrapper = std::make_shared<JSValueWrapper>(ctx, this_val);
 
     uint64_t listener_id = data->element->AddEventListener(type,
-        [ctx, listener_wrapper](std::shared_ptr<Event> event) {
-            // 包装 Event 对象
+        [ctx, listener_wrapper, this_wrapper](std::shared_ptr<Event> event) {
             JSValue event_val = WrapEvent(ctx, event);
+            JSValue this_val = JS_DupValue(ctx, this_wrapper->Get());
 
-            // 调用 JS 监听器函数
-            JSValue result = listener_wrapper->Call(JS_UNDEFINED, 1, &event_val);
+            JSValue result = listener_wrapper->Call(this_val, 1, &event_val);
 
-            // 释放
             if (JS_IsException(result)) {
-                // 输出错误但不中断
                 JSValue exception = JS_GetException(ctx);
                 const char* err = JS_ToCString(ctx, exception);
                 if (err) {
                     JS_FreeCString(ctx, err);
                 }
-                // 尝试获取堆栈信息
                 JSValue stack = JS_GetPropertyStr(ctx, exception, "stack");
                 if (!JS_IsUndefined(stack)) {
                     const char* stack_str = JS_ToCString(ctx, stack);
@@ -1052,6 +1203,9 @@ static JSValue JSElement_addEventListener(JSContext* ctx, JSValueConst this_val,
                 JS_FreeValue(ctx, exception);
             }
             JS_FreeValue(ctx, result);
+            if (!JS_IsUndefined(this_val)) {
+                JS_FreeValue(ctx, this_val);
+            }
             JS_FreeValue(ctx, event_val);
         },
         use_capture,
@@ -1434,10 +1588,12 @@ static JSValue JSElement_set_event_property(JSContext* ctx, JSValueConst this_va
 
     if (JS_IsFunction(ctx, val)) {
         auto listener_wrapper = std::make_shared<JSValueWrapper>(ctx, val);
+        auto this_wrapper = std::make_shared<JSValueWrapper>(ctx, this_val);
         uint64_t listener_id = data->element->AddEventListener(desc->event_type,
-            [ctx, listener_wrapper](std::shared_ptr<Event> event) {
+            [ctx, listener_wrapper, this_wrapper](std::shared_ptr<Event> event) {
                 JSValue event_val = WrapEvent(ctx, event);
-                JSValue result = listener_wrapper->Call(JS_UNDEFINED, 1, &event_val);
+                JSValue this_val = JS_DupValue(ctx, this_wrapper->Get());
+                JSValue result = listener_wrapper->Call(this_val, 1, &event_val);
                 if (JS_IsException(result)) {
                     JSValue exception = JS_GetException(ctx);
                     const char* err = JS_ToCString(ctx, exception);
@@ -1447,6 +1603,9 @@ static JSValue JSElement_set_event_property(JSContext* ctx, JSValueConst this_va
                     JS_FreeValue(ctx, exception);
                 }
                 JS_FreeValue(ctx, result);
+                if (!JS_IsUndefined(this_val)) {
+                    JS_FreeValue(ctx, this_val);
+                }
                 JS_FreeValue(ctx, event_val);
             },
             false, false
@@ -1546,6 +1705,19 @@ static JSValue JSElement_get_innerHTML(JSContext* ctx, JSValueConst this_val, in
     if (!data || !data->element) return JS_NewString(ctx, "");
 
     return JS_NewString(ctx, data->element->GetInnerHTML().c_str());
+}
+
+// template.content getter
+static JSValue JSElement_get_content(JSContext* ctx, JSValueConst this_val, int magic) {
+    auto* data = static_cast<JSElementData*>(JS_GetOpaque(this_val, js_element_class_id));
+    if (!data || !data->element) return JS_NULL;
+
+    auto template_element = std::dynamic_pointer_cast<HTMLTemplateElement>(data->element);
+    if (!template_element || !template_element->GetContent()) {
+        return JS_UNDEFINED;
+    }
+
+    return WrapNode(ctx, template_element->GetContent());
 }
 
 // innerHTML setter
@@ -1905,6 +2077,8 @@ static JSValue JSElement_get_parentElement(JSContext* ctx, JSValueConst this_val
 
 static const JSCFunctionListEntry js_element_proto_funcs[] = {
     JS_CGETSET_MAGIC_DEF("tagName", JSElement_get_tagName, nullptr, 0),
+    JS_CGETSET_MAGIC_DEF("localName", JSElement_get_localName, nullptr, 0),
+    JS_CGETSET_MAGIC_DEF("namespaceURI", JSElement_get_namespaceURI, nullptr, 0),
     JS_CGETSET_MAGIC_DEF("id", JSElement_get_id, JSElement_set_id, 0),
     JS_CGETSET_MAGIC_DEF("className", JSElement_get_className, JSElement_set_className, 0),
     JS_CGETSET_MAGIC_DEF("classList", JSElement_get_classList, nullptr, 0),
@@ -1912,7 +2086,10 @@ static const JSCFunctionListEntry js_element_proto_funcs[] = {
     JS_CGETSET_MAGIC_DEF("attributes", JSElement_get_attributes, nullptr, 0),
     JS_CGETSET_MAGIC_DEF("style", JSElement_get_style, nullptr, 0),
     JS_CGETSET_MAGIC_DEF("value", JSElement_get_value, JSElement_set_value, 0),
+    JS_CGETSET_MAGIC_DEF("defaultValue", JSElement_get_defaultValue, JSElement_set_defaultValue, 0),
+    JS_CGETSET_MAGIC_DEF("defaultChecked", JSElement_get_defaultChecked, JSElement_set_defaultChecked, 0),
     JS_CGETSET_MAGIC_DEF("checked", JSElement_get_checked, JSElement_set_checked, 0),
+    JS_CGETSET_MAGIC_DEF("selected", JSElement_get_selected, JSElement_set_selected, 0),
     JS_CGETSET_MAGIC_DEF("selectionStart", JSElement_get_selectionStart, JSElement_set_selectionStart, 0),
     JS_CGETSET_MAGIC_DEF("selectionEnd", JSElement_get_selectionEnd, JSElement_set_selectionEnd, 0),
     // DOM 树导航
@@ -1930,6 +2107,7 @@ static const JSCFunctionListEntry js_element_proto_funcs[] = {
     // innerHTML/outerHTML 属性
     JS_CGETSET_MAGIC_DEF("innerHTML", JSElement_get_innerHTML, JSElement_set_innerHTML, 0),
     JS_CGETSET_MAGIC_DEF("outerHTML", JSElement_get_outerHTML, nullptr, 0),
+    JS_CGETSET_MAGIC_DEF("content", JSElement_get_content, nullptr, 0),
     // HTMLCanvasElement 属性
     JS_CGETSET_MAGIC_DEF("width", JSElement_get_canvas_width, JSElement_set_canvas_width, 0),
     JS_CGETSET_MAGIC_DEF("height", JSElement_get_canvas_height, JSElement_set_canvas_height, 0),

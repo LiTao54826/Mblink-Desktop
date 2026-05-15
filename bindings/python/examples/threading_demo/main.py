@@ -9,11 +9,8 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
 from mbink import App
 
 app = App("MBink Threading Demo", 1100, 760, gpu=False)
-app.load_html_file('./ui/index.html')
 
 state = app.shared("demo")
-logs = app.logview("logs")
-term = app.terminal("term")
 stop_event = threading.Event()
 workers = []
 workers_lock = threading.Lock()
@@ -27,6 +24,10 @@ with state.batch():
     state.last_log = "ready"
     state.last_test = "not started"
     state.last_test_mode = "-"
+
+app.load_html_file('./ui/index.html')
+logs = app.logview("logs")
+term = app.terminal("term")
 
 
 def worker_loop(name: str):

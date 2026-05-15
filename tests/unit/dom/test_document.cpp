@@ -14,6 +14,8 @@
 #include <gtest/gtest.h>
 #include "test_utils/test_helpers.h"
 #include "test_utils/mock_objects.h"
+#include "bridge/state_manager.h"
+#include "dom/bindings/native_data_binding.h"
 #include "dom/document.h"
 #include "dom/element.h"
 #include "dom/text.h"
@@ -210,6 +212,26 @@ TEST_F(DocumentTest, LoadHTMLWithNestedElements) {
 
     auto lis = doc->GetElementsByTagName("li");
     EXPECT_EQ(lis.size(), 3);
+}
+
+TEST_F(DocumentTest, LoadHTMLAutoMountsDeclarativeBindingsWhenStateManagerExists) {
+    auto doc = CreateDocument();
+    StateManager state;
+    ASSERT_EQ(state.createJson("profile", json{{"name", "Alice"}}), MBinkError::Ok);
+    doc->SetStateManager(&state);
+
+    ASSERT_TRUE(doc->LoadHTML("<html><body><span id='name' mb-text='profile.name'></span></body></html>"));
+    auto* runtime = doc->GetNativeDataBindingRuntime();
+    ASSERT_NE(runtime, nullptr);
+    runtime->flush();
+
+    auto name = doc->GetElementById("name");
+    ASSERT_NE(name, nullptr);
+    EXPECT_EQ(name->GetTextContent(), "Alice");
+
+    ASSERT_TRUE(state.set("profile.name", "Bob"));
+    runtime->flush();
+    EXPECT_EQ(name->GetTextContent(), "Bob");
 }
 
 TEST_F(DocumentTest, SaveHTML) {

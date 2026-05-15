@@ -1,13 +1,14 @@
 #include "resource_package.h"
 #include "core/utils/encoding_utils.h"
+#include "tools/esm_loader/embedded_js.h"
 #include "tools/app_bundler/bytecode_compiler.h"
 #include "tools/app_bundler/module_resolver.h"
-#include "tools/esm_loader/embedded_js.h"
 
 #include <cctype>
 #include <filesystem>
 #include <fstream>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 extern "C" {
@@ -116,12 +117,95 @@ bool IsJsFile(const fs::path& path) {
     return ext == ".js" || ext == ".mjs";
 }
 
+fs::path FindOfficialPreactRoot() {
+    static const fs::path kOfficialPreactRelativeRoot =
+        Utf8PathToFsPath("third_party") / Utf8PathToFsPath("preact");
+    fs::path current = fs::absolute(Utf8PathToFsPath(__FILE__)).parent_path();
+    while (!current.empty()) {
+        const fs::path candidate = current / kOfficialPreactRelativeRoot / "package.json";
+        if (fs::exists(candidate)) {
+            return current / kOfficialPreactRelativeRoot;
+        }
+        if (!current.has_parent_path() || current == current.parent_path()) {
+            break;
+        }
+        current = current.parent_path();
+    }
+    throw std::runtime_error("Unable to locate official Preact sources under third_party/preact");
+}
+
+std::string BuildOfficialPreactModule(const fs::path& entry_path) {
+    return "export * from '" + NormalizeFsPath(fs::absolute(entry_path)) + "';";
+}
+
+std::string EmbeddedOfficialPreactModule(const char* path) {
+    auto source = mbink::embedded::GetEmbeddedJS(path);
+    if (source.empty()) {
+        throw std::runtime_error(std::string("Missing embedded official Preact module: ") + path);
+    }
+    return std::string(source);
+}
+
+std::string StripJsExtension(std::string path) {
+    if (path.size() > 3 && path.substr(path.size() - 3) == ".js") {
+        path.resize(path.size() - 3);
+    }
+    return path;
+}
+
+std::string OfficialPreactModuleId(const char* path) {
+    std::string id(path ? path : "");
+    static const std::string prefix = "third_party/preact/";
+    if (id.rfind(prefix, 0) == 0) {
+        id.replace(0, prefix.size(), "__mbink_official_preact/");
+    }
+    return id;
+}
+
+std::string BuildEmbeddedOfficialPreactModule(const char* path) {
+    return "export * from '" + OfficialPreactModuleId(path) + "';";
+}
+
+void RegisterOfficialPreactSource(mbink::ModuleResolver& resolver, const char* path) {
+    const auto source = EmbeddedOfficialPreactModule(path);
+    const auto module_id = OfficialPreactModuleId(path);
+    resolver.RegisterBuiltinModule(module_id, source);
+    resolver.RegisterBuiltinModule(StripJsExtension(module_id), source);
+}
+
+void RegisterOfficialPreactBuiltinModules(mbink::ModuleResolver& resolver) {
+    static constexpr const char* kOfficialPreactSources[] = {
+        "third_party/preact/src/index.js",
+        "third_party/preact/src/render.js",
+        "third_party/preact/src/create-element.js",
+        "third_party/preact/src/component.js",
+        "third_party/preact/src/options.js",
+        "third_party/preact/src/util.js",
+        "third_party/preact/src/constants.js",
+        "third_party/preact/src/clone-element.js",
+        "third_party/preact/src/create-context.js",
+        "third_party/preact/src/diff/index.js",
+        "third_party/preact/src/diff/children.js",
+        "third_party/preact/src/diff/props.js",
+        "third_party/preact/src/diff/catch-error.js",
+        "third_party/preact/hooks/src/index.js",
+        "third_party/preact/jsx-runtime/src/index.js",
+        "third_party/preact/jsx-runtime/src/utils.js",
+    };
+    for (const auto* path : kOfficialPreactSources) {
+        RegisterOfficialPreactSource(resolver, path);
+    }
+    resolver.RegisterBuiltinModule("preact", BuildEmbeddedOfficialPreactModule("third_party/preact/src/index.js"));
+    resolver.RegisterBuiltinModule("preact/hooks", BuildEmbeddedOfficialPreactModule("third_party/preact/hooks/src/index.js"));
+    resolver.RegisterBuiltinModule("preact/jsx-runtime", BuildEmbeddedOfficialPreactModule("third_party/preact/jsx-runtime/src/index.js"));
+    resolver.RegisterBuiltinModule("preact/jsx-dev-runtime", BuildEmbeddedOfficialPreactModule("third_party/preact/jsx-runtime/src/index.js"));
+}
+
 std::vector<uint8_t> CompileJsFile(const fs::path& path,
                                    const std::string& package_module_path,
                                    std::string& error) {
     mbink::ModuleResolver resolver;
-    resolver.RegisterBuiltinModule("preact", std::string(mbink::embedded::GetPreactJS()));
-    resolver.RegisterBuiltinModule("preact/hooks", std::string(mbink::embedded::GetHooksJS()));
+    RegisterOfficialPreactBuiltinModules(resolver);
 
     auto modules = resolver.Resolve(FsPathToUtf8String(path));
     if (resolver.HasErrors()) {
@@ -135,13 +219,34 @@ std::vector<uint8_t> CompileJsFile(const fs::path& path,
     const fs::path source_entry = path.lexically_normal();
     const fs::path virtual_entry_path = fs::path(virtual_entry).lexically_normal();
 
+    std::unordered_map<std::string, std::string> rewritten_ids;
     for (auto& module : modules) {
         if (module.is_builtin || module.path.empty()) continue;
+        const std::string original_id = module.id;
         fs::path source_module = Utf8PathToFsPath(module.path.c_str()).lexically_normal();
         fs::path rel = fs::relative(source_module, source_entry.parent_path());
         fs::path virtual_module = (virtual_entry_path.parent_path() / rel).lexically_normal();
         module.id = NormalizeFsPath(virtual_module);
         module.path = FsPathToUtf8String(source_module);
+        rewritten_ids[original_id] = module.id;
+    }
+
+    for (auto& module : modules) {
+        for (auto& dep : module.dependencies) {
+            auto it = rewritten_ids.find(dep);
+            if (it != rewritten_ids.end()) {
+                if (module.is_builtin) {
+                    const std::string old_specifier = "'" + dep + "'";
+                    const std::string new_specifier = "'" + it->second + "'";
+                    size_t pos = 0;
+                    while ((pos = module.source.find(old_specifier, pos)) != std::string::npos) {
+                        module.source.replace(pos, old_specifier.size(), new_specifier);
+                        pos += new_specifier.size();
+                    }
+                }
+                dep = it->second;
+            }
+        }
     }
 
     mbink::BytecodeCompiler compiler;
@@ -179,22 +284,15 @@ bool BuildPayload(const fs::path& input, std::vector<uint8_t>& payload, std::str
 
     W32(payload, static_cast<uint32_t>(files.size()));
     for (const auto& file : files) {
-        const bool is_js = IsJsFile(file);
         std::string relative = is_dir ? NormalizeFsPath(fs::relative(file, base)) : FsPathToUtf8String(file.filename());
         std::vector<uint8_t> data;
-        if (is_js) {
-            data = CompileJsFile(file, relative, error);
-            if (data.empty()) {
-                if (error.empty()) error = "failed to compile js: " + FsPathToUtf8String(file);
-                return false;
-            }
-        } else if (!ReadFileBytes(file, data)) {
+        if (!ReadFileBytes(file, data)) {
             error = "failed to read file: " + FsPathToUtf8String(file);
             return false;
         }
 
         W32(payload, static_cast<uint32_t>(relative.size()));
-        W32(payload, is_js ? kResourceFlagBytecode : 0u);
+        W32(payload, 0u);
         W64(payload, static_cast<uint64_t>(data.size()));
         payload.insert(payload.end(), relative.begin(), relative.end());
         payload.insert(payload.end(), data.begin(), data.end());

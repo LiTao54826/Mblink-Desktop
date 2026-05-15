@@ -9,9 +9,37 @@
 #include <gtest/gtest.h>
 #include "tools/app_bundler/bytecode_compiler.h"
 #include "tools/app_bundler/module_resolver.h"
+#include <filesystem>
+#include <fstream>
 #include <random>
 
 using namespace mbink;
+
+namespace fs = std::filesystem;
+
+namespace {
+
+fs::path FindRepoRoot() {
+    auto current = fs::current_path();
+    while (!current.empty()) {
+        if (fs::exists(current / "third_party" / "preact" / "package.json")) {
+            return current;
+        }
+        if (!current.has_parent_path() || current == current.parent_path()) {
+            break;
+        }
+        current = current.parent_path();
+    }
+    throw std::runtime_error("Unable to locate repository root for Preact property tests");
+}
+
+std::string NormalizePath(const fs::path& path) {
+    std::string normalized = fs::weakly_canonical(path).lexically_normal().string();
+    std::replace(normalized.begin(), normalized.end(), '\\', '/');
+    return normalized;
+}
+
+}  // namespace
 
 class BytecodeCompilerPropertyTest : public ::testing::Test {
 protected:
@@ -84,6 +112,40 @@ TEST_F(BytecodeCompilerPropertyTest, CompileMultipleModules) {
     
     // 最后一个应该是入口
     EXPECT_TRUE(compiled.back().is_entry);
+}
+
+TEST_F(BytecodeCompilerPropertyTest, CompileOfficialPreactWrapperModulesWithoutLegacyGlobals) {
+    const auto repo_root = FindRepoRoot();
+    const auto preact_entry = NormalizePath(repo_root / "third_party" / "preact" / "src" / "index.js");
+    const auto hooks_entry = NormalizePath(repo_root / "third_party" / "preact" / "hooks" / "src" / "index.js");
+
+    const fs::path test_dir = fs::temp_directory_path() / "bytecode_compiler_official_preact";
+    fs::remove_all(test_dir);
+    fs::create_directories(test_dir);
+
+    const fs::path entry_file = test_dir / "app.js";
+    {
+        std::ofstream out(entry_file);
+        out << "import { h } from 'preact';\n"
+               "import { useState } from 'preact/hooks';\n"
+               "export const app = { h, useState };\n";
+    }
+
+    ModuleResolver resolver;
+    resolver.RegisterBuiltinModule("preact", "export * from '" + preact_entry + "';");
+    resolver.RegisterBuiltinModule("preact/hooks", "export * from '" + hooks_entry + "';");
+
+    auto modules = resolver.Resolve(entry_file.string());
+    ASSERT_FALSE(resolver.HasErrors()) << resolver.GetErrors().front().message;
+
+    BytecodeCompiler compiler;
+    compiler.SetEntryDir(test_dir.string());
+    auto compiled = compiler.CompileModules(modules);
+
+    EXPECT_FALSE(compiler.HasErrors());
+    EXPECT_FALSE(compiled.empty());
+
+    fs::remove_all(test_dir);
 }
 
 /**

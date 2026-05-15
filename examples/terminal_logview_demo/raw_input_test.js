@@ -1,3 +1,6 @@
+import { h, render } from 'preact';
+import { useState } from 'preact/hooks';
+
 /**
  * 原始 input 元素测试
  * 
@@ -7,10 +10,6 @@
 
 (function() {
     'use strict';
-
-    var h = Preact.h;
-    var render = Preact.render;
-    var useState = PreactHooks.useState;
 
     console.log('=== 原始 Input 元素测试 ===');
 

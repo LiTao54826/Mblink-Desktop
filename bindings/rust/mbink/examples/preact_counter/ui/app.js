@@ -1,4 +1,4 @@
-const { h, render } = Preact;
+import { h, render } from 'preact';
 
 const styles = {
     wrap: {
@@ -61,7 +61,7 @@ function App() {
     );
 }
 
-const root = document.getElementById('root');
+const root = document.getElementById('root') || document.body;
 function rerender() {
     render(h(App), root);
 }

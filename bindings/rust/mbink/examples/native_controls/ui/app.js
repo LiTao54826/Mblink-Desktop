@@ -1,4 +1,4 @@
-const { h, render } = Preact;
+import { h, render } from 'preact';
 
 const styles = {
     title: { fontSize: '20px', fontWeight: '700', marginBottom: '8px' },
@@ -32,4 +32,4 @@ function App() {
     );
 }
 
-render(h(App), document.getElementById('root'));
+render(h(App), document.getElementById('root') || document.body);

@@ -107,18 +107,26 @@ public:
      * @brief 立即停止事件传播（包括当前节点的其他监听器）
      */
     void StopImmediatePropagation();
-    
+
     /**
      * @brief 阻止默认行为
      */
     void PreventDefault();
-    
+
+    /**
+     * @brief 初始化事件（兼容 document.createEvent('Event') + initEvent）
+     * @param type 事件类型
+     * @param bubbles 是否冒泡
+     * @param cancelable 是否可取消
+     */
+    void InitEvent(const std::string& type, bool bubbles, bool cancelable);
+
     /**
      * @brief 检查事件传播是否已停止
      * @return true 表示已停止
      */
     bool IsPropagationStopped() const { return propagation_stopped_; }
-    
+
     /**
      * @brief 检查事件传播是否立即停止
      * @return true 表示立即停止
@@ -168,6 +176,44 @@ protected:
     bool propagation_stopped_;
     bool immediate_propagation_stopped_;
     bool default_prevented_;
+};
+
+/**
+ * @brief 自定义事件类
+ */
+class CustomEvent : public Event {
+public:
+    /**
+     * @brief 构造函数
+     * @param type 事件类型
+     * @param bubbles 是否冒泡
+     * @param cancelable 是否可取消
+     * @param detail_json detail 的 JSON 序列化结果
+     */
+    CustomEvent(const std::string& type,
+                bool bubbles = false,
+                bool cancelable = false,
+                const std::string& detail_json = "null");
+
+    /**
+     * @brief 获取 detail 的 JSON 序列化结果
+     */
+    const std::string& GetDetailJSON() const { return detail_json_; }
+
+    /**
+     * @brief 初始化自定义事件
+     * @param type 事件类型
+     * @param bubbles 是否冒泡
+     * @param cancelable 是否可取消
+     * @param detail_json detail 的 JSON 序列化结果
+     */
+    void InitCustomEvent(const std::string& type,
+                         bool bubbles,
+                         bool cancelable,
+                         const std::string& detail_json);
+
+private:
+    std::string detail_json_;
 };
 
 /**

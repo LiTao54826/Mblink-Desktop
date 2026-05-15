@@ -111,14 +111,6 @@
       "amount": 120,
       "category": "医疗",
       "note": "体检"
-    },
-    {
-      "id": 19,
-      "date": "2026-02-24",
-      "type": "expense",
-      "amount": 84545.0,
-      "category": "餐饮",
-      "note": "845545"
     }
   ],
   "next_id": 20

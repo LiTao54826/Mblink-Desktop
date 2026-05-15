@@ -139,27 +139,28 @@ static JSValue JSNode_get_nodeName(JSContext* ctx, JSValueConst this_val, int ma
         return JS_NULL;
     }
 
-    // 对于 Element，返回大写的标签名
     auto element = std::dynamic_pointer_cast<Element>(node);
     if (element) {
         std::string tag_name = element->GetTagName();
-        // 转换为大写
         for (auto& c : tag_name) {
-            c = std::toupper(c);
+            c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
         }
         return JS_NewString(ctx, tag_name.c_str());
     }
-    
-    // 对于 Text 节点，返回 "#text"
+
     if (node->GetNodeType() == NodeType::TEXT_NODE) {
         return JS_NewString(ctx, "#text");
     }
-    
-    // 对于 Document 节点，返回 "#document"
+    if (node->GetNodeType() == NodeType::COMMENT_NODE) {
+        return JS_NewString(ctx, "#comment");
+    }
     if (node->GetNodeType() == NodeType::DOCUMENT_NODE) {
         return JS_NewString(ctx, "#document");
     }
-    
+    if (node->GetNodeType() == NodeType::DOCUMENT_FRAGMENT_NODE) {
+        return JS_NewString(ctx, "#document-fragment");
+    }
+
     return JS_NewString(ctx, "");
 }
 
@@ -170,8 +171,6 @@ static JSValue JSNode_get_nodeType(JSContext* ctx, JSValueConst this_val, int ma
         return JS_NewInt32(ctx, 0);
     }
 
-    // 返回 DOM 标准的 nodeType 值
-    // ELEMENT_NODE = 1, TEXT_NODE = 3, DOCUMENT_NODE = 9
     int type = 0;
     switch (node->GetNodeType()) {
         case NodeType::ELEMENT_NODE:
@@ -180,8 +179,14 @@ static JSValue JSNode_get_nodeType(JSContext* ctx, JSValueConst this_val, int ma
         case NodeType::TEXT_NODE:
             type = 3;
             break;
+        case NodeType::COMMENT_NODE:
+            type = 8;
+            break;
         case NodeType::DOCUMENT_NODE:
             type = 9;
+            break;
+        case NodeType::DOCUMENT_FRAGMENT_NODE:
+            type = 11;
             break;
         default:
             type = 0;
@@ -190,41 +195,65 @@ static JSValue JSNode_get_nodeType(JSContext* ctx, JSValueConst this_val, int ma
     return JS_NewInt32(ctx, type);
 }
 
-// nodeValue getter - 对于文本节点返回文本内容，对于元素节点返回 null
+// isConnected getter
+static JSValue JSNode_get_isConnected(JSContext* ctx, JSValueConst this_val, int magic) {
+    auto node = UnwrapNode(ctx, this_val);
+    if (!node) {
+        return JS_FALSE;
+    }
+    return JS_NewBool(ctx, node->IsConnected());
+}
+
+// compareDocumentPosition(other) - 比较参数节点相对当前节点的位置
+static JSValue JSNode_compareDocumentPosition(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) {
+    auto node = UnwrapNode(ctx, this_val);
+    if (!node) {
+        return JS_EXCEPTION;
+    }
+
+    if (argc < 1) {
+        return JS_ThrowTypeError(ctx, "compareDocumentPosition requires 1 argument");
+    }
+
+    auto other = UnwrapNode(ctx, argv[0]);
+    if (!other) {
+        return JS_ThrowTypeError(ctx, "parameter 1 is not of type 'Node'");
+    }
+
+    return JS_NewUint32(ctx, node->CompareDocumentPosition(other));
+}
+
+// nodeValue getter - 对于文本/注释节点返回文本内容，对于元素节点返回 null
 static JSValue JSNode_get_nodeValue(JSContext* ctx, JSValueConst this_val, int magic) {
     auto node = UnwrapNode(ctx, this_val);
     if (!node) {
         return JS_NULL;
     }
 
-    // 对于文本节点，返回文本内容
-    if (node->GetNodeType() == NodeType::TEXT_NODE) {
+    if (node->GetNodeType() == NodeType::TEXT_NODE || node->GetNodeType() == NodeType::COMMENT_NODE) {
         auto text_node = std::dynamic_pointer_cast<Text>(node);
         if (text_node) {
             return JS_NewString(ctx, text_node->GetData().c_str());
         }
-        // 回退到 textContent
         return JS_NewString(ctx, node->GetTextContent().c_str());
     }
-    
-    // 对于元素节点和文档节点，返回 null
+
     return JS_NULL;
 }
 
-// nodeValue setter - 对于文本节点设置文本内容
+// nodeValue setter - 对于文本/注释节点设置文本内容
 static JSValue JSNode_set_nodeValue(JSContext* ctx, JSValueConst this_val, JSValue val, int magic) {
     auto node = UnwrapNode(ctx, this_val);
     if (!node) {
         return JS_UNDEFINED;
     }
 
-    // 只有文本节点可以设置 nodeValue
-    if (node->GetNodeType() == NodeType::TEXT_NODE) {
+    if (node->GetNodeType() == NodeType::TEXT_NODE || node->GetNodeType() == NodeType::COMMENT_NODE) {
         const char* str = JS_ToCString(ctx, val);
         if (!str) {
             return JS_EXCEPTION;
         }
-        
+
         auto text_node = std::dynamic_pointer_cast<Text>(node);
         if (text_node) {
             text_node->SetData(str);
@@ -233,7 +262,45 @@ static JSValue JSNode_set_nodeValue(JSContext* ctx, JSValueConst this_val, JSVal
         }
         JS_FreeCString(ctx, str);
     }
-    
+
+    return JS_UNDEFINED;
+}
+
+static JSValue JSNode_get_data(JSContext* ctx, JSValueConst this_val, int magic) {
+    auto node = UnwrapNode(ctx, this_val);
+    if (!node) {
+        return JS_UNDEFINED;
+    }
+
+    if (node->GetNodeType() == NodeType::TEXT_NODE || node->GetNodeType() == NodeType::COMMENT_NODE) {
+        auto text_node = std::dynamic_pointer_cast<Text>(node);
+        if (text_node) {
+            return JS_NewString(ctx, text_node->GetData().c_str());
+        }
+    }
+
+    return JS_UNDEFINED;
+}
+
+static JSValue JSNode_set_data(JSContext* ctx, JSValueConst this_val, JSValue val, int magic) {
+    auto node = UnwrapNode(ctx, this_val);
+    if (!node) {
+        return JS_UNDEFINED;
+    }
+
+    if (node->GetNodeType() == NodeType::TEXT_NODE || node->GetNodeType() == NodeType::COMMENT_NODE) {
+        const char* str = JS_ToCString(ctx, val);
+        if (!str) {
+            return JS_EXCEPTION;
+        }
+
+        auto text_node = std::dynamic_pointer_cast<Text>(node);
+        if (text_node) {
+            text_node->SetData(str);
+        }
+        JS_FreeCString(ctx, str);
+    }
+
     return JS_UNDEFINED;
 }
 
@@ -401,6 +468,26 @@ static JSValue JSNode_remove(JSContext* ctx, JSValueConst this_val, int argc, JS
     return JS_UNDEFINED;
 }
 
+// cloneNode(deep) - 克隆当前节点
+static JSValue JSNode_cloneNode(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) {
+    auto node = UnwrapNode(ctx, this_val);
+    if (!node) {
+        return JS_EXCEPTION;
+    }
+
+    bool deep = false;
+    if (argc > 0) {
+        deep = JS_ToBool(ctx, argv[0]);
+    }
+
+    auto cloned = node->CloneNode(deep);
+    if (!cloned) {
+        return JS_NULL;
+    }
+
+    return WrapNode(ctx, cloned);
+}
+
 // ========== 类定义 ==========
 
 static const JSCFunctionListEntry js_node_proto_funcs[] = {
@@ -413,11 +500,15 @@ static const JSCFunctionListEntry js_node_proto_funcs[] = {
     JS_CGETSET_MAGIC_DEF("childNodes", JSNode_get_childNodes, nullptr, 0),
     JS_CGETSET_MAGIC_DEF("nodeName", JSNode_get_nodeName, nullptr, 0),
     JS_CGETSET_MAGIC_DEF("nodeType", JSNode_get_nodeType, nullptr, 0),
+    JS_CGETSET_MAGIC_DEF("isConnected", JSNode_get_isConnected, nullptr, 0),
+    JS_CFUNC_DEF("compareDocumentPosition", 1, JSNode_compareDocumentPosition),
     JS_CGETSET_MAGIC_DEF("nodeValue", JSNode_get_nodeValue, JSNode_set_nodeValue, 0),
+    JS_CGETSET_MAGIC_DEF("data", JSNode_get_data, JSNode_set_data, 0),
     JS_CFUNC_DEF("appendChild", 1, JSNode_appendChild),
     JS_CFUNC_DEF("removeChild", 1, JSNode_removeChild),
     JS_CFUNC_DEF("insertBefore", 2, JSNode_insertBefore),
     JS_CFUNC_DEF("replaceChild", 2, JSNode_replaceChild),
+    JS_CFUNC_DEF("cloneNode", 1, JSNode_cloneNode),
     JS_CFUNC_DEF("remove", 0, JSNode_remove),
 };
 
@@ -450,6 +541,10 @@ void InitNodeBinding(JSContext* ctx) {
 JSValue WrapNode(JSContext* ctx, std::shared_ptr<Node> node) {
     if (!node) {
         return JS_NULL;
+    }
+
+    if (auto element = std::dynamic_pointer_cast<Element>(node)) {
+        return WrapElement(ctx, element);
     }
 
     // 检查是否已经包装过（引用相等性）

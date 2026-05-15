@@ -3,8 +3,8 @@
 package mbink
 
 /*
-#cgo CFLAGS: -I../../../core/api
-#cgo LDFLAGS: -L.. -L../../../build/lib/Release -lmbink
+#cgo CFLAGS: -I../../../core/api -I../core/api
+#cgo LDFLAGS: -L.. -L../../../build/lib/Release -L../.. -lmbink
 #include <stdlib.h>
 #include <stdint.h>
 #include "mbink.h"

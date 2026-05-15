@@ -816,7 +816,7 @@ std::string QuickJSRuntime::ResolveFolderOrFile(const std::string& path) {
     }
 
     // 2. 尝试补常见扩展名
-    if (!path.empty() && path.find('.') == std::string::npos) {
+    if (!path.empty() && fs_path.extension().empty()) {
         fs::path with_js = fs_path;
         with_js += ".js";
         if (fs::is_regular_file(with_js)) {
@@ -850,17 +850,26 @@ std::string QuickJSRuntime::ResolveFolderOrFileWithLoader(const std::string& pat
         if (file_loader_(path, data, nullptr)) {
             return path;
         }
-        if (!path.empty() && path.find('.') == std::string::npos) {
+        if (!path.empty() && Utf8PathToFsPath(path).extension().empty()) {
             const std::string with_js = path + ".js";
             if (file_loader_(with_js, data, nullptr)) {
                 return with_js;
+            }
+            if (std::filesystem::is_regular_file(Utf8PathToFsPath(with_js))) {
+                return NormalizeFsPath(Utf8PathToFsPath(with_js));
             }
             for (const auto& ext : GetNativeModuleExtensions()) {
                 const std::string with_native = path + ext;
                 if (file_loader_(with_native, data, nullptr)) {
                     return with_native;
                 }
+                if (std::filesystem::is_regular_file(Utf8PathToFsPath(with_native))) {
+                    return NormalizeFsPath(Utf8PathToFsPath(with_native));
+                }
             }
+        }
+        if (std::filesystem::exists(Utf8PathToFsPath(path))) {
+            return ResolveFolderOrFile(path);
         }
         return ResolvePackageDirectoryWithLoader(path);
     }
@@ -871,50 +880,45 @@ std::string QuickJSRuntime::ResolvePackageDirectory(const std::string& dir_path)
     namespace fs = std::filesystem;
     fs::path dir_fs_path = Utf8PathToFsPath(dir_path);
 
-    fs::path package_json = dir_fs_path / "package.json";
-    if (!fs::exists(package_json)) {
-        // 没有 package.json，尝试默认入口
-        fs::path index_js = dir_fs_path / "index.js";
-        if (fs::exists(index_js)) {
-            return NormalizeFsPath(index_js);
+    auto resolve_field = [&](const char* field_name) -> std::string {
+        fs::path package_json = dir_fs_path / "package.json";
+        if (!fs::exists(package_json)) {
+            return "";
         }
-        for (const auto& ext : GetNativeModuleExtensions()) {
-            fs::path index_native = dir_fs_path / ("index" + ext);
-            if (fs::exists(index_native)) {
-                return NormalizeFsPath(index_native);
+
+        std::ifstream file(Utf8PathToFsPath(FsPathToUtf8String(package_json)), std::ios::binary);
+        if (!file.is_open()) {
+            return "";
+        }
+
+        try {
+            json pkg = json::parse(file);
+
+            if (pkg.contains("exports")) {
+                std::string exports_result = ResolvePackageExports(pkg["exports"], dir_path, ".");
+                if (!exports_result.empty()) {
+                    return ResolveFolderOrFile(exports_result);
+                }
             }
-        }
-        return NormalizeFsPath(dir_fs_path);
-    }
 
-    // 读取并解析 package.json
-    std::ifstream file(Utf8PathToFsPath(FsPathToUtf8String(package_json)), std::ios::binary);
-    if (!file.is_open()) {
-        return dir_path;
-    }
-
-    try {
-        json pkg = json::parse(file);
-
-        // 优先使用 exports 字段（新标准）
-        if (pkg.contains("exports")) {
-            std::string exports_result = ResolvePackageExports(pkg["exports"], dir_path, ".");
-            if (!exports_result.empty()) {
-                return ResolveFolderOrFile(exports_result);
+            if (pkg.contains(field_name) && pkg[field_name].is_string()) {
+                std::string entry_file = pkg[field_name].get<std::string>();
+                fs::path entry_path = dir_fs_path / Utf8PathToFsPath(entry_file);
+                return ResolveFolderOrFile(NormalizeFsPath(entry_path));
             }
+        } catch (...) {
         }
 
-        // 回退到 main 字段
-        if (pkg.contains("main") && pkg["main"].is_string()) {
-            std::string main_file = pkg["main"].get<std::string>();
-            fs::path main_path = dir_fs_path / Utf8PathToFsPath(main_file);
-            return ResolveFolderOrFile(NormalizeFsPath(main_path));
-        }
-    } catch (...) {
-        // JSON 解析失败
+        return "";
+    };
+
+    if (std::string resolved = resolve_field("module"); !resolved.empty()) {
+        return resolved;
+    }
+    if (std::string resolved = resolve_field("main"); !resolved.empty()) {
+        return resolved;
     }
 
-    // 最后尝试默认入口
     fs::path index_js = dir_fs_path / "index.js";
     if (fs::exists(index_js)) {
         return NormalizeFsPath(index_js);
@@ -949,6 +953,13 @@ std::string QuickJSRuntime::ResolvePackageDirectoryWithLoader(const std::string&
                 if (!exports_result.empty()) {
                     return ResolveFolderOrFileWithLoader(exports_result);
                 }
+            }
+            if (pkg.contains("module") && pkg["module"].is_string()) {
+                std::string module_file = pkg["module"].get<std::string>();
+                if (module_file.rfind("./", 0) == 0) {
+                    module_file = module_file.substr(2);
+                }
+                return ResolveFolderOrFileWithLoader(normalized + "/" + module_file);
             }
             if (pkg.contains("main") && pkg["main"].is_string()) {
                 std::string main_file = pkg["main"].get<std::string>();

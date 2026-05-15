@@ -8,6 +8,8 @@
 #include "bindings/js_element.h"
 #include "bindings/js_selection.h"
 #include "bindings/js_range.h"
+#include "bindings/js_event.h"
+#include "core/dom/bindings/native_data_binding.h"
 #include "core/dom/document.h"
 #include "core/dom/text.h"
 #include "core/event/input/hit_test_controller.h"
@@ -263,8 +265,16 @@ static JSValue JS_Document_createElementNS(JSContext* ctx, JSValueConst this_val
         return JS_ThrowTypeError(ctx, "createElementNS requires 2 arguments");
     }
 
+    const char* namespace_uri = JS_IsNull(argv[0]) ? nullptr : JS_ToCString(ctx, argv[0]);
+    if (!JS_IsNull(argv[0]) && !namespace_uri) {
+        return JS_EXCEPTION;
+    }
+
     const char* qualified_name = JS_ToCString(ctx, argv[1]);
     if (!qualified_name) {
+        if (namespace_uri) {
+            JS_FreeCString(ctx, namespace_uri);
+        }
         return JS_EXCEPTION;
     }
     std::string qualified_name_str(qualified_name);
@@ -274,6 +284,9 @@ static JSValue JS_Document_createElementNS(JSContext* ctx, JSValueConst this_val
     JS_FreeValue(ctx, global);
 
     if (JS_IsUndefined(window_val)) {
+        if (namespace_uri) {
+            JS_FreeCString(ctx, namespace_uri);
+        }
         JS_FreeCString(ctx, qualified_name);
         return ThrowDocumentCreateError(ctx, "document.createElementNS", qualified_name_str.c_str(), "window binding is undefined");
     }
@@ -283,6 +296,9 @@ static JSValue JS_Document_createElementNS(JSContext* ctx, JSValueConst this_val
     JS_FreeValue(ctx, window_val);
 
     if (!ptr) {
+        if (namespace_uri) {
+            JS_FreeCString(ctx, namespace_uri);
+        }
         JS_FreeCString(ctx, qualified_name);
         return ThrowDocumentCreateError(ctx, "document.createElementNS", qualified_name_str.c_str(), "window pointer is null");
     }
@@ -290,15 +306,21 @@ static JSValue JS_Document_createElementNS(JSContext* ctx, JSValueConst this_val
     auto* window = static_cast<Window*>(ptr);
     auto doc = window->GetDocument();
     if (!doc) {
+        if (namespace_uri) {
+            JS_FreeCString(ctx, namespace_uri);
+        }
         JS_FreeCString(ctx, qualified_name);
         return ThrowDocumentCreateError(ctx, "document.createElementNS", qualified_name_str.c_str(), "document is null");
     }
 
-    auto element = doc->CreateElement(qualified_name);
+    auto element = doc->CreateElementNS(namespace_uri ? namespace_uri : "", qualified_name);
+    if (namespace_uri) {
+        JS_FreeCString(ctx, namespace_uri);
+    }
     JS_FreeCString(ctx, qualified_name);
 
     if (!element) {
-        return ThrowDocumentCreateError(ctx, "document.createElementNS", qualified_name_str.c_str(), "CreateElement returned null");
+        return ThrowDocumentCreateError(ctx, "document.createElementNS", qualified_name_str.c_str(), "CreateElementNS returned null");
     }
 
     return bindings::WrapElement(ctx, element);
@@ -353,6 +375,54 @@ static JSValue JS_Document_createTextNode(JSContext* ctx, JSValueConst this_val,
 }
 
 // ========== document.createDocumentFragment 实现 ==========
+
+
+// ========== document.createComment 实现 ==========
+
+static JSValue JS_Document_createComment(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) {
+    if (argc < 1) {
+        return JS_ThrowTypeError(ctx, "createComment requires 1 argument");
+    }
+
+    const char* data = JS_ToCString(ctx, argv[0]);
+    if (!data) {
+        return JS_EXCEPTION;
+    }
+
+    JSValue global = JS_GetGlobalObject(ctx);
+    JSValue window_val = JS_GetPropertyStr(ctx, global, "__mbink_window_ptr");
+    JS_FreeValue(ctx, global);
+
+    if (JS_IsUndefined(window_val)) {
+        JS_FreeCString(ctx, data);
+        return JS_NULL;
+    }
+
+    void* ptr = nullptr;
+    JS_ToInt64Ext(ctx, (int64_t*)&ptr, window_val);
+    JS_FreeValue(ctx, window_val);
+
+    if (!ptr) {
+        JS_FreeCString(ctx, data);
+        return JS_NULL;
+    }
+
+    auto* window = static_cast<Window*>(ptr);
+    auto doc = window->GetDocument();
+    if (!doc) {
+        JS_FreeCString(ctx, data);
+        return JS_NULL;
+    }
+
+    auto comment = doc->CreateComment(data);
+    JS_FreeCString(ctx, data);
+
+    if (!comment) {
+        return JS_NULL;
+    }
+
+    return bindings::WrapNode(ctx, comment);
+}
 
 static JSValue JS_Document_createDocumentFragment(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) {
     // 从全局对象获取 window
@@ -1198,6 +1268,54 @@ static JSValue JS_Window_getComputedStyle(JSContext* ctx, JSValueConst this_val,
 // ========== document.addEventListener 实现 ==========
 // 注意：document 的事件监听器实际上委托给 body 元素处理
 
+static JSValue JS_Document_createEvent(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) {
+    if (argc < 1) {
+        return JS_ThrowTypeError(ctx, "createEvent requires 1 argument");
+    }
+
+    const char* interface_name = JS_ToCString(ctx, argv[0]);
+    if (!interface_name) {
+        return JS_EXCEPTION;
+    }
+
+    const bool is_event = strcmp(interface_name, "Event") == 0 || strcmp(interface_name, "event") == 0;
+    const bool is_custom_event = strcmp(interface_name, "CustomEvent") == 0 || strcmp(interface_name, "customevent") == 0;
+    JS_FreeCString(ctx, interface_name);
+    if (!is_event && !is_custom_event) {
+        return JS_ThrowTypeError(ctx, "Only Event and CustomEvent interfaces are supported");
+    }
+
+    if (is_custom_event) {
+        return bindings::WrapEvent(ctx, std::make_shared<CustomEvent>("", false, false, "null"));
+    }
+
+    return bindings::WrapEvent(ctx, std::make_shared<Event>("", false, false));
+}
+
+static JSValue JS_Document_dispatchEvent(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) {
+    if (argc < 1) {
+        return JS_ThrowTypeError(ctx, "dispatchEvent requires 1 argument");
+    }
+
+    JSValue body = JS_GetPropertyStr(ctx, this_val, "body");
+    if (JS_IsNull(body) || JS_IsUndefined(body)) {
+        JS_FreeValue(ctx, body);
+        return JS_FALSE;
+    }
+
+    JSValue dispatchEvent = JS_GetPropertyStr(ctx, body, "dispatchEvent");
+    if (JS_IsFunction(ctx, dispatchEvent)) {
+        JSValue result = JS_Call(ctx, dispatchEvent, body, argc, argv);
+        JS_FreeValue(ctx, dispatchEvent);
+        JS_FreeValue(ctx, body);
+        return result;
+    }
+
+    JS_FreeValue(ctx, dispatchEvent);
+    JS_FreeValue(ctx, body);
+    return JS_FALSE;
+}
+
 static JSValue JS_Document_addEventListener(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) {
     if (argc < 2) {
         return JS_ThrowTypeError(ctx, "addEventListener requires at least 2 arguments");
@@ -1479,6 +1597,160 @@ static JSValue JS_Document_elementFromPoint(JSContext* ctx, JSValueConst this_va
 
 // ========== 绑定函数 ==========
 
+static std::shared_ptr<Document> GetBoundDocumentFromGlobal(JSContext* ctx) {
+    JSValue global = JS_GetGlobalObject(ctx);
+    JSValue window_val = JS_GetPropertyStr(ctx, global, "__mbink_window_ptr");
+    JS_FreeValue(ctx, global);
+    void* ptr = nullptr;
+    JS_ToInt64Ext(ctx, (int64_t*)&ptr, window_val);
+    JS_FreeValue(ctx, window_val);
+    if (!ptr) return nullptr;
+    auto* window = static_cast<Window*>(ptr);
+    return window->GetDocument();
+}
+
+static NativeDataBindingRuntime* RequireNativeBindingRuntime(JSContext* ctx) {
+    auto doc = GetBoundDocumentFromGlobal(ctx);
+    if (!doc) {
+        JS_ThrowInternalError(ctx, "document is unavailable");
+        return nullptr;
+    }
+    auto* runtime = doc->GetNativeDataBindingRuntime();
+    if (!runtime) {
+        JS_ThrowInternalError(ctx, "native binding runtime requires host state manager");
+        return nullptr;
+    }
+    return runtime;
+}
+
+static JSValue JS_Document_nativeBinding_scope(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
+    if (argc < 2) return JS_ThrowTypeError(ctx, "nativeBinding.scope requires element and aliases");
+    auto* runtime = RequireNativeBindingRuntime(ctx);
+    auto doc = GetBoundDocumentFromGlobal(ctx);
+    if (!runtime || !doc) return JS_EXCEPTION;
+    auto owner = bindings::UnwrapElement(ctx, argv[0]);
+    if (!owner) return JS_ThrowTypeError(ctx, "scope owner must be Element");
+
+    JSValue aliasesValue = JS_DupValue(ctx, argv[1]);
+    json aliasesJson = doc->GetJSRuntime()->JSValueToJSON(aliasesValue);
+    JS_FreeValue(ctx, aliasesValue);
+    std::unordered_map<std::string, ScopeSlot> aliases;
+    if (aliasesJson.is_object()) {
+        for (auto it = aliasesJson.begin(); it != aliasesJson.end(); ++it) {
+            if (it.value().is_string()) aliases[it.key()] = ScopeSlot{it.value().get<std::string>(), false};
+            else if (it.value().is_object() && it.value().contains("graphPath") && it.value()["graphPath"].is_string()) {
+                aliases[it.key()] = ScopeSlot{it.value()["graphPath"].get<std::string>(), it.value().value("readOnly", false)};
+            }
+        }
+    }
+    bool readOnly = argc >= 3 && JS_ToBool(ctx, argv[2]);
+    return JS_NewInt64(ctx, runtime->createScope(owner, aliases, readOnly));
+}
+
+static JSValue JS_Document_nativeBinding_text(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
+    if (argc < 3) return JS_ThrowTypeError(ctx, "nativeBinding.text requires owner, target, path");
+    auto* runtime = RequireNativeBindingRuntime(ctx);
+    if (!runtime) return JS_EXCEPTION;
+    auto owner = bindings::UnwrapElement(ctx, argv[0]);
+    auto target = bindings::UnwrapNode(ctx, argv[1]);
+    const char* path = JS_ToCString(ctx, argv[2]);
+    if (!owner || !target || !path) return JS_ThrowTypeError(ctx, "invalid nativeBinding.text args");
+    uint64_t id = runtime->createTextBinding(owner, target, path);
+    runtime->mountBinding(id);
+    JS_FreeCString(ctx, path);
+    return JS_NewInt64(ctx, static_cast<int64_t>(id));
+}
+
+static JSValue JS_Document_nativeBinding_attr(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
+    if (argc < 4) return JS_ThrowTypeError(ctx, "nativeBinding.attr requires owner, target, attr, path");
+    auto* runtime = RequireNativeBindingRuntime(ctx);
+    if (!runtime) return JS_EXCEPTION;
+    auto owner = bindings::UnwrapElement(ctx, argv[0]);
+    auto target = bindings::UnwrapElement(ctx, argv[1]);
+    const char* attr = JS_ToCString(ctx, argv[2]);
+    const char* path = JS_ToCString(ctx, argv[3]);
+    if (!owner || !target || !attr || !path) return JS_ThrowTypeError(ctx, "invalid nativeBinding.attr args");
+    uint64_t id = runtime->createAttrBinding(owner, target, attr, path);
+    runtime->mountBinding(id);
+    JS_FreeCString(ctx, attr);
+    JS_FreeCString(ctx, path);
+    return JS_NewInt64(ctx, static_cast<int64_t>(id));
+}
+
+static JSValue JS_Document_nativeBinding_visible(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
+    if (argc < 3) return JS_ThrowTypeError(ctx, "nativeBinding.visible requires owner, target, path");
+    auto* runtime = RequireNativeBindingRuntime(ctx);
+    if (!runtime) return JS_EXCEPTION;
+    auto owner = bindings::UnwrapElement(ctx, argv[0]);
+    auto target = bindings::UnwrapElement(ctx, argv[1]);
+    const char* path = JS_ToCString(ctx, argv[2]);
+    if (!owner || !target || !path) return JS_ThrowTypeError(ctx, "invalid nativeBinding.visible args");
+    uint64_t id = runtime->createVisibleBinding(owner, target, path);
+    runtime->mountBinding(id);
+    JS_FreeCString(ctx, path);
+    return JS_NewInt64(ctx, static_cast<int64_t>(id));
+}
+
+static JSValue JS_Document_nativeBinding_modelValue(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
+    if (argc < 3) return JS_ThrowTypeError(ctx, "nativeBinding.modelValue requires owner, input, path");
+    auto* runtime = RequireNativeBindingRuntime(ctx);
+    if (!runtime) return JS_EXCEPTION;
+    auto owner = bindings::UnwrapElement(ctx, argv[0]);
+    auto input = std::dynamic_pointer_cast<HTMLInputElement>(bindings::UnwrapElement(ctx, argv[1]));
+    const char* path = JS_ToCString(ctx, argv[2]);
+    if (!owner || !input || !path) return JS_ThrowTypeError(ctx, "invalid nativeBinding.modelValue args");
+    uint64_t id = runtime->createModelValueBinding(owner, input, path);
+    runtime->mountBinding(id);
+    JS_FreeCString(ctx, path);
+    return JS_NewInt64(ctx, static_cast<int64_t>(id));
+}
+
+static JSValue JS_Document_nativeBinding_modelChecked(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
+    if (argc < 3) return JS_ThrowTypeError(ctx, "nativeBinding.modelChecked requires owner, input, path");
+    auto* runtime = RequireNativeBindingRuntime(ctx);
+    if (!runtime) return JS_EXCEPTION;
+    auto owner = bindings::UnwrapElement(ctx, argv[0]);
+    auto input = std::dynamic_pointer_cast<HTMLInputElement>(bindings::UnwrapElement(ctx, argv[1]));
+    const char* path = JS_ToCString(ctx, argv[2]);
+    if (!owner || !input || !path) return JS_ThrowTypeError(ctx, "invalid nativeBinding.modelChecked args");
+    uint64_t id = runtime->createModelCheckedBinding(owner, input, path);
+    runtime->mountBinding(id);
+    JS_FreeCString(ctx, path);
+    return JS_NewInt64(ctx, static_cast<int64_t>(id));
+}
+
+static JSValue JS_Document_nativeBinding_mountDeclarative(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
+    auto* runtime = RequireNativeBindingRuntime(ctx);
+    auto doc = GetBoundDocumentFromGlobal(ctx);
+    if (!runtime || !doc) return JS_EXCEPTION;
+
+    std::shared_ptr<Element> root;
+    if (argc >= 1 && !JS_IsUndefined(argv[0]) && !JS_IsNull(argv[0])) {
+        root = bindings::UnwrapElement(ctx, argv[0]);
+        if (!root) return JS_ThrowTypeError(ctx, "nativeBinding.mountDeclarative root must be Element");
+    } else {
+        root = doc->GetBody() ? doc->GetBody() : doc->GetDocumentElement();
+    }
+
+    return JS_NewInt32(ctx, static_cast<int32_t>(runtime->mountDeclarative(root)));
+}
+
+static JSValue JS_Document_nativeBinding_unmount(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
+    if (argc < 1) return JS_ThrowTypeError(ctx, "nativeBinding.unmount requires binding id");
+    auto* runtime = RequireNativeBindingRuntime(ctx);
+    if (!runtime) return JS_EXCEPTION;
+    int64_t id = 0;
+    JS_ToInt64(ctx, &id, argv[0]);
+    return JS_NewBool(ctx, runtime->unmountBinding(static_cast<uint64_t>(id)));
+}
+
+static JSValue JS_Document_nativeBinding_flush(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
+    (void)argc; (void)argv;
+    auto* runtime = RequireNativeBindingRuntime(ctx);
+    if (!runtime) return JS_EXCEPTION;
+    return JS_NewInt32(ctx, static_cast<int32_t>(runtime->flush()));
+}
+
 void BindDocumentAPIs(JSContext* ctx, Window* window) {
     // 保存 window 指针到全局对象（用于回调中访问）
     JSValue global = JS_GetGlobalObject(ctx);
@@ -1513,9 +1785,25 @@ void BindDocumentAPIs(JSContext* ctx, Window* window) {
     JS_SetPropertyStr(ctx, document, "createTextNode",
         JS_NewCFunction(ctx, JS_Document_createTextNode, "createTextNode", 1));
 
+    // 设置 createComment 方法
+    JS_SetPropertyStr(ctx, document, "createComment",
+        JS_NewCFunction(ctx, JS_Document_createComment, "createComment", 1));
+
     // 设置 createDocumentFragment 方法
     JS_SetPropertyStr(ctx, document, "createDocumentFragment",
         JS_NewCFunction(ctx, JS_Document_createDocumentFragment, "createDocumentFragment", 0));
+
+    JSValue native_binding = JS_NewObject(ctx);
+    JS_SetPropertyStr(ctx, native_binding, "scope", JS_NewCFunction(ctx, JS_Document_nativeBinding_scope, "scope", 3));
+    JS_SetPropertyStr(ctx, native_binding, "text", JS_NewCFunction(ctx, JS_Document_nativeBinding_text, "text", 3));
+    JS_SetPropertyStr(ctx, native_binding, "attr", JS_NewCFunction(ctx, JS_Document_nativeBinding_attr, "attr", 4));
+    JS_SetPropertyStr(ctx, native_binding, "visible", JS_NewCFunction(ctx, JS_Document_nativeBinding_visible, "visible", 3));
+    JS_SetPropertyStr(ctx, native_binding, "modelValue", JS_NewCFunction(ctx, JS_Document_nativeBinding_modelValue, "modelValue", 3));
+    JS_SetPropertyStr(ctx, native_binding, "modelChecked", JS_NewCFunction(ctx, JS_Document_nativeBinding_modelChecked, "modelChecked", 3));
+    JS_SetPropertyStr(ctx, native_binding, "mountDeclarative", JS_NewCFunction(ctx, JS_Document_nativeBinding_mountDeclarative, "mountDeclarative", 1));
+    JS_SetPropertyStr(ctx, native_binding, "unmount", JS_NewCFunction(ctx, JS_Document_nativeBinding_unmount, "unmount", 1));
+    JS_SetPropertyStr(ctx, native_binding, "flush", JS_NewCFunction(ctx, JS_Document_nativeBinding_flush, "flush", 0));
+    JS_SetPropertyStr(ctx, document, "nativeBinding", native_binding);
 
     // 设置 createRange 方法
     JS_SetPropertyStr(ctx, document, "createRange",
@@ -1544,6 +1832,14 @@ void BindDocumentAPIs(JSContext* ctx, Window* window) {
     // 设置 getSelection 方法（document.getSelection 是 window.getSelection 的别名）
     JS_SetPropertyStr(ctx, document, "getSelection",
         JS_NewCFunction(ctx, JS_Window_getSelection, "getSelection", 0));
+
+    // 设置 createEvent 方法
+    JS_SetPropertyStr(ctx, document, "createEvent",
+        JS_NewCFunction(ctx, JS_Document_createEvent, "createEvent", 1));
+
+    // 设置 dispatchEvent 方法（委托给 body）
+    JS_SetPropertyStr(ctx, document, "dispatchEvent",
+        JS_NewCFunction(ctx, JS_Document_dispatchEvent, "dispatchEvent", 1));
 
     // 设置 addEventListener 方法（委托给 body）
     JS_SetPropertyStr(ctx, document, "addEventListener",

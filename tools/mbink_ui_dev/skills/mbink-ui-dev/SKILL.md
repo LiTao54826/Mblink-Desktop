@@ -29,9 +29,36 @@ Use `mbink-ui-dev` as the primary control surface for MBink UI development. Trea
 9. Use `click`, `input_text`, `scroll`, and `highlight` to validate interactions or spotlight the exact element under review.
 10. Re-run `snapshot_ui`, `query_element`, `get_console_logs`, and `get_js_errors` to verify the effect.
 
+## Build UI First, Then Integrate Host Code
+
+- Start new UI work in the `tool` runtime or through the shared `ui/bridge.js` mock layer before editing Python, Rust, or Go host code.
+- Build the UI with realistic mock data first. Finish layout, state, loading, empty, error, and interaction behavior in `mbink-ui-dev` before wiring real host behavior.
+- Prefer componentized UI development for anything beyond a very small screen. Split reusable shell, panels, forms, lists, dialogs, and native-element wrappers into local Preact components before host integration.
+- Treat automated UI validation as a required gate. Run `build`, reload or reopen the runtime, take a `snapshot`, target important elements with `query_element`, inspect layout-sensitive nodes with `inspect`, exercise representative `click`, `input_text`, and `scroll` paths, then check `logs` and `errors`.
+- Do not start or modify host-language implementation for a feature while the mock UI is blank, failing to build, missing important selectors, or producing runtime JS errors.
+- After the UI validation gate passes, implement the narrow host API surface behind `ui/bridge.js`, then validate the real Python, Rust, or Go host runtime and finish with `mbink-ui-dev build`.
+- Keep mock and host API names aligned so the same UI test path can run before and after host integration.
+
+## Develop Incrementally
+
+- Add UI in small verified slices instead of writing the whole screen or a large component in one pass.
+- Build one component, state branch, or interaction path at a time, then run the relevant `build`, reload or reopen, `snapshot`, `query_element`, `inspect`, interaction, `logs`, and `errors` checks before adding the next slice.
+- When a slice introduces a framework compatibility issue, blank UI, selector failure, layout regression, or JS error, stop at that slice and fix it before continuing.
+- Introduce risky syntax, browser APIs, CSS features, native elements, third-party dependencies, or host bridge calls in the smallest isolated component that can prove compatibility.
+- Keep each validation target stable with IDs or data attributes so the failure can be traced to the last added slice instead of a large unverified rewrite.
+
+## Require Snapshot Evidence Before Completion
+
+- Do not claim a UI task is complete from code review, build success, clean logs, or subjective judgment alone.
+- Before reporting completion, run `snapshot` or `snapshot_ui` against the live runtime and confirm the tree contains real rendered UI nodes, expected key text or controls, nonzero rects for important regions, and no placeholder-only or empty root.
+- Use `query_element` for key selectors after the snapshot so the exact controls that matter to the user are proven present and targetable.
+- For visual or layout-sensitive work, also use `inspect` on the relevant nodes and summarize the verified geometry, visibility, or style facts.
+- If `snapshot` cannot be run, fails, returns an empty tree, or does not show the expected UI, report the work as not fully verified and continue debugging instead of saying it is done.
+- In the final response for UI work, include a short verification note naming the snapshot or query checks that passed. Build output alone is not enough evidence.
+
 ## Prefer These Tool Priorities
 
-- Call `snapshot_ui` before acting so the UI state is grounded in real data.
+- Call `snapshot_ui` before acting and before completion so the UI state is grounded in real rendered data.
 - Use `query_element` to locate and `inspect` to diagnose. Do not debug by selector guesswork alone.
 - Prefer dedicated UI control tools over `eval_js` for locate, inspect, click, input, scroll, and highlight actions.
 - Prefer source edits plus build plus reload over `eval_js` patches.
@@ -40,13 +67,31 @@ Use `mbink-ui-dev` as the primary control surface for MBink UI development. Trea
 - Do not reload a failed build. Fix build errors first.
 - Use logs and JS errors as supporting evidence, not as a replacement for snapshots.
 
+## Author Within Current MBink Limits
+
+- Treat MBink as a QuickJS plus MBink DOM desktop runtime, not as Chromium, Firefox, Safari, Node.js, or a complete Web platform.
+- Write UI code as ESM. Prefer official `preact`, `preact/hooks`, `preact/jsx-runtime`, and `preact/jsx-dev-runtime` imports. Do not use `preact-lite.js`, `globalThis.Preact`, `globalThis.PreactHooks`, or legacy custom `js/preact/*` APIs.
+- Prefer the template pattern: `import { h, render } from 'preact'` and author components with `h(...)`. If using JSX in `.js`, `.mjs`, `.jsx`, `.ts`, or `.tsx`, keep `h` and `Fragment` in scope unless `mbink.config.json` intentionally changes the JSX settings and the build is verified.
+- Structure non-trivial UI as small Preact components with explicit props and stable selectors. Keep host calls in `ui/bridge.js` or thin adapter helpers instead of scattering host behavior across visual components.
+- Do not rely on TypeScript type checking from `mbink-ui-dev build`; current TypeScript and TSX handling is esbuild transpilation only.
+- Use `ui/bridge.js` and `hostApi` for Python, Rust, and Go host interaction. The `tool` runtime provides dev mocks only; tray, native window actions, and host resource behavior must not be treated as real in `tool` projects.
+- Use MBink's native `<terminal>` and `<logview>` elements for terminal emulation and high-volume log display instead of browser or npm terminal/log widgets. Read [native-elements.md](references/native-elements.md) before using either element.
+- When unsure whether a JavaScript, DOM, Preact, host bridge, or native-element API is compatible, read [supported-api-reference.md](references/supported-api-reference.md) before using it.
+- Avoid browser or Node APIs that are not part of the verified runtime surface: `require`, `module.exports`, Node built-ins such as `fs` and `path`, `process`, `Buffer`, `localStorage`, `sessionStorage`, `indexedDB`, workers, WebSocket, full navigation/history/download behavior, native form submission, and `navigator.clipboard`.
+- Treat `snapshot` screenshot payloads, `max_depth`, `root_selector`, `reload --mode`, HTTP plus SSE transport, MCP notifications, and VS Code preview as unavailable unless the reference says they have landed.
+- Read [compatibility-guidelines.md](references/compatibility-guidelines.md) before adding new framework dependencies, browser APIs, runtime-specific host features, or non-template syntax.
+
 ## Bootstrap Projects and Templates Deliberately
 
 - Use `init` or `init_project` to scaffold new projects.
-- Choose from `preact-jsx`, `preact-ts`, `vanilla-js`, `python`, `go`, or `rust`.
+- CLI `mbink-ui-dev init` now accepts an optional target directory. `mbink-ui-dev init` scaffolds into the current directory, while `mbink-ui-dev init my-app` scaffolds into `my-app`.
+- Choose a canonical purpose (`minimal`, `showcase`, `desktop-app`) and runtime (`tool`, `python`, `rust`, `go`). Bare `init` defaults to `minimal/tool`; legacy `--template` names are compatibility-only.
 - Open the new project immediately after init and verify the initial runtime with a snapshot.
-- Host starters generate a multi-file frontend scaffold under `src/app.js` and `src/components/*`, while keeping the host entry in `host/main.py`, `host/main.go`, or `rust_host/src/main.rs`.
-- Expect `preact-jsx` projects to rely on global `Preact` and `PreactHooks` and register the root through `__mbink_register_root__`.
+- Templates are embedded into `mbink-ui-dev.exe` at build time, so distribution does not depend on shipping a separate `tools/mbink_ui_dev/templates` directory.
+- Distribute `mbink-ui-dev.exe` with the adjacent MBink runtime library (`mbink.dll` on Windows); host-runtime init copies that one runtime library into the generated Python, Go, or Rust project.
+- Runtime templates vendor their MBink binding files, and init copies the runtime library, so generated Python, Go, and Rust projects are self-contained and do not depend on `MBINK_REPO_ROOT`.
+- Use `mbink-ui-dev build` as the release path. It compiles the UI into `app.mbrp` and then builds the selected host artifact in one command.
+- Runtime starters share the canonical UI under `ui/app.js`, add `ui/bridge.js` mock fallback, and generate runnable host adapters such as `host/main.py`, `host/main.go`, or `rust_host/src/main.rs` when a host runtime is selected.
 - Read [cli-mcp-reference.md](references/cli-mcp-reference.md) when template choice, config layout, or generated structure matters.
 
 ## Use File and Interaction Operations Intentionally

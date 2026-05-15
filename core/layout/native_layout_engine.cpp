@@ -3215,8 +3215,9 @@ LayoutOutput NativeLayoutEngine::ComputeIFCLayout(NodeId node_id, const LayoutIn
     // 当前 total_height / total_width 已经包含 padding + border，
     // 因此在 content-box 模式下需要把 padding/border 加回去再做外框约束。
     // CSS spec: when min > max, min wins (apply max first, then min)
-    float min_height = style.min_height.ToPx(0, style.font_size);
-    float max_height = style.max_height.ToPx(0, style.font_size);
+    float percent_height_base = inputs.parent_size.height.value_or(0.0f);
+    float min_height = style.min_height.ToPx(percent_height_base, style.font_size);
+    float max_height = style.max_height.ToPx(percent_height_base, style.font_size);
     float min_width = style.min_width.ToPx(container_width, style.font_size);
     float max_width = style.max_width.ToPx(container_width, style.font_size);
 
@@ -3377,8 +3378,8 @@ void NativeLayoutEngine::LayoutAbsoluteChildrenInIFC(
         // Add padding and border to size
         float padding_left = child_computed.padding_left.ToPx(containing_block_size.width, child_computed.font_size);
         float padding_right = child_computed.padding_right.ToPx(containing_block_size.width, child_computed.font_size);
-        float padding_top = child_computed.padding_top.ToPx(containing_block_size.height, child_computed.font_size);
-        float padding_bottom = child_computed.padding_bottom.ToPx(containing_block_size.height, child_computed.font_size);
+        float padding_top = child_computed.padding_top.ToPx(containing_block_size.width, child_computed.font_size);
+        float padding_bottom = child_computed.padding_bottom.ToPx(containing_block_size.width, child_computed.font_size);
 
         float border_left_w = child_computed.border_left_width;
         float border_right_w = child_computed.border_right_width;

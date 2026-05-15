@@ -1,0 +1,21 @@
+{
+  "name": "reactflow_test",
+  "entry": "index.html",
+  "src_dir": "src",
+  "out_dir": ".dist",
+  "runtime": "tool",
+  "purpose": "minimal",
+  "window": {
+    "title": "reactflow_test",
+    "width": 800,
+    "height": 600
+  },
+  "build": {
+    "builder": "esbuild",
+    "jsx_factory": "h",
+    "jsx_fragment": "Fragment",
+    "external": ["preact", "preact/hooks"],
+    "sourcemap": true,
+    "minify": false
+  }
+}

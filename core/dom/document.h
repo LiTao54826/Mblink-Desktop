@@ -15,6 +15,7 @@
 #include "document_fragment.h"
 #include "element.h"
 #include "text.h"
+#include "comment.h"
 #include "selection/range.h"
 #include "selection/selection.h"
 #include "observers/dom_observer.h"
@@ -30,6 +31,8 @@ namespace mbink {
     class LexborDocument;
     class StyleManager;
     class QuickJSRuntime;
+    class StateManager;
+    class NativeDataBindingRuntime;
     class Window;
 }
 
@@ -66,11 +69,27 @@ public:
     std::shared_ptr<Element> CreateElement(const std::string& tag_name);
 
     /**
+     * @brief 创建带命名空间的元素节点
+     * @param namespace_uri 命名空间URI
+     * @param qualified_name 限定名
+     * @return 元素节点
+     */
+    std::shared_ptr<Element> CreateElementNS(const std::string& namespace_uri,
+                                             const std::string& qualified_name);
+
+    /**
      * @brief 创建文本节点
      * @param data 文本数据
      * @return 文本节点
      */
     std::shared_ptr<Text> CreateTextNode(const std::string& data);
+
+    /**
+     * @brief 创建注释节点
+     * @param data 注释数据
+     * @return 注释节点
+     */
+    std::shared_ptr<Comment> CreateComment(const std::string& data);
 
     /**
      * @brief 创建文档片段
@@ -396,6 +415,14 @@ public:
      */
     Window* GetWindow() const { return window_; }
 
+    void SetStateManager(StateManager* stateManager) { state_manager_ = stateManager; }
+    StateManager* GetStateManager() const { return state_manager_; }
+    NativeDataBindingRuntime* GetNativeDataBindingRuntime();
+    void AutoMountNativeDeclarativeBindings();
+    void AutoMountNativeDeclarativeBindings(const std::shared_ptr<Element>& root);
+    void RefreshNativeDeclarativeBindings(const std::shared_ptr<Element>& root);
+    void UnmountNativeDeclarativeBindings(const std::shared_ptr<Element>& root);
+
     // ========== 同步布局 ==========
 
     /**
@@ -491,6 +518,12 @@ private:
 
     // JavaScript 运行时
     QuickJSRuntime* js_runtime_ = nullptr;
+
+    // 宿主状态图（不拥有所有权）
+    StateManager* state_manager_ = nullptr;
+
+    // Stage 1 Native binding runtime
+    std::unique_ptr<NativeDataBindingRuntime> native_data_binding_runtime_;
 
     // 关联的 Window（不拥有所有权）
     Window* window_ = nullptr;

@@ -496,6 +496,10 @@ fn dll_path() -> PathBuf {
         return PathBuf::from(path);
     }
 
+    if let Some(path) = dll_next_to_exe() {
+        return path;
+    }
+
     let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let runtime_candidate = manifest_dir.join("runtime").join("mbink.dll");
     if runtime_candidate.exists() {
@@ -503,6 +507,12 @@ fn dll_path() -> PathBuf {
     }
 
     PathBuf::from("mbink.dll")
+}
+
+fn dll_next_to_exe() -> Option<PathBuf> {
+    let exe_dir = env::current_exe().ok()?.parent()?.to_path_buf();
+    let candidate = exe_dir.join("mbink.dll");
+    candidate.exists().then_some(candidate)
 }
 
 pub unsafe fn mbink_init() -> c_int { (api().mbink_init)() }

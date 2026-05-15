@@ -2,8 +2,8 @@
  * 纯 JS 版 Todo App - 用于对比测试输入延迟
  * 使用 Preact + useState，不依赖 Python SharedObject
  */
-const { h, render } = Preact;
-const { useState } = PreactHooks;
+import { h, render } from 'preact';
+import { useState } from 'preact/hooks';
 
 // ── 样式（与 Python 版完全相同）─────────────────────────────
 const S = {

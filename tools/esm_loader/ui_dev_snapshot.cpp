@@ -1,11 +1,13 @@
 #include "ui_dev_snapshot.h"
 
 #include <algorithm>
+#include <atomic>
 #include <cctype>
 #include <filesystem>
 #include <fstream>
 #include <sstream>
 #include <unordered_set>
+#include <utility>
 
 #include <nlohmann/json.hpp>
 
@@ -13,6 +15,7 @@
 #include "core/dom/element.h"
 #include "core/dom/node.h"
 #include "core/dom/text.h"
+#include "core/render/objects/render_object.h"
 #include "core/window/window.h"
 
 namespace mbink::ui_dev {
@@ -60,9 +63,82 @@ bool ShouldSkipElementTag(const std::string& tag) {
     return skipped_tags.count(tag) > 0;
 }
 
-nlohmann::json SerializeNode(const std::shared_ptr<mbink::Node>& node) {
+std::shared_ptr<mbink::Node> ResolveSnapshotRoot(mbink::Document* document,
+                                                 const std::string& root_selector,
+                                                 std::string* error) {
+    auto body = document ? document->GetBody() : nullptr;
+    if (!root_selector.empty()) {
+        std::shared_ptr<mbink::Element> selected;
+        if (root_selector == "body") {
+            selected = body;
+        } else if (root_selector == "html") {
+            selected = document->GetDocumentElement();
+        } else if (body) {
+            selected = body->QuerySelector(root_selector);
+        }
+        if (!selected) {
+            if (error) *error = "root_selector_not_found";
+            return nullptr;
+        }
+        return std::static_pointer_cast<mbink::Node>(selected);
+    }
+    return body ? std::static_pointer_cast<mbink::Node>(body)
+                : std::static_pointer_cast<mbink::Node>(document->GetDocumentElement());
+}
+
+nlohmann::json CachedElementRect(const std::shared_ptr<mbink::Element>& element) {
+    auto render_object = element ? element->GetRenderObject() : nullptr;
+    if (!render_object) {
+        return nlohmann::json{{"x", 0}, {"y", 0}, {"w", 0}, {"h", 0}};
+    }
+
+    const auto& layout = render_object->GetLayoutInfo();
+    float x = layout.x;
+    float y = layout.y;
+    for (auto parent = render_object->GetParent(); parent; parent = parent->GetParent()) {
+        const auto& parent_layout = parent->GetLayoutInfo();
+        x += parent_layout.x - parent->GetScrollX();
+        y += parent_layout.y - parent->GetScrollY();
+    }
+    return nlohmann::json{{"x", x}, {"y", y}, {"w", layout.width}, {"h", layout.height}};
+}
+
+struct SnapshotTraversalState {
+    size_t max_nodes = 2000;
+    int max_depth = 64;
+    size_t node_count = 0;
+    bool truncated = false;
+    std::string truncated_reason;
+    std::shared_ptr<std::atomic<bool>> shutdown_requested;
+};
+
+bool ShouldAbort(const SnapshotTraversalState& state) {
+    return state.shutdown_requested && state.shutdown_requested->load();
+}
+
+nlohmann::json SerializeNode(const std::shared_ptr<mbink::Node>& node,
+                             SnapshotTraversalState* state,
+                             int depth) {
     nlohmann::json j;
     if (!node) return j;
+    if (state) {
+        if (ShouldAbort(*state)) {
+            state->truncated = true;
+            state->truncated_reason = "shutdown_in_progress";
+            return j;
+        }
+        if (state->node_count >= state->max_nodes) {
+            state->truncated = true;
+            if (state->truncated_reason.empty()) state->truncated_reason = "max_nodes";
+            return j;
+        }
+        if (depth > state->max_depth) {
+            state->truncated = true;
+            if (state->truncated_reason.empty()) state->truncated_reason = "max_depth";
+            return j;
+        }
+        ++state->node_count;
+    }
 
     j["node_id"] = NodeId(node);
     j["children"] = nlohmann::json::array();
@@ -74,16 +150,15 @@ nlohmann::json SerializeNode(const std::shared_ptr<mbink::Node>& node) {
     if (node->GetNodeType() == mbink::NodeType::TEXT_NODE) {
         auto text = std::dynamic_pointer_cast<mbink::Text>(node);
         const std::string data = text ? text->GetData() : "";
-        // 跳过纯空白文本
-        bool ws = true;
+        bool whitespace = true;
         for (char c : data) {
             if (!(c == ' ' || c == '\t' || c == '\r' || c == '\n')) {
-                ws = false;
+                whitespace = false;
                 break;
             }
         }
         j["tag"] = "#text";
-        j["text"] = ws ? nullptr : nlohmann::json(data);
+        j["text"] = whitespace ? nullptr : nlohmann::json(data);
         j["rect"] = nlohmann::json{{"x", 0}, {"y", 0}, {"w", 0}, {"h", 0}};
         return j;
     }
@@ -100,24 +175,22 @@ nlohmann::json SerializeNode(const std::shared_ptr<mbink::Node>& node) {
 
         if (el) {
             for (const auto& [k, v] : el->GetAllAttributes()) j["attrs"][k] = v;
-            const auto r = el->GetBoundingClientRect();
-            j["rect"] = nlohmann::json{{"x", r.x}, {"y", r.y}, {"w", r.width}, {"h", r.height}};
-            j["visible"] = r.width > 0.0f && r.height > 0.0f;
+            auto rect = CachedElementRect(el);
+            j["rect"] = rect;
+            j["visible"] = rect.value("w", 0.0) > 0.0 && rect.value("h", 0.0) > 0.0;
         } else {
             j["rect"] = nlohmann::json{{"x", 0}, {"y", 0}, {"w", 0}, {"h", 0}};
         }
 
         for (const auto& child : node->GetChildNodes()) {
-            auto cj = SerializeNode(child);
-            if (!cj.is_object()) continue;
-            // 丢弃空白 text
-            if (cj.value("tag", "") == "#text" && cj["text"].is_null()) continue;
-            j["children"].push_back(std::move(cj));
+            auto child_json = SerializeNode(child, state, depth + 1);
+            if (!child_json.is_object()) continue;
+            if (child_json.value("tag", "") == "#text" && child_json["text"].is_null()) continue;
+            j["children"].push_back(std::move(child_json));
         }
         return j;
     }
 
-    // 其他节点类型
     j["tag"] = "#node";
     j["text"] = nullptr;
     j["rect"] = nlohmann::json{{"x", 0}, {"y", 0}, {"w", 0}, {"h", 0}};
@@ -130,33 +203,87 @@ bool ExportUiDevSnapshot(const std::shared_ptr<mbink::Window>& window,
                          const std::shared_ptr<mbink::Document>& document,
                          const std::string& output_path,
                          std::string* error) {
+    return ExportUiDevSnapshot(window, document, output_path, SnapshotExportOptions{}, error);
+}
+
+bool ExportUiDevSnapshot(const std::shared_ptr<mbink::Window>& window,
+                         const std::shared_ptr<mbink::Document>& document,
+                         const std::string& output_path,
+                         const SnapshotExportOptions& options,
+                         std::string* error) {
+    return ExportUiDevSnapshot(window.get(), document.get(), output_path, options, error);
+}
+
+bool ExportUiDevSnapshot(mbink::Window* window,
+                         mbink::Document* document,
+                         const std::string& output_path,
+                         const SnapshotExportOptions& options,
+                         std::string* error) {
     if (output_path.empty()) return false;
     if (!window || !document) {
-        if (error) *error = "window/document 为空";
+        if (error) *error = "window/document is null";
+        return false;
+    }
+    if (options.shutdown_requested && options.shutdown_requested->load()) {
+        if (error) *error = "shutdown_in_progress";
         return false;
     }
 
-    auto body = document->GetBody();
-    std::shared_ptr<mbink::Node> root = body ? std::static_pointer_cast<mbink::Node>(body)
-                                             : std::static_pointer_cast<mbink::Node>(document->GetDocumentElement());
+    auto root = ResolveSnapshotRoot(document, options.root_selector, error);
+    if (!root) return false;
 
-    auto tree = SerializeNode(root);
+    SnapshotTraversalState traversal;
+    traversal.max_nodes = options.max_nodes == 0 ? 2000 : options.max_nodes;
+    traversal.max_depth = options.max_depth <= 0 ? 64 : options.max_depth;
+    traversal.shutdown_requested = options.shutdown_requested;
+
+    auto tree = SerializeNode(root, &traversal, 0);
+    if (options.shutdown_requested && options.shutdown_requested->load()) {
+        if (error) *error = "shutdown_in_progress";
+        return false;
+    }
+
     const double viewport_width = tree.contains("rect") ? tree["rect"].value("w", 0.0) : 0.0;
     const double viewport_height = tree.contains("rect") ? tree["rect"].value("h", 0.0) : 0.0;
 
     nlohmann::json snapshot;
     snapshot["ok"] = true;
     snapshot["timestamp"] = "";
+    snapshot["runtime_epoch"] = options.runtime_epoch;
+    snapshot["node_count"] = traversal.node_count;
+    snapshot["truncated"] = traversal.truncated;
+    snapshot["truncated_reason"] = traversal.truncated ? traversal.truncated_reason : "";
+    snapshot["limits"] = nlohmann::json{{"max_nodes", traversal.max_nodes}, {"max_depth", traversal.max_depth}};
+    if (!options.root_selector.empty()) snapshot["root_selector"] = options.root_selector;
     snapshot["viewport"] = nlohmann::json{{"width", viewport_width}, {"height", viewport_height}, {"dpr", 1.0}};
     snapshot["screenshot_base64"] = "";
     snapshot["tree"] = std::move(tree);
-    snapshot["note"] = "P0: runtime 导出的 DOM snapshot（rect/visible 为 best-effort）";
+    snapshot["note"] = "P0: runtime exported DOM snapshot; rect/visible are best-effort.";
 
     try {
-        std::filesystem::path p(output_path);
-        std::filesystem::create_directories(p.parent_path());
-        std::ofstream ofs(p, std::ios::binary | std::ios::trunc);
+        std::filesystem::path path(output_path);
+        const auto parent = path.parent_path();
+        if (!parent.empty()) std::filesystem::create_directories(parent);
+        const auto tmp_path = path.string() + ".tmp";
+        std::ofstream ofs(tmp_path, std::ios::binary | std::ios::trunc);
         ofs << snapshot.dump(2);
+        ofs.close();
+        if (!ofs.good()) {
+            if (error) *error = "write_snapshot_failed";
+            return false;
+        }
+
+        std::error_code ec;
+        std::filesystem::rename(tmp_path, path, ec);
+        if (ec) {
+            std::filesystem::remove(path, ec);
+            ec.clear();
+            std::filesystem::rename(tmp_path, path, ec);
+        }
+        if (ec) {
+            if (error) *error = ec.message();
+            return false;
+        }
         return true;
     } catch (const std::exception& e) {
         if (error) *error = e.what();

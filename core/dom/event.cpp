@@ -44,6 +44,13 @@ void Event::PreventDefault() {
     }
 }
 
+void Event::InitEvent(const std::string& type, bool bubbles, bool cancelable) {
+    type_ = type;
+    bubbles_ = bubbles;
+    cancelable_ = cancelable;
+    Reset();
+}
+
 void Event::SetTarget(std::shared_ptr<Node> target) {
     target_ = target;
 }
@@ -63,6 +70,24 @@ void Event::Reset() {
     propagation_stopped_ = false;
     immediate_propagation_stopped_ = false;
     default_prevented_ = false;
+}
+
+// ========== CustomEvent 类实现 ==========
+
+CustomEvent::CustomEvent(const std::string& type,
+                         bool bubbles,
+                         bool cancelable,
+                         const std::string& detail_json)
+    : Event(type, bubbles, cancelable)
+    , detail_json_(detail_json.empty() ? "null" : detail_json) {
+}
+
+void CustomEvent::InitCustomEvent(const std::string& type,
+                                  bool bubbles,
+                                  bool cancelable,
+                                  const std::string& detail_json) {
+    detail_json_ = detail_json.empty() ? "null" : detail_json;
+    InitEvent(type, bubbles, cancelable);
 }
 
 // ========== MouseEvent 类实现 ==========

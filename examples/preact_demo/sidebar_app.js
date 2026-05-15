@@ -1,3 +1,6 @@
+import { h, render } from 'preact';
+import { useRef, useState } from 'preact/hooks';
+
 /**
  * @file sidebar_app.js
  * @brief Sidebar Desktop App Demo
@@ -6,10 +9,6 @@
 
 (function () {
     'use strict';
-
-    var h = Preact.h;
-    var render = Preact.render;
-    var useState = PreactHooks.useState;
 
     // Colors
     var PRIMARY = '#3498db';
@@ -428,7 +427,7 @@
         var state = useState('home');
         var activePage = state[0];
         var setActivePage = state[1];
-        var contentRef = PreactHooks.useRef(null);
+        var contentRef = useRef(null);
 
         // 页面切换时重置滚动位置
         function handlePageChange(page) {

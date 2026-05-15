@@ -3,12 +3,14 @@
 
 set(BRIDGE_SOURCES
     bridge.cpp
+    native_state_graph.cpp
     state_manager.cpp
     host_bridge.cpp
 )
 
 set(BRIDGE_HEADERS
     bridge.h
+    native_state_graph.h
     state_manager.h
     host_bridge.h
 )

@@ -245,6 +245,19 @@ TEST_F(ScrollHandlingTest, ScrollSyncedToRenderObject) {
     EXPECT_FLOAT_EQ(scrollable_->GetScrollY(), 100);
 }
 
+TEST_F(ScrollHandlingTest, ScrollbarDragTargetCalculationDoesNotMutateRenderObject) {
+    scrollable_->StartScrollbarDrag(RenderObject::ScrollbarHitArea::HorizontalTrack, 0, 0);
+
+    float target_x = scrollable_->GetScrollX();
+    float target_y = scrollable_->GetScrollY();
+    EXPECT_TRUE(scrollable_->UpdateScrollbarDrag(10, 0, target_x, target_y));
+
+    EXPECT_GT(target_x, 0);
+    EXPECT_FLOAT_EQ(target_y, 0);
+    EXPECT_FLOAT_EQ(scrollable_->GetScrollX(), 0);
+    EXPECT_FLOAT_EQ(scrollable_->GetScrollY(), 0);
+}
+
 // =========================================================================
 // 固定元素测试
 // =========================================================================

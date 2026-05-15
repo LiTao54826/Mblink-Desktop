@@ -681,8 +681,6 @@ bool loadEmbeddedRuntimeScripts(mbink::QuickJSRuntime* runtime) {
 
     evalScript(mbink::embedded::GetDomPolyfillsJS(), "dom.js");
     evalScript(mbink::embedded::GetBootstrapJS(), "bootstrap.js");
-    evalScript(mbink::embedded::GetPreactJS(), "preact.js");
-    evalScript(mbink::embedded::GetHooksJS(), "hooks.js");
     return true;
 }
 
@@ -706,6 +704,62 @@ std::string NormalizeFsPath(const fs::path& path) {
     std::string result = FsPathToUtf8String(path.lexically_normal());
     std::replace(result.begin(), result.end(), '\\', '/');
     return result;
+}
+
+fs::path FindOfficialPreactRoot() {
+    static const fs::path kOfficialPreactRelativeRoot =
+        Utf8PathToFsPath("third_party") / Utf8PathToFsPath("preact");
+    fs::path current = fs::absolute(Utf8PathToFsPath(__FILE__)).parent_path();
+    while (!current.empty()) {
+        const fs::path candidate = current / kOfficialPreactRelativeRoot / "package.json";
+        if (fs::exists(candidate)) {
+            return current / kOfficialPreactRelativeRoot;
+        }
+        if (!current.has_parent_path() || current == current.parent_path()) {
+            break;
+        }
+        current = current.parent_path();
+    }
+    throw std::runtime_error("Unable to locate official Preact sources under third_party/preact");
+}
+
+std::string BuildOfficialPreactModule(const fs::path& entry_path) {
+    return "export * from '" + NormalizeFsPath(fs::absolute(entry_path)) + "';";
+}
+
+std::string EmbeddedOfficialPreactModule(const char* path) {
+    auto source = mbink::embedded::GetEmbeddedJS(path);
+    if (source.empty()) {
+        throw std::runtime_error(std::string("Missing embedded official Preact module: ") + path);
+    }
+    return std::string(source);
+}
+
+std::string StripJsExtension(std::string path) {
+    if (path.size() > 3 && path.substr(path.size() - 3) == ".js") {
+        path.resize(path.size() - 3);
+    }
+    return path;
+}
+
+std::string OfficialPreactModuleId(const char* path) {
+    std::string id(path ? path : "");
+    static const std::string prefix = "third_party/preact/";
+    if (id.rfind(prefix, 0) == 0) {
+        id.replace(0, prefix.size(), "__mbink_official_preact/");
+    }
+    return id;
+}
+
+std::string BuildEmbeddedOfficialPreactModule(const char* path) {
+    return "export * from '" + OfficialPreactModuleId(path) + "';";
+}
+
+void RegisterOfficialPreactSource(mbink::QuickJSRuntime* runtime, const char* path) {
+    const auto source = EmbeddedOfficialPreactModule(path);
+    const auto module_id = OfficialPreactModuleId(path);
+    runtime->RegisterModule(module_id, source);
+    runtime->RegisterModule(StripJsExtension(module_id), source);
 }
 
 std::string NormalizeResourcePath(std::string path) {
@@ -773,32 +827,31 @@ void registerPreactModules(mbink::QuickJSRuntime* runtime) {
         return;
     }
 
-    runtime->RegisterModule("preact", R"(
-        export const h = globalThis.Preact.h;
-        export const render = globalThis.Preact.render;
-        export const Component = globalThis.Preact.Component;
-        export const Fragment = globalThis.Preact.Fragment;
-        export const createRef = globalThis.Preact.createRef;
-        export const createElement = globalThis.Preact.createElement;
-        export const createContext = globalThis.Preact.createContext;
-        export const cloneElement = globalThis.Preact.cloneElement;
-        export const isValidElement = globalThis.Preact.isValidElement;
-        export default globalThis.Preact;
-    )");
-
-    runtime->RegisterModule("preact/hooks", R"(
-        export const useState = globalThis.PreactHooks.useState;
-        export const useEffect = globalThis.PreactHooks.useEffect;
-        export const useRef = globalThis.PreactHooks.useRef;
-        export const useMemo = globalThis.PreactHooks.useMemo;
-        export const useCallback = globalThis.PreactHooks.useCallback;
-        export const useContext = globalThis.PreactHooks.useContext;
-        export const useReducer = globalThis.PreactHooks.useReducer;
-        export const useLayoutEffect = globalThis.PreactHooks.useLayoutEffect;
-        export const useImperativeHandle = globalThis.PreactHooks.useImperativeHandle;
-        export const useDebugValue = globalThis.PreactHooks.useDebugValue;
-        export default globalThis.PreactHooks;
-    )");
+    static constexpr const char* kOfficialPreactSources[] = {
+        "third_party/preact/src/index.js",
+        "third_party/preact/src/render.js",
+        "third_party/preact/src/create-element.js",
+        "third_party/preact/src/component.js",
+        "third_party/preact/src/options.js",
+        "third_party/preact/src/util.js",
+        "third_party/preact/src/constants.js",
+        "third_party/preact/src/clone-element.js",
+        "third_party/preact/src/create-context.js",
+        "third_party/preact/src/diff/index.js",
+        "third_party/preact/src/diff/children.js",
+        "third_party/preact/src/diff/props.js",
+        "third_party/preact/src/diff/catch-error.js",
+        "third_party/preact/hooks/src/index.js",
+        "third_party/preact/jsx-runtime/src/index.js",
+        "third_party/preact/jsx-runtime/src/utils.js",
+    };
+    for (const auto* path : kOfficialPreactSources) {
+        RegisterOfficialPreactSource(runtime, path);
+    }
+    runtime->RegisterModule("preact", BuildEmbeddedOfficialPreactModule("third_party/preact/src/index.js"));
+    runtime->RegisterModule("preact/hooks", BuildEmbeddedOfficialPreactModule("third_party/preact/hooks/src/index.js"));
+    runtime->RegisterModule("preact/jsx-runtime", BuildEmbeddedOfficialPreactModule("third_party/preact/jsx-runtime/src/index.js"));
+    runtime->RegisterModule("preact/jsx-dev-runtime", BuildEmbeddedOfficialPreactModule("third_party/preact/jsx-runtime/src/index.js"));
 }
 
 #ifdef _WIN32
@@ -1075,6 +1128,7 @@ WindowContext* createWindowContext(const mbink::WindowConfig& wc) {
 #endif
 
     ctx->stateManager = std::make_unique<mbink::StateManager>();
+    ctx->document->SetStateManager(ctx->stateManager.get());
     ctx->hostBridge = std::make_unique<mbink::HostBridge>(jsCtx, ctx->stateManager.get());
     ctx->hostBridge->registerGlobal();
 
@@ -1838,6 +1892,9 @@ int mbink_load_js_file(MBinkHandle handle, const char* filepath) {
                             setLastError(error.empty() ? "Failed to eval resource bytecode" : error);
                             return MBINK_ERROR_JS_ERROR;
                         }
+                        if (ctx->window) {
+                            ctx->window->SetNeedsRepaint();
+                        }
                         return MBINK_OK;
                     }
                     path = NormalizeResourcePath(filepath);
@@ -1845,6 +1902,9 @@ int mbink_load_js_file(MBinkHandle handle, const char* filepath) {
             }
         }
         ctx->runtime->LoadModuleFile(path);
+        if (ctx->window) {
+            ctx->window->SetNeedsRepaint();
+        }
         return MBINK_OK;
     } catch (const std::exception& e) {
         setLastError(e.what());

@@ -425,6 +425,7 @@ void EventLoop::RunOnce() {
     // 6. 检查是否应该退出
     auto& window_manager = WindowManager::Instance();
     if (!window_manager.HasWindows()) {
+        std::cerr << "[EventLoop::RunOnce] quitting: no windows registered" << std::endl;
         should_quit_ = true;
     } else {
         bool all_should_close = true;
@@ -438,6 +439,7 @@ void EventLoop::RunOnce() {
             }
         }
         if (all_should_close) {
+            std::cerr << "[EventLoop::RunOnce] quitting: all windows marked should_close" << std::endl;
             should_quit_ = true;
         }
     }
@@ -612,17 +614,8 @@ void EventLoop::Update(float delta_time) {
 }
 
 void EventLoop::Render() {
-    if (render_callback_) {
-        try {
-            render_callback_();
-        } catch (const std::exception& e) {
-            std::cerr << "[EventLoop] EXCEPTION in render_callback_: " << e.what() << std::endl;
-        } catch (...) {
-            std::cerr << "[EventLoop] UNKNOWN EXCEPTION in render_callback_" << std::endl;
-        }
-    }
-
-    // 渲染所有窗口
+    // 先渲染窗口，再执行 render callback。
+    // 这样 UI Dev 等回调看到的是本帧最终 DOM/布局状态，且避免回调内重复 Render/SwapBuffers。
     auto& window_manager = WindowManager::Instance();
     for (auto& window : window_manager.GetAllWindows()) {
         if (window->NeedsRepaint()) {
@@ -634,6 +627,16 @@ void EventLoop::Render() {
             } catch (...) {
                 std::cerr << "[EventLoop] UNKNOWN EXCEPTION in window->Render()/SwapBuffers()" << std::endl;
             }
+        }
+    }
+
+    if (render_callback_) {
+        try {
+            render_callback_();
+        } catch (const std::exception& e) {
+            std::cerr << "[EventLoop] EXCEPTION in render_callback_: " << e.what() << std::endl;
+        } catch (...) {
+            std::cerr << "[EventLoop] UNKNOWN EXCEPTION in render_callback_" << std::endl;
         }
     }
 }

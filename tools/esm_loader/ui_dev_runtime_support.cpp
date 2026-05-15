@@ -1,5 +1,6 @@
 #include "ui_dev_runtime_support.h"
 
+#include <atomic>
 #include <chrono>
 #include <cstdio>
 #include <deque>
@@ -42,13 +43,40 @@ bool WriteJsonFile(const std::string& path, const nlohmann::json& value) {
 
 void WriteLifecycleState(const std::string& path,
                          const std::string& status,
-                         const std::string& reason) {
+                         const std::string& reason,
+                         const std::string& runtime_epoch) {
     if (path.empty()) return;
     WriteJsonFile(path,
                   nlohmann::json{{"ok", true},
                                  {"status", status},
                                  {"reason", reason},
+                                 {"runtime_epoch", runtime_epoch},
                                  {"timestamp", CurrentTimestampIso8601()}});
+}
+
+void ExportPendingSnapshot(const std::shared_ptr<Window>& window,
+                           const std::shared_ptr<Document>& document,
+                           const std::string& snapshot_file,
+                           size_t snapshot_max_nodes,
+                           int snapshot_max_depth,
+                           const std::string& snapshot_root_selector,
+                           const std::shared_ptr<std::string>& runtime_epoch,
+                           const std::shared_ptr<std::atomic<bool>>& shutdown_requested,
+                           const std::shared_ptr<bool>& snapshot_pending) {
+    const bool needs_snapshot = !snapshot_file.empty() && *snapshot_pending;
+    if (!needs_snapshot) return;
+    if (shutdown_requested && shutdown_requested->load()) return;
+
+    std::string err;
+    SnapshotExportOptions snapshot_options;
+    snapshot_options.runtime_epoch = runtime_epoch ? *runtime_epoch : std::string{};
+    snapshot_options.max_nodes = snapshot_max_nodes;
+    snapshot_options.max_depth = snapshot_max_depth;
+    snapshot_options.root_selector = snapshot_root_selector;
+    snapshot_options.shutdown_requested = shutdown_requested;
+    if (ExportUiDevSnapshot(window, document, snapshot_file, snapshot_options, &err)) {
+        *snapshot_pending = false;
+    }
 }
 
 std::string CurrentTimestampIso8601() {
@@ -121,36 +149,43 @@ void ConfigureRuntimeControl(EventLoop* event_loop,
                              const std::shared_ptr<Document>& document,
                              const RuntimeSupportOptions& options) {
     if (!event_loop || !runtime || !window || !document) return;
-    auto snapshot_written = std::make_shared<bool>(false);
     auto snapshot_pending = std::make_shared<bool>(!options.snapshot_file.empty());
     auto lifecycle_file = std::make_shared<std::string>(options.lifecycle_file);
+    auto runtime_epoch = std::make_shared<std::string>(options.runtime_epoch);
+    auto shutdown_requested = std::make_shared<std::atomic<bool>>(false);
     auto stopped_reason = std::make_shared<std::string>();
     auto quit_elapsed = std::make_shared<float>(0.0f);
     auto quit_frames = std::make_shared<int>(0);
 
-    WriteLifecycleState(*lifecycle_file, "running", "started");
+    WriteLifecycleState(*lifecycle_file, "running", "started", *runtime_epoch);
     if (*snapshot_pending) window->SetNeedsRepaint();
-    window->SetOnCloseCallback([event_loop, lifecycle_file, stopped_reason]() {
+    window->SetOnCloseCallback([event_loop, lifecycle_file, stopped_reason, runtime_epoch, shutdown_requested]() {
+        shutdown_requested->store(true);
         if (stopped_reason->empty()) {
             *stopped_reason = "user_closed";
-            WriteLifecycleState(*lifecycle_file, "stopped", *stopped_reason);
+            WriteLifecycleState(*lifecycle_file, "stopped", *stopped_reason, *runtime_epoch);
         }
         event_loop->Stop();
     });
 
-    event_loop->SetRenderCallback([window, document, snapshot_file = options.snapshot_file, snapshot_written, snapshot_pending]() {
-        const bool needs_snapshot = !snapshot_file.empty() && *snapshot_pending;
-        if (!window->NeedsRepaint() && !needs_snapshot) return;
-        if (window->NeedsRepaint()) {
-            window->Render();
-            window->SwapBuffers();
-        }
-        if (needs_snapshot) {
-            std::string err;
-            ExportUiDevSnapshot(window, document, snapshot_file, &err);
-            *snapshot_written = true;
-            *snapshot_pending = false;
-        }
+    event_loop->SetRenderCallback([window,
+                                   document,
+                                   snapshot_file = options.snapshot_file,
+                                   snapshot_max_nodes = options.snapshot_max_nodes,
+                                   snapshot_max_depth = options.snapshot_max_depth,
+                                   snapshot_root_selector = options.snapshot_root_selector,
+                                   runtime_epoch,
+                                   shutdown_requested,
+                                   snapshot_pending]() {
+        ExportPendingSnapshot(window,
+                              document,
+                              snapshot_file,
+                              snapshot_max_nodes,
+                              snapshot_max_depth,
+                              snapshot_root_selector,
+                              runtime_epoch,
+                              shutdown_requested,
+                              snapshot_pending);
     });
 
     auto last_command_id = std::make_shared<std::string>();
@@ -160,8 +195,12 @@ void ConfigureRuntimeControl(EventLoop* event_loop,
                                    command_file = options.command_file,
                                    response_file = options.response_file,
                                    snapshot_file = options.snapshot_file,
+                                   snapshot_max_nodes = options.snapshot_max_nodes,
+                                   snapshot_max_depth = options.snapshot_max_depth,
+                                   snapshot_root_selector = options.snapshot_root_selector,
+                                   runtime_epoch,
+                                   shutdown_requested,
                                    last_command_id,
-                                   snapshot_written,
                                    snapshot_pending,
                                    event_loop,
                                    lifecycle_file,
@@ -169,6 +208,16 @@ void ConfigureRuntimeControl(EventLoop* event_loop,
                                    quit_elapsed,
                                    quit_frames,
                                    quit_after_seconds = options.quit_after_seconds](float delta_time) {
+        if (shutdown_requested->load()) return;
+        ExportPendingSnapshot(window,
+                              document,
+                              snapshot_file,
+                              snapshot_max_nodes,
+                              snapshot_max_depth,
+                              snapshot_root_selector,
+                              runtime_epoch,
+                              shutdown_requested,
+                              snapshot_pending);
         if (!command_file.empty() && !response_file.empty()) {
             bool handled = false;
             std::string err;
@@ -178,9 +227,10 @@ void ConfigureRuntimeControl(EventLoop* event_loop,
                                       command_file,
                                       response_file,
                                       last_command_id.get(),
+                                      runtime_epoch.get(),
+                                      shutdown_requested,
                                       &handled,
                                       &err) && handled) {
-                *snapshot_written = false;
                 *snapshot_pending = !snapshot_file.empty();
                 if (*snapshot_pending) window->SetNeedsRepaint();
             }
@@ -190,11 +240,12 @@ void ConfigureRuntimeControl(EventLoop* event_loop,
         ++(*quit_frames);
         *quit_elapsed += delta_time;
         if (*quit_elapsed >= quit_after_seconds) {
+            shutdown_requested->store(true);
             std::cout << "[Auto-quit] Completed " << *quit_elapsed << " seconds (" << *quit_frames
                       << " frames), exiting..." << std::endl;
             if (stopped_reason->empty()) {
                 *stopped_reason = "auto_quit";
-                WriteLifecycleState(*lifecycle_file, "stopped", *stopped_reason);
+                WriteLifecycleState(*lifecycle_file, "stopped", *stopped_reason, *runtime_epoch);
             }
             event_loop->Stop();
         }

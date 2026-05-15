@@ -11,6 +11,7 @@ set(DOM_TEST_SOURCES
     dom/test_css_style_declaration.cpp
     dom/test_incremental_update.cpp
     dom/test_html_select_element.cpp
+    dom/test_native_data_binding.cpp
 )
 
 # 事件测试

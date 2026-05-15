@@ -48,6 +48,7 @@ bool BytecodeCompiler::Initialize() {
 
 char* BytecodeCompiler::ModuleNormalize(JSContext* ctx, const char* module_base,
                                          const char* module_name, void* opaque) {
+    BytecodeCompiler* compiler = static_cast<BytecodeCompiler*>(opaque);
     std::string name(module_name);
     std::string base(module_base ? module_base : "");
 
@@ -69,6 +70,22 @@ char* BytecodeCompiler::ModuleNormalize(JSContext* ctx, const char* module_base,
     // 统一使用正斜杠
     std::string resolved_str = resolved.string();
     std::replace(resolved_str.begin(), resolved_str.end(), '\\', '/');
+
+    if (compiler) {
+        if (compiler->module_sources_.find(resolved_str) != compiler->module_sources_.end()) {
+            return js_strdup(ctx, resolved_str.c_str());
+        }
+
+        const std::string with_js = resolved_str + ".js";
+        if (compiler->module_sources_.find(with_js) != compiler->module_sources_.end()) {
+            return js_strdup(ctx, with_js.c_str());
+        }
+
+        const std::string with_index = resolved_str + "/index.js";
+        if (compiler->module_sources_.find(with_index) != compiler->module_sources_.end()) {
+            return js_strdup(ctx, with_index.c_str());
+        }
+    }
 
     return js_strdup(ctx, resolved_str.c_str());
 }
