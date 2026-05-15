@@ -453,12 +453,18 @@ bool SnapshotMatchesRuntimeEpoch(const nlohmann::json& snapshot, const DaemonSta
 
 nlohmann::json BuildSnapshotFileResponse(const DaemonState& state,
                                          const std::filesystem::path& snapshot_path,
+                                         const nlohmann::json& snapshot,
                                          uintmax_t bytes,
                                          const std::string& note) {
+    const nlohmann::json viewport = snapshot.contains("viewport")
+                                        ? snapshot["viewport"]
+                                        : nlohmann::json{{"width", state.project.width},
+                                                         {"height", state.project.height},
+                                                         {"dpr", 1.0}};
     return nlohmann::json{{"ok", true},
                           {"timestamp", CurrentTimestampIso8601()},
                           {"response_mode", "file"},
-                          {"viewport", {{"width", state.project.width}, {"height", state.project.height}, {"dpr", 1.0}}},
+                          {"viewport", viewport},
                           {"screenshot_base64", ""},
                           {"snapshot", SnapshotFileMetadata(snapshot_path, bytes)},
                           {"runtime_epoch", state.runtime_epoch},
@@ -475,12 +481,14 @@ nlohmann::json BuildSnapshotResponse(const DaemonState& state,
     if (response_mode == "file") {
         return BuildSnapshotFileResponse(state,
                                          snapshot_path,
+                                         snapshot,
                                          snapshot_bytes,
                                          "snapshot stored on disk; read snapshot.path to avoid large IPC/stdout payloads");
     }
     if (response_mode == "auto" && snapshot_bytes > kInlineSnapshotMaxBytes) {
         return BuildSnapshotFileResponse(state,
                                          snapshot_path,
+                                         snapshot,
                                          snapshot_bytes,
                                          "snapshot is large, so response was returned by file path");
     }

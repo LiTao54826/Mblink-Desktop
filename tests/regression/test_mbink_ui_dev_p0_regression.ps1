@@ -10,7 +10,35 @@ $projA = Join-Path (Get-Location) 'tmp/mbink_ui_dev_multi_verify_a'
 $projB = Join-Path (Get-Location) 'tmp/mbink_ui_dev_multi_verify_b'
 $tmpJs = Join-Path (Get-Location) 'tmp/mbink_ui_dev_eval_test.js'
 if (!(Test-Path $exe)) { throw "missing exe: $exe" }
-if (!(Test-Path $projA) -or !(Test-Path $projB)) { throw 'missing multi-project verify fixtures' }
+
+function Stop-TestRuntimeProcesses() {
+    $titles = @('todo_app_js', 'mbink_ui_dev_p0_canonical_template', 'mbink_ui_dev_multi_verify_a', 'mbink_ui_dev_multi_verify_b')
+    $projectMarkers = @($todo, $canonicalDev, $projA, $projB)
+    $runtimeProcesses = @(Get-Process -Name 'esm_loader' -ErrorAction SilentlyContinue |
+        Where-Object { $titles -contains $_.MainWindowTitle })
+    foreach ($proc in $runtimeProcesses) {
+        $proc | Stop-Process -Force -ErrorAction SilentlyContinue
+    }
+    foreach ($proc in $runtimeProcesses) {
+        try { Wait-Process -Id $proc.Id -Timeout 3 -ErrorAction SilentlyContinue } catch {}
+    }
+
+    $daemonProcesses = @(Get-CimInstance Win32_Process |
+        Where-Object {
+            $commandLine = $_.CommandLine
+            $_.Name -eq 'mbink-ui-dev.exe' -and
+            $commandLine -like '*daemon run*' -and
+            ($projectMarkers | Where-Object { $marker = $_; $marker -and $commandLine -like "*$marker*" })
+        })
+    foreach ($proc in $daemonProcesses) {
+        Stop-Process -Id $proc.ProcessId -Force -ErrorAction SilentlyContinue
+    }
+    foreach ($proc in $daemonProcesses) {
+        try { Wait-Process -Id $proc.ProcessId -Timeout 3 -ErrorAction SilentlyContinue } catch {}
+    }
+}
+
+Stop-TestRuntimeProcesses
 if (Test-Path $canonicalDev) { Remove-Item -LiteralPath $canonicalDev -Recurse -Force }
 Set-Content -Path $tmpJs -Value '1+2' -NoNewline
 
@@ -25,6 +53,90 @@ function Invoke-JsonCommand([string]$name, [string[]]$arguments, [scriptblock]$a
 
 function Assert([bool]$condition, [string]$message) {
     if (-not $condition) { throw $message }
+}
+
+function Write-Utf8File([string]$path, [string]$content) {
+    $parent = Split-Path -Parent $path
+    if ($parent -and !(Test-Path $parent)) { New-Item -ItemType Directory -Force -Path $parent | Out-Null }
+    Set-Content -LiteralPath $path -Value $content -NoNewline -Encoding UTF8
+}
+
+function Reset-MultiVerifyFixtures() {
+    & $exe daemon stop --project $projA *> $null
+    & $exe daemon stop --project $projB *> $null
+    if (Test-Path $projA) { Remove-Item -LiteralPath $projA -Recurse -Force }
+    if (Test-Path $projB) { Remove-Item -LiteralPath $projB -Recurse -Force }
+    New-Item -ItemType Directory -Force -Path (Join-Path $projA 'src'), (Join-Path $projB 'src') | Out-Null
+
+    Write-Utf8File (Join-Path $projA 'mbink.config.json') @'
+{
+  "name": "mbink_ui_dev_multi_verify_a",
+  "template": "vanilla-js",
+  "entry": "src/app.js",
+  "src_dir": "src",
+  "out_dir": ".dist",
+  "window": { "title": "mbink_ui_dev_multi_verify_a", "width": 1280, "height": 800 },
+  "build": {
+    "builder": "esbuild",
+    "jsx_factory": "h",
+    "jsx_fragment": "Fragment",
+    "external": ["preact", "preact/hooks"],
+    "sourcemap": true,
+    "minify": false
+  }
+}
+'@
+    Write-Utf8File (Join-Path $projA 'src/app.js') @'
+import { h, render } from 'preact';
+
+function App() {
+  return h('main', { id: 'multi-verify-a-root', style: { fontFamily: 'Segoe UI, sans-serif', minHeight: '100vh', padding: '24px', background: '#f8fafc', color: '#0f172a' } },
+    h('h1', null, 'Multi Verify A'),
+    h('p', null, 'This fixture uses a direct ESM Preact entry and should render during open/snapshot checks.'),
+    h('button', { id: 'multi-verify-a-button', onClick: () => console.log('hello from multi verify A'), style: { padding: '10px 14px', borderRadius: '8px', border: '1px solid #cbd5e1', cursor: 'pointer' } }, 'Click me')
+  );
+}
+
+render(h(App), document.body);
+'@
+
+    Write-Utf8File (Join-Path $projB 'mbink.config.json') @'
+{
+  "name": "mbink_ui_dev_multi_verify_b",
+  "template": "preact-jsx",
+  "entry": "src/App.jsx",
+  "src_dir": "src",
+  "out_dir": ".dist",
+  "window": { "title": "mbink_ui_dev_multi_verify_b", "width": 1280, "height": 800 },
+  "build": {
+    "builder": "esbuild",
+    "jsx_factory": "h",
+    "jsx_fragment": "Fragment",
+    "external": ["preact", "preact/hooks"],
+    "sourcemap": true,
+    "minify": false
+  }
+}
+'@
+    Write-Utf8File (Join-Path $projB 'src/App.jsx') @'
+import { h, Fragment, render } from 'preact';
+import { useState } from 'preact/hooks';
+
+function App() {
+  const [count, setCount] = useState(0);
+  return (
+    <main id="multi-verify-b-root" style={{ fontFamily: 'Segoe UI, sans-serif', minHeight: '100vh', padding: 24, background: '#020617', color: '#e2e8f0' }}>
+      <h1>Multi Verify B</h1>
+      <p>This fixture uses JSX compiled to ESM imports and should render during open/snapshot checks.</p>
+      <button id="multi-verify-b-button" onClick={() => setCount(count + 1)} style={{ padding: '10px 14px', borderRadius: 8, border: '1px solid #475569', cursor: 'pointer' }}>
+        Count: {count}
+      </button>
+    </main>
+  );
+}
+
+render(<App />, document.body);
+'@
 }
 
 function Start-ServeProcess() {
@@ -58,6 +170,7 @@ function Invoke-Rpc([System.Diagnostics.Process]$proc, [hashtable]$payload) {
 & $exe daemon stop --project $projA *> $null
 & $exe daemon stop --project $projB *> $null
 & $exe daemon stop --project $canonicalDev *> $null
+Reset-MultiVerifyFixtures
 
 Invoke-JsonCommand 'open todo' @('open', $todo) {
     param($j)
@@ -68,6 +181,9 @@ Invoke-JsonCommand 'snapshot cold start' @('snapshot', '--project', $todo) {
     Assert ($j.ok -eq $true) 'snapshot not ok'
     Assert ($j.tree.tag -ne 'stub-root') 'snapshot returned stub-root'
     Assert ($j.viewport.width -eq 800 -and $j.viewport.height -eq 600) 'viewport size mismatch'
+    Assert ([double]$j.viewport.dpr -ge 1.0) 'viewport dpr missing'
+    Assert ([double]$j.viewport.physical_width -ge [double]$j.viewport.width) 'viewport physical width missing'
+    Assert ([double]$j.viewport.physical_height -ge [double]$j.viewport.height) 'viewport physical height missing'
     Assert ($j.response_mode -eq 'inline') 'snapshot default response was not inline for small DOM'
     Assert ((Test-Path -LiteralPath $j.snapshot.path) -and $j.snapshot.bytes -gt 0) 'snapshot metadata path missing'
 }
@@ -75,6 +191,9 @@ Invoke-JsonCommand 'snapshot file response' @('snapshot', '--project', $todo, '-
     param($j)
     Assert ($j.ok -eq $true) 'snapshot file response not ok'
     Assert ($j.response_mode -eq 'file') 'snapshot file response did not use file mode'
+    Assert ([double]$j.viewport.dpr -ge 1.0) 'snapshot file response dpr missing'
+    Assert ([double]$j.viewport.physical_width -ge [double]$j.viewport.width) 'snapshot file response physical width missing'
+    Assert ([double]$j.viewport.physical_height -ge [double]$j.viewport.height) 'snapshot file response physical height missing'
     Assert ((Test-Path -LiteralPath $j.snapshot.path) -and $j.snapshot.bytes -gt 0) 'snapshot file response path missing'
     Assert (-not ($j.PSObject.Properties.Name -contains 'tree')) 'snapshot file response should not inline tree'
 }
@@ -169,17 +288,33 @@ try {
     Assert ($openA.result.structuredContent.ok -eq $true) 'open_project A not ok'
     $infoA = Invoke-Rpc $serve @{ jsonrpc = '2.0'; id = 3; method = 'tools/call'; params = @{ name = 'get_project_info'; arguments = @{} } }
     Assert ($infoA.result.structuredContent.project.root -eq $projA) 'active project A mismatch'
-    $openB = Invoke-Rpc $serve @{ jsonrpc = '2.0'; id = 4; method = 'tools/call'; params = @{ name = 'open_project'; arguments = @{ path = $projB } } }
+    $snapshotA = Invoke-Rpc $serve @{ jsonrpc = '2.0'; id = 4; method = 'tools/call'; params = @{ name = 'snapshot_ui'; arguments = @{ response_mode = 'inline' } } }
+    Assert ($snapshotA.result.isError -eq $false -and $snapshotA.result.structuredContent.node_count -gt 1) 'project A snapshot is blank'
+    $queryA = Invoke-Rpc $serve @{ jsonrpc = '2.0'; id = 5; method = 'tools/call'; params = @{ name = 'query_element'; arguments = @{ selector = '#multi-verify-a-root' } } }
+    Assert ($queryA.result.isError -eq $false -and $queryA.result.structuredContent.result.count -eq 1) 'project A root missing'
+    Assert ([double]$queryA.result.structuredContent.result.matches[0].rect.w -gt 0 -and [double]$queryA.result.structuredContent.result.matches[0].rect.h -gt 0) 'project A root rect is blank'
+    $openB = Invoke-Rpc $serve @{ jsonrpc = '2.0'; id = 6; method = 'tools/call'; params = @{ name = 'open_project'; arguments = @{ path = $projB } } }
     Assert ($openB.result.isError -eq $false) 'open_project B failed'
     Assert ($openB.result.structuredContent.ok -eq $true) 'open_project B not ok'
-    $infoB = Invoke-Rpc $serve @{ jsonrpc = '2.0'; id = 5; method = 'tools/call'; params = @{ name = 'get_project_info'; arguments = @{} } }
+    $infoB = Invoke-Rpc $serve @{ jsonrpc = '2.0'; id = 7; method = 'tools/call'; params = @{ name = 'get_project_info'; arguments = @{} } }
     Assert ($infoB.result.structuredContent.project.root -eq $projB) 'active project B mismatch'
+    $snapshotB = Invoke-Rpc $serve @{ jsonrpc = '2.0'; id = 8; method = 'tools/call'; params = @{ name = 'snapshot_ui'; arguments = @{ response_mode = 'inline' } } }
+    Assert ($snapshotB.result.isError -eq $false -and $snapshotB.result.structuredContent.node_count -gt 1) 'project B snapshot is blank'
+    $queryB = Invoke-Rpc $serve @{ jsonrpc = '2.0'; id = 9; method = 'tools/call'; params = @{ name = 'query_element'; arguments = @{ selector = '#multi-verify-b-root' } } }
+    Assert ($queryB.result.isError -eq $false -and $queryB.result.structuredContent.result.count -eq 1) 'project B root missing'
+    Assert ([double]$queryB.result.structuredContent.result.matches[0].rect.w -gt 0 -and [double]$queryB.result.structuredContent.result.matches[0].rect.h -gt 0) 'project B root rect is blank'
+    $clickB = Invoke-Rpc $serve @{ jsonrpc = '2.0'; id = 10; method = 'tools/call'; params = @{ name = 'click'; arguments = @{ selector = '#multi-verify-b-button' } } }
+    Assert ($clickB.result.isError -eq $false -and $clickB.result.structuredContent.result.clicked -eq $true -and $clickB.result.structuredContent.result.element.text -like '*Count: 1*') 'project B click failed'
     Write-Host '[OK]  serve open_project cold switch A/B'
 }
 finally {
     if ($serve -and -not $serve.HasExited) { $serve.Kill() }
 }
 
+& $exe daemon stop --project $todo *> $null
 & $exe daemon stop --project $canonicalDev *> $null
+& $exe daemon stop --project $projA *> $null
+& $exe daemon stop --project $projB *> $null
+Stop-TestRuntimeProcesses
 
 Write-Host '[PASS] mbink-ui-dev P0 regression green'

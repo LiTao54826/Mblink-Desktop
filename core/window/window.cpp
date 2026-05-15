@@ -54,9 +54,11 @@
 
 #include "include/core/SkRefCnt.h"
 #include "include/core/SkColorSpace.h"
+#include "include/core/SkImage.h"
 #include "include/core/SkImageInfo.h"
 #include "include/core/SkFont.h"
 #include "include/core/SkRegion.h"
+#include "include/core/SkSamplingOptions.h"
 #include "include/gpu/ganesh/gl/GrGLInterface.h"
 #include "include/gpu/ganesh/gl/GrGLDirectContext.h"
 #include "include/gpu/ganesh/gl/GrGLBackendSurface.h"
@@ -119,6 +121,36 @@ namespace {
 inline bool IsAnimFrameDebugEnabled() {
     static const bool enabled = (std::getenv("MBINK_DEBUG_ANIM_FRAME") != nullptr);
     return enabled;
+}
+
+inline bool IsBaselineFrameStatsEnabled() {
+    static const bool enabled = (std::getenv("MBINK_BASELINE_FRAME_STATS") != nullptr);
+    return enabled;
+}
+
+inline bool IsRetainedPresentEnabled() {
+    static const bool enabled = (std::getenv("MBINK_EXPERIMENT_RETAINED_PRESENT") != nullptr);
+    return enabled;
+}
+
+inline double GetBaselineTimeMs() {
+    auto now = std::chrono::high_resolution_clock::now();
+    auto duration = now.time_since_epoch();
+    return std::chrono::duration<double, std::milli>(duration).count();
+}
+
+inline const char* RenderBackendName(RenderBackend backend) {
+    switch (backend) {
+        case RenderBackend::AUTO:
+            return "auto";
+        case RenderBackend::OPENGL:
+            return "opengl";
+        case RenderBackend::CPU:
+            return "cpu";
+        case RenderBackend::SOFTWARE:
+            return "software";
+    }
+    return "unknown";
 }
 
 inline float NormalizeScale(float scale) {
@@ -1191,6 +1223,9 @@ void Window::Render() {
     DEBUG_LOG("[Window::Render] Called, needs_repaint_=" << needs_repaint_
               << ", render_tree_valid_=" << render_tree_valid_);
 
+    const bool baseline_stats_enabled = IsBaselineFrameStatsEnabled();
+    const double render_start_ms = baseline_stats_enabled ? GetBaselineTimeMs() : 0.0;
+
     // 处理待处理的 resize（节流期间被跳过的最后一次 resize）
     if (has_pending_resize_) {
         has_pending_resize_ = false;
@@ -1228,6 +1263,17 @@ void Window::Render() {
     // 快速路径：无需重绘且无活动动画时直接返回
     if (!needs_repaint_ && !has_active_animations && dirty_rects_.empty() && render_tree_valid_) {
         if (render_pipeline_ && !render_pipeline_->NeedsUpdate()) {
+            if (baseline_stats_enabled) {
+                std::cout << "[MBINK_BASELINE_FRAME]"
+                          << " boundary=window"
+                          << " class=idle_early_return"
+                          << " total_ms=" << (GetBaselineTimeMs() - render_start_ms)
+                          << " backend=" << RenderBackendName(actual_backend_)
+                          << " active_animations=0"
+                          << " dirty_rects=0"
+                          << " render_tree_valid=1"
+                          << "\n";
+            }
             return;
         }
     }
@@ -1452,19 +1498,87 @@ void Window::Render() {
                 }
             }
         }
-        canvas->clear(clear_color);
+        double clear_time_ms = 0.0;
+        double pipeline_time_ms = 0.0;
+        double dropdown_time_ms = 0.0;
+        double devtools_time_ms = 0.0;
+        double flush_time_ms = 0.0;
+        double retained_copy_time_ms = 0.0;
 
-        // 应用 DPI 缩放
-        canvas->save();
-        canvas->scale(dpi_scale, dpi_scale);
-
-        // 如果 DevTools 打开，裁剪到主应用区域
-        if (devtools.IsOpen()) {
-            canvas->clipRect(SkRect::MakeXYWH(app_x, app_y, app_width, app_height));
+        const int retained_width_px = std::max(0, static_cast<int>(std::lround(app_width * dpi_scale)));
+        const int retained_height_px = std::max(0, static_cast<int>(std::lround(app_height * dpi_scale)));
+        const bool retained_present_enabled =
+            IsRetainedPresentEnabled() && !config_.transparent && !has_active_animations &&
+            retained_width_px > 0 && retained_height_px > 0;
+        SkCanvas* main_canvas = canvas;
+        bool retained_present_used = false;
+        bool retained_present_valid = false;
+        bool retained_main_reused = false;
+        if (retained_present_enabled) {
+            if (!retained_main_surface_ ||
+                retained_main_width_px_ != retained_width_px ||
+                retained_main_height_px_ != retained_height_px) {
+                retained_main_surface_ =
+                    SkSurfaces::Raster(SkImageInfo::MakeN32Premul(retained_width_px, retained_height_px));
+                retained_main_width_px_ = retained_width_px;
+                retained_main_height_px_ = retained_height_px;
+                retained_main_has_content_ = false;
+            }
+            if (retained_main_surface_) {
+                main_canvas = retained_main_surface_->getCanvas();
+                retained_present_valid = (main_canvas != nullptr);
+                retained_present_used = retained_present_valid;
+            }
+        } else {
+            retained_main_surface_.reset();
+            retained_main_width_px_ = 0;
+            retained_main_height_px_ = 0;
+            retained_main_has_content_ = false;
         }
 
-        // 处理一帧
-        bool process_ok = render_pipeline_->ProcessFrame(canvas);
+        const bool can_reuse_retained_main =
+            retained_present_used &&
+            retained_main_has_content_ &&
+            render_tree_valid_ &&
+            retained_main_surface_ &&
+            !has_active_animations &&
+            dirty_rects_.empty() &&
+            render_pipeline_ &&
+            !render_pipeline_->NeedsUpdate();
+
+        double stage_start_ms = baseline_stats_enabled ? GetBaselineTimeMs() : 0.0;
+        bool process_ok = true;
+        if (can_reuse_retained_main) {
+            retained_main_reused = true;
+        } else {
+            main_canvas->clear(clear_color);
+            if (baseline_stats_enabled) {
+                clear_time_ms = GetBaselineTimeMs() - stage_start_ms;
+            }
+
+            // 应用 DPI 缩放
+            main_canvas->save();
+            main_canvas->scale(dpi_scale, dpi_scale);
+
+            // 如果 DevTools 打开，裁剪到主应用区域
+            if (devtools.IsOpen()) {
+                const SkRect main_clip_rect = retained_present_used
+                    ? SkRect::MakeXYWH(0.0f, 0.0f, app_width, app_height)
+                    : SkRect::MakeXYWH(app_x, app_y, app_width, app_height);
+                main_canvas->clipRect(main_clip_rect);
+            }
+
+            // 处理一帧
+            stage_start_ms = baseline_stats_enabled ? GetBaselineTimeMs() : 0.0;
+            process_ok = render_pipeline_->ProcessFrame(main_canvas);
+            if (baseline_stats_enabled) {
+                pipeline_time_ms = GetBaselineTimeMs() - stage_start_ms;
+            }
+            if (retained_present_used) {
+                retained_main_has_content_ = process_ok;
+            }
+            main_canvas->restore();
+        }
 
         if (IsAnimFrameDebugEnabled()) {
             static uint64_t render_frame = 0;
@@ -1479,20 +1593,82 @@ void Window::Render() {
         }
 
         // 更新并绘制 select 下拉菜单
+        if (retained_present_used) {
+            stage_start_ms = baseline_stats_enabled ? GetBaselineTimeMs() : 0.0;
+            canvas->clear(clear_color);
+            if (sk_sp<SkImage> retained_image = retained_main_surface_->makeImageSnapshot()) {
+                canvas->drawImage(retained_image, app_x * dpi_scale, app_y * dpi_scale, SkSamplingOptions());
+            } else {
+                retained_present_used = false;
+                retained_main_has_content_ = false;
+                canvas->save();
+                canvas->scale(dpi_scale, dpi_scale);
+                if (devtools.IsOpen()) {
+                    canvas->clipRect(SkRect::MakeXYWH(app_x, app_y, app_width, app_height));
+                }
+                process_ok = render_pipeline_->ProcessFrame(canvas);
+                canvas->restore();
+            }
+            if (baseline_stats_enabled) {
+                retained_copy_time_ms = GetBaselineTimeMs() - stage_start_ms;
+            }
+        }
+
+        canvas->save();
+        canvas->scale(dpi_scale, dpi_scale);
+        if (devtools.IsOpen()) {
+            canvas->clipRect(SkRect::MakeXYWH(app_x, app_y, app_width, app_height));
+        }
+
         auto& dropdown_manager = SelectDropdownManager::Instance();
         if (dropdown_manager.IsDropdownOpen()) {
             dropdown_manager.UpdatePositionFromRenderTree(cached_render_tree_);
         }
+        stage_start_ms = baseline_stats_enabled ? GetBaselineTimeMs() : 0.0;
         dropdown_manager.Paint(canvas);
+        if (baseline_stats_enabled) {
+            dropdown_time_ms = GetBaselineTimeMs() - stage_start_ms;
+        }
 
         canvas->restore();
 
         // 渲染 DevTools
+        stage_start_ms = baseline_stats_enabled ? GetBaselineTimeMs() : 0.0;
         RenderDevTools(canvas, static_cast<float>(logical_width), static_cast<float>(logical_height));
+        if (baseline_stats_enabled) {
+            devtools_time_ms = GetBaselineTimeMs() - stage_start_ms;
+        }
 
         // 刷新 GPU 命令（如果使用 GPU）
         if (gr_context_) {
+            stage_start_ms = baseline_stats_enabled ? GetBaselineTimeMs() : 0.0;
             gr_context_->flush();
+            if (baseline_stats_enabled) {
+                flush_time_ms = GetBaselineTimeMs() - stage_start_ms;
+            }
+        }
+        if (baseline_stats_enabled) {
+            std::cout << "[MBINK_BASELINE_FRAME]"
+                      << " boundary=window"
+                      << " class=rendered"
+                      << " total_ms=" << (GetBaselineTimeMs() - render_start_ms)
+                      << " clear_ms=" << clear_time_ms
+                      << " pipeline_ms=" << pipeline_time_ms
+                      << " dropdown_ms=" << dropdown_time_ms
+                      << " devtools_ms=" << devtools_time_ms
+                      << " flush_ms=" << flush_time_ms
+                      << " retained_present_enabled=" << (retained_present_enabled ? 1 : 0)
+                      << " retained_present_used=" << (retained_present_used ? 1 : 0)
+                      << " retained_present_valid=" << (retained_present_valid ? 1 : 0)
+                      << " retained_main_reused=" << (retained_main_reused ? 1 : 0)
+                      << " retained_copy_ms=" << retained_copy_time_ms
+                      << " process_ok=" << (process_ok ? 1 : 0)
+                      << " backend=" << RenderBackendName(actual_backend_)
+                      << " active_animations=" << (has_active_animations ? 1 : 0)
+                      << " dirty_rects=" << dirty_rects_.size()
+                      << " devtools_open=" << (devtools.IsOpen() ? 1 : 0)
+                      << " dropdown_open=" << (dropdown_manager.IsDropdownOpen() ? 1 : 0)
+                      << "\n";
         }
         // 注意：Present 由 SwapBuffers() 调用，不在这里调用
     }

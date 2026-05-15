@@ -455,6 +455,32 @@ TEST_F(CompositorStatsTest, LayerCountStats) {
     EXPECT_EQ(info.layers_composited, 3);
 }
 
+TEST_F(CompositorStatsTest, CompositeToCanvasUpdatesStats) {
+    auto root = CreateColoredLayer(SK_ColorRED, 0, 0, 200, 200);
+    auto child = CreateColoredLayer(SK_ColorGREEN, 10, 10, 50, 50);
+    root->AddChild(child);
+
+    SkBitmap result;
+    result.allocN32Pixels(200, 200);
+    SkCanvas canvas(result);
+
+    compositor_->ResetStats();
+
+    ASSERT_TRUE(compositor_->CompositeToCanvas(root.get(), &canvas));
+
+    const auto& stats = compositor_->GetStats();
+    EXPECT_EQ(stats.frames_composited, 1);
+    EXPECT_EQ(stats.frames_skipped, 0);
+    EXPECT_EQ(stats.layers_composited, 2);
+    EXPECT_GT(stats.composite_time_ms, 0.0);
+
+    const auto& frame_info = compositor_->GetLastFrameInfo();
+    EXPECT_FALSE(frame_info.frame_skipped);
+    EXPECT_EQ(frame_info.layers_composited, 2);
+    EXPECT_GT(frame_info.composite_time_ms, 0.0);
+    EXPECT_GT(frame_info.total_time_ms, 0.0);
+}
+
 // =========================================================================
 // 调试功能测试
 // =========================================================================

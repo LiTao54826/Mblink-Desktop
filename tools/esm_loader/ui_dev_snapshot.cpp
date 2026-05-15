@@ -245,6 +245,10 @@ bool ExportUiDevSnapshot(mbink::Window* window,
 
     const double viewport_width = tree.contains("rect") ? tree["rect"].value("w", 0.0) : 0.0;
     const double viewport_height = tree.contains("rect") ? tree["rect"].value("h", 0.0) : 0.0;
+    const double dpr = static_cast<double>(window->GetDisplayScale());
+    int physical_width = 0;
+    int physical_height = 0;
+    if (window) window->GetPhysicalSize(&physical_width, &physical_height);
 
     nlohmann::json snapshot;
     snapshot["ok"] = true;
@@ -255,7 +259,11 @@ bool ExportUiDevSnapshot(mbink::Window* window,
     snapshot["truncated_reason"] = traversal.truncated ? traversal.truncated_reason : "";
     snapshot["limits"] = nlohmann::json{{"max_nodes", traversal.max_nodes}, {"max_depth", traversal.max_depth}};
     if (!options.root_selector.empty()) snapshot["root_selector"] = options.root_selector;
-    snapshot["viewport"] = nlohmann::json{{"width", viewport_width}, {"height", viewport_height}, {"dpr", 1.0}};
+    snapshot["viewport"] = nlohmann::json{{"width", viewport_width},
+                                           {"height", viewport_height},
+                                           {"dpr", dpr},
+                                           {"physical_width", physical_width},
+                                           {"physical_height", physical_height}};
     snapshot["screenshot_base64"] = "";
     snapshot["tree"] = std::move(tree);
     snapshot["note"] = "P0: runtime exported DOM snapshot; rect/visible are best-effort.";

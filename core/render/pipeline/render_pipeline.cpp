@@ -46,6 +46,11 @@ namespace {
         static const bool enabled = (std::getenv("MBINK_DEBUG_LAYER_REBUILD") != nullptr);
         return enabled;
     }
+
+    bool IsBaselineFrameStatsEnabled() {
+        static const bool enabled = (std::getenv("MBINK_BASELINE_FRAME_STATS") != nullptr);
+        return enabled;
+    }
 }
 
 // =========================================================================
@@ -333,6 +338,13 @@ bool RenderPipeline::ProcessFrame(SkCanvas* canvas) {
     // RenderPipeline 不再自己构建渲染树，而是使用外部设置的渲染树
     // 如果没有渲染树，直接返回
     if (!render_tree_) {
+        if (IsBaselineFrameStatsEnabled()) {
+            std::cout << "[MBINK_BASELINE_FRAME]"
+                      << " boundary=pipeline"
+                      << " frame=" << frame_seq
+                      << " class=no_render_tree"
+                      << "\n";
+        }
         if (debug_anim_frame && (frame_seq <= 120 || (frame_seq % 60 == 0))) {
             std::cout << "[ANIM_FRAME_PIPELINE] frame=" << frame_seq
                       << " earlyReturn=no_render_tree"
@@ -386,6 +398,32 @@ bool RenderPipeline::ProcessFrame(SkCanvas* canvas) {
     current_frame_stats_.total_time = GetCurrentTimeMs() - frame_start_time_;
     current_frame_stats_.using_gpu = compositor_->IsUsingGPU();
     last_frame_stats_ = current_frame_stats_;
+
+    if (IsBaselineFrameStatsEnabled()) {
+        std::cout << "[MBINK_BASELINE_FRAME]"
+                  << " boundary=pipeline"
+                  << " frame=" << frame_seq
+                  << " class=rendered"
+                  << " total_ms=" << current_frame_stats_.total_time
+                  << " dom_ms=" << current_frame_stats_.dom_sync_time
+                  << " style_ms=" << current_frame_stats_.style_time
+                  << " layer_ms=" << current_frame_stats_.layer_tree_time
+                  << " raster_ms=" << current_frame_stats_.rasterize_time
+                  << " composite_ms=" << current_frame_stats_.composite_time
+                  << " layers_built=" << current_frame_stats_.layers_built
+                  << " layers_rasterized=" << current_frame_stats_.layers_rasterized
+                  << " layers_composited=" << current_frame_stats_.layers_composited
+                  << " full_rasterizations=" << current_frame_stats_.full_rasterizations
+                  << " incremental_rasterizations=" << current_frame_stats_.incremental_rasterizations
+                  << " pixels_rasterized=" << current_frame_stats_.pixels_rasterized
+                  << " pixels_skipped=" << current_frame_stats_.pixels_skipped
+                  << " textures_uploaded=" << current_frame_stats_.textures_uploaded
+                  << " frames_composited=" << current_frame_stats_.frames_composited
+                  << " frames_skipped=" << current_frame_stats_.frames_skipped
+                  << " compositor_composite_ms=" << current_frame_stats_.compositor_composite_time_ms
+                  << " using_gpu=" << (current_frame_stats_.using_gpu ? 1 : 0)
+                  << "\n";
+    }
 
     if (debug_anim_frame && (frame_seq <= 120 || (frame_seq % 60 == 0))) {
         std::cout << "[ANIM_FRAME_PIPELINE] frame=" << frame_seq
@@ -625,12 +663,16 @@ void RenderPipeline::DoRasterize() {
     int rasterized = rasterizer_->RasterizeDirtyLayers(root_layer_.get());
     current_frame_stats_.layers_rasterized = rasterized;
 
-    const auto& stats = rasterizer_->GetStats();
-    const int frame_full_rasterizations = stats.full_rasterizations - stats_before.full_rasterizations;
-    const int frame_incremental_rasterizations =
-        stats.incremental_rasterizations - stats_before.incremental_rasterizations;
-
-    current_frame_stats_.dirty_regions_count = frame_incremental_rasterizations;
+    const RasterizeStats stats_after = rasterizer_->GetStats();
+    current_frame_stats_.full_rasterizations =
+        stats_after.full_rasterizations - stats_before.full_rasterizations;
+    current_frame_stats_.incremental_rasterizations =
+        stats_after.incremental_rasterizations - stats_before.incremental_rasterizations;
+    current_frame_stats_.pixels_rasterized =
+        stats_after.pixels_rasterized - stats_before.pixels_rasterized;
+    current_frame_stats_.pixels_skipped =
+        stats_after.pixels_skipped - stats_before.pixels_skipped;
+    current_frame_stats_.dirty_regions_count = current_frame_stats_.incremental_rasterizations;
 
     // if (frame_full_rasterizations > 0 || frame_incremental_rasterizations > 0) {
     //     const char* render_mode = frame_full_rasterizations > 0 ? "full" : "incremental";
@@ -651,9 +693,20 @@ void RenderPipeline::DoComposite(SkCanvas* canvas) {
 
     // 优先使用层合成（如果层树已构建）
     if (root_layer_) {
+        const CompositeStats stats_before = compositor_->GetStats();
         compositor_->CompositeToCanvas(root_layer_.get(), canvas);
-        const auto& stats = compositor_->GetStats();
-        current_frame_stats_.layers_composited = stats.layers_composited;
+        const CompositeStats stats_after = compositor_->GetStats();
+        current_frame_stats_.frames_composited =
+            stats_after.frames_composited - stats_before.frames_composited;
+        current_frame_stats_.frames_skipped =
+            stats_after.frames_skipped - stats_before.frames_skipped;
+        current_frame_stats_.layers_composited =
+            stats_after.layers_composited - stats_before.layers_composited;
+        current_frame_stats_.textures_uploaded =
+            stats_after.textures_uploaded - stats_before.textures_uploaded;
+        current_frame_stats_.compositor_composite_time_ms =
+            stats_after.composite_time_ms - stats_before.composite_time_ms;
+        current_frame_stats_.frame_skipped = (current_frame_stats_.frames_skipped > 0);
         return;
     }
 

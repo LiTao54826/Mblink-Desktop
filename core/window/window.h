@@ -691,6 +691,10 @@ private:
     SDL_Surface* sdl_surface_ = nullptr;    // SDL Surface for direct rendering (no SDL_Renderer)
     sk_sp<GrDirectContext> gr_context_;
     sk_sp<SkSurface> surface_;
+    sk_sp<SkSurface> retained_main_surface_;
+    int retained_main_width_px_ = 0;
+    int retained_main_height_px_ = 0;
+    bool retained_main_has_content_ = false;
     bool should_close_ = false;
     RenderBackend actual_backend_ = RenderBackend::AUTO;  // 实际使用的渲染后端
 

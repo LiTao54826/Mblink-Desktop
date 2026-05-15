@@ -98,6 +98,14 @@ struct UnifiedFrameStats {
     int layers_rasterized = 0;
     int layers_composited = 0;
     int dirty_regions_count = 0;
+    int full_rasterizations = 0;
+    int incremental_rasterizations = 0;
+    int pixels_rasterized = 0;
+    int pixels_skipped = 0;
+    int textures_uploaded = 0;
+    int frames_composited = 0;
+    int frames_skipped = 0;
+    double compositor_composite_time_ms = 0.0;
     
     // 增量样式重算统计
     int style_nodes_visited = 0;
@@ -132,6 +140,14 @@ struct UnifiedFrameStats {
         layers_rasterized = 0;
         layers_composited = 0;
         dirty_regions_count = 0;
+        full_rasterizations = 0;
+        incremental_rasterizations = 0;
+        pixels_rasterized = 0;
+        pixels_skipped = 0;
+        textures_uploaded = 0;
+        frames_composited = 0;
+        frames_skipped = 0;
+        compositor_composite_time_ms = 0.0;
         style_nodes_visited = 0;
         style_nodes_recalculated = 0;
         style_subtrees_skipped = 0;

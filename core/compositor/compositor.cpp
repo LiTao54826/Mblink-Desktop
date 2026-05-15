@@ -583,6 +583,9 @@ bool Compositor::CompositeToCanvas(CompositorLayer* root, SkCanvas* canvas) {
         return false;
     }
 
+    current_frame_info_ = CompositorFrameInfo();
+    auto start_time = std::chrono::high_resolution_clock::now();
+
     // 注意：CompositeToCanvas 不使用帧跳过优化！
     // 原因：调用方（window.cpp）每帧都会 canvas->clear(clear_color) 清除画布，
     // 如果跳过合成，canvas 上就只有背景色，导致画面闪烁空白帧。
@@ -595,6 +598,20 @@ bool Compositor::CompositeToCanvas(CompositorLayer* root, SkCanvas* canvas) {
     CompositeLayerCPU(root, canvas, SkMatrix::I());
 
     needs_composite_ = false;
+
+    auto end_time = std::chrono::high_resolution_clock::now();
+    const double composite_time_ms = std::chrono::duration<double, std::milli>(end_time - start_time).count();
+    const int layers_composited = CountLayers(root);
+
+    stats_.frames_composited++;
+    stats_.layers_composited += layers_composited;
+    stats_.composite_time_ms += composite_time_ms;
+
+    current_frame_info_.composite_time_ms = composite_time_ms;
+    current_frame_info_.total_time_ms = current_frame_info_.composite_time_ms;
+    current_frame_info_.layers_composited = layers_composited;
+    current_frame_info_.frame_skipped = false;
+    last_frame_info_ = current_frame_info_;
 
     return true;
 }
