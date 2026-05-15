@@ -316,13 +316,68 @@ std::string BuildOfficialPreactModule(const std::filesystem::path& entry_path) {
     return "export * from '" + normalized + "';";
 }
 
+std::string EmbeddedOfficialPreactModule(const char* path) {
+    auto source = mbink::embedded::GetEmbeddedJS(path);
+    if (source.empty()) {
+        throw std::runtime_error(std::string("Missing embedded official Preact module: ") + path);
+    }
+    return std::string(source);
+}
+
+std::string StripJsExtension(std::string path) {
+    if (path.size() > 3 && path.substr(path.size() - 3) == ".js") {
+        path.resize(path.size() - 3);
+    }
+    return path;
+}
+
+std::string OfficialPreactModuleId(const char* path) {
+    std::string id(path ? path : "");
+    static const std::string prefix = "third_party/preact/";
+    if (id.rfind(prefix, 0) == 0) {
+        id.replace(0, prefix.size(), "__mbink_official_preact/");
+    }
+    return id;
+}
+
+std::string BuildEmbeddedOfficialPreactModule(const char* path) {
+    return "export * from '" + OfficialPreactModuleId(path) + "';";
+}
+
+void RegisterOfficialPreactSource(QuickJSRuntime* runtime, const char* path) {
+    const auto source = EmbeddedOfficialPreactModule(path);
+    const auto module_id = OfficialPreactModuleId(path);
+    runtime->RegisterModule(module_id, source);
+    runtime->RegisterModule(StripJsExtension(module_id), source);
+}
+
 // 注册官方 Preact ES 模块
 void RegisterPreactModules(QuickJSRuntime* runtime) {
-    const auto preact_root = FindOfficialPreactRoot();
-    runtime->RegisterModule("preact", BuildOfficialPreactModule(preact_root / "src" / "index.js"));
-    runtime->RegisterModule("preact/hooks", BuildOfficialPreactModule(preact_root / "hooks" / "src" / "index.js"));
-    runtime->RegisterModule("preact/jsx-runtime", BuildOfficialPreactModule(preact_root / "jsx-runtime" / "src" / "index.js"));
-    runtime->RegisterModule("preact/jsx-dev-runtime", BuildOfficialPreactModule(preact_root / "jsx-runtime" / "src" / "index.js"));
+    static constexpr const char* kOfficialPreactSources[] = {
+        "third_party/preact/src/index.js",
+        "third_party/preact/src/render.js",
+        "third_party/preact/src/create-element.js",
+        "third_party/preact/src/component.js",
+        "third_party/preact/src/options.js",
+        "third_party/preact/src/util.js",
+        "third_party/preact/src/constants.js",
+        "third_party/preact/src/clone-element.js",
+        "third_party/preact/src/create-context.js",
+        "third_party/preact/src/diff/index.js",
+        "third_party/preact/src/diff/children.js",
+        "third_party/preact/src/diff/props.js",
+        "third_party/preact/src/diff/catch-error.js",
+        "third_party/preact/hooks/src/index.js",
+        "third_party/preact/jsx-runtime/src/index.js",
+        "third_party/preact/jsx-runtime/src/utils.js",
+    };
+    for (const auto* path : kOfficialPreactSources) {
+        RegisterOfficialPreactSource(runtime, path);
+    }
+    runtime->RegisterModule("preact", BuildEmbeddedOfficialPreactModule("third_party/preact/src/index.js"));
+    runtime->RegisterModule("preact/hooks", BuildEmbeddedOfficialPreactModule("third_party/preact/hooks/src/index.js"));
+    runtime->RegisterModule("preact/jsx-runtime", BuildEmbeddedOfficialPreactModule("third_party/preact/jsx-runtime/src/index.js"));
+    runtime->RegisterModule("preact/jsx-dev-runtime", BuildEmbeddedOfficialPreactModule("third_party/preact/jsx-runtime/src/index.js"));
 
     std::cout << "  ✓ Official Preact ES modules registered" << std::endl;
 }
@@ -494,6 +549,10 @@ int main(int argc, char** argv) {
     std::string ui_dev_console_file;
     std::string ui_dev_errors_file;
     std::string ui_dev_lifecycle_file;
+    std::string ui_dev_runtime_epoch;
+    size_t ui_dev_snapshot_max_nodes = 2000;
+    int ui_dev_snapshot_max_depth = 64;
+    std::string ui_dev_snapshot_root_selector;
     bool execute_scripts = true;
     bool disable_official_preact = false;
     bool verbose = !has_embedded;  // 嵌入模式默认静默
@@ -533,6 +592,14 @@ int main(int argc, char** argv) {
             ui_dev_errors_file = argv[++i];
         } else if (arg == "--ui-dev-lifecycle-file" && i + 1 < argc) {
             ui_dev_lifecycle_file = argv[++i];
+        } else if (arg == "--ui-dev-runtime-epoch" && i + 1 < argc) {
+            ui_dev_runtime_epoch = argv[++i];
+        } else if (arg == "--ui-dev-snapshot-max-nodes" && i + 1 < argc) {
+            ui_dev_snapshot_max_nodes = static_cast<size_t>(std::stoul(argv[++i]));
+        } else if (arg == "--ui-dev-snapshot-max-depth" && i + 1 < argc) {
+            ui_dev_snapshot_max_depth = std::stoi(argv[++i]);
+        } else if (arg == "--ui-dev-snapshot-root-selector" && i + 1 < argc) {
+            ui_dev_snapshot_root_selector = argv[++i];
         } else if (arg == "--no-scripts") {
             execute_scripts = false;
         } else if (arg == "--no-official-preact") {
@@ -689,6 +756,10 @@ int main(int argc, char** argv) {
             ui_dev_console_file,
             ui_dev_errors_file,
             ui_dev_lifecycle_file,
+            ui_dev_runtime_epoch,
+            ui_dev_snapshot_max_nodes,
+            ui_dev_snapshot_max_depth,
+            ui_dev_snapshot_root_selector,
             quit_after_seconds,
         };
         mbink::ui_dev::AttachStructuredRuntimeBuffers(runtime.get(), ui_dev_options);

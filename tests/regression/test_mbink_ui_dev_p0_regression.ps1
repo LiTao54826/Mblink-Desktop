@@ -5,12 +5,13 @@ $OutputEncoding = [System.Text.UTF8Encoding]::new($false)
 Set-Location (Join-Path $PSScriptRoot '..\..')
 $exe = Join-Path (Get-Location) 'build/bin/Release/mbink-ui-dev.exe'
 $todo = Join-Path (Get-Location) 'examples/todo_app_js'
-$jsxDev = Join-Path (Get-Location) 'examples/official_preact_jsx_dev'
+$canonicalDev = Join-Path (Get-Location) 'tmp/mbink_ui_dev_p0_canonical_template'
 $projA = Join-Path (Get-Location) 'tmp/mbink_ui_dev_multi_verify_a'
 $projB = Join-Path (Get-Location) 'tmp/mbink_ui_dev_multi_verify_b'
 $tmpJs = Join-Path (Get-Location) 'tmp/mbink_ui_dev_eval_test.js'
 if (!(Test-Path $exe)) { throw "missing exe: $exe" }
 if (!(Test-Path $projA) -or !(Test-Path $projB)) { throw 'missing multi-project verify fixtures' }
+if (Test-Path $canonicalDev) { Remove-Item -LiteralPath $canonicalDev -Recurse -Force }
 Set-Content -Path $tmpJs -Value '1+2' -NoNewline
 
 function Invoke-JsonCommand([string]$name, [string[]]$arguments, [scriptblock]$assert) {
@@ -56,6 +57,7 @@ function Invoke-Rpc([System.Diagnostics.Process]$proc, [hashtable]$payload) {
 
 & $exe daemon stop --project $projA *> $null
 & $exe daemon stop --project $projB *> $null
+& $exe daemon stop --project $canonicalDev *> $null
 
 Invoke-JsonCommand 'open todo' @('open', $todo) {
     param($j)
@@ -66,6 +68,15 @@ Invoke-JsonCommand 'snapshot cold start' @('snapshot', '--project', $todo) {
     Assert ($j.ok -eq $true) 'snapshot not ok'
     Assert ($j.tree.tag -ne 'stub-root') 'snapshot returned stub-root'
     Assert ($j.viewport.width -eq 800 -and $j.viewport.height -eq 600) 'viewport size mismatch'
+    Assert ($j.response_mode -eq 'inline') 'snapshot default response was not inline for small DOM'
+    Assert ((Test-Path -LiteralPath $j.snapshot.path) -and $j.snapshot.bytes -gt 0) 'snapshot metadata path missing'
+}
+Invoke-JsonCommand 'snapshot file response' @('snapshot', '--project', $todo, '--response', 'file') {
+    param($j)
+    Assert ($j.ok -eq $true) 'snapshot file response not ok'
+    Assert ($j.response_mode -eq 'file') 'snapshot file response did not use file mode'
+    Assert ((Test-Path -LiteralPath $j.snapshot.path) -and $j.snapshot.bytes -gt 0) 'snapshot file response path missing'
+    Assert (-not ($j.PSObject.Properties.Name -contains 'tree')) 'snapshot file response should not inline tree'
 }
 Invoke-JsonCommand 'query with --project first' @('query', '--project', $todo, '#todo-input') {
     param($j)
@@ -89,38 +100,46 @@ Invoke-JsonCommand 'query updated result' @('query', '--project', $todo, 'span')
     Assert ($texts -contains 'task from regression') 'post-click query result is stale'
 }
 
-Invoke-JsonCommand 'open official preact jsx dev' @('open', '--project', $jsxDev) {
+Invoke-JsonCommand 'init canonical desktop template' @('init', $canonicalDev, '--purpose', 'desktop-app', '--runtime', 'tool') {
     param($j)
-    Assert ($j.ok -eq $true) 'open official preact jsx dev not ok'
+    Assert ($j.ok -eq $true -and $j.canonical_key -eq 'desktop-app/tool') 'init canonical desktop template not ok'
+    Assert (($j.files_created -contains 'ui/app.js') -and ($j.files_created -contains 'ui/bridge.js')) 'canonical template missing UI bridge files'
 }
-Invoke-JsonCommand 'snapshot official preact jsx dev' @('snapshot', '--project', $jsxDev) {
+Invoke-JsonCommand 'open canonical desktop template' @('open', '--project', $canonicalDev) {
     param($j)
-    Assert ($j.ok -eq $true) 'snapshot official preact jsx dev not ok'
-    Assert ($j.tree.tag -ne 'stub-root') 'official preact jsx dev snapshot returned stub-root'
+    Assert ($j.ok -eq $true) 'open canonical desktop template not ok'
 }
-Invoke-JsonCommand 'query official preact jsx button' @('query', '--project', $jsxDev, '#add-btn') {
+Invoke-JsonCommand 'snapshot canonical desktop template' @('snapshot', '--project', $canonicalDev) {
     param($j)
-    Assert ($j.ok -eq $true -and $j.result.count -eq 1) 'official preact jsx add button missing'
+    Assert ($j.ok -eq $true) 'snapshot canonical desktop template not ok'
+    Assert ($j.tree.tag -ne 'stub-root') 'canonical desktop template snapshot returned stub-root'
+    Assert ($j.tree.rect.h -eq $j.viewport.height) 'canonical body height differs from viewport'
 }
-Invoke-JsonCommand 'input-text official preact jsx' @('input-text', '--project', $jsxDev, '#draft-input', 'task from jsx regression') {
+Invoke-JsonCommand 'query canonical validation input' @('query', '--project', $canonicalDev, '#validation-input') {
     param($j)
-    Assert ($j.ok -eq $true -and $j.result.value -eq 'task from jsx regression') 'official preact jsx input-text failed'
+    Assert ($j.ok -eq $true -and $j.result.count -eq 1) 'canonical validation input missing'
 }
-Invoke-JsonCommand 'inspect official preact jsx draft state' @('inspect', '--project', $jsxDev, '#state-text') {
+Invoke-JsonCommand 'click canonical counter' @('click', '--project', $canonicalDev, '#counter-button') {
     param($j)
-    Assert ($j.ok -eq $true -and $j.result.outer_html -like '*task from jsx regression*') 'official preact jsx draft state did not update'
+    Assert ($j.ok -eq $true -and $j.result.clicked -eq $true -and $j.result.element.text -like '*1*') 'canonical counter click failed'
 }
-Invoke-JsonCommand 'click official preact jsx add button' @('click', '--project', $jsxDev, '#add-btn') {
+Invoke-JsonCommand 'input-text canonical validation' @('input-text', '--project', $canonicalDev, '#validation-input', 'task from canonical regression') {
     param($j)
-    Assert ($j.ok -eq $true -and $j.result.clicked -eq $true) 'official preact jsx click failed'
+    Assert ($j.ok -eq $true -and $j.result.value -eq 'task from canonical regression') 'canonical input-text failed'
 }
-Invoke-JsonCommand 'inspect official preact jsx summary' @('inspect', '--project', $jsxDev, '#summary') {
+Invoke-JsonCommand 'submit canonical validation' @('click', '--project', $canonicalDev, '#submit-button') {
     param($j)
-    Assert ($j.ok -eq $true -and $j.result.outer_html -like '*items:1*') 'official preact jsx summary did not rerender'
+    Assert ($j.ok -eq $true -and $j.result.clicked -eq $true) 'canonical submit click failed'
 }
-Invoke-JsonCommand 'inspect official preact jsx list' @('inspect', '--project', $jsxDev, '#items-list') {
+Invoke-JsonCommand 'inspect canonical result' @('inspect', '--project', $canonicalDev, '#result-text') {
     param($j)
-    Assert ($j.ok -eq $true -and $j.result.outer_html -like '*task from jsx regression*') 'official preact jsx list item missing after click'
+    Assert ($j.ok -eq $true -and $j.result.outer_html -like '*task from canonical regression*') 'canonical result did not update'
+}
+Invoke-JsonCommand 'eval canonical body height' @('eval', '--project', $canonicalDev, "JSON.stringify({bodyScrollHeight:document.body.scrollHeight,innerHeight:window.innerHeight,input:document.getElementById('validation-input').value})") {
+    param($j)
+    $state = $j.result | ConvertFrom-Json
+    Assert ([double]$state.bodyScrollHeight -le ([double]$state.innerHeight + 1)) 'canonical body overflows viewport'
+    Assert ($state.input -eq 'task from canonical regression') 'canonical input value not retained'
 }
 
 Invoke-JsonCommand 'highlight' @('highlight', '--project', $todo, '#todo-input', '--color', '#ff4d4f') {
@@ -160,5 +179,7 @@ try {
 finally {
     if ($serve -and -not $serve.HasExited) { $serve.Kill() }
 }
+
+& $exe daemon stop --project $canonicalDev *> $null
 
 Write-Host '[PASS] mbink-ui-dev P0 regression green'

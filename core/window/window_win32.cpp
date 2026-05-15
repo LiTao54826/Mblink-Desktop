@@ -16,6 +16,7 @@
 #include "window_win32.h"
 #include "window.h"
 #include "display_backend.h"
+#include <SDL3/SDL.h>
 #include <unordered_map>
 #include <iostream>
 #include <cstdlib>
@@ -27,6 +28,8 @@
 namespace mbink {
 namespace win32 {
 
+extern "C" const char* SDL_CreateTemporaryString(const char* string);
+
 // Windows 子类化窗口过程，用于拦截可能导致闪烁的消息
 static std::unordered_map<HWND, WNDPROC> g_original_wndprocs;
 static std::unordered_map<HWND, Window*> g_hwnd_to_window;
@@ -36,6 +39,55 @@ static bool g_debug_messages = false;
 static int g_paint_count = 0;
 static int g_present_count = 0;
 static DWORD g_last_stats_time = 0;
+
+static SDL_Scancode Win32VirtualKeyToSDLScancode(WPARAM virtual_key) {
+    const UINT scan_code = MapVirtualKeyW(static_cast<UINT>(virtual_key), MAPVK_VK_TO_VSC);
+    if (scan_code == 0) {
+        return SDL_SCANCODE_UNKNOWN;
+    }
+    return SDL_GetScancodeFromKey(static_cast<SDL_Keycode>(virtual_key), nullptr);
+}
+
+static void PushSDLKeyEventFromWin32(Window* window, UINT msg, WPARAM wParam) {
+    SDL_Window* sdl_window = window ? window->GetSDLWindow() : nullptr;
+    if (!sdl_window) {
+        return;
+    }
+
+    SDL_Event event{};
+    event.type = (msg == WM_KEYUP || msg == WM_SYSKEYUP) ? SDL_EVENT_KEY_UP : SDL_EVENT_KEY_DOWN;
+    event.key.windowID = SDL_GetWindowID(sdl_window);
+    event.key.key = static_cast<SDL_Keycode>(wParam);
+    event.key.scancode = Win32VirtualKeyToSDLScancode(wParam);
+    event.key.repeat = false;
+    SDL_PushEvent(&event);
+}
+
+static void PushSDLTextInputFromWin32(Window* window, WPARAM wParam) {
+    SDL_Window* sdl_window = window ? window->GetSDLWindow() : nullptr;
+    if (!sdl_window || !SDL_TextInputActive(sdl_window)) {
+        return;
+    }
+
+    if (wParam < 0x20 || wParam == 0x7F) {
+        return;
+    }
+
+    wchar_t wide_text[2] = { static_cast<wchar_t>(wParam), L'\0' };
+    char utf8_text[8] = {};
+    int written = WideCharToMultiByte(CP_UTF8, 0, wide_text, 1, utf8_text, static_cast<int>(sizeof(utf8_text) - 1), nullptr, nullptr);
+    if (written <= 0) {
+        return;
+    }
+
+    SDL_Event event{};
+    event.type = SDL_EVENT_TEXT_INPUT;
+    event.text.windowID = SDL_GetWindowID(sdl_window);
+    event.text.text = SDL_CreateTemporaryString(utf8_text);
+    if (event.text.text) {
+        SDL_PushEvent(&event);
+    }
+}
 
 // 缓存窗口大小，用于检测虚假的大小变化
 static std::unordered_map<HWND, RECT> g_window_rects;
@@ -102,6 +154,18 @@ static LRESULT CALLBACK SubclassWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPAR
     Window* window = (window_it != g_hwnd_to_window.end()) ? window_it->second : nullptr;
 
     switch (msg) {
+        case WM_KEYDOWN:
+        case WM_SYSKEYDOWN:
+        case WM_KEYUP:
+        case WM_SYSKEYUP:
+            PushSDLKeyEventFromWin32(window, msg, wParam);
+            break;
+
+        case WM_CHAR:
+        case WM_SYSCHAR:
+            PushSDLTextInputFromWin32(window, wParam);
+            break;
+
         case WM_CLOSE: {
             break;
         }

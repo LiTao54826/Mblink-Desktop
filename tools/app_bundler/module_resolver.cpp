@@ -212,7 +212,7 @@ bool ModuleResolver::ResolveModule(const std::string& module_id,
     if (IsBuiltinModule(module_id)) {
         module.is_builtin = true;
         module.source = builtin_modules_[module_id];
-        module.path = "";
+        module.path = module_id;
         
         if (verbose_) {
             std::cout << "  Resolved builtin: " << module_id << std::endl;

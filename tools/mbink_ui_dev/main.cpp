@@ -32,7 +32,9 @@ using mbink::ui_dev::SendDaemonRequest;
 using mbink::ui_dev::StartDetachedDaemon;
 using mbink::ui_dev::WaitForDaemonReady;
 using mbink::ui_dev::InitProject;
+using mbink::ui_dev::InitProjectOptions;
 using mbink::ui_dev::InitProjectResult;
+using mbink::ui_dev::ListSupportedInitCombinations;
 using mbink::ui_dev::ListSupportedInitTemplates;
 
 
@@ -40,9 +42,12 @@ namespace {
 
 constexpr int kDaemonStartupTimeoutMs = 10000;
 constexpr int kDaemonRequestTimeoutMs = 10000;
-constexpr int kBuildRequestTimeoutMs = 45000;
+constexpr int kBuildRequestTimeoutMs = 300000;
 constexpr int kDaemonOpenRetryCount = 3;
 constexpr int kDaemonOpenRetryDelayMs = 250;
+constexpr size_t kMcpInlineTextMaxBytes = 128 * 1024;
+
+std::string GetOptionValue(const std::vector<std::string>& args, const std::string& key);
 
 void ConfigureConsoleForUtf8() {
 #ifdef _WIN32
@@ -53,6 +58,75 @@ void ConfigureConsoleForUtf8() {
 
 void PrintJson(const nlohmann::json& j) {
     std::cout << j.dump(2) << std::endl;
+}
+
+nlohmann::json SnapshotRequestFromResponseMode(const std::string& response_mode) {
+    nlohmann::json req{{"cmd", "snapshot"}};
+    if (!response_mode.empty()) req["response_mode"] = response_mode;
+    return req;
+}
+
+void AddIntOptionIfPresent(const std::vector<std::string>& args,
+                           const std::string& option,
+                           const std::string& field,
+                           nlohmann::json* req) {
+    const auto value = GetOptionValue(args, option);
+    if (value.empty() || !req) return;
+    try {
+        (*req)[field] = std::stoi(value);
+    } catch (...) {
+    }
+}
+
+std::string SummarizeToolResultForText(const nlohmann::json& value) {
+    const auto rendered = value.dump(2);
+    if (rendered.size() <= kMcpInlineTextMaxBytes) return rendered;
+    nlohmann::json summary{{"ok", value.value("ok", true)},
+                           {"truncated", true},
+                           {"bytes", rendered.size()},
+                           {"message", "structuredContent is large; use structuredContent or snapshot.path instead of text"}};
+    if (value.is_object()) {
+        for (const auto& key : {"response_mode", "source", "snapshot", "viewport", "timestamp", "inline_limit_bytes", "note"}) {
+            if (value.contains(key)) summary[key] = value.at(key);
+        }
+    }
+    return summary.dump(2);
+}
+
+nlohmann::json InitProjectResultToJson(const InitProjectResult& result) {
+    nlohmann::json warnings = nlohmann::json::array();
+    for (const auto& warning : result.warnings) {
+        warnings.push_back({{"code", "template_selection_warning"}, {"message", warning}});
+    }
+    return nlohmann::json{{"ok", true},
+                          {"project_root", result.project_root.string()},
+                          {"project_name", result.project_name},
+                          {"template", result.template_name},
+                          {"purpose", result.purpose},
+                          {"runtime", result.runtime},
+                          {"canonical_key", result.canonical_key},
+                          {"requested", {{"purpose", result.requested_purpose}, {"runtime", result.requested_runtime}, {"legacy_template", result.legacy_template}, {"used_default", result.used_default}}},
+                          {"resolved", {{"purpose", result.purpose}, {"runtime", result.runtime}, {"canonical_key", result.canonical_key}, {"layers", result.layers}}},
+                          {"legacy_template", result.legacy_template},
+                          {"used_default", result.used_default},
+                          {"layers", result.layers},
+                          {"warnings", warnings},
+                          {"supported_purposes", nlohmann::json::array({"minimal", "showcase", "desktop-app"})},
+                          {"supported_runtimes", nlohmann::json::array({"tool", "python", "rust", "go"})},
+                          {"supported_combinations", ListSupportedInitCombinations()},
+                          {"default_combination", "minimal/tool"},
+                          {"legacy_templates", ListSupportedInitTemplates()},
+                          {"files_created", result.files_created},
+                          {"next_step", result.next_step}};
+}
+
+std::string InitErrorCode(const std::string& message) {
+    if (message.find("must be provided together") != std::string::npos) return "invalid_args.partial_canonical_input";
+    if (message.find("conflicts") != std::string::npos) return "invalid_args.legacy_canonical_conflict";
+    if (message.find("unsupported purpose") != std::string::npos) return "invalid_args.unsupported_purpose";
+    if (message.find("unsupported runtime") != std::string::npos) return "invalid_args.unsupported_runtime";
+    if (message.find("unsupported legacy template") != std::string::npos) return "invalid_args.unsupported_legacy_template";
+    return "init_failed";
 }
 
 void PrintJsonLine(const nlohmann::json& j) {
@@ -159,7 +233,7 @@ std::optional<std::filesystem::path> NormalizeProjectRoot(const std::string& pro
     auto root = std::filesystem::absolute(project_hint).lexically_normal();
     if (std::filesystem::exists(root) && !std::filesystem::is_directory(root)) root = root.parent_path();
     if (root.empty() || !std::filesystem::exists(root) || !std::filesystem::is_directory(root)) {
-        if (error) *error = "项目目录不存在: " + project_hint;
+        if (error) *error = "project directory does not exist: " + project_hint;
         return std::nullopt;
     }
     return root;
@@ -223,8 +297,44 @@ std::optional<ProjectIdentity> ResolveProjectIdentity(const std::string& project
         return std::nullopt;
     }
 
-    if (error) *error = "未找到可用项目，请在项目目录下执行，或使用 --project <path> / open <path>";
+    if (error) *error = "No project found. Run in a project directory or pass --project <path> / open <path>";
     return std::nullopt;
+}
+
+std::optional<ProjectIdentity> FindManagedProjectByRoot(const std::filesystem::path& root,
+                                                        std::string* error) {
+    std::string list_error;
+    auto managed_projects = ListManagedProjects(&list_error);
+    if (!list_error.empty()) {
+        if (error) *error = list_error;
+        return std::nullopt;
+    }
+
+    const auto normalized_root = std::filesystem::absolute(root).lexically_normal();
+    for (const auto& identity : managed_projects) {
+        if (identity.project_root.empty()) continue;
+        const auto candidate = std::filesystem::absolute(identity.project_root).lexically_normal();
+        if (candidate == normalized_root) return identity;
+    }
+    return std::nullopt;
+}
+
+std::optional<ProjectIdentity> ResolveExistingProjectIdentity(const std::string& project_hint,
+                                                             std::string* error) {
+    if (error) error->clear();
+    if (project_hint.empty()) return ResolveProjectIdentity("", false, error);
+
+    const auto root = NormalizeProjectRoot(project_hint, error);
+    if (!root.has_value()) return std::nullopt;
+    std::string lookup_error;
+    if (const auto identity = FindManagedProjectByRoot(*root, &lookup_error); identity.has_value()) {
+        return identity;
+    }
+    if (!lookup_error.empty()) {
+        if (error) *error = lookup_error;
+        return std::nullopt;
+    }
+    return ResolveProjectIdentity(project_hint, false, error);
 }
 
 bool HasRunningDaemon(const ProjectIdentity& identity, bool cleanup_stale_state) {
@@ -269,8 +379,15 @@ nlohmann::json CallDaemonWithTimeout(const ProjectIdentity& identity,
     return resp;
 }
 
-nlohmann::json OpenProjectViaDaemon(const ProjectIdentity& identity, bool started_now) {
-    const auto request = nlohmann::json{{"cmd", "open"}, {"project_root", identity.project_root.string()}};
+int PrintDaemonResponse(nlohmann::json response) {
+    const bool ok = response.value("ok", false);
+    PrintJson(response);
+    return ok ? 0 : 1;
+}
+
+nlohmann::json OpenProjectViaDaemon(const ProjectIdentity& identity, bool started_now, bool force = false) {
+    auto request = nlohmann::json{{"cmd", "open"}, {"project_root", identity.project_root.string()}};
+    if (force) request["force"] = true;
     auto response = CallDaemon(identity, request);
     if (!started_now) return response;
     for (int attempt = 1; attempt < kDaemonOpenRetryCount; ++attempt) {
@@ -319,7 +436,9 @@ bool ResolveEvalCode(const std::vector<std::string>& args, std::string* code, st
 
 bool OptionConsumesNextValue(const std::string& arg) {
     return arg == "--project" || arg == "--encoding" || arg == "--content" || arg == "--from" ||
-           arg == "--x" || arg == "--y" || arg == "--color" || arg == "--code-base64";
+           arg == "--x" || arg == "--y" || arg == "--color" || arg == "--code-base64" ||
+           arg == "--response" || arg == "--response-mode" ||
+           arg == "--max-nodes" || arg == "--max-depth" || arg == "--root-selector" || arg == "--limit";
 }
 
 std::vector<std::string> CollectPositionalArgs(const std::vector<std::string>& args) {
@@ -350,6 +469,12 @@ std::optional<ProjectIdentity> ResolveCommandProject(const std::vector<std::stri
     return ResolveProjectIdentity(GetProjectHint(args, positional_index), allow_auto_create, error);
 }
 
+std::optional<ProjectIdentity> ResolveExistingCommandProject(const std::vector<std::string>& args,
+                                                            size_t positional_index,
+                                                            std::string* error) {
+    return ResolveExistingProjectIdentity(GetProjectHint(args, positional_index), error);
+}
+
 std::optional<ProjectIdentity> RequireRunningDaemonProject(const std::vector<std::string>& args,
                                                           size_t positional_index,
                                                           bool allow_auto_create,
@@ -357,7 +482,7 @@ std::optional<ProjectIdentity> RequireRunningDaemonProject(const std::vector<std
     auto identity = ResolveCommandProject(args, positional_index, allow_auto_create, error);
     if (!identity.has_value()) return std::nullopt;
     if (!HasRunningDaemon(*identity, true)) {
-        if (error) *error = "请先执行 open 或 daemon start";
+        if (error) *error = "Run open or daemon start first";
         return std::nullopt;
     }
     return identity;
@@ -402,27 +527,47 @@ std::string DecodeUriComponent(const std::string& value) {
 }
 
 nlohmann::json BuildMcpTools() {
-    return nlohmann::json::array({
-        {{"name", "open_project"}, {"description", "打开项目并启动运行时"}, {"inputSchema", {{"type", "object"}, {"properties", {{"path", {{"type", "string"}}}, {"project_root", {{"type", "string"}}}}}}}},
-        {{"name", "init_project"}, {"description", "初始化新项目模板"}, {"inputSchema", {{"type", "object"}, {"properties", {{"path", {{"type", "string"}}}, {"template", {{"type", "string"}, {"enum", nlohmann::json(ListSupportedInitTemplates())}}}}}, {"required", nlohmann::json::array({"path", "template"})}}}},
-        {{"name", "get_project_info"}, {"description", "获取当前项目信息"}, {"inputSchema", {{"type", "object"}, {"properties", nlohmann::json::object()}}}},
-        {{"name", "read_file"}, {"description", "读取项目文件"}, {"inputSchema", {{"type", "object"}, {"properties", {{"path", {{"type", "string"}}}, {"encoding", {{"type", "string"}, {"enum", nlohmann::json::array({"utf8", "base64"})}}}}}, {"required", nlohmann::json::array({"path"})}}}},
-        {{"name", "write_file"}, {"description", "写入项目文件"}, {"inputSchema", {{"type", "object"}, {"properties", {{"path", {{"type", "string"}}}, {"content", {{"type", "string"}}}, {"encoding", {{"type", "string"}, {"enum", nlohmann::json::array({"utf8", "base64"})}}}}}, {"required", nlohmann::json::array({"path", "content"})}}}},
-        {{"name", "build"}, {"description", "执行构建，可选 watch"}, {"inputSchema", {{"type", "object"}, {"properties", {{"watch", {{"type", "boolean"}}}}}}}},
-        {{"name", "get_build_status"}, {"description", "获取最近一次构建状态"}, {"inputSchema", {{"type", "object"}, {"properties", nlohmann::json::object()}}}},
-        {{"name", "reload"}, {"description", "重启当前 runtime"}, {"inputSchema", {{"type", "object"}, {"properties", nlohmann::json::object()}}}},
-        {{"name", "eval_js"}, {"description", "在运行时执行 JS 代码"}, {"inputSchema", {{"type", "object"}, {"properties", {{"code", {{"type", "string"}}}}}, {"required", nlohmann::json::array({"code"})}}}},
-        {{"name", "query_element"}, {"description", "按 selector 查询元素列表"}, {"inputSchema", {{"type", "object"}, {"properties", {{"selector", {{"type", "string"}}}}}, {"required", nlohmann::json::array({"selector"})}}}},
-        {{"name", "inspect"}, {"description", "检查单个元素详情"}, {"inputSchema", {{"type", "object"}, {"properties", {{"selector", {{"type", "string"}}}}}, {"required", nlohmann::json::array({"selector"})}}}},
-        {{"name", "click"}, {"description", "点击目标元素"}, {"inputSchema", {{"type", "object"}, {"properties", {{"selector", {{"type", "string"}}}}}, {"required", nlohmann::json::array({"selector"})}}}},
-        {{"name", "input_text"}, {"description", "向目标元素输入文本"}, {"inputSchema", {{"type", "object"}, {"properties", {{"selector", {{"type", "string"}}}, {"text", {{"type", "string"}}}}}, {"required", nlohmann::json::array({"selector", "text"})}}}},
-        {{"name", "scroll"}, {"description", "滚动目标元素"}, {"inputSchema", {{"type", "object"}, {"properties", {{"selector", {{"type", "string"}}}, {"x", {{"type", "number"}}}, {"y", {{"type", "number"}}}}}, {"required", nlohmann::json::array({"selector"})}}}},
-        {{"name", "highlight"}, {"description", "高亮目标元素"}, {"inputSchema", {{"type", "object"}, {"properties", {{"selector", {{"type", "string"}}}, {"color", {{"type", "string"}}}}}, {"required", nlohmann::json::array({"selector"})}}}},
-        {{"name", "snapshot_ui"}, {"description", "获取运行时快照"}, {"inputSchema", {{"type", "object"}, {"properties", nlohmann::json::object()}}}},
-        {{"name", "get_console_logs"}, {"description", "获取运行时日志"}, {"inputSchema", {{"type", "object"}, {"properties", nlohmann::json::object()}}}},
-        {{"name", "get_js_errors"}, {"description", "获取运行时错误"}, {"inputSchema", {{"type", "object"}, {"properties", nlohmann::json::object()}}}},
-        {{"name", "stop_daemon"}, {"description", "停止 daemon"}, {"inputSchema", {{"type", "object"}, {"properties", nlohmann::json::object()}}}}
+    auto tools = nlohmann::json::array({
+        {{"name", "open_project"},
+         {"description", "Open a project and start or reuse its runtime"},
+         {"inputSchema", {{"type", "object"},
+                          {"properties", {{"path", {{"type", "string"}}},
+                                          {"project_root", {{"type", "string"}}},
+                                          {"force", {{"type", "boolean"}}}}}}}},
+        {{"name", "init_project"}, {"description", "Initialize a new MBink UI Dev project"}, {"inputSchema", {{"type", "object"}, {"additionalProperties", false}, {"properties", {{"path", {{"type", "string"}}}, {"purpose", {{"type", "string"}, {"enum", nlohmann::json::array({"minimal", "showcase", "desktop-app"})}}}, {"runtime", {{"type", "string"}, {"enum", nlohmann::json::array({"tool", "python", "rust", "go"})}}}, {"template", {{"type", "string"}, {"deprecated", true}, {"enum", nlohmann::json(ListSupportedInitTemplates())}}}}}, {"required", nlohmann::json::array({"path"})}}}},
+        {{"name", "get_project_info"}, {"description", "Get current project information"}, {"inputSchema", {{"type", "object"}, {"properties", nlohmann::json::object()}}}},
+        {{"name", "read_file"}, {"description", "Read a project file"}, {"inputSchema", {{"type", "object"}, {"properties", {{"path", {{"type", "string"}}}, {"encoding", {{"type", "string"}, {"enum", nlohmann::json::array({"utf8", "base64"})}}}}}, {"required", nlohmann::json::array({"path"})}}}},
+        {{"name", "write_file"}, {"description", "Write a project file"}, {"inputSchema", {{"type", "object"}, {"properties", {{"path", {{"type", "string"}}}, {"content", {{"type", "string"}}}, {"encoding", {{"type", "string"}, {"enum", nlohmann::json::array({"utf8", "base64"})}}}}}, {"required", nlohmann::json::array({"path", "content"})}}}},
+        {{"name", "build"}, {"description", "Build the project"}, {"inputSchema", {{"type", "object"}, {"properties", {{"watch", {{"type", "boolean"}}}}}}}},
+        {{"name", "get_build_status"}, {"description", "Get the latest build status"}, {"inputSchema", {{"type", "object"}, {"properties", nlohmann::json::object()}}}},
+        {{"name", "reload"}, {"description", "Reload the current runtime"}, {"inputSchema", {{"type", "object"}, {"properties", nlohmann::json::object()}}}},
+        {{"name", "eval_js"}, {"description", "Evaluate JavaScript in the runtime"}, {"inputSchema", {{"type", "object"}, {"properties", {{"code", {{"type", "string"}}}}}, {"required", nlohmann::json::array({"code"})}}}},
+        {{"name", "query_element"}, {"description", "Query elements by selector"}, {"inputSchema", {{"type", "object"}, {"properties", {{"selector", {{"type", "string"}}}, {"limit", {{"type", "integer"}, {"minimum", 0}}}}}, {"required", nlohmann::json::array({"selector"})}}}},
+        {{"name", "inspect"}, {"description", "Inspect one element"}, {"inputSchema", {{"type", "object"}, {"properties", {{"selector", {{"type", "string"}}}}}, {"required", nlohmann::json::array({"selector"})}}}},
+        {{"name", "click"}, {"description", "Click an element"}, {"inputSchema", {{"type", "object"}, {"properties", {{"selector", {{"type", "string"}}}}}, {"required", nlohmann::json::array({"selector"})}}}},
+        {{"name", "input_text"}, {"description", "Input text into an element"}, {"inputSchema", {{"type", "object"}, {"properties", {{"selector", {{"type", "string"}}}, {"text", {{"type", "string"}}}}}, {"required", nlohmann::json::array({"selector", "text"})}}}},
+        {{"name", "scroll"}, {"description", "Scroll an element"}, {"inputSchema", {{"type", "object"}, {"properties", {{"selector", {{"type", "string"}}}, {"x", {{"type", "number"}}}, {"y", {{"type", "number"}}}}}, {"required", nlohmann::json::array({"selector"})}}}},
+        {{"name", "highlight"}, {"description", "Highlight an element"}, {"inputSchema", {{"type", "object"}, {"properties", {{"selector", {{"type", "string"}}}, {"color", {{"type", "string"}}}}}, {"required", nlohmann::json::array({"selector"})}}}},
+        {{"name", "snapshot_ui"}, {"description", "Get a UI snapshot"}, {"inputSchema", {{"type", "object"}, {"properties", nlohmann::json::object()}}}},
+        {{"name", "get_console_logs"}, {"description", "Get runtime console logs"}, {"inputSchema", {{"type", "object"}, {"properties", nlohmann::json::object()}}}},
+        {{"name", "get_js_errors"}, {"description", "Get runtime JavaScript errors"}, {"inputSchema", {{"type", "object"}, {"properties", nlohmann::json::object()}}}},
+        {{"name", "stop_daemon"}, {"description", "Stop the daemon"}, {"inputSchema", {{"type", "object"}, {"properties", nlohmann::json::object()}}}}
     });
+    for (auto& tool : tools) {
+        if (tool.value("name", std::string{}) == "snapshot_ui") {
+            tool["inputSchema"] = nlohmann::json{{"type", "object"},
+                                                 {"properties", {{"response_mode", {{"type", "string"}, {"enum", nlohmann::json::array({"auto", "inline", "file"})}}},
+                                                                 {"max_nodes", {{"type", "integer"}, {"minimum", 1}}},
+                                                                 {"max_depth", {{"type", "integer"}, {"minimum", 1}}},
+                                                                 {"root_selector", {{"type", "string"}}}}}};
+        } else if (tool.value("name", std::string{}) == "query_element") {
+            tool["inputSchema"] = nlohmann::json{{"type", "object"},
+                                                 {"properties", {{"selector", {{"type", "string"}}},
+                                                                 {"limit", {{"type", "integer"}, {"minimum", 0}}}}},
+                                                 {"required", nlohmann::json::array({"selector"})}};
+        }
+    }
+    return tools;
 }
 
 nlohmann::json BuildMcpResources() {
@@ -443,7 +588,7 @@ nlohmann::json ReadMcpResource(const std::optional<ProjectIdentity>& active_proj
     nlohmann::json payload;
     std::string mime_type = "application/json";
     if (uri == "ui://snapshot") {
-        payload = CallDaemon(*project, nlohmann::json{{"cmd", "snapshot"}});
+        payload = CallDaemon(*project, nlohmann::json{{"cmd", "snapshot"}, {"response_mode", "auto"}});
     } else if (uri == "ui://console_logs") {
         payload = CallDaemon(*project, nlohmann::json{{"cmd", "logs"}});
     } else if (uri == "ui://build_status") {
@@ -474,19 +619,17 @@ nlohmann::json CallMcpTool(const std::string& tool_name,
     nlohmann::json tool_result;
     if (tool_name == "init_project") {
         const auto target_dir = arguments.value("path", arguments.value("target_dir", std::string{}));
-        const auto template_name = arguments.value("template", std::string{"preact-jsx"});
-        if (target_dir.empty()) return ErrorResponse("invalid_args", "path 不能为空");
+        if (target_dir.empty()) return ErrorResponse("invalid_args", "path cannot be empty");
+        InitProjectOptions options;
+        options.purpose = arguments.value("purpose", std::string{});
+        options.runtime = arguments.value("runtime", std::string{});
+        options.legacy_template = arguments.value("template", std::string{});
         InitProjectResult result;
         std::string err;
-        if (!InitProject(std::filesystem::path(target_dir), template_name, &result, &err)) {
-            return ErrorResponse("init_failed", err);
+        if (!InitProject(std::filesystem::path(target_dir), options, &result, &err)) {
+            return ErrorResponse(InitErrorCode(err), err);
         }
-        tool_result = nlohmann::json{{"ok", true},
-                                     {"project_root", result.project_root.string()},
-                                     {"project_name", result.project_name},
-                                     {"template", result.template_name},
-                                     {"files_created", result.files_created},
-                                     {"next_step", result.next_step}};
+        tool_result = InitProjectResultToJson(result);
     } else if (tool_name == "open_project") {
         const auto root = arguments.value("path", arguments.value("project_root", std::string{}));
         std::string err;
@@ -494,7 +637,7 @@ nlohmann::json CallMcpTool(const std::string& tool_name,
         auto identity = ResolveProjectIdentity(root, true, &err);
         if (!identity.has_value()) return ErrorResponse("project_not_found", err);
         if (!EnsureDaemonRunning(*identity, &err, &started_now)) return ErrorResponse("daemon_start_failed", err);
-        tool_result = OpenProjectViaDaemon(*identity, started_now);
+        tool_result = OpenProjectViaDaemon(*identity, started_now, arguments.value("force", false));
         if (tool_result.value("ok", false) && active_project) *active_project = *identity;
     } else if (tool_name == "read_file") {
         std::string err;
@@ -540,7 +683,9 @@ nlohmann::json CallMcpTool(const std::string& tool_name,
         if (!project.has_value()) return ErrorResponse("project_not_resolved", err);
         const auto selector = arguments.value("selector", std::string{});
         if (selector.empty()) return ErrorResponse("invalid_args", "selector 不能为空");
-        tool_result = CallDaemon(*project, nlohmann::json{{"cmd", tool_name}, {"selector", selector}});
+        nlohmann::json req{{"cmd", tool_name}, {"selector", selector}};
+        if (arguments.contains("limit")) req["limit"] = arguments["limit"];
+        tool_result = CallDaemon(*project, req);
     } else if (tool_name == "input_text") {
         std::string err;
         const auto project = ResolveMcpProject(active_project ? *active_project : std::optional<ProjectIdentity>{}, &err);
@@ -558,7 +703,7 @@ nlohmann::json CallMcpTool(const std::string& tool_name,
         nlohmann::json req{{"cmd", "scroll"}, {"selector", selector}};
         if (arguments.contains("x")) req["x"] = arguments["x"];
         if (arguments.contains("y")) req["y"] = arguments["y"];
-        if (!req.contains("x") && !req.contains("y")) return ErrorResponse("invalid_args", "scroll 至少需要 x 或 y");
+        if (!req.contains("x") && !req.contains("y")) return ErrorResponse("invalid_args", "scroll requires at least x or y");
         tool_result = CallDaemon(*project, req);
     } else if (tool_name == "highlight") {
         std::string err;
@@ -574,7 +719,12 @@ nlohmann::json CallMcpTool(const std::string& tool_name,
         std::string err;
         const auto project = ResolveMcpProject(active_project ? *active_project : std::optional<ProjectIdentity>{}, &err);
         if (!project.has_value()) return ErrorResponse("project_not_resolved", err);
-        tool_result = CallDaemon(*project, nlohmann::json{{"cmd", "snapshot"}});
+        auto response_mode = arguments.value("response_mode", arguments.value("mode", std::string{}));
+        auto req = SnapshotRequestFromResponseMode(response_mode);
+        if (arguments.contains("max_nodes")) req["max_nodes"] = arguments["max_nodes"];
+        if (arguments.contains("max_depth")) req["max_depth"] = arguments["max_depth"];
+        if (arguments.contains("root_selector")) req["root_selector"] = arguments["root_selector"];
+        tool_result = CallDaemon(*project, req);
     } else if (tool_name == "get_console_logs" || tool_name == "logs") {
         std::string err;
         const auto project = ResolveMcpProject(active_project ? *active_project : std::optional<ProjectIdentity>{}, &err);
@@ -607,7 +757,7 @@ nlohmann::json CallMcpTool(const std::string& tool_name,
         return ErrorResponse("tool_not_found", "未知工具: " + tool_name);
     }
 
-    return nlohmann::json{{"content", nlohmann::json::array({{{"type", "text"}, {"text", tool_result.dump(2)}}})},
+    return nlohmann::json{{"content", nlohmann::json::array({{{"type", "text"}, {"text", SummarizeToolResultForText(tool_result)}}})},
                           {"structuredContent", tool_result},
                           {"isError", !tool_result.value("ok", false)}};
 }
@@ -628,10 +778,11 @@ int main(int argc, char** argv) {
 
     const auto& cmd = args[0];
     if (cmd == "init") {
-        const std::string template_name = [&args]() {
-            const auto value = GetOptionValue(args, "--template");
-            return value.empty() ? std::string("preact-jsx") : value;
-        }();
+        InitProjectOptions options;
+        options.legacy_template = GetOptionValue(args, "--template");
+        options.purpose = GetOptionValue(args, "--purpose");
+        options.runtime = GetOptionValue(args, "--runtime");
+
         std::vector<std::string> positional;
         bool skip_next = false;
         for (size_t i = 1; i < args.size(); ++i) {
@@ -639,7 +790,7 @@ int main(int argc, char** argv) {
                 skip_next = false;
                 continue;
             }
-            if (args[i] == "--template") {
+            if (args[i] == "--template" || args[i] == "--purpose" || args[i] == "--runtime") {
                 skip_next = true;
                 continue;
             }
@@ -647,23 +798,17 @@ int main(int argc, char** argv) {
             positional.push_back(args[i]);
         }
         if (positional.size() > 1) {
-            PrintJson(ErrorResponse("invalid_args", "用法: mbink-ui-dev init [target-dir] [--template preact-jsx|preact-ts|vanilla-js|python|go|rust]"));
+            PrintJson(ErrorResponse("invalid_args", "usage: mbink-ui-dev init [target-dir] [--purpose minimal|showcase|desktop-app --runtime tool|python|rust|go] [--template legacy-name]"));
             return 1;
         }
         const auto target_dir = positional.empty() ? std::filesystem::current_path() : std::filesystem::path(positional.front());
         InitProjectResult result;
         std::string err;
-        if (!InitProject(target_dir, template_name, &result, &err)) {
-            PrintJson(ErrorResponse("init_failed", err));
+        if (!InitProject(target_dir, options, &result, &err)) {
+            PrintJson(ErrorResponse(InitErrorCode(err), err));
             return 1;
         }
-        PrintJson(nlohmann::json{{"ok", true},
-                                 {"project_root", result.project_root.string()},
-                                 {"project_name", result.project_name},
-                                 {"template", result.template_name},
-                                 {"supported_templates", ListSupportedInitTemplates()},
-                                 {"files_created", result.files_created},
-                                 {"next_step", result.next_step}});
+        PrintJson(InitProjectResultToJson(result));
         return 0;
     }
     if (cmd == "daemon") {
@@ -689,7 +834,7 @@ int main(int argc, char** argv) {
         }
         if (action == "stop") {
             std::string err;
-            const auto identity = ResolveCommandProject(args, args.size(), false, &err);
+            const auto identity = ResolveExistingCommandProject(args, args.size(), &err);
             if (!identity.has_value()) {
                 PrintJson(ErrorResponse("project_not_found", err));
                 return 1;
@@ -699,7 +844,7 @@ int main(int argc, char** argv) {
         }
         if (action == "status") {
             std::string err;
-            const auto identity = ResolveCommandProject(args, args.size(), false, &err);
+            const auto identity = ResolveExistingCommandProject(args, args.size(), &err);
             if (!identity.has_value()) {
                 PrintJson(ErrorResponse("project_not_found", err));
                 return 1;
@@ -715,13 +860,13 @@ int main(int argc, char** argv) {
             }
             return 0;
         }
-        PrintJson(ErrorResponse("invalid_args", "未知 daemon 子命令；`eval` 应直接使用 `mbink-ui-dev eval <code>`"));
+        PrintJson(ErrorResponse("invalid_args", "Unknown daemon subcommand; use `mbink-ui-dev eval <code>` directly"));
         return 1;
     }
 
     if (cmd == "stop") {
         std::string err;
-        const auto identity = ResolveCommandProject(args, args.size(), false, &err);
+        const auto identity = ResolveExistingCommandProject(args, args.size(), &err);
         if (!identity.has_value()) {
             PrintJson(ErrorResponse("project_not_found", err));
             return 1;
@@ -745,6 +890,7 @@ int main(int argc, char** argv) {
     if (cmd == "open") {
         std::string err;
         bool started_now = false;
+        const bool force = std::find(args.begin() + 1, args.end(), std::string("--force")) != args.end();
         const auto identity = ResolveCommandProject(args, 1, true, &err);
         if (!identity.has_value()) {
             PrintJson(ErrorResponse("project_not_found", err));
@@ -754,7 +900,7 @@ int main(int argc, char** argv) {
             PrintJson(ErrorResponse("daemon_start_failed", err));
             return 1;
         }
-        PrintJson(OpenProjectViaDaemon(*identity, started_now));
+        PrintJson(OpenProjectViaDaemon(*identity, started_now, force));
         return 0;
     }
 
@@ -827,7 +973,25 @@ int main(int argc, char** argv) {
     }
 
 
-    // 其余命令：要求 daemon 已运行
+    // Other commands require a running daemon
+    if (cmd == "build") {
+        std::string err;
+        const auto identity = ResolveCommandProject(args, args.size(), true, &err);
+        if (!identity.has_value()) {
+            PrintJson(ErrorResponse("project_not_found", err));
+            return 1;
+        }
+        if (!EnsureDaemonRunning(*identity, &err)) {
+            PrintJson(ErrorResponse("daemon_start_failed", err));
+            return 1;
+        }
+        nlohmann::json req{{"cmd", "build"}};
+        if (std::find(args.begin() + 1, args.end(), std::string("--watch")) != args.end()) req["watch"] = true;
+        const auto response = CallDaemonWithTimeout(*identity, req, kBuildRequestTimeoutMs);
+        PrintJson(response);
+        return response.value("ok", false) ? 0 : 1;
+    }
+
     std::string command_error;
     const auto identity = RequireRunningDaemonProject(args, args.size(), true, &command_error);
     if (!identity.has_value()) {
@@ -836,8 +1000,18 @@ int main(int argc, char** argv) {
     }
     const auto positional = CollectPositionalArgs(args);
 
-    if (cmd == "snapshot") PrintJson(CallDaemon(*identity, nlohmann::json{{"cmd", "snapshot"}}));
-    else if (cmd == "info") PrintJson(CallDaemon(*identity, nlohmann::json{{"cmd", "info"}}));
+    if (cmd == "snapshot") {
+        auto response_mode = GetOptionValue(args, "--response-mode");
+        if (response_mode.empty()) response_mode = GetOptionValue(args, "--response");
+        auto req = SnapshotRequestFromResponseMode(response_mode);
+        AddIntOptionIfPresent(args, "--max-nodes", "max_nodes", &req);
+        AddIntOptionIfPresent(args, "--max-depth", "max_depth", &req);
+        const auto root_selector = GetOptionValue(args, "--root-selector");
+        if (!root_selector.empty()) req["root_selector"] = root_selector;
+        PrintJson(CallDaemon(*identity, req));
+        return 0;
+    }
+    else if (cmd == "info") return PrintDaemonResponse(CallDaemon(*identity, nlohmann::json{{"cmd", "info"}}));
     else if (cmd == "read") {
         if (positional.empty()) {
             PrintJson(ErrorResponse("invalid_args", "用法: mbink-ui-dev read <path> [--encoding utf8|base64]"));
@@ -857,7 +1031,7 @@ int main(int argc, char** argv) {
         const auto inline_content = GetOptionValue(args, "--content");
         const auto encoding = GetOptionValue(args, "--encoding");
         if (!from.empty() && !inline_content.empty()) {
-            PrintJson(ErrorResponse("invalid_args", "--content 与 --from 不能同时指定"));
+            PrintJson(ErrorResponse("invalid_args", "--content and --from cannot both be specified"));
             return 1;
         }
         std::string content;
@@ -874,36 +1048,33 @@ int main(int argc, char** argv) {
         const std::string resolved_encoding = encoding.empty() ? "utf8" : encoding;
         nlohmann::json req{{"cmd", "write"}, {"path", positional[0]}, {"encoding", resolved_encoding}};
         req["content"] = resolved_encoding == "base64" ? Base64Encode(content) : content;
-        PrintJson(CallDaemon(*identity, req));
+        return PrintDaemonResponse(CallDaemon(*identity, req));
     }
-    else if (cmd == "build") {
-        nlohmann::json req{{"cmd", "build"}};
-        if (std::find(args.begin() + 1, args.end(), std::string("--watch")) != args.end()) req["watch"] = true;
-        PrintJson(CallDaemonWithTimeout(*identity, req, kBuildRequestTimeoutMs));
-    }
-    else if (cmd == "build-status") PrintJson(CallDaemon(*identity, nlohmann::json{{"cmd", "build_status"}}));
-    else if (cmd == "logs") PrintJson(CallDaemon(*identity, nlohmann::json{{"cmd", "logs"}}));
-    else if (cmd == "errors") PrintJson(CallDaemon(*identity, nlohmann::json{{"cmd", "errors"}}));
+    else if (cmd == "build-status") return PrintDaemonResponse(CallDaemon(*identity, nlohmann::json{{"cmd", "build_status"}}));
+    else if (cmd == "logs") return PrintDaemonResponse(CallDaemon(*identity, nlohmann::json{{"cmd", "logs"}}));
+    else if (cmd == "errors") return PrintDaemonResponse(CallDaemon(*identity, nlohmann::json{{"cmd", "errors"}}));
     else if (cmd == "query" || cmd == "query-element") {
         if (positional.empty()) {
             PrintJson(ErrorResponse("invalid_args", "用法: mbink-ui-dev query <selector>"));
             return 1;
         }
-        PrintJson(CallDaemon(*identity, nlohmann::json{{"cmd", "query_element"}, {"selector", positional[0]}}));
+        nlohmann::json req{{"cmd", "query_element"}, {"selector", positional[0]}};
+        AddIntOptionIfPresent(args, "--limit", "limit", &req);
+        return PrintDaemonResponse(CallDaemon(*identity, req));
     }
     else if (cmd == "inspect") {
         if (positional.empty()) {
             PrintJson(ErrorResponse("invalid_args", "用法: mbink-ui-dev inspect <selector>"));
             return 1;
         }
-        PrintJson(CallDaemon(*identity, nlohmann::json{{"cmd", "inspect"}, {"selector", positional[0]}}));
+        return PrintDaemonResponse(CallDaemon(*identity, nlohmann::json{{"cmd", "inspect"}, {"selector", positional[0]}}));
     }
     else if (cmd == "click") {
         if (positional.empty()) {
             PrintJson(ErrorResponse("invalid_args", "用法: mbink-ui-dev click <selector>"));
             return 1;
         }
-        PrintJson(CallDaemon(*identity, nlohmann::json{{"cmd", "click"}, {"selector", positional[0]}}));
+        return PrintDaemonResponse(CallDaemon(*identity, nlohmann::json{{"cmd", "click"}, {"selector", positional[0]}}));
     }
     else if (cmd == "input-text") {
         if (positional.size() < 2) {
@@ -912,7 +1083,7 @@ int main(int argc, char** argv) {
         }
         std::string text = positional[1];
         for (size_t i = 2; i < positional.size(); ++i) text += " " + positional[i];
-        PrintJson(CallDaemon(*identity, nlohmann::json{{"cmd", "input_text"}, {"selector", positional[0]}, {"text", text}}));
+        return PrintDaemonResponse(CallDaemon(*identity, nlohmann::json{{"cmd", "input_text"}, {"selector", positional[0]}, {"text", text}}));
     }
     else if (cmd == "scroll") {
         if (positional.empty()) {
@@ -925,23 +1096,23 @@ int main(int argc, char** argv) {
         double number = 0.0;
         if (!x.empty()) {
             if (!TryParseNumber(x, &number)) {
-                PrintJson(ErrorResponse("invalid_args", "--x 必须是数字"));
+                PrintJson(ErrorResponse("invalid_args", "--x must be a number"));
                 return 1;
             }
             req["x"] = number;
         }
         if (!y.empty()) {
             if (!TryParseNumber(y, &number)) {
-                PrintJson(ErrorResponse("invalid_args", "--y 必须是数字"));
+                PrintJson(ErrorResponse("invalid_args", "--y must be a number"));
                 return 1;
             }
             req["y"] = number;
         }
         if (!req.contains("x") && !req.contains("y")) {
-            PrintJson(ErrorResponse("invalid_args", "scroll 至少需要 --x 或 --y"));
+            PrintJson(ErrorResponse("invalid_args", "scroll requires at least --x or --y"));
             return 1;
         }
-        PrintJson(CallDaemon(*identity, req));
+        return PrintDaemonResponse(CallDaemon(*identity, req));
     }
     else if (cmd == "highlight") {
         if (positional.empty()) {
@@ -951,7 +1122,7 @@ int main(int argc, char** argv) {
         nlohmann::json req{{"cmd", "highlight"}, {"selector", positional[0]}};
         const auto color = GetOptionValue(args, "--color");
         if (!color.empty()) req["color"] = color;
-        PrintJson(CallDaemon(*identity, req));
+        return PrintDaemonResponse(CallDaemon(*identity, req));
     }
     else if (cmd == "eval") {
         std::string code;
@@ -960,9 +1131,9 @@ int main(int argc, char** argv) {
             PrintJson(ErrorResponse("invalid_args", error));
             return 1;
         }
-        PrintJson(CallDaemon(*identity, nlohmann::json{{"cmd", "eval"}, {"code", code}}));
+        return PrintDaemonResponse(CallDaemon(*identity, nlohmann::json{{"cmd", "eval"}, {"code", code}}));
     }
-    else if (cmd == "reload") PrintJson(CallDaemon(*identity, nlohmann::json{{"cmd", "reload"}}));
+    else if (cmd == "reload") return PrintDaemonResponse(CallDaemon(*identity, nlohmann::json{{"cmd", "reload"}}));
     else {
         PrintJson(ErrorResponse("invalid_args", "未知命令"));
         return 1;

@@ -79,6 +79,9 @@ See also | 参考：
 
 ## Examples | 示例
 
+- `tools/mbink_ui_dev/` is the canonical starter path for new projects.
+- `mbink-ui-dev init <dir> --purpose <minimal|showcase|desktop-app> --runtime <tool|python|rust|go>` generates slim purpose-first templates.
+- Host runtimes generate runnable starters: `python host/main.py`, `go run ./host`, or `cargo run --manifest-path rust_host/Cargo.toml`.
 - `examples/modern_desktop_demo/`
 - `examples/component_demo/`
 - `examples/html_demo/`

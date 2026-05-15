@@ -1,5 +1,6 @@
 #include "resource_package.h"
 #include "core/utils/encoding_utils.h"
+#include "tools/esm_loader/embedded_js.h"
 #include "tools/app_bundler/bytecode_compiler.h"
 #include "tools/app_bundler/module_resolver.h"
 
@@ -137,12 +138,67 @@ std::string BuildOfficialPreactModule(const fs::path& entry_path) {
     return "export * from '" + NormalizeFsPath(fs::absolute(entry_path)) + "';";
 }
 
+std::string EmbeddedOfficialPreactModule(const char* path) {
+    auto source = mbink::embedded::GetEmbeddedJS(path);
+    if (source.empty()) {
+        throw std::runtime_error(std::string("Missing embedded official Preact module: ") + path);
+    }
+    return std::string(source);
+}
+
+std::string StripJsExtension(std::string path) {
+    if (path.size() > 3 && path.substr(path.size() - 3) == ".js") {
+        path.resize(path.size() - 3);
+    }
+    return path;
+}
+
+std::string OfficialPreactModuleId(const char* path) {
+    std::string id(path ? path : "");
+    static const std::string prefix = "third_party/preact/";
+    if (id.rfind(prefix, 0) == 0) {
+        id.replace(0, prefix.size(), "__mbink_official_preact/");
+    }
+    return id;
+}
+
+std::string BuildEmbeddedOfficialPreactModule(const char* path) {
+    return "export * from '" + OfficialPreactModuleId(path) + "';";
+}
+
+void RegisterOfficialPreactSource(mbink::ModuleResolver& resolver, const char* path) {
+    const auto source = EmbeddedOfficialPreactModule(path);
+    const auto module_id = OfficialPreactModuleId(path);
+    resolver.RegisterBuiltinModule(module_id, source);
+    resolver.RegisterBuiltinModule(StripJsExtension(module_id), source);
+}
+
 void RegisterOfficialPreactBuiltinModules(mbink::ModuleResolver& resolver) {
-    const fs::path preact_root = FindOfficialPreactRoot();
-    resolver.RegisterBuiltinModule("preact", BuildOfficialPreactModule(preact_root / "src" / "index.js"));
-    resolver.RegisterBuiltinModule("preact/hooks", BuildOfficialPreactModule(preact_root / "hooks" / "src" / "index.js"));
-    resolver.RegisterBuiltinModule("preact/jsx-runtime", BuildOfficialPreactModule(preact_root / "jsx-runtime" / "src" / "index.js"));
-    resolver.RegisterBuiltinModule("preact/jsx-dev-runtime", BuildOfficialPreactModule(preact_root / "jsx-runtime" / "src" / "index.js"));
+    static constexpr const char* kOfficialPreactSources[] = {
+        "third_party/preact/src/index.js",
+        "third_party/preact/src/render.js",
+        "third_party/preact/src/create-element.js",
+        "third_party/preact/src/component.js",
+        "third_party/preact/src/options.js",
+        "third_party/preact/src/util.js",
+        "third_party/preact/src/constants.js",
+        "third_party/preact/src/clone-element.js",
+        "third_party/preact/src/create-context.js",
+        "third_party/preact/src/diff/index.js",
+        "third_party/preact/src/diff/children.js",
+        "third_party/preact/src/diff/props.js",
+        "third_party/preact/src/diff/catch-error.js",
+        "third_party/preact/hooks/src/index.js",
+        "third_party/preact/jsx-runtime/src/index.js",
+        "third_party/preact/jsx-runtime/src/utils.js",
+    };
+    for (const auto* path : kOfficialPreactSources) {
+        RegisterOfficialPreactSource(resolver, path);
+    }
+    resolver.RegisterBuiltinModule("preact", BuildEmbeddedOfficialPreactModule("third_party/preact/src/index.js"));
+    resolver.RegisterBuiltinModule("preact/hooks", BuildEmbeddedOfficialPreactModule("third_party/preact/hooks/src/index.js"));
+    resolver.RegisterBuiltinModule("preact/jsx-runtime", BuildEmbeddedOfficialPreactModule("third_party/preact/jsx-runtime/src/index.js"));
+    resolver.RegisterBuiltinModule("preact/jsx-dev-runtime", BuildEmbeddedOfficialPreactModule("third_party/preact/jsx-runtime/src/index.js"));
 }
 
 std::vector<uint8_t> CompileJsFile(const fs::path& path,
@@ -228,22 +284,15 @@ bool BuildPayload(const fs::path& input, std::vector<uint8_t>& payload, std::str
 
     W32(payload, static_cast<uint32_t>(files.size()));
     for (const auto& file : files) {
-        const bool is_js = IsJsFile(file);
         std::string relative = is_dir ? NormalizeFsPath(fs::relative(file, base)) : FsPathToUtf8String(file.filename());
         std::vector<uint8_t> data;
-        if (is_js) {
-            data = CompileJsFile(file, relative, error);
-            if (data.empty()) {
-                if (error.empty()) error = "failed to compile js: " + FsPathToUtf8String(file);
-                return false;
-            }
-        } else if (!ReadFileBytes(file, data)) {
+        if (!ReadFileBytes(file, data)) {
             error = "failed to read file: " + FsPathToUtf8String(file);
             return false;
         }
 
         W32(payload, static_cast<uint32_t>(relative.size()));
-        W32(payload, is_js ? kResourceFlagBytecode : 0u);
+        W32(payload, 0u);
         W64(payload, static_cast<uint64_t>(data.size()));
         payload.insert(payload.end(), relative.begin(), relative.end());
         payload.insert(payload.end(), data.begin(), data.end());

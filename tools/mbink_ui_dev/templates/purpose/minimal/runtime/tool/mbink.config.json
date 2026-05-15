@@ -1,0 +1,21 @@
+﻿{
+  "template": "minimal/tool",
+  "purpose": "minimal",
+  "runtime": "tool",
+  "entry": "ui/app.js",
+  "src_dir": "ui",
+  "out_dir": ".dist",
+  "window": {
+    "title": "MBink minimal (tool)",
+    "width": 900,
+    "height": 640
+  },
+  "build": {
+    "builder": "esbuild",
+    "jsx_factory": "h",
+    "jsx_fragment": "Fragment",
+    "external": ["preact", "preact/hooks"],
+    "sourcemap": true,
+    "minify": false
+  }
+}

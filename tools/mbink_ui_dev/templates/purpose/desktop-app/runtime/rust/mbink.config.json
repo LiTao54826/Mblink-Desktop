@@ -1,0 +1,26 @@
+﻿{
+    "template":  "desktop-app/rust",
+    "purpose":  "desktop-app",
+    "runtime":  "rust",
+    "entry":  "ui/app.js",
+    "src_dir":  "ui",
+    "out_dir":  ".dist",
+    "window":  {
+                   "title":  "MBink desktop-app (rust)",
+                   "width":  1120,
+                   "height":  780,
+                   "borderless":  true,
+                   "resizable":  true
+               },
+    "build":  {
+                  "builder":  "esbuild",
+                  "jsx_factory":  "h",
+                  "jsx_fragment":  "Fragment",
+                  "external":  [
+                                   "preact",
+                                   "preact/hooks"
+                               ],
+                  "sourcemap":  true,
+                  "minify":  false
+              }
+}

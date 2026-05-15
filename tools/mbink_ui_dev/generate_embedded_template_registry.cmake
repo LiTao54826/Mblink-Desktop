@@ -27,7 +27,7 @@ if(TEMPLATE_FILE_LIST)
     endforeach()
     string(APPEND OUTPUT_CONTENT "};\n")
 else()
-    string(APPEND OUTPUT_CONTENT "static const EmbeddedTemplateEntry kEmbeddedTemplateEntries[] = {};\n")
+    string(APPEND OUTPUT_CONTENT "static const EmbeddedTemplateEntry kEmbeddedTemplateEntries[] = {{nullptr, nullptr, 0}};\n")
 endif()
 
 file(WRITE "${OUTPUT_FILE}" "${OUTPUT_CONTENT}")

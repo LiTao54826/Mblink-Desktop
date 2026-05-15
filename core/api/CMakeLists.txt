@@ -25,6 +25,7 @@ file(GLOB_RECURSE MBINK_API_JS_FILES CONFIGURE_DEPENDS
 set(MBINK_API_GENERATE_SCRIPT "${CMAKE_SOURCE_DIR}/tools/esm_loader/generate_embedded_js.cmake")
 set(MBINK_API_GENERATE_REGISTRY_SCRIPT "${CMAKE_SOURCE_DIR}/tools/esm_loader/generate_embedded_js_registry.cmake")
 set(MBINK_API_GENERATED_JS_INCS "")
+set(MBINK_API_EMBEDDED_JS_REGISTRY_PATHS "")
 
 foreach(JS_REL_PATH IN LISTS MBINK_API_JS_FILES)
     string(REGEX REPLACE "[^A-Za-z0-9_]" "_" JS_VAR_NAME "${JS_REL_PATH}")
@@ -43,10 +44,38 @@ foreach(JS_REL_PATH IN LISTS MBINK_API_JS_FILES)
     )
 
     list(APPEND MBINK_API_GENERATED_JS_INCS ${JS_OUTPUT_FILE})
+    list(APPEND MBINK_API_EMBEDDED_JS_REGISTRY_PATHS ${JS_REL_PATH})
+endforeach()
+
+set(MBINK_API_OFFICIAL_PREACT_DIR "${CMAKE_SOURCE_DIR}/third_party/preact")
+file(GLOB_RECURSE MBINK_API_OFFICIAL_PREACT_FILES CONFIGURE_DEPENDS
+    RELATIVE "${CMAKE_SOURCE_DIR}"
+    "${MBINK_API_OFFICIAL_PREACT_DIR}/*.js"
+    "${MBINK_API_OFFICIAL_PREACT_DIR}/*.json"
+)
+
+foreach(JS_REL_PATH IN LISTS MBINK_API_OFFICIAL_PREACT_FILES)
+    string(REGEX REPLACE "[^A-Za-z0-9_]" "_" JS_VAR_NAME "${JS_REL_PATH}")
+    set(JS_INPUT_FILE "${CMAKE_SOURCE_DIR}/${JS_REL_PATH}")
+    set(JS_OUTPUT_FILE "${MBINK_API_GENERATED_DIR}/${JS_VAR_NAME}.inc")
+
+    add_custom_command(
+        OUTPUT ${JS_OUTPUT_FILE}
+        COMMAND ${CMAKE_COMMAND}
+            -DINPUT_FILE=${JS_INPUT_FILE}
+            -DOUTPUT_FILE=${JS_OUTPUT_FILE}
+            -DVAR_NAME=${JS_VAR_NAME}
+            -P ${MBINK_API_GENERATE_SCRIPT}
+        DEPENDS ${JS_INPUT_FILE} ${MBINK_API_GENERATE_SCRIPT}
+        COMMENT "Embedding ${JS_REL_PATH} for mbink_api"
+    )
+
+    list(APPEND MBINK_API_GENERATED_JS_INCS ${JS_OUTPUT_FILE})
+    list(APPEND MBINK_API_EMBEDDED_JS_REGISTRY_PATHS ${JS_REL_PATH})
 endforeach()
 
 set(MBINK_API_EMBEDDED_JS_LIST_FILE "${MBINK_API_GENERATED_DIR}/embedded_js_files.txt")
-string(REPLACE ";" "\n" MBINK_API_JS_FILES_CONTENT "${MBINK_API_JS_FILES}")
+string(REPLACE ";" "\n" MBINK_API_JS_FILES_CONTENT "${MBINK_API_EMBEDDED_JS_REGISTRY_PATHS}")
 file(WRITE "${MBINK_API_EMBEDDED_JS_LIST_FILE}" "${MBINK_API_JS_FILES_CONTENT}\n")
 
 set(MBINK_API_EMBEDDED_JS_REGISTRY_INC "${MBINK_API_GENERATED_DIR}/embedded_js_registry.inc")
@@ -67,6 +96,27 @@ add_custom_target(mbink_api_generate_embedded_js
 )
 
 # 构建为 SHARED 库 (DLL/SO)，供 Python ctypes / Go cgo / Rust FFI 调用
+add_library(mbink_resource_package STATIC
+    resource_package.cpp
+    ${CMAKE_SOURCE_DIR}/tools/esm_loader/embedded_js.cpp
+    ${CMAKE_SOURCE_DIR}/tools/app_bundler/bytecode_compiler.cpp
+    ${CMAKE_SOURCE_DIR}/tools/app_bundler/module_resolver.cpp
+)
+
+add_dependencies(mbink_resource_package mbink_api_generate_embedded_js)
+
+target_include_directories(mbink_resource_package PUBLIC
+    ${CMAKE_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/core
+    ${CMAKE_SOURCE_DIR}/tools/esm_loader
+    ${CMAKE_CURRENT_BINARY_DIR}
+)
+
+target_link_libraries(mbink_resource_package PUBLIC
+    mbink_utils
+    quickjs
+)
+
 add_library(mbink_api SHARED ${API_SOURCES})
 
 add_dependencies(mbink_api mbink_api_generate_embedded_js)
