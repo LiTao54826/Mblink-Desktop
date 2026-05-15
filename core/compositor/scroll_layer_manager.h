@@ -17,6 +17,7 @@
 #pragma once
 
 #include "compositor_layer.h"
+#include <cstdint>
 #include <memory>
 #include <unordered_map>
 #include <unordered_set>
@@ -67,6 +68,31 @@ struct FixedElementInfo {
     // 固定位置（相对于视口）
     float fixed_x = 0.0f;
     float fixed_y = 0.0f;
+};
+
+enum class ScrollInvalidationReason {
+    None,
+    ClipLayerFullDirty,
+    AncestorLayerFullDirty,
+    MissingLayerTarget
+};
+
+struct ScrollInvalidationStats {
+    std::uint64_t scrolls_handled = 0;
+    std::uint64_t full_dirty_scrolls = 0;
+    std::uint64_t clip_layer_full_dirty_scrolls = 0;
+    std::uint64_t ancestor_layer_full_dirty_scrolls = 0;
+    std::uint64_t missing_layer_target_scrolls = 0;
+    ScrollInvalidationReason last_reason = ScrollInvalidationReason::None;
+
+    void Reset() {
+        scrolls_handled = 0;
+        full_dirty_scrolls = 0;
+        clip_layer_full_dirty_scrolls = 0;
+        ancestor_layer_full_dirty_scrolls = 0;
+        missing_layer_target_scrolls = 0;
+        last_reason = ScrollInvalidationReason::None;
+    }
 };
 
 /**
@@ -172,6 +198,9 @@ public:
      * @return true 如果滚动成功
      */
     bool ScrollTo(RenderObject* container, float scroll_x, float scroll_y);
+
+    const ScrollInvalidationStats& GetInvalidationStats() const { return invalidation_stats_; }
+    void ResetInvalidationStats() { invalidation_stats_.Reset(); }
 
     /**
      * @brief 更新滚动容器的内容尺寸
@@ -313,6 +342,7 @@ private:
 
     // 固定元素映射
     std::unordered_map<RenderObject*, FixedElementInfo> fixed_elements_;
+    ScrollInvalidationStats invalidation_stats_;
 
     // 层 ID 计数器
     static uint32_t next_layer_id_;

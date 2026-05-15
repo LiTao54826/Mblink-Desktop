@@ -181,12 +181,26 @@ TEST_F(ScrollHandlingTest, ScrollOffsetOwnedByClipLayer) {
     auto clip_layer = scrollable_->GetCompositorLayer();
     ASSERT_NE(clip_layer, nullptr);
 
-    EXPECT_TRUE(manager_->HandleScroll(scrollable_.get(), 0, 100));
+    EXPECT_TRUE(manager_->HandleScroll(scrollable_.get(), 0, 50));
 
     auto clip_offset = clip_layer->GetScrollOffset();
     auto content_offset = info->content_layer->GetScrollOffset();
-    EXPECT_FLOAT_EQ(clip_offset.fY, 100);
+    EXPECT_FLOAT_EQ(clip_offset.fY, 50);
     EXPECT_FLOAT_EQ(content_offset.fY, 0);
+}
+
+TEST_F(ScrollHandlingTest, ScrollInvalidationStatsRecordClipLayerFallback) {
+    manager_->ResetInvalidationStats();
+
+    EXPECT_TRUE(manager_->HandleScroll(scrollable_.get(), 0, 50));
+
+    const auto& stats = manager_->GetInvalidationStats();
+    EXPECT_EQ(stats.scrolls_handled, 1);
+    EXPECT_EQ(stats.full_dirty_scrolls, 1);
+    EXPECT_EQ(stats.clip_layer_full_dirty_scrolls, 1);
+    EXPECT_EQ(stats.ancestor_layer_full_dirty_scrolls, 0);
+    EXPECT_EQ(stats.missing_layer_target_scrolls, 0);
+    EXPECT_EQ(stats.last_reason, ScrollInvalidationReason::ClipLayerFullDirty);
 }
 
 /**
@@ -438,14 +452,18 @@ TEST_F(CleanupTest, ClearRemovesAllState) {
     
     manager_->RegisterScrollContainer(scrollable.get());
     manager_->RegisterFixedElement(fixed.get());
+    manager_->HandleScroll(scrollable.get(), 0, 50);
     
     EXPECT_EQ(manager_->GetScrollContainerCount(), 1);
     EXPECT_EQ(manager_->GetFixedElementCount(), 1);
+    EXPECT_EQ(manager_->GetInvalidationStats().scrolls_handled, 1);
     
     manager_->Clear();
     
     EXPECT_EQ(manager_->GetScrollContainerCount(), 0);
     EXPECT_EQ(manager_->GetFixedElementCount(), 0);
+    EXPECT_EQ(manager_->GetInvalidationStats().scrolls_handled, 0);
+    EXPECT_EQ(manager_->GetInvalidationStats().last_reason, ScrollInvalidationReason::None);
 }
 
 // =========================================================================
@@ -485,6 +503,22 @@ TEST_F(EdgeCaseTest, ScrollOnUnregisteredContainerReturnsFalse) {
     
     // 不注册，直接尝试滚动
     EXPECT_FALSE(manager_->HandleScroll(scrollable.get(), 0, 100));
+}
+
+TEST_F(EdgeCaseTest, ScrollInvalidationStatsRecordMissingLayerFallback) {
+    auto scrollable = std::make_shared<ScrollableRenderObject>();
+    ASSERT_TRUE(manager_->RegisterScrollContainer(scrollable.get()));
+    manager_->ResetInvalidationStats();
+
+    EXPECT_TRUE(manager_->HandleScroll(scrollable.get(), 0, 50));
+
+    const auto& stats = manager_->GetInvalidationStats();
+    EXPECT_EQ(stats.scrolls_handled, 1);
+    EXPECT_EQ(stats.full_dirty_scrolls, 0);
+    EXPECT_EQ(stats.clip_layer_full_dirty_scrolls, 0);
+    EXPECT_EQ(stats.ancestor_layer_full_dirty_scrolls, 0);
+    EXPECT_EQ(stats.missing_layer_target_scrolls, 1);
+    EXPECT_EQ(stats.last_reason, ScrollInvalidationReason::MissingLayerTarget);
 }
 
 /**

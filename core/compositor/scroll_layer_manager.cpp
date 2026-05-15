@@ -278,6 +278,7 @@ bool ScrollLayerManager::HandleScroll(RenderObject* container, float delta_x, fl
     // 因为在 CompositeLayerCPU 中，滚动偏移会被应用到子层的绘制上
     // 如果 clip_layer 和 content_layer 都设置滚动偏移，会导致双重滚动
     auto clip_layer = container->GetCompositorLayer();
+    invalidation_stats_.scrolls_handled++;
     
     if (clip_layer) {
         clip_layer->SetScrollOffset(SkPoint::Make(info->scroll_x, info->scroll_y));
@@ -291,6 +292,9 @@ bool ScrollLayerManager::HandleScroll(RenderObject* container, float delta_x, fl
     // Paint 中应用滚动偏移，所以需要重新光栅化
     if (clip_layer) {
         clip_layer->MarkFullDirty();
+        invalidation_stats_.full_dirty_scrolls++;
+        invalidation_stats_.clip_layer_full_dirty_scrolls++;
+        invalidation_stats_.last_reason = ScrollInvalidationReason::ClipLayerFullDirty;
     } else {
         // 滚动容器没有独立层，需要标记其父层或根层为脏
         bool found_layer = false;
@@ -299,10 +303,17 @@ bool ScrollLayerManager::HandleScroll(RenderObject* container, float delta_x, fl
             auto parent_layer = parent->GetCompositorLayer();
             if (parent_layer) {
                 parent_layer->MarkFullDirty();
+                invalidation_stats_.full_dirty_scrolls++;
+                invalidation_stats_.ancestor_layer_full_dirty_scrolls++;
+                invalidation_stats_.last_reason = ScrollInvalidationReason::AncestorLayerFullDirty;
                 found_layer = true;
                 break;
             }
             parent = parent->GetParent();
+        }
+        if (!found_layer) {
+            invalidation_stats_.missing_layer_target_scrolls++;
+            invalidation_stats_.last_reason = ScrollInvalidationReason::MissingLayerTarget;
         }
     }
 
@@ -619,6 +630,7 @@ RenderObject* ScrollLayerManager::FindScrollContainerAt(float x, float y) const 
 void ScrollLayerManager::Clear() {
     scroll_containers_.clear();
     fixed_elements_.clear();
+    invalidation_stats_.Reset();
 }
 
 // =========================================================================
