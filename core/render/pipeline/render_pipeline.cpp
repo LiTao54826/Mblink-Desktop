@@ -446,6 +446,17 @@ bool RenderPipeline::ProcessFrame(SkCanvas* canvas) {
                      last_observed_layer_tree_scroll_stats_.missing_layer_target_scrolls) +
         diff_counter(scroll_manager_stats.missing_layer_target_scrolls,
                      last_observed_scroll_manager_stats_.missing_layer_target_scrolls);
+    ScrollInvalidationStats frame_scroll_stats;
+    frame_scroll_stats.clip_layer_full_dirty_scrolls =
+        current_frame_stats_.scroll_clip_layer_full_dirty_fallbacks;
+    frame_scroll_stats.ancestor_layer_full_dirty_scrolls =
+        current_frame_stats_.scroll_ancestor_layer_full_dirty_fallbacks;
+    frame_scroll_stats.missing_layer_target_scrolls =
+        current_frame_stats_.scroll_missing_layer_target_fallbacks;
+    current_frame_stats_.scroll_incremental_eligible_fallbacks =
+        static_cast<int>(IncrementalEligibleScrollFallbacks(frame_scroll_stats));
+    current_frame_stats_.scroll_conservative_fallbacks =
+        static_cast<int>(ConservativeScrollFallbacks(frame_scroll_stats));
     current_frame_stats_.last_scroll_invalidation_reason =
         (current_frame_stats_.scrolls_handled > 0)
             ? pending_scroll_invalidation_reason_
@@ -492,6 +503,10 @@ bool RenderPipeline::ProcessFrame(SkCanvas* canvas) {
                   << current_frame_stats_.scroll_ancestor_layer_full_dirty_fallbacks
                   << " scroll_missing_layer_target_fallbacks="
                   << current_frame_stats_.scroll_missing_layer_target_fallbacks
+                  << " scroll_incremental_eligible_fallbacks="
+                  << current_frame_stats_.scroll_incremental_eligible_fallbacks
+                  << " scroll_conservative_fallbacks="
+                  << current_frame_stats_.scroll_conservative_fallbacks
                   << " scroll_last_reason="
                   << static_cast<int>(current_frame_stats_.last_scroll_invalidation_reason)
                   << " using_gpu=" << (current_frame_stats_.using_gpu ? 1 : 0)

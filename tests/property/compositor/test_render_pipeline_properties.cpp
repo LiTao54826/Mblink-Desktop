@@ -262,6 +262,8 @@ TEST_F(PipelineScrollTest, ScrollInvalidationStatsRecordedPerFrame) {
     EXPECT_EQ(scrolled_stats.scroll_clip_layer_full_dirty_fallbacks, 1);
     EXPECT_EQ(scrolled_stats.scroll_ancestor_layer_full_dirty_fallbacks, 0);
     EXPECT_EQ(scrolled_stats.scroll_missing_layer_target_fallbacks, 0);
+    EXPECT_EQ(scrolled_stats.scroll_incremental_eligible_fallbacks, 1);
+    EXPECT_EQ(scrolled_stats.scroll_conservative_fallbacks, 0);
     EXPECT_EQ(scrolled_stats.last_scroll_invalidation_reason,
               ScrollInvalidationReason::ClipLayerFullDirty);
 
@@ -291,6 +293,8 @@ TEST_F(PipelineScrollTest, ScrollInvalidationStatsSurviveConfigSwitchBeforeFrame
     EXPECT_EQ(stats.scrolls_handled, 1);
     EXPECT_EQ(stats.scroll_full_dirty_fallbacks, 1);
     EXPECT_EQ(stats.scroll_clip_layer_full_dirty_fallbacks, 1);
+    EXPECT_EQ(stats.scroll_incremental_eligible_fallbacks, 1);
+    EXPECT_EQ(stats.scroll_conservative_fallbacks, 0);
     EXPECT_EQ(stats.last_scroll_invalidation_reason,
               ScrollInvalidationReason::ClipLayerFullDirty);
 }
@@ -322,6 +326,8 @@ TEST_F(PipelineScrollTest, LegacyScrollInvalidationStatsRecordedPerFrame) {
     EXPECT_EQ(scrolled_stats.scrolls_handled, 1);
     EXPECT_EQ(scrolled_stats.scroll_full_dirty_fallbacks, 1);
     EXPECT_EQ(scrolled_stats.scroll_clip_layer_full_dirty_fallbacks, 1);
+    EXPECT_EQ(scrolled_stats.scroll_incremental_eligible_fallbacks, 1);
+    EXPECT_EQ(scrolled_stats.scroll_conservative_fallbacks, 0);
     EXPECT_EQ(scrolled_stats.last_scroll_invalidation_reason,
               ScrollInvalidationReason::ClipLayerFullDirty);
 
@@ -336,6 +342,37 @@ TEST_F(PipelineScrollTest, LegacyScrollInvalidationStatsRecordedPerFrame) {
 // =========================================================================
 // 动画测试
 // =========================================================================
+
+TEST_F(PipelineScrollTest, MissingLayerScrollFallbackClassifiedConservative) {
+    auto pipeline = std::make_unique<RenderPipeline>();
+    UnifiedPipelineConfig config;
+    config.enable_incremental_layer_tree = false;
+    ASSERT_TRUE(pipeline->Initialize(800, 600, config));
+
+    auto root = std::make_shared<TestRenderObject>();
+    root->SetBounds(0, 0, 400, 300);
+    root->SetScrollable(true);
+    root->SetContentSize(800, 1000);
+    root->ClearNeedsLayout();
+    pipeline->SetRenderTree(root);
+
+    auto surface = SkSurfaces::Raster(SkImageInfo::MakeN32Premul(800, 600));
+    ASSERT_TRUE(pipeline->ProcessFrame(surface->getCanvas()));
+    root->SetCompositorLayer(nullptr);
+    ASSERT_EQ(root->GetCompositorLayer(), nullptr);
+
+    ASSERT_TRUE(pipeline->HandleScroll(root.get(), 0, 100));
+    ASSERT_TRUE(pipeline->ProcessFrame(surface->getCanvas()));
+
+    const auto& stats = pipeline->GetLastFrameStats();
+    EXPECT_EQ(stats.scrolls_handled, 1);
+    EXPECT_EQ(stats.scroll_full_dirty_fallbacks, 0);
+    EXPECT_EQ(stats.scroll_missing_layer_target_fallbacks, 1);
+    EXPECT_EQ(stats.scroll_incremental_eligible_fallbacks, 0);
+    EXPECT_EQ(stats.scroll_conservative_fallbacks, 1);
+    EXPECT_EQ(stats.last_scroll_invalidation_reason,
+              ScrollInvalidationReason::MissingLayerTarget);
+}
 
 class PipelineAnimationTest : public ::testing::Test {
 protected:

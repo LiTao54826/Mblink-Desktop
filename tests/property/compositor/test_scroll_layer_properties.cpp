@@ -200,6 +200,8 @@ TEST_F(ScrollHandlingTest, ScrollInvalidationStatsRecordClipLayerFallback) {
     EXPECT_EQ(stats.clip_layer_full_dirty_scrolls, 1);
     EXPECT_EQ(stats.ancestor_layer_full_dirty_scrolls, 0);
     EXPECT_EQ(stats.missing_layer_target_scrolls, 0);
+    EXPECT_EQ(IncrementalEligibleScrollFallbacks(stats), 1);
+    EXPECT_EQ(ConservativeScrollFallbacks(stats), 0);
     EXPECT_EQ(stats.last_reason, ScrollInvalidationReason::ClipLayerFullDirty);
 }
 
@@ -518,6 +520,8 @@ TEST_F(EdgeCaseTest, ScrollInvalidationStatsRecordMissingLayerFallback) {
     EXPECT_EQ(stats.clip_layer_full_dirty_scrolls, 0);
     EXPECT_EQ(stats.ancestor_layer_full_dirty_scrolls, 0);
     EXPECT_EQ(stats.missing_layer_target_scrolls, 1);
+    EXPECT_EQ(IncrementalEligibleScrollFallbacks(stats), 0);
+    EXPECT_EQ(ConservativeScrollFallbacks(stats), 1);
     EXPECT_EQ(stats.last_reason, ScrollInvalidationReason::MissingLayerTarget);
 }
 

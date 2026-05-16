@@ -112,6 +112,8 @@ struct UnifiedFrameStats {
     int scroll_clip_layer_full_dirty_fallbacks = 0;
     int scroll_ancestor_layer_full_dirty_fallbacks = 0;
     int scroll_missing_layer_target_fallbacks = 0;
+    int scroll_incremental_eligible_fallbacks = 0;
+    int scroll_conservative_fallbacks = 0;
     ScrollInvalidationReason last_scroll_invalidation_reason = ScrollInvalidationReason::None;
     
     // 增量样式重算统计
@@ -160,6 +162,8 @@ struct UnifiedFrameStats {
         scroll_clip_layer_full_dirty_fallbacks = 0;
         scroll_ancestor_layer_full_dirty_fallbacks = 0;
         scroll_missing_layer_target_fallbacks = 0;
+        scroll_incremental_eligible_fallbacks = 0;
+        scroll_conservative_fallbacks = 0;
         last_scroll_invalidation_reason = ScrollInvalidationReason::None;
         style_nodes_visited = 0;
         style_nodes_recalculated = 0;

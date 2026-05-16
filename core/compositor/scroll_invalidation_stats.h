@@ -34,4 +34,13 @@ struct ScrollInvalidationStats {
     }
 };
 
+inline std::uint64_t IncrementalEligibleScrollFallbacks(const ScrollInvalidationStats& stats) {
+    return stats.clip_layer_full_dirty_scrolls;
+}
+
+inline std::uint64_t ConservativeScrollFallbacks(const ScrollInvalidationStats& stats) {
+    return stats.ancestor_layer_full_dirty_scrolls +
+           stats.missing_layer_target_scrolls;
+}
+
 } // namespace mbink
