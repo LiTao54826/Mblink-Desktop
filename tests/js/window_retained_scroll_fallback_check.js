@@ -14,14 +14,14 @@ function run() {
   const windowSrc = fs.readFileSync(windowPath, 'utf8');
   const pipelineHeader = fs.readFileSync(pipelineHeaderPath, 'utf8');
 
-  assert(pipelineHeader.includes('bool HasPendingScrollFullDirtyFallback() const;'),
-    'RenderPipeline must expose pending scroll full-dirty fallback state before ProcessFrame');
+  assert(pipelineHeader.includes('bool HasPendingScrollRetainedPresentBlockingFallback() const;'),
+    'RenderPipeline must expose pending retained-present-blocking scroll fallback state before ProcessFrame');
 
-  assert(windowSrc.includes('render_pipeline_->HasPendingScrollFullDirtyFallback()'),
-    'Window::Render must check pending scroll full-dirty fallback before retained-main reuse');
+  assert(windowSrc.includes('render_pipeline_->HasPendingScrollRetainedPresentBlockingFallback()'),
+    'Window::Render must check pending retained-present-blocking scroll fallback before retained-main reuse');
 
-  assert(windowSrc.includes('GetLastFrameStats().scroll_full_dirty_fallbacks > 0'),
-    'Window::Render must also guard against the previous rendered scroll fallback frame');
+  assert(windowSrc.includes('GetLastFrameStats().scroll_retained_present_blocking_fallbacks > 0'),
+    'Window::Render must also guard against the previous rendered retained-present-blocking scroll fallback frame');
 
   assert(windowSrc.includes('retained_main_has_content_ = false;') &&
          windowSrc.includes('retained_main_scroll_fallback_invalidated'),

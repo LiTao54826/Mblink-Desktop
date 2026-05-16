@@ -264,6 +264,7 @@ TEST_F(PipelineScrollTest, ScrollInvalidationStatsRecordedPerFrame) {
     EXPECT_EQ(scrolled_stats.scroll_missing_layer_target_fallbacks, 0);
     EXPECT_EQ(scrolled_stats.scroll_incremental_eligible_fallbacks, 1);
     EXPECT_EQ(scrolled_stats.scroll_conservative_fallbacks, 0);
+    EXPECT_EQ(scrolled_stats.scroll_retained_present_blocking_fallbacks, 1);
     EXPECT_EQ(scrolled_stats.last_scroll_invalidation_reason,
               ScrollInvalidationReason::ClipLayerFullDirty);
 
@@ -271,6 +272,7 @@ TEST_F(PipelineScrollTest, ScrollInvalidationStatsRecordedPerFrame) {
     const auto& idle_stats = pipeline_->GetLastFrameStats();
     EXPECT_EQ(idle_stats.scrolls_handled, 0);
     EXPECT_EQ(idle_stats.scroll_full_dirty_fallbacks, 0);
+    EXPECT_EQ(idle_stats.scroll_retained_present_blocking_fallbacks, 0);
     EXPECT_EQ(idle_stats.last_scroll_invalidation_reason,
               ScrollInvalidationReason::None);
 }
@@ -295,6 +297,7 @@ TEST_F(PipelineScrollTest, ScrollInvalidationStatsSurviveConfigSwitchBeforeFrame
     EXPECT_EQ(stats.scroll_clip_layer_full_dirty_fallbacks, 1);
     EXPECT_EQ(stats.scroll_incremental_eligible_fallbacks, 1);
     EXPECT_EQ(stats.scroll_conservative_fallbacks, 0);
+    EXPECT_EQ(stats.scroll_retained_present_blocking_fallbacks, 1);
     EXPECT_EQ(stats.last_scroll_invalidation_reason,
               ScrollInvalidationReason::ClipLayerFullDirty);
 }
@@ -328,6 +331,7 @@ TEST_F(PipelineScrollTest, LegacyScrollInvalidationStatsRecordedPerFrame) {
     EXPECT_EQ(scrolled_stats.scroll_clip_layer_full_dirty_fallbacks, 1);
     EXPECT_EQ(scrolled_stats.scroll_incremental_eligible_fallbacks, 1);
     EXPECT_EQ(scrolled_stats.scroll_conservative_fallbacks, 0);
+    EXPECT_EQ(scrolled_stats.scroll_retained_present_blocking_fallbacks, 1);
     EXPECT_EQ(scrolled_stats.last_scroll_invalidation_reason,
               ScrollInvalidationReason::ClipLayerFullDirty);
 
@@ -335,6 +339,7 @@ TEST_F(PipelineScrollTest, LegacyScrollInvalidationStatsRecordedPerFrame) {
     const auto& idle_stats = pipeline->GetLastFrameStats();
     EXPECT_EQ(idle_stats.scrolls_handled, 0);
     EXPECT_EQ(idle_stats.scroll_full_dirty_fallbacks, 0);
+    EXPECT_EQ(idle_stats.scroll_retained_present_blocking_fallbacks, 0);
     EXPECT_EQ(idle_stats.last_scroll_invalidation_reason,
               ScrollInvalidationReason::None);
 }
@@ -362,6 +367,8 @@ TEST_F(PipelineScrollTest, MissingLayerScrollFallbackClassifiedConservative) {
     ASSERT_EQ(root->GetCompositorLayer(), nullptr);
 
     ASSERT_TRUE(pipeline->HandleScroll(root.get(), 0, 100));
+    EXPECT_FALSE(pipeline->HasPendingScrollFullDirtyFallback());
+    EXPECT_TRUE(pipeline->HasPendingScrollRetainedPresentBlockingFallback());
     ASSERT_TRUE(pipeline->ProcessFrame(surface->getCanvas()));
 
     const auto& stats = pipeline->GetLastFrameStats();
@@ -370,6 +377,7 @@ TEST_F(PipelineScrollTest, MissingLayerScrollFallbackClassifiedConservative) {
     EXPECT_EQ(stats.scroll_missing_layer_target_fallbacks, 1);
     EXPECT_EQ(stats.scroll_incremental_eligible_fallbacks, 0);
     EXPECT_EQ(stats.scroll_conservative_fallbacks, 1);
+    EXPECT_EQ(stats.scroll_retained_present_blocking_fallbacks, 1);
     EXPECT_EQ(stats.last_scroll_invalidation_reason,
               ScrollInvalidationReason::MissingLayerTarget);
 }

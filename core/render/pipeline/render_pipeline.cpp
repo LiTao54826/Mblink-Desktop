@@ -51,6 +51,11 @@ namespace {
         static const bool enabled = (std::getenv("MBINK_BASELINE_FRAME_STATS") != nullptr);
         return enabled;
     }
+
+    int RetainedPresentBlockingScrollFallbacks(const ScrollInvalidationStats& stats) {
+        return static_cast<int>(
+            IncrementalEligibleScrollFallbacks(stats) + ConservativeScrollFallbacks(stats));
+    }
 }
 
 // =========================================================================
@@ -333,6 +338,15 @@ bool RenderPipeline::HasPendingScrollFullDirtyFallback() const {
                last_observed_scroll_manager_stats_.full_dirty_scrolls;
 }
 
+bool RenderPipeline::HasPendingScrollRetainedPresentBlockingFallback() const {
+    const auto& layer_tree_scroll_stats = layer_tree_manager_->GetInvalidationStats();
+    const auto& scroll_manager_stats = scroll_manager_->GetInvalidationStats();
+    return RetainedPresentBlockingScrollFallbacks(layer_tree_scroll_stats) >
+               RetainedPresentBlockingScrollFallbacks(last_observed_layer_tree_scroll_stats_) ||
+           RetainedPresentBlockingScrollFallbacks(scroll_manager_stats) >
+               RetainedPresentBlockingScrollFallbacks(last_observed_scroll_manager_stats_);
+}
+
 // =========================================================================
 // 主渲染入口
 // =========================================================================
@@ -457,6 +471,9 @@ bool RenderPipeline::ProcessFrame(SkCanvas* canvas) {
         static_cast<int>(IncrementalEligibleScrollFallbacks(frame_scroll_stats));
     current_frame_stats_.scroll_conservative_fallbacks =
         static_cast<int>(ConservativeScrollFallbacks(frame_scroll_stats));
+    current_frame_stats_.scroll_retained_present_blocking_fallbacks =
+        current_frame_stats_.scroll_incremental_eligible_fallbacks +
+        current_frame_stats_.scroll_conservative_fallbacks;
     current_frame_stats_.last_scroll_invalidation_reason =
         (current_frame_stats_.scrolls_handled > 0)
             ? pending_scroll_invalidation_reason_
@@ -507,6 +524,8 @@ bool RenderPipeline::ProcessFrame(SkCanvas* canvas) {
                   << current_frame_stats_.scroll_incremental_eligible_fallbacks
                   << " scroll_conservative_fallbacks="
                   << current_frame_stats_.scroll_conservative_fallbacks
+                  << " scroll_retained_present_blocking_fallbacks="
+                  << current_frame_stats_.scroll_retained_present_blocking_fallbacks
                   << " scroll_last_reason="
                   << static_cast<int>(current_frame_stats_.last_scroll_invalidation_reason)
                   << " using_gpu=" << (current_frame_stats_.using_gpu ? 1 : 0)

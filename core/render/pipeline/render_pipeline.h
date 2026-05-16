@@ -114,6 +114,7 @@ struct UnifiedFrameStats {
     int scroll_missing_layer_target_fallbacks = 0;
     int scroll_incremental_eligible_fallbacks = 0;
     int scroll_conservative_fallbacks = 0;
+    int scroll_retained_present_blocking_fallbacks = 0;
     ScrollInvalidationReason last_scroll_invalidation_reason = ScrollInvalidationReason::None;
     
     // 增量样式重算统计
@@ -164,6 +165,7 @@ struct UnifiedFrameStats {
         scroll_missing_layer_target_fallbacks = 0;
         scroll_incremental_eligible_fallbacks = 0;
         scroll_conservative_fallbacks = 0;
+        scroll_retained_present_blocking_fallbacks = 0;
         last_scroll_invalidation_reason = ScrollInvalidationReason::None;
         style_nodes_visited = 0;
         style_nodes_recalculated = 0;
@@ -281,6 +283,7 @@ public:
     RenderStage GetCurrentStage() const { return current_stage_; }
     const UnifiedFrameStats& GetLastFrameStats() const { return last_frame_stats_; }
     bool HasPendingScrollFullDirtyFallback() const;
+    bool HasPendingScrollRetainedPresentBlockingFallback() const;
     std::shared_ptr<RenderObject> GetRenderTree() const { return render_tree_; }
     void SetRenderTree(std::shared_ptr<RenderObject> tree);
     std::shared_ptr<CompositorLayer> GetRootLayer() const { return root_layer_; }

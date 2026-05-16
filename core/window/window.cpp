@@ -1538,13 +1538,14 @@ void Window::Render() {
             retained_main_has_content_ = false;
         }
 
-        const bool pending_scroll_full_dirty_fallback =
-            render_pipeline_ && render_pipeline_->HasPendingScrollFullDirtyFallback();
-        const bool previous_scroll_full_dirty_fallback =
+        const bool pending_scroll_retained_present_blocking_fallback =
+            render_pipeline_ && render_pipeline_->HasPendingScrollRetainedPresentBlockingFallback();
+        const bool previous_scroll_retained_present_blocking_fallback =
             render_pipeline_ &&
-            render_pipeline_->GetLastFrameStats().scroll_full_dirty_fallbacks > 0;
+            render_pipeline_->GetLastFrameStats().scroll_retained_present_blocking_fallbacks > 0;
         retained_main_scroll_fallback_blocked =
-            pending_scroll_full_dirty_fallback || previous_scroll_full_dirty_fallback;
+            pending_scroll_retained_present_blocking_fallback ||
+            previous_scroll_retained_present_blocking_fallback;
         if (retained_present_used && retained_main_scroll_fallback_blocked) {
             retained_main_has_content_ = false;
         }
@@ -1592,7 +1593,7 @@ void Window::Render() {
                 retained_main_has_content_ = process_ok;
             }
             if (retained_present_used &&
-                render_pipeline_->GetLastFrameStats().scroll_full_dirty_fallbacks > 0) {
+                render_pipeline_->GetLastFrameStats().scroll_retained_present_blocking_fallbacks > 0) {
                 retained_main_has_content_ = false;
                 retained_main_scroll_fallback_invalidated = true;
             }
