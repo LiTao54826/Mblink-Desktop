@@ -245,6 +245,83 @@ TEST_F(PipelineScrollTest, ScrollSyncedToRenderObject) {
     EXPECT_FLOAT_EQ(root_->GetScrollY(), 100);
 }
 
+TEST_F(PipelineScrollTest, ScrollInvalidationStatsRecordedPerFrame) {
+    auto surface = SkSurfaces::Raster(SkImageInfo::MakeN32Premul(800, 600));
+
+    ASSERT_TRUE(pipeline_->HandleScroll(root_.get(), 0, 100));
+    ASSERT_TRUE(pipeline_->ProcessFrame(surface->getCanvas()));
+
+    const auto& scrolled_stats = pipeline_->GetLastFrameStats();
+    EXPECT_EQ(scrolled_stats.scrolls_handled, 1);
+    EXPECT_EQ(scrolled_stats.scroll_full_dirty_fallbacks, 1);
+    EXPECT_EQ(scrolled_stats.scroll_clip_layer_full_dirty_fallbacks, 1);
+    EXPECT_EQ(scrolled_stats.scroll_ancestor_layer_full_dirty_fallbacks, 0);
+    EXPECT_EQ(scrolled_stats.scroll_missing_layer_target_fallbacks, 0);
+    EXPECT_EQ(scrolled_stats.last_scroll_invalidation_reason,
+              ScrollInvalidationReason::ClipLayerFullDirty);
+
+    ASSERT_TRUE(pipeline_->ProcessFrame(surface->getCanvas()));
+    const auto& idle_stats = pipeline_->GetLastFrameStats();
+    EXPECT_EQ(idle_stats.scrolls_handled, 0);
+    EXPECT_EQ(idle_stats.scroll_full_dirty_fallbacks, 0);
+    EXPECT_EQ(idle_stats.last_scroll_invalidation_reason,
+              ScrollInvalidationReason::None);
+}
+
+TEST_F(PipelineScrollTest, ScrollInvalidationStatsSurviveConfigSwitchBeforeFrame) {
+    auto surface = SkSurfaces::Raster(SkImageInfo::MakeN32Premul(800, 600));
+
+    ASSERT_TRUE(pipeline_->HandleScroll(root_.get(), 0, 100));
+
+    auto config = pipeline_->GetConfig();
+    config.enable_incremental_layer_tree = false;
+    pipeline_->SetConfig(config);
+
+    ASSERT_TRUE(pipeline_->ProcessFrame(surface->getCanvas()));
+
+    const auto& stats = pipeline_->GetLastFrameStats();
+    EXPECT_EQ(stats.scrolls_handled, 1);
+    EXPECT_EQ(stats.scroll_full_dirty_fallbacks, 1);
+    EXPECT_EQ(stats.scroll_clip_layer_full_dirty_fallbacks, 1);
+    EXPECT_EQ(stats.last_scroll_invalidation_reason,
+              ScrollInvalidationReason::ClipLayerFullDirty);
+}
+
+TEST_F(PipelineScrollTest, LegacyScrollInvalidationStatsRecordedPerFrame) {
+    auto pipeline = std::make_unique<RenderPipeline>();
+    UnifiedPipelineConfig config;
+    config.enable_incremental_layer_tree = false;
+    ASSERT_TRUE(pipeline->Initialize(800, 600, config));
+
+    auto root = std::make_shared<TestRenderObject>();
+    root->SetBounds(0, 0, 400, 300);
+    root->SetScrollable(true);
+    root->SetContentSize(800, 1000);
+    root->ClearNeedsLayout();
+    root->SetCompositorLayer(std::make_shared<CompositorLayer>(1));
+    pipeline->SetRenderTree(root);
+
+    auto surface = SkSurfaces::Raster(SkImageInfo::MakeN32Premul(800, 600));
+    ASSERT_TRUE(pipeline->ProcessFrame(surface->getCanvas()));
+
+    ASSERT_TRUE(pipeline->HandleScroll(root.get(), 0, 100));
+    ASSERT_TRUE(pipeline->ProcessFrame(surface->getCanvas()));
+
+    const auto& scrolled_stats = pipeline->GetLastFrameStats();
+    EXPECT_EQ(scrolled_stats.scrolls_handled, 1);
+    EXPECT_EQ(scrolled_stats.scroll_full_dirty_fallbacks, 1);
+    EXPECT_EQ(scrolled_stats.scroll_clip_layer_full_dirty_fallbacks, 1);
+    EXPECT_EQ(scrolled_stats.last_scroll_invalidation_reason,
+              ScrollInvalidationReason::ClipLayerFullDirty);
+
+    ASSERT_TRUE(pipeline->ProcessFrame(surface->getCanvas()));
+    const auto& idle_stats = pipeline->GetLastFrameStats();
+    EXPECT_EQ(idle_stats.scrolls_handled, 0);
+    EXPECT_EQ(idle_stats.scroll_full_dirty_fallbacks, 0);
+    EXPECT_EQ(idle_stats.last_scroll_invalidation_reason,
+              ScrollInvalidationReason::None);
+}
+
 // =========================================================================
 // 动画测试
 // =========================================================================

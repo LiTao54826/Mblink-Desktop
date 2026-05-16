@@ -17,7 +17,7 @@
 #pragma once
 
 #include "compositor_layer.h"
-#include <cstdint>
+#include "scroll_invalidation_stats.h"
 #include <memory>
 #include <unordered_map>
 #include <unordered_set>
@@ -68,31 +68,6 @@ struct FixedElementInfo {
     // 固定位置（相对于视口）
     float fixed_x = 0.0f;
     float fixed_y = 0.0f;
-};
-
-enum class ScrollInvalidationReason {
-    None,
-    ClipLayerFullDirty,
-    AncestorLayerFullDirty,
-    MissingLayerTarget
-};
-
-struct ScrollInvalidationStats {
-    std::uint64_t scrolls_handled = 0;
-    std::uint64_t full_dirty_scrolls = 0;
-    std::uint64_t clip_layer_full_dirty_scrolls = 0;
-    std::uint64_t ancestor_layer_full_dirty_scrolls = 0;
-    std::uint64_t missing_layer_target_scrolls = 0;
-    ScrollInvalidationReason last_reason = ScrollInvalidationReason::None;
-
-    void Reset() {
-        scrolls_handled = 0;
-        full_dirty_scrolls = 0;
-        clip_layer_full_dirty_scrolls = 0;
-        ancestor_layer_full_dirty_scrolls = 0;
-        missing_layer_target_scrolls = 0;
-        last_reason = ScrollInvalidationReason::None;
-    }
 };
 
 /**

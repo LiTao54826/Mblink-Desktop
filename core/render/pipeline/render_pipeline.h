@@ -26,6 +26,7 @@
 #include "core/compositor/rasterizer.h"
 #include "core/compositor/compositor.h"
 #include "core/compositor/animation/animation_layer_bridge.h"
+#include "core/compositor/scroll_invalidation_stats.h"
 #include "core/compositor/scroll_layer_manager.h"
 #include "core/compositor/property_tree/property_trees.h"
 #include "core/compositor/property_tree/property_tree_builder.h"
@@ -106,6 +107,12 @@ struct UnifiedFrameStats {
     int frames_composited = 0;
     int frames_skipped = 0;
     double compositor_composite_time_ms = 0.0;
+    int scrolls_handled = 0;
+    int scroll_full_dirty_fallbacks = 0;
+    int scroll_clip_layer_full_dirty_fallbacks = 0;
+    int scroll_ancestor_layer_full_dirty_fallbacks = 0;
+    int scroll_missing_layer_target_fallbacks = 0;
+    ScrollInvalidationReason last_scroll_invalidation_reason = ScrollInvalidationReason::None;
     
     // 增量样式重算统计
     int style_nodes_visited = 0;
@@ -148,6 +155,12 @@ struct UnifiedFrameStats {
         frames_composited = 0;
         frames_skipped = 0;
         compositor_composite_time_ms = 0.0;
+        scrolls_handled = 0;
+        scroll_full_dirty_fallbacks = 0;
+        scroll_clip_layer_full_dirty_fallbacks = 0;
+        scroll_ancestor_layer_full_dirty_fallbacks = 0;
+        scroll_missing_layer_target_fallbacks = 0;
+        last_scroll_invalidation_reason = ScrollInvalidationReason::None;
         style_nodes_visited = 0;
         style_nodes_recalculated = 0;
         style_subtrees_skipped = 0;
@@ -390,6 +403,9 @@ private:
 
     UnifiedFrameStats last_frame_stats_;
     UnifiedFrameStats current_frame_stats_;
+    ScrollInvalidationStats last_observed_layer_tree_scroll_stats_;
+    ScrollInvalidationStats last_observed_scroll_manager_stats_;
+    ScrollInvalidationReason pending_scroll_invalidation_reason_ = ScrollInvalidationReason::None;
     double frame_start_time_ = 0.0;
 };
 

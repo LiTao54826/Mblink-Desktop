@@ -288,6 +288,7 @@ bool LayerTreeManager::SetScrollPosition(RenderObject* container, float x, float
 
     // 检查是否有变化
     if (state.scroll_x != old_x || state.scroll_y != old_y) {
+        invalidation_stats_.scrolls_handled++;
         state.version++;
         NotifyScrollListeners(container, state);
 
@@ -297,6 +298,12 @@ bool LayerTreeManager::SetScrollPosition(RenderObject* container, float x, float
         if (layer) {
             layer->SetScrollOffset(SkPoint::Make(state.scroll_x, state.scroll_y));
             layer->MarkFullDirty();  // 需要重新光栅化
+            invalidation_stats_.full_dirty_scrolls++;
+            invalidation_stats_.clip_layer_full_dirty_scrolls++;
+            invalidation_stats_.last_reason = ScrollInvalidationReason::ClipLayerFullDirty;
+        } else {
+            invalidation_stats_.missing_layer_target_scrolls++;
+            invalidation_stats_.last_reason = ScrollInvalidationReason::MissingLayerTarget;
         }
 
         // 同步到 RenderObject

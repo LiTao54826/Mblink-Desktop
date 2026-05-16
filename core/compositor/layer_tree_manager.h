@@ -13,6 +13,7 @@
 
 #include "layer_tree_types.h"
 #include "animation/animation_bounds_calculator.h"
+#include "scroll_invalidation_stats.h"
 #include "include/core/SkPoint.h"
 #include "include/core/SkRect.h"
 #include <memory>
@@ -217,6 +218,8 @@ public:
      * @brief 获取滚动容器数量
      */
     size_t GetScrollContainerCount() const { return scroll_states_.size(); }
+    const ScrollInvalidationStats& GetInvalidationStats() const { return invalidation_stats_; }
+    void ResetInvalidationStats() { invalidation_stats_.Reset(); }
 
     // =========================================================================
     // 坐标转换
@@ -460,6 +463,7 @@ private:
 
     // 滚动状态（SSOT）
     std::unordered_map<RenderObject*, ScrollState> scroll_states_;
+    ScrollInvalidationStats invalidation_stats_;
 
     // 滚动监听器
     std::unordered_map<uint32_t, ScrollListener> scroll_listeners_;

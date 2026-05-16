@@ -23,6 +23,7 @@ set(COMPOSITOR_HEADERS
     rasterizer.h
     compositor.h
     scroll_layer_manager.h
+    scroll_invalidation_stats.h
     animation/animation_layer_bridge.h
     animation/animation_bounds_calculator.h
 )

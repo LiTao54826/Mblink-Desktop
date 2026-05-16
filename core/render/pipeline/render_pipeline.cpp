@@ -128,6 +128,9 @@ bool RenderPipeline::Initialize(int width, int height, const UnifiedPipelineConf
 
     initialized_ = true;
     needs_render_ = true;
+    last_observed_layer_tree_scroll_stats_.Reset();
+    last_observed_scroll_manager_stats_.Reset();
+    pending_scroll_invalidation_reason_ = ScrollInvalidationReason::None;
     return true;
 }
 
@@ -140,6 +143,10 @@ void RenderPipeline::Shutdown() {
     compositor_->Shutdown();
     layer_tree_builder_->Clear();
     scroll_manager_->Clear();
+    layer_tree_manager_->ResetInvalidationStats();
+    last_observed_layer_tree_scroll_stats_.Reset();
+    last_observed_scroll_manager_stats_.Reset();
+    pending_scroll_invalidation_reason_ = ScrollInvalidationReason::None;
     animation_bridge_->Clear();
     root_layer_.reset();
     render_tree_.reset();
@@ -397,6 +404,53 @@ bool RenderPipeline::ProcessFrame(SkCanvas* canvas) {
     // 更新统计
     current_frame_stats_.total_time = GetCurrentTimeMs() - frame_start_time_;
     current_frame_stats_.using_gpu = compositor_->IsUsingGPU();
+    const auto& layer_tree_scroll_stats = layer_tree_manager_->GetInvalidationStats();
+    const auto& scroll_manager_stats = scroll_manager_->GetInvalidationStats();
+    auto diff_counter = [](std::uint64_t current, std::uint64_t previous) {
+        return static_cast<int>(current - previous);
+    };
+    const int layer_tree_scrolls_handled = diff_counter(
+        layer_tree_scroll_stats.scrolls_handled,
+        last_observed_layer_tree_scroll_stats_.scrolls_handled);
+    const int scroll_manager_scrolls_handled = diff_counter(
+        scroll_manager_stats.scrolls_handled,
+        last_observed_scroll_manager_stats_.scrolls_handled);
+    current_frame_stats_.scrolls_handled =
+        layer_tree_scrolls_handled + scroll_manager_scrolls_handled;
+    current_frame_stats_.scroll_full_dirty_fallbacks =
+        diff_counter(layer_tree_scroll_stats.full_dirty_scrolls,
+                     last_observed_layer_tree_scroll_stats_.full_dirty_scrolls) +
+        diff_counter(scroll_manager_stats.full_dirty_scrolls,
+                     last_observed_scroll_manager_stats_.full_dirty_scrolls);
+    current_frame_stats_.scroll_clip_layer_full_dirty_fallbacks =
+        diff_counter(layer_tree_scroll_stats.clip_layer_full_dirty_scrolls,
+                     last_observed_layer_tree_scroll_stats_.clip_layer_full_dirty_scrolls) +
+        diff_counter(scroll_manager_stats.clip_layer_full_dirty_scrolls,
+                     last_observed_scroll_manager_stats_.clip_layer_full_dirty_scrolls);
+    current_frame_stats_.scroll_ancestor_layer_full_dirty_fallbacks =
+        diff_counter(layer_tree_scroll_stats.ancestor_layer_full_dirty_scrolls,
+                     last_observed_layer_tree_scroll_stats_.ancestor_layer_full_dirty_scrolls) +
+        diff_counter(scroll_manager_stats.ancestor_layer_full_dirty_scrolls,
+                     last_observed_scroll_manager_stats_.ancestor_layer_full_dirty_scrolls);
+    current_frame_stats_.scroll_missing_layer_target_fallbacks =
+        diff_counter(layer_tree_scroll_stats.missing_layer_target_scrolls,
+                     last_observed_layer_tree_scroll_stats_.missing_layer_target_scrolls) +
+        diff_counter(scroll_manager_stats.missing_layer_target_scrolls,
+                     last_observed_scroll_manager_stats_.missing_layer_target_scrolls);
+    current_frame_stats_.last_scroll_invalidation_reason =
+        (current_frame_stats_.scrolls_handled > 0)
+            ? pending_scroll_invalidation_reason_
+            : ScrollInvalidationReason::None;
+    if (current_frame_stats_.scrolls_handled > 0 &&
+        current_frame_stats_.last_scroll_invalidation_reason == ScrollInvalidationReason::None) {
+        current_frame_stats_.last_scroll_invalidation_reason =
+            (scroll_manager_scrolls_handled > 0)
+                ? scroll_manager_stats.last_reason
+                : layer_tree_scroll_stats.last_reason;
+    }
+    last_observed_layer_tree_scroll_stats_ = layer_tree_scroll_stats;
+    last_observed_scroll_manager_stats_ = scroll_manager_stats;
+    pending_scroll_invalidation_reason_ = ScrollInvalidationReason::None;
     last_frame_stats_ = current_frame_stats_;
 
     if (IsBaselineFrameStatsEnabled()) {
@@ -421,6 +475,16 @@ bool RenderPipeline::ProcessFrame(SkCanvas* canvas) {
                   << " frames_composited=" << current_frame_stats_.frames_composited
                   << " frames_skipped=" << current_frame_stats_.frames_skipped
                   << " compositor_composite_ms=" << current_frame_stats_.compositor_composite_time_ms
+                  << " scrolls_handled=" << current_frame_stats_.scrolls_handled
+                  << " scroll_full_dirty_fallbacks=" << current_frame_stats_.scroll_full_dirty_fallbacks
+                  << " scroll_clip_layer_full_dirty_fallbacks="
+                  << current_frame_stats_.scroll_clip_layer_full_dirty_fallbacks
+                  << " scroll_ancestor_layer_full_dirty_fallbacks="
+                  << current_frame_stats_.scroll_ancestor_layer_full_dirty_fallbacks
+                  << " scroll_missing_layer_target_fallbacks="
+                  << current_frame_stats_.scroll_missing_layer_target_fallbacks
+                  << " scroll_last_reason="
+                  << static_cast<int>(current_frame_stats_.last_scroll_invalidation_reason)
                   << " using_gpu=" << (current_frame_stats_.using_gpu ? 1 : 0)
                   << "\n";
     }
@@ -1148,6 +1212,10 @@ bool RenderPipeline::HandleScroll(RenderObject* container, float delta_x, float 
     }
 
     if (scrolled) {
+        const auto& scroll_stats = config_.enable_incremental_layer_tree
+            ? layer_tree_manager_->GetInvalidationStats()
+            : scroll_manager_->GetInvalidationStats();
+        pending_scroll_invalidation_reason_ = scroll_stats.last_reason;
         compositor_->MarkNeedsComposite();
         needs_render_ = true;
     }
@@ -1178,6 +1246,10 @@ bool RenderPipeline::ScrollTo(RenderObject* container, float scroll_x, float scr
     }
 
     if (scrolled) {
+        const auto& scroll_stats = config_.enable_incremental_layer_tree
+            ? layer_tree_manager_->GetInvalidationStats()
+            : scroll_manager_->GetInvalidationStats();
+        pending_scroll_invalidation_reason_ = scroll_stats.last_reason;
         compositor_->MarkNeedsComposite();
         needs_render_ = true;
     }
