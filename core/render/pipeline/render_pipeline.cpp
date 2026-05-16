@@ -324,6 +324,15 @@ bool RenderPipeline::NeedsUpdate() const {
     return needs_style_recalc_ || needs_layout_ || needs_paint_ || needs_render_;
 }
 
+bool RenderPipeline::HasPendingScrollFullDirtyFallback() const {
+    const auto& layer_tree_scroll_stats = layer_tree_manager_->GetInvalidationStats();
+    const auto& scroll_manager_stats = scroll_manager_->GetInvalidationStats();
+    return layer_tree_scroll_stats.full_dirty_scrolls >
+               last_observed_layer_tree_scroll_stats_.full_dirty_scrolls ||
+           scroll_manager_stats.full_dirty_scrolls >
+               last_observed_scroll_manager_stats_.full_dirty_scrolls;
+}
+
 // =========================================================================
 // 主渲染入口
 // =========================================================================

@@ -248,8 +248,13 @@ TEST_F(PipelineScrollTest, ScrollSyncedToRenderObject) {
 TEST_F(PipelineScrollTest, ScrollInvalidationStatsRecordedPerFrame) {
     auto surface = SkSurfaces::Raster(SkImageInfo::MakeN32Premul(800, 600));
 
+    EXPECT_FALSE(pipeline_->HasPendingScrollFullDirtyFallback());
+
     ASSERT_TRUE(pipeline_->HandleScroll(root_.get(), 0, 100));
+    EXPECT_TRUE(pipeline_->HasPendingScrollFullDirtyFallback());
+
     ASSERT_TRUE(pipeline_->ProcessFrame(surface->getCanvas()));
+    EXPECT_FALSE(pipeline_->HasPendingScrollFullDirtyFallback());
 
     const auto& scrolled_stats = pipeline_->GetLastFrameStats();
     EXPECT_EQ(scrolled_stats.scrolls_handled, 1);
@@ -272,12 +277,15 @@ TEST_F(PipelineScrollTest, ScrollInvalidationStatsSurviveConfigSwitchBeforeFrame
     auto surface = SkSurfaces::Raster(SkImageInfo::MakeN32Premul(800, 600));
 
     ASSERT_TRUE(pipeline_->HandleScroll(root_.get(), 0, 100));
+    EXPECT_TRUE(pipeline_->HasPendingScrollFullDirtyFallback());
 
     auto config = pipeline_->GetConfig();
     config.enable_incremental_layer_tree = false;
     pipeline_->SetConfig(config);
+    EXPECT_TRUE(pipeline_->HasPendingScrollFullDirtyFallback());
 
     ASSERT_TRUE(pipeline_->ProcessFrame(surface->getCanvas()));
+    EXPECT_FALSE(pipeline_->HasPendingScrollFullDirtyFallback());
 
     const auto& stats = pipeline_->GetLastFrameStats();
     EXPECT_EQ(stats.scrolls_handled, 1);
@@ -303,9 +311,12 @@ TEST_F(PipelineScrollTest, LegacyScrollInvalidationStatsRecordedPerFrame) {
 
     auto surface = SkSurfaces::Raster(SkImageInfo::MakeN32Premul(800, 600));
     ASSERT_TRUE(pipeline->ProcessFrame(surface->getCanvas()));
+    EXPECT_FALSE(pipeline->HasPendingScrollFullDirtyFallback());
 
     ASSERT_TRUE(pipeline->HandleScroll(root.get(), 0, 100));
+    EXPECT_TRUE(pipeline->HasPendingScrollFullDirtyFallback());
     ASSERT_TRUE(pipeline->ProcessFrame(surface->getCanvas()));
+    EXPECT_FALSE(pipeline->HasPendingScrollFullDirtyFallback());
 
     const auto& scrolled_stats = pipeline->GetLastFrameStats();
     EXPECT_EQ(scrolled_stats.scrolls_handled, 1);

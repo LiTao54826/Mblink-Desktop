@@ -276,6 +276,7 @@ public:
 
     RenderStage GetCurrentStage() const { return current_stage_; }
     const UnifiedFrameStats& GetLastFrameStats() const { return last_frame_stats_; }
+    bool HasPendingScrollFullDirtyFallback() const;
     std::shared_ptr<RenderObject> GetRenderTree() const { return render_tree_; }
     void SetRenderTree(std::shared_ptr<RenderObject> tree);
     std::shared_ptr<CompositorLayer> GetRootLayer() const { return root_layer_; }

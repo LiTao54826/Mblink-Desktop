@@ -1514,6 +1514,8 @@ void Window::Render() {
         bool retained_present_used = false;
         bool retained_present_valid = false;
         bool retained_main_reused = false;
+        bool retained_main_scroll_fallback_blocked = false;
+        bool retained_main_scroll_fallback_invalidated = false;
         if (retained_present_enabled) {
             if (!retained_main_surface_ ||
                 retained_main_width_px_ != retained_width_px ||
@@ -1536,12 +1538,24 @@ void Window::Render() {
             retained_main_has_content_ = false;
         }
 
+        const bool pending_scroll_full_dirty_fallback =
+            render_pipeline_ && render_pipeline_->HasPendingScrollFullDirtyFallback();
+        const bool previous_scroll_full_dirty_fallback =
+            render_pipeline_ &&
+            render_pipeline_->GetLastFrameStats().scroll_full_dirty_fallbacks > 0;
+        retained_main_scroll_fallback_blocked =
+            pending_scroll_full_dirty_fallback || previous_scroll_full_dirty_fallback;
+        if (retained_present_used && retained_main_scroll_fallback_blocked) {
+            retained_main_has_content_ = false;
+        }
+
         const bool can_reuse_retained_main =
             retained_present_used &&
             retained_main_has_content_ &&
             render_tree_valid_ &&
             retained_main_surface_ &&
             !has_active_animations &&
+            !retained_main_scroll_fallback_blocked &&
             dirty_rects_.empty() &&
             render_pipeline_ &&
             !render_pipeline_->NeedsUpdate();
@@ -1576,6 +1590,11 @@ void Window::Render() {
             }
             if (retained_present_used) {
                 retained_main_has_content_ = process_ok;
+            }
+            if (retained_present_used &&
+                render_pipeline_->GetLastFrameStats().scroll_full_dirty_fallbacks > 0) {
+                retained_main_has_content_ = false;
+                retained_main_scroll_fallback_invalidated = true;
             }
             main_canvas->restore();
         }
@@ -1661,6 +1680,10 @@ void Window::Render() {
                       << " retained_present_used=" << (retained_present_used ? 1 : 0)
                       << " retained_present_valid=" << (retained_present_valid ? 1 : 0)
                       << " retained_main_reused=" << (retained_main_reused ? 1 : 0)
+                      << " retained_main_scroll_fallback_blocked="
+                      << (retained_main_scroll_fallback_blocked ? 1 : 0)
+                      << " retained_main_scroll_fallback_invalidated="
+                      << (retained_main_scroll_fallback_invalidated ? 1 : 0)
                       << " retained_copy_ms=" << retained_copy_time_ms
                       << " process_ok=" << (process_ok ? 1 : 0)
                       << " backend=" << RenderBackendName(actual_backend_)
