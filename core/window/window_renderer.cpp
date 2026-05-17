@@ -182,7 +182,7 @@ void WindowRenderer::UpdateAnimations(double current_time) {
 
     bool should_request_repaint = has_active_animations || has_pending_animations;
     if (should_request_repaint) {
-        window_->SetNeedsRepaint();
+        window_->SetNeedsRepaintFor(RepaintReason::Animation);
     }
 
     if (debug_anim_loop && (debug_frame <= 120 || (debug_frame % 60 == 0))) {
@@ -236,28 +236,7 @@ bool WindowRenderer::HasPendingAnimations(RenderObject* root) const {
     if (!applicator) {
         return false;
     }
-
-    // 关键修复：以“动画声明”作为 pending 条件，不依赖 started_animations_。
-    // 之前依赖 HasActiveAnimations() 会被历史/局部状态误导，
-    // 可能在 running_animations_ 暂时为空的帧把窗口判定为“不需要重绘”，
-    // 造成动画只在交互事件触发时才跳一下。
-
-    // 检查当前对象是否声明了可启动动画
-    const auto& style = root->GetComputedStyle();
-    for (const auto& anim : style.animations) {
-        if (anim.IsValid() && !anim.name.empty() && anim.name != "none") {
-            return true;
-        }
-    }
-
-    // 递归检查子节点
-    for (const auto& child : root->GetChildren()) {
-        if (HasPendingAnimations(child.get())) {
-            return true;
-        }
-    }
-
-    return false;
+    return applicator->HasPendingAnimationStartup(root);
 }
 
 bool WindowRenderer::LayoutDirtySubtree(RenderObject* render_obj, float parent_width, float parent_height) {

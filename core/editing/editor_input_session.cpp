@@ -51,13 +51,21 @@ bool EditorInputSession::IsEditorTarget(const std::shared_ptr<Element>& element)
     return tag == "input" || tag == "textarea" || tag == "terminal" || element->IsContentEditable();
 }
 
+void EditorInputSession::PrepareTextInput(Window* window) {
+    if (!window || !window->GetSDLWindow()) return;
+    SDL_Window* sdl_window = window->GetSDLWindow();
+    if (prepared_text_input_windows_.find(sdl_window) != prepared_text_input_windows_.end()) return;
+    if (!SDL_TextInputActive(sdl_window)) {
+        SDL_StartTextInput(sdl_window);
+    }
+    prepared_text_input_windows_.insert(sdl_window);
+}
+
 void EditorInputSession::SyncTextInputState(Window* window, const std::shared_ptr<Element>& element) {
     if (!window || !window->GetSDLWindow()) return;
     if (IsEditorTarget(element)) {
-        if (!SDL_TextInputActive(window->GetSDLWindow())) SDL_StartTextInput(window->GetSDLWindow());
+        PrepareTextInput(window);
         UpdateTextInputArea(window, element);
-    } else if (SDL_TextInputActive(window->GetSDLWindow())) {
-        SDL_StopTextInput(window->GetSDLWindow());
     }
 }
 

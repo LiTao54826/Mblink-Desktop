@@ -8,6 +8,7 @@
 
 #pragma once
 
+#include <cstdint>
 #include <memory>
 #include <vector>
 #include "core/dom/observers/dom_observer.h"
@@ -61,6 +62,13 @@ public:
      * @return true表示成功设置焦点
      */
     bool SetFocus(std::shared_ptr<Element> element, bool focus_visible = false);
+
+    /**
+     * @brief 获取焦点请求序号
+     *
+     * 每次显式 focus/blur/clear 都会递增，用于鼠标事件收尾时判断 JS 是否已经处理焦点。
+     */
+    uint64_t GetFocusChangeSerial() const { return focus_change_serial_; }
 
     /**
      * @brief 移除焦点
@@ -161,6 +169,8 @@ private:
 private:
     // 当前焦点元素（弱引用，避免循环引用）
     std::weak_ptr<Element> focus_element_;
+
+    uint64_t focus_change_serial_ = 0;
 
     // 窗口指针（用于SDL文本输入）
     Window* window_ = nullptr;

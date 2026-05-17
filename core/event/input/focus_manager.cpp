@@ -22,6 +22,7 @@
 #include <SDL3/SDL.h>
 #include <algorithm>
 #include <cmath>
+#include <cstdlib>
 #include <iostream>
 
 namespace mbink {
@@ -89,6 +90,38 @@ SkFont BuildElementFont(const RenderObject* render_object) {
 bool IsImeDebugEnabled() {
     static const bool enabled = std::getenv("MBINK_DEBUG_IME_AREA") != nullptr;
     return enabled;
+}
+
+void MarkFocusedElementDirty(Window* window, const std::shared_ptr<Element>& element) {
+    if (!window || !element) {
+        return;
+    }
+
+    auto render_obj = element->GetRenderObject();
+    if (!render_obj) {
+        return;
+    }
+
+    render_obj->MarkNeedsPaint();
+    render_obj->InvalidatePaintCache();
+
+    SkRect dirty_rect = SkRect::MakeEmpty();
+    const auto& bounds = render_obj->GetViewportBounds();
+    if (bounds.valid && bounds.width > 0.0f && bounds.height > 0.0f) {
+        dirty_rect = SkRect::MakeXYWH(bounds.x, bounds.y, bounds.width, bounds.height);
+    } else {
+        dirty_rect = render_obj->GetViewportBoundingRect();
+    }
+
+    if (!dirty_rect.isEmpty()) {
+        element->SetDirtyRect(dirty_rect);
+        window->AddDirtyRect(dirty_rect);
+        if (auto* pipeline = window->GetRenderPipeline()) {
+            pipeline->MarkDirtyRegion(dirty_rect);
+        }
+    } else if (auto* pipeline = window->GetRenderPipeline()) {
+        pipeline->MarkNeedsPaint();
+    }
 }
 
 void LogImeAreaDebug(const std::string& tag,
@@ -175,6 +208,7 @@ bool FocusManager::SetFocus(std::shared_ptr<Element> element, bool focus_visible
 
     // 获取当前焦点元素
     auto old_focus = focus_element_.lock();
+    ++focus_change_serial_;
 
     // 如果已经是焦点元素，不需要重复设置
     if (old_focus == element) {
@@ -208,24 +242,12 @@ bool FocusManager::SetFocus(std::shared_ptr<Element> element, bool focus_visible
 
     // 关键修复：标记新旧焦点元素的 RenderObject 需要重绘
     // 这样增量渲染系统才会重绘焦点变化的区域
-    if (old_focus) {
-        if (auto render_obj = old_focus->GetRenderObject()) {
-            render_obj->MarkNeedsPaint();
-            render_obj->InvalidatePaintCache();
-        }
-    }
-    if (auto render_obj = element->GetRenderObject()) {
-        render_obj->MarkNeedsPaint();
-        render_obj->InvalidatePaintCache();
-    }
+    MarkFocusedElementDirty(window_, old_focus);
+    MarkFocusedElementDirty(window_, element);
 
     // 触发重绘以显示光标
     if (window_) {
-        window_->SetNeedsRepaint();
-        // 关键修复：同时通知 RenderPipeline 需要重绘
-        if (auto pipeline = window_->GetRenderPipeline()) {
-            pipeline->MarkNeedsPaint();
-        }
+        window_->SetNeedsRepaintFor(RepaintReason::Focus);
     }
 
     return true;
@@ -233,6 +255,7 @@ bool FocusManager::SetFocus(std::shared_ptr<Element> element, bool focus_visible
 
 void FocusManager::Blur(std::shared_ptr<Element> element) {
     auto current_focus = focus_element_.lock();
+    ++focus_change_serial_;
 
     if (current_focus == element) {
         // 如果是输入元素或 contentEditable 元素，停止SDL文本输入
@@ -243,10 +266,7 @@ void FocusManager::Blur(std::shared_ptr<Element> element) {
         SendFocusEvents(current_focus, nullptr, false);
 
         // 关键修复：标记失去焦点元素的 RenderObject 需要重绘
-        if (auto render_obj = current_focus->GetRenderObject()) {
-            render_obj->MarkNeedsPaint();
-            render_obj->InvalidatePaintCache();
-        }
+        MarkFocusedElementDirty(window_, current_focus);
 
         // 清除焦点
         focus_element_.reset();
@@ -259,11 +279,7 @@ void FocusManager::Blur(std::shared_ptr<Element> element) {
 
         // 触发重绘以隐藏光标
         if (window_) {
-            window_->SetNeedsRepaint();
-            // 关键修复：同时通知 RenderPipeline 需要重绘
-            if (auto pipeline = window_->GetRenderPipeline()) {
-                pipeline->MarkNeedsPaint();
-            }
+            window_->SetNeedsRepaintFor(RepaintReason::Focus);
         }
     }
 }
@@ -354,6 +370,7 @@ bool FocusManager::TabToNextFocusableElement(std::shared_ptr<Document> current_d
 
 void FocusManager::ClearFocus() {
     auto current_focus = focus_element_.lock();
+    ++focus_change_serial_;
     if (current_focus) {
         // 如果是输入元素或 contentEditable 元素，停止SDL文本输入
         std::string tag_name = current_focus->GetTagName();
@@ -369,7 +386,7 @@ void FocusManager::ClearFocus() {
 
         // 触发重绘
         if (window_) {
-            window_->SetNeedsRepaint();
+            window_->SetNeedsRepaintFor(RepaintReason::Focus);
         }
     }
     focus_element_.reset();
@@ -616,8 +633,10 @@ void FocusManager::SendFocusEvents(std::shared_ptr<Element> old_focus,
                 element->DispatchEvent(focusout_event);
 
                 // 移除:focus和:focus-visible伪类
-                element->SetPseudoClass("focus", false);
-                element->SetPseudoClass("focus-visible", false);
+                if (element == old_focus) {
+                    element->SetPseudoClass("focus", false);
+                    element->SetPseudoClass("focus-visible", false);
+                }
             } catch (const std::exception&) {
                 // 元素已被销毁或发生其他错误，忽略
             } catch (...) {
@@ -648,12 +667,13 @@ void FocusManager::SendFocusEvents(std::shared_ptr<Element> old_focus,
                 auto focusin_event = std::make_shared<Event>("focusin");
                 element->DispatchEvent(focusin_event);
 
-                // 设置:focus伪类
-                element->SetPseudoClass("focus", true);
+                if (element == new_focus) {
+                    element->SetPseudoClass("focus", true);
 
-                // 如果是键盘导航，设置:focus-visible伪类
-                if (focus_visible) {
-                    element->SetPseudoClass("focus-visible", true);
+                    // 如果是键盘导航，设置:focus-visible伪类
+                    if (focus_visible) {
+                        element->SetPseudoClass("focus-visible", true);
+                    }
                 }
             } catch (const std::exception&) {
                 // 元素已被销毁或发生其他错误，忽略

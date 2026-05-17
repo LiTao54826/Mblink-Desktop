@@ -1893,7 +1893,7 @@ int mbink_load_js_file(MBinkHandle handle, const char* filepath) {
                             return MBINK_ERROR_JS_ERROR;
                         }
                         if (ctx->window) {
-                            ctx->window->SetNeedsRepaint();
+                            ctx->window->SetNeedsRepaintFor(mbink::RepaintReason::API);
                         }
                         return MBINK_OK;
                     }
@@ -1903,7 +1903,7 @@ int mbink_load_js_file(MBinkHandle handle, const char* filepath) {
         }
         ctx->runtime->LoadModuleFile(path);
         if (ctx->window) {
-            ctx->window->SetNeedsRepaint();
+            ctx->window->SetNeedsRepaintFor(mbink::RepaintReason::API);
         }
         return MBINK_OK;
     } catch (const std::exception& e) {
@@ -2090,7 +2090,7 @@ int mbink_devtools_open(MBinkHandle handle) {
         devtools.Initialize(ctx->document.get(), ctx->window.get());
         devtools.Open();
         if (ctx->window) {
-            ctx->window->SetNeedsRepaint();
+            ctx->window->SetNeedsRepaintFor(mbink::RepaintReason::DevTools);
         }
     }
     return MBINK_OK;
@@ -2102,7 +2102,7 @@ int mbink_devtools_close(MBinkHandle handle) {
     auto& devtools = mbink::DevToolsManager::GetInstance();
     devtools.Close();
     if (ctx && ctx->window) {
-        ctx->window->SetNeedsRepaint();
+        ctx->window->SetNeedsRepaintFor(mbink::RepaintReason::DevTools);
     }
     return MBINK_OK;
 }

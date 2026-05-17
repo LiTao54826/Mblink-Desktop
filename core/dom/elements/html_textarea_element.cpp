@@ -410,8 +410,6 @@ void HTMLTextAreaElement::SetSelection(int start, int end) {
 }
 
 void HTMLTextAreaElement::RequestTextAreaRepaint() {
-    MarkDirty(DirtyType::PAINT);
-
     auto doc = GetOwnerDocument();
     if (!doc) {
         return;
@@ -422,7 +420,32 @@ void HTMLTextAreaElement::RequestTextAreaRepaint() {
         return;
     }
 
-    window->SetNeedsRepaint();
+    SkRect dirty_rect = SkRect::MakeEmpty();
+    if (auto render_obj = GetRenderObject()) {
+        render_obj->MarkNeedsPaint();
+        render_obj->InvalidatePaintCache();
+
+        const auto& bounds = render_obj->GetViewportBounds();
+        if (bounds.valid && bounds.width > 0.0f && bounds.height > 0.0f) {
+            dirty_rect = SkRect::MakeXYWH(bounds.x, bounds.y, bounds.width, bounds.height);
+        } else {
+            dirty_rect = render_obj->GetViewportBoundingRect();
+        }
+    }
+
+    if (!dirty_rect.isEmpty()) {
+        SetDirtyRect(dirty_rect);
+        window->AddDirtyRect(dirty_rect);
+
+        if (auto* pipeline = window->GetRenderPipeline()) {
+            pipeline->MarkDirtyRegion(dirty_rect);
+            pipeline->MarkNeedsPaint();
+        }
+    } else if (auto* pipeline = window->GetRenderPipeline()) {
+        pipeline->MarkNeedsPaint();
+    }
+
+    window->SetNeedsRepaintFor(RepaintReason::KeyboardInput);
     if (auto* pipeline = window->GetRenderPipeline()) {
         pipeline->ForceRasterize();
     }

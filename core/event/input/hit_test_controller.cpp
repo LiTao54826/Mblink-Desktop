@@ -135,7 +135,8 @@ bool HitTestController::HitTestRenderObject(
     float viewport_x,
     float viewport_y,
     const HitTestRequest& request,
-    HitTestResultEx& result) {
+    HitTestResultEx& result,
+    bool test_out_of_flow_descendants) {
 
     if (!render_obj) return false;
 
@@ -166,12 +167,14 @@ bool HitTestController::HitTestRenderObject(
     }
 
     // 按 z-index + DOM 顺序测试所有后代中的 out-of-flow 元素
-    std::vector<RenderObject*> out_of_flow_descendants;
-    CollectOutOfFlowDescendantsInDomOrder(render_obj, out_of_flow_descendants);
-    SortByZIndexAndDomOrder(out_of_flow_descendants);
-    for (auto it = out_of_flow_descendants.rbegin(); it != out_of_flow_descendants.rend(); ++it) {
-        if (HitTestRenderObject(*it, viewport_x, viewport_y, request, result)) {
-            return true;
+    if (test_out_of_flow_descendants) {
+        std::vector<RenderObject*> out_of_flow_descendants;
+        CollectOutOfFlowDescendantsInDomOrder(render_obj, out_of_flow_descendants);
+        SortByZIndexAndDomOrder(out_of_flow_descendants);
+        for (auto it = out_of_flow_descendants.rbegin(); it != out_of_flow_descendants.rend(); ++it) {
+            if (HitTestRenderObject(*it, viewport_x, viewport_y, request, result, false)) {
+                return true;
+            }
         }
     }
 
@@ -194,7 +197,7 @@ bool HitTestController::HitTestRenderObject(
     for (auto it = children.rbegin(); it != children.rend(); ++it) {
         const auto& child_style = (*it)->GetComputedStyle();
         if (child_style.position != "fixed" && child_style.position != "absolute") {
-            if (HitTestRenderObject(it->get(), viewport_x, viewport_y, request, result)) {
+            if (HitTestRenderObject(it->get(), viewport_x, viewport_y, request, result, false)) {
                 return true;
             }
         }

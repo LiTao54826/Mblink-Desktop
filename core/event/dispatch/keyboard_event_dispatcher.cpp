@@ -70,7 +70,7 @@ bool KeyboardEventDispatcher::HandleKeyboardEvent(const SDL_Event& event,
         auto& devtools = DevToolsManager::GetInstance();
         if (devtools.HandleKeyboardShortcut(key_code, ctrl_key, shift_key, alt_key)) {
             // DevTools 消费了这个快捷键
-            window->SetNeedsRepaint();
+            window->SetNeedsRepaintFor(RepaintReason::DevTools);
             return true;
         }
     }
@@ -211,7 +211,7 @@ void KeyboardEventDispatcher::HandleKeyDown(const SDL_Event& event,
             if (logview_element) {
                 logview_element->OnKeyDown(key, ctrl_key, shift_key);
                 // 触发重绘
-                window->SetNeedsRepaint();
+                window->SetNeedsRepaintFor(RepaintReason::KeyboardInput);
                 if (auto pipeline = window->GetRenderPipeline()) {
                     pipeline->ForceRasterize();
                 }

@@ -134,7 +134,8 @@ private:
         float viewport_x,
         float viewport_y,
         const HitTestRequest& request,
-        HitTestResultEx& result);
+        HitTestResultEx& result,
+        bool test_out_of_flow_descendants = true);
 
     /**
      * @brief 检查元素是否被裁剪

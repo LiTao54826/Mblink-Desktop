@@ -1500,17 +1500,8 @@ void QuickJSRuntime::RunEventLoop(int max_iterations) {
 
         iterations++;
 
-        // 6. If no immediate tasks but have timers, sleep briefly
-        if (task_queue_.empty() && !timer_queue_.empty()) {
-            // Get the earliest timer (first element in multimap)
-            int64_t next_time = timer_queue_.begin()->first;
-            int64_t sleep_ms = std::max(0LL, next_time - GetCurrentTimeMs());
-            if (sleep_ms > 0) {
-                std::this_thread::sleep_for(std::chrono::milliseconds(
-                    std::min(sleep_ms, 10LL)
-                ));
-            }
-        }
+        // Do not sleep here. The UI event loop calls RunEventLoop(1) on the
+        // interactive path; waiting for a future timer here adds input latency.
     }
 }
 

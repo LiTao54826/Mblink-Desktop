@@ -59,6 +59,8 @@
 #include "include/core/SkFont.h"
 #include "include/core/SkRegion.h"
 #include "include/core/SkSamplingOptions.h"
+#include "include/core/SkPaint.h"
+#include "include/core/SkBlendMode.h"
 #include "include/gpu/ganesh/gl/GrGLInterface.h"
 #include "include/gpu/ganesh/gl/GrGLDirectContext.h"
 #include "include/gpu/ganesh/gl/GrGLBackendSurface.h"
@@ -95,6 +97,27 @@
 
 namespace mbink {
 
+const char* RepaintReasonName(RepaintReason reason) {
+    switch (reason) {
+        case RepaintReason::Unknown: return "unknown";
+        case RepaintReason::Initial: return "initial";
+        case RepaintReason::Resize: return "resize";
+        case RepaintReason::DOMMutation: return "dom_mutation";
+        case RepaintReason::PseudoClass: return "pseudo_class";
+        case RepaintReason::Focus: return "focus";
+        case RepaintReason::KeyboardInput: return "keyboard_input";
+        case RepaintReason::MouseHover: return "mouse_hover";
+        case RepaintReason::MouseButton: return "mouse_button";
+        case RepaintReason::WheelScroll: return "wheel_scroll";
+        case RepaintReason::Animation: return "animation";
+        case RepaintReason::Terminal: return "terminal";
+        case RepaintReason::DevTools: return "devtools";
+        case RepaintReason::API: return "api";
+        case RepaintReason::Layout: return "layout";
+    }
+    return "unknown";
+}
+
 // 从 render_object.cpp 导入的绘制统计变量
 extern std::atomic<int> g_paint_total_calls;
 extern std::atomic<int> g_paint_culled_calls;
@@ -128,9 +151,33 @@ inline bool IsBaselineFrameStatsEnabled() {
     return enabled;
 }
 
-inline bool IsRetainedPresentEnabled() {
-    static const bool enabled = (std::getenv("MBINK_EXPERIMENT_RETAINED_PRESENT") != nullptr);
-    return enabled;
+inline bool IsEnvFlagEnabled(const char* name) {
+    const char* value = std::getenv(name);
+    return value && std::strcmp(value, "0") != 0 && std::strcmp(value, "false") != 0;
+}
+
+inline bool IsRetainedPresentExperimentEnabled() {
+    static const bool disabled = IsEnvFlagEnabled("MBINK_DISABLE_RETAINED_PRESENT");
+    return !disabled;
+}
+
+SkRect UnionDirtyRects(const std::vector<SkRect>& dirty_rects, float width, float height) {
+    const SkRect viewport = SkRect::MakeWH(width, height);
+    SkRect dirty_bounds = SkRect::MakeEmpty();
+    bool has_bounds = false;
+    for (const SkRect& dirty_rect : dirty_rects) {
+        SkRect clipped;
+        if (!clipped.intersect(dirty_rect, viewport) || clipped.isEmpty()) {
+            continue;
+        }
+        if (!has_bounds) {
+            dirty_bounds = clipped;
+            has_bounds = true;
+        } else {
+            dirty_bounds.join(clipped);
+        }
+    }
+    return has_bounds ? dirty_bounds : SkRect::MakeEmpty();
 }
 
 inline double GetBaselineTimeMs() {
@@ -421,7 +468,7 @@ void Window::Show() {
     if (sdl_window_) {
         SDL_ShowWindow(sdl_window_);
         SetForceFullRepaint(true);
-        SetNeedsRepaint();
+        SetNeedsRepaintFor(RepaintReason::API);
     }
 }
 
@@ -433,7 +480,7 @@ void Window::ShowAndFocus() {
     SDL_ShowWindow(sdl_window_);
     SDL_RaiseWindow(sdl_window_);
     SetForceFullRepaint(true);
-    SetNeedsRepaint();
+    SetNeedsRepaintFor(RepaintReason::API);
 }
 
 void Window::Hide() {
@@ -1019,7 +1066,7 @@ bool Window::HandleSDLEvent(const SDL_Event& event) {
                     pending_resize_width_ = new_width;
                     pending_resize_height_ = new_height;
                     has_pending_resize_ = true;
-                    SetNeedsRepaint();
+                    SetNeedsRepaintFor(RepaintReason::Resize);
                     return true;
                 }
 
@@ -1028,7 +1075,7 @@ bool Window::HandleSDLEvent(const SDL_Event& event) {
                 OnResize();
                 InvalidateRenderTree();  // 窗口大小改变，需要用新尺寸重建渲染树和布局
                 SetForceFullRepaint(true);  // 关键修复：强制全量重绘，避免新区域显示垃圾数据
-                SetNeedsRepaint();
+                SetNeedsRepaintFor(RepaintReason::Resize);
                 DispatchWindowEvent(WindowEvent(WindowEventType::RESIZE, config_.width, config_.height));
                 return true;
             }
@@ -1068,7 +1115,7 @@ bool Window::HandleSDLEvent(const SDL_Event& event) {
                 // 窗口最大化时需要触发重绘
                 // 注意：不在这里调用 InvalidateRenderTree()，因为此时窗口尺寸可能还未更新
                 // RESIZED 事件会随后触发，届时会正确处理渲染树重建
-                SetNeedsRepaint();
+                SetNeedsRepaintFor(RepaintReason::Resize);
                 DispatchWindowEvent(WindowEvent(WindowEventType::MAXIMIZE));
                 return true;
             }
@@ -1077,7 +1124,7 @@ bool Window::HandleSDLEvent(const SDL_Event& event) {
                 // 窗口还原时需要触发重绘
                 // 注意：不在这里调用 InvalidateRenderTree()，因为此时窗口尺寸可能还未更新
                 // RESIZED 事件会随后触发，届时会正确处理渲染树重建
-                SetNeedsRepaint();
+                SetNeedsRepaintFor(RepaintReason::Resize);
 
                 // P0: 还原后主动触发缓存回收，帮助内存从高水位回落
                 ImageCache::GetInstance().SetMaxCacheSize(kImageCacheShrinkBytes);
@@ -1216,7 +1263,7 @@ void Window::SetDocument(std::shared_ptr<Document> document) {
     // 2. 强制全量重绘（避免增量渲染导致的显示问题）
     SetForceFullRepaint(true);
     // 3. 标记需要重绘
-    SetNeedsRepaint();
+    SetNeedsRepaintFor(RepaintReason::API);
 }
 
 void Window::Render() {
@@ -1225,6 +1272,18 @@ void Window::Render() {
 
     const bool baseline_stats_enabled = IsBaselineFrameStatsEnabled();
     const double render_start_ms = baseline_stats_enabled ? GetBaselineTimeMs() : 0.0;
+    double stage_start_ms = render_start_ms;
+    double animation_probe_ms = 0.0;
+    double viewport_ms = 0.0;
+    double pipeline_init_ms = 0.0;
+    double size_check_ms = 0.0;
+    double ensure_tree_ms = 0.0;
+    double dirty_sync_ms = 0.0;
+    double style_dirty_scan_ms = 0.0;
+    double layout_ms = 0.0;
+    double animation_update_ms = 0.0;
+    size_t pending_animation_retry_count = 0;
+    size_t pending_animation_retry_exhausted = 0;
 
     // 处理待处理的 resize（节流期间被跳过的最后一次 resize）
     if (has_pending_resize_) {
@@ -1235,13 +1294,15 @@ void Window::Render() {
         }
         InvalidateRenderTree();
         SetForceFullRepaint(true);
-        SetNeedsRepaint();
+        SetNeedsRepaintFor(RepaintReason::Resize);
         DispatchWindowEvent(WindowEvent(WindowEventType::RESIZE, config_.width, config_.height));
     }
 
     if (!document_ || !surface_) {
         return;
     }
+
+    stage_start_ms = baseline_stats_enabled ? GetBaselineTimeMs() : 0.0;
 
     // =========================================================================
     // 检查是否有活动动画
@@ -1258,6 +1319,13 @@ void Window::Render() {
     }
     if (!has_active_animations && animation_applicator_ && cached_render_tree_) {
         has_active_animations = HasPendingAnimations(cached_render_tree_.get());
+        pending_animation_retry_count =
+            animation_applicator_->CountPendingAnimationStartupRetries(cached_render_tree_.get());
+        pending_animation_retry_exhausted =
+            animation_applicator_->CountExhaustedAnimationStartupRetries(cached_render_tree_.get());
+    }
+    if (baseline_stats_enabled) {
+        animation_probe_ms = GetBaselineTimeMs() - stage_start_ms;
     }
 
     // 快速路径：无需重绘且无活动动画时直接返回
@@ -1268,8 +1336,11 @@ void Window::Render() {
                           << " boundary=window"
                           << " class=idle_early_return"
                           << " total_ms=" << (GetBaselineTimeMs() - render_start_ms)
+                          << " animation_probe_ms=" << animation_probe_ms
                           << " backend=" << RenderBackendName(actual_backend_)
                           << " active_animations=0"
+                          << " pending_animation_retry_count=" << pending_animation_retry_count
+                          << " pending_animation_retry_exhausted=" << pending_animation_retry_exhausted
                           << " dirty_rects=0"
                           << " render_tree_valid=1"
                           << "\n";
@@ -1307,10 +1378,14 @@ void Window::Render() {
 
     // 设置视口尺寸
     RenderObject::SetViewportSize(app_width, app_height);
+    if (baseline_stats_enabled) {
+        viewport_ms = GetBaselineTimeMs() - stage_start_ms;
+    }
 
     // =========================================================================
     // 初始化统一渲染管线
     // =========================================================================
+    stage_start_ms = baseline_stats_enabled ? GetBaselineTimeMs() : 0.0;
     if (render_pipeline_ && !render_pipeline_->IsInitialized()) {
         if (!render_pipeline_->Initialize(static_cast<int>(app_width), static_cast<int>(app_height))) {
             return;
@@ -1326,6 +1401,9 @@ void Window::Render() {
                 render_pipeline_->GetPropertyTrees());
         }
     }
+    if (baseline_stats_enabled) {
+        pipeline_init_ms = GetBaselineTimeMs() - stage_start_ms;
+    }
 
     // =========================================================================
     // 检查窗口大小是否改变（需要重建布局树）
@@ -1333,6 +1411,7 @@ void Window::Render() {
     // 关键修复：视口尺寸按像素取整后比较，避免浮点抖动导致每帧都被判定为尺寸变化。
     // 之前使用 float + epsilon(0.01) 在部分 DPI/DevTools 场景下会持续触发，
     // 从而每帧置位 needs_layer_tree_rebuild_，压制增量路径。
+    stage_start_ms = baseline_stats_enabled ? GetBaselineTimeMs() : 0.0;
     static int last_app_width_px = -1;
     static int last_app_height_px = -1;
 
@@ -1354,12 +1433,19 @@ void Window::Render() {
             render_pipeline_->Resize(app_width_px, app_height_px);
         }
     }
+    if (baseline_stats_enabled) {
+        size_check_ms = GetBaselineTimeMs() - stage_start_ms;
+    }
 
     // =========================================================================
     // 确保渲染树已构建
     // =========================================================================
+    stage_start_ms = baseline_stats_enabled ? GetBaselineTimeMs() : 0.0;
     const bool render_tree_rebuild_required = (!render_tree_valid_ || !cached_render_tree_);
     EnsureRenderTree();
+    if (baseline_stats_enabled) {
+        ensure_tree_ms = GetBaselineTimeMs() - stage_start_ms;
+    }
 
     if (!cached_render_tree_) {
         return;
@@ -1376,6 +1462,7 @@ void Window::Render() {
     // =========================================================================
     // 关键修复：全量重建帧跳过增量同步，避免同帧重复插入 out-of-flow 节点
     bool needs_layout_update = false;
+    stage_start_ms = baseline_stats_enabled ? GetBaselineTimeMs() : 0.0;
     if (!render_tree_rebuild_required && document_ && render_tree_synchronizer_ && cached_render_tree_ && render_tree_valid_) {
         auto& tracker = document_->GetDirtyTracker();
         const bool has_pending_changes = tracker.HasPendingChanges();
@@ -1387,6 +1474,9 @@ void Window::Render() {
             }
         }
     }
+    if (baseline_stats_enabled) {
+        dirty_sync_ms = GetBaselineTimeMs() - stage_start_ms;
+    }
 
     // =========================================================================
     // 增量样式更新：处理 style 属性变化导致的样式重算
@@ -1394,6 +1484,7 @@ void Window::Render() {
     // 当 style 属性变化时，DOM 节点会被标记为 IsStyleDirty()
     // 需要遍历 DOM 树，将脏标记同步到 RenderObject 并重新计算样式
     // 关键修复：结构变更帧跳过这轮递归，避免用旧 layout/render 映射继续更新新树
+    stage_start_ms = baseline_stats_enabled ? GetBaselineTimeMs() : 0.0;
     if (!needs_layout_update && document_ && cached_render_tree_ && render_tree_valid_) {
         auto body = document_->GetBody();
         if (body && cached_render_tree_) {
@@ -1416,11 +1507,15 @@ void Window::Render() {
             }
         }
     }
+    if (baseline_stats_enabled) {
+        style_dirty_scan_ms = GetBaselineTimeMs() - stage_start_ms;
+    }
 
     // =========================================================================
     // 增量布局：处理样式变更导致的布局需求
     // =========================================================================
     // 即使没有 DOM 结构变化，样式变更（如 overflow）也可能需要重新布局
+    stage_start_ms = baseline_stats_enabled ? GetBaselineTimeMs() : 0.0;
     if (layout_engine_ && cached_render_tree_) {
         // 获取窗口尺寸
         int physical_width, physical_height;
@@ -1466,6 +1561,10 @@ void Window::Render() {
     }
 
     // 关键：将渲染树传递给统一渲染管线
+    if (baseline_stats_enabled) {
+        layout_ms = GetBaselineTimeMs() - stage_start_ms;
+    }
+
     if (render_pipeline_ && render_pipeline_->GetRenderTree() != cached_render_tree_) {
         render_pipeline_->SetRenderTree(cached_render_tree_);
     }
@@ -1477,7 +1576,11 @@ void Window::Render() {
     Uint64 anim_current_time = SDL_GetPerformanceCounter();
     Uint64 anim_frequency = SDL_GetPerformanceFrequency();
     double timestamp_sec = static_cast<double>(anim_current_time - anim_start_time) / anim_frequency;
+    stage_start_ms = baseline_stats_enabled ? GetBaselineTimeMs() : 0.0;
     UpdateAnimations(timestamp_sec);
+    if (baseline_stats_enabled) {
+        animation_update_ms = GetBaselineTimeMs() - stage_start_ms;
+    }
 
     // =========================================================================
     // 使用统一渲染管线渲染
@@ -1505,16 +1608,38 @@ void Window::Render() {
         double flush_time_ms = 0.0;
         double retained_copy_time_ms = 0.0;
 
+        const SkRect dirty_bounds = UnionDirtyRects(dirty_rects_, app_width, app_height);
+        const bool has_dirty_bounds = !dirty_bounds.isEmpty();
+        SkRect dirty_bounds_px = dirty_bounds;
+        dirty_bounds_px.fLeft *= dpi_scale;
+        dirty_bounds_px.fTop *= dpi_scale;
+        dirty_bounds_px.fRight *= dpi_scale;
+        dirty_bounds_px.fBottom *= dpi_scale;
         const int retained_width_px = std::max(0, static_cast<int>(std::lround(app_width * dpi_scale)));
         const int retained_height_px = std::max(0, static_cast<int>(std::lround(app_height * dpi_scale)));
+        const bool pending_scroll_retained_present_blocking_fallback =
+            render_pipeline_ && render_pipeline_->HasPendingScrollRetainedPresentBlockingFallback();
+        const bool previous_scroll_retained_present_blocking_fallback =
+            render_pipeline_ &&
+            render_pipeline_->GetLastFrameStats().scroll_retained_present_blocking_fallbacks > 0;
+        bool retained_main_scroll_fallback_blocked =
+            pending_scroll_retained_present_blocking_fallback ||
+            previous_scroll_retained_present_blocking_fallback;
+        const bool retained_present_safety_ok =
+            !config_.transparent && !has_active_animations &&
+            retained_width_px > 0 && retained_height_px > 0 &&
+            !retained_main_scroll_fallback_blocked;
+        const bool retained_present_experiment_enabled = IsRetainedPresentExperimentEnabled();
         const bool retained_present_enabled =
-            IsRetainedPresentEnabled() && !config_.transparent && !has_active_animations &&
-            retained_width_px > 0 && retained_height_px > 0;
+            retained_present_experiment_enabled && retained_present_safety_ok;
+        const char* retained_present_mode =
+            !retained_present_experiment_enabled ? "disabled_env" :
+            (!retained_present_safety_ok ? "blocked_safety" :
+             "default");
         SkCanvas* main_canvas = canvas;
         bool retained_present_used = false;
         bool retained_present_valid = false;
         bool retained_main_reused = false;
-        bool retained_main_scroll_fallback_blocked = false;
         bool retained_main_scroll_fallback_invalidated = false;
         if (retained_present_enabled) {
             if (!retained_main_surface_ ||
@@ -1538,35 +1663,44 @@ void Window::Render() {
             retained_main_has_content_ = false;
         }
 
-        const bool pending_scroll_retained_present_blocking_fallback =
-            render_pipeline_ && render_pipeline_->HasPendingScrollRetainedPresentBlockingFallback();
-        const bool previous_scroll_retained_present_blocking_fallback =
-            render_pipeline_ &&
-            render_pipeline_->GetLastFrameStats().scroll_retained_present_blocking_fallbacks > 0;
-        retained_main_scroll_fallback_blocked =
-            pending_scroll_retained_present_blocking_fallback ||
-            previous_scroll_retained_present_blocking_fallback;
-        if (retained_present_used && retained_main_scroll_fallback_blocked) {
-            retained_main_has_content_ = false;
-        }
-
         const bool can_reuse_retained_main =
             retained_present_used &&
             retained_main_has_content_ &&
             render_tree_valid_ &&
             retained_main_surface_ &&
             !has_active_animations &&
+            !force_full_repaint_ &&
             !retained_main_scroll_fallback_blocked &&
-            dirty_rects_.empty() &&
+            !has_dirty_bounds &&
             render_pipeline_ &&
             !render_pipeline_->NeedsUpdate();
+        const bool can_update_retained_dirty_region =
+            retained_present_used &&
+            retained_main_has_content_ &&
+            render_tree_valid_ &&
+            retained_main_surface_ &&
+            !has_active_animations &&
+            !force_full_repaint_ &&
+            !retained_main_scroll_fallback_blocked &&
+            has_dirty_bounds &&
+            render_pipeline_ &&
+            render_pipeline_->NeedsUpdate();
 
         double stage_start_ms = baseline_stats_enabled ? GetBaselineTimeMs() : 0.0;
         bool process_ok = true;
         if (can_reuse_retained_main) {
             retained_main_reused = true;
         } else {
-            main_canvas->clear(clear_color);
+            if (can_update_retained_dirty_region) {
+                main_canvas->save();
+                main_canvas->clipRect(dirty_bounds_px, SkClipOp::kIntersect, true);
+                SkPaint clear_paint;
+                clear_paint.setBlendMode(SkBlendMode::kSrc);
+                clear_paint.setColor(clear_color);
+                main_canvas->drawRect(dirty_bounds_px, clear_paint);
+            } else {
+                main_canvas->clear(clear_color);
+            }
             if (baseline_stats_enabled) {
                 clear_time_ms = GetBaselineTimeMs() - stage_start_ms;
             }
@@ -1574,6 +1708,9 @@ void Window::Render() {
             // 应用 DPI 缩放
             main_canvas->save();
             main_canvas->scale(dpi_scale, dpi_scale);
+            if (can_update_retained_dirty_region) {
+                main_canvas->clipRect(dirty_bounds, SkClipOp::kIntersect, true);
+            }
 
             // 如果 DevTools 打开，裁剪到主应用区域
             if (devtools.IsOpen()) {
@@ -1585,7 +1722,8 @@ void Window::Render() {
 
             // 处理一帧
             stage_start_ms = baseline_stats_enabled ? GetBaselineTimeMs() : 0.0;
-            process_ok = render_pipeline_->ProcessFrame(main_canvas);
+            process_ok = render_pipeline_->ProcessFrame(
+                main_canvas, can_update_retained_dirty_region ? &dirty_bounds : nullptr);
             if (baseline_stats_enabled) {
                 pipeline_time_ms = GetBaselineTimeMs() - stage_start_ms;
             }
@@ -1598,6 +1736,9 @@ void Window::Render() {
                 retained_main_scroll_fallback_invalidated = true;
             }
             main_canvas->restore();
+            if (can_update_retained_dirty_region) {
+                main_canvas->restore();
+            }
         }
 
         if (IsAnimFrameDebugEnabled()) {
@@ -1672,12 +1813,22 @@ void Window::Render() {
                       << " boundary=window"
                       << " class=rendered"
                       << " total_ms=" << (GetBaselineTimeMs() - render_start_ms)
+                      << " animation_probe_ms=" << animation_probe_ms
+                      << " viewport_ms=" << viewport_ms
+                      << " pipeline_init_ms=" << pipeline_init_ms
+                      << " size_check_ms=" << size_check_ms
+                      << " ensure_tree_ms=" << ensure_tree_ms
+                      << " dirty_sync_ms=" << dirty_sync_ms
+                      << " style_dirty_scan_ms=" << style_dirty_scan_ms
+                      << " layout_ms=" << layout_ms
+                      << " animation_update_ms=" << animation_update_ms
                       << " clear_ms=" << clear_time_ms
                       << " pipeline_ms=" << pipeline_time_ms
                       << " dropdown_ms=" << dropdown_time_ms
                       << " devtools_ms=" << devtools_time_ms
                       << " flush_ms=" << flush_time_ms
                       << " retained_present_enabled=" << (retained_present_enabled ? 1 : 0)
+                      << " retained_present_mode=" << retained_present_mode
                       << " retained_present_used=" << (retained_present_used ? 1 : 0)
                       << " retained_present_valid=" << (retained_present_valid ? 1 : 0)
                       << " retained_main_reused=" << (retained_main_reused ? 1 : 0)
@@ -1689,6 +1840,8 @@ void Window::Render() {
                       << " process_ok=" << (process_ok ? 1 : 0)
                       << " backend=" << RenderBackendName(actual_backend_)
                       << " active_animations=" << (has_active_animations ? 1 : 0)
+                      << " pending_animation_retry_count=" << pending_animation_retry_count
+                      << " pending_animation_retry_exhausted=" << pending_animation_retry_exhausted
                       << " dirty_rects=" << dirty_rects_.size()
                       << " devtools_open=" << (devtools.IsOpen() ? 1 : 0)
                       << " dropdown_open=" << (dropdown_manager.IsDropdownOpen() ? 1 : 0)

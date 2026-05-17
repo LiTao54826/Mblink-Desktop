@@ -69,8 +69,60 @@
 #include <functional>
 #include <limits>
 #include <map>
+#include <chrono>
+#include <cstdlib>
 
 namespace mbink {
+
+namespace {
+inline bool IsBaselineFrameStatsEnabled() {
+    static const bool enabled = (std::getenv("MBINK_BASELINE_FRAME_STATS") != nullptr);
+    return enabled;
+}
+
+inline double GetBaselineTimeMs() {
+    auto now = std::chrono::high_resolution_clock::now();
+    auto duration = now.time_since_epoch();
+    return std::chrono::duration<double, std::milli>(duration).count();
+}
+
+bool MarkElementPaintDirty(Window* window, const std::shared_ptr<Element>& element) {
+    if (!window || !element) {
+        return false;
+    }
+
+    auto render_obj = element->GetRenderObject();
+    if (!render_obj) {
+        return false;
+    }
+
+    render_obj->MarkNeedsPaint();
+    render_obj->InvalidatePaintCache();
+
+    SkRect dirty_rect = SkRect::MakeEmpty();
+    const auto& bounds = render_obj->GetViewportBounds();
+    if (bounds.valid && bounds.width > 0.0f && bounds.height > 0.0f) {
+        dirty_rect = SkRect::MakeXYWH(bounds.x, bounds.y, bounds.width, bounds.height);
+    } else {
+        dirty_rect = render_obj->GetViewportBoundingRect();
+    }
+
+    auto* pipeline = window->GetRenderPipeline();
+    if (!dirty_rect.isEmpty()) {
+        element->SetDirtyRect(dirty_rect);
+        window->AddDirtyRect(dirty_rect);
+        if (pipeline) {
+            pipeline->MarkDirtyRegion(dirty_rect);
+        }
+        return true;
+    }
+
+    if (pipeline) {
+        pipeline->MarkNeedsPaint();
+    }
+    return false;
+}
+}
 
 EventLoop::EventLoop()
     : running_(false)
@@ -120,6 +172,7 @@ EventLoop::EventLoop()
     auto& wm = WindowManager::Instance();
     for (auto& window : wm.GetAllWindows()) {
         window->SetFocusManager(focus_manager_.get());
+        editor_input_session_->PrepareTextInput(window.get());
     }
 }
 
@@ -175,6 +228,7 @@ EventLoop::EventLoop(std::shared_ptr<TaskScheduler> task_scheduler)
     auto& wm = WindowManager::Instance();
     for (auto& window : wm.GetAllWindows()) {
         window->SetFocusManager(focus_manager_.get());
+        editor_input_session_->PrepareTextInput(window.get());
     }
 }
 
@@ -197,6 +251,7 @@ void EventLoop::Run() {
     auto& wm = WindowManager::Instance();
     for (auto& window : wm.GetAllWindows()) {
         window->SetFocusManager(focus_manager_.get());
+        editor_input_session_->PrepareTextInput(window.get());
     }
 
     while (running_ && !should_quit_) {
@@ -301,6 +356,7 @@ void EventLoop::RunOnce() {
     // 会把编辑器整块周期性拖入增量重绘链，容易与 gutter/chunk invalidation 打架，
     // 表现为获取焦点后随 caret blink 周期出现闪烁。
     static Uint64 last_cursor_blink_time = SDL_GetTicks();
+    static Element* last_blink_focus_element = nullptr;
     static bool cursor_visible = true;
     auto focus_element = focus_manager_->GetFocusElement();
     if (focus_element) {
@@ -308,6 +364,14 @@ void EventLoop::RunOnce() {
         bool uses_native_caret_blink = (tag_name == "input" || tag_name == "textarea");
 
         if (uses_native_caret_blink) {
+            if (last_blink_focus_element != focus_element.get()) {
+                last_blink_focus_element = focus_element.get();
+                cursor_visible = true;
+                cursor_visible_ = true;
+                RenderObject::SetCursorVisible(true);
+                last_cursor_blink_time = SDL_GetTicks();
+            }
+
             // 每500毫秒切换光标显示状态
             Uint64 now = SDL_GetTicks();
             if (now - last_cursor_blink_time >= 500) {
@@ -320,19 +384,17 @@ void EventLoop::RunOnce() {
 
                 // 关键修复：标记元素的 RenderObject 需要重绘
                 // 这样增量渲染系统才会重绘光标区域
-                if (auto render_obj = focus_element->GetRenderObject()) {
-                    render_obj->MarkNeedsPaint();
-                    render_obj->InvalidatePaintCache();
-                }
-
                 // 触发重绘以更新光标
                 auto& wm = WindowManager::Instance();
                 for (auto& window : wm.GetAllWindows()) {
-                    window->SetNeedsRepaint();
+                    const bool marked_dirty = MarkElementPaintDirty(window.get(), focus_element);
+                    window->SetNeedsRepaintFor(RepaintReason::Focus);
                     // 关键修复：同时通知 RenderPipeline 需要重绘
                     // 否则 RenderPipeline::NeedsUpdate() 返回 false，导致快速路径跳过渲染
-                    if (auto pipeline = window->GetRenderPipeline()) {
-                        pipeline->MarkNeedsPaint();
+                    if (!marked_dirty) {
+                        if (auto pipeline = window->GetRenderPipeline()) {
+                            pipeline->MarkNeedsPaint();
+                        }
                     }
                 }
             }
@@ -343,12 +405,14 @@ void EventLoop::RunOnce() {
             cursor_visible_ = true;
             RenderObject::SetCursorVisible(true);
             last_cursor_blink_time = SDL_GetTicks();
+            last_blink_focus_element = nullptr;
         }
     } else {
         // 没有聚焦的可编辑元素时，重置光标状态
         cursor_visible = true;
         cursor_visible_ = true;
         RenderObject::SetCursorVisible(true);
+        last_blink_focus_element = nullptr;
     }
 
     // 5. 先推进动画时间轴（即使当前帧尚未标记重绘）
@@ -373,7 +437,7 @@ void EventLoop::RunOnce() {
     bool terminal_repaint = TerminalNeedsRepaint();
     if (terminal_repaint) {
         for (auto& window : wm.GetAllWindows()) {
-            window->SetNeedsRepaint();
+            window->SetNeedsRepaintFor(RepaintReason::Terminal);
             // 关键：强制重新光栅化，确保终端内容被重绘
             if (auto pipeline = window->GetRenderPipeline()) {
                 pipeline->ForceRasterize();
@@ -616,27 +680,64 @@ void EventLoop::Update(float delta_time) {
 void EventLoop::Render() {
     // 先渲染窗口，再执行 render callback。
     // 这样 UI Dev 等回调看到的是本帧最终 DOM/布局状态，且避免回调内重复 Render/SwapBuffers。
+    const bool baseline_stats_enabled = IsBaselineFrameStatsEnabled();
     auto& window_manager = WindowManager::Instance();
     for (auto& window : window_manager.GetAllWindows()) {
         if (window->NeedsRepaint()) {
+            const bool needs_repaint_before = window->NeedsRepaint();
+            const char* repaint_reason = window->GetLastRepaintReasonName();
+            const uint64_t repaint_reason_count = window->GetRepaintReasonCount();
+            const double render_start_ms = baseline_stats_enabled ? GetBaselineTimeMs() : 0.0;
+            double render_ms = 0.0;
+            double swap_ms = 0.0;
             try {
                 window->Render();
+                if (baseline_stats_enabled) {
+                    render_ms = GetBaselineTimeMs() - render_start_ms;
+                }
+                const double swap_start_ms = baseline_stats_enabled ? GetBaselineTimeMs() : 0.0;
                 window->SwapBuffers();
+                if (baseline_stats_enabled) {
+                    swap_ms = GetBaselineTimeMs() - swap_start_ms;
+                }
             } catch (const std::exception& e) {
                 std::cerr << "[EventLoop] EXCEPTION in window->Render()/SwapBuffers(): " << e.what() << std::endl;
             } catch (...) {
                 std::cerr << "[EventLoop] UNKNOWN EXCEPTION in window->Render()/SwapBuffers()" << std::endl;
             }
+            if (baseline_stats_enabled) {
+                const bool needs_repaint_after = window->NeedsRepaint();
+                std::cout << "[MBINK_BASELINE_FRAME]"
+                          << " boundary=event_loop"
+                          << " class=window_frame"
+                          << " render_ms=" << render_ms
+                          << " swap_ms=" << swap_ms
+                          << " render_plus_swap_ms=" << (render_ms + swap_ms)
+                          << " needs_repaint_before=" << (needs_repaint_before ? 1 : 0)
+                          << " needs_repaint_after=" << (needs_repaint_after ? 1 : 0)
+                          << " repaint_reason=" << repaint_reason
+                          << " repaint_reason_count=" << repaint_reason_count
+                          << "\n";
+                window->ResetRepaintReasonCount();
+            }
         }
     }
 
     if (render_callback_) {
+        const double callback_start_ms = baseline_stats_enabled ? GetBaselineTimeMs() : 0.0;
         try {
             render_callback_();
         } catch (const std::exception& e) {
             std::cerr << "[EventLoop] EXCEPTION in render_callback_: " << e.what() << std::endl;
         } catch (...) {
             std::cerr << "[EventLoop] UNKNOWN EXCEPTION in render_callback_" << std::endl;
+        }
+        if (baseline_stats_enabled) {
+            std::cout << "[MBINK_BASELINE_FRAME]"
+                      << " boundary=event_loop"
+                      << " class=render_callback"
+                      << " loop_render_callback_ms=" << (GetBaselineTimeMs() - callback_start_ms)
+                      << "\n";
         }
     }
 }

@@ -676,6 +676,7 @@ public:
         needs_layout_ = false;
         needs_paint_ = false;
         child_needs_paint_ = false;
+        child_needs_layout_ = false;
     }
 
     // =========================================================================

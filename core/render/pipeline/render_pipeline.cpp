@@ -56,6 +56,24 @@ namespace {
         return static_cast<int>(
             IncrementalEligibleScrollFallbacks(stats) + ConservativeScrollFallbacks(stats));
     }
+
+    void ClearRenderedTreePaintDirtyFlags(RenderObject* obj) {
+        if (!obj || !obj->IsDirtyForPaint()) {
+            return;
+        }
+
+        const bool has_dirty_children = obj->ChildNeedsPaint();
+        obj->ClearNeedsPaint();
+        obj->ClearChildNeedsPaint();
+
+        if (!has_dirty_children) {
+            return;
+        }
+
+        for (const auto& child : obj->GetChildren()) {
+            ClearRenderedTreePaintDirtyFlags(child.get());
+        }
+    }
 }
 
 // =========================================================================
@@ -351,7 +369,7 @@ bool RenderPipeline::HasPendingScrollRetainedPresentBlockingFallback() const {
 // 主渲染入口
 // =========================================================================
 
-bool RenderPipeline::ProcessFrame(SkCanvas* canvas) {
+bool RenderPipeline::ProcessFrame(SkCanvas* canvas, const SkRect* logical_clip) {
     if (!initialized_ || !canvas) {
         return false;
     }
@@ -421,7 +439,7 @@ bool RenderPipeline::ProcessFrame(SkCanvas* canvas) {
 
     // 6. 合成
     stage_start = GetCurrentTimeMs();
-    DoComposite(canvas);
+    DoComposite(canvas, logical_clip);
     current_frame_stats_.composite_time = GetCurrentTimeMs() - stage_start;
 
     // 更新统计
@@ -545,6 +563,7 @@ bool RenderPipeline::ProcessFrame(SkCanvas* canvas) {
     // 清除脏标记
     needs_render_ = false;
     needs_paint_ = false;
+    ClearRenderedTreePaintDirtyFlags(render_tree_.get());
     current_stage_ = RenderStage::Idle;
 
     return true;
@@ -791,7 +810,7 @@ void RenderPipeline::DoRasterize() {
     // }
 }
 
-void RenderPipeline::DoComposite(SkCanvas* canvas) {
+void RenderPipeline::DoComposite(SkCanvas* canvas, const SkRect* logical_clip) {
     current_stage_ = RenderStage::Composite;
 
     if (!canvas) {
@@ -801,7 +820,7 @@ void RenderPipeline::DoComposite(SkCanvas* canvas) {
     // 优先使用层合成（如果层树已构建）
     if (root_layer_) {
         const CompositeStats stats_before = compositor_->GetStats();
-        compositor_->CompositeToCanvas(root_layer_.get(), canvas);
+        compositor_->CompositeToCanvas(root_layer_.get(), canvas, logical_clip);
         const CompositeStats stats_after = compositor_->GetStats();
         current_frame_stats_.frames_composited =
             stats_after.frames_composited - stats_before.frames_composited;

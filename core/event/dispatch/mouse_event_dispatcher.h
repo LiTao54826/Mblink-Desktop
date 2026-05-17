@@ -14,6 +14,7 @@
 
 #include <SDL3/SDL.h>
 
+#include <cstdint>
 #include <functional>
 #include <memory>
 #include <string>
@@ -312,6 +313,17 @@ private:
                          std::shared_ptr<RenderObject> root_render);
 
 private:
+    struct PendingFocusClear {
+        std::weak_ptr<Element> element;
+        std::weak_ptr<Element> target;
+        uint64_t focus_serial = 0;
+        bool active = false;
+    };
+
+    void PrepareFocusClearOnMouseDown(const std::shared_ptr<Element>& hit_element, int button);
+    void ResolveFocusClearAfterClick(std::shared_ptr<Window> window);
+    void CancelPendingFocusClear();
+
     // 依赖的管理器（不拥有所有权）
     DragManager* drag_manager_ = nullptr;
     SelectionManager* selection_manager_ = nullptr;
@@ -328,6 +340,7 @@ private:
     // 点击状态追踪（用于 click/dblclick）
     std::weak_ptr<Element> last_mousedown_element_;
     std::weak_ptr<Element> last_click_element_;
+    PendingFocusClear pending_focus_clear_;
     Uint64 last_click_time_ = 0;
     int click_count_ = 0;  // 连续点击次数（1=单击, 2=双击, 3=三击）
     float last_click_x_ = 0;

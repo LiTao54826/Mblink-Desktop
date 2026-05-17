@@ -75,7 +75,7 @@ bool WheelEventDispatcher::HandleWheelEvent(const SDL_Event& event,
             int rel_x = static_cast<int>(logical_x - panel_x);
             int rel_y = static_cast<int>(logical_y - panel_y);
             if (devtools.HandleMouseWheel(rel_x, rel_y, wheel_x, wheel_y)) {
-                window->SetNeedsRepaint();
+                window->SetNeedsRepaintFor(RepaintReason::DevTools);
                 return true;  // 事件被 DevTools 消费
             }
         }
@@ -85,7 +85,7 @@ bool WheelEventDispatcher::HandleWheelEvent(const SDL_Event& event,
     auto& dropdown_manager = SelectDropdownManager::Instance();
     if (dropdown_manager.IsDropdownOpen() && dropdown_manager.HitTest(logical_x, logical_y)) {
         if (dropdown_manager.HandleWheel(wheel_y)) {
-            window->SetNeedsRepaint();
+            window->SetNeedsRepaintFor(RepaintReason::WheelScroll);
             if (auto pipeline = window->GetRenderPipeline()) {
                 pipeline->ForceRasterize();
             }
@@ -179,7 +179,7 @@ bool WheelEventDispatcher::HandleTerminalWheel(std::shared_ptr<Window> window,
     terminal_element->HandleWheel(delta, horizontal);
 
     // 标记窗口需要重绘
-    window->SetNeedsRepaint();
+    window->SetNeedsRepaintFor(RepaintReason::WheelScroll);
     if (auto pipeline = window->GetRenderPipeline()) {
         pipeline->ForceRasterize();
     }
@@ -205,7 +205,7 @@ bool WheelEventDispatcher::HandleLogViewWheel(std::shared_ptr<Window> window,
     logview_element->OnWheel(delta, horizontal);
 
     // 标记窗口需要重绘
-    window->SetNeedsRepaint();
+    window->SetNeedsRepaintFor(RepaintReason::WheelScroll);
     if (auto pipeline = window->GetRenderPipeline()) {
         pipeline->ForceRasterize();
     }
@@ -276,7 +276,7 @@ bool WheelEventDispatcher::HandleTextAreaWheel(std::shared_ptr<Window> window,
         }
 
         // 标记窗口需要重绘
-        window->SetNeedsRepaint();
+        window->SetNeedsRepaintFor(RepaintReason::WheelScroll);
         return true;
     }
 
@@ -390,7 +390,7 @@ bool WheelEventDispatcher::HandleScrollableElementWheel(
         }
         window->SetForceFullRepaint(true);
     }
-    window->SetNeedsRepaint();
+    window->SetNeedsRepaintFor(RepaintReason::WheelScroll);
 
     return true;
 }

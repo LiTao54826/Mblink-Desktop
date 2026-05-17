@@ -83,8 +83,6 @@ bool HTMLInputElement::SupportsTextEditing() const {
 }
 
 void HTMLInputElement::RequestInputRepaint() {
-    MarkDirty(DirtyType::PAINT);
-
     auto doc = GetOwnerDocument();
     if (!doc) {
         return;
@@ -95,18 +93,32 @@ void HTMLInputElement::RequestInputRepaint() {
         return;
     }
 
-    auto rect = GetBoundingClientRect();
-    if (rect.width > 0.0f && rect.height > 0.0f) {
-        SkRect dirty_rect = SkRect::MakeXYWH(rect.x, rect.y, rect.width, rect.height);
+    SkRect dirty_rect = SkRect::MakeEmpty();
+    if (auto render_obj = GetRenderObject()) {
+        render_obj->MarkNeedsPaint();
+        render_obj->InvalidatePaintCache();
+
+        const auto& bounds = render_obj->GetViewportBounds();
+        if (bounds.valid && bounds.width > 0.0f && bounds.height > 0.0f) {
+            dirty_rect = SkRect::MakeXYWH(bounds.x, bounds.y, bounds.width, bounds.height);
+        } else {
+            dirty_rect = render_obj->GetViewportBoundingRect();
+        }
+    }
+
+    if (!dirty_rect.isEmpty()) {
+        SetDirtyRect(dirty_rect);
         window->AddDirtyRect(dirty_rect);
 
         if (auto* pipeline = window->GetRenderPipeline()) {
             pipeline->MarkDirtyRegion(dirty_rect);
             pipeline->MarkNeedsPaint();
         }
+    } else if (auto* pipeline = window->GetRenderPipeline()) {
+        pipeline->MarkNeedsPaint();
     }
 
-    window->SetNeedsRepaint();
+    window->SetNeedsRepaintFor(RepaintReason::KeyboardInput);
 }
 
 
@@ -526,6 +538,12 @@ void HTMLInputElement::SetCursorPosition(int char_pos) {
         char_pos = static_cast<int>(char_count);
     }
 
+    if (edit_state_->selection_anchor == char_pos &&
+        edit_state_->selection_focus == char_pos &&
+        edit_state_->caret_position == char_pos) {
+        return;
+    }
+
     edit_state_->SetCaretPosition(char_pos);
     RequestInputRepaint();
 }
@@ -544,6 +562,12 @@ void HTMLInputElement::SetSelection(int start, int end) {
     if (end < 0) end = 0;
     if (start > static_cast<int>(char_count)) start = static_cast<int>(char_count);
     if (end > static_cast<int>(char_count)) end = static_cast<int>(char_count);
+
+    if (edit_state_->selection_anchor == start &&
+        edit_state_->selection_focus == end &&
+        edit_state_->caret_position == end) {
+        return;
+    }
 
     edit_state_->SetSelection(start, end);
     RequestInputRepaint();

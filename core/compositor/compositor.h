@@ -125,7 +125,7 @@ public:
      * @param canvas 目标 Canvas
      * @return true 如果合成成功
      */
-    bool CompositeToCanvas(CompositorLayer* root, SkCanvas* canvas);
+    bool CompositeToCanvas(CompositorLayer* root, SkCanvas* canvas, const SkRect* logical_clip = nullptr);
 
     /**
      * @brief 检查是否需要合成（有变化）
@@ -244,7 +244,10 @@ private:
      * @param canvas 目标 Canvas
      * @param parent_transform 父层变换
      */
-    void CompositeLayerCPU(CompositorLayer* layer, SkCanvas* canvas, const SkMatrix& parent_transform);
+    void CompositeLayerCPU(CompositorLayer* layer,
+                           SkCanvas* canvas,
+                           const SkMatrix& parent_transform,
+                           const SkRect* logical_clip = nullptr);
 
     // =========================================================================
     // 辅助方法

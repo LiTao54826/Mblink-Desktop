@@ -34,6 +34,7 @@
 #include <lexbor/dom/interfaces/element.h>
 #include <lexbor/dom/interfaces/text.h>
 #include "core/lexbor/lexbor_document.h"
+#include "core/lexbor/style_manager.h"
 #include "core/render/objects/render_object.h"
 #include "core/window/window.h"
 #include "core/render/pipeline/render_pipeline.h"
@@ -742,15 +743,25 @@ void Element::SetPseudoClass(const std::string& pseudo_class, bool activate) {
         pseudo_classes_.erase(pseudo_class);
     }
 
-    // 标记需要重新计算样式和重绘
-    // 伪类变化需要样式重计算（如:focus, :hover改变边框颜色）
-    MarkDirty(DirtyType::STYLE | DirtyType::PAINT);
+    const bool is_local_interaction_pseudo_class =
+        pseudo_class == "hover" ||
+        pseudo_class == "active" ||
+        pseudo_class == "focus" ||
+        pseudo_class == "focus-visible";
 
-    // 特殊处理：hover 伪类需要通知观察者以触发样式重新解析
-    // 这是因为 :hover 选择器可能定义了动画，需要重新解析样式来获取
-    // 其他伪类（如 :focus, :active）不需要，因为它们通常只改变颜色等简单属性
-    if (pseudo_class == "hover") {
+    if (is_local_interaction_pseudo_class) {
         auto doc = GetOwnerDocument();
+        auto style_manager = doc ? doc->GetStyleManager() : nullptr;
+        const std::string tag_name = GetTagName();
+        const bool has_builtin_hover = pseudo_class == "hover" &&
+            (tag_name == "button" || tag_name == "a");
+        const bool has_css_hover =
+            pseudo_class == "hover" && style_manager && style_manager->HasHoverRules(this);
+
+        if (pseudo_class == "hover" && !has_builtin_hover && !has_css_hover) {
+            return;
+        }
+
         if (doc) {
             doc->GetObserverManager().NotifyPseudoClassChanged(
                 std::static_pointer_cast<Element>(shared_from_this()),
@@ -758,7 +769,12 @@ void Element::SetPseudoClass(const std::string& pseudo_class, bool activate) {
                 activate
             );
         }
+        return;
     }
+
+    // 标记需要重新计算样式和重绘
+    // 伪类变化需要样式重计算（如:focus, :active 改变边框颜色）
+    MarkDirty(DirtyType::STYLE | DirtyType::PAINT);
 }
 
 bool Element::HasPseudoClass(const std::string& pseudo_class) const {
@@ -1525,12 +1541,6 @@ void Element::Focus() {
             render_obj->InvalidatePaintCache();
         }
 
-        if (tag_name_ == "input" || tag_name_ == "textarea" || tag_name_ == "terminal" || IsContentEditable()) {
-            if (window->GetSDLWindow()) {
-                SDL_StartTextInput(window->GetSDLWindow());
-            }
-        }
-
         window->SetNeedsRepaint();
         if (auto pipeline = window->GetRenderPipeline()) {
             pipeline->MarkNeedsPaint();
@@ -1568,12 +1578,6 @@ void Element::Blur() {
         if (auto render_obj = GetRenderObject()) {
             render_obj->MarkNeedsPaint();
             render_obj->InvalidatePaintCache();
-        }
-
-        if (tag_name_ == "input" || tag_name_ == "textarea" || tag_name_ == "terminal" || IsContentEditable()) {
-            if (window && window->GetSDLWindow()) {
-                SDL_StopTextInput(window->GetSDLWindow());
-            }
         }
 
         if (window) {

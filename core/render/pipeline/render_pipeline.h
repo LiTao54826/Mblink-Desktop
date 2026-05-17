@@ -232,7 +232,7 @@ public:
      * 5. 光栅化（来自 V2）
      * 6. 合成（来自 V2）
      */
-    bool ProcessFrame(SkCanvas* canvas);
+    bool ProcessFrame(SkCanvas* canvas, const SkRect* logical_clip = nullptr);
     
     bool NeedsUpdate() const;
     void MarkNeedsRender() { needs_render_ = true; }
@@ -319,7 +319,7 @@ private:
     void DoLayout();        // 来自 V1
     void DoLayerTreeBuild();// 来自 V2
     void DoRasterize();     // 来自 V2
-    void DoComposite(SkCanvas* canvas); // 来自 V2
+    void DoComposite(SkCanvas* canvas, const SkRect* logical_clip = nullptr); // 来自 V2
 
     // =========================================================================
     // 辅助方法（来自 V2）

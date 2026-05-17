@@ -63,7 +63,7 @@ bool IncrementalLayoutManager::AddOutOfFlowElement(Element* element, Node* paren
     render_object->MarkNeedsPaint();
 
     // 标记脏区域
-    window_->SetNeedsRepaint();
+    window_->SetNeedsRepaintFor(RepaintReason::Layout);
 
     return true;
 }
@@ -87,7 +87,7 @@ bool IncrementalLayoutManager::RemoveOutOfFlowElement(Element* element) {
     parent->RemoveChild(render_object);
 
     // 标记需要重绘
-    window_->SetNeedsRepaint();
+    window_->SetNeedsRepaintFor(RepaintReason::Layout);
 
     return true;
 }

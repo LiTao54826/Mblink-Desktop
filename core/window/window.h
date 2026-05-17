@@ -41,6 +41,7 @@
 #include <functional>
 #include <vector>
 #include <unordered_map>
+#include <cstdint>
 #include <SDL3/SDL.h>
 #include "include/core/SkSurface.h"
 #include "include/gpu/ganesh/GrDirectContext.h"
@@ -80,6 +81,26 @@ enum class RenderBackend {
 /**
  * @brief 窗口配置
  */
+enum class RepaintReason {
+    Unknown,
+    Initial,
+    Resize,
+    DOMMutation,
+    PseudoClass,
+    Focus,
+    KeyboardInput,
+    MouseHover,
+    MouseButton,
+    WheelScroll,
+    Animation,
+    Terminal,
+    DevTools,
+    API,
+    Layout
+};
+
+const char* RepaintReasonName(RepaintReason reason);
+
 struct WindowConfig {
     std::string title = "MBink Window";
     int width = 800;
@@ -460,8 +481,22 @@ public:
      * @brief 标记需要重绘
      */
     void SetNeedsRepaint() {
+        SetNeedsRepaintFor(RepaintReason::Unknown);
+    }
+
+    void SetNeedsRepaintFor(RepaintReason reason) {
+        RecordRepaintReason(reason);
         needs_repaint_ = true;
     }
+
+    void MarkRepaintReason(RepaintReason reason) {
+        RecordRepaintReason(reason);
+    }
+
+    RepaintReason GetLastRepaintReason() const { return last_repaint_reason_; }
+    const char* GetLastRepaintReasonName() const { return RepaintReasonName(last_repaint_reason_); }
+    uint64_t GetRepaintReasonCount() const { return repaint_reason_count_; }
+    void ResetRepaintReasonCount() { repaint_reason_count_ = 0; }
 
     /**
      * @brief 强制同步布局
@@ -683,6 +718,15 @@ private:
     void RenderDevTools(SkCanvas* canvas, float width, float height);
 
 private:
+    void RecordRepaintReason(RepaintReason reason) {
+        if (repaint_reason_count_ == 0 || last_repaint_reason_ != reason) {
+            last_repaint_reason_ = reason;
+            repaint_reason_count_ = 1;
+        } else {
+            ++repaint_reason_count_;
+        }
+    }
+
     WindowConfig config_;
     SDL_Window* sdl_window_ = nullptr;
     SDL_GLContext gl_context_ = nullptr;
@@ -714,6 +758,8 @@ private:
     std::unique_ptr<Renderer> renderer_;
     std::unique_ptr<DOMObserver> dom_observer_;  // DOM 观察者
     bool needs_repaint_ = true;  // 初始需要绘制
+    RepaintReason last_repaint_reason_ = RepaintReason::Initial;
+    uint64_t repaint_reason_count_ = 1;
 
     // Week 2: 增量渲染优化
     std::shared_ptr<RenderObject> cached_render_tree_;  // 缓存的渲染树

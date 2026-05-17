@@ -20,6 +20,7 @@
 #include <set>
 #include <map>
 #include <memory>
+#include <cstddef>
 
 namespace mbink {
 
@@ -162,6 +163,9 @@ public:
      * @return 活动动画名称集合
      */
     std::set<std::string> GetActiveAnimationNames(RenderObject* object) const;
+    bool HasPendingAnimationStartup(RenderObject* object) const;
+    size_t CountPendingAnimationStartupRetries(RenderObject* root) const;
+    size_t CountExhaustedAnimationStartupRetries(RenderObject* root) const;
     
     /**
      * @brief 清理所有动画状态
@@ -186,6 +190,8 @@ private:
     /// 跟踪每个 Element 已启动的动画名称
     /// 使用 Element* 作为键，跨渲染树重建时可保持动画启动状态
     std::map<Element*, std::set<std::string>> started_animations_;
+    std::map<Element*, std::map<std::string, int>> startup_retry_attempts_;
+    static constexpr int kMaxStartupRetryAttempts = 3;
 
     /**
      * @brief 清理 started_animations_ 中已失效的 Element 键
@@ -196,14 +202,17 @@ private:
     void PruneStaleStartedAnimations();
 
     /**
-     * @brief 是否启用动画调试日志（兼容两个环境变量）
-     */
-    bool IsDebugAnimationEnabled() const;
-
-    /**
      * @brief 从 controller 运行态判断某元素动画是否已真正启动
      */
     bool IsAnimationRunningForElement(Element* element, const std::string& animation_name) const;
+    bool HasPendingAnimationStartupInTree(RenderObject* object) const;
+    bool HasPendingAnimationStartupForElement(Element* element,
+                                             const std::string& animation_name) const;
+    void CountPendingStartupRetries(RenderObject* root,
+                                    size_t& pending_count,
+                                    size_t& exhausted_count) const;
+    void CollectElementsInTree(RenderObject* root, std::set<Element*>& elements) const;
+    void PruneStaleStartupRetries(RenderObject* root);
 
     /**
      * @brief 从 RenderObject 提取关联的 Element

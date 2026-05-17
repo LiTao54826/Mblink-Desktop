@@ -578,7 +578,7 @@ bool Compositor::Composite(CompositorLayer* root) {
     return true;
 }
 
-bool Compositor::CompositeToCanvas(CompositorLayer* root, SkCanvas* canvas) {
+bool Compositor::CompositeToCanvas(CompositorLayer* root, SkCanvas* canvas, const SkRect* logical_clip) {
     if (!root || !canvas) {
         return false;
     }
@@ -595,7 +595,7 @@ bool Compositor::CompositeToCanvas(CompositorLayer* root, SkCanvas* canvas) {
     // 中间 bitmap 会丢失缩放信息导致文字模糊和子像素渲染失效。
 
     // 直接在目标 canvas 上合成（保留 canvas 的 DPI 缩放和子像素渲染能力）
-    CompositeLayerCPU(root, canvas, SkMatrix::I());
+    CompositeLayerCPU(root, canvas, SkMatrix::I(), logical_clip);
 
     needs_composite_ = false;
 
@@ -759,7 +759,10 @@ static int GetLayerZIndex(CompositorLayer* layer) {
     return obj->GetComputedStyle().z_index;
 }
 
-void Compositor::CompositeLayerCPU(CompositorLayer* layer, SkCanvas* canvas, const SkMatrix& parent_transform) {
+void Compositor::CompositeLayerCPU(CompositorLayer* layer,
+                                   SkCanvas* canvas,
+                                   const SkMatrix& parent_transform,
+                                   const SkRect* logical_clip) {
     if (!layer || !canvas) {
         return;
     }
@@ -819,7 +822,38 @@ void Compositor::CompositeLayerCPU(CompositorLayer* layer, SkCanvas* canvas, con
 
             // 位图是物理像素大小，需要缩放回逻辑像素大小绘制
             float dpi_scale = layer->GetDpiScale();
-            if (dpi_scale != 1.0f) {
+            const bool transform_is_clip_compatible =
+                (layer_transform.getType() & ~SkMatrix::kTranslate_Mask) == 0;
+            const bool can_draw_clipped_region =
+                logical_clip &&
+                layer->GetTransform().isIdentity() &&
+                !layer->GetShadowExtent().HasExtent() &&
+                transform_is_clip_compatible;
+            if (can_draw_clipped_region) {
+                const float tx = layer_transform.getTranslateX();
+                const float ty = layer_transform.getTranslateY();
+                SkRect local_clip = *logical_clip;
+                local_clip.offset(-tx, -ty);
+                SkRect local_layer = SkRect::MakeWH(bounds.width(), bounds.height());
+                if (local_clip.intersect(local_layer) && !local_clip.isEmpty()) {
+                    SkIRect src = SkIRect::MakeLTRB(
+                        static_cast<int>(std::floor((local_clip.left() - draw_offset_x) * dpi_scale)),
+                        static_cast<int>(std::floor((local_clip.top() - draw_offset_y) * dpi_scale)),
+                        static_cast<int>(std::ceil((local_clip.right() - draw_offset_x) * dpi_scale)),
+                        static_cast<int>(std::ceil((local_clip.bottom() - draw_offset_y) * dpi_scale)));
+                    src.intersect(SkIRect::MakeWH(bitmap.width(), bitmap.height()));
+                    if (!src.isEmpty()) {
+                        SkRect dst = SkRect::MakeLTRB(
+                            draw_offset_x + src.left() / dpi_scale,
+                            draw_offset_y + src.top() / dpi_scale,
+                            draw_offset_x + src.right() / dpi_scale,
+                            draw_offset_y + src.bottom() / dpi_scale);
+                        canvas->drawImageRect(bitmap.asImage(), SkRect::Make(src), dst,
+                                              SkSamplingOptions(SkFilterMode::kLinear), &paint,
+                                              SkCanvas::kFast_SrcRectConstraint);
+                    }
+                }
+            } else if (dpi_scale != 1.0f) {
                 canvas->save();
                 canvas->scale(1.0f / dpi_scale, 1.0f / dpi_scale);
                 // 应用 DPI 缩放到偏移
@@ -869,10 +903,10 @@ void Compositor::CompositeLayerCPU(CompositorLayer* layer, SkCanvas* canvas, con
 
         if (child_is_fixed) {
             // fixed 元素：不应用任何滚动偏移，重置变换
-            CompositeLayerCPU(child, canvas, SkMatrix::I());
+            CompositeLayerCPU(child, canvas, SkMatrix::I(), logical_clip);
         } else {
             // 非 fixed 元素：传递累积的平移偏移
-            CompositeLayerCPU(child, canvas, child_transform);
+            CompositeLayerCPU(child, canvas, child_transform, logical_clip);
         }
     }
 }

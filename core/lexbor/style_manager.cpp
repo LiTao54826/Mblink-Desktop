@@ -21,7 +21,9 @@ namespace mbink {
 StyleManager::StyleManager(Document* doc)
     : document_(doc)
     , stylesheets_()
-    , inline_styles_() {
+    , inline_styles_()
+    , hover_rule_cache_()
+    , stylesheet_version_(0) {
 }
 
 StyleManager::~StyleManager() {
@@ -44,6 +46,7 @@ void StyleManager::AddStyleSheet(std::shared_ptr<LexborStyleSheet> sheet,
               [](const StyleSheetEntry& a, const StyleSheetEntry& b) {
                   return a.priority < b.priority;
               });
+    InvalidateHoverRuleCache();
 }
 
 bool StyleManager::RemoveStyleSheet(std::shared_ptr<LexborStyleSheet> sheet) {
@@ -54,6 +57,7 @@ bool StyleManager::RemoveStyleSheet(std::shared_ptr<LexborStyleSheet> sheet) {
     
     if (it != stylesheets_.end()) {
         stylesheets_.erase(it);
+        InvalidateHoverRuleCache();
         return true;
     }
     
@@ -63,6 +67,7 @@ bool StyleManager::RemoveStyleSheet(std::shared_ptr<LexborStyleSheet> sheet) {
 void StyleManager::ClearStyleSheets() {
     stylesheets_.clear();
     inline_styles_.clear();
+    InvalidateHoverRuleCache();
 }
 
 // ========== 样式解析 ==========
@@ -589,6 +594,41 @@ bool StyleManager::HasHoverRules(Element* element) const {
     if (!element) {
         return false;
     }
+
+    std::string selector_signature;
+    for (Element* current = element; current;) {
+        selector_signature += current->GetTagName();
+        selector_signature += '#';
+        selector_signature += current->GetAttribute("id");
+        selector_signature += '.';
+        selector_signature += current->GetClassName();
+        selector_signature += '|';
+
+        auto parent_node = current->GetParentNode();
+        if (parent_node && parent_node->GetNodeType() == NodeType::ELEMENT_NODE) {
+            current = static_cast<Element*>(parent_node.get());
+        } else {
+            current = nullptr;
+        }
+    }
+
+    auto cached = hover_rule_cache_.find(element);
+    if (cached != hover_rule_cache_.end()) {
+        const auto& entry = cached->second;
+        if (entry.stylesheet_version == stylesheet_version_ &&
+            entry.selector_signature == selector_signature) {
+            return entry.has_hover_rule;
+        }
+    }
+
+    auto remember = [&](bool has_hover_rule) {
+        hover_rule_cache_[element] = HoverRuleCacheEntry{
+            selector_signature,
+            stylesheet_version_,
+            has_hover_rule
+        };
+        return has_hover_rule;
+    };
     
     // 遍历所有样式表，检查是否有匹配该元素的 :hover 规则
     for (const auto& entry : stylesheets_) {
@@ -610,17 +650,22 @@ bool StyleManager::HasHoverRules(Element* element) const {
             
             // 如果基础选择器为空（如 ":hover"），则匹配所有元素
             if (base_selector.empty()) {
-                return true;
+                return remember(true);
             }
             
             // 检查基础选择器是否匹配元素
             if (MatchesSelector(base_selector, element)) {
-                return true;
+                return remember(true);
             }
         }
     }
     
-    return false;
+    return remember(false);
+}
+
+void StyleManager::InvalidateHoverRuleCache() {
+    hover_rule_cache_.clear();
+    ++stylesheet_version_;
 }
 
 } // namespace mbink

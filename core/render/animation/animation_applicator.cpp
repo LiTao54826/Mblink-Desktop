@@ -48,7 +48,7 @@ void AnimationApplicator::StartAnimationsForObject(RenderObject* object) {
         return;
     }
 
-    // 先清理陈旧状态，避免旧 Element* 污染启动判定
+    // 先清理已结束动画状态，避免旧 Element* 污染启动判定
     PruneStaleStartedAnimations();
 
     // 从 RenderObject 提取 Element
@@ -59,24 +59,24 @@ void AnimationApplicator::StartAnimationsForObject(RenderObject* object) {
 
     const auto& style = object->GetComputedStyle();
     auto& started = started_animations_[element];  // 使用 Element* 作为键
-
-    // 调试日志（兼容 MBINK_DEBUG_ANIMATION / MBINK_DEBUG_ANIM）
-    const bool debug_anim = IsDebugAnimationEnabled();
+    auto& retry_attempts = startup_retry_attempts_[element];
 
     // 遍历 ComputedStyle 中定义的所有动画
     for (const auto& anim : style.animations) {
         if (!anim.IsValid()) {
-            if (debug_anim && !anim.name.empty()) {
-            }
             continue;
         }
 
         // 检查是否已启动
         if (started.find(anim.name) != started.end()) {
+            retry_attempts.erase(anim.name);
             continue;
         }
 
-        if (debug_anim) {
+        auto retry_it = retry_attempts.find(anim.name);
+        if (retry_it != retry_attempts.end() &&
+            retry_it->second >= kMaxStartupRetryAttempts) {
+            continue;
         }
 
         // 启动动画（注意：StartAnimation 可能因 keyframes 尚未注册而失败）
@@ -88,7 +88,9 @@ void AnimationApplicator::StartAnimationsForObject(RenderObject* object) {
 
         if (started_ok) {
             started.insert(anim.name);
-        } else if (debug_anim) {
+            retry_attempts.erase(anim.name);
+        } else {
+            ++retry_attempts[anim.name];
         }
     }
 
@@ -111,6 +113,14 @@ void AnimationApplicator::StartAnimationsForObject(RenderObject* object) {
 
     for (const auto& name : to_remove) {
         started.erase(name);
+        retry_attempts.erase(name);
+    }
+    for (auto it = retry_attempts.begin(); it != retry_attempts.end();) {
+        if (current_names.find(it->first) == current_names.end()) {
+            it = retry_attempts.erase(it);
+        } else {
+            ++it;
+        }
     }
 }
 
@@ -231,6 +241,7 @@ void AnimationApplicator::StopAnimationsForObject(RenderObject* object) {
     }
 
     controller_.StopAllAnimations(object);
+    startup_retry_attempts_.erase(element);
     started_animations_.erase(element);  // 使用 Element* 作为键
 }
 
@@ -298,18 +309,58 @@ std::set<std::string> AnimationApplicator::GetActiveAnimationNames(RenderObject*
     return {};
 }
 
+bool AnimationApplicator::HasPendingAnimationStartup(RenderObject* object) const {
+    if (!object) {
+        return false;
+    }
+
+    const_cast<AnimationApplicator*>(this)->PruneStaleStartupRetries(object);
+    return HasPendingAnimationStartupInTree(object);
+}
+
+bool AnimationApplicator::HasPendingAnimationStartupInTree(RenderObject* object) const {
+    if (!object) {
+        return false;
+    }
+
+    Element* element = const_cast<AnimationApplicator*>(this)->ExtractElement(object);
+    if (element) {
+        const auto& style = object->GetComputedStyle();
+        for (const auto& anim : style.animations) {
+            if (anim.IsValid() && HasPendingAnimationStartupForElement(element, anim.name)) {
+                return true;
+            }
+        }
+    }
+
+    for (const auto& child : object->GetChildren()) {
+        if (HasPendingAnimationStartupInTree(child.get())) {
+            return true;
+        }
+    }
+    return false;
+}
+
+size_t AnimationApplicator::CountPendingAnimationStartupRetries(RenderObject* root) const {
+    size_t pending_count = 0;
+    size_t exhausted_count = 0;
+    CountPendingStartupRetries(root, pending_count, exhausted_count);
+    return pending_count;
+}
+
+size_t AnimationApplicator::CountExhaustedAnimationStartupRetries(RenderObject* root) const {
+    size_t pending_count = 0;
+    size_t exhausted_count = 0;
+    CountPendingStartupRetries(root, pending_count, exhausted_count);
+    return exhausted_count;
+}
+
 void AnimationApplicator::Clear() {
     // 清理所有已启动动画的跟踪信息
     // 注意：不再清除 AnimationController 中的动画
     // 因为动画现在通过 Element 引用关联，渲染树重建不会影响动画
     started_animations_.clear();
-}
-
-bool AnimationApplicator::IsDebugAnimationEnabled() const {
-    static const bool debug_enabled =
-        (std::getenv("MBINK_DEBUG_ANIMATION") != nullptr) ||
-        (std::getenv("MBINK_DEBUG_ANIM") != nullptr);
-    return debug_enabled;
+    startup_retry_attempts_.clear();
 }
 
 bool AnimationApplicator::IsAnimationRunningForElement(Element* element,
@@ -325,6 +376,55 @@ bool AnimationApplicator::IsAnimationRunningForElement(Element* element,
         }
     }
     return false;
+}
+
+bool AnimationApplicator::HasPendingAnimationStartupForElement(Element* element,
+                                                               const std::string& animation_name) const {
+    if (!element || animation_name.empty() || animation_name == "none") {
+        return false;
+    }
+    auto element_it = startup_retry_attempts_.find(element);
+    if (element_it == startup_retry_attempts_.end()) {
+        return false;
+    }
+    auto retry_it = element_it->second.find(animation_name);
+    return retry_it != element_it->second.end() &&
+           retry_it->second > 0 &&
+           retry_it->second < kMaxStartupRetryAttempts;
+}
+
+void AnimationApplicator::CountPendingStartupRetries(RenderObject* root,
+                                                     size_t& pending_count,
+                                                     size_t& exhausted_count) const {
+    if (!root) {
+        return;
+    }
+
+    Element* element = const_cast<AnimationApplicator*>(this)->ExtractElement(root);
+    if (element) {
+        const auto& style = root->GetComputedStyle();
+        auto element_it = startup_retry_attempts_.find(element);
+        if (element_it != startup_retry_attempts_.end()) {
+            for (const auto& anim : style.animations) {
+                if (!anim.IsValid() || anim.name.empty() || anim.name == "none") {
+                    continue;
+                }
+                auto retry_it = element_it->second.find(anim.name);
+                if (retry_it == element_it->second.end() || retry_it->second <= 0) {
+                    continue;
+                }
+                if (retry_it->second < kMaxStartupRetryAttempts) {
+                    ++pending_count;
+                } else {
+                    ++exhausted_count;
+                }
+            }
+        }
+    }
+
+    for (const auto& child : root->GetChildren()) {
+        CountPendingStartupRetries(child.get(), pending_count, exhausted_count);
+    }
 }
 
 void AnimationApplicator::PruneStaleStartedAnimations() {
@@ -343,6 +443,37 @@ void AnimationApplicator::PruneStaleStartedAnimations() {
     for (auto it = started_animations_.begin(); it != started_animations_.end();) {
         if (alive_elements.find(it->first) == alive_elements.end()) {
             it = started_animations_.erase(it);
+        } else {
+            ++it;
+        }
+    }
+}
+
+void AnimationApplicator::CollectElementsInTree(RenderObject* root, std::set<Element*>& elements) const {
+    if (!root) {
+        return;
+    }
+
+    Element* element = ExtractElement(root);
+    if (element) {
+        elements.insert(element);
+    }
+
+    for (const auto& child : root->GetChildren()) {
+        CollectElementsInTree(child.get(), elements);
+    }
+}
+
+void AnimationApplicator::PruneStaleStartupRetries(RenderObject* root) {
+    if (startup_retry_attempts_.empty()) {
+        return;
+    }
+
+    std::set<Element*> live_tree_elements;
+    CollectElementsInTree(root, live_tree_elements);
+    for (auto it = startup_retry_attempts_.begin(); it != startup_retry_attempts_.end();) {
+        if (live_tree_elements.find(it->first) == live_tree_elements.end()) {
+            it = startup_retry_attempts_.erase(it);
         } else {
             ++it;
         }

@@ -8,6 +8,7 @@
 #include <string>
 #include <vector>
 #include <map>
+#include <unordered_map>
 #include <memory>
 #include "lexbor_stylesheet.h"
 #include "core/render/animation/animation_controller.h"
@@ -209,10 +210,21 @@ private:
     std::vector<std::string> FindKeyframesBlocks(const std::string& css_text) const;
     
 private:
+    struct HoverRuleCacheEntry {
+        std::string selector_signature;
+        size_t stylesheet_version = 0;
+        bool has_hover_rule = false;
+    };
+
+    void InvalidateHoverRuleCache();
+
+private:
     Document* document_;                          // 关联的文档
     std::vector<StyleSheetEntry> stylesheets_;    // 样式表列表
     std::map<Element*, std::map<std::string, std::string>> inline_styles_; // 内联样式缓存
     AnimationController animation_controller_;    // 动画控制器
+    mutable std::unordered_map<Element*, HoverRuleCacheEntry> hover_rule_cache_;
+    size_t stylesheet_version_ = 0;
 };
 
 } // namespace mbink

@@ -61,6 +61,21 @@ bool IsPrimaryEditorElement(const std::shared_ptr<Element>& element) {
     return tag_name == "input" || tag_name == "textarea" || tag_name == "terminal" || tag_name == "logview";
 }
 
+bool ContainsElement(const std::shared_ptr<Element>& ancestor, const std::shared_ptr<Element>& element) {
+    if (!ancestor || !element) {
+        return false;
+    }
+
+    std::shared_ptr<Node> current = element;
+    while (current) {
+        if (current.get() == ancestor.get()) {
+            return true;
+        }
+        current = current->GetParentNode();
+    }
+    return false;
+}
+
 } // namespace
 
 MouseEventDispatcher::MouseEventDispatcher() = default;
@@ -79,6 +94,62 @@ void MouseEventDispatcher::SetManagers(DragManager* drag_manager,
 
 void MouseEventDispatcher::SetCursorCallback(std::function<void(SDL_SystemCursor)> callback) {
     cursor_callback_ = std::move(callback);
+}
+
+void MouseEventDispatcher::CancelPendingFocusClear() {
+    pending_focus_clear_.element.reset();
+    pending_focus_clear_.target.reset();
+    pending_focus_clear_.focus_serial = 0;
+    pending_focus_clear_.active = false;
+}
+
+void MouseEventDispatcher::PrepareFocusClearOnMouseDown(const std::shared_ptr<Element>& hit_element, int button) {
+    CancelPendingFocusClear();
+
+    if (button != 1 || !focus_manager_ || !hit_element) {
+        return;
+    }
+
+    auto current_focus = focus_manager_->GetFocusElement();
+    if (!current_focus || ContainsElement(current_focus, hit_element)) {
+        return;
+    }
+
+    pending_focus_clear_.element = current_focus;
+    pending_focus_clear_.target = focus_manager_->FindFocusableElement(hit_element);
+    pending_focus_clear_.focus_serial = focus_manager_->GetFocusChangeSerial();
+    pending_focus_clear_.active = true;
+}
+
+void MouseEventDispatcher::ResolveFocusClearAfterClick(std::shared_ptr<Window> window) {
+    if (!pending_focus_clear_.active || !focus_manager_) {
+        return;
+    }
+
+    auto pending_element = pending_focus_clear_.element.lock();
+    auto target_element = pending_focus_clear_.target.lock();
+    const uint64_t pending_serial = pending_focus_clear_.focus_serial;
+    CancelPendingFocusClear();
+
+    if (!pending_element) {
+        return;
+    }
+
+    focus_manager_->SetWindow(window.get());
+    if (focus_manager_->GetFocusElement() != pending_element) {
+        return;
+    }
+
+    if (focus_manager_->GetFocusChangeSerial() != pending_serial) {
+        return;
+    }
+
+    if (target_element) {
+        focus_manager_->SetFocus(target_element, false);
+        return;
+    }
+
+    focus_manager_->Blur(pending_element);
 }
 
 bool MouseEventDispatcher::HandleMouseEvent(const SDL_Event& event,
@@ -131,12 +202,12 @@ bool MouseEventDispatcher::HandleMouseEvent(const SDL_Event& event,
                 }
             }
 
-            window->SetNeedsRepaint();
+            window->SetNeedsRepaintFor(RepaintReason::MouseButton);
             return true;
         } else if (event.type == SDL_EVENT_MOUSE_BUTTON_UP && event.button.button == SDL_BUTTON_LEFT) {
             dragging_element->EndScrollbarDrag();
             ClearScrollbarDragging();
-            window->SetNeedsRepaint();
+            window->SetNeedsRepaintFor(RepaintReason::MouseButton);
             return true;
         }
     }
@@ -146,16 +217,16 @@ bool MouseEventDispatcher::HandleMouseEvent(const SDL_Event& event,
     if (dropdown_manager.IsDropdownOpen()) {
         if (event.type == SDL_EVENT_MOUSE_MOTION) {
             if (dropdown_manager.HandleMouseMove(logical_x, logical_y)) {
-                window->SetNeedsRepaint();
+                window->SetNeedsRepaintFor(RepaintReason::MouseHover);
             }
         } else if (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN && event.button.button == SDL_BUTTON_LEFT) {
             if (dropdown_manager.HitTest(logical_x, logical_y)) {
                 dropdown_manager.HandleClick(logical_x, logical_y);
-                window->SetNeedsRepaint();
+                window->SetNeedsRepaintFor(RepaintReason::MouseButton);
                 return true;
             } else {
                 dropdown_manager.CloseDropdown();
-                window->SetNeedsRepaint();
+                window->SetNeedsRepaintFor(RepaintReason::MouseButton);
             }
         }
     }
@@ -265,7 +336,7 @@ bool MouseEventDispatcher::HandleMouseEvent(const SDL_Event& event,
             if (scrollbar_area != RenderObject::ScrollbarHitArea::None) {
                 scrollable->StartScrollbarDrag(scrollbar_area, logical_x, logical_y);
                 SetScrollbarDraggingElement(scrollable, window_id);
-                window->SetNeedsRepaint();
+                window->SetNeedsRepaintFor(RepaintReason::MouseButton);
                 return true;
             }
         }
@@ -281,10 +352,24 @@ bool MouseEventDispatcher::HandleMouseEvent(const SDL_Event& event,
     if (!hit_result.IsValid()) {
         auto last_mousedown = last_mousedown_element_.lock();
 
+        if (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN) {
+            if (event.button.button == SDL_BUTTON_LEFT && focus_manager_) {
+                auto current_focus = focus_manager_->GetFocusElement();
+                if (current_focus) {
+                    pending_focus_clear_.element = current_focus;
+                    pending_focus_clear_.focus_serial = focus_manager_->GetFocusChangeSerial();
+                    pending_focus_clear_.active = true;
+                }
+            } else {
+                CancelPendingFocusClear();
+            }
+        }
+
         if (event.type == SDL_EVENT_MOUSE_BUTTON_UP && last_mousedown) {
             HandleNoHitMouseUp(window, last_mousedown, event, logical_x, logical_y);
             last_mousedown->SetPseudoClass("active", false);
             last_mousedown_element_.reset();
+            ResolveFocusClearAfterClick(window);
 
             if (event.button.button == SDL_BUTTON_LEFT && drag_manager_) {
                 drag_manager_->EndDrag(mouse_x, mouse_y);
@@ -292,6 +377,9 @@ bool MouseEventDispatcher::HandleMouseEvent(const SDL_Event& event,
         }
         else if (event.type == SDL_EVENT_MOUSE_MOTION && last_mousedown) {
             HandleNoHitMouseMotion(window, last_mousedown, event, logical_x, logical_y);
+        }
+        else if (event.type == SDL_EVENT_MOUSE_BUTTON_UP) {
+            ResolveFocusClearAfterClick(window);
         }
 
         return false;
@@ -312,6 +400,7 @@ bool MouseEventDispatcher::HandleMouseEvent(const SDL_Event& event,
 
     // ===== 处理 mousedown 事件 =====
     if (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN) {
+        PrepareFocusClearOnMouseDown(hit_result.element, button);
         HandleMouseDown(window, document, hit_result, event, logical_x, logical_y, button, root_render);
     }
     // ===== 处理 mouseup 事件 =====
@@ -368,7 +457,7 @@ void MouseEventDispatcher::UpdateHoverChain(std::shared_ptr<Window> window,
 
     // 如果有伪类变化，触发重绘
     if (changed) {
-        window->SetNeedsRepaint();
+        window->SetNeedsRepaintFor(RepaintReason::MouseHover);
     }
 
     // 发送 mouseleave 到旧的 hover 元素
@@ -458,8 +547,7 @@ bool MouseEventDispatcher::SendEvents(const std::vector<std::weak_ptr<Element>>&
 
                 // 只有具有内置 hover 样式的元素才需要触发重绘
                 std::string tag = element->GetTagName();
-                if (tag == "button" || tag == "a" || tag == "input" ||
-                    tag == "textarea" || tag == "select") {
+                if (tag == "button" || tag == "a") {
                     has_changes = true;
                 }
             }
@@ -736,7 +824,7 @@ void MouseEventDispatcher::ProcessFormElementDefaultAction(std::shared_ptr<Eleme
 
             auto& window_manager = WindowManager::Instance();
             for (auto& window : window_manager.GetAllWindows()) {
-                window->SetNeedsRepaint();
+                window->SetNeedsRepaintFor(RepaintReason::MouseButton);
             }
         }
         // Radio: 选中
@@ -757,7 +845,7 @@ void MouseEventDispatcher::ProcessFormElementDefaultAction(std::shared_ptr<Eleme
 
                 auto& window_manager = WindowManager::Instance();
                 for (auto& window : window_manager.GetAllWindows()) {
-                    window->SetNeedsRepaint();
+                    window->SetNeedsRepaintFor(RepaintReason::MouseButton);
                 }
             }
         }
@@ -836,7 +924,7 @@ void MouseEventDispatcher::ProcessFormElementDefaultAction(std::shared_ptr<Eleme
 
             auto& window_manager = WindowManager::Instance();
             for (auto& window : window_manager.GetAllWindows()) {
-                window->SetNeedsRepaint();
+                window->SetNeedsRepaintFor(RepaintReason::MouseButton);
             }
         }
     }
@@ -913,7 +1001,7 @@ void MouseEventDispatcher::HandleNoHitMouseUp(std::shared_ptr<Window> window,
         auto terminal_element = std::dynamic_pointer_cast<HTMLTerminalElement>(last_mousedown);
         if (terminal_element) {
             terminal_element->HandleMouseUp(logical_x, logical_y, 0);
-            window->SetNeedsRepaint();
+            window->SetNeedsRepaintFor(RepaintReason::MouseButton);
             if (auto pipeline = window->GetRenderPipeline()) {
                 pipeline->ForceRasterize();
             }
@@ -922,14 +1010,14 @@ void MouseEventDispatcher::HandleNoHitMouseUp(std::shared_ptr<Window> window,
         auto logview_element = std::dynamic_pointer_cast<HTMLLogViewElement>(last_mousedown);
         if (logview_element) {
             logview_element->OnMouseUp(logical_x, logical_y, 0);
-            window->SetNeedsRepaint();
+            window->SetNeedsRepaintFor(RepaintReason::MouseButton);
         }
     } else if (tag_name == "input") {
         auto input_element = std::dynamic_pointer_cast<HTMLInputElement>(last_mousedown);
         if (input_element) {
             if (input_element->IsDraggingRange()) {
                 input_element->EndRangeDrag();
-                window->SetNeedsRepaint();
+                window->SetNeedsRepaintFor(RepaintReason::MouseButton);
             }
             else if (input_element->IsDraggingSelection()) {
                 HandleInputMouseInteraction(input_element, 0, event.type, 14.0f, "");
@@ -939,7 +1027,7 @@ void MouseEventDispatcher::HandleNoHitMouseUp(std::shared_ptr<Window> window,
         if (contenteditable_controller_ && contenteditable_controller_->IsDragging()) {
             contenteditable_controller_->HandleMouseUp(last_mousedown, logical_x, logical_y);
         }
-        window->SetNeedsRepaint();
+        window->SetNeedsRepaintFor(RepaintReason::MouseButton);
     }
 }
 
@@ -1099,7 +1187,7 @@ void MouseEventDispatcher::HandleNoHitMouseMotion(std::shared_ptr<Window> window
                     float local_x = logical_x - find_result.abs_x;
                     float local_y = logical_y - find_result.abs_y;
                     terminal_element->HandleMouseMove(local_x, local_y);
-                    window->SetNeedsRepaint();
+                    window->SetNeedsRepaintFor(RepaintReason::MouseHover);
                     if (auto pipeline = window->GetRenderPipeline()) {
                         pipeline->ForceRasterize();
                     }
@@ -1143,7 +1231,7 @@ void MouseEventDispatcher::HandleNoHitMouseMotion(std::shared_ptr<Window> window
                     float local_x = logical_x - find_result.abs_x;
                     float local_y = logical_y - find_result.abs_y;
                     logview_element->OnMouseMove(local_x, local_y);
-                    window->SetNeedsRepaint();
+                    window->SetNeedsRepaintFor(RepaintReason::MouseHover);
                 }
             }
         }
@@ -1197,7 +1285,7 @@ void MouseEventDispatcher::HandleRangeDrag(std::shared_ptr<Window> window,
         const auto& layout = find_result.render_obj->GetLayoutInfo();
         float local_x = logical_x - find_result.abs_x;
         input_element->UpdateRangeDrag(local_x, layout.width);
-        window->SetNeedsRepaint();
+        window->SetNeedsRepaintFor(RepaintReason::MouseButton);
     }
 }
 
@@ -1271,7 +1359,7 @@ void MouseEventDispatcher::HandleMouseDown(std::shared_ptr<Window> window,
                 input_element->StartRangeDrag(layout.width);
                 // 立即更新位置
                 input_element->UpdateRangeDrag(hit_result.local_x, layout.width);
-                window->SetNeedsRepaint();
+                window->SetNeedsRepaintFor(RepaintReason::MouseButton);
             }
             // 处理文本输入框
             else if (input_type == InputType::Text || input_type == InputType::Password ||
@@ -1372,7 +1460,7 @@ void MouseEventDispatcher::HandleMouseDown(std::shared_ptr<Window> window,
             }
 
             // 标记需要重绘
-            window->SetNeedsRepaint();
+            window->SetNeedsRepaintFor(RepaintReason::MouseButton);
             if (auto pipeline = window->GetRenderPipeline()) {
                 pipeline->ForceRasterize();
             }
@@ -1408,7 +1496,7 @@ void MouseEventDispatcher::HandleMouseDown(std::shared_ptr<Window> window,
                 focus_manager_->SetFocus(hit_result.element, false);
             }
 
-            window->SetNeedsRepaint();
+            window->SetNeedsRepaintFor(RepaintReason::MouseButton);
             if (auto pipeline = window->GetRenderPipeline()) {
                 pipeline->ForceRasterize();
             }
@@ -1468,7 +1556,7 @@ void MouseEventDispatcher::HandleMouseUp(std::shared_ptr<Window> window,
             if (input_element) {
                 if (input_element->IsDraggingRange()) {
                     input_element->EndRangeDrag();
-                    window->SetNeedsRepaint();
+                    window->SetNeedsRepaintFor(RepaintReason::MouseButton);
                 }
                 else if (input_element->IsDraggingSelection()) {
                     HandleInputMouseInteraction(input_element, 0, event.type, 14.0f, "");
@@ -1488,7 +1576,7 @@ void MouseEventDispatcher::HandleMouseUp(std::shared_ptr<Window> window,
             auto terminal_element = std::dynamic_pointer_cast<HTMLTerminalElement>(last_mousedown);
             if (terminal_element) {
                 terminal_element->HandleMouseUp(logical_x, logical_y, 0);
-                window->SetNeedsRepaint();
+                window->SetNeedsRepaintFor(RepaintReason::MouseButton);
                 if (auto pipeline = window->GetRenderPipeline()) {
                     pipeline->ForceRasterize();
                 }
@@ -1497,7 +1585,7 @@ void MouseEventDispatcher::HandleMouseUp(std::shared_ptr<Window> window,
             auto logview_element = std::dynamic_pointer_cast<HTMLLogViewElement>(last_mousedown);
             if (logview_element) {
                 logview_element->OnMouseUp(logical_x, logical_y, 0);
-                window->SetNeedsRepaint();
+                window->SetNeedsRepaintFor(RepaintReason::MouseButton);
                 if (auto pipeline = window->GetRenderPipeline()) {
                     pipeline->ForceRasterize();
                 }
@@ -1566,6 +1654,7 @@ void MouseEventDispatcher::HandleMouseUp(std::shared_ptr<Window> window,
         last_click_time_ = now;
     }
 
+    ResolveFocusClearAfterClick(window);
     last_mousedown_element_.reset();
 
     // 结束拖拽
@@ -1645,7 +1734,7 @@ void MouseEventDispatcher::HandleMouseMove(std::shared_ptr<Window> window,
             auto terminal_element = std::dynamic_pointer_cast<HTMLTerminalElement>(last_mousedown);
             if (terminal_element) {
                 terminal_element->HandleMouseMove(hit_result.local_x, hit_result.local_y);
-                window->SetNeedsRepaint();
+                window->SetNeedsRepaintFor(RepaintReason::MouseHover);
                 if (auto pipeline = window->GetRenderPipeline()) {
                     pipeline->ForceRasterize();
                 }
@@ -1654,7 +1743,7 @@ void MouseEventDispatcher::HandleMouseMove(std::shared_ptr<Window> window,
             auto logview_element = std::dynamic_pointer_cast<HTMLLogViewElement>(last_mousedown);
             if (logview_element) {
                 logview_element->OnMouseMove(hit_result.local_x, hit_result.local_y);
-                window->SetNeedsRepaint();
+                window->SetNeedsRepaintFor(RepaintReason::MouseHover);
                 if (auto pipeline = window->GetRenderPipeline()) {
                     pipeline->ForceRasterize();
                 }
@@ -1690,7 +1779,7 @@ void MouseEventDispatcher::HandleContentEditableDragSelection(std::shared_ptr<Wi
     }
 
     if (contenteditable_controller_->HandleMouseMove(document, logical_x, logical_y, root_render, window.get())) {
-        window->SetNeedsRepaint();
+        window->SetNeedsRepaintFor(RepaintReason::MouseHover);
     }
 }
 

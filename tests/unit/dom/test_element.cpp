@@ -17,8 +17,17 @@
 #include "dom/element.h"
 #include "dom/document.h"
 #include "dom/event.h"
+#include "dom/elements/html_input_element.h"
+#include "dom/elements/html_textarea_element.h"
+#include "event/input/focus_manager.h"
 #include "dom/utils/dom_token_list.h"
 #include "dom/style/css_style_declaration.h"
+#include "lexbor/style_manager.h"
+#include "render/css/style_resolver.h"
+#include "window/window.h"
+#ifdef GetClassName
+#undef GetClassName
+#endif
 
 namespace mbink {
 namespace test {
@@ -287,6 +296,395 @@ TEST_F(ElementTest, SetPseudoClass) {
 
     elem->SetPseudoClass("hover", false);
     EXPECT_FALSE(elem->HasPseudoClass("hover"));
+}
+
+TEST_F(ElementTest, HoverPseudoClassDoesNotDirtyAncestor) {
+    auto parent = CreateElement("div");
+    auto child = CreateElement("div");
+    parent->AppendChild(child);
+
+    parent->ClearDirty();
+    child->ClearDirty();
+
+    child->SetPseudoClass("hover", true);
+
+    EXPECT_TRUE(child->HasPseudoClass("hover"));
+    EXPECT_FALSE(parent->IsDirty());
+    EXPECT_FALSE(parent->IsStyleDirty());
+    EXPECT_FALSE(parent->IsPaintDirty());
+}
+
+TEST_F(ElementTest, BuiltinButtonHoverStyleStillResolves) {
+    auto button = CreateElement("button");
+    button->SetStyle("background-color", "#808080");
+
+    StyleResolver resolver;
+    auto normal_style = resolver.ResolveStyle(button, nullptr);
+
+    button->SetPseudoClass("hover", true);
+    auto hover_style = resolver.ResolveStyle(button, nullptr);
+
+    EXPECT_NE(normal_style.background_color, hover_style.background_color);
+    EXPECT_EQ(hover_style.background_color, "#6C6C6C");
+}
+
+TEST_F(ElementTest, DescendantHoverSelectorStillResolves) {
+    auto parent = CreateElement("div");
+    parent->SetClassName("parent");
+    auto child = CreateElement("span");
+    child->SetClassName("child");
+    parent->AppendChild(child);
+    doc_->GetBody()->AppendChild(parent);
+
+    ASSERT_TRUE(doc_->GetStyleManager()->ParseCSSString(R"(
+        .parent:hover .child { color: rgb(255, 0, 0); }
+    )"));
+
+    StyleResolver resolver;
+    resolver.SetStyleManager(doc_->GetStyleManager());
+
+    auto normal_style = resolver.ResolveStyle(child, nullptr);
+    parent->SetPseudoClass("hover", true);
+    auto hover_style = resolver.ResolveStyle(child, nullptr);
+
+    EXPECT_NE(normal_style.color, hover_style.color);
+    EXPECT_EQ(hover_style.color, "rgb(255, 0, 0)");
+}
+
+TEST_F(ElementTest, HoverPseudoClassRestylesDescendantRenderObject) {
+    WindowConfig config;
+    config.hidden = true;
+    config.headless = true;
+    config.backend = RenderBackend::CPU;
+    auto window = std::make_shared<Window>(config);
+    window->SetDocument(doc_);
+
+    auto parent = CreateElement("div");
+    parent->SetClassName("parent");
+    auto child = CreateElement("span");
+    child->SetClassName("child");
+    parent->AppendChild(child);
+    doc_->GetBody()->AppendChild(parent);
+
+    ASSERT_TRUE(doc_->GetStyleManager()->ParseCSSString(R"(
+        .parent:hover .child { color: rgb(255, 0, 0); }
+    )"));
+
+    RenderTreeBuilder builder;
+    builder.SetDocument(doc_.get());
+    auto render_root = builder.BuildRenderTree(doc_->GetBody());
+    ASSERT_NE(render_root, nullptr);
+    ASSERT_NE(child->GetRenderObject(), nullptr);
+    EXPECT_NE(child->GetRenderObject()->GetComputedStyle().color, "rgb(255, 0, 0)");
+
+    parent->SetPseudoClass("hover", true);
+
+    EXPECT_TRUE(parent->HasPseudoClass("hover"));
+    EXPECT_EQ(child->GetRenderObject()->GetComputedStyle().color, "rgb(255, 0, 0)");
+    EXPECT_TRUE(window->NeedsRepaint());
+    EXPECT_EQ(window->GetLastRepaintReason(), RepaintReason::PseudoClass);
+}
+
+TEST_F(ElementTest, HoverPseudoClassExitRestylesDescendantRenderObject) {
+    WindowConfig config;
+    config.hidden = true;
+    config.headless = true;
+    config.backend = RenderBackend::CPU;
+    auto window = std::make_shared<Window>(config);
+    window->SetDocument(doc_);
+
+    auto parent = CreateElement("div");
+    parent->SetClassName("parent");
+    auto child = CreateElement("span");
+    child->SetClassName("child");
+    parent->AppendChild(child);
+    doc_->GetBody()->AppendChild(parent);
+
+    ASSERT_TRUE(doc_->GetStyleManager()->ParseCSSString(R"(
+        .parent:hover .child { color: rgb(255, 0, 0); }
+    )"));
+
+    RenderTreeBuilder builder;
+    builder.SetDocument(doc_.get());
+    auto render_root = builder.BuildRenderTree(doc_->GetBody());
+    ASSERT_NE(render_root, nullptr);
+    ASSERT_NE(child->GetRenderObject(), nullptr);
+
+    parent->SetPseudoClass("hover", true);
+    EXPECT_EQ(child->GetRenderObject()->GetComputedStyle().color, "rgb(255, 0, 0)");
+
+    parent->SetPseudoClass("hover", false);
+    EXPECT_FALSE(parent->HasPseudoClass("hover"));
+    EXPECT_NE(child->GetRenderObject()->GetComputedStyle().color, "rgb(255, 0, 0)");
+}
+
+TEST_F(ElementTest, LayoutHoverStyleMarksDescendantForLayout) {
+    WindowConfig config;
+    config.hidden = true;
+    config.headless = true;
+    config.backend = RenderBackend::CPU;
+    auto window = std::make_shared<Window>(config);
+    window->SetDocument(doc_);
+
+    auto parent = CreateElement("div");
+    parent->SetClassName("parent");
+    auto child = CreateElement("span");
+    child->SetClassName("child");
+    parent->AppendChild(child);
+    doc_->GetBody()->AppendChild(parent);
+
+    ASSERT_TRUE(doc_->GetStyleManager()->ParseCSSString(R"(
+        .parent:hover .child { padding-left: 12px; }
+    )"));
+
+    RenderTreeBuilder builder;
+    builder.SetDocument(doc_.get());
+    auto render_root = builder.BuildRenderTree(doc_->GetBody());
+    ASSERT_NE(render_root, nullptr);
+    ASSERT_NE(child->GetRenderObject(), nullptr);
+    child->GetRenderObject()->ClearNeedsLayout();
+    child->GetRenderObject()->ClearNeedsPaint();
+
+    parent->SetPseudoClass("hover", true);
+
+    const auto& child_style = child->GetRenderObject()->GetComputedStyle();
+    EXPECT_EQ(child_style.padding_left.ToPx(0.0f, child_style.font_size), 12.0f);
+    EXPECT_TRUE(child->GetRenderObject()->NeedsLayout());
+    EXPECT_TRUE(child->GetRenderObject()->NeedsPaint());
+    EXPECT_TRUE(window->NeedsRepaint());
+    EXPECT_EQ(window->GetLastRepaintReason(), RepaintReason::PseudoClass);
+}
+
+TEST_F(ElementTest, HoverPseudoClassRestylesInheritedTextRenderObject) {
+    WindowConfig config;
+    config.hidden = true;
+    config.headless = true;
+    config.backend = RenderBackend::CPU;
+    auto window = std::make_shared<Window>(config);
+    window->SetDocument(doc_);
+
+    auto parent = CreateElement("div");
+    parent->SetClassName("parent");
+    auto text = CreateTextNode("label");
+    parent->AppendChild(text);
+    doc_->GetBody()->AppendChild(parent);
+
+    ASSERT_TRUE(doc_->GetStyleManager()->ParseCSSString(R"(
+        .parent:hover { color: rgb(0, 128, 255); }
+    )"));
+
+    RenderTreeBuilder builder;
+    builder.SetDocument(doc_.get());
+    auto render_root = builder.BuildRenderTree(doc_->GetBody());
+    ASSERT_NE(render_root, nullptr);
+    ASSERT_NE(text->GetRenderObject(), nullptr);
+    EXPECT_NE(text->GetRenderObject()->GetComputedStyle().color, "rgb(0, 128, 255)");
+
+    parent->SetPseudoClass("hover", true);
+
+    EXPECT_EQ(parent->GetRenderObject()->GetComputedStyle().color, "rgb(0, 128, 255)");
+    EXPECT_EQ(text->GetRenderObject()->GetComputedStyle().color, "rgb(0, 128, 255)");
+}
+
+TEST_F(ElementTest, FocusPseudoClassDoesNotDirtyAncestor) {
+    WindowConfig config;
+    config.hidden = true;
+    config.headless = true;
+    config.backend = RenderBackend::CPU;
+    auto window = std::make_shared<Window>(config);
+    window->SetDocument(doc_);
+
+    auto parent = CreateElement("div");
+    auto input = std::dynamic_pointer_cast<HTMLInputElement>(doc_->CreateElement("input"));
+    ASSERT_NE(input, nullptr);
+    parent->AppendChild(input);
+    doc_->GetBody()->AppendChild(parent);
+
+    RenderTreeBuilder builder;
+    builder.SetDocument(doc_.get());
+    auto render_root = builder.BuildRenderTree(doc_->GetBody());
+    ASSERT_NE(render_root, nullptr);
+    ASSERT_NE(input->GetRenderObject(), nullptr);
+
+    doc_->GetBody()->ClearDirty();
+    parent->ClearDirty();
+    input->ClearDirty();
+    input->GetRenderObject()->ClearNeedsPaint();
+
+    input->SetPseudoClass("focus", true);
+
+    EXPECT_TRUE(input->HasPseudoClass("focus"));
+    EXPECT_FALSE(doc_->GetBody()->IsDirty());
+    EXPECT_FALSE(parent->IsDirty());
+    EXPECT_FALSE(input->IsDirty());
+    EXPECT_TRUE(input->GetRenderObject()->NeedsPaint());
+    EXPECT_TRUE(window->NeedsRepaint());
+    EXPECT_EQ(window->GetLastRepaintReason(), RepaintReason::PseudoClass);
+}
+
+TEST_F(ElementTest, FocusPseudoClassRestylesInputRenderObject) {
+    WindowConfig config;
+    config.hidden = true;
+    config.headless = true;
+    config.backend = RenderBackend::CPU;
+    auto window = std::make_shared<Window>(config);
+    window->SetDocument(doc_);
+
+    auto input = std::dynamic_pointer_cast<HTMLInputElement>(doc_->CreateElement("input"));
+    ASSERT_NE(input, nullptr);
+    doc_->GetBody()->AppendChild(input);
+
+    RenderTreeBuilder builder;
+    builder.SetDocument(doc_.get());
+    auto render_root = builder.BuildRenderTree(doc_->GetBody());
+    ASSERT_NE(render_root, nullptr);
+    ASSERT_NE(input->GetRenderObject(), nullptr);
+
+    input->SetPseudoClass("focus", true);
+
+    const auto& focused_style = input->GetRenderObject()->GetComputedStyle();
+    EXPECT_EQ(focused_style.outline_style, "solid");
+    EXPECT_EQ(focused_style.outline_width.ToPx(0.0f, focused_style.font_size), 2.0f);
+    EXPECT_TRUE(input->GetRenderObject()->NeedsPaint());
+}
+
+TEST_F(ElementTest, FocusManagerOnlyMarksFocusedElementPseudoClass) {
+    WindowConfig config;
+    config.hidden = true;
+    config.headless = true;
+    config.backend = RenderBackend::CPU;
+    auto window = std::make_shared<Window>(config);
+    window->SetDocument(doc_);
+
+    auto parent = CreateElement("div");
+    auto input = std::dynamic_pointer_cast<HTMLInputElement>(doc_->CreateElement("input"));
+    ASSERT_NE(input, nullptr);
+    parent->AppendChild(input);
+    doc_->GetBody()->AppendChild(parent);
+
+    RenderTreeBuilder builder;
+    builder.SetDocument(doc_.get());
+    auto render_root = builder.BuildRenderTree(doc_->GetBody());
+    ASSERT_NE(render_root, nullptr);
+
+    FocusManager focus_manager;
+    focus_manager.SetWindow(window.get());
+    ASSERT_TRUE(focus_manager.SetFocus(input, false));
+
+    EXPECT_TRUE(input->HasPseudoClass("focus"));
+    EXPECT_FALSE(parent->HasPseudoClass("focus"));
+    EXPECT_FALSE(doc_->GetBody()->HasPseudoClass("focus"));
+}
+
+TEST_F(ElementTest, FocusManagerMarksOnlyFocusedElementDirtyRegion) {
+    WindowConfig config;
+    config.hidden = true;
+    config.headless = true;
+    config.backend = RenderBackend::CPU;
+    auto window = std::make_shared<Window>(config);
+    window->SetDocument(doc_);
+
+    auto parent = CreateElement("div");
+    auto input = std::dynamic_pointer_cast<HTMLInputElement>(doc_->CreateElement("input"));
+    ASSERT_NE(input, nullptr);
+    parent->AppendChild(input);
+    doc_->GetBody()->AppendChild(parent);
+
+    RenderTreeBuilder builder;
+    builder.SetDocument(doc_.get());
+    auto render_root = builder.BuildRenderTree(doc_->GetBody());
+    ASSERT_NE(render_root, nullptr);
+    ASSERT_NE(input->GetRenderObject(), nullptr);
+
+    doc_->GetBody()->ClearDirty();
+    parent->ClearDirty();
+    input->ClearDirty();
+    input->GetRenderObject()->ClearNeedsPaint();
+    window->ClearDirtyRects();
+
+    FocusManager focus_manager;
+    focus_manager.SetWindow(window.get());
+    ASSERT_TRUE(focus_manager.SetFocus(input, false));
+
+    EXPECT_FALSE(doc_->GetBody()->IsDirty());
+    EXPECT_FALSE(parent->IsDirty());
+    EXPECT_FALSE(input->IsDirty());
+    EXPECT_TRUE(input->GetRenderObject()->NeedsPaint());
+    EXPECT_TRUE(window->NeedsRepaint());
+    EXPECT_EQ(window->GetLastRepaintReason(), RepaintReason::Focus);
+    EXPECT_LE(window->GetDirtyRects().size(), 1u);
+}
+
+TEST_F(ElementTest, InputRepaintDoesNotDirtyAncestor) {
+    WindowConfig config;
+    config.hidden = true;
+    config.headless = true;
+    config.backend = RenderBackend::CPU;
+    auto window = std::make_shared<Window>(config);
+    window->SetDocument(doc_);
+
+    auto parent = CreateElement("div");
+    auto input = std::dynamic_pointer_cast<HTMLInputElement>(doc_->CreateElement("input"));
+    ASSERT_NE(input, nullptr);
+    parent->AppendChild(input);
+    doc_->GetBody()->AppendChild(parent);
+
+    RenderTreeBuilder builder;
+    builder.SetDocument(doc_.get());
+    auto render_root = builder.BuildRenderTree(doc_->GetBody());
+    ASSERT_NE(render_root, nullptr);
+    ASSERT_NE(input->GetRenderObject(), nullptr);
+
+    doc_->GetBody()->ClearDirty();
+    parent->ClearDirty();
+    input->ClearDirty();
+    input->GetRenderObject()->ClearNeedsPaint();
+
+    input->SetValue("a", false);
+
+    EXPECT_EQ(input->GetValue(), "a");
+    EXPECT_FALSE(doc_->GetBody()->IsDirty());
+    EXPECT_FALSE(parent->IsDirty());
+    EXPECT_FALSE(input->IsDirty());
+    EXPECT_TRUE(input->GetRenderObject()->NeedsPaint());
+    EXPECT_TRUE(window->NeedsRepaint());
+    EXPECT_EQ(window->GetLastRepaintReason(), RepaintReason::KeyboardInput);
+}
+
+TEST_F(ElementTest, TextAreaRepaintDoesNotDirtyAncestor) {
+    WindowConfig config;
+    config.hidden = true;
+    config.headless = true;
+    config.backend = RenderBackend::CPU;
+    auto window = std::make_shared<Window>(config);
+    window->SetDocument(doc_);
+
+    auto parent = CreateElement("div");
+    auto textarea = std::dynamic_pointer_cast<HTMLTextAreaElement>(doc_->CreateElement("textarea"));
+    ASSERT_NE(textarea, nullptr);
+    parent->AppendChild(textarea);
+    doc_->GetBody()->AppendChild(parent);
+
+    RenderTreeBuilder builder;
+    builder.SetDocument(doc_.get());
+    auto render_root = builder.BuildRenderTree(doc_->GetBody());
+    ASSERT_NE(render_root, nullptr);
+    ASSERT_NE(textarea->GetRenderObject(), nullptr);
+
+    doc_->GetBody()->ClearDirty();
+    parent->ClearDirty();
+    textarea->ClearDirty();
+    textarea->GetRenderObject()->ClearNeedsPaint();
+
+    textarea->HandleTextInput("a");
+
+    EXPECT_EQ(textarea->GetValue(), "a");
+    EXPECT_FALSE(doc_->GetBody()->IsDirty());
+    EXPECT_FALSE(parent->IsDirty());
+    EXPECT_FALSE(textarea->IsDirty());
+    EXPECT_TRUE(textarea->GetRenderObject()->NeedsPaint());
+    EXPECT_TRUE(window->NeedsRepaint());
+    EXPECT_EQ(window->GetLastRepaintReason(), RepaintReason::KeyboardInput);
 }
 
 TEST_F(ElementTest, MultiplePseudoClasses) {

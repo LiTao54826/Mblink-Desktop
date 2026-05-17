@@ -128,6 +128,11 @@ bool InputEditingController::ApplySetSelection(int anchor, int focus) {
     int len = static_cast<int>(utf8::CharCount(edit_state_->text));
     anchor = anchor < 0 ? 0 : (anchor > len ? len : anchor);
     focus = focus < 0 ? 0 : (focus > len ? len : focus);
+    if (edit_state_->selection_anchor == anchor &&
+        edit_state_->selection_focus == focus &&
+        edit_state_->caret_position == focus) {
+        return false;
+    }
     edit_state_->SetSelection(anchor, focus); RequestRepaint(); return true;
 }
 

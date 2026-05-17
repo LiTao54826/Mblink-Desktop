@@ -657,6 +657,21 @@ void RenderFlex::Paint(SkCanvas* canvas) {
         if (child->HasOwnCompositorLayer()) {
             continue;
         }
+        const auto& child_style = child->GetComputedStyle();
+        const bool is_fixed_or_absolute =
+            child_style.position == "fixed" || child_style.position == "absolute";
+        if (!is_fixed_or_absolute || child_style.z_index < 100) {
+            const auto& child_layout = child->GetLayoutInfo();
+            SkRect child_rect = SkRect::MakeXYWH(
+                child_layout.x,
+                child_layout.y,
+                child_layout.width,
+                child_layout.height
+            );
+            if (canvas->quickReject(child_rect.makeOutset(50, 50))) {
+                continue;
+            }
+        }
         child->Paint(canvas);
     }
 

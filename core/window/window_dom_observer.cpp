@@ -46,6 +46,165 @@ void AddDirtyRectForRenderObject(Window* window, Element* owner, RenderObject* r
     }
 }
 
+bool HasBuiltinHoverStyle(const std::string& tag_name) {
+    return tag_name == "button" || tag_name == "a";
+}
+
+bool LayoutSensitiveStyleChanged(const ComputedStyle& old_style,
+                                 const ComputedStyle& new_style) {
+    return old_style.display != new_style.display ||
+           old_style.width != new_style.width ||
+           old_style.height != new_style.height ||
+           old_style.min_width != new_style.min_width ||
+           old_style.min_height != new_style.min_height ||
+           old_style.max_width != new_style.max_width ||
+           old_style.max_height != new_style.max_height ||
+           old_style.margin_left != new_style.margin_left ||
+           old_style.margin_right != new_style.margin_right ||
+           old_style.margin_top != new_style.margin_top ||
+           old_style.margin_bottom != new_style.margin_bottom ||
+           old_style.padding_left != new_style.padding_left ||
+           old_style.padding_right != new_style.padding_right ||
+           old_style.padding_top != new_style.padding_top ||
+           old_style.padding_bottom != new_style.padding_bottom ||
+           old_style.border_left_width != new_style.border_left_width ||
+           old_style.border_right_width != new_style.border_right_width ||
+           old_style.border_top_width != new_style.border_top_width ||
+           old_style.border_bottom_width != new_style.border_bottom_width ||
+           old_style.text_align != new_style.text_align ||
+           old_style.justify_content != new_style.justify_content ||
+           old_style.align_items != new_style.align_items ||
+           old_style.align_self != new_style.align_self ||
+           old_style.flex_direction != new_style.flex_direction ||
+           old_style.flex_wrap != new_style.flex_wrap ||
+           old_style.flex_grow != new_style.flex_grow ||
+           old_style.flex_shrink != new_style.flex_shrink ||
+           old_style.flex_basis != new_style.flex_basis ||
+           old_style.position != new_style.position ||
+           old_style.left != new_style.left ||
+           old_style.right != new_style.right ||
+           old_style.top != new_style.top ||
+           old_style.bottom != new_style.bottom ||
+           old_style.overflow_x != new_style.overflow_x ||
+           old_style.overflow_y != new_style.overflow_y ||
+           old_style.white_space != new_style.white_space ||
+           old_style.font_size != new_style.font_size ||
+           old_style.font_weight != new_style.font_weight ||
+           old_style.font_family != new_style.font_family ||
+           old_style.line_height != new_style.line_height;
+}
+
+void SyncLayoutStyle(Window* window,
+                     RenderObject* render_obj,
+                     const ComputedStyle& new_style,
+                     bool needs_layout_sync) {
+    if (!window || !render_obj || !window->GetLayoutEngine()) {
+        return;
+    }
+
+    auto* layout_engine = window->GetLayoutEngine();
+    if (!needs_layout_sync) {
+        return;
+    }
+
+    if (layout_engine->HasElement(render_obj)) {
+        layout_engine->UpdateStyle(render_obj, new_style);
+        layout_engine->MarkNeedsLayout(render_obj);
+        return;
+    }
+
+    auto ancestor = render_obj->GetParent();
+    while (ancestor) {
+        if (layout_engine->HasElement(ancestor.get())) {
+            layout_engine->MarkNeedsLayout(ancestor.get());
+            break;
+        }
+        ancestor = ancestor->GetParent();
+    }
+}
+
+void ApplyInheritedTextStyle(Window* window,
+                             Element* owner,
+                             RenderObject* text_render,
+                             const ComputedStyle* parent_style) {
+    if (!window || !text_render || !parent_style) {
+        return;
+    }
+
+    const auto old_style = text_render->GetComputedStyle();
+    ComputedStyle text_style = text_render->GetComputedStyle();
+    text_style.color = parent_style->color;
+    text_style.font_family = parent_style->font_family;
+    text_style.font_size = parent_style->font_size;
+    text_style.font_weight = parent_style->font_weight;
+    text_style.font_style = parent_style->font_style;
+    text_style.line_height = parent_style->line_height;
+    text_style.text_align = parent_style->text_align;
+    text_style.text_decoration = parent_style->text_decoration;
+    text_style.text_shadow = parent_style->text_shadow;
+
+    text_render->SetComputedStyle(text_style);
+    const bool needs_layout_sync = LayoutSensitiveStyleChanged(old_style, text_style);
+    if (needs_layout_sync) {
+        text_render->MarkNeedsLayout();
+    }
+    text_render->MarkNeedsPaint();
+    SyncLayoutStyle(window, text_render, text_style, needs_layout_sync);
+    text_render->InvalidatePaintCache();
+    AddDirtyRectForRenderObject(window, owner, text_render);
+}
+
+void RestyleInteractionPseudoClassSubtree(Window* window,
+                                          StyleResolver& resolver,
+                                          const std::shared_ptr<Element>& element,
+                                          const ComputedStyle* parent_style) {
+    if (!window || !element) {
+        return;
+    }
+
+    auto render_obj = element->GetRenderObject();
+    ComputedStyle new_style;
+    ComputedStyle non_render_style;
+    const ComputedStyle* child_parent_style = parent_style;
+
+    if (render_obj) {
+        const auto old_style = render_obj->GetComputedStyle();
+        AddDirtyRectForRenderObject(window, element.get(), render_obj.get());
+
+        new_style = resolver.ResolveStyle(element, parent_style);
+        render_obj->SetComputedStyle(new_style);
+
+        const bool needs_layout_sync = LayoutSensitiveStyleChanged(old_style, new_style);
+        if (needs_layout_sync) {
+            render_obj->MarkNeedsLayout();
+            render_obj->MarkNeedsPaint();
+        } else {
+            render_obj->MarkNeedsPaint();
+        }
+
+        SyncLayoutStyle(window, render_obj.get(), new_style, needs_layout_sync);
+        render_obj->InvalidatePaintCache();
+        AddDirtyRectForRenderObject(window, element.get(), render_obj.get());
+        child_parent_style = &render_obj->GetComputedStyle();
+    } else {
+        non_render_style = resolver.ResolveStyle(element, parent_style);
+        child_parent_style = &non_render_style;
+    }
+
+    for (const auto& child : element->GetChildNodes()) {
+        if (!child) {
+            continue;
+        }
+
+        if (child->GetNodeType() == NodeType::ELEMENT_NODE) {
+            auto child_element = std::static_pointer_cast<Element>(child);
+            RestyleInteractionPseudoClassSubtree(window, resolver, child_element, child_parent_style);
+        } else if (child->GetNodeType() == NodeType::TEXT_NODE) {
+            ApplyInheritedTextStyle(window, element.get(), child->GetRenderObject().get(), child_parent_style);
+        }
+    }
+}
+
 
 }  // namespace
 
@@ -65,7 +224,7 @@ void WindowDOMObserver::OnNodeAdded(Node* node, Node* parent) {
                     // 否则新样式不会应用到已有的 DOM 元素
                     if (window_) {
                         window_->InvalidateRenderTree();
-                        window_->SetNeedsRepaint();
+                        window_->SetNeedsRepaintFor(RepaintReason::DOMMutation);
                     }
                 }
             }
@@ -94,7 +253,7 @@ void WindowDOMObserver::OnNodeAdded(Node* node, Node* parent) {
                     //
                     // 对 out-of-flow 统一走渲染树重建，确保 DOM->RenderTree 单一真源。
                     window_->InvalidateRenderTree();
-                    window_->SetNeedsRepaint();
+                    window_->SetNeedsRepaintFor(RepaintReason::DOMMutation);
                     return;
                 }
 
@@ -117,7 +276,7 @@ void WindowDOMObserver::OnNodeAdded(Node* node, Node* parent) {
                     node->SetNeedsStyleRecalc(StyleChangeType::kSubtreeStyleChange);
                     node->SetNeedsLayout();
 
-                    window_->SetNeedsRepaint();
+                    window_->SetNeedsRepaintFor(RepaintReason::DOMMutation);
                     return;
                 }
             }
@@ -147,7 +306,7 @@ void WindowDOMObserver::OnNodeAdded(Node* node, Node* parent) {
         // 4. 增量更新：标记需要重绘
         // DirtyNodeTracker 已经在 Node::AppendChild 中记录了变化
         // RenderTreeSynchronizer 会在渲染时根据变化区域大小决定是增量更新还是全量重建
-        window_->SetNeedsRepaint();
+        window_->SetNeedsRepaintFor(RepaintReason::DOMMutation);
     }
 }
 
@@ -169,7 +328,7 @@ void WindowDOMObserver::OnNodeRemoved(Node* node, Node* parent) {
                     // 直接移除会与同步器/层树路径竞争，可能留下残留对象或脏状态。
                     // 统一触发重建，确保 fixed/absolute 元素生命周期一致。
                     window_->InvalidateRenderTree();
-                    window_->SetNeedsRepaint();
+                    window_->SetNeedsRepaintFor(RepaintReason::DOMMutation);
                     return;
                 }
 
@@ -194,7 +353,7 @@ void WindowDOMObserver::OnNodeRemoved(Node* node, Node* parent) {
                         parent->SetNeedsLayout();
                     }
 
-                    window_->SetNeedsRepaint();
+                    window_->SetNeedsRepaintFor(RepaintReason::DOMMutation);
                     return;
                 }
             }
@@ -223,7 +382,7 @@ void WindowDOMObserver::OnNodeRemoved(Node* node, Node* parent) {
                     const auto& parent_style = parent_elem->GetRenderObject()->GetComputedStyle();
                     if (parent_style.position == "fixed") {
                         window_->InvalidateRenderTree();
-                        window_->SetNeedsRepaint();
+                        window_->SetNeedsRepaintFor(RepaintReason::DOMMutation);
                         return;
                     }
                 }
@@ -233,7 +392,7 @@ void WindowDOMObserver::OnNodeRemoved(Node* node, Node* parent) {
         // 2. 增量更新：标记需要重绘
         // DirtyNodeTracker 已经在 Node::RemoveChild 中记录了变化
         // RenderTreeSynchronizer 会在渲染时根据变化区域大小决定是增量更新还是全量重建
-        window_->SetNeedsRepaint();
+        window_->SetNeedsRepaintFor(RepaintReason::DOMMutation);
     }
 }
 
@@ -284,7 +443,7 @@ void WindowDOMObserver::OnAttributeChanged(Element* element,
                 if (was_none != is_none) {
                     // 可见性发生变化，需要重建渲染树
                     window_->InvalidateRenderTree();
-                    window_->SetNeedsRepaint();
+                    window_->SetNeedsRepaintFor(RepaintReason::DOMMutation);
                     return;
                 }
 
@@ -318,7 +477,7 @@ void WindowDOMObserver::OnAttributeChanged(Element* element,
                 }
             }
         }
-        window_->SetNeedsRepaint();
+        window_->SetNeedsRepaintFor(RepaintReason::DOMMutation);
         // 注意：属性变化不调用 InvalidateRenderTree()，保持渲染树结构
     }
 }
@@ -337,7 +496,7 @@ void WindowDOMObserver::OnStyleChanged(Element* element,
             if (was_none != is_none) {
                 // 可见性发生变化，需要重建渲染树
                 window_->InvalidateRenderTree();
-                window_->SetNeedsRepaint();
+                window_->SetNeedsRepaintFor(RepaintReason::DOMMutation);
                 return;
             }
         }
@@ -430,7 +589,7 @@ void WindowDOMObserver::OnStyleChanged(Element* element,
                 window_->AddDirtyRect(bounds);
             }
         }
-        window_->SetNeedsRepaint();
+        window_->SetNeedsRepaintFor(RepaintReason::DOMMutation);
     }
 }
 
@@ -448,7 +607,7 @@ void WindowDOMObserver::OnTextChanged(Node* node,
 
         // 不在这里直接 SetText / UpdateContentVersion / 逐节点 MarkNeedsLayout，
         // 统一由 ProcessTextChanges 执行，确保单一语义入口。
-        window_->SetNeedsRepaint();
+        window_->SetNeedsRepaintFor(RepaintReason::DOMMutation);
     }
 }
 
@@ -467,7 +626,7 @@ void WindowDOMObserver::OnSubtreeModified(Node* root) {
             if (tracker.GetTextChangeCount() > 0 &&
                 tracker.GetStructuralChangeCount() == 0) {
                 // 保持增量路径：触发重绘，但不触发全量渲染树失效
-                window_->SetNeedsRepaint();
+                window_->SetNeedsRepaintFor(RepaintReason::DOMMutation);
                 return;
             }
 
@@ -504,14 +663,14 @@ void WindowDOMObserver::OnSubtreeModified(Node* root) {
                             }
                         }
                     }
-                    window_->SetNeedsRepaint();
+                    window_->SetNeedsRepaintFor(RepaintReason::DOMMutation);
                     return;
                 }
             }
         }
 
         // 大量变化或无法确定时，回退到全量重建
-        window_->SetNeedsRepaint();
+        window_->SetNeedsRepaintFor(RepaintReason::DOMMutation);
         window_->InvalidateRenderTree();
     }
 }
@@ -519,108 +678,38 @@ void WindowDOMObserver::OnSubtreeModified(Node* root) {
 void WindowDOMObserver::OnPseudoClassChanged(std::shared_ptr<Element> element,
                                              const std::string& pseudo_class,
                                              bool activate) {
+    (void)activate;
+
     if (window_ && !IsInBatch(element.get())) {
-        // hover 伪类变化需要重新解析样式（可能有 :hover 选择器定义的动画）
-        if (pseudo_class == "hover") {
-            // 性能优化：只有当元素有 :hover 相关的 CSS 规则时才重新解析样式
+        if (pseudo_class == "hover" || pseudo_class == "active" ||
+            pseudo_class == "focus" || pseudo_class == "focus-visible") {
             auto style_manager = window_->GetDocument() ? window_->GetDocument()->GetStyleManager() : nullptr;
-            if (!style_manager || !style_manager->HasHoverRules(element.get())) {
-                // 没有 hover 规则，不需要重新解析样式
+            const std::string tag_name = element->GetTagName();
+            const bool has_builtin_hover = pseudo_class == "hover" && HasBuiltinHoverStyle(tag_name);
+            const bool has_css_hover = pseudo_class == "hover" && style_manager && style_manager->HasHoverRules(element.get());
+            if (pseudo_class == "hover" && !has_builtin_hover && !has_css_hover) {
                 return;
             }
 
-            if (auto render_obj = element->GetRenderObject()) {
-                AddDirtyRectForRenderObject(window_, element.get(), render_obj.get());
-
-                StyleResolver resolver;
+            StyleResolver resolver;
+            if (style_manager) {
                 resolver.SetStyleManager(style_manager);
-
-                const auto& old_style = render_obj->GetComputedStyle();
-
-                // 获取父元素样式用于继承
-                const ComputedStyle* parent_style = nullptr;
-                if (auto parent_node = element->GetParentNode()) {
-                    if (parent_node->GetNodeType() == NodeType::ELEMENT_NODE) {
-                        auto parent_elem = std::static_pointer_cast<Element>(parent_node);
-                        if (auto parent_render = parent_elem->GetRenderObject()) {
-                            parent_style = &parent_render->GetComputedStyle();
-                        }
-                    }
-                }
-
-                auto new_style = resolver.ResolveStyle(element, parent_style);
-                render_obj->SetComputedStyle(new_style);
-
-                bool needs_layout_sync =
-                    old_style.display != new_style.display ||
-                    old_style.width != new_style.width ||
-                    old_style.height != new_style.height ||
-                    old_style.min_width != new_style.min_width ||
-                    old_style.min_height != new_style.min_height ||
-                    old_style.max_width != new_style.max_width ||
-                    old_style.max_height != new_style.max_height ||
-                    old_style.margin_left != new_style.margin_left ||
-                    old_style.margin_right != new_style.margin_right ||
-                    old_style.margin_top != new_style.margin_top ||
-                    old_style.margin_bottom != new_style.margin_bottom ||
-                    old_style.padding_left != new_style.padding_left ||
-                    old_style.padding_right != new_style.padding_right ||
-                    old_style.padding_top != new_style.padding_top ||
-                    old_style.padding_bottom != new_style.padding_bottom ||
-                    old_style.border_left_width != new_style.border_left_width ||
-                    old_style.border_right_width != new_style.border_right_width ||
-                    old_style.border_top_width != new_style.border_top_width ||
-                    old_style.border_bottom_width != new_style.border_bottom_width ||
-                    old_style.text_align != new_style.text_align ||
-                    old_style.justify_content != new_style.justify_content ||
-                    old_style.align_items != new_style.align_items ||
-                    old_style.align_self != new_style.align_self ||
-                    old_style.flex_direction != new_style.flex_direction ||
-                    old_style.flex_wrap != new_style.flex_wrap ||
-                    old_style.flex_grow != new_style.flex_grow ||
-                    old_style.flex_shrink != new_style.flex_shrink ||
-                    old_style.flex_basis != new_style.flex_basis ||
-                    old_style.position != new_style.position ||
-                    old_style.left != new_style.left ||
-                    old_style.right != new_style.right ||
-                    old_style.top != new_style.top ||
-                    old_style.bottom != new_style.bottom ||
-                    old_style.overflow_x != new_style.overflow_x ||
-                    old_style.overflow_y != new_style.overflow_y ||
-                    old_style.white_space != new_style.white_space ||
-                    old_style.font_size != new_style.font_size ||
-                    old_style.font_weight != new_style.font_weight ||
-                    old_style.font_family != new_style.font_family ||
-                    old_style.line_height != new_style.line_height;
-
-                if (needs_layout_sync) {
-                    render_obj->MarkNeedsLayout();
-                    render_obj->MarkNeedsPaint();
-
-                    if (window_->GetLayoutEngine()) {
-                        auto* layout_engine = window_->GetLayoutEngine();
-                        if (layout_engine->HasElement(render_obj.get())) {
-                            layout_engine->UpdateStyle(render_obj.get(), new_style);
-                        } else {
-                            auto ancestor = render_obj->GetParent();
-                            while (ancestor) {
-                                if (layout_engine->HasElement(ancestor.get())) {
-                                    layout_engine->MarkNeedsLayout(ancestor.get());
-                                    break;
-                                }
-                                ancestor = ancestor->GetParent();
-                            }
-                        }
-                    }
-                } else {
-                    render_obj->MarkNeedsPaint();
-                }
-
-                render_obj->InvalidatePaintCache();
-                AddDirtyRectForRenderObject(window_, element.get(), render_obj.get());
             }
-            window_->SetNeedsRepaint();
+
+            const ComputedStyle* parent_style = nullptr;
+            if (auto parent_node = element->GetParentNode()) {
+                if (parent_node->GetNodeType() == NodeType::ELEMENT_NODE) {
+                    auto parent_elem = std::static_pointer_cast<Element>(parent_node);
+                    if (auto parent_render = parent_elem->GetRenderObject()) {
+                        parent_style = &parent_render->GetComputedStyle();
+                    }
+                }
+            }
+
+            RestyleInteractionPseudoClassSubtree(window_, resolver, element, parent_style);
+            window_->SetNeedsRepaintFor(RepaintReason::PseudoClass);
             return;
+
         }
 
         // 其他伪类的处理
@@ -638,7 +727,7 @@ void WindowDOMObserver::OnPseudoClassChanged(std::shared_ptr<Element> element,
                 render_obj->MarkNeedsPaint();
                 AddDirtyRectForRenderObject(window_, element.get(), render_obj.get());
             }
-            window_->SetNeedsRepaint();
+            window_->SetNeedsRepaintFor(RepaintReason::PseudoClass);
         }
     }
 }

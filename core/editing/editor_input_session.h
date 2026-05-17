@@ -3,6 +3,7 @@
 #include <SDL3/SDL.h>
 #include <memory>
 #include <string>
+#include <unordered_set>
 
 namespace mbink {
 
@@ -21,6 +22,7 @@ public:
     void SetContentEditableHandler(ContentEditableHandler* handler) { contenteditable_handler_ = handler; }
 
     bool IsEditorTarget(const std::shared_ptr<Element>& element) const;
+    void PrepareTextInput(Window* window);
     void SyncTextInputState(Window* window, const std::shared_ptr<Element>& element);
     void UpdateTextInputArea(Window* window, const std::shared_ptr<Element>& element);
 
@@ -48,6 +50,7 @@ public:
 
 private:
     ContentEditableHandler* contenteditable_handler_ = nullptr;
+    std::unordered_set<SDL_Window*> prepared_text_input_windows_;
 };
 
 }  // namespace mbink
