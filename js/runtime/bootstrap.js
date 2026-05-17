@@ -308,6 +308,9 @@
         for (var i = 0; i < runtime.roots.length; i++) {
             var item = runtime.roots[i];
             if (!item) continue;
+            if (item.container && typeof item.renderImpl === 'function') {
+                try { item.renderImpl(null, item.container); } catch (_) {}
+            }
             if (item.container) {
                 try { item.container.__preactRoot = null; } catch (_) {}
             }

@@ -41,6 +41,14 @@ public:
     JSValue GetJSValue(Node* node) const;
 
     /**
+     * @brief 获取 Node 对应的 JSValue 和 QuickJS 上下文
+     * @param node C++ Node 指针
+     * @param ctx_out 输出 QuickJS 上下文
+     * @return JSValue，如果不存在返回 JS_UNDEFINED
+     */
+    JSValue GetJSValueWithContext(Node* node, JSContext** ctx_out) const;
+
+    /**
      * @brief 设置 Node 到 JSValue 的映射
      * @param node C++ Node 指针
      * @param value JSValue（会被 DupValue）

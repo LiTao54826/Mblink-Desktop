@@ -56,6 +56,20 @@ function run() {
          windowSrc.includes('can_update_retained_dirty_region ? &dirty_bounds : nullptr') &&
          windowSrc.includes('main_canvas->clipRect(dirty_bounds'),
     'Dirty retained-present frames must clip redraw work to the dirty bounds');
+  const dirtyClipStart = windowSrc.indexOf('const bool retained_dirty_clip_allowed =');
+  const dirtyClipEnd = windowSrc.indexOf(';', dirtyClipStart);
+  const dirtyClipBlock = windowSrc.slice(dirtyClipStart, dirtyClipEnd);
+  assert(dirtyClipStart >= 0 &&
+         dirtyClipBlock.includes('CanUseRetainedDirtyClipForReason(last_repaint_reason_)') &&
+         dirtyClipBlock.includes('!had_pending_dom_changes') &&
+         dirtyClipBlock.includes('!render_tree_rebuild_required') &&
+         dirtyClipBlock.includes('!needs_layout_update'),
+    'Dirty retained-present clipping must be disabled for DOM/layout/tree rebuild frames');
+  const updateStart = windowSrc.indexOf('const bool can_update_retained_dirty_region =');
+  const updateEnd = windowSrc.indexOf(';', updateStart);
+  const updateBlock = windowSrc.slice(updateStart, updateEnd);
+  assert(updateStart >= 0 && updateBlock.includes('retained_dirty_clip_allowed'),
+    'Dirty retained-present update must be gated by the retained dirty-clip allowlist');
   assert(windowSrc.includes('RenderDevTools(canvas') &&
          windowSrc.indexOf('RenderDevTools(canvas') > windowSrc.indexOf('retained_main_surface_->makeImageSnapshot()'),
     'DevTools overlay must be painted after retained-main copy');

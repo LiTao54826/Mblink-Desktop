@@ -96,6 +96,16 @@ json BuildNativeLeakDelta(const json& current, const json& previous) {
 
 json g_last_native_leak_payload;
 std::string g_last_native_leak_tag;
+
+void ClearKnownDOMWrapperBackrefs(JSContext* ctx, JSValueConst value) {
+    if (!ctx || JS_IsUndefined(value) || JS_IsNull(value)) {
+        return;
+    }
+
+    JS_SetPropertyStr(ctx, value, "_children", JS_UNDEFINED);
+    JS_SetPropertyStr(ctx, value, "_listeners", JS_UNDEFINED);
+    JS_SetPropertyStr(ctx, value, "__preactRoot", JS_UNDEFINED);
+}
 }
 
 
@@ -215,17 +225,31 @@ void WindowBindings::Cleanup() {
             JS_GetOpaque(value, bindings::GetElementClassID())) {
             bindings::ClearElementListenerBindings(entry_ctx, value);
         }
+        ClearKnownDOMWrapperBackrefs(entry_ctx, value);
 
         element->ClearAllEventListeners();
     });
 
     JSValue global = JS_GetGlobalObject(ctx);
+    JS_SetPropertyStr(ctx, global, "addEventListener", JS_UNDEFINED);
+    JS_SetPropertyStr(ctx, global, "removeEventListener", JS_UNDEFINED);
+    JS_SetPropertyStr(ctx, global, "dispatchEvent", JS_UNDEFINED);
+    JS_SetPropertyStr(ctx, global, "setTimeout", JS_UNDEFINED);
+    JS_SetPropertyStr(ctx, global, "setInterval", JS_UNDEFINED);
+    JS_SetPropertyStr(ctx, global, "requestAnimationFrame", JS_UNDEFINED);
+    JS_SetPropertyStr(ctx, global, "clearTimeout", JS_UNDEFINED);
+    JS_SetPropertyStr(ctx, global, "clearInterval", JS_UNDEFINED);
+    JS_SetPropertyStr(ctx, global, "cancelAnimationFrame", JS_UNDEFINED);
+
     JS_SetPropertyStr(ctx, global, "document", JS_UNDEFINED);
     JS_SetPropertyStr(ctx, global, "__mbink_window_ptr", JS_UNDEFINED);
 
     JSValue window_obj = JS_GetPropertyStr(ctx, global, "window");
     if (!JS_IsUndefined(window_obj) && !JS_IsNull(window_obj)) {
         JS_SetPropertyStr(ctx, window_obj, "document", JS_UNDEFINED);
+        JS_SetPropertyStr(ctx, window_obj, "addEventListener", JS_UNDEFINED);
+        JS_SetPropertyStr(ctx, window_obj, "removeEventListener", JS_UNDEFINED);
+        JS_SetPropertyStr(ctx, window_obj, "dispatchEvent", JS_UNDEFINED);
         JS_FreeValue(ctx, window_obj);
     }
 

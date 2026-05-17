@@ -161,6 +161,29 @@ inline bool IsRetainedPresentExperimentEnabled() {
     return !disabled;
 }
 
+inline bool CanUseRetainedDirtyClipForReason(RepaintReason reason) {
+    switch (reason) {
+        case RepaintReason::PseudoClass:
+        case RepaintReason::Focus:
+        case RepaintReason::KeyboardInput:
+        case RepaintReason::MouseHover:
+        case RepaintReason::MouseButton:
+        case RepaintReason::WheelScroll:
+        case RepaintReason::Terminal:
+            return true;
+        case RepaintReason::Unknown:
+        case RepaintReason::Initial:
+        case RepaintReason::Resize:
+        case RepaintReason::DOMMutation:
+        case RepaintReason::Animation:
+        case RepaintReason::DevTools:
+        case RepaintReason::API:
+        case RepaintReason::Layout:
+            return false;
+    }
+    return false;
+}
+
 SkRect UnionDirtyRects(const std::vector<SkRect>& dirty_rects, float width, float height) {
     const SkRect viewport = SkRect::MakeWH(width, height);
     SkRect dirty_bounds = SkRect::MakeEmpty();
@@ -1462,10 +1485,12 @@ void Window::Render() {
     // =========================================================================
     // 关键修复：全量重建帧跳过增量同步，避免同帧重复插入 out-of-flow 节点
     bool needs_layout_update = false;
+    bool had_pending_dom_changes = false;
     stage_start_ms = baseline_stats_enabled ? GetBaselineTimeMs() : 0.0;
     if (!render_tree_rebuild_required && document_ && render_tree_synchronizer_ && cached_render_tree_ && render_tree_valid_) {
         auto& tracker = document_->GetDirtyTracker();
         const bool has_pending_changes = tracker.HasPendingChanges();
+        had_pending_dom_changes = has_pending_changes;
         if (has_pending_changes) {
             // 调用 RenderTreeSynchronizer 来同步变化
             bool synced = render_tree_synchronizer_->Synchronize(tracker, cached_render_tree_);
@@ -1610,6 +1635,11 @@ void Window::Render() {
 
         const SkRect dirty_bounds = UnionDirtyRects(dirty_rects_, app_width, app_height);
         const bool has_dirty_bounds = !dirty_bounds.isEmpty();
+        const bool retained_dirty_clip_allowed =
+            CanUseRetainedDirtyClipForReason(last_repaint_reason_) &&
+            !had_pending_dom_changes &&
+            !render_tree_rebuild_required &&
+            !needs_layout_update;
         SkRect dirty_bounds_px = dirty_bounds;
         dirty_bounds_px.fLeft *= dpi_scale;
         dirty_bounds_px.fTop *= dpi_scale;
@@ -1683,6 +1713,7 @@ void Window::Render() {
             !force_full_repaint_ &&
             !retained_main_scroll_fallback_blocked &&
             has_dirty_bounds &&
+            retained_dirty_clip_allowed &&
             render_pipeline_ &&
             render_pipeline_->NeedsUpdate();
 

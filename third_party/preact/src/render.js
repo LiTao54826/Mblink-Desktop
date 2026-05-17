@@ -16,6 +16,14 @@ export function render(vnode, parentDom) {
 	}
 
 	if (options._root) options._root(vnode, parentDom);
+	if (
+		typeof globalThis != 'undefined' &&
+		typeof globalThis.__mbinkRegisterPreactRoot == 'function'
+	) {
+		try {
+			globalThis.__mbinkRegisterPreactRoot(vnode, parentDom, render);
+		} catch (e) {}
+	}
 
 	// @ts-expect-error
 	let isHydrating = vnode && vnode._flags & MODE_HYDRATE;

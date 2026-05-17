@@ -11,6 +11,7 @@
 #include "core/dom/document.h"
 #include "core/layout/layout_engine.h"
 #include "core/quickjs/dom_binding_map.h"
+#include "core/quickjs/bindings/js_element.h"
 #include <algorithm>
 #include <cstdlib>
 #include <iostream>
@@ -30,6 +31,38 @@ bool IsNodeAttachedToDocument(Node* node) {
     return false;
 }
 
+void ClearDetachedDOMWrapperBackrefs(JSContext* ctx, JSValueConst value) {
+    if (!ctx || JS_IsUndefined(value) || JS_IsNull(value)) {
+        return;
+    }
+
+    JS_SetPropertyStr(ctx, value, "_children", JS_UNDEFINED);
+    JS_SetPropertyStr(ctx, value, "_listeners", JS_UNDEFINED);
+    JS_SetPropertyStr(ctx, value, "__preactRoot", JS_UNDEFINED);
+}
+
+void CleanupDetachedDOMBinding(Node* node) {
+    if (!node) {
+        return;
+    }
+
+    auto* element = dynamic_cast<Element*>(node);
+    auto& binding_map = DOMBindingMap::GetInstance();
+    JSContext* ctx = nullptr;
+    JSValue value = binding_map.GetJSValueWithContext(node, &ctx);
+    if (ctx && !JS_IsUndefined(value) && !JS_IsNull(value)) {
+        if (element && !JS_IsUndefined(value) && !JS_IsNull(value) &&
+            JS_GetOpaque(value, bindings::GetElementClassID())) {
+            bindings::ClearElementListenerBindings(ctx, value);
+        }
+        ClearDetachedDOMWrapperBackrefs(ctx, value);
+    }
+
+    if (element) {
+        element->ClearAllEventListeners();
+    }
+}
+
 size_t RemoveBindingsForSubtree(const std::shared_ptr<Node>& node) {
     if (!node) {
         return 0;
@@ -38,6 +71,7 @@ size_t RemoveBindingsForSubtree(const std::shared_ptr<Node>& node) {
     auto& binding_map = DOMBindingMap::GetInstance();
     size_t removed = 0;
     if (binding_map.Has(node.get())) {
+        CleanupDetachedDOMBinding(node.get());
         removed = 1;
     }
     binding_map.Remove(node.get());
