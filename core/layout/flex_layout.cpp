@@ -1978,23 +1978,83 @@ static Size<float> PerformAbsoluteLayoutOnAbsoluteChildren(
             known_dimensions = MaybeClamp(known_dimensions, min_size, max_size);
         }
 
-        // Measure child
-        // Use InherentSize mode so that the child's style size (width/height) is respected
-        // This is important for flex containers inside absolute positioned elements
-        // to properly calculate their inner_container_size for justify-content/align-items
-        auto layout_output = tree.PerformChildLayout(
-            child,
-            known_dimensions,
-            containing_block_size_opt,
-            Size<AvailableSpace>{
-                AvailableSpace::Definite(containing_block_size.width),
-                AvailableSpace::Definite(containing_block_size.height)
-            },
-            SizingMode::InherentSize,
-            LineBoolFalse()
-        );
+        bool auto_width_should_shrink_to_fit =
+            !known_dimensions.width.has_value() &&
+            !(inset.left.has_value() && inset.right.has_value());
+        bool auto_height_should_shrink_to_fit =
+            !known_dimensions.height.has_value() &&
+            !(inset.top.has_value() && inset.bottom.has_value());
 
-        auto final_size = Clamp(layout_output.size, min_size, max_size);
+        Size<AvailableSpace> child_available_space = {
+            auto_width_should_shrink_to_fit
+                ? AvailableSpace::MaxContent()
+                : AvailableSpace::Definite(containing_block_size.width),
+            auto_height_should_shrink_to_fit
+                ? AvailableSpace::MaxContent()
+                : AvailableSpace::Definite(containing_block_size.height)
+        };
+
+        // Auto-sized positioned flex containers shrink-wrap unless both opposing insets stretch them.
+        // Keep the definite/InherentSize path for explicit sizes and left+right/top+bottom constraints.
+        bool child_should_shrink_to_fit =
+            auto_width_should_shrink_to_fit || auto_height_should_shrink_to_fit;
+        LayoutOutput layout_output;
+        Size<float> final_size = Size<float>::Zero();
+
+        if (child_should_shrink_to_fit) {
+            auto measured_size = tree.MeasureChildSize(
+                child,
+                known_dimensions,
+                containing_block_size_opt,
+                child_available_space,
+                SizingMode::ContentSize
+            );
+
+            final_size = {
+                known_dimensions.width.value_or(measured_size.width),
+                known_dimensions.height.value_or(measured_size.height)
+            };
+
+            if (auto_width_should_shrink_to_fit) {
+                float available_width = containing_block_size.width -
+                    inset.left.value_or(0.0f) - inset.right.value_or(0.0f) -
+                    margin.left - margin.right;
+                final_size.width = f32_min(final_size.width, f32_max(available_width, 0.0f));
+            }
+            if (auto_height_should_shrink_to_fit) {
+                float available_height = containing_block_size.height -
+                    inset.top.value_or(0.0f) - inset.bottom.value_or(0.0f) -
+                    margin.top - margin.bottom;
+                final_size.height = f32_min(final_size.height, f32_max(available_height, 0.0f));
+            }
+
+            final_size = Clamp(final_size, min_size, max_size);
+            layout_output = tree.PerformChildLayout(
+                child,
+                Size<std::optional<float>>{
+                    std::optional<float>(final_size.width),
+                    std::optional<float>(final_size.height)
+                },
+                containing_block_size_opt,
+                Size<AvailableSpace>{
+                    AvailableSpace::Definite(final_size.width),
+                    AvailableSpace::Definite(final_size.height)
+                },
+                SizingMode::InherentSize,
+                LineBoolFalse()
+            );
+        } else {
+            layout_output = tree.PerformChildLayout(
+                child,
+                known_dimensions,
+                containing_block_size_opt,
+                child_available_space,
+                SizingMode::InherentSize,
+                LineBoolFalse()
+            );
+        }
+
+        final_size = Clamp(layout_output.size, min_size, max_size);
 
         // Compute location
         // For fixed positioning, location is relative to viewport (0, 0)
