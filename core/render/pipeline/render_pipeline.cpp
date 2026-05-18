@@ -74,6 +74,37 @@ namespace {
             ClearRenderedTreePaintDirtyFlags(child.get());
         }
     }
+
+    bool AccumulatePaintScrollOffset(const RenderObject* obj,
+                                     const RenderObject* ancestor,
+                                     SkPoint& offset) {
+        offset = SkPoint::Make(0.0f, 0.0f);
+        if (!obj || !ancestor || obj == ancestor) {
+            return true;
+        }
+
+        auto parent = obj->GetParent();
+        while (parent) {
+            offset.offset(parent->GetScrollX(), parent->GetScrollY());
+            if (parent.get() == ancestor) {
+                return true;
+            }
+            parent = parent->GetParent();
+        }
+
+        offset = SkPoint::Make(0.0f, 0.0f);
+        return false;
+    }
+
+    void MoveToLayerPaintSpace(SkRect& rect,
+                               const RenderObject* obj,
+                               const RenderObject* layer_render_obj) {
+        SkPoint scroll_offset;
+        if (AccumulatePaintScrollOffset(obj, layer_render_obj, scroll_offset) &&
+            (scroll_offset.fX != 0.0f || scroll_offset.fY != 0.0f)) {
+            rect.offset(-scroll_offset.fX, -scroll_offset.fY);
+        }
+    }
 }
 
 // =========================================================================
@@ -968,11 +999,13 @@ void RenderPipeline::CollectDirtyRectsForLayer(RenderObject* obj, CompositorLaye
                 bounds = SkRect::MakeWH(layer_bounds.width(), layer_bounds.height());
             } else {
                 bounds = obj->GetBoundingRectRelativeTo(layer_render_obj);
+                MoveToLayerPaintSpace(bounds, obj, layer_render_obj);
                 if (obj->HasPreviousPaintBounds()) {
                     previous_bounds = obj->GetPreviousPaintBounds();
                     if (!previous_bounds.isEmpty()) {
                         previous_bounds.offset(-layer_render_obj->GetBoundingRect().x(),
                                                -layer_render_obj->GetBoundingRect().y());
+                        MoveToLayerPaintSpace(previous_bounds, obj, layer_render_obj);
                         has_previous_bounds = true;
                     }
                 }

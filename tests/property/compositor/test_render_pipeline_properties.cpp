@@ -16,6 +16,7 @@
 #include "core/render/objects/render_object.h"
 #include "include/core/SkSurface.h"
 #include "include/core/SkCanvas.h"
+#include "include/core/SkPaint.h"
 #include <memory>
 
 using namespace mbink;
@@ -57,6 +58,49 @@ public:
     void SetFixed(bool fixed) {
         computed_style_.position = fixed ? "fixed" : "static";
     }
+
+    void SetPaintColor(SkColor color) {
+        paint_color_ = color;
+    }
+
+    void Paint(SkCanvas* canvas) override {
+        if (!canvas) {
+            return;
+        }
+
+        canvas->save();
+        canvas->translate(layout_info_.x, layout_info_.y);
+
+        if (SkColorGetA(paint_color_) != 0) {
+            SkPaint paint;
+            paint.setColor(paint_color_);
+            paint.setStyle(SkPaint::kFill_Style);
+            canvas->drawRect(SkRect::MakeWH(layout_info_.width, layout_info_.height), paint);
+        }
+
+        const bool clips_scroll_content = IsScrollable();
+        if (clips_scroll_content) {
+            canvas->save();
+            canvas->clipRect(SkRect::MakeWH(layout_info_.width, layout_info_.height));
+            canvas->translate(-GetScrollX(), -GetScrollY());
+        }
+
+        for (const auto& child : children_) {
+            if (!child->HasOwnCompositorLayer()) {
+                child->Paint(canvas);
+            }
+        }
+
+        if (clips_scroll_content) {
+            canvas->restore();
+        }
+
+        canvas->restore();
+        needs_paint_ = false;
+    }
+
+private:
+    SkColor paint_color_ = SK_ColorTRANSPARENT;
 };
 
 // =========================================================================
@@ -486,6 +530,41 @@ TEST_F(PipelineDirtyRegionTest, MarkDirtyRegionSetsNeedsUpdate) {
 // =========================================================================
 // 配置测试
 // =========================================================================
+
+TEST_F(PipelineDirtyRegionTest, DirtyChildInsideScrolledLayerUsesVisibleLayerSpace) {
+    auto pipeline = std::make_unique<RenderPipeline>();
+    pipeline->Initialize(800, 600);
+
+    auto root = std::make_shared<TestRenderObject>();
+    root->SetBounds(0, 0, 800, 600);
+
+    auto scroll_container = std::make_shared<TestRenderObject>();
+    scroll_container->SetBounds(0, 0, 300, 200);
+    scroll_container->SetScrollable(true);
+    scroll_container->SetScrollY(260);
+
+    auto scrolled_child = std::make_shared<TestRenderObject>();
+    scrolled_child->SetBounds(20, 300, 80, 40);
+    scrolled_child->SetPaintColor(SK_ColorRED);
+
+    scroll_container->AppendChild(scrolled_child);
+    root->AppendChild(scroll_container);
+    pipeline->SetRenderTree(root);
+
+    auto surface = SkSurfaces::Raster(SkImageInfo::MakeN32Premul(800, 600));
+    pipeline->ProcessFrame(surface->getCanvas());
+
+    scrolled_child->SetPaintColor(SK_ColorGREEN);
+    scrolled_child->MarkNeedsPaint();
+    pipeline->MarkNeedsPaint();
+    pipeline->ProcessFrame(surface->getCanvas());
+
+    const auto& stats = pipeline->GetLastFrameStats();
+    EXPECT_EQ(stats.full_rasterizations, 0);
+    EXPECT_EQ(stats.incremental_rasterizations, 1);
+    EXPECT_GT(stats.pixels_rasterized, 0);
+    EXPECT_LT(stats.pixels_rasterized, 300 * 200);
+}
 
 class PipelineConfigTest : public ::testing::Test {
 protected:
