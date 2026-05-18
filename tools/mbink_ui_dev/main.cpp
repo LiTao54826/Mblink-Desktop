@@ -49,6 +49,10 @@ constexpr size_t kMcpInlineTextMaxBytes = 128 * 1024;
 
 std::string GetOptionValue(const std::vector<std::string>& args, const std::string& key);
 
+bool HasOption(const std::vector<std::string>& args, const std::string& key) {
+    return std::find(args.begin(), args.end(), key) != args.end();
+}
+
 void ConfigureConsoleForUtf8() {
 #ifdef _WIN32
     SetConsoleOutputCP(CP_UTF8);
@@ -66,6 +70,18 @@ nlohmann::json SnapshotRequestFromResponseMode(const std::string& response_mode)
     return req;
 }
 
+void AddScreenshotOptionsIfPresent(const std::vector<std::string>& args,
+                                   nlohmann::json* req) {
+    if (!req) return;
+    if (HasOption(args, "--include-screenshot")) {
+        (*req)["include_screenshot"] = true;
+    }
+    if (HasOption(args, "--inline-screenshot")) {
+        (*req)["include_screenshot"] = true;
+        (*req)["inline_screenshot"] = true;
+    }
+}
+
 void AddIntOptionIfPresent(const std::vector<std::string>& args,
                            const std::string& option,
                            const std::string& field,
@@ -79,15 +95,25 @@ void AddIntOptionIfPresent(const std::vector<std::string>& args,
 }
 
 std::string SummarizeToolResultForText(const nlohmann::json& value) {
-    const auto rendered = value.dump(2);
+    auto text_value = value;
+    if (text_value.is_object()) {
+        text_value.erase("screenshot_base64");
+        if (text_value.contains("screenshot") && text_value["screenshot"].is_object()) {
+            text_value["screenshot"].erase("base64");
+        }
+    }
+    const auto rendered = text_value.dump(2);
     if (rendered.size() <= kMcpInlineTextMaxBytes) return rendered;
     nlohmann::json summary{{"ok", value.value("ok", true)},
                            {"truncated", true},
                            {"bytes", rendered.size()},
                            {"message", "structuredContent is large; use structuredContent or snapshot.path instead of text"}};
     if (value.is_object()) {
-        for (const auto& key : {"response_mode", "source", "snapshot", "viewport", "timestamp", "inline_limit_bytes", "note"}) {
+        for (const auto& key : {"response_mode", "source", "snapshot", "screenshot", "viewport", "timestamp", "inline_limit_bytes", "note"}) {
             if (value.contains(key)) summary[key] = value.at(key);
+        }
+        if (summary.contains("screenshot") && summary["screenshot"].is_object()) {
+            summary["screenshot"].erase("base64");
         }
     }
     return summary.dump(2);
@@ -559,7 +585,9 @@ nlohmann::json BuildMcpTools() {
                                                  {"properties", {{"response_mode", {{"type", "string"}, {"enum", nlohmann::json::array({"auto", "inline", "file"})}}},
                                                                  {"max_nodes", {{"type", "integer"}, {"minimum", 1}}},
                                                                  {"max_depth", {{"type", "integer"}, {"minimum", 1}}},
-                                                                 {"root_selector", {{"type", "string"}}}}}};
+                                                                 {"root_selector", {{"type", "string"}}},
+                                                                 {"include_screenshot", {{"type", "boolean"}}},
+                                                                 {"inline_screenshot", {{"type", "boolean"}}}}}};
         } else if (tool.value("name", std::string{}) == "query_element") {
             tool["inputSchema"] = nlohmann::json{{"type", "object"},
                                                  {"properties", {{"selector", {{"type", "string"}}},
@@ -724,6 +752,8 @@ nlohmann::json CallMcpTool(const std::string& tool_name,
         if (arguments.contains("max_nodes")) req["max_nodes"] = arguments["max_nodes"];
         if (arguments.contains("max_depth")) req["max_depth"] = arguments["max_depth"];
         if (arguments.contains("root_selector")) req["root_selector"] = arguments["root_selector"];
+        if (arguments.contains("include_screenshot")) req["include_screenshot"] = arguments["include_screenshot"];
+        if (arguments.contains("inline_screenshot")) req["inline_screenshot"] = arguments["inline_screenshot"];
         tool_result = CallDaemon(*project, req);
     } else if (tool_name == "get_console_logs" || tool_name == "logs") {
         std::string err;
@@ -1008,6 +1038,7 @@ int main(int argc, char** argv) {
         AddIntOptionIfPresent(args, "--max-depth", "max_depth", &req);
         const auto root_selector = GetOptionValue(args, "--root-selector");
         if (!root_selector.empty()) req["root_selector"] = root_selector;
+        AddScreenshotOptionsIfPresent(args, &req);
         PrintJson(CallDaemon(*identity, req));
         return 0;
     }

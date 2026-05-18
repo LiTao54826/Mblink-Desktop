@@ -553,6 +553,9 @@ int main(int argc, char** argv) {
     size_t ui_dev_snapshot_max_nodes = 2000;
     int ui_dev_snapshot_max_depth = 64;
     std::string ui_dev_snapshot_root_selector;
+    bool ui_dev_snapshot_include_screenshot = false;
+    bool ui_dev_snapshot_inline_screenshot = false;
+    std::string ui_dev_snapshot_screenshot_file;
     bool execute_scripts = true;
     bool disable_official_preact = false;
     bool verbose = !has_embedded;  // 嵌入模式默认静默
@@ -600,6 +603,13 @@ int main(int argc, char** argv) {
             ui_dev_snapshot_max_depth = std::stoi(argv[++i]);
         } else if (arg == "--ui-dev-snapshot-root-selector" && i + 1 < argc) {
             ui_dev_snapshot_root_selector = argv[++i];
+        } else if (arg == "--ui-dev-snapshot-include-screenshot") {
+            ui_dev_snapshot_include_screenshot = true;
+        } else if (arg == "--ui-dev-snapshot-inline-screenshot") {
+            ui_dev_snapshot_inline_screenshot = true;
+            ui_dev_snapshot_include_screenshot = true;
+        } else if (arg == "--ui-dev-screenshot-file" && i + 1 < argc) {
+            ui_dev_snapshot_screenshot_file = argv[++i];
         } else if (arg == "--no-scripts") {
             execute_scripts = false;
         } else if (arg == "--no-official-preact") {
@@ -760,6 +770,9 @@ int main(int argc, char** argv) {
             ui_dev_snapshot_max_nodes,
             ui_dev_snapshot_max_depth,
             ui_dev_snapshot_root_selector,
+            ui_dev_snapshot_include_screenshot,
+            ui_dev_snapshot_inline_screenshot,
+            ui_dev_snapshot_screenshot_file,
             quit_after_seconds,
         };
         mbink::ui_dev::AttachStructuredRuntimeBuffers(runtime.get(), ui_dev_options);

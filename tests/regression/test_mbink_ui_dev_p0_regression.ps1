@@ -55,6 +55,16 @@ function Assert([bool]$condition, [string]$message) {
     if (-not $condition) { throw $message }
 }
 
+function Assert-PngFile([string]$path) {
+    Assert ((Test-Path -LiteralPath $path) -eq $true) "missing png file: $path"
+    $bytes = [System.IO.File]::ReadAllBytes($path)
+    Assert ($bytes.Length -gt 8) "png file is too small: $path"
+    $expected = [byte[]](0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A)
+    for ($i = 0; $i -lt $expected.Length; $i++) {
+        Assert ($bytes[$i] -eq $expected[$i]) "png signature mismatch at byte $i"
+    }
+}
+
 function Write-Utf8File([string]$path, [string]$content) {
     $parent = Split-Path -Parent $path
     if ($parent -and !(Test-Path $parent)) { New-Item -ItemType Directory -Force -Path $parent | Out-Null }
@@ -186,6 +196,7 @@ Invoke-JsonCommand 'snapshot cold start' @('snapshot', '--project', $todo) {
     Assert ([double]$j.viewport.physical_height -ge [double]$j.viewport.height) 'viewport physical height missing'
     Assert ($j.response_mode -eq 'inline') 'snapshot default response was not inline for small DOM'
     Assert ((Test-Path -LiteralPath $j.snapshot.path) -and $j.snapshot.bytes -gt 0) 'snapshot metadata path missing'
+    Assert (($null -eq $j.screenshot -or $j.screenshot.included -ne $true) -and [string]::IsNullOrEmpty($j.screenshot_base64)) 'default snapshot unexpectedly included screenshot payload'
 }
 Invoke-JsonCommand 'snapshot file response' @('snapshot', '--project', $todo, '--response', 'file') {
     param($j)
@@ -196,6 +207,28 @@ Invoke-JsonCommand 'snapshot file response' @('snapshot', '--project', $todo, '-
     Assert ([double]$j.viewport.physical_height -ge [double]$j.viewport.height) 'snapshot file response physical height missing'
     Assert ((Test-Path -LiteralPath $j.snapshot.path) -and $j.snapshot.bytes -gt 0) 'snapshot file response path missing'
     Assert (-not ($j.PSObject.Properties.Name -contains 'tree')) 'snapshot file response should not inline tree'
+}
+Invoke-JsonCommand 'snapshot screenshot file response' @('snapshot', '--project', $todo, '--response', 'file', '--include-screenshot') {
+    param($j)
+    Assert ($j.ok -eq $true) 'snapshot screenshot file response not ok'
+    Assert ($j.response_mode -eq 'file') 'snapshot screenshot response did not use file mode'
+    Assert ((Test-Path -LiteralPath $j.snapshot.path) -and $j.snapshot.bytes -gt 0) 'snapshot screenshot json path missing'
+    Assert ($j.screenshot.included -eq $true) 'screenshot metadata missing'
+    Assert ($j.screenshot.mime_type -eq 'image/png') 'screenshot mime type mismatch'
+    Assert ($j.screenshot.bytes -gt 8) 'screenshot byte count missing'
+    Assert ([string]::IsNullOrEmpty($j.screenshot_base64)) 'file screenshot response should not include base64'
+    Assert-PngFile $j.screenshot.path
+}
+Invoke-JsonCommand 'snapshot inline screenshot file response' @('snapshot', '--project', $todo, '--response', 'file', '--inline-screenshot') {
+    param($j)
+    Assert ($j.ok -eq $true) 'snapshot inline screenshot file response not ok'
+    Assert ($j.response_mode -eq 'file') 'inline screenshot response did not preserve DOM file mode'
+    Assert ($j.screenshot.included -eq $true) 'inline screenshot metadata missing'
+    Assert ($j.screenshot.encoding -eq 'base64') 'inline screenshot encoding mismatch'
+    Assert (-not [string]::IsNullOrEmpty($j.screenshot.base64)) 'inline screenshot metadata base64 missing'
+    Assert (-not [string]::IsNullOrEmpty($j.screenshot_base64)) 'inline screenshot top-level base64 missing'
+    Assert ($j.screenshot.base64 -eq $j.screenshot_base64) 'inline screenshot base64 aliases differ'
+    Assert-PngFile $j.screenshot.path
 }
 Invoke-JsonCommand 'query with --project first' @('query', '--project', $todo, '#todo-input') {
     param($j)
@@ -290,6 +323,16 @@ try {
     Assert ($infoA.result.structuredContent.project.root -eq $projA) 'active project A mismatch'
     $snapshotA = Invoke-Rpc $serve @{ jsonrpc = '2.0'; id = 4; method = 'tools/call'; params = @{ name = 'snapshot_ui'; arguments = @{ response_mode = 'inline' } } }
     Assert ($snapshotA.result.isError -eq $false -and $snapshotA.result.structuredContent.node_count -gt 1) 'project A snapshot is blank'
+    $screenshotA = Invoke-Rpc $serve @{ jsonrpc = '2.0'; id = 41; method = 'tools/call'; params = @{ name = 'snapshot_ui'; arguments = @{ response_mode = 'file'; include_screenshot = $true } } }
+    Assert ($screenshotA.result.isError -eq $false -and $screenshotA.result.structuredContent.screenshot.included -eq $true) 'project A screenshot snapshot missing metadata'
+    Assert-PngFile $screenshotA.result.structuredContent.screenshot.path
+    $inlineScreenshotA = Invoke-Rpc $serve @{ jsonrpc = '2.0'; id = 42; method = 'tools/call'; params = @{ name = 'snapshot_ui'; arguments = @{ response_mode = 'file'; inline_screenshot = $true } } }
+    Assert ($inlineScreenshotA.result.isError -eq $false -and $inlineScreenshotA.result.structuredContent.screenshot.encoding -eq 'base64') 'project A inline screenshot encoding mismatch'
+    Assert (-not [string]::IsNullOrEmpty($inlineScreenshotA.result.structuredContent.screenshot_base64)) 'project A inline screenshot base64 missing'
+    Assert ($inlineScreenshotA.result.structuredContent.screenshot.base64 -eq $inlineScreenshotA.result.structuredContent.screenshot_base64) 'project A inline screenshot base64 aliases differ'
+    $inlineScreenshotPrefix = $inlineScreenshotA.result.structuredContent.screenshot_base64.Substring(0, [Math]::Min(64, $inlineScreenshotA.result.structuredContent.screenshot_base64.Length))
+    Assert (-not ([string]$inlineScreenshotA.result.content[0].text).Contains($inlineScreenshotPrefix)) 'project A inline screenshot text summary leaked base64 payload'
+    Assert-PngFile $inlineScreenshotA.result.structuredContent.screenshot.path
     $queryA = Invoke-Rpc $serve @{ jsonrpc = '2.0'; id = 5; method = 'tools/call'; params = @{ name = 'query_element'; arguments = @{ selector = '#multi-verify-a-root' } } }
     Assert ($queryA.result.isError -eq $false -and $queryA.result.structuredContent.result.count -eq 1) 'project A root missing'
     Assert ([double]$queryA.result.structuredContent.result.matches[0].rect.w -gt 0 -and [double]$queryA.result.structuredContent.result.matches[0].rect.h -gt 0) 'project A root rect is blank'

@@ -23,6 +23,9 @@ struct RuntimeSupportOptions {
     size_t snapshot_max_nodes = 2000;
     int snapshot_max_depth = 64;
     std::string snapshot_root_selector;
+    bool snapshot_include_screenshot = false;
+    bool snapshot_inline_screenshot = false;
+    std::string snapshot_screenshot_file;
     float quit_after_seconds = 0.0f;
 };
 

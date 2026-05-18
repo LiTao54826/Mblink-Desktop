@@ -40,6 +40,7 @@ mbink-ui-dev build [--watch] [--project <path>]
 mbink-ui-dev build-status [--project <path>]
 mbink-ui-dev snapshot [--project <path>]
 mbink-ui-dev snapshot [--response auto|inline|file] [--project <path>]
+mbink-ui-dev snapshot --include-screenshot [--inline-screenshot] [--response auto|inline|file] [--project <path>]
 mbink-ui-dev logs [--project <path>]
 mbink-ui-dev errors [--project <path>]
 
@@ -252,13 +253,15 @@ If more than one managed project exists and resolution is ambiguous, pass an exp
 - `timestamp`
 - `viewport`
 - `tree`
+- `screenshot` metadata when `include_screenshot` is true
 
 Current documented notes:
 
-- `include_screenshot` exists as an input field but is currently a reserved flag and does not return a screenshot payload.
+- `include_screenshot` is opt-in. Default snapshots do not include screenshot bytes or write a PNG.
+- Screenshot-enabled file responses include `screenshot.included: true`, `screenshot.mime_type: "image/png"`, `screenshot.path`, `screenshot.bytes`, dimensions, and `dpr`.
+- `screenshot_base64` is empty unless `--inline-screenshot` or MCP `inline_screenshot: true` is explicitly requested.
 - `snapshot` defaults to `--response auto`: small snapshots are returned inline; large snapshots return `response_mode: "file"` with `snapshot.path` and `snapshot.bytes` so callers can read the JSON from disk without moving a large payload through daemon IPC, stdout, or MCP text.
-- Use `snapshot --response file` or MCP `snapshot_ui({ "response_mode": "file" })` when the caller can read files directly and wants the most reliable path for large DOM trees.
-- `max_depth` and `root_selector` are also reserved fields in the current implementation.
+- Use `snapshot --response file --include-screenshot` or MCP `snapshot_ui({ "response_mode": "file", "include_screenshot": true })` when the caller can read files directly and wants the most reliable path for DOM JSON plus PNG output.
 
 Important node fields inside `tree`:
 

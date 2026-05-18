@@ -53,12 +53,16 @@
 #include <SDL3/SDL_opengl.h>
 
 #include "include/core/SkRefCnt.h"
+#include "include/core/SkData.h"
 #include "include/core/SkColorSpace.h"
 #include "include/core/SkImage.h"
 #include "include/core/SkImageInfo.h"
+#include "include/core/SkBitmap.h"
+#include "include/core/SkPixmap.h"
 #include "include/core/SkFont.h"
 #include "include/core/SkRegion.h"
 #include "include/core/SkSamplingOptions.h"
+#include "include/core/SkStream.h"
 #include "include/core/SkPaint.h"
 #include "include/core/SkBlendMode.h"
 #include "include/gpu/ganesh/gl/GrGLInterface.h"
@@ -66,6 +70,7 @@
 #include "include/gpu/ganesh/gl/GrGLBackendSurface.h"
 #include "include/gpu/ganesh/GrBackendSurface.h"
 #include "include/gpu/ganesh/SkSurfaceGanesh.h"
+#include "include/encode/SkPngEncoder.h"
 #include "core/dom/document.h"
 #include "core/dom/element.h"
 #include "core/dom/text.h"
@@ -652,6 +657,66 @@ void Window::SetAlwaysOnTop(bool on_top) {
 
 SkCanvas* Window::GetCanvas() const {
     return surface_ ? surface_->getCanvas() : nullptr;
+}
+
+bool Window::CaptureCurrentFramePng(std::vector<uint8_t>* bytes,
+                                    int* width,
+                                    int* height,
+                                    std::string* error) {
+    if (error) error->clear();
+    if (!bytes) {
+        if (error) *error = "bytes output is null";
+        return false;
+    }
+    bytes->clear();
+    if (!surface_) {
+        if (error) *error = "window surface is not available";
+        return false;
+    }
+
+    if (gr_context_) gr_context_->flush();
+
+    int physical_width = 0;
+    int physical_height = 0;
+    GetPhysicalSize(&physical_width, &physical_height);
+    if (physical_width <= 0 || physical_height <= 0) {
+        if (error) *error = "window surface has invalid size";
+        return false;
+    }
+
+    SkImageInfo info = SkImageInfo::MakeN32Premul(physical_width, physical_height);
+    SkBitmap bitmap;
+    if (!bitmap.tryAllocPixels(info)) {
+        if (error) *error = "failed to allocate screenshot bitmap";
+        return false;
+    }
+    if (!surface_->readPixels(bitmap, 0, 0)) {
+        if (error) *error = "failed to read window surface pixels";
+        return false;
+    }
+
+    SkPixmap pixmap;
+    if (!bitmap.peekPixels(&pixmap)) {
+        if (error) *error = "failed to read screenshot pixels";
+        return false;
+    }
+    SkPngEncoder::Options options;
+    SkDynamicMemoryWStream stream;
+    if (!SkPngEncoder::Encode(&stream, pixmap, options)) {
+        if (error) *error = "failed to encode screenshot png";
+        return false;
+    }
+    sk_sp<SkData> data = stream.detachAsData();
+    if (!data || data->size() == 0) {
+        if (error) *error = "failed to encode screenshot png";
+        return false;
+    }
+
+    const auto* begin = static_cast<const uint8_t*>(data->data());
+    bytes->assign(begin, begin + data->size());
+    if (width) *width = physical_width;
+    if (height) *height = physical_height;
+    return true;
 }
 
 PaintModeDisplayBackend* Window::GetPaintModeBackend() const {

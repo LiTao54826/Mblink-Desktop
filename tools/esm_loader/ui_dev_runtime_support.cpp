@@ -14,6 +14,7 @@
 #include "core/dom/document.h"
 #include "core/event/loop/event_loop.h"
 #include "core/quickjs/quickjs_runtime.h"
+#include "core/render/pipeline/render_pipeline.h"
 #include "core/utils/encoding_utils.h"
 #include "core/window/window.h"
 #include "ui_dev_control.h"
@@ -56,10 +57,14 @@ void WriteLifecycleState(const std::string& path,
 
 void ExportPendingSnapshot(const std::shared_ptr<Window>& window,
                            const std::shared_ptr<Document>& document,
+                           QuickJSRuntime* runtime,
                            const std::string& snapshot_file,
                            size_t snapshot_max_nodes,
                            int snapshot_max_depth,
                            const std::string& snapshot_root_selector,
+                           bool snapshot_include_screenshot,
+                           bool snapshot_inline_screenshot,
+                           const std::string& snapshot_screenshot_file,
                            const std::shared_ptr<std::string>& runtime_epoch,
                            const std::shared_ptr<std::atomic<bool>>& shutdown_requested,
                            const std::shared_ptr<bool>& snapshot_pending) {
@@ -67,15 +72,35 @@ void ExportPendingSnapshot(const std::shared_ptr<Window>& window,
     if (!needs_snapshot) return;
     if (shutdown_requested && shutdown_requested->load()) return;
 
+    if (snapshot_include_screenshot || snapshot_inline_screenshot) {
+        if (runtime) {
+            runtime->RunEventLoop(1);
+            runtime->ProcessMicrotasks();
+        }
+        if (auto* pipeline = window->GetRenderPipeline()) {
+            pipeline->ForceFullUpdate();
+            pipeline->ForceRasterize();
+        }
+        window->InvalidateRenderTree();
+        window->SetNeedsRepaint();
+        window->Render();
+    }
+
     std::string err;
     SnapshotExportOptions snapshot_options;
     snapshot_options.runtime_epoch = runtime_epoch ? *runtime_epoch : std::string{};
     snapshot_options.max_nodes = snapshot_max_nodes;
     snapshot_options.max_depth = snapshot_max_depth;
     snapshot_options.root_selector = snapshot_root_selector;
+    snapshot_options.include_screenshot = snapshot_include_screenshot;
+    snapshot_options.inline_screenshot = snapshot_inline_screenshot;
+    snapshot_options.screenshot_path = snapshot_screenshot_file;
     snapshot_options.shutdown_requested = shutdown_requested;
     if (ExportUiDevSnapshot(window, document, snapshot_file, snapshot_options, &err)) {
         *snapshot_pending = false;
+    }
+    if (snapshot_include_screenshot || snapshot_inline_screenshot) {
+        window->SwapBuffers();
     }
 }
 
@@ -168,21 +193,29 @@ void ConfigureRuntimeControl(EventLoop* event_loop,
         event_loop->Stop();
     });
 
-    event_loop->SetRenderCallback([window,
-                                   document,
+    event_loop->SetRenderCallback([runtime,
+                                    window,
+                                    document,
                                    snapshot_file = options.snapshot_file,
                                    snapshot_max_nodes = options.snapshot_max_nodes,
                                    snapshot_max_depth = options.snapshot_max_depth,
                                    snapshot_root_selector = options.snapshot_root_selector,
+                                   snapshot_include_screenshot = options.snapshot_include_screenshot,
+                                   snapshot_inline_screenshot = options.snapshot_inline_screenshot,
+                                   snapshot_screenshot_file = options.snapshot_screenshot_file,
                                    runtime_epoch,
                                    shutdown_requested,
                                    snapshot_pending]() {
         ExportPendingSnapshot(window,
                               document,
+                              runtime,
                               snapshot_file,
                               snapshot_max_nodes,
                               snapshot_max_depth,
                               snapshot_root_selector,
+                              snapshot_include_screenshot,
+                              snapshot_inline_screenshot,
+                              snapshot_screenshot_file,
                               runtime_epoch,
                               shutdown_requested,
                               snapshot_pending);
@@ -198,6 +231,9 @@ void ConfigureRuntimeControl(EventLoop* event_loop,
                                    snapshot_max_nodes = options.snapshot_max_nodes,
                                    snapshot_max_depth = options.snapshot_max_depth,
                                    snapshot_root_selector = options.snapshot_root_selector,
+                                   snapshot_include_screenshot = options.snapshot_include_screenshot,
+                                   snapshot_inline_screenshot = options.snapshot_inline_screenshot,
+                                   snapshot_screenshot_file = options.snapshot_screenshot_file,
                                    runtime_epoch,
                                    shutdown_requested,
                                    last_command_id,
@@ -211,10 +247,14 @@ void ConfigureRuntimeControl(EventLoop* event_loop,
         if (shutdown_requested->load()) return;
         ExportPendingSnapshot(window,
                               document,
+                              runtime,
                               snapshot_file,
                               snapshot_max_nodes,
                               snapshot_max_depth,
                               snapshot_root_selector,
+                              snapshot_include_screenshot,
+                              snapshot_inline_screenshot,
+                              snapshot_screenshot_file,
                               runtime_epoch,
                               shutdown_requested,
                               snapshot_pending);

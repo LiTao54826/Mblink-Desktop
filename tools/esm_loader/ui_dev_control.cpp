@@ -68,6 +68,33 @@ void ForceWindowFrame(QuickJSRuntime* runtime, Window* window, int passes = 2) {
     }
 }
 
+bool ExportSnapshotFromFreshFrame(QuickJSRuntime* runtime,
+                                  Window* window,
+                                  Document* document,
+                                  const std::string& snapshot_file,
+                                  const SnapshotExportOptions& options,
+                                  std::string* error) {
+    if (!window) {
+        if (error) *error = "window is null";
+        return false;
+    }
+    if (runtime) {
+        runtime->RunEventLoop(1);
+        runtime->ProcessMicrotasks();
+    }
+    if (auto* pipeline = window->GetRenderPipeline()) {
+        pipeline->ForceFullUpdate();
+        pipeline->ForceRasterize();
+    }
+    window->InvalidateRenderTree();
+    window->SetNeedsRepaint();
+    window->Render();
+
+    const bool ok = ExportUiDevSnapshot(window, document, snapshot_file, options, error);
+    window->SwapBuffers();
+    return ok;
+}
+
 bool WriteJsonFileAtomic(const fs::path& path, const nlohmann::json& value) {
     const auto parent = path.parent_path();
     if (!parent.empty()) fs::create_directories(parent);
@@ -200,12 +227,18 @@ bool TryHandleUiDevCommand(QuickJSRuntime* runtime,
             options.max_nodes = max_nodes > 0 ? static_cast<size_t>(max_nodes) : 2000;
             options.max_depth = max_depth > 0 ? max_depth : 64;
             options.root_selector = cmd.value("root_selector", std::string{});
+            options.include_screenshot = cmd.value("include_screenshot", false);
+            options.inline_screenshot = cmd.value("inline_screenshot", false);
+            options.screenshot_path = cmd.value("screenshot_file", std::string{});
             options.shutdown_requested = shutdown_requested;
             std::string snapshot_error;
-            if (!ExportUiDevSnapshot(window, document, snapshot_file, options, &snapshot_error)) {
+            if (!ExportSnapshotFromFreshFrame(runtime, window, document, snapshot_file, options, &snapshot_error)) {
                 throw std::runtime_error(snapshot_error.empty() ? "snapshot export failed" : snapshot_error);
             }
             resp["snapshot_file"] = snapshot_file;
+            resp["include_screenshot"] = options.include_screenshot;
+            resp["inline_screenshot"] = options.inline_screenshot;
+            if (!options.screenshot_path.empty()) resp["screenshot_file"] = options.screenshot_path;
             resp["root_selector"] = options.root_selector;
             resp["max_nodes"] = options.max_nodes;
             resp["max_depth"] = options.max_depth;

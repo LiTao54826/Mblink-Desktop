@@ -471,6 +471,11 @@ public:
      */
     void Render();
 
+    bool CaptureCurrentFramePng(std::vector<uint8_t>* bytes,
+                                int* width = nullptr,
+                                int* height = nullptr,
+                                std::string* error = nullptr);
+
     /**
      * @brief 清空画布
      * @param color 清空颜色（默认白色）

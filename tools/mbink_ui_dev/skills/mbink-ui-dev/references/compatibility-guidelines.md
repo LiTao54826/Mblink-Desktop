@@ -130,7 +130,7 @@ Do not replace these with browser or npm widgets such as xterm.js-style terminal
 ## CLI and MCP Feature Boundaries
 
 - `reload` currently restarts the runtime. Do not pass or assume `css`, `remount`, or `restart` modes.
-- `snapshot_ui` returns structured DOM snapshot data. `include_screenshot`, `max_depth`, and `root_selector` are reserved and should not be relied on for current behavior.
+- `snapshot_ui` returns structured DOM snapshot data. `include_screenshot` is available as an opt-in PNG capture path; default snapshots remain DOM-only. Prefer file-mode screenshot metadata over inline base64. `max_depth` and `root_selector` are supported snapshot-bounding options for callers that need smaller DOM payloads.
 - CLI stdout is JSON and stderr is human-readable logs.
 - MCP uses stdio. HTTP plus SSE transport, push notifications, and VS Code side-panel preview are future work.
 - If multiple projects are present, always pass `--project <abs-path>` or call `open_project` for the intended project.

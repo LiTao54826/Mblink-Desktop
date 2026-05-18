@@ -8,6 +8,7 @@
 #include <sstream>
 #include <unordered_set>
 #include <utility>
+#include <vector>
 
 #include <nlohmann/json.hpp>
 
@@ -114,6 +115,66 @@ struct SnapshotTraversalState {
 
 bool ShouldAbort(const SnapshotTraversalState& state) {
     return state.shutdown_requested && state.shutdown_requested->load();
+}
+
+std::string Base64Encode(const std::vector<uint8_t>& bytes) {
+    static constexpr char kTable[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    std::string output;
+    output.reserve(((bytes.size() + 2) / 3) * 4);
+    for (size_t i = 0; i < bytes.size(); i += 3) {
+        const uint8_t b0 = bytes[i];
+        const uint8_t b1 = i + 1 < bytes.size() ? bytes[i + 1] : 0;
+        const uint8_t b2 = i + 2 < bytes.size() ? bytes[i + 2] : 0;
+        output.push_back(kTable[(b0 >> 2) & 0x3F]);
+        output.push_back(kTable[((b0 & 0x03) << 4) | ((b1 >> 4) & 0x0F)]);
+        output.push_back(i + 1 < bytes.size() ? kTable[((b1 & 0x0F) << 2) | ((b2 >> 6) & 0x03)] : '=');
+        output.push_back(i + 2 < bytes.size() ? kTable[b2 & 0x3F] : '=');
+    }
+    return output;
+}
+
+std::filesystem::path DefaultScreenshotPathForSnapshot(const std::filesystem::path& snapshot_path) {
+    auto screenshot_path = snapshot_path;
+    if (screenshot_path.has_extension()) {
+        screenshot_path.replace_extension(".png");
+    } else {
+        screenshot_path += ".png";
+    }
+    return screenshot_path;
+}
+
+bool WriteFileAtomic(const std::filesystem::path& path,
+                     const char* data,
+                     size_t size,
+                     std::string* error) {
+    try {
+        const auto parent = path.parent_path();
+        if (!parent.empty()) std::filesystem::create_directories(parent);
+        const auto tmp_path = path.string() + ".tmp";
+        std::ofstream ofs(tmp_path, std::ios::binary | std::ios::trunc);
+        if (size > 0) ofs.write(data, static_cast<std::streamsize>(size));
+        ofs.close();
+        if (!ofs.good()) {
+            if (error) *error = "write_file_failed";
+            return false;
+        }
+
+        std::error_code ec;
+        std::filesystem::rename(tmp_path, path, ec);
+        if (ec) {
+            std::filesystem::remove(path, ec);
+            ec.clear();
+            std::filesystem::rename(tmp_path, path, ec);
+        }
+        if (ec) {
+            if (error) *error = ec.message();
+            return false;
+        }
+        return true;
+    } catch (const std::exception& e) {
+        if (error) *error = e.what();
+        return false;
+    }
 }
 
 nlohmann::json SerializeNode(const std::shared_ptr<mbink::Node>& node,
@@ -250,6 +311,41 @@ bool ExportUiDevSnapshot(mbink::Window* window,
     int physical_height = 0;
     if (window) window->GetPhysicalSize(&physical_width, &physical_height);
 
+    nlohmann::json screenshot = nlohmann::json{{"included", false}};
+    std::string screenshot_base64;
+    if (options.include_screenshot || options.inline_screenshot) {
+        std::vector<uint8_t> png_bytes;
+        int screenshot_width = 0;
+        int screenshot_height = 0;
+        std::string capture_error;
+        if (!window->CaptureCurrentFramePng(&png_bytes, &screenshot_width, &screenshot_height, &capture_error)) {
+            if (error) *error = capture_error.empty() ? "screenshot_capture_failed" : capture_error;
+            return false;
+        }
+        const auto screenshot_path = options.screenshot_path.empty()
+                                         ? DefaultScreenshotPathForSnapshot(std::filesystem::path(output_path))
+                                         : std::filesystem::path(options.screenshot_path);
+        if (!WriteFileAtomic(screenshot_path,
+                             reinterpret_cast<const char*>(png_bytes.data()),
+                             png_bytes.size(),
+                             error)) {
+            return false;
+        }
+        screenshot = nlohmann::json{{"included", true},
+                                    {"format", "png"},
+                                    {"mime_type", "image/png"},
+                                    {"encoding", options.inline_screenshot ? "base64" : "file"},
+                                    {"path", screenshot_path.string()},
+                                    {"bytes", png_bytes.size()},
+                                    {"width", screenshot_width},
+                                    {"height", screenshot_height},
+                                    {"dpr", dpr}};
+        if (options.inline_screenshot) {
+            screenshot_base64 = Base64Encode(png_bytes);
+            screenshot["base64"] = screenshot_base64;
+        }
+    }
+
     nlohmann::json snapshot;
     snapshot["ok"] = true;
     snapshot["timestamp"] = "";
@@ -264,7 +360,8 @@ bool ExportUiDevSnapshot(mbink::Window* window,
                                            {"dpr", dpr},
                                            {"physical_width", physical_width},
                                            {"physical_height", physical_height}};
-    snapshot["screenshot_base64"] = "";
+    snapshot["screenshot"] = screenshot;
+    snapshot["screenshot_base64"] = screenshot_base64;
     snapshot["tree"] = std::move(tree);
     snapshot["note"] = "P0: runtime exported DOM snapshot; rect/visible are best-effort.";
 
@@ -272,24 +369,9 @@ bool ExportUiDevSnapshot(mbink::Window* window,
         std::filesystem::path path(output_path);
         const auto parent = path.parent_path();
         if (!parent.empty()) std::filesystem::create_directories(parent);
-        const auto tmp_path = path.string() + ".tmp";
-        std::ofstream ofs(tmp_path, std::ios::binary | std::ios::trunc);
-        ofs << snapshot.dump(2);
-        ofs.close();
-        if (!ofs.good()) {
+        const auto payload = snapshot.dump(2);
+        if (!WriteFileAtomic(path, payload.data(), payload.size(), error)) {
             if (error) *error = "write_snapshot_failed";
-            return false;
-        }
-
-        std::error_code ec;
-        std::filesystem::rename(tmp_path, path, ec);
-        if (ec) {
-            std::filesystem::remove(path, ec);
-            ec.clear();
-            std::filesystem::rename(tmp_path, path, ec);
-        }
-        if (ec) {
-            if (error) *error = ec.message();
             return false;
         }
         return true;

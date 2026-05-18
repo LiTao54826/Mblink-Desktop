@@ -5,6 +5,7 @@
 #include <atomic>
 #include <cctype>
 #include <chrono>
+#include <cstring>
 #include <cstdlib>
 #include <deque>
 #include <fstream>
@@ -445,6 +446,40 @@ nlohmann::json SnapshotFileMetadata(const std::filesystem::path& snapshot_path, 
                           {"bytes", bytes}};
 }
 
+bool FileHasPngSignature(const std::filesystem::path& path) {
+    static constexpr unsigned char kPngSignature[8] = {0x89, 'P', 'N', 'G', '\r', '\n', 0x1A, '\n'};
+    std::ifstream ifs(path, std::ios::binary);
+    if (!ifs) return false;
+    unsigned char signature[8] = {};
+    ifs.read(reinterpret_cast<char*>(signature), sizeof(signature));
+    return ifs.gcount() == static_cast<std::streamsize>(sizeof(signature)) &&
+           std::memcmp(signature, kPngSignature, sizeof(signature)) == 0;
+}
+
+nlohmann::json ScreenshotFileMetadata(const nlohmann::json& screenshot, bool include_inline) {
+    if (!screenshot.is_object() || !screenshot.value("included", false)) {
+        return nlohmann::json{{"included", false}};
+    }
+    auto result = screenshot;
+    if (!include_inline) {
+        result.erase("base64");
+        result["encoding"] = "file";
+    }
+    return result;
+}
+
+bool SnapshotScreenshotLooksComplete(const nlohmann::json& snapshot) {
+    if (!snapshot.is_object()) return false;
+    const auto& screenshot = snapshot.contains("screenshot") ? snapshot["screenshot"] : nlohmann::json();
+    if (!screenshot.is_object() || !screenshot.value("included", false)) return false;
+    const auto path = screenshot.value("path", std::string{});
+    const auto expected_bytes = screenshot.value("bytes", uintmax_t{0});
+    if (path.empty() || expected_bytes == 0) return false;
+    const auto screenshot_path = std::filesystem::path(path);
+    const auto actual_bytes = FileSizeOrZero(screenshot_path);
+    return actual_bytes == expected_bytes && actual_bytes > 0 && FileHasPngSignature(screenshot_path);
+}
+
 bool SnapshotMatchesRuntimeEpoch(const nlohmann::json& snapshot, const DaemonState& state) {
     if (!snapshot.is_object() || !snapshot.value("ok", false)) return false;
     const auto snapshot_epoch = snapshot.value("runtime_epoch", std::string{});
@@ -465,8 +500,10 @@ nlohmann::json BuildSnapshotFileResponse(const DaemonState& state,
                           {"timestamp", CurrentTimestampIso8601()},
                           {"response_mode", "file"},
                           {"viewport", viewport},
-                          {"screenshot_base64", ""},
                           {"snapshot", SnapshotFileMetadata(snapshot_path, bytes)},
+                          {"screenshot", ScreenshotFileMetadata(snapshot.value("screenshot", nlohmann::json{{"included", false}}),
+                                                                 snapshot.value("screenshot_base64", std::string{}).size() > 0)},
+                          {"screenshot_base64", snapshot.value("screenshot_base64", std::string{})},
                           {"runtime_epoch", state.runtime_epoch},
                           {"source", snapshot_path.string()},
                           {"inline_limit_bytes", kInlineSnapshotMaxBytes},
@@ -505,12 +542,24 @@ nlohmann::json BuildSnapshotResponse(const DaemonState& state,
 bool SnapshotRequestHasCustomOptions(const nlohmann::json& request) {
     return request.contains("max_nodes") ||
            request.contains("max_depth") ||
-           request.contains("root_selector");
+           request.contains("root_selector") ||
+           request.value("include_screenshot", false) ||
+           request.value("inline_screenshot", false);
 }
 
 std::filesystem::path BuildRequestSnapshotPath(const DaemonState& state) {
     auto path = GetRuntimeSnapshotPath(state);
     path += "." + GenerateRuntimeEpoch() + ".request.json";
+    return path;
+}
+
+std::filesystem::path BuildRequestScreenshotPath(const std::filesystem::path& snapshot_path) {
+    auto path = snapshot_path;
+    if (path.has_extension()) {
+        path.replace_extension(".png");
+    } else {
+        path += ".png";
+    }
     return path;
 }
 
@@ -2186,10 +2235,15 @@ nlohmann::json DispatchDaemonRequest(const nlohmann::json& request, DaemonState*
             return ErrorResponse("invalid_args", "snapshot response_mode must be auto, inline, or file");
         }
 
+        const bool include_screenshot = request.value("include_screenshot", false) ||
+                                        request.value("inline_screenshot", false);
+        const bool inline_screenshot = request.value("inline_screenshot", false);
         const bool custom_snapshot = SnapshotRequestHasCustomOptions(request);
         DaemonState snapshot_state = *state;
         auto snapshot_path = custom_snapshot ? BuildRequestSnapshotPath(snapshot_state)
                                              : GetRuntimeSnapshotPath(snapshot_state);
+        const auto screenshot_path = include_screenshot ? BuildRequestScreenshotPath(snapshot_path)
+                                                        : std::filesystem::path{};
         const int runtime_pid = snapshot_state.runtime_pid;
         lock.unlock();
 
@@ -2198,20 +2252,28 @@ nlohmann::json DispatchDaemonRequest(const nlohmann::json& request, DaemonState*
             if (request.contains("max_nodes")) runtime_cmd["max_nodes"] = request["max_nodes"];
             if (request.contains("max_depth")) runtime_cmd["max_depth"] = request["max_depth"];
             if (request.contains("root_selector")) runtime_cmd["root_selector"] = request["root_selector"];
+            if (include_screenshot) {
+                runtime_cmd["include_screenshot"] = true;
+                runtime_cmd["inline_screenshot"] = inline_screenshot;
+                runtime_cmd["screenshot_file"] = screenshot_path.string();
+            }
             std::string error;
             nlohmann::json resp;
             if (!RequestRuntimeUiCommand(snapshot_state, runtime_pid, std::move(runtime_cmd), &resp, &error)) {
                 RemoveFileIfExists(snapshot_path);
+                if (include_screenshot) RemoveFileIfExists(screenshot_path);
                 return RuntimeCommandErrorResponse("snapshot_failed", error);
             }
             if (!resp.value("ok", false)) {
                 RemoveFileIfExists(snapshot_path);
+                if (include_screenshot) RemoveFileIfExists(screenshot_path);
                 return ErrorResponse("snapshot_failed", ExtractRuntimeCommandMessage(resp, "snapshot export failed"));
             }
         }
 
         auto snapshot = SnapshotFileLooksComplete(snapshot_path) ? ReadJsonFile(snapshot_path) : nlohmann::json();
         bool snapshot_ready = SnapshotMatchesRuntimeEpoch(snapshot, snapshot_state);
+        if (snapshot_ready && include_screenshot) snapshot_ready = SnapshotScreenshotLooksComplete(snapshot);
         bool stale_snapshot = snapshot.is_object() && snapshot.value("ok", false) && !snapshot_ready;
         if (!snapshot_ready &&
             !custom_snapshot &&
@@ -2221,6 +2283,7 @@ nlohmann::json DispatchDaemonRequest(const nlohmann::json& request, DaemonState*
                 std::this_thread::sleep_for(std::chrono::milliseconds(25));
                 snapshot = SnapshotFileLooksComplete(snapshot_path) ? ReadJsonFile(snapshot_path) : nlohmann::json();
                 snapshot_ready = SnapshotMatchesRuntimeEpoch(snapshot, snapshot_state);
+                if (snapshot_ready && include_screenshot) snapshot_ready = SnapshotScreenshotLooksComplete(snapshot);
                 stale_snapshot = snapshot.is_object() && snapshot.value("ok", false) && !snapshot_ready;
                 if (snapshot_ready) break;
             }

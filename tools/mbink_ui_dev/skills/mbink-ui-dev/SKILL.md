@@ -78,7 +78,7 @@ Use `mbink-ui-dev` as the primary control surface for MBink UI development. Trea
 - Use MBink's native `<terminal>` and `<logview>` elements for terminal emulation and high-volume log display instead of browser or npm terminal/log widgets. Read [native-elements.md](references/native-elements.md) before using either element.
 - When unsure whether a JavaScript, DOM, Preact, host bridge, or native-element API is compatible, read [supported-api-reference.md](references/supported-api-reference.md) before using it.
 - Avoid browser or Node APIs that are not part of the verified runtime surface: `require`, `module.exports`, Node built-ins such as `fs` and `path`, `process`, `Buffer`, `localStorage`, `sessionStorage`, `indexedDB`, workers, WebSocket, full navigation/history/download behavior, native form submission, and `navigator.clipboard`.
-- Treat `snapshot` screenshot payloads, `max_depth`, `root_selector`, `reload --mode`, HTTP plus SSE transport, MCP notifications, and VS Code preview as unavailable unless the reference says they have landed.
+- Treat `reload --mode`, HTTP plus SSE transport, MCP notifications, and VS Code preview as unavailable unless the reference says they have landed. `snapshot` supports opt-in screenshot output through `include_screenshot`; prefer file-mode PNG metadata over inline base64 unless the caller explicitly needs inline data.
 - Read [compatibility-guidelines.md](references/compatibility-guidelines.md) before adding new framework dependencies, browser APIs, runtime-specific host features, or non-template syntax.
 
 ## Bootstrap Projects and Templates Deliberately
