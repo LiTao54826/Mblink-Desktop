@@ -6,6 +6,7 @@
 #include <cctype>
 #include <chrono>
 #include <cstring>
+#include <cstdint>
 #include <cstdlib>
 #include <deque>
 #include <fstream>
@@ -329,9 +330,12 @@ bool MaterialConfigEquals(const ProjectConfig& a, const ProjectConfig& b) {
            a.build_external == b.build_external &&
            a.build_sourcemap == b.build_sourcemap &&
            a.build_minify == b.build_minify &&
+           a.build_hide_console == b.build_hide_console &&
            a.width == b.width &&
            a.height == b.height &&
-           a.title == b.title;
+           a.title == b.title &&
+           a.borderless == b.borderless &&
+           a.resizable == b.resizable;
 }
 
 void MergeRuntimeFields(DaemonState* state, const DaemonState& source) {
@@ -726,6 +730,40 @@ bool CopyFileOverwrite(const std::filesystem::path& from, const std::filesystem:
         if (error) *error = "failed to copy " + from.string() + " to " + to.string();
         return false;
     }
+    return true;
+}
+
+bool SetWindowsGuiSubsystem(const std::filesystem::path& exe_path, bool hide_console, std::string* error) {
+    std::string data;
+    if (!ReadFileBytes(exe_path, &data, error)) return false;
+    if (data.size() < 64) {
+        if (error) *error = "invalid PE file: too small";
+        return false;
+    }
+    auto* bytes = reinterpret_cast<unsigned char*>(data.data());
+    if (bytes[0] != 'M' || bytes[1] != 'Z') {
+        if (error) *error = "invalid PE file: missing MZ signature";
+        return false;
+    }
+    uint32_t pe_offset = 0;
+    std::memcpy(&pe_offset, bytes + 0x3C, sizeof(pe_offset));
+    if (pe_offset + 24 + 70 > data.size()) {
+        if (error) *error = "invalid PE file: PE header out of bounds";
+        return false;
+    }
+    if (bytes[pe_offset] != 'P' || bytes[pe_offset + 1] != 'E' ||
+        bytes[pe_offset + 2] != 0 || bytes[pe_offset + 3] != 0) {
+        if (error) *error = "invalid PE file: missing PE signature";
+        return false;
+    }
+    const size_t subsystem_offset = static_cast<size_t>(pe_offset) + 24 + 68;
+    if (subsystem_offset + 2 > data.size()) {
+        if (error) *error = "invalid PE file: subsystem field out of bounds";
+        return false;
+    }
+    const uint16_t subsystem = hide_console ? 2 : 3;
+    std::memcpy(bytes + subsystem_offset, &subsystem, sizeof(subsystem));
+    if (!WriteFileBytes(exe_path, data, error)) return false;
     return true;
 }
 
@@ -1619,6 +1657,11 @@ nlohmann::json BuildRustHostArtifact(const std::filesystem::path& project_root,
         status["error"] = error ? *error : "failed to copy rust artifact";
         return status;
     }
+    if (!SetWindowsGuiSubsystem(final_exe, config.build_hide_console, error)) {
+        status["ok"] = false;
+        status["error"] = error ? *error : "failed to set rust artifact subsystem";
+        return status;
+    }
     status["outputs"].push_back(std::filesystem::relative(final_exe, project_root).generic_string());
     if (!CopyRuntimeDllToFinal(project_root, final_dir, &status["outputs"], error)) {
         status["ok"] = false;
@@ -1626,6 +1669,9 @@ nlohmann::json BuildRustHostArtifact(const std::filesystem::path& project_root,
         return status;
     }
     status["host_artifact"] = std::filesystem::relative(final_exe, project_root).generic_string();
+    status["window"] = {{"borderless", config.borderless}, {"resizable", config.resizable}};
+    status["windows_subsystem"] = config.build_hide_console ? "windows" : "console";
+    status["hide_console"] = config.build_hide_console;
     return status;
 }
 
@@ -1660,8 +1706,9 @@ nlohmann::json BuildGoHostArtifact(const std::filesystem::path& project_root,
         return nlohmann::json{{"ok", false}, {"runtime", "go"}, {"error", error ? *error : ""}};
     }
 
+    const std::string ldflags = config.build_hide_console ? " -ldflags " + QuoteForCmd("-H=windowsgui") : "";
     const std::string command = "cmd.exe /d /c set CGO_ENABLED=1&& " + QuoteForCmd(go.string()) +
-                                " build -mod=mod -o " + QuoteForCmd(final_exe.string()) + " ./host";
+                                " build -mod=mod" + ldflags + " -o " + QuoteForCmd(final_exe.string()) + " ./host";
     auto step = BuildStepFromProcess("go build", command, project_root, 180000, out_dir / "go-build.log", error);
     nlohmann::json status{{"ok", step.value("ok", false)},
                           {"runtime", "go"},
@@ -1670,6 +1717,11 @@ nlohmann::json BuildGoHostArtifact(const std::filesystem::path& project_root,
                           {"steps", nlohmann::json::array({step})},
                           {"outputs", outputs}};
     if (!step.value("ok", false)) return status;
+    if (!SetWindowsGuiSubsystem(final_exe, config.build_hide_console, error)) {
+        status["ok"] = false;
+        status["error"] = error ? *error : "failed to set go artifact subsystem";
+        return status;
+    }
     status["outputs"].push_back(std::filesystem::relative(final_exe, project_root).generic_string());
     if (!CopyRuntimeDllToFinal(project_root, final_dir, &status["outputs"], error)) {
         status["ok"] = false;
@@ -1677,6 +1729,9 @@ nlohmann::json BuildGoHostArtifact(const std::filesystem::path& project_root,
         return status;
     }
     status["host_artifact"] = std::filesystem::relative(final_exe, project_root).generic_string();
+    status["window"] = {{"borderless", config.borderless}, {"resizable", config.resizable}};
+    status["windows_subsystem"] = config.build_hide_console ? "windows" : "console";
+    status["hide_console"] = config.build_hide_console;
     return status;
 }
 
@@ -1713,8 +1768,10 @@ nlohmann::json BuildPythonHostArtifact(const std::filesystem::path& project_root
     const auto python_cmd = ToLowerAscii(python.filename().string()) == "py.exe"
         ? QuoteForCmd(python.string()) + " -3"
         : QuoteForCmd(python.string());
+    const std::string console_mode = config.build_hide_console ? " --windowed" : " --console";
     const std::string command =
         python_cmd + " -m PyInstaller --noconfirm --clean --onefile --name " + QuoteForCmd(stem) +
+        console_mode +
         " --distpath " + QuoteForCmd(final_dir.string()) +
         " --workpath " + QuoteForCmd((out_dir / "pyinstaller-work").string()) +
         " --specpath " + QuoteForCmd((out_dir / "pyinstaller-spec").string()) +
@@ -1736,8 +1793,16 @@ nlohmann::json BuildPythonHostArtifact(const std::filesystem::path& project_root
         status["error"] = error ? *error : "PyInstaller failed";
         return status;
     }
+    if (!SetWindowsGuiSubsystem(final_exe, config.build_hide_console, error)) {
+        status["ok"] = false;
+        status["error"] = error ? *error : "failed to set python artifact subsystem";
+        return status;
+    }
     status["outputs"].push_back(std::filesystem::relative(final_exe, project_root).generic_string());
     status["host_artifact"] = std::filesystem::relative(final_exe, project_root).generic_string();
+    status["window"] = {{"borderless", config.borderless}, {"resizable", config.resizable}};
+    status["windows_subsystem"] = config.build_hide_console ? "windows" : "console";
+    status["hide_console"] = config.build_hide_console;
     return status;
 }
 
@@ -1891,6 +1956,7 @@ bool StartRuntime(const std::filesystem::path& root, DaemonState* state, std::st
                        " --ui-dev-runtime-epoch \"" + state->runtime_epoch + "\"" +
                        " --ui-dev-snapshot-max-nodes 2000" +
                        " --ui-dev-snapshot-max-depth 64";
+    if (state->project.borderless) args += " --borderless";
     if (!StartDetachedProcess(runtime_exe, args, root, &stdout_path, &stderr_path, &state->runtime_pid, error)) {
         state->runtime_pid = 0;
         state->runtime_status = "stopped";
@@ -2189,6 +2255,8 @@ nlohmann::json DispatchDaemonRequest(const nlohmann::json& request, DaemonState*
         const auto root = std::filesystem::path(state->project_root);
         if (!std::filesystem::exists(root)) return ErrorResponse("project_not_found", "项目目录不存在");
         std::string error;
+        state->project = LoadProjectConfig(root, &error);
+        if (!error.empty()) return ErrorResponse("config_load_failed", error);
         auto build_status = BuildEsbuildStatus(root, state->project, &error);
         if (!error.empty()) {
             state->last_build = build_status.is_object() ? build_status : nlohmann::json{{"ok", false}, {"status", "failed"}, {"error", error}};

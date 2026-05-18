@@ -16,6 +16,7 @@
     "jsx_fragment": "Fragment",
     "external": ["preact", "preact/hooks"],
     "sourcemap": true,
-    "minify": false
+    "minify": false,
+    "hide_console": true
   }
 }

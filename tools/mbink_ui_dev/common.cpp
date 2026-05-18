@@ -599,8 +599,13 @@ static void ToJson(nlohmann::json& j, const ProjectConfig& p) {
                    {"jsx_fragment", p.build_jsx_fragment},
                    {"external", p.build_external},
                    {"sourcemap", p.build_sourcemap},
-                   {"minify", p.build_minify}}},
-        {"window", {{"width", p.width}, {"height", p.height}, {"title", p.title}}},
+                   {"minify", p.build_minify},
+                   {"hide_console", p.build_hide_console}}},
+        {"window", {{"width", p.width},
+                    {"height", p.height},
+                    {"title", p.title},
+                    {"borderless", p.borderless},
+                    {"resizable", p.resizable}}},
     };
 }
 
@@ -619,6 +624,7 @@ static void FromJson(const nlohmann::json& j, ProjectConfig& p) {
         p.build_jsx_fragment = b.value("jsx_fragment", p.build_jsx_fragment);
         p.build_sourcemap = b.value("sourcemap", p.build_sourcemap);
         p.build_minify = b.value("minify", p.build_minify);
+        p.build_hide_console = b.value("hide_console", p.build_hide_console);
         if (b.contains("external") && b.at("external").is_array()) {
             p.build_external.clear();
             for (const auto& item : b.at("external")) {
@@ -631,6 +637,8 @@ static void FromJson(const nlohmann::json& j, ProjectConfig& p) {
         p.width = w.value("width", p.width);
         p.height = w.value("height", p.height);
         p.title = w.value("title", p.title);
+        p.borderless = w.value("borderless", p.borderless);
+        p.resizable = w.value("resizable", p.resizable);
     }
 }
 
@@ -851,6 +859,7 @@ ProjectConfig LoadProjectConfig(const std::filesystem::path& project_root, std::
             cfg.build_jsx_fragment = b.value("jsx_fragment", cfg.build_jsx_fragment);
             cfg.build_sourcemap = b.value("sourcemap", cfg.build_sourcemap);
             cfg.build_minify = b.value("minify", cfg.build_minify);
+            cfg.build_hide_console = b.value("hide_console", cfg.build_hide_console);
             if (b.contains("external") && b.at("external").is_array()) {
                 cfg.build_external.clear();
                 for (const auto& item : b.at("external")) {
@@ -863,6 +872,8 @@ ProjectConfig LoadProjectConfig(const std::filesystem::path& project_root, std::
             cfg.title = w.value("title", cfg.title);
             cfg.width = w.value("width", cfg.width);
             cfg.height = w.value("height", cfg.height);
+            cfg.borderless = w.value("borderless", cfg.borderless);
+            cfg.resizable = w.value("resizable", cfg.resizable);
         }
         if (cfg.name.empty()) cfg.name = project_root.filename().string();
         if (cfg.title.empty()) cfg.title = cfg.name.empty() ? "MBink UI Dev" : cfg.name;
@@ -986,7 +997,11 @@ nlohmann::json ProjectToJson(const std::filesystem::path& root, const ProjectCon
     j["template"] = config.template_name;
     j["purpose"] = config.purpose;
     j["runtime"] = config.runtime;
-    j["window"] = {{"width", config.width}, {"height", config.height}, {"title", config.title}};
+    j["window"] = {{"width", config.width},
+                   {"height", config.height},
+                   {"title", config.title},
+                   {"borderless", config.borderless},
+                   {"resizable", config.resizable}};
     return j;
 }
 
