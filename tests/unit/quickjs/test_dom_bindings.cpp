@@ -555,6 +555,17 @@ TEST_F(DOMBindingsTest, StyleSetProperty) {
 
 // ========== DOM 操作测试 ==========
 
+TEST_F(DOMBindingsTest, StyleVendorPrefixedProperty) {
+    auto result = runtime_->Eval(R"(
+        var div = document.createElement('div');
+        div.style.WebkitAppRegion = 'no-drag';
+        div.style.WebkitWindowControl = 'close';
+        div.style.getPropertyValue('-webkit-app-region') + '|' +
+            div.style.getPropertyValue('-webkit-window-control');
+    )");
+    EXPECT_EQ(result, "no-drag|close");
+}
+
 TEST_F(DOMBindingsTest, AppendChild) {
     auto result = runtime_->Eval(R"(
         var parent = document.createElement('div');

@@ -31,6 +31,7 @@
 #include "core/lexbor/style_manager.h"
 #include "core/render/utils/color.h"
 #include <algorithm>
+#include <cctype>
 #include <sstream>
 #include <iostream>
 #include <cstdio>
@@ -48,6 +49,140 @@ std::vector<std::string> SplitWhitespaceTokens(const std::string& value) {
         tokens.push_back(token);
     }
     return tokens;
+}
+
+std::string TrimCSSValue(const std::string& value) {
+    size_t start = value.find_first_not_of(" \t\n\r");
+    if (start == std::string::npos) {
+        return "";
+    }
+    size_t end = value.find_last_not_of(" \t\n\r");
+    return value.substr(start, end - start + 1);
+}
+
+bool ContainsNulByte(const std::string& value) {
+    return value.find('\0') != std::string::npos;
+}
+
+std::string StripNulBytes(const std::string& value) {
+    std::string cleaned;
+    cleaned.reserve(value.size());
+    for (char c : value) {
+        if (c != '\0') {
+            cleaned += c;
+        }
+    }
+    return cleaned;
+}
+
+std::string ToLowerASCII(const std::string& value) {
+    std::string lower = value;
+    std::transform(lower.begin(), lower.end(), lower.begin(), [](unsigned char c) {
+        return static_cast<char>(std::tolower(c));
+    });
+    return lower;
+}
+
+bool IsSuffixOf(const std::string& value, const std::string& suffix) {
+    return value.size() >= suffix.size() &&
+           value.compare(value.size() - suffix.size(), suffix.size(), suffix) == 0;
+}
+
+std::string RecoverKnownCSSKeyword(const std::string& value,
+                                   const std::vector<std::string>& candidates) {
+    std::string cleaned = ToLowerASCII(TrimCSSValue(StripNulBytes(value)));
+    if (cleaned.empty()) {
+        return "";
+    }
+
+    for (const auto& candidate : candidates) {
+        if (cleaned == candidate) {
+            return candidate;
+        }
+
+        if (cleaned.size() >= 3 && IsSuffixOf(candidate, cleaned)) {
+            return candidate;
+        }
+    }
+
+    return "";
+}
+
+std::string NormalizeFontFamilyValue(const std::string& value) {
+    std::vector<std::string> families;
+    std::string current;
+    bool in_quote = false;
+    char quote_char = '\0';
+
+    auto flush_family = [&]() {
+        std::string family = TrimCSSValue(current);
+        current.clear();
+
+        if (family.size() >= 2 &&
+            ((family.front() == '"' && family.back() == '"') ||
+             (family.front() == '\'' && family.back() == '\''))) {
+            family = family.substr(1, family.size() - 2);
+            family = TrimCSSValue(family);
+        }
+
+        if (ContainsNulByte(family)) {
+            static const std::vector<std::string> kGenericFamilies = {
+                "serif",
+                "sans-serif",
+                "monospace",
+                "cursive",
+                "fantasy",
+                "system-ui",
+                "ui-serif",
+                "ui-sans-serif",
+                "ui-monospace",
+                "ui-rounded"
+            };
+            family = RecoverKnownCSSKeyword(family, kGenericFamilies);
+        }
+
+        bool has_name_char = false;
+        for (char c : family) {
+            if (!std::isspace(static_cast<unsigned char>(c)) && c != '"' && c != '\'') {
+                has_name_char = true;
+                break;
+            }
+        }
+
+        if (has_name_char) {
+            families.push_back(family);
+        }
+    };
+
+    for (char c : value) {
+        if (in_quote) {
+            current += c;
+            if (c == quote_char) {
+                in_quote = false;
+            }
+            continue;
+        }
+
+        if (c == '"' || c == '\'') {
+            in_quote = true;
+            quote_char = c;
+            current += c;
+        } else if (c == ',') {
+            flush_family();
+        } else {
+            current += c;
+        }
+    }
+    flush_family();
+
+    std::string normalized;
+    for (const auto& family : families) {
+        if (!normalized.empty()) {
+            normalized += ", ";
+        }
+        normalized += family;
+    }
+    return normalized;
 }
 
 }  // namespace
@@ -539,6 +674,7 @@ void StyleResolver::ApplyElementSpecificStyle(ComputedStyle& style, const std::s
     if (tag_name == "button" || tag_name == "input" || tag_name == "select" || tag_name == "textarea") {
         style.border.style = CSSBorderStyle::SOLID;
         style.border.color = Color::FromRGB(118, 118, 118);  // Chrome 默认边框色
+        style.color = "#000000";
     }
 
     if (tag_name == "button") {
@@ -1709,7 +1845,10 @@ bool StyleResolver::ParseBackgroundProperty(ComputedStyle& style,
         style.color = resolved_value;
     }
     else if (property == "font-family") {
-        style.font_family = resolved_value;
+        auto normalized_font_family = NormalizeFontFamilyValue(resolved_value);
+        if (!normalized_font_family.empty()) {
+            style.font_family = normalized_font_family;
+        }
     }
     else if (property == "font-size") {
         auto length = CSSValue::ParseLength(resolved_value);
@@ -2479,6 +2618,25 @@ void StyleResolver::ParseStyleProperty(ComputedStyle& style,
     std::string resolved_value = value;
     if (CSSVarResolver::ContainsVar(value)) {
         resolved_value = CSSVarResolver::ResolveVar(value, style.css_variables);
+    }
+
+    resolved_value = TrimCSSValue(resolved_value);
+
+    if (ContainsNulByte(resolved_value)) {
+        static const std::vector<std::string> kCSSWideKeywords = {
+            "inherit",
+            "initial",
+            "unset",
+            "revert"
+        };
+        std::string recovered_keyword = RecoverKnownCSSKeyword(resolved_value, kCSSWideKeywords);
+        if (!recovered_keyword.empty()) {
+            resolved_value = recovered_keyword;
+        }
+    }
+
+    if ((resolved_value == "inherit" || resolved_value == "unset") && IsInheritableProperty(property)) {
+        return;
     }
 
     // 3. Expand common alignment shorthands before longhand parsing

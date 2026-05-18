@@ -162,6 +162,10 @@ static JSValue JSStyleDeclaration_get_length(JSContext* ctx, JSValueConst this_v
  */
 static std::string CamelToKebab(const std::string& camel) {
     std::string result;
+    if (camel.rfind("Webkit", 0) == 0 || camel.rfind("Moz", 0) == 0 ||
+        camel.rfind("Ms", 0) == 0 || camel.rfind("O", 0) == 0) {
+        result += '-';
+    }
     for (size_t i = 0; i < camel.length(); ++i) {
         char c = camel[i];
         if (std::isupper(c)) {

@@ -351,6 +351,52 @@ TEST_F(ElementTest, DescendantHoverSelectorStillResolves) {
     EXPECT_EQ(hover_style.color, "rgb(255, 0, 0)");
 }
 
+TEST_F(ElementTest, FontFamilyInheritKeepsParentFontList) {
+    auto parent = CreateElement("div");
+    parent->SetClassName("font-parent");
+    auto input = std::dynamic_pointer_cast<HTMLInputElement>(doc_->CreateElement("input"));
+    ASSERT_NE(input, nullptr);
+    parent->AppendChild(input);
+    doc_->GetBody()->AppendChild(parent);
+
+    ASSERT_TRUE(doc_->GetStyleManager()->ParseCSSString(R"(
+        .font-parent { font-family: "Segoe UI", "Microsoft YaHei", sans-serif; }
+        input { font-family: inherit; }
+    )"));
+
+    StyleResolver resolver;
+    resolver.SetStyleManager(doc_->GetStyleManager());
+
+    auto parent_style = resolver.ResolveStyle(parent, nullptr);
+    auto input_style = resolver.ResolveStyle(input, &parent_style);
+
+    EXPECT_EQ(parent_style.font_family, "Segoe UI, Microsoft YaHei, sans-serif");
+    EXPECT_EQ(input_style.font_family, parent_style.font_family);
+}
+
+TEST_F(ElementTest, TextInputDefaultColorUsesFieldText) {
+    auto parent = CreateElement("div");
+    parent->SetClassName("dark-parent");
+    auto input = std::dynamic_pointer_cast<HTMLInputElement>(doc_->CreateElement("input"));
+    ASSERT_NE(input, nullptr);
+    input->SetAttribute("type", "text");
+    parent->AppendChild(input);
+    doc_->GetBody()->AppendChild(parent);
+
+    ASSERT_TRUE(doc_->GetStyleManager()->ParseCSSString(R"(
+        .dark-parent { color: #f5f5fa; }
+    )"));
+
+    StyleResolver resolver;
+    resolver.SetStyleManager(doc_->GetStyleManager());
+
+    auto parent_style = resolver.ResolveStyle(parent, nullptr);
+    auto input_style = resolver.ResolveStyle(input, &parent_style);
+
+    EXPECT_EQ(parent_style.color, "#f5f5fa");
+    EXPECT_EQ(input_style.color, "#000000");
+}
+
 TEST_F(ElementTest, HoverPseudoClassRestylesDescendantRenderObject) {
     WindowConfig config;
     config.hidden = true;
