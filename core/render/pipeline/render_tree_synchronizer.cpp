@@ -409,7 +409,7 @@ void RenderTreeSynchronizer::ProcessStyleChanges(DirtyNodeTracker& tracker) {
         render_obj->InvalidatePaintCache();
 
         // style/class/id 变化可能影响整棵后代子树的变量继承与选择器匹配
-        if (change.property == "style" || change.property == "class" || change.property == "id") {
+        if (change.property == "class" || change.property == "id") {
             for (const auto& child : element->GetChildNodes()) {
                 if (child && child->GetNodeType() == NodeType::ELEMENT_NODE) {
                     RefreshElementSubtreeStyles(resolver, std::static_pointer_cast<Element>(child));
@@ -1024,9 +1024,14 @@ size_t RenderTreeSynchronizer::FindInsertPosition(
 }
 
 void RenderTreeSynchronizer::InvalidateAncestorLayout(RenderObject* obj) {
-    while (obj) {
-        obj->MarkNeedsLayout();
-        obj = obj->GetParent().get();
+    if (!obj) {
+        return;
+    }
+
+    obj->MarkNeedsLayout(false);
+    obj->MarkAncestorsWithChildNeedsLayout();
+    if (auto engine = layout_engine_.lock()) {
+        engine->MarkNeedsLayout(obj);
     }
 }
 

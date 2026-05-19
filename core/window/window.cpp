@@ -232,6 +232,21 @@ SkRect UnionDirtyRects(const std::vector<SkRect>& dirty_rects, float width, floa
     return has_bounds ? dirty_bounds : SkRect::MakeEmpty();
 }
 
+float TotalDirtyRectArea(const std::vector<SkRect>& dirty_rects, float width, float height) {
+    const SkRect viewport = SkRect::MakeWH(width, height);
+    float total_area = 0.0f;
+
+    for (const auto& dirty_rect : dirty_rects) {
+        SkRect clipped;
+        if (!clipped.intersect(dirty_rect, viewport) || clipped.isEmpty()) {
+            continue;
+        }
+        total_area += clipped.width() * clipped.height();
+    }
+
+    return total_area;
+}
+
 void AddRetainedDirtyRectForRenderObject(Window* window, RenderObject* render_obj) {
     if (!window || !render_obj) {
         return;
@@ -302,6 +317,20 @@ void AddRetainedDirtyRectsForPaintDirtyTree(Window* window, RenderObject* render
 
     for (const auto& child : render_obj->GetChildren()) {
         AddRetainedDirtyRectsForPaintDirtyTree(window, child.get());
+    }
+}
+
+void ClearDomDirtyTree(Node* node) {
+    if (!node) {
+        return;
+    }
+
+    node->ClearDirty();
+    node->ClearNeedsStyleRecalc();
+    node->ClearNeedsLayout();
+
+    for (const auto& child : node->GetChildNodes()) {
+        ClearDomDirtyTree(child.get());
     }
 }
 
@@ -1662,6 +1691,7 @@ void Window::Render() {
             }
             // 调用 RenderTreeSynchronizer 来同步变化
             bool synced = render_tree_synchronizer_->Synchronize(tracker, cached_render_tree_);
+            ClearDomDirtyTree(document_->GetBody().get());
             if (synced) {
                 needs_layout_update = true;
             }
@@ -1678,7 +1708,7 @@ void Window::Render() {
     // 需要遍历 DOM 树，将脏标记同步到 RenderObject 并重新计算样式
     // 关键修复：结构变更帧跳过这轮递归，避免用旧 layout/render 映射继续更新新树
     stage_start_ms = baseline_stats_enabled ? GetBaselineTimeMs() : 0.0;
-    if (!needs_layout_update && document_ && cached_render_tree_ && render_tree_valid_) {
+    if (!needs_layout_update && !had_pending_dom_changes && document_ && cached_render_tree_ && render_tree_valid_) {
         auto body = document_->GetBody();
         if (body && cached_render_tree_) {
             // 检查是否有样式脏标记需要处理
@@ -1687,16 +1717,7 @@ void Window::Render() {
             if (has_style_dirty) {
                 MarkRenderObjectsDirty(body.get(), cached_render_tree_.get());
                 // 清除 DOM 节点的脏标记和增量标记（递归清除整个子树）
-                std::function<void(Node*)> clearDirtyRecursive = [&](Node* node) {
-                    if (!node) return;
-                    node->ClearDirty();
-                    node->ClearNeedsStyleRecalc();
-                    node->ClearNeedsLayout();
-                    for (const auto& child : node->GetChildNodes()) {
-                        clearDirtyRecursive(child.get());
-                    }
-                };
-                clearDirtyRecursive(body.get());
+                ClearDomDirtyTree(body.get());
             }
         }
     }
@@ -1734,7 +1755,7 @@ void Window::Render() {
             layout_sync_valid_ = true;
 
             // 关键修复：结构变化后强制层树重建，避免父层残留旧位图导致“重影/双实例”
-            if (render_pipeline_) {
+            if (had_structural_dom_changes && render_pipeline_) {
                 render_pipeline_->InvalidateLayerTree();
                 render_pipeline_->ForceFullUpdate();
             }
@@ -1812,10 +1833,20 @@ void Window::Render() {
 
         const SkRect dirty_bounds = UnionDirtyRects(dirty_rects_, app_width, app_height);
         const bool has_dirty_bounds = !dirty_bounds.isEmpty();
+        const float viewport_area = app_width * app_height;
+        const float dirty_union_area = has_dirty_bounds ? dirty_bounds.width() * dirty_bounds.height() : 0.0f;
+        const float dirty_total_area = has_dirty_bounds ? TotalDirtyRectArea(dirty_rects_, app_width, app_height) : 0.0f;
+        const bool dirty_union_too_broad =
+            has_dirty_bounds &&
+            dirty_rects_.size() > 1 &&
+            viewport_area > 0.0f &&
+            dirty_union_area > viewport_area * 0.75f &&
+            dirty_total_area < dirty_union_area * 0.60f;
         const bool retained_dirty_clip_allowed =
             CanUseRetainedDirtyClipForReason(last_repaint_reason_) &&
             (!had_pending_dom_changes || !had_structural_dom_changes) &&
             !render_tree_rebuild_required &&
+            !dirty_union_too_broad &&
             (!needs_layout_update || has_dirty_bounds);
         SkRect dirty_bounds_px = dirty_bounds;
         dirty_bounds_px.fLeft *= dpi_scale;

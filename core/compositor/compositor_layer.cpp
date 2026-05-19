@@ -303,7 +303,7 @@ void CompositorLayer::MergeDirtyRegions() {
         merged_area += rect.width() * rect.height();
     }
 
-    if (merged_area > layer_area / 2) {
+    if (merged_area > layer_area * 9 / 10) {
         dirty_regions_.clear();
         dirty_regions_.push_back(SkIRect::MakeWH(
             static_cast<int>(bounds_.width()),
