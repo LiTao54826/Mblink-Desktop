@@ -1834,6 +1834,9 @@ void Window::Render() {
         if (!needs_layout_update && !document_->GetDirtyTracker().HasPendingChanges()) {
             layout_sync_valid_ = true;
         }
+        if (needs_layout_update && render_pipeline_) {
+            render_pipeline_->ForceRasterize();
+        }
 
         // 注意：不再在每次布局更新时触发完整层树重建
         // 层树会在 RenderPipeline::DoLayerTreeBuild 中通过 DetectAndCreateNewLayers 增量更新
@@ -1911,7 +1914,7 @@ void Window::Render() {
             (!had_pending_dom_changes || !had_structural_dom_changes) &&
             !render_tree_rebuild_required &&
             !dirty_union_too_broad &&
-            (!needs_layout_update || has_dirty_bounds);
+            !needs_layout_update;
         SkRect dirty_bounds_px = dirty_bounds;
         dirty_bounds_px.fLeft *= dpi_scale;
         dirty_bounds_px.fTop *= dpi_scale;
@@ -2000,7 +2003,7 @@ void Window::Render() {
             retained_dirty_reason_allowed &&
             (!had_pending_dom_changes || !had_structural_dom_changes) &&
             !render_tree_rebuild_required &&
-            (!needs_layout_update || has_dirty_bounds) &&
+            !needs_layout_update &&
             render_pipeline_ &&
             render_pipeline_->NeedsUpdate();
 

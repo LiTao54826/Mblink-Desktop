@@ -65,8 +65,8 @@ function run() {
          dirtyClipBlock.includes('retained_dirty_reason_allowed') &&
          dirtyClipBlock.includes('(!had_pending_dom_changes || !had_structural_dom_changes)') &&
          dirtyClipBlock.includes('!render_tree_rebuild_required') &&
-         dirtyClipBlock.includes('(!needs_layout_update || has_dirty_bounds)'),
-    'Dirty retained-present clipping must stay blocked for structural/tree rebuild frames but allow bounded style/layout updates');
+         dirtyClipBlock.includes('!needs_layout_update'),
+    'Dirty retained-present clipping must stay blocked for structural/tree rebuild and layout update frames');
   assert(windowSrc.includes('AddRetainedDirtyRectsForPendingChanges(this, tracker)') &&
          windowSrc.includes('AddRetainedDirtyRectsForPaintDirtyTree(this, cached_render_tree_.get(), app_width, app_height)'),
     'Non-structural DOM batches must collect old and new dirty bounds for retained-present clipping');
@@ -75,6 +75,11 @@ function run() {
   const updateBlock = windowSrc.slice(updateStart, updateEnd);
   assert(updateStart >= 0 && updateBlock.includes('retained_dirty_clip_allowed'),
     'Dirty retained-present update must be gated by the retained dirty-clip allowlist');
+  const rasterLimitStart = windowSrc.indexOf('const bool can_limit_pipeline_raster_to_dirty_rects =');
+  const rasterLimitEnd = windowSrc.indexOf(';', rasterLimitStart);
+  const rasterLimitBlock = windowSrc.slice(rasterLimitStart, rasterLimitEnd);
+  assert(rasterLimitStart >= 0 && rasterLimitBlock.includes('!needs_layout_update'),
+    'Pipeline raster dirty-rect limiting must be disabled for layout update frames');
   assert(windowSrc.includes('RenderDevTools(canvas') &&
          windowSrc.indexOf('RenderDevTools(canvas') > windowSrc.indexOf('retained_main_surface_->makeImageSnapshot()'),
     'DevTools overlay must be painted after retained-main copy');
