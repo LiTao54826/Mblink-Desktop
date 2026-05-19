@@ -227,7 +227,7 @@ private:
     std::weak_ptr<Document> document_;
 
     /// 布局引擎
-    std::weak_ptr<LayoutEngine> layout_engine_;
+    std::shared_ptr<LayoutEngine> layout_engine_;
 
     /// 渲染树构建器
     std::weak_ptr<RenderTreeBuilder> render_tree_builder_;

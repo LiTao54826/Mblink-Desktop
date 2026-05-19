@@ -387,7 +387,7 @@ void RenderTreeSynchronizer::ProcessStyleChanges(DirtyNodeTracker& tracker) {
 
         // 与 OnStyleChanged 保持一致：同步推进到 LayoutEngine 的样式更新路径
         // 避免仅更新 RenderObject 样式而 LayoutNode 未被正确标脏，导致增量布局漏算。
-        if (auto engine = layout_engine_.lock()) {
+        if (auto engine = layout_engine_) {
             if (engine->HasElement(render_obj.get())) {
                 engine->UpdateStyle(render_obj.get(), new_style);
             } else {
@@ -450,7 +450,7 @@ void RenderTreeSynchronizer::RefreshElementSubtreeStyles(StyleResolver& resolver
         ComputedStyle new_style = resolver.ResolveStyle(element, parent_style);
         render_obj->SetComputedStyle(new_style);
 
-        if (auto engine = layout_engine_.lock()) {
+        if (auto engine = layout_engine_) {
             if (engine->HasElement(render_obj.get())) {
                 engine->UpdateStyle(render_obj.get(), new_style);
             }
@@ -497,7 +497,7 @@ void RenderTreeSynchronizer::ProcessTextChanges(DirtyNodeTracker& tracker) {
         }
 
         // 内容变化版本由同步器统一推进，避免 Observer/Synchronizer 双路径重复更新
-        if (auto engine = layout_engine_.lock()) {
+        if (auto engine = layout_engine_) {
             engine->UpdateContentVersion(render_obj.get());
         }
 
@@ -740,7 +740,7 @@ void RenderTreeSynchronizer::RemoveRenderObject(Node* node) {
             // RenderObject::MarkNeedsLayout 只设置 RenderObject 的标志
             // 但 ComputeIncrementalLayout 检查的是 LayoutNode 的标志
             // 必须通过 LayoutEngine::MarkNeedsLayout 来同步两者
-            auto layout_engine = layout_engine_.lock();
+            auto layout_engine = layout_engine_;
             if (layout_engine) {
                 layout_engine->MarkNeedsLayout(parent_ro.get());
             }
@@ -1030,7 +1030,7 @@ void RenderTreeSynchronizer::InvalidateAncestorLayout(RenderObject* obj) {
 
     obj->MarkNeedsLayout(false);
     obj->MarkAncestorsWithChildNeedsLayout();
-    if (auto engine = layout_engine_.lock()) {
+    if (auto engine = layout_engine_) {
         engine->MarkNeedsLayout(obj);
     }
 }

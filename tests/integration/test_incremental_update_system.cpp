@@ -254,10 +254,18 @@ TEST_F(IncrementalUpdateSystemTest, SynchronizerStyleOnlyChangeDoesNotRequestLay
     auto doc = CreateDocument();
     auto body = doc->GetBody();
     auto panel = doc->CreateElement("div");
-    panel->SetAttribute("style", "display: grid; gap: 4px;");
-    auto child = doc->CreateElement("span");
-    child->SetTextContent("compact target");
-    panel->AppendChild(child);
+    panel->SetAttribute("style",
+                        "display: grid; width: 856px; "
+                        "grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); "
+                        "grid-auto-rows: minmax(134px, auto); gap: 10px;");
+    std::vector<std::shared_ptr<Element>> items;
+    for (int i = 0; i < 8; ++i) {
+        auto child = doc->CreateElement("article");
+        child->SetAttribute("style", "height: 48px;");
+        child->SetTextContent("compact target " + std::to_string(i + 1));
+        items.push_back(child);
+        panel->AppendChild(child);
+    }
     body->AppendChild(panel);
 
     RenderTreeBuilder builder;
@@ -265,27 +273,40 @@ TEST_F(IncrementalUpdateSystemTest, SynchronizerStyleOnlyChangeDoesNotRequestLay
     auto render_root = builder.BuildRenderTree(body);
     ASSERT_NE(render_root, nullptr);
     ASSERT_NE(panel->GetRenderObject(), nullptr);
+    ASSERT_NE(items[4]->GetRenderObject(), nullptr);
 
-    auto layout_engine = std::make_shared<LayoutEngine>();
+    auto owned_layout_engine = std::make_unique<LayoutEngine>();
+    LayoutEngine* layout_engine = owned_layout_engine.get();
     layout_engine->BuildLayoutTree(render_root);
-    layout_engine->ComputeLayout(800.0f, 600.0f);
+    layout_engine->ComputeLayout(1180.0f, 820.0f);
     layout_engine->GetLayoutInfo(render_root);
+    const auto normal_item = items[4]->GetRenderObject()->GetLayoutInfo();
 
     doc->GetDirtyTracker().Clear();
-    panel->SetAttribute("style", "display: grid; gap: 8px; padding: 6px;");
+    panel->SetAttribute("style",
+                        "display: grid; width: 856px; "
+                        "grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); "
+                        "grid-auto-rows: minmax(104px, auto); gap: 7px;");
     ASSERT_EQ(doc->GetDirtyTracker().GetStructuralChangeCount(), 0);
     ASSERT_GT(doc->GetDirtyTracker().GetStyleChangeCount(), 0);
 
     RenderTreeSynchronizer synchronizer;
     synchronizer.SetDocument(doc);
-    synchronizer.SetLayoutEngine(layout_engine);
+    synchronizer.SetLayoutEngine(std::shared_ptr<LayoutEngine>(
+        layout_engine, [](LayoutEngine*) {}));
 
     bool requires_layout_tree_rebuild =
         synchronizer.Synchronize(doc->GetDirtyTracker(), render_root);
 
     EXPECT_FALSE(requires_layout_tree_rebuild);
     EXPECT_FALSE(doc->GetDirtyTracker().HasPendingChanges());
-    EXPECT_TRUE(layout_engine->ComputeIncrementalLayout(800.0f, 600.0f));
+    EXPECT_TRUE(layout_engine->ComputeIncrementalLayout(1180.0f, 820.0f));
+    layout_engine->GetLayoutInfo(render_root);
+
+    const auto compact_item = items[4]->GetRenderObject()->GetLayoutInfo();
+    EXPECT_NE(compact_item.x, normal_item.x);
+    EXPECT_NEAR(compact_item.x, 690.4f, 0.5f);
+    EXPECT_NEAR(compact_item.y, 0.0f, 0.5f);
 }
 
 } // namespace test

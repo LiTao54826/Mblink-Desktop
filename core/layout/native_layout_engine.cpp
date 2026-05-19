@@ -157,6 +157,48 @@ static LengthPercentage ConvertLength(const CSSLength& css_length) {
 // Forward declaration for recursive call
 static std::vector<TrackSizingFunction> ParseGridTemplate(const std::string& template_str);
 
+static bool SameTrackMin(const MinTrackSizingFunction& a, const MinTrackSizingFunction& b) {
+    return a.type == b.type && a.value == b.value && a.is_percent == b.is_percent;
+}
+
+static bool SameTrackMax(const MaxTrackSizingFunction& a, const MaxTrackSizingFunction& b) {
+    return a.type == b.type && a.value == b.value && a.is_percent == b.is_percent;
+}
+
+static bool SameNonRepeatedTrack(const NonRepeatedTrackSizingFunction& a,
+                                 const NonRepeatedTrackSizingFunction& b) {
+    return SameTrackMin(a.min, b.min) && SameTrackMax(a.max, b.max);
+}
+
+static bool SameRepeatedTracks(const std::vector<NonRepeatedTrackSizingFunction>& a,
+                               const std::vector<NonRepeatedTrackSizingFunction>& b) {
+    if (a.size() != b.size()) {
+        return false;
+    }
+    for (size_t i = 0; i < a.size(); ++i) {
+        if (!SameNonRepeatedTrack(a[i], b[i])) {
+            return false;
+        }
+    }
+    return true;
+}
+
+static bool SameTrackTemplate(const std::vector<TrackSizingFunction>& a,
+                              const std::vector<TrackSizingFunction>& b) {
+    if (a.size() != b.size()) {
+        return false;
+    }
+    for (size_t i = 0; i < a.size(); ++i) {
+        if (a[i].type != b[i].type ||
+            !SameNonRepeatedTrack(a[i].single, b[i].single) ||
+            a[i].repeat_count != b[i].repeat_count ||
+            !SameRepeatedTracks(a[i].repeat_tracks, b[i].repeat_tracks)) {
+            return false;
+        }
+    }
+    return true;
+}
+
 // Helper to parse a single grid track value
 static NonRepeatedTrackSizingFunction ParseGridTrackValue(const std::string& value) {
     std::string trimmed = value;
@@ -750,7 +792,20 @@ void NativeLayoutEngine::UpdateStyle(RenderObject* render_obj, const ComputedSty
             }
 
             // Grid 属性变化会影响布局
-            if (old_style.grid_auto_flow != new_style.grid_auto_flow) {
+            auto new_grid_template_columns = ParseGridTemplate(style.grid_template_columns);
+            auto new_grid_template_rows = ParseGridTemplate(style.grid_template_rows);
+            auto new_grid_auto_columns = ParseGridAutoTracks(style.grid_auto_columns);
+            auto new_grid_auto_rows = ParseGridAutoTracks(style.grid_auto_rows);
+            auto new_grid_column_gap = ConvertLength(style.column_gap);
+            auto new_grid_row_gap = ConvertLength(style.row_gap);
+
+            if (old_style.grid_auto_flow != new_style.grid_auto_flow ||
+                !SameTrackTemplate(node->grid_container_style.grid_template_columns, new_grid_template_columns) ||
+                !SameTrackTemplate(node->grid_container_style.grid_template_rows, new_grid_template_rows) ||
+                !SameRepeatedTracks(node->grid_container_style.grid_auto_columns, new_grid_auto_columns) ||
+                !SameRepeatedTracks(node->grid_container_style.grid_auto_rows, new_grid_auto_rows) ||
+                node->grid_container_style.column_gap != new_grid_column_gap ||
+                node->grid_container_style.row_gap != new_grid_row_gap) {
                 layout_changed = true;
             }
 
@@ -768,12 +823,12 @@ void NativeLayoutEngine::UpdateStyle(RenderObject* render_obj, const ComputedSty
 
             // 更新 Grid 特有数据（仅解析 Grid 特有属性，不再同步 CoreStyle 基类）
             // 这些属性不在统一的 Style 结构中，需要单独解析
-            node->grid_container_style.grid_template_columns = ParseGridTemplate(style.grid_template_columns);
-            node->grid_container_style.grid_template_rows = ParseGridTemplate(style.grid_template_rows);
-            node->grid_container_style.grid_auto_columns = ParseGridAutoTracks(style.grid_auto_columns);
-            node->grid_container_style.grid_auto_rows = ParseGridAutoTracks(style.grid_auto_rows);
-            node->grid_container_style.column_gap = ConvertLength(style.column_gap);
-            node->grid_container_style.row_gap = ConvertLength(style.row_gap);
+            node->grid_container_style.grid_template_columns = std::move(new_grid_template_columns);
+            node->grid_container_style.grid_template_rows = std::move(new_grid_template_rows);
+            node->grid_container_style.grid_auto_columns = std::move(new_grid_auto_columns);
+            node->grid_container_style.grid_auto_rows = std::move(new_grid_auto_rows);
+            node->grid_container_style.column_gap = new_grid_column_gap;
+            node->grid_container_style.row_gap = new_grid_row_gap;
 
             // 解析 Grid 项目特有属性
             auto [col_start, col_end] = ParseGridLine(style.grid_column);
@@ -788,11 +843,40 @@ void NativeLayoutEngine::UpdateStyle(RenderObject* render_obj, const ComputedSty
             // **Validates: Requirements 1.3**
             if (layout_changed) {
                 node->needs_layout = true;
+                const bool is_flex_or_grid_container =
+                    old_style.display == Display::Flex ||
+                    old_style.display == Display::Grid ||
+                    new_style.display == Display::Flex ||
+                    new_style.display == Display::Grid;
+                for (NodeId ancestor_id = node->parent; ancestor_id != 0;) {
+                    LayoutNode* ancestor = GetNode(ancestor_id);
+                    if (!ancestor) {
+                        break;
+                    }
+                    ancestor->cache.Clear();
+                    ancestor->needs_layout = true;
+                    if (ancestor->render_obj) {
+                        ancestor->render_obj->MarkNeedsLayout(false);
+                    }
+                    ancestor_id = ancestor->parent;
+                }
                 // 关键修复：清除当前节点的缓存，确保布局重新计算
                 node->cache.Clear();
 
                 // 关键修复：当 overflow 变化时，滚动条的出现/消失会影响子元素的可用宽度
                 // 需要清除所有子元素的布局缓存，确保它们使用新的可用宽度重新布局
+                if (is_flex_or_grid_container) {
+                    for (NodeId child_id : node->children) {
+                        ClearWidthDependentCachesRecursive(child_id);
+                        if (LayoutNode* child = GetNode(child_id)) {
+                            child->needs_layout = true;
+                            if (child->render_obj) {
+                                child->render_obj->MarkNeedsLayout(false);
+                            }
+                        }
+                    }
+                }
+
                 if (overflow_changed) {
                     // 关键修复：清除当前元素自身的 content_width_/content_height_ 缓存
                     // 当 overflow 变化时，滚动条的出现/消失会影响内容区域宽度的判断

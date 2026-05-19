@@ -838,5 +838,48 @@ TEST_F(NativeLayoutEngineTest, FixedChildVerticalPaddingPercentUsesViewportWidth
     EXPECT_FLOAT_EQ(fixed_info.height, 180.0f);
 }
 
+TEST_F(NativeLayoutEngineTest, GridTrackStyleUpdateInvalidatesIncrementalLayout) {
+    auto body = doc_->GetBody();
+    auto grid = doc_->CreateElement("section");
+    std::vector<std::shared_ptr<Element>> items;
+
+    grid->SetStyle("display", "grid");
+    grid->SetStyle("grid-template-columns", "repeat(auto-fit, minmax(190px, 1fr))");
+    grid->SetStyle("grid-auto-rows", "minmax(134px, auto)");
+    grid->SetStyle("gap", "10px");
+    grid->SetStyle("width", "856px");
+
+    for (int i = 0; i < 8; ++i) {
+        auto item = doc_->CreateElement("article");
+        item->SetStyle("height", "48px");
+        items.push_back(item);
+        grid->AppendChild(item);
+    }
+    body->AppendChild(grid);
+
+    BuildAndLayout(1180.0f, 820.0f);
+
+    ASSERT_NE(grid->GetRenderObject(), nullptr);
+    ASSERT_NE(items[4]->GetRenderObject(), nullptr);
+
+    const auto normal_item = items[4]->GetRenderObject()->GetLayoutInfo();
+
+    ComputedStyle compact_style = grid->GetRenderObject()->GetComputedStyle();
+    compact_style.grid_template_columns = "repeat(auto-fit, minmax(150px, 1fr))";
+    compact_style.grid_auto_rows = "minmax(104px, auto)";
+    compact_style.column_gap = CSSLength(7.0f, CSSUnit::PX);
+    compact_style.row_gap = CSSLength(7.0f, CSSUnit::PX);
+
+    layout_engine_->UpdateStyle(grid->GetRenderObject().get(), compact_style);
+    EXPECT_TRUE(layout_engine_->ComputeIncrementalLayout(1180.0f, 820.0f));
+    layout_engine_->GetLayoutInfo(render_root_);
+
+    const auto compact_item = items[4]->GetRenderObject()->GetLayoutInfo();
+
+    EXPECT_NEAR(compact_item.x, 690.4f, 0.5f);
+    EXPECT_NEAR(compact_item.y, 0.0f, 0.5f);
+    EXPECT_NE(compact_item.x, normal_item.x);
+}
+
 } // namespace test
 } // namespace mbink

@@ -38,6 +38,13 @@ function run() {
   const processFrameSrc = pipelineSrc.slice(processFrameStart, processFrameEnd);
   assert(!/external_root_dirty_rects_[\s\S]{0,300}ClearDirtyRegions/.test(processFrameSrc),
     'RenderPipeline must not replace internally collected root dirty regions with external dirty hints');
+  const forceRasterizeStart = pipelineSrc.indexOf('void RenderPipeline::ForceRasterize()');
+  const forceRasterizeEnd = pipelineSrc.indexOf('void RenderPipeline::MarkDirty(', forceRasterizeStart);
+  const forceRasterizeSrc = pipelineSrc.slice(forceRasterizeStart, forceRasterizeEnd);
+  assert(forceRasterizeStart >= 0 &&
+         forceRasterizeSrc.includes('MarkAllLayersDirty(root_layer_.get())') &&
+         !forceRasterizeSrc.includes('root_layer_->MarkFullDirty()'),
+    'ForceRasterize must mark every compositor layer dirty, not only the root layer');
 
   console.log('[PASS] compositor dirty clip guard is present');
 }

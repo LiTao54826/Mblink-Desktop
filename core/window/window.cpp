@@ -1740,6 +1740,7 @@ void Window::Render() {
     bool needs_layout_update = false;
     bool had_pending_dom_changes = false;
     bool had_structural_dom_changes = false;
+    bool needs_dom_raster_update = false;
     stage_start_ms = baseline_stats_enabled ? GetBaselineTimeMs() : 0.0;
     if (!render_tree_rebuild_required && document_ && render_tree_synchronizer_ && cached_render_tree_ && render_tree_valid_) {
         auto& tracker = document_->GetDirtyTracker();
@@ -1753,6 +1754,7 @@ void Window::Render() {
             // 调用 RenderTreeSynchronizer 来同步变化
             bool synced = render_tree_synchronizer_->Synchronize(tracker, cached_render_tree_);
             ClearDomDirtyTree(document_->GetBody().get());
+            needs_dom_raster_update = true;
             if (synced) {
                 needs_layout_update = true;
             }
@@ -1834,7 +1836,7 @@ void Window::Render() {
         if (!needs_layout_update && !document_->GetDirtyTracker().HasPendingChanges()) {
             layout_sync_valid_ = true;
         }
-        if (needs_layout_update && render_pipeline_) {
+        if ((needs_layout_update || needs_dom_raster_update) && render_pipeline_) {
             render_pipeline_->ForceRasterize();
         }
 
@@ -1976,6 +1978,9 @@ void Window::Render() {
             !has_active_animations &&
             !force_full_repaint_ &&
             !retained_main_scroll_fallback_blocked &&
+            !had_pending_dom_changes &&
+            !render_tree_rebuild_required &&
+            !needs_layout_update &&
             !has_dirty_bounds &&
             render_pipeline_ &&
             !render_pipeline_->NeedsUpdate();

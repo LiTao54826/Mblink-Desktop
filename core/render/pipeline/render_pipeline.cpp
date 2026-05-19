@@ -356,7 +356,7 @@ void RenderPipeline::InvalidateLayerTree() {
 
 void RenderPipeline::ForceRasterize() {
     if (root_layer_) {
-        root_layer_->MarkFullDirty();
+        MarkAllLayersDirty(root_layer_.get());
     }
     needs_render_ = true;
 }

@@ -50,6 +50,18 @@ function run() {
   const reuseBlock = windowSrc.slice(reuseStart, reuseEnd);
   assert(reuseStart >= 0 && reuseBlock.includes('!force_full_repaint_'),
     'Retained-main reuse must be blocked by Window-level force_full_repaint_');
+  for (const gate of [
+    '!had_pending_dom_changes',
+    '!render_tree_rebuild_required',
+    '!needs_layout_update'
+  ]) {
+    assert(reuseBlock.includes(gate), `Retained-main reuse must be blocked by ${gate}`);
+  }
+  assert(windowSrc.includes('bool needs_dom_raster_update = false') &&
+         windowSrc.includes('needs_dom_raster_update = true') &&
+         windowSrc.includes('(needs_layout_update || needs_dom_raster_update) && render_pipeline_') &&
+         windowSrc.includes('render_pipeline_->ForceRasterize()'),
+    'DOM/style/text batches must force pipeline rasterization even when layout does not rebuild');
   assert(windowSrc.includes('can_update_retained_dirty_region') &&
          windowSrc.includes('UnionDirtyRects') &&
          windowSrc.includes('dirty_bounds_px') &&
