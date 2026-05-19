@@ -61,10 +61,13 @@ function run() {
   const dirtyClipBlock = windowSrc.slice(dirtyClipStart, dirtyClipEnd);
   assert(dirtyClipStart >= 0 &&
          dirtyClipBlock.includes('CanUseRetainedDirtyClipForReason(last_repaint_reason_)') &&
-         dirtyClipBlock.includes('!had_pending_dom_changes') &&
+         dirtyClipBlock.includes('(!had_pending_dom_changes || !had_structural_dom_changes)') &&
          dirtyClipBlock.includes('!render_tree_rebuild_required') &&
-         dirtyClipBlock.includes('!needs_layout_update'),
-    'Dirty retained-present clipping must be disabled for DOM/layout/tree rebuild frames');
+         dirtyClipBlock.includes('(!needs_layout_update || has_dirty_bounds)'),
+    'Dirty retained-present clipping must stay blocked for structural/tree rebuild frames but allow bounded style/layout updates');
+  assert(windowSrc.includes('AddRetainedDirtyRectsForPendingChanges(this, tracker)') &&
+         windowSrc.includes('AddRetainedDirtyRectsForPaintDirtyTree(this, cached_render_tree_.get())'),
+    'Non-structural DOM batches must collect old and new dirty bounds for retained-present clipping');
   const updateStart = windowSrc.indexOf('const bool can_update_retained_dirty_region =');
   const updateEnd = windowSrc.indexOf(';', updateStart);
   const updateBlock = windowSrc.slice(updateStart, updateEnd);

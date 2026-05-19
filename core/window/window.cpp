@@ -75,6 +75,7 @@
 #include "core/dom/element.h"
 #include "core/dom/text.h"
 #include "core/dom/observers/dom_observer.h"
+#include "core/dom/observers/dirty_node_tracker.h"
 #include "core/render/pipeline/renderer.h"
 #include "core/render/objects/render_object.h"
 #include "core/render/css/style_resolver.h"
@@ -191,6 +192,7 @@ inline bool IsRetainedPresentExperimentEnabled() {
 
 inline bool CanUseRetainedDirtyClipForReason(RepaintReason reason) {
     switch (reason) {
+        case RepaintReason::DOMMutation:
         case RepaintReason::PseudoClass:
         case RepaintReason::Focus:
         case RepaintReason::KeyboardInput:
@@ -202,7 +204,6 @@ inline bool CanUseRetainedDirtyClipForReason(RepaintReason reason) {
         case RepaintReason::Unknown:
         case RepaintReason::Initial:
         case RepaintReason::Resize:
-        case RepaintReason::DOMMutation:
         case RepaintReason::Animation:
         case RepaintReason::DevTools:
         case RepaintReason::API:
@@ -229,6 +230,79 @@ SkRect UnionDirtyRects(const std::vector<SkRect>& dirty_rects, float width, floa
         }
     }
     return has_bounds ? dirty_bounds : SkRect::MakeEmpty();
+}
+
+void AddRetainedDirtyRectForRenderObject(Window* window, RenderObject* render_obj) {
+    if (!window || !render_obj) {
+        return;
+    }
+
+    auto add_bounds = [window](SkRect bounds) {
+        if (bounds.isEmpty()) {
+            return;
+        }
+        bounds.outset(50.0f, 50.0f);
+        window->AddDirtyRect(bounds);
+    };
+
+    SkRect current_bounds = render_obj->GetViewportBoundingRect();
+    if (current_bounds.isEmpty()) {
+        current_bounds = render_obj->GetBoundingRect();
+    }
+    add_bounds(current_bounds);
+
+    if (render_obj->HasPreviousPaintBounds()) {
+        SkRect previous_bounds = render_obj->GetPreviousViewportPaintBounds();
+        if (previous_bounds.isEmpty()) {
+            previous_bounds = render_obj->GetPreviousPaintBounds();
+        }
+        add_bounds(previous_bounds);
+    }
+}
+
+void AddRetainedDirtyRectForNode(Window* window, const std::shared_ptr<Node>& node) {
+    if (!window || !node) {
+        return;
+    }
+
+    auto render_obj = node->GetRenderObject();
+    if (!render_obj && node->GetNodeType() == NodeType::TEXT_NODE) {
+        if (auto parent = node->GetParentNode()) {
+            render_obj = parent->GetRenderObject();
+        }
+    }
+    AddRetainedDirtyRectForRenderObject(window, render_obj.get());
+}
+
+void AddRetainedDirtyRectsForPendingChanges(Window* window, const DirtyNodeTracker& tracker) {
+    if (!window) {
+        return;
+    }
+
+    for (const auto& change : tracker.GetStyleChanges()) {
+        AddRetainedDirtyRectForNode(window, change.element.lock());
+    }
+    for (const auto& change : tracker.GetTextChanges()) {
+        AddRetainedDirtyRectForNode(window, change.node.lock());
+    }
+}
+
+void AddRetainedDirtyRectsForPaintDirtyTree(Window* window, RenderObject* render_obj) {
+    if (!window || !render_obj || !render_obj->IsDirtyForPaint()) {
+        return;
+    }
+
+    if (render_obj->NeedsPaint()) {
+        AddRetainedDirtyRectForRenderObject(window, render_obj);
+    }
+
+    if (!render_obj->ChildNeedsPaint()) {
+        return;
+    }
+
+    for (const auto& child : render_obj->GetChildren()) {
+        AddRetainedDirtyRectsForPaintDirtyTree(window, child.get());
+    }
 }
 
 inline double GetBaselineTimeMs() {
@@ -1575,12 +1649,17 @@ void Window::Render() {
     // 关键修复：全量重建帧跳过增量同步，避免同帧重复插入 out-of-flow 节点
     bool needs_layout_update = false;
     bool had_pending_dom_changes = false;
+    bool had_structural_dom_changes = false;
     stage_start_ms = baseline_stats_enabled ? GetBaselineTimeMs() : 0.0;
     if (!render_tree_rebuild_required && document_ && render_tree_synchronizer_ && cached_render_tree_ && render_tree_valid_) {
         auto& tracker = document_->GetDirtyTracker();
         const bool has_pending_changes = tracker.HasPendingChanges();
         had_pending_dom_changes = has_pending_changes;
         if (has_pending_changes) {
+            had_structural_dom_changes = tracker.GetStructuralChangeCount() > 0;
+            if (!had_structural_dom_changes) {
+                AddRetainedDirtyRectsForPendingChanges(this, tracker);
+            }
             // 调用 RenderTreeSynchronizer 来同步变化
             bool synced = render_tree_synchronizer_->Synchronize(tracker, cached_render_tree_);
             if (synced) {
@@ -1680,6 +1759,10 @@ void Window::Render() {
     }
 
     // 关键：将渲染树传递给统一渲染管线
+    if (!had_structural_dom_changes && cached_render_tree_) {
+        AddRetainedDirtyRectsForPaintDirtyTree(this, cached_render_tree_.get());
+    }
+
     if (baseline_stats_enabled) {
         layout_ms = GetBaselineTimeMs() - stage_start_ms;
     }
@@ -1731,9 +1814,9 @@ void Window::Render() {
         const bool has_dirty_bounds = !dirty_bounds.isEmpty();
         const bool retained_dirty_clip_allowed =
             CanUseRetainedDirtyClipForReason(last_repaint_reason_) &&
-            !had_pending_dom_changes &&
+            (!had_pending_dom_changes || !had_structural_dom_changes) &&
             !render_tree_rebuild_required &&
-            !needs_layout_update;
+            (!needs_layout_update || has_dirty_bounds);
         SkRect dirty_bounds_px = dirty_bounds;
         dirty_bounds_px.fLeft *= dpi_scale;
         dirty_bounds_px.fTop *= dpi_scale;
