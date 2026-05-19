@@ -45,6 +45,27 @@ std::string NewRuntimeEpoch() {
 
 std::string JsonLiteral(const nlohmann::json& value) { return value.dump(); }
 
+class DocumentBatchScope {
+public:
+    explicit DocumentBatchScope(Document* document) : document_(document) {
+        if (document_) {
+            document_->BeginBatch();
+        }
+    }
+
+    ~DocumentBatchScope() {
+        if (document_) {
+            document_->EndBatch();
+        }
+    }
+
+    DocumentBatchScope(const DocumentBatchScope&) = delete;
+    DocumentBatchScope& operator=(const DocumentBatchScope&) = delete;
+
+private:
+    Document* document_;
+};
+
 void ForceWindowFrame(QuickJSRuntime* runtime, Window* window, int passes = 2) {
     if (!window) return;
     if (passes < 1) passes = 1;
@@ -54,10 +75,8 @@ void ForceWindowFrame(QuickJSRuntime* runtime, Window* window, int passes = 2) {
             runtime->ProcessMicrotasks();
         }
         if (auto* pipeline = window->GetRenderPipeline()) {
-            pipeline->ForceFullUpdate();
             pipeline->ForceRasterize();
         }
-        window->InvalidateRenderTree();
         window->SetNeedsRepaint();
         window->Render();
         window->SwapBuffers();
@@ -83,10 +102,8 @@ bool ExportSnapshotFromFreshFrame(QuickJSRuntime* runtime,
         runtime->ProcessMicrotasks();
     }
     if (auto* pipeline = window->GetRenderPipeline()) {
-        pipeline->ForceFullUpdate();
         pipeline->ForceRasterize();
     }
-    window->InvalidateRenderTree();
     window->SetNeedsRepaint();
     window->Render();
 
@@ -195,6 +212,7 @@ bool TryHandleUiDevCommand(QuickJSRuntime* runtime,
             resp["ok"] = false;
             resp["error"] = nlohmann::json{{"code", "shutdown_in_progress"}, {"message", "runtime is shutting down"}};
         } else if (type == "eval") {
+            DocumentBatchScope batch_scope(document);
             resp["result"] = runtime->Eval(cmd.value("code", ""), "<mbink-ui-dev eval>");
         } else if (type == "reload_bundle") {
             const std::string bundle_path = cmd.value("bundle_path", "");
@@ -209,7 +227,10 @@ bool TryHandleUiDevCommand(QuickJSRuntime* runtime,
             ClearBody(document);
             runtime->SetBaseModulePath(normalized_path);
             const std::string next_epoch = NewRuntimeEpoch();
-            resp["result"] = runtime->EvalModule(bundle_code, normalized_path + "#reload-" + next_epoch);
+            {
+                DocumentBatchScope batch_scope(document);
+                resp["result"] = runtime->EvalModule(bundle_code, normalized_path + "#reload-" + next_epoch);
+            }
             if (runtime_epoch) {
                 *runtime_epoch = next_epoch;
                 resp["runtime_epoch"] = *runtime_epoch;
@@ -245,9 +266,12 @@ bool TryHandleUiDevCommand(QuickJSRuntime* runtime,
         } else if (type == "query_element" || type == "inspect" || type == "click" || type == "input_text" || type == "scroll" || type == "highlight") {
             const auto selector = cmd.value("selector", std::string{});
             if (selector.empty()) throw std::runtime_error(type + " missing selector");
-            resp["result"] = runtime->Eval(BuildUiDevDomScript(type, cmd), "<mbink-ui-dev dom>");
+            {
+                DocumentBatchScope batch_scope(document);
+                resp["result"] = runtime->Eval(BuildUiDevDomScript(type, cmd), "<mbink-ui-dev dom>");
+            }
             if (type == "click" || type == "input_text" || type == "scroll" || type == "highlight") {
-                ForceWindowFrame(runtime, window);
+                ForceWindowFrame(runtime, window, 1);
                 auto latest = runtime->Eval(BuildUiDevDomScript(type, cmd, false), "<mbink-ui-dev dom result>");
                 if (resp["result"].is_object() && latest.is_object()) {
                     for (auto it = latest.begin(); it != latest.end(); ++it) resp["result"][it.key()] = it.value();

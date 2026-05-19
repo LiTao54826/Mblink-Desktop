@@ -961,6 +961,12 @@ int main(int argc, char** argv) {
             window->Render();
             window->SwapBuffers();
         }
+        runtime->RunEventLoop(1);
+        runtime->ProcessMicrotasks();
+        if (window->NeedsRepaint()) {
+            window->Render();
+            window->SwapBuffers();
+        }
 
         // 初始化 DevTools
         devtools.Initialize(document.get(), window.get());

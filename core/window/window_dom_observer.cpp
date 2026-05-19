@@ -50,6 +50,46 @@ bool HasBuiltinHoverStyle(const std::string& tag_name) {
     return tag_name == "button" || tag_name == "a";
 }
 
+std::string ExtractInlineDisplayValue(const std::string& css_text) {
+    std::istringstream declarations(css_text);
+    std::string declaration;
+    while (std::getline(declarations, declaration, ';')) {
+        const auto colon = declaration.find(':');
+        if (colon == std::string::npos) {
+            continue;
+        }
+
+        std::string property = declaration.substr(0, colon);
+        std::string value = declaration.substr(colon + 1);
+
+        auto trim = [](std::string& text) {
+            const char* whitespace = " \t\n\r";
+            const size_t start = text.find_first_not_of(whitespace);
+            if (start == std::string::npos) {
+                text.clear();
+                return;
+            }
+            const size_t end = text.find_last_not_of(whitespace);
+            text = text.substr(start, end - start + 1);
+        };
+        trim(property);
+        trim(value);
+        std::transform(property.begin(), property.end(), property.begin(), [](unsigned char c) {
+            return static_cast<char>(std::tolower(c));
+        });
+
+        if (property == "display") {
+            return value;
+        }
+    }
+    return "";
+}
+
+bool InlineStyleDisplayMayChange(const std::string& old_value,
+                                 const std::string& new_value) {
+    return ExtractInlineDisplayValue(old_value) != ExtractInlineDisplayValue(new_value);
+}
+
 bool LayoutSensitiveStyleChanged(const ComputedStyle& old_style,
                                  const ComputedStyle& new_style) {
     return old_style.display != new_style.display ||
@@ -619,11 +659,75 @@ void WindowDOMObserver::OnSubtreeModified(Node* root) {
         auto doc = window_->GetDocument();
         if (doc) {
             const auto& tracker = doc->GetDirtyTracker();
+            if (!tracker.HasPendingChanges()) {
+                return;
+            }
+
+            if (tracker.GetStructuralChangeCount() == 0 &&
+                tracker.GetStyleChangeCount() > 0) {
+                StyleResolver resolver;
+                if (doc->GetStyleManager()) {
+                    resolver.SetStyleManager(doc->GetStyleManager());
+                }
+
+                for (const auto& change : tracker.GetStyleChanges()) {
+                    auto element = change.element.lock();
+                    if (!element) {
+                        continue;
+                    }
+
+                    if (change.property == "display") {
+                        const bool was_none = (change.old_value == "none" || change.old_value.empty());
+                        const bool is_none = (change.new_value == "none");
+                        if (was_none != is_none) {
+                            window_->SetNeedsRepaintFor(RepaintReason::DOMMutation);
+                            window_->InvalidateRenderTree();
+                            return;
+                        }
+                    }
+
+                    if (change.property == "style" &&
+                        InlineStyleDisplayMayChange(change.old_value, change.new_value)) {
+                        window_->SetNeedsRepaintFor(RepaintReason::DOMMutation);
+                        window_->InvalidateRenderTree();
+                        return;
+                    }
+
+                    if (change.property == "class") {
+                        auto render_obj = element->GetRenderObject();
+                        if (!render_obj) {
+                            window_->SetNeedsRepaintFor(RepaintReason::DOMMutation);
+                            window_->InvalidateRenderTree();
+                            return;
+                        }
+
+                        const ComputedStyle* parent_style = nullptr;
+                        if (auto parent_node = element->GetParentNode()) {
+                            if (parent_node->GetNodeType() == NodeType::ELEMENT_NODE) {
+                                auto parent_elem = std::static_pointer_cast<Element>(parent_node);
+                                if (auto parent_render = parent_elem->GetRenderObject()) {
+                                    parent_style = &parent_render->GetComputedStyle();
+                                }
+                            }
+                        }
+
+                        const auto old_display = render_obj->GetComputedStyle().display;
+                        const auto new_display = resolver.ResolveStyle(element, parent_style).display;
+                        if ((old_display == RenderObjectType::NONE) !=
+                            (new_display == RenderObjectType::NONE)) {
+                            window_->SetNeedsRepaintFor(RepaintReason::DOMMutation);
+                            window_->InvalidateRenderTree();
+                            return;
+                        }
+                    }
+                }
+            }
 
             // 如果只有文本变化，不需要全量重建
             // 文本内容更新统一由 RenderTreeSynchronizer::ProcessTextChanges 处理，
             // 这里不再重复 SetText/MarkNeedsLayout，避免双路径重复导致时序抖动。
-            if (tracker.GetTextChangeCount() > 0 &&
+            if ((tracker.GetTextChangeCount() > 0 ||
+                 tracker.GetStyleChangeCount() > 0) &&
                 tracker.GetStructuralChangeCount() == 0) {
                 // 保持增量路径：触发重绘，但不触发全量渲染树失效
                 window_->SetNeedsRepaintFor(RepaintReason::DOMMutation);
@@ -680,7 +784,7 @@ void WindowDOMObserver::OnPseudoClassChanged(std::shared_ptr<Element> element,
                                              bool activate) {
     (void)activate;
 
-    if (window_ && !IsInBatch(element.get())) {
+    if (window_) {
         if (pseudo_class == "hover" || pseudo_class == "active" ||
             pseudo_class == "focus" || pseudo_class == "focus-visible") {
             auto style_manager = window_->GetDocument() ? window_->GetDocument()->GetStyleManager() : nullptr;

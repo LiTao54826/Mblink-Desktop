@@ -270,6 +270,21 @@ static bool TrackUsesIntrinsicMaxSizing(const GridTrack& track) {
     );
 }
 
+static bool TrackNeedsMinContentProbe(const GridTrack& track) {
+    return track.kind == GridTrackKind::Track && (
+        track.min_track_sizing_function.type == MinTrackSizingFunctionType::MinContent ||
+        track.max_track_sizing_function.type == MaxTrackSizingFunctionType::MinContent
+    );
+}
+
+static bool TrackNeedsMaxContentProbe(const GridTrack& track) {
+    return track.kind == GridTrackKind::Track && (
+        track.min_track_sizing_function.type == MinTrackSizingFunctionType::MaxContent ||
+        track.max_track_sizing_function.type == MaxTrackSizingFunctionType::MaxContent ||
+        track.max_track_sizing_function.type == MaxTrackSizingFunctionType::FitContent
+    );
+}
+
 /// Resolve track base sizes
 static void ResolveTrackBaseSizes(
     std::vector<GridTrack>& tracks,
@@ -875,41 +890,63 @@ LayoutOutput ComputeGridLayout(
             Line<bool>{false, false}
         );
 
-        auto min_content_width_output = tree.PerformChildLayout(
-            child_id,
-            Size<std::optional<float>>{std::nullopt, std::nullopt},
-            Size<std::optional<float>>{child_parent_width, child_parent_height},
-            Size<AvailableSpace>{AvailableSpace::MinContent(), child_height_space},
-            SizingMode::InherentSize,
-            Line<bool>{false, false}
-        );
+        bool needs_min_content_width = false;
+        bool needs_max_content_width = false;
+        for (size_t t = col_track_start; t <= col_track_end && t < columns.size(); t++) {
+            needs_min_content_width = needs_min_content_width || TrackNeedsMinContentProbe(columns[t]);
+            needs_max_content_width = needs_max_content_width || TrackNeedsMaxContentProbe(columns[t]);
+        }
 
-        auto max_content_width_output = tree.PerformChildLayout(
-            child_id,
-            Size<std::optional<float>>{std::nullopt, std::nullopt},
-            Size<std::optional<float>>{child_parent_width, child_parent_height},
-            Size<AvailableSpace>{AvailableSpace::MaxContent(), child_height_space},
-            SizingMode::InherentSize,
-            Line<bool>{false, false}
-        );
+        bool needs_min_content_height = false;
+        bool needs_max_content_height = false;
+        for (size_t t = row_track_start; t <= row_track_end && t < rows.size(); t++) {
+            needs_min_content_height = needs_min_content_height || TrackNeedsMinContentProbe(rows[t]);
+            needs_max_content_height = needs_max_content_height || TrackNeedsMaxContentProbe(rows[t]);
+        }
 
-        auto min_content_height_output = tree.PerformChildLayout(
-            child_id,
-            Size<std::optional<float>>{std::nullopt, std::nullopt},
-            Size<std::optional<float>>{child_parent_width, child_parent_height},
-            Size<AvailableSpace>{child_width_space, AvailableSpace::MinContent()},
-            SizingMode::InherentSize,
-            Line<bool>{false, false}
-        );
+        float min_content_width = child_output.size.width;
+        if (needs_min_content_width) {
+            min_content_width = tree.MeasureChildSize(
+                child_id,
+                Size<std::optional<float>>{std::nullopt, std::nullopt},
+                Size<std::optional<float>>{child_parent_width, child_parent_height},
+                Size<AvailableSpace>{AvailableSpace::MinContent(), child_height_space},
+                SizingMode::InherentSize
+            ).width;
+        }
 
-        auto max_content_height_output = tree.PerformChildLayout(
-            child_id,
-            Size<std::optional<float>>{std::nullopt, std::nullopt},
-            Size<std::optional<float>>{child_parent_width, child_parent_height},
-            Size<AvailableSpace>{child_width_space, AvailableSpace::MaxContent()},
-            SizingMode::InherentSize,
-            Line<bool>{false, false}
-        );
+        float max_content_width = child_output.size.width;
+        if (needs_max_content_width) {
+            max_content_width = tree.MeasureChildSize(
+                child_id,
+                Size<std::optional<float>>{std::nullopt, std::nullopt},
+                Size<std::optional<float>>{child_parent_width, child_parent_height},
+                Size<AvailableSpace>{AvailableSpace::MaxContent(), child_height_space},
+                SizingMode::InherentSize
+            ).width;
+        }
+
+        float min_content_height = child_output.size.height;
+        if (needs_min_content_height) {
+            min_content_height = tree.MeasureChildSize(
+                child_id,
+                Size<std::optional<float>>{std::nullopt, std::nullopt},
+                Size<std::optional<float>>{child_parent_width, child_parent_height},
+                Size<AvailableSpace>{child_width_space, AvailableSpace::MinContent()},
+                SizingMode::InherentSize
+            ).height;
+        }
+
+        float max_content_height = child_output.size.height;
+        if (needs_max_content_height) {
+            max_content_height = tree.MeasureChildSize(
+                child_id,
+                Size<std::optional<float>>{std::nullopt, std::nullopt},
+                Size<std::optional<float>>{child_parent_width, child_parent_height},
+                Size<AvailableSpace>{child_width_space, AvailableSpace::MaxContent()},
+                SizingMode::InherentSize
+            ).height;
+        }
 
         placements.push_back({
             child_id,
@@ -919,10 +956,10 @@ LayoutOutput ComputeGridLayout(
             row_span,
             child_output.size.width,
             child_output.size.height,
-            min_content_width_output.size.width,
-            max_content_width_output.size.width,
-            min_content_height_output.size.height,
-            max_content_height_output.size.height
+            min_content_width,
+            max_content_width,
+            min_content_height,
+            max_content_height
         });
 
         // Mark cells as occupied

@@ -13,6 +13,8 @@
 #include "core/dom/element.h"
 #include "core/dom/text.h"
 #include "core/dom/observers/dirty_node_tracker.h"
+#include "core/layout/layout_engine.h"
+#include "core/render/css/style_resolver.h"
 #include "core/render/pipeline/render_pipeline.h"
 #include "core/render/pipeline/render_tree_synchronizer.h"
 #include "core/render/objects/render_object.h"
@@ -246,6 +248,44 @@ TEST_F(IncrementalUpdateSystemTest, SynchronizerRebuildThreshold) {
     
     // 这些设置应该被保存（无法直接验证，但不应该崩溃）
     SUCCEED();
+}
+
+TEST_F(IncrementalUpdateSystemTest, SynchronizerStyleOnlyChangeDoesNotRequestLayoutTreeRebuild) {
+    auto doc = CreateDocument();
+    auto body = doc->GetBody();
+    auto panel = doc->CreateElement("div");
+    panel->SetAttribute("style", "display: grid; gap: 4px;");
+    auto child = doc->CreateElement("span");
+    child->SetTextContent("compact target");
+    panel->AppendChild(child);
+    body->AppendChild(panel);
+
+    RenderTreeBuilder builder;
+    builder.SetDocument(doc.get());
+    auto render_root = builder.BuildRenderTree(body);
+    ASSERT_NE(render_root, nullptr);
+    ASSERT_NE(panel->GetRenderObject(), nullptr);
+
+    auto layout_engine = std::make_shared<LayoutEngine>();
+    layout_engine->BuildLayoutTree(render_root);
+    layout_engine->ComputeLayout(800.0f, 600.0f);
+    layout_engine->GetLayoutInfo(render_root);
+
+    doc->GetDirtyTracker().Clear();
+    panel->SetAttribute("style", "display: grid; gap: 8px; padding: 6px;");
+    ASSERT_EQ(doc->GetDirtyTracker().GetStructuralChangeCount(), 0);
+    ASSERT_GT(doc->GetDirtyTracker().GetStyleChangeCount(), 0);
+
+    RenderTreeSynchronizer synchronizer;
+    synchronizer.SetDocument(doc);
+    synchronizer.SetLayoutEngine(layout_engine);
+
+    bool requires_layout_tree_rebuild =
+        synchronizer.Synchronize(doc->GetDirtyTracker(), render_root);
+
+    EXPECT_FALSE(requires_layout_tree_rebuild);
+    EXPECT_FALSE(doc->GetDirtyTracker().HasPendingChanges());
+    EXPECT_TRUE(layout_engine->ComputeIncrementalLayout(800.0f, 600.0f));
 }
 
 } // namespace test

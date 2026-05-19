@@ -100,6 +100,7 @@ enum class RepaintReason {
 };
 
 const char* RepaintReasonName(RepaintReason reason);
+bool RepaintReasonMayAffectLayout(RepaintReason reason);
 
 struct WindowConfig {
     std::string title = "MBink Window";
@@ -492,6 +493,9 @@ public:
     void SetNeedsRepaintFor(RepaintReason reason) {
         RecordRepaintReason(reason);
         needs_repaint_ = true;
+        if (RepaintReasonMayAffectLayout(reason)) {
+            layout_sync_valid_ = false;
+        }
     }
 
     void MarkRepaintReason(RepaintReason reason) {
@@ -769,6 +773,7 @@ private:
     // Week 2: 增量渲染优化
     std::shared_ptr<RenderObject> cached_render_tree_;  // 缓存的渲染树
     bool render_tree_valid_ = false;  // 渲染树是否有效
+    bool layout_sync_valid_ = false;  // 已缓存布局是否与当前 DOM/样式/视口同步
     std::vector<SkRect> dirty_rects_;  // 脏区域列表（用于局部重绘）
     SkRect last_dirty_bounds_;  // 上一帧的脏区域边界（用于 CPU 模式局部更新）
     bool has_dirty_bounds_ = false;  // 是否有脏区域边界

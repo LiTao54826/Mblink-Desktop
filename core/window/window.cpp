@@ -124,6 +124,29 @@ const char* RepaintReasonName(RepaintReason reason) {
 }
 
 // 从 render_object.cpp 导入的绘制统计变量
+bool RepaintReasonMayAffectLayout(RepaintReason reason) {
+    switch (reason) {
+        case RepaintReason::Initial:
+        case RepaintReason::Resize:
+        case RepaintReason::DOMMutation:
+        case RepaintReason::KeyboardInput:
+        case RepaintReason::API:
+        case RepaintReason::Layout:
+            return true;
+        case RepaintReason::Unknown:
+        case RepaintReason::PseudoClass:
+        case RepaintReason::Focus:
+        case RepaintReason::MouseHover:
+        case RepaintReason::MouseButton:
+        case RepaintReason::WheelScroll:
+        case RepaintReason::Animation:
+        case RepaintReason::Terminal:
+        case RepaintReason::DevTools:
+            return false;
+    }
+    return false;
+}
+
 extern std::atomic<int> g_paint_total_calls;
 extern std::atomic<int> g_paint_culled_calls;
 
@@ -1513,6 +1536,7 @@ void Window::Render() {
         last_app_width_px = app_width_px;
         last_app_height_px = app_height_px;
         render_tree_valid_ = false;  // 窗口大小改变，需要重建布局树
+        layout_sync_valid_ = false;
 
         // 关键修复：窗口大小改变时，需要强制重建层树
         // 因为层的边界需要根据新的视口尺寸更新
@@ -1628,6 +1652,7 @@ void Window::Render() {
             layout_engine_->BuildLayoutTree(cached_render_tree_, true);
             layout_engine_->ComputeLayout(sync_app_width, sync_app_height);
             layout_engine_->GetLayoutInfo(cached_render_tree_);
+            layout_sync_valid_ = true;
 
             // 关键修复：结构变化后强制层树重建，避免父层残留旧位图导致“重影/双实例”
             if (render_pipeline_) {
@@ -1641,8 +1666,12 @@ void Window::Render() {
             if (did_incremental) {
                 layout_engine_->GetLayoutInfo(cached_render_tree_);
                 needs_layout_update = true;
+                layout_sync_valid_ = true;
                 // 注意：ViewportBounds 缓存失效已在 ReadLayoutResults 中按需处理
             }
+        }
+        if (!needs_layout_update && !document_->GetDirtyTracker().HasPendingChanges()) {
+            layout_sync_valid_ = true;
         }
 
         // 注意：不再在每次布局更新时触发完整层树重建
@@ -2581,6 +2610,12 @@ void Window::ForceLayoutSync() {
 
     // 确保渲染树已构建
     const bool render_tree_rebuild_required = (!render_tree_valid_ || !cached_render_tree_);
+    if (layout_sync_valid_ &&
+        !render_tree_rebuild_required &&
+        cached_render_tree_ &&
+        !document_->GetDirtyTracker().HasPendingChanges()) {
+        return;
+    }
     EnsureRenderTree();
 
     if (!cached_render_tree_) {
@@ -2591,6 +2626,8 @@ void Window::ForceLayoutSync() {
     if (render_tree_rebuild_required) {
         RenderTreeSynchronizer::CleanupDetachedDOMBindings(document_->GetDirtyTracker());
         document_->GetDirtyTracker().Clear();
+        layout_sync_valid_ = true;
+        return;
     }
 
     // 获取视口尺寸
@@ -2610,26 +2647,43 @@ void Window::ForceLayoutSync() {
     }
 
     // 处理待处理的 DOM 变化
-    bool needs_rebuild = false;
-    if (!render_tree_rebuild_required && render_tree_synchronizer_) {
+    bool needs_layout_tree_rebuild = false;
+    if (render_tree_synchronizer_) {
         auto& tracker = document_->GetDirtyTracker();
         bool has_pending = tracker.HasPendingChanges();
 
         if (has_pending) {
-            needs_rebuild = render_tree_synchronizer_->Synchronize(tracker, cached_render_tree_);
+            needs_layout_tree_rebuild = render_tree_synchronizer_->Synchronize(tracker, cached_render_tree_);
         }
     }
 
     // 重建布局树并计算布局
     // 如果有 DOM 变化，强制重建布局树
-    layout_engine_->BuildLayoutTree(cached_render_tree_, needs_rebuild);
-    layout_engine_->ComputeLayout(app_width, app_height);
-    layout_engine_->GetLayoutInfo(cached_render_tree_);
+    if (needs_layout_tree_rebuild) {
+        layout_engine_->BuildLayoutTree(cached_render_tree_, true);
+        layout_engine_->ComputeLayout(app_width, app_height);
+        layout_engine_->GetLayoutInfo(cached_render_tree_);
+        layout_sync_valid_ = true;
+        return;
+    }
+
+    if (cached_render_tree_->NeedsLayout() || cached_render_tree_->ChildNeedsLayout()) {
+        LayoutDirtySubtree(cached_render_tree_.get(), app_width, app_height);
+        layout_sync_valid_ = true;
+        return;
+    }
+
+    bool did_incremental = layout_engine_->ComputeIncrementalLayout(app_width, app_height);
+    if (did_incremental) {
+        layout_engine_->GetLayoutInfo(cached_render_tree_);
+    }
+    layout_sync_valid_ = true;
 }
 
 void Window::InvalidateRenderTree() {
     // 标记渲染树需要重建
     render_tree_valid_ = false;
+    layout_sync_valid_ = false;
 
     // 关键修复：在清空渲染树之前保存滚动位置
     // 这样 EnsureRenderTree() 重建时可以恢复滚动状态
@@ -2763,8 +2817,10 @@ void Window::EnsureRenderTree() {
         layout_engine_->BuildLayoutTree(cached_render_tree_);
         layout_engine_->ComputeLayout(app_width, app_height);
         layout_engine_->GetLayoutInfo(cached_render_tree_);
+        layout_sync_valid_ = true;
     } else {
         cached_render_tree_->Layout(app_width, app_height);
+        layout_sync_valid_ = true;
     }
 
     // 关键修复：在布局计算完成后恢复滚动位置

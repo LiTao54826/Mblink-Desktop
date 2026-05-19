@@ -75,6 +75,32 @@
 namespace mbink {
 
 namespace {
+class DocumentBatchScope {
+public:
+    DocumentBatchScope() {
+        for (auto& window : WindowManager::Instance().GetAllWindows()) {
+            auto document = window ? window->GetDocument() : nullptr;
+            if (!document) {
+                continue;
+            }
+            documents_.push_back(document);
+            document->BeginBatch();
+        }
+    }
+
+    ~DocumentBatchScope() {
+        for (auto it = documents_.rbegin(); it != documents_.rend(); ++it) {
+            (*it)->EndBatch();
+        }
+    }
+
+    DocumentBatchScope(const DocumentBatchScope&) = delete;
+    DocumentBatchScope& operator=(const DocumentBatchScope&) = delete;
+
+private:
+    std::vector<std::shared_ptr<Document>> documents_;
+};
+
 inline bool IsBaselineFrameStatsEnabled() {
     static const bool enabled = (std::getenv("MBINK_BASELINE_FRAME_STATS") != nullptr);
     return enabled;
@@ -280,6 +306,7 @@ void EventLoop::RunOnce() {
 
     // 2. 执行调度任务
     try {
+        DocumentBatchScope batch_scope;
         task_scheduler_->ProcessTasks();
     } catch (const std::exception& e) {
         std::cerr << "[EventLoop::RunOnce] EXCEPTION in task_scheduler_->ProcessTasks: " << e.what() << std::endl;
@@ -290,6 +317,7 @@ void EventLoop::RunOnce() {
     // 2.1 处理全局单例 TaskScheduler 的微任务
     // Selection 等组件使用 TaskScheduler::Instance() 发布微任务
     try {
+        DocumentBatchScope batch_scope;
         TaskScheduler::Instance().ProcessMicrotasks();
     } catch (const std::exception& e) {
         std::cerr << "[EventLoop::RunOnce] EXCEPTION in ProcessMicrotasks: " << e.what() << std::endl;
@@ -300,6 +328,7 @@ void EventLoop::RunOnce() {
     // 2.5 处理 QuickJS 定时器和微任务
     if (quickjs_runtime_) {
         try {
+            DocumentBatchScope batch_scope;
             // 处理 QuickJS 内部的定时器队列
             quickjs_runtime_->RunEventLoop(1);  // 只运行一次迭代
         } catch (const std::exception& e) {
@@ -321,6 +350,7 @@ void EventLoop::RunOnce() {
     double timestamp_ms = ((current_time - start_time) * 1000.0) / frequency;
 
     try {
+        DocumentBatchScope batch_scope;
         task_scheduler_->ProcessAnimationFrames(timestamp_ms);
     } catch (const std::exception& e) {
         std::cerr << "[EventLoop::RunOnce] EXCEPTION in ProcessAnimationFrames: " << e.what() << std::endl;
@@ -333,6 +363,7 @@ void EventLoop::RunOnce() {
     // 否则 DOM 变化不会在当前帧被渲染，导致 UI 更新延迟
     if (quickjs_runtime_) {
         try {
+            DocumentBatchScope batch_scope;
             quickjs_runtime_->RunEventLoop(1);  // 处理可能产生的微任务
         } catch (const std::exception& e) {
             std::cerr << "[EventLoop::RunOnce] EXCEPTION in quickjs_runtime_->RunEventLoop (post-anim): " << e.what() << std::endl;
@@ -343,6 +374,7 @@ void EventLoop::RunOnce() {
 
     // 4.7 处理全局单例 TaskScheduler 的微任务（动画帧可能触发新的微任务）
     try {
+        DocumentBatchScope batch_scope;
         TaskScheduler::Instance().ProcessMicrotasks();
     } catch (const std::exception& e) {
         std::cerr << "[EventLoop::RunOnce] EXCEPTION in ProcessMicrotasks (post-anim): " << e.what() << std::endl;
@@ -573,6 +605,8 @@ ClipboardManager* EventLoop::GetClipboardManager() {
 }
 
 bool EventLoop::ProcessEvents() {
+    DocumentBatchScope batch_scope;
+
     bool has_events = false;
     SDL_Event event;
 
@@ -667,6 +701,7 @@ bool EventLoop::ProcessEvents() {
 
 void EventLoop::Update(float delta_time) {
     if (update_callback_) {
+        DocumentBatchScope batch_scope;
         try {
             update_callback_(delta_time);
         } catch (const std::exception& e) {

@@ -110,7 +110,9 @@ bool RenderTreeSynchronizer::Synchronize(DirtyNodeTracker& tracker,
     tracker.Optimize();
     CleanupDetachedDOMBindings(tracker);
 
-    const bool needs_subtree_rebuild = NeedsSubtreeRebuild(tracker);
+    const bool has_structural_changes = tracker.GetStructuralChangeCount() > 0;
+    const bool needs_subtree_rebuild =
+        has_structural_changes && NeedsSubtreeRebuild(tracker);
 
     // 判断是否需要子树重建
     if (needs_subtree_rebuild) {
@@ -184,7 +186,7 @@ bool RenderTreeSynchronizer::Synchronize(DirtyNodeTracker& tracker,
         for (Node* root : pruned_roots) {
             RebuildSubtree(root);
         }
-    } else {
+    } else if (has_structural_changes) {
         // 增量更新
         ProcessStructuralChanges(tracker);
     }
@@ -198,7 +200,7 @@ bool RenderTreeSynchronizer::Synchronize(DirtyNodeTracker& tracker,
 
     render_tree_ = nullptr;
 
-    return true;
+    return has_structural_changes;
 }
 
 

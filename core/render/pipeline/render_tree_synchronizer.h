@@ -77,7 +77,7 @@ public:
      *
      * @param tracker 脏节点追踪器
      * @param render_tree 渲染树根节点
-     * @return 是否有变化被应用
+     * @return 是否应用了结构变化，调用方需要重建 LayoutTree
      */
     bool Synchronize(DirtyNodeTracker& tracker,
                      std::shared_ptr<RenderObject> render_tree);

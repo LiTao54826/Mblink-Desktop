@@ -13,6 +13,7 @@
 #include "layout/grid/types.h"
 #include "layout/types/style.h"
 #include "layout/types/geometry.h"
+#include <unordered_map>
 
 namespace mbink {
 namespace test {
@@ -179,6 +180,152 @@ TEST_F(GridLayoutTest, NonRepeatedTrackSizingFunctionFlex) {
     EXPECT_EQ(func.min.type, MinTrackSizingFunctionType::Auto);
     EXPECT_EQ(func.max.type, MaxTrackSizingFunctionType::Fraction);
     EXPECT_FLOAT_EQ(func.max.value, 2.0f);
+}
+
+class CountingGridTree : public LayoutGridContainer {
+public:
+    explicit CountingGridTree(const GridContainerStyle& grid_style) : grid_style_(grid_style) {
+        Style root_style;
+        root_style.display = Display::Grid;
+        root_style.size = Size<Dimension>{
+            Dimension::Length(400.0f),
+            Dimension::Length(200.0f)
+        };
+        styles_[root_id_] = root_style;
+
+        Style child_style;
+        child_style.display = Display::Block;
+        styles_[child_id_] = child_style;
+        child_styles_[child_id_] = GridItemStyle{};
+    }
+
+    size_t ChildCount(NodeId node) const override {
+        return node == root_id_ ? 1 : 0;
+    }
+
+    NodeId GetChildId(NodeId node, size_t index) const override {
+        return node == root_id_ && index == 0 ? child_id_ : INVALID_NODE_ID;
+    }
+
+    Cache& GetCache(NodeId node) override {
+        return caches_[node];
+    }
+
+    void SetUnroundedLayout(NodeId node, const Layout& layout) override {
+        layouts_[node] = layout;
+    }
+
+    const Layout& GetLayout(NodeId node) const override {
+        auto it = layouts_.find(node);
+        return it != layouts_.end() ? it->second : default_layout_;
+    }
+
+    LayoutOutput PerformChildLayout(
+        NodeId,
+        Size<std::optional<float>>,
+        Size<std::optional<float>>,
+        Size<AvailableSpace> available_space,
+        SizingMode,
+        Line<bool>
+    ) override {
+        perform_child_layout_calls++;
+        if (available_space.width.IsMinContent()) min_content_width_calls++;
+        if (available_space.width.IsMaxContent()) max_content_width_calls++;
+        if (available_space.height.IsMinContent()) min_content_height_calls++;
+        if (available_space.height.IsMaxContent()) max_content_height_calls++;
+        LayoutOutput output;
+        output.size = Size<float>{120.0f, 40.0f};
+        output.content_size = output.size;
+        return output;
+    }
+
+    Size<float> MeasureChildSize(
+        NodeId,
+        Size<std::optional<float>>,
+        Size<std::optional<float>>,
+        Size<AvailableSpace> available_space,
+        SizingMode
+    ) override {
+        measure_child_size_calls++;
+        if (available_space.width.IsMinContent()) min_content_width_calls++;
+        if (available_space.width.IsMaxContent()) max_content_width_calls++;
+        if (available_space.height.IsMinContent()) min_content_height_calls++;
+        if (available_space.height.IsMaxContent()) max_content_height_calls++;
+        return Size<float>{120.0f, 40.0f};
+    }
+
+    const Style& GetContainerStyle(NodeId node) const override {
+        return styles_.at(node);
+    }
+
+    const Style& GetChildStyle(NodeId node) const override {
+        return styles_.at(node);
+    }
+
+    const GridContainerStyle& GetGridContainerStyle(NodeId node) const override {
+        return node == root_id_ ? grid_style_ : default_grid_style_;
+    }
+
+    const GridItemStyle& GetGridItemStyle(NodeId node) const override {
+        auto it = child_styles_.find(node);
+        return it != child_styles_.end() ? it->second : default_grid_item_style_;
+    }
+
+    bool IsTextNode(NodeId) const override {
+        return false;
+    }
+
+    int perform_child_layout_calls = 0;
+    int measure_child_size_calls = 0;
+    int min_content_width_calls = 0;
+    int max_content_width_calls = 0;
+    int min_content_height_calls = 0;
+    int max_content_height_calls = 0;
+
+private:
+    static constexpr NodeId root_id_ = 1;
+    static constexpr NodeId child_id_ = 2;
+
+    GridContainerStyle grid_style_;
+    GridContainerStyle default_grid_style_;
+    GridItemStyle default_grid_item_style_;
+    Layout default_layout_;
+    std::unordered_map<NodeId, Style> styles_;
+    std::unordered_map<NodeId, GridItemStyle> child_styles_;
+    std::unordered_map<NodeId, Cache> caches_;
+    std::unordered_map<NodeId, Layout> layouts_;
+};
+
+TEST_F(GridLayoutTest, FixedMinmaxFlexTracksSkipIntrinsicProbeLayouts) {
+    GridContainerStyle grid_style;
+    grid_style.grid_template_columns.push_back(TrackSizingFunction::Repeat(
+        UINT16_MAX,
+        {NonRepeatedTrackSizingFunction::MinMax(
+            MinTrackSizingFunction::Fixed(150.0f),
+            MaxTrackSizingFunction::Fraction(1.0f)
+        )}
+    ));
+    grid_style.grid_auto_rows.push_back(NonRepeatedTrackSizingFunction::MinMax(
+        MinTrackSizingFunction::Fixed(104.0f),
+        MaxTrackSizingFunction::Auto()
+    ));
+
+    CountingGridTree tree(grid_style);
+    LayoutInput input;
+    input.run_mode = RunMode::PerformLayout;
+    input.known_dimensions = Size<std::optional<float>>{400.0f, 200.0f};
+    input.parent_size = Size<std::optional<float>>{400.0f, 200.0f};
+    input.available_space = Size<AvailableSpace>{
+        AvailableSpace::Definite(400.0f),
+        AvailableSpace::Definite(200.0f)
+    };
+
+    ComputeGridLayout(tree, 1, input);
+
+    EXPECT_EQ(tree.measure_child_size_calls, 0);
+    EXPECT_EQ(tree.min_content_width_calls, 0);
+    EXPECT_EQ(tree.max_content_width_calls, 0);
+    EXPECT_EQ(tree.min_content_height_calls, 0);
 }
 
 TEST_F(GridLayoutTest, NonRepeatedTrackSizingFunctionMinMax) {
