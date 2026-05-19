@@ -238,6 +238,12 @@ ComputedStyle StyleResolver::ResolveStyle(std::shared_ptr<Element> element,
     // 这一步必须在继承之后，以确保元素自身的样式优先级高于继承
     ApplyElementSpecificStyle(style, element->GetTagName(), element);
 
+    if (element->HasPseudoClass("disabled")) {
+        style.opacity = 0.6f;
+        style.background_color = "#F5F5F5";
+        style.color = "#999999";
+    }
+
     // 4. CSS 规则（<style> 标签和外部样式表）
     ApplyCSSRules(style, element);
 
@@ -2844,14 +2850,6 @@ void StyleResolver::ApplyPseudoClassStyles(ComputedStyle& style, std::shared_ptr
             style.outline_color = SkColorSetARGB(168, 26, 115, 232);
             style.outline_offset = CSSLength(0, CSSUnit::PX);
         }
-    }
-
-    // ========== :disabled 伪类样式 ==========
-    if (element->HasPseudoClass("disabled")) {
-        // 禁用状态：灰色，半透明
-        style.opacity = 0.6f;
-        style.background_color = "#F5F5F5";
-        style.color = "#999999";
     }
 
     // ========== :checked 伪类样式 ==========

@@ -11,6 +11,7 @@
 #include <algorithm>
 #include <cctype>
 #include <iostream>
+#include <string>
 
 // Lexbor头文件
 #include <lexbor/html/html.h>
@@ -162,6 +163,26 @@ bool SelectorEngine::MatchesSimpleSelector(const Element* element, const std::st
     // 通配符
     if (selector == "*") {
         return true;
+    }
+
+    size_t pseudo_pos = selector.find(':');
+    if (pseudo_pos != std::string::npos) {
+        std::string base_selector = selector.substr(0, pseudo_pos);
+        std::string pseudo_class = selector.substr(pseudo_pos + 1);
+        size_t pseudo_end = pseudo_class.find_first_of("(:");
+        if (pseudo_end != std::string::npos) {
+            pseudo_class = pseudo_class.substr(0, pseudo_end);
+        }
+
+        if (!pseudo_class.empty() && !element->HasPseudoClass(pseudo_class)) {
+            return false;
+        }
+
+        if (base_selector.empty()) {
+            return true;
+        }
+
+        return MatchesSimpleSelector(element, base_selector);
     }
 
     // ID 选择器 (#id)
@@ -395,6 +416,10 @@ bool SelectorEngine::Matches(
 
     if (!element || selector.empty()) {
         return false;
+    }
+
+    if (selector.find(':') != std::string::npos) {
+        return MatchesSimpleSelector(element.get(), selector);
     }
 
     LexborContext& ctx = GetContext();

@@ -63,6 +63,21 @@ bool IsDeclarativeBindingAttributeName(const std::string& name) {
            name.rfind("mb-scope-ro:", 0) == 0;
 }
 
+std::string NormalizePseudoClassName(const std::string& pseudo_class) {
+    if (pseudo_class.size() > 1 && pseudo_class[0] == ':' && pseudo_class[1] != ':') {
+        return pseudo_class.substr(1);
+    }
+    return pseudo_class;
+}
+
+bool IsFormControlTag(const std::string& tag_name) {
+    return tag_name == "button" ||
+           tag_name == "input" ||
+           tag_name == "select" ||
+           tag_name == "textarea" ||
+           tag_name == "option";
+}
+
 }  // namespace
 
 void Element::MarkLexborDirty() {
@@ -221,17 +236,22 @@ const std::unordered_map<std::string, std::string>& Element::GetAllAttributes() 
 }
 
 void Element::RemoveAttribute(const std::string& name) {
+    const bool had_attr = HasAttribute(name);
     // 获取旧值
     std::string old_value = GetAttribute(name);
 
     // 移除属性
+    if (!had_attr) {
+        return;
+    }
+
     attributes_.erase(name);
     MarkDirty();
     MarkLexborDirty();
 
     // 记录到 DirtyNodeTracker 并通知观察者（只有当属性存在时）
     auto doc = GetOwnerDocument();
-    if (!old_value.empty() && doc) {
+    if (doc) {
         doc->GetDirtyTracker().RecordStyleChanged(
             std::static_pointer_cast<Element>(shared_from_this()),
             name, old_value, "");
@@ -239,7 +259,7 @@ void Element::RemoveAttribute(const std::string& name) {
         doc->GetObserverManager().NotifyAttributeChanged(this, name, old_value, "");
     }
 
-    if (doc && IsConnected() && !old_value.empty() && IsDeclarativeBindingAttributeName(name)) {
+    if (doc && IsConnected() && IsDeclarativeBindingAttributeName(name)) {
         doc->RefreshNativeDeclarativeBindings(std::static_pointer_cast<Element>(shared_from_this()));
     }
 }
@@ -729,7 +749,8 @@ void Element::SetPseudoClass(const std::string& pseudo_class, bool activate) {
     // 参考：RmlUi/Source/Core/Element.cpp - SetPseudoClass
     // 参考：Chrome/Blink - 伪类是浏览器内部状态，不应触发框架重新渲染
 
-    bool current_state = HasPseudoClass(pseudo_class);
+    const std::string normalized_pseudo_class = NormalizePseudoClassName(pseudo_class);
+    bool current_state = HasPseudoClass(normalized_pseudo_class);
 
     // 状态没有变化，直接返回
     if (current_state == activate) {
@@ -738,34 +759,39 @@ void Element::SetPseudoClass(const std::string& pseudo_class, bool activate) {
 
     // 更新伪类状态
     if (activate) {
-        pseudo_classes_[pseudo_class] = true;
+        pseudo_classes_[normalized_pseudo_class] = true;
+        if (normalized_pseudo_class == "disabled") {
+            pseudo_classes_.erase("enabled");
+        } else if (normalized_pseudo_class == "enabled") {
+            pseudo_classes_.erase("disabled");
+        }
     } else {
-        pseudo_classes_.erase(pseudo_class);
+        pseudo_classes_.erase(normalized_pseudo_class);
     }
 
     const bool is_local_interaction_pseudo_class =
-        pseudo_class == "hover" ||
-        pseudo_class == "active" ||
-        pseudo_class == "focus" ||
-        pseudo_class == "focus-visible";
+        normalized_pseudo_class == "hover" ||
+        normalized_pseudo_class == "active" ||
+        normalized_pseudo_class == "focus" ||
+        normalized_pseudo_class == "focus-visible";
 
     if (is_local_interaction_pseudo_class) {
         auto doc = GetOwnerDocument();
         auto style_manager = doc ? doc->GetStyleManager() : nullptr;
         const std::string tag_name = GetTagName();
-        const bool has_builtin_hover = pseudo_class == "hover" &&
+        const bool has_builtin_hover = normalized_pseudo_class == "hover" &&
             (tag_name == "button" || tag_name == "a");
         const bool has_css_hover =
-            pseudo_class == "hover" && style_manager && style_manager->HasHoverRules(this);
+            normalized_pseudo_class == "hover" && style_manager && style_manager->HasHoverRules(this);
 
-        if (pseudo_class == "hover" && !has_builtin_hover && !has_css_hover) {
+        if (normalized_pseudo_class == "hover" && !has_builtin_hover && !has_css_hover) {
             return;
         }
 
         if (doc) {
             doc->GetObserverManager().NotifyPseudoClassChanged(
                 std::static_pointer_cast<Element>(shared_from_this()),
-                pseudo_class,
+                normalized_pseudo_class,
                 activate
             );
         }
@@ -778,7 +804,17 @@ void Element::SetPseudoClass(const std::string& pseudo_class, bool activate) {
 }
 
 bool Element::HasPseudoClass(const std::string& pseudo_class) const {
-    auto it = pseudo_classes_.find(pseudo_class);
+    const std::string normalized_pseudo_class = NormalizePseudoClassName(pseudo_class);
+    if (IsFormControlTag(GetTagName())) {
+        const bool has_disabled_attribute = HasAttribute("disabled");
+        if (has_disabled_attribute && normalized_pseudo_class == "disabled") {
+            return true;
+        }
+        if (has_disabled_attribute && normalized_pseudo_class == "enabled") {
+            return false;
+        }
+    }
+    auto it = pseudo_classes_.find(normalized_pseudo_class);
     return it != pseudo_classes_.end() && it->second;
 }
 

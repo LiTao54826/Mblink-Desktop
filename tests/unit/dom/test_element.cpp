@@ -298,6 +298,86 @@ TEST_F(ElementTest, SetPseudoClass) {
     EXPECT_FALSE(elem->HasPseudoClass("hover"));
 }
 
+TEST_F(ElementTest, PseudoClassAcceptsSelectorColonPrefix) {
+    auto elem = CreateElement("button");
+
+    elem->SetPseudoClass(":disabled", true);
+
+    EXPECT_TRUE(elem->HasPseudoClass("disabled"));
+    EXPECT_TRUE(elem->HasPseudoClass(":disabled"));
+    EXPECT_TRUE(elem->Matches("button:disabled"));
+
+    auto pseudo_classes = elem->GetActivePseudoClasses();
+    EXPECT_EQ(pseudo_classes.size(), 1);
+    EXPECT_EQ(pseudo_classes[0], "disabled");
+
+    elem->SetPseudoClass("disabled", false);
+    EXPECT_FALSE(elem->HasPseudoClass("disabled"));
+    EXPECT_FALSE(elem->HasPseudoClass(":disabled"));
+}
+
+TEST_F(ElementTest, ButtonDisabledPseudoClassMatchesCssRule) {
+    auto button = doc_->CreateElement("button");
+    doc_->GetBody()->AppendChild(button);
+
+    ASSERT_TRUE(doc_->GetStyleManager()->ParseCSSString(R"(
+        button { opacity: 1; color: rgb(0, 0, 0); }
+        button:disabled { opacity: 0.45; color: rgb(153, 153, 153); }
+    )"));
+
+    StyleResolver resolver;
+    resolver.SetStyleManager(doc_->GetStyleManager());
+
+    button->SetPseudoClass(":disabled", true);
+    auto style = resolver.ResolveStyle(button, nullptr);
+
+    EXPECT_FLOAT_EQ(style.opacity, 0.45f);
+    EXPECT_EQ(style.color, "rgb(153, 153, 153)");
+}
+
+TEST_F(ElementTest, ButtonDisabledAttributeMatchesPseudoClassCssRule) {
+    auto button = doc_->CreateElement("button");
+    doc_->GetBody()->AppendChild(button);
+
+    ASSERT_TRUE(doc_->GetStyleManager()->ParseCSSString(R"(
+        button { background-color: #2563eb; color: #ffffff; }
+        button:disabled { background-color: #e5e7eb; color: #9ca3af; }
+    )"));
+
+    StyleResolver resolver;
+    resolver.SetStyleManager(doc_->GetStyleManager());
+
+    button->SetAttribute("disabled", "true");
+
+    EXPECT_TRUE(button->HasPseudoClass("disabled"));
+    EXPECT_FALSE(button->HasPseudoClass("enabled"));
+    EXPECT_TRUE(button->Matches("button:disabled"));
+
+    auto style = resolver.ResolveStyle(button, nullptr);
+    EXPECT_EQ(style.background_color, "#e5e7eb");
+    EXPECT_EQ(style.color, "#9ca3af");
+}
+
+TEST_F(ElementTest, ButtonDisabledAttributeMatchesClassPseudoClassCssRule) {
+    auto button = doc_->CreateElement("button");
+    button->SetClassName("primary-button");
+    doc_->GetBody()->AppendChild(button);
+
+    ASSERT_TRUE(doc_->GetStyleManager()->ParseCSSString(R"(
+        .primary-button { background-color: #2563eb; color: #ffffff; }
+        .primary-button:disabled { background-color: #e5e7eb; color: #9ca3af; }
+    )"));
+
+    StyleResolver resolver;
+    resolver.SetStyleManager(doc_->GetStyleManager());
+
+    button->SetAttribute("disabled", "true");
+
+    auto style = resolver.ResolveStyle(button, nullptr);
+    EXPECT_EQ(style.background_color, "#e5e7eb");
+    EXPECT_EQ(style.color, "#9ca3af");
+}
+
 TEST_F(ElementTest, HoverPseudoClassDoesNotDirtyAncestor) {
     auto parent = CreateElement("div");
     auto child = CreateElement("div");
@@ -429,6 +509,48 @@ TEST_F(ElementTest, HoverPseudoClassRestylesDescendantRenderObject) {
     EXPECT_EQ(child->GetRenderObject()->GetComputedStyle().color, "rgb(255, 0, 0)");
     EXPECT_TRUE(window->NeedsRepaint());
     EXPECT_EQ(window->GetLastRepaintReason(), RepaintReason::PseudoClass);
+}
+
+TEST_F(ElementTest, DisabledAttributeRestylesExistingButtonRenderObject) {
+    WindowConfig config;
+    config.hidden = true;
+    config.headless = true;
+    config.backend = RenderBackend::CPU;
+    auto window = std::make_shared<Window>(config);
+    window->SetDocument(doc_);
+
+    auto button = CreateElement("button");
+    button->SetClassName("primary-button");
+    doc_->GetBody()->AppendChild(button);
+
+    ASSERT_TRUE(doc_->GetStyleManager()->ParseCSSString(R"(
+        .primary-button { background-color: #2563eb; color: #ffffff; }
+        .primary-button:disabled { background-color: #e5e7eb; color: #9ca3af; }
+    )"));
+
+    RenderTreeBuilder builder;
+    builder.SetDocument(doc_.get());
+    auto render_root = builder.BuildRenderTree(doc_->GetBody());
+    ASSERT_NE(render_root, nullptr);
+    ASSERT_NE(button->GetRenderObject(), nullptr);
+
+    EXPECT_EQ(button->GetRenderObject()->GetComputedStyle().background_color, "#2563eb");
+    EXPECT_EQ(button->GetRenderObject()->GetComputedStyle().color, "#ffffff");
+
+    button->SetAttribute("disabled", "true");
+
+    EXPECT_TRUE(button->HasPseudoClass("disabled"));
+    EXPECT_EQ(button->GetRenderObject()->GetComputedStyle().background_color, "#e5e7eb");
+    EXPECT_EQ(button->GetRenderObject()->GetComputedStyle().color, "#9ca3af");
+    EXPECT_TRUE(button->GetRenderObject()->NeedsPaint());
+    EXPECT_TRUE(window->NeedsRepaint());
+    EXPECT_EQ(window->GetLastRepaintReason(), RepaintReason::DOMMutation);
+
+    button->RemoveAttribute("disabled");
+
+    EXPECT_FALSE(button->HasPseudoClass("disabled"));
+    EXPECT_EQ(button->GetRenderObject()->GetComputedStyle().background_color, "#2563eb");
+    EXPECT_EQ(button->GetRenderObject()->GetComputedStyle().color, "#ffffff");
 }
 
 TEST_F(ElementTest, HoverPseudoClassExitRestylesDescendantRenderObject) {

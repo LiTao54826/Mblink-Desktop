@@ -9,6 +9,11 @@ description: Operate the MBink UI development toolchain through `mbink-ui-dev` C
 
 Use `mbink-ui-dev` as the primary control surface for MBink UI development. Treat the latest progress described in `MBINK_UI_DEV_TOOL_DESIGN.md` as authoritative: P2 is complete, the P3 precision-control loop is now available, and ecosystem items such as HTTP+SSE transport, MCP notifications, and VS Code preview are still future work.
 
+## Layout and Sizing Defaults
+
+- Treat all width and height values as logical pixels, including app window size, viewport size, element rects, spacing, and default template dimensions. Do not design against physical pixels or inflate layouts for high-DPI displays.
+- MBink UI is primarily a desktop-app framework. Make the outermost `body` or root shell fill the full window by default, keep `body` non-scrollable unless page-level scrolling is genuinely required, and place scrollbars inside the content regions that need them.
+
 ## Choose the Control Surface
 
 - Use the CLI when the agent has shell access and wants direct JSON responses.
@@ -35,6 +40,7 @@ Use `mbink-ui-dev` as the primary control surface for MBink UI development. Trea
 - Build the UI with realistic mock data first. Finish layout, state, loading, empty, error, and interaction behavior in `mbink-ui-dev` before wiring real host behavior.
 - Prefer componentized UI development for anything beyond a very small screen. Split reusable shell, panels, forms, lists, dialogs, and native-element wrappers into local Preact components before host integration.
 - Treat automated UI validation as a required gate. Run `build`, reload or reopen the runtime, take a `snapshot`, target important elements with `query_element`, inspect layout-sensitive nodes with `inspect`, exercise representative `click`, `input_text`, and `scroll` paths, then check `logs` and `errors`.
+- Preserve this order even during incremental work: design and verify the UI with mock data first, then implement and connect the real host-language logic only after the UI slice passes its validation gate.
 - Do not start or modify host-language implementation for a feature while the mock UI is blank, failing to build, missing important selectors, or producing runtime JS errors.
 - After the UI validation gate passes, implement the narrow host API surface behind `ui/bridge.js`, then validate the real Python, Rust, or Go host runtime and finish with `mbink-ui-dev build`.
 - Keep mock and host API names aligned so the same UI test path can run before and after host integration.
@@ -43,6 +49,9 @@ Use `mbink-ui-dev` as the primary control surface for MBink UI development. Trea
 
 - Add UI in small verified slices instead of writing the whole screen or a large component in one pass.
 - Build one component, state branch, or interaction path at a time, then run the relevant `build`, reload or reopen, `snapshot`, `query_element`, `inspect`, interaction, `logs`, and `errors` checks before adding the next slice.
+- For each UI slice, follow this verification order: write code, build and reload, capture a live `snapshot`, confirm the rendered structure and key rects are correct, capture a screenshot when screenshot output is available, compare the visual result against the intended CSS, then test interaction behavior if that slice has any interactions.
+- During the visual check, verify layout fit, text size, text alignment, colors, element positions, element sizes, spacing, and state colors against the CSS intent. Do not continue to the next slice while the snapshot structure or screenshot appearance contradicts the expected CSS result.
+- When a visual issue clearly contradicts valid CSS or expected MBink behavior, diagnose and fix the MBink framework first instead of hiding the problem with project-specific CSS workarounds. Temporary UI-side workarounds are acceptable only to isolate the failure, and should be removed after the framework fix lands.
 - When a slice introduces a framework compatibility issue, blank UI, selector failure, layout regression, or JS error, stop at that slice and fix it before continuing.
 - Introduce risky syntax, browser APIs, CSS features, native elements, third-party dependencies, or host bridge calls in the smallest isolated component that can prove compatibility.
 - Keep each validation target stable with IDs or data attributes so the failure can be traced to the last added slice instead of a large unverified rewrite.

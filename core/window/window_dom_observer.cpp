@@ -90,6 +90,17 @@ bool InlineStyleDisplayMayChange(const std::string& old_value,
     return ExtractInlineDisplayValue(old_value) != ExtractInlineDisplayValue(new_value);
 }
 
+bool AttributeChangeMayAffectStyle(const std::string& name) {
+    return name == "style" ||
+           name == "class" ||
+           name == "id" ||
+           name == "disabled" ||
+           name == "checked" ||
+           name == "selected" ||
+           name == "open" ||
+           name == "hidden";
+}
+
 bool LayoutSensitiveStyleChanged(const ComputedStyle& old_style,
                                  const ComputedStyle& new_style) {
     return old_style.display != new_style.display ||
@@ -451,7 +462,7 @@ void WindowDOMObserver::OnAttributeChanged(Element* element,
             // 关键修复：当 style 或 class 属性变化时，需要重新解析样式
             // style: 确保 transform 等属性的动态更新能正确生效
             // class: 确保 CSS 类选择器匹配的样式能正确应用（如 .cm-activeLine）
-            if (name == "style" || name == "class") {
+            if (AttributeChangeMayAffectStyle(name)) {
                 // 通用路径：class/style 变化只作用于当前元素，布局传播由样式解析结果和布局引擎决定。
                 // 避免为具体组件写死额外的祖先/后代 dirty 扩散逻辑。
 
