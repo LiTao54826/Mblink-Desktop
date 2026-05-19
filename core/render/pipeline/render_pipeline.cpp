@@ -479,14 +479,6 @@ bool RenderPipeline::ProcessFrame(SkCanvas* canvas,
     // 4. 层树构建
     stage_start = GetCurrentTimeMs();
     DoLayerTreeBuild();
-    if (root_layer_ && external_root_dirty_rects_ && !external_root_dirty_rects_->empty()) {
-        root_layer_->ClearDirtyRegions();
-        for (const auto& dirty_rect : *external_root_dirty_rects_) {
-            if (!dirty_rect.isEmpty()) {
-                root_layer_->MarkDirty(dirty_rect);
-            }
-        }
-    }
     current_frame_stats_.layer_tree_time = GetCurrentTimeMs() - stage_start;
 
     // 5. 光栅化

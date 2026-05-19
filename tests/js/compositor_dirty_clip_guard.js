@@ -33,6 +33,11 @@ function run() {
   assert(pipelineSrc.includes('DoComposite(canvas, logical_clip)') &&
          pipelineSrc.includes('CompositeToCanvas(root_layer_.get(), canvas, logical_clip)'),
     'RenderPipeline must pass the logical clip into compositor composition');
+  const processFrameStart = pipelineSrc.indexOf('bool RenderPipeline::ProcessFrame(');
+  const processFrameEnd = pipelineSrc.indexOf('void RenderPipeline::EnsureRenderTree()', processFrameStart);
+  const processFrameSrc = pipelineSrc.slice(processFrameStart, processFrameEnd);
+  assert(!/external_root_dirty_rects_[\s\S]{0,300}ClearDirtyRegions/.test(processFrameSrc),
+    'RenderPipeline must not replace internally collected root dirty regions with external dirty hints');
 
   console.log('[PASS] compositor dirty clip guard is present');
 }
