@@ -881,5 +881,47 @@ TEST_F(NativeLayoutEngineTest, GridTrackStyleUpdateInvalidatesIncrementalLayout)
     EXPECT_NE(compact_item.x, normal_item.x);
 }
 
+TEST_F(NativeLayoutEngineTest, InlineBlockTextChangeInvalidatesNearestLayoutNode) {
+    auto body = doc_->GetBody();
+    auto header = doc_->CreateElement("header");
+    auto spacer = doc_->CreateElement("div");
+    auto button = doc_->CreateElement("button");
+    auto text = doc_->CreateTextNode("Short");
+
+    header->SetStyle("display", "grid");
+    header->SetStyle("grid-template-columns", "minmax(0, 1fr) auto");
+    header->SetStyle("width", "600px");
+
+    button->SetStyle("padding", "7px 11px");
+    button->SetStyle("border", "1px solid #9fb3c8");
+    button->AppendChild(text);
+
+    header->AppendChild(spacer);
+    header->AppendChild(button);
+    body->AppendChild(header);
+
+    BuildAndLayout(800.0f, 600.0f);
+
+    ASSERT_NE(button->GetRenderObject(), nullptr);
+    ASSERT_NE(text->GetRenderObject(), nullptr);
+
+    const float initial_width = button->GetRenderObject()->GetLayoutInfo().width;
+
+    auto text_render = text->GetRenderObject();
+    auto render_text = std::dynamic_pointer_cast<RenderText>(text_render);
+    ASSERT_NE(render_text, nullptr);
+
+    render_text->SetText("Much longer button label");
+    layout_engine_->UpdateContentVersion(render_text.get());
+    layout_engine_->MarkNeedsLayout(render_text.get());
+
+    EXPECT_TRUE(layout_engine_->ComputeIncrementalLayout(800.0f, 600.0f));
+    layout_engine_->GetLayoutInfo(render_root_);
+
+    const float updated_width = button->GetRenderObject()->GetLayoutInfo().width;
+
+    EXPECT_GT(updated_width, initial_width + 40.0f);
+}
+
 } // namespace test
 } // namespace mbink

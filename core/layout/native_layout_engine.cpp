@@ -695,9 +695,24 @@ bool NativeLayoutEngine::ComputeIncrementalLayout(float available_width, float a
 
 void NativeLayoutEngine::MarkNeedsLayout(RenderObject* render_obj) {
     auto it = render_to_node_.find(render_obj);
+    if (it == render_to_node_.end()) {
+        auto ancestor = render_obj ? render_obj->GetParent() : nullptr;
+        while (ancestor) {
+            it = render_to_node_.find(ancestor.get());
+            if (it != render_to_node_.end()) {
+                break;
+            }
+            ancestor = ancestor->GetParent();
+        }
+    }
+
     if (it != render_to_node_.end()) {
         LayoutNode* node = GetNode(it->second);
         if (node) {
+            if (node->render_obj) {
+                node->render_obj->MarkNeedsLayout(false);
+            }
+
             // Determine the layout scope for this node
             // This decides how dirty marks should propagate through the tree
             // **Feature: incremental-layout-optimization**
@@ -989,6 +1004,17 @@ void NativeLayoutEngine::UpdateContentVersion(RenderObject* render_obj) {
     }
 
     auto it = render_to_node_.find(render_obj);
+    if (it == render_to_node_.end()) {
+        auto ancestor = render_obj->GetParent();
+        while (ancestor) {
+            it = render_to_node_.find(ancestor.get());
+            if (it != render_to_node_.end()) {
+                break;
+            }
+            ancestor = ancestor->GetParent();
+        }
+    }
+
     if (it == render_to_node_.end()) {
         return;
     }
@@ -4571,13 +4597,11 @@ void NativeLayoutEngine::ReadLayoutResults(RenderObject* render_obj) {
     // Update render object with layout info
 
     if (!is_table_internal) {
-        // Normal elements: always sync final position from layout tree.
-        // Size sync is conditional: if element is already laid out, keep its own measured size.
-        bool should_sync_size = !info.is_laid_out;
-
+        // Normal elements: always sync the latest position and size from the layout tree.
+        // `is_laid_out` only means the node has valid layout info; it must not freeze the
+        // render object on an older size after content or style changes.
         bool position_changed = (info.x != node->layout.location.x || info.y != node->layout.location.y);
-        bool size_changed = should_sync_size &&
-                            (info.width != node->output.size.width || info.height != node->output.size.height);
+        bool size_changed = (info.width != node->output.size.width || info.height != node->output.size.height);
 
         if (position_changed || size_changed) {
             render_obj->MarkNeedsPaint();
@@ -4589,11 +4613,8 @@ void NativeLayoutEngine::ReadLayoutResults(RenderObject* render_obj) {
         info.x = node->layout.location.x;
         info.y = node->layout.location.y;
 
-        // Size may already be finalized by element's own layout pass.
-        if (should_sync_size) {
-            info.width = node->output.size.width;
-            info.height = node->output.size.height;
-        }
+        info.width = node->output.size.width;
+        info.height = node->output.size.height;
     }
     // For TABLE internal elements, their layout is fully managed by RenderTable::Layout
     // We only mark them as laid out, but preserve their positions and dimensions
