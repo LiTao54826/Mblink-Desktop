@@ -213,6 +213,10 @@ inline bool CanUseRetainedDirtyClipForReason(RepaintReason reason) {
     return false;
 }
 
+inline bool HasExplicitDirtyRectsForUnknownReason(RepaintReason reason, bool has_dirty_bounds) {
+    return reason == RepaintReason::Unknown && has_dirty_bounds;
+}
+
 SkRect UnionDirtyRects(const std::vector<SkRect>& dirty_rects, float width, float height) {
     const SkRect viewport = SkRect::MakeWH(width, height);
     SkRect dirty_bounds = SkRect::MakeEmpty();
@@ -275,6 +279,50 @@ void AddRetainedDirtyRectForRenderObject(Window* window, RenderObject* render_ob
     }
 }
 
+bool RectsNearlyEqual(const SkRect& a, const SkRect& b) {
+    constexpr float kEpsilon = 0.5f;
+    return std::abs(a.left() - b.left()) <= kEpsilon &&
+           std::abs(a.top() - b.top()) <= kEpsilon &&
+           std::abs(a.right() - b.right()) <= kEpsilon &&
+           std::abs(a.bottom() - b.bottom()) <= kEpsilon;
+}
+
+bool IsStableViewportSizedAncestor(RenderObject* render_obj, float viewport_width, float viewport_height) {
+    if (!render_obj || viewport_width <= 0.0f || viewport_height <= 0.0f) {
+        return false;
+    }
+
+    SkRect current_bounds = render_obj->GetViewportBoundingRect();
+    if (current_bounds.isEmpty()) {
+        current_bounds = render_obj->GetBoundingRect();
+    }
+    if (current_bounds.isEmpty()) {
+        return false;
+    }
+
+    const SkRect viewport = SkRect::MakeWH(viewport_width, viewport_height);
+    SkRect current_visible;
+    if (!current_visible.intersect(current_bounds, viewport) || current_visible.isEmpty()) {
+        return false;
+    }
+
+    const float viewport_area = viewport_width * viewport_height;
+    const float current_area = current_visible.width() * current_visible.height();
+    if (viewport_area <= 0.0f || current_area < viewport_area * 0.80f) {
+        return false;
+    }
+
+    if (!render_obj->HasPreviousPaintBounds()) {
+        return true;
+    }
+
+    SkRect previous_bounds = render_obj->GetPreviousViewportPaintBounds();
+    if (previous_bounds.isEmpty()) {
+        previous_bounds = render_obj->GetPreviousPaintBounds();
+    }
+    return !previous_bounds.isEmpty() && RectsNearlyEqual(current_bounds, previous_bounds);
+}
+
 void AddRetainedDirtyRectForNode(Window* window, const std::shared_ptr<Node>& node) {
     if (!window || !node) {
         return;
@@ -302,22 +350,35 @@ void AddRetainedDirtyRectsForPendingChanges(Window* window, const DirtyNodeTrack
     }
 }
 
-void AddRetainedDirtyRectsForPaintDirtyTree(Window* window, RenderObject* render_obj) {
+bool AddRetainedDirtyRectsForPaintDirtyTree(Window* window,
+                                            RenderObject* render_obj,
+                                            float viewport_width,
+                                            float viewport_height) {
     if (!window || !render_obj || !render_obj->IsDirtyForPaint()) {
-        return;
+        return false;
     }
 
-    if (render_obj->NeedsPaint()) {
-        AddRetainedDirtyRectForRenderObject(window, render_obj);
+    bool added_child_dirty_rect = false;
+    if (render_obj->ChildNeedsPaint()) {
+        for (const auto& child : render_obj->GetChildren()) {
+            added_child_dirty_rect =
+                AddRetainedDirtyRectsForPaintDirtyTree(
+                    window, child.get(), viewport_width, viewport_height) ||
+                added_child_dirty_rect;
+        }
     }
 
-    if (!render_obj->ChildNeedsPaint()) {
-        return;
+    if (!render_obj->NeedsPaint()) {
+        return added_child_dirty_rect;
     }
 
-    for (const auto& child : render_obj->GetChildren()) {
-        AddRetainedDirtyRectsForPaintDirtyTree(window, child.get());
+    if (added_child_dirty_rect &&
+        IsStableViewportSizedAncestor(render_obj, viewport_width, viewport_height)) {
+        return true;
     }
+
+    AddRetainedDirtyRectForRenderObject(window, render_obj);
+    return true;
 }
 
 void ClearDomDirtyTree(Node* node) {
@@ -1781,7 +1842,7 @@ void Window::Render() {
 
     // 关键：将渲染树传递给统一渲染管线
     if (!had_structural_dom_changes && cached_render_tree_) {
-        AddRetainedDirtyRectsForPaintDirtyTree(this, cached_render_tree_.get());
+        AddRetainedDirtyRectsForPaintDirtyTree(this, cached_render_tree_.get(), app_width, app_height);
     }
 
     if (baseline_stats_enabled) {
@@ -1842,8 +1903,11 @@ void Window::Render() {
             viewport_area > 0.0f &&
             dirty_union_area > viewport_area * 0.75f &&
             dirty_total_area < dirty_union_area * 0.60f;
+        const bool retained_dirty_reason_allowed =
+            CanUseRetainedDirtyClipForReason(last_repaint_reason_) ||
+            HasExplicitDirtyRectsForUnknownReason(last_repaint_reason_, has_dirty_bounds);
         const bool retained_dirty_clip_allowed =
-            CanUseRetainedDirtyClipForReason(last_repaint_reason_) &&
+            retained_dirty_reason_allowed &&
             (!had_pending_dom_changes || !had_structural_dom_changes) &&
             !render_tree_rebuild_required &&
             !dirty_union_too_broad &&
@@ -1933,7 +1997,7 @@ void Window::Render() {
             !force_full_repaint_ &&
             !retained_main_scroll_fallback_blocked &&
             has_dirty_bounds &&
-            CanUseRetainedDirtyClipForReason(last_repaint_reason_) &&
+            retained_dirty_reason_allowed &&
             (!had_pending_dom_changes || !had_structural_dom_changes) &&
             !render_tree_rebuild_required &&
             (!needs_layout_update || has_dirty_bounds) &&
