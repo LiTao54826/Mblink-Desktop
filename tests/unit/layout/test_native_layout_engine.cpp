@@ -842,6 +842,7 @@ TEST_F(NativeLayoutEngineTest, GridTrackStyleUpdateInvalidatesIncrementalLayout)
     auto body = doc_->GetBody();
     auto grid = doc_->CreateElement("section");
     std::vector<std::shared_ptr<Element>> items;
+    std::vector<std::shared_ptr<Element>> actions;
 
     grid->SetStyle("display", "grid");
     grid->SetStyle("grid-template-columns", "repeat(auto-fit, minmax(190px, 1fr))");
@@ -851,8 +852,21 @@ TEST_F(NativeLayoutEngineTest, GridTrackStyleUpdateInvalidatesIncrementalLayout)
 
     for (int i = 0; i < 8; ++i) {
         auto item = doc_->CreateElement("article");
-        item->SetStyle("height", "48px");
+        auto action = doc_->CreateElement("button");
+        auto label = doc_->CreateTextNode("Action");
+
+        item->SetStyle("display", "grid");
+        item->SetStyle("grid-template-rows", "auto minmax(0, 1fr) auto");
+        item->SetStyle("gap", "8px");
+        item->SetStyle("padding", "12px");
+        item->SetStyle("height", "134px");
+
+        action->SetStyle("width", "100%");
+        action->AppendChild(label);
+        item->AppendChild(action);
+
         items.push_back(item);
+        actions.push_back(action);
         grid->AppendChild(item);
     }
     body->AppendChild(grid);
@@ -861,8 +875,10 @@ TEST_F(NativeLayoutEngineTest, GridTrackStyleUpdateInvalidatesIncrementalLayout)
 
     ASSERT_NE(grid->GetRenderObject(), nullptr);
     ASSERT_NE(items[4]->GetRenderObject(), nullptr);
+    ASSERT_NE(actions[0]->GetRenderObject(), nullptr);
 
     const auto normal_item = items[4]->GetRenderObject()->GetLayoutInfo();
+    const auto normal_action = actions[0]->GetRenderObject()->GetLayoutInfo();
 
     ComputedStyle compact_style = grid->GetRenderObject()->GetComputedStyle();
     compact_style.grid_template_columns = "repeat(auto-fit, minmax(150px, 1fr))";
@@ -875,10 +891,12 @@ TEST_F(NativeLayoutEngineTest, GridTrackStyleUpdateInvalidatesIncrementalLayout)
     layout_engine_->GetLayoutInfo(render_root_);
 
     const auto compact_item = items[4]->GetRenderObject()->GetLayoutInfo();
+    const auto compact_action = actions[0]->GetRenderObject()->GetLayoutInfo();
 
     EXPECT_NEAR(compact_item.x, 690.4f, 0.5f);
     EXPECT_NEAR(compact_item.y, 0.0f, 0.5f);
     EXPECT_NE(compact_item.x, normal_item.x);
+    EXPECT_LT(compact_action.width, normal_action.width);
 }
 
 TEST_F(NativeLayoutEngineTest, InlineBlockTextChangeInvalidatesNearestLayoutNode) {

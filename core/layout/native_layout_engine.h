@@ -582,6 +582,15 @@ private:
      * @param node_id The root node of the subtree to clear
      */
     void ClearWidthDependentCachesRecursive(NodeId node_id);
+
+    /**
+     * @brief Recursively mark a subtree as needing layout.
+     *
+     * Used when a container's own layout model changes, such as grid tracks or
+     * flex gaps. The container recomputes item placement, but descendants also
+     * need fresh layout outputs because their available space may have changed.
+     */
+    void MarkSubtreeNeedsLayout(NodeId node_id);
 };
 
 } // namespace mbink

@@ -882,13 +882,7 @@ void NativeLayoutEngine::UpdateStyle(RenderObject* render_obj, const ComputedSty
                 // 需要清除所有子元素的布局缓存，确保它们使用新的可用宽度重新布局
                 if (is_flex_or_grid_container) {
                     for (NodeId child_id : node->children) {
-                        ClearWidthDependentCachesRecursive(child_id);
-                        if (LayoutNode* child = GetNode(child_id)) {
-                            child->needs_layout = true;
-                            if (child->render_obj) {
-                                child->render_obj->MarkNeedsLayout(false);
-                            }
-                        }
+                        MarkSubtreeNeedsLayout(child_id);
                     }
                 }
 
@@ -1216,6 +1210,23 @@ void NativeLayoutEngine::ClearWidthDependentCachesRecursive(NodeId node_id) {
 
     for (NodeId child_id : node->children) {
         ClearWidthDependentCachesRecursive(child_id);
+    }
+}
+
+void NativeLayoutEngine::MarkSubtreeNeedsLayout(NodeId node_id) {
+    LayoutNode* node = GetNode(node_id);
+    if (!node) {
+        return;
+    }
+
+    node->needs_layout = true;
+    node->cache.Clear();
+    if (node->render_obj) {
+        node->render_obj->MarkNeedsLayout(false);
+    }
+
+    for (NodeId child_id : node->children) {
+        MarkSubtreeNeedsLayout(child_id);
     }
 }
 
@@ -4605,6 +4616,7 @@ void NativeLayoutEngine::ReadLayoutResults(RenderObject* render_obj) {
 
         if (position_changed || size_changed) {
             render_obj->MarkNeedsPaint();
+            render_obj->InvalidatePaintCache();
             render_obj->InvalidateViewportBounds();
             render_obj->InvalidateDescendantViewportBounds();
         }
