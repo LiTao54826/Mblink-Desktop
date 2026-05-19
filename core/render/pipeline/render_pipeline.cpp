@@ -52,6 +52,20 @@ namespace {
         return enabled;
     }
 
+    bool IsNearlyFullLayerRect(const SkRect& rect, const SkRect& layer_bounds) {
+        if (rect.isEmpty() || layer_bounds.isEmpty()) {
+            return false;
+        }
+
+        const float layer_area = layer_bounds.width() * layer_bounds.height();
+        if (layer_area <= 0.0f) {
+            return false;
+        }
+
+        const float rect_area = rect.width() * rect.height();
+        return rect_area >= layer_area * 0.90f;
+    }
+
     int RetainedPresentBlockingScrollFallbacks(const ScrollInvalidationStats& stats) {
         return static_cast<int>(
             IncrementalEligibleScrollFallbacks(stats) + ConservativeScrollFallbacks(stats));
@@ -400,7 +414,9 @@ bool RenderPipeline::HasPendingScrollRetainedPresentBlockingFallback() const {
 // 主渲染入口
 // =========================================================================
 
-bool RenderPipeline::ProcessFrame(SkCanvas* canvas, const SkRect* logical_clip) {
+bool RenderPipeline::ProcessFrame(SkCanvas* canvas,
+                                  const SkRect* logical_clip,
+                                  const std::vector<SkRect>* raster_dirty_rects) {
     if (!initialized_ || !canvas) {
         return false;
     }
@@ -412,6 +428,7 @@ bool RenderPipeline::ProcessFrame(SkCanvas* canvas, const SkRect* logical_clip) 
     frame_start_time_ = GetCurrentTimeMs();
     current_frame_stats_.Reset();
     current_stage_ = RenderStage::Idle;
+    external_root_dirty_rects_ = raster_dirty_rects;
 
     // 注意：渲染树由 Window::EnsureRenderTree() 构建和管理
     // RenderPipeline 不再自己构建渲染树，而是使用外部设置的渲染树
@@ -429,6 +446,7 @@ bool RenderPipeline::ProcessFrame(SkCanvas* canvas, const SkRect* logical_clip) 
                       << " earlyReturn=no_render_tree"
                       << "\n";
         }
+        external_root_dirty_rects_ = nullptr;
         return false;
     }
 
@@ -595,6 +613,7 @@ bool RenderPipeline::ProcessFrame(SkCanvas* canvas, const SkRect* logical_clip) 
     needs_render_ = false;
     needs_paint_ = false;
     ClearRenderedTreePaintDirtyFlags(render_tree_.get());
+    external_root_dirty_rects_ = nullptr;
     current_stage_ = RenderStage::Idle;
 
     return true;
@@ -1019,7 +1038,18 @@ void RenderPipeline::CollectDirtyRectsForLayer(RenderObject* obj, CompositorLaye
         // 扩展边界以包含阴影、outline 等
         bounds.outset(50, 50);
 
-        layer->MarkDirty(bounds);
+        if (layer->GetPromotionReason() == LayerPromotionReason::RootLayer &&
+            external_root_dirty_rects_ &&
+            !external_root_dirty_rects_->empty() &&
+            IsNearlyFullLayerRect(bounds, layer->GetBounds())) {
+            for (const auto& dirty_rect : *external_root_dirty_rects_) {
+                if (!dirty_rect.isEmpty()) {
+                    layer->MarkDirty(dirty_rect);
+                }
+            }
+        } else {
+            layer->MarkDirty(bounds);
+        }
         obj->ClearPreviousPaintBounds();
     }
 

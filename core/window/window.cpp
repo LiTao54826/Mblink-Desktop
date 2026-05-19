@@ -1924,6 +1924,21 @@ void Window::Render() {
             retained_dirty_clip_allowed &&
             render_pipeline_ &&
             render_pipeline_->NeedsUpdate();
+        const bool can_limit_pipeline_raster_to_dirty_rects =
+            retained_present_used &&
+            retained_main_has_content_ &&
+            render_tree_valid_ &&
+            retained_main_surface_ &&
+            !has_active_animations &&
+            !force_full_repaint_ &&
+            !retained_main_scroll_fallback_blocked &&
+            has_dirty_bounds &&
+            CanUseRetainedDirtyClipForReason(last_repaint_reason_) &&
+            (!had_pending_dom_changes || !had_structural_dom_changes) &&
+            !render_tree_rebuild_required &&
+            (!needs_layout_update || has_dirty_bounds) &&
+            render_pipeline_ &&
+            render_pipeline_->NeedsUpdate();
 
         double stage_start_ms = baseline_stats_enabled ? GetBaselineTimeMs() : 0.0;
         bool process_ok = true;
@@ -1962,7 +1977,9 @@ void Window::Render() {
             // 处理一帧
             stage_start_ms = baseline_stats_enabled ? GetBaselineTimeMs() : 0.0;
             process_ok = render_pipeline_->ProcessFrame(
-                main_canvas, can_update_retained_dirty_region ? &dirty_bounds : nullptr);
+                main_canvas,
+                can_update_retained_dirty_region ? &dirty_bounds : nullptr,
+                can_limit_pipeline_raster_to_dirty_rects ? &dirty_rects_ : nullptr);
             if (baseline_stats_enabled) {
                 pipeline_time_ms = GetBaselineTimeMs() - stage_start_ms;
             }

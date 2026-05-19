@@ -232,7 +232,8 @@ public:
      * 5. 光栅化（来自 V2）
      * 6. 合成（来自 V2）
      */
-    bool ProcessFrame(SkCanvas* canvas, const SkRect* logical_clip = nullptr);
+    bool ProcessFrame(SkCanvas* canvas, const SkRect* logical_clip = nullptr,
+                      const std::vector<SkRect>* raster_dirty_rects = nullptr);
     
     bool NeedsUpdate() const;
     void MarkNeedsRender() { needs_render_ = true; }
@@ -414,6 +415,7 @@ private:
     ScrollInvalidationStats last_observed_layer_tree_scroll_stats_;
     ScrollInvalidationStats last_observed_scroll_manager_stats_;
     ScrollInvalidationReason pending_scroll_invalidation_reason_ = ScrollInvalidationReason::None;
+    const std::vector<SkRect>* external_root_dirty_rects_ = nullptr;
     double frame_start_time_ = 0.0;
 };
 
