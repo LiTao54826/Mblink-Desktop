@@ -13,6 +13,9 @@
 #include "core/dom/elements/logview/log_entry.h"
 #include "core/dom/elements/terminal/html_terminal_element.h"
 
+#include "include/core/SkImageInfo.h"
+#include "include/core/SkSurface.h"
+
 #include <gtest/gtest.h>
 
 namespace mbink {
@@ -331,6 +334,78 @@ TEST_F(TerminalLogViewIntegrationTest, LogViewScrollTo) {
 }
 
 // ========== 组合测试 ==========
+
+TEST_F(TerminalLogViewIntegrationTest, LogViewLongAppendKeepsAutoScrollAtBottom) {
+    auto doc = CreateDocument();
+
+    auto elem = doc->CreateElement("logview");
+    auto* logview = dynamic_cast<HTMLLogViewElement*>(elem.get());
+    ASSERT_NE(logview, nullptr);
+
+    auto surface = SkSurfaces::Raster(SkImageInfo::MakeN32Premul(320, 160));
+    ASSERT_NE(surface, nullptr);
+
+    for (int i = 0; i < 20; i++) {
+        logview->Append(LogLevel::INFO, "app", "Entry " + std::to_string(i));
+    }
+    logview->Render(surface->getCanvas(), 0, 0, 320, 160);
+    logview->ScrollToBottom();
+
+    logview->Append(LogLevel::INFO, "app", std::string(500, 'x'));
+    logview->Render(surface->getCanvas(), 0, 0, 320, 160);
+
+    EXPECT_GT(logview->max_horizontal_scroll_offset_for_test(), 0);
+    EXPECT_EQ(logview->scroll_offset_for_test(),
+              logview->max_scroll_offset_for_test());
+}
+
+TEST_F(TerminalLogViewIntegrationTest, LogViewCapacityTrimKeepsSearchAndExportCorrect) {
+    auto doc = CreateDocument();
+
+    auto elem = doc->CreateElement("logview");
+    auto* logview = dynamic_cast<HTMLLogViewElement*>(elem.get());
+    ASSERT_NE(logview, nullptr);
+
+    logview->set_max_entries(3);
+    logview->Append(LogLevel::INFO, "app", "oldest");
+    logview->Append(LogLevel::WARN, "app", "keep-warn");
+    logview->Append(LogLevel::ERROR, "app", "keep-error");
+    logview->Append(LogLevel::INFO, "app", "newest");
+
+    EXPECT_EQ(logview->GetLogCount(), 3u);
+    EXPECT_EQ(logview->Search("oldest"), 0);
+    EXPECT_EQ(logview->Search("keep"), 2);
+
+    std::string exported = logview->Export("text");
+    EXPECT_EQ(exported.find("oldest"), std::string::npos);
+    EXPECT_NE(exported.find("keep-warn"), std::string::npos);
+    EXPECT_NE(exported.find("newest"), std::string::npos);
+}
+
+TEST_F(TerminalLogViewIntegrationTest, LogViewFilterAfterAppendUsesFilteredRows) {
+    auto doc = CreateDocument();
+
+    auto elem = doc->CreateElement("logview");
+    auto* logview = dynamic_cast<HTMLLogViewElement*>(elem.get());
+    ASSERT_NE(logview, nullptr);
+
+    auto surface = SkSurfaces::Raster(SkImageInfo::MakeN32Premul(420, 180));
+    ASSERT_NE(surface, nullptr);
+
+    logview->Append(LogLevel::INFO, "app", "info 1");
+    logview->Append(LogLevel::ERROR, "app", "error 1");
+    logview->SetLevelFilter({"ERROR"});
+    logview->Render(surface->getCanvas(), 0, 0, 420, 180);
+
+    logview->Append(LogLevel::INFO, "app", "info 2");
+    logview->Append(LogLevel::ERROR, "app", "error 2");
+
+    EXPECT_EQ(logview->Search("error"), 2);
+    EXPECT_EQ(logview->Search("info"), 0);
+
+    logview->ClearFilter();
+    EXPECT_EQ(logview->Search("info"), 2);
+}
 
 TEST_F(TerminalLogViewIntegrationTest, MultipleElementsInDocument) {
     auto doc = CreateDocument();

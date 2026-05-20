@@ -15,8 +15,22 @@
 #include <iomanip>
 #include <iostream>
 #include <sstream>
+#include <string>
 
 namespace mbink {
+
+namespace {
+
+bool IsAsciiText(std::string_view text) {
+    for (unsigned char ch : text) {
+        if (ch >= 0x80) {
+            return false;
+        }
+    }
+    return true;
+}
+
+}  // namespace
 
 LogRenderer::LogRenderer() {
     // 使用 FontManager 加载等宽字体
@@ -39,6 +53,12 @@ LogRenderer::LogRenderer() {
 
 void LogRenderer::SetConfig(const LogViewConfig& config) {
     config_ = config;
+    InvalidateWidthCache();
+}
+
+void LogRenderer::SetFont(sk_sp<SkTypeface> typeface, float size) {
+    VirtualScrollRenderer::SetFont(std::move(typeface), size);
+    InvalidateWidthCache();
 }
 
 void LogRenderer::SetBuffer(LogBuffer* buffer) {
@@ -47,6 +67,9 @@ void LogRenderer::SetBuffer(LogBuffer* buffer) {
 }
 
 void LogRenderer::SetFilteredIndices(const std::vector<size_t>* indices) {
+    if (filtered_indices_ == indices) {
+        return;
+    }
     filtered_indices_ = indices;
     InvalidateWidthCache();
 }
@@ -62,68 +85,31 @@ void LogRenderer::SetSelection(const virtual_text::SelectionManager* selection) 
 void LogRenderer::InvalidateWidthCache() {
     max_content_width_dirty_ = true;
 }
+
+void LogRenderer::UpdateCachedWidthForEntry(size_t log_index) {
+    if (!buffer_ || log_index >= buffer_->size()) {
+        return;
+    }
+    if (max_content_width_dirty_) {
+        return;
+    }
+    cached_max_content_width_ =
+        std::max(cached_max_content_width_, ComputeEntryWidth(log_index));
+}
+
+void LogRenderer::UpdateScrollMetricsForBounds(const SkRect& bounds) {
+    if (!buffer_) {
+        return;
+    }
+    UpdateLayoutMetrics(bounds);
+}
+
 void LogRenderer::Render(SkCanvas* canvas, const SkRect& bounds) {
     if (!buffer_ || !canvas) {
         return;
     }
 
-    total_lines_ = GetDisplayLineCount();
-    float content_width = ComputeMaxContentWidth();
-
-    const float scrollbar_thickness = 8.0f;
-    const float scrollbar_gap = 2.0f;
-
-    float inner_width = std::max(0.0f, bounds.width() - 2 * padding_);
-    float inner_height = std::max(0.0f, bounds.height() - 2 * padding_);
-
-    bool need_vertical_scrollbar = false;
-    bool need_horizontal_scrollbar = false;
-
-    while (true) {
-        float viewport_width = std::max(
-            0.0f, inner_width - (need_vertical_scrollbar
-                                     ? (scrollbar_thickness + scrollbar_gap)
-                                     : 0.0f));
-        float viewport_height = std::max(
-            0.0f, inner_height - (need_horizontal_scrollbar
-                                      ? (scrollbar_thickness + scrollbar_gap)
-                                      : 0.0f));
-
-        int visible_lines = 0;
-        if (line_height_ > 0) {
-            visible_lines = static_cast<int>(viewport_height / line_height_);
-            if (visible_lines < 1) visible_lines = 1;
-        }
-
-        bool new_need_vertical = total_lines_ > visible_lines;
-        int horizontal_max = static_cast<int>(std::ceil(
-            std::max(0.0f, content_width - viewport_width) /
-            std::max(cell_width_, 1.0f)));
-        bool new_need_horizontal = horizontal_max > 0;
-
-        if (new_need_vertical == need_vertical_scrollbar &&
-            new_need_horizontal == need_horizontal_scrollbar) {
-            break;
-        }
-
-        need_vertical_scrollbar = new_need_vertical;
-        need_horizontal_scrollbar = new_need_horizontal;
-    }
-
-    SkRect content_bounds = bounds;
-    if (need_vertical_scrollbar) {
-        content_bounds.fRight -= scrollbar_thickness + scrollbar_gap;
-    }
-    if (need_horizontal_scrollbar) {
-        content_bounds.fBottom -= scrollbar_thickness + scrollbar_gap;
-    }
-
-    UpdateMetrics(content_bounds.height());
-    total_lines_ = GetDisplayLineCount();
-    float viewport_width = std::max(0.0f, content_bounds.width() - 2 * padding_);
-    SetMaxHorizontalScrollOffset(
-        static_cast<int>(std::ceil(std::max(0.0f, content_width - viewport_width) /
-                                   std::max(cell_width_, 1.0f))));
+    LayoutResult layout = UpdateLayoutMetrics(bounds);
 
     SkPaint bg_paint;
     bg_paint.setColor(config_.background_color);
@@ -134,14 +120,14 @@ void LogRenderer::Render(SkCanvas* canvas, const SkRect& bounds) {
     }
 
     canvas->save();
-    canvas->clipRect(content_bounds);
+    canvas->clipRect(layout.content_bounds);
 
     int start_line = scroll_offset_;
     int end_line = std::min(start_line + visible_lines_ + 1, total_lines_);
 
     for (int i = start_line; i < end_line; ++i) {
         size_t log_index = DisplayIndexToLogIndex(i);
-        SkRect line_rect = GetLineRect(i - start_line, content_bounds);
+        SkRect line_rect = GetLineRect(i - start_line, layout.content_bounds);
 
         bool is_current = false;
         if (search_ && search_->current_match() >= 0) {
@@ -156,9 +142,9 @@ void LogRenderer::Render(SkCanvas* canvas, const SkRect& bounds) {
 
     canvas->restore();
 
-    RenderScrollbar(canvas, content_bounds, need_horizontal_scrollbar);
-    RenderHorizontalScrollbar(canvas, content_bounds,
-                              need_vertical_scrollbar);
+    RenderScrollbar(canvas, layout.content_bounds, layout.need_horizontal_scrollbar);
+    RenderHorizontalScrollbar(canvas, layout.content_bounds,
+                              layout.need_vertical_scrollbar);
 }
 
 
@@ -256,10 +242,7 @@ float LogRenderer::RenderTimestamp(SkCanvas* canvas, uint32_t timestamp,
     paint.SetColor(config_.timestamp_color);
     paint.SetAntiAlias(true);
 
-    TextRenderer text_renderer(canvas);
-    text_renderer.DrawTextWithEmoji(ts, x, y, font, paint);
-
-    return x + TextRenderer::MeasureMixedTextWidth(ts, font);
+    return DrawTextRun(canvas, ts, x, y, font, paint);
 }
 
 float LogRenderer::RenderLevel(SkCanvas* canvas, LogLevel level,
@@ -274,10 +257,7 @@ float LogRenderer::RenderLevel(SkCanvas* canvas, LogLevel level,
     paint.SetAntiAlias(true);
 
     std::string text = std::string("[") + level_str + "]";
-    TextRenderer text_renderer(canvas);
-    text_renderer.DrawTextWithEmoji(text, x, y, font, paint);
-
-    return x + TextRenderer::MeasureMixedTextWidth(text, font);
+    return DrawTextRun(canvas, text, x, y, font, paint);
 }
 
 float LogRenderer::RenderSource(SkCanvas* canvas, const std::string& source,
@@ -288,10 +268,7 @@ float LogRenderer::RenderSource(SkCanvas* canvas, const std::string& source,
     paint.SetAntiAlias(true);
 
     std::string text = "[" + source + "]";
-    TextRenderer text_renderer(canvas);
-    text_renderer.DrawTextWithEmoji(text, x, y, font, paint);
-
-    return x + TextRenderer::MeasureMixedTextWidth(text, font);
+    return DrawTextRun(canvas, text, x, y, font, paint);
 }
 
 void LogRenderer::RenderMessage(SkCanvas* canvas, size_t log_index,
@@ -308,13 +285,11 @@ void LogRenderer::RenderMessage(SkCanvas* canvas, size_t log_index,
         matches = search_->GetMatchesForEntry(log_index);
     }
 
-    TextRenderer text_renderer(canvas);
-
     if (matches.empty()) {
         Paint paint;
         paint.SetColor(text_color);
         paint.SetAntiAlias(true);
-        text_renderer.DrawTextWithEmoji(std::string(message), x, y, font, paint);
+        DrawTextRun(canvas, message, x, y, font, paint);
     } else {
         size_t pos = 0;
         float current_x = x;
@@ -325,12 +300,11 @@ void LogRenderer::RenderMessage(SkCanvas* canvas, size_t log_index,
                 Paint paint;
                 paint.SetColor(text_color);
                 paint.SetAntiAlias(true);
-                text_renderer.DrawTextWithEmoji(before, current_x, y, font, paint);
-                current_x += TextRenderer::MeasureMixedTextWidth(before, font);
+                current_x = DrawTextRun(canvas, before, current_x, y, font, paint);
             }
 
             std::string match_text(message.substr(match.start_pos, match.length));
-            float match_width = TextRenderer::MeasureMixedTextWidth(match_text, font);
+            float match_width = MeasureTextRun(match_text, font);
 
             bool is_current = search_->IsCurrentMatch(log_index, match.start_pos);
             SkPaint bg_paint;
@@ -345,7 +319,7 @@ void LogRenderer::RenderMessage(SkCanvas* canvas, size_t log_index,
             Paint paint;
             paint.SetColor(text_color);
             paint.SetAntiAlias(true);
-            text_renderer.DrawTextWithEmoji(match_text, current_x, y, font, paint);
+            DrawTextRun(canvas, match_text, current_x, y, font, paint);
             current_x += match_width;
 
             pos = match.start_pos + match.length;
@@ -356,9 +330,40 @@ void LogRenderer::RenderMessage(SkCanvas* canvas, size_t log_index,
             Paint paint;
             paint.SetColor(text_color);
             paint.SetAntiAlias(true);
-            text_renderer.DrawTextWithEmoji(after, current_x, y, font, paint);
+            DrawTextRun(canvas, after, current_x, y, font, paint);
         }
     }
+}
+
+float LogRenderer::DrawTextRun(SkCanvas* canvas, std::string_view text,
+                               float x, float y, const SkFont& font,
+                               const Paint& paint) const {
+    if (!canvas || text.empty()) {
+        return x;
+    }
+
+    if (IsAsciiText(text)) {
+        canvas->drawSimpleText(text.data(), text.size(), SkTextEncoding::kUTF8,
+                               x, y, font, paint.GetSkPaint());
+        return x + font.measureText(text.data(), text.size(), SkTextEncoding::kUTF8);
+    }
+
+    TextRenderer text_renderer(canvas);
+    std::string owned_text(text);
+    text_renderer.DrawTextWithEmoji(owned_text, x, y, font, paint);
+    return x + TextRenderer::MeasureMixedTextWidth(owned_text, font);
+}
+
+float LogRenderer::MeasureTextRun(std::string_view text, const SkFont& font) const {
+    if (text.empty()) {
+        return 0.0f;
+    }
+
+    if (IsAsciiText(text)) {
+        return font.measureText(text.data(), text.size(), SkTextEncoding::kUTF8);
+    }
+
+    return TextRenderer::MeasureMixedTextWidth(std::string(text), font);
 }
 
 std::string LogRenderer::FormatTimestamp(uint32_t timestamp) const {
@@ -387,24 +392,22 @@ float LogRenderer::ComputeEntryWidth(size_t log_index) const {
     float width = 0.0f;
 
     if (config_.show_timestamp) {
-        width += TextRenderer::MeasureMixedTextWidth(FormatTimestamp(entry.timestamp()),
-                                                     font) + cell_width_;
+        width += MeasureTextRun(FormatTimestamp(entry.timestamp()), font) + cell_width_;
     }
 
     if (config_.show_level) {
         std::string text = std::string("[") + LogLevelToString(entry.level()) + "]";
-        width += TextRenderer::MeasureMixedTextWidth(text, font) + cell_width_;
+        width += MeasureTextRun(text, font) + cell_width_;
     }
 
     if (config_.show_source) {
         const std::string& source = buffer_->GetSourceName(entry.source_id());
         if (!source.empty()) {
-            width += TextRenderer::MeasureMixedTextWidth("[" + source + "]", font) +
-                     cell_width_;
+            width += MeasureTextRun("[" + source + "]", font) + cell_width_;
         }
     }
 
-    width += TextRenderer::MeasureMixedTextWidth(std::string(entry.message()), font);
+    width += MeasureTextRun(entry.message(), font);
     return width;
 }
 
@@ -426,6 +429,67 @@ float LogRenderer::ComputeMaxContentWidth() const {
     cached_max_content_width_ = max_width;
     max_content_width_dirty_ = false;
     return cached_max_content_width_;
+}
+
+LogRenderer::LayoutResult LogRenderer::UpdateLayoutMetrics(const SkRect& bounds) {
+    LayoutResult result;
+    total_lines_ = GetDisplayLineCount();
+    float content_width = ComputeMaxContentWidth();
+
+    const float scrollbar_thickness = 8.0f;
+    const float scrollbar_gap = 2.0f;
+
+    float inner_width = std::max(0.0f, bounds.width() - 2 * padding_);
+    float inner_height = std::max(0.0f, bounds.height() - 2 * padding_);
+
+    while (true) {
+        float viewport_width = std::max(
+            0.0f, inner_width - (result.need_vertical_scrollbar
+                                     ? (scrollbar_thickness + scrollbar_gap)
+                                     : 0.0f));
+        float viewport_height = std::max(
+            0.0f, inner_height - (result.need_horizontal_scrollbar
+                                      ? (scrollbar_thickness + scrollbar_gap)
+                                      : 0.0f));
+
+        int visible_lines = 0;
+        if (line_height_ > 0) {
+            visible_lines = static_cast<int>(viewport_height / line_height_);
+            if (visible_lines < 1) visible_lines = 1;
+        }
+
+        bool new_need_vertical = total_lines_ > visible_lines;
+        int horizontal_max = static_cast<int>(std::ceil(
+            std::max(0.0f, content_width - viewport_width) /
+            std::max(cell_width_, 1.0f)));
+        bool new_need_horizontal = horizontal_max > 0;
+
+        if (new_need_vertical == result.need_vertical_scrollbar &&
+            new_need_horizontal == result.need_horizontal_scrollbar) {
+            break;
+        }
+
+        result.need_vertical_scrollbar = new_need_vertical;
+        result.need_horizontal_scrollbar = new_need_horizontal;
+    }
+
+    result.content_bounds = bounds;
+    if (result.need_vertical_scrollbar) {
+        result.content_bounds.fRight -= scrollbar_thickness + scrollbar_gap;
+    }
+    if (result.need_horizontal_scrollbar) {
+        result.content_bounds.fBottom -= scrollbar_thickness + scrollbar_gap;
+    }
+
+    UpdateMetrics(result.content_bounds.height());
+    total_lines_ = GetDisplayLineCount();
+    float viewport_width =
+        std::max(0.0f, result.content_bounds.width() - 2 * padding_);
+    SetMaxHorizontalScrollOffset(static_cast<int>(std::ceil(
+        std::max(0.0f, content_width - viewport_width) /
+        std::max(cell_width_, 1.0f))));
+
+    return result;
 }
 
 void LogRenderer::RenderScrollbar(SkCanvas* canvas, const SkRect& content_bounds,

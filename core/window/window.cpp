@@ -251,16 +251,46 @@ float TotalDirtyRectArea(const std::vector<SkRect>& dirty_rects, float width, fl
     return total_area;
 }
 
+SkIRect ClampPhysicalRect(const SkRect& rect, int width, int height) {
+    if (width <= 0 || height <= 0 || rect.isEmpty()) {
+        return SkIRect::MakeEmpty();
+    }
+
+    int left = static_cast<int>(std::floor(rect.left()));
+    int top = static_cast<int>(std::floor(rect.top()));
+    int right = static_cast<int>(std::ceil(rect.right()));
+    int bottom = static_cast<int>(std::ceil(rect.bottom()));
+
+    left = std::clamp(left, 0, width);
+    top = std::clamp(top, 0, height);
+    right = std::clamp(right, 0, width);
+    bottom = std::clamp(bottom, 0, height);
+
+    if (right <= left || bottom <= top) {
+        return SkIRect::MakeEmpty();
+    }
+    return SkIRect::MakeLTRB(left, top, right, bottom);
+}
+
 void AddRetainedDirtyRectForRenderObject(Window* window, RenderObject* render_obj) {
     if (!window || !render_obj) {
         return;
     }
 
-    auto add_bounds = [window](SkRect bounds) {
+    auto add_bounds = [window, render_obj](SkRect bounds) {
         if (bounds.isEmpty()) {
             return;
         }
-        bounds.outset(50.0f, 50.0f);
+        const auto node = render_obj->GetNode();
+        float outset = 50.0f;
+        if (node && node->GetNodeType() == NodeType::ELEMENT_NODE) {
+            auto element = std::dynamic_pointer_cast<Element>(node);
+            const std::string tag_name = element ? element->GetTagName() : "";
+            if (tag_name == "terminal" || tag_name == "logview") {
+                outset = 4.0f;
+            }
+        }
+        bounds.outset(outset, outset);
         window->AddDirtyRect(bounds);
     };
 
@@ -1963,6 +1993,8 @@ void Window::Render() {
         dirty_bounds_px.fTop *= dpi_scale;
         dirty_bounds_px.fRight *= dpi_scale;
         dirty_bounds_px.fBottom *= dpi_scale;
+        SkRect present_dirty_bounds_px = dirty_bounds_px;
+        present_dirty_bounds_px.offset(app_x * dpi_scale, app_y * dpi_scale);
         const int retained_width_px = std::max(0, static_cast<int>(std::lround(app_width * dpi_scale)));
         const int retained_height_px = std::max(0, static_cast<int>(std::lround(app_height * dpi_scale)));
         const bool pending_scroll_retained_present_blocking_fallback =
@@ -1993,8 +2025,14 @@ void Window::Render() {
             if (!retained_main_surface_ ||
                 retained_main_width_px_ != retained_width_px ||
                 retained_main_height_px_ != retained_height_px) {
+                const SkImageInfo retained_info =
+                    SkImageInfo::MakeN32Premul(retained_width_px, retained_height_px);
                 retained_main_surface_ =
-                    SkSurfaces::Raster(SkImageInfo::MakeN32Premul(retained_width_px, retained_height_px));
+                    actual_backend_ == RenderBackend::OPENGL && gr_context_
+                        ? SkSurfaces::RenderTarget(gr_context_.get(),
+                                                   skgpu::Budgeted::kYes,
+                                                   retained_info)
+                        : SkSurfaces::Raster(retained_info);
                 retained_main_width_px_ = retained_width_px;
                 retained_main_height_px_ = retained_height_px;
                 retained_main_has_content_ = false;
@@ -2123,11 +2161,38 @@ void Window::Render() {
         }
 
         // 更新并绘制 select 下拉菜单
+        bool partial_retained_copy_used = false;
         if (retained_present_used) {
             stage_start_ms = baseline_stats_enabled ? GetBaselineTimeMs() : 0.0;
-            canvas->clear(clear_color);
+            const bool can_partial_retained_copy =
+                actual_backend_ == RenderBackend::CPU &&
+                can_update_retained_dirty_region &&
+                has_dirty_bounds &&
+                !dirty_bounds_px.isEmpty() &&
+                !devtools.IsOpen() &&
+                !SelectDropdownManager::Instance().IsDropdownOpen();
+
+            if (!can_partial_retained_copy) {
+                canvas->clear(clear_color);
+            }
             if (sk_sp<SkImage> retained_image = retained_main_surface_->makeImageSnapshot()) {
-                canvas->drawImage(retained_image, app_x * dpi_scale, app_y * dpi_scale, SkSamplingOptions());
+                if (can_partial_retained_copy) {
+                    const SkIRect src = ClampPhysicalRect(
+                        dirty_bounds_px, retained_image->width(), retained_image->height());
+                    if (!src.isEmpty()) {
+                        SkRect dst = SkRect::MakeXYWH(
+                            app_x * dpi_scale + src.left(),
+                            app_y * dpi_scale + src.top(),
+                            static_cast<float>(src.width()),
+                            static_cast<float>(src.height()));
+                        canvas->drawImageRect(retained_image, SkRect::Make(src), dst,
+                                              SkSamplingOptions(), nullptr,
+                                              SkCanvas::kFast_SrcRectConstraint);
+                        partial_retained_copy_used = true;
+                    }
+                } else {
+                    canvas->drawImage(retained_image, app_x * dpi_scale, app_y * dpi_scale, SkSamplingOptions());
+                }
             } else {
                 retained_present_used = false;
                 retained_main_has_content_ = false;
@@ -2142,6 +2207,16 @@ void Window::Render() {
             if (baseline_stats_enabled) {
                 retained_copy_time_ms = GetBaselineTimeMs() - stage_start_ms;
             }
+        }
+
+        if (retained_present_used &&
+            actual_backend_ == RenderBackend::CPU &&
+            partial_retained_copy_used) {
+            last_dirty_bounds_ = present_dirty_bounds_px;
+            has_dirty_bounds_ = true;
+        } else {
+            last_dirty_bounds_ = SkRect::MakeEmpty();
+            has_dirty_bounds_ = false;
         }
 
         canvas->save();

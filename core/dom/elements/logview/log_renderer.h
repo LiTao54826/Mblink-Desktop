@@ -12,8 +12,11 @@
 #include "log_search.h"
 #include "../virtual_text/selection_manager.h"
 #include "../virtual_text/virtual_scroll_renderer.h"
+#include "core/render/utils/paint.h"
 
 #include "include/core/SkColor.h"
+
+#include <string_view>
 
 namespace mbink {
 
@@ -74,6 +77,7 @@ public:
      * @brief 设置配置
      */
     void SetConfig(const LogViewConfig& config);
+    void SetFont(sk_sp<SkTypeface> typeface, float size);
 
     /**
      * @brief 获取配置
@@ -91,6 +95,9 @@ public:
      * @brief 设置过滤后的索引
      */
     void SetFilteredIndices(const std::vector<size_t>* indices);
+    void InvalidateWidthCache();
+    void UpdateCachedWidthForEntry(size_t log_index);
+    void UpdateScrollMetricsForBounds(const SkRect& bounds);
 
     /**
      * @brief 设置搜索器（用于高亮）
@@ -122,6 +129,12 @@ public:
     size_t DisplayIndexToLogIndex(int display_index) const;
 
 private:
+    struct LayoutResult {
+        SkRect content_bounds = SkRect::MakeEmpty();
+        bool need_vertical_scrollbar = false;
+        bool need_horizontal_scrollbar = false;
+    };
+
     LogBuffer* buffer_ = nullptr;
     const std::vector<size_t>* filtered_indices_ = nullptr;
     const LogSearch* search_ = nullptr;
@@ -161,6 +174,11 @@ private:
                        std::string_view message, LogLevel level,
                        float x, float y, float max_width);
 
+    float DrawTextRun(SkCanvas* canvas, std::string_view text,
+                      float x, float y, const SkFont& font,
+                      const Paint& paint) const;
+    float MeasureTextRun(std::string_view text, const SkFont& font) const;
+
     /**
      * @brief 计算单条日志的渲染宽度
      */
@@ -170,11 +188,7 @@ private:
      * @brief 计算内容的最大渲染宽度
      */
     float ComputeMaxContentWidth() const;
-
-    /**
-     * @brief 标记最大内容宽度缓存失效
-     */
-    void InvalidateWidthCache();
+    LayoutResult UpdateLayoutMetrics(const SkRect& bounds);
 
     /**
      * @brief 格式化时间戳

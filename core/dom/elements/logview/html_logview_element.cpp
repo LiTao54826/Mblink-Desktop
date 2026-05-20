@@ -46,7 +46,9 @@ void HTMLLogViewElement::set_max_entries(int value) {
     }
     buffer_ = std::move(new_buffer);
     renderer_->SetBuffer(buffer_.get());
-    filter_dirty_ = true;
+    filtered_indices_.clear();
+    filter_dirty_ = filter_->HasFilter();
+    renderer_->SetFilteredIndices(filter_->HasFilter() ? &filtered_indices_ : nullptr);
     RequestRepaint(RepaintReason::Terminal);
 }
 
@@ -94,9 +96,31 @@ void HTMLLogViewElement::Append(const std::string& level,
 void HTMLLogViewElement::Append(LogLevel level, const std::string& source,
                                 const std::string& message) {
     bool was_at_bottom = IsAtBottom();
+    size_t old_size = buffer_->size();
 
     buffer_->Append(level, source, message);
-    filter_dirty_ = true;
+    size_t new_size = buffer_->size();
+    bool trimmed = old_size >= buffer_->max_entries();
+    bool has_filter = filter_->HasFilter();
+
+    if (trimmed) {
+        filter_dirty_ = has_filter;
+        if (!has_filter) {
+            filtered_indices_.clear();
+            renderer_->SetFilteredIndices(nullptr);
+        }
+        renderer_->InvalidateWidthCache();
+    } else if (has_filter) {
+        filter_dirty_ = true;
+        renderer_->InvalidateWidthCache();
+    } else {
+        filter_dirty_ = false;
+        filtered_indices_.clear();
+        renderer_->SetFilteredIndices(nullptr);
+        if (new_size > old_size) {
+            renderer_->UpdateCachedWidthForEntry(new_size - 1);
+        }
+    }
 
     // 自动滚动
     if (auto_scroll_ && was_at_bottom) {
@@ -112,7 +136,10 @@ void HTMLLogViewElement::Clear() {
     selection_.ClearSelection();
     filtered_indices_.clear();
     filter_dirty_ = false;
+    renderer_->SetFilteredIndices(nullptr);
+    renderer_->InvalidateWidthCache();
     renderer_->SetScrollOffset(0);
+    renderer_->SetHorizontalScrollOffset(0);
     RequestRepaint(RepaintReason::Terminal);
 }
 
@@ -134,17 +161,13 @@ void HTMLLogViewElement::ScrollToBottom() {
         return;
     }
 
-    if (view_height_ > 0) {
-        const float scrollbar_thickness = 8.0f;
-        const float scrollbar_gap = 2.0f;
-        float content_height = view_height_;
-        if (renderer_->max_horizontal_scroll_offset() > 0) {
-            content_height -= scrollbar_thickness + scrollbar_gap;
-        }
-        renderer_->UpdateMetrics(content_height);
+    if (view_width_ > 0 && view_height_ > 0) {
+        renderer_->UpdateScrollMetricsForBounds(
+            SkRect::MakeXYWH(view_x_, view_y_, view_width_, view_height_));
+    } else {
+        renderer_->SetTotalLines(renderer_->GetDisplayLineCount());
     }
 
-    renderer_->SetTotalLines(renderer_->GetDisplayLineCount());
     renderer_->ScrollTo(renderer_->max_scroll_offset());
     RequestRepaint(RepaintReason::Terminal);
 }
@@ -164,19 +187,24 @@ void HTMLLogViewElement::SetLevelFilter(const std::vector<std::string>& levels) 
     }
     filter_->SetLevelMask(mask);
     filter_dirty_ = true;
+    renderer_->InvalidateWidthCache();
     RequestRepaint(RepaintReason::Terminal);
 }
 
 void HTMLLogViewElement::SetSourceFilter(const std::vector<std::string>& sources) {
     filter_->SetSourceFilter(sources);
     filter_dirty_ = true;
+    renderer_->InvalidateWidthCache();
     RequestRepaint(RepaintReason::Terminal);
 }
 
 void HTMLLogViewElement::ClearFilter() {
     filter_->SetLevelMask(0xFF);
     filter_->ClearSourceFilter();
-    filter_dirty_ = true;
+    filtered_indices_.clear();
+    filter_dirty_ = false;
+    renderer_->SetFilteredIndices(nullptr);
+    renderer_->InvalidateWidthCache();
     RequestRepaint(RepaintReason::Terminal);
 }
 
@@ -394,13 +422,6 @@ void HTMLLogViewElement::Render(SkCanvas* canvas, float x, float y,
     // 更新过滤索引
     UpdateFilteredIndices();
 
-    // 设置过滤索引
-    if (filter_->HasFilter()) {
-        renderer_->SetFilteredIndices(&filtered_indices_);
-    } else {
-        renderer_->SetFilteredIndices(nullptr);
-    }
-
     // 设置选择状态
     renderer_->SetSelection(&selection_);
 
@@ -590,10 +611,19 @@ void HTMLLogViewElement::SetSelectionCallback(SelectionCallback callback) {
 // === 私有方法 ===
 
 void HTMLLogViewElement::UpdateFilteredIndices() {
+    if (!filter_->HasFilter()) {
+        filtered_indices_.clear();
+        filter_dirty_ = false;
+        renderer_->SetFilteredIndices(nullptr);
+        return;
+    }
+
     if (!filter_dirty_) return;
 
     filter_->UpdateFilteredIndices(*buffer_, filtered_indices_);
     filter_dirty_ = false;
+    renderer_->SetFilteredIndices(&filtered_indices_);
+    renderer_->InvalidateWidthCache();
 }
 
 bool HTMLLogViewElement::IsAtBottom() {
@@ -603,17 +633,13 @@ bool HTMLLogViewElement::IsAtBottom() {
         return true;
     }
 
-    if (view_height_ > 0) {
-        const float scrollbar_thickness = 8.0f;
-        const float scrollbar_gap = 2.0f;
-        float content_height = view_height_;
-        if (renderer_->max_horizontal_scroll_offset() > 0) {
-            content_height -= scrollbar_thickness + scrollbar_gap;
-        }
-        renderer_->UpdateMetrics(content_height);
+    if (view_width_ > 0 && view_height_ > 0) {
+        renderer_->UpdateScrollMetricsForBounds(
+            SkRect::MakeXYWH(view_x_, view_y_, view_width_, view_height_));
+    } else {
+        renderer_->SetTotalLines(renderer_->GetDisplayLineCount());
     }
 
-    renderer_->SetTotalLines(renderer_->GetDisplayLineCount());
     return renderer_->scroll_offset() >= renderer_->max_scroll_offset();
 }
 

@@ -90,6 +90,12 @@ public:
      */
     size_t GetLogCount() const;
 
+    int scroll_offset_for_test() const { return renderer_->scroll_offset(); }
+    int max_scroll_offset_for_test() const { return renderer_->max_scroll_offset(); }
+    int max_horizontal_scroll_offset_for_test() const {
+        return renderer_->max_horizontal_scroll_offset();
+    }
+
     // === 滚动控制 ===
 
     /**

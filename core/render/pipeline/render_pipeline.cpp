@@ -66,6 +66,23 @@ namespace {
         return rect_area >= layer_area * 0.90f;
     }
 
+    bool IsTightNativeTextElement(const RenderObject* obj) {
+        if (!obj) {
+            return false;
+        }
+        auto node = obj->GetNode();
+        if (!node || node->GetNodeType() != NodeType::ELEMENT_NODE) {
+            return false;
+        }
+
+        auto element = std::dynamic_pointer_cast<Element>(node);
+        if (!element) {
+            return false;
+        }
+        const std::string tag_name = element->GetTagName();
+        return tag_name == "terminal" || tag_name == "logview";
+    }
+
     int RetainedPresentBlockingScrollFallbacks(const ScrollInvalidationStats& stats) {
         return static_cast<int>(
             IncrementalEligibleScrollFallbacks(stats) + ConservativeScrollFallbacks(stats));
@@ -1036,7 +1053,8 @@ void RenderPipeline::CollectDirtyRectsForLayer(RenderObject* obj, CompositorLaye
         }
 
         // 扩展边界以包含阴影、outline 等
-        bounds.outset(50, 50);
+        const float dirty_outset = IsTightNativeTextElement(obj) ? 4.0f : 50.0f;
+        bounds.outset(dirty_outset, dirty_outset);
 
         if (layer->GetPromotionReason() == LayerPromotionReason::RootLayer &&
             external_root_dirty_rects_ &&
