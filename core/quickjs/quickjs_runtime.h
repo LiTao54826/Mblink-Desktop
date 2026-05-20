@@ -180,6 +180,9 @@ public:
      */
     void RunEventLoop(int max_iterations = -1);
 
+    bool HasReadyTasks() const;
+    int64_t MillisecondsUntilNextTimer() const;
+
     /**
      * @brief 处理所有待执行的微任务
      */

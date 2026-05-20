@@ -15,9 +15,11 @@ namespace mbink {
 LogBuffer::LogBuffer(size_t max_entries)
     : max_entries_(max_entries),
       start_time_(Clock::now()) {
-    // 预分配一些空间
-    data_.reserve(max_entries * 64);  // 假设平均每条日志 64 字节
-    entry_offsets_.reserve(max_entries);
+    constexpr size_t kInitialEntryReserve = 256;
+    constexpr size_t kEstimatedBytesPerEntry = 64;
+    const size_t initial_entries = std::min(max_entries, kInitialEntryReserve);
+    data_.reserve(initial_entries * kEstimatedBytesPerEntry);
+    entry_offsets_.reserve(initial_entries);
     source_names_.reserve(16);
 }
 

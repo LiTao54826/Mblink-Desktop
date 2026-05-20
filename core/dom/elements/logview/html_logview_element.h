@@ -14,6 +14,7 @@
 #include "log_search.h"
 #include "../virtual_text/selection_manager.h"
 #include "core/dom/element.h"
+#include "core/window/repaint_reason.h"
 
 #include <functional>
 #include <memory>
@@ -280,10 +281,14 @@ private:
      */
     bool IsAtBottom();
 
+    void ApplyScrollToBottom();
+
     /**
      * @brief 坐标转换：屏幕坐标到行列
      */
     std::pair<int, int> ScreenToLineCol(float x, float y) const;
+
+    void RequestCoalescedRepaint(RepaintReason reason);
 };
 
 }  // namespace mbink

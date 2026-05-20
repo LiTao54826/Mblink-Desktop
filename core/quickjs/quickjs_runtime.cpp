@@ -1434,6 +1434,29 @@ bool QuickJSRuntime::HasPendingJobs() {
     return JS_IsJobPending(rt_);
 }
 
+bool QuickJSRuntime::HasReadyTasks() const {
+    if (!task_queue_.empty() || JS_IsJobPending(rt_)) {
+        return true;
+    }
+    if (timer_queue_.empty()) {
+        return false;
+    }
+
+    auto now = std::chrono::steady_clock::now();
+    auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch());
+    return timer_queue_.begin()->first <= duration.count();
+}
+
+int64_t QuickJSRuntime::MillisecondsUntilNextTimer() const {
+    if (timer_queue_.empty()) {
+        return -1;
+    }
+
+    auto now = std::chrono::steady_clock::now();
+    auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch());
+    return std::max<int64_t>(0, timer_queue_.begin()->first - duration.count());
+}
+
 void QuickJSRuntime::RunEventLoop(int max_iterations) {
     int iterations = 0;
 

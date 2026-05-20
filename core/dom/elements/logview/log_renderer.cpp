@@ -12,9 +12,8 @@
 #include "include/core/SkFont.h"
 #include "include/core/SkPaint.h"
 
-#include <iomanip>
+#include <cstdio>
 #include <iostream>
-#include <sstream>
 #include <string>
 
 namespace mbink {
@@ -102,6 +101,79 @@ void LogRenderer::UpdateScrollMetricsForBounds(const SkRect& bounds) {
         return;
     }
     UpdateLayoutMetrics(bounds);
+}
+
+void LogRenderer::UpdateLineMetricsForBounds(const SkRect& bounds) {
+    total_lines_ = GetDisplayLineCount();
+    UpdateMetrics(bounds.height());
+}
+
+void LogRenderer::UpdateLineMetricsForBounds(const SkRect& bounds,
+                                             float known_content_width) {
+    LayoutResult result;
+    total_lines_ = GetDisplayLineCount();
+
+    const float scrollbar_thickness = 8.0f;
+    const float scrollbar_gap = 2.0f;
+    const float inner_width = std::max(0.0f, bounds.width() - 2 * padding_);
+    const float inner_height = std::max(0.0f, bounds.height() - 2 * padding_);
+
+    while (true) {
+        const float viewport_width = std::max(
+            0.0f, inner_width - (result.need_vertical_scrollbar
+                                     ? (scrollbar_thickness + scrollbar_gap)
+                                     : 0.0f));
+        const float viewport_height = std::max(
+            0.0f, inner_height - (result.need_horizontal_scrollbar
+                                      ? (scrollbar_thickness + scrollbar_gap)
+                                      : 0.0f));
+
+        int visible_lines = 0;
+        if (line_height_ > 0) {
+            visible_lines = static_cast<int>(viewport_height / line_height_);
+            if (visible_lines < 1) visible_lines = 1;
+        }
+
+        const bool new_need_vertical = total_lines_ > visible_lines;
+        const int horizontal_max = static_cast<int>(std::ceil(
+            std::max(0.0f, known_content_width - viewport_width) /
+            std::max(cell_width_, 1.0f)));
+        const bool new_need_horizontal = horizontal_max > 0;
+
+        if (new_need_vertical == result.need_vertical_scrollbar &&
+            new_need_horizontal == result.need_horizontal_scrollbar) {
+            break;
+        }
+
+        result.need_vertical_scrollbar = new_need_vertical;
+        result.need_horizontal_scrollbar = new_need_horizontal;
+    }
+
+    result.content_bounds = bounds;
+    if (result.need_vertical_scrollbar) {
+        result.content_bounds.fRight -= scrollbar_thickness + scrollbar_gap;
+    }
+    if (result.need_horizontal_scrollbar) {
+        result.content_bounds.fBottom -= scrollbar_thickness + scrollbar_gap;
+    }
+
+    UpdateMetrics(result.content_bounds.height());
+    const float viewport_width =
+        std::max(0.0f, result.content_bounds.width() - 2 * padding_);
+    SetMaxHorizontalScrollOffset(static_cast<int>(std::ceil(
+        std::max(0.0f, known_content_width - viewport_width) /
+        std::max(cell_width_, 1.0f))));
+}
+
+void LogRenderer::UpdateLineMetricsForEntryBounds(const SkRect& bounds,
+                                                  size_t log_index) {
+    if (!max_content_width_dirty_) {
+        UpdateCachedWidthForEntry(log_index);
+        UpdateLineMetricsForBounds(bounds, cached_max_content_width_);
+        return;
+    }
+
+    UpdateLineMetricsForBounds(bounds, ComputeEntryWidth(log_index));
 }
 
 void LogRenderer::Render(SkCanvas* canvas, const SkRect& bounds) {
@@ -345,7 +417,7 @@ float LogRenderer::DrawTextRun(SkCanvas* canvas, std::string_view text,
     if (IsAsciiText(text)) {
         canvas->drawSimpleText(text.data(), text.size(), SkTextEncoding::kUTF8,
                                x, y, font, paint.GetSkPaint());
-        return x + font.measureText(text.data(), text.size(), SkTextEncoding::kUTF8);
+        return x + static_cast<float>(text.size()) * cell_width_;
     }
 
     TextRenderer text_renderer(canvas);
@@ -360,7 +432,7 @@ float LogRenderer::MeasureTextRun(std::string_view text, const SkFont& font) con
     }
 
     if (IsAsciiText(text)) {
-        return font.measureText(text.data(), text.size(), SkTextEncoding::kUTF8);
+        return static_cast<float>(text.size()) * cell_width_;
     }
 
     return TextRenderer::MeasureMixedTextWidth(std::string(text), font);
@@ -373,13 +445,10 @@ std::string LogRenderer::FormatTimestamp(uint32_t timestamp) const {
     uint32_t min = (total_sec / 60) % 60;
     uint32_t hour = total_sec / 3600;
 
-    std::ostringstream oss;
-    oss << std::setfill('0')
-        << std::setw(2) << hour << ":"
-        << std::setw(2) << min << ":"
-        << std::setw(2) << sec << "."
-        << std::setw(3) << ms;
-    return oss.str();
+    char buffer[16];
+    std::snprintf(buffer, sizeof(buffer), "%02u:%02u:%02u.%03u",
+                  hour, min, sec, ms);
+    return std::string(buffer);
 }
 
 float LogRenderer::ComputeEntryWidth(size_t log_index) const {

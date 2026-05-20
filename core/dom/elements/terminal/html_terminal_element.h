@@ -12,6 +12,7 @@
 #include "terminal_renderer.h"
 #include "core/dom/element.h"
 #include "core/dom/elements/virtual_text/selection_manager.h"
+#include "core/window/repaint_reason.h"
 
 #include <memory>
 #include <string>
@@ -251,6 +252,8 @@ private:
      * @brief 将屏幕坐标转换为行列
      */
     void ScreenToCell(float x, float y, int& row, int& col) const;
+
+    void RequestCoalescedRepaint(RepaintReason reason);
 };
 
 }  // namespace mbink

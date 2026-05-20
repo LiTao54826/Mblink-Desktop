@@ -98,6 +98,9 @@ public:
     void InvalidateWidthCache();
     void UpdateCachedWidthForEntry(size_t log_index);
     void UpdateScrollMetricsForBounds(const SkRect& bounds);
+    void UpdateLineMetricsForBounds(const SkRect& bounds);
+    void UpdateLineMetricsForBounds(const SkRect& bounds, float known_content_width);
+    void UpdateLineMetricsForEntryBounds(const SkRect& bounds, size_t log_index);
 
     /**
      * @brief 设置搜索器（用于高亮）

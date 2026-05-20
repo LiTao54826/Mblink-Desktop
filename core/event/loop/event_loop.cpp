@@ -43,6 +43,7 @@
 #include "core/render/layer/paint_layer.h"
 #include "core/dom/document.h"
 #include "core/dom/element.h"
+#include "core/dom/elements/native_text_repaint_coalescer.h"
 #include "core/dom/selection/selection.h"
 #include "core/dom/elements/html_input_element.h"
 #include "core/dom/elements/html_textarea_element.h"
@@ -109,6 +110,19 @@ inline double GetBaselineTimeMs() {
     auto now = std::chrono::high_resolution_clock::now();
     auto duration = now.time_since_epoch();
     return std::chrono::duration<double, std::milli>(duration).count();
+}
+
+Sint32 ClampIdleDelayMs(int64_t next_timer_delay_ms) {
+    constexpr Uint32 kDefaultIdleDelayMs = 4;
+    constexpr Sint32 kMaxTimerIdleDelayMs = 64;
+    if (next_timer_delay_ms < 0) {
+        return kDefaultIdleDelayMs;
+    }
+    if (next_timer_delay_ms <= 1) {
+        return 1;
+    }
+    return static_cast<Sint32>(
+        std::clamp<int64_t>(next_timer_delay_ms - 1, 1, kMaxTimerIdleDelayMs));
 }
 
 bool MarkElementPaintDirty(Window* window, const std::shared_ptr<Element>& element) {
@@ -470,6 +484,8 @@ void EventLoop::RunOnce() {
         }
     }
 
+    NativeTextRepaintCoalescer::Instance().FlushDue();
+
     bool any_needs_repaint = false;
     for (auto& window : wm.GetAllWindows()) {
         if (window->NeedsRepaint()) {
@@ -541,8 +557,21 @@ void EventLoop::RunOnce() {
     // 7.5 空闲时休眠以降低 CPU 占用
     // 当没有事件、没有任务、没有重绘需求时，休眠一小段时间
     // 这解决了 VSync 启用但没有渲染时的忙等待问题
-    if (!has_events && !any_needs_repaint && !task_scheduler_->HasPendingTasks()) {
-        SDL_Delay(1);  // 休眠 1ms，显著降低 CPU 占用同时保持响应性
+    const bool has_ready_js_tasks = quickjs_runtime_ && quickjs_runtime_->HasReadyTasks();
+    if (!has_events &&
+        !any_needs_repaint &&
+        !task_scheduler_->HasPendingTasks() &&
+        !has_ready_js_tasks) {
+        const int64_t next_js_timer_delay_ms =
+            quickjs_runtime_ ? quickjs_runtime_->MillisecondsUntilNextTimer() : -1;
+        const int64_t next_native_text_delay_ms =
+            NativeTextRepaintCoalescer::Instance().MillisecondsUntilNextFlush();
+        int64_t next_delay_ms = next_js_timer_delay_ms;
+        if (next_native_text_delay_ms >= 0 &&
+            (next_delay_ms < 0 || next_native_text_delay_ms < next_delay_ms)) {
+            next_delay_ms = next_native_text_delay_ms;
+        }
+        SDL_WaitEventTimeout(nullptr, ClampIdleDelayMs(next_delay_ms));
     }
 
     // 8. 帧率控制
@@ -773,6 +802,10 @@ void EventLoop::Render() {
 bool EventLoop::HasWork() const {
     // 检查是否有待处理的任务
     if (task_scheduler_->HasPendingTasks()) {
+        return true;
+    }
+
+    if (NativeTextRepaintCoalescer::Instance().HasPending()) {
         return true;
     }
 

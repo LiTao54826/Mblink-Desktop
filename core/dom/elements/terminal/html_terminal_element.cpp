@@ -7,6 +7,7 @@
 #include "command_executor.h"
 #include "pty_backend.h"
 #include "core/dom/document.h"
+#include "core/dom/elements/native_text_repaint_coalescer.h"
 #include "core/window/repaint_reason.h"
 
 #include <algorithm>
@@ -17,6 +18,10 @@
 #endif
 
 namespace mbink {
+
+namespace {
+constexpr int64_t kStreamingRepaintIntervalMs = 120;
+}
 
 HTMLTerminalElement::HTMLTerminalElement()
     : Element("terminal") {
@@ -115,7 +120,7 @@ void HTMLTerminalElement::Write(const std::string& data) {
             ScrollToBottom();
         }
 
-        RequestRepaint(RepaintReason::Terminal);
+        RequestCoalescedRepaint(RepaintReason::Terminal);
     }
 }
 
@@ -681,6 +686,11 @@ void HTMLTerminalElement::ScreenToCell(float x, float y, int& row, int& col) con
 
     row = renderer_->HitTestLine(y);
     col = renderer_->HitTestColumn(x);
+}
+
+void HTMLTerminalElement::RequestCoalescedRepaint(RepaintReason reason) {
+    NativeTextRepaintCoalescer::Instance().Request(
+        weak_from_this(), reason, kStreamingRepaintIntervalMs);
 }
 
 }  // namespace mbink

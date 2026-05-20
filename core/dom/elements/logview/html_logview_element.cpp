@@ -5,6 +5,7 @@
 
 #include "html_logview_element.h"
 
+#include "core/dom/elements/native_text_repaint_coalescer.h"
 #include "core/window/window.h"
 #include "include/core/SkCanvas.h"
 #include "include/core/SkTypeface.h"
@@ -19,6 +20,10 @@
 #endif
 
 namespace mbink {
+
+namespace {
+constexpr int64_t kStreamingRepaintIntervalMs = 120;
+}
 
 HTMLLogViewElement::HTMLLogViewElement()
     : Element("logview"),
@@ -124,9 +129,10 @@ void HTMLLogViewElement::Append(LogLevel level, const std::string& source,
 
     // 自动滚动
     if (auto_scroll_ && was_at_bottom) {
-        ScrollToBottom();
+        ApplyScrollToBottom();
+        RequestCoalescedRepaint(RepaintReason::Terminal);
     } else {
-        RequestRepaint(RepaintReason::Terminal);
+        RequestCoalescedRepaint(RepaintReason::Terminal);
     }
 }
 
@@ -155,6 +161,11 @@ void HTMLLogViewElement::ScrollTo(int line) {
 }
 
 void HTMLLogViewElement::ScrollToBottom() {
+    ApplyScrollToBottom();
+    RequestRepaint(RepaintReason::Terminal);
+}
+
+void HTMLLogViewElement::ApplyScrollToBottom() {
     UpdateFilteredIndices();
 
     if (!renderer_) {
@@ -162,14 +173,17 @@ void HTMLLogViewElement::ScrollToBottom() {
     }
 
     if (view_width_ > 0 && view_height_ > 0) {
-        renderer_->UpdateScrollMetricsForBounds(
-            SkRect::MakeXYWH(view_x_, view_y_, view_width_, view_height_));
+        const SkRect bounds = SkRect::MakeXYWH(view_x_, view_y_, view_width_, view_height_);
+        if (!filter_->HasFilter() && !filter_dirty_ && buffer_->size() > 0) {
+            renderer_->UpdateLineMetricsForEntryBounds(bounds, buffer_->size() - 1);
+        } else {
+            renderer_->UpdateLineMetricsForBounds(bounds);
+        }
     } else {
         renderer_->SetTotalLines(renderer_->GetDisplayLineCount());
     }
 
     renderer_->ScrollTo(renderer_->max_scroll_offset());
-    RequestRepaint(RepaintReason::Terminal);
 }
 
 void HTMLLogViewElement::ScrollToTop() {
@@ -634,8 +648,12 @@ bool HTMLLogViewElement::IsAtBottom() {
     }
 
     if (view_width_ > 0 && view_height_ > 0) {
-        renderer_->UpdateScrollMetricsForBounds(
-            SkRect::MakeXYWH(view_x_, view_y_, view_width_, view_height_));
+        const SkRect bounds = SkRect::MakeXYWH(view_x_, view_y_, view_width_, view_height_);
+        if (!filter_->HasFilter() && !filter_dirty_ && buffer_->size() > 0) {
+            renderer_->UpdateLineMetricsForEntryBounds(bounds, buffer_->size() - 1);
+        } else {
+            renderer_->UpdateLineMetricsForBounds(bounds);
+        }
     } else {
         renderer_->SetTotalLines(renderer_->GetDisplayLineCount());
     }
@@ -650,6 +668,11 @@ std::pair<int, int> HTMLLogViewElement::ScreenToLineCol(float x, float y) const 
     int col = renderer_->HitTestColumn(x);
 
     return {line, col};
+}
+
+void HTMLLogViewElement::RequestCoalescedRepaint(RepaintReason reason) {
+    NativeTextRepaintCoalescer::Instance().Request(
+        weak_from_this(), reason, kStreamingRepaintIntervalMs);
 }
 
 }  // namespace mbink
