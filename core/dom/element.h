@@ -37,6 +37,7 @@ class DOMTokenList;
 class CSSStyleDeclaration;
 class DOMStringMap;
 class Document;
+enum class RepaintReason;
 using EventListener = std::function<void(std::shared_ptr<Event>)>;
 
 // EventListener包装器，包含唯一ID、捕获阶段标志和once选项
@@ -484,6 +485,11 @@ public:
         float left = 0;
     };
     DOMRect GetBoundingClientRect() const;
+
+    /**
+     * @brief 请求重绘当前元素所在区域
+     */
+    void RequestRepaint(RepaintReason reason);
 
     /**
      * @brief 滚动元素到可见区域

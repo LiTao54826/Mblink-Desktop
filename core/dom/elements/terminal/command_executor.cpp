@@ -5,6 +5,7 @@
 
 #include "command_executor.h"
 
+#include <algorithm>
 #include <thread>
 
 #ifdef _WIN32
@@ -168,7 +169,9 @@ void CommandExecutor::ReadOutput() {
     
     while (running_.load()) {
         // 读取 stdout
-        if (ReadFile(stdout_read_, buffer, sizeof(buffer) - 1, &bytes_read, nullptr)) {
+        DWORD stdout_available = 0;
+        if (PeekNamedPipe(stdout_read_, nullptr, 0, nullptr, &stdout_available, nullptr) && stdout_available > 0 &&
+            ReadFile(stdout_read_, buffer, std::min<DWORD>(stdout_available, sizeof(buffer) - 1), &bytes_read, nullptr)) {
             if (bytes_read > 0) {
                 buffer[bytes_read] = '\0';
                 if (output_cb_) {
@@ -178,7 +181,9 @@ void CommandExecutor::ReadOutput() {
         }
 
         // 读取 stderr
-        if (ReadFile(stderr_read_, buffer, sizeof(buffer) - 1, &bytes_read, nullptr)) {
+        DWORD stderr_available = 0;
+        if (PeekNamedPipe(stderr_read_, nullptr, 0, nullptr, &stderr_available, nullptr) && stderr_available > 0 &&
+            ReadFile(stderr_read_, buffer, std::min<DWORD>(stderr_available, sizeof(buffer) - 1), &bytes_read, nullptr)) {
             if (bytes_read > 0) {
                 buffer[bytes_read] = '\0';
                 if (output_cb_) {
@@ -191,6 +196,26 @@ void CommandExecutor::ReadOutput() {
         DWORD exit_code;
         if (GetExitCodeProcess(process_handle_, &exit_code)) {
             if (exit_code != STILL_ACTIVE) {
+                DWORD stdout_available = 0;
+                while (PeekNamedPipe(stdout_read_, nullptr, 0, nullptr, &stdout_available, nullptr) && stdout_available > 0 &&
+                       ReadFile(stdout_read_, buffer, std::min<DWORD>(stdout_available, sizeof(buffer) - 1), &bytes_read, nullptr) &&
+                       bytes_read > 0) {
+                    buffer[bytes_read] = '\0';
+                    if (output_cb_) {
+                        output_cb_(std::string(buffer, bytes_read), false);
+                    }
+                }
+
+                DWORD stderr_available = 0;
+                while (PeekNamedPipe(stderr_read_, nullptr, 0, nullptr, &stderr_available, nullptr) && stderr_available > 0 &&
+                       ReadFile(stderr_read_, buffer, std::min<DWORD>(stderr_available, sizeof(buffer) - 1), &bytes_read, nullptr) &&
+                       bytes_read > 0) {
+                    buffer[bytes_read] = '\0';
+                    if (output_cb_) {
+                        output_cb_(std::string(buffer, bytes_read), true);
+                    }
+                }
+
                 running_.store(false);
                 if (exit_cb_) {
                     exit_cb_(static_cast<int>(exit_code));

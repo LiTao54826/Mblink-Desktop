@@ -408,12 +408,16 @@ public:
      * @param window Window 指针（不拥有所有权）
      */
     void SetWindow(Window* window) { window_ = window; }
+    void SetWindowHandle(std::shared_ptr<Window> window) { window_handle_ = std::move(window); }
 
     /**
      * @brief 获取关联的 Window
      * @return Window 指针
      */
     Window* GetWindow() const { return window_; }
+    std::shared_ptr<Window> GetWindowHandle() const { return window_handle_.lock(); }
+    void PostUiTask(std::function<void()> task);
+    void FlushUiTasks();
 
     void SetStateManager(StateManager* stateManager) { state_manager_ = stateManager; }
     StateManager* GetStateManager() const { return state_manager_; }
@@ -527,6 +531,7 @@ private:
 
     // 关联的 Window（不拥有所有权）
     Window* window_ = nullptr;
+    std::weak_ptr<Window> window_handle_;
 
     // 焦点管理
     std::weak_ptr<Element> active_element_;

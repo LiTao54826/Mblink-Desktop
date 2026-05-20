@@ -42,9 +42,11 @@
 #include <vector>
 #include <unordered_map>
 #include <cstdint>
+#include <mutex>
 #include <SDL3/SDL.h>
 #include "include/core/SkSurface.h"
 #include "include/gpu/ganesh/GrDirectContext.h"
+#include "repaint_reason.h"
 #include "window_event.h"
 #include "display_backend.h"
 
@@ -78,30 +80,6 @@ enum class RenderBackend {
     SOFTWARE    // SDL 软件渲染
 };
 
-/**
- * @brief 窗口配置
- */
-enum class RepaintReason {
-    Unknown,
-    Initial,
-    Resize,
-    DOMMutation,
-    PseudoClass,
-    Focus,
-    KeyboardInput,
-    MouseHover,
-    MouseButton,
-    WheelScroll,
-    Animation,
-    Terminal,
-    DevTools,
-    API,
-    Layout
-};
-
-const char* RepaintReasonName(RepaintReason reason);
-bool RepaintReasonMayAffectLayout(RepaintReason reason);
-
 struct WindowConfig {
     std::string title = "MBink Window";
     int width = 800;
@@ -134,7 +112,7 @@ struct WindowConfig {
  *
  * 管理SDL窗口和Skia渲染上下文
  */
-class Window {
+class Window : public std::enable_shared_from_this<Window> {
     // 允许 WindowRenderer 访问私有成员
     friend class WindowRenderer;
 
@@ -611,6 +589,16 @@ public:
     RenderPipeline* GetRenderPipeline() const { return render_pipeline_.get(); }
 
     /**
+     * @brief 投递任务到窗口所属 UI 线程执行
+     */
+    void PostUiTask(std::function<void()> task);
+
+    /**
+     * @brief 执行已投递的 UI 线程任务
+     */
+    void FlushUiTasks(size_t max_tasks = 64);
+
+    /**
      * @brief 获取渲染树同步器
      * @return 渲染树同步器指针
      *
@@ -750,6 +738,9 @@ private:
     bool retained_main_has_content_ = false;
     bool should_close_ = false;
     RenderBackend actual_backend_ = RenderBackend::AUTO;  // 实际使用的渲染后端
+    bool ui_tasks_accepting_ = true;
+    std::mutex ui_tasks_mutex_;
+    std::vector<std::function<void()>> ui_tasks_;
 
     // 事件回调（简单回调）
     std::function<void(int, int)> on_resize_callback_;

@@ -6,9 +6,10 @@
 #include "html_terminal_element.h"
 #include "command_executor.h"
 #include "pty_backend.h"
+#include "core/dom/document.h"
+#include "core/window/repaint_reason.h"
 
 #include <algorithm>
-#include <atomic>
 #include <iostream>
 
 #ifdef _WIN32
@@ -16,14 +17,6 @@
 #endif
 
 namespace mbink {
-
-// 全局原子标志，用于通知主线程终端需要重绘
-// 这是线程安全的方式，因为 PTY 回调在后台线程中执行
-static std::atomic<bool> g_terminal_needs_repaint{false};
-
-bool TerminalNeedsRepaint() {
-    return g_terminal_needs_repaint.exchange(false);
-}
 
 HTMLTerminalElement::HTMLTerminalElement()
     : Element("terminal") {
@@ -80,6 +73,7 @@ void HTMLTerminalElement::set_rows(int value) {
         if (pty_ && pty_->IsRunning()) {
             pty_->Resize(rows_, cols_);
         }
+        RequestRepaint(RepaintReason::Terminal);
     }
 }
 
@@ -95,6 +89,7 @@ void HTMLTerminalElement::set_cols(int value) {
         if (pty_ && pty_->IsRunning()) {
             pty_->Resize(rows_, cols_);
         }
+        RequestRepaint(RepaintReason::Terminal);
     }
 }
 
@@ -106,6 +101,7 @@ void HTMLTerminalElement::set_scrollback(int value) {
         buffer_->set_visible_rows(rows_);
         renderer_->SetBuffer(buffer_.get());
         SetupParserCallbacks();
+        RequestRepaint(RepaintReason::Terminal);
     }
 }
 
@@ -119,8 +115,7 @@ void HTMLTerminalElement::Write(const std::string& data) {
             ScrollToBottom();
         }
 
-        // 设置全局标志，通知主线程需要重绘
-        g_terminal_needs_repaint.store(true);
+        RequestRepaint(RepaintReason::Terminal);
     }
 }
 
@@ -131,11 +126,13 @@ void HTMLTerminalElement::Clear() {
     if (parser_) {
         parser_->Reset();
     }
+    RequestRepaint(RepaintReason::Terminal);
 }
 
 void HTMLTerminalElement::ScrollTo(int line) {
     if (renderer_) {
         renderer_->ScrollTo(line);
+        RequestRepaint(RepaintReason::Terminal);
     }
 }
 
@@ -194,18 +191,37 @@ void HTMLTerminalElement::Execute(const std::string& command) {
     if (!executor_) {
         executor_ = std::make_unique<CommandExecutor>();
 
-        executor_->SetOutputCallback([this](const std::string& data, bool is_stderr) {
+        auto post_output = [weak = weak_from_this()](std::string data) {
+            auto node = weak.lock();
+            auto terminal = std::dynamic_pointer_cast<HTMLTerminalElement>(node);
+            if (!terminal) {
+                return;
+            }
+
+            auto doc = terminal->GetOwnerDocument();
+            if (!doc) {
+                return;
+            }
+
+            doc->PostUiTask([weak, data = std::move(data)]() {
+                auto node = weak.lock();
+                auto terminal = std::dynamic_pointer_cast<HTMLTerminalElement>(node);
+                if (terminal) {
+                    terminal->Write(data);
+                }
+            });
+        };
+
+        executor_->SetOutputCallback([post_output](const std::string& data, bool is_stderr) {
             // stderr 可以用不同颜色显示
             if (is_stderr) {
-                Write("\x1b[31m");  // 红色
-            }
-            Write(data);
-            if (is_stderr) {
-                Write("\x1b[0m");   // 重置
+                post_output(std::string("\x1b[31m") + data + "\x1b[0m");
+            } else {
+                post_output(data);
             }
         });
 
-        executor_->SetExitCallback([this](int exit_code) {
+        executor_->SetExitCallback([](int exit_code) {
             // 可以触发事件
             (void)exit_code;
         });
@@ -218,11 +234,32 @@ void HTMLTerminalElement::StartShell(const std::string& shell) {
     if (!pty_) {
         pty_ = PtyBackend::Create();
 
-        pty_->SetDataCallback([this](const char* data, size_t len) {
-            Write(std::string(data, len));
+        auto post_output = [weak = weak_from_this()](std::string data) {
+            auto node = weak.lock();
+            auto terminal = std::dynamic_pointer_cast<HTMLTerminalElement>(node);
+            if (!terminal) {
+                return;
+            }
+
+            auto doc = terminal->GetOwnerDocument();
+            if (!doc) {
+                return;
+            }
+
+            doc->PostUiTask([weak, data = std::move(data)]() {
+                auto node = weak.lock();
+                auto terminal = std::dynamic_pointer_cast<HTMLTerminalElement>(node);
+                if (terminal) {
+                    terminal->Write(data);
+                }
+            });
+        };
+
+        pty_->SetDataCallback([post_output](const char* data, size_t len) {
+            post_output(std::string(data, len));
         });
 
-        pty_->SetExitCallback([this](int exit_code) {
+        pty_->SetExitCallback([](int exit_code) {
             (void)exit_code;
         });
     }
@@ -511,17 +548,20 @@ void HTMLTerminalElement::HandleMouseDown(float x, float y, int button, int clic
     if (clicks == 1) {
         // 单击：开始选择
         selection_.StartSelection(row, col);
+        RequestRepaint(RepaintReason::Terminal);
     } else if (clicks == 2) {
         // 双击：选择单词
         if (buffer_) {
             std::string line_text = buffer_->GetLineText(row);
             selection_.SelectWord(row, col, line_text);
+            RequestRepaint(RepaintReason::Terminal);
         }
     } else if (clicks == 3) {
         // 三击：选择整行
         if (buffer_) {
             std::string line_text = buffer_->GetLineText(row);
             selection_.SelectLine(row, static_cast<int>(line_text.size()));
+            RequestRepaint(RepaintReason::Terminal);
         }
     }
 }
@@ -547,6 +587,7 @@ void HTMLTerminalElement::HandleMouseMove(float x, float y) {
             if (new_offset != last_drag_horizontal_offset_) {
                 renderer_->SetHorizontalScrollOffset(new_offset);
                 last_drag_horizontal_offset_ = renderer_->horizontal_scroll_offset();
+                RequestRepaint(RepaintReason::Terminal);
             }
         }
         return;
@@ -574,6 +615,7 @@ void HTMLTerminalElement::HandleMouseMove(float x, float y) {
             int delta_offset = static_cast<int>((delta_y / available_track) * max_scroll);
 
             renderer_->ScrollTo(drag_start_offset_ + delta_offset);
+            RequestRepaint(RepaintReason::Terminal);
         }
         return;
     }
@@ -585,6 +627,7 @@ void HTMLTerminalElement::HandleMouseMove(float x, float y) {
     int row, col;
     ScreenToCell(x, y, row, col);
     selection_.UpdateSelection(row, col);
+    RequestRepaint(RepaintReason::Terminal);
 }
 
 void HTMLTerminalElement::HandleMouseUp(float x, float y, int button) {
@@ -596,6 +639,7 @@ void HTMLTerminalElement::HandleMouseUp(float x, float y, int button) {
             is_dragging_scrollbar_ = false;
         } else {
             selection_.EndSelection();
+            RequestRepaint(RepaintReason::Terminal);
         }
     }
 }
@@ -610,6 +654,7 @@ void HTMLTerminalElement::HandleWheel(float delta, bool horizontal) {
             // delta < 0 表示向上滚动（查看历史内容，scroll_offset 减少）
             renderer_->ScrollBy(lines);
         }
+        RequestRepaint(RepaintReason::Terminal);
     }
 }
 

@@ -33,6 +33,7 @@
 #include "elements/svg_element.h"
 #include "elements/terminal/html_terminal_element.h"
 #include "elements/logview/html_logview_element.h"
+#include "core/window/window.h"
 #include "core/lexbor/lexbor_document.h"
 #include "core/lexbor/style_manager.h"
 #include "core/quickjs/quickjs_runtime.h"
@@ -483,6 +484,28 @@ void Document::SetBody(std::shared_ptr<Element> body) {
 
 void Document::SetHead(std::shared_ptr<Element> head) {
     head_ = head;
+}
+
+void Document::PostUiTask(std::function<void()> task) {
+    if (!task) {
+        return;
+    }
+
+    auto window = window_handle_.lock();
+    if (!window) {
+        return;
+    }
+
+    window->PostUiTask(std::move(task));
+}
+
+void Document::FlushUiTasks() {
+    auto window = window_handle_.lock();
+    if (!window) {
+        return;
+    }
+
+    window->FlushUiTasks();
 }
 
 // ========== Lexbor 集成 ==========

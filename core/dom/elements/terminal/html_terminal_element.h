@@ -23,16 +23,6 @@ class PtyBackend;
 class CommandExecutor;
 
 /**
- * @brief 检查终端是否需要重绘
- * 
- * 这是一个线程安全的函数，用于在主线程中检查是否有终端数据更新。
- * 调用后会自动清除标志。
- * 
- * @return true 如果有终端需要重绘
- */
-bool TerminalNeedsRepaint();
-
-/**
  * @brief HTML 终端元素
  *
  * 实现 <terminal> 自定义元素，提供：

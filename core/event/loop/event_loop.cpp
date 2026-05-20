@@ -49,7 +49,6 @@
 #include "core/dom/elements/html_button_element.h"
 #include "core/dom/elements/html_form_element.h"
 #include "core/dom/elements/html_select_element.h"
-#include "core/dom/elements/terminal/html_terminal_element.h"
 #include "core/render/objects/select_dropdown.h"
 #include "core/render/css/style_resolver.h"
 #include "core/render/objects/render_inline_block.h"
@@ -464,19 +463,13 @@ void EventLoop::RunOnce() {
 
     // 5. 只在有窗口需要重绘时才渲染
     auto& wm = WindowManager::Instance();
-    
-    // 5.1 检查终端是否需要重绘（PTY 数据到达）
-    bool terminal_repaint = TerminalNeedsRepaint();
-    if (terminal_repaint) {
-        for (auto& window : wm.GetAllWindows()) {
-            window->SetNeedsRepaintFor(RepaintReason::Terminal);
-            // 关键：强制重新光栅化，确保终端内容被重绘
-            if (auto pipeline = window->GetRenderPipeline()) {
-                pipeline->ForceRasterize();
-            }
+
+    for (auto& window : wm.GetAllWindows()) {
+        if (window) {
+            window->FlushUiTasks();
         }
     }
-    
+
     bool any_needs_repaint = false;
     for (auto& window : wm.GetAllWindows()) {
         if (window->NeedsRepaint()) {

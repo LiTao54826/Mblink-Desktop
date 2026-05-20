@@ -590,6 +590,37 @@ Window::Window(const WindowConfig& config) : config_(config) {
     RenderObject::SetViewportSize(logical_width, logical_height);
 }
 
+void Window::PostUiTask(std::function<void()> task) {
+    if (!task) {
+        return;
+    }
+
+    std::lock_guard<std::mutex> lock(ui_tasks_mutex_);
+    if (!ui_tasks_accepting_) {
+        return;
+    }
+    ui_tasks_.push_back(std::move(task));
+}
+
+void Window::FlushUiTasks(size_t max_tasks) {
+    std::vector<std::function<void()>> tasks;
+    {
+        std::lock_guard<std::mutex> lock(ui_tasks_mutex_);
+        const size_t count = max_tasks == 0 ? ui_tasks_.size() : std::min(max_tasks, ui_tasks_.size());
+        tasks.reserve(count);
+        for (size_t i = 0; i < count; ++i) {
+            tasks.push_back(std::move(ui_tasks_[i]));
+        }
+        ui_tasks_.erase(ui_tasks_.begin(), ui_tasks_.begin() + static_cast<std::ptrdiff_t>(count));
+    }
+
+    for (auto& task : tasks) {
+        if (task) {
+            task();
+        }
+    }
+}
+
 Window::~Window() {
     // 关键修复：在释放 Skia 资源之前，先激活 OpenGL 上下文
     // Skia 的 GrContext 在释放时需要调用 OpenGL 清理函数
@@ -604,6 +635,12 @@ Window::~Window() {
     on_focus_callback_ = {};
     on_blur_callback_ = {};
     event_listeners_.clear();
+
+    {
+        std::lock_guard<std::mutex> lock(ui_tasks_mutex_);
+        ui_tasks_accepting_ = false;
+        ui_tasks_.clear();
+    }
 
     document_.reset();
 
@@ -1503,6 +1540,9 @@ void Window::SetDocument(std::shared_ptr<Document> document) {
     if (document_ && dom_observer_) {
         document_->RemoveObserver(dom_observer_.get());
     }
+    if (document_) {
+        document_->SetWindowHandle(nullptr);
+    }
 
     document_ = document;
 
@@ -1515,6 +1555,7 @@ void Window::SetDocument(std::shared_ptr<Document> document) {
     if (document_) {
         // 关键：设置 Document 对 Window 的引用，用于 Element::Focus() 等方法
         document_->SetWindow(this);
+        document_->SetWindowHandle(weak_from_this().lock());
 
         dom_observer_ = std::make_unique<WindowDOMObserver>(this);
         document_->AddObserver(dom_observer_.get());

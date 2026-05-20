@@ -5,6 +5,7 @@
 
 #include "html_logview_element.h"
 
+#include "core/window/window.h"
 #include "include/core/SkCanvas.h"
 #include "include/core/SkTypeface.h"
 
@@ -46,6 +47,7 @@ void HTMLLogViewElement::set_max_entries(int value) {
     buffer_ = std::move(new_buffer);
     renderer_->SetBuffer(buffer_.get());
     filter_dirty_ = true;
+    RequestRepaint(RepaintReason::Terminal);
 }
 
 bool HTMLLogViewElement::show_timestamp() const {
@@ -56,6 +58,7 @@ void HTMLLogViewElement::set_show_timestamp(bool value) {
     auto config = renderer_->config();
     config.show_timestamp = value;
     renderer_->SetConfig(config);
+    RequestRepaint(RepaintReason::Terminal);
 }
 
 bool HTMLLogViewElement::show_level() const {
@@ -66,6 +69,7 @@ void HTMLLogViewElement::set_show_level(bool value) {
     auto config = renderer_->config();
     config.show_level = value;
     renderer_->SetConfig(config);
+    RequestRepaint(RepaintReason::Terminal);
 }
 
 bool HTMLLogViewElement::show_source() const {
@@ -76,6 +80,7 @@ void HTMLLogViewElement::set_show_source(bool value) {
     auto config = renderer_->config();
     config.show_source = value;
     renderer_->SetConfig(config);
+    RequestRepaint(RepaintReason::Terminal);
 }
 
 // === 日志操作 ===
@@ -96,6 +101,8 @@ void HTMLLogViewElement::Append(LogLevel level, const std::string& source,
     // 自动滚动
     if (auto_scroll_ && was_at_bottom) {
         ScrollToBottom();
+    } else {
+        RequestRepaint(RepaintReason::Terminal);
     }
 }
 
@@ -106,6 +113,7 @@ void HTMLLogViewElement::Clear() {
     filtered_indices_.clear();
     filter_dirty_ = false;
     renderer_->SetScrollOffset(0);
+    RequestRepaint(RepaintReason::Terminal);
 }
 
 size_t HTMLLogViewElement::GetLogCount() const {
@@ -116,6 +124,7 @@ size_t HTMLLogViewElement::GetLogCount() const {
 
 void HTMLLogViewElement::ScrollTo(int line) {
     renderer_->ScrollTo(line);
+    RequestRepaint(RepaintReason::Terminal);
 }
 
 void HTMLLogViewElement::ScrollToBottom() {
@@ -137,10 +146,12 @@ void HTMLLogViewElement::ScrollToBottom() {
 
     renderer_->SetTotalLines(renderer_->GetDisplayLineCount());
     renderer_->ScrollTo(renderer_->max_scroll_offset());
+    RequestRepaint(RepaintReason::Terminal);
 }
 
 void HTMLLogViewElement::ScrollToTop() {
     renderer_->ScrollTo(0);
+    RequestRepaint(RepaintReason::Terminal);
 }
 
 // === 过滤 ===
@@ -153,17 +164,20 @@ void HTMLLogViewElement::SetLevelFilter(const std::vector<std::string>& levels) 
     }
     filter_->SetLevelMask(mask);
     filter_dirty_ = true;
+    RequestRepaint(RepaintReason::Terminal);
 }
 
 void HTMLLogViewElement::SetSourceFilter(const std::vector<std::string>& sources) {
     filter_->SetSourceFilter(sources);
     filter_dirty_ = true;
+    RequestRepaint(RepaintReason::Terminal);
 }
 
 void HTMLLogViewElement::ClearFilter() {
     filter_->SetLevelMask(0xFF);
     filter_->ClearSourceFilter();
     filter_dirty_ = true;
+    RequestRepaint(RepaintReason::Terminal);
 }
 
 // === 搜索 ===
@@ -197,6 +211,7 @@ int HTMLLogViewElement::Search(const std::string& query, bool use_regex) {
         }
     }
 
+    RequestRepaint(RepaintReason::Terminal);
     return count;
 }
 
@@ -236,6 +251,7 @@ void HTMLLogViewElement::PrevMatch() {
 void HTMLLogViewElement::ClearSearch() {
     search_->Clear();
     renderer_->SetSearch(nullptr);
+    RequestRepaint(RepaintReason::Terminal);
 }
 
 int HTMLLogViewElement::GetMatchCount() const {
@@ -354,6 +370,7 @@ void HTMLLogViewElement::SelectAll() {
     selection_.StartSelection(0, 0);
     selection_.UpdateSelection(total_lines - 1, 9999);  // 用一个大数表示行尾
     selection_.EndSelection();
+    RequestRepaint(RepaintReason::Terminal);
 }
 
 // === 导出 ===
@@ -399,6 +416,7 @@ void HTMLLogViewElement::SetFont(const std::string& family, float size) {
         // 实际应用中应使用 FontManager 来加载字体
     }
     renderer_->SetFont(typeface, size);
+    RequestRepaint(RepaintReason::Terminal);
 }
 
 // === 事件处理 ===
@@ -445,12 +463,14 @@ void HTMLLogViewElement::OnMouseDown(float x, float y, int button,
 
     if (click_count == 1) {
         selection_.StartSelection(line, col);
+        RequestRepaint(RepaintReason::Terminal);
     } else if (click_count == 2) {
         // 双击选词
         size_t log_idx = renderer_->DisplayIndexToLogIndex(line);
         if (log_idx < buffer_->size()) {
             std::string msg(buffer_->GetMessage(log_idx));
             selection_.SelectWord(line, col, msg);
+            RequestRepaint(RepaintReason::Terminal);
         }
     } else if (click_count == 3) {
         // 三击选行
@@ -458,6 +478,7 @@ void HTMLLogViewElement::OnMouseDown(float x, float y, int button,
         if (log_idx < buffer_->size()) {
             int len = static_cast<int>(buffer_->GetMessage(log_idx).length());
             selection_.SelectLine(line, len);
+            RequestRepaint(RepaintReason::Terminal);
         }
     }
 }
@@ -483,6 +504,7 @@ void HTMLLogViewElement::OnMouseMove(float x, float y) {
             if (new_offset != last_drag_horizontal_offset_) {
                 renderer_->SetHorizontalScrollOffset(new_offset);
                 last_drag_horizontal_offset_ = renderer_->horizontal_scroll_offset();
+                RequestRepaint(RepaintReason::Terminal);
             }
         }
         return;
@@ -491,6 +513,7 @@ void HTMLLogViewElement::OnMouseMove(float x, float y) {
     if (selection_.IsSelecting()) {
         auto [line, col] = ScreenToLineCol(x, y);
         selection_.UpdateSelection(line, col);
+        RequestRepaint(RepaintReason::Terminal);
     }
 }
 
@@ -501,9 +524,11 @@ void HTMLLogViewElement::OnMouseUp(float x, float y, int button) {
     if (is_dragging_horizontal_scrollbar_) {
         is_dragging_horizontal_scrollbar_ = false;
         last_drag_horizontal_offset_ = -1;
+        RequestRepaint(RepaintReason::Terminal);
         return;
     }
     selection_.EndSelection();
+    RequestRepaint(RepaintReason::Terminal);
 }
 
 void HTMLLogViewElement::OnWheel(float delta_y, bool horizontal) {
@@ -513,6 +538,7 @@ void HTMLLogViewElement::OnWheel(float delta_y, bool horizontal) {
     } else {
         renderer_->ScrollBy(delta);
     }
+    RequestRepaint(RepaintReason::Terminal);
 }
 
 void HTMLLogViewElement::OnKeyDown(const std::string& key, bool ctrl, bool shift) {
@@ -550,8 +576,10 @@ void HTMLLogViewElement::OnKeyDown(const std::string& key, bool ctrl, bool shift
     // Page Up / Page Down
     if (key == "PageUp") {
         renderer_->ScrollBy(-renderer_->visible_lines());
+        RequestRepaint(RepaintReason::Terminal);
     } else if (key == "PageDown") {
         renderer_->ScrollBy(renderer_->visible_lines());
+        RequestRepaint(RepaintReason::Terminal);
     }
 }
 
