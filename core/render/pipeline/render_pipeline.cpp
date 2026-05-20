@@ -83,6 +83,26 @@ namespace {
         return tag_name == "terminal" || tag_name == "logview";
     }
 
+    float DirtyOutsetForRenderObject(const RenderObject* obj) {
+        constexpr float kTightOutset = 4.0f;
+        constexpr float kConservativeOutset = 50.0f;
+        if (!obj) {
+            return kConservativeOutset;
+        }
+        if (IsTightNativeTextElement(obj)) {
+            return kTightOutset;
+        }
+
+        const auto& style = obj->GetComputedStyle();
+        const bool has_visual_overflow =
+            !style.box_shadow.empty() ||
+            !style.text_shadow.empty() ||
+            style.filter.has_value() ||
+            style.backdrop_filter.has_value() ||
+            (style.outline_style != "none" && !style.outline_width.IsZero());
+        return has_visual_overflow ? kConservativeOutset : kTightOutset;
+    }
+
     int RetainedPresentBlockingScrollFallbacks(const ScrollInvalidationStats& stats) {
         return static_cast<int>(
             IncrementalEligibleScrollFallbacks(stats) + ConservativeScrollFallbacks(stats));
@@ -1053,7 +1073,7 @@ void RenderPipeline::CollectDirtyRectsForLayer(RenderObject* obj, CompositorLaye
         }
 
         // 扩展边界以包含阴影、outline 等
-        const float dirty_outset = IsTightNativeTextElement(obj) ? 4.0f : 50.0f;
+        const float dirty_outset = DirtyOutsetForRenderObject(obj);
         bounds.outset(dirty_outset, dirty_outset);
 
         if (layer->GetPromotionReason() == LayerPromotionReason::RootLayer &&

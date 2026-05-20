@@ -277,19 +277,37 @@ void AddRetainedDirtyRectForRenderObject(Window* window, RenderObject* render_ob
         return;
     }
 
-    auto add_bounds = [window, render_obj](SkRect bounds) {
-        if (bounds.isEmpty()) {
-            return;
+    auto dirty_outset_for = [](const RenderObject* object) {
+        constexpr float kTightOutset = 4.0f;
+        constexpr float kConservativeOutset = 50.0f;
+        if (!object) {
+            return kConservativeOutset;
         }
-        const auto node = render_obj->GetNode();
-        float outset = 50.0f;
+
+        const auto node = object->GetNode();
         if (node && node->GetNodeType() == NodeType::ELEMENT_NODE) {
             auto element = std::dynamic_pointer_cast<Element>(node);
             const std::string tag_name = element ? element->GetTagName() : "";
             if (tag_name == "terminal" || tag_name == "logview") {
-                outset = 4.0f;
+                return kTightOutset;
             }
         }
+
+        const auto& style = object->GetComputedStyle();
+        const bool has_visual_overflow =
+            !style.box_shadow.empty() ||
+            !style.text_shadow.empty() ||
+            style.filter.has_value() ||
+            style.backdrop_filter.has_value() ||
+            (style.outline_style != "none" && !style.outline_width.IsZero());
+        return has_visual_overflow ? kConservativeOutset : kTightOutset;
+    };
+
+    auto add_bounds = [window, render_obj, dirty_outset_for](SkRect bounds) {
+        if (bounds.isEmpty()) {
+            return;
+        }
+        const float outset = dirty_outset_for(render_obj);
         bounds.outset(outset, outset);
         window->AddDirtyRect(bounds);
     };
@@ -1908,7 +1926,11 @@ void Window::Render() {
             layout_sync_valid_ = true;
         }
         if ((needs_layout_update || needs_dom_raster_update) && render_pipeline_) {
-            render_pipeline_->ForceRasterize();
+            if (had_structural_dom_changes) {
+                render_pipeline_->ForceRasterize();
+            } else {
+                render_pipeline_->MarkNeedsPaint();
+            }
         }
 
         // 注意：不再在每次布局更新时触发完整层树重建
@@ -1986,8 +2008,7 @@ void Window::Render() {
             retained_dirty_reason_allowed &&
             (!had_pending_dom_changes || !had_structural_dom_changes) &&
             !render_tree_rebuild_required &&
-            !dirty_union_too_broad &&
-            !needs_layout_update;
+            !dirty_union_too_broad;
         SkRect dirty_bounds_px = dirty_bounds;
         dirty_bounds_px.fLeft *= dpi_scale;
         dirty_bounds_px.fTop *= dpi_scale;
@@ -2087,7 +2108,6 @@ void Window::Render() {
             retained_dirty_reason_allowed &&
             (!had_pending_dom_changes || !had_structural_dom_changes) &&
             !render_tree_rebuild_required &&
-            !needs_layout_update &&
             render_pipeline_ &&
             render_pipeline_->NeedsUpdate();
 
