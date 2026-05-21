@@ -264,6 +264,10 @@ private:
     float view_y_ = 0;
     float view_width_ = 0;
     float view_height_ = 0;
+    bool is_dragging_scrollbar_ = false;
+    float drag_start_y_ = 0.0f;
+    int drag_start_offset_ = 0;
+    int last_drag_scroll_offset_ = -1;
     bool is_dragging_horizontal_scrollbar_ = false;
     float drag_start_x_ = 0.0f;
     int drag_start_horizontal_offset_ = 0;

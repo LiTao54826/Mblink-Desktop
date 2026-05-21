@@ -106,6 +106,7 @@ Do not replace these with browser or npm widgets such as xterm.js-style terminal
 - Prefer normal block, flex, grid, inline, positioning, transforms, clipping, and stacking behavior that has been validated by snapshot and visual checks.
 - Avoid browser-specific layout assumptions and advanced CSS features unless verified in MBink: container queries, complex filters/backdrop filters, advanced animations, sticky edge cases, custom scrollbars, complex writing modes, and print/media-query workflows.
 - Keep UI dimensions explicit enough for snapshot inspection. Use stable IDs on important controls so `query_element`, `inspect`, `click`, and `input_text` can target them reliably.
+- Treat text overflow as a layout defect in compact controls: buttons, tabs, badges, and similar elements must keep labels inside their bounds, and any longer copy must have an explicit wrap, truncate, or resize strategy before approval.
 - For frameless desktop templates, treat CSS window-control and drag-region properties as host-specific integration points and verify them in a host runtime, not just `tool`.
 
 ## Host Runtime Boundaries

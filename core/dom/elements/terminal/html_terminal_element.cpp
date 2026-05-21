@@ -21,6 +21,10 @@ namespace mbink {
 
 namespace {
 constexpr int64_t kStreamingRepaintIntervalMs = 120;
+constexpr float kScrollbarThickness = 8.0f;
+constexpr float kScrollbarGap = 2.0f;
+constexpr float kScrollbarPadding = 4.0f;
+constexpr float kScrollbarMinThumbSize = 20.0f;
 }
 
 HTMLTerminalElement::HTMLTerminalElement()
@@ -156,7 +160,7 @@ void HTMLTerminalElement::ScrollToBottom() {
         renderer_->UpdateMetrics(content_height);
     }
 
-    renderer_->SetTotalLines(buffer_->total_lines());
+    renderer_->SetTotalLines(buffer_->display_line_count());
     renderer_->ScrollTo(renderer_->max_scroll_offset());
 }
 
@@ -175,7 +179,7 @@ bool HTMLTerminalElement::IsAtBottom() {
         renderer_->UpdateMetrics(content_height);
     }
 
-    renderer_->SetTotalLines(buffer_->total_lines());
+    renderer_->SetTotalLines(buffer_->display_line_count());
     return renderer_->scroll_offset() >= renderer_->max_scroll_offset();
 }
 
@@ -497,19 +501,26 @@ void HTMLTerminalElement::HandleMouseDown(float x, float y, int button, int clic
         return;
     }
 
-    if (renderer_ && renderer_->max_horizontal_scroll_offset() > 0) {
-        const float scrollbar_height = 8.0f;
-        const float scrollbar_gap = 2.0f;
+    if (renderer_ && renderer_->has_horizontal_scrollbar()) {
         const float content_padding = 4.0f;
-        float content_height = last_bounds_.height() - (scrollbar_height + scrollbar_gap);
-        float track_x = last_bounds_.left() + content_padding;
-        float track_y = last_bounds_.top() + content_height + scrollbar_gap;
-        float track_width = last_bounds_.width() - 2 * content_padding;
-        if (track_width > 0 && y >= track_y && y <= track_y + scrollbar_height) {
+        bool has_vertical_scrollbar = renderer_->has_vertical_scrollbar();
+        float content_height =
+            last_bounds_.height() - (kScrollbarThickness + kScrollbarGap);
+        float track_x = content_padding;
+        float track_y = content_height + kScrollbarGap;
+        float track_width = last_bounds_.width() -
+                            (has_vertical_scrollbar
+                                 ? kScrollbarThickness + kScrollbarGap
+                                 : 0.0f) -
+                            2 * content_padding;
+        if (track_width > 0 && y >= track_y &&
+            y <= track_y + kScrollbarThickness) {
             float cell_width = renderer_->cell_width() > 1.0f ? renderer_->cell_width() : 1.0f;
             float visible_columns = track_width / cell_width;
             if (visible_columns < 1.0f) visible_columns = 1.0f;
-            float total_columns = static_cast<float>(buffer_ ? buffer_->cols() : 0);
+            float total_columns =
+                static_cast<float>(renderer_->max_horizontal_scroll_offset()) +
+                visible_columns;
             if (total_columns < visible_columns) total_columns = visible_columns;
             float thumb_width = track_width * (visible_columns / total_columns);
             if (thumb_width < 20.0f) thumb_width = 20.0f;
@@ -531,15 +542,17 @@ void HTMLTerminalElement::HandleMouseDown(float x, float y, int button, int clic
         }
     }
 
-    if (renderer_ && renderer_->total_lines() > renderer_->visible_lines()) {
-        const float scrollbar_width = 8.0f;
-        const float scrollbar_gap = 2.0f;
-        float scrollbar_x = last_bounds_.right() - scrollbar_width;
-        if (renderer_->max_horizontal_scroll_offset() > 0) {
-            scrollbar_x -= scrollbar_gap;
-        }
-
-        if (x >= scrollbar_x && x <= scrollbar_x + scrollbar_width) {
+    if (renderer_ && renderer_->has_vertical_scrollbar()) {
+        bool has_horizontal_scrollbar = renderer_->has_horizontal_scrollbar();
+        float scrollbar_x = last_bounds_.width() - kScrollbarThickness;
+        float track_height = last_bounds_.height() -
+                             (has_horizontal_scrollbar
+                                  ? kScrollbarThickness + kScrollbarGap
+                                  : 0.0f) -
+                             2 * kScrollbarPadding;
+        if (x >= scrollbar_x && x <= scrollbar_x + kScrollbarThickness &&
+            y >= kScrollbarPadding &&
+            y <= kScrollbarPadding + track_height) {
             is_dragging_scrollbar_ = true;
             drag_start_y_ = y;
             drag_start_offset_ = renderer_->scroll_offset();
@@ -574,11 +587,18 @@ void HTMLTerminalElement::HandleMouseDown(float x, float y, int button, int clic
 void HTMLTerminalElement::HandleMouseMove(float x, float y) {
     if (is_dragging_horizontal_scrollbar_ && renderer_) {
         const float content_padding = 4.0f;
-        float track_width = last_bounds_.width() - 2 * content_padding;
+        bool has_vertical_scrollbar = renderer_->has_vertical_scrollbar();
+        float track_width = last_bounds_.width() -
+                            (has_vertical_scrollbar
+                                 ? kScrollbarThickness + kScrollbarGap
+                                 : 0.0f) -
+                            2 * content_padding;
         float cell_width = renderer_->cell_width() > 1.0f ? renderer_->cell_width() : 1.0f;
         float visible_columns = track_width / cell_width;
         if (visible_columns < 1.0f) visible_columns = 1.0f;
-        float total_columns = static_cast<float>(buffer_ ? buffer_->cols() : 0);
+        float total_columns =
+            static_cast<float>(renderer_->max_horizontal_scroll_offset()) +
+            visible_columns;
         if (total_columns < visible_columns) total_columns = visible_columns;
         float thumb_width = track_width * (visible_columns / total_columns);
         if (thumb_width < 20.0f) thumb_width = 20.0f;
@@ -599,17 +619,20 @@ void HTMLTerminalElement::HandleMouseMove(float x, float y) {
     }
 
     if (is_dragging_scrollbar_ && renderer_) {
-        float padding = 4.0f;
-        float track_height = last_bounds_.height() - 2 * padding;
-        if (renderer_->max_horizontal_scroll_offset() > 0) {
-            track_height -= 10.0f;
-        }
+        bool has_horizontal_scrollbar = renderer_->has_horizontal_scrollbar();
+        float track_height = last_bounds_.height() -
+                             (has_horizontal_scrollbar
+                                  ? kScrollbarThickness + kScrollbarGap
+                                  : 0.0f) -
+                             2 * kScrollbarPadding;
 
         // 计算滑块高度
-        float content_ratio = static_cast<float>(renderer_->visible_lines()) / renderer_->total_lines();
+        float content_ratio =
+            static_cast<float>(renderer_->visible_lines()) /
+            (std::max)(1, renderer_->total_lines());
         float thumb_height = track_height * content_ratio;
-        const float min_thumb_height = 20.0f;
-        if (thumb_height < min_thumb_height) thumb_height = min_thumb_height;
+        thumb_height =
+            std::clamp(thumb_height, kScrollbarMinThumbSize, track_height);
 
         // 计算可用轨道高度
         float available_track = track_height - thumb_height;

@@ -1015,6 +1015,19 @@ bool RequestRuntimeReloadBundle(const DaemonState& state,
                                  error);
 }
 
+void WriteRuntimeLifecycleUnlocked(const DaemonState& state,
+                                   const std::string& status,
+                                   const std::string& reason) {
+    if (state.runtime_epoch.empty()) return;
+    WriteJsonFile(GetRuntimeLifecyclePath(state),
+                  nlohmann::json{{"ok", true},
+                                 {"status", status},
+                                 {"reason", reason},
+                                 {"runtime_epoch", state.runtime_epoch},
+                                 {"pid", state.runtime_pid},
+                                 {"timestamp", CurrentTimestampIso8601()}});
+}
+
 bool RequestRuntimeUiCommand(const DaemonState& state,
                              int runtime_pid,
                              nlohmann::json command,
@@ -1067,6 +1080,7 @@ nlohmann::json ReloadRuntimeBundleOrRestart(const std::filesystem::path& root, D
             if (!next_epoch.empty()) state->runtime_epoch = next_epoch;
             state->runtime_status = "running";
             state->runtime_stop_reason = "running";
+            WriteRuntimeLifecycleUnlocked(*state, state->runtime_status, state->runtime_stop_reason);
             return nlohmann::json{{"ok", true},
                                   {"mode", "reload_bundle"},
                                   {"fallback", false},

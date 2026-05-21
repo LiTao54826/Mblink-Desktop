@@ -187,6 +187,12 @@ private:
     void PaintRenderObjectRecursive(SkCanvas* canvas, RenderObject* obj, const SkIRect* clip_rect);
 
     /**
+     * @brief Record paint bounds for a render object and all descendants after a successful paint.
+     * @param obj Root render object of the painted subtree
+     */
+    void UpdatePreviousPaintBoundsForSubtree(RenderObject* obj);
+
+    /**
      * @brief 应用非根层的 canvas 偏移补偿
      *
      * 统一处理非根层的 layout 位置抵消、fixed 元素 transform 偏移、

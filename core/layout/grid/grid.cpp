@@ -494,15 +494,9 @@ LayoutOutput ComputeGridLayout(
     auto [row_auto_rep, row_count] = ComputeExplicitGridSizeInAxis(grid_style, inner_node_size.height, AbsoluteAxis::Vertical);
 
     // 3. Calculate required rows for auto-placement
-    // Count only element children (skip text nodes)
+    // Direct text runs in a grid container participate as anonymous grid items.
     size_t total_child_count = tree.ChildCount(node);
-    size_t grid_item_count = 0;
-    for (size_t i = 0; i < total_child_count; i++) {
-        NodeId child_id = tree.GetChildId(node, i);
-        if (!tree.IsTextNode(child_id)) {
-            grid_item_count++;
-        }
-    }
+    size_t grid_item_count = total_child_count;
 
     size_t num_cols = col_count > 0 ? col_count : 1;
     size_t num_rows = row_count > 0 ? row_count : 1;
@@ -717,11 +711,6 @@ LayoutOutput ComputeGridLayout(
 
     for (size_t i = 0; i < total_child_count; i++) {
         NodeId child_id = tree.GetChildId(node, i);
-
-        // Skip text nodes - they don't participate in grid layout
-        if (tree.IsTextNode(child_id)) {
-            continue;
-        }
 
         // Get Grid-specific item style for placement properties (grid-row-start/end, grid-column-start/end)
         const auto& grid_item_style = tree.GetGridItemStyle(child_id);

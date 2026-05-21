@@ -53,6 +53,7 @@ void TerminalBuffer::PutCell(const Cell& cell) {
     if (cursor_col_ >= cols_) {
         NewLine();
     }
+    MarkContentMetricsDirty();
 }
 
 void TerminalBuffer::NewLine() {
@@ -67,10 +68,12 @@ void TerminalBuffer::NewLine() {
     
     int buffer_row = GetBufferRow(cursor_row_);
     EnsureLine(buffer_row);
+    MarkContentMetricsDirty();
 }
 
 void TerminalBuffer::CarriageReturn() {
     cursor_col_ = 0;
+    MarkContentMetricsDirty();
 }
 
 void TerminalBuffer::Clear(ClearMode mode) {
@@ -91,6 +94,7 @@ void TerminalBuffer::Clear(ClearMode mode) {
                     std::fill(l.begin(), l.end(), kDefaultCell);
                 }
             }
+            MarkContentMetricsDirty();
             break;
         }
         
@@ -109,6 +113,7 @@ void TerminalBuffer::Clear(ClearMode mode) {
             for (int c = 0; c <= cursor_col_ && c < static_cast<int>(line.size()); ++c) {
                 line[c] = kDefaultCell;
             }
+            MarkContentMetricsDirty();
             break;
         }
         
@@ -122,6 +127,7 @@ void TerminalBuffer::Clear(ClearMode mode) {
             }
             cursor_row_ = 0;
             cursor_col_ = 0;
+            MarkContentMetricsDirty();
             break;
         }
     }
@@ -131,12 +137,14 @@ void TerminalBuffer::SetCursor(int row, int col) {
     cursor_row_ = row;
     cursor_col_ = col;
     ClampCursor();
+    MarkContentMetricsDirty();
 }
 
 void TerminalBuffer::MoveCursor(int delta_row, int delta_col) {
     cursor_row_ += delta_row;
     cursor_col_ += delta_col;
     ClampCursor();
+    MarkContentMetricsDirty();
 }
 
 const Cell& TerminalBuffer::GetCell(int row, int col) const {
@@ -150,6 +158,44 @@ const Cell& TerminalBuffer::GetCell(int row, int col) const {
     }
     
     return line[col];
+}
+
+int TerminalBuffer::display_line_count() const {
+    RecomputeContentMetrics();
+    return cached_display_line_count_;
+}
+
+int TerminalBuffer::max_content_columns() const {
+    RecomputeContentMetrics();
+    return cached_max_content_columns_;
+}
+
+void TerminalBuffer::RecomputeContentMetrics() const {
+    if (!content_metrics_dirty_) {
+        return;
+    }
+
+    const int total = total_lines();
+    int last_display_row =
+        total > 0 ? std::clamp(cursor_buffer_row(), 0, total - 1) : 0;
+    int max_column = std::max(1, cursor_col_ + 1);
+
+    for (int row = 0; row < total; ++row) {
+        const auto& line = lines_[row];
+        for (int col = static_cast<int>(line.size()) - 1; col >= 0; --col) {
+            const Cell& cell = line[col];
+            if (cell.codepoint != ' ' && cell.codepoint != 0) {
+                last_display_row = std::max(last_display_row, row);
+                int cell_width = std::max(1, static_cast<int>(cell.width));
+                max_column = std::max(max_column, col + cell_width);
+                break;
+            }
+        }
+    }
+
+    cached_display_line_count_ = std::max(1, last_display_row + 1);
+    cached_max_content_columns_ = std::max(1, max_column);
+    content_metrics_dirty_ = false;
 }
 
 std::string TerminalBuffer::Serialize() const {
@@ -250,8 +296,13 @@ std::string TerminalBuffer::GetLineText(int row) const {
 }
 
 void TerminalBuffer::EnsureLine(int row) {
+    bool added_line = false;
     while (total_lines() <= row) {
         lines_.Emplace(cols_, kDefaultCell);
+        added_line = true;
+    }
+    if (added_line) {
+        MarkContentMetricsDirty();
     }
 }
 
@@ -265,11 +316,17 @@ void TerminalBuffer::ScrollUp() {
     lines_.Emplace(cols_, kDefaultCell);
     // 更新滚动顶部位置
     scroll_top_++;
+    MarkContentMetricsDirty();
 }
 
 void TerminalBuffer::ClampCursor() {
     cursor_row_ = std::max(0, std::min(cursor_row_, visible_rows_ - 1));
     cursor_col_ = std::max(0, std::min(cursor_col_, cols_ - 1));
+}
+
+void TerminalBuffer::set_visible_rows(int rows) {
+    visible_rows_ = rows;
+    MarkContentMetricsDirty();
 }
 
 int TerminalBuffer::GetBufferRow(int screen_row) const {

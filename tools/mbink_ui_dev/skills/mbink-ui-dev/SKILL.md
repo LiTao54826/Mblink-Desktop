@@ -45,12 +45,22 @@ Use `mbink-ui-dev` as the primary control surface for MBink UI development. Trea
 - After the UI validation gate passes, implement the narrow host API surface behind `ui/bridge.js`, then validate the real Python, Rust, or Go host runtime and finish with `mbink-ui-dev build`.
 - Keep mock and host API names aligned so the same UI test path can run before and after host integration.
 
+## Prefer Async Host Calls
+
+- Treat JavaScript-to-host calls as asynchronous by default. UI code should call host behavior through `hostApi` methods that return promises and are safe to `await`.
+- Use Python `@app.bind_async`, Rust `App::bind_async`, or Go `App.BindAsync` for host work that might block, including filesystem access, network calls, process execution, sleeps, database work, native control bulk updates, CPU-heavy processing, or any operation with user-visible latency.
+- Use synchronous `bind` only for tiny, deterministic operations that return immediately and cannot block the UI, such as simple in-memory reads, validation of already-loaded data, or trivial window state helpers.
+- Keep the async boundary behind `ui/bridge.js`: visual components should call `hostApi.someAction(payload)` and handle loading, success, empty, and error states instead of calling `globalThis.backend` directly.
+- In the `tool` runtime, keep mocks promise-compatible even when they return immediately, so the same UI path works unchanged after wiring the real Python, Rust, or Go host runtime.
+- If an existing host call starts doing heavier work, upgrade it from sync binding to async binding before adding UI around it.
+
 ## Develop Incrementally
 
 - Add UI in small verified slices instead of writing the whole screen or a large component in one pass.
 - Build one component, state branch, or interaction path at a time, then run the relevant `build`, reload or reopen, `snapshot`, `query_element`, `inspect`, interaction, `logs`, and `errors` checks before adding the next slice.
 - For each UI slice, follow this verification order: write code, build and reload, capture a live `snapshot`, confirm the rendered structure and key rects are correct, capture a screenshot when screenshot output is available, compare the visual result against the intended CSS, then test interaction behavior if that slice has any interactions.
 - During the visual check, verify layout fit, text size, text alignment, colors, element positions, element sizes, spacing, and state colors against the CSS intent. Do not continue to the next slice while the snapshot structure or screenshot appearance contradicts the expected CSS result.
+- Treat text overflow as a validation failure in compact controls: buttons, tabs, badges, and similar elements must keep their labels inside their bounds, and any longer copy must have an explicit wrap, truncate, or resize strategy before approval.
 - When a visual issue clearly contradicts valid CSS or expected MBink behavior, diagnose and fix the MBink framework first instead of hiding the problem with project-specific CSS workarounds. Temporary UI-side workarounds are acceptable only to isolate the failure, and should be removed after the framework fix lands.
 - When a slice introduces a framework compatibility issue, blank UI, selector failure, layout regression, or JS error, stop at that slice and fix it before continuing.
 - Introduce risky syntax, browser APIs, CSS features, native elements, third-party dependencies, or host bridge calls in the smallest isolated component that can prove compatibility.

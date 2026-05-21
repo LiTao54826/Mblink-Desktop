@@ -72,14 +72,14 @@ void TerminalRenderer::Render(SkCanvas* canvas, const SkRect& bounds) {
         return;
     }
 
-    SetTotalLines(buffer_->total_lines());
+    SetTotalLines(buffer_->display_line_count());
 
     const float scrollbar_thickness = 8.0f;
     const float scrollbar_gap = 2.0f;
 
     float inner_width = std::max(0.0f, bounds.width() - 2 * padding_);
     float inner_height = std::max(0.0f, bounds.height() - 2 * padding_);
-    float content_width = buffer_->cols() * cell_width_;
+    float content_width = buffer_->max_content_columns() * cell_width_;
 
     bool need_vertical_scrollbar = false;
     bool need_horizontal_scrollbar = false;
@@ -122,6 +122,8 @@ void TerminalRenderer::Render(SkCanvas* canvas, const SkRect& bounds) {
     if (need_horizontal_scrollbar) {
         content_bounds.fBottom -= scrollbar_thickness + scrollbar_gap;
     }
+    has_vertical_scrollbar_ = need_vertical_scrollbar;
+    has_horizontal_scrollbar_ = need_horizontal_scrollbar;
 
     UpdateMetrics(content_bounds.height());
     float viewport_width = std::max(0.0f, content_bounds.width() - 2 * padding_);
@@ -142,8 +144,8 @@ void TerminalRenderer::Render(SkCanvas* canvas, const SkRect& bounds) {
 
     int start_line = scroll_offset_;
     int end_line = scroll_offset_ + visible_lines_ + 1;
-    if (end_line > buffer_->total_lines()) {
-        end_line = buffer_->total_lines();
+    if (end_line > total_lines_) {
+        end_line = total_lines_;
     }
 
     for (int row = start_line; row < end_line; ++row) {
@@ -429,9 +431,10 @@ void TerminalRenderer::RenderHorizontalScrollbar(SkCanvas* canvas,
         SkRect::MakeXYWH(track_x, track_y, track_width, scrollbar_height);
     canvas->drawRoundRect(track_rect, 4.0f, 4.0f, track_paint);
 
-    float total_columns = static_cast<float>(buffer_ ? buffer_->cols() : 0);
     float visible_columns =
         std::max(1.0f, track_width / std::max(cell_width_, 1.0f));
+    float total_columns = static_cast<float>(max_horizontal_scroll_offset()) +
+                          visible_columns;
     total_columns = std::max(total_columns, visible_columns);
     float thumb_width = track_width * (visible_columns / total_columns);
     thumb_width = std::max(thumb_width, min_thumb_width);

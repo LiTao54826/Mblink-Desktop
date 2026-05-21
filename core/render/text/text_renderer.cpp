@@ -583,7 +583,6 @@ std::vector<std::string> TextRenderer::WrapText(const std::string& text, float m
         return lines;
     }
 
-    // 按换行符分割
     std::istringstream iss(text);
     std::string paragraph;
 
@@ -593,63 +592,135 @@ std::vector<std::string> TextRenderer::WrapText(const std::string& text, float m
             continue;
         }
 
-        // 测量整段文本 - 使用支持混合字体的测量方法
         float paragraph_width = MeasureTextWidthWithEmoji(paragraph, font);
-
         if (paragraph_width <= max_width) {
-            // 整段文本可以放在一行
             lines.push_back(paragraph);
             continue;
         }
 
-        // 需要换行 - 逐字符处理以支持中文
-        std::string current_line;
-        float current_width = 0.0f;
-        const char* str = paragraph.c_str();
-        size_t len = paragraph.size();
-        size_t pos = 0;
+        std::vector<std::string> tokens;
+        const char* paragraph_str = paragraph.c_str();
+        size_t paragraph_len = paragraph.size();
+        size_t paragraph_pos = 0;
 
-        while (pos < len) {
-            // 解码UTF-8字符
-            auto [codepoint, bytes] = DecodeUTF8Char(str + pos, len - pos);
+        while (paragraph_pos < paragraph_len) {
+            auto [codepoint, bytes] = DecodeUTF8Char(paragraph_str + paragraph_pos,
+                                                     paragraph_len - paragraph_pos);
             if (bytes == 0) break;
 
-            std::string char_str(str + pos, bytes);
-            // 使用支持混合字体的测量方法
-            float char_width = MeasureTextWidthWithEmoji(char_str, font);
-
-            // 检查是否是空格（用于单词边界）
+            std::string char_str(paragraph_str + paragraph_pos, bytes);
             bool is_space = (codepoint == ' ' || codepoint == '\t');
+            bool is_cjk = FontManager::IsCJK(codepoint);
 
-            // 检查添加这个字符后是否会超出宽度
-            if (current_width + char_width > max_width && !current_line.empty()) {
-                // 当前行已满，保存并开始新行
-                // 如果当前字符是空格，跳过它（不要在新行开头放空格）
-                if (!is_space) {
+            if (is_space || is_cjk) {
+                tokens.push_back(char_str);
+                paragraph_pos += bytes;
+                continue;
+            }
+
+            std::string token = char_str;
+            paragraph_pos += bytes;
+            while (paragraph_pos < paragraph_len) {
+                auto [next_codepoint, next_bytes] = DecodeUTF8Char(paragraph_str + paragraph_pos,
+                                                                    paragraph_len - paragraph_pos);
+                if (next_bytes == 0) break;
+
+                bool next_is_space = (next_codepoint == ' ' || next_codepoint == '\t');
+                bool next_is_cjk = FontManager::IsCJK(next_codepoint);
+                if (next_is_space || next_is_cjk) break;
+
+                token.append(paragraph_str + paragraph_pos, next_bytes);
+                paragraph_pos += next_bytes;
+            }
+            tokens.push_back(token);
+        }
+
+        std::string current_line;
+        float current_width = 0.0f;
+
+        auto append_long_token_by_character = [&](const std::string& token) {
+            const char* token_str = token.c_str();
+            size_t token_len = token.size();
+            size_t token_pos = 0;
+
+            while (token_pos < token_len) {
+                auto [codepoint, bytes] = DecodeUTF8Char(token_str + token_pos,
+                                                         token_len - token_pos);
+                if (bytes == 0) break;
+
+                std::string char_str(token_str + token_pos, bytes);
+                float char_width = MeasureTextWidthWithEmoji(char_str, font);
+
+                if (!current_line.empty() && current_width + char_width > max_width) {
                     lines.push_back(current_line);
                     current_line = char_str;
                     current_width = char_width;
                 } else {
-                    lines.push_back(current_line);
-                    current_line.clear();
-                    current_width = 0.0f;
+                    current_line += char_str;
+                    current_width += char_width;
                 }
-            } else {
-                current_line += char_str;
-                current_width += char_width;
+
+                token_pos += bytes;
+            }
+        };
+
+        for (const auto& token : tokens) {
+            if (token.empty()) continue;
+
+            bool is_space_token = (token == " " || token == "\t");
+            if (is_space_token && current_line.empty()) {
+                continue;
             }
 
-            pos += bytes;
+            float token_width = MeasureTextWidthWithEmoji(token, font);
+            if (current_line.empty()) {
+                if (token_width <= max_width) {
+                    current_line = token;
+                    current_width = token_width;
+                } else {
+                    append_long_token_by_character(token);
+                }
+                continue;
+            }
+
+            if (current_width + token_width <= max_width) {
+                current_line += token;
+                current_width += token_width;
+                continue;
+            }
+
+            while (!current_line.empty() &&
+                   (current_line.back() == ' ' || current_line.back() == '\t')) {
+                current_line.pop_back();
+            }
+            lines.push_back(current_line);
+            current_line.clear();
+            current_width = 0.0f;
+
+            if (is_space_token) {
+                continue;
+            }
+
+            if (token_width <= max_width) {
+                current_line = token;
+                current_width = token_width;
+                continue;
+            }
+
+            append_long_token_by_character(token);
         }
 
         if (!current_line.empty()) {
+            while (!current_line.empty() &&
+                   (current_line.back() == ' ' || current_line.back() == '\t')) {
+                current_line.pop_back();
+            }
             lines.push_back(current_line);
         }
     }
 
     return lines;
 }
-
 float TextRenderer::MeasureMinContentWidth(const std::string& text, const SkFont& font) {
     if (text.empty()) {
         return 0.0f;

@@ -1447,9 +1447,12 @@ public:
 
     // Get wrapped lines (populated after layout with width constraint)
     const std::vector<std::string>& GetWrappedLines() const { return wrapped_lines_; }
+    const std::vector<float>& GetWrappedLineXOffsets() const { return wrapped_line_x_offsets_; }
 
     // Set wrapped lines (called by measure function)
     void SetWrappedLines(const std::vector<std::string>& lines);
+    void SetWrappedLinesWithAlignedOffsets(const std::vector<std::string>& lines,
+                                           float line_box_width);
 
     // Set wrapped lines with per-line x offsets (from IFC line fragments)
     void SetWrappedLinesWithOffsets(const std::vector<std::string>& lines,

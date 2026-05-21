@@ -2558,8 +2558,11 @@ LayoutOutput NativeLayoutEngine::ComputeNodeLayout(NodeId node_id, const LayoutI
     // 仅返回缓存的 LayoutOutput 会丢失这些 side effects，导致“高度是两行但绘制仍单行”等时序问题。
     // 因此在 PerformLayout + IFC 路径下禁用该层缓存读取。
 
+    const bool is_text_node = node->render_obj &&
+                              node->render_obj->GetType() == RenderObjectType::TEXT;
     bool disable_cache_read = (inputs.run_mode == RunMode::PerformLayout) &&
-                              (node->is_ifc_container || node->is_anonymous_block);
+                              (node->is_ifc_container || node->is_anonymous_block ||
+                               is_text_node);
 
     if (!disable_cache_read) {
         auto cached = node->cache.Get(
@@ -4376,7 +4379,7 @@ LayoutOutput NativeLayoutEngine::MeasureLeafNode(NodeId node_id, const LayoutInp
             text_obj->SetActualTextWidth(max_word_width);
         } else if (should_wrap && available_width > 0) {
             std::vector<std::string> lines = text_renderer.WrapText(text, available_width, font);
-            text_obj->SetWrappedLines(lines);
+            text_obj->SetWrappedLinesWithAlignedOffsets(lines, available_width);
 
             float max_line_width = 0.0f;
             for (const auto& line : lines) {

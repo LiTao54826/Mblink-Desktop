@@ -76,6 +76,50 @@ bool ContainsElement(const std::shared_ptr<Element>& ancestor, const std::shared
     return false;
 }
 
+bool IsDisabledFormControlElement(const std::shared_ptr<Element>& element) {
+    if (!element || !element->HasAttribute("disabled")) {
+        return false;
+    }
+
+    const std::string tag_name = element->GetTagName();
+    return tag_name == "button" ||
+           tag_name == "input" ||
+           tag_name == "select" ||
+           tag_name == "textarea" ||
+           tag_name == "option" ||
+           tag_name == "optgroup" ||
+           tag_name == "fieldset";
+}
+
+std::shared_ptr<Element> ResolveHoverTargetForDisabledFormControl(const std::shared_ptr<Element>& element) {
+    if (!element) {
+        return nullptr;
+    }
+
+    std::shared_ptr<Node> current = element;
+    while (current) {
+        if (current->GetNodeType() == NodeType::ELEMENT_NODE) {
+            auto current_element = std::static_pointer_cast<Element>(current);
+            if (IsDisabledFormControlElement(current_element)) {
+                current = current->GetParentNode();
+                while (current) {
+                    if (current->GetNodeType() == NodeType::ELEMENT_NODE) {
+                        auto hover_element = std::static_pointer_cast<Element>(current);
+                        if (!IsDisabledFormControlElement(hover_element)) {
+                            return hover_element;
+                        }
+                    }
+                    current = current->GetParentNode();
+                }
+                return nullptr;
+            }
+        }
+        current = current->GetParentNode();
+    }
+
+    return element;
+}
+
 } // namespace
 
 MouseEventDispatcher::MouseEventDispatcher() = default;
@@ -150,6 +194,71 @@ void MouseEventDispatcher::ResolveFocusClearAfterClick(std::shared_ptr<Window> w
     }
 
     focus_manager_->Blur(pending_element);
+}
+
+bool MouseEventDispatcher::ShouldSuppressMouseEventsForDisabledFormControl(
+    const std::shared_ptr<Element>& element) {
+    std::shared_ptr<Node> current = element;
+    while (current) {
+        if (current->GetNodeType() == NodeType::ELEMENT_NODE) {
+            auto current_element = std::static_pointer_cast<Element>(current);
+            if (IsDisabledFormControlElement(current_element)) {
+                return true;
+            }
+        }
+        current = current->GetParentNode();
+    }
+    return false;
+}
+
+void MouseEventDispatcher::HandleSuppressedDisabledMouseTarget(std::shared_ptr<Window> window,
+                                                               const SDL_Event& event,
+                                                               float logical_x,
+                                                               float logical_y) {
+    if (!window) {
+        return;
+    }
+
+    if (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN) {
+        int button = SDLButtonToMouseButton(event.button.button);
+        if (button == 1) mouse_buttons_state_ |= 1;
+        else if (button == 3) mouse_buttons_state_ |= 2;
+        else if (button == 2) mouse_buttons_state_ |= 4;
+
+        CancelPendingFocusClear();
+        if (auto last_mousedown = last_mousedown_element_.lock()) {
+            last_mousedown->SetPseudoClass("active", false);
+        }
+        last_mousedown_element_.reset();
+        return;
+    }
+
+    if (event.type == SDL_EVENT_MOUSE_BUTTON_UP) {
+        int button = SDLButtonToMouseButton(event.button.button);
+        if (button == 1) mouse_buttons_state_ &= ~1;
+        else if (button == 3) mouse_buttons_state_ &= ~2;
+        else if (button == 2) mouse_buttons_state_ &= ~4;
+
+        auto last_mousedown = last_mousedown_element_.lock();
+        if (last_mousedown) {
+            HandleNoHitMouseUp(window, last_mousedown, event, logical_x, logical_y);
+            last_mousedown->SetPseudoClass("active", false);
+            last_mousedown_element_.reset();
+        }
+
+        ResolveFocusClearAfterClick(window);
+        if (event.button.button == SDL_BUTTON_LEFT && drag_manager_) {
+            drag_manager_->EndDrag(logical_x, logical_y);
+        }
+        return;
+    }
+
+    if (event.type == SDL_EVENT_MOUSE_MOTION) {
+        auto last_mousedown = last_mousedown_element_.lock();
+        if (last_mousedown) {
+            HandleNoHitMouseMotion(window, last_mousedown, event, logical_x, logical_y);
+        }
+    }
 }
 
 bool MouseEventDispatcher::HandleMouseEvent(const SDL_Event& event,
@@ -260,6 +369,18 @@ bool MouseEventDispatcher::HandleMouseEvent(const SDL_Event& event,
     }
 
     // 更新 hover 链
+    if (hit_result.IsValid() &&
+        ShouldSuppressMouseEventsForDisabledFormControl(hit_result.element)) {
+        HitTestResult hover_hit;
+        hover_hit.element = ResolveHoverTargetForDisabledFormControl(hit_result.element);
+        UpdateHoverChain(window, logical_x, logical_y, hover_hit);
+        if (event.type == SDL_EVENT_MOUSE_MOTION) {
+            UpdateMouseCursor(hover_hit, window_id);
+        }
+        HandleSuppressedDisabledMouseTarget(window, event, logical_x, logical_y);
+        return true;
+    }
+
     UpdateHoverChain(window, logical_x, logical_y, hit_result);
 
     // 更新鼠标光标样式
@@ -461,7 +582,7 @@ void MouseEventDispatcher::UpdateHoverChain(std::shared_ptr<Window> window,
     }
 
     // 发送 mouseleave 到旧的 hover 元素
-    if (old_hover) {
+    if (old_hover && !ShouldSuppressMouseEventsForDisabledFormControl(old_hover)) {
         auto leave_event = std::make_shared<MouseEvent>(
             "mouseleave",
             static_cast<int>(mouse_x),
@@ -474,7 +595,7 @@ void MouseEventDispatcher::UpdateHoverChain(std::shared_ptr<Window> window,
     }
 
     // 发送 mouseenter 到新的 hover 元素
-    if (new_hover) {
+    if (new_hover && !ShouldSuppressMouseEventsForDisabledFormControl(new_hover)) {
         auto enter_event = std::make_shared<MouseEvent>(
             "mouseenter",
             static_cast<int>(mouse_x),
@@ -526,6 +647,13 @@ bool MouseEventDispatcher::SendEvents(const std::vector<std::weak_ptr<Element>>&
 
         if (!found) {
             // 创建鼠标事件
+            if (ShouldSuppressMouseEventsForDisabledFormControl(element)) {
+                if (element->HasPseudoClass("hover")) {
+                    element->SetPseudoClass("hover", false);
+                }
+                continue;
+            }
+
             auto mouse_event = std::make_shared<MouseEvent>(
                 event_type,
                 static_cast<int>(mouse_x),

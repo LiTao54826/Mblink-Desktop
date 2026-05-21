@@ -13,6 +13,8 @@
 #include "layout/native_layout_engine.h"
 #include "render/css/style_resolver.h"
 #include "render/objects/render_object.h"
+#include "render/text/font_manager.h"
+#include "render/text/text_renderer.h"
 #include "dom/document.h"
 #include "dom/element.h"
 #include <fstream>
@@ -897,6 +899,90 @@ TEST_F(NativeLayoutEngineTest, GridTrackStyleUpdateInvalidatesIncrementalLayout)
     EXPECT_NEAR(compact_item.y, 0.0f, 0.5f);
     EXPECT_NE(compact_item.x, normal_item.x);
     EXPECT_LT(compact_action.width, normal_action.width);
+}
+
+TEST_F(NativeLayoutEngineTest, GridButtonLaysOutDirectTextChildrenCenteredAfterWrap) {
+    auto body = doc_->GetBody();
+    auto stack = doc_->CreateElement("div");
+    auto refresh_button = doc_->CreateElement("button");
+    auto refresh_label = doc_->CreateTextNode("Refresh status");
+    auto vscode_button = doc_->CreateElement("button");
+    auto vscode_label = doc_->CreateTextNode("Run VS Code again");
+
+    body->SetStyle("margin", "0");
+
+    stack->SetStyle("display", "grid");
+    stack->SetStyle("gap", "10px");
+    stack->SetStyle("width", "160px");
+
+    auto apply_button_style = [](const std::shared_ptr<Element>& button) {
+        button->SetStyle("display", "grid");
+        button->SetStyle("place-items", "center");
+        button->SetStyle("text-align", "center");
+        button->SetStyle("width", "118px");
+        button->SetStyle("min-height", "44px");
+        button->SetStyle("padding", "6px 12px");
+        button->SetStyle("box-sizing", "border-box");
+        button->SetStyle("font-size", "14px");
+        button->SetStyle("line-height", "1.25");
+        button->SetStyle("font-weight", "600");
+        button->SetStyle("white-space", "normal");
+    };
+
+    apply_button_style(refresh_button);
+    apply_button_style(vscode_button);
+
+    refresh_button->AppendChild(refresh_label);
+    vscode_button->AppendChild(vscode_label);
+    stack->AppendChild(refresh_button);
+    stack->AppendChild(vscode_button);
+    body->AppendChild(stack);
+
+    BuildAndLayout(320.0f, 200.0f);
+
+    FontDescriptor desc;
+    desc.family = "Arial";
+    desc.size = 14.0f;
+    desc.weight = FontWeight::BOLD;
+    SkFont font = FontManager::GetInstance().LoadFont(desc);
+    TextRenderer text_renderer(nullptr);
+
+    auto expect_wrapped_button_centered =
+        [&](const std::shared_ptr<Element>& button,
+            const std::shared_ptr<Node>& label,
+            const std::vector<std::string>& expected_lines) {
+            ASSERT_NE(button->GetRenderObject(), nullptr);
+            ASSERT_NE(label->GetRenderObject(), nullptr);
+
+            const auto& button_info = button->GetRenderObject()->GetLayoutInfo();
+            const auto& label_info = label->GetRenderObject()->GetLayoutInfo();
+            auto render_label = std::dynamic_pointer_cast<RenderText>(label->GetRenderObject());
+            ASSERT_NE(render_label, nullptr);
+
+            EXPECT_NEAR(button_info.width, 118.0f, 0.5f);
+            EXPECT_GE(button_info.height, 44.0f);
+            EXPECT_GT(label_info.width, 0.0f);
+            EXPECT_GT(label_info.height, 0.0f);
+            EXPECT_GT(label_info.x, 0.0f);
+            EXPECT_GT(label_info.y, 0.0f);
+            EXPECT_LE(label_info.x + label_info.width, button_info.width);
+            EXPECT_LE(label_info.y + label_info.height, button_info.height);
+
+            ASSERT_EQ(render_label->GetWrappedLines(), expected_lines);
+            ASSERT_EQ(render_label->GetWrappedLineXOffsets().size(), expected_lines.size());
+
+            const float content_center_x = 12.0f + (118.0f - 24.0f) / 2.0f;
+            for (size_t i = 0; i < expected_lines.size(); ++i) {
+                const float line_width = text_renderer.MeasureTextWidthWithEmoji(expected_lines[i], font);
+                const float painted_center_x =
+                    label_info.x + render_label->GetWrappedLineXOffsets()[i] + line_width / 2.0f;
+                EXPECT_NEAR(painted_center_x, content_center_x, 1.0f)
+                    << "line " << i << " should be centered in the button content box";
+            }
+        };
+
+    expect_wrapped_button_centered(refresh_button, refresh_label, {"Refresh", "status"});
+    expect_wrapped_button_centered(vscode_button, vscode_label, {"Run VS Code", "again"});
 }
 
 TEST_F(NativeLayoutEngineTest, InlineBlockTextChangeInvalidatesNearestLayoutNode) {

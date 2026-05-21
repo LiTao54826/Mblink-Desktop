@@ -10,6 +10,7 @@
 #include "include/core/SkCanvas.h"
 #include "include/core/SkTypeface.h"
 
+#include <algorithm>
 #include <cstdio>
 #include <cstring>
 #include <iostream>
@@ -23,6 +24,10 @@ namespace mbink {
 
 namespace {
 constexpr int64_t kStreamingRepaintIntervalMs = 120;
+constexpr float kScrollbarThickness = 8.0f;
+constexpr float kScrollbarGap = 2.0f;
+constexpr float kScrollbarPadding = 4.0f;
+constexpr float kScrollbarMinThumbSize = 20.0f;
 }
 
 HTMLLogViewElement::HTMLLogViewElement()
@@ -460,15 +465,57 @@ void HTMLLogViewElement::OnMouseDown(float x, float y, int button,
                                      int click_count) {
     if (button != 0) return;  // 只处理左键
 
+    if (renderer_ && renderer_->total_lines() > renderer_->visible_lines()) {
+        bool has_horizontal_scrollbar =
+            renderer_->max_horizontal_scroll_offset() > 0;
+        float track_x = view_width_ - kScrollbarThickness;
+        float track_y = kScrollbarPadding;
+        float track_height = view_height_ -
+                             (has_horizontal_scrollbar
+                                  ? kScrollbarThickness + kScrollbarGap
+                                  : 0.0f) -
+                             2 * kScrollbarPadding;
+        if (track_height > 0.0f && x >= track_x &&
+            x <= track_x + kScrollbarThickness && y >= track_y &&
+            y <= track_y + track_height) {
+            float content_ratio =
+                static_cast<float>(renderer_->visible_lines()) /
+                (std::max)(1, renderer_->total_lines());
+            float thumb_height = track_height * content_ratio;
+            thumb_height =
+                std::clamp(thumb_height, kScrollbarMinThumbSize, track_height);
+            float available_track = track_height - thumb_height;
+            int max_scroll = (std::max)(1, renderer_->max_scroll_offset());
+            float scroll_ratio =
+                static_cast<float>(renderer_->scroll_offset()) / max_scroll;
+            scroll_ratio = std::clamp(scroll_ratio, 0.0f, 1.0f);
+            float thumb_y = track_y + scroll_ratio * available_track;
+
+            if (y >= thumb_y && y <= thumb_y + thumb_height) {
+                is_dragging_scrollbar_ = true;
+                drag_start_y_ = y;
+                drag_start_offset_ = renderer_->scroll_offset();
+                last_drag_scroll_offset_ = drag_start_offset_;
+                return;
+            }
+        }
+    }
+
     if (renderer_ && renderer_->max_horizontal_scroll_offset() > 0) {
-        const float scrollbar_height = 8.0f;
-        const float scrollbar_gap = 2.0f;
         const float content_padding = 4.0f;
-        float content_height = view_height_ - (scrollbar_height + scrollbar_gap);
-        float track_x = view_x_ + content_padding;
-        float track_y = view_y_ + content_height + scrollbar_gap;
-        float track_width = view_width_ - 2 * content_padding;
-        if (track_width > 0 && y >= track_y && y <= track_y + scrollbar_height) {
+        bool has_vertical_scrollbar =
+            renderer_->total_lines() > renderer_->visible_lines();
+        float content_height =
+            view_height_ - (kScrollbarThickness + kScrollbarGap);
+        float track_x = content_padding;
+        float track_y = content_height + kScrollbarGap;
+        float track_width = view_width_ -
+                            (has_vertical_scrollbar
+                                 ? kScrollbarThickness + kScrollbarGap
+                                 : 0.0f) -
+                            2 * content_padding;
+        if (track_width > 0 && y >= track_y &&
+            y <= track_y + kScrollbarThickness) {
             float cell_width = renderer_->cell_width() > 1.0f ? renderer_->cell_width() : 1.0f;
             float visible_columns = track_width / cell_width;
             if (visible_columns < 1.0f) visible_columns = 1.0f;
@@ -519,9 +566,47 @@ void HTMLLogViewElement::OnMouseDown(float x, float y, int button,
 }
 
 void HTMLLogViewElement::OnMouseMove(float x, float y) {
+    if (is_dragging_scrollbar_ && renderer_) {
+        bool has_horizontal_scrollbar =
+            renderer_->max_horizontal_scroll_offset() > 0;
+        float track_height = view_height_ -
+                             (has_horizontal_scrollbar
+                                  ? kScrollbarThickness + kScrollbarGap
+                                  : 0.0f) -
+                             2 * kScrollbarPadding;
+        if (track_height > 0.0f) {
+            float content_ratio =
+                static_cast<float>(renderer_->visible_lines()) /
+                (std::max)(1, renderer_->total_lines());
+            float thumb_height = track_height * content_ratio;
+            thumb_height =
+                std::clamp(thumb_height, kScrollbarMinThumbSize, track_height);
+            float available_track = track_height - thumb_height;
+            if (available_track > 0.0f) {
+                float delta_y = y - drag_start_y_;
+                int max_scroll = renderer_->max_scroll_offset();
+                int delta_offset =
+                    static_cast<int>((delta_y / available_track) * max_scroll);
+                int new_offset = drag_start_offset_ + delta_offset;
+                if (new_offset != last_drag_scroll_offset_) {
+                    renderer_->ScrollTo(new_offset);
+                    last_drag_scroll_offset_ = renderer_->scroll_offset();
+                    RequestRepaint(RepaintReason::Terminal);
+                }
+            }
+        }
+        return;
+    }
+
     if (is_dragging_horizontal_scrollbar_ && renderer_) {
         const float content_padding = 4.0f;
-        float track_width = view_width_ - 2 * content_padding;
+        bool has_vertical_scrollbar =
+            renderer_->total_lines() > renderer_->visible_lines();
+        float track_width = view_width_ -
+                            (has_vertical_scrollbar
+                                 ? kScrollbarThickness + kScrollbarGap
+                                 : 0.0f) -
+                            2 * content_padding;
         float cell_width = renderer_->cell_width() > 1.0f ? renderer_->cell_width() : 1.0f;
         float visible_columns = track_width / cell_width;
         if (visible_columns < 1.0f) visible_columns = 1.0f;
@@ -556,6 +641,12 @@ void HTMLLogViewElement::OnMouseUp(float x, float y, int button) {
     (void)x;
     (void)y;
     if (button != 0) return;
+    if (is_dragging_scrollbar_) {
+        is_dragging_scrollbar_ = false;
+        last_drag_scroll_offset_ = -1;
+        RequestRepaint(RepaintReason::Terminal);
+        return;
+    }
     if (is_dragging_horizontal_scrollbar_) {
         is_dragging_horizontal_scrollbar_ = false;
         last_drag_horizontal_offset_ = -1;

@@ -118,6 +118,30 @@ std::string NormalizeSVGAttributeName(const std::shared_ptr<Element>& element, c
     return name;
 }
 
+bool IsDisabledFormControlForSyntheticClick(const std::shared_ptr<Element>& element) {
+    std::shared_ptr<Node> current = element;
+    while (current) {
+        if (current->GetNodeType() == NodeType::ELEMENT_NODE) {
+            auto current_element = std::static_pointer_cast<Element>(current);
+            if (current_element->HasAttribute("disabled")) {
+                const std::string tag_name = current_element->GetTagName();
+                if (tag_name == "button" ||
+                    tag_name == "input" ||
+                    tag_name == "select" ||
+                    tag_name == "textarea" ||
+                    tag_name == "option" ||
+                    tag_name == "optgroup" ||
+                    tag_name == "fieldset") {
+                    return true;
+                }
+            }
+        }
+        current = current->GetParentNode();
+    }
+
+    return false;
+}
+
 } // namespace
 
 
@@ -2001,6 +2025,10 @@ static JSValue JSElement_remove(JSContext* ctx, JSValueConst this_val, int argc,
 static JSValue JSElement_click(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) {
     auto* data = static_cast<JSElementData*>(JS_GetOpaque(this_val, js_element_class_id));
     if (!data || !data->element) return JS_UNDEFINED;
+
+    if (IsDisabledFormControlForSyntheticClick(data->element)) {
+        return JS_UNDEFINED;
+    }
 
     auto click_event = std::make_shared<MouseEvent>("click", 0, 0, 0, 1, 0);
     data->element->DispatchEvent(click_event);

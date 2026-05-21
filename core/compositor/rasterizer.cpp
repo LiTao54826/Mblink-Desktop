@@ -237,8 +237,7 @@ bool Rasterizer::RasterizeLayer(CompositorLayer* layer) {
     canvas->restore();
 
     // 记录本次成功绘制后的边界，供下次增量脏区计算使用
-    render_obj->UpdatePreviousPaintBounds(render_obj->GetBoundingRect(),
-                                          render_obj->GetViewportBoundingRect());
+    UpdatePreviousPaintBoundsForSubtree(render_obj);
 
 
     // 清除脏区域
@@ -450,8 +449,7 @@ bool Rasterizer::RasterizeRegion(CompositorLayer* layer, const SkIRect& region) 
 
 
     // 记录本次成功绘制后的边界，供下次增量脏区计算使用
-    render_obj->UpdatePreviousPaintBounds(render_obj->GetBoundingRect(),
-                                          render_obj->GetViewportBoundingRect());
+    UpdatePreviousPaintBoundsForSubtree(render_obj);
 
     return true;
 }
@@ -608,6 +606,18 @@ void Rasterizer::PaintRenderObjectRecursive(SkCanvas* canvas, RenderObject* obj,
     // 递归绘制子对象
     for (const auto& child : obj->GetChildren()) {
         PaintRenderObjectRecursive(canvas, child.get(), clip_rect);
+    }
+}
+
+void Rasterizer::UpdatePreviousPaintBoundsForSubtree(RenderObject* obj) {
+    if (!obj) {
+        return;
+    }
+
+    obj->UpdatePreviousPaintBounds(obj->GetBoundingRect(), obj->GetViewportBoundingRect());
+
+    for (const auto& child : obj->GetChildren()) {
+        UpdatePreviousPaintBoundsForSubtree(child.get());
     }
 }
 

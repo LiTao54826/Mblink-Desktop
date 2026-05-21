@@ -1629,6 +1629,20 @@ TEST_F(DOMBindingsTest, ElementClickDispatchesEvent) {
     EXPECT_EQ(result, true);
 }
 
+TEST_F(DOMBindingsTest, ElementClickDoesNotDispatchForDisabledButton) {
+    auto result = runtime_->Eval(R"(
+        var clicks = 0;
+        var button = document.createElement('button');
+        button.setAttribute('disabled', 'true');
+        button.addEventListener('click', function() {
+            clicks++;
+        });
+        button.click();
+        clicks;
+    )");
+    EXPECT_EQ(result, 0);
+}
+
 TEST_F(DOMBindingsTest, EventTimeStampAndStopImmediatePropagation) {
     auto result = runtime_->Eval(R"(
         var calls = 0;

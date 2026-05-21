@@ -104,9 +104,19 @@ public:
     int total_lines() const { return static_cast<int>(lines_.size()); }
 
     /**
+     * @brief 获取包含实际内容或光标的显示行数
+     */
+    int display_line_count() const;
+
+    /**
      * @brief 获取列数
      */
     int cols() const { return cols_; }
+
+    /**
+     * @brief 获取包含实际内容或光标的最大列数
+     */
+    int max_content_columns() const;
 
     /**
      * @brief 获取可见行数
@@ -116,7 +126,7 @@ public:
     /**
      * @brief 设置可见行数
      */
-    void set_visible_rows(int rows) { visible_rows_ = rows; }
+    void set_visible_rows(int rows);
 
     // === 序列化 ===
 
@@ -158,6 +168,10 @@ private:
     // 默认单元格
     static const Cell kDefaultCell;
 
+    mutable bool content_metrics_dirty_ = true;
+    mutable int cached_display_line_count_ = 1;
+    mutable int cached_max_content_columns_ = 1;
+
     /**
      * @brief 将屏幕行号转换为缓冲区行号
      * @param screen_row 屏幕行号 (0 到 visible_rows_-1)
@@ -187,6 +201,9 @@ private:
      * @brief 限制光标在有效范围内
      */
     void ClampCursor();
+
+    void MarkContentMetricsDirty() { content_metrics_dirty_ = true; }
+    void RecomputeContentMetrics() const;
 };
 
 }  // namespace mbink

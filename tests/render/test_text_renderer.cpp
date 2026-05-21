@@ -128,5 +128,22 @@ TEST_F(TextRendererTest, MeasureMixedTextWidthMixed) {
     EXPECT_GT(width, 0.0f);
 }
 
+TEST_F(TextRendererTest, WrapTextPrefersWordBoundaryForButtonLabel) {
+    FontDescriptor desc;
+    desc.size = 13;
+    SkFont font = FontManager::GetInstance().LoadFont(desc);
+
+    TextRenderer renderer(nullptr);
+    float first_line_width = renderer.MeasureTextWidthWithEmoji("Run VS Code", font);
+    float full_width = renderer.MeasureTextWidthWithEmoji("Run VS Code again", font);
+    ASSERT_GT(full_width, first_line_width);
+
+    auto lines = renderer.WrapText("Run VS Code again", first_line_width + 0.5f, font);
+
+    ASSERT_EQ(lines.size(), 2u);
+    EXPECT_EQ(lines[0], "Run VS Code");
+    EXPECT_EQ(lines[1], "again");
+}
+
 } // namespace test
 } // namespace mbink

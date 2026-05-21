@@ -102,6 +102,9 @@ public:
      */
     void Render(SkCanvas* canvas, const SkRect& bounds) override;
 
+    bool has_vertical_scrollbar() const { return has_vertical_scrollbar_; }
+    bool has_horizontal_scrollbar() const { return has_horizontal_scrollbar_; }
+
 private:
     TerminalBuffer* buffer_ = nullptr;
     ColorPalette palette_;
@@ -113,6 +116,8 @@ private:
     
     // CJK 字体（用于中文等宽字符）
     sk_sp<SkTypeface> cjk_typeface_;
+    bool has_vertical_scrollbar_ = false;
+    bool has_horizontal_scrollbar_ = false;
 
     // 选择范围
     bool has_selection_ = false;

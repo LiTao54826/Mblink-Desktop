@@ -8,7 +8,6 @@
 #include "animation/animation_bounds_calculator.h"
 #include "core/render/objects/render_object.h"
 #include "core/render/animation/keyframes.h"
-#include "core/dom/element.h"
 #include <algorithm>
 #include <iostream>
 #include <cmath>
@@ -175,16 +174,6 @@ std::shared_ptr<CompositorLayer> LayerTreeBuilder::CreateLayer(
     layer->SetRenderObject(obj);
     layer->SetPromotionReason(reason);
     layer->SetDpiScale(dpi_scale_);  // 设置 DPI 缩放
-
-    // 调试日志：打印被提升的元素信息
-    if (obj) {
-        auto node = obj->GetNode();
-        std::string tag_name = "unknown";
-        if (node && node->GetNodeType() == NodeType::ELEMENT_NODE) {
-            auto element = std::static_pointer_cast<Element>(node);
-            tag_name = element->GetTagName();
-        }
-    }
 
     // 设置层边界
     UpdateLayerBounds(layer.get(), obj);

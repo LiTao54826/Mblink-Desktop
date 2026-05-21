@@ -68,6 +68,44 @@ void RenderText::SetWrappedLines(const std::vector<std::string>& lines) {
     wrapped_line_y_offsets_.clear();
 }
 
+void RenderText::SetWrappedLinesWithAlignedOffsets(const std::vector<std::string>& lines,
+                                                   float line_box_width) {
+    wrapped_lines_ = lines;
+    wrapped_line_y_offsets_.clear();
+    wrapped_line_x_offsets_.assign(lines.size(), 0.0f);
+
+    if (lines.empty() || line_box_width <= 0.0f) {
+        return;
+    }
+
+    std::string text_align = computed_style_.text_align;
+    if (auto parent = GetParent()) {
+        const auto& parent_style = parent->GetComputedStyle();
+        if (!parent_style.text_align.empty()) {
+            text_align = parent_style.text_align;
+        }
+    }
+
+    if (text_align != "center" && text_align != "right") {
+        return;
+    }
+
+    FontDescriptor desc;
+    desc.family = computed_style_.font_family;
+    desc.size = computed_style_.font_size;
+    desc.weight = ParseCSSFontWeight(computed_style_.font_weight);
+    desc.style = (computed_style_.font_style == "italic") ? FontStyle::ITALIC : FontStyle::NORMAL;
+
+    SkFont font = FontManager::GetInstance().LoadFont(desc);
+    TextRenderer text_renderer(nullptr);
+
+    for (size_t i = 0; i < lines.size(); ++i) {
+        const float line_width = text_renderer.MeasureTextWidthWithEmoji(lines[i], font);
+        const float free_width = std::max(0.0f, line_box_width - line_width);
+        wrapped_line_x_offsets_[i] = (text_align == "center") ? free_width / 2.0f : free_width;
+    }
+}
+
 void RenderText::SetWrappedLinesWithOffsets(const std::vector<std::string>& lines,
                                             const std::vector<float>& x_offsets) {
     wrapped_lines_ = lines;
@@ -110,17 +148,18 @@ void RenderText::Layout(float parent_width, float parent_height) {
     if (text_.find('\n') != std::string::npos) {
         std::istringstream iss(text_);
         std::string line;
+        std::vector<std::string> lines;
         float max_width = 0;
-        int line_count = 0;
 
         while (std::getline(iss, line)) {
             float line_width = text_renderer.MeasureTextWidthWithEmoji(line, font);
             max_width = std::max(max_width, line_width);
-            line_count++;
+            lines.push_back(line);
         }
 
+        SetWrappedLinesWithAlignedOffsets(lines, max_width);
         layout_info_.width = max_width;
-        layout_info_.height = line_count * line_height;
+        layout_info_.height = lines.size() * line_height;
     } else if (parent_width > 0) {
         float text_width = text_renderer.MeasureTextWidthWithEmoji(text_, font);
         const float epsilon = 0.01f;
@@ -133,13 +172,16 @@ void RenderText::Layout(float parent_width, float parent_height) {
                 float line_width = text_renderer.MeasureTextWidthWithEmoji(line, font);
                 max_width = std::max(max_width, line_width);
             }
+            SetWrappedLinesWithAlignedOffsets(lines, parent_width);
             layout_info_.width = max_width;
             layout_info_.height = lines.size() * line_height;
         } else {
+            SetWrappedLines({});
             layout_info_.width = text_width;
             layout_info_.height = line_height;
         }
     } else {
+        SetWrappedLines({});
         float width = text_renderer.MeasureTextWidthWithEmoji(text_, font);
         layout_info_.width = width;
         layout_info_.height = line_height;

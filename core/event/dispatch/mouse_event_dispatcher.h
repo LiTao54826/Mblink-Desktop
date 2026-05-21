@@ -183,6 +183,11 @@ public:
      */
     void ProcessFormElementDefaultAction(std::shared_ptr<Element> element, const HitTestResult& hit_result);
 
+    /**
+     * @brief 判定命中的元素是否应该屏蔽鼠标交互。
+     */
+    static bool ShouldSuppressMouseEventsForDisabledFormControl(const std::shared_ptr<Element>& element);
+
 private:
     /**
      * @brief 发送事件到元素集合的差集
@@ -323,6 +328,10 @@ private:
     void PrepareFocusClearOnMouseDown(const std::shared_ptr<Element>& hit_element, int button);
     void ResolveFocusClearAfterClick(std::shared_ptr<Window> window);
     void CancelPendingFocusClear();
+    void HandleSuppressedDisabledMouseTarget(std::shared_ptr<Window> window,
+                                             const SDL_Event& event,
+                                             float logical_x,
+                                             float logical_y);
 
     // 依赖的管理器（不拥有所有权）
     DragManager* drag_manager_ = nullptr;
