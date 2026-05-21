@@ -121,3 +121,4 @@ reports/
 bindings/python/examples/xxxx/
 tmp/
 .devui
+.omc/
