@@ -89,6 +89,12 @@ bool KeyboardEventDispatcher::HandleKeyboardEvent(const SDL_Event& event,
     if (event.type == SDL_EVENT_KEY_DOWN) {
         const bool is_plain_tab = event.key.key == SDLK_TAB && !ctrl_key && !alt_key && !meta_key;
         if (!focus_element && !is_plain_tab) {
+            int key_code = SDLKeycodeToKeyCode(event.key.key);
+            if ((ctrl_key || meta_key) && !alt_key && !shift_key && key_code == 67 &&
+                clipboard_manager_ &&
+                clipboard_manager_->HandleKeyboardShortcut(document, key_code, ctrl_key, meta_key)) {
+                return true;
+            }
             return false;
         }
         HandleKeyDown(event, focus_element, document, window, ctrl_key, shift_key, alt_key, meta_key);
@@ -181,7 +187,10 @@ void KeyboardEventDispatcher::HandleKeyDown(const SDL_Event& event,
                 return;
             }
 
-            if (is_contenteditable_target && clipboard_manager_ && clipboard_manager_->HandleKeyboardShortcut(document, key_code, ctrl_key, meta_key)) {
+            bool can_run_default_clipboard_action = is_contenteditable_target || key_code == 67;
+            if (can_run_default_clipboard_action &&
+                clipboard_manager_ &&
+                clipboard_manager_->HandleKeyboardShortcut(document, key_code, ctrl_key, meta_key)) {
                 if (focus_manager_) {
                     focus_manager_->UpdateTextInputArea();
                 }

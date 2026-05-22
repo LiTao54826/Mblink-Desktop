@@ -8,6 +8,7 @@
 #include "core/dom/document.h"
 #include "core/render/animation/keyframes.h"
 #include <algorithm>
+#include <cctype>
 #include <sstream>
 #include <vector>
 #include <regex>
@@ -16,6 +17,612 @@
 
 namespace mbink {
 
+namespace {
+
+std::string TrimASCIIWhitespace(const std::string& value) {
+    size_t start = value.find_first_not_of(" \t\n\r\f");
+    if (start == std::string::npos) {
+        return "";
+    }
+
+    size_t end = value.find_last_not_of(" \t\n\r\f");
+    return value.substr(start, end - start + 1);
+}
+
+std::string ToLowerASCII(std::string value) {
+    std::transform(value.begin(), value.end(), value.begin(), [](unsigned char ch) {
+        return static_cast<char>(std::tolower(ch));
+    });
+    return value;
+}
+
+std::string RemoveASCIIWhitespace(std::string value) {
+    value.erase(std::remove_if(value.begin(), value.end(), [](unsigned char ch) {
+        return std::isspace(ch) != 0;
+    }), value.end());
+    return value;
+}
+
+bool ParseInteger(const std::string& value, int& result) {
+    if (value.empty()) {
+        return false;
+    }
+
+    size_t index = 0;
+    if (value[index] == '+' || value[index] == '-') {
+        ++index;
+    }
+    if (index >= value.size()) {
+        return false;
+    }
+
+    for (; index < value.size(); ++index) {
+        if (!std::isdigit(static_cast<unsigned char>(value[index]))) {
+            return false;
+        }
+    }
+
+    try {
+        result = std::stoi(value);
+    } catch (...) {
+        return false;
+    }
+    return true;
+}
+
+int ElementChildIndex(const Element* element, int* element_child_count = nullptr) {
+    if (element_child_count) {
+        *element_child_count = 0;
+    }
+    if (!element) {
+        return 0;
+    }
+
+    auto parent = element->GetParentNode();
+    if (!parent) {
+        return 0;
+    }
+
+    int index = 0;
+    int count = 0;
+    for (const auto& child : parent->GetChildNodes()) {
+        auto child_element = std::dynamic_pointer_cast<Element>(child);
+        if (!child_element) {
+            continue;
+        }
+
+        ++count;
+        if (child_element.get() == element) {
+            index = count;
+        }
+    }
+
+    if (element_child_count) {
+        *element_child_count = count;
+    }
+    return index;
+}
+
+bool MatchesAnPlusB(int index, const std::string& expression) {
+    if (index <= 0) {
+        return false;
+    }
+
+    std::string normalized = ToLowerASCII(RemoveASCIIWhitespace(expression));
+    if (normalized == "odd") {
+        return index % 2 == 1;
+    }
+    if (normalized == "even") {
+        return index % 2 == 0;
+    }
+
+    size_t n_pos = normalized.find('n');
+    if (n_pos == std::string::npos) {
+        int child_index = 0;
+        return ParseInteger(normalized, child_index) && index == child_index;
+    }
+
+    std::string a_part = normalized.substr(0, n_pos);
+    std::string b_part = normalized.substr(n_pos + 1);
+
+    int a = 0;
+    if (a_part.empty() || a_part == "+") {
+        a = 1;
+    } else if (a_part == "-") {
+        a = -1;
+    } else if (!ParseInteger(a_part, a)) {
+        return false;
+    }
+
+    int b = 0;
+    if (!b_part.empty() && !ParseInteger(b_part, b)) {
+        return false;
+    }
+
+    if (a == 0) {
+        return index == b;
+    }
+
+    int delta = index - b;
+    if (a > 0) {
+        return delta >= 0 && delta % a == 0;
+    }
+
+    return delta <= 0 && delta % a == 0;
+}
+
+bool MatchesStructuralPseudoClass(const std::string& pseudo_class, const Element* element) {
+    std::string pseudo = ToLowerASCII(TrimASCIIWhitespace(pseudo_class));
+
+    if (pseudo == "first-child") {
+        return ElementChildIndex(element) == 1;
+    }
+
+    if (pseudo == "last-child") {
+        int child_count = 0;
+        int index = ElementChildIndex(element, &child_count);
+        return index > 0 && index == child_count;
+    }
+
+    constexpr const char* nth_child_prefix = "nth-child(";
+    const size_t prefix_length = std::char_traits<char>::length(nth_child_prefix);
+    if (pseudo.rfind(nth_child_prefix, 0) == 0 && pseudo.size() > prefix_length && pseudo.back() == ')') {
+        std::string expression = pseudo.substr(prefix_length, pseudo.size() - prefix_length - 1);
+        return MatchesAnPlusB(ElementChildIndex(element), expression);
+    }
+
+    return false;
+}
+
+bool IsStructuralPseudoClass(const std::string& pseudo_class) {
+    std::string pseudo = ToLowerASCII(TrimASCIIWhitespace(pseudo_class));
+    return pseudo == "first-child" ||
+           pseudo == "last-child" ||
+           pseudo.rfind("nth-child(", 0) == 0;
+}
+
+std::vector<std::string> SplitSelectorList(const std::string& selector_list) {
+    std::vector<std::string> selectors;
+    std::string current;
+    int paren_depth = 0;
+    int bracket_depth = 0;
+    char quote = '\0';
+    bool escape_next = false;
+
+    for (char ch : selector_list) {
+        if (escape_next) {
+            current += ch;
+            escape_next = false;
+            continue;
+        }
+
+        if (ch == '\\') {
+            current += ch;
+            escape_next = true;
+            continue;
+        }
+
+        if (quote != '\0') {
+            current += ch;
+            if (ch == quote) {
+                quote = '\0';
+            }
+            continue;
+        }
+
+        if (ch == '"' || ch == '\'') {
+            current += ch;
+            quote = ch;
+            continue;
+        }
+
+        if (ch == '(') {
+            ++paren_depth;
+            current += ch;
+            continue;
+        }
+
+        if (ch == ')' && paren_depth > 0) {
+            --paren_depth;
+            current += ch;
+            continue;
+        }
+
+        if (ch == '[') {
+            ++bracket_depth;
+            current += ch;
+            continue;
+        }
+
+        if (ch == ']' && bracket_depth > 0) {
+            --bracket_depth;
+            current += ch;
+            continue;
+        }
+
+        if (ch == ',' && paren_depth == 0 && bracket_depth == 0) {
+            std::string trimmed = TrimASCIIWhitespace(current);
+            if (!trimmed.empty()) {
+                selectors.push_back(trimmed);
+            }
+            current.clear();
+            continue;
+        }
+
+        current += ch;
+    }
+
+    std::string trimmed = TrimASCIIWhitespace(current);
+    if (!trimmed.empty()) {
+        selectors.push_back(trimmed);
+    }
+    return selectors;
+}
+
+void PushSelectorPart(std::vector<std::string>& parts, std::string& current_part) {
+    std::string trimmed = TrimASCIIWhitespace(current_part);
+    if (!trimmed.empty()) {
+        parts.push_back(trimmed);
+    }
+    current_part.clear();
+}
+
+bool SplitComplexSelector(
+    const std::string& selector,
+    std::vector<std::string>& parts,
+    std::vector<char>& combinators) {
+    std::string current_part;
+    bool pending_descendant = false;
+    int paren_depth = 0;
+    int bracket_depth = 0;
+    char quote = '\0';
+    bool escape_next = false;
+
+    for (char ch : selector) {
+        if (escape_next) {
+            current_part += ch;
+            escape_next = false;
+            continue;
+        }
+
+        if (ch == '\\') {
+            current_part += ch;
+            escape_next = true;
+            continue;
+        }
+
+        if (quote != '\0') {
+            current_part += ch;
+            if (ch == quote) {
+                quote = '\0';
+            }
+            continue;
+        }
+
+        if (ch == '"' || ch == '\'') {
+            current_part += ch;
+            quote = ch;
+            continue;
+        }
+
+        if (ch == '(') {
+            ++paren_depth;
+            current_part += ch;
+            continue;
+        }
+
+        if (ch == ')' && paren_depth > 0) {
+            --paren_depth;
+            current_part += ch;
+            continue;
+        }
+
+        if (ch == '[') {
+            ++bracket_depth;
+            current_part += ch;
+            continue;
+        }
+
+        if (ch == ']' && bracket_depth > 0) {
+            --bracket_depth;
+            current_part += ch;
+            continue;
+        }
+
+        if (paren_depth == 0 && bracket_depth == 0 && ch == '>') {
+            PushSelectorPart(parts, current_part);
+            if (parts.empty()) {
+                return false;
+            }
+            combinators.push_back('>');
+            pending_descendant = false;
+            continue;
+        }
+
+        if (paren_depth == 0 && bracket_depth == 0 && std::isspace(static_cast<unsigned char>(ch))) {
+            if (!current_part.empty()) {
+                pending_descendant = true;
+            }
+            continue;
+        }
+
+        if (pending_descendant) {
+            PushSelectorPart(parts, current_part);
+            if (parts.empty()) {
+                return false;
+            }
+            combinators.push_back(' ');
+            pending_descendant = false;
+        }
+
+        current_part += ch;
+    }
+
+    PushSelectorPart(parts, current_part);
+    return !parts.empty() && combinators.size() + 1 == parts.size();
+}
+
+std::string ExtractPseudoArgument(const std::string& selector, size_t open_paren_pos) {
+    int depth = 1;
+    char quote = '\0';
+    bool escape_next = false;
+
+    for (size_t i = open_paren_pos + 1; i < selector.size(); ++i) {
+        char ch = selector[i];
+
+        if (escape_next) {
+            escape_next = false;
+            continue;
+        }
+        if (ch == '\\') {
+            escape_next = true;
+            continue;
+        }
+        if (quote != '\0') {
+            if (ch == quote) {
+                quote = '\0';
+            }
+            continue;
+        }
+        if (ch == '"' || ch == '\'') {
+            quote = ch;
+            continue;
+        }
+        if (ch == '(') {
+            ++depth;
+            continue;
+        }
+        if (ch == ')' && --depth == 0) {
+            return selector.substr(open_paren_pos + 1, i - open_paren_pos - 1);
+        }
+    }
+
+    return "";
+}
+
+bool IsSelectorNameChar(char ch) {
+    unsigned char uch = static_cast<unsigned char>(ch);
+    return std::isalnum(uch) || ch == '_' || ch == '-';
+}
+
+bool IsSelectorNameStart(char ch) {
+    unsigned char uch = static_cast<unsigned char>(ch);
+    return std::isalpha(uch) || ch == '_' || ch == '-';
+}
+
+bool IsSimpleSelectorBoundary(char ch) {
+    return ch == '#' || ch == '.' || ch == '[' || ch == ':';
+}
+
+size_t FindMatchingParen(const std::string& selector, size_t open_paren_pos) {
+    if (open_paren_pos >= selector.size() || selector[open_paren_pos] != '(') {
+        return std::string::npos;
+    }
+
+    int depth = 1;
+    char quote = '\0';
+    bool escape_next = false;
+
+    for (size_t i = open_paren_pos + 1; i < selector.size(); ++i) {
+        char ch = selector[i];
+
+        if (escape_next) {
+            escape_next = false;
+            continue;
+        }
+        if (ch == '\\') {
+            escape_next = true;
+            continue;
+        }
+        if (quote != '\0') {
+            if (ch == quote) {
+                quote = '\0';
+            }
+            continue;
+        }
+        if (ch == '"' || ch == '\'') {
+            quote = ch;
+            continue;
+        }
+        if (ch == '(') {
+            ++depth;
+            continue;
+        }
+        if (ch == ')' && --depth == 0) {
+            return i;
+        }
+    }
+
+    return std::string::npos;
+}
+
+size_t FindMatchingBracket(const std::string& selector, size_t open_bracket_pos) {
+    if (open_bracket_pos >= selector.size() || selector[open_bracket_pos] != '[') {
+        return std::string::npos;
+    }
+
+    char quote = '\0';
+    bool escape_next = false;
+
+    for (size_t i = open_bracket_pos + 1; i < selector.size(); ++i) {
+        char ch = selector[i];
+
+        if (escape_next) {
+            escape_next = false;
+            continue;
+        }
+        if (ch == '\\') {
+            escape_next = true;
+            continue;
+        }
+        if (quote != '\0') {
+            if (ch == quote) {
+                quote = '\0';
+            }
+            continue;
+        }
+        if (ch == '"' || ch == '\'') {
+            quote = ch;
+            continue;
+        }
+        if (ch == ']') {
+            return i;
+        }
+    }
+
+    return std::string::npos;
+}
+
+void SkipASCIIWhitespace(const std::string& value, size_t& index) {
+    while (index < value.size() && std::isspace(static_cast<unsigned char>(value[index]))) {
+        ++index;
+    }
+}
+
+std::string ParseAttributeValue(const std::string& value, size_t& index) {
+    if (index >= value.size()) {
+        return "";
+    }
+
+    std::string result;
+    if (value[index] == '"' || value[index] == '\'') {
+        char quote = value[index++];
+        bool escape_next = false;
+        while (index < value.size()) {
+            char ch = value[index++];
+            if (escape_next) {
+                result += ch;
+                escape_next = false;
+                continue;
+            }
+            if (ch == '\\') {
+                escape_next = true;
+                continue;
+            }
+            if (ch == quote) {
+                break;
+            }
+            result += ch;
+        }
+        return result;
+    }
+
+    while (index < value.size() &&
+           !std::isspace(static_cast<unsigned char>(value[index]))) {
+        result += value[index++];
+    }
+    return result;
+}
+
+bool MatchesAttributeSelector(const std::string& attribute_selector, Element* element) {
+    if (!element) {
+        return false;
+    }
+
+    std::string selector = TrimASCIIWhitespace(attribute_selector);
+    if (selector.empty()) {
+        return false;
+    }
+
+    size_t index = 0;
+    SkipASCIIWhitespace(selector, index);
+
+    size_t name_start = index;
+    while (index < selector.size() &&
+           (IsSelectorNameChar(selector[index]) || selector[index] == ':')) {
+        ++index;
+    }
+
+    std::string attr_name = selector.substr(name_start, index - name_start);
+    if (attr_name.empty()) {
+        return false;
+    }
+
+    SkipASCIIWhitespace(selector, index);
+    if (index >= selector.size()) {
+        return element->HasAttribute(attr_name);
+    }
+
+    std::string op;
+    if ((selector[index] == '~' || selector[index] == '|' ||
+         selector[index] == '^' || selector[index] == '$' ||
+         selector[index] == '*') &&
+        index + 1 < selector.size() && selector[index + 1] == '=') {
+        op = selector.substr(index, 2);
+        index += 2;
+    } else if (selector[index] == '=') {
+        op = "=";
+        ++index;
+    } else {
+        return false;
+    }
+
+    SkipASCIIWhitespace(selector, index);
+    std::string expected_value = ParseAttributeValue(selector, index);
+    SkipASCIIWhitespace(selector, index);
+    if (index != selector.size() || !element->HasAttribute(attr_name)) {
+        return false;
+    }
+
+    std::string actual_value = element->GetAttribute(attr_name);
+    if (op == "=") {
+        return actual_value == expected_value;
+    }
+    if (op == "~=") {
+        std::istringstream stream(actual_value);
+        std::string token;
+        while (stream >> token) {
+            if (token == expected_value) {
+                return true;
+            }
+        }
+        return false;
+    }
+    if (op == "|=") {
+        return actual_value == expected_value ||
+               (actual_value.size() > expected_value.size() &&
+                actual_value.rfind(expected_value + "-", 0) == 0);
+    }
+    if (op == "^=") {
+        return !expected_value.empty() && actual_value.rfind(expected_value, 0) == 0;
+    }
+    if (op == "$=") {
+        return !expected_value.empty() &&
+               actual_value.size() >= expected_value.size() &&
+               actual_value.compare(actual_value.size() - expected_value.size(),
+                                    expected_value.size(),
+                                    expected_value) == 0;
+    }
+    if (op == "*=") {
+        return !expected_value.empty() &&
+               actual_value.find(expected_value) != std::string::npos;
+    }
+
+    return false;
+}
+
+} // namespace
+
 // ========== 构造函数和析构函数 ==========
 
 StyleManager::StyleManager(Document* doc)
@@ -23,7 +630,8 @@ StyleManager::StyleManager(Document* doc)
     , stylesheets_()
     , inline_styles_()
     , hover_rule_cache_()
-    , stylesheet_version_(0) {
+    , stylesheet_version_(0)
+    , next_stylesheet_order_(0) {
 }
 
 StyleManager::~StyleManager() {
@@ -39,10 +647,10 @@ void StyleManager::AddStyleSheet(std::shared_ptr<LexborStyleSheet> sheet,
         return;
     }
     
-    stylesheets_.emplace_back(sheet, priority, source);
+    stylesheets_.emplace_back(sheet, priority, source, next_stylesheet_order_++);
     
     // 按优先级排序（优先级高的在后面，这样后面的会覆盖前面的）
-    std::sort(stylesheets_.begin(), stylesheets_.end(),
+    std::stable_sort(stylesheets_.begin(), stylesheets_.end(),
               [](const StyleSheetEntry& a, const StyleSheetEntry& b) {
                   return a.priority < b.priority;
               });
@@ -67,6 +675,7 @@ bool StyleManager::RemoveStyleSheet(std::shared_ptr<LexborStyleSheet> sheet) {
 void StyleManager::ClearStyleSheets() {
     stylesheets_.clear();
     inline_styles_.clear();
+    next_stylesheet_order_ = 0;
     InvalidateHoverRuleCache();
 }
 
@@ -145,7 +754,13 @@ std::vector<const CSSRule*> StyleManager::GetMatchingRules(Element* element) con
         return {};
     }
     
-    std::vector<const CSSRule*> matching_rules;
+    struct MatchingRule {
+        const CSSRule* rule = nullptr;
+        int stylesheet_priority = 0;
+        size_t stylesheet_order = 0;
+    };
+
+    std::vector<MatchingRule> matching_rule_entries;
     
     // 遍历所有样式表
     for (const auto& entry : stylesheets_) {
@@ -154,17 +769,36 @@ std::vector<const CSSRule*> StyleManager::GetMatchingRules(Element* element) con
         // 遍历样式表中的所有规则
         for (const auto& rule : rules) {
             if (MatchesSelector(rule->selector, element)) {
-                matching_rules.push_back(rule.get());
+                matching_rule_entries.push_back({
+                    rule.get(),
+                    entry.priority,
+                    entry.insertion_order
+                });
             }
         }
     }
     
     // 按优先级排序
-    std::sort(matching_rules.begin(), matching_rules.end(),
-              [](const CSSRule* a, const CSSRule* b) {
-                  return a->specificity < b->specificity;
+    std::sort(matching_rule_entries.begin(), matching_rule_entries.end(),
+              [](const MatchingRule& a, const MatchingRule& b) {
+                  if (a.stylesheet_priority != b.stylesheet_priority) {
+                      return a.stylesheet_priority < b.stylesheet_priority;
+                  }
+                  if (a.rule->specificity != b.rule->specificity) {
+                      return a.rule->specificity < b.rule->specificity;
+                  }
+                  if (a.stylesheet_order != b.stylesheet_order) {
+                      return a.stylesheet_order < b.stylesheet_order;
+                  }
+                  return a.rule->source_order < b.rule->source_order;
               });
-    
+
+    std::vector<const CSSRule*> matching_rules;
+    matching_rules.reserve(matching_rule_entries.size());
+    for (const auto& entry : matching_rule_entries) {
+        matching_rules.push_back(entry.rule);
+    }
+
     return matching_rules;
 }
 
@@ -202,260 +836,173 @@ bool StyleManager::MatchesSelector(const std::string& selector, Element* element
         return false;
     }
 
-    // 简化的选择器匹配实现
-    // 支持：标签选择器、类选择器、ID选择器、后代选择器、逗号分隔选择器
-
-    std::string trimmed_selector = selector;
-    // 去除前后空格
-    size_t start = trimmed_selector.find_first_not_of(" \t\n\r");
-    size_t end = trimmed_selector.find_last_not_of(" \t\n\r");
-    if (start != std::string::npos && end != std::string::npos) {
-        trimmed_selector = trimmed_selector.substr(start, end - start + 1);
+    std::string normalized_selector = TrimASCIIWhitespace(selector);
+    if (normalized_selector.empty()) {
+        return false;
     }
 
-    // 检查是否是逗号分隔的选择器组（如 "html, body"）
-    size_t comma_pos = trimmed_selector.find(',');
-    if (comma_pos != std::string::npos) {
-        // 分割逗号分隔的选择器，任一匹配即返回 true
-        std::istringstream iss(trimmed_selector);
-        std::string single_selector;
-        while (std::getline(iss, single_selector, ',')) {
-            // 去除前后空格
-            size_t s_start = single_selector.find_first_not_of(" \t\n\r");
-            size_t s_end = single_selector.find_last_not_of(" \t\n\r");
-            if (s_start != std::string::npos && s_end != std::string::npos) {
-                single_selector = single_selector.substr(s_start, s_end - s_start + 1);
-                // 递归调用匹配单个选择器
-                if (MatchesSelector(single_selector, element)) {
-                    return true;
-                }
+    auto selector_list = SplitSelectorList(normalized_selector);
+    if (selector_list.size() > 1) {
+        for (const auto& single_selector : selector_list) {
+            if (MatchesSelector(single_selector, element)) {
+                return true;
             }
         }
         return false;
     }
 
-    // 解析复合选择器（支持后代选择器和子选择器）
-    // 将选择器分解为 parts 和 combinators
-    // 例如 ".parent > .child .grandchild" 分解为:
-    //   parts: [".parent", ".child", ".grandchild"]
-    //   combinators: ['>', ' ']  (> 表示子选择器，空格表示后代选择器)
-    
     std::vector<std::string> parts;
-    std::vector<char> combinators;  // '>' 或 ' '
-    
-    std::string current_part;
-    bool last_was_space = false;
-    bool last_was_combinator = false;
-    
-    for (size_t i = 0; i < trimmed_selector.size(); ++i) {
-        char c = trimmed_selector[i];
-        
-        if (c == '>') {
-            // 子选择器
-            if (!current_part.empty()) {
-                // 去除 current_part 的前后空格
-                size_t ps = current_part.find_first_not_of(" \t");
-                size_t pe = current_part.find_last_not_of(" \t");
-                if (ps != std::string::npos && pe != std::string::npos) {
-                    parts.push_back(current_part.substr(ps, pe - ps + 1));
-                }
-                current_part.clear();
-            }
-            combinators.push_back('>');
-            last_was_combinator = true;
-            last_was_space = false;
-        } else if (c == ' ' || c == '\t') {
-            if (!current_part.empty() && !last_was_combinator) {
-                // 可能是后代选择器，但需要等待看下一个非空字符
-                last_was_space = true;
-            }
-        } else {
-            // 普通字符
-            if (last_was_space && !current_part.empty()) {
-                // 这是一个后代选择器（空格分隔）
-                size_t ps = current_part.find_first_not_of(" \t");
-                size_t pe = current_part.find_last_not_of(" \t");
-                if (ps != std::string::npos && pe != std::string::npos) {
-                    parts.push_back(current_part.substr(ps, pe - ps + 1));
-                }
-                current_part.clear();
-                combinators.push_back(' ');
-            }
-            current_part += c;
-            last_was_space = false;
-            last_was_combinator = false;
-        }
-    }
-    
-    // 添加最后一个部分
-    if (!current_part.empty()) {
-        size_t ps = current_part.find_first_not_of(" \t");
-        size_t pe = current_part.find_last_not_of(" \t");
-        if (ps != std::string::npos && pe != std::string::npos) {
-            parts.push_back(current_part.substr(ps, pe - ps + 1));
-        }
-    }
-    
-    if (parts.empty()) {
+    std::vector<char> combinators;
+    if (!SplitComplexSelector(normalized_selector, parts, combinators)) {
         return false;
     }
-    
-    // 如果只有一个部分，直接匹配
+
     if (parts.size() == 1) {
         return MatchesSimpleSelector(parts[0], element);
     }
-    
-    // 最后一个选择器必须匹配当前元素
+
     if (!MatchesSimpleSelector(parts.back(), element)) {
         return false;
     }
-    
-    // 从右向左检查祖先元素
+
     auto parent_node = element->GetParentNode();
     Element* ancestor = dynamic_cast<Element*>(parent_node.get());
     int part_index = static_cast<int>(parts.size()) - 2;
     int comb_index = static_cast<int>(combinators.size()) - 1;
-    
+
     while (ancestor && part_index >= 0 && comb_index >= 0) {
         char combinator = combinators[comb_index];
-        
         if (combinator == '>') {
-            // 子选择器：必须是直接父元素
-            if (MatchesSimpleSelector(parts[part_index], ancestor)) {
-                part_index--;
-                comb_index--;
-                parent_node = ancestor->GetParentNode();
-                ancestor = dynamic_cast<Element*>(parent_node.get());
-            } else {
-                // 直接父元素不匹配，整个选择器不匹配
+            if (!MatchesSimpleSelector(parts[part_index], ancestor)) {
                 return false;
             }
-        } else {
-            // 后代选择器：可以是任意祖先
-            if (MatchesSimpleSelector(parts[part_index], ancestor)) {
-                part_index--;
-                comb_index--;
-            }
+            --part_index;
+            --comb_index;
             parent_node = ancestor->GetParentNode();
             ancestor = dynamic_cast<Element*>(parent_node.get());
+            continue;
         }
+
+        if (MatchesSimpleSelector(parts[part_index], ancestor)) {
+            --part_index;
+            --comb_index;
+        }
+        parent_node = ancestor->GetParentNode();
+        ancestor = dynamic_cast<Element*>(parent_node.get());
     }
-    
-    // 所有部分都必须匹配
+
     return part_index < 0;
-
-    // 简单选择器匹配
-    return MatchesSimpleSelector(trimmed_selector, element);
 }
-
 bool StyleManager::MatchesSimpleSelector(const std::string& selector, Element* element) const {
     if (!element || selector.empty()) {
         return false;
     }
 
-    // 通配符选择器 (*)
-    if (selector == "*") {
-        return true;
+    std::string simple = TrimASCIIWhitespace(selector);
+    if (simple.empty()) {
+        return false;
     }
 
-    // 检查是否包含伪类选择器（如 .class:hover, div:active）
-    size_t pseudo_pos = selector.find(':');
-    std::string base_selector = selector;
-    std::string pseudo_class;
-    
-    if (pseudo_pos != std::string::npos) {
-        base_selector = selector.substr(0, pseudo_pos);
-        pseudo_class = selector.substr(pseudo_pos + 1);
+    size_t index = 0;
+    if (simple[index] == '*') {
+        ++index;
+    } else if (!IsSimpleSelectorBoundary(simple[index])) {
+        if (!IsSelectorNameStart(simple[index])) {
+            return false;
+        }
+        size_t tag_start = index;
+        while (index < simple.size() && IsSelectorNameChar(simple[index])) {
+            ++index;
+        }
+        std::string expected_tag = simple.substr(tag_start, index - tag_start);
+        if (ToLowerASCII(element->GetTagName()) != ToLowerASCII(expected_tag)) {
+            return false;
+        }
+    }
 
-        // 移除伪类中可能的额外部分（如 :hover::after）
-        size_t double_colon = pseudo_class.find(':');
-        if (double_colon != std::string::npos) {
-            pseudo_class = pseudo_class.substr(0, double_colon);
+    while (index < simple.size()) {
+        char ch = simple[index];
+
+        if (ch == '#') {
+            ++index;
+            size_t id_start = index;
+            while (index < simple.size() && IsSelectorNameChar(simple[index])) {
+                ++index;
+            }
+            if (id_start == index ||
+                element->GetAttribute("id") != simple.substr(id_start, index - id_start)) {
+                return false;
+            }
+            continue;
         }
 
-        if (!pseudo_class.empty()) {
+        if (ch == '.') {
+            ++index;
+            size_t class_start = index;
+            while (index < simple.size() && IsSelectorNameChar(simple[index])) {
+                ++index;
+            }
+            if (class_start == index ||
+                !element->HasClass(simple.substr(class_start, index - class_start))) {
+                return false;
+            }
+            continue;
+        }
+
+        if (ch == '[') {
+            size_t end = FindMatchingBracket(simple, index);
+            if (end == std::string::npos ||
+                !MatchesAttributeSelector(simple.substr(index + 1, end - index - 1), element)) {
+                return false;
+            }
+            index = end + 1;
+            continue;
+        }
+
+        if (ch == ':') {
+            if (index + 1 < simple.size() && simple[index + 1] == ':') {
+                return false;
+            }
+
+            ++index;
+            size_t name_start = index;
+            while (index < simple.size() && IsSelectorNameChar(simple[index])) {
+                ++index;
+            }
+            if (name_start == index) {
+                return false;
+            }
+
+            std::string pseudo_class = ToLowerASCII(simple.substr(name_start, index - name_start));
+            if (index < simple.size() && simple[index] == '(') {
+                size_t end = FindMatchingParen(simple, index);
+                if (end == std::string::npos) {
+                    return false;
+                }
+                pseudo_class += "(" + simple.substr(index + 1, end - index - 1) + ")";
+                index = end + 1;
+            }
+
             if (pseudo_class == "root") {
                 auto parent = element->GetParentNode();
                 if (!parent || parent->GetNodeType() != NodeType::DOCUMENT_NODE) {
                     return false;
                 }
+            } else if (IsStructuralPseudoClass(pseudo_class)) {
+                if (!MatchesStructuralPseudoClass(pseudo_class, element)) {
+                    return false;
+                }
             } else if (!element->HasPseudoClass(pseudo_class)) {
-                // 其他伪类仍按动态状态伪类处理
                 return false;
             }
-        }
-    }
-    
-    // 如果只有伪类（如 :hover），匹配所有有该伪类的元素
-    if (base_selector.empty()) {
-        return true;  // 伪类已经在上面检查过了
-    }
-
-    // ID选择器 (#id)
-    if (base_selector[0] == '#') {
-        std::string id = base_selector.substr(1);
-        return element->GetAttribute("id") == id;
-    }
-
-    // 类选择器 (.class)
-    if (base_selector[0] == '.') {
-        std::string class_name = base_selector.substr(1);
-        // 处理多个类选择器（如 .class1.class2）
-        size_t next_dot = class_name.find('.');
-        if (next_dot != std::string::npos) {
-            // 多个类选择器
-            std::string first_class = class_name.substr(0, next_dot);
-            std::string rest = class_name.substr(next_dot);
-            if (!element->HasClass(first_class)) {
-                return false;
-            }
-            // 递归检查剩余的类
-            return MatchesSimpleSelector(rest, element);
-        }
-        return element->HasClass(class_name);
-    }
-
-    // 标签选择器 (tag)
-    // 处理复合选择器（如 div.container）
-    size_t dot_pos = base_selector.find('.');
-    size_t hash_pos = base_selector.find('#');
-
-    if (dot_pos != std::string::npos || hash_pos != std::string::npos) {
-        // 复合选择器：先匹配标签
-        size_t sep_pos = (dot_pos != std::string::npos) ? dot_pos : hash_pos;
-        std::string tag = base_selector.substr(0, sep_pos);
-
-        if (!tag.empty() && element->GetTagName() != tag) {
-            return false;
+            continue;
         }
 
-        // 再匹配类或ID
-        if (dot_pos != std::string::npos) {
-            std::string class_name = base_selector.substr(dot_pos + 1);
-            // 移除可能的ID部分
-            size_t hash_in_class = class_name.find('#');
-            if (hash_in_class != std::string::npos) {
-                class_name = class_name.substr(0, hash_in_class);
-            }
-            if (!element->HasClass(class_name)) {
-                return false;
-            }
-        }
-
-        if (hash_pos != std::string::npos) {
-            std::string id = base_selector.substr(hash_pos + 1);
-            if (element->GetAttribute("id") != id) {
-                return false;
-            }
-        }
-
-        return true;
+        return false;
     }
 
-    // 简单标签选择器
-    return element->GetTagName() == base_selector;
+    return true;
 }
-
 std::map<std::string, std::string> StyleManager::ParseDeclarations(const std::string& declarations) const {
     std::map<std::string, std::string> result;
     
@@ -669,4 +1216,3 @@ void StyleManager::InvalidateHoverRuleCache() {
 }
 
 } // namespace mbink
-

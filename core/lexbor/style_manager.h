@@ -27,8 +27,13 @@ struct StyleSheetEntry {
     int priority;                              // 优先级（数值越大优先级越高）
     std::string source;                        // 来源（"user", "inline", "default"等）
     
-    StyleSheetEntry(std::shared_ptr<LexborStyleSheet> s, int p = 0, const std::string& src = "user")
-        : sheet(s), priority(p), source(src) {}
+    size_t insertion_order = 0;
+
+    StyleSheetEntry(std::shared_ptr<LexborStyleSheet> s,
+                    int p = 0,
+                    const std::string& src = "user",
+                    size_t order = 0)
+        : sheet(s), priority(p), source(src), insertion_order(order) {}
 };
 
 /**
@@ -225,6 +230,7 @@ private:
     AnimationController animation_controller_;    // 动画控制器
     mutable std::unordered_map<Element*, HoverRuleCacheEntry> hover_rule_cache_;
     size_t stylesheet_version_ = 0;
+    size_t next_stylesheet_order_ = 0;
 };
 
 } // namespace mbink

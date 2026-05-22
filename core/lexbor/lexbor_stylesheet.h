@@ -26,9 +26,10 @@ struct CSSRule {
     std::string selector;                           // 选择器字符串
     std::map<std::string, std::string> declarations; // 属性声明
     int specificity;                                // 选择器优先级
+    size_t source_order = 0;
     bool important;                                 // 是否有!important
     
-    CSSRule() : specificity(0), important(false) {}
+    CSSRule() : specificity(0), source_order(0), important(false) {}
 };
 
 /**
@@ -166,6 +167,7 @@ private:
     lxb_css_parser_t* parser_;
     lxb_css_stylesheet_t* stylesheet_;
     std::vector<std::unique_ptr<CSSRule>> rules_;
+    size_t next_source_order_ = 0;
     std::vector<std::string> errors_;
     
     static CSSAssetProvider asset_provider_;

@@ -5,6 +5,9 @@
 
 #include <gtest/gtest.h>
 #include "lexbor/style_manager.h"
+#include "dom/document.h"
+#include "dom/element.h"
+#include "render/css/style_resolver.h"
 
 namespace mbink {
 namespace test {
@@ -71,6 +74,225 @@ TEST_F(StyleManagerTest, ParseInlineStyleSingleProperty) {
     auto styles = style_manager_->ParseInlineStyle("color: blue");
     EXPECT_EQ(styles.size(), 1);
     EXPECT_EQ(styles["color"], "blue");
+}
+
+TEST_F(StyleManagerTest, StructuralPseudoClassesMatchElementChildPosition) {
+    auto doc = std::make_shared<Document>();
+    doc->Initialize();
+
+    auto list = doc->CreateElement("ul");
+    auto first_item = doc->CreateElement("li");
+    auto second_item = doc->CreateElement("li");
+    auto third_item = doc->CreateElement("li");
+    doc->GetBody()->AppendChild(list);
+    list->AppendChild(first_item);
+    list->AppendChild(doc->CreateTextNode("ignored text"));
+    list->AppendChild(second_item);
+    list->AppendChild(third_item);
+
+    ASSERT_TRUE(style_manager_->ParseCSSString(R"(
+        li:first-child { color: red; }
+        li:last-child { background-color: blue; }
+        li:nth-child(2) { font-weight: bold; }
+        li:nth-child(odd) { text-decoration: underline; }
+    )"));
+
+    auto first_style = style_manager_->ComputeStyle(first_item.get());
+    auto second_style = style_manager_->ComputeStyle(second_item.get());
+    auto third_style = style_manager_->ComputeStyle(third_item.get());
+
+    EXPECT_EQ(first_style["color"], "red");
+    EXPECT_EQ(first_style["text-decoration"], "underline");
+    EXPECT_FALSE(first_style.contains("font-weight"));
+    EXPECT_FALSE(first_style.contains("background-color"));
+
+    EXPECT_EQ(second_style["font-weight"], "bold");
+    EXPECT_FALSE(second_style.contains("color"));
+    EXPECT_FALSE(second_style.contains("text-decoration"));
+
+    EXPECT_EQ(third_style["background-color"], "blue");
+    EXPECT_EQ(third_style["text-decoration"], "underline");
+}
+
+TEST_F(StyleManagerTest, TableStickyFirstColumnSelectorComputesStandardProperties) {
+    auto doc = std::make_shared<Document>();
+    doc->Initialize();
+
+    auto table = doc->CreateElement("table");
+    auto thead = doc->CreateElement("thead");
+    auto row = doc->CreateElement("tr");
+    auto first_header = doc->CreateElement("th");
+    auto second_header = doc->CreateElement("th");
+    doc->GetBody()->AppendChild(table);
+    table->AppendChild(thead);
+    thead->AppendChild(row);
+    row->AppendChild(first_header);
+    row->AppendChild(second_header);
+
+    ASSERT_TRUE(doc->GetStyleManager()->ParseCSSString(R"(
+        th:first-child,
+        td:first-child {
+            position: sticky;
+            left: 0;
+            z-index: 2;
+        }
+        thead th:first-child {
+            z-index: 3;
+        }
+    )"));
+
+    StyleResolver resolver;
+    resolver.SetStyleManager(doc->GetStyleManager());
+
+    auto first_style = resolver.ResolveStyle(first_header, nullptr);
+    auto second_style = resolver.ResolveStyle(second_header, nullptr);
+
+    EXPECT_EQ(first_style.position, "sticky");
+    EXPECT_FLOAT_EQ(first_style.left.ToPx(), 0.0f);
+    EXPECT_EQ(first_style.z_index, 3);
+
+    EXPECT_NE(second_style.position, "sticky");
+    EXPECT_EQ(second_style.z_index, 0);
+}
+
+TEST_F(StyleManagerTest, SelectorListSpecificityDoesNotLeakAcrossBranches) {
+    auto doc = std::make_shared<Document>();
+    doc->Initialize();
+
+    auto row = doc->CreateElement("tr");
+    auto first_header = doc->CreateElement("th");
+    doc->GetBody()->AppendChild(row);
+    row->AppendChild(first_header);
+
+    ASSERT_TRUE(doc->GetStyleManager()->ParseCSSString(R"(
+        #unmatched-selector,
+        th:first-child {
+            z-index: 1;
+        }
+        tr th:first-child {
+            z-index: 3;
+        }
+    )"));
+
+    StyleResolver resolver;
+    resolver.SetStyleManager(doc->GetStyleManager());
+
+    auto style = resolver.ResolveStyle(first_header, nullptr);
+    EXPECT_EQ(style.z_index, 3);
+}
+
+TEST_F(StyleManagerTest, NthChildExpressionWithSpacesMatchesAsSingleSelector) {
+    auto doc = std::make_shared<Document>();
+    doc->Initialize();
+
+    auto list = doc->CreateElement("ul");
+    auto first_item = doc->CreateElement("li");
+    auto second_item = doc->CreateElement("li");
+    auto third_item = doc->CreateElement("li");
+    doc->GetBody()->AppendChild(list);
+    list->AppendChild(first_item);
+    list->AppendChild(second_item);
+    list->AppendChild(third_item);
+
+    ASSERT_TRUE(doc->GetStyleManager()->ParseCSSString(R"(
+        ul li:nth-child(2n + 1) { color: red; }
+    )"));
+
+    auto first_style = doc->GetStyleManager()->ComputeStyle(first_item.get());
+    auto second_style = doc->GetStyleManager()->ComputeStyle(second_item.get());
+    auto third_style = doc->GetStyleManager()->ComputeStyle(third_item.get());
+
+    EXPECT_EQ(first_style["color"], "red");
+    EXPECT_FALSE(second_style.contains("color"));
+    EXPECT_EQ(third_style["color"], "red");
+}
+
+TEST_F(StyleManagerTest, ChainedPseudoClassesAllHaveToMatch) {
+    auto doc = std::make_shared<Document>();
+    doc->Initialize();
+
+    auto row = doc->CreateElement("tr");
+    auto first_header = doc->CreateElement("th");
+    doc->GetBody()->AppendChild(row);
+    row->AppendChild(first_header);
+
+    ASSERT_TRUE(doc->GetStyleManager()->ParseCSSString(R"(
+        th:first-child:hover { color: red; }
+    )"));
+
+    auto without_hover = doc->GetStyleManager()->ComputeStyle(first_header.get());
+    EXPECT_FALSE(without_hover.contains("color"));
+
+    first_header->SetPseudoClass("hover", true);
+    auto with_hover = doc->GetStyleManager()->ComputeStyle(first_header.get());
+    EXPECT_EQ(with_hover["color"], "red");
+}
+
+TEST_F(StyleManagerTest, SelectorListSplitsOnlyTopLevelCommas) {
+    auto doc = std::make_shared<Document>();
+    doc->Initialize();
+
+    auto target = doc->CreateElement("div");
+    target->SetAttribute("data-label", "a,b");
+    doc->GetBody()->AppendChild(target);
+
+    ASSERT_TRUE(doc->GetStyleManager()->ParseCSSString(R"(
+        div[data-label="a,b"], span { color: red; }
+    )"));
+
+    auto style = doc->GetStyleManager()->ComputeStyle(target.get());
+    EXPECT_EQ(style["color"], "red");
+}
+
+TEST_F(StyleManagerTest, LaterSameSpecificityRuleWinsBySourceOrder) {
+    auto doc = std::make_shared<Document>();
+    doc->Initialize();
+
+    auto row = doc->CreateElement("tr");
+    auto first_header = doc->CreateElement("th");
+    doc->GetBody()->AppendChild(row);
+    row->AppendChild(first_header);
+
+    ASSERT_TRUE(doc->GetStyleManager()->ParseCSSString(R"(
+        th:first-child { z-index: 1; }
+        th:first-child { z-index: 4; }
+    )"));
+
+    StyleResolver resolver;
+    resolver.SetStyleManager(doc->GetStyleManager());
+
+    auto style = resolver.ResolveStyle(first_header, nullptr);
+    EXPECT_EQ(style.z_index, 4);
+}
+
+TEST_F(StyleManagerTest, LaterSamePriorityStyleSheetWinsWithSameSpecificity) {
+    auto doc = std::make_shared<Document>();
+    doc->Initialize();
+
+    auto target = doc->CreateElement("div");
+    target->SetAttribute("class", "target");
+    doc->GetBody()->AppendChild(target);
+
+    ASSERT_TRUE(doc->GetStyleManager()->ParseCSSString(".target { color: red; }", 0, "first"));
+    ASSERT_TRUE(doc->GetStyleManager()->ParseCSSString(".target { color: blue; }", 0, "second"));
+
+    auto style = doc->GetStyleManager()->ComputeStyle(target.get());
+    EXPECT_EQ(style["color"], "blue");
+}
+
+TEST_F(StyleManagerTest, HigherPriorityStyleSheetWinsOverLaterLowerPriorityStyleSheet) {
+    auto doc = std::make_shared<Document>();
+    doc->Initialize();
+
+    auto target = doc->CreateElement("div");
+    target->SetAttribute("class", "target");
+    doc->GetBody()->AppendChild(target);
+
+    ASSERT_TRUE(doc->GetStyleManager()->ParseCSSString(".target { color: blue; }", 10, "high"));
+    ASSERT_TRUE(doc->GetStyleManager()->ParseCSSString(".target { color: red; }", 0, "low"));
+
+    auto style = doc->GetStyleManager()->ComputeStyle(target.get());
+    EXPECT_EQ(style["color"], "blue");
 }
 
 // ========== 样式表管理测试 ==========

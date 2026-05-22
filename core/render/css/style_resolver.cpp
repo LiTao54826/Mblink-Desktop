@@ -1433,6 +1433,18 @@ bool StyleResolver::ParseLayoutProperty(ComputedStyle& style,
         }
         return true;
     }
+    if (property == "table-layout") {
+        if (resolved_value == "auto" || resolved_value == "fixed") {
+            style.table_layout = resolved_value;
+        }
+        return true;
+    }
+    if (property == "caption-side") {
+        if (resolved_value == "top" || resolved_value == "bottom") {
+            style.caption_side = resolved_value;
+        }
+        return true;
+    }
     if (property == "width") {
         style.width = CSSValue::ParseLength(resolved_value);
         return true;

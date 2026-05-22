@@ -23,9 +23,15 @@ set(EVENT_TEST_SOURCES
     event/test_hit_test_controller.cpp
 )
 
+set(EDITING_TEST_SOURCES
+    editing/test_table_selection_copy.cpp
+)
+
 # 布局测试
 set(LAYOUT_TEST_SOURCES
     layout/test_native_layout_engine.cpp
+    layout/test_table_layout_baseline.cpp
+    layout/test_table_sticky_layout.cpp
     layout/test_flex_layout.cpp
     layout/test_block_layout.cpp
     layout/test_grid_layout.cpp
@@ -67,6 +73,7 @@ add_executable(mbink_unit_tests
     main.cpp
     ${DOM_TEST_SOURCES}
     ${EVENT_TEST_SOURCES}
+    ${EDITING_TEST_SOURCES}
     ${LAYOUT_TEST_SOURCES}
     ${RENDER_TEST_SOURCES}
     ${QUICKJS_TEST_SOURCES}

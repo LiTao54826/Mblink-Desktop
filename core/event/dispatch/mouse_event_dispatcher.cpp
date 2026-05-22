@@ -61,6 +61,21 @@ bool IsPrimaryEditorElement(const std::shared_ptr<Element>& element) {
     return tag_name == "input" || tag_name == "textarea" || tag_name == "terminal" || tag_name == "logview";
 }
 
+bool IsSelectionSuppressedByUserSelect(const std::shared_ptr<Element>& element) {
+    std::shared_ptr<Node> current = element;
+    while (current) {
+        auto current_element = std::dynamic_pointer_cast<Element>(current);
+        if (current_element) {
+            auto render_object = current_element->GetRenderObject();
+            if (render_object && render_object->GetComputedStyle().user_select == "none") {
+                return true;
+            }
+        }
+        current = current->GetParentNode();
+    }
+    return false;
+}
+
 bool ContainsElement(const std::shared_ptr<Element>& ancestor, const std::shared_ptr<Element>& element) {
     if (!ancestor || !element) {
         return false;
@@ -1445,8 +1460,13 @@ void MouseEventDispatcher::HandleMouseDown(std::shared_ptr<Window> window,
                 shift_key,
                 hit_result.render_object,
                 root_render);
-        } else if (selection_manager_ && !IsPrimaryEditorElement(hit_result.element)) {
+        } else if (selection_manager_ &&
+                   !IsPrimaryEditorElement(hit_result.element) &&
+                   !IsSelectionSuppressedByUserSelect(hit_result.element)) {
             UpdateSelectionFromClick(document, hit_result, logical_x, logical_y);
+            if (auto pipeline = window->GetRenderPipeline()) {
+                pipeline->ForceRasterize();
+            }
         }
     }
 
@@ -1881,6 +1901,19 @@ void MouseEventDispatcher::HandleMouseMove(std::shared_ptr<Window> window,
         else if (last_mousedown->IsContentEditable() && contenteditable_controller_ && contenteditable_controller_->IsDragging()) {
             HandleContentEditableDragSelection(window, document, logical_x, logical_y, root_render, SDL_EVENT_MOUSE_MOTION);
         }
+        else if ((buttons & 1) != 0 &&
+                 selection_manager_ &&
+                 document &&
+                 !IsPrimaryEditorElement(last_mousedown) &&
+                 !last_mousedown->IsContentEditable() &&
+                 !IsSelectionSuppressedByUserSelect(last_mousedown) &&
+                 !IsSelectionSuppressedByUserSelect(hit_result.element)) {
+            ExtendSelectionFromDrag(document, hit_result, logical_x, logical_y);
+            window->SetNeedsRepaintFor(RepaintReason::MouseHover);
+            if (auto pipeline = window->GetRenderPipeline()) {
+                pipeline->ForceRasterize();
+            }
+        }
     }
 
     // 更新拖拽状态
@@ -1997,7 +2030,12 @@ void MouseEventDispatcher::UpdateSelectionFromClick(
 
     float local_x = logical_x;
     if (text_render) {
-        local_x -= text_render->GetLayoutInfo().x;
+        const auto& bounds = text_render->GetViewportBounds();
+        if (bounds.valid) {
+            local_x = logical_x - bounds.x;
+        } else {
+            local_x -= text_render->GetLayoutInfo().x;
+        }
     } else if (hit_result.render_object) {
         local_x = hit_result.local_x - hit_result.render_object->GetComputedStyle().padding.left.ToPx();
     }
@@ -2012,6 +2050,105 @@ void MouseEventDispatcher::UpdateSelectionFromClick(
     }
 
     selection->Collapse(caret_pos.node, caret_pos.offset);
+}
+
+void MouseEventDispatcher::ExtendSelectionFromDrag(
+    std::shared_ptr<Document> document,
+    const HitTestResult& hit_result,
+    float logical_x,
+    float logical_y) {
+
+    (void)logical_y;
+
+    if (!document || !hit_result.IsValid() || !selection_manager_) {
+        return;
+    }
+
+    auto selection = selection_manager_->GetSelection(document);
+    if (!selection || !selection->GetAnchorNode()) {
+        return;
+    }
+
+    std::shared_ptr<Text> text_node = nullptr;
+    std::shared_ptr<RenderObject> text_render = nullptr;
+
+    if (hit_result.render_object) {
+        auto node = hit_result.render_object->GetNode();
+        if (node && node->GetNodeType() == NodeType::TEXT_NODE) {
+            text_node = std::dynamic_pointer_cast<Text>(node);
+            text_render = hit_result.render_object;
+        } else {
+            for (const auto& child : hit_result.render_object->GetChildren()) {
+                auto child_node = child->GetNode();
+                if (child_node && child_node->GetNodeType() == NodeType::TEXT_NODE) {
+                    text_node = std::dynamic_pointer_cast<Text>(child_node);
+                    text_render = child;
+                    break;
+                }
+            }
+        }
+    }
+
+    if (!text_node) {
+        for (const auto& child : hit_result.element->GetChildNodes()) {
+            if (child->GetNodeType() == NodeType::TEXT_NODE) {
+                text_node = std::dynamic_pointer_cast<Text>(child);
+                break;
+            }
+        }
+    }
+
+    if (!text_node) {
+        return;
+    }
+
+    std::string text = text_node->GetTextContent();
+    if (text.empty()) {
+        selection->Extend(text_node, 0);
+        return;
+    }
+
+    float font_size = 16.0f;
+    std::string font_family = "sans-serif";
+
+    if (text_render) {
+        const auto& style = text_render->GetComputedStyle();
+        font_size = style.font_size;
+        font_family = style.font_family.empty() ? "sans-serif" : style.font_family;
+    } else if (hit_result.render_object) {
+        const auto& style = hit_result.render_object->GetComputedStyle();
+        font_size = style.font_size;
+        font_family = style.font_family.empty() ? "sans-serif" : style.font_family;
+    }
+
+    FontDescriptor desc;
+    desc.family = font_family;
+    desc.size = font_size;
+    desc.weight = FontWeight::NORMAL;
+    desc.style = FontStyle::NORMAL;
+    SkFont font = FontManager::GetInstance().LoadFont(desc);
+
+    float local_x = logical_x;
+    if (text_render) {
+        const auto& bounds = text_render->GetViewportBounds();
+        if (bounds.valid) {
+            local_x = logical_x - bounds.x;
+        } else {
+            local_x -= text_render->GetLayoutInfo().x;
+        }
+    } else if (hit_result.render_object) {
+        local_x = hit_result.local_x - hit_result.render_object->GetComputedStyle().padding.left.ToPx();
+    }
+
+    CaretPosition caret_pos = selection_manager_->HitTestToCaretPosition(hit_result.element,
+                                                                         static_cast<int>(std::round(local_x)),
+                                                                         static_cast<int>(std::round(logical_y)),
+                                                                         &font);
+    if (!caret_pos.IsValid()) {
+        return;
+    }
+
+    selection->Extend(caret_pos.node, caret_pos.offset);
 }
 
 } // namespace mbink

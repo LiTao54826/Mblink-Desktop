@@ -624,6 +624,360 @@ TEST_F(DOMBindingsTest, QuerySelectorAll) {
     EXPECT_GE(result.get<int>(), 3);
 }
 
+TEST_F(DOMBindingsTest, TableRangeToStringUsesTabAndNewlineSeparators) {
+    auto result = runtime_->Eval(R"(
+        document.body.innerHTML =
+            '<table><tbody>' +
+            '<tr><td>Alpha</td><td>Beta</td></tr>' +
+            '<tr><td>Gamma</td><td>Delta</td></tr>' +
+            '</tbody></table>';
+
+        var cells = document.querySelectorAll('td');
+        var range = document.createRange();
+        range.setStart(cells[0].childNodes[0], 0);
+        range.setEnd(cells[3].childNodes[0], 5);
+
+        range.toString();
+    )");
+    EXPECT_EQ(result, "Alpha\tBeta\nGamma\tDelta");
+}
+
+TEST_F(DOMBindingsTest, GetComputedStyleReportsStandardTableDisplayValues) {
+    auto result = runtime_->Eval(R"(
+        document.body.innerHTML =
+            '<table id="table">' +
+            '<caption id="caption">People</caption>' +
+            '<thead id="head"><tr id="head-row"><th id="head-cell">Name</th></tr></thead>' +
+            '<tbody id="body"><tr id="body-row"><td id="body-cell">Alice</td></tr></tbody>' +
+            '<tfoot id="foot"><tr id="foot-row"><td id="foot-cell">Total</td></tr></tfoot>' +
+            '</table>';
+
+        JSON.stringify({
+            table: getComputedStyle(document.getElementById('table')).display,
+            caption: getComputedStyle(document.getElementById('caption')).display,
+            head: getComputedStyle(document.getElementById('head')).display,
+            body: getComputedStyle(document.getElementById('body')).display,
+            foot: getComputedStyle(document.getElementById('foot')).display,
+            row: getComputedStyle(document.getElementById('body-row')).display,
+            cell: getComputedStyle(document.getElementById('body-cell')).display,
+            th: getComputedStyle(document.getElementById('head-cell')).display
+        });
+    )");
+    EXPECT_EQ(result,
+              R"({"table":"table","caption":"table-caption","head":"table-header-group","body":"table-row-group","foot":"table-footer-group","row":"table-row","cell":"table-cell","th":"table-cell"})");
+}
+
+TEST_F(DOMBindingsTest, ScrollContainerExposesClientSizeForTableOverflow) {
+    auto setup_result = runtime_->Eval(R"(
+        document.body.innerHTML =
+            '<div id="scroller" style="width: 520px; height: 260px; overflow: auto; border: 1px solid #000;">' +
+            '<table id="table" style="min-width: 920px; border-spacing: 0;">' +
+            '<tbody><tr>' +
+            '<td style="min-width: 140px; padding: 10px 12px;">Alpha</td>' +
+            '<td style="min-width: 140px; padding: 10px 12px;">North</td>' +
+            '<td style="min-width: 140px; padding: 10px 12px;">Ready</td>' +
+            '<td style="min-width: 140px; padding: 10px 12px;">Owner</td>' +
+            '<td style="min-width: 140px; padding: 10px 12px;">Updated</td>' +
+            '<td style="min-width: 140px; padding: 10px 12px;">Notes</td>' +
+            '</tr></tbody></table></div>';
+        'ok';
+    )");
+    EXPECT_EQ(setup_result, "ok");
+
+    window_->EnsureRenderTree();
+
+    auto result = runtime_->Eval(R"(
+        var scroller = document.getElementById('scroller');
+        var table = document.getElementById('table');
+        JSON.stringify({
+            clientWidth: scroller.clientWidth,
+            clientHeight: scroller.clientHeight,
+            hasHorizontalOverflow: scroller.scrollWidth > scroller.clientWidth,
+            tableOverflowsScroller: table.getBoundingClientRect().width > scroller.clientWidth
+        });
+    )");
+
+    EXPECT_EQ(result,
+              R"({"clientWidth":520,"clientHeight":260,"hasHorizontalOverflow":true,"tableOverflowsScroller":true})");
+}
+
+TEST_F(DOMBindingsTest, TableElementExposesRowsAndSectionCollections) {
+    auto result = runtime_->Eval(R"(
+        document.body.innerHTML =
+            '<table id="people">' +
+            '<caption id="caption">People</caption>' +
+            '<thead id="head"><tr id="head-row"><th>Name</th></tr></thead>' +
+            '<tbody id="body-a"><tr id="row-a"><td>Alice</td></tr></tbody>' +
+            '<tbody id="body-b"><tr id="row-b"><td>Bob</td></tr></tbody>' +
+            '<tfoot id="foot"><tr id="foot-row"><td>Total</td></tr></tfoot>' +
+            '</table>';
+
+        var table = document.getElementById('people');
+        JSON.stringify({
+            caption: table.caption.id,
+            tHead: table.tHead.id,
+            tFoot: table.tFoot.id,
+            bodies: [table.tBodies.length, table.tBodies[0].id, table.tBodies[1].id],
+            rows: [
+                table.rows.length,
+                table.rows[0].id,
+                table.rows[1].id,
+                table.rows[2].id,
+                table.rows[3].id
+            ],
+            sectionRows: [table.tBodies[0].rows.length, table.tBodies[0].rows[0].id]
+        });
+    )");
+    EXPECT_EQ(result,
+              R"({"caption":"caption","tHead":"head","tFoot":"foot","bodies":[2,"body-a","body-b"],"rows":[4,"head-row","row-a","row-b","foot-row"],"sectionRows":[1,"row-a"]})");
+}
+
+TEST_F(DOMBindingsTest, TableRowsAndCellsExposeIndexesAndSpanProperties) {
+    auto result = runtime_->Eval(R"(
+        document.body.innerHTML =
+            '<table>' +
+            '<thead><tr id="head-row"><th id="head-cell">Name</th></tr></thead>' +
+            '<tbody>' +
+            '<tr id="row-a"><td id="cell-a" colspan="2" rowspan="0">A</td><th id="cell-b">B</th></tr>' +
+            '<tr id="row-b"><td>C</td></tr>' +
+            '</tbody>' +
+            '</table>';
+
+        var rowA = document.getElementById('row-a');
+        var rowB = document.getElementById('row-b');
+        var cellA = document.getElementById('cell-a');
+        var cellB = document.getElementById('cell-b');
+
+        var before = {
+            rowIndex: rowA.rowIndex,
+            sectionRowIndex: rowA.sectionRowIndex,
+            nextRowIndex: rowB.rowIndex,
+            cells: [rowA.cells.length, rowA.cells[0].id, rowA.cells[1].id],
+            cellIndexes: [cellA.cellIndex, cellB.cellIndex],
+            spans: [cellA.colSpan, cellA.rowSpan]
+        };
+
+        cellA.colSpan = 3;
+        cellA.rowSpan = 2;
+        var after = {
+            spans: [cellA.colSpan, cellA.rowSpan],
+            attrs: [cellA.getAttribute('colspan'), cellA.getAttribute('rowspan')]
+        };
+
+        JSON.stringify({ before: before, after: after });
+    )");
+    EXPECT_EQ(result,
+              R"({"before":{"rowIndex":1,"sectionRowIndex":0,"nextRowIndex":2,"cells":[2,"cell-a","cell-b"],"cellIndexes":[0,1],"spans":[2,0]},"after":{"spans":[3,2],"attrs":["3","2"]}})");
+}
+
+TEST_F(DOMBindingsTest, TableDomMutationMethodsCreateAndDeleteRowsCellsAndSections) {
+    auto result = runtime_->Eval(R"(
+        document.body.innerHTML = '';
+        var table = document.createElement('table');
+        document.body.appendChild(table);
+
+        var rowA = table.insertRow();
+        rowA.id = 'row-a';
+        rowA.insertCell().textContent = 'A';
+        rowA.insertCell(0).textContent = 'B';
+
+        var rowB = table.insertRow(-1);
+        rowB.id = 'row-b';
+        rowB.insertCell().textContent = 'C';
+        rowB.deleteCell(0);
+        rowB.insertCell().textContent = 'D';
+
+        var caption = table.createCaption();
+        caption.id = 'caption';
+        caption.textContent = 'People';
+        var head = table.createTHead();
+        head.id = 'head';
+        var headRow = head.insertRow();
+        headRow.id = 'head-row';
+        headRow.insertCell().textContent = 'Name';
+        var foot = table.createTFoot();
+        foot.id = 'foot';
+        var footRow = foot.insertRow();
+        footRow.id = 'foot-row';
+        footRow.insertCell().textContent = 'Total';
+
+        table.deleteRow(1);
+        var beforeDeletes = {
+            caption: table.caption.id,
+            tHead: table.tHead.id,
+            tFoot: table.tFoot.id,
+            bodies: table.tBodies.length,
+            rows: [table.rows.length, table.rows[0].id, table.rows[1].id, table.rows[2].id],
+            rowB: [rowB.rowIndex, rowB.sectionRowIndex, rowB.cells.length, rowB.cells[0].textContent],
+            rowAttached: rowA.parentNode === null
+        };
+
+        table.deleteCaption();
+        table.deleteTHead();
+        table.deleteTFoot();
+        var afterDeletes = {
+            caption: table.caption,
+            tHead: table.tHead,
+            tFoot: table.tFoot,
+            rows: [table.rows.length, table.rows[0].id]
+        };
+
+        JSON.stringify({ beforeDeletes: beforeDeletes, afterDeletes: afterDeletes });
+    )");
+    EXPECT_EQ(result,
+              R"({"beforeDeletes":{"caption":"caption","tHead":"head","tFoot":"foot","bodies":1,"rows":[3,"head-row","row-b","foot-row"],"rowB":[1,0,1,"D"],"rowAttached":true},"afterDeletes":{"caption":null,"tHead":null,"tFoot":null,"rows":[1,"row-b"]}})");
+}
+
+TEST_F(DOMBindingsTest, TableRowsFollowBrowserOrderAndInsertRowUsesRowsCollection) {
+    auto result = runtime_->Eval(R"(
+        document.body.innerHTML = '';
+        var table = document.createElement('table');
+        document.body.appendChild(table);
+
+        var foot = document.createElement('tfoot');
+        var footRow = document.createElement('tr');
+        footRow.id = 'foot-row';
+        foot.appendChild(footRow);
+        table.appendChild(foot);
+
+        var directRow = document.createElement('tr');
+        directRow.id = 'direct-row';
+        table.appendChild(directRow);
+
+        var head = document.createElement('thead');
+        var headRow = document.createElement('tr');
+        headRow.id = 'head-row';
+        head.appendChild(headRow);
+        table.appendChild(head);
+
+        var body = document.createElement('tbody');
+        var bodyRow = document.createElement('tr');
+        bodyRow.id = 'body-row';
+        body.appendChild(bodyRow);
+        table.appendChild(body);
+
+        var orderBefore = [
+            table.rows[0].id,
+            table.rows[1].id,
+            table.rows[2].id,
+            table.rows[3].id
+        ];
+        var indexesBefore = [headRow.rowIndex, directRow.rowIndex, bodyRow.rowIndex, footRow.rowIndex];
+        var sectionIndexesBefore = [
+            headRow.sectionRowIndex,
+            directRow.sectionRowIndex,
+            bodyRow.sectionRowIndex,
+            footRow.sectionRowIndex
+        ];
+
+        var appended = table.insertRow(-1);
+        appended.id = 'appended-row';
+
+        var inserted = table.insertRow(1);
+        inserted.id = 'inserted-row';
+
+        JSON.stringify({
+            orderBefore: orderBefore,
+            indexesBefore: indexesBefore,
+            sectionIndexesBefore: sectionIndexesBefore,
+            appendedParent: appended.parentNode.tagName.toLowerCase(),
+            insertedParent: inserted.parentNode.tagName.toLowerCase(),
+            orderAfter: [
+                table.rows[0].id,
+                table.rows[1].id,
+                table.rows[2].id,
+                table.rows[3].id,
+                table.rows[4].id,
+                table.rows[5].id
+            ],
+            indexesAfter: [inserted.rowIndex, appended.rowIndex],
+            sectionIndexesAfter: [
+                inserted.sectionRowIndex,
+                directRow.sectionRowIndex,
+                bodyRow.sectionRowIndex,
+                footRow.sectionRowIndex,
+                appended.sectionRowIndex
+            ]
+        });
+    )");
+    EXPECT_EQ(result,
+              R"({"orderBefore":["head-row","direct-row","body-row","foot-row"],"indexesBefore":[0,1,2,3],"sectionIndexesBefore":[0,1,0,0],"appendedParent":"tfoot","insertedParent":"table","orderAfter":["head-row","inserted-row","direct-row","body-row","foot-row","appended-row"],"indexesAfter":[1,5],"sectionIndexesAfter":[1,2,0,0,1]})");
+}
+
+TEST_F(DOMBindingsTest, TableCreateTBodyInsertsAfterLastTBodyAndBeforeFollowingSections) {
+    auto result = runtime_->Eval(R"(
+        document.body.innerHTML = '';
+        var table = document.createElement('table');
+        document.body.appendChild(table);
+
+        var bodyA = document.createElement('tbody');
+        bodyA.id = 'body-a';
+        table.appendChild(bodyA);
+
+        var foot = document.createElement('tfoot');
+        foot.id = 'foot';
+        table.appendChild(foot);
+
+        var bodyB = table.createTBody();
+        bodyB.id = 'body-b';
+
+        var tableWithoutBodies = document.createElement('table');
+        document.body.appendChild(tableWithoutBodies);
+        var lonelyFoot = document.createElement('tfoot');
+        lonelyFoot.id = 'lonely-foot';
+        tableWithoutBodies.appendChild(lonelyFoot);
+        var createdBody = tableWithoutBodies.createTBody();
+        createdBody.id = 'created-body';
+
+        JSON.stringify({
+            bodyCount: table.tBodies.length,
+            orderWithBody: [
+                table.childNodes[0].id,
+                table.childNodes[1].id,
+                table.childNodes[2].id
+            ],
+            orderWithoutBody: [
+                tableWithoutBodies.childNodes[0].id,
+                tableWithoutBodies.childNodes[1].id
+            ]
+        });
+    )");
+    EXPECT_EQ(result,
+              R"({"bodyCount":2,"orderWithBody":["body-a","body-b","foot"],"orderWithoutBody":["lonely-foot","created-body"]})");
+}
+
+TEST_F(DOMBindingsTest, TableColumnElementsExposeStandardSpanProperty) {
+    auto result = runtime_->Eval(R"(
+        document.body.innerHTML = '';
+        var col = document.createElement('col');
+        var group = document.createElement('colgroup');
+
+        var defaults = [col.span, group.span];
+
+        col.span = 3;
+        group.span = 2;
+        var afterSet = [
+            col.span,
+            col.getAttribute('span'),
+            group.span,
+            group.getAttribute('span')
+        ];
+
+        col.span = 0;
+        group.span = -4;
+        var afterClamp = [
+            col.span,
+            col.getAttribute('span'),
+            group.span,
+            group.getAttribute('span')
+        ];
+
+        JSON.stringify({ defaults: defaults, afterSet: afterSet, afterClamp: afterClamp });
+    )");
+    EXPECT_EQ(result,
+              R"({"defaults":[1,1],"afterSet":[3,"3",2,"2"],"afterClamp":[1,"1",1,"1"]})");
+}
+
 TEST_F(DOMBindingsTest, GetElementById) {
     auto result = runtime_->Eval(R"(
         var div = document.createElement('div');

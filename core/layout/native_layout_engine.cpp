@@ -2045,6 +2045,8 @@ Style NativeLayoutEngine::ConvertStyle(const ComputedStyle& computed) {
         style.scrollbar_height = RenderObject::GetScrollbarWidth();
     }
 
+    style.item_is_table = (computed.display == RenderObjectType::TABLE);
+
     return style;
 }
 
@@ -2560,9 +2562,13 @@ LayoutOutput NativeLayoutEngine::ComputeNodeLayout(NodeId node_id, const LayoutI
 
     const bool is_text_node = node->render_obj &&
                               node->render_obj->GetType() == RenderObjectType::TEXT;
-    bool disable_cache_read = (inputs.run_mode == RunMode::PerformLayout) &&
-                              (node->is_ifc_container || node->is_anonymous_block ||
-                               is_text_node);
+    const bool is_content_size_probe =
+        inputs.run_mode == RunMode::PerformLayout &&
+        inputs.sizing_mode == SizingMode::ContentSize;
+    bool disable_cache_read = is_content_size_probe ||
+                              ((inputs.run_mode == RunMode::PerformLayout) &&
+                               (node->is_ifc_container || node->is_anonymous_block ||
+                                is_text_node));
 
     if (!disable_cache_read) {
         auto cached = node->cache.Get(
@@ -2593,14 +2599,16 @@ LayoutOutput NativeLayoutEngine::ComputeNodeLayout(NodeId node_id, const LayoutI
             // Store in cache and return early (pass content_version for incremental layout)
             // **Feature: incremental-layout-optimization**
             // **Validates: Requirements 1.4, 1.5**
-            node->cache.Store(
-                inputs.known_dimensions,
-                inputs.available_space,
-                inputs.run_mode,
-                node->content_version,
-                output
-            );
-            node->output = output;
+            if (!is_content_size_probe) {
+                node->cache.Store(
+                    inputs.known_dimensions,
+                    inputs.available_space,
+                    inputs.run_mode,
+                    node->content_version,
+                    output
+                );
+                node->output = output;
+            }
             return output;
         }
 
@@ -2643,14 +2651,16 @@ LayoutOutput NativeLayoutEngine::ComputeNodeLayout(NodeId node_id, const LayoutI
                 // Store in cache and return (pass content_version for incremental layout)
                 // **Feature: incremental-layout-optimization**
                 // **Validates: Requirements 1.4, 1.5**
-                node->cache.Store(
-                    inputs.known_dimensions,
-                    inputs.available_space,
-                    inputs.run_mode,
-                    node->content_version,
-                    output
-                );
-                node->output = output;
+                if (!is_content_size_probe) {
+                    node->cache.Store(
+                        inputs.known_dimensions,
+                        inputs.available_space,
+                        inputs.run_mode,
+                        node->content_version,
+                        output
+                    );
+                    node->output = output;
+                }
                 return output;
             }
         }
@@ -2868,15 +2878,17 @@ LayoutOutput NativeLayoutEngine::ComputeNodeLayout(NodeId node_id, const LayoutI
     // Store in cache (pass content_version for incremental layout invalidation)
     // **Feature: incremental-layout-optimization**
     // **Validates: Requirements 1.4, 1.5**
-    node->cache.Store(
-        inputs.known_dimensions,
-        inputs.available_space,
-        inputs.run_mode,
-        node->content_version,
-        output
-    );
+    if (!is_content_size_probe) {
+        node->cache.Store(
+            inputs.known_dimensions,
+            inputs.available_space,
+            inputs.run_mode,
+            node->content_version,
+            output
+        );
 
-    node->output = output;
+        node->output = output;
+    }
     return output;
 }
 
@@ -3094,14 +3106,19 @@ LayoutOutput NativeLayoutEngine::ComputeTableLayout(NodeId node_id, const Layout
     // 存储到缓存 (pass content_version for incremental layout invalidation)
     // **Feature: incremental-layout-optimization**
     // **Validates: Requirements 1.4, 1.5**
-    node->cache.Store(
-        inputs.known_dimensions,
-        inputs.available_space,
-        inputs.run_mode,
-        node->content_version,
-        output
-    );
-    node->output = output;
+    const bool is_content_size_probe =
+        inputs.run_mode == RunMode::PerformLayout &&
+        inputs.sizing_mode == SizingMode::ContentSize;
+    if (!is_content_size_probe) {
+        node->cache.Store(
+            inputs.known_dimensions,
+            inputs.available_space,
+            inputs.run_mode,
+            node->content_version,
+            output
+        );
+        node->output = output;
+    }
 
     return output;
 }

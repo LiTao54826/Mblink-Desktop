@@ -11,95 +11,232 @@
  */
 
 #include "render_object.h"
+#include "core/render/css/style_resolver.h"
 #include "core/render/painters/box_renderer.h"
 #include "core/render/utils/color.h"
 #include "core/dom/element.h"
+#include "core/dom/document.h"
 #include <algorithm>
+#include <functional>
 #include <limits>
 
 namespace mbink {
 
-// ========== RenderTable 实现 ==========
+namespace {
 
-void RenderTable::CollectColumnStyles() {
-    column_background_colors_.clear();
+std::string LowerTagName(const std::shared_ptr<Element>& element) {
+    if (!element) {
+        return "";
+    }
+    std::string tag_name = element->GetTagName();
+    std::transform(tag_name.begin(), tag_name.end(), tag_name.begin(), ::tolower);
+    return tag_name;
+}
 
-    // 遍历子元素查找 colgroup 和 col
-    for (auto& child : children_) {
-        // 检查是否是 colgroup（通过检查 DOM 元素的标签名）
-        auto node = child->GetNode();
-        if (!node) continue;
+int ParsePositiveSpan(const std::shared_ptr<Element>& element, const std::string& attribute_name) {
+    if (!element) {
+        return 1;
+    }
 
-        auto element = std::dynamic_pointer_cast<Element>(node);
-        if (!element) continue;
-
-        std::string tag_name = element->GetTagName();
-        std::transform(tag_name.begin(), tag_name.end(), tag_name.begin(), ::tolower);
-
-        if (tag_name == "colgroup") {
-            // colgroup 的背景色（作为默认值应用到其下的 col）
-            std::string colgroup_bg = child->GetComputedStyle().background_color;
-
-            // 遍历 colgroup 中的 col 元素
-            for (auto& col_child : child->GetChildren()) {
-                auto col_node = col_child->GetNode();
-                if (!col_node) continue;
-
-                auto col_element = std::dynamic_pointer_cast<Element>(col_node);
-                if (!col_element) continue;
-
-                std::string col_tag = col_element->GetTagName();
-                std::transform(col_tag.begin(), col_tag.end(), col_tag.begin(), ::tolower);
-
-                if (col_tag == "col") {
-                    // 获取 col 的背景色，如果没有则使用 colgroup 的
-                    std::string col_bg = col_child->GetComputedStyle().background_color;
-                    if (col_bg.empty() || col_bg == "transparent") {
-                        col_bg = colgroup_bg;
-                    }
-
-                    // 检查 span 属性
-                    int span = 1;
-                    std::string span_str = col_element->GetAttribute("span");
-                    if (!span_str.empty()) {
-                        try {
-                            span = std::stoi(span_str);
-                            if (span < 1) span = 1;
-                        } catch (...) {
-                            span = 1;
-                        }
-                    }
-
-                    // 为每个跨越的列添加背景色
-                    for (int i = 0; i < span; ++i) {
-                        column_background_colors_.push_back(col_bg);
-                    }
-                }
-            }
+    int span = 1;
+    std::string span_str = element->GetAttribute(attribute_name);
+    if (!span_str.empty()) {
+        try {
+            span = std::stoi(span_str);
+        } catch (...) {
+            span = 1;
         }
-        else if (tag_name == "col") {
-            // 直接的 col 元素（没有 colgroup 包裹）
-            std::string col_bg = child->GetComputedStyle().background_color;
+    }
+    return std::max(1, span);
+}
 
-            // 检查 span 属性
-            int span = 1;
-            std::string span_str = element->GetAttribute("span");
-            if (!span_str.empty()) {
-                try {
-                    span = std::stoi(span_str);
-                    if (span < 1) span = 1;
-                } catch (...) {
-                    span = 1;
-                }
-            }
+ComputedStyle ResolveDetachedElementStyle(
+    const std::shared_ptr<Element>& element,
+    const ComputedStyle* parent_style) {
+    StyleResolver resolver;
+    if (element) {
+        auto document = element->GetOwnerDocument();
+        if (document && document->GetStyleManager()) {
+            resolver.SetStyleManager(document->GetStyleManager());
+        }
+    }
+    return resolver.ResolveStyle(element, parent_style);
+}
 
-            // 为每个跨越的列添加背景色
-            for (int i = 0; i < span; ++i) {
-                column_background_colors_.push_back(col_bg);
-            }
+bool IsStickyTableCell(const std::shared_ptr<RenderObject>& object) {
+    return object &&
+           object->GetType() == RenderObjectType::TABLE_CELL &&
+           object->GetComputedStyle().position == "sticky";
+}
+
+void PaintNonStickyTableChildren(
+    const std::vector<std::shared_ptr<RenderObject>>& children,
+    SkCanvas* canvas) {
+    for (const auto& child : children) {
+        if (!IsStickyTableCell(child)) {
+            child->Paint(canvas);
         }
     }
 }
+
+int StickyTableCellAxisPriority(const RenderObject& object) {
+    const auto& style = object.GetComputedStyle();
+    const bool sticks_vertically = style.top.unit != CSSUnit::AUTO ||
+                                   style.bottom.unit != CSSUnit::AUTO;
+    const bool sticks_horizontally = style.left.unit != CSSUnit::AUTO ||
+                                     style.right.unit != CSSUnit::AUTO;
+
+    if (sticks_vertically && sticks_horizontally) {
+        return 3;
+    }
+    if (sticks_horizontally) {
+        return 2;
+    }
+    if (sticks_vertically) {
+        return 1;
+    }
+    return 0;
+}
+
+struct StickyTablePaintEntry {
+    std::shared_ptr<RenderObject> cell;
+    std::vector<std::shared_ptr<RenderObject>> ancestor_path;
+    int z_index = 0;
+    int axis_priority = 0;
+    size_t dom_order = 0;
+};
+
+void CollectStickyTablePaintEntries(
+    const std::vector<std::shared_ptr<RenderObject>>& children,
+    std::vector<std::shared_ptr<RenderObject>>& ancestor_path,
+    std::vector<StickyTablePaintEntry>& entries,
+    size_t& next_dom_order) {
+    for (const auto& child : children) {
+        if (!child) {
+            continue;
+        }
+
+        if (IsStickyTableCell(child)) {
+            StickyTablePaintEntry entry;
+            entry.cell = child;
+            entry.ancestor_path = ancestor_path;
+            entry.z_index = child->GetComputedStyle().z_index;
+            entry.axis_priority = StickyTableCellAxisPriority(*child);
+            entry.dom_order = next_dom_order++;
+            entries.push_back(std::move(entry));
+            continue;
+        }
+
+        ancestor_path.push_back(child);
+        CollectStickyTablePaintEntries(child->GetChildren(),
+                                       ancestor_path,
+                                       entries,
+                                       next_dom_order);
+        ancestor_path.pop_back();
+    }
+}
+
+void SortStickyTablePaintEntries(std::vector<StickyTablePaintEntry>& entries) {
+    std::stable_sort(entries.begin(), entries.end(),
+                     [](const StickyTablePaintEntry& a, const StickyTablePaintEntry& b) {
+                         if (a.z_index != b.z_index) {
+                             return a.z_index < b.z_index;
+                         }
+                         if (a.axis_priority != b.axis_priority) {
+                             return a.axis_priority < b.axis_priority;
+                         }
+                         return a.dom_order < b.dom_order;
+                     });
+}
+
+void PaintStickyTableEntry(const StickyTablePaintEntry& entry, SkCanvas* canvas) {
+    if (!entry.cell || !canvas) {
+        return;
+    }
+
+    canvas->save();
+    for (const auto& ancestor : entry.ancestor_path) {
+        if (!ancestor) {
+            continue;
+        }
+        const auto& layout = ancestor->GetLayoutInfo();
+        canvas->translate(layout.x, layout.y);
+    }
+    entry.cell->Paint(canvas);
+    canvas->restore();
+}
+
+void PaintStickyTableCells(
+    const std::vector<std::shared_ptr<RenderObject>>& children,
+    SkCanvas* canvas) {
+    std::vector<StickyTablePaintEntry> entries;
+    std::vector<std::shared_ptr<RenderObject>> ancestor_path;
+    size_t next_dom_order = 0;
+    CollectStickyTablePaintEntries(children, ancestor_path, entries, next_dom_order);
+    SortStickyTablePaintEntries(entries);
+
+    for (const auto& entry : entries) {
+        PaintStickyTableEntry(entry, canvas);
+    }
+}
+
+}  // namespace
+
+// ========== RenderTable 实现 ==========
+
+void RenderTable::CollectColumnStyles() {
+    column_styles_.clear();
+
+    auto table_element = std::dynamic_pointer_cast<Element>(GetNode());
+    if (table_element) {
+        auto append_column_style = [&](const ComputedStyle& style,
+                                       const ComputedStyle* group_style,
+                                       int span) {
+            ColumnStyle column_style;
+            column_style.background_color = style.background_color;
+            if ((column_style.background_color.empty() ||
+                 column_style.background_color == "transparent") &&
+                group_style) {
+                column_style.background_color = group_style->background_color;
+            }
+            column_style.width = style.width;
+
+            for (int i = 0; i < span; ++i) {
+                column_styles_.push_back(column_style);
+            }
+        };
+
+        for (const auto& child_node : table_element->GetChildNodes()) {
+            auto child_element = std::dynamic_pointer_cast<Element>(child_node);
+            std::string tag_name = LowerTagName(child_element);
+
+            if (tag_name == "colgroup") {
+                ComputedStyle group_style = ResolveDetachedElementStyle(child_element, &computed_style_);
+                bool has_col_children = false;
+
+                for (const auto& col_node : child_element->GetChildNodes()) {
+                    auto col_element = std::dynamic_pointer_cast<Element>(col_node);
+                    if (LowerTagName(col_element) != "col") {
+                        continue;
+                    }
+                    has_col_children = true;
+                    ComputedStyle col_style = ResolveDetachedElementStyle(col_element, &group_style);
+                    append_column_style(col_style, &group_style, ParsePositiveSpan(col_element, "span"));
+                }
+
+                if (!has_col_children) {
+                    append_column_style(group_style, nullptr, ParsePositiveSpan(child_element, "span"));
+                }
+            } else if (tag_name == "col") {
+                ComputedStyle col_style = ResolveDetachedElementStyle(child_element, &computed_style_);
+                append_column_style(col_style, nullptr, ParsePositiveSpan(child_element, "span"));
+            }
+        }
+    }
+
+    return;
+}
+
 
 void RenderTable::CalculateColumnWidths(float available_width) {
     // 收集所有行中的单元格来确定列数和宽度
@@ -141,6 +278,7 @@ void RenderTable::CalculateColumnWidths(float available_width) {
             max_columns = std::max(max_columns, count_row_columns(child));
         }
     }
+    max_columns = std::max(max_columns, column_styles_.size());
 
     if (max_columns == 0) {
         column_widths_.clear();
@@ -193,6 +331,11 @@ void RenderTable::CalculateColumnWidths(float available_width) {
 
             if (cell_style.width.unit == CSSUnit::PX) {
                 content_preferred_width = std::max(content_preferred_width, cell_style.width.value);
+            }
+            if (!cell_style.min_width.IsZero()) {
+                float min_width = cell_style.min_width.ToPx(available_width, cell_style.font_size);
+                content_min_width = std::max(content_min_width, min_width);
+                content_preferred_width = std::max(content_preferred_width, min_width);
             }
 
             if (col_span == 1) {
@@ -259,9 +402,26 @@ void RenderTable::CalculateColumnWidths(float available_width) {
     float table_border_right = is_collapse ? 0 : style.border.width.ToPx();
     float table_padding_left = style.padding.left.ToPx(available_width, style.font_size);
     float table_padding_right = style.padding.right.ToPx(available_width, style.font_size);
+    float table_border_spacing = is_collapse ? 0 : style.border_spacing.ToPx();
 
     float table_extra = table_border_left + table_border_right + table_padding_left + table_padding_right;
-    float available_for_columns = available_width - table_extra;
+    float spacing_extra = is_collapse ? 0 : table_border_spacing * (max_columns + 1);
+    float available_for_columns = std::max(0.0f, available_width - table_extra - spacing_extra);
+
+    auto resolve_column_width = [&](const CSSLength& width) -> float {
+        if (width.unit == CSSUnit::AUTO || width.unit == CSSUnit::NONE) {
+            return 0.0f;
+        }
+        return std::max(0.0f, width.ToPx(available_for_columns, style.font_size));
+    };
+
+    for (size_t i = 0; i < max_columns && i < column_styles_.size(); ++i) {
+        float column_width = resolve_column_width(column_styles_[i].width);
+        if (column_width > 0.0f) {
+            min_widths[i] = std::max(min_widths[i], column_width);
+            preferred_widths[i] = std::max(preferred_widths[i], column_width);
+        }
+    }
 
     float total_min_width = 0;
     float total_preferred_width = 0;
@@ -274,6 +434,111 @@ void RenderTable::CalculateColumnWidths(float available_width) {
     column_widths_.resize(max_columns);
 
     bool has_explicit_width = (style.width.unit == CSSUnit::PX || style.width.unit == CSSUnit::PERCENT);
+
+    if (has_explicit_width && style.table_layout == "fixed") {
+        std::vector<bool> assigned(max_columns, false);
+        std::fill(column_widths_.begin(), column_widths_.end(), 0.0f);
+
+        for (size_t i = 0; i < max_columns && i < column_styles_.size(); ++i) {
+            float column_width = resolve_column_width(column_styles_[i].width);
+            if (column_width > 0.0f) {
+                column_widths_[i] = column_width;
+                assigned[i] = true;
+            }
+        }
+
+        auto assign_first_row_cell_widths = [&](std::shared_ptr<RenderObject> row) {
+            if (!row) {
+                return;
+            }
+            size_t logical_col = 0;
+            for (auto& cell : row->GetChildren()) {
+                auto table_cell = std::dynamic_pointer_cast<RenderTableCell>(cell);
+                int col_span = table_cell ? std::max(1, table_cell->GetColSpan()) : 1;
+                const auto& cell_style = cell->GetComputedStyle();
+                float cell_width = resolve_column_width(cell_style.width);
+
+                if (cell_width > 0.0f) {
+                    int unassigned_span = 0;
+                    for (int i = 0; i < col_span && logical_col + i < max_columns; ++i) {
+                        if (!assigned[logical_col + i]) {
+                            unassigned_span++;
+                        }
+                    }
+                    if (unassigned_span > 0) {
+                        float width_per_column = cell_width / unassigned_span;
+                        for (int i = 0; i < col_span && logical_col + i < max_columns; ++i) {
+                            if (!assigned[logical_col + i]) {
+                                column_widths_[logical_col + i] = width_per_column;
+                                assigned[logical_col + i] = true;
+                            }
+                        }
+                    }
+                }
+
+                logical_col += col_span;
+                if (logical_col >= max_columns) {
+                    break;
+                }
+            }
+        };
+
+        std::shared_ptr<RenderObject> first_row;
+        for (auto& child : children_) {
+            RenderObjectType child_type = child->GetType();
+            if (child_type == RenderObjectType::TABLE_ROW) {
+                first_row = child;
+                break;
+            }
+            if (child_type == RenderObjectType::TABLE_ROW_GROUP ||
+                child_type == RenderObjectType::TABLE_HEADER_GROUP ||
+                child_type == RenderObjectType::TABLE_FOOTER_GROUP) {
+                for (auto& row : child->GetChildren()) {
+                    if (row->GetType() == RenderObjectType::TABLE_ROW) {
+                        first_row = row;
+                        break;
+                    }
+                }
+            }
+            if (first_row) {
+                break;
+            }
+        }
+        assign_first_row_cell_widths(first_row);
+
+        float assigned_total = 0.0f;
+        size_t unassigned_count = 0;
+        for (size_t i = 0; i < max_columns; ++i) {
+            if (assigned[i]) {
+                assigned_total += column_widths_[i];
+            } else {
+                unassigned_count++;
+            }
+        }
+
+        float fixed_layout_width = available_for_columns;
+        if (style.width.unit == CSSUnit::PX) {
+            fixed_layout_width = style.width.value;
+        } else if (style.width.unit == CSSUnit::PERCENT) {
+            fixed_layout_width = style.width.value / 100.0f * available_width;
+        }
+
+        float remaining_width = std::max(0.0f, fixed_layout_width - assigned_total);
+        if (unassigned_count > 0) {
+            float width_per_column = remaining_width / unassigned_count;
+            for (size_t i = 0; i < max_columns; ++i) {
+                if (!assigned[i]) {
+                    column_widths_[i] = width_per_column;
+                }
+            }
+        } else if (assigned_total > 0.0f && assigned_total < fixed_layout_width) {
+            float scale = fixed_layout_width / assigned_total;
+            for (float& column_width : column_widths_) {
+                column_width *= scale;
+            }
+        }
+        return;
+    }
 
     if (has_explicit_width) {
         if (total_preferred_width <= available_for_columns) {
@@ -312,11 +577,7 @@ void RenderTable::Layout(float parent_width, float parent_height) {
 
     float border_spacing = 0;
     if (!is_collapse) {
-        if (style.border_spacing.value > 0) {
-            border_spacing = style.border_spacing.ToPx();
-        } else {
-            border_spacing = 2.0f;
-        }
+        border_spacing = style.border_spacing.ToPx();
     }
 
     float border_width = style.border.width.ToPx();
@@ -349,7 +610,6 @@ void RenderTable::Layout(float parent_width, float parent_height) {
         float total_spacing = is_collapse ? 0 : (border_spacing * (num_columns + 1));
 
         width = total_column_width + total_spacing + padding_left + padding_right + effective_border * 2;
-        width = std::min(width, parent_width);
     }
 
     float current_y = padding_top + effective_border + (is_collapse ? 0 : border_spacing);
@@ -357,7 +617,8 @@ void RenderTable::Layout(float parent_width, float parent_height) {
 
     // 先布局 caption
     for (auto& child : children_) {
-        if (child->GetType() == RenderObjectType::TABLE_CAPTION) {
+        if (child->GetType() == RenderObjectType::TABLE_CAPTION &&
+            child->GetComputedStyle().caption_side != "bottom") {
             child->Layout(content_width, 0);
             auto& child_layout = child->GetLayoutInfo();
             child_layout.x = padding_left + effective_border;
@@ -369,6 +630,7 @@ void RenderTable::Layout(float parent_width, float parent_height) {
     // 收集所有行
     std::vector<std::shared_ptr<RenderTableRow>> all_rows;
     std::vector<std::shared_ptr<RenderObject>> row_groups;
+    std::vector<size_t> row_group_end_indices;
 
     auto collect_rows = [&](std::shared_ptr<RenderObject> container) {
         for (auto& child : container->GetChildren()) {
@@ -388,10 +650,12 @@ void RenderTable::Layout(float parent_width, float parent_height) {
             child_type == RenderObjectType::TABLE_FOOTER_GROUP) {
             row_groups.push_back(child);
             collect_rows(child);
+            row_group_end_indices.push_back(all_rows.size());
         } else if (child_type == RenderObjectType::TABLE_ROW) {
             auto table_row = std::dynamic_pointer_cast<RenderTableRow>(child);
             if (table_row) {
                 all_rows.push_back(table_row);
+                row_group_end_indices.push_back(all_rows.size());
             }
         }
     }
@@ -450,7 +714,18 @@ void RenderTable::Layout(float parent_width, float parent_height) {
                 int col_span = table_cell->GetColSpan();
                 int row_span = table_cell->GetRowSpan();
                 if (col_span < 1) col_span = 1;
-                if (row_span < 1) row_span = 1;
+                if (row_span == 0) {
+                    auto group_end_it = std::upper_bound(
+                        row_group_end_indices.begin(),
+                        row_group_end_indices.end(),
+                        row_idx);
+                    size_t group_end = group_end_it != row_group_end_indices.end()
+                        ? *group_end_it
+                        : all_rows.size();
+                    row_span = static_cast<int>(std::max<size_t>(1, group_end - row_idx));
+                } else if (row_span < 1) {
+                    row_span = 1;
+                }
 
                 if (row_span > 1) {
                     RowspanInfo info;
@@ -480,6 +755,17 @@ void RenderTable::Layout(float parent_width, float parent_height) {
     }
 
     // 第二遍：更新 rowspan 单元格的高度
+    for (auto& child : children_) {
+        if (child->GetType() == RenderObjectType::TABLE_CAPTION &&
+            child->GetComputedStyle().caption_side == "bottom") {
+            child->Layout(content_width, 0);
+            auto& child_layout = child->GetLayoutInfo();
+            child_layout.x = padding_left + effective_border;
+            child_layout.y = current_y;
+            current_y += child_layout.height;
+        }
+    }
+
     for (const auto& info : rowspan_cells) {
         size_t end_row = std::min(info.start_row + info.row_span, all_rows.size());
         if (end_row <= info.start_row) continue;
@@ -542,6 +828,13 @@ void RenderTable::Layout(float parent_width, float parent_height) {
 
     float height = current_y + padding_bottom + effective_border;
 
+    if (!style.min_width.IsZero()) {
+        width = std::max(width, style.min_width.ToPx(parent_width, style.font_size));
+    }
+    if (style.max_width.unit != CSSUnit::NONE) {
+        width = std::min(width, style.max_width.ToPx(parent_width, style.font_size));
+    }
+
     if (style.height.unit == CSSUnit::PX) {
         height = std::max(height, style.height.value);
     }
@@ -598,9 +891,8 @@ void RenderTable::Paint(SkCanvas* canvas) {
         canvas->drawRect(bounds, bg_paint);
     }
 
-    for (auto& child : children_) {
-        child->Paint(canvas);
-    }
+    PaintNonStickyTableChildren(children_, canvas);
+    PaintStickyTableCells(children_, canvas);
 
     if (style.border.style != CSSBorderStyle::NONE && border_w > 0) {
         char width_str[32];
@@ -654,9 +946,7 @@ void RenderTableRowGroup::Paint(SkCanvas* canvas) {
         canvas->drawRect(bounds, bg_paint);
     }
 
-    for (auto& child : children_) {
-        child->Paint(canvas);
-    }
+    PaintNonStickyTableChildren(children_, canvas);
 
     canvas->restore();
     needs_paint_ = false;
@@ -793,9 +1083,7 @@ void RenderTableRow::Paint(SkCanvas* canvas) {
         canvas->drawRect(bounds, bg_paint);
     }
 
-    for (auto& child : children_) {
-        child->Paint(canvas);
-    }
+    PaintNonStickyTableChildren(children_, canvas);
 
     canvas->restore();
     needs_paint_ = false;
@@ -866,17 +1154,22 @@ void RenderTableCell::Paint(SkCanvas* canvas) {
         return;
     }
 
-    SkRect paint_rect = SkRect::MakeXYWH(layout_info_.x, layout_info_.y, layout_info_.width, layout_info_.height);
+    const auto& style = computed_style_;
+    const auto& layout = layout_info_;
+    SkPoint sticky_offset = ComputeStickyOffset();
+
+    SkRect paint_rect = SkRect::MakeXYWH(
+        layout.x + sticky_offset.x(),
+        layout.y + sticky_offset.y(),
+        layout.width,
+        layout.height);
     if (canvas->quickReject(paint_rect.makeOutset(20, 20))) {
         needs_paint_ = false;
         return;
     }
 
-    const auto& style = computed_style_;
-    const auto& layout = layout_info_;
-
     canvas->save();
-    canvas->translate(layout.x, layout.y);
+    canvas->translate(layout.x + sticky_offset.x(), layout.y + sticky_offset.y());
 
     float border_w = style.border.width.ToPx();
 

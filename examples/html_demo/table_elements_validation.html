@@ -1,0 +1,561 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Table Elements Validation</title>
+    <style>
+        html,
+        body {
+            margin: 0;
+            font-family: Arial, sans-serif;
+            color: #202124;
+            background: #f8fafc;
+        }
+
+        main {
+            padding: 24px;
+            display: flex;
+            flex-direction: column;
+            gap: 24px;
+        }
+
+        #table-scroll-container {
+            width: 520px;
+            height: 320px;
+            overflow: auto;
+            border: 1px solid #b8c2cc;
+            background: #ffffff;
+        }
+
+        table {
+            border-collapse: separate;
+            border-spacing: 0;
+            min-width: 920px;
+            user-select: text;
+        }
+
+        caption {
+            padding: 8px;
+            text-align: left;
+            font-weight: 700;
+            background: #e8f0fe;
+        }
+
+        th,
+        td {
+            min-width: 140px;
+            padding: 10px 12px;
+            border-right: 1px solid #d7dde3;
+            border-bottom: 1px solid #d7dde3;
+            background: #ffffff;
+            text-align: left;
+            white-space: nowrap;
+        }
+
+        th {
+            background: #edf2f7;
+            font-weight: 700;
+        }
+
+        #table-sticky-header,
+        thead th {
+            position: sticky;
+            top: 0;
+            z-index: 2;
+        }
+
+        #table-first-column-cell,
+        th:first-child,
+        td:first-child {
+            position: sticky;
+            left: 0;
+            z-index: 1;
+            background: #fff7ed;
+        }
+
+        thead th:first-child {
+            z-index: 3;
+        }
+
+        #table-layout-compat {
+            width: 360px;
+            min-width: 360px;
+            table-layout: fixed;
+            border-spacing: 0;
+            border: 0;
+        }
+
+        #table-layout-compat caption {
+            caption-side: bottom;
+            background: #e0f2fe;
+        }
+
+        #table-layout-compat th,
+        #table-layout-compat td {
+            min-width: 0;
+            width: auto;
+            padding: 8px;
+            border: 0;
+            background: transparent;
+        }
+
+        #table-layout-compat .cell-local-bg {
+            background: rgba(255, 255, 255, 0.72);
+        }
+
+        #table-collapse-check {
+            width: 220px;
+            min-width: 220px;
+            border-collapse: collapse;
+            border-spacing: 12px;
+        }
+
+        #table-collapse-check td {
+            min-width: 80px;
+            padding: 8px;
+            border: 1px solid #64748b;
+            background: #ffffff;
+        }
+
+        #table-dom-api-probe {
+            min-width: 360px;
+            width: 360px;
+            table-layout: fixed;
+        }
+
+        #table-dom-api-probe th,
+        #table-dom-api-probe td {
+            min-width: 0;
+            padding: 8px;
+        }
+
+        #table-dom-api-result {
+            font-size: 13px;
+            color: #475569;
+            line-height: 1.5;
+            white-space: pre-line;
+        }
+
+        #multi-sticky-scroll-container {
+            width: 680px;
+            height: 188px;
+            overflow: auto;
+            border: 1px solid #8aa0b6;
+            background: #ffffff;
+        }
+
+        #multi-sticky-table {
+            min-width: 1320px;
+            table-layout: fixed;
+        }
+
+        #multi-sticky-table th,
+        #multi-sticky-table td {
+            min-width: 120px;
+            width: 120px;
+        }
+
+        #multi-sticky-table .sticky-left-1 {
+            position: sticky;
+            left: 0;
+            z-index: 4;
+            background: #fff7ed;
+        }
+
+        #multi-sticky-table .sticky-left-2 {
+            position: sticky;
+            left: 145px;
+            z-index: 4;
+            background: #ecfdf5;
+        }
+
+        #multi-sticky-table .sticky-right-2 {
+            position: sticky;
+            right: 145px;
+            z-index: 4;
+            background: #eff6ff;
+        }
+
+        #multi-sticky-table .sticky-right-1 {
+            position: sticky;
+            right: 0;
+            z-index: 5;
+            background: #fdf2f8;
+        }
+
+        #multi-sticky-table thead .sticky-left-1,
+        #multi-sticky-table thead .sticky-left-2,
+        #multi-sticky-table thead .sticky-right-2,
+        #multi-sticky-table thead .sticky-right-1 {
+            z-index: 6;
+        }
+
+        #single-right-scroll-container {
+            width: 500px;
+            height: 138px;
+            overflow: auto;
+            border: 1px solid #8aa0b6;
+            background: #ffffff;
+        }
+
+        #single-right-table {
+            min-width: 900px;
+            table-layout: fixed;
+        }
+
+        #single-right-table th,
+        #single-right-table td {
+            min-width: 120px;
+            width: 120px;
+        }
+
+        #single-right-table .single-right-sticky {
+            position: sticky;
+            right: 0;
+            z-index: 4;
+            background: #fdf2f8;
+        }
+
+        #single-right-table thead .single-right-sticky {
+            z-index: 5;
+        }
+    </style>
+</head>
+<body>
+    <main>
+        <div id="table-scroll-container">
+            <table id="copy-source-table">
+                <caption>Browser table element validation</caption>
+                <thead>
+                    <tr>
+                        <th id="table-sticky-header">Name</th>
+                        <th>Region</th>
+                        <th>Status</th>
+                        <th>Owner</th>
+                        <th>Updated</th>
+                        <th>Notes</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td id="table-first-column-cell">Alpha</td>
+                        <td>North</td>
+                        <td>Ready</td>
+                        <td>Lee</td>
+                        <td>2026-05-21</td>
+                        <td>Selectable cell text</td>
+                    </tr>
+                    <tr>
+                        <td>Beta</td>
+                        <td>South</td>
+                        <td>Review</td>
+                        <td>Chen</td>
+                        <td>2026-05-20</td>
+                        <td>Horizontal scroll should not move the first column</td>
+                    </tr>
+                    <tr>
+                        <td>Gamma</td>
+                        <td>West</td>
+                        <td>Blocked</td>
+                        <td>Singh</td>
+                        <td>2026-05-19</td>
+                        <td>Vertical scroll should keep the header visible</td>
+                    </tr>
+                    <tr>
+                        <td>Delta</td>
+                        <td>East</td>
+                        <td>Ready</td>
+                        <td>Garcia</td>
+                        <td>2026-05-18</td>
+                        <td>Copy should serialize selected cells as plain text</td>
+                    </tr>
+                    <tr>
+                        <td>Epsilon</td>
+                        <td>Central</td>
+                        <td>Ready</td>
+                        <td>Patel</td>
+                        <td>2026-05-17</td>
+                        <td>Stable IDs support mbink-ui-dev inspection</td>
+                    </tr>
+                    <tr>
+                        <td>Zeta</td>
+                        <td>North</td>
+                        <td>Queued</td>
+                        <td>Rivera</td>
+                        <td>2026-05-16</td>
+                        <td>More rows make vertical sticky header testing visible</td>
+                    </tr>
+                    <tr>
+                        <td>Eta</td>
+                        <td>South</td>
+                        <td>Ready</td>
+                        <td>Wang</td>
+                        <td>2026-05-15</td>
+                        <td>Drag over these cells to check selection highlight</td>
+                    </tr>
+                    <tr>
+                        <td>Theta</td>
+                        <td>West</td>
+                        <td>Review</td>
+                        <td>Smith</td>
+                        <td>2026-05-14</td>
+                        <td>Header should remain pinned while this row scrolls under it</td>
+                    </tr>
+                    <tr>
+                        <td>Iota</td>
+                        <td>East</td>
+                        <td>Blocked</td>
+                        <td>Kim</td>
+                        <td>2026-05-13</td>
+                        <td>First column should stay visible during horizontal scrolling</td>
+                    </tr>
+                    <tr>
+                        <td>Kappa</td>
+                        <td>Central</td>
+                        <td>Ready</td>
+                        <td>Nguyen</td>
+                        <td>2026-05-12</td>
+                        <td>Multi-row selection should continue across table rows</td>
+                    </tr>
+                    <tr>
+                        <td>Lambda</td>
+                        <td>North</td>
+                        <td>Queued</td>
+                        <td>Brown</td>
+                        <td>2026-05-11</td>
+                        <td>Scrollable content remains browser-level table markup</td>
+                    </tr>
+                    <tr>
+                        <td>Mu</td>
+                        <td>South</td>
+                        <td>Review</td>
+                        <td>Davis</td>
+                        <td>2026-05-10</td>
+                        <td>Use this lower row to confirm vertical scroll range</td>
+                    </tr>
+                    <tr>
+                        <td>Nu</td>
+                        <td>West</td>
+                        <td>Ready</td>
+                        <td>Miller</td>
+                        <td>2026-05-09</td>
+                        <td>Sticky cells should stay clipped inside the scroll container</td>
+                    </tr>
+                    <tr>
+                        <td>Xi</td>
+                        <td>East</td>
+                        <td>Ready</td>
+                        <td>Wilson</td>
+                        <td>2026-05-08</td>
+                        <td>Text selection and copy use standard table cell text</td>
+                    </tr>
+                    <tr>
+                        <td>Omicron</td>
+                        <td>Central</td>
+                        <td>Queued</td>
+                        <td>Moore</td>
+                        <td>2026-05-07</td>
+                        <td>Final visible rows make the scrollbar thumb taller to inspect</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+
+        <div id="multi-sticky-scroll-container">
+            <table id="multi-sticky-table">
+                <caption>Multi sticky column validation</caption>
+                <thead>
+                    <tr>
+                        <th id="multi-left-one-header" class="sticky-left-1">Left A</th>
+                        <th id="multi-left-two-header" class="sticky-left-2">Left B</th>
+                        <th>Data 1</th>
+                        <th>Data 2</th>
+                        <th>Data 3</th>
+                        <th>Data 4</th>
+                        <th>Data 5</th>
+                        <th id="multi-right-two-header" class="sticky-right-2">Right B</th>
+                        <th id="multi-right-one-header" class="sticky-right-1">Right C</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td id="multi-left-one-cell" class="sticky-left-1">L1 Alpha</td>
+                        <td id="multi-left-two-cell" class="sticky-left-2">L2 Alpha</td>
+                        <td>A-1</td>
+                        <td>A-2</td>
+                        <td>A-3</td>
+                        <td>A-4</td>
+                        <td>A-5</td>
+                        <td id="multi-right-two-cell" class="sticky-right-2">R2 Alpha</td>
+                        <td id="multi-right-one-cell" class="sticky-right-1">R1 Alpha</td>
+                    </tr>
+                    <tr>
+                        <td class="sticky-left-1">L1 Beta</td>
+                        <td class="sticky-left-2">L2 Beta</td>
+                        <td>B-1</td>
+                        <td>B-2</td>
+                        <td>B-3</td>
+                        <td>B-4</td>
+                        <td>B-5</td>
+                        <td class="sticky-right-2">R2 Beta</td>
+                        <td class="sticky-right-1">R1 Beta</td>
+                    </tr>
+                    <tr>
+                        <td class="sticky-left-1">L1 Gamma</td>
+                        <td class="sticky-left-2">L2 Gamma</td>
+                        <td>C-1</td>
+                        <td>C-2</td>
+                        <td>C-3</td>
+                        <td>C-4</td>
+                        <td>C-5</td>
+                        <td class="sticky-right-2">R2 Gamma</td>
+                        <td class="sticky-right-1">R1 Gamma</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+
+        <div id="single-right-scroll-container">
+            <table id="single-right-table">
+                <caption>Single right sticky column validation</caption>
+                <thead>
+                    <tr>
+                        <th>Code</th>
+                        <th>Phase</th>
+                        <th>Owner</th>
+                        <th>Metric</th>
+                        <th>State</th>
+                        <th id="single-right-header" class="single-right-sticky">Action</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>A-100</td>
+                        <td>Plan</td>
+                        <td>Lee</td>
+                        <td>72</td>
+                        <td>Ready</td>
+                        <td id="single-right-cell" class="single-right-sticky">Review</td>
+                    </tr>
+                    <tr>
+                        <td>B-200</td>
+                        <td>Build</td>
+                        <td>Chen</td>
+                        <td>84</td>
+                        <td>Queued</td>
+                        <td class="single-right-sticky">Open</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+
+        <table id="table-layout-compat">
+            <colgroup id="compat-colgroup" style="background-color: #fee2e2;">
+                <col id="compat-col-span" span="2" style="width: 120px; background-color: #dcfce7;">
+                <col id="compat-third-col" style="width: 120px;">
+            </colgroup>
+            <caption id="compat-bottom-caption">Layout compatibility caption</caption>
+            <tbody>
+                <tr id="compat-row-a">
+                    <td id="compat-rowspan-cell" rowspan="0" class="cell-local-bg">Rows A-C</td>
+                    <td id="compat-cell-a">A</td>
+                    <td id="compat-cell-c">C</td>
+                </tr>
+                <tr id="compat-row-b">
+                    <td id="compat-cell-b">B</td>
+                    <td>Second row</td>
+                </tr>
+                <tr id="compat-row-c">
+                    <td>Final</td>
+                    <td>Row</td>
+                </tr>
+            </tbody>
+        </table>
+
+        <table id="table-collapse-check">
+            <tbody>
+                <tr>
+                    <td id="collapse-cell-a">A</td>
+                    <td id="collapse-cell-b">B</td>
+                </tr>
+            </tbody>
+        </table>
+
+        <table id="table-dom-api-probe"></table>
+        <div id="table-dom-api-result"></div>
+    </main>
+    <script>
+        (function () {
+            var table = document.getElementById('table-dom-api-probe');
+            var head = table.createTHead();
+            var headRow = head.insertRow();
+            headRow.id = 'dom-api-head-row';
+            headRow.insertCell().textContent = 'Name';
+
+            var row = table.insertRow();
+            row.id = 'dom-api-body-row';
+            row.insertCell().textContent = 'Alpha';
+            row.insertCell().textContent = 'Ready';
+
+            var foot = table.createTFoot();
+            var footRow = foot.insertRow();
+            footRow.id = 'dom-api-foot-row';
+
+            var body = table.createTBody();
+            var lateRow = body.insertRow();
+            lateRow.id = 'dom-api-late-row';
+
+            var col = document.createElement('col');
+            col.span = 2;
+
+            var mixed = document.createElement('table');
+            var mixedFoot = document.createElement('tfoot');
+            var mixedFootRow = document.createElement('tr');
+            mixedFoot.appendChild(mixedFootRow);
+            mixed.appendChild(mixedFoot);
+            var mixedDirectRow = document.createElement('tr');
+            mixed.appendChild(mixedDirectRow);
+            var mixedHead = document.createElement('thead');
+            var mixedHeadRow = document.createElement('tr');
+            mixedHead.appendChild(mixedHeadRow);
+            mixed.appendChild(mixedHead);
+            var mixedBody = document.createElement('tbody');
+            var mixedBodyRow = document.createElement('tr');
+            mixedBody.appendChild(mixedBodyRow);
+            mixed.appendChild(mixedBody);
+            var mixedInsertedRow = mixed.insertRow(1);
+            mixedInsertedRow.id = 'mixed-inserted-row';
+            mixedDirectRow.id = 'mixed-direct-row';
+            mixedBodyRow.id = 'mixed-body-row';
+            mixedFootRow.id = 'mixed-foot-row';
+            mixedHeadRow.id = 'mixed-head-row';
+
+            var checks = [
+                table.rows.length === 4,
+                row.cells.length === 2,
+                row.rowIndex === 1,
+                row.cells[1].cellIndex === 1,
+                table.rows[2].id === 'dom-api-late-row',
+                table.rows[3].id === 'dom-api-foot-row',
+                table.tBodies.length === 1,
+                col.span === 2,
+                mixed.rows.length === 5,
+                mixed.rows[0].id === 'mixed-head-row',
+                mixed.rows[1].id === 'mixed-inserted-row',
+                mixed.rows[2].id === 'mixed-direct-row',
+                mixed.rows[3].id === 'mixed-body-row',
+                mixed.rows[4].id === 'mixed-foot-row',
+                mixedInsertedRow.rowIndex === 1,
+                mixedInsertedRow.sectionRowIndex === 0,
+                mixedDirectRow.sectionRowIndex === 1,
+                mixedBodyRow.sectionRowIndex === 0
+            ];
+            var passed = checks.every(function (item) { return item; });
+            document.getElementById('table-dom-api-result').textContent =
+                'Table DOM API: ' + (passed ? 'PASS' : 'FAIL') + '\n' +
+                'Rows: 4 total, inserted body row before foot row, mixed table order is head, inserted, direct, body, foot.\n' +
+                'Cells: body row has 2 cells, second cell index is 1, col span is 2.';
+        })();
+    </script>
+</body>
+</html>

@@ -33,51 +33,78 @@ HTMLTableRowElement::HTMLTableRowElement()
 }
 
 int HTMLTableRowElement::GetRowIndex() const {
-    // 获取行在整个表格中的索引
     auto parent = GetParentElementOf(this);
     if (!parent) return -1;
 
-    // 如果父元素是 section (thead/tbody/tfoot)，需要查找 table
-    std::shared_ptr<Element> table_or_section = parent;
+    std::shared_ptr<Element> table = parent;
     if (parent->GetTagName() == "thead" ||
         parent->GetTagName() == "tbody" ||
         parent->GetTagName() == "tfoot") {
-        table_or_section = GetParentElementOf(parent.get());
+        table = GetParentElementOf(parent.get());
     }
 
-    if (!table_or_section || table_or_section->GetTagName() != "table") {
+    if (!table || table->GetTagName() != "table") {
         return -1;
     }
 
-    // 遍历所有行计算索引
     int index = 0;
-    const auto& children = table_or_section->GetChildNodes();
-    for (size_t i = 0; i < children.size(); ++i) {
-        auto element = std::dynamic_pointer_cast<Element>(children[i]);
-        if (!element) continue;
-
-        if (element->GetTagName() == "tr") {
-            if (element.get() == this) return index;
-            index++;
-        } else if (element->GetTagName() == "thead" ||
-                   element->GetTagName() == "tbody" ||
-                   element->GetTagName() == "tfoot") {
-            const auto& section_children = element->GetChildNodes();
-            for (size_t j = 0; j < section_children.size(); ++j) {
-                auto row = std::dynamic_pointer_cast<Element>(section_children[j]);
-                if (row && row->GetTagName() == "tr") {
-                    if (row.get() == this) return index;
-                    index++;
-                }
+    const auto& children = table->GetChildNodes();
+    auto count_rows_in_section = [&](const std::shared_ptr<Element>& section) -> bool {
+        const auto& section_children = section->GetChildNodes();
+        for (const auto& section_child : section_children) {
+            auto row = std::dynamic_pointer_cast<Element>(section_child);
+            if (row && row->GetTagName() == "tr") {
+                if (row.get() == this) return true;
+                index++;
             }
         }
+        return false;
+    };
+
+    for (const auto& child : children) {
+        auto element = std::dynamic_pointer_cast<Element>(child);
+        if (element && element->GetTagName() == "thead" && count_rows_in_section(element)) {
+            return index;
+        }
     }
+
+    for (const auto& child : children) {
+        auto element = std::dynamic_pointer_cast<Element>(child);
+        if (!element) continue;
+
+        const std::string tag_name = element->GetTagName();
+        if (tag_name == "tr") {
+            if (element.get() == this) return index;
+            index++;
+        } else if (tag_name == "tbody" && count_rows_in_section(element)) {
+            return index;
+        }
+    }
+
+    for (const auto& child : children) {
+        auto element = std::dynamic_pointer_cast<Element>(child);
+        if (element && element->GetTagName() == "tfoot" && count_rows_in_section(element)) {
+            return index;
+        }
+    }
+
     return -1;
 }
 
 int HTMLTableRowElement::GetSectionRowIndex() const {
     auto parent = GetParentElementOf(this);
     if (!parent) return -1;
+
+    const std::string parent_tag_name = parent->GetTagName();
+    if (parent_tag_name == "table") {
+        return GetRowIndex();
+    }
+
+    if (parent_tag_name != "thead" &&
+        parent_tag_name != "tbody" &&
+        parent_tag_name != "tfoot") {
+        return -1;
+    }
 
     int index = 0;
     const auto& children = parent->GetChildNodes();

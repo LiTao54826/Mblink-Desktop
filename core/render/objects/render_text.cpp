@@ -12,7 +12,12 @@
 #include "core/render/text/text_transform.h"
 #include "core/render/utils/shadow_renderer.h"
 #include "core/render/utils/color.h"
+#include "core/dom/document.h"
 #include "core/dom/element.h"
+#include "core/dom/node.h"
+#include "core/dom/selection/range.h"
+#include "core/dom/selection/selection.h"
+#include "core/utils/utf8_utils.h"
 #include <algorithm>
 #include <cmath>
 #include <iostream>
@@ -34,6 +39,150 @@
 
 
 namespace mbink {
+
+namespace {
+
+struct TextSelectionPaintRange {
+    bool selected = false;
+    int start = 0;
+    int end = 0;
+};
+
+bool IsNodeBetween(const std::shared_ptr<Node>& node,
+                   const std::shared_ptr<Node>& start,
+                   const std::shared_ptr<Node>& end) {
+    if (!node || !start || !end) {
+        return false;
+    }
+
+    constexpr uint32_t kFollowing = 0x04;
+    const uint32_t from_start = start->CompareDocumentPosition(node);
+    const uint32_t to_end = node->CompareDocumentPosition(end);
+    return (from_start & kFollowing) != 0 && (to_end & kFollowing) != 0;
+}
+
+TextSelectionPaintRange ResolveSelectionPaintRange(const std::shared_ptr<Node>& node,
+                                                   const std::string& text) {
+    TextSelectionPaintRange result;
+    if (!node || node->GetNodeType() != NodeType::TEXT_NODE || text.empty()) {
+        return result;
+    }
+
+    auto document = node->GetOwnerDocument();
+    if (!document) {
+        return result;
+    }
+
+    auto selection = document->GetSelection();
+    if (!selection || selection->IsCollapsed()) {
+        return result;
+    }
+
+    auto range = selection->GetRangeAt(0);
+    if (!range) {
+        return result;
+    }
+
+    auto start_node = range->GetStartContainer();
+    auto end_node = range->GetEndContainer();
+    if (!start_node || !end_node) {
+        return result;
+    }
+
+    const int text_length = static_cast<int>(utf8::CharCount(text));
+    int start = 0;
+    int end = text_length;
+    bool intersects = false;
+
+    if (start_node == node && end_node == node) {
+        start = range->GetStartOffset();
+        end = range->GetEndOffset();
+        intersects = start < end;
+    } else if (start_node == node) {
+        start = range->GetStartOffset();
+        intersects = start < end;
+    } else if (end_node == node) {
+        end = range->GetEndOffset();
+        intersects = start < end;
+    } else {
+        intersects = IsNodeBetween(node, start_node, end_node);
+    }
+
+    if (!intersects) {
+        return result;
+    }
+
+    result.selected = true;
+    result.start = std::clamp(start, 0, text_length);
+    result.end = std::clamp(end, result.start, text_length);
+    if (result.start >= result.end) {
+        result.selected = false;
+    }
+    return result;
+}
+
+void PaintTextSelectionHighlight(SkCanvas* canvas,
+                                 const std::vector<std::string>& lines,
+                                 const std::vector<float>& line_x_offsets,
+                                 const std::vector<float>& line_y_offsets,
+                                 float line_height,
+                                 const SkFont& font,
+                                 const TextSelectionPaintRange& selection) {
+    if (!canvas || !selection.selected || selection.start >= selection.end) {
+        return;
+    }
+
+    SkPaint highlight_paint;
+    highlight_paint.setColor(SkColorSetARGB(110, 51, 153, 255));
+    highlight_paint.setStyle(SkPaint::kFill_Style);
+
+    int line_start = 0;
+    for (size_t i = 0; i < lines.size(); ++i) {
+        const auto& line = lines[i];
+        const int line_length = static_cast<int>(utf8::CharCount(line));
+        const int line_end = line_start + line_length;
+
+        const int selected_start = std::max(selection.start, line_start);
+        const int selected_end = std::min(selection.end, line_end);
+        if (selected_start < selected_end) {
+            float line_x = 0.0f;
+            if (i < line_x_offsets.size()) {
+                line_x = line_x_offsets[i];
+            }
+
+            float line_top = static_cast<float>(i) * line_height;
+            if (i < line_y_offsets.size()) {
+                line_top = line_y_offsets[i];
+            }
+
+            const int local_start = selected_start - line_start;
+            const int local_end = selected_end - line_start;
+            const std::string prefix = utf8::SubstrByChar(line, 0, static_cast<size_t>(local_start));
+            const std::string selected_text = utf8::SubstrByChar(line,
+                                                                 static_cast<size_t>(local_start),
+                                                                 static_cast<size_t>(local_end));
+            const float start_x = line_x + font.measureText(prefix.c_str(),
+                                                            prefix.size(),
+                                                            SkTextEncoding::kUTF8,
+                                                            nullptr);
+            const float width = font.measureText(selected_text.c_str(),
+                                                 selected_text.size(),
+                                                 SkTextEncoding::kUTF8,
+                                                 nullptr);
+            if (width > 0.0f) {
+                canvas->drawRect(SkRect::MakeXYWH(start_x, line_top, width, line_height),
+                                 highlight_paint);
+            }
+        }
+
+        line_start = line_end;
+        if (i + 1 < lines.size()) {
+            ++line_start;
+        }
+    }
+}
+
+}  // namespace
 
 // 辅助函数：计算浏览器风格的 line-height: normal
 // 与 IFCLayout::MeasureTextStatic 中的查找表保持一致
@@ -358,6 +507,13 @@ void RenderText::Paint(SkCanvas* canvas) {
     float current_y = baseline_y;
     // 多行文本的行间距也需要与 Layout 保持一致
     float line_height = css_line_height;
+    PaintTextSelectionHighlight(canvas,
+                                lines_to_render,
+                                wrapped_line_x_offsets_,
+                                wrapped_line_y_offsets_,
+                                line_height,
+                                font,
+                                ResolveSelectionPaintRange(GetNode(), text_));
 
     for (size_t i = 0; i < lines_to_render.size(); ++i) {
         const auto& line = lines_to_render[i];

@@ -137,6 +137,32 @@ private:
         HitTestResultEx& result,
         bool test_out_of_flow_descendants = true);
 
+    bool HitTestRenderObjectWithViewportOffset(
+        RenderObject* render_obj,
+        RenderObject* offset_root,
+        float viewport_x,
+        float viewport_y,
+        const HitTestRequest& request,
+        HitTestResultEx& result,
+        float offset_x,
+        float offset_y,
+        bool test_out_of_flow_descendants = true);
+
+    bool HitTestStickyTableCell(
+        RenderObject* render_obj,
+        float viewport_x,
+        float viewport_y,
+        const HitTestRequest& request,
+        HitTestResultEx& result);
+
+    bool IsClippedWithViewportOffset(
+        RenderObject* render_obj,
+        RenderObject* offset_root,
+        float viewport_x,
+        float viewport_y,
+        float offset_x,
+        float offset_y);
+
     /**
      * @brief 检查元素是否被裁剪
      */

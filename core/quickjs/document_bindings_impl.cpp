@@ -1082,7 +1082,16 @@ static JSValue JS_Window_getComputedStyle(JSContext* ctx, JSValueConst this_val,
         case RenderObjectType::INLINE: display_str = "inline"; break;
         case RenderObjectType::INLINE_BLOCK: display_str = "inline-block"; break;
         case RenderObjectType::FLEX: display_str = "flex"; break;
+        case RenderObjectType::INLINE_FLEX: display_str = "inline-flex"; break;
         case RenderObjectType::GRID: display_str = "grid"; break;
+        case RenderObjectType::INLINE_GRID: display_str = "inline-grid"; break;
+        case RenderObjectType::TABLE: display_str = "table"; break;
+        case RenderObjectType::TABLE_ROW_GROUP: display_str = "table-row-group"; break;
+        case RenderObjectType::TABLE_HEADER_GROUP: display_str = "table-header-group"; break;
+        case RenderObjectType::TABLE_FOOTER_GROUP: display_str = "table-footer-group"; break;
+        case RenderObjectType::TABLE_ROW: display_str = "table-row"; break;
+        case RenderObjectType::TABLE_CELL: display_str = "table-cell"; break;
+        case RenderObjectType::TABLE_CAPTION: display_str = "table-caption"; break;
         case RenderObjectType::NONE: display_str = "none"; break;
         case RenderObjectType::CONTENTS: display_str = "contents"; break;
         default: display_str = "block"; break;

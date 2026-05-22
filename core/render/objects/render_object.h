@@ -301,6 +301,8 @@ struct ComputedStyle {
     std::string pointer_events = "auto";     // auto, none
     std::string user_select = "auto";        // auto, none, text, all
     std::string word_break = "normal";       // normal, break-all, keep-all, break-word
+    std::string table_layout = "auto";       // auto, fixed
+    std::string caption_side = "top";        // top, bottom
 
     // 表格相关属性
     std::string border_collapse = "separate";  // collapse, separate (CSS 默认值是 separate)
@@ -396,6 +398,7 @@ struct ComputedStyle {
         row_gap = CSSLength(0, CSSUnit::PX);
         grid_column_gap = CSSLength(0, CSSUnit::PX);
         grid_row_gap = CSSLength(0, CSSUnit::PX);
+        border_spacing = CSSLength(2, CSSUnit::PX);
         top = CSSLength(0, CSSUnit::AUTO);
         right = CSSLength(0, CSSUnit::AUTO);
         bottom = CSSLength(0, CSSUnit::AUTO);
@@ -969,6 +972,15 @@ public:
     }
 
     /**
+     * @brief Compute the visual offset applied by position: sticky.
+     *
+     * The returned offset is in viewport-aligned CSS pixels and can be applied
+     * in paint coordinates because MBink currently uses an unscaled 2D canvas
+     * for normal table/block painting.
+     */
+    SkPoint ComputeStickyOffset() const;
+
+    /**
      * @brief 查找包含块（最近的定位祖先）
      * @return 包含块的共享指针，如果没有则返回 nullptr
      */
@@ -1501,13 +1513,18 @@ public:
 
     // 获取列的背景色（从 colgroup/col 继承）
     std::string GetColumnBackgroundColor(size_t col_index) const {
-        if (col_index < column_background_colors_.size()) {
-            return column_background_colors_[col_index];
+        if (col_index < column_styles_.size()) {
+            return column_styles_[col_index].background_color;
         }
         return "";
     }
 
 private:
+    struct ColumnStyle {
+        std::string background_color;
+        CSSLength width;
+    };
+
     // 计算表格列宽度
     void CalculateColumnWidths(float available_width);
 
@@ -1518,7 +1535,7 @@ private:
     std::vector<float> column_widths_;
 
     // 列的背景色（从 colgroup/col 收集）
-    std::vector<std::string> column_background_colors_;
+    std::vector<ColumnStyle> column_styles_;
 };
 
 /**

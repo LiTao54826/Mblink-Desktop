@@ -14,11 +14,182 @@
 #include "include/core/SkFont.h"
 #include "include/core/SkTextBlob.h"
 #include <algorithm>
+#include <cctype>
 #include <iostream>
 #include <stdexcept>
 #include <vector>
 
 namespace mbink {
+
+namespace {
+
+std::string NormalizeTagName(const std::shared_ptr<Element>& element) {
+    if (!element) {
+        return "";
+    }
+    std::string tag = element->GetTagName();
+    std::transform(tag.begin(), tag.end(), tag.begin(), [](unsigned char c) {
+        return static_cast<char>(std::tolower(c));
+    });
+    return tag;
+}
+
+std::shared_ptr<Element> ClosestTableElement(const std::shared_ptr<Node>& node,
+                                             const char* tag_name) {
+    std::shared_ptr<Node> current = node;
+    while (current) {
+        if (current->GetNodeType() == NodeType::ELEMENT_NODE) {
+            auto element = std::dynamic_pointer_cast<Element>(current);
+            if (NormalizeTagName(element) == tag_name) {
+                return element;
+            }
+        }
+        current = current->GetParentNode();
+    }
+    return nullptr;
+}
+
+bool IsTableCellElement(const std::shared_ptr<Element>& element) {
+    const std::string tag = NormalizeTagName(element);
+    return tag == "td" || tag == "th";
+}
+
+std::shared_ptr<Element> ClosestTableCell(const std::shared_ptr<Node>& node) {
+    std::shared_ptr<Node> current = node;
+    while (current) {
+        if (current->GetNodeType() == NodeType::ELEMENT_NODE) {
+            auto element = std::dynamic_pointer_cast<Element>(current);
+            if (IsTableCellElement(element)) {
+                return element;
+            }
+        }
+        current = current->GetParentNode();
+    }
+    return nullptr;
+}
+
+int CompareNodeOrder(const std::shared_ptr<Node>& a,
+                     const std::shared_ptr<Node>& b) {
+    if (!a || !b || a == b) {
+        return 0;
+    }
+
+    constexpr uint32_t kPreceding = 0x02;
+    constexpr uint32_t kFollowing = 0x04;
+    uint32_t position = a->CompareDocumentPosition(b);
+    if ((position & kFollowing) != 0) {
+        return -1;
+    }
+    if ((position & kPreceding) != 0) {
+        return 1;
+    }
+    return 0;
+}
+
+void CollectTableRows(const std::shared_ptr<Node>& node,
+                      std::vector<std::shared_ptr<Element>>& rows) {
+    if (!node) {
+        return;
+    }
+
+    if (node->GetNodeType() == NodeType::ELEMENT_NODE) {
+        auto element = std::dynamic_pointer_cast<Element>(node);
+        if (NormalizeTagName(element) == "tr") {
+            rows.push_back(element);
+            return;
+        }
+    }
+
+    for (const auto& child : node->GetChildNodes()) {
+        CollectTableRows(child, rows);
+    }
+}
+
+std::vector<std::shared_ptr<Element>> TableRowsInOrder(
+    const std::shared_ptr<Element>& table) {
+    std::vector<std::shared_ptr<Element>> rows;
+    CollectTableRows(table, rows);
+    return rows;
+}
+
+std::vector<std::shared_ptr<Element>> CellsInRow(
+    const std::shared_ptr<Element>& row) {
+    std::vector<std::shared_ptr<Element>> cells;
+    if (!row) {
+        return cells;
+    }
+
+    for (const auto& child : row->GetChildNodes()) {
+        auto element = std::dynamic_pointer_cast<Element>(child);
+        if (IsTableCellElement(element)) {
+            cells.push_back(element);
+        }
+    }
+    return cells;
+}
+
+std::shared_ptr<Node> FirstTextDescendant(const std::shared_ptr<Node>& node) {
+    if (!node) {
+        return nullptr;
+    }
+    if (node->GetNodeType() == NodeType::TEXT_NODE) {
+        return node;
+    }
+    for (const auto& child : node->GetChildNodes()) {
+        auto result = FirstTextDescendant(child);
+        if (result) {
+            return result;
+        }
+    }
+    return nullptr;
+}
+
+std::shared_ptr<Node> LastTextDescendant(const std::shared_ptr<Node>& node) {
+    if (!node) {
+        return nullptr;
+    }
+    if (node->GetNodeType() == NodeType::TEXT_NODE) {
+        return node;
+    }
+    const auto& children = node->GetChildNodes();
+    for (auto it = children.rbegin(); it != children.rend(); ++it) {
+        auto result = LastTextDescendant(*it);
+        if (result) {
+            return result;
+        }
+    }
+    return nullptr;
+}
+
+std::string TextForRangeInNode(const Range& range,
+                               const std::shared_ptr<Node>& first,
+                               int first_offset,
+                               const std::shared_ptr<Node>& last,
+                               int last_offset) {
+    if (!first || !last) {
+        return "";
+    }
+
+    auto owner_document = range.GetOwnerDocument();
+    if (!owner_document) {
+        return "";
+    }
+
+    auto subrange = owner_document->CreateRange();
+    if (!subrange) {
+        return "";
+    }
+
+    try {
+        subrange->SetStart(first, first_offset);
+        subrange->SetEnd(last, last_offset);
+    } catch (...) {
+        return "";
+    }
+    return subrange->ToString();
+}
+
+} // namespace
 
 Range::Range(std::shared_ptr<Document> owner_document)
     : owner_document_(owner_document)
@@ -224,6 +395,11 @@ std::string Range::ToString() const {
     }
 
     // 如果起始和结束在同一个文本节点
+    std::string table_text;
+    if (ToTableString(start_node, end_node, table_text)) {
+        return table_text;
+    }
+
     if (start_node == end_node && start_node->GetNodeType() == NodeType::TEXT_NODE) {
         auto text_node = std::dynamic_pointer_cast<Text>(start_node);
         if (text_node) {
@@ -258,6 +434,104 @@ std::string Range::ToString() const {
  * @param end_offset 结束偏移
  * @return 矩形区域
  */
+bool Range::ToTableString(std::shared_ptr<Node> start_node,
+                          std::shared_ptr<Node> end_node,
+                          std::string& result) const {
+    result.clear();
+
+    auto start_cell = ClosestTableCell(start_node);
+    auto end_cell = ClosestTableCell(end_node);
+    if (!start_cell || !end_cell) {
+        return false;
+    }
+
+    auto start_row = ClosestTableElement(start_cell, "tr");
+    auto end_row = ClosestTableElement(end_cell, "tr");
+    auto start_table = ClosestTableElement(start_cell, "table");
+    auto end_table = ClosestTableElement(end_cell, "table");
+    if (!start_row || !end_row || !start_table || start_table != end_table) {
+        return false;
+    }
+
+    if (start_cell == end_cell) {
+        return false;
+    }
+
+    if (CompareNodeOrder(start_cell, end_cell) > 0) {
+        std::swap(start_node, end_node);
+        std::swap(start_cell, end_cell);
+        std::swap(start_row, end_row);
+    }
+
+    bool in_rows = false;
+
+    for (const auto& row : TableRowsInOrder(start_table)) {
+        if (row == start_row) {
+            in_rows = true;
+        }
+        if (!in_rows) {
+            continue;
+        }
+
+        std::string row_text;
+        bool has_selected_cell = false;
+        bool in_cells = row != start_row;
+        for (const auto& cell : CellsInRow(row)) {
+            if (cell == start_cell) {
+                in_cells = true;
+            }
+            if (!in_cells) {
+                continue;
+            }
+
+            if (has_selected_cell) {
+                row_text += "\t";
+            }
+            has_selected_cell = true;
+
+            auto first_text = FirstTextDescendant(cell);
+            auto last_text = LastTextDescendant(cell);
+            if (first_text && last_text) {
+                int first_offset = 0;
+                int last_offset = GetNodeLength(last_text);
+
+                if (cell == start_cell) {
+                    first_text = start_node;
+                    first_offset = start_offset_;
+                }
+                if (cell == end_cell) {
+                    last_text = end_node;
+                    last_offset = end_offset_;
+                }
+
+                row_text += TextForRangeInNode(*this,
+                                               first_text,
+                                               first_offset,
+                                               last_text,
+                                               last_offset);
+            }
+
+            if (cell == end_cell) {
+                in_cells = false;
+                break;
+            }
+        }
+
+        if (has_selected_cell) {
+            if (!result.empty()) {
+                result += "\n";
+            }
+            result += row_text;
+        }
+
+        if (row == end_row) {
+            break;
+        }
+    }
+
+    return true;
+}
+
 Range::DOMRect Range::ComputeTextRect(
     std::shared_ptr<Text> text_node,
     int start_offset,

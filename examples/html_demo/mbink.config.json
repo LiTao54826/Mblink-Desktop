@@ -1,0 +1,23 @@
+{
+  "name": "html_demo",
+  "template": "unknown",
+  "purpose": "minimal",
+  "runtime": "tool",
+  "entry": "table_elements_validation.html",
+  "src_dir": ".",
+  "out_dir": ".dist",
+  "window": {
+    "title": "Table Elements Validation",
+    "width": 900,
+    "height": 640
+  },
+  "build": {
+    "builder": "esbuild",
+    "jsx_factory": "h",
+    "jsx_fragment": "Fragment",
+    "external": ["preact", "preact/hooks"],
+    "sourcemap": true,
+    "minify": false,
+    "hide_console": true
+  }
+}

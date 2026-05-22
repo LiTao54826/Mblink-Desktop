@@ -275,6 +275,11 @@ private:
                                   float logical_x,
                                   float logical_y);
 
+    void ExtendSelectionFromDrag(std::shared_ptr<Document> document,
+                                 const HitTestResult& hit_result,
+                                 float logical_x,
+                                 float logical_y);
+
     /**
      * @brief 处理 Range 滑块拖动
      */

@@ -235,6 +235,10 @@ private:
      */
     void CollectText(std::shared_ptr<Node> node, std::string& result, bool& in_range) const;
 
+    bool ToTableString(std::shared_ptr<Node> start_node,
+                       std::shared_ptr<Node> end_node,
+                       std::string& result) const;
+
     /**
      * @brief 计算文本节点在指定偏移范围内的矩形
      * @param text_node 文本节点

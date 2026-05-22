@@ -9,6 +9,8 @@
 #include "core/render/objects/render_object.h"
 #include "core/render/layer/paint_layer.h"
 #include "core/compositor/compositor_layer.h"
+#include "include/core/SkPoint.h"
+#include "include/core/SkRect.h"
 #include <algorithm>
 #include <sstream>
 #include <iostream>
@@ -50,6 +52,95 @@ void SortByZIndexAndDomOrder(std::vector<mbink::RenderObject*>& render_objects) 
     std::stable_sort(render_objects.begin(), render_objects.end(),
                      [](mbink::RenderObject* a, mbink::RenderObject* b) {
                          return a->GetComputedStyle().z_index < b->GetComputedStyle().z_index;
+                     });
+}
+
+bool IsStickyTableCellForHitTest(mbink::RenderObject* render_object) {
+    return render_object &&
+           render_object->GetType() == mbink::RenderObjectType::TABLE_CELL &&
+           render_object->GetComputedStyle().position == "sticky";
+}
+
+bool IsRenderObjectDescendantOf(
+    const std::shared_ptr<mbink::RenderObject>& object,
+    const mbink::RenderObject* ancestor) {
+    auto current = object;
+    while (current) {
+        if (current.get() == ancestor) {
+            return true;
+        }
+        current = current->GetParent();
+    }
+    return false;
+}
+
+int StickyTableCellAxisPriority(mbink::RenderObject* render_object) {
+    if (!IsStickyTableCellForHitTest(render_object)) {
+        return 0;
+    }
+
+    const auto& style = render_object->GetComputedStyle();
+    bool sticks_vertically = style.top.unit != mbink::CSSUnit::AUTO ||
+                             style.bottom.unit != mbink::CSSUnit::AUTO;
+    bool sticks_horizontally = style.left.unit != mbink::CSSUnit::AUTO ||
+                               style.right.unit != mbink::CSSUnit::AUTO;
+
+    if (sticks_vertically && sticks_horizontally) {
+        return 3;
+    }
+    if (sticks_horizontally) {
+        return 2;
+    }
+    if (sticks_vertically) {
+        return 1;
+    }
+    return 0;
+}
+
+struct StickyTableHitTestEntry {
+    mbink::RenderObject* cell = nullptr;
+    int z_index = 0;
+    int axis_priority = 0;
+    size_t dom_order = 0;
+};
+
+void CollectStickyTableCellsInDomOrder(
+    mbink::RenderObject* root,
+    std::vector<StickyTableHitTestEntry>& sticky_cells,
+    size_t& next_dom_order) {
+    if (!root) {
+        return;
+    }
+
+    for (const auto& child : root->GetChildren()) {
+        if (!child) {
+            continue;
+        }
+
+        if (IsStickyTableCellForHitTest(child.get())) {
+            StickyTableHitTestEntry entry;
+            entry.cell = child.get();
+            entry.z_index = child->GetComputedStyle().z_index;
+            entry.axis_priority = StickyTableCellAxisPriority(child.get());
+            entry.dom_order = next_dom_order++;
+            sticky_cells.push_back(entry);
+            continue;
+        }
+
+        CollectStickyTableCellsInDomOrder(child.get(), sticky_cells, next_dom_order);
+    }
+}
+
+void SortStickyTableCellsByPaintOrder(std::vector<StickyTableHitTestEntry>& sticky_cells) {
+    std::stable_sort(sticky_cells.begin(), sticky_cells.end(),
+                     [](const StickyTableHitTestEntry& a, const StickyTableHitTestEntry& b) {
+                         if (a.z_index != b.z_index) {
+                             return a.z_index < b.z_index;
+                         }
+                         if (a.axis_priority != b.axis_priority) {
+                             return a.axis_priority < b.axis_priority;
+                         }
+                         return a.dom_order < b.dom_order;
                      });
 }
 
@@ -194,6 +285,18 @@ bool HitTestController::HitTestRenderObject(
     }
 
     // 第三遍：测试普通流子元素（static/relative）
+    if (render_obj->GetType() == RenderObjectType::TABLE) {
+        std::vector<StickyTableHitTestEntry> sticky_cells;
+        size_t next_dom_order = 0;
+        CollectStickyTableCellsInDomOrder(render_obj, sticky_cells, next_dom_order);
+        SortStickyTableCellsByPaintOrder(sticky_cells);
+        for (auto it = sticky_cells.rbegin(); it != sticky_cells.rend(); ++it) {
+            if (HitTestStickyTableCell(it->cell, viewport_x, viewport_y, request, result)) {
+                return true;
+            }
+        }
+    }
+
     for (auto it = children.rbegin(); it != children.rend(); ++it) {
         const auto& child_style = (*it)->GetComputedStyle();
         if (child_style.position != "fixed" && child_style.position != "absolute") {
@@ -224,6 +327,210 @@ bool HitTestController::HitTestRenderObject(
         }
 
         return true;
+    }
+
+    return false;
+}
+
+bool HitTestController::HitTestRenderObjectWithViewportOffset(
+    RenderObject* render_obj,
+    RenderObject* offset_root,
+    float viewport_x,
+    float viewport_y,
+    const HitTestRequest& request,
+    HitTestResultEx& result,
+    float offset_x,
+    float offset_y,
+    bool test_out_of_flow_descendants) {
+
+    if (!render_obj) return false;
+
+    const auto& layout = render_obj->GetLayoutInfo();
+    if (!layout.is_laid_out) return false;
+
+    const auto& style = render_obj->GetComputedStyle();
+
+    auto node = render_obj->GetNode();
+    auto element = std::dynamic_pointer_cast<Element>(node);
+
+    if (request.test_visibility && style.visibility == "hidden") {
+        return false;
+    }
+
+    if (request.test_opacity && style.opacity <= 0.0f) {
+        return false;
+    }
+
+    if (!render_obj->GetViewportBounds().valid) {
+        render_obj->UpdateViewportBounds();
+    }
+    const auto& bounds = render_obj->GetViewportBounds();
+    if (!bounds.valid) {
+        return false;
+    }
+
+    if (test_out_of_flow_descendants) {
+        std::vector<RenderObject*> out_of_flow_descendants;
+        CollectOutOfFlowDescendantsInDomOrder(render_obj, out_of_flow_descendants);
+        SortByZIndexAndDomOrder(out_of_flow_descendants);
+        for (auto it = out_of_flow_descendants.rbegin(); it != out_of_flow_descendants.rend(); ++it) {
+            if (HitTestRenderObjectWithViewportOffset(
+                    *it, offset_root, viewport_x, viewport_y, request, result, offset_x, offset_y, false)) {
+                return true;
+            }
+        }
+    }
+
+    const bool is_offset_root = render_obj == offset_root;
+    const float effective_offset_x = is_offset_root ? 0.0f : offset_x;
+    const float effective_offset_y = is_offset_root ? 0.0f : offset_y;
+    SkRect adjusted_bounds = SkRect::MakeXYWH(
+        bounds.x + effective_offset_x,
+        bounds.y + effective_offset_y,
+        bounds.width,
+        bounds.height);
+
+    if (!adjusted_bounds.contains(viewport_x, viewport_y)) {
+        return false;
+    }
+
+    if (IsClippedWithViewportOffset(
+            render_obj, offset_root, viewport_x, viewport_y, offset_x, offset_y)) {
+        return false;
+    }
+
+    const auto& children = render_obj->GetChildren();
+    for (auto it = children.rbegin(); it != children.rend(); ++it) {
+        const auto& child_style = (*it)->GetComputedStyle();
+        if (child_style.position != "fixed" && child_style.position != "absolute") {
+            if (HitTestRenderObjectWithViewportOffset(
+                    it->get(), offset_root, viewport_x, viewport_y, request, result, offset_x, offset_y, false)) {
+                return true;
+            }
+        }
+    }
+
+    if (style.pointer_events == "none" && !request.ignore_pointer_events) {
+        return false;
+    }
+
+    if (element) {
+        result.element = element;
+        result.render_object = render_obj->shared_from_this();
+        result.local_x = viewport_x - adjusted_bounds.x();
+        result.local_y = viewport_y - adjusted_bounds.y();
+
+        if (request.for_devtools) {
+            FillDevToolsInfo(result, render_obj, nullptr);
+        }
+
+        return true;
+    }
+
+    return false;
+}
+
+bool HitTestController::HitTestStickyTableCell(
+    RenderObject* render_obj,
+    float viewport_x,
+    float viewport_y,
+    const HitTestRequest& request,
+    HitTestResultEx& result) {
+
+    if (!render_obj) {
+        return false;
+    }
+
+    if (!render_obj->GetViewportBounds().valid) {
+        render_obj->UpdateViewportBounds();
+    }
+
+    SkPoint sticky_offset = render_obj->ComputeStickyOffset();
+    return HitTestRenderObjectWithViewportOffset(
+        render_obj,
+        render_obj,
+        viewport_x,
+        viewport_y,
+        request,
+        result,
+        sticky_offset.x(),
+        sticky_offset.y(),
+        false);
+}
+
+bool HitTestController::IsClippedWithViewportOffset(
+    RenderObject* render_obj,
+    RenderObject* offset_root,
+    float viewport_x,
+    float viewport_y,
+    float offset_x,
+    float offset_y) {
+
+    if (!render_obj) {
+        return false;
+    }
+
+    const auto& style = render_obj->GetComputedStyle();
+    if (style.position == "fixed") {
+        return false;
+    }
+
+    constexpr int TOP_LAYER_ZINDEX_THRESHOLD = 100;
+    bool is_absolute = (style.position == "absolute");
+    if (is_absolute && style.z_index >= TOP_LAYER_ZINDEX_THRESHOLD) {
+        return false;
+    }
+
+    auto ancestor = render_obj->GetParent();
+    while (ancestor) {
+        const auto& ancestor_style = ancestor->GetComputedStyle();
+        bool ancestor_is_positioned = (ancestor_style.position == "absolute" ||
+                                       ancestor_style.position == "fixed");
+        if (ancestor_is_positioned && ancestor_style.z_index >= TOP_LAYER_ZINDEX_THRESHOLD) {
+            return false;
+        }
+        ancestor = ancestor->GetParent();
+    }
+
+    auto parent = render_obj->GetParent();
+    while (parent) {
+        const auto& parent_style = parent->GetComputedStyle();
+
+        bool has_overflow_clip = parent_style.overflow == "hidden" ||
+                                 parent_style.overflow == "scroll" ||
+                                 parent_style.overflow == "auto";
+
+        if (has_overflow_clip) {
+            if (!parent->GetViewportBounds().valid) {
+                parent->UpdateViewportBounds();
+            }
+
+            const auto& parent_bounds = parent->GetViewportBounds();
+            if (parent_bounds.valid) {
+                const bool parent_needs_offset =
+                    offset_root && parent.get() != offset_root &&
+                    IsRenderObjectDescendantOf(parent, offset_root);
+                SkRect adjusted_parent_bounds = SkRect::MakeXYWH(
+                    parent_bounds.x + (parent_needs_offset ? offset_x : 0.0f),
+                    parent_bounds.y + (parent_needs_offset ? offset_y : 0.0f),
+                    parent_bounds.width,
+                    parent_bounds.height);
+
+                if (!adjusted_parent_bounds.contains(viewport_x, viewport_y)) {
+                    return true;
+                }
+            }
+        }
+
+        if (is_absolute) {
+            bool is_positioned = !parent_style.position.empty() &&
+                                 parent_style.position != "static";
+            if (is_positioned) {
+                break;
+            }
+        }
+
+        parent = parent->GetParent();
     }
 
     return false;

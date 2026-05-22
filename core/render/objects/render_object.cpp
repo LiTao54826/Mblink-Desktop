@@ -44,6 +44,7 @@
 #include "core/compositor/compositor_layer.h"
 #include "core/utils/utf8_utils.h"
 #include <algorithm>
+#include <cmath>
 #include <iostream>
 #include <sstream>
 #include <chrono>
@@ -66,6 +67,13 @@ namespace mbink {
 
 namespace {
 std::atomic<size_t> g_render_object_live_count{0};
+
+float ResolveStickyInset(const CSSLength& inset, float base_value, float font_size) {
+    if (inset.unit == CSSUnit::AUTO) {
+        return 0.0f;
+    }
+    return inset.ToPx(base_value, font_size);
+}
 }
 
 // 静态成员初始化
@@ -818,6 +826,10 @@ SkRect RenderObject::GetViewportBoundingRect() const {
         }
     }
 
+    SkPoint sticky_offset = ComputeStickyOffset();
+    abs_x += sticky_offset.x();
+    abs_y += sticky_offset.y();
+
     SkRect base_rect = SkRect::MakeXYWH(abs_x, abs_y, layout.width, layout.height);
 
     // 关键修复：如果元素有 transform，需要计算变换后的边界框
@@ -1466,6 +1478,122 @@ SkPoint ViewportBounds::ToLocalCoordinates(float viewport_x, float viewport_y) c
 
 // ========== 命中测试优化：视口坐标缓存 ==========
 
+SkPoint RenderObject::ComputeStickyOffset() const {
+    const auto& style = computed_style_;
+    if (style.position != "sticky") {
+        return SkPoint::Make(0.0f, 0.0f);
+    }
+
+    const RenderObject* scroll_container = nullptr;
+    auto ancestor = parent_.lock();
+    while (ancestor) {
+        if (ancestor->IsScrollContainer()) {
+            scroll_container = ancestor.get();
+            break;
+        }
+        ancestor = ancestor->GetParent();
+    }
+
+    if (!scroll_container || (!scroll_container->GetScrollX() && !scroll_container->GetScrollY())) {
+        return SkPoint::Make(0.0f, 0.0f);
+    }
+
+    if (!scroll_container->GetViewportBounds().valid) {
+        const_cast<RenderObject*>(scroll_container)->UpdateViewportBounds();
+    }
+
+    const auto& container_bounds = scroll_container->GetViewportBounds();
+    if (!layout_info_.is_laid_out || !container_bounds.valid) {
+        return SkPoint::Make(0.0f, 0.0f);
+    }
+
+    ViewportBounds own_bounds;
+    own_bounds.x = layout_info_.x;
+    own_bounds.y = layout_info_.y;
+    own_bounds.width = layout_info_.width;
+    own_bounds.height = layout_info_.height;
+    own_bounds.valid = true;
+
+    auto parent = parent_.lock();
+    while (parent) {
+        if (!parent->GetViewportBounds().valid) {
+            const_cast<RenderObject*>(parent.get())->UpdateViewportBounds();
+        }
+
+        const auto& parent_style = parent->GetComputedStyle();
+        const auto& parent_bounds = parent->GetViewportBounds();
+
+        if (parent_style.position == "fixed") {
+            if (parent_bounds.valid) {
+                own_bounds.x += parent_bounds.x;
+                own_bounds.y += parent_bounds.y;
+                if (parent_bounds.has_transform) {
+                    own_bounds.x += (parent_bounds.transformed_bounds.x() - parent_bounds.x);
+                    own_bounds.y += (parent_bounds.transformed_bounds.y() - parent_bounds.y);
+                }
+            }
+            break;
+        }
+
+        const auto& parent_layout = parent->GetLayoutInfo();
+        own_bounds.x += parent_layout.x;
+        own_bounds.y += parent_layout.y;
+        own_bounds.x -= parent->GetScrollX();
+        own_bounds.y -= parent->GetScrollY();
+
+        if (parent_bounds.valid && parent_bounds.has_transform) {
+            own_bounds.x += (parent_bounds.transformed_bounds.x() - parent_bounds.x);
+            own_bounds.y += (parent_bounds.transformed_bounds.y() - parent_bounds.y);
+        }
+
+        parent = parent->GetParent();
+    }
+
+    const float left_inset = style.left.unit == CSSUnit::AUTO
+        ? std::numeric_limits<float>::quiet_NaN()
+        : ResolveStickyInset(style.left, container_bounds.width, style.font_size);
+    const float right_inset = style.right.unit == CSSUnit::AUTO
+        ? std::numeric_limits<float>::quiet_NaN()
+        : ResolveStickyInset(style.right, container_bounds.width, style.font_size);
+    const float top_inset = style.top.unit == CSSUnit::AUTO
+        ? std::numeric_limits<float>::quiet_NaN()
+        : ResolveStickyInset(style.top, container_bounds.height, style.font_size);
+    const float bottom_inset = style.bottom.unit == CSSUnit::AUTO
+        ? std::numeric_limits<float>::quiet_NaN()
+        : ResolveStickyInset(style.bottom, container_bounds.height, style.font_size);
+
+    float offset_x = 0.0f;
+    float offset_y = 0.0f;
+
+    if (!std::isnan(left_inset)) {
+        const float sticky_left = container_bounds.x + left_inset;
+        if (own_bounds.x < sticky_left) {
+            offset_x = sticky_left - own_bounds.x;
+        }
+    } else if (!std::isnan(right_inset)) {
+        const float sticky_right = container_bounds.x + container_bounds.width - right_inset;
+        const float own_right = own_bounds.x + own_bounds.width;
+        if (own_right > sticky_right) {
+            offset_x = sticky_right - own_right;
+        }
+    }
+
+    if (!std::isnan(top_inset)) {
+        const float sticky_top = container_bounds.y + top_inset;
+        if (own_bounds.y < sticky_top) {
+            offset_y = sticky_top - own_bounds.y;
+        }
+    } else if (!std::isnan(bottom_inset)) {
+        const float sticky_bottom = container_bounds.y + container_bounds.height - bottom_inset;
+        const float own_bottom = own_bounds.y + own_bounds.height;
+        if (own_bottom > sticky_bottom) {
+            offset_y = sticky_bottom - own_bottom;
+        }
+    }
+
+    return SkPoint::Make(offset_x, offset_y);
+}
+
 void RenderObject::UpdateViewportBounds() {
     const auto& layout = layout_info_;
     const auto& style = computed_style_;
@@ -1605,6 +1733,10 @@ void RenderObject::UpdateViewportBounds() {
     viewport_bounds_.width = layout.width;
     viewport_bounds_.height = layout.height;
     viewport_bounds_.valid = true;
+
+    SkPoint sticky_offset = ComputeStickyOffset();
+    viewport_bounds_.x += sticky_offset.x();
+    viewport_bounds_.y += sticky_offset.y();
 
     ApplyTransformToViewportBounds();
 }

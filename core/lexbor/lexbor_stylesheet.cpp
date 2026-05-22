@@ -4,6 +4,8 @@
  */
 #include "lexbor_stylesheet.h"
 
+#include <algorithm>
+#include <cctype>
 #include <fstream>
 #include <sstream>
 
@@ -13,6 +15,188 @@
 #include <lexbor/css/stylesheet.h>
 
 namespace mbink {
+
+namespace {
+
+std::string TrimASCIIWhitespace(const std::string& value) {
+    size_t start = value.find_first_not_of(" \t\n\r\f");
+    if (start == std::string::npos) {
+        return "";
+    }
+
+    size_t end = value.find_last_not_of(" \t\n\r\f");
+    return value.substr(start, end - start + 1);
+}
+
+bool IsNameStart(char ch) {
+    unsigned char uch = static_cast<unsigned char>(ch);
+    return std::isalpha(uch) || ch == '_' || ch == '-';
+}
+
+bool IsNameChar(char ch) {
+    unsigned char uch = static_cast<unsigned char>(ch);
+    return std::isalnum(uch) || ch == '_' || ch == '-';
+}
+
+std::vector<std::string> SplitSelectorList(const std::string& selector_list) {
+    std::vector<std::string> selectors;
+    std::string current;
+    int paren_depth = 0;
+    int bracket_depth = 0;
+    char quote = '\0';
+    bool escape_next = false;
+
+    for (char ch : selector_list) {
+        if (escape_next) {
+            current += ch;
+            escape_next = false;
+            continue;
+        }
+        if (ch == '\\') {
+            current += ch;
+            escape_next = true;
+            continue;
+        }
+        if (quote != '\0') {
+            current += ch;
+            if (ch == quote) {
+                quote = '\0';
+            }
+            continue;
+        }
+        if (ch == '"' || ch == '\'') {
+            current += ch;
+            quote = ch;
+            continue;
+        }
+        if (ch == '(') {
+            ++paren_depth;
+            current += ch;
+            continue;
+        }
+        if (ch == ')' && paren_depth > 0) {
+            --paren_depth;
+            current += ch;
+            continue;
+        }
+        if (ch == '[') {
+            ++bracket_depth;
+            current += ch;
+            continue;
+        }
+        if (ch == ']' && bracket_depth > 0) {
+            --bracket_depth;
+            current += ch;
+            continue;
+        }
+        if (ch == ',' && paren_depth == 0 && bracket_depth == 0) {
+            std::string trimmed = TrimASCIIWhitespace(current);
+            if (!trimmed.empty()) {
+                selectors.push_back(trimmed);
+            }
+            current.clear();
+            continue;
+        }
+        current += ch;
+    }
+
+    std::string trimmed = TrimASCIIWhitespace(current);
+    if (!trimmed.empty()) {
+        selectors.push_back(trimmed);
+    }
+    return selectors;
+}
+
+int CalculateSingleSelectorSpecificity(const std::string& selector) {
+    int specificity = 0;
+    bool expecting_type_selector = true;
+
+    for (size_t i = 0; i < selector.size(); ++i) {
+        char ch = selector[i];
+
+        if (std::isspace(static_cast<unsigned char>(ch)) || ch == '>' || ch == '+' || ch == '~') {
+            expecting_type_selector = true;
+            continue;
+        }
+
+        if (ch == '#') {
+            specificity += 100;
+            expecting_type_selector = false;
+            while (i + 1 < selector.size() && IsNameChar(selector[i + 1])) {
+                ++i;
+            }
+            continue;
+        }
+
+        if (ch == '.' || ch == '[' || ch == ':') {
+            specificity += 10;
+            expecting_type_selector = false;
+
+            if (ch == '[') {
+                size_t end = selector.find(']', i + 1);
+                i = (end == std::string::npos) ? selector.size() - 1 : end;
+            } else if (ch == ':') {
+                if (i + 1 < selector.size() && selector[i + 1] == ':') {
+                    ++i;
+                }
+                while (i + 1 < selector.size() && IsNameChar(selector[i + 1])) {
+                    ++i;
+                }
+                if (i + 1 < selector.size() && selector[i + 1] == '(') {
+                    size_t end = selector.find(')', i + 2);
+                    i = (end == std::string::npos) ? selector.size() - 1 : end;
+                }
+            } else {
+                while (i + 1 < selector.size() && IsNameChar(selector[i + 1])) {
+                    ++i;
+                }
+            }
+            continue;
+        }
+
+        if (ch == '*') {
+            expecting_type_selector = false;
+            continue;
+        }
+
+        if (expecting_type_selector && IsNameStart(ch)) {
+            specificity += 1;
+            expecting_type_selector = false;
+            while (i + 1 < selector.size() && IsNameChar(selector[i + 1])) {
+                ++i;
+            }
+            continue;
+        }
+
+        expecting_type_selector = false;
+    }
+
+    return specificity;
+}
+
+bool AppendSelectorListRules(
+    std::vector<std::unique_ptr<CSSRule>>& rules,
+    size_t& next_source_order,
+    const std::string& selector_list,
+    const std::map<std::string, std::string>& declarations,
+    bool important) {
+    bool added_rule = false;
+
+    for (const auto& single_selector : SplitSelectorList(selector_list)) {
+        auto rule = std::make_unique<CSSRule>();
+        rule->selector = single_selector;
+        rule->declarations = declarations;
+        rule->specificity = CalculateSingleSelectorSpecificity(single_selector);
+        rule->source_order = next_source_order++;
+        rule->important = important;
+        rules.push_back(std::move(rule));
+        added_rule = true;
+    }
+
+    return added_rule;
+}
+
+} // namespace
 
 CSSAssetProvider LexborStyleSheet::asset_provider_ = nullptr;
 
@@ -62,10 +246,12 @@ LexborStyleSheet::LexborStyleSheet(LexborStyleSheet&& other) noexcept
     : parser_(other.parser_)
     , stylesheet_(other.stylesheet_)
     , rules_(std::move(other.rules_))
-    , errors_(std::move(other.errors_)) {
+    , errors_(std::move(other.errors_))
+    , next_source_order_(other.next_source_order_) {
     
     other.parser_ = nullptr;
     other.stylesheet_ = nullptr;
+    other.next_source_order_ = 0;
 }
 
 LexborStyleSheet& LexborStyleSheet::operator=(LexborStyleSheet&& other) noexcept {
@@ -83,9 +269,11 @@ LexborStyleSheet& LexborStyleSheet::operator=(LexborStyleSheet&& other) noexcept
         stylesheet_ = other.stylesheet_;
         rules_ = std::move(other.rules_);
         errors_ = std::move(other.errors_);
+        next_source_order_ = other.next_source_order_;
         
         other.parser_ = nullptr;
         other.stylesheet_ = nullptr;
+        other.next_source_order_ = 0;
     }
     return *this;
 }
@@ -95,6 +283,7 @@ LexborStyleSheet& LexborStyleSheet::operator=(LexborStyleSheet&& other) noexcept
 bool LexborStyleSheet::ParseCSS(const std::string& css) {
     errors_.clear();
     rules_.clear();
+    next_source_order_ = 0;
     
     if (!parser_) {
         errors_.push_back("Parser not initialized");
@@ -162,10 +351,15 @@ const CSSRule* LexborStyleSheet::GetRule(size_t index) const {
 
 bool LexborStyleSheet::AddRule(const std::string& selector,
                                 const std::map<std::string, std::string>& declarations) {
+    if (AppendSelectorListRules(rules_, next_source_order_, selector, declarations, false)) {
+        return true;
+    }
+
     auto rule = std::make_unique<CSSRule>();
     rule->selector = selector;
     rule->declarations = declarations;
     rule->specificity = CalculateSpecificity(selector);
+    rule->source_order = next_source_order_++;
     rule->important = false;
     
     rules_.push_back(std::move(rule));
@@ -183,6 +377,7 @@ bool LexborStyleSheet::RemoveRule(size_t index) {
 
 void LexborStyleSheet::ClearRules() {
     rules_.clear();
+    next_source_order_ = 0;
 }
 
 // ========== 序列化 ==========
@@ -308,28 +503,20 @@ void LexborStyleSheet::ProcessStyleRule(lxb_css_rule_style_t* style_rule) {
         }
     }
     
-    rules_.push_back(std::move(rule));
+    if (!AppendSelectorListRules(rules_, next_source_order_, rule->selector, rule->declarations, rule->important)) {
+        rule->source_order = next_source_order_++;
+        rules_.push_back(std::move(rule));
+    }
 }
 
 int LexborStyleSheet::CalculateSpecificity(const std::string& selector) {
-    // 简化的优先级计算
-    // ID选择器: 100, 类选择器: 10, 标签选择器: 1
-    int specificity = 0;
-    
-    for (size_t i = 0; i < selector.length(); i++) {
-        if (selector[i] == '#') {
-            specificity += 100;
-        } else if (selector[i] == '.' || selector[i] == '[' || selector[i] == ':') {
-            specificity += 10;
-        }
+    int max_specificity = 0;
+
+    for (const auto& single_selector : SplitSelectorList(selector)) {
+        max_specificity = std::max(max_specificity, CalculateSingleSelectorSpecificity(single_selector));
     }
-    
-    // 如果没有特殊选择器，可能是标签选择器
-    if (specificity == 0 && !selector.empty()) {
-        specificity = 1;
-    }
-    
-    return specificity;
+
+    return max_specificity;
 }
 
 } // namespace mbink

@@ -1426,6 +1426,17 @@ Element::DOMRect Element::GetBoundingClientRect() const {
     // 尝试从关联的 RenderObject 获取布局信息
     auto render_object = GetRenderObject();
     if (render_object) {
+        auto viewport_rect = render_object->GetViewportBoundingRect();
+        rect.x = viewport_rect.left();
+        rect.y = viewport_rect.top();
+        rect.width = viewport_rect.width();
+        rect.height = viewport_rect.height();
+        rect.top = viewport_rect.top();
+        rect.left = viewport_rect.left();
+        rect.right = viewport_rect.right();
+        rect.bottom = viewport_rect.bottom();
+        return rect;
+
         const auto& layout = render_object->GetLayoutInfo();
         const auto& style = render_object->GetComputedStyle();
 

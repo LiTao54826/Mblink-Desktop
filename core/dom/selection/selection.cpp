@@ -463,6 +463,25 @@ int Selection::ComparePositions(
     }
 
     // 检查 node_a 是否是 node_b 的祖先
+    constexpr uint32_t kPreceding = 0x02;
+    constexpr uint32_t kFollowing = 0x04;
+    constexpr uint32_t kContains = 0x08;
+    constexpr uint32_t kContainedBy = 0x10;
+
+    uint32_t position = node_a->CompareDocumentPosition(node_b);
+    if ((position & kFollowing) != 0) {
+        return -1;
+    }
+    if ((position & kPreceding) != 0) {
+        return 1;
+    }
+    if ((position & kContainedBy) != 0) {
+        return 1;
+    }
+    if ((position & kContains) != 0) {
+        return -1;
+    }
+
     auto current = node_b;
     while (current) {
         if (current == node_a) {

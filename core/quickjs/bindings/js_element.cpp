@@ -15,6 +15,7 @@
 #include "core/dom/elements/html_option_element.h"
 #include "core/dom/elements/html_canvas_element.h"
 #include "core/dom/elements/html_image_element.h"
+#include "core/dom/elements/html_table_element.h"
 #include "core/dom/elements/html_template_element.h"
 #include "core/dom/elements/svg_element.h"
 #include "core/dom/elements/terminal/html_terminal_element.h"
@@ -97,6 +98,11 @@ static JSValue JSElement_get_event_property(JSContext* ctx, JSValueConst this_va
 static JSValue JSElement_set_event_property(JSContext* ctx, JSValueConst this_val, JSValue val, int magic);
 namespace {
 
+enum class TableRowInsertionTarget {
+    Table,
+    Section
+};
+
 bool IsSVGElementInstance(const std::shared_ptr<Element>& element) {
     return static_cast<bool>(std::dynamic_pointer_cast<SVGElement>(element));
 }
@@ -140,6 +146,355 @@ bool IsDisabledFormControlForSyntheticClick(const std::shared_ptr<Element>& elem
     }
 
     return false;
+}
+
+bool IsTableSectionTag(const std::string& tag_name) {
+    return tag_name == "thead" || tag_name == "tbody" || tag_name == "tfoot";
+}
+
+bool IsTableCellTag(const std::string& tag_name) {
+    return tag_name == "td" || tag_name == "th";
+}
+
+std::shared_ptr<Document> OwnerDocumentFor(const std::shared_ptr<Element>& element) {
+    return element ? element->GetOwnerDocument() : nullptr;
+}
+
+std::shared_ptr<Element> CreateElementFor(const std::shared_ptr<Element>& owner,
+                                          const std::string& tag_name) {
+    if (auto document = OwnerDocumentFor(owner)) {
+        return document->CreateElement(tag_name);
+    }
+    return std::make_shared<Element>(tag_name);
+}
+
+JSValue WrapElementArray(JSContext* ctx, const std::vector<std::shared_ptr<Element>>& elements) {
+    JSValue array = JS_NewArray(ctx);
+    uint32_t index = 0;
+    for (const auto& element : elements) {
+        JS_SetPropertyUint32(ctx, array, index++, WrapElement(ctx, element));
+    }
+    return array;
+}
+
+std::shared_ptr<Element> FirstDirectChildByTag(const std::shared_ptr<Element>& element,
+                                               const std::string& tag_name) {
+    if (!element) {
+        return nullptr;
+    }
+
+    for (const auto& child : element->GetChildNodes()) {
+        auto child_element = std::dynamic_pointer_cast<Element>(child);
+        if (child_element && child_element->GetTagName() == tag_name) {
+            return child_element;
+        }
+    }
+    return nullptr;
+}
+
+std::shared_ptr<Element> LastDirectChildByTag(const std::shared_ptr<Element>& element,
+                                              const std::string& tag_name) {
+    if (!element) {
+        return nullptr;
+    }
+
+    const auto& children = element->GetChildNodes();
+    for (auto it = children.rbegin(); it != children.rend(); ++it) {
+        auto child_element = std::dynamic_pointer_cast<Element>(*it);
+        if (child_element && child_element->GetTagName() == tag_name) {
+            return child_element;
+        }
+    }
+    return nullptr;
+}
+
+std::vector<std::shared_ptr<Element>> DirectChildrenByTag(const std::shared_ptr<Element>& element,
+                                                          const std::string& tag_name) {
+    std::vector<std::shared_ptr<Element>> results;
+    if (!element) {
+        return results;
+    }
+
+    for (const auto& child : element->GetChildNodes()) {
+        auto child_element = std::dynamic_pointer_cast<Element>(child);
+        if (child_element && child_element->GetTagName() == tag_name) {
+            results.push_back(child_element);
+        }
+    }
+    return results;
+}
+
+std::vector<std::shared_ptr<Element>> DirectRowsOf(const std::shared_ptr<Element>& section) {
+    return DirectChildrenByTag(section, "tr");
+}
+
+std::vector<std::shared_ptr<Element>> CellsOfRow(const std::shared_ptr<Element>& row) {
+    std::vector<std::shared_ptr<Element>> cells;
+    if (!row || row->GetTagName() != "tr") {
+        return cells;
+    }
+
+    for (const auto& child : row->GetChildNodes()) {
+        auto child_element = std::dynamic_pointer_cast<Element>(child);
+        if (child_element && IsTableCellTag(child_element->GetTagName())) {
+            cells.push_back(child_element);
+        }
+    }
+    return cells;
+}
+
+std::vector<std::shared_ptr<Element>> TableBodiesOf(const std::shared_ptr<Element>& table) {
+    return DirectChildrenByTag(table, "tbody");
+}
+
+std::vector<std::shared_ptr<Element>> TableRowsOf(const std::shared_ptr<Element>& table) {
+    std::vector<std::shared_ptr<Element>> rows;
+    if (!table || table->GetTagName() != "table") {
+        return rows;
+    }
+
+    std::vector<std::shared_ptr<Element>> body_rows;
+    std::vector<std::shared_ptr<Element>> foot_rows;
+
+    for (const auto& child : table->GetChildNodes()) {
+        auto child_element = std::dynamic_pointer_cast<Element>(child);
+        if (!child_element) {
+            continue;
+        }
+
+        const std::string tag_name = child_element->GetTagName();
+        if (tag_name == "thead") {
+            auto section_rows = DirectRowsOf(child_element);
+            rows.insert(rows.end(), section_rows.begin(), section_rows.end());
+        } else if (tag_name == "tr") {
+            body_rows.push_back(child_element);
+        } else if (tag_name == "tbody") {
+            auto section_rows = DirectRowsOf(child_element);
+            body_rows.insert(body_rows.end(), section_rows.begin(), section_rows.end());
+        } else if (tag_name == "tfoot") {
+            auto section_rows = DirectRowsOf(child_element);
+            foot_rows.insert(foot_rows.end(), section_rows.begin(), section_rows.end());
+        }
+    }
+
+    rows.insert(rows.end(), body_rows.begin(), body_rows.end());
+    rows.insert(rows.end(), foot_rows.begin(), foot_rows.end());
+    return rows;
+}
+
+std::shared_ptr<Element> LastTableBodyOrNull(const std::shared_ptr<Element>& table) {
+    return LastDirectChildByTag(table, "tbody");
+}
+
+std::shared_ptr<Element> CreateTableBody(const std::shared_ptr<Element>& table) {
+    if (!table || table->GetTagName() != "table") {
+        return nullptr;
+    }
+
+    auto tbody = CreateElementFor(table, "tbody");
+    if (auto last_tbody = LastTableBodyOrNull(table)) {
+        table->InsertBefore(tbody, last_tbody->GetNextSibling());
+    } else {
+        table->AppendChild(tbody);
+    }
+    return tbody;
+}
+
+std::shared_ptr<Element> ParentElementOf(const std::shared_ptr<Element>& element) {
+    if (!element) {
+        return nullptr;
+    }
+    return std::dynamic_pointer_cast<Element>(element->GetParentNode());
+}
+
+std::shared_ptr<Element> LastRowParentForTable(const std::shared_ptr<Element>& table) {
+    auto rows = TableRowsOf(table);
+    if (!rows.empty()) {
+        return ParentElementOf(rows.back());
+    }
+    return LastTableBodyOrNull(table);
+}
+
+std::vector<std::shared_ptr<Element>> DirectRowsForTableSection(const std::shared_ptr<Element>& element) {
+    if (!element || !IsTableSectionTag(element->GetTagName())) {
+        return {};
+    }
+    return DirectRowsOf(element);
+}
+
+std::shared_ptr<Element> ParentTableOfRow(const std::shared_ptr<Element>& row) {
+    auto parent = ParentElementOf(row);
+    if (!parent) {
+        return nullptr;
+    }
+    if (parent->GetTagName() == "table") {
+        return parent;
+    }
+    if (IsTableSectionTag(parent->GetTagName())) {
+        auto table = ParentElementOf(parent);
+        if (table && table->GetTagName() == "table") {
+            return table;
+        }
+    }
+    return nullptr;
+}
+
+std::shared_ptr<Element> DefaultBodyForTable(const std::shared_ptr<Element>& table) {
+    if (!table || table->GetTagName() != "table") {
+        return nullptr;
+    }
+
+    if (auto tbody = LastTableBodyOrNull(table)) {
+        return tbody;
+    }
+
+    auto tbody = CreateElementFor(table, "tbody");
+    table->AppendChild(tbody);
+    return tbody;
+}
+
+std::shared_ptr<Element> ReferenceChildForTableSection(const std::shared_ptr<Element>& table,
+                                                       const std::string& section_tag) {
+    if (!table) {
+        return nullptr;
+    }
+
+    if (section_tag == "thead") {
+        for (const auto& child : table->GetChildNodes()) {
+            auto child_element = std::dynamic_pointer_cast<Element>(child);
+            if (!child_element) {
+                continue;
+            }
+            const std::string tag_name = child_element->GetTagName();
+            if (tag_name != "caption" && tag_name != "colgroup") {
+                return child_element;
+            }
+        }
+        return nullptr;
+    }
+
+    if (section_tag == "tfoot") {
+        return nullptr;
+    }
+
+    return nullptr;
+}
+
+std::shared_ptr<Element> EnsureTableSection(const std::shared_ptr<Element>& table,
+                                            const std::string& section_tag) {
+    if (!table || table->GetTagName() != "table") {
+        return nullptr;
+    }
+
+    if (auto existing = FirstDirectChildByTag(table, section_tag)) {
+        return existing;
+    }
+
+    auto section = CreateElementFor(table, section_tag);
+    table->InsertBefore(section, ReferenceChildForTableSection(table, section_tag));
+    return section;
+}
+
+std::shared_ptr<Element> EnsureCaption(const std::shared_ptr<Element>& table) {
+    if (!table || table->GetTagName() != "table") {
+        return nullptr;
+    }
+
+    if (auto existing = FirstDirectChildByTag(table, "caption")) {
+        return existing;
+    }
+
+    auto caption = CreateElementFor(table, "caption");
+    table->InsertBefore(caption, table->GetFirstChild());
+    return caption;
+}
+
+int NormalizeTableInsertIndex(JSContext* ctx, JSValueConst value, int length) {
+    if (JS_IsUndefined(value)) {
+        return -1;
+    }
+
+    int32_t index = -1;
+    if (JS_ToInt32(ctx, &index, value) != 0) {
+        return -2;
+    }
+
+    if (index < -1 || index > length) {
+        return -2;
+    }
+    return index;
+}
+
+int NormalizeDeleteIndex(JSContext* ctx, JSValueConst value, int length) {
+    int32_t index = -1;
+    if (!JS_IsUndefined(value) && JS_ToInt32(ctx, &index, value) != 0) {
+        return -2;
+    }
+
+    if (index == -1) {
+        index = length - 1;
+    }
+    if (index < 0 || index >= length) {
+        return -2;
+    }
+    return index;
+}
+
+std::shared_ptr<Element> InsertTableRow(std::shared_ptr<Element> target,
+                                        int index,
+                                        TableRowInsertionTarget target_type) {
+    if (!target) {
+        return nullptr;
+    }
+
+    if (target_type == TableRowInsertionTarget::Section) {
+        auto rows = DirectRowsForTableSection(target);
+        auto row = CreateElementFor(target, "tr");
+        std::shared_ptr<Node> ref_child;
+        if (index >= 0 && index < static_cast<int>(rows.size())) {
+            ref_child = rows[static_cast<size_t>(index)];
+        }
+        target->InsertBefore(row, ref_child);
+        return row;
+    }
+
+    auto rows = TableRowsOf(target);
+    auto row = CreateElementFor(target, "tr");
+    if (rows.empty()) {
+        auto tbody = DefaultBodyForTable(target);
+        if (!tbody) {
+            return nullptr;
+        }
+        tbody->AppendChild(row);
+        return row;
+    }
+
+    if (index >= 0 && index < static_cast<int>(rows.size())) {
+        auto reference_row = rows[static_cast<size_t>(index)];
+        auto parent = ParentElementOf(reference_row);
+        if (parent) {
+            parent->InsertBefore(row, reference_row);
+            return row;
+        }
+    }
+
+    auto parent = LastRowParentForTable(target);
+    if (!parent) {
+        return nullptr;
+    }
+    parent->AppendChild(row);
+    return row;
+}
+
+void DeleteFirstDirectChildByTag(const std::shared_ptr<Element>& element,
+                                 const std::string& tag_name) {
+    if (!element) {
+        return;
+    }
+
+    if (auto child = FirstDirectChildByTag(element, tag_name)) {
+        element->RemoveChild(child);
+    }
 }
 
 } // namespace
@@ -1744,6 +2099,184 @@ static JSValue JSElement_get_content(JSContext* ctx, JSValueConst this_val, int 
     return WrapNode(ctx, template_element->GetContent());
 }
 
+static JSValue JSElement_get_table_caption(JSContext* ctx, JSValueConst this_val, int magic) {
+    auto* data = static_cast<JSElementData*>(JS_GetOpaque(this_val, js_element_class_id));
+    if (!data || !data->element || data->element->GetTagName() != "table") return JS_NULL;
+
+    auto caption = FirstDirectChildByTag(data->element, "caption");
+    return caption ? WrapElement(ctx, caption) : JS_NULL;
+}
+
+static JSValue JSElement_set_table_caption(JSContext* ctx, JSValueConst this_val, JSValue val, int magic) {
+    auto* data = static_cast<JSElementData*>(JS_GetOpaque(this_val, js_element_class_id));
+    if (!data || !data->element || data->element->GetTagName() != "table") return JS_UNDEFINED;
+
+    if (JS_IsNull(val)) {
+        DeleteFirstDirectChildByTag(data->element, "caption");
+        return JS_UNDEFINED;
+    }
+
+    auto caption = UnwrapElement(ctx, val);
+    if (!caption || caption->GetTagName() != "caption") {
+        return JS_ThrowTypeError(ctx, "caption must be a caption element or null");
+    }
+
+    DeleteFirstDirectChildByTag(data->element, "caption");
+    data->element->InsertBefore(caption, data->element->GetFirstChild());
+    return JS_UNDEFINED;
+}
+
+static JSValue JSElement_get_table_tHead(JSContext* ctx, JSValueConst this_val, int magic) {
+    auto* data = static_cast<JSElementData*>(JS_GetOpaque(this_val, js_element_class_id));
+    if (!data || !data->element || data->element->GetTagName() != "table") return JS_NULL;
+
+    auto head = FirstDirectChildByTag(data->element, "thead");
+    return head ? WrapElement(ctx, head) : JS_NULL;
+}
+
+static JSValue JSElement_set_table_tHead(JSContext* ctx, JSValueConst this_val, JSValue val, int magic) {
+    auto* data = static_cast<JSElementData*>(JS_GetOpaque(this_val, js_element_class_id));
+    if (!data || !data->element || data->element->GetTagName() != "table") return JS_UNDEFINED;
+
+    if (JS_IsNull(val)) {
+        DeleteFirstDirectChildByTag(data->element, "thead");
+        return JS_UNDEFINED;
+    }
+
+    auto head = UnwrapElement(ctx, val);
+    if (!head || head->GetTagName() != "thead") {
+        return JS_ThrowTypeError(ctx, "tHead must be a thead element or null");
+    }
+
+    DeleteFirstDirectChildByTag(data->element, "thead");
+    data->element->InsertBefore(head, ReferenceChildForTableSection(data->element, "thead"));
+    return JS_UNDEFINED;
+}
+
+static JSValue JSElement_get_table_tFoot(JSContext* ctx, JSValueConst this_val, int magic) {
+    auto* data = static_cast<JSElementData*>(JS_GetOpaque(this_val, js_element_class_id));
+    if (!data || !data->element || data->element->GetTagName() != "table") return JS_NULL;
+
+    auto foot = FirstDirectChildByTag(data->element, "tfoot");
+    return foot ? WrapElement(ctx, foot) : JS_NULL;
+}
+
+static JSValue JSElement_set_table_tFoot(JSContext* ctx, JSValueConst this_val, JSValue val, int magic) {
+    auto* data = static_cast<JSElementData*>(JS_GetOpaque(this_val, js_element_class_id));
+    if (!data || !data->element || data->element->GetTagName() != "table") return JS_UNDEFINED;
+
+    if (JS_IsNull(val)) {
+        DeleteFirstDirectChildByTag(data->element, "tfoot");
+        return JS_UNDEFINED;
+    }
+
+    auto foot = UnwrapElement(ctx, val);
+    if (!foot || foot->GetTagName() != "tfoot") {
+        return JS_ThrowTypeError(ctx, "tFoot must be a tfoot element or null");
+    }
+
+    DeleteFirstDirectChildByTag(data->element, "tfoot");
+    data->element->AppendChild(foot);
+    return JS_UNDEFINED;
+}
+
+static JSValue JSElement_get_table_tBodies(JSContext* ctx, JSValueConst this_val, int magic) {
+    auto* data = static_cast<JSElementData*>(JS_GetOpaque(this_val, js_element_class_id));
+    if (!data || !data->element || data->element->GetTagName() != "table") return JS_NewArray(ctx);
+
+    return WrapElementArray(ctx, TableBodiesOf(data->element));
+}
+
+static JSValue JSElement_get_table_rows(JSContext* ctx, JSValueConst this_val, int magic) {
+    auto* data = static_cast<JSElementData*>(JS_GetOpaque(this_val, js_element_class_id));
+    if (!data || !data->element) return JS_NewArray(ctx);
+
+    const std::string tag_name = data->element->GetTagName();
+    if (tag_name == "table") {
+        return WrapElementArray(ctx, TableRowsOf(data->element));
+    }
+    if (IsTableSectionTag(tag_name)) {
+        return WrapElementArray(ctx, DirectRowsOf(data->element));
+    }
+    return JS_NewArray(ctx);
+}
+
+static JSValue JSElement_get_row_cells(JSContext* ctx, JSValueConst this_val, int magic) {
+    auto* data = static_cast<JSElementData*>(JS_GetOpaque(this_val, js_element_class_id));
+    if (!data || !data->element || data->element->GetTagName() != "tr") return JS_NewArray(ctx);
+
+    return WrapElementArray(ctx, CellsOfRow(data->element));
+}
+
+static JSValue JSElement_get_rowIndex(JSContext* ctx, JSValueConst this_val, int magic) {
+    auto* data = static_cast<JSElementData*>(JS_GetOpaque(this_val, js_element_class_id));
+    auto row = data ? std::dynamic_pointer_cast<HTMLTableRowElement>(data->element) : nullptr;
+    return JS_NewInt32(ctx, row ? row->GetRowIndex() : -1);
+}
+
+static JSValue JSElement_get_sectionRowIndex(JSContext* ctx, JSValueConst this_val, int magic) {
+    auto* data = static_cast<JSElementData*>(JS_GetOpaque(this_val, js_element_class_id));
+    auto row = data ? std::dynamic_pointer_cast<HTMLTableRowElement>(data->element) : nullptr;
+    return JS_NewInt32(ctx, row ? row->GetSectionRowIndex() : -1);
+}
+
+static JSValue JSElement_get_cellIndex(JSContext* ctx, JSValueConst this_val, int magic) {
+    auto* data = static_cast<JSElementData*>(JS_GetOpaque(this_val, js_element_class_id));
+    auto cell = data ? std::dynamic_pointer_cast<HTMLTableCellElement>(data->element) : nullptr;
+    return JS_NewInt32(ctx, cell ? cell->GetCellIndex() : -1);
+}
+
+static JSValue JSElement_get_colSpan(JSContext* ctx, JSValueConst this_val, int magic) {
+    auto* data = static_cast<JSElementData*>(JS_GetOpaque(this_val, js_element_class_id));
+    auto cell = data ? std::dynamic_pointer_cast<HTMLTableCellElement>(data->element) : nullptr;
+    return JS_NewInt32(ctx, cell ? cell->GetColSpan() : 1);
+}
+
+static JSValue JSElement_set_colSpan(JSContext* ctx, JSValueConst this_val, JSValue val, int magic) {
+    auto* data = static_cast<JSElementData*>(JS_GetOpaque(this_val, js_element_class_id));
+    auto cell = data ? std::dynamic_pointer_cast<HTMLTableCellElement>(data->element) : nullptr;
+    if (!cell) return JS_UNDEFINED;
+
+    int32_t span = 1;
+    if (JS_ToInt32(ctx, &span, val) != 0) return JS_EXCEPTION;
+    cell->SetColSpan(span);
+    return JS_UNDEFINED;
+}
+
+static JSValue JSElement_get_rowSpan(JSContext* ctx, JSValueConst this_val, int magic) {
+    auto* data = static_cast<JSElementData*>(JS_GetOpaque(this_val, js_element_class_id));
+    auto cell = data ? std::dynamic_pointer_cast<HTMLTableCellElement>(data->element) : nullptr;
+    return JS_NewInt32(ctx, cell ? cell->GetRowSpan() : 1);
+}
+
+static JSValue JSElement_set_rowSpan(JSContext* ctx, JSValueConst this_val, JSValue val, int magic) {
+    auto* data = static_cast<JSElementData*>(JS_GetOpaque(this_val, js_element_class_id));
+    auto cell = data ? std::dynamic_pointer_cast<HTMLTableCellElement>(data->element) : nullptr;
+    if (!cell) return JS_UNDEFINED;
+
+    int32_t span = 1;
+    if (JS_ToInt32(ctx, &span, val) != 0) return JS_EXCEPTION;
+    cell->SetRowSpan(span);
+    return JS_UNDEFINED;
+}
+
+static JSValue JSElement_get_table_col_span(JSContext* ctx, JSValueConst this_val, int magic) {
+    auto* data = static_cast<JSElementData*>(JS_GetOpaque(this_val, js_element_class_id));
+    auto column = data ? std::dynamic_pointer_cast<HTMLTableColElement>(data->element) : nullptr;
+    return JS_NewInt32(ctx, column ? column->GetSpan() : 1);
+}
+
+static JSValue JSElement_set_table_col_span(JSContext* ctx, JSValueConst this_val, JSValue val, int magic) {
+    auto* data = static_cast<JSElementData*>(JS_GetOpaque(this_val, js_element_class_id));
+    auto column = data ? std::dynamic_pointer_cast<HTMLTableColElement>(data->element) : nullptr;
+    if (!column) return JS_UNDEFINED;
+
+    int32_t span = 1;
+    if (JS_ToInt32(ctx, &span, val) != 0) return JS_EXCEPTION;
+    column->SetSpan(span);
+    return JS_UNDEFINED;
+}
+
 // innerHTML setter
 static JSValue JSElement_set_innerHTML(JSContext* ctx, JSValueConst this_val, JSValue val, int magic) {
     auto* data = static_cast<JSElementData*>(JS_GetOpaque(this_val, js_element_class_id));
@@ -1826,6 +2359,46 @@ static JSValue JSElement_get_scrollHeight(JSContext* ctx, JSValueConst this_val,
     return JS_NewFloat64(ctx, render_obj->GetScrollHeight());
 }
 
+static JSValue JSElement_get_clientWidth(JSContext* ctx, JSValueConst this_val, int magic) {
+    auto* data = static_cast<JSElementData*>(JS_GetOpaque(this_val, js_element_class_id));
+    if (!data || !data->element) return JS_NewFloat64(ctx, 0);
+
+    auto render_obj = data->element->GetRenderObject();
+    if (!render_obj) return JS_NewFloat64(ctx, 0);
+
+    const auto& style = render_obj->GetComputedStyle();
+    float border_left = style.border_left_width > 0
+        ? style.border_left_width
+        : style.border.width.ToPx();
+    float border_right = style.border_right_width > 0
+        ? style.border_right_width
+        : style.border.width.ToPx();
+
+    const auto& layout = render_obj->GetLayoutInfo();
+    float client_width = layout.width - border_left - border_right;
+    return JS_NewFloat64(ctx, std::max(0.0f, client_width));
+}
+
+static JSValue JSElement_get_clientHeight(JSContext* ctx, JSValueConst this_val, int magic) {
+    auto* data = static_cast<JSElementData*>(JS_GetOpaque(this_val, js_element_class_id));
+    if (!data || !data->element) return JS_NewFloat64(ctx, 0);
+
+    auto render_obj = data->element->GetRenderObject();
+    if (!render_obj) return JS_NewFloat64(ctx, 0);
+
+    const auto& style = render_obj->GetComputedStyle();
+    float border_top = style.border_top_width > 0
+        ? style.border_top_width
+        : style.border.width.ToPx();
+    float border_bottom = style.border_bottom_width > 0
+        ? style.border_bottom_width
+        : style.border.width.ToPx();
+
+    const auto& layout = render_obj->GetLayoutInfo();
+    float client_height = layout.height - border_top - border_bottom;
+    return JS_NewFloat64(ctx, std::max(0.0f, client_height));
+}
+
 // getBoundingClientRect - 获取元素的边界矩形
 static JSValue JSElement_getBoundingClientRect(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) {
     auto* data = static_cast<JSElementData*>(JS_GetOpaque(this_val, js_element_class_id));
@@ -1891,6 +2464,234 @@ static JSValue JSElement_getClientRects(JSContext* ctx, JSValueConst this_val, i
 }
 
 // scrollIntoView - 滚动元素到可见区域
+static JSValue JSElement_insertRow(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) {
+    auto* data = static_cast<JSElementData*>(JS_GetOpaque(this_val, js_element_class_id));
+    if (!data || !data->element) return JS_EXCEPTION;
+
+    const std::string tag_name = data->element->GetTagName();
+    const bool is_table = tag_name == "table";
+    const bool is_section = IsTableSectionTag(tag_name);
+    if (!is_table && !is_section) {
+        return JS_ThrowTypeError(ctx, "insertRow is only available on table sections and tables");
+    }
+
+    const int length = is_table
+        ? static_cast<int>(TableRowsOf(data->element).size())
+        : static_cast<int>(DirectRowsOf(data->element).size());
+    int index = NormalizeTableInsertIndex(ctx, argc > 0 ? argv[0] : JS_UNDEFINED, length);
+    if (index == -2) {
+        return JS_ThrowRangeError(ctx, "insertRow index out of range");
+    }
+
+    auto row = InsertTableRow(data->element,
+                              index,
+                              is_table ? TableRowInsertionTarget::Table : TableRowInsertionTarget::Section);
+    return row ? WrapElement(ctx, row) : JS_EXCEPTION;
+}
+
+static JSValue JSElement_deleteRow(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) {
+    auto* data = static_cast<JSElementData*>(JS_GetOpaque(this_val, js_element_class_id));
+    if (!data || !data->element) return JS_EXCEPTION;
+
+    const std::string tag_name = data->element->GetTagName();
+    const bool is_table = tag_name == "table";
+    const bool is_section = IsTableSectionTag(tag_name);
+    if (!is_table && !is_section) {
+        return JS_ThrowTypeError(ctx, "deleteRow is only available on table sections and tables");
+    }
+
+    auto rows = is_table ? TableRowsOf(data->element) : DirectRowsOf(data->element);
+    int index = NormalizeDeleteIndex(ctx, argc > 0 ? argv[0] : JS_UNDEFINED, static_cast<int>(rows.size()));
+    if (index == -2) {
+        return JS_ThrowRangeError(ctx, "deleteRow index out of range");
+    }
+
+    auto row = rows[static_cast<size_t>(index)];
+    auto parent = ParentElementOf(row);
+    if (parent) {
+        parent->RemoveChild(row);
+    }
+    return JS_UNDEFINED;
+}
+
+static JSValue JSElement_insertCell(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) {
+    auto* data = static_cast<JSElementData*>(JS_GetOpaque(this_val, js_element_class_id));
+    if (!data || !data->element || data->element->GetTagName() != "tr") {
+        return JS_ThrowTypeError(ctx, "insertCell is only available on table rows");
+    }
+
+    auto cells = CellsOfRow(data->element);
+    int index = NormalizeTableInsertIndex(ctx, argc > 0 ? argv[0] : JS_UNDEFINED, static_cast<int>(cells.size()));
+    if (index == -2) {
+        return JS_ThrowRangeError(ctx, "insertCell index out of range");
+    }
+
+    auto cell = CreateElementFor(data->element, "td");
+    std::shared_ptr<Node> ref_child;
+    if (index >= 0 && index < static_cast<int>(cells.size())) {
+        ref_child = cells[static_cast<size_t>(index)];
+    }
+    data->element->InsertBefore(cell, ref_child);
+    return WrapElement(ctx, cell);
+}
+
+static JSValue JSElement_deleteCell(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) {
+    auto* data = static_cast<JSElementData*>(JS_GetOpaque(this_val, js_element_class_id));
+    if (!data || !data->element || data->element->GetTagName() != "tr") {
+        return JS_ThrowTypeError(ctx, "deleteCell is only available on table rows");
+    }
+
+    auto cells = CellsOfRow(data->element);
+    int index = NormalizeDeleteIndex(ctx, argc > 0 ? argv[0] : JS_UNDEFINED, static_cast<int>(cells.size()));
+    if (index == -2) {
+        return JS_ThrowRangeError(ctx, "deleteCell index out of range");
+    }
+
+    data->element->RemoveChild(cells[static_cast<size_t>(index)]);
+    return JS_UNDEFINED;
+}
+
+static JSValue JSElement_createTHead(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) {
+    auto* data = static_cast<JSElementData*>(JS_GetOpaque(this_val, js_element_class_id));
+    if (!data || !data->element || data->element->GetTagName() != "table") {
+        return JS_ThrowTypeError(ctx, "createTHead is only available on tables");
+    }
+
+    auto section = EnsureTableSection(data->element, "thead");
+    return section ? WrapElement(ctx, section) : JS_EXCEPTION;
+}
+
+static JSValue JSElement_deleteTHead(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) {
+    auto* data = static_cast<JSElementData*>(JS_GetOpaque(this_val, js_element_class_id));
+    if (!data || !data->element || data->element->GetTagName() != "table") {
+        return JS_ThrowTypeError(ctx, "deleteTHead is only available on tables");
+    }
+
+    DeleteFirstDirectChildByTag(data->element, "thead");
+    return JS_UNDEFINED;
+}
+
+static JSValue JSElement_createTFoot(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) {
+    auto* data = static_cast<JSElementData*>(JS_GetOpaque(this_val, js_element_class_id));
+    if (!data || !data->element || data->element->GetTagName() != "table") {
+        return JS_ThrowTypeError(ctx, "createTFoot is only available on tables");
+    }
+
+    auto section = EnsureTableSection(data->element, "tfoot");
+    return section ? WrapElement(ctx, section) : JS_EXCEPTION;
+}
+
+static JSValue JSElement_createTBody(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) {
+    auto* data = static_cast<JSElementData*>(JS_GetOpaque(this_val, js_element_class_id));
+    if (!data || !data->element || data->element->GetTagName() != "table") {
+        return JS_ThrowTypeError(ctx, "createTBody is only available on tables");
+    }
+
+    auto section = CreateTableBody(data->element);
+    return section ? WrapElement(ctx, section) : JS_EXCEPTION;
+}
+
+static JSValue JSElement_deleteTFoot(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) {
+    auto* data = static_cast<JSElementData*>(JS_GetOpaque(this_val, js_element_class_id));
+    if (!data || !data->element || data->element->GetTagName() != "table") {
+        return JS_ThrowTypeError(ctx, "deleteTFoot is only available on tables");
+    }
+
+    DeleteFirstDirectChildByTag(data->element, "tfoot");
+    return JS_UNDEFINED;
+}
+
+static JSValue JSElement_createCaption(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) {
+    auto* data = static_cast<JSElementData*>(JS_GetOpaque(this_val, js_element_class_id));
+    if (!data || !data->element || data->element->GetTagName() != "table") {
+        return JS_ThrowTypeError(ctx, "createCaption is only available on tables");
+    }
+
+    auto caption = EnsureCaption(data->element);
+    return caption ? WrapElement(ctx, caption) : JS_EXCEPTION;
+}
+
+static JSValue JSElement_deleteCaption(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) {
+    auto* data = static_cast<JSElementData*>(JS_GetOpaque(this_val, js_element_class_id));
+    if (!data || !data->element || data->element->GetTagName() != "table") {
+        return JS_ThrowTypeError(ctx, "deleteCaption is only available on tables");
+    }
+
+    DeleteFirstDirectChildByTag(data->element, "caption");
+    return JS_UNDEFINED;
+}
+
+void DefineElementAccessor(JSContext* ctx,
+                           JSValueConst obj,
+                           const char* name,
+                           JSValue (*getter)(JSContext*, JSValueConst, int),
+                           JSValue (*setter)(JSContext*, JSValueConst, JSValue, int) = nullptr) {
+    JSAtom atom = JS_NewAtom(ctx, name);
+    JSCFunctionType getter_type;
+    getter_type.getter_magic = getter;
+    JSCFunctionType setter_type;
+    setter_type.setter_magic = setter;
+    JS_DefinePropertyGetSet(ctx, obj, atom,
+                            JS_NewCFunction2(ctx, getter_type.generic, name, 0, JS_CFUNC_getter_magic, 0),
+                            setter ? JS_NewCFunction2(ctx, setter_type.generic, name, 1, JS_CFUNC_setter_magic, 0)
+                                   : JS_UNDEFINED,
+                            JS_PROP_ENUMERABLE | JS_PROP_CONFIGURABLE);
+    JS_FreeAtom(ctx, atom);
+}
+
+void AttachTableElementBindings(JSContext* ctx, JSValueConst obj, const std::shared_ptr<Element>& element) {
+    if (!ctx || !element) {
+        return;
+    }
+
+    const std::string tag_name = element->GetTagName();
+    if (tag_name == "table") {
+        DefineElementAccessor(ctx, obj, "caption", JSElement_get_table_caption, JSElement_set_table_caption);
+        DefineElementAccessor(ctx, obj, "tHead", JSElement_get_table_tHead, JSElement_set_table_tHead);
+        DefineElementAccessor(ctx, obj, "tFoot", JSElement_get_table_tFoot, JSElement_set_table_tFoot);
+        DefineElementAccessor(ctx, obj, "tBodies", JSElement_get_table_tBodies);
+        DefineElementAccessor(ctx, obj, "rows", JSElement_get_table_rows);
+
+        JS_SetPropertyStr(ctx, obj, "insertRow", JS_NewCFunction(ctx, JSElement_insertRow, "insertRow", 1));
+        JS_SetPropertyStr(ctx, obj, "deleteRow", JS_NewCFunction(ctx, JSElement_deleteRow, "deleteRow", 1));
+        JS_SetPropertyStr(ctx, obj, "createTHead", JS_NewCFunction(ctx, JSElement_createTHead, "createTHead", 0));
+        JS_SetPropertyStr(ctx, obj, "createTFoot", JS_NewCFunction(ctx, JSElement_createTFoot, "createTFoot", 0));
+        JS_SetPropertyStr(ctx, obj, "createTBody", JS_NewCFunction(ctx, JSElement_createTBody, "createTBody", 0));
+        JS_SetPropertyStr(ctx, obj, "deleteTHead", JS_NewCFunction(ctx, JSElement_deleteTHead, "deleteTHead", 0));
+        JS_SetPropertyStr(ctx, obj, "deleteTFoot", JS_NewCFunction(ctx, JSElement_deleteTFoot, "deleteTFoot", 0));
+        JS_SetPropertyStr(ctx, obj, "createCaption", JS_NewCFunction(ctx, JSElement_createCaption, "createCaption", 0));
+        JS_SetPropertyStr(ctx, obj, "deleteCaption", JS_NewCFunction(ctx, JSElement_deleteCaption, "deleteCaption", 0));
+        return;
+    }
+
+    if (IsTableSectionTag(tag_name)) {
+        DefineElementAccessor(ctx, obj, "rows", JSElement_get_table_rows);
+        JS_SetPropertyStr(ctx, obj, "insertRow", JS_NewCFunction(ctx, JSElement_insertRow, "insertRow", 1));
+        JS_SetPropertyStr(ctx, obj, "deleteRow", JS_NewCFunction(ctx, JSElement_deleteRow, "deleteRow", 1));
+        return;
+    }
+
+    if (tag_name == "tr") {
+        DefineElementAccessor(ctx, obj, "rowIndex", JSElement_get_rowIndex);
+        DefineElementAccessor(ctx, obj, "sectionRowIndex", JSElement_get_sectionRowIndex);
+        DefineElementAccessor(ctx, obj, "cells", JSElement_get_row_cells);
+        JS_SetPropertyStr(ctx, obj, "insertCell", JS_NewCFunction(ctx, JSElement_insertCell, "insertCell", 1));
+        JS_SetPropertyStr(ctx, obj, "deleteCell", JS_NewCFunction(ctx, JSElement_deleteCell, "deleteCell", 1));
+        return;
+    }
+
+    if (IsTableCellTag(tag_name)) {
+        DefineElementAccessor(ctx, obj, "cellIndex", JSElement_get_cellIndex);
+        DefineElementAccessor(ctx, obj, "colSpan", JSElement_get_colSpan, JSElement_set_colSpan);
+        DefineElementAccessor(ctx, obj, "rowSpan", JSElement_get_rowSpan, JSElement_set_rowSpan);
+        return;
+    }
+
+    if (tag_name == "col" || tag_name == "colgroup") {
+        DefineElementAccessor(ctx, obj, "span", JSElement_get_table_col_span, JSElement_set_table_col_span);
+    }
+}
+
 static JSValue JSElement_scrollIntoView(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv) {
     auto* data = static_cast<JSElementData*>(JS_GetOpaque(this_val, js_element_class_id));
     if (!data || !data->element) return JS_UNDEFINED;
@@ -2129,6 +2930,8 @@ static const JSCFunctionListEntry js_element_proto_funcs[] = {
     JS_CGETSET_MAGIC_DEF("scrollLeft", JSElement_get_scrollLeft, JSElement_set_scrollLeft, 0),
     JS_CGETSET_MAGIC_DEF("scrollWidth", JSElement_get_scrollWidth, nullptr, 0),
     JS_CGETSET_MAGIC_DEF("scrollHeight", JSElement_get_scrollHeight, nullptr, 0),
+    JS_CGETSET_MAGIC_DEF("clientWidth", JSElement_get_clientWidth, nullptr, 0),
+    JS_CGETSET_MAGIC_DEF("clientHeight", JSElement_get_clientHeight, nullptr, 0),
     // contentEditable 属性
     JS_CGETSET_MAGIC_DEF("isContentEditable", JSElement_get_isContentEditable, nullptr, 0),
     JS_CGETSET_MAGIC_DEF("contentEditable", JSElement_get_contentEditable, JSElement_set_contentEditable, 0),
@@ -2539,6 +3342,8 @@ JSValue WrapElement(JSContext* ctx, std::shared_ptr<Element> element) {
                 return JS_UNDEFINED;
             }, "prevMatch", 0));
     }
+
+    AttachTableElementBindings(ctx, obj, element);
 
     return obj;
 }
