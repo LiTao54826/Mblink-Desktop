@@ -362,10 +362,16 @@ void ScrollLayerManager::UpdateContentSize(RenderObject* container) {
     info->content_height = container->GetContentHeight();
 
     if (info->content_width <= 0 || needs_recalc) {
-        info->content_width = container->CalculateContentWidth();
+        const float calculated_width = container->CalculateContentWidth();
+        if (calculated_width > 0 || info->content_width <= 0) {
+            info->content_width = calculated_width;
+        }
     }
     if (info->content_height <= 0 || needs_recalc) {
-        info->content_height = container->CalculateContentHeight();
+        const float calculated_height = container->CalculateContentHeight();
+        if (calculated_height > 0 || info->content_height <= 0) {
+            info->content_height = calculated_height;
+        }
     }
 
     // 更新视口尺寸（与RegisterScrollContainer逻辑一致）
@@ -551,6 +557,7 @@ std::shared_ptr<CompositorLayer> ScrollLayerManager::CreateScrollContentLayer(Re
     
     layer->SetPromotionReason(LayerPromotionReason::ScrollableContent);
     layer->SetDebugName("ScrollContent");
+    layer->SetAllowsBitmapBacking(false);
 
     // 设置层边界为内容尺寸
     // 注意：如果缓存的内容尺寸为 0，需要动态计算
@@ -582,6 +589,87 @@ std::shared_ptr<CompositorLayer> ScrollLayerManager::CreateScrollContentLayer(Re
     // 它的位图是空的（透明的）
 
     return layer;
+}
+
+std::vector<ScrollContainerMemoryStats> ScrollLayerManager::CollectMemoryStats() const {
+    std::vector<ScrollContainerMemoryStats> stats;
+    stats.reserve(scroll_containers_.size());
+
+    std::unordered_set<CompositorLayer*> scroll_clip_layers;
+    for (const auto& [container, info] : scroll_containers_) {
+        if (!container) {
+            continue;
+        }
+        if (auto clip_layer = container->GetCompositorLayer()) {
+            scroll_clip_layers.insert(clip_layer.get());
+        }
+    }
+
+    for (const auto& [container, info] : scroll_containers_) {
+        if (!container) {
+            continue;
+        }
+
+        ScrollContainerMemoryStats entry;
+        entry.container_id = static_cast<std::uint64_t>(reinterpret_cast<std::uintptr_t>(container));
+        entry.content_width = info.content_width;
+        entry.content_height = info.content_height;
+        entry.viewport_width = info.viewport_width;
+        entry.viewport_height = info.viewport_height;
+
+        CompositorLayer* clip_layer = container->GetCompositorLayer().get();
+        CompositorLayer* content_layer = info.content_layer.get();
+
+        if (clip_layer) {
+            entry.clip_layer_id = clip_layer->GetId();
+            entry.clip_layer_bitmap_bytes = clip_layer->GetBitmapByteSize();
+            entry.clip_layer_texture_bytes = clip_layer->GetTextureByteSize();
+        }
+
+        if (content_layer) {
+            entry.content_layer_id = content_layer->GetId();
+            entry.content_layer_bitmap_bytes = content_layer->GetBitmapByteSize();
+            entry.content_layer_texture_bytes = content_layer->GetTextureByteSize();
+            entry.content_layer_allows_bitmap_backing = content_layer->AllowsBitmapBacking();
+            AccumulateDescendantMemory(content_layer,
+                                       scroll_clip_layers,
+                                       entry.descendant_bitmap_bytes,
+                                       entry.descendant_texture_bytes);
+        }
+
+        entry.total_bitmap_bytes = entry.clip_layer_bitmap_bytes +
+                                   entry.content_layer_bitmap_bytes +
+                                   entry.descendant_bitmap_bytes;
+        entry.total_texture_bytes = entry.clip_layer_texture_bytes +
+                                    entry.content_layer_texture_bytes +
+                                    entry.descendant_texture_bytes;
+        stats.push_back(entry);
+    }
+
+    return stats;
+}
+
+void ScrollLayerManager::AccumulateDescendantMemory(CompositorLayer* layer,
+                                                    const std::unordered_set<CompositorLayer*>& stop_layers,
+                                                    size_t& bitmap_bytes,
+                                                    size_t& texture_bytes) {
+    if (!layer) {
+        return;
+    }
+
+    for (const auto& child : layer->GetChildren()) {
+        if (!child) {
+            continue;
+        }
+
+        if (stop_layers.find(child.get()) != stop_layers.end()) {
+            continue;
+        }
+
+        bitmap_bytes += child->GetBitmapByteSize();
+        texture_bytes += child->GetTextureByteSize();
+        AccumulateDescendantMemory(child.get(), stop_layers, bitmap_bytes, texture_bytes);
+    }
 }
 
 std::shared_ptr<CompositorLayer> ScrollLayerManager::CreateFixedElementLayer(RenderObject* element) {

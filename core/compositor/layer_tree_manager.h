@@ -220,6 +220,7 @@ public:
     size_t GetScrollContainerCount() const { return scroll_states_.size(); }
     const ScrollInvalidationStats& GetInvalidationStats() const { return invalidation_stats_; }
     void ResetInvalidationStats() { invalidation_stats_.Reset(); }
+    void ClearScrollState();
 
     // =========================================================================
     // 坐标转换

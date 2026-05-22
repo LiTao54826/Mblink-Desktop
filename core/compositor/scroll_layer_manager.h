@@ -18,6 +18,7 @@
 
 #include "compositor_layer.h"
 #include "scroll_invalidation_stats.h"
+#include <cstdint>
 #include <memory>
 #include <unordered_map>
 #include <unordered_set>
@@ -68,6 +69,25 @@ struct FixedElementInfo {
     // 固定位置（相对于视口）
     float fixed_x = 0.0f;
     float fixed_y = 0.0f;
+};
+
+struct ScrollContainerMemoryStats {
+    std::uint64_t container_id = 0;
+    std::uint32_t clip_layer_id = 0;
+    std::uint32_t content_layer_id = 0;
+    float content_width = 0.0f;
+    float content_height = 0.0f;
+    float viewport_width = 0.0f;
+    float viewport_height = 0.0f;
+    size_t clip_layer_bitmap_bytes = 0;
+    size_t content_layer_bitmap_bytes = 0;
+    size_t descendant_bitmap_bytes = 0;
+    size_t total_bitmap_bytes = 0;
+    size_t clip_layer_texture_bytes = 0;
+    size_t content_layer_texture_bytes = 0;
+    size_t descendant_texture_bytes = 0;
+    size_t total_texture_bytes = 0;
+    bool content_layer_allows_bitmap_backing = false;
 };
 
 /**
@@ -176,6 +196,7 @@ public:
 
     const ScrollInvalidationStats& GetInvalidationStats() const { return invalidation_stats_; }
     void ResetInvalidationStats() { invalidation_stats_.Reset(); }
+    std::vector<ScrollContainerMemoryStats> CollectMemoryStats() const;
 
     /**
      * @brief 更新滚动容器的内容尺寸
@@ -303,6 +324,10 @@ private:
      * @brief 限制滚动位置在有效范围内
      */
     void ClampScrollPosition(ScrollContainerInfo& info);
+    static void AccumulateDescendantMemory(CompositorLayer* layer,
+                                           const std::unordered_set<CompositorLayer*>& stop_layers,
+                                           size_t& bitmap_bytes,
+                                           size_t& texture_bytes);
 
     // 关联的组件
     LayerTreeBuilder* layer_tree_builder_ = nullptr;

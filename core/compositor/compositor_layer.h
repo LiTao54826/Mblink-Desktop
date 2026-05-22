@@ -232,6 +232,11 @@ public:
      */
     void ReleaseBitmap();
 
+    bool AllowsBitmapBacking() const { return allow_bitmap_backing_; }
+    void SetAllowsBitmapBacking(bool allowed);
+    size_t GetBitmapByteSize() const;
+    size_t GetTextureByteSize() const;
+
     // =========================================================================
     // 脏区域管理
     // =========================================================================
@@ -609,6 +614,7 @@ private:
     SkBitmap bitmap_;
     std::unique_ptr<SkCanvas> canvas_;
     bool bitmap_valid_ = false;
+    bool allow_bitmap_backing_ = true;
 
     // GPU 纹理
     GLuint texture_id_ = 0;

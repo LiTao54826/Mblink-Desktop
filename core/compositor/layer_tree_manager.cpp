@@ -43,6 +43,12 @@ void LayerTreeManager::SetViewport(float width, float height, float dpi_scale) {
     dpi_scale_ = dpi_scale;
 }
 
+void LayerTreeManager::ClearScrollState() {
+    scroll_states_.clear();
+    pending_updates_.clear();
+    invalidation_stats_.Reset();
+}
+
 // ============================================================================
 // 增量更新接口
 // ============================================================================

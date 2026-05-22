@@ -1,0 +1,11 @@
+{
+  "name": "modern_desktop_demo",
+  "entry": "app.js",
+  "runtime": "tool",
+  "window": {
+    "title": "Modern Desktop Demo",
+    "width": 1400,
+    "height": 900,
+    "resizable": true
+  }
+}

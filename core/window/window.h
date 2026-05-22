@@ -504,7 +504,13 @@ public:
      * @brief 检查是否需要重绘
      * @return true表示需要重绘
      */
-    bool NeedsRepaint() const { return needs_repaint_ || has_pending_resize_; }
+    bool NeedsRepaint() const;
+
+    /**
+     * @brief Restore the normal Skia cache budget after a resize burst.
+     * @return true when this call changed cache state and queued a repaint.
+     */
+    bool RestoreResizeBurstCacheLimitIfReady();
 
     /**
      * @brief 添加脏区域（用于增量渲染）
@@ -819,7 +825,9 @@ private:
 
     // 连续 resize 追踪（用于 burst 场景更激进回收）
     Uint64 resize_burst_window_start_tick_ = 0;
+    Uint64 resize_burst_last_tick_ = 0;
     int resize_burst_count_ = 0;
+    bool resize_burst_cache_limited_ = false;
 
     // 保存的滚动位置（用于 InvalidateRenderTree 后恢复）
     std::unordered_map<Node*, std::pair<float, float>> saved_scroll_positions_;

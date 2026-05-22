@@ -346,6 +346,12 @@ void RenderPipeline::SetRenderTree(std::shared_ptr<RenderObject> tree) {
         if (layer_tree_builder_) {
             layer_tree_builder_->Clear();
         }
+        if (scroll_manager_) {
+            scroll_manager_->Clear();
+        }
+        if (layer_tree_manager_) {
+            layer_tree_manager_->ClearScrollState();
+        }
         root_layer_.reset();
 
         needs_render_ = true;

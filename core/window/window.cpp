@@ -158,8 +158,9 @@ static int sdl_init_count = 0;
 
 // P0 内存优化参数
 static constexpr int kResizeDebounceMs = 120;
-static constexpr size_t kSkiaResizeCacheLimitBytes = 48 * 1024 * 1024;      // 48MB
-static constexpr size_t kSkiaRestoreCacheLimitBytes = 32 * 1024 * 1024;     // 32MB
+static constexpr size_t kSkiaMinCacheLimitBytes = 16 * 1024 * 1024;         // 16MB
+static constexpr size_t kSkiaDefaultCacheLimitBytes = 32 * 1024 * 1024;     // 32MB
+static constexpr size_t kSkiaMaxCacheLimitBytes = 64 * 1024 * 1024;         // 64MB
 static constexpr size_t kImageCacheShrinkBytes = 48 * 1024 * 1024;          // 48MB
 
 // P1 连续 resize 累积治理参数
@@ -178,6 +179,24 @@ inline bool IsAnimFrameDebugEnabled() {
 inline bool IsBaselineFrameStatsEnabled() {
     static const bool enabled = (std::getenv("MBINK_BASELINE_FRAME_STATS") != nullptr);
     return enabled;
+}
+
+inline size_t EstimateSurfaceBytes(int width, int height) {
+    if (width <= 0 || height <= 0) {
+        return 0;
+    }
+    return static_cast<size_t>(width) * static_cast<size_t>(height) * 4;
+}
+
+inline size_t ComputeSkiaCacheLimitForSurface(int width, int height) {
+    const size_t surface_bytes = EstimateSurfaceBytes(width, height);
+    const size_t target = std::max(kSkiaDefaultCacheLimitBytes, surface_bytes * 3);
+    return std::clamp(target, kSkiaMinCacheLimitBytes, kSkiaMaxCacheLimitBytes);
+}
+
+inline size_t ComputeSkiaCacheLimitForSurface(int width, int height, bool in_resize_burst) {
+    const size_t limit = ComputeSkiaCacheLimitForSurface(width, height);
+    return in_resize_burst ? std::min(limit, kSkiaBurstCacheLimitBytes) : limit;
 }
 
 inline bool IsEnvFlagEnabled(const char* name) {
@@ -1135,7 +1154,8 @@ void Window::OnResize() {
 
         // P0: resize 后主动做一次 GPU 资源预算与延迟回收，降低高水位驻留
         if (gr_context_) {
-            gr_context_->setResourceCacheLimit(kSkiaResizeCacheLimitBytes);
+            const bool in_resize_burst = resize_burst_count_ >= kResizeBurstThreshold;
+            gr_context_->setResourceCacheLimit(ComputeSkiaCacheLimitForSurface(width, height, in_resize_burst));
             gr_context_->performDeferredCleanup(std::chrono::milliseconds(0));
         }
     } else if (actual_backend_ == RenderBackend::CPU) {
@@ -1288,6 +1308,8 @@ void Window::InitSkia() {
     if (!gr_context_) {
         throw std::runtime_error("Failed to create Skia context");
     }
+
+    gr_context_->setResourceCacheLimit(kSkiaDefaultCacheLimitBytes);
 }
 
 void Window::CreateSkiaSurface() {
@@ -1300,6 +1322,8 @@ void Window::CreateSkiaSurface() {
     SDL_GetWindowSizeInPixels(sdl_window_, &width, &height);
 
     // 创建OpenGL帧缓冲信息
+    gr_context_->setResourceCacheLimit(ComputeSkiaCacheLimitForSurface(width, height));
+
     GrGLFramebufferInfo framebuffer_info;
     framebuffer_info.fFBOID = 0;  // 0表示默认帧缓冲
     framebuffer_info.fFormat = GL_RGBA8;
@@ -1399,10 +1423,12 @@ bool Window::HandleSDLEvent(const SDL_Event& event) {
 
                 // P1: 识别连续 resize burst（例如用户持续拖拽/反复放大缩小）
                 const Uint64 now = SDL_GetTicks();
+                resize_burst_last_tick_ = now;
                 if (resize_burst_window_start_tick_ == 0 ||
                     (now - resize_burst_window_start_tick_) > static_cast<Uint64>(kResizeBurstWindowMs)) {
                     resize_burst_window_start_tick_ = now;
                     resize_burst_count_ = 1;
+                    resize_burst_cache_limited_ = false;
                 } else {
                     ++resize_burst_count_;
                 }
@@ -1416,6 +1442,7 @@ bool Window::HandleSDLEvent(const SDL_Event& event) {
                 const bool in_resize_burst = resize_burst_count_ >= kResizeBurstThreshold;
                 if (in_resize_burst) {
                     ImageCache::GetInstance().SetMaxCacheSize(kImageCacheBurstShrinkBytes);
+                    resize_burst_cache_limited_ = true;
                     if (gr_context_) {
                         gr_context_->setResourceCacheLimit(kSkiaBurstCacheLimitBytes);
                         gr_context_->performDeferredCleanup(std::chrono::milliseconds(0));
@@ -1491,7 +1518,10 @@ bool Window::HandleSDLEvent(const SDL_Event& event) {
                 ImageCache::GetInstance().Clear();
 
                 if (gr_context_) {
-                    gr_context_->setResourceCacheLimit(kSkiaRestoreCacheLimitBytes);
+                    int width = 0;
+                    int height = 0;
+                    SDL_GetWindowSizeInPixels(sdl_window_, &width, &height);
+                    gr_context_->setResourceCacheLimit(ComputeSkiaCacheLimitForSurface(width, height));
                     gr_context_->performDeferredCleanup(std::chrono::milliseconds(0));
                     gr_context_->purgeUnlockedResources(GrPurgeResourceOptions::kAllResources);
                     gr_context_->flush();
@@ -1628,6 +1658,43 @@ void Window::SetDocument(std::shared_ptr<Document> document) {
     SetForceFullRepaint(true);
     // 3. 标记需要重绘
     SetNeedsRepaintFor(RepaintReason::API);
+}
+
+bool Window::NeedsRepaint() const {
+    if (needs_repaint_ || has_pending_resize_) {
+        return true;
+    }
+    return resize_burst_cache_limited_ &&
+           resize_burst_last_tick_ != 0 &&
+           (SDL_GetTicks() - resize_burst_last_tick_) > static_cast<Uint64>(kResizeBurstWindowMs);
+}
+
+bool Window::RestoreResizeBurstCacheLimitIfReady() {
+    if (!resize_burst_cache_limited_) {
+        return false;
+    }
+
+    const Uint64 now = SDL_GetTicks();
+    if (resize_burst_last_tick_ == 0 ||
+        (now - resize_burst_last_tick_) <= static_cast<Uint64>(kResizeBurstWindowMs)) {
+        return false;
+    }
+
+    resize_burst_cache_limited_ = false;
+    resize_burst_window_start_tick_ = 0;
+    resize_burst_count_ = 0;
+
+    if (gr_context_ && sdl_window_) {
+        int width = 0;
+        int height = 0;
+        SDL_GetWindowSizeInPixels(sdl_window_, &width, &height);
+        gr_context_->setResourceCacheLimit(ComputeSkiaCacheLimitForSurface(width, height));
+        gr_context_->performDeferredCleanup(std::chrono::milliseconds(0));
+    }
+
+    SetForceFullRepaint(true);
+    SetNeedsRepaintFor(RepaintReason::Resize);
+    return true;
 }
 
 void Window::Render() {

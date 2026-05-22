@@ -740,6 +740,7 @@ void EventLoop::Render() {
     const bool baseline_stats_enabled = IsBaselineFrameStatsEnabled();
     auto& window_manager = WindowManager::Instance();
     for (auto& window : window_manager.GetAllWindows()) {
+        window->RestoreResizeBurstCacheLimitIfReady();
         if (window->NeedsRepaint()) {
             const bool needs_repaint_before = window->NeedsRepaint();
             const char* repaint_reason = window->GetLastRepaintReasonName();

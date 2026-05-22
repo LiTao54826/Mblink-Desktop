@@ -167,6 +167,11 @@ bool Rasterizer::RasterizeLayer(CompositorLayer* layer) {
         return false;
     }
 
+    if (!layer->AllowsBitmapBacking()) {
+        layer->ClearDirtyRegions();
+        return true;
+    }
+
     auto start_time = std::chrono::high_resolution_clock::now();
 
     // 确保位图已分配
@@ -296,6 +301,11 @@ int Rasterizer::RasterizeDirtyLayers(CompositorLayer* root) {
 bool Rasterizer::RasterizeDirtyRegions(CompositorLayer* layer) {
     if (!layer || !layer->HasDirtyRegions()) {
         return false;
+    }
+
+    if (!layer->AllowsBitmapBacking()) {
+        layer->ClearDirtyRegions();
+        return true;
     }
 
     auto start_time = std::chrono::high_resolution_clock::now();

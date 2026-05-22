@@ -16,6 +16,9 @@
 #include "core/dom/bindings/canvas_bindings.h"
 #include "core/quickjs/dom_binding_map.h"
 #include "core/compositor/compositor_layer.h"
+#include "core/compositor/layer_tree_manager.h"
+#include "core/compositor/scroll_layer_manager.h"
+#include "core/render/pipeline/render_pipeline.h"
 #include "core/render/image/image_cache.h"
 #include "core/event/loop/event_loop.h"
 #include <iostream>
@@ -91,6 +94,64 @@ json BuildNativeLeakDelta(const json& current, const json& previous) {
         {"ProcessMemory.WorkingSetSize", JsonPathInt64(current, {"ProcessMemory", "WorkingSetSize"}) - JsonPathInt64(previous, {"ProcessMemory", "WorkingSetSize"})},
         {"ProcessMemory.PrivateUsage", JsonPathInt64(current, {"ProcessMemory", "PrivateUsage"}) - JsonPathInt64(previous, {"ProcessMemory", "PrivateUsage"})},
         {"ProcessMemory.PagefileUsage", JsonPathInt64(current, {"ProcessMemory", "PagefileUsage"}) - JsonPathInt64(previous, {"ProcessMemory", "PagefileUsage"})}
+    };
+}
+
+json BuildScrollInvalidationStatsPayload(const ScrollInvalidationStats& stats) {
+    return {
+        {"scrolls_handled", stats.scrolls_handled},
+        {"full_dirty_scrolls", stats.full_dirty_scrolls},
+        {"clip_layer_full_dirty_scrolls", stats.clip_layer_full_dirty_scrolls},
+        {"ancestor_layer_full_dirty_scrolls", stats.ancestor_layer_full_dirty_scrolls},
+        {"missing_layer_target_scrolls", stats.missing_layer_target_scrolls},
+        {"incremental_eligible_fallbacks", IncrementalEligibleScrollFallbacks(stats)},
+        {"conservative_fallbacks", ConservativeScrollFallbacks(stats)}
+    };
+}
+
+json BuildScrollContainerMemoryStatsPayload(const std::vector<ScrollContainerMemoryStats>& stats) {
+    json containers = json::array();
+    uint64_t total_bitmap_bytes = 0;
+    uint64_t total_texture_bytes = 0;
+    uint64_t total_clip_bitmap_bytes = 0;
+    uint64_t total_content_bitmap_bytes = 0;
+    uint64_t total_descendant_bitmap_bytes = 0;
+
+    for (const auto& entry : stats) {
+        total_bitmap_bytes += entry.total_bitmap_bytes;
+        total_texture_bytes += entry.total_texture_bytes;
+        total_clip_bitmap_bytes += entry.clip_layer_bitmap_bytes;
+        total_content_bitmap_bytes += entry.content_layer_bitmap_bytes;
+        total_descendant_bitmap_bytes += entry.descendant_bitmap_bytes;
+
+        containers.push_back({
+            {"container_id", entry.container_id},
+            {"clip_layer_id", entry.clip_layer_id},
+            {"content_layer_id", entry.content_layer_id},
+            {"content_width", entry.content_width},
+            {"content_height", entry.content_height},
+            {"viewport_width", entry.viewport_width},
+            {"viewport_height", entry.viewport_height},
+            {"clip_layer_bitmap_bytes", entry.clip_layer_bitmap_bytes},
+            {"content_layer_bitmap_bytes", entry.content_layer_bitmap_bytes},
+            {"descendant_bitmap_bytes", entry.descendant_bitmap_bytes},
+            {"total_bitmap_bytes", entry.total_bitmap_bytes},
+            {"clip_layer_texture_bytes", entry.clip_layer_texture_bytes},
+            {"content_layer_texture_bytes", entry.content_layer_texture_bytes},
+            {"descendant_texture_bytes", entry.descendant_texture_bytes},
+            {"total_texture_bytes", entry.total_texture_bytes},
+            {"content_layer_allows_bitmap_backing", entry.content_layer_allows_bitmap_backing}
+        });
+    }
+
+    return {
+        {"container_count", stats.size()},
+        {"total_bitmap_bytes", total_bitmap_bytes},
+        {"total_texture_bytes", total_texture_bytes},
+        {"total_clip_layer_bitmap_bytes", total_clip_bitmap_bytes},
+        {"total_content_layer_bitmap_bytes", total_content_bitmap_bytes},
+        {"total_descendant_bitmap_bytes", total_descendant_bitmap_bytes},
+        {"containers", containers}
     };
 }
 
@@ -364,6 +425,42 @@ void WindowBindings::BindWindowObject() {
             default: backend_name = "AUTO"; break;
         }
 
+        json scroll_memory = {
+            {"container_count", 0},
+            {"total_bitmap_bytes", 0},
+            {"total_texture_bytes", 0},
+            {"total_clip_layer_bitmap_bytes", 0},
+            {"total_content_layer_bitmap_bytes", 0},
+            {"total_descendant_bitmap_bytes", 0},
+            {"containers", json::array()}
+        };
+        json scroll_invalidation = json::object();
+        if (window_) {
+            if (auto* pipeline = window_->GetRenderPipeline()) {
+                if (auto* scroll_manager = pipeline->GetScrollManager()) {
+                    scroll_memory = BuildScrollContainerMemoryStatsPayload(
+                        scroll_manager->CollectMemoryStats());
+                    scroll_invalidation["scroll_manager"] =
+                        BuildScrollInvalidationStatsPayload(scroll_manager->GetInvalidationStats());
+                }
+                if (auto* layer_tree_manager = pipeline->GetLayerTreeManager()) {
+                    scroll_invalidation["layer_tree_manager"] =
+                        BuildScrollInvalidationStatsPayload(layer_tree_manager->GetInvalidationStats());
+                }
+                const auto& frame_stats = pipeline->GetLastFrameStats();
+                scroll_invalidation["last_frame"] = {
+                    {"scrolls_handled", frame_stats.scrolls_handled},
+                    {"full_dirty_fallbacks", frame_stats.scroll_full_dirty_fallbacks},
+                    {"clip_layer_full_dirty_fallbacks", frame_stats.scroll_clip_layer_full_dirty_fallbacks},
+                    {"ancestor_layer_full_dirty_fallbacks", frame_stats.scroll_ancestor_layer_full_dirty_fallbacks},
+                    {"missing_layer_target_fallbacks", frame_stats.scroll_missing_layer_target_fallbacks},
+                    {"incremental_eligible_fallbacks", frame_stats.scroll_incremental_eligible_fallbacks},
+                    {"conservative_fallbacks", frame_stats.scroll_conservative_fallbacks},
+                    {"retained_present_blocking_fallbacks", frame_stats.scroll_retained_present_blocking_fallbacks}
+                };
+            }
+        }
+
         json payload = {
             {"tag", tag},
             {"CompositorLayer.bitmap_count", CompositorLayer::GetLiveBitmapCount()},
@@ -388,6 +485,8 @@ void WindowBindings::BindWindowObject() {
             {"Skia.resource_cache_count", window_ ? window_->GetSkiaResourceCacheCount() : 0},
             {"Skia.resource_cache_bytes", window_ ? window_->GetSkiaResourceCacheBytes() : 0},
             {"Skia.resource_cache_limit", window_ ? window_->GetSkiaResourceCacheLimit() : 0},
+            {"ScrollContainers", scroll_memory},
+            {"ScrollInvalidation", scroll_invalidation},
             {"Skia.purge_executed", false},
             {"ProcessMemory", CollectProcessMemoryStats()}
         };

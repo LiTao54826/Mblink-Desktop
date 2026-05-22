@@ -98,6 +98,31 @@ size_t CompositorLayer::GetLiveTextureBytes() {
     return g_compositor_layer_live_texture_bytes.load(std::memory_order_relaxed);
 }
 
+size_t CompositorLayer::GetBitmapByteSize() const {
+    return EstimateBitmapBytes(bitmap_);
+}
+
+size_t CompositorLayer::GetTextureByteSize() const {
+    return EstimateTextureBytes(texture_width_, texture_height_);
+}
+
+void CompositorLayer::SetAllowsBitmapBacking(bool allowed) {
+    if (allow_bitmap_backing_ == allowed) {
+        return;
+    }
+
+    allow_bitmap_backing_ = allowed;
+    if (!allow_bitmap_backing_) {
+        DestroyTexture();
+        ReleaseBitmap();
+        dirty_regions_.clear();
+        texture_dirty_regions_.clear();
+    } else {
+        bitmap_valid_ = false;
+        MarkFullDirty();
+    }
+}
+
 // =========================================================================
 // 边界和变换
 // =========================================================================
@@ -126,6 +151,9 @@ void CompositorLayer::SetBounds(const SkRect& bounds) {
 // =========================================================================
 
 SkCanvas* CompositorLayer::GetCanvas() {
+    if (!allow_bitmap_backing_) {
+        return nullptr;
+    }
     if (!EnsureBitmap()) {
         return nullptr;
     }
@@ -133,6 +161,10 @@ SkCanvas* CompositorLayer::GetCanvas() {
 }
 
 bool CompositorLayer::EnsureBitmap() {
+    if (!allow_bitmap_backing_) {
+        return false;
+    }
+
     // 🐛 修复：对于有 box-shadow 的 fixed 元素，扩展 bitmap 以容纳阴影
     // 优化：使用四个方向独立的扩展值，节省内存并提高精确度
 
@@ -216,6 +248,10 @@ void CompositorLayer::ReleaseBitmap() {
 // =========================================================================
 
 void CompositorLayer::MarkDirty(const SkRect& region) {
+    if (!allow_bitmap_backing_) {
+        return;
+    }
+
     // 转换为整数矩形
     SkIRect iregion = region.roundOut();
 
@@ -247,6 +283,11 @@ void CompositorLayer::MarkDirty(const SkRect& region) {
 }
 
 void CompositorLayer::MarkFullDirty() {
+    if (!allow_bitmap_backing_) {
+        dirty_regions_.clear();
+        return;
+    }
+
     dirty_regions_.clear();
     dirty_regions_.push_back(SkIRect::MakeWH(
         static_cast<int>(bounds_.width()),
@@ -319,6 +360,9 @@ void CompositorLayer::MergeDirtyRegions() {
 // =========================================================================
 
 void CompositorLayer::MarkTextureDirty(const SkIRect& region) {
+    if (!allow_bitmap_backing_) {
+        return;
+    }
     texture_dirty_regions_.push_back(region);
 }
 
@@ -389,6 +433,10 @@ bool CompositorLayer::UploadDirtyRegions() {
 }
 
 bool CompositorLayer::CreateTexture() {
+    if (!allow_bitmap_backing_) {
+        return false;
+    }
+
     if (texture_id_ != 0) {
         return true;  // 已存在
     }
