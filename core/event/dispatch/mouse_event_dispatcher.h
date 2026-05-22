@@ -270,12 +270,14 @@ private:
     /**
      * @brief 更新 Selection 到点击位置（普通元素 fallback）
      */
-    void UpdateSelectionFromClick(std::shared_ptr<Document> document,
+    void UpdateSelectionFromClick(std::shared_ptr<Window> window,
+                                  std::shared_ptr<Document> document,
                                   const HitTestResult& hit_result,
                                   float logical_x,
                                   float logical_y);
 
-    void ExtendSelectionFromDrag(std::shared_ptr<Document> document,
+    void ExtendSelectionFromDrag(std::shared_ptr<Window> window,
+                                 std::shared_ptr<Document> document,
                                  const HitTestResult& hit_result,
                                  float logical_x,
                                  float logical_y);

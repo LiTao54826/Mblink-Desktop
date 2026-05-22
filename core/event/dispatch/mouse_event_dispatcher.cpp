@@ -12,6 +12,7 @@
 #include "core/dom/element.h"
 #include "core/dom/node.h"
 #include "core/dom/text.h"
+#include "core/dom/selection/range.h"
 #include "core/dom/selection/selection.h"
 #include "core/dom/elements/html_input_element.h"
 #include "core/dom/elements/html_textarea_element.h"
@@ -43,11 +44,13 @@
 #include "core/window/window_manager.h"
 
 #include <algorithm>
+#include <cctype>
 #include <functional>
 #include <iostream>
 #include <limits>
 #include <map>
 #include <sstream>
+#include <utility>
 
 namespace mbink {
 
@@ -74,6 +77,407 @@ bool IsSelectionSuppressedByUserSelect(const std::shared_ptr<Element>& element) 
         current = current->GetParentNode();
     }
     return false;
+}
+
+struct ResolvedTextHit {
+    std::shared_ptr<Text> text_node;
+    std::shared_ptr<RenderObject> text_render;
+    SkFont font;
+    float local_x = 0.0f;
+    float local_y = 0.0f;
+};
+
+SkFont FontForRenderObject(const std::shared_ptr<RenderObject>& render_object,
+                           const std::shared_ptr<RenderObject>& fallback) {
+    const ComputedStyle* style = nullptr;
+    if (render_object) {
+        style = &render_object->GetComputedStyle();
+    } else if (fallback) {
+        style = &fallback->GetComputedStyle();
+    }
+
+    FontDescriptor desc;
+    desc.family = style && !style->font_family.empty() ? style->font_family : "sans-serif";
+    desc.size = style && style->font_size > 0.0f ? style->font_size : 16.0f;
+    desc.weight = style ? ParseCSSFontWeight(style->font_weight) : FontWeight::NORMAL;
+    desc.style = style && style->font_style == "italic" ? FontStyle::ITALIC : FontStyle::NORMAL;
+    return FontManager::GetInstance().LoadFont(desc);
+}
+
+std::shared_ptr<RenderObject> FindFirstTextRenderObject(const std::shared_ptr<RenderObject>& root) {
+    if (!root) {
+        return nullptr;
+    }
+    if (root->GetType() == RenderObjectType::TEXT) {
+        return root;
+    }
+    for (const auto& child : root->GetChildren()) {
+        auto found = FindFirstTextRenderObject(child);
+        if (found) {
+            return found;
+        }
+    }
+    return nullptr;
+}
+
+std::shared_ptr<RenderObject> FindTextRenderForNode(const std::shared_ptr<RenderObject>& root,
+                                                    const std::shared_ptr<Text>& text_node) {
+    if (!root || !text_node) {
+        return nullptr;
+    }
+    if (root->GetType() == RenderObjectType::TEXT && root->GetNode() == text_node) {
+        return root;
+    }
+    for (const auto& child : root->GetChildren()) {
+        auto found = FindTextRenderForNode(child, text_node);
+        if (found) {
+            return found;
+        }
+    }
+    return nullptr;
+}
+
+std::shared_ptr<RenderObject> ResolveTextRenderForDOMText(
+    const HitTestResult& hit_result,
+    const std::shared_ptr<Text>& text_node) {
+    if (!text_node) {
+        return nullptr;
+    }
+
+    auto render = text_node->GetRenderObject();
+    if (render) {
+        return render;
+    }
+
+    if (hit_result.render_object) {
+        auto found = FindTextRenderForNode(hit_result.render_object, text_node);
+        if (found) {
+            return found;
+        }
+    }
+
+    auto current = hit_result.render_object ? hit_result.render_object->GetParent() : nullptr;
+    while (current) {
+        auto found = FindTextRenderForNode(current, text_node);
+        if (found) {
+            return found;
+        }
+        current = current->GetParent();
+    }
+
+    return nullptr;
+}
+
+std::shared_ptr<RenderObject> ChooseTextRenderForPoint(
+    const std::vector<std::shared_ptr<RenderObject>>& candidates,
+    float logical_x,
+    float logical_y) {
+    std::shared_ptr<RenderObject> best;
+    float best_distance = std::numeric_limits<float>::max();
+
+    for (const auto& candidate : candidates) {
+        if (!candidate) {
+            continue;
+        }
+        candidate->UpdateViewportBounds();
+        const auto& bounds = candidate->GetViewportBounds();
+        if (!bounds.valid) {
+            continue;
+        }
+
+        const bool vertical_hit = logical_y >= bounds.y && logical_y <= bounds.y + bounds.height;
+        const float clamped_x = std::clamp(logical_x, bounds.x, bounds.x + bounds.width);
+        const float clamped_y = std::clamp(logical_y, bounds.y, bounds.y + bounds.height);
+        const float dx = logical_x - clamped_x;
+        const float dy = logical_y - clamped_y;
+        const float distance = dx * dx + dy * dy + (vertical_hit ? 0.0f : bounds.height * bounds.height);
+
+        if (!best || distance < best_distance) {
+            best = candidate;
+            best_distance = distance;
+        }
+    }
+
+    return best;
+}
+
+std::shared_ptr<RenderObject> ResolveTextRenderForHit(const HitTestResult& hit_result,
+                                                      float logical_x,
+                                                      float logical_y) {
+    if (!hit_result.render_object) {
+        return nullptr;
+    }
+
+    if (hit_result.render_object->GetType() == RenderObjectType::TEXT) {
+        return hit_result.render_object;
+    }
+
+    std::vector<std::shared_ptr<RenderObject>> candidates;
+    std::function<void(const std::shared_ptr<RenderObject>&)> collect_text;
+    collect_text = [&](const std::shared_ptr<RenderObject>& object) {
+        if (!object) {
+            return;
+        }
+        if (object->GetType() == RenderObjectType::TEXT) {
+            candidates.push_back(object);
+            return;
+        }
+        for (const auto& child : object->GetChildren()) {
+            collect_text(child);
+        }
+    };
+
+    collect_text(hit_result.render_object);
+
+    auto current = hit_result.render_object->GetParent();
+    while (candidates.empty() && current) {
+        collect_text(current);
+        current = current->GetParent();
+    }
+
+    if (!candidates.empty()) {
+        return ChooseTextRenderForPoint(candidates, logical_x, logical_y);
+    }
+
+    return nullptr;
+}
+
+std::shared_ptr<Text> ResolveTextNodeForHit(const HitTestResult& hit_result,
+                                            const std::shared_ptr<RenderObject>& text_render) {
+    if (text_render) {
+        auto node = text_render->GetNode();
+        if (node && node->GetNodeType() == NodeType::TEXT_NODE) {
+            return std::dynamic_pointer_cast<Text>(node);
+        }
+    }
+
+    if (hit_result.render_object) {
+        auto node = hit_result.render_object->GetNode();
+        if (node && node->GetNodeType() == NodeType::TEXT_NODE) {
+            return std::dynamic_pointer_cast<Text>(node);
+        }
+    }
+
+    return nullptr;
+}
+
+ResolvedTextHit ResolveTextHit(const HitTestResult& hit_result,
+                               float logical_x,
+                               float logical_y) {
+    ResolvedTextHit result;
+    if (!hit_result.IsValid()) {
+        return result;
+    }
+
+    result.text_render = ResolveTextRenderForHit(hit_result, logical_x, logical_y);
+    result.text_node = ResolveTextNodeForHit(hit_result, result.text_render);
+    if (!result.text_node) {
+        return result;
+    }
+
+    if (!result.text_render) {
+        result.text_render = ResolveTextRenderForDOMText(hit_result, result.text_node);
+    }
+
+    result.font = FontForRenderObject(result.text_render, hit_result.render_object);
+
+    if (result.text_render) {
+        result.text_render->UpdateViewportBounds();
+        const auto& bounds = result.text_render->GetViewportBounds();
+        if (bounds.valid) {
+            result.local_x = logical_x - bounds.x;
+            result.local_y = logical_y - bounds.y;
+            result.local_x = std::clamp(result.local_x, 0.0f, std::max(0.0f, bounds.width));
+            result.local_y = std::clamp(result.local_y, 0.0f, std::max(0.0f, bounds.height));
+            return result;
+        }
+        const auto& layout = result.text_render->GetLayoutInfo();
+        result.local_x = logical_x - layout.x;
+        result.local_y = logical_y - layout.y;
+    } else if (hit_result.render_object) {
+        const auto& style = hit_result.render_object->GetComputedStyle();
+        result.local_x = hit_result.local_x - style.padding.left.ToPx();
+        result.local_y = hit_result.local_y - style.padding.top.ToPx();
+    } else {
+        result.local_x = logical_x;
+        result.local_y = logical_y;
+    }
+
+    return result;
+}
+
+std::pair<int, int> AdjacentStringBounds(const std::string& text, int caret_offset) {
+    const int char_count = static_cast<int>(utf8::CharCount(text));
+    if (char_count <= 0) {
+        return {0, 0};
+    }
+
+    int index = std::clamp(caret_offset, 0, char_count - 1);
+    if (caret_offset > 0 && caret_offset == char_count) {
+        index = char_count - 1;
+    }
+
+    auto char_at = [&](int char_index) {
+        return utf8::SubstrByChar(text, static_cast<size_t>(char_index), static_cast<size_t>(char_index + 1));
+    };
+
+    auto is_ascii_word = [](unsigned char c) {
+        return std::isalnum(c) != 0 || c == '_';
+    };
+
+    auto classify = [&](const std::string& ch) {
+        if (ch.empty()) {
+            return 0;
+        }
+        const unsigned char c = static_cast<unsigned char>(ch[0]);
+        if (ch.size() == 1) {
+            if (is_ascii_word(c)) return 1;
+            if (std::isspace(c) != 0) return 0;
+            return 2;
+        }
+        return 1;
+    };
+
+    int kind = classify(char_at(index));
+    if (kind == 0 && index > 0) {
+        const int previous_kind = classify(char_at(index - 1));
+        if (previous_kind != 0) {
+            --index;
+            kind = previous_kind;
+        }
+    }
+    if (kind == 0) {
+        return {caret_offset, caret_offset};
+    }
+
+    int start = index;
+    while (start > 0 && classify(char_at(start - 1)) == kind) {
+        --start;
+    }
+
+    int end = index + 1;
+    while (end < char_count && classify(char_at(end)) == kind) {
+        ++end;
+    }
+
+    return {start, end};
+}
+
+SkRect SelectionRectToSkRect(const SelectionRect& rect) {
+    if (rect.width <= 0.0f || rect.height <= 0.0f) {
+        return SkRect::MakeEmpty();
+    }
+    return SkRect::MakeXYWH(rect.x, rect.y, rect.width, rect.height);
+}
+
+void AddSelectionDirtyRects(Window* window,
+                            const std::vector<SelectionRect>& rects) {
+    if (!window) {
+        return;
+    }
+    for (const auto& rect : rects) {
+        const SkRect dirty_rect = SelectionRectToSkRect(rect);
+        if (!dirty_rect.isEmpty()) {
+            window->AddDirtyRect(dirty_rect);
+        }
+    }
+}
+
+void MarkSelectedTextRenderersDirty(const std::shared_ptr<Node>& node) {
+    if (!node) {
+        return;
+    }
+
+    if (node->GetNodeType() == NodeType::TEXT_NODE) {
+        if (auto render_object = node->GetRenderObject()) {
+            render_object->MarkNeedsPaint();
+        } else if (auto parent = node->GetParentNode()) {
+            if (auto parent_render_object = parent->GetRenderObject()) {
+                parent_render_object->MarkNeedsPaint();
+            }
+        }
+        return;
+    }
+
+    for (const auto& child : node->GetChildNodes()) {
+        MarkSelectedTextRenderersDirty(child);
+    }
+}
+
+void MarkSelectionRangeRenderersDirty(const std::shared_ptr<Selection>& selection) {
+    if (!selection) {
+        return;
+    }
+
+    auto range = selection->GetRangeAt(0);
+    if (!range) {
+        auto anchor = selection->GetComputedAnchorNode();
+        auto focus = selection->GetComputedFocusNode();
+        MarkSelectedTextRenderersDirty(anchor);
+        if (focus != anchor) {
+            MarkSelectedTextRenderersDirty(focus);
+        }
+        return;
+    }
+
+    auto common_ancestor = range->GetCommonAncestorContainer();
+    if (common_ancestor) {
+        MarkSelectedTextRenderersDirty(common_ancestor);
+        return;
+    }
+
+    auto start = range->GetStartContainer();
+    auto end = range->GetEndContainer();
+    MarkSelectedTextRenderersDirty(start);
+    if (end != start) {
+        MarkSelectedTextRenderersDirty(end);
+    }
+}
+
+void InvalidateSelectionPaint(std::shared_ptr<Window> window,
+                              const std::shared_ptr<Document>& document,
+                              SelectionManager* selection_manager,
+                              const std::vector<SelectionRect>& old_rects,
+                              const std::shared_ptr<RenderObject>& touched_render,
+                              RepaintReason reason) {
+    if (!window || !document || !selection_manager) {
+        return;
+    }
+
+    AddSelectionDirtyRects(window.get(), old_rects);
+    AddSelectionDirtyRects(window.get(), selection_manager->GetSelectionRects(document));
+
+    auto selection = selection_manager->GetSelection(document);
+    MarkSelectionRangeRenderersDirty(selection);
+    if (touched_render) {
+        touched_render->MarkNeedsPaint();
+    }
+
+    window->SetNeedsRepaintFor(reason);
+    if (auto pipeline = window->GetRenderPipeline()) {
+        pipeline->MarkNeedsPaint();
+    }
+}
+
+CaretPosition CaretPositionFromResolvedTextHit(const ResolvedTextHit& text_hit) {
+    CaretPosition caret_pos;
+    if (!text_hit.text_node) {
+        return caret_pos;
+    }
+
+    const std::string text = text_hit.text_node->GetData();
+    caret_pos.node = text_hit.text_node;
+    caret_pos.offset = std::clamp(text_edit_metrics::HitTestTextPosition(
+                                      text,
+                                      text_hit.local_x,
+                                      text_hit.font,
+                                      false),
+                                  0,
+                                  static_cast<int>(utf8::CharCount(text)));
+    caret_pos.x = text_hit.local_x;
+    caret_pos.y = text_hit.local_y;
+    caret_pos.height = 16.0f;
+    return caret_pos;
 }
 
 bool ContainsElement(const std::shared_ptr<Element>& ancestor, const std::shared_ptr<Element>& element) {
@@ -1463,10 +1867,7 @@ void MouseEventDispatcher::HandleMouseDown(std::shared_ptr<Window> window,
         } else if (selection_manager_ &&
                    !IsPrimaryEditorElement(hit_result.element) &&
                    !IsSelectionSuppressedByUserSelect(hit_result.element)) {
-            UpdateSelectionFromClick(document, hit_result, logical_x, logical_y);
-            if (auto pipeline = window->GetRenderPipeline()) {
-                pipeline->ForceRasterize();
-            }
+            UpdateSelectionFromClick(window, document, hit_result, logical_x, logical_y);
         }
     }
 
@@ -1675,7 +2076,7 @@ void MouseEventDispatcher::HandleMouseDown(std::shared_ptr<Window> window,
 }
 
 void MouseEventDispatcher::HandleMouseUp(std::shared_ptr<Window> window,
-                                          std::shared_ptr<Document> /*document*/,
+                                          std::shared_ptr<Document> document,
                                           const HitTestResult& hit_result,
                                           const SDL_Event& event,
                                           float logical_x,
@@ -1796,6 +2197,34 @@ void MouseEventDispatcher::HandleMouseUp(std::shared_ptr<Window> window,
                 0  // buttons: 按钮已释放
             );
             hit_result.element->DispatchEvent(dblclick_event);
+
+            if (button == 1 &&
+                selection_manager_ &&
+                document &&
+                !IsPrimaryEditorElement(hit_result.element) &&
+                !hit_result.element->IsContentEditable() &&
+                !IsSelectionSuppressedByUserSelect(hit_result.element)) {
+                const auto text_hit = ResolveTextHit(hit_result, logical_x, logical_y);
+                CaretPosition caret_pos = CaretPositionFromResolvedTextHit(text_hit);
+                if (caret_pos.IsValid()) {
+                    const std::string text = text_hit.text_node->GetData();
+                    auto [start, end] = AdjacentStringBounds(text, caret_pos.offset);
+                    if (start < end) {
+                        auto selection = selection_manager_->GetSelection(document);
+                        if (selection) {
+                            const auto old_rects = selection_manager_->GetSelectionRects(document);
+                            MarkSelectionRangeRenderersDirty(selection);
+                            selection->SetBaseAndExtent(text_hit.text_node, start, text_hit.text_node, end);
+                            InvalidateSelectionPaint(window,
+                                                     document,
+                                                     selection_manager_,
+                                                     old_rects,
+                                                     text_hit.text_render,
+                                                     RepaintReason::MouseButton);
+                        }
+                    }
+                }
+            }
         }
 
         last_click_element_ = hit_result.element;
@@ -1908,11 +2337,7 @@ void MouseEventDispatcher::HandleMouseMove(std::shared_ptr<Window> window,
                  !last_mousedown->IsContentEditable() &&
                  !IsSelectionSuppressedByUserSelect(last_mousedown) &&
                  !IsSelectionSuppressedByUserSelect(hit_result.element)) {
-            ExtendSelectionFromDrag(document, hit_result, logical_x, logical_y);
-            window->SetNeedsRepaintFor(RepaintReason::MouseHover);
-            if (auto pipeline = window->GetRenderPipeline()) {
-                pipeline->ForceRasterize();
-            }
+            ExtendSelectionFromDrag(window, document, hit_result, logical_x, logical_y);
         }
     }
 
@@ -1945,14 +2370,13 @@ void MouseEventDispatcher::HandleContentEditableDragSelection(std::shared_ptr<Wi
 }
 
 void MouseEventDispatcher::UpdateSelectionFromClick(
+    std::shared_ptr<Window> window,
     std::shared_ptr<Document> document,
     const HitTestResult& hit_result,
     float logical_x,
     float logical_y) {
 
-    (void)logical_y;
-
-    if (!document || !hit_result.IsValid() || !selection_manager_) {
+    if (!window || !document || !hit_result.IsValid() || !selection_manager_) {
         return;
     }
 
@@ -1960,6 +2384,49 @@ void MouseEventDispatcher::UpdateSelectionFromClick(
     if (!selection) {
         return;
     }
+
+    const auto old_rects = selection_manager_->GetSelectionRects(document);
+    MarkSelectionRangeRenderersDirty(selection);
+    const auto resolved_text_hit = ResolveTextHit(hit_result, logical_x, logical_y);
+    if (!resolved_text_hit.text_node) {
+        selection->Collapse(hit_result.element, 0);
+        InvalidateSelectionPaint(window,
+                                 document,
+                                 selection_manager_,
+                                 old_rects,
+                                 hit_result.render_object,
+                                 RepaintReason::MouseButton);
+        return;
+    }
+    if (resolved_text_hit.text_node->GetData().empty()) {
+        selection->Collapse(resolved_text_hit.text_node, 0);
+        InvalidateSelectionPaint(window,
+                                 document,
+                                 selection_manager_,
+                                 old_rects,
+                                 resolved_text_hit.text_render,
+                                 RepaintReason::MouseButton);
+        return;
+    }
+    CaretPosition resolved_caret = CaretPositionFromResolvedTextHit(resolved_text_hit);
+    if (!resolved_caret.IsValid()) {
+        selection->Collapse(resolved_text_hit.text_node, 0);
+        InvalidateSelectionPaint(window,
+                                 document,
+                                 selection_manager_,
+                                 old_rects,
+                                 resolved_text_hit.text_render,
+                                 RepaintReason::MouseButton);
+        return;
+    }
+    selection->Collapse(resolved_caret.node, resolved_caret.offset);
+    InvalidateSelectionPaint(window,
+                             document,
+                             selection_manager_,
+                             old_rects,
+                             resolved_text_hit.text_render,
+                             RepaintReason::MouseButton);
+    return;
 
     // 查找点击位置的文本节点
     std::shared_ptr<Text> text_node = nullptr;
@@ -2053,14 +2520,13 @@ void MouseEventDispatcher::UpdateSelectionFromClick(
 }
 
 void MouseEventDispatcher::ExtendSelectionFromDrag(
+    std::shared_ptr<Window> window,
     std::shared_ptr<Document> document,
     const HitTestResult& hit_result,
     float logical_x,
     float logical_y) {
 
-    (void)logical_y;
-
-    if (!document || !hit_result.IsValid() || !selection_manager_) {
+    if (!window || !document || !hit_result.IsValid() || !selection_manager_) {
         return;
     }
 
@@ -2068,6 +2534,35 @@ void MouseEventDispatcher::ExtendSelectionFromDrag(
     if (!selection || !selection->GetAnchorNode()) {
         return;
     }
+
+    const auto old_rects = selection_manager_->GetSelectionRects(document);
+    MarkSelectionRangeRenderersDirty(selection);
+    const auto resolved_text_hit = ResolveTextHit(hit_result, logical_x, logical_y);
+    if (!resolved_text_hit.text_node) {
+        return;
+    }
+    if (resolved_text_hit.text_node->GetData().empty()) {
+        selection->Extend(resolved_text_hit.text_node, 0);
+        InvalidateSelectionPaint(window,
+                                 document,
+                                 selection_manager_,
+                                 old_rects,
+                                 resolved_text_hit.text_render,
+                                 RepaintReason::MouseHover);
+        return;
+    }
+    CaretPosition resolved_caret = CaretPositionFromResolvedTextHit(resolved_text_hit);
+    if (!resolved_caret.IsValid()) {
+        return;
+    }
+    selection->Extend(resolved_caret.node, resolved_caret.offset);
+    InvalidateSelectionPaint(window,
+                             document,
+                             selection_manager_,
+                             old_rects,
+                             resolved_text_hit.text_render,
+                             RepaintReason::MouseHover);
+    return;
 
     std::shared_ptr<Text> text_node = nullptr;
     std::shared_ptr<RenderObject> text_render = nullptr;
