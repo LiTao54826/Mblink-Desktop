@@ -236,6 +236,39 @@ inline bool HasExplicitDirtyRectsForUnknownReason(RepaintReason reason, bool has
     return reason == RepaintReason::Unknown && has_dirty_bounds;
 }
 
+inline bool IsWindowPartiallyOutsideDisplay(SDL_Window* window) {
+    if (!window) {
+        return false;
+    }
+
+    int x = 0;
+    int y = 0;
+    int width = 0;
+    int height = 0;
+    if (!SDL_GetWindowPosition(window, &x, &y) ||
+        !SDL_GetWindowSize(window, &width, &height) ||
+        width <= 0 || height <= 0) {
+        return false;
+    }
+    if (SDL_WINDOWPOS_ISUNDEFINED(static_cast<Uint32>(x)) ||
+        SDL_WINDOWPOS_ISUNDEFINED(static_cast<Uint32>(y))) {
+        return false;
+    }
+
+    const SDL_DisplayID display_id = SDL_GetDisplayForWindow(window);
+    SDL_Rect display_bounds{};
+    if (display_id == 0 || !SDL_GetDisplayBounds(display_id, &display_bounds)) {
+        return false;
+    }
+
+    return x < display_bounds.x ||
+           y < display_bounds.y ||
+           x + width > display_bounds.x + display_bounds.w ||
+           y + height > display_bounds.y + display_bounds.h;
+}
+
+std::unordered_map<SDL_WindowID, bool> g_window_surface_may_be_stale;
+
 SkRect UnionDirtyRects(const std::vector<SkRect>& dirty_rects, float width, float height) {
     const SkRect viewport = SkRect::MakeWH(width, height);
     SkRect dirty_bounds = SkRect::MakeEmpty();
@@ -541,14 +574,10 @@ inline bool ShouldCreateOpenGLWindow(const WindowConfig& config) {
 
 }
 
-// SDL 事件过滤器：过滤掉可能导致闪烁的事件
+// SDL 事件过滤器：保留窗口生命周期事件，由 Window::HandleSDLEvent 统一节流处理。
 // 返回 true 表示保留事件，返回 false 表示丢弃事件
 static bool SDLCALL SDLEventFilter(void* userdata, SDL_Event* event) {
     (void)userdata;
-    // 过滤掉 EXPOSED 事件，避免在 Windows 上触发闪烁
-    if (event->type == SDL_EVENT_WINDOW_EXPOSED) {
-        return false;  // 丢弃此事件
-    }
     return true;  // 保留其他事件
 }
 
@@ -726,6 +755,10 @@ Window::~Window() {
     }
 
     // 释放 FBO 管理器（在释放 Skia 资源之前）
+    if (sdl_window_) {
+        g_window_surface_may_be_stale.erase(SDL_GetWindowID(sdl_window_));
+    }
+
     fbo_manager_.reset();
 
     // 释放Skia资源
@@ -1194,7 +1227,7 @@ void Window::InitSDL() {
             throw std::runtime_error(std::string("Failed to initialize SDL: ") + SDL_GetError());
         }
 
-        // 设置事件过滤器，过滤掉可能导致闪烁的 EXPOSED 事件
+        // 设置事件过滤器，保留窗口生命周期事件以便处理可见性变化。
         SDL_SetEventFilter(SDLEventFilter, nullptr);
     }
     sdl_init_count++;
@@ -1258,6 +1291,8 @@ void Window::CreateSDLWindow() {
     if (config_.x >= 0 && config_.y >= 0) {
         SDL_SetWindowPosition(sdl_window_, config_.x, config_.y);
     }
+    g_window_surface_may_be_stale[SDL_GetWindowID(sdl_window_)] =
+        IsWindowPartiallyOutsideDisplay(sdl_window_);
 }
 
 void Window::InitOpenGL() {
@@ -1407,6 +1442,34 @@ bool Window::HandleSDLEvent(const SDL_Event& event) {
             return false;  // 不是此窗口的事件
         }
 
+        const SDL_WindowID window_id = SDL_GetWindowID(sdl_window_);
+        auto request_full_surface_present = [this]() {
+            SetForceFullRepaint(true);
+            SetNeedsRepaintFor(RepaintReason::Unknown);
+        };
+
+        auto mark_surface_may_be_stale = [&]() {
+            g_window_surface_may_be_stale[window_id] = true;
+        };
+
+        auto resync_surface_after_visibility_change = [&](bool allow_partial_resync = false) {
+            const bool partially_outside = IsWindowPartiallyOutsideDisplay(sdl_window_);
+            if (partially_outside) {
+                const bool was_stale = g_window_surface_may_be_stale[window_id];
+                g_window_surface_may_be_stale[window_id] = true;
+                if (allow_partial_resync && was_stale) {
+                    request_full_surface_present();
+                }
+                return;
+            }
+
+            auto it = g_window_surface_may_be_stale.find(window_id);
+            if (it != g_window_surface_may_be_stale.end() && it->second) {
+                it->second = false;
+                request_full_surface_present();
+            }
+        };
+
         switch (event.type) {
             case SDL_EVENT_WINDOW_RESIZED:
             case SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED: {
@@ -1470,6 +1533,7 @@ bool Window::HandleSDLEvent(const SDL_Event& event) {
             case SDL_EVENT_WINDOW_MOVED: {
                 int x = event.window.data1;
                 int y = event.window.data2;
+                resync_surface_after_visibility_change(true);
                 if (on_move_callback_) {
                     on_move_callback_(x, y);
                 }
@@ -1478,6 +1542,7 @@ bool Window::HandleSDLEvent(const SDL_Event& event) {
             }
 
             case SDL_EVENT_WINDOW_FOCUS_GAINED: {
+                resync_surface_after_visibility_change();
                 if (on_focus_callback_) {
                     on_focus_callback_();
                 }
@@ -1494,11 +1559,13 @@ bool Window::HandleSDLEvent(const SDL_Event& event) {
             }
 
             case SDL_EVENT_WINDOW_MINIMIZED: {
+                mark_surface_may_be_stale();
                 DispatchWindowEvent(WindowEvent(WindowEventType::MINIMIZE));
                 return true;
             }
 
             case SDL_EVENT_WINDOW_MAXIMIZED: {
+                resync_surface_after_visibility_change();
                 // 窗口最大化时需要触发重绘
                 // 注意：不在这里调用 InvalidateRenderTree()，因为此时窗口尺寸可能还未更新
                 // RESIZED 事件会随后触发，届时会正确处理渲染树重建
@@ -1508,6 +1575,7 @@ bool Window::HandleSDLEvent(const SDL_Event& event) {
             }
 
             case SDL_EVENT_WINDOW_RESTORED: {
+                resync_surface_after_visibility_change();
                 // 窗口还原时需要触发重绘
                 // 注意：不在这里调用 InvalidateRenderTree()，因为此时窗口尺寸可能还未更新
                 // RESIZED 事件会随后触发，届时会正确处理渲染树重建
@@ -1533,6 +1601,7 @@ bool Window::HandleSDLEvent(const SDL_Event& event) {
             }
 
             case SDL_EVENT_WINDOW_CLOSE_REQUESTED: {
+                g_window_surface_may_be_stale.erase(window_id);
                 bool handled = false;
                 if (on_close_request_handler_) {
                     handled = on_close_request_handler_();
@@ -1550,19 +1619,19 @@ bool Window::HandleSDLEvent(const SDL_Event& event) {
             }
 
             case SDL_EVENT_WINDOW_SHOWN: {
+                resync_surface_after_visibility_change();
                 DispatchWindowEvent(WindowEvent(WindowEventType::SHOWN));
                 return true;
             }
 
             case SDL_EVENT_WINDOW_HIDDEN: {
+                mark_surface_may_be_stale();
                 DispatchWindowEvent(WindowEvent(WindowEventType::HIDDEN));
                 return true;
             }
 
             case SDL_EVENT_WINDOW_EXPOSED: {
-                // 完全忽略 EXPOSED 事件
-                // 在 Windows 上，SDL_RenderPresent 会触发 EXPOSED 事件，形成无限循环
-                // 我们的渲染由 needs_repaint_ 标志控制，不需要响应 EXPOSED 事件
+                resync_surface_after_visibility_change();
                 return true;
             }
 
@@ -1572,7 +1641,7 @@ bool Window::HandleSDLEvent(const SDL_Event& event) {
             }
 
             case SDL_EVENT_WINDOW_OCCLUDED: {
-                // 窗口被遮挡，不需要处理
+                mark_surface_may_be_stale();
                 return true;
             }
 
