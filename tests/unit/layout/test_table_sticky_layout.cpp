@@ -612,6 +612,52 @@ TEST_F(TableStickyLayoutTest, MultipleRightStickyColumnsKeepExplicitOffsetsAfter
     EXPECT_EQ(last_result.element->GetAttribute("id"), "right-sticky-1");
 }
 
+TEST_F(TableStickyLayoutTest, RightStickyColumnsAttachAtInitialHorizontalScrollWhenNaturallyOffscreen) {
+    LoadStickyFixtureHtml(R"(
+        <html>
+        <body style="margin: 0;">
+            <div id="scroller" style="width: 360px; height: 96px; overflow: auto;">
+                <table id="table" style="width: 720px; border-spacing: 0; table-layout: fixed;">
+                    <tbody>
+                        <tr>
+                            <td style="width: 120px; height: 48px; padding: 0;">Data 1</td>
+                            <td style="width: 120px; height: 48px; padding: 0;">Data 2</td>
+                            <td style="width: 120px; height: 48px; padding: 0;">Data 3</td>
+                            <td style="width: 120px; height: 48px; padding: 0;">Data 4</td>
+                            <td id="right-sticky-2"
+                                style="position: sticky; right: 120px; z-index: 4; width: 120px; height: 48px; padding: 0; background-color: #0000ff;">
+                                Right 2
+                            </td>
+                            <td id="right-sticky-1"
+                                style="position: sticky; right: 0; z-index: 5; width: 120px; height: 48px; padding: 0; background-color: #ff00ff;">
+                                Right 1
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </body>
+        </html>
+    )");
+
+    auto scroller = RenderObjectForId("scroller");
+    auto right_sticky_2 = RenderObjectForId("right-sticky-2");
+    auto right_sticky_1 = RenderObjectForId("right-sticky-1");
+    ASSERT_NE(scroller, nullptr);
+    ASSERT_NE(right_sticky_2, nullptr);
+    ASSERT_NE(right_sticky_1, nullptr);
+
+    const auto scroller_bounds = BoundsFor(scroller);
+    ASSERT_GT(scroller->GetMaxScrollX(), 0.0f);
+
+    const auto right_2_bounds = BoundsFor(right_sticky_2);
+    const auto right_1_bounds = BoundsFor(right_sticky_1);
+    EXPECT_NEAR(right_1_bounds.x + right_1_bounds.width,
+                scroller_bounds.x + scroller_bounds.width,
+                0.5f);
+    EXPECT_NEAR(right_2_bounds.x + right_2_bounds.width, right_1_bounds.x, 0.5f);
+}
+
 TEST_F(TableStickyLayoutTest, RightStickyColumnStaysAtScrollContainerRightAfterHorizontalScroll) {
     LoadStickyFixtureHtml(R"(
         <html>

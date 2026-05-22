@@ -1494,7 +1494,7 @@ SkPoint RenderObject::ComputeStickyOffset() const {
         ancestor = ancestor->GetParent();
     }
 
-    if (!scroll_container || (!scroll_container->GetScrollX() && !scroll_container->GetScrollY())) {
+    if (!scroll_container) {
         return SkPoint::Make(0.0f, 0.0f);
     }
 
