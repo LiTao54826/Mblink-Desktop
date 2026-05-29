@@ -4458,17 +4458,14 @@ LayoutOutput NativeLayoutEngine::MeasureLeafNode(NodeId node_id, const LayoutInp
         if (inputs.known_dimensions.width.has_value() && inputs.known_dimensions.height.has_value()) {
             auto* inline_block = static_cast<RenderInlineBlock*>(render_obj);
 
-            LayoutInfo& layout = inline_block->GetLayoutInfo();
-            layout.width = *inputs.known_dimensions.width;
-            layout.height = *inputs.known_dimensions.height;
-            layout.is_laid_out = true;
-
-            // Call Layout to update internal child layout/positioning while preserving
-            // the externally assigned dimensions.
-            inline_block->Layout(*inputs.known_dimensions.width, *inputs.known_dimensions.height);
+            inline_block->SetExternalLayoutSize(*inputs.known_dimensions.width,
+                                                *inputs.known_dimensions.height);
+            inline_block->Layout(*inputs.known_dimensions.width,
+                                 *inputs.known_dimensions.height);
 
             LayoutOutput output;
-            output.size = Size<float>{layout.width, layout.height};
+            output.size = Size<float>{inline_block->GetLayoutInfo().width,
+                                      inline_block->GetLayoutInfo().height};
             output.content_size = output.size;
             output.margins_can_collapse_through = false;
 
@@ -4516,11 +4513,13 @@ LayoutOutput NativeLayoutEngine::MeasureLeafNode(NodeId node_id, const LayoutInp
         if (inputs.known_dimensions.width.has_value() && inputs.known_dimensions.height.has_value()) {
             auto* inline_flex = static_cast<RenderInlineFlex*>(render_obj);
 
-            // Call Layout to update internal state
+            inline_flex->SetExternalLayoutSize(*inputs.known_dimensions.width,
+                                               *inputs.known_dimensions.height);
             inline_flex->Layout(*inputs.known_dimensions.width, *inputs.known_dimensions.height);
 
             LayoutOutput output;
-            output.size = Size<float>{*inputs.known_dimensions.width, *inputs.known_dimensions.height};
+            output.size = Size<float>{inline_flex->GetLayoutInfo().width,
+                                      inline_flex->GetLayoutInfo().height};
             output.content_size = output.size;
             output.margins_can_collapse_through = false;
 
@@ -4693,7 +4692,7 @@ void NativeLayoutEngine::ReadLayoutResults(RenderObject* render_obj) {
 
         if (!is_svg) {
             auto* inline_block = static_cast<RenderInlineBlock*>(render_obj);
-            // Call Layout with the final dimensions to properly position children
+            inline_block->SetExternalLayoutSize(info.width, info.height);
             inline_block->Layout(info.width, info.height);
         }
     }
@@ -4710,6 +4709,7 @@ void NativeLayoutEngine::ReadLayoutResults(RenderObject* render_obj) {
     if (type == RenderObjectType::INLINE_FLEX || type == RenderObjectType::INLINE_GRID) {
         if (type == RenderObjectType::INLINE_FLEX) {
             auto* inline_flex = static_cast<RenderInlineFlex*>(render_obj);
+            inline_flex->SetExternalLayoutSize(info.width, info.height);
             inline_flex->Layout(info.width, info.height);
         }
         // inline-grid can be added here in the future

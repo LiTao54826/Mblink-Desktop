@@ -6,7 +6,6 @@
 #include "text_renderer.h"
 #include <sstream>
 #include <cstdint>
-#include <iostream>
 
 namespace mbink {
 

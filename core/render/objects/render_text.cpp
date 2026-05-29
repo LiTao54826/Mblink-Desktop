@@ -227,6 +227,10 @@ void RenderText::SetWrappedLinesWithAlignedOffsets(const std::vector<std::string
         return;
     }
 
+    if (lines.size() == 1) {
+        return;
+    }
+
     std::string text_align = computed_style_.text_align;
     if (auto parent = GetParent()) {
         const auto& parent_style = parent->GetComputedStyle();
@@ -258,7 +262,11 @@ void RenderText::SetWrappedLinesWithAlignedOffsets(const std::vector<std::string
 void RenderText::SetWrappedLinesWithOffsets(const std::vector<std::string>& lines,
                                             const std::vector<float>& x_offsets) {
     wrapped_lines_ = lines;
-    wrapped_line_x_offsets_ = x_offsets;
+    if (lines.size() == 1) {
+        wrapped_line_x_offsets_.assign(1, 0.0f);
+    } else {
+        wrapped_line_x_offsets_ = x_offsets;
+    }
     wrapped_line_y_offsets_.clear();
 }
 
@@ -266,8 +274,13 @@ void RenderText::SetWrappedLinesWithOffsets(const std::vector<std::string>& line
                                             const std::vector<float>& x_offsets,
                                             const std::vector<float>& y_offsets) {
     wrapped_lines_ = lines;
-    wrapped_line_x_offsets_ = x_offsets;
-    wrapped_line_y_offsets_ = y_offsets;
+    if (lines.size() == 1) {
+        wrapped_line_x_offsets_.assign(1, 0.0f);
+        wrapped_line_y_offsets_.assign(1, 0.0f);
+    } else {
+        wrapped_line_x_offsets_ = x_offsets;
+        wrapped_line_y_offsets_ = y_offsets;
+    }
 }
 
 void RenderText::Layout(float parent_width, float parent_height) {
@@ -460,6 +473,8 @@ void RenderText::Paint(SkCanvas* canvas) {
     // 优先使用与当前布局高度一致的 wrapped_lines_，避免旧测量阶段遗留的 wrapped_lines_
     // 导致“布局单行但绘制多行”的不一致。
     std::vector<std::string> lines_to_render;
+    const std::vector<float>* line_x_offsets_to_render = nullptr;
+    const std::vector<float>* line_y_offsets_to_render = nullptr;
     if (!wrapped_lines_.empty()) {
         const float expected_height = css_line_height * static_cast<float>(wrapped_lines_.size());
         const float tolerance = 0.5f;
@@ -467,6 +482,8 @@ void RenderText::Paint(SkCanvas* canvas) {
 
         if (wrapped_matches_layout) {
             lines_to_render = wrapped_lines_;
+            line_x_offsets_to_render = &wrapped_line_x_offsets_;
+            line_y_offsets_to_render = &wrapped_line_y_offsets_;
         } else {
             // wrapped_lines_ 与当前 layout 高度不匹配，视为过期数据，回退到单行/显式换行路径
             if (debug_text_paint) {
@@ -507,10 +524,16 @@ void RenderText::Paint(SkCanvas* canvas) {
     float current_y = baseline_y;
     // 多行文本的行间距也需要与 Layout 保持一致
     float line_height = css_line_height;
+    const std::vector<float> empty_offsets;
+    const std::vector<float>& line_x_offsets =
+        line_x_offsets_to_render ? *line_x_offsets_to_render : empty_offsets;
+    const std::vector<float>& line_y_offsets =
+        line_y_offsets_to_render ? *line_y_offsets_to_render : empty_offsets;
+
     PaintTextSelectionHighlight(canvas,
                                 lines_to_render,
-                                wrapped_line_x_offsets_,
-                                wrapped_line_y_offsets_,
+                                line_x_offsets,
+                                line_y_offsets,
                                 line_height,
                                 font,
                                 ResolveSelectionPaintRange(GetNode(), text_));
@@ -518,13 +541,13 @@ void RenderText::Paint(SkCanvas* canvas) {
     for (size_t i = 0; i < lines_to_render.size(); ++i) {
         const auto& line = lines_to_render[i];
         float line_x = 0.0f;
-        if (i < wrapped_line_x_offsets_.size()) {
-            line_x = wrapped_line_x_offsets_[i];
+        if (i < line_x_offsets.size()) {
+            line_x = line_x_offsets[i];
         }
 
         float line_y = current_y;
-        if (i < wrapped_line_y_offsets_.size()) {
-            line_y = wrapped_line_y_offsets_[i] + baseline_y;
+        if (i < line_y_offsets.size()) {
+            line_y = line_y_offsets[i] + baseline_y;
         }
 
         if (!line.empty()) {
@@ -607,8 +630,8 @@ void RenderText::Paint(SkCanvas* canvas) {
         for (size_t i = 0; i < lines_to_render.size(); ++i) {
             const auto& line = lines_to_render[i];
             float line_x = 0.0f;
-            if (i < wrapped_line_x_offsets_.size()) {
-                line_x = wrapped_line_x_offsets_[i];
+            if (i < line_x_offsets.size()) {
+                line_x = line_x_offsets[i];
             }
 
             float line_width = text_renderer.MeasureTextWidthWithEmoji(line, font);

@@ -1054,7 +1054,9 @@ void RenderPipeline::CollectDirtyRectsForLayer(RenderObject* obj, CompositorLaye
                 return env ? std::atof(env) : 200.0f;
             }();
 
-            bool is_small_layer = (layer_bounds.width() <= small_layer_threshold &&
+            bool is_fixed_layer = layer->GetPromotionReason() == LayerPromotionReason::PositionFixed;
+            bool is_small_layer = !is_fixed_layer &&
+                                  (layer_bounds.width() <= small_layer_threshold &&
                                    layer_bounds.height() <= small_layer_threshold);
 
             if (obj == layer_render_obj || is_small_layer) {

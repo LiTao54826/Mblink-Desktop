@@ -4,6 +4,7 @@
  */
 
 #include "render_flex.h"
+#include "positioned_layout.h"
 #include "core/render/painters/box_renderer.h"
 #include "core/render/painters/background_painter.h"
 #include "core/render/painters/border_painter.h"
@@ -56,17 +57,17 @@ void RenderFlex::LayoutAsFlex(float parent_width, float parent_height) {
     // 因为它不会被 IFC 布局引擎处理
 
     // 计算宽度 - 块级flex容器默认占满父容器宽度
-    float width = parent_width;
-    if (!style.width.IsAuto()) {
+    float width = HasExternalLayoutWidth() ? GetExternalLayoutWidth() : parent_width;
+    if (!HasExternalLayoutWidth() && !style.width.IsAuto()) {
         width = style.width.ToPx(parent_width, style.font_size);
     }
 
     // 应用 min-width 和 max-width
-    if (!style.min_width.IsZero()) {
+    if (!HasExternalLayoutWidth() && !style.min_width.IsZero()) {
         float min_w = style.min_width.ToPx(parent_width, style.font_size);
         width = std::max(width, min_w);
     }
-    if (style.max_width.unit != CSSUnit::NONE) {
+    if (!HasExternalLayoutWidth() && style.max_width.unit != CSSUnit::NONE) {
         float max_w = style.max_width.ToPx(parent_width, style.font_size);
         width = std::min(width, max_w);
     }
@@ -89,7 +90,10 @@ void RenderFlex::LayoutAsFlex(float parent_width, float parent_height) {
     // 计算高度
     float height = 0;
     float content_height = 0;
-    if (!style.height.IsAuto()) {
+    if (HasExternalLayoutHeight()) {
+        height = GetExternalLayoutHeight();
+        content_height = height - padding_top - padding_bottom - border_top - border_bottom;
+    } else if (!style.height.IsAuto()) {
         height = style.height.ToPx(parent_height, style.font_size);
         content_height = height - padding_top - padding_bottom - border_top - border_bottom;
     } else if (flex_target_main_size_ >= 0) {
@@ -172,7 +176,7 @@ void RenderFlex::LayoutAsFlex(float parent_width, float parent_height) {
     }
 
     // 如果高度是 auto 且没有被 flex container 分配固定尺寸，根据内容计算
-    if (style.height.IsAuto() && flex_target_main_size_ < 0) {
+    if (!HasExternalLayoutHeight() && style.height.IsAuto() && flex_target_main_size_ < 0) {
         if (is_row) {
             content_height = max_cross_size;
         } else {
@@ -182,12 +186,12 @@ void RenderFlex::LayoutAsFlex(float parent_width, float parent_height) {
     }
 
     // 应用 min-height 和 max-height
-    if (!style.min_height.IsZero()) {
+    if (!HasExternalLayoutHeight() && !style.min_height.IsZero()) {
         float min_h = style.min_height.ToPx(parent_height, style.font_size);
         height = std::max(height, min_h);
         content_height = height - padding_top - padding_bottom - border_top - border_bottom;
     }
-    if (style.max_height.unit != CSSUnit::NONE) {
+    if (!HasExternalLayoutHeight() && style.max_height.unit != CSSUnit::NONE) {
         float max_h = style.max_height.ToPx(parent_height, style.font_size);
         height = std::min(height, max_h);
         content_height = height - padding_top - padding_bottom - border_top - border_bottom;
@@ -245,39 +249,6 @@ void RenderFlex::LayoutAsFlex(float parent_width, float parent_height) {
 
     // 基于 flex-basis 计算 free_space（而非自然尺寸）
     float free_space = main_size - total_base_main;
-
-    // 🔍 DEBUG: 写文件日志（定位问题后删除）
-    {
-        static FILE* dbg = nullptr;
-        if (!dbg) dbg = fopen("D:\\code\\C\\MBink\\flex_debug.log", "w");
-        if (dbg) {
-            auto nd = GetNode();
-            std::string tn = "?", cn = "";
-            if (nd && nd->GetNodeType() == NodeType::ELEMENT_NODE) {
-                auto el = std::static_pointer_cast<Element>(nd);
-                tn = el->GetTagName(); cn = el->GetAttribute("class");
-            }
-            fprintf(dbg, "[FLEX] <%s class='%s'> dir=%s main_size=%.1f total_natural=%.1f total_base=%.1f free=%.1f content_h=%.1f h=%.1f parent_h=%.1f flex_target=%.1f\n",
-                tn.c_str(), cn.c_str(), style.flex_direction.c_str(), main_size, total_main_size, total_base_main, free_space, content_height, height, parent_height, flex_target_main_size_);
-            for (auto& fi : flex_children) {
-                auto& cs2 = children_[fi.index]->GetComputedStyle();
-                auto& cl2 = children_[fi.index]->GetLayoutInfo();
-                auto cn2 = children_[fi.index]->GetNode();
-                std::string t2 = "?", c2 = "";
-                if (cn2 && cn2->GetNodeType() == NodeType::ELEMENT_NODE) {
-                    auto e2 = std::static_pointer_cast<Element>(cn2);
-                    t2 = e2->GetTagName(); c2 = e2->GetAttribute("class");
-                }
-                fprintf(dbg, "  [%zu] <%s class='%s'> grow=%.1f shrink=%.1f basis_unit=%d basis_val=%.1f base_main=%.1f natural_h=%.1f\n",
-                    fi.index, t2.c_str(), c2.c_str(), fi.flex_grow, fi.flex_shrink,
-                    (int)cs2.flex_basis.unit, cs2.flex_basis.value, fi.base_main_size, cl2.height);
-            }
-            fprintf(dbg, "  => will %s (free=%.1f grow_total=%.1f shrink_total=%.1f)\n",
-                (free_space > 0 && total_flex_grow > 0) ? "GROW" : (free_space < 0 && total_flex_shrink_scaled > 0) ? "SHRINK" : "NONE",
-                free_space, total_flex_grow, total_flex_shrink_scaled);
-            fflush(dbg);
-        }
-    }
 
     if (free_space > 0 && total_flex_grow > 0) {
         // Growing: 按 flex-grow 比例分配剩余空间
@@ -441,33 +412,9 @@ void RenderFlex::LayoutAsFlex(float parent_width, float parent_height) {
             continue;
         }
 
-        auto& child_layout = child->GetLayoutInfo();
-
-        bool has_left = !child_style.left.IsAuto();
-        bool has_top = !child_style.top.IsAuto();
-        bool has_right = !child_style.right.IsAuto();
-        bool has_bottom = !child_style.bottom.IsAuto();
-
-        float container_w = content_width;
-        float container_h = content_height;
-
-        // 水平定位
-        if (has_left) {
-            child_layout.x = padding_left + border_left + child_style.left.ToPx(container_w, child_style.font_size);
-        } else if (has_right) {
-            child_layout.x = padding_left + border_left + container_w - child_layout.width - child_style.right.ToPx(container_w, child_style.font_size);
-        } else {
-            child_layout.x = padding_left + border_left;
-        }
-
-        // 垂直定位
-        if (has_top) {
-            child_layout.y = padding_top + border_top + child_style.top.ToPx(container_h, child_style.font_size);
-        } else if (has_bottom) {
-            child_layout.y = padding_top + border_top + container_h - child_layout.height - child_style.bottom.ToPx(container_h, child_style.font_size);
-        } else {
-            child_layout.y = padding_top + border_top;
-        }
+        LayoutPositionedChild(child, content_width, content_height,
+                              padding_left + border_left,
+                              padding_top + border_top);
     }
 
     // 设置布局信息

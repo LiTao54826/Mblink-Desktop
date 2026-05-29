@@ -1192,12 +1192,14 @@ void IFCLayout::ApplyLayoutResults(RenderObject* container, float container_widt
                     }
                     auto* inline_block = static_cast<RenderInlineBlock*>(render_obj);
                     // 调用 Layout 来设置子元素位置（尺寸已经在 MeasureIntrinsicSize 中计算过了）
+                    inline_block->SetExternalLayoutSize(box.width, box.height);
                     inline_block->Layout(box.width, box.height);
                 } else if (obj_type == RenderObjectType::INLINE_FLEX) {
                     if (debug_ifc) {
                     }
                     auto* inline_flex = static_cast<RenderInlineFlex*>(render_obj);
                     // 调用 Layout 来设置子元素位置（尺寸已经在 MeasureIntrinsicSize 中计算过了）
+                    inline_flex->SetExternalLayoutSize(box.width, box.height);
                     inline_flex->Layout(box.width, box.height);
                 }
                 // inline-grid 暂时不处理，未来可以添加

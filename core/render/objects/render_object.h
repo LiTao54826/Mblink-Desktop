@@ -602,6 +602,14 @@ public:
      */
     void SetFlexTargetMainSize(float size) { flex_target_main_size_ = size; }
     float GetFlexTargetMainSize() const { return flex_target_main_size_; }
+    void SetExternalLayoutSize(float width, float height);
+    void SetExternalLayoutWidth(float width);
+    void SetExternalLayoutHeight(float height);
+    void ClearExternalLayoutConstraints();
+    bool HasExternalLayoutWidth() const { return external_layout_width_valid_; }
+    bool HasExternalLayoutHeight() const { return external_layout_height_valid_; }
+    float GetExternalLayoutWidth() const { return external_layout_width_; }
+    float GetExternalLayoutHeight() const { return external_layout_height_; }
 
     /**
      * @brief 标记需要重新布局
@@ -1292,6 +1300,10 @@ protected:
     // 当 flex container 分配了空间给 flex item 时设置此值
     // -1 表示未设置（使用正常的 auto 计算）
     float flex_target_main_size_ = -1.0f;
+    bool external_layout_width_valid_ = false;
+    bool external_layout_height_valid_ = false;
+    float external_layout_width_ = 0.0f;
+    float external_layout_height_ = 0.0f;
 
     // 滚动内容层标志：当为 true 时，Paint 不应用滚动偏移
     // 滚动偏移将在合成阶段由 ScrollLayerManager 的 content_layer 应用

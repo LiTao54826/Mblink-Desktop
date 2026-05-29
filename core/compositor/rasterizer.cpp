@@ -392,17 +392,11 @@ bool Rasterizer::RasterizeRegion(CompositorLayer* layer, const SkIRect& region) 
     // 保存 Canvas 状态
     canvas->save();
 
-    // 清除区域为透明（在设置裁剪之前）
-    // 🐛 修复：对于 fixed 元素，不使用 region clip 清除，因为会限制后续的 clip
-    if (!is_fixed) {
-        canvas->save();
-        canvas->clipIRect(region);
-        ClearRegion(canvas, region);
-        canvas->restore();
-    } else {
-        // fixed 元素：直接清除整个 canvas
-        canvas->clear(SK_ColorTRANSPARENT);
-    }
+    // 清除当前脏区为透明（在设置绘制裁剪之前）
+    canvas->save();
+    canvas->clipIRect(region);
+    ClearRegion(canvas, region);
+    canvas->restore();
 
     // 应用非根层的 canvas 偏移补偿（layout 位置、transform、动画边界等）
     // 注意：此处之前缺少静态变换偏移的 fallback 逻辑，现在通过公共方法补全
@@ -435,21 +429,7 @@ bool Rasterizer::RasterizeRegion(CompositorLayer* layer, const SkIRect& region) 
         clip_rect.offset(offset_x, offset_y);
     }
 
-    // 修复：对于 fixed 元素，使用实际 viewport 大小的 clip 而不是 region
-    // 之前使用 hardcoded 10000x10000，现在使用真实 viewport 尺寸 + padding
-    if (is_fixed) {
-        const auto& style = render_obj->GetComputedStyle();
-
-        // 使用实际 viewport 尺寸，加上足够的 padding 以容纳 box-shadow 等溢出效果
-        float vp_w = viewport_width_ > 0 ? viewport_width_ : 10000.0f;
-        float vp_h = viewport_height_ > 0 ? viewport_height_ : 10000.0f;
-        float padding = 200.0f;  // 足够容纳大多数 box-shadow
-        clip_rect = SkRect::MakeXYWH(-padding, -padding, vp_w + padding * 2, vp_h + padding * 2);
-    }
-
     canvas->clipRect(clip_rect);
-
-    // 调试日志已移除
 
     // 绘制渲染对象
     render_obj->Paint(canvas);

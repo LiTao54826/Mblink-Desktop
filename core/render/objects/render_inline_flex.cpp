@@ -4,6 +4,7 @@
  */
 
 #include "render_inline_flex.h"
+#include "positioned_layout.h"
 #include "core/render/painters/box_renderer.h"
 #include "core/render/painters/background_painter.h"
 #include "core/render/painters/border_painter.h"
@@ -248,17 +249,16 @@ void RenderInlineFlex::LayoutAsFlex(float parent_width, float parent_height) {
 
     // 🎯 关键修复：检查尺寸是否已经被外部布局引擎（如 IFC）设置
     // 如果已经设置，我们只需要布局子元素，不需要重新计算尺寸和坐标
-    bool dimensions_externally_set = layout_info_.is_laid_out &&
-                                     layout_info_.width > 0 &&
-                                     layout_info_.height > 0;
+    bool width_externally_set = HasExternalLayoutWidth();
+    bool height_externally_set = HasExternalLayoutHeight();
 
     // 使用已设置的尺寸或父容器尺寸作为参考
-    float reference_width = dimensions_externally_set ? layout_info_.width : parent_width;
-    float reference_height = dimensions_externally_set ? layout_info_.height : parent_height;
+    float reference_width = HasExternalLayoutWidth() ? GetExternalLayoutWidth() : parent_width;
+    float reference_height = HasExternalLayoutHeight() ? GetExternalLayoutHeight() : parent_height;
 
     // 计算宽度 - inline-flex 如果 width 为 auto，应该使用 shrink-to-fit
     float width = reference_width;
-    if (!dimensions_externally_set) {
+    if (!width_externally_set) {
         if (!style.width.IsAuto()) {
             width = style.width.ToPx(parent_width, style.font_size);
         }
@@ -292,7 +292,9 @@ void RenderInlineFlex::LayoutAsFlex(float parent_width, float parent_height) {
     // 计算高度
     float height = reference_height;
     float content_height = 0;
-    if (!dimensions_externally_set) {
+    if (height_externally_set) {
+        content_height = height - padding_top - padding_bottom - border_top - border_bottom;
+    } else {
         if (!style.height.IsAuto()) {
             height = style.height.ToPx(parent_height, style.font_size);
             content_height = height - padding_top - padding_bottom - border_top - border_bottom;
@@ -301,8 +303,6 @@ void RenderInlineFlex::LayoutAsFlex(float parent_width, float parent_height) {
             content_height = flex_target_main_size_;
             height = content_height + padding_top + padding_bottom + border_top + border_bottom;
         }
-    } else {
-        content_height = height - padding_top - padding_bottom - border_top - border_bottom;
     }
 
     // 确定 flex 方向
@@ -380,7 +380,7 @@ void RenderInlineFlex::LayoutAsFlex(float parent_width, float parent_height) {
     // 🎯 关键修复：inline-flex 的 width 为 auto 时，应该使用 shrink-to-fit
     // 即宽度应该适应内容，而不是占满父容器
     // 但是如果尺寸已经被外部设置（如 IFC），则跳过这个步骤
-    if (!dimensions_externally_set && style.width.IsAuto()) {
+    if (!width_externally_set && style.width.IsAuto()) {
         if (is_row) {
             // 主轴是水平方向，宽度 = 内容宽度
             content_width = total_main_size;
@@ -405,7 +405,7 @@ void RenderInlineFlex::LayoutAsFlex(float parent_width, float parent_height) {
 
     // 如果高度是 auto 且没有被 flex container 分配固定尺寸，根据内容计算
     // 但是如果尺寸已经被外部设置（如 IFC），则跳过这个步骤
-    if (!dimensions_externally_set && style.height.IsAuto() && flex_target_main_size_ < 0) {
+    if (!height_externally_set && style.height.IsAuto() && flex_target_main_size_ < 0) {
         if (is_row) {
             content_height = max_cross_size;
         } else {
@@ -415,7 +415,7 @@ void RenderInlineFlex::LayoutAsFlex(float parent_width, float parent_height) {
     }
 
     // 应用 min-height 和 max-height
-    if (!dimensions_externally_set) {
+    if (!height_externally_set) {
         if (!style.min_height.IsZero()) {
             float min_h = style.min_height.ToPx(parent_height, style.font_size);
             height = std::max(height, min_h);
@@ -619,41 +619,15 @@ void RenderInlineFlex::LayoutAsFlex(float parent_width, float parent_height) {
             continue;
         }
 
-        auto& child_layout = child->GetLayoutInfo();
-
-        bool has_left = !child_style.left.IsAuto();
-        bool has_top = !child_style.top.IsAuto();
-        bool has_right = !child_style.right.IsAuto();
-        bool has_bottom = !child_style.bottom.IsAuto();
-
-        float container_w = content_width;
-        float container_h = content_height;
-
-        // 水平定位
-        if (has_left) {
-            child_layout.x = padding_left + border_left + child_style.left.ToPx(container_w, child_style.font_size);
-        } else if (has_right) {
-            child_layout.x = padding_left + border_left + container_w - child_layout.width - child_style.right.ToPx(container_w, child_style.font_size);
-        } else {
-            child_layout.x = padding_left + border_left;
-        }
-
-        // 垂直定位
-        if (has_top) {
-            child_layout.y = padding_top + border_top + child_style.top.ToPx(container_h, child_style.font_size);
-        } else if (has_bottom) {
-            child_layout.y = padding_top + border_top + container_h - child_layout.height - child_style.bottom.ToPx(container_h, child_style.font_size);
-        } else {
-            child_layout.y = padding_top + border_top;
-        }
+        LayoutPositionedChild(child, content_width, content_height,
+                              padding_left + border_left,
+                              padding_top + border_top);
     }
 
     // 设置布局信息
     // 🎯 关键修复：如果尺寸已经被外部设置（如 IFC），则不覆盖 width 和 height
-    if (!dimensions_externally_set) {
-        layout_info_.width = width;
-        layout_info_.height = height;
-    }
+    layout_info_.width = width;
+    layout_info_.height = height;
 
     layout_info_.content_rect = SkRect::MakeXYWH(
         padding_left + border_left, padding_top + border_top,

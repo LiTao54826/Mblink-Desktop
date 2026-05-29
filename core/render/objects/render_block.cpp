@@ -16,6 +16,7 @@
 
 #include "render_object.h"
 #include "render_inline_block.h"
+#include "positioned_layout.h"
 #include "core/render/painters/box_renderer.h"
 #include "core/render/text/text_renderer.h"
 #include "core/render/text/font_manager.h"
@@ -119,17 +120,17 @@ void RenderBlock::Layout(float parent_width, float parent_height) {
     }
 
     // 计算宽度
-    float width = parent_width;
-    if (!style.width.IsAuto()) {
+    float width = HasExternalLayoutWidth() ? GetExternalLayoutWidth() : parent_width;
+    if (!HasExternalLayoutWidth() && !style.width.IsAuto()) {
         width = style.width.ToPx(parent_width, style.font_size);
     }
 
     // 应用 min-width 和 max-width
-    if (!style.min_width.IsZero()) {
+    if (!HasExternalLayoutWidth() && !style.min_width.IsZero()) {
         float min_w = style.min_width.ToPx(parent_width, style.font_size);
         width = std::max(width, min_w);
     }
-    if (style.max_width.unit != CSSUnit::NONE) {
+    if (!HasExternalLayoutWidth() && style.max_width.unit != CSSUnit::NONE) {
         float max_w = style.max_width.ToPx(parent_width, style.font_size);
         width = std::min(width, max_w);
     }
@@ -279,17 +280,19 @@ void RenderBlock::Layout(float parent_width, float parent_height) {
 
     // 计算高度
     float height = 0;
-    if (!style.height.IsAuto()) {
+    if (HasExternalLayoutHeight()) {
+        height = GetExternalLayoutHeight();
+    } else if (!style.height.IsAuto()) {
         height = style.height.ToPx(parent_height, style.font_size);
     } else {
         height = current_y + padding_top + padding_bottom + border_top + border_bottom;
     }
 
-    if (!style.min_height.IsZero()) {
+    if (!HasExternalLayoutHeight() && !style.min_height.IsZero()) {
         float min_h = style.min_height.ToPx(parent_height, style.font_size);
         height = std::max(height, min_h);
     }
-    if (style.max_height.unit != CSSUnit::NONE) {
+    if (!HasExternalLayoutHeight() && style.max_height.unit != CSSUnit::NONE) {
         float max_h = style.max_height.ToPx(parent_height, style.font_size);
         height = std::min(height, max_h);
     }
@@ -308,30 +311,9 @@ void RenderBlock::Layout(float parent_width, float parent_height) {
             continue;
         }
 
-        auto& child_layout = child->GetLayoutInfo();
-
-        bool has_left = !child_style.left.IsAuto();
-        bool has_top = !child_style.top.IsAuto();
-        bool has_right = !child_style.right.IsAuto();
-        bool has_bottom = !child_style.bottom.IsAuto();
-
-        // 水平定位
-        if (has_left) {
-            child_layout.x = padding_left + border_left + child_style.left.ToPx(container_w, child_style.font_size);
-        } else if (has_right) {
-            child_layout.x = padding_left + border_left + container_w - child_layout.width - child_style.right.ToPx(container_w, child_style.font_size);
-        } else {
-            child_layout.x = padding_left + border_left;
-        }
-
-        // 垂直定位
-        if (has_top) {
-            child_layout.y = padding_top + border_top + child_style.top.ToPx(container_h, child_style.font_size);
-        } else if (has_bottom) {
-            child_layout.y = padding_top + border_top + container_h - child_layout.height - child_style.bottom.ToPx(container_h, child_style.font_size);
-        } else {
-            child_layout.y = padding_top + border_top;
-        }
+        LayoutPositionedChild(child, container_w, container_h,
+                              padding_left + border_left,
+                              padding_top + border_top);
     }
 
     layout_info_.content_rect = SkRect::MakeXYWH(
@@ -354,17 +336,17 @@ void RenderBlock::LayoutAsFlex(float parent_width, float parent_height) {
     const auto& style = computed_style_;
 
     // 计算宽度
-    float width = parent_width;
-    if (!style.width.IsAuto()) {
+    float width = HasExternalLayoutWidth() ? GetExternalLayoutWidth() : parent_width;
+    if (!HasExternalLayoutWidth() && !style.width.IsAuto()) {
         width = style.width.ToPx(parent_width, style.font_size);
     }
 
     // 应用 min-width 和 max-width
-    if (!style.min_width.IsZero()) {
+    if (!HasExternalLayoutWidth() && !style.min_width.IsZero()) {
         float min_w = style.min_width.ToPx(parent_width, style.font_size);
         width = std::max(width, min_w);
     }
-    if (style.max_width.unit != CSSUnit::NONE) {
+    if (!HasExternalLayoutWidth() && style.max_width.unit != CSSUnit::NONE) {
         float max_w = style.max_width.ToPx(parent_width, style.font_size);
         width = std::min(width, max_w);
     }
@@ -387,7 +369,10 @@ void RenderBlock::LayoutAsFlex(float parent_width, float parent_height) {
     // 计算高度
     float height = 0;
     float content_height = 0;
-    if (!style.height.IsAuto()) {
+    if (HasExternalLayoutHeight()) {
+        height = GetExternalLayoutHeight();
+        content_height = height - padding_top - padding_bottom - border_top - border_bottom;
+    } else if (!style.height.IsAuto()) {
         height = style.height.ToPx(parent_height, style.font_size);
         content_height = height - padding_top - padding_bottom - border_top - border_bottom;
     }
@@ -439,7 +424,7 @@ void RenderBlock::LayoutAsFlex(float parent_width, float parent_height) {
     }
 
     // 如果高度是 auto，根据内容计算
-    if (style.height.IsAuto()) {
+    if (!HasExternalLayoutHeight() && style.height.IsAuto()) {
         if (is_row) {
             content_height = max_cross_size;
         } else {
@@ -449,12 +434,12 @@ void RenderBlock::LayoutAsFlex(float parent_width, float parent_height) {
     }
 
     // 应用 min-height 和 max-height
-    if (!style.min_height.IsZero()) {
+    if (!HasExternalLayoutHeight() && !style.min_height.IsZero()) {
         float min_h = style.min_height.ToPx(parent_height, style.font_size);
         height = std::max(height, min_h);
         content_height = height - padding_top - padding_bottom - border_top - border_bottom;
     }
-    if (style.max_height.unit != CSSUnit::NONE) {
+    if (!HasExternalLayoutHeight() && style.max_height.unit != CSSUnit::NONE) {
         float max_h = style.max_height.ToPx(parent_height, style.font_size);
         height = std::min(height, max_h);
         content_height = height - padding_top - padding_bottom - border_top - border_bottom;
@@ -569,30 +554,9 @@ void RenderBlock::LayoutAsFlex(float parent_width, float parent_height) {
             continue;
         }
 
-        auto& child_layout = child->GetLayoutInfo();
-
-        bool has_left = !child_style.left.IsAuto();
-        bool has_top = !child_style.top.IsAuto();
-        bool has_right = !child_style.right.IsAuto();
-        bool has_bottom = !child_style.bottom.IsAuto();
-
-        // 水平定位
-        if (has_left) {
-            child_layout.x = padding_left + border_left + child_style.left.ToPx(content_width, child_style.font_size);
-        } else if (has_right) {
-            child_layout.x = padding_left + border_left + content_width - child_layout.width - child_style.right.ToPx(content_width, child_style.font_size);
-        } else {
-            child_layout.x = padding_left + border_left;
-        }
-
-        // 垂直定位
-        if (has_top) {
-            child_layout.y = padding_top + border_top + child_style.top.ToPx(content_height, child_style.font_size);
-        } else if (has_bottom) {
-            child_layout.y = padding_top + border_top + content_height - child_layout.height - child_style.bottom.ToPx(content_height, child_style.font_size);
-        } else {
-            child_layout.y = padding_top + border_top;
-        }
+        LayoutPositionedChild(child, content_width, content_height,
+                              padding_left + border_left,
+                              padding_top + border_top);
     }
 
     layout_info_.content_rect = SkRect::MakeXYWH(

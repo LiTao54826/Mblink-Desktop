@@ -47,13 +47,12 @@ void RenderInlineBlock::Layout(float parent_width, float parent_height) {
     // position children, not recalculate our own dimensions.
     // This is important because flex layout may stretch elements (align-items: stretch),
     // and we need to preserve the externally calculated dimensions.
-    bool dimensions_externally_set = layout_info_.is_laid_out &&
-                                     layout_info_.width > 0 &&
-                                     layout_info_.height > 0;
+    bool width_externally_set = HasExternalLayoutWidth();
+    bool height_externally_set = HasExternalLayoutHeight();
 
     // 计算 padding (use layout_info_.width if externally set, otherwise parent_width)
-    float reference_width = dimensions_externally_set ? layout_info_.width : parent_width;
-    float reference_height = dimensions_externally_set ? layout_info_.height : parent_height;
+    float reference_width = HasExternalLayoutWidth() ? GetExternalLayoutWidth() : parent_width;
+    float reference_height = HasExternalLayoutHeight() ? GetExternalLayoutHeight() : parent_height;
 
     float padding_left = style.padding.left.ToPx(reference_width, style.font_size);
     float padding_right = style.padding.right.ToPx(reference_width, style.font_size);
@@ -72,7 +71,7 @@ void RenderInlineBlock::Layout(float parent_width, float parent_height) {
     static bool debug = std::getenv("MBINK_DEBUG_INLINE_BLOCK") != nullptr;
 
     // 1. 计算宽度 (only if not externally set)
-    if (!dimensions_externally_set) {
+    if (!width_externally_set) {
         if (style.width.unit != CSSUnit::NONE && style.width.unit != CSSUnit::AUTO) {
             // 显式设置了宽度
             float specified_width = style.width.ToPx(parent_width, style.font_size);
@@ -100,6 +99,7 @@ void RenderInlineBlock::Layout(float parent_width, float parent_height) {
             }
         }
     } else {
+        layout_info_.width = GetExternalLayoutWidth();
         if (debug) {
         }
     }
@@ -150,7 +150,7 @@ void RenderInlineBlock::Layout(float parent_width, float parent_height) {
         border_top = border_bottom = border_width;
     }
 
-    if (!dimensions_externally_set) {
+    if (!height_externally_set) {
         if (style.height.unit != CSSUnit::NONE && style.height.unit != CSSUnit::AUTO) {
             // 显式设置了高度
             float specified_height = style.height.ToPx(parent_height, style.font_size);
@@ -187,6 +187,10 @@ void RenderInlineBlock::Layout(float parent_width, float parent_height) {
     }
 
     // 4. 设置子元素位置，支持 text-align
+    if (height_externally_set) {
+        layout_info_.height = GetExternalLayoutHeight();
+    }
+
     // Calculate content area for positioning children
     float content_area_height = layout_info_.height - padding_top - padding_bottom - border_top - border_bottom;
     float start_x = padding_left + border_left;

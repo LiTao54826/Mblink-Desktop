@@ -93,15 +93,8 @@ nlohmann::json CachedElementRect(const std::shared_ptr<mbink::Element>& element)
         return nlohmann::json{{"x", 0}, {"y", 0}, {"w", 0}, {"h", 0}};
     }
 
-    const auto& layout = render_object->GetLayoutInfo();
-    float x = layout.x;
-    float y = layout.y;
-    for (auto parent = render_object->GetParent(); parent; parent = parent->GetParent()) {
-        const auto& parent_layout = parent->GetLayoutInfo();
-        x += parent_layout.x - parent->GetScrollX();
-        y += parent_layout.y - parent->GetScrollY();
-    }
-    return nlohmann::json{{"x", x}, {"y", y}, {"w", layout.width}, {"h", layout.height}};
+    const auto rect = render_object->GetViewportBoundingRect();
+    return nlohmann::json{{"x", rect.x()}, {"y", rect.y()}, {"w", rect.width()}, {"h", rect.height()}};
 }
 
 struct SnapshotTraversalState {

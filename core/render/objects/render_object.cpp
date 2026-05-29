@@ -2095,6 +2095,31 @@ bool RenderObject::CanDirectlyUpdateOpacity() const {
     return false;
 }
 
+void RenderObject::SetExternalLayoutSize(float width, float height) {
+    SetExternalLayoutWidth(width);
+    SetExternalLayoutHeight(height);
+    layout_info_.is_laid_out = true;
+}
+
+void RenderObject::SetExternalLayoutWidth(float width) {
+    external_layout_width_ = std::max(0.0f, width);
+    external_layout_width_valid_ = true;
+    layout_info_.width = external_layout_width_;
+}
+
+void RenderObject::SetExternalLayoutHeight(float height) {
+    external_layout_height_ = std::max(0.0f, height);
+    external_layout_height_valid_ = true;
+    layout_info_.height = external_layout_height_;
+}
+
+void RenderObject::ClearExternalLayoutConstraints() {
+    external_layout_width_valid_ = false;
+    external_layout_height_valid_ = false;
+    external_layout_width_ = 0.0f;
+    external_layout_height_ = 0.0f;
+}
+
 // ============================================================================
 // 布局边界支持（增量布局优化）
 // ============================================================================
