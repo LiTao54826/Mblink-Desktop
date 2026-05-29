@@ -138,7 +138,8 @@ static Size<float> FinalLayoutPass(
     LayoutFlexboxContainer& tree,
     std::vector<FlexLine>& flex_lines,
     std::vector<FlexItem>& flex_items,
-    const FlexAlgoConstants& constants
+    const FlexAlgoConstants& constants,
+    bool apply_layout_results
 );
 
 static Size<float> PerformAbsoluteLayoutOnAbsoluteChildren(
@@ -479,28 +480,37 @@ static LayoutOutput ComputePreliminary(
     // 16. Align all flex lines per align-content
     AlignFlexLinesPerAlignContent(flex_lines, constants, total_line_cross_size);
 
+    // A ContentSize PerformLayout call is an intermediate probe (for example a
+    // column flex baseline pass). It may need output sizes, but must not write
+    // child locations into the real layout tree.
+    bool apply_layout_results = inputs.sizing_mode != SizingMode::ContentSize;
+
     // Do a final layout pass and gather the resulting layouts
-    auto inflow_content_size = FinalLayoutPass(tree, flex_lines, flex_items, constants);
+    auto inflow_content_size = FinalLayoutPass(tree, flex_lines, flex_items, constants, apply_layout_results);
 
     // Perform absolute layout on all absolutely positioned children
-    auto absolute_content_size = PerformAbsoluteLayoutOnAbsoluteChildren(tree, node, constants);
+    auto absolute_content_size = apply_layout_results
+        ? PerformAbsoluteLayoutOnAbsoluteChildren(tree, node, constants)
+        : Size<float>::Zero();
 
     // Handle display:none children
-    size_t len = tree.ChildCount(node);
-    for (size_t order = 0; order < len; ++order) {
-        NodeId child = tree.GetChildId(node, order);
-        if (tree.GetChildStyle(child).GetBoxGenerationMode() == BoxGenerationMode::None) {
-            Layout layout;
-            layout.order = static_cast<uint32_t>(order);
-            tree.SetUnroundedLayout(child, layout);
-            tree.PerformChildLayout(
-                child,
-                Size<std::optional<float>>{std::nullopt, std::nullopt},
-                Size<std::optional<float>>{std::nullopt, std::nullopt},
-                Size<AvailableSpace>{AvailableSpace::MaxContent(), AvailableSpace::MaxContent()},
-                SizingMode::InherentSize,
-                LineBoolFalse()
-            );
+    if (apply_layout_results) {
+        size_t len = tree.ChildCount(node);
+        for (size_t order = 0; order < len; ++order) {
+            NodeId child = tree.GetChildId(node, order);
+            if (tree.GetChildStyle(child).GetBoxGenerationMode() == BoxGenerationMode::None) {
+                Layout layout;
+                layout.order = static_cast<uint32_t>(order);
+                tree.SetUnroundedLayout(child, layout);
+                tree.PerformChildLayout(
+                    child,
+                    Size<std::optional<float>>{std::nullopt, std::nullopt},
+                    Size<std::optional<float>>{std::nullopt, std::nullopt},
+                    Size<AvailableSpace>{AvailableSpace::MaxContent(), AvailableSpace::MaxContent()},
+                    SizingMode::InherentSize,
+                    LineBoolFalse()
+                );
+            }
         }
     }
 
@@ -1737,7 +1747,8 @@ static void CalculateFlexItem(
     float total_offset_cross,
     float line_offset_cross,
     Size<float>& content_size,
-    const FlexAlgoConstants& constants
+    const FlexAlgoConstants& constants,
+    bool apply_layout_results
 ) {
     // 调试日志
     static bool debug_flex = std::getenv("DEBUG_FLEX") != nullptr;
@@ -1756,17 +1767,20 @@ static void CalculateFlexItem(
         std::optional<float>(constants.inner_container_size.height)
     };
 
-    auto layout_output = tree.PerformChildLayout(
-        item.node,
-        known_dimensions,
-        parent_inner_size,
-        Size<AvailableSpace>{
-            AvailableSpace::Definite(item.target_size.width),
-            AvailableSpace::Definite(item.target_size.height)
-        },
-        SizingMode::InherentSize,
-        LineBoolFalse()
-    );
+    LayoutOutput layout_output;
+    if (apply_layout_results) {
+        layout_output = tree.PerformChildLayout(
+            item.node,
+            known_dimensions,
+            parent_inner_size,
+            Size<AvailableSpace>{
+                AvailableSpace::Definite(item.target_size.width),
+                AvailableSpace::Definite(item.target_size.height)
+            },
+            SizingMode::InherentSize,
+            LineBoolFalse()
+        );
+    }
 
     // Compute position
     float offset_main = total_offset_main + item.offset_main + item.margin.MainStart(constants.dir);
@@ -1807,7 +1821,8 @@ static void CalculateFlexItem(
     // 否则使用 target_size（保留 min/max 约束）
     Size<float> final_size = item.target_size;
     bool target_too_small = item.target_size.Main(constants.dir) < 1.0f;
-    bool layout_output_valid = layout_output.size.Main(constants.dir) > 1.0f;
+    bool layout_output_valid = apply_layout_results &&
+        layout_output.size.Main(constants.dir) > 1.0f;
 
     // 🔍 DEBUG: 打印尺寸选择
     if (debug_flex) {
@@ -1820,12 +1835,14 @@ static void CalculateFlexItem(
     } else if (debug_flex) {
     }
 
-    layout.size = final_size;
-    layout.content_size = layout_output.content_size;
-    layout.location = location;
-    layout.padding = item.padding;
-    layout.border = item.border;
-    tree.SetUnroundedLayout(item.node, layout);
+    if (apply_layout_results) {
+        layout.size = final_size;
+        layout.content_size = layout_output.content_size;
+        layout.location = location;
+        layout.padding = item.padding;
+        layout.border = item.border;
+        tree.SetUnroundedLayout(item.node, layout);
+    }
 
     // Update total_offset_main for next item
     total_offset_main += item.offset_main + RectMainAxisSum(item.margin, constants.dir) + final_size.Main(constants.dir);
@@ -1841,7 +1858,8 @@ static Size<float> FinalLayoutPass(
     LayoutFlexboxContainer& tree,
     std::vector<FlexLine>& flex_lines,
     std::vector<FlexItem>& flex_items,
-    const FlexAlgoConstants& constants
+    const FlexAlgoConstants& constants,
+    bool apply_layout_results
 ) {
     Size<float> content_size = Size<float>::Zero();
     bool layout_reverse = IsReverse(constants.dir);
@@ -1860,14 +1878,14 @@ static Size<float> FinalLayoutPass(
                 size_t i = line.end_index - 1 - idx;
                 auto& item = flex_items[i];
                 // Pass 0.0f for line_offset_cross since it's already included in total_offset_cross
-                CalculateFlexItem(tree, item, total_offset_main, total_offset_cross, 0.0f, content_size, constants);
+                CalculateFlexItem(tree, item, total_offset_main, total_offset_cross, 0.0f, content_size, constants, apply_layout_results);
             }
         } else {
             // Normal iteration
             for (size_t i = line.start_index; i < line.end_index; ++i) {
                 auto& item = flex_items[i];
                 // Pass 0.0f for line_offset_cross since it's already included in total_offset_cross
-                CalculateFlexItem(tree, item, total_offset_main, total_offset_cross, 0.0f, content_size, constants);
+                CalculateFlexItem(tree, item, total_offset_main, total_offset_cross, 0.0f, content_size, constants, apply_layout_results);
             }
         }
     }
