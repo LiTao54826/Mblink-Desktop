@@ -79,5 +79,25 @@ TEST(HitTestControllerTest, OutOfFlowHitTestUsesZIndexAcrossBranches) {
     EXPECT_EQ(controller_result.render_object.get(), box410.render.get());
 }
 
+TEST(HitTestControllerTest, ViewportBoundsStopsAtFixedAncestorForDescendants) {
+    auto root = CreateBox("root", "static", 0, 0, 0, 800, 600);
+    auto offset_branch = CreateBox("offset-branch", "static", 0, 0, 180, 800, 600);
+    auto fixed_modal = CreateBox("fixed-modal", "fixed", 1000, 100, 80, 500, 320);
+    auto select = CreateBox("select", "static", 0, 24, 160, 240, 36);
+
+    root.render->AppendChild(offset_branch.render);
+    offset_branch.render->AppendChild(fixed_modal.render);
+    fixed_modal.render->AppendChild(select.render);
+
+    fixed_modal.render->UpdateViewportBounds();
+    select.render->UpdateViewportBounds();
+
+    const auto rect = select.render->GetViewportBoundingRect();
+    EXPECT_FLOAT_EQ(rect.x(), 124.0f);
+    EXPECT_FLOAT_EQ(rect.y(), 240.0f);
+    EXPECT_FLOAT_EQ(rect.width(), 240.0f);
+    EXPECT_FLOAT_EQ(rect.height(), 36.0f);
+}
+
 }  // namespace test
 }  // namespace mbink

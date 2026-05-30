@@ -1436,24 +1436,7 @@ void MouseEventDispatcher::ProcessFormElementDefaultAction(std::shared_ptr<Eleme
             } else {
                 auto render_obj = hit_result.render_object;
                 if (render_obj) {
-                    float abs_x = 0, abs_y = 0;
-                    auto current = render_obj;
-                    while (current) {
-                        const auto& layout = current->GetLayoutInfo();
-                        abs_x += layout.x;
-                        abs_y += layout.y;
-
-                        auto parent = current->GetParent();
-                        if (parent) {
-                            abs_x -= parent->GetScrollX();
-                            abs_y -= parent->GetScrollY();
-                        }
-
-                        current = parent;
-                    }
-
-                    const auto& layout = render_obj->GetLayoutInfo();
-                    SkRect trigger_rect = SkRect::MakeXYWH(abs_x, abs_y, layout.width, layout.height);
+                    SkRect trigger_rect = render_obj->GetViewportBoundingRect();
 
                     select_element->SetDropdownOpen(true);
                     dropdown_manager.OpenDropdown(select_element, trigger_rect);

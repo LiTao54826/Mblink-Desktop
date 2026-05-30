@@ -10,7 +10,9 @@
 #include "core/event/input/hit_test_controller.h"
 #include "core/event/dispatch/mouse_event_dispatcher.h"
 #include "core/event/dispatch/wheel_event_dispatcher.h"
+#include "core/render/objects/select_dropdown.h"
 #include "core/render/objects/render_object.h"
+#include "core/dom/elements/html_select_element.h"
 #include "core/window/window.h"
 
 namespace mbink {
@@ -400,6 +402,60 @@ TEST(MouseEventDispatcherTest, FixedModalHorizontalScrollbarConsumesMouseDown) {
 
     EXPECT_TRUE(dispatcher.HandleMouseEvent(motion, window, document, root_render));
     EXPECT_GT(scroller_render->GetScrollX(), 0.0f);
+}
+
+TEST(MouseEventDispatcherTest, SelectDropdownUsesViewportBoundsInsideFixedModal) {
+    auto document = std::make_shared<Document>();
+    document->Initialize();
+
+    auto body = document->GetBody();
+    ASSERT_TRUE(body);
+
+    auto offset_branch = document->CreateElement("div");
+    auto fixed_modal = document->CreateElement("div");
+    auto select = std::dynamic_pointer_cast<HTMLSelectElement>(document->CreateElement("select"));
+    ASSERT_TRUE(select);
+
+    auto option = document->CreateElement("option");
+    option->SetAttribute("value", "a");
+    option->AppendChild(document->CreateTextNode("A"));
+    select->AppendChild(option);
+
+    body->AppendChild(offset_branch);
+    offset_branch->AppendChild(fixed_modal);
+    fixed_modal->AppendChild(select);
+
+    auto root_render = CreateHitTestBox(body, 0.0f, 0.0f, 800.0f, 600.0f);
+    auto branch_render = CreateHitTestBox(offset_branch, 0.0f, 180.0f, 800.0f, 600.0f);
+    auto modal_render = CreateHitTestBox(fixed_modal, 100.0f, 80.0f, 500.0f, 320.0f);
+    auto select_render = CreateHitTestBox(select, 24.0f, 160.0f, 240.0f, 36.0f);
+
+    modal_render->GetComputedStyle().position = "fixed";
+    modal_render->GetComputedStyle().z_index = 1000;
+
+    root_render->AppendChild(branch_render);
+    branch_render->AppendChild(modal_render);
+    modal_render->AppendChild(select_render);
+    UpdateViewportBoundsRecursive(root_render);
+
+    HitTestResult hit_result;
+    hit_result.element = select;
+    hit_result.render_object = select_render;
+    hit_result.local_x = 12.0f;
+    hit_result.local_y = 12.0f;
+
+    auto& dropdown_manager = SelectDropdownManager::Instance();
+    dropdown_manager.CloseDropdown();
+
+    MouseEventDispatcher dispatcher;
+    dispatcher.ProcessFormElementDefaultAction(select, hit_result);
+
+    ASSERT_TRUE(dropdown_manager.IsDropdownOpen());
+    const SkRect dropdown_rect = dropdown_manager.GetDropdownRect();
+    EXPECT_FLOAT_EQ(dropdown_rect.x(), 124.0f);
+    EXPECT_FLOAT_EQ(dropdown_rect.y(), 277.0f);
+
+    dropdown_manager.CloseDropdown();
 }
 
 TEST(WheelEventDispatcherTest, FixedModalConsumesWheelOutsideScrollableArea) {

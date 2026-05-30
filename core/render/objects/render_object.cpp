@@ -793,6 +793,18 @@ SkRect RenderObject::GetBoundingRectRelativeTo(const RenderObject* ancestor) con
 }
 
 SkRect RenderObject::GetViewportBoundingRect() const {
+    const_cast<RenderObject*>(this)->UpdateViewportBounds();
+
+    if (viewport_bounds_.valid) {
+        if (viewport_bounds_.has_transform) {
+            return viewport_bounds_.transformed_bounds;
+        }
+        return SkRect::MakeXYWH(viewport_bounds_.x,
+                                viewport_bounds_.y,
+                                viewport_bounds_.width,
+                                viewport_bounds_.height);
+    }
+
     // 使用布局信息计算边界框（视口坐标系，用于元素选择器高亮）
     const auto& layout = layout_info_;
 
