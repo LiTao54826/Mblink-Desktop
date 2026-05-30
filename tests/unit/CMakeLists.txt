@@ -66,6 +66,7 @@ set(UTILS_TEST_SOURCES
 # Compositor 测试
 set(COMPOSITOR_TEST_SOURCES
     compositor/test_compositor_layer.cpp
+    compositor/test_compositor_clip.cpp
 )
 
 # 创建单元测试可执行文件

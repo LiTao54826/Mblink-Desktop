@@ -32,6 +32,76 @@ WheelEventDispatcher::WheelEventDispatcher() = default;
 
 WheelEventDispatcher::~WheelEventDispatcher() = default;
 
+namespace {
+
+constexpr int kTopLayerZIndexThreshold = 100;
+constexpr float kViewportCoverTolerance = 1.0f;
+
+bool CoversViewport(const std::shared_ptr<RenderObject>& render_obj) {
+    if (!render_obj) {
+        return false;
+    }
+
+    if (!render_obj->GetViewportBounds().valid) {
+        render_obj->UpdateViewportBounds();
+    }
+
+    const auto& bounds = render_obj->GetViewportBounds();
+    const float viewport_width = RenderObject::GetViewportWidth();
+    const float viewport_height = RenderObject::GetViewportHeight();
+    if (!bounds.valid || viewport_width <= 0.0f || viewport_height <= 0.0f) {
+        return false;
+    }
+
+    return bounds.x <= kViewportCoverTolerance &&
+           bounds.y <= kViewportCoverTolerance &&
+           bounds.x + bounds.width >= viewport_width - kViewportCoverTolerance &&
+           bounds.y + bounds.height >= viewport_height - kViewportCoverTolerance;
+}
+
+bool IsFixedTopLayerScrollBoundary(const std::shared_ptr<RenderObject>& render_obj) {
+    if (!render_obj) {
+        return false;
+    }
+
+    const auto& style = render_obj->GetComputedStyle();
+    return style.position == "fixed" &&
+           style.z_index >= kTopLayerZIndexThreshold &&
+           style.pointer_events != "none" &&
+           CoversViewport(render_obj);
+}
+
+bool IsPositionedTopLayer(const std::shared_ptr<RenderObject>& render_obj) {
+    if (!render_obj) {
+        return false;
+    }
+
+    const auto& style = render_obj->GetComputedStyle();
+    return (style.position == "fixed" || style.position == "absolute") &&
+           style.z_index >= kTopLayerZIndexThreshold &&
+           style.pointer_events != "none";
+}
+
+bool TreeHasFixedTopLayerScrollBoundary(const std::shared_ptr<RenderObject>& render_obj) {
+    if (!render_obj) {
+        return false;
+    }
+
+    if (IsFixedTopLayerScrollBoundary(render_obj)) {
+        return true;
+    }
+
+    for (const auto& child : render_obj->GetChildren()) {
+        if (TreeHasFixedTopLayerScrollBoundary(child)) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+}  // namespace
+
 bool WheelEventDispatcher::HandleWheelEvent(const SDL_Event& event,
                                              std::shared_ptr<Window> window,
                                              std::shared_ptr<Document> document) {
@@ -149,11 +219,25 @@ bool WheelEventDispatcher::HandleWheelEvent(const SDL_Event& event,
 
     // 从命中的元素向上遍历，找到第一个可滚动的元素
     auto render_obj = hit_result.render_object;
+    bool top_layer_boundary_known = false;
+    bool has_fixed_top_layer_boundary = false;
     
     while (render_obj) {
         if (HandleScrollableElementWheel(window, render_obj, logical_x, logical_y,
                                          wheel_x, wheel_y, shift_pressed)) {
             return true;
+        }
+        if (IsFixedTopLayerScrollBoundary(render_obj)) {
+            return true;
+        }
+        if (IsPositionedTopLayer(render_obj)) {
+            if (!top_layer_boundary_known) {
+                has_fixed_top_layer_boundary = TreeHasFixedTopLayerScrollBoundary(root_render);
+                top_layer_boundary_known = true;
+            }
+            if (has_fixed_top_layer_boundary) {
+                return true;
+            }
         }
         render_obj = render_obj->GetParent();
     }

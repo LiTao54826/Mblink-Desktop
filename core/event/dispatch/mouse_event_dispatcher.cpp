@@ -306,6 +306,58 @@ ResolvedTextHit ResolveTextHit(const HitTestResult& hit_result,
     return result;
 }
 
+std::string ResolveOverflowX(const ComputedStyle& style) {
+    return !style.overflow_x.empty() ? style.overflow_x : style.overflow;
+}
+
+std::string ResolveOverflowY(const ComputedStyle& style) {
+    return !style.overflow_y.empty() ? style.overflow_y : style.overflow;
+}
+
+bool AllowsScrollbarHitTesting(const RenderObject& object) {
+    const auto& style = object.GetComputedStyle();
+    const std::string overflow_x = ResolveOverflowX(style);
+    const std::string overflow_y = ResolveOverflowY(style);
+    return overflow_x == "scroll" || overflow_x == "auto" ||
+           overflow_y == "scroll" || overflow_y == "auto";
+}
+
+RenderObject::ScrollbarHitArea HitTestScrollbarInViewport(
+    const std::shared_ptr<RenderObject>& object,
+    float viewport_x,
+    float viewport_y) {
+    if (!object || !AllowsScrollbarHitTesting(*object)) {
+        return RenderObject::ScrollbarHitArea::None;
+    }
+
+    if (!object->GetViewportBounds().valid) {
+        object->UpdateViewportBounds();
+    }
+
+    const auto& bounds = object->GetViewportBounds();
+    if (!bounds.valid) {
+        return RenderObject::ScrollbarHitArea::None;
+    }
+
+    SkPoint local = bounds.ToLocalCoordinates(viewport_x, viewport_y);
+    return object->HitTestScrollbar(local.x(), local.y());
+}
+
+std::shared_ptr<RenderObject> FindScrollbarTargetFromHit(
+    const HitTestResult& hit_result,
+    float viewport_x,
+    float viewport_y) {
+    auto current = hit_result.render_object;
+    while (current) {
+        if (HitTestScrollbarInViewport(current, viewport_x, viewport_y) !=
+            RenderObject::ScrollbarHitArea::None) {
+            return current;
+        }
+        current = current->GetParent();
+    }
+    return nullptr;
+}
+
 std::pair<int, int> AdjacentStringBounds(const std::string& text, int caret_offset) {
     const int char_count = static_cast<int>(utf8::CharCount(text));
     if (char_count <= 0) {
@@ -809,70 +861,9 @@ bool MouseEventDispatcher::HandleMouseEvent(const SDL_Event& event,
 
     // ===== 检测滚动条点击 =====
     if (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN && event.button.button == SDL_BUTTON_LEFT && root_render) {
-        std::function<std::shared_ptr<RenderObject>(std::shared_ptr<RenderObject>, float, float)> findScrollableAtPoint;
-        findScrollableAtPoint = [&](std::shared_ptr<RenderObject> obj, float abs_x, float abs_y) -> std::shared_ptr<RenderObject> {
-            const auto& layout = obj->GetLayoutInfo();
-            float local_x = abs_x - layout.x;
-            float local_y = abs_y - layout.y;
-
-            float effective_width = obj->GetEffectiveVisibleWidth();
-            float effective_height = obj->GetEffectiveVisibleHeight();
-            if (effective_width <= 0) effective_width = layout.width;
-            if (effective_height <= 0) effective_height = layout.height;
-
-            if (local_x >= 0 && local_x <= effective_width && local_y >= 0 && local_y <= effective_height) {
-                const auto& style = obj->GetComputedStyle();
-                std::string overflow_x = !style.overflow_x.empty() ? style.overflow_x : style.overflow;
-                std::string overflow_y = !style.overflow_y.empty() ? style.overflow_y : style.overflow;
-                bool allow_scroll = (overflow_x == "scroll" || overflow_x == "auto" ||
-                                     overflow_y == "scroll" || overflow_y == "auto");
-                if (allow_scroll) {
-                    auto scrollbar_area = obj->HitTestScrollbar(local_x, local_y);
-                    if (scrollbar_area != RenderObject::ScrollbarHitArea::None) {
-                        return obj;
-                    }
-                }
-
-                float child_offset_x = local_x + obj->GetScrollX();
-                float child_offset_y = local_y + obj->GetScrollY();
-                for (const auto& child : obj->GetChildren()) {
-                    auto result = findScrollableAtPoint(child, child_offset_x, child_offset_y);
-                    if (result) {
-                        return result;
-                    }
-                }
-            }
-            return nullptr;
-        };
-
-        auto scrollable = findScrollableAtPoint(root_render, logical_x, logical_y);
+        auto scrollable = FindScrollbarTargetFromHit(hit_result, logical_x, logical_y);
         if (scrollable) {
-            float elem_abs_x = 0, elem_abs_y = 0;
-            std::vector<std::shared_ptr<RenderObject>> ancestors;
-            auto current = scrollable;
-            while (current) {
-                ancestors.push_back(current);
-                current = current->GetParent();
-            }
-            // 计算元素的绝对位置时，需要考虑父元素的滚动偏移
-            // 滚动条是固定在容器视口内的，不随内容滚动
-            // 所以计算 local 坐标时，需要减去父元素的滚动偏移
-            for (auto it = ancestors.rbegin(); it != ancestors.rend(); ++it) {
-                const auto& l = (*it)->GetLayoutInfo();
-                elem_abs_x += l.x;
-                elem_abs_y += l.y;
-                // 对于非目标元素的祖先，需要减去其滚动偏移
-                // 因为子元素的视觉位置会随父元素滚动而移动
-                if ((*it) != scrollable) {
-                    elem_abs_x -= (*it)->GetScrollX();
-                    elem_abs_y -= (*it)->GetScrollY();
-                }
-            }
-
-            float local_x = logical_x - elem_abs_x;
-            float local_y = logical_y - elem_abs_y;
-
-            auto scrollbar_area = scrollable->HitTestScrollbar(local_x, local_y);
+            auto scrollbar_area = HitTestScrollbarInViewport(scrollable, logical_x, logical_y);
             if (scrollbar_area != RenderObject::ScrollbarHitArea::None) {
                 scrollable->StartScrollbarDrag(scrollbar_area, logical_x, logical_y);
                 SetScrollbarDraggingElement(scrollable, window_id);

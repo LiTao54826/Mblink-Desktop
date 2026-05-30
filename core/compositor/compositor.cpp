@@ -759,6 +759,134 @@ static int GetLayerZIndex(CompositorLayer* layer) {
     return obj->GetComputedStyle().z_index;
 }
 
+static std::string ResolveOverflowX(const ComputedStyle& style) {
+    return !style.overflow_x.empty() ? style.overflow_x : style.overflow;
+}
+
+static std::string ResolveOverflowY(const ComputedStyle& style) {
+    return !style.overflow_y.empty() ? style.overflow_y : style.overflow;
+}
+
+static bool IsOverflowClipValue(const std::string& value) {
+    return value == "hidden" || value == "scroll" || value == "auto";
+}
+
+static bool LayerClipsDescendants(const CompositorLayer* layer) {
+    if (!layer || !layer->GetRenderObject()) {
+        return false;
+    }
+
+    const auto& style = layer->GetRenderObject()->GetComputedStyle();
+    return IsOverflowClipValue(ResolveOverflowX(style)) ||
+           IsOverflowClipValue(ResolveOverflowY(style));
+}
+
+static SkRect MapRectToCanvas(const SkMatrix& matrix, const SkRect& rect) {
+    SkPoint points[4] = {
+        SkPoint::Make(rect.left(), rect.top()),
+        SkPoint::Make(rect.right(), rect.top()),
+        SkPoint::Make(rect.right(), rect.bottom()),
+        SkPoint::Make(rect.left(), rect.bottom())
+    };
+    matrix.mapPoints(points, 4);
+
+    float min_x = points[0].x();
+    float max_x = points[0].x();
+    float min_y = points[0].y();
+    float max_y = points[0].y();
+    for (int i = 1; i < 4; ++i) {
+        min_x = (std::min)(min_x, points[i].x());
+        max_x = (std::max)(max_x, points[i].x());
+        min_y = (std::min)(min_y, points[i].y());
+        max_y = (std::max)(max_y, points[i].y());
+    }
+
+    return SkRect::MakeLTRB(min_x, min_y, max_x, max_y);
+}
+
+static SkRect ComputeLocalOverflowClip(RenderObject* object) {
+    if (!object) {
+        return SkRect::MakeEmpty();
+    }
+
+    const auto& style = object->GetComputedStyle();
+    const std::string overflow_x = ResolveOverflowX(style);
+    const std::string overflow_y = ResolveOverflowY(style);
+    if (!IsOverflowClipValue(overflow_x) && !IsOverflowClipValue(overflow_y)) {
+        return SkRect::MakeEmpty();
+    }
+
+    const float border_left = style.border_left_width > 0 ? style.border_left_width : style.border.width.ToPx();
+    const float border_right = style.border_right_width > 0 ? style.border_right_width : style.border.width.ToPx();
+    const float border_top = style.border_top_width > 0 ? style.border_top_width : style.border.width.ToPx();
+    const float border_bottom = style.border_bottom_width > 0 ? style.border_bottom_width : style.border.width.ToPx();
+
+    const float effective_width = object->GetEffectiveVisibleWidth();
+    const float effective_height = object->GetEffectiveVisibleHeight();
+    const float visible_width = (std::max)(0.0f, effective_width - border_left - border_right);
+    const float visible_height = (std::max)(0.0f, effective_height - border_top - border_bottom);
+
+    float content_width = object->GetContentWidth();
+    float content_height = object->GetContentHeight();
+    if (content_width <= 0.0f) {
+        content_width = object->CalculateContentWidth();
+    }
+    if (content_height <= 0.0f) {
+        content_height = object->CalculateContentHeight();
+    }
+
+    const bool allow_h_scroll = (overflow_x == "scroll" || overflow_x == "auto");
+    const bool allow_v_scroll = (overflow_y == "scroll" || overflow_y == "auto");
+    const float scrollbar_width = RenderObject::GetScrollbarWidth();
+    constexpr float kScrollTolerance = 1.0f;
+
+    bool needs_v_scroll = allow_v_scroll &&
+        (overflow_y == "scroll" || content_height > visible_height + kScrollTolerance);
+
+    float content_area_width = (std::max)(0.0f, visible_width - (needs_v_scroll ? scrollbar_width : 0.0f));
+    bool needs_h_scroll = allow_h_scroll &&
+        (overflow_x == "scroll" || content_width > content_area_width + kScrollTolerance);
+    float content_area_height = (std::max)(0.0f, visible_height - (needs_h_scroll ? scrollbar_width : 0.0f));
+
+    if (needs_h_scroll && allow_v_scroll && !needs_v_scroll &&
+        content_height > content_area_height + kScrollTolerance) {
+        needs_v_scroll = true;
+        content_area_width = (std::max)(0.0f, visible_width - scrollbar_width);
+        needs_h_scroll = allow_h_scroll &&
+            (overflow_x == "scroll" || content_width > content_area_width + kScrollTolerance);
+        content_area_height = (std::max)(0.0f, visible_height - (needs_h_scroll ? scrollbar_width : 0.0f));
+    }
+
+    return SkRect::MakeXYWH(border_left, border_top, content_area_width, content_area_height);
+}
+
+static bool CombineClip(const SkRect* inherited_clip,
+                        const SkRect* additional_clip,
+                        SkRect* combined_clip) {
+    if (!combined_clip) {
+        return false;
+    }
+
+    bool has_clip = false;
+    if (inherited_clip) {
+        *combined_clip = *inherited_clip;
+        has_clip = true;
+    }
+
+    if (additional_clip) {
+        if (has_clip) {
+            if (!combined_clip->intersect(*additional_clip)) {
+                *combined_clip = SkRect::MakeEmpty();
+            }
+        } else {
+            *combined_clip = *additional_clip;
+            has_clip = true;
+        }
+    }
+
+    return has_clip;
+}
+
 void Compositor::CompositeLayerCPU(CompositorLayer* layer,
                                    SkCanvas* canvas,
                                    const SkMatrix& parent_transform,
@@ -797,6 +925,18 @@ void Compositor::CompositeLayerCPU(CompositorLayer* layer,
     }
 
     // 应用当前层变换到画布
+    SkRect overflow_clip_storage;
+    const SkRect* overflow_clip = nullptr;
+    if (LayerClipsDescendants(layer)) {
+        SkRect local_clip = ComputeLocalOverflowClip(layer->GetRenderObject());
+        overflow_clip_storage = MapRectToCanvas(layer_transform, local_clip);
+        overflow_clip = &overflow_clip_storage;
+    }
+
+    SkRect child_clip_storage;
+    const bool has_child_clip = CombineClip(logical_clip, overflow_clip, &child_clip_storage);
+    const SkRect* child_logical_clip = has_child_clip ? &child_clip_storage : nullptr;
+
     if (!skip_self_draw) {
         canvas->concat(layer_transform);
     }
@@ -900,13 +1040,26 @@ void Compositor::CompositeLayerCPU(CompositorLayer* layer,
         // 关键修复：position: fixed 元素不应该受到父层滚动偏移的影响
         // fixed 元素的位置是相对于视口的，不随滚动变化
         bool child_is_fixed = (child->GetPromotionReason() == LayerPromotionReason::PositionFixed);
+        const SkRect* effective_child_clip = child_is_fixed ? logical_clip : child_logical_clip;
+        if (effective_child_clip && effective_child_clip->isEmpty()) {
+            continue;
+        }
+
+        if (effective_child_clip) {
+            canvas->save();
+            canvas->clipRect(*effective_child_clip, SkClipOp::kIntersect, true);
+        }
 
         if (child_is_fixed) {
             // fixed 元素：不应用任何滚动偏移，重置变换
-            CompositeLayerCPU(child, canvas, SkMatrix::I(), logical_clip);
+            CompositeLayerCPU(child, canvas, SkMatrix::I(), effective_child_clip);
         } else {
             // 非 fixed 元素：传递累积的平移偏移
-            CompositeLayerCPU(child, canvas, child_transform, logical_clip);
+            CompositeLayerCPU(child, canvas, child_transform, effective_child_clip);
+        }
+
+        if (effective_child_clip) {
+            canvas->restore();
         }
     }
 }
