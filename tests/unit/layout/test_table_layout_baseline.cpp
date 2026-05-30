@@ -4,6 +4,7 @@
 #include "dom/element.h"
 #include "dom/text.h"
 #include "layout/native_layout_engine.h"
+#include "event/input/hit_test_controller.h"
 #include "render/css/style_resolver.h"
 #include "render/objects/render_object.h"
 #include "test_utils/test_helpers.h"
@@ -619,6 +620,137 @@ TEST_F(TableLayoutBaselineTest, RowspanZeroSpansRemainingRowsInSection) {
     EXPECT_NEAR(rowspan_cell->GetLayoutInfo().height, expected_height, 0.5f);
     EXPECT_GT(RenderObjectForId("cell-b")->GetLayoutInfo().x,
               rowspan_cell->GetLayoutInfo().x + rowspan_cell->GetLayoutInfo().width - 0.5f);
+}
+
+TEST_F(TableLayoutBaselineTest, CellChildrenAreRelayoutedWithFinalColumnWidth) {
+    LoadAndLayout(R"(
+        <html>
+        <body>
+            <table id="table" style="width: 320px; table-layout: fixed; border-spacing: 0;">
+                <colgroup>
+                    <col style="width: 160px;">
+                    <col style="width: 160px;">
+                </colgroup>
+                <tbody>
+                    <tr>
+                        <td id="cell" style="padding: 10px;">
+                            <div id="content" style="width: 100%; display: flex; gap: 8px;">
+                                <button id="open">Open</button>
+                                <button id="delete">Delete</button>
+                            </div>
+                        </td>
+                        <td>Other</td>
+                    </tr>
+                </tbody>
+            </table>
+        </body>
+        </html>
+    )");
+
+    auto cell = RenderObjectForId("cell");
+    auto content = RenderObjectForId("content");
+    auto open_button = RenderObjectForId("open");
+    auto delete_button = RenderObjectForId("delete");
+    ASSERT_NE(cell, nullptr);
+    ASSERT_NE(content, nullptr);
+    ASSERT_NE(open_button, nullptr);
+    ASSERT_NE(delete_button, nullptr);
+
+    EXPECT_TRUE(content->GetLayoutInfo().is_laid_out);
+    // 160px column minus 10px horizontal padding and the default 1px cell borders.
+    EXPECT_NEAR(content->GetLayoutInfo().width,
+                cell->GetLayoutInfo().width - 22.0f,
+                0.5f);
+    EXPECT_LT(open_button->GetLayoutInfo().x, delete_button->GetLayoutInfo().x);
+    EXPECT_LE(delete_button->GetLayoutInfo().x + delete_button->GetLayoutInfo().width,
+              content->GetLayoutInfo().width + 0.5f);
+}
+
+TEST_F(TableLayoutBaselineTest, FlexButtonsInsideCellKeepIntrinsicHeightAfterRowHeightSync) {
+    LoadAndLayout(R"(
+        <html>
+        <body>
+            <table id="table" style="width: 360px; table-layout: fixed; border-spacing: 0;">
+                <colgroup>
+                    <col style="width: 210px;">
+                    <col style="width: 150px;">
+                </colgroup>
+                <tbody>
+                    <tr>
+                        <td id="tall-cell" style="padding: 12px 16px;">
+                            <select id="node" style="width: 100%; height: 56px; padding: 0 12px;">
+                                <option>Task A</option>
+                            </select>
+                        </td>
+                        <td id="action-cell" style="padding: 12px 16px; vertical-align: middle;">
+                            <div id="actions" style="width: 100%; display: flex; align-items: center; gap: 8px;">
+                                <button id="open" style="display: flex; align-items: center; justify-content: center; padding: 6px 12px; font-size: 11px;">Open</button>
+                                <button id="delete" style="display: flex; align-items: center; justify-content: center; padding: 6px 12px; font-size: 11px; background: #ef4444; color: #fff;">Delete</button>
+                            </div>
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        </body>
+        </html>
+    )");
+
+    auto action_cell = RenderObjectForId("action-cell");
+    auto actions = RenderObjectForId("actions");
+    auto open_button = RenderObjectForId("open");
+    auto delete_button = RenderObjectForId("delete");
+    ASSERT_NE(action_cell, nullptr);
+    ASSERT_NE(actions, nullptr);
+    ASSERT_NE(open_button, nullptr);
+    ASSERT_NE(delete_button, nullptr);
+
+    EXPECT_LT(delete_button->GetLayoutInfo().height, action_cell->GetLayoutInfo().height - 20.0f);
+    EXPECT_LT(open_button->GetLayoutInfo().height, action_cell->GetLayoutInfo().height - 20.0f);
+    EXPECT_LT(open_button->GetLayoutInfo().x, delete_button->GetLayoutInfo().x);
+    EXPECT_GE(actions->GetLayoutInfo().y, 12.0f);
+    EXPECT_LE(actions->GetLayoutInfo().y + actions->GetLayoutInfo().height,
+              action_cell->GetLayoutInfo().height - 12.0f + 0.5f);
+}
+
+TEST_F(TableLayoutBaselineTest, HitTestingFindsButtonInsideNormalTableCell) {
+    LoadAndLayout(R"(
+        <html>
+        <body style="margin: 0;">
+            <table id="table" style="width: 320px; table-layout: fixed; border-spacing: 0;">
+                <colgroup>
+                    <col style="width: 160px;">
+                    <col style="width: 160px;">
+                </colgroup>
+                <tbody>
+                    <tr>
+                        <td id="action-cell" style="padding: 12px 16px; vertical-align: middle;">
+                            <div id="actions" style="display: inline-block; white-space: nowrap; font-size: 0;">
+                                <button id="open" style="display: inline-block; height: 32px; padding: 0 12px;">Open</button>
+                                <span style="display: inline-block; width: 8px;"></span>
+                                <button id="delete" style="display: inline-block; height: 32px; padding: 0 12px;">Delete</button>
+                            </div>
+                        </td>
+                        <td>Other</td>
+                    </tr>
+                </tbody>
+            </table>
+        </body>
+        </html>
+    )");
+
+    auto open_button = RenderObjectForId("open");
+    ASSERT_NE(open_button, nullptr);
+    ASSERT_NE(render_root_->EnsurePaintLayer(), nullptr);
+
+    const SkRect button_bounds = open_button->GetViewportBoundingRect();
+    HitTestController controller;
+    auto result = controller.HitTest(render_root_,
+                                     button_bounds.centerX(),
+                                     button_bounds.centerY());
+
+    ASSERT_TRUE(result.IsValid());
+    ASSERT_NE(result.element, nullptr);
+    EXPECT_EQ(result.element->GetAttribute("id"), "open");
 }
 
 }  // namespace test

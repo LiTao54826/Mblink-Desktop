@@ -219,6 +219,11 @@ public:
     void OnOptionsChanged();
 
     /**
+     * @brief 标记 select 本体需要重绘
+     */
+    void RequestSelectionRepaint();
+
+    /**
      * @brief 处理点击事件（切换下拉菜单或选择下一个选项）
      */
     void HandleClick();

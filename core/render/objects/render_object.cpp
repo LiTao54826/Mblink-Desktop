@@ -89,6 +89,7 @@ void RenderObject::MarkNeedsLayout(bool propagate_to_parent) {
     needs_layout_ = true;
     content_width_ = 0.0f;
     content_height_ = 0.0f;
+    InvalidateViewportBounds();
     if (propagate_to_parent) {
         auto parent = parent_.lock();
         if (parent) {

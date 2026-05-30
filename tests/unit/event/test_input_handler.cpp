@@ -14,6 +14,8 @@
 #include "core/render/objects/render_object.h"
 #include "core/dom/elements/html_select_element.h"
 #include "core/window/window.h"
+#include "core/render/css/style_resolver.h"
+#include "layout/native_layout_engine.h"
 
 namespace mbink {
 namespace test {
@@ -456,6 +458,309 @@ TEST(MouseEventDispatcherTest, SelectDropdownUsesViewportBoundsInsideFixedModal)
     EXPECT_FLOAT_EQ(dropdown_rect.y(), 277.0f);
 
     dropdown_manager.CloseDropdown();
+}
+
+TEST(MouseEventDispatcherTest, TableButtonInsideFixedModalReceivesHoverAndClick) {
+    auto document = std::make_shared<Document>();
+    document->Initialize();
+
+    ASSERT_TRUE(document->LoadHTML(R"(
+        <html>
+        <body style="margin: 0;">
+            <div id="overlay"
+                 style="position: fixed; left: 0; top: 0; width: 1400px; height: 760px; z-index: 9000; display: flex; align-items: center; justify-content: center;">
+                <div id="dialog"
+                     style="width: 1320px; height: 520px; overflow: hidden; display: flex; flex-direction: column; gap: 20px;">
+                    <div id="header" style="height: 80px;">Browser Manager</div>
+                    <div id="scroller" style="flex: 1; min-height: 0; overflow-x: auto; overflow-y: auto;">
+                        <table id="table" style="width: 1120px; min-width: 1120px; table-layout: fixed; border-spacing: 0;">
+                            <colgroup>
+                                <col style="width: 13%;">
+                                <col style="width: 80px;">
+                                <col style="width: 21%;">
+                                <col style="width: 15%;">
+                                <col style="width: 96px;">
+                                <col style="width: 110px;">
+                                <col style="width: 17%;">
+                                <col style="width: 140px;">
+                            </colgroup>
+                            <tbody>
+                                <tr>
+                                    <td style="padding: 12px 16px;"><input id="name" style="width: 100%; height: 36px;"></td>
+                                    <td style="padding: 12px 16px;">9222</td>
+                                    <td style="padding: 12px 16px;">path</td>
+                                    <td style="padding: 12px 16px;"><select id="node" style="width: 100%; height: 36px;"><option>A</option></select></td>
+                                    <td style="padding: 12px 16px;">on</td>
+                                    <td style="padding: 12px 16px;">120</td>
+                                    <td style="padding: 12px 16px;">idle</td>
+                                    <td style="padding: 12px 16px; white-space: nowrap;">
+                                        <div id="actions" style="min-height: 36px; white-space: nowrap; font-size: 0;">
+                                            <button id="open" style="display: inline-block; height: 32px; padding: 0 12px; background: #ffffff;">Open</button>
+                                        </div>
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </body>
+        </html>
+    )"));
+
+    auto open_button = document->GetElementById("open");
+    ASSERT_TRUE(open_button);
+
+    int mouseover_count = 0;
+    int mousedown_count = 0;
+    int mouseup_count = 0;
+    int click_count = 0;
+    open_button->AddEventListener("mouseover", [&](std::shared_ptr<Event>) { ++mouseover_count; });
+    open_button->AddEventListener("mousedown", [&](std::shared_ptr<Event>) { ++mousedown_count; });
+    open_button->AddEventListener("mouseup", [&](std::shared_ptr<Event>) { ++mouseup_count; });
+    open_button->AddEventListener("click", [&](std::shared_ptr<Event>) { ++click_count; });
+
+    RenderTreeBuilder builder;
+    builder.SetDocument(document.get());
+    auto root_render = builder.BuildRenderTree(document->GetBody());
+    ASSERT_TRUE(root_render);
+
+    NativeLayoutEngine layout_engine;
+    layout_engine.BuildLayoutTree(root_render);
+    layout_engine.ComputeLayout(1400.0f, 760.0f);
+    layout_engine.GetLayoutInfo(root_render);
+
+    auto open_render = FindRenderObjectById(root_render, "open");
+    auto overlay_render = FindRenderObjectById(root_render, "overlay");
+    auto dialog_render = FindRenderObjectById(root_render, "dialog");
+    auto scroller_render = FindRenderObjectById(root_render, "scroller");
+    auto table_render = FindRenderObjectById(root_render, "table");
+    ASSERT_TRUE(open_render);
+    ASSERT_TRUE(overlay_render);
+    ASSERT_TRUE(dialog_render);
+    ASSERT_TRUE(scroller_render);
+    ASSERT_TRUE(table_render);
+
+    const SkRect button_bounds = open_render->GetViewportBoundingRect();
+    ASSERT_GT(button_bounds.width(), 0.0f);
+    ASSERT_GT(button_bounds.height(), 0.0f);
+    const float hit_x = button_bounds.centerX();
+    const float hit_y = button_bounds.centerY();
+
+    HitTestController hit_test_controller;
+    auto hit_result = hit_test_controller.HitTest(root_render, hit_x, hit_y);
+    ASSERT_TRUE(hit_result.IsValid());
+    ASSERT_TRUE(hit_result.element);
+    EXPECT_EQ(hit_result.element->GetAttribute("id"), "open")
+        << "hit=(" << hit_x << "," << hit_y << ")"
+        << " open=" << button_bounds.x() << "," << button_bounds.y() << " "
+        << button_bounds.width() << "x" << button_bounds.height()
+        << " overlay=" << overlay_render->GetViewportBoundingRect().x() << ","
+        << overlay_render->GetViewportBoundingRect().y() << " "
+        << overlay_render->GetViewportBoundingRect().width() << "x"
+        << overlay_render->GetViewportBoundingRect().height()
+        << " dialog=" << dialog_render->GetViewportBoundingRect().x() << ","
+        << dialog_render->GetViewportBoundingRect().y() << " "
+        << dialog_render->GetViewportBoundingRect().width() << "x"
+        << dialog_render->GetViewportBoundingRect().height()
+        << " scroller=" << scroller_render->GetViewportBoundingRect().x() << ","
+        << scroller_render->GetViewportBoundingRect().y() << " "
+        << scroller_render->GetViewportBoundingRect().width() << "x"
+        << scroller_render->GetViewportBoundingRect().height()
+        << " table=" << table_render->GetViewportBoundingRect().x() << ","
+        << table_render->GetViewportBoundingRect().y() << " "
+        << table_render->GetViewportBoundingRect().width() << "x"
+        << table_render->GetViewportBoundingRect().height();
+
+    WindowConfig config;
+    config.width = 1400;
+    config.height = 760;
+    config.hidden = true;
+    config.headless = true;
+    config.backend = RenderBackend::CPU;
+    auto window = std::make_shared<Window>(config);
+    MouseEventDispatcher dispatcher;
+    const float display_scale = window->GetDisplayScale();
+
+    SDL_Event motion{};
+    motion.type = SDL_EVENT_MOUSE_MOTION;
+    motion.motion.windowID = 1;
+    motion.motion.x = hit_x * display_scale;
+    motion.motion.y = hit_y * display_scale;
+    EXPECT_TRUE(dispatcher.HandleMouseEvent(motion, window, document, root_render));
+
+    SDL_Event down{};
+    down.type = SDL_EVENT_MOUSE_BUTTON_DOWN;
+    down.button.windowID = 1;
+    down.button.button = SDL_BUTTON_LEFT;
+    down.button.x = hit_x * display_scale;
+    down.button.y = hit_y * display_scale;
+    EXPECT_TRUE(dispatcher.HandleMouseEvent(down, window, document, root_render));
+
+    SDL_Event up{};
+    up.type = SDL_EVENT_MOUSE_BUTTON_UP;
+    up.button.windowID = 1;
+    up.button.button = SDL_BUTTON_LEFT;
+    up.button.x = hit_x * display_scale;
+    up.button.y = hit_y * display_scale;
+    EXPECT_TRUE(dispatcher.HandleMouseEvent(up, window, document, root_render));
+
+    EXPECT_TRUE(open_button->HasPseudoClass("hover"));
+    EXPECT_EQ(mouseover_count, 1);
+    EXPECT_EQ(mousedown_count, 1);
+    EXPECT_EQ(mouseup_count, 1);
+    EXPECT_EQ(click_count, 1);
+}
+
+TEST(MouseEventDispatcherTest, TableButtonInsideScrolledFixedModalReceivesHoverAndClick) {
+    auto document = std::make_shared<Document>();
+    document->Initialize();
+
+    ASSERT_TRUE(document->LoadHTML(R"(
+        <html>
+        <body style="margin: 0;">
+            <div id="overlay"
+                 style="position: fixed; left: 0; top: 0; width: 960px; height: 700px; z-index: 99999; display: flex; align-items: center; justify-content: center;">
+                <div id="dialog"
+                     style="width: 928px; height: 560px; overflow: hidden; display: flex; flex-direction: column; gap: 20px; padding: 24px; box-sizing: border-box;">
+                    <div id="header" style="height: 48px; display: flex; justify-content: space-between;">
+                        <button id="add" style="height: 32px; padding: 0 12px;">Add</button>
+                        <button id="close" style="height: 32px; padding: 0 12px;">Close</button>
+                    </div>
+                    <div id="scroller"
+                         style="flex: 1; min-height: 0; overflow-x: auto; overflow-y: auto; border: 1px solid #e5e7eb;">
+                        <table id="table" style="width: 100%; min-width: 1120px; table-layout: fixed; border-collapse: separate; border-spacing: 0;">
+                            <colgroup>
+                                <col style="width: 13%;">
+                                <col style="width: 80px;">
+                                <col style="width: 21%;">
+                                <col style="width: 15%;">
+                                <col style="width: 96px;">
+                                <col style="width: 110px;">
+                                <col style="width: 17%;">
+                                <col style="width: 140px;">
+                            </colgroup>
+                            <thead>
+                                <tr>
+                                    <th style="position: sticky; top: 0; z-index: 10; padding: 12px 16px;">Name</th>
+                                    <th style="position: sticky; top: 0; z-index: 10; padding: 12px 16px;">Port</th>
+                                    <th style="position: sticky; top: 0; z-index: 10; padding: 12px 16px;">Path</th>
+                                    <th style="position: sticky; top: 0; z-index: 10; padding: 12px 16px;">Node</th>
+                                    <th style="position: sticky; top: 0; z-index: 10; padding: 12px 16px;">Keep</th>
+                                    <th style="position: sticky; top: 0; z-index: 10; padding: 12px 16px;">Every</th>
+                                    <th style="position: sticky; top: 0; z-index: 10; padding: 12px 16px;">Status</th>
+                                    <th style="position: sticky; top: 0; z-index: 10; padding: 12px 16px;">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td style="padding: 12px 16px;"><input id="name" style="width: 100%; height: 36px;"></td>
+                                    <td style="padding: 12px 16px;">9222</td>
+                                    <td style="padding: 12px 16px;">path</td>
+                                    <td style="padding: 12px 16px;"><select id="node" style="width: 100%; height: 36px;"><option>A</option></select></td>
+                                    <td style="padding: 12px 16px;"><label style="display: flex; align-items: center; min-height: 36px;"><input id="keep" type="checkbox;">On</label></td>
+                                    <td style="padding: 12px 16px;"><select id="every" style="width: 100%; height: 36px;"><option>120</option></select></td>
+                                    <td style="padding: 12px 16px;"><div style="display: flex; flex-direction: column; min-height: 36px;"><span>idle</span><span>detail</span></div></td>
+                                    <td id="action-cell" style="padding: 12px 16px; white-space: nowrap;">
+                                        <div id="actions" style="min-height: 36px; white-space: nowrap; font-size: 0;">
+                                            <button id="open" style="display: inline-block; height: 32px; padding: 0 12px; background: #ffffff;">Open</button>
+                                            <span style="display: inline-block; width: 8px;"></span>
+                                            <button id="delete" style="display: inline-block; height: 32px; padding: 0 12px; background: #ef4444; color: #ffffff;">Delete</button>
+                                        </div>
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </body>
+        </html>
+    )"));
+
+    auto open_button = document->GetElementById("open");
+    ASSERT_TRUE(open_button);
+
+    int mouseover_count = 0;
+    int mousedown_count = 0;
+    int mouseup_count = 0;
+    int click_count = 0;
+    open_button->AddEventListener("mouseover", [&](std::shared_ptr<Event>) { ++mouseover_count; });
+    open_button->AddEventListener("mousedown", [&](std::shared_ptr<Event>) { ++mousedown_count; });
+    open_button->AddEventListener("mouseup", [&](std::shared_ptr<Event>) { ++mouseup_count; });
+    open_button->AddEventListener("click", [&](std::shared_ptr<Event>) { ++click_count; });
+
+    RenderTreeBuilder builder;
+    builder.SetDocument(document.get());
+    auto root_render = builder.BuildRenderTree(document->GetBody());
+    ASSERT_TRUE(root_render);
+
+    NativeLayoutEngine layout_engine;
+    layout_engine.BuildLayoutTree(root_render);
+    layout_engine.ComputeLayout(960.0f, 700.0f);
+    layout_engine.GetLayoutInfo(root_render);
+    ASSERT_NE(root_render->EnsurePaintLayer(), nullptr);
+
+    auto open_render = FindRenderObjectById(root_render, "open");
+    auto scroller_render = FindRenderObjectById(root_render, "scroller");
+    ASSERT_TRUE(open_render);
+    ASSERT_TRUE(scroller_render);
+    scroller_render->SetScrollX(260.0f);
+
+    const SkRect button_bounds = open_render->GetViewportBoundingRect();
+    ASSERT_GT(button_bounds.width(), 0.0f);
+    ASSERT_GT(button_bounds.height(), 0.0f);
+    const float hit_x = button_bounds.centerX();
+    const float hit_y = button_bounds.centerY();
+
+    HitTestController hit_test_controller;
+    auto hit_result = hit_test_controller.HitTest(root_render, hit_x, hit_y);
+    ASSERT_TRUE(hit_result.IsValid());
+    ASSERT_TRUE(hit_result.element);
+    EXPECT_EQ(hit_result.element->GetAttribute("id"), "open")
+        << "hit=(" << hit_x << "," << hit_y << ")"
+        << " open=" << button_bounds.x() << "," << button_bounds.y() << " "
+        << button_bounds.width() << "x" << button_bounds.height()
+        << " scroller_scroll_x=" << scroller_render->GetScrollX();
+
+    WindowConfig config;
+    config.width = 960;
+    config.height = 700;
+    config.hidden = true;
+    config.headless = true;
+    config.backend = RenderBackend::CPU;
+    auto window = std::make_shared<Window>(config);
+    MouseEventDispatcher dispatcher;
+    const float display_scale = window->GetDisplayScale();
+
+    SDL_Event motion{};
+    motion.type = SDL_EVENT_MOUSE_MOTION;
+    motion.motion.windowID = 1;
+    motion.motion.x = hit_x * display_scale;
+    motion.motion.y = hit_y * display_scale;
+    EXPECT_TRUE(dispatcher.HandleMouseEvent(motion, window, document, root_render));
+
+    SDL_Event down{};
+    down.type = SDL_EVENT_MOUSE_BUTTON_DOWN;
+    down.button.windowID = 1;
+    down.button.button = SDL_BUTTON_LEFT;
+    down.button.x = hit_x * display_scale;
+    down.button.y = hit_y * display_scale;
+    EXPECT_TRUE(dispatcher.HandleMouseEvent(down, window, document, root_render));
+
+    SDL_Event up{};
+    up.type = SDL_EVENT_MOUSE_BUTTON_UP;
+    up.button.windowID = 1;
+    up.button.button = SDL_BUTTON_LEFT;
+    up.button.x = hit_x * display_scale;
+    up.button.y = hit_y * display_scale;
+    EXPECT_TRUE(dispatcher.HandleMouseEvent(up, window, document, root_render));
+
+    EXPECT_TRUE(open_button->HasPseudoClass("hover"));
+    EXPECT_EQ(mouseover_count, 1);
+    EXPECT_EQ(mousedown_count, 1);
+    EXPECT_EQ(mouseup_count, 1);
+    EXPECT_EQ(click_count, 1);
 }
 
 TEST(WheelEventDispatcherTest, FixedModalConsumesWheelOutsideScrollableArea) {

@@ -257,14 +257,15 @@ void RenderFlex::LayoutAsFlex(float parent_width, float parent_height) {
             float extra = free_space * (item.flex_grow / total_flex_grow);
             float new_main = item.base_main_size + extra;
             auto& child = children_[item.index];
-            // 告诉子元素它被 flex container 分配了固定的主轴尺寸
-            child->SetFlexTargetMainSize(new_main);
             if (is_row) {
                 child->Layout(new_main, content_height > 0 ? content_height : 0);
             } else {
+                // flex_target_main_size_ is consumed as height by flex children, so only
+                // set it when this container's main axis maps to the child's height.
+                child->SetFlexTargetMainSize(new_main);
                 child->Layout(content_width, new_main);
+                child->SetFlexTargetMainSize(-1.0f);
             }
-            child->SetFlexTargetMainSize(-1.0f);  // 重置，避免污染后续布局
         }
         // 重新计算 total_main_size 和 free_space
         total_main_size = 0;
@@ -283,13 +284,13 @@ void RenderFlex::LayoutAsFlex(float parent_width, float parent_height) {
             float new_main = std::max(0.0f, item.base_main_size - shrink_amount);
             if (new_main != item.base_main_size) {
                 auto& child = children_[item.index];
-                child->SetFlexTargetMainSize(new_main);
                 if (is_row) {
                     child->Layout(new_main, content_height > 0 ? content_height : 0);
                 } else {
+                    child->SetFlexTargetMainSize(new_main);
                     child->Layout(content_width, new_main);
+                    child->SetFlexTargetMainSize(-1.0f);
                 }
-                child->SetFlexTargetMainSize(-1.0f);
             }
         }
         // 重新计算 total_main_size 和 free_space

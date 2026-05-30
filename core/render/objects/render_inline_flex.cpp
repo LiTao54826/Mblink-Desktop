@@ -483,13 +483,13 @@ void RenderInlineFlex::LayoutAsFlex(float parent_width, float parent_height) {
             float extra = free_space * (item.flex_grow / total_flex_grow);
             float new_main = item.base_main_size + extra;
             auto& child = children_[item.index];
-            child->SetFlexTargetMainSize(new_main);
             if (is_row) {
                 child->Layout(new_main, content_height > 0 ? content_height : 0);
             } else {
+                child->SetFlexTargetMainSize(new_main);
                 child->Layout(content_width, new_main);
+                child->SetFlexTargetMainSize(-1.0f);
             }
-            child->SetFlexTargetMainSize(-1.0f);
         }
         total_main_size = 0;
         for (auto& item : flex_children) {
@@ -506,13 +506,13 @@ void RenderInlineFlex::LayoutAsFlex(float parent_width, float parent_height) {
             float new_main = std::max(0.0f, item.base_main_size - shrink_amount);
             if (new_main != item.base_main_size) {
                 auto& child = children_[item.index];
-                child->SetFlexTargetMainSize(new_main);
                 if (is_row) {
                     child->Layout(new_main, content_height > 0 ? content_height : 0);
                 } else {
+                    child->SetFlexTargetMainSize(new_main);
                     child->Layout(content_width, new_main);
+                    child->SetFlexTargetMainSize(-1.0f);
                 }
-                child->SetFlexTargetMainSize(-1.0f);
             }
         }
         total_main_size = 0;

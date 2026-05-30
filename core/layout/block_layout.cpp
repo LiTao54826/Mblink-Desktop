@@ -100,8 +100,11 @@ LayoutOutput ComputeBlockLayout(
             std::optional<float>(f32_max(*styled_based_known_dimensions.height, padding_border_size.height));
     }
     
-    // Short-circuit if both dimensions known and only computing size
-    if (inputs.sizing_mode == SizingMode::ContentSize) {
+    // Short-circuit only for pure size measurement. A PerformLayout call with
+    // ContentSize can still be the final pass for out-of-flow children with
+    // known dimensions, so descendants must be laid out.
+    if (inputs.run_mode == RunMode::ComputeSize &&
+        inputs.sizing_mode == SizingMode::ContentSize) {
         if (styled_based_known_dimensions.width.has_value() &&
             styled_based_known_dimensions.height.has_value()) {
             return LayoutOutput::FromOuterSize(Size<float>{
@@ -875,7 +878,7 @@ Size<float> PerformAbsoluteLayoutOnAbsoluteChildren(
                 AvailableSpace::Definite(containing_block_size.width),
                 AvailableSpace::Definite(containing_block_size.height)
             },
-            SizingMode::ContentSize,
+            SizingMode::InherentSize,
             LineBoolFalse()
         );
 

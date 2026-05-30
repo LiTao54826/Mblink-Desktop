@@ -180,6 +180,16 @@ void PaintStickyTableCells(
     }
 }
 
+void MarkSubtreeNeedsLayout(const std::shared_ptr<RenderObject>& object) {
+    if (!object) {
+        return;
+    }
+    object->MarkNeedsLayout(false);
+    for (const auto& child : object->GetChildren()) {
+        MarkSubtreeNeedsLayout(child);
+    }
+}
+
 }  // namespace
 
 // ========== RenderTable 实现 ==========
@@ -327,6 +337,7 @@ void RenderTable::CalculateColumnWidths(float available_width) {
                 auto& child_layout = cell_child->GetLayoutInfo();
                 content_min_width = std::max(content_min_width, child_layout.width);
                 content_preferred_width = std::max(content_preferred_width, child_layout.width);
+                MarkSubtreeNeedsLayout(cell_child);
             }
 
             if (cell_style.width.unit == CSSUnit::PX) {
@@ -590,6 +601,10 @@ void RenderTable::Layout(float parent_width, float parent_height) {
 
     CollectColumnStyles();
 
+    const float min_width = style.min_width.IsZero()
+        ? 0.0f
+        : style.min_width.ToPx(parent_width, style.font_size);
+
     float width;
     if (has_explicit_width) {
         if (style.width.unit == CSSUnit::PX) {
@@ -597,9 +612,10 @@ void RenderTable::Layout(float parent_width, float parent_height) {
         } else {
             width = style.width.value / 100.0f * parent_width;
         }
+        width = std::max(width, min_width);
         CalculateColumnWidths(width);
     } else {
-        CalculateColumnWidths(parent_width);
+        CalculateColumnWidths(std::max(parent_width, min_width));
 
         float total_column_width = 0;
         for (float col_w : column_widths_) {
@@ -610,6 +626,7 @@ void RenderTable::Layout(float parent_width, float parent_height) {
         float total_spacing = is_collapse ? 0 : (border_spacing * (num_columns + 1));
 
         width = total_column_width + total_spacing + padding_left + padding_right + effective_border * 2;
+        width = std::max(width, min_width);
     }
 
     float current_y = padding_top + effective_border + (is_collapse ? 0 : border_spacing);
@@ -828,9 +845,6 @@ void RenderTable::Layout(float parent_width, float parent_height) {
 
     float height = current_y + padding_bottom + effective_border;
 
-    if (!style.min_width.IsZero()) {
-        width = std::max(width, style.min_width.ToPx(parent_width, style.font_size));
-    }
     if (style.max_width.unit != CSSUnit::NONE) {
         width = std::min(width, style.max_width.ToPx(parent_width, style.font_size));
     }

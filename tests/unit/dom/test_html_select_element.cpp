@@ -3,6 +3,8 @@
 #include "test_utils/mock_objects.h"
 #include "dom/elements/html_select_element.h"
 #include "dom/elements/html_option_element.h"
+#include "render/css/style_resolver.h"
+#include "render/objects/render_object.h"
 
 namespace mbink {
 namespace test {
@@ -104,6 +106,35 @@ TEST_F(HTMLSelectElementTest, UserSelectionHelpersTriggerChange) {
     select->SelectHoveredOption();
     EXPECT_EQ(select->GetValue(), "a");
     EXPECT_EQ(listener.GetCallCount(), 2);
+}
+
+TEST_F(HTMLSelectElementTest, SelectionChangeMarksRenderObjectForPaint) {
+    auto select = std::dynamic_pointer_cast<HTMLSelectElement>(CreateElement("select"));
+    auto optionA = std::dynamic_pointer_cast<HTMLOptionElement>(CreateElement("option"));
+    auto optionB = std::dynamic_pointer_cast<HTMLOptionElement>(CreateElement("option"));
+    optionA->SetAttribute("value", "a");
+    optionB->SetAttribute("value", "b");
+    select->AppendChild(optionA);
+    select->AppendChild(optionB);
+
+    auto body = doc_->GetBody();
+    ASSERT_NE(body, nullptr);
+    body->AppendChild(select);
+
+    RenderTreeBuilder builder;
+    builder.SetDocument(doc_.get());
+    auto render_root = builder.BuildRenderTree(body);
+    ASSERT_NE(render_root, nullptr);
+    auto select_render = select->GetRenderObject();
+    ASSERT_NE(select_render, nullptr);
+
+    select_render->ClearNeedsPaint();
+    EXPECT_FALSE(select_render->NeedsPaint());
+
+    select->SetValue("b");
+
+    EXPECT_TRUE(select_render->NeedsPaint());
+    EXPECT_EQ(select->GetValue(), "b");
 }
 
 TEST_F(HTMLSelectElementTest, PendingValueReappliedWhenOptionValueChanges) {

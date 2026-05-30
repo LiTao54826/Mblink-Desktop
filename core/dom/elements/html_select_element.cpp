@@ -6,6 +6,8 @@
 #include "html_select_element.h"
 #include "html_form_element.h"
 #include "../event.h"
+#include "core/render/objects/render_object.h"
+#include "core/window/repaint_reason.h"
 #include <algorithm>
 
 namespace mbink {
@@ -177,7 +179,12 @@ void HTMLSelectElement::SetSelectedIndex(long index, bool trigger_events) {
 
     suppress_change_event_ = previous_suppress;
 
-    if (trigger_events && !previous_suppress && previous_index != GetSelectedIndex()) {
+    long current_index = GetSelectedIndex();
+    if (previous_index != current_index) {
+        RequestSelectionRepaint();
+    }
+
+    if (trigger_events && !previous_suppress && previous_index != current_index) {
         TriggerChangeEvent();
     }
 }
@@ -219,7 +226,12 @@ void HTMLSelectElement::SetValue(const std::string& value, bool trigger_events) 
     pending_value_ = matched ? std::string() : value;
     suppress_change_event_ = previous_suppress;
 
-    if (trigger_events && !previous_suppress && previous_index != GetSelectedIndex()) {
+    long current_index = GetSelectedIndex();
+    if (previous_index != current_index) {
+        RequestSelectionRepaint();
+    }
+
+    if (trigger_events && !previous_suppress && previous_index != current_index) {
         TriggerChangeEvent();
     }
 }
@@ -359,6 +371,14 @@ void HTMLSelectElement::TriggerChangeEvent() {
 
     // 触发事件
     DispatchEvent(event);
+}
+
+void HTMLSelectElement::RequestSelectionRepaint() {
+    if (auto render_object = GetRenderObject()) {
+        render_object->MarkNeedsPaint();
+        render_object->InvalidatePaintCache();
+    }
+    RequestRepaint(RepaintReason::DOMMutation);
 }
 
 void HTMLSelectElement::HandleClick() {
