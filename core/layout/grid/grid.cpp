@@ -431,6 +431,8 @@ LayoutOutput ComputeGridLayout(
     auto parent_size = inputs.parent_size;
     auto available_space = inputs.available_space;
     auto run_mode = inputs.run_mode;
+    const bool apply_layout_results =
+        run_mode == RunMode::PerformLayout && inputs.sizing_mode != SizingMode::ContentSize;
 
     // 1. Compute "available grid space"
     // Read common properties from unified Style
@@ -870,13 +872,12 @@ LayoutOutput ComputeGridLayout(
             child_height_space
         };
 
-        auto child_output = tree.PerformChildLayout(
+        auto child_size = tree.MeasureChildSize(
             child_id,
             Size<std::optional<float>>{std::nullopt, std::nullopt},
             Size<std::optional<float>>{child_parent_width, child_parent_height},
             measure_space,
-            SizingMode::InherentSize,
-            Line<bool>{false, false}
+            SizingMode::InherentSize
         );
 
         bool needs_min_content_width = false;
@@ -893,7 +894,7 @@ LayoutOutput ComputeGridLayout(
             needs_max_content_height = needs_max_content_height || TrackNeedsMaxContentProbe(rows[t]);
         }
 
-        float min_content_width = child_output.size.width;
+        float min_content_width = child_size.width;
         if (needs_min_content_width) {
             min_content_width = tree.MeasureChildSize(
                 child_id,
@@ -904,7 +905,7 @@ LayoutOutput ComputeGridLayout(
             ).width;
         }
 
-        float max_content_width = child_output.size.width;
+        float max_content_width = child_size.width;
         if (needs_max_content_width) {
             max_content_width = tree.MeasureChildSize(
                 child_id,
@@ -915,7 +916,7 @@ LayoutOutput ComputeGridLayout(
             ).width;
         }
 
-        float min_content_height = child_output.size.height;
+        float min_content_height = child_size.height;
         if (needs_min_content_height) {
             min_content_height = tree.MeasureChildSize(
                 child_id,
@@ -926,7 +927,7 @@ LayoutOutput ComputeGridLayout(
             ).height;
         }
 
-        float max_content_height = child_output.size.height;
+        float max_content_height = child_size.height;
         if (needs_max_content_height) {
             max_content_height = tree.MeasureChildSize(
                 child_id,
@@ -943,8 +944,8 @@ LayoutOutput ComputeGridLayout(
             row_idx,
             col_span,
             row_span,
-            child_output.size.width,
-            child_output.size.height,
+            child_size.width,
+            child_size.height,
             min_content_width,
             max_content_width,
             min_content_height,
@@ -1156,176 +1157,178 @@ LayoutOutput ComputeGridLayout(
         return output;
     }
 
-    // Second pass: position children in their cells
-    for (const auto& placement : placements) {
-        size_t col_track_start = placement.col_idx * 2;
-        size_t row_track_start = placement.row_idx * 2;
-        size_t col_track_end = (placement.col_idx + placement.col_span - 1) * 2;
-        size_t row_track_end = (placement.row_idx + placement.row_span - 1) * 2;
+    // Second pass: position children in their cells. Content-size probes are
+    // intermediate measurements; they must not commit child layouts.
+    if (apply_layout_results) {
+        for (const auto& placement : placements) {
+            size_t col_track_start = placement.col_idx * 2;
+            size_t row_track_start = placement.row_idx * 2;
+            size_t col_track_end = (placement.col_idx + placement.col_span - 1) * 2;
+            size_t row_track_end = (placement.row_idx + placement.row_span - 1) * 2;
 
-        float cell_x = 0.0f;
-        float cell_y = 0.0f;
-        float cell_width = 0.0f;
-        float cell_height = 0.0f;
+            float cell_x = 0.0f;
+            float cell_y = 0.0f;
+            float cell_width = 0.0f;
+            float cell_height = 0.0f;
 
-        // Get position from first track
-        if (col_track_start < columns.size()) {
-            cell_x = columns[col_track_start].offset;
-        }
-        if (row_track_start < rows.size()) {
-            cell_y = rows[row_track_start].offset;
-        }
-
-        // Calculate width spanning multiple tracks
-        for (size_t t = col_track_start; t <= col_track_end && t < columns.size(); t++) {
-            if (columns[t].kind != GridTrackKind::Gutter) {
-                cell_width += columns[t].base_size;
-            } else if (t > col_track_start && t < col_track_end) {
-                cell_width += columns[t].base_size;
+            // Get position from first track
+            if (col_track_start < columns.size()) {
+                cell_x = columns[col_track_start].offset;
             }
-        }
-
-        // Calculate height spanning multiple tracks
-        for (size_t t = row_track_start; t <= row_track_end && t < rows.size(); t++) {
-            if (rows[t].kind != GridTrackKind::Gutter) {
-                cell_height += rows[t].base_size;
-            } else if (t > row_track_start && t < row_track_end) {
-                cell_height += rows[t].base_size;
+            if (row_track_start < rows.size()) {
+                cell_y = rows[row_track_start].offset;
             }
-        }
 
-        // Get child's unified Style for common properties (align-self, justify-self, size)
-        const auto& child_style = tree.GetChildStyle(placement.child_id);
+            // Calculate width spanning multiple tracks
+            for (size_t t = col_track_start; t <= col_track_end && t < columns.size(); t++) {
+                if (columns[t].kind != GridTrackKind::Gutter) {
+                    cell_width += columns[t].base_size;
+                } else if (t > col_track_start && t < col_track_end) {
+                    cell_width += columns[t].base_size;
+                }
+            }
 
-        const Size<std::optional<float>> cell_size{
-            std::optional<float>(cell_width),
-            std::optional<float>(cell_height)
-        };
-        const auto resolved_child_size = MaybeResolve(child_style.size, cell_size);
-        const auto resolved_child_min_size = MaybeResolve(child_style.min_size, cell_size);
-        const auto resolved_child_max_size = MaybeResolve(child_style.max_size, cell_size);
-        const auto clamped_child_size = MaybeClamp(
-            resolved_child_size,
-            resolved_child_min_size,
-            resolved_child_max_size
-        );
+            // Calculate height spanning multiple tracks
+            for (size_t t = row_track_start; t <= row_track_end && t < rows.size(); t++) {
+                if (rows[t].kind != GridTrackKind::Gutter) {
+                    cell_height += rows[t].base_size;
+                } else if (t > row_track_start && t < row_track_end) {
+                    cell_height += rows[t].base_size;
+                }
+            }
 
-        // Determine final size and position based on alignment. Explicit
-        // percentage sizes on grid items resolve against the final grid area,
-        // not the earlier intrinsic measurement pass.
-        float final_width = clamped_child_size.width.value_or(placement.measured_width);
-        float final_height = clamped_child_size.height.value_or(placement.measured_height);
-        float offset_x = 0.0f;
-        float offset_y = 0.0f;
+            // Get child's unified Style for common properties (align-self, justify-self, size)
+            const auto& child_style = tree.GetChildStyle(placement.child_id);
 
-        // Resolve justify-items (horizontal alignment within cell)
-        // Child's justify-self overrides container's justify-items
-        // Read from unified Style for alignment properties
-        auto justify = child_style.justify_self.value_or(
-            style.justify_items.value_or(AlignItems::Stretch));
+            const Size<std::optional<float>> cell_size{
+                std::optional<float>(cell_width),
+                std::optional<float>(cell_height)
+            };
+            const auto resolved_child_size = MaybeResolve(child_style.size, cell_size);
+            const auto resolved_child_min_size = MaybeResolve(child_style.min_size, cell_size);
+            const auto resolved_child_max_size = MaybeResolve(child_style.max_size, cell_size);
+            const auto clamped_child_size = MaybeClamp(
+                resolved_child_size,
+                resolved_child_min_size,
+                resolved_child_max_size
+            );
 
-        // Check if child has explicit width - if so, don't stretch even if justify is Stretch
-        // Read from unified Style for size property
-        bool has_explicit_width = !child_style.size.width.IsAuto();
+            // Determine final size and position based on alignment. Explicit
+            // percentage sizes on grid items resolve against the final grid area,
+            // not the earlier intrinsic measurement pass.
+            float final_width = clamped_child_size.width.value_or(placement.measured_width);
+            float final_height = clamped_child_size.height.value_or(placement.measured_height);
+            float offset_x = 0.0f;
+            float offset_y = 0.0f;
 
-        if (justify == AlignItems::Stretch && !has_explicit_width) {
-            final_width = cell_width;
-        } else {
-            // For non-stretch, or when child has explicit width, we need to measure with intrinsic sizing
-            // to get the child's natural width (respecting its own width property)
-            // Pass cell_width as parent size so percentage widths can resolve
-            auto intrinsic_output = tree.PerformChildLayout(
+            // Resolve justify-items (horizontal alignment within cell)
+            // Child's justify-self overrides container's justify-items
+            // Read from unified Style for alignment properties
+            auto justify = child_style.justify_self.value_or(
+                style.justify_items.value_or(AlignItems::Stretch));
+
+            // Check if child has explicit width - if so, don't stretch even if justify is Stretch
+            // Read from unified Style for size property
+            bool has_explicit_width = !child_style.size.width.IsAuto();
+
+            if (justify == AlignItems::Stretch && !has_explicit_width) {
+                final_width = cell_width;
+            } else {
+                // For non-stretch, or when child has explicit width, we need to measure with intrinsic sizing
+                // to get the child's natural width (respecting its own width property)
+                // Pass cell_width as parent size so percentage widths can resolve
+                auto intrinsic_size = tree.MeasureChildSize(
+                    placement.child_id,
+                    Size<std::optional<float>>{std::nullopt, std::nullopt},
+                    Size<std::optional<float>>{cell_width, cell_height},
+                    Size<AvailableSpace>{AvailableSpace::Definite(cell_width), AvailableSpace::MaxContent()},
+                    SizingMode::InherentSize
+                );
+                final_width = intrinsic_size.width;
+
+                float free_space = cell_width - final_width;
+                if (free_space > 0) {
+                    switch (justify) {
+                        case AlignItems::Center:
+                            offset_x = free_space / 2.0f;
+                            break;
+                        case AlignItems::End:
+                        case AlignItems::FlexEnd:
+                            offset_x = free_space;
+                            break;
+                        case AlignItems::Start:
+                        case AlignItems::FlexStart:
+                        case AlignItems::Stretch:  // Stretch with explicit width acts like Start
+                        default:
+                            offset_x = 0.0f;
+                            break;
+                    }
+                }
+            }
+            final_width = Clamp(
+                Size<float>{final_width, final_height},
+                resolved_child_min_size,
+                resolved_child_max_size
+            ).width;
+
+            // Resolve align-items (vertical alignment within cell)
+            // Child's align-self overrides container's align-items
+            // Read from unified Style for alignment properties
+            auto align = child_style.align_self.value_or(
+                style.align_items.value_or(AlignItems::Stretch));
+
+            // Check if child has explicit height - if so, don't stretch even if align is Stretch
+            // Read from unified Style for size property
+            bool has_explicit_height = !child_style.size.height.IsAuto();
+
+            if (align == AlignItems::Stretch && !has_explicit_height) {
+                final_height = cell_height;
+            } else {
+                // For non-stretch, or when child has explicit height, use measured height
+                float free_space = cell_height - final_height;
+                if (free_space > 0) {
+                    switch (align) {
+                        case AlignItems::Center:
+                            offset_y = free_space / 2.0f;
+                            break;
+                        case AlignItems::End:
+                        case AlignItems::FlexEnd:
+                            offset_y = free_space;
+                            break;
+                        case AlignItems::Start:
+                        case AlignItems::FlexStart:
+                        case AlignItems::Stretch:  // Stretch with explicit height acts like Start
+                        default:
+                            offset_y = 0.0f;
+                            break;
+                    }
+                }
+            }
+            final_height = Clamp(
+                Size<float>{final_width, final_height},
+                resolved_child_min_size,
+                resolved_child_max_size
+            ).height;
+
+            // Perform final layout with known dimensions so child containers
+            // (like flex containers) can properly align their children
+            tree.PerformChildLayout(
                 placement.child_id,
-                Size<std::optional<float>>{std::nullopt, std::nullopt},
+                Size<std::optional<float>>{final_width, final_height},
                 Size<std::optional<float>>{cell_width, cell_height},
-                Size<AvailableSpace>{AvailableSpace::Definite(cell_width), AvailableSpace::MaxContent()},
+                Size<AvailableSpace>{AvailableSpace::Definite(final_width), AvailableSpace::Definite(final_height)},
                 SizingMode::InherentSize,
                 Line<bool>{false, false}
             );
-            final_width = intrinsic_output.size.width;
 
-            float free_space = cell_width - final_width;
-            if (free_space > 0) {
-                switch (justify) {
-                    case AlignItems::Center:
-                        offset_x = free_space / 2.0f;
-                        break;
-                    case AlignItems::End:
-                    case AlignItems::FlexEnd:
-                        offset_x = free_space;
-                        break;
-                    case AlignItems::Start:
-                    case AlignItems::FlexStart:
-                    case AlignItems::Stretch:  // Stretch with explicit width acts like Start
-                    default:
-                        offset_x = 0.0f;
-                        break;
-                }
-            }
+            tree.SetUnroundedLayout(placement.child_id, Layout{
+                0,  // order
+                cell_x + offset_x,
+                cell_y + offset_y,
+                final_width,
+                final_height
+            });
         }
-        final_width = Clamp(
-            Size<float>{final_width, final_height},
-            resolved_child_min_size,
-            resolved_child_max_size
-        ).width;
-
-        // Resolve align-items (vertical alignment within cell)
-        // Child's align-self overrides container's align-items
-        // Read from unified Style for alignment properties
-        auto align = child_style.align_self.value_or(
-            style.align_items.value_or(AlignItems::Stretch));
-
-        // Check if child has explicit height - if so, don't stretch even if align is Stretch
-        // Read from unified Style for size property
-        bool has_explicit_height = !child_style.size.height.IsAuto();
-
-        if (align == AlignItems::Stretch && !has_explicit_height) {
-            final_height = cell_height;
-        } else {
-            // For non-stretch, or when child has explicit height, use measured height
-            float free_space = cell_height - final_height;
-            if (free_space > 0) {
-                switch (align) {
-                    case AlignItems::Center:
-                        offset_y = free_space / 2.0f;
-                        break;
-                    case AlignItems::End:
-                    case AlignItems::FlexEnd:
-                        offset_y = free_space;
-                        break;
-                    case AlignItems::Start:
-                    case AlignItems::FlexStart:
-                    case AlignItems::Stretch:  // Stretch with explicit height acts like Start
-                    default:
-                        offset_y = 0.0f;
-                        break;
-                }
-            }
-        }
-        final_height = Clamp(
-            Size<float>{final_width, final_height},
-            resolved_child_min_size,
-            resolved_child_max_size
-        ).height;
-
-        // Perform final layout with known dimensions so child containers
-        // (like flex containers) can properly align their children
-        tree.PerformChildLayout(
-            placement.child_id,
-            Size<std::optional<float>>{final_width, final_height},
-            Size<std::optional<float>>{cell_width, cell_height},
-            Size<AvailableSpace>{AvailableSpace::Definite(final_width), AvailableSpace::Definite(final_height)},
-            SizingMode::InherentSize,
-            Line<bool>{false, false}
-        );
-
-        tree.SetUnroundedLayout(placement.child_id, Layout{
-            0,  // order
-            cell_x + offset_x,
-            cell_y + offset_y,
-            final_width,
-            final_height
-        });
     }
 
     Size<float> content_size{col_sum, row_sum};

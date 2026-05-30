@@ -212,6 +212,9 @@ public:
     }
 
     void SetUnroundedLayout(NodeId node, const Layout& layout) override {
+        set_unrounded_layout_calls++;
+        last_set_layout_node = node;
+        last_set_layout = layout;
         layouts_[node] = layout;
     }
 
@@ -277,10 +280,13 @@ public:
 
     int perform_child_layout_calls = 0;
     int measure_child_size_calls = 0;
+    int set_unrounded_layout_calls = 0;
     int min_content_width_calls = 0;
     int max_content_width_calls = 0;
     int min_content_height_calls = 0;
     int max_content_height_calls = 0;
+    NodeId last_set_layout_node = INVALID_NODE_ID;
+    Layout last_set_layout;
 
 private:
     static constexpr NodeId root_id_ = 1;
@@ -322,10 +328,61 @@ TEST_F(GridLayoutTest, FixedMinmaxFlexTracksSkipIntrinsicProbeLayouts) {
 
     ComputeGridLayout(tree, 1, input);
 
-    EXPECT_EQ(tree.measure_child_size_calls, 0);
+    EXPECT_EQ(tree.measure_child_size_calls, 1);
     EXPECT_EQ(tree.min_content_width_calls, 0);
     EXPECT_EQ(tree.max_content_width_calls, 0);
     EXPECT_EQ(tree.min_content_height_calls, 0);
+}
+
+TEST_F(GridLayoutTest, PerformLayoutCommitsGridItemLayout) {
+    GridContainerStyle grid_style;
+    grid_style.grid_template_columns.push_back(TrackSizingFunction::Single(
+        NonRepeatedTrackSizingFunction::Flex(1.0f)
+    ));
+
+    CountingGridTree tree(grid_style);
+    LayoutInput input;
+    input.run_mode = RunMode::PerformLayout;
+    input.sizing_mode = SizingMode::InherentSize;
+    input.known_dimensions = Size<std::optional<float>>{260.0f, 100.0f};
+    input.parent_size = Size<std::optional<float>>{260.0f, 100.0f};
+    input.available_space = Size<AvailableSpace>{
+        AvailableSpace::Definite(260.0f),
+        AvailableSpace::Definite(100.0f)
+    };
+
+    ComputeGridLayout(tree, 1, input);
+
+    EXPECT_EQ(tree.measure_child_size_calls, 1);
+    EXPECT_EQ(tree.perform_child_layout_calls, 1);
+    EXPECT_EQ(tree.set_unrounded_layout_calls, 1);
+    EXPECT_EQ(tree.last_set_layout_node, 2);
+    EXPECT_FLOAT_EQ(tree.last_set_layout.size.width, 260.0f);
+}
+
+TEST_F(GridLayoutTest, ContentSizeProbeDoesNotCommitGridItemLayout) {
+    GridContainerStyle grid_style;
+    grid_style.grid_template_columns.push_back(TrackSizingFunction::Single(
+        NonRepeatedTrackSizingFunction::Flex(1.0f)
+    ));
+
+    CountingGridTree tree(grid_style);
+    LayoutInput input;
+    input.run_mode = RunMode::PerformLayout;
+    input.sizing_mode = SizingMode::ContentSize;
+    input.known_dimensions = Size<std::optional<float>>{260.0f, 100.0f};
+    input.parent_size = Size<std::optional<float>>{260.0f, 100.0f};
+    input.available_space = Size<AvailableSpace>{
+        AvailableSpace::Definite(260.0f),
+        AvailableSpace::Definite(100.0f)
+    };
+
+    ComputeGridLayout(tree, 1, input);
+
+    EXPECT_EQ(tree.measure_child_size_calls, 1);
+    EXPECT_EQ(tree.perform_child_layout_calls, 0);
+    EXPECT_EQ(tree.set_unrounded_layout_calls, 0);
+    EXPECT_EQ(tree.last_set_layout_node, INVALID_NODE_ID);
 }
 
 TEST_F(GridLayoutTest, NonRepeatedTrackSizingFunctionMinMax) {
