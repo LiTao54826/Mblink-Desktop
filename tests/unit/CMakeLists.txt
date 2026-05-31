@@ -25,6 +25,7 @@ set(EVENT_TEST_SOURCES
 
 set(EDITING_TEST_SOURCES
     editing/test_table_selection_copy.cpp
+    editing/test_input_horizontal_scroll.cpp
 )
 
 # 布局测试

@@ -1824,136 +1824,19 @@ void RenderBlock::PaintInputElement(SkCanvas* canvas, HTMLInputElement* input, c
         type == InputType::Email || type == InputType::Tel ||
         type == InputType::Url || type == InputType::Search ||
         type == InputType::Number) {
+        FormElementPaintParams params;
+        params.font_family = computed_style_.font_family;
+        params.font_size = computed_style_.font_size;
+        params.text_color = computed_style_.color;
+        auto element = std::static_pointer_cast<Element>(GetNode());
+        params.has_focus = element && element->HasPseudoClass("focus");
 
-        std::string value = input->GetValue();
-        std::string display_text = value;
-
-        // 如果是密码类型，显示为星号
-        if (type == InputType::Password && !value.empty()) {
-            display_text = std::string(value.length(), '*');
-        }
-
-        // 如果值为空，显示placeholder
-        if (value.empty()) {
-            display_text = input->GetPlaceholder();
-        }
-
-        if (!display_text.empty()) {
-            // 创建字体
-            FontDescriptor desc;
-            desc.family = computed_style_.font_family;
-            desc.size = computed_style_.font_size;
-            desc.weight = FontWeight::NORMAL;
-            desc.style = FontStyle::NORMAL;
-
-            SkFont font = FontManager::GetInstance().LoadFont(desc);
-
-            // 获取字体度量信息
-            SkFontMetrics font_metrics;
-            font.getMetrics(&font_metrics);
-
-            // 计算文本位置（左对齐，垂直居中）
-            float text_x = box.content_x;
-            float text_y = box.content_y + (box.content_height - font_metrics.fDescent + font_metrics.fAscent) / 2 - font_metrics.fAscent;
-
-            // 创建文本渲染器
-            TextRenderer text_renderer(canvas);
-
-            // 设置文本颜色
-            mbink::Paint text_paint;
-            if (value.empty()) {
-                // placeholder使用灰色
-                text_paint.SetColor(SkColorSetRGB(150, 150, 150));
-            } else if (!computed_style_.color.empty()) {
-                text_paint.SetColor(mbink::Color::Parse(computed_style_.color));
-            } else {
-                text_paint.SetColor(SK_ColorBLACK);
-            }
-
-            // 绘制文本
-            text_renderer.DrawText(display_text, text_x, text_y, font, text_paint);
-
-            // 如果有焦点，绘制选中高亮和光标
-            auto element = std::static_pointer_cast<Element>(GetNode());
-            if (element && element->HasPseudoClass("focus")) {
-                int sel_start = input->GetSelectionStart();
-                int sel_end = input->GetSelectionEnd();
-
-                // 绘制选中区域高亮
-                if (sel_start != sel_end) {
-                    int start_char = std::min(sel_start, sel_end);
-                    int end_char = std::max(sel_start, sel_end);
-
-                    // 使用 UTF-8 工具计算字节位置
-                    size_t start_byte = utf8::CharPosToBytePos(value, start_char);
-                    size_t end_byte = utf8::CharPosToBytePos(value, end_char);
-
-                    std::string text_before_sel = value.substr(0, start_byte);
-                    std::string selected_text = value.substr(start_byte, end_byte - start_byte);
-
-                    // 如果是密码类型，使用星号
-                    if (type == InputType::Password) {
-                        text_before_sel = std::string(start_char, '*');
-                        selected_text = std::string(end_char - start_char, '*');
-                    }
-
-                    float sel_start_x = text_x;
-                    if (start_char > 0) {
-                        sel_start_x += font.measureText(text_before_sel.c_str(), text_before_sel.length(), SkTextEncoding::kUTF8);
-                    }
-                    float sel_width = font.measureText(selected_text.c_str(), selected_text.length(), SkTextEncoding::kUTF8);
-
-                    // 绘制选中背景
-                    SkPaint sel_paint;
-                    sel_paint.setColor(SkColorSetARGB(128, 51, 153, 255));  // 半透明蓝色
-                    sel_paint.setStyle(SkPaint::kFill_Style);
-
-                    canvas->drawRect(SkRect::MakeXYWH(sel_start_x, box.content_y, sel_width, box.content_height), sel_paint);
-                }
-
-                // 使用 RenderObject 的全局光标状态，避免重复的系统时间调用
-                // 光标闪烁由 EventLoop 统一管理
-                bool cursor_visible = RenderObject::IsCursorVisible();
-
-                if (cursor_visible) {
-                    // 计算光标位置 - 使用 UTF-8 字符位置转换为字节位置
-                    int cursor_pos = sel_end;  // 使用 selection_end 作为光标位置
-                    size_t cursor_byte_pos = utf8::CharPosToBytePos(value, cursor_pos);
-                    std::string text_before_cursor = value.substr(0, cursor_byte_pos);
-
-                    // 如果是密码类型，使用星号计算宽度
-                    if (type == InputType::Password) {
-                        text_before_cursor = std::string(cursor_pos, '*');
-                    }
-
-                    // 测量光标前的文本宽度
-                    float cursor_x = text_x;
-                    if (cursor_pos > 0) {
-                        cursor_x += font.measureText(
-                            text_before_cursor.c_str(),
-                            text_before_cursor.length(),
-                            SkTextEncoding::kUTF8
-                        );
-                    }
-
-                    // 计算光标的Y坐标（基于字体度量，垂直居中）
-                    float font_height = font_metrics.fDescent - font_metrics.fAscent;
-                    float cursor_y_top = box.content_y + (box.content_height - font_height) / 2;
-                    float cursor_y_bottom = cursor_y_top + font_height;
-
-                    // 绘制光标
-                    SkPaint cursor_paint;
-                    cursor_paint.setColor(SK_ColorBLACK);
-                    cursor_paint.setStrokeWidth(1.5f);
-                    cursor_paint.setAntiAlias(true);
-
-                    canvas->drawLine(cursor_x, cursor_y_top, cursor_x, cursor_y_bottom, cursor_paint);
-                }
-            }
-        }
+        FormElementPainter painter(canvas);
+        painter.PaintTextInput(input, box, params, type == InputType::Password);
+        return;
     }
-    // 处理checkbox和radio类型
-    else if (type == InputType::Checkbox || type == InputType::Radio) {
+
+    if (type == InputType::Checkbox || type == InputType::Radio) {
         bool checked = input->GetChecked();
         float cx = box.content_x + box.content_width / 2;
         float cy = box.content_y + box.content_height / 2;

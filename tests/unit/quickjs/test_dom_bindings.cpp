@@ -701,6 +701,24 @@ TEST_F(DOMBindingsTest, ScrollContainerExposesClientSizeForTableOverflow) {
               R"({"clientWidth":520,"clientHeight":260,"hasHorizontalOverflow":true,"tableOverflowsScroller":true})");
 }
 
+TEST_F(DOMBindingsTest, InputScrollLeftIsNotExposedAsPublicApi) {
+    auto result = runtime_->Eval(R"(
+        var input = document.createElement('input');
+        input.value = 'abcdefghijklmnopqrstuvwxyz';
+        input.scrollLeft = 40;
+        JSON.stringify({
+            inputScrollLeftType: typeof input.scrollLeft,
+            inputHasScrollLeft: 'scrollLeft' in input,
+            elementPrototypeHasScrollLeft:
+                Object.getOwnPropertyDescriptor(Object.getPrototypeOf(input), 'scrollLeft') !== undefined,
+            divScrollLeftType: typeof document.createElement('div').scrollLeft
+        });
+    )");
+
+    EXPECT_EQ(result,
+              R"({"inputScrollLeftType":"undefined","inputHasScrollLeft":false,"elementPrototypeHasScrollLeft":false,"divScrollLeftType":"number"})");
+}
+
 TEST_F(DOMBindingsTest, TableElementExposesRowsAndSectionCollections) {
     auto result = runtime_->Eval(R"(
         document.body.innerHTML =

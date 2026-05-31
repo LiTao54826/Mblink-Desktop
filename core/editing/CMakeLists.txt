@@ -5,6 +5,7 @@ set(EDITING_SOURCES
     selection_manager.cpp
     clipboard_manager.cpp
     editor_input_session.cpp
+    input_ime_geometry.cpp
     contenteditable_handler.cpp
     contenteditable_controller.cpp
     contenteditable_geometry.cpp
@@ -19,6 +20,7 @@ set(EDITING_SOURCES
 set(EDITING_HEADERS
     selection_manager.h
     editor_input_session.h
+    input_ime_geometry.h
     input_editing_controller.h
     textarea_edit_state.h
     textarea_editing_controller.h

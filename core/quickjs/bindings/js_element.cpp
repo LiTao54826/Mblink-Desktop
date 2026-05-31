@@ -98,6 +98,8 @@ static JSValue JSElement_get_event_property(JSContext* ctx, JSValueConst this_va
 static JSValue JSElement_set_event_property(JSContext* ctx, JSValueConst this_val, JSValue val, int magic);
 namespace {
 
+constexpr const char* kScrollLeftPropertyName = "scrollLeft";
+
 enum class TableRowInsertionTarget {
     Table,
     Section
@@ -146,6 +148,22 @@ bool IsDisabledFormControlForSyntheticClick(const std::shared_ptr<Element>& elem
     }
 
     return false;
+}
+
+bool IsInputElementObject(JSValueConst obj) {
+    auto* data = static_cast<JSElementData*>(JS_GetOpaque(obj, js_element_class_id));
+    return data && std::dynamic_pointer_cast<HTMLInputElement>(data->element);
+}
+
+bool IsScrollLeftAtom(JSContext* ctx, JSAtom atom) {
+    const char* name = JS_AtomToCString(ctx, atom);
+    if (!name) {
+        return false;
+    }
+
+    bool matches = std::string(name) == kScrollLeftPropertyName;
+    JS_FreeCString(ctx, name);
+    return matches;
 }
 
 bool IsTableSectionTag(const std::string& tag_name) {
@@ -2304,6 +2322,10 @@ static JSValue JSElement_get_scrollLeft(JSContext* ctx, JSValueConst this_val, i
     auto* data = static_cast<JSElementData*>(JS_GetOpaque(this_val, js_element_class_id));
     if (!data || !data->element) return JS_NewFloat64(ctx, 0);
 
+    if (std::dynamic_pointer_cast<HTMLInputElement>(data->element)) {
+        return JS_UNDEFINED;
+    }
+
     auto render_obj = data->element->GetRenderObject();
     if (!render_obj) return JS_NewFloat64(ctx, 0);
 
@@ -2316,6 +2338,10 @@ static JSValue JSElement_get_scrollLeft(JSContext* ctx, JSValueConst this_val, i
 static JSValue JSElement_set_scrollLeft(JSContext* ctx, JSValueConst this_val, JSValue val, int magic) {
     auto* data = static_cast<JSElementData*>(JS_GetOpaque(this_val, js_element_class_id));
     if (!data || !data->element) return JS_UNDEFINED;
+
+    if (std::dynamic_pointer_cast<HTMLInputElement>(data->element)) {
+        return JS_UNDEFINED;
+    }
 
     auto render_obj = data->element->GetRenderObject();
     if (!render_obj) return JS_UNDEFINED;
@@ -2625,7 +2651,8 @@ void DefineElementAccessor(JSContext* ctx,
                            JSValueConst obj,
                            const char* name,
                            JSValue (*getter)(JSContext*, JSValueConst, int),
-                           JSValue (*setter)(JSContext*, JSValueConst, JSValue, int) = nullptr) {
+                           JSValue (*setter)(JSContext*, JSValueConst, JSValue, int) = nullptr,
+                           int property_flags = JS_PROP_ENUMERABLE | JS_PROP_CONFIGURABLE) {
     JSAtom atom = JS_NewAtom(ctx, name);
     JSCFunctionType getter_type;
     getter_type.getter_magic = getter;
@@ -2635,8 +2662,21 @@ void DefineElementAccessor(JSContext* ctx,
                             JS_NewCFunction2(ctx, getter_type.generic, name, 0, JS_CFUNC_getter_magic, 0),
                             setter ? JS_NewCFunction2(ctx, setter_type.generic, name, 1, JS_CFUNC_setter_magic, 0)
                                    : JS_UNDEFINED,
-                            JS_PROP_ENUMERABLE | JS_PROP_CONFIGURABLE);
+                            property_flags);
     JS_FreeAtom(ctx, atom);
+}
+
+void AttachElementScrollBindings(JSContext* ctx, JSValueConst obj, const std::shared_ptr<Element>& element) {
+    if (!ctx || !element || std::dynamic_pointer_cast<HTMLInputElement>(element)) {
+        return;
+    }
+
+    DefineElementAccessor(ctx,
+                          obj,
+                          kScrollLeftPropertyName,
+                          JSElement_get_scrollLeft,
+                          JSElement_set_scrollLeft,
+                          JS_PROP_CONFIGURABLE);
 }
 
 void AttachTableElementBindings(JSContext* ctx, JSValueConst obj, const std::shared_ptr<Element>& element) {
@@ -2927,7 +2967,6 @@ static const JSCFunctionListEntry js_element_proto_funcs[] = {
     JS_CGETSET_MAGIC_DEF("parentElement", JSElement_get_parentElement, nullptr, 0),
     // 滚动属性
     JS_CGETSET_MAGIC_DEF("scrollTop", JSElement_get_scrollTop, JSElement_set_scrollTop, 0),
-    JS_CGETSET_MAGIC_DEF("scrollLeft", JSElement_get_scrollLeft, JSElement_set_scrollLeft, 0),
     JS_CGETSET_MAGIC_DEF("scrollWidth", JSElement_get_scrollWidth, nullptr, 0),
     JS_CGETSET_MAGIC_DEF("scrollHeight", JSElement_get_scrollHeight, nullptr, 0),
     JS_CGETSET_MAGIC_DEF("clientWidth", JSElement_get_clientWidth, nullptr, 0),
@@ -2995,12 +3034,46 @@ static const JSCFunctionListEntry js_element_proto_funcs[] = {
     JS_CFUNC_DEF("remove", 0, JSElement_remove),
 };
 
+static int JSElementDefineOwnProperty(JSContext* ctx,
+                                      JSValueConst this_obj,
+                                      JSAtom prop,
+                                      JSValueConst val,
+                                      JSValueConst getter,
+                                      JSValueConst setter,
+                                      int flags) {
+    (void)val;
+    (void)getter;
+    (void)setter;
+    (void)flags;
+    if (IsInputElementObject(this_obj) && IsScrollLeftAtom(ctx, prop)) {
+        return true;
+    }
+
+    return JS_DefineProperty(ctx,
+                             this_obj,
+                             prop,
+                             val,
+                             getter,
+                             setter,
+                             flags | JS_PROP_NO_EXOTIC);
+}
+
+static JSClassExoticMethods js_element_exotic_methods = {
+    /* get_own_property */ nullptr,
+    /* get_own_property_names */ nullptr,
+    /* delete_property */ nullptr,
+    /* define_own_property */ JSElementDefineOwnProperty,
+    /* has_property */ nullptr,
+    /* get_property */ nullptr,
+    /* set_property */ nullptr,
+};
+
 static JSClassDef js_element_class = {
     /* class_name */ "Element",
     /* finalizer */ JSElementFinalizer,
     /* gc_mark */ JSElementGCMark,
     /* call */ nullptr,
-    /* exotic */ nullptr,
+    /* exotic */ &js_element_exotic_methods,
 };
 
 // ========== 公共 API ==========
@@ -3343,6 +3416,7 @@ JSValue WrapElement(JSContext* ctx, std::shared_ptr<Element> element) {
             }, "prevMatch", 0));
     }
 
+    AttachElementScrollBindings(ctx, obj, element);
     AttachTableElementBindings(ctx, obj, element);
 
     return obj;

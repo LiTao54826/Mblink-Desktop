@@ -128,7 +128,8 @@ public:
                                      float local_x,
                                      Uint32 event_type,
                                      float font_size,
-                                     const std::string& font_family);
+                                     const std::string& font_family,
+                                     float visible_width = 0.0f);
 
     /**
      * @brief 处理 TextArea 元素的鼠标交互

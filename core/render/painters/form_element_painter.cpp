@@ -10,10 +10,14 @@
 #include "core/dom/elements/html_textarea_element.h"
 #include "core/dom/element.h"
 #include "core/render/input/input_paint_model.h"
+#include "core/render/input/input_text_viewport.h"
+#include "core/render/input/text_edit_metrics.h"
 #include "core/render/objects/render_object.h"
 #include "core/render/utils/color.h"
 #include "core/utils/utf8_utils.h"
 #include <algorithm>
+#include "include/core/SkPathEffect.h"
+#include "include/effects/SkDashPathEffect.h"
 
 namespace mbink {
 
@@ -165,8 +169,9 @@ void FormElementPainter::PaintTextInput(HTMLInputElement* input,
                                         const Box& box,
                                         const FormElementPaintParams& params,
                                         bool is_password) {
+    (void)is_password;
     InputPaintModel model = InputPaintModel::FromInputElement(input);
-    if (model.display_text.empty()) {
+    if (model.display_text.empty() && !params.has_focus) {
         return;
     }
 
@@ -175,20 +180,67 @@ void FormElementPainter::PaintTextInput(HTMLInputElement* input,
     SkFontMetrics font_metrics;
     font.getMetrics(&font_metrics);
 
-    float text_x = box.content_x;
+    const float spinner_width = input && input->GetInputType() == InputType::Number
+        ? input_text_viewport::kNumberSpinnerReservedWidth
+        : 0.0f;
+    auto viewport = input_text_viewport::Resolve({
+        &model,
+        &font,
+        box.content_width,
+        spinner_width,
+        input ? input->GetScrollLeft() : 0.0f,
+        input_text_viewport::ActiveCharPosition(model)
+    });
+    if (input) {
+        input->SetScrollLeft(viewport.scroll_left);
+    }
+
+    float text_x = input_text_viewport::TextOriginX(box.content_x, viewport);
     float text_y = box.content_y + (box.content_height - font_metrics.fDescent + font_metrics.fAscent) / 2 - font_metrics.fAscent;
 
-    PaintInputTextLayer(model, text_x, text_y, font, params);
+    canvas_->save();
+    canvas_->clipRect(SkRect::MakeXYWH(box.content_x,
+                                       box.content_y,
+                                       viewport.visible_width,
+                                       box.content_height));
+
+    if (!model.display_text.empty()) {
+        PaintInputTextLayer(model, text_x, text_y, font, params);
+    }
 
     if (!params.has_focus) {
+        canvas_->restore();
         return;
     }
 
     PaintInputSelectionLayer(model, text_x, box, font, is_password);
 
+    if (model.HasComposition() && !(model.is_password && !model.is_placeholder)) {
+        float comp_start_x = text_x + text_edit_metrics::MeasurePrefixWidth(model.visual_text,
+                                                                            model.composition_start,
+                                                                            font,
+                                                                            false);
+        float comp_end_x = text_x + text_edit_metrics::MeasurePrefixWidth(model.visual_text,
+                                                                          model.composition_end,
+                                                                          font,
+                                                                          false);
+        SkPaint comp_underline_paint;
+        comp_underline_paint.setColor(SkColorSetRGB(66, 133, 244));
+        comp_underline_paint.setStyle(SkPaint::kStroke_Style);
+        comp_underline_paint.setStrokeWidth(std::max(1.0f, font_metrics.fUnderlineThickness));
+        comp_underline_paint.setAntiAlias(true);
+        const SkScalar dash_intervals[] = {3.0f, 2.0f};
+        comp_underline_paint.setPathEffect(SkDashPathEffect::Make(dash_intervals, 2, 0));
+        float underline_y = std::min(box.content_y + box.content_height - 1.0f,
+                                     text_y + font_metrics.fDescent + 1.0f);
+        canvas_->drawLine(comp_start_x, underline_y, comp_end_x, underline_y, comp_underline_paint);
+    }
+
     if (IsCursorVisible()) {
         PaintInputCaretLayer(model, text_x, box, font, font_metrics, is_password);
     }
+
+    canvas_->restore();
 }
 
 void FormElementPainter::PaintInputTextLayer(const InputPaintModel& model,
@@ -209,13 +261,35 @@ void FormElementPainter::PaintInputSelectionLayer(const InputPaintModel& model,
                                                   const Box& box,
                                                   const SkFont& font,
                                                   bool is_password) {
+    (void)is_password;
     if (!model.HasSelection() || model.is_placeholder) {
         return;
     }
 
-    PaintSelectionHighlight(text_x, box, font, model.value,
-                            model.selection_start, model.selection_end,
-                            is_password);
+    int start_char = std::min(model.VisibleSelectionStart(), model.VisibleSelectionEnd());
+    int end_char = std::max(model.VisibleSelectionStart(), model.VisibleSelectionEnd());
+    if (start_char == end_char || model.visual_text.empty()) {
+        return;
+    }
+
+    const bool mask_as_password = model.is_password && !model.is_placeholder;
+    float sel_start_x = text_x + text_edit_metrics::MeasurePrefixWidth(model.visual_text,
+                                                                        start_char,
+                                                                        font,
+                                                                        mask_as_password);
+    float sel_width = text_edit_metrics::MeasurePrefixWidth(model.visual_text,
+                                                            end_char,
+                                                            font,
+                                                            mask_as_password) -
+                      text_edit_metrics::MeasurePrefixWidth(model.visual_text,
+                                                            start_char,
+                                                            font,
+                                                            mask_as_password);
+
+    SkPaint sel_paint;
+    sel_paint.setColor(kSelectionColor);
+    sel_paint.setStyle(SkPaint::kFill_Style);
+    canvas_->drawRect(SkRect::MakeXYWH(sel_start_x, box.content_y, sel_width, box.content_height), sel_paint);
 }
 
 void FormElementPainter::PaintInputCaretLayer(const InputPaintModel& model,
@@ -224,69 +298,16 @@ void FormElementPainter::PaintInputCaretLayer(const InputPaintModel& model,
                                               const SkFont& font,
                                               const SkFontMetrics& font_metrics,
                                               bool is_password) {
-    PaintCursor(text_x, box, font, font_metrics, model.value,
-                model.caret_position, is_password);
-}
-
-void FormElementPainter::PaintSelectionHighlight(float text_x,
-                                                 const Box& box,
-                                                 const SkFont& font,
-                                                 const std::string& value,
-                                                 int sel_start,
-                                                 int sel_end,
-                                                 bool is_password) {
-    int start_char = std::min(sel_start, sel_end);
-    int end_char = std::max(sel_start, sel_end);
-
-    // 使用 UTF-8 工具计算字节位置
-    size_t start_byte = utf8::CharPosToBytePos(value, start_char);
-    size_t end_byte = utf8::CharPosToBytePos(value, end_char);
-
-    std::string text_before_sel = value.substr(0, start_byte);
-    std::string selected_text = value.substr(start_byte, end_byte - start_byte);
-
-    // 如果是密码类型，使用星号
-    if (is_password) {
-        text_before_sel = std::string(start_char, '*');
-        selected_text = std::string(end_char - start_char, '*');
-    }
-
-    float sel_start_x = text_x + MeasureInputTextWidth(text_before_sel, font);
-    float sel_width = MeasureInputTextWidth(selected_text, font);
-
-    // 绘制选中背景
-    SkPaint sel_paint;
-    sel_paint.setColor(kSelectionColor);
-    sel_paint.setStyle(SkPaint::kFill_Style);
-
-    canvas_->drawRect(SkRect::MakeXYWH(sel_start_x, box.content_y, sel_width, box.content_height), sel_paint);
-}
-
-void FormElementPainter::PaintCursor(float text_x,
-                                     const Box& box,
-                                     const SkFont& font,
-                                     const SkFontMetrics& font_metrics,
-                                     const std::string& value,
-                                     int cursor_pos,
-                                     bool is_password) {
-    // 计算光标位置 - 使用 UTF-8 字符位置转换为字节位置
-    size_t cursor_byte_pos = utf8::CharPosToBytePos(value, cursor_pos);
-    std::string text_before_cursor = value.substr(0, cursor_byte_pos);
-
-    // 如果是密码类型，使用星号计算宽度
-    if (is_password) {
-        text_before_cursor = std::string(cursor_pos, '*');
-    }
-
-    // 测量光标前的文本宽度
-    float cursor_x = text_x + MeasureInputTextWidth(text_before_cursor, font);
-
-    // 计算光标的 Y 坐标（基于字体度量，垂直居中）
+    (void)is_password;
+    const bool mask_as_password = model.is_password && !model.is_placeholder;
+    float cursor_x = text_x + text_edit_metrics::MeasurePrefixWidth(model.visual_text,
+                                                                    model.VisibleCaretPosition(),
+                                                                    font,
+                                                                    mask_as_password);
     float font_height = font_metrics.fDescent - font_metrics.fAscent;
     float cursor_y_top = box.content_y + (box.content_height - font_height) / 2;
     float cursor_y_bottom = cursor_y_top + font_height;
 
-    // 绘制光标
     SkPaint cursor_paint;
     cursor_paint.setColor(SK_ColorBLACK);
     cursor_paint.setStrokeWidth(kCursorWidth);

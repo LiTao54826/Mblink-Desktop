@@ -161,42 +161,6 @@ public:
                               bool is_password);
 
 private:
-    /**
-     * @brief 绘制文本选中高亮
-     * @param text_x 文本起始 X 坐标
-     * @param box 盒模型定义
-     * @param font 字体
-     * @param value 文本值
-     * @param sel_start 选中起始位置
-     * @param sel_end 选中结束位置
-     * @param is_password 是否为密码类型
-     */
-    void PaintSelectionHighlight(float text_x, 
-                                 const Box& box, 
-                                 const SkFont& font,
-                                 const std::string& value,
-                                 int sel_start, 
-                                 int sel_end,
-                                 bool is_password);
-
-    /**
-     * @brief 绘制输入光标
-     * @param text_x 文本起始 X 坐标
-     * @param box 盒模型定义
-     * @param font 字体
-     * @param font_metrics 字体度量
-     * @param value 文本值
-     * @param cursor_pos 光标位置
-     * @param is_password 是否为密码类型
-     */
-    void PaintCursor(float text_x,
-                     const Box& box,
-                     const SkFont& font,
-                     const SkFontMetrics& font_metrics,
-                     const std::string& value,
-                     int cursor_pos,
-                     bool is_password);
-
     float MeasureInputTextWidth(const std::string& text,
                                 const SkFont& font) const;
 

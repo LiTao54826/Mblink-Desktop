@@ -254,6 +254,9 @@ public:
      */
     bool IsDraggingSelection() const { return is_dragging_selection_; }
 
+    float GetScrollLeft() const { return scroll_left_; }
+    void SetScrollLeft(float scroll_left);
+
     /**
      * @brief 设置光标位置（用于鼠标点击定位）
      * @param char_pos 字符位置（UTF-8字符索引）
@@ -266,6 +269,7 @@ public:
      * @param end 选择结束字符位置
      */
     void SetSelection(int start, int end);
+    void SetSelectionDirectional(int anchor, int focus);
 
     /**
      * @brief 获取拖动起始位置
@@ -371,6 +375,7 @@ private:
     bool checked_;              // 选中状态（checkbox/radio）
     bool is_dragging_selection_ = false;  // 是否正在拖动选择
     int drag_start_pos_ = 0;    // 拖动选择的起始字符位置
+    float scroll_left_ = 0.0f;
 
     // Range 滑块拖动状态
     bool is_dragging_range_ = false;  // 是否正在拖动 range 滑块

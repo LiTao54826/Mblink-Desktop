@@ -32,6 +32,8 @@
 #include "core/render/pipeline/render_pipeline.h"
 #include "core/render/objects/select_dropdown.h"
 #include "core/render/text/font_manager.h"
+#include "core/render/input/input_paint_model.h"
+#include "core/render/input/input_text_viewport.h"
 #include "core/render/input/text_edit_metrics.h"
 #include "core/utils/utf8_utils.h"
 #include <include/core/SkFont.h>
@@ -77,6 +79,61 @@ bool IsSelectionSuppressedByUserSelect(const std::shared_ptr<Element>& element) 
         current = current->GetParentNode();
     }
     return false;
+}
+
+float ResolveBorderLeft(const ComputedStyle& style) {
+    return style.border_left_width > 0.0f ? style.border_left_width : style.border.width.ToPx();
+}
+
+float ResolveBorderRight(const ComputedStyle& style) {
+    return style.border_right_width > 0.0f ? style.border_right_width : style.border.width.ToPx();
+}
+
+float InputTextContentLeft(const ComputedStyle& style, const LayoutInfo& layout) {
+    return ResolveBorderLeft(style) + style.padding.left.ToPx(layout.width, style.font_size);
+}
+
+float InputTextContentWidth(const ComputedStyle& style, const LayoutInfo& layout) {
+    float padding_left = style.padding.left.ToPx(layout.width, style.font_size);
+    float padding_right = style.padding.right.ToPx(layout.width, style.font_size);
+    return std::max(0.0f,
+                    layout.width - ResolveBorderLeft(style) - ResolveBorderRight(style) -
+                        padding_left - padding_right);
+}
+
+float InputTextVisibleWidth(InputType type, const ComputedStyle& style, const LayoutInfo& layout) {
+    float content_width = InputTextContentWidth(style, layout);
+    float spinner_width = type == InputType::Number
+        ? input_text_viewport::kNumberSpinnerReservedWidth
+        : 0.0f;
+    return std::max(0.0f, content_width - spinner_width);
+}
+
+bool ComputeInputTextLocalX(const std::shared_ptr<HTMLInputElement>& input_element,
+                            float viewport_x,
+                            float& local_x,
+                            float& visible_width) {
+    if (!input_element) {
+        return false;
+    }
+
+    auto render_object = input_element->GetRenderObject();
+    if (!render_object) {
+        return false;
+    }
+    if (!render_object->GetViewportBounds().valid) {
+        render_object->UpdateViewportBounds();
+    }
+    const auto& bounds = render_object->GetViewportBounds();
+    if (!bounds.valid) {
+        return false;
+    }
+
+    const auto& style = render_object->GetComputedStyle();
+    const auto& layout = render_object->GetLayoutInfo();
+    local_x = viewport_x - bounds.x - InputTextContentLeft(style, layout);
+    visible_width = InputTextVisibleWidth(input_element->GetInputType(), style, layout);
+    return true;
 }
 
 struct ResolvedTextHit {
@@ -1115,7 +1172,7 @@ void MouseEventDispatcher::UpdateMouseCursor(const HitTestResult& hit_result, Ui
                     float padding_right = style.padding.right.ToPx();
                     float border_width = style.border.width.ToPx();
 
-                    const float spinner_width = 16.0f;
+                    const float spinner_width = input_text_viewport::kNumberSpinnerReservedWidth;
                     float content_width = layout.width - padding_left - padding_right - border_width * 2;
                     float spinner_x = padding_left + border_width + content_width - spinner_width;
 
@@ -1172,7 +1229,8 @@ void MouseEventDispatcher::HandleInputMouseInteraction(
     float local_x,
     Uint32 event_type,
     float font_size,
-    const std::string& font_family) {
+    const std::string& font_family,
+    float visible_width) {
 
     if (!input_element) {
         return;
@@ -1195,20 +1253,100 @@ void MouseEventDispatcher::HandleInputMouseInteraction(
     desc.style = FontStyle::NORMAL;
     SkFont font = FontManager::GetInstance().LoadFont(desc);
 
-    const bool mask_as_password = type == InputType::Password;
-    int char_pos = text_edit_metrics::HitTestTextPosition(value, local_x, font, mask_as_password);
+    InputPaintModel paint_model = InputPaintModel::FromInputElement(input_element.get());
+    const float spinner_width = type == InputType::Number
+        ? input_text_viewport::kNumberSpinnerReservedWidth
+        : 0.0f;
+    float content_width = visible_width > 0.0f ? visible_width + spinner_width : 0.0f;
+    if (content_width <= 0.0f) {
+        content_width = std::max(0.0f, text_edit_metrics::MeasureTextWidth(
+            paint_model.visual_text,
+            font,
+            paint_model.is_password && !paint_model.is_placeholder));
+    }
+
+    auto viewport = input_text_viewport::Resolve({
+        &paint_model,
+        &font,
+        content_width,
+        spinner_width,
+        input_element->GetScrollLeft(),
+        input_text_viewport::ActiveCharPosition(paint_model),
+        false
+    });
+
+    if (event_type == SDL_EVENT_MOUSE_MOTION &&
+        input_element->IsDraggingSelection() &&
+        viewport.visible_width > 0.0f) {
+        const float scroll_step = std::max(1.0f, font_size > 0 ? font_size : 14.0f);
+        if (local_x < 0.0f) {
+            viewport.scroll_left = std::max(0.0f, viewport.scroll_left - scroll_step);
+        } else if (local_x > viewport.visible_width) {
+            viewport.scroll_left = std::min(viewport.max_scroll_left, viewport.scroll_left + scroll_step);
+        }
+        input_element->SetScrollLeft(viewport.scroll_left);
+        viewport = input_text_viewport::Resolve({
+            &paint_model,
+            &font,
+            content_width,
+            spinner_width,
+            input_element->GetScrollLeft(),
+            input_text_viewport::ActiveCharPosition(paint_model),
+            false
+        });
+    } else {
+        input_element->SetScrollLeft(viewport.scroll_left);
+    }
+
+    const bool mask_as_password = paint_model.is_password && !paint_model.is_placeholder;
+    float content_x = input_text_viewport::ContentXFromVisibleX(local_x, viewport);
+    int char_pos = text_edit_metrics::HitTestTextPosition(paint_model.visual_text,
+                                                          content_x,
+                                                          font,
+                                                          mask_as_password);
 
     if (event_type == SDL_EVENT_MOUSE_BUTTON_DOWN) {
         input_element->SetCursorPosition(char_pos);
         input_element->SetDragStartPos(char_pos);
         input_element->HandleMouseDown(local_x, 0);
+        paint_model = InputPaintModel::FromInputElement(input_element.get());
+        auto caret_viewport = input_text_viewport::Resolve({
+            &paint_model,
+            &font,
+            content_width,
+            spinner_width,
+            input_element->GetScrollLeft(),
+            input_text_viewport::ActiveCharPosition(paint_model),
+            true
+        });
+        input_element->SetScrollLeft(caret_viewport.scroll_left);
+        if (focus_manager_) {
+            focus_manager_->UpdateTextInputArea();
+        }
     } else if (event_type == SDL_EVENT_MOUSE_MOTION) {
         if (input_element->IsDraggingSelection()) {
             int drag_start = input_element->GetDragStartPos();
-            input_element->SetSelection(drag_start, char_pos);
+            input_element->SetSelectionDirectional(drag_start, char_pos);
+            paint_model = InputPaintModel::FromInputElement(input_element.get());
+            auto selection_viewport = input_text_viewport::Resolve({
+                &paint_model,
+                &font,
+                content_width,
+                spinner_width,
+                input_element->GetScrollLeft(),
+                input_text_viewport::ActiveCharPosition(paint_model),
+                true
+            });
+            input_element->SetScrollLeft(selection_viewport.scroll_left);
+            if (focus_manager_) {
+                focus_manager_->UpdateTextInputArea();
+            }
         }
     } else if (event_type == SDL_EVENT_MOUSE_BUTTON_UP) {
         input_element->HandleMouseUp();
+        if (focus_manager_) {
+            focus_manager_->UpdateTextInputArea();
+        }
     }
 }
 
@@ -1541,7 +1679,16 @@ void MouseEventDispatcher::HandleNoHitMouseUp(std::shared_ptr<Window> window,
                 window->SetNeedsRepaintFor(RepaintReason::MouseButton);
             }
             else if (input_element->IsDraggingSelection()) {
-                HandleInputMouseInteraction(input_element, 0, event.type, 14.0f, "");
+                float text_local_x = 0.0f;
+                float visible_width = 0.0f;
+                if (ComputeInputTextLocalX(input_element, logical_x, text_local_x, visible_width)) {
+                    auto render_object = input_element->GetRenderObject();
+                    const auto& style = render_object->GetComputedStyle();
+                    HandleInputMouseInteraction(input_element, text_local_x, event.type,
+                                               style.font_size, style.font_family, visible_width);
+                } else {
+                    input_element->HandleMouseUp();
+                }
             }
         }
     } else if (last_mousedown->IsContentEditable()) {
@@ -1655,10 +1802,11 @@ void MouseEventDispatcher::HandleNoHitMouseMotion(std::shared_ptr<Window> window
                     auto find_result = findRenderObj(root_render, 0.0f, 0.0f);
                     if (find_result.render_obj) {
                         const auto& style = find_result.render_obj->GetComputedStyle();
-                        float padding_left = style.padding.left.ToPx();
-                        float text_local_x = logical_x - find_result.abs_x - padding_left;
+                        const auto& layout = find_result.render_obj->GetLayoutInfo();
+                        float text_local_x = logical_x - find_result.abs_x - InputTextContentLeft(style, layout);
+                        float visible_width = InputTextVisibleWidth(input_element->GetInputType(), style, layout);
                         HandleInputMouseInteraction(input_element, text_local_x, event.type,
-                                                   style.font_size, style.font_family);
+                                                   style.font_size, style.font_family, visible_width);
                     }
                 }
             }
@@ -1891,10 +2039,11 @@ void MouseEventDispatcher::HandleMouseDown(std::shared_ptr<Window> window,
                      input_type == InputType::Number) {
                 if (hit_result.render_object) {
                     const auto& style = hit_result.render_object->GetComputedStyle();
-                    float padding_left = style.padding.left.ToPx();
-                    float text_local_x = hit_result.local_x - padding_left;
+                    const auto& layout = hit_result.render_object->GetLayoutInfo();
+                    float text_local_x = hit_result.local_x - InputTextContentLeft(style, layout);
+                    float visible_width = InputTextVisibleWidth(input_type, style, layout);
                     HandleInputMouseInteraction(input_element, text_local_x, event.type,
-                                               style.font_size, style.font_family);
+                                               style.font_size, style.font_family, visible_width);
                 }
             }
 
@@ -2082,7 +2231,16 @@ void MouseEventDispatcher::HandleMouseUp(std::shared_ptr<Window> window,
                     window->SetNeedsRepaintFor(RepaintReason::MouseButton);
                 }
                 else if (input_element->IsDraggingSelection()) {
-                    HandleInputMouseInteraction(input_element, 0, event.type, 14.0f, "");
+                    float text_local_x = 0.0f;
+                    float visible_width = 0.0f;
+                    if (ComputeInputTextLocalX(input_element, logical_x, text_local_x, visible_width)) {
+                        auto render_object = input_element->GetRenderObject();
+                        const auto& style = render_object->GetComputedStyle();
+                        HandleInputMouseInteraction(input_element, text_local_x, event.type,
+                                                   style.font_size, style.font_family, visible_width);
+                    } else {
+                        input_element->HandleMouseUp();
+                    }
                 }
             }
         } else if (tag_name == "textarea") {
@@ -2243,11 +2401,14 @@ void MouseEventDispatcher::HandleMouseMove(std::shared_ptr<Window> window,
             auto input_element = std::dynamic_pointer_cast<HTMLInputElement>(last_mousedown);
             if (input_element && input_element->IsDraggingSelection()) {
                 if (hit_result.render_object) {
-                    const auto& style = hit_result.render_object->GetComputedStyle();
-                    float padding_left = style.padding.left.ToPx();
-                    float text_local_x = hit_result.local_x - padding_left;
-                    HandleInputMouseInteraction(input_element, text_local_x, SDL_EVENT_MOUSE_MOTION,
-                                               style.font_size, style.font_family);
+                    float text_local_x = 0.0f;
+                    float visible_width = 0.0f;
+                    if (ComputeInputTextLocalX(input_element, logical_x, text_local_x, visible_width)) {
+                        auto render_object = input_element->GetRenderObject();
+                        const auto& style = render_object->GetComputedStyle();
+                        HandleInputMouseInteraction(input_element, text_local_x, SDL_EVENT_MOUSE_MOTION,
+                                                   style.font_size, style.font_family, visible_width);
+                    }
                 }
             }
         } else if (tag_name == "textarea") {

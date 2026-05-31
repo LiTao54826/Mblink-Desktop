@@ -22,6 +22,11 @@ InputPaintModel InputPaintModel::FromInputElement(const HTMLInputElement* input)
     model.caret_position = input->GetSelectionEnd();
 
     auto edit_state = input->GetEditState();
+    if (edit_state) {
+        model.selection_start = edit_state->selection_anchor;
+        model.selection_end = edit_state->selection_focus;
+        model.caret_position = edit_state->selection_focus;
+    }
     if (edit_state && edit_state->HasActiveComposition()) {
         const auto& composition = edit_state->composition_state;
         int start = std::max(0, composition.start);
@@ -42,10 +47,13 @@ InputPaintModel InputPaintModel::FromInputElement(const HTMLInputElement* input)
         model.visual_text = model.display_text;
         model.is_placeholder = true;
     } else if (model.is_password) {
-        model.display_text = std::string(model.value.size(), '*');
+        model.display_text = std::string(utf8::CharCount(model.value), '*');
         model.visual_text = model.has_composition
-            ? std::string(model.visual_text.size(), '*')
+            ? std::string(utf8::CharCount(model.visual_text), '*')
             : model.display_text;
+        if (model.has_composition) {
+            model.display_text = model.visual_text;
+        }
     } else {
         model.display_text = model.visual_text;
     }

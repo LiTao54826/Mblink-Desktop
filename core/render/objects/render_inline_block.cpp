@@ -8,6 +8,7 @@
 #include "core/render/painters/box_renderer.h"
 #include "core/render/text/text_renderer.h"
 #include "core/render/input/input_paint_model.h"
+#include "core/render/input/input_text_viewport.h"
 #include "core/render/input/text_edit_metrics.h"
 #include "core/render/utils/gradient_renderer.h"
 #include "core/render/utils/color.h"
@@ -1051,15 +1052,15 @@ void RenderInlineBlock::PaintInputElement(SkCanvas* canvas, HTMLInputElement* in
         desc.style = FontStyle::NORMAL;
         SkFont font = FontManager::GetInstance().LoadFont(desc);
 
-        const float spinner_width = (type == InputType::Number) ? 16.0f : 0.0f;
+        const float spinner_width = (type == InputType::Number)
+            ? input_text_viewport::kNumberSpinnerReservedWidth
+            : 0.0f;
 
         SkFontMetrics font_metrics;
         font.getMetrics(&font_metrics);
         float text_height = -font_metrics.fAscent + font_metrics.fDescent;
         float text_box_top = box.content_y + (box.content_height - text_height) / 2.0f;
         float text_y = text_box_top - font_metrics.fAscent;
-        float text_x = box.content_x;
-        float text_available_width = box.content_width - spinner_width;
 
         InputPaintModel paint_model = InputPaintModel::FromInputElement(input);
         const bool is_placeholder = paint_model.is_placeholder;
@@ -1067,12 +1068,22 @@ void RenderInlineBlock::PaintInputElement(SkCanvas* canvas, HTMLInputElement* in
         const std::string& display_text = paint_model.display_text;
         const std::string& actual_value = paint_model.value;
         const std::string& visual_text = paint_model.visual_text;
+        auto viewport = input_text_viewport::Resolve({
+            &paint_model,
+            &font,
+            box.content_width,
+            spinner_width,
+            input->GetScrollLeft(),
+            input_text_viewport::ActiveCharPosition(paint_model)
+        });
+        input->SetScrollLeft(viewport.scroll_left);
+        float text_x = input_text_viewport::TextOriginX(box.content_x, viewport);
 
         canvas->save();
         SkRect text_clip_rect = SkRect::MakeXYWH(
-            text_x,
+            box.content_x,
             std::max(box.content_y, text_box_top - 1.0f),
-            text_available_width,
+            viewport.visible_width,
             std::min(box.content_height, text_height + 2.0f)
         );
         canvas->clipRect(text_clip_rect);

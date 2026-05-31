@@ -26,6 +26,7 @@ set(RENDER_SOURCES
     
     # Render input models
     input/input_paint_model.cpp
+    input/input_text_viewport.cpp
     input/text_edit_metrics.cpp
 
     # Basic rendering primitives (utils subdirectory)
@@ -119,6 +120,7 @@ set(RENDER_HEADERS
     
     # Render input models
     input/input_paint_model.h
+    input/input_text_viewport.h
 
     # Basic rendering primitives (utils subdirectory)
     utils/color.h

@@ -5,6 +5,7 @@
 #include "contenteditable_geometry.h"
 #include "contenteditable_handler.h"
 #include "input_edit_command.h"
+#include "input_ime_geometry.h"
 #include "textarea_editing_controller.h"
 #include "core/dom/document.h"
 #include "core/dom/element.h"
@@ -12,6 +13,7 @@
 #include "core/dom/elements/html_textarea_element.h"
 #include "core/dom/selection/selection.h"
 #include "core/render/input/input_paint_model.h"
+#include "core/render/input/input_text_viewport.h"
 #include "core/render/input/text_edit_metrics.h"
 #include "core/render/objects/render_object.h"
 #include "core/render/text/font_manager.h"
@@ -87,8 +89,26 @@ void EditorInputSession::UpdateTextInputArea(Window* window, const std::shared_p
     float area_x = content_x, area_y = content_y, area_w = content_w, area_h = std::max(1.0f, std::max(style.font_size, -metrics.fAscent + metrics.fDescent)), caret_x = content_x;
     if (auto input = std::dynamic_pointer_cast<HTMLInputElement>(element)) {
         auto paint_model = InputPaintModel::FromInputElement(input.get());
-        int anchor = paint_model.HasComposition() ? paint_model.composition_start : paint_model.VisibleCaretPosition();
-        caret_x += text_edit_metrics::MeasurePrefixWidth(paint_model.visual_text, anchor, font, paint_model.is_password && !paint_model.is_placeholder);
+        float spinner_width = input->GetInputType() == InputType::Number
+            ? input_text_viewport::kNumberSpinnerReservedWidth
+            : 0.0f;
+        auto geometry = input_ime_geometry::ResolveInputGeometry({
+            &paint_model,
+            &font,
+            &metrics,
+            content_x,
+            content_y,
+            content_w,
+            style.font_size,
+            input->GetScrollLeft(),
+            spinner_width
+        });
+        input->SetScrollLeft(geometry.resolved_scroll_left);
+        area_x = geometry.area_x;
+        area_y = geometry.area_y;
+        area_w = geometry.area_w;
+        area_h = geometry.area_h;
+        caret_x = geometry.caret_x;
     } else if (auto textarea = std::dynamic_pointer_cast<HTMLTextAreaElement>(element)) {
         std::string value = textarea->GetValue();
         int anchor = textarea->GetSelectionEnd();

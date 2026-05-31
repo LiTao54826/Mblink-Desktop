@@ -128,7 +128,11 @@ bool HTMLInputElement::ApplyEditCommand(const InputEditCommand& command) {
     }
 
     InputEditingController controller(this, edit_state_);
-    return controller.ApplyCommand(command);
+    bool changed = controller.ApplyCommand(command);
+    if (changed) {
+        RequestInputRepaint();
+    }
+    return changed;
 }
 
 void HTMLInputElement::SetValue(const std::string& value, bool trigger_events) {
@@ -149,6 +153,9 @@ void HTMLInputElement::SetValue(const std::string& value, bool trigger_events) {
     int anchor = std::min(edit_state_->selection_anchor, new_length);
     int focus = std::min(edit_state_->selection_focus, new_length);
     edit_state_->SetSelection(anchor, focus);
+    if (new_length == 0) {
+        SetScrollLeft(0.0f);
+    }
 
     if (old_value != new_value) {
         RequestInputRepaint();
@@ -526,6 +533,16 @@ void HTMLInputElement::HandleMouseUp() {
     is_dragging_selection_ = false;
 }
 
+void HTMLInputElement::SetScrollLeft(float scroll_left) {
+    float clamped = std::max(0.0f, scroll_left);
+    if (std::abs(scroll_left_ - clamped) < 0.01f) {
+        return;
+    }
+
+    scroll_left_ = clamped;
+    RequestInputRepaint();
+}
+
 void HTMLInputElement::SetCursorPosition(int char_pos) {
     if (!edit_state_) {
         return;
@@ -570,6 +587,25 @@ void HTMLInputElement::SetSelection(int start, int end) {
     }
 
     edit_state_->SetSelection(start, end);
+    RequestInputRepaint();
+}
+
+void HTMLInputElement::SetSelectionDirectional(int anchor, int focus) {
+    if (!edit_state_) {
+        return;
+    }
+
+    int char_count = static_cast<int>(utf8::CharCount(edit_state_->text));
+    anchor = std::clamp(anchor, 0, char_count);
+    focus = std::clamp(focus, 0, char_count);
+
+    if (edit_state_->selection_anchor == anchor &&
+        edit_state_->selection_focus == focus &&
+        edit_state_->caret_position == focus) {
+        return;
+    }
+
+    edit_state_->SetSelection(anchor, focus);
     RequestInputRepaint();
 }
 
