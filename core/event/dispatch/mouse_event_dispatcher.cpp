@@ -479,6 +479,70 @@ SkRect SelectionRectToSkRect(const SelectionRect& rect) {
     return SkRect::MakeXYWH(rect.x, rect.y, rect.width, rect.height);
 }
 
+std::vector<std::string> SplitExplicitTextLines(const std::string& text) {
+    std::vector<std::string> lines;
+    std::istringstream stream(text);
+    std::string line;
+    while (std::getline(stream, line)) {
+        lines.push_back(line);
+    }
+    return lines;
+}
+
+float ResolveTextLineHeight(const std::shared_ptr<RenderObject>& render_object,
+                            size_t line_count) {
+    if (!render_object || line_count == 0) {
+        return 16.0f;
+    }
+
+    render_object->UpdateViewportBounds();
+    const auto& bounds = render_object->GetViewportBounds();
+    if (bounds.valid && bounds.height > 0.0f) {
+        return std::max(1.0f, bounds.height / static_cast<float>(line_count));
+    }
+
+    const auto& layout = render_object->GetLayoutInfo();
+    if (layout.height > 0.0f) {
+        return std::max(1.0f, layout.height / static_cast<float>(line_count));
+    }
+
+    const auto& style = render_object->GetComputedStyle();
+    if (style.font_size > 0.0f) {
+        return std::max(1.0f, style.line_height * style.font_size);
+    }
+    return 16.0f;
+}
+
+int ResolveTextLineIndex(float local_y,
+                         size_t line_count,
+                         const std::vector<float>& line_y_offsets,
+                         float line_height) {
+    if (line_count <= 1) {
+        return 0;
+    }
+
+    if (line_y_offsets.size() == line_count) {
+        int index = 0;
+        for (size_t i = 0; i < line_count; ++i) {
+            const float top = line_y_offsets[i];
+            const float bottom = (i + 1 < line_count)
+                ? line_y_offsets[i + 1]
+                : top + line_height;
+            if (local_y < bottom) {
+                index = static_cast<int>(i);
+                break;
+            }
+            index = static_cast<int>(i);
+        }
+        return std::clamp(index, 0, static_cast<int>(line_count) - 1);
+    }
+
+    const float safe_line_height = std::max(1.0f, line_height);
+    return std::clamp(static_cast<int>(std::floor(local_y / safe_line_height)),
+                      0,
+                      static_cast<int>(line_count) - 1);
+}
+
 void AddSelectionDirtyRects(Window* window,
                             const std::vector<SelectionRect>& rects) {
     if (!window) {
@@ -575,6 +639,55 @@ CaretPosition CaretPositionFromResolvedTextHit(const ResolvedTextHit& text_hit) 
     }
 
     const std::string text = text_hit.text_node->GetData();
+    const int text_length = static_cast<int>(utf8::CharCount(text));
+
+    std::vector<std::string> lines;
+    std::vector<float> line_x_offsets;
+    std::vector<float> line_y_offsets;
+    auto render_text = std::dynamic_pointer_cast<RenderText>(text_hit.text_render);
+    if (render_text) {
+        lines = render_text->GetWrappedLines();
+        line_x_offsets = render_text->GetWrappedLineXOffsets();
+        line_y_offsets = render_text->GetWrappedLineYOffsets();
+    }
+    if (lines.empty() && text.find('\n') != std::string::npos) {
+        lines = SplitExplicitTextLines(text);
+    }
+
+    if (lines.size() > 1) {
+        const float line_height = ResolveTextLineHeight(text_hit.text_render, lines.size());
+        const int line_index = ResolveTextLineIndex(text_hit.local_y,
+                                                    lines.size(),
+                                                    line_y_offsets,
+                                                    line_height);
+        const std::vector<int> line_starts =
+            text_edit_metrics::ComputeRenderedLineStartOffsets(text, lines);
+        const std::string& line = lines[static_cast<size_t>(line_index)];
+        const float line_x = static_cast<size_t>(line_index) < line_x_offsets.size()
+            ? line_x_offsets[static_cast<size_t>(line_index)]
+            : 0.0f;
+        const float line_local_x = text_hit.local_x - line_x;
+        const int line_offset = text_edit_metrics::HitTestTextPosition(line,
+                                                                       line_local_x,
+                                                                       text_hit.font,
+                                                                       false);
+        const int line_start = static_cast<size_t>(line_index) < line_starts.size()
+            ? line_starts[static_cast<size_t>(line_index)]
+            : 0;
+
+        caret_pos.node = text_hit.text_node;
+        caret_pos.offset = std::clamp(line_start + line_offset, 0, text_length);
+        caret_pos.x = line_x + text_edit_metrics::MeasurePrefixWidth(line,
+                                                                     line_offset,
+                                                                     text_hit.font,
+                                                                     false);
+        caret_pos.y = static_cast<size_t>(line_index) < line_y_offsets.size()
+            ? line_y_offsets[static_cast<size_t>(line_index)]
+            : line_height * static_cast<float>(line_index);
+        caret_pos.height = line_height;
+        return caret_pos;
+    }
+
     caret_pos.node = text_hit.text_node;
     caret_pos.offset = std::clamp(text_edit_metrics::HitTestTextPosition(
                                       text,
@@ -582,7 +695,7 @@ CaretPosition CaretPositionFromResolvedTextHit(const ResolvedTextHit& text_hit) 
                                       text_hit.font,
                                       false),
                                   0,
-                                  static_cast<int>(utf8::CharCount(text)));
+                                  text_length);
     caret_pos.x = text_hit.local_x;
     caret_pos.y = text_hit.local_y;
     caret_pos.height = 16.0f;

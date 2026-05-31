@@ -8,7 +8,9 @@
 #include "core/editing/clipboard_manager.h"
 #include "core/editing/selection_manager.h"
 #include "core/event/dispatch/mouse_event_dispatcher.h"
+#include "core/render/input/text_edit_metrics.h"
 #include "core/render/css/style_resolver.h"
+#include "core/render/text/font_manager.h"
 #include "core/window/window.h"
 #include "test_utils/test_helpers.h"
 
@@ -436,6 +438,105 @@ TEST_F(TableSelectionCopyTest, MouseDragPastTextEdgeCopiesPlainTableCellText) {
     ClipboardManager clipboard(&selection_manager, nullptr);
     ASSERT_TRUE(clipboard.Copy(document));
     EXPECT_EQ(clipboard.GetText(), "Alpha");
+}
+
+TEST_F(TableSelectionCopyTest, MouseDragSelectionAcrossWrappedLinesCopiesFullText) {
+    const std::string payload =
+        "START | alpha-bravo-charlie-delta-echo-foxtrot-golf-hotel | "
+        "0123456789-0123456789-0123456789 | "
+        "the-caret-should-keep-the-active-edge-visible | END";
+
+    auto document = CreateDocumentFromHTML(
+        "<html><body>"
+        "<div id='payload' style='width: 520px; font-family: Arial; font-size: 16px; "
+        "line-height: 1.2; user-select: text;'>" + payload + "</div>"
+        "</body></html>");
+    auto root_render = BuildRenderTreeForDocument(document, 620.0f, 300.0f);
+    ASSERT_NE(root_render, nullptr);
+
+    auto payload_render = FindRenderObjectByElementId(root_render, "payload");
+    ASSERT_NE(payload_render, nullptr);
+    auto text_render = std::dynamic_pointer_cast<RenderText>(FirstTextRenderObject(payload_render));
+    ASSERT_NE(text_render, nullptr);
+    ASSERT_GT(text_render->GetWrappedLines().size(), 1u);
+
+    text_render->UpdateViewportBounds();
+    const auto& text_bounds = text_render->GetViewportBounds();
+    ASSERT_TRUE(text_bounds.valid);
+
+    const auto& lines = text_render->GetWrappedLines();
+    const auto& x_offsets = text_render->GetWrappedLineXOffsets();
+    const auto& y_offsets = text_render->GetWrappedLineYOffsets();
+    ASSERT_GE(lines.size(), 2u);
+
+    FontDescriptor desc;
+    desc.family = "Arial";
+    desc.size = 16.0f;
+    desc.weight = FontWeight::NORMAL;
+    desc.style = FontStyle::NORMAL;
+    SkFont font = FontManager::GetInstance().LoadFont(desc);
+
+    const float line_height = text_bounds.height / static_cast<float>(lines.size());
+    const float first_line_x = x_offsets.empty() ? 0.0f : x_offsets[0];
+    const float second_line_x = x_offsets.size() > 1 ? x_offsets[1] : 0.0f;
+    const float first_line_y = y_offsets.empty() ? line_height * 0.5f : y_offsets[0] + line_height * 0.5f;
+    const float second_line_y = y_offsets.size() > 1 ? y_offsets[1] + line_height * 0.5f : line_height * 1.5f;
+    const float second_line_width = text_edit_metrics::MeasureTextWidth(lines[1], font, false);
+
+    WindowConfig config;
+    config.hidden = true;
+    config.headless = true;
+    config.backend = RenderBackend::CPU;
+    auto window = std::make_shared<Window>(config);
+    window->SetDocument(document);
+
+    SelectionManager selection_manager;
+    MouseEventDispatcher dispatcher;
+    dispatcher.SetManagers(nullptr, &selection_manager, nullptr, nullptr);
+
+    const float display_scale = window->GetDisplayScale();
+    const float start_x = text_bounds.x + first_line_x;
+    const float start_y = text_bounds.y + first_line_y;
+    const float end_x = text_bounds.x + second_line_x + second_line_width + 4.0f;
+    const float end_y = text_bounds.y + second_line_y;
+
+    EXPECT_TRUE(dispatcher.HandleMouseEvent(
+        MouseButtonEvent(SDL_EVENT_MOUSE_BUTTON_DOWN, start_x * display_scale, start_y * display_scale),
+        window,
+        document,
+        root_render));
+    EXPECT_TRUE(dispatcher.HandleMouseEvent(
+        MouseMotionEvent(end_x * display_scale, end_y * display_scale),
+        window,
+        document,
+        root_render));
+    EXPECT_TRUE(dispatcher.HandleMouseEvent(
+        MouseButtonEvent(SDL_EVENT_MOUSE_BUTTON_UP, end_x * display_scale, end_y * display_scale),
+        window,
+        document,
+        root_render));
+
+    const size_t second_line_start = payload.find(lines[1], lines[0].size());
+    ASSERT_NE(second_line_start, std::string::npos);
+    const std::string expected = payload.substr(0, second_line_start + lines[1].size());
+    ClipboardManager clipboard(&selection_manager, nullptr);
+    ASSERT_TRUE(clipboard.Copy(document));
+    EXPECT_EQ(clipboard.GetText(), expected);
+
+    auto surface = SkSurfaces::Raster(SkImageInfo::MakeN32Premul(620, 300));
+    ASSERT_NE(surface, nullptr);
+    auto canvas = surface->getCanvas();
+    ASSERT_NE(canvas, nullptr);
+    canvas->clear(SK_ColorWHITE);
+    root_render->Paint(canvas);
+
+    const float second_line_top = y_offsets.size() > 1 ? y_offsets[1] : line_height;
+    const SkRect second_line_tail = SkRect::MakeXYWH(
+        text_bounds.x + second_line_x + std::max(0.0f, second_line_width - 12.0f),
+        text_bounds.y + second_line_top,
+        12.0f,
+        line_height);
+    EXPECT_TRUE(ContainsSelectionBluePixel(surface, second_line_tail));
 }
 
 TEST_F(TableSelectionCopyTest, DoubleClickSelectsAdjacentStringInTableCell) {

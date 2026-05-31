@@ -61,5 +61,34 @@ int HitTestTextPosition(const std::string& text,
     return total_chars;
 }
 
-}  // namespace mbink::text_edit_metrics
+std::vector<int> ComputeRenderedLineStartOffsets(const std::string& text,
+                                                 const std::vector<std::string>& lines) {
+    std::vector<int> starts;
+    starts.reserve(lines.size());
 
+    size_t search_byte = 0;
+    int fallback_char = 0;
+    for (const auto& line : lines) {
+        if (line.empty()) {
+            starts.push_back(fallback_char);
+            continue;
+        }
+
+        const size_t found = text.find(line, search_byte);
+        if (found == std::string::npos) {
+            starts.push_back(fallback_char);
+            fallback_char += static_cast<int>(utf8::CharCount(line));
+            search_byte = utf8::CharPosToBytePos(text, static_cast<size_t>(fallback_char));
+            continue;
+        }
+
+        const int start = static_cast<int>(utf8::BytePosToCharPos(text, found));
+        starts.push_back(start);
+        search_byte = found + line.size();
+        fallback_char = static_cast<int>(utf8::BytePosToCharPos(text, search_byte));
+    }
+
+    return starts;
+}
+
+}  // namespace mbink::text_edit_metrics

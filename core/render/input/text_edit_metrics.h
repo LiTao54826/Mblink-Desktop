@@ -1,6 +1,7 @@
 #pragma once
 
 #include <string>
+#include <vector>
 
 class SkFont;
 
@@ -20,5 +21,7 @@ int HitTestTextPosition(const std::string& text,
                         const SkFont& font,
                         bool mask_as_password = false);
 
-}  // namespace mbink::text_edit_metrics
+std::vector<int> ComputeRenderedLineStartOffsets(const std::string& text,
+                                                 const std::vector<std::string>& lines);
 
+}  // namespace mbink::text_edit_metrics

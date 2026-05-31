@@ -10,6 +10,7 @@
 #include "core/render/text/font_manager.h"
 #include "core/render/text/text_renderer.h"
 #include "core/render/text/text_transform.h"
+#include "core/render/input/text_edit_metrics.h"
 #include "core/render/utils/shadow_renderer.h"
 #include "core/render/utils/color.h"
 #include "core/dom/document.h"
@@ -122,6 +123,7 @@ TextSelectionPaintRange ResolveSelectionPaintRange(const std::shared_ptr<Node>& 
 }
 
 void PaintTextSelectionHighlight(SkCanvas* canvas,
+                                 const std::string& text,
                                  const std::vector<std::string>& lines,
                                  const std::vector<float>& line_x_offsets,
                                  const std::vector<float>& line_y_offsets,
@@ -136,10 +138,12 @@ void PaintTextSelectionHighlight(SkCanvas* canvas,
     highlight_paint.setColor(SkColorSetARGB(110, 51, 153, 255));
     highlight_paint.setStyle(SkPaint::kFill_Style);
 
-    int line_start = 0;
+    const std::vector<int> line_starts =
+        text_edit_metrics::ComputeRenderedLineStartOffsets(text, lines);
     for (size_t i = 0; i < lines.size(); ++i) {
         const auto& line = lines[i];
         const int line_length = static_cast<int>(utf8::CharCount(line));
+        const int line_start = i < line_starts.size() ? line_starts[i] : 0;
         const int line_end = line_start + line_length;
 
         const int selected_start = std::max(selection.start, line_start);
@@ -173,11 +177,6 @@ void PaintTextSelectionHighlight(SkCanvas* canvas,
                 canvas->drawRect(SkRect::MakeXYWH(start_x, line_top, width, line_height),
                                  highlight_paint);
             }
-        }
-
-        line_start = line_end;
-        if (i + 1 < lines.size()) {
-            ++line_start;
         }
     }
 }
@@ -531,6 +530,7 @@ void RenderText::Paint(SkCanvas* canvas) {
         line_y_offsets_to_render ? *line_y_offsets_to_render : empty_offsets;
 
     PaintTextSelectionHighlight(canvas,
+                                text_,
                                 lines_to_render,
                                 line_x_offsets,
                                 line_y_offsets,
