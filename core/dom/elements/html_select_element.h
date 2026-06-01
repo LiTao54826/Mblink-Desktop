@@ -295,6 +295,7 @@ private:
      * @brief 触发change事件
      */
     void TriggerChangeEvent();
+    void TriggerInputEvent();
 };
 
 } // namespace mbink

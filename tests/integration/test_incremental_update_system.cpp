@@ -309,6 +309,61 @@ TEST_F(IncrementalUpdateSystemTest, SynchronizerStyleOnlyChangeDoesNotRequestLay
     EXPECT_NEAR(compact_item.y, 0.0f, 0.5f);
 }
 
+TEST_F(IncrementalUpdateSystemTest, OptionTextChangeInvalidatesOwningSelect) {
+    auto doc = CreateDocumentFromHTML(R"(
+        <html>
+        <body>
+            <select id="region-filter" style="width: 180px; height: 34px;">
+                <option id="all-option" value="all" selected>All regions</option>
+                <option value="na">NA</option>
+            </select>
+        </body>
+        </html>
+    )");
+
+    auto body = doc->GetBody();
+    auto select = doc->GetElementById("region-filter");
+    auto option = doc->GetElementById("all-option");
+    ASSERT_NE(body, nullptr);
+    ASSERT_NE(select, nullptr);
+    ASSERT_NE(option, nullptr);
+
+    RenderTreeBuilder builder;
+    builder.SetDocument(doc.get());
+    auto render_root = builder.BuildRenderTree(body);
+    ASSERT_NE(render_root, nullptr);
+    auto select_render = select->GetRenderObject();
+    ASSERT_NE(select_render, nullptr);
+
+    auto owned_layout_engine = std::make_unique<LayoutEngine>();
+    LayoutEngine* layout_engine = owned_layout_engine.get();
+    layout_engine->BuildLayoutTree(render_root);
+    layout_engine->ComputeLayout(800.0f, 600.0f);
+    layout_engine->GetLayoutInfo(render_root);
+
+    select_render->ClearNeedsPaint();
+    select_render->ClearNeedsLayout();
+    EXPECT_FALSE(select_render->NeedsPaint());
+    EXPECT_FALSE(select_render->NeedsLayout());
+
+    doc->GetDirtyTracker().Clear();
+    option->SetTextContent("Everywhere");
+    ASSERT_GT(doc->GetDirtyTracker().GetTextChangeCount(), 0);
+
+    RenderTreeSynchronizer synchronizer;
+    synchronizer.SetDocument(doc);
+    synchronizer.SetLayoutEngine(std::shared_ptr<LayoutEngine>(
+        layout_engine, [](LayoutEngine*) {}));
+
+    bool requires_layout_tree_rebuild =
+        synchronizer.Synchronize(doc->GetDirtyTracker(), render_root);
+
+    EXPECT_FALSE(requires_layout_tree_rebuild);
+    EXPECT_FALSE(doc->GetDirtyTracker().HasPendingChanges());
+    EXPECT_TRUE(select_render->NeedsPaint());
+    EXPECT_TRUE(select_render->NeedsLayout());
+}
+
 TEST_F(IncrementalUpdateSystemTest, SynchronizerDisplayClassChangeReplacesRenderObjectType) {
     auto doc = CreateDocumentFromHTML(R"(
         <html>

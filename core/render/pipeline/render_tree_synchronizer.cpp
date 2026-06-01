@@ -8,7 +8,9 @@
 #include "core/render/css/style_resolver.h"  // RenderTreeBuilder 在这里定义
 #include "core/dom/observers/dirty_node_tracker.h"
 #include "core/dom/node.h"
+#include "core/dom/element.h"
 #include "core/dom/document.h"
+#include "core/dom/elements/html_select_element.h"
 #include "core/layout/layout_engine.h"
 #include "core/quickjs/dom_binding_map.h"
 #include "core/quickjs/bindings/js_element.h"
@@ -104,6 +106,29 @@ void ClearRenderObjectLinksForSubtree(Node* node) {
     for (const auto& child : node->GetChildNodes()) {
         ClearRenderObjectLinksForSubtree(child.get());
     }
+}
+
+std::shared_ptr<HTMLSelectElement> FindSelectForOptionContent(const std::shared_ptr<Node>& node) {
+    if (!node) {
+        return nullptr;
+    }
+
+    bool inside_option = false;
+    auto current = node->GetParentNode();
+    while (current) {
+        if (current->GetNodeType() == NodeType::ELEMENT_NODE) {
+            auto element = std::static_pointer_cast<Element>(current);
+            const std::string tag = element->GetTagName();
+            if (tag == "option") {
+                inside_option = true;
+            } else if (inside_option && tag == "select") {
+                return std::dynamic_pointer_cast<HTMLSelectElement>(element);
+            }
+        }
+        current = current->GetParentNode();
+    }
+
+    return nullptr;
 }
 
 } // namespace
@@ -387,7 +412,9 @@ bool RenderTreeSynchronizer::ProcessStyleChanges(DirtyNodeTracker& tracker) {
         if (!element) continue;
 
         auto render_obj = element->GetRenderObject();
-        if (!render_obj) continue;
+        if (!render_obj) {
+            continue;
+        }
 
         // 获取父元素样式用于继承
         const ComputedStyle* parent_style = nullptr;
@@ -535,6 +562,7 @@ void RenderTreeSynchronizer::ProcessTextChanges(DirtyNodeTracker& tracker) {
     for (const auto& change : tracker.GetTextChanges()) {
         auto node = change.node.lock();
         if (!node) continue;
+        auto owning_select = FindSelectForOptionContent(node);
 
         // 使用增量更新系统的脏标记
         node->SetNeedsStyleRecalc(StyleChangeType::kLocalStyleChange);
@@ -548,7 +576,12 @@ void RenderTreeSynchronizer::ProcessTextChanges(DirtyNodeTracker& tracker) {
                 render_obj = parent->GetRenderObject();
             }
         }
-        if (!render_obj) continue;
+        if (!render_obj) {
+            if (owning_select) {
+                owning_select->OnOptionsChanged();
+            }
+            continue;
+        }
 
         // 更新文本内容
         if (render_obj->GetType() == RenderObjectType::TEXT) {
@@ -567,6 +600,10 @@ void RenderTreeSynchronizer::ProcessTextChanges(DirtyNodeTracker& tracker) {
         // 这确保滚动容器等祖先节点的 content_height_ 缓存被清除
         InvalidateAncestorLayout(render_obj.get());
         render_obj->MarkNeedsPaint();
+
+        if (owning_select) {
+            owning_select->OnOptionsChanged();
+        }
     }
 }
 

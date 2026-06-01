@@ -108,6 +108,32 @@ TEST_F(HTMLSelectElementTest, UserSelectionHelpersTriggerChange) {
     EXPECT_EQ(listener.GetCallCount(), 2);
 }
 
+TEST_F(HTMLSelectElementTest, UserSelectionHelpersTriggerInputAndChange) {
+    auto select = std::dynamic_pointer_cast<HTMLSelectElement>(CreateElement("select"));
+    auto optionA = std::dynamic_pointer_cast<HTMLOptionElement>(CreateElement("option"));
+    auto optionB = std::dynamic_pointer_cast<HTMLOptionElement>(CreateElement("option"));
+    optionA->SetAttribute("value", "a");
+    optionB->SetAttribute("value", "b");
+    select->AppendChild(optionA);
+    select->AppendChild(optionB);
+    select->SetSelectedIndex(0);
+
+    MockEventListener input_listener;
+    MockEventListener change_listener;
+    select->AddEventListener("input", input_listener.GetListener());
+    select->AddEventListener("change", change_listener.GetListener());
+
+    select->SelectNextOption();
+
+    EXPECT_EQ(select->GetValue(), "b");
+    EXPECT_EQ(input_listener.GetCallCount(), 1);
+    EXPECT_EQ(change_listener.GetCallCount(), 1);
+    ASSERT_NE(input_listener.GetLastEvent(), nullptr);
+    ASSERT_NE(change_listener.GetLastEvent(), nullptr);
+    EXPECT_EQ(input_listener.GetLastEvent()->GetType(), "input");
+    EXPECT_EQ(change_listener.GetLastEvent()->GetType(), "change");
+}
+
 TEST_F(HTMLSelectElementTest, SelectionChangeMarksRenderObjectForPaint) {
     auto select = std::dynamic_pointer_cast<HTMLSelectElement>(CreateElement("select"));
     auto optionA = std::dynamic_pointer_cast<HTMLOptionElement>(CreateElement("option"));
@@ -129,12 +155,45 @@ TEST_F(HTMLSelectElementTest, SelectionChangeMarksRenderObjectForPaint) {
     ASSERT_NE(select_render, nullptr);
 
     select_render->ClearNeedsPaint();
+    select_render->ClearNeedsLayout();
     EXPECT_FALSE(select_render->NeedsPaint());
+    EXPECT_FALSE(select_render->NeedsLayout());
 
     select->SetValue("b");
 
     EXPECT_TRUE(select_render->NeedsPaint());
+    EXPECT_TRUE(select_render->NeedsLayout());
     EXPECT_EQ(select->GetValue(), "b");
+}
+
+TEST_F(HTMLSelectElementTest, OptionCollectionChangeMarksRenderObjectForPaintAndLayout) {
+    auto select = std::dynamic_pointer_cast<HTMLSelectElement>(CreateElement("select"));
+    auto option = std::dynamic_pointer_cast<HTMLOptionElement>(CreateElement("option"));
+    option->SetAttribute("value", "a");
+    select->AppendChild(option);
+
+    auto body = doc_->GetBody();
+    ASSERT_NE(body, nullptr);
+    body->AppendChild(select);
+
+    RenderTreeBuilder builder;
+    builder.SetDocument(doc_.get());
+    auto render_root = builder.BuildRenderTree(body);
+    ASSERT_NE(render_root, nullptr);
+    auto select_render = select->GetRenderObject();
+    ASSERT_NE(select_render, nullptr);
+
+    select_render->ClearNeedsPaint();
+    select_render->ClearNeedsLayout();
+    EXPECT_FALSE(select_render->NeedsPaint());
+    EXPECT_FALSE(select_render->NeedsLayout());
+
+    auto new_option = std::dynamic_pointer_cast<HTMLOptionElement>(CreateElement("option"));
+    new_option->SetAttribute("value", "b");
+    select->AppendChild(new_option);
+
+    EXPECT_TRUE(select_render->NeedsPaint());
+    EXPECT_TRUE(select_render->NeedsLayout());
 }
 
 TEST_F(HTMLSelectElementTest, PendingValueReappliedWhenOptionValueChanges) {
