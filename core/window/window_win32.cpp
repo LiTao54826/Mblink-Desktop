@@ -33,6 +33,7 @@ extern "C" const char* SDL_CreateTemporaryString(const char* string);
 // Windows 子类化窗口过程，用于拦截可能导致闪烁的消息
 static std::unordered_map<HWND, WNDPROC> g_original_wndprocs;
 static std::unordered_map<HWND, Window*> g_hwnd_to_window;
+static std::unordered_map<HWND, std::string> g_pressed_window_controls;
 
 // 调试：是否启用消息日志
 static bool g_debug_messages = false;
@@ -68,6 +69,38 @@ static void PushSDLTextInputFromWin32(Window* window, WPARAM wParam) {
 
 // 缓存窗口大小，用于检测虚假的大小变化
 static std::unordered_map<HWND, RECT> g_window_rects;
+
+static std::string HitTestWindowControlFromClientPoint(HWND hwnd, Window* window, LPARAM lParam) {
+    if (!hwnd || !window) {
+        return {};
+    }
+
+    POINT screen_pt = { GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam) };
+    ClientToScreen(hwnd, &screen_pt);
+    return window->HitTestWindowControl(screen_pt.x, screen_pt.y);
+}
+
+static void RunWindowControlAction(HWND hwnd, Window* window, const std::string& control) {
+    if (control == "close") {
+        PostMessage(hwnd, WM_CLOSE, 0, 0);
+    } else if (control == "minimize") {
+        ShowWindow(hwnd, SW_MINIMIZE);
+    } else if (control == "maximize") {
+        if (IsZoomed(hwnd)) {
+            ShowWindow(hwnd, SW_RESTORE);
+        } else {
+            ShowWindow(hwnd, SW_MAXIMIZE);
+        }
+    } else if (control == "pin") {
+        DWORD ex_style = GetWindowLong(hwnd, GWL_EXSTYLE);
+        bool is_topmost = (ex_style & WS_EX_TOPMOST) != 0;
+        SetWindowPos(hwnd, is_topmost ? HWND_NOTOPMOST : HWND_TOPMOST,
+                     0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE);
+        if (window) {
+            window->SetAlwaysOnTop(!is_topmost);
+        }
+    }
+}
 
 static const char* GetMessageName(UINT msg) {
     switch (msg) {
@@ -215,9 +248,44 @@ static LRESULT CALLBACK SubclassWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPAR
             break;
         }
 
+        case WM_LBUTTONDOWN: {
+            if (window && window->IsBorderless()) {
+                std::string control = HitTestWindowControlFromClientPoint(hwnd, window, lParam);
+                if (!control.empty()) {
+                    g_pressed_window_controls[hwnd] = control;
+                    SetCapture(hwnd);
+                    return 0;
+                }
+            }
+            g_pressed_window_controls.erase(hwnd);
+            break;
+        }
+
         case WM_LBUTTONUP: {
             // 处理 CSS -webkit-window-control 按钮点击
             if (window && window->IsBorderless()) {
+                auto pressed_it = g_pressed_window_controls.find(hwnd);
+                if (pressed_it != g_pressed_window_controls.end()) {
+                    std::string pressed_control = pressed_it->second;
+                    g_pressed_window_controls.erase(pressed_it);
+                    if (GetCapture() == hwnd) {
+                        ReleaseCapture();
+                    }
+
+                    std::string released_control = HitTestWindowControlFromClientPoint(hwnd, window, lParam);
+                    if (released_control == pressed_control) {
+                        RunWindowControlAction(hwnd, window, released_control);
+                    }
+                    return 0;
+                }
+
+                {
+                    std::string control = HitTestWindowControlFromClientPoint(hwnd, window, lParam);
+                    if (!control.empty()) {
+                        return 0;
+                    }
+                }
+
                 POINT screen_pt = { GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam) };
                 ClientToScreen(hwnd, &screen_pt);
                 std::string control = window->HitTestWindowControl(screen_pt.x, screen_pt.y);
@@ -248,6 +316,10 @@ static LRESULT CALLBACK SubclassWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPAR
             }
             break;
         }
+
+        case WM_CAPTURECHANGED:
+            g_pressed_window_controls.erase(hwnd);
+            break;
 
         case WM_ERASEBKGND:
             // 阻止 Windows 擦除背景，避免闪烁
@@ -428,6 +500,7 @@ void UnsubclassWindow(HWND hwnd) {
     }
     g_hwnd_to_window.erase(hwnd);
     g_window_rects.erase(hwnd);
+    g_pressed_window_controls.erase(hwnd);
 }
 
 void EnableBorderlessShadow(HWND hwnd) {
