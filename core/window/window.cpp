@@ -1088,20 +1088,17 @@ void Window::SwapBuffers() {
             // 使用局部更新优化 CPU 模式性能
             if (has_dirty_bounds_ && !last_dirty_bounds_.isEmpty()) {
                 // 有脏区域边界：只更新脏区域
-                int dirty_x = static_cast<int>(last_dirty_bounds_.left());
-                int dirty_y = static_cast<int>(last_dirty_bounds_.top());
-                int dirty_width = static_cast<int>(last_dirty_bounds_.width());
-                int dirty_height = static_cast<int>(last_dirty_bounds_.height());
 
                 // 边界检查
                 int surface_width = static_cast<int>(pixmap.width());
                 int surface_height = static_cast<int>(pixmap.height());
-                if (dirty_x < 0) dirty_x = 0;
-                if (dirty_y < 0) dirty_y = 0;
-                if (dirty_x + dirty_width > surface_width) dirty_width = surface_width - dirty_x;
-                if (dirty_y + dirty_height > surface_height) dirty_height = surface_height - dirty_y;
+                SkIRect dirty_rect = ClampPhysicalRect(last_dirty_bounds_, surface_width, surface_height);
+                int dirty_x = dirty_rect.left();
+                int dirty_y = dirty_rect.top();
+                int dirty_width = dirty_rect.width();
+                int dirty_height = dirty_rect.height();
 
-                if (dirty_width > 0 && dirty_height > 0) {
+                if (!dirty_rect.isEmpty()) {
                     if (debug_anim_frame && (swap_frame <= 120 || (swap_frame % 60 == 0))) {
                         std::cout << "[ANIM_FRAME_SWAP] frame=" << swap_frame
                                   << " backend=CPU"
@@ -2144,6 +2141,7 @@ void Window::Render() {
             retained_dirty_reason_allowed &&
             (!had_pending_dom_changes || !had_structural_dom_changes) &&
             !render_tree_rebuild_required &&
+            !needs_layout_update &&
             !dirty_union_too_broad;
         SkRect dirty_bounds_px = dirty_bounds;
         dirty_bounds_px.fLeft *= dpi_scale;
@@ -2244,6 +2242,7 @@ void Window::Render() {
             retained_dirty_reason_allowed &&
             (!had_pending_dom_changes || !had_structural_dom_changes) &&
             !render_tree_rebuild_required &&
+            !needs_layout_update &&
             render_pipeline_ &&
             render_pipeline_->NeedsUpdate();
 
@@ -2254,7 +2253,7 @@ void Window::Render() {
         } else {
             if (can_update_retained_dirty_region) {
                 main_canvas->save();
-                main_canvas->clipRect(dirty_bounds_px, SkClipOp::kIntersect, true);
+                main_canvas->clipRect(dirty_bounds_px, SkClipOp::kIntersect, false);
                 SkPaint clear_paint;
                 clear_paint.setBlendMode(SkBlendMode::kSrc);
                 clear_paint.setColor(clear_color);
@@ -2270,7 +2269,7 @@ void Window::Render() {
             main_canvas->save();
             main_canvas->scale(dpi_scale, dpi_scale);
             if (can_update_retained_dirty_region) {
-                main_canvas->clipRect(dirty_bounds, SkClipOp::kIntersect, true);
+                main_canvas->clipRect(dirty_bounds, SkClipOp::kIntersect, false);
             }
 
             // 如果 DevTools 打开，裁剪到主应用区域
@@ -2343,7 +2342,7 @@ void Window::Render() {
                             static_cast<float>(src.height()));
                         canvas->drawImageRect(retained_image, SkRect::Make(src), dst,
                                               SkSamplingOptions(), nullptr,
-                                              SkCanvas::kFast_SrcRectConstraint);
+                                              SkCanvas::kStrict_SrcRectConstraint);
                         partial_retained_copy_used = true;
                     }
                 } else {

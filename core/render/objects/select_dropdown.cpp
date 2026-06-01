@@ -37,6 +37,7 @@ constexpr float kViewportMargin = 4.0f;
 constexpr float kBorderInset = 1.0f;
 constexpr float kWheelStep = 36.0f;
 constexpr float kCornerRadius = 6.0f;
+constexpr float kDropdownDirtyOutset = 20.0f;
 
 struct DropdownRow {
     std::string text;
@@ -124,6 +125,36 @@ SkRect GetWindowViewportRect(const std::shared_ptr<HTMLSelectElement>& select, c
 
 float GetMaxScroll(const SelectDropdownInfo& info) {
     return std::max(0.0f, info.content_height - info.viewport_rect.height());
+}
+
+SkRect DropdownPaintBounds(const SelectDropdownInfo& info) {
+    SkRect bounds = info.dropdown_rect;
+    if (bounds.isEmpty()) {
+        return SkRect::MakeEmpty();
+    }
+
+    // The popup is painted on the final window surface, not into the retained
+    // main-content cache. Include blur and antialias fringe so partial presents
+    // overwrite stale popup border/scrollbar pixels when the popup moves/closes.
+    bounds.outset(kDropdownDirtyOutset, kDropdownDirtyOutset);
+    return bounds;
+}
+
+void QueueDropdownRepaint(const SelectDropdownInfo& info, RepaintReason reason) {
+    auto select = info.select_element.lock();
+    auto owner_window = FindOwnerWindow(select);
+    if (!owner_window) {
+        return;
+    }
+
+    SkRect dirty_bounds = DropdownPaintBounds(info);
+    if (!dirty_bounds.isEmpty()) {
+        owner_window->AddDirtyRect(dirty_bounds);
+    }
+    if (!info.trigger_rect.isEmpty()) {
+        owner_window->AddDirtyRect(info.trigger_rect);
+    }
+    owner_window->SetNeedsRepaintFor(reason);
 }
 
 void EnsureSelectedOptionVisible(SelectDropdownInfo& info,
@@ -232,6 +263,7 @@ void SelectDropdownManager::OpenDropdown(std::shared_ptr<HTMLSelectElement> sele
     if (!select) return;
 
     if (current_dropdown_.is_open) {
+        QueueDropdownRepaint(current_dropdown_, RepaintReason::MouseButton);
         auto old_select = current_dropdown_.select_element.lock();
         if (old_select) {
             old_select->SetDropdownOpen(false);
@@ -244,10 +276,13 @@ void SelectDropdownManager::OpenDropdown(std::shared_ptr<HTMLSelectElement> sele
 
     select->SetHoveredIndex(select->GetSelectedIndex());
     RecomputeDropdownLayout(current_dropdown_, select, trigger_rect, true);
+    QueueDropdownRepaint(current_dropdown_, RepaintReason::MouseButton);
 }
 
 void SelectDropdownManager::CloseDropdown() {
     if (!current_dropdown_.is_open) return;
+
+    QueueDropdownRepaint(current_dropdown_, RepaintReason::MouseButton);
 
     auto select = current_dropdown_.select_element.lock();
     if (select) {
@@ -267,11 +302,18 @@ void SelectDropdownManager::UpdatePosition(const SkRect& new_trigger_rect) {
 
     auto select = current_dropdown_.select_element.lock();
     if (!select) {
+        QueueDropdownRepaint(current_dropdown_, RepaintReason::MouseButton);
         current_dropdown_ = {};
         return;
     }
 
+    SelectDropdownInfo previous_dropdown = current_dropdown_;
     RecomputeDropdownLayout(current_dropdown_, select, new_trigger_rect, false);
+    if (previous_dropdown.dropdown_rect != current_dropdown_.dropdown_rect ||
+        previous_dropdown.trigger_rect != current_dropdown_.trigger_rect) {
+        QueueDropdownRepaint(previous_dropdown, RepaintReason::MouseButton);
+        QueueDropdownRepaint(current_dropdown_, RepaintReason::MouseButton);
+    }
 }
 
 void SelectDropdownManager::UpdatePositionFromRenderTree(std::shared_ptr<RenderObject> root_render) {
