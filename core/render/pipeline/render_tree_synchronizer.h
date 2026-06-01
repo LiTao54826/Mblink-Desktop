@@ -29,6 +29,7 @@ class Document;
 class DirtyNodeTracker;
 class RenderTreeBuilder;
 class LayoutEngine;
+struct ComputedStyle;
 
 class StyleResolver;
 
@@ -123,7 +124,7 @@ private:
      * @brief 处理样式变化
      * @param tracker 脏节点追踪器
      */
-    void ProcessStyleChanges(DirtyNodeTracker& tracker);
+    bool ProcessStyleChanges(DirtyNodeTracker& tracker);
 
     /**
      * @brief 处理文本变化
@@ -177,6 +178,12 @@ private:
     void ReplaceRenderObject(Node* old_node, Node* new_node, Node* parent, size_t index);
 
     /**
+     * @brief Replace an existing render object when computed display maps to a different layout class.
+     */
+    std::shared_ptr<RenderObject> ReplaceRenderObjectForStyleChange(std::shared_ptr<Element> element,
+                                                                    const ComputedStyle& new_style);
+
+    /**
      * @brief 移动渲染对象（不清除关联）
      * @param node DOM 节点
      * @param old_parent 旧父 DOM 节点
@@ -219,7 +226,7 @@ private:
      * @param resolver 样式解析器
      * @param element 起始元素
      */
-    void RefreshElementSubtreeStyles(StyleResolver& resolver, std::shared_ptr<Element> element);
+    bool RefreshElementSubtreeStyles(StyleResolver& resolver, std::shared_ptr<Element> element);
 
 
 private:

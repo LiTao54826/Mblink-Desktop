@@ -309,5 +309,100 @@ TEST_F(IncrementalUpdateSystemTest, SynchronizerStyleOnlyChangeDoesNotRequestLay
     EXPECT_NEAR(compact_item.y, 0.0f, 0.5f);
 }
 
+TEST_F(IncrementalUpdateSystemTest, SynchronizerDisplayClassChangeReplacesRenderObjectType) {
+    auto doc = CreateDocumentFromHTML(R"(
+        <html>
+        <head>
+            <style>
+                table { width: 320px; table-layout: fixed; border-spacing: 0; }
+                th { position: sticky; top: 0; padding: 8px 10px; font-size: 12px; font-weight: 700; }
+                .sort-btn {
+                    width: 100%;
+                    padding: 0;
+                    border: 0;
+                    display: flex;
+                    align-items: center;
+                    justify-content: space-between;
+                    font: inherit;
+                }
+            </style>
+        </head>
+        <body>
+            <table id="orders">
+                <thead>
+                    <tr>
+                        <th id="header-cell">
+                            <button id="sort-button" type="button">
+                                <span>Client</span>
+                                <span>-</span>
+                            </button>
+                        </th>
+                        <th>Owner</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr><td>Northstar Labs</td><td>Mina Chen</td></tr>
+                </tbody>
+            </table>
+        </body>
+        </html>
+    )");
+
+    auto body = doc->GetBody();
+    auto button = doc->GetElementById("sort-button");
+    auto header_cell = doc->GetElementById("header-cell");
+    ASSERT_NE(body, nullptr);
+    ASSERT_NE(button, nullptr);
+    ASSERT_NE(header_cell, nullptr);
+
+    RenderTreeBuilder builder;
+    builder.SetDocument(doc.get());
+    auto render_root = builder.BuildRenderTree(body);
+    ASSERT_NE(render_root, nullptr);
+
+    auto initial_button_ro = button->GetRenderObject();
+    ASSERT_NE(initial_button_ro, nullptr);
+    ASSERT_EQ(initial_button_ro->GetType(), RenderObjectType::INLINE_BLOCK);
+
+    auto owned_layout_engine = std::make_unique<LayoutEngine>();
+    LayoutEngine* layout_engine = owned_layout_engine.get();
+    layout_engine->BuildLayoutTree(render_root);
+    layout_engine->ComputeLayout(800.0f, 600.0f);
+    layout_engine->GetLayoutInfo(render_root);
+
+    doc->GetDirtyTracker().Clear();
+    button->SetClassName("sort-btn");
+    ASSERT_EQ(doc->GetDirtyTracker().GetStructuralChangeCount(), 0);
+    ASSERT_GT(doc->GetDirtyTracker().GetStyleChangeCount(), 0);
+
+    RenderTreeSynchronizer synchronizer;
+    synchronizer.SetDocument(doc);
+    auto builder_ref = std::shared_ptr<RenderTreeBuilder>(
+        &builder, [](RenderTreeBuilder*) {});
+    synchronizer.SetRenderTreeBuilder(builder_ref);
+    synchronizer.SetLayoutEngine(std::shared_ptr<LayoutEngine>(
+        layout_engine, [](LayoutEngine*) {}));
+
+    bool requires_layout_tree_rebuild =
+        synchronizer.Synchronize(doc->GetDirtyTracker(), render_root);
+
+    auto updated_button_ro = button->GetRenderObject();
+    ASSERT_NE(updated_button_ro, nullptr);
+    EXPECT_TRUE(requires_layout_tree_rebuild);
+    EXPECT_NE(updated_button_ro.get(), initial_button_ro.get());
+    EXPECT_EQ(updated_button_ro->GetType(), RenderObjectType::FLEX);
+    EXPECT_EQ(updated_button_ro->GetComputedStyle().display, RenderObjectType::FLEX);
+
+    layout_engine->BuildLayoutTree(render_root, true);
+    layout_engine->ComputeLayout(800.0f, 600.0f);
+    layout_engine->GetLayoutInfo(render_root);
+
+    auto header_cell_ro = header_cell->GetRenderObject();
+    ASSERT_NE(header_cell_ro, nullptr);
+    EXPECT_GT(updated_button_ro->GetLayoutInfo().height, 0.0f);
+    EXPECT_GE(header_cell_ro->GetLayoutInfo().height,
+              updated_button_ro->GetLayoutInfo().height + 16.0f);
+}
+
 } // namespace test
 } // namespace mbink

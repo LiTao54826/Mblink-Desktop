@@ -81,6 +81,31 @@ size_t RemoveBindingsForSubtree(const std::shared_ptr<Node>& node) {
     return removed;
 }
 
+RenderObjectType RenderClassForDisplay(RenderObjectType display) {
+    switch (display) {
+        case RenderObjectType::GRID:
+        case RenderObjectType::INLINE_GRID:
+            return RenderObjectType::BLOCK;
+        default:
+            return display;
+    }
+}
+
+bool DisplayRequiresRenderObjectReplacement(RenderObjectType current_type,
+                                            RenderObjectType new_display) {
+    return RenderClassForDisplay(current_type) != RenderClassForDisplay(new_display);
+}
+
+void ClearRenderObjectLinksForSubtree(Node* node) {
+    if (!node) {
+        return;
+    }
+    node->SetRenderObject(nullptr);
+    for (const auto& child : node->GetChildNodes()) {
+        ClearRenderObjectLinksForSubtree(child.get());
+    }
+}
+
 } // namespace
 
 RenderTreeSynchronizer::RenderTreeSynchronizer() = default;
@@ -192,7 +217,7 @@ bool RenderTreeSynchronizer::Synchronize(DirtyNodeTracker& tracker,
     }
 
     // 处理样式和文本变化
-    ProcessStyleChanges(tracker);
+    const bool style_replaced_render_objects = ProcessStyleChanges(tracker);
     ProcessTextChanges(tracker);
 
     // 清除追踪器
@@ -200,7 +225,7 @@ bool RenderTreeSynchronizer::Synchronize(DirtyNodeTracker& tracker,
 
     render_tree_ = nullptr;
 
-    return has_structural_changes;
+    return has_structural_changes || style_replaced_render_objects;
 }
 
 
@@ -346,14 +371,16 @@ void RenderTreeSynchronizer::ProcessStructuralChanges(DirtyNodeTracker& tracker)
     }
 }
 
-void RenderTreeSynchronizer::ProcessStyleChanges(DirtyNodeTracker& tracker) {
+bool RenderTreeSynchronizer::ProcessStyleChanges(DirtyNodeTracker& tracker) {
     auto doc = document_.lock();
-    if (!doc) return;
+    if (!doc) return false;
 
     StyleResolver resolver;
     if (doc->GetStyleManager()) {
         resolver.SetStyleManager(doc->GetStyleManager());
     }
+
+    bool replaced_render_objects = false;
 
     for (const auto& change : tracker.GetStyleChanges()) {
         auto element = change.element.lock();
@@ -383,6 +410,21 @@ void RenderTreeSynchronizer::ProcessStyleChanges(DirtyNodeTracker& tracker) {
 
         // 重新解析样式
         ComputedStyle new_style = resolver.ResolveStyle(element, parent_style);
+        if (DisplayRequiresRenderObjectReplacement(render_obj->GetType(), new_style.display)) {
+            render_obj = ReplaceRenderObjectForStyleChange(element, new_style);
+            replaced_render_objects = true;
+            if (!render_obj) {
+                if (new_style.display == RenderObjectType::CONTENTS) {
+                    for (const auto& child : element->GetChildNodes()) {
+                        if (child && child->GetNodeType() == NodeType::ELEMENT_NODE) {
+                            replaced_render_objects |= RefreshElementSubtreeStyles(
+                                resolver, std::static_pointer_cast<Element>(child));
+                        }
+                    }
+                }
+                continue;
+            }
+        }
         render_obj->SetComputedStyle(new_style);
 
         // 与 OnStyleChanged 保持一致：同步推进到 LayoutEngine 的样式更新路径
@@ -412,19 +454,23 @@ void RenderTreeSynchronizer::ProcessStyleChanges(DirtyNodeTracker& tracker) {
         if (change.property == "class" || change.property == "id") {
             for (const auto& child : element->GetChildNodes()) {
                 if (child && child->GetNodeType() == NodeType::ELEMENT_NODE) {
-                    RefreshElementSubtreeStyles(resolver, std::static_pointer_cast<Element>(child));
+                    replaced_render_objects |=
+                        RefreshElementSubtreeStyles(resolver, std::static_pointer_cast<Element>(child));
                 }
             }
         }
     }
+
+    return replaced_render_objects;
 }
 
-void RenderTreeSynchronizer::RefreshElementSubtreeStyles(StyleResolver& resolver,
+bool RenderTreeSynchronizer::RefreshElementSubtreeStyles(StyleResolver& resolver,
                                                         std::shared_ptr<Element> element) {
     if (!element) {
-        return;
+        return false;
     }
 
+    bool replaced_render_objects = false;
     auto render_obj = element->GetRenderObject();
     if (render_obj) {
         const ComputedStyle* parent_style = nullptr;
@@ -448,6 +494,19 @@ void RenderTreeSynchronizer::RefreshElementSubtreeStyles(StyleResolver& resolver
         }
 
         ComputedStyle new_style = resolver.ResolveStyle(element, parent_style);
+        if (DisplayRequiresRenderObjectReplacement(render_obj->GetType(), new_style.display)) {
+            render_obj = ReplaceRenderObjectForStyleChange(element, new_style);
+            replaced_render_objects = true;
+            if (!render_obj) {
+                for (const auto& child : element->GetChildNodes()) {
+                    if (child && child->GetNodeType() == NodeType::ELEMENT_NODE) {
+                        replaced_render_objects |= RefreshElementSubtreeStyles(
+                            resolver, std::static_pointer_cast<Element>(child));
+                    }
+                }
+                return replaced_render_objects;
+            }
+        }
         render_obj->SetComputedStyle(new_style);
 
         if (auto engine = layout_engine_) {
@@ -463,9 +522,12 @@ void RenderTreeSynchronizer::RefreshElementSubtreeStyles(StyleResolver& resolver
 
     for (const auto& child : element->GetChildNodes()) {
         if (child && child->GetNodeType() == NodeType::ELEMENT_NODE) {
-            RefreshElementSubtreeStyles(resolver, std::static_pointer_cast<Element>(child));
+            replaced_render_objects |=
+                RefreshElementSubtreeStyles(resolver, std::static_pointer_cast<Element>(child));
         }
     }
+
+    return replaced_render_objects;
 }
 
 
@@ -842,6 +904,86 @@ void RenderTreeSynchronizer::ReplaceRenderObject(
     } else {
         InvalidateAncestorLayout(parent_ro.get());
     }
+}
+
+std::shared_ptr<RenderObject> RenderTreeSynchronizer::ReplaceRenderObjectForStyleChange(
+    std::shared_ptr<Element> element,
+    const ComputedStyle& new_style) {
+    if (!element) {
+        return nullptr;
+    }
+
+    auto old_ro = element->GetRenderObject();
+    if (!old_ro) {
+        return nullptr;
+    }
+
+    auto parent_ro = old_ro->GetParent();
+    if (!parent_ro) {
+        return nullptr;
+    }
+
+    auto builder = render_tree_builder_.lock();
+    if (!builder) {
+        return nullptr;
+    }
+
+    auto new_ro = builder->CreateRenderObjectForElement(element.get());
+    auto& siblings = parent_ro->GetChildrenMutable();
+    auto old_it = std::find(siblings.begin(), siblings.end(), old_ro);
+
+    if (!new_ro) {
+        const size_t old_index =
+            old_it != siblings.end()
+                ? static_cast<size_t>(std::distance(siblings.begin(), old_it))
+                : siblings.size();
+        auto old_children = old_ro->GetChildren();
+        old_ro->RemoveAllChildren();
+
+        if (old_it != siblings.end()) {
+            siblings.erase(old_it);
+        }
+        old_ro->SetParent(nullptr);
+
+        if (new_style.display == RenderObjectType::CONTENTS) {
+            size_t insert_index = std::min(old_index, siblings.size());
+            for (const auto& child : old_children) {
+                siblings.insert(siblings.begin() + insert_index, child);
+                child->SetParent(parent_ro);
+                ++insert_index;
+            }
+            element->SetRenderObject(nullptr);
+        } else {
+            ClearRenderObjectLinksForSubtree(element.get());
+        }
+
+        InvalidateAncestorLayout(parent_ro.get());
+        return nullptr;
+    }
+
+    new_ro->SetNode(element);
+    new_ro->SetComputedStyle(new_style);
+    new_ro->SetParent(parent_ro);
+
+    auto old_children = old_ro->GetChildren();
+    old_ro->RemoveAllChildren();
+    for (const auto& child : old_children) {
+        new_ro->AppendChild(child);
+    }
+
+    if (old_it != siblings.end()) {
+        *old_it = new_ro;
+    } else {
+        siblings.push_back(new_ro);
+    }
+
+    old_ro->SetParent(nullptr);
+    element->SetRenderObject(new_ro);
+
+    InvalidateAncestorLayout(new_ro.get());
+    new_ro->MarkNeedsPaint();
+    new_ro->InvalidatePaintCache();
+    return new_ro;
 }
 
 void RenderTreeSynchronizer::MoveRenderObject(Node* node, Node* old_parent,

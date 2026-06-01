@@ -712,6 +712,61 @@ TEST_F(TableLayoutBaselineTest, FlexButtonsInsideCellKeepIntrinsicHeightAfterRow
               action_cell->GetLayoutInfo().height - 12.0f + 0.5f);
 }
 
+TEST_F(TableLayoutBaselineTest, FlexButtonInsideHeaderCellContributesNaturalHeight) {
+    LoadAndLayout(R"(
+        <html>
+        <head>
+            <style>
+                table { width: 320px; table-layout: fixed; border-spacing: 0; }
+                th { position: sticky; top: 0; padding: 8px 10px; font-size: 12px; font-weight: 700; }
+                .sort-btn {
+                    width: 100%;
+                    padding: 0;
+                    border: 0;
+                    display: flex;
+                    align-items: center;
+                    justify-content: space-between;
+                    font: inherit;
+                }
+            </style>
+        </head>
+        <body>
+            <table id="table">
+                <thead>
+                    <tr id="header-row">
+                        <th id="header-cell">
+                            <button id="sort-button" class="sort-btn" type="button">
+                                <span id="label">Client</span>
+                                <span id="mark">-</span>
+                            </button>
+                        </th>
+                        <th>Owner</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>Northstar Labs</td>
+                        <td>Mina Chen</td>
+                    </tr>
+                </tbody>
+            </table>
+        </body>
+        </html>
+    )");
+
+    auto header_cell = RenderObjectForId("header-cell");
+    auto sort_button = RenderObjectForId("sort-button");
+    auto label = RenderObjectForId("label");
+    ASSERT_NE(header_cell, nullptr);
+    ASSERT_NE(sort_button, nullptr);
+    ASSERT_NE(label, nullptr);
+
+    EXPECT_GT(label->GetLayoutInfo().height, 0.0f);
+    EXPECT_GT(sort_button->GetLayoutInfo().height, 0.0f);
+    EXPECT_GE(header_cell->GetLayoutInfo().height,
+              sort_button->GetLayoutInfo().height + 16.0f);
+}
+
 TEST_F(TableLayoutBaselineTest, HitTestingFindsButtonInsideNormalTableCell) {
     LoadAndLayout(R"(
         <html>

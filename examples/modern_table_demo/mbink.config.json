@@ -1,0 +1,28 @@
+{
+  "build": {
+    "builder": "esbuild",
+    "external": [
+      "preact",
+      "preact/hooks"
+    ],
+    "hide_console": true,
+    "jsx_factory": "h",
+    "jsx_fragment": "Fragment",
+    "minify": false,
+    "sourcemap": true
+  },
+  "entry": "ui/app.js",
+  "name": "modern_table_demo",
+  "out_dir": ".dist",
+  "purpose": "desktop-app",
+  "runtime": "tool",
+  "src_dir": "ui",
+  "template": "desktop-app/tool",
+  "window": {
+    "borderless": true,
+    "height": 780,
+    "resizable": true,
+    "title": "modern_table_demo",
+    "width": 1120
+  }
+}
