@@ -111,7 +111,7 @@ This initializes window state from Rust and renders it in the page.
 cargo run -p mbink --example resources_mount
 ```
 
-This compiles a temporary directory into a resource package, mounts it on the app, and loads `/index.html` from the package.
+This compiles a temporary directory into a resource package, mounts it on the app, and loads `/input/index.html` from the package.
 
 ## Resource read example
 
@@ -146,12 +146,12 @@ use mbink::{App, compile_resources, load_resource_file};
 fn demo() -> mbink::Result<()> {
     compile_resources("assets", "assets.mbk", "")?;
 
-    let file = load_resource_file("assets.mbk", "index.html", "")?;
+    let file = load_resource_file("assets.mbk", "assets/index.html", "")?;
     let html = file.into_utf8_string()?;
 
     let app = App::new("MBink", 800, 600)?;
     app.mount_resource_package("assets.mbk", "", "/")?;
-    app.load_html_file("/index.html")?;
+    app.load_html_file("/assets/index.html")?;
     Ok(())
 }
 ```

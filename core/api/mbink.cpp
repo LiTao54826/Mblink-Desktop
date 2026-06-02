@@ -1786,7 +1786,7 @@ int mbink_load_html_file(MBinkHandle handle, const char* filepath) {
                         nullptr,
                         error)) {
                     content.assign(reinterpret_cast<const char*>(data.data()), data.size());
-                    fs::path html_dir = fs::path(NormalizeResourcePath(filepath)).parent_path();
+                    fs::path html_dir = Utf8PathToFsPath(NormalizeResourcePath(filepath)).parent_path();
                     base_path = NormalizeResourcePath(FsPathToUtf8String(html_dir));
                 }
             }

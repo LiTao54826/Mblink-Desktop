@@ -29,7 +29,7 @@ fn main() -> mbink::Result<()> {
 
     let mut app = App::new("MBink Rust Resources", 800, 600)?;
     app.mount_resource_package(&path_str(&package_file), "", "/")?;
-    app.load_html_file("/index.html")?;
+    app.load_html_file("/input/index.html")?;
     app.run();
     Ok(())
 }

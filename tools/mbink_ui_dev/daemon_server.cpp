@@ -714,7 +714,7 @@ std::filesystem::path ResourcePackagePath(const std::filesystem::path& project_r
 }
 
 std::filesystem::path ResourceInputDir(const std::filesystem::path& project_root, const ProjectConfig& config) {
-    return std::filesystem::absolute(project_root / config.out_dir / "resource-input").lexically_normal();
+    return std::filesystem::absolute(project_root / config.out_dir / "app").lexically_normal();
 }
 
 bool CopyFileOverwrite(const std::filesystem::path& from, const std::filesystem::path& to, std::string* error) {

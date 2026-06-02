@@ -18,7 +18,7 @@ fn main() -> mbink::Result<()> {
 
     compile_resources(&path_str(&input_dir), &path_str(&package_file), "")?;
 
-    let file = load_resource_file(&path_str(&package_file), "message.txt", "")?;
+    let file = load_resource_file(&path_str(&package_file), "input/message.txt", "")?;
     println!("flags = {}", file.flags());
     assert_eq!(file.flags() & RESOURCE_FLAG_BYTECODE, 0);
     assert_eq!(file.into_utf8_string()?, "hello from resource package\n");

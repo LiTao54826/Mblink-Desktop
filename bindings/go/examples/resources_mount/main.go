@@ -38,7 +38,7 @@ func main() {
 		return args, nil
 	}))
 	must(app.MountResourcePackage(packageFile, "", "/"))
-	must(app.LoadHTMLFile("/index.html"))
+	must(app.LoadHTMLFile("/input/index.html"))
 	must(autorun.Run(app, func(tick int) error {
 		if report == "" || report == "null" || report == `""` {
 			if tick <= 6 {

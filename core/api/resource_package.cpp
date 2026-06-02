@@ -4,6 +4,7 @@
 #include "tools/app_bundler/bytecode_compiler.h"
 #include "tools/app_bundler/module_resolver.h"
 
+#include <algorithm>
 #include <cctype>
 #include <filesystem>
 #include <fstream>
@@ -44,6 +45,26 @@ std::string NormalizeFsPath(const fs::path& path) {
     std::string result = FsPathToUtf8String(path.lexically_normal());
     std::replace(result.begin(), result.end(), '\\', '/');
     return result;
+}
+
+std::string NormalizeResourceName(const fs::path& path) {
+    std::string result = NormalizeFsPath(path);
+    while (!result.empty() && result.front() == '/') {
+        result.erase(result.begin());
+    }
+    return result == "." ? std::string() : result;
+}
+
+std::string NormalizeResourceName(const char* path) {
+    return NormalizeResourceName(Utf8PathToFsPath(path));
+}
+
+fs::path DirectoryResourceRootName(const fs::path& input) {
+    fs::path root = input.lexically_normal().filename();
+    if (root.empty()) {
+        root = input.lexically_normal().parent_path().filename();
+    }
+    return root;
 }
 
 uint32_t HashKey(const char* key) {
@@ -269,7 +290,7 @@ std::vector<uint8_t> CompileJsFile(const fs::path& path,
 bool BuildPayload(const fs::path& input, std::vector<uint8_t>& payload, std::string& error) {
     std::vector<fs::path> files;
     const bool is_dir = fs::is_directory(input);
-	    const fs::path base = is_dir ? input : input.parent_path();
+    const fs::path base = is_dir ? input : input.parent_path();
 
     if (is_dir) {
         for (const auto& entry : fs::recursive_directory_iterator(input)) {
@@ -282,9 +303,18 @@ bool BuildPayload(const fs::path& input, std::vector<uint8_t>& payload, std::str
         return false;
     }
 
+    std::sort(files.begin(), files.end(), [](const fs::path& a, const fs::path& b) {
+        return NormalizeFsPath(a) < NormalizeFsPath(b);
+    });
+
     W32(payload, static_cast<uint32_t>(files.size()));
+    const fs::path resource_root = is_dir ? DirectoryResourceRootName(input) : fs::path();
     for (const auto& file : files) {
-        std::string relative = is_dir ? NormalizeFsPath(fs::relative(file, base)) : FsPathToUtf8String(file.filename());
+        fs::path resource_name = file.filename();
+        if (is_dir) {
+            resource_name = resource_root / fs::relative(file, base);
+        }
+        std::string relative = NormalizeResourceName(resource_name);
         std::vector<uint8_t> data;
         if (!ReadFileBytes(file, data)) {
             error = "failed to read file: " + FsPathToUtf8String(file);
@@ -380,7 +410,8 @@ bool LoadResourceFile(const char* package_file,
         return false;
     }
 
-    const std::string target = fs::path(resource_path).generic_string();
+    const std::string target = NormalizeResourceName(resource_path);
+
     for (uint32_t i = 0; i < count; ++i) {
         uint32_t name_len = 0;
         uint32_t flags = 0;

@@ -10,6 +10,8 @@ EMBEDDED_CONFIG = {
     "runtime": "python",
     "window": {"title": "MBink", "width": 900, "height": 640, "resizable": True},
 }
+RESOURCE_CONFIG_PATH = "app/mbink.config.json"
+RESOURCE_APP_PATH = "/app/app.js"
 
 
 def app_base_dir():
@@ -75,7 +77,7 @@ def load_config(resource_package):
         return json.loads(config_path.read_text(encoding="utf-8"))
     if resource_package:
         try:
-            data, _flags = load_resource_file(str(resource_package), "mbink.config.json")
+            data, _flags = load_resource_file(str(resource_package), RESOURCE_CONFIG_PATH)
             return json.loads(data.decode("utf-8"))
         except Exception:
             pass
@@ -189,7 +191,7 @@ def main():
     )
     if resource_package:
         app.mount_resource_package(str(resource_package), "", "/")
-        app.load_js_file("/app.js")
+        app.load_js_file(RESOURCE_APP_PATH)
     else:
         app.load_js_file(str(PROJECT_ROOT / "ui" / "app.js"))
     app.run()
