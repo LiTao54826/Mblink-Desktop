@@ -1484,6 +1484,17 @@ void NativeLayoutEngine::RemoveElement(RenderObject* render_obj) {
     NodeId node_id = it->second;
     LayoutNode* node = GetNode(node_id);
 
+    if (node && node->render_obj != render_obj) {
+        render_to_node_.erase(render_obj);
+        node->cache.Clear();
+        node->needs_layout = true;
+        node->content_version = ContentVersionManager::GetInstance().GenerateVersion();
+        if (node->render_obj) {
+            node->render_obj->MarkNeedsLayout(false);
+        }
+        return;
+    }
+
     // 从父节点的 children 列表中移除，并清除祖先的布局缓存
     if (node && node->parent != 0) {
         LayoutNode* parent = GetNode(node->parent);

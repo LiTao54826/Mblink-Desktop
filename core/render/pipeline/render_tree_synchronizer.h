@@ -124,13 +124,16 @@ private:
      * @brief 处理样式变化
      * @param tracker 脏节点追踪器
      */
-    bool ProcessStyleChanges(DirtyNodeTracker& tracker);
+    bool ProcessStyleChanges(DirtyNodeTracker& tracker,
+                             const std::unordered_set<Node*>* rebuilt_roots = nullptr,
+                             const std::unordered_set<Node*>* preapplied_style_roots = nullptr);
 
     /**
      * @brief 处理文本变化
      * @param tracker 脏节点追踪器
      */
-    void ProcessTextChanges(DirtyNodeTracker& tracker);
+    void ProcessTextChanges(DirtyNodeTracker& tracker,
+                            const std::unordered_set<Node*>* rebuilt_roots = nullptr);
 
     /**
      * @brief 判断是否需要子树重建
@@ -220,6 +223,10 @@ private:
      * @param obj 起始渲染对象
      */
     void InvalidateAncestorLayout(RenderObject* obj);
+
+    bool ApplyStyleChange(StyleResolver& resolver,
+                          const std::shared_ptr<Element>& element,
+                          bool refresh_descendants);
 
     /**
      * @brief 递归刷新元素子树的样式与布局失效状态

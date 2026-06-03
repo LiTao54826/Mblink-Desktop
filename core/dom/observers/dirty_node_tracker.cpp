@@ -275,6 +275,88 @@ void DirtyNodeTracker::Optimize() {
 
     structural_changes_ = std::move(optimized_structural);
 
+    std::unordered_set<Node*> added_subtree_roots;
+    std::unordered_set<Node*> removed_subtree_roots;
+    for (const auto& change : structural_changes_) {
+        switch (change.type) {
+            case StructuralChangeType::Added:
+                if (change.node) {
+                    added_subtree_roots.insert(change.node.get());
+                }
+                break;
+            case StructuralChangeType::Removed:
+                if (change.node) {
+                    removed_subtree_roots.insert(change.node.get());
+                }
+                break;
+            case StructuralChangeType::Replaced:
+                if (change.old_node) {
+                    removed_subtree_roots.insert(change.old_node.get());
+                }
+                if (change.new_node) {
+                    added_subtree_roots.insert(change.new_node.get());
+                }
+                break;
+            case StructuralChangeType::Moved:
+                break;
+        }
+    }
+
+    auto is_covered_by_root = [](Node* node,
+                                 const std::unordered_set<Node*>& roots,
+                                 bool include_self) {
+        if (!node || roots.empty()) {
+            return false;
+        }
+
+        Node* current = include_self ? node : node->GetParentNode().get();
+        while (current) {
+            if (roots.find(current) != roots.end()) {
+                return true;
+            }
+            auto parent = current->GetParentNode();
+            current = parent.get();
+        }
+        return false;
+    };
+
+    if (!added_subtree_roots.empty() || !removed_subtree_roots.empty()) {
+        std::vector<StructuralChange> subtree_pruned_structural;
+        subtree_pruned_structural.reserve(structural_changes_.size());
+
+        for (auto& change : structural_changes_) {
+            bool covered = false;
+            switch (change.type) {
+                case StructuralChangeType::Added:
+                    covered = change.node &&
+                        is_covered_by_root(change.node.get(), added_subtree_roots, false);
+                    break;
+                case StructuralChangeType::Removed:
+                    covered = change.node &&
+                        is_covered_by_root(change.node.get(), removed_subtree_roots, false);
+                    break;
+                case StructuralChangeType::Moved:
+                    covered = change.node &&
+                        (is_covered_by_root(change.node.get(), added_subtree_roots, false) ||
+                         is_covered_by_root(change.node.get(), removed_subtree_roots, false));
+                    break;
+                case StructuralChangeType::Replaced:
+                    covered =
+                        (change.old_node &&
+                         is_covered_by_root(change.old_node.get(), removed_subtree_roots, false)) ||
+                        (change.new_node &&
+                         is_covered_by_root(change.new_node.get(), added_subtree_roots, false));
+                    break;
+            }
+
+            if (!covered) {
+                subtree_pruned_structural.push_back(std::move(change));
+            }
+        }
+
+        structural_changes_ = std::move(subtree_pruned_structural);
+    }
+
     // 优化样式变化：合并同一元素同一属性的多次变化
     std::unordered_map<Element*, std::unordered_map<std::string, size_t>> style_change_indices;
     std::vector<StyleChange> optimized_styles;
@@ -283,6 +365,10 @@ void DirtyNodeTracker::Optimize() {
         auto& change = style_changes_[i];
         auto element = change.element.lock();
         if (!element) continue;
+        if (is_covered_by_root(element.get(), added_subtree_roots, true) ||
+            is_covered_by_root(element.get(), removed_subtree_roots, true)) {
+            continue;
+        }
 
         auto& prop_indices = style_change_indices[element.get()];
         auto it = prop_indices.find(change.property);
@@ -307,6 +393,10 @@ void DirtyNodeTracker::Optimize() {
         auto& change = text_changes_[i];
         auto node = change.node.lock();
         if (!node) continue;
+        if (is_covered_by_root(node.get(), added_subtree_roots, true) ||
+            is_covered_by_root(node.get(), removed_subtree_roots, true)) {
+            continue;
+        }
 
         auto it = text_change_indices.find(node.get());
 

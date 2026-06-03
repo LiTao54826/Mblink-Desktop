@@ -48,6 +48,7 @@
 #include <chrono>
 #include <algorithm>
 #include <unordered_map>
+#include <unordered_set>
 #include <cstdlib>
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_opengl.h>
@@ -580,6 +581,145 @@ void ClearDomDirtyTree(Node* node) {
 
     for (const auto& child : node->GetChildNodes()) {
         ClearDomDirtyTree(child.get());
+    }
+}
+
+void ClearDomDirtyNode(Node* node) {
+    if (!node) {
+        return;
+    }
+
+    node->ClearDirty();
+    node->ClearNeedsStyleRecalc();
+    node->ClearNeedsLayout();
+}
+
+struct DirtyDomClearScope {
+    std::vector<std::shared_ptr<Node>> ancestor_nodes;
+    std::vector<std::shared_ptr<Node>> subtree_roots;
+    std::unordered_set<Node*> ancestor_seen;
+    std::unordered_set<Node*> subtree_seen;
+    Node* boundary_root = nullptr;
+};
+
+void AddDirtyDomAncestorPath(DirtyDomClearScope& scope,
+                             const std::shared_ptr<Node>& node) {
+    std::vector<std::shared_ptr<Node>> path;
+    auto current = node;
+    while (current) {
+        path.push_back(current);
+        if (!scope.boundary_root || current.get() == scope.boundary_root) {
+            for (const auto& path_node : path) {
+                if (scope.ancestor_seen.insert(path_node.get()).second) {
+                    scope.ancestor_nodes.push_back(path_node);
+                }
+            }
+            return;
+        }
+        current = current->GetParentNode();
+    }
+}
+
+void AddDirtyDomSubtreeRoot(DirtyDomClearScope& scope,
+                            const std::shared_ptr<Node>& node) {
+    if (!node) {
+        return;
+    }
+
+    if (scope.boundary_root &&
+        node.get() != scope.boundary_root &&
+        !scope.boundary_root->Contains(node)) {
+        return;
+    }
+
+    if (scope.subtree_seen.insert(node.get()).second) {
+        scope.subtree_roots.push_back(node);
+    }
+    AddDirtyDomAncestorPath(scope, node);
+}
+
+bool IsDescendantOfSubtreeRoot(Node* node,
+                               const std::unordered_set<Node*>& roots) {
+    if (!node || roots.empty()) {
+        return false;
+    }
+
+    auto parent = node->GetParentNode();
+    while (parent) {
+        if (roots.find(parent.get()) != roots.end()) {
+            return true;
+        }
+        parent = parent->GetParentNode();
+    }
+    return false;
+}
+
+void CollectStructuralDirtyAncestorPaths(const DirtyNodeTracker& tracker,
+                                         DirtyDomClearScope& scope) {
+    for (const auto& change : tracker.GetStructuralChanges()) {
+        switch (change.type) {
+            case DirtyNodeTracker::StructuralChangeType::Added:
+                AddDirtyDomAncestorPath(scope, change.parent);
+                AddDirtyDomAncestorPath(scope, change.node);
+                break;
+            case DirtyNodeTracker::StructuralChangeType::Removed:
+                AddDirtyDomAncestorPath(scope, change.parent);
+                break;
+            case DirtyNodeTracker::StructuralChangeType::Moved:
+                AddDirtyDomAncestorPath(scope, change.old_parent);
+                AddDirtyDomAncestorPath(scope, change.parent);
+                AddDirtyDomAncestorPath(scope, change.node);
+                break;
+            case DirtyNodeTracker::StructuralChangeType::Replaced:
+                AddDirtyDomAncestorPath(scope, change.parent);
+                AddDirtyDomAncestorPath(scope, change.new_node);
+                break;
+        }
+    }
+}
+
+void CollectOptimizedDirtyDomClearScope(const DirtyNodeTracker& tracker,
+                                        DirtyDomClearScope& scope) {
+    for (const auto& change : tracker.GetStructuralChanges()) {
+        switch (change.type) {
+            case DirtyNodeTracker::StructuralChangeType::Added:
+                AddDirtyDomSubtreeRoot(scope, change.node);
+                AddDirtyDomAncestorPath(scope, change.parent);
+                break;
+            case DirtyNodeTracker::StructuralChangeType::Removed:
+                AddDirtyDomAncestorPath(scope, change.parent);
+                break;
+            case DirtyNodeTracker::StructuralChangeType::Moved:
+                AddDirtyDomAncestorPath(scope, change.old_parent);
+                AddDirtyDomAncestorPath(scope, change.parent);
+                AddDirtyDomAncestorPath(scope, change.node);
+                break;
+            case DirtyNodeTracker::StructuralChangeType::Replaced:
+                AddDirtyDomSubtreeRoot(scope, change.new_node);
+                AddDirtyDomAncestorPath(scope, change.parent);
+                break;
+        }
+    }
+
+    for (const auto& change : tracker.GetStyleChanges()) {
+        AddDirtyDomAncestorPath(scope, change.element.lock());
+    }
+    for (const auto& change : tracker.GetTextChanges()) {
+        AddDirtyDomAncestorPath(scope, change.node.lock());
+    }
+}
+
+void ClearDirtyDomScope(const DirtyDomClearScope& scope) {
+    for (const auto& root : scope.subtree_roots) {
+        if (!root ||
+            IsDescendantOfSubtreeRoot(root.get(), scope.subtree_seen)) {
+            continue;
+        }
+        ClearDomDirtyTree(root.get());
+    }
+
+    for (const auto& node : scope.ancestor_nodes) {
+        ClearDomDirtyNode(node.get());
     }
 }
 
@@ -1864,6 +2004,9 @@ void Window::Render() {
     double size_check_ms = 0.0;
     double ensure_tree_ms = 0.0;
     double dirty_sync_ms = 0.0;
+    double dirty_rect_collect_ms = 0.0;
+    double render_tree_sync_ms = 0.0;
+    double dom_dirty_clear_ms = 0.0;
     double style_dirty_scan_ms = 0.0;
     double layout_ms = 0.0;
     double animation_update_ms = 0.0;
@@ -2059,16 +2202,38 @@ void Window::Render() {
         const bool has_pending_changes = tracker.HasPendingChanges();
         had_pending_dom_changes = has_pending_changes;
         if (has_pending_changes) {
+            DirtyDomClearScope dirty_clear_scope;
+            auto body = document_->GetBody();
+            dirty_clear_scope.boundary_root = body.get();
+            CollectStructuralDirtyAncestorPaths(tracker, dirty_clear_scope);
+            tracker.Optimize();
+            CollectOptimizedDirtyDomClearScope(tracker, dirty_clear_scope);
+
             had_structural_dom_changes = tracker.GetStructuralChangeCount() > 0;
-            if (!had_structural_dom_changes) {
-                AddRetainedDirtyRectsForPendingChanges(this, tracker);
-            } else {
-                structural_dirty_rects_bounded =
-                    AddStructuralDirtyRectsForPendingChanges(this, tracker);
+            double dirty_phase_start_ms = baseline_stats_enabled ? GetBaselineTimeMs() : 0.0;
+            if (tracker.HasPendingChanges()) {
+                if (!had_structural_dom_changes) {
+                    AddRetainedDirtyRectsForPendingChanges(this, tracker);
+                } else {
+                    structural_dirty_rects_bounded =
+                        AddStructuralDirtyRectsForPendingChanges(this, tracker);
+                }
+            }
+            if (baseline_stats_enabled) {
+                dirty_rect_collect_ms = GetBaselineTimeMs() - dirty_phase_start_ms;
+                dirty_phase_start_ms = GetBaselineTimeMs();
             }
             // 调用 RenderTreeSynchronizer 来同步变化
-            bool synced = render_tree_synchronizer_->Synchronize(tracker, cached_render_tree_);
-            ClearDomDirtyTree(document_->GetBody().get());
+            bool synced = tracker.HasPendingChanges() &&
+                render_tree_synchronizer_->Synchronize(tracker, cached_render_tree_);
+            if (baseline_stats_enabled) {
+                render_tree_sync_ms = GetBaselineTimeMs() - dirty_phase_start_ms;
+                dirty_phase_start_ms = GetBaselineTimeMs();
+            }
+            ClearDirtyDomScope(dirty_clear_scope);
+            if (baseline_stats_enabled) {
+                dom_dirty_clear_ms = GetBaselineTimeMs() - dirty_phase_start_ms;
+            }
             needs_dom_raster_update = true;
             if (synced) {
                 needs_layout_update = true;
@@ -2533,6 +2698,9 @@ void Window::Render() {
                       << " size_check_ms=" << size_check_ms
                       << " ensure_tree_ms=" << ensure_tree_ms
                       << " dirty_sync_ms=" << dirty_sync_ms
+                      << " dirty_rect_collect_ms=" << dirty_rect_collect_ms
+                      << " render_tree_sync_ms=" << render_tree_sync_ms
+                      << " dom_dirty_clear_ms=" << dom_dirty_clear_ms
                       << " style_dirty_scan_ms=" << style_dirty_scan_ms
                       << " layout_ms=" << layout_ms
                       << " animation_update_ms=" << animation_update_ms
@@ -3215,6 +3383,9 @@ void Window::ForceLayoutSync() {
     if (render_tree_rebuild_required) {
         RenderTreeSynchronizer::CleanupDetachedDOMBindings(document_->GetDirtyTracker());
         document_->GetDirtyTracker().Clear();
+        if (auto body = document_->GetBody()) {
+            ClearDomDirtyTree(body.get());
+        }
         layout_sync_valid_ = true;
         return;
     }
@@ -3242,7 +3413,18 @@ void Window::ForceLayoutSync() {
         bool has_pending = tracker.HasPendingChanges();
 
         if (has_pending) {
-            needs_layout_tree_rebuild = render_tree_synchronizer_->Synchronize(tracker, cached_render_tree_);
+            DirtyDomClearScope dirty_clear_scope;
+            auto body = document_->GetBody();
+            dirty_clear_scope.boundary_root = body.get();
+            CollectStructuralDirtyAncestorPaths(tracker, dirty_clear_scope);
+            tracker.Optimize();
+            CollectOptimizedDirtyDomClearScope(tracker, dirty_clear_scope);
+
+            if (tracker.HasPendingChanges()) {
+                needs_layout_tree_rebuild =
+                    render_tree_synchronizer_->Synchronize(tracker, cached_render_tree_);
+            }
+            ClearDirtyDomScope(dirty_clear_scope);
         }
     }
 
