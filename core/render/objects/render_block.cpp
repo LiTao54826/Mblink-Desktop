@@ -34,6 +34,7 @@
 #include "core/dom/document.h"
 #include "core/dom/selection/selection.h"
 #include "core/dom/elements/html_input_element.h"
+#include "core/dom/elements/html_select_element.h"
 #include "core/dom/elements/html_textarea_element.h"
 #include "core/dom/elements/html_canvas_element.h"
 #include "core/dom/elements/html_image_element.h"
@@ -1243,6 +1244,19 @@ void RenderBlock::Paint(SkCanvas* canvas) {
         }
 
         // 渲染图片元素 - 保持与 RenderInlineBlock 一致的 object-fit/object-position 行为
+        auto select_element = std::dynamic_pointer_cast<HTMLSelectElement>(node);
+        if (select_element) {
+            PaintSelectElement(canvas, select_element.get(), box);
+            // A select paints its selected option as native control content.
+            // Do not paint option children as ordinary document content.
+            if (has_opacity) {
+                canvas->restore();
+            }
+            canvas->restore();
+            needs_paint_ = false;
+            return;
+        }
+
         auto image_element = std::dynamic_pointer_cast<HTMLImageElement>(node);
         if (image_element) {
             sk_sp<SkImage> image = image_element->GetSkImage();
@@ -1908,6 +1922,21 @@ void RenderBlock::PaintInputElement(SkCanvas* canvas, HTMLInputElement* input, c
             }
         }
     }
+}
+
+void RenderBlock::PaintSelectElement(SkCanvas* canvas, HTMLSelectElement* select, const Box& box) {
+    if (!select) return;
+
+    FormElementPaintParams params;
+    params.font_family = computed_style_.font_family;
+    params.font_size = computed_style_.font_size;
+    params.text_color = computed_style_.color;
+
+    auto element = std::static_pointer_cast<Element>(GetNode());
+    params.has_focus = element && element->HasPseudoClass("focus");
+
+    FormElementPainter painter(canvas);
+    painter.PaintSelectElement(select, box, params);
 }
 
 void RenderBlock::PaintTextAreaElement(SkCanvas* canvas, HTMLTextAreaElement* textarea, const Box& box) {

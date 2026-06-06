@@ -1374,6 +1374,7 @@ protected:
 // 前向声明
 class HTMLInputElement;
 class HTMLTextAreaElement;
+class HTMLSelectElement;
 struct Box;
 
 /**
@@ -1402,6 +1403,8 @@ private:
      * @param box 盒模型
      */
     void PaintTextAreaElement(SkCanvas* canvas, HTMLTextAreaElement* textarea, const Box& box);
+
+    void PaintSelectElement(SkCanvas* canvas, HTMLSelectElement* select, const Box& box);
 
     /**
      * @brief 渲染contentEditable元素的光标

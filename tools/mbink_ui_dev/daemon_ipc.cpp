@@ -1,4 +1,5 @@
 #include "daemon_ipc.h"
+#include "common.h"
 
 #include <algorithm>
 #include <chrono>
@@ -78,12 +79,13 @@ bool SendDaemonRequest(const std::string& pipe_name,
                        std::string* error,
                        int timeout_ms) {
 #ifdef _WIN32
-    if (!WaitNamedPipeA(pipe_name.c_str(), timeout_ms)) {
+    const auto wide_pipe_name = Utf8ToWide(pipe_name);
+    if (!WaitNamedPipeW(wide_pipe_name.c_str(), timeout_ms)) {
         if (error) *error = "daemon_queue_timeout";
         return false;
     }
 
-    HANDLE pipe = CreateFileA(pipe_name.c_str(),
+    HANDLE pipe = CreateFileW(wide_pipe_name.c_str(),
                               GENERIC_READ | GENERIC_WRITE,
                               0,
                               nullptr,

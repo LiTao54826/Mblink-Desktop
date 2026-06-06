@@ -172,6 +172,26 @@ bool IsDescendantOfAnyRoot(Node* node, const std::unordered_set<Node*>* roots) {
     return false;
 }
 
+size_t DOMIndexInParent(Node* node) {
+    if (!node) {
+        return 0;
+    }
+
+    auto parent = node->GetParentNode();
+    if (!parent) {
+        return 0;
+    }
+
+    const auto& siblings = parent->GetChildNodes();
+    for (size_t i = 0; i < siblings.size(); ++i) {
+        if (siblings[i].get() == node) {
+            return i;
+        }
+    }
+
+    return siblings.size();
+}
+
 } // namespace
 
 RenderTreeSynchronizer::RenderTreeSynchronizer() = default;
@@ -629,37 +649,93 @@ bool RenderTreeSynchronizer::RefreshElementSubtreeStyles(StyleResolver& resolver
     }
 
     bool replaced_render_objects = false;
-    auto render_obj = element->GetRenderObject();
-    if (render_obj) {
-        const ComputedStyle* parent_style = nullptr;
-        ComputedStyle root_parent_style;
-        if (auto parent_node = element->GetParentNode()) {
+    auto resolve_parent_style = [&](const std::shared_ptr<Element>& target,
+                                    ComputedStyle& root_parent_style) -> const ComputedStyle* {
+        if (!target) {
+            return nullptr;
+        }
+
+        if (auto parent_node = target->GetParentNode()) {
             if (parent_node->GetNodeType() == NodeType::ELEMENT_NODE) {
                 auto parent_elem = std::static_pointer_cast<Element>(parent_node);
                 if (auto parent_render = parent_elem->GetRenderObject()) {
-                    parent_style = &parent_render->GetComputedStyle();
+                    return &parent_render->GetComputedStyle();
                 }
             } else if (parent_node->GetNodeType() == NodeType::DOCUMENT_NODE &&
-                       element->GetTagName() == "body") {
+                       target->GetTagName() == "body") {
                 if (auto doc = document_.lock()) {
                     auto document_element = doc->GetDocumentElement();
                     if (document_element) {
                         root_parent_style = resolver.ResolveStyle(document_element, nullptr);
-                        parent_style = &root_parent_style;
+                        return &root_parent_style;
                     }
                 }
             }
         }
 
-        ComputedStyle new_style = resolver.ResolveStyle(element, parent_style);
+        return nullptr;
+    };
+
+    auto parent_allows_render_object = [&](const std::shared_ptr<Element>& target) {
+        auto parent_node = target ? target->GetParentNode() : nullptr;
+        if (!parent_node || parent_node->GetNodeType() != NodeType::ELEMENT_NODE) {
+            return true;
+        }
+
+        auto parent_elem = std::static_pointer_cast<Element>(parent_node);
+        if (parent_elem->GetRenderObject()) {
+            return true;
+        }
+
+        ComputedStyle parent_root_parent_style;
+        const ComputedStyle* grand_parent_style =
+            resolve_parent_style(parent_elem, parent_root_parent_style);
+        ComputedStyle parent_style = resolver.ResolveStyle(parent_elem, grand_parent_style);
+        return parent_style.display == RenderObjectType::CONTENTS;
+    };
+
+    ComputedStyle root_parent_style;
+    const ComputedStyle* parent_style = resolve_parent_style(element, root_parent_style);
+    ComputedStyle new_style = resolver.ResolveStyle(element, parent_style);
+
+    auto render_obj = element->GetRenderObject();
+    if (!render_obj) {
+        if (new_style.display == RenderObjectType::NONE) {
+            RemoveRenderObject(element.get());
+            return true;
+        }
+
+        if (!parent_allows_render_object(element)) {
+            return false;
+        }
+
+        auto parent_node = element->GetParentNode();
+        if (!parent_node) {
+            return false;
+        }
+
+        render_obj = InsertRenderObject(element.get(), parent_node.get(), DOMIndexInParent(element.get()));
+        replaced_render_objects = true;
+
+        if (render_obj) {
+            render_obj->SetComputedStyle(new_style);
+            InvalidateAncestorLayout(render_obj.get());
+            render_obj->MarkNeedsPaint();
+            render_obj->InvalidatePaintCache();
+        }
+    }
+
+    if (render_obj) {
         if (DisplayRequiresRenderObjectReplacement(render_obj->GetType(), new_style.display)) {
             render_obj = ReplaceRenderObjectForStyleChange(element, new_style);
             replaced_render_objects = true;
             if (!render_obj) {
-                for (const auto& child : element->GetChildNodes()) {
-                    if (child && child->GetNodeType() == NodeType::ELEMENT_NODE) {
-                        replaced_render_objects |= RefreshElementSubtreeStyles(
-                            resolver, std::static_pointer_cast<Element>(child));
+                if (new_style.display == RenderObjectType::CONTENTS) {
+                    for (const auto& child : element->GetChildNodes()) {
+                        if (child && child->GetNodeType() == NodeType::ELEMENT_NODE) {
+                            replaced_render_objects |= RefreshElementSubtreeStyles(
+                                resolver, std::static_pointer_cast<Element>(child));
+                        }
                     }
                 }
                 return replaced_render_objects;
@@ -670,6 +746,15 @@ bool RenderTreeSynchronizer::RefreshElementSubtreeStyles(StyleResolver& resolver
         if (auto engine = layout_engine_) {
             if (engine->HasElement(render_obj.get())) {
                 engine->UpdateStyle(render_obj.get(), new_style);
+            } else {
+                auto ancestor = render_obj->GetParent();
+                while (ancestor) {
+                    if (engine->HasElement(ancestor.get())) {
+                        engine->MarkNeedsLayout(ancestor.get());
+                        break;
+                    }
+                    ancestor = ancestor->GetParent();
+                }
             }
         }
 

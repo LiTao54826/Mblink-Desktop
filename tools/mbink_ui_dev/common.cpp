@@ -19,10 +19,55 @@
 
 namespace mbink::ui_dev {
 
+#ifdef _WIN32
+std::wstring Utf8ToWide(const std::string& value) {
+    if (value.empty()) return L"";
+    int size = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, value.data(), static_cast<int>(value.size()), nullptr, 0);
+    UINT code_page = CP_UTF8;
+    DWORD flags = MB_ERR_INVALID_CHARS;
+    if (size <= 0) {
+        code_page = CP_ACP;
+        flags = 0;
+        size = MultiByteToWideChar(code_page, flags, value.data(), static_cast<int>(value.size()), nullptr, 0);
+    }
+    if (size <= 0) return L"";
+    std::wstring result(size, L'\0');
+    MultiByteToWideChar(code_page, flags, value.data(), static_cast<int>(value.size()), result.data(), size);
+    return result;
+}
+
+std::string WideToUtf8(const std::wstring& value) {
+    if (value.empty()) return "";
+    const int size = WideCharToMultiByte(CP_UTF8, 0, value.data(), static_cast<int>(value.size()), nullptr, 0, nullptr, nullptr);
+    if (size <= 0) return "";
+    std::string result(size, '\0');
+    WideCharToMultiByte(CP_UTF8, 0, value.data(), static_cast<int>(value.size()), result.data(), size, nullptr, nullptr);
+    return result;
+}
+#endif
+
+std::filesystem::path PathFromUtf8(const std::string& value) {
+#ifdef _WIN32
+    return std::filesystem::path(Utf8ToWide(value));
+#else
+    return std::filesystem::path(value);
+#endif
+}
+
+std::string PathToUtf8(const std::filesystem::path& path) {
+#ifdef _WIN32
+    return WideToUtf8(path.wstring());
+#else
+    return path.string();
+#endif
+}
+
 namespace {
 
 std::string NormalizePathString(const std::filesystem::path& path) {
-    return std::filesystem::absolute(path).lexically_normal().generic_string();
+    auto normalized = PathToUtf8(std::filesystem::absolute(path).lexically_normal());
+    std::replace(normalized.begin(), normalized.end(), '\\', '/');
+    return normalized;
 }
 
 std::string SanitizeIdComponent(std::string value) {
@@ -89,7 +134,7 @@ void ToJson(nlohmann::json& j, const ProjectIdentity& identity) {
 void FromJson(const nlohmann::json& j, ProjectIdentity& identity) {
     identity.project_id = j.value("project_id", std::string{});
     identity.runtime_id = j.value("runtime_id", identity.project_id);
-    identity.project_root = j.value("project_root", std::string{});
+    identity.project_root = PathFromUtf8(j.value("project_root", std::string{}));
 }
 
 
@@ -128,9 +173,16 @@ std::optional<std::filesystem::path> FindMbinkRepoRootUpwards(std::filesystem::p
 
 std::filesystem::path CurrentExecutablePath() {
 #ifdef _WIN32
-    char buf[MAX_PATH] = {0};
-    const DWORD n = GetModuleFileNameA(nullptr, buf, MAX_PATH);
-    return std::filesystem::path(std::string(buf, buf + n));
+    std::wstring buffer(MAX_PATH, L'\0');
+    for (;;) {
+        const DWORD n = GetModuleFileNameW(nullptr, buffer.data(), static_cast<DWORD>(buffer.size()));
+        if (n == 0) return {};
+        if (n < buffer.size()) {
+            buffer.resize(n);
+            return std::filesystem::path(buffer);
+        }
+        buffer.resize(buffer.size() * 2);
+    }
 #else
     return std::filesystem::current_path();
 #endif
@@ -436,7 +488,7 @@ bool TryInitProjectFromEmbeddedTemplates(const std::filesystem::path& root,
         result->project_name = project_name;
         result->template_name = template_name;
         result->files_created = files_created;
-        result->next_step = "执行 mbink-ui-dev open \"" + root.string() + "\"";
+        result->next_step = "执行 mbink-ui-dev open \"" + PathToUtf8(root) + "\"";
     }
     return true;
 }
@@ -521,7 +573,7 @@ bool TryInitProjectFromEmbeddedTemplateLayers(const std::filesystem::path& root,
         result->layers = resolution.layers;
         result->warnings = resolution.warnings;
         result->files_created = files_created;
-        result->next_step = "鎵ц mbink-ui-dev open \"" + root.string() + "\"";
+        result->next_step = "鎵ц mbink-ui-dev open \"" + PathToUtf8(root) + "\"";
     }
     return true;
 }
@@ -798,12 +850,14 @@ ProjectConfig LoadProjectConfig(const std::filesystem::path& project_root, std::
     if (error) error->clear();
 
     ProjectConfig cfg;
-    cfg.name = project_root.filename().string();
+    cfg.name = PathToUtf8(project_root.filename());
     cfg.title = cfg.name.empty() ? cfg.title : cfg.name;
 
     const auto normalize_rel = [](const std::string& value) -> std::string {
         if (value.empty()) return "";
-        return std::filesystem::path(value).lexically_normal().generic_string();
+        auto normalized = PathToUtf8(PathFromUtf8(value).lexically_normal());
+        std::replace(normalized.begin(), normalized.end(), '\\', '/');
+        return normalized;
     };
     const auto detect_entry = [&project_root]() -> std::string {
         static const std::vector<std::string> candidates = {
@@ -875,7 +929,7 @@ ProjectConfig LoadProjectConfig(const std::filesystem::path& project_root, std::
             cfg.borderless = w.value("borderless", cfg.borderless);
             cfg.resizable = w.value("resizable", cfg.resizable);
         }
-        if (cfg.name.empty()) cfg.name = project_root.filename().string();
+        if (cfg.name.empty()) cfg.name = PathToUtf8(project_root.filename());
         if (cfg.title.empty()) cfg.title = cfg.name.empty() ? "MBink UI Dev" : cfg.name;
         if (cfg.build_builder.empty()) cfg.build_builder = "esbuild";
         if (cfg.build_builder != "esbuild") {
@@ -886,7 +940,7 @@ ProjectConfig LoadProjectConfig(const std::filesystem::path& project_root, std::
             if (error) *error = "window.width/window.height 必须大于 0";
             return cfg;
         }
-        const auto entry_path = std::filesystem::absolute(project_root / cfg.entry).lexically_normal();
+        const auto entry_path = std::filesystem::absolute(project_root / PathFromUtf8(cfg.entry)).lexically_normal();
         if (!std::filesystem::exists(entry_path)) {
             if (error) *error = "entry 文件不存在: " + cfg.entry;
             return cfg;
@@ -939,7 +993,8 @@ bool InitProject(const std::filesystem::path& target_dir,
         }
     }
 
-    const std::string project_name = root.filename().string().empty() ? "mbink-app" : root.filename().string();
+    const std::string root_name = PathToUtf8(root.filename());
+    const std::string project_name = root_name.empty() ? "mbink-app" : root_name;
     if (!TryInitProjectFromEmbeddedTemplateLayers(root, project_name, resolution, result, error)) {
         if (error && error->empty()) *error = "failed to initialize project from template layers";
         return false;
@@ -989,7 +1044,7 @@ nlohmann::json StateToJson(const DaemonState& state) {
 nlohmann::json ProjectToJson(const std::filesystem::path& root, const ProjectConfig& config) {
     nlohmann::json j;
     j["name"] = config.name;
-    j["root"] = root.string();
+    j["root"] = PathToUtf8(root);
     ToJson(j["config"], config);
     j["entry"] = config.entry;
     j["src_dir"] = config.src_dir;

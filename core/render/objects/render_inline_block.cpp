@@ -6,6 +6,7 @@
 #include "render_inline_block.h"
 #include "core/render/text/font_manager.h"
 #include "core/render/painters/box_renderer.h"
+#include "core/render/painters/form_element_painter.h"
 #include "core/render/text/text_renderer.h"
 #include "core/render/input/input_paint_model.h"
 #include "core/render/input/input_text_viewport.h"
@@ -894,7 +895,17 @@ void RenderInlineBlock::Paint(SkCanvas* canvas) {
 
         // Select元素
         if (element->GetTagName() == "select") {
-            PaintSelectElement(canvas, element.get(), box);
+            auto select_element = std::dynamic_pointer_cast<HTMLSelectElement>(node);
+            if (select_element) {
+                FormElementPaintParams params;
+                params.font_family = style.font_family;
+                params.font_size = style.font_size;
+                params.text_color = style.color;
+                params.has_focus = element->HasPseudoClass("focus");
+
+                FormElementPainter painter(canvas);
+                painter.PaintSelectElement(select_element.get(), box, params);
+            }
             // Select元素不绘制子元素（option元素由PaintSelectElement处理）
             if (has_opacity) {
                 canvas->restore(); // 恢复 opacity layer

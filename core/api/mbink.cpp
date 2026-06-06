@@ -400,6 +400,7 @@ struct WindowContext {
     void* onTrayMenuUserData = nullptr;
 
     bool running = false;
+    bool initialFrameWarmupDone = false;
     std::unique_ptr<mbink::AppTray> tray;
     std::string trayTooltip;
     std::vector<mbink::AppTrayMenuItem> trayMenuItems;
@@ -490,6 +491,59 @@ void reportNativeError(const std::string& error) {
     std::ofstream log("mbink_native_error.log", std::ios::app);
     if (log.is_open()) {
         log << error << std::endl;
+    }
+}
+
+void processRuntimeQueuesForWarmup(WindowContext* ctx) {
+    if (!ctx) return;
+
+    if (ctx->stateManager) {
+        ctx->stateManager->processQueue();
+    }
+    if (ctx->hostBridge) {
+        ctx->hostBridge->flushEvents();
+        ctx->hostBridge->flushAsyncResults();
+    }
+    if (ctx->runtime) {
+        ctx->runtime->RunEventLoop(1);
+        ctx->runtime->ProcessMicrotasks();
+    }
+    ctx->mainThreadQueue.flush();
+    forEachSharedObjectSnapshot(ctx, [](SharedObjectData* shared) {
+        shared->flushPendingNotify();
+    });
+    if (ctx->runtime) {
+        ctx->runtime->ProcessMicrotasks();
+    }
+}
+
+void renderWarmupFrame(WindowContext* ctx, bool forceFullRepaint) {
+    if (!ctx || !ctx->window) return;
+
+    if (forceFullRepaint) {
+        ctx->window->InvalidateRenderTree();
+        ctx->window->SetForceFullRepaint(true);
+        ctx->window->SetNeedsRepaintFor(mbink::RepaintReason::API);
+    }
+
+    if (ctx->window->NeedsRepaint()) {
+        ctx->window->Render();
+        ctx->window->SwapBuffers();
+    }
+}
+
+void ensureInitialFrameWarmup(WindowContext* ctx) {
+    if (!ctx || ctx->initialFrameWarmupDone) return;
+    ctx->initialFrameWarmupDone = true;
+
+    try {
+        renderWarmupFrame(ctx, true);
+        processRuntimeQueuesForWarmup(ctx);
+        renderWarmupFrame(ctx, false);
+    } catch (const std::exception& e) {
+        reportNativeError(std::string("Initial frame warmup failed: ") + e.what());
+    } catch (...) {
+        reportNativeError("Initial frame warmup failed: unknown error");
     }
 }
 
@@ -1428,6 +1482,8 @@ void mbink_run(MBinkHandle handle) {
     });
 
     // 阻塞运行事件循环
+    ensureInitialFrameWarmup(ctx);
+
 #ifdef _WIN32
     unsigned int sehCode = 0;
     std::string sehMessage;
@@ -1454,6 +1510,8 @@ bool mbink_poll_events(MBinkHandle handle) {
     if (!handle) return false;
     auto ctx = getContext(handle);
     if (!ctx->eventLoop) return false;
+
+    ensureInitialFrameWarmup(ctx);
 
     if (ctx->stateManager) {
         ctx->stateManager->processQueue();

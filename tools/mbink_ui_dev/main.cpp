@@ -15,6 +15,7 @@
 
 #ifdef _WIN32
 #include <windows.h>
+#include <shellapi.h>
 #endif
 
 using mbink::ui_dev::DaemonState;
@@ -36,6 +37,8 @@ using mbink::ui_dev::InitProjectOptions;
 using mbink::ui_dev::InitProjectResult;
 using mbink::ui_dev::ListSupportedInitCombinations;
 using mbink::ui_dev::ListSupportedInitTemplates;
+using mbink::ui_dev::PathFromUtf8;
+using mbink::ui_dev::PathToUtf8;
 
 
 namespace {
@@ -58,6 +61,25 @@ void ConfigureConsoleForUtf8() {
     SetConsoleOutputCP(CP_UTF8);
     SetConsoleCP(CP_UTF8);
 #endif
+}
+
+std::vector<std::string> CollectCommandLineArgsUtf8(int argc, char** argv) {
+    std::vector<std::string> args;
+#ifdef _WIN32
+    int wide_argc = 0;
+    LPWSTR* wide_argv = CommandLineToArgvW(GetCommandLineW(), &wide_argc);
+    if (wide_argv) {
+        args.reserve(static_cast<size_t>(wide_argc > 1 ? wide_argc - 1 : 0));
+        for (int i = 1; i < wide_argc; ++i) {
+            args.push_back(mbink::ui_dev::WideToUtf8(wide_argv[i]));
+        }
+        LocalFree(wide_argv);
+        return args;
+    }
+#endif
+    args.reserve(static_cast<size_t>(argc > 1 ? argc - 1 : 0));
+    for (int i = 1; i < argc; ++i) args.emplace_back(argv[i]);
+    return args;
 }
 
 void PrintJson(const nlohmann::json& j) {
@@ -125,7 +147,7 @@ nlohmann::json InitProjectResultToJson(const InitProjectResult& result) {
         warnings.push_back({{"code", "template_selection_warning"}, {"message", warning}});
     }
     return nlohmann::json{{"ok", true},
-                          {"project_root", result.project_root.string()},
+                          {"project_root", PathToUtf8(result.project_root)},
                           {"project_name", result.project_name},
                           {"template", result.template_name},
                           {"purpose", result.purpose},
@@ -244,9 +266,16 @@ bool Base64Decode(const std::string& input, std::string* output, std::string* er
 
 std::filesystem::path GetExecutablePath() {
 #ifdef _WIN32
-    char buf[MAX_PATH] = {0};
-    const DWORD n = GetModuleFileNameA(nullptr, buf, MAX_PATH);
-    return std::filesystem::path(std::string(buf, buf + n));
+    std::wstring buffer(MAX_PATH, L'\0');
+    for (;;) {
+        const DWORD n = GetModuleFileNameW(nullptr, buffer.data(), static_cast<DWORD>(buffer.size()));
+        if (n == 0) return {};
+        if (n < buffer.size()) {
+            buffer.resize(n);
+            return std::filesystem::path(buffer);
+        }
+        buffer.resize(buffer.size() * 2);
+    }
 #else
     return std::filesystem::current_path();
 #endif
@@ -256,7 +285,7 @@ std::optional<std::filesystem::path> NormalizeProjectRoot(const std::string& pro
     if (error) error->clear();
     if (project_hint.empty()) return std::nullopt;
 
-    auto root = std::filesystem::absolute(project_hint).lexically_normal();
+    auto root = std::filesystem::absolute(PathFromUtf8(project_hint)).lexically_normal();
     if (std::filesystem::exists(root) && !std::filesystem::is_directory(root)) root = root.parent_path();
     if (root.empty() || !std::filesystem::exists(root) || !std::filesystem::is_directory(root)) {
         if (error) *error = "project directory does not exist: " + project_hint;
@@ -378,7 +407,7 @@ bool EnsureDaemonRunning(const ProjectIdentity& identity, std::string* error, bo
     if (HasRunningDaemon(identity, true)) return true;
 
     int pid = 0;
-    if (!StartDetachedDaemon(GetExecutablePath(), identity.project_root.string(), identity.project_id, &pid, error)) {
+    if (!StartDetachedDaemon(GetExecutablePath(), PathToUtf8(identity.project_root), identity.project_id, &pid, error)) {
         return false;
     }
     if (started_now) *started_now = true;
@@ -412,7 +441,7 @@ int PrintDaemonResponse(nlohmann::json response) {
 }
 
 nlohmann::json OpenProjectViaDaemon(const ProjectIdentity& identity, bool started_now, bool force = false) {
-    auto request = nlohmann::json{{"cmd", "open"}, {"project_root", identity.project_root.string()}};
+    auto request = nlohmann::json{{"cmd", "open"}, {"project_root", PathToUtf8(identity.project_root)}};
     if (force) request["force"] = true;
     auto response = CallDaemon(identity, request);
     if (!started_now) return response;
@@ -439,7 +468,7 @@ bool ResolveEvalCode(const std::vector<std::string>& args, std::string* code, st
             *code = ReadStdinBytes();
             return true;
         }
-        if (!ReadFileBytes(std::filesystem::absolute(from), code)) {
+        if (!ReadFileBytes(std::filesystem::absolute(PathFromUtf8(from)), code)) {
             if (error) *error = "读取 --from 文件失败";
             return false;
         }
@@ -654,7 +683,7 @@ nlohmann::json CallMcpTool(const std::string& tool_name,
         options.legacy_template = arguments.value("template", std::string{});
         InitProjectResult result;
         std::string err;
-        if (!InitProject(std::filesystem::path(target_dir), options, &result, &err)) {
+        if (!InitProject(PathFromUtf8(target_dir), options, &result, &err)) {
             return ErrorResponse(InitErrorCode(err), err);
         }
         tool_result = InitProjectResultToJson(result);
@@ -798,8 +827,7 @@ nlohmann::json CallMcpTool(const std::string& tool_name,
 int main(int argc, char** argv) {
     ConfigureConsoleForUtf8();
 
-    std::vector<std::string> args;
-    for (int i = 1; i < argc; ++i) args.emplace_back(argv[i]);
+    const auto args = CollectCommandLineArgsUtf8(argc, argv);
 
     if (args.empty()) {
         PrintJson(ErrorResponse("invalid_args", "用法: mbink-ui-dev <daemon|stop|init|open|info|read|write|build|build-status|snapshot|logs|errors|eval <code>|query <selector>|inspect <selector>|click <selector>|input-text <selector> <text>|scroll <selector> [--x <num>] [--y <num>]|highlight <selector> [--color <css-color>]|reload|serve> ..."));
@@ -831,7 +859,7 @@ int main(int argc, char** argv) {
             PrintJson(ErrorResponse("invalid_args", "usage: mbink-ui-dev init [target-dir] [--purpose minimal|showcase|desktop-app --runtime tool|python|rust|go] [--template legacy-name]"));
             return 1;
         }
-        const auto target_dir = positional.empty() ? std::filesystem::current_path() : std::filesystem::path(positional.front());
+        const auto target_dir = positional.empty() ? std::filesystem::current_path() : PathFromUtf8(positional.front());
         InitProjectResult result;
         std::string err;
         if (!InitProject(target_dir, options, &result, &err)) {
@@ -885,7 +913,7 @@ int main(int argc, char** argv) {
             } else {
                 PrintJson(nlohmann::json{{"ok", true},
                                          {"project_id", identity->project_id},
-                                         {"project_root", identity->project_root.string()},
+                                         {"project_root", PathToUtf8(identity->project_root)},
                                          {"daemon", nlohmann::json{{"running", false}}}});
             }
             return 0;
@@ -907,7 +935,7 @@ int main(int argc, char** argv) {
             RemoveState(identity->project_id, &rm_err);
             PrintJson(nlohmann::json{{"ok", true},
                                      {"project_id", identity->project_id},
-                                     {"project_root", identity->project_root.string()},
+                                     {"project_root", PathToUtf8(identity->project_root)},
                                      {"stopped", false},
                                      {"already_stopped", true}});
             return 0;
@@ -1067,7 +1095,7 @@ int main(int argc, char** argv) {
         }
         std::string content;
         if (!from.empty()) {
-            if (!ReadFileBytes(std::filesystem::absolute(from), &content)) {
+            if (!ReadFileBytes(std::filesystem::absolute(PathFromUtf8(from)), &content)) {
                 PrintJson(ErrorResponse("file_read_failed", "读取 --from 文件失败"));
                 return 1;
             }
