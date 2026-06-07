@@ -131,7 +131,17 @@ TEST(HTMLAudioElementTest, ControlDraggingUpdatesSeekAndVolume) {
 
     const auto geometry = audio->ComputeControlGeometry(0.0f, 0.0f, 320.0f, 36.0f);
     ASSERT_GT(geometry.progress_track.width(), 0.0f);
+    ASSERT_GT(geometry.time_label.width(), 0.0f);
     ASSERT_GT(geometry.volume_track.width(), 0.0f);
+    EXPECT_LT(geometry.progress_track.right(), geometry.time_label.left());
+    EXPECT_LT(geometry.time_label.right(), geometry.volume_track.left());
+    EXPECT_EQ(audio->HitTestControls(geometry.time_label.centerX(),
+                                     geometry.time_label.centerY(),
+                                     0.0f,
+                                     0.0f,
+                                     320.0f,
+                                     36.0f),
+              HTMLAudioElement::ControlPart::None);
 
     EXPECT_TRUE(audio->HandleControlMouseDown(geometry.progress_track.left() + geometry.progress_track.width() * 0.5f,
                                               geometry.progress_track.centerY(),

@@ -28,6 +28,7 @@
 #include "core/render/painters/border_painter.h"
 #include "core/render/painters/scrollbar_painter.h"
 #include "core/render/painters/form_element_painter.h"
+#include "core/render/painters/audio_element_painter.h"
 #include "core/dom/node.h"
 #include "core/dom/element.h"
 #include "core/dom/text.h"
@@ -38,6 +39,7 @@
 #include "core/dom/elements/html_textarea_element.h"
 #include "core/dom/elements/html_canvas_element.h"
 #include "core/dom/elements/html_image_element.h"
+#include "core/dom/elements/html_audio_element.h"
 #include "core/dom/elements/terminal/html_terminal_element.h"
 #include "core/dom/elements/logview/html_logview_element.h"
 #include "core/render/canvas/canvas_rendering_context_2d.h"
@@ -1249,6 +1251,17 @@ void RenderBlock::Paint(SkCanvas* canvas) {
             PaintSelectElement(canvas, select_element.get(), box);
             // A select paints its selected option as native control content.
             // Do not paint option children as ordinary document content.
+            if (has_opacity) {
+                canvas->restore();
+            }
+            canvas->restore();
+            needs_paint_ = false;
+            return;
+        }
+
+        auto audio_element = std::dynamic_pointer_cast<HTMLAudioElement>(node);
+        if (audio_element) {
+            PaintAudioElementControl(canvas, audio_element.get(), box, computed_style_);
             if (has_opacity) {
                 canvas->restore();
             }

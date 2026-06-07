@@ -19,6 +19,8 @@ namespace {
 constexpr float kAudioControlPadding = 8.0f;
 constexpr float kAudioPlayButtonSize = 22.0f;
 constexpr float kAudioVolumeWidth = 54.0f;
+constexpr float kAudioTimeLabelWidth = 78.0f;
+constexpr float kAudioMinimumProgressWidth = 48.0f;
 constexpr float kAudioTrackHeight = 4.0f;
 constexpr double kAudioInitialQueueSeconds = 0.20;
 
@@ -353,11 +355,23 @@ HTMLAudioElement::ControlGeometry HTMLAudioElement::ComputeControlGeometry(float
                                              kAudioTrackHeight);
 
     const float progress_left = geometry.play_button.right() + kAudioControlPadding;
-    const float progress_right = volume_left - kAudioControlPadding;
+    const float controls_right = volume_left - kAudioControlPadding;
+    const float available_progress_and_time = std::max(0.0f, controls_right - progress_left);
+    const float desired_time_width = std::min(kAudioTimeLabelWidth, available_progress_and_time);
+    const float time_width = available_progress_and_time > kAudioMinimumProgressWidth
+        ? std::min(desired_time_width, available_progress_and_time - kAudioMinimumProgressWidth)
+        : 0.0f;
+    const float progress_right = controls_right - (time_width > 0.0f ? time_width + kAudioControlPadding : 0.0f);
     geometry.progress_track = SkRect::MakeXYWH(progress_left,
                                                center_y - kAudioTrackHeight * 0.5f,
                                                std::max(0.0f, progress_right - progress_left),
                                                kAudioTrackHeight);
+    if (time_width > 0.0f) {
+        geometry.time_label = SkRect::MakeXYWH(progress_right + kAudioControlPadding,
+                                               content_y,
+                                               time_width,
+                                               content_height);
+    }
 
     return geometry;
 }

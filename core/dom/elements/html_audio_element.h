@@ -30,6 +30,7 @@ public:
     struct ControlGeometry {
         SkRect play_button = SkRect::MakeEmpty();
         SkRect progress_track = SkRect::MakeEmpty();
+        SkRect time_label = SkRect::MakeEmpty();
         SkRect volume_track = SkRect::MakeEmpty();
         SkRect bounds = SkRect::MakeEmpty();
     };

@@ -7,6 +7,7 @@
 #include "core/render/text/font_manager.h"
 #include "core/render/painters/box_renderer.h"
 #include "core/render/painters/form_element_painter.h"
+#include "core/render/painters/audio_element_painter.h"
 #include "core/render/text/text_renderer.h"
 #include "core/render/input/input_paint_model.h"
 #include "core/render/input/input_text_viewport.h"
@@ -30,6 +31,7 @@
 #include "core/render/image/image_loader.h"
 #include "core/utils/utf8_utils.h"
 #include <algorithm>
+#include <cmath>
 #include <iostream>
 #include <unordered_map>
 #include <chrono>
@@ -39,8 +41,6 @@
 #include "include/effects/SkDashPathEffect.h"
 
 namespace mbink {
-
-
 
 void RenderInlineBlock::Layout(float parent_width, float parent_height) {
     const auto& style = computed_style_;
@@ -2028,109 +2028,7 @@ void RenderInlineBlock::PaintMeterElement(SkCanvas* canvas, HTMLMeterElement* me
 }
 
 void RenderInlineBlock::PaintAudioElement(SkCanvas* canvas, HTMLAudioElement* audio, const Box& box) {
-    if (!canvas || !audio) {
-        return;
-    }
-
-    const SkRect bounds = SkRect::MakeXYWH(box.content_x, box.content_y, box.content_width, box.content_height);
-    if (bounds.isEmpty()) {
-        return;
-    }
-
-    SkPaint background_paint;
-    background_paint.setColor(SkColorSetRGB(245, 247, 250));
-    background_paint.setStyle(SkPaint::kFill_Style);
-    background_paint.setAntiAlias(true);
-
-    SkPaint border_paint;
-    border_paint.setColor(SkColorSetRGB(198, 205, 214));
-    border_paint.setStyle(SkPaint::kStroke_Style);
-    border_paint.setStrokeWidth(1.0f);
-    border_paint.setAntiAlias(true);
-
-    const float radius = std::min(6.0f, bounds.height() * 0.25f);
-    const SkRRect control_rrect = SkRRect::MakeRectXY(bounds, radius, radius);
-    canvas->drawRRect(control_rrect, background_paint);
-    canvas->drawRRect(control_rrect, border_paint);
-
-    if (!audio->GetControls()) {
-        return;
-    }
-
-    const auto geometry = audio->ComputeControlGeometry(
-        box.content_x,
-        box.content_y,
-        box.content_width,
-        box.content_height);
-    const float center_y = box.content_y + box.content_height * 0.5f;
-
-    SkPaint icon_paint;
-    icon_paint.setColor(SkColorSetRGB(34, 42, 53));
-    icon_paint.setStyle(SkPaint::kFill_Style);
-    icon_paint.setAntiAlias(true);
-
-    if (audio->GetPaused()) {
-        SkPath play_path;
-        const float left = geometry.play_button.left() + geometry.play_button.width() * 0.34f;
-        const float top = geometry.play_button.top() + geometry.play_button.height() * 0.25f;
-        const float bottom = geometry.play_button.bottom() - geometry.play_button.height() * 0.25f;
-        const float right = geometry.play_button.right() - geometry.play_button.width() * 0.25f;
-        play_path.moveTo(left, top);
-        play_path.lineTo(right, center_y);
-        play_path.lineTo(left, bottom);
-        play_path.close();
-        canvas->drawPath(play_path, icon_paint);
-    } else {
-        const float bar_width = std::max(2.0f, geometry.play_button.width() * 0.18f);
-        const float bar_height = geometry.play_button.height() * 0.48f;
-        const float gap = bar_width;
-        const float left = geometry.play_button.centerX() - gap * 0.5f - bar_width;
-        const float top = geometry.play_button.centerY() - bar_height * 0.5f;
-        canvas->drawRect(SkRect::MakeXYWH(left, top, bar_width, bar_height), icon_paint);
-        canvas->drawRect(SkRect::MakeXYWH(left + bar_width + gap, top, bar_width, bar_height), icon_paint);
-    }
-
-    auto draw_track = [&](const SkRect& track, float ratio, SkColor fill_color) {
-        if (track.width() <= 0.0f || track.height() <= 0.0f) {
-            return;
-        }
-
-        SkPaint track_paint;
-        track_paint.setColor(SkColorSetRGB(214, 220, 228));
-        track_paint.setStyle(SkPaint::kFill_Style);
-        track_paint.setAntiAlias(true);
-        const float track_radius = track.height() * 0.5f;
-        canvas->drawRRect(SkRRect::MakeRectXY(track, track_radius, track_radius), track_paint);
-
-        const float clamped_ratio = std::clamp(ratio, 0.0f, 1.0f);
-        if (clamped_ratio > 0.0f) {
-            SkRect fill = track;
-            fill.fRight = fill.fLeft + fill.width() * clamped_ratio;
-            SkPaint fill_paint;
-            fill_paint.setColor(fill_color);
-            fill_paint.setStyle(SkPaint::kFill_Style);
-            fill_paint.setAntiAlias(true);
-            canvas->drawRRect(SkRRect::MakeRectXY(fill, track_radius, track_radius), fill_paint);
-        }
-
-        SkPaint thumb_paint;
-        thumb_paint.setColor(SkColorSetRGB(42, 105, 214));
-        thumb_paint.setStyle(SkPaint::kFill_Style);
-        thumb_paint.setAntiAlias(true);
-        const float thumb_radius = std::max(4.0f, track.height());
-        const float thumb_x = track.left() + track.width() * clamped_ratio;
-        canvas->drawCircle(thumb_x, track.centerY(), thumb_radius, thumb_paint);
-    };
-
-    const double duration = audio->GetDuration();
-    const float progress_ratio = duration > 0.0
-        ? static_cast<float>(audio->CurrentTime() / duration)
-        : 0.0f;
-    draw_track(geometry.progress_track, progress_ratio, SkColorSetRGB(42, 105, 214));
-
-    const float volume_ratio = audio->GetMuted() ? 0.0f : static_cast<float>(audio->GetVolume());
-    draw_track(geometry.volume_track, volume_ratio, SkColorSetRGB(77, 94, 117));
-    audio->ScheduleControlsRepaint();
+    PaintAudioElementControl(canvas, audio, box, computed_style_);
 }
 
 } // namespace mbink
