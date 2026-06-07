@@ -63,6 +63,7 @@ set(LEXBOR_TEST_SOURCES
 set(UTILS_TEST_SOURCES
     utils/test_json.cpp
     utils/test_encoding.cpp
+    utils/test_background_task_runner.cpp
 )
 
 # Compositor 测试

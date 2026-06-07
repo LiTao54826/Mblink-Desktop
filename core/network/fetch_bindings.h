@@ -16,8 +16,12 @@
 #include <mutex>
 #include <vector>
 #include <functional>
+#include <atomic>
 
 namespace mbink {
+
+class AsyncResourceContext;
+class BackgroundTaskRunner;
 
 /**
  * @brief 待处理的 fetch 响应
@@ -28,8 +32,10 @@ struct PendingFetchResponse {
 };
 
 // 前向声明静态回调函数
-static JSValue js_fetch_request(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv);
-static JSValue js_fetch_check_response(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv);
+static JSValue js_fetch_request(JSContext* ctx, JSValueConst this_val,
+                                int argc, JSValueConst* argv, int magic, JSValue* func_data);
+static JSValue js_fetch_check_response(JSContext* ctx, JSValueConst this_val,
+                                       int argc, JSValueConst* argv, int magic, JSValue* func_data);
 
 /**
  * @brief Fetch API 绑定类
@@ -38,8 +44,10 @@ static JSValue js_fetch_check_response(JSContext* ctx, JSValueConst this_val, in
  */
 class FetchBindings {
     // 允许静态回调函数访问私有成员
-    friend JSValue js_fetch_request(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv);
-    friend JSValue js_fetch_check_response(JSContext* ctx, JSValueConst this_val, int argc, JSValueConst* argv);
+    friend JSValue js_fetch_request(JSContext* ctx, JSValueConst this_val,
+                                    int argc, JSValueConst* argv, int magic, JSValue* func_data);
+    friend JSValue js_fetch_check_response(JSContext* ctx, JSValueConst this_val,
+                                           int argc, JSValueConst* argv, int magic, JSValue* func_data);
 
 public:
     using AssetProvider = std::function<bool(const std::string&, std::vector<uint8_t>&)>;
@@ -49,7 +57,10 @@ public:
      * @param ctx QuickJS 上下文
      * @param task_scheduler 任务调度器
      */
-    FetchBindings(JSContext* ctx, std::shared_ptr<TaskScheduler> task_scheduler);
+    FetchBindings(JSContext* ctx,
+                  std::shared_ptr<TaskScheduler> task_scheduler,
+                  std::shared_ptr<BackgroundTaskRunner> background_runner = nullptr,
+                  std::shared_ptr<AsyncResourceContext> resource_context = nullptr);
 
     /**
      * @brief 析构函数
@@ -66,6 +77,7 @@ public:
      * 在主线程中调用，用于处理异步请求完成后的回调
      */
     void ProcessPendingResponses();
+    void BeginShutdown();
 
     /**
      * @brief 检查是否有待处理的响应
@@ -78,9 +90,13 @@ public:
     static const std::string& GetBasePath();
 
     // 静态实例指针（供静态回调使用）
-    static FetchBindings* instance_;
-
 private:
+    struct PendingState {
+        mutable std::mutex mutex;
+        std::queue<PendingFetchResponse> responses;
+        std::atomic<bool> alive{true};
+    };
+
     /**
      * @brief 注册原生函数
      */
@@ -118,17 +134,22 @@ private:
      * @brief 执行 JS 代码
      */
     void EvalJS(const std::string& code, const std::string& filename);
+    static void PublishPendingResponse(const std::shared_ptr<PendingState>& state,
+                                       int request_id,
+                                       HttpResponse response);
+    static HttpResponse MakeShutdownResponse(const std::string& message);
 
 private:
     JSContext* ctx_;
     std::shared_ptr<TaskScheduler> task_scheduler_;
+    std::shared_ptr<BackgroundTaskRunner> background_runner_;
+    std::shared_ptr<AsyncResourceContext> resource_context_;
     std::unique_ptr<HttpClient> http_client_;
 
     int next_request_id_;
 
     // 待处理的响应队列（线程安全）
-    mutable std::mutex pending_mutex_;
-    std::queue<PendingFetchResponse> pending_responses_;
+    std::shared_ptr<PendingState> pending_state_;
 
     static AssetProvider asset_provider_;
     static std::string base_path_;

@@ -4,10 +4,11 @@
  */
 
 #include "http_client.h"
+#include "core/utils/background_task_runner.h"
 #include <iostream>
 #include <sstream>
-#include <thread>
 #include <regex>
+#include <utility>
 
 #ifdef _WIN32
 #include <windows.h>
@@ -17,7 +18,9 @@
 
 namespace mbink {
 
-HttpClient::HttpClient() {
+HttpClient::HttpClient(std::shared_ptr<BackgroundTaskRunner> background_runner)
+    : background_runner_(background_runner ? std::move(background_runner)
+                                           : std::make_shared<BackgroundTaskRunner>()) {
 }
 
 HttpClient::~HttpClient() {
@@ -83,19 +86,57 @@ void HttpClient::PostAsync(const std::string& url, const std::string& body,
 void HttpClient::RequestAsync(const std::string& url, const HttpRequestOptions& options,
                               ResponseCallback callback) {
     // 在新线程中执行请求
-    std::thread([this, url, options, callback]() {
+    auto task = [url, options, callback]() {
         HttpResponse response = DoRequest(url, options);
         if (callback) {
             callback(response);
         }
-    }).detach();
+    };
+    auto on_drop = [callback]() {
+        if (callback) {
+            callback(MakeShutdownResponse("Background task dropped during shutdown"));
+        }
+    };
+
+    if (!background_runner_ || !background_runner_->Post(std::move(task), std::move(on_drop), url)) {
+        if (callback) {
+            callback(MakeShutdownResponse("Background task runner is shutting down"));
+        }
+    }
 }
 
 std::future<HttpResponse> HttpClient::RequestFuture(const std::string& url,
                                                     const HttpRequestOptions& options) {
-    return std::async(std::launch::async, [this, url, options]() {
-        return DoRequest(url, options);
-    });
+    auto promise = std::make_shared<std::promise<HttpResponse>>();
+    auto future = promise->get_future();
+
+    auto task = [promise, url, options]() {
+        try {
+            promise->set_value(DoRequest(url, options));
+        } catch (const std::exception& e) {
+            promise->set_value(MakeShutdownResponse(std::string("HTTP request failed: ") + e.what()));
+        } catch (...) {
+            promise->set_value(MakeShutdownResponse("HTTP request failed: unknown error"));
+        }
+    };
+    auto on_drop = [promise]() {
+        promise->set_value(MakeShutdownResponse("Background task dropped during shutdown"));
+    };
+
+    if (!background_runner_ || !background_runner_->Post(std::move(task), std::move(on_drop), url)) {
+        promise->set_value(MakeShutdownResponse("Background task runner is shutting down"));
+    }
+
+    return future;
+}
+
+HttpResponse HttpClient::MakeShutdownResponse(const std::string& message) {
+    HttpResponse response;
+    response.status_code = 0;
+    response.status_text = "Background Task Unavailable";
+    response.error = message;
+    response.ok = false;
+    return response;
 }
 
 #ifdef _WIN32

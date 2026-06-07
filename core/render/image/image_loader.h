@@ -18,10 +18,14 @@
 #include <memory>
 #include <functional>
 #include <vector>
+#include <cstdint>
 #include "include/core/SkImage.h"
 #include "include/core/SkData.h"
 
 namespace mbink {
+
+class AsyncResourceContext;
+class BackgroundTaskRunner;
 
 /**
  * @brief 图片加载结果
@@ -173,6 +177,11 @@ public:
      * @param callback 加载完成回调
      */
     static void LoadFromUrlAsyncWithResult(const std::string& url, ImageLoadResultCallback callback);
+
+    static void RegisterAsyncContext(uint64_t owner_token,
+                                     std::weak_ptr<BackgroundTaskRunner> runner,
+                                     std::weak_ptr<AsyncResourceContext> resource_context);
+    static void UnregisterAsyncContext(uint64_t owner_token);
     
     // ========== 格式检测 ==========
     

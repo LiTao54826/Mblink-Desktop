@@ -26,6 +26,7 @@ extern "C" {
 namespace mbink {
 
 class StateManager;
+class BackgroundTaskRunner;
 
 /**
  * @brief 宿主函数回调类型
@@ -78,7 +79,9 @@ public:
      * @param ctx QuickJS 上下文
      * @param stateManager 状态管理器
      */
-    HostBridge(JSContext* ctx, StateManager* stateManager);
+    HostBridge(JSContext* ctx,
+               StateManager* stateManager,
+               std::shared_ptr<BackgroundTaskRunner> background_runner = nullptr);
     
     /**
      * @brief 析构函数
@@ -180,6 +183,7 @@ private:
 
     JSContext* ctx_;
     StateManager* stateManager_;
+    std::shared_ptr<BackgroundTaskRunner> background_runner_;
     std::unordered_map<std::string, HostFunction> functions_;
     std::unordered_map<std::string, HostAsyncFunction> asyncFunctions_;
     

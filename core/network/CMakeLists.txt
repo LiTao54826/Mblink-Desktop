@@ -24,6 +24,7 @@ target_include_directories(mbink_network PUBLIC
 target_link_libraries(mbink_network PUBLIC
     quickjs
     mbink_event
+    mbink_utils
 )
 
 # Windows specific
