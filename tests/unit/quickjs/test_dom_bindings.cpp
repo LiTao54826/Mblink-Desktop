@@ -238,6 +238,53 @@ TEST_F(DOMBindingsTest, CreateElement) {
     EXPECT_EQ(result, "div");
 }
 
+TEST_F(DOMBindingsTest, AudioElementExposesFirstPassMediaApi) {
+    auto result = runtime_->Eval(R"(
+        const audio = document.createElement('audio');
+        audio.src = 'tone.wav';
+        audio.controls = true;
+        audio.loop = true;
+        audio.muted = true;
+        audio.volume = 0.25;
+        audio.currentTime = 3;
+        [
+          audio.tagName.toLowerCase(),
+          audio.src,
+          audio.controls,
+          audio.loop,
+          audio.muted,
+          audio.volume,
+          typeof audio.currentTime,
+          typeof audio.duration,
+          audio.paused,
+          audio.ended,
+          typeof audio.load,
+          typeof audio.play,
+          typeof audio.pause
+        ].join('|');
+    )");
+
+    EXPECT_EQ(result, "audio|tone.wav|true|true|true|0.25|number|number|true|false|function|function|function");
+}
+
+TEST_F(DOMBindingsTest, AudioPropertiesAreUndefinedOnNonAudioElements) {
+    auto result = runtime_->Eval(R"(
+        const div = document.createElement('div');
+        [
+          typeof div.controls,
+          typeof div.loop,
+          typeof div.muted,
+          typeof div.volume,
+          typeof div.currentTime,
+          typeof div.duration,
+          typeof div.paused,
+          typeof div.ended
+        ].join('|');
+    )");
+
+    EXPECT_EQ(result, "undefined|undefined|undefined|undefined|undefined|undefined|undefined|undefined");
+}
+
 TEST_F(DOMBindingsTest, CreateTextNode) {
     auto result = runtime_->Eval(R"(
         var text = document.createTextNode('Hello');

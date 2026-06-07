@@ -50,6 +50,7 @@
 #include "core/dom/elements/html_button_element.h"
 #include "core/dom/elements/html_form_element.h"
 #include "core/dom/elements/html_select_element.h"
+#include "core/dom/elements/html_audio_element.h"
 #include "core/render/objects/select_dropdown.h"
 #include "core/render/css/style_resolver.h"
 #include "core/render/objects/render_inline_block.h"
@@ -485,6 +486,7 @@ void EventLoop::RunOnce() {
     }
 
     NativeTextRepaintCoalescer::Instance().FlushDue();
+    HTMLAudioElement::TickActiveAudioElements();
 
     bool any_needs_repaint = false;
     for (auto& window : wm.GetAllWindows()) {

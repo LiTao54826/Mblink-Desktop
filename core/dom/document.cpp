@@ -7,6 +7,7 @@
 #include "bindings/native_data_binding.h"
 #include "selection/range.h"
 #include "elements/html_input_element.h"
+#include "elements/html_audio_element.h"
 #include "elements/html_textarea_element.h"
 #include "elements/html_button_element.h"
 #include "elements/html_form_element.h"
@@ -283,6 +284,8 @@ std::shared_ptr<Element> Document::CreateElement(const std::string& tag_name) {
     } else if (tag_name == "img") {
         auto img = std::make_shared<HTMLImageElement>();
         element = img;
+    } else if (tag_name == "audio") {
+        element = std::make_shared<HTMLAudioElement>();
     } else if (tag_name == "canvas") {
         auto canvas = std::make_shared<HTMLCanvasElement>();
         element = canvas;

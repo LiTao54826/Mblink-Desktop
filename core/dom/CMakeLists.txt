@@ -69,6 +69,7 @@ set(DOM_ELEMENTS_SOURCES
     elements/html_select_element.cpp
     elements/html_option_element.cpp
     elements/html_anchor_element.cpp
+    elements/html_audio_element.cpp
     elements/html_label_element.cpp
     elements/html_image_element.cpp
     elements/html_div_element.cpp
@@ -120,6 +121,12 @@ target_link_libraries(mbink_dom PUBLIC
     terminal_element
     logview_element
 )
+
+if(TARGET SDL3::SDL3)
+    target_link_libraries(mbink_dom PUBLIC SDL3::SDL3)
+elseif(TARGET SDL3-static)
+    target_link_libraries(mbink_dom PUBLIC SDL3-static)
+endif()
 
 # 链接Skia（如果启用）- 需要SkRect.h
 if(TARGET skia)

@@ -322,8 +322,8 @@ void StyleResolver::ApplyDefaultStyle(ComputedStyle& style, const std::string& t
         tag_name == "dir" || tag_name == "menu" ||
         // 表单
         tag_name == "form" || tag_name == "fieldset" || tag_name == "legend" ||
-        // 多媒体
-        tag_name == "video" || tag_name == "audio" ||
+        // 多媒体容器
+        tag_name == "video" ||
         // 其他块级
         tag_name == "layer" || tag_name == "marquee" ||
         tag_name == "noscript" || tag_name == "listing" || tag_name == "xmp" ||
@@ -374,7 +374,7 @@ void StyleResolver::ApplyDefaultStyle(ComputedStyle& style, const std::string& t
     // ========== display: inline-block 元素 ==========
     else if (tag_name == "img" || tag_name == "input" ||
              tag_name == "button" || tag_name == "select" || tag_name == "textarea" ||
-             tag_name == "meter" || tag_name == "progress" ||
+             tag_name == "meter" || tag_name == "progress" || tag_name == "audio" ||
              tag_name == "canvas" || tag_name == "embed" || tag_name == "object" ||
              tag_name == "iframe" || tag_name == "frame" || tag_name == "frameset") {
         style.display = RenderObjectType::INLINE_BLOCK;
@@ -1288,6 +1288,14 @@ void StyleResolver::ApplyElementSpecificStyle(ComputedStyle& style, const std::s
         style.width = CSSLength(80, CSSUnit::PX);
         style.height = CSSLength(16, CSSUnit::PX);
         style.vertical_align = "middle";
+    }
+
+    if (tag_name == "audio") {
+        style.display = RenderObjectType::INLINE_BLOCK;
+        style.width = CSSLength(320, CSSUnit::PX);
+        style.height = CSSLength(36, CSSUnit::PX);
+        style.vertical_align = "middle";
+        style.box_sizing = "border-box";
     }
 
     // ========== SVG 元素 ==========

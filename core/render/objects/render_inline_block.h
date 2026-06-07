@@ -83,6 +83,8 @@ private:
      * @brief 渲染meter元素的特定内容
      */
     void PaintMeterElement(SkCanvas* canvas, class HTMLMeterElement* meter, const Box& box);
+
+    void PaintAudioElement(SkCanvas* canvas, class HTMLAudioElement* audio, const Box& box);
 };
 
 } // namespace mbink
