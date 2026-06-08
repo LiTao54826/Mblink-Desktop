@@ -138,6 +138,25 @@ public:
      * @return true 如果有待处理的任务
      */
     bool HasPendingTasks() const;
+
+    /**
+     * @brief Check whether any scheduler task is ready to run now.
+     *
+     * Future timers are not considered ready, but queued animation frames are.
+     */
+    bool HasReadyTasks() const;
+
+    /**
+     * @brief Check whether any timer task is ready to execute now.
+     */
+    bool HasReadyTimerTasks() const;
+
+    /**
+     * @brief Milliseconds until the next timer task should run.
+     *
+     * @return -1 if there are no timer tasks.
+     */
+    int64_t MillisecondsUntilNextTimer() const;
     
     /**
      * @brief 清除所有任务

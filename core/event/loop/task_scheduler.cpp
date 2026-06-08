@@ -193,6 +193,43 @@ bool TaskScheduler::HasPendingTasks() const {
     return false;
 }
 
+bool TaskScheduler::HasReadyTasks() const {
+    if (HasReadyTimerTasks()) {
+        return true;
+    }
+
+    for (const auto& task : animation_frame_tasks_) {
+        if (!task.cancelled) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+bool TaskScheduler::HasReadyTimerTasks() const {
+    if (tasks_.empty()) {
+        return false;
+    }
+
+    return tasks_.top().execute_time <= GetCurrentTime();
+}
+
+int64_t TaskScheduler::MillisecondsUntilNextTimer() const {
+    if (tasks_.empty()) {
+        return -1;
+    }
+
+    const Uint64 now = GetCurrentTime();
+    const Uint64 execute_time = tasks_.top().execute_time;
+    if (execute_time <= now) {
+        return 0;
+    }
+
+    const Uint64 delta_ticks = execute_time - now;
+    return static_cast<int64_t>((delta_ticks * 1000) / performance_frequency_);
+}
+
 void TaskScheduler::ClearAllTasks() {
     // 清空优先队列
     while (!tasks_.empty()) {

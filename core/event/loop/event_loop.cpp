@@ -559,16 +559,22 @@ void EventLoop::RunOnce() {
     // 7.5 空闲时休眠以降低 CPU 占用
     // 当没有事件、没有任务、没有重绘需求时，休眠一小段时间
     // 这解决了 VSync 启用但没有渲染时的忙等待问题
+    const bool has_ready_native_tasks = task_scheduler_->HasReadyTasks();
     const bool has_ready_js_tasks = quickjs_runtime_ && quickjs_runtime_->HasReadyTasks();
     if (!has_events &&
         !any_needs_repaint &&
-        !task_scheduler_->HasPendingTasks() &&
+        !has_ready_native_tasks &&
         !has_ready_js_tasks) {
         const int64_t next_js_timer_delay_ms =
             quickjs_runtime_ ? quickjs_runtime_->MillisecondsUntilNextTimer() : -1;
+        const int64_t next_native_timer_delay_ms = task_scheduler_->MillisecondsUntilNextTimer();
         const int64_t next_native_text_delay_ms =
             NativeTextRepaintCoalescer::Instance().MillisecondsUntilNextFlush();
         int64_t next_delay_ms = next_js_timer_delay_ms;
+        if (next_native_timer_delay_ms >= 0 &&
+            (next_delay_ms < 0 || next_native_timer_delay_ms < next_delay_ms)) {
+            next_delay_ms = next_native_timer_delay_ms;
+        }
         if (next_native_text_delay_ms >= 0 &&
             (next_delay_ms < 0 || next_native_text_delay_ms < next_delay_ms)) {
             next_delay_ms = next_native_text_delay_ms;
