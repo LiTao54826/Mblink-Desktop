@@ -34,7 +34,7 @@ function run() {
 
   const uiDevPath = path.join(process.cwd(), 'tools', 'mbink_ui_dev', 'daemon_server.cpp');
   const uiDevSrc = fs.readFileSync(uiDevPath, 'utf8');
-  assert(uiDevSrc.includes('project_root / config.out_dir / "app"'),
+  assert(uiDevSrc.includes('JoinProjectPath(project_root, config.out_dir) / "app"'),
     'mbink-ui-dev resource input directory must match the /app.js runtime virtual root');
 
   const pythonTemplate = fs.readFileSync(

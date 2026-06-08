@@ -776,6 +776,43 @@ std::filesystem::path ResourceInputDir(const std::filesystem::path& project_root
     return std::filesystem::absolute(JoinProjectPath(project_root, config.out_dir) / "app").lexically_normal();
 }
 
+bool IsBundledSourceFile(const std::filesystem::path& path) {
+    const auto ext = ToLowerAscii(path.extension().string());
+    return ext == ".js" ||
+           ext == ".mjs" ||
+           ext == ".jsx" ||
+           ext == ".ts" ||
+           ext == ".tsx" ||
+           ext == ".css" ||
+           ext == ".html" ||
+           ext == ".htm";
+}
+
+bool IsIgnoredStaticAssetDir(const std::filesystem::path& path,
+                             const std::filesystem::path& project_root,
+                             const ProjectConfig& config) {
+    const auto name = ToLowerAscii(path.filename().string());
+    if (name.empty() ||
+        name == ".git" ||
+        name == ".hg" ||
+        name == ".svn" ||
+        name == ".devui" ||
+        name == "__pycache__" ||
+        name == "node_modules" ||
+        name == "host" ||
+        name == "rust_host" ||
+        name == "go_host" ||
+        name == "vendor" ||
+        name == ".venv" ||
+        name == "venv" ||
+        name == "env") {
+        return true;
+    }
+
+    const auto out_dir = std::filesystem::absolute(JoinProjectPath(project_root, config.out_dir)).lexically_normal();
+    return IsPathInsideRoot(out_dir, path);
+}
+
 bool CopyFileOverwrite(const std::filesystem::path& from, const std::filesystem::path& to, std::string* error) {
     std::error_code ec;
     const auto parent = to.parent_path();
@@ -790,6 +827,68 @@ bool CopyFileOverwrite(const std::filesystem::path& from, const std::filesystem:
         return false;
     }
     return true;
+}
+
+size_t CopyUiStaticAssets(const std::filesystem::path& project_root,
+                          const ProjectConfig& config,
+                          const std::filesystem::path& target_root,
+                          std::string* error) {
+    size_t copied = 0;
+    std::string ignored;
+    const auto public_root = std::filesystem::absolute(project_root / "public").lexically_normal();
+    const auto assets_root = std::filesystem::absolute(project_root / "assets").lexically_normal();
+    std::vector<std::pair<std::filesystem::path, std::filesystem::path>> roots = {
+        {JoinProjectPath(project_root, config.src_dir), {}},
+        {public_root, {}},
+        {assets_root, std::filesystem::path("assets")}
+    };
+
+    std::vector<std::pair<std::filesystem::path, std::filesystem::path>> unique_roots;
+    for (const auto& [root, target_prefix] : roots) {
+        std::error_code ec;
+        const auto absolute = std::filesystem::absolute(root, ec).lexically_normal();
+        if (ec ||
+            absolute.empty() ||
+            !std::filesystem::exists(absolute, ec) ||
+            !std::filesystem::is_directory(absolute, ec) ||
+            std::any_of(unique_roots.begin(), unique_roots.end(), [&](const auto& item) {
+                return item.first == absolute;
+            })) {
+            continue;
+        }
+        unique_roots.push_back({absolute, target_prefix});
+    }
+
+    for (const auto& [root, target_prefix] : unique_roots) {
+        std::error_code ec;
+        for (std::filesystem::recursive_directory_iterator it(root, std::filesystem::directory_options::skip_permission_denied, ec),
+             end; !ec && it != end; it.increment(ec)) {
+            const auto current = it->path();
+            if (it->is_directory(ec)) {
+                if (target_prefix.empty() &&
+                    root != public_root &&
+                    root != assets_root &&
+                    (IsPathInsideRoot(project_root / "public", current) ||
+                     IsPathInsideRoot(project_root / "assets", current))) {
+                    it.disable_recursion_pending();
+                    continue;
+                }
+                if (IsIgnoredStaticAssetDir(current, project_root, config)) it.disable_recursion_pending();
+                continue;
+            }
+            if (!it->is_regular_file(ec) || IsBundledSourceFile(current)) continue;
+
+            const auto rel = std::filesystem::relative(current, root, ec);
+            if (ec || rel.empty()) continue;
+            if (!CopyFileOverwrite(current, target_root / target_prefix / rel, &ignored)) {
+                if (error) *error = ignored;
+                return copied;
+            }
+            ++copied;
+        }
+    }
+
+    return copied;
 }
 
 bool SetWindowsGuiSubsystem(const std::filesystem::path& exe_path, bool hide_console, std::string* error) {
@@ -849,6 +948,12 @@ nlohmann::json CompileResourcePackageStatus(const std::filesystem::path& project
     if (!CopyFileOverwrite(app_bundle, input_dir / "app.js", error)) {
         return nlohmann::json{{"ok", false}, {"error", error ? *error : ""}};
     }
+    std::string asset_error;
+    const size_t static_assets = CopyUiStaticAssets(project_root, config, input_dir, &asset_error);
+    if (!asset_error.empty()) {
+        if (error) *error = asset_error;
+        return nlohmann::json{{"ok", false}, {"error", asset_error}};
+    }
     const auto config_path = project_root / "mbink.config.json";
     if (std::filesystem::exists(config_path, ec)) {
         std::string ignored;
@@ -870,7 +975,8 @@ nlohmann::json CompileResourcePackageStatus(const std::filesystem::path& project
     return nlohmann::json{{"ok", true},
                           {"format", "mbrp"},
                           {"input_dir", RelativePathToUtf8(input_dir, project_root)},
-                          {"output", RelativePathToUtf8(output_file, project_root)}};
+                          {"output", RelativePathToUtf8(output_file, project_root)},
+                          {"static_assets", static_assets}};
 }
 
 std::string Base64Encode(const std::string& input) {
@@ -1552,6 +1658,17 @@ nlohmann::json BuildEsbuildStatus(const std::filesystem::path& project_root, con
                           {"raw_output", lines},
                           {"build_log", PathToUtf8(build_log_path)}};
     if (exit_code == 0) {
+        std::string asset_error;
+        const size_t copied_static_assets = CopyUiStaticAssets(project_root, config, out_dir, &asset_error);
+        status["static_assets"] = copied_static_assets;
+        if (!asset_error.empty()) {
+            status["ok"] = false;
+            status["status"] = "failed";
+            status["errors"].push_back({{"message", asset_error}});
+            if (error) *error = asset_error;
+            WriteJsonFile(build_log_path, status);
+            return status;
+        }
         std::string package_error;
         auto package_status = CompileResourcePackageStatus(project_root, config, output_file, &package_error);
         status["resource_package"] = package_status;

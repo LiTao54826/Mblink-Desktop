@@ -2,8 +2,16 @@
 
 #include "dom/document.h"
 #include "dom/elements/html_audio_element.h"
+#include "core/api/mbink.h"
+#include "core/lexbor/lexbor_stylesheet.h"
+#include "core/network/fetch_bindings.h"
+#include "core/render/image/image_loader.h"
+#include "core/utils/encoding_utils.h"
 
+#include <SDL3/SDL.h>
 #include <cstdint>
+#include <filesystem>
+#include <fstream>
 #include <string>
 #include <vector>
 
@@ -12,23 +20,74 @@ namespace test {
 
 namespace {
 
+void AppendU16(std::vector<uint8_t>& out, uint16_t value) {
+    out.push_back(static_cast<uint8_t>(value & 0xff));
+    out.push_back(static_cast<uint8_t>((value >> 8) & 0xff));
+}
+
+void AppendU32(std::vector<uint8_t>& out, uint32_t value) {
+    out.push_back(static_cast<uint8_t>(value & 0xff));
+    out.push_back(static_cast<uint8_t>((value >> 8) & 0xff));
+    out.push_back(static_cast<uint8_t>((value >> 16) & 0xff));
+    out.push_back(static_cast<uint8_t>((value >> 24) & 0xff));
+}
+
+std::vector<uint8_t> MakeSilentWav(uint32_t frames) {
+    constexpr uint16_t kChannels = 1;
+    constexpr uint16_t kBitsPerSample = 16;
+    constexpr uint32_t kSampleRate = 8000;
+    constexpr uint16_t kBlockAlign = kChannels * (kBitsPerSample / 8);
+    constexpr uint32_t kByteRate = kSampleRate * kBlockAlign;
+
+    const uint32_t data_size = frames * kBlockAlign;
+    std::vector<uint8_t> wav;
+    wav.reserve(44 + data_size);
+    wav.insert(wav.end(), {'R', 'I', 'F', 'F'});
+    AppendU32(wav, 36 + data_size);
+    wav.insert(wav.end(), {'W', 'A', 'V', 'E'});
+    wav.insert(wav.end(), {'f', 'm', 't', ' '});
+    AppendU32(wav, 16);
+    AppendU16(wav, 1);
+    AppendU16(wav, kChannels);
+    AppendU32(wav, kSampleRate);
+    AppendU32(wav, kByteRate);
+    AppendU16(wav, kBlockAlign);
+    AppendU16(wav, kBitsPerSample);
+    wav.insert(wav.end(), {'d', 'a', 't', 'a'});
+    AppendU32(wav, data_size);
+    wav.resize(44 + data_size, 0);
+    return wav;
+}
+
 std::vector<uint8_t> MakeTinyWav() {
-    return {
-        'R', 'I', 'F', 'F',
-        38, 0, 0, 0,
-        'W', 'A', 'V', 'E',
-        'f', 'm', 't', ' ',
-        16, 0, 0, 0,
-        1, 0,
-        1, 0,
-        0x40, 0x1F, 0, 0,
-        0x80, 0x3E, 0, 0,
-        2, 0,
-        16, 0,
-        'd', 'a', 't', 'a',
-        2, 0, 0, 0,
-        0, 0
-    };
+    return MakeSilentWav(1);
+}
+
+bool WriteBinaryFile(const std::filesystem::path& path, const std::vector<uint8_t>& data) {
+    std::ofstream out(path, std::ios::binary);
+    return out.is_open() &&
+           (data.empty() || static_cast<bool>(out.write(reinterpret_cast<const char*>(data.data()),
+                                                        static_cast<std::streamsize>(data.size()))));
+}
+
+bool WriteTextFile(const std::filesystem::path& path, const std::string& data) {
+    std::ofstream out(path, std::ios::binary);
+    return out.is_open() && static_cast<bool>(out.write(data.data(), static_cast<std::streamsize>(data.size())));
+}
+
+std::string PathToUtf8(const std::filesystem::path& path) {
+#ifdef _WIN32
+    return utils::WideToUTF8(path.wstring());
+#else
+    return path.string();
+#endif
+}
+
+void ClearGlobalAssetProviders() {
+    Document::SetAssetProvider(nullptr);
+    FetchBindings::SetAssetProvider(nullptr);
+    ImageLoader::SetAssetProvider(nullptr);
+    LexborStyleSheet::SetAssetProvider(nullptr);
 }
 
 } // namespace
@@ -47,7 +106,7 @@ TEST(HTMLAudioElementTest, DocumentCreateElementReturnsAudioElement) {
 TEST(HTMLAudioElementTest, LoadsWavFromAssetProviderWithoutAudioDevice) {
     Document::SetAssetProvider([](const std::string& path, std::vector<uint8_t>& data) {
         if (path == "tone.wav") {
-            data = MakeTinyWav();
+            data = MakeSilentWav(8000);
             return true;
         }
         return false;
@@ -169,6 +228,101 @@ TEST(HTMLAudioElementTest, ControlDraggingUpdatesSeekAndVolume) {
     EXPECT_TRUE(audio->HandleControlMouseUp());
 
     Document::SetAssetProvider(nullptr);
+}
+
+TEST(HTMLAudioElementTest, PlayStartsSDLStreamWithDummyAudioDriver) {
+    if (!SDL_SetHint(SDL_HINT_AUDIO_DRIVER, "dummy")) {
+        GTEST_SKIP() << "SDL audio driver hint was already locked";
+    }
+
+    Document::SetAssetProvider([](const std::string& path, std::vector<uint8_t>& data) {
+        if (path == "tone.wav") {
+            data = MakeTinyWav();
+            return true;
+        }
+        return false;
+    });
+
+    auto document = std::make_shared<Document>();
+    document->Initialize();
+    auto audio = std::dynamic_pointer_cast<HTMLAudioElement>(document->CreateElement("audio"));
+    ASSERT_NE(audio, nullptr);
+
+    audio->SetSrc("tone.wav");
+    ASSERT_TRUE(audio->HasDecodedAudio()) << audio->GetError();
+
+    EXPECT_TRUE(audio->Play()) << audio->GetError();
+    EXPECT_FALSE(audio->GetPaused());
+    audio->Pause();
+    EXPECT_TRUE(audio->GetPaused());
+
+    Document::SetAssetProvider(nullptr);
+    SDL_QuitSubSystem(SDL_INIT_AUDIO);
+}
+
+TEST(HTMLAudioElementTest, MountedResourcePackageResolvesAudioRelativeToLoadedJS) {
+    const auto temp_root = std::filesystem::temp_directory_path() / "mbink-audio-resource-package-test";
+    const auto input_dir = temp_root / "app";
+    const auto package_file = temp_root / "app.mbrp";
+    std::error_code ec;
+    std::filesystem::remove_all(temp_root, ec);
+    ASSERT_TRUE(std::filesystem::create_directories(input_dir, ec) || std::filesystem::exists(input_dir));
+
+    ASSERT_TRUE(WriteTextFile(input_dir / "app.js", R"JS(
+const audio = document.createElement('audio');
+audio.src = 'tone.wav';
+document.body.appendChild(audio);
+globalThis.__audioPackageResult = {
+  src: audio.src,
+  loaded: audio.load(),
+  duration: audio.duration,
+  error: audio.error
+};
+)JS"));
+    ASSERT_TRUE(WriteBinaryFile(input_dir / "tone.wav", MakeSilentWav(8000)));
+
+    std::string input_text = PathToUtf8(input_dir);
+    std::string package_text = PathToUtf8(package_file);
+    ASSERT_EQ(mbink_init(), MBINK_OK);
+    ASSERT_EQ(mbink_compile_resources(input_text.c_str(), package_text.c_str(), ""), MBINK_OK)
+        << mbink_last_error();
+
+    void* resource_data = nullptr;
+    size_t resource_size = 0;
+    uint32_t resource_flags = 0;
+    ASSERT_EQ(mbink_load_resource_file(package_text.c_str(), "app/tone.wav", "",
+                                       &resource_data, &resource_size, &resource_flags), MBINK_OK)
+        << mbink_last_error();
+    EXPECT_EQ(resource_size, MakeSilentWav(8000).size());
+    mbink_free(resource_data);
+
+    MBinkConfig config = mbink_default_config();
+    config.headless = true;
+    config.gpu = false;
+    config.width = 320;
+    config.height = 120;
+    MBinkHandle handle = mbink_create_ex(&config);
+    ASSERT_NE(handle, nullptr) << mbink_last_error();
+
+    ASSERT_EQ(mbink_mount_resource_package(handle, package_text.c_str(), "", "/"), MBINK_OK)
+        << mbink_last_error();
+    ASSERT_EQ(mbink_load_js_file(handle, "/app/app.js"), MBINK_OK)
+        << mbink_last_error();
+
+    ASSERT_EQ(mbink_eval_js(handle, R"JS(
+(function(result) {
+  if (!result || result.src !== 'tone.wav' || result.loaded !== true ||
+      result.duration !== 1 || result.error) {
+    throw new Error(JSON.stringify(result));
+  }
+  return true;
+})(globalThis.__audioPackageResult)
+)JS"), MBINK_OK) << mbink_last_error();
+
+    mbink_destroy(handle);
+    mbink_cleanup();
+    ClearGlobalAssetProviders();
+    std::filesystem::remove_all(temp_root, ec);
 }
 
 } // namespace test

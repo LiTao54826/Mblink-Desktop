@@ -980,6 +980,10 @@ int main(int argc, char** argv) {
             // ===== JS/ESM 模式：加载 ES 模块 =====
             fs::path abs_path = fs::absolute(Utf8PathToFsPath(entry_path));
             std::string normalized_abs_path = NormalizeFsPath(abs_path);
+            std::string module_base_path = NormalizeFsPath(abs_path.parent_path());
+            document->SetBasePath(module_base_path);
+            FetchBindings::SetBasePath(module_base_path);
+            ImageLoader::SetBasePath(module_base_path);
             runtime->SetBaseModulePath(normalized_abs_path);
 
             std::string entry_code = ReadFile(entry_path);

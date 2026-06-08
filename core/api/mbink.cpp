@@ -2099,6 +2099,7 @@ int mbink_load_js_file(MBinkHandle handle, const char* filepath) {
 
     try {
         std::string path = filepath;
+        std::string next_base_path;
         if (!ctx->mountedResourcePackage.empty()) {
             const std::string resourcePath = JoinMountedResourcePath(
                 ctx->mountedResourceMountPoint.empty() ? "/" : ctx->mountedResourceMountPoint,
@@ -2114,8 +2115,11 @@ int mbink_load_js_file(MBinkHandle handle, const char* filepath) {
                         data,
                         &flags,
                         error)) {
+                    const fs::path module_dir = Utf8PathToFsPath(NormalizeResourcePath(filepath)).parent_path();
+                    next_base_path = NormalizeResourcePath(FsPathToUtf8String(module_dir));
                     if ((flags & mbink::resourcepkg::kResourceFlagBytecode) != 0) {
                         auto jsCtx = ctx->runtime->GetContext();
+                        SetRuntimeBasePath(ctx, next_base_path);
                         if (!mbink::resourcepkg::EvalMaybeMergedBytecode(jsCtx, data.data(), data.size(), error)) {
                             setLastError(error.empty() ? "Failed to eval resource bytecode" : error);
                             return MBINK_ERROR_JS_ERROR;
@@ -2129,6 +2133,17 @@ int mbink_load_js_file(MBinkHandle handle, const char* filepath) {
                 }
             }
         }
+        if (next_base_path.empty()) {
+            fs::path module_dir;
+            if (!path.empty() && path.front() == '/') {
+                module_dir = Utf8PathToFsPath(NormalizeResourcePath(path)).parent_path();
+                next_base_path = NormalizeResourcePath(FsPathToUtf8String(module_dir));
+            } else {
+                module_dir = fs::absolute(Utf8PathToFsPath(path)).parent_path();
+                next_base_path = NormalizeFsPath(module_dir);
+            }
+        }
+        SetRuntimeBasePath(ctx, next_base_path);
         ctx->runtime->LoadModuleFile(path);
         if (ctx->window) {
             ctx->window->SetNeedsRepaintFor(mbink::RepaintReason::API);
