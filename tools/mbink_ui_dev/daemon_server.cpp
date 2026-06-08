@@ -13,6 +13,7 @@
 #include <iomanip>
 #include <map>
 #include <mutex>
+#include <optional>
 #include <random>
 #include <sstream>
 #include <thread>
@@ -1590,6 +1591,166 @@ std::filesystem::path FindExecutableOnPath(const std::vector<std::string>& names
     return {};
 }
 
+bool IsPythonNativeBinary(const std::filesystem::path& path) {
+    const auto ext = ToLowerAscii(path.extension().string());
+    return ext == ".pyd" || ext == ".dll" || ext == ".so" || ext == ".dylib";
+}
+
+bool IsIgnoredPythonPackageDir(const std::filesystem::path& path) {
+    const auto name = ToLowerAscii(path.filename().string());
+    return name.empty() ||
+           name == "__pycache__" ||
+           name == ".git" ||
+           name == ".hg" ||
+           name == ".svn" ||
+           name == ".venv" ||
+           name == "venv" ||
+           name == "env" ||
+           name == "node_modules" ||
+           name == ".dist" ||
+           name == "build" ||
+           name == "dist" ||
+           name == "pyinstaller-work" ||
+           name == "pyinstaller-spec";
+}
+
+std::optional<std::string> PythonPackageNameFromDir(const std::filesystem::path& package_dir,
+                                                    const std::filesystem::path& search_root) {
+    std::error_code ec;
+    auto rel = std::filesystem::relative(package_dir, search_root, ec);
+    if (ec || rel.empty()) return std::nullopt;
+
+    std::vector<std::string> parts;
+    for (const auto& part : rel) {
+        const auto item = part.string();
+        if (item.empty() || item == "." || item == "..") return std::nullopt;
+        parts.push_back(item);
+    }
+    if (parts.empty()) return std::nullopt;
+
+    std::filesystem::path current = search_root;
+    for (const auto& part : parts) {
+        current /= part;
+        if (!std::filesystem::exists(current / "__init__.py")) return std::nullopt;
+    }
+
+    std::string name;
+    for (const auto& part : parts) {
+        if (!name.empty()) name += ".";
+        name += part;
+    }
+    return name.empty() ? std::nullopt : std::optional<std::string>{name};
+}
+
+std::vector<std::filesystem::path> PythonImportSearchRoots(const std::filesystem::path& project_root,
+                                                           const ProjectConfig& config) {
+    std::vector<std::filesystem::path> roots = {
+        project_root,
+        project_root / "src",
+        JoinProjectPath(project_root, config.src_dir),
+        project_root / "host",
+        project_root / "vendor"
+    };
+    std::vector<std::filesystem::path> result;
+    for (const auto& root : roots) {
+        std::error_code ec;
+        const auto absolute = std::filesystem::absolute(root, ec).lexically_normal();
+        if (ec || absolute.empty() || !std::filesystem::exists(absolute, ec) || !std::filesystem::is_directory(absolute, ec)) continue;
+        if (std::find(result.begin(), result.end(), absolute) == result.end()) result.push_back(absolute);
+    }
+    return result;
+}
+
+std::optional<std::string> PythonVersionFromAbiTag(const std::filesystem::path& path) {
+    const auto name = ToLowerAscii(path.filename().string());
+    const std::string marker = ".cp";
+    const auto pos = name.find(marker);
+    if (pos == std::string::npos || pos + marker.size() + 2 > name.size()) return std::nullopt;
+
+    size_t i = pos + marker.size();
+    std::string digits;
+    while (i < name.size() && std::isdigit(static_cast<unsigned char>(name[i]))) {
+        digits.push_back(name[i]);
+        ++i;
+    }
+    if (digits.size() == 2) {
+        return digits.substr(0, 1) + "." + digits.substr(1, 1);
+    }
+    if (digits.size() == 3) {
+        return digits.substr(0, 1) + "." + digits.substr(1, 2);
+    }
+    return std::nullopt;
+}
+
+struct PythonPackageScan {
+    std::vector<std::string> collect_all;
+    std::vector<std::string> native_binaries;
+    std::optional<std::string> required_python_version;
+};
+
+PythonPackageScan ScanProjectPythonPackages(const std::filesystem::path& project_root,
+                                            const ProjectConfig& config,
+                                            const std::vector<std::filesystem::path>& search_roots) {
+    PythonPackageScan scan;
+    for (const auto& search_root : search_roots) {
+        std::error_code ec;
+        std::filesystem::recursive_directory_iterator it(search_root, std::filesystem::directory_options::skip_permission_denied, ec);
+        const std::filesystem::recursive_directory_iterator end;
+        for (; !ec && it != end; it.increment(ec)) {
+            const auto& entry = *it;
+            const auto path = entry.path();
+            if (entry.is_directory(ec)) {
+                if (IsIgnoredPythonPackageDir(path)) it.disable_recursion_pending();
+                continue;
+            }
+            if (!entry.is_regular_file(ec) || !IsPythonNativeBinary(path)) continue;
+            if (IsPathInsideRoot(JoinProjectPath(project_root, config.out_dir), path)) continue;
+
+            scan.native_binaries.push_back(RelativePathToUtf8(path, project_root));
+            if (!scan.required_python_version.has_value()) {
+                scan.required_python_version = PythonVersionFromAbiTag(path);
+            }
+
+            auto dir = path.parent_path();
+            while (!dir.empty() && IsPathInsideRoot(search_root, dir)) {
+                if (std::filesystem::exists(dir / "__init__.py")) {
+                    if (auto package_name = PythonPackageNameFromDir(dir, search_root)) {
+                        if (*package_name != "mbink" &&
+                            std::find(scan.collect_all.begin(), scan.collect_all.end(), *package_name) == scan.collect_all.end()) {
+                            scan.collect_all.push_back(*package_name);
+                        }
+                        break;
+                    }
+                }
+                if (dir == search_root) break;
+                dir = dir.parent_path();
+            }
+        }
+    }
+
+    std::sort(scan.collect_all.begin(), scan.collect_all.end());
+    std::sort(scan.native_binaries.begin(), scan.native_binaries.end());
+    scan.native_binaries.erase(std::unique(scan.native_binaries.begin(), scan.native_binaries.end()), scan.native_binaries.end());
+    return scan;
+}
+
+std::filesystem::path FindPythonLauncher(const std::optional<std::string>& required_version) {
+    if (required_version.has_value()) {
+        const auto launcher = FindExecutableOnPath({"py.exe"});
+        if (!launcher.empty()) return launcher;
+    }
+    return FindExecutableOnPath({"python.exe", "py.exe", "python"});
+}
+
+std::string BuildPythonCommand(const std::filesystem::path& python,
+                               const std::optional<std::string>& required_version) {
+    const auto executable = ToLowerAscii(python.filename().string());
+    if (executable == "py.exe") {
+        return QuoteForCmd(PathToUtf8(python)) + (required_version.has_value() ? " -" + *required_version : " -3");
+    }
+    return QuoteForCmd(PathToUtf8(python));
+}
+
 std::filesystem::path FindMbinkRuntimeLibrary(const std::filesystem::path& project_root) {
     const auto exe_dir = GetCurrentExecutablePath().parent_path();
     const std::vector<std::filesystem::path> candidates = {
@@ -1816,12 +1977,6 @@ nlohmann::json BuildPythonHostArtifact(const std::filesystem::path& project_root
         if (error) *error = "host/main.py not found";
         return nlohmann::json{{"ok", false}, {"runtime", "python"}, {"error", error ? *error : ""}};
     }
-    const auto python = FindExecutableOnPath({"python.exe", "py.exe", "python"});
-    if (python.empty()) {
-        if (error) *error = "python not found in PATH";
-        return nlohmann::json{{"ok", false}, {"runtime", "python"}, {"error", error ? *error : ""}};
-    }
-
     const auto out_dir = std::filesystem::absolute(JoinProjectPath(project_root, config.out_dir)).lexically_normal();
     const auto final_dir = out_dir / "final";
     const auto resource_copy = project_root / "host" / "resources" / "app.mbrp";
@@ -1837,29 +1992,49 @@ nlohmann::json BuildPythonHostArtifact(const std::filesystem::path& project_root
     }
 
     const std::string stem = SanitizeArtifactStem(config.name);
-    const auto python_cmd = ToLowerAscii(python.filename().string()) == "py.exe"
-        ? QuoteForCmd(PathToUtf8(python)) + " -3"
-        : QuoteForCmd(PathToUtf8(python));
+    const auto python_search_roots = PythonImportSearchRoots(project_root, config);
+    const auto python_package_scan = ScanProjectPythonPackages(project_root, config, python_search_roots);
+    const auto python = FindPythonLauncher(python_package_scan.required_python_version);
+    if (python.empty()) {
+        if (error) *error = "python not found in PATH";
+        return nlohmann::json{{"ok", false}, {"runtime", "python"}, {"error", error ? *error : ""}};
+    }
+    const auto python_cmd = BuildPythonCommand(python, python_package_scan.required_python_version);
     const std::string console_mode = config.build_hide_console ? " --windowed" : " --console";
-    const std::string command =
-        python_cmd + " -m PyInstaller --noconfirm --clean --onefile --name " + QuoteForCmd(stem) +
+    std::string pyinstaller_args =
+        " -m PyInstaller --noconfirm --clean --onefile --name " + QuoteForCmd(stem) +
         console_mode +
         " --distpath " + QuoteForCmd(PathToUtf8(final_dir)) +
         " --workpath " + QuoteForCmd(PathToUtf8(out_dir / "pyinstaller-work")) +
-        " --specpath " + QuoteForCmd(PathToUtf8(out_dir / "pyinstaller-spec")) +
-        " --paths " + QuoteForCmd(PathToUtf8(project_root / "vendor")) +
+        " --specpath " + QuoteForCmd(PathToUtf8(out_dir / "pyinstaller-spec"));
+    for (const auto& search_root : python_search_roots) {
+        pyinstaller_args += " --paths " + QuoteForCmd(PathToUtf8(search_root));
+    }
+    for (const auto& package_name : python_package_scan.collect_all) {
+        pyinstaller_args += " --collect-all " + QuoteForCmd(package_name);
+    }
+    pyinstaller_args +=
         " --add-data " + QuoteForCmd(PathToUtf8(resource_copy) + ";resources") +
         " --add-binary " + QuoteForCmd(PathToUtf8(dll_path) + ";mbink/bin") +
         " " + QuoteForCmd(PathToUtf8(main_py));
+    const std::string command = python_cmd + pyinstaller_args;
 
     auto step = BuildStepFromProcess("python -m PyInstaller", command, project_root, 240000, out_dir / "pyinstaller.log", error);
     const auto final_exe = final_dir / (stem + ".exe");
     nlohmann::json status{{"ok", step.value("ok", false) && std::filesystem::exists(final_exe)},
                           {"runtime", "python"},
                           {"builder", "pyinstaller"},
+                          {"python_executable", PathToUtf8(python)},
+                          {"python_required_version", python_package_scan.required_python_version.value_or("")},
+                          {"python_import_paths", nlohmann::json::array()},
+                          {"python_collect_all", python_package_scan.collect_all},
+                          {"python_native_binaries", python_package_scan.native_binaries},
                           {"embedded_resource", RelativePathToUtf8(resource_copy, project_root)},
                           {"steps", nlohmann::json::array({step})},
                           {"outputs", outputs}};
+    for (const auto& search_root : python_search_roots) {
+        status["python_import_paths"].push_back(RelativePathToUtf8(search_root, project_root));
+    }
     if (!status.value("ok", false)) {
         if (error && error->empty()) *error = "PyInstaller did not produce the expected exe";
         status["error"] = error ? *error : "PyInstaller failed";
