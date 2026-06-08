@@ -2238,6 +2238,9 @@ void Window::Render() {
             if (synced) {
                 needs_layout_update = true;
             }
+            if (!had_structural_dom_changes && render_pipeline_) {
+                render_pipeline_->MarkNeedsPaint();
+            }
         }
     }
     if (baseline_stats_enabled) {
