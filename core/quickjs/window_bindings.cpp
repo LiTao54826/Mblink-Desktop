@@ -9,6 +9,7 @@
 #include "bindings/js_style_declaration.h"
 #include "bindings/js_event.h"
 #include "bindings/js_data_transfer.h"
+#include "bindings/js_file_list.h"
 #include "bindings/js_range.h"
 #include "bindings/js_selection.h"
 #include "bindings/js_mutation_observer.h"
@@ -227,6 +228,7 @@ EventLoop* WindowBindings::GetActiveEventLoop() {
 
 void WindowBindings::InitBindings() {
     // 初始化新的模块化 DOM 绑定系统（有 exotic 支持）
+    bindings::InitFileListBinding(runtime_->GetContext());
     bindings::InitNodeBinding(runtime_->GetContext());
     bindings::InitElementBinding(runtime_->GetContext());
     bindings::InitStyleDeclarationBinding(runtime_->GetContext());  // 支持 element.style.xxx = '...'

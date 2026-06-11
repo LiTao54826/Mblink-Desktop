@@ -36,6 +36,7 @@
 #include "core/editing/contenteditable_controller.h"
 #include "core/editing/clipboard_manager.h"
 #include "../types/mouse_event.h"
+#include "../types/data_transfer.h"
 #include "../input/keyboard_utils.h"
 #include "../input/hit_test_controller.h"
 #include "../types/event_types.h"
@@ -43,6 +44,8 @@
 #include "core/render/layer/paint_layer.h"
 #include "core/dom/document.h"
 #include "core/dom/element.h"
+#include "core/dom/file_selection_policy.h"
+#include "core/dom/drag_event.h"
 #include "core/dom/elements/native_text_repaint_coalescer.h"
 #include "core/dom/selection/selection.h"
 #include "core/dom/elements/html_input_element.h"
@@ -161,6 +164,39 @@ bool MarkElementPaintDirty(Window* window, const std::shared_ptr<Element>& eleme
         pipeline->MarkNeedsPaint();
     }
     return false;
+}
+
+HitTestResult HitTestWindowAt(std::shared_ptr<Window> window, float logical_x, float logical_y) {
+    HitTestResult hit_result;
+    if (!window) {
+        return hit_result;
+    }
+
+    window->EnsureRenderTree();
+    auto root_render = window->GetCachedRenderTree();
+    if (!root_render) {
+        return hit_result;
+    }
+
+    HitTestController hit_controller;
+    HitTestRequest request;
+    auto result_ex = hit_controller.HitTest(root_render, logical_x, logical_y, request);
+    if (result_ex.IsValid()) {
+        hit_result.element = result_ex.element;
+        hit_result.render_object = result_ex.render_object;
+        hit_result.local_x = result_ex.local_x;
+        hit_result.local_y = result_ex.local_y;
+    }
+    return hit_result;
+}
+
+std::shared_ptr<DragEvent> MakeFileDropDragEvent(const std::string& type,
+                                                 int client_x,
+                                                 int client_y,
+                                                 const std::shared_ptr<DataTransfer>& data_transfer) {
+    auto event = std::make_shared<DragEvent>(type, client_x, client_y, 0, data_transfer);
+    event->SetScreenPosition(client_x, client_y);
+    return event;
 }
 }
 
@@ -636,6 +672,7 @@ ClipboardManager* EventLoop::GetClipboardManager() {
 
 bool EventLoop::ProcessEvents() {
     DocumentBatchScope batch_scope;
+    ProcessPendingFileDialogResults();
 
     bool has_events = false;
     SDL_Event event;
@@ -660,6 +697,33 @@ bool EventLoop::ProcessEvents() {
             }
             if (!has_windows || all_should_close) {
                 should_quit_ = true;
+            }
+            continue;
+        }
+
+        if (IsFileDialogResultEvent(event)) {
+            try {
+                HandleFileDialogResultEvent(event);
+            } catch (const std::exception& e) {
+                std::cerr << "[EventLoop] EXCEPTION in HandleFileDialogResultEvent: " << e.what() << std::endl;
+            } catch (...) {
+                std::cerr << "[EventLoop] UNKNOWN EXCEPTION in HandleFileDialogResultEvent" << std::endl;
+            }
+            continue;
+        }
+
+        if (event.type == SDL_EVENT_DROP_BEGIN ||
+            event.type == SDL_EVENT_DROP_FILE ||
+            event.type == SDL_EVENT_DROP_POSITION ||
+            event.type == SDL_EVENT_DROP_COMPLETE) {
+            try {
+                HandleFileDropEventForDOM(event);
+            } catch (const std::exception& e) {
+                std::cerr << "[EventLoop] EXCEPTION in HandleFileDropEventForDOM"
+                          << " (event.type=" << event.type << "): " << e.what() << std::endl;
+            } catch (...) {
+                std::cerr << "[EventLoop] UNKNOWN EXCEPTION in HandleFileDropEventForDOM"
+                          << " (event.type=" << event.type << ")" << std::endl;
             }
             continue;
         }
@@ -827,6 +891,99 @@ bool EventLoop::HasWork() const {
     // }
 
     return false;
+}
+
+void EventLoop::HandleFileDropEventForDOM(const SDL_Event& event) {
+    if (event.type == SDL_EVENT_DROP_BEGIN) {
+        pending_drop_file_paths_.clear();
+        pending_drop_window_id_ = event.drop.windowID;
+        pending_drop_x_ = 0.0f;
+        pending_drop_y_ = 0.0f;
+        return;
+    }
+
+    if (event.type == SDL_EVENT_DROP_POSITION) {
+        pending_drop_window_id_ = event.drop.windowID;
+        pending_drop_x_ = event.drop.x;
+        pending_drop_y_ = event.drop.y;
+        return;
+    }
+
+    if (event.type == SDL_EVENT_DROP_FILE) {
+        pending_drop_window_id_ = event.drop.windowID;
+        pending_drop_x_ = event.drop.x;
+        pending_drop_y_ = event.drop.y;
+        if (event.drop.data && event.drop.data[0] != '\0') {
+            pending_drop_file_paths_.emplace_back(event.drop.data);
+        }
+        return;
+    }
+
+    if (event.type != SDL_EVENT_DROP_COMPLETE) {
+        return;
+    }
+
+    pending_drop_window_id_ = event.drop.windowID ? event.drop.windowID : pending_drop_window_id_;
+    pending_drop_x_ = event.drop.x;
+    pending_drop_y_ = event.drop.y;
+
+    if (pending_drop_file_paths_.empty()) {
+        return;
+    }
+
+    auto& window_manager = WindowManager::Instance();
+    auto window = window_manager.FindWindowByID(pending_drop_window_id_);
+    if (!window) {
+        auto all_windows = window_manager.GetAllWindows();
+        if (!all_windows.empty()) {
+            window = all_windows[0];
+        }
+    }
+    if (!window) {
+        pending_drop_file_paths_.clear();
+        return;
+    }
+
+    const float dpi_scale = window->GetDisplayScale();
+    const float logical_x = pending_drop_x_ / dpi_scale;
+    const float logical_y = pending_drop_y_ / dpi_scale;
+    auto hit_result = HitTestWindowAt(window, logical_x, logical_y);
+    if (!hit_result.IsValid() || !hit_result.element) {
+        pending_drop_file_paths_.clear();
+        return;
+    }
+
+    auto data_transfer = std::make_shared<DataTransfer>();
+    data_transfer->SetFilesFromPaths(pending_drop_file_paths_);
+    data_transfer->SetDropEffect(DragEffect::Copy);
+
+    const int client_x = static_cast<int>(logical_x);
+    const int client_y = static_cast<int>(logical_y);
+    hit_result.element->DispatchEvent(MakeFileDropDragEvent(DragEvent::DRAG_ENTER, client_x, client_y, data_transfer));
+    auto drag_over_event = MakeFileDropDragEvent(DragEvent::DRAG_OVER, client_x, client_y, data_transfer);
+    hit_result.element->DispatchEvent(drag_over_event);
+    if (!drag_over_event->IsDefaultPrevented()) {
+        pending_drop_file_paths_.clear();
+        return;
+    }
+
+    auto drop_event = MakeFileDropDragEvent(DragEvent::DROP, client_x, client_y, data_transfer);
+    hit_result.element->DispatchEvent(drop_event);
+
+    if (!drop_event->IsDefaultPrevented()) {
+        auto input_element = std::dynamic_pointer_cast<HTMLInputElement>(hit_result.element);
+        if (input_element &&
+            input_element->GetInputType() == InputType::File &&
+            !input_element->IsDisabled()) {
+            FileSelectionOptions options;
+            options.allow_multiple = input_element->AllowsMultipleFiles();
+            options.allow_directories = input_element->AllowsDirectorySelection();
+            options.accept = input_element->GetAccept();
+            input_element->SetFiles(SanitizeFileSelection(BuildFileListFromPaths(pending_drop_file_paths_), options), true);
+        }
+    }
+
+    pending_drop_file_paths_.clear();
 }
 
 void EventLoop::HandleMouseEventForDOM(const SDL_Event& event) {

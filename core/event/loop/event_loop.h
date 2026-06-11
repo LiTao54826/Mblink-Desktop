@@ -12,6 +12,7 @@
 #include <functional>
 #include <unordered_set>
 #include <string>
+#include <vector>
 
 namespace mbink {
 
@@ -158,6 +159,7 @@ public:
      * @return std::shared_ptr<TaskScheduler> 任务调度器智能指针
      */
     std::shared_ptr<TaskScheduler> GetTaskSchedulerPtr();
+    void HandleFileDropEventForTesting(const SDL_Event& event) { HandleFileDropEventForDOM(event); }
 
     /**
      * @brief 获取光标是否可见（用于闪烁效果）
@@ -240,6 +242,8 @@ private:
      * @param event SDL 鼠标滚轮事件
      */
     void HandleMouseWheelEventForDOM(const SDL_Event& event);
+
+    void HandleFileDropEventForDOM(const SDL_Event& event);
 
     /**
      * @brief 处理表单元素的默认行为（参考 RmlUi InputTypeCheckbox::ProcessDefaultAction）
@@ -385,6 +389,11 @@ private:
     std::unique_ptr<ContentEditableController> contenteditable_controller_;
     std::unique_ptr<ClipboardManager> clipboard_manager_;
     std::unique_ptr<EditorInputSession> editor_input_session_;
+
+    std::vector<std::string> pending_drop_file_paths_;
+    Uint32 pending_drop_window_id_ = 0;
+    float pending_drop_x_ = 0.0f;
+    float pending_drop_y_ = 0.0f;
 
     // 光标闪烁状态
     bool cursor_visible_ = true;  // 光标是否可见（用于闪烁效果）

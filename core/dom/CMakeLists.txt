@@ -18,6 +18,8 @@ set(DOM_CORE_SOURCES
     document_fragment.cpp
     event.cpp
     drag_event.cpp
+    file_list.cpp
+    file_selection_policy.cpp
 )
 
 set(DOM_CORE_HEADERS
@@ -28,6 +30,8 @@ set(DOM_CORE_HEADERS
     document.h
     event.h
     drag_event.h
+    file_list.h
+    file_selection_policy.h
 )
 
 # 子目录源文件

@@ -15,8 +15,11 @@
 #include "core/utils/encoding_utils.h"
 #include "quickjs/quickjs_runtime.h"
 #include "quickjs/window_bindings.h"
+#include "quickjs/bindings/js_data_transfer.h"
 #include "dom/bindings/dom_bindings.h"
 #include "dom/document.h"
+#include "dom/elements/html_input_element.h"
+#include "event/types/data_transfer.h"
 #include "window/window.h"
 #include "core/event/loop/task_scheduler.h"
 
@@ -179,6 +182,7 @@ protected:
     }
 
     void TearDown() override {
+        HTMLInputElement::SetFilePickerForTesting(nullptr);
         if (window_bindings_) {
             window_bindings_->Cleanup();
             DOMBindings::Cleanup(nullptr);
@@ -2060,6 +2064,397 @@ TEST_F(DOMBindingsTest, ElementClickDoesNotDispatchForDisabledButton) {
         clicks;
     )");
     EXPECT_EQ(result, 0);
+}
+
+TEST_F(DOMBindingsTest, FileInputClickPopulatesFileListThroughPickerHook) {
+    const auto temp_dir = std::filesystem::temp_directory_path() / "mbink-js-file-input-test";
+    std::filesystem::create_directories(temp_dir);
+    const auto first_path = temp_dir / "picked.txt";
+    const auto second_path = temp_dir / "picked.json";
+    {
+        std::ofstream(first_path) << "abc";
+        std::ofstream(second_path) << "{}";
+    }
+
+    const std::string first = FsPathToUtf8String(first_path);
+    const std::string second = FsPathToUtf8String(second_path);
+    HTMLInputElement::SetFilePickerForTesting([first, second](HTMLInputElement& input) {
+        input.SetFilesFromPaths({first, second}, true);
+    });
+
+    auto result = runtime_->Eval(R"(
+        var input = document.createElement('input');
+        input.setAttribute('type', 'file');
+        input.setAttribute('multiple', '');
+        var inputEvents = 0;
+        var changeEvents = 0;
+        input.addEventListener('input', function() { inputEvents++; });
+        input.addEventListener('change', function() { changeEvents++; });
+        input.click();
+        var files = input.files;
+        files &&
+          files.length === 2 &&
+          files[0].name === 'picked.txt' &&
+          files.item(1).name === 'picked.json' &&
+          files.item(2) === null &&
+          files[0].size === 3 &&
+          files[0].type === 'text/plain' &&
+          inputEvents === 1 &&
+          changeEvents === 1;
+    )");
+    EXPECT_EQ(result, true);
+
+    std::error_code ec;
+    std::filesystem::remove_all(temp_dir, ec);
+}
+
+TEST_F(DOMBindingsTest, FileInputClickDefaultCanBePrevented) {
+    HTMLInputElement::SetFilePickerForTesting([](HTMLInputElement& input) {
+        input.SetFilesFromPaths({"should-not-be-picked.txt"}, true);
+    });
+
+    auto result = runtime_->Eval(R"(
+        var input = document.createElement('input');
+        input.setAttribute('type', 'file');
+        input.addEventListener('click', function(event) {
+            event.preventDefault();
+        });
+        input.click();
+        input.files.length === 0;
+    )");
+    EXPECT_EQ(result, true);
+}
+
+TEST_F(DOMBindingsTest, FileInputFilesAreReadonlySnapshotsWithBrowserTags) {
+    const auto temp_dir = std::filesystem::temp_directory_path() / "mbink-js-file-input-tags-test";
+    std::filesystem::create_directories(temp_dir);
+    const auto first_path = temp_dir / "snapshot.txt";
+    {
+        std::ofstream(first_path) << "abc";
+    }
+
+    const std::string first = FsPathToUtf8String(first_path);
+    HTMLInputElement::SetFilePickerForTesting([first](HTMLInputElement& input) {
+        input.SetFilesFromPaths({first}, true);
+    });
+
+    auto result = runtime_->Eval(R"(
+        var input = document.createElement('input');
+        input.setAttribute('type', 'file');
+        input.click();
+        var firstSnapshot = input.files;
+        var secondSnapshot = input.files;
+        var file = firstSnapshot[0];
+        var lengthDescriptor = Object.getOwnPropertyDescriptor(firstSnapshot, 'length');
+        var indexDescriptor = Object.getOwnPropertyDescriptor(firstSnapshot, '0');
+        var tagDescriptor = Object.getOwnPropertyDescriptor(firstSnapshot, Symbol.toStringTag);
+        var originalName = file.name;
+        firstSnapshot.length = 99;
+        firstSnapshot[0] = { name: 'mutated' };
+        file.name = 'mutated';
+        ({
+          snapshotDistinct: firstSnapshot !== secondSnapshot,
+          value: input.value,
+          listTag: Object.prototype.toString.call(firstSnapshot),
+          fileTag: Object.prototype.toString.call(file),
+          lengthWritable: lengthDescriptor.writable,
+          lengthConfigurable: lengthDescriptor.configurable,
+          indexWritable: indexDescriptor.writable,
+          indexConfigurable: indexDescriptor.configurable,
+          tagWritable: tagDescriptor.writable,
+          tagConfigurable: tagDescriptor.configurable,
+          lengthAfterWrite: input.files.length,
+          nameAfterWrite: input.files[0].name,
+          originalName: originalName,
+          relativePath: input.files[0].webkitRelativePath,
+          pathIsUndefined: typeof input.files[0].path === 'undefined',
+          isDirectoryIsUndefined: typeof input.files[0].isDirectory === 'undefined',
+          missing: input.files.item(4),
+          nonFileFiles: document.createElement('div').files
+        });
+    )");
+
+    EXPECT_EQ(result["snapshotDistinct"], true);
+    EXPECT_EQ(result["value"], "C:\\fakepath\\snapshot.txt");
+    EXPECT_EQ(result["listTag"], "[object FileList]");
+    EXPECT_EQ(result["fileTag"], "[object File]");
+    EXPECT_EQ(result["lengthWritable"], false);
+    EXPECT_EQ(result["lengthConfigurable"], false);
+    EXPECT_EQ(result["indexWritable"], false);
+    EXPECT_EQ(result["indexConfigurable"], false);
+    EXPECT_EQ(result["tagWritable"], false);
+    EXPECT_EQ(result["tagConfigurable"], false);
+    EXPECT_EQ(result["lengthAfterWrite"], 1);
+    EXPECT_EQ(result["nameAfterWrite"], "snapshot.txt");
+    EXPECT_EQ(result["originalName"], "snapshot.txt");
+    EXPECT_EQ(result["relativePath"], "");
+    EXPECT_EQ(result["pathIsUndefined"], true);
+    EXPECT_EQ(result["isDirectoryIsUndefined"], true);
+    EXPECT_TRUE(result["missing"].is_null());
+    EXPECT_TRUE(result["nonFileFiles"].is_null());
+
+    std::error_code ec;
+    std::filesystem::remove_all(temp_dir, ec);
+}
+
+TEST_F(DOMBindingsTest, FileInputDefaultValueDoesNotAliasLiveSelection) {
+    const auto temp_dir = std::filesystem::temp_directory_path() / "mbink-js-file-default-value-test";
+    std::filesystem::create_directories(temp_dir);
+    const auto file_path = temp_dir / "picked.txt";
+    {
+        std::ofstream(file_path) << "abc";
+    }
+
+    const std::string picked = FsPathToUtf8String(file_path);
+    HTMLInputElement::SetFilePickerForTesting([picked](HTMLInputElement& input) {
+        input.SetFilesFromPaths({picked}, true);
+    });
+
+    auto result = runtime_->Eval(R"(
+        var input = document.createElement('input');
+        input.setAttribute('type', 'file');
+        input.defaultValue = 'C:/fake/path.txt';
+        var before = {
+          value: input.value,
+          defaultValue: input.defaultValue,
+          files: input.files.length
+        };
+        input.click();
+        var picked = {
+          value: input.value,
+          defaultValue: input.defaultValue,
+          files: input.files.length,
+          name: input.files[0].name
+        };
+        input.defaultValue = '';
+        ({
+          beforeValue: before.value,
+          beforeDefaultValue: before.defaultValue,
+          beforeFiles: before.files,
+          pickedValue: picked.value,
+          pickedDefaultValue: picked.defaultValue,
+          pickedFiles: picked.files,
+          pickedName: picked.name,
+          afterClearValue: input.value,
+          afterClearDefaultValue: input.defaultValue,
+          afterClearFiles: input.files.length
+        });
+    )");
+
+    EXPECT_EQ(result["beforeValue"], "");
+    EXPECT_EQ(result["beforeDefaultValue"], "C:/fake/path.txt");
+    EXPECT_EQ(result["beforeFiles"], 0);
+    EXPECT_EQ(result["pickedValue"], "C:\\fakepath\\picked.txt");
+    EXPECT_EQ(result["pickedDefaultValue"], "C:/fake/path.txt");
+    EXPECT_EQ(result["pickedFiles"], 1);
+    EXPECT_EQ(result["pickedName"], "picked.txt");
+    EXPECT_EQ(result["afterClearValue"], "");
+    EXPECT_EQ(result["afterClearDefaultValue"], "");
+    EXPECT_EQ(result["afterClearFiles"], 0);
+
+    std::error_code ec;
+    std::filesystem::remove_all(temp_dir, ec);
+}
+
+TEST_F(DOMBindingsTest, FileInputDirectorySelectionExposesRelativeFilePaths) {
+    const auto temp_dir = std::filesystem::temp_directory_path() / "mbink-js-file-directory-test";
+    const auto directory = temp_dir / "folder";
+    const auto nested = directory / "nested";
+    std::filesystem::create_directories(nested);
+    const auto file_path = nested / "child.txt";
+    {
+        std::ofstream(file_path) << "abc";
+    }
+
+    const std::string picked_directory = FsPathToUtf8String(directory);
+    HTMLInputElement::SetFilePickerForTesting([picked_directory](HTMLInputElement& input) {
+        input.SetFilesFromPaths({picked_directory}, true);
+    });
+
+    auto result = runtime_->Eval(R"(
+        var input = document.createElement('input');
+        input.setAttribute('type', 'file');
+        input.setAttribute('webkitdirectory', '');
+        input.click();
+        ({
+          length: input.files.length,
+          value: input.value,
+          name: input.files[0].name,
+          relativePath: input.files[0].webkitRelativePath,
+          pathIsUndefined: typeof input.files[0].path === 'undefined',
+          isDirectoryIsUndefined: typeof input.files[0].isDirectory === 'undefined'
+        });
+    )");
+
+    EXPECT_EQ(result["length"], 1);
+    EXPECT_EQ(result["value"], "C:\\fakepath\\child.txt");
+    EXPECT_EQ(result["name"], "child.txt");
+    EXPECT_EQ(result["relativePath"], "folder/nested/child.txt");
+    EXPECT_EQ(result["pathIsUndefined"], true);
+    EXPECT_EQ(result["isDirectoryIsUndefined"], true);
+
+    HTMLInputElement::SetFilePickerForTesting(nullptr);
+    std::error_code ec;
+    std::filesystem::remove_all(temp_dir, ec);
+}
+
+TEST_F(DOMBindingsTest, DataTransferFilesExposeFileListToJavaScript) {
+    const auto temp_dir = std::filesystem::temp_directory_path() / "mbink-js-data-transfer-files-test";
+    std::filesystem::create_directories(temp_dir);
+    const auto file_path = temp_dir / "dragged.txt";
+    {
+        std::ofstream(file_path) << "drop";
+    }
+
+    auto transfer = std::make_shared<DataTransfer>();
+    transfer->SetData("text/plain", "payload");
+    transfer->SetFilesFromPaths({FsPathToUtf8String(file_path)});
+
+    JSContext* ctx = runtime_->GetContext();
+    JSValue global = JS_GetGlobalObject(ctx);
+    JS_SetPropertyStr(ctx, global, "__testTransfer", bindings::WrapDataTransfer(ctx, transfer));
+    JS_FreeValue(ctx, global);
+
+    auto result = runtime_->Eval(R"(
+        var files = __testTransfer.files;
+        var secondSnapshot = __testTransfer.files;
+        var lengthDescriptor = Object.getOwnPropertyDescriptor(files, 'length');
+        var indexDescriptor = Object.getOwnPropertyDescriptor(files, '0');
+        files.length = 99;
+        files[0] = { name: 'mutated' };
+        files[0].name = 'mutated';
+        ({
+          snapshotDistinct: files !== secondSnapshot,
+          typeCount: __testTransfer.types.length,
+          firstType: __testTransfer.types[0],
+          secondType: __testTransfer.types[1],
+          listTag: Object.prototype.toString.call(files),
+          fileTag: Object.prototype.toString.call(files[0]),
+          lengthWritable: lengthDescriptor.writable,
+          lengthConfigurable: lengthDescriptor.configurable,
+          indexWritable: indexDescriptor.writable,
+          indexConfigurable: indexDescriptor.configurable,
+          length: files.length,
+          freshLength: __testTransfer.files.length,
+          name: __testTransfer.files[0].name,
+          pathIsUndefined: typeof __testTransfer.files[0].path === 'undefined',
+          text: __testTransfer.getData('text/plain'),
+          missing: files.item(3)
+        });
+    )");
+
+    EXPECT_EQ(result["snapshotDistinct"], true);
+    EXPECT_EQ(result["typeCount"], 2);
+    EXPECT_EQ(result["firstType"], "text/plain");
+    EXPECT_EQ(result["secondType"], "Files");
+    EXPECT_EQ(result["listTag"], "[object FileList]");
+    EXPECT_EQ(result["fileTag"], "[object File]");
+    EXPECT_EQ(result["lengthWritable"], false);
+    EXPECT_EQ(result["lengthConfigurable"], false);
+    EXPECT_EQ(result["indexWritable"], false);
+    EXPECT_EQ(result["indexConfigurable"], false);
+    EXPECT_EQ(result["length"], 1);
+    EXPECT_EQ(result["freshLength"], 1);
+    EXPECT_EQ(result["name"], "dragged.txt");
+    EXPECT_EQ(result["pathIsUndefined"], true);
+    EXPECT_EQ(result["text"], "payload");
+    EXPECT_TRUE(result["missing"].is_null());
+
+    std::error_code ec;
+    std::filesystem::remove_all(temp_dir, ec);
+}
+
+TEST_F(DOMBindingsTest, FileInputFilesSetterAcceptsDataTransferFileList) {
+    const auto temp_dir = std::filesystem::temp_directory_path() / "mbink-js-file-input-setter-test";
+    std::filesystem::create_directories(temp_dir);
+    const auto file_path = temp_dir / "dragged.txt";
+    {
+        std::ofstream(file_path) << "drop";
+    }
+
+    auto transfer = std::make_shared<DataTransfer>();
+    transfer->SetFilesFromPaths({FsPathToUtf8String(file_path)});
+
+    JSContext* ctx = runtime_->GetContext();
+    JSValue global = JS_GetGlobalObject(ctx);
+    JS_SetPropertyStr(ctx, global, "__testTransfer", bindings::WrapDataTransfer(ctx, transfer));
+    JS_FreeValue(ctx, global);
+
+    auto result = runtime_->Eval(R"(
+        var input = document.createElement('input');
+        input.setAttribute('type', 'file');
+        input.files = __testTransfer.files;
+        var afterSet = {
+          length: input.files.length,
+          value: input.value,
+          name: input.files[0].name
+        };
+        input.files = null;
+        ({
+          length: afterSet.length,
+          value: afterSet.value,
+          name: afterSet.name,
+          clearedLength: input.files.length,
+          clearedValue: input.value
+        });
+    )");
+
+    EXPECT_EQ(result["length"], 1);
+    EXPECT_EQ(result["value"], "C:\\fakepath\\dragged.txt");
+    EXPECT_EQ(result["name"], "dragged.txt");
+    EXPECT_EQ(result["clearedLength"], 0);
+    EXPECT_EQ(result["clearedValue"], "");
+
+    std::error_code ec;
+    std::filesystem::remove_all(temp_dir, ec);
+}
+
+TEST_F(DOMBindingsTest, FileInputFilesSetterKeepsDirectoryFilesWithoutMultiple) {
+    const auto temp_dir = std::filesystem::temp_directory_path() / "mbink-js-file-input-directory-setter-test";
+    const auto directory = temp_dir / "folder";
+    const auto nested = directory / "nested";
+    const auto first_path = directory / "a.txt";
+    const auto second_path = nested / "b.txt";
+    std::filesystem::create_directories(nested);
+    {
+        std::ofstream(first_path) << "a";
+        std::ofstream(second_path) << "bb";
+    }
+
+    auto transfer = std::make_shared<DataTransfer>();
+    transfer->SetFilesFromPaths({FsPathToUtf8String(directory)});
+
+    JSContext* ctx = runtime_->GetContext();
+    JSValue global = JS_GetGlobalObject(ctx);
+    JS_SetPropertyStr(ctx, global, "__testTransfer", bindings::WrapDataTransfer(ctx, transfer));
+    JS_FreeValue(ctx, global);
+
+    auto result = runtime_->Eval(R"(
+        var input = document.createElement('input');
+        input.setAttribute('type', 'file');
+        input.setAttribute('webkitdirectory', '');
+        input.files = __testTransfer.files;
+        ({
+          transferLength: __testTransfer.files.length,
+          inputLength: input.files.length,
+          firstName: input.files[0].name,
+          firstRelativePath: input.files[0].webkitRelativePath,
+          secondName: input.files[1].name,
+          secondRelativePath: input.files[1].webkitRelativePath,
+          value: input.value
+        });
+    )");
+
+    EXPECT_EQ(result["transferLength"], 2);
+    EXPECT_EQ(result["inputLength"], 2);
+    EXPECT_EQ(result["firstName"], "a.txt");
+    EXPECT_EQ(result["firstRelativePath"], "folder/a.txt");
+    EXPECT_EQ(result["secondName"], "b.txt");
+    EXPECT_EQ(result["secondRelativePath"], "folder/nested/b.txt");
+    EXPECT_EQ(result["value"], "C:\\fakepath\\a.txt");
+
+    std::error_code ec;
+    std::filesystem::remove_all(temp_dir, ec);
 }
 
 TEST_F(DOMBindingsTest, EventTimeStampAndStopImmediatePropagation) {

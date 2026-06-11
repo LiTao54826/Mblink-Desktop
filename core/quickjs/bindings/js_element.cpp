@@ -30,12 +30,12 @@
 #include "js_node.h"
 #include "js_style_declaration.h"
 #include "js_event.h"
+#include "js_file_list.h"
 #include "core/quickjs/js_value_wrapper.h"
 #include <algorithm>
 #include <memory>
 #include <string>
 #include <iostream>
-#include <sstream>
 #include <vector>
 #include <utility>
 
@@ -1023,6 +1023,55 @@ static JSValue JSElement_get_value(JSContext* ctx, JSValueConst this_val, int ma
     return JS_UNDEFINED;
 }
 
+// HTMLInputElement.files getter
+static JSValue JSElement_get_files(JSContext* ctx, JSValueConst this_val, int magic) {
+    auto* data = static_cast<JSElementData*>(JS_GetOpaque(this_val, js_element_class_id));
+    if (!data || !data->element) {
+        return JS_UNDEFINED;
+    }
+
+    auto input_element = std::dynamic_pointer_cast<HTMLInputElement>(data->element);
+    if (!input_element) {
+        return JS_UNDEFINED;
+    }
+
+    if (input_element->GetInputType() != InputType::File) {
+        return JS_NULL;
+    }
+
+    return WrapFileList(ctx, input_element->GetFiles());
+}
+
+// HTMLInputElement.files setter
+static JSValue JSElement_set_files(JSContext* ctx, JSValueConst this_val, JSValueConst val, int magic) {
+    auto* data = static_cast<JSElementData*>(JS_GetOpaque(this_val, js_element_class_id));
+    if (!data || !data->element) {
+        return JS_UNDEFINED;
+    }
+
+    auto input_element = std::dynamic_pointer_cast<HTMLInputElement>(data->element);
+    if (!input_element) {
+        return JS_UNDEFINED;
+    }
+
+    if (input_element->GetInputType() != InputType::File) {
+        return JS_UNDEFINED;
+    }
+
+    if (JS_IsNull(val)) {
+        input_element->ClearFiles(false);
+        return JS_UNDEFINED;
+    }
+
+    FileList files;
+    if (!FileListFromJSValue(ctx, val, &files)) {
+        return JS_ThrowTypeError(ctx, "HTMLInputElement.files must be a FileList");
+    }
+
+    input_element->SetFiles(std::move(files), false);
+    return JS_UNDEFINED;
+}
+
 // value setter (for HTMLOptionElement, HTMLInputElement, HTMLTextAreaElement, HTMLSelectElement)
 static JSValue JSElement_set_value(JSContext* ctx, JSValueConst this_val, JSValue val, int magic) {
     auto* data = static_cast<JSElementData*>(JS_GetOpaque(this_val, js_element_class_id));
@@ -1082,6 +1131,10 @@ static JSValue JSElement_get_defaultValue(JSContext* ctx, JSValueConst this_val,
 
     auto input_element = std::dynamic_pointer_cast<HTMLInputElement>(data->element);
     if (input_element) {
+        if (input_element->GetInputType() == InputType::File) {
+            std::string value = input_element->GetAttribute("value");
+            return JS_NewString(ctx, value.c_str());
+        }
         std::string value = input_element->GetValue();
         return JS_NewString(ctx, value.c_str());
     }
@@ -1109,6 +1162,11 @@ static JSValue JSElement_set_defaultValue(JSContext* ctx, JSValueConst this_val,
 
     auto input_element = std::dynamic_pointer_cast<HTMLInputElement>(data->element);
     if (input_element) {
+        if (input_element->GetInputType() == InputType::File) {
+            input_element->SetAttribute("value", str);
+            JS_FreeCString(ctx, str);
+            return JS_UNDEFINED;
+        }
         input_element->SetValue(str, false);
         JS_FreeCString(ctx, str);
         return JS_UNDEFINED;
@@ -3034,6 +3092,14 @@ static JSValue JSElement_click(JSContext* ctx, JSValueConst this_val, int argc, 
 
     auto click_event = std::make_shared<MouseEvent>("click", 0, 0, 0, 1, 0);
     data->element->DispatchEvent(click_event);
+
+    auto input_element = std::dynamic_pointer_cast<HTMLInputElement>(data->element);
+    if (input_element &&
+        input_element->GetInputType() == InputType::File &&
+        !click_event->IsDefaultPrevented()) {
+        input_element->OpenFilePicker();
+    }
+
     return JS_UNDEFINED;
 }
 
@@ -3116,6 +3182,7 @@ static const JSCFunctionListEntry js_element_proto_funcs[] = {
     JS_CGETSET_MAGIC_DEF("attributes", JSElement_get_attributes, nullptr, 0),
     JS_CGETSET_MAGIC_DEF("style", JSElement_get_style, nullptr, 0),
     JS_CGETSET_MAGIC_DEF("value", JSElement_get_value, JSElement_set_value, 0),
+    JS_CGETSET_MAGIC_DEF("files", JSElement_get_files, JSElement_set_files, 0),
     JS_CGETSET_MAGIC_DEF("defaultValue", JSElement_get_defaultValue, JSElement_set_defaultValue, 0),
     JS_CGETSET_MAGIC_DEF("defaultChecked", JSElement_get_defaultChecked, JSElement_set_defaultChecked, 0),
     JS_CGETSET_MAGIC_DEF("checked", JSElement_get_checked, JSElement_set_checked, 0),

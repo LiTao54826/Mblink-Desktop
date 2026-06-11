@@ -17,14 +17,18 @@
 #include "dom/element.h"
 #include "dom/document.h"
 #include "dom/event.h"
+#include "dom/file_selection_policy.h"
 #include "dom/elements/html_input_element.h"
 #include "dom/elements/html_textarea_element.h"
+#include "event/types/data_transfer.h"
 #include "event/input/focus_manager.h"
 #include "dom/utils/dom_token_list.h"
 #include "dom/style/css_style_declaration.h"
 #include "lexbor/style_manager.h"
 #include "render/css/style_resolver.h"
 #include "window/window.h"
+#include <filesystem>
+#include <fstream>
 #ifdef GetClassName
 #undef GetClassName
 #endif
@@ -475,6 +479,276 @@ TEST_F(ElementTest, TextInputDefaultColorUsesFieldText) {
 
     EXPECT_EQ(parent_style.color, "#f5f5fa");
     EXPECT_EQ(input_style.color, "#000000");
+}
+
+TEST_F(ElementTest, FileInputMaintainsBrowserStyleFileList) {
+    const auto temp_dir = std::filesystem::temp_directory_path() / "mbink-file-input-test";
+    std::filesystem::create_directories(temp_dir);
+    const auto first_path = temp_dir / "first.txt";
+    const auto second_path = temp_dir / "second.json";
+    {
+        std::ofstream(first_path) << "hello";
+        std::ofstream(second_path) << "{}";
+    }
+
+    auto input = std::dynamic_pointer_cast<HTMLInputElement>(doc_->CreateElement("input"));
+    ASSERT_NE(input, nullptr);
+    input->SetAttribute("type", "file");
+
+    int input_events = 0;
+    int change_events = 0;
+    input->AddEventListener("input", [&](std::shared_ptr<Event>) { ++input_events; });
+    input->AddEventListener("change", [&](std::shared_ptr<Event>) { ++change_events; });
+
+    input->SetFilesFromPaths({first_path.string(), second_path.string()}, true);
+    ASSERT_EQ(input->GetFiles().size(), 1u);
+    EXPECT_EQ(input->GetFiles()[0].name, "first.txt");
+    EXPECT_EQ(input->GetFiles()[0].type, "text/plain");
+    EXPECT_EQ(input->GetFiles()[0].size, 5u);
+    EXPECT_EQ(input->GetValue(), "C:\\fakepath\\first.txt");
+    EXPECT_EQ(input_events, 1);
+    EXPECT_EQ(change_events, 1);
+
+    input->SetAttribute("multiple", "");
+    input->SetFilesFromPaths({first_path.string(), second_path.string()}, true);
+    ASSERT_EQ(input->GetFiles().size(), 2u);
+    EXPECT_EQ(input->GetFiles()[1].name, "second.json");
+    EXPECT_EQ(input->GetFiles()[1].type, "application/json");
+    EXPECT_EQ(input->GetValue(), "C:\\fakepath\\first.txt");
+    EXPECT_EQ(input_events, 2);
+    EXPECT_EQ(change_events, 2);
+
+    input->SetValue("C:/fake/path.txt", true);
+    ASSERT_EQ(input->GetFiles().size(), 2u);
+    EXPECT_EQ(input_events, 2);
+    EXPECT_EQ(change_events, 2);
+
+    input->SetValue("", true);
+    EXPECT_TRUE(input->GetFiles().empty());
+    EXPECT_TRUE(input->GetValue().empty());
+    EXPECT_EQ(input_events, 3);
+    EXPECT_EQ(change_events, 3);
+
+    std::error_code ec;
+    std::filesystem::remove_all(temp_dir, ec);
+}
+
+TEST_F(ElementTest, FileInputValueAttributeCannotForgeSelection) {
+    const auto temp_dir = std::filesystem::temp_directory_path() / "mbink-file-input-value-test";
+    std::filesystem::create_directories(temp_dir);
+    const auto file_path = temp_dir / "picked.txt";
+    {
+        std::ofstream(file_path) << "value";
+    }
+
+    auto input = std::dynamic_pointer_cast<HTMLInputElement>(doc_->CreateElement("input"));
+    ASSERT_NE(input, nullptr);
+    input->SetAttribute("type", "file");
+    input->SetFilesFromPaths({file_path.string()}, false);
+    ASSERT_EQ(input->GetFiles().size(), 1u);
+
+    input->SetAttribute("value", "C:/fake/path.txt");
+    ASSERT_EQ(input->GetFiles().size(), 1u);
+    EXPECT_EQ(input->GetFiles()[0].name, "picked.txt");
+    EXPECT_EQ(input->GetValue(), "C:\\fakepath\\picked.txt");
+
+    input->SetAttribute("value", "");
+    EXPECT_TRUE(input->GetFiles().empty());
+    EXPECT_TRUE(input->GetValue().empty());
+
+    std::error_code ec;
+    std::filesystem::remove_all(temp_dir, ec);
+}
+
+TEST_F(ElementTest, FileInputClearsSelectionAcrossTypeChanges) {
+    const auto temp_dir = std::filesystem::temp_directory_path() / "mbink-file-input-type-change-test";
+    std::filesystem::create_directories(temp_dir);
+    const auto file_path = temp_dir / "picked.txt";
+    {
+        std::ofstream(file_path) << "value";
+    }
+
+    auto input = std::dynamic_pointer_cast<HTMLInputElement>(doc_->CreateElement("input"));
+    ASSERT_NE(input, nullptr);
+    input->SetAttribute("type", "file");
+    input->SetFilesFromPaths({file_path.string()}, false);
+    ASSERT_EQ(input->GetFiles().size(), 1u);
+
+    input->SetAttribute("type", "text");
+    EXPECT_TRUE(input->GetFiles().empty());
+    EXPECT_TRUE(input->GetValue().empty());
+
+    input->SetAttribute("type", "file");
+    EXPECT_TRUE(input->GetFiles().empty());
+    EXPECT_TRUE(input->GetValue().empty());
+
+    input->SetAttribute("type", "text");
+    input->SetValue("plain text", false);
+    input->SetAttribute("type", "file");
+    EXPECT_TRUE(input->GetFiles().empty());
+    EXPECT_TRUE(input->GetValue().empty());
+
+    input->SetInputType(InputType::File);
+    input->SetFilesFromPaths({file_path.string()}, false);
+    ASSERT_EQ(input->GetFiles().size(), 1u);
+    input->SetInputType(InputType::Text);
+    EXPECT_TRUE(input->GetFiles().empty());
+    EXPECT_TRUE(input->GetValue().empty());
+
+    std::error_code ec;
+    std::filesystem::remove_all(temp_dir, ec);
+}
+
+TEST_F(ElementTest, FileInputAppliesAcceptAndDirectorySelectionPolicy) {
+    const auto temp_dir = std::filesystem::temp_directory_path() / "mbink-file-input-policy-test";
+    std::filesystem::create_directories(temp_dir);
+    const auto text_path = temp_dir / "note.TXT";
+    const auto json_path = temp_dir / "data.json";
+    const auto image_path = temp_dir / "photo.png";
+    const auto directory_path = temp_dir / "folder";
+    const auto nested_path = directory_path / "nested";
+    const auto directory_file_path = nested_path / "inside.txt";
+    std::filesystem::create_directories(directory_path);
+    std::filesystem::create_directories(nested_path);
+    {
+        std::ofstream(text_path) << "text";
+        std::ofstream(json_path) << "{}";
+        std::ofstream(image_path) << "png";
+        std::ofstream(directory_file_path) << "inside";
+    }
+
+    auto input = std::dynamic_pointer_cast<HTMLInputElement>(doc_->CreateElement("input"));
+    ASSERT_NE(input, nullptr);
+    input->SetAttribute("type", "file");
+    input->SetAttribute("multiple", "");
+    input->SetAttribute("accept", ".txt,image/*,application/json;ignored");
+    input->SetFilesFromPaths({json_path.string(), text_path.string(), image_path.string(), directory_path.string()}, false);
+
+    ASSERT_EQ(input->GetFiles().size(), 2u);
+    EXPECT_EQ(input->GetFiles()[0].name, "note.TXT");
+    EXPECT_EQ(input->GetFiles()[1].name, "photo.png");
+
+    input->SetAttribute("directory", "");
+    input->SetAttribute("accept", "");
+    input->SetFilesFromPaths({directory_path.string(), text_path.string()}, false);
+    ASSERT_EQ(input->GetFiles().size(), 2u);
+    EXPECT_FALSE(input->GetFiles()[0].is_directory);
+    EXPECT_EQ(input->GetFiles()[0].name, "inside.txt");
+    EXPECT_EQ(input->GetFiles()[0].webkit_relative_path, "folder/nested/inside.txt");
+    EXPECT_EQ(input->GetFiles()[1].name, "note.TXT");
+
+    std::error_code ec;
+    std::filesystem::remove_all(temp_dir, ec);
+}
+
+TEST_F(ElementTest, FileInputDirectorySelectionKeepsAllFilesWithoutMultiple) {
+    const auto temp_dir = std::filesystem::temp_directory_path() / "mbink-file-input-directory-single-test";
+    const auto directory_path = temp_dir / "folder";
+    const auto nested_path = directory_path / "nested";
+    const auto first_path = directory_path / "a.txt";
+    const auto second_path = nested_path / "b.txt";
+    std::filesystem::create_directories(nested_path);
+    {
+        std::ofstream(first_path) << "a";
+        std::ofstream(second_path) << "bb";
+    }
+
+    auto input = std::dynamic_pointer_cast<HTMLInputElement>(doc_->CreateElement("input"));
+    ASSERT_NE(input, nullptr);
+    input->SetAttribute("type", "file");
+    input->SetAttribute("webkitdirectory", "");
+    input->SetFilesFromPaths({directory_path.string()}, false);
+
+    ASSERT_EQ(input->GetFiles().size(), 2u);
+    EXPECT_EQ(input->GetFiles()[0].name, "a.txt");
+    EXPECT_EQ(input->GetFiles()[0].webkit_relative_path, "folder/a.txt");
+    EXPECT_EQ(input->GetFiles()[1].name, "b.txt");
+    EXPECT_EQ(input->GetFiles()[1].webkit_relative_path, "folder/nested/b.txt");
+    EXPECT_EQ(input->GetValue(), "C:\\fakepath\\a.txt");
+
+    std::error_code ec;
+    std::filesystem::remove_all(temp_dir, ec);
+}
+
+TEST_F(ElementTest, FileInputAcceptSupportsExactMimeAndEmptyFilteredSelection) {
+    const auto temp_dir = std::filesystem::temp_directory_path() / "mbink-file-input-accept-test";
+    std::filesystem::create_directories(temp_dir);
+    const auto text_path = temp_dir / "note.txt";
+    const auto json_path = temp_dir / "data.json";
+    {
+        std::ofstream(text_path) << "text";
+        std::ofstream(json_path) << "{}";
+    }
+
+    auto input = std::dynamic_pointer_cast<HTMLInputElement>(doc_->CreateElement("input"));
+    ASSERT_NE(input, nullptr);
+    input->SetAttribute("type", "file");
+    input->SetAttribute("multiple", "");
+    input->SetAttribute("accept", "application/json");
+    input->SetFilesFromPaths({text_path.string(), json_path.string()}, false);
+
+    ASSERT_EQ(input->GetFiles().size(), 1u);
+    EXPECT_EQ(input->GetFiles()[0].name, "data.json");
+    EXPECT_EQ(input->GetFiles()[0].type, "application/json");
+
+    input->SetAttribute("accept", "application/pdf");
+    input->SetFilesFromPaths({text_path.string(), json_path.string()}, false);
+    EXPECT_TRUE(input->GetFiles().empty());
+
+    std::error_code ec;
+    std::filesystem::remove_all(temp_dir, ec);
+}
+
+TEST_F(ElementTest, FileInputBuildsNativeDialogFiltersFromAccept) {
+    const auto filters = BuildFileDialogAcceptFilters(".txt, image/*, application/json, image/jpeg, application/unknown");
+
+    ASSERT_EQ(filters.size(), 4u);
+    EXPECT_EQ(filters[0].name, ".txt");
+    EXPECT_EQ(filters[0].pattern, "txt");
+    EXPECT_EQ(filters[1].name, "image/*");
+    EXPECT_EQ(filters[1].pattern, "png;jpg;jpeg;gif;webp;svg");
+    EXPECT_EQ(filters[2].name, "application/json");
+    EXPECT_EQ(filters[2].pattern, "json");
+    EXPECT_EQ(filters[3].name, "image/jpeg");
+    EXPECT_EQ(filters[3].pattern, "jpg;jpeg");
+}
+
+TEST_F(ElementTest, DataTransferExposesFilesTypeWhenFilesArePresent) {
+    const auto temp_dir = std::filesystem::temp_directory_path() / "mbink-data-transfer-file-test";
+    std::filesystem::create_directories(temp_dir);
+    const auto file_path = temp_dir / "dragged.txt";
+    const auto directory_path = temp_dir / "folder";
+    const auto nested_path = directory_path / "nested";
+    const auto directory_file_path = nested_path / "inside.txt";
+    std::filesystem::create_directories(nested_path);
+    {
+        std::ofstream(file_path) << "drop";
+        std::ofstream(directory_file_path) << "inside";
+    }
+
+    DataTransfer transfer;
+    transfer.SetData("text/plain", "payload");
+    transfer.SetFilesFromPaths({file_path.string()});
+
+    const auto types = transfer.GetTypes();
+    EXPECT_NE(std::find(types.begin(), types.end(), "text/plain"), types.end());
+    EXPECT_NE(std::find(types.begin(), types.end(), "Files"), types.end());
+    ASSERT_EQ(transfer.GetFiles().size(), 1u);
+    EXPECT_EQ(transfer.GetFiles()[0].name, "dragged.txt");
+    EXPECT_EQ(transfer.GetFiles()[0].size, 4u);
+
+    transfer.SetFilesFromPaths({directory_path.string()});
+    ASSERT_EQ(transfer.GetFiles().size(), 1u);
+    EXPECT_FALSE(transfer.GetFiles()[0].is_directory);
+    EXPECT_EQ(transfer.GetFiles()[0].name, "inside.txt");
+    EXPECT_EQ(transfer.GetFiles()[0].webkit_relative_path, "folder/nested/inside.txt");
+
+    transfer.ClearData();
+    EXPECT_TRUE(transfer.GetFiles().empty());
+    EXPECT_TRUE(transfer.GetTypes().empty());
+
+    std::error_code ec;
+    std::filesystem::remove_all(temp_dir, ec);
 }
 
 TEST_F(ElementTest, HoverPseudoClassRestylesDescendantRenderObject) {

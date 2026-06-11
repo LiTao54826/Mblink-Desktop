@@ -2525,6 +2525,12 @@ void MouseEventDispatcher::HandleMouseUp(std::shared_ptr<Window> window,
             0  // buttons: 按钮已释放
         );
         hit_result.element->DispatchEvent(click_event);
+        if (button == 1 && !click_event->IsDefaultPrevented()) {
+            auto input_element = std::dynamic_pointer_cast<HTMLInputElement>(hit_result.element);
+            if (input_element && input_element->GetInputType() == InputType::File) {
+                input_element->OpenFilePicker();
+            }
+        }
 
         // 参考 Blink/Chrome 的行为：
         // click 事件分发后，不应该再尝试设置焦点或清除焦点

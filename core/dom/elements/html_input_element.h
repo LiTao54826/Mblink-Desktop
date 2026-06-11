@@ -11,10 +11,14 @@
 #pragma once
 
 #include "../element.h"
+#include "../file_list.h"
 #include "core/editing/input_edit_command.h"
 #include "core/editing/input_edit_state.h"
+#include <SDL3/SDL_events.h>
+#include <functional>
 #include <memory>
 #include <string>
+#include <vector>
 
 namespace mbink {
 
@@ -52,6 +56,8 @@ enum class InputType {
  */
 class HTMLInputElement : public Element {
 public:
+    using FilePicker = std::function<void(HTMLInputElement&)>;
+
     /**
      * @brief 构造函数
      */
@@ -98,6 +104,16 @@ public:
      * @param trigger_events 是否触发change/input事件
      */
     void SetValue(const std::string& value, bool trigger_events = false);
+
+    const FileList& GetFiles() const { return files_; }
+    void SetFiles(FileList files, bool trigger_events = false);
+    void SetFilesFromPaths(const std::vector<std::string>& paths, bool trigger_events = false);
+    void ClearFiles(bool trigger_events = false);
+    bool AllowsMultipleFiles() const { return HasAttribute("multiple"); }
+    bool AllowsDirectorySelection() const { return HasAttribute("webkitdirectory") || HasAttribute("directory"); }
+    std::string GetAccept() const { return GetAttribute("accept"); }
+    bool OpenFilePicker();
+    static void SetFilePickerForTesting(FilePicker picker);
 
     /**
      * @brief 获取checked状态（用于checkbox和radio）
@@ -370,6 +386,9 @@ protected:
     static InputType StringToInputType(const std::string& type_str);
 
 private:
+    void UpdateFileValueFromFiles();
+    FileList files_;
+
     InputType input_type_;      // Input类型
     std::shared_ptr<InputEditState> edit_state_;  // 单行 input 编辑状态
     bool checked_;              // 选中状态（checkbox/radio）
@@ -380,6 +399,11 @@ private:
     // Range 滑块拖动状态
     bool is_dragging_range_ = false;  // 是否正在拖动 range 滑块
 };
+
+bool IsFileDialogResultEvent(const SDL_Event& event);
+void HandleFileDialogResultEvent(const SDL_Event& event);
+void ProcessPendingFileDialogResults();
+void QueueFileDialogResultForTesting(std::shared_ptr<HTMLInputElement> input, std::vector<std::string> paths);
 
 } // namespace mbink
 

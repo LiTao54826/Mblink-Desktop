@@ -7,8 +7,12 @@
 #include "event/loop/event_loop.h"
 #include "event/loop/task_scheduler.h"
 #include "dom/document.h"
+#include "dom/event.h"
+#include "dom/elements/html_input_element.h"
 #include "window/window.h"
 #include "window/window_manager.h"
+#include <filesystem>
+#include <fstream>
 
 namespace mbink {
 namespace test {
@@ -81,6 +85,39 @@ TEST_F(EventLoopTest, SetRenderCallback) {
     // EXPECT_TRUE(called);
 }
 
+TEST_F(EventLoopTest, FileDialogResultQueueUpdatesInputOnRunOnce) {
+    const auto temp_dir = std::filesystem::temp_directory_path() / "mbink-event-loop-file-dialog-result-test";
+    std::filesystem::create_directories(temp_dir);
+    const auto file_path = temp_dir / "picked.txt";
+    {
+        std::ofstream(file_path) << "picked";
+    }
+
+    auto document = std::make_shared<Document>();
+    document->Initialize();
+    auto input = std::dynamic_pointer_cast<HTMLInputElement>(document->CreateElement("input"));
+    ASSERT_NE(input, nullptr);
+    input->SetAttribute("type", "file");
+    document->GetBody()->AppendChild(input);
+
+    int input_events = 0;
+    int change_events = 0;
+    input->AddEventListener("input", [&](std::shared_ptr<Event>) { ++input_events; });
+    input->AddEventListener("change", [&](std::shared_ptr<Event>) { ++change_events; });
+
+    QueueFileDialogResultForTesting(input, {file_path.string()});
+    event_loop_->RunOnce();
+
+    ASSERT_EQ(input->GetFiles().size(), 1u);
+    EXPECT_EQ(input->GetFiles()[0].name, "picked.txt");
+    EXPECT_EQ(input->GetValue(), "C:\\fakepath\\picked.txt");
+    EXPECT_EQ(input_events, 1);
+    EXPECT_EQ(change_events, 1);
+
+    std::error_code ec;
+    std::filesystem::remove_all(temp_dir, ec);
+}
+
 TEST_F(EventLoopTest, RenderCallbackRunsAfterWindowRender) {
     WindowConfig config;
     config.hidden = true;
@@ -108,6 +145,226 @@ TEST_F(EventLoopTest, RenderCallbackRunsAfterWindowRender) {
 
     EXPECT_TRUE(callback_called);
     EXPECT_FALSE(callback_saw_pending_repaint);
+}
+
+TEST_F(EventLoopTest, FileDropRequiresDragOverDefaultPrevention) {
+    const auto temp_dir = std::filesystem::temp_directory_path() / "mbink-event-loop-file-drop-reject-test";
+    std::filesystem::create_directories(temp_dir);
+    const auto file_path = temp_dir / "drop.txt";
+    {
+        std::ofstream(file_path) << "drop";
+    }
+
+    auto document = std::make_shared<Document>();
+    document->Initialize();
+    auto input = std::dynamic_pointer_cast<HTMLInputElement>(document->CreateElement("input"));
+    ASSERT_NE(input, nullptr);
+    input->SetAttribute("type", "file");
+    input->SetAttribute("style", "width: 200px; height: 40px;");
+    document->GetBody()->AppendChild(input);
+
+    WindowConfig config;
+    config.hidden = true;
+    config.headless = true;
+    config.backend = RenderBackend::CPU;
+    auto window = std::make_shared<Window>(config);
+    window->SetDocument(document);
+    WindowManager::Instance().RegisterWindow(window);
+    window->EnsureRenderTree();
+
+    int dragenter_events = 0;
+    int dragover_events = 0;
+    int drop_events = 0;
+    input->AddEventListener("dragenter", [&](std::shared_ptr<Event>) { ++dragenter_events; });
+    input->AddEventListener("dragover", [&](std::shared_ptr<Event>) { ++dragover_events; });
+    input->AddEventListener("drop", [&](std::shared_ptr<Event>) { ++drop_events; });
+
+    SDL_Event begin{};
+    begin.type = SDL_EVENT_DROP_BEGIN;
+    begin.drop.windowID = 0;
+    event_loop_->HandleFileDropEventForTesting(begin);
+
+    const std::string path = file_path.string();
+    SDL_Event file{};
+    file.type = SDL_EVENT_DROP_FILE;
+    file.drop.windowID = 0;
+    file.drop.x = 5.0f;
+    file.drop.y = 5.0f;
+    file.drop.data = path.c_str();
+    event_loop_->HandleFileDropEventForTesting(file);
+
+    SDL_Event complete{};
+    complete.type = SDL_EVENT_DROP_COMPLETE;
+    complete.drop.windowID = 0;
+    complete.drop.x = 5.0f;
+    complete.drop.y = 5.0f;
+    event_loop_->HandleFileDropEventForTesting(complete);
+
+    WindowManager::Instance().UnregisterWindow(window);
+
+    EXPECT_EQ(dragenter_events, 1);
+    EXPECT_EQ(dragover_events, 1);
+    EXPECT_EQ(drop_events, 0);
+    EXPECT_TRUE(input->GetFiles().empty());
+
+    std::error_code ec;
+    std::filesystem::remove_all(temp_dir, ec);
+}
+
+TEST_F(EventLoopTest, FileDropWritesOnlyWhenAcceptedAndNotCanceled) {
+    const auto temp_dir = std::filesystem::temp_directory_path() / "mbink-event-loop-file-drop-accept-test";
+    std::filesystem::create_directories(temp_dir);
+    const auto file_path = temp_dir / "drop.txt";
+    const auto json_path = temp_dir / "drop.json";
+    {
+        std::ofstream(file_path) << "drop";
+        std::ofstream(json_path) << "{}";
+    }
+
+    auto document = std::make_shared<Document>();
+    document->Initialize();
+    auto input = std::dynamic_pointer_cast<HTMLInputElement>(document->CreateElement("input"));
+    ASSERT_NE(input, nullptr);
+    input->SetAttribute("type", "file");
+    input->SetAttribute("multiple", "");
+    input->SetAttribute("accept", ".txt");
+    input->SetAttribute("style", "width: 200px; height: 40px;");
+    document->GetBody()->AppendChild(input);
+
+    WindowConfig config;
+    config.hidden = true;
+    config.headless = true;
+    config.backend = RenderBackend::CPU;
+    auto window = std::make_shared<Window>(config);
+    window->SetDocument(document);
+    WindowManager::Instance().RegisterWindow(window);
+    window->EnsureRenderTree();
+
+    int drop_events = 0;
+    bool cancel_drop = false;
+    input->AddEventListener("dragover", [](std::shared_ptr<Event> event) {
+        event->PreventDefault();
+    });
+    input->AddEventListener("drop", [&](std::shared_ptr<Event> event) {
+        ++drop_events;
+        if (cancel_drop) {
+            event->PreventDefault();
+        }
+    });
+
+    auto dispatch_drop = [&](const std::vector<std::string>& paths) {
+        SDL_Event begin{};
+        begin.type = SDL_EVENT_DROP_BEGIN;
+        begin.drop.windowID = 0;
+        event_loop_->HandleFileDropEventForTesting(begin);
+
+        for (const auto& path : paths) {
+            SDL_Event file{};
+            file.type = SDL_EVENT_DROP_FILE;
+            file.drop.windowID = 0;
+            file.drop.x = 5.0f;
+            file.drop.y = 5.0f;
+            file.drop.data = path.c_str();
+            event_loop_->HandleFileDropEventForTesting(file);
+        }
+
+        SDL_Event complete{};
+        complete.type = SDL_EVENT_DROP_COMPLETE;
+        complete.drop.windowID = 0;
+        complete.drop.x = 5.0f;
+        complete.drop.y = 5.0f;
+        event_loop_->HandleFileDropEventForTesting(complete);
+    };
+
+    dispatch_drop({file_path.string(), json_path.string()});
+    ASSERT_EQ(input->GetFiles().size(), 1u);
+    EXPECT_EQ(input->GetFiles()[0].name, "drop.txt");
+    EXPECT_EQ(drop_events, 1);
+
+    cancel_drop = true;
+    dispatch_drop({json_path.string()});
+    ASSERT_EQ(input->GetFiles().size(), 1u);
+    EXPECT_EQ(input->GetFiles()[0].name, "drop.txt");
+    EXPECT_EQ(drop_events, 2);
+
+    input->SetDisabled(true);
+    cancel_drop = false;
+    dispatch_drop({file_path.string()});
+    ASSERT_EQ(input->GetFiles().size(), 1u);
+    EXPECT_EQ(input->GetFiles()[0].name, "drop.txt");
+    EXPECT_EQ(drop_events, 3);
+
+    WindowManager::Instance().UnregisterWindow(window);
+
+    std::error_code ec;
+    std::filesystem::remove_all(temp_dir, ec);
+}
+
+TEST_F(EventLoopTest, FileDropDirectoryWritesAllFilesWithoutMultiple) {
+    const auto temp_dir = std::filesystem::temp_directory_path() / "mbink-event-loop-directory-drop-test";
+    const auto directory_path = temp_dir / "folder";
+    const auto nested_path = directory_path / "nested";
+    const auto first_path = directory_path / "a.txt";
+    const auto second_path = nested_path / "b.txt";
+    std::filesystem::create_directories(nested_path);
+    {
+        std::ofstream(first_path) << "a";
+        std::ofstream(second_path) << "bb";
+    }
+
+    auto document = std::make_shared<Document>();
+    document->Initialize();
+    auto input = std::dynamic_pointer_cast<HTMLInputElement>(document->CreateElement("input"));
+    ASSERT_NE(input, nullptr);
+    input->SetAttribute("type", "file");
+    input->SetAttribute("webkitdirectory", "");
+    input->SetAttribute("style", "width: 200px; height: 40px;");
+    document->GetBody()->AppendChild(input);
+
+    WindowConfig config;
+    config.hidden = true;
+    config.headless = true;
+    config.backend = RenderBackend::CPU;
+    auto window = std::make_shared<Window>(config);
+    window->SetDocument(document);
+    WindowManager::Instance().RegisterWindow(window);
+    window->EnsureRenderTree();
+
+    input->AddEventListener("dragover", [](std::shared_ptr<Event> event) {
+        event->PreventDefault();
+    });
+
+    SDL_Event begin{};
+    begin.type = SDL_EVENT_DROP_BEGIN;
+    begin.drop.windowID = 0;
+    event_loop_->HandleFileDropEventForTesting(begin);
+
+    const std::string path = directory_path.string();
+    SDL_Event file{};
+    file.type = SDL_EVENT_DROP_FILE;
+    file.drop.windowID = 0;
+    file.drop.x = 5.0f;
+    file.drop.y = 5.0f;
+    file.drop.data = path.c_str();
+    event_loop_->HandleFileDropEventForTesting(file);
+
+    SDL_Event complete{};
+    complete.type = SDL_EVENT_DROP_COMPLETE;
+    complete.drop.windowID = 0;
+    complete.drop.x = 5.0f;
+    complete.drop.y = 5.0f;
+    event_loop_->HandleFileDropEventForTesting(complete);
+
+    WindowManager::Instance().UnregisterWindow(window);
+
+    ASSERT_EQ(input->GetFiles().size(), 2u);
+    EXPECT_EQ(input->GetFiles()[0].name, "a.txt");
+    EXPECT_EQ(input->GetFiles()[0].webkit_relative_path, "folder/a.txt");
+    EXPECT_EQ(input->GetFiles()[1].name, "b.txt");
+    EXPECT_EQ(input->GetFiles()[1].webkit_relative_path, "folder/nested/b.txt");
+
+    std::error_code ec;
+    std::filesystem::remove_all(temp_dir, ec);
 }
 
 TEST_F(EventLoopTest, GetTaskScheduler) {
